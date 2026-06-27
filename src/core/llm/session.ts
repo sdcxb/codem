@@ -206,9 +206,8 @@ export class SessionManager {
           content: textParts.map((p) => p.content).join("\n") || "(empty)",
         });
       } else if (msg.role === "assistant") {
-        // Collect text, reasoning, and tool parts
         const textContent: string[] = [];
-        const toolCalls: ContentBlock[] = [];
+        const toolParts: any[] = [];
 
         for (const part of msg.parts) {
           if (part.type === "text") {
@@ -216,28 +215,67 @@ export class SessionManager {
           } else if (part.type === "reasoning") {
             textContent.push(`[Thinking: ${part.content}]`);
           } else if (part.type === "tool") {
-            if (part.status === "completed" || part.status === "error") {
-              // Add tool result as a separate message
-              result.push({
-                id: `${msg.id}-tool-${part.id}`,
-                role: "tool",
-                content: part.output || part.error || "(no output)",
-                toolCallId: part.id,
-              });
-            }
+            toolParts.push(part);
           }
         }
 
-        if (textContent.length > 0 || toolCalls.length > 0) {
-          result.push({
+        // Only add tool_calls if ALL tool parts have results
+        const completedTools = toolParts.filter((p) => p.status === "completed" || p.status === "error");
+        const hasCompleteTools = toolParts.length > 0 && completedTools.length === toolParts.length;
+
+        // Add assistant message
+        if (textContent.length > 0 || toolParts.length > 0) {
+          const assistantMsg: any = {
             id: msg.id,
             role: "assistant",
-            content: textContent.join("\n") || "(tool use)",
-          });
+            content: textContent.join("\n") || "",
+          };
+          if (hasCompleteTools) {
+            assistantMsg.tool_calls = completedTools.map((part) => ({
+              id: part.id,
+              type: "function",
+              function: {
+                name: part.name,
+                arguments: JSON.stringify(part.input || {}),
+              },
+            }));
+          }
+          result.push(assistantMsg);
+        }
+
+        // Add tool results only if we added tool_calls
+        if (hasCompleteTools) {
+          for (const part of completedTools) {
+            result.push({
+              id: `${msg.id}-tool-${part.id}`,
+              role: "tool",
+              content: part.output || part.error || "(no output)",
+              toolCallId: part.id,
+            });
+          }
         }
       }
     }
 
-    return result;
+    // Final safety: remove orphan tool messages
+    // Find the last assistant message with tool_calls
+    const cleaned: LLMMessage[] = [];
+    let lastAssistantWithToolCalls = false;
+    for (const msg of result) {
+      if (msg.role === "assistant") {
+        lastAssistantWithToolCalls = !!(msg as any).tool_calls;
+        cleaned.push(msg);
+      } else if (msg.role === "tool") {
+        if (lastAssistantWithToolCalls) {
+          cleaned.push(msg);
+        }
+        // Skip orphan tool messages
+      } else {
+        lastAssistantWithToolCalls = false;
+        cleaned.push(msg);
+      }
+    }
+
+    return cleaned;
   }
 }

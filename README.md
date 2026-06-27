@@ -240,7 +240,36 @@ npm run tauri:build
 
 ## 更新日志
 
-### 2026-06-27
+### 2026-06-27（下午更新）
+
+**API 模式 DeepSeek 支持：**
+- 注册 DeepSeek/Moonshot provider（`provider.ts`）
+- 模型列表根据 provider 动态显示（SettingsPanel + ChatPanel）
+- `configureEngine` 根据模型名自动匹配 provider（deepseek → deepseek, claude → anthropic 等）
+- 启动时 `currentMode`/`currentProvider` 状态同步，确保 UI 模型列表与模式一致
+- "保存并刷新模型"按钮：保存 API Key 后立即生效
+
+**消息格式兼容性修复：**
+- `toAPIMessages` 重写：assistant 消息带 tool_calls 时正确生成 `tool_calls` 字段
+- `toAPIMessage` 修复：保留 `tool_calls` 字段不被丢弃（`this` 绑定 + 字段透传）
+- 孤立 tool 消息过滤：无对应 tool_calls 的 tool 消息自动跳过
+- `content: null` 改为空字符串，避免 DeepSeek 400 错误
+
+**Rust 后端新增：**
+- `mimo_read_auth`：读取 `~/.local/share/mimocode/auth.json`
+- `mimo_delete_auth`：登出时删除 auth.json
+- `mimo_login`：启动 mimo.exe 子进程执行 OAuth 登录
+- `mimo_request_device_code`/`mimo_poll_token`/`mimo_get_user_info`/`mimo_refresh_token`（备用 OAuth 命令）
+
+**调试日志：**
+- `handleSend` 每步实时写入 `debug.log`（`write_file`）
+- `append_file` Rust 命令支持
+
+**待排查问题：**
+1. **聊天中切换模型，模型回答记录没保存** — 提问记录保存了，但 assistant 回复切换模型后丢失
+2. **聊天窗口没显示工具调用** — 需确认是 DeepSeek 没触发工具调用，还是工具调用 UI 显示有问题
+
+### 2026-06-27（上午）
 
 **项目重命名为 Codem：**
 - `package.json` → `codem`，`tauri.conf.json` → `productName: "Codem"`，`Cargo.toml` → `name = "codem"`

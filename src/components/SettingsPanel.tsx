@@ -464,12 +464,34 @@ export function SettingsPanel({ onClose, onSessionRecovery, onUsageStats }: Sett
               value={settings.model}
               onChange={(e) => setSettings({ ...settings, model: e.target.value })}
             >
-              <option value="mimo-v2.5-pro">mimo-v2.5-pro</option>
-              <option value="mimo-v2.5">mimo-v2.5</option>
-              <option value="mimo-v2-pro">mimo-v2-pro</option>
-              <option value="mimo-v2-flash">mimo-v2-flash</option>
-              <option value="mimo-v2.5-pro">mimo-v2.5-pro</option>
-              <option value="mimo-v2.5-lite">mimo-v2.5-lite</option>
+              {settings.mode === "cli" ? (
+                <>
+                  <option value="mimo-v2.5-pro">MiMo v2.5 Pro (免费)</option>
+                  <option value="mimo-v2.5">MiMo v2.5</option>
+                  <option value="mimo-v2-pro">MiMo v2 Pro</option>
+                  <option value="mimo-v2-flash">MiMo v2 Flash</option>
+                </>
+              ) : (
+                <>
+                  {settings.providers.filter(p => p.apiKey).map(p => {
+                    const models: Record<string, Array<{id: string, name: string}>> = {
+                      openai: [{id:"gpt-4o",name:"GPT-4o"},{id:"gpt-4o-mini",name:"GPT-4o Mini"},{id:"o3",name:"o3"}],
+                      anthropic: [{id:"claude-sonnet-4-20250514",name:"Claude Sonnet 4"},{id:"claude-opus-4-20250514",name:"Claude Opus 4"}],
+                      deepseek: [
+                        {id:"deepseek-v4-flash",name:"DeepSeek V4 Flash"},
+                        {id:"deepseek-v4-pro",name:"DeepSeek V4 Pro"},
+                      ],
+                      moonshot: [{id:"moonshot-v1-8k",name:"Moonshot 8K"},{id:"moonshot-v1-32k",name:"Moonshot 32K"},{id:"moonshot-v1-128k",name:"Moonshot 128K"}],
+                    };
+                    return (models[p.id] || []).map(m => (
+                      <option key={m.id} value={m.id}>{p.name} - {m.name}</option>
+                    ));
+                  })}
+                  {!settings.providers.some(p => p.apiKey && p.id !== "mimo") && (
+                    <option value="" disabled>请先配置 API Key</option>
+                  )}
+                </>
+              )}
             </select>
           </div>
 
@@ -657,6 +679,28 @@ export function SettingsPanel({ onClose, onSessionRecovery, onUsageStats }: Sett
                   onChange={(e) => updateProvider(provider.id, { baseUrl: e.target.value })}
                 />
               </div>
+
+              <button
+                onClick={() => {
+                  // Save settings
+                  const newSettings = { ...settings };
+                  localStorage.setItem("mimo-settings", JSON.stringify(newSettings));
+                  // Trigger engine reconfigure
+                  window.dispatchEvent(new Event("mimo-settings-changed"));
+                }}
+                style={{
+                  padding: "6px 16px",
+                  background: "var(--accent-primary)",
+                  color: "white",
+                  border: "none",
+                  borderRadius: 4,
+                  fontSize: 12,
+                  cursor: "pointer",
+                  marginTop: 4,
+                }}
+              >
+                保存并刷新模型
+              </button>
             </div>
           ))}
         </div>

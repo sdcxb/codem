@@ -74,7 +74,29 @@ function App() {
   const [editingFile, setEditingFile] = useState<string | null>(null);
   const [appIdentity, setAppIdentity] = useState<AppIdentity | null>(null);
   const [showBootstrap, setShowBootstrap] = useState(false);
-  const [cliModel, setCliModel] = useState("mimo/mimo-auto");
+  const [cliModel, setCliModel] = useState("mimo-v2.5-pro");
+  const [currentMode, setCurrentMode] = useState<"cli" | "api">("cli");
+  const [currentProvider, setCurrentProvider] = useState("mimo");
+
+  // Handle model change from chat header - sync with engine
+  const handleModelChange = useCallback((model: string) => {
+    setCliModel(model);
+    const engine = engineRef.current;
+    engine.updateConfig({ defaultModel: model });
+
+    // Determine provider from model
+    const mode = getMode();
+    if (mode === "api") {
+      let provider = "openai";
+      if (model.startsWith("deepseek")) provider = "deepseek";
+      else if (model.startsWith("claude")) provider = "anthropic";
+      else if (model.startsWith("moonshot")) provider = "moonshot";
+      else if (model.startsWith("gpt") || model.startsWith("o3")) provider = "openai";
+      engine.updateConfig({ defaultProvider: provider });
+      setCurrentProvider(provider);
+      console.log(`[ModelChange] model=${model}, provider=${provider}`);
+    }
+  }, []);
   const [pendingPermission, setPendingPermission] = useState<{
     request: PermissionRequest;
     resolve: (result: PermissionResult) => void;
@@ -123,8 +145,12 @@ function App() {
       const settings = JSON.parse(saved);
 
       if (settings.mode === "cli") {
-        // CLI mode: load API key from auth.json or local DB
-        engine.updateConfig({ defaultProvider: "mimo", defaultModel: settings.model || "mimo-v2.5-pro" });
+        // CLI mode: always use mimo model
+        const model = "mimo-v2.5-pro";
+        engine.updateConfig({ defaultProvider: "mimo", defaultModel: model });
+        setCliModel(model);
+        setCurrentMode("cli");
+        setCurrentProvider("mimo");
         const auth = getMiMoAuth();
         let account = auth.getActiveAccount();
         if (!account) {
@@ -146,10 +172,38 @@ function App() {
             }
           }
         }
-        if (settings.model) {
-          engine.updateConfig({ defaultModel: settings.model });
-          console.log(`[Engine] API mode: model=${settings.model}`);
+        // Determine provider from selected model
+        const model = settings.model || "";
+        let provider = "openai"; // default fallback
+        if (model.startsWith("deepseek")) provider = "deepseek";
+        else if (model.startsWith("claude")) provider = "anthropic";
+        else if (model.startsWith("moonshot")) provider = "moonshot";
+        else if (model.startsWith("gpt") || model.startsWith("o3")) provider = "openai";
+        // If model doesn't match any provider, use first configured provider's first model
+        let finalModel = model;
+        if (!model || provider === "openai" && !model.startsWith("gpt") && !model.startsWith("o3")) {
+          // Find first configured provider and use its first model
+          if (settings.providers) {
+            for (const p of settings.providers) {
+              if (p.apiKey && p.id !== "mimo") {
+                provider = p.id;
+                const models: Record<string, string> = {
+                  openai: "gpt-4o",
+                  anthropic: "claude-sonnet-4-20250514",
+                  deepseek: "deepseek-v4-flash",
+                  moonshot: "moonshot-v1-8k",
+                };
+                finalModel = models[p.id] || model;
+                break;
+              }
+            }
+          }
         }
+        engine.updateConfig({ defaultProvider: provider, defaultModel: finalModel });
+        setCliModel(finalModel);
+        setCurrentMode("api");
+        setCurrentProvider(provider);
+        console.log(`[Engine] API mode: provider=${provider}, model=${finalModel}`);
       }
     }
   }, []);
@@ -213,25 +267,46 @@ function App() {
   // Auto-save messages whenever they change (only for the correct session)
   useEffect(() => {
     if (currentProject && currentSession && messages.length > 0 && messagesSessionRef.current === currentSession.id) {
+      console.log(`[AutoSave] Saving ${messages.length} messages to session ${currentSession.id}`);
       saveMessages(currentSession.id);
     }
-  }, [messages, currentProject?.id, currentSession?.id]);
+  }, [messages]);
+
+  // Save messages before unmount or session switch
+  useEffect(() => {
+    return () => {
+      if (currentProject && currentSession && messages.length > 0) {
+        console.log(`[Cleanup] Saving ${messages.length} messages to session ${currentSession.id}`);
+        saveMessages(currentSession.id);
+      }
+    };
+  }, [currentSession?.id]);
 
   // ========== Send Message ==========
   const handleSend = async (message: string, attachments?: any[]) => {
     const logs: string[] = [];
-    const log = (msg: string) => { logs.push(`[${new Date().toISOString()}] ${msg}`); console.log(msg); };
+    const log = async (msg: string) => {
+      const line = `[${new Date().toISOString()}] ${msg}`;
+      console.log(msg);
+      logs.push(line);
+      // Write to file immediately
+      try {
+        const { invoke } = (window as any).__TAURI__?.core || {};
+        if (invoke) {
+          await invoke("write_file", { path: "D:\\mimo-gui\\debug.log", content: logs.join("\n") + "\n" });
+        }
+      } catch {}
+    };
 
-    log(`[Send] message: "${message.substring(0, 80)}"`);
-    log(`[Send] currentSession: ${currentSession?.id || "NULL"}`);
-    log(`[Send] currentProject: ${currentProject?.id || "NULL"}`);
+    await log(`[Send] START - message: "${message.substring(0, 80)}"`);
+    await log(`[Send] mode=${getMode()}, currentSession=${currentSession?.id || "NULL"}, currentProject=${currentProject?.id || "NULL"}`);
 
     if (!currentSession) {
-      log("[Send] ABORT: no currentSession");
-      try { const { invoke } = (window as any).__TAURI__.core; await invoke("write_file", { path: "debug.log", content: logs.join("\n") }); } catch {}
+      await log("[Send] ABORT: no currentSession");
       return;
     }
 
+    await log(`[Send] updateSession...`);
     useProjectStore.getState().updateSession(currentSession.id, {
       messageCount: currentSession.messageCount + 1,
       lastMessageAt: Date.now(),
@@ -246,6 +321,7 @@ function App() {
       userContent = attachmentInfo + (message ? "\n" + message : "");
     }
 
+    await log(`[Send] adding user message...`);
     addMessage({
       id: `user-${Date.now()}`,
       role: "user",
@@ -254,34 +330,37 @@ function App() {
       status: "done",
       attachments,
     });
+    await log(`[Send] user message added`);
 
     const mode = getMode();
     const engine = engineRef.current;
 
-    // Check if engine is properly configured
+    await log(`[Send] engine=${!!engine}`);
+
     const provider = engine.getDefaultProvider();
     const model = engine.getDefaultModel();
-    console.log(`[Send] mode=${mode}, provider=${provider}, model=${model}`);
+    await log(`[Send] provider=${provider}, model=${model}`);
 
-    // Ensure engine is configured
+    const providerObj = engine.providers.get(provider);
+    await log(`[Send] providerObj=${!!providerObj}, isConfigured=${providerObj?.isConfigured()}`);
+
     if (provider === "openai" && model === "gpt-4o") {
-      // Not configured - try to configure from settings
+      await log("[Send] Engine not configured, calling configureEngine...");
       configureEngine();
     }
 
-    // CLI mode: check MiMo auth
     if (mode === "cli") {
+      await log("[Send] CLI mode: checking MiMo auth...");
       const auth = getMiMoAuth();
       let account = auth.getActiveAccount();
       if (!account) {
-        // Try loading from auth.json
         account = await auth.loadFromAuthJson();
       }
       if (!account) {
         addMessage({
           id: `err-${Date.now()}`,
           role: "system",
-          content: `❌ 未找到 MiMo 认证信息。请先在终端运行 \`mimo providers login\` 登录。`,
+          content: `❌ 未找到 MiMo 认证信息。`,
           timestamp: Date.now(),
           status: "error",
         });
@@ -290,30 +369,28 @@ function App() {
       engine.setProviderConfig("mimo", { apiKey: account.accessToken, baseUrl: account.url });
     }
 
-    // Both API and CLI modes use the internal LLM engine
-    // Mode only affects authentication (API keys vs MiMo OAuth)
+    await log(`[Send] setStreaming(true)...`);
     setStreaming(true);
+
     const providerName = engine.getDefaultProvider();
     const modelName = engine.getDefaultModel();
-    log(`[Send] mode=${getMode()}, provider=${providerName}, model=${modelName}`);
+    await log(`[Send] providerName=${providerName}, modelName=${modelName}`);
 
-    // Check if provider is configured
-    const providerObj = engine.providers.get(providerName);
-    if (providerObj && !providerObj.isConfigured()) {
-      log(`[Send] Provider "${providerName}" not configured (no API key)`);
+    const providerObj2 = engine.providers.get(providerName);
+    if (providerObj2 && !providerObj2.isConfigured()) {
+      await log(`[Send] Provider not configured!`);
       setStreaming(false);
       addMessage({
         id: `err-${Date.now()}`,
         role: "system",
-        content: `❌ ${providerName} 未配置 API Key。请打开设置配置，或切换到 CLI 模式。`,
+        content: `❌ ${providerName} 未配置 API Key。`,
         timestamp: Date.now(),
         status: "error",
       });
-      try { const { invoke } = (window as any).__TAURI__.core; await invoke("write_file", { path: "debug.log", content: logs.join("\n") }); } catch {}
       return;
     }
 
-    log("[Send] Starting engine.process...");
+    await log(`[Send] Starting engine.process...`);
     const cwd = currentProject?.path || APP_ROOT;
     let assistantMsgId = `assistant-${Date.now()}`;
     let assistantContent = "";
@@ -321,7 +398,7 @@ function App() {
     try {
       abortRef.current = new AbortController();
 
-      log("[Send] Starting engine.process loop...");
+      await log(`[Send] Calling engine.process...`);
       for await (const event of engine.process(currentSession.id, message, cwd, undefined, {
         onPermissionRequest: (request) => {
           return new Promise((resolve) => {
@@ -329,7 +406,7 @@ function App() {
           });
         },
       })) {
-        log(`[Send] Event: ${event.type}`);
+        await log(`[Send] Event: ${event.type}`);
         if (abortRef.current.signal.aborted) break;
 
         switch (event.type) {
@@ -350,7 +427,6 @@ function App() {
 
           case "tool_start": {
             const tc = "toolCall" in event ? event.toolCall : null;
-            log(`[Send] tool_start: ${tc?.name || "?"} (${tc?.id || "?"})`);
             if (tc) {
               addToolCall(assistantMsgId, {
                 id: tc.id,
@@ -376,7 +452,7 @@ function App() {
           case "tool_error": {
             const tc = "toolCall" in event ? event.toolCall : null;
             const err = "error" in event ? event.error : "Unknown error";
-            log(`[Send] tool_error: ${tc?.name || "?"} - ${err}`);
+            await log(`[Send] tool_error: ${tc?.name || "?"} - ${err}`);
             if (tc) {
               updateToolCall(assistantMsgId, tc.id, {
                 status: "error",
@@ -392,7 +468,7 @@ function App() {
         useAppStore.getState().updateMessage(assistantMsgId, { status: "done" });
       }
     } catch (error: any) {
-      log(`[Send] ERROR: ${error.message || String(error)}`);
+      await log(`[Send] ERROR: ${error.message || String(error)}`);
       addMessage({
         id: `err-${Date.now()}`,
         role: "system",
@@ -401,21 +477,12 @@ function App() {
         status: "error",
       });
     } finally {
+      await log(`[Send] FINALLY`);
       setStreaming(false);
       abortRef.current = null;
       if (currentProject && currentSession) {
         saveMessages(currentSession.id);
-        try {
-          const engine = engineRef.current;
-          const session = engine.sessions.getSession(currentSession.id);
-          if (session) engine.saveToRecovery(session);
-        } catch {}
       }
-      // Write debug logs to file
-      try {
-        const { invoke } = (window as any).__TAURI__.core;
-        await invoke("write_file", { path: "debug.log", content: logs.join("\n") });
-      } catch {}
     }
   };
 
@@ -595,7 +662,9 @@ function App() {
                 }}
                 connected={true}
                 model={cliModel}
-                onModelChange={setCliModel}
+                onModelChange={handleModelChange}
+                mode={currentMode}
+                providerId={currentProvider}
               />
             )}
             {bottomTab === "terminal" && (

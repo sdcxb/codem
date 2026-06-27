@@ -42,8 +42,8 @@ export class OpenAICompatibleProvider implements LLMProvider {
       headers,
       body: JSON.stringify({
         model: request.model,
-        messages: request.messages.map(this.toAPIMessage),
-        tools: request.tools?.length ? request.tools.map(this.toAPITool) : undefined,
+        messages: request.messages.map((m) => this.toAPIMessage(m)),
+        tools: request.tools?.length ? request.tools.map((t) => this.toAPITool(t)) : undefined,
         temperature: request.temperature ?? 0.7,
         max_tokens: request.maxTokens ?? 4096,
         stream: false,
@@ -87,15 +87,16 @@ export class OpenAICompatibleProvider implements LLMProvider {
       headers["Authorization"] = `Bearer ${this.config.apiKey}`;
     }
     const url = `${baseUrl}/chat/completions`;
+    const tools = request.tools?.length ? request.tools.map((t) => this.toAPITool(t)) : undefined;
     const body = JSON.stringify({
       model: request.model,
-      messages: request.messages.map(this.toAPIMessage),
-      tools: request.tools?.length ? request.tools.map(this.toAPITool) : undefined,
+      messages: request.messages.map((m) => this.toAPIMessage(m)),
+      tools,
       temperature: request.temperature ?? 0.7,
       max_tokens: request.maxTokens ?? 4096,
       stream: true,
     });
-    console.log("[Provider] stream:", url, "body size:", body.length, "bytes");
+    console.log("[Provider] stream:", url, "model:", request.model, "msgs:", request.messages.length, "tools:", tools?.length || 0, "hasKey:", !!this.config.apiKey);
     const response = await fetch(url, {
       method: "POST",
       headers,
@@ -181,14 +182,17 @@ export class OpenAICompatibleProvider implements LLMProvider {
     }
   }
 
-  private toAPIMessage(msg: { role: string; content: string | any[]; toolCallId?: string; name?: string }) {
+  private toAPIMessage(msg: any) {
     const role = msg.role === "tool" ? "tool" : msg.role;
-    const content = typeof msg.content === "string" ? msg.content : this.serializeContent(msg.content);
+    const content = typeof msg.content === "string" ? msg.content : (msg.content ? this.serializeContent(msg.content) : "");
 
     if (role === "tool") {
-      return { role: "tool", content, tool_call_id: msg.toolCallId };
+      return { role: "tool", content, tool_call_id: msg.toolCallId || msg.tool_call_id };
     }
-    return { role, content, name: msg.name };
+    const result: any = { role, content };
+    if (msg.name) result.name = msg.name;
+    if (msg.tool_calls) result.tool_calls = msg.tool_calls;
+    return result;
   }
 
   private serializeContent(blocks: any[]): string {
@@ -273,6 +277,31 @@ export function createDefaultProviders(): ProviderRegistry {
       { id: "mimo-v2.5", name: "MiMo v2.5", contextWindow: 1000000, maxOutputTokens: 64000, supportsTools: true, supportsStreaming: true },
       { id: "mimo-v2-pro", name: "MiMo v2 Pro", contextWindow: 1000000, maxOutputTokens: 64000, supportsTools: true, supportsStreaming: true },
       { id: "mimo-v2-flash", name: "MiMo v2 Flash", contextWindow: 1000000, maxOutputTokens: 64000, supportsTools: true, supportsStreaming: true },
+    ],
+  }));
+
+  // DeepSeek
+  registry.register(new OpenAICompatibleProvider({
+    id: "deepseek",
+    name: "DeepSeek",
+    apiKey: "",
+    baseUrl: "https://api.deepseek.com",
+    models: [
+      { id: "deepseek-v4-flash", name: "DeepSeek V4 Flash", contextWindow: 1000000, maxOutputTokens: 384000, supportsTools: true, supportsStreaming: true },
+      { id: "deepseek-v4-pro", name: "DeepSeek V4 Pro", contextWindow: 1000000, maxOutputTokens: 384000, supportsTools: true, supportsStreaming: true },
+    ],
+  }));
+
+  // Moonshot (Kimi)
+  registry.register(new OpenAICompatibleProvider({
+    id: "moonshot",
+    name: "Moonshot",
+    apiKey: "",
+    baseUrl: "https://api.moonshot.cn/v1",
+    models: [
+      { id: "moonshot-v1-8k", name: "Moonshot v1 8K", contextWindow: 8192, maxOutputTokens: 4096, supportsTools: true, supportsStreaming: true },
+      { id: "moonshot-v1-32k", name: "Moonshot v1 32K", contextWindow: 32768, maxOutputTokens: 8192, supportsTools: true, supportsStreaming: true },
+      { id: "moonshot-v1-128k", name: "Moonshot v1 128K", contextWindow: 131072, maxOutputTokens: 8192, supportsTools: true, supportsStreaming: true },
     ],
   }));
 
