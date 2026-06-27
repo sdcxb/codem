@@ -80,6 +80,17 @@ function App() {
 
   // Handle model change from chat header - sync with engine
   const handleModelChange = useCallback((model: string) => {
+    // Abort any ongoing streaming
+    if (abortRef.current) {
+      abortRef.current.abort();
+    }
+
+    // Save current messages before switching models
+    if (currentProject && currentSession && messages.length > 0) {
+      console.log(`[ModelChange] Saving ${messages.length} messages before switching to ${model}`);
+      saveMessages(currentSession.id);
+    }
+
     setCliModel(model);
     const engine = engineRef.current;
     engine.updateConfig({ defaultModel: model });
