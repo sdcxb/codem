@@ -242,6 +242,13 @@ npm run tauri:build
 
 ### 2026-06-27
 
+**项目重命名为 Codem：**
+- `package.json` → `codem`，`tauri.conf.json` → `productName: "Codem"`，`Cargo.toml` → `name = "codem"`
+- 所有 UI 文本默认值从 "MiMo" 改为 "Codem"
+- MCP 客户端名从 `mimo-gui` 改为 `codem`
+- 硬编码调试路径 `D:\mimo-gui\` 改为相对路径
+- 新增 SVG logo + PNG/ICO 图标
+
 **CLI 模式认证（浏览器授权登录）：**
 - MiMo CLI 认证流程：`mimo providers login -p xiaomi` → 浏览器打开 `platform.xiaomimimo.com` → 授权 → token 写入 `~/.local/share/mimocode/auth.json`
 - Rust 后端 `mimo_login` 命令：启动 mimo.exe 子进程，等待 auth.json 写入，返回 token
@@ -276,6 +283,12 @@ npm run tauri:build
 - engine.log 记录 agentic loop 全流程
 - debug.log 记录前端事件收发
 - 设置面板"运行登录测试"按钮（5 项自动化测试）
+
+**文档与发布：**
+- README 重写：快速开始、环境要求、安装步骤、常用操作表格
+- 删除"泄露代码"表述，改为"对标 Claude Code 功能复现"
+- 添加作者的话、运行界面截图
+- 发布到 GitHub：https://github.com/sdcxb/codem
 
 ### 2026-06-26
 
