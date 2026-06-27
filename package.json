@@ -1,0 +1,46 @@
+{
+  "name": "codem",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "server": "tsx server.ts",
+    "start": "concurrently \"npm run server\" \"npm run dev\"",
+    "build": "tsc && vite build",
+    "build:server": "node build-server.mjs",
+    "preview": "vite preview",
+    "tauri": "tauri",
+    "tauri:dev": "npm run build:server && tauri dev",
+    "tauri:build": "npm run build:server && tauri build"
+  },
+  "dependencies": {
+    "@tauri-apps/plugin-dialog": "^2.7.1",
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/addon-web-links": "^0.12.0",
+    "@xterm/xterm": "^6.0.0",
+    "node-pty": "^1.1.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-markdown": "^9.0.1",
+    "react-syntax-highlighter": "^15.6.1",
+    "remark-gfm": "^4.0.0",
+    "sql.js": "^1.14.1",
+    "ws": "^8.18.0",
+    "zustand": "^5.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@types/react-syntax-highlighter": "^15.5.13",
+    "@types/ws": "^8.18.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "@yao-pkg/pkg": "^6.20.0",
+    "concurrently": "^9.0.0",
+    "png-to-ico": "^3.0.1",
+    "sharp": "^0.35.2",
+    "tsx": "^4.22.4",
+    "typescript": "^5.6.3",
+    "vite": "^6.0.0"
+  }
+}

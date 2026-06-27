@@ -1,0 +1,31 @@
+# Dependencies
+node_modules/
+dist/
+dist-server/
+
+# Tauri build artifacts
+src-tauri/target/
+src-tauri/binaries/
+
+# Logs
+*.log
+debug.log
+engine.log
+db-diag.log
+load-msgs.log
+session-switch.log
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local
+
+# Test output
+test-output.json
