@@ -37,9 +37,9 @@
 - **弹窗编辑**：文件编辑采用居中弹窗而非侧边面板，提升编辑体验
 - **快捷操作**：顶部导航栏（新对话、搜索、插件、自动化）借鉴 Codex 的操作入口设计
 
-#### 3. 对标 Claude Code 泄露代码复现功能
+#### 3. 对标 Claude Code 功能复现
 
-参考 Claude Code 泄露代码中的功能实现和架构设计：
+参考 Claude Code 的功能实现和架构设计：
 
 - **Agent 循环**：复现 Claude Code 的 Agent Loop 机制，支持多轮工具调用和自主决策
 - **工具执行器**：参考 Claude Code 的流式工具执行设计，支持并发和顺序执行混合
@@ -169,39 +169,54 @@ codem/
 - [ ] 主题持久化
 - [ ] 多语言支持
 
-## 运行方式
+## 快速开始
 
-### 开发模式
+### 环境要求
 
-```bash
-# 1. 启动后端服务
-npm run server
+- **Node.js** >= 18（推荐 20+）
+- **Rust**（用于编译 Tauri 后端，安装指南：https://rustup.rs）
+- **Windows 10/11**（目前仅支持 Windows）
 
-# 2. 启动前端开发服务器
-npm run dev
-
-# 或一键启动
-npm run start
-```
-
-### Tauri 桌面应用
+### 安装与运行
 
 ```bash
-# 开发模式（自动打包 server + 启动 Tauri）
+# 1. 克隆仓库
+git clone https://github.com/sdcxb/codem.git
+cd codem
+
+# 2. 安装前端依赖
+npm install
+
+# 3. 开发模式运行（首次会自动编译 Rust 依赖，约 2-5 分钟）
 npm run tauri:dev
 
-# 生产构建（打包成独立安装包，内嵌 Node.js 运行时）
+# 4. 生产构建（生成安装包）
 npm run tauri:build
-
-# 运行
-src-tauri/target/release/mimo-gui.exe
 ```
 
-### 构建说明
+构建产物位于 `src-tauri/target/release/bundle/`，包含 `.msi` 安装包和独立 `.exe`。
 
-- `npm run build:server` — 将 server.ts 打包为独立可执行文件（esbuild + pkg）
-- `npm run tauri:dev` — 自动打包 server 后启动 Tauri 开发模式
-- `npm run tauri:build` — 构建生产安装包，server 作为 sidecar 自动打包
+### 首次使用
+
+1. 启动 Codem 后，进入 **设置** 页面
+2. 选择模式：
+   - **CLI 模式**：点击"登录小米账号"，在浏览器中完成 MiMo 账号授权（免费使用 mimo-v2.5-pro 模型）
+   - **API 模式**：配置第三方 API Key（支持 OpenAI、Anthropic、DeepSeek、Moonshot 等）
+3. 点击侧栏 **+** 按钮新建项目，选择代码目录
+4. 开始对话，Codem 会自动读写项目文件、执行命令
+
+### 常用操作
+
+| 操作 | 说明 |
+|------|------|
+| 新建对话 | 侧栏点击 **✏️ 新对话** |
+| 切换模型 | 聊天窗口顶部下拉选择 |
+| 文件浏览器 | 侧栏点击 **📂** 按钮 |
+| 查看快照 | 聊天窗口点击 **📸** 按钮 |
+| 智能体面板 | 聊天窗口点击 **🤖** 按钮 |
+| 上下文监控 | 聊天窗口点击 **📊** 按钮 |
+| 用量统计 | 设置 → 用量统计 |
+| 会话恢复 | 设置 → 会话恢复 |
 
 ## 注意事项
 
