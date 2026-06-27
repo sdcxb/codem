@@ -96,14 +96,12 @@ export class OpenAICompatibleProvider implements LLMProvider {
       max_tokens: request.maxTokens ?? 4096,
       stream: true,
     });
-    console.log("[Provider] stream:", url, "model:", request.model, "msgs:", request.messages.length, "tools:", tools?.length || 0, "hasKey:", !!this.config.apiKey);
     const response = await fetch(url, {
       method: "POST",
       headers,
       body,
       signal: request.abortSignal,
     });
-    console.log("[Provider] response status:", response.status);
 
     if (!response.ok) {
       const error = await response.text();

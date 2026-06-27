@@ -119,16 +119,8 @@ export class AgenticLoop {
     this.abortController = new AbortController();
     this.state = this.createInitialState();
 
-    const log = (msg: string) => {
-      console.log(msg);
-      try { (window as any).__TAURI__?.core.invoke("append_file", { path: "engine.log", content: `[${new Date().toISOString()}] ${msg}` }); } catch {}
-    };
-
-    log(`[AgenticLoop] run START, sessionId: ${sessionId}`);
     const session = this.sessions.getSession(sessionId);
-    log(`[AgenticLoop] getSession: ${session ? "FOUND" : "NOT FOUND"}`);
     if (!session) {
-      log(`[AgenticLoop] ERROR: Session not found, yielding error event`);
       yield { type: "end", result: { type: "error", error: "Session not found" } };
       return { type: "error", error: "Session not found" };
     }
@@ -141,7 +133,6 @@ export class AgenticLoop {
       timestamp: Date.now(),
     };
     this.sessions.addMessage(sessionId, userMsg);
-    log(`[AgenticLoop] user message added`);
 
     // Create assistant message
     let assistantMsg: MessageV2 = {
@@ -152,14 +143,14 @@ export class AgenticLoop {
       model: this.provider.id,
     };
     this.sessions.addMessage(sessionId, assistantMsg);
-    log(`[AgenticLoop] assistant message created, entering main loop`);
+    
 
     // Main loop
     while (this.state.iteration < this.state.maxIterations) {
       this.state.iteration++;
       this.state.toolCallsInIteration = 0;
 
-      log(`[AgenticLoop] iteration ${this.state.iteration}, building messages...`);
+      
       yield { type: "start", iteration: this.state.iteration };
 
       if (this.abortController.signal.aborted) {
@@ -183,27 +174,26 @@ export class AgenticLoop {
         messagesForIteration = this.buildMessages(this.sessions.getSession(sessionId)!);
       }
 
-      log(`[AgenticLoop] calling executeIteration...`);
-      // Execute iteration and collect events
-      const events = await this.executeIteration(
+      
+      // Execute iteration - yields events directly for real-time streaming
+      let iterationToolCalls = 0;
+      for await (const event of this.executeIteration(
         sessionId,
         assistantMsg,
         messagesForIteration,
         toolDefs,
         cwd,
         systemPrompt,
-      );
-      log(`[AgenticLoop] executeIteration returned ${events.length} events, toolCalls: ${this.state.toolCallsInIteration}`);
-
-      // Yield all collected events
-      for (const event of events) {
-        log(`[AgenticLoop] yielding event: ${event.type}`);
+      )) {
         yield event;
+        if (event.type === "tool_start") iterationToolCalls++;
       }
+      this.state.toolCallsInIteration = iterationToolCalls;
+      
 
       // Check if we should continue
       if (this.state.toolCallsInIteration === 0) {
-        log(`[AgenticLoop] no tool calls, stopping`);
+        
         const result: LoopResult = {
           type: "stop",
           reason: "completed",
@@ -243,24 +233,18 @@ export class AgenticLoop {
     return result;
   }
 
-  private async executeIteration(
+  private async *executeIteration(
     sessionId: string,
     assistantMsg: MessageV2,
     apiMessages: any[],
     toolDefs: ToolDefinition[],
     cwd: string,
     systemPrompt: string,
-  ): Promise<LoopEvent[]> {
-    const events: LoopEvent[] = [];
+  ): AsyncGenerator<LoopEvent, void, unknown> {
     let currentText = "";
     let currentToolCalls: StreamingToolCall[] = [];
     let finishReason = "stop";
     let usage: TokenUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
-
-    const log = (msg: string) => {
-      console.log(msg);
-      try { (window as any).__TAURI__?.core.invoke("append_file", { path: "engine.log", content: `[${new Date().toISOString()}] ${msg}` }); } catch {}
-    };
 
     const session = this.sessions.getSession(sessionId);
 
@@ -278,19 +262,16 @@ export class AgenticLoop {
         abortSignal: this.abortController!.signal,
       };
 
-      log(`[executeIteration] model: ${request.model}, msgs: ${request.messages.length}, tools: ${request.tools?.length || 0}`);
-      log(`[executeIteration] provider: ${this.provider.id}, baseUrl: ${(this.provider as any).config?.baseUrl}`);
-
-      // Execute with retry for transient errors
+      // Execute with retry - collect events, yield after
+      const collectedEvents: LoopEvent[] = [];
+      let streamError: string | null = null;
       await this.retryExecutor.execute(
         async () => {
-          log(`[executeIteration] calling provider.stream...`);
           for await (const event of this.provider.stream(request)) {
-            log(`[executeIteration] stream event: ${event.type}`);
             switch (event.type) {
               case "text_delta":
                 currentText += event.text;
-                events.push({ type: "text_delta", text: event.text });
+                collectedEvents.push({ type: "text_delta", text: event.text });
                 break;
 
               case "tool_use_start":
@@ -302,7 +283,7 @@ export class AgenticLoop {
                   rawArgs: "",
                 };
                 currentToolCalls.push(tc);
-                events.push({ type: "tool_start", toolCall: tc });
+                collectedEvents.push({ type: "tool_start", toolCall: tc });
                 break;
 
               case "tool_use_delta":
@@ -322,9 +303,7 @@ export class AgenticLoop {
                 break;
 
               case "usage":
-                if (event.usage) {
-                  usage = event.usage;
-                }
+                if (event.usage) usage = event.usage;
                 break;
 
               case "end":
@@ -332,41 +311,41 @@ export class AgenticLoop {
                 break;
 
               case "error":
-                events.push({ type: "tool_error", toolCall: { id: "", name: "", input: {}, status: "error" }, error: event.error });
+                streamError = event.error;
                 break;
             }
           }
         },
         (attempt, delay, error) => {
-          const { type } = classifyError(error);
           logRetry(attempt, delay, error);
-          events.push({
-            type: "retry",
-            attempt,
-            delay,
-            error: error instanceof Error ? error.message : String(error),
-            errorType: type,
-          });
         },
       );
+
+      // Yield collected events
+      for (const evt of collectedEvents) {
+        yield evt;
+      }
+      if (streamError) {
+        yield { type: "tool_error", toolCall: { id: "", name: "", input: {}, status: "error" }, error: streamError };
+      }
     } catch (error: any) {
       if (error.name === "AbortError") {
-        return events;
+        return;
       }
 
       if (error.message?.includes("prompt_too_long") || error.message?.includes("context_length_exceeded")) {
         if (this.config.enableReactiveCompaction) {
-          events.push({ type: "compaction_start" });
+          yield { type: "compaction_start" };
           const compacted = this.compactMessages(session?.messages || []);
-          events.push({ type: "compaction_end", messagesRemoved: compacted });
+          yield { type: "compaction_end", messagesRemoved: compacted };
         }
-        return events;
+        return;
       }
 
       this.state.consecutiveErrors++;
       this.state.lastError = error.message;
-      events.push({ type: "tool_error", toolCall: { id: "", name: "", input: {}, status: "error" }, error: error.message });
-      return events;
+      yield { type: "tool_error", toolCall: { id: "", name: "", input: {}, status: "error" }, error: error.message };
+      return;
     }
 
     // Add text part
@@ -381,11 +360,11 @@ export class AgenticLoop {
     this.state.totalUsage.promptTokens += usage.promptTokens;
     this.state.totalUsage.completionTokens += usage.completionTokens;
     this.state.totalUsage.totalTokens = this.state.totalUsage.promptTokens + this.state.totalUsage.completionTokens;
-    events.push({ type: "usage", usage });
+    yield { type: "usage", usage };
 
     // If no tool calls, we're done
     if (currentToolCalls.length === 0) {
-      return events;
+      return;
     }
 
     // Execute tools
@@ -453,7 +432,6 @@ export class AgenticLoop {
         // Auto-snapshot before destructive tools
         if (["write", "edit", "bash"].includes(name) && ctx.cwd) {
           await this.ensureSnapshot(ctx.cwd, ctx.sessionId);
-          // Record file before modification (for write/edit)
           if ((name === "write" || name === "edit") && typeof args.path === "string" && this.currentSnapshotId) {
             try {
               const { readFile } = await import("../file-api");
@@ -480,6 +458,7 @@ export class AgenticLoop {
               status: "running",
             } as Part],
           }));
+          yield event;
           break;
 
         case "tool_complete":
@@ -499,7 +478,7 @@ export class AgenticLoop {
             timestamp: Date.now(),
           });
 
-          events.push({ type: "tool_complete", toolCall: event.toolCall, result: event.result });
+          yield event;
           this.state.consecutiveErrors = 0;
           break;
 
@@ -513,13 +492,11 @@ export class AgenticLoop {
             ),
           }));
 
-          events.push({ type: "tool_error", toolCall: event.toolCall, error: event.error });
+          yield event;
           this.state.consecutiveErrors++;
           break;
       }
     }
-
-    return events;
   }
 
   private buildMessages(session: Session): any[] {
@@ -542,7 +519,6 @@ export class AgenticLoop {
   }
 
   private async ensureSnapshot(cwd: string, sessionId: string): Promise<void> {
-    // Create a new snapshot for each destructive tool batch
     if (!this.currentSnapshotId || this.lastCwd !== cwd) {
       const snapshotService = getSnapshotService(cwd);
       const snapshot = await snapshotService.create(

@@ -162,17 +162,10 @@ export class LLMEngine {
     agentId?: string,
     options?: { onPermissionRequest?: (request: import("../permission/permission").PermissionRequest) => Promise<import("../permission/permission").PermissionResult> },
   ): AsyncGenerator<LoopEvent, void, unknown> {
-    const log = (msg: string) => {
-      console.log(msg);
-      try { (window as any).__TAURI__?.core.invoke("append_file", { path: "engine.log", content: `[${new Date().toISOString()}] ${msg}` }); } catch {}
-    };
-
-    log(`[Process] START sessionId: ${sessionId}`);
-    const session = this.sessions.getOrCreateSession(sessionId, "default", this.config.defaultModel || "unknown");
-    log(`[Process] session ready: ${session.id}, msgs: ${session.messages.length}`);
+    // Ensure session exists in SessionManager
+    this.sessions.getOrCreateSession(sessionId, "default", this.config.defaultModel || "unknown");
 
     const loop = this.getAgenticLoop(agentId);
-    log(`[Process] entering loop.run...`);
     if (options?.onPermissionRequest) {
       loop.updateConfig({ onPermissionRequest: options.onPermissionRequest });
     }
@@ -183,7 +176,6 @@ export class LLMEngine {
     let toolCallCount = 0;
 
     for await (const event of loop.run(sessionId, message, cwd, systemPrompt)) {
-      console.log("[Process] event:", event.type);
       if (event.type === "usage") {
         lastUsage = event.usage;
       }

@@ -277,17 +277,15 @@ function App() {
 
   // Auto-save messages whenever they change (only for the correct session)
   useEffect(() => {
-    if (currentProject && currentSession && messages.length > 0 && messagesSessionRef.current === currentSession.id) {
-      console.log(`[AutoSave] Saving ${messages.length} messages to session ${currentSession.id}`);
-      saveMessages(currentSession.id);
-    }
+      if (currentProject && currentSession && messages.length > 0 && messagesSessionRef.current === currentSession.id) {
+        saveMessages(currentSession.id);
+      }
   }, [messages]);
 
   // Save messages before unmount or session switch
   useEffect(() => {
     return () => {
       if (currentProject && currentSession && messages.length > 0) {
-        console.log(`[Cleanup] Saving ${messages.length} messages to session ${currentSession.id}`);
         saveMessages(currentSession.id);
       }
     };
@@ -295,29 +293,9 @@ function App() {
 
   // ========== Send Message ==========
   const handleSend = async (message: string, attachments?: any[]) => {
-    const logs: string[] = [];
-    const log = async (msg: string) => {
-      const line = `[${new Date().toISOString()}] ${msg}`;
-      console.log(msg);
-      logs.push(line);
-      // Write to file immediately
-      try {
-        const { invoke } = (window as any).__TAURI__?.core || {};
-        if (invoke) {
-          await invoke("write_file", { path: "D:\\mimo-gui\\debug.log", content: logs.join("\n") + "\n" });
-        }
-      } catch {}
-    };
+    if (!currentSession) return;
 
-    await log(`[Send] START - message: "${message.substring(0, 80)}"`);
-    await log(`[Send] mode=${getMode()}, currentSession=${currentSession?.id || "NULL"}, currentProject=${currentProject?.id || "NULL"}`);
-
-    if (!currentSession) {
-      await log("[Send] ABORT: no currentSession");
-      return;
-    }
-
-    await log(`[Send] updateSession...`);
+    
     useProjectStore.getState().updateSession(currentSession.id, {
       messageCount: currentSession.messageCount + 1,
       lastMessageAt: Date.now(),
@@ -326,13 +304,13 @@ function App() {
     let userContent = message;
     if (attachments && attachments.length > 0) {
       const attachmentInfo = attachments.map((a: any) => {
-        if (a.type === "image") return `[附件: 图片 ${a.name}]`;
-        return `[附件: ${a.name}${a.size ? ` (${a.size} bytes)` : ""}]`;
+        if (a.type === "image") return `[Image: ${a.name}]`;
+        return `[File: ${a.name}${a.size ? ` (${a.size} bytes)` : ""}]`;
       }).join("\n");
       userContent = attachmentInfo + (message ? "\n" + message : "");
     }
 
-    await log(`[Send] adding user message...`);
+    
     addMessage({
       id: `user-${Date.now()}`,
       role: "user",
@@ -341,27 +319,25 @@ function App() {
       status: "done",
       attachments,
     });
-    await log(`[Send] user message added`);
+    
 
     const mode = getMode();
     const engine = engineRef.current;
 
-    await log(`[Send] engine=${!!engine}`);
+    
 
     const provider = engine.getDefaultProvider();
     const model = engine.getDefaultModel();
-    await log(`[Send] provider=${provider}, model=${model}`);
+    
 
     const providerObj = engine.providers.get(provider);
-    await log(`[Send] providerObj=${!!providerObj}, isConfigured=${providerObj?.isConfigured()}`);
+    
 
     if (provider === "openai" && model === "gpt-4o") {
-      await log("[Send] Engine not configured, calling configureEngine...");
       configureEngine();
     }
 
     if (mode === "cli") {
-      await log("[Send] CLI mode: checking MiMo auth...");
       const auth = getMiMoAuth();
       let account = auth.getActiveAccount();
       if (!account) {
@@ -369,9 +345,9 @@ function App() {
       }
       if (!account) {
         addMessage({
-          id: `err-${Date.now()}`,
-          role: "system",
-          content: `❌ 未找到 MiMo 认证信息。`,
+          id: 'err-' + Date.now(),
+          role: 'system',
+          content: '[Error] MiMo auth not found. Please login first.',
           timestamp: Date.now(),
           status: "error",
         });
@@ -380,28 +356,28 @@ function App() {
       engine.setProviderConfig("mimo", { apiKey: account.accessToken, baseUrl: account.url });
     }
 
-    await log(`[Send] setStreaming(true)...`);
+    
     setStreaming(true);
 
     const providerName = engine.getDefaultProvider();
     const modelName = engine.getDefaultModel();
-    await log(`[Send] providerName=${providerName}, modelName=${modelName}`);
+    
 
     const providerObj2 = engine.providers.get(providerName);
     if (providerObj2 && !providerObj2.isConfigured()) {
-      await log(`[Send] Provider not configured!`);
+      
       setStreaming(false);
       addMessage({
-        id: `err-${Date.now()}`,
-        role: "system",
-        content: `❌ ${providerName} 未配置 API Key。`,
+        id: 'err-' + Date.now(),
+        role: 'system',
+        content: '[Error] ' + providerName + ' not configured. Please set API Key in Settings.',
         timestamp: Date.now(),
-        status: "error",
+        status: 'error',
       });
       return;
     }
 
-    await log(`[Send] Starting engine.process...`);
+    
     const cwd = currentProject?.path || APP_ROOT;
     let assistantMsgId = `assistant-${Date.now()}`;
     let assistantContent = "";
@@ -409,7 +385,7 @@ function App() {
     try {
       abortRef.current = new AbortController();
 
-      await log(`[Send] Calling engine.process...`);
+      
       for await (const event of engine.process(currentSession.id, message, cwd, undefined, {
         onPermissionRequest: (request) => {
           return new Promise((resolve) => {
@@ -417,7 +393,6 @@ function App() {
           });
         },
       })) {
-        await log(`[Send] Event: ${event.type}`);
         if (abortRef.current.signal.aborted) break;
 
         switch (event.type) {
@@ -439,6 +414,16 @@ function App() {
           case "tool_start": {
             const tc = "toolCall" in event ? event.toolCall : null;
             if (tc) {
+              // Ensure assistant message exists before adding tool call
+              if (!useAppStore.getState().messages.find((m) => m.id === assistantMsgId)) {
+                addMessage({
+                  id: assistantMsgId,
+                  role: "assistant",
+                  content: "",
+                  timestamp: Date.now(),
+                  status: "streaming",
+                });
+              }
               addToolCall(assistantMsgId, {
                 id: tc.id,
                 tool: tc.name,
@@ -463,7 +448,7 @@ function App() {
           case "tool_error": {
             const tc = "toolCall" in event ? event.toolCall : null;
             const err = "error" in event ? event.error : "Unknown error";
-            await log(`[Send] tool_error: ${tc?.name || "?"} - ${err}`);
+            
             if (tc) {
               updateToolCall(assistantMsgId, tc.id, {
                 status: "error",
@@ -479,16 +464,16 @@ function App() {
         useAppStore.getState().updateMessage(assistantMsgId, { status: "done" });
       }
     } catch (error: any) {
-      await log(`[Send] ERROR: ${error.message || String(error)}`);
+      
       addMessage({
-        id: `err-${Date.now()}`,
-        role: "system",
-        content: `❌ ${error.message || String(error)}`,
+        id: 'err-' + Date.now(),
+        role: 'system',
+        content: '[Error] ' + (error.message || String(error)),
         timestamp: Date.now(),
-        status: "error",
+        status: 'error',
       });
     } finally {
-      await log(`[Send] FINALLY`);
+      
       setStreaming(false);
       abortRef.current = null;
       if (currentProject && currentSession) {
@@ -551,7 +536,7 @@ function App() {
         break;
       }
       case "error": {
-        addMessage({ id: `err-${Date.now()}`, role: "system", content: `�?${e.message || "Error"}`, timestamp: Date.now(), status: "error" });
+        addMessage({ id: 'err-' + Date.now(), role: 'system', content: '[Error] ' + (e.message || 'Unknown error'), timestamp: Date.now(), status: 'error' });
         setStreaming(false);
         currentMsgIdRef.current = null;
         break;
@@ -590,7 +575,7 @@ function App() {
     <div className="app">
       {!dbReady ? (
         <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", color: "var(--text-secondary)" }}>
-          加载中...
+          Loading...
         </div>
       ) : (
         <>
@@ -609,10 +594,10 @@ function App() {
           onMemory={() => setShowMemoryManager(true)}
           onRemoveProject={(id, name, path) => {
             setConfirmDialog({
-              title: "移除项目",
-              message: `确定移除项目「${name}」？`,
-              confirmLabel: "仅移除",
-              cancelLabel: "删除文件",
+              title: "Remove Project",
+              message: `Remove project "${name}"?`,
+              confirmLabel: "Remove Only",
+              cancelLabel: "Delete Files",
               onConfirm: () => {
                 useProjectStore.getState().deleteProject(id);
                 const projects = useProjectStore.getState().projects.filter((p) => p.id !== id);
@@ -643,10 +628,10 @@ function App() {
         <div className="panel-right">
           <div className="panel-tabs">
             <button className={`tab ${bottomTab === "chat" ? "active" : ""}`} onClick={() => setBottomTab("chat")}>
-              💬 对话
+              馃挰 瀵硅瘽
             </button>
             <button className={`tab ${bottomTab === "terminal" ? "active" : ""}`} onClick={() => setBottomTab("terminal")}>
-              ⌨️ 终端
+              鈱笍 缁堢
             </button>
           </div>
 
@@ -658,7 +643,7 @@ function App() {
                 onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
                 onFork={(messageIndex) => {
                   if (currentSession && currentProject) {
-                    createSession(`分叉�? ${currentSession.title}`);
+                    createSession('Fork: ' + currentSession.title);
                     // Load forked messages into new session
                     const sourceKey = `mimo-chat-${currentProject.id}-${currentSession.id}`;
                     const sourceData = localStorage.getItem(sourceKey);
@@ -744,8 +729,8 @@ function App() {
       {fileExplorerProjectId && currentProject && fileExplorerProjectId === currentProject.id && (
         <div className="floating-explorer">
           <div className="floating-explorer-header">
-            <span>📂 文件浏览器</span>
-            <button className="floating-explorer-close" onClick={() => setFileExplorerRefreshKey((k) => k + 1)} title="刷新">🔄</button>
+            <span>File Explorer</span>
+            <button className="floating-explorer-close" onClick={() => setFileExplorerRefreshKey((k) => k + 1)} title="Refresh">🔄</button>
             <button className="floating-explorer-close" onClick={() => setFileExplorerProjectId(null)}>✕</button>
           </div>
           <div className="floating-explorer-body">
@@ -793,3 +778,4 @@ function App() {
 }
 
 export default App;
+

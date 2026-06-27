@@ -240,6 +240,40 @@ npm run tauri:build
 
 ## 更新日志
 
+### 2026-06-27（晚间更新）
+
+**CLI 模式认证（浏览器授权登录）：**
+- MiMo OAuth 流程：Rust 后端 `mimo_login` 命令启动 `mimo providers login -p xiaomi`，浏览器打开授权页面
+- Rust 后端 `mimo_read_auth` 读取 `~/.local/share/mimocode/auth.json`
+- Rust 后端 `mimo_delete_auth` 登出时删除 auth.json
+- SettingsPanel 登录/登出 UI 完善
+
+**消息持久化修复：**
+- `createMessage` 改为 upsert（先查后插/更新）
+- `messagesSessionRef` 追踪当前消息所属会话，切换会话时先保存旧消息
+- `handleModelChange` 切换前 abort 流式 + 保存消息
+
+**历史对话加载修复：**
+- `toggleExpand` 时刷新 `allSessions`
+- App.tsx useEffect 依赖添加 `currentProject?.id`
+
+**Agentic Loop 重构：**
+- `executeIteration` 改为 AsyncGenerator 直接 yield 事件，实现实时流式输出
+- 工具参数解析：`tool_use_delta` 累积 rawArgs，`tool_use_end` 时统一 JSON.parse
+- `finishReason` 检查修复：MiMo API 返回 `"stop"` 而非 `"tool_use"`
+- `SessionManager.getOrCreateSession` 确保 sessionId 存在
+- assistant 消息在 tool_start 时自动创建
+
+**UI 优化：**
+- 添加"思考中..."动画指示器
+- 工具调用状态图标（⏳/✅/❌）
+- 移除调试日志，优化流式性能
+
+**编码修复：**
+- 修复 App.tsx 中多处中文/emoji 编码损坏
+- mimo.ts 重写，修复编码损坏
+- 硬编码调试路径改为相对路径
+
 ### 2026-06-27（下午更新）
 
 **API 模式 DeepSeek 支持：**

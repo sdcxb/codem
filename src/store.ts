@@ -59,11 +59,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   addMessage: (msg) => {
     set((s) => {
-      if (s.messages.some((m) => m.id === msg.id)) {
-        console.log("[Store] addMessage: duplicate id, skipping:", msg.id);
-        return s;
-      }
-      console.log("[Store] addMessage:", msg.id, msg.role, "content length:", msg.content?.length || 0);
+      if (s.messages.some((m) => m.id === msg.id)) return s;
       return { messages: [...s.messages, msg] };
     });
   },
@@ -72,11 +68,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   appendToMessage: (id, content) => set((s) => {
     const msg = s.messages.find((m) => m.id === id);
-    if (!msg) {
-      console.log("[Store] appendToMessage: message not found:", id);
-      return s;
-    }
-    console.log("[Store] appendToMessage:", id, "adding", content.length, "chars");
+    if (!msg) return s;
     return {
       messages: s.messages.map((m) => m.id === id && content ? { ...m, content: m.content + content } : m),
     };
@@ -103,7 +95,6 @@ export const useAppStore = create<AppState>((set, get) => ({
   loadMessages: (sessionId) => {
     try {
       const messages = MessageStorage.listMessages(sessionId);
-      console.log(`[Store] loadMessages: session=${sessionId}, found=${messages.length} messages`);
       set({ messages });
     } catch (e) {
       console.error("[Store] loadMessages failed:", e);
@@ -114,11 +105,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   saveMessages: (sessionId) => {
     try {
       const msgs = get().messages;
-      console.log(`[Store] saveMessages: session=${sessionId}, saving=${msgs.length} messages`);
       for (const msg of msgs) {
         MessageStorage.createMessage(msg, sessionId);
       }
-      console.log(`[Store] saveMessages: done`);
     } catch (e) {
       console.error("[Store] saveMessages failed:", e);
     }

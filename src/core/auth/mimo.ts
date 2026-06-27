@@ -15,27 +15,11 @@ export interface LoginResult {
 export class MiMoAuth {
   async loadFromAuthJson(): Promise<Account | null> {
     try {
-      console.log("[MiMoAuth] loadFromAuthJson: calling mimo_read_auth...");
       const auth = await tauriInvoke("mimo_read_auth");
-      console.log("[MiMoAuth] loadFromAuthJson: auth =", auth);
-
-      if (!auth) {
-        console.error("[MiMoAuth] loadFromAuthJson: auth is null");
-        return null;
-      }
-      if (!auth.xiaomi) {
-        console.error("[MiMoAuth] loadFromAuthJson: auth.xiaomi is null");
-        return null;
-      }
-      if (!auth.xiaomi.key) {
-        console.error("[MiMoAuth] loadFromAuthJson: auth.xiaomi.key is null");
-        return null;
-      }
+      if (!auth?.xiaomi?.key) return null;
 
       const uid = auth.xiaomi.metadata?.uid || "default";
       const accountId = `mimo-${uid}`;
-      console.log("[MiMoAuth] loadFromAuthJson: accountId =", accountId);
-
       const account: Account = {
         id: accountId,
         email: `MiMo User (${uid})`,
@@ -48,31 +32,22 @@ export class MiMoAuth {
 
       // Check if this exact account already exists and is active
       const existing = AccountStorage.getActiveAccount();
-      console.log("[MiMoAuth] loadFromAuthJson: existing active =", existing?.id);
-
       if (existing && existing.id === accountId && existing.accessToken === account.accessToken) {
-        console.log("[MiMoAuth] loadFromAuthJson: returning existing account");
         return existing;
       }
 
-      // Deactivate other accounts
-      const allAccounts = AccountStorage.listAccounts();
-      console.log("[MiMoAuth] loadFromAuthJson: total accounts =", allAccounts.length);
-      for (const acc of allAccounts) {
+      // Deactivate other accounts, then save this one
+      for (const acc of AccountStorage.listAccounts()) {
         if (acc.isActive && acc.id !== accountId) {
-          console.log("[MiMoAuth] loadFromAuthJson: deactivating", acc.id);
           AccountStorage.updateAccount(acc.id, { isActive: false });
         }
       }
 
-      // Save account
-      console.log("[MiMoAuth] loadFromAuthJson: creating account...");
+      // Use createAccount (handles upsert now)
       AccountStorage.createAccount(account);
-      console.log("[MiMoAuth] loadFromAuthJson: account created, returning");
-
       return account;
     } catch (e) {
-      console.error("[MiMoAuth] loadFromAuthJson FAILED:", e);
+      console.error("[MiMoAuth] Failed to load auth.json:", e);
       return null;
     }
   }
@@ -107,12 +82,8 @@ export class MiMoAuth {
     return account.accessToken;
   }
 
-  async logout(accountId: string): Promise<void> {
+  logout(accountId: string): void {
     AccountStorage.deleteAccount(accountId);
-    // Also delete auth.json from disk
-    try {
-      await tauriInvoke("mimo_delete_auth");
-    } catch {}
   }
 }
 
