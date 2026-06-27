@@ -57,7 +57,7 @@ function getMode(): "cli" | "api" {
 }
 
 function App() {
-  const { messages, addMessage, appendToMessage, setStreaming, addToolCall, updateToolCall, loadMessages, saveMessages } = useAppStore();
+  const { messages, addMessage, appendToMessage, setStreaming, isStreaming, addToolCall, updateToolCall, loadMessages, saveMessages } = useAppStore();
   const { currentProject, currentSession, createSession, dbReady, loadFromDB } = useProjectStore();
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
@@ -126,6 +126,27 @@ function App() {
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mimoSessionRef = useRef<string | null>(null);
   const messagesSessionRef = useRef<string | null>(null);
+  
+  // Streaming buffer - batch text updates to reduce re-renders
+  const streamBufferRef = useRef<{ id: string; text: string; timer: ReturnType<typeof setTimeout> | null }>({ id: "", text: "", timer: null });
+  const flushStreamBuffer = useCallback(() => {
+    const buffer = streamBufferRef.current;
+    if (buffer.id && buffer.text) {
+      appendToMessage(buffer.id, buffer.text);
+      buffer.text = "";
+    }
+    buffer.timer = null;
+  }, [appendToMessage]);
+
+  // Flush buffer on unmount
+  useEffect(() => {
+    return () => {
+      if (streamBufferRef.current.timer) {
+        clearTimeout(streamBufferRef.current.timer);
+      }
+      flushStreamBuffer();
+    };
+  }, [flushStreamBuffer]);
 
   useEffect(() => {
     const identity = loadAppIdentity();
@@ -154,6 +175,13 @@ function App() {
 
     if (saved) {
       const settings = JSON.parse(saved);
+      const prevMode = getMode();
+      const modeChanged = settings.mode !== prevMode;
+
+      // Save messages before switching modes
+      if (modeChanged && currentProject && currentSession && messages.length > 0) {
+        saveMessages(currentSession.id);
+      }
 
       if (settings.mode === "cli") {
         // CLI mode: always use mimo model
@@ -275,12 +303,23 @@ function App() {
     }
   }, [currentProject?.id, currentSession?.id]);
 
-  // Auto-save messages whenever they change (only for the correct session)
+  // Auto-save messages when streaming ends
   useEffect(() => {
-      if (currentProject && currentSession && messages.length > 0 && messagesSessionRef.current === currentSession.id) {
+    if (!isStreaming && currentProject && currentSession && messages.length > 0 && messagesSessionRef.current === currentSession.id) {
+      saveMessages(currentSession.id);
+    }
+  }, [isStreaming]);
+
+  // Save messages before window closes
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      if (currentProject && currentSession && messages.length > 0) {
         saveMessages(currentSession.id);
       }
-  }, [messages]);
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [currentProject, currentSession, messages]);
 
   // Save messages before unmount or session switch
   useEffect(() => {
@@ -406,12 +445,18 @@ function App() {
                 timestamp: Date.now(),
                 status: "streaming",
               });
-            } else {
-              appendToMessage(assistantMsgId, event.text);
+            }
+            // Always set buffer ID and accumulate text
+            streamBufferRef.current.id = assistantMsgId;
+            streamBufferRef.current.text += event.text;
+            if (!streamBufferRef.current.timer) {
+              streamBufferRef.current.timer = setTimeout(flushStreamBuffer, 100);
             }
             break;
 
           case "tool_start": {
+            // Flush any buffered text before showing tool call
+            flushStreamBuffer();
             const tc = "toolCall" in event ? event.toolCall : null;
             if (tc) {
               // Ensure assistant message exists before adding tool call
@@ -424,6 +469,7 @@ function App() {
                   status: "streaming",
                 });
               }
+              streamBufferRef.current.id = assistantMsgId;
               addToolCall(assistantMsgId, {
                 id: tc.id,
                 tool: tc.name,
@@ -473,6 +519,8 @@ function App() {
         status: 'error',
       });
     } finally {
+      // Flush any remaining buffered text
+      flushStreamBuffer();
       
       setStreaming(false);
       abortRef.current = null;
@@ -628,10 +676,10 @@ function App() {
         <div className="panel-right">
           <div className="panel-tabs">
             <button className={`tab ${bottomTab === "chat" ? "active" : ""}`} onClick={() => setBottomTab("chat")}>
-              馃挰 瀵硅瘽
+              💬 Chat
             </button>
             <button className={`tab ${bottomTab === "terminal" ? "active" : ""}`} onClick={() => setBottomTab("terminal")}>
-              鈱笍 缁堢
+              ⌨️ Terminal
             </button>
           </div>
 

@@ -88,14 +88,18 @@ export class OpenAICompatibleProvider implements LLMProvider {
     }
     const url = `${baseUrl}/chat/completions`;
     const tools = request.tools?.length ? request.tools.map((t) => this.toAPITool(t)) : undefined;
-    const body = JSON.stringify({
+    const bodyObj: any = {
       model: request.model,
       messages: request.messages.map((m) => this.toAPIMessage(m)),
       tools,
       temperature: request.temperature ?? 0.7,
-      max_tokens: request.maxTokens ?? 4096,
       stream: true,
-    });
+    };
+    if (request.maxTokens) {
+      bodyObj.max_tokens = request.maxTokens;
+    }
+    const body = JSON.stringify(bodyObj);
+    console.log("[Provider] stream:", url, "model:", request.model, "msgs:", request.messages.length, "tools:", tools?.length || 0);
     const response = await fetch(url, {
       method: "POST",
       headers,

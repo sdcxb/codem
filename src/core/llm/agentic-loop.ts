@@ -159,6 +159,7 @@ export class AgenticLoop {
 
       const apiMessages = this.buildMessages(session);
       const toolDefs = this.tools.getDefinitions();
+      console.log("[AgenticLoop] tools available:", toolDefs.length, toolDefs.map(t => t.name));
 
       this.state.contextPressure = this.estimateContextPressure(apiMessages);
 
@@ -257,21 +258,22 @@ export class AgenticLoop {
         ],
         tools: toolDefs.length > 0 ? toolDefs : undefined,
         temperature: this.config.temperature,
-        maxTokens: this.config.maxOutputTokens,
         stream: true,
         abortSignal: this.abortController!.signal,
       };
 
-      // Execute with retry - collect events, yield after
-      const collectedEvents: LoopEvent[] = [];
-      let streamError: string | null = null;
-      await this.retryExecutor.execute(
-        async () => {
+      // Stream events directly - no collection, real-time yielding
+      let retryCount = 0;
+      const maxRetries = 3;
+      let success = false;
+
+      while (!success && retryCount < maxRetries) {
+        try {
           for await (const event of this.provider.stream(request)) {
             switch (event.type) {
               case "text_delta":
                 currentText += event.text;
-                collectedEvents.push({ type: "text_delta", text: event.text });
+                yield { type: "text_delta", text: event.text };
                 break;
 
               case "tool_use_start":
@@ -283,7 +285,7 @@ export class AgenticLoop {
                   rawArgs: "",
                 };
                 currentToolCalls.push(tc);
-                collectedEvents.push({ type: "tool_start", toolCall: tc });
+                yield { type: "tool_start", toolCall: tc };
                 break;
 
               case "tool_use_delta":
@@ -311,22 +313,19 @@ export class AgenticLoop {
                 break;
 
               case "error":
-                streamError = event.error;
+                yield { type: "tool_error", toolCall: { id: "", name: "", input: {}, status: "error" }, error: event.error };
                 break;
             }
           }
-        },
-        (attempt, delay, error) => {
-          logRetry(attempt, delay, error);
-        },
-      );
-
-      // Yield collected events
-      for (const evt of collectedEvents) {
-        yield evt;
-      }
-      if (streamError) {
-        yield { type: "tool_error", toolCall: { id: "", name: "", input: {}, status: "error" }, error: streamError };
+          success = true;
+        } catch (retryError: any) {
+          retryCount++;
+          if (retryCount >= maxRetries || retryError.name === "AbortError") {
+            throw retryError;
+          }
+          // Wait before retry
+          await new Promise(resolve => setTimeout(resolve, 1000 * retryCount));
+        }
       }
     } catch (error: any) {
       if (error.name === "AbortError") {

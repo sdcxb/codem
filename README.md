@@ -300,8 +300,14 @@ npm run tauri:build
 - `append_file` Rust 命令支持
 
 **待排查问题：**
-1. ~~**聊天中切换模型，模型回答记录没保存**~~ ✅ 已修复：`handleModelChange` 切换前先 abort 流式 + 保存消息
-2. **聊天窗口没显示工具调用** — API 模式和 CLI 模式均不显示工具调用过程，需排查是工具未被触发还是 UI 显示问题
+1. ~~**聊天中切换模型，模型回答记录没保存**~~ ✅ 已修复：`beforeunload` 事件 + 模式切换时保存
+2. ~~**聊天窗口没显示工具调用**~~ ✅ 已修复：tool_start 时自动创建 assistant 消息 + buffer ID 同步
+
+**消息持久化修复：**
+- `beforeunload` 事件：关闭窗口时自动保存消息
+- 模式切换时保存：`configureEngine` 检测模式变化并保存当前消息
+- streaming buffer：100ms 批量更新，减少 React 重渲染次数
+- max_tokens 限制移除：不发送 max_tokens 让 API 使用默认值
 
 ### 2026-06-27（上午）
 
