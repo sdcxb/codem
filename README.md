@@ -234,9 +234,11 @@ npm run tauri:build
 
 ## 注意事项
 
-- **CLI 模式**：点击"登录小米账号"自动调用 `mimo providers login`，浏览器授权后 token 保存到 `~/.local/share/mimocode/auth.json`
-- **API 模式**：需要在设置中配置对应 Provider 的 API Key
-- 两种模式均使用内置 LLM 引擎直连 API，无需依赖外部 mimo.exe 进程
+- **API 模式**：需要在设置中配置对应 Provider 的 API Key，直接可用，无需任何外部依赖
+- **CLI 模式**：专门针对 MiMo 模型，有两种认证方式：
+  - **方式一**：安装 [mimocode CLI](https://github.com/xiaomi/mimocode)，点击"登录小米账号"一键认证
+  - **方式二**：手动创建 `~/.local/share/mimocode/auth.json`，填入小米 ID 和 API Key（参考 `example-config/auth.json`）
+- 两种模式均使用内置 LLM 引擎直连 API，无需依赖外部进程
 
 ## 更新日志
 
