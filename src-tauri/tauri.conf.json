@@ -27,7 +27,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; connect-src 'self' ws://localhost:* http://localhost:* https://mimo.xiaomi.com https://*.xiaomi.com https://api.xiaomimimo.com; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; worker-src 'self' 'wasm-unsafe-eval'"
+      "csp": "default-src 'self'; connect-src 'self' ws://localhost:* http://localhost:* https://*.xiaomi.com https://api.xiaomimimo.com https://api.deepseek.com https://api.openai.com https://api.anthropic.com https://api.moonshot.cn; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; worker-src 'self' 'wasm-unsafe-eval'"
     }
   },
   "bundle": {
