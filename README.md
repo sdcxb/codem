@@ -1,6 +1,6 @@
 # Codem
 
-对标 Codex，融合 MiMo Code CLI 和 Claude Code 开发的桌面 GUI 客户端。
+对标 Codex，借鉴 MiMo Code CLI 和 Claude Code 开发的桌面 GUI 客户端。
 
 ## 项目简介
 
