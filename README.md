@@ -242,23 +242,26 @@ npm run tauri:build
 
 ## 更新日志
 
-### 2026-06-28
+### 2026-07-02
 
 **多智能体协作系统：**
+- `spawn_subagent` 工具：主智能体派发子智能体任务，支持 `persistent` 标记区分临时/持久协作
 - `wait_for_subagent` 工具：主智能体等待子智能体完成并获取结果
-- 临时/持久子智能体标记：`persistent` 字段区分一次性任务和长期协作
-- AgentPanel 显示持久标签
-- System prompt 新增多智能体协作指引（缓存文件模式、审核循环）
-- spawn_subagent / wait_for_subagent 工具注册到引擎
+- System prompt 增强：引导主智能体通过缓存文件与子智能体协作，审核通过后才采纳输出
+- AgentPanel/AgentDetail 显示持久标签
+
+**运行效果：**
+
+![多智能体协作示例](docs/multi-agent.png)
 
 **UI 优化：**
-- 聊天窗口自动滚动到底部（加载历史对话时）
-- 流式输出 streaming buffer（100ms 批量更新）
+- 聊天窗口自动滚动到底部（加载历史对话、新消息时）
+- 流式输出 streaming buffer（100ms 批量更新，减少卡顿）
 
 **消息持久化：**
 - 关闭窗口时自动保存（beforeunload 事件）
 - 模式切换时保存当前消息
-- 移除 max_tokens 限制，让 API 使用默认值
+- 移除 max_tokens 限制，让 API 使用模型默认值
 
 **CSP 修复：**
 - 添加 api.deepseek.com、api.openai.com、api.anthropic.com、api.moonshot.cn
