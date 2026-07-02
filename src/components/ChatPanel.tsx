@@ -52,6 +52,7 @@ interface ChatPanelProps {
 export function ChatPanel({ onSend, onCancel, onToggleSidebar, onFork, connected, model, onModelChange, mode = "cli", providerId = "mimo" }: ChatPanelProps) {
   const { messages, isStreaming } = useAppStore();
   const [showModelPicker, setShowModelPicker] = useState(false);
+  const [showReasoning, setShowReasoning] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const models = mode === "cli" ? MIMO_MODELS : (API_MODELS[providerId] || MIMO_MODELS);
@@ -118,6 +119,13 @@ export function ChatPanel({ onSend, onCancel, onToggleSidebar, onFork, connected
           )}
         </div>
         <button
+          className={`agent-toggle ${showReasoning ? "active" : ""}`}
+          onClick={() => setShowReasoning(!showReasoning)}
+          title={showReasoning ? "隐藏思考过程" : "显示思考过程"}
+        >
+          💭
+        </button>
+        <button
           className={`agent-toggle ${showAgentPanel ? "active" : ""}`}
           onClick={() => { setShowAgentPanel(!showAgentPanel); setShowSnapshotPanel(false); setSelectedAgentId(null); }}
           title="智能体工作列表"
@@ -160,7 +168,7 @@ export function ChatPanel({ onSend, onCancel, onToggleSidebar, onFork, connected
             </div>
           )}
           {messages.map((msg, index) => (
-            <MessageBubble key={msg.id} message={msg} index={index} onFork={onFork} />
+            <MessageBubble key={msg.id} message={msg} index={index} onFork={onFork} showReasoning={showReasoning} />
           ))}
           {isStreaming && (
             <div className="thinking-indicator">

@@ -142,6 +142,11 @@ export class OpenAICompatibleProvider implements LLMProvider {
           const delta = parsed.choices?.[0]?.delta;
           const finishReason = parsed.choices?.[0]?.finish_reason;
 
+          // Handle reasoning_content (DeepSeek thinking models)
+          if (delta?.reasoning_content) {
+            yield { type: "reasoning_delta", text: delta.reasoning_content };
+          }
+
           if (delta?.content) {
             yield { type: "text_delta", text: delta.content };
           }

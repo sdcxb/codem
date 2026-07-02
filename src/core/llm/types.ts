@@ -81,6 +81,7 @@ export interface ToolCallResult {
 export type StreamEvent =
   | { type: "start"; id: string; model: string }
   | { type: "text_delta"; text: string }
+  | { type: "reasoning_delta"; text: string }
   | { type: "tool_use_start"; id: string; name: string }
   | { type: "tool_use_delta"; id: string; input: string }
   | { type: "tool_use_end"; id: string }

@@ -835,6 +835,39 @@ body {
   background: var(--bg-hover);
 }
 
+/* ========== Reasoning/Thinking Block ========== */
+.reasoning-block {
+  margin-top: 8px;
+  border: 1px solid var(--border-primary);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.reasoning-toggle {
+  width: 100%;
+  padding: 6px 12px;
+  background: var(--bg-tertiary);
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 12px;
+  text-align: left;
+}
+
+.reasoning-toggle:hover {
+  background: var(--bg-hover);
+}
+
+.reasoning-content {
+  padding: 8px 12px;
+  font-size: 12px;
+  color: var(--text-muted);
+  background: var(--bg-secondary);
+  max-height: 300px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+}
+
 /* ========== Tool Calls ========== */
 .tool-calls {
   margin-top: 8px;

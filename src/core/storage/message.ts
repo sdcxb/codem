@@ -6,6 +6,7 @@ export interface MessageRow {
   session_id: string;
   role: string;
   content: string;
+  reasoning: string | null;
   timestamp: number;
   model: string | null;
   prompt_tokens: number;
@@ -28,6 +29,7 @@ function rowToMessage(row: MessageRow, toolCalls: ToolCall[]): Message {
     id: row.id,
     role: row.role as "user" | "assistant" | "system",
     content: row.content,
+    reasoning: row.reasoning ?? undefined,
     timestamp: row.timestamp,
     model: row.model ?? undefined,
     status: row.status as Message["status"],
@@ -79,12 +81,13 @@ export function listMessages(sessionId: string, limit?: number): Message[] {
       session_id: row[1] as string,
       role: row[2] as string,
       content: row[3] as string,
-      timestamp: row[4] as number,
-      model: row[5] as string | null,
-      prompt_tokens: row[6] as number,
-      completion_tokens: row[7] as number,
-      cost: row[8] as number,
-      status: row[9] as string,
+      reasoning: row[4] as string | null,
+      timestamp: row[5] as number,
+      model: row[6] as string | null,
+      prompt_tokens: row[7] as number,
+      completion_tokens: row[8] as number,
+      cost: row[9] as number,
+      status: row[10] as string,
     };
     const toolCalls = loadToolCallsForMessage(db, messageRow.id);
     return rowToMessage(messageRow, toolCalls);
@@ -102,12 +105,13 @@ export function getMessage(id: string): Message | null {
     session_id: row[1] as string,
     role: row[2] as string,
     content: row[3] as string,
-    timestamp: row[4] as number,
-    model: row[5] as string | null,
-    prompt_tokens: row[6] as number,
-    completion_tokens: row[7] as number,
-    cost: row[8] as number,
-    status: row[9] as string,
+    reasoning: row[4] as string | null,
+    timestamp: row[5] as number,
+    model: row[6] as string | null,
+    prompt_tokens: row[7] as number,
+    completion_tokens: row[8] as number,
+    cost: row[9] as number,
+    status: row[10] as string,
   };
 
   const toolCalls = loadToolCallsForMessage(db, id);
@@ -122,6 +126,7 @@ export function createMessage(message: Message, sessionId: string): void {
     // Update existing message
     updateMessage(message.id, {
       content: message.content,
+      reasoning: message.reasoning,
       model: message.model,
       status: message.status,
       toolCalls: message.toolCalls,
@@ -130,12 +135,13 @@ export function createMessage(message: Message, sessionId: string): void {
   }
 
   db.run(
-    "INSERT INTO messages (id, session_id, role, content, timestamp, model, prompt_tokens, completion_tokens, cost, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    "INSERT INTO messages (id, session_id, role, content, reasoning, timestamp, model, prompt_tokens, completion_tokens, cost, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     [
       message.id,
       sessionId,
       message.role,
       message.content,
+      message.reasoning ?? null,
       message.timestamp,
       message.model ?? null,
       0,
@@ -162,6 +168,7 @@ export function updateMessage(id: string, update: Partial<Message>): void {
   const values: (string | number | null)[] = [];
 
   if (update.content !== undefined) { fields.push("content = ?"); values.push(update.content); }
+  if (update.reasoning !== undefined) { fields.push("reasoning = ?"); values.push(update.reasoning); }
   if (update.model !== undefined) { fields.push("model = ?"); values.push(update.model ?? null); }
   if (update.status !== undefined) { fields.push("status = ?"); values.push(update.status ?? "done"); }
 

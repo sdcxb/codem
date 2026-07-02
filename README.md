@@ -244,27 +244,24 @@ npm run tauri:build
 
 ### 2026-07-02
 
-**多智能体协作系统：**
-- `spawn_subagent` 工具：主智能体派发子智能体任务，支持 `persistent` 标记区分临时/持久协作
-- `wait_for_subagent` 工具：主智能体等待子智能体完成并获取结果
-- System prompt 增强：引导主智能体通过缓存文件与子智能体协作，审核通过后才采纳输出
-- AgentPanel/AgentDetail 显示持久标签
+**思考过程可视化：**
+- Provider 层解析 `reasoning_content`（DeepSeek 支持）
+- UI 层用 `<pre>` 标签显示，避免 markdown 格式混乱
+- 聊天窗口 💭 按钮控制显示/隐藏思考过程
+- `reasoning` 字段持久化到数据库（migration 添加列）
 
-**运行效果：**
+**消息持久化修复：**
+- 移除不可靠的 `beforeunload` 事件
+- 改用 debounce 2秒自动保存（流式期间）
+- 流式结束立即保存
 
-![多智能体协作示例](docs/multi-agent.png)
+**工具输出优化：**
+- bash 输出截断：stdout 50KB、stderr 10KB，防止上下文溢出
+- Windows `CREATE_NO_WINDOW` 标志，防止命令行弹窗
 
-**UI 优化：**
-- 聊天窗口自动滚动到底部（加载历史对话、新消息时）
-- 流式输出 streaming buffer（100ms 批量更新，减少卡顿）
-
-**消息持久化：**
-- 关闭窗口时自动保存（beforeunload 事件）
-- 模式切换时保存当前消息
-- 移除 max_tokens 限制，让 API 使用模型默认值
-
-**CSP 修复：**
-- 添加 api.deepseek.com、api.openai.com、api.anthropic.com、api.moonshot.cn
+**待排查问题：**
+- ~~重启后对话记录丢失~~ ✅ 已修复：debounce 保存 + reasoning 字段持久化
+- 切换模型后工具调用显示问题 — 待验证
 
 ### 2026-06-27（晚间更新）
 

@@ -303,23 +303,25 @@ function App() {
     }
   }, [currentProject?.id, currentSession?.id]);
 
-  // Auto-save messages when streaming ends
+  // Auto-save messages with debounce (every 2 seconds during streaming, immediately when done)
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
-    if (!isStreaming && currentProject && currentSession && messages.length > 0 && messagesSessionRef.current === currentSession.id) {
-      saveMessages(currentSession.id);
-    }
-  }, [isStreaming]);
-
-  // Save messages before window closes
-  useEffect(() => {
-    const handleBeforeUnload = () => {
-      if (currentProject && currentSession && messages.length > 0) {
+    if (currentProject && currentSession && messages.length > 0 && messagesSessionRef.current === currentSession.id) {
+      if (isStreaming) {
+        // Debounce during streaming
+        if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = setTimeout(() => {
+          saveMessages(currentSession.id);
+        }, 2000);
+      } else {
+        // Save immediately when not streaming
         saveMessages(currentSession.id);
       }
+    }
+    return () => {
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     };
-    window.addEventListener("beforeunload", handleBeforeUnload);
-    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
-  }, [currentProject, currentSession, messages]);
+  }, [messages, isStreaming]);
 
   // Save messages before unmount or session switch
   useEffect(() => {
@@ -420,11 +422,11 @@ function App() {
     const cwd = currentProject?.path || APP_ROOT;
     let assistantMsgId = `assistant-${Date.now()}`;
     let assistantContent = "";
+    let reasoningContent = "";
 
     try {
       abortRef.current = new AbortController();
 
-      
       for await (const event of engine.process(currentSession.id, message, cwd, undefined, {
         onPermissionRequest: (request) => {
           return new Promise((resolve) => {
@@ -435,6 +437,16 @@ function App() {
         if (abortRef.current.signal.aborted) break;
 
         switch (event.type) {
+          case "reasoning_delta":
+            reasoningContent += event.text;
+            // Update message with reasoning content
+            if (useAppStore.getState().messages.find((m) => m.id === assistantMsgId)) {
+              useAppStore.getState().updateMessage(assistantMsgId, { 
+                reasoning: reasoningContent 
+              } as any);
+            }
+            break;
+
           case "text_delta":
             assistantContent += event.text;
             if (!useAppStore.getState().messages.find((m) => m.id === assistantMsgId)) {

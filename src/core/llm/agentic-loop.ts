@@ -54,6 +54,7 @@ const DEFAULT_LOOP_CONFIG: LoopConfig = {
 export type LoopEvent =
   | { type: "start"; iteration: number }
   | { type: "text_delta"; text: string }
+  | { type: "reasoning_delta"; text: string }
   | { type: "tool_start"; toolCall: StreamingToolCall }
   | { type: "tool_complete"; toolCall: StreamingToolCall; result: any }
   | { type: "tool_error"; toolCall: StreamingToolCall; error: string }
@@ -274,6 +275,10 @@ export class AgenticLoop {
               case "text_delta":
                 currentText += event.text;
                 yield { type: "text_delta", text: event.text };
+                break;
+
+              case "reasoning_delta":
+                yield { type: "reasoning_delta", text: event.text };
                 break;
 
               case "tool_use_start":

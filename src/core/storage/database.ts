@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS messages (
   session_id TEXT NOT NULL,
   role TEXT NOT NULL,
   content TEXT NOT NULL,
+  reasoning TEXT,
   timestamp INTEGER NOT NULL,
   model TEXT,
   prompt_tokens INTEGER DEFAULT 0,
@@ -145,6 +146,13 @@ export async function initDatabase(): Promise<SqlJsDatabase> {
 
   // Create tables if not exist
   db.run(SCHEMA);
+
+  // Migration: add reasoning column if missing
+  try {
+    db.run("ALTER TABLE messages ADD COLUMN reasoning TEXT");
+  } catch (e) {
+    // Column already exists, ignore
+  }
 
   // Save after schema creation
   saveDatabase();

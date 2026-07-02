@@ -11,9 +11,10 @@ interface MessageBubbleProps {
   message: Message;
   index?: number;
   onFork?: (messageIndex: number) => void;
+  showReasoning?: boolean;
 }
 
-export function MessageBubble({ message, index, onFork }: MessageBubbleProps) {
+export function MessageBubble({ message, index, onFork, showReasoning = true }: MessageBubbleProps) {
   const [expanded, setExpanded] = useState(true);
   const [showAttachment, setShowAttachment] = useState<string | null>(null);
 
@@ -98,6 +99,20 @@ export function MessageBubble({ message, index, onFork }: MessageBubbleProps) {
             {message.content}
           </ReactMarkdown>
         </div>
+
+        {message.reasoning && showReasoning && (
+          <div className="reasoning-block">
+            <button
+              className="reasoning-toggle"
+              onClick={() => setExpanded(!expanded)}
+            >
+              💭 思考过程 {expanded ? "▼" : "▶"}
+            </button>
+            {expanded && (
+              <pre className="reasoning-content">{message.reasoning}</pre>
+            )}
+          </div>
+        )}
 
         {message.toolCalls && message.toolCalls.length > 0 && (
           <div className="tool-calls">
