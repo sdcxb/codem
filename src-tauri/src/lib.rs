@@ -215,15 +215,35 @@ async fn execute_command(command: String, cwd: Option<String>) -> Result<serde_j
         .map(|p| p.to_string_lossy().to_string())
         .unwrap_or_default());
 
-    let output = std::process::Command::new("cmd")
-        .args(["/C", &command])
-        .current_dir(&work_dir)
-        .output()
-        .map_err(|e| e.to_string())?;
+    let mut cmd = std::process::Command::new("cmd");
+    cmd.args(["/C", &command]).current_dir(&work_dir);
+
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    }
+
+    let output = cmd.output().map_err(|e| e.to_string())?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    // Truncate very long output to prevent context overflow
+    let stdout = if stdout.len() > 50000 {
+        format!("{}...(truncated, {} bytes total)", &stdout[..50000], stdout.len())
+    } else {
+        stdout.to_string()
+    };
+    let stderr = if stderr.len() > 10000 {
+        format!("{}...(truncated)", &stderr[..10000])
+    } else {
+        stderr.to_string()
+    };
 
     Ok(serde_json::json!({
-        "stdout": String::from_utf8_lossy(&output.stdout),
-        "stderr": String::from_utf8_lossy(&output.stderr),
+        "stdout": stdout,
+        "stderr": stderr,
         "exitCode": output.status.code(),
     }))
 }
@@ -310,9 +330,14 @@ async fn mimo_login() -> Result<serde_json::Value, String> {
     eprintln!("[mimo_login] mimo_path: {}", mimo_path);
 
     // Run mimo providers login
-    let child = std::process::Command::new(&mimo_path)
-        .args(["providers", "login", "-p", "xiaomi"])
-        .spawn()
+    let mut cmd = std::process::Command::new(&mimo_path);
+    cmd.args(["providers", "login", "-p", "xiaomi"]);
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    }
+    let child = cmd.spawn()
         .map_err(|e| format!("Failed to start mimo login: {}", e))?;
     eprintln!("[mimo_login] spawned mimo, waiting for auth.json...");
 
