@@ -101,11 +101,12 @@ export class LLMEngine {
 
   private setupSubagentSpawner() {
     import("../subagent/spawner").then(({ LLMSubagentSpawner }) => {
-      import("./tools").then(({ setSubagentManager, createSpawnSubagentTool }) => {
+      import("./tools").then(({ setSubagentManager, createSpawnSubagentTool, createWaitForSubagentTool }) => {
         const spawner = new LLMSubagentSpawner(this);
         this.subagents.setSpawner(spawner);
         setSubagentManager(this.subagents);
         this.tools.register(createSpawnSubagentTool());
+        this.tools.register(createWaitForSubagentTool());
       });
     });
   }

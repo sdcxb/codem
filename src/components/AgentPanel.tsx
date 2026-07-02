@@ -86,6 +86,7 @@ export function AgentPanel({ agents, onClose, onSelectAgent }: AgentPanelProps) 
             <div className="agent-item-header">
               <span className="agent-item-icon">{getAgentIcon(agent.agentId)}</span>
               <span className="agent-item-name">{agent.agentId}</span>
+              {agent.persistent && <span className="agent-item-badge">持久</span>}
               <span className="agent-item-status">
                 {getStatusIcon(agent.status)} {getStatusLabel(agent.status)}
               </span>

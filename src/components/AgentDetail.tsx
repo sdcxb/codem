@@ -75,6 +75,10 @@ export function AgentDetail({ task, onBack }: AgentDetailProps) {
               <label>运行时长</label>
               <span>{formatDuration(task.startedAt, task.completedAt)}</span>
             </div>
+            <div className="agent-detail-field">
+              <label>类型</label>
+              <span>{task.persistent ? "🔒 持久协作" : "⚡ 临时任务"}</span>
+            </div>
           </div>
         </div>
 

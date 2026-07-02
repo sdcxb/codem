@@ -298,13 +298,14 @@ export function setSubagentManager(manager: import("../subagent/subagent").Subag
 export function createSpawnSubagentTool(): ToolDef {
   return {
     id: "spawn_subagent",
-    description: "Spawn a sub-agent to work on a specific task in parallel. Use this when you need to delegate work to a specialized agent.",
+    description: "Spawn a sub-agent to work on a task. Returns immediately with task ID. Use wait_for_subagent to get the result.",
     parameters: {
       type: "object",
       properties: {
-        agentId: { type: "string", description: "The agent type: 'explore' for code search, 'general' for general tasks, 'build' for implementation" },
+        agentId: { type: "string", description: "Agent type: 'explore' for search, 'general' for general tasks, 'build' for implementation" },
         prompt: { type: "string", description: "The task prompt for the sub-agent" },
         cwd: { type: "string", description: "Working directory (optional)" },
+        persistent: { type: "boolean", description: "If true, the sub-agent stays alive after completing (for repeated use). Default: false" },
       },
       required: ["agentId", "prompt"],
     },
@@ -316,21 +317,49 @@ export function createSpawnSubagentTool(): ToolDef {
       const agentId = args.agentId as string;
       const prompt = args.prompt as string;
       const cwd = (args.cwd as string) || ctx.cwd;
+      const persistent = (args.persistent as boolean) || false;
 
       try {
-        const task = await subagentManager.spawn(
-          ctx.sessionId,
-          agentId,
-          prompt,
-          cwd,
-        );
-
+        const task = await subagentManager.spawn(ctx.sessionId, agentId, prompt, cwd, undefined, persistent);
         return {
           title: `spawn_subagent: ${agentId}`,
-          output: `Sub-agent spawned with ID: ${task.id}\nStatus: ${task.status}\nTask: ${prompt.substring(0, 100)}`,
+          output: `Sub-agent spawned.\nID: ${task.id}\nStatus: ${task.status}\nPersistent: ${task.persistent}\nTask: ${prompt.substring(0, 200)}\n\nUse wait_for_subagent with task_id="${task.id}" to wait for the result.`,
         };
       } catch (error: any) {
         return { title: "spawn_subagent", output: `Error: ${error.message}` };
+      }
+    },
+  };
+}
+
+export function createWaitForSubagentTool(): ToolDef {
+  return {
+    id: "wait_for_subagent",
+    description: "Wait for a sub-agent to complete and get its result. Use after spawn_subagent.",
+    parameters: {
+      type: "object",
+      properties: {
+        task_id: { type: "string", description: "The sub-agent task ID from spawn_subagent" },
+        timeout: { type: "number", description: "Max wait time in seconds (default 300)" },
+      },
+      required: ["task_id"],
+    },
+    async execute(args, ctx) {
+      if (!subagentManager) {
+        return { title: "wait_for_subagent", output: "Error: Sub-agent manager not initialized" };
+      }
+
+      const taskId = args.task_id as string;
+      const timeout = (args.timeout as number || 300) * 1000;
+
+      try {
+        const result = await subagentManager.waitForCompletion(taskId, timeout);
+        return {
+          title: `wait_for_subagent: ${taskId}`,
+          output: `Status: ${result.status}\nSummary: ${result.summary}\nOutput:\n${result.output}\nFiles: ${result.filesTouched.join(", ") || "none"}`,
+        };
+      } catch (error: any) {
+        return { title: "wait_for_subagent", output: `Error: ${error.message}` };
       }
     },
   };

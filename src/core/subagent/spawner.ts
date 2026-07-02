@@ -22,6 +22,7 @@ export class LLMSubagentSpawner implements SubagentSpawner {
       ...taskData,
       id: `sub-${generateId()}`,
       status: "pending",
+      persistent: taskData.persistent || false,
       createdAt: Date.now(),
     };
 

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useAppStore, MessageAttachment } from "../store";
 import { MessageBubble } from "./MessageBubble";
 import { InputArea } from "./InputArea";
@@ -52,6 +52,7 @@ interface ChatPanelProps {
 export function ChatPanel({ onSend, onCancel, onToggleSidebar, onFork, connected, model, onModelChange, mode = "cli", providerId = "mimo" }: ChatPanelProps) {
   const { messages, isStreaming } = useAppStore();
   const [showModelPicker, setShowModelPicker] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const models = mode === "cli" ? MIMO_MODELS : (API_MODELS[providerId] || MIMO_MODELS);
   const [showAgentPanel, setShowAgentPanel] = useState(false);
@@ -59,6 +60,11 @@ export function ChatPanel({ onSend, onCancel, onToggleSidebar, onFork, connected
   const [showContextMonitor, setShowContextMonitor] = useState(false);
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [agents, setAgents] = useState<SubagentTask[]>([]);
+
+  // Auto-scroll to bottom when messages change
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, isStreaming]);
 
   // Subscribe to SubagentManager updates
   useEffect(() => {
@@ -164,6 +170,7 @@ export function ChatPanel({ onSend, onCancel, onToggleSidebar, onFork, connected
               <span className="thinking-text">思考中...</span>
             </div>
           )}
+          <div ref={messagesEndRef} />
         </div>
 
         {showAgentPanel && (

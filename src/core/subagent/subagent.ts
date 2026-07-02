@@ -10,6 +10,7 @@ export interface SubagentTask {
   prompt: string;
   cwd: string;
   status: SubagentStatus;
+  persistent: boolean;
   result?: SubagentResult;
   error?: string;
   createdAt: number;
@@ -72,6 +73,7 @@ export class SubagentManager {
     prompt: string,
     cwd: string,
     timeout?: number,
+    persistent?: boolean,
   ): Promise<SubagentTask> {
     if (!this.spawner) {
       throw new Error("No spawner configured");
@@ -95,6 +97,7 @@ export class SubagentManager {
       prompt,
       cwd,
       timeout: timeout || this.config.defaultTimeout,
+      persistent: persistent || false,
     });
 
     this.tasks.set(task.id, task);
