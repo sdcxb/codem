@@ -162,6 +162,8 @@ function App() {
         await initDatabase();
         await migrateFromLocalStorage();
         useProjectStore.getState().loadFromDB();
+        // Reload v2 sessions now that DB is ready
+        engineRef.current.sessions.reload();
       } catch (err) {
         console.error("[App] Init failed:", err);
         useProjectStore.getState().loadFromDB();

@@ -242,7 +242,26 @@ npm run tauri:build
 
 ## 更新日志
 
-### 2026-07-03
+### 2026-07-03（v0.56）
+
+**SessionManager 迁移到 SQLite：**
+- `src/core/llm/session.ts` 的 SessionManager 从 localStorage 迁移到 SQLite
+- 新增 `v2_sessions` 表存储 agentic loop 的 V2 格式会话
+- 新增 `src/core/storage/v2-session.ts` 存储模块
+- 启动时自动迁移旧 localStorage 数据到 SQLite
+- 数据库初始化后再加载会话，避免白屏
+
+**系统提示词修复：**
+- `buildSystemPrompt()` 加入 `loadAppIdentity()` 读取用户身份信息
+- 系统提示词现在包含身份信息（默认 "Codem"）
+
+**版本号统一：**
+- `package.json`、`Cargo.toml`、`tauri.conf.json` 统一为 `0.56.0`
+
+**已知问题：**
+- AI 可能自称 "Claude Code"（MiMoCode CLI 历史对话包含 Claude Code 相关内容，可能被带入上下文）
+
+### 2026-07-03（v0.55）
 
 **消息持久化根因修复：**
 - Rust `lib.rs` 中 `&stdout[..50000]` 按字节截断 bash 输出，UTF-8 多字节字符（中文/emoji）被切断导致 panic → Tauri 进程崩溃 → JS `finally` 不执行 → 消息永远不保存

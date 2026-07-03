@@ -45,6 +45,8 @@ export { CostTracker, getCostTracker } from "./cost-tracker";
 export { ToolRenderRegistry, getToolRenderRegistry, DefaultToolRenderer } from "./tool-renderer";
 
 // ========== LLM Engine Config ==========
+import { loadAppIdentity } from "../config/loader";
+
 export interface LLMEngineConfig {
   defaultProvider?: string;
   defaultModel?: string;
@@ -143,8 +145,12 @@ export class LLMEngine {
       ? mcpTools.map((t) => `- **${t.server}/${t.name}**: ${t.description}`).join("\n")
       : "";
 
+    const identity = loadAppIdentity();
+    console.log("[buildSystemPrompt] identity:", JSON.stringify(identity));
+
     const config: SystemPromptConfig = {
       agent,
+      identity,
       workingDirectory: cwd,
       date: new Date().toISOString(),
       modelInfo: `${this.config.defaultProvider}/${this.config.defaultModel}`,
@@ -152,7 +158,9 @@ export class LLMEngine {
       mcpInstructions: mcpPrompt,
     };
 
-    return buildSystemPrompt(config);
+    const prompt = buildSystemPrompt(config);
+    console.log("[buildSystemPrompt] prompt length:", prompt.length, "first 200 chars:", prompt.substring(0, 200));
+    return prompt;
   }
 
   /** Process a user message through the agentic loop */

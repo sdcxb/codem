@@ -76,6 +76,17 @@ CREATE TABLE IF NOT EXISTS accounts (
   updated_at INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS v2_sessions (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  title TEXT NOT NULL,
+  model TEXT,
+  messages TEXT NOT NULL DEFAULT '[]',
+  total_usage TEXT NOT NULL DEFAULT '{"promptTokens":0,"completionTokens":0,"cost":0}',
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_sessions_project ON sessions(project_id);
 CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id);
 CREATE INDEX IF NOT EXISTS idx_tool_calls_message ON tool_calls(message_id);
@@ -167,6 +178,28 @@ export async function initDatabase(): Promise<SqlJsDatabase> {
     db.run("UPDATE messages SET reasoning = NULL WHERE reasoning IS NOT NULL AND reasoning GLOB '[0-9]*' AND LENGTH(reasoning) >= 10");
   } catch (e) {
     console.warn("[Database] Failed to fix corrupted reasoning:", e);
+  }
+
+  // Migration: move v2 sessions from localStorage to SQLite
+  try {
+    const v2Data = localStorage.getItem("mimo-sessions-v2");
+    if (v2Data) {
+      const parsed = JSON.parse(v2Data);
+      for (const [id, session] of Object.entries(parsed)) {
+        const s = session as any;
+        const existing = db.exec("SELECT id FROM v2_sessions WHERE id = ?", [id]);
+        if (existing.length === 0 || existing[0].values.length === 0) {
+          db.run(
+            "INSERT INTO v2_sessions (id, project_id, title, model, messages, total_usage, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            [id, s.projectId || "default", s.title || "对话", s.model || "", JSON.stringify(s.messages || []), JSON.stringify(s.totalUsage || { promptTokens: 0, completionTokens: 0, cost: 0 }), s.createdAt || Date.now(), s.updatedAt || Date.now()]
+          );
+        }
+      }
+      localStorage.removeItem("mimo-sessions-v2");
+      console.log("[Database] Migrated v2 sessions from localStorage");
+    }
+  } catch (e) {
+    console.warn("[Database] Failed to migrate v2 sessions:", e);
   }
 
   // Save after schema creation

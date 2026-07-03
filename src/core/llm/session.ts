@@ -1,4 +1,5 @@
 import type { LLMMessage, ContentBlock } from "./types";
+import { loadV2Sessions, saveV2Session, deleteV2Session } from "../storage/v2-session";
 
 // ========== Message V2 (Claude Code style) ==========
 export interface MessageV2 {
@@ -76,7 +77,6 @@ export interface Session {
 }
 
 // ========== Session Manager ==========
-const SESSIONS_KEY = "mimo-sessions-v2";
 
 export class SessionManager {
   private sessions: Map<string, Session> = new Map();
@@ -87,23 +87,16 @@ export class SessionManager {
   }
 
   private load() {
-    try {
-      const data = localStorage.getItem(SESSIONS_KEY);
-      if (data) {
-        const parsed = JSON.parse(data);
-        for (const [id, session] of Object.entries(parsed)) {
-          this.sessions.set(id, session as Session);
-        }
-      }
-    } catch {}
+    this.sessions = loadV2Sessions();
   }
 
-  private save() {
-    const obj: Record<string, Session> = {};
-    for (const [id, session] of this.sessions) {
-      obj[id] = session;
-    }
-    localStorage.setItem(SESSIONS_KEY, JSON.stringify(obj));
+  /** Reload sessions from database (call after DB init) */
+  reload() {
+    this.load();
+  }
+
+  private save(session: Session) {
+    saveV2Session(session);
   }
 
   createSession(projectId: string, model: string): Session {
@@ -119,7 +112,7 @@ export class SessionManager {
     };
     this.sessions.set(session.id, session);
     this.currentSessionId = session.id;
-    this.save();
+    this.save(session);
     return session;
   }
 
@@ -137,7 +130,7 @@ export class SessionManager {
         totalUsage: { promptTokens: 0, completionTokens: 0, cost: 0 },
       };
       this.sessions.set(session.id, session);
-      this.save();
+      this.save(session);
     }
     return session;
   }
@@ -165,7 +158,7 @@ export class SessionManager {
     if (!session) return;
     session.messages.push(message);
     session.updatedAt = Date.now();
-    this.save();
+    this.save(session);
   }
 
   updateMessage(sessionId: string, messageId: string, updater: (msg: MessageV2) => MessageV2) {
@@ -175,7 +168,7 @@ export class SessionManager {
     if (idx === -1) return;
     session.messages[idx] = updater(session.messages[idx]);
     session.updatedAt = Date.now();
-    this.save();
+    this.save(session);
   }
 
   deleteSession(id: string) {
@@ -183,14 +176,14 @@ export class SessionManager {
     if (this.currentSessionId === id) {
       this.currentSessionId = null;
     }
-    this.save();
+    deleteV2Session(id);
   }
 
   renameSession(id: string, title: string) {
     const session = this.sessions.get(id);
     if (!session) return;
     session.title = title;
-    this.save();
+    this.save(session);
   }
 
   /** Convert MessageV2 to LLM API message format */
