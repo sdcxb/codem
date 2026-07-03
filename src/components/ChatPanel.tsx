@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useAppStore, MessageAttachment } from "../store";
+import { useProjectStore } from "../core/store";
 import { MessageBubble } from "./MessageBubble";
 import { InputArea } from "./InputArea";
 import { AgentPanel } from "./AgentPanel";
@@ -50,10 +51,12 @@ interface ChatPanelProps {
 }
 
 export function ChatPanel({ onSend, onCancel, onToggleSidebar, onFork, connected, model, onModelChange, mode = "cli", providerId = "mimo" }: ChatPanelProps) {
-  const { messages, isStreaming, removeGeneratedFiles } = useAppStore();
+  const { messages, isStreaming, removeGeneratedFiles, hasMoreMessages, isLoadingMore, loadMoreMessages } = useAppStore();
+  const { currentSession } = useProjectStore();
   const [showModelPicker, setShowModelPicker] = useState(false);
   const [showReasoning, setShowReasoning] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
 
   const models = mode === "cli" ? MIMO_MODELS : (API_MODELS[providerId] || MIMO_MODELS);
   const [showAgentPanel, setShowAgentPanel] = useState(false);
@@ -62,10 +65,61 @@ export function ChatPanel({ onSend, onCancel, onToggleSidebar, onFork, connected
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [agents, setAgents] = useState<SubagentTask[]>([]);
 
-  // Auto-scroll to bottom when messages change
+  // Auto-scroll to bottom only on initial load or new messages (not when loading history)
+  const prevMessagesLenRef = useRef(0);
+  const isInitialLoadRef = useRef(true);
+  const loadingHistoryRef = useRef(false);
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (isInitialLoadRef.current && messages.length > 0) {
+      isInitialLoadRef.current = false;
+      prevMessagesLenRef.current = messages.length;
+      setTimeout(() => messagesEndRef.current?.scrollIntoView(), 100);
+    } else if (loadingHistoryRef.current) {
+      // After loading history, nudge scroll down a bit to prevent re-trigger
+      loadingHistoryRef.current = false;
+      prevMessagesLenRef.current = messages.length;
+      setTimeout(() => {
+        const container = messagesContainerRef.current;
+        if (container && container.scrollTop < 60) {
+          container.scrollTop = 120;
+        }
+      }, 50);
+    } else if (messages.length > prevMessagesLenRef.current) {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+      prevMessagesLenRef.current = messages.length;
+    }
   }, [messages, isStreaming]);
+
+  // Reset initial load flag when session changes
+  useEffect(() => {
+    isInitialLoadRef.current = true;
+    prevMessagesLenRef.current = 0;
+    loadingHistoryRef.current = false;
+  }, [currentSession?.id]);
+
+  // Scroll detection for loading more messages (10 at a time)
+  useEffect(() => {
+    const container = messagesContainerRef.current;
+    if (!container) return;
+
+    let scrollTimer: ReturnType<typeof setTimeout> | null = null;
+    const handleScroll = () => {
+      if (scrollTimer) return;
+      scrollTimer = setTimeout(() => {
+        scrollTimer = null;
+        if (container.scrollTop < 50 && hasMoreMessages && !isLoadingMore) {
+          loadingHistoryRef.current = true;
+          loadMoreMessages(currentSession?.id || "", 10);
+        }
+      }, 200);
+    };
+
+    container.addEventListener("scroll", handleScroll);
+    return () => {
+      container.removeEventListener("scroll", handleScroll);
+      if (scrollTimer) clearTimeout(scrollTimer);
+    };
+  }, [hasMoreMessages, isLoadingMore, loadMoreMessages]);
 
   // Subscribe to SubagentManager updates
   useEffect(() => {
@@ -164,7 +218,16 @@ export function ChatPanel({ onSend, onCancel, onToggleSidebar, onFork, connected
       </div>
 
       <div className="chat-body">
-        <div className="messages-container">
+        <div className="messages-container" ref={messagesContainerRef}>
+          {hasMoreMessages && (
+            <div className="load-more-indicator">
+              {isLoadingMore ? (
+                <span className="load-more-loading">⏳ 加载中...</span>
+              ) : (
+                <span>↑ 滚动加载更多历史消息</span>
+              )}
+            </div>
+          )}
           {showContextMonitor && (
             <ContextMonitor sessionId={""} visible={showContextMonitor} />
           )}

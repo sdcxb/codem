@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS projects (
   name TEXT NOT NULL,
   path TEXT NOT NULL,
   description TEXT,
+  pinned INTEGER DEFAULT 0,
   created_at INTEGER NOT NULL,
   last_accessed_at INTEGER NOT NULL
 );
@@ -180,6 +181,13 @@ export async function initDatabase(): Promise<SqlJsDatabase> {
     console.warn("[Database] Failed to fix corrupted reasoning:", e);
   }
 
+  // Migration: add pinned column to projects table
+  try {
+    db.run("ALTER TABLE projects ADD COLUMN pinned INTEGER DEFAULT 0");
+  } catch (e) {
+    // Column already exists, ignore
+  }
+
   // Migration: move v2 sessions from localStorage to SQLite
   try {
     const v2Data = localStorage.getItem("mimo-sessions-v2");
@@ -200,6 +208,18 @@ export async function initDatabase(): Promise<SqlJsDatabase> {
     }
   } catch (e) {
     console.warn("[Database] Failed to migrate v2 sessions:", e);
+  }
+
+  // Migration: clear stale V2 sessions with old identity
+  try {
+    const staleCount = db.exec("SELECT COUNT(*) FROM v2_sessions");
+    const count = staleCount.length > 0 ? staleCount[0].values[0][0] : 0;
+    if (count > 0) {
+      db.run("DELETE FROM v2_sessions");
+      console.log("[Database] Cleared", count, "stale V2 sessions");
+    }
+  } catch (e) {
+    console.warn("[Database] Failed to clear stale V2 sessions:", e);
   }
 
   // Save after schema creation

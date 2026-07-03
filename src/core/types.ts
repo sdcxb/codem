@@ -5,6 +5,7 @@ export interface Project {
   createdAt: number;
   lastAccessedAt: number;
   description?: string;
+  pinned?: boolean;
 }
 
 export interface Session {

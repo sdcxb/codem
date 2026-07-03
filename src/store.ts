@@ -38,6 +38,8 @@ interface AppState {
   currentModel: string;
   cwd: string;
   streamingMsgId: string | null;
+  hasMoreMessages: boolean;
+  isLoadingMore: boolean;
 
   addMessage: (msg: Message) => void;
   updateMessage: (id: string, update: Partial<Message>) => void;
@@ -49,6 +51,7 @@ interface AppState {
   setCwd: (d: string) => void;
   clearMessages: () => void;
   loadMessages: (sessionId: string) => void;
+  loadMoreMessages: (sessionId: string, count?: number) => void;
   saveMessages: (sessionId: string) => void;
   removeGeneratedFiles: (messageId: string, files: string[]) => void;
 }
@@ -59,6 +62,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   currentModel: "mimo-auto",
   cwd: "",
   streamingMsgId: null,
+  hasMoreMessages: false,
+  isLoadingMore: false,
 
   addMessage: (msg) => {
     set((s) => {
@@ -97,11 +102,52 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   loadMessages: (sessionId) => {
     try {
+      const INITIAL_LIMIT = 10;
       const messages = MessageStorage.listMessages(sessionId);
-      set({ messages });
+      const totalCount = messages.length;
+      const initialMessages = totalCount > INITIAL_LIMIT ? messages.slice(totalCount - INITIAL_LIMIT) : messages;
+      set({ 
+        messages: initialMessages, 
+        hasMoreMessages: totalCount > INITIAL_LIMIT,
+        isLoadingMore: false,
+      });
     } catch (e) {
       console.error("[Store] loadMessages failed:", e);
-      set({ messages: [] });
+      set({ messages: [], hasMoreMessages: false, isLoadingMore: false });
+    }
+  },
+
+  loadMoreMessages: (sessionId, count = 10) => {
+    try {
+      const currentMessages = get().messages;
+      if (currentMessages.length === 0 || get().isLoadingMore) return;
+      
+      set({ isLoadingMore: true });
+      
+      // Small delay so the loading indicator is visible
+      setTimeout(() => {
+        const allMessages = MessageStorage.listMessages(sessionId);
+        const currentOldestTimestamp = currentMessages[0].timestamp;
+        const olderMessages = allMessages.filter(m => m.timestamp < currentOldestTimestamp);
+        
+        if (olderMessages.length === 0) {
+          set({ hasMoreMessages: false, isLoadingMore: false });
+          return;
+        }
+        
+        const newBatch = olderMessages.length > count 
+          ? olderMessages.slice(olderMessages.length - count) 
+          : olderMessages;
+        
+        set((s) => ({ 
+          messages: [...newBatch, ...s.messages],
+          hasMoreMessages: olderMessages.length > count,
+          isLoadingMore: false,
+        }));
+      }, 300);
+    } catch (e) {
+      console.error("[Store] loadMoreMessages failed:", e);
+      set({ isLoadingMore: false });
     }
   },
 

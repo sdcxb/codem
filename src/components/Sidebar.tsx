@@ -1,8 +1,9 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useAppStore } from "../store";
 import { useProjectStore } from "../core/store";
 import { AppIdentity } from "../core/types";
 import { ConfirmDialog } from "./ConfirmDialog";
+import { SearchDialog } from "./SearchDialog";
 
 interface SidebarProps {
   identity: AppIdentity | null;
@@ -22,7 +23,7 @@ export function Sidebar({ identity, onSettings, onProjects, onConfig, onMcp, onS
   const {
     projects, currentProject, currentSession,
     createSession, switchSession, deleteSession,
-    openProject, getProjectSessions,
+    openProject, getProjectSessions, updateProject,
   } = useProjectStore();
   const [theme, setTheme] = useState<"dark" | "light">(() => {
     return (localStorage.getItem("mimo-theme") as "dark" | "light") || "dark";
@@ -32,6 +33,11 @@ export function Sidebar({ identity, onSettings, onProjects, onConfig, onMcp, onS
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState("");
   const [deleteConfirm, setDeleteConfirm] = useState<{ sessionId: string; title: string } | null>(null);
+  const [showSearch, setShowSearch] = useState(false);
+  const [hoverMenuProjectId, setHoverMenuProjectId] = useState<string | null>(null);
+  const [clickedMenuProjectId, setClickedMenuProjectId] = useState<string | null>(null);
+  const [menuPosition, setMenuPosition] = useState<{ top: number; left: number } | null>(null);
+  const menuCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const loadAllSessions = () => {
     const sessionsMap: Record<string, any[]> = {};
@@ -117,7 +123,7 @@ export function Sidebar({ identity, onSettings, onProjects, onConfig, onMcp, onS
           <span className="sidebar-nav-icon">✏️</span>
           <span>新对话</span>
         </button>
-        <button className="sidebar-nav-item" onClick={onConfig}>
+        <button className="sidebar-nav-item" onClick={() => setShowSearch(true)}>
           <span className="sidebar-nav-icon">🔍</span>
           <span>搜索</span>
         </button>
@@ -158,23 +164,78 @@ export function Sidebar({ identity, onSettings, onProjects, onConfig, onMcp, onS
                     onClick={() => toggleExpand(project.id)}
                   >
                     <span className="sidebar-project-arrow">{isExpanded ? "▾" : "▸"}</span>
-                    <span className="sidebar-project-icon">📁</span>
+                    <span className="sidebar-project-icon">{project.pinned ? "📌" : "📁"}</span>
                     <span className="sidebar-project-name">{project.name}</span>
-                    <button
-                      className={`sidebar-project-btn ${fileExplorerProjectId === project.id ? "active" : ""}`}
-                      onClick={(e) => { e.stopPropagation(); onToggleFileExplorer?.(project.id); }}
-                      title="文件浏览器"
-                    >📂</button>
                     <button
                       className="sidebar-project-btn"
                       onClick={(e) => { e.stopPropagation(); handleNewSession(project.id); }}
                       title="新对话"
                     >+</button>
-                    <button
-                      className="sidebar-project-btn delete"
-                      onClick={(e) => { e.stopPropagation(); onRemoveProject?.(project.id, project.name, project.path); }}
-                      title="移除项目"
-                    >🗑️</button>
+                    <div
+                      className="sidebar-project-more-wrapper"
+                      onMouseEnter={(e) => {
+                        if (menuCloseTimer.current) {
+                          clearTimeout(menuCloseTimer.current);
+                          menuCloseTimer.current = null;
+                        }
+                        const rect = e.currentTarget.getBoundingClientRect();
+                        setMenuPosition({ top: rect.bottom + 4, left: rect.right - 140 });
+                        setHoverMenuProjectId(project.id);
+                      }}
+                      onMouseLeave={() => {
+                        if (clickedMenuProjectId !== project.id) {
+                          menuCloseTimer.current = setTimeout(() => {
+                            setHoverMenuProjectId(null);
+                          }, 500);
+                        }
+                      }}
+                    >
+                      <button
+                        className="sidebar-project-btn more"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (clickedMenuProjectId === project.id) {
+                            setClickedMenuProjectId(null);
+                            setHoverMenuProjectId(null);
+                          } else {
+                            const rect = e.currentTarget.getBoundingClientRect();
+                            setMenuPosition({ top: rect.bottom + 4, left: rect.right - 140 });
+                            setClickedMenuProjectId(project.id);
+                            setHoverMenuProjectId(project.id);
+                          }
+                        }}
+                        title="更多操作"
+                      >⋯</button>
+                      {(hoverMenuProjectId === project.id || clickedMenuProjectId === project.id) && menuPosition && (
+                        <div
+                          className="sidebar-project-more-menu"
+                          style={{ top: menuPosition.top, left: menuPosition.left }}
+                          onMouseEnter={() => {
+                            if (menuCloseTimer.current) {
+                              clearTimeout(menuCloseTimer.current);
+                              menuCloseTimer.current = null;
+                            }
+                          }}
+                          onMouseLeave={() => {
+                            if (clickedMenuProjectId !== project.id) {
+                              menuCloseTimer.current = setTimeout(() => {
+                                setHoverMenuProjectId(null);
+                              }, 500);
+                            }
+                          }}
+                        >
+                          <button onClick={(e) => { e.stopPropagation(); updateProject(project.id, { pinned: !project.pinned }); setHoverMenuProjectId(null); setClickedMenuProjectId(null); }}>
+                            {project.pinned ? "📌 取消置顶" : "📌 置顶项目"}
+                          </button>
+                          <button onClick={(e) => { e.stopPropagation(); onToggleFileExplorer?.(project.id); setHoverMenuProjectId(null); setClickedMenuProjectId(null); }}>
+                            📂 文件浏览器
+                          </button>
+                          <button onClick={(e) => { e.stopPropagation(); onRemoveProject?.(project.id, project.name, project.path); setHoverMenuProjectId(null); setClickedMenuProjectId(null); }}>
+                            🗑️ 移除项目
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   </div>
                   {isExpanded && (
                     <div className="sidebar-sessions">
@@ -188,10 +249,17 @@ export function Sidebar({ identity, onSettings, onProjects, onConfig, onMcp, onS
                             onClick={() => handleSessionClick(project.id, s.id)}
                           >
                             <span className="sidebar-session-title">{s.title}</span>
-                            <button
-                              className="sidebar-session-delete"
-                              onClick={(e) => { e.stopPropagation(); setDeleteConfirm({ sessionId: s.id, title: s.title }); }}
-                            >✕</button>
+                            <div className="sidebar-session-actions">
+                              <button
+                                className={`sidebar-session-pin ${s.pinned ? "pinned" : ""}`}
+                                onClick={(e) => { e.stopPropagation(); /* TODO: session pin */ }}
+                                title={s.pinned ? "取消置顶" : "置顶对话"}
+                              >📌</button>
+                              <button
+                                className="sidebar-session-delete"
+                                onClick={(e) => { e.stopPropagation(); setDeleteConfirm({ sessionId: s.id, title: s.title }); }}
+                              >✕</button>
+                            </div>
                           </div>
                         ))
                       )}
@@ -212,6 +280,25 @@ export function Sidebar({ identity, onSettings, onProjects, onConfig, onMcp, onS
           cancelLabel="取消"
           onConfirm={() => { deleteSession(deleteConfirm.sessionId); setDeleteConfirm(null); loadAllSessions(); }}
           onCancel={() => setDeleteConfirm(null)}
+        />
+      )}
+
+      {showSearch && (
+        <SearchDialog
+          onClose={() => setShowSearch(false)}
+          onSwitchProject={(projectId) => {
+            openProject(projectId);
+            setShowSearch(false);
+          }}
+          onNewSession={() => {
+            if (currentProject) {
+              handleNewSession(currentProject.id);
+            }
+          }}
+          onOpenSkills={() => {
+            onSkills?.();
+            setShowSearch(false);
+          }}
         />
       )}
     </div>

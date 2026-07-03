@@ -293,6 +293,7 @@ export async function saveUser(
 
 // ========== App-Level Identity (localStorage) ==========
 const APP_IDENTITY_KEY = "mimo-app-identity";
+const USER_CONFIG_KEY = "mimo-user";
 
 export function loadAppIdentity(): AppIdentity {
   try {
@@ -300,6 +301,21 @@ export function loadAppIdentity(): AppIdentity {
     if (data) return JSON.parse(data);
   } catch {}
   return { name: "", creature: "", vibe: "", emoji: "", avatar: "", onboarded: false };
+}
+
+export function loadUserConfig(): UserConfig | undefined {
+  try {
+    const data = localStorage.getItem(USER_CONFIG_KEY);
+    console.log("[loadUserConfig] raw data:", data);
+    if (data) {
+      const parsed = JSON.parse(data);
+      console.log("[loadUserConfig] parsed:", JSON.stringify(parsed));
+      return parsed;
+    }
+  } catch (e) {
+    console.error("[loadUserConfig] error:", e);
+  }
+  return undefined;
 }
 
 export function saveAppIdentity(identity: AppIdentity): void {

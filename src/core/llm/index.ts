@@ -45,7 +45,7 @@ export { CostTracker, getCostTracker } from "./cost-tracker";
 export { ToolRenderRegistry, getToolRenderRegistry, DefaultToolRenderer } from "./tool-renderer";
 
 // ========== LLM Engine Config ==========
-import { loadAppIdentity } from "../config/loader";
+import { loadAppIdentity, loadUserConfig } from "../config/loader";
 
 export interface LLMEngineConfig {
   defaultProvider?: string;
@@ -146,11 +146,14 @@ export class LLMEngine {
       : "";
 
     const identity = loadAppIdentity();
+    const user = loadUserConfig();
     console.log("[buildSystemPrompt] identity:", JSON.stringify(identity));
+    console.log("[buildSystemPrompt] user:", JSON.stringify(user));
 
     const config: SystemPromptConfig = {
       agent,
       identity,
+      user,
       workingDirectory: cwd,
       date: new Date().toISOString(),
       modelInfo: `${this.config.defaultProvider}/${this.config.defaultModel}`,

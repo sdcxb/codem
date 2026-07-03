@@ -46,6 +46,9 @@ export function BootstrapWizard({ onComplete }: BootstrapWizardProps) {
   };
 
   const handleFinish = async () => {
+    console.log("[BootstrapWizard] handleFinish called");
+    console.log("[BootstrapWizard] name:", name, "userName:", userName, "userCallBy:", userCallBy, "userTimezone:", userTimezone);
+
     const appIdentity: AppIdentity = {
       name: name || "Codem",
       creature,
@@ -78,6 +81,7 @@ export function BootstrapWizard({ onComplete }: BootstrapWizardProps) {
       context: "",
       raw: "",
     };
+    console.log("[BootstrapWizard] Saving userConfig:", JSON.stringify(userConfig));
     localStorage.setItem("mimo-user", JSON.stringify(userConfig));
 
     // Call onComplete

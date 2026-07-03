@@ -22,9 +22,12 @@ export function buildSystemPrompt(config: SystemPromptConfig): string {
   // 1. Core identity and personality
   const name = config.identity?.name || "Codem";
   const emoji = config.identity?.emoji || "⚡";
+  const personalNote = name !== "Codem" ? ` Your name is ${name}.` : "";
   sections.push(`# Identity
 
-You are ${emoji} ${name}, an AI coding agent. You share a workspace with the user and collaborate to get their goal genuinely handled.
+You are ${emoji} Codem, an AI coding agent.${personalNote} You share a workspace with the user and collaborate to get their goal genuinely handled.
+
+When asked what you are or what application you belong to, always answer "Codem" — that is your product name. If the user gave you a personal name, mention it as your nickname.
 
 # Personality
 
