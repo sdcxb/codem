@@ -12,11 +12,13 @@ interface MessageBubbleProps {
   index?: number;
   onFork?: (messageIndex: number) => void;
   showReasoning?: boolean;
+  onDeleteFiles?: (files: string[]) => void;
 }
 
-export function MessageBubble({ message, index, onFork, showReasoning = true }: MessageBubbleProps) {
+export function MessageBubble({ message, index, onFork, showReasoning = true, onDeleteFiles }: MessageBubbleProps) {
   const [expanded, setExpanded] = useState(true);
   const [showAttachment, setShowAttachment] = useState<string | null>(null);
+  const [showFilesConfirm, setShowFilesConfirm] = useState(false);
 
   const isUser = message.role === "user";
   const isSystem = message.role === "system";
@@ -140,6 +142,44 @@ export function MessageBubble({ message, index, onFork, showReasoning = true }: 
                     </div>
                   );
                 })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {message.generatedFiles && message.generatedFiles.length > 0 && (
+          <div className="generated-files">
+            {!showFilesConfirm ? (
+              <button
+                className="files-cleanup-btn"
+                onClick={() => setShowFilesConfirm(true)}
+              >
+                🗑️ 清理过程文件 ({message.generatedFiles.length})
+              </button>
+            ) : (
+              <div className="files-confirm">
+                <div className="files-list">
+                  {message.generatedFiles.map((file, i) => (
+                    <div key={i} className="file-item">{file}</div>
+                  ))}
+                </div>
+                <div className="files-actions">
+                  <button
+                    className="files-delete-btn"
+                    onClick={() => {
+                      onDeleteFiles?.(message.generatedFiles!);
+                      setShowFilesConfirm(false);
+                    }}
+                  >
+                    删除
+                  </button>
+                  <button
+                    className="files-cancel-btn"
+                    onClick={() => setShowFilesConfirm(false)}
+                  >
+                    取消
+                  </button>
+                </div>
               </div>
             )}
           </div>

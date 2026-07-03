@@ -242,6 +242,25 @@ npm run tauri:build
 
 ## 更新日志
 
+### 2026-07-03
+
+**消息持久化根因修复：**
+- Rust `lib.rs` 中 `&stdout[..50000]` 按字节截断 bash 输出，UTF-8 多字节字符（中文/emoji）被切断导致 panic → Tauri 进程崩溃 → JS `finally` 不执行 → 消息永远不保存
+- 修复：用 `char_indices()` 找合法字符边界再截断
+- `listMessages`/`getMessage` 改用显式列名 SELECT（解决 `SELECT *` + ALTER TABLE 追加列导致的列顺序错乱）
+- `rowToToolCallFromAny` 中 `JSON.parse` 加 try-catch 容错（单条 tool_call 解析失败不崩溃整个加载）
+- `saveMessages` 逐条 try-catch（单条失败不阻止其余保存）
+
+**思考过程持久化：**
+- reasoning 列顺序修复：显式列名 SELECT，timestamp 不再误读为 reasoning
+- 迁移清理：旧数据库中 reasoning 字段存的 timestamp 值自动清除
+
+**过程文件清理按钮：**
+- 追踪 `write` 工具生成的文件列表（`generatedFiles` 字段持久化到数据库）
+- 消息气泡上显示"🗑️ 清理过程文件"按钮
+- 点击后显示文件列表，确认删除后调用 Rust `delete_file` 命令
+- 历史对话中也支持删除
+
 ### 2026-07-02
 
 **思考过程可视化：**

@@ -36,6 +36,7 @@ CREATE TABLE IF NOT EXISTS messages (
   completion_tokens INTEGER DEFAULT 0,
   cost REAL DEFAULT 0,
   status TEXT DEFAULT 'done',
+  generated_files TEXT,
   FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
 );
 
@@ -150,6 +151,13 @@ export async function initDatabase(): Promise<SqlJsDatabase> {
   // Migration: add reasoning column if missing
   try {
     db.run("ALTER TABLE messages ADD COLUMN reasoning TEXT");
+  } catch (e) {
+    // Column already exists, ignore
+  }
+
+  // Migration: add generated_files column if missing
+  try {
+    db.run("ALTER TABLE messages ADD COLUMN generated_files TEXT");
   } catch (e) {
     // Column already exists, ignore
   }

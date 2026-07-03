@@ -11,6 +11,7 @@ export interface Message {
   toolCalls?: ToolCall[];
   attachments?: MessageAttachment[];
   status?: "pending" | "streaming" | "done" | "error";
+  generatedFiles?: string[];
 }
 
 export interface MessageAttachment {
@@ -112,5 +113,15 @@ export const useAppStore = create<AppState>((set, get) => ({
     } catch (e) {
       console.error("[Store] saveMessages failed:", e);
     }
+  },
+
+  removeGeneratedFiles: (messageId, files) => {
+    set((s) => ({
+      messages: s.messages.map((m) =>
+        m.id === messageId
+          ? { ...m, generatedFiles: (m.generatedFiles || []).filter((f) => !files.includes(f)) }
+          : m
+      ),
+    }));
   },
 }));

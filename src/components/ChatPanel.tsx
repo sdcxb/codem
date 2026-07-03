@@ -50,7 +50,7 @@ interface ChatPanelProps {
 }
 
 export function ChatPanel({ onSend, onCancel, onToggleSidebar, onFork, connected, model, onModelChange, mode = "cli", providerId = "mimo" }: ChatPanelProps) {
-  const { messages, isStreaming } = useAppStore();
+  const { messages, isStreaming, removeGeneratedFiles } = useAppStore();
   const [showModelPicker, setShowModelPicker] = useState(false);
   const [showReasoning, setShowReasoning] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -82,6 +82,17 @@ export function ChatPanel({ onSend, onCancel, onToggleSidebar, onFork, connected
     const interval = setInterval(updateAgents, 2000);
     return () => clearInterval(interval);
   }, []);
+
+  const handleDeleteFiles = async (messageId: string, files: string[]) => {
+    for (const file of files) {
+      try {
+        await window.__TAURI__?.core.invoke("delete_file", { path: file });
+      } catch (e) {
+        console.warn("[ChatPanel] Failed to delete file:", file, e);
+      }
+    }
+    removeGeneratedFiles(messageId, files);
+  };
 
   const selectedAgent = selectedAgentId ? agents.find((a) => a.id === selectedAgentId) : null;
   const runningCount = agents.filter((a) => a.status === "running").length;
@@ -168,7 +179,14 @@ export function ChatPanel({ onSend, onCancel, onToggleSidebar, onFork, connected
             </div>
           )}
           {messages.map((msg, index) => (
-            <MessageBubble key={msg.id} message={msg} index={index} onFork={onFork} showReasoning={showReasoning} />
+            <MessageBubble
+              key={msg.id}
+              message={msg}
+              index={index}
+              onFork={onFork}
+              showReasoning={showReasoning}
+              onDeleteFiles={(files) => handleDeleteFiles(msg.id, files)}
+            />
           ))}
           {isStreaming && (
             <div className="thinking-indicator">

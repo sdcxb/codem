@@ -315,6 +315,11 @@ async fn mimo_delete_auth() -> Result<(), String> {
 }
 
 #[tauri::command]
+async fn delete_file(path: String) -> Result<(), String> {
+    std::fs::remove_file(&path).map_err(|e| format!("Failed to delete {}: {}", path, e))
+}
+
+#[tauri::command]
 async fn mimo_login() -> Result<serde_json::Value, String> {
     eprintln!("[mimo_login] Starting...");
 
@@ -438,6 +443,7 @@ pub fn run() {
             mimo_read_auth,
             mimo_delete_auth,
             mimo_login,
+            delete_file,
         ])
         .setup(|app| {
             // Apply window vibrancy (frosted glass effect) on Windows

@@ -13,6 +13,7 @@ export interface MessageRow {
   completion_tokens: number;
   cost: number;
   status: string;
+  generated_files: string | null;
 }
 
 export interface ToolCallRow {
@@ -34,6 +35,7 @@ function rowToMessage(row: MessageRow, toolCalls: ToolCall[]): Message {
     model: row.model ?? undefined,
     status: row.status as Message["status"],
     toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+    generatedFiles: row.generated_files ? JSON.parse(row.generated_files) : undefined,
   };
 }
 
@@ -75,7 +77,7 @@ export function listMessages(sessionId: string, limit?: number): Message[] {
   const db = getDatabase();
   const limitClause = limit ? `LIMIT ${limit}` : "";
   const result = db.exec(
-    `SELECT id, session_id, role, content, timestamp, model, prompt_tokens, completion_tokens, cost, status, reasoning FROM messages WHERE session_id = ? ORDER BY timestamp ASC ${limitClause}`,
+    `SELECT id, session_id, role, content, timestamp, model, prompt_tokens, completion_tokens, cost, status, reasoning, generated_files FROM messages WHERE session_id = ? ORDER BY timestamp ASC ${limitClause}`,
     [sessionId]
   );
   if (result.length === 0) return [];
@@ -94,6 +96,7 @@ export function listMessages(sessionId: string, limit?: number): Message[] {
         cost: row[8] as number,
         status: row[9] as string,
         reasoning: row[10] as string | null,
+        generated_files: row[11] as string | null,
       };
       const toolCalls = loadToolCallsForMessage(db, messageRow.id);
       return rowToMessage(messageRow, toolCalls);
@@ -106,7 +109,7 @@ export function listMessages(sessionId: string, limit?: number): Message[] {
 
 export function getMessage(id: string): Message | null {
   const db = getDatabase();
-  const result = db.exec("SELECT id, session_id, role, content, timestamp, model, prompt_tokens, completion_tokens, cost, status, reasoning FROM messages WHERE id = ?", [id]);
+  const result = db.exec("SELECT id, session_id, role, content, timestamp, model, prompt_tokens, completion_tokens, cost, status, reasoning, generated_files FROM messages WHERE id = ?", [id]);
   if (result.length === 0 || result[0].values.length === 0) return null;
 
   const row = result[0].values[0];
@@ -122,6 +125,7 @@ export function getMessage(id: string): Message | null {
     cost: row[8] as number,
     status: row[9] as string,
     reasoning: row[10] as string | null,
+    generated_files: row[11] as string | null,
   };
 
   const toolCalls = loadToolCallsForMessage(db, id);
@@ -140,6 +144,7 @@ export function createMessage(message: Message, sessionId: string): void {
       model: message.model,
       status: message.status,
       toolCalls: message.toolCalls,
+      generatedFiles: message.generatedFiles,
     });
     return;
   }
@@ -160,6 +165,15 @@ export function createMessage(message: Message, sessionId: string): void {
       message.status ?? "done",
     ]
   );
+
+  // Update generated_files separately to avoid INSERT failure if column missing
+  if (message.generatedFiles && message.generatedFiles.length > 0) {
+    try {
+      db.run("UPDATE messages SET generated_files = ? WHERE id = ?", [JSON.stringify(message.generatedFiles), message.id]);
+    } catch (e) {
+      console.warn("[createMessage] generated_files column may not exist:", e);
+    }
+  }
 
   if (message.toolCalls) {
     for (const tc of message.toolCalls) {
@@ -184,7 +198,20 @@ export function updateMessage(id: string, update: Partial<Message>): void {
 
   if (fields.length > 0) {
     values.push(id);
-    db.run(`UPDATE messages SET ${fields.join(", ")} WHERE id = ?`, values);
+    try {
+      db.run(`UPDATE messages SET ${fields.join(", ")} WHERE id = ?`, values);
+    } catch (e) {
+      console.error("[updateMessage] Failed to update:", e);
+    }
+  }
+
+  // Handle generated_files separately to avoid failure if column missing
+  if (update.generatedFiles !== undefined) {
+    try {
+      db.run("UPDATE messages SET generated_files = ? WHERE id = ?", [update.generatedFiles ? JSON.stringify(update.generatedFiles) : null, id]);
+    } catch (e) {
+      console.warn("[updateMessage] generated_files column may not exist:", e);
+    }
   }
 
   if (update.toolCalls !== undefined) {

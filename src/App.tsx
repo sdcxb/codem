@@ -129,6 +129,7 @@ function App() {
   
   // Streaming buffer - batch text updates to reduce re-renders
   const streamBufferRef = useRef<{ id: string; text: string; timer: ReturnType<typeof setTimeout> | null }>({ id: "", text: "", timer: null });
+  const generatedFilesRef = useRef<Set<string>>(new Set());
   const flushStreamBuffer = useCallback(() => {
     const buffer = streamBufferRef.current;
     if (buffer.id && buffer.text) {
@@ -499,6 +500,10 @@ function App() {
                 status: "done",
                 result: typeof event.result === "string" ? event.result : JSON.stringify(event.result || ""),
               });
+              // Track generated files from write tool
+              if (tc.name === "write" && tc.input?.path) {
+                generatedFilesRef.current.add(tc.input.path as string);
+              }
             }
             break;
           }
@@ -519,7 +524,12 @@ function App() {
       }
 
       if (assistantContent) {
-        useAppStore.getState().updateMessage(assistantMsgId, { status: "done" });
+        const generatedFiles = Array.from(generatedFilesRef.current);
+        useAppStore.getState().updateMessage(assistantMsgId, {
+          status: "done",
+          generatedFiles: generatedFiles.length > 0 ? generatedFiles : undefined,
+        });
+        generatedFilesRef.current.clear();
       }
     } catch (error: any) {
       
