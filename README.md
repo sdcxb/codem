@@ -258,9 +258,6 @@ npm run tauri:build
 **版本号统一：**
 - `package.json`、`Cargo.toml`、`tauri.conf.json` 统一为 `0.56.0`
 
-**已知问题：**
-- AI 可能自称 "Claude Code"（MiMoCode CLI 历史对话包含 Claude Code 相关内容，可能被带入上下文）
-
 ### 2026-07-03（v0.55）
 
 **消息持久化根因修复：**
