@@ -86,7 +86,7 @@ export function ChatPanel({ onSend, onCancel, onToggleSidebar, onFork, connected
   const handleDeleteFiles = async (messageId: string, files: string[]) => {
     for (const file of files) {
       try {
-        await window.__TAURI__?.core.invoke("delete_file", { path: file });
+        await (window as any).__TAURI__?.core.invoke("delete_file", { path: file });
       } catch (e) {
         console.warn("[ChatPanel] Failed to delete file:", file, e);
       }

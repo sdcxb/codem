@@ -50,6 +50,7 @@ interface AppState {
   clearMessages: () => void;
   loadMessages: (sessionId: string) => void;
   saveMessages: (sessionId: string) => void;
+  removeGeneratedFiles: (messageId: string, files: string[]) => void;
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
