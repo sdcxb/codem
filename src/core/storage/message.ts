@@ -48,14 +48,19 @@ function rowToToolCall(row: ToolCallRow): ToolCall {
 }
 
 function rowToToolCallFromAny(tr: any[]): ToolCall {
-  return rowToToolCall({
+  let args: Record<string, unknown> = {};
+  try {
+    args = JSON.parse(tr[3] as string);
+  } catch {
+    args = {};
+  }
+  return {
     id: tr[0] as string,
-    message_id: tr[1] as string,
     tool: tr[2] as string,
-    args: tr[3] as string,
-    result: tr[4] as string | null,
-    status: tr[5] as string,
-  });
+    args,
+    result: (tr[4] as string | null) ?? undefined,
+    status: (tr[5] as string) as ToolCall["status"],
+  };
 }
 
 function loadToolCallsForMessage(db: any, messageId: string): ToolCall[] {
@@ -70,33 +75,38 @@ export function listMessages(sessionId: string, limit?: number): Message[] {
   const db = getDatabase();
   const limitClause = limit ? `LIMIT ${limit}` : "";
   const result = db.exec(
-    `SELECT * FROM messages WHERE session_id = ? ORDER BY timestamp ASC ${limitClause}`,
+    `SELECT id, session_id, role, content, timestamp, model, prompt_tokens, completion_tokens, cost, status, reasoning FROM messages WHERE session_id = ? ORDER BY timestamp ASC ${limitClause}`,
     [sessionId]
   );
   if (result.length === 0) return [];
 
   return result[0].values.map((row: any[]) => {
-    const messageRow: MessageRow = {
-      id: row[0] as string,
-      session_id: row[1] as string,
-      role: row[2] as string,
-      content: row[3] as string,
-      reasoning: row[4] as string | null,
-      timestamp: row[5] as number,
-      model: row[6] as string | null,
-      prompt_tokens: row[7] as number,
-      completion_tokens: row[8] as number,
-      cost: row[9] as number,
-      status: row[10] as string,
-    };
-    const toolCalls = loadToolCallsForMessage(db, messageRow.id);
-    return rowToMessage(messageRow, toolCalls);
-  });
+    try {
+      const messageRow: MessageRow = {
+        id: row[0] as string,
+        session_id: row[1] as string,
+        role: row[2] as string,
+        content: row[3] as string,
+        timestamp: row[4] as number,
+        model: row[5] as string | null,
+        prompt_tokens: row[6] as number,
+        completion_tokens: row[7] as number,
+        cost: row[8] as number,
+        status: row[9] as string,
+        reasoning: row[10] as string | null,
+      };
+      const toolCalls = loadToolCallsForMessage(db, messageRow.id);
+      return rowToMessage(messageRow, toolCalls);
+    } catch (e) {
+      console.warn("[listMessages] Failed to convert row:", e);
+      return null;
+    }
+  }).filter((m): m is Message => m !== null);
 }
 
 export function getMessage(id: string): Message | null {
   const db = getDatabase();
-  const result = db.exec("SELECT * FROM messages WHERE id = ?", [id]);
+  const result = db.exec("SELECT id, session_id, role, content, timestamp, model, prompt_tokens, completion_tokens, cost, status, reasoning FROM messages WHERE id = ?", [id]);
   if (result.length === 0 || result[0].values.length === 0) return null;
 
   const row = result[0].values[0];
@@ -105,13 +115,13 @@ export function getMessage(id: string): Message | null {
     session_id: row[1] as string,
     role: row[2] as string,
     content: row[3] as string,
-    reasoning: row[4] as string | null,
-    timestamp: row[5] as number,
-    model: row[6] as string | null,
-    prompt_tokens: row[7] as number,
-    completion_tokens: row[8] as number,
-    cost: row[9] as number,
-    status: row[10] as string,
+    timestamp: row[4] as number,
+    model: row[5] as string | null,
+    prompt_tokens: row[6] as number,
+    completion_tokens: row[7] as number,
+    cost: row[8] as number,
+    status: row[9] as string,
+    reasoning: row[10] as string | null,
   };
 
   const toolCalls = loadToolCallsForMessage(db, id);

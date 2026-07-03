@@ -231,12 +231,22 @@ async fn execute_command(command: String, cwd: Option<String>) -> Result<serde_j
 
     // Truncate very long output to prevent context overflow
     let stdout = if stdout.len() > 50000 {
-        format!("{}...(truncated, {} bytes total)", &stdout[..50000], stdout.len())
+        let truncate_at = stdout.char_indices()
+            .filter(|(i, _)| *i <= 50000)
+            .last()
+            .map(|(i, c)| i + c.len_utf8())
+            .unwrap_or(0);
+        format!("{}...(truncated, {} bytes total)", &stdout[..truncate_at], stdout.len())
     } else {
         stdout.to_string()
     };
     let stderr = if stderr.len() > 10000 {
-        format!("{}...(truncated)", &stderr[..10000])
+        let truncate_at = stderr.char_indices()
+            .filter(|(i, _)| *i <= 10000)
+            .last()
+            .map(|(i, c)| i + c.len_utf8())
+            .unwrap_or(0);
+        format!("{}...(truncated)", &stderr[..truncate_at])
     } else {
         stderr.to_string()
     };

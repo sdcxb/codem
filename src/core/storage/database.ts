@@ -154,6 +154,13 @@ export async function initDatabase(): Promise<SqlJsDatabase> {
     // Column already exists, ignore
   }
 
+  // Migration: fix corrupted reasoning values (timestamp stored as reasoning)
+  try {
+    db.run("UPDATE messages SET reasoning = NULL WHERE reasoning IS NOT NULL AND reasoning GLOB '[0-9]*' AND LENGTH(reasoning) >= 10");
+  } catch (e) {
+    console.warn("[Database] Failed to fix corrupted reasoning:", e);
+  }
+
   // Save after schema creation
   saveDatabase();
 
