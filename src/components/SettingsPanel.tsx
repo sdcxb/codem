@@ -539,7 +539,7 @@ export function SettingsPanel({ onClose, onSessionRecovery, onUsageStats }: Sett
               type="text"
               value={identity.name}
               onChange={(e) => setIdentity({ ...identity, name: e.target.value })}
-              placeholder="MIMO、小助手、或者随便什么..."
+                placeholder="CODEM、小助手、或者随便什么..."
             />
           </div>
 

@@ -2,6 +2,91 @@ import initSqlJs, { type Database as SqlJsDatabase } from "sql.js/dist/sql-asm.j
 
 let db: SqlJsDatabase | null = null;
 const DB_STORAGE_KEY = "mimo-sqlite-db";
+const DB_FILE_NAME = "codem-db.bin";
+
+const isTauri = () => !!(window as any).__TAURI__;
+
+async function getDbPath(): Promise<string> {
+  if (isTauri()) {
+    const { invoke } = (window as any).__TAURI__.core;
+    const appDir: string = await invoke("get_app_data_dir");
+    return `${appDir}${DB_FILE_NAME}`;
+  }
+  return DB_FILE_NAME;
+}
+
+function uint8ToBase64(data: Uint8Array): string {
+  let binary = "";
+  const chunkSize = 8192;
+  for (let i = 0; i < data.length; i += chunkSize) {
+    const chunk = data.subarray(i, i + chunkSize);
+    binary += String.fromCharCode(...chunk);
+  }
+  return btoa(binary);
+}
+
+function base64ToUint8(base64: string): Uint8Array {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
+}
+
+async function saveDatabase(): Promise<void> {
+  if (!db) return;
+  try {
+    if (!isTauri()) {
+      console.warn("[Database] Browser mode, cannot save");
+      return;
+    }
+    const data = db.export();
+    const { invoke } = (window as any).__TAURI__.core;
+    const path = await getDbPath();
+    const base64 = uint8ToBase64(data);
+    await invoke("write_file", { path, content: base64, encoding: "base64" });
+    console.log(`[Database] Saved ${data.length} bytes to file`);
+  } catch (e) {
+    console.error("[Database] Failed to save:", e);
+  }
+}
+
+function saveDatabaseAsync(): void {
+  saveDatabase().catch(e => console.error("[Database] Async save failed:", e));
+}
+
+async function loadDatabaseFromStorage(): Promise<Uint8Array | null> {
+  try {
+    if (!isTauri()) {
+      console.warn("[Database] Browser mode detected, database not available");
+      return null;
+    }
+    
+    const { invoke } = (window as any).__TAURI__.core;
+    const path = await getDbPath();
+    try {
+      const base64: string = await invoke("read_file", { path, encoding: "base64" });
+      if (base64 && base64.length > 100) {
+        const data = base64ToUint8(base64);
+        // Validate: SQLite files start with "SQLite format 3"
+        const header = String.fromCharCode(...data.slice(0, 16));
+        if (header.startsWith("SQLite format")) {
+          console.log(`[Database] Loaded ${data.length} bytes from file`);
+          return data;
+        } else {
+          console.warn("[Database] File exists but is not valid SQLite, will create new database");
+        }
+      }
+    } catch {
+      // File doesn't exist, will create new database
+    }
+    return null;
+  } catch (e) {
+    console.error("[Database] Failed to load:", e);
+    return null;
+  }
+}
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS projects (
@@ -88,143 +173,89 @@ CREATE TABLE IF NOT EXISTS v2_sessions (
   updated_at INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS settings (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS mcp_servers (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  config TEXT NOT NULL,
+  enabled INTEGER DEFAULT 1,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS memory (
+  id TEXT PRIMARY KEY,
+  content TEXT NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS recovery_data (
+  session_id TEXT PRIMARY KEY,
+  data TEXT NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS cost_records (
+  id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL,
+  model TEXT NOT NULL,
+  provider TEXT NOT NULL,
+  prompt_tokens INTEGER DEFAULT 0,
+  completion_tokens INTEGER DEFAULT 0,
+  cost REAL DEFAULT 0,
+  duration INTEGER DEFAULT 0,
+  timestamp INTEGER NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_sessions_project ON sessions(project_id);
 CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id);
 CREATE INDEX IF NOT EXISTS idx_tool_calls_message ON tool_calls(message_id);
 CREATE INDEX IF NOT EXISTS idx_attachments_session ON attachments(session_id);
 CREATE INDEX IF NOT EXISTS idx_accounts_active ON accounts(is_active);
+CREATE INDEX IF NOT EXISTS idx_cost_records_session ON cost_records(session_id);
+CREATE INDEX IF NOT EXISTS idx_cost_records_timestamp ON cost_records(timestamp);
 `;
-
-function uint8ToBase64(data: Uint8Array): string {
-  let binary = "";
-  const chunkSize = 8192;
-  for (let i = 0; i < data.length; i += chunkSize) {
-    const chunk = data.subarray(i, i + chunkSize);
-    binary += String.fromCharCode(...chunk);
-  }
-  return btoa(binary);
-}
-
-function base64ToUint8(base64: string): Uint8Array {
-  const binary = atob(base64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) {
-    bytes[i] = binary.charCodeAt(i);
-  }
-  return bytes;
-}
-
-function saveDatabase(): void {
-  if (!db) return;
-  try {
-    const data = db.export();
-    const base64 = uint8ToBase64(data);
-    localStorage.setItem(DB_STORAGE_KEY, base64);
-    console.log(`[Database] Saved ${data.length} bytes`);
-  } catch (e) {
-    console.error("[Database] Failed to save:", e);
-  }
-}
-
-function loadDatabaseFromStorage(): Uint8Array | null {
-  try {
-    const base64 = localStorage.getItem(DB_STORAGE_KEY);
-    if (!base64) return null;
-    const bytes = base64ToUint8(base64);
-    console.log(`[Database] Loaded ${bytes.length} bytes`);
-    return bytes;
-  } catch (e) {
-    console.error("[Database] Failed to load:", e);
-    return null;
-  }
-}
 
 export async function initDatabase(): Promise<SqlJsDatabase> {
   if (db) return db;
 
   const SQL = await initSqlJs();
 
-  // Try to load existing database from localStorage
-  const existingData = loadDatabaseFromStorage();
+  const existingData = await loadDatabaseFromStorage();
   if (existingData) {
     db = new SQL.Database(existingData);
-    console.log("[Database] Loaded existing database from localStorage");
+    console.log("[Database] Loaded existing database");
   } else {
     db = new SQL.Database();
     console.log("[Database] Created new database");
   }
 
-  // Enable foreign keys
   db.run("PRAGMA foreign_keys = ON");
-
-  // Create tables if not exist
   db.run(SCHEMA);
 
-  // Migration: add reasoning column if missing
-  try {
-    db.run("ALTER TABLE messages ADD COLUMN reasoning TEXT");
-  } catch (e) {
-    // Column already exists, ignore
+  // Migrations
+  const migrations = [
+    "ALTER TABLE messages ADD COLUMN reasoning TEXT",
+    "ALTER TABLE messages ADD COLUMN generated_files TEXT",
+    "ALTER TABLE projects ADD COLUMN pinned INTEGER DEFAULT 0",
+  ];
+  for (const sql of migrations) {
+    try { db.run(sql); } catch (e) { /* column already exists */ }
   }
 
-  // Migration: add generated_files column if missing
-  try {
-    db.run("ALTER TABLE messages ADD COLUMN generated_files TEXT");
-  } catch (e) {
-    // Column already exists, ignore
-  }
-
-  // Migration: fix corrupted reasoning values (timestamp stored as reasoning)
+  // Fix corrupted reasoning values
   try {
     db.run("UPDATE messages SET reasoning = NULL WHERE reasoning IS NOT NULL AND reasoning GLOB '[0-9]*' AND LENGTH(reasoning) >= 10");
   } catch (e) {
     console.warn("[Database] Failed to fix corrupted reasoning:", e);
   }
 
-  // Migration: add pinned column to projects table
-  try {
-    db.run("ALTER TABLE projects ADD COLUMN pinned INTEGER DEFAULT 0");
-  } catch (e) {
-    // Column already exists, ignore
-  }
-
-  // Migration: move v2 sessions from localStorage to SQLite
-  try {
-    const v2Data = localStorage.getItem("mimo-sessions-v2");
-    if (v2Data) {
-      const parsed = JSON.parse(v2Data);
-      for (const [id, session] of Object.entries(parsed)) {
-        const s = session as any;
-        const existing = db.exec("SELECT id FROM v2_sessions WHERE id = ?", [id]);
-        if (existing.length === 0 || existing[0].values.length === 0) {
-          db.run(
-            "INSERT INTO v2_sessions (id, project_id, title, model, messages, total_usage, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            [id, s.projectId || "default", s.title || "对话", s.model || "", JSON.stringify(s.messages || []), JSON.stringify(s.totalUsage || { promptTokens: 0, completionTokens: 0, cost: 0 }), s.createdAt || Date.now(), s.updatedAt || Date.now()]
-          );
-        }
-      }
-      localStorage.removeItem("mimo-sessions-v2");
-      console.log("[Database] Migrated v2 sessions from localStorage");
-    }
-  } catch (e) {
-    console.warn("[Database] Failed to migrate v2 sessions:", e);
-  }
-
-  // Migration: clear stale V2 sessions with old identity
-  try {
-    const staleCount = db.exec("SELECT COUNT(*) FROM v2_sessions");
-    const count = staleCount.length > 0 ? staleCount[0].values[0][0] : 0;
-    if (count > 0) {
-      db.run("DELETE FROM v2_sessions");
-      console.log("[Database] Cleared", count, "stale V2 sessions");
-    }
-  } catch (e) {
-    console.warn("[Database] Failed to clear stale V2 sessions:", e);
-  }
-
-  // Save after schema creation
-  saveDatabase();
-
+  await saveDatabase();
   return db;
 }
 
@@ -233,7 +264,11 @@ export async function resetDatabase(): Promise<SqlJsDatabase> {
     db.close();
     db = null;
   }
-  localStorage.removeItem(DB_STORAGE_KEY);
+  if (isTauri()) {
+    const { invoke } = (window as any).__TAURI__.core;
+    const path = await getDbPath();
+    try { await invoke("delete_file", { path }); } catch {}
+  }
   return initDatabase();
 }
 
@@ -243,11 +278,10 @@ export function getDatabase(): SqlJsDatabase {
 }
 
 export function persistDatabase(): void {
-  saveDatabase();
+  saveDatabaseAsync();
 }
 
 export function closeDatabase(): void {
-  saveDatabase();
   if (db) {
     db.close();
     db = null;
@@ -264,7 +298,6 @@ export function importDatabase(data: Uint8Array): void {
     db.close();
   }
   const SQL = initSqlJs();
-  // @ts-ignore - sql.js constructor accepts buffer
-  db = new SQL.Database(data);
-  saveDatabase();
+  db = new (SQL as any).Database(data);
+  persistDatabase();
 }

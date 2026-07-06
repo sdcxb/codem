@@ -21,7 +21,7 @@ export interface ToolExecutorConfig {
 const DEFAULT_CONFIG: ToolExecutorConfig = {
   maxConcurrent: 5,
   concurrencySafeTools: ["read", "glob", "grep"],
-  toolTimeout: 60000,
+  toolTimeout: 60000, // 60 seconds for regular tools
   abortSiblingsOnError: false,
 };
 
@@ -104,9 +104,13 @@ export class StreamingToolExecutorImpl {
               throw new Error("Aborted");
             }
 
+            // wait_for_subagent and spawn_subagent should not have a timeout
+            const noTimeoutTools = ["wait_for_subagent", "spawn_subagent"];
+            const useTimeout = !noTimeoutTools.includes(tc.name);
+
             const result = await Promise.race([
               toolHandler(tc.name, tc.input, { ...ctx, abort: tc.abortController.signal }),
-              this.timeout(this.config.toolTimeout),
+              useTimeout ? this.timeout(this.config.toolTimeout) : new Promise<never>(() => {}),
             ]);
 
             tc.status = "completed";
@@ -164,9 +168,13 @@ export class StreamingToolExecutorImpl {
         throw new Error("Aborted");
       }
 
+      // wait_for_subagent and spawn_subagent should not have a timeout
+      const noTimeoutTools = ["wait_for_subagent", "spawn_subagent"];
+      const useTimeout = !noTimeoutTools.includes(tc.name);
+
       const result = await Promise.race([
         toolHandler(tc.name, tc.input, { ...ctx, abort: tc.abortController.signal }),
-        this.timeout(this.config.toolTimeout),
+        useTimeout ? this.timeout(this.config.toolTimeout) : new Promise<never>(() => {}),
       ]);
 
       tc.status = "completed";

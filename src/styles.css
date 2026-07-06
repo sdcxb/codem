@@ -4896,3 +4896,29 @@ body {
   0%, 100% { opacity: 0.6; }
   50% { opacity: 1; }
 }
+
+/* ========== Sub-agent Status ========== */
+.subagent-status {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.subagent-status.running {
+  background: rgba(47, 129, 247, 0.15);
+  color: var(--accent);
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+.subagent-status.done {
+  background: rgba(63, 185, 80, 0.15);
+  color: var(--success);
+}
+
+.subagent-status.failed {
+  background: rgba(248, 81, 73, 0.15);
+  color: var(--error);
+}

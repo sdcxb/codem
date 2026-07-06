@@ -47,7 +47,7 @@ export function AgentDetail({ task, onBack }: AgentDetailProps) {
         </button>
         <div className="agent-detail-title">
           <span className="agent-detail-icon">{getAgentIcon(task.agentId)}</span>
-          <span>{task.agentId}</span>
+          <span>{task.name || task.agentId}</span>
         </div>
         <span className={`agent-detail-status ${task.status}`}>
           {getStatusIcon(task.status)} {task.status}

@@ -1,11 +1,12 @@
 import type { Session, MessageV2 } from "../llm/session";
+import { loadRecoveryData, saveRecoveryData, removeRecoveryData } from "../storage/settings";
 
 // ========== Recovery Types ==========
 export type RecoveryLayer = "memory" | "local" | "file";
 
 export interface RecoveryConfig {
-  /** Storage key prefix for localStorage */
-  localStoragePrefix: string;
+  /** Storage key prefix for SQLite */
+  storagePrefix: string;
   /** File path for JSONL persistence */
   filePath: string;
   /** Maximum sessions to keep per layer */
@@ -21,7 +22,7 @@ export interface RecoveryConfig {
 }
 
 const DEFAULT_CONFIG: RecoveryConfig = {
-  localStoragePrefix: "mimo-recovery",
+  storagePrefix: "mimo-recovery",
   filePath: ".mimo-recovery/sessions.jsonl",
   maxSessions: 50,
   maxMessagesPerSession: 500,
@@ -146,14 +147,14 @@ export class MultiLayerRecovery {
 
   /** Load from all layers */
   private load(): void {
-    // Load from localStorage (Layer 2: local)
+    // Load from SQLite (Layer 2: local)
     try {
-      const data = localStorage.getItem(`${this.config.localStoragePrefix}-state`);
-      if (data) {
-        this.state = JSON.parse(data);
+      const stateData = loadRecoveryData(`${this.config.storagePrefix}-state`);
+      if (stateData) {
+        this.state = JSON.parse(stateData);
       }
 
-      const sessionsData = localStorage.getItem(`${this.config.localStoragePrefix}-sessions`);
+      const sessionsData = loadRecoveryData(`${this.config.storagePrefix}-sessions`);
       if (sessionsData) {
         const parsed = JSON.parse(sessionsData);
         for (const [id, session] of Object.entries(parsed)) {
@@ -228,25 +229,25 @@ export class MultiLayerRecovery {
     this.saveState();
   }
 
-  /** Save to localStorage */
+  /** Save to SQLite */
   private saveToLocal(): void {
     try {
       // Save state
-      localStorage.setItem(`${this.config.localStoragePrefix}-state`, JSON.stringify(this.state));
+      saveRecoveryData(`${this.config.storagePrefix}-state`, JSON.stringify(this.state));
 
       // Save sessions
       const sessionsObj: Record<string, Session> = {};
       for (const [id, session] of this.sessions) {
         sessionsObj[id] = session;
       }
-      localStorage.setItem(`${this.config.localStoragePrefix}-sessions`, JSON.stringify(sessionsObj));
+      saveRecoveryData(`${this.config.storagePrefix}-sessions`, JSON.stringify(sessionsObj));
     } catch {}
   }
 
   /** Save state */
   private saveState(): void {
     try {
-      localStorage.setItem(`${this.config.localStoragePrefix}-state`, JSON.stringify(this.state));
+      saveRecoveryData(`${this.config.storagePrefix}-state`, JSON.stringify(this.state));
     } catch {}
   }
 
@@ -288,9 +289,9 @@ export class MultiLayerRecovery {
     const memory = this.sessions.get(sessionId);
     if (memory) return memory;
 
-    // Layer 2: localStorage
+    // Layer 2: SQLite
     try {
-      const data = localStorage.getItem(`${this.config.localStoragePrefix}-sessions`);
+      const data = loadRecoveryData(`${this.config.storagePrefix}-sessions`);
       if (data) {
         const parsed = JSON.parse(data);
         if (parsed[sessionId]) {
@@ -418,8 +419,8 @@ export class MultiLayerRecovery {
   clear(): void {
     this.sessions.clear();
     this.state = this.initState();
-    localStorage.removeItem(`${this.config.localStoragePrefix}-state`);
-    localStorage.removeItem(`${this.config.localStoragePrefix}-sessions`);
+    removeRecoveryData(`${this.config.storagePrefix}-state`);
+    removeRecoveryData(`${this.config.storagePrefix}-sessions`);
   }
 
   /** Destroy */

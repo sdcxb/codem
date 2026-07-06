@@ -1,9 +1,69 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Message } from "../store";
 import ReactMarkdown from "react-markdown";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { DefaultToolRenderer } from "../core/llm/tool-renderer";
+import { getSubagentManager } from "../core/subagent/subagent";
+
+// Handle link clicks - open files with system default app, external URLs in browser
+function handleLinkClick(e: React.MouseEvent<HTMLAnchorElement>, href: string) {
+  e.preventDefault();
+  e.stopPropagation();
+  console.log("[handleLinkClick] href:", href);
+  if (!href) return;
+  
+  // Check if it's a file path (starts with / or C:\ or contains path separators)
+  const isFilePath = href.startsWith("/") || /^[A-Z]:\\/i.test(href) || href.includes("\\");
+  
+  if (isFilePath) {
+    // Open file with system default app via Tauri
+    const { invoke } = (window as any).__TAURI__?.core || {};
+    if (invoke) {
+      console.log("[handleLinkClick] opening file:", href);
+      invoke("open_file_external", { path: href }).then(() => {
+        console.log("[handleLinkClick] file opened successfully");
+      }).catch((err: any) => {
+        console.error("[handleLinkClick] Failed to open file:", err);
+      });
+    } else {
+      console.error("[handleLinkClick] Tauri not available");
+    }
+  } else {
+    // Open external URL in default browser
+    console.log("[handleLinkClick] opening URL:", href);
+    window.open(href, "_blank");
+  }
+}
+
+// Sub-agent status indicator
+function SubagentStatus({ taskId, name }: { taskId: string; name?: string }) {
+  const [status, setStatus] = useState<string>("running");
+  const [summary, setSummary] = useState<string>("");
+
+  useEffect(() => {
+    const manager = getSubagentManager();
+    const check = () => {
+      const task = manager.getTask(taskId);
+      if (!task) return;
+      setStatus(task.status);
+      if (task.result) setSummary(task.result.summary);
+    };
+    check();
+    const interval = setInterval(check, 2000);
+    return () => clearInterval(interval);
+  }, [taskId]);
+
+  const displayName = name || "子智能体";
+
+  if (status === "completed") {
+    return <span className="subagent-status done">✅ {displayName} 完成{summary ? `: ${summary}` : ""}</span>;
+  }
+  if (status === "failed") {
+    return <span className="subagent-status failed">❌ {displayName} 失败</span>;
+  }
+  return <span className="subagent-status running">⏳ {displayName} 运行中...</span>;
+}
 
 const toolRenderer = new DefaultToolRenderer({ maxOutputLength: 200 });
 
@@ -96,6 +156,18 @@ export function MessageBubble({ message, index, onFork, showReasoning = true, on
                   </code>
                 );
               },
+              a({ href, children, ...props }) {
+                return (
+                  <a
+                    {...props}
+                    href={href}
+                    onClick={(e) => handleLinkClick(e, href || "")}
+                    style={{ color: "#7c6cf0", cursor: "pointer", textDecoration: "underline" }}
+                  >
+                    {children}
+                  </a>
+                );
+              },
             }}
           >
             {message.content}
@@ -127,18 +199,35 @@ export function MessageBubble({ message, index, onFork, showReasoning = true, on
             {expanded && (
               <div className="tool-list">
                 {message.toolCalls.map((tc) => {
+                  // Check if this is a spawn_subagent with a task ID
+                  const subagentTaskId = tc.tool === "spawn_subagent" && tc.result?.startsWith("SUBAGENT_TASK_ID:")
+                    ? tc.result.split("\n")[0].replace("SUBAGENT_TASK_ID:", "")
+                    : null;
+
                   const rendered = tc.status === "done" && tc.result
                     ? toolRenderer.renderToolResult({ id: tc.id, name: tc.tool, input: tc.args, output: tc.result, status: "completed" })
                     : tc.status === "error"
                     ? toolRenderer.renderToolError(tc.result || "Unknown error", tc.id)
                     : toolRenderer.renderToolUse(tc.tool, tc.args, tc.id);
 
+                  // For spawn_subagent, show the agent name and type
+                  const agentId = tc.tool === "spawn_subagent" ? tc.args?.agentId as string : null;
+                  // Extract name from args or from result string
+                  let agentName = tc.tool === "spawn_subagent" ? tc.args?.name as string : null;
+                  if (!agentName && tc.tool === "spawn_subagent" && tc.result) {
+                    const nameMatch = tc.result.match(/Sub-agent "([^"]+)"/);
+                    if (nameMatch) agentName = nameMatch[1];
+                  }
+                  const displayName = agentId ? `${agentName || "子智能体"} (${agentId})` : tc.tool;
+                  const displayIcon = agentId ? (agentId === "explore" ? "🔍" : agentId === "general" ? "🤖" : agentId === "build" ? "🔨" : "🔧") : rendered.icon;
+
                   return (
                     <div key={tc.id} className={`tool-item ${tc.status}`}>
-                      <span className="tool-name">{rendered.icon} {tc.tool}</span>
+                      <span className="tool-name">{displayIcon} {displayName}</span>
                       <span className="tool-status">
                         {tc.status === "running" ? "⏳" : tc.status === "done" ? "✅" : "❌"}
                       </span>
+                      {subagentTaskId && <SubagentStatus taskId={subagentTaskId} name={agentName || undefined} />}
                     </div>
                   );
                 })}

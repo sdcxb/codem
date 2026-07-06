@@ -3,8 +3,23 @@ import type { ProcessorEvent } from "../llm/processor";
 // ========== Sub-agent Types ==========
 export type SubagentStatus = "pending" | "running" | "completed" | "failed" | "cancelled";
 
+// Random names for sub-agents
+const SUBAGENT_NAMES = [
+  "Alice", "Bob", "Charlie", "Diana", "Eve", "Frank", "Grace", "Henry",
+  "Ivy", "Jack", "Kate", "Leo", "Mia", "Noah", "Olivia", "Paul",
+  "Quinn", "Rose", "Sam", "Tina", "Uma", "Victor", "Wendy", "Xander",
+  "Yara", "Zane", "Aria", "Blake", "Clara", "Derek", "Elena", "Felix",
+  "Greta", "Hugo", "Iris", "James", "Kira", "Liam", "Nora", "Oscar",
+];
+
+function generateSubagentName(): string {
+  const index = Math.floor(Math.random() * SUBAGENT_NAMES.length);
+  return SUBAGENT_NAMES[index];
+}
+
 export interface SubagentTask {
   id: string;
+  name: string;
   parentId: string;
   agentId: string;
   prompt: string;
@@ -46,6 +61,7 @@ const DEFAULT_CONFIG: SubagentConfig = {
 export interface SubagentSpawner {
   spawn(task: Omit<SubagentTask, "id" | "status" | "createdAt">): Promise<SubagentTask>;
   cancel(taskId: string): Promise<void>;
+  cancelAll(): void;
   getStatus(taskId: string): SubagentStatus;
   getResult(taskId: string): SubagentResult | undefined;
 }
@@ -72,6 +88,7 @@ export class SubagentManager {
     agentId: string,
     prompt: string,
     cwd: string,
+    parentAbortSignal?: AbortSignal,
     timeout?: number,
     persistent?: boolean,
   ): Promise<SubagentTask> {
@@ -91,14 +108,21 @@ export class SubagentManager {
       throw new Error(`Maximum nesting depth (${this.config.maxDepth}) reached`);
     }
 
+    // Generate task ID and name
+    const taskId = `sub-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const taskName = generateSubagentName();
+    
     const task = await this.spawner.spawn({
+      id: taskId,
+      name: taskName,
       parentId,
       agentId,
       prompt,
       cwd,
       timeout: timeout || this.config.defaultTimeout,
       persistent: persistent || false,
-    });
+      parentAbortSignal,
+    } as any);
 
     this.tasks.set(task.id, task);
 
@@ -163,6 +187,20 @@ export class SubagentManager {
     this.tasks.set(taskId, task);
   }
 
+  /** Cancel all running tasks */
+  cancelAll() {
+    if (this.spawner) {
+      this.spawner.cancelAll();
+    }
+    for (const [id, task] of this.tasks) {
+      if (task.status === "running") {
+        task.status = "cancelled";
+        task.completedAt = Date.now();
+        this.tasks.set(id, task);
+      }
+    }
+  }
+
   /** Get a task */
   getTask(taskId: string): SubagentTask | undefined {
     return this.tasks.get(taskId);
@@ -212,12 +250,15 @@ export class SubagentManager {
       const check = () => {
         const task = this.tasks.get(taskId);
         if (!task) {
+          console.error(`[waitForCompletion] Task ${taskId} NOT FOUND. Available IDs: ${Array.from(this.tasks.keys()).join(', ')}`);
           reject(new Error("Task not found"));
           return;
         }
 
-        if (task.status === "completed" && task.result) {
-          resolve(task.result);
+        console.log(`[waitForCompletion] Task ${taskId} status=${task.status}, hasResult=${!!task.result}, resultStatus=${task.result?.status}`);
+
+        if (task.status === "completed") {
+          resolve(task.result || { status: "success", summary: "Completed", output: "", filesTouched: [], findings: [] });
           return;
         }
 
@@ -289,7 +330,10 @@ export class SubagentManager {
 
 // ========== Task Result Parser ==========
 export function parseTaskResult(output: string): SubagentResult {
-  const lines = output.split("\n");
+  // Filter out <system-reminder> tags
+  const cleanOutput = output.replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, "").trim();
+  
+  const lines = cleanOutput.split("\n");
   let status: SubagentResult["status"] = "success";
   let summary = "";
   let filesTouched: string[] = [];
@@ -332,7 +376,7 @@ export function parseTaskResult(output: string): SubagentResult {
   return {
     status,
     summary: summary || "Task completed",
-    output,
+    output: cleanOutput,
     filesTouched,
     findings,
   };

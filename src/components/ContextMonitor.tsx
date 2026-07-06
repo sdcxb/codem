@@ -18,14 +18,13 @@ export function ContextMonitor({ sessionId, visible }: ContextMonitorProps) {
 
     const update = () => {
       try {
-        const engine = getLLMEngine();
-        const session = engine.sessions.getSession(sessionId);
-        if (!session) return;
+        const { listMessages } = require("../core/storage/message");
+        const messages = listMessages(sessionId);
 
         const contextManager = getContextManager();
-        const b = contextManager.calculateBudget(session.messages);
+        const b = contextManager.calculateBudgetFromMessages(messages);
         setBudget(b);
-        setPressure(contextManager.getPressureLevel(session.messages));
+        setPressure(contextManager.getPressureLevelFromMessages(messages));
 
         const costTracker = getCostTracker();
         const today = costTracker.getTodayCost();

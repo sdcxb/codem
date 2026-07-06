@@ -1,6 +1,6 @@
 [package]
 name = "codem"
-version = "0.60.0"
+version = "0.70.0"
 description = "Codem - AI Coding Assistant"
 authors = ["Codem"]
 edition = "2021"
@@ -27,3 +27,4 @@ hostname = "0.3"
 window-vibrancy = "0.6"
 rfd = "0.15"
 open = "5"
+base64 = "0.22"

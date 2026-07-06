@@ -1,14 +1,6 @@
 import { initDatabase } from "./database";
-import * as ProjectStorage from "./project";
 import * as SessionStorage from "./session";
 import * as MessageStorage from "./message";
-import type { Project, Session } from "../types";
-import type { Message } from "../../store";
-
-const PROJECTS_KEY = "mimo-projects";
-const SESSIONS_PREFIX = "mimo-sessions-";
-const CHAT_PREFIX = "mimo-chat-";
-const SESSIONS_KEY_V2 = "mimo-sessions-v2";
 
 interface MigrationResult {
   projects: number;
@@ -29,124 +21,58 @@ export async function migrateFromLocalStorage(): Promise<MigrationResult> {
     // Initialize SQLite database
     await initDatabase();
 
-    // 1. Migrate projects
-    const projectsData = localStorage.getItem(PROJECTS_KEY);
-    if (projectsData) {
-      const projects: Project[] = JSON.parse(projectsData);
-      for (const project of projects) {
-        try {
-          const existing = ProjectStorage.getProject(project.id);
-          if (!existing) {
-            ProjectStorage.createProject(project);
-            result.projects++;
-          }
-        } catch (e) {
-          result.errors.push(`Failed to migrate project ${project.id}: ${e}`);
-        }
-      }
-    }
+    // Migration from localStorage is no longer needed
+    // All data is now stored in SQLite
+    console.log("[Migration] No localStorage migration needed - using SQLite");
 
-    // 2. Migrate sessions (from project-scoped storage)
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (key?.startsWith(SESSIONS_PREFIX)) {
-        const projectId = key.slice(SESSIONS_PREFIX.length);
-        try {
-          const sessionsData = localStorage.getItem(key);
-          if (sessionsData) {
-            const sessions: Session[] = JSON.parse(sessionsData);
-            for (const session of sessions) {
-              const existing = SessionStorage.getSession(session.id);
-              if (!existing) {
-                SessionStorage.createSession(session);
-                result.sessions++;
-              }
-            }
-          }
-        } catch (e) {
-          result.errors.push(`Failed to migrate sessions for project ${projectId}: ${e}`);
-        }
-      }
-    }
+    // Migrate from v2_sessions table to sessions table (if v2_sessions has data)
+    console.log("[Migration] Checking v2_sessions table...");
+    try {
+      const { loadV2Sessions } = await import("./v2-session");
+      const v2Sessions = loadV2Sessions();
+      console.log("[Migration] Found", v2Sessions.size, "sessions in v2_sessions table");
+      for (const [id, v2Session] of v2Sessions) {
+        const existing = SessionStorage.getSession(id);
+        if (!existing) {
+          SessionStorage.createSession({
+            id,
+            projectId: v2Session.projectId,
+            title: v2Session.title,
+            model: v2Session.model,
+            createdAt: v2Session.createdAt,
+            lastMessageAt: v2Session.updatedAt,
+            messageCount: v2Session.messages?.length || 0,
+          });
+          result.sessions++;
 
-    // 3. Migrate chat messages
-    // Key format: mimo-chat-${projectId}-${sessionId}
-    // Both IDs are ${timestamp}-${random}, so split produces 5+ parts
-    // Session ID = last 2 parts joined by "-"
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (key?.startsWith(CHAT_PREFIX)) {
-        const remainder = key.slice(CHAT_PREFIX.length);
-        const parts = remainder.split("-");
-        const sessionId = parts.slice(2).join("-");
-        if (sessionId) {
-          try {
-            const messagesData = localStorage.getItem(key);
-            if (messagesData) {
-              const messages: Message[] = JSON.parse(messagesData);
-              for (const message of messages) {
-                const existing = MessageStorage.getMessage(message.id);
-                if (!existing) {
-                  MessageStorage.createMessage(message, sessionId);
-                  result.messages++;
-                }
-              }
-            }
-          } catch (e) {
-            result.errors.push(`Failed to migrate messages for session ${sessionId}: ${e}`);
-          }
-        }
-      }
-    }
+          // Migrate messages from V2 session
+          if (v2Session.messages && Array.isArray(v2Session.messages)) {
+            console.log("[Migration] Migrating", v2Session.messages.length, "messages from v2_sessions for session", id);
+            for (const msg of v2Session.messages) {
+              const existingMsg = MessageStorage.getMessage(msg.id);
+              if (!existingMsg) {
+                // Extract content from parts array
+                const content = msg.parts
+                  ?.filter((p: any) => p.type === "text")
+                  .map((p: any) => p.content)
+                  .join("\n") || "";
 
-    // 4. Migrate V2 sessions (from llm/session.ts)
-    const sessionsV2Data = localStorage.getItem(SESSIONS_KEY_V2);
-    if (sessionsV2Data) {
-      try {
-        const sessionsV2 = JSON.parse(sessionsV2Data);
-        for (const [id, session] of Object.entries(sessionsV2)) {
-          const sess = session as any;
-          const existing = SessionStorage.getSession(id);
-          if (!existing) {
-            SessionStorage.createSession({
-              id,
-              projectId: sess.projectId || "",
-              title: sess.title || `Session ${id}`,
-              model: sess.model,
-              createdAt: sess.createdAt || Date.now(),
-              lastMessageAt: sess.updatedAt || Date.now(),
-              messageCount: sess.messages?.length || 0,
-            });
-            result.sessions++;
-
-            // Migrate messages from V2 session
-            if (sess.messages && Array.isArray(sess.messages)) {
-              for (const msg of sess.messages) {
-                const existingMsg = MessageStorage.getMessage(msg.id);
-                if (!existingMsg) {
-                  // Convert V2 message format to store Message format
-                  const content = msg.parts
-                    ?.filter((p: any) => p.type === "text")
-                    .map((p: any) => p.content)
-                    .join("\n") || "";
-
-                  MessageStorage.createMessage({
-                    id: msg.id,
-                    role: msg.role,
-                    content,
-                    timestamp: msg.timestamp || Date.now(),
-                    model: msg.model,
-                    status: "done",
-                  }, id);
-                  result.messages++;
-                }
+                MessageStorage.createMessage({
+                  id: msg.id,
+                  role: msg.role,
+                  content,
+                  timestamp: msg.timestamp || Date.now(),
+                  model: msg.model,
+                  status: "done",
+                }, id);
+                result.messages++;
               }
             }
           }
         }
-      } catch (e) {
-        result.errors.push(`Failed to migrate V2 sessions: ${e}`);
       }
+    } catch (e) {
+      console.warn("[Migration] v2_sessions migration skipped:", e);
     }
 
     console.log("[Migration] Completed:", result);
@@ -159,19 +85,6 @@ export async function migrateFromLocalStorage(): Promise<MigrationResult> {
 }
 
 export function clearLocalStorage(): void {
-  // Remove migrated keys
-  const keysToRemove: string[] = [];
-  for (let i = 0; i < localStorage.length; i++) {
-    const key = localStorage.key(i);
-    if (
-      key?.startsWith(PROJECTS_KEY) ||
-      key?.startsWith(SESSIONS_PREFIX) ||
-      key?.startsWith(CHAT_PREFIX) ||
-      key === SESSIONS_KEY_V2
-    ) {
-      keysToRemove.push(key);
-    }
-  }
-  keysToRemove.forEach((key) => localStorage.removeItem(key));
-  console.log(`[Migration] Cleared ${keysToRemove.length} localStorage keys`);
+  // No longer needed - localStorage is not used
+  console.log("[Migration] clearLocalStorage is deprecated");
 }

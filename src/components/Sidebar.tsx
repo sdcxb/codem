@@ -119,7 +119,12 @@ export function Sidebar({ identity, onSettings, onProjects, onConfig, onMcp, onS
       </div>
 
       <div className="sidebar-nav">
-        <button className="sidebar-nav-item" onClick={clearMessages}>
+        <button className="sidebar-nav-item" onClick={() => {
+          clearMessages();
+          if (currentProject) {
+            createSession();
+          }
+        }}>
           <span className="sidebar-nav-icon">✏️</span>
           <span>新对话</span>
         </button>

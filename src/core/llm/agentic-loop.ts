@@ -1,11 +1,11 @@
 import type { LLMProvider, LLMRequest, ToolDefinition, TokenUsage } from "./types";
 import type { ToolRegistry, ToolContext } from "./tools";
-import type { SessionManager, Session, MessageV2, Part } from "./session";
 import type { ToolExecutorConfig } from "./streaming-executor";
 import { StreamingToolExecutorImpl, type StreamingToolCall } from "./streaming-executor";
 import { RetryExecutor, classifyError, logRetry } from "../retry/retry";
 import { getPermissionManager, type PermissionRequest, type PermissionResult } from "../permission/permission";
 import { getSnapshotService } from "../snapshot/snapshot";
+import * as MessageStorage from "../storage/message";
 
 // ========== Agentic Loop Types ==========
 export type LoopResult =
@@ -69,7 +69,6 @@ export type LoopEvent =
 export class AgenticLoop {
   private provider: LLMProvider;
   private tools: ToolRegistry;
-  private sessions: SessionManager;
   private executor: StreamingToolExecutorImpl;
   private retryExecutor: RetryExecutor;
   private config: LoopConfig;
@@ -77,16 +76,18 @@ export class AgenticLoop {
   private abortController: AbortController | null = null;
   private currentSnapshotId: string | null = null;
   private lastCwd: string = "";
+  // Loop detection
+  private recentTexts: string[] = [];
+  private recentToolCalls: string[] = [];
+  private readonly MAX_RECENT_TEXTS = 5;
 
   constructor(
     provider: LLMProvider,
     tools: ToolRegistry,
-    sessions: SessionManager,
     config?: Partial<LoopConfig>,
   ) {
     this.provider = provider;
     this.tools = tools;
-    this.sessions = sessions;
     this.config = { ...DEFAULT_LOOP_CONFIG, ...config };
     this.executor = new StreamingToolExecutorImpl(config?.toolExecutor);
     this.retryExecutor = new RetryExecutor({
@@ -119,31 +120,13 @@ export class AgenticLoop {
   ): AsyncGenerator<LoopEvent, LoopResult, unknown> {
     this.abortController = new AbortController();
     this.state = this.createInitialState();
+    console.log(`[AgenticLoop.run] sessionId: ${sessionId}, userMessage: ${userMessage.substring(0, 50)}...`);
 
-    const session = this.sessions.getSession(sessionId);
-    if (!session) {
-      yield { type: "end", result: { type: "error", error: "Session not found" } };
-      return { type: "error", error: "Session not found" };
-    }
+    // User message is saved by App.tsx (main session) or already in DB (sub-agent)
+    // Don't save here to avoid duplicates
 
-    // Add user message
-    const userMsg: MessageV2 = {
-      id: `msg-${Date.now()}`,
-      role: "user",
-      parts: [{ type: "text", content: userMessage }],
-      timestamp: Date.now(),
-    };
-    this.sessions.addMessage(sessionId, userMsg);
-
-    // Create assistant message
-    let assistantMsg: MessageV2 = {
-      id: `msg-${Date.now() + 1}`,
-      role: "assistant",
-      parts: [],
-      timestamp: Date.now(),
-      model: this.provider.id,
-    };
-    this.sessions.addMessage(sessionId, assistantMsg);
+    // Local assistant message ID for tracking
+    let assistantMsgId = `msg-${Date.now() + 1}`;
     
 
     // Main loop
@@ -158,7 +141,7 @@ export class AgenticLoop {
         return { type: "aborted" };
       }
 
-      const apiMessages = this.buildMessages(session);
+      const apiMessages = this.buildMessages(sessionId);
       const toolDefs = this.tools.getDefinitions();
       console.log("[AgenticLoop] tools available:", toolDefs.length, toolDefs.map(t => t.name));
 
@@ -167,21 +150,18 @@ export class AgenticLoop {
       let messagesForIteration = apiMessages;
       if (this.state.contextPressure > this.config.compactionThreshold && this.config.enableCompaction) {
         yield { type: "compaction_start" };
-        const compacted = this.compactMessages(session.messages);
-        this.sessions.updateMessage(sessionId, assistantMsg.id, (msg) => ({
-          ...msg,
-          parts: [{ type: "text", content: `[Context compacted]` } as Part],
-        }));
+        const compacted = this.compactMessages(sessionId);
         yield { type: "compaction_end", messagesRemoved: compacted };
-        messagesForIteration = this.buildMessages(this.sessions.getSession(sessionId)!);
+        messagesForIteration = this.buildMessages(sessionId);
       }
 
       
       // Execute iteration - yields events directly for real-time streaming
       let iterationToolCalls = 0;
+      const spawnTaskIds: string[] = [];
       for await (const event of this.executeIteration(
         sessionId,
-        assistantMsg,
+        assistantMsgId,
         messagesForIteration,
         toolDefs,
         cwd,
@@ -189,9 +169,12 @@ export class AgenticLoop {
       )) {
         yield event;
         if (event.type === "tool_start") iterationToolCalls++;
+        // Track spawn_subagent calls
+        if (event.type === "tool_start" && event.toolCall?.name === "spawn_subagent") {
+          // The task ID will be in the tool result, extract it later
+        }
       }
       this.state.toolCallsInIteration = iterationToolCalls;
-      
 
       // Check if we should continue
       if (this.state.toolCallsInIteration === 0) {
@@ -215,15 +198,8 @@ export class AgenticLoop {
         return result;
       }
 
-      // Create new assistant message for next iteration
-      assistantMsg = {
-        id: `msg-${Date.now() + this.state.iteration + 100}`,
-        role: "assistant",
-        parts: [],
-        timestamp: Date.now(),
-        model: this.provider.id,
-      };
-      this.sessions.addMessage(sessionId, assistantMsg);
+      // New assistant message for next iteration is handled by App.tsx
+      assistantMsgId = `msg-${Date.now() + this.state.iteration + 100}`;
     }
 
     const result: LoopResult = {
@@ -237,7 +213,7 @@ export class AgenticLoop {
 
   private async *executeIteration(
     sessionId: string,
-    assistantMsg: MessageV2,
+    assistantMsgId: string,
     apiMessages: any[],
     toolDefs: ToolDefinition[],
     cwd: string,
@@ -247,8 +223,6 @@ export class AgenticLoop {
     let currentToolCalls: StreamingToolCall[] = [];
     let finishReason = "stop";
     let usage: TokenUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
-
-    const session = this.sessions.getSession(sessionId);
 
     try {
       const request: LLMRequest = {
@@ -340,7 +314,7 @@ export class AgenticLoop {
       if (error.message?.includes("prompt_too_long") || error.message?.includes("context_length_exceeded")) {
         if (this.config.enableReactiveCompaction) {
           yield { type: "compaction_start" };
-          const compacted = this.compactMessages(session?.messages || []);
+          const compacted = this.compactMessages(sessionId);
           yield { type: "compaction_end", messagesRemoved: compacted };
         }
         return;
@@ -352,12 +326,42 @@ export class AgenticLoop {
       return;
     }
 
-    // Add text part
+    // Text content is handled by App.tsx via text_delta events
+    // No need to write to database here
+
+    // Loop detection: track recent text outputs
     if (currentText) {
-      this.sessions.updateMessage(sessionId, assistantMsg.id, (msg) => ({
-        ...msg,
-        parts: [...msg.parts, { type: "text", content: currentText } as Part],
-      }));
+      this.recentTexts.push(currentText.substring(0, 200));
+      if (this.recentTexts.length > this.MAX_RECENT_TEXTS) {
+        this.recentTexts.shift();
+      }
+      
+      // Check for repeated patterns
+      if (this.recentTexts.length >= 3) {
+        const last = this.recentTexts[this.recentTexts.length - 1];
+        const repeated = this.recentTexts.filter(t => t === last).length;
+        if (repeated >= 3) {
+          console.warn("[AgenticLoop] Detected loop pattern, breaking");
+          yield { type: "text_delta", text: "\n\n[检测到重复循环，自动终止任务]" };
+          return;
+        }
+      }
+    }
+    
+    // Tool call loop detection: track recent tool calls
+    if (currentToolCalls.length > 0) {
+      const toolCallKey = currentToolCalls.map(tc => `${tc.name}:${JSON.stringify(tc.input)}`).join("|");
+      this.recentToolCalls.push(toolCallKey);
+      if (this.recentToolCalls.length > 10) {
+        this.recentToolCalls.shift();
+      }
+      // Check if same tool call repeated 3+ times
+      const repeatedTools = this.recentToolCalls.filter(t => t === toolCallKey).length;
+      if (repeatedTools >= 3) {
+        console.warn("[AgenticLoop] Detected tool call loop, breaking");
+        yield { type: "text_delta", text: "\n\n[检测到工具调用重复循环，自动终止任务]" };
+        return;
+      }
     }
 
     // Update usage
@@ -376,10 +380,10 @@ export class AgenticLoop {
 
     const toolCtx: ToolContext = {
       sessionId,
-      messageId: assistantMsg.id,
+      messageId: assistantMsgId,
       cwd,
       abort: this.abortController!.signal,
-      messages: this.sessions.toAPIMessages(session?.messages || []),
+      messages: this.buildMessages(sessionId),
       metadata: () => {},
     };
 
@@ -452,50 +456,18 @@ export class AgenticLoop {
     )) {
       switch (event.type) {
         case "tool_start":
-          this.sessions.updateMessage(sessionId, assistantMsg.id, (msg) => ({
-            ...msg,
-            parts: [...msg.parts, {
-              type: "tool",
-              id: event.toolCall.id,
-              name: event.toolCall.name,
-              input: event.toolCall.input,
-              status: "running",
-            } as Part],
-          }));
+          // Just yield - App.tsx handles persistence via useAppStore
           yield event;
           break;
 
         case "tool_complete":
-          this.sessions.updateMessage(sessionId, assistantMsg.id, (msg) => ({
-            ...msg,
-            parts: msg.parts.map((p) =>
-              p.type === "tool" && p.id === event.toolCall.id
-                ? { ...p, output: event.result.output, status: "completed" }
-                : p
-            ),
-          }));
-
-          this.sessions.addMessage(sessionId, {
-            id: `msg-${Date.now()}-${event.toolCall.id}`,
-            role: "user",
-            parts: [{ type: "text", content: `[Tool Result]\n${event.result.output}` }],
-            timestamp: Date.now(),
-          });
-
+          // Just yield - App.tsx handles persistence via useAppStore
           yield event;
           this.state.consecutiveErrors = 0;
           break;
 
         case "tool_error":
-          this.sessions.updateMessage(sessionId, assistantMsg.id, (msg) => ({
-            ...msg,
-            parts: msg.parts.map((p) =>
-              p.type === "tool" && p.id === event.toolCall.id
-                ? { ...p, output: `Error: ${event.error}`, status: "error", error: event.error }
-                : p
-            ),
-          }));
-
+          // Just yield - App.tsx handles persistence via useAppStore
           yield event;
           this.state.consecutiveErrors++;
           break;
@@ -503,8 +475,55 @@ export class AgenticLoop {
     }
   }
 
-  private buildMessages(session: Session): any[] {
-    return this.sessions.toAPIMessages(session.messages);
+  private buildMessages(sessionId: string): any[] {
+    const messages = MessageStorage.listMessages(sessionId);
+    const llmMessages = MessageStorage.messagesToLLMMessages(messages);
+    
+    // Filter out <system-reminder> tags from all messages
+    for (const msg of llmMessages) {
+      if (typeof msg.content === "string") {
+        msg.content = msg.content.replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, "").trim();
+      }
+    }
+    
+    console.log(`[buildMessages] sessionId: ${sessionId}, raw messages: ${messages.length}, llm messages: ${llmMessages.length}`);
+    if (llmMessages.length > 0) {
+      console.log(`[buildMessages] first message: role=${llmMessages[0].role}, content=${(llmMessages[0].content as string)?.substring(0, 100)}`);
+    }
+    
+    // Context-aware limiting: send as many messages as fit in ~100K tokens
+    const maxTokens = 100000;
+    let totalTokens = 0;
+    const selected: typeof llmMessages = [];
+    
+    for (let i = llmMessages.length - 1; i >= 0; i--) {
+      const msg = llmMessages[i];
+      const content = typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content || "");
+      const msgTokens = Math.ceil(content.length / 4);
+      
+      if (totalTokens + msgTokens > maxTokens) break;
+      
+      selected.unshift(msg);
+      totalTokens += msgTokens;
+    }
+    
+    // Filter orphan tool messages
+    const valid: typeof llmMessages = [];
+    let hasTools = false;
+    for (const msg of selected) {
+      if (msg.role === "assistant") {
+        hasTools = !!(msg as any).tool_calls;
+        valid.push(msg);
+      } else if (msg.role === "tool") {
+        if (hasTools) valid.push(msg);
+      } else {
+        hasTools = false;
+        valid.push(msg);
+      }
+    }
+    
+    console.log(`[buildMessages] total: ${messages.length}, selected: ${valid.length}, tokens: ~${totalTokens}`);
+    return valid;
   }
 
   private estimateContextPressure(messages: any[]): number {
@@ -517,7 +536,8 @@ export class AgenticLoop {
     return Math.min(1, estimatedTokens / maxTokens);
   }
 
-  private compactMessages(messages: MessageV2[]): number {
+  private compactMessages(sessionId: string): number {
+    const messages = MessageStorage.listMessages(sessionId);
     const keepCount = Math.min(20, messages.length);
     return messages.length - keepCount;
   }

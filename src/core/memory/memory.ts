@@ -1,4 +1,5 @@
 import type { MessageV2 } from "../llm/session";
+import { loadMemory, saveMemory } from "../storage/settings";
 
 // ========== Memory Types ==========
 export type MemoryScope = "project" | "session" | "global";
@@ -44,10 +45,10 @@ export class MemoryService {
     this.load();
   }
 
-  /** Load memory from localStorage */
+  /** Load memory from SQLite */
   private load() {
     try {
-      const data = localStorage.getItem("mimo-memory");
+      const data = loadMemory();
       if (data) {
         const parsed = JSON.parse(data);
         for (const [id, entry] of Object.entries(parsed)) {
@@ -57,13 +58,15 @@ export class MemoryService {
     } catch {}
   }
 
-  /** Save memory to localStorage */
+  /** Save memory to SQLite */
   private save() {
     const obj: Record<string, MemoryEntry> = {};
     for (const [id, entry] of this.entries) {
       obj[id] = entry;
     }
-    localStorage.setItem("mimo-memory", JSON.stringify(obj));
+    try {
+      saveMemory(JSON.stringify(obj));
+    } catch {}
   }
 
   /** Add a memory entry */

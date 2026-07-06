@@ -269,3 +269,132 @@ export function getMessageCount(sessionId: string): number {
   if (result.length === 0) return 0;
   return result[0].values[0][0] as number;
 }
+
+// ========== Agentic Loop Helper Functions ==========
+
+export function appendMessageContent(id: string, text: string): void {
+  const db = getDatabase();
+  db.run("UPDATE messages SET content = content || ? WHERE id = ?", [text, id]);
+  persistDatabase();
+}
+
+export function setMessageContent(id: string, content: string): void {
+  const db = getDatabase();
+  db.run("UPDATE messages SET content = ? WHERE id = ?", [content, id]);
+  persistDatabase();
+}
+
+export function setMessageReasoning(id: string, reasoning: string): void {
+  const db = getDatabase();
+  try {
+    db.run("UPDATE messages SET reasoning = ? WHERE id = ?", [reasoning, id]);
+  } catch (e) {
+    console.warn("[setMessageReasoning] Failed:", e);
+  }
+  persistDatabase();
+}
+
+export function setMessageStatus(id: string, status: string): void {
+  const db = getDatabase();
+  db.run("UPDATE messages SET status = ? WHERE id = ?", [status, id]);
+  persistDatabase();
+}
+
+// ========== Convert Message to LLM API format ==========
+
+function stripSystemReminders(content: string): string {
+  // Remove <system-reminder>...</system-reminder> tags injected by MiMoCode CLI
+  return content.replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, "").trim();
+}
+
+export interface LLMMessage {
+  id: string;
+  role: "system" | "user" | "assistant" | "tool";
+  content: string;
+  toolCallId?: string;
+  name?: string;
+  tool_calls?: Array<{
+    id: string;
+    type: string;
+    function: { name: string; arguments: string };
+  }>;
+}
+
+export function messagesToLLMMessages(messages: Message[]): LLMMessage[] {
+  const result: LLMMessage[] = [];
+
+  for (const msg of messages) {
+    if (msg.role === "user") {
+      const cleanContent = stripSystemReminders(msg.content || "(empty)");
+      if (!cleanContent) continue; // Skip empty messages after stripping
+      result.push({
+        id: msg.id,
+        role: "user",
+        content: cleanContent,
+      });
+    } else if (msg.role === "assistant") {
+      const toolCalls = msg.toolCalls || [];
+      const completedTools = toolCalls.filter((t) => t.status === "done" || t.status === "error");
+      const hasCompleteTools = toolCalls.length > 0 && completedTools.length === toolCalls.length;
+
+      // Build content: text only (reasoning_content is a separate field for DeepSeek)
+      let content = stripSystemReminders(msg.content || "");
+
+      if (content || toolCalls.length > 0) {
+        const assistantMsg: LLMMessage = {
+          id: msg.id,
+          role: "assistant",
+          content,
+        };
+        // Include reasoning_content separately for DeepSeek thinking mode
+        if (msg.reasoning) {
+          (assistantMsg as any).reasoning = msg.reasoning;
+        }
+        if (hasCompleteTools) {
+          assistantMsg.tool_calls = completedTools.map((tc) => ({
+            id: tc.id,
+            type: "function",
+            function: {
+              name: tc.tool,
+              arguments: JSON.stringify(tc.args || {}),
+            },
+          }));
+        }
+        result.push(assistantMsg);
+      }
+
+      // Add tool results
+      if (hasCompleteTools) {
+        for (const tc of completedTools) {
+          const cleanResult = stripSystemReminders(tc.result || "(no output)");
+          result.push({
+            id: `${msg.id}-tool-${tc.id}`,
+            role: "tool",
+            content: cleanResult,
+            toolCallId: tc.id,
+          });
+        }
+      }
+    }
+    // Skip system messages (they're handled separately)
+  }
+
+  // Remove orphan tool messages
+  const cleaned: LLMMessage[] = [];
+  let lastAssistantWithToolCalls = false;
+  for (const msg of result) {
+    if (msg.role === "assistant") {
+      lastAssistantWithToolCalls = !!(msg as any).tool_calls;
+      cleaned.push(msg);
+    } else if (msg.role === "tool") {
+      if (lastAssistantWithToolCalls) {
+        cleaned.push(msg);
+      }
+    } else {
+      lastAssistantWithToolCalls = false;
+      cleaned.push(msg);
+    }
+  }
+
+  return cleaned;
+}

@@ -112,10 +112,13 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 
   createSession: (title) => {
     const project = get().currentProject;
-    const session: Session = { id: generateId(), projectId: project?.id || "", title: title || `对话 ${get().sessions.length + 1}`, createdAt: Date.now(), lastMessageAt: Date.now(), messageCount: 0, attachments: [] };
+    const newId = generateId();
+    console.log(`[createSession] Creating new session: ${newId}, project: ${project?.id}`);
+    const session: Session = { id: newId, projectId: project?.id || "", title: title || `对话 ${get().sessions.length + 1}`, createdAt: Date.now(), lastMessageAt: Date.now(), messageCount: 0, attachments: [] };
     try { SessionStorage.createSession(session); } catch (e) { console.error("[Store] createSession failed:", e); }
     const updated = [...get().sessions, session];
     set({ sessions: updated, currentSession: session });
+    console.log(`[createSession] Set currentSession to: ${session.id}`);
     return session;
   },
 

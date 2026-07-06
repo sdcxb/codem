@@ -8,8 +8,6 @@ import type {
 } from "../types";
 import { readFile as apiReadFile, writeFile as apiWriteFile, listDirectory } from "../file-api";
 
-const API_BASE = "http://localhost:3002";
-
 // ========== Config Directory Names ==========
 const CONFIG_DIRS: Record<ConfigLevel, string> = {
   app: ".mimo-app",
@@ -30,19 +28,10 @@ async function writeFile(path: string, content: string): Promise<void> {
 }
 
 async function ensureDir(path: string): Promise<void> {
-  const isTauri = !!(window as any).__TAURI__;
-  if (isTauri) {
-    try {
-      const { invoke } = (window as any).__TAURI__.core;
-      await invoke("execute_command", { command: `mkdir "${path}"` });
-    } catch {}
-  } else {
-    await fetch(`${API_BASE}/api/mkdir`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ path }),
-    });
-  }
+  const { invoke } = (window as any).__TAURI__.core;
+  try {
+    await invoke("execute_command", { command: `mkdir "${path}"` });
+  } catch {}
 }
 
 async function listDir(path: string): Promise<Array<{ name: string; path: string; isDirectory: boolean }>> {
@@ -291,35 +280,21 @@ export async function saveUser(
   await saveConfigFile(basePath, level, "USER.md", serializeUser(config));
 }
 
-// ========== App-Level Identity (localStorage) ==========
-const APP_IDENTITY_KEY = "mimo-app-identity";
-const USER_CONFIG_KEY = "mimo-user";
+// ========== App-Level Identity (SQLite) ==========
+import { getSettingJSON, setSettingJSON } from "../storage/settings";
 
 export function loadAppIdentity(): AppIdentity {
-  try {
-    const data = localStorage.getItem(APP_IDENTITY_KEY);
-    if (data) return JSON.parse(data);
-  } catch {}
-  return { name: "", creature: "", vibe: "", emoji: "", avatar: "", onboarded: false };
+  return getSettingJSON<AppIdentity>("mimo-app-identity", { name: "", creature: "", vibe: "", emoji: "", avatar: "", onboarded: false });
 }
 
 export function loadUserConfig(): UserConfig | undefined {
-  try {
-    const data = localStorage.getItem(USER_CONFIG_KEY);
-    console.log("[loadUserConfig] raw data:", data);
-    if (data) {
-      const parsed = JSON.parse(data);
-      console.log("[loadUserConfig] parsed:", JSON.stringify(parsed));
-      return parsed;
-    }
-  } catch (e) {
-    console.error("[loadUserConfig] error:", e);
-  }
-  return undefined;
+  const config = getSettingJSON<UserConfig | null>("mimo-user", null);
+  console.log("[loadUserConfig] loaded:", JSON.stringify(config));
+  return config || undefined;
 }
 
 export function saveAppIdentity(identity: AppIdentity): void {
-  localStorage.setItem(APP_IDENTITY_KEY, JSON.stringify(identity));
+  setSettingJSON("mimo-app-identity", identity);
 }
 
 // ========== Bootstrap Detection ==========

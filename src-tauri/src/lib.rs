@@ -143,16 +143,41 @@ async fn set_default_agent(
 }
 
 #[tauri::command]
-async fn read_file(path: String) -> Result<String, String> {
-    std::fs::read_to_string(&path).map_err(|e| e.to_string())
+async fn read_file(path: String, encoding: Option<String>) -> Result<String, String> {
+    match encoding.as_deref() {
+        Some("base64") => {
+            // Read binary file and encode as base64
+            use base64::Engine;
+            let bytes = std::fs::read(&path).map_err(|e| e.to_string())?;
+            Ok(base64::engine::general_purpose::STANDARD.encode(&bytes))
+        }
+        _ => {
+            // Read as UTF-8 text
+            std::fs::read_to_string(&path).map_err(|e| e.to_string())
+        }
+    }
 }
 
 #[tauri::command]
-async fn write_file(path: String, content: String) -> Result<(), String> {
+async fn write_file(path: String, content: String, encoding: Option<String>) -> Result<(), String> {
     if let Some(parent) = std::path::Path::new(&path).parent() {
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
-    std::fs::write(&path, content).map_err(|e| e.to_string())
+    
+    match encoding.as_deref() {
+        Some("base64") => {
+            // Decode base64 content and write as binary
+            use base64::Engine;
+            let bytes = base64::engine::general_purpose::STANDARD
+                .decode(&content)
+                .map_err(|e| format!("Base64 decode error: {}", e))?;
+            std::fs::write(&path, bytes).map_err(|e| e.to_string())
+        }
+        _ => {
+            // Write as UTF-8 text
+            std::fs::write(&path, content).map_err(|e| e.to_string())
+        }
+    }
 }
 
 #[tauri::command]
@@ -210,13 +235,169 @@ async fn delete_directory(path: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+async fn get_app_data_dir(app: tauri::AppHandle) -> Result<String, String> {
+    let path = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(&path).map_err(|e| e.to_string())?;
+    let mut dir_str = path.to_string_lossy().to_string();
+    if !dir_str.ends_with(std::path::MAIN_SEPARATOR) {
+        dir_str.push(std::path::MAIN_SEPARATOR);
+    }
+    Ok(dir_str)
+}
+
+#[tauri::command]
+async fn get_default_cwd() -> Result<String, String> {
+    // Return user's home directory as default working directory
+    let home = std::env::var("USERPROFILE")
+        .or_else(|_| std::env::var("HOME"))
+        .map_err(|_| "Cannot determine home directory")?;
+    Ok(home)
+}
+
+#[tauri::command]
+async fn glob_search(pattern: String, path: String) -> Result<Vec<String>, String> {
+    let search_path = std::path::Path::new(&path);
+    eprintln!("[glob_search] pattern: {}, path: {}, exists: {}", pattern, path, search_path.exists());
+    if !search_path.exists() {
+        return Err(format!("Path does not exist: {}", path));
+    }
+    
+    let mut results = Vec::new();
+    glob_search_recursive(search_path, &pattern, &mut results)?;
+    eprintln!("[glob_search] found {} files", results.len());
+    Ok(results)
+}
+
+fn glob_search_recursive(dir: &std::path::Path, pattern: &str, results: &mut Vec<String>) -> Result<(), String> {
+    let entries = std::fs::read_dir(dir).map_err(|e| e.to_string())?;
+    
+    for entry in entries {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let path = entry.path();
+        let name = entry.file_name().to_string_lossy().to_string();
+        
+        // Skip hidden files and directories
+        if name.starts_with('.') {
+            continue;
+        }
+        
+        let is_dir = path.is_dir();
+        
+        // Check if file matches pattern
+        if !is_dir {
+            let matches = pattern == "*" || name_matches_glob(&name, pattern);
+            if matches {
+                eprintln!("[glob_search] MATCH: {} against pattern: {}", name, pattern);
+                results.push(path.to_string_lossy().to_string());
+            }
+        }
+        
+        // Recurse into directories
+        if is_dir {
+            glob_search_recursive(&path, pattern, results)?;
+        }
+    }
+    
+    Ok(())
+}
+
+fn name_matches_glob(name: &str, pattern: &str) -> bool {
+    if pattern == "*" {
+        return true;
+    }
+    // Handle {a,b,c} patterns - check each alternative
+    if let Some(start) = pattern.find('{') {
+        if let Some(end) = pattern[start..].find('}') {
+            let prefix = &pattern[..start];
+            let suffix = &pattern[start + end + 1..];
+            let alternatives = &pattern[start + 1..start + end];
+            eprintln!("[name_matches_glob] expanding braces: prefix={}, suffix={}, alternatives={}", prefix, suffix, alternatives);
+            for alt in alternatives.split(',') {
+                let expanded = format!("{}{}{}", prefix, alt.trim(), suffix);
+                eprintln!("[name_matches_glob] trying expanded: {}", expanded);
+                if name_matches_glob(name, &expanded) {
+                    return true;
+                }
+            }
+            return false;
+        }
+    }
+    // Handle **/filename patterns - extract the filename part
+    let effective_pattern = if let Some(idx) = pattern.rfind("**") {
+        let after = &pattern[idx+2..];
+        if after.starts_with('/') || after.starts_with('\\') {
+            &after[1..]
+        } else {
+            pattern
+        }
+    } else if let Some(idx) = pattern.rfind('/') {
+        &pattern[idx+1..]
+    } else if let Some(idx) = pattern.rfind('\\') {
+        &pattern[idx+1..]
+    } else {
+        pattern
+    };
+    
+    if effective_pattern == "*" {
+        return true;
+    }
+    // Simple glob matching with multiple wildcards
+    let result = glob_match(effective_pattern, name);
+    eprintln!("[name_matches_glob] matching '{}' against '{}': {}", name, effective_pattern, result);
+    result
+}
+
+fn glob_match(pattern: &str, name: &str) -> bool {
+    let pat_chars: Vec<char> = pattern.chars().collect();
+    let name_chars: Vec<char> = name.chars().collect();
+    let pat_len = pat_chars.len();
+    let name_len = name_chars.len();
+    
+    // Dynamic programming approach for wildcard matching
+    let mut dp = vec![vec![false; name_len + 1]; pat_len + 1];
+    dp[0][0] = true;
+    
+    // Handle leading wildcards
+    for i in 0..pat_len {
+        if pat_chars[i] == '*' {
+            dp[i + 1][0] = dp[i][0];
+        }
+    }
+    
+    for i in 0..pat_len {
+        for j in 0..name_len {
+            if pat_chars[i] == '*' {
+                dp[i + 1][j + 1] = dp[i][j + 1] || dp[i + 1][j];
+            } else if pat_chars[i] == '?' || pat_chars[i] == name_chars[j] {
+                dp[i + 1][j + 1] = dp[i][j];
+            }
+        }
+    }
+    
+    dp[pat_len][name_len]
+}
+
+#[tauri::command]
 async fn execute_command(command: String, cwd: Option<String>) -> Result<serde_json::Value, String> {
     let work_dir = cwd.unwrap_or_else(|| std::env::current_dir()
         .map(|p| p.to_string_lossy().to_string())
         .unwrap_or_default());
 
-    let mut cmd = std::process::Command::new("cmd");
-    cmd.args(["/C", &command]).current_dir(&work_dir);
+    // Always use PowerShell for consistent UTF-8 handling
+    let mut cmd = std::process::Command::new("powershell");
+    // Strip powershell prefix if present
+    let ps_body = if command.starts_with("powershell ") {
+        command.strip_prefix("powershell ").unwrap_or(&command)
+    } else {
+        &command
+    };
+    // Strip -Command prefix if present
+    let ps_body = ps_body.strip_prefix("-Command ").unwrap_or(ps_body);
+    // Prepend UTF-8 encoding setup
+    let utf8_prefix = "[Console]::OutputEncoding = [Text.Encoding]::UTF8; $OutputEncoding = [System.Text.Encoding]::UTF8; ";
+    let full_command = format!("{}{}", utf8_prefix, ps_body);
+    cmd.arg("-Command").arg(&full_command).current_dir(&work_dir);
+    cmd.env("PYTHONIOENCODING", "utf-8");
 
     #[cfg(target_os = "windows")]
     {
@@ -444,6 +625,9 @@ pub fn run() {
             mimo_delete_auth,
             mimo_login,
             delete_file,
+            glob_search,
+            get_app_data_dir,
+            get_default_cwd,
         ])
         .setup(|app| {
             // Apply window vibrancy (frosted glass effect) on Windows

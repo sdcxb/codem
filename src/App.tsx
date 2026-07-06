@@ -150,23 +150,22 @@ function App() {
   }, [flushStreamBuffer]);
 
   useEffect(() => {
-    const identity = loadAppIdentity();
-    setAppIdentity(identity);
-    if (!identity.onboarded || !identity.name) {
-      setShowBootstrap(true);
-    }
-
-    // Initialize SQLite, migrate from localStorage, then load projects
+    // Initialize SQLite first, then load everything from database
     (async () => {
       try {
         await initDatabase();
         await migrateFromLocalStorage();
         useProjectStore.getState().loadFromDB();
-        // Reload v2 sessions now that DB is ready
-        engineRef.current.sessions.reload();
       } catch (err) {
         console.error("[App] Init failed:", err);
         useProjectStore.getState().loadFromDB();
+      }
+
+      // Load identity AFTER database is ready
+      const identity = loadAppIdentity();
+      setAppIdentity(identity);
+      if (!identity.onboarded || !identity.name) {
+        setShowBootstrap(true);
       }
     })();
   }, []);
@@ -314,10 +313,12 @@ function App() {
         // Debounce during streaming
         if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
         saveTimerRef.current = setTimeout(() => {
+          console.log(`[AutoSave] Debounce save: ${messages.length} messages to ${currentSession.id}`);
           saveMessages(currentSession.id);
         }, 2000);
       } else {
         // Save immediately when not streaming
+        console.log(`[AutoSave] Immediate save: ${messages.length} messages to ${currentSession.id}`);
         saveMessages(currentSession.id);
       }
     }
@@ -363,6 +364,11 @@ function App() {
       status: "done",
       attachments,
     });
+
+    // Immediately save to database so agentic loop can read it
+    if (currentSession) {
+      saveMessages(currentSession.id);
+    }
     
 
     const mode = getMode();
@@ -427,6 +433,8 @@ function App() {
     let assistantContent = "";
     let reasoningContent = "";
 
+    console.log(`[handleSend] sessionId: ${currentSession.id}, message: ${message.substring(0, 50)}...`);
+
     try {
       abortRef.current = new AbortController();
 
@@ -460,6 +468,10 @@ function App() {
                 timestamp: Date.now(),
                 status: "streaming",
               });
+              // Immediately save assistant message creation
+              if (currentSession) {
+                saveMessages(currentSession.id);
+              }
             }
             // Always set buffer ID and accumulate text
             streamBufferRef.current.id = assistantMsgId;
@@ -488,9 +500,13 @@ function App() {
               addToolCall(assistantMsgId, {
                 id: tc.id,
                 tool: tc.name,
-                args: tc.input || {},
+                args: { ...tc.input, name: tc.input?.name || (tc as any).metadata?.name },
                 status: "running",
               });
+              // Immediately save tool call so agentic loop can read it
+              if (currentSession) {
+                saveMessages(currentSession.id);
+              }
             }
             break;
           }
@@ -498,13 +514,28 @@ function App() {
           case "tool_complete": {
             const tc = "toolCall" in event ? event.toolCall : null;
             if (tc) {
+              // Extract the output string from the result
+              let resultStr: string;
+              if (typeof event.result === "string") {
+                resultStr = event.result;
+              } else if (event.result && typeof event.result === "object" && "output" in event.result) {
+                resultStr = (event.result as any).output;
+              } else {
+                resultStr = JSON.stringify(event.result || "");
+              }
+              // Filter out <system-reminder> tags from tool results
+              resultStr = resultStr.replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, "").trim();
               updateToolCall(assistantMsgId, tc.id, {
                 status: "done",
-                result: typeof event.result === "string" ? event.result : JSON.stringify(event.result || ""),
+                result: resultStr,
               });
               // Track generated files from write tool
               if (tc.name === "write" && tc.input?.path) {
                 generatedFilesRef.current.add(tc.input.path as string);
+              }
+              // Immediately save so next agentic loop iteration can read it
+              if (currentSession) {
+                saveMessages(currentSession.id);
               }
             }
             break;
@@ -519,6 +550,10 @@ function App() {
                 status: "error",
                 result: err,
               });
+              // Immediately save tool error
+              if (currentSession) {
+                saveMessages(currentSession.id);
+              }
             }
             break;
           }
@@ -596,14 +631,7 @@ function App() {
         currentMsgIdRef.current = null;
         if (currentProject && currentSession) {
           saveMessages(currentSession.id);
-          // Save to recovery service for session restoration
-          try {
-            const engine = engineRef.current;
-            const session = engine.sessions.getSession(currentSession.id);
-            if (session) {
-              engine.saveToRecovery(session);
-            }
-          } catch {}
+          // Recovery is handled by the messages table - no need for SessionManager
         }
         break;
       }
@@ -626,6 +654,23 @@ function App() {
       abortRef.current.abort();
       abortRef.current = null;
     }
+    // Note: Sub-agents continue running when main task is paused (Codex strategy)
+    // Only global pause should freeze everything
+    engineRef.current.abort();
+    setStreaming(false);
+  };
+
+  // Global pause: freeze everything (main + sub-agents)
+  const handleGlobalPause = () => {
+    if (abortRef.current) {
+      abortRef.current.abort();
+      abortRef.current = null;
+    }
+    try {
+      const { getSubagentManager } = require("../core/subagent/subagent");
+      const manager = getSubagentManager();
+      manager.cancelAll();
+    } catch {}
     engineRef.current.abort();
     setStreaming(false);
   };

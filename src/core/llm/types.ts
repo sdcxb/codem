@@ -84,7 +84,7 @@ export type StreamEvent =
   | { type: "reasoning_delta"; text: string }
   | { type: "tool_use_start"; id: string; name: string }
   | { type: "tool_use_delta"; id: string; input: string }
-  | { type: "tool_use_end"; id: string }
+  | { type: "tool_use_end"; id: string; name?: string; input?: Record<string, unknown> }
   | { type: "usage"; usage: TokenUsage }
   | { type: "end"; finishReason: string }
   | { type: "error"; error: string };

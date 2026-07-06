@@ -1,4 +1,6 @@
 // ========== MCP Types ==========
+import { getSettingJSON, setSettingJSON } from "../storage/settings";
+
 export interface MCPServerConfig {
   /** Server name */
   name: string;
@@ -164,22 +166,15 @@ export class MCPClient {
   // ========== Internal Methods ==========
 
   private async connectStdio(config: MCPServerConfig, _connection: MCPConnection): Promise<void> {
-    // Use backend server to spawn stdio MCP process
+    // Use Tauri command to spawn stdio MCP process
     try {
-      const response = await fetch("http://localhost:3002/api/mcp-stdio-connect", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: config.name,
-          command: config.command,
-          args: config.args,
-          env: config.env,
-        }),
+      const { invoke } = (window as any).__TAURI__.core;
+      await invoke("mcp_stdio_connect", {
+        name: config.name,
+        command: config.command,
+        args: config.args,
+        env: config.env,
       });
-
-      if (!response.ok) {
-        throw new Error(`Failed to connect: ${response.status}`);
-      }
     } catch (error: any) {
       throw new Error(`Stdio connection failed: ${error.message}`);
     }
@@ -276,19 +271,18 @@ export class MCPRegistry {
     this.loadConfigs();
   }
 
-  /** Load configs from localStorage */
+  /** Load configs from SQLite */
   private loadConfigs() {
     try {
-      const data = localStorage.getItem("mimo-mcp-servers");
-      if (data) {
-        this.configs = JSON.parse(data);
-      }
+      this.configs = getSettingJSON<MCPServerConfig[]>("mimo-mcp-servers", []);
     } catch {}
   }
 
-  /** Save configs to localStorage */
+  /** Save configs to SQLite */
   private saveConfigs() {
-    localStorage.setItem("mimo-mcp-servers", JSON.stringify(this.configs));
+    try {
+      setSettingJSON("mimo-mcp-servers", this.configs);
+    } catch {}
   }
 
   /** Add a server config */

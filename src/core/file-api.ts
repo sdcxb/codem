@@ -1,7 +1,6 @@
 /**
- * 统一文件 API 适配层
- * Tauri 模式：直接调用 Rust 命令
- * 浏览器模式：回退到 HTTP API
+ * 统一文件 API 适配层（Tauri 模式）
+ * 所有文件操作通过 Tauri IPC 调用 Rust 命令
  */
 
 const isTauri = () => !!(window as any).__TAURI__;
@@ -11,101 +10,74 @@ async function tauriInvoke(command: string, args?: Record<string, unknown>): Pro
   return invoke(command, args);
 }
 
+async function getDefaultCwd(): Promise<string> {
+  return tauriInvoke("get_default_cwd");
+}
+
 // ========== File Operations ==========
 
 export async function readFile(path: string): Promise<string> {
-  if (isTauri()) {
-    return tauriInvoke("read_file", { path });
-  }
-  const res = await fetch(`http://localhost:3002/api/file?path=${encodeURIComponent(path)}`);
-  if (!res.ok) throw new Error(`Failed to read file: ${res.status}`);
-  return res.text();
+  return tauriInvoke("read_file", { path });
 }
 
 export async function writeFile(path: string, content: string): Promise<void> {
-  if (isTauri()) {
-    await tauriInvoke("write_file", { path, content });
-  } else {
-    const res = await fetch("http://localhost:3002/api/write-file", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ path, content }),
-    });
-    if (!res.ok) throw new Error(`Failed to write file: ${res.status}`);
-  }
+  await tauriInvoke("write_file", { path, content });
 }
 
 export async function listDirectory(path: string): Promise<Array<{ name: string; path: string; isDirectory: boolean }>> {
-  if (isTauri()) {
-    return tauriInvoke("list_directory", { path });
-  }
-  const res = await fetch(`http://localhost:3002/api/files?path=${encodeURIComponent(path)}`);
-  if (!res.ok) throw new Error(`Failed to list directory: ${res.status}`);
-  return res.json();
+  return tauriInvoke("list_directory", { path });
 }
 
 export async function deletePath(path: string): Promise<void> {
-  if (isTauri()) {
-    await tauriInvoke("delete_directory", { path });
-  } else {
-    // Browser mode: can't delete files
-    throw new Error("Delete not supported in browser mode");
-  }
+  await tauriInvoke("delete_directory", { path });
 }
 
 export async function executeCommand(command: string, cwd?: string): Promise<{ stdout: string; stderr: string }> {
-  if (isTauri()) {
-    return tauriInvoke("execute_command", { command, cwd });
-  }
-  const res = await fetch("http://localhost:3002/api/bash", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ command, cwd }),
-  });
-  if (!res.ok) throw new Error(`Failed to execute command: ${res.status}`);
-  return res.json();
+  return tauriInvoke("execute_command", { command, cwd });
 }
 
 export async function globSearch(pattern: string, path?: string): Promise<string[]> {
-  if (isTauri()) {
-    // Use executeCommand for glob in Tauri mode
-    const cmd = `dir /s /b "${pattern}"`;
-    const result = await executeCommand(cmd, path);
-    return result.stdout.split("\n").filter(Boolean);
+  let searchPath = path || await getDefaultCwd();
+  
+  // Resolve relative paths
+  if (searchPath === ".") {
+    searchPath = await getDefaultCwd();
   }
-  const res = await fetch(`http://localhost:3002/api/glob?pattern=${encodeURIComponent(pattern)}&path=${encodeURIComponent(path || ".")}`);
-  if (!res.ok) throw new Error(`Glob search failed: ${res.status}`);
-  const data = await res.json();
-  return data.files || [];
+  
+  const winPattern = pattern.replace(/\//g, '\\');
+  console.log("[globSearch] calling Rust glob_search:", { pattern: winPattern, path: searchPath, originalPath: path });
+  
+  // Add timeout to prevent hanging
+  const timeoutPromise = new Promise<never>((_, reject) => 
+    setTimeout(() => reject(new Error("glob_search timed out")), 30000)
+  );
+  const result = await Promise.race([
+    tauriInvoke("glob_search", { pattern: winPattern, path: searchPath }),
+    timeoutPromise
+  ]);
+  console.log("[globSearch] result length:", result.length);
+  return result;
 }
 
 export async function grepSearch(pattern: string, path?: string, include?: string): Promise<string[]> {
-  if (isTauri()) {
-    // Use findstr for grep in Tauri mode
-    const includeArg = include ? `/M "${include}"` : "";
-    const cmd = `findstr /R /S "${pattern}" "${path || "."}\\*" ${includeArg}`;
-    const result = await executeCommand(cmd, path);
-    return result.stdout.split("\n").filter(Boolean);
-  }
-  const params = new URLSearchParams({ pattern, path: path || "." });
-  if (include) params.set("include", include);
-  const res = await fetch(`http://localhost:3002/api/grep?${params}`);
-  if (!res.ok) throw new Error(`Grep search failed: ${res.status}`);
-  const data = await res.json();
-  return data.results || [];
+  // Use PowerShell for better Unicode support
+  const searchPath = path || await getDefaultCwd();
+  const filterArg = include ? `-Include '${include}'` : "";
+  const psCommand = `Get-ChildItem -Path '${searchPath}' ${filterArg} -Recurse -File -ErrorAction SilentlyContinue | Select-String -Pattern '${pattern}' -SimpleMatch | ForEach-Object { $_.Path + ':' + $_.LineNumber + ':' + $_.Line }`;
+  const cmd = `powershell -Command "${psCommand}"`;
+  console.log("[grepSearch] cmd:", cmd);
+  const result = await executeCommand(cmd);
+  return result.stdout.split("\n").filter(line => line.trim() !== "");
 }
 
 // ========== Dialog Operations ==========
 
 export async function openFolderPicker(): Promise<string | null> {
-  if (isTauri()) {
-    try {
-      const result = await tauriInvoke("open_folder_dialog");
-      return result || null;
-    } catch (e) {
-      console.error("Folder picker error:", e);
-      return null;
-    }
+  try {
+    const result = await tauriInvoke("open_folder_dialog");
+    return result || null;
+  } catch (e) {
+    console.error("Folder picker error:", e);
+    return null;
   }
-  return null;
 }

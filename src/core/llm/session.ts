@@ -52,12 +52,14 @@ export interface FilePart {
 
 export interface StepStartPart {
   type: "step_start";
-  stepNumber: number;
+  name: string;
 }
 
 export interface StepFinishPart {
   type: "step_finish";
-  finishReason: string;
+  name: string;
+  duration: number;
+  result: "success" | "error";
 }
 
 // ========== Session ==========
@@ -97,6 +99,7 @@ export class SessionManager {
 
   private save(session: Session) {
     saveV2Session(session);
+    // Don't sync to messages table - let useAppStore handle persistence
   }
 
   createSession(projectId: string, model: string): Session {
@@ -251,7 +254,6 @@ export class SessionManager {
     }
 
     // Final safety: remove orphan tool messages
-    // Find the last assistant message with tool_calls
     const cleaned: LLMMessage[] = [];
     let lastAssistantWithToolCalls = false;
     for (const msg of result) {
@@ -262,7 +264,6 @@ export class SessionManager {
         if (lastAssistantWithToolCalls) {
           cleaned.push(msg);
         }
-        // Skip orphan tool messages
       } else {
         lastAssistantWithToolCalls = false;
         cleaned.push(msg);

@@ -117,7 +117,7 @@ export function BootstrapWizard({ onComplete }: BootstrapWizardProps) {
                 className="bootstrap-input"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="MIMO、小助手、或者随便什么..."
+                placeholder="CODEM、小助手、或者随便什么..."
                 autoFocus
                 onKeyDown={(e) => e.key === "Enter" && handleNext()}
               />

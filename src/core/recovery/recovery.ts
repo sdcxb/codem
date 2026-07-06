@@ -48,11 +48,11 @@ export class SessionRecoveryService {
     this.startAutoSave();
   }
 
-  /** Load recovery data from localStorage */
+  /** Load recovery data from SQLite */
   private load(): RecoveryData {
     try {
-      const key = `${this.config.storagePrefix}-data`;
-      const raw = localStorage.getItem(key);
+      const { loadRecoveryData } = require("../storage/settings");
+      const raw = loadRecoveryData(this.config.storagePrefix);
       if (raw) {
         const parsed = JSON.parse(raw);
         if (parsed.version === 1) {
@@ -76,12 +76,12 @@ export class SessionRecoveryService {
     };
   }
 
-  /** Save recovery data to localStorage */
+  /** Save recovery data to SQLite */
   private save() {
     try {
-      const key = `${this.config.storagePrefix}-data`;
+      const { saveRecoveryData } = require("../storage/settings");
       this.data.lastSaved = Date.now();
-      localStorage.setItem(key, JSON.stringify(this.data));
+      saveRecoveryData(this.config.storagePrefix, JSON.stringify(this.data));
       this.dirty = false;
     } catch (error) {
       console.error("[Recovery] Failed to save:", error);

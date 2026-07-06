@@ -109,7 +109,8 @@ export class OpenAICompatibleProvider implements LLMProvider {
 
     if (!response.ok) {
       const error = await response.text();
-      throw new Error(`API error ${response.status}: ${error}`);
+      console.error("[Provider] API error:", response.status, error.substring(0, 500));
+      throw new Error(`API error ${response.status}: ${error.substring(0, 200)}`);
     }
 
     const reader = response.body?.getReader();
@@ -168,8 +169,27 @@ export class OpenAICompatibleProvider implements LLMProvider {
           }
 
           if (finishReason) {
-            for (const [, tc] of Object.entries(currentToolCalls)) {
-              yield { type: "tool_use_end", id: tc.id };
+            // Yield tool_use_end events for each tool call
+            for (const key of Object.keys(currentToolCalls)) {
+              const tc = currentToolCalls[key];
+              if (tc) {
+                // Parse args if available
+                let parsedArgs: Record<string, unknown> = {};
+                if (tc.arguments) {
+                  try {
+                    parsedArgs = JSON.parse(tc.arguments);
+                  } catch (e) {
+                    console.error("[Provider] Failed to parse tool args:", tc.arguments.substring(0, 200));
+                  }
+                }
+                console.log("[Provider] Tool call end:", tc.name, "args:", JSON.stringify(parsedArgs).substring(0, 200));
+                yield { 
+                  type: "tool_use_end" as const, 
+                  id: tc.id,
+                  name: tc.name,
+                  input: parsedArgs,
+                };
+              }
             }
 
             const usage = parsed.usage || {};
@@ -191,7 +211,13 @@ export class OpenAICompatibleProvider implements LLMProvider {
 
   private toAPIMessage(msg: any) {
     const role = msg.role === "tool" ? "tool" : msg.role;
-    const content = typeof msg.content === "string" ? msg.content : (msg.content ? this.serializeContent(msg.content) : "");
+    let content = typeof msg.content === "string" ? msg.content : (msg.content ? this.serializeContent(msg.content) : "");
+    // Strip <system-reminder> tags injected by external CLI tools
+    content = content.replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, "").trim();
+    // Truncate individual message content if too large (>200KB)
+    if (content.length > 200000) {
+      content = content.substring(0, 200000) + "\n... (truncated)";
+    }
 
     if (role === "tool") {
       return { role: "tool", content, tool_call_id: msg.toolCallId || msg.tool_call_id };
@@ -199,6 +225,10 @@ export class OpenAICompatibleProvider implements LLMProvider {
     const result: any = { role, content };
     if (msg.name) result.name = msg.name;
     if (msg.tool_calls) result.tool_calls = msg.tool_calls;
+    // Include reasoning_content for DeepSeek thinking mode (required by API)
+    if (msg.reasoning) {
+      result.reasoning_content = msg.reasoning;
+    }
     return result;
   }
 

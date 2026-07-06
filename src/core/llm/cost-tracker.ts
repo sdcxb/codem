@@ -1,4 +1,5 @@
 import type { TokenUsage } from "./types";
+import { getSettingJSON, setSettingJSON } from "../storage/settings";
 
 // ========== Cost Types ==========
 export interface ModelCost {
@@ -91,19 +92,18 @@ export class CostTracker {
     }
   }
 
-  /** Load records from localStorage */
+  /** Load records from SQLite */
   private load() {
     try {
-      const data = localStorage.getItem(this.config.storageKey);
-      if (data) {
-        const parsed = JSON.parse(data);
+      const parsed = getSettingJSON<any>(this.config.storageKey, null);
+      if (parsed) {
         this.records = parsed.records || [];
         this.sessionCosts = new Map(parsed.sessionCosts || []);
       }
     } catch {}
   }
 
-  /** Save records to localStorage */
+  /** Save records to SQLite */
   private save() {
     if (!this.config.persist) return;
 
@@ -113,10 +113,10 @@ export class CostTracker {
         this.records = this.records.slice(-this.config.maxRecords);
       }
 
-      localStorage.setItem(this.config.storageKey, JSON.stringify({
+      setSettingJSON(this.config.storageKey, {
         records: this.records,
         sessionCosts: Array.from(this.sessionCosts.entries()),
-      }));
+      });
     } catch {}
   }
 

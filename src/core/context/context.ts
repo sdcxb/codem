@@ -48,6 +48,42 @@ export class ContextManager {
     this.config = { ...DEFAULT_CONFIG, ...config };
   }
 
+  /** Calculate token budget for current messages (simple Message format) */
+  calculateBudgetFromMessages(messages: { content?: string; reasoning?: string; toolCalls?: Array<{ args?: any; result?: string }> }[]): TokenBudget {
+    const used = messages.reduce((sum, msg) => {
+      let tokens = 0;
+      if (msg.content) tokens += this.estimateTextTokens(msg.content);
+      if (msg.reasoning) tokens += this.estimateTextTokens(msg.reasoning);
+      if (msg.toolCalls) {
+        for (const tc of msg.toolCalls) {
+          tokens += 10;
+          if (tc.args) tokens += this.estimateTextTokens(JSON.stringify(tc.args));
+          if (tc.result) tokens += this.estimateTextTokens(tc.result);
+        }
+      }
+      return sum + tokens;
+    }, 0);
+    const available = this.config.maxContextWindow - this.config.systemPromptTokens - this.config.outputReserve;
+    return {
+      total: this.config.maxContextWindow,
+      systemPrompt: this.config.systemPromptTokens,
+      outputReserve: this.config.outputReserve,
+      available,
+      used,
+      remaining: Math.max(0, available - used),
+    };
+  }
+
+  /** Get pressure level from simple Messages (0-3) */
+  getPressureLevelFromMessages(messages: { content?: string; reasoning?: string; toolCalls?: Array<{ args?: any; result?: string }> }[]): number {
+    const budget = this.calculateBudgetFromMessages(messages);
+    const usageRatio = budget.used / budget.available;
+    if (usageRatio < 0.5) return 0;
+    if (usageRatio < 0.7) return 1;
+    if (usageRatio < 0.9) return 2;
+    return 3;
+  }
+
   /** Calculate token budget for current messages */
   calculateBudget(messages: MessageV2[]): TokenBudget {
     const used = this.estimateTokens(messages);
