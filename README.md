@@ -242,6 +242,50 @@ npm run tauri:build
 
 ## 更新日志
 
+### 2026-07-06（v0.70）
+
+> ⚠️ 本次更新消耗 300+ 人民币的 tokens，涉及大量底层重构和编码修复。
+
+![v0.70 更新](docs/7-6.png)
+
+**统一存储架构（告别 localStorage）：**
+- 全部迁移到 SQLite 存储：应用设置、MCP 配置、记忆数据、恢复数据、成本追踪等
+- 新增 `settings`、`mcp_servers`、`memory`、`recovery_data`、`cost_records` 表
+- 数据库持久化到 Tauri 文件系统（`AppData/Roaming/com.codem.app/codem-db.bin`），无大小限制
+- 自动从 localStorage 迁移数据到 SQLite
+
+**中文编码全面修复：**
+- Rust 层统一使用 PowerShell 执行所有命令，强制 UTF-8 编码输出
+- glob 工具修复：改用 `chars()` 替代 `as_bytes()`，正确处理中文字符
+- PowerShell 添加 `[Console]::OutputEncoding = [Text.Encoding]::UTF8`
+- Python 添加 `PYTHONIOENCODING=utf-8` 环境变量
+- 文件读取过滤 `<system-reminder>` 标签
+
+**子智能体系统重构：**
+- fork-join 模式：`spawn_subagent` 立即返回（并行启动），`wait_for_subagent` 阻塞等待结果
+- 强身份系统提示词：明确身份为 "Codem Sub-Agent"，防止被文件内容中的其他 AI 提示词干扰
+- 文件内容包装：用醒目中文边框标记，防止 LLM 把其他 AI 的提示词当成自己的指令
+- 工具结果持久化：子智能体的助手消息和工具结果正确保存到数据库
+- reasoning_content 支持：捕获 DeepSeek thinking mode 的 reasoning 内容并正确回传
+- 循环检测：新增工具调用循环检测，相同调用出现 3 次自动终止
+
+**系统提示词优化：**
+- 语言规则：要求 AI 用中文回复，思考过程也用中文
+- 完成回执：要求 AI 完成任务后必须告知结果
+- 脚本执行规则：先写文件再执行，用 `python -m pip` 代替 `pip`
+- 子智能体协作：详细的 fork-join 模式指导
+
+**工具改进：**
+- glob 工具：支持 `{a,b}` 多选模式、`**/` 递归搜索、中文文件名匹配
+- read 工具：输出截断（>100KB）、`<system-reminder>` 过滤、文件内容包装
+- bash 工具：统一使用 PowerShell 执行，强制 UTF-8 编码
+- 路径解析：`"."` 正确解析为项目目录
+
+**暂停策略（对标 Codex）：**
+- 主任务暂停不影响子智能体，子智能体继续运行
+- 全局暂停冻结所有任务
+- 恢复后读取子智能体完整结果
+
 ### 2026-07-03（v0.60）
 
 **系统提示词全面重写：**
