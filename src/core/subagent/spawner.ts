@@ -161,7 +161,7 @@ export class LLMSubagentSpawner implements SubagentSpawner {
 
       // Combine AI text output with tool results
       const fullOutput = toolResults.length > 0
-        ? output + "\n\n[Tool Results]\n" + toolResults.join("\n---\n")
+        ? output + "\n\n[工具结果]\n" + toolResults.join("\n---\n")
         : output;
 
       // Parse result

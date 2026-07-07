@@ -117,7 +117,11 @@ export class ContextManager {
     return 3; // Critical
   }
 
-  /** Compact messages to fit within budget */
+  /** Compact messages to fit within budget.
+   *  Strategy: Remove old messages, keep recent ones.
+   *  Also trim large tool outputs in the kept messages if needed.
+   *  Returns [compactionMarker, ...messagesToKeep].
+   */
   compact(messages: MessageV2[]): MessageV2[] {
     if (!this.needsCompaction(messages)) return messages;
 
@@ -126,24 +130,22 @@ export class ContextManager {
 
     if (excessTokens <= 0) return messages;
 
-    // Strategy: Remove old messages, keep recent ones
-    const compacted: MessageV2[] = [];
-    let savedTokens = 0;
-
-    // Keep the last N messages
+    // Keep the last N messages (make a shallow copy so we can mutate)
     const keepCount = Math.min(this.config.maxMessagesAfterCompaction, messages.length);
-    const messagesToKeep = messages.slice(-keepCount);
+    const messagesToKeep = messages.slice(-keepCount).map(m => ({ ...m, parts: [...m.parts] }));
     const messagesToRemove = messages.slice(0, messages.length - keepCount);
+
+    let savedTokens = 0;
 
     // Calculate tokens saved from removed messages
     for (const msg of messagesToRemove) {
       savedTokens += this.estimateMessageTokens(msg);
     }
 
-    // If still need more space, trim old tool outputs
+    // If still need more space, trim large tool outputs in the kept messages
     if (savedTokens < excessTokens && this.config.preserveRecentToolOutputs) {
-      for (let i = 0; i < compacted.length; i++) {
-        const msg = compacted[i];
+      for (let i = 0; i < messagesToKeep.length; i++) {
+        const msg = messagesToKeep[i];
         if (msg.role === "assistant") {
           for (const part of msg.parts) {
             if (part.type === "tool" && part.output && part.output.length > 500) {
@@ -156,13 +158,13 @@ export class ContextManager {
       }
     }
 
-    // Add a compaction marker
+    // Add a compaction marker that summarizes what was removed
     const marker: MessageV2 = {
       id: `compact-${Date.now()}`,
       role: "user",
       parts: [{
         type: "text",
-        content: `[Context compacted: ${messagesToRemove.length} messages removed, ~${savedTokens} tokens saved]`,
+        content: `[上下文已压缩：移除了 ${messagesToRemove.length} 条旧消息，节省约 ${savedTokens} tokens。以下是最近 ${keepCount} 条消息，请基于此继续工作。]`,
       }],
       timestamp: Date.now(),
     };

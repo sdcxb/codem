@@ -342,5 +342,18 @@ export function createDefaultProviders(): ProviderRegistry {
     ],
   }));
 
+  // Google Gemini (via OpenAI-compatible endpoint)
+  registry.register(new OpenAICompatibleProvider({
+    id: "gemini",
+    name: "Google Gemini",
+    apiKey: "",
+    baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai",
+    models: [
+      { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash", contextWindow: 1000000, maxOutputTokens: 65536, supportsTools: true, supportsStreaming: true },
+      { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro", contextWindow: 1000000, maxOutputTokens: 65536, supportsTools: true, supportsStreaming: true },
+      { id: "gemini-2.0-flash", name: "Gemini 2.0 Flash", contextWindow: 1000000, maxOutputTokens: 65536, supportsTools: true, supportsStreaming: true },
+    ],
+  }));
+
   return registry;
 }

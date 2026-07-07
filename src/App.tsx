@@ -24,34 +24,33 @@ import { getMiMoAuth } from "./core/auth/mimo";
 import type { PermissionRequest, PermissionResult } from "./core/permission/permission";
 import { initDatabase, resetDatabase } from "./core/storage";
 import { migrateFromLocalStorage } from "./core/storage/migration";
+import { getSetting, setSetting, getSettingJSON } from "./core/storage/settings";
+import * as MessageStorage from "./core/storage/message";
 
 const APP_ROOT = "D:\\mimo";
 type BottomTab = "chat" | "terminal";
 
 function getCliSessionKey(projectId: string, sessionId: string) {
-  return `mimo-cli-session-${projectId}-${sessionId}`;
+  return `codem-cli-session-${projectId}-${sessionId}`;
 }
 
 function loadCliSessionId(projectId: string, sessionId: string): string | null {
   try {
-    return localStorage.getItem(getCliSessionKey(projectId, sessionId));
+    return getSetting(getCliSessionKey(projectId, sessionId));
   } catch {}
   return null;
 }
 
 function saveCliSessionId(projectId: string, sessionId: string, mimoSessionId: string) {
   try {
-    localStorage.setItem(getCliSessionKey(projectId, sessionId), mimoSessionId);
+    setSetting(getCliSessionKey(projectId, sessionId), mimoSessionId);
   } catch {}
 }
 
 function getMode(): "cli" | "api" {
   try {
-    const saved = localStorage.getItem("mimo-settings");
-    if (saved) {
-      const settings = JSON.parse(saved);
-      return settings.mode || "api";
-    }
+    const settings = getSettingJSON<any>("codem-settings", {});
+    return settings.mode || "api";
   } catch {}
   return "api";
 }
@@ -102,14 +101,16 @@ function App() {
       if (model.startsWith("deepseek")) provider = "deepseek";
       else if (model.startsWith("claude")) provider = "anthropic";
       else if (model.startsWith("moonshot")) provider = "moonshot";
+      else if (model.startsWith("gemini")) provider = "gemini";
       else if (model.startsWith("gpt") || model.startsWith("o3")) provider = "openai";
       engine.updateConfig({ defaultProvider: provider });
       setCurrentProvider(provider);
       console.log(`[ModelChange] model=${model}, provider=${provider}`);
     }
   }, []);
-  const [pendingPermission, setPendingPermission] = useState<{
-    request: PermissionRequest;
+const [compactionStatus, setCompactionStatus] = useState<{ active: boolean; messagesRemoved?: number } | null>(null);
+const [pendingPermission, setPendingPermission] = useState<{
+request: PermissionRequest;
     resolve: (result: PermissionResult) => void;
   } | null>(null);
   const [confirmDialog, setConfirmDialog] = useState<{
@@ -172,11 +173,11 @@ function App() {
 
   // Configure engine based on mode and settings
   const configureEngine = useCallback(async () => {
-    const saved = localStorage.getItem("mimo-settings");
+    const saved = getSettingJSON<any>("codem-settings", null);
     const engine = engineRef.current;
 
     if (saved) {
-      const settings = JSON.parse(saved);
+      const settings = saved;
       const prevMode = getMode();
       const modeChanged = settings.mode !== prevMode;
 
@@ -219,6 +220,7 @@ function App() {
         if (model.startsWith("deepseek")) provider = "deepseek";
         else if (model.startsWith("claude")) provider = "anthropic";
         else if (model.startsWith("moonshot")) provider = "moonshot";
+        else if (model.startsWith("gemini")) provider = "gemini";
         else if (model.startsWith("gpt") || model.startsWith("o3")) provider = "openai";
         // If model doesn't match any provider, use first configured provider's first model
         let finalModel = model;
@@ -233,6 +235,7 @@ function App() {
                   anthropic: "claude-sonnet-4-20250514",
                   deepseek: "deepseek-v4-flash",
                   moonshot: "moonshot-v1-8k",
+                  gemini: "gemini-2.5-flash",
                 };
                 finalModel = models[p.id] || model;
                 break;
@@ -252,8 +255,8 @@ function App() {
   useEffect(() => {
     configureEngine();
     // Listen for settings changes from SettingsPanel
-    window.addEventListener("mimo-settings-changed", configureEngine);
-    return () => window.removeEventListener("mimo-settings-changed", configureEngine);
+    window.addEventListener("codem-settings-changed", configureEngine);
+    return () => window.removeEventListener("codem-settings-changed", configureEngine);
   }, [configureEngine]);
 
   // WebSocket connection for CLI mode
@@ -557,6 +560,39 @@ function App() {
             }
             break;
           }
+
+          case "compaction_start": {
+            setCompactionStatus({ active: true });
+            break;
+          }
+
+          case "compaction_end": {
+            const removed = "messagesRemoved" in event ? event.messagesRemoved : 0;
+            setCompactionStatus({ active: false, messagesRemoved: removed });
+            // Reload messages from DB since old ones were deleted
+            if (currentSession) {
+              loadMessages(currentSession.id);
+              saveMessages(currentSession.id);
+            }
+            // Auto-clear compaction status after 3 seconds
+            setTimeout(() => setCompactionStatus(null), 3000);
+            break;
+          }
+
+          case "end": {
+            // Handle overflow result (context completely exhausted)
+            if ("result" in event && event.result?.type === "overflow") {
+              const msg = event.result.message || "上下文窗口已满，请开启新对话。";
+              addMessage({
+                id: 'overflow-' + Date.now(),
+                role: "system",
+                content: `⚠️ ${msg}`,
+                timestamp: Date.now(),
+                status: "error",
+              });
+            }
+            break;
+          }
         }
       }
 
@@ -717,8 +753,6 @@ function App() {
               cancelLabel: "Delete Files",
               onConfirm: () => {
                 useProjectStore.getState().deleteProject(id);
-                const projects = useProjectStore.getState().projects.filter((p) => p.id !== id);
-                localStorage.setItem("mimo-projects", JSON.stringify(projects));
                 setConfirmDialog(null);
               },
               onCancel: async () => {
@@ -730,8 +764,6 @@ function App() {
                   console.error("Failed to delete directory:", e);
                 }
                 useProjectStore.getState().deleteProject(id);
-                const projects = useProjectStore.getState().projects.filter((p) => p.id !== id);
-                localStorage.setItem("mimo-projects", JSON.stringify(projects));
                 setConfirmDialog(null);
               },
             });
@@ -753,6 +785,15 @@ function App() {
           </div>
 
           <div className="panel-content">
+            {compactionStatus && (
+              <div className={`compaction-banner ${compactionStatus.active ? "compaction-active" : "compaction-done"}`}>
+                {compactionStatus.active ? (
+                  <><span className="compaction-spinner" /> 正在压缩上下文...</>
+                ) : (
+                  <>✅ 上下文已压缩{compactionStatus.messagesRemoved ? `（移除 ${compactionStatus.messagesRemoved} 条旧消息）` : ""}</>
+                )}
+              </div>
+            )}
             {bottomTab === "chat" && (
               <ChatPanel
                 onSend={handleSend}
@@ -760,16 +801,25 @@ function App() {
                 onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
                 onFork={(messageIndex) => {
                   if (currentSession && currentProject) {
-                    createSession('Fork: ' + currentSession.title);
-                    // Load forked messages into new session
-                    const sourceKey = `mimo-chat-${currentProject.id}-${currentSession.id}`;
-                    const sourceData = localStorage.getItem(sourceKey);
-                    if (sourceData) {
-                      const sourceMessages = JSON.parse(sourceData);
+                    const newSession = createSession('Fork: ' + currentSession.title);
+                    // Fork messages from SQLite via MessageStorage
+                    const sourceMessages = MessageStorage.listMessages(currentSession.id);
+                    if (sourceMessages.length > 0) {
                       const forkedMessages = sourceMessages.slice(0, messageIndex + 1);
-                      const targetKey = `mimo-chat-${currentProject.id}-${useProjectStore.getState().currentSession?.id}`;
-                      localStorage.setItem(targetKey, JSON.stringify(forkedMessages));
-                      loadMessages(useProjectStore.getState().currentSession!.id);
+                      const forkTs = Date.now();
+                      for (const msg of forkedMessages) {
+                        // Generate new IDs to avoid conflicts with source messages
+                        const newMsgId = `${msg.id}-fork-${forkTs}-${Math.random().toString(36).substr(2, 5)}`;
+                        MessageStorage.createMessage({
+                          ...msg,
+                          id: newMsgId,
+                          toolCalls: msg.toolCalls?.map((tc) => ({
+                            ...tc,
+                            id: `${tc.id}-fork-${forkTs}-${Math.random().toString(36).substr(2, 5)}`,
+                          })),
+                        }, newSession.id);
+                      }
+                      loadMessages(newSession.id);
                     }
                   }
                 }}

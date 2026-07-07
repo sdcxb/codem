@@ -62,7 +62,7 @@ export interface CostTrackerConfig {
 }
 
 const DEFAULT_CONFIG: CostTrackerConfig = {
-  storageKey: "mimo-cost-tracker",
+  storageKey: "codem-cost-tracker",
   maxRecords: 10000,
   persist: true,
   limits: {},
@@ -70,13 +70,32 @@ const DEFAULT_CONFIG: CostTrackerConfig = {
 
 // ========== Model Cost Database ==========
 const MODEL_COSTS: Record<string, ModelCost> = {
+  // OpenAI
   "gpt-4o": { modelId: "gpt-4o", provider: "openai", inputCostPer1k: 0.0025, outputCostPer1k: 0.01 },
   "gpt-4o-mini": { modelId: "gpt-4o-mini", provider: "openai", inputCostPer1k: 0.00015, outputCostPer1k: 0.0006 },
   "o3": { modelId: "o3", provider: "openai", inputCostPer1k: 0.01, outputCostPer1k: 0.04 },
+  // Anthropic
   "claude-sonnet-4-20250514": { modelId: "claude-sonnet-4-20250514", provider: "anthropic", inputCostPer1k: 0.003, outputCostPer1k: 0.015 },
   "claude-opus-4-20250514": { modelId: "claude-opus-4-20250514", provider: "anthropic", inputCostPer1k: 0.015, outputCostPer1k: 0.075 },
+  // MiMo (Xiaomi)
   "mimo-auto": { modelId: "mimo-auto", provider: "mimo", inputCostPer1k: 0.001, outputCostPer1k: 0.002 },
   "mimo-v2.5-pro": { modelId: "mimo-v2.5-pro", provider: "mimo", inputCostPer1k: 0.003, outputCostPer1k: 0.006 },
+  "mimo-v2.5": { modelId: "mimo-v2.5", provider: "mimo", inputCostPer1k: 0.002, outputCostPer1k: 0.004 },
+  "mimo-v2-pro": { modelId: "mimo-v2-pro", provider: "mimo", inputCostPer1k: 0.002, outputCostPer1k: 0.004 },
+  "mimo-v2-flash": { modelId: "mimo-v2-flash", provider: "mimo", inputCostPer1k: 0.0005, outputCostPer1k: 0.001 },
+  // DeepSeek
+  "deepseek-v4-flash": { modelId: "deepseek-v4-flash", provider: "deepseek", inputCostPer1k: 0.00027, outputCostPer1k: 0.0011 },
+  "deepseek-v4-pro": { modelId: "deepseek-v4-pro", provider: "deepseek", inputCostPer1k: 0.0022, outputCostPer1k: 0.0088 },
+  "deepseek-chat": { modelId: "deepseek-chat", provider: "deepseek", inputCostPer1k: 0.00027, outputCostPer1k: 0.0011 },
+  "deepseek-reasoner": { modelId: "deepseek-reasoner", provider: "deepseek", inputCostPer1k: 0.00055, outputCostPer1k: 0.0022 },
+  // Moonshot (Kimi)
+  "moonshot-v1-8k": { modelId: "moonshot-v1-8k", provider: "moonshot", inputCostPer1k: 0.0017, outputCostPer1k: 0.0017 },
+  "moonshot-v1-32k": { modelId: "moonshot-v1-32k", provider: "moonshot", inputCostPer1k: 0.0034, outputCostPer1k: 0.0034 },
+  "moonshot-v1-128k": { modelId: "moonshot-v1-128k", provider: "moonshot", inputCostPer1k: 0.0085, outputCostPer1k: 0.0085 },
+  // Google Gemini
+  "gemini-2.5-flash": { modelId: "gemini-2.5-flash", provider: "gemini", inputCostPer1k: 0.0003, outputCostPer1k: 0.0025 },
+  "gemini-2.5-pro": { modelId: "gemini-2.5-pro", provider: "gemini", inputCostPer1k: 0.00125, outputCostPer1k: 0.005 },
+  "gemini-2.0-flash": { modelId: "gemini-2.0-flash", provider: "gemini", inputCostPer1k: 0.0001, outputCostPer1k: 0.0004 },
 };
 
 // ========== Cost Tracker ==========
@@ -163,7 +182,20 @@ export class CostTracker {
 
   /** Calculate cost for a model */
   calculateCost(model: string, usage: TokenUsage): number {
-    const costInfo = MODEL_COSTS[model];
+    // Try exact match first
+    let costInfo = MODEL_COSTS[model];
+
+    // Try prefix match for model variants (e.g. deepseek-chat -> deepseek-chat)
+    if (!costInfo) {
+      const keys = Object.keys(MODEL_COSTS);
+      for (const key of keys) {
+        if (model.startsWith(key) || key.startsWith(model.split("-").slice(0, 2).join("-"))) {
+          costInfo = MODEL_COSTS[key];
+          break;
+        }
+      }
+    }
+
     if (!costInfo) return 0;
 
     const inputCost = (usage.promptTokens / 1000) * costInfo.inputCostPer1k;

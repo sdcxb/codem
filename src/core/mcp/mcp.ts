@@ -274,14 +274,14 @@ export class MCPRegistry {
   /** Load configs from SQLite */
   private loadConfigs() {
     try {
-      this.configs = getSettingJSON<MCPServerConfig[]>("mimo-mcp-servers", []);
+      this.configs = getSettingJSON<MCPServerConfig[]>("codem-mcp-servers", []);
     } catch {}
   }
 
   /** Save configs to SQLite */
   private saveConfigs() {
     try {
-      setSettingJSON("mimo-mcp-servers", this.configs);
+      setSettingJSON("codem-mcp-servers", this.configs);
     } catch {}
   }
 

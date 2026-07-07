@@ -22,8 +22,8 @@ export interface RecoveryConfig {
 }
 
 const DEFAULT_CONFIG: RecoveryConfig = {
-  storagePrefix: "mimo-recovery",
-  filePath: ".mimo-recovery/sessions.jsonl",
+  storagePrefix: "codem-recovery",
+  filePath: ".codem-recovery/sessions.jsonl",
   maxSessions: 50,
   maxMessagesPerSession: 500,
   syncAcrossLayers: true,

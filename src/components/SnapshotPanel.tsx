@@ -15,11 +15,17 @@ function formatTime(timestamp: number): string {
   return new Date(timestamp).toLocaleDateString("zh-CN");
 }
 
+interface ToastMsg {
+  type: "success" | "error";
+  text: string;
+}
+
 export function SnapshotPanel({ cwd, onClose, onRestore }: SnapshotPanelProps) {
   const [snapshots, setSnapshots] = useState<Snapshot[]>([]);
   const [loading, setLoading] = useState(true);
   const [restoring, setRestoring] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [toast, setToast] = useState<ToastMsg | null>(null);
 
   useEffect(() => {
     loadSnapshots();
@@ -39,12 +45,26 @@ export function SnapshotPanel({ cwd, onClose, onRestore }: SnapshotPanelProps) {
     setRestoring(snapshotId);
     try {
       const service = getSnapshotService(cwd);
-      await service.restore(snapshotId);
+      const changes = await service.restore(snapshotId);
       onRestore?.(snapshotId);
-      // Reload to show updated state
       await loadSnapshots();
-    } catch {}
+      // 构造回滚结果提示
+      const restoredCount = changes.length;
+      const deletedCount = changes.filter((c) => c.type === "deleted").length;
+      const modifiedCount = changes.filter((c) => c.type === "modified").length;
+      const addedCount = changes.filter((c) => c.type === "added").length;
+      const parts: string[] = [];
+      if (modifiedCount > 0) parts.push(`恢复 ${modifiedCount} 个文件`);
+      if (addedCount > 0) parts.push(`写入 ${addedCount} 个文件`);
+      if (deletedCount > 0) parts.push(`删除 ${deletedCount} 个文件`);
+      const summary = parts.length > 0 ? parts.join("，") : "没有文件需要回滚";
+      setToast({ type: "success", text: `✅ 回滚成功！${summary}（共 ${restoredCount} 个文件）` });
+    } catch (e: any) {
+      setToast({ type: "error", text: `❌ 回滚失败：${e?.message || "未知错误"}` });
+    }
     setRestoring(null);
+    // 3秒后自动清除提示
+    setTimeout(() => setToast(null), 3000);
   };
 
   return (
@@ -56,6 +76,12 @@ export function SnapshotPanel({ cwd, onClose, onRestore }: SnapshotPanelProps) {
         </div>
         <button className="snapshot-panel-close" onClick={onClose}>✕</button>
       </div>
+
+      {toast && (
+        <div className={`snapshot-toast snapshot-toast-${toast.type}`}>
+          {toast.text}
+        </div>
+      )}
 
       <div className="snapshot-panel-actions">
         <button className="snapshot-refresh-btn" onClick={loadSnapshots} disabled={loading}>

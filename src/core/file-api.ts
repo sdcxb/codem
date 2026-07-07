@@ -29,10 +29,15 @@ export async function listDirectory(path: string): Promise<Array<{ name: string;
 }
 
 export async function deletePath(path: string): Promise<void> {
-  await tauriInvoke("delete_directory", { path });
+  // 先尝试删文件，失败再尝试删目录
+  try {
+    await tauriInvoke("delete_file", { path });
+  } catch {
+    await tauriInvoke("delete_directory", { path });
+  }
 }
 
-export async function executeCommand(command: string, cwd?: string): Promise<{ stdout: string; stderr: string }> {
+export async function executeCommand(command: string, cwd?: string): Promise<{ stdout: string; stderr: string; exitCode?: number }> {
   return tauriInvoke("execute_command", { command, cwd });
 }
 
@@ -62,8 +67,14 @@ export async function globSearch(pattern: string, path?: string): Promise<string
 export async function grepSearch(pattern: string, path?: string, include?: string): Promise<string[]> {
   // Use PowerShell for better Unicode support
   const searchPath = path || await getDefaultCwd();
-  const filterArg = include ? `-Include '${include}'` : "";
-  const psCommand = `Get-ChildItem -Path '${searchPath}' ${filterArg} -Recurse -File -ErrorAction SilentlyContinue | Select-String -Pattern '${pattern}' -SimpleMatch | ForEach-Object { $_.Path + ':' + $_.LineNumber + ':' + $_.Line }`;
+  // Escape single quotes for PowerShell (single quote → double single quotes)
+  const safePath = searchPath.replace(/'/g, "''");
+  const safePattern = pattern.replace(/'/g, "''");
+  const safeInclude = include ? include.replace(/'/g, "''") : "";
+  const filterArg = safeInclude ? `-Include '${safeInclude}'` : "";
+  // Use -AllMatches to support regex (Select-String default is regex, not simple match)
+  // PowerShell Select-String supports regex natively and handles Unicode patterns
+  const psCommand = `Get-ChildItem -Path '${safePath}' ${filterArg} -Recurse -File -ErrorAction SilentlyContinue | Select-String -Pattern '${safePattern}' | ForEach-Object { $_.Path + ':' + $_.LineNumber + ':' + $_.Line }`;
   const cmd = `powershell -Command "${psCommand}"`;
   console.log("[grepSearch] cmd:", cmd);
   const result = await executeCommand(cmd);

@@ -3,6 +3,7 @@ import type { IdentityConfig, UserConfig, AppIdentity } from "../core/types";
 import { saveAppIdentity } from "../core/config/loader";
 import { getMiMoAuth } from "../core/auth/mimo";
 import type { LoginResult } from "../core/auth/mimo";
+import { getSettingJSON, setSettingJSON } from "../core/storage/settings";
 
 interface ProviderKey {
   id: string;
@@ -27,6 +28,7 @@ const defaultProviders: ProviderKey[] = [
   { id: "anthropic", name: "Anthropic", apiKey: "", baseUrl: "https://api.anthropic.com/v1" },
   { id: "deepseek", name: "DeepSeek", apiKey: "", baseUrl: "https://api.deepseek.com/v1" },
   { id: "moonshot", name: "Moonshot (Kimi)", apiKey: "", baseUrl: "https://api.moonshot.cn/v1" },
+  { id: "gemini", name: "Google Gemini", apiKey: "", baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai" },
 ];
 
 const defaultSettings: Settings = {
@@ -75,18 +77,26 @@ export function SettingsPanel({ onClose, onSessionRecovery, onUsageStats }: Sett
   const [loginError, setLoginError] = useState<string | null>(null);
 
   useEffect(() => {
-    const stored = localStorage.getItem("mimo-settings");
+    const stored = getSettingJSON<Settings | null>("codem-settings", null);
     if (stored) {
-      const parsed = JSON.parse(stored);
+      const parsed = stored;
       if (!parsed.providers) {
         parsed.providers = defaultProviders;
+      } else {
+        // 补全缺失的 provider（兼容旧版本设置）
+        const existingIds = parsed.providers.map((p: ProviderKey) => p.id);
+        for (const dp of defaultProviders) {
+          if (!existingIds.includes(dp.id)) {
+            parsed.providers.push(dp);
+          }
+        }
       }
       setSettings({ ...defaultSettings, ...parsed });
     }
 
-    const storedIdentity = localStorage.getItem("mimo-identity");
+    const storedIdentity = getSettingJSON<IdentityConfig | null>("codem-identity", null);
     if (storedIdentity) {
-      const parsed = JSON.parse(storedIdentity);
+      const parsed = storedIdentity;
       setIdentity({
         name: parsed.name || defaultIdentity.name,
         creature: parsed.creature || defaultIdentity.creature,
@@ -107,7 +117,7 @@ export function SettingsPanel({ onClose, onSessionRecovery, onUsageStats }: Sett
   }, []);
 
   const handleSave = () => {
-    localStorage.setItem("mimo-settings", JSON.stringify(settings));
+    setSettingJSON("codem-settings", settings);
 
     const identityToSave: IdentityConfig = {
       name: identity.name,
@@ -117,7 +127,7 @@ export function SettingsPanel({ onClose, onSessionRecovery, onUsageStats }: Sett
       avatar: identity.avatar || "",
       raw: identity.raw || "",
     };
-    localStorage.setItem("mimo-identity", JSON.stringify(identityToSave));
+    setSettingJSON("codem-identity", identityToSave);
 
     const appIdentity: AppIdentity = {
       name: identity.name || "Codem",
@@ -138,7 +148,7 @@ export function SettingsPanel({ onClose, onSessionRecovery, onUsageStats }: Sett
       context: userConfig.context || "",
       raw: userConfig.raw || "",
     };
-    localStorage.setItem("mimo-user", JSON.stringify(userToSave));
+    setSettingJSON("codem-user", userToSave);
 
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
@@ -154,7 +164,7 @@ export function SettingsPanel({ onClose, onSessionRecovery, onUsageStats }: Sett
       if (existing) {
         setLoginStatus("success");
         setMimoAccount({ email: existing.email, uid: existing.id });
-        window.dispatchEvent(new Event("mimo-settings-changed"));
+        window.dispatchEvent(new Event("codem-settings-changed"));
         return;
       }
       // If no existing auth, run mimo providers login
@@ -162,7 +172,7 @@ export function SettingsPanel({ onClose, onSessionRecovery, onUsageStats }: Sett
       if (result.success) {
         setLoginStatus("success");
         setMimoAccount({ email: "MiMo User", uid: "" });
-        window.dispatchEvent(new Event("mimo-settings-changed"));
+        window.dispatchEvent(new Event("codem-settings-changed"));
       } else {
         setLoginStatus("error");
         setLoginError(result.error || "Login failed");
@@ -180,7 +190,7 @@ export function SettingsPanel({ onClose, onSessionRecovery, onUsageStats }: Sett
       await auth.logout(account.id);
       setMimoAccount(null);
       setLoginStatus("idle");
-      window.dispatchEvent(new Event("mimo-settings-changed"));
+      window.dispatchEvent(new Event("codem-settings-changed"));
     }
   };
 
@@ -338,8 +348,8 @@ export function SettingsPanel({ onClose, onSessionRecovery, onUsageStats }: Sett
                 onClick={() => {
                   const newSettings = { ...settings, mode: "api" as const };
                   setSettings(newSettings);
-                  localStorage.setItem("mimo-settings", JSON.stringify(newSettings));
-                  window.dispatchEvent(new Event("mimo-settings-changed"));
+                  setSettingJSON("codem-settings", newSettings);
+                  window.dispatchEvent(new Event("codem-settings-changed"));
                 }}
               >
                 <span className="mode-icon">🔑</span>
@@ -351,8 +361,8 @@ export function SettingsPanel({ onClose, onSessionRecovery, onUsageStats }: Sett
                 onClick={() => {
                   const newSettings = { ...settings, mode: "cli" as const };
                   setSettings(newSettings);
-                  localStorage.setItem("mimo-settings", JSON.stringify(newSettings));
-                  window.dispatchEvent(new Event("mimo-settings-changed"));
+                  setSettingJSON("codem-settings", newSettings);
+                  window.dispatchEvent(new Event("codem-settings-changed"));
                 }}
               >
                 <span className="mode-icon">⚡</span>
@@ -482,6 +492,7 @@ export function SettingsPanel({ onClose, onSessionRecovery, onUsageStats }: Sett
                         {id:"deepseek-v4-pro",name:"DeepSeek V4 Pro"},
                       ],
                       moonshot: [{id:"moonshot-v1-8k",name:"Moonshot 8K"},{id:"moonshot-v1-32k",name:"Moonshot 32K"},{id:"moonshot-v1-128k",name:"Moonshot 128K"}],
+                      gemini: [{id:"gemini-2.5-flash",name:"Gemini 2.5 Flash"},{id:"gemini-2.5-pro",name:"Gemini 2.5 Pro"},{id:"gemini-2.0-flash",name:"Gemini 2.0 Flash"}],
                     };
                     return (models[p.id] || []).map(m => (
                       <option key={m.id} value={m.id}>{p.name} - {m.name}</option>
@@ -684,9 +695,9 @@ export function SettingsPanel({ onClose, onSessionRecovery, onUsageStats }: Sett
                 onClick={() => {
                   // Save settings
                   const newSettings = { ...settings };
-                  localStorage.setItem("mimo-settings", JSON.stringify(newSettings));
+                  setSettingJSON("codem-settings", newSettings);
                   // Trigger engine reconfigure
-                  window.dispatchEvent(new Event("mimo-settings-changed"));
+                  window.dispatchEvent(new Event("codem-settings-changed"));
                 }}
                 style={{
                   padding: "6px 16px",

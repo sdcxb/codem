@@ -1,7 +1,7 @@
 import type { LLMMessage, ContentBlock } from "./types";
 import { loadV2Sessions, saveV2Session, deleteV2Session } from "../storage/v2-session";
 
-// ========== Message V2 (Claude Code style) ==========
+// ========== Message V2 ==========
 export interface MessageV2 {
   id: string;
   role: "user" | "assistant";

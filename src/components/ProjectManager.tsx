@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useProjectStore } from "../core/store";
 import { createProjectFiles, loadProjectInstructions, loadProjectSkills, loadProjectMemory } from "../core/project/files";
 
@@ -23,22 +23,16 @@ interface ProjectManagerProps {
 }
 
 export function ProjectManager({ onClose }: ProjectManagerProps) {
-  const { projects, createProject, openProject, deleteProject, setProjects, setInstructions, setSkills, setMemories } = useProjectStore();
+  const { projects, createProject, openProject, deleteProject, setInstructions, setSkills, setMemories } = useProjectStore();
   const [mode, setMode] = useState<"list" | "create" | "import">("list");
   const [newName, setNewName] = useState("");
   const [newPath, setNewPath] = useState("");
   const [newDesc, setNewDesc] = useState("");
 
-  useEffect(() => {
-    const stored = localStorage.getItem("mimo-projects");
-    if (stored) setProjects(JSON.parse(stored));
-  }, []);
-
   const handleCreate = async () => {
     if (!newName.trim() || !newPath.trim()) return;
     await createProjectFiles(newPath);
     const project = createProject(newName, newPath, newDesc);
-    localStorage.setItem("mimo-projects", JSON.stringify([...projects, project]));
     await loadProjectData(newPath);
     onClose();
   };
@@ -47,7 +41,6 @@ export function ProjectManager({ onClose }: ProjectManagerProps) {
     if (!newPath.trim()) return;
     const name = newPath.split("\\").pop() || "导入项目";
     const project = createProject(name, newPath, "导入的项目");
-    localStorage.setItem("mimo-projects", JSON.stringify([...projects, project]));
     await loadProjectData(newPath);
     onClose();
   };
@@ -61,8 +54,6 @@ export function ProjectManager({ onClose }: ProjectManagerProps) {
   const handleDelete = (projectId: string) => {
     if (!confirm("确定删除此项目？")) return;
     deleteProject(projectId);
-    const updated = projects.filter((p) => p.id !== projectId);
-    localStorage.setItem("mimo-projects", JSON.stringify(updated));
   };
 
   const handlePickFolder = async () => {

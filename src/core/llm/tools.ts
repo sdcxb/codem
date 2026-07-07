@@ -94,7 +94,7 @@ export class ToolRegistry {
 export function createBashTool(): ToolDef {
   return {
     id: "bash",
-    description: "Execute a bash command in the terminal",
+    description: "Execute a bash command in the terminal (PowerShell on Windows). The system automatically sets UTF-8 encoding (chcp 65001) and PYTHONUTF8=1. Output includes stdout, stderr, and exit code. If output contains garbled characters (乱码), the source command may be outputting in GBK — do NOT retry with a different tool, adjust the command instead.",
     parameters: {
       type: "object",
       properties: {
@@ -109,9 +109,15 @@ export function createBashTool(): ToolDef {
 
       try {
         const data = await executeCommand(command, workdir);
+        const exitCode = (data as any).exitCode;
+        const output = data.stdout || data.stderr || "(no output)";
+        // Include exit code in output so LLM can diagnose failures
+        const formatted = exitCode !== undefined && exitCode !== 0
+          ? `${output}\n[exit code: ${exitCode}]`
+          : output;
         return {
           title: `bash: ${command.substring(0, 50)}`,
-          output: data.stdout || data.stderr || "(no output)",
+          output: formatted,
         };
       } catch (error: any) {
         return { title: `bash: ${command.substring(0, 50)}`, output: `Error: ${error.message}` };
@@ -123,7 +129,7 @@ export function createBashTool(): ToolDef {
 export function createReadFileTool(): ToolDef {
   return {
     id: "read",
-    description: "Read a file from the filesystem",
+    description: "Read a file from the filesystem. Files are read as UTF-8 text. BOM (Byte Order Mark) is automatically stripped. Chinese and emoji content is fully supported.",
     parameters: {
       type: "object",
       properties: {
@@ -186,7 +192,7 @@ export function createReadFileTool(): ToolDef {
 export function createWriteFileTool(): ToolDef {
   return {
     id: "write",
-    description: "Write content to a file (creates or overwrites)",
+    description: "Write content to a file (creates or overwrites). Files are saved as UTF-8 without BOM. Chinese and emoji content is fully supported. For Python scripts, include '# -*- coding: utf-8 -*-' as the first line.",
     parameters: {
       type: "object",
       properties: {
@@ -248,7 +254,7 @@ export function createEditFileTool(): ToolDef {
 export function createGlobTool(): ToolDef {
   return {
     id: "glob",
-    description: "Find files matching a glob pattern",
+    description: "Find files matching a glob pattern. Supports Chinese filenames natively. Patterns: * (wildcard), ? (single char), {a,b} (alternatives), ** (recursive). Example: glob(pattern=\"*.py\") or glob(pattern=\"测试*.md\", path=\"D:\\\\项目\")",
     parameters: {
       type: "object",
       properties: {
@@ -282,7 +288,7 @@ export function createGlobTool(): ToolDef {
 export function createGrepTool(): ToolDef {
   return {
     id: "grep",
-    description: "Search file contents using regex",
+    description: "Search file contents using regex. Supports Chinese patterns natively. Uses PowerShell Select-String under the hood. Example: grep(pattern=\"中文\", path=\"D:\\\\项目\") or grep(pattern=\"function.*中文\", include=\"*.py\")",
     parameters: {
       type: "object",
       properties: {
@@ -346,7 +352,7 @@ export function createSpawnSubagentTool(): ToolDef {
     },
     async execute(args, ctx) {
       if (!subagentManager) {
-        return { title: "spawn_subagent", output: "Error: Sub-agent manager not initialized" };
+        return { title: "spawn_subagent", output: "错误：子智能体管理器未初始化" };
       }
 
       const agentId = args.agentId as string;
@@ -357,11 +363,11 @@ export function createSpawnSubagentTool(): ToolDef {
         const task = await subagentManager.spawn(ctx.sessionId, agentId, prompt, cwd, ctx.abort);
         return {
           title: `spawn_subagent: ${agentId}`,
-          output: `SUBAGENT_TASK_ID:${task.id}\nSub-agent "${task.name}" started for: ${prompt.substring(0, 100)}`,
+          output: `SUBAGENT_TASK_ID:${task.id}\n子智能体 "${task.name}" 已启动，任务: ${prompt.substring(0, 100)}`,
           metadata: { agentId, name: task.name },
         };
       } catch (error: any) {
-        return { title: "spawn_subagent", output: `Error: ${error.message}` };
+        return { title: "spawn_subagent", output: `错误: ${error.message}` };
       }
     },
   };
@@ -380,7 +386,7 @@ export function createWaitForSubagentTool(): ToolDef {
     },
     async execute(args, ctx) {
       if (!subagentManager) {
-        return { title: "wait_for_subagent", output: "Error: Sub-agent manager not initialized" };
+        return { title: "wait_for_subagent", output: "错误：子智能体管理器未初始化" };
       }
 
       const taskId = args.task_id as string;
@@ -389,19 +395,19 @@ export function createWaitForSubagentTool(): ToolDef {
         // Poll until completion - no timeout
         while (true) {
           const task = subagentManager.getTask(taskId);
-          if (!task) return { title: "wait_for_subagent", output: "Error: Task not found" };
+          if (!task) return { title: "wait_for_subagent", output: "错误：未找到任务" };
           if (task.status === "completed" && task.result) {
             return {
               title: `wait_for_subagent: ${taskId}`,
-              output: `Status: ${task.result.status}\nSummary: ${task.result.summary}\nOutput:\n${task.result.output}\nFiles: ${task.result.filesTouched.join(", ") || "none"}`,
+              output: `状态: ${task.result.status}\n摘要: ${task.result.summary}\n输出:\n${task.result.output}\n文件: ${task.result.filesTouched.join(", ") || "无"}`,
             };
           }
-          if (task.status === "failed") return { title: "wait_for_subagent", output: `Error: ${task.error || "Task failed"}` };
-          if (task.status === "cancelled") return { title: "wait_for_subagent", output: "Error: Task cancelled" };
+          if (task.status === "failed") return { title: "wait_for_subagent", output: `错误: ${task.error || "任务失败"}` };
+          if (task.status === "cancelled") return { title: "wait_for_subagent", output: "错误：任务已取消" };
           await new Promise(resolve => setTimeout(resolve, 1000));
         }
       } catch (error: any) {
-        return { title: "wait_for_subagent", output: `Error: ${error.message}` };
+        return { title: "wait_for_subagent", output: `错误: ${error.message}` };
       }
     },
   };

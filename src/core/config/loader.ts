@@ -284,17 +284,17 @@ export async function saveUser(
 import { getSettingJSON, setSettingJSON } from "../storage/settings";
 
 export function loadAppIdentity(): AppIdentity {
-  return getSettingJSON<AppIdentity>("mimo-app-identity", { name: "", creature: "", vibe: "", emoji: "", avatar: "", onboarded: false });
+  return getSettingJSON<AppIdentity>("codem-app-identity", { name: "", creature: "", vibe: "", emoji: "", avatar: "", onboarded: false });
 }
 
 export function loadUserConfig(): UserConfig | undefined {
-  const config = getSettingJSON<UserConfig | null>("mimo-user", null);
+  const config = getSettingJSON<UserConfig | null>("codem-user", null);
   console.log("[loadUserConfig] loaded:", JSON.stringify(config));
   return config || undefined;
 }
 
 export function saveAppIdentity(identity: AppIdentity): void {
-  setSettingJSON("mimo-app-identity", identity);
+  setSettingJSON("codem-app-identity", identity);
 }
 
 // ========== Bootstrap Detection ==========

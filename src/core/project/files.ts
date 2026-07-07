@@ -28,10 +28,104 @@ export async function createProjectFiles(projectPath: string): Promise<void> {
 }
 
 export async function loadProjectInstructions(projectPath: string): Promise<string> {
+  // Try project root AGENTS.md
   try {
     return await apiReadFile(`${projectPath}\\AGENTS.md`);
   } catch {}
   return "";
+}
+
+/**
+ * Discover AGENTS.md files in a hierarchical manner:
+ * 1. Global: ~/.codem/AGENTS.md (or AGENTS.override.md)
+ * 2. Project root: {projectPath}/AGENTS.md (or AGENTS.override.md)
+ * 3. Current working directory: walk from project root to cwd, checking each level
+ *
+ * Files closer to the current directory override earlier guidance because
+ * they appear later in the combined prompt.
+ *
+ * @param projectPath - The project root directory
+ * @param cwd - The current working directory (optional, defaults to projectPath)
+ * @param maxBytes - Maximum combined bytes (default 32KB)
+ */
+export async function loadHierarchicalProjectInstructions(
+  projectPath: string,
+  cwd?: string,
+  maxBytes: number = 32768,
+): Promise<string> {
+  const sections: string[] = [];
+  let totalBytes = 0;
+
+  // Layer 1: Global instructions (~/.codem/AGENTS.md)
+  try {
+    const homeDir = await executeCommand("echo %USERPROFILE%", undefined)
+      .then(r => r.stdout.trim())
+      .catch(() => "");
+    if (homeDir) {
+      // Try override first, then regular
+      let globalContent = "";
+      try {
+        globalContent = await apiReadFile(`${homeDir}\\.codem\\AGENTS.override.md`);
+      } catch {
+        try {
+          globalContent = await apiReadFile(`${homeDir}\\.codem\\AGENTS.md`);
+        } catch {}
+      }
+      if (globalContent.trim()) {
+        const bytes = Buffer.byteLength(globalContent, "utf-8");
+        if (totalBytes + bytes <= maxBytes) {
+          sections.push(`<!-- Global Instructions -->\n${globalContent}`);
+          totalBytes += bytes;
+        }
+      }
+    }
+  } catch {}
+
+  // Layer 2: Project root AGENTS.md
+  try {
+    let projectContent = "";
+    try {
+      projectContent = await apiReadFile(`${projectPath}\\AGENTS.override.md`);
+    } catch {
+      projectContent = await apiReadFile(`${projectPath}\\AGENTS.md`);
+    }
+    if (projectContent.trim()) {
+      const bytes = Buffer.byteLength(projectContent, "utf-8");
+      if (totalBytes + bytes <= maxBytes) {
+        sections.push(`<!-- Project Instructions -->\n${projectContent}`);
+        totalBytes += bytes;
+      }
+    }
+  } catch {}
+
+  // Layer 3: Nested directory instructions (from project root to cwd)
+  const targetDir = cwd || projectPath;
+  if (targetDir !== projectPath && targetDir.startsWith(projectPath)) {
+    // Walk from project root + 1 level down to targetDir
+    const relativePath = targetDir.substring(projectPath.length).split("\\").filter(Boolean);
+    let currentPath = projectPath;
+
+    for (const dir of relativePath) {
+      currentPath = `${currentPath}\\${dir}`;
+      try {
+        let nestedContent = "";
+        try {
+          nestedContent = await apiReadFile(`${currentPath}\\AGENTS.override.md`);
+        } catch {
+          nestedContent = await apiReadFile(`${currentPath}\\AGENTS.md`);
+        }
+        if (nestedContent.trim()) {
+          const bytes = Buffer.byteLength(nestedContent, "utf-8");
+          if (totalBytes + bytes <= maxBytes) {
+            sections.push(`<!-- ${dir} Instructions -->\n${nestedContent}`);
+            totalBytes += bytes;
+          }
+        }
+      } catch {}
+    }
+  }
+
+  return sections.join("\n\n---\n\n");
 }
 
 export async function loadProjectSkills(projectPath: string): Promise<Array<{ name: string; content: string }>> {

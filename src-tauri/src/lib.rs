@@ -152,8 +152,13 @@ async fn read_file(path: String, encoding: Option<String>) -> Result<String, Str
             Ok(base64::engine::general_purpose::STANDARD.encode(&bytes))
         }
         _ => {
-            // Read as UTF-8 text
-            std::fs::read_to_string(&path).map_err(|e| e.to_string())
+            // Read as UTF-8 text, strip BOM if present
+            let mut content = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+            // Strip UTF-8 BOM (EF BB BF) — some Windows tools (Notepad, VS Code) add it
+            if content.starts_with('\u{FEFF}') {
+                content = content.trim_start_matches('\u{FEFF}').to_string();
+            }
+            Ok(content)
         }
     }
 }
@@ -393,11 +398,19 @@ async fn execute_command(command: String, cwd: Option<String>) -> Result<serde_j
     };
     // Strip -Command prefix if present
     let ps_body = ps_body.strip_prefix("-Command ").unwrap_or(ps_body);
-    // Prepend UTF-8 encoding setup
-    let utf8_prefix = "[Console]::OutputEncoding = [Text.Encoding]::UTF8; $OutputEncoding = [System.Text.Encoding]::UTF8; ";
+    // Prepend comprehensive UTF-8 encoding setup
+    // chcp 65001: Set console code page to UTF-8 (affects native commands like ipconfig, dir, etc.)
+    // [Console]::OutputEncoding: .NET stdout encoding for PowerShell
+    // [Console]::InputEncoding: .NET stdin encoding (for commands that read from stdin)
+    // $OutputEncoding: PowerShell pipeline encoding between cmdlets
+    // $PSDefaultParameterValues: Default encoding for Out-File, redirections
+    let utf8_prefix = "chcp 65001 | Out-Null; [Console]::OutputEncoding = [Text.Encoding]::UTF8; [Console]::InputEncoding = [Text.Encoding]::UTF8; $OutputEncoding = [System.Text.Encoding]::UTF8; $PSDefaultParameterValues['Out-File:Encoding'] = 'utf8'; ";
     let full_command = format!("{}{}", utf8_prefix, ps_body);
     cmd.arg("-Command").arg(&full_command).current_dir(&work_dir);
+    // Python encoding: PYTHONIOENCODING for stdin/stdout, PYTHONUTF8 for UTF-8 mode (3.7+)
     cmd.env("PYTHONIOENCODING", "utf-8");
+    cmd.env("PYTHONUTF8", "1");
+    cmd.env("PYTHONLEGACYWINDOWSSTDIO", "0");
 
     #[cfg(target_os = "windows")]
     {

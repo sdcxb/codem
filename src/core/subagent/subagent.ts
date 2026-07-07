@@ -342,32 +342,32 @@ export function parseTaskResult(output: string): SubagentResult {
   for (const line of lines) {
     const trimmed = line.trim();
 
-    // Parse status
-    if (trimmed.startsWith("**Status**:")) {
-      const statusStr = trimmed.replace("**Status**:", "").trim().toLowerCase();
-      if (statusStr.includes("success")) status = "success";
-      else if (statusStr.includes("partial")) status = "partial";
-      else if (statusStr.includes("failed")) status = "failed";
-      else if (statusStr.includes("blocked")) status = "blocked";
+    // 解析状态（兼容中英文标记）
+    if (trimmed.startsWith("**状态**:") || trimmed.startsWith("**Status**:")) {
+      const statusStr = trimmed.replace(/\*\*(?:状态|Status)\*\*:/, "").trim().toLowerCase();
+      if (statusStr.includes("success") || statusStr.includes("成功")) status = "success";
+      else if (statusStr.includes("partial") || statusStr.includes("部分")) status = "partial";
+      else if (statusStr.includes("failed") || statusStr.includes("失败")) status = "failed";
+      else if (statusStr.includes("blocked") || statusStr.includes("阻塞")) status = "blocked";
     }
 
-    // Parse summary
-    if (trimmed.startsWith("**Summary**:")) {
-      summary = trimmed.replace("**Summary**:", "").trim();
+    // 解析摘要
+    if (trimmed.startsWith("**摘要**:") || trimmed.startsWith("**Summary**:")) {
+      summary = trimmed.replace(/\*\*(?:摘要|Summary)\*\*:/, "").trim();
     }
 
-    // Parse files touched
-    if (trimmed.startsWith("**Files touched**:")) {
-      const filesStr = trimmed.replace("**Files touched**:", "").trim();
-      if (filesStr !== "(none)") {
+    // 解析涉及的文件
+    if (trimmed.startsWith("**文件**:") || trimmed.startsWith("**Files touched**:")) {
+      const filesStr = trimmed.replace(/\*\*(?:文件|Files touched)\*\*:/, "").trim();
+      if (filesStr !== "(none)" && filesStr !== "无") {
         filesTouched = filesStr.split(",").map((f) => f.trim());
       }
     }
 
-    // Parse findings
-    if (trimmed.startsWith("**Findings worth promoting**:")) {
-      const findingsStr = trimmed.replace("**Findings worth promoting**:", "").trim();
-      if (findingsStr !== "(none)") {
+    // 解析发现
+    if (trimmed.startsWith("**发现**:") || trimmed.startsWith("**Findings worth promoting**:")) {
+      const findingsStr = trimmed.replace(/\*\*(?:发现|Findings worth promoting)\*\*:/, "").trim();
+      if (findingsStr !== "(none)" && findingsStr !== "无") {
         findings = findingsStr.split("\n").map((f) => f.replace(/^-\s*/, "").trim()).filter(Boolean);
       }
     }
@@ -375,7 +375,7 @@ export function parseTaskResult(output: string): SubagentResult {
 
   return {
     status,
-    summary: summary || "Task completed",
+    summary: summary || "任务已完成",
     output: cleanOutput,
     filesTouched,
     findings,

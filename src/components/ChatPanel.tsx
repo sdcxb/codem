@@ -36,6 +36,11 @@ const API_MODELS: Record<string, Array<{ id: string; name: string }>> = {
     { id: "moonshot-v1-32k", name: "Moonshot v1 32K" },
     { id: "moonshot-v1-128k", name: "Moonshot v1 128K" },
   ],
+  gemini: [
+    { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash" },
+    { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro" },
+    { id: "gemini-2.0-flash", name: "Gemini 2.0 Flash" },
+  ],
 };
 
 interface ChatPanelProps {
@@ -52,7 +57,7 @@ interface ChatPanelProps {
 
 export function ChatPanel({ onSend, onCancel, onToggleSidebar, onFork, connected, model, onModelChange, mode = "cli", providerId = "mimo" }: ChatPanelProps) {
   const { messages, isStreaming, removeGeneratedFiles, hasMoreMessages, isLoadingMore, loadMoreMessages } = useAppStore();
-  const { currentSession } = useProjectStore();
+  const { currentSession, currentProject } = useProjectStore();
   const [showModelPicker, setShowModelPicker] = useState(false);
   const [showReasoning, setShowReasoning] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -207,7 +212,7 @@ export function ChatPanel({ onSend, onCancel, onToggleSidebar, onFork, connected
         </button>
         <button
           className={`agent-toggle ${showContextMonitor ? "active" : ""}`}
-          onClick={() => setShowContextMonitor(!showContextMonitor)}
+          onClick={() => { setShowContextMonitor(!showContextMonitor); setShowAgentPanel(false); setShowSnapshotPanel(false); setSelectedAgentId(null); }}
           title="上下文监控"
         >
           📊
@@ -227,9 +232,6 @@ export function ChatPanel({ onSend, onCancel, onToggleSidebar, onFork, connected
                 <span>↑ 滚动加载更多历史消息</span>
               )}
             </div>
-          )}
-          {showContextMonitor && (
-            <ContextMonitor sessionId={""} visible={showContextMonitor} />
           )}
           {messages.length === 0 && (
             <div className="empty-state">
@@ -279,9 +281,15 @@ export function ChatPanel({ onSend, onCancel, onToggleSidebar, onFork, connected
         {showSnapshotPanel && (
           <div className="agent-panel-container">
             <SnapshotPanel
-              cwd={""}
+              cwd={currentProject?.path || ""}
               onClose={() => setShowSnapshotPanel(false)}
             />
+          </div>
+        )}
+
+        {showContextMonitor && (
+          <div className="agent-panel-container">
+            <ContextMonitor sessionId={currentSession?.id || ""} visible={showContextMonitor} />
           </div>
         )}
       </div>

@@ -4,6 +4,7 @@ import { useProjectStore } from "../core/store";
 import { AppIdentity } from "../core/types";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { SearchDialog } from "./SearchDialog";
+import { getSetting, setSetting } from "../core/storage/settings";
 
 interface SidebarProps {
   identity: AppIdentity | null;
@@ -26,7 +27,7 @@ export function Sidebar({ identity, onSettings, onProjects, onConfig, onMcp, onS
     openProject, getProjectSessions, updateProject,
   } = useProjectStore();
   const [theme, setTheme] = useState<"dark" | "light">(() => {
-    return (localStorage.getItem("mimo-theme") as "dark" | "light") || "dark";
+    return (getSetting("codem-theme") as "dark" | "light") || "dark";
   });
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set());
   const [allSessions, setAllSessions] = useState<Record<string, Array<typeof currentSession & { lastMessageAt: number; messageCount: number }>>>({});
@@ -53,7 +54,7 @@ export function Sidebar({ identity, onSettings, onProjects, onConfig, onMcp, onS
 
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
-    localStorage.setItem("mimo-theme", theme);
+    setSetting("codem-theme", theme);
   }, [theme]);
 
   useEffect(() => {

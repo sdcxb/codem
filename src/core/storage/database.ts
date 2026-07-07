@@ -1,7 +1,8 @@
 import initSqlJs, { type Database as SqlJsDatabase } from "sql.js/dist/sql-asm.js";
 
 let db: SqlJsDatabase | null = null;
-const DB_STORAGE_KEY = "mimo-sqlite-db";
+// DB_STORAGE_KEY was used in old localStorage-based persistence; now using Tauri file system
+// const DB_STORAGE_KEY = "codem-sqlite-db";
 const DB_FILE_NAME = "codem-db.bin";
 
 const isTauri = () => !!(window as any).__TAURI__;

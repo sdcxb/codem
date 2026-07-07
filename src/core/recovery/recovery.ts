@@ -15,7 +15,7 @@ export interface RecoveryConfig {
 }
 
 const DEFAULT_CONFIG: RecoveryConfig = {
-  storagePrefix: "mimo-recovery",
+  storagePrefix: "codem-recovery",
   maxSessions: 50,
   maxMessagesPerSession: 500,
   autoSave: true,

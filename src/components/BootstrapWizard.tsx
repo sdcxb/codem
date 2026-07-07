@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { AppIdentity, IdentityConfig, UserConfig } from "../core/types";
 import { saveAppIdentity } from "../core/config/loader";
+import { setSettingJSON } from "../core/storage/settings";
 
 interface BootstrapWizardProps {
   appRoot: string;
@@ -58,10 +59,10 @@ export function BootstrapWizard({ onComplete }: BootstrapWizardProps) {
       onboarded: true,
     };
 
-    // Save to localStorage (no backend needed)
+    // Save to SQLite settings
     saveAppIdentity(appIdentity);
 
-    // Save identity and user config to localStorage
+    // Save identity and user config to SQLite settings
     const identityConfig: IdentityConfig = {
       name: appIdentity.name,
       creature: appIdentity.creature,
@@ -70,7 +71,7 @@ export function BootstrapWizard({ onComplete }: BootstrapWizardProps) {
       avatar: "",
       raw: "",
     };
-    localStorage.setItem("mimo-identity", JSON.stringify(identityConfig));
+    setSettingJSON("codem-identity", identityConfig);
 
     const userConfig: UserConfig = {
       name: userName,
@@ -82,7 +83,7 @@ export function BootstrapWizard({ onComplete }: BootstrapWizardProps) {
       raw: "",
     };
     console.log("[BootstrapWizard] Saving userConfig:", JSON.stringify(userConfig));
-    localStorage.setItem("mimo-user", JSON.stringify(userConfig));
+    setSettingJSON("codem-user", userConfig);
 
     // Call onComplete
     onComplete(appIdentity);

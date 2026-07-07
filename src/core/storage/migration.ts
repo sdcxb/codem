@@ -1,12 +1,108 @@
 import { initDatabase } from "./database";
 import * as SessionStorage from "./session";
 import * as MessageStorage from "./message";
+import { getSetting, setSetting, setSettingJSON, getSettingJSON, removeSetting } from "./settings";
 
 interface MigrationResult {
   projects: number;
   sessions: number;
   messages: number;
   errors: string[];
+}
+
+/**
+ * 迁移旧 mimo-* 前缀的 SQLite settings key 到 codem-* 前缀
+ * 同时从 localStorage 迁移数据到 SQLite settings 表
+ */
+function migrateSettingsKeys(): number {
+  let migrated = 0;
+
+  // 旧 key → 新 key 映射（SQLite settings 表内部迁移）
+  const keyMap: Record<string, string> = {
+    "mimo-settings": "codem-settings",
+    "mimo-app-identity": "codem-app-identity",
+    "mimo-user": "codem-user",
+    "mimo-identity": "codem-identity",
+    "mimo-mcp-servers": "codem-mcp-servers",
+    "mimo-cost-tracker": "codem-cost-tracker",
+  };
+
+  for (const [oldKey, newKey] of Object.entries(keyMap)) {
+    const existing = getSetting(newKey);
+    if (existing) continue; // 新 key 已有数据，跳过
+
+    const oldData = getSetting(oldKey);
+    if (oldData) {
+      setSetting(newKey, oldData);
+      removeSetting(oldKey);
+      migrated++;
+      console.log(`[Migration] SQLite key: ${oldKey} → ${newKey}`);
+    }
+  }
+
+  return migrated;
+}
+
+/**
+ * 从 localStorage 迁移到 SQLite settings 表
+ * 处理还未迁移到 SQLite 的 localStorage 数据
+ */
+function migrateFromLocalStorageToSettings(): number {
+  let migrated = 0;
+
+  // localStorage key → SQLite settings key 映射
+  const lsKeyMap: Record<string, string> = {
+    "mimo-settings": "codem-settings",
+    "mimo-identity": "codem-identity",
+    "mimo-user": "codem-user",
+    "mimo-theme": "codem-theme",
+  };
+
+  for (const [lsKey, sqliteKey] of Object.entries(lsKeyMap)) {
+    const existing = getSetting(sqliteKey);
+    if (existing) continue; // SQLite 已有数据，跳过
+
+    try {
+      const lsData = localStorage.getItem(lsKey);
+      if (lsData) {
+        setSetting(sqliteKey, lsData);
+        localStorage.removeItem(lsKey);
+        migrated++;
+        console.log(`[Migration] localStorage → SQLite: ${lsKey} → ${sqliteKey}`);
+      }
+    } catch {
+      // localStorage 可能不可用
+    }
+  }
+
+  // 迁移 mimo-cli-session-* 的 localStorage key 到 SQLite settings
+  try {
+    const keysToRemove: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && key.startsWith("mimo-cli-session-")) {
+        const newKey = "codem-" + key.substring(5); // mimo- → codem-
+        const existing = getSetting(newKey);
+        if (!existing) {
+          const data = localStorage.getItem(key);
+          if (data) {
+            setSetting(newKey, data);
+            migrated++;
+            console.log(`[Migration] localStorage → SQLite: ${key} → ${newKey}`);
+          }
+        }
+        keysToRemove.push(key);
+      }
+    }
+    // 清理已迁移的 localStorage key
+    for (const key of keysToRemove) {
+      localStorage.removeItem(key);
+    }
+  } catch {
+    // localStorage 可能不可用
+  }
+
+  return migrated;
 }
 
 export async function migrateFromLocalStorage(): Promise<MigrationResult> {
@@ -21,9 +117,17 @@ export async function migrateFromLocalStorage(): Promise<MigrationResult> {
     // Initialize SQLite database
     await initDatabase();
 
-    // Migration from localStorage is no longer needed
-    // All data is now stored in SQLite
-    console.log("[Migration] No localStorage migration needed - using SQLite");
+    // 1. 迁移 SQLite settings 表内旧 key → 新 key
+    const settingsMigrated = migrateSettingsKeys();
+    if (settingsMigrated > 0) {
+      console.log(`[Migration] Migrated ${settingsMigrated} settings keys from mimo-* to codem-*`);
+    }
+
+    // 2. 从 localStorage 迁移到 SQLite settings 表
+    const lsMigrated = migrateFromLocalStorageToSettings();
+    if (lsMigrated > 0) {
+      console.log(`[Migration] Migrated ${lsMigrated} items from localStorage to SQLite`);
+    }
 
     // Migrate from v2_sessions table to sessions table (if v2_sessions has data)
     console.log("[Migration] Checking v2_sessions table...");

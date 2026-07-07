@@ -215,7 +215,7 @@ export function MessageBubble({ message, index, onFork, showReasoning = true, on
                   // Extract name from args or from result string
                   let agentName = tc.tool === "spawn_subagent" ? tc.args?.name as string : null;
                   if (!agentName && tc.tool === "spawn_subagent" && tc.result) {
-                    const nameMatch = tc.result.match(/Sub-agent "([^"]+)"/);
+                    const nameMatch = tc.result.match(/(?:子智能体|Sub-agent)\s*"([^"]+)"/);
                     if (nameMatch) agentName = nameMatch[1];
                   }
                   const displayName = agentId ? `${agentName || "子智能体"} (${agentId})` : tc.tool;

@@ -263,6 +263,42 @@ export function deleteMessage(id: string): void {
   persistDatabase();
 }
 
+/** Delete all messages before a given timestamp (exclusive) in a session */
+export function deleteMessagesBefore(sessionId: string, timestamp: number): number {
+  const db = getDatabase();
+  // First get the IDs of messages to delete (so we can clean up tool_calls)
+  const result = db.exec(
+    "SELECT id FROM messages WHERE session_id = ? AND timestamp < ?",
+    [sessionId, timestamp]
+  );
+  if (result.length === 0) return 0;
+  const ids = result[0].values.map((row: any[]) => row[0] as string);
+
+  // Delete tool_calls for those messages
+  for (const id of ids) {
+    db.run("DELETE FROM tool_calls WHERE message_id = ?", [id]);
+  }
+  // Delete the messages
+  db.run(
+    "DELETE FROM messages WHERE session_id = ? AND timestamp < ?",
+    [sessionId, timestamp]
+  );
+  persistDatabase();
+  return ids.length;
+}
+
+/** Delete messages by their IDs (and associated tool_calls) */
+export function deleteMessagesByIds(ids: string[]): number {
+  if (ids.length === 0) return 0;
+  const db = getDatabase();
+  for (const id of ids) {
+    db.run("DELETE FROM tool_calls WHERE message_id = ?", [id]);
+    db.run("DELETE FROM messages WHERE id = ?", [id]);
+  }
+  persistDatabase();
+  return ids.length;
+}
+
 export function getMessageCount(sessionId: string): number {
   const db = getDatabase();
   const result = db.exec("SELECT COUNT(*) FROM messages WHERE session_id = ?", [sessionId]);
