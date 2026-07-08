@@ -10,6 +10,7 @@ import { ConfigEditor } from "./components/ConfigEditor";
 import { BootstrapWizard } from "./components/BootstrapWizard";
 import { PermissionDialog } from "./components/PermissionDialog";
 import { ConfirmDialog } from "./components/ConfirmDialog";
+import { CloseConfirmDialog } from "./components/CloseConfirmDialog";
 import { McpManager } from "./components/McpManager";
 import { SkillManager } from "./components/SkillManager";
 import { MemoryManager } from "./components/MemoryManager";
@@ -25,6 +26,7 @@ import type { PermissionRequest, PermissionResult } from "./core/permission/perm
 import { initDatabase, resetDatabase } from "./core/storage";
 import { migrateFromLocalStorage } from "./core/storage/migration";
 import { getSetting, setSetting, getSettingJSON } from "./core/storage/settings";
+import { setLang, useLang, S } from "./core/i18n/lang";
 import * as MessageStorage from "./core/storage/message";
 
 const APP_ROOT = "D:\\mimo";
@@ -56,6 +58,7 @@ function getMode(): "cli" | "api" {
 }
 
 function App() {
+  const lang = useLang();
   const { messages, addMessage, appendToMessage, setStreaming, isStreaming, addToolCall, updateToolCall, loadMessages, saveMessages } = useAppStore();
   const { currentProject, currentSession, createSession, dbReady, loadFromDB } = useProjectStore();
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -73,6 +76,7 @@ function App() {
   const [editingFile, setEditingFile] = useState<string | null>(null);
   const [appIdentity, setAppIdentity] = useState<AppIdentity | null>(null);
   const [showBootstrap, setShowBootstrap] = useState(false);
+  const [showCloseConfirm, setShowCloseConfirm] = useState(false);
   const [cliModel, setCliModel] = useState("mimo-v2.5-pro");
   const [currentMode, setCurrentMode] = useState<"cli" | "api">("cli");
   const [currentProvider, setCurrentProvider] = useState("mimo");
@@ -160,6 +164,25 @@ request: PermissionRequest;
       } catch (err) {
         console.error("[App] Init failed:", err);
         useProjectStore.getState().loadFromDB();
+      }
+
+      // Detect installer default language on first run (no language setting in DB)
+      // NSIS installer (Chinese .exe) → default "zh"
+      // MSI installer (English .msi) → default "en"
+      const existingLang = getSetting("codem-language");
+      if (!existingLang) {
+        try {
+          const { invoke } = (window as any).__TAURI__?.core || {};
+          if (invoke) {
+            const installerLang = await invoke("get_installer_default_lang");
+            if (installerLang === "en" || installerLang === "zh") {
+              setLang(installerLang);
+              console.log(`[App] Detected installer language: ${installerLang}`);
+            }
+          }
+        } catch (e) {
+          console.warn("[App] Failed to detect installer language:", e);
+        }
       }
 
       // Load identity AFTER database is ready
@@ -258,6 +281,44 @@ request: PermissionRequest;
     window.addEventListener("codem-settings-changed", configureEngine);
     return () => window.removeEventListener("codem-settings-changed", configureEngine);
   }, [configureEngine]);
+
+  // Handle window close request from Rust (tray icon support)
+  useEffect(() => {
+    const { listen } = (window as any).__TAURI__?.event || {};
+    if (!listen) return;
+
+    let unlisten: (() => void) | undefined;
+    listen("close-requested", () => {
+      const closeBehavior = getSetting("codem-close-behavior"); // "tray" | "close" | null
+      if (closeBehavior === "tray") {
+        // Minimize to tray
+        const { invoke } = (window as any).__TAURI__?.core || {};
+        invoke?.("hide_to_tray");
+      } else if (closeBehavior === "close") {
+        // Quit the app
+        const { invoke } = (window as any).__TAURI__?.core || {};
+        invoke?.("quit_app");
+      } else {
+        // First time — show dialog
+        setShowCloseConfirm(true);
+      }
+    }).then((un: () => void) => { unlisten = un; });
+
+    return () => { unlisten?.(); };
+  }, []);
+
+  const handleCloseChoice = useCallback((action: "tray" | "close", remember: boolean) => {
+    setShowCloseConfirm(false);
+    if (remember) {
+      setSetting("codem-close-behavior", action);
+    }
+    const { invoke } = (window as any).__TAURI__?.core || {};
+    if (action === "tray") {
+      invoke?.("hide_to_tray");
+    } else {
+      invoke?.("quit_app");
+    }
+  }, []);
 
   // WebSocket connection for CLI mode
   const connectWebSocket = useCallback(() => {
@@ -435,8 +496,10 @@ request: PermissionRequest;
     let assistantMsgId = `assistant-${Date.now()}`;
     let assistantContent = "";
     let reasoningContent = "";
+    let lastAssistantMsgId = "";
 
-    console.log(`[handleSend] sessionId: ${currentSession.id}, message: ${message.substring(0, 50)}...`);
+    // Record start time for execution timer
+    useAppStore.getState().setStreamStartTime(Date.now());
 
     try {
       abortRef.current = new AbortController();
@@ -453,13 +516,55 @@ request: PermissionRequest;
         switch (event.type) {
           case "reasoning_delta":
             reasoningContent += event.text;
-            // Update message with reasoning content
-            if (useAppStore.getState().messages.find((m) => m.id === assistantMsgId)) {
-              useAppStore.getState().updateMessage(assistantMsgId, { 
-                reasoning: reasoningContent 
-              } as any);
+            // Create assistant message if it doesn't exist yet (reasoning often arrives before text)
+            if (!useAppStore.getState().messages.find((m) => m.id === assistantMsgId)) {
+              addMessage({
+                id: assistantMsgId,
+                role: "assistant",
+                content: "",
+                timestamp: Date.now(),
+                status: "streaming",
+              });
+              if (currentSession) {
+                saveMessages(currentSession.id);
+              }
             }
+            // Update message with reasoning content
+            useAppStore.getState().updateMessage(assistantMsgId, {
+              reasoning: reasoningContent
+            } as any);
             break;
+
+          case "start": {
+            // New agentic loop iteration — keep the SAME assistant message
+            // so all iterations accumulate into one reply (text + reasoning + tools)
+            const iter = 'iteration' in event ? event.iteration : 1;
+            if (iter > 1) {
+              // Add a visual separator between iterations in reasoning
+              const sep = `\n\n---\n\n`;
+              reasoningContent += sep;
+              // Update the existing message with the separator
+              const existing = useAppStore.getState().messages.find((m) => m.id === assistantMsgId);
+              if (existing) {
+                useAppStore.getState().updateMessage(assistantMsgId, {
+                  reasoning: reasoningContent
+                } as any);
+              }
+            }
+            lastAssistantMsgId = assistantMsgId;
+            break;
+          }
+
+          case "step_progress": {
+            // Deterministic step progress from the agentic loop itself
+            useAppStore.getState().setStepProgress({
+              current: event.step,
+              total: event.total ?? 0,
+              title: event.title || "",
+              steps: event.steps?.map(s => ({ title: s.title })) ?? null,
+            });
+            break;
+          }
 
           case "text_delta":
             assistantContent += event.text;
@@ -471,12 +576,10 @@ request: PermissionRequest;
                 timestamp: Date.now(),
                 status: "streaming",
               });
-              // Immediately save assistant message creation
               if (currentSession) {
                 saveMessages(currentSession.id);
               }
             }
-            // Always set buffer ID and accumulate text
             streamBufferRef.current.id = assistantMsgId;
             streamBufferRef.current.text += event.text;
             if (!streamBufferRef.current.timer) {
@@ -485,11 +588,9 @@ request: PermissionRequest;
             break;
 
           case "tool_start": {
-            // Flush any buffered text before showing tool call
             flushStreamBuffer();
             const tc = "toolCall" in event ? event.toolCall : null;
             if (tc) {
-              // Ensure assistant message exists before adding tool call
               if (!useAppStore.getState().messages.find((m) => m.id === assistantMsgId)) {
                 addMessage({
                   id: assistantMsgId,
@@ -616,6 +717,10 @@ request: PermissionRequest;
     } finally {
       // Flush any remaining buffered text
       flushStreamBuffer();
+      // Clear step progress after a short delay so user sees the final state
+      setTimeout(() => useAppStore.getState().setStepProgress(null), 2000);
+      // Clear stream start time
+      useAppStore.getState().setStreamStartTime(null);
       
       setStreaming(false);
       abortRef.current = null;
@@ -777,10 +882,10 @@ request: PermissionRequest;
         <div className="panel-right">
           <div className="panel-tabs">
             <button className={`tab ${bottomTab === "chat" ? "active" : ""}`} onClick={() => setBottomTab("chat")}>
-              💬 Chat
+              💬 {lang === "zh" ? "对话" : "Chat"}
             </button>
             <button className={`tab ${bottomTab === "terminal" ? "active" : ""}`} onClick={() => setBottomTab("terminal")}>
-              ⌨️ Terminal
+              ⌨️ {lang === "zh" ? "终端" : "Terminal"}
             </button>
           </div>
 
@@ -937,6 +1042,10 @@ request: PermissionRequest;
           onConfirm={confirmDialog.onConfirm}
           onCancel={confirmDialog.onCancel}
         />
+      )}
+
+      {showCloseConfirm && (
+        <CloseConfirmDialog onChoose={handleCloseChoice} />
       )}
         </>
       )}

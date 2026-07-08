@@ -1,7 +1,18 @@
 import type { ProcessorEvent } from "../llm/processor";
+import { getLang } from "../i18n/lang";
 
 // ========== Sub-agent Types ==========
 export type SubagentStatus = "pending" | "running" | "completed" | "failed" | "cancelled";
+
+// ========== Sub-agent Activity Tracking ==========
+export interface SubagentActivity {
+  id: string;
+  type: "thinking" | "tool";
+  label: string;
+  status: "running" | "done";
+  startedAt: number;
+  completedAt?: number;
+}
 
 // Random names for sub-agents
 const SUBAGENT_NAMES = [
@@ -32,6 +43,8 @@ export interface SubagentTask {
   startedAt?: number;
   completedAt?: number;
   timeout?: number;
+  /** Real-time activity list for Codex-style execution view */
+  activities?: SubagentActivity[];
 }
 
 export interface SubagentResult {
@@ -375,7 +388,7 @@ export function parseTaskResult(output: string): SubagentResult {
 
   return {
     status,
-    summary: summary || "任务已完成",
+    summary: summary || (getLang() === "zh" ? "任务已完成" : "Task completed"),
     output: cleanOutput,
     filesTouched,
     findings,

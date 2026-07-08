@@ -32,6 +32,26 @@ export interface ToolCall {
   status: "pending" | "running" | "done" | "error";
 }
 
+export interface StepItem {
+  title: string;
+}
+
+export interface AgentActivity {
+  id: string;
+  type: "thinking" | "tool";
+  label: string;
+  status: "running" | "done";
+  startedAt: number;
+  completedAt?: number;
+}
+
+export interface StepProgress {
+  current: number;
+  total: number; // 0 means unknown (indeterminate progress)
+  title: string;
+  steps: StepItem[] | null; // Full step plan for hover tooltip
+}
+
 interface AppState {
   messages: Message[];
   isStreaming: boolean;
@@ -40,6 +60,9 @@ interface AppState {
   streamingMsgId: string | null;
   hasMoreMessages: boolean;
   isLoadingMore: boolean;
+  stepProgress: StepProgress | null;
+  agentActivities: AgentActivity[];
+  streamStartTime: number | null;
 
   addMessage: (msg: Message) => void;
   updateMessage: (id: string, update: Partial<Message>) => void;
@@ -54,6 +77,12 @@ interface AppState {
   loadMoreMessages: (sessionId: string, count?: number) => void;
   saveMessages: (sessionId: string) => void;
   removeGeneratedFiles: (messageId: string, files: string[]) => void;
+  setStepProgress: (progress: StepProgress | null) => void;
+  setAgentActivities: (activities: AgentActivity[]) => void;
+  addAgentActivity: (activity: AgentActivity) => void;
+  updateAgentActivity: (id: string, update: Partial<AgentActivity>) => void;
+  clearAgentActivities: () => void;
+  setStreamStartTime: (time: number | null) => void;
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -64,6 +93,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   streamingMsgId: null,
   hasMoreMessages: false,
   isLoadingMore: false,
+  stepProgress: null,
+  agentActivities: [],
+  streamStartTime: null,
 
   addMessage: (msg) => {
     set((s) => {
@@ -95,10 +127,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     messages: s.messages.map((m) => m.id === messageId ? { ...m, toolCalls: (m.toolCalls || []).map((t) => t.id === toolId ? { ...t, ...update } : t) } : m),
   })),
 
-  setStreaming: (v) => set({ isStreaming: v, streamingMsgId: v ? get().streamingMsgId : null }),
+  setStreaming: (v) => set({ isStreaming: v, streamingMsgId: v ? get().streamingMsgId : null, stepProgress: v ? get().stepProgress : null, agentActivities: v ? get().agentActivities : [], streamStartTime: v ? get().streamStartTime : null }),
   setCurrentModel: (m) => set({ currentModel: m }),
   setCwd: (d) => set({ cwd: d }),
-  clearMessages: () => set({ messages: [], streamingMsgId: null }),
+  clearMessages: () => set({ messages: [], streamingMsgId: null, stepProgress: null, agentActivities: [], streamStartTime: null }),
 
   loadMessages: (sessionId) => {
     try {
@@ -171,4 +203,11 @@ export const useAppStore = create<AppState>((set, get) => ({
       ),
     }));
   },
+
+  setStepProgress: (progress) => set({ stepProgress: progress }),
+  setAgentActivities: (activities) => set({ agentActivities: activities }),
+  addAgentActivity: (activity) => set((s) => ({ agentActivities: [...s.agentActivities, activity] })),
+  updateAgentActivity: (id, update) => set((s) => ({ agentActivities: s.agentActivities.map((a) => a.id === id ? { ...a, ...update } : a) })),
+  clearAgentActivities: () => set({ agentActivities: [], streamStartTime: null }),
+  setStreamStartTime: (time) => set({ streamStartTime: time }),
 }));

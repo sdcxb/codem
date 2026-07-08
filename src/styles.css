@@ -2499,6 +2499,167 @@ body {
   overflow: hidden;
 }
 
+/* ========== Step Progress (Codex Style) ========== */
+.step-progress-container {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  width: fit-content;
+  margin: 0 auto;
+  z-index: 10;
+}
+
+.step-progress-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-primary);
+  border-radius: 16px;
+  font-size: 12px;
+  cursor: default;
+  transition: background 0.2s, border-color 0.2s;
+  max-width: 400px;
+  user-select: none;
+}
+
+.step-progress-pill:hover {
+  background: var(--bg-hover, var(--bg-secondary));
+  border-color: var(--accent-primary);
+}
+
+.step-progress-ring {
+  flex-shrink: 0;
+}
+
+.step-ring-indeterminate {
+  animation: step-ring-spin 1.2s linear infinite;
+}
+
+@keyframes step-ring-spin {
+  from { transform: rotate(-90deg); }
+  to { transform: rotate(270deg); }
+}
+
+.step-progress-text {
+  color: var(--text-primary);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.step-progress-sep {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.step-progress-detail {
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 11px;
+}
+
+/* ========== Step Tooltip (Hover) ========== */
+.step-tooltip {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--bg-elevated, var(--bg-secondary));
+  border: 1px solid var(--border-primary);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  padding: 10px 0;
+  min-width: 240px;
+  max-width: 360px;
+  z-index: 100;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.12s ease, visibility 0.12s ease;
+}
+
+.step-progress-container:hover .step-tooltip {
+  opacity: 1;
+  visibility: visible;
+}
+
+.step-tooltip::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 6px solid transparent;
+  border-top-color: var(--bg-elevated, var(--bg-secondary));
+  pointer-events: none;
+}
+
+.step-tooltip-header {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 0 14px 6px;
+  border-bottom: 1px solid var(--border-primary);
+  margin-bottom: 4px;
+}
+
+.step-tooltip-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.step-tooltip-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 14px;
+  transition: background 0.15s;
+}
+
+.step-tooltip-item.active {
+  background: var(--bg-hover, rgba(255, 255, 255, 0.04));
+}
+
+.step-tooltip-ring {
+  flex-shrink: 0;
+  display: block;
+  width: 20px;
+  height: 20px;
+}
+
+.step-tooltip-title {
+  font-size: 12px;
+  color: var(--text-primary);
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.step-tooltip-title.pending {
+  color: var(--text-muted);
+}
+
+.step-tooltip-badge {
+  font-size: 10px;
+  color: var(--accent-primary);
+  background: var(--accent-primary-alpha, rgba(124, 108, 240, 0.15));
+  padding: 1px 6px;
+  border-radius: 8px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
 .chat-body .messages-container {
   flex: 1;
 }
@@ -2913,6 +3074,122 @@ body {
   color: var(--error);
   font-size: 12px;
   white-space: pre-wrap;
+}
+
+/* ========== Subagent Codex-style Execution View ========== */
+
+.subagent-elapsed-section {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 14px 16px;
+  margin-bottom: 4px;
+}
+
+.subagent-elapsed-label {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.subagent-elapsed-time {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-variant-numeric: tabular-nums;
+}
+
+.subagent-elapsed-spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--border-primary);
+  border-top-color: var(--accent-primary, var(--accent));
+  border-radius: 50%;
+  animation: subagent-spin 0.8s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes subagent-spin {
+  to { transform: rotate(360deg); }
+}
+
+.subagent-activity-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0 16px 16px;
+}
+
+.subagent-activity-empty {
+  font-size: 13px;
+  color: var(--text-muted);
+  padding: 8px 0;
+}
+
+.subagent-activity-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  font-size: 13px;
+  line-height: 1.4;
+  transition: background 0.15s;
+}
+
+.subagent-activity-item.running {
+  background: var(--bg-tertiary);
+}
+
+.subagent-activity-item.done {
+  opacity: 0.85;
+}
+
+.subagent-activity-item.done:hover {
+  background: var(--bg-hover);
+  opacity: 1;
+}
+
+.subagent-activity-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.subagent-activity-spinner {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border: 1.5px solid var(--border-primary);
+  border-top-color: var(--accent-primary, var(--accent));
+  border-radius: 50%;
+  animation: subagent-spin 0.8s linear infinite;
+}
+
+.subagent-activity-label {
+  flex: 1;
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.subagent-activity-item.done .subagent-activity-label {
+  color: var(--text-secondary);
+}
+
+.subagent-activity-duration {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
 }
 
 /* ========== Permission Dialog ========== */
@@ -4840,6 +5117,32 @@ body {
   padding: 12px 16px;
   color: var(--text-muted);
   font-size: 13px;
+}
+
+/* ========== Main Agent Streaming Timer ========== */
+
+.streaming-timer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.streaming-timer-spinner {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--border-primary);
+  border-top-color: var(--accent-primary, var(--accent));
+  border-radius: 50%;
+  animation: subagent-spin 0.8s linear infinite;
+  flex-shrink: 0;
+}
+
+.streaming-timer-text {
+  font-variant-numeric: tabular-nums;
 }
 
 .thinking-dot {

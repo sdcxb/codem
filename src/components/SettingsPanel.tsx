@@ -3,7 +3,8 @@ import type { IdentityConfig, UserConfig, AppIdentity } from "../core/types";
 import { saveAppIdentity } from "../core/config/loader";
 import { getMiMoAuth } from "../core/auth/mimo";
 import type { LoginResult } from "../core/auth/mimo";
-import { getSettingJSON, setSettingJSON } from "../core/storage/settings";
+import { getSettingJSON, setSettingJSON, getSetting, setSetting, removeSetting } from "../core/storage/settings";
+import { setLang, useLang, S, type Language } from "../core/i18n/lang";
 
 interface ProviderKey {
   id: string;
@@ -19,6 +20,7 @@ interface Settings {
   theme: "dark" | "light";
   fontSize: number;
   autoApprove: boolean;
+  language: Language;
   providers: ProviderKey[];
 }
 
@@ -38,6 +40,7 @@ const defaultSettings: Settings = {
   theme: "dark",
   fontSize: 14,
   autoApprove: false,
+  language: "zh",
   providers: defaultProviders,
 };
 
@@ -67,6 +70,7 @@ const defaultUser: UserConfig = {
 };
 
 export function SettingsPanel({ onClose, onSessionRecovery, onUsageStats }: SettingsPanelProps) {
+  const lang = useLang();
   const [settings, setSettings] = useState<Settings>(defaultSettings);
   const [identity, setIdentity] = useState<IdentityConfig>(defaultIdentity);
   const [userConfig, setUserConfig] = useState<UserConfig>(defaultUser);
@@ -94,6 +98,12 @@ export function SettingsPanel({ onClose, onSessionRecovery, onUsageStats }: Sett
       setSettings({ ...defaultSettings, ...parsed });
     }
 
+    // Load language setting (also stored separately for fast access)
+    const storedLang = getSetting("codem-language");
+    if (storedLang === "en" || storedLang === "zh") {
+      setSettings(prev => ({ ...prev, language: storedLang }));
+    }
+
     const storedIdentity = getSettingJSON<IdentityConfig | null>("codem-identity", null);
     if (storedIdentity) {
       const parsed = storedIdentity;
@@ -118,6 +128,7 @@ export function SettingsPanel({ onClose, onSessionRecovery, onUsageStats }: Sett
 
   const handleSave = () => {
     setSettingJSON("codem-settings", settings);
+    setLang(settings.language);
 
     const identityToSave: IdentityConfig = {
       name: identity.name,
@@ -335,13 +346,13 @@ export function SettingsPanel({ onClose, onSessionRecovery, onUsageStats }: Sett
     <div className="settings-overlay" onClick={onClose}>
       <div className="settings-panel" onClick={(e) => e.stopPropagation()}>
         <div className="settings-header">
-          <h3>⚙️ 设置</h3>
+          <h3>{S.settings.title[lang]}</h3>
           <button className="settings-close" onClick={onClose}>✕</button>
         </div>
 
         <div className="settings-body">
           <div className="settings-mode-switch">
-            <label className="mode-label">运行模式</label>
+            <label className="mode-label">{S.settings.runMode[lang]}</label>
             <div className="mode-options">
               <button
                 className={`mode-btn ${settings.mode === "api" ? "active" : ""}`}
@@ -353,8 +364,8 @@ export function SettingsPanel({ onClose, onSessionRecovery, onUsageStats }: Sett
                 }}
               >
                 <span className="mode-icon">🔑</span>
-                <span className="mode-title">API 模式</span>
-                <span className="mode-desc">配置 API Key，调用大模型 API</span>
+                <span className="mode-title">{S.settings.apiMode[lang]}</span>
+                <span className="mode-desc">{S.settings.apiModeDesc[lang]}</span>
               </button>
               <button
                 className={`mode-btn ${settings.mode === "cli" ? "active" : ""}`}
@@ -366,8 +377,8 @@ export function SettingsPanel({ onClose, onSessionRecovery, onUsageStats }: Sett
                 }}
               >
                 <span className="mode-icon">⚡</span>
-                <span className="mode-title">CLI 模式</span>
-                <span className="mode-desc">MiMo 账号登录，使用积分调用</span>
+                <span className="mode-title">{S.settings.cliMode[lang]}</span>
+                <span className="mode-desc">{S.settings.cliModeDesc[lang]}</span>
               </button>
             </div>
           </div>
@@ -469,7 +480,7 @@ export function SettingsPanel({ onClose, onSessionRecovery, onUsageStats }: Sett
           )}
 
           <div className="setting-group">
-            <label>模型</label>
+            <label>{S.settings.model[lang]}</label>
             <select
               value={settings.model}
               onChange={(e) => setSettings({ ...settings, model: e.target.value })}
@@ -507,18 +518,36 @@ export function SettingsPanel({ onClose, onSessionRecovery, onUsageStats }: Sett
           </div>
 
           <div className="setting-group">
-            <label>主题</label>
+            <label>{S.settings.theme[lang]}</label>
             <select
               value={settings.theme}
               onChange={(e) => setSettings({ ...settings, theme: e.target.value as "dark" | "light" })}
             >
-              <option value="dark">深色</option>
-              <option value="light">浅色</option>
+              <option value="dark">{S.settings.dark[lang]}</option>
+              <option value="light">{S.settings.light[lang]}</option>
             </select>
           </div>
 
           <div className="setting-group">
-            <label>字体大小</label>
+            <label>语言 / Language</label>
+            <select
+              value={settings.language}
+              onChange={(e) => {
+                const lang = e.target.value as Language;
+                setLang(lang);
+                const newSettings = { ...settings, language: lang };
+                setSettings(newSettings);
+                setSettingJSON("codem-settings", newSettings);
+                window.dispatchEvent(new Event("codem-settings-changed"));
+              }}
+            >
+              <option value="zh">中文</option>
+              <option value="en">English</option>
+            </select>
+          </div>
+
+          <div className="setting-group">
+            <label>{S.settings.fontSize[lang]}</label>
             <input
               type="range"
               min="10"
@@ -536,16 +565,35 @@ export function SettingsPanel({ onClose, onSessionRecovery, onUsageStats }: Sett
                 checked={settings.autoApprove}
                 onChange={(e) => setSettings({ ...settings, autoApprove: e.target.checked })}
               />
-              自动批准工具调用
+              {S.settings.autoApprove[lang]}
             </label>
+          </div>
+
+          <div className="setting-group">
+            <label>{S.settings.closeBehavior[lang]}</label>
+            <select
+              value={getSetting("codem-close-behavior") || "ask"}
+              onChange={(e) => {
+                const val = e.target.value;
+                if (val === "ask") {
+                  removeSetting("codem-close-behavior");
+                } else {
+                  setSetting("codem-close-behavior", val);
+                }
+              }}
+            >
+              <option value="ask">{S.settings.closeAsk[lang]}</option>
+              <option value="tray">{S.settings.closeTray[lang]}</option>
+              <option value="close">{S.settings.closeQuit[lang]}</option>
+            </select>
           </div>
 
           <div className="settings-divider" />
 
-          <div className="settings-section-title">身份配置</div>
+          <div className="settings-section-title">{S.settings.identityConfig[lang]}</div>
 
           <div className="setting-group">
-            <label>叫我什么</label>
+            <label>{S.settings.callMe[lang]}</label>
             <input
               type="text"
               value={identity.name}
@@ -555,7 +603,7 @@ export function SettingsPanel({ onClose, onSessionRecovery, onUsageStats }: Sett
           </div>
 
           <div className="setting-group">
-            <label>我是什么</label>
+            <label>{S.settings.whatAmI[lang]}</label>
             <div className="identity-options">
               {["AI 助手", "数字精灵", "代码伙伴", "赛博管家", "电子幽灵"].map((opt) => (
                 <button
@@ -576,7 +624,7 @@ export function SettingsPanel({ onClose, onSessionRecovery, onUsageStats }: Sett
           </div>
 
           <div className="setting-group">
-            <label>什么风格</label>
+            <label>{S.settings.whatStyle[lang]}</label>
             <div className="identity-options">
               {["靠谱、直接、有观点", "温暖、耐心、鼓励型", "犀利、幽默、毒舌", "冷静、专业、简洁", "随性、自然、像朋友"].map((opt) => (
                 <button
@@ -597,7 +645,7 @@ export function SettingsPanel({ onClose, onSessionRecovery, onUsageStats }: Sett
           </div>
 
           <div className="setting-group">
-            <label>我的标志</label>
+            <label>{S.settings.myIcon[lang]}</label>
             <div className="identity-emoji-grid">
               {["⚡", "🤖", "🦊", "🐱", "🔮", "🌙", "🎯", "💎", "🚀", "🧠", "🎭", "🌊"].map((e) => (
                 <button
@@ -620,10 +668,10 @@ export function SettingsPanel({ onClose, onSessionRecovery, onUsageStats }: Sett
 
           <div className="settings-divider" />
 
-          <div className="settings-section-title">关于你</div>
+          <div className="settings-section-title">{S.settings.aboutYou[lang]}</div>
 
           <div className="setting-group">
-            <label>你的名字</label>
+            <label>{S.settings.yourName[lang]}</label>
             <input
               type="text"
               value={userConfig.name}
@@ -633,7 +681,7 @@ export function SettingsPanel({ onClose, onSessionRecovery, onUsageStats }: Sett
           </div>
 
           <div className="setting-group">
-            <label>想让我怎么叫你</label>
+            <label>{S.settings.callYou[lang]}</label>
             <input
               type="text"
               value={userConfig.callBy}
@@ -643,7 +691,7 @@ export function SettingsPanel({ onClose, onSessionRecovery, onUsageStats }: Sett
           </div>
 
           <div className="setting-group">
-            <label>你的时区</label>
+            <label>{S.settings.yourTimezone[lang]}</label>
             <input
               type="text"
               value={userConfig.timezone}
@@ -654,7 +702,7 @@ export function SettingsPanel({ onClose, onSessionRecovery, onUsageStats }: Sett
 
           <div className="settings-divider" />
 
-          <div className="settings-section-title">API 配置</div>
+          <div className="settings-section-title">{S.settings.apiConfig[lang]}</div>
 
           {settings.providers.map((provider) => (
             <div key={provider.id} className="provider-group">
@@ -710,7 +758,7 @@ export function SettingsPanel({ onClose, onSessionRecovery, onUsageStats }: Sett
                   marginTop: 4,
                 }}
               >
-                保存并刷新模型
+                {S.settings.saveRefresh[lang]}
               </button>
             </div>
           ))}
@@ -723,7 +771,7 @@ export function SettingsPanel({ onClose, onSessionRecovery, onUsageStats }: Sett
               style={{ background: "var(--bg-tertiary)", marginRight: "auto" }}
               onClick={onSessionRecovery}
             >
-              🔄 会话恢复
+              {S.settings.sessionRecovery[lang]}
             </button>
           )}
           {onUsageStats && (
@@ -732,11 +780,11 @@ export function SettingsPanel({ onClose, onSessionRecovery, onUsageStats }: Sett
               style={{ background: "var(--bg-tertiary)", marginRight: "8px" }}
               onClick={onUsageStats}
             >
-              📊 用量统计
+              {S.settings.usageStats[lang]}
             </button>
           )}
-          {saved && <span className="save-success">✅ 已保存</span>}
-          <button className="save-btn" onClick={handleSave}>保存设置</button>
+          {saved && <span className="save-success">{S.settings.saved[lang]}</span>}
+          <button className="save-btn" onClick={handleSave}>{S.settings.saveSettings[lang]}</button>
         </div>
       </div>
     </div>

@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { MessageAttachment } from "../store";
 import { FileUpload } from "./FileUpload";
+import { useLang, S } from "../core/i18n/lang";
 
 interface InputAreaProps {
   onSend: (message: string, attachments?: MessageAttachment[]) => void;
@@ -10,6 +11,7 @@ interface InputAreaProps {
 }
 
 export function InputArea({ onSend, onCancel, disabled, isStreaming }: InputAreaProps) {
+  const lang = useLang();
   const [input, setInput] = useState("");
   const [pendingAttachments, setPendingAttachments] = useState<MessageAttachment[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -104,12 +106,12 @@ export function InputArea({ onSend, onCancel, disabled, isStreaming }: InputArea
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
           onPaste={handlePaste}
-          placeholder={disabled ? "AI 正在思考..." : "输入消息... (Enter 发送, Ctrl+V 粘贴图片)"}
+          placeholder={disabled ? S.input.aiThinking[lang] : S.input.placeholder[lang]}
           disabled={disabled}
           rows={1}
         />
         {isStreaming ? (
-          <button className="send-btn cancel-btn" onClick={onCancel} title="取消">
+          <button className="send-btn cancel-btn" onClick={onCancel} title={S.input.cancel[lang]}>
             ■
           </button>
         ) : (

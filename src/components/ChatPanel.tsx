@@ -9,6 +9,7 @@ import { SnapshotPanel } from "./SnapshotPanel";
 import { ContextMonitor } from "./ContextMonitor";
 import { SubagentTask } from "../core/subagent/subagent";
 import { getSubagentManager } from "../core/subagent/subagent";
+import { useLang, S } from "../core/i18n/lang";
 
 const MIMO_MODELS = [
   { id: "mimo-v2.5-pro", name: "MiMo v2.5 Pro" },
@@ -56,7 +57,8 @@ interface ChatPanelProps {
 }
 
 export function ChatPanel({ onSend, onCancel, onToggleSidebar, onFork, connected, model, onModelChange, mode = "cli", providerId = "mimo" }: ChatPanelProps) {
-  const { messages, isStreaming, removeGeneratedFiles, hasMoreMessages, isLoadingMore, loadMoreMessages } = useAppStore();
+  const lang = useLang();
+  const { messages, isStreaming, removeGeneratedFiles, hasMoreMessages, isLoadingMore, loadMoreMessages, stepProgress, streamStartTime } = useAppStore();
   const { currentSession, currentProject } = useProjectStore();
   const [showModelPicker, setShowModelPicker] = useState(false);
   const [showReasoning, setShowReasoning] = useState(true);
@@ -137,8 +139,8 @@ export function ChatPanel({ onSend, onCancel, onToggleSidebar, onFork, connected
     // Initial load
     updateAgents();
 
-    // Poll for updates every 2 seconds
-    const interval = setInterval(updateAgents, 2000);
+    // Poll for updates frequently for real-time activity tracking
+    const interval = setInterval(updateAgents, 500);
     return () => clearInterval(interval);
   }, []);
 
@@ -191,14 +193,14 @@ export function ChatPanel({ onSend, onCancel, onToggleSidebar, onFork, connected
         <button
           className={`agent-toggle ${showReasoning ? "active" : ""}`}
           onClick={() => setShowReasoning(!showReasoning)}
-          title={showReasoning ? "隐藏思考过程" : "显示思考过程"}
+          title={showReasoning ? S.chat.hideReasoning[lang] : S.chat.showReasoning[lang]}
         >
           💭
         </button>
         <button
           className={`agent-toggle ${showAgentPanel ? "active" : ""}`}
           onClick={() => { setShowAgentPanel(!showAgentPanel); setShowSnapshotPanel(false); setSelectedAgentId(null); }}
-          title="智能体工作列表"
+          title={S.chat.agentList[lang]}
         >
           🤖
           {runningCount > 0 && <span className="agent-badge">{runningCount}</span>}
@@ -206,14 +208,14 @@ export function ChatPanel({ onSend, onCancel, onToggleSidebar, onFork, connected
         <button
           className={`agent-toggle ${showSnapshotPanel ? "active" : ""}`}
           onClick={() => { setShowSnapshotPanel(!showSnapshotPanel); setShowAgentPanel(false); setSelectedAgentId(null); }}
-          title="文件快照"
+          title={S.chat.snapshot[lang]}
         >
           📸
         </button>
         <button
           className={`agent-toggle ${showContextMonitor ? "active" : ""}`}
           onClick={() => { setShowContextMonitor(!showContextMonitor); setShowAgentPanel(false); setShowSnapshotPanel(false); setSelectedAgentId(null); }}
-          title="上下文监控"
+          title={S.chat.contextMonitor[lang]}
         >
           📊
         </button>
@@ -227,9 +229,9 @@ export function ChatPanel({ onSend, onCancel, onToggleSidebar, onFork, connected
           {hasMoreMessages && (
             <div className="load-more-indicator">
               {isLoadingMore ? (
-                <span className="load-more-loading">⏳ 加载中...</span>
+                <span className="load-more-loading">{S.chat.loading[lang]}</span>
               ) : (
-                <span>↑ 滚动加载更多历史消息</span>
+                <span>{S.chat.loadMore[lang]}</span>
               )}
             </div>
           )}
@@ -237,9 +239,9 @@ export function ChatPanel({ onSend, onCancel, onToggleSidebar, onFork, connected
             <div className="empty-state">
               <div className="logo">⚡</div>
               <h2>Codem</h2>
-              <p>开始对话，让我帮你写代码</p>
+              <p>{S.chat.emptyTitle[lang]}</p>
               {!connected && (
-                <p className="connecting-text">正在连接服务器...</p>
+                <p className="connecting-text">{S.chat.connecting[lang]}</p>
               )}
             </div>
           )}
@@ -254,12 +256,7 @@ export function ChatPanel({ onSend, onCancel, onToggleSidebar, onFork, connected
             />
           ))}
           {isStreaming && (
-            <div className="thinking-indicator">
-              <div className="thinking-dot"></div>
-              <div className="thinking-dot"></div>
-              <div className="thinking-dot"></div>
-              <span className="thinking-text">思考中...</span>
-            </div>
+            <StreamingTimer startTime={streamStartTime} lang={lang} />
           )}
           <div ref={messagesEndRef} />
         </div>
@@ -294,7 +291,142 @@ export function ChatPanel({ onSend, onCancel, onToggleSidebar, onFork, connected
         )}
       </div>
 
+      {stepProgress && isStreaming && (
+        <div className="step-progress-container">
+          <div className="step-progress-pill">
+            {/* Mini circular indicator */}
+            <svg className="step-progress-ring" width="16" height="16" viewBox="0 0 16 16">
+              <circle cx="8" cy="8" r="6" fill="none" stroke="var(--bg-tertiary)" strokeWidth="2" />
+              {stepProgress.total > 0 ? (
+                <circle
+                  cx="8" cy="8" r="6" fill="none" stroke="var(--accent-primary)" strokeWidth="2"
+                  strokeDasharray={`${2 * Math.PI * 6}`}
+                  strokeDashoffset={`${2 * Math.PI * 6 * (1 - stepProgress.current / stepProgress.total)}`}
+                  strokeLinecap="round"
+                  transform="rotate(-90 8 8)"
+                  style={{ transition: "stroke-dashoffset 0.4s ease" }}
+                />
+              ) : (
+                <circle
+                  cx="8" cy="8" r="6" fill="none" stroke="var(--accent-primary)" strokeWidth="2"
+                  strokeDasharray={`${2 * Math.PI * 6 * 0.3}`}
+                  strokeLinecap="round"
+                  transform="rotate(-90 8 8)"
+                  className="step-ring-indeterminate"
+                />
+              )}
+            </svg>
+            <span className="step-progress-text">
+              {stepProgress.total > 0
+                ? (lang === "zh"
+                    ? `第${stepProgress.current}/${stepProgress.total}步`
+                    : `Step ${stepProgress.current}/${stepProgress.total}`)
+                : (lang === "zh"
+                    ? `第${stepProgress.current}步`
+                    : `Step ${stepProgress.current}`)}
+            </span>
+            {stepProgress.title && (
+              <span className="step-progress-sep">·</span>
+            )}
+            {stepProgress.title && (
+              <span className="step-progress-detail">{stepProgress.title}</span>
+            )}
+          </div>
+
+          {/* Hover tooltip with full step plan — pure CSS hover, immune to re-renders */}
+          {stepProgress.steps && stepProgress.steps.length > 0 && (
+            <div className="step-tooltip">
+              <div className="step-tooltip-header">
+                {lang === "zh" ? "执行计划" : "Execution Plan"}
+              </div>
+              <div className="step-tooltip-list">
+                {stepProgress.steps.map((s, i) => {
+                  const stepNum = i + 1;
+                  const isCompleted = stepNum < stepProgress.current;
+                  const isCurrent = stepNum === stepProgress.current;
+                  const isPending = stepNum > stepProgress.current;
+                  return (
+                    <div key={i} className={`step-tooltip-item ${isCompleted ? "done" : ""} ${isCurrent ? "active" : ""} ${isPending ? "pending" : ""}`}>
+                      <svg className="step-tooltip-ring" width="20" height="20" viewBox="0 0 20 20">
+                        {isCompleted && (
+                          <g>
+                            <circle cx="10" cy="10" r="8" fill="none" stroke="#22c55e" strokeWidth="2.5" />
+                            <path d="M6 10 L9 13 L14 7" fill="none" stroke="#22c55e" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+                          </g>
+                        )}
+                        {isCurrent && (
+                          <g>
+                            <circle cx="10" cy="10" r="8" fill="none" stroke="#555" strokeWidth="2.5" />
+                            <path d="M10 2 A 8 8 0 0 1 10 18" fill="none" stroke="#7c6cf0" strokeWidth="2.5" strokeLinecap="round" />
+                            <circle cx="10" cy="10" r="3" fill="#7c6cf0" />
+                          </g>
+                        )}
+                        {isPending && (
+                          <circle cx="10" cy="10" r="8" fill="none" stroke="#555" strokeWidth="2.5" />
+                        )}
+                      </svg>
+                      <span className={`step-tooltip-title ${isCurrent ? "active" : ""} ${isPending ? "pending" : ""}`}>
+                        {s.title}
+                      </span>
+                      {isCurrent && <span className="step-tooltip-badge">{lang === "zh" ? "进行中" : "running"}</span>}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       <InputArea onSend={onSend} onCancel={onCancel} disabled={isStreaming || !connected} isStreaming={isStreaming} />
+    </div>
+  );
+}
+
+/** Format duration in ms to compact human-readable string */
+function formatElapsed(ms: number): string {
+  if (ms < 1000) return `${ms}ms`;
+  const seconds = Math.floor(ms / 1000);
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = seconds % 60;
+  if (minutes < 60) return `${minutes}m ${remainingSeconds}s`;
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+  return `${hours}h ${remainingMinutes}m`;
+}
+
+/** Simple streaming timer — shows elapsed time while processing.
+ *  Uses requestAnimationFrame for smooth updates that sync with browser paint cycle. */
+function StreamingTimer({ startTime, lang }: {
+  startTime: number | null;
+  lang: "zh" | "en";
+}) {
+  const zh = lang === "zh";
+  const textRef = useRef<HTMLSpanElement>(null);
+
+  useEffect(() => {
+    if (!startTime) return;
+    let rafId: number;
+    const update = () => {
+      if (textRef.current) {
+        const elapsed = Date.now() - startTime;
+        textRef.current.textContent = `${zh ? "已处理" : "Processed"} ${formatElapsed(elapsed)}`;
+      }
+      rafId = requestAnimationFrame(update);
+    };
+    update();
+    return () => cancelAnimationFrame(rafId);
+  }, [startTime, zh]);
+
+  if (!startTime) return null;
+
+  return (
+    <div className="streaming-timer">
+      <span className="streaming-timer-spinner" />
+      <span className="streaming-timer-text" ref={textRef}>
+        {zh ? "已处理" : "Processed"} 0s
+      </span>
     </div>
   );
 }

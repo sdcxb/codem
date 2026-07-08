@@ -5,6 +5,7 @@ import { AppIdentity } from "../core/types";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { SearchDialog } from "./SearchDialog";
 import { getSetting, setSetting } from "../core/storage/settings";
+import { useLang, S } from "../core/i18n/lang";
 
 interface SidebarProps {
   identity: AppIdentity | null;
@@ -20,6 +21,7 @@ interface SidebarProps {
 }
 
 export function Sidebar({ identity, onSettings, onProjects, onConfig, onMcp, onSkills, onMemory, onRemoveProject, fileExplorerProjectId, onToggleFileExplorer }: SidebarProps) {
+  const lang = useLang();
   const { clearMessages, loadMessages } = useAppStore();
   const {
     projects, currentProject, currentSession,
@@ -114,7 +116,7 @@ export function Sidebar({ identity, onSettings, onProjects, onConfig, onMcp, onS
     <div className="sidebar">
       <div className="sidebar-header">
         <h3>{identity?.emoji || "⚡"} {identity?.name || "Codem"}</h3>
-        <button className="theme-toggle" onClick={toggleTheme} title="切换主题">
+        <button className="theme-toggle" onClick={toggleTheme} title={S.sidebar.toggleTheme[lang]}>
           {theme === "dark" ? "☀️" : "🌙"}
         </button>
       </div>
@@ -127,38 +129,38 @@ export function Sidebar({ identity, onSettings, onProjects, onConfig, onMcp, onS
           }
         }}>
           <span className="sidebar-nav-icon">✏️</span>
-          <span>新对话</span>
+          <span>{S.sidebar.newChat[lang]}</span>
         </button>
         <button className="sidebar-nav-item" onClick={() => setShowSearch(true)}>
           <span className="sidebar-nav-icon">🔍</span>
-          <span>搜索</span>
+          <span>{S.sidebar.search[lang]}</span>
         </button>
         <button className="sidebar-nav-item" onClick={onMcp}>
           <span className="sidebar-nav-icon">🔌</span>
-          <span>MCP</span>
+          <span>{S.sidebar.mcp[lang]}</span>
         </button>
         <button className="sidebar-nav-item" onClick={onSkills}>
           <span className="sidebar-nav-icon">📚</span>
-          <span>技能</span>
+          <span>{S.sidebar.skills[lang]}</span>
         </button>
         <button className="sidebar-nav-item" onClick={onMemory}>
           <span className="sidebar-nav-icon">🧠</span>
-          <span>记忆</span>
+          <span>{S.sidebar.memory[lang]}</span>
         </button>
         <button className="sidebar-nav-item" onClick={onSettings}>
           <span className="sidebar-nav-icon">⚙️</span>
-          <span>设置</span>
+          <span>{S.sidebar.settings[lang]}</span>
         </button>
       </div>
 
       <div className="sidebar-section">
         <div className="sidebar-section-header">
-          <span>项目</span>
-          <button className="sidebar-section-btn" onClick={onProjects} title="新增项目">+</button>
+          <span>{S.sidebar.projects[lang]}</span>
+          <button className="sidebar-section-btn" onClick={onProjects} title={S.sidebar.addProject[lang]}>+</button>
         </div>
         <div className="sidebar-projects">
           {projects.length === 0 ? (
-            <div className="sidebar-empty">暂无项目</div>
+            <div className="sidebar-empty">{S.sidebar.noProjects[lang]}</div>
           ) : (
             projects.map((project) => {
               const isExpanded = expandedProjects.has(project.id);
@@ -175,7 +177,7 @@ export function Sidebar({ identity, onSettings, onProjects, onConfig, onMcp, onS
                     <button
                       className="sidebar-project-btn"
                       onClick={(e) => { e.stopPropagation(); handleNewSession(project.id); }}
-                      title="新对话"
+                      title={S.sidebar.newChat[lang]}
                     >+</button>
                     <div
                       className="sidebar-project-more-wrapper"
@@ -210,7 +212,7 @@ export function Sidebar({ identity, onSettings, onProjects, onConfig, onMcp, onS
                             setHoverMenuProjectId(project.id);
                           }
                         }}
-                        title="更多操作"
+                        title={S.sidebar.moreActions[lang]}
                       >⋯</button>
                       {(hoverMenuProjectId === project.id || clickedMenuProjectId === project.id) && menuPosition && (
                         <div
@@ -231,13 +233,13 @@ export function Sidebar({ identity, onSettings, onProjects, onConfig, onMcp, onS
                           }}
                         >
                           <button onClick={(e) => { e.stopPropagation(); updateProject(project.id, { pinned: !project.pinned }); setHoverMenuProjectId(null); setClickedMenuProjectId(null); }}>
-                            {project.pinned ? "📌 取消置顶" : "📌 置顶项目"}
+                            {project.pinned ? S.sidebar.unpinProject[lang] : S.sidebar.pinProject[lang]}
                           </button>
                           <button onClick={(e) => { e.stopPropagation(); onToggleFileExplorer?.(project.id); setHoverMenuProjectId(null); setClickedMenuProjectId(null); }}>
-                            📂 文件浏览器
+                            {S.sidebar.fileBrowser[lang]}
                           </button>
                           <button onClick={(e) => { e.stopPropagation(); onRemoveProject?.(project.id, project.name, project.path); setHoverMenuProjectId(null); setClickedMenuProjectId(null); }}>
-                            🗑️ 移除项目
+                            {S.sidebar.removeProject[lang]}
                           </button>
                         </div>
                       )}
@@ -246,7 +248,7 @@ export function Sidebar({ identity, onSettings, onProjects, onConfig, onMcp, onS
                   {isExpanded && (
                     <div className="sidebar-sessions">
                       {projectSessions.length === 0 ? (
-                        <div className="sidebar-session-empty">暂无对话</div>
+                        <div className="sidebar-session-empty">{S.sidebar.noSessions[lang]}</div>
                       ) : (
                         projectSessions.map((s: any) => (
                           <div
@@ -259,7 +261,7 @@ export function Sidebar({ identity, onSettings, onProjects, onConfig, onMcp, onS
                               <button
                                 className={`sidebar-session-pin ${s.pinned ? "pinned" : ""}`}
                                 onClick={(e) => { e.stopPropagation(); /* TODO: session pin */ }}
-                                title={s.pinned ? "取消置顶" : "置顶对话"}
+                                title={s.pinned ? S.sidebar.unpinProject[lang] : S.sidebar.pinProject[lang]}
                               >📌</button>
                               <button
                                 className="sidebar-session-delete"
@@ -280,10 +282,10 @@ export function Sidebar({ identity, onSettings, onProjects, onConfig, onMcp, onS
 
       {deleteConfirm && (
         <ConfirmDialog
-          title="删除对话"
-          message={`确定删除「${deleteConfirm.title}」？`}
-          confirmLabel="删除"
-          cancelLabel="取消"
+          title={S.sidebar.deleteSession[lang]}
+          message={`${S.sidebar.deleteSessionMsg[lang]}${deleteConfirm.title}${S.sidebar.deleteSessionMsgEnd[lang]}`}
+          confirmLabel={S.sidebar.confirmDelete[lang]}
+          cancelLabel={S.sidebar.cancel[lang]}
           onConfirm={() => { deleteSession(deleteConfirm.sessionId); setDeleteConfirm(null); loadAllSessions(); }}
           onCancel={() => setDeleteConfirm(null)}
         />

@@ -55,8 +55,13 @@ const DEFAULT_LOOP_CONFIG: LoopConfig = {
   temperature: 0.7,
 };
 
+export interface StepPlan {
+  title: string;
+}
+
 export type LoopEvent =
   | { type: "start"; iteration: number }
+  | { type: "step_progress"; step: number; total: number | null; title: string; steps: StepPlan[] | null }
   | { type: "text_delta"; text: string }
   | { type: "reasoning_delta"; text: string }
   | { type: "tool_start"; toolCall: StreamingToolCall }
@@ -118,6 +123,136 @@ export class AgenticLoop {
     };
   }
 
+  /**
+   * Lightweight heuristic step estimation — no LLM call needed.
+   * Analyzes the user message to estimate how many agentic iterations
+   * the task will likely require.
+   */
+  private estimateSteps(userMessage: string): { plan: StepPlan[] | null; total: number | null } {
+    const msg = userMessage.toLowerCase();
+    const zh = /[\u4e00-\u9fa5]/.test(userMessage);
+
+    // Count action keywords that suggest tool usage
+    const toolKeywords = [
+      "read", "write", "edit", "create", "delete", "search", "grep",
+      "run", "execute", "test", "build", "install", "fetch", "spawn",
+      "读取", "写入", "编辑", "创建", "删除", "搜索", "运行", "执行",
+      "测试", "构建", "安装", "获取", "子智能体", "重构", "修改",
+    ];
+    const fileKeywords = ["file", "文件", ".ts", ".js", ".py", ".rs", ".json", ".css", ".html"];
+    const multiKeywords = ["multiple", "all", "every", "每个", "所有", "多个", "批量"];
+
+    let toolCount = 0;
+    for (const kw of toolKeywords) {
+      if (msg.includes(kw)) toolCount++;
+    }
+    let fileCount = 0;
+    for (const kw of fileKeywords) {
+      if (msg.includes(kw)) fileCount++;
+    }
+    const isMulti = multiKeywords.some(kw => msg.includes(kw));
+
+    // Estimate total steps
+    let total: number;
+    const steps: StepPlan[] = [];
+
+    if (toolCount === 0) {
+      // Pure text answer
+      total = 1;
+      steps.push({ title: zh ? "回答问题" : "Answer question" });
+    } else if (toolCount <= 2 && !isMulti) {
+      // Simple tool task (read + answer, write + answer)
+      total = 2;
+      steps.push({ title: zh ? "分析任务" : "Analyze task" });
+      steps.push({ title: zh ? "执行并回答" : "Execute and answer" });
+    } else if (toolCount <= 4 && fileCount <= 2) {
+      // Moderate task (read + edit + verify)
+      total = 3;
+      steps.push({ title: zh ? "读取和分析" : "Read and analyze" });
+      steps.push({ title: zh ? "执行修改" : "Make changes" });
+      steps.push({ title: zh ? "验证结果" : "Verify results" });
+    } else if (isMulti || fileCount > 3) {
+      // Complex multi-file task
+      total = 5;
+      steps.push({ title: zh ? "分析项目结构" : "Analyze project" });
+      steps.push({ title: zh ? "读取相关文件" : "Read files" });
+      steps.push({ title: zh ? "执行修改" : "Make changes" });
+      steps.push({ title: zh ? "验证和测试" : "Verify and test" });
+      steps.push({ title: zh ? "总结结果" : "Summarize" });
+    } else {
+      // Default moderate task
+      total = 3;
+      steps.push({ title: zh ? "分析任务" : "Analyze task" });
+      steps.push({ title: zh ? "执行操作" : "Execute" });
+      steps.push({ title: zh ? "验证结果" : "Verify" });
+    }
+
+    return { plan: steps, total };
+  }
+
+  /**
+   * Plan all steps for a task before the main loop.
+   * Makes a lightweight non-streaming LLM call to get a structured plan.
+   * Returns an array of step titles, like Codex/Catpaw pre-planning.
+   */
+  private async planSteps(userMessage: string): Promise<StepPlan[] | null> {
+    try {
+      const lang = (await import("../i18n/lang")).getLang();
+      const estPrompt = lang === "zh"
+        ? `你是一个任务规划器。根据用户的任务，拆解为具体的执行步骤。每一步对应一次 agentic 迭代（包括文字回答和工具调用）。
+
+规则：
+- 纯文字回答（无工具调用）= 1 步
+- 回答 + 写文件 = 2 步
+- 读文件 + 编辑文件 + 验证 = 3 步
+- 复杂的多文件重构 = 5-10 步
+- 最多 20 步
+
+用 JSON 数组格式回复，每个元素包含 title 字段（简短的中文步骤描述）。不要有其他解释。
+例如：[{"title":"回答问题"},{"title":"写入文件"}]`
+        : `You are a task planner. Break down the user's task into concrete execution steps. Each step corresponds to one agentic iteration (including text answers and tool calls).
+
+Rules:
+- Simple text answer with no tools = 1 step
+- Answer + write file = 2 steps
+- Read file + edit file + verify = 3 steps
+- Complex multi-file refactoring = 5-10 steps
+- Maximum 20 steps
+
+Reply as a JSON array, each element has a "title" field (short step description). No other explanation.
+Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
+
+      const request: LLMRequest = {
+        model: this.config.model || this.provider.id,
+        messages: [
+          { id: "system", role: "system", content: estPrompt },
+          { id: "user", role: "user", content: userMessage.substring(0, 500) },
+        ],
+        temperature: 0,
+        stream: false,
+        abortSignal: this.abortController!.signal,
+      };
+
+      const response = await this.provider.complete(request);
+      let jsonStr = response.content.trim();
+      const jsonMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
+      if (jsonMatch) jsonStr = jsonMatch[1].trim();
+      // Also try to find a JSON array directly
+      const arrayMatch = jsonStr.match(/\[[\s\S]*\]/);
+      if (arrayMatch) jsonStr = arrayMatch[0];
+
+      const steps = JSON.parse(jsonStr) as StepPlan[];
+      if (Array.isArray(steps) && steps.length > 0) {
+        const limited = steps.slice(0, 20);
+        console.log(`[AgenticLoop] Planned ${limited.length} steps:`, limited.map(s => s.title));
+        return limited;
+      }
+    } catch (err) {
+      console.warn("[AgenticLoop] Step planning failed:", err);
+    }
+    return null;
+  }
+
   async *run(
     sessionId: string,
     userMessage: string,
@@ -135,7 +270,11 @@ export class AgenticLoop {
 
     // Local assistant message ID for tracking
     let assistantMsgId = `msg-${Date.now() + 1}`;
-    
+
+    // Pre-plan: use lightweight heuristic estimation (no extra LLM call)
+    // This avoids blocking the main loop and prevents WebSocket interference in CLI mode
+    const planState = this.estimateSteps(userMessage);
+    console.log(`[AgenticLoop] Estimated ${planState.total ?? 0} steps:`, planState.plan?.map(s => s.title));
 
     // Main loop
     while (this.state.iteration < this.state.maxIterations) {
@@ -143,8 +282,21 @@ export class AgenticLoop {
       this.state.toolCallsInIteration = 0;
       this.state.compactedThisIteration = false;
 
-      
+      // Dynamically adjust if we exceed the plan
+      if (planState.total !== null && this.state.iteration > planState.total) {
+        planState.total = this.state.iteration + 1;
+        // Append a generic step to the plan
+        if (planState.plan) {
+          planState.plan.push({ title: `Step ${this.state.iteration}` });
+        }
+      }
+
       yield { type: "start", iteration: this.state.iteration };
+      // Emit step progress — deterministic, based on iteration count
+      const stepTitle = planState.plan && planState.plan[this.state.iteration - 1]
+        ? planState.plan[this.state.iteration - 1].title
+        : "";
+      yield { type: "step_progress", step: this.state.iteration, total: planState.total, title: stepTitle, steps: planState.plan };
 
       if (this.abortController.signal.aborted) {
         return { type: "aborted" };
@@ -194,6 +346,15 @@ export class AgenticLoop {
       )) {
         yield event;
         if (event.type === "tool_start") iterationToolCalls++;
+        // Update step title when we see the first tool call in this iteration
+        if (event.type === "tool_start" && iterationToolCalls === 1) {
+          // Use planned title if available, fall back to tool name
+          const plannedTitle = planState.plan && planState.plan[this.state.iteration - 1]
+            ? planState.plan[this.state.iteration - 1].title
+            : "";
+          const toolTitle = plannedTitle || this.getToolTitle(event.toolCall.name);
+          yield { type: "step_progress", step: this.state.iteration, total: planState.total, title: toolTitle, steps: planState.plan };
+        }
         // Track spawn_subagent calls
         if (event.type === "tool_start" && event.toolCall?.name === "spawn_subagent") {
           // The task ID will be in the tool result, extract it later
@@ -234,6 +395,29 @@ export class AgenticLoop {
     };
     yield { type: "end", result };
     return result;
+  }
+
+  /** Get a human-readable title for a tool call, used for step progress display */
+  private getToolTitle(toolName: string): string {
+    const titleMap: Record<string, string> = {
+      read_file: "Reading file",
+      write_file: "Writing file",
+      edit_file: "Editing file",
+      multi_edit_file: "Editing file",
+      list_directory: "Listing directory",
+      search_code: "Searching code",
+      grep_search: "Searching code",
+      run_terminal_command: "Running command",
+      run_test: "Running tests",
+      web_fetch: "Fetching web",
+      spawn_subagent: "Spawning sub-agent",
+      create_file: "Creating file",
+      delete_file: "Deleting file",
+      file_search: "Searching files",
+      todo_write: "Updating tasks",
+      codebase_search: "Searching codebase",
+    };
+    return titleMap[toolName] || toolName;
   }
 
   private async *executeIteration(
@@ -289,7 +473,7 @@ export class AgenticLoop {
                   rawArgs: "",
                 };
                 currentToolCalls.push(tc);
-                yield { type: "tool_start", toolCall: tc };
+                // Don't yield tool_start yet — wait for input to be parsed at tool_use_end
                 break;
 
               case "tool_use_delta":
@@ -305,6 +489,10 @@ export class AgenticLoop {
                   try {
                     ended.input = JSON.parse((ended as any).rawArgs);
                   } catch {}
+                }
+                // Yield tool_start NOW with fully parsed input — preserves LLM output order
+                if (ended) {
+                  yield { type: "tool_start", toolCall: ended };
                 }
                 break;
 
@@ -495,8 +683,7 @@ export class AgenticLoop {
     )) {
       switch (event.type) {
         case "tool_start":
-          // Just yield - App.tsx handles persistence via useAppStore
-          yield event;
+          // Skip — already yielded during streaming phase to preserve LLM output order
           break;
 
         case "tool_complete":

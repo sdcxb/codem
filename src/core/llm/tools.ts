@@ -1,5 +1,6 @@
 import type { ToolDefinition, ToolCallResult, LLMMessage } from "./types";
 import { readFile, writeFile, executeCommand, globSearch, grepSearch } from "../file-api";
+import { getLang } from "../i18n/lang";
 
 // ========== Tool Context ==========
 export interface ToolContext {
@@ -352,7 +353,8 @@ export function createSpawnSubagentTool(): ToolDef {
     },
     async execute(args, ctx) {
       if (!subagentManager) {
-        return { title: "spawn_subagent", output: "错误：子智能体管理器未初始化" };
+        const msg = getLang() === "zh" ? "错误：子智能体管理器未初始化" : "Error: Sub-agent manager not initialized";
+        return { title: "spawn_subagent", output: msg };
       }
 
       const agentId = args.agentId as string;
@@ -361,9 +363,12 @@ export function createSpawnSubagentTool(): ToolDef {
 
       try {
         const task = await subagentManager.spawn(ctx.sessionId, agentId, prompt, cwd, ctx.abort);
+        const zh = getLang() === "zh";
+        const subagentLabel = zh ? "子智能体" : "Sub-agent";
+        const startedLabel = zh ? "已启动，任务" : "started for";
         return {
           title: `spawn_subagent: ${agentId}`,
-          output: `SUBAGENT_TASK_ID:${task.id}\n子智能体 "${task.name}" 已启动，任务: ${prompt.substring(0, 100)}`,
+          output: `SUBAGENT_TASK_ID:${task.id}\n${subagentLabel} "${task.name}" ${startedLabel}: ${prompt.substring(0, 100)}`,
           metadata: { agentId, name: task.name },
         };
       } catch (error: any) {
@@ -386,28 +391,35 @@ export function createWaitForSubagentTool(): ToolDef {
     },
     async execute(args, ctx) {
       if (!subagentManager) {
-        return { title: "wait_for_subagent", output: "错误：子智能体管理器未初始化" };
+        const msg = getLang() === "zh" ? "错误：子智能体管理器未初始化" : "Error: Sub-agent manager not initialized";
+        return { title: "wait_for_subagent", output: msg };
       }
 
       const taskId = args.task_id as string;
+      const zh = getLang() === "zh";
 
       try {
         // Poll until completion - no timeout
         while (true) {
           const task = subagentManager.getTask(taskId);
-          if (!task) return { title: "wait_for_subagent", output: "错误：未找到任务" };
+          if (!task) return { title: "wait_for_subagent", output: zh ? "错误：未找到任务" : "Error: Task not found" };
           if (task.status === "completed" && task.result) {
+            const statusL = zh ? "状态" : "Status";
+            const summaryL = zh ? "摘要" : "Summary";
+            const outputL = zh ? "输出" : "Output";
+            const filesL = zh ? "文件" : "Files";
+            const noneL = zh ? "无" : "none";
             return {
               title: `wait_for_subagent: ${taskId}`,
-              output: `状态: ${task.result.status}\n摘要: ${task.result.summary}\n输出:\n${task.result.output}\n文件: ${task.result.filesTouched.join(", ") || "无"}`,
+              output: `${statusL}: ${task.result.status}\n${summaryL}: ${task.result.summary}\n${outputL}:\n${task.result.output}\n${filesL}: ${task.result.filesTouched.join(", ") || noneL}`,
             };
           }
-          if (task.status === "failed") return { title: "wait_for_subagent", output: `错误: ${task.error || "任务失败"}` };
-          if (task.status === "cancelled") return { title: "wait_for_subagent", output: "错误：任务已取消" };
+          if (task.status === "failed") return { title: "wait_for_subagent", output: zh ? `错误: ${task.error || "任务失败"}` : `Error: ${task.error || "Task failed"}` };
+          if (task.status === "cancelled") return { title: "wait_for_subagent", output: zh ? "错误：任务已取消" : "Error: Task cancelled" };
           await new Promise(resolve => setTimeout(resolve, 1000));
         }
       } catch (error: any) {
-        return { title: "wait_for_subagent", output: `错误: ${error.message}` };
+        return { title: "wait_for_subagent", output: zh ? `错误: ${error.message}` : `Error: ${error.message}` };
       }
     },
   };

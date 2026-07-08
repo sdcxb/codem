@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useProjectStore } from "../core/store";
+import { useLang, S } from "../core/i18n/lang";
 
 interface SearchDialogProps {
   onClose: () => void;
@@ -9,6 +10,7 @@ interface SearchDialogProps {
 }
 
 export function SearchDialog({ onClose, onSwitchProject, onNewSession, onOpenSkills }: SearchDialogProps) {
+  const lang = useLang();
   const [query, setQuery] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
   const { projects, currentProject, openProject } = useProjectStore();
@@ -47,14 +49,14 @@ export function SearchDialog({ onClose, onSwitchProject, onNewSession, onOpenSki
             className="search-input"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="搜索聊天或运行命令"
+            placeholder={lang === "zh" ? "搜索聊天或运行命令" : "Search chats or run commands"}
           />
         </div>
 
         <div className="search-content">
           {/* Section 1: Projects */}
           <div className="search-section">
-            <div className="search-section-title">聊天</div>
+            <div className="search-section-title">{S.sidebar.projects[lang]}</div>
             {filteredProjects.map((project, index) => (
               <div
                 key={project.id}
@@ -70,20 +72,20 @@ export function SearchDialog({ onClose, onSwitchProject, onNewSession, onOpenSki
 
           {/* Section 2: Conversations */}
           <div className="search-section">
-            <div className="search-section-title">对话</div>
+            <div className="search-section-title">{lang === "zh" ? "对话" : "Chats"}</div>
             <div className="search-item" onClick={() => { onNewSession(); onClose(); }}>
               <span className="search-item-icon">✏️</span>
-              <span className="search-item-label">新建快速对话</span>
+              <span className="search-item-label">{lang === "zh" ? "新建快速对话" : "New quick chat"}</span>
               <span className="search-item-shortcut">Ctrl+N</span>
             </div>
           </div>
 
           {/* Section 3: Skills */}
           <div className="search-section">
-            <div className="search-section-title">技能</div>
+            <div className="search-section-title">{S.sidebar.skills[lang]}</div>
             <div className="search-item" onClick={() => { onOpenSkills(); onClose(); }}>
               <span className="search-item-icon">📚</span>
-              <span className="search-item-label">前往技能</span>
+              <span className="search-item-label">{lang === "zh" ? "前往技能" : "Go to Skills"}</span>
               <span className="search-item-shortcut">Ctrl+S</span>
             </div>
           </div>

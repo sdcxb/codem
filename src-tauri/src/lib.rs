@@ -1,6 +1,9 @@
 use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, Manager, State};
+use tauri::WindowEvent as WinEvent;
+use tauri::tray::{TrayIconBuilder, TrayIconEvent, MouseButton, MouseButtonState};
+use tauri::menu::{MenuBuilder, MenuItemBuilder};
 
 // ========== Types ==========
 
@@ -257,6 +260,69 @@ async fn get_default_cwd() -> Result<String, String> {
         .or_else(|_| std::env::var("HOME"))
         .map_err(|_| "Cannot determine home directory")?;
     Ok(home)
+}
+
+#[tauri::command]
+async fn get_installer_default_lang() -> Result<String, String> {
+    // Detect installer type via Windows registry:
+    // - NSIS installer (Chinese .exe) → default "zh"
+    // - MSI installer (English .msi) → default "en"
+    // - Dev mode (no installer) → default "zh"
+    #[cfg(target_os = "windows")]
+    {
+        // NSIS creates: HKCU\Software\Codem with UninstallString value
+        let nsis_check = std::process::Command::new("reg")
+            .args(["query", "HKCU\\Software\\Codem"])
+            .output();
+        
+        if let Ok(output) = nsis_check {
+            if output.status.success() {
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                if stdout.to_lowercase().contains("codem") {
+                    return Ok("zh".to_string());
+                }
+            }
+        }
+
+        // MSI creates: HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{...}
+        // Check for MSI uninstall entries containing "Codem" or "com.codem.app"
+        for hive in &["HKLM", "HKCU"] {
+            let path = format!("{}\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall", hive);
+            if let Ok(output) = std::process::Command::new("reg")
+                .args(["query", &path, "/s", "/f", "Codem"])
+                .output()
+            {
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                if stdout.to_lowercase().contains("codem") {
+                    // Found Codem in uninstall registry — check if it's MSI
+                    if stdout.contains("MsiExec") || stdout.contains(".msi") {
+                        return Ok("en".to_string());
+                    }
+                }
+            }
+            // Also check WOW6432Node for 32-bit MSI entries
+            let path_wow64 = format!("{}\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall", hive);
+            if let Ok(output) = std::process::Command::new("reg")
+                .args(["query", &path_wow64, "/s", "/f", "Codem"])
+                .output()
+            {
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                if stdout.to_lowercase().contains("codem") {
+                    if stdout.contains("MsiExec") || stdout.contains(".msi") {
+                        return Ok("en".to_string());
+                    }
+                }
+            }
+        }
+
+        // Default: Chinese (covers dev mode and NSIS)
+        Ok("zh".to_string())
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        Ok("en".to_string())
+    }
 }
 
 #[tauri::command]
@@ -591,6 +657,55 @@ fn which_mimo() -> Option<String> {
     None
 }
 
+// ========== System Tray & Window Close ==========
+
+#[tauri::command]
+async fn hide_to_tray(app: AppHandle) -> Result<(), String> {
+    if let Some(window) = app.get_webview_window("main") {
+        window.hide().map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+async fn show_from_tray(app: AppHandle) -> Result<(), String> {
+    if let Some(window) = app.get_webview_window("main") {
+        window.show().map_err(|e| e.to_string())?;
+        window.set_focus().map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+async fn quit_app(app: AppHandle) -> Result<(), String> {
+    app.exit(0);
+    Ok(())
+}
+
+fn build_tray_menu(app: &AppHandle, lang: &str) -> tauri::Result<tauri::menu::Menu<tauri::Wry>> {
+    let (show_label, quit_label) = if lang == "en" {
+        ("Show Codem", "Quit")
+    } else {
+        ("显示 Codem", "退出")
+    };
+    let show_item = MenuItemBuilder::with_id("show", show_label).build(app)?;
+    let quit_item = MenuItemBuilder::with_id("quit", quit_label).build(app)?;
+    MenuBuilder::new(app)
+        .item(&show_item)
+        .separator()
+        .item(&quit_item)
+        .build()
+}
+
+#[tauri::command]
+async fn update_tray_language(app: AppHandle, lang: String) -> Result<(), String> {
+    let menu = build_tray_menu(&app, &lang).map_err(|e| e.to_string())?;
+    if let Some(tray) = app.tray_by_id("main-tray") {
+        tray.set_menu(Some(menu)).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 // ========== Main Entry ==========
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -641,6 +756,11 @@ pub fn run() {
             glob_search,
             get_app_data_dir,
             get_default_cwd,
+            get_installer_default_lang,
+            hide_to_tray,
+            show_from_tray,
+            quit_app,
+            update_tray_language,
         ])
         .setup(|app| {
             // Apply window vibrancy (frosted glass effect) on Windows
@@ -654,12 +774,67 @@ pub fn run() {
                 }
             }
 
+            // Build system tray
+            let app_handle = app.handle().clone();
+            let menu = build_tray_menu(&app_handle, "zh").expect("Failed to build tray menu");
+            let _tray = TrayIconBuilder::with_id("main-tray")
+                .icon(app.default_window_icon().expect("no default window icon").clone())
+                .tooltip("Codem")
+                .menu(&menu)
+                .on_menu_event(move |app, event| {
+                    match event.id.as_ref() {
+                        "show" => {
+                            if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                        }
+                        }
+                        "quit" => {
+                            app.exit(0);
+                        }
+                        _ => {}
+                    }
+                })
+                .on_tray_icon_event(move |tray, event| {
+                    if let TrayIconEvent::Click {
+                        button: MouseButton::Left,
+                        button_state: MouseButtonState::Up,
+                        ..
+                    } = event
+                    {
+                        let app = tray.app_handle();
+                        if let Some(window) = app.get_webview_window("main") {
+                            if window.is_visible().unwrap_or(false) {
+                                let _ = window.hide();
+                            } else {
+                                let _ = window.show();
+                                let _ = window.set_focus();
+                            }
+                        }
+                    }
+                })
+                .build(app)?;
+
             Ok(())
         })
         .build(tauri::generate_context!())
         .expect("error while building tauri application");
 
-    app.run(|_app_handle, _event| {
-        // App closed
+    app.run(|app_handle, event| {
+        match event {
+            tauri::RunEvent::WindowEvent {
+                label,
+                event: WinEvent::CloseRequested { api, .. },
+                ..
+            } => {
+                // Always prevent the default close
+                api.prevent_close();
+                // Notify frontend to handle close behavior
+                if let Some(window) = app_handle.get_webview_window(&label) {
+                    let _ = window.emit("close-requested", ());
+                }
+            }
+            _ => {}
+        }
     });
 }

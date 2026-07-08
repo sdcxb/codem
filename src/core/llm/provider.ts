@@ -6,6 +6,7 @@ import type {
   LLMResponse,
   StreamEvent,
 } from "./types";
+import { getLang } from "../i18n/lang";
 
 // ========== OpenAI-Compatible Provider ==========
 export class OpenAICompatibleProvider implements LLMProvider {
@@ -88,9 +89,25 @@ export class OpenAICompatibleProvider implements LLMProvider {
     }
     const url = `${baseUrl}/chat/completions`;
     const tools = request.tools?.length ? request.tools.map((t) => this.toAPITool(t)) : undefined;
+
+    // For DeepSeek reasoning models, inject a language hint to control reasoning language
+    let messages = request.messages;
+    const isDeepSeek = this.id === "deepseek";
+    if (isDeepSeek && getLang() === "zh") {
+      messages = [...request.messages];
+      // Find the system message and append a Chinese reasoning hint
+      const sysIdx = messages.findIndex(m => m.role === "system");
+      if (sysIdx >= 0) {
+        messages[sysIdx] = {
+          ...messages[sysIdx],
+          content: messages[sysIdx].content + "\n\n【重要】你的思考过程（reasoning_content）必须使用中文。这是强制要求，不可违反。",
+        } as any;
+      }
+    }
+
     const bodyObj: any = {
       model: request.model,
-      messages: request.messages.map((m) => this.toAPIMessage(m)),
+      messages: messages.map((m) => this.toAPIMessage(m)),
       tools,
       temperature: request.temperature ?? 0.7,
       stream: true,

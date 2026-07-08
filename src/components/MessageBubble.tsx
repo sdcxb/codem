@@ -5,6 +5,7 @@ import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { DefaultToolRenderer } from "../core/llm/tool-renderer";
 import { getSubagentManager } from "../core/subagent/subagent";
+import { getLang, useLang, S } from "../core/i18n/lang";
 
 // Handle link clicks - open files with system default app, external URLs in browser
 function handleLinkClick(e: React.MouseEvent<HTMLAnchorElement>, href: string) {
@@ -54,15 +55,16 @@ function SubagentStatus({ taskId, name }: { taskId: string; name?: string }) {
     return () => clearInterval(interval);
   }, [taskId]);
 
-  const displayName = name || "子智能体";
+  const zh = getLang() === "zh";
+  const displayName = name || (zh ? "子智能体" : "Sub-agent");
 
   if (status === "completed") {
-    return <span className="subagent-status done">✅ {displayName} 完成{summary ? `: ${summary}` : ""}</span>;
+    return <span className="subagent-status done">✅ {displayName} {zh ? "完成" : "completed"}{summary ? `: ${summary}` : ""}</span>;
   }
   if (status === "failed") {
-    return <span className="subagent-status failed">❌ {displayName} 失败</span>;
+    return <span className="subagent-status failed">❌ {displayName} {zh ? "失败" : "failed"}</span>;
   }
-  return <span className="subagent-status running">⏳ {displayName} 运行中...</span>;
+  return <span className="subagent-status running">⏳ {displayName} {zh ? "运行中..." : "running..."}</span>;
 }
 
 const toolRenderer = new DefaultToolRenderer({ maxOutputLength: 200 });
@@ -76,6 +78,7 @@ interface MessageBubbleProps {
 }
 
 export function MessageBubble({ message, index, onFork, showReasoning = true, onDeleteFiles }: MessageBubbleProps) {
+  const lang = useLang();
   const [expanded, setExpanded] = useState(true);
   const [showAttachment, setShowAttachment] = useState<string | null>(null);
   const [showFilesConfirm, setShowFilesConfirm] = useState(false);
@@ -95,7 +98,7 @@ export function MessageBubble({ message, index, onFork, showReasoning = true, on
           <button
             className="message-fork-btn"
             onClick={() => onFork(index)}
-            title="从这条消息分叉新对话"
+            title={S.bubble.fork[lang]}
           >
             🔀
           </button>
@@ -137,7 +140,7 @@ export function MessageBubble({ message, index, onFork, showReasoning = true, on
                           className="copy-btn"
                           onClick={() => navigator.clipboard.writeText(codeStr)}
                         >
-                          复制
+                          {S.bubble.copy[lang]}
                         </button>
                       </div>
                       <SyntaxHighlighter
@@ -180,7 +183,7 @@ export function MessageBubble({ message, index, onFork, showReasoning = true, on
               className="reasoning-toggle"
               onClick={() => setExpanded(!expanded)}
             >
-              💭 思考过程 {expanded ? "▼" : "▶"}
+              {S.bubble.reasoning[lang]} {expanded ? "▼" : "▶"}
             </button>
             {expanded && (
               <pre className="reasoning-content">{message.reasoning}</pre>
@@ -194,7 +197,7 @@ export function MessageBubble({ message, index, onFork, showReasoning = true, on
               className="tool-toggle"
               onClick={() => setExpanded(!expanded)}
             >
-              🔧 {message.toolCalls.length} 个工具调用 {expanded ? "▼" : "▶"}
+              🔧 {message.toolCalls.length} {S.bubble.toolCalls[lang]} {expanded ? "▼" : "▶"}
             </button>
             {expanded && (
               <div className="tool-list">
@@ -218,7 +221,7 @@ export function MessageBubble({ message, index, onFork, showReasoning = true, on
                     const nameMatch = tc.result.match(/(?:子智能体|Sub-agent)\s*"([^"]+)"/);
                     if (nameMatch) agentName = nameMatch[1];
                   }
-                  const displayName = agentId ? `${agentName || "子智能体"} (${agentId})` : tc.tool;
+                  const displayName = agentId ? `${agentName || (getLang() === "zh" ? "子智能体" : "Sub-agent")} (${agentId})` : tc.tool;
                   const displayIcon = agentId ? (agentId === "explore" ? "🔍" : agentId === "general" ? "🤖" : agentId === "build" ? "🔨" : "🔧") : rendered.icon;
 
                   return (
@@ -243,7 +246,7 @@ export function MessageBubble({ message, index, onFork, showReasoning = true, on
                 className="files-cleanup-btn"
                 onClick={() => setShowFilesConfirm(true)}
               >
-                🗑️ 清理过程文件 ({message.generatedFiles.length})
+                {S.bubble.cleanFiles[lang]} ({message.generatedFiles.length})
               </button>
             ) : (
               <div className="files-confirm">
@@ -260,13 +263,13 @@ export function MessageBubble({ message, index, onFork, showReasoning = true, on
                       setShowFilesConfirm(false);
                     }}
                   >
-                    删除
+                    {S.bubble.delete[lang]}
                   </button>
                   <button
                     className="files-cancel-btn"
                     onClick={() => setShowFilesConfirm(false)}
                   >
-                    取消
+                    {S.bubble.cancel[lang]}
                   </button>
                 </div>
               </div>

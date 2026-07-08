@@ -18,8 +18,11 @@ export interface AgentDefinition {
   description: string;
   mode: AgentMode;
 
-  /** System prompt for this agent */
+  /** System prompt for this agent (Chinese) */
   prompt: string;
+
+  /** System prompt for this agent (English, falls back to prompt) */
+  promptEn?: string;
 
   /** Tools this agent can use (empty = all tools) */
   toolAllowlist?: string[];
@@ -164,6 +167,9 @@ When the user doesn't specify implementation details, choose the simplest approa
       prompt: `你是一个规划助手，负责分析代码并制定计划，不做实际修改。
 专注于理解代码库、识别问题、提出解决方案。
 不要执行任何写/编辑操作。`,
+      promptEn: `You are a planning assistant. You analyze code and create plans, but do NOT make actual changes.
+Focus on understanding the codebase, identifying problems, and proposing solutions.
+Do NOT perform any write/edit operations.`,
       toolAllowlist: ["read", "glob", "grep", "bash"],
       permissions: [
         { tool: "read", action: "allow" },
@@ -185,6 +191,9 @@ When the user doesn't specify implementation details, choose the simplest approa
       prompt: `你是一个代码库探索助手，负责快速搜索和分析代码。
 使用 glob 和 grep 查找相关文件和代码模式。
 简洁地报告发现，包含文件路径和行号。`,
+      promptEn: `You are a codebase exploration assistant. You quickly search and analyze code.
+Use glob and grep to find relevant files and code patterns.
+Report findings concisely, including file paths and line numbers.`,
       toolAllowlist: ["read", "glob", "grep"],
       permissions: [
         { tool: "read", action: "allow" },
@@ -205,6 +214,8 @@ When the user doesn't specify implementation details, choose the simplest approa
       mode: "subagent",
       prompt: `你是一个通用助手，负责处理委派的任务。
 请全面完成任务并报告你的发现。`,
+      promptEn: `You are a general-purpose assistant. You handle delegated tasks.
+Complete tasks thoroughly and report your findings.`,
       permissions: [
         { tool: "*", action: "allow" },
       ],
