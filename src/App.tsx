@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef, useCallback } from "react";
+import { TooltipProvider } from "./components/ui/tooltip";
 import { ChatPanel } from "./components/ChatPanel";
 import { Sidebar } from "./components/Sidebar";
 import { TerminalPanel } from "./components/TerminalPanel";
@@ -980,6 +981,7 @@ request: PermissionRequest;
   };
 
   return (
+    <TooltipProvider delayDuration={300} skipDelayDuration={500}>
     <div className="app">
       {!dbReady ? (
         <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", color: "var(--text-secondary)" }}>
@@ -1235,6 +1237,7 @@ request: PermissionRequest;
         </>
       )}
     </div>
+    </TooltipProvider>
   );
 }
 

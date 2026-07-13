@@ -1,3 +1,30 @@
+/* ========== Design Tokens ========== */
+/* Unified design system: radius, shadow, animation, z-index */
+:root {
+  /* Radius scale */
+  --radius-sm: 0.25rem;
+  --radius: 0.5rem;
+  --radius-md: 0.625rem;
+  --radius-lg: 0.875rem;
+  --radius-full: 9999px;
+
+  /* Z-index scale */
+  --z-dropdown: 1000;
+  --z-tooltip: 1100;
+  --z-popover: 1200;
+  --z-modal: 1300;
+  --z-toast: 1400;
+
+  /* Animation durations */
+  --duration-fast: 150ms;
+  --duration-normal: 200ms;
+  --duration-slow: 300ms;
+
+  /* Transition defaults */
+  --transition-color: color var(--duration-fast) ease, background-color var(--duration-fast) ease, border-color var(--duration-fast) ease;
+  --transition-all: all var(--duration-normal) ease;
+}
+
 /* ========== Theme Variables ========== */
 :root,
 [data-theme="dark"] {
@@ -10,14 +37,14 @@
   --text-muted: #6e7681;
   --border-primary: rgba(48, 54, 61, 0.80);
   --border-secondary: rgba(33, 38, 45, 0.80);
-  --accent: #2f81f7;
-  --accent-hover: #388bfd;
-  --accent-muted: rgba(31, 111, 235, 0.20);
+  --accent: #7c6cf0;
+  --accent-hover: #8b7df5;
+  --accent-muted: rgba(124, 108, 240, 0.20);
   --success: #3fb950;
   --warning: #d29922;
   --error: #f85149;
   --info: #58a6ff;
-  --user-bg: rgba(47, 129, 247, 0.90);
+  --user-bg: rgba(124, 108, 240, 0.90);
   --assistant-bg: rgba(22, 27, 34, 0.90);
   --system-bg: rgba(28, 33, 40, 0.90);
   --code-bg: rgba(13, 17, 23, 0.90);
@@ -25,6 +52,17 @@
   --input-bg: rgba(13, 17, 23, 0.85);
   --scrollbar-track: rgba(22, 27, 34, 0.80);
   --scrollbar-thumb: rgba(48, 54, 61, 0.90);
+  /* Shadows */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.35);
+  --shadow-lg: 0 12px 32px rgba(124, 108, 240, 0.12);
+  --shadow-popover: 0 8px 24px rgba(0, 0, 0, 0.4);
+  /* Tooltip */
+  --tooltip-bg: rgba(33, 38, 45, 0.98);
+  --tooltip-border: rgba(48, 54, 61, 0.80);
+  /* Dropdown */
+  --dropdown-bg: rgba(22, 27, 34, 0.98);
+  --dropdown-hover: rgba(48, 54, 61, 0.90);
 }
 
 [data-theme="light"] {
@@ -37,14 +75,14 @@
   --text-muted: #8b949e;
   --border-primary: rgba(208, 215, 222, 0.80);
   --border-secondary: rgba(234, 238, 242, 0.80);
-  --accent: #0969da;
-  --accent-hover: #0550ae;
-  --accent-muted: rgba(9, 105, 218, 0.20);
+  --accent: #6b5ce7;
+  --accent-hover: #5a4bd1;
+  --accent-muted: rgba(107, 92, 231, 0.15);
   --success: #1a7f37;
   --warning: #9a6700;
   --error: #cf222e;
-  --info: #0969da;
-  --user-bg: rgba(9, 105, 218, 0.90);
+  --info: #6b5ce7;
+  --user-bg: rgba(107, 92, 231, 0.90);
   --assistant-bg: rgba(246, 248, 250, 0.90);
   --system-bg: rgba(234, 238, 242, 0.90);
   --code-bg: rgba(246, 248, 250, 0.90);
@@ -52,6 +90,17 @@
   --input-bg: rgba(255, 255, 255, 0.85);
   --scrollbar-track: rgba(246, 248, 250, 0.80);
   --scrollbar-thumb: rgba(208, 215, 222, 0.90);
+  /* Shadows */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.06);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
+  --shadow-lg: 0 12px 32px rgba(107, 92, 231, 0.10);
+  --shadow-popover: 0 8px 24px rgba(0, 0, 0, 0.12);
+  /* Tooltip */
+  --tooltip-bg: rgba(33, 38, 45, 0.95);
+  --tooltip-border: rgba(48, 54, 61, 0.80);
+  /* Dropdown */
+  --dropdown-bg: rgba(255, 255, 255, 0.98);
+  --dropdown-hover: rgba(234, 238, 242, 0.90);
 }
 
 /* ========== Reset ========== */
@@ -5682,3 +5731,121 @@ body {
 .diff-custom-submit-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 .diff-custom-cancel-btn { padding: 6px 16px; font-size: 13px; font-weight: 600; border: none; background: var(--bg-hover); color: var(--text-secondary); cursor: pointer; border-radius: 6px; transition: all 0.15s; }
 .diff-custom-cancel-btn:hover { color: var(--text-primary); }
+
+/* ========== Radix UI Component Styles ========== */
+/* Batch A: Design system foundation */
+
+/* Tooltip (Radix UI) */
+.tooltip-content {
+  z-index: var(--z-tooltip);
+  padding: 6px 10px;
+  font-size: 12px;
+  line-height: 1.4;
+  background: var(--tooltip-bg);
+  color: #f0f6fc;
+  border: 1px solid var(--tooltip-border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-md);
+  max-width: 240px;
+  word-wrap: break-word;
+  animation: tooltip-fade-in var(--duration-fast) ease;
+}
+@keyframes tooltip-fade-in {
+  from { opacity: 0; transform: scale(0.96); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+/* Dropdown Menu (Radix UI) */
+.dropdown-menu-content {
+  z-index: var(--z-dropdown);
+  min-width: 160px;
+  padding: 4px;
+  background: var(--dropdown-bg);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-popover);
+  backdrop-filter: blur(12px);
+  animation: dropdown-slide-in var(--duration-fast) ease;
+}
+@keyframes dropdown-slide-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.dropdown-menu-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  font-size: 13px;
+  color: var(--text-primary);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  user-select: none;
+  outline: none;
+  transition: background var(--duration-fast) ease;
+}
+.dropdown-menu-item:hover {
+  background: var(--dropdown-hover);
+}
+.dropdown-menu-item:focus {
+  background: var(--dropdown-hover);
+}
+.dropdown-menu-item-inset {
+  padding-left: 28px;
+}
+.dropdown-menu-item-destructive {
+  color: var(--error);
+}
+.dropdown-menu-item-destructive:hover {
+  background: rgba(248, 81, 73, 0.12);
+}
+.dropdown-menu-separator {
+  height: 1px;
+  margin: 4px 0;
+  background: var(--border-secondary);
+}
+.dropdown-menu-label {
+  padding: 6px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* Popover (Radix UI) */
+.popover-content {
+  z-index: var(--z-popover);
+  background: var(--dropdown-bg);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-popover);
+  backdrop-filter: blur(12px);
+  animation: popover-slide-in var(--duration-fast) ease;
+}
+@keyframes popover-slide-in {
+  from { opacity: 0; transform: scale(0.96); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+/* ========== Theme Transition ========== */
+/* Smooth theme switching */
+*,
+*::before,
+*::after {
+  transition-property: background-color, border-color, color, box-shadow;
+  transition-duration: 0ms;
+}
+[data-theme] *,
+[data-theme] *::before,
+[data-theme] *::after {
+  transition-duration: var(--duration-normal);
+}
+/* Prevent flash during initial theme application */
+.no-transition,
+.no-transition *,
+.no-transition *::before,
+.no-transition *::after {
+  transition-duration: 0ms !important;
+}

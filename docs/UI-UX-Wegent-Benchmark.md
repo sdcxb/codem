@@ -1,8 +1,9 @@
 # UI/UX 对标分析：Wegent vs Codem
 
 > 创建时间：2026-07-13
+> 最后更新：2026-07-13
 > 参考项目：[Wegent](https://github.com/wecode-ai/Wegent)（微博开源 AI Agent 操作系统）
-> 状态：分析完成，待评估执行
+> 状态：分析完成 + 执行计划已确定，正在执行
 
 ---
 
@@ -333,3 +334,229 @@
 | P3 | 侧栏增强 | 1 天 |
 | P3 | 输入区增强 | 0.5 天 |
 | **合计** | | **约 6 天** |
+
+---
+
+## 十一、渲染链路影响分析
+
+> 在执行优化前，必须确认每项改动是否影响主面板的核心渲染链路。
+
+### 当前渲染链路全景
+
+```
+ChatPanel.tsx (主面板容器)
+├── chat-header (顶栏)
+│   ├── ☰ 侧栏切换
+│   ├── model-selector (模型选择器)
+│   ├── 💭 思考过程开关 (showReasoning)
+│   ├── 🤖 子智能体面板开关 (showAgentPanel) + runningCount 徽章
+│   ├── 📸 快照面板开关
+│   ├── 📊 上下文监控开关
+│   └── ● 连接状态
+│
+├── chat-body (主体)
+│   ├── messages-container (消息列表 — 滚动区域)
+│   │   ├── [历史消息加载指示器]
+│   │   ├── [空状态欢迎页]
+│   │   ├── messages.map(msg => MessageBubble)  ← 核心渲染
+│   │   └── StreamingTimer (流式状态指示器)
+│   │       ├── spinner (CSS 圆圈)
+│   │       ├── status 文字 (connecting/streaming/executing_tools)
+│   │       └── elapsed 计时 (requestAnimationFrame)
+│   │
+│   ├── agent-panel-container (子智能体侧面板 — 条件渲染)
+│   │   ├── AgentPanel (任务列表)  ← 500ms 轮询刷新
+│   │   └── AgentDetail (任务详情)  ← 点击选中后显示
+│   │
+│   ├── SnapshotPanel (快照面板 — 条件渲染)
+│   └── ContextMonitor (上下文监控 — 条件监控)
+│
+├── step-progress-container (步骤进度条 — 条件渲染)
+│   ├── 步骤圆形指示器 (SVG)
+│   ├── "第N/M步" 文字
+│   └── hover → step-tooltip (完整执行计划)
+│
+└── InputArea (输入区)
+```
+
+```
+MessageBubble.tsx (单条消息渲染)
+├── message-avatar (👤/⚙️/🤖)
+└── message-body
+    ├── message-fork-btn (🔀 fork 按钮)
+    ├── message-attachments (附件：图片/文件)
+    ├── message-content (核心内容 — ReactMarkdown)
+    │   ├── 代码块 (SyntaxHighlighter + 复制按钮)
+    │   ├── 链接 (handleLinkClick → Tauri open_file_external)
+    │   └── 图片 (inline img 渲染)
+    ├── reasoning-block (思考过程 — 可折叠)
+    │   ├── reasoning-toggle 按钮
+    │   └── reasoning-content (<pre> 纯文本)
+    ├── tool-calls (工具调用列表 — 可折叠)
+    │   └── toolCalls.map(tc =>
+    │       ├── tool-item
+    │       │   ├── 工具图标 + 名称 (子智能体有特殊图标映射)
+    │       │   ├── 状态指示 (⏳/✅/❌)
+    │       │   ├── SubagentStatus (如果是 spawn_subagent)
+    │       │   │   └── 2秒轮询 getSubagentManager().getTask(taskId)
+    │       │   └── tool-error-detail (错误详情)
+    │       └── ...)
+    └── generated-files (生成文件清理)
+```
+
+### 逐项影响评估
+
+#### 不触碰渲染链路的优化（纯外观 / 独立区域）
+
+| 项 | 改动区域 | 影响主面板渲染 | 影响子智能体面板 | 说明 |
+|----|---------|:---:|:---:|------|
+| #1 Tailwind+shadcn | CSS 变量 + 构建配置 | ❌ | ❌ | 只改颜色值和构建配置 |
+| #4 右键菜单 | `Sidebar.tsx` | ❌ | ❌ | 不触碰 ChatPanel |
+| #6 Tooltip 系统 | 各组件加 `title` 属性 | ❌ | ❌ | 只加 hover 提示 |
+| #7 流式动画 | CSS keyframes + StreamingTimer 样式 | ❌ 仅外观 | ❌ | 不改状态机逻辑 |
+| #8 配色统一 | CSS 变量值 | ❌ | ❌ | 只改颜色 |
+| #9 侧栏增强 | `Sidebar.tsx` | ❌ | ❌ | 不触碰 ChatPanel |
+| #10 输入区增强 | `InputArea.tsx` | ❌ | ❌ | 不触碰 ChatPanel |
+
+#### 会触碰渲染链路的优化（已分析风险，可控）
+
+| 项 | 改动位置 | 影响范围 | 风险等级 | 保护措施 |
+|----|---------|---------|:---:|---------|
+| #2 气泡工具栏 | `MessageBubble.tsx` 末尾追加浮动 div | 追加元素，不改已有结构 | 🟢 低 | `position: absolute` + `z-index` 不遮挡已有按钮 |
+| #3 长消息折叠 | `MessageBubble.tsx` 包裹 `message-content` | 改变内容区视觉高度 | ⚠️ 中 | `message.status === "streaming"` 时不折叠 |
+| #5 选区引用 | 新建 `SelectionTooltip.tsx` + `ChatPanel.tsx` 集成 | overlay 不侵入已有组件 | 🟢 低 | `createPortal` 到 document.body |
+
+### 核心结论
+
+| 维度 | 是否会被影响 | 原因 |
+|------|:---:|------|
+| **回答展示**（ReactMarkdown 渲染） | ❌ | 不修改 `ReactMarkdown` 组件、不修改 `message.content` 数据流 |
+| **思考过程**（reasoning-block） | ❌ | 独立 DOM 节点，无优化项触碰 |
+| **工具调用展示**（tool-calls + SubagentStatus） | ❌ | 独立 DOM 节点，优化只在末尾追加元素 |
+| **子智能体状态回执**（SubagentStatus 轮询） | ❌ | 组件在 MessageBubble 内部，不触碰 |
+| **子智能体面板**（AgentPanel/AgentDetail） | ❌ | 面板在 ChatPanel 的 agent-panel-container 中，不触碰 |
+| **流式状态指示器**（StreamingTimer） | ⚠️ 仅外观 | #7 改 spinner 动画样式，不改状态机逻辑 |
+| **步骤进度条**（StepProgress） | ❌ | 无优化项触碰 |
+| **整体布局**（header + body + input 三段式） | ❌ | 无优化项改 ChatPanel 的布局结构 |
+
+**总结：10 项优化纯粹影响视觉层（CSS 样式 + 外观），不会影响操作逻辑、数据流、渲染结构、子智能体面板。**
+
+---
+
+## 十二、文件级冲突矩阵
+
+### 冲突热点
+
+| 文件 | 行数 | #1 | #2 | #3 | #4 | #5 | #6 | #7 | #8 | #9 | #10 | 总触及次数 |
+|------|------|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| **styles.css** | 4859 | ✏️重构 | ✏️+80行 | ✏️+30行 | ✏️+50行 | | | | ✏️全量 | ✏️+100行 | ✏️+40行 | 7 |
+| **MessageBubble.tsx** | 286 | | ✏️+90行 | ✏️+60行 | | ✏️选区 | | | | | | 3 |
+| **Sidebar.tsx** | 299 | | | | ✏️+80行 | | ✏️Tooltip | | | ✏️+150行 | | 3 |
+| **ChatPanel.tsx** | 428 | | | | | ✏️+30行 | | ✏️+20行 | | | | 2 |
+| **InputArea.tsx** | 231 | | | | | ✏️+20行 | | | | | ✏️+70行 | 2 |
+| **App.tsx** | 1149 | | | | | | | ✏️+10行 | | | | 1 |
+| **store.ts** | 219 | | | | | ✏️+字段 | | | | | | 1 |
+| **vite.config.ts** | 17 | ✏️PostCSS | | | | | | | | | | 1 |
+| **package.json** | 51 | ✏️+deps | | | | | | | | | | 1 |
+
+### 解决策略
+
+- **🔥 `styles.css`（7 项触及）**：#1 + #8 合并为一次全量重构；后续 #2/#3/#4/#7/#9/#10 改为文件末尾追加新 class，不触碰已有代码。或直接用 Tailwind class 写在 .tsx 里。
+- **🔥 `MessageBubble.tsx`（3 项触及）**：#2 + #3 合并一次改完；#5 改为新建独立组件，不侵入 MessageBubble 内部。
+- **🔥 `Sidebar.tsx`（3 项触及）**：#4 + #9 合并一次改完；#6 只加 `title` 属性，不触碰逻辑。
+
+---
+
+## 十三、批次执行计划
+
+> 原则：同一文件只打开一次，减少反复修改产生的冲突。每个批次完成后提交一次 Git commit。
+
+### 批次 A：基础设施层（一次改完配置 + CSS 变量）
+
+| 字段 | 值 |
+|------|------|
+| **包含项** | #1 Tailwind+shadcn 引入 + #8 配色统一 |
+| **改动文件** | `vite.config.ts`、`package.json`、`styles.css`（全量重构 CSS 变量段）、`tailwind.config.ts`（新建）、`src/components/ui/`（新建 shadcn 组件） |
+| **不触碰** | 任何 `.tsx` 业务组件 |
+| **目标** | 建立设计 token + 组件库基础设施 |
+| **风险** | ⚠️ 高——Vite 构建配置变化 |
+| **验证点** | `npm run dev` 能启动 + 现有 UI 不走样 |
+| **预估工时** | 1.5 天 |
+| **状态** | ⬜ 待执行 |
+
+### 批次 B：消息体验层（一次改完 MessageBubble）
+
+| 字段 | 值 |
+|------|------|
+| **包含项** | #2 气泡工具栏 + #3 长消息折叠 + #7 流式动画 |
+| **改动文件** | `MessageBubble.tsx`（一次改完）、`styles.css`（末尾追加动画+工具栏样式）、`ChatPanel.tsx`（状态驱动动画）、`App.tsx`（主题过渡） |
+| **不触碰** | Sidebar、InputArea、SettingsPanel |
+| **目标** | 消息气泡全套体验提升 |
+| **依赖** | 批次 A 完成（有 shadcn Tooltip 可用） |
+| **保护规则** | `message.status === "streaming"` 时 `contentCollapsed` 强制为 `false`（流式消息不折叠） |
+| **预估工时** | 1 天 |
+| **状态** | ⬜ 待执行 |
+
+### 批次 C：导航交互层（一次改完 Sidebar + InputArea）
+
+| 字段 | 值 |
+|------|------|
+| **包含项** | #4 右键菜单 + #9 侧栏增强 + #10 输入区增强 |
+| **改动文件** | `Sidebar.tsx`（一次改完）、`InputArea.tsx`（一次改完）、`styles.css`（末尾追加侧栏+输入区样式） |
+| **不触碰** | MessageBubble、ChatPanel |
+| **目标** | 导航 + 输入全套体验提升 |
+| **依赖** | 批次 A 完成（有 shadcn DropdownMenu 可用） |
+| **预估工时** | 1.5 天 |
+| **状态** | ⬜ 待执行 |
+
+### 批次 D：高级交互层（独立组件，低冲突）
+
+| 字段 | 值 |
+|------|------|
+| **包含项** | #5 选区引用 + #6 Tooltip 全局扫描 |
+| **改动文件** | 新建 `SelectionTooltip.tsx`；`ChatPanel.tsx`（集成选区）；`InputArea.tsx`（引用预览）；`store.ts`（+quoteContext）；`Sidebar.tsx`/`SettingsPanel.tsx`（加 title 属性） |
+| **目标** | 高级交互功能 |
+| **依赖** | 批次 B 完成（消息气泡已稳定） |
+| **预估工时** | 1 天 |
+| **状态** | ⬜ 待执行 |
+
+### 批次执行顺序
+
+```
+批次 A (基础设施) → 批次 B (消息体验) → 批次 C (导航交互) → 批次 D (高级交互)
+     1.5天              1天                1.5天              1天
+```
+
+### 冲突矩阵验证（按批次执行后）
+
+| 文件 | 批次 A | 批次 B | 批次 C | 批次 D | 总修改次数 |
+|------|:---:|:---:|:---:|:---:|:---:|
+| styles.css | ✏️全量 | ✏️追加 | ✏️追加 | | 2 次（A 全量 + B/C 追加，不冲突） |
+| MessageBubble.tsx | | ✏️ | | | **1 次** |
+| Sidebar.tsx | | | ✏️ | ✏️+title | 2 次（C 改逻辑 + D 加属性） |
+| ChatPanel.tsx | | ✏️ | | ✏️ | 2 次（B 动画 + D 选区） |
+| InputArea.tsx | | | ✏️ | ✏️ | 2 次（C 增强 + D 引用） |
+| App.tsx | | ✏️ | | | **1 次** |
+| store.ts | | | | ✏️ | **1 次** |
+| vite.config.ts | ✏️ | | | | **1 次** |
+
+**关键改进**：`styles.css` 从 7 次修改 → 降为 2 次。`MessageBubble.tsx` 从 3 次 → 降为 1 次。
+
+### 风险控制措施
+
+1. **批次 A 完成后立刻验证构建**：`npm run dev` + `npm run tauri:build`，确认 Tailwind + Tauri 打包无冲突后再继续
+2. **每个批次完成后提交一次 Git commit**：便于出问题时回滚到上一个稳定批次
+3. **批次 B/C 对 `styles.css` 只追加不修改**：在文件末尾新增 class，不触碰批次 A 重构的变量段
+4. **批次 D 对 `Sidebar.tsx` 只加 `title` 属性**：不触碰批次 C 的逻辑改动
+
+### 架构安全确认
+
+> 所有 10 项优化均为纯前端改动（`.tsx` + `.css` + 构建配置），不触及：
+> - ❌ Rust 后端（`lib.rs`）
+> - ❌ Node.js 服务器（`server.ts`）
+> - ❌ Tauri IPC 命令层
+> - ❌ 构建管线（`build-server.mjs` / `tauri.conf.json`）
+> - ❌ Sidecar 二进制
+>
+> Tailwind CSS 是构建时工具，输出静态 CSS 到 `dist/`，Tauri 打包后与现有架构完全一致。
+> **不会破坏独立安装包无需安装依赖的架构。**
