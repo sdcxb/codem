@@ -23,6 +23,7 @@ export function InputArea({ onSend, onCancel, disabled, isStreaming, collaborati
   const [showSecurityPicker, setShowSecurityPicker] = useState(false);
   const [securityMode, setSecurityMode] = useState<SecurityMode>(getEffectiveSecurityMode(projectPath));
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [expanded, setExpanded] = useState(false);
 
   // Update when project path changes
   useEffect(() => {
@@ -221,15 +222,23 @@ export function InputArea({ onSend, onCancel, disabled, isStreaming, collaborati
         </button>
         <textarea
           ref={textareaRef}
-          className="message-input"
+          className={`message-input ${expanded ? "expanded" : ""}`}
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
           onPaste={handlePaste}
-          placeholder={disabled ? S.input.aiThinking[lang] : S.input.placeholder[lang]}
+          placeholder={disabled ? S.sidebar.disabledHint[lang] : S.input.placeholder[lang]}
           disabled={disabled}
           rows={1}
         />
+        {/* #10: Expand/collapse button */}
+        <button
+          className="mode-toggle-btn"
+          onClick={() => setExpanded(!expanded)}
+          title={expanded ? S.sidebar.collapseInput[lang] : S.sidebar.expandInput[lang]}
+        >
+          {expanded ? "🗗" : "🗖"}
+        </button>
         {isStreaming ? (
           <button className="send-btn cancel-btn" onClick={onCancel} title={S.input.cancel[lang]}>
             ■

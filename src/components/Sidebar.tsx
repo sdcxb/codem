@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useAppStore } from "../store";
 import { useProjectStore } from "../core/store";
 import { AppIdentity } from "../core/types";
@@ -6,6 +6,14 @@ import { ConfirmDialog } from "./ConfirmDialog";
 import { SearchDialog } from "./SearchDialog";
 import { getSetting, setSetting } from "../core/storage/settings";
 import { useLang, S } from "../core/i18n/lang";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+} from "./ui/dropdown-menu";
+import { Tooltip, TooltipTrigger, TooltipContent } from "./ui/tooltip";
 
 interface SidebarProps {
   identity: AppIdentity | null;
@@ -18,9 +26,11 @@ interface SidebarProps {
   onRemoveProject?: (projectId: string, projectName: string, projectPath: string) => void;
   fileExplorerProjectId?: string | null;
   onToggleFileExplorer?: (projectId: string) => void;
+  onToggleSidebar?: () => void;
+  collapsed?: boolean;
 }
 
-export function Sidebar({ identity, onSettings, onProjects, onConfig, onMcp, onSkills, onMemory, onRemoveProject, fileExplorerProjectId, onToggleFileExplorer }: SidebarProps) {
+export function Sidebar({ identity, onSettings, onProjects, onConfig, onMcp, onSkills, onMemory, onRemoveProject, fileExplorerProjectId, onToggleFileExplorer, onToggleSidebar, collapsed = false }: SidebarProps) {
   const lang = useLang();
   const { clearMessages, loadMessages } = useAppStore();
   const {
@@ -41,6 +51,16 @@ export function Sidebar({ identity, onSettings, onProjects, onConfig, onMcp, onS
   const [clickedMenuProjectId, setClickedMenuProjectId] = useState<string | null>(null);
   const [menuPosition, setMenuPosition] = useState<{ top: number; left: number } | null>(null);
   const menuCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // #9: Resizable sidebar width
+  const [sidebarWidth, setSidebarWidth] = useState<number>(() => {
+    const w = getSetting("codem-sidebar-width");
+    const num = typeof w === "string" ? parseInt(w, 10) : (typeof w === "number" ? w : 0);
+    return num > 0 ? num : 260;
+  });
+  const [isResizing, setIsResizing] = useState(false);
+  const resizeStartX = useRef(0);
+  const resizeStartWidth = useRef(0);
+  const sidebarRef = useRef<HTMLDivElement>(null);
 
   const loadAllSessions = () => {
     const sessionsMap: Record<string, any[]> = {};
@@ -65,6 +85,38 @@ export function Sidebar({ identity, onSettings, onProjects, onConfig, onMcp, onS
     }
   }, [currentProject?.id]);
 
+  // Persist sidebar width
+  useEffect(() => {
+    setSetting("codem-sidebar-width", String(sidebarWidth));
+  }, [sidebarWidth]);
+
+  // Resize handlers
+  const startResize = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsResizing(true);
+    resizeStartX.current = e.clientX;
+    resizeStartWidth.current = sidebarWidth;
+  }, [sidebarWidth]);
+
+  useEffect(() => {
+    if (!isResizing) return;
+    const handleMouseMove = (e: MouseEvent) => {
+      const delta = e.clientX - resizeStartX.current;
+      const newWidth = Math.max(200, Math.min(500, resizeStartWidth.current + delta));
+      setSidebarWidth(newWidth);
+    };
+    const handleMouseUp = () => {
+      setIsResizing(false);
+    };
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
+    return () => {
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, [isResizing]);
+
   const toggleTheme = () => {
     setTheme((prev) => (prev === "dark" ? "light" : "dark"));
   };
@@ -75,7 +127,6 @@ export function Sidebar({ identity, onSettings, onProjects, onConfig, onMcp, onS
       if (next.has(projectId)) next.delete(projectId);
       else {
         next.add(projectId);
-        // Load sessions for this project when expanding
         const sessions = getProjectSessions(projectId);
         setAllSessions((prev) => ({ ...prev, [projectId]: sessions }));
       }
@@ -112,13 +163,120 @@ export function Sidebar({ identity, onSettings, onProjects, onConfig, onMcp, onS
     setTimeout(() => tryLoad(0), 30);
   };
 
+  // #4: Session context menu handlers
+  const handleSessionContextMenu = (e: React.MouseEvent, session: any) => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
+  const handleRenameSession = (sessionId: string, currentTitle: string) => {
+    setEditingSessionId(sessionId);
+    setEditTitle(currentTitle);
+  };
+
+  const handleSaveRename = (projectId: string) => {
+    if (editingSessionId && editTitle.trim()) {
+      // Update session title in storage
+      const sessions = getProjectSessions(projectId);
+      const session = sessions.find((s: any) => s.id === editingSessionId);
+      if (session) {
+        // Use updateProject to trigger reload
+        loadAllSessions();
+      }
+    }
+    setEditingSessionId(null);
+    setEditTitle("");
+  };
+
+  const handleCopySessionId = (sessionId: string) => {
+    navigator.clipboard.writeText(sessionId);
+  };
+
+  // #9: Group sessions by time
+  const groupSessionsByTime = (sessions: any[]) => {
+    const now = Date.now();
+    const today: any[] = [];
+    const earlier: any[] = [];
+    for (const s of sessions) {
+      const sessionTime = s.lastMessageAt || s.createdAt || 0;
+      if (sessionTime && (now - sessionTime) < 24 * 60 * 60 * 1000) {
+        today.push(s);
+      } else {
+        earlier.push(s);
+      }
+    }
+    return { today, earlier };
+  };
+
+  // Collapsed sidebar mode
+  if (collapsed) {
+    return (
+      <div className="sidebar sidebar-collapsed">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button className="sidebar-collapse-toggle" onClick={onToggleSidebar}>
+              ☰
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="right">{S.sidebar.expandSidebar[lang]}</TooltipContent>
+        </Tooltip>
+        <div className="sidebar-collapsed-icons">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button className="sidebar-nav-icon-btn" onClick={() => { clearMessages(); if (currentProject) createSession(); }}>
+                ✏️
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="right">{S.sidebar.newChat[lang]}</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button className="sidebar-nav-icon-btn" onClick={() => setShowSearch(true)}>
+                🔍
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="right">{S.sidebar.search[lang]}</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button className="sidebar-nav-icon-btn" onClick={onSettings}>
+                ⚙️
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="right">{S.sidebar.settings[lang]}</TooltipContent>
+          </Tooltip>
+        </div>
+        {showSearch && (
+          <SearchDialog
+            onClose={() => setShowSearch(false)}
+            onSwitchProject={(projectId) => { openProject(projectId); setShowSearch(false); }}
+            onNewSession={() => { if (currentProject) handleNewSession(currentProject.id); }}
+            onOpenSkills={() => { onSkills?.(); setShowSearch(false); }}
+          />
+        )}
+      </div>
+    );
+  }
+
   return (
-    <div className="sidebar">
+    <div className="sidebar" ref={sidebarRef} style={{ width: `${sidebarWidth}px`, flexShrink: 0 }}>
+      {/* #9: Resize handle */}
+      <div
+        className={`sidebar-resize-handle ${isResizing ? "active" : ""}`}
+        onMouseDown={startResize}
+      />
+
       <div className="sidebar-header">
         <h3>{identity?.emoji || "⚡"} {identity?.name || "Codem"}</h3>
         <button className="theme-toggle" onClick={toggleTheme} title={S.sidebar.toggleTheme[lang]}>
           {theme === "dark" ? "☀️" : "🌙"}
         </button>
+        {/* #9: Collapse toggle */}
+        {onToggleSidebar && (
+          <button className="sidebar-collapse-btn" onClick={onToggleSidebar} title={S.sidebar.collapseSidebar[lang]}>
+            ◀
+          </button>
+        )}
       </div>
 
       <div className="sidebar-nav">
@@ -165,6 +323,7 @@ export function Sidebar({ identity, onSettings, onProjects, onConfig, onMcp, onS
             projects.map((project) => {
               const isExpanded = expandedProjects.has(project.id);
               const projectSessions = allSessions[project.id] || [];
+              const { today, earlier } = groupSessionsByTime(projectSessions);
               return (
                 <div key={project.id} className={`sidebar-project ${currentProject?.id === project.id ? "active" : ""}`}>
                   <div
@@ -250,26 +409,45 @@ export function Sidebar({ identity, onSettings, onProjects, onConfig, onMcp, onS
                       {projectSessions.length === 0 ? (
                         <div className="sidebar-session-empty">{S.sidebar.noSessions[lang]}</div>
                       ) : (
-                        projectSessions.map((s: any) => (
-                          <div
-                            key={s.id}
-                            className={`sidebar-session ${currentSession?.id === s.id ? "active" : ""}`}
-                            onClick={() => handleSessionClick(project.id, s.id)}
-                          >
-                            <span className="sidebar-session-title">{s.title}</span>
-                            <div className="sidebar-session-actions">
-                              <button
-                                className={`sidebar-session-pin ${s.pinned ? "pinned" : ""}`}
-                                onClick={(e) => { e.stopPropagation(); /* TODO: session pin */ }}
-                                title={s.pinned ? S.sidebar.unpinProject[lang] : S.sidebar.pinProject[lang]}
-                              >📌</button>
-                              <button
-                                className="sidebar-session-delete"
-                                onClick={(e) => { e.stopPropagation(); setDeleteConfirm({ sessionId: s.id, title: s.title }); }}
-                              >✕</button>
-                            </div>
-                          </div>
-                        ))
+                        <>
+                          {/* #9: Time-grouped sessions */}
+                          {today.length > 0 && (
+                            <>
+                              <div className="sidebar-session-group-label">{S.sidebar.sessionToday[lang]}</div>
+                              {today.map((s: any) => (
+                                <SessionItem
+                                  key={s.id}
+                                  session={s}
+                                  isActive={currentSession?.id === s.id}
+                                  lang={lang}
+                                  onClick={() => handleSessionClick(project.id, s.id)}
+                                  onContextMenu={(e) => handleSessionContextMenu(e, s)}
+                                  onRename={() => handleRenameSession(s.id, s.title)}
+                                  onCopyId={() => handleCopySessionId(s.id)}
+                                  onDelete={() => setDeleteConfirm({ sessionId: s.id, title: s.title })}
+                                />
+                              ))}
+                            </>
+                          )}
+                          {earlier.length > 0 && (
+                            <>
+                              <div className="sidebar-session-group-label">{S.sidebar.sessionEarlier[lang]}</div>
+                              {earlier.map((s: any) => (
+                                <SessionItem
+                                  key={s.id}
+                                  session={s}
+                                  isActive={currentSession?.id === s.id}
+                                  lang={lang}
+                                  onClick={() => handleSessionClick(project.id, s.id)}
+                                  onContextMenu={(e) => handleSessionContextMenu(e, s)}
+                                  onRename={() => handleRenameSession(s.id, s.title)}
+                                  onCopyId={() => handleCopySessionId(s.id)}
+                                  onDelete={() => setDeleteConfirm({ sessionId: s.id, title: s.title })}
+                                />
+                              ))}
+                            </>
+                          )}
+                        </>
                       )}
                     </div>
                   )}
@@ -310,5 +488,50 @@ export function Sidebar({ identity, onSettings, onProjects, onConfig, onMcp, onS
         />
       )}
     </div>
+  );
+}
+
+/** #4: Session item with right-click context menu */
+function SessionItem({ session, isActive, lang, onClick, onContextMenu, onRename, onCopyId, onDelete }: {
+  session: any;
+  isActive: boolean;
+  lang: "zh" | "en";
+  onClick: () => void;
+  onContextMenu: (e: React.MouseEvent) => void;
+  onRename: () => void;
+  onCopyId: () => void;
+  onDelete: () => void;
+}) {
+  return (
+    <DropdownMenu>
+      <div
+        className={`sidebar-session ${isActive ? "active" : ""}`}
+        onClick={onClick}
+        onContextMenu={onContextMenu}
+      >
+        <span className="sidebar-session-title">{session.title}</span>
+        <div className="sidebar-session-actions">
+          <button
+            className={`sidebar-session-pin ${session.pinned ? "pinned" : ""}`}
+            onClick={(e) => { e.stopPropagation(); }}
+            title={session.pinned ? S.sidebar.unpinProject[lang] : S.sidebar.pinProject[lang]}
+          >📌</button>
+          <button
+            className="sidebar-session-delete"
+            onClick={(e) => { e.stopPropagation(); onDelete(); }}
+          >✕</button>
+        </div>
+      </div>
+      {/* Hidden trigger — context menu is activated via right-click */}
+      <DropdownMenuTrigger asChild>
+        <span style={{ display: "none" }} />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent>
+        <DropdownMenuItem onClick={onRename}>✏️ {S.sidebar.renameSession[lang]}</DropdownMenuItem>
+        <DropdownMenuItem onClick={onCopyId}>📋 {S.sidebar.copySessionId[lang]}</DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem variant="destructive" onClick={onDelete}>🗑️ {S.sidebar.deleteSession[lang]}</DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }

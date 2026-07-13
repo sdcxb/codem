@@ -88,6 +88,15 @@ export const S = {
     deleteSessionMsgEnd: { zh: "」？", en: '"?' },
     confirmDelete: { zh: "删除", en: "Delete" },
     cancel: { zh: "取消", en: "Cancel" },
+    renameSession: { zh: "重命名", en: "Rename" },
+    copySessionId: { zh: "复制对话 ID", en: "Copy Chat ID" },
+    sessionToday: { zh: "今天", en: "Today" },
+    sessionEarlier: { zh: "更早", en: "Earlier" },
+    collapseSidebar: { zh: "折叠侧栏", en: "Collapse" },
+    expandSidebar: { zh: "展开侧栏", en: "Expand" },
+    expandInput: { zh: "展开输入框", en: "Expand input" },
+    collapseInput: { zh: "收起输入框", en: "Collapse input" },
+    disabledHint: { zh: "AI 正在处理中，请等待完成或点击 ■ 取消", en: "AI is working, wait or click ■ to cancel" },
   },
 
   // Settings panel
