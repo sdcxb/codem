@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { Message } from "../store";
 import ReactMarkdown from "react-markdown";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
@@ -6,6 +6,7 @@ import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { DefaultToolRenderer } from "../core/llm/tool-renderer";
 import { getSubagentManager } from "../core/subagent/subagent";
 import { getLang, useLang, S } from "../core/i18n/lang";
+import { Tooltip, TooltipTrigger, TooltipContent } from "./ui/tooltip";
 
 // Handle link clicks - open files with system default app, external URLs in browser
 function handleLinkClick(e: React.MouseEvent<HTMLAnchorElement>, href: string) {
@@ -69,22 +70,49 @@ function SubagentStatus({ taskId, name }: { taskId: string; name?: string }) {
 
 const toolRenderer = new DefaultToolRenderer({ maxOutputLength: 200 });
 
+// Threshold for long message collapse (in pixels)
+const COLLAPSE_THRESHOLD = 400;
+
 interface MessageBubbleProps {
   message: Message;
   index?: number;
   onFork?: (messageIndex: number) => void;
   showReasoning?: boolean;
   onDeleteFiles?: (files: string[]) => void;
+  onRegenerate?: (messageIndex: number) => void;
 }
 
-export function MessageBubble({ message, index, onFork, showReasoning = true, onDeleteFiles }: MessageBubbleProps) {
+export function MessageBubble({ message, index, onFork, showReasoning = true, onDeleteFiles, onRegenerate }: MessageBubbleProps) {
   const lang = useLang();
   const [expanded, setExpanded] = useState(true);
   const [showAttachment, setShowAttachment] = useState<string | null>(null);
   const [showFilesConfirm, setShowFilesConfirm] = useState(false);
+  const [contentCollapsed, setContentCollapsed] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const contentRef = useRef<HTMLDivElement>(null);
 
   const isUser = message.role === "user";
   const isSystem = message.role === "system";
+  const isStreaming = message.status === "streaming";
+
+  // Check if content should be collapsible (after render, not during streaming)
+  useEffect(() => {
+    if (isStreaming) {
+      setContentCollapsed(false);
+      return;
+    }
+    if (contentRef.current && contentRef.current.scrollHeight > COLLAPSE_THRESHOLD) {
+      // Auto-collapse long messages, but only once per message
+      setContentCollapsed(true);
+    }
+  }, [isStreaming, message.content]);
+
+  const handleCopyMessage = useCallback(() => {
+    navigator.clipboard.writeText(message.content).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }, [message.content]);
 
   return (
     <div className={`message ${isUser ? "user" : isSystem ? "system" : "assistant"}`}>
@@ -125,71 +153,89 @@ export function MessageBubble({ message, index, onFork, showReasoning = true, on
           </div>
         )}
 
-        <div className="message-content">
-          <ReactMarkdown
-            components={{
-              code({ className, children, ...props }) {
-                const match = /language-(\w+)/.exec(className || "");
-                const codeStr = String(children).replace(/\n$/, "");
-                if (match) {
-                  return (
-                    <div className="code-block">
-                      <div className="code-header">
-                        <span>{match[1]}</span>
-                        <button
-                          className="copy-btn"
-                          onClick={() => navigator.clipboard.writeText(codeStr)}
+        {/* Long message collapse wrapper (#3) */}
+        <div
+          className={`message-content-wrapper ${contentCollapsed && !isStreaming ? "collapsed" : ""}`}
+        >
+          <div className="message-content" ref={contentRef}>
+            <ReactMarkdown
+              components={{
+                code({ className, children, ...props }) {
+                  const match = /language-(\w+)/.exec(className || "");
+                  const codeStr = String(children).replace(/\n$/, "");
+                  if (match) {
+                    return (
+                      <div className="code-block">
+                        <div className="code-header">
+                          <span>{match[1]}</span>
+                          <button
+                            className="copy-btn"
+                            onClick={() => navigator.clipboard.writeText(codeStr)}
+                          >
+                            {S.bubble.copy[lang]}
+                          </button>
+                        </div>
+                        <SyntaxHighlighter
+                          style={oneDark}
+                          language={match[1]}
+                          PreTag="div"
                         >
-                          {S.bubble.copy[lang]}
-                        </button>
+                          {codeStr}
+                        </SyntaxHighlighter>
                       </div>
-                      <SyntaxHighlighter
-                        style={oneDark}
-                        language={match[1]}
-                        PreTag="div"
-                      >
-                        {codeStr}
-                      </SyntaxHighlighter>
-                    </div>
+                    );
+                  }
+                  return (
+                    <code className={className} {...props}>
+                      {children}
+                    </code>
                   );
-                }
-                return (
-                  <code className={className} {...props}>
-                    {children}
-                  </code>
-                );
-              },
-              a({ href, children, ...props }) {
-                return (
-                  <a
-                    {...props}
-                    href={href}
-                    onClick={(e) => handleLinkClick(e, href || "")}
-                    style={{ color: "#7c6cf0", cursor: "pointer", textDecoration: "underline" }}
-                  >
-                    {children}
-                  </a>
-                );
-              },
-              img({ src, alt, ...props }) {
-                // Render images (including base64 data URLs from image_gen tool) inline
-                return (
-                  <img
-                    src={src}
-                    alt={alt || ""}
-                    {...props}
-                    style={{ maxWidth: "100%", borderRadius: 8, marginTop: 8, marginBottom: 8 }}
-                    onError={(e) => {
-                      console.error("[Image render error]", alt, src?.substring(0, 50));
-                    }}
-                  />
-                );
-              },
-            }}
-          >
-            {message.content}
-          </ReactMarkdown>
+                },
+                a({ href, children, ...props }) {
+                  return (
+                    <a
+                      {...props}
+                      href={href}
+                      onClick={(e) => handleLinkClick(e, href || "")}
+                      style={{ color: "var(--accent)", cursor: "pointer", textDecoration: "underline" }}
+                    >
+                      {children}
+                    </a>
+                  );
+                },
+                img({ src, alt, ...props }) {
+                  // Render images (including base64 data URLs from image_gen tool) inline
+                  return (
+                    <img
+                      src={src}
+                      alt={alt || ""}
+                      {...props}
+                      style={{ maxWidth: "100%", borderRadius: 8, marginTop: 8, marginBottom: 8 }}
+                      onError={(e) => {
+                        console.error("[Image render error]", alt, src?.substring(0, 50));
+                      }}
+                    />
+                  );
+                },
+              }}
+            >
+              {message.content}
+            </ReactMarkdown>
+          </div>
+          {/* Collapse overlay with expand button */}
+          {contentCollapsed && !isStreaming && (
+            <div className="collapse-overlay" onClick={() => setContentCollapsed(false)}>
+              <span className="collapse-btn">{S.bubble.expand[lang]} ▼</span>
+            </div>
+          )}
         </div>
+
+        {/* Collapsed indicator (when collapsed, show a small expand hint) */}
+        {contentCollapsed && !isStreaming && (
+          <button className="content-collapsed-hint" onClick={() => setContentCollapsed(false)}>
+            {S.bubble.expand[lang]} · {contentRef.current?.scrollHeight ?? 0}px →
+          </button>
+        )}
 
         {message.reasoning && showReasoning && (
           <div className="reasoning-block">
@@ -290,6 +336,60 @@ export function MessageBubble({ message, index, onFork, showReasoning = true, on
                   </button>
                 </div>
               </div>
+            )}
+          </div>
+        )}
+
+        {/* #2: Floating toolbar — shown on hover, not during streaming */}
+        {!isStreaming && !isSystem && message.content && (
+          <div className="message-toolbar">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button className="toolbar-btn" onClick={handleCopyMessage}>
+                  {copied ? "✓" : "📋"}
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>{copied ? S.bubble.copied[lang] : S.bubble.copyMessage[lang]}</TooltipContent>
+            </Tooltip>
+            {contentCollapsed && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button className="toolbar-btn" onClick={() => setContentCollapsed(false)}>
+                    📖
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent>{S.bubble.expand[lang]}</TooltipContent>
+              </Tooltip>
+            )}
+            {!contentCollapsed && contentRef.current && contentRef.current.scrollHeight > COLLAPSE_THRESHOLD && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button className="toolbar-btn" onClick={() => setContentCollapsed(true)}>
+                    📕
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent>{S.bubble.collapse[lang]}</TooltipContent>
+              </Tooltip>
+            )}
+            {onFork && index !== undefined && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button className="toolbar-btn" onClick={() => onFork(index)}>
+                    🔀
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent>{S.bubble.fork[lang]}</TooltipContent>
+              </Tooltip>
+            )}
+            {onRegenerate && index !== undefined && !isUser && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button className="toolbar-btn" onClick={() => onRegenerate(index)}>
+                    🔄
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent>{S.bubble.regenerate[lang]}</TooltipContent>
+              </Tooltip>
             )}
           </div>
         )}

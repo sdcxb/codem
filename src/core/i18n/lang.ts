@@ -198,6 +198,11 @@ export const S = {
     cleanFiles: { zh: "🗑️ 清理过程文件", en: "🗑️ Clean up files" },
     delete: { zh: "删除", en: "Delete" },
     cancel: { zh: "取消", en: "Cancel" },
+    expand: { zh: "展开", en: "Expand" },
+    collapse: { zh: "收起", en: "Collapse" },
+    copyMessage: { zh: "复制消息", en: "Copy message" },
+    copied: { zh: "已复制", en: "Copied" },
+    regenerate: { zh: "重新生成", en: "Regenerate" },
   },
 
   // MessageBubble subagent status
