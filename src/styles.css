@@ -6074,3 +6074,64 @@ body {
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+/* ========== Batch D: Selection Tooltip + Quote Context ========== */
+
+/* #5: Selection tooltip floating button */
+.selection-tooltip {
+  animation: tooltip-fade-in var(--duration-fast) ease;
+}
+.selection-tooltip-btn {
+  padding: 4px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #f0f6fc;
+  background: var(--accent);
+  border: 1px solid var(--accent-hover);
+  border-radius: var(--radius-full);
+  cursor: pointer;
+  white-space: nowrap;
+  box-shadow: var(--shadow-md);
+  transition: var(--transition-color);
+}
+.selection-tooltip-btn:hover {
+  background: var(--accent-hover);
+}
+
+/* #5: Quote context banner in input area */
+.quote-context-banner {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  margin-bottom: 6px;
+  background: var(--accent-muted);
+  border: 1px solid var(--border-secondary);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.quote-context-icon {
+  flex-shrink: 0;
+}
+.quote-context-text {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-style: italic;
+}
+.quote-context-clear {
+  flex-shrink: 0;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 14px;
+  padding: 0 2px;
+  border-radius: var(--radius-sm);
+}
+.quote-context-clear:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}

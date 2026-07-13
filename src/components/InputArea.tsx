@@ -14,9 +14,12 @@ interface InputAreaProps {
   onModeChange: (mode: CollaborationMode) => void;
   /** Project path for per-project security mode */
   projectPath?: string;
+  /** #5: Quoted text from selection tooltip */
+  quoteContext?: string | null;
+  onClearQuote?: () => void;
 }
 
-export function InputArea({ onSend, onCancel, disabled, isStreaming, collaborationMode, onModeChange, projectPath }: InputAreaProps) {
+export function InputArea({ onSend, onCancel, disabled, isStreaming, collaborationMode, onModeChange, projectPath, quoteContext, onClearQuote }: InputAreaProps) {
   const lang = useLang();
   const [input, setInput] = useState("");
   const [pendingAttachments, setPendingAttachments] = useState<MessageAttachment[]>([]);
@@ -24,6 +27,15 @@ export function InputArea({ onSend, onCancel, disabled, isStreaming, collaborati
   const [securityMode, setSecurityMode] = useState<SecurityMode>(getEffectiveSecurityMode(projectPath));
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [expanded, setExpanded] = useState(false);
+
+  // #5: Insert quote context into input when received
+  useEffect(() => {
+    if (quoteContext) {
+      const quoted = quoteContext.split("\n").map((line) => `> ${line}`).join("\n");
+      setInput((prev) => prev ? `${prev}\n\n${quoted}\n\n` : `${quoted}\n\n`);
+      setTimeout(() => textareaRef.current?.focus(), 50);
+    }
+  }, [quoteContext]);
 
   // Update when project path changes
   useEffect(() => {
@@ -129,6 +141,15 @@ export function InputArea({ onSend, onCancel, disabled, isStreaming, collaborati
 
   return (
     <div className="input-area">
+      {/* #5: Quote context preview banner */}
+      {quoteContext && (
+        <div className="quote-context-banner">
+          <span className="quote-context-icon">💬</span>
+          <span className="quote-context-text">{quoteContext.length > 80 ? quoteContext.substring(0, 80) + "..." : quoteContext}</span>
+          <button className="quote-context-clear" onClick={() => onClearQuote?.()}>✕</button>
+        </div>
+      )}
+
       {/* Pending Attachments */}
       {pendingAttachments.length > 0 && (
         <div className="pending-attachments">

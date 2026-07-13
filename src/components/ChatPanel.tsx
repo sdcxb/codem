@@ -3,6 +3,7 @@ import { useAppStore, MessageAttachment } from "../store";
 import { useProjectStore } from "../core/store";
 import { MessageBubble } from "./MessageBubble";
 import { InputArea } from "./InputArea";
+import { SelectionTooltip } from "./SelectionTooltip";
 import type { CollaborationMode } from "../core/agent/agent";
 import { AgentPanel } from "./AgentPanel";
 import { AgentDetail } from "./AgentDetail";
@@ -75,6 +76,7 @@ export function ChatPanel({ onSend, onCancel, onToggleSidebar, onFork, connected
   const [showContextMonitor, setShowContextMonitor] = useState(false);
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [agents, setAgents] = useState<SubagentTask[]>([]);
+  const [quoteContext, setQuoteContext] = useState<string | null>(null);
 
   // Auto-scroll to bottom only on initial load or new messages (not when loading history)
   const prevMessagesLenRef = useRef(0);
@@ -230,6 +232,7 @@ export function ChatPanel({ onSend, onCancel, onToggleSidebar, onFork, connected
 
       <div className="chat-body">
         <div className="messages-container" ref={messagesContainerRef}>
+          <SelectionTooltip containerRef={messagesContainerRef} onQuote={(text) => setQuoteContext(text)} />
           {hasMoreMessages && (
             <div className="load-more-indicator">
               {isLoadingMore ? (
@@ -257,6 +260,10 @@ export function ChatPanel({ onSend, onCancel, onToggleSidebar, onFork, connected
               onFork={onFork}
               showReasoning={showReasoning}
               onDeleteFiles={(files) => handleDeleteFiles(msg.id, files)}
+              onRegenerate={(idx) => {
+                /* TODO: implement regenerate */
+                console.log("Regenerate from index", idx);
+              }}
             />
           ))}
           {isStreaming && (
@@ -382,7 +389,7 @@ export function ChatPanel({ onSend, onCancel, onToggleSidebar, onFork, connected
         </div>
       )}
 
-      <InputArea onSend={onSend} onCancel={onCancel} disabled={isStreaming || !connected} isStreaming={isStreaming} collaborationMode={collaborationMode} onModeChange={onModeChange || (() => {})} projectPath={projectPath} />
+      <InputArea onSend={(msg, atts) => { onSend(msg, atts); setQuoteContext(null); }} onCancel={onCancel} disabled={isStreaming || !connected} isStreaming={isStreaming} collaborationMode={collaborationMode} onModeChange={onModeChange || (() => {})} projectPath={projectPath} quoteContext={quoteContext} onClearQuote={() => setQuoteContext(null)} />
     </div>
   );
 }
