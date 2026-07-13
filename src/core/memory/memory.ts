@@ -261,6 +261,272 @@ export class MemoryService {
     }
     this.save();
   }
+
+  // ========== F2.4: Export / Import ==========
+
+  /** Export all memories as JSON string */
+  exportAsJSON(): string {
+    const data = {
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      entries: Array.from(this.entries.values()),
+    };
+    return JSON.stringify(data, null, 2);
+  }
+
+  /** Export all memories as Markdown */
+  exportAsMarkdown(): string {
+    const lines: string[] = ["# Codem Memory Export", ""];
+    lines.push(`Exported: ${new Date().toISOString()}`);
+    lines.push("");
+
+    for (const scope of ["global", "project", "session"] as MemoryScope[]) {
+      const entries = this.listByScope(scope);
+      if (entries.length === 0) continue;
+      lines.push(`## ${scope.charAt(0).toUpperCase() + scope.slice(1)} Memories`);
+      lines.push("");
+      for (const e of entries) {
+        const date = new Date(e.timestamp).toISOString().split("T")[0];
+        lines.push(`### ${e.key}`);
+        lines.push(`- **ID**: ${e.id}`);
+        lines.push(`- **Date**: ${date}`);
+        if (e.tags && e.tags.length > 0) {
+          lines.push(`- **Tags**: ${e.tags.join(", ")}`);
+        }
+        if (e.filePath) {
+          lines.push(`- **File**: ${e.filePath}`);
+        }
+        lines.push("");
+        lines.push(e.content);
+        lines.push("");
+      }
+    }
+    return lines.join("\n");
+  }
+
+  /** Import memories from JSON string. Returns count of imported entries. */
+  importFromJSON(jsonStr: string, overwrite = false): number {
+    try {
+      const data = JSON.parse(jsonStr);
+      const entries: MemoryEntry[] = Array.isArray(data) ? data : (data.entries || []);
+      let count = 0;
+      for (const entry of entries) {
+        if (!entry.id || !entry.key || !entry.content) continue;
+        if (!overwrite && this.entries.has(entry.id)) continue;
+        this.entries.set(entry.id, {
+          ...entry,
+          content: entry.content.substring(0, this.config.maxContentLength),
+        });
+        count++;
+      }
+      if (count > 0) this.save();
+      return count;
+    } catch (err) {
+      console.error("[importFromJSON] Failed:", err);
+      return 0;
+    }
+  }
+
+  // ========== F3.1: Cross-session Memory Consolidation ==========
+
+  /**
+   * F3.1: Consolidate memories across sessions.
+   *
+   * Performs three operations:
+   * 1. **Deduplication**: Find entries with similar keys/content and merge them
+   *    into a single entry (keeping the most recent, combining content).
+   * 2. **Stale cleanup**: Remove entries older than `maxAgeDays` that haven't been
+   *    accessed recently (based on timestamp).
+   * 3. **Capacity enforcement**: Enforce max entries per scope (FIFO eviction).
+   *
+   * Returns a summary of what was done.
+   */
+  consolidate(options?: {
+    maxAgeDays?: number;        // Default: 90 days
+    maxEntriesPerScope?: number; // Default: from config
+    similarityThreshold?: number; // Default: 0.7 (70% content similarity)
+  }): { duplicatesMerged: number; staleRemoved: number; capacityTrimmed: number } {
+    const maxAgeDays = options?.maxAgeDays ?? 90;
+    const maxPerScope = options?.maxEntriesPerScope ?? 200;
+    const similarityThreshold = options?.similarityThreshold ?? 0.7;
+
+    let duplicatesMerged = 0;
+    let staleRemoved = 0;
+    let capacityTrimmed = 0;
+
+    const allEntries = Array.from(this.entries.values());
+
+    // --- 1. Deduplication ---
+    // Group by scope, then find similar entries within each scope
+    for (const scope of ["project", "global", "session"] as MemoryScope[]) {
+      const scopedEntries = allEntries
+        .filter(e => e.scope === scope)
+        .sort((a, b) => b.timestamp - a.timestamp); // Most recent first
+
+      const toDelete = new Set<string>();
+      const toMerge: Map<string, string[]> = new Map(); // keeperId -> [duplicateIds]
+
+      for (let i = 0; i < scopedEntries.length; i++) {
+        if (toDelete.has(scopedEntries[i].id)) continue;
+
+        for (let j = i + 1; j < scopedEntries.length; j++) {
+          if (toDelete.has(scopedEntries[j].id)) continue;
+
+          const similarity = this.calculateSimilarity(scopedEntries[i], scopedEntries[j]);
+          if (similarity >= similarityThreshold) {
+            // Mark j as duplicate of i
+            toDelete.add(scopedEntries[j].id);
+            const existing = toMerge.get(scopedEntries[i].id) || [];
+            existing.push(scopedEntries[j].id);
+            toMerge.set(scopedEntries[i].id, existing);
+          }
+        }
+      }
+
+      // Merge duplicate content into keepers
+      for (const [keeperId, dupIds] of toMerge) {
+        const keeper = this.entries.get(keeperId);
+        if (!keeper) continue;
+
+        const dupContents: string[] = [];
+        for (const dupId of dupIds) {
+          const dup = this.entries.get(dupId);
+          if (dup) {
+            // Append content that's not already in the keeper
+            if (!keeper.content.includes(dup.content.substring(0, 50))) {
+              dupContents.push(dup.content);
+            }
+            // Merge tags
+            if (dup.tags) {
+              keeper.tags = [...new Set([...(keeper.tags || []), ...dup.tags])];
+            }
+          }
+        }
+
+        if (dupContents.length > 0) {
+          keeper.content = (keeper.content + "\n\n" + dupContents.join("\n\n")).substring(0, this.config.maxContentLength);
+        }
+
+        this.entries.set(keeperId, keeper);
+        duplicatesMerged += dupIds.length;
+      }
+
+      // Delete duplicates
+      for (const id of toDelete) {
+        this.entries.delete(id);
+      }
+    }
+
+    // --- 2. Stale cleanup ---
+    const now = Date.now();
+    const maxAgeMs = maxAgeDays * 24 * 60 * 60 * 1000;
+    for (const [id, entry] of this.entries) {
+      if (entry.scope === "session") continue; // Don't auto-clean session memories
+      if (now - entry.timestamp > maxAgeMs) {
+        this.entries.delete(id);
+        staleRemoved++;
+      }
+    }
+
+    // --- 3. Capacity enforcement ---
+    for (const scope of ["project", "global", "session"] as MemoryScope[]) {
+      const scopedEntries = Array.from(this.entries.values())
+        .filter(e => e.scope === scope)
+        .sort((a, b) => b.timestamp - a.timestamp); // Most recent first
+
+      if (scopedEntries.length > maxPerScope) {
+        const toRemove = scopedEntries.slice(maxPerScope);
+        for (const entry of toRemove) {
+          this.entries.delete(entry.id);
+          capacityTrimmed++;
+        }
+      }
+    }
+
+    if (duplicatesMerged > 0 || staleRemoved > 0 || capacityTrimmed > 0) {
+      this.save();
+      console.log(`[F3.1] Memory consolidation: ${duplicatesMerged} duplicates merged, ${staleRemoved} stale removed, ${capacityTrimmed} capacity trimmed`);
+    }
+
+    return { duplicatesMerged, staleRemoved, capacityTrimmed };
+  }
+
+  /**
+   * Calculate similarity between two memory entries (0-1).
+   * Uses key similarity (Jaccard) + content overlap.
+   */
+  private calculateSimilarity(a: MemoryEntry, b: MemoryEntry): number {
+    // Key similarity: exact match = 1.0, partial match = lower
+    let keyScore = 0;
+    if (a.key === b.key) {
+      keyScore = 1.0;
+    } else {
+      const aWords = new Set(a.key.toLowerCase().split(/\s+/));
+      const bWords = new Set(b.key.toLowerCase().split(/\s+/));
+      const intersection = [...aWords].filter(w => bWords.has(w)).length;
+      const union = new Set([...aWords, ...bWords]).size;
+      keyScore = union > 0 ? intersection / union : 0;
+    }
+
+    // Content similarity: based on first 200 chars overlap
+    const aPrefix = a.content.substring(0, 200).toLowerCase();
+    const bPrefix = b.content.substring(0, 200).toLowerCase();
+    let contentScore = 0;
+    if (aPrefix === bPrefix) {
+      contentScore = 1.0;
+    } else {
+      // Simple character-level overlap
+      const aChars = new Set(aPrefix);
+      const bChars = new Set(bPrefix);
+      const intersection = [...aChars].filter(c => bChars.has(c)).length;
+      const union = new Set([...aChars, ...bChars]).size;
+      contentScore = union > 0 ? intersection / union : 0;
+    }
+
+    // Weighted: key match is more important
+    return keyScore * 0.6 + contentScore * 0.4;
+  }
+
+  /**
+   * F3.1: Get memory consolidation stats.
+   * Useful for UI display and debugging.
+   */
+  getConsolidationStats(): {
+    totalEntries: number;
+    potentialDuplicates: number;
+    oldestAge: number | null;
+    scopeBreakdown: Record<MemoryScope, number>;
+  } {
+    const allEntries = Array.from(this.entries.values());
+    let potentialDuplicates = 0;
+
+    // Quick check for potential duplicates (same key)
+    const keyCounts: Record<string, number> = {};
+    for (const entry of allEntries) {
+      const key = entry.key.toLowerCase();
+      keyCounts[key] = (keyCounts[key] || 0) + 1;
+    }
+    for (const count of Object.values(keyCounts)) {
+      if (count > 1) potentialDuplicates += count - 1;
+    }
+
+    const timestamps = allEntries.map(e => e.timestamp);
+    const now = Date.now();
+    const oldest = timestamps.length > 0 ? Math.min(...timestamps) : null;
+    const oldestAge = oldest !== null ? Math.floor((now - oldest) / (24 * 60 * 60 * 1000)) : null;
+
+    const scopeBreakdown: Record<MemoryScope, number> = { project: 0, session: 0, global: 0 };
+    for (const entry of allEntries) {
+      scopeBreakdown[entry.scope]++;
+    }
+
+    return {
+      totalEntries: allEntries.length,
+      potentialDuplicates,
+      oldestAge,
+      scopeBreakdown,
+    };
+  }
 }
 
 // ========== Singleton ==========

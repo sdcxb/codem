@@ -171,6 +171,20 @@ export function MessageBubble({ message, index, onFork, showReasoning = true, on
                   </a>
                 );
               },
+              img({ src, alt, ...props }) {
+                // Render images (including base64 data URLs from image_gen tool) inline
+                return (
+                  <img
+                    src={src}
+                    alt={alt || ""}
+                    {...props}
+                    style={{ maxWidth: "100%", borderRadius: 8, marginTop: 8, marginBottom: 8 }}
+                    onError={(e) => {
+                      console.error("[Image render error]", alt, src?.substring(0, 50));
+                    }}
+                  />
+                );
+              },
             }}
           >
             {message.content}
@@ -231,6 +245,9 @@ export function MessageBubble({ message, index, onFork, showReasoning = true, on
                         {tc.status === "running" ? "⏳" : tc.status === "done" ? "✅" : "❌"}
                       </span>
                       {subagentTaskId && <SubagentStatus taskId={subagentTaskId} name={agentName || undefined} />}
+                      {tc.status === "error" && tc.result && (
+                        <div className="tool-error-detail">{tc.result}</div>
+                      )}
                     </div>
                   );
                 })}

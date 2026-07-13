@@ -1,7 +1,12 @@
 // Agent types
 
+import type { TaskSlot } from "../llm/model-profile";
+
 // ========== Agent Types ==========
 export type AgentMode = "primary" | "subagent" | "all";
+
+/** Collaboration mode (C1): controls agent behavior style */
+export type CollaborationMode = "default" | "plan";
 
 export interface AgentPermission {
   /** Tool name pattern (supports wildcards like "bash", "file.*") */
@@ -47,6 +52,15 @@ export interface AgentDefinition {
 
   /** Context mode: inline = full context, fork = isolated */
   contextMode?: "inline" | "fork";
+
+  /** Collaboration mode (C1): "default" = autonomous execution, "plan" = read-only planning */
+  collaborationMode?: CollaborationMode;
+
+  /** Reasoning effort override (E2): "low" | "medium" | "high" */
+  reasoningEffort?: "low" | "medium" | "high";
+
+  /** M1: Model slot for this agent — determines which Profile slot to use for model resolution */
+  modelSlot?: TaskSlot;
 }
 
 // ========== Agent Info ==========
@@ -156,6 +170,7 @@ When the user doesn't specify implementation details, choose the simplest approa
       ],
       canSpawnSubagents: true,
       maxSteps: 20,
+      modelSlot: "chat",
     });
 
     // Plan agent (read-only)
@@ -180,6 +195,7 @@ Do NOT perform any write/edit operations.`,
         { tool: "edit", action: "deny" },
       ],
       maxSteps: 10,
+      modelSlot: "subagent",
     });
 
     // Explore agent (read-only codebase search)
@@ -204,6 +220,7 @@ Report findings concisely, including file paths and line numbers.`,
         { tool: "bash", action: "deny" },
       ],
       maxSteps: 15,
+      modelSlot: "subagent",
     });
 
     // General subagent
@@ -221,6 +238,7 @@ Complete tasks thoroughly and report your findings.`,
       ],
       canSpawnSubagents: false,
       maxSteps: 10,
+      modelSlot: "subagent",
     });
 
     // Title agent (generates conversation titles)
@@ -237,6 +255,7 @@ Output ONLY the title, no quotes, no explanation.`,
       ],
       maxSteps: 1,
       maxTokens: 50,
+      modelSlot: "memory",
     });
 
     // Summary agent
@@ -254,6 +273,7 @@ Keep it under 200 words.`,
       ],
       maxSteps: 1,
       maxTokens: 500,
+      modelSlot: "memory",
     });
   }
 }

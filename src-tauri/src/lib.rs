@@ -167,7 +167,19 @@ async fn read_file(path: String, encoding: Option<String>) -> Result<String, Str
 }
 
 #[tauri::command]
-async fn write_file(path: String, content: String, encoding: Option<String>) -> Result<(), String> {
+async fn write_file(path: String, content: String, encoding: Option<String>, workspace: Option<String>) -> Result<(), String> {
+    // S5: Sandbox path whitelist — if workspace is provided, restrict writes to workspace
+    if let Some(ref ws) = workspace {
+        let ws_canonical = canonicalize_path(ws);
+        let target_canonical = canonicalize_path(&path);
+        if !target_canonical.starts_with(&ws_canonical) {
+            return Err(format!(
+                "Sandbox: Write to '{}' is outside the workspace '{}'. Set the workspace directory or disable sandbox mode in settings.",
+                path, ws
+            ));
+        }
+    }
+
     if let Some(parent) = std::path::Path::new(&path).parent() {
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
@@ -185,6 +197,31 @@ async fn write_file(path: String, content: String, encoding: Option<String>) -> 
             // Write as UTF-8 text
             std::fs::write(&path, content).map_err(|e| e.to_string())
         }
+    }
+}
+
+/// S5: Canonicalize a path for comparison (resolve . and .. without requiring the path to exist)
+fn canonicalize_path(path: &str) -> String {
+    let normalized = path.replace('/', "\\");
+    let mut parts: Vec<&str> = Vec::new();
+    for part in normalized.split('\\') {
+        if part == "" || part == "." {
+            continue;
+        }
+        if part == ".." {
+            parts.pop();
+            continue;
+        }
+        parts.push(part);
+    }
+    let result = parts.join("\\");
+    // Preserve drive letter prefix
+    if normalized.len() >= 2 && normalized.as_bytes()[1] == b':' {
+        result
+    } else if normalized.starts_with("\\\\") {
+        format!("\\{}", result)
+    } else {
+        result
     }
 }
 

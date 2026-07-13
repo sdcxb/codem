@@ -5,6 +5,7 @@ import type {
   LLMRequest,
   LLMResponse,
   StreamEvent,
+  LLMMessage,
 } from "./types";
 import { getLang } from "../i18n/lang";
 
@@ -38,16 +39,20 @@ export class OpenAICompatibleProvider implements LLMProvider {
     if (this.config.apiKey) {
       headers["Authorization"] = `Bearer ${this.config.apiKey}`;
     }
+    // E7: Prompt caching — flag the system prompt for caching when supported
+    const messages = this.markCacheableMessages(request.messages);
     const response = await fetch(`${baseUrl}/chat/completions`, {
       method: "POST",
       headers,
       body: JSON.stringify({
         model: request.model,
-        messages: request.messages.map((m) => this.toAPIMessage(m)),
+        messages: messages.map((m) => this.toAPIMessage(m)),
         tools: request.tools?.length ? request.tools.map((t) => this.toAPITool(t)) : undefined,
         temperature: request.temperature ?? 0.7,
         max_tokens: request.maxTokens ?? 4096,
         stream: false,
+        // E2: Reasoning effort (OpenAI o-series / DeepSeek R1 etc.)
+        ...(request.reasoningEffort ? { reasoning_effort: request.reasoningEffort } : {}),
       }),
       signal: request.abortSignal,
     });
@@ -91,7 +96,7 @@ export class OpenAICompatibleProvider implements LLMProvider {
     const tools = request.tools?.length ? request.tools.map((t) => this.toAPITool(t)) : undefined;
 
     // For DeepSeek reasoning models, inject a language hint to control reasoning language
-    let messages = request.messages;
+    let messages = this.markCacheableMessages(request.messages);
     const isDeepSeek = this.id === "deepseek";
     if (isDeepSeek && getLang() === "zh") {
       messages = [...request.messages];
@@ -111,6 +116,8 @@ export class OpenAICompatibleProvider implements LLMProvider {
       tools,
       temperature: request.temperature ?? 0.7,
       stream: true,
+      // E2: Reasoning effort (OpenAI o-series / DeepSeek R1 etc.)
+      ...(request.reasoningEffort ? { reasoning_effort: request.reasoningEffort } : {}),
     };
     if (request.maxTokens) {
       bodyObj.max_tokens = request.maxTokens;
@@ -133,12 +140,45 @@ export class OpenAICompatibleProvider implements LLMProvider {
     const reader = response.body?.getReader();
     if (!reader) throw new Error("No response body");
 
+    // Wire up abort signal to the reader: when user clicks ■ (cancel),
+    // AbortController.abort() fires. We need to cancel the reader to unblock
+    // any pending reader.read() call. Without this, the reader could block
+    // forever even after abort.
+    const abortHandler = () => {
+      try { reader.cancel(); } catch {}
+    };
+    if (request.abortSignal) {
+      if (request.abortSignal.aborted) {
+        // Already aborted before we got here
+        reader.cancel();
+      } else {
+        request.abortSignal.addEventListener("abort", abortHandler, { once: true });
+      }
+    }
+
     const decoder = new TextDecoder();
     let buffer = "";
     let msgId = "";
     let currentToolCalls: Record<string, { id: string; name: string; arguments: string }> = {};
+    let streamEnded = false;
 
     yield { type: "start", id: msgId, model: request.model };
+
+    // === No idle timeout ===
+    // We deliberately do NOT use any time-based idle timeout here.
+    // Time-based timeouts are fundamentally unreliable:
+    //   - Too short → kills legitimate long-paused responses (DeepSeek R1 thinking)
+    //   - Too long  → real dead connections hang for a long time
+    //   - Any value  → a guess, not a deterministic judgment
+    //
+    // Instead, we rely on STATE-BASED detection + user control:
+    //   1. The agentic loop emits "connecting" → "streaming" → "executing_tools"
+    //   2. The UI shows the current state to the user in real time
+    //   3. The user can cancel at ANY time via the ■ button (AbortController)
+    //   4. If the TCP connection truly dies, the OS will eventually return an error
+    //      from reader.read(), which we handle in the catch block below.
+    //
+    // This is zero-risk: no normal request will ever be killed by a timer.
 
     while (true) {
       const { done, value } = await reader.read();
@@ -186,6 +226,7 @@ export class OpenAICompatibleProvider implements LLMProvider {
           }
 
           if (finishReason) {
+            streamEnded = true;
             // Yield tool_use_end events for each tool call
             for (const key of Object.keys(currentToolCalls)) {
               const tc = currentToolCalls[key];
@@ -224,6 +265,67 @@ export class OpenAICompatibleProvider implements LLMProvider {
         } catch {}
       }
     }
+
+    // Fallback: if stream ended without finish_reason, yield tool_use_end + end
+    // This handles APIs that close the connection without an explicit finish_reason
+    if (!streamEnded) {
+      console.warn("[Provider] Stream ended without finish_reason, yielding fallback events");
+      for (const key of Object.keys(currentToolCalls)) {
+        const tc = currentToolCalls[key];
+        if (tc) {
+          let parsedArgs: Record<string, unknown> = {};
+          if (tc.arguments) {
+            try {
+              parsedArgs = JSON.parse(tc.arguments);
+            } catch (e) {
+              console.error("[Provider] Fallback: failed to parse tool args:", tc.arguments.substring(0, 200));
+            }
+          }
+          console.log("[Provider] Fallback tool_use_end:", tc.name, "args:", JSON.stringify(parsedArgs).substring(0, 200));
+          yield {
+            type: "tool_use_end" as const,
+            id: tc.id,
+            name: tc.name,
+            input: parsedArgs,
+          };
+        }
+      }
+      yield { type: "usage", usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 } };
+      yield { type: "end", finishReason: Object.keys(currentToolCalls).length > 0 ? "tool_use" : "stop" };
+    }
+
+    // Clean up abort listener
+    if (request.abortSignal) {
+      request.abortSignal.removeEventListener("abort", abortHandler);
+    }
+  }
+
+  /**
+   * E7: Mark system prompt and early messages as cacheable.
+   * For Anthropic-compatible APIs, adds cache_control markers.
+   * For OpenAI-compatible APIs, this is a no-op (caching is automatic).
+   */
+  private markCacheableMessages(messages: LLMMessage[]): LLMMessage[] {
+    // Only apply cache markers for Anthropic provider
+    if (this.id !== "anthropic") return messages;
+
+    return messages.map((msg, i) => {
+      // Mark the system message and the first user message as cacheable
+      if (i === 0 || (i === 1 && msg.role === "user")) {
+        return {
+          ...msg,
+          // Anthropic cache_control marker — the API will cache this prefix
+          content: typeof msg.content === "string"
+            ? msg.content
+            : msg.content,
+          // Add cache_control as a sidecar property (Anthropic API supports this)
+          ...(typeof msg.content === "string" ? {
+            content: [{ type: "text", text: msg.content, cache_control: { type: "ephemeral" } }],
+          } : {}),
+        } as any;
+      }
+      return msg;
+    });
   }
 
   private toAPIMessage(msg: any) {
@@ -242,10 +344,13 @@ export class OpenAICompatibleProvider implements LLMProvider {
     const result: any = { role, content };
     if (msg.name) result.name = msg.name;
     if (msg.tool_calls) result.tool_calls = msg.tool_calls;
-    // Include reasoning_content for DeepSeek thinking mode (required by API)
-    if (msg.reasoning) {
-      result.reasoning_content = msg.reasoning;
-    }
+    // NOTE: Do NOT send reasoning_content from previous assistant messages back to the API.
+    // reasoning_content is an OUTPUT field (DeepSeek thinking mode), not a standard INPUT field.
+    // Sending old reasoning back causes the LLM to treat previous thinking patterns as
+    // implicit instructions (e.g., old reasoning about "append not overwrite" gets carried
+    // forward to new requests where the user didn't ask for append).
+    // Only the current turn's reasoning is meaningful — past reasoning informed past responses
+    // and should not influence future turns.
     return result;
   }
 

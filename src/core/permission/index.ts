@@ -1,1 +1,2 @@
 export { PermissionManager, PermissionEvaluator, getPermissionManager, type PermissionRequest, type PermissionResult, type PermissionAction, type PermissionRule } from "./permission";
+export { SECURITY_MODES, getGlobalSecurityMode, setGlobalSecurityMode, getProjectSecurityMode, setProjectSecurityMode, getEffectiveSecurityMode, shouldShowWriteConfirm, shouldCheckPermissions, isAutoApprovable, evaluateWithSecurityMode, type SecurityMode, type SecurityModeInfo } from "./security-mode";

@@ -1,5 +1,7 @@
 import { useState, useEffect } from "react";
 import { getSnapshotService, type Snapshot } from "../core/snapshot/snapshot";
+import { DiffViewer } from "./DiffViewer";
+import { readFile } from "../core/file-api";
 
 interface SnapshotPanelProps {
   cwd: string;
@@ -26,6 +28,8 @@ export function SnapshotPanel({ cwd, onClose, onRestore }: SnapshotPanelProps) {
   const [restoring, setRestoring] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [toast, setToast] = useState<ToastMsg | null>(null);
+  // S4: Diff viewer state
+  const [diffFile, setDiffFile] = useState<{ path: string; before: string; after: string } | null>(null);
 
   useEffect(() => {
     loadSnapshots();
@@ -65,6 +69,25 @@ export function SnapshotPanel({ cwd, onClose, onRestore }: SnapshotPanelProps) {
     setRestoring(null);
     // 3秒后自动清除提示
     setTimeout(() => setToast(null), 3000);
+  };
+
+  const handleViewDiff = async (filePath: string, snapshotContent: string, isNew: boolean) => {
+    try {
+      let currentContent = "";
+      try {
+        currentContent = await readFile(filePath);
+      } catch {
+        // File doesn't exist currently
+      }
+      setDiffFile({
+        path: filePath,
+        before: isNew ? "" : snapshotContent,  // snapshot has the original content
+        after: currentContent,                    // current file content
+      });
+    } catch (e: any) {
+      setToast({ type: "error", text: `❌ 无法读取文件：${e?.message || "未知错误"}` });
+      setTimeout(() => setToast(null), 3000);
+    }
   };
 
   return (
@@ -137,7 +160,16 @@ export function SnapshotPanel({ cwd, onClose, onRestore }: SnapshotPanelProps) {
                     <label>已记录文件</label>
                     <ul>
                       {snapshot.files.map((file, i) => (
-                        <li key={i} className="mono">{file.path}</li>
+                        <li key={i} className="snapshot-file-item">
+                          <span className="mono snapshot-file-path">{file.path}</span>
+                          <button
+                            className="snapshot-diff-btn"
+                            onClick={() => handleViewDiff(file.path, file.content, file.isNew || false)}
+                            title="查看变更"
+                          >
+                            🔍 Diff
+                          </button>
+                        </li>
                       ))}
                     </ul>
                   </div>
@@ -157,6 +189,20 @@ export function SnapshotPanel({ cwd, onClose, onRestore }: SnapshotPanelProps) {
           </div>
         ))}
       </div>
+
+      {/* S4: Diff Viewer Modal */}
+      {diffFile && (
+        <div className="diff-viewer-overlay" onClick={() => setDiffFile(null)}>
+          <div className="diff-viewer-modal" onClick={(e) => e.stopPropagation()}>
+            <DiffViewer
+              filePath={diffFile.path}
+              before={diffFile.before}
+              after={diffFile.after}
+              onClose={() => setDiffFile(null)}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

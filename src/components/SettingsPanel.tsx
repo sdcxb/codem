@@ -5,6 +5,10 @@ import { getMiMoAuth } from "../core/auth/mimo";
 import type { LoginResult } from "../core/auth/mimo";
 import { getSettingJSON, setSettingJSON, getSetting, setSetting, removeSetting } from "../core/storage/settings";
 import { setLang, useLang, S, type Language } from "../core/i18n/lang";
+import { ModelProfilePanel } from "./ModelProfilePanel";
+import { getPermissionManager, type PermissionRule, type PermissionAction } from "../core/permission/permission";
+import { SECURITY_MODES, getGlobalSecurityMode, setGlobalSecurityMode, type SecurityMode } from "../core/permission/security-mode";
+import { MultimodalPanel } from "./MultimodalPanel";
 
 interface ProviderKey {
   id: string;
@@ -206,6 +210,8 @@ export function SettingsPanel({ onClose, onSessionRecovery, onUsageStats }: Sett
   };
 
   const [testResult, setTestResult] = useState<string>("");
+  const [showModelProfiles, setShowModelProfiles] = useState(false);
+  const [showMultimodal, setShowMultimodal] = useState(false);
   const runLoginTest = async () => {
     const lines: string[] = [];
     const log = (msg: string) => { lines.push(msg); console.log(msg); };
@@ -481,10 +487,12 @@ export function SettingsPanel({ onClose, onSessionRecovery, onUsageStats }: Sett
 
           <div className="setting-group">
             <label>{S.settings.model[lang]}</label>
-            <select
-              value={settings.model}
-              onChange={(e) => setSettings({ ...settings, model: e.target.value })}
-            >
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <select
+                value={settings.model}
+                onChange={(e) => setSettings({ ...settings, model: e.target.value })}
+                style={{ flex: 1 }}
+              >
               {settings.mode === "cli" ? (
                 <>
                   <option value="mimo-v2.5-pro">MiMo v2.5 Pro (免费)</option>
@@ -515,7 +523,27 @@ export function SettingsPanel({ onClose, onSessionRecovery, onUsageStats }: Sett
                 </>
               )}
             </select>
+              <button
+                onClick={() => setShowModelProfiles(true)}
+                style={{
+                  padding: "6px 12px",
+                  borderRadius: 4,
+                  border: "1px solid var(--border-primary)",
+                  background: "var(--bg-secondary)",
+                  color: "var(--text-primary)",
+                  cursor: "pointer",
+                  fontSize: 12,
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {lang === "zh" ? "⚙️ 配置方案" : "⚙️ Profiles"}
+              </button>
+            </div>
           </div>
+
+          {showModelProfiles && (
+            <ModelProfilePanel onClose={() => setShowModelProfiles(false)} />
+          )}
 
           <div className="setting-group">
             <label>{S.settings.theme[lang]}</label>
@@ -558,15 +586,22 @@ export function SettingsPanel({ onClose, onSessionRecovery, onUsageStats }: Sett
             <span>{settings.fontSize}px</span>
           </div>
 
+          {/* Security Mode — three-tier approval policy */}
           <div className="setting-group">
-            <label>
-              <input
-                type="checkbox"
-                checked={settings.autoApprove}
-                onChange={(e) => setSettings({ ...settings, autoApprove: e.target.checked })}
-              />
-              {S.settings.autoApprove[lang]}
-            </label>
+            <label>{lang === "zh" ? "🔒 安全策略" : "🔒 Security Policy"}</label>
+            <div style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 8 }}>
+              {lang === "zh"
+                ? "控制 AI 执行操作时的审批级别。项目级设置可覆盖全局策略。"
+                : "Control the approval level for AI operations. Per-project settings can override this."}
+            </div>
+            <SecurityModeSelector
+              currentMode={getGlobalSecurityMode()}
+              onModeChange={(mode) => {
+                setGlobalSecurityMode(mode);
+                window.dispatchEvent(new Event("codem-settings-changed"));
+              }}
+              lang={lang}
+            />
           </div>
 
           <div className="setting-group">
@@ -762,6 +797,64 @@ export function SettingsPanel({ onClose, onSessionRecovery, onUsageStats }: Sett
               </button>
             </div>
           ))}
+
+          <div className="settings-divider" />
+
+          {/* S5: Sandbox Mode */}
+          <div className="setting-group">
+            <label>
+              <input
+                type="checkbox"
+                checked={getSetting("codem-sandbox-enabled") === "true"}
+                onChange={(e) => {
+                  if (e.target.checked) {
+                    setSetting("codem-sandbox-enabled", "true");
+                  } else {
+                    removeSetting("codem-sandbox-enabled");
+                  }
+                  window.dispatchEvent(new Event("codem-settings-changed"));
+                }}
+              />
+              {lang === "zh" ? "🔒 沙箱模式（限制写入范围到工作目录）" : "🔒 Sandbox Mode (restrict writes to workspace)"}
+            </label>
+            <div style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 4 }}>
+              {lang === "zh"
+                ? "开启后，AI 助手只能在当前工作目录及其子目录中写入文件，防止意外修改项目外部文件。"
+                : "When enabled, the AI assistant can only write files within the current workspace directory and its subdirectories."}
+            </div>
+          </div>
+
+          {/* F4: Multimodal Settings Entry */}
+          <div className="setting-group">
+            <label>{lang === "zh" ? "🎨 多模态能力" : "🎨 Multimodal"}</label>
+            <div style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 8 }}>
+              {lang === "zh"
+                ? "配置 Embedding 语义搜索、TTS 语音合成、ImageGen 图像生成。"
+                : "Configure Embedding semantic search, TTS text-to-speech, and ImageGen image generation."}
+            </div>
+            <button
+              onClick={() => setShowMultimodal(true)}
+              style={{
+                padding: "8px 16px",
+                borderRadius: 6,
+                border: "1px solid var(--border-primary)",
+                background: "var(--bg-secondary)",
+                color: "var(--text-primary)",
+                cursor: "pointer",
+                fontSize: 13,
+                width: "100%",
+              }}
+            >
+              {lang === "zh" ? "🎨 多模态设置" : "🎨 Multimodal Settings"}
+            </button>
+          </div>
+
+          {showMultimodal && (
+            <MultimodalPanel onClose={() => setShowMultimodal(false)} />
+          )}
+
+          {/* F3.5: Custom Permission Rules UI */}
+          <PermissionRulesSection />
         </div>
 
         <div className="settings-footer">
@@ -787,6 +880,283 @@ export function SettingsPanel({ onClose, onSessionRecovery, onUsageStats }: Sett
           <button className="save-btn" onClick={handleSave}>{S.settings.saveSettings[lang]}</button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ========== F3.5: Permission Rules Section ==========
+
+function PermissionRulesSection() {
+  const lang = useLang();
+  const zh = lang === "zh";
+  const [customRules, setCustomRules] = useState<PermissionRule[]>([]);
+  const [newRule, setNewRule] = useState<PermissionRule>({
+    tool: "*",
+    action: "ask",
+    resource: "",
+  });
+
+  const refresh = () => {
+    const evaluator = getPermissionManager().getEvaluator();
+    setCustomRules([...evaluator.getCustomRules()]);
+  };
+
+  useEffect(() => {
+    refresh();
+  }, []);
+
+  const handleAdd = () => {
+    if (!newRule.tool.trim()) return;
+    const evaluator = getPermissionManager().getEvaluator();
+    evaluator.addCustomRule({
+      tool: newRule.tool.trim(),
+      action: newRule.action,
+      resource: newRule.resource?.trim() || undefined,
+    });
+    refresh();
+    setNewRule({ tool: "*", action: "ask", resource: "" });
+  };
+
+  const handleRemove = (index: number) => {
+    const evaluator = getPermissionManager().getEvaluator();
+    // Custom rules start after default rules
+    const defaultCount = 16;
+    evaluator.removeCustomRule(defaultCount + index);
+    refresh();
+  };
+
+  const actionLabels: Record<PermissionAction, string> = {
+    allow: zh ? "✅ 允许" : "✅ Allow",
+    deny: zh ? "🚫 禁止" : "🚫 Deny",
+    ask: zh ? "❓ 询问" : "❓ Ask",
+  };
+
+  const actionColors: Record<PermissionAction, string> = {
+    allow: "var(--success)",
+    deny: "var(--text-error, #ef4444)",
+    ask: "var(--text-secondary)",
+  };
+
+  return (
+    <div className="setting-group">
+      <div className="settings-section-title">
+        {zh ? "🔐 权限规则" : "🔐 Permission Rules"}
+      </div>
+      <div style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 12 }}>
+        {zh
+          ? "自定义工具权限规则。规则按顺序匹配，最后匹配的规则生效。内置规则（受保护路径、危险命令）始终生效。"
+          : "Custom tool permission rules. Rules are matched in order, last match wins. Built-in rules (protected paths, dangerous commands) always apply."}
+      </div>
+
+      {/* Existing custom rules */}
+      {customRules.length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 12 }}>
+          {customRules.map((rule, i) => (
+            <div
+              key={i}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                padding: "6px 10px",
+                background: "var(--bg-secondary)",
+                borderRadius: 6,
+                border: "1px solid var(--border-primary)",
+                fontSize: 12,
+              }}
+            >
+              <span style={{ fontFamily: "monospace", flex: "0 0 auto", color: "var(--text-primary)" }}>
+                {rule.tool}
+              </span>
+              {rule.resource && (
+                <>
+                  <span style={{ color: "var(--text-muted)" }}>→</span>
+                  <span style={{ fontFamily: "monospace", flex: "0 0 auto", color: "var(--text-secondary)" }}>
+                    {rule.resource}
+                  </span>
+                </>
+              )}
+              <span style={{ color: actionColors[rule.action], fontWeight: 600, marginLeft: "auto" }}>
+                {actionLabels[rule.action]}
+              </span>
+              <button
+                onClick={() => handleRemove(i)}
+                style={{
+                  background: "none",
+                  border: "none",
+                  color: "var(--text-muted)",
+                  cursor: "pointer",
+                  fontSize: 14,
+                  padding: "0 4px",
+                }}
+                title={zh ? "删除" : "Delete"}
+              >
+                ✕
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {customRules.length === 0 && (
+        <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 12, fontStyle: "italic" }}>
+          {zh ? "暂无自定义规则" : "No custom rules"}
+        </div>
+      )}
+
+      {/* Add new rule */}
+      <div
+        style={{
+          display: "flex",
+          gap: 6,
+          alignItems: "flex-end",
+          padding: 10,
+          background: "var(--bg-secondary)",
+          borderRadius: 6,
+          border: "1px solid var(--border-primary)",
+        }}
+      >
+        <div style={{ flex: 1 }}>
+          <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>
+            {zh ? "工具名 (支持 * 通配)" : "Tool (supports * wildcard)"}
+          </label>
+          <input
+            type="text"
+            value={newRule.tool}
+            onChange={(e) => setNewRule({ ...newRule, tool: e.target.value })}
+            placeholder="bash / write / *"
+            style={{ width: "100%", fontSize: 12, fontFamily: "monospace" }}
+          />
+        </div>
+        <div style={{ flex: 1 }}>
+          <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>
+            {zh ? "资源匹配 (可选)" : "Resource (optional)"}
+          </label>
+          <input
+            type="text"
+            value={newRule.resource || ""}
+            onChange={(e) => setNewRule({ ...newRule, resource: e.target.value })}
+            placeholder="rm -rf* / **/.env"
+            style={{ width: "100%", fontSize: 12, fontFamily: "monospace" }}
+          />
+        </div>
+        <div style={{ flex: "0 0 auto" }}>
+          <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>
+            {zh ? "动作" : "Action"}
+          </label>
+          <select
+            value={newRule.action}
+            onChange={(e) => setNewRule({ ...newRule, action: e.target.value as PermissionAction })}
+            style={{ fontSize: 12 }}
+          >
+            <option value="ask">{zh ? "询问" : "Ask"}</option>
+            <option value="allow">{zh ? "允许" : "Allow"}</option>
+            <option value="deny">{zh ? "禁止" : "Deny"}</option>
+          </select>
+        </div>
+        <button
+          onClick={handleAdd}
+          style={{
+            padding: "6px 14px",
+            background: "var(--accent-primary)",
+            color: "white",
+            border: "none",
+            borderRadius: 4,
+            fontSize: 12,
+            cursor: "pointer",
+            whiteSpace: "nowrap",
+            flex: "0 0 auto",
+          }}
+        >
+          {zh ? "添加" : "Add"}
+        </button>
+      </div>
+
+      {/* Quick templates */}
+      <div style={{ marginTop: 8, display: "flex", flexWrap: "wrap", gap: 6 }}>
+        <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{zh ? "快速添加: " : "Quick add: "}</span>
+        {[
+          { label: zh ? "禁止 bash sudo" : "Deny sudo", tool: "bash", action: "deny" as PermissionAction, resource: "sudo*" },
+          { label: zh ? "允许 read *" : "Allow read", tool: "read", action: "allow" as PermissionAction, resource: "" },
+          { label: zh ? "禁止 write *.lock" : "Deny *.lock", tool: "write", action: "deny" as PermissionAction, resource: "**/*.lock" },
+          { label: zh ? "询问 bash npm*" : "Ask npm", tool: "bash", action: "ask" as PermissionAction, resource: "npm*" },
+        ].map((tpl) => (
+          <button
+            key={tpl.label}
+            onClick={() => {
+              const evaluator = getPermissionManager().getEvaluator();
+              evaluator.addCustomRule({
+                tool: tpl.tool,
+                action: tpl.action,
+                resource: tpl.resource || undefined,
+              });
+              refresh();
+            }}
+            style={{
+              padding: "3px 8px",
+              background: "var(--bg-tertiary)",
+              border: "1px solid var(--border-primary)",
+              borderRadius: 3,
+              fontSize: 11,
+              cursor: "pointer",
+              color: "var(--text-secondary)",
+            }}
+          >
+            {tpl.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ========== Security Mode Selector Component ==========
+
+export function SecurityModeSelector({
+  currentMode,
+  onModeChange,
+  lang,
+  compact,
+}: {
+  currentMode: SecurityMode;
+  onModeChange: (mode: SecurityMode) => void;
+  lang: "zh" | "en";
+  compact?: boolean;
+}) {
+  const zh = lang === "zh";
+  return (
+    <div style={{ display: "flex", gap: compact ? 4 : 8, flexWrap: "wrap" }}>
+      {SECURITY_MODES.map((m) => (
+        <button
+          key={m.mode}
+          onClick={() => onModeChange(m.mode)}
+          style={{
+            flex: compact ? undefined : 1,
+            padding: compact ? "4px 8px" : "8px 12px",
+            borderRadius: 6,
+            border: `1px solid ${currentMode === m.mode ? "var(--accent)" : "var(--border-primary)"}`,
+            background: currentMode === m.mode ? "var(--accent)" : "var(--bg-secondary)",
+            color: currentMode === m.mode ? "#fff" : "var(--text-primary)",
+            cursor: "pointer",
+            fontSize: compact ? 11 : 13,
+            fontWeight: currentMode === m.mode ? 600 : 400,
+            transition: "all 0.15s ease",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            gap: 2,
+          }}
+          title={zh ? m.desc_zh : m.desc_en}
+        >
+          <span style={{ fontSize: compact ? 12 : 16 }}>{m.icon}</span>
+          <span>{zh ? m.label_zh : m.label_en}</span>
+          {!compact && (
+            <span style={{ fontSize: 10, opacity: 0.8, textAlign: "center", marginTop: 2 }}>
+              {zh ? m.desc_zh : m.desc_en}
+            </span>
+          )}
+        </button>
+      ))}
     </div>
   );
 }

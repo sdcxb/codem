@@ -2,19 +2,39 @@ import { useState, useRef, useEffect } from "react";
 import { MessageAttachment } from "../store";
 import { FileUpload } from "./FileUpload";
 import { useLang, S } from "../core/i18n/lang";
+import type { CollaborationMode } from "../core/agent/agent";
+import { SECURITY_MODES, getEffectiveSecurityMode, setProjectSecurityMode, setGlobalSecurityMode, type SecurityMode } from "../core/permission/security-mode";
 
 interface InputAreaProps {
   onSend: (message: string, attachments?: MessageAttachment[]) => void;
   onCancel: () => void;
   disabled: boolean;
   isStreaming: boolean;
+  collaborationMode: CollaborationMode;
+  onModeChange: (mode: CollaborationMode) => void;
+  /** Project path for per-project security mode */
+  projectPath?: string;
 }
 
-export function InputArea({ onSend, onCancel, disabled, isStreaming }: InputAreaProps) {
+export function InputArea({ onSend, onCancel, disabled, isStreaming, collaborationMode, onModeChange, projectPath }: InputAreaProps) {
   const lang = useLang();
   const [input, setInput] = useState("");
   const [pendingAttachments, setPendingAttachments] = useState<MessageAttachment[]>([]);
+  const [showSecurityPicker, setShowSecurityPicker] = useState(false);
+  const [securityMode, setSecurityMode] = useState<SecurityMode>(getEffectiveSecurityMode(projectPath));
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Update when project path changes
+  useEffect(() => {
+    setSecurityMode(getEffectiveSecurityMode(projectPath));
+  }, [projectPath]);
+
+  // Listen for global security mode changes
+  useEffect(() => {
+    const handler = () => setSecurityMode(getEffectiveSecurityMode(projectPath));
+    window.addEventListener("codem-security-mode-changed", handler);
+    return () => window.removeEventListener("codem-security-mode-changed", handler);
+  }, [projectPath]);
 
   useEffect(() => {
     if (textareaRef.current) {
@@ -77,6 +97,35 @@ export function InputArea({ onSend, onCancel, disabled, isStreaming }: InputArea
     setPendingAttachments((prev) => prev.filter((a) => a.id !== id));
   };
 
+  // Cycle through security modes on double-click
+  const cycleSecurityMode = () => {
+    const modes: SecurityMode[] = ["ask", "auto", "full"];
+    const currentIdx = modes.indexOf(securityMode);
+    const nextMode = modes[(currentIdx + 1) % modes.length];
+    // MUST persist to storage — otherwise the event listener reads the old
+    // value from storage and overwrites the local state immediately.
+    if (projectPath) {
+      setProjectSecurityMode(projectPath, nextMode);
+    } else {
+      setGlobalSecurityMode(nextMode);
+    }
+    // setGlobalSecurityMode / setProjectSecurityMode already dispatch the
+    // event, so no need to dispatch again.
+  };
+
+  // Select a specific mode from the dropdown
+  const selectSecurityMode = (mode: SecurityMode) => {
+    if (projectPath) {
+      setProjectSecurityMode(projectPath, mode);
+    } else {
+      setGlobalSecurityMode(mode);
+    }
+    setShowSecurityPicker(false);
+  };
+
+  const currentModeInfo = SECURITY_MODES.find(m => m.mode === securityMode)!;
+  const zh = lang === "zh";
+
   return (
     <div className="input-area">
       {/* Pending Attachments */}
@@ -97,8 +146,79 @@ export function InputArea({ onSend, onCancel, disabled, isStreaming }: InputArea
         </div>
       )}
 
+      {/* Security mode quick picker dropdown */}
+      {showSecurityPicker && (
+        <>
+          {/* Backdrop to close on outside click */}
+          <div
+            onClick={() => setShowSecurityPicker(false)}
+            style={{ position: "fixed", inset: 0, zIndex: 99 }}
+          />
+          <div style={{
+            position: "absolute",
+            bottom: "100%",
+            left: 0,
+            marginBottom: 4,
+            background: "var(--bg-secondary)",
+            border: "1px solid var(--border-primary)",
+            borderRadius: 8,
+            padding: 8,
+            zIndex: 100,
+            display: "flex",
+            gap: 4,
+            boxShadow: "0 -4px 12px rgba(0,0,0,0.3)",
+          }}>
+            {SECURITY_MODES.map(m => (
+              <button
+                key={m.mode}
+                onClick={() => selectSecurityMode(m.mode)}
+                style={{
+                  padding: "8px 12px",
+                  borderRadius: 6,
+                  border: `1px solid ${securityMode === m.mode ? "var(--accent)" : "var(--border-primary)"}`,
+                  background: securityMode === m.mode ? "var(--accent)" : "var(--bg-tertiary)",
+                  color: securityMode === m.mode ? "#fff" : "var(--text-primary)",
+                  cursor: "pointer",
+                  fontSize: 11,
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  gap: 4,
+                  minWidth: 90,
+                }}
+                title={zh ? m.desc_zh : m.desc_en}
+              >
+                <span style={{ fontSize: 18 }}>{m.icon}</span>
+                <span style={{ fontWeight: 600 }}>{zh ? m.label_zh : m.label_en}</span>
+                <span style={{ fontSize: 9, opacity: 0.7, textAlign: "center", lineHeight: 1.3 }}>
+                  {zh ? m.desc_zh.substring(0, 20) + "…" : m.desc_en.substring(0, 25) + "…"}
+                </span>
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+
       <div className="input-wrapper">
         <FileUpload onUpload={handleUpload} />
+        {/* C1: Collaboration mode toggle */}
+        <button
+          className={`mode-toggle-btn ${collaborationMode}`}
+          onClick={() => onModeChange(collaborationMode === "default" ? "plan" : "default")}
+          title={collaborationMode === "plan" ? (zh ? "计划模式（只读）— 点击切换到执行模式" : "Plan mode (read-only) — click to switch") : (zh ? "执行模式 — 点击切换到计划模式" : "Execute mode — click for plan mode")}
+        >
+          {collaborationMode === "plan" ? "📋" : "⚡"}
+        </button>
+        {/* Security mode toggle — single click cycles through ask → auto → full */}
+        <button
+          className={`mode-toggle-btn security-${securityMode}`}
+          onClick={cycleSecurityMode}
+          title={zh ? `安全策略: ${currentModeInfo.label_zh} — ${currentModeInfo.desc_zh}（点击切换）` : `Security: ${currentModeInfo.label_en} — ${currentModeInfo.desc_en} (click to cycle)`}
+          style={{ position: "relative", display: "flex", alignItems: "center", gap: 3, fontSize: 12, fontWeight: 600 }}
+        >
+          <span style={{ fontSize: 15 }}>{currentModeInfo.icon}</span>
+          <span>{zh ? currentModeInfo.label_zh : currentModeInfo.label_en}</span>
+        </button>
         <textarea
           ref={textareaRef}
           className="message-input"

@@ -20,8 +20,49 @@ export async function readFile(path: string): Promise<string> {
   return tauriInvoke("read_file", { path });
 }
 
-export async function writeFile(path: string, content: string): Promise<void> {
-  await tauriInvoke("write_file", { path, content });
+export async function writeFile(path: string, content: string, options?: { encoding?: string; workspace?: string }): Promise<void> {
+  // S5: Frontend sandbox check — reject writes outside workspace before hitting Rust backend
+  if (options?.workspace) {
+    if (!isPathWithinWorkspace(path, options.workspace)) {
+      throw new Error(
+        `Sandbox: Write to "${path}" is outside the workspace "${options.workspace}". ` +
+        `The sandbox restricts file writes to the workspace directory and its subdirectories.`
+      );
+    }
+  }
+  await tauriInvoke("write_file", { path, content, encoding: options?.encoding, workspace: options?.workspace });
+}
+
+/**
+ * S5: Check if a path is within the workspace directory.
+ * Normalizes both paths and checks if the target starts with the workspace prefix.
+ */
+export function isPathWithinWorkspace(targetPath: string, workspace: string): boolean {
+  const normalize = (p: string): string => {
+    return p
+      .replace(/\//g, "\\")
+      .split("\\")
+      .filter((seg) => seg !== "" && seg !== ".")
+      .reduce<string[]>((acc, seg) => {
+        if (seg === "..") {
+          acc.pop();
+        } else {
+          acc.push(seg);
+        }
+        return acc;
+      }, [])
+      .join("\\")
+      .toLowerCase();
+  };
+
+  const normalizedTarget = normalize(targetPath);
+  const normalizedWorkspace = normalize(workspace);
+
+  // The target must be the workspace itself or a subdirectory/file within it
+  return (
+    normalizedTarget === normalizedWorkspace ||
+    normalizedTarget.startsWith(normalizedWorkspace + "\\")
+  );
 }
 
 export async function listDirectory(path: string): Promise<Array<{ name: string; path: string; isDirectory: boolean }>> {

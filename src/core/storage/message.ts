@@ -371,22 +371,32 @@ export function messagesToLLMMessages(messages: Message[]): LLMMessage[] {
     } else if (msg.role === "assistant") {
       const toolCalls = msg.toolCalls || [];
       const completedTools = toolCalls.filter((t) => t.status === "done" || t.status === "error");
-      const hasCompleteTools = toolCalls.length > 0 && completedTools.length === toolCalls.length;
 
       // Build content: text only (reasoning_content is a separate field for DeepSeek)
       let content = stripSystemReminders(msg.content || "");
 
-      if (content || toolCalls.length > 0) {
+      // Include the assistant message if it has text content OR any completed tool calls.
+      // Previously this was all-or-nothing: if ANY tool call was still "running",
+      // ALL tool calls and results were excluded. This caused the LLM to lose
+      // visibility of previous tool results (e.g., wait_for_subagent results),
+      // leading to infinite loops where the LLM repeatedly called the same tool.
+      //
+      // Now: only include COMPLETED tool calls and their results. Running/pending
+      // tool calls are simply omitted — they'll be included in the next iteration
+      // once they complete.
+      if (content || completedTools.length > 0) {
         const assistantMsg: LLMMessage = {
           id: msg.id,
           role: "assistant",
           content,
         };
-        // Include reasoning_content separately for DeepSeek thinking mode
-        if (msg.reasoning) {
-          (assistantMsg as any).reasoning = msg.reasoning;
-        }
-        if (hasCompleteTools) {
+        // NOTE: Do NOT attach reasoning_content to historical assistant messages.
+        // reasoning_content is an OUTPUT-only field (DeepSeek thinking mode).
+        // Sending old reasoning back to the API causes the LLM to treat previous
+        // thinking patterns as implicit instructions for new requests.
+        // Reasoning is still stored in the DB for UI display (thinking process),
+        // but it is NOT sent back to the LLM API as input.
+        if (completedTools.length > 0) {
           assistantMsg.tool_calls = completedTools.map((tc) => ({
             id: tc.id,
             type: "function",
@@ -399,17 +409,15 @@ export function messagesToLLMMessages(messages: Message[]): LLMMessage[] {
         result.push(assistantMsg);
       }
 
-      // Add tool results
-      if (hasCompleteTools) {
-        for (const tc of completedTools) {
-          const cleanResult = stripSystemReminders(tc.result || "(no output)");
-          result.push({
-            id: `${msg.id}-tool-${tc.id}`,
-            role: "tool",
-            content: cleanResult,
-            toolCallId: tc.id,
-          });
-        }
+      // Add tool results for completed tools only
+      for (const tc of completedTools) {
+        const cleanResult = stripSystemReminders(tc.result || "(no output)");
+        result.push({
+          id: `${msg.id}-tool-${tc.id}`,
+          role: "tool",
+          content: cleanResult,
+          toolCallId: tc.id,
+        });
       }
     }
     // Skip system messages (they're handled separately)

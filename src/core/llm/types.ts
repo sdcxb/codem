@@ -26,6 +26,8 @@ export interface LLMRequest {
   maxTokens?: number;
   stream?: boolean;
   abortSignal?: AbortSignal;
+  /** Reasoning effort level (E2): controls how much the model "thinks" before responding */
+  reasoningEffort?: "low" | "medium" | "high";
 }
 
 export interface LLMResponse {

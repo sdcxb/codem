@@ -16,6 +16,7 @@ import { CostTracker, getCostTracker } from "./cost-tracker";
 import * as MessageStorage from "../storage/message";
 import { ToolRenderRegistry, getToolRenderRegistry } from "./tool-renderer";
 import { SettingsManager, getSettingsManager, type SettingsSource, type PermissionRule } from "../settings/settings";
+import { getModelProfileManager, type TaskSlot, type ModelSlotConfig } from "./model-profile";
 
 // ========== Re-exports ==========
 export type { LLMProvider, LLMRequest, LLMResponse, StreamEvent, TokenUsage, ToolDefinition } from "./types";
@@ -24,6 +25,9 @@ export type { Session, MessageV2, Part, TextPart, ReasoningPart, ToolPart } from
 export type { LoopConfig, LoopResult, LoopState, LoopEvent } from "./agentic-loop";
 export type { ModelCost, UsageRecord, SessionCost, CostTrackerConfig } from "./cost-tracker";
 export type { ToolRenderer, ToolRenderResult, ToolRenderConfig } from "./tool-renderer";
+export type { CollaborationMode } from "../agent/agent";
+export { ModelProfileManager, getModelProfileManager } from "./model-profile";
+export type { TaskSlot, ModelSlotConfig, ModelProfile } from "./model-profile";
 
 export { ProviderRegistry, OpenAICompatibleProvider, createDefaultProviders } from "./provider";
 export { ToolRegistry, createDefaultToolRegistry } from "./tools";
@@ -43,9 +47,42 @@ export { AgenticLoop } from "./agentic-loop";
 export { CostTracker, getCostTracker } from "./cost-tracker";
 export { ToolRenderRegistry, getToolRenderRegistry, DefaultToolRenderer } from "./tool-renderer";
 
+// ========== F2.1: Memory Desensitization ==========
+
+/** Patterns for sensitive data that should be redacted from memories */
+const SECRET_REDACT_PATTERNS: Array<{ pattern: RegExp; replacement: string }> = [
+  // API keys: sk-..., pk-..., key-...
+  { pattern: /(?:sk|pk|key|api[_-]?key)[-_]?[a-zA-Z0-9]{20,}/gi, replacement: "[REDACTED_API_KEY]" },
+  // Bearer tokens
+  { pattern: /Bearer\s+[a-zA-Z0-9._\-]{20,}/gi, replacement: "[REDACTED_TOKEN]" },
+  // Password assignments: password=xxx, password: xxx
+  { pattern: /(?:password|passwd|pwd)\s*[:=]\s*\S+/gi, replacement: "[REDACTED_PASSWORD]" },
+  // Secret/token assignments
+  { pattern: /(?:secret|token|access[_-]?key)\s*[:=]\s*\S+/gi, replacement: "[REDACTED_SECRET]" },
+  // Private keys
+  { pattern: /-----BEGIN\s+(?:RSA\s+)?PRIVATE\s+KEY-----[\s\S]*?-----END\s+(?:RSA\s+)?PRIVATE\s+KEY-----/gi, replacement: "[REDACTED_PRIVATE_KEY]" },
+  // AWS-style keys (AKIA...)
+  { pattern: /AKIA[0-9A-Z]{16}/g, replacement: "[REDACTED_AWS_KEY]" },
+  // GitHub tokens (ghp_..., gho_..., ghs_...)
+  { pattern: /gh[opusr]_[A-Za-z0-9]{36,}/g, replacement: "[REDACTED_GITHUB_TOKEN]" },
+];
+
+/**
+ * F2.1: Redact sensitive data from text before saving to memory.
+ * Replaces API keys, passwords, tokens, and private keys with placeholders.
+ */
+function redactSecrets(text: string): string {
+  let result = text;
+  for (const { pattern, replacement } of SECRET_REDACT_PATTERNS) {
+    result = result.replace(pattern, replacement);
+  }
+  return result;
+}
+
 // ========== LLM Engine Config ==========
 import { loadAppIdentity, loadUserConfig } from "../config/loader";
 import { getLang } from "../i18n/lang";
+import { getSettingJSON, setSettingJSON } from "../storage/settings";
 
 export interface LLMEngineConfig {
   defaultProvider?: string;
@@ -73,6 +110,7 @@ export class LLMEngine {
   readonly costTracker: CostTracker;
   readonly toolRenderer: ToolRenderRegistry;
   readonly settings: SettingsManager;
+  readonly profileManager: ReturnType<typeof getModelProfileManager>;
 
   private agenticLoop: AgenticLoop | null = null;
   private config: LLMEngineConfig;
@@ -94,6 +132,7 @@ export class LLMEngine {
     this.costTracker = getCostTracker();
     this.toolRenderer = getToolRenderRegistry();
     this.settings = getSettingsManager(projectPath) || new SettingsManager(projectPath || ".");
+    this.profileManager = getModelProfileManager();
 
     // Set up sub-agent spawner and register spawn tool
     this.setupSubagentSpawner();
@@ -111,19 +150,74 @@ export class LLMEngine {
     });
   }
 
+  /**
+   * M1: Resolve provider + model for a task slot.
+   * Uses the active ModelProfile, with fallback chain.
+   * Falls back to engine default if no slot is configured.
+   */
+  resolveSlot(slot: TaskSlot): { providerId: string; modelId: string; reasoningEffort?: "low" | "medium" | "high"; temperature?: number; maxTokens?: number } {
+    const slotConfig = this.profileManager.resolveSlot(slot);
+    if (slotConfig) {
+      // Verify provider exists
+      const provider = this.providers.get(slotConfig.provider);
+      if (provider && provider.isConfigured()) {
+        return {
+          providerId: slotConfig.provider,
+          modelId: slotConfig.model,
+          reasoningEffort: slotConfig.reasoningEffort,
+          temperature: slotConfig.temperature,
+          maxTokens: slotConfig.maxTokens,
+        };
+      }
+    }
+    // Fallback to engine default
+    return {
+      providerId: this.config.defaultProvider || "openai",
+      modelId: this.config.defaultModel || "gpt-4o",
+    };
+  }
+
   /** Get or create an agentic loop */
-  getAgenticLoop(_agentId?: string): AgenticLoop {
-    const provider = this.providers.get(this.config.defaultProvider || "openai");
-    if (!provider) throw new Error("No provider configured");
+  getAgenticLoop(agentId?: string): AgenticLoop {
+    // E1: Read agent-specific model override
+    const agent = agentId ? this.agents.get(agentId) : undefined;
+
+    // M1: Resolve model via Profile using agent's modelSlot (default: "chat")
+    const slot = agent?.modelSlot || "chat";
+    const resolved = this.resolveSlot(slot);
+
+    const provider = this.providers.get(resolved.providerId);
+    if (!provider) throw new Error(`No provider configured: ${resolved.providerId}`);
+
+    // Determine effective model: agent override > profile resolved > engine default
+    const model = agent?.model || resolved.modelId;
 
     this.agenticLoop = new AgenticLoop(
       provider,
       this.tools,
       {
         maxIterations: this.config.maxToolCalls || 50,
-        temperature: this.config.temperature,
-        maxOutputTokens: this.config.maxTokens || 4096,
-        model: this.config.defaultModel,
+        temperature: agent?.temperature ?? resolved.temperature ?? this.config.temperature,
+        maxOutputTokens: agent?.maxTokens || resolved.maxTokens || this.config.maxTokens || 4096,
+        model,
+        // Pass through agent-level overrides (Phase 0 fields)
+        reasoningEffort: agent?.reasoningEffort || resolved.reasoningEffort,
+        collaborationMode: agent?.collaborationMode,
+        // M1: Pass slot resolver so compaction can use a different model
+        resolveProvider: (slot: string) => {
+          const slotResolved = this.resolveSlot(slot as TaskSlot);
+          const slotProvider = this.providers.get(slotResolved.providerId);
+          if (slotProvider && slotProvider.isConfigured()) {
+            return {
+              provider: slotProvider,
+              model: slotResolved.modelId,
+              temperature: slotResolved.temperature,
+            };
+          }
+          return null;
+        },
+        // E8: Pass cost tracker for cost-aware degradation
+        costTracker: this.costTracker,
       },
     );
 
@@ -174,9 +268,14 @@ export class LLMEngine {
    * AGENTS.md files (global → project → current directory).
    * Use this when cwd is available for layered project instructions.
    */
-  async buildSystemPromptAsync(sessionId: string, agentId?: string, cwd?: string): Promise<string> {
+  async buildSystemPromptAsync(sessionId: string, agentId?: string, cwd?: string, collaborationMode?: import("../agent/agent").CollaborationMode): Promise<string> {
     const agent = this.agents.get(agentId || this.config.defaultAgent || "build");
     if (!agent) return "";
+
+    // C1: Override collaboration mode if specified
+    const effectiveAgent = collaborationMode
+      ? { ...agent, collaborationMode }
+      : agent;
 
     const skillPrompt = this.skills.buildSkillPrompt();
     const mcpTools = this.mcp.getAllTools();
@@ -196,12 +295,15 @@ export class LLMEngine {
     if (cwd) {
       try {
         const { loadHierarchicalProjectInstructions } = await import("../project/files");
-        projectInstructions = await loadHierarchicalProjectInstructions(cwd, cwd) || undefined;
+        // F1.4: Read max bytes from settings (default 32KB)
+        const { getSetting } = await import("../storage/settings");
+        const maxBytes = parseInt(getSetting("agentsMdMaxBytes") || "32768", 10);
+        projectInstructions = await loadHierarchicalProjectInstructions(cwd, cwd, maxBytes) || undefined;
       } catch {}
     }
 
     const config: SystemPromptConfig = {
-      agent,
+      agent: effectiveAgent,
       identity,
       user,
       workingDirectory: cwd,
@@ -337,13 +439,46 @@ This system runs on Windows with PowerShell. The system sets chcp 65001 and PYTH
     message: string,
     cwd: string,
     agentId?: string,
-    options?: { onPermissionRequest?: (request: import("../permission/permission").PermissionRequest) => Promise<import("../permission/permission").PermissionResult> },
+    options?: {
+      onPermissionRequest?: (request: import("../permission/permission").PermissionRequest) => Promise<import("../permission/permission").PermissionResult>;
+      collaborationMode?: import("../agent/agent").CollaborationMode;
+      onWriteConfirm?: (params: { filePath: string; existingContent: string; newContent: string }) => Promise<import("./tools").WriteConfirmResult>;
+      securityMode?: "ask" | "auto" | "full";
+    },
   ): AsyncGenerator<LoopEvent, void, unknown> {
     const loop = this.getAgenticLoop(agentId);
     if (options?.onPermissionRequest) {
       loop.updateConfig({ onPermissionRequest: options.onPermissionRequest });
     }
-    const systemPrompt = await this.buildSystemPromptAsync(sessionId, agentId, cwd);
+    // C1: Apply collaboration mode override
+    if (options?.collaborationMode) {
+      loop.updateConfig({ collaborationMode: options.collaborationMode });
+    }
+    // S4: Wire up write confirmation for diff review
+    if (options?.onWriteConfirm) {
+      loop.updateConfig({ onWriteConfirm: options.onWriteConfirm });
+    }
+    // Security mode: three-tier approval policy
+    if (options?.securityMode) {
+      loop.updateConfig({ securityMode: options.securityMode });
+    }
+    // F1.2/F1.3: Wire memory extraction callbacks
+    // F3.2: Only enable if memory is enabled for this session
+    const memoryEnabled = this.isMemoryEnabled(sessionId);
+    loop.updateConfig({
+      memoryEnabled,
+      onCompactionComplete: () => {
+        if (memoryEnabled) {
+          this.extractMemoriesFromSession(sessionId).catch(() => {});
+        }
+      },
+      onTurnComplete: () => {
+        if (memoryEnabled) {
+          this.extractMemoriesFromSession(sessionId).catch(() => {});
+        }
+      },
+    });
+    const systemPrompt = await this.buildSystemPromptAsync(sessionId, agentId, cwd, options?.collaborationMode);
 
     const startTime = Date.now();
     let lastUsage: import("./types").TokenUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
@@ -487,6 +622,45 @@ This system runs on Windows with PowerShell. The system sets chcp 65001 and PYTH
   }
 
   /**
+   * F3.1: Consolidate memories across sessions.
+   * Deduplicates, removes stale entries, and enforces capacity limits.
+   * Should be called periodically (e.g., when a session ends or on app startup).
+   */
+  consolidateMemories(options?: {
+    maxAgeDays?: number;
+    maxEntriesPerScope?: number;
+    similarityThreshold?: number;
+  }): { duplicatesMerged: number; staleRemoved: number; capacityTrimmed: number } {
+    return this.memory.consolidate(options);
+  }
+
+  /**
+   * F3.1: Get memory consolidation stats for UI display.
+   */
+  getMemoryConsolidationStats() {
+    return this.memory.getConsolidationStats();
+  }
+
+  /**
+   * F3.2: Check if memory extraction is enabled for the current session.
+   * Controlled by /memory on|off commands.
+   */
+  isMemoryEnabled(sessionId: string): boolean {
+    // Check session-level override first
+    const sessionOverride = getSettingJSON<boolean | null>(`memory-enabled-${sessionId}`, null);
+    if (sessionOverride !== null) return sessionOverride;
+    // Default: enabled
+    return true;
+  }
+
+  /**
+   * F3.2: Enable or disable memory extraction for a session.
+   */
+  setMemoryEnabled(sessionId: string, enabled: boolean): void {
+    setSettingJSON(`memory-enabled-${sessionId}`, enabled);
+  }
+
+  /**
    * Extract durable memories from a session's conversation using LLM.
    * Should be called when a session ends or after compaction.
    *
@@ -496,10 +670,15 @@ This system runs on Windows with PowerShell. The system sets chcp 65001 and PYTH
    * - Skip if provider is not configured or session is too short
    */
   async extractMemoriesFromSession(sessionId: string): Promise<void> {
+    // F3.2: Check if memory extraction is enabled for this session
+    if (!this.isMemoryEnabled(sessionId)) return;
+
     const messages = MessageStorage.listMessages(sessionId);
     if (messages.length < 10) return; // Too short to extract meaningful memories
 
-    const provider = this.providers.get(this.config.defaultProvider || "openai");
+    // M1: Use "memory" slot from active profile (falls back to subagent → chat)
+    const resolved = this.resolveSlot("memory");
+    const provider = this.providers.get(resolved.providerId);
     if (!provider || !provider.isConfigured()) return;
 
     // Build conversation text (limit to last 50 messages to control cost)
@@ -540,7 +719,7 @@ This system runs on Windows with PowerShell. The system sets chcp 65001 and PYTH
 
     try {
       const response = await provider.complete({
-        model: this.config.defaultModel || "gpt-4o",
+        model: resolved.modelId,
         messages: [
           { id: "system", role: "system", content: systemPrompt },
           { id: "user", role: "user", content: conversationText },
@@ -562,25 +741,39 @@ This system runs on Windows with PowerShell. The system sets chcp 65001 and PYTH
 
       // Save extracted memories
       for (const mem of memories) {
+        // F2.1: Redact sensitive data before saving
+        const safeKey = redactSecrets(mem.key);
+        const safeContent = redactSecrets(mem.content);
+
         // Check if similar memory already exists (avoid duplicates)
-        const existing = this.memory.search(mem.key, "project", 3);
+        const existing = this.memory.search(safeKey, "project", 3);
         const isDuplicate = existing.some(r =>
-          r.entry.key === mem.key ||
-          r.entry.content.substring(0, 50) === mem.content.substring(0, 50)
+          r.entry.key === safeKey ||
+          r.entry.content.substring(0, 50) === safeContent.substring(0, 50)
         );
 
-        if (!isDuplicate && mem.content.length > 10) {
+        if (!isDuplicate && safeContent.length > 10) {
           this.memory.add({
             scope: "project",
-            key: mem.key,
-            content: mem.content,
+            key: safeKey,
+            content: safeContent,
             tags: mem.tags,
           });
-          console.log(`[extractMemories] Saved memory: ${mem.key}`);
+          console.log(`[extractMemories] Saved memory: ${safeKey}`);
         }
       }
 
       console.log(`[extractMemories] Extracted ${memories.length} memories from session ${sessionId}`);
+
+      // F3.1: Run lightweight consolidation after extraction
+      // (only if we actually saved new memories)
+      if (memories.length > 0) {
+        try {
+          this.memory.consolidate({ maxAgeDays: 90, maxEntriesPerScope: 200 });
+        } catch (err) {
+          console.warn("[extractMemories] Consolidation failed:", err);
+        }
+      }
     } catch (err) {
       console.warn("[extractMemories] Failed to extract memories:", err);
     }
@@ -643,8 +836,8 @@ This system runs on Windows with PowerShell. The system sets chcp 65001 and PYTH
     return this.subagents.spawn(parentId, agentId, prompt, cwd, parentAbortSignal, timeout);
   }
 
-  async waitForSubagent(taskId: string, timeout?: number): Promise<SubagentResult> {
-    return this.subagents.waitForCompletion(taskId, timeout);
+  async waitForSubagent(taskId: string): Promise<SubagentResult> {
+    return this.subagents.waitForCompletion(taskId);
   }
 
   getSubagentStats() {

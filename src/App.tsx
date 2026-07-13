@@ -8,6 +8,8 @@ import { SettingsPanel } from "./components/SettingsPanel";
 import { ProjectManager } from "./components/ProjectManager";
 import { ConfigEditor } from "./components/ConfigEditor";
 import { BootstrapWizard } from "./components/BootstrapWizard";
+import type { CollaborationMode } from "./core/agent/agent";
+import { getEffectiveSecurityMode, type SecurityMode } from "./core/permission/security-mode";
 import { PermissionDialog } from "./components/PermissionDialog";
 import { ConfirmDialog } from "./components/ConfirmDialog";
 import { CloseConfirmDialog } from "./components/CloseConfirmDialog";
@@ -16,6 +18,7 @@ import { SkillManager } from "./components/SkillManager";
 import { MemoryManager } from "./components/MemoryManager";
 import { SessionRecovery } from "./components/SessionRecovery";
 import { UsageStats } from "./components/UsageStats";
+import { DiffViewer } from "./components/DiffViewer";
 import { useAppStore } from "./store";
 import { useProjectStore } from "./core/store";
 import { loadAppIdentity } from "./core/config/loader";
@@ -59,7 +62,7 @@ function getMode(): "cli" | "api" {
 
 function App() {
   const lang = useLang();
-  const { messages, addMessage, appendToMessage, setStreaming, isStreaming, addToolCall, updateToolCall, loadMessages, saveMessages } = useAppStore();
+  const { messages, addMessage, appendToMessage, setStreaming, isStreaming, addToolCall, updateToolCall, loadMessages, saveMessages, setLLMStatus } = useAppStore();
   const { currentProject, currentSession, createSession, dbReady, loadFromDB } = useProjectStore();
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
@@ -80,6 +83,25 @@ function App() {
   const [cliModel, setCliModel] = useState("mimo-v2.5-pro");
   const [currentMode, setCurrentMode] = useState<"cli" | "api">("cli");
   const [currentProvider, setCurrentProvider] = useState("mimo");
+  const [collaborationMode, setCollaborationMode] = useState<CollaborationMode>("default");
+  const [securityMode, setSecurityMode] = useState<SecurityMode>(getEffectiveSecurityMode(currentProject?.path));
+
+  // Listen for security mode changes from UI (InputArea toggle, SettingsPanel)
+  useEffect(() => {
+    const handler = () => {
+      setSecurityMode(getEffectiveSecurityMode(currentProject?.path));
+    };
+    window.addEventListener("codem-security-mode-changed", handler);
+    return () => window.removeEventListener("codem-security-mode-changed", handler);
+  }, [currentProject?.path]);
+
+  // S4: Pending write confirmation for diff review
+  const [pendingWriteConfirm, setPendingWriteConfirm] = useState<{
+    filePath: string;
+    existingContent: string;
+    newContent: string;
+    resolve: (result: import("./core/llm/tools").WriteConfirmResult) => void;
+  } | null>(null);
 
   // Handle model change from chat header - sync with engine
   const handleModelChange = useCallback((model: string) => {
@@ -404,7 +426,111 @@ request: PermissionRequest;
   const handleSend = async (message: string, attachments?: any[]) => {
     if (!currentSession) return;
 
-    
+    // F3.2: Handle /memory slash commands
+    const trimmedMessage = message.trim();
+    if (trimmedMessage.startsWith("/memory")) {
+      const parts = trimmedMessage.split(/\s+/);
+      const subcommand = parts[1]?.toLowerCase();
+      const engineInstance = engineRef.current;
+      const sessionId = currentSession.id;
+
+      if (subcommand === "off" || subcommand === "disable") {
+        engineInstance.setMemoryEnabled(sessionId, false);
+        addMessage({
+          id: `system-${Date.now()}`,
+          role: "system",
+          content: "记忆提取已关闭。本会话不再自动提取记忆。使用 /memory on 重新开启。",
+          timestamp: Date.now(),
+          status: "done",
+        });
+        return;
+      } else if (subcommand === "on" || subcommand === "enable") {
+        engineInstance.setMemoryEnabled(sessionId, true);
+        addMessage({
+          id: `system-${Date.now()}`,
+          role: "system",
+          content: "记忆提取已开启。本会话将自动提取记忆。",
+          timestamp: Date.now(),
+          status: "done",
+        });
+        return;
+      } else if (subcommand === "status") {
+        const enabled = engineInstance.isMemoryEnabled(sessionId);
+        const stats = engineInstance.getMemoryConsolidationStats();
+        addMessage({
+          id: `system-${Date.now()}`,
+          role: "system",
+          content: `记忆状态: ${enabled ? "✅ 开启" : "❌ 关闭"}\n记忆总数: ${stats.totalEntries}\n潜在重复: ${stats.potentialDuplicates}\n作用域分布: 项目=${stats.scopeBreakdown.project}, 全局=${stats.scopeBreakdown.global}, 会话=${stats.scopeBreakdown.session}`,
+          timestamp: Date.now(),
+          status: "done",
+        });
+        return;
+      } else if (subcommand === "consolidate" || subcommand === "clean") {
+        const result = engineInstance.consolidateMemories();
+        addMessage({
+          id: `system-${Date.now()}`,
+          role: "system",
+          content: `记忆整合完成：合并 ${result.duplicatesMerged} 条重复，清理 ${result.staleRemoved} 条过期，裁剪 ${result.capacityTrimmed} 条超额。`,
+          timestamp: Date.now(),
+          status: "done",
+        });
+        return;
+      } else {
+        addMessage({
+          id: `system-${Date.now()}`,
+          role: "system",
+          content: "用法：\n/memory on — 开启记忆提取\n/memory off — 关闭记忆提取\n/memory status — 查看记忆状态\n/memory consolidate — 手动整合记忆",
+          timestamp: Date.now(),
+          status: "done",
+        });
+        return;
+      }
+    }
+
+    // F3.3: Handle /generate-agents slash command
+    if (trimmedMessage === "/generate-agents" || trimmedMessage === "/gen-agents") {
+      const projectPath = currentProject?.path;
+      if (!projectPath) {
+        addMessage({
+          id: `system-${Date.now()}`,
+          role: "system",
+          content: "❌ 未找到项目路径，请先打开一个项目。",
+          timestamp: Date.now(),
+          status: "done",
+        });
+        return;
+      }
+      addMessage({
+        id: `system-${Date.now()}`,
+        role: "system",
+        content: "🔍 正在分析项目结构并生成 AGENTS.md...",
+        timestamp: Date.now(),
+        status: "done",
+      });
+      try {
+        const { generateAgentsMd } = await import("./core/project/files");
+        const { writeFile } = await import("./core/file-api");
+        const content = await generateAgentsMd(projectPath);
+        await writeFile(`${projectPath}\\AGENTS.md`, content);
+        addMessage({
+          id: `system-${Date.now() + 1}`,
+          role: "system",
+          content: `✅ AGENTS.md 已生成并写入项目根目录。\n\n生成内容摘要：\n- 检测技术栈和框架\n- 识别项目结构\n- 推断构建/测试/lint 命令\n- 生成代码规范和 AI 规则\n\n你可以编辑 AGENTS.md 来补充更多项目特定信息。`,
+          timestamp: Date.now(),
+          status: "done",
+        });
+      } catch (e: any) {
+        addMessage({
+          id: `system-${Date.now() + 1}`,
+          role: "system",
+          content: `❌ 生成 AGENTS.md 失败：${e?.message || e}`,
+          timestamp: Date.now(),
+          status: "done",
+        });
+      }
+      return;
+    }
+
     useProjectStore.getState().updateSession(currentSession.id, {
       messageCount: currentSession.messageCount + 1,
       lastMessageAt: Date.now(),
@@ -510,6 +636,15 @@ request: PermissionRequest;
             setPendingPermission({ request, resolve });
           });
         },
+        collaborationMode,
+        // S4: Wire up write confirmation for diff review
+        onWriteConfirm: (params) => {
+          return new Promise((resolve) => {
+            setPendingWriteConfirm({ ...params, resolve });
+          });
+        },
+        // Security mode: three-tier approval policy
+        securityMode,
       })) {
         if (abortRef.current.signal.aborted) break;
 
@@ -536,22 +671,37 @@ request: PermissionRequest;
             break;
 
           case "start": {
-            // New agentic loop iteration — keep the SAME assistant message
-            // so all iterations accumulate into one reply (text + reasoning + tools)
+            // Each iteration gets its own assistant message so the LLM sees
+            // clear iteration boundaries in its context. Previously all
+            // iterations accumulated into one giant message, causing the LLM
+            // to lose track of which tool results belonged to which iteration.
             const iter = 'iteration' in event ? event.iteration : 1;
             if (iter > 1) {
-              // Add a visual separator between iterations in reasoning
-              const sep = `\n\n---\n\n`;
-              reasoningContent += sep;
-              // Update the existing message with the separator
-              const existing = useAppStore.getState().messages.find((m) => m.id === assistantMsgId);
-              if (existing) {
+              // Finalize the previous assistant message
+              flushStreamBuffer();
+              if (useAppStore.getState().messages.find((m) => m.id === assistantMsgId)) {
                 useAppStore.getState().updateMessage(assistantMsgId, {
-                  reasoning: reasoningContent
+                  status: "done",
+                  reasoning: reasoningContent || undefined,
                 } as any);
+                if (currentSession) {
+                  saveMessages(currentSession.id);
+                }
               }
+              // Start a new assistant message for this iteration
+              lastAssistantMsgId = assistantMsgId;
+              assistantMsgId = `assistant-${Date.now()}-${iter}`;
+              assistantContent = "";
+              reasoningContent = "";
+              generatedFilesRef.current.clear();
             }
-            lastAssistantMsgId = assistantMsgId;
+            break;
+          }
+
+          case "llm_status": {
+            // State-based connection tracking — no timers, just state transitions
+            // connecting → streaming → executing_tools → (next iteration or done)
+            setLLMStatus(event.status);
             break;
           }
 
@@ -933,6 +1083,9 @@ request: PermissionRequest;
                 onModelChange={handleModelChange}
                 mode={currentMode}
                 providerId={currentProvider}
+                collaborationMode={collaborationMode}
+                onModeChange={setCollaborationMode}
+                projectPath={currentProject?.path}
               />
             )}
             {bottomTab === "terminal" && (
@@ -1046,6 +1199,38 @@ request: PermissionRequest;
 
       {showCloseConfirm && (
         <CloseConfirmDialog onChoose={handleCloseChoice} />
+      )}
+
+      {/* S4: Diff Review Dialog for file overwrites */}
+      {pendingWriteConfirm && (
+        <div className="modal-overlay" onClick={() => {
+          pendingWriteConfirm.resolve({ action: "reject" });
+          setPendingWriteConfirm(null);
+        }}>
+          <div className="modal-editor" onClick={(e) => e.stopPropagation()} style={{ maxWidth: "90vw", width: "900px" }}>
+            <DiffViewer
+              filePath={pendingWriteConfirm.filePath}
+              before={pendingWriteConfirm.existingContent}
+              after={pendingWriteConfirm.newContent}
+              onAccept={() => {
+                pendingWriteConfirm.resolve({ action: "accept" });
+                setPendingWriteConfirm(null);
+              }}
+              onReject={() => {
+                pendingWriteConfirm.resolve({ action: "reject" });
+                setPendingWriteConfirm(null);
+              }}
+              onCustom={(instruction) => {
+                pendingWriteConfirm.resolve({ action: "custom", instruction });
+                setPendingWriteConfirm(null);
+              }}
+              onClose={() => {
+                pendingWriteConfirm.resolve({ action: "reject" });
+                setPendingWriteConfirm(null);
+              }}
+            />
+          </div>
+        </div>
       )}
         </>
       )}

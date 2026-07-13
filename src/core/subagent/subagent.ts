@@ -65,7 +65,7 @@ export interface SubagentConfig {
 }
 
 const DEFAULT_CONFIG: SubagentConfig = {
-  defaultTimeout: 10 * 60 * 1000, // 10 minutes
+  defaultTimeout: 0, // 0 = no timeout, rely on state-based control (task completion/failure/cancel)
   maxConcurrent: 5,
   maxDepth: 3,
 };
@@ -154,14 +154,11 @@ export class SubagentManager {
     task.startedAt = Date.now();
     this.tasks.set(taskId, task);
 
-    // Set timeout
-    if (task.timeout) {
-      setTimeout(() => {
-        if (task.status === "running") {
-          this.cancel(taskId);
-        }
-      }, task.timeout);
-    }
+    // NO time-based timeout — sub-agents run until they complete, fail, or are
+    // explicitly cancelled by the user or parent task abort.
+    // Previous implementation used setTimeout(task.timeout) which is unreliable:
+    // a sub-agent doing complex work (e.g. 1-hour analysis) would be killed
+    // arbitrarily at the 10-minute mark.
   }
 
   /** Complete a task */
@@ -253,48 +250,33 @@ export class SubagentManager {
     return depth;
   }
 
-  /** Wait for a task to complete */
-  async waitForCompletion(taskId: string, timeout?: number): Promise<SubagentResult> {
-    return new Promise((resolve, reject) => {
-      const startTime = Date.now();
-      const checkInterval = 1000;
-      const maxWait = timeout || 10 * 60 * 1000;
+  /** Wait for a task to complete — state-based, no time timeout */
+  async waitForCompletion(taskId: string): Promise<SubagentResult> {
+    const checkInterval = 1000;
 
-      const check = () => {
-        const task = this.tasks.get(taskId);
-        if (!task) {
-          console.error(`[waitForCompletion] Task ${taskId} NOT FOUND. Available IDs: ${Array.from(this.tasks.keys()).join(', ')}`);
-          reject(new Error("Task not found"));
-          return;
-        }
+    // Poll until task reaches a terminal state.
+    // NO time-based timeout — sub-agents should be allowed to run as long as
+    // needed. Cancellation is handled via abort signals and explicit cancel().
+    while (true) {
+      const task = this.tasks.get(taskId);
+      if (!task) {
+        throw new Error(`Task not found: ${taskId}`);
+      }
 
-        console.log(`[waitForCompletion] Task ${taskId} status=${task.status}, hasResult=${!!task.result}, resultStatus=${task.result?.status}`);
+      if (task.status === "completed") {
+        return task.result || { status: "success", summary: "Completed", output: "", filesTouched: [], findings: [] };
+      }
 
-        if (task.status === "completed") {
-          resolve(task.result || { status: "success", summary: "Completed", output: "", filesTouched: [], findings: [] });
-          return;
-        }
+      if (task.status === "failed") {
+        throw new Error(task.error || "Task failed");
+      }
 
-        if (task.status === "failed") {
-          reject(new Error(task.error || "Task failed"));
-          return;
-        }
+      if (task.status === "cancelled") {
+        throw new Error("Task cancelled");
+      }
 
-        if (task.status === "cancelled") {
-          reject(new Error("Task cancelled"));
-          return;
-        }
-
-        if (Date.now() - startTime > maxWait) {
-          reject(new Error("Timeout waiting for task"));
-          return;
-        }
-
-        setTimeout(check, checkInterval);
-      };
-
-      check();
-    });
+      await new Promise(resolve => setTimeout(resolve, checkInterval));
+    }
   }
 
   /** Emit event for a task */

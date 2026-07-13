@@ -3,6 +3,7 @@ import { useAppStore, MessageAttachment } from "../store";
 import { useProjectStore } from "../core/store";
 import { MessageBubble } from "./MessageBubble";
 import { InputArea } from "./InputArea";
+import type { CollaborationMode } from "../core/agent/agent";
 import { AgentPanel } from "./AgentPanel";
 import { AgentDetail } from "./AgentDetail";
 import { SnapshotPanel } from "./SnapshotPanel";
@@ -54,11 +55,14 @@ interface ChatPanelProps {
   onModelChange: (model: string) => void;
   mode?: "cli" | "api";
   providerId?: string;
+  collaborationMode?: CollaborationMode;
+  onModeChange?: (mode: CollaborationMode) => void;
+  projectPath?: string;
 }
 
-export function ChatPanel({ onSend, onCancel, onToggleSidebar, onFork, connected, model, onModelChange, mode = "cli", providerId = "mimo" }: ChatPanelProps) {
+export function ChatPanel({ onSend, onCancel, onToggleSidebar, onFork, connected, model, onModelChange, mode = "cli", providerId = "mimo", collaborationMode = "default", onModeChange, projectPath }: ChatPanelProps) {
   const lang = useLang();
-  const { messages, isStreaming, removeGeneratedFiles, hasMoreMessages, isLoadingMore, loadMoreMessages, stepProgress, streamStartTime } = useAppStore();
+  const { messages, isStreaming, removeGeneratedFiles, hasMoreMessages, isLoadingMore, loadMoreMessages, stepProgress, streamStartTime, llmStatus } = useAppStore();
   const { currentSession, currentProject } = useProjectStore();
   const [showModelPicker, setShowModelPicker] = useState(false);
   const [showReasoning, setShowReasoning] = useState(true);
@@ -256,7 +260,7 @@ export function ChatPanel({ onSend, onCancel, onToggleSidebar, onFork, connected
             />
           ))}
           {isStreaming && (
-            <StreamingTimer startTime={streamStartTime} lang={lang} />
+            <StreamingTimer startTime={streamStartTime} lang={lang} llmStatus={llmStatus} />
           )}
           <div ref={messagesEndRef} />
         </div>
@@ -378,7 +382,7 @@ export function ChatPanel({ onSend, onCancel, onToggleSidebar, onFork, connected
         </div>
       )}
 
-      <InputArea onSend={onSend} onCancel={onCancel} disabled={isStreaming || !connected} isStreaming={isStreaming} />
+      <InputArea onSend={onSend} onCancel={onCancel} disabled={isStreaming || !connected} isStreaming={isStreaming} collaborationMode={collaborationMode} onModeChange={onModeChange || (() => {})} projectPath={projectPath} />
     </div>
   );
 }
@@ -396,14 +400,26 @@ function formatElapsed(ms: number): string {
   return `${hours}h ${remainingMinutes}m`;
 }
 
-/** Simple streaming timer — shows elapsed time while processing.
- *  Uses requestAnimationFrame for smooth updates that sync with browser paint cycle. */
-function StreamingTimer({ startTime, lang }: {
+/** State-based streaming indicator — shows current LLM connection state + elapsed time.
+ *  Instead of time-based timeouts, we track state transitions:
+ *    connecting → streaming → executing_tools → (next iteration or done)
+ *  The user can cancel at any time via the ■ button. */
+function StreamingTimer({ startTime, lang, llmStatus }: {
   startTime: number | null;
   lang: "zh" | "en";
+  llmStatus: string;
 }) {
   const zh = lang === "zh";
   const textRef = useRef<HTMLSpanElement>(null);
+  const statusRef = useRef<HTMLSpanElement>(null);
+
+  // Status labels — state-driven, not time-driven
+  const statusLabels: Record<string, { zh: string; en: string }> = {
+    connecting: { zh: "正在连接 AI 服务器", en: "Connecting to AI server" },
+    streaming: { zh: "正在接收 AI 响应", en: "Receiving AI response" },
+    executing_tools: { zh: "正在执行工具", en: "Executing tools" },
+    idle: { zh: "处理中", en: "Processing" },
+  };
 
   useEffect(() => {
     if (!startTime) return;
@@ -411,21 +427,35 @@ function StreamingTimer({ startTime, lang }: {
     const update = () => {
       if (textRef.current) {
         const elapsed = Date.now() - startTime;
-        textRef.current.textContent = `${zh ? "已处理" : "Processed"} ${formatElapsed(elapsed)}`;
+        textRef.current.textContent = formatElapsed(elapsed);
       }
       rafId = requestAnimationFrame(update);
     };
     update();
     return () => cancelAnimationFrame(rafId);
-  }, [startTime, zh]);
+  }, [startTime]);
+
+  // Update status text when llmStatus changes
+  useEffect(() => {
+    if (statusRef.current) {
+      const label = statusLabels[llmStatus] || statusLabels.idle;
+      statusRef.current.textContent = zh ? label.zh : label.en;
+    }
+  }, [llmStatus, zh]);
 
   if (!startTime) return null;
+
+  const label = statusLabels[llmStatus] || statusLabels.idle;
 
   return (
     <div className="streaming-timer">
       <span className="streaming-timer-spinner" />
+      <span className="streaming-timer-status" ref={statusRef}>
+        {zh ? label.zh : label.en}
+      </span>
+      <span className="streaming-timer-sep">·</span>
       <span className="streaming-timer-text" ref={textRef}>
-        {zh ? "已处理" : "Processed"} 0s
+        0s
       </span>
     </div>
   );

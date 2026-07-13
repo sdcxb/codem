@@ -1,11 +1,12 @@
 import type { LLMProvider, LLMRequest, ToolDefinition, TokenUsage } from "./types";
-import type { ToolRegistry, ToolContext } from "./tools";
+import type { ToolRegistry, ToolContext, WriteConfirmResult } from "./tools";
 import type { ToolExecutorConfig } from "./streaming-executor";
 import { StreamingToolExecutorImpl, type StreamingToolCall } from "./streaming-executor";
 import { RetryExecutor, classifyError, logRetry } from "../retry/retry";
 import { getPermissionManager, type PermissionRequest, type PermissionResult } from "../permission/permission";
 import { getSnapshotService } from "../snapshot/snapshot";
 import * as MessageStorage from "../storage/message";
+import { evaluateWithSecurityMode } from "../permission/security-mode";
 
 // ========== Agentic Loop Types ==========
 export type LoopResult =
@@ -27,6 +28,10 @@ export interface LoopState {
   compactedThisIteration: boolean;
   /** Count of consecutive compactions to prevent infinite loops */
   consecutiveCompactions: number;
+  /** E8: True if cost degradation has been activated (switched to cheaper model) */
+  costDegraded: boolean;
+  /** S4: True if a write confirmation was rejected by the user — stops the loop to prevent retries */
+  writeRejected: boolean;
 }
 
 export interface LoopConfig {
@@ -42,6 +47,45 @@ export interface LoopConfig {
   toolExecutor?: Partial<ToolExecutorConfig>;
   /** Called when a tool needs user permission. Return the user's decision. */
   onPermissionRequest?: (request: PermissionRequest) => Promise<PermissionResult>;
+
+  // ===== Phase 0 新增字段（以下字段暂不使用，为后续 Phase 预留） =====
+
+  /** (E2) Reasoning effort level passed to LLMRequest */
+  reasoningEffort?: "low" | "medium" | "high";
+
+  /** (F1.2) Called after context compaction completes, for triggering memory extraction */
+  onCompactionComplete?: () => void;
+
+  /** (F1.3) Called after each turn completes, for triggering memory extraction */
+  onTurnComplete?: (usage: TokenUsage) => void;
+
+  /** (F1.2/F1.3) Whether automatic memory extraction is enabled */
+  memoryEnabled?: boolean;
+
+  /** (E8) Cost tracker instance for cost-aware degradation */
+  costTracker?: import("./cost-tracker").CostTracker;
+
+  /** (E8) Cost warning threshold (0-1, default 0.8). When session cost reaches this fraction of the limit, degrade to cheaper model. */
+  costWarningThreshold?: number;
+
+  /** (E8) Hard stop threshold (0-1, default 1.0). When session cost reaches this fraction of the limit, stop the loop. */
+  costStopThreshold?: number;
+
+  /** (M1) Resolve a task slot to a provider + model for that slot. Returns null to use loop default. */
+  resolveProvider?: (slot: string) => { provider: LLMProvider; model: string; temperature?: number } | null;
+
+  /** (C1) Collaboration mode: "default" = autonomous, "plan" = read-only planning */
+  collaborationMode?: import("../agent/agent").CollaborationMode;
+
+  /** Security mode: "ask" = confirm everything, "auto" = auto-approve safe ops, "full" = never ask */
+  securityMode?: "ask" | "auto" | "full";
+
+  /** (S1) Called before overwriting an existing file. Return accept/reject/custom instruction. */
+  onWriteConfirm?: (params: {
+    filePath: string;
+    existingContent: string;
+    newContent: string;
+  }) => Promise<WriteConfirmResult>;
 }
 
 const DEFAULT_LOOP_CONFIG: LoopConfig = {
@@ -53,14 +97,20 @@ const DEFAULT_LOOP_CONFIG: LoopConfig = {
   enablePermissions: true,
   maxOutputTokens: 4096,
   temperature: 0.7,
+  // Phase 0 新增默认值
+  memoryEnabled: false,
+  collaborationMode: "default",
 };
 
 export interface StepPlan {
   title: string;
 }
 
+export type LLMStatus = "connecting" | "streaming" | "executing_tools";
+
 export type LoopEvent =
   | { type: "start"; iteration: number }
+  | { type: "llm_status"; status: LLMStatus }
   | { type: "step_progress"; step: number; total: number | null; title: string; steps: StepPlan[] | null }
   | { type: "text_delta"; text: string }
   | { type: "reasoning_delta"; text: string }
@@ -76,7 +126,7 @@ export type LoopEvent =
 
 // ========== Agentic Loop ==========
 export class AgenticLoop {
-  private provider: LLMProvider;
+  private provider: LLMProvider; // E8: not readonly — can be swapped during cost degradation
   private tools: ToolRegistry;
   private executor: StreamingToolExecutorImpl;
   private retryExecutor: RetryExecutor;
@@ -85,10 +135,35 @@ export class AgenticLoop {
   private abortController: AbortController | null = null;
   private currentSnapshotId: string | null = null;
   private lastCwd: string = "";
-  // Loop detection
-  private recentTexts: string[] = [];
-  private recentToolCalls: string[] = [];
-  private readonly MAX_RECENT_TEXTS = 5;
+  // State-based tool deduplication — no timers, no thresholds
+  // Tracks what files have been read/written in the CURRENT user request.
+  // Reset at the start of each run() call (new user message = new task).
+  private readCache: Map<string, string> = new Map();   // path → last read content
+  private writeCache: Map<string, string> = new Map();  // path → last written content
+  // Tracks subagent task IDs that have already been waited on in this run().
+  // Prevents the LLM from repeatedly calling wait_for_subagent for the same
+  // completed task across iterations (root cause of the "infinite wait" loop).
+  private waitedSubagents: Map<string, string> = new Map(); // taskId → cached result output
+  // Tracks subagent task IDs that have been spawned but NOT yet waited on.
+  // Prevents the LLM from spawning endless subagents without collecting results.
+  private spawnedSubagents: Set<string> = new Set(); // taskId (not yet waited on)
+  // Tracks which tool names have been called during this run().
+  // Used by the task-completeness check to detect premature stopping
+  // (e.g., user asked to "save as test3.txt" but no write tool was called).
+  private toolsCalledInRun: Set<string> = new Set();
+
+  // E3: Incremental message cache — avoids redundant full conversions
+  private msgCache: {
+    sessionId: string;
+    rawCount: number;
+    rawLastId: string;
+    rawLastFingerprint: string;
+    llmMessages: any[];
+  } | null = null;
+
+  // F3.6: Retrospective tracking — counts repeated errors to suggest AGENTS.md updates
+  private retrospectiveErrorCount = 0;
+  private retrospectiveSuggested = false;
 
   constructor(
     provider: LLMProvider,
@@ -120,6 +195,8 @@ export class AgenticLoop {
       isCompacting: false,
       compactedThisIteration: false,
       consecutiveCompactions: 0,
+      costDegraded: false,
+      writeRejected: false,
     };
   }
 
@@ -263,7 +340,15 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
     this.state = this.createInitialState();
     // 每次新对话重置快照状态，确保每次对话独立创建快照
     this.resetSnapshot();
-    console.log(`[AgenticLoop.run] sessionId: ${sessionId}, userMessage: ${userMessage.substring(0, 50)}...`);
+    // Reset tool deduplication state — new user message = new task, previous
+    // read/write caches are no longer relevant
+    this.readCache.clear();
+    this.writeCache.clear();
+    this.waitedSubagents.clear();
+    this.spawnedSubagents.clear();
+    this.toolsCalledInRun.clear();
+    this.taskReminderSent = false;
+    console.log(`[AgenticLoop.run] sessionId: ${sessionId}, userMessage: ${userMessage.substring(0, 80)}...`);
 
     // User message is saved by App.tsx (main session) or already in DB (sub-agent)
     // Don't save here to avoid duplicates
@@ -281,6 +366,53 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
       this.state.iteration++;
       this.state.toolCallsInIteration = 0;
       this.state.compactedThisIteration = false;
+
+      // E8: Cost-aware degradation — degrade to cheaper model before hard stop
+      if (this.config.costTracker) {
+        const limits = (this.config.costTracker as any).config?.limits;
+        const warningThreshold = this.config.costWarningThreshold ?? 0.8;
+        const stopThreshold = this.config.costStopThreshold ?? 1.0;
+
+        // Use perSession limit (fallback to total)
+        const limit = limits?.perSession ?? limits?.total;
+        if (limit) {
+          // Get current session cost
+          const sessionCost = this.config.costTracker.getTodayCost(); // Approximate — use today's cost as proxy
+          const ratio = sessionCost / limit;
+
+          // Hard stop: cost exceeds stop threshold
+          if (ratio >= stopThreshold) {
+            const result: LoopResult = {
+              type: "stop",
+              reason: `Cost limit exceeded: $${sessionCost.toFixed(4)} >= $${limit.toFixed(2)} (threshold: ${stopThreshold})`,
+              usage: this.state.totalUsage,
+            };
+            if (this.config.memoryEnabled && this.config.onTurnComplete) {
+              try { this.config.onTurnComplete(this.state.totalUsage); } catch {}
+            }
+            yield { type: "end", result };
+            return result;
+          }
+
+          // Soft degradation: switch to cheaper model (compaction slot) when warning threshold reached
+          if (ratio >= warningThreshold && !this.state.costDegraded && this.config.resolveProvider) {
+            const degraded = this.config.resolveProvider("compaction");
+            if (degraded && degraded.model !== this.config.model) {
+              console.log(`[E8] Cost degradation: $${sessionCost.toFixed(4)}/$${limit.toFixed(2)} (${(ratio * 100).toFixed(0)}%), switching from ${this.config.model} to ${degraded.model}`);
+              this.config.model = degraded.model;
+              this.provider = degraded.provider;
+              if (degraded.temperature !== undefined) {
+                this.config.temperature = degraded.temperature;
+              }
+              this.state.costDegraded = true;
+              yield {
+                type: "text_delta",
+                text: `\n\n⚠️ **成本降级**：当前会话费用已达上限的 ${(ratio * 100).toFixed(0)}%，已自动切换到更经济的模型 (${degraded.model}) 以控制成本。\n`,
+              };
+            }
+          }
+        }
+      }
 
       // Dynamically adjust if we exceed the plan
       if (planState.total !== null && this.state.iteration > planState.total) {
@@ -324,6 +456,10 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
         yield { type: "compaction_start" };
         const compacted = await this.compactMessages(sessionId);
         yield { type: "compaction_end", messagesRemoved: compacted };
+        // F1.2: Trigger memory extraction after compaction
+        if (this.config.memoryEnabled && this.config.onCompactionComplete) {
+          try { this.config.onCompactionComplete(); } catch {}
+        }
         messagesForIteration = this.buildMessages(sessionId);
         this.state.compactedThisIteration = true;
         this.state.consecutiveCompactions++;
@@ -361,15 +497,73 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
         }
       }
       this.state.toolCallsInIteration = iterationToolCalls;
+      console.log(`[AgenticLoop] Iteration ${this.state.iteration} completed: ${iterationToolCalls} tool calls, ${this.state.consecutiveErrors} consecutive errors`);
+      // S4: If a write was rejected by the user, stop the loop immediately
+      // This prevents the LLM from retrying the write in subsequent iterations
+      if (this.state.writeRejected) {
+        yield { type: "text_delta", text: "\n\n⚠️ **写入已被拒绝**。用户未确认文件覆盖，已停止执行。如需重新写入，请重新发送指令。" };
+        const result: LoopResult = {
+          type: "stop",
+          reason: "write_rejected_by_user",
+          usage: this.state.totalUsage,
+        };
+        if (this.config.memoryEnabled && this.config.onTurnComplete) {
+          try { this.config.onTurnComplete(this.state.totalUsage); } catch {}
+        }
+        yield { type: "end", result };
+        return result;
+      }
 
       // Check if we should continue
       if (this.state.toolCallsInIteration === 0 && !this.state.compactedThisIteration) {
-        
+        // === Task-completeness check ===
+        // Before stopping, check if the user's original request asked for
+        // specific actions (write/save/create) that haven't been performed yet.
+        // If so, inject a reminder and continue the loop instead of stopping.
+        const taskCheck = this.checkTaskCompleteness(userMessage);
+        if (taskCheck) {
+          console.log(`[AgenticLoop] Task incomplete — injecting reminder: ${taskCheck.substring(0, 100)}...`);
+          MessageStorage.createMessage({
+            id: `task-reminder-${Date.now()}`,
+            role: "user",
+            content: taskCheck,
+            timestamp: Date.now(),
+            status: "done",
+          }, sessionId);
+          this.msgCache = null;
+          // Continue the loop — don't stop
+          continue;
+        }
+        // Sub-agent guard: before stopping, check if there are spawned sub-agents
+        // that haven't been waited on yet. If so, inject a reminder instead of stopping.
+        if (this.spawnedSubagents.size > 0) {
+          const unwaitedIds = Array.from(this.spawnedSubagents);
+          const taskList = unwaitedIds.map(id => `  - task_id: "${id}"`).join("\n");
+          const reminder = `[SYSTEM REMINDER] You have ${unwaitedIds.length} sub-agent(s) that were spawned but NOT waited on. You MUST call wait_for_subagent for each task ID below to collect their results.\n\nUn-waited task IDs:\n${taskList}\n\nCall wait_for_subagent(task_id: "...") for EACH task ID above. Do NOT spawn new sub-agents. Do NOT finish without collecting results.`;
+          // Inject the reminder as a user message so the LLM sees it
+          MessageStorage.createMessage({
+            id: `reminder-${Date.now()}`,
+            role: "user",
+            content: reminder,
+            timestamp: Date.now(),
+            status: "done",
+          }, sessionId);
+          // Invalidate message cache so the reminder is included
+          this.msgCache = null;
+          console.warn(`[AgenticLoop] ${unwaitedIds.length} un-waited sub-agent(s) — injected wait_for_subagent reminder instead of stopping. IDs: ${unwaitedIds.join(", ")}`);
+          // Continue the loop — don't stop
+          continue;
+        }
+        // No un-waited sub-agents — safe to stop
         const result: LoopResult = {
           type: "stop",
           reason: "completed",
           usage: this.state.totalUsage,
         };
+        // F1.3: Trigger memory extraction after turn completes
+        if (this.config.memoryEnabled && this.config.onTurnComplete) {
+          try { this.config.onTurnComplete(this.state.totalUsage); } catch {}
+        }
         yield { type: "end", result };
         return result;
       }
@@ -380,6 +574,10 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
           reason: "too_many_errors",
           usage: this.state.totalUsage,
         };
+        // F1.3: Trigger memory extraction even on error stop
+        if (this.config.memoryEnabled && this.config.onTurnComplete) {
+          try { this.config.onTurnComplete(this.state.totalUsage); } catch {}
+        }
         yield { type: "end", result };
         return result;
       }
@@ -393,8 +591,22 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
       reason: "max_iterations",
       usage: this.state.totalUsage,
     };
+    // F1.3: Trigger memory extraction on max iterations stop
+    if (this.config.memoryEnabled && this.config.onTurnComplete) {
+      try { this.config.onTurnComplete(this.state.totalUsage); } catch {}
+    }
     yield { type: "end", result };
     return result;
+  }
+
+  /**
+   * F3.6: Generate a retrospective hint suggesting the user update AGENTS.md.
+   * Only fires once per session to avoid nagging.
+   */
+  private getRetrospectiveHint(): string {
+    if (this.retrospectiveSuggested || this.retrospectiveErrorCount < 2) return "";
+    this.retrospectiveSuggested = true;
+    return "\n\n💡 **回顾性建议**：检测到反复出错。考虑在项目的 `AGENTS.md` 中添加规则来避免此类问题，例如记录常见陷阱、正确的命令格式或编码规范。这有助于 AI 在未来的会话中避免同样的错误。";
   }
 
   /** Get a human-readable title for a tool call, used for step progress display */
@@ -444,6 +656,8 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
         temperature: this.config.temperature,
         stream: true,
         abortSignal: this.abortController!.signal,
+        // E2: Pass reasoning effort to LLM
+        reasoningEffort: this.config.reasoningEffort,
       };
 
       // Stream events directly - no collection, real-time yielding
@@ -453,7 +667,21 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
 
       while (!success && retryCount < maxRetries) {
         try {
+          // Emit "connecting" state BEFORE calling provider.stream().
+          // The fetch() happens inside provider.stream() on first iteration
+          // of the async generator — this is where it can hang if the server
+          // is unresponsive. The user sees "正在连接 AI 服务器..." and can
+          // cancel via the ■ button at any time.
+          console.log(`[AgenticLoop] Iteration ${this.state.iteration}: calling LLM (attempt ${retryCount + 1}/${maxRetries}), messages: ${apiMessages.length}, tools: ${toolDefs.length}`);
+          yield { type: "llm_status", status: "connecting" };
+          let firstEventReceived = false;
+
           for await (const event of this.provider.stream(request)) {
+            if (!firstEventReceived) {
+              firstEventReceived = true;
+              // First byte received — connection is alive, now streaming
+              yield { type: "llm_status", status: "streaming" };
+            }
             switch (event.type) {
               case "text_delta":
                 currentText += event.text;
@@ -485,13 +713,29 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
 
               case "tool_use_end":
                 const ended = currentToolCalls.find((t) => t.id === event.id);
-                if (ended && (ended as any).rawArgs) {
-                  try {
-                    ended.input = JSON.parse((ended as any).rawArgs);
-                  } catch {}
-                }
-                // Yield tool_start NOW with fully parsed input — preserves LLM output order
                 if (ended) {
+                  // Prefer provider-parsed input if available
+                  if (event.input && Object.keys(event.input).length > 0) {
+                    ended.input = event.input;
+                  } else if ((ended as any).rawArgs) {
+                    // Fallback: parse from rawArgs accumulated via tool_use_delta
+                    try {
+                      ended.input = JSON.parse((ended as any).rawArgs);
+                    } catch (parseErr) {
+                      console.error("[AgenticLoop] Failed to parse tool args:", (ended as any).rawArgs, parseErr);
+                      // Fallback: try to extract path and content from partial JSON
+                      const rawStr = (ended as any).rawArgs as string;
+                      const pathMatch = rawStr.match(/"path"\s*:\s*"([^"]*)"/);
+                      const contentMatch = rawStr.match(/"content"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+                      if (pathMatch) {
+                        ended.input = {
+                          path: pathMatch[1],
+                          content: contentMatch ? JSON.parse(`"${contentMatch[1]}"`) : "",
+                        };
+                      }
+                    }
+                  }
+                  // Yield tool_start NOW with fully parsed input — preserves LLM output order
                   yield { type: "tool_start", toolCall: ended };
                 }
                 break;
@@ -510,8 +754,10 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
             }
           }
           success = true;
+          console.log(`[AgenticLoop] Iteration ${this.state.iteration}: LLM stream ended. finishReason: ${finishReason}, toolCalls: ${currentToolCalls.length}, text length: ${currentText.length}`);
         } catch (retryError: any) {
           retryCount++;
+          console.error(`[AgenticLoop] Iteration ${this.state.iteration}: LLM stream error (attempt ${retryCount}/${maxRetries}):`, retryError.name, retryError.message);
           if (retryCount >= maxRetries || retryError.name === "AbortError") {
             throw retryError;
           }
@@ -549,39 +795,44 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
     // Text content is handled by App.tsx via text_delta events
     // No need to write to database here
 
-    // Loop detection: track recent text outputs
-    if (currentText) {
-      this.recentTexts.push(currentText.substring(0, 200));
-      if (this.recentTexts.length > this.MAX_RECENT_TEXTS) {
-        this.recentTexts.shift();
-      }
-      
-      // Check for repeated patterns
-      if (this.recentTexts.length >= 3) {
-        const last = this.recentTexts[this.recentTexts.length - 1];
-        const repeated = this.recentTexts.filter(t => t === last).length;
-        if (repeated >= 3) {
-          console.warn("[AgenticLoop] Detected loop pattern, breaking");
-          yield { type: "text_delta", text: "\n\n[检测到重复循环，自动终止任务]" };
-          return;
+    // ===== Single-response deduplication =====
+    // Remove duplicate read calls and duplicate wait_for_subagent calls within one response
+    const seenReadPaths = new Set<string>();
+    const seenWaitTaskIds = new Set<string>();
+    const dedupedToolCalls: typeof currentToolCalls = [];
+    const duplicateToolCalls: typeof currentToolCalls = [];
+    console.log(`[AgenticLoop] Single-response dedup: ${currentToolCalls.length} tool calls in this response: [${currentToolCalls.map(tc => `${tc.name}(${JSON.stringify(tc.input?.task_id || tc.input?.path || "")})`).join(", ")}]`);
+    for (const tc of currentToolCalls) {
+      const isRead = tc.name === "read" || tc.name === "read_file";
+      const filePath = tc.input?.path || tc.input?.file_path;
+      if (isRead && filePath && typeof filePath === "string") {
+        if (seenReadPaths.has(filePath)) {
+          duplicateToolCalls.push(tc);
+          continue;
         }
+        seenReadPaths.add(filePath);
       }
+      // Deduplicate wait_for_subagent with the same task_id
+      if (tc.name === "wait_for_subagent") {
+        const taskId = tc.input?.task_id as string;
+        if (taskId && seenWaitTaskIds.has(taskId)) {
+          duplicateToolCalls.push(tc);
+          continue;
+        }
+        if (taskId) seenWaitTaskIds.add(taskId);
+      }
+      dedupedToolCalls.push(tc);
     }
-    
-    // Tool call loop detection: track recent tool calls
-    if (currentToolCalls.length > 0) {
-      const toolCallKey = currentToolCalls.map(tc => `${tc.name}:${JSON.stringify(tc.input)}`).join("|");
-      this.recentToolCalls.push(toolCallKey);
-      if (this.recentToolCalls.length > 10) {
-        this.recentToolCalls.shift();
+    if (duplicateToolCalls.length > 0) {
+      console.warn(`[AgenticLoop] Removed ${duplicateToolCalls.length} duplicate tool calls in same response`);
+      for (const dtc of duplicateToolCalls) {
+        yield {
+          type: "tool_error",
+          toolCall: dtc,
+          error: "Skipped: Duplicate tool call in one response. This was automatically filtered out to prevent redundant operations.",
+        };
       }
-      // Check if same tool call repeated 3+ times
-      const repeatedTools = this.recentToolCalls.filter(t => t === toolCallKey).length;
-      if (repeatedTools >= 3) {
-        console.warn("[AgenticLoop] Detected tool call loop, breaking");
-        yield { type: "text_delta", text: "\n\n[检测到工具调用重复循环，自动终止任务]" };
-        return;
-      }
+      currentToolCalls = dedupedToolCalls;
     }
 
     // Update usage
@@ -595,16 +846,57 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
       return;
     }
 
+    // Limit destructive tools (write/edit/multi_edit) to 1 per iteration
+    // This prevents the LLM from generating multiple conflicting writes that cause content corruption
+    const destructiveTools = currentToolCalls.filter(tc =>
+      tc.name === "write" || tc.name === "edit" || tc.name === "multi_edit"
+    );
+    const filteredToolCalls: StreamingToolCall[] = [];
+    if (destructiveTools.length > 1) {
+      console.warn(`[AgenticLoop] LLM generated ${destructiveTools.length} destructive tool calls in one iteration, keeping only the first`);
+      // Keep only the first destructive tool call, collect the rest for error reporting
+      let firstSeen = false;
+      currentToolCalls = currentToolCalls.filter(tc => {
+        const isDestructive = tc.name === "write" || tc.name === "edit" || tc.name === "multi_edit";
+        if (!isDestructive) return true;
+        if (!firstSeen) { firstSeen = true; return true; }
+        // Track filtered-out tool calls so we can emit error events for them
+        filteredToolCalls.push(tc);
+        return false;
+      });
+    }
+
+    // S4: Emit tool_error events for filtered-out destructive tool calls
+    // This ensures the UI marks them as "skipped" instead of showing "running" forever
+    for (const ftc of filteredToolCalls) {
+      yield {
+        type: "tool_error",
+        toolCall: ftc,
+        error: "Skipped: Only one write/edit/multi_edit call is allowed per response. This duplicate was automatically filtered out.",
+      };
+    }
+
     // Execute tools
     this.state.toolCallsInIteration = currentToolCalls.length;
+    // Notify UI that we've transitioned from LLM streaming to tool execution
+    yield { type: "llm_status", status: "executing_tools" };
 
     const toolCtx: ToolContext = {
       sessionId,
       messageId: assistantMsgId,
       cwd,
       abort: this.abortController!.signal,
-      messages: this.buildMessages(sessionId),
+      // NOTE: Do NOT call buildMessages() here — it would pollute the cache
+      // with a fingerprint where tool calls are still "running" (no results yet).
+      // The next iteration's buildMessages would then get a cache hit and return
+      // stale messages WITHOUT tool results, causing the LLM to retry tool calls.
+      // No tool currently reads ctx.messages, so passing empty is safe.
+      messages: [],
       metadata: () => {},
+      // S4: Pass write confirmation callback for diff review
+      onWriteConfirm: this.config.onWriteConfirm,
+      // Security mode: controls whether write confirmation and permission checks are active
+      securityMode: this.config.securityMode || "ask",
     };
 
     for await (const event of this.executor.execute(
@@ -616,13 +908,31 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
           return { id: "", name, input: args, output: `Tool "${name}" not found`, status: "error" as const };
         }
 
-        // Permission check
-        if (this.config.enablePermissions) {
+        // C1: Plan mode — block write tools
+        if (this.config.collaborationMode === "plan") {
+          const writeTools = ["write", "edit", "delete", "create_file", "delete_file"];
+          if (writeTools.includes(name)) {
+            return {
+              id: "",
+              name,
+              input: args,
+              output: `Blocked: Cannot use "${name}" in Plan mode. Plan mode is read-only. Ask the user to switch to Default mode to execute changes.`,
+              status: "error" as const,
+            };
+          }
+        }
+
+        // Permission check — gated by security mode
+        const secMode = this.config.securityMode || "ask";
+        if (secMode !== "full" && this.config.enablePermissions) {
           const resource = typeof args.path === "string" ? args.path
             : typeof args.command === "string" ? args.command
             : undefined;
           const permissionManager = getPermissionManager();
-          const action = permissionManager.getEvaluator().evaluate(name, resource);
+          const rawAction = permissionManager.getEvaluator().evaluate(name, resource);
+
+          // Apply security mode to the evaluated action
+          const action = evaluateWithSecurityMode(secMode, name, resource, rawAction);
 
           if (action === "ask" && this.config.onPermissionRequest) {
             const requestId = `perm-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
@@ -677,7 +987,119 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
           }
         }
 
+        // ===== State-based deduplication =====
+        // Instead of counting loops and breaking, we intercept redundant operations
+        // and return cached results with clear guidance to the LLM.
+        const filePath = typeof args.path === "string" ? args.path : "";
+
+        // READ: if this file was already read in this request and hasn't been written since,
+        // return cached content instead of re-reading
+        if ((name === "read" || name === "read_file") && filePath && this.readCache.has(filePath)) {
+          const cached = this.readCache.get(filePath)!;
+          console.log(`[AgenticLoop] Cache hit for read ${filePath} — returning cached content`);
+          return {
+            id: "",
+            name,
+            input: args,
+            output: `[CACHE HIT] This file was already read earlier in this conversation. The content has not changed since then. Use the content below directly — do NOT call read again.\n\nFile: ${filePath}\n\n${cached}`,
+            status: "completed" as const,
+          };
+        }
+
+        // WRITE: if this file was already written with EXACTLY the same content in this request,
+        // skip the write and tell the LLM
+        if ((name === "write") && filePath && this.writeCache.has(filePath)) {
+          const lastWritten = this.writeCache.get(filePath)!;
+          const newContent = typeof args.content === "string" ? args.content : "";
+          if (lastWritten === newContent) {
+            console.log(`[AgenticLoop] Skipping duplicate write to ${filePath} — identical content`);
+            return {
+              id: "",
+              name,
+              input: args,
+              output: `[NO-OP] This exact content was already written to ${filePath} earlier in this conversation. The file already contains this content. Do NOT write again. Report success to the user and stop.`,
+              status: "completed" as const,
+            };
+          }
+        }
+
+        // WAIT_FOR_SUBAGENT: if this task was already waited on in a previous iteration,
+        // return the cached result and tell the LLM to stop calling wait_for_subagent for it.
+        // This prevents the "infinite wait" loop where the LLM repeatedly calls
+        // wait_for_subagent for already-completed tasks across iterations.
+        if (name === "wait_for_subagent") {
+          const taskId = typeof args.task_id === "string" ? args.task_id : "";
+          console.log(`[AgenticLoop] wait_for_subagent called: task_id="${taskId}", args=${JSON.stringify(args).substring(0, 200)}`);
+          if (!taskId) {
+            console.warn(`[AgenticLoop] wait_for_subagent called WITHOUT task_id! Full args:`, JSON.stringify(args));
+          }
+          if (taskId && this.waitedSubagents.has(taskId)) {
+            const cachedResult = this.waitedSubagents.get(taskId)!;
+            console.warn(`[AgenticLoop] wait_for_subagent(${taskId}) CACHE HIT — already collected in iteration ${this.state.iteration}`);
+            return {
+              id: "",
+              name,
+              input: args,
+              output: `[ALREADY COLLECTED] You already called wait_for_subagent for task ${taskId} in a previous iteration and received the result. Do NOT call wait_for_subagent for this task again. Use the result you already received. Here is the cached result for reference:\n\n${cachedResult}\n\nIf you have collected all sub-agent results, proceed to the next step (e.g., write the output file). Do NOT wait again.`,
+              status: "completed" as const,
+            };
+          }
+        }
+
         const result = await tool.execute(args, ctx);
+
+        // Track which tools have been called in this run() for task-completeness check
+        this.toolsCalledInRun.add(name);
+        console.log(`[AgenticLoop] Tool executed: ${name}, path: ${args.path || args.command || "(none)"}, output length: ${result.output?.length || 0}`);
+
+        // ===== Update state after tool execution =====
+        // Record read content for future cache hits
+        if ((name === "read" || name === "read_file") && filePath && result.output) {
+          this.readCache.set(filePath, result.output);
+        }
+        // Record written content and invalidate read cache for that file
+        if ((name === "write" || name === "edit" || name === "multi_edit") && filePath &&
+            result.output && result.output.includes("Successfully")) {
+          if (name === "write" && typeof args.content === "string") {
+            this.writeCache.set(filePath, args.content);
+          } else {
+            // For edit/multi_edit, we don't know the full final content, so just invalidate
+            this.writeCache.delete(filePath);
+          }
+          // File changed — read cache is stale
+          this.readCache.delete(filePath);
+        }
+
+        // Track waited subagent results for cross-iteration deduplication
+        if (name === "wait_for_subagent" && result.output) {
+          const taskId = typeof args.task_id === "string" ? args.task_id : "";
+          if (taskId) {
+            this.waitedSubagents.set(taskId, result.output);
+            this.spawnedSubagents.delete(taskId); // Mark as waited on
+          }
+        }
+        // Track spawned subagent task IDs to prevent endless spawning
+        if (name === "spawn_subagent" && result.output) {
+          // Extract task ID from the output (format: SUBAGENT_TASK_ID:sub-xxx)
+          const match = result.output.match(/SUBAGENT_TASK_ID:(sub-[^\s\n]+)/);
+          if (match && match[1]) {
+            this.spawnedSubagents.add(match[1]);
+            console.log(`[AgenticLoop] Tracked spawned subagent: ${match[1]} (total un-waited: ${this.spawnedSubagents.size})`);
+          }
+        }
+
+        // S4: Detect write rejection — set flag to stop the loop
+        if (result.output && result.output.includes("User rejected the overwrite")) {
+          this.state.writeRejected = true;
+          console.warn(`[AgenticLoop] Write to ${args.path} was rejected by user. Loop will stop after this iteration.`);
+        }
+        // S4: After a successful write, append guidance to tool result (not as a separate message)
+        // This ensures the LLM sees the guidance in the tool result, and no broken UI message is created
+        if ((name === "write" || name === "edit" || name === "multi_edit") &&
+            result.output && result.output.includes("Successfully wrote") &&
+            typeof args.path === "string") {
+          result.output += `\n\n[Guidance] 写入已成功完成。请勿重复写入同一文件。请直接向用户报告结果并结束任务，不要再调用任何工具。`;
+        }
         return { id: "", name, input: args, output: result.output, status: "completed" as const };
       },
     )) {
@@ -701,40 +1123,102 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
     }
   }
 
+  /**
+   * E3 + E6: Build messages with incremental caching and intelligent context selection.
+   *
+   * E3 (Incremental): Caches converted LLM messages. On subsequent calls:
+   *   - If message count unchanged and last message fingerprint matches → return cache (O(1))
+   *   - If new messages appended → only convert the delta (last cached msg + new msgs)
+   *   - If message count decreased (compaction) → full rebuild
+   *
+   * E6 (Intelligent Selection): When context exceeds budget, uses priority-based retention:
+   *   - Priority 4 (CRITICAL): Compaction markers — always keep
+   *   - Priority 3 (HIGH): User messages — always keep (preserves original intent)
+   *   - Priority 2 (MEDIUM): Recent assistant+tool messages
+   *   - Priority 1 (LOW): Old tool results and assistant text — drop first
+   */
   private buildMessages(sessionId: string): any[] {
     const messages = MessageStorage.listMessages(sessionId);
-    const llmMessages = MessageStorage.messagesToLLMMessages(messages);
-    
-    // Filter out <system-reminder> tags from all messages
-    for (const msg of llmMessages) {
-      if (typeof msg.content === "string") {
-        msg.content = msg.content.replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, "").trim();
+
+    // --- E3: Incremental message building ---
+    // Fingerprint MUST include tool call statuses + result presence, because
+    // tool calls transition from "running" → "done" without changing message count,
+    // content length, or toolCalls.length. Without this, the cache returns stale
+    // messages where tool results are missing, causing the LLM to retry tool calls.
+    const lastRaw = messages[messages.length - 1];
+    const toolCallSig = lastRaw?.toolCalls
+      ? lastRaw.toolCalls.map(tc => `${tc.status}:${tc.result ? '1' : '0'}`).join(',')
+      : '';
+    const lastFingerprint = lastRaw
+      ? `${lastRaw.id}:${lastRaw.content.length}:${lastRaw.toolCalls?.length || 0}:${lastRaw.status}:${toolCallSig}`
+      : "";
+
+    let llmMessages: any[];
+
+    if (
+      this.msgCache &&
+      this.msgCache.sessionId === sessionId &&
+      this.msgCache.rawCount === messages.length &&
+      this.msgCache.rawLastId === (lastRaw?.id || "") &&
+      this.msgCache.rawLastFingerprint === lastFingerprint
+    ) {
+      // Cache hit — no changes since last build (same iteration, multiple calls)
+      llmMessages = [...this.msgCache.llmMessages];
+    } else if (
+      this.msgCache &&
+      this.msgCache.sessionId === sessionId &&
+      messages.length > this.msgCache.rawCount
+    ) {
+      // New messages appended — incremental conversion
+      // Re-convert from the last cached raw message (it may have been updated during streaming)
+      const staleFromRaw = Math.max(0, this.msgCache.rawCount - 1);
+      const newMessages = messages.slice(staleFromRaw);
+      const newLLM = this.convertMessagesToLLM(newMessages);
+
+      // Find where to splice in the LLM array — locate the LLM message
+      // that corresponds to the stale raw message
+      const staleRawId = messages[staleFromRaw]?.id;
+      let spliceIdx = this.msgCache.llmMessages.length;
+      if (staleRawId) {
+        const idx = this.msgCache.llmMessages.findIndex(
+          (m) => m.id === staleRawId || (typeof m.id === "string" && m.id.startsWith(`${staleRawId}-tool-`)),
+        );
+        if (idx >= 0) spliceIdx = idx;
       }
+
+      llmMessages = [
+        ...this.msgCache.llmMessages.slice(0, spliceIdx),
+        ...newLLM,
+      ];
+
+      this.msgCache = {
+        sessionId,
+        rawCount: messages.length,
+        rawLastId: lastRaw?.id || "",
+        rawLastFingerprint: lastFingerprint,
+        llmMessages: [...llmMessages],
+      };
+    } else {
+      // Full rebuild — first call, session change, or compaction (count decreased)
+      llmMessages = this.convertMessagesToLLM(messages);
+      this.msgCache = {
+        sessionId,
+        rawCount: messages.length,
+        rawLastId: lastRaw?.id || "",
+        rawLastFingerprint: lastFingerprint,
+        llmMessages: [...llmMessages],
+      };
     }
-    
-    console.log(`[buildMessages] sessionId: ${sessionId}, raw messages: ${messages.length}, llm messages: ${llmMessages.length}`);
-    if (llmMessages.length > 0) {
-      console.log(`[buildMessages] first message: role=${llmMessages[0].role}, content=${(llmMessages[0].content as string)?.substring(0, 100)}`);
-    }
-    
-    // Context-aware limiting: send as many messages as fit in ~100K tokens
-    const maxTokens = 100000;
-    let totalTokens = 0;
-    const selected: typeof llmMessages = [];
-    
-    for (let i = llmMessages.length - 1; i >= 0; i--) {
-      const msg = llmMessages[i];
-      const content = typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content || "");
-      const msgTokens = Math.ceil(content.length / 4);
-      
-      if (totalTokens + msgTokens > maxTokens) break;
-      
-      selected.unshift(msg);
-      totalTokens += msgTokens;
-    }
-    
-    // Filter orphan tool messages
-    const valid: typeof llmMessages = [];
+
+    // --- E6: Intelligent context selection ---
+    const selected = this.selectMessagesByPriority(llmMessages, 100000);
+
+    // Filter orphan tool messages AND strip dangling tool_calls
+    // 1. If a "tool" message has no preceding assistant with tool_calls → drop it
+    // 2. If an assistant has tool_calls but its tool results were dropped by selection
+    //    → strip tool_calls from the assistant so the LLM doesn't see "pending" tool calls
+    //    and retry them (root cause of tool call loops)
+    const valid: any[] = [];
     let hasTools = false;
     for (const msg of selected) {
       if (msg.role === "assistant") {
@@ -747,9 +1231,152 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
         valid.push(msg);
       }
     }
-    
-    console.log(`[buildMessages] total: ${messages.length}, selected: ${valid.length}, tokens: ~${totalTokens}`);
+
+    // Second pass: if an assistant has tool_calls but no following tool results,
+    // strip the tool_calls to prevent the LLM from seeing incomplete tool calls
+    for (let i = 0; i < valid.length; i++) {
+      const msg = valid[i];
+      if (msg.role === "assistant" && (msg as any).tool_calls) {
+        // Check if the next messages are tool results for this assistant
+        let hasResults = false;
+        for (let j = i + 1; j < valid.length; j++) {
+          if (valid[j].role === "tool") { hasResults = true; break; }
+          if (valid[j].role === "assistant" || valid[j].role === "user") break;
+        }
+        if (!hasResults) {
+          // Strip tool_calls — the LLM will only see the text content
+          const { tool_calls, ...rest } = msg;
+          valid[i] = rest;
+          console.warn(`[buildMessages] Stripped dangling tool_calls from assistant ${msg.id} (tool results were dropped by context selection)`);
+        }
+      }
+    }
+
+    console.log(`[buildMessages] raw: ${messages.length}, llm: ${llmMessages.length}, selected: ${valid.length}`);
+    // Diagnostic: dump the messages that will be sent to the LLM
+    for (const m of valid) {
+      if (m.role === "tool") {
+        console.log(`  [buildMessages] tool result: toolCallId=${m.toolCallId}, content_len=${(m.content || "").length}, preview=${(m.content || "").substring(0, 120)}`);
+      } else if (m.role === "assistant" && m.tool_calls) {
+        console.log(`  [buildMessages] assistant ${m.id}: tool_calls=[${m.tool_calls.map((tc: any) => tc.function?.name).join(",")}], content_len=${(m.content || "").length}`);
+      } else if (m.role === "user") {
+        console.log(`  [buildMessages] user ${m.id}: content_len=${(m.content || "").length}, preview=${(m.content || "").substring(0, 80)}`);
+      }
+    }
     return valid;
+  }
+
+  /** Convert raw DB messages to LLM API format, stripping system-reminder tags and stale custom instructions */
+  private convertMessagesToLLM(messages: any[]): any[] {
+    const llmMessages = MessageStorage.messagesToLLMMessages(messages);
+    for (const msg of llmMessages) {
+      if (typeof msg.content === "string") {
+        // Strip system-reminder tags
+        msg.content = msg.content.replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, "").trim();
+        // Strip stale custom instructions from old tool results — these cause the LLM to
+        // carry over one-time instructions (e.g., "append not overwrite") to future writes,
+        // creating confusion and loops. Replace with a neutral summary.
+        if (msg.role === "tool" && msg.content.includes("User gave") && msg.content.includes("custom instruction")) {
+          msg.content = "[This write was not executed — user provided a one-time instruction that was already handled in that iteration. No action needed.]";
+        }
+      }
+    }
+    return llmMessages;
+  }
+
+  /**
+   * E6: Priority-based message selection when context exceeds token budget.
+   *
+   * Priority levels:
+   *   4 (CRITICAL) — Compaction markers (summaries of past context)
+   *   3 (HIGH)     — User messages (original intent must be preserved)
+   *   2 (MEDIUM)   — Assistant messages with tool calls, recent tool results
+   *   1 (LOW)      — Old tool results, old assistant text-only messages
+   *
+   * Selection strategy: greedy by priority, then by recency within each tier.
+   * Large tool results are truncated if budget is tight.
+   */
+  private selectMessagesByPriority(messages: any[], maxTokens: number): any[] {
+    if (messages.length === 0) return [];
+
+    // Estimate tokens for each message
+    const tokens = messages.map((msg) => {
+      const content = typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content || "");
+      return Math.ceil(content.length / 4);
+    });
+
+    const totalTokens = tokens.reduce((a, b) => a + b, 0);
+    if (totalTokens <= maxTokens) return [...messages]; // Everything fits
+
+    // Assign priorities
+    const recencyThreshold = Math.floor(messages.length * 0.7);
+    const priorities = messages.map((msg, i) => {
+      const content = typeof msg.content === "string" ? msg.content : "";
+      const isRecent = i >= recencyThreshold ? 1 : 0;
+
+      // Compaction markers — CRITICAL
+      if (msg.role === "user" && content.startsWith("[上下文已自动压缩]")) return 4;
+      // User messages — HIGH
+      if (msg.role === "user") return 3;
+      // Assistant with tool calls — MEDIUM
+      if (msg.role === "assistant" && (msg as any).tool_calls) return 2 + isRecent;
+      // Tool results — LOW-MEDIUM
+      if (msg.role === "tool") return 1 + isRecent;
+      // Assistant text-only — LOW
+      return 1 + isRecent;
+    });
+
+    // Greedy selection: keep by priority tier, most recent first within each tier
+    const selected = new Set<number>();
+    let usedTokens = 0;
+
+    // Tier 1: CRITICAL + HIGH (always keep)
+    for (let i = 0; i < messages.length; i++) {
+      if (priorities[i] >= 3) {
+        selected.add(i);
+        usedTokens += tokens[i];
+      }
+    }
+
+    // Tier 2: MEDIUM (most recent first)
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (priorities[i] >= 2 && !selected.has(i)) {
+        if (usedTokens + tokens[i] <= maxTokens) {
+          selected.add(i);
+          usedTokens += tokens[i];
+        }
+      }
+    }
+
+    // Tier 3: LOW (most recent first)
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (!selected.has(i)) {
+        if (usedTokens + tokens[i] <= maxTokens) {
+          selected.add(i);
+          usedTokens += tokens[i];
+        }
+      }
+    }
+
+    // Build result preserving order, with truncation for oversized tool results
+    const result: any[] = [];
+    for (let i = 0; i < messages.length; i++) {
+      if (!selected.has(i)) continue;
+      let msg = messages[i];
+      // Truncate very large tool results if over 90% budget
+      if (msg.role === "tool" && usedTokens > maxTokens * 0.9) {
+        const content = typeof msg.content === "string" ? msg.content : "";
+        if (content.length > 5000) {
+          const truncated = content.substring(0, 2000) + "\n...(truncated for context budget)";
+          usedTokens -= tokens[i];
+          usedTokens += Math.ceil(2000 / 4);
+          msg = { ...msg, content: truncated };
+        }
+      }
+      result.push(msg);
+    }
+
+    return result;
   }
 
   private estimateContextPressure(messages: any[]): number {
@@ -914,18 +1541,24 @@ ${truncatedConv}`
 
 ${truncatedConv}`;
 
+    // M1: Use "compaction" slot if resolveProvider is available
+    const resolved = this.config.resolveProvider?.("compaction");
+    const compactionProvider = resolved?.provider || this.provider;
+    const compactionModel = resolved?.model || this.config.model || this.provider.id;
+    const compactionTemperature = resolved?.temperature ?? 0.3;
+
     const request: LLMRequest = {
-      model: this.config.model || this.provider.id,
+      model: compactionModel,
       messages: [
         { id: "system", role: "system", content: systemPrompt },
         { id: "user", role: "user", content: userPrompt },
       ],
-      temperature: 0.3, // Low temperature for factual summary
+      temperature: compactionTemperature, // Low temperature for factual summary
       stream: false,
       abortSignal: this.abortController?.signal,
     };
 
-    const response = await this.provider.complete(request);
+    const response = await compactionProvider.complete(request);
     return response.content;
   }
 
@@ -982,6 +1615,75 @@ ${truncatedConv}`;
   abort() {
     this.abortController?.abort();
     this.executor.abortAll();
+  }
+
+  /**
+   * Task-completeness check: examines the user's original request to detect
+   * required actions that haven't been performed yet.
+   *
+   * Returns a reminder string if the task is incomplete, or null if it's safe
+   * to stop.
+   *
+   * This is NOT time-based — it's a deterministic state check:
+   * - Did the user ask to "save/write/create" a file? → check if write was called
+   * - Did the user ask to "use subagents"? → check if spawn_subagent was called
+   * - Did the user ask to "summarize/combine"? → check if write was called (output)
+   *
+   * Only triggers ONCE per run() to avoid infinite reminders.
+   */
+  private taskReminderSent = false;
+
+  private checkTaskCompleteness(userMessage: string): string | null {
+    if (this.taskReminderSent) return null;
+
+    const msg = userMessage.toLowerCase();
+    const zh = /[\u4e00-\u9fa5]/.test(userMessage);
+    const missing: string[] = [];
+
+    // Check: user asked to save/write/create a file, but no write tool was called
+    const asksToWrite =
+      /save|write|create|保存|写入|创建|生成|另存/.test(msg) &&
+      /\.(txt|md|json|js|ts|py|rs|csv|xml|html|css|yaml|yml|toml)/.test(msg);
+    const hasWritten = this.toolsCalledInRun.has("write") ||
+      this.toolsCalledInRun.has("edit") ||
+      this.toolsCalledInRun.has("multi_edit");
+
+    if (asksToWrite && !hasWritten) {
+      // Try to extract the target filename from the user message
+      const fileMatch = userMessage.match(/(\w+\.\w+)/g);
+      const fileName = fileMatch && fileMatch.length > 0
+        ? fileMatch[fileMatch.length - 1]  // Last filename mentioned is likely the output
+        : null;
+      missing.push(zh
+        ? `你还没有执行写入操作。用户要求保存文件${fileName ? ` "${fileName}"` : ""}，但你没有调用 write 工具。请立即使用 write 工具完成写入。`
+        : `You haven't performed a write operation. The user asked to save${fileName ? ` "${fileName}"` : ""}, but you didn't call the write tool. Please use the write tool now to complete the task.`
+      );
+    }
+
+    // Check: user asked to use subagents, but none were spawned
+    const asksForSubagent =
+      /子智能体|子代理|sub.?agent|subagent|分别用/.test(msg);
+    const hasSpawned = this.toolsCalledInRun.has("spawn_subagent");
+
+    if (asksForSubagent && !hasSpawned) {
+      missing.push(zh
+        ? `用户要求使用子智能体来完成任务，但你没有调用 spawn_subagent 工具。请立即使用 spawn_subagent 工具派发子智能体。`
+        : `The user asked to use sub-agents, but you didn't call spawn_subagent. Please use spawn_subagent now to delegate the work.`
+      );
+    }
+
+    if (missing.length === 0) {
+      return null;
+    }
+
+    // Mark as sent to prevent repeated reminders
+    this.taskReminderSent = true;
+
+    const header = zh
+      ? `[任务未完成提醒] 你的回复中没有工具调用，但用户的原始请求尚未完成。以下是你遗漏的操作：`
+      : `[TASK INCOMPLETE] Your response had no tool calls, but the user's original request is not yet complete. The following actions are missing:`;
+
+    return `${header}\n\n${missing.map((m, i) => `${i + 1}. ${m}`).join("\n")}\n\n${zh ? "请继续执行这些操作，不要只是回复文字就停止。" : "Please continue executing these actions. Do not stop with a text-only response."}`;
   }
 
   getState(): Readonly<LoopState> {

@@ -52,6 +52,8 @@ export interface StepProgress {
   steps: StepItem[] | null; // Full step plan for hover tooltip
 }
 
+export type LLMStatus = "idle" | "connecting" | "streaming" | "executing_tools";
+
 interface AppState {
   messages: Message[];
   isStreaming: boolean;
@@ -63,6 +65,7 @@ interface AppState {
   stepProgress: StepProgress | null;
   agentActivities: AgentActivity[];
   streamStartTime: number | null;
+  llmStatus: LLMStatus;
 
   addMessage: (msg: Message) => void;
   updateMessage: (id: string, update: Partial<Message>) => void;
@@ -83,6 +86,7 @@ interface AppState {
   updateAgentActivity: (id: string, update: Partial<AgentActivity>) => void;
   clearAgentActivities: () => void;
   setStreamStartTime: (time: number | null) => void;
+  setLLMStatus: (status: LLMStatus) => void;
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -96,6 +100,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   stepProgress: null,
   agentActivities: [],
   streamStartTime: null,
+  llmStatus: "idle" as LLMStatus,
 
   addMessage: (msg) => {
     set((s) => {
@@ -127,7 +132,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     messages: s.messages.map((m) => m.id === messageId ? { ...m, toolCalls: (m.toolCalls || []).map((t) => t.id === toolId ? { ...t, ...update } : t) } : m),
   })),
 
-  setStreaming: (v) => set({ isStreaming: v, streamingMsgId: v ? get().streamingMsgId : null, stepProgress: v ? get().stepProgress : null, agentActivities: v ? get().agentActivities : [], streamStartTime: v ? get().streamStartTime : null }),
+  setStreaming: (v) => set({ isStreaming: v, streamingMsgId: v ? get().streamingMsgId : null, stepProgress: v ? get().stepProgress : null, agentActivities: v ? get().agentActivities : [], streamStartTime: v ? get().streamStartTime : null, llmStatus: v ? get().llmStatus : "idle" }),
   setCurrentModel: (m) => set({ currentModel: m }),
   setCwd: (d) => set({ cwd: d }),
   clearMessages: () => set({ messages: [], streamingMsgId: null, stepProgress: null, agentActivities: [], streamStartTime: null }),
@@ -210,4 +215,5 @@ export const useAppStore = create<AppState>((set, get) => ({
   updateAgentActivity: (id, update) => set((s) => ({ agentActivities: s.agentActivities.map((a) => a.id === id ? { ...a, ...update } : a) })),
   clearAgentActivities: () => set({ agentActivities: [], streamStartTime: null }),
   setStreamStartTime: (time) => set({ streamStartTime: time }),
+  setLLMStatus: (status) => set({ llmStatus: status }),
 }));

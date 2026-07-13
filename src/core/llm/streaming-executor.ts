@@ -1,5 +1,34 @@
 import type { ToolCallResult, LLMMessage } from "../llm/types";
 
+// ========== F2.5: Parameter Security Scanner ==========
+
+/** Patterns that indicate sensitive data in tool parameters */
+const SENSITIVE_PATTERNS = [
+  /(?:sk-|pk-|Bearer\s+)[a-zA-Z0-9]{20,}/i,  // API keys
+  /(?:password|passwd|pwd)\s*[:=]\s*\S+/i,    // Passwords
+  /(?:secret|token)\s*[:=]\s*\S+/i,           // Secrets/tokens
+  /-----BEGIN\s+(?:RSA\s+)?PRIVATE\s+KEY-----/i, // Private keys
+  /[a-zA-Z0-9+/]{40,}={0,2}/,                   // Base64 blobs (potential credentials)
+];
+
+/**
+ * F2.5: Scan tool parameters for sensitive data before execution.
+ * Returns a warning message if sensitive data is detected, or null if clean.
+ */
+function scanParametersForSecrets(name: string, args: Record<string, unknown>): string | null {
+  // Only scan write/bash tools — read-only tools can't exfiltrate
+  if (!["write", "edit", "multi_edit", "bash"].includes(name)) return null;
+
+  const argsStr = JSON.stringify(args);
+  for (const pattern of SENSITIVE_PATTERNS) {
+    if (pattern.test(argsStr)) {
+      // Don't block — just warn the LLM via the result
+      return `[Security Warning] The parameters for tool "${name}" contain what appears to be sensitive data (API key, password, or private key). Be careful not to expose secrets in files or commands. If this is intentional (e.g., writing a .env template), proceed. If not, review the parameters.`;
+    }
+  }
+  return null;
+}
+
 // ========== Types ==========
 export interface StreamingToolCall {
   id: string;
@@ -20,7 +49,8 @@ export interface ToolExecutorConfig {
 
 const DEFAULT_CONFIG: ToolExecutorConfig = {
   maxConcurrent: 5,
-  concurrencySafeTools: ["read", "glob", "grep"],
+  // E5: Extended concurrency-safe tools — all read-only tools can run in parallel
+  concurrencySafeTools: ["read", "glob", "grep", "codebase_search", "file_search", "list_directory", "web_fetch"],
   toolTimeout: 60000, // 60 seconds for regular tools
   abortSiblingsOnError: false,
 };
@@ -104,14 +134,25 @@ export class StreamingToolExecutorImpl {
               throw new Error("Aborted");
             }
 
-            // wait_for_subagent and spawn_subagent should not have a timeout
-            const noTimeoutTools = ["wait_for_subagent", "spawn_subagent"];
+            // F2.5: Security scan before execution
+            const securityWarning = scanParametersForSecrets(tc.name, tc.input);
+
+            // bash manages its own timeout via timeout_ms parameter; spawn/wait_subagent never timeout
+            // write/edit/multi_edit may trigger user confirmation dialogs (overwrite, permission) — no timeout
+            const noTimeoutTools = ["bash", "wait_for_subagent", "spawn_subagent", "write", "edit", "multi_edit"];
             const useTimeout = !noTimeoutTools.includes(tc.name);
 
             const result = await Promise.race([
               toolHandler(tc.name, tc.input, { ...ctx, abort: tc.abortController.signal }),
               useTimeout ? this.timeout(this.config.toolTimeout) : new Promise<never>(() => {}),
             ]);
+
+            // F2.5: Append security warning to result if detected
+            if (securityWarning && result.output) {
+              result.output = `${securityWarning}\n\n${result.output}`;
+            } else if (securityWarning) {
+              (result as any).output = securityWarning;
+            }
 
             tc.status = "completed";
             tc.result = result;
@@ -168,14 +209,25 @@ export class StreamingToolExecutorImpl {
         throw new Error("Aborted");
       }
 
-      // wait_for_subagent and spawn_subagent should not have a timeout
-      const noTimeoutTools = ["wait_for_subagent", "spawn_subagent"];
+      // F2.5: Security scan before execution
+      const securityWarning = scanParametersForSecrets(tc.name, tc.input);
+
+      // bash manages its own timeout via timeout_ms parameter; spawn/wait_subagent never timeout
+      // write/edit/multi_edit may trigger user confirmation dialogs — no timeout
+      const noTimeoutTools = ["bash", "wait_for_subagent", "spawn_subagent", "write", "edit", "multi_edit"];
       const useTimeout = !noTimeoutTools.includes(tc.name);
 
       const result = await Promise.race([
         toolHandler(tc.name, tc.input, { ...ctx, abort: tc.abortController.signal }),
         useTimeout ? this.timeout(this.config.toolTimeout) : new Promise<never>(() => {}),
       ]);
+
+      // F2.5: Append security warning to result if detected
+      if (securityWarning && result.output) {
+        result.output = `${securityWarning}\n\n${result.output}`;
+      } else if (securityWarning) {
+        (result as any).output = securityWarning;
+      }
 
       tc.status = "completed";
       tc.result = result;

@@ -65,7 +65,11 @@ const DEFAULT_CONFIG: CostTrackerConfig = {
   storageKey: "codem-cost-tracker",
   maxRecords: 10000,
   persist: true,
-  limits: {},
+  limits: {
+    // E8: Default cost limits — degrade at 80%, stop at 100%
+    perSession: 5.0,  // $5 per session — degrade to cheaper model at $4
+    perDay: 20.0,     // $20 per day
+  },
 };
 
 // ========== Model Cost Database ==========

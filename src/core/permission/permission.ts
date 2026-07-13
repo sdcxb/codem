@@ -1,4 +1,5 @@
 import { getAgentRegistry } from "../agent/agent";
+import { getSettingJSON, setSettingJSON } from "../storage/settings";
 
 // ========== Permission Types ==========
 export type PermissionAction = "allow" | "deny" | "ask";
@@ -29,6 +30,8 @@ export interface PermissionRule {
   sessionId?: string;
 }
 
+const CUSTOM_RULES_KEY = "codem-custom-permission-rules";
+
 // ========== Permission Evaluator ==========
 export class PermissionEvaluator {
   private rules: PermissionRule[] = [];
@@ -36,11 +39,61 @@ export class PermissionEvaluator {
 
   constructor() {
     this.loadDefaults();
+    this.loadCustomRules();
   }
 
   /** Add a permission rule */
   addRule(rule: PermissionRule) {
     this.rules.push(rule);
+  }
+
+  /** F3.5: Add a custom rule and persist it */
+  addCustomRule(rule: PermissionRule) {
+    this.rules.push(rule);
+    this.saveCustomRules();
+  }
+
+  /** F3.5: Remove a custom rule by index and persist */
+  removeCustomRule(index: number) {
+    // Calculate custom rule range (defaults are loaded first)
+    const defaultCount = this.getDefaultRuleCount();
+    const customIdx = index - defaultCount;
+    if (customIdx < 0 || customIdx >= this.rules.length - defaultCount) return;
+    this.rules.splice(index, 1);
+    this.saveCustomRules();
+  }
+
+  /** F3.5: Get only the custom rules (not defaults) */
+  getCustomRules(): PermissionRule[] {
+    return this.rules.slice(this.getDefaultRuleCount());
+  }
+
+  /** F3.5: Get the number of default rules */
+  private getDefaultRuleCount(): number {
+    // Default rules are: 6 bash rules + 10 S2 protected path rules = 16
+    return 16;
+  }
+
+  /** F3.5: Load custom rules from storage */
+  private loadCustomRules() {
+    try {
+      const stored = getSettingJSON<PermissionRule[] | null>(CUSTOM_RULES_KEY, null);
+      if (stored && Array.isArray(stored)) {
+        for (const rule of stored) {
+          if (rule.tool && rule.action) {
+            this.rules.push(rule);
+          }
+        }
+      }
+    } catch {}
+  }
+
+  /** F3.5: Save custom rules to storage */
+  private saveCustomRules() {
+    try {
+      const custom = this.getCustomRules();
+      setSettingJSON(CUSTOM_RULES_KEY, custom);
+    } catch {}
   }
 
   /** Clear all rules */
@@ -131,6 +184,18 @@ export class PermissionEvaluator {
     this.addRule({ tool: "bash", action: "ask", resource: "chmod*" });
     this.addRule({ tool: "bash", action: "ask", resource: "chown*" });
     this.addRule({ tool: "bash", action: "ask", resource: "sudo*" });
+
+    // S2: Protected paths — deny write/edit to critical files
+    this.addRule({ tool: "write", action: "deny", resource: "**/.git/**" });
+    this.addRule({ tool: "write", action: "deny", resource: "**/.env" });
+    this.addRule({ tool: "write", action: "deny", resource: "**/.env.*" });
+    this.addRule({ tool: "write", action: "deny", resource: "**/.mimo-snapshots/**" });
+    this.addRule({ tool: "write", action: "deny", resource: "**/node_modules/**" });
+    this.addRule({ tool: "edit", action: "deny", resource: "**/.git/**" });
+    this.addRule({ tool: "edit", action: "deny", resource: "**/.env" });
+    this.addRule({ tool: "edit", action: "deny", resource: "**/.env.*" });
+    this.addRule({ tool: "edit", action: "deny", resource: "**/.mimo-snapshots/**" });
+    this.addRule({ tool: "edit", action: "deny", resource: "**/node_modules/**" });
   }
 }
 
@@ -166,17 +231,13 @@ export class PermissionManager {
       }
     }
 
-    // Create pending request
+    // Create pending request — NO time-based timeout.
+    // The user may take as long as they need to review and decide.
+    // If the user closes the app or cancels, abort signals handle cleanup.
+    // Previous implementation had a 5-minute timeout that auto-denied,
+    // which was unreliable and could interrupt long reviews.
     return new Promise((resolve, reject) => {
       this.pendingRequests.set(request.id, { resolve, reject });
-
-      // Timeout after 5 minutes
-      setTimeout(() => {
-        if (this.pendingRequests.has(request.id)) {
-          this.pendingRequests.delete(request.id);
-          resolve({ requestId: request.id, action: "deny" });
-        }
-      }, 5 * 60 * 1000);
     });
   }
 
