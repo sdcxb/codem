@@ -215,18 +215,18 @@ export function MemoryManager({ onClose }: MemoryManagerProps) {
         <div className="memory-manager-actions">
           {editMode === "none" && (
             <>
-              <button className="memory-add-btn" onClick={handleStartCreate}>
-                ➕ 新增
+              <button className="memory-action-btn" onClick={handleStartCreate}>
+                + 新增
               </button>
               {/* F2.4: Export / Import */}
-              <button className="memory-export-btn" onClick={handleExportJSON} title="导出为 JSON">
-                📥 JSON
+              <button className="memory-action-btn" onClick={handleExportJSON} title="导出为 JSON">
+                JSON
               </button>
-              <button className="memory-export-btn" onClick={handleExportMarkdown} title="导出为 Markdown">
-                📝 MD
+              <button className="memory-action-btn" onClick={handleExportMarkdown} title="导出为 Markdown">
+                MD
               </button>
-              <label className="memory-import-btn" title="导入 JSON">
-                📤 导入
+              <label className="memory-action-btn memory-action-label" title="导入 JSON">
+                导入
                 <input
                   type="file"
                   accept=".json"
@@ -236,7 +236,7 @@ export function MemoryManager({ onClose }: MemoryManagerProps) {
               </label>
               {/* F3.1: Memory consolidation button */}
               <button
-                className="memory-export-btn"
+                className="memory-action-btn"
                 title="整合记忆：去重、清理过期、裁剪超额"
                 onClick={() => {
                   const result = getLLMEngine().consolidateMemories();
@@ -245,7 +245,7 @@ export function MemoryManager({ onClose }: MemoryManagerProps) {
                   window.location.reload();
                 }}
               >
-                🧹 整合
+                整合
               </button>
             </>
           )}

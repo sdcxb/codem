@@ -284,7 +284,7 @@ export function ContextMonitor({ sessionId, visible }: ContextMonitorProps) {
               disabled={compacting}
               title="压缩上下文：移除旧消息并生成摘要，类似 Codex 的 /compact 命令"
             >
-              {compacting ? "⏳ 压缩中..." : "🗜️ 压缩上下文"}
+              {compacting ? "⏳ 压缩中..." : "▼ 压缩上下文"}
             </button>
             {compactResult && (
               <span className={`context-compact-result ${compactResult.removed > 0 ? "success" : "info"}`}>

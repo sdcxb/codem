@@ -21,8 +21,8 @@ export function CloseConfirmDialog({ onChoose }: CloseConfirmDialogProps) {
           <button
             className="confirm-btn"
             style={{
-              background: "var(--accent-primary)",
-              color: "white",
+              background: "var(--accent)",
+              color: "var(--text-on-accent)",
               border: "none",
               padding: "10px 16px",
               borderRadius: 6,

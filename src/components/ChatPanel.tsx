@@ -51,6 +51,7 @@ interface ChatPanelProps {
   onCancel: () => void;
   onToggleSidebar: () => void;
   onFork?: (messageIndex: number) => void;
+  onRegenerate?: (messageIndex: number) => void;
   connected: boolean;
   model: string;
   onModelChange: (model: string) => void;
@@ -61,7 +62,7 @@ interface ChatPanelProps {
   projectPath?: string;
 }
 
-export function ChatPanel({ onSend, onCancel, onToggleSidebar, onFork, connected, model, onModelChange, mode = "cli", providerId = "mimo", collaborationMode = "default", onModeChange, projectPath }: ChatPanelProps) {
+export function ChatPanel({ onSend, onCancel, onToggleSidebar, onFork, onRegenerate, connected, model, onModelChange, mode = "cli", providerId = "mimo", collaborationMode = "default", onModeChange, projectPath }: ChatPanelProps) {
   const lang = useLang();
   const { messages, isStreaming, removeGeneratedFiles, hasMoreMessages, isLoadingMore, loadMoreMessages, stepProgress, streamStartTime, llmStatus } = useAppStore();
   const { currentSession, currentProject } = useProjectStore();
@@ -260,10 +261,7 @@ export function ChatPanel({ onSend, onCancel, onToggleSidebar, onFork, connected
               onFork={onFork}
               showReasoning={showReasoning}
               onDeleteFiles={(files) => handleDeleteFiles(msg.id, files)}
-              onRegenerate={(idx) => {
-                /* TODO: implement regenerate */
-                console.log("Regenerate from index", idx);
-              }}
+              onRegenerate={onRegenerate}
             />
           ))}
           {isStreaming && (
@@ -310,7 +308,7 @@ export function ChatPanel({ onSend, onCancel, onToggleSidebar, onFork, connected
               <circle cx="8" cy="8" r="6" fill="none" stroke="var(--bg-tertiary)" strokeWidth="2" />
               {stepProgress.total > 0 ? (
                 <circle
-                  cx="8" cy="8" r="6" fill="none" stroke="var(--accent-primary)" strokeWidth="2"
+                  cx="8" cy="8" r="6" fill="none" stroke="var(--accent)" strokeWidth="2"
                   strokeDasharray={`${2 * Math.PI * 6}`}
                   strokeDashoffset={`${2 * Math.PI * 6 * (1 - stepProgress.current / stepProgress.total)}`}
                   strokeLinecap="round"
@@ -319,7 +317,7 @@ export function ChatPanel({ onSend, onCancel, onToggleSidebar, onFork, connected
                 />
               ) : (
                 <circle
-                  cx="8" cy="8" r="6" fill="none" stroke="var(--accent-primary)" strokeWidth="2"
+                  cx="8" cy="8" r="6" fill="none" stroke="var(--accent)" strokeWidth="2"
                   strokeDasharray={`${2 * Math.PI * 6 * 0.3}`}
                   strokeLinecap="round"
                   transform="rotate(-90 8 8)"

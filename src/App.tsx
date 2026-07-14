@@ -562,6 +562,17 @@ request: PermissionRequest;
     }
     
 
+    await runAgenticLoop(message);
+  };
+
+  /**
+   * Run the agentic loop — shared by handleSend and handleRegenerate.
+   * This function handles provider setup, streaming, tool calls, and
+   * all event processing from the LLM engine.
+   */
+  const runAgenticLoop = async (message: string) => {
+    if (!currentSession) return;
+
     const mode = getMode();
     const engine = engineRef.current;
 
@@ -881,7 +892,43 @@ request: PermissionRequest;
     }
   };
 
-  // WebSocket message handler for CLI mode
+  /**
+   * Regenerate the assistant response at the given message index.
+   * Truncates messages from that index onwards, finds the last user
+   * message, and re-runs the agentic loop.
+   */
+  const handleRegenerate = async (messageIndex: number) => {
+    if (!currentSession || isStreaming) return;
+
+    const allMessages = useAppStore.getState().messages;
+    if (messageIndex < 0 || messageIndex >= allMessages.length) return;
+
+    // Find the last user message before the assistant message at messageIndex
+    let userMessage = "";
+    for (let i = messageIndex - 1; i >= 0; i--) {
+      if (allMessages[i].role === "user") {
+        userMessage = allMessages[i].content;
+        break;
+      }
+    }
+    if (!userMessage) return;
+
+    // Collect message IDs to delete (from messageIndex onwards)
+    const idsToDelete = allMessages.slice(messageIndex).map((m) => m.id);
+
+    // Truncate messages in store
+    useAppStore.setState({ messages: allMessages.slice(0, messageIndex) });
+
+    // Delete removed messages from DB
+    if (idsToDelete.length > 0) {
+      try { MessageStorage.deleteMessagesByIds(idsToDelete); } catch (e) {
+        console.error("[Regenerate] Failed to delete messages:", e);
+      }
+    }
+
+    // Re-run the agentic loop with the original user message
+    await runAgenticLoop(userMessage);
+  };
   const currentMsgIdRef = useRef<string | null>(null);
 
   const handleWSMessage = (e: any) => {
@@ -1056,6 +1103,7 @@ request: PermissionRequest;
                 onSend={handleSend}
                 onCancel={handleCancel}
                 onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
+                onRegenerate={handleRegenerate}
                 onFork={(messageIndex) => {
                   if (currentSession && currentProject) {
                     const newSession = createSession('Fork: ' + currentSession.title);

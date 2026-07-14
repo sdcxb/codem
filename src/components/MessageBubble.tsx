@@ -121,16 +121,6 @@ export function MessageBubble({ message, index, onFork, showReasoning = true, on
       </div>
 
       <div className="message-body">
-        {/* Fork button */}
-        {onFork && index !== undefined && (
-          <button
-            className="message-fork-btn"
-            onClick={() => onFork(index)}
-            title={S.bubble.fork[lang]}
-          >
-            🔀
-          </button>
-        )}
         {/* Attachments */}
         {message.attachments && message.attachments.length > 0 && (
           <div className="message-attachments">

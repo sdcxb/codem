@@ -40,6 +40,7 @@
   --accent: #7c6cf0;
   --accent-hover: #8b7df5;
   --accent-muted: rgba(124, 108, 240, 0.20);
+  --text-on-accent: #ffffff;
   --success: #3fb950;
   --warning: #d29922;
   --error: #f85149;
@@ -57,8 +58,16 @@
   --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.35);
   --shadow-lg: 0 12px 32px rgba(124, 108, 240, 0.12);
   --shadow-popover: 0 8px 24px rgba(0, 0, 0, 0.4);
+  /* Semantic status hovers */
+  --error-hover: #da3633;
+  --success-hover: #22c55e;
+  /* Security mode semantic colors */
+  --security-ask: #60a5fa;
+  --security-auto: #c084fc;
+  --security-full: #4ade80;
   /* Tooltip */
   --tooltip-bg: rgba(33, 38, 45, 0.98);
+  --tooltip-text: #f0f6fc;
   --tooltip-border: rgba(48, 54, 61, 0.80);
   /* Dropdown */
   --dropdown-bg: rgba(22, 27, 34, 0.98);
@@ -78,6 +87,7 @@
   --accent: #6b5ce7;
   --accent-hover: #5a4bd1;
   --accent-muted: rgba(107, 92, 231, 0.15);
+  --text-on-accent: #ffffff;
   --success: #1a7f37;
   --warning: #9a6700;
   --error: #cf222e;
@@ -95,8 +105,16 @@
   --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
   --shadow-lg: 0 12px 32px rgba(107, 92, 231, 0.10);
   --shadow-popover: 0 8px 24px rgba(0, 0, 0, 0.12);
+  /* Semantic status hovers */
+  --error-hover: #cf222e;
+  --success-hover: #1a7f37;
+  /* Security mode semantic colors */
+  --security-ask: #3b82f6;
+  --security-auto: #8b5cf6;
+  --security-full: #22c55e;
   /* Tooltip */
   --tooltip-bg: rgba(33, 38, 45, 0.95);
+  --tooltip-text: #f0f6fc;
   --tooltip-border: rgba(48, 54, 61, 0.80);
   /* Dropdown */
   --dropdown-bg: rgba(255, 255, 255, 0.98);
@@ -565,6 +583,81 @@ body {
   color: var(--text-primary);
   font-size: 13px;
   outline: none;
+}
+
+/* #4: Inline rename input for sessions */
+.sidebar-session-edit-input {
+  flex: 1;
+  padding: 2px 6px;
+  background: var(--input-bg);
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  color: var(--text-primary);
+  font-size: 13px;
+  outline: none;
+}
+
+/* #4: Right-click context menu overlay (click-outside catcher) */
+.context-menu-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 9998;
+  background: transparent;
+}
+
+/* #4: Right-click context menu for sessions */
+.sidebar-session-context-menu {
+  position: fixed;
+  z-index: 9999;
+  min-width: 160px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius, 6px);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  padding: 4px 0;
+  animation: context-menu-in 0.1s ease-out;
+}
+
+@keyframes context-menu-in {
+  from { opacity: 0; transform: scale(0.96); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.sidebar-session-context-menu button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 14px;
+  background: none;
+  border: none;
+  color: var(--text-primary);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.1s;
+}
+
+.sidebar-session-context-menu button:hover {
+  background: var(--bg-hover);
+}
+
+.sidebar-session-context-menu button.destructive {
+  color: var(--error);
+}
+
+.sidebar-session-context-menu button.destructive:hover {
+  background: rgba(239, 68, 68, 0.1);
+}
+
+.sidebar-context-menu-separator {
+  height: 1px;
+  margin: 4px 0;
+  background: var(--border-primary);
 }
 
 .sidebar-section {
@@ -1044,8 +1137,8 @@ body {
   padding: 6px 8px;
   margin-top: 4px;
   font-size: 11px;
-  color: var(--danger, #e74c3c);
-  background: var(--danger-bg, rgba(231, 76, 60, 0.1));
+  color: var(--error);
+  background: rgba(248, 81, 73, 0.1);
   border-radius: 4px;
   font-family: "SF Mono", "Fira Code", monospace;
   word-break: break-word;
@@ -1115,7 +1208,7 @@ body {
 }
 
 .files-delete-btn:hover {
-  background: #da3633;
+  background: var(--error-hover);
 }
 
 .files-cancel-btn {
@@ -1156,11 +1249,12 @@ body {
 
 /* C1: Collaboration mode toggle */
 .mode-toggle-btn {
-  background: none;
-  border: 1px solid var(--border-primary);
-  border-radius: 6px;
-  cursor: pointer;
-  padding: 4px 8px;
+background: none;
+border: 1px solid var(--border-primary);
+border-radius: 6px;
+cursor: pointer;
+padding: 4px 8px;
+color: var(--text-secondary);
   font-size: 16px;
   line-height: 1;
   transition: all 0.15s ease;
@@ -1172,27 +1266,27 @@ body {
 }
 
 .mode-toggle-btn.plan {
-  background: var(--warning-bg, rgba(255, 193, 7, 0.15));
-  border-color: var(--warning, #ffc107);
+  background: rgba(210, 153, 34, 0.15);
+  border-color: var(--warning);
 }
 
 /* Security mode button colors */
 .mode-toggle-btn.security-ask {
-  background: rgba(59, 130, 246, 0.12);
-  border-color: rgba(59, 130, 246, 0.5);
-  color: #60a5fa;
+  background: rgba(96, 165, 250, 0.12);
+  border-color: rgba(96, 165, 250, 0.5);
+  color: var(--security-ask);
 }
 
 .mode-toggle-btn.security-auto {
-  background: rgba(168, 85, 247, 0.12);
-  border-color: rgba(168, 85, 247, 0.5);
-  color: #c084fc;
+  background: rgba(192, 132, 252, 0.12);
+  border-color: rgba(192, 132, 252, 0.5);
+  color: var(--security-auto);
 }
 
 .mode-toggle-btn.security-full {
-  background: rgba(34, 197, 94, 0.12);
-  border-color: rgba(34, 197, 94, 0.5);
-  color: #4ade80;
+  background: rgba(74, 222, 128, 0.12);
+  border-color: rgba(74, 222, 128, 0.5);
+  color: var(--security-full);
 }
 
 .message-input {
@@ -1246,7 +1340,7 @@ body {
 }
 
 .cancel-btn:hover {
-  background: #da3633 !important;
+  background: var(--error-hover) !important;
 }
 
 /* ========== Attachments ========== */
@@ -1903,7 +1997,7 @@ body {
 .save-btn {
   padding: 8px 20px;
   background: var(--accent);
-  color: white;
+  color: var(--text-on-accent);
   border: none;
   border-radius: 6px;
   cursor: pointer;
@@ -2241,7 +2335,7 @@ body {
 }
 
 .confirm-btn.danger:hover {
-  background: #da3633;
+  background: var(--error-hover);
 }
 
 /* ========== Scrollbar ========== */
@@ -2574,9 +2668,9 @@ body {
 }
 
 .agent-toggle.active {
-  background: var(--accent-muted);
-  border-color: var(--accent);
-  color: var(--accent);
+background: var(--accent-muted);
+border-color: var(--accent);
+color: var(--text-primary);
 }
 
 .agent-badge {
@@ -2630,7 +2724,7 @@ body {
 
 .step-progress-pill:hover {
   background: var(--bg-hover, var(--bg-secondary));
-  border-color: var(--accent-primary);
+  border-color: var(--accent);
 }
 
 .step-progress-ring {
@@ -2756,8 +2850,8 @@ body {
 
 .step-tooltip-badge {
   font-size: 10px;
-  color: var(--accent-primary);
-  background: var(--accent-primary-alpha, rgba(124, 108, 240, 0.15));
+color: var(--accent);
+background: rgba(124, 108, 240, 0.15);
   padding: 1px 6px;
   border-radius: 8px;
   font-weight: 600;
@@ -3213,7 +3307,7 @@ body {
   width: 14px;
   height: 14px;
   border: 2px solid var(--border-primary);
-  border-top-color: var(--accent-primary, var(--accent));
+  border-top-color: var(--accent);
   border-radius: 50%;
   animation: subagent-spin 0.8s linear infinite;
   flex-shrink: 0;
@@ -3274,7 +3368,7 @@ body {
   width: 12px;
   height: 12px;
   border: 1.5px solid var(--border-primary);
-  border-top-color: var(--accent-primary, var(--accent));
+  border-top-color: var(--accent);
   border-radius: 50%;
   animation: subagent-spin 0.8s linear infinite;
 }
@@ -3668,15 +3762,15 @@ body {
 }
 
 .snapshot-toast-success {
-  background: rgba(34, 197, 94, 0.15);
-  color: #22c55e;
-  border: 1px solid rgba(34, 197, 94, 0.3);
+  background: rgba(63, 185, 80, 0.15);
+  color: var(--success);
+  border: 1px solid rgba(63, 185, 80, 0.3);
 }
 
 .snapshot-toast-error {
-  background: rgba(239, 68, 68, 0.15);
-  color: #ef4444;
-  border: 1px solid rgba(239, 68, 68, 0.3);
+  background: rgba(248, 81, 73, 0.15);
+  color: var(--error);
+  border: 1px solid rgba(248, 81, 73, 0.3);
 }
 
 @keyframes snapshot-toast-slide {
@@ -3746,16 +3840,7 @@ body {
 
 .mcp-action-btn:hover {
   background: var(--bg-hover);
-}
-
-.mcp-action-btn.primary {
-  background: var(--accent);
   border-color: var(--accent);
-  color: white;
-}
-
-.mcp-action-btn.primary:hover {
-  background: var(--accent-hover);
 }
 
 .mcp-add-form {
@@ -3819,8 +3904,8 @@ body {
 }
 
 .mcp-form-btn.confirm {
-  background: var(--accent);
-  color: white;
+background: var(--accent);
+color: var(--text-on-accent);
 }
 
 .mcp-form-btn.confirm:hover:not(:disabled) {
@@ -3956,8 +4041,8 @@ body {
 }
 
 .mcp-server-btn.connect {
-  background: var(--accent);
-  color: white;
+background: var(--accent);
+color: var(--text-on-accent);
 }
 
 .mcp-server-btn.connect:hover:not(:disabled) {
@@ -3985,7 +4070,7 @@ body {
 }
 
 .mcp-server-btn.remove:hover {
-  background: var(--error)10;
+background: var(--accent-muted);
 }
 
 /* ========== Skill Manager ========== */
@@ -4516,7 +4601,7 @@ body {
 .memory-delete-btn {
   padding: 6px 14px;
   background: var(--error);
-  color: white;
+  color: var(--text-on-accent);
   border: none;
   border-radius: 6px;
   cursor: pointer;
@@ -4534,24 +4619,34 @@ body {
   gap: 8px;
 }
 
-.memory-add-btn {
+/* Unified memory action button */
+.memory-action-btn {
   padding: 4px 12px;
-  background: var(--accent);
-  color: white;
-  border: none;
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-primary);
   border-radius: 4px;
   cursor: pointer;
   font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.15s ease;
 }
 
-.memory-add-btn:hover {
-  opacity: 0.9;
+.memory-action-btn:hover {
+  background: var(--bg-hover);
+  border-color: var(--accent);
+}
+
+.memory-action-label {
+  cursor: pointer;
 }
 
 .memory-edit-btn {
   padding: 6px 14px;
   background: var(--accent);
-  color: white;
+  color: var(--text-on-accent);
   border: none;
   border-radius: 6px;
   cursor: pointer;
@@ -4560,7 +4655,7 @@ body {
 }
 
 .memory-edit-btn:hover {
-  opacity: 0.9;
+  background: var(--accent-hover);
 }
 
 .memory-edit-form {
@@ -4568,7 +4663,7 @@ body {
   border-radius: 8px;
   padding: 16px;
   margin-bottom: 12px;
-  border: 1px solid var(--border-color);
+  border: 1px solid var(--border-primary);
 }
 
 .memory-edit-form-title {
@@ -4603,7 +4698,7 @@ body {
   width: 100%;
   padding: 8px 10px;
   background: var(--bg-primary);
-  border: 1px solid var(--border-color);
+  border: 1px solid var(--border-primary);
   border-radius: 6px;
   color: var(--text-primary);
   font-size: 13px;
@@ -4633,7 +4728,7 @@ body {
 .memory-save-btn {
   padding: 6px 16px;
   background: var(--success);
-  color: white;
+  color: var(--text-on-accent);
   border: none;
   border-radius: 6px;
   cursor: pointer;
@@ -4648,7 +4743,7 @@ body {
   padding: 6px 16px;
   background: var(--bg-hover);
   color: var(--text-secondary);
-  border: 1px solid var(--border-color);
+  border: 1px solid var(--border-primary);
   border-radius: 6px;
   cursor: pointer;
   font-size: 12px;
@@ -4842,15 +4937,15 @@ body {
 }
 
 .compaction-banner.compaction-active {
-  background: rgba(59, 130, 246, 0.1);
-  color: #3b82f6;
-  border-bottom: 1px solid rgba(59, 130, 246, 0.2);
+background: var(--accent-muted);
+color: var(--text-primary);
+border-bottom: 1px solid var(--accent);
 }
 
 .compaction-banner.compaction-done {
-  background: rgba(34, 197, 94, 0.1);
-  color: #22c55e;
-  border-bottom: 1px solid rgba(34, 197, 94, 0.2);
+  background: rgba(63, 185, 80, 0.10);
+  color: var(--success);
+  border-bottom: 1px solid rgba(63, 185, 80, 0.20);
 }
 
 .compaction-spinner {
@@ -5314,35 +5409,7 @@ body {
   background: var(--error)10;
 }
 
-/* ========== Message Fork ========== */
-.message {
-  position: relative;
-}
-
-.message-fork-btn {
-  position: absolute;
-  top: 4px;
-  right: 4px;
-  opacity: 0;
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border-primary);
-  color: var(--text-secondary);
-  cursor: pointer;
-  padding: 2px 6px;
-  border-radius: 4px;
-  font-size: 12px;
-  transition: all 0.15s ease;
-}
-
-.message:hover .message-fork-btn {
-  opacity: 1;
-}
-
-.message-fork-btn:hover {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: white;
-}
+/* ========== Message Fork (legacy — removed, fork now in toolbar) ========== */
 
 /* ========== Thinking Indicator ========== */
 .thinking-indicator {
@@ -5370,7 +5437,7 @@ body {
   width: 12px;
   height: 12px;
   border: 2px solid var(--border-primary);
-  border-top-color: var(--accent-primary, var(--accent));
+  border-top-color: var(--accent);
   border-radius: 50%;
   animation: subagent-spin 0.8s linear infinite;
   flex-shrink: 0;
@@ -5742,7 +5809,7 @@ body {
   font-size: 12px;
   line-height: 1.4;
   background: var(--tooltip-bg);
-  color: #f0f6fc;
+  color: var(--tooltip-text);
   border: 1px solid var(--tooltip-border);
   border-radius: var(--radius-sm);
   box-shadow: var(--shadow-md);
@@ -6085,7 +6152,7 @@ body {
   padding: 4px 12px;
   font-size: 12px;
   font-weight: 500;
-  color: #f0f6fc;
+  color: var(--text-primary);
   background: var(--accent);
   border: 1px solid var(--accent-hover);
   border-radius: var(--radius-full);

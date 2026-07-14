@@ -6,13 +6,6 @@ import { ConfirmDialog } from "./ConfirmDialog";
 import { SearchDialog } from "./SearchDialog";
 import { getSetting, setSetting } from "../core/storage/settings";
 import { useLang, S } from "../core/i18n/lang";
-import {
-  DropdownMenu,
-  DropdownMenuTrigger,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-} from "./ui/dropdown-menu";
 import { Tooltip, TooltipTrigger, TooltipContent } from "./ui/tooltip";
 
 interface SidebarProps {
@@ -37,6 +30,7 @@ export function Sidebar({ identity, onSettings, onProjects, onConfig, onMcp, onS
     projects, currentProject, currentSession,
     createSession, switchSession, deleteSession,
     openProject, getProjectSessions, updateProject,
+    renameSession,
   } = useProjectStore();
   const [theme, setTheme] = useState<"dark" | "light">(() => {
     return (getSetting("codem-theme") as "dark" | "light") || "dark";
@@ -47,6 +41,8 @@ export function Sidebar({ identity, onSettings, onProjects, onConfig, onMcp, onS
   const [editTitle, setEditTitle] = useState("");
   const [deleteConfirm, setDeleteConfirm] = useState<{ sessionId: string; title: string } | null>(null);
   const [showSearch, setShowSearch] = useState(false);
+  // #4: Right-click context menu state
+  const [sessionContextMenu, setSessionContextMenu] = useState<{ session: any; x: number; y: number } | null>(null);
   const [hoverMenuProjectId, setHoverMenuProjectId] = useState<string | null>(null);
   const [clickedMenuProjectId, setClickedMenuProjectId] = useState<string | null>(null);
   const [menuPosition, setMenuPosition] = useState<{ top: number; left: number } | null>(null);
@@ -163,26 +159,34 @@ export function Sidebar({ identity, onSettings, onProjects, onConfig, onMcp, onS
     setTimeout(() => tryLoad(0), 30);
   };
 
-  // #4: Session context menu handlers
+  // #4: Session context menu — right-click opens a custom positioned menu
   const handleSessionContextMenu = (e: React.MouseEvent, session: any) => {
     e.preventDefault();
     e.stopPropagation();
+    const x = Math.min(e.clientX, window.innerWidth - 180);
+    const y = Math.min(e.clientY, window.innerHeight - 140);
+    setSessionContextMenu({ session, x, y });
   };
+
+  // Close context menu on Escape
+  useEffect(() => {
+    if (!sessionContextMenu) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setSessionContextMenu(null);
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [sessionContextMenu]);
 
   const handleRenameSession = (sessionId: string, currentTitle: string) => {
     setEditingSessionId(sessionId);
     setEditTitle(currentTitle);
   };
 
-  const handleSaveRename = (projectId: string) => {
+  const handleSaveRename = () => {
     if (editingSessionId && editTitle.trim()) {
-      // Update session title in storage
-      const sessions = getProjectSessions(projectId);
-      const session = sessions.find((s: any) => s.id === editingSessionId);
-      if (session) {
-        // Use updateProject to trigger reload
-        loadAllSessions();
-      }
+      renameSession(editingSessionId, editTitle.trim());
+      loadAllSessions();
     }
     setEditingSessionId(null);
     setEditTitle("");
@@ -422,6 +426,11 @@ export function Sidebar({ identity, onSettings, onProjects, onConfig, onMcp, onS
                                   lang={lang}
                                   onClick={() => handleSessionClick(project.id, s.id)}
                                   onContextMenu={(e) => handleSessionContextMenu(e, s)}
+                                  isEditing={editingSessionId === s.id}
+                                  editValue={editTitle}
+                                  onEditChange={setEditTitle}
+                                  onEditCommit={handleSaveRename}
+                                  onEditCancel={() => { setEditingSessionId(null); setEditTitle(""); }}
                                   onRename={() => handleRenameSession(s.id, s.title)}
                                   onCopyId={() => handleCopySessionId(s.id)}
                                   onDelete={() => setDeleteConfirm({ sessionId: s.id, title: s.title })}
@@ -440,6 +449,11 @@ export function Sidebar({ identity, onSettings, onProjects, onConfig, onMcp, onS
                                   lang={lang}
                                   onClick={() => handleSessionClick(project.id, s.id)}
                                   onContextMenu={(e) => handleSessionContextMenu(e, s)}
+                                  isEditing={editingSessionId === s.id}
+                                  editValue={editTitle}
+                                  onEditChange={setEditTitle}
+                                  onEditCommit={handleSaveRename}
+                                  onEditCancel={() => { setEditingSessionId(null); setEditTitle(""); }}
                                   onRename={() => handleRenameSession(s.id, s.title)}
                                   onCopyId={() => handleCopySessionId(s.id)}
                                   onDelete={() => setDeleteConfirm({ sessionId: s.id, title: s.title })}
@@ -487,51 +501,93 @@ export function Sidebar({ identity, onSettings, onProjects, onConfig, onMcp, onS
           }}
         />
       )}
+
+      {/* #4: Right-click context menu for sessions */}
+      {sessionContextMenu && (
+        <>
+          <div
+            className="context-menu-overlay"
+            onClick={() => setSessionContextMenu(null)}
+            onContextMenu={(e) => { e.preventDefault(); setSessionContextMenu(null); }}
+          />
+          <div
+            className="sidebar-session-context-menu"
+            style={{ top: sessionContextMenu.y, left: sessionContextMenu.x }}
+          >
+            <button onClick={() => { handleRenameSession(sessionContextMenu.session.id, sessionContextMenu.session.title); setSessionContextMenu(null); }}>
+              ✏️ {S.sidebar.renameSession[lang]}
+            </button>
+            <button onClick={() => { handleCopySessionId(sessionContextMenu.session.id); setSessionContextMenu(null); }}>
+              📋 {S.sidebar.copySessionId[lang]}
+            </button>
+            <div className="sidebar-context-menu-separator" />
+            <button className="destructive" onClick={() => { setDeleteConfirm({ sessionId: sessionContextMenu.session.id, title: sessionContextMenu.session.title }); setSessionContextMenu(null); }}>
+              🗑️ {S.sidebar.deleteSession[lang]}
+            </button>
+          </div>
+        </>
+      )}
     </div>
   );
 }
 
-/** #4: Session item with right-click context menu */
-function SessionItem({ session, isActive, lang, onClick, onContextMenu, onRename, onCopyId, onDelete }: {
+/** #4: Session item with right-click context menu + inline rename */
+function SessionItem({
+  session, isActive, lang, onClick, onContextMenu,
+  isEditing, editValue, onEditChange, onEditCommit, onEditCancel,
+  onRename, onCopyId, onDelete,
+}: {
   session: any;
   isActive: boolean;
   lang: "zh" | "en";
   onClick: () => void;
   onContextMenu: (e: React.MouseEvent) => void;
+  isEditing: boolean;
+  editValue: string;
+  onEditChange: (value: string) => void;
+  onEditCommit: () => void;
+  onEditCancel: () => void;
   onRename: () => void;
   onCopyId: () => void;
   onDelete: () => void;
 }) {
-  return (
-    <DropdownMenu>
-      <div
-        className={`sidebar-session ${isActive ? "active" : ""}`}
-        onClick={onClick}
-        onContextMenu={onContextMenu}
-      >
-        <span className="sidebar-session-title">{session.title}</span>
-        <div className="sidebar-session-actions">
-          <button
-            className={`sidebar-session-pin ${session.pinned ? "pinned" : ""}`}
-            onClick={(e) => { e.stopPropagation(); }}
-            title={session.pinned ? S.sidebar.unpinProject[lang] : S.sidebar.pinProject[lang]}
-          >📌</button>
-          <button
-            className="sidebar-session-delete"
-            onClick={(e) => { e.stopPropagation(); onDelete(); }}
-          >✕</button>
-        </div>
+  // Inline rename mode
+  if (isEditing) {
+    return (
+      <div className={`sidebar-session ${isActive ? "active" : ""}`}>
+        <input
+          className="sidebar-session-edit-input"
+          value={editValue}
+          onChange={(e) => onEditChange(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") { e.preventDefault(); onEditCommit(); }
+            if (e.key === "Escape") { e.preventDefault(); onEditCancel(); }
+          }}
+          onBlur={onEditCommit}
+          autoFocus
+          onClick={(e) => e.stopPropagation()}
+        />
       </div>
-      {/* Hidden trigger — context menu is activated via right-click */}
-      <DropdownMenuTrigger asChild>
-        <span style={{ display: "none" }} />
-      </DropdownMenuTrigger>
-      <DropdownMenuContent>
-        <DropdownMenuItem onClick={onRename}>✏️ {S.sidebar.renameSession[lang]}</DropdownMenuItem>
-        <DropdownMenuItem onClick={onCopyId}>📋 {S.sidebar.copySessionId[lang]}</DropdownMenuItem>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem variant="destructive" onClick={onDelete}>🗑️ {S.sidebar.deleteSession[lang]}</DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
+    );
+  }
+  return (
+    <div
+      className={`sidebar-session ${isActive ? "active" : ""}`}
+      onClick={onClick}
+      onContextMenu={onContextMenu}
+    >
+      <span className="sidebar-session-title">{session.title}</span>
+      <div className="sidebar-session-actions">
+        <button
+          className={`sidebar-session-pin ${session.pinned ? "pinned" : ""}`}
+          onClick={(e) => { e.stopPropagation(); }}
+          title={session.pinned ? S.sidebar.unpinProject[lang] : S.sidebar.pinProject[lang]}
+        >📌</button>
+        <button
+          className="sidebar-session-delete"
+          onClick={(e) => { e.stopPropagation(); onDelete(); }}
+        >✕</button>
+      </div>
+    </div>
   );
 }

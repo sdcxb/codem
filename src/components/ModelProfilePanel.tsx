@@ -132,9 +132,9 @@ export function ModelProfilePanel({ onClose }: ModelProfilePanelProps) {
                   style={{
                     padding: "10px 16px",
                     borderRadius: 8,
-                    border: `2px solid ${activeProfileId === p.id ? "var(--accent-primary)" : "var(--border-primary)"}`,
-                    background: activeProfileId === p.id ? "var(--accent-primary)" : "var(--bg-secondary)",
-                    color: activeProfileId === p.id ? "white" : "var(--text-primary)",
+                    border: `2px solid ${activeProfileId === p.id ? "var(--accent)" : "var(--border-primary)"}`,
+                    background: activeProfileId === p.id ? "var(--accent)" : "var(--bg-secondary)",
+                    color: activeProfileId === p.id ? "var(--text-on-accent)" : "var(--text-primary)",
                     cursor: "pointer",
                     transition: "all 0.2s",
                     textAlign: "left",
@@ -183,7 +183,7 @@ export function ModelProfilePanel({ onClose }: ModelProfilePanelProps) {
                 marginBottom: 16,
                 padding: 12,
                 borderRadius: 8,
-                border: `1px solid ${editingProfileId === profile.id ? "var(--accent-primary)" : "var(--border-primary)"}`,
+                border: `1px solid ${editingProfileId === profile.id ? "var(--accent)" : "var(--border-primary)"}`,
                 background: "var(--bg-secondary)",
               }}
             >
@@ -220,9 +220,9 @@ export function ModelProfilePanel({ onClose }: ModelProfilePanelProps) {
                         style={{
                           padding: "4px 10px",
                           borderRadius: 4,
-                          border: "1px solid var(--text-error)",
+                          border: "1px solid var(--error)",
                           background: "transparent",
-                          color: "var(--text-error)",
+                          color: "var(--error)",
                           cursor: "pointer",
                           fontSize: 11,
                         }}
@@ -307,7 +307,7 @@ function CreateProfileForm({
         marginBottom: 16,
         padding: 12,
         borderRadius: 8,
-        border: "1px solid var(--accent-primary)",
+        border: "1px solid var(--accent)",
         background: "var(--bg-secondary)",
       }}
     >
@@ -338,8 +338,8 @@ function CreateProfileForm({
           padding: "8px 20px",
           borderRadius: 6,
           border: "none",
-          background: name.trim() ? "var(--accent-primary)" : "var(--bg-tertiary)",
-          color: "white",
+          background: name.trim() ? "var(--accent)" : "var(--bg-tertiary)",
+          color: "var(--text-on-accent)",
           cursor: name.trim() ? "pointer" : "not-allowed",
           fontSize: 13,
           width: "100%",

@@ -110,7 +110,7 @@ export function MultimodalPanel({ onClose }: MultimodalPanelProps) {
           padding: 12,
           background: "var(--bg-secondary)",
           borderRadius: 8,
-          border: `1px solid ${isEnabled ? "var(--accent-primary)" : "var(--border-primary)"}`,
+          border: `1px solid ${isEnabled ? "var(--accent)" : "var(--border-primary)"}`,
           marginBottom: 12,
         }}
       >
@@ -299,8 +299,8 @@ export function MultimodalPanel({ onClose }: MultimodalPanelProps) {
           style={{
             marginLeft: "auto",
             padding: "8px 20px",
-            background: "var(--accent-primary)",
-            color: "white",
+            background: "var(--accent)",
+            color: "var(--text-on-accent)",
             border: "none",
             borderRadius: 6,
             fontSize: 13,

@@ -81,8 +81,8 @@ export function McpManager({ onClose }: McpManagerProps) {
         <button className="mcp-action-btn" onClick={handleConnectAll}>
           🔄 全部连接
         </button>
-        <button className="mcp-action-btn primary" onClick={() => setShowAdd(true)}>
-          ➕ 添加服务器
+        <button className="mcp-action-btn" onClick={() => setShowAdd(true)}>
+          + 添加服务器
         </button>
       </div>
 

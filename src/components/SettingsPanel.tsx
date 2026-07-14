@@ -428,8 +428,8 @@ export function SettingsPanel({ onClose, onSessionRecovery, onUsageStats }: Sett
                   disabled={loginStatus === "loading"}
                   style={{
                     padding: "8px 16px",
-                    background: loginStatus === "loading" ? "var(--bg-tertiary)" : "var(--accent-primary)",
-                    color: "white",
+                    background: loginStatus === "loading" ? "var(--bg-tertiary)" : "var(--accent)",
+                    color: "var(--text-on-accent)",
                     border: "none",
                     borderRadius: 6,
                     fontSize: 13,
@@ -442,7 +442,7 @@ export function SettingsPanel({ onClose, onSessionRecovery, onUsageStats }: Sett
               )}
 
               {loginStatus === "error" && (
-                <div style={{ fontSize: 12, color: "var(--text-error)", marginTop: 6 }}>
+                <div style={{ fontSize: 12, color: "var(--error)", marginTop: 6 }}>
                   {loginError}
                 </div>
               )}
@@ -784,13 +784,13 @@ export function SettingsPanel({ onClose, onSessionRecovery, onUsageStats }: Sett
                 }}
                 style={{
                   padding: "6px 16px",
-                  background: "var(--accent-primary)",
-                  color: "white",
-                  border: "none",
-                  borderRadius: 4,
-                  fontSize: 12,
-                  cursor: "pointer",
-                  marginTop: 4,
+background: "var(--accent)",
+color: "var(--text-on-accent)",
+border: "none",
+borderRadius: 4,
+fontSize: 12,
+cursor: "pointer",
+marginTop: 4,
                 }}
               >
                 {S.settings.saveRefresh[lang]}
@@ -861,7 +861,7 @@ export function SettingsPanel({ onClose, onSessionRecovery, onUsageStats }: Sett
           {onSessionRecovery && (
             <button
               className="save-btn"
-              style={{ background: "var(--bg-tertiary)", marginRight: "auto" }}
+              style={{ background: "var(--bg-tertiary)", color: "var(--text-primary)", border: "1px solid var(--border-primary)", marginRight: "auto" }}
               onClick={onSessionRecovery}
             >
               {S.settings.sessionRecovery[lang]}
@@ -870,7 +870,7 @@ export function SettingsPanel({ onClose, onSessionRecovery, onUsageStats }: Sett
           {onUsageStats && (
             <button
               className="save-btn"
-              style={{ background: "var(--bg-tertiary)", marginRight: "8px" }}
+              style={{ background: "var(--bg-tertiary)", color: "var(--text-primary)", border: "1px solid var(--border-primary)", marginRight: "8px" }}
               onClick={onUsageStats}
             >
               {S.settings.usageStats[lang]}
@@ -933,7 +933,7 @@ function PermissionRulesSection() {
 
   const actionColors: Record<PermissionAction, string> = {
     allow: "var(--success)",
-    deny: "var(--text-error, #ef4444)",
+    deny: "var(--error)",
     ask: "var(--text-secondary)",
   };
 
@@ -1058,14 +1058,14 @@ function PermissionRulesSection() {
           onClick={handleAdd}
           style={{
             padding: "6px 14px",
-            background: "var(--accent-primary)",
-            color: "white",
-            border: "none",
-            borderRadius: 4,
-            fontSize: 12,
-            cursor: "pointer",
-            whiteSpace: "nowrap",
-            flex: "0 0 auto",
+background: "var(--accent)",
+color: "var(--text-on-accent)",
+border: "none",
+borderRadius: 4,
+fontSize: 12,
+cursor: "pointer",
+whiteSpace: "nowrap",
+flex: "0 0 auto",
           }}
         >
           {zh ? "添加" : "Add"}
