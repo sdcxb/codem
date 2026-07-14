@@ -121,6 +121,21 @@ export function SettingsPanel({ onClose, onSessionRecovery, onUsageStats }: Sett
       });
     }
 
+    // Load user config (name, callBy, timezone, etc.)
+    const storedUser = getSettingJSON<UserConfig | null>("codem-user", null);
+    console.log("[SettingsPanel] Loading codem-user:", JSON.stringify(storedUser));
+    if (storedUser) {
+      setUserConfig({
+        name: storedUser.name || "",
+        callBy: storedUser.callBy || "",
+        pronouns: storedUser.pronouns || "",
+        timezone: storedUser.timezone || "Asia/Shanghai",
+        notes: storedUser.notes || "",
+        context: storedUser.context || "",
+        raw: storedUser.raw || "",
+      });
+    }
+
     // Check MiMo auth.json
     const auth = getMiMoAuth();
     auth.loadFromAuthJson().then((account) => {

@@ -39,27 +39,40 @@ function handleLinkClick(e: React.MouseEvent<HTMLAnchorElement>, href: string) {
 }
 
 // Sub-agent status indicator
-function SubagentStatus({ taskId, name }: { taskId: string; name?: string }) {
-  const [status, setStatus] = useState<string>("running");
-  const [summary, setSummary] = useState<string>("");
+function SubagentStatus({ taskId, name, toolStatus }: { taskId: string; name?: string; toolStatus?: string }) {
+const [status, setStatus] = useState<string>("init");
+const [summary, setSummary] = useState<string>("");
 
-  useEffect(() => {
-    const manager = getSubagentManager();
-    const check = () => {
-      const task = manager.getTask(taskId);
-      if (!task) return;
-      setStatus(task.status);
-      if (task.result) setSummary(task.result.summary);
-    };
-    check();
-    const interval = setInterval(check, 2000);
-    return () => clearInterval(interval);
-  }, [taskId]);
+useEffect(() => {
+const manager = getSubagentManager();
+const check = () => {
+const task = manager.getTask(taskId);
+if (task) {
+setStatus(task.status);
+if (task.result) setSummary(task.result.summary);
+} else {
+// Task not in memory (historical session) — fall back to tool call status
+if (toolStatus === "done") {
+setStatus("completed");
+} else if (toolStatus === "error") {
+setStatus("failed");
+} else {
+setStatus("running");
+}
+}
+};
+check();
+const interval = setInterval(check, 2000);
+return () => clearInterval(interval);
+}, [taskId, toolStatus]);
 
-  const zh = getLang() === "zh";
-  const displayName = name || (zh ? "子智能体" : "Sub-agent");
+const zh = getLang() === "zh";
+const displayName = name || (zh ? "子智能体" : "Sub-agent");
 
-  if (status === "completed") {
+// While initializing, don't show anything (avoids brief "running" flash)
+if (status === "init") return null;
+
+if (status === "completed") {
     return <span className="subagent-status done">✅ {displayName} {zh ? "完成" : "completed"}{summary ? `: ${summary}` : ""}</span>;
   }
   if (status === "failed") {
@@ -282,7 +295,7 @@ export const MessageBubble = memo(function MessageBubble({ message, index, showR
                       <span className="tool-status">
                         {tc.status === "running" ? "⏳" : tc.status === "done" ? "✅" : "❌"}
                       </span>
-                      {subagentTaskId && <SubagentStatus taskId={subagentTaskId} name={agentName || undefined} />}
+                      {subagentTaskId && <SubagentStatus taskId={subagentTaskId} name={agentName || undefined} toolStatus={tc.status} />}
                       {tc.status === "error" && tc.result && (
                         <div className="tool-error-detail">{tc.result}</div>
                       )}

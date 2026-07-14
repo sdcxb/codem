@@ -53,8 +53,16 @@ async function saveDatabase(): Promise<void> {
   }
 }
 
+let saveDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+
 function saveDatabaseAsync(): void {
-  saveDatabase().catch(e => console.error("[Database] Async save failed:", e));
+  // Debounce: if multiple writes happen in quick succession (e.g. createSession + updateProject),
+  // only persist once after the last write
+  if (saveDebounceTimer) clearTimeout(saveDebounceTimer);
+  saveDebounceTimer = setTimeout(() => {
+    saveDatabase().catch(e => console.error("[Database] Async save failed:", e));
+    saveDebounceTimer = null;
+  }, 500);
 }
 
 async function loadDatabaseFromStorage(): Promise<Uint8Array | null> {
@@ -281,7 +289,16 @@ export function getDatabase(): SqlJsDatabase {
 }
 
 export function persistDatabase(): void {
-  saveDatabaseAsync();
+saveDatabaseAsync();
+}
+
+/** Flush any pending debounced save immediately */
+export function flushDatabase(): void {
+  if (saveDebounceTimer) {
+    clearTimeout(saveDebounceTimer);
+    saveDebounceTimer = null;
+    saveDatabase().catch(e => console.error("[Database] Flush save failed:", e));
+  }
 }
 
 export function closeDatabase(): void {

@@ -67,8 +67,9 @@ export function useLang(): Language {
 export const S = {
   // Sidebar
   sidebar: {
-    newChat: { zh: "新对话", en: "New Chat" },
-    search: { zh: "搜索", en: "Search" },
+newChat: { zh: "新对话", en: "New Chat" },
+globalChats: { zh: "全局对话", en: "Global Chats" },
+search: { zh: "搜索", en: "Search" },
     mcp: { zh: "MCP", en: "MCP" },
     skills: { zh: "技能", en: "Skills" },
     memory: { zh: "记忆", en: "Memory" },

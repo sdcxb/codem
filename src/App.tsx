@@ -85,7 +85,23 @@ function App() {
   const [currentMode, setCurrentMode] = useState<"cli" | "api">("cli");
   const [currentProvider, setCurrentProvider] = useState("mimo");
   const [collaborationMode, setCollaborationMode] = useState<CollaborationMode>("default");
+  const windowVisibleRef = useRef(true);
   const [securityMode, setSecurityMode] = useState<SecurityMode>(getEffectiveSecurityMode(currentProject?.path));
+
+  // Track window visibility for task completion notifications
+  useEffect(() => {
+    const onVisibilityChange = () => { windowVisibleRef.current = !document.hidden; };
+    const onBlur = () => { windowVisibleRef.current = false; };
+    const onFocus = () => { windowVisibleRef.current = true; };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    window.addEventListener("blur", onBlur);
+    window.addEventListener("focus", onFocus);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      window.removeEventListener("blur", onBlur);
+      window.removeEventListener("focus", onFocus);
+    };
+  }, []);
 
   // Listen for security mode changes from UI (InputArea toggle, SettingsPanel)
   useEffect(() => {
@@ -380,14 +396,16 @@ request: PermissionRequest;
   }, [connectWebSocket]);
 
   useEffect(() => {
-    if (currentProject && currentSession) {
+    if (currentSession) {
       // Save old messages to old session before switching
       if (messagesSessionRef.current && messagesSessionRef.current !== currentSession.id && messages.length > 0) {
         saveMessages(messagesSessionRef.current);
       }
       messagesSessionRef.current = currentSession.id;
       loadMessages(currentSession.id);
-      const saved = loadCliSessionId(currentProject.id, currentSession.id);
+      // CLI session ID is keyed by project + session; for global sessions, use "" as project ID
+      const projId = currentProject?.id || "";
+      const saved = loadCliSessionId(projId, currentSession.id);
       mimoSessionRef.current = saved;
     }
   }, [currentProject?.id, currentSession?.id]);
@@ -395,7 +413,7 @@ request: PermissionRequest;
   // Auto-save messages with debounce (every 2 seconds during streaming, immediately when done)
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
-    if (currentProject && currentSession && messages.length > 0 && messagesSessionRef.current === currentSession.id) {
+    if (currentSession && messages.length > 0 && messagesSessionRef.current === currentSession.id) {
       if (isStreaming) {
         // Debounce during streaming
         if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
@@ -417,7 +435,7 @@ request: PermissionRequest;
   // Save messages before unmount or session switch
   useEffect(() => {
     return () => {
-      if (currentProject && currentSession && messages.length > 0) {
+      if (currentSession && messages.length > 0) {
         saveMessages(currentSession.id);
       }
     };
@@ -425,7 +443,9 @@ request: PermissionRequest;
 
   // ========== Send Message ==========
   const handleSend = async (message: string, attachments?: any[]) => {
-    if (!currentSession) return;
+    // Always read latest currentSession from store (avoids stale closure)
+    const session = useProjectStore.getState().currentSession;
+    if (!session) return;
 
     // F3.2: Handle /memory slash commands
     const trimmedMessage = message.trim();
@@ -433,7 +453,7 @@ request: PermissionRequest;
       const parts = trimmedMessage.split(/\s+/);
       const subcommand = parts[1]?.toLowerCase();
       const engineInstance = engineRef.current;
-      const sessionId = currentSession.id;
+      const sessionId = session.id;
 
       if (subcommand === "off" || subcommand === "disable") {
         engineInstance.setMemoryEnabled(sessionId, false);
@@ -532,8 +552,8 @@ request: PermissionRequest;
       return;
     }
 
-    useProjectStore.getState().updateSession(currentSession.id, {
-      messageCount: currentSession.messageCount + 1,
+    useProjectStore.getState().updateSession(session.id, {
+      messageCount: session.messageCount + 1,
       lastMessageAt: Date.now(),
     });
 
@@ -557,12 +577,9 @@ request: PermissionRequest;
     });
 
     // Immediately save to database so agentic loop can read it
-    if (currentSession) {
-      saveMessages(currentSession.id);
-    }
-    
+    saveMessages(session.id);
 
-    await runAgenticLoop(message);
+    await runAgenticLoop(message, session);
   };
 
   /**
@@ -570,8 +587,8 @@ request: PermissionRequest;
    * This function handles provider setup, streaming, tool calls, and
    * all event processing from the LLM engine.
    */
-  const runAgenticLoop = async (message: string) => {
-    if (!currentSession) return;
+  const runAgenticLoop = async (message: string, session: Session) => {
+    if (!session) return;
 
     const mode = getMode();
     const engine = engineRef.current;
@@ -642,7 +659,7 @@ request: PermissionRequest;
     try {
       abortRef.current = new AbortController();
 
-      for await (const event of engine.process(currentSession.id, message, cwd, undefined, {
+      for await (const event of engine.process(session.id, message, cwd, undefined, {
         onPermissionRequest: (request) => {
           return new Promise((resolve) => {
             setPendingPermission({ request, resolve });
@@ -672,9 +689,9 @@ request: PermissionRequest;
                 timestamp: Date.now(),
                 status: "streaming",
               });
-              if (currentSession) {
-                saveMessages(currentSession.id);
-              }
+if (session) {
+saveMessages(session.id);
+}
             }
             // Update message with reasoning content
             useAppStore.getState().updateMessage(assistantMsgId, {
@@ -696,9 +713,9 @@ request: PermissionRequest;
                   status: "done",
                   reasoning: reasoningContent || undefined,
                 } as any);
-                if (currentSession) {
-                  saveMessages(currentSession.id);
-                }
+if (session) {
+saveMessages(session.id);
+}
               }
               // Start a new assistant message for this iteration
               lastAssistantMsgId = assistantMsgId;
@@ -738,9 +755,9 @@ request: PermissionRequest;
                 timestamp: Date.now(),
                 status: "streaming",
               });
-              if (currentSession) {
-                saveMessages(currentSession.id);
-              }
+if (session) {
+saveMessages(session.id);
+}
             }
             streamBufferRef.current.id = assistantMsgId;
             streamBufferRef.current.text += event.text;
@@ -770,9 +787,9 @@ request: PermissionRequest;
                 status: "running",
               });
               // Immediately save tool call so agentic loop can read it
-              if (currentSession) {
-                saveMessages(currentSession.id);
-              }
+if (session) {
+saveMessages(session.id);
+}
             }
             break;
           }
@@ -800,9 +817,9 @@ request: PermissionRequest;
                 generatedFilesRef.current.add(tc.input.path as string);
               }
               // Immediately save so next agentic loop iteration can read it
-              if (currentSession) {
-                saveMessages(currentSession.id);
-              }
+if (session) {
+saveMessages(session.id);
+}
             }
             break;
           }
@@ -817,9 +834,9 @@ request: PermissionRequest;
                 result: err,
               });
               // Immediately save tool error
-              if (currentSession) {
-                saveMessages(currentSession.id);
-              }
+if (session) {
+saveMessages(session.id);
+}
             }
             break;
           }
@@ -833,10 +850,10 @@ request: PermissionRequest;
             const removed = "messagesRemoved" in event ? event.messagesRemoved : 0;
             setCompactionStatus({ active: false, messagesRemoved: removed });
             // Reload messages from DB since old ones were deleted
-            if (currentSession) {
-              loadMessages(currentSession.id);
-              saveMessages(currentSession.id);
-            }
+        if (session) {
+          loadMessages(session.id);
+          saveMessages(session.id);
+        }
             // Auto-clear compaction status after 3 seconds
             setTimeout(() => setCompactionStatus(null), 3000);
             break;
@@ -886,8 +903,43 @@ request: PermissionRequest;
       
       setStreaming(false);
       abortRef.current = null;
-      if (currentProject && currentSession) {
-        saveMessages(currentSession.id);
+      if (session) {
+        saveMessages(session.id);
+      }
+      // Task completion notification when app is in background or minimized
+      if (!windowVisibleRef.current) {
+        // Use Tauri internal API to show window and bring to front
+        try {
+          const tauri = (window as any).__TAURI__;
+          if (tauri?.core?.invoke) {
+            await tauri.core.invoke("plugin:window|show", { label: "main" });
+            await tauri.core.invoke("plugin:window|set_focus", { label: "main" });
+            await tauri.core.invoke("plugin:window|unminimize", { label: "main" });
+            console.log("[Notify] Window shown and focused");
+          }
+        } catch (e) { console.warn("[Notify] Window show failed:", e); }
+        // Send native notification
+        try {
+          const tauri = (window as any).__TAURI__;
+          if (tauri?.core?.invoke) {
+            let granted = true;
+            try {
+              granted = await tauri.core.invoke("plugin:notification|is_permission_granted");
+              if (!granted) {
+                const result = await tauri.core.invoke("plugin:notification|request_permission");
+                granted = result === 2 || result === "granted";
+              }
+            } catch {}
+            if (granted) {
+              const sessionTitle = session.title || "对话";
+              const userQuestion = message.length > 30 ? message.substring(0, 30) + "..." : message;
+              await tauri.core.invoke("plugin:notification|notify", {
+                options: { title: `任务完成 — ${sessionTitle}`, body: `"${userQuestion}" 执行完毕，点击查看结果` }
+              });
+              console.log("[Notify] Notification sent");
+            }
+          }
+        } catch (e) { console.warn("[Notify] Native notification failed:", e); }
       }
     }
   };
@@ -899,7 +951,8 @@ request: PermissionRequest;
    * and re-runs the agentic loop from that user message.
    */
   const handleRegenerate = async (messageIndex: number) => {
-    if (!currentSession || isStreaming) return;
+    const session = useProjectStore.getState().currentSession;
+    if (!session || isStreaming) return;
 
     const allMessages = useAppStore.getState().messages;
     if (messageIndex < 0 || messageIndex >= allMessages.length) return;
@@ -930,7 +983,7 @@ request: PermissionRequest;
     }
 
     // Re-run the agentic loop with the original user message
-    await runAgenticLoop(userMessage);
+    await runAgenticLoop(userMessage, session);
   };
   const currentMsgIdRef = useRef<string | null>(null);
 

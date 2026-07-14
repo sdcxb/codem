@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { AppIdentity, IdentityConfig, UserConfig } from "../core/types";
 import { saveAppIdentity } from "../core/config/loader";
-import { setSettingJSON } from "../core/storage/settings";
+import { setSettingJSON, getSettingJSON } from "../core/storage/settings";
 
 interface BootstrapWizardProps {
   appRoot: string;
@@ -47,8 +47,13 @@ export function BootstrapWizard({ onComplete }: BootstrapWizardProps) {
   };
 
   const handleFinish = async () => {
+    // Read the latest state values (defensive — in case of stale closure)
+    const finalUserName = userName || "";
+    const finalUserCallBy = userCallBy || finalUserName;
+    const finalUserTimezone = userTimezone || "Asia/Shanghai";
+
     console.log("[BootstrapWizard] handleFinish called");
-    console.log("[BootstrapWizard] name:", name, "userName:", userName, "userCallBy:", userCallBy, "userTimezone:", userTimezone);
+    console.log("[BootstrapWizard] name:", name, "userName:", finalUserName, "userCallBy:", finalUserCallBy, "userTimezone:", finalUserTimezone);
 
     const appIdentity: AppIdentity = {
       name: name || "Codem",
@@ -74,16 +79,20 @@ export function BootstrapWizard({ onComplete }: BootstrapWizardProps) {
     setSettingJSON("codem-identity", identityConfig);
 
     const userConfig: UserConfig = {
-      name: userName,
-      callBy: userCallBy || userName,
+      name: finalUserName,
+      callBy: finalUserCallBy,
       pronouns: "",
-      timezone: userTimezone,
+      timezone: finalUserTimezone,
       notes: "",
       context: "",
       raw: "",
     };
     console.log("[BootstrapWizard] Saving userConfig:", JSON.stringify(userConfig));
     setSettingJSON("codem-user", userConfig);
+
+    // Verify save
+    const verify = getSettingJSON<UserConfig | null>("codem-user", null);
+    console.log("[BootstrapWizard] Verified codem-user saved:", JSON.stringify(verify));
 
     // Call onComplete
     onComplete(appIdentity);

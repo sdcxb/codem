@@ -747,9 +747,10 @@ async fn update_tray_language(app: AppHandle, lang: String) -> Result<(), String
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let app = tauri::Builder::default()
-        .plugin(tauri_plugin_shell::init())
-        .plugin(tauri_plugin_fs::init())
+let app = tauri::Builder::default()
+.plugin(tauri_plugin_shell::init())
+.plugin(tauri_plugin_fs::init())
+.plugin(tauri_plugin_notification::init())
         .manage(AppState {
             providers: Mutex::new(vec![
                 ProviderConfig {

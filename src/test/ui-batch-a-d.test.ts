@@ -1195,9 +1195,9 @@ describe("三个已知问题修复验证（源码级）", () => {
       expect(appSrc).toContain("isStreaming");
     });
 
-    it("handleSend 调用 runAgenticLoop（提取公共函数）", () => {
-      expect(appSrc).toContain("await runAgenticLoop(message)");
-    });
+it("handleSend 调用 runAgenticLoop（提取公共函数）", () => {
+expect(appSrc).toContain("await runAgenticLoop(message, session)");
+});
   });
 });
 
@@ -1553,9 +1553,9 @@ describe("批次 E: 分叉/重新生成 Q&A 轮次架构", () => {
       expect(appSrc).not.toContain("allMessages.slice(0, messageIndex)");
     });
 
-    it("源码调用 runAgenticLoop 重跑", () => {
-      expect(appSrc).toContain("await runAgenticLoop(userMessage)");
-    });
+it("源码调用 runAgenticLoop 重跑", () => {
+expect(appSrc).toContain("await runAgenticLoop(userMessage, session)");
+});
   });
 
   // ===== E8: 工具调用 + 子智能体场景验证 =====
@@ -1698,10 +1698,10 @@ describe("批次 E: 分叉/重新生成 Q&A 轮次架构", () => {
       expect(forked[0].id).toBe("u1");
     });
 
-    it("流式状态时 regenerate 被阻止", () => {
-      // App.tsx 中 handleRegenerate 第一行检查 isStreaming
-      expect(appSrc).toMatch(/if \(!currentSession \|\| isStreaming\) return/);
-    });
+it("流式状态时 regenerate 被阻止", () => {
+// App.tsx 中 handleRegenerate 第一行检查 isStreaming
+expect(appSrc).toMatch(/if \(!session \|\| isStreaming\) return/);
+});
   });
 
   // ===== E10: 消息反馈（toolbar 其他按钮不受影响） =====
@@ -1739,6 +1739,145 @@ describe("批次 E: 分叉/重新生成 Q&A 轮次架构", () => {
       );
       expect(src).toContain("onDeleteFiles");
       expect(src).toContain("showFilesConfirm");
+    });
+  });
+});
+
+// =========================================================================
+// 批次 F: 子智能体状态 + 全局对话 + 性能优化 + 通知
+// =========================================================================
+
+describe("批次 F: 子智能体状态 + 全局对话 + 性能 + 通知", () => {
+  const fs = require("fs");
+  const path = require("path");
+  const appSrc = fs.readFileSync(path.resolve(__dirname, "../App.tsx"), "utf-8");
+  const msgBubbleSrc = fs.readFileSync(path.resolve(__dirname, "../components/MessageBubble.tsx"), "utf-8");
+  const sidebarSrc = fs.readFileSync(path.resolve(__dirname, "../components/Sidebar.tsx"), "utf-8");
+  const sessionStorageSrc = fs.readFileSync(path.resolve(__dirname, "../core/storage/session.ts"), "utf-8");
+  const dbSrc = fs.readFileSync(path.resolve(__dirname, "../core/storage/database.ts"), "utf-8");
+  const settingsPanelSrc = fs.readFileSync(path.resolve(__dirname, "../components/SettingsPanel.tsx"), "utf-8");
+
+  // ===== F1: SubagentStatus 历史回退 =====
+  describe("F1: 子智能体历史状态回退", () => {
+    it("SubagentStatus 接受 toolStatus prop", () => {
+      expect(msgBubbleSrc).toContain("toolStatus");
+    });
+
+    it("SubagentStatus 在 task 不在内存时回退到 toolStatus", () => {
+      expect(msgBubbleSrc).toContain('toolStatus === "done"');
+      expect(msgBubbleSrc).toContain("completed");
+    });
+
+    it("SubagentStatus 初始状态为 init（不闪烁运行中）", () => {
+      expect(msgBubbleSrc).toContain('"init"');
+    });
+  });
+
+  // ===== F2: 全局对话 =====
+  describe("F2: 全局对话功能", () => {
+    it("新对话按钮创建全局会话（清除 currentProject）", () => {
+      expect(sidebarSrc).toContain("currentProject: null");
+    });
+
+    it("loadAllSessions 加载全局会话列表", () => {
+      expect(sidebarSrc).toContain('"__global__"');
+      expect(sidebarSrc).toContain('listSessions("")');
+    });
+
+    it("handleSessionClick 处理 __global__ projectId", () => {
+      expect(sidebarSrc).toContain('projectId === "__global__"');
+    });
+
+    it("侧边栏包含全局对话区域", () => {
+      expect(sidebarSrc).toContain("globalChats");
+    });
+
+    it("i18n 包含 globalChats 字符串", () => {
+      const langSrc = fs.readFileSync(path.resolve(__dirname, "../core/i18n/lang.ts"), "utf-8");
+      expect(langSrc).toContain("globalChats");
+    });
+  });
+
+  // ===== F3: 性能优化 - DB 防抖 =====
+  describe("F3: DB 写入防抖", () => {
+    it("saveDatabaseAsync 使用 debounce", () => {
+      expect(dbSrc).toContain("saveDebounceTimer");
+      expect(dbSrc).toContain("clearTimeout");
+    });
+
+    it("flushDatabase 函数存在", () => {
+      expect(dbSrc).toContain("flushDatabase");
+    });
+
+    it("handleNewSession 不再使用嵌套 setTimeout", () => {
+      // handleNewSession should be direct calls, not nested setTimeout
+      const handleNewSessionMatch = sidebarSrc.match(/handleNewSession[\s\S]*?\n  \};/);
+      expect(handleNewSessionMatch).toBeTruthy();
+      expect(handleNewSessionMatch![0]).not.toContain("setTimeout");
+    });
+  });
+
+  // ===== F4: App.tsx 全局会话消息保存 =====
+  describe("F4: 全局会话消息保存", () => {
+    it("handleSend 从 store 直接读取 session", () => {
+      expect(appSrc).toContain("useProjectStore.getState().currentSession");
+    });
+
+    it("runAgenticLoop 接收 session 参数", () => {
+      expect(appSrc).toContain("runAgenticLoop(message, session)");
+      expect(appSrc).toContain("session: Session");
+    });
+
+    it("CLI session ID 使用 projId 兼容全局会话", () => {
+      expect(appSrc).toContain("currentProject?.id ||");
+    });
+  });
+
+  // ===== F5: 任务完成通知 =====
+  describe("F5: 任务完成通知", () => {
+    it("App.tsx 检测 document.visibilityState", () => {
+      expect(appSrc).toContain("visibilityState");
+    });
+
+    it("App.tsx 调用 win.show 和 win.setFocus", () => {
+      expect(appSrc).toContain("plugin:window|show");
+      expect(appSrc).toContain("plugin:window|set_focus");
+      expect(appSrc).toContain("plugin:window|unminimize");
+    });
+
+    it("App.tsx 发送原生通知", () => {
+      expect(appSrc).toContain("plugin:notification|notify");
+      expect(appSrc).toContain("任务完成");
+    });
+
+    it("capabilities 包含 notification 权限", () => {
+      const capSrc = fs.readFileSync(path.resolve(__dirname, "../../src-tauri/capabilities/default.json"), "utf-8");
+      expect(capSrc).toContain("notification:allow-notify");
+      expect(capSrc).toContain("core:window:allow-show");
+      expect(capSrc).toContain("core:window:allow-unminimize");
+    });
+  });
+
+  // ===== F6: SettingsPanel 加载 codem-user =====
+  describe("F6: SettingsPanel 用户配置加载", () => {
+    it("SettingsPanel 从 codem-user 加载用户配置", () => {
+      expect(settingsPanelSrc).toContain('getSettingJSON');
+      expect(settingsPanelSrc).toContain('codem-user');
+    });
+  });
+
+  // ===== F7: SessionStorage pinned 支持 =====
+  describe("F7: SessionStorage pinned 持久化", () => {
+    it("listSessions 按 pinned DESC 排序", () => {
+      expect(sessionStorageSrc).toContain("ORDER BY pinned DESC");
+    });
+
+    it("togglePinned 原子性函数存在", () => {
+      expect(sessionStorageSrc).toContain("togglePinned");
+    });
+
+    it("createSession 包含 pinned 字段", () => {
+      expect(sessionStorageSrc).toContain("pinned");
     });
   });
 });

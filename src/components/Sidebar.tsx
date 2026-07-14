@@ -61,6 +61,8 @@ export function Sidebar({ identity, onSettings, onProjects, onConfig, onMcp, onS
 
   const loadAllSessions = () => {
     const sessionsMap: Record<string, any[]> = {};
+    // Load global sessions (projectId = "")
+    sessionsMap["__global__"] = SessionStorage.listSessions("");
     for (const p of projects) {
       sessionsMap[p.id] = getProjectSessions(p.id);
     }
@@ -133,13 +135,19 @@ export function Sidebar({ identity, onSettings, onProjects, onConfig, onMcp, onS
 
   const handleNewSession = (projectId: string) => {
     openProject(projectId);
-    setTimeout(() => {
-      createSession();
-      setTimeout(() => loadAllSessions(), 50);
-    }, 50);
+    createSession();
+    loadAllSessions();
   };
 
   const handleSessionClick = (projectId: string, sessionId: string) => {
+    // Handle global sessions (projectId === "__global__" maps to empty projectId "")
+    if (projectId === "__global__") {
+      useProjectStore.setState({ currentProject: null, currentSession: null, sessions: SessionStorage.listSessions("") });
+      const sessions = SessionStorage.listSessions("");
+      const session = sessions.find((s: any) => s.id === sessionId);
+      if (session) switchSession(sessionId);
+      return;
+    }
     if (currentProject?.id === projectId) {
       const sessions = getProjectSessions(projectId);
       const session = sessions.find((s: any) => s.id === sessionId);
@@ -287,9 +295,9 @@ export function Sidebar({ identity, onSettings, onProjects, onConfig, onMcp, onS
       <div className="sidebar-nav">
         <button className="sidebar-nav-item" onClick={() => {
           clearMessages();
-          if (currentProject) {
-            createSession();
-          }
+          // New chat creates a global session (no project context)
+          useProjectStore.setState({ currentProject: null, currentSession: null, sessions: [] });
+          createSession();
         }}>
           <span className="sidebar-nav-icon">✏️</span>
           <span>{S.sidebar.newChat[lang]}</span>
@@ -314,6 +322,73 @@ export function Sidebar({ identity, onSettings, onProjects, onConfig, onMcp, onS
           <span className="sidebar-nav-icon">⚙️</span>
           <span>{S.sidebar.settings[lang]}</span>
         </button>
+      </div>
+
+      <div className="sidebar-section">
+        <div className="sidebar-section-header">
+          <span>{S.sidebar.globalChats[lang]}</span>
+        </div>
+        <div className="sidebar-sessions">
+          {(() => {
+            const globalSessions = (allSessions["__global__"] || []).slice().sort((a: any, b: any) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0));
+            const { today, earlier } = groupSessionsByTime(globalSessions);
+            if (globalSessions.length === 0) {
+              return <div className="sidebar-session-empty">{S.sidebar.noSessions[lang]}</div>;
+            }
+            return (
+              <>
+            {today.length > 0 && (
+              <>
+                <div className="sidebar-session-group-label">{S.sidebar.sessionToday[lang]}</div>
+                {today.map((s: any) => (
+                  <SessionItem
+                    key={s.id}
+                    session={s}
+                    isActive={currentSession?.id === s.id && !currentProject}
+                    lang={lang}
+                    onClick={() => handleSessionClick("__global__", s.id)}
+                    onContextMenu={(e) => handleSessionContextMenu(e, s)}
+                    isEditing={editingSessionId === s.id}
+                    editValue={editTitle}
+                    onEditChange={setEditTitle}
+                    onEditCommit={handleSaveRename}
+                    onEditCancel={() => { setEditingSessionId(null); setEditTitle(""); }}
+                    onRename={() => handleRenameSession(s.id, s.title)}
+                    onCopyId={() => handleCopySessionId(s.id)}
+                    onDelete={() => setDeleteConfirm({ sessionId: s.id, title: s.title })}
+                    onPin={() => { SessionStorage.togglePinned(s.id); loadAllSessions(); }}
+                  />
+                ))}
+              </>
+            )}
+            {earlier.length > 0 && (
+              <>
+                <div className="sidebar-session-group-label">{S.sidebar.sessionEarlier[lang]}</div>
+                {earlier.map((s: any) => (
+                  <SessionItem
+                    key={s.id}
+                    session={s}
+                    isActive={currentSession?.id === s.id && !currentProject}
+                    lang={lang}
+                    onClick={() => handleSessionClick("__global__", s.id)}
+                    onContextMenu={(e) => handleSessionContextMenu(e, s)}
+                    isEditing={editingSessionId === s.id}
+                    editValue={editTitle}
+                    onEditChange={setEditTitle}
+                    onEditCommit={handleSaveRename}
+                    onEditCancel={() => { setEditingSessionId(null); setEditTitle(""); }}
+                    onRename={() => handleRenameSession(s.id, s.title)}
+                    onCopyId={() => handleCopySessionId(s.id)}
+                    onDelete={() => setDeleteConfirm({ sessionId: s.id, title: s.title })}
+                    onPin={() => { SessionStorage.togglePinned(s.id); loadAllSessions(); }}
+                  />
+                ))}
+              </>
+            )}
+              </>
+            );
+          })()}
+        </div>
       </div>
 
       <div className="sidebar-section">
