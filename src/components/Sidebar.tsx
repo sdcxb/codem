@@ -5,6 +5,7 @@ import { AppIdentity } from "../core/types";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { SearchDialog } from "./SearchDialog";
 import { getSetting, setSetting } from "../core/storage/settings";
+import * as SessionStorage from "../core/storage/session";
 import { useLang, S } from "../core/i18n/lang";
 import { Tooltip, TooltipTrigger, TooltipContent } from "./ui/tooltip";
 
@@ -434,6 +435,7 @@ export function Sidebar({ identity, onSettings, onProjects, onConfig, onMcp, onS
                                   onRename={() => handleRenameSession(s.id, s.title)}
                                   onCopyId={() => handleCopySessionId(s.id)}
                                   onDelete={() => setDeleteConfirm({ sessionId: s.id, title: s.title })}
+                                  onPin={() => { SessionStorage.togglePinned(s.id); loadAllSessions(); }}
                                 />
                               ))}
                             </>
@@ -457,6 +459,7 @@ export function Sidebar({ identity, onSettings, onProjects, onConfig, onMcp, onS
                                   onRename={() => handleRenameSession(s.id, s.title)}
                                   onCopyId={() => handleCopySessionId(s.id)}
                                   onDelete={() => setDeleteConfirm({ sessionId: s.id, title: s.title })}
+                                  onPin={() => { SessionStorage.togglePinned(s.id); loadAllSessions(); }}
                                 />
                               ))}
                             </>
@@ -535,7 +538,7 @@ export function Sidebar({ identity, onSettings, onProjects, onConfig, onMcp, onS
 function SessionItem({
   session, isActive, lang, onClick, onContextMenu,
   isEditing, editValue, onEditChange, onEditCommit, onEditCancel,
-  onRename, onCopyId, onDelete,
+  onRename, onCopyId, onDelete, onPin,
 }: {
   session: any;
   isActive: boolean;
@@ -550,6 +553,7 @@ function SessionItem({
   onRename: () => void;
   onCopyId: () => void;
   onDelete: () => void;
+  onPin: () => void;
 }) {
   // Inline rename mode
   if (isEditing) {
@@ -580,9 +584,9 @@ function SessionItem({
       <div className="sidebar-session-actions">
         <button
           className={`sidebar-session-pin ${session.pinned ? "pinned" : ""}`}
-          onClick={(e) => { e.stopPropagation(); }}
+          onClick={(e) => { e.stopPropagation(); onPin(); }}
           title={session.pinned ? S.sidebar.unpinProject[lang] : S.sidebar.pinProject[lang]}
-        >📌</button>
+        >{session.pinned ? "📍" : "📌"}</button>
         <button
           className="sidebar-session-delete"
           onClick={(e) => { e.stopPropagation(); onDelete(); }}

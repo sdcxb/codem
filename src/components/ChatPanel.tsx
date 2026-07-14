@@ -1,9 +1,10 @@
-import { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useAppStore, MessageAttachment } from "../store";
 import { useProjectStore } from "../core/store";
 import { MessageBubble } from "./MessageBubble";
 import { InputArea } from "./InputArea";
 import { SelectionTooltip } from "./SelectionTooltip";
+import { Tooltip, TooltipTrigger, TooltipContent } from "./ui/tooltip";
 import type { CollaborationMode } from "../core/agent/agent";
 import { AgentPanel } from "./AgentPanel";
 import { AgentDetail } from "./AgentDetail";
@@ -253,17 +254,71 @@ export function ChatPanel({ onSend, onCancel, onToggleSidebar, onFork, onRegener
               )}
             </div>
           )}
-          {messages.map((msg, index) => (
+          {messages.map((msg, index) => {
+            // Determine if this is the last assistant message in the current Q&A turn.
+            let isLastInTurn = false;
+            if (msg.role === "assistant") {
+              isLastInTurn = true;
+              for (let i = index + 1; i < messages.length; i++) {
+                if (messages[i].role === "user") break;
+                if (messages[i].role === "assistant") {
+                  isLastInTurn = false;
+                  break;
+                }
+              }
+            }
+            // Determine turn boundary: a new turn starts at each user message.
+            let isTurnEnd = false;
+            if (index === messages.length - 1) {
+              isTurnEnd = true;
+            } else if (messages[index + 1].role === "user") {
+              isTurnEnd = true;
+            }
+            // Check if this turn has any assistant response (walk backwards to find user start)
+            let isTurnWithResponse = false;
+            if (isTurnEnd) {
+              for (let j = index; j >= 0; j--) {
+                if (messages[j].role === "user") break;
+                if (messages[j].role === "assistant") { isTurnWithResponse = true; break; }
+              }
+            }
+
+            return (
+            <React.Fragment key={msg.id}>
             <MessageBubble
-              key={msg.id}
               message={msg}
               index={index}
-              onFork={onFork}
               showReasoning={showReasoning}
               onDeleteFiles={(files) => handleDeleteFiles(msg.id, files)}
-              onRegenerate={onRegenerate}
+              isLastInTurn={isLastInTurn}
             />
-          ))}
+            {isTurnEnd && !isStreaming && (
+              <div className="qa-turn-footer">
+                {onFork && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button className="qa-turn-btn" onClick={() => onFork(index)}>
+                        🔀
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent>{S.bubble.fork[lang]}</TooltipContent>
+                  </Tooltip>
+                )}
+                {onRegenerate && isTurnWithResponse && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button className="qa-turn-btn" onClick={() => onRegenerate(index)}>
+                        🔄
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent>{S.bubble.regenerate[lang]}</TooltipContent>
+                  </Tooltip>
+                )}
+              </div>
+            )}
+            </React.Fragment>
+            );
+          })}
           {isStreaming && (
             <StreamingTimer startTime={streamStartTime} lang={lang} llmStatus={llmStatus} />
           )}

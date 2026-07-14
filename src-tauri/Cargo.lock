@@ -517,7 +517,7 @@ dependencies = [
 
 [[package]]
 name = "codem"
-version = "0.79.9"
+version = "0.80.0"
 dependencies = [
  "base64 0.22.1",
  "futures-util",

@@ -58,6 +58,8 @@ export function MemoryManager({ onClose }: MemoryManagerProps) {
   const [editError, setEditError] = useState("");
 
   useEffect(() => {
+    // Reload from DB in case singleton was created before DB was ready
+    getMemoryService().reload();
     loadEntries();
   }, []);
 

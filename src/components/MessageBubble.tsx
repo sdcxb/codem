@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, memo, useMemo } from "react";
 import { Message } from "../store";
 import ReactMarkdown from "react-markdown";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
@@ -76,13 +76,13 @@ const COLLAPSE_THRESHOLD = 400;
 interface MessageBubbleProps {
   message: Message;
   index?: number;
-  onFork?: (messageIndex: number) => void;
   showReasoning?: boolean;
   onDeleteFiles?: (files: string[]) => void;
-  onRegenerate?: (messageIndex: number) => void;
+  /** true if this is the last assistant message in the current Q&A turn */
+  isLastInTurn?: boolean;
 }
 
-export function MessageBubble({ message, index, onFork, showReasoning = true, onDeleteFiles, onRegenerate }: MessageBubbleProps) {
+export const MessageBubble = memo(function MessageBubble({ message, index, showReasoning = true, onDeleteFiles, isLastInTurn }: MessageBubbleProps) {
   const lang = useLang();
   const [expanded, setExpanded] = useState(true);
   const [showAttachment, setShowAttachment] = useState<string | null>(null);
@@ -94,6 +94,66 @@ export function MessageBubble({ message, index, onFork, showReasoning = true, on
   const isUser = message.role === "user";
   const isSystem = message.role === "system";
   const isStreaming = message.status === "streaming";
+
+  // Memoize ReactMarkdown components config to prevent re-creation on every render
+  const markdownComponents = useMemo(() => ({
+    code({ className, children, ...props }: any) {
+      const match = /language-(\w+)/.exec(className || "");
+      const codeStr = String(children).replace(/\n$/, "");
+      if (match) {
+        return (
+          <div className="code-block">
+            <div className="code-header">
+              <span>{match[1]}</span>
+              <button
+                className="copy-btn"
+                onClick={() => navigator.clipboard.writeText(codeStr)}
+              >
+                {S.bubble.copy[lang]}
+              </button>
+            </div>
+            <SyntaxHighlighter
+              style={oneDark}
+              language={match[1]}
+              PreTag="div"
+            >
+              {codeStr}
+            </SyntaxHighlighter>
+          </div>
+        );
+      }
+      return (
+        <code className={className} {...props}>
+          {children}
+        </code>
+      );
+    },
+    a({ href, children, ...props }: any) {
+      return (
+        <a
+          {...props}
+          href={href}
+          onClick={(e: React.MouseEvent<HTMLAnchorElement>) => handleLinkClick(e, href || "")}
+          style={{ color: "var(--accent)", cursor: "pointer", textDecoration: "underline" }}
+        >
+          {children}
+        </a>
+      );
+    },
+    img({ src, alt, ...props }: any) {
+      return (
+        <img
+          src={src}
+          alt={alt || ""}
+          {...props}
+          style={{ maxWidth: "100%", borderRadius: 8, marginTop: 8, marginBottom: 8 }}
+          onError={(e) => {
+            console.error("[Image render error]", alt, src?.substring(0, 50));
+          }}
+        />
+      );
+    },
+  }), [lang]);
 
   // Check if content should be collapsible (after render, not during streaming)
   useEffect(() => {
@@ -149,65 +209,7 @@ export function MessageBubble({ message, index, onFork, showReasoning = true, on
         >
           <div className="message-content" ref={contentRef}>
             <ReactMarkdown
-              components={{
-                code({ className, children, ...props }) {
-                  const match = /language-(\w+)/.exec(className || "");
-                  const codeStr = String(children).replace(/\n$/, "");
-                  if (match) {
-                    return (
-                      <div className="code-block">
-                        <div className="code-header">
-                          <span>{match[1]}</span>
-                          <button
-                            className="copy-btn"
-                            onClick={() => navigator.clipboard.writeText(codeStr)}
-                          >
-                            {S.bubble.copy[lang]}
-                          </button>
-                        </div>
-                        <SyntaxHighlighter
-                          style={oneDark}
-                          language={match[1]}
-                          PreTag="div"
-                        >
-                          {codeStr}
-                        </SyntaxHighlighter>
-                      </div>
-                    );
-                  }
-                  return (
-                    <code className={className} {...props}>
-                      {children}
-                    </code>
-                  );
-                },
-                a({ href, children, ...props }) {
-                  return (
-                    <a
-                      {...props}
-                      href={href}
-                      onClick={(e) => handleLinkClick(e, href || "")}
-                      style={{ color: "var(--accent)", cursor: "pointer", textDecoration: "underline" }}
-                    >
-                      {children}
-                    </a>
-                  );
-                },
-                img({ src, alt, ...props }) {
-                  // Render images (including base64 data URLs from image_gen tool) inline
-                  return (
-                    <img
-                      src={src}
-                      alt={alt || ""}
-                      {...props}
-                      style={{ maxWidth: "100%", borderRadius: 8, marginTop: 8, marginBottom: 8 }}
-                      onError={(e) => {
-                        console.error("[Image render error]", alt, src?.substring(0, 50));
-                      }}
-                    />
-                  );
-                },
-              }}
+              components={markdownComponents}
             >
               {message.content}
             </ReactMarkdown>
@@ -361,32 +363,12 @@ export function MessageBubble({ message, index, onFork, showReasoning = true, on
                 <TooltipContent>{S.bubble.collapse[lang]}</TooltipContent>
               </Tooltip>
             )}
-            {onFork && index !== undefined && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button className="toolbar-btn" onClick={() => onFork(index)}>
-                    🔀
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent>{S.bubble.fork[lang]}</TooltipContent>
-              </Tooltip>
-            )}
-            {onRegenerate && index !== undefined && !isUser && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button className="toolbar-btn" onClick={() => onRegenerate(index)}>
-                    🔄
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent>{S.bubble.regenerate[lang]}</TooltipContent>
-              </Tooltip>
-            )}
           </div>
         )}
       </div>
     </div>
   );
-}
+});
 
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;

@@ -87,6 +87,7 @@
  *  13. 主题切换过渡不闪烁
  */
 import { describe, it, expect, beforeEach, vi } from "vitest";
+import type { Message } from "../store";
 
 // ===== 1. CSS 变量完整性测试 =====
 describe("批次 A: CSS 变量完整性", () => {
@@ -1164,9 +1165,14 @@ describe("三个已知问题修复验证（源码级）", () => {
       expect(chatPanelSrc).toMatch(/onRegenerate/);
     });
 
-    it("ChatPanel 将 onRegenerate 直接传递给 MessageBubble（不再 TODO）", () => {
-      expect(chatPanelSrc).toContain("onRegenerate={onRegenerate}");
-      expect(chatPanelSrc).not.toContain("TODO: implement regenerate");
+    it("ChatPanel 在轮次底部渲染 onRegenerate 按钮", () => {
+      expect(chatPanelSrc).toContain("isLastInTurn");
+      expect(chatPanelSrc).toContain("onRegenerate");
+    });
+
+    it("ChatPanel 在轮次底部渲染 onFork 按钮", () => {
+      expect(chatPanelSrc).toContain("onFork");
+      expect(chatPanelSrc).toContain("qa-turn-footer");
     });
 
     it("App.tsx 实现 handleRegenerate 函数", () => {
@@ -1174,12 +1180,14 @@ describe("三个已知问题修复验证（源码级）", () => {
       expect(appSrc).toContain("runAgenticLoop");
     });
 
-    it("handleRegenerate 查找最后一条 user 消息", () => {
+    it("handleRegenerate 从 messageIndex 向上查找 user 消息", () => {
       expect(appSrc).toContain('allMessages[i].role === "user"');
+      expect(appSrc).toContain("userIndex");
     });
 
-    it("handleRegenerate 截断消息并从 DB 删除", () => {
-      expect(appSrc).toContain("allMessages.slice(0, messageIndex)");
+    it("handleRegenerate 保留 user 消息，删除整轮 assistant 回答", () => {
+      expect(appSrc).toContain("allMessages.slice(0, userIndex + 1)");
+      expect(appSrc).toContain("allMessages.slice(userIndex + 1)");
       expect(appSrc).toContain("deleteMessagesByIds");
     });
 
@@ -1189,6 +1197,548 @@ describe("三个已知问题修复验证（源码级）", () => {
 
     it("handleSend 调用 runAgenticLoop（提取公共函数）", () => {
       expect(appSrc).toContain("await runAgenticLoop(message)");
+    });
+  });
+});
+
+// =========================================================================
+// 批次 E: 分叉/重新生成 Q&A 轮次架构重构测试
+// =========================================================================
+// 改动核心：
+//   1. fork 按钮只在 user 消息上显示
+//   2. regenerate 按钮只在轮次最后一条 assistant 消息上显示
+//   3. handleFork 分叉整个 Q&A 轮次（user + 所有后续 assistant）
+//   4. handleRegenerate 删除整轮 assistant 回答后重新执行
+// =========================================================================
+
+describe("批次 E: 分叉/重新生成 Q&A 轮次架构", () => {
+  const fs = require("fs");
+  const path = require("path");
+  const appSrc = fs.readFileSync(path.resolve(__dirname, "../App.tsx"), "utf-8");
+  const chatPanelSrc = fs.readFileSync(path.resolve(__dirname, "../components/ChatPanel.tsx"), "utf-8");
+
+  // ---- 辅助函数 ----
+  function makeMessages(): Message[] {
+    return [
+      // Turn 1: 用户提问A + 两段 assistant 回答
+      { id: "u1", role: "user", content: "问题A", timestamp: 1000, status: "done" },
+      { id: "a1", role: "assistant", content: "回答A-第一段", timestamp: 1001, status: "done" },
+      { id: "a2", role: "assistant", content: "回答A-第二段", timestamp: 1002, status: "done" },
+      // Turn 2: 用户提问B + 三段 assistant 回答
+      { id: "u2", role: "user", content: "问题B", timestamp: 2000, status: "done" },
+      { id: "a3", role: "assistant", content: "回答B-第一段", timestamp: 2001, status: "done" },
+      { id: "a4", role: "assistant", content: "回答B-第二段", timestamp: 2002, status: "done" },
+      { id: "a5", role: "assistant", content: "回答B-第三段", timestamp: 2003, status: "done" },
+    ];
+  }
+
+  // ===== E1: isLastInTurn 计算逻辑 =====
+  describe("E1: isLastInTurn 轮次末尾检测", () => {
+    function computeIsLastInTurn(messages: Message[], index: number): boolean {
+      if (messages[index].role !== "assistant") return false;
+      for (let i = index + 1; i < messages.length; i++) {
+        if (messages[i].role === "user") return true; // 下一条是 user → 当前是末尾
+        if (messages[i].role === "assistant") return false; // 还有后续 assistant → 不是末尾
+      }
+      return true; // 后面没有消息了 → 是末尾
+    }
+
+    it("Turn 1 的最后一条 assistant（index=2, a2）是 isLastInTurn", () => {
+      const msgs = makeMessages();
+      expect(computeIsLastInTurn(msgs, 2)).toBe(true);
+    });
+
+    it("Turn 1 的第一条 assistant（index=1, a1）不是 isLastInTurn", () => {
+      const msgs = makeMessages();
+      expect(computeIsLastInTurn(msgs, 1)).toBe(false);
+    });
+
+    it("Turn 2 的最后一条 assistant（index=6, a5）是 isLastInTurn", () => {
+      const msgs = makeMessages();
+      expect(computeIsLastInTurn(msgs, 6)).toBe(true);
+    });
+
+    it("Turn 2 的第一条 assistant（index=4, a3）不是 isLastInTurn", () => {
+      const msgs = makeMessages();
+      expect(computeIsLastInTurn(msgs, 4)).toBe(false);
+    });
+
+    it("Turn 2 的中间 assistant（index=5, a4）不是 isLastInTurn", () => {
+      const msgs = makeMessages();
+      expect(computeIsLastInTurn(msgs, 5)).toBe(false);
+    });
+
+    it("user 消息永远不是 isLastInTurn（返回 false）", () => {
+      const msgs = makeMessages();
+      expect(computeIsLastInTurn(msgs, 0)).toBe(false);
+      expect(computeIsLastInTurn(msgs, 3)).toBe(false);
+    });
+
+    it("只有一条 assistant 消息时，它就是 isLastInTurn", () => {
+      const msgs: Message[] = [
+        { id: "u1", role: "user", content: "Q", timestamp: 1, status: "done" },
+        { id: "a1", role: "assistant", content: "A", timestamp: 2, status: "done" },
+      ];
+      expect(computeIsLastInTurn(msgs, 1)).toBe(true);
+    });
+
+    it("assistant 后跟 system 消息时仍为 isLastInTurn", () => {
+      const msgs: Message[] = [
+        { id: "u1", role: "user", content: "Q", timestamp: 1, status: "done" },
+        { id: "a1", role: "assistant", content: "A", timestamp: 2, status: "done" },
+        { id: "s1", role: "system", content: "system msg", timestamp: 3, status: "done" },
+      ];
+      // system 不是 user 也不是 assistant → 不阻断 isLastInTurn
+      expect(computeIsLastInTurn(msgs, 1)).toBe(true);
+    });
+  });
+
+  // ===== E2: handleFork 整轮分叉逻辑 =====
+  describe("E2: handleFork 整轮分叉逻辑", () => {
+    function computeForkSlice(sourceMessages: Message[], messageIndex: number): Message[] {
+      // 模拟 App.tsx 中的 fork 逻辑
+      let endIdx = sourceMessages.length;
+      for (let i = messageIndex + 1; i < sourceMessages.length; i++) {
+        if (sourceMessages[i].role === "user") {
+          endIdx = i;
+          break;
+        }
+      }
+      return sourceMessages.slice(0, endIdx);
+    }
+
+    it("从 Turn 1 的 user 消息分叉 → 包含整个 Turn 1（user+a1+a2）", () => {
+      const msgs = makeMessages();
+      const forked = computeForkSlice(msgs, 0);
+      expect(forked).toHaveLength(3);
+      expect(forked[0].id).toBe("u1");
+      expect(forked[1].id).toBe("a1");
+      expect(forked[2].id).toBe("a2");
+    });
+
+    it("从 Turn 2 的 user 消息分叉 → 包含 Turn 1 + Turn 2 全部", () => {
+      const msgs = makeMessages();
+      const forked = computeForkSlice(msgs, 3);
+      expect(forked).toHaveLength(7);
+      expect(forked[0].id).toBe("u1");
+      expect(forked[6].id).toBe("a5");
+    });
+
+    it("分叉不会截断到中间段（不会只取 user 不取回答）", () => {
+      const msgs = makeMessages();
+      const forked = computeForkSlice(msgs, 0);
+      // 确保包含了回答消息，而不只是 user 消息本身
+      expect(forked.length).toBeGreaterThan(1);
+      expect(forked.some(m => m.role === "assistant")).toBe(true);
+    });
+
+    it("只有单轮对话时分叉包含所有消息", () => {
+      const msgs: Message[] = [
+        { id: "u1", role: "user", content: "Q", timestamp: 1, status: "done" },
+        { id: "a1", role: "assistant", content: "A1", timestamp: 2, status: "done" },
+        { id: "a2", role: "assistant", content: "A2", timestamp: 3, status: "done" },
+      ];
+      const forked = computeForkSlice(msgs, 0);
+      expect(forked).toHaveLength(3);
+    });
+
+    it("最后一条消息是 user 消息时分叉到末尾", () => {
+      const msgs: Message[] = [
+        { id: "u1", role: "user", content: "Q1", timestamp: 1, status: "done" },
+        { id: "a1", role: "assistant", content: "A1", timestamp: 2, status: "done" },
+        { id: "u2", role: "user", content: "Q2", timestamp: 3, status: "done" },
+      ];
+      const forked = computeForkSlice(msgs, 2);
+      expect(forked).toHaveLength(3);
+      expect(forked[2].id).toBe("u2");
+    });
+  });
+
+  // ===== E3: handleRegenerate 整轮重跑逻辑 =====
+  describe("E3: handleRegenerate 整轮重跑逻辑", () => {
+    function computeRegenerateSlice(allMessages: Message[], messageIndex: number) {
+      // 模拟 App.tsx 中的 regenerate 逻辑
+      let userMessage = "";
+      let userIndex = -1;
+      for (let i = messageIndex; i >= 0; i--) {
+        if (allMessages[i].role === "user") {
+          userMessage = allMessages[i].content;
+          userIndex = i;
+          break;
+        }
+      }
+      if (userIndex === -1) return null;
+      const idsToDelete = allMessages.slice(userIndex + 1).map(m => m.id);
+      const remainingMessages = allMessages.slice(0, userIndex + 1);
+      return { userMessage, userIndex, idsToDelete, remainingMessages };
+    }
+
+    it("从 Turn 2 最后一条（a5, index=6）regenerate → 删除整个 Turn 2 回答", () => {
+      const msgs = makeMessages();
+      const result = computeRegenerateSlice(msgs, 6);
+      expect(result).not.toBeNull();
+      expect(result!.userMessage).toBe("问题B");
+      expect(result!.userIndex).toBe(3);
+      // 删除 a3, a4, a5
+      expect(result!.idsToDelete).toEqual(["a3", "a4", "a5"]);
+      // 保留 u1, a1, a2, u2
+      expect(result!.remainingMessages).toHaveLength(4);
+      expect(result!.remainingMessages[3].id).toBe("u2");
+    });
+
+    it("从 Turn 1 最后一条（a2, index=2）regenerate → 删除 Turn 1 回答及后续所有轮次", () => {
+      const msgs = makeMessages();
+      const result = computeRegenerateSlice(msgs, 2);
+      expect(result).not.toBeNull();
+      expect(result!.userMessage).toBe("问题A");
+      expect(result!.userIndex).toBe(0);
+      // 删除 a1, a2, u2, a3, a4, a5（user 之后全部，包括后续轮次）
+      expect(result!.idsToDelete).toEqual(["a1", "a2", "u2", "a3", "a4", "a5"]);
+      // 只保留 u1
+      expect(result!.remainingMessages).toHaveLength(1);
+    });
+
+    it("从 Turn 1 中间段（a1, index=1）regenerate → 仍删除整个 Turn 1 回答", () => {
+      const msgs = makeMessages();
+      const result = computeRegenerateSlice(msgs, 1);
+      expect(result).not.toBeNull();
+      expect(result!.userMessage).toBe("问题A");
+      expect(result!.userIndex).toBe(0);
+      // 删除从 user 之后的所有消息：a1, a2, u2, a3, a4, a5
+      expect(result!.idsToDelete).toHaveLength(6);
+    });
+
+    it("regenerate 不会只删一段回答（永远删除整轮）", () => {
+      const msgs = makeMessages();
+      // 即使从 a4（Turn 2 中间段）触发，也会删除 user 后全部
+      const result = computeRegenerateSlice(msgs, 5);
+      expect(result!.userIndex).toBe(3);
+      expect(result!.idsToDelete).toHaveLength(3); // a3, a4, a5
+    });
+
+    it("只有单轮对话时 regenerate 删除全部 assistant", () => {
+      const msgs: Message[] = [
+        { id: "u1", role: "user", content: "Q", timestamp: 1, status: "done" },
+        { id: "a1", role: "assistant", content: "A1", timestamp: 2, status: "done" },
+        { id: "a2", role: "assistant", content: "A2", timestamp: 3, status: "done" },
+      ];
+      const result = computeRegenerateSlice(msgs, 2);
+      expect(result!.userMessage).toBe("Q");
+      expect(result!.idsToDelete).toEqual(["a1", "a2"]);
+      expect(result!.remainingMessages).toHaveLength(1);
+    });
+  });
+
+  // ===== E4: MessageBubble 按钮显示条件 =====
+  describe("E4: MessageBubble 按钮显示条件", () => {
+    it("MessageBubble 不再包含 fork 按钮（已移到轮次容器）", () => {
+      const src = fs.readFileSync(
+        path.resolve(__dirname, "../components/MessageBubble.tsx"),
+        "utf-8"
+      );
+      expect(src).not.toContain('onFork');
+    });
+
+    it("MessageBubble 不再包含 regenerate 按钮（已移到轮次容器）", () => {
+      const src = fs.readFileSync(
+        path.resolve(__dirname, "../components/MessageBubble.tsx"),
+        "utf-8"
+      );
+      expect(src).not.toContain('onRegenerate');
+    });
+
+    it("MessageBubble 接口包含 isLastInTurn prop", () => {
+      const src = fs.readFileSync(
+        path.resolve(__dirname, "../components/MessageBubble.tsx"),
+        "utf-8"
+      );
+      expect(src).toContain("isLastInTurn?: boolean");
+    });
+
+    it("MessageBubble 保留复制、折叠、删除文件按钮", () => {
+      const src = fs.readFileSync(
+        path.resolve(__dirname, "../components/MessageBubble.tsx"),
+        "utf-8"
+      );
+      expect(src).toContain('handleCopyMessage');
+      expect(src).toContain('contentCollapsed');
+      expect(src).toContain('onDeleteFiles');
+    });
+  });
+
+  // ===== E5: ChatPanel isLastInTurn 计算 =====
+  describe("E5: ChatPanel isLastInTurn 计算", () => {
+    it("源码包含 isLastInTurn 计算逻辑", () => {
+      const src = fs.readFileSync(
+        path.resolve(__dirname, "../components/ChatPanel.tsx"),
+        "utf-8"
+      );
+      expect(src).toContain("isLastInTurn");
+      expect(src).toContain("msg.role === \"assistant\"");
+    });
+
+    it("源码包含向后扫描逻辑", () => {
+      const src = fs.readFileSync(
+        path.resolve(__dirname, "../components/ChatPanel.tsx"),
+        "utf-8"
+      );
+      // 向后扫描直到遇到 user 或 assistant
+      expect(src).toContain("for (let i = index + 1");
+      expect(src).toContain("messages[i].role === \"user\"");
+    });
+
+    it("ChatPanel 在轮次底部渲染 onFork 按钮", () => {
+      const src = fs.readFileSync(
+        path.resolve(__dirname, "../components/ChatPanel.tsx"),
+        "utf-8"
+      );
+      expect(src).toContain('onFork');
+      expect(src).toContain('qa-turn-footer');
+    });
+
+    it("ChatPanel 在轮次底部渲染 onRegenerate 按钮", () => {
+      const src = fs.readFileSync(
+        path.resolve(__dirname, "../components/ChatPanel.tsx"),
+        "utf-8"
+      );
+      expect(src).toContain('onRegenerate');
+      expect(src).toContain('qa-turn-footer');
+    });
+
+    it("isLastInTurn prop 传递给 MessageBubble", () => {
+      const src = fs.readFileSync(
+        path.resolve(__dirname, "../components/ChatPanel.tsx"),
+        "utf-8"
+      );
+      expect(src).toContain("isLastInTurn={isLastInTurn}");
+    });
+  });
+
+  // ===== E6: App.tsx handleFork 整轮分叉 =====
+  describe("E6: App.tsx handleFork 整轮分叉", () => {
+    it("源码包含 endIdx 计算逻辑", () => {
+      expect(appSrc).toContain("endIdx");
+      expect(appSrc).toContain("sourceMessages.length");
+    });
+
+    it("源码包含查找下一条 user 消息的逻辑", () => {
+      expect(appSrc).toContain('sourceMessages[i].role === "user"');
+    });
+
+    it("源码使用 slice(0, endIdx) 而非 slice(0, messageIndex + 1)", () => {
+      expect(appSrc).toContain("slice(0, endIdx)");
+      expect(appSrc).not.toContain("slice(0, messageIndex + 1)");
+    });
+  });
+
+  // ===== E7: App.tsx handleRegenerate 整轮重跑 =====
+  describe("E7: App.tsx handleRegenerate 整轮重跑", () => {
+    it("源码从 messageIndex 向上搜索 user 消息", () => {
+      expect(appSrc).toContain("for (let i = messageIndex; i >= 0; i--)");
+    });
+
+    it("源码使用 userIndex 保存用户消息索引", () => {
+      expect(appSrc).toContain("userIndex");
+    });
+
+    it("源码删除 user 之后的所有消息（slice(userIndex + 1)）", () => {
+      expect(appSrc).toContain("allMessages.slice(userIndex + 1)");
+    });
+
+    it("源码保留 user 消息（slice(0, userIndex + 1)）", () => {
+      expect(appSrc).toContain("allMessages.slice(0, userIndex + 1)");
+    });
+
+    it("源码不再使用 slice(0, messageIndex) 截断", () => {
+      expect(appSrc).not.toContain("allMessages.slice(0, messageIndex)");
+    });
+
+    it("源码调用 runAgenticLoop 重跑", () => {
+      expect(appSrc).toContain("await runAgenticLoop(userMessage)");
+    });
+  });
+
+  // ===== E8: 工具调用 + 子智能体场景验证 =====
+  describe("E8: 工具调用 + 子智能体场景", () => {
+    it("多轮工具调用场景: 一个 user 产生多段含 toolCalls 的 assistant", () => {
+      const msgs: Message[] = [
+        { id: "u1", role: "user", content: "读文件A和文件B", timestamp: 1, status: "done" },
+        {
+          id: "a1", role: "assistant", content: "正在读取文件...", timestamp: 2, status: "done",
+          toolCalls: [{ id: "tc1", tool: "read", args: { path: "A" }, status: "done", result: "contentA" }],
+        },
+        {
+          id: "a2", role: "assistant", content: "正在读取文件B...", timestamp: 3, status: "done",
+          toolCalls: [{ id: "tc2", tool: "read", args: { path: "B" }, status: "done", result: "contentB" }],
+        },
+        { id: "a3", role: "assistant", content: "两个文件读取完毕", timestamp: 4, status: "done" },
+      ];
+
+      // 验证 isLastInTurn 只在 a3
+      function computeIsLastInTurn(messages: Message[], index: number): boolean {
+        if (messages[index].role !== "assistant") return false;
+        for (let i = index + 1; i < messages.length; i++) {
+          if (messages[i].role === "user") return true;
+          if (messages[i].role === "assistant") return false;
+        }
+        return true;
+      }
+      expect(computeIsLastInTurn(msgs, 1)).toBe(false); // a1 不是末尾
+      expect(computeIsLastInTurn(msgs, 2)).toBe(false); // a2 不是末尾
+      expect(computeIsLastInTurn(msgs, 3)).toBe(true);  // a3 是末尾
+    });
+
+    it("子智能体场景: spawn_subagent 后产生多段 assistant", () => {
+      const msgs: Message[] = [
+        { id: "u1", role: "user", content: "用子智能体搜索", timestamp: 1, status: "done" },
+        {
+          id: "a1", role: "assistant", content: "正在启动子智能体...", timestamp: 2, status: "done",
+          toolCalls: [{ id: "tc1", tool: "spawn_subagent", args: { type: "explore", task: "搜索" }, status: "done", result: "SUBAGENT_TASK_ID:task-1" }],
+        },
+        { id: "a2", role: "assistant", content: "等待子智能体结果...", timestamp: 3, status: "done" },
+        { id: "a3", role: "assistant", content: "子智能体完成，结果如下：...", timestamp: 4, status: "done" },
+      ];
+
+      // fork 应包含 u1 + a1 + a2 + a3（完整轮次）
+      function computeForkSlice(sourceMessages: Message[], messageIndex: number): Message[] {
+        let endIdx = sourceMessages.length;
+        for (let i = messageIndex + 1; i < sourceMessages.length; i++) {
+          if (sourceMessages[i].role === "user") { endIdx = i; break; }
+        }
+        return sourceMessages.slice(0, endIdx);
+      }
+      const forked = computeForkSlice(msgs, 0);
+      expect(forked).toHaveLength(4);
+      expect(forked.some(m => m.toolCalls?.some(tc => tc.tool === "spawn_subagent"))).toBe(true);
+    });
+
+    it("regenerate 子智能体轮次: 删除全部含 spawn_subagent 的消息", () => {
+      const msgs: Message[] = [
+        { id: "u1", role: "user", content: "Q", timestamp: 1, status: "done" },
+        {
+          id: "a1", role: "assistant", content: "A1", timestamp: 2, status: "done",
+          toolCalls: [{ id: "tc1", tool: "spawn_subagent", args: {}, status: "done", result: "SUBAGENT_TASK_ID:1" }],
+        },
+        { id: "a2", role: "assistant", content: "A2", timestamp: 3, status: "done" },
+      ];
+      // 从 a2 (index=2) regenerate
+      let userIndex = -1;
+      for (let i = 2; i >= 0; i--) {
+        if (msgs[i].role === "user") { userIndex = i; break; }
+      }
+      const idsToDelete = msgs.slice(userIndex + 1).map(m => m.id);
+      expect(idsToDelete).toEqual(["a1", "a2"]);
+      // 确保包含 spawn_subagent 的消息被删除
+      expect(idsToDelete).toContain("a1");
+    });
+  });
+
+  // ===== E9: 边界条件 =====
+  describe("E9: 边界条件", () => {
+    it("空消息列表时 fork 不崩溃", () => {
+      const msgs: Message[] = [];
+      let endIdx = msgs.length;
+      for (let i = 0 + 1; i < msgs.length; i++) {
+        if (msgs[i].role === "user") { endIdx = i; break; }
+      }
+      const forked = msgs.slice(0, endIdx);
+      expect(forked).toHaveLength(0);
+    });
+
+    it("只有 user 消息没有回答时 fork 只包含 user", () => {
+      const msgs: Message[] = [
+        { id: "u1", role: "user", content: "Q", timestamp: 1, status: "done" },
+      ];
+      let endIdx = msgs.length;
+      for (let i = 1; i < msgs.length; i++) {
+        if (msgs[i].role === "user") { endIdx = i; break; }
+      }
+      const forked = msgs.slice(0, endIdx);
+      expect(forked).toHaveLength(1);
+    });
+
+    it("system 消息不影响轮次计算", () => {
+      const msgs: Message[] = [
+        { id: "u1", role: "user", content: "Q1", timestamp: 1, status: "done" },
+        { id: "s1", role: "system", content: "记忆已提取", timestamp: 2, status: "done" },
+        { id: "a1", role: "assistant", content: "A1", timestamp: 3, status: "done" },
+      ];
+      // isLastInTurn: a1 后面无消息 → true
+      function computeIsLastInTurn(messages: Message[], index: number): boolean {
+        if (messages[index].role !== "assistant") return false;
+        for (let i = index + 1; i < messages.length; i++) {
+          if (messages[i].role === "user") return true;
+          if (messages[i].role === "assistant") return false;
+        }
+        return true;
+      }
+      expect(computeIsLastInTurn(msgs, 2)).toBe(true);
+      // fork: 从 u1 fork → 包含 s1 + a1（system 不阻断）
+      let endIdx = msgs.length;
+      for (let i = 1; i < msgs.length; i++) {
+        if (msgs[i].role === "user") { endIdx = i; break; }
+      }
+      const forked = msgs.slice(0, endIdx);
+      expect(forked).toHaveLength(3);
+    });
+
+    it("连续两个 user 消息（中间无 assistant）时 fork 正确", () => {
+      const msgs: Message[] = [
+        { id: "u1", role: "user", content: "Q1", timestamp: 1, status: "done" },
+        { id: "u2", role: "user", content: "Q2", timestamp: 2, status: "done" },
+        { id: "a1", role: "assistant", content: "A2", timestamp: 3, status: "done" },
+      ];
+      // 从 u1 fork → 下一条 user 是 u2，所以 fork 只包含 u1
+      let endIdx = msgs.length;
+      for (let i = 1; i < msgs.length; i++) {
+        if (msgs[i].role === "user") { endIdx = i; break; }
+      }
+      const forked = msgs.slice(0, endIdx);
+      expect(forked).toHaveLength(1);
+      expect(forked[0].id).toBe("u1");
+    });
+
+    it("流式状态时 regenerate 被阻止", () => {
+      // App.tsx 中 handleRegenerate 第一行检查 isStreaming
+      expect(appSrc).toMatch(/if \(!currentSession \|\| isStreaming\) return/);
+    });
+  });
+
+  // ===== E10: 消息反馈（toolbar 其他按钮不受影响） =====
+  describe("E10: 消息反馈工具栏不受影响", () => {
+    it("复制按钮仍在所有非流式消息上显示", () => {
+      const src = fs.readFileSync(
+        path.resolve(__dirname, "../components/MessageBubble.tsx"),
+        "utf-8"
+      );
+      expect(src).toContain("handleCopyMessage");
+      expect(src).toContain("📋");
+    });
+
+    it("折叠/展开按钮不受 isLastInTurn 影响", () => {
+      const src = fs.readFileSync(
+        path.resolve(__dirname, "../components/MessageBubble.tsx"),
+        "utf-8"
+      );
+      expect(src).toContain("contentCollapsed");
+      expect(src).toContain("COLLAPSE_THRESHOLD");
+    });
+
+    it("工具栏整体显示条件不变（!isStreaming && !isSystem && content）", () => {
+      const src = fs.readFileSync(
+        path.resolve(__dirname, "../components/MessageBubble.tsx"),
+        "utf-8"
+      );
+      expect(src).toContain("!isStreaming && !isSystem && message.content");
+    });
+
+    it("删除文件按钮不受影响", () => {
+      const src = fs.readFileSync(
+        path.resolve(__dirname, "../components/MessageBubble.tsx"),
+        "utf-8"
+      );
+      expect(src).toContain("onDeleteFiles");
+      expect(src).toContain("showFilesConfirm");
     });
   });
 });

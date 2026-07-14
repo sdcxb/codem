@@ -108,6 +108,7 @@ CREATE TABLE IF NOT EXISTS sessions (
   created_at INTEGER NOT NULL,
   last_message_at INTEGER NOT NULL,
   message_count INTEGER DEFAULT 0,
+  pinned INTEGER DEFAULT 0,
   FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
 );
 
@@ -240,11 +241,12 @@ export async function initDatabase(): Promise<SqlJsDatabase> {
   db.run(SCHEMA);
 
   // Migrations
-  const migrations = [
-    "ALTER TABLE messages ADD COLUMN reasoning TEXT",
-    "ALTER TABLE messages ADD COLUMN generated_files TEXT",
-    "ALTER TABLE projects ADD COLUMN pinned INTEGER DEFAULT 0",
-  ];
+const migrations = [
+"ALTER TABLE messages ADD COLUMN reasoning TEXT",
+"ALTER TABLE messages ADD COLUMN generated_files TEXT",
+"ALTER TABLE projects ADD COLUMN pinned INTEGER DEFAULT 0",
+"ALTER TABLE sessions ADD COLUMN pinned INTEGER DEFAULT 0",
+];
   for (const sql of migrations) {
     try { db.run(sql); } catch (e) { /* column already exists */ }
   }

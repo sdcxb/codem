@@ -893,9 +893,10 @@ request: PermissionRequest;
   };
 
   /**
-   * Regenerate the assistant response at the given message index.
-   * Truncates messages from that index onwards, finds the last user
-   * message, and re-runs the agentic loop.
+   * Regenerate the assistant response for the current Q&A turn.
+   * Called from the LAST assistant message in a turn. Finds the user message
+   * that started this turn, deletes ALL assistant messages in the turn,
+   * and re-runs the agentic loop from that user message.
    */
   const handleRegenerate = async (messageIndex: number) => {
     if (!currentSession || isStreaming) return;
@@ -903,21 +904,23 @@ request: PermissionRequest;
     const allMessages = useAppStore.getState().messages;
     if (messageIndex < 0 || messageIndex >= allMessages.length) return;
 
-    // Find the last user message before the assistant message at messageIndex
+    // Find the user message that started this turn (search backwards from messageIndex)
     let userMessage = "";
-    for (let i = messageIndex - 1; i >= 0; i--) {
+    let userIndex = -1;
+    for (let i = messageIndex; i >= 0; i--) {
       if (allMessages[i].role === "user") {
         userMessage = allMessages[i].content;
+        userIndex = i;
         break;
       }
     }
-    if (!userMessage) return;
+    if (!userMessage || userIndex === -1) return;
 
-    // Collect message IDs to delete (from messageIndex onwards)
-    const idsToDelete = allMessages.slice(messageIndex).map((m) => m.id);
+    // Collect message IDs to delete (all messages AFTER the user message = entire assistant response)
+    const idsToDelete = allMessages.slice(userIndex + 1).map((m) => m.id);
 
-    // Truncate messages in store
-    useAppStore.setState({ messages: allMessages.slice(0, messageIndex) });
+    // Truncate messages in store: keep everything up to and including the user message
+    useAppStore.setState({ messages: allMessages.slice(0, userIndex + 1) });
 
     // Delete removed messages from DB
     if (idsToDelete.length > 0) {
@@ -1110,7 +1113,16 @@ request: PermissionRequest;
                     // Fork messages from SQLite via MessageStorage
                     const sourceMessages = MessageStorage.listMessages(currentSession.id);
                     if (sourceMessages.length > 0) {
-                      const forkedMessages = sourceMessages.slice(0, messageIndex + 1);
+                      // Fork the entire Q&A turn: from the user message at messageIndex
+                      // through all subsequent assistant messages until the next user message.
+                      let endIdx = sourceMessages.length;
+                      for (let i = messageIndex + 1; i < sourceMessages.length; i++) {
+                        if (sourceMessages[i].role === "user") {
+                          endIdx = i;
+                          break;
+                        }
+                      }
+                      const forkedMessages = sourceMessages.slice(0, endIdx);
                       const forkTs = Date.now();
                       for (const msg of forkedMessages) {
                         // Generate new IDs to avoid conflicts with source messages

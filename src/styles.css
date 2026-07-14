@@ -906,8 +906,59 @@ body {
   padding: 16px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 2px;
   background: var(--bg-primary);
+}
+
+/* ========== Q&A Turn Container ========== */
+/* Visual grouping: messages in the same turn are separated from other turns
+   by a subtle border line. The fork/regenerate buttons appear on hover. */
+.qa-turn-footer {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 0 6px;
+  margin-bottom: 14px;
+  border-bottom: 1px solid var(--border-secondary);
+}
+
+/* Buttons hidden by default, shown on hover */
+.qa-turn-footer .qa-turn-btn {
+  opacity: 0;
+  transition: opacity var(--duration-fast) ease;
+}
+
+/* Show buttons when hovering the preceding message or the footer itself */
+.message:hover + .qa-turn-footer .qa-turn-btn,
+.qa-turn-footer:hover .qa-turn-btn {
+  opacity: 1;
+}
+
+/* Last turn: always show buttons at reduced opacity */
+.qa-turn-footer:last-of-type .qa-turn-btn {
+  opacity: 0.5;
+}
+
+.qa-turn-btn {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  background: transparent;
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-full);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: var(--transition-color);
+}
+
+.qa-turn-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  border-color: var(--accent);
 }
 
 .empty-state {
@@ -938,6 +989,11 @@ body {
   display: flex;
   gap: 12px;
   max-width: 85%;
+  /* Performance: skip rendering work for off-screen messages */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 120px;
+  /* Performance: limit browser reflow scope to this element */
+  contain: content;
 }
 
 .message.user {

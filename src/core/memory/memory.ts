@@ -45,18 +45,24 @@ export class MemoryService {
     this.load();
   }
 
-  /** Load memory from SQLite */
-  private load() {
-    try {
-      const data = loadMemory();
-      if (data) {
-        const parsed = JSON.parse(data);
-        for (const [id, entry] of Object.entries(parsed)) {
-          this.entries.set(id, entry as MemoryEntry);
-        }
-      }
-    } catch {}
-  }
+/** Load memory from SQLite */
+private load() {
+try {
+const data = loadMemory();
+if (data) {
+const parsed = JSON.parse(data);
+for (const [id, entry] of Object.entries(parsed)) {
+this.entries.set(id, entry as MemoryEntry);
+}
+}
+} catch {}
+}
+
+/** Reload memory from SQLite (call when DB is ready) */
+reload() {
+this.entries.clear();
+this.load();
+}
 
   /** Save memory to SQLite */
   private save() {

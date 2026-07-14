@@ -17,6 +17,7 @@ export interface Session {
   messageCount: number;
   model?: string;
   attachments?: Attachment[];
+  pinned?: boolean;
 }
 
 export interface Attachment {

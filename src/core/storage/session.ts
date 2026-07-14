@@ -9,6 +9,7 @@ export interface SessionRow {
   created_at: number;
   last_message_at: number;
   message_count: number;
+  pinned: number;
 }
 
 function rowToSession(row: SessionRow): Session {
@@ -20,6 +21,7 @@ function rowToSession(row: SessionRow): Session {
     createdAt: row.created_at,
     lastMessageAt: row.last_message_at,
     messageCount: row.message_count,
+    pinned: row.pinned === 1,
   };
 }
 
@@ -32,13 +34,14 @@ function rowToSessionFromAny(row: any[]): Session {
     created_at: row[4] as number,
     last_message_at: row[5] as number,
     message_count: row[6] as number,
+    pinned: row[7] as number ?? 0,
   });
 }
 
 export function listSessions(projectId: string): Session[] {
   const db = getDatabase();
   const result = db.exec(
-    "SELECT * FROM sessions WHERE project_id = ? ORDER BY last_message_at DESC",
+    "SELECT * FROM sessions WHERE project_id = ? ORDER BY pinned DESC, last_message_at DESC",
     [projectId]
   );
   if (result.length === 0) return [];
@@ -55,7 +58,7 @@ export function getSession(id: string): Session | null {
 export function createSession(session: Session): void {
   const db = getDatabase();
   db.run(
-    "INSERT INTO sessions (id, project_id, title, model, created_at, last_message_at, message_count) VALUES (?, ?, ?, ?, ?, ?, ?)",
+    "INSERT INTO sessions (id, project_id, title, model, created_at, last_message_at, message_count, pinned) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
     [
       session.id,
       session.projectId,
@@ -64,6 +67,7 @@ export function createSession(session: Session): void {
       session.createdAt,
       session.lastMessageAt,
       session.messageCount,
+      session.pinned ? 1 : 0,
     ]
   );
   persistDatabase();
@@ -78,6 +82,7 @@ export function updateSession(id: string, update: Partial<Session>): void {
   if (update.model !== undefined) { fields.push("model = ?"); values.push(update.model ?? null); }
   if (update.lastMessageAt !== undefined) { fields.push("last_message_at = ?"); values.push(update.lastMessageAt); }
   if (update.messageCount !== undefined) { fields.push("message_count = ?"); values.push(update.messageCount); }
+  if (update.pinned !== undefined) { fields.push("pinned = ?"); values.push(update.pinned ? 1 : 0); }
 
   if (fields.length === 0) return;
   values.push(id);
@@ -89,6 +94,17 @@ export function deleteSession(id: string): void {
   const db = getDatabase();
   db.run("DELETE FROM sessions WHERE id = ?", [id]);
   persistDatabase();
+}
+
+/** Atomically toggle the pinned state of a session */
+export function togglePinned(id: string): boolean {
+  const db = getDatabase();
+  const result = db.exec("SELECT pinned FROM sessions WHERE id = ?", [id]);
+  const current = result.length > 0 && result[0].values.length > 0 ? (result[0].values[0][0] as number) : 0;
+  const newPinned = current === 1 ? 0 : 1;
+  db.run("UPDATE sessions SET pinned = ? WHERE id = ?", [newPinned, id]);
+  persistDatabase();
+  return newPinned === 1;
 }
 
 export function searchSessions(query: string): Session[] {
