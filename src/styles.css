@@ -6258,3 +6258,38 @@ border-bottom: 1px solid var(--accent);
   color: var(--text-primary);
   background: var(--bg-hover);
 }
+
+/* ========== Display Mode (uses agent-toggle styles) ========== */
+
+/* ========== Unified Mode Separator ========== */
+.unified-separator {
+  height: 1px;
+  background: linear-gradient(to right, transparent, var(--border-primary), transparent);
+  margin: 12px 0;
+  border: none;
+}
+
+/* ========== Unified Mode Reasoning (collapsed by default) ========== */
+.unified-mode .reasoning-block {
+  margin-top: 8px;
+}
+.unified-mode .reasoning-content {
+  max-height: 300px;
+  overflow-y: auto;
+  font-size: 12px;
+  color: var(--text-secondary);
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* ========== Unified Mode Tool Calls (collapsed by default) ========== */
+.unified-mode .tool-calls {
+  margin-top: 8px;
+}
+.unified-mode .tool-list {
+  max-height: 400px;
+  overflow-y: auto;
+}

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { useAppStore, MessageAttachment } from "../store";
+import { useAppStore, MessageAttachment, type Message } from "../store";
 import { useProjectStore } from "../core/store";
 import { MessageBubble } from "./MessageBubble";
 import { InputArea } from "./InputArea";
@@ -65,7 +65,7 @@ interface ChatPanelProps {
 
 export function ChatPanel({ onSend, onCancel, onToggleSidebar, onFork, onRegenerate, connected, model, onModelChange, mode = "cli", providerId = "mimo", collaborationMode = "default", onModeChange, projectPath }: ChatPanelProps) {
   const lang = useLang();
-  const { messages, isStreaming, removeGeneratedFiles, hasMoreMessages, isLoadingMore, loadMoreMessages, stepProgress, streamStartTime, llmStatus } = useAppStore();
+  const { messages, isStreaming, removeGeneratedFiles, hasMoreMessages, isLoadingMore, loadMoreMessages, stepProgress, streamStartTime, llmStatus, displayMode, setDisplayMode } = useAppStore();
   const { currentSession, currentProject } = useProjectStore();
   const [showModelPicker, setShowModelPicker] = useState(false);
   const [showReasoning, setShowReasoning] = useState(true);
@@ -227,6 +227,15 @@ export function ChatPanel({ onSend, onCancel, onToggleSidebar, onFork, onRegener
         >
           📊
         </button>
+        <button
+          className={`agent-toggle ${displayMode === "unified" ? "active" : ""}`}
+          onClick={() => setDisplayMode(displayMode === "segmented" ? "unified" : "segmented")}
+          title={displayMode === "segmented"
+            ? S.chat.unifiedMode[lang] + " — " + S.chat.unifiedModeHint[lang]
+            : S.chat.segmentedMode[lang] + " — " + S.chat.segmentedModeHint[lang]}
+        >
+          {displayMode === "segmented" ? "⛓" : "🔗"}
+        </button>
         <span className={`status-dot ${connected ? "connected" : "disconnected"}`}>
           {connected ? "●" : "○"}
         </span>
@@ -254,11 +263,63 @@ export function ChatPanel({ onSend, onCancel, onToggleSidebar, onFork, onRegener
               )}
             </div>
           )}
-          {messages.map((msg, index) => {
+          {/* In unified mode, merge consecutive assistant messages into one visual bubble.
+              DB keeps separate messages per iteration (for LLM context clarity),
+              but the UI merges them so the user sees one unified response. */}
+          {(() => {
+            const isUnified = displayMode === "unified";
+            // Build render list: each entry is either a single message or a merged group
+            const renderList: { msg: Message; skip: boolean; isLastInGroup: boolean }[] = [];
+            for (let i = 0; i < messages.length; i++) {
+              const msg = messages[i];
+              if (isUnified && msg.role === "assistant") {
+                // Check if this is the start of a consecutive assistant group
+                const prevMsg = messages[i - 1];
+                const isGroupStart = !prevMsg || prevMsg.role !== "assistant";
+                if (isGroupStart) {
+                  // Collect all consecutive assistant messages
+                  const group: Message[] = [msg];
+                  let lastIdx = i;
+                  for (let j = i + 1; j < messages.length; j++) {
+                    if (messages[j].role !== "assistant") break;
+                    group.push(messages[j]);
+                    lastIdx = j;
+                  }
+                  // Create merged message
+                  const merged: Message = {
+                    ...msg,
+                    id: msg.id, // keep first message's ID
+                    content: group.map(m => m.content).filter(Boolean).join("\n\n---\n\n"),
+                    reasoning: group.map(m => m.reasoning).filter(Boolean).join("\n\n---\n\n") || undefined,
+                    toolCalls: group.flatMap(m => m.toolCalls || []),
+                    status: group[group.length - 1].status,
+                    generatedFiles: group.flatMap(m => m.generatedFiles || []).length > 0
+                      ? group.flatMap(m => m.generatedFiles || [])
+                      : undefined,
+                  };
+                  renderList.push({ msg: merged, skip: false, isLastInGroup: true });
+                  // Mark intermediate messages as skipped
+                  for (let j = i + 1; j <= lastIdx; j++) {
+                    renderList.push({ msg: messages[j], skip: true, isLastInGroup: j === lastIdx });
+                  }
+                  i = lastIdx; // skip to end of group
+                } else {
+                  // Already handled by group start
+                  renderList.push({ msg, skip: true, isLastInGroup: false });
+                }
+              } else {
+                renderList.push({ msg, skip: false, isLastInGroup: false });
+              }
+            }
+
+            return renderList.map(({ msg, skip }, index) => {
+            if (skip) return null;
+
             // Determine if this is the last assistant message in the current Q&A turn.
             let isLastInTurn = false;
             if (msg.role === "assistant") {
               isLastInTurn = true;
+              // In unified mode, check the original messages array
               for (let i = index + 1; i < messages.length; i++) {
                 if (messages[i].role === "user") break;
                 if (messages[i].role === "assistant") {
@@ -318,7 +379,8 @@ export function ChatPanel({ onSend, onCancel, onToggleSidebar, onFork, onRegener
             )}
             </React.Fragment>
             );
-          })}
+          });
+          })()}
           {isStreaming && (
             <StreamingTimer startTime={streamStartTime} lang={lang} llmStatus={llmStatus} />
           )}

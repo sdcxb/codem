@@ -157,3 +157,70 @@
 - **版本**：0.80.0 → 0.80.1
 - **新增依赖**：`@tauri-apps/plugin-notification`、`@tauri-apps/api`、Rust `tauri-plugin-notification`
 - **兼容性**：向后兼容
+
+---
+
+# v0.80.2 - 显示模式切换 + 子智能体调用修复
+
+## 🎯 核心改进
+
+### 1. 显示模式切换（分段/统一）
+
+**功能**：在 ChatPanel header 右侧添加模式切换按钮（⛓/🔗），支持两种回答显示风格：
+
+1. **分段模式（segmented）**：每个 agentic loop 迭代是独立消息气泡，各自有 reasoning 窗口和 toolCall 窗口
+2. **统一模式（unified，默认）**：所有迭代累积到同一条消息气泡，所有回答文本在一个窗口、reasoning 统一折叠面板（默认折叠）、工具调用统一列表，各迭代间有细分隔线
+
+**关键实现决策**：
+- DB 存储按分段模式（每轮独立消息，LLM 上下文清晰），UI 渲染时在统一模式下将连续的 assistant 消息合并为一个气泡
+- 这样既保证了 LLM 上下文的迭代边界清晰（避免工具调用混淆），又实现了统一模式的视觉体验
+- `MessageBubble.tsx` 完全不用改，合并逻辑在 `ChatPanel.tsx` 的渲染层完成
+
+**改动文件**：
+- `store.ts`：新增 `displayMode` 状态 + `setDisplayMode` action，默认值 `"unified"`
+- `App.tsx`：`runAgenticLoop` 的 `case "start"` 分流逻辑（统一/分段一致，均为每轮创建新消息）
+- `MessageBubble.tsx`：unified 模式下默认折叠 reasoning 和 toolCalls
+- `ChatPanel.tsx`：header 添加切换按钮 + 渲染层合并连续 assistant 消息
+- `styles.css`：`.unified-separator` 分隔线样式
+- `i18n/lang.ts`：新增 `unifiedMode`/`segmentedMode`/`unifiedModeHint`/`segmentedModeHint` 字符串
+
+### 2. 子智能体调用修复（wait_for_subagent 无限循环）
+
+**问题背景**：统一模式下，LLM 重复调用 `wait_for_subagent`，导致工具调用列表中出现 10+ 次重复的 wait 调用，主任务无法继续。
+
+**根因分析**：
+- 统一模式最初将所有迭代的工具调用累积到同一条 DB 消息中，LLM 看到一个巨大的消息包含所有工具调用和结果，导致 LLM 混淆，重复调用
+- 缓存命中的工具调用仍被计入 `toolCallsInIteration`，导致循环认为"有工具调用"而永不触发停止条件
+- 单响应去重只检查同一次响应内的重复，未检查跨迭代的缓存
+
+**修复方案**（多层防护）：
+1. **DB 存储统一**：统一模式也按分段模式创建新消息，LLM 上下文与分段模式一致
+2. **跨迭代去重**：单响应去重增加跨迭代缓存检查，已收集过的 `wait_for_subagent` 直接跳过
+3. **cacheHitCount 机制**：跟踪每次迭代中有多少工具调用是缓存命中（无新工作），如果全部是缓存命中则设 `toolCallsInIteration = 0`，触发停止条件检查
+4. **run() 不覆盖缓存零值**：`executeIteration` 设为 0 后，`run()` 不会用原始 `tool_start` 计数覆盖回非零值
+
+**改动文件**：
+- `src/core/llm/agentic-loop.ts`：`cacheHitCount` 计数器 + 跨迭代去重 + `run()` 保护逻辑
+- `src/App.tsx`：`case "start"` 统一/分段一致
+
+### 3. 任务完整性检查增强
+
+**问题**：用户要求"汇总子智能体的结果，追加到 test3.txt"，但 LLM 在收集完子智能体结果后就停止了，没有执行写入操作。
+
+**根因**：`checkTaskCompleteness` 的 `asksToWrite` 正则缺少"追加"、"输出到"、"写到"等关键词，导致写入检查未触发。
+
+**修复**：
+- `asksToWrite` 正则增加 `追加|输出到|写到` 关键词
+- 新增 `asksToAggregate` 检查：用户要求"汇总/总结/合并"且要求写入文件但未执行时，注入额外提醒
+
+### 4. 显示模式按钮 UI 优化
+
+- 按钮从最右侧移到上下文监控按钮（📊）旁边
+- 当前模式可视化：统一模式（🔗）高亮显示（active 状态），分段模式（⛓）无高亮
+- 统一使用 `agent-toggle` 样式类，移除独立的 `.display-mode-toggle` 样式
+
+## 📦 升级信息
+
+- **版本**：0.80.1 → 0.80.2
+- **兼容性**：向后兼容
+- **默认模式**：统一模式（unified）成为默认显示模式

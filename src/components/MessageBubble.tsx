@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, memo, useMemo } from "react";
-import { Message } from "../store";
+import { Message, useAppStore } from "../store";
 import ReactMarkdown from "react-markdown";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
@@ -96,8 +96,10 @@ interface MessageBubbleProps {
 }
 
 export const MessageBubble = memo(function MessageBubble({ message, index, showReasoning = true, onDeleteFiles, isLastInTurn }: MessageBubbleProps) {
-  const lang = useLang();
-  const [expanded, setExpanded] = useState(true);
+const lang = useLang();
+  const displayMode = useAppStore((s) => s.displayMode);
+  const [expanded, setExpanded] = useState(displayMode !== "unified");
+  const [toolsExpanded, setToolsExpanded] = useState(displayMode !== "unified");
   const [showAttachment, setShowAttachment] = useState<string | null>(null);
   const [showFilesConfirm, setShowFilesConfirm] = useState(false);
   const [contentCollapsed, setContentCollapsed] = useState(false);
@@ -188,7 +190,7 @@ export const MessageBubble = memo(function MessageBubble({ message, index, showR
   }, [message.content]);
 
   return (
-    <div className={`message ${isUser ? "user" : isSystem ? "system" : "assistant"}`}>
+    <div className={`message ${isUser ? "user" : isSystem ? "system" : "assistant"} ${displayMode === "unified" ? "unified-mode" : ""}`}>
       <div className="message-avatar">
         {isUser ? "👤" : isSystem ? "⚙️" : "🤖"}
       </div>
@@ -222,7 +224,10 @@ export const MessageBubble = memo(function MessageBubble({ message, index, showR
         >
           <div className="message-content" ref={contentRef}>
             <ReactMarkdown
-              components={markdownComponents}
+              components={{
+                ...markdownComponents,
+                hr: () => <div className="unified-separator" />,
+              }}
             >
               {message.content}
             </ReactMarkdown>
@@ -260,11 +265,11 @@ export const MessageBubble = memo(function MessageBubble({ message, index, showR
           <div className="tool-calls">
             <button
               className="tool-toggle"
-              onClick={() => setExpanded(!expanded)}
+              onClick={() => setToolsExpanded(!toolsExpanded)}
             >
-              🔧 {message.toolCalls.length} {S.bubble.toolCalls[lang]} {expanded ? "▼" : "▶"}
+              🔧 {message.toolCalls.length} {S.bubble.toolCalls[lang]} {toolsExpanded ? "▼" : "▶"}
             </button>
-            {expanded && (
+            {toolsExpanded && (
               <div className="tool-list">
                 {message.toolCalls.map((tc) => {
                   // Check if this is a spawn_subagent with a task ID

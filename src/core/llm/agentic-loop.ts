@@ -496,8 +496,15 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
           // The task ID will be in the tool result, extract it later
         }
       }
-      this.state.toolCallsInIteration = iterationToolCalls;
-      console.log(`[AgenticLoop] Iteration ${this.state.iteration} completed: ${iterationToolCalls} tool calls, ${this.state.consecutiveErrors} consecutive errors`);
+      // Don't overwrite toolCallsInIteration if executeIteration already
+      // determined that ALL tool calls were cache hits (set to 0).
+      // iterationToolCounts counts raw tool_start events (before cache detection),
+      // so it would incorrectly restore a non-zero value and prevent the loop
+      // from checking stop conditions.
+      if (this.state.toolCallsInIteration > 0) {
+        this.state.toolCallsInIteration = iterationToolCalls;
+      }
+      console.log(`[AgenticLoop] Iteration ${this.state.iteration} completed: ${iterationToolCalls} tool calls (effective: ${this.state.toolCallsInIteration}), ${this.state.consecutiveErrors} consecutive errors`);
       // S4: If a write was rejected by the user, stop the loop immediately
       // This prevents the LLM from retrying the write in subsequent iterations
       if (this.state.writeRejected) {
@@ -815,7 +822,16 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
       // Deduplicate wait_for_subagent with the same task_id
       if (tc.name === "wait_for_subagent") {
         const taskId = tc.input?.task_id as string;
+        // Within-response dedup: same task_id called multiple times in one response
         if (taskId && seenWaitTaskIds.has(taskId)) {
+          duplicateToolCalls.push(tc);
+          continue;
+        }
+        // Cross-iteration dedup: task_id already collected in a previous iteration.
+        // This prevents the LLM from re-waiting on completed sub-agents across
+        // iterations, which was the root cause of the "infinite wait" loop.
+        if (taskId && this.waitedSubagents.has(taskId)) {
+          console.warn(`[AgenticLoop] Single-response dedup: wait_for_subagent(${taskId}) already collected in previous iteration — skipping`);
           duplicateToolCalls.push(tc);
           continue;
         }
@@ -826,10 +842,14 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
     if (duplicateToolCalls.length > 0) {
       console.warn(`[AgenticLoop] Removed ${duplicateToolCalls.length} duplicate tool calls in same response`);
       for (const dtc of duplicateToolCalls) {
+        const isCrossIterWait = dtc.name === "wait_for_subagent" &&
+          this.waitedSubagents.has(dtc.input?.task_id as string);
         yield {
           type: "tool_error",
           toolCall: dtc,
-          error: "Skipped: Duplicate tool call in one response. This was automatically filtered out to prevent redundant operations.",
+          error: isCrossIterWait
+            ? `Skipped: wait_for_subagent for this task was already called in a previous iteration. The result was already collected. Do NOT call wait_for_subagent for this task again. Proceed to the next step (e.g., write the output file).`
+            : "Skipped: Duplicate tool call in one response. This was automatically filtered out to prevent redundant operations.",
         };
       }
       currentToolCalls = dedupedToolCalls;
@@ -878,6 +898,10 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
 
     // Execute tools
     this.state.toolCallsInIteration = currentToolCalls.length;
+    // Track how many tool calls were cache hits (no new work done).
+    // If ALL tool calls in this iteration were cache hits, we treat it as
+    // a no-op iteration so the loop can check stop conditions and exit.
+    let cacheHitCount = 0;
     // Notify UI that we've transitioned from LLM streaming to tool execution
     yield { type: "llm_status", status: "executing_tools" };
 
@@ -997,6 +1021,7 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
         if ((name === "read" || name === "read_file") && filePath && this.readCache.has(filePath)) {
           const cached = this.readCache.get(filePath)!;
           console.log(`[AgenticLoop] Cache hit for read ${filePath} — returning cached content`);
+          cacheHitCount++;
           return {
             id: "",
             name,
@@ -1013,6 +1038,7 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
           const newContent = typeof args.content === "string" ? args.content : "";
           if (lastWritten === newContent) {
             console.log(`[AgenticLoop] Skipping duplicate write to ${filePath} — identical content`);
+            cacheHitCount++;
             return {
               id: "",
               name,
@@ -1036,6 +1062,7 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
           if (taskId && this.waitedSubagents.has(taskId)) {
             const cachedResult = this.waitedSubagents.get(taskId)!;
             console.warn(`[AgenticLoop] wait_for_subagent(${taskId}) CACHE HIT — already collected in iteration ${this.state.iteration}`);
+            cacheHitCount++;
             return {
               id: "",
               name,
@@ -1120,6 +1147,16 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
           this.state.consecutiveErrors++;
           break;
       }
+    }
+
+    // If ALL tool calls in this iteration were cache hits (no new work done),
+    // treat as a no-op iteration so the main loop checks stop conditions.
+    // This prevents infinite loops where the LLM repeatedly calls wait_for_subagent
+    // (or read/write) for already-completed tasks — the cache returns results but
+    // the loop never stops because toolCallsInIteration > 0.
+    if (cacheHitCount > 0 && cacheHitCount === this.state.toolCallsInIteration) {
+      console.log(`[AgenticLoop] All ${cacheHitCount} tool calls were cache hits — treating as no-op iteration`);
+      this.state.toolCallsInIteration = 0;
     }
   }
 
@@ -1640,9 +1677,9 @@ ${truncatedConv}`;
     const zh = /[\u4e00-\u9fa5]/.test(userMessage);
     const missing: string[] = [];
 
-    // Check: user asked to save/write/create a file, but no write tool was called
+    // Check: user asked to save/write/create/append a file, but no write tool was called
     const asksToWrite =
-      /save|write|create|保存|写入|创建|生成|另存/.test(msg) &&
+      /save|write|create|保存|写入|创建|生成|另存|追加|输出到|写到/.test(msg) &&
       /\.(txt|md|json|js|ts|py|rs|csv|xml|html|css|yaml|yml|toml)/.test(msg);
     const hasWritten = this.toolsCalledInRun.has("write") ||
       this.toolsCalledInRun.has("edit") ||
@@ -1669,6 +1706,18 @@ ${truncatedConv}`;
       missing.push(zh
         ? `用户要求使用子智能体来完成任务，但你没有调用 spawn_subagent 工具。请立即使用 spawn_subagent 工具派发子智能体。`
         : `The user asked to use sub-agents, but you didn't call spawn_subagent. Please use spawn_subagent now to delegate the work.`
+      );
+    }
+
+    // Check: user asked to summarize/aggregate results, but no write was called
+    // This catches cases like "汇总...追加到..." where the aggregation implies writing
+    const asksToAggregate =
+      /汇总|总结|合并|aggregate|summarize|combine/.test(msg);
+    if (asksToAggregate && asksToWrite && !hasWritten) {
+      // Already covered by asksToWrite check above, but add extra emphasis
+      missing.push(zh
+        ? `用户要求汇总子智能体的结果并写入文件，但你还没有执行写入操作。请立即使用 write 工具将汇总结果写入目标文件。`
+        : `The user asked to aggregate sub-agent results and write to a file, but you haven't written yet. Please use the write tool now.`
       );
     }
 

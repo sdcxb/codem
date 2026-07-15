@@ -66,6 +66,7 @@ interface AppState {
   agentActivities: AgentActivity[];
   streamStartTime: number | null;
   llmStatus: LLMStatus;
+  displayMode: "segmented" | "unified";
 
   addMessage: (msg: Message) => void;
   updateMessage: (id: string, update: Partial<Message>) => void;
@@ -87,6 +88,7 @@ interface AppState {
   clearAgentActivities: () => void;
   setStreamStartTime: (time: number | null) => void;
   setLLMStatus: (status: LLMStatus) => void;
+  setDisplayMode: (mode: "segmented" | "unified") => void;
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -101,6 +103,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   agentActivities: [],
   streamStartTime: null,
   llmStatus: "idle" as LLMStatus,
+  displayMode: "unified" as "segmented" | "unified",
 
   addMessage: (msg) => {
     set((s) => {
@@ -216,4 +219,5 @@ export const useAppStore = create<AppState>((set, get) => ({
   clearAgentActivities: () => set({ agentActivities: [], streamStartTime: null }),
   setStreamStartTime: (time) => set({ streamStartTime: time }),
   setLLMStatus: (status) => set({ llmStatus: status }),
+  setDisplayMode: (mode) => set({ displayMode: mode }),
 }));

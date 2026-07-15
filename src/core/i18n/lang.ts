@@ -98,6 +98,8 @@ search: { zh: "搜索", en: "Search" },
     expandInput: { zh: "展开输入框", en: "Expand input" },
     collapseInput: { zh: "收起输入框", en: "Collapse input" },
     disabledHint: { zh: "AI 正在处理中，请等待完成或点击 ■ 取消", en: "AI is working, wait or click ■ to cancel" },
+    segmented: { zh: "分段模式", en: "Segmented" },
+    unified: { zh: "统一模式", en: "Unified" },
   },
 
   // Settings panel
@@ -190,6 +192,10 @@ search: { zh: "搜索", en: "Search" },
     emptyTitle: { zh: "开始对话，让我帮你写代码", en: "Start a conversation, let me help you code" },
     connecting: { zh: "正在连接服务器...", en: "Connecting to server..." },
     thinking: { zh: "思考中...", en: "Thinking..." },
+    segmentedMode: { zh: "分段模式", en: "Segmented" },
+    unifiedMode: { zh: "统一模式", en: "Unified" },
+    segmentedModeHint: { zh: "每轮迭代独立显示", en: "Each iteration shown separately" },
+    unifiedModeHint: { zh: "所有内容合并显示", en: "All content merged into one" },
   },
 
   // InputArea

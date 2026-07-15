@@ -700,7 +700,7 @@ describe("批次 B: 工具调用 + 子智能体状态链路不受影响", () => 
   });
 
   it("非 spawn_subagent 工具不解析 task ID", () => {
-    const tool = "read";
+    const tool: string = "read";
     const result = "file content here";
     const subagentTaskId = tool === "spawn_subagent" && result?.startsWith("SUBAGENT_TASK_ID:")
       ? result.split("\n")[0].replace("SUBAGENT_TASK_ID:", "")
@@ -924,7 +924,7 @@ describe("批次 A-D: 边界场景推演", () => {
     // quoteContext 清除只清 banner，input 中的文本保留
     // 这是设计决策：用户可能已经编辑了引用文本
     let input = "> 引用内容\n\n";
-    let quoteContext = "引用内容";
+    let quoteContext: string | null = "引用内容";
     // 清除 quoteContext
     quoteContext = null;
     // input 不变
@@ -1835,8 +1835,10 @@ describe("批次 F: 子智能体状态 + 全局对话 + 性能 + 通知", () => 
 
   // ===== F5: 任务完成通知 =====
   describe("F5: 任务完成通知", () => {
-    it("App.tsx 检测 document.visibilityState", () => {
-      expect(appSrc).toContain("visibilityState");
+    it("App.tsx 使用 windowVisibleRef 追踪窗口可见性", () => {
+      expect(appSrc).toContain("windowVisibleRef");
+      expect(appSrc).toContain("blur");
+      expect(appSrc).toContain("focus");
     });
 
     it("App.tsx 调用 win.show 和 win.setFocus", () => {

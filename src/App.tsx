@@ -23,7 +23,7 @@ import { DiffViewer } from "./components/DiffViewer";
 import { useAppStore } from "./store";
 import { useProjectStore } from "./core/store";
 import { loadAppIdentity } from "./core/config/loader";
-import { AppIdentity } from "./core/types";
+import { AppIdentity, type Session } from "./core/types";
 import { getLLMEngine } from "./core/llm";
 import { getMiMoAuth } from "./core/auth/mimo";
 import type { PermissionRequest, PermissionResult } from "./core/permission/permission";
@@ -704,18 +704,23 @@ saveMessages(session.id);
             // clear iteration boundaries in its context. Previously all
             // iterations accumulated into one giant message, causing the LLM
             // to lose track of which tool results belonged to which iteration.
+            //
+            // Both unified and segmented modes create separate DB messages per
+            // iteration. The difference is purely visual: unified mode collapses
+            // reasoning and tool calls by default (handled in MessageBubble.tsx
+            // via displayMode === "unified" check).
             const iter = 'iteration' in event ? event.iteration : 1;
             if (iter > 1) {
-              // Finalize the previous assistant message
+              // Finalize previous, create new message — same for both modes
               flushStreamBuffer();
               if (useAppStore.getState().messages.find((m) => m.id === assistantMsgId)) {
                 useAppStore.getState().updateMessage(assistantMsgId, {
                   status: "done",
                   reasoning: reasoningContent || undefined,
                 } as any);
-if (session) {
-saveMessages(session.id);
-}
+                if (session) {
+                  saveMessages(session.id);
+                }
               }
               // Start a new assistant message for this iteration
               lastAssistantMsgId = assistantMsgId;
