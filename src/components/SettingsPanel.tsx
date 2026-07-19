@@ -10,6 +10,7 @@ import { getPermissionManager, type PermissionRule, type PermissionAction } from
 import { SECURITY_MODES, getGlobalSecurityMode, setGlobalSecurityMode, type SecurityMode } from "../core/permission/security-mode";
 import { MultimodalPanel } from "./MultimodalPanel";
 import { getNotebookConfig } from "../core/knowledge";
+import { SkinSelector } from "./SkinSelector";
 
 interface ProviderKey {
   id: string;
@@ -564,16 +565,7 @@ export function SettingsPanel({ onClose, onSessionRecovery, onUsageStats }: Sett
             <ModelProfilePanel onClose={() => setShowModelProfiles(false)} />
           )}
 
-          <div className="setting-group">
-            <label>{S.settings.theme[lang]}</label>
-            <select
-              value={settings.theme}
-              onChange={(e) => setSettings({ ...settings, theme: e.target.value as "dark" | "light" })}
-            >
-              <option value="dark">{S.settings.dark[lang]}</option>
-              <option value="light">{S.settings.light[lang]}</option>
-            </select>
-          </div>
+          <SkinSelector />
 
           <div className="setting-group">
             <label>语言 / Language</label>

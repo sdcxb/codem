@@ -33,6 +33,7 @@ import { getMiMoAuth } from "./core/auth/mimo";
 import type { PermissionRequest, PermissionResult } from "./core/permission/permission";
 import { initDatabase, resetDatabase } from "./core/storage";
 import { migrateFromLocalStorage } from "./core/storage/migration";
+import { ThemeManager } from "./core/theme";
 import { getSetting, setSetting, getSettingJSON } from "./core/storage/settings";
 import { setLang, useLang, S } from "./core/i18n/lang";
 import * as MessageStorage from "./core/storage/message";
@@ -245,6 +246,7 @@ request: PermissionRequest;
       try {
         await initDatabase();
         await migrateFromLocalStorage();
+        ThemeManager.init();
         useProjectStore.getState().loadFromDB();
       } catch (err) {
         console.error("[App] Init failed:", err);
