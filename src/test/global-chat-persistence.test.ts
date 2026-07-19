@@ -3,7 +3,7 @@ import { initDatabase, getDatabase } from "../core/storage/database";
 import * as MessageStorage from "../core/storage/message";
 import * as SessionStorage from "../core/storage/session";
 import * as ProjectStorage from "../core/storage/project";
-import type { Message } from "../core/types";
+import type { Message } from "../store";
 
 describe("全局对话持久化修复", () => {
   beforeEach(async () => {
