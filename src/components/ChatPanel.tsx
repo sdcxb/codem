@@ -48,7 +48,7 @@ const API_MODELS: Record<string, Array<{ id: string; name: string }>> = {
 };
 
 interface ChatPanelProps {
-  onSend: (message: string, attachments?: MessageAttachment[]) => void;
+  onSend: (message: string, attachments?: MessageAttachment[], selectedSkills?: string[]) => void;
   onCancel: () => void;
   onToggleSidebar: () => void;
   onFork?: (messageIndex: number) => void;
@@ -504,7 +504,7 @@ export function ChatPanel({ onSend, onCancel, onToggleSidebar, onFork, onRegener
         </div>
       )}
 
-      <InputArea onSend={(msg, atts) => { onSend(msg, atts); setQuoteContext(null); }} onCancel={onCancel} disabled={isStreaming || !connected} isStreaming={isStreaming} collaborationMode={collaborationMode} onModeChange={onModeChange || (() => {})} projectPath={projectPath} quoteContext={quoteContext} onClearQuote={() => setQuoteContext(null)} />
+      <InputArea onSend={(msg, atts, skills) => { onSend(msg, atts, skills); setQuoteContext(null); }} onCancel={onCancel} disabled={isStreaming || !connected} isStreaming={isStreaming} collaborationMode={collaborationMode} onModeChange={onModeChange || (() => {})} projectPath={projectPath} quoteContext={quoteContext} onClearQuote={() => setQuoteContext(null)} />
     </div>
   );
 }

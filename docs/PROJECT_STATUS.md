@@ -1,6 +1,6 @@
 # Codem 项目开发状态
 
-> 本文档供新对话快速理解项目当前状态。最后更新：v0.80.2（含显示模式切换 + 子智能体调用修复）
+> 本文档供新对话快速理解项目当前状态。最后更新：v0.85（含技能触发机制三层改造 + 附件系统重构 + 全局对话持久化修复）
 
 ## 项目概述
 
@@ -10,7 +10,7 @@
 - **存储**：SQLite（sql.js，通过 Tauri 文件系统持久化到 AppData）
 - **模型接入**：MiMo CLI（小米账户登录）+ OpenAI 兼容 API（多 Provider）
 - **GitHub**：https://github.com/sdcxb/codem
-- **当前版本**：v0.80.2（已发布 release）
+- **当前版本**：v0.85（已发布 release）
 
 ## 架构总览
 
@@ -122,16 +122,18 @@ App.tsx                    — 主应用，状态管理 + 事件处理
 | v0.80.1 | 2026-07-14 | 全局对话 + 任务通知 + 新建对话修复 + DB 防抖 |
 | 开发中 | 2026-07-15 | 显示模式切换（分段/统一）— 未提交未发版 |
 | v0.80.2 | 2026-07-15 | 显示模式切换 + 子智能体调用修复 + 任务完整性增强 |
+| v0.85 | 2026-07-19 | 技能触发三层改造 + 附件系统重构 + 全局对话持久化修复 + 技能市场 + Web搜索 |
 
 ## 未提交的改动
 
-当前工作区有 9 个文件的改动（v0.80.2），准备提交：
-- `src/App.tsx` — runAgenticLoop 统一/分段一致 + reasoning_delta 清理
-- `src/components/ChatPanel.tsx` — header 模式切换按钮 + 渲染层合并连续 assistant 消息
-- `src/components/MessageBubble.tsx` — unified 模式默认折叠
-- `src/core/i18n/lang.ts` — displayMode 字符串
-- `src/core/llm/agentic-loop.ts` — cacheHitCount + 跨迭代去重 + 任务完整性增强
-- `src/store.ts` — displayMode 状态（默认 unified）
-- `src/styles.css` — unified 模式样式
-- `src/test/ui-batch-a-d.test.ts` — 测试修复
-- `docs/CHANGELOG-v0.80.md` — 更新日志
+当前工作区已提交至 v0.85，包含以下主要改动：
+- 技能触发机制三层改造（Skills First Principle + forcePreload + 用户选择）
+- 附件系统全面重构（inline 预览 + 沙箱同步 + read_attachment 工具）
+- 全局对话持久化修复（FK 约束种子记录）
+- 侧边栏滚动修复
+- 技能市场 + 安装器
+- Phase D 高级技能（prompt-optimization + interactive）
+- 知识笔记本模块
+- Web 搜索集成
+- 提示词约束重构为运行时数据层约束
+- 新增 253 个测试用例（总计 1441 个）

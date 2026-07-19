@@ -1196,7 +1196,7 @@ describe("三个已知问题修复验证（源码级）", () => {
     });
 
 it("handleSend 调用 runAgenticLoop（提取公共函数）", () => {
-expect(appSrc).toContain("await runAgenticLoop(message, session)");
+expect(appSrc).toContain("await runAgenticLoop(message, session, selectedSkills)");
 });
   });
 });
@@ -1823,10 +1823,10 @@ describe("批次 F: 子智能体状态 + 全局对话 + 性能 + 通知", () => 
       expect(appSrc).toContain("useProjectStore.getState().currentSession");
     });
 
-    it("runAgenticLoop 接收 session 参数", () => {
-      expect(appSrc).toContain("runAgenticLoop(message, session)");
-      expect(appSrc).toContain("session: Session");
-    });
+it("runAgenticLoop 接收 session 参数", () => {
+expect(appSrc).toContain("runAgenticLoop(message, session, selectedSkills)");
+expect(appSrc).toContain("session: Session");
+});
 
     it("CLI session ID 使用 projId 兼容全局会话", () => {
       expect(appSrc).toContain("currentProject?.id ||");

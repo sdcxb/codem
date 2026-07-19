@@ -22,6 +22,9 @@ export interface MessageAttachment {
   preview?: string;
   mimeType?: string;
   size?: number;
+  /** Sandbox file path — when the attachment is synced to the workspace, this is the
+   * relative path (from workspace root) where the file can be read/grep'd by file tools. */
+  sandboxPath?: string;
 }
 
 export interface ToolCall {

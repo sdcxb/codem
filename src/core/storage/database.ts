@@ -149,10 +149,13 @@ CREATE TABLE IF NOT EXISTS tool_calls (
 CREATE TABLE IF NOT EXISTS attachments (
   id TEXT PRIMARY KEY,
   session_id TEXT NOT NULL,
+  message_id TEXT,
   name TEXT NOT NULL,
   type TEXT NOT NULL,
   path TEXT,
   content TEXT,
+  preview TEXT,
+  sandbox_path TEXT,
   mime_type TEXT,
   size INTEGER,
   added_at INTEGER NOT NULL,
@@ -222,6 +225,47 @@ CREATE TABLE IF NOT EXISTS cost_records (
   timestamp INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS notebooks (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  description TEXT,
+  summary TEXT,
+  summary_status TEXT DEFAULT 'pending',
+  source_count INTEGER DEFAULT 0,
+  chunk_count INTEGER DEFAULT 0,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS notebook_sources (
+  id TEXT PRIMARY KEY,
+  notebook_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  type TEXT NOT NULL,
+  content TEXT,
+  file_path TEXT,
+  url TEXT,
+  mime_type TEXT,
+  size INTEGER,
+  status TEXT DEFAULT 'pending',
+  chunk_count INTEGER DEFAULT 0,
+  error_message TEXT,
+  created_at INTEGER NOT NULL,
+  FOREIGN KEY (notebook_id) REFERENCES notebooks(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS notebook_chunks (
+  id TEXT PRIMARY KEY,
+  source_id TEXT NOT NULL,
+  notebook_id TEXT NOT NULL,
+  content TEXT NOT NULL,
+  chunk_index INTEGER NOT NULL,
+  embedding BLOB,
+  token_count INTEGER DEFAULT 0,
+  created_at INTEGER NOT NULL,
+  FOREIGN KEY (source_id) REFERENCES notebook_sources(id) ON DELETE CASCADE
+);
+
 CREATE INDEX IF NOT EXISTS idx_sessions_project ON sessions(project_id);
 CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id);
 CREATE INDEX IF NOT EXISTS idx_tool_calls_message ON tool_calls(message_id);
@@ -229,6 +273,9 @@ CREATE INDEX IF NOT EXISTS idx_attachments_session ON attachments(session_id);
 CREATE INDEX IF NOT EXISTS idx_accounts_active ON accounts(is_active);
 CREATE INDEX IF NOT EXISTS idx_cost_records_session ON cost_records(session_id);
 CREATE INDEX IF NOT EXISTS idx_cost_records_timestamp ON cost_records(timestamp);
+CREATE INDEX IF NOT EXISTS idx_notebook_sources_notebook ON notebook_sources(notebook_id);
+CREATE INDEX IF NOT EXISTS idx_notebook_chunks_notebook ON notebook_chunks(notebook_id);
+CREATE INDEX IF NOT EXISTS idx_notebook_chunks_source ON notebook_chunks(source_id);
 `;
 
 export async function initDatabase(): Promise<SqlJsDatabase> {
@@ -248,12 +295,27 @@ export async function initDatabase(): Promise<SqlJsDatabase> {
   db.run("PRAGMA foreign_keys = ON");
   db.run(SCHEMA);
 
+  // Seed a global project record (id="") so that global chat sessions
+  // (projectId="") satisfy the sessions.project_id foreign key constraint.
+  // Without this, createSession / createMessage silently fail for global chats.
+  try {
+    db.run(
+      "INSERT OR IGNORE INTO projects (id, name, path, description, pinned, created_at, last_accessed_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      ["", "全局对话", "", "Global chat (no project context)", 0, Date.now(), Date.now()]
+    );
+  } catch (e) {
+    console.warn("[Database] Failed to seed global project:", e);
+  }
+
   // Migrations
 const migrations = [
 "ALTER TABLE messages ADD COLUMN reasoning TEXT",
 "ALTER TABLE messages ADD COLUMN generated_files TEXT",
 "ALTER TABLE projects ADD COLUMN pinned INTEGER DEFAULT 0",
 "ALTER TABLE sessions ADD COLUMN pinned INTEGER DEFAULT 0",
+"ALTER TABLE attachments ADD COLUMN message_id TEXT",
+"ALTER TABLE attachments ADD COLUMN preview TEXT",
+"ALTER TABLE attachments ADD COLUMN sandbox_path TEXT",
 ];
   for (const sql of migrations) {
     try { db.run(sql); } catch (e) { /* column already exists */ }

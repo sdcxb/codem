@@ -618,13 +618,12 @@ async fn delete_file(path: String) -> Result<(), String> {
 
 #[tauri::command]
 async fn mimo_login() -> Result<serde_json::Value, String> {
-    eprintln!("[mimo_login] Starting...");
+    eprintln!("[mimo_login] Starting native OAuth (no external mimo.exe needed)...");
 
     let home = std::env::var("USERPROFILE")
         .or_else(|_| std::env::var("HOME"))
         .unwrap_or_default();
     let auth_path = std::path::Path::new(&home).join(".local").join("share").join("mimocode").join("auth.json");
-    eprintln!("[mimo_login] auth_path: {}", auth_path.display());
 
     // If auth.json already exists with a key, just return it
     if auth_path.exists() {
@@ -638,60 +637,160 @@ async fn mimo_login() -> Result<serde_json::Value, String> {
         }
     }
 
-    let mimo_path = which_mimo().ok_or("mimo.exe not found. Please install mimocode first.")?;
-    eprintln!("[mimo_login] mimo_path: {}", mimo_path);
+    // --- Native OAuth: X25519 ECDH + AES-256-GCM ---
+    use x25519_dalek::{EphemeralSecret, PublicKey};
+    use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+    use base64::Engine;
+    use sha2::{Sha256, Digest};
+    use aes_gcm::{Aes256Gcm, KeyInit, Nonce};
+    use aes_gcm::aead::Aead;
+    use rand::rngs::OsRng;
 
-    // Run mimo providers login
-    let mut cmd = std::process::Command::new(&mimo_path);
-    cmd.args(["providers", "login", "-p", "xiaomi"]);
-    #[cfg(target_os = "windows")]
-    {
-        use std::os::windows::process::CommandExt;
-        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
-    }
-    let child = cmd.spawn()
-        .map_err(|e| format!("Failed to start mimo login: {}", e))?;
-    eprintln!("[mimo_login] spawned mimo, waiting for auth.json...");
+    let platform_url = std::env::var("MIMO_PLATFORM_URL")
+        .unwrap_or_else(|_| "https://platform.xiaomimimo.com".to_string());
 
-    // Wait for auth.json (timeout 5 min)
+    // 1. Generate X25519 keypair
+    let mut rng = OsRng;
+    let secret = EphemeralSecret::random_from_rng(&mut rng);
+    let public_key = PublicKey::from(&secret);
+    let pk_base64 = URL_SAFE_NO_PAD.encode(public_key.to_bytes());
+
+    // 2. Start local TCP listener on a random port
+    let listener = std::net::TcpListener::bind("127.0.0.1:0")
+        .map_err(|e| format!("Failed to start local server: {}", e))?;
+    let port = listener.local_addr()
+        .map_err(|e| format!("Failed to get local address: {}", e))?
+        .port();
+    eprintln!("[mimo_login] Local callback server on port {}", port);
+
+    let redirect_uri = format!("http://localhost:{}/", port);
+    let key_name = hostname::get()
+        .ok()
+        .and_then(|h| h.into_string().ok())
+        .unwrap_or_else(|| "codem".to_string());
+
+    // 3. Build authorize URL
+    let auth_url = format!(
+        "{}/authorize?pk={}&redirect_uri={}&kn=mimocode&key_name={}",
+        platform_url,
+        URL_SAFE_NO_PAD.encode(pk_base64.as_bytes()),
+        URL_SAFE_NO_PAD.encode(redirect_uri.as_bytes()),
+        URL_SAFE_NO_PAD.encode(key_name.as_bytes()),
+    );
+    eprintln!("[mimo_login] Authorize URL: {}", auth_url);
+
+    // 4. Open browser
+    open::that(&auth_url)
+        .map_err(|e| format!("Failed to open browser: {}", e))?;
+
+    // 5. Wait for callback (timeout 5 minutes)
+    listener.set_nonblocking(false)
+        .map_err(|e| format!("Failed to set blocking mode: {}", e))?;
+
     let start = std::time::Instant::now();
-    loop {
+    let (mut stream, _addr) = loop {
         if start.elapsed().as_secs() > 300 {
             return Err("Login timeout after 5 minutes".to_string());
         }
-        if auth_path.exists() {
-            if let Ok(content) = std::fs::read_to_string(&auth_path) {
-                eprintln!("[mimo_login] auth.json found, content length: {}", content.len());
-                if let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) {
-                    if let Some(key) = json["xiaomi"]["key"].as_str() {
-                        eprintln!("[mimo_login] key found, length: {}", key.len());
-                        return Ok(serde_json::json!({ "success": true, "auth": json }));
-                    }
-                }
+        match listener.accept() {
+            Ok(conn) => break conn,
+            Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+            Err(e) => return Err(format!("Accept failed: {}", e)),
+        }
+    };
+
+    // 6. Read HTTP request
+    use std::io::Read;
+    let mut buf = [0u8; 8192];
+    let n = stream.read(&mut buf)
+        .map_err(|e| format!("Read failed: {}", e))?;
+    let request = String::from_utf8_lossy(&buf[..n]);
+    eprintln!("[mimo_login] Callback request: {} bytes", n);
+
+    // Parse the request line: GET /?u=xxx HTTP/1.1
+    let request_line = request.lines().next().unwrap_or("");
+    let path = request_line.split_whitespace().nth(1).unwrap_or("");
+
+    // Send redirect response
+    let response = format!(
+        "HTTP/1.1 302 Found\r\nLocation: {}/authorize/callback?status=success\r\nConnection: close\r\n\r\n",
+        platform_url
+    );
+    use std::io::Write;
+    let _ = stream.write_all(response.as_bytes());
+    let _ = stream.flush();
+
+    // 7. Extract and decrypt the `u` parameter
+    let query = path.split('?').nth(1).unwrap_or("");
+    let u_param: Option<&str> = query.split('&')
+        .find_map(|p| {
+            let mut parts = p.splitn(2, '=');
+            if parts.next()? == "u" { parts.next() } else { None }
+        });
+
+    let encrypted_b64 = u_param.ok_or("Missing 'u' parameter in callback")?;
+    let encrypted_data = URL_SAFE_NO_PAD.decode(encrypted_b64)
+        .or_else(|_| base64::engine::general_purpose::STANDARD_NO_PAD.decode(encrypted_b64))
+        .map_err(|e| format!("Failed to decode encrypted data: {}", e))?;
+
+    if encrypted_data.len() < 60 {
+        return Err("Encrypted data too short".to_string());
+    }
+
+    // Layout: [32 bytes ephemeral pubkey] [12 bytes nonce] [ciphertext] [16 bytes auth tag]
+    let ephemeral_pub_bytes: [u8; 32] = encrypted_data[..32]
+        .try_into()
+        .map_err(|_| "Invalid ephemeral public key".to_string())?;
+    let ephemeral_pub = PublicKey::from(ephemeral_pub_bytes);
+    let nonce_bytes = &encrypted_data[32..44];
+    let ciphertext_with_tag = &encrypted_data[44..];
+
+    // ECDH shared secret
+    let shared_secret = secret.diffie_hellman(&ephemeral_pub);
+    let aes_key = Sha256::digest(shared_secret.as_bytes());
+
+    // AES-256-GCM decrypt
+    let cipher = Aes256Gcm::new_from_slice(&aes_key)
+        .map_err(|e| format!("AES key init failed: {}", e))?;
+    let nonce = Nonce::from_slice(nonce_bytes);
+    let plaintext = cipher.decrypt(nonce, ciphertext_with_tag)
+        .map_err(|e| format!("Decryption failed: {}", e))?;
+
+    let json_str = String::from_utf8(plaintext)
+        .map_err(|e| format!("Decrypted data is not valid UTF-8: {}", e))?;
+    eprintln!("[mimo_login] Decrypted credential data");
+
+    let cred: serde_json::Value = serde_json::from_str(&json_str)
+        .map_err(|e| format!("Failed to parse credential JSON: {}", e))?;
+
+    let sk = cred["sk"].as_str()
+        .ok_or("Missing 'sk' in credential data")?;
+    let uid = cred["uid"].as_str().or(cred["uid"].as_i64().map(|_| "")).unwrap_or("");
+    let url = cred["url"].as_str().unwrap_or("https://api.xiaomimimo.com/v1");
+
+    // 8. Write auth.json
+    let auth_json = serde_json::json!({
+        "xiaomi": {
+            "type": "api",
+            "key": sk,
+            "metadata": {
+                "uid": uid,
+                "base_url": url
             }
         }
-        std::thread::sleep(std::time::Duration::from_millis(500));
-    }
-}
+    });
 
-fn which_mimo() -> Option<String> {
-    let candidates = vec![
-        "D:\\mimo\\mimo.exe".to_string(),
-        "mimo.exe".to_string(),
-    ];
-    for c in &candidates {
-        if std::path::Path::new(c).exists() {
-            return Some(c.clone());
-        }
+    if let Some(parent) = auth_path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("Failed to create auth dir: {}", e))?;
     }
-    if let Ok(output) = std::process::Command::new("where").arg("mimo").output() {
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let first_line = stdout.lines().next().unwrap_or("").trim();
-        if !first_line.is_empty() && std::path::Path::new(first_line).exists() {
-            return Some(first_line.to_string());
-        }
-    }
-    None
+    std::fs::write(&auth_path, serde_json::to_string_pretty(&auth_json).unwrap_or_default())
+        .map_err(|e| format!("Failed to write auth.json: {}", e))?;
+
+    eprintln!("[mimo_login] auth.json written successfully");
+    Ok(serde_json::json!({ "success": true, "auth": auth_json }))
 }
 
 // ========== System Tray & Window Close ==========
@@ -741,6 +840,90 @@ async fn update_tray_language(app: AppHandle, lang: String) -> Result<(), String
         tray.set_menu(Some(menu)).map_err(|e| e.to_string())?;
     }
     Ok(())
+}
+
+// ========== HTTP Proxy Commands (Skill Market) ==========
+
+/// Response structure for http_get command
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HttpResponse {
+    pub status: u16,
+    pub body: String,
+    pub headers: std::collections::HashMap<String, String>,
+}
+
+/// Performs an HTTP GET request through the Rust side (bypasses CSP restrictions).
+/// Used by the skill market to fetch repository listings and skill metadata.
+#[tauri::command]
+async fn http_get(
+    url: String,
+    headers: Option<std::collections::HashMap<String, String>>,
+) -> Result<HttpResponse, String> {
+    let client = reqwest::Client::builder()
+        .user_agent("Codem/1.0 (Skill Market)")
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    let mut req = client.get(&url);
+    if let Some(h) = headers {
+        for (k, v) in h {
+            req = req.header(k, v);
+        }
+    }
+
+    let resp = req.send().await.map_err(|e| e.to_string())?;
+    let status = resp.status().as_u16();
+
+    let mut resp_headers = std::collections::HashMap::new();
+    for (k, v) in resp.headers() {
+        if let Ok(val) = v.to_str() {
+            resp_headers.insert(k.as_str().to_string(), val.to_string());
+        }
+    }
+
+    let body = resp.text().await.map_err(|e| e.to_string())?;
+
+    Ok(HttpResponse { status, body, headers: resp_headers })
+}
+
+/// Downloads a file from a URL and saves it to the specified local path.
+/// Used by the skill market to download skill ZIP packages.
+#[tauri::command]
+async fn http_download(
+    url: String,
+    dest_path: String,
+    headers: Option<std::collections::HashMap<String, String>>,
+) -> Result<String, String> {
+    let client = reqwest::Client::builder()
+        .user_agent("Codem/1.0 (Skill Market)")
+        .timeout(std::time::Duration::from_secs(120))
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    let mut req = client.get(&url);
+    if let Some(h) = headers {
+        for (k, v) in h {
+            req = req.header(k, v);
+        }
+    }
+
+    let resp = req.send().await.map_err(|e| e.to_string())?;
+
+    if !resp.status().is_success() {
+        return Err(format!("HTTP {}: {}", resp.status(), url));
+    }
+
+    // Ensure parent directory exists
+    let dest = std::path::Path::new(&dest_path);
+    if let Some(parent) = dest.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+
+    let bytes = resp.bytes().await.map_err(|e| e.to_string())?;
+    std::fs::write(&dest, &bytes).map_err(|e| e.to_string())?;
+
+    Ok(dest_path)
 }
 
 // ========== Main Entry ==========
@@ -799,6 +982,8 @@ let app = tauri::Builder::default()
             show_from_tray,
             quit_app,
             update_tray_language,
+            http_get,
+            http_download,
         ])
         .setup(|app| {
             // Apply window vibrancy (frosted glass effect) on Windows

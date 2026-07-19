@@ -8,6 +8,65 @@ import { getSubagentManager } from "../core/subagent/subagent";
 import { getLang, useLang, S } from "../core/i18n/lang";
 import { Tooltip, TooltipTrigger, TooltipContent } from "./ui/tooltip";
 
+// B6: Mermaid diagram renderer component
+const MermaidDiagram = memo(function MermaidDiagram({ chart }: { chart: string }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [svg, setSvg] = useState<string>("");
+  const [error, setError] = useState<string>("");
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const mermaid = (await import("mermaid")).default;
+        mermaid.initialize({
+          startOnLoad: false,
+          theme: "dark",
+          securityLevel: "loose",
+          fontFamily: "inherit",
+        });
+        const id = `mermaid-${Date.now()}-${Math.random().toString(36).substring(7)}`;
+        const { svg: renderedSvg } = await mermaid.render(id, chart);
+        if (!cancelled) {
+          setSvg(renderedSvg);
+          setError("");
+          setLoading(false);
+        }
+      } catch (err: any) {
+        if (!cancelled) {
+          setError(err.message || String(err));
+          setLoading(false);
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [chart]);
+
+  if (loading) {
+    return <div className="mermaid-loading">Rendering diagram...</div>;
+  }
+  if (error) {
+    return (
+      <div className="mermaid-error">
+        <div className="mermaid-error-title">Diagram render error:</div>
+        <pre className="mermaid-error-detail">{error}</pre>
+        <details>
+          <summary>Source code</summary>
+          <pre className="mermaid-source">{chart}</pre>
+        </details>
+      </div>
+    );
+  }
+  return (
+    <div
+      ref={containerRef}
+      className="mermaid-container"
+      dangerouslySetInnerHTML={{ __html: svg }}
+    />
+  );
+});
+
 // Handle link clicks - open files with system default app, external URLs in browser
 function handleLinkClick(e: React.MouseEvent<HTMLAnchorElement>, href: string) {
   e.preventDefault();
@@ -110,12 +169,25 @@ const lang = useLang();
   const isSystem = message.role === "system";
   const isStreaming = message.status === "streaming";
 
+  // For user messages: strip <attachment> blocks from displayed content.
+  // Attachment content is inlined into message.content for the LLM (with data-isolation
+  // markers), but the UI should only show the user's actual text — attachments are
+  // already rendered as separate cards above. Without this, uploaded file content
+  // (e.g. another AI's system prompt) would be fully displayed in the chat bubble.
+  const displayContent = isUser
+    ? message.content.replace(/<attachment>[\s\S]*?<\/attachment>\s*/g, "").trim()
+    : message.content;
+
   // Memoize ReactMarkdown components config to prevent re-creation on every render
   const markdownComponents = useMemo(() => ({
     code({ className, children, ...props }: any) {
       const match = /language-(\w+)/.exec(className || "");
       const codeStr = String(children).replace(/\n$/, "");
       if (match) {
+        // B6: Render mermaid diagrams inline
+        if (match[1] === "mermaid") {
+          return <MermaidDiagram chart={codeStr} />;
+        }
         return (
           <div className="code-block">
             <div className="code-header">
@@ -180,14 +252,14 @@ const lang = useLang();
       // Auto-collapse long messages, but only once per message
       setContentCollapsed(true);
     }
-  }, [isStreaming, message.content]);
+  }, [isStreaming, displayContent]);
 
   const handleCopyMessage = useCallback(() => {
-    navigator.clipboard.writeText(message.content).then(() => {
+    navigator.clipboard.writeText(displayContent).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     });
-  }, [message.content]);
+  }, [displayContent]);
 
   return (
     <div className={`message ${isUser ? "user" : isSystem ? "system" : "assistant"} ${displayMode === "unified" ? "unified-mode" : ""}`}>
@@ -229,7 +301,7 @@ const lang = useLang();
                 hr: () => <div className="unified-separator" />,
               }}
             >
-              {message.content}
+              {displayContent}
             </ReactMarkdown>
           </div>
           {/* Collapse overlay with expand button */}

@@ -190,6 +190,9 @@ export class DefaultToolRenderer implements ToolRenderer {
       task: "📋",
       memory: "🧠",
       skill: "🛠️",
+      load_skill: "🛠️",
+      web_search: "🔎",
+      read_attachment: "📎",
       workflow: "🔄",
       lsp: "📡",
     };
@@ -214,6 +217,12 @@ export class DefaultToolRenderer implements ToolRenderer {
         return `${args.url || ""}`;
       case "websearch":
         return `${args.query || ""}`;
+      case "load_skill":
+        return `skill: ${args.skill_name || ""}`;
+      case "web_search":
+        return `query: ${args.query || ""}`;
+      case "read_attachment":
+        return `attachment: ${args.attachment_id || args.name || ""}`;
       default:
         if (this.config.showArgs) {
           const argStr = JSON.stringify(args);

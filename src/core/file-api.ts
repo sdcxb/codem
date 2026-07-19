@@ -10,7 +10,7 @@ async function tauriInvoke(command: string, args?: Record<string, unknown>): Pro
   return invoke(command, args);
 }
 
-async function getDefaultCwd(): Promise<string> {
+export async function getDefaultCwd(): Promise<string> {
   return tauriInvoke("get_default_cwd");
 }
 

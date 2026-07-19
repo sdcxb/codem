@@ -1,0 +1,830 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Codex Hub Interface</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        :root {
+            --bg-base: #0a0a0a;
+            --bg-panel: #121212;
+            --bg-card: #1c1c1e;
+            --bg-input: #151515;
+            --color-primary: #ff6b00;
+            --color-primary-hover: #e56000;
+            --text-main: #e0e0e0;
+            --text-muted: #888888;
+            --text-success: #4ade80;
+            --border-color: #2a2a2a;
+            --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            background-color: var(--bg-base);
+            color: var(--text-main);
+            font-family: var(--font-family);
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            font-size: 14px;
+        }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #333;
+            border-radius: 3px;
+        }
+
+        /* Top Navbar */
+        .navbar {
+            height: 50px;
+            display: flex;
+            align-items: center;
+            padding: 0 16px;
+            border-bottom: 1px solid var(--border-color);
+            background-color: var(--bg-base);
+        }
+
+        .navbar-logo {
+            display: flex;
+            align-items: center;
+            font-weight: 900;
+            font-size: 18px;
+            margin-right: 40px;
+            letter-spacing: 1px;
+        }
+
+        .navbar-logo .hub {
+            background-color: var(--color-primary);
+            color: #000;
+            padding: 2px 6px;
+            border-radius: 4px;
+            margin-left: 4px;
+            font-size: 14px;
+        }
+
+        .navbar-links {
+            display: flex;
+            gap: 24px;
+            flex: 1;
+        }
+
+        .navbar-links a {
+            color: var(--text-muted);
+            text-decoration: none;
+            font-weight: 500;
+            padding: 16px 0;
+            border-bottom: 2px solid transparent;
+        }
+
+        .navbar-links a.active {
+            color: var(--color-primary);
+            border-bottom-color: var(--color-primary);
+        }
+
+        .navbar-links a:hover:not(.active) {
+            color: var(--text-main);
+        }
+
+        .navbar-actions {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            color: var(--text-muted);
+        }
+
+        /* Main Layout */
+        .main-container {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        /* Left Sidebar */
+        .left-sidebar {
+            width: 260px;
+            background-color: var(--bg-panel);
+            border-right: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            padding: 16px 0;
+        }
+
+        .menu-section {
+            padding: 0 16px;
+            margin-bottom: 24px;
+        }
+
+        .menu-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 10px 12px;
+            color: var(--text-muted);
+            cursor: pointer;
+            border-radius: 6px;
+            margin-bottom: 4px;
+        }
+
+        .menu-item:hover {
+            background-color: var(--bg-card);
+            color: var(--text-main);
+        }
+
+        .menu-item.active {
+            color: var(--color-primary);
+            border-left: 3px solid var(--color-primary);
+            background-color: rgba(255, 107, 0, 0.1);
+            border-radius: 0 6px 6px 0;
+        }
+
+        .section-title {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-bottom: 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .sidebar-footer {
+            margin-top: auto;
+            padding: 16px;
+            border-top: 1px solid var(--border-color);
+        }
+
+        .user-profile {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 8px;
+            background-color: var(--bg-card);
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+        }
+
+        .user-avatar {
+            width: 32px;
+            height: 32px;
+            background-color: #333;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            background-color: var(--text-success);
+            border-radius: 50%;
+            display: inline-block;
+        }
+
+        /* Center Content */
+        .center-content {
+            flex: 1;
+            padding: 24px 32px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .page-title {
+            font-size: 20px;
+            font-weight: 600;
+        }
+
+        .main-card {
+            background-color: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 20px;
+            border-left: 4px solid var(--color-primary);
+        }
+
+        .main-card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+
+        .main-card-title {
+            font-size: 18px;
+            font-weight: 600;
+        }
+
+        .status-badge {
+            font-size: 12px;
+            color: var(--text-muted);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        
+        .status-badge .dot {
+            width: 6px;
+            height: 6px;
+            background-color: var(--color-primary);
+            border-radius: 50%;
+        }
+
+        .content-text ul {
+            margin-left: 20px;
+            margin-top: 10px;
+            margin-bottom: 16px;
+            color: #ccc;
+        }
+
+        .content-text li {
+            margin-bottom: 6px;
+        }
+
+        .code-block {
+            background-color: #050505;
+            border: 1px solid #333;
+            border-radius: 8px;
+            padding: 12px 16px;
+            margin-bottom: 16px;
+            position: relative;
+        }
+
+        .code-block .lang {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-bottom: 8px;
+        }
+
+        .code-block pre {
+            font-family: Consolas, Monaco, monospace;
+            color: #a5d6ff; /* Code color */
+            white-space: pre-wrap;
+            line-height: 1.5;
+        }
+
+        .code-block .copy-btn {
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            color: var(--text-muted);
+            cursor: pointer;
+        }
+
+        .card-actions {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 24px;
+        }
+
+        .btn {
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-size: 14px;
+            cursor: pointer;
+            border: none;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-weight: 500;
+        }
+
+        .btn-primary {
+            background-color: var(--color-primary);
+            color: #fff;
+        }
+        
+        .btn-primary:hover {
+            background-color: var(--color-primary-hover);
+        }
+
+        .btn-outline {
+            background-color: transparent;
+            border: 1px solid var(--color-primary);
+            color: var(--color-primary);
+        }
+
+        .action-icons {
+            display: flex;
+            gap: 16px;
+            color: var(--text-muted);
+            font-size: 16px;
+        }
+
+        .action-icons i {
+            cursor: pointer;
+        }
+        
+        .action-icons i:hover {
+            color: var(--text-main);
+        }
+
+        /* Sub Cards Grid */
+        .sub-cards {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 16px;
+        }
+
+        .sub-card {
+            background-color: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .sub-card-preview {
+            height: 100px;
+            background-color: #111;
+            border-radius: 6px;
+            margin-bottom: 12px;
+            border: 1px solid #333;
+        }
+
+        .sub-card-title {
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+
+        .sub-card-stats {
+            display: flex;
+            gap: 12px;
+            font-size: 12px;
+            margin-bottom: 16px;
+        }
+
+        .stat-badge {
+            background-color: #2a2a2a;
+            padding: 2px 6px;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .stat-badge.success {
+            color: var(--text-success);
+            background-color: rgba(74, 222, 128, 0.1);
+        }
+
+        .sub-card-footer {
+            display: flex;
+            justify-content: space-between;
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-top: auto;
+        }
+
+        /* Chat Input */
+        .chat-input-wrapper {
+            margin-top: auto;
+            border: 1px solid var(--color-primary);
+            border-radius: 12px;
+            background-color: var(--bg-input);
+            padding: 12px 16px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .chat-input-wrapper input {
+            flex: 1;
+            background: transparent;
+            border: none;
+            color: var(--text-main);
+            font-size: 14px;
+            outline: none;
+        }
+
+        .chat-input-wrapper input::placeholder {
+            color: #666;
+        }
+
+        .chat-tools {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            color: var(--text-muted);
+        }
+
+        .chat-tools .dropdown {
+            font-size: 12px;
+            padding: 4px 8px;
+            border-radius: 4px;
+            background-color: #2a2a2a;
+            color: var(--text-main);
+            cursor: pointer;
+        }
+
+        .btn-send {
+            background-color: var(--color-primary);
+            color: white;
+            border: none;
+            width: 32px;
+            height: 32px;
+            border-radius: 6px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        /* Right Sidebar */
+        .right-sidebar {
+            width: 300px;
+            background-color: var(--bg-panel);
+            border-left: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            padding: 20px;
+        }
+
+        .agent-card {
+            background-color: #050505;
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 20px;
+            text-align: center;
+            margin-bottom: 24px;
+        }
+        
+        .agent-image {
+            width: 120px;
+            height: 120px;
+            background-color: #1a1a1a;
+            border-radius: 20px;
+            margin: 0 auto 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 40px;
+            color: var(--color-primary);
+            position: relative;
+        }
+
+        .agent-info {
+            text-align: left;
+            font-size: 13px;
+        }
+        
+        .agent-info p {
+            margin-bottom: 4px;
+        }
+
+        .tasks-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+
+        .tasks-header h3 {
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        .tasks-header a {
+            color: var(--text-muted);
+            font-size: 12px;
+            text-decoration: none;
+        }
+
+        .task-list {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .task-item {
+            background-color: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 12px;
+            display: flex;
+            gap: 12px;
+            cursor: pointer;
+        }
+        
+        .task-item:hover {
+            border-color: #444;
+        }
+
+        .task-icon {
+            width: 36px;
+            height: 36px;
+            background-color: #2a2a2a;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--text-main);
+        }
+
+        .task-content h4 {
+            font-size: 13px;
+            margin-bottom: 6px;
+            font-weight: 500;
+        }
+
+        .task-tags {
+            display: flex;
+            gap: 6px;
+            font-size: 11px;
+            color: var(--text-muted);
+        }
+
+        .task-tags span {
+            background-color: #222;
+            padding: 2px 6px;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Top Navbar -->
+    <nav class="navbar">
+        <div class="navbar-logo">
+            CODEX <span class="hub">HUB</span>
+        </div>
+        <div class="navbar-links">
+            <a href="#" class="active">首页</a>
+            <a href="#">任务</a>
+            <a href="#">Skills</a>
+            <a href="#">Sites</a>
+            <a href="#">Pull Requests</a>
+            <a href="#">Automations</a>
+        </div>
+        <div class="navbar-actions">
+            <i class="fas fa-search"></i>
+            <i class="far fa-bell"></i>
+            <i class="fas fa-cog"></i>
+            <span style="margin-left: 12px; letter-spacing: 2px;">— □ ×</span>
+        </div>
+    </nav>
+
+    <!-- Main Container -->
+    <div class="main-container">
+        
+        <!-- Left Sidebar -->
+        <aside class="left-sidebar">
+            <div class="menu-section">
+                <div class="menu-item active">
+                    <i class="far fa-play-circle"></i>
+                    <span>正在进行</span>
+                </div>
+                <div class="menu-item">
+                    <i class="far fa-bookmark"></i>
+                    <span>稍后再看</span>
+                </div>
+                <div class="menu-item">
+                    <i class="far fa-folder"></i>
+                    <span>项目</span>
+                </div>
+                <div class="menu-item">
+                    <i class="fas fa-history"></i>
+                    <span>历史记录</span>
+                </div>
+            </div>
+
+            <div class="menu-section">
+                <div class="section-title">
+                    <span>项目</span>
+                    <i class="fas fa-plus" style="cursor: pointer;"></i>
+                </div>
+                <div class="menu-item"><i class="far fa-folder" style="color:var(--color-primary)"></i> kin</div>
+                <div class="menu-item"><i class="far fa-folder" style="color:var(--color-primary)"></i> haiker</div>
+                <div class="menu-item"><i class="far fa-folder" style="color:var(--color-primary)"></i> kol.red</div>
+                <div class="menu-item"><i class="far fa-folder" style="color:var(--color-primary)"></i> ppt-forge</div>
+                <div class="menu-item"><i class="far fa-folder" style="color:var(--color-primary)"></i> image-agent</div>
+            </div>
+
+            <div class="menu-section" style="flex:1; overflow-y:auto;">
+                <div class="section-title">
+                    <span>历史记录</span>
+                </div>
+                <div class="menu-item"><i class="far fa-clock" style="color:var(--color-primary)"></i> 修复数据库迁移问题</div>
+                <div class="menu-item"><i class="far fa-clock"></i> 优化推送通知逻辑</div>
+                <div class="menu-item"><i class="far fa-clock"></i> 升级依赖包</div>
+                <div class="menu-item"><i class="far fa-clock"></i> 重构鉴权模块</div>
+                <div class="menu-item"><i class="far fa-clock"></i> 修复支付回调 Bug</div>
+            </div>
+
+            <div class="sidebar-footer">
+                <div class="user-profile">
+                    <div class="user-avatar">
+                        <i class="fas fa-robot"></i>
+                    </div>
+                    <div>
+                        <div style="font-weight: 600; font-size: 13px;">Codex User <i class="fas fa-chevron-down" style="font-size:10px; margin-left:4px; color:#888;"></i></div>
+                        <div style="font-size: 12px; color: var(--text-muted); margin-top:2px;">
+                            <span class="status-dot"></span> 在线
+                        </div>
+                    </div>
+                </div>
+                <div style="display:flex; justify-content:space-between; margin-top:16px; font-size:11px; color:var(--text-muted);">
+                    <div><span class="status-dot"></span> 所有系统正常</div>
+                    <div><i class="fas fa-code-branch"></i> 12 <i class="fas fa-bug"></i> 2 <i class="fas fa-database"></i> 134</div>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Center Content -->
+        <main class="center-content">
+            <h2 class="page-title">最热门的 Coding Session</h2>
+            
+            <!-- Main Session Card -->
+            <div class="main-card">
+                <div class="main-card-header">
+                    <div class="main-card-title">| 修复数据库迁移问题</div>
+                    <div class="status-badge"><span class="dot"></span> 进行中 <i class="fas fa-ellipsis-v" style="margin-left: 8px; cursor:pointer;"></i></div>
+                </div>
+                
+                <div class="content-text">
+                    <p>结构确认没问题，以下是修复方案：</p>
+                    <ul>
+                        <li><code>redeem_codes</code>、<code>push_tokens</code> 与 migration 一致。</li>
+                        <li><code>android_subscriptions</code> 多了 free_trial 字段，这是后续的增量字段，不影响 baseline。</li>
+                        <li><code>d1_migrations</code> 已存在，保留历史记录。</li>
+                    </ul>
+                    <p style="margin-bottom: 12px;">现在开始执行修复脚本：</p>
+                </div>
+
+                <div class="code-block">
+                    <i class="far fa-copy copy-btn"></i>
+                    <div class="lang">bash</div>
+                    <pre>./node_modules/.bin/wrangler d1 execute haiker --remote <span style="color:var(--color-primary)">--command</span> \
+  <span style="color:#a5d6ff">"INSERT OR IGNORE INTO d1_migrations (name)
+   VALUES ('0001_initial.sql'), ('0002_push_notifications.sql');"</span></pre>
+                </div>
+
+                <div class="content-text">
+                    <p style="margin-bottom: 12px;">确认只显示 <code>0003_push_delivery_dedup.sql</code> 后，继续执行：</p>
+                </div>
+
+                <div class="code-block">
+                    <i class="far fa-copy copy-btn"></i>
+                    <div class="lang">bash</div>
+                    <pre>./node_modules/.bin/wrangler d1 migrations apply haiker --remote</pre>
+                </div>
+
+                <div class="card-actions">
+                    <div style="display:flex; gap:12px;">
+                        <button class="btn btn-primary"><i class="fas fa-play"></i> 继续执行</button>
+                        <button class="btn btn-outline"><i class="fas fa-code"></i> 查看 Diff</button>
+                    </div>
+                    <div class="action-icons">
+                        <i class="far fa-thumbs-up"></i>
+                        <i class="far fa-thumbs-down"></i>
+                        <i class="fas fa-share-square"></i>
+                        <i class="far fa-bookmark"></i>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Mini Cards Grid -->
+            <div class="sub-cards">
+                <div class="sub-card">
+                    <div class="sub-card-preview" style="background: #151515 url('data:image/svg+xml;utf8,<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"100%\" height=\"100%\"><text x=\"10\" y=\"20\" fill=\"%23333\" font-size=\"10\" font-family=\"monospace\">route.ts\nconst [name]</text></svg>') no-repeat center; background-size: cover;"></div>
+                    <div class="sub-card-title">重构登录模块</div>
+                    <div class="sub-card-stats">
+                        <span class="stat-badge"><i class="fas fa-database"></i> 12.8K tokens</span>
+                        <span class="stat-badge success"><i class="far fa-check-circle"></i> 98% context</span>
+                    </div>
+                    <div class="sub-card-footer">
+                        <span><i class="far fa-file-alt"></i> 3 files changed</span>
+                        <span><i class="far fa-clock"></i> 2h ago</span>
+                    </div>
+                </div>
+
+                <div class="sub-card">
+                    <div class="sub-card-preview" style="background: #151515 url('data:image/svg+xml;utf8,<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"100%\" height=\"100%\"><rect width=\"100%\" height=\"100%\" fill=\"%231a1a1a\"/><text x=\"10\" y=\"20\" fill=\"red\" font-size=\"10\">- 0001_initial.sql</text><text x=\"10\" y=\"35\" fill=\"green\" font-size=\"10\">+ 0002_fix.sql</text></svg>') no-repeat center; background-size: cover;"></div>
+                    <div class="sub-card-title">修复生产环境 Bug</div>
+                    <div class="sub-card-stats">
+                        <span class="stat-badge"><i class="fas fa-database"></i> 8.2K tokens</span>
+                        <span class="stat-badge success"><i class="far fa-check-circle"></i> 97% context</span>
+                    </div>
+                    <div class="sub-card-footer">
+                        <span><i class="far fa-file-alt"></i> 2 files changed</span>
+                        <span><i class="far fa-clock"></i> 1h ago</span>
+                    </div>
+                </div>
+
+                <div class="sub-card">
+                    <div class="sub-card-preview" style="background: #151515 url('data:image/svg+xml;utf8,<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"100%\" height=\"100%\"><text x=\"10\" y=\"20\" fill=\"%234ade80\" font-size=\"10\">✓ Success!</text><text x=\"10\" y=\"35\" fill=\"%233b82f6\" font-size=\"10\">View deployment...</text></svg>') no-repeat center; background-size: cover;"></div>
+                    <div class="sub-card-title">部署到 Cloudflare</div>
+                    <div class="sub-card-stats">
+                        <span class="stat-badge"><i class="fas fa-database"></i> 15.6K tokens</span>
+                        <span class="stat-badge success"><i class="far fa-check-circle"></i> 99% context</span>
+                    </div>
+                    <div class="sub-card-footer">
+                        <span><i class="far fa-file-alt"></i> 5 files changed</span>
+                        <span><i class="far fa-clock"></i> 30m ago</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Bottom Chat Input -->
+            <div class="chat-input-wrapper">
+                <i class="fas fa-paperclip" style="color:var(--text-muted); cursor:pointer;"></i>
+                <i class="fas fa-slash" style="color:var(--text-muted); cursor:pointer; background:#222; padding:2px 6px; border-radius:4px; font-size:10px;"></i>
+                <input type="text" placeholder="描述你想让 Codex 完成的任务...">
+                <div class="chat-tools">
+                    <div class="dropdown">Codex Pro <i class="fas fa-chevron-down" style="margin-left:4px;"></i></div>
+                    <button class="btn-send"><i class="far fa-paper-plane"></i></button>
+                </div>
+            </div>
+        </main>
+
+        <!-- Right Sidebar -->
+        <aside class="right-sidebar">
+            <div class="agent-card">
+                <div style="text-align: left; margin-bottom: 16px; font-weight: 500;">正在工作的 Agent</div>
+                <!-- 模拟原图中黑色的机器人图标 -->
+                <div class="agent-image">
+                    <i class="fas fa-robot" style="color: #333; font-size: 80px;"></i>
+                    <div style="position: absolute; top: 35%; display:flex; flex-direction:column; gap:4px; align-items:center;">
+                        <span style="color:var(--color-primary); font-size:18px; font-weight:bold; background:#000; padding:2px 8px; border-radius:4px;">> _</span>
+                        <span style="color:var(--color-primary); font-size:18px; font-weight:bold; background:#000; padding:2px 8px; border-radius:4px;">> -</span>
+                    </div>
+                </div>
+                <div class="agent-info">
+                    <p><span class="status-dot"></span> Codex 在线</p>
+                    <p style="color: var(--text-muted); margin-top:8px;">正在为你写代码</p>
+                </div>
+            </div>
+
+            <div class="tasks-header">
+                <h3><i class="fas fa-fire" style="color:var(--color-primary); margin-right:6px;"></i>推荐任务</h3>
+                <a href="#">查看全部</a>
+            </div>
+
+            <div class="task-list">
+                <div class="task-item">
+                    <div class="task-icon"><i class="fas fa-terminal"></i></div>
+                    <div class="task-content">
+                        <h4>优化 API 响应性能</h4>
+                        <div class="task-tags">
+                            <span>性能优化</span><span>后端</span>
+                        </div>
+                        <div style="font-size:11px; color:var(--text-muted); margin-top:6px;">预计 45 分钟</div>
+                    </div>
+                </div>
+
+                <div class="task-item">
+                    <div class="task-icon"><i class="fas fa-database"></i></div>
+                    <div class="task-content">
+                        <h4>清理冗余索引</h4>
+                        <div class="task-tags">
+                            <span>数据库</span><span>维护</span>
+                        </div>
+                        <div style="font-size:11px; color:var(--text-muted); margin-top:6px;">预计 30 分钟</div>
+                    </div>
+                </div>
+
+                <div class="task-item">
+                    <div class="task-icon"><i class="fas fa-clipboard-list"></i></div>
+                    <div class="task-content">
+                        <h4>补充单元测试</h4>
+                        <div class="task-tags">
+                            <span>测试</span><span>质量</span>
+                        </div>
+                        <div style="font-size:11px; color:var(--text-muted); margin-top:6px;">预计 60 分钟</div>
+                    </div>
+                </div>
+
+                <div class="task-item">
+                    <div class="task-icon"><i class="fas fa-code"></i></div>
+                    <div class="task-content">
+                        <h4>升级依赖包</h4>
+                        <div class="task-tags">
+                            <span>依赖管理</span><span>安全</span>
+                        </div>
+                        <div style="font-size:11px; color:var(--text-muted); margin-top:6px;">预计 25 分钟</div>
+                    </div>
+                </div>
+            </div>
+        </aside>
+
+    </div>
+</body>
+</html>

@@ -1,0 +1,628 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Codex Custom Theme UI - Merged Background</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Dancing+Script:wght@600&display=swap');
+
+        /* 
+         * [AI DIRECTIVE]
+         * 主题颜色可以基于 dream-reference.jpg 动态提取
+         */
+        :root {
+            --bg-app: #fdf5f7;
+            --bg-sidebar: #fdf5f7;
+            --bg-main: #ffffff;
+            
+            --text-main: #6c474d;
+            --text-muted: #a88a8f;
+            --text-light: #d6b8be;
+            --accent-pink: #e88c9a;      
+            --accent-light: #fce8eb;     
+            --border-color: #f7dee2;
+
+            --card-bg: rgba(255, 255, 255, 0.65); /* 稍微降低透明度，透出更多背景细节 */
+            --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            background-color: var(--bg-app);
+            color: var(--text-main);
+            font-family: var(--font-family);
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            font-size: 13px;
+        }
+
+        ::-webkit-scrollbar { width: 4px; height: 4px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #f0cdd2; border-radius: 4px; }
+
+        /* Title Bar */
+        .titlebar {
+            height: 38px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 16px;
+            background-color: var(--bg-sidebar);
+            -webkit-app-region: drag;
+        }
+
+        .titlebar-menu {
+            display: flex;
+            gap: 16px;
+            color: var(--text-main);
+        }
+
+        .titlebar-menu .window-controls {
+            display: flex;
+            gap: 12px;
+            margin-right: 20px;
+            color: var(--text-muted);
+        }
+
+        .titlebar-controls {
+            display: flex;
+            gap: 16px;
+            color: var(--text-muted);
+        }
+
+        /* Main Layout */
+        .app-body {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        /* Sidebar */
+        .sidebar {
+            width: 220px;
+            background-color: var(--bg-sidebar);
+            display: flex;
+            flex-direction: column;
+            padding: 10px 0;
+            border-right: 1px solid var(--border-color);
+        }
+
+        .sidebar-header {
+            padding: 10px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 18px;
+            font-weight: 600;
+            color: var(--accent-pink);
+            margin-bottom: 10px;
+        }
+
+        .menu-list {
+            padding: 0 10px;
+            margin-bottom: 16px;
+        }
+
+        .menu-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 12px;
+            border-radius: 8px;
+            color: var(--text-main);
+            cursor: pointer;
+            margin-bottom: 2px;
+        }
+
+        .menu-item:hover {
+            background-color: var(--accent-light);
+        }
+
+        .menu-item i {
+            color: var(--accent-pink);
+            width: 16px;
+            text-align: center;
+        }
+
+        .menu-section {
+            padding: 0 10px;
+            margin-bottom: 12px;
+            flex: 1;
+            overflow-y: auto;
+        }
+
+        .section-title {
+            padding: 4px 12px;
+            font-size: 11px;
+            color: var(--text-muted);
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            margin-bottom: 4px;
+        }
+
+        .sidebar-footer {
+            padding: 12px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-top: 1px solid var(--border-color);
+        }
+
+        .user-profile {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .user-avatar {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            background-color: var(--accent-pink);
+            background-image: url('dream-reference.jpg'); /* 更新为提供的图片 */
+            background-size: cover;
+            background-position: center top;
+        }
+
+        .continue-setting {
+            margin: 0 10px 10px;
+            padding: 8px 12px;
+            background-color: var(--accent-light);
+            border-radius: 8px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            color: var(--text-main);
+        }
+
+        /* Main Content */
+        .main-content {
+            flex: 1;
+            background-color: var(--bg-main);
+            padding: 16px;
+            position: relative;
+            overflow-y: auto;
+        }
+
+        /* 
+         * 【修改核心】
+         * 移除原本的渐变色和分离的图片遮罩
+         * 直接将完整的 dream-reference.jpg 作为整个容器的背景
+         */
+        .theme-container {
+            width: 100%;
+            min-height: 100%;
+            background: url('dream-reference.jpg') no-repeat center center;
+            background-size: cover;
+            border-radius: 16px;
+            position: relative;
+            padding: 40px;
+            display: flex;
+            flex-direction: column;
+            box-shadow: inset 0 0 40px rgba(255, 255, 255, 0.3);
+            overflow: hidden;
+        }
+
+        /* Background Decorations (可选：如果觉得图片本身花瓣够多，可以隐藏这些元素) */
+        .bg-decoration {
+            position: absolute;
+            pointer-events: none;
+            opacity: 0.5; /* 降低了透明度，以免抢占背景原图的风头 */
+        }
+        .rose-left {
+            top: -20px; left: -20px; font-size: 120px;
+            background: -webkit-linear-gradient(var(--text-light), var(--accent-pink));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            transform: rotate(-15deg);
+        }
+        .rose-right {
+            bottom: 80px; right: -30px; font-size: 150px;
+            background: -webkit-linear-gradient(var(--text-light), var(--accent-pink));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            transform: rotate(20deg);
+        }
+
+        .content-wrapper {
+            position: relative;
+            z-index: 1;
+            max-width: 800px; /* 控制左侧内容宽度，不遮挡右侧人物 */
+        }
+
+        /* Headers */
+        .tagline {
+            color: var(--accent-pink);
+            font-size: 14px;
+            font-weight: 500;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .script-title {
+            font-family: 'Dancing Script', cursive;
+            font-size: 64px;
+            color: var(--accent-pink);
+            opacity: 0.6;
+            margin-top: -10px;
+            margin-bottom: 10px;
+            transform: rotate(-3deg);
+        }
+
+        .main-heading {
+            font-size: 32px;
+            font-weight: 600;
+            margin-bottom: 12px;
+            color: var(--text-main);
+        }
+
+        .sub-heading {
+            font-size: 14px;
+            color: var(--text-main);
+            margin-bottom: 40px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        /* Action Cards */
+        .cards-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 16px;
+            margin-bottom: 40px;
+        }
+
+        .action-card {
+            background-color: var(--card-bg);
+            border: 1px solid rgba(255, 255, 255, 0.8);
+            border-radius: 12px;
+            padding: 24px 16px;
+            text-align: center;
+            box-shadow: 0 4px 12px rgba(232, 140, 154, 0.15);
+            backdrop-filter: blur(12px); /* 增强毛玻璃效果 */
+            -webkit-backdrop-filter: blur(12px);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            transition: transform 0.2s, background-color 0.2s;
+            cursor: pointer;
+        }
+
+        .action-card:hover {
+            transform: translateY(-2px);
+            background-color: rgba(255, 255, 255, 0.95);
+        }
+
+        .card-icon {
+            width: 48px;
+            height: 48px;
+            background-color: var(--accent-light);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--accent-pink);
+            font-size: 20px;
+            margin-bottom: 16px;
+        }
+
+        .card-title {
+            font-weight: 500;
+            margin-bottom: 12px;
+            line-height: 1.4;
+        }
+
+        .card-heart {
+            color: var(--accent-pink);
+            font-size: 12px;
+            opacity: 0.6;
+        }
+
+        /* Input Area */
+        .input-area {
+            background-color: var(--card-bg);
+            border: 1px solid rgba(255, 255, 255, 0.8);
+            border-radius: 16px;
+            padding: 16px;
+            margin-top: auto;
+            box-shadow: 0 4px 12px rgba(232, 140, 154, 0.15);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+        }
+
+        .input-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: var(--text-main);
+            opacity: 0.8;
+            margin-bottom: 12px;
+            font-size: 12px;
+        }
+
+        .input-box {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .input-box input {
+            width: 100%;
+            background: transparent;
+            border: none;
+            outline: none;
+            font-size: 14px;
+            color: var(--text-main);
+            padding: 4px 0;
+        }
+        
+        .input-box input::placeholder {
+            color: var(--text-muted);
+        }
+
+        .input-actions {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .action-left {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .btn-icon {
+            width: 32px;
+            height: 32px;
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+            background: transparent;
+            color: var(--text-muted);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+        }
+
+        .badge-access {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 12px;
+            background-color: rgba(252, 232, 235, 0.8);
+            border-radius: 20px;
+            color: var(--accent-pink);
+            font-size: 12px;
+        }
+
+        .action-right {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            color: var(--text-muted);
+        }
+
+        .btn-send {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            background-color: var(--accent-pink);
+            color: white;
+            border: none;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            box-shadow: 0 4px 8px rgba(232, 140, 154, 0.4);
+        }
+
+        /* Polaroid Floating Card */
+        .polaroid {
+            position: absolute;
+            bottom: 40px;
+            right: 40px;
+            background: white;
+            padding: 10px 10px 24px 10px;
+            border-radius: 4px;
+            box-shadow: 0 10px 20px rgba(0,0,0,0.1);
+            transform: rotate(5deg);
+            z-index: 10;
+            width: 140px;
+            text-align: center;
+        }
+
+        .polaroid img {
+            width: 100%;
+            height: 120px;
+            object-fit: cover;
+            object-position: center top;
+            background-color: #eee;
+            margin-bottom: 12px;
+        }
+
+        .polaroid-text {
+            font-size: 11px;
+            color: var(--text-muted);
+            line-height: 1.4;
+        }
+
+        .pin {
+            position: absolute;
+            top: -10px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: var(--accent-pink);
+            font-size: 20px;
+            filter: drop-shadow(0 2px 2px rgba(0,0,0,0.1));
+        }
+    </style>
+</head>
+<body>
+
+    <nav class="titlebar">
+        <div class="titlebar-menu">
+            <div class="window-controls">
+                <i class="far fa-window-maximize" style="transform: rotate(90deg); font-size: 12px;"></i>
+            </div>
+            <span style="font-size: 16px; margin-right: 12px;"><i class="fas fa-bars"></i></span>
+            <span style="margin-right: 12px;">←</span>
+            <span style="margin-right: 16px;">→</span>
+            <span>文件</span>
+            <span>编辑</span>
+            <span>视图</span>
+            <span>帮助</span>
+        </div>
+        <div class="titlebar-controls">
+            <span>—</span>
+            <span>□</span>
+            <span>×</span>
+        </div>
+    </nav>
+
+    <div class="app-body">
+        
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                Codex <span style="font-size:12px; opacity:0.5;">✦</span>
+                <i class="fas fa-search" style="font-size: 14px; color: var(--text-muted); font-weight:normal;"></i>
+            </div>
+
+            <div class="menu-list">
+                <div class="menu-item"><i class="far fa-edit"></i><span>新建任务</span></div>
+                <div class="menu-item"><i class="far fa-clock"></i><span>已安排</span></div>
+                <div class="menu-item"><i class="fas fa-plug"></i><span>插件</span></div>
+                <div class="menu-item"><i class="fas fa-border-all"></i><span>站点</span></div>
+                <div class="menu-item"><i class="fas fa-code-branch"></i><span>拉取请求</span></div>
+                <div class="menu-item"><i class="far fa-comment-dots"></i><span>聊天</span></div>
+            </div>
+
+            <div class="menu-section">
+                <div class="section-title">✦ 项目</div>
+                <div class="menu-item"><i class="far fa-folder" style="color:var(--text-light)"></i> 有菜星球</div>
+                <div class="menu-item"><i class="far fa-folder" style="color:var(--text-light)"></i> 有菜影视清单</div>
+                <div class="menu-item"><i class="far fa-folder" style="color:var(--text-light)"></i> 粉色造型收藏</div>
+                <div class="menu-item"><i class="far fa-folder" style="color:var(--text-light)"></i> 甜妹穿搭灵感</div>
+                <div class="menu-item"><i class="far fa-heart" style="color:var(--text-light)"></i> 一起追剧打卡</div>
+            </div>
+
+            <div class="menu-section">
+                <div class="section-title">✦ 任务</div>
+                <div class="menu-item"><i class="far fa-check-circle" style="color:var(--text-light)"></i> 看一部有菜主演作品</div>
+                <div class="menu-item"><i class="far fa-check-circle" style="color:var(--text-light)"></i> 听今日心情歌单</div>
+                <div class="menu-item"><i class="far fa-check-circle" style="color:var(--text-light)"></i> 收藏一张有菜氛围照</div>
+                <div class="menu-item"><i class="far fa-check-circle" style="color:var(--text-light)"></i> 写一句今日应援</div>
+                <div class="menu-item"><i class="far fa-check-circle" style="color:var(--text-light)"></i> 学一个拍照姿势</div>
+                <div class="menu-item"><i class="far fa-check-circle" style="color:var(--text-light)"></i> 做今日追星手账</div>
+                <div class="menu-item"><i class="far fa-check-circle" style="color:var(--text-light)"></i> 晚安留言给有菜</div>
+            </div>
+
+            <div class="continue-setting">
+                <span><i class="far fa-smile"></i> 继续设置</span>
+                <span style="color:var(--accent-pink)"><i class="fas fa-heart"></i></span>
+                <span style="color:var(--text-muted)">0/4</span>
+            </div>
+
+            <div class="sidebar-footer">
+                <div class="user-profile">
+                    <div class="user-avatar"></div>
+                    <span style="font-weight: 500;">kimeryq <i class="fas fa-chevron-down" style="font-size:10px; color:var(--text-muted)"></i></span>
+                </div>
+                <i class="fas fa-cog" style="color: var(--text-muted); cursor:pointer;"></i>
+            </div>
+        </aside>
+
+        <main class="main-content">
+            <div class="theme-container">
+                
+                <i class="fab fa-pagelines bg-decoration rose-left"></i>
+                <i class="fab fa-pagelines bg-decoration rose-right"></i>
+
+                <div class="content-wrapper">
+                    <div class="tagline">
+                        <i class="fab fa-pagelines"></i> 桥本有菜专属定制皮肤 ✦
+                    </div>
+                    <div style="color: var(--text-main); font-size: 12px; margin-bottom: 20px; padding-left: 24px; opacity:0.8;">Codex App 限定版 ✦</div>
+                    
+                    <div class="script-title">Arina Hashimoto</div>
+                    
+                    <h1 class="main-heading">我们该构建什么？</h1>
+                    <div class="sub-heading">
+                        与有菜一起，用灵感创造无限可能 ✦
+                    </div>
+
+                    <div class="cards-grid">
+                        <div class="action-card">
+                            <div class="card-icon"><i class="fas fa-code"></i></div>
+                            <div class="card-title">探索并理解代码</div>
+                            <i class="fas fa-heart card-heart"></i>
+                        </div>
+                        <div class="action-card">
+                            <div class="card-icon"><i class="fas fa-puzzle-piece"></i></div>
+                            <div class="card-title">构建新功能、<br>应用或工具</div>
+                            <i class="fas fa-heart card-heart"></i>
+                        </div>
+                        <div class="action-card">
+                            <div class="card-icon"><i class="fas fa-clipboard-check"></i></div>
+                            <div class="card-title">审查代码并提出<br>修改建议</div>
+                            <i class="fas fa-heart card-heart"></i>
+                        </div>
+                        <div class="action-card">
+                            <div class="card-icon"><i class="fas fa-tools"></i></div>
+                            <div class="card-title">修复问题和失败</div>
+                            <i class="fas fa-heart card-heart"></i>
+                        </div>
+                    </div>
+
+                    <div class="input-area">
+                        <div class="input-header">
+                            <i class="far fa-file-video"></i> 视频
+                        </div>
+                        <div class="input-box">
+                            <input type="text" placeholder="随心输入，让灵感陪你一起写代码吧～">
+                            
+                            <div class="input-actions">
+                                <div class="action-left">
+                                    <button class="btn-icon"><i class="fas fa-plus"></i></button>
+                                    <div class="badge-access">
+                                        <i class="fas fa-info-circle"></i> 完全访问 <i class="far fa-heart"></i>
+                                    </div>
+                                    <i class="fab fa-pagelines" style="color:var(--accent-pink); font-size:20px;"></i>
+                                </div>
+                                <div class="action-right">
+                                    <span style="font-size: 12px;">5.6 Sol 中 <i class="fas fa-chevron-down" style="font-size:10px;"></i></span>
+                                    <i class="fas fa-microphone" style="cursor:pointer;"></i>
+                                    <button class="btn-send"><i class="fas fa-arrow-up"></i></button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="polaroid">
+                    <i class="fas fa-thumbtack pin"></i>
+                    <img src="dream-reference.jpg" alt="Polaroid">
+                    <div class="polaroid-text">
+                        一直陪伴<br>是最温暖的应援 <i class="fas fa-heart" style="color:var(--accent-pink)"></i>
+                    </div>
+                </div>
+
+            </div>
+        </main>
+    </div>
+
+</body>
+</html>

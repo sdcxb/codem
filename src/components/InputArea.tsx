@@ -4,9 +4,11 @@ import { FileUpload } from "./FileUpload";
 import { useLang, S } from "../core/i18n/lang";
 import type { CollaborationMode } from "../core/agent/agent";
 import { SECURITY_MODES, getEffectiveSecurityMode, setProjectSecurityMode, setGlobalSecurityMode, type SecurityMode } from "../core/permission/security-mode";
+import { getSkillRegistry } from "../core/skill/skill";
+import { getSettingJSON } from "../core/storage/settings";
 
 interface InputAreaProps {
-  onSend: (message: string, attachments?: MessageAttachment[]) => void;
+  onSend: (message: string, attachments?: MessageAttachment[], selectedSkills?: string[]) => void;
   onCancel: () => void;
   disabled: boolean;
   isStreaming: boolean;
@@ -25,6 +27,8 @@ export function InputArea({ onSend, onCancel, disabled, isStreaming, collaborati
   const [pendingAttachments, setPendingAttachments] = useState<MessageAttachment[]>([]);
   const [showSecurityPicker, setShowSecurityPicker] = useState(false);
   const [securityMode, setSecurityMode] = useState<SecurityMode>(getEffectiveSecurityMode(projectPath));
+  const [showSkillPicker, setShowSkillPicker] = useState(false);
+  const [selectedSkills, setSelectedSkills] = useState<string[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [expanded, setExpanded] = useState(false);
 
@@ -58,9 +62,10 @@ export function InputArea({ onSend, onCancel, disabled, isStreaming, collaborati
 
   const handleSubmit = () => {
     if ((!input.trim() && pendingAttachments.length === 0) || disabled) return;
-    onSend(input.trim(), pendingAttachments.length > 0 ? pendingAttachments : undefined);
+    onSend(input.trim(), pendingAttachments.length > 0 ? pendingAttachments : undefined, selectedSkills.length > 0 ? selectedSkills : undefined);
     setInput("");
     setPendingAttachments([]);
+    setSelectedSkills([]);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -223,6 +228,86 @@ export function InputArea({ onSend, onCancel, disabled, isStreaming, collaborati
 
       <div className="input-wrapper">
         <FileUpload onUpload={handleUpload} />
+        {/* Skill picker — lets user explicitly select skills for this message */}
+        <div style={{ position: "relative" }}>
+          <button
+            className={`mode-toggle-btn ${selectedSkills.length > 0 ? "active" : ""}`}
+            onClick={() => setShowSkillPicker(!showSkillPicker)}
+            title={zh ? "选择技能" : "Select skills"}
+            style={selectedSkills.length > 0 ? { background: "var(--accent)", color: "#fff" } : {}}
+          >
+            {selectedSkills.length > 0 ? `🎯 ${selectedSkills.length}` : "🎯"}
+          </button>
+          {showSkillPicker && (
+            <>
+              <div
+                style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 99 }}
+                onClick={() => setShowSkillPicker(false)}
+              />
+              <div style={{
+                position: "absolute",
+                bottom: "100%",
+                left: 0,
+                marginBottom: 4,
+                background: "var(--bg-secondary)",
+                border: "1px solid var(--border-primary)",
+                borderRadius: 8,
+                padding: 8,
+                minWidth: 220,
+                maxWidth: 320,
+                zIndex: 100,
+                boxShadow: "0 -4px 12px rgba(0,0,0,0.3)",
+                maxHeight: 300,
+                overflowY: "auto",
+              }}>
+                <div style={{ fontSize: 11, fontWeight: 600, marginBottom: 6, opacity: 0.7 }}>
+                  {zh ? "选择技能（本次消息）" : "Select skills (this message)"}
+                </div>
+                {(() => {
+                  let disabled: string[] = [];
+                  try { disabled = getSettingJSON<string[]>("codem-disabled-skills", []); } catch {}
+                  const skills = getSkillRegistry().getAll().filter(s => !disabled.includes(s.name));
+                  if (skills.length === 0) {
+                    return <div style={{ fontSize: 11, opacity: 0.5, padding: "8px 0" }}>{zh ? "无可用技能" : "No skills available"}</div>;
+                  }
+                  return skills.map(s => (
+                    <label
+                      key={s.name}
+                      style={{
+                        display: "flex",
+                        alignItems: "flex-start",
+                        gap: 6,
+                        padding: "6px 4px",
+                        cursor: "pointer",
+                        borderRadius: 4,
+                        fontSize: 11,
+                      }}
+                      onMouseEnter={(e) => (e.currentTarget.style.background = "var(--bg-tertiary)")}
+                      onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedSkills.includes(s.name)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedSkills([...selectedSkills, s.name]);
+                          } else {
+                            setSelectedSkills(selectedSkills.filter(n => n !== s.name));
+                          }
+                        }}
+                        style={{ marginTop: 2 }}
+                      />
+                      <div>
+                        <div style={{ fontWeight: 600 }}>{s.displayName || s.name}</div>
+                        <div style={{ opacity: 0.6, fontSize: 10, lineHeight: 1.3 }}>{s.description}</div>
+                      </div>
+                    </label>
+                  ));
+                })()}
+              </div>
+            </>
+          )}
+        </div>
         {/* C1: Collaboration mode toggle */}
         <button
           className={`mode-toggle-btn ${collaborationMode}`}

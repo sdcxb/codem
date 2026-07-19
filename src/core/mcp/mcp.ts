@@ -291,6 +291,19 @@ export class MCPRegistry {
     this.saveConfigs();
   }
 
+  /** Update an existing server config by name */
+  updateServer(name: string, config: MCPServerConfig) {
+    const idx = this.configs.findIndex((c) => c.name === name);
+    if (idx >= 0) {
+      // If name changed, disconnect old and use new
+      if (name !== config.name) {
+        this.client.disconnect(name);
+      }
+      this.configs[idx] = config;
+      this.saveConfigs();
+    }
+  }
+
   /** Remove a server config */
   removeServer(name: string) {
     this.configs = this.configs.filter((c) => c.name !== name);

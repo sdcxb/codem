@@ -9,10 +9,13 @@ import {
   getMultimodalSettings,
   saveMultimodalSettings,
   MULTIMODAL_MODELS,
+  isLocalEmbeddingProvider,
+  getDefaultLocalEmbeddingConfig,
   type MultimodalSettings,
   type MultimodalProviderConfig,
 } from "../core/llm/multimodal";
 import { getSettingJSON } from "../core/storage/settings";
+import { AVAILABLE_LOCAL_MODELS, getStatus as getLocalStatus, type LocalEmbeddingStatus } from "../core/knowledge/local-embedding";
 
 interface ProviderKey {
   id: string;
@@ -32,9 +35,15 @@ export function MultimodalPanel({ onClose }: MultimodalPanelProps) {
     imageGen: null,
   });
   const [saved, setSaved] = useState(false);
+  const [localStatus, setLocalStatus] = useState<LocalEmbeddingStatus>(getLocalStatus());
 
   useEffect(() => {
     setSettings(getMultimodalSettings());
+    // 定期轮询本地模型状态
+    const interval = setInterval(() => {
+      setLocalStatus(getLocalStatus());
+    }, 1000);
+    return () => clearInterval(interval);
   }, []);
 
   // Load existing provider keys from codem-settings for quick selection
@@ -132,6 +141,23 @@ export function MultimodalPanel({ onClose }: MultimodalPanelProps) {
           {description}
         </div>
 
+        {/* Embedding 未配置时显示默认本地模型提示 */}
+        {!isEnabled && modality === "embedding" && (
+          <div style={{
+            marginTop: 8,
+            padding: "6px 10px",
+            background: "rgba(34,197,94,0.08)",
+            borderRadius: 6,
+            fontSize: 11,
+            color: "var(--text-secondary)",
+            lineHeight: 1.6,
+            border: "1px solid rgba(34,197,94,0.2)",
+          }}>
+            ✅ 当前默认使用内置本地模型（{getDefaultLocalEmbeddingConfig().model}，~22MB），
+            随安装包打包，无需配置 API Key，安装后即可离线使用。如需更高精度，可启用后选择其他本地模型或远程 API。
+          </div>
+        )}
+
         {isEnabled && config && (
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             {/* Provider selector */}
@@ -142,11 +168,26 @@ export function MultimodalPanel({ onClose }: MultimodalPanelProps) {
               <select
                 value={config.providerId}
                 onChange={(e) => {
-                  const selected = providerKeys.find(p => p.id === e.target.value);
-                  updateModality(modality, "providerId", e.target.value);
-                  if (selected) {
-                    updateModality(modality, "apiKey", selected.apiKey);
-                    updateModality(modality, "baseUrl", selected.baseUrl);
+                  const newProviderId = e.target.value;
+                  if (newProviderId === "local") {
+                    // 本地模式：无需 API Key 和 Base URL
+                    setSettings(prev => ({
+                      ...prev,
+                      [modality]: {
+                        ...prev[modality]!,
+                        providerId: "local",
+                        apiKey: "",
+                        baseUrl: "",
+                        model: AVAILABLE_LOCAL_MODELS[0].id,
+                      },
+                    }));
+                  } else {
+                    const selected = providerKeys.find(p => p.id === newProviderId);
+                    updateModality(modality, "providerId", newProviderId);
+                    if (selected) {
+                      updateModality(modality, "apiKey", selected.apiKey);
+                      updateModality(modality, "baseUrl", selected.baseUrl);
+                    }
                   }
                 }}
                 style={{ width: "100%", fontSize: 12 }}
@@ -154,61 +195,159 @@ export function MultimodalPanel({ onClose }: MultimodalPanelProps) {
                 {providerKeys.map(p => (
                   <option key={p.id} value={p.id}>{p.name}{p.apiKey ? " ✓" : ""}</option>
                 ))}
+                {/* 本地模型选项（仅 Embedding 可用） */}
+                {modality === "embedding" && (
+                  <option value="local">🖥️ 本地模型 (ONNX Runtime)</option>
+                )}
               </select>
             </div>
 
-            {/* Model selector */}
-            <div>
-              <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 3 }}>
-                模型
-              </label>
-              {availableModels && availableModels.length > 0 ? (
-                <select
-                  value={config.model}
-                  onChange={(e) => updateModality(modality, "model", e.target.value)}
-                  style={{ width: "100%", fontSize: 12 }}
-                >
-                  {availableModels.map(m => (
-                    <option key={m} value={m}>{m}</option>
-                  ))}
-                </select>
-              ) : (
-                <input
-                  type="text"
-                  value={config.model}
-                  onChange={(e) => updateModality(modality, "model", e.target.value)}
-                  placeholder="输入模型名称"
-                  style={{ width: "100%", fontSize: 12 }}
-                />
-              )}
-            </div>
+            {/* === 本地模式特殊 UI === */}
+            {modality === "embedding" && isLocalEmbeddingProvider(config) ? (
+              <>
+                {/* 本地模型选择器 */}
+                <div>
+                  <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 3 }}>
+                    本地模型
+                  </label>
+                  <select
+                    value={config.model}
+                    onChange={(e) => updateModality(modality, "model", e.target.value)}
+                    style={{ width: "100%", fontSize: 12 }}
+                  >
+                    {AVAILABLE_LOCAL_MODELS.map(m => (
+                      <option key={m.id} value={m.id}>{m.name} ({m.size})</option>
+                    ))}
+                  </select>
+                </div>
 
-            {/* API Key */}
-            <div>
-              <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 3 }}>
-                API Key
-              </label>
-              <input
-                type="password"
-                value={config.apiKey}
-                onChange={(e) => updateModality(modality, "apiKey", e.target.value)}
-                placeholder="API Key"
-                style={{ width: "100%", fontSize: 12 }}
-              />
-            </div>
+                {/* 模型详情 */}
+                {(() => {
+                  const modelInfo = AVAILABLE_LOCAL_MODELS.find(m => m.id === config.model);
+                  if (!modelInfo) return null;
+                  return (
+                    <div style={{
+                      padding: 8,
+                      background: "var(--bg-tertiary, var(--bg-primary))",
+                      borderRadius: 6,
+                      fontSize: 11,
+                      color: "var(--text-secondary)",
+                      lineHeight: 1.6,
+                    }}>
+                      <div style={{ marginBottom: 4 }}>{modelInfo.description}</div>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                        <span style={{
+                          padding: "1px 6px",
+                          background: "var(--bg-secondary)",
+                          borderRadius: 3,
+                          fontSize: 10,
+                        }}>维度: {modelInfo.dim}</span>
+                        <span style={{
+                          padding: "1px 6px",
+                          background: "var(--bg-secondary)",
+                          borderRadius: 3,
+                          fontSize: 10,
+                        }}>{modelInfo.languages}</span>
+                        <span style={{
+                          padding: "1px 6px",
+                          background: "var(--bg-secondary)",
+                          borderRadius: 3,
+                          fontSize: 10,
+                        }}>{modelInfo.license}</span>
+                      </div>
+                    </div>
+                  );
+                })()}
 
-            {/* Base URL */}
-            <div>
-              <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 3 }}>
-                Base URL
-              </label>
-              <input
-                type="text"
-                value={config.baseUrl}
-                onChange={(e) => updateModality(modality, "baseUrl", e.target.value)}
-                style={{ width: "100%", fontSize: 12 }}
-              />
-            </div>
+                {/* 模型状态指示器 */}
+                <div style={{
+                  padding: "6px 8px",
+                  borderRadius: 6,
+                  fontSize: 11,
+                  background: localStatus.state === "ready" ? "rgba(34,197,94,0.1)"
+                    : localStatus.state === "loading" ? "rgba(59,130,246,0.1)"
+                    : localStatus.state === "error" ? "rgba(239,68,68,0.1)"
+                    : "var(--bg-tertiary, var(--bg-primary))",
+                  color: localStatus.state === "ready" ? "var(--success)"
+                    : localStatus.state === "error" ? "var(--danger)"
+                    : "var(--text-secondary)",
+                }}>
+                  {localStatus.state === "ready" && "✅ 模型已加载，可正常使用"}
+                  {localStatus.state === "loading" && `⏳ ${localStatus.message || "正在加载..."}`}
+                  {localStatus.state === "not-loaded" && "⚪ 模型未加载（首次使用时自动下载）"}
+                  {localStatus.state === "error" && `❌ ${localStatus.message || "加载失败"}`}
+                </div>
+
+                {/* 说明文字 */}
+                <div style={{
+                  fontSize: 11,
+                  color: "var(--text-muted)",
+                  lineHeight: 1.6,
+                  padding: "4px 0",
+                }}>
+                  💡 本地模式无需 API Key，模型在本地运行（ONNX Runtime WASM）。
+                  默认模型（all-MiniLM-L6-v2）已随安装包内置，开箱即用。
+                  其他模型首次使用时从 HuggingFace 下载并缓存。超长文本自动子分块处理。
+                </div>
+              </>
+            ) : (
+              <>
+                {/* === 远程模式 UI（原有逻辑） === */}
+
+                {/* Model selector */}
+                <div>
+                  <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 3 }}>
+                    模型
+                  </label>
+                  {availableModels && availableModels.length > 0 ? (
+                    <select
+                      value={config.model}
+                      onChange={(e) => updateModality(modality, "model", e.target.value)}
+                      style={{ width: "100%", fontSize: 12 }}
+                    >
+                      {availableModels.map(m => (
+                        <option key={m} value={m}>{m}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      type="text"
+                      value={config.model}
+                      onChange={(e) => updateModality(modality, "model", e.target.value)}
+                      placeholder="输入模型名称"
+                      style={{ width: "100%", fontSize: 12 }}
+                    />
+                  )}
+                </div>
+
+                {/* API Key */}
+                <div>
+                  <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 3 }}>
+                    API Key
+                  </label>
+                  <input
+                    type="password"
+                    value={config.apiKey}
+                    onChange={(e) => updateModality(modality, "apiKey", e.target.value)}
+                    placeholder="API Key"
+                    style={{ width: "100%", fontSize: 12 }}
+                  />
+                </div>
+
+                {/* Base URL */}
+                <div>
+                  <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 3 }}>
+                    Base URL
+                  </label>
+                  <input
+                    type="text"
+                    value={config.baseUrl}
+                    onChange={(e) => updateModality(modality, "baseUrl", e.target.value)}
+                    style={{ width: "100%", fontSize: 12 }}
+                  />
+                </div>
+              </>
+            )}
           </div>
         )}
       </div>
@@ -264,7 +403,7 @@ export function MultimodalPanel({ onClose }: MultimodalPanelProps) {
           "embedding",
           "Embedding 语义搜索",
           "🔍",
-          "将文本转为向量进行语义相似度搜索，可用于代码库搜索、知识库检索等场景。",
+          "将文本转为向量进行语义相似度搜索。未配置时默认使用本地模型（ONNX Runtime，无需 API Key），也可选择远程 API（OpenAI/Gemini）。",
         )}
 
         {renderModalityConfig(

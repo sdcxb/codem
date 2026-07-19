@@ -26,6 +26,8 @@ export interface Attachment {
   type: "file" | "image" | "code" | "url";
   path?: string;
   content?: string;
+  preview?: string;
+  sandboxPath?: string;
   mimeType?: string;
   size?: number;
   addedAt: number;

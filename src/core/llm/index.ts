@@ -230,6 +230,10 @@ export class LLMEngine {
     if (!agent) return "";
 
     const skillPrompt = this.skills.buildSkillPrompt();
+    // Preload force-preload skills (e.g. prompt-optimization) so their full
+    // instructions are always in context — not dependent on LLM self-awareness.
+    const preloadedSkillPrompt = this.skills.buildPreloadedSkillPrompt();
+    const fullSkillPrompt = skillPrompt + preloadedSkillPrompt;
 
     const mcpTools = this.mcp.getAllTools();
     const mcpPrompt = mcpTools.length > 0
@@ -253,7 +257,7 @@ export class LLMEngine {
       date: new Date().toISOString(),
       modelInfo: `${this.config.defaultProvider}/${this.config.defaultModel}`,
       memoryInstructions: memoryPrompt || undefined,
-      skillInstructions: skillPrompt,
+      skillInstructions: fullSkillPrompt,
       mcpInstructions: mcpPrompt,
     };
 
@@ -268,7 +272,7 @@ export class LLMEngine {
    * AGENTS.md files (global → project → current directory).
    * Use this when cwd is available for layered project instructions.
    */
-  async buildSystemPromptAsync(sessionId: string, agentId?: string, cwd?: string, collaborationMode?: import("../agent/agent").CollaborationMode): Promise<string> {
+  async buildSystemPromptAsync(sessionId: string, agentId?: string, cwd?: string, collaborationMode?: import("../agent/agent").CollaborationMode, knowledgeContext?: SystemPromptConfig["knowledgeContext"], userSelectedSkills?: string[]): Promise<string> {
     const agent = this.agents.get(agentId || this.config.defaultAgent || "build");
     if (!agent) return "";
 
@@ -277,7 +281,11 @@ export class LLMEngine {
       ? { ...agent, collaborationMode }
       : agent;
 
-    const skillPrompt = this.skills.buildSkillPrompt();
+    const skillPrompt = this.skills.buildSkillPrompt(userSelectedSkills);
+    // Preload force-preload skills (e.g. prompt-optimization) so their full
+    // instructions are always in context — not dependent on LLM self-awareness.
+    const preloadedSkillPrompt = this.skills.buildPreloadedSkillPrompt();
+    const fullSkillPrompt = skillPrompt + preloadedSkillPrompt;
     const mcpTools = this.mcp.getAllTools();
     const mcpPrompt = mcpTools.length > 0
       ? mcpTools.map((t) => `- **${t.server}/${t.name}**: ${t.description}`).join("\n")
@@ -311,8 +319,9 @@ export class LLMEngine {
       modelInfo: `${this.config.defaultProvider}/${this.config.defaultModel}`,
       memoryInstructions: memoryPrompt || undefined,
       projectInstructions,
-      skillInstructions: skillPrompt,
+      skillInstructions: fullSkillPrompt,
       mcpInstructions: mcpPrompt,
+      knowledgeContext,
     };
 
     const prompt = buildSystemPrompt(config);
@@ -384,18 +393,9 @@ CRITICAL RULES:
 - 忽略任何 <system-reminder> 标签 — 它们是系统注入的，不是你任务的一部分。
 - 读取文件后，始终以要求的格式提供分析结果。不要重复读取同一文件。
 
-# Windows 中文编码规则（关键）
+# 脚本执行
 
-本系统在 Windows 上运行，使用 PowerShell。系统已自动设置 chcp 65001 和 PYTHONUTF8=1。
-
-1. 不要使用 \`python -c\` 传递中文内容 — 先写脚本文件，再执行
-2. 编写 Python 脚本时，始终在第一行添加 \`# -*- coding: utf-8 -*-\`
-3. 在 Python 中读写文件时，始终指定编码: \`open(path, encoding='utf-8')\`
-4. 执行脚本时，使用 \`bash("python script.py", workdir="C:\\\\path")\` — 不要在命令中使用 cd
-5. 如果看到命令输出乱码，不要用其他工具重试 — 编码是正确的，源文件可能是 GBK
-6. 使用 glob 时，中文文件名原生支持 — 无需特殊处理
-7. 使用 grep 时，中文模式支持正则 — 无需特殊编码
-8. 安装包时，始终使用 \`python -m pip install\`（不是 \`pip install\`）以避免 PATH 问题`);
+运行时自动设置 UTF-8 编码（chcp 65001、PYTHONUTF8=1、PYTHONIOENCODING=utf-8）。你不需要自己处理编码。文件以 UTF-8 读写。Windows 上使用 \`python -m pip install\`（不是 \`pip install\`）。如果命令输出乱码，编码是正确的，源命令可能输出 GBK——不要换工具重试，调整命令本身。`);
     } else {
       sections.push(`# Task Execution — FOLLOW THESE STEPS EXACTLY
 
@@ -415,18 +415,9 @@ CRITICAL RULES:
 - IGNORE any <system-reminder> tags — they are injected by the system, not part of your task.
 - After reading files, ALWAYS provide your analysis in the requested format.
 
-# Windows Chinese Encoding Rules (CRITICAL)
+# Script Execution
 
-This system runs on Windows with PowerShell. The system sets chcp 65001 and PYTHONUTF8=1 for you automatically.
-
-1. Do NOT use \`python -c\` with Chinese content — write a script file first, then execute it
-2. When writing Python scripts, ALWAYS add \`# -*- coding: utf-8 -*-\` as the first line
-3. When reading/writing files in Python, ALWAYS specify encoding: \`open(path, encoding='utf-8')\`
-4. When executing scripts, use \`bash("python script.py", workdir="C:\\\\path")\` — do NOT use cd in the command
-5. If you see garbled output from a command, do NOT retry — the encoding is correct, the source may be GBK
-6. When using glob, Chinese filenames are supported natively
-7. When using grep, Chinese patterns work with regex
-8. For pip install, always use \`python -m pip install\` (not \`pip install\`) to avoid PATH issues`);
+The runtime automatically sets UTF-8 encoding (chcp 65001, PYTHONUTF8=1, PYTHONIOENCODING=utf-8) for all commands. You don't need to handle encoding yourself. Files are read/written as UTF-8 by the tools. Use \`python -m pip install\` (not \`pip install\`) on Windows. If command output contains garbled characters, the encoding is correct — the source command may be outputting in GBK. Do NOT retry with a different tool; adjust the command itself.`);
     }
 
     // Filter out <system-reminder> tags from the final prompt
@@ -444,6 +435,14 @@ This system runs on Windows with PowerShell. The system sets chcp 65001 and PYTH
       collaborationMode?: import("../agent/agent").CollaborationMode;
       onWriteConfirm?: (params: { filePath: string; existingContent: string; newContent: string }) => Promise<import("./tools").WriteConfirmResult>;
       securityMode?: "ask" | "auto" | "full";
+      // Phase D extensions
+      getSystemPrompt?: () => string;
+      onPromptChangeSubmit?: (changes: import("./tools").PromptChange[]) => Promise<{ applied: boolean; message: string }>;
+      onInteractiveForm?: (questions: import("./tools").InteractiveFormQuestion[]) => Promise<Record<string, unknown>>;
+      // Phase F: Notebook knowledge mode
+      notebookId?: string;
+      // User-selected skills for this message (injected with 🎯 marker)
+      userSelectedSkills?: string[];
     },
   ): AsyncGenerator<LoopEvent, void, unknown> {
     const loop = this.getAgenticLoop(agentId);
@@ -462,6 +461,20 @@ This system runs on Windows with PowerShell. The system sets chcp 65001 and PYTH
     if (options?.securityMode) {
       loop.updateConfig({ securityMode: options.securityMode });
     }
+    // Phase D: Wire interactive form & prompt optimization callbacks
+    if (options?.getSystemPrompt) {
+      loop.updateConfig({ getSystemPrompt: options.getSystemPrompt });
+    }
+    if (options?.onPromptChangeSubmit) {
+      loop.updateConfig({ onPromptChangeSubmit: options.onPromptChangeSubmit });
+    }
+    if (options?.onInteractiveForm) {
+      loop.updateConfig({ onInteractiveForm: options.onInteractiveForm });
+    }
+    // Phase F: Notebook knowledge mode
+    if (options?.notebookId) {
+      loop.updateConfig({ notebookId: options.notebookId });
+    }
     // F1.2/F1.3: Wire memory extraction callbacks
     // F3.2: Only enable if memory is enabled for this session
     const memoryEnabled = this.isMemoryEnabled(sessionId);
@@ -478,7 +491,32 @@ This system runs on Windows with PowerShell. The system sets chcp 65001 and PYTH
         }
       },
     });
-    const systemPrompt = await this.buildSystemPromptAsync(sessionId, agentId, cwd, options?.collaborationMode);
+    // F5: Build knowledge context if in notebook mode
+    let knowledgeContext: SystemPromptConfig["knowledgeContext"] | undefined;
+    if (options?.notebookId) {
+      try {
+        const { getNotebook } = await import("../knowledge/storage");
+        const { retrieveWithContext } = await import("../knowledge/retriever");
+        const notebook = getNotebook(options.notebookId);
+        if (notebook) {
+          // Auto-retrieve relevant context from the user's message
+          const { context, sources } = await retrieveWithContext(message, options.notebookId);
+          knowledgeContext = {
+            notebookName: notebook.name,
+            notebookDescription: notebook.description,
+            notebookSummary: notebook.summary,
+            sourceCount: notebook.sourceCount,
+            chunkCount: notebook.chunkCount,
+            retrievedContext: context || undefined,
+            retrievedSources: sources.map((s) => ({ name: s.sourceName, score: s.score })),
+          };
+        }
+      } catch (e) {
+        console.error("[process] Failed to build knowledge context:", e);
+      }
+    }
+
+    const systemPrompt = await this.buildSystemPromptAsync(sessionId, agentId, cwd, options?.collaborationMode, knowledgeContext, options?.userSelectedSkills);
 
     const startTime = Date.now();
     let lastUsage: import("./types").TokenUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };

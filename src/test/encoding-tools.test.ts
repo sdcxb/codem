@@ -136,59 +136,40 @@ describe("工具链路编码 — 工具 description 包含编码指导", () => {
   });
 });
 
-describe("工具链路编码 — 子智能体提示词包含编码规范", () => {
-  // 验证子智能体系统提示词中的编码规范
-  const subagentEncodingRules = `# Windows Chinese Encoding Rules (CRITICAL)
+describe("工具链路编码 — 子智能体提示词编码规范（精简版）", () => {
+  // 验证子智能体系统提示词中的精简编码说明
+  // 旧的 8 条 "Windows Chinese Encoding Rules" 已被运行时层替代
+  // 现在只保留简短的 Script Execution 说明
+  const subagentScriptExecution = `# Script Execution
 
-This system runs on Windows with PowerShell. The system sets chcp 65001 and PYTHONUTF8=1 for you automatically.
-
-1. Do NOT use \`python -c\` with Chinese content — write a script file first, then execute it
-2. When writing Python scripts, ALWAYS add \`# -*- coding: utf-8 -*-\` as the first line
-3. When reading/writing files in Python, ALWAYS specify encoding: \`open(path, encoding='utf-8')\`
-4. When executing scripts, use \`bash("python script.py", workdir="C:\\\\path")\` — do NOT use cd in the command
-5. If you see garbled output (乱码) from a command, do NOT retry with a different tool — the encoding is correct, the source may be GBK
-6. When using glob, Chinese filenames are supported natively — no special handling needed
-7. When using grep, Chinese patterns work with regex — no special encoding needed
-8. For pip install, always use \`python -m pip install\` (not \`pip install\`) to avoid PATH issues`;
+The runtime automatically sets UTF-8 encoding (chcp 65001, PYTHONUTF8=1, PYTHONIOENCODING=utf-8) for all commands. You don't need to handle encoding yourself. Files are read/written as UTF-8 by the tools. Use \`python -m pip install\` (not \`pip install\`) on Windows. If command output contains garbled characters, the encoding is correct — the source command may be outputting in GBK. Do NOT retry with a different tool; adjust the command itself.`;
 
   it("包含 chcp 65001 说明", () => {
-    expect(subagentEncodingRules).toContain("chcp 65001");
+    expect(subagentScriptExecution).toContain("chcp 65001");
   });
 
   it("包含 PYTHONUTF8 说明", () => {
-    expect(subagentEncodingRules).toContain("PYTHONUTF8");
-  });
-
-  it("禁止 python -c 加中文", () => {
-    expect(subagentEncodingRules).toContain("python -c");
-    expect(subagentEncodingRules).toContain("Chinese content");
-  });
-
-  it("包含 Python 编码声明指导", () => {
-    expect(subagentEncodingRules).toContain("coding: utf-8");
-  });
-
-  it("包含文件 I/O 编码指导", () => {
-    expect(subagentEncodingRules).toContain("encoding='utf-8'");
+    expect(subagentScriptExecution).toContain("PYTHONUTF8");
   });
 
   it("包含乱码处理指导", () => {
-    expect(subagentEncodingRules).toContain("乱码");
-    expect(subagentEncodingRules).toContain("GBK");
-  });
-
-  it("包含 glob 中文支持说明", () => {
-    expect(subagentEncodingRules).toContain("glob");
-    expect(subagentEncodingRules).toContain("Chinese filenames");
-  });
-
-  it("包含 grep 中文支持说明", () => {
-    expect(subagentEncodingRules).toContain("grep");
-    expect(subagentEncodingRules).toContain("Chinese patterns");
+    expect(subagentScriptExecution).toContain("garbled");
+    expect(subagentScriptExecution).toContain("GBK");
+    expect(subagentScriptExecution).toContain("Do NOT retry");
   });
 
   it("包含 pip install 指导", () => {
-    expect(subagentEncodingRules).toContain("python -m pip install");
+    expect(subagentScriptExecution).toContain("python -m pip install");
+  });
+
+  it("不再包含旧的详细编码规则", () => {
+    expect(subagentScriptExecution).not.toContain("Windows Chinese Encoding Rules");
+    expect(subagentScriptExecution).not.toContain("ALWAYS add");
+    expect(subagentScriptExecution).not.toContain("ALWAYS specify encoding");
+  });
+
+  it("不再要求 LLM 手动处理编码", () => {
+    expect(subagentScriptExecution).toContain("don't need to handle encoding yourself");
   });
 });
 

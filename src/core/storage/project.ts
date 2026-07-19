@@ -25,7 +25,8 @@ function rowToProject(row: ProjectRow): Project {
 
 export function listProjects(): Project[] {
   const db = getDatabase();
-  const result = db.exec("SELECT * FROM projects ORDER BY pinned DESC, last_accessed_at DESC");
+  // Exclude the global project (id="") — it's a FK seed record, not a real project
+  const result = db.exec("SELECT * FROM projects WHERE id != '' ORDER BY pinned DESC, last_accessed_at DESC");
   if (result.length === 0) return [];
   return result[0].values.map((row: any[]) =>
     rowToProject({

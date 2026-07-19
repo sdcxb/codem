@@ -2,6 +2,10 @@ import type { ToolDefinition, ToolCallResult, LLMMessage } from "./types";
 import { readFile, writeFile, executeCommand, globSearch, grepSearch, isPathWithinWorkspace } from "../file-api";
 import { getLang } from "../i18n/lang";
 import { getSetting } from "../storage/settings";
+import { createLoadSkillTool } from "./tools/load-skill";
+import { createWebSearchTool } from "./tools/web-search";
+import { createReadAttachmentTool } from "./tools/read-attachment";
+import { createSearchNotebookTool } from "./tools/search-notebook";
 
 // ========== S5: Sandbox Helpers ==========
 
@@ -172,12 +176,55 @@ export interface ToolContext {
   workspace?: string;
   /** Security mode: "ask" = show Diff confirm, "auto" = skip Diff confirm, "full" = skip everything */
   securityMode?: "ask" | "auto" | "full";
+
+  // ===== Phase D extensions =====
+
+  /** (D2) Get the current system prompt. Returns the assembled prompt string. */
+  getSystemPrompt?: () => string;
+  /** (D2) Submit prompt changes for user review. Returns when user has reviewed. */
+  onPromptChangeSubmit?: (changes: PromptChange[]) => Promise<{ applied: boolean; message: string }>;
+  /** (D3) Present an interactive form to the user and wait for their response. */
+  onInteractiveForm?: (questions: InteractiveFormQuestion[]) => Promise<Record<string, unknown>>;
+
+  // ===== Phase F extensions =====
+
+  /** (F5) Active notebook ID for knowledge base mode. When set, search_notebook tool is available. */
+  notebookId?: string;
 }
 
 export interface ToolExecuteResult {
   title: string;
   metadata?: Record<string, any>;
   output: string;
+}
+
+// ========== Phase D: Interactive Form & Prompt Optimization Types ==========
+
+/** (D3) A single question in an interactive form */
+export interface InteractiveFormOption {
+  label: string;
+  value: string;
+  recommended?: boolean;
+}
+
+/** (D3) A question to present to the user via interactive form */
+export interface InteractiveFormQuestion {
+  id: string;
+  question: string;
+  input_type: "choice" | "text";
+  options?: InteractiveFormOption[];
+  multi_select?: boolean;
+  required?: boolean;
+  default?: string | string[];
+  placeholder?: string;
+}
+
+/** (D2) A prompt change submitted for user review */
+export interface PromptChange {
+  type: string;
+  name: string;
+  original: string;
+  suggested: string;
 }
 
 // ========== Tool Definition ==========
@@ -194,6 +241,11 @@ export class ToolRegistry {
 
   register(tool: ToolDef) {
     this.tools.set(tool.id, tool);
+  }
+
+  /** Remove a tool by id (used by SkillToolRegistry when unloading skills) */
+  remove(id: string): boolean {
+    return this.tools.delete(id);
   }
 
   get(id: string): ToolDef | undefined {
@@ -271,8 +323,65 @@ export function createBashTool(): ToolDef {
       required: ["command"],
     },
     async execute(args, ctx) {
-      const command = args.command as string;
-      const workdir = (args.workdir as string) || ctx.cwd;
+      let command = args.command as string;
+      let workdir = (args.workdir as string) || ctx.cwd;
+
+      // Auto-detect "cd <path> && <rest>" pattern and split into workdir + rest.
+      // This lets the LLM use natural shell syntax without needing to know about
+      // the workdir parameter. The runtime handles it transparently.
+      const cdMatch = command.match(/^\s*cd\s+["']?([^'"\&]+?)["']?\s*&&\s*(.+)$/s);
+      if (cdMatch) {
+        const cdPath = cdMatch[1].trim();
+        const rest = cdMatch[2].trim();
+        // Resolve relative cd path against current workdir
+        if (cdPath && !cdPath.startsWith("/") && !/^[A-Za-z]:[\\/]/.test(cdPath)) {
+          const sep = workdir.includes("/") && !workdir.includes("\\") ? "/" : "\\";
+          workdir = workdir.replace(/[\\/]+$/, "") + sep + cdPath;
+        } else {
+          workdir = cdPath;
+        }
+        command = rest;
+        console.log(`[bash tool] Auto-split cd: workdir="${workdir}", command="${command.substring(0, 80)}"`);
+      }
+
+      // P0+: Encoding safety net — handle edge cases that the Rust backend's
+      // chcp 65001 + PYTHONUTF8=1 doesn't fully cover.
+      //
+      // 1. `python -c "中文"` — Command-line args go through Windows code page
+      //    conversion. Even with PYTHONUTF8=1, the args themselves can get
+      //    mangled. Fix: rewrite to use a temp file with UTF-8 BOM.
+      // 2. `.bat/.cmd` execution — Batch files default to ANSI encoding; if the
+      //    LLM wrote one with Chinese content (UTF-8 no BOM), cmd.exe garbles it.
+      //    Fix: prepend chcp 65001 explicitly (Rust layer sets it for PowerShell,
+      //    but cmd.exe subprocesses need it re-asserted).
+      const hasNonAscii = /[^\x00-\x7F]/.test(command);
+
+      // Detect `python -c "..."` or `python -c '...'` with non-ASCII content
+      const pythonCMatch = command.match(/^(\s*python(?:3)?\s+-c\s+)(["'])([\s\S]*?)\2\s*$/);
+      if (pythonCMatch && hasNonAscii) {
+        const prefix = pythonCMatch[1];
+        const scriptBody = pythonCMatch[3];
+        // Write to a temp file and execute that instead — avoids command-line
+        // encoding conversion entirely. File is written as UTF-8 by Rust backend.
+        const tempFile = `${workdir.replace(/[\\/]+$/, "")}\\__pyc_temp_${Date.now()}.py`;
+        try {
+          await writeFile(tempFile, `# -*- coding: utf-8 -*-\n${scriptBody}`, { workspace: ctx.workspace || ctx.cwd });
+          command = `${prefix.replace(/-c\s+$/, "")} "${tempFile}"`;
+          console.log(`[bash tool] Rewrote python -c with non-ASCII to temp file: ${tempFile}`);
+        } catch (e) {
+          console.warn(`[bash tool] Failed to write temp file for python -c rewrite:`, e);
+          // Fall through — let the original command run; PYTHONUTF8=1 may still save it
+        }
+      }
+
+      // Detect .bat/.cmd execution — prepend chcp 65001 to ensure the batch
+      // interpreter uses UTF-8 code page (PowerShell's chcp doesn't propagate
+      // to cmd.exe subprocesses in all cases)
+      if (/\.(bat|cmd)\b/i.test(command) && !command.includes("chcp")) {
+        command = `chcp 65001 >nul && ${command}`;
+        console.log(`[bash tool] Prepended chcp 65001 for .bat/.cmd execution`);
+      }
+
       // LLM can specify timeout; clamp to safe range
       const requestedTimeout = (args.timeout_ms as number) || 30000;
       const timeoutMs = Math.max(5000, Math.min(requestedTimeout, 600000));
@@ -795,6 +904,14 @@ export function createDefaultToolRegistry(): ToolRegistry {
   registry.register(createGrepTool());
   registry.register(createTTSTool());
   registry.register(createImageGenTool());
+  // B3: load_skill tool for lazy skill loading
+  registry.register(createLoadSkillTool(registry));
+  // B4: web_search tool
+  registry.register(createWebSearchTool());
+  // B5: read_attachment tool
+  registry.register(createReadAttachmentTool());
+  // F5: search_notebook tool for knowledge base mode
+  registry.register(createSearchNotebookTool());
   return registry;
 }
 

@@ -530,12 +530,13 @@ describe("跨会话上下文一致性", () => {
     // 两者互补：压缩保留会话内上下文，记忆保留跨会话上下文
   });
 
-  it("场景：子智能体也获得编码规范", () => {
-    const subagentPrompt = `# Windows Chinese Encoding Rules (CRITICAL)
-1. Do NOT use \`python -c\` with Chinese content
-2. When writing Python scripts, ALWAYS add \`# -*- coding: utf-8 -*-\``;
-    expect(subagentPrompt).toContain("python -c");
-    expect(subagentPrompt).toContain("coding: utf-8");
+  it("场景：子智能体也获得编码说明（精简版）", () => {
+    // 旧的 8 条编码规则已删除，替换为简短的 Script Execution 说明
+    // 编码由运行时层（Rust + bash 工具）处理，LLM 不需要手动处理
+    const subagentPrompt = `# Script Execution\nThe runtime automatically sets UTF-8 encoding (chcp 65001, PYTHONUTF8=1). You don't need to handle encoding yourself.`;
+    expect(subagentPrompt).toContain("automatically sets UTF-8");
+    expect(subagentPrompt).toContain("PYTHONUTF8");
+    expect(subagentPrompt).not.toContain("Windows Chinese Encoding Rules");
   });
 });
 

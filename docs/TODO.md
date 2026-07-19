@@ -1,6 +1,93 @@
 # Codem 待办事项
 
+> **开发计划主线文档**：`docs/DEV-PLAN-UNIFIED.md`（统一开发计划，包含架构约束、影响分析、完整路线图）
+>
+> 以下为具体待办事项跟踪。Phase 0-4 已全部完成，当前进入 Phase B（工具/技能基础架构）。
+
 ## 待开发
+
+### Phase B：工具/技能基础架构（1-2周）✅ 已完成
+
+> 详见 `docs/DEV-PLAN-UNIFIED.md` 第四章 Phase B
+
+- [x] **B1** SKILL.md 解析器增强 — 新增 provider/tools/mcpServers/version/author/tags/bindShells 等字段 (`skill.ts`)
+- [x] **B2** SkillToolProvider 架构 — 技能携带工具的抽象层 (新增 `provider.ts`/`registry.ts`, `ToolRegistry.remove()`)
+- [x] **B3** load_skill 懒加载工具 — LLM 按需加载技能 prompt + 会话级缓存 + TTL 自动卸载 (新增 `load-skill.ts`, agentic-loop 集成)
+- [x] **B4** web_search 工具 — 支持 Tavily/通用 API 搜索引擎 (新增 `web-search.ts`, 设置面板配置)
+- [x] **B5** read_attachment 工具 — 分页读取用户上传附件 (新增 `read-attachment.ts`)
+- [x] **B6** mermaid-diagram 技能 — 内置技能 + MessageBubble Mermaid SVG 渲染 (新增 `MermaidDiagram` 组件, `mermaid` npm 依赖)
+
+### Phase C：技能管理 UI（1周）✅ 已完成
+
+> 详见 `docs/DEV-PLAN-UNIFIED.md` 第四章 Phase C
+
+- [x] **C1** UI 组件基础设施 — Switch/Dialog/AlertDialog/Badge/Card/Progress (新增 `src/components/ui/`, 安装 `@radix-ui/react-switch`/`react-dialog`/`react-alert-dialog`/`fflate`)
+- [x] **C2** 技能上传/安装 — ZIP 拖拽上传+fflate 解压+安全检查+覆盖确认 (新增 `installer.ts`, 重构 `SkillManager.tsx`)
+- [x] **C3** 技能启用/禁用 — Switch 开关+SQLite 持久化+`buildSkillPrompt` 过滤禁用技能
+- [x] **C4** 技能删除+搜索 — AlertDialog 二次确认+搜索框+标签/别名搜索+来源 Badge
+- [x] **C5** MCP 管理改进 — 编辑服务器(Dialog)+JSON 导入+删除确认+`updateServer()` 方法
+- [x] **C6** 管理界面图标替换 — SkillManager/McpManager 全面使用 `lucide-react` 图标 (聊天内 Emoji 保留)
+
+### Phase D：高级技能（2-3周）✅ 已完成
+
+> 详见 `docs/DEV-PLAN-UNIFIED.md` 第四章 Phase D
+
+- [x] **D1** conversation_to_prompt 技能 — 对话转可复用提示词 (纯 prompt 技能 + SKILL.md + 内置注册)
+- [x] **D2** prompt-optimization 技能 — 查看/修改系统提示词 (`PromptOptimizationProvider` + `get_system_prompt`/`submit_prompt_changes` 工具 + `PromptChangeReviewDialog` UI + App 全链路接线)
+- [x] **D3** interactive 表单技能 — 交互式数据收集 (`InteractiveFormProvider` + `interactive_form_question` 工具 + `InteractiveFormDialog` UI + App 全链路接线)
+- [x] **D4** skill-creator 技能 — 创建/改进/评估技能 (SKILL.md + `references/schemas.md` + `agents/{grader,analyzer,comparator}.md` + `scripts/{run-eval,aggregate-benchmark,quick-validate,package-skill,generate-review}.ts`)
+
+### 技能市场（B+C 方案：Rust HTTP 代理）✅ 已完成
+
+> 详见 `docs/DEV-PLAN-UNIFIED.md` 第 8.5 节
+
+- [x] **M1** Rust 层 HTTP 代理命令 — `http_get` + `http_download` Tauri command（复用 `reqwest` 依赖，绕过 CSP）
+- [x] **M2** 前端市场客户端 — `skill-market-client.ts`：搜索/下载/安装逻辑 + 4个默认市场源（Anthropic Skills / GitHub Agent Skills / GitHub SKILL.md Repos / Codem 内置）
+- [x] **M3** SkillManager 市场标签页 — 新增「技能市场」Tab + 卡片网格 UI + 搜索/筛选/安装/详情对话框
+- [x] **M4** 编译验证 + 生产构建 — TypeScript 零错误 + Rust `cargo check` 通过 + `npm run build` 成功
+
+### Phase F：笔记本式知识管理（NotebookLM 模式，3-4周）⏳ 待开始
+
+> 详见 `docs/DEV-PLAN-UNIFIED.md` 第四章 Phase F
+> 对标 Google NotebookLM：笔记本→上传来源→知识化处理→笔记本内问答
+> 全部使用本地 SQLite + 已有 Embedding API，不破坏一键安装
+
+- [ ] **F1** 数据模型 — SQLite 新增 notebooks/notebook_sources/notebook_chunks 三张表 (`database.ts` SCHEMA 扩展, 新增 `knowledge/storage.ts`)
+- [ ] **F2** 文本提取与分块引擎 — 文件/文本/URL→纯文本提取 + 段落+句子分块+重叠窗口 (新增 `extractor.ts`/`chunker.ts`)
+- [ ] **F3** Embedding 索引管道 — 提取→分块→批量 Embedding→SQLite BLOB 存储 + 进度回调 (新增 `indexer.ts`)
+- [ ] **F4** 语义检索引擎 — query embedding + cosineSimilarity 排序 + top-K + 来源标注 (新增 `retriever.ts`)
+- [ ] **F5** 笔记本对话集成 — 系统 prompt 注入知识范围 + 自动检索 + `search_notebook` 工具 + 来源引用渲染 (修改 `prompt.ts`/`agentic-loop.ts`/`tools.ts`, 新增 `search-notebook.ts`)
+- [ ] **F6** 笔记本管理 UI — 侧边栏笔记本分区 + 笔记本详情(来源管理+对话+摘要+建议问题) (新增 `NotebookManager.tsx`/`NotebookDetail.tsx`/`NotebookChat.tsx`)
+- [ ] **F7** PDF 文本提取（可选）— `pdfjs-dist` 构建时打包 (修改 `extractor.ts`, `package.json`)
+- [ ] **F8** 笔记本设置与配置 — Embedding/分块/检索参数配置 (修改 `SettingsPanel.tsx`)
+
+### Phase E：Work 模式拆分（远期，2-3周）⏳ 待开始
+
+> 前提：Phase B-D 全部完成
+
+- [ ] **E1** 模式切换器（UI 顶层 Codex/Work 切换）
+- [ ] **E2** Work 系统提示词（调研/文档导向）
+- [ ] **E3** Work 工具集（Web 搜索/文档生成/信息整理）
+- [ ] **E4** 项目制上下文（对话+文件+指令绑定）
+- [ ] **E5** 计划任务（定时/触发/监控）
+- [ ] **E6** 人机协作迭代（中途暂停/审查/调整）
+- [ ] **E7** 用量池共享
+
+### MSI 安装包中文向导
+- [ ] 在 `tauri.conf.json` 的 `bundle.windows.wix` 中配置 WiX 多语言（zh-CN + en-US）
+- [ ] 重新构建 MSI 安装包，确认安装向导界面支持中英文
+- [ ] 更新 Release 中的 MSI 文件
+
+### 版本发布流程备忘
+每次发版需完成以下步骤：
+1. `git commit` + `git tag vX.XX` + `git push origin master --tags`
+2. `gh release create vX.XX --title "..." --notes-file release-notes.md`
+3. `npm run tauri build` 构建生产版安装包
+4. `gh release upload vX.XX` 上传 exe + msi 到 GitHub Release
+
+## 已完成
+
+### Phase 0-4：Codex 核心对标 ✅ 全部完成
 
 ### Phase 0：类型与接口层（0.5 天）✅ 完成
 - [x] `LLMRequest` 增加 `reasoningEffort` 字段 (`types.ts`)
@@ -54,29 +141,6 @@
 - [x] 多模态-TTS — `multimodal.ts` `textToSpeech()` + `playTTSAudio()` + `/tts` 命令 + AI `tts` 工具
 - [x] 多模态-ImageGen — `multimodal.ts` `generateImages()` + `/image` 命令 + AI `image_gen` 工具
 - [x] 多模态设置 UI — `MultimodalPanel.tsx` 配置面板 + `SettingsPanel.tsx` 入口
-
-### Phase 5：Work 模式拆分（远期目标，Phase 0-4 全部完成后）
-- [ ] **W1 模式切换器** — UI 顶层 Codex/Work 模式切换
-- [ ] **W2 Work 系统提示词** — 调研/文档导向的独立提示词
-- [ ] **W3 Work 工具集** — Web 搜索/文档生成/信息整理（禁用编程工具）
-- [ ] **W4 项目制上下文** — 对话+文件+指令绑定为项目单元
-- [ ] **W5 计划任务** — 定时/触发/监控变化的任务调度
-- [ ] **W6 人机协作迭代** — 任务运行中途暂停/审查/调整方向
-- [ ] **W7 用量池共享** — Work 和 Codex 共享同一用量池
-
-### MSI 安装包中文向导
-- [ ] 在 `tauri.conf.json` 的 `bundle.windows.wix` 中配置 WiX 多语言（zh-CN + en-US）
-- [ ] 重新构建 MSI 安装包，确认安装向导界面支持中英文
-- [ ] 更新 Release 中的 MSI 文件
-
-### 版本发布流程备忘
-每次发版需完成以下步骤：
-1. `git commit` + `git tag vX.XX` + `git push origin master --tags`
-2. `gh release create vX.XX --title "..." --notes-file release-notes.md`
-3. `npm run tauri build` 构建生产版安装包
-4. `gh release upload vX.XX` 上传 exe + msi 到 GitHub Release
-
-## 已完成
 
 ### v0.79 发布 (2026-07-13)
 
@@ -179,6 +243,29 @@
 - [x] `App.tsx` 启动时检测安装器类型自动设置默认语言
 - [x] Rust 后端新增 `get_installer_default_lang` 命令（注册表检测 NSIS=zh / MSI=en）
 - [x] `tauri.conf.json` 配置 NSIS 中英文双语 + WiX 英文
+
+### Phase F: 笔记本式知识管理（NotebookLM 模式）(2026-07-16)
+- [x] F1: 数据模型 — SQLite 新增 notebooks/notebook_sources/notebook_chunks 三表 + CRUD storage
+- [x] F2: 文本提取与分块引擎 — extractor.ts (txt/md/code/url/html) + chunker.ts (段落→句子→重叠窗口)
+- [x] F3: Embedding 索引管道 — indexer.ts (批量 embedding + 进度回调 + 增量索引 + 摘要生成 + 建议问题)
+- [x] F4: 语义检索引擎 — retriever.ts (cosine 相似度 + top-K + 阈值过滤 + 查询缓存 + 上下文构建)
+- [x] F5: 笔记本对话集成 — prompt.ts 知识上下文注入 + search_notebook 工具 + agentic-loop notebookId 透传
+- [x] F6: 笔记本管理 UI — NotebookManager.tsx (列表/详情/来源管理/索引进度/建议问题/对话入口) + Sidebar 集成
+- [x] F7: PDF 文本提取 — pdf-extractor.ts (纯 TypeScript，零依赖，支持 FlateDecode 解压)
+- [x] F8: 笔记本设置 — SettingsPanel.tsx 新增分块/检索参数配置 UI
+- [x] TypeScript 编译零错误 + npm run build 成功
+
+### Phase G: 本地嵌入模型 (ONNX Runtime + 小型 BERT) (2026-07-17)
+- [x] G1: 风险1缓解 — local-embedding.ts 子分块预处理 (≤128 token, mean pooling 合并)
+- [x] G2: 风险2缓解 — 7 个多领域模型 (MiniLM/BGE-zh/BGE-en/E5/GTE/paraphrase)
+- [x] G3: 风险3缓解 — WASM+默认模型随包打包 (public/wasm + public/models)，安装后离线可用
+- [x] G3.1: 默认回退 — 未配置 Embedding API 时自动使用本地 ONNX 模式
+- [x] G4: multimodal.ts 本地模式路由 — isLocalEmbeddingProvider + getDefaultLocalEmbeddingConfig + isUsingLocalEmbedding
+- [x] G5: retriever.ts 维度不匹配保护 — 切换模型后旧索引自动跳过
+- [x] G6: indexer.ts 本地模式批次调整 — BATCH_SIZE = 10
+- [x] G7: MultimodalPanel.tsx 本地模型 UI — 选择器/详情/状态指示器
+- [x] G8: Phase G 测试套件 — 42 个测试用例全部通过
+- [x] TypeScript 编译零错误 + 1213 测试全部通过
 
 ### v0.77 (2026-07-07)
 - [x] 修复子智能体调用后主任务思考过程变为英文（5 个英语污染源）

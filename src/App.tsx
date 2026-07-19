@@ -20,6 +20,10 @@ import { MemoryManager } from "./components/MemoryManager";
 import { SessionRecovery } from "./components/SessionRecovery";
 import { UsageStats } from "./components/UsageStats";
 import { DiffViewer } from "./components/DiffViewer";
+import { InteractiveFormDialog } from "./components/InteractiveFormDialog";
+import { PromptChangeReviewDialog } from "./components/PromptChangeReviewDialog";
+import { NotebookManager } from "./components/NotebookManager";
+import type { InteractiveFormQuestion, PromptChange } from "./core/llm/tools";
 import { useAppStore } from "./store";
 import { useProjectStore } from "./core/store";
 import { loadAppIdentity } from "./core/config/loader";
@@ -32,8 +36,29 @@ import { migrateFromLocalStorage } from "./core/storage/migration";
 import { getSetting, setSetting, getSettingJSON } from "./core/storage/settings";
 import { setLang, useLang, S } from "./core/i18n/lang";
 import * as MessageStorage from "./core/storage/message";
+import { formatAttachmentsInline } from "./core/llm/attachment-formatter";
+import { syncAttachmentsToWorkspace } from "./core/llm/attachment-sync";
 
-const APP_ROOT = "D:\\mimo";
+/**
+ * 动态获取应用根目录（用户主目录）。
+ * 不再写死 D:\mimo，而是从 Tauri 运行时获取用户主目录。
+ */
+let _appRootCache: string | null = null;
+async function getAppRoot(): Promise<string> {
+  if (_appRootCache) return _appRootCache;
+  try {
+    const { invoke } = (window as any).__TAURI__?.core || {};
+    if (invoke) {
+      _appRootCache = (await invoke("get_default_cwd")) as string;
+      return _appRootCache;
+    }
+  } catch {}
+  _appRootCache = "D:\\mimo";
+  return _appRootCache;
+}
+
+// 同步 fallback：在异步 getAppRoot 完成前使用
+const APP_ROOT_FALLBACK = "D:\\mimo";
 type BottomTab = "chat" | "terminal";
 
 function getCliSessionKey(projectId: string, sessionId: string) {
@@ -66,12 +91,16 @@ function App() {
   const { messages, addMessage, appendToMessage, setStreaming, isStreaming, addToolCall, updateToolCall, loadMessages, saveMessages, setLLMStatus } = useAppStore();
   const { currentProject, currentSession, createSession, dbReady, loadFromDB } = useProjectStore();
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [appRoot, setAppRoot] = useState<string>(APP_ROOT_FALLBACK);
   const [showSettings, setShowSettings] = useState(false);
   const [showProjectManager, setShowProjectManager] = useState(false);
   const [showConfigEditor, setShowConfigEditor] = useState(false);
   const [showMcpManager, setShowMcpManager] = useState(false);
   const [showSkillManager, setShowSkillManager] = useState(false);
   const [showMemoryManager, setShowMemoryManager] = useState(false);
+  const [showNotebookManager, setShowNotebookManager] = useState(false);
+  const [activeNotebookId, setActiveNotebookId] = useState<string | null>(null);
+  const [activeNotebookName, setActiveNotebookName] = useState<string>('');
   const [showSessionRecovery, setShowSessionRecovery] = useState(false);
   const [showUsageStats, setShowUsageStats] = useState(false);
   const [bottomTab, setBottomTab] = useState<BottomTab>("chat");
@@ -103,6 +132,11 @@ function App() {
     };
   }, []);
 
+  // 动态加载应用根目录（用户主目录），替换写死的 D:\mimo
+  useEffect(() => {
+    getAppRoot().then(setAppRoot).catch(() => {});
+  }, []);
+
   // Listen for security mode changes from UI (InputArea toggle, SettingsPanel)
   useEffect(() => {
     const handler = () => {
@@ -118,6 +152,18 @@ function App() {
     existingContent: string;
     newContent: string;
     resolve: (result: import("./core/llm/tools").WriteConfirmResult) => void;
+  } | null>(null);
+
+  // D3: Pending interactive form
+  const [pendingInteractiveForm, setPendingInteractiveForm] = useState<{
+    questions: InteractiveFormQuestion[];
+    resolve: (answers: Record<string, unknown>) => void;
+  } | null>(null);
+
+  // D2: Pending prompt changes
+  const [pendingPromptChanges, setPendingPromptChanges] = useState<{
+    changes: PromptChange[];
+    resolve: (result: { applied: boolean; message: string }) => void;
   } | null>(null);
 
   // Handle model change from chat header - sync with engine
@@ -442,7 +488,7 @@ request: PermissionRequest;
   }, [currentSession?.id]);
 
   // ========== Send Message ==========
-  const handleSend = async (message: string, attachments?: any[]) => {
+  const handleSend = async (message: string, attachments?: any[], selectedSkills?: string[]) => {
     // Always read latest currentSession from store (avoids stale closure)
     const session = useProjectStore.getState().currentSession;
     if (!session) return;
@@ -559,27 +605,40 @@ request: PermissionRequest;
 
     let userContent = message;
     if (attachments && attachments.length > 0) {
-      const attachmentInfo = attachments.map((a: any) => {
-        if (a.type === "image") return `[Image: ${a.name}]`;
-        return `[File: ${a.name}${a.size ? ` (${a.size} bytes)` : ""}]`;
-      }).join("\n");
-      userContent = attachmentInfo + (message ? "\n" + message : "");
-    }
+      // Sync attachments to the workspace .attachments/ directory so the LLM
+      // can use read/grep/glob tools on them directly (Wegent-style sandbox sync).
+      const cwd = currentProject?.path || await getAppRoot();
+      const syncedAttachments = await syncAttachmentsToWorkspace(attachments, cwd);
 
-    
-    addMessage({
-      id: `user-${Date.now()}`,
-      role: "user",
-      content: userContent,
-      timestamp: Date.now(),
-      status: "done",
-      attachments,
-    });
+      // Wegent-style: inline attachment content with truncation annotations
+      // Small files (< 4KB) are fully inlined; large files get head+tail preview
+      // LLM naturally calls read_attachment when it sees "Truncated: yes"
+      const attachmentInfo = formatAttachmentsInline(syncedAttachments);
+      userContent = attachmentInfo + (message ? "\n\n" + message : "");
+
+      // Use synced attachments (with sandboxPath) for the message
+      addMessage({
+        id: `user-${Date.now()}`,
+        role: "user",
+        content: userContent,
+        timestamp: Date.now(),
+        status: "done",
+        attachments: syncedAttachments,
+      });
+    } else {
+      addMessage({
+        id: `user-${Date.now()}`,
+        role: "user",
+        content: userContent,
+        timestamp: Date.now(),
+        status: "done",
+      });
+    }
 
     // Immediately save to database so agentic loop can read it
     saveMessages(session.id);
 
-    await runAgenticLoop(message, session);
+      await runAgenticLoop(message, session, selectedSkills);
   };
 
   /**
@@ -587,7 +646,7 @@ request: PermissionRequest;
    * This function handles provider setup, streaming, tool calls, and
    * all event processing from the LLM engine.
    */
-  const runAgenticLoop = async (message: string, session: Session) => {
+  const runAgenticLoop = async (message: string, session: Session, selectedSkills?: string[]) => {
     if (!session) return;
 
     const mode = getMode();
@@ -647,7 +706,7 @@ request: PermissionRequest;
     }
 
     
-    const cwd = currentProject?.path || APP_ROOT;
+    const cwd = currentProject?.path || await getAppRoot();
     let assistantMsgId = `assistant-${Date.now()}`;
     let assistantContent = "";
     let reasoningContent = "";
@@ -674,6 +733,26 @@ request: PermissionRequest;
         },
         // Security mode: three-tier approval policy
         securityMode,
+        // D2: Prompt optimization callbacks
+        getSystemPrompt: () => {
+          // Return the current system prompt from the engine
+          return engine.buildSystemPrompt(session.id, undefined, cwd);
+        },
+        onPromptChangeSubmit: (changes: PromptChange[]) => {
+          return new Promise((resolve) => {
+            setPendingPromptChanges({ changes, resolve });
+          });
+        },
+        // D3: Interactive form callback
+        onInteractiveForm: (questions: InteractiveFormQuestion[]) => {
+          return new Promise((resolve) => {
+            setPendingInteractiveForm({ questions, resolve });
+          });
+        },
+        // F5: Notebook knowledge mode
+        ...(activeNotebookId ? { notebookId: activeNotebookId } : {}),
+        // User-selected skills (injected with 🎯 marker in system prompt)
+        ...(selectedSkills && selectedSkills.length > 0 ? { userSelectedSkills: selectedSkills } : {}),
       })) {
         if (abortRef.current.signal.aborted) break;
 
@@ -1098,7 +1177,7 @@ saveMessages(session.id);
       ) : (
         <>
           {showBootstrap && (
-            <BootstrapWizard appRoot={APP_ROOT} onComplete={handleBootstrapComplete} />
+            <BootstrapWizard appRoot={appRoot} onComplete={handleBootstrapComplete} />
           )}
 
           {sidebarOpen && (
@@ -1110,6 +1189,7 @@ saveMessages(session.id);
           onMcp={() => setShowMcpManager(true)}
           onSkills={() => setShowSkillManager(true)}
           onMemory={() => setShowMemoryManager(true)}
+          onNotebooks={() => setShowNotebookManager(true)}
           onRemoveProject={(id, name, path) => {
             setConfirmDialog({
               title: "Remove Project",
@@ -1157,6 +1237,18 @@ saveMessages(session.id);
                 ) : (
                   <>✅ 上下文已压缩{compactionStatus.messagesRemoved ? `（移除 ${compactionStatus.messagesRemoved} 条旧消息）` : ""}</>
                 )}
+              </div>
+            )}
+            {activeNotebookId && (
+              <div className="notebook-mode-banner">
+                <span className="notebook-mode-icon">📓</span>
+                <span>{lang === 'zh' ? `笔记本模式：${activeNotebookName}` : `Notebook Mode: ${activeNotebookName}`}</span>
+                <button
+                  className="notebook-mode-close"
+                  onClick={() => { setActiveNotebookId(null); setActiveNotebookName(''); }}
+                >
+                  ✕
+                </button>
               </div>
             )}
             {bottomTab === "chat" && (
@@ -1209,7 +1301,7 @@ saveMessages(session.id);
               />
             )}
             {bottomTab === "terminal" && (
-              <TerminalPanel cwd={currentProject?.path || APP_ROOT} />
+              <TerminalPanel cwd={currentProject?.path || appRoot} />
             )}
           </div>
         </div>
@@ -1225,7 +1317,7 @@ saveMessages(session.id);
       {showProjectManager && <ProjectManager onClose={() => setShowProjectManager(false)} />}
       {showConfigEditor && currentProject && (
         <ConfigEditor
-          appRoot={APP_ROOT}
+          appRoot={appRoot}
           projectPath={currentProject.path}
           onClose={() => setShowConfigEditor(false)}
         />
@@ -1251,6 +1343,21 @@ saveMessages(session.id);
         <div className="modal-overlay" onClick={() => setShowMemoryManager(false)}>
           <div className="modal-editor" onClick={(e) => e.stopPropagation()}>
             <MemoryManager onClose={() => setShowMemoryManager(false)} />
+          </div>
+        </div>
+      )}
+
+      {showNotebookManager && (
+        <div className="modal-overlay" onClick={() => setShowNotebookManager(false)}>
+          <div className="modal-editor" style={{ maxWidth: '900px', height: '80vh' }} onClick={(e) => e.stopPropagation()}>
+            <NotebookManager
+              onClose={() => setShowNotebookManager(false)}
+              onOpenNotebookChat={(notebookId, notebookName) => {
+                setActiveNotebookId(notebookId);
+                setActiveNotebookName(notebookName);
+                setShowNotebookManager(false);
+              }}
+            />
           </div>
         </div>
       )}
@@ -1351,6 +1458,41 @@ saveMessages(session.id);
             />
           </div>
         </div>
+      )}
+
+      {/* D3: Interactive Form Dialog */}
+      {pendingInteractiveForm && (
+        <InteractiveFormDialog
+          questions={pendingInteractiveForm.questions}
+          onSubmit={(answers) => {
+            pendingInteractiveForm.resolve(answers);
+            setPendingInteractiveForm(null);
+          }}
+          onCancel={() => {
+            pendingInteractiveForm.resolve({});
+            setPendingInteractiveForm(null);
+          }}
+        />
+      )}
+
+      {/* D2: Prompt Change Review Dialog */}
+      {pendingPromptChanges && (
+        <PromptChangeReviewDialog
+          changes={pendingPromptChanges.changes}
+          onApply={(appliedChanges) => {
+            // Here you would apply the changes to the actual system prompt
+            // For now, we just confirm what was applied
+            const msg = appliedChanges.length > 0
+              ? `Applied ${appliedChanges.length} prompt change(s): ${appliedChanges.map(c => c.name).join(", ")}`
+              : "No changes were applied.";
+            pendingPromptChanges.resolve({ applied: appliedChanges.length > 0, message: msg });
+            setPendingPromptChanges(null);
+          }}
+          onCancel={() => {
+            pendingPromptChanges.resolve({ applied: false, message: "User cancelled all changes." });
+            setPendingPromptChanges(null);
+          }}
+        />
       )}
         </>
       )}

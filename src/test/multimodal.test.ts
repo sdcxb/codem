@@ -191,22 +191,30 @@ describe("多模态模块", () => {
     });
   });
 
-  // ===== 3. 未配置时的错误处理 =====
-  describe("未配置时的错误处理", () => {
-    it("generateEmbeddings 未配置时抛出错误", async () => {
-      await expect(generateEmbeddings({ texts: ["hello"] })).rejects.toThrow("Embedding provider not configured");
+  // ===== 3. 未配置时的默认回退行为 =====
+  describe("未配置时的默认回退行为", () => {
+    it("generateEmbeddings 未配置时自动回退到本地模式", async () => {
+      // 清除配置，触发默认回退
+      saveMultimodalSettings({ embedding: null, tts: null, imageGen: null });
+      // 不再抛出错误，而是自动回退到本地 ONNX 模式
+      // 在测试环境中本地模型加载会失败（无浏览器缓存），但不会报"not configured"
+      await expect(generateEmbeddings({ texts: ["hello"] })).rejects.toThrow(
+        /cache|model|loading/i // 本地模型加载失败错误，而非配置错误
+      );
     });
 
-    it("generateEmbeddings 配置但未启用时抛出错误", async () => {
+    it("generateEmbeddings 配置但未启用时自动回退到本地模式", async () => {
       saveMultimodalSettings({
         embedding: { providerId: "openai", apiKey: "sk-test", baseUrl: "", model: "v1", enabled: false },
         tts: null,
         imageGen: null,
       });
-      await expect(generateEmbeddings({ texts: ["hello"] })).rejects.toThrow("Embedding provider not configured");
+      await expect(generateEmbeddings({ texts: ["hello"] })).rejects.toThrow(
+        /cache|model|loading/i
+      );
     });
 
-    it("generateEmbeddings 配置但无 API Key 时抛出错误", async () => {
+    it("generateEmbeddings 远程模式无 API Key 时抛出配置错误", async () => {
       saveMultimodalSettings({
         embedding: { providerId: "openai", apiKey: "", baseUrl: "", model: "v1", enabled: true },
         tts: null,

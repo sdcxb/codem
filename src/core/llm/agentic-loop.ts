@@ -86,6 +86,20 @@ export interface LoopConfig {
     existingContent: string;
     newContent: string;
   }) => Promise<WriteConfirmResult>;
+
+  // ===== Phase D extensions =====
+
+  /** (D2) Get the current system prompt. Returns the assembled prompt string. */
+  getSystemPrompt?: () => string;
+  /** (D2) Submit prompt changes for user review. */
+  onPromptChangeSubmit?: (changes: import("./tools").PromptChange[]) => Promise<{ applied: boolean; message: string }>;
+  /** (D3) Present an interactive form to the user and wait for their response. */
+  onInteractiveForm?: (questions: import("./tools").InteractiveFormQuestion[]) => Promise<Record<string, unknown>>;
+
+  // ===== Phase F extensions =====
+
+  /** (F5) Active notebook ID — when set, enables notebook knowledge mode */
+  notebookId?: string;
 }
 
 const DEFAULT_LOOP_CONFIG: LoopConfig = {
@@ -361,13 +375,21 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
     const planState = this.estimateSteps(userMessage);
     console.log(`[AgenticLoop] Estimated ${planState.total ?? 0} steps:`, planState.plan?.map(s => s.title));
 
-    // Main loop
-    while (this.state.iteration < this.state.maxIterations) {
-      this.state.iteration++;
-      this.state.toolCallsInIteration = 0;
-      this.state.compactedThisIteration = false;
+      // Main loop
+      while (this.state.iteration < this.state.maxIterations) {
+        this.state.iteration++;
+        this.state.toolCallsInIteration = 0;
+        this.state.compactedThisIteration = false;
 
-      // E8: Cost-aware degradation — degrade to cheaper model before hard stop
+        // B3: Tick session skills — decrement TTL and unload expired skills
+        try {
+          const { tickSessionSkills } = await import("./tools/load-skill");
+          await tickSessionSkills(sessionId, this.tools);
+        } catch (err) {
+          console.warn("[AgenticLoop] Failed to tick session skills:", err);
+        }
+
+        // E8: Cost-aware degradation — degrade to cheaper model before hard stop
       if (this.config.costTracker) {
         const limits = (this.config.costTracker as any).config?.limits;
         const warningThreshold = this.config.costWarningThreshold ?? 0.8;
@@ -435,8 +457,51 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
       }
 
       const apiMessages = this.buildMessages(sessionId);
-      const toolDefs = this.tools.getDefinitions();
-      console.log("[AgenticLoop] tools available:", toolDefs.length, toolDefs.map(t => t.name));
+      // P2/P4: Filter tool definitions based on runtime context.
+      // - Plan mode: write/edit/multi_edit/tts/image_gen tools are hidden (enforced at registration layer)
+      // - read_attachment: only available when conversation has document attachments
+      //   (matches Wegent's ChatContext._build_extra_tools has_attachments pattern)
+      const allToolDefs = this.tools.getDefinitions();
+      const writeToolNames = new Set(["write", "edit", "multi_edit", "tts", "image_gen"]);
+
+      // P4: Check if any message in this session has a document attachment.
+      // read_attachment is useless without attachments — hiding it prevents the
+      // LLM from hallucinating file content or calling it on plain text chats.
+      const hasDocumentAttachment = this.checkHasDocumentAttachment(sessionId);
+      const conditionalToolNames = new Set<string>();
+      if (!hasDocumentAttachment) conditionalToolNames.add("read_attachment");
+
+      const toolDefs = allToolDefs.filter(t => {
+        if (this.config.collaborationMode === "plan" && writeToolNames.has(t.name)) return false;
+        if (conditionalToolNames.has(t.name)) return false;
+        return true;
+      });
+      console.log(`[AgenticLoop] collaborationMode=${this.config.collaborationMode}, hasAttachment=${hasDocumentAttachment}, tools available: ${toolDefs.length}/${allToolDefs.length}`, toolDefs.map(t => t.name));
+
+      // B3: Inject pending skill prompts (from load_skill tool)
+      const { consumePendingSkillPrompts, getLoadedSkillPrompts, tickSessionSkills } = await import("./tools/load-skill");
+      const pendingSkillPrompt = consumePendingSkillPrompts(sessionId);
+      if (pendingSkillPrompt) {
+        // Append to the system message or first user message
+        if (apiMessages.length > 0 && apiMessages[0].role === "system") {
+          const sysMsg = apiMessages[0];
+          if (typeof sysMsg.content === "string") {
+            sysMsg.content += pendingSkillPrompt;
+          }
+        }
+        console.log("[AgenticLoop] Injected skill prompt:", pendingSkillPrompt.length, "chars");
+      }
+
+      // Also inject already-loaded skill prompts (for context recovery after compaction)
+      const activeSkillPrompt = getLoadedSkillPrompts(sessionId);
+      if (activeSkillPrompt && !pendingSkillPrompt) {
+        if (apiMessages.length > 0 && apiMessages[0].role === "system") {
+          const sysMsg = apiMessages[0];
+          if (typeof sysMsg.content === "string" && !sysMsg.content.includes("Active Skill Instructions")) {
+            sysMsg.content += activeSkillPrompt;
+          }
+        }
+      }
 
       this.state.contextPressure = this.estimateContextPressure(apiMessages);
 
@@ -808,6 +873,28 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
     const seenWaitTaskIds = new Set<string>();
     const dedupedToolCalls: typeof currentToolCalls = [];
     const duplicateToolCalls: typeof currentToolCalls = [];
+
+    // P5: Sub-agent two-step enforcement — if the same response has both
+    // spawn_subagent AND wait_for_subagent, the wait calls are invalid because
+    // the task IDs from spawn haven't been returned yet (the LLM would be
+    // guessing task IDs). Reject wait calls with a clear error message.
+    // This replaces 60+ lines of "NEVER spawn+wait in same response" prompt rules.
+    const hasSpawnInResponse = currentToolCalls.some(tc => tc.name === "spawn_subagent");
+    if (hasSpawnInResponse) {
+      const waitCalls = currentToolCalls.filter(tc => tc.name === "wait_for_subagent");
+      if (waitCalls.length > 0) {
+        console.warn(`[AgenticLoop] P5: Rejected ${waitCalls.length} wait_for_subagent call(s) in same response as spawn_subagent — task IDs not available yet`);
+        for (const wtc of waitCalls) {
+          yield {
+            type: "tool_error",
+            toolCall: wtc,
+            error: "Cannot wait_for_subagent in the same response as spawn_subagent — the task IDs are not available until the spawn results return. Send spawn_subagent calls first, then in your NEXT response use the returned task IDs to call wait_for_subagent.",
+          };
+        }
+        currentToolCalls = currentToolCalls.filter(tc => tc.name !== "wait_for_subagent");
+      }
+    }
+
     console.log(`[AgenticLoop] Single-response dedup: ${currentToolCalls.length} tool calls in this response: [${currentToolCalls.map(tc => `${tc.name}(${JSON.stringify(tc.input?.task_id || tc.input?.path || "")})`).join(", ")}]`);
     for (const tc of currentToolCalls) {
       const isRead = tc.name === "read" || tc.name === "read_file";
@@ -921,6 +1008,12 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
       onWriteConfirm: this.config.onWriteConfirm,
       // Security mode: controls whether write confirmation and permission checks are active
       securityMode: this.config.securityMode || "ask",
+      // Phase D: Interactive form & prompt optimization callbacks
+      getSystemPrompt: this.config.getSystemPrompt,
+      onPromptChangeSubmit: this.config.onPromptChangeSubmit,
+      onInteractiveForm: this.config.onInteractiveForm,
+      // Phase F: Notebook knowledge mode
+      notebookId: this.config.notebookId,
     };
 
     for await (const event of this.executor.execute(
@@ -1425,6 +1518,40 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
     const maxTokens = 128000;
     return Math.min(1, estimatedTokens / maxTokens);
   }
+
+/**
+ * P4: Check if the current session has any document attachments.
+ * Only document attachments (file/code/url, NOT image) warrant the
+ * read_attachment tool — images go through the vision channel.
+ *
+ * Attachments are now persisted in the DB (attachments table with message_id),
+ * so listMessages returns them. A content-based fallback covers legacy messages
+ * that were saved before attachments were persisted.
+ */
+private checkHasDocumentAttachment(sessionId: string): boolean {
+  try {
+    const messages = MessageStorage.listMessages(sessionId);
+    for (const msg of messages) {
+      // 1. Check attachments array (persisted in DB)
+      if (msg.attachments && msg.attachments.length > 0) {
+        for (const att of msg.attachments) {
+          if (att.type === "file" || att.type === "code" || att.type === "url") {
+            return true;
+          }
+        }
+      }
+      // 2. Fallback: check inline <attachment> tags in content (legacy messages)
+      if (msg.role === "user" && msg.content && msg.content.includes("<attachment>")) {
+        if (!msg.content.includes("Truncated: n/a (image)")) {
+          return true;
+        }
+      }
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
 
   /**
    * Compact messages for a session using LLM-powered summarization.

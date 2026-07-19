@@ -1,5 +1,5 @@
 import { getDatabase, persistDatabase } from "./database";
-import type { Message, ToolCall } from "../../store";
+import type { Message, ToolCall, MessageAttachment } from "../../store";
 
 export interface MessageRow {
   id: string;
@@ -25,7 +25,7 @@ export interface ToolCallRow {
   status: string;
 }
 
-function rowToMessage(row: MessageRow, toolCalls: ToolCall[]): Message {
+function rowToMessage(row: MessageRow, toolCalls: ToolCall[], attachments?: MessageAttachment[]): Message {
   return {
     id: row.id,
     role: row.role as "user" | "assistant" | "system",
@@ -35,6 +35,7 @@ function rowToMessage(row: MessageRow, toolCalls: ToolCall[]): Message {
     model: row.model ?? undefined,
     status: row.status as Message["status"],
     toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+    attachments: attachments && attachments.length > 0 ? attachments : undefined,
     generatedFiles: row.generated_files ? JSON.parse(row.generated_files) : undefined,
   };
 }
@@ -73,6 +74,31 @@ function loadToolCallsForMessage(db: any, messageId: string): ToolCall[] {
   return toolResult.length > 0 ? toolResult[0].values.map(rowToToolCallFromAny) : [];
 }
 
+/** Load attachments associated with a specific message (by message_id) */
+function loadAttachmentsForMessage(db: any, messageId: string): MessageAttachment[] {
+  try {
+    const result = db.exec(
+      "SELECT id, name, type, path, content, preview, sandbox_path, mime_type, size FROM attachments WHERE message_id = ? ORDER BY added_at ASC",
+      [messageId]
+    );
+    if (result.length === 0) return [];
+    return result[0].values.map((row: any[]) => ({
+      id: row[0] as string,
+      name: row[1] as string,
+      type: row[2] as "file" | "image" | "code" | "url",
+      path: row[3] as string | undefined,
+      content: row[4] as string | undefined,
+      preview: row[5] as string | undefined,
+      sandboxPath: row[6] as string | undefined,
+      mimeType: row[7] as string | undefined,
+      size: row[8] as number | undefined,
+    }));
+  } catch (e) {
+    console.warn("[loadAttachmentsForMessage] Failed:", e);
+    return [];
+  }
+}
+
 export function listMessages(sessionId: string, limit?: number): Message[] {
   const db = getDatabase();
   const limitClause = limit ? `LIMIT ${limit}` : "";
@@ -99,12 +125,44 @@ export function listMessages(sessionId: string, limit?: number): Message[] {
         generated_files: row[11] as string | null,
       };
       const toolCalls = loadToolCallsForMessage(db, messageRow.id);
-      return rowToMessage(messageRow, toolCalls);
+      const attachments = loadAttachmentsForMessage(db, messageRow.id);
+      return rowToMessage(messageRow, toolCalls, attachments);
     } catch (e) {
       console.warn("[listMessages] Failed to convert row:", e);
       return null;
     }
   }).filter((m): m is Message => m !== null);
+}
+
+/**
+ * List all attachments across all sessions (for cross-session reuse).
+ * Returns attachments with their owning session_id and message_id.
+ */
+export function listAllAttachments(limit?: number): Array<MessageAttachment & { sessionId: string; messageId: string }> {
+  const db = getDatabase();
+  const limitClause = limit ? `LIMIT ${limit}` : "";
+  try {
+    const result = db.exec(
+      `SELECT id, session_id, message_id, name, type, path, content, preview, sandbox_path, mime_type, size FROM attachments ORDER BY added_at DESC ${limitClause}`
+    );
+    if (result.length === 0) return [];
+    return result[0].values.map((row: any[]) => ({
+      id: row[0] as string,
+      sessionId: row[1] as string,
+      messageId: row[2] as string,
+      name: row[3] as string,
+      type: row[4] as "file" | "image" | "code" | "url",
+      path: row[5] as string | undefined,
+      content: row[6] as string | undefined,
+      preview: row[7] as string | undefined,
+      sandboxPath: row[8] as string | undefined,
+      mimeType: row[9] as string | undefined,
+      size: row[10] as number | undefined,
+    }));
+  } catch (e) {
+    console.warn("[listAllAttachments] Failed:", e);
+    return [];
+  }
 }
 
 export function getMessage(id: string): Message | null {
@@ -129,7 +187,8 @@ export function getMessage(id: string): Message | null {
   };
 
   const toolCalls = loadToolCallsForMessage(db, id);
-  return rowToMessage(messageRow, toolCalls);
+  const attachments = loadAttachmentsForMessage(db, id);
+  return rowToMessage(messageRow, toolCalls, attachments);
 }
 
 export function createMessage(message: Message, sessionId: string): void {
@@ -181,6 +240,33 @@ export function createMessage(message: Message, sessionId: string): void {
         "INSERT INTO tool_calls (id, message_id, tool, args, result, status) VALUES (?, ?, ?, ?, ?, ?)",
         [tc.id, message.id, tc.tool, JSON.stringify(tc.args), tc.result ?? null, tc.status]
       );
+    }
+  }
+
+  // Persist attachments associated with this message
+  if (message.attachments && message.attachments.length > 0) {
+    for (const att of message.attachments) {
+      try {
+        db.run(
+          "INSERT OR REPLACE INTO attachments (id, session_id, message_id, name, type, path, content, preview, sandbox_path, mime_type, size, added_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+          [
+            att.id,
+            sessionId,
+            message.id,
+            att.name,
+            att.type,
+            (att as any).path ?? null,
+            att.content ?? null,
+            att.preview ?? null,
+            att.sandboxPath ?? null,
+            att.mimeType ?? null,
+            att.size ?? null,
+            Date.now(),
+          ]
+        );
+      } catch (e) {
+        console.warn("[createMessage] Failed to save attachment:", e);
+      }
     }
   }
   persistDatabase();

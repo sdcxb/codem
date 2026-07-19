@@ -112,13 +112,25 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 
   createSession: (title) => {
     const project = get().currentProject;
+    const projectId = project?.id || "";
     const newId = generateId();
-    console.log(`[createSession] Creating new session: ${newId}, project: ${project?.id}`);
-    const session: Session = { id: newId, projectId: project?.id || "", title: title || `对话 ${get().sessions.length + 1}`, createdAt: Date.now(), lastMessageAt: Date.now(), messageCount: 0, attachments: [] };
+    console.log(`[createSession] Creating new session: ${newId}, project: ${projectId}`);
+    // 从数据库查询实际会话数，避免内存中的 sessions 列表不同步导致编号错误
+    let sessionNumber = 1;
+    try {
+      const existingSessions = SessionStorage.listSessions(projectId);
+      sessionNumber = existingSessions.length + 1;
+    } catch (e) {
+      console.warn("[createSession] Failed to count existing sessions:", e);
+    }
+    // 如果内存中 sessions 更长，使用内存长度（防止重复编号）
+    const memCount = get().sessions.length;
+    if (memCount >= sessionNumber) sessionNumber = memCount + 1;
+    const session: Session = { id: newId, projectId, title: title || `对话 ${sessionNumber}`, createdAt: Date.now(), lastMessageAt: Date.now(), messageCount: 0, attachments: [] };
     try { SessionStorage.createSession(session); } catch (e) { console.error("[Store] createSession failed:", e); }
     const updated = [...get().sessions, session];
     set({ sessions: updated, currentSession: session });
-    console.log(`[createSession] Set currentSession to: ${session.id}`);
+    console.log(`[createSession] Set currentSession to: ${session.id}, title: ${session.title}`);
     return session;
   },
 

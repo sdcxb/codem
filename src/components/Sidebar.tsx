@@ -17,6 +17,7 @@ interface SidebarProps {
   onMcp?: () => void;
   onSkills?: () => void;
   onMemory?: () => void;
+  onNotebooks?: () => void;
   onRemoveProject?: (projectId: string, projectName: string, projectPath: string) => void;
   fileExplorerProjectId?: string | null;
   onToggleFileExplorer?: (projectId: string) => void;
@@ -24,7 +25,7 @@ interface SidebarProps {
   collapsed?: boolean;
 }
 
-export function Sidebar({ identity, onSettings, onProjects, onConfig, onMcp, onSkills, onMemory, onRemoveProject, fileExplorerProjectId, onToggleFileExplorer, onToggleSidebar, collapsed = false }: SidebarProps) {
+export function Sidebar({ identity, onSettings, onProjects, onConfig, onMcp, onSkills, onMemory, onNotebooks, onRemoveProject, fileExplorerProjectId, onToggleFileExplorer, onToggleSidebar, collapsed = false }: SidebarProps) {
   const lang = useLang();
   const { clearMessages, loadMessages } = useAppStore();
   const {
@@ -134,6 +135,15 @@ export function Sidebar({ identity, onSettings, onProjects, onConfig, onMcp, onS
   };
 
   const handleNewSession = (projectId: string) => {
+    // 全局对话场景：__global__ 不是真实项目，openProject 会提前返回
+    // 需要手动加载全局 sessions 列表，确保 createSession 的编号正确
+    if (projectId === "__global__") {
+      const globalSessions = SessionStorage.listSessions("");
+      useProjectStore.setState({ currentProject: null, currentSession: null, sessions: globalSessions });
+      createSession();
+      loadAllSessions();
+      return;
+    }
     openProject(projectId);
     createSession();
     loadAllSessions();
@@ -318,12 +328,17 @@ export function Sidebar({ identity, onSettings, onProjects, onConfig, onMcp, onS
           <span className="sidebar-nav-icon">🧠</span>
           <span>{S.sidebar.memory[lang]}</span>
         </button>
+        <button className="sidebar-nav-item" onClick={onNotebooks}>
+          <span className="sidebar-nav-icon">📓</span>
+          <span>{lang === 'zh' ? '知识笔记本' : 'Notebooks'}</span>
+        </button>
         <button className="sidebar-nav-item" onClick={onSettings}>
           <span className="sidebar-nav-icon">⚙️</span>
           <span>{S.sidebar.settings[lang]}</span>
         </button>
       </div>
 
+      <div className="sidebar-scroll">
       <div className="sidebar-section">
         <div className="sidebar-section-header">
           <span>{S.sidebar.globalChats[lang]}</span>
@@ -548,6 +563,7 @@ export function Sidebar({ identity, onSettings, onProjects, onConfig, onMcp, onS
             })
           )}
         </div>
+      </div>
       </div>
 
       {deleteConfirm && (
