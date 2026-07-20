@@ -1,0 +1,470 @@
+/* ========== Dream Skin ========== */
+/* 浅色梦幻氛围感，支持背景图自适应主题色 */
+/* ThemeManager 会注入以下 CSS 变量：
+   --dream-bg-image: url(...)    背景图
+   --dream-accent: #xxx          强调色（从图片提取）
+   --dream-text-main: #xxx       主文字色
+   --dream-text-muted: #xxx      次要文字色
+   --dream-bg-card: rgba(...)    卡片背景（半透明）
+   --dream-bg-panel: rgba(...)   面板背景（半透明）
+   --dream-border-color: rgba(...) 边框色
+   --dream-blur-px: Npx          毛玻璃模糊度
+   --dream-card-opacity: 0.N     卡片透明度
+   同时覆盖默认皮肤的 --bg-primary, --sidebar-bg, --accent 等
+*/
+
+/* 梦幻皮肤根容器 - 透明，让背景层可见 */
+[data-skin="dream"] .app {
+  position: relative;
+  background: transparent !important;
+  color: var(--dream-text-main, #6c474d);
+}
+
+/* Dream 标题栏 - 透明，配合背景图 */
+[data-skin="dream"] .titlebar {
+  background: transparent;
+}
+[data-skin="dream"] .titlebar-icon {
+  color: var(--dream-accent, #e88c9a);
+}
+[data-skin="dream"] .titlebar-title {
+  color: var(--dream-text-muted, #a88a8f);
+}
+[data-skin="dream"] .titlebar-btn {
+  color: var(--dream-text-muted, #a88a8f);
+}
+[data-skin="dream"] .titlebar-btn:hover {
+  background: rgba(232, 140, 154, 0.12);
+  color: var(--dream-text-main, #6c474d);
+}
+[data-skin="dream"] .titlebar-btn-close:hover {
+  background: #e81123;
+  color: #ffffff;
+}
+
+/* 背景层 - 固定定位覆盖整个窗口 */
+[data-skin="dream"] .dream-bg-layer {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 0;
+  background-image: var(--dream-bg-image, none);
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  pointer-events: none;
+}
+
+/* 无背景图时的渐变 fallback */
+[data-skin="dream"] .dream-bg-layer.no-image {
+  background: linear-gradient(135deg, #fdf5f7 0%, #fce8eb 50%, #f7dee2 100%);
+}
+
+/* 背景层叠加 - 增强可读性 */
+[data-skin="dream"] .dream-bg-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 1;
+  background: rgba(0, 0, 0, 0.15);
+  pointer-events: none;
+}
+
+/* 装饰元素容器 */
+[data-skin="dream"] .dream-decorations {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 2;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+[data-skin="dream"] .dream-decoration {
+  position: absolute;
+  pointer-events: none;
+  opacity: 0.3;
+  color: var(--dream-accent, #e88c9a);
+}
+
+[data-skin="dream"] .dream-decoration.rose-left {
+  top: -20px;
+  left: -20px;
+  font-size: 120px;
+  transform: rotate(-15deg);
+}
+
+[data-skin="dream"] .dream-decoration.rose-right {
+  bottom: 80px;
+  right: -30px;
+  font-size: 150px;
+  transform: rotate(20deg);
+}
+
+[data-skin="dream"] .dream-decorations[data-hidden="1"] {
+  display: none;
+}
+
+/* 主内容层 - 提升到背景层之上 */
+/* 注意：不包含 .dream-polaroid，因为它需要保持 position:fixed */
+[data-skin="dream"] .app > .sidebar,
+[data-skin="dream"] .app > .main-area {
+  position: relative;
+  z-index: 3;
+}
+
+/* ========== Sidebar - 透明毛玻璃 ========== */
+[data-skin="dream"] .sidebar {
+  background: var(--dream-bg-card, rgba(255, 255, 255, 0.65)) !important;
+  backdrop-filter: blur(var(--dream-blur-px, 12px));
+  -webkit-backdrop-filter: blur(var(--dream-blur-px, 12px));
+  border-right: 1px solid var(--dream-border-color, rgba(232, 140, 154, 0.15));
+  color: var(--dream-text-main, #6c474d);
+}
+
+[data-skin="dream"] .sidebar-header,
+[data-skin="dream"] .sidebar-section-title,
+[data-skin="dream"] .sidebar-nav-item,
+[data-skin="dream"] .sidebar-project-name,
+[data-skin="dream"] .sidebar-session-item {
+  color: var(--dream-text-main, #6c474d);
+}
+
+[data-skin="dream"] .sidebar-session-item:hover,
+[data-skin="dream"] .sidebar-nav-item:hover {
+  background: rgba(232, 140, 154, 0.1);
+}
+
+[data-skin="dream"] .sidebar-session-item.active {
+  background: rgba(232, 140, 154, 0.15);
+  color: var(--dream-accent, #e88c9a);
+}
+
+[data-skin="dream"] .sidebar-bottom,
+[data-skin="dream"] .sidebar-footer {
+  background: transparent;
+  border-top: 1px solid var(--dream-border-color, rgba(232, 140, 154, 0.15));
+}
+
+/* 主题切换按钮在 Dream 下隐藏 */
+[data-skin="dream"] .theme-toggle {
+  display: none;
+}
+
+/* ========== 主面板区域 - 透明 ========== */
+[data-skin="dream"] .main-area {
+  background: transparent !important;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+[data-skin="dream"] .panel-right {
+  background: var(--dream-bg-card, rgba(255, 255, 255, 0.88)) !important;
+  backdrop-filter: blur(var(--dream-blur-px, 12px));
+  -webkit-backdrop-filter: blur(var(--dream-blur-px, 12px));
+  border: 1px solid var(--dream-border-color, rgba(0, 0, 0, 0.12));
+  border-radius: 16px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  margin: 8px;
+  overflow: hidden;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+[data-skin="dream"] .panel-tabs {
+  background: rgba(0, 0, 0, 0.03);
+  border-bottom: 1px solid var(--dream-border-color, rgba(0, 0, 0, 0.1));
+  padding: 0 12px;
+  display: flex;
+  gap: 4px;
+  height: 40px;
+  align-items: center;
+}
+
+[data-skin="dream"] .panel-tabs .tab {
+  background: transparent;
+  color: var(--dream-text-muted, #a88a8f);
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 8px 16px;
+  cursor: pointer;
+  font-size: 13px;
+  transition: color 0.2s, border-color 0.2s;
+}
+
+[data-skin="dream"] .panel-tabs .tab:hover {
+  color: var(--dream-text-main, #6c474d);
+}
+
+[data-skin="dream"] .panel-tabs .tab.active {
+  color: var(--dream-accent, #e88c9a);
+  border-bottom-color: var(--dream-accent, #e88c9a);
+}
+
+[data-skin="dream"] .panel-content {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  background: transparent !important;
+}
+
+/* ========== 消息气泡 - 毛玻璃 ========== */
+/* 只给 .message-content 加背景和边框，移除 .message 外层边框避免双边框 */
+[data-skin="dream"] .message-bubble,
+[data-skin="dream"] .message {
+  background: transparent !important;
+  border: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  color: var(--dream-text-main, #1a1a2e);
+}
+
+[data-skin="dream"] .message-content {
+  background: var(--dream-bg-card, rgba(255, 255, 255, 0.88)) !important;
+  backdrop-filter: blur(var(--dream-blur-px, 12px));
+  -webkit-backdrop-filter: blur(var(--dream-blur-px, 12px));
+  border: 1px solid var(--dream-border-color, rgba(0, 0, 0, 0.1)) !important;
+  border-radius: 12px !important;
+  color: var(--dream-text-main, #1a1a2e) !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+
+[data-skin="dream"] .user .message-content {
+  background: rgba(0, 0, 0, 0.04) !important;
+  border-color: rgba(0, 0, 0, 0.08) !important;
+}
+
+[data-skin="dream"] .assistant .message-content {
+  background: var(--dream-bg-card, rgba(255, 255, 255, 0.9)) !important;
+}
+
+[data-skin="dream"] .system .message-content {
+  background: rgba(0, 0, 0, 0.03) !important;
+  color: var(--dream-text-muted, #555566);
+}
+
+/* ========== 输入区域 - 透明毛玻璃 ========== */
+[data-skin="dream"] .chat-input-wrapper,
+[data-skin="dream"] .input-area,
+[data-skin="dream"] .input-wrapper {
+  background: var(--dream-bg-card, rgba(255, 255, 255, 0.88)) !important;
+  backdrop-filter: blur(var(--dream-blur-px, 12px));
+  -webkit-backdrop-filter: blur(var(--dream-blur-px, 12px));
+  border: 1px solid var(--dream-border-color, rgba(0, 0, 0, 0.12));
+  border-radius: 16px;
+  color: var(--dream-text-main, #1a1a2e);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
+}
+
+[data-skin="dream"] .chat-input-wrapper input,
+[data-skin="dream"] .chat-input-wrapper textarea,
+[data-skin="dream"] .input-area input,
+[data-skin="dream"] .input-area textarea {
+  background: transparent;
+  color: var(--dream-text-main, #6c474d);
+  border: none;
+  outline: none;
+}
+
+[data-skin="dream"] .chat-input-wrapper input::placeholder,
+[data-skin="dream"] .chat-input-wrapper textarea::placeholder,
+[data-skin="dream"] .input-area input::placeholder,
+[data-skin="dream"] .input-area textarea::placeholder {
+  color: var(--dream-text-muted, #a88a8f);
+}
+
+/* 发送按钮 */
+[data-skin="dream"] .btn-send,
+[data-skin="dream"] .send-button {
+  background: var(--dream-accent, #e88c9a) !important;
+  color: white !important;
+  border: none;
+  border-radius: 50%;
+  box-shadow: 0 4px 8px rgba(232, 140, 154, 0.3);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+[data-skin="dream"] .btn-send:hover,
+[data-skin="dream"] .send-button:hover {
+  background: var(--dream-accent, #e88c9a) !important;
+  filter: brightness(0.9);
+  transform: scale(1.05);
+}
+
+/* ========== 代码块 - 毛玻璃 ========== */
+[data-skin="dream"] pre,
+[data-skin="dream"] .code-block {
+  background: var(--dream-bg-panel, rgba(245, 245, 248, 0.9)) !important;
+  backdrop-filter: blur(var(--dream-blur-px, 12px));
+  -webkit-backdrop-filter: blur(var(--dream-blur-px, 12px));
+  border: 1px solid var(--dream-border-color, rgba(0, 0, 0, 0.1));
+  border-radius: 8px;
+  color: var(--dream-text-main, #1a1a2e);
+}
+
+/* ========== 工具调用 ========== */
+[data-skin="dream"] .tool-call,
+[data-skin="dream"] .tool-result {
+  background: var(--dream-bg-card, rgba(255, 255, 255, 0.8)) !important;
+  backdrop-filter: blur(var(--dream-blur-px, 12px));
+  -webkit-backdrop-filter: blur(var(--dream-blur-px, 12px));
+  border: 1px solid var(--dream-border-color, rgba(0, 0, 0, 0.1));
+  border-radius: 8px;
+  color: var(--dream-text-main, #1a1a2e);
+}
+
+/* ========== 模态框 / 设置面板 - 强制磨砂高不透明，确保文字可读 ========== */
+[data-skin="dream"] .modal-overlay {
+background: rgba(0, 0, 0, 0.35);
+backdrop-filter: blur(6px);
+-webkit-backdrop-filter: blur(6px);
+}
+
+[data-skin="dream"] .modal-editor,
+[data-skin="dream"] .settings-panel,
+[data-skin="dream"] .project-manager,
+[data-skin="dream"] .config-editor {
+background: rgba(255, 255, 255, 0.95) !important;
+backdrop-filter: blur(20px);
+-webkit-backdrop-filter: blur(20px);
+border: 1px solid var(--dream-border-color, rgba(0, 0, 0, 0.12));
+box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
+color: var(--dream-text-main, #1a1a2e) !important;
+}
+
+/* 暗色梦幻模式下模态框背景 */
+[data-skin="dream"][data-theme="dark"] .modal-editor,
+[data-skin="dream"][data-theme="dark"] .settings-panel,
+[data-skin="dream"][data-theme="dark"] .project-manager,
+[data-skin="dream"][data-theme="dark"] .config-editor {
+background: rgba(30, 30, 46, 0.95) !important;
+color: var(--dream-text-main, #e0d8e0) !important;
+}
+
+/* ========== 滚动条 ========== */
+[data-skin="dream"] ::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+[data-skin="dream"] ::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+[data-skin="dream"] ::-webkit-scrollbar-thumb {
+  background: rgba(232, 140, 154, 0.3);
+  border-radius: 4px;
+}
+
+[data-skin="dream"] ::-webkit-scrollbar-thumb:hover {
+  background: var(--dream-accent, #e88c9a);
+}
+
+/* ========== 拍立得已移除（遮挡对话区域） ========== */
+[data-skin="dream"] .dream-polaroid {
+  display: none !important;
+}
+
+[data-skin="dream"] .dream-polaroid img {
+  width: 100%;
+  height: 120px;
+  object-fit: cover;
+  object-position: center top;
+  background-color: #eee;
+  margin-bottom: 12px;
+  border-radius: 2px;
+}
+
+[data-skin="dream"] .dream-polaroid-text {
+  font-size: 11px;
+  color: var(--dream-text-muted, #a88a8f);
+  line-height: 1.4;
+}
+
+[data-skin="dream"] .dream-polaroid-pin {
+  position: absolute;
+  top: -10px;
+  left: 50%;
+  transform: translateX(-50%);
+  color: var(--dream-accent, #e88c9a);
+  font-size: 20px;
+}
+
+[data-skin="dream"] .dream-polaroid[data-hidden="1"] {
+  display: none;
+}
+
+/* 响应式 */
+@media (max-width: 900px) {
+  [data-skin="dream"] .dream-polaroid {
+    width: 100px;
+    bottom: 20px;
+    right: 20px;
+  }
+
+  [data-skin="dream"] .dream-polaroid img {
+    height: 80px;
+  }
+}
+
+@media (max-width: 600px) {
+  [data-skin="dream"] .dream-polaroid {
+    display: none;
+  }
+
+  [data-skin="dream"] .dream-decoration {
+    font-size: 80px;
+  }
+}
+
+/* ========== 技能选择弹窗 - 毛玻璃，确保文字可读 ========== */
+[data-skin="dream"] .skill-picker-popup {
+  background: rgba(255, 255, 255, 0.95) !important;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--dream-border-color, rgba(0, 0, 0, 0.12));
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  padding: 10px 12px;
+  color: var(--dream-text-main, #1a1a2e) !important;
+}
+
+[data-skin="dream"][data-theme="dark"] .skill-picker-popup {
+  background: rgba(30, 30, 46, 0.95) !important;
+  color: var(--dream-text-main, #e0d8e0) !important;
+}
+
+/* ========== 通用下拉菜单 / 弹出层 - 毛玻璃 ========== */
+[data-skin="dream"] .dropdown-menu,
+[data-skin="dream"] .popover,
+[data-skin="dream"] .popup-menu,
+[data-skin="dream"] .context-menu {
+  background: rgba(255, 255, 255, 0.95) !important;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--dream-border-color, rgba(0, 0, 0, 0.12));
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+  color: var(--dream-text-main, #1a1a2e) !important;
+}
+
+[data-skin="dream"][data-theme="dark"] .dropdown-menu,
+[data-skin="dream"][data-theme="dark"] .popover,
+[data-skin="dream"][data-theme="dark"] .popup-menu,
+[data-skin="dream"][data-theme="dark"] .context-menu {
+  background: rgba(30, 30, 46, 0.95) !important;
+  color: var(--dream-text-main, #e0d8e0) !important;
+}

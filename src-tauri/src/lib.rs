@@ -1,9 +1,13 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::sync::Arc;
 use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri::WindowEvent as WinEvent;
 use tauri::tray::{TrayIconBuilder, TrayIconEvent, MouseButton, MouseButtonState};
 use tauri::menu::{MenuBuilder, MenuItemBuilder};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::sync::{oneshot, Mutex as TokioMutex};
 
 // ========== Types ==========
 
@@ -63,12 +67,21 @@ pub struct CostStats {
     pub total_tokens: u64,
 }
 
+// ========== MCP Stdio Process Management ==========
+
+struct McpProcessHandle {
+    stdin: tokio::process::ChildStdin,
+    pending: Arc<TokioMutex<HashMap<i64, oneshot::Sender<serde_json::Value>>>>,
+    _child: tokio::process::Child,
+}
+
 // ========== App State ==========
 
 struct AppState {
     providers: Mutex<Vec<ProviderConfig>>,
     default_model: Mutex<String>,
     default_agent: Mutex<String>,
+    mcp_processes: TokioMutex<HashMap<String, McpProcessHandle>>,
 }
 
 // ========== Commands ==========
@@ -617,6 +630,148 @@ async fn delete_file(path: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+async fn rename_file(old_path: String, new_path: String) -> Result<(), String> {
+    std::fs::rename(&old_path, &new_path).map_err(|e| format!("Failed to rename: {}", e))
+}
+
+#[tauri::command]
+async fn make_directory(path: String) -> Result<(), String> {
+    std::fs::create_dir_all(&path).map_err(|e| format!("Failed to create directory: {}", e))
+}
+
+// ========== MCP Stdio Commands ==========
+
+/// Spawn an MCP stdio child process and start reading its stdout.
+#[tauri::command]
+async fn mcp_stdio_connect(
+    state: State<'_, AppState>,
+    name: String,
+    command: String,
+    args: Option<Vec<String>>,
+    env: Option<HashMap<String, String>>,
+) -> Result<(), String> {
+    let mut cmd = tokio::process::Command::new(&command);
+    if let Some(args) = &args {
+        cmd.args(args);
+    }
+    if let Some(env) = &env {
+        for (k, v) in env {
+            cmd.env(k, v);
+        }
+    }
+    cmd.stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+
+    #[cfg(target_os = "windows")]
+    {
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    }
+
+    let mut child = cmd.spawn().map_err(|e| format!("Failed to spawn MCP process: {}", e))?;
+    let stdin = child.stdin.take().ok_or("Failed to capture stdin")?;
+    let stdout = child.stdout.take().ok_or("Failed to capture stdout")?;
+
+    let pending: Arc<TokioMutex<HashMap<i64, oneshot::Sender<serde_json::Value>>>> =
+        Arc::new(TokioMutex::new(HashMap::new()));
+    let pending_clone = pending.clone();
+
+    // Background task: read stdout line by line, dispatch to pending requesters
+    tokio::spawn(async move {
+        let mut reader = BufReader::new(stdout).lines();
+        while let Ok(Some(line)) = reader.next_line().await {
+            if line.trim().is_empty() {
+                continue;
+            }
+            // Try to parse as JSON
+            if let Ok(json) = serde_json::from_str::<serde_json::Value>(&line) {
+                // Check if this is a response (has "id")
+                if let Some(id) = json.get("id").and_then(|v| v.as_i64()) {
+                    let mut map = pending_clone.lock().await;
+                    if let Some(sender) = map.remove(&id) {
+                        let _ = sender.send(json);
+                    }
+                }
+                // Notifications (no "id") are silently ignored for now
+            }
+        }
+    });
+
+    let mut processes = state.mcp_processes.lock().await;
+    processes.insert(name, McpProcessHandle {
+        stdin,
+        pending,
+        _child: child,
+    });
+
+    Ok(())
+}
+
+/// Send a JSON-RPC message to an MCP stdio process and wait for the response.
+#[tauri::command]
+async fn mcp_stdio_request(
+    state: State<'_, AppState>,
+    name: String,
+    message: String,
+) -> Result<String, String> {
+    // Parse the message to extract the request id
+    let parsed: serde_json::Value = serde_json::from_str(&message)
+        .map_err(|e| format!("Invalid JSON message: {}", e))?;
+    let id = parsed.get("id").and_then(|v| v.as_i64())
+        .ok_or("Message missing 'id' field")?;
+
+    let mut processes = state.mcp_processes.lock().await;
+    let handle = processes.get_mut(&name)
+        .ok_or(format!("MCP process '{}' not found", name))?;
+
+    // Register a pending response channel
+    let (tx, rx) = oneshot::channel();
+    {
+        let mut map = handle.pending.lock().await;
+        map.insert(id, tx);
+    }
+
+    // Write message + newline to stdin
+    let msg = format!("{}\n", message);
+    handle.stdin.write_all(msg.as_bytes()).await
+        .map_err(|e| format!("Failed to write to stdin: {}", e))?;
+    handle.stdin.flush().await
+        .map_err(|e| format!("Failed to flush stdin: {}", e))?;
+
+    // Wait for response with timeout (30 seconds)
+    let result = tokio::time::timeout(
+        std::time::Duration::from_secs(30),
+        rx,
+    ).await;
+
+    match result {
+        Ok(Ok(json)) => Ok(serde_json::to_string(&json).unwrap_or_default()),
+        Ok(Err(_)) => Err("MCP response channel closed".to_string()),
+        Err(_) => {
+            // Timeout — clean up pending request
+            let mut map = handle.pending.lock().await;
+            map.remove(&id);
+            Err("MCP request timeout (30s)".to_string())
+        }
+    }
+}
+
+/// Disconnect and kill an MCP stdio process.
+#[tauri::command]
+async fn mcp_stdio_disconnect(
+    state: State<'_, AppState>,
+    name: String,
+) -> Result<(), String> {
+    let mut processes = state.mcp_processes.lock().await;
+    if let Some(mut handle) = processes.remove(&name) {
+        // Kill the child process
+        let _ = handle._child.kill().await;
+        let _ = handle._child.wait().await;
+    }
+    Ok(())
+}
+
+#[tauri::command]
 async fn mimo_login() -> Result<serde_json::Value, String> {
     eprintln!("[mimo_login] Starting native OAuth (no external mimo.exe needed)...");
 
@@ -951,6 +1106,7 @@ let app = tauri::Builder::default()
             ]),
             default_model: Mutex::new("gpt-4o".to_string()),
             default_agent: Mutex::new("build".to_string()),
+            mcp_processes: TokioMutex::new(HashMap::new()),
         })
         .invoke_handler(tauri::generate_handler![
             send_message,
@@ -974,6 +1130,11 @@ let app = tauri::Builder::default()
             mimo_delete_auth,
             mimo_login,
             delete_file,
+            rename_file,
+            make_directory,
+            mcp_stdio_connect,
+            mcp_stdio_request,
+            mcp_stdio_disconnect,
             glob_search,
             get_app_data_dir,
             get_default_cwd,
@@ -986,14 +1147,24 @@ let app = tauri::Builder::default()
             http_download,
         ])
         .setup(|app| {
-            // Apply window vibrancy (frosted glass effect) on Windows
+            // Apply window vibrancy (frosted glass effect)
             #[cfg(target_os = "windows")]
             {
                 if let Some(window) = app.get_webview_window("main") {
+                    // Win11: Mica (wallpaper-tinted); fallback to Win10 Acrylic
                     let result = window_vibrancy::apply_mica(&window, Some(true));
-                    if result.is_err() {
-                        let _ = window_vibrancy::apply_acrylic(&window, Some((18, 18, 18, 120)));
+                    if let Err(e) = result {
+                        eprintln!("[vibrancy] Mica failed ({}), trying Acrylic", e);
+                        let _ = window_vibrancy::apply_acrylic(&window, Some((18, 18, 18, 100)));
                     }
+                }
+            }
+
+            #[cfg(target_os = "macos")]
+            {
+                if let Some(window) = app.get_webview_window("main") {
+                    use window_vibrancy::{apply_vibrancy, NSVisualEffectMaterial, NSVisualEffectState};
+                    let _ = apply_vibrancy(&window, NSVisualEffectMaterial::HudWindow, Some(NSVisualEffectState::Active), None);
                 }
             }
 

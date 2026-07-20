@@ -1,7 +1,5 @@
 import { useState, useEffect, useRef } from "react";
 
-const isTauri = () => !!(window as any).__TAURI__;
-
 interface FileEditorProps {
   filePath: string;
   onClose: () => void;
@@ -20,10 +18,7 @@ const OFFICE_EXTS = new Set(["doc", "docx", "xls", "xlsx", "ppt", "pptx"]);
 const BINARY_EXTS = new Set(["exe", "dll", "so", "dylib", "bin", "zip", "tar", "gz", "rar", "7z", "mp3", "mp4", "avi", "mov", "wav", "ttf", "otf", "woff", "woff2"]);
 
 function fileUrl(path: string): string {
-  if (isTauri()) {
-    return `https://asset.localhost/${encodeURIComponent(path)}`;
-  }
-  return `http://localhost:3002/api/file?path=${encodeURIComponent(path)}`;
+  return `https://asset.localhost/${encodeURIComponent(path)}`;
 }
 
 function FilePreviewImage({ filePath }: { filePath: string }) {
@@ -48,18 +43,14 @@ function FilePreviewOffice({ filePath, fileName }: { filePath: string; fileName:
   const icons: Record<string, string> = { doc: "📄", docx: "📄", xls: "📊", xlsx: "📊", ppt: "📑", pptx: "📑" };
 
   const handleOpenExternal = async () => {
-    if (isTauri()) {
+    try {
+      const { invoke } = (window as any).__TAURI__.core;
+      await invoke("open_file_external", { path: filePath });
+    } catch {
       try {
         const { invoke } = (window as any).__TAURI__.core;
-        await invoke("open_file_external", { path: filePath });
-      } catch {
-        try {
-          const { invoke } = (window as any).__TAURI__.core;
-          await invoke("execute_command", { command: `cmd /c start "" "${filePath}"` });
-        } catch {}
-      }
-    } else {
-      window.open(fileUrl(filePath), "_blank");
+        await invoke("execute_command", { command: `cmd /c start "" "${filePath}"` });
+      } catch {}
     }
   };
 
@@ -114,15 +105,8 @@ export function FileEditor({ filePath, onClose }: FileEditorProps) {
 
     const loadFile = async () => {
       try {
-        let text: string;
-        if (isTauri()) {
-          const { invoke } = (window as any).__TAURI__.core;
-          text = await invoke("read_file", { path: filePath });
-        } else {
-          const res = await fetch(`http://localhost:3002/api/file?path=${encodeURIComponent(filePath)}`);
-          if (!res.ok) throw new Error(`HTTP ${res.status}`);
-          text = await res.text();
-        }
+        const { invoke } = (window as any).__TAURI__.core;
+        const text = await invoke("read_file", { path: filePath });
         setContent(text);
         setOriginalContent(text);
         setModified(false);
@@ -144,17 +128,8 @@ export function FileEditor({ filePath, onClose }: FileEditorProps) {
   const handleSave = async () => {
     setSaving(true);
     try {
-      if (isTauri()) {
-        const { invoke } = (window as any).__TAURI__.core;
-        await invoke("write_file", { path: filePath, content });
-      } else {
-        const res = await fetch("http://localhost:3002/api/write-file", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ path: filePath, content }),
-        });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      }
+      const { invoke } = (window as any).__TAURI__.core;
+      await invoke("write_file", { path: filePath, content });
       setOriginalContent(content);
       setModified(false);
     } catch (err: any) {

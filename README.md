@@ -18,7 +18,11 @@
 >
 > 下周本人博士开题，没有时间更新，希望有更厉害的程序员兄弟能接力开发！
 
-![Codem 运行界面](docs/screenshot.png)
+![Codem 运行界面](docs/26720-1.jpg)
+
+![Codem Hub 皮肤](docs/26720-2.jpg)
+
+![Codem 梦幻皮肤](docs/26720-3.jpg)
 
 ### 项目来源与借鉴
 
@@ -172,6 +176,11 @@ codem/
 - [x] 文件夹选择器改用 rfd crate（支持中文路径）
 - [x] 清理 48 处未使用导入/变量 + 多处死代码
 - [x] 多语言支持（中英文切换，安装包自动检测默认语言，提示词和思考过程双语输出）
+- [x] 皮肤系统（默认/Hub/梦幻三套皮肤，ThemeManager + useSkin + CSS 变量分层）
+- [x] 窗口毛玻璃效果（decorations: false + Mica/Acrylic，自定义标题栏）
+- [x] 自定义标题栏（TitleBar 组件，拖拽 + 最小化/最大化/关闭，三皮肤适配）
+- [x] Hub 皮肤三栏布局（TopNavbar + RightSidebar，橙色科技风）
+- [x] 梦幻皮肤毛玻璃面板（背景图 + 装饰元素 + 透明毛玻璃卡片，可配置透明度/模糊度）
 
 ### 进行中
 
@@ -241,6 +250,42 @@ npm run tauri:build
 - 两种模式均使用内置 LLM 引擎直连 API，无需依赖外部进程
 
 ## 更新日志
+
+### 2026-07-20（v0.86）
+
+> 本次更新实现完整的皮肤系统（默认/Hub/梦幻三套皮肤）、Windows Mica 窗口毛玻璃效果、自定义标题栏，以及多处 UI 修复。
+
+![v0.86 更新](docs/26720-1.jpg)
+
+**皮肤系统（三套皮肤完整实现）：**
+- **皮肤基础设施**：新增 `ThemeManager` 主题管理器 + `useSkin` Hook，CSS 变量分层驱动，`data-skin` 属性零 JS 重渲染切换
+- **默认皮肤**：GitHub 暗色风格，紫色强调色，完全不透明背景
+- **Hub 皮肤**：深色科技感，橙色强调色，三栏布局（顶部导航 + 左侧栏 + 主面板 + 右侧栏），对标 Codex Hub
+- **梦幻皮肤（Dream）**：浅色梦幻氛围，粉色强调色，支持自定义背景图 + 装饰元素 + 毛玻璃面板，透明背景透出 Mica
+- **皮肤切换 UI**：`SkinSelector` 组件，侧栏底部一键切换，持久化到 SQLite
+
+**窗口毛玻璃效果（Windows Mica）：**
+- `tauri.conf.json` 开启 `transparent: true` + `decorations: false`
+- Rust 端 `window-vibrancy` crate：Win11 Mica（壁纸色调混合）+ Win10 Acrylic fallback + macOS NSVisualEffectView
+- Mica 是 DWM 层静态色调混合，专为低功耗设计，GPU 开销极小
+
+**自定义标题栏：**
+- 新增 `TitleBar.tsx` 组件：`data-tauri-drag-region` 拖拽 + 最小化/最大化/关闭按钮
+- 三套皮肤各有标题栏样式（透明背景 + 皮肤主题色），Mica 透过透明标题栏可见
+
+**Hub 皮肤 UI 修复：**
+- 修复消息气泡双边框问题（外层 `.message` 透明，只给内层 `.message-content` 设置样式）
+- 修复右侧边栏响应式断点（`max-width: 1200px` → `1024px`）
+
+**梦幻皮肤 UI 修复：**
+- 修复消息气泡双边框问题
+- 设置面板/模态框改为磨砂效果（0.95 不透明 + 20px blur），解决文字看不清的问题
+- 技能选择弹窗添加毛玻璃效果（`.skill-picker-popup`）
+
+**其他改进：**
+- 默认皮肤背景改为完全不透明（alpha 1.0），只有标题栏透出 Mica
+- 清理 `.wecode-ref` 对标项目残留（从 git 移除 + 修复 `.gitignore` UTF-16 编码问题）
+- 全部 1482 个测试通过
 
 ### 2026-07-19（v0.85）
 

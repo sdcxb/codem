@@ -244,19 +244,14 @@ export function InputArea({ onSend, onCancel, disabled, isStreaming, collaborati
                 style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 99 }}
                 onClick={() => setShowSkillPicker(false)}
               />
-              <div style={{
+              <div className="skill-picker-popup" style={{
                 position: "absolute",
                 bottom: "100%",
                 left: 0,
                 marginBottom: 4,
-                background: "var(--bg-secondary)",
-                border: "1px solid var(--border-primary)",
-                borderRadius: 8,
-                padding: 8,
                 minWidth: 220,
                 maxWidth: 320,
                 zIndex: 100,
-                boxShadow: "0 -4px 12px rgba(0,0,0,0.3)",
                 maxHeight: 300,
                 overflowY: "auto",
               }}>

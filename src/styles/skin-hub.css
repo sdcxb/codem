@@ -1,0 +1,680 @@
+/* ========== Hub Skin ========== */
+/* 基于 1.html 设计稿：深色科技感 Hub 界面，三栏布局 */
+/* 完全独立的 CSS，不依赖默认皮肤的 CSS 变量 */
+
+/* Hub 皮肤专属变量（使用 hub- 前缀，避免与默认皮肤冲突） */
+[data-skin="hub"] {
+  --hub-bg-base: #0a0a0a;
+  --hub-bg-panel: #121212;
+  --hub-bg-card: #1c1c1e;
+  --hub-bg-input: #151515;
+  --hub-bg-hover: #2a2a2a;
+  --hub-color-primary: #ff6b00;
+  --hub-color-primary-hover: #e56000;
+  --hub-color-primary-muted: rgba(255, 107, 0, 0.15);
+  --hub-text-main: #e0e0e0;
+  --hub-text-muted: #888888;
+  --hub-text-success: #4ade80;
+  --hub-border-color: #2a2a2a;
+
+  /* 覆盖默认皮肤的 CSS 变量，让所有组件（模态框、按钮、输入框等）自动使用 Hub 配色 */
+  --bg-primary: #0a0a0a;
+  --bg-secondary: #121212;
+  --bg-tertiary: #1c1c1e;
+  --bg-hover: #2a2a2a;
+  --sidebar-bg: #121212;
+  --input-bg: #151515;
+  --code-bg: #050505;
+  --accent: #ff6b00;
+  --accent-hover: #e56000;
+  --accent-muted: rgba(255, 107, 0, 0.15);
+  --text-primary: #e0e0e0;
+  --text-secondary: #888888;
+  --text-muted: #666666;
+  --text-on-accent: #ffffff;
+  --border-primary: #2a2a2a;
+  --border-secondary: #1c1c1e;
+  --success: #4ade80;
+  --warning: #d29922;
+  --error: #f85149;
+  --info: #58a6ff;
+  --user-bg: rgba(255, 107, 0, 0.12);
+  --assistant-bg: #1c1c1e;
+  --system-bg: #121212;
+  --tooltip-bg: #1c1c1e;
+  --tooltip-text: #e0e0e0;
+  --tooltip-border: #2a2a2a;
+  --dropdown-bg: #121212;
+  --dropdown-hover: #2a2a2a;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.6);
+  --shadow-lg: 0 12px 32px rgba(255, 107, 0, 0.08);
+  --shadow-popover: 0 8px 24px rgba(0, 0, 0, 0.7);
+}
+
+/* Hub 皮肤根容器 - 三栏 Grid 布局 */
+[data-skin="hub"] .hub-app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+  background: var(--hub-bg-base);
+  color: var(--hub-text-main);
+  overflow: hidden;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 14px;
+}
+
+/* Hub 标题栏样式 */
+[data-skin="hub"] .titlebar {
+  background: transparent;
+}
+[data-skin="hub"] .titlebar-icon {
+  color: var(--hub-accent);
+}
+[data-skin="hub"] .titlebar-title {
+  color: var(--hub-text-muted);
+}
+[data-skin="hub"] .titlebar-btn {
+  color: var(--hub-text-muted);
+}
+[data-skin="hub"] .titlebar-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--hub-text-main);
+}
+
+[data-skin="hub"] .hub-body {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+[data-skin="hub"] .hub-sidebar-wrapper {
+  background: var(--hub-bg-panel);
+  border-right: 1px solid var(--hub-border-color);
+  overflow-y: auto;
+  overflow-x: hidden;
+  flex-shrink: 0;
+  height: 100%;
+}
+
+/* 确保 Sidebar 在 Hub 下正确显示 */
+[data-skin="hub"] .hub-sidebar-wrapper .sidebar {
+  width: 260px !important;
+  height: 100% !important;
+  background: var(--hub-bg-panel) !important;
+  border-right: none !important;
+}
+
+[data-skin="hub"] .hub-main-wrapper {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+}
+
+/* ========== 覆盖默认皮肤组件在 Hub 下的样式 ========== */
+
+/* Sidebar 在 Hub 下的颜色 */
+[data-skin="hub"] .sidebar {
+  background: var(--hub-bg-panel) !important;
+  color: var(--hub-text-main);
+  border-right: 1px solid var(--hub-border-color);
+}
+
+[data-skin="hub"] .sidebar-header,
+[data-skin="hub"] .sidebar-section-title,
+[data-skin="hub"] .sidebar-nav-item,
+[data-skin="hub"] .sidebar-project-name,
+[data-skin="hub"] .sidebar-session-item {
+  color: var(--hub-text-main);
+}
+
+[data-skin="hub"] .sidebar-session-item:hover,
+[data-skin="hub"] .sidebar-nav-item:hover {
+  background: var(--hub-bg-hover);
+}
+
+[data-skin="hub"] .sidebar-session-item.active {
+  background: var(--hub-color-primary-muted);
+  color: var(--hub-color-primary);
+}
+
+[data-skin="hub"] .sidebar-bottom,
+[data-skin="hub"] .sidebar-footer {
+  background: var(--hub-bg-panel);
+  border-top: 1px solid var(--hub-border-color);
+}
+
+/* 主题切换按钮在 Hub 下隐藏（Hub 固定暗色） */
+[data-skin="hub"] .theme-toggle {
+  display: none;
+}
+
+/* 主面板区域 */
+[data-skin="hub"] .main-area {
+  background: var(--hub-bg-base);
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+[data-skin="hub"] .panel-right {
+  background: var(--hub-bg-base);
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+[data-skin="hub"] .panel-tabs {
+  background: var(--hub-bg-panel);
+  border-bottom: 1px solid var(--hub-border-color);
+  padding: 0 12px;
+  display: flex;
+  gap: 4px;
+  height: 40px;
+  align-items: center;
+}
+
+[data-skin="hub"] .panel-tabs .tab {
+  background: transparent;
+  color: var(--hub-text-muted);
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 8px 16px;
+  cursor: pointer;
+  font-size: 13px;
+  transition: color 0.2s, border-color 0.2s;
+}
+
+[data-skin="hub"] .panel-tabs .tab:hover {
+  color: var(--hub-text-main);
+}
+
+[data-skin="hub"] .panel-tabs .tab.active {
+  color: var(--hub-color-primary);
+  border-bottom-color: var(--hub-color-primary);
+}
+
+[data-skin="hub"] .panel-content {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  background: var(--hub-bg-base);
+}
+
+/* ========== 消息气泡 ========== */
+/* 只给 .message-content（内层）设置样式，.message（外层 flex 容器）保持无背景无边框 */
+[data-skin="hub"] .message-bubble,
+[data-skin="hub"] .message {
+  background: transparent !important;
+  border: none !important;
+  border-radius: 0 !important;
+}
+
+[data-skin="hub"] .message-content {
+  background: var(--hub-bg-card);
+  border: 1px solid var(--hub-border-color);
+  border-radius: 8px;
+  color: var(--hub-text-main);
+}
+
+[data-skin="hub"] .user .message-content {
+  background: rgba(255, 107, 0, 0.08);
+  border-color: rgba(255, 107, 0, 0.2);
+}
+
+[data-skin="hub"] .assistant .message-content {
+  background: var(--hub-bg-card);
+}
+
+[data-skin="hub"] .system .message-content {
+  background: var(--hub-bg-panel);
+  color: var(--hub-text-muted);
+}
+
+/* ========== 输入区域 ========== */
+[data-skin="hub"] .chat-input-wrapper,
+[data-skin="hub"] .input-area,
+[data-skin="hub"] .input-wrapper {
+  background: var(--hub-bg-input);
+  border: 1px solid var(--hub-border-color);
+  border-radius: 8px;
+  color: var(--hub-text-main);
+}
+
+[data-skin="hub"] .chat-input-wrapper input,
+[data-skin="hub"] .chat-input-wrapper textarea,
+[data-skin="hub"] .input-area input,
+[data-skin="hub"] .input-area textarea {
+  background: transparent;
+  color: var(--hub-text-main);
+  border: none;
+  outline: none;
+}
+
+[data-skin="hub"] .chat-input-wrapper input::placeholder,
+[data-skin="hub"] .chat-input-wrapper textarea::placeholder,
+[data-skin="hub"] .input-area input::placeholder,
+[data-skin="hub"] .input-area textarea::placeholder {
+  color: var(--hub-text-muted);
+}
+
+/* 发送按钮 */
+[data-skin="hub"] .btn-send,
+[data-skin="hub"] .send-button {
+  background: var(--hub-color-primary);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+[data-skin="hub"] .btn-send:hover,
+[data-skin="hub"] .send-button:hover {
+  background: var(--hub-color-primary-hover);
+}
+
+/* ========== 代码块 ========== */
+[data-skin="hub"] pre,
+[data-skin="hub"] .code-block {
+  background: #050505;
+  border: 1px solid #333;
+  border-radius: 6px;
+  color: #a5d6ff;
+}
+
+/* ========== 工具调用 ========== */
+[data-skin="hub"] .tool-call,
+[data-skin="hub"] .tool-result {
+  background: var(--hub-bg-card);
+  border: 1px solid var(--hub-border-color);
+  border-radius: 6px;
+  color: var(--hub-text-main);
+}
+
+/* ========== 模态框 ========== */
+[data-skin="hub"] .modal-overlay {
+  background: rgba(0, 0, 0, 0.7);
+}
+
+[data-skin="hub"] .modal-editor {
+  background: var(--hub-bg-panel);
+  border: 1px solid var(--hub-border-color);
+  color: var(--hub-text-main);
+}
+
+/* ========== 滚动条 ========== */
+[data-skin="hub"] ::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+[data-skin="hub"] ::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+[data-skin="hub"] ::-webkit-scrollbar-thumb {
+  background: #333;
+  border-radius: 3px;
+}
+
+[data-skin="hub"] ::-webkit-scrollbar-thumb:hover {
+  background: #444;
+}
+
+/* ========== Hub 顶部导航栏 ========== */
+[data-skin="hub"] .hub-navbar {
+  height: 50px;
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--hub-border-color);
+  background: var(--hub-bg-base);
+  flex-shrink: 0;
+  -webkit-app-region: drag;
+}
+
+[data-skin="hub"] .hub-navbar-logo {
+  display: flex;
+  align-items: center;
+  font-weight: 900;
+  font-size: 18px;
+  margin-right: 40px;
+  letter-spacing: 1px;
+  color: var(--hub-text-main);
+  -webkit-app-region: no-drag;
+  text-transform: lowercase;
+}
+
+[data-skin="hub"] .hub-navbar-logo .hub-badge {
+  background: var(--hub-color-primary);
+  color: #000;
+  padding: 2px 6px;
+  border-radius: 4px;
+  margin-left: 4px;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+[data-skin="hub"] .hub-navbar-links {
+  display: flex;
+  gap: 24px;
+  flex: 1;
+  -webkit-app-region: no-drag;
+}
+
+[data-skin="hub"] .hub-navbar-links a {
+  color: var(--hub-text-muted);
+  text-decoration: none;
+  font-weight: 500;
+  padding: 16px 0;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  transition: color 0.2s, border-color 0.2s;
+}
+
+[data-skin="hub"] .hub-navbar-links a:hover {
+  color: var(--hub-text-main);
+}
+
+[data-skin="hub"] .hub-navbar-links a.active {
+  color: var(--hub-color-primary);
+  border-bottom-color: var(--hub-color-primary);
+}
+
+[data-skin="hub"] .hub-navbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  color: var(--hub-text-muted);
+  -webkit-app-region: no-drag;
+}
+
+[data-skin="hub"] .hub-navbar-actions i {
+  cursor: pointer;
+  transition: color 0.2s;
+}
+
+[data-skin="hub"] .hub-navbar-actions i:hover {
+  color: var(--hub-text-main);
+}
+
+/* ========== Hub 右侧栏 ========== */
+[data-skin="hub"] .hub-right-sidebar {
+  width: 300px;
+  background: var(--hub-bg-panel);
+  border-left: 1px solid var(--hub-border-color);
+  display: flex;
+  flex-direction: column;
+  padding: 20px;
+  overflow-y: auto;
+  flex-shrink: 0;
+}
+
+[data-skin="hub"] .hub-agent-card {
+  background: #050505;
+  border: 1px solid var(--hub-border-color);
+  border-radius: 12px;
+  padding: 20px;
+  text-align: center;
+  margin-bottom: 24px;
+}
+
+[data-skin="hub"] .hub-agent-image {
+  width: 120px;
+  height: 120px;
+  background: #1a1a1a;
+  border-radius: 20px;
+  margin: 0 auto 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 40px;
+  color: var(--hub-color-primary);
+  position: relative;
+}
+
+[data-skin="hub"] .hub-agent-info {
+  text-align: left;
+  font-size: 13px;
+}
+
+[data-skin="hub"] .hub-agent-info p {
+  margin-bottom: 4px;
+}
+
+[data-skin="hub"] .hub-status-dot {
+  width: 8px;
+  height: 8px;
+  background: var(--hub-text-success);
+  border-radius: 50%;
+  display: inline-block;
+}
+
+/* Hub 推荐任务 */
+[data-skin="hub"] .hub-tasks-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+[data-skin="hub"] .hub-tasks-header h3 {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--hub-text-main);
+}
+
+[data-skin="hub"] .hub-tasks-header a {
+  color: var(--hub-text-muted);
+  font-size: 12px;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+[data-skin="hub"] .hub-task-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+[data-skin="hub"] .hub-task-item {
+  background: var(--hub-bg-card);
+  border: 1px solid var(--hub-border-color);
+  border-radius: 8px;
+  padding: 12px;
+  display: flex;
+  gap: 12px;
+  cursor: pointer;
+  transition: border-color 0.2s;
+}
+
+[data-skin="hub"] .hub-task-item:hover {
+  border-color: #444;
+}
+
+[data-skin="hub"] .hub-task-icon {
+  width: 36px;
+  height: 36px;
+  background: var(--hub-bg-hover);
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--hub-text-main);
+  flex-shrink: 0;
+}
+
+[data-skin="hub"] .hub-task-content h4 {
+  font-size: 13px;
+  margin-bottom: 6px;
+  font-weight: 500;
+  color: var(--hub-text-main);
+}
+
+[data-skin="hub"] .hub-task-tags {
+  display: flex;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--hub-text-muted);
+}
+
+[data-skin="hub"] .hub-task-tags span {
+  background: #222;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+/* Hub 响应式：小屏隐藏右侧栏 */
+@media (max-width: 1024px) {
+  [data-skin="hub"] .hub-right-sidebar {
+    display: none;
+  }
+}
+
+/* ========== 右侧栏收缩/展开按钮 ========== */
+[data-skin="hub"] .hub-sidebar-toggle {
+  position: absolute;
+  top: 12px;
+  left: -12px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--hub-bg-card, #1e1e2e);
+  border: 1.5px solid var(--hub-color-primary, #ff6b35);
+  color: var(--hub-color-primary, #ff6b35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 10;
+  transition: all 0.2s;
+  font-size: 10px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+}
+
+[data-skin="hub"] .hub-sidebar-toggle:hover {
+  background: var(--hub-color-primary, #ff6b35);
+  color: #fff;
+  border-color: var(--hub-color-primary, #ff6b35);
+  transform: scale(1.1);
+}
+
+[data-skin="hub"] .hub-sidebar-toggle-open {
+  top: 12px;
+  right: 8px;
+  left: auto;
+}
+
+[data-skin="hub"] .hub-sidebar-toggle-collapsed {
+  position: static;
+  top: auto;
+  left: auto;
+}
+
+/* 收缩状态 */
+[data-skin="hub"] .hub-right-sidebar-collapsed {
+  width: 32px !important;
+  padding: 0 !important;
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 12px !important;
+}
+
+[data-skin="hub"] .hub-right-sidebar-collapsed .hub-sidebar-toggle {
+  position: static;
+  top: auto;
+  left: auto;
+}
+
+/* 确保 hub-right-sidebar 有 position: relative 用于按钮定位 */
+[data-skin="hub"] .hub-right-sidebar {
+  position: relative;
+}
+
+/* ========== 任务图标颜色区分 ========== */
+[data-skin="hub"] .hub-task-icon-blue {
+  background: rgba(59, 130, 246, 0.15) !important;
+  color: #60a5fa !important;
+}
+
+[data-skin="hub"] .hub-task-icon-green {
+  background: rgba(34, 197, 94, 0.15) !important;
+  color: #4ade80 !important;
+}
+
+[data-skin="hub"] .hub-task-icon-orange {
+  background: rgba(251, 146, 60, 0.15) !important;
+  color: #fb923c !important;
+}
+
+[data-skin="hub"] .hub-task-icon-purple {
+  background: rgba(168, 85, 247, 0.15) !important;
+  color: #c084fc !important;
+}
+
+/* ========== 新手引导 ========== */
+[data-skin="hub"] .hub-onboarding-item {
+  transition: border-color 0.2s, background 0.2s;
+}
+
+[data-skin="hub"] .hub-onboarding-item:hover {
+  border-color: var(--hub-color-primary) !important;
+  background: var(--hub-color-primary-muted) !important;
+}
+
+[data-skin="hub"] .hub-onboarding-item .hub-task-icon {
+  /* 颜色由 hub-task-icon-* 类控制 */
+}
+
+/* ========== 最近对话 ========== */
+[data-skin="hub"] .hub-recent-item {
+  transition: border-color 0.2s, background 0.2s;
+}
+
+[data-skin="hub"] .hub-recent-item:hover {
+  border-color: #444 !important;
+  background: var(--hub-bg-hover) !important;
+}
+
+[data-skin="hub"] .hub-recent-item .hub-task-icon {
+  /* 颜色由 hub-task-icon-* 类控制 */
+}
+
+/* 隐私隐藏按钮 */
+[data-skin="hub"] .hub-hide-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  background: transparent;
+  border: none;
+  color: var(--hub-text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.2s, color 0.2s;
+}
+
+[data-skin="hub"] .hub-recent-item:hover .hub-hide-btn {
+  opacity: 1;
+}
+
+[data-skin="hub"] .hub-hide-btn:hover {
+  color: var(--hub-color-primary);
+  background: var(--hub-color-primary-muted);
+}
+
+/* 恢复隐藏对话按钮 */
+[data-skin="hub"] .hub-restore-btn:hover {
+  color: var(--hub-color-primary) !important;
+}

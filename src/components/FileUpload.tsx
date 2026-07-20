@@ -1,8 +1,6 @@
 import { useRef, useState } from "react";
 import { MessageAttachment } from "../store";
 
-const isTauri = () => !!(window as any).__TAURI__;
-
 interface FileUploadProps {
   onUpload: (attachments: MessageAttachment[]) => void;
 }
@@ -37,41 +35,15 @@ export function FileUpload({ onUpload }: FileUploadProps) {
           fullContent = preview; // 图片以 data URL 形式存储
         }
 
-        if (isTauri()) {
-          // Tauri mode: read file directly via File API, no server needed
-          attachments.push({
-            id: `local-${Date.now()}-${Math.random().toString(36).substring(7)}`,
-            name: file.name,
-            type: isImageFile(file.name) ? "image" : "file",
-            content: fullContent || preview,
-            mimeType: file.type || guessMimeType(file.name),
-            size: file.size,
-          });
-        } else {
-          // Browser/dev mode: use sidecar server upload
-          const formData = new FormData();
-          formData.append("file", file);
-
-          const res = await fetch("http://localhost:3002/api/upload", {
-            method: "POST",
-            body: formData,
-          });
-
-          if (res.ok) {
-            const data = await res.json();
-            if (data.files && data.files.length > 0) {
-              const uploaded = data.files[0];
-              attachments.push({
-                id: uploaded.id,
-                name: file.name,
-                type: isImageFile(file.name) ? "image" : "file",
-                content: fullContent || preview,
-                mimeType: uploaded.mimeType,
-                size: file.size,
-              });
-            }
-          }
-        }
+        // Read file directly via File API — no server needed
+        attachments.push({
+          id: `local-${Date.now()}-${Math.random().toString(36).substring(7)}`,
+          name: file.name,
+          type: isImageFile(file.name) ? "image" : "file",
+          content: fullContent || preview,
+          mimeType: file.type || guessMimeType(file.name),
+          size: file.size,
+        });
       } catch (err) {
         console.error("Upload failed:", err);
       }

@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { TooltipProvider } from "./components/ui/tooltip";
+import { TitleBar } from "./components/TitleBar";
 import { ChatPanel } from "./components/ChatPanel";
 import { Sidebar } from "./components/Sidebar";
 import { TerminalPanel } from "./components/TerminalPanel";
@@ -23,6 +24,8 @@ import { DiffViewer } from "./components/DiffViewer";
 import { InteractiveFormDialog } from "./components/InteractiveFormDialog";
 import { PromptChangeReviewDialog } from "./components/PromptChangeReviewDialog";
 import { NotebookManager } from "./components/NotebookManager";
+import { GitHubCloneDialog } from "./components/GitHubCloneDialog";
+import { SearchDialog } from "./components/SearchDialog";
 import type { InteractiveFormQuestion, PromptChange } from "./core/llm/tools";
 import { useAppStore } from "./store";
 import { useProjectStore } from "./core/store";
@@ -33,12 +36,14 @@ import { getMiMoAuth } from "./core/auth/mimo";
 import type { PermissionRequest, PermissionResult } from "./core/permission/permission";
 import { initDatabase, resetDatabase } from "./core/storage";
 import { migrateFromLocalStorage } from "./core/storage/migration";
-import { ThemeManager } from "./core/theme";
 import { getSetting, setSetting, getSettingJSON } from "./core/storage/settings";
 import { setLang, useLang, S } from "./core/i18n/lang";
 import * as MessageStorage from "./core/storage/message";
 import { formatAttachmentsInline } from "./core/llm/attachment-formatter";
 import { syncAttachmentsToWorkspace } from "./core/llm/attachment-sync";
+import { ThemeManager, useSkin } from "./core/theme";
+import { HubLayout } from "./components/HubLayout";
+import { DreamLayout } from "./components/DreamLayout";
 
 /**
  * 动态获取应用根目录（用户主目录）。
@@ -100,6 +105,8 @@ function App() {
   const [showSkillManager, setShowSkillManager] = useState(false);
   const [showMemoryManager, setShowMemoryManager] = useState(false);
   const [showNotebookManager, setShowNotebookManager] = useState(false);
+  const [showGitHubClone, setShowGitHubClone] = useState(false);
+  const [showSearchDialog, setShowSearchDialog] = useState(false);
   const [activeNotebookId, setActiveNotebookId] = useState<string | null>(null);
   const [activeNotebookName, setActiveNotebookName] = useState<string>('');
   const [showSessionRecovery, setShowSessionRecovery] = useState(false);
@@ -213,8 +220,6 @@ request: PermissionRequest;
   } | null>(null);
   const engineRef = useRef(getLLMEngine());
   const abortRef = useRef<AbortController | null>(null);
-  const wsRef = useRef<WebSocket | null>(null);
-  const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mimoSessionRef = useRef<string | null>(null);
   const messagesSessionRef = useRef<string | null>(null);
   
@@ -406,42 +411,6 @@ request: PermissionRequest;
       invoke?.("quit_app");
     }
   }, []);
-
-  // WebSocket connection for CLI mode
-  const connectWebSocket = useCallback(() => {
-    if (getMode() !== "cli") return;
-    if (wsRef.current?.readyState === WebSocket.OPEN) return;
-
-    try {
-      const ws = new WebSocket("ws://localhost:3001");
-
-      ws.onopen = () => {};
-
-      ws.onmessage = (event) => {
-        try {
-          const e = JSON.parse(event.data as string);
-          handleWSMessage(e);
-        } catch {}
-      };
-
-      ws.onclose = () => {
-        wsRef.current = null;
-        if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
-        reconnectTimer.current = setTimeout(connectWebSocket, 2000);
-      };
-
-      ws.onerror = () => {};
-      wsRef.current = ws;
-    } catch {}
-  }, []);
-
-  useEffect(() => {
-    connectWebSocket();
-    return () => {
-      if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
-      wsRef.current?.close();
-    };
-  }, [connectWebSocket]);
 
   useEffect(() => {
     if (currentSession) {
@@ -1071,64 +1040,6 @@ saveMessages(session.id);
     // Re-run the agentic loop with the original user message
     await runAgenticLoop(userMessage, session);
   };
-  const currentMsgIdRef = useRef<string | null>(null);
-
-  const handleWSMessage = (e: any) => {
-    // Capture mimo session ID from response and persist
-    if (e.sessionID && !mimoSessionRef.current) {
-      mimoSessionRef.current = e.sessionID;
-      if (currentProject && currentSession) {
-        saveCliSessionId(currentProject.id, currentSession.id, e.sessionID);
-      }
-    }
-
-    switch (e.type) {
-      case "text": {
-        const text = e.part?.text || "";
-        const msgId = e.part?.messageID || currentMsgIdRef.current || `msg-${Date.now()}`;
-        if (!currentMsgIdRef.current || currentMsgIdRef.current !== msgId) {
-          currentMsgIdRef.current = msgId;
-          addMessage({ id: msgId, role: "assistant", content: text, timestamp: Date.now(), status: "streaming" });
-        } else {
-          appendToMessage(msgId, text);
-        }
-        break;
-      }
-      case "tool_use": {
-        const msgId = currentMsgIdRef.current || `tool-${Date.now()}`;
-        const part = e.part || {};
-        const state = part.state || {};
-        addToolCall(msgId, {
-          id: part.callID || `tc-${Date.now()}`,
-          tool: part.tool || "unknown",
-          args: state.input || {},
-          result: typeof state.output === "string" ? state.output : JSON.stringify(state.output || ""),
-          status: state.status === "completed" ? "done" : "running",
-        });
-        break;
-      }
-      case "done": {
-        setStreaming(false);
-        currentMsgIdRef.current = null;
-        if (currentProject && currentSession) {
-          saveMessages(currentSession.id);
-          // Recovery is handled by the messages table - no need for SessionManager
-        }
-        break;
-      }
-      case "error": {
-        addMessage({ id: 'err-' + Date.now(), role: 'system', content: '[Error] ' + (e.message || 'Unknown error'), timestamp: Date.now(), status: 'error' });
-        setStreaming(false);
-        currentMsgIdRef.current = null;
-        break;
-      }
-      case "cancelled": {
-        setStreaming(false);
-        currentMsgIdRef.current = null;
-        break;
-      }
-    }
-  };
 
   const handleCancel = () => {
     if (abortRef.current) {
@@ -1169,9 +1080,13 @@ saveMessages(session.id);
     setShowBootstrap(false);
   };
 
+  const { skin } = useSkin();
+
   return (
     <TooltipProvider delayDuration={300} skipDelayDuration={500}>
     <div className="app">
+      <TitleBar />
+      <div className="app-content">
       {!dbReady ? (
         <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", color: "var(--text-secondary)" }}>
           Loading...
@@ -1182,8 +1097,256 @@ saveMessages(session.id);
             <BootstrapWizard appRoot={appRoot} onComplete={handleBootstrapComplete} />
           )}
 
+          {/* 核心内容：Sidebar + MainArea，根据皮肤选择不同布局包裹 */}
+          {skin === "hub" ? (
+            <HubLayout
+              onTasks={() => setShowProjectManager(true)}
+              onSkills={() => setShowSkillManager(true)}
+              onNotebooks={() => setShowNotebookManager(true)}
+              onAutomations={() => setShowMcpManager(true)}
+              onSearch={() => setShowSearchDialog(true)}
+              onSettings={() => setShowSettings(true)}
+              onNewChat={() => {
+                // 新建全局对话（不属于任何项目）
+                useProjectStore.setState({ currentProject: null });
+                createSession();
+              }}
+              onNewProject={() => setShowProjectManager(true)}
+              onImportProject={() => setShowProjectManager(true)}
+              onGitHubClone={() => setShowGitHubClone(true)}
+              onOpenSession={(sessionId, projectId) => {
+                // 切换到指定会话
+                useProjectStore.getState().openProject(projectId);
+                useProjectStore.getState().switchSession(sessionId);
+              }}
+              sidebar={
+                sidebarOpen ? (
+                  <Sidebar
+                    identity={appIdentity}
+                    onSettings={() => setShowSettings(true)}
+                    onProjects={() => setShowProjectManager(true)}
+                    onConfig={() => setShowConfigEditor(true)}
+                    onMcp={() => setShowMcpManager(true)}
+                    onSkills={() => setShowSkillManager(true)}
+                    onMemory={() => setShowMemoryManager(true)}
+                    onNotebooks={() => setShowNotebookManager(true)}
+                    onRemoveProject={(id, name, path) => {
+                      setConfirmDialog({
+                        title: "Remove Project",
+                        message: `Remove project "${name}"?`,
+                        confirmLabel: "Remove Only",
+                        cancelLabel: "Delete Files",
+                        onConfirm: () => {
+                          useProjectStore.getState().deleteProject(id);
+                          setConfirmDialog(null);
+                        },
+                        onCancel: async () => {
+                          try {
+                            const { invoke } = (window as any).__TAURI__.core;
+                            await invoke("delete_directory", { path });
+                          } catch (e) {
+                            console.error("Failed to delete directory:", e);
+                          }
+                          useProjectStore.getState().deleteProject(id);
+                          setConfirmDialog(null);
+                        },
+                      });
+                    }}
+                    fileExplorerProjectId={fileExplorerProjectId}
+                    onToggleFileExplorer={handleToggleFileExplorer}
+                  />
+                ) : null
+              }
+              mainPanel={
+                <div className="main-area">
+                  <div className="panel-right">
+                    <div className="panel-tabs">
+                      <button className={`tab ${bottomTab === "chat" ? "active" : ""}`} onClick={() => setBottomTab("chat")}>
+                        💬 {lang === "zh" ? "对话" : "Chat"}
+                      </button>
+                      <button className={`tab ${bottomTab === "terminal" ? "active" : ""}`} onClick={() => setBottomTab("terminal")}>
+                        ⌨️ {lang === "zh" ? "终端" : "Terminal"}
+                      </button>
+                    </div>
+                    <div className="panel-content">
+                      {compactionStatus && (
+                        <div className={`compaction-banner ${compactionStatus.active ? "compaction-active" : "compaction-done"}`}>
+                          {compactionStatus.active ? (
+                            <><span className="compaction-spinner" /> 正在压缩上下文...</>
+                          ) : (
+                            <>✅ 上下文已压缩{compactionStatus.messagesRemoved ? `（移除 ${compactionStatus.messagesRemoved} 条旧消息）` : ""}</>
+                          )}
+                        </div>
+                      )}
+                      {activeNotebookId && (
+                        <div className="notebook-mode-banner">
+                          <span className="notebook-mode-icon">📓</span>
+                          <span>{lang === 'zh' ? `笔记本模式：${activeNotebookName}` : `Notebook Mode: ${activeNotebookName}`}</span>
+                          <button className="notebook-mode-close" onClick={() => { setActiveNotebookId(null); setActiveNotebookName(''); }}>✕</button>
+                        </div>
+                      )}
+                      {bottomTab === "chat" && (
+                        <ChatPanel
+                          onSend={handleSend}
+                          onCancel={handleCancel}
+                          onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
+                          onRegenerate={handleRegenerate}
+                          onFork={(messageIndex) => {
+                            if (currentSession && currentProject) {
+                              const newSession = createSession('Fork: ' + currentSession.title);
+                              const sourceMessages = MessageStorage.listMessages(currentSession.id);
+                              if (sourceMessages.length > 0) {
+                                let endIdx = sourceMessages.length;
+                                for (let i = messageIndex + 1; i < sourceMessages.length; i++) {
+                                  if (sourceMessages[i].role === "user") { endIdx = i; break; }
+                                }
+                                const forkedMessages = sourceMessages.slice(0, endIdx);
+                                const forkTs = Date.now();
+                                for (const msg of forkedMessages) {
+                                  const newMsgId = `${msg.id}-fork-${forkTs}-${Math.random().toString(36).substr(2, 5)}`;
+                                  MessageStorage.createMessage({
+                                    ...msg, id: newMsgId,
+                                    toolCalls: msg.toolCalls?.map((tc) => ({ ...tc, id: `${tc.id}-fork-${forkTs}-${Math.random().toString(36).substr(2, 5)}` })),
+                                  }, newSession.id);
+                                }
+                                loadMessages(newSession.id);
+                              }
+                            }
+                          }}
+                          connected={true}
+                          model={cliModel}
+                          onModelChange={handleModelChange}
+                          mode={currentMode}
+                          providerId={currentProvider}
+                          collaborationMode={collaborationMode}
+                          onModeChange={setCollaborationMode}
+                          projectPath={currentProject?.path}
+                        />
+                      )}
+                      {bottomTab === "terminal" && (
+                        <TerminalPanel cwd={currentProject?.path || appRoot} />
+                      )}
+                    </div>
+                  </div>
+                </div>
+              }
+            />
+          ) : skin === "dream" ? (
+            <DreamLayout>
+              {sidebarOpen && (
+                <Sidebar
+                  identity={appIdentity}
+                  onSettings={() => setShowSettings(true)}
+                  onProjects={() => setShowProjectManager(true)}
+                  onConfig={() => setShowConfigEditor(true)}
+                  onMcp={() => setShowMcpManager(true)}
+                  onSkills={() => setShowSkillManager(true)}
+                  onMemory={() => setShowMemoryManager(true)}
+                  onNotebooks={() => setShowNotebookManager(true)}
+                  onRemoveProject={(id, name, path) => {
+                    setConfirmDialog({
+                      title: "Remove Project",
+                      message: `Remove project "${name}"?`,
+                      confirmLabel: "Remove Only",
+                      cancelLabel: "Delete Files",
+                      onConfirm: () => {
+                        useProjectStore.getState().deleteProject(id);
+                        setConfirmDialog(null);
+                      },
+                      onCancel: async () => {
+                        try {
+                          const { invoke } = (window as any).__TAURI__.core;
+                          await invoke("delete_directory", { path });
+                        } catch (e) {
+                          console.error("Failed to delete directory:", e);
+                        }
+                        useProjectStore.getState().deleteProject(id);
+                        setConfirmDialog(null);
+                      },
+                    });
+                  }}
+                  fileExplorerProjectId={fileExplorerProjectId}
+                  onToggleFileExplorer={handleToggleFileExplorer}
+                />
+              )}
+
+              <div className="main-area">
+                <div className="panel-right">
+                  <div className="panel-tabs">
+                    <button className={`tab ${bottomTab === "chat" ? "active" : ""}`} onClick={() => setBottomTab("chat")}>
+                      💬 {lang === "zh" ? "对话" : "Chat"}
+                    </button>
+                    <button className={`tab ${bottomTab === "terminal" ? "active" : ""}`} onClick={() => setBottomTab("terminal")}>
+                      ⌨️ {lang === "zh" ? "终端" : "Terminal"}
+                    </button>
+                  </div>
+                  <div className="panel-content">
+                    {compactionStatus && (
+                      <div className={`compaction-banner ${compactionStatus.active ? "compaction-active" : "compaction-done"}`}>
+                        {compactionStatus.active ? (
+                          <><span className="compaction-spinner" /> 正在压缩上下文...</>
+                        ) : (
+                          <>✅ 上下文已压缩{compactionStatus.messagesRemoved ? `（移除 ${compactionStatus.messagesRemoved} 条旧消息）` : ""}</>
+                        )}
+                      </div>
+                    )}
+                    {activeNotebookId && (
+                      <div className="notebook-mode-banner">
+                        <span className="notebook-mode-icon">📓</span>
+                        <span>{lang === 'zh' ? `笔记本模式：${activeNotebookName}` : `Notebook Mode: ${activeNotebookName}`}</span>
+                        <button className="notebook-mode-close" onClick={() => { setActiveNotebookId(null); setActiveNotebookName(''); }}>✕</button>
+                      </div>
+                    )}
+                    {bottomTab === "chat" && (
+                      <ChatPanel
+                        onSend={handleSend}
+                        onCancel={handleCancel}
+                        onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
+                        onRegenerate={handleRegenerate}
+                        onFork={(messageIndex) => {
+                          if (currentSession && currentProject) {
+                            const newSession = createSession('Fork: ' + currentSession.title);
+                            const sourceMessages = MessageStorage.listMessages(currentSession.id);
+                            if (sourceMessages.length > 0) {
+                              let endIdx = sourceMessages.length;
+                              for (let i = messageIndex + 1; i < sourceMessages.length; i++) {
+                                if (sourceMessages[i].role === "user") { endIdx = i; break; }
+                              }
+                              const forkedMessages = sourceMessages.slice(0, endIdx);
+                              const forkTs = Date.now();
+                              for (const msg of forkedMessages) {
+                                const newMsgId = `${msg.id}-fork-${forkTs}-${Math.random().toString(36).substr(2, 5)}`;
+                                MessageStorage.createMessage({
+                                  ...msg, id: newMsgId,
+                                  toolCalls: msg.toolCalls?.map((tc) => ({ ...tc, id: `${tc.id}-fork-${forkTs}-${Math.random().toString(36).substr(2, 5)}` })),
+                                }, newSession.id);
+                              }
+                              loadMessages(newSession.id);
+                            }
+                          }
+                        }}
+                        connected={true}
+                        model={cliModel}
+                        onModelChange={handleModelChange}
+                        mode={currentMode}
+                        providerId={currentProvider}
+                        collaborationMode={collaborationMode}
+                        onModeChange={setCollaborationMode}
+                        projectPath={currentProject?.path}
+                      />
+                    )}
+                    {bottomTab === "terminal" && (
+                      <TerminalPanel cwd={currentProject?.path || appRoot} />
+                    )}
+                  </div>
+                </div>
+              </div>
+            </DreamLayout>
+          ) : (
+            <>
+              {/* 默认皮肤：原始布局，不受 ThemeManager 干预 */}
           {sidebarOpen && (
-            <Sidebar
+                <Sidebar
           identity={appIdentity}
           onSettings={() => setShowSettings(true)}
           onProjects={() => setShowProjectManager(true)}
@@ -1308,6 +1471,8 @@ saveMessages(session.id);
           </div>
         </div>
       </div>
+            </>
+          )}
 
       {showSettings && (
         <SettingsPanel
@@ -1347,6 +1512,19 @@ saveMessages(session.id);
             <MemoryManager onClose={() => setShowMemoryManager(false)} />
           </div>
         </div>
+      )}
+
+      {showGitHubClone && (
+        <GitHubCloneDialog onClose={() => setShowGitHubClone(false)} />
+      )}
+
+      {showSearchDialog && (
+        <SearchDialog
+          onClose={() => setShowSearchDialog(false)}
+          onSwitchProject={(projectId) => { useProjectStore.getState().openProject(projectId); setShowSearchDialog(false); }}
+          onNewSession={() => { if (currentProject) createSession(); setShowSearchDialog(false); }}
+          onOpenSkills={() => { setShowSkillManager(true); setShowSearchDialog(false); }}
+        />
       )}
 
       {showNotebookManager && (
@@ -1498,6 +1676,7 @@ saveMessages(session.id);
       )}
         </>
       )}
+      </div>
     </div>
     </TooltipProvider>
   );

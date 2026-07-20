@@ -13,8 +13,6 @@ interface FileExplorerProps {
   refreshKey?: number;
 }
 
-const isTauri = () => !!(window as any).__TAURI__;
-
 // Directory cache shared across instances
 const dirCache = new Map<string, FileEntry[]>();
 
@@ -23,16 +21,6 @@ async function loadDirectoryFromTauri(path: string): Promise<FileEntry[]> {
     const { invoke } = (window as any).__TAURI__.core;
     const entries = await invoke("list_directory", { path });
     return entries || [];
-  } catch {
-    return [];
-  }
-}
-
-async function loadDirectoryFromAPI(path: string, signal?: AbortSignal): Promise<FileEntry[]> {
-  try {
-    const res = await fetch(`http://localhost:3002/api/files?path=${encodeURIComponent(path)}`, { signal });
-    if (!res.ok) return [];
-    return await res.json();
   } catch {
     return [];
   }
@@ -53,11 +41,7 @@ export function FileExplorer({ cwd, onFileClick, refreshKey }: FileExplorerProps
     }
 
     let entries: FileEntry[];
-    if (isTauri()) {
-      entries = await loadDirectoryFromTauri(path);
-    } else {
-      entries = await loadDirectoryFromAPI(path, signal);
-    }
+    entries = await loadDirectoryFromTauri(path);
 
     if (entries.length > 0) {
       dirCache.set(path, entries);

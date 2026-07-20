@@ -93,8 +93,8 @@ export const HUB_SKIN: SkinConfig = {
 export const DEFAULT_DREAM_CONFIG: DreamSkinConfig = {
   backgroundImage: null,
   extractedPalette: null,
-  blurRadius: 12,
-  cardOpacity: 0.65,
+  blurRadius: 2,
+  cardOpacity: 0.3,
   decorations: true,
   polaroid: true,
   scriptFont: true,

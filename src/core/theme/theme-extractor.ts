@@ -46,7 +46,7 @@ export class ThemeExtractor {
     // 主色调：像素最多的聚类
     const dominant = sortedClusters[0]?.centroid ?? { r: 128, g: 128, b: 128 };
 
-    // 强调色：饱和度最高的聚类（非主色调）
+    // 强调色：饱和度最高的聚类（非主色调），并调整亮度确保与背景对比度
     let accent = dominant;
     let maxSaturation = -1;
     for (const cluster of sortedClusters) {
@@ -66,14 +66,30 @@ export class ThemeExtractor {
     const avgLuminance = this.calculateAverageLuminance(pixels);
     const isDark = avgLuminance < 0.5;
 
-    // 背景色：基于平均亮度和主色调
-    const background = isDark
-      ? this.darken(dominant, 0.85)
-      : this.lighten(dominant, 0.92);
+    // 确保 accent 与背景有足够对比度：浅色背景用深色 accent，深色背景用亮色 accent
+    const accentHsl = this.rgbToHsl(accent);
+    if (!isDark) {
+      // 浅色背景：accent 亮度调低到 0.35-0.45 范围，确保深色按钮上白色文字可读
+      if (accentHsl.l > 0.55) {
+        accentHsl.l = 0.4;
+      }
+      accent = this.hslToRgb(accentHsl);
+    } else {
+      // 深色背景：accent 亮度调高到 0.55-0.65 范围
+      if (accentHsl.l < 0.45) {
+        accentHsl.l = 0.6;
+      }
+      accent = this.hslToRgb(accentHsl);
+    }
 
-    // 文本色：基于背景色的反色
-    const textPrimary = isDark ? '#f0f0f0' : this.darken(dominant, 0.4);
-    const textSecondary = isDark ? '#a0a0a0' : this.lighten(this.darken(dominant, 0.3), 0.3);
+    // 背景色：使用中性白色或深色，而非从主色调派生
+    const background = isDark
+      ? '#1a1a2e'
+      : '#ffffff';
+
+    // 文本色：基于亮度选择高对比度中性色，而非从主色调派生
+    const textPrimary = isDark ? '#f5f5f5' : '#1a1a2e';
+    const textSecondary = isDark ? '#b0b0b0' : '#555566';
 
     // 完整色板
     const palette = sortedClusters.slice(0, 6).map(c => this.rgbToHex(c.centroid));
@@ -81,7 +97,7 @@ export class ThemeExtractor {
     return {
       dominant: this.rgbToHex(dominant),
       accent: this.rgbToHex(accent),
-      background: this.rgbToHex(background),
+      background: background,
       textPrimary,
       textSecondary,
       isDark,

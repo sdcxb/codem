@@ -93,6 +93,14 @@ export class MCPClient {
     const connection = this.connections.get(serverName);
     if (!connection) return;
 
+    // If stdio transport, kill the process via Tauri
+    if (connection.config.transport === "stdio") {
+      try {
+        const { invoke } = (window as any).__TAURI__.core;
+        await invoke("mcp_stdio_disconnect", { name: serverName });
+      } catch {}
+    }
+
     connection.status = "disconnected";
     this.connections.delete(serverName);
   }
@@ -256,8 +264,26 @@ export class MCPClient {
       return data.result;
     }
 
-    // For stdio, would write to stdin and read from stdout
-    throw new Error("Stdio transport not yet implemented");
+    // For stdio, use Tauri command to send request and receive response
+    try {
+      const { invoke } = (window as any).__TAURI__.core;
+      const responseStr = await invoke("mcp_stdio_request", {
+        name: serverName,
+        message: JSON.stringify({
+          jsonrpc: "2.0",
+          id,
+          method,
+          params,
+        }),
+      });
+      const data = JSON.parse(responseStr);
+      if (data.error) {
+        throw new Error(data.error.message || "Request failed");
+      }
+      return data.result ?? data;
+    } catch (error: any) {
+      throw new Error(`Stdio request failed: ${error.message}`);
+    }
   }
 }
 

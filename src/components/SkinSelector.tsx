@@ -1,17 +1,25 @@
 /**
  * 皮肤选择器组件
  * 在设置面板中显示，允许用户切换三套皮肤
+ *
+ * 设计原则：
+ * - 只有默认皮肤才显示明暗模式选择（由 Sidebar codem-theme 系统管理）
+ * - Hub/Dream 皮肤各自有固定的配色，不需要明暗切换
  */
 
 import { useState, useEffect } from "react";
 import { ThemeManager } from "../core/theme";
 import type { SkinId } from "../core/theme";
+import { getSetting, setSetting } from "../core/storage/settings";
 import { useLang, S } from "../core/i18n/lang";
 
 export function SkinSelector() {
   const [skin, setSkin] = useState<SkinId>(ThemeManager.getSkin());
-  const [themeMode, setThemeMode] = useState(ThemeManager.getThemeMode());
-  const { lang } = useLang();
+  // 明暗模式读取 codem-theme（与 Sidebar 一致），而非 ThemeManager
+  const [themeMode, setThemeMode] = useState<"dark" | "light">(
+    () => (getSetting("codem-theme") as "dark" | "light") || "dark"
+  );
+  const lang = useLang();
 
   useEffect(() => {
     const unsubscribe = ThemeManager.onChange((newSkin) => {
@@ -27,7 +35,9 @@ export function SkinSelector() {
 
   const handleThemeModeChange = (mode: "dark" | "light") => {
     setThemeMode(mode);
-    ThemeManager.setThemeMode(mode);
+    // 与 Sidebar 使用同一套 codem-theme 系统
+    setSetting("codem-theme", mode);
+    document.documentElement.setAttribute("data-theme", mode);
   };
 
   const skins = ThemeManager.getAvailableSkins();
@@ -49,6 +59,7 @@ export function SkinSelector() {
         ))}
       </div>
 
+      {/* 只有默认皮肤才显示明暗模式选择 */}
       {skin === "default" && (
         <div className="setting-group" style={{ marginTop: "12px" }}>
           <label>{S.settings.theme[lang]}</label>
@@ -73,7 +84,7 @@ export function SkinSelector() {
 function DreamConfigPanel() {
   const [dreamConfig, setDreamConfig] = useState(ThemeManager.getDreamConfig());
   const [uploading, setUploading] = useState(false);
-  const { lang } = useLang();
+  const lang = useLang();
 
   const updateConfig = (config: Partial<typeof dreamConfig>) => {
     const newConfig = { ...dreamConfig, ...config };
@@ -161,7 +172,7 @@ function DreamConfigPanel() {
         <label>{lang === "zh" ? "卡片透明度" : "Card Opacity"}: {Math.round(dreamConfig.cardOpacity * 100)}%</label>
         <input
           type="range"
-          min="0.3"
+          min="0.1"
           max="1"
           step="0.05"
           value={dreamConfig.cardOpacity}
