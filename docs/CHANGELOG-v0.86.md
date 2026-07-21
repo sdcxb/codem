@@ -2,7 +2,7 @@
 
 > 本次更新实现了完整的皮肤系统（默认/Hub/梦幻三套皮肤）、Windows Mica 毛玻璃窗口效果、自定义标题栏，以及多处 UI 修复。
 
-![v0.86 更新](26720-1.jpg)
+![v0.86 更新](https://github.com/sdcxb/codem/raw/master/docs/26720-1.jpg)
 
 ## 🎯 核心改进
 
