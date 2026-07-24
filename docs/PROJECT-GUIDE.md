@@ -1,7 +1,7 @@
 # Codem 项目完整说明
 
 > **用途**：新对话快速理解项目全貌、架构、文件关联、当前状态。
-> 创建时间：2026-07-23 | 当前版本：v0.86（开发中，含 Worktree + 并行对话 + 自动化）
+> 创建时间：2026-07-23 | 最后更新：2026-07-24 | 当前版本：v0.87（已发布，含 Worktree + 并行对话 + 自动化 + GitHub Clone + 全局字体）
 
 ---
 
@@ -13,7 +13,7 @@
 - **GitHub**：https://github.com/sdcxb/codem
 - **分发**：NSIS `.exe` + WiX `.msi`，一键安装无需依赖
 - **平台**：Windows 优先
-- **版本**：v0.86
+- **版本**：v0.87
 
 ---
 
@@ -470,9 +470,9 @@ automation/automation-manager.ts
 | 文件 | 类型 | 说明 | 状态 |
 |------|------|------|------|
 | **PROJECT-GUIDE.md** | 📌本项目 | **本文档**，完整项目说明 | ✅ 最新 |
-| **PROJECT_STATUS.md** | 项目简介 | 项目概述+架构+功能清单+版本历史 | v0.86 |
+| **PROJECT_STATUS.md** | 项目简介 | 项目概述+架构+功能清单+版本历史 | v0.87 |
 | **PROJECT-CONTEXT.md** | 旧版交接 | v0.79 时的交接文档，已被 PROJECT_STATUS 替代 | 📦 归档 |
-| **TODO.md** | 待办跟踪 | Phase 0-G 全部完成记录 + Phase E/F 待办 | ✅ 最新 |
+| **TODO.md** | 待办跟踪 | Phase 0-G 全部完成记录 + Phase E 待办 | ✅ 最新 |
 | **DEV-PLAN-UNIFIED.md** | 主线计划 | 统一开发计划（1172行），整合了 ROADMAP + Benchmark + TODO | 📦 参考 |
 | **ROADMAP-codex-alignment.md** | 历史路线图 | Codex 对标改进路线图（Phase 0-4 已完成） | 📦 归档 |
 | **TOOLS-SKILLS-BENCHMARK.md** | 对标分析 | 工具/技能/MCP 对标分析（66K，Phase B-D 已完成） | 📦 归档 |
@@ -490,13 +490,15 @@ automation/automation-manager.ts
 | **CHANGELOG-v0.70.md** | 变更日志 | v0.70 变更记录 | 📦 归档 |
 | **CHANGELOG-v0.80.md** | 变更日志 | v0.80 变更记录 | 📦 归档 |
 | **CHANGELOG-v0.86.md** | 变更日志 | v0.86 变更记录 | 📦 归档 |
+| **CHANGELOG-v0.87.md** | 变更日志 | v0.87 变更记录 | ✅ 最新 |
 
 ### 文档优先级说明
 
 **新对话只需要阅读：**
 1. `PROJECT-GUIDE.md`（本文档）— 完整理解项目
 2. `TODO.md` — 了解当前待办
-3. `AUDIT-WORKTREE-PARALLEL.md` — 了解最近审计结果
+3. `CHANGELOG-v0.87.md` — 了解最新版本变更
+4. `AUDIT-WORKTREE-PARALLEL.md` — 了解最近审计结果
 
 **其余文档均为历史归档或已完成计划的记录，不影响进度判断。**
 
@@ -514,23 +516,30 @@ automation/automation-manager.ts
 | v0.80 | 2026-07-14 | 轮次架构 + UI对比度 + 性能优化 + 置顶 |
 | v0.85 | 2026-07-19 | 技能触发三层 + 附件重构 + 技能市场 + Web搜索 + 知识管理 + 本地嵌入 |
 | v0.86 | 2026-07-20 | 皮肤系统 + Mica毛玻璃 + 自定义标题栏 |
+| v0.87 | 2026-07-24 | Worktree全链路 + 并行对话 + 自动任务 + GitHub Clone + 侧边栏重构 + 全局字体 + Prompt Cache优化 |
 
-### 6.2 v0.86 后大更新（未发版，当前工作区）
+### 6.2 v0.87 已发布功能
 
-以下改动已全部完成，等待发版：
+以下功能均已包含在 v0.87 发布版本中：
 
-| 功能 | 状态 | 关键文件 |
-|------|------|---------|
-| **Git Worktree 全链路** | ✅ | `environment/`, `App.tsx`, `core/store.ts`, `GitInfoPanel.tsx` |
-| **并行对话** | ✅ | `App.tsx` (per-session Map), `llm/index.ts` (loopPool), `store.ts` (activeSessions) |
-| **自动任务 (Automation)** | ✅ | `automation/automation-manager.ts`, `SettingsPanel.tsx` |
-| **InputArea 底部控制栏** | ✅ | `InputArea.tsx` (项目/模式/分支/安全选择器) |
-| **设置侧边栏分栏** | ✅ | `SettingsPanel.tsx` (9个Tab) |
-| **GitInfoPanel** | ✅ | `GitInfoPanel.tsx` (分支/dirty/diff/commit/push/pull/worktree监控) |
-| **梦幻皮肤磨砂弹窗** | ✅ | 所有弹窗组件 Portal + `skin-dream.css` |
-| **安全移除项目** | ✅ | `App.tsx` (三按钮弹窗) + `lib.rs` (回收站删除) |
-| **侧栏更多操作菜单** | ✅ | `Sidebar.tsx` (absolute定位 + 点击/hover双模式) |
-| **选项目打开最新对话** | ✅ | `InputArea.tsx` (handleSelectProject) |
+| 功能 | 关键文件 |
+|------|---------|
+| **Git Worktree 全链路** | `environment/`, `App.tsx`, `core/store.ts`, `GitInfoPanel.tsx` |
+| **并行对话** | `App.tsx` (per-session Map), `llm/index.ts` (loopPool), `store.ts` (activeSessions) |
+| **自动任务 (Automation)** | `automation/automation-manager.ts`, `SettingsPanel.tsx` |
+| **InputArea 底部控制栏** | `InputArea.tsx` (项目/模式/分支/安全选择器) |
+| **设置侧边栏分栏** | `SettingsPanel.tsx` (9个Tab) |
+| **GitInfoPanel** | `GitInfoPanel.tsx` (分支/dirty/diff/commit/push/pull/worktree监控) |
+| **梦幻皮肤磨砂弹窗** | 所有弹窗组件 Portal + `skin-dream.css` |
+| **安全移除项目** | `App.tsx` (三按钮弹窗) + `lib.rs` (回收站删除) |
+| **侧栏更多操作菜单** | `Sidebar.tsx` (absolute定位 + 点击/hover双模式) |
+| **选项目打开最新对话** | `InputArea.tsx` (handleSelectProject) |
+| **GitHub Clone** | `ProjectManager.tsx`, `GitHubCloneDialog.tsx` |
+| **侧边栏布局重构** | `Sidebar.tsx` (分段控件 + 独立滚动 + Portal菜单) |
+| **全局字体系统** | `public/fonts/`, `SettingsPanel.tsx`, `styles.css` (--font-family/--font-weight) |
+| **SlashCommandMenu** | `SlashCommandMenu.tsx` (/ 命令菜单) |
+| **Prompt Cache 优化** | `prompt.ts` (时间戳分钟精度) |
+| **分段控件主题适配** | `styles.css` (color-mix + --accent) |
 
 ### 6.3 待办事项
 
@@ -541,6 +550,7 @@ automation/automation-manager.ts
 | **REFACTOR-PROMPT-TO-DATA** | ⏳ | 提示词约束→数据层约束的重构计划 |
 | **MSI 中文向导** | ⏳ | WiX 多语言配置 |
 | **对话搜索完善** | ⏳ | 当前搜索功能基础 |
+| **Vision API 图片理解** | ⏳ | 将粘贴的图片数据传给 vision 模型 |
 
 ### 6.4 关键技术决策
 

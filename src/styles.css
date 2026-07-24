@@ -8364,3 +8364,56 @@ line-height: 1.3;
 .dream-toggles input[type="checkbox"] {
   cursor: pointer;
 }
+
+/* ========== Pet Sprite Animation ==========
+   基于 Petdex (MIT) 的精灵图 CSS 动画方案。
+   精灵图是固定网格：192×208px 帧宽，8 列 1536px 总宽。
+   通过 CSS steps() 步进 background-position 实现帧动画。
+*/
+
+.pet-sprite-card {
+  width: 192px;
+  height: 208px;
+  overflow: hidden;
+  contain: layout paint;
+}
+
+.pet-sprite-card-inner {
+  width: 192px;
+  height: 208px;
+  background-repeat: no-repeat;
+  image-rendering: pixelated;
+  transform-origin: top left;
+  will-change: background-position;
+  animation: pet-card-sprite var(--pet-duration, 1100ms) steps(var(--pet-frames, 6)) infinite;
+}
+
+@keyframes pet-card-sprite {
+  from {
+    background-position: 0 0;
+  }
+  to {
+    background-position: calc(var(--pet-frames, 6) * -192px) 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pet-sprite-card-inner {
+    animation: none;
+  }
+}
+
+/* ========== Pet Window Mode ==========
+   独立宠物窗口的透明背景。
+   强制所有层级透明，消除 WebView2 可能残留的黑色背景/边框。
+*/
+html.pet-window-mode,
+html.pet-window-mode body,
+html.pet-window-mode #root {
+  background: transparent !important;
+  border: none !important;
+  outline: none !important;
+  overflow: hidden !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}

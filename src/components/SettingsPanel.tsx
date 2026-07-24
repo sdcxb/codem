@@ -15,6 +15,9 @@ import { GitConfigSection, EnvironmentConfigSection } from "./GitEnvSettings";
 import { getWorktreeSettings, setWorktreeSettings, type WorktreeInfo } from "../core/environment";
 import { useProjectStore } from "../core/store";
 import { getAutomationConfig, setAutomationConfig, refreshAutomationEngines, stopAutomationEngines, type AutomationTrigger, type TriggerType } from "../core/automation/automation-manager";
+import { PetMarketDialog } from "./PetMarketDialog";
+import { usePetStore } from "../core/pet/pet-store";
+import { uninstallPet } from "../core/pet/pet-manager";
 
 interface ProviderKey {
   id: string;
@@ -240,7 +243,8 @@ export function SettingsPanel({ onClose, onSessionRecovery, onUsageStats, initia
   const [testResult, setTestResult] = useState<string>("");
 const [showModelProfiles, setShowModelProfiles] = useState(false);
 const [showMultimodal, setShowMultimodal] = useState(false);
-const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security" | "git" | "environment" | "worktree" | "knowledge" | "automation" | "multimodal">((initialTab as any) || "general");
+const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security" | "git" | "environment" | "worktree" | "knowledge" | "automation" | "multimodal" | "pet">((initialTab as any) || "general");
+  const [showPetMarket, setShowPetMarket] = useState(false);
   const runLoginTest = async () => {
     const lines: string[] = [];
     const log = (msg: string) => { lines.push(msg); console.log(msg); };
@@ -413,6 +417,9 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
 </button>
             <button className={`settings-sidebar-item ${activeTab === "multimodal" ? "active" : ""}`} onClick={() => setActiveTab("multimodal")}>
               <span className="sidebar-icon">🤖</span>{lang === "zh" ? "多模态" : "Multimodal"}
+            </button>
+            <button className={`settings-sidebar-item ${activeTab === "pet" ? "active" : ""}`} onClick={() => setActiveTab("pet")}>
+              <span className="sidebar-icon">🐾</span>{lang === "zh" ? "宠物" : "Pet"}
             </button>
           </div>
 
@@ -1010,6 +1017,12 @@ marginTop: 4,
 <WorktreeSettingsSection lang={lang} />
 </>
 )}
+{activeTab === "pet" && (
+<>
+{/* Pet Settings */}
+<PetSettingsSection lang={lang} onOpenMarket={() => setShowPetMarket(true)} />
+</>
+)}
           </div>
         </div>
 
@@ -1036,6 +1049,288 @@ marginTop: 4,
           <button className="save-btn" onClick={handleSave}>{S.settings.saveSettings[lang]}</button>
         </div>
       </div>
+      <PetMarketDialog open={showPetMarket} onClose={() => setShowPetMarket(false)} />
+    </div>
+  );
+}
+
+// ========== Pet Settings Section ==========
+
+function PetSettingsSection({ lang, onOpenMarket }: { lang: Language; onOpenMarket: () => void }) {
+  const zh = lang === "zh";
+  const {
+    enabled,
+    activePet,
+    installedPets,
+    scale,
+    opacity,
+    positionX,
+    positionY,
+    setEnabled,
+    setActivePet,
+    setScale,
+    setOpacity,
+    setPosition,
+    refreshInstalledPets,
+  } = usePetStore();
+
+  // 位置滑块回调
+  const handlePosChange = (axis: "x" | "y", value: number) => {
+    if (axis === "x") {
+      setPosition(value, positionY);
+    } else {
+      setPosition(positionX, value);
+    }
+  };
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+      {/* 启用开关 */}
+      <div className="settings-row" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div>
+          <div style={{ fontWeight: 600, fontSize: "14px", color: "var(--text-primary)" }}>
+            {zh ? "启用桌面宠物" : "Enable Desktop Pet"}
+          </div>
+          <div style={{ fontSize: "12px", color: "var(--text-secondary)", marginTop: "2px" }}>
+            {zh ? "在窗口右下角显示宠物，它会响应 Agent 的工作状态" : "Show a pet in the bottom-right corner that reacts to Agent activity"}
+          </div>
+        </div>
+        <button
+          onClick={() => setEnabled(!enabled)}
+          style={{
+            width: "44px",
+            height: "24px",
+            borderRadius: "12px",
+            border: enabled ? "none" : "1px solid var(--border-primary)",
+            background: enabled ? "var(--accent)" : "var(--bg-hover)",
+            color: "#fff",
+            cursor: "pointer",
+            position: "relative",
+            transition: "background 0.2s, border-color 0.2s",
+            flexShrink: 0,
+          }}
+        >
+          <span style={{
+            position: "absolute",
+            top: enabled ? "2px" : "1px",
+            left: enabled ? "22px" : "2px",
+            width: "20px",
+            height: "20px",
+            borderRadius: "50%",
+            background: enabled ? "#fff" : "var(--text-secondary)",
+            transition: "left 0.2s, background 0.2s",
+            boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
+          }} />
+        </button>
+      </div>
+
+      {/* 宠物市场按钮 */}
+      <div style={{
+        padding: "12px 16px",
+        borderRadius: "8px",
+        background: "var(--bg-tertiary)",
+        border: "1px solid var(--border-primary)",
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+      }}>
+        <div>
+          <div style={{ fontWeight: 600, fontSize: "13px", color: "var(--text-primary)" }}>
+            {zh ? "宠物市场" : "Pet Market"}
+          </div>
+          <div style={{ fontSize: "11px", color: "var(--text-secondary)", marginTop: "2px" }}>
+            {zh ? "从 Petdex 浏览和下载更多宠物" : "Browse and download more pets from Petdex"}
+          </div>
+        </div>
+        <button
+          onClick={onOpenMarket}
+          style={{
+            padding: "6px 16px",
+            borderRadius: "6px",
+            border: "1px solid var(--accent)",
+            background: "var(--accent)",
+            color: "#fff",
+            cursor: "pointer",
+            fontSize: "13px",
+            fontWeight: 500,
+          }}
+        >
+          🐾 {zh ? "浏览市场" : "Browse Market"}
+        </button>
+      </div>
+
+      {/* 已安装宠物列表 */}
+      <div>
+        <div style={{ fontWeight: 600, fontSize: "14px", color: "var(--text-primary)", marginBottom: "8px" }}>
+          {zh ? "已安装宠物" : "Installed Pets"} ({installedPets.length})
+        </div>
+        {installedPets.length === 0 ? (
+          <div style={{
+            padding: "24px",
+            textAlign: "center",
+            color: "var(--text-secondary)",
+            fontSize: "13px",
+            background: "var(--bg-tertiary)",
+            borderRadius: "8px",
+            border: "1px dashed var(--border-primary)",
+          }}>
+            {zh ? "暂无已安装的宠物，去市场看看吧~" : "No pets installed yet. Check out the market!"}
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+            {installedPets.map((pet) => (
+              <div
+                key={pet.slug}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  padding: "10px 14px",
+                  borderRadius: "8px",
+                  background: activePet?.slug === pet.slug ? "rgba(99, 102, 241, 0.15)" : "var(--bg-tertiary)",
+                  border: activePet?.slug === pet.slug ? "1px solid var(--accent)" : "1px solid var(--border-primary)",
+                }}
+              >
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 600, fontSize: "13px", color: "var(--text-primary)" }}>
+                    {pet.definition.name}
+                    {activePet?.slug === pet.slug && (
+                      <span style={{ marginLeft: "8px", fontSize: "11px", color: "var(--accent)" }}>● {zh ? "当前" : "Active"}</span>
+                    )}
+                  </div>
+                  <div style={{ fontSize: "11px", color: "var(--text-secondary)" }}>
+                    {pet.definition.description || pet.definition.author || pet.slug}
+                  </div>
+                </div>
+                <div style={{ display: "flex", gap: "6px" }}>
+                  {activePet?.slug !== pet.slug && (
+                    <button
+                      onClick={() => setActivePet(pet.slug)}
+                      style={{
+                        padding: "4px 10px",
+                        borderRadius: "4px",
+                        border: "1px solid var(--border-primary)",
+                        background: "none",
+                        color: "var(--text-primary)",
+                        cursor: "pointer",
+                        fontSize: "12px",
+                      }}
+                    >
+                      {zh ? "激活" : "Activate"}
+                    </button>
+                  )}
+                  <button
+                    onClick={async () => {
+                      await uninstallPet(pet.slug);
+                      await refreshInstalledPets();
+                    }}
+                    style={{
+                      padding: "4px 10px",
+                      borderRadius: "4px",
+                      border: "1px solid rgba(239, 68, 68, 0.3)",
+                      background: "rgba(239, 68, 68, 0.1)",
+                      color: "#f87171",
+                      cursor: "pointer",
+                      fontSize: "12px",
+                    }}
+                  >
+                    {zh ? "卸载" : "Uninstall"}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* 缩放滑轨 — 始终可见 */}
+      <div>
+        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "4px" }}>
+          <span style={{ fontSize: "13px", color: "var(--text-primary)" }}>{zh ? "宠物大小" : "Pet Size"}</span>
+          <span style={{ fontSize: "12px", color: "var(--text-secondary)" }}>{Math.round(scale * 100)}%</span>
+        </div>
+        <input
+          type="range"
+          min="0.15"
+          max="1.5"
+          step="0.05"
+          value={scale}
+          onChange={(e) => setScale(parseFloat(e.target.value))}
+          style={{ width: "100%" }}
+        />
+        <div style={{ display: "flex", justifyContent: "space-between", marginTop: "2px", fontSize: "10px", color: "var(--text-muted, #666)" }}>
+          <span>{zh ? "小" : "Small"}</span>
+          <span>{zh ? "大" : "Large"}</span>
+        </div>
+      </div>
+
+      {/* 其他显示设置 — 仅启用且有激活宠物时可见 */}
+      {enabled && activePet && (
+        <>
+          {/* 透明度 */}
+          <div>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "4px" }}>
+              <span style={{ fontSize: "13px", color: "var(--text-primary)" }}>{zh ? "透明度" : "Opacity"}</span>
+              <span style={{ fontSize: "12px", color: "var(--text-secondary)" }}>{Math.round(opacity * 100)}%</span>
+            </div>
+            <input
+              type="range"
+              min="0.3"
+              max="1.0"
+              step="0.05"
+              value={opacity}
+              onChange={(e) => setOpacity(parseFloat(e.target.value))}
+              style={{ width: "100%" }}
+            />
+          </div>
+
+          {/* 位置 X */}
+          <div>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "4px" }}>
+              <span style={{ fontSize: "13px", color: "var(--text-primary)" }}>{zh ? "水平位置" : "Position X"}</span>
+              <span style={{ fontSize: "12px", color: "var(--text-secondary)" }}>{positionX}px</span>
+            </div>
+            <input
+              type="range"
+              min="0"
+              max="400"
+              step="4"
+              value={positionX}
+              onChange={(e) => handlePosChange("x", parseInt(e.target.value))}
+              style={{ width: "100%" }}
+            />
+          </div>
+
+          {/* 位置 Y */}
+          <div>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "4px" }}>
+              <span style={{ fontSize: "13px", color: "var(--text-primary)" }}>{zh ? "垂直位置" : "Position Y"}</span>
+              <span style={{ fontSize: "12px", color: "var(--text-secondary)" }}>{positionY}px</span>
+            </div>
+            <input
+              type="range"
+              min="0"
+              max="300"
+              step="4"
+              value={positionY}
+              onChange={(e) => handlePosChange("y", parseInt(e.target.value))}
+              style={{ width: "100%" }}
+            />
+          </div>
+
+          {/* 提示 */}
+          <div style={{
+            padding: "8px 12px",
+            borderRadius: "6px",
+            background: "rgba(99, 102, 241, 0.08)",
+            border: "1px solid rgba(99, 102, 241, 0.2)",
+            fontSize: "11px",
+            color: "var(--text-secondary)",
+          }}>
+            💡 {zh ? "提示：可以直接拖拽窗口中的宠物来移动位置。空闲时点击宠物有彩蛋。" : "Tip: Drag the pet in the window to reposition. Click the pet when idle for a surprise."}
+          </div>
+        </>
+      )}
     </div>
   );
 }

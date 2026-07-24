@@ -1,6 +1,6 @@
 # Codem 项目开发状态
 
-> 本文档供新对话快速理解项目当前状态。最后更新：v0.86（含皮肤系统 + 窗口毛玻璃 + 自定义标题栏）
+> 本文档供新对话快速理解项目当前状态。最后更新：v0.87（含 Worktree 全链路 + 并行对话 + 自动任务 + GitHub Clone + 侧边栏重构 + 全局字体）
 
 ## 项目概述
 
@@ -10,7 +10,7 @@
 - **存储**：SQLite（sql.js，通过 Tauri 文件系统持久化到 AppData）
 - **模型接入**：MiMo CLI（小米账户登录）+ OpenAI 兼容 API（多 Provider）
 - **GitHub**：https://github.com/sdcxb/codem
-- **当前版本**：v0.86（已发布 release）
+- **当前版本**：v0.87（已发布 release）
 
 ## 架构总览
 
@@ -77,6 +77,20 @@ App.tsx                    — 主应用，状态管理 + 事件处理
 - [x] **显示模式切换**：分段（segmented）/ 统一（unified，默认），统一模式将连续 assistant 消息合并为一个气泡
 - [x] **子智能体调用修复**：跨迭代去重 + cacheHitCount 机制，修复 wait_for_subagent 无限循环
 - [x] **任务完整性检查增强**：追加/汇总关键词检测，防止 LLM 提前停止
+- [x] **Git Worktree 全链路**：worktree-manager.ts（create/remove/scan/limit）+ handleSend 自动创建 + deleteSession 自动清理 + forkSession 继承
+- [x] **并行对话**：per-session Map 隔离（activeSessions/loopPool/权限/写确认/提示词变更/表单），多会话同时流式
+- [x] **自动任务**：automation-manager.ts（timer/file_watch 触发器）+ 设置面板配置 + 自动回调 handleSend
+- [x] **InputArea 底部控制栏**：项目/模式/分支/安全模式选择器，一键切换执行环境
+- [x] **GitInfoPanel**：分支/dirty/diff/commit/push/pull/worktree 实时监控面板
+- [x] **GitHub Clone**：项目管理器新增从 GitHub 拉取功能，支持 git clone URL 直接创建项目
+- [x] **侧边栏布局重构**：分段控件（MCP/技能/记忆）+ 独立滚动 + Portal 菜单 + 标题栏按钮
+- [x] **全局字体系统**：内置 Alimama 方圆体 + 字体选择器 + 字重滑块（100-900）
+- [x] **SlashCommandMenu**：/ 命令菜单
+- [x] **Prompt Cache 优化**：System Prompt 时间戳降为分钟精度，提升 KV Cache 命中率
+- [x] **梦幻皮肤磨砂弹窗**：所有弹窗组件用 createPortal 渲染，绕过 backdrop-filter 问题
+- [x] **安全移除项目**：三按钮弹窗（移除/删除到回收站/取消）
+- [x] **设置侧边栏分栏**：9 个 Tab（通用/外观/安全/Git/环境/Worktree/知识/自动化/多模态）
+- [x] **分段控件主题适配**：color-mix + --accent 主题色自适应，三套皮肤均有良好对比度
 
 ### 🔧 开发中
 
@@ -84,9 +98,12 @@ App.tsx                    — 主应用，状态管理 + 事件处理
 
 ### 🔄 待完成
 
+- [ ] Phase E：Work 模式拆分（Codex/Work 双模式切换）
 - [ ] 更多 Provider 测试（目前主要测试了 DeepSeek + MiMo）
-- [ ] Skills/MCP 完整功能测试
+- [ ] REFACTOR-PROMPT-TO-DATA（提示词约束→数据层约束的重构计划）
+- [ ] MSI 中文向导（WiX 多语言配置）
 - [ ] 对话搜索功能完善
+- [ ] Vision API 图片理解（将粘贴的图片数据传给 vision 模型）
 - [ ] 上下文压缩策略优化
 
 ## 关键技术决策
@@ -109,9 +126,7 @@ App.tsx                    — 主应用，状态管理 + 事件处理
 
 ## 测试覆盖
 
-- 188 个测试（`src/test/ui-batch-a-d.test.ts`），覆盖批次 A-F
-- 批次 E：轮次分组 + 分叉/重新生成
-- 批次 F：子智能体状态 + 全局对话 + 性能 + 通知 + pinned 持久化
+- 1614 个测试（36 个测试文件），覆盖 UI 批次 A-F + 安全模式 + Git 环境 + Worktree + 命名规范等
 
 ## 版本历史
 
@@ -124,15 +139,8 @@ App.tsx                    — 主应用，状态管理 + 事件处理
 | v0.80.2 | 2026-07-15 | 显示模式切换 + 子智能体调用修复 + 任务完整性增强 |
 | v0.85 | 2026-07-19 | 技能触发三层改造 + 附件系统重构 + 全局对话持久化修复 + 技能市场 + Web搜索 |
 | v0.86 | 2026-07-20 | 皮肤系统（默认/Hub/梦幻）+ 窗口 Mica 毛玻璃 + 自定义标题栏 + UI 修复 |
+| v0.87 | 2026-07-24 | Worktree全链路 + 并行对话 + 自动任务 + GitHub Clone + 侧边栏重构 + 全局字体 + Prompt Cache优化 |
 
-## 未提交的改动
+## 当前工作区状态
 
-当前工作区即将提交 v0.86，包含以下主要改动：
-- 皮肤系统完整实现（默认/Hub/梦幻三套皮肤 + ThemeManager + SkinSelector）
-- 窗口毛玻璃效果（decorations: false + Mica/Acrylic + macOS vibrancy）
-- 自定义标题栏（TitleBar 组件 + 三皮肤适配）
-- Hub 皮肤消息双边框修复 + 右侧栏响应式修复
-- 梦幻皮肤设置面板磨砂效果 + 技能弹窗毛玻璃
-- 默认皮肤背景改完全不透明
-- 清理 .wecode-ref 对标项目残留 + 修复 .gitignore
-- 全部 1482 个测试通过
+v0.87 已发布，工作区干净（git working tree clean）。全部 1614 个测试通过。

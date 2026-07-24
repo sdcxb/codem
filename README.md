@@ -181,6 +181,24 @@ codem/
 - [x] 自定义标题栏（TitleBar 组件，拖拽 + 最小化/最大化/关闭，三皮肤适配）
 - [x] Hub 皮肤三栏布局（TopNavbar + RightSidebar，橙色科技风）
 - [x] 梦幻皮肤毛玻璃面板（背景图 + 装饰元素 + 透明毛玻璃卡片，可配置透明度/模糊度）
+- [x] Git Worktree 全链路（create/remove/scan/limit + handleSend 自动创建 + deleteSession 自动清理 + forkSession 继承）
+- [x] 并行对话隔离（per-session Map：activeSessions/loopPool/权限/写确认/提示词变更/表单）
+- [x] 自动任务系统（timer/file_watch 触发器 + 设置面板配置 + 自动回调）
+- [x] InputArea 底部控制栏（项目/模式/分支/安全模式选择器）
+- [x] GitInfoPanel（分支/dirty/diff/commit/push/pull/worktree 实时监控）
+- [x] GitHub Clone（项目管理器从 GitHub 拉取 + 2×2 网格布局）
+- [x] 侧边栏布局重构（分段控件 + 独立滚动 + Portal 菜单 + 标题栏按钮）
+- [x] 全局字体系统（内置 Alimama 方圆体 + 字体选择器 + 字重滑块 100-900）
+- [x] SlashCommandMenu（/ 命令菜单）
+- [x] Prompt Cache 优化（System Prompt 时间戳降为分钟精度）
+- [x] 梦幻皮肤磨砂弹窗（所有弹窗用 createPortal 渲染）
+- [x] 安全移除项目（三按钮弹窗 + 回收站删除）
+- [x] 设置侧边栏分栏（9 个 Tab：通用/外观/安全/Git/环境/Worktree/知识/自动化/多模态）
+- [x] 桌面宠物系统（基于 Petdex MIT 集成，独立透明窗口 + 精灵图动画 + Agent 状态映射）
+- [x] 宠物市场（接入 Petdex Manifest API，浏览/安装/卸载宠物，CSS steps() 预览动画）
+- [x] 悬浮气泡通知（任务完成/Token 查询，自定义称呼，高度自适应，增量位置调整）
+- [x] 宠物右键原生菜单（关闭/置顶切换/重置位置/查看 Token，不受窗口边界裁剪）
+- [x] 宠物设置面板（启用开关 + 大小滑轨 + 透明度滑轨 + 市场入口 + 已安装列表）
 
 ### 进行中
 
@@ -188,9 +206,12 @@ codem/
 
 ### 待开发
 
+- [ ] Phase E：Work 模式拆分（Codex/Work 双模式切换）
 - [ ] Vision API 图片理解（将粘贴的图片数据传给 vision 模型）
 - [ ] 终端面板增强
-- [ ] 主题持久化
+- [ ] REFACTOR-PROMPT-TO-DATA（提示词约束→数据层约束重构）
+- [ ] MSI 中文向导（WiX 多语言配置）
+- [ ] 对话搜索功能完善
 
 ## 快速开始
 
@@ -738,6 +759,24 @@ npm run tauri:build
 - 内置 LLM 引擎集成
 - 设置面板 + API Key 管理
 - 浮动文件浏览器 + 弹窗编辑器
+
+### 2026-07-24 (v0.88.0)
+
+- **桌面宠物系统**：基于开源项目 Petdex (MIT License) 集成改造，宠物以独立透明窗口运行在桌面上，主窗口最小化时宠物仍可见
+  - 精灵图帧动画引擎（CSS background-position + requestAnimationFrame，6 种动画状态：idle/thinking/working/happy/sad/sleeping）
+  - Agent 生命周期映射：连接→思考、执行工具→工作、成功→开心、出错→伤心、空闲 60s→睡觉
+  - 修复精灵图渲染错位问题（backgroundPosition 与 backgroundSize 统一缩放坐标系）
+  - 移除 Windows DWM 黑色边框（`.shadow(false)`）
+- **宠物市场**：接入 Petdex Manifest API，浏览/搜索/安装/卸载宠物，CSS `steps()` 步进动画预览
+- **悬浮气泡通知**：
+  - Agent 任务完成时自动弹出气泡（区分"任务做完了！"和"回复完成了！"）
+  - 自动拼接用户设置的称呼（如"主人，任务做完了！"）
+  - 高度自适应内容，窗口随气泡动态扩展宽高，增量位置调整保证宠物视觉静止
+- **右键原生菜单**：改用 Rust 原生 MenuBuilder，不受窗口边界裁剪，支持关闭/置顶切换/重置位置/查看 Token
+- **Token 查询**：右键查看剩余 Token，调用 context.calculateBudgetFromMessages 获取预算，气泡显示
+- **宠物设置面板**：新增🐾Tab，启用开关 + 大小滑轨(0.2x~1.0x) + 透明度滑轨 + 市场入口 + 已安装列表
+- **开源声明**：新增 THIRD_PARTY_NOTICES.md，声明 Petdex MIT License 集成
+- **进程命名统一**：index.html title 更新为 Codem，WebView2 进程名统一
 
 ### 2026-07-24 (v0.87.0)
 

@@ -2,7 +2,7 @@
 
 > **开发计划主线文档**：`docs/DEV-PLAN-UNIFIED.md`（统一开发计划，包含架构约束、影响分析、完整路线图）
 >
-> 以下为具体待办事项跟踪。Phase 0-4 已全部完成，当前进入 Phase B（工具/技能基础架构）。
+> 以下为具体待办事项跟踪。Phase 0-4 + Phase B-D + Phase F-G 已全部完成，v0.87 已发布。
 
 ## 待开发
 
@@ -46,20 +46,20 @@
 - [x] **M3** SkillManager 市场标签页 — 新增「技能市场」Tab + 卡片网格 UI + 搜索/筛选/安装/详情对话框
 - [x] **M4** 编译验证 + 生产构建 — TypeScript 零错误 + Rust `cargo check` 通过 + `npm run build` 成功
 
-### Phase F：笔记本式知识管理（NotebookLM 模式，3-4周）⏳ 待开始
+### Phase F：笔记本式知识管理（NotebookLM 模式，3-4周）✅ 已完成（2026-07-16）
 
 > 详见 `docs/DEV-PLAN-UNIFIED.md` 第四章 Phase F
 > 对标 Google NotebookLM：笔记本→上传来源→知识化处理→笔记本内问答
 > 全部使用本地 SQLite + 已有 Embedding API，不破坏一键安装
 
-- [ ] **F1** 数据模型 — SQLite 新增 notebooks/notebook_sources/notebook_chunks 三张表 (`database.ts` SCHEMA 扩展, 新增 `knowledge/storage.ts`)
-- [ ] **F2** 文本提取与分块引擎 — 文件/文本/URL→纯文本提取 + 段落+句子分块+重叠窗口 (新增 `extractor.ts`/`chunker.ts`)
-- [ ] **F3** Embedding 索引管道 — 提取→分块→批量 Embedding→SQLite BLOB 存储 + 进度回调 (新增 `indexer.ts`)
-- [ ] **F4** 语义检索引擎 — query embedding + cosineSimilarity 排序 + top-K + 来源标注 (新增 `retriever.ts`)
-- [ ] **F5** 笔记本对话集成 — 系统 prompt 注入知识范围 + 自动检索 + `search_notebook` 工具 + 来源引用渲染 (修改 `prompt.ts`/`agentic-loop.ts`/`tools.ts`, 新增 `search-notebook.ts`)
-- [ ] **F6** 笔记本管理 UI — 侧边栏笔记本分区 + 笔记本详情(来源管理+对话+摘要+建议问题) (新增 `NotebookManager.tsx`/`NotebookDetail.tsx`/`NotebookChat.tsx`)
-- [ ] **F7** PDF 文本提取（可选）— `pdfjs-dist` 构建时打包 (修改 `extractor.ts`, `package.json`)
-- [ ] **F8** 笔记本设置与配置 — Embedding/分块/检索参数配置 (修改 `SettingsPanel.tsx`)
+- [x] **F1** 数据模型 — SQLite 新增 notebooks/notebook_sources/notebook_chunks 三张表 (`database.ts` SCHEMA 扩展, 新增 `knowledge/storage.ts`)
+- [x] **F2** 文本提取与分块引擎 — 文件/文本/URL→纯文本提取 + 段落+句子分块+重叠窗口 (新增 `extractor.ts`/`chunker.ts`)
+- [x] **F3** Embedding 索引管道 — 提取→分块→批量 Embedding→SQLite BLOB 存储 + 进度回调 (新增 `indexer.ts`)
+- [x] **F4** 语义检索引擎 — query embedding + cosineSimilarity 排序 + top-K + 来源标注 (新增 `retriever.ts`)
+- [x] **F5** 笔记本对话集成 — 系统 prompt 注入知识范围 + 自动检索 + `search_notebook` 工具 + 来源引用渲染 (修改 `prompt.ts`/`agentic-loop.ts`/`tools.ts`, 新增 `search-notebook.ts`)
+- [x] **F6** 笔记本管理 UI — 侧边栏笔记本分区 + 笔记本详情(来源管理+对话+摘要+建议问题) (新增 `NotebookManager.tsx`/`NotebookDetail.tsx`/`NotebookChat.tsx`)
+- [x] **F7** PDF 文本提取 — `pdf-extractor.ts` (纯 TypeScript，零依赖，支持 FlateDecode 解压)
+- [x] **F8** 笔记本设置与配置 — Embedding/分块/检索参数配置 (修改 `SettingsPanel.tsx`)
 
 ### Phase E：Work 模式拆分（远期，2-3周）⏳ 待开始
 
@@ -77,6 +77,45 @@
 - [ ] 在 `tauri.conf.json` 的 `bundle.windows.wix` 中配置 WiX 多语言（zh-CN + en-US）
 - [ ] 重新构建 MSI 安装包，确认安装向导界面支持中英文
 - [ ] 更新 Release 中的 MSI 文件
+
+### v0.87 发布 (2026-07-24)
+
+#### Git Worktree 全链路
+- [x] `worktree-manager.ts` — create/remove/scan/limit，Windows PowerShell 兼容
+- [x] `environment-runner.ts` — setup/cleanup 脚本自动执行
+- [x] `App.tsx handleSend` — 检查 executionMode，worktree 模式自动创建并用作 cwd
+- [x] `core/store.ts deleteSession` — 自动调用 removeWorktreeSync 清理
+- [x] `core/store.ts forkSession` — 继承 executionMode，创建独立 worktree
+- [x] `GitInfoPanel.tsx` — 分支/dirty/diff/commit/push/pull/worktree 监控面板
+- [x] `GitEnvSettings.tsx` — Git 环境配置（token/提交身份/脚本）
+- [x] `InputArea.tsx` — 底部控制栏：本地/工作树模式切换 + 分支选择器
+
+#### 并行对话隔离
+- [x] `store.ts` — `activeSessions: Map<sessionId, boolean>` 替代单例 isStreaming
+- [x] `llm/index.ts` — `loopPool: Map<sessionId, AgenticLoop>` + getAgenticLoop + cleanupSessionLoop
+- [x] `App.tsx` — 所有 Promise-based UI 改为 per-session Map（权限/写确认/提示词变更/表单）
+- [x] `App.tsx` — safeAddMessage/safeUpdateMessage + isViewingSession 守卫
+
+#### 自动任务系统
+- [x] `automation-manager.ts` — timer/file_watch 触发器 + 配置 CRUD + start/fire/stop/stopAll
+- [x] `SettingsPanel.tsx` — 自动化 Tab 可视化配置
+
+#### GitHub Clone + UI 改进
+- [x] `ProjectManager.tsx` — 从 GitHub 拉取功能 + 2×2 网格布局
+- [x] `Sidebar.tsx` — 分段控件 + 独立滚动 + Portal 菜单 + 标题栏按钮
+- [x] `SlashCommandMenu.tsx` — / 命令菜单
+- [x] 全局字体系统 — Alimama 方圆体 + 字体选择器 + 字重滑块
+- [x] Prompt Cache 优化 — System Prompt 时间戳降为分钟精度
+- [x] 分段控件主题适配 — color-mix + --accent 三皮肤自适应
+- [x] 梦幻皮肤磨砂弹窗 — 所有弹窗用 createPortal 渲染
+- [x] 安全移除项目 — 三按钮弹窗 + 回收站删除
+- [x] 设置侧边栏分栏 — 9 个 Tab
+
+#### 审计与测试
+- [x] `AUDIT-WORKTREE-PARALLEL.md` — 12 项隐患全部修复
+- [x] `REGRESSION-TEST-CASES.md` — 58 组 236 步回归测试
+- [x] 新增 `codem-naming.test.ts`（443 行）+ `git-env-config.test.ts`（1147 行）
+- [x] 全部 1614 个测试通过
 
 ### 版本发布流程备忘
 每次发版需完成以下步骤：

@@ -5,7 +5,7 @@ use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri::WindowEvent as WinEvent;
 use tauri::tray::{TrayIconBuilder, TrayIconEvent, MouseButton, MouseButtonState};
-use tauri::menu::{MenuBuilder, MenuItemBuilder};
+use tauri::menu::{ContextMenu, MenuBuilder, MenuItemBuilder, PredefinedMenuItem, CheckMenuItemBuilder};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::sync::{oneshot, Mutex as TokioMutex};
 
@@ -978,6 +978,131 @@ async fn mimo_login() -> Result<serde_json::Value, String> {
 
 // ========== System Tray & Window Close ==========
 
+// ========== Pet Window ==========
+
+/// Creates a transparent, always-on-top, frameless window for the desktop pet.
+/// The window floats on the desktop independently of the main window.
+#[tauri::command]
+async fn create_pet_window(app: AppHandle) -> Result<(), String> {
+    // If the pet window already exists, just show it
+    if let Some(existing) = app.get_webview_window("pet") {
+        existing.show().map_err(|e| e.to_string())?;
+        return Ok(());
+    }
+
+    let window = tauri::WebviewWindowBuilder::new(
+        &app,
+        "pet",
+        tauri::WebviewUrl::App("index.html?window=pet".into()),
+    )
+    .title("Pet")
+    .inner_size(200.0, 250.0)
+    .transparent(true)
+    .decorations(false)
+    .always_on_top(true)
+    .skip_taskbar(true)
+    .resizable(true) // Must be true for setSize to work programmatically
+    .shadow(false) // Disable DWM shadow — eliminates the black border on transparent borderless windows
+    .visible(true) // Show immediately; frontend will resize after content loads
+    .build()
+    .map_err(|e| format!("Failed to create pet window: {}", e))?;
+
+    // Position at bottom-right of the primary monitor
+    if let Some(monitor) = window.primary_monitor().ok().flatten() {
+        let monitor_size = monitor.size();
+        let scale_factor = monitor.scale_factor();
+        let win_size = window.outer_size().unwrap_or(tauri::PhysicalSize::new(200, 250));
+        let x = (monitor_size.width as f64 / scale_factor) - (win_size.width as f64 / scale_factor) - 24.0;
+        let y = (monitor_size.height as f64 / scale_factor) - (win_size.height as f64 / scale_factor) - 8.0;
+        let _ = window.set_position(tauri::Position::Logical(tauri::LogicalPosition::new(x, y)));
+    }
+
+    Ok(())
+}
+
+/// Shows a native popup context menu for the pet at the cursor position.
+/// Native menus are not clipped by window boundaries.
+#[tauri::command]
+async fn show_pet_menu(app: AppHandle, x: f64, y: f64, pet_name: Option<String>) -> Result<(), String> {
+    // Header: pet name (disabled)
+    let name_label = pet_name.unwrap_or_else(|| "宠物".to_string());
+    let header_item = MenuItemBuilder::with_id("pet-header", format!("\u{1F43E} {}", name_label))
+        .enabled(false)
+        .build(&app)
+        .map_err(|e| e.to_string())?;
+
+    // Separator
+    let sep1 = PredefinedMenuItem::separator(&app)
+        .map_err(|e| e.to_string())?;
+
+    // Always-on-top toggle (check item)
+    let is_on_top = app.get_webview_window("pet")
+        .map(|w| w.is_always_on_top().unwrap_or(true))
+        .unwrap_or(true);
+    let top_item = CheckMenuItemBuilder::with_id("pet-toggle-top", "窗口置顶")
+        .checked(is_on_top)
+        .build(&app)
+        .map_err(|e| e.to_string())?;
+
+    // Reset position
+    let reset_item = MenuItemBuilder::with_id("pet-reset-pos", "重置位置")
+        .build(&app)
+        .map_err(|e| e.to_string())?;
+
+    // Check remaining tokens
+    let token_item = MenuItemBuilder::with_id("pet-check-tokens", "查看剩余 Token")
+        .build(&app)
+        .map_err(|e| e.to_string())?;
+
+    // Separator
+    let sep2 = PredefinedMenuItem::separator(&app)
+        .map_err(|e| e.to_string())?;
+
+    // Close pet
+    let close_item = MenuItemBuilder::with_id("close-pet", "关闭宠物")
+        .build(&app)
+        .map_err(|e| e.to_string())?;
+
+    let menu = MenuBuilder::new(&app)
+        .item(&header_item)
+        .item(&sep1)
+        .item(&top_item)
+        .item(&reset_item)
+        .item(&token_item)
+        .item(&sep2)
+        .item(&close_item)
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    if let Some(window) = app.get_webview_window("pet") {
+        let pos = tauri::Position::Physical(tauri::PhysicalPosition::new(x as i32, y as i32));
+        menu.popup_at(window.as_ref().window(), pos)
+            .map_err(|e| e.to_string())?;
+    }
+
+    Ok(())
+}
+
+/// Closes the pet window.
+#[tauri::command]
+async fn close_pet_window(app: AppHandle) -> Result<(), String> {
+    if let Some(window) = app.get_webview_window("pet") {
+        window.close().map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+/// Resizes the pet window (used when scale changes).
+#[tauri::command]
+async fn resize_pet_window(app: AppHandle, width: f64, height: f64) -> Result<(), String> {
+    if let Some(window) = app.get_webview_window("pet") {
+        window
+            .set_size(tauri::LogicalSize::new(width, height))
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 #[tauri::command]
 async fn hide_to_tray(app: AppHandle) -> Result<(), String> {
     if let Some(window) = app.get_webview_window("main") {
@@ -1211,6 +1336,10 @@ path_exists,
             http_get,
             http_post,
             http_download,
+            create_pet_window,
+            close_pet_window,
+            resize_pet_window,
+            show_pet_menu,
         ])
         .setup(|app| {
             // Apply window vibrancy (frosted glass effect)
@@ -1251,6 +1380,32 @@ path_exists,
                         }
                         "quit" => {
                             app.exit(0);
+                        }
+                        "close-pet" => {
+                            // Pet context menu → notify frontend to disable pet
+                            let _ = app.emit("pet-disable-request", ());
+                        }
+                        "pet-toggle-top" => {
+                            if let Some(window) = app.get_webview_window("pet") {
+                                let current = window.is_always_on_top().unwrap_or(true);
+                                let _ = window.set_always_on_top(!current);
+                            }
+                        }
+                        "pet-reset-pos" => {
+                            if let Some(window) = app.get_webview_window("pet") {
+                                if let Some(monitor) = window.primary_monitor().ok().flatten() {
+                                    let monitor_size = monitor.size();
+                                    let scale_factor = monitor.scale_factor();
+                                    let win_size = window.outer_size().unwrap_or(tauri::PhysicalSize::new(200, 250));
+                                    let px = (monitor_size.width as f64 / scale_factor) - (win_size.width as f64 / scale_factor) - 24.0;
+                                    let py = (monitor_size.height as f64 / scale_factor) - (win_size.height as f64 / scale_factor) - 8.0;
+                                    let _ = window.set_position(tauri::Position::Logical(tauri::LogicalPosition::new(px, py)));
+                                }
+                            }
+                        }
+                        "pet-check-tokens" => {
+                            // Notify main window to fetch token info and forward to pet
+                            let _ = app.emit("pet-check-tokens-request", ());
                         }
                         _ => {}
                     }

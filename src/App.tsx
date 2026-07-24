@@ -27,6 +27,8 @@ import { PromptChangeReviewDialog } from "./components/PromptChangeReviewDialog"
 import { NotebookManager } from "./components/NotebookManager";
 import { GitHubCloneDialog } from "./components/GitHubCloneDialog";
 import { SearchDialog } from "./components/SearchDialog";
+import { usePetStore } from "./core/pet/pet-store";
+import { loadInstalledPets as loadInstalledPetsPets } from "./core/pet/pet-manager";
 import type { InteractiveFormQuestion, PromptChange } from "./core/llm/tools";
 import { useAppStore } from "./store";
 import { useProjectStore } from "./core/store";
@@ -406,6 +408,45 @@ flushStreamBuffer(); // flush all on unmount
         }
       } catch (e) {
         console.warn("[App] Automation engine startup failed:", e);
+      }
+
+      // Initialize pet system
+      try {
+        await loadInstalledPetsPets();
+        await usePetStore.getState().init();
+      } catch (e) {
+        console.warn("[App] Pet system init failed:", e);
+      }
+
+      // Listen for "查看剩余 Token" requests from pet context menu
+      const tauriForPet = (window as any).__TAURI__;
+      if (tauriForPet?.event?.listen) {
+        tauriForPet.event.listen("pet-check-tokens-request", async () => {
+          try {
+            const engine = engineRef.current;
+            if (!engine) {
+              usePetStore.getState().showBubble("引擎未初始化");
+              return;
+            }
+            // Use context manager to calculate remaining tokens for current session
+            const sessionId = useProjectStore.getState().currentSession?.id;
+            if (!sessionId) {
+              usePetStore.getState().showBubble("没有活跃会话");
+              return;
+            }
+            const messages = MessageStorage.listMessages(sessionId);
+            const budget = engine.context.calculateBudgetFromMessages(messages);
+            const remaining = budget.remaining;
+            const total = budget.total;
+            const used = budget.used;
+            usePetStore.getState().showBubble(
+              `剩余 Token: ${remaining.toLocaleString()} / ${total.toLocaleString()}（已用 ${used.toLocaleString()}）`,
+              6000
+            );
+          } catch {
+            usePetStore.getState().showBubble("查询 Token 失败");
+          }
+        });
       }
     })();
   }, []);
@@ -989,6 +1030,8 @@ flushStreamBuffer(session.id);
             // State-based connection tracking — no timers, just state transitions
             // connecting → streaming → executing_tools → (next iteration or done)
             setLLMStatus(event.status);
+            // Bridge to pet system
+            usePetStore.getState().onLLMStatus(event.status);
             break;
           }
 
@@ -1026,6 +1069,8 @@ flushStreamBuffer(session.id);
 
           case "tool_start": {
             flushStreamBuffer(session.id);
+            // Bridge to pet system
+            usePetStore.getState().onStreamEvent(event);
             const tc = "toolCall" in event ? event.toolCall : null;
             if (tc) {
               if (!useAppStore.getState().messages.find((m) => m.id === assistantMsgId)) {
@@ -1055,6 +1100,8 @@ saveMessages(session.id);
           }
 
           case "tool_complete": {
+            // Bridge to pet system
+            usePetStore.getState().onStreamEvent(event);
             const tc = "toolCall" in event ? event.toolCall : null;
             if (tc) {
               // Extract the output string from the result
@@ -1085,6 +1132,8 @@ saveMessages(session.id);
           }
 
           case "tool_error": {
+            // Bridge to pet system
+            usePetStore.getState().onStreamEvent(event);
             const tc = "toolCall" in event ? event.toolCall : null;
             const err = "error" in event ? event.error : "Unknown error";
             
@@ -1120,6 +1169,17 @@ saveMessages(session.id);
           }
 
           case "end": {
+            // Bridge to pet system
+            usePetStore.getState().onStreamEvent(event);
+            // Show bubble notification on task completion
+            const isOverflow = "result" in event && event.result?.type === "overflow";
+            if (!isOverflow) {
+              // Determine if tools were used (task with actions) vs simple chat
+              const hadToolCalls = generatedFilesRef.current.size > 0;
+              const bubbleMsg = hadToolCalls ? "任务做完了！" : "回复完成了！";
+              // Small delay so pet "happy" animation starts first
+              setTimeout(() => usePetStore.getState().showBubble(bubbleMsg), 300);
+            }
             // Handle overflow result (context completely exhausted)
             if ("result" in event && event.result?.type === "overflow") {
               const msg = event.result.message || "上下文窗口已满，请开启新对话。";
@@ -1895,9 +1955,10 @@ clearPendingWriteConfirm();
         </>
       )}
       </div>
-    </div>
-    </TooltipProvider>
-  );
+
+</div>
+</TooltipProvider>
+);
 }
 
 export default App;
