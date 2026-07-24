@@ -1,7 +1,7 @@
 # Codem 项目完整说明
 
 > **用途**：新对话快速理解项目全貌、架构、文件关联、当前状态。
-> 创建时间：2026-07-23 | 最后更新：2026-07-24 | 当前版本：v0.87（已发布，含 Worktree + 并行对话 + 自动化 + GitHub Clone + 全局字体）
+> 创建时间：2026-07-23 | 最后更新：2026-07-24 | 当前版本：v0.88（已发布，含桌面宠物系统 + 悬浮气泡通知 + 宠物市场 + 右键原生菜单）
 
 ---
 
@@ -13,7 +13,7 @@
 - **GitHub**：https://github.com/sdcxb/codem
 - **分发**：NSIS `.exe` + WiX `.msi`，一键安装无需依赖
 - **平台**：Windows 优先
-- **版本**：v0.87
+- **版本**：v0.88
 
 ---
 
@@ -67,7 +67,10 @@ rfd (原生文件对话框) + base64 + x25519-dalek (加密)
 │  │  │   ├── MessageBubble.tsx ─ 消息气泡 (memo优化 + 子智能体) │  │
 │  │  │   └── InputArea.tsx ─ 输入区 (底部控制栏 + 模式/分支)   │  │
 │  │  ├── RightSidebar.tsx ─ 右侧栏 (活跃任务/GitInfoPanel)     │  │
-│  │  ├── SettingsPanel.tsx ─ 设置面板 (9个Tab)                 │  │
+│  │  ├── SettingsPanel.tsx ─ 设置面板 (10个Tab，含宠物)        │  │
+│  │  ├── PetWindowApp.tsx ─ 独立宠物窗口 (透明/置顶/精灵图动画)  │  │
+│  │  ├── PetSprite.tsx ─ 宠物精灵图帧动画渲染                    │  │
+│  │  ├── PetMarketDialog.tsx ─ 宠物市场 (Petdex API)             │  │
 │  │  ├── TopNavbar.tsx ─ 顶部导航 (皮肤/布局切换)              │  │
 │  │  └── DreamLayout.tsx / HubLayout.tsx ─ 皮肤布局            │  │
 │  │                                                            │  │
@@ -77,8 +80,8 @@ rfd (原生文件对话框) + base64 + x25519-dalek (加密)
 │  │  ├── context/ ─ 上下文管理 + token计数 + 压缩              │  │
 │  │  ├── memory/ ─ 三级记忆 (project/session/global)          │  │
 │  │  ├── permission/ ─ 权限系统 + 安全模式                     │  │
-│  │  ├── environment/ ─ Git Worktree + 执行模式                │  │
-│  │  ├── automation/ ─ 自动任务 (定时器/文件监听)              │  │
+│  │  ├── environment/ ─ Git Worktree + 执行模式                │  │  │  │   ├── pet/ ─ 桌面宠物系统 (Petdex集成/状态映射/气泡通知)   │  │
+│  │  │   ├── automation/ ─ 自动任务 (定时器/文件监听)              │  │
 │  │  ├── knowledge/ ─ 笔记本知识管理 (RAG)                     │  │
 │  │  ├── skill/ ─ 技能系统 (SKILL.md + 注册)                   │  │
 │  │  ├── mcp/ ─ MCP 协议                                       │  │
@@ -92,9 +95,9 @@ rfd (原生文件对话框) + base64 + x25519-dalek (加密)
 │  └────────────────────────────────────────────────────────────┘  │
 │                          │ Tauri Commands (invoke)               │
 │  ┌───────────────────────┴─────────────────────────────────────┐ │
-│  │              Rust 后端 (src-tauri/src/lib.rs)               │ │
-│  │  文件操作 / 命令执行 / HTTP代理 / 删除到回收站 /           │ │
-│  │  窗口管理 / Mica毛玻璃 / 路径检查 / 安装器检测              │ │
+│  │              Rust 后端 (src-tauri/src/lib.rs)               │ │  │  文件操作 / 命令执行 / HTTP代理 / 删除到回收站 /           │ │
+│  │  窗口管理 / Mica毛玻璃 / 路径检查 / 安装器检测 /            │ │
+│  │  宠物窗口管理 / 原生右键菜单 / 阴影控制                      │ │
 │  └─────────────────────────────────────────────────────────────┘ │
 │                          │                                        │
 │  ┌───────────────────────┴─────────────────────────────────────┐ │
@@ -295,10 +298,17 @@ mimo-gui/
 │   │   ├── snapshot/             # 快照
 │   │   └── config/               # 配置加载
 │   │
+│   ├── core/pet/                 # 桌面宠物系统
+│   │   ├── pet-store.ts          # Zustand store (状态映射/气泡/窗口管理)
+│   │   ├── pet-types.ts          # 类型定义 (PetDefinition/PetState/PetSettings)
+│   │   ├── pet-manager.ts        # 本地宠物安装/加载/卸载
+│   │   ├── pet-market-client.ts  # Petdex 市场 API 客户端
+│   │   └── index.ts              # 导出
 │   └── test/                     # 测试文件
 │       ├── ui-batch-a-d.test.ts  # 188个UI批量测试
 │       ├── security-mode.test.ts # 安全模式测试
 │       ├── git-env-config.test.ts # Git环境配置测试
+│       ├── pet-system.test.ts    # 宠物系统测试
 │       └── ...                   # 其他测试
 │
 ├── src-tauri/                    # Rust 后端
@@ -308,6 +318,7 @@ mimo-gui/
 │   │   │                         #   list_dir / path_exists / delete_directory (回收站)
 │   │   │                         #   http_get / http_download / get_app_data_dir
 │   │   │                         #   get_installer_default_lang / ...
+│   │   │                         #   create_pet_window / close_pet_window / show_pet_menu
 │   │   └── main.rs               # 程序入口
 │   ├── Cargo.toml                # Rust 依赖
 │   ├── tauri.conf.json           # Tauri 配置（窗口/CSP/Bundle/NSIS/WiX）
@@ -472,7 +483,7 @@ automation/automation-manager.ts
 | **PROJECT-GUIDE.md** | 📌本项目 | **本文档**，完整项目说明 | ✅ 最新 |
 | **PROJECT_STATUS.md** | 项目简介 | 项目概述+架构+功能清单+版本历史 | v0.87 |
 | **PROJECT-CONTEXT.md** | 旧版交接 | v0.79 时的交接文档，已被 PROJECT_STATUS 替代 | 📦 归档 |
-| **TODO.md** | 待办跟踪 | Phase 0-G 全部完成记录 + Phase E 待办 | ✅ 最新 |
+| **TODO.md** | 待办跟踪 | Phase 0-G 全部完成记录 + v0.88 宠物系统 + Phase E 待办 | ✅ 最新 |
 | **DEV-PLAN-UNIFIED.md** | 主线计划 | 统一开发计划（1172行），整合了 ROADMAP + Benchmark + TODO | 📦 参考 |
 | **ROADMAP-codex-alignment.md** | 历史路线图 | Codex 对标改进路线图（Phase 0-4 已完成） | 📦 归档 |
 | **TOOLS-SKILLS-BENCHMARK.md** | 对标分析 | 工具/技能/MCP 对标分析（66K，Phase B-D 已完成） | 📦 归档 |
@@ -490,14 +501,15 @@ automation/automation-manager.ts
 | **CHANGELOG-v0.70.md** | 变更日志 | v0.70 变更记录 | 📦 归档 |
 | **CHANGELOG-v0.80.md** | 变更日志 | v0.80 变更记录 | 📦 归档 |
 | **CHANGELOG-v0.86.md** | 变更日志 | v0.86 变更记录 | 📦 归档 |
-| **CHANGELOG-v0.87.md** | 变更日志 | v0.87 变更记录 | ✅ 最新 |
+| **CHANGELOG-v0.88.md** | 变更日志 | v0.88 变更记录 | ✅ 最新 |
+| **CHANGELOG-v0.87.md** | 变更日志 | v0.87 变更记录 | 📦 归档 |
 
 ### 文档优先级说明
 
 **新对话只需要阅读：**
 1. `PROJECT-GUIDE.md`（本文档）— 完整理解项目
 2. `TODO.md` — 了解当前待办
-3. `CHANGELOG-v0.87.md` — 了解最新版本变更
+3. `CHANGELOG-v0.88.md` — 了解最新版本变更
 4. `AUDIT-WORKTREE-PARALLEL.md` — 了解最近审计结果
 
 **其余文档均为历史归档或已完成计划的记录，不影响进度判断。**
@@ -517,8 +529,25 @@ automation/automation-manager.ts
 | v0.85 | 2026-07-19 | 技能触发三层 + 附件重构 + 技能市场 + Web搜索 + 知识管理 + 本地嵌入 |
 | v0.86 | 2026-07-20 | 皮肤系统 + Mica毛玻璃 + 自定义标题栏 |
 | v0.87 | 2026-07-24 | Worktree全链路 + 并行对话 + 自动任务 + GitHub Clone + 侧边栏重构 + 全局字体 + Prompt Cache优化 |
+| v0.88 | 2026-07-24 | 桌面宠物系统 + 宠物市场 + 悬浮气泡通知 + 右键原生菜单 + Token查询 |
 
-### 6.2 v0.87 已发布功能
+### 6.2 v0.88 已发布功能
+
+以下功能均已包含在 v0.88 发布版本中：
+
+| 功能 | 关键文件 |
+|------|----------|
+| **桌面宠物系统** | `core/pet/pet-store.ts`, `PetWindowApp.tsx`, `PetSprite.tsx`, `lib.rs` (create_pet_window) |
+| **宠物市场** | `PetMarketDialog.tsx`, `core/pet/pet-market-client.ts` (Petdex Manifest API) |
+| **悬浮气泡通知** | `PetWindowApp.tsx` (useLayoutEffect测量高度+增量位置), `pet-store.ts` (showBubble/showRawBubble) |
+| **右键原生菜单** | `lib.rs` (show_pet_menu + MenuBuilder), `PetWindowApp.tsx` (handleContextMenu) |
+| **Token查询** | `App.tsx` (pet-check-tokens-request事件), `pet-store.ts` (showBubble) |
+| **宠物设置面板** | `SettingsPanel.tsx` (🐾Tab, 启用开关/大小滑轨/透明度滑轨/市场入口) |
+| **精灵图动画** | `PetSprite.tsx` (CSS background-position帧动画, 6种状态) |
+| **Agent状态映射** | `pet-store.ts` (onLLMStatus/onStreamEvent → idle/thinking/working/happy/sad/sleeping) |
+| **开源声明** | `THIRD_PARTY_NOTICES.md` (Petdex MIT License) |
+
+### 6.2.1 v0.87 已发布功能
 
 以下功能均已包含在 v0.87 发布版本中：
 
@@ -545,6 +574,7 @@ automation/automation-manager.ts
 
 | 项目 | 状态 | 说明 |
 |------|------|------|
+| **桌面宠物系统** | ✅ 已完成 | v0.88 发布，基于 Petdex MIT 集成 |
 | **Phase E: Work 模式拆分** | ⏳ 远期 | Codex/Work 双模式切换 |
 | **更多 Provider 测试** | ⏳ | 目前主要测试 DeepSeek + MiMo |
 | **REFACTOR-PROMPT-TO-DATA** | ⏳ | 提示词约束→数据层约束的重构计划 |

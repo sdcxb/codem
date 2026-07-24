@@ -2,7 +2,7 @@
 
 > **开发计划主线文档**：`docs/DEV-PLAN-UNIFIED.md`（统一开发计划，包含架构约束、影响分析、完整路线图）
 >
-> 以下为具体待办事项跟踪。Phase 0-4 + Phase B-D + Phase F-G 已全部完成，v0.87 已发布。
+> 以下为具体待办事项跟踪。Phase 0-4 + Phase B-D + Phase F-G 已全部完成，v0.88 已发布（含桌面宠物系统）。
 
 ## 待开发
 
@@ -77,6 +77,47 @@
 - [ ] 在 `tauri.conf.json` 的 `bundle.windows.wix` 中配置 WiX 多语言（zh-CN + en-US）
 - [ ] 重新构建 MSI 安装包，确认安装向导界面支持中英文
 - [ ] 更新 Release 中的 MSI 文件
+
+### v0.88 发布 (2026-07-24)
+
+#### 桌面宠物系统（基于 Petdex MIT 集成）
+- [x] `pet-store.ts` — Zustand 状态管理，Agent 生命周期事件 → 宠物动画状态映射
+- [x] `pet-types.ts` — 类型定义（PetDefinition/PetState/PetSettings/MarketPet）
+- [x] `pet-manager.ts` — 本地宠物安装/加载/卸载/列表
+- [x] `pet-market-client.ts` — Petdex 市场 API 客户端（Manifest + 图片代理）
+- [x] `PetWindowApp.tsx` — 独立透明窗口根组件（精灵图 + 气泡 + 拖拽 + 右键）
+- [x] `PetSprite.tsx` — 精灵图帧动画渲染（CSS background-position + requestAnimationFrame）
+- [x] `PetMarketDialog.tsx` — 宠物市场对话框（CSS steps() 预览动画 + 安装/卸载）
+- [x] `lib.rs` — `create_pet_window`（透明/无边框/置顶/无阴影） + `close_pet_window` + `show_pet_menu`（原生右键菜单）
+- [x] `SettingsPanel.tsx` — 🐾 宠物 Tab（启用开关 + 大小滑轨 + 透明度滑轨 + 市场入口 + 已安装列表）
+- [x] `App.tsx` — Agent 事件 → pet-store 状态同步 + 任务完成气泡通知 + Token 查询事件监听
+- [x] `main.tsx` — pet-window-mode CSS class（透明背景）
+- [x] `THIRD_PARTY_NOTICES.md` — Petdex MIT License 集成声明
+- [x] `pet-system.test.ts` — 宠物系统单元测试
+
+#### 悬浮气泡通知
+- [x] `pet-store.ts` — `showBubble`（自动拼接称呼）/ `showRawBubble`（原始文本）
+- [x] `PetWindowApp.tsx` — `useLayoutEffect` 同步测量气泡高度，窗口随内容动态扩展宽高
+- [x] `PetWindowApp.tsx` — 增量位置调整（delta 计算），气泡出现/消失时宠物视觉静止
+- [x] `App.tsx` — end 事件区分"任务做完了！"/"回复完成了！"，延迟 300ms 等待 happy 动画
+- [x] 气泡小尾巴 CSS 三角形 + `petBubbleIn` 淡入动画
+
+#### 右键原生菜单 + Token 查询
+- [x] `lib.rs` — `show_pet_menu` 使用 `MenuBuilder`（关闭/置顶切换/重置位置/查看 Token）
+- [x] `lib.rs` — `on_menu_event` 处理菜单点击，`app.emit` 转发到前端
+- [x] `App.tsx` — `pet-check-tokens-request` 事件监听，调用 `engine.context.calculateBudgetFromMessages`
+- [x] 气泡显示 Token 信息，自动拼接称呼，高度自适应不溢出
+
+#### 精灵图渲染修复
+- [x] `PetSprite.tsx` — `backgroundPosition` 与 `backgroundSize` 统一缩放坐标系，修复画面截断拼接
+- [x] `lib.rs` — `.shadow(false)` 移除 Windows DWM 黑色边框
+- [x] `lib.rs` — `.resizable(true)` 支持 `setSize` 动态调整
+- [x] `PetWindowApp.tsx` — 物理像素↔逻辑像素正确转换（`window.devicePixelRatio`）
+
+#### 其他改进
+- [x] `index.html` — `<title>` 更新为 "Codem"，WebView2 进程名统一
+- [x] `capabilities/default.json` — 新增 `core:window:allow-set-shadow` 权限
+- [x] `styles.css` — `.pet-window-mode` 透明背景样式
 
 ### v0.87 发布 (2026-07-24)
 
