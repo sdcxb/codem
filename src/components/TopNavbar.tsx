@@ -1,6 +1,6 @@
 /**
  * Hub 皮肤 - 顶部导航栏
- * 将 Codex Hub 的菜单映射到 codem 现有功能
+ * 顶部菜单映射到 codem 各功能
  */
 
 import { useLang } from "../core/i18n/lang";
@@ -18,7 +18,7 @@ interface TopNavbarProps {
 export function TopNavbar({ onHome, onTasks, onSkills, onNotebooks, onAutomations, onSearch, onSettings }: TopNavbarProps) {
   const lang = useLang();
 
-  // 映射 Codex Hub 菜单到 codem 功能
+  // 菜单映射到 codem 功能
   const links = [
     { id: "home", label: lang === "zh" ? "首页" : "Home", active: true, onClick: onHome },
     // Tasks → 项目管理器（管理对话和项目）

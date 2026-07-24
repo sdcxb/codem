@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import { useProjectStore } from "../core/store";
 import { useLang, S } from "../core/i18n/lang";
 
@@ -39,7 +40,7 @@ export function SearchDialog({ onClose, onSwitchProject, onNewSession, onOpenSki
     onClose();
   };
 
-  return (
+  return createPortal(
     <div className="search-overlay" onClick={onClose}>
       <div className="search-dialog" onClick={(e) => e.stopPropagation()}>
         <div className="search-input-wrapper">
@@ -91,6 +92,7 @@ export function SearchDialog({ onClose, onSwitchProject, onNewSession, onOpenSki
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

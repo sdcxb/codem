@@ -170,10 +170,10 @@ export function ConfigEditor({ appRoot, projectPath, onClose }: ConfigEditorProp
                 <div className="config-init-section">
                   <h4>初始化配置目录</h4>
                   <button className="config-init-btn" onClick={() => handleInitLevel("app")}>
-                    🏠 初始化全局配置 (.mimo-app/)
+                    🏠 初始化全局配置 (.codem-app/)
                   </button>
                   <button className="config-init-btn" onClick={() => handleInitLevel("project")}>
-                    📁 初始化项目配置 (.mimo/)
+                    📁 初始化项目配置 (.codem/)
                   </button>
                 </div>
               </div>

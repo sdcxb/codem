@@ -8,6 +8,7 @@
  */
 
 import { useState, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { Check, X, Star, HelpCircle } from "lucide-react";
 import type { InteractiveFormQuestion } from "../core/llm/tools";
 
@@ -82,8 +83,8 @@ export function InteractiveFormDialog({ questions, onSubmit, onCancel }: Interac
 
   const isSingleQuestion = questions.length === 1;
 
-  return (
-    <div className="modal-overlay" onClick={onCancel}>
+return createPortal(
+<div className="modal-overlay" onClick={onCancel}>
       <div
         className="modal-editor"
         onClick={(e) => e.stopPropagation()}
@@ -311,6 +312,7 @@ export function InteractiveFormDialog({ questions, onSubmit, onCancel }: Interac
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

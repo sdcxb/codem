@@ -289,7 +289,30 @@ async fn list_directory(path: String) -> Result<Vec<serde_json::Value>, String> 
 
 #[tauri::command]
 async fn delete_directory(path: String) -> Result<(), String> {
-    std::fs::remove_dir_all(&path).map_err(|e| e.to_string())
+    // Move to recycle bin instead of permanent delete
+    #[cfg(target_os = "windows")]
+    {
+        use std::process::Command;
+        // PowerShell: move to recycle bin (VisualBasic assembly)
+        let script = format!(
+            "Add-Type -AssemblyName Microsoft.VisualBasic; [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteDirectory('{}', 'OnlyErrorDialogs', 'SendToRecycleBin')",
+            path.replace('\'', "''")
+        );
+        let output = Command::new("powershell")
+            .args(["-NoProfile", "-Command", &script])
+            .output()
+            .map_err(|e| format!("Failed to execute PowerShell: {}", e))?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(format!("Failed to move to recycle bin: {}", stderr));
+        }
+        Ok(())
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        // On non-Windows, permanent delete as fallback
+        std::fs::remove_dir_all(&path).map_err(|e| e.to_string())
+    }
 }
 
 #[tauri::command]
@@ -637,6 +660,11 @@ async fn rename_file(old_path: String, new_path: String) -> Result<(), String> {
 #[tauri::command]
 async fn make_directory(path: String) -> Result<(), String> {
     std::fs::create_dir_all(&path).map_err(|e| format!("Failed to create directory: {}", e))
+}
+
+#[tauri::command]
+async fn path_exists(path: String) -> Result<bool, String> {
+    Ok(std::path::Path::new(&path).exists())
 }
 
 // ========== MCP Stdio Commands ==========
@@ -1042,6 +1070,42 @@ async fn http_get(
     Ok(HttpResponse { status, body, headers: resp_headers })
 }
 
+/// Performs an HTTP POST request through the Rust side (bypasses CSP restrictions).
+/// Used for GitHub API calls (e.g. creating repositories).
+#[tauri::command]
+async fn http_post(
+    url: String,
+    body: String,
+    headers: Option<std::collections::HashMap<String, String>>,
+) -> Result<HttpResponse, String> {
+    let client = reqwest::Client::builder()
+        .user_agent("Codem/1.0")
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    let mut req = client.post(&url).body(body);
+    if let Some(h) = headers {
+        for (k, v) in h {
+            req = req.header(k, v);
+        }
+    }
+
+    let resp = req.send().await.map_err(|e| e.to_string())?;
+    let status = resp.status().as_u16();
+
+    let mut resp_headers = std::collections::HashMap::new();
+    for (k, v) in resp.headers() {
+        if let Ok(val) = v.to_str() {
+            resp_headers.insert(k.as_str().to_string(), val.to_string());
+        }
+    }
+
+    let body = resp.text().await.map_err(|e| e.to_string())?;
+
+    Ok(HttpResponse { status, body, headers: resp_headers })
+}
+
 /// Downloads a file from a URL and saves it to the specified local path.
 /// Used by the skill market to download skill ZIP packages.
 #[tauri::command]
@@ -1132,6 +1196,7 @@ let app = tauri::Builder::default()
             delete_file,
             rename_file,
             make_directory,
+path_exists,
             mcp_stdio_connect,
             mcp_stdio_request,
             mcp_stdio_disconnect,
@@ -1144,6 +1209,7 @@ let app = tauri::Builder::default()
             quit_app,
             update_tray_language,
             http_get,
+            http_post,
             http_download,
         ])
         .setup(|app| {

@@ -8,6 +8,7 @@
  */
 
 import { useState } from "react";
+import { createPortal } from "react-dom";
 import { Check, X, ChevronDown, ChevronRight, FileText } from "lucide-react";
 import type { PromptChange } from "../core/llm/tools";
 
@@ -38,8 +39,8 @@ export function PromptChangeReviewDialog({ changes, onApply, onCancel }: PromptC
   const applyCount = changes.filter((_, idx) => decisionMap[idx] === "apply").length;
   const skipCount = changes.filter((_, idx) => decisionMap[idx] === "skip").length;
 
-  return (
-    <div className="modal-overlay" onClick={onCancel}>
+return createPortal(
+<div className="modal-overlay" onClick={onCancel}>
       <div
         className="modal-editor"
         onClick={(e) => e.stopPropagation()}
@@ -264,6 +265,7 @@ export function PromptChangeReviewDialog({ changes, onApply, onCancel }: PromptC
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

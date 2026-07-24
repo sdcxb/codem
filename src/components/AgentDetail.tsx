@@ -83,7 +83,7 @@ export function AgentDetail({ task, onBack }: AgentDetailProps) {
       </div>
 
       <div className="agent-detail-body">
-        {/* Elapsed Time — Codex style */}
+        {/* Elapsed Time */}
         <div className="subagent-elapsed-section">
           <div className="subagent-elapsed-label">
             {isRunning
@@ -98,7 +98,7 @@ export function AgentDetail({ task, onBack }: AgentDetailProps) {
           </div>
         </div>
 
-        {/* Activity List — Codex style */}
+        {/* Activity List */}
         <div className="subagent-activity-list">
           {activities.length === 0 && !isRunning && (
             <div className="subagent-activity-empty">
@@ -209,7 +209,7 @@ export function AgentDetail({ task, onBack }: AgentDetailProps) {
   );
 }
 
-/** Single activity row in Codex style */
+/** Single activity row */
 function ActivityRow({ activity, zh }: { activity: SubagentActivity; zh: boolean }) {
   const isRunning = activity.status === "running";
   const duration = activity.completedAt

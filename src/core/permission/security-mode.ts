@@ -1,5 +1,5 @@
 /**
- * Security Mode — three-tier approval policy, inspired by Codex CLI.
+ * Security Mode — three-tier approval policy.
  *
  * Modes:
  * - "ask":  Every potentially destructive operation requires user confirmation.

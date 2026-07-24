@@ -2,6 +2,7 @@ import { create } from "zustand";
 import type { Project, Session, ProjectSkill, ProjectMemory, ProjectInstructions, ProjectConfig, Attachment } from "./types";
 import * as ProjectStorage from "./storage/project";
 import * as SessionStorage from "./storage/session";
+import { getProjectExecutionMode, createWorktree, removeWorktree, getWorktreeRoot } from "./environment";
 
 interface ProjectState {
   currentProject: Project | null;
@@ -126,7 +127,19 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     // 如果内存中 sessions 更长，使用内存长度（防止重复编号）
     const memCount = get().sessions.length;
     if (memCount >= sessionNumber) sessionNumber = memCount + 1;
-    const session: Session = { id: newId, projectId, title: title || `对话 ${sessionNumber}`, createdAt: Date.now(), lastMessageAt: Date.now(), messageCount: 0, attachments: [] };
+    const session: Session = {
+      id: newId, projectId,
+      title: title || `对话 ${sessionNumber}`,
+      createdAt: Date.now(), lastMessageAt: Date.now(),
+      messageCount: 0, attachments: [],
+    };
+    // Inherit execution mode from project preference
+    if (project?.path) {
+      try {
+        const execMode = getProjectExecutionMode(project.path);
+        session.executionMode = execMode;
+      } catch {}
+    }
     try { SessionStorage.createSession(session); } catch (e) { console.error("[Store] createSession failed:", e); }
     const updated = [...get().sessions, session];
     set({ sessions: updated, currentSession: session });
@@ -138,6 +151,19 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     const project = get().currentProject;
     if (!project) throw new Error("No project selected");
     const newSession: Session = { id: generateId(), projectId: project.id, title: "分叉自对话", createdAt: Date.now(), lastMessageAt: Date.now(), messageCount: 0, attachments: [] };
+    // Inherit execution mode from project preference
+    const execMode = getProjectExecutionMode(project.path);
+    newSession.executionMode = execMode;
+    // If worktree mode, create an isolated worktree for the forked session
+    if (execMode === "git_worktree" && project.path) {
+      try {
+        const wtPath = createWorktreeSync(project.path, newSession.id);
+        newSession.worktreePath = wtPath;
+      } catch (e) {
+        console.error("[forkSession] Failed to create worktree:", e);
+        newSession.executionMode = "current_workspace";
+      }
+    }
     try { SessionStorage.createSession(newSession); } catch {}
     const updated = [...get().sessions, newSession];
     set({ sessions: updated, currentSession: newSession });
@@ -147,6 +173,26 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   switchSession: (sessionId) => { const s = get().sessions.find((s) => s.id === sessionId); if (s) set({ currentSession: s }); },
 
   deleteSession: (sessionId) => {
+    // Clean up worktree if this session had one
+    const session = get().sessions.find(s => s.id === sessionId);
+    if (session?.worktreePath && session.executionMode === "git_worktree") {
+      const projectPath = get().currentProject?.path;
+      if (projectPath) {
+        removeWorktreeSync(projectPath, session.worktreePath);
+      }
+    }
+    // Clean up the engine's per-session loop pool to free memory
+    try {
+      const { getLLMEngine } = require("../llm");
+      const engine = getLLMEngine();
+      engine.cleanupSessionLoop?.(sessionId);
+    } catch {}
+    // Clean up abort controller if present
+    try {
+      const { useAppStore } = require("../store");
+      const abortControllers = (useAppStore.getState() as any).abortControllers;
+      // This is in App.tsx's ref, not in store — skip if not available
+    } catch {}
     try { SessionStorage.deleteSession(sessionId); } catch {}
     set({ sessions: get().sessions.filter((s) => s.id !== sessionId), currentSession: get().currentSession?.id === sessionId ? null : get().currentSession });
   },
@@ -178,3 +224,39 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   updateInstructions: (content) => set((s) => ({ instructions: { ...s.instructions, content } })),
   setProjectConfig: (config) => set((s) => ({ config: { ...s.config, ...config } })),
 }));
+
+// ========== Worktree sync wrappers ==========
+// These wrap async worktree operations for use in sync store actions.
+// The async creation runs in the background; runAgenticLoop will create
+// the worktree if session.worktreePath is still empty when sending a message.
+
+function createWorktreeSync(projectPath: string, sessionId: string, branch?: string): string {
+  const worktreeRoot = getWorktreeRoot(projectPath);
+  const worktreePath = `${worktreeRoot}/${sessionId}`;
+  // Fire async creation — persist to session on success
+  createWorktree(projectPath, sessionId, branch).then((actualPath) => {
+    // Persist the worktree path once creation succeeds
+    try {
+      const store = useProjectStore.getState();
+      store.updateSession(sessionId, { worktreePath: actualPath });
+    } catch (e) {
+      console.error("[Store] Failed to persist worktreePath:", e);
+    }
+  }).catch(e => {
+    console.error("[Store] Async worktree creation failed:", e);
+    // Mark session as fallback to local mode
+    try {
+      const store = useProjectStore.getState();
+      store.updateSession(sessionId, { executionMode: "current_workspace" });
+    } catch {}
+  });
+  // Return predicted path immediately (will be confirmed by async callback)
+  return worktreePath;
+}
+
+function removeWorktreeSync(projectPath: string, worktreePath: string): void {
+  // Fire-and-forget async removal
+  removeWorktree(projectPath, worktreePath).catch(e => {
+    console.error("[Store] Async worktree removal failed:", e);
+  });
+}

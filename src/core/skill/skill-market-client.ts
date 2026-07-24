@@ -101,7 +101,7 @@ export const DEFAULT_MARKET_SOURCES: MarketSource[] = [
     id: "github-agent-skills",
     name: "GitHub Agent Skills",
     type: "github-search",
-    url: "https://api.github.com/search/repositories?q=topic:agent-skills+topic:claude&sort=stars&order=desc&per_page=30",
+    url: "https://api.github.com/search/repositories?q=topic:agent-skills+topic:ai-coding&sort=stars&order=desc&per_page=30",
     enabled: true,
     icon: "⭐",
   },

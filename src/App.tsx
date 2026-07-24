@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { TooltipProvider } from "./components/ui/tooltip";
 import { TitleBar } from "./components/TitleBar";
 import { ChatPanel } from "./components/ChatPanel";
@@ -44,6 +45,7 @@ import { syncAttachmentsToWorkspace } from "./core/llm/attachment-sync";
 import { ThemeManager, useSkin } from "./core/theme";
 import { HubLayout } from "./components/HubLayout";
 import { DreamLayout } from "./components/DreamLayout";
+import { runSetupScript, runCleanupScript } from "./core/environment";
 
 /**
  * 动态获取应用根目录（用户主目录）。
@@ -99,6 +101,7 @@ function App() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [appRoot, setAppRoot] = useState<string>(APP_ROOT_FALLBACK);
   const [showSettings, setShowSettings] = useState(false);
+  const [settingsInitialTab, setSettingsInitialTab] = useState<string>("general");
   const [showProjectManager, setShowProjectManager] = useState(false);
   const [showConfigEditor, setShowConfigEditor] = useState(false);
   const [showMcpManager, setShowMcpManager] = useState(false);
@@ -154,32 +157,98 @@ function App() {
     return () => window.removeEventListener("codem-security-mode-changed", handler);
   }, [currentProject?.path]);
 
-  // S4: Pending write confirmation for diff review
-  const [pendingWriteConfirm, setPendingWriteConfirm] = useState<{
+  // ENV series: Auto-run setup/cleanup scripts on project switch
+  const prevProjectPathRef = useRef<string | null>(null);
+  useEffect(() => {
+    const prevPath = prevProjectPathRef.current;
+    const newPath = currentProject?.path || null;
+
+    // Only act when project path actually changes
+    if (prevPath === newPath) return;
+    prevProjectPathRef.current = newPath;
+
+    // Run cleanup script for the old project (if any)
+    if (prevPath) {
+      runCleanupScript(prevPath).then((result) => {
+        if (result && !result.success) {
+          console.warn(`[ENV] Cleanup script failed for ${prevPath}:`, result.stderr);
+        }
+      }).catch(() => {});
+    }
+
+    // Run setup script for the new project (if any)
+    if (newPath) {
+      runSetupScript(newPath).then((result) => {
+        if (result && !result.success) {
+          console.warn(`[ENV] Setup script failed for ${newPath}:`, result.stderr);
+        }
+      }).catch(() => {});
+    }
+  }, [currentProject?.path]);
+
+  // S4: Pending write confirmation for diff review — per-session for parallel safety
+  const [pendingWriteConfirms, setPendingWriteConfirms] = useState<Map<string, {
     filePath: string;
     existingContent: string;
     newContent: string;
     resolve: (result: import("./core/llm/tools").WriteConfirmResult) => void;
-  } | null>(null);
+  }>>(new Map());
+  // Convenience accessor: get the pending write confirm for the current session
+  const pendingWriteConfirm = currentSession ? pendingWriteConfirms.get(currentSession.id) : null;
+  const setPendingWriteConfirm = (val: any) => {
+    if (!val || !currentSession) { return; }
+    setPendingWriteConfirms(prev => {
+      const next = new Map(prev);
+      next.set(currentSession.id, val);
+      return next;
+    });
+  };
+  const clearPendingWriteConfirm = () => {
+    if (!currentSession) return;
+    setPendingWriteConfirms(prev => {
+      const next = new Map(prev);
+      next.delete(currentSession.id);
+      return next;
+    });
+  };
 
-  // D3: Pending interactive form
-  const [pendingInteractiveForm, setPendingInteractiveForm] = useState<{
-    questions: InteractiveFormQuestion[];
-    resolve: (answers: Record<string, unknown>) => void;
-  } | null>(null);
+// D3: Pending interactive form — per-session for parallel safety
+const [pendingInteractiveForms, setPendingInteractiveForms] = useState<Map<string, {
+questions: InteractiveFormQuestion[];
+resolve: (answers: Record<string, unknown>) => void;
+}>>(new Map());
+const pendingInteractiveForm = currentSession ? pendingInteractiveForms.get(currentSession.id) : null;
+const setPendingInteractiveForm = (val: any) => {
+  if (!val || !currentSession) return;
+  setPendingInteractiveForms(prev => { const next = new Map(prev); next.set(currentSession.id, val); return next; });
+};
+const clearPendingInteractiveForm = () => {
+  if (!currentSession) return;
+  setPendingInteractiveForms(prev => { const next = new Map(prev); next.delete(currentSession.id); return next; });
+};
 
-  // D2: Pending prompt changes
-  const [pendingPromptChanges, setPendingPromptChanges] = useState<{
-    changes: PromptChange[];
-    resolve: (result: { applied: boolean; message: string }) => void;
-  } | null>(null);
+// D2: Pending prompt changes — per-session for parallel safety
+const [pendingPromptChangesMap, setPendingPromptChangesMap] = useState<Map<string, {
+changes: PromptChange[];
+resolve: (result: { applied: boolean; message: string }) => void;
+}>>(new Map());
+const pendingPromptChanges = currentSession ? pendingPromptChangesMap.get(currentSession.id) : null;
+const setPendingPromptChanges = (val: any) => {
+  if (!val || !currentSession) return;
+  setPendingPromptChangesMap(prev => { const next = new Map(prev); next.set(currentSession.id, val); return next; });
+};
+const clearPendingPromptChanges = () => {
+  if (!currentSession) return;
+  setPendingPromptChangesMap(prev => { const next = new Map(prev); next.delete(currentSession.id); return next; });
+};
 
-  // Handle model change from chat header - sync with engine
-  const handleModelChange = useCallback((model: string) => {
-    // Abort any ongoing streaming
-    if (abortRef.current) {
-      abortRef.current.abort();
-    }
+// Handle model change from chat header - sync with engine
+const handleModelChange = useCallback((model: string) => {
+// Abort all ongoing streaming sessions
+for (const controller of abortControllersRef.current.values()) {
+controller.abort();
+}
+abortControllersRef.current.clear();
 
     // Save current messages before switching models
     if (currentProject && currentSession && messages.length > 0) {
@@ -206,44 +275,81 @@ function App() {
     }
   }, []);
 const [compactionStatus, setCompactionStatus] = useState<{ active: boolean; messagesRemoved?: number } | null>(null);
-const [pendingPermission, setPendingPermission] = useState<{
+const [pendingPermissions, setPendingPermissions] = useState<Map<string, {
 request: PermissionRequest;
     resolve: (result: PermissionResult) => void;
-  } | null>(null);
-  const [confirmDialog, setConfirmDialog] = useState<{
-    title: string;
-    message: string;
-    confirmLabel: string;
-    cancelLabel: string;
-    onConfirm: () => void;
-    onCancel: () => void;
-  } | null>(null);
-  const engineRef = useRef(getLLMEngine());
-  const abortRef = useRef<AbortController | null>(null);
-  const mimoSessionRef = useRef<string | null>(null);
+  }>>(new Map());
+  // Convenience accessor: get the pending permission for the current session
+  const pendingPermission = currentSession ? pendingPermissions.get(currentSession.id) : null;
+  const setPendingPermission = (val: any) => {
+    if (!val || !currentSession) { return; }
+    setPendingPermissions(prev => {
+      const next = new Map(prev);
+      next.set(currentSession.id, val);
+      return next;
+    });
+  };
+  const clearPendingPermission = () => {
+    if (!currentSession) return;
+    setPendingPermissions(prev => {
+      const next = new Map(prev);
+      next.delete(currentSession.id);
+      return next;
+    });
+  };
+const [confirmDialog, setConfirmDialog] = useState<{
+title: string;
+message: string;
+confirmLabel: string;
+cancelLabel: string;
+onConfirm: () => void;
+onCancel: () => void;
+} | null>(null);
+// Safe project removal dialog with 3 options
+const [removeProjectDialog, setRemoveProjectDialog] = useState<{
+id: string; name: string; path: string;
+} | null>(null);
+const engineRef = useRef(getLLMEngine());
+// Per-session abort controllers for parallel execution
+const abortControllersRef = useRef<Map<string, AbortController>>(new Map());
+// handleSend ref for automation callbacks (avoids stale closure)
+const handleSendRef = useRef<(message: string, attachments?: any[], selectedSkills?: string[]) => void>(() => {});
+const mimoSessionRef = useRef<string | null>(null);
   const messagesSessionRef = useRef<string | null>(null);
+  /** Tracks which session is currently streaming — for parallel message isolation */
+  const streamingSessionIdRef = useRef<string | null>(null);
   
   // Streaming buffer - batch text updates to reduce re-renders
-  const streamBufferRef = useRef<{ id: string; text: string; timer: ReturnType<typeof setTimeout> | null }>({ id: "", text: "", timer: null });
+  // Keyed by sessionId for parallel isolation — each session has its own buffer
+  const streamBufferRef = useRef<Map<string, { id: string; text: string; timer: ReturnType<typeof setTimeout> | null }>>(new Map());
   const generatedFilesRef = useRef<Set<string>>(new Set());
-  const flushStreamBuffer = useCallback(() => {
-    const buffer = streamBufferRef.current;
-    if (buffer.id && buffer.text) {
-      appendToMessage(buffer.id, buffer.text);
-      buffer.text = "";
+  const flushStreamBuffer = useCallback((sessionId?: string) => {
+    const buffers = streamBufferRef.current;
+    // If sessionId given, flush only that session's buffer; otherwise flush all
+    const toFlush = sessionId ? [buffers.get(sessionId)].filter(Boolean) : Array.from(buffers.values());
+    for (const buffer of toFlush) {
+      if (!buffer) continue;
+      if (buffer.id && buffer.text) {
+        // Only append to UI if this session is currently being viewed
+        const viewing = useProjectStore.getState().currentSession?.id;
+        if (viewing === sessionId) {
+          appendToMessage(buffer.id, buffer.text);
+        }
+        buffer.text = "";
+      }
+      buffer.timer = null;
     }
-    buffer.timer = null;
   }, [appendToMessage]);
 
-  // Flush buffer on unmount
+  // Flush all buffers on unmount
   useEffect(() => {
     return () => {
-      if (streamBufferRef.current.timer) {
-        clearTimeout(streamBufferRef.current.timer);
-      }
-      flushStreamBuffer();
-    };
-  }, [flushStreamBuffer]);
+for (const buffer of streamBufferRef.current.values()) {
+if (buffer.timer) clearTimeout(buffer.timer);
+}
+flushStreamBuffer(); // flush all on unmount
+};
+}, [flushStreamBuffer]);
 
   useEffect(() => {
     // Initialize SQLite first, then load everything from database
@@ -282,6 +388,24 @@ request: PermissionRequest;
       setAppIdentity(identity);
       if (!identity.onboarded || !identity.name) {
         setShowBootstrap(true);
+      }
+
+      // Start automation engines (file watch + timer triggers)
+      try {
+        const { startAutomationEngines, getAutomationConfig } = await import("./core/automation/automation-manager");
+        const config = getAutomationConfig();
+        if (config.triggers.length > 0) {
+          startAutomationEngines((trigger) => {
+            console.log(`[Automation] Triggered: ${trigger.name}`);
+            // Create a new session and send the trigger message
+            const session = useProjectStore.getState().createSession(`🤖 ${trigger.name}`);
+            if (session) {
+              handleSendRef.current(trigger.message, [], []);
+            }
+          });
+        }
+      } catch (e) {
+        console.warn("[App] Automation engine startup failed:", e);
       }
     })();
   }, []);
@@ -458,11 +582,13 @@ request: PermissionRequest;
     };
   }, [currentSession?.id]);
 
-  // ========== Send Message ==========
-  const handleSend = async (message: string, attachments?: any[], selectedSkills?: string[]) => {
-    // Always read latest currentSession from store (avoids stale closure)
-    const session = useProjectStore.getState().currentSession;
-    if (!session) return;
+// Keep handleSendRef updated for automation callbacks (defined after handleSend below)
+
+// ========== Send Message ==========
+const handleSend = async (message: string, attachments?: any[], selectedSkills?: string[]) => {
+// Always read latest currentSession from store (avoids stale closure)
+const session = useProjectStore.getState().currentSession;
+if (!session) return;
 
     // F3.2: Handle /memory slash commands
     const trimmedMessage = message.trim();
@@ -612,6 +738,11 @@ request: PermissionRequest;
       await runAgenticLoop(message, session, selectedSkills);
   };
 
+  // Keep handleSendRef updated for automation callbacks (avoids stale closure)
+  useEffect(() => {
+    handleSendRef.current = handleSend;
+  });
+
   /**
    * Run the agentic loop — shared by handleSend and handleRegenerate.
    * This function handles provider setup, streaming, tool calls, and
@@ -656,7 +787,9 @@ request: PermissionRequest;
     }
 
     
-    setStreaming(true);
+setStreaming(true);
+useAppStore.getState().setSessionActive(session.id, true);
+streamingSessionIdRef.current = session.id;
 
     const providerName = engine.getDefaultProvider();
     const modelName = engine.getDefaultModel();
@@ -665,19 +798,55 @@ request: PermissionRequest;
     const providerObj2 = engine.providers.get(providerName);
     if (providerObj2 && !providerObj2.isConfigured()) {
       
-      setStreaming(false);
-      addMessage({
-        id: 'err-' + Date.now(),
-        role: 'system',
-        content: '[Error] ' + providerName + ' not configured. Please set API Key in Settings.',
-        timestamp: Date.now(),
+setStreaming(false);
+useAppStore.getState().setSessionActive(session.id, false);
+streamingSessionIdRef.current = null;
+addMessage({
+id: 'err-' + Date.now(),
+role: 'system',
+content: '[Error] ' + providerName + ' not configured. Please set API Key in Settings.',
+timestamp: Date.now(),
         status: 'error',
       });
       return;
     }
 
-    
-    const cwd = currentProject?.path || await getAppRoot();
+    // Determine cwd: use worktree path if session has one, otherwise project path
+    let cwd = currentProject?.path || await getAppRoot();
+    if (session.worktreePath) {
+      cwd = session.worktreePath;
+    } else if (session.executionMode === "git_worktree" && currentProject?.path) {
+      // Session wants worktree mode but doesn't have a path yet — create one
+      try {
+        const { createWorktree, getProjectExecutionMode } = await import("./core/environment");
+        const wtPath = await createWorktree(currentProject.path, session.id, session.worktreeBranch);
+        cwd = wtPath;
+        // Persist the worktree path on the session
+        useProjectStore.getState().updateSession(session.id, { worktreePath: wtPath });
+        session.worktreePath = wtPath;
+      } catch (e) {
+        console.error("[App] Failed to create worktree, falling back to project dir:", e);
+        addMessage({
+          id: `wt-err-${Date.now()}`,
+          role: "system",
+          content: lang === "zh"
+            ? `❌ 工作树创建失败，使用本地目录: ${e instanceof Error ? e.message : String(e)}`
+            : `❌ Worktree creation failed, using local dir: ${e instanceof Error ? e.message : String(e)}`,
+          timestamp: Date.now(),
+          status: "error",
+        });
+      }
+    }
+    // Show success toast if worktree was just created
+    if (session.worktreePath && session.executionMode === "git_worktree" && cwd === session.worktreePath) {
+      addMessage({
+        id: `wt-ok-${Date.now()}`,
+        role: "system",
+        content: lang === "zh" ? `🌲 工作树已创建: ${session.worktreePath}` : `🌲 Worktree created: ${session.worktreePath}`,
+        timestamp: Date.now(),
+        status: "done",
+      });
+    }
     let assistantMsgId = `assistant-${Date.now()}`;
     let assistantContent = "";
     let reasoningContent = "";
@@ -687,19 +856,45 @@ request: PermissionRequest;
     useAppStore.getState().setStreamStartTime(Date.now());
 
     try {
-      abortRef.current = new AbortController();
+const sessionAbort = new AbortController();
+abortControllersRef.current.set(session.id, sessionAbort);
+
+// Helper: check if this session is currently being viewed (for UI updates)
+const isViewingSession = () => {
+  const viewing = useProjectStore.getState().currentSession?.id;
+  return viewing === session.id;
+};
+// Safe message helpers: only update UI if viewing this session, always save to DB
+const safeAddMessage = (msg: any) => {
+  if (isViewingSession()) addMessage(msg);
+  // Always persist to DB regardless
+  if (session) saveMessages(session.id);
+};
+const safeUpdateMessage = (id: string, update: any) => {
+  if (isViewingSession()) useAppStore.getState().updateMessage(id, update);
+};
 
       for await (const event of engine.process(session.id, message, cwd, undefined, {
         onPermissionRequest: (request) => {
           return new Promise((resolve) => {
-            setPendingPermission({ request, resolve });
+            // Per-session: set permission for this specific session
+            setPendingPermissions(prev => {
+              const next = new Map(prev);
+              next.set(session.id, { request, resolve });
+              return next;
+            });
           });
         },
         collaborationMode,
         // S4: Wire up write confirmation for diff review
         onWriteConfirm: (params) => {
           return new Promise((resolve) => {
-            setPendingWriteConfirm({ ...params, resolve });
+            // Per-session: set write confirm for this specific session
+            setPendingWriteConfirms(prev => {
+              const next = new Map(prev);
+              next.set(session.id, { ...params, resolve });
+              return next;
+            });
           });
         },
         // Security mode: three-tier approval policy
@@ -711,13 +906,21 @@ request: PermissionRequest;
         },
         onPromptChangeSubmit: (changes: PromptChange[]) => {
           return new Promise((resolve) => {
-            setPendingPromptChanges({ changes, resolve });
+            setPendingPromptChangesMap(prev => {
+              const next = new Map(prev);
+              next.set(session.id, { changes, resolve });
+              return next;
+            });
           });
         },
         // D3: Interactive form callback
         onInteractiveForm: (questions: InteractiveFormQuestion[]) => {
           return new Promise((resolve) => {
-            setPendingInteractiveForm({ questions, resolve });
+            setPendingInteractiveForms(prev => {
+              const next = new Map(prev);
+              next.set(session.id, { questions, resolve });
+              return next;
+            });
           });
         },
         // F5: Notebook knowledge mode
@@ -725,14 +928,14 @@ request: PermissionRequest;
         // User-selected skills (injected with 🎯 marker in system prompt)
         ...(selectedSkills && selectedSkills.length > 0 ? { userSelectedSkills: selectedSkills } : {}),
       })) {
-        if (abortRef.current.signal.aborted) break;
+        if (sessionAbort.signal.aborted) break;
 
         switch (event.type) {
           case "reasoning_delta":
             reasoningContent += event.text;
             // Create assistant message if it doesn't exist yet (reasoning often arrives before text)
             if (!useAppStore.getState().messages.find((m) => m.id === assistantMsgId)) {
-              addMessage({
+              safeAddMessage({
                 id: assistantMsgId,
                 role: "assistant",
                 content: "",
@@ -744,7 +947,7 @@ saveMessages(session.id);
 }
             }
             // Update message with reasoning content
-            useAppStore.getState().updateMessage(assistantMsgId, {
+            safeUpdateMessage(assistantMsgId, {
               reasoning: reasoningContent
             } as any);
             break;
@@ -761,10 +964,10 @@ saveMessages(session.id);
             // via displayMode === "unified" check).
             const iter = 'iteration' in event ? event.iteration : 1;
             if (iter > 1) {
-              // Finalize previous, create new message — same for both modes
-              flushStreamBuffer();
+// Finalize previous, create new message — same for both modes
+flushStreamBuffer(session.id);
               if (useAppStore.getState().messages.find((m) => m.id === assistantMsgId)) {
-                useAppStore.getState().updateMessage(assistantMsgId, {
+                safeUpdateMessage(assistantMsgId, {
                   status: "done",
                   reasoning: reasoningContent || undefined,
                 } as any);
@@ -803,30 +1006,30 @@ saveMessages(session.id);
           case "text_delta":
             assistantContent += event.text;
             if (!useAppStore.getState().messages.find((m) => m.id === assistantMsgId)) {
-              addMessage({
+              safeAddMessage({
                 id: assistantMsgId,
                 role: "assistant",
                 content: assistantContent,
                 timestamp: Date.now(),
                 status: "streaming",
               });
-if (session) {
-saveMessages(session.id);
-}
             }
-            streamBufferRef.current.id = assistantMsgId;
-            streamBufferRef.current.text += event.text;
-            if (!streamBufferRef.current.timer) {
-              streamBufferRef.current.timer = setTimeout(flushStreamBuffer, 100);
+            // Per-session buffer
+            let buf = streamBufferRef.current.get(session.id);
+            if (!buf) { buf = { id: "", text: "", timer: null }; streamBufferRef.current.set(session.id, buf); }
+            buf.id = assistantMsgId;
+            buf.text += event.text;
+            if (!buf.timer) {
+              buf.timer = setTimeout(() => flushStreamBuffer(session.id), 100);
             }
             break;
 
           case "tool_start": {
-            flushStreamBuffer();
+            flushStreamBuffer(session.id);
             const tc = "toolCall" in event ? event.toolCall : null;
             if (tc) {
               if (!useAppStore.getState().messages.find((m) => m.id === assistantMsgId)) {
-                addMessage({
+                safeAddMessage({
                   id: assistantMsgId,
                   role: "assistant",
                   content: "",
@@ -834,8 +1037,10 @@ saveMessages(session.id);
                   status: "streaming",
                 });
               }
-              streamBufferRef.current.id = assistantMsgId;
-              addToolCall(assistantMsgId, {
+              let buf2 = streamBufferRef.current.get(session.id);
+              if (!buf2) { buf2 = { id: "", text: "", timer: null }; streamBufferRef.current.set(session.id, buf2); }
+              buf2.id = assistantMsgId;
+              if (isViewingSession()) addToolCall(assistantMsgId, {
                 id: tc.id,
                 tool: tc.name,
                 args: { ...tc.input, name: tc.input?.name || (tc as any).metadata?.name },
@@ -863,7 +1068,7 @@ saveMessages(session.id);
               }
               // Filter out <system-reminder> tags from tool results
               resultStr = resultStr.replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, "").trim();
-              updateToolCall(assistantMsgId, tc.id, {
+              if (isViewingSession()) updateToolCall(assistantMsgId, tc.id, {
                 status: "done",
                 result: resultStr,
               });
@@ -884,7 +1089,7 @@ saveMessages(session.id);
             const err = "error" in event ? event.error : "Unknown error";
             
             if (tc) {
-              updateToolCall(assistantMsgId, tc.id, {
+              if (isViewingSession()) updateToolCall(assistantMsgId, tc.id, {
                 status: "error",
                 result: err,
               });
@@ -918,7 +1123,7 @@ saveMessages(session.id);
             // Handle overflow result (context completely exhausted)
             if ("result" in event && event.result?.type === "overflow") {
               const msg = event.result.message || "上下文窗口已满，请开启新对话。";
-              addMessage({
+              safeAddMessage({
                 id: 'overflow-' + Date.now(),
                 role: "system",
                 content: `⚠️ ${msg}`,
@@ -933,7 +1138,7 @@ saveMessages(session.id);
 
       if (assistantContent) {
         const generatedFiles = Array.from(generatedFilesRef.current);
-        useAppStore.getState().updateMessage(assistantMsgId, {
+        safeUpdateMessage(assistantMsgId, {
           status: "done",
           generatedFiles: generatedFiles.length > 0 ? generatedFiles : undefined,
         });
@@ -948,16 +1153,21 @@ saveMessages(session.id);
         timestamp: Date.now(),
         status: 'error',
       });
+      if (session) saveMessages(session.id);
     } finally {
-      // Flush any remaining buffered text
-      flushStreamBuffer();
+// Flush any remaining buffered text for this session
+flushStreamBuffer(session.id);
       // Clear step progress after a short delay so user sees the final state
       setTimeout(() => useAppStore.getState().setStepProgress(null), 2000);
       // Clear stream start time
       useAppStore.getState().setStreamStartTime(null);
       
-      setStreaming(false);
-      abortRef.current = null;
+setStreaming(false);
+if (session) {
+useAppStore.getState().setSessionActive(session.id, false);
+}
+streamingSessionIdRef.current = null;
+abortControllersRef.current.delete(session?.id || "");
       if (session) {
         saveMessages(session.id);
       }
@@ -1041,12 +1251,22 @@ saveMessages(session.id);
     await runAgenticLoop(userMessage, session);
   };
 
-  const handleCancel = () => {
-    if (abortRef.current) {
-      abortRef.current.abort();
-      abortRef.current = null;
-    }
-    // Note: Sub-agents continue running when main task is paused (Codex strategy)
+const handleCancel = () => {
+// Abort the current session's streaming
+if (currentSession) {
+const controller = abortControllersRef.current.get(currentSession.id);
+if (controller) {
+controller.abort();
+abortControllersRef.current.delete(currentSession.id);
+}
+} else {
+// Fallback: abort all
+for (const controller of abortControllersRef.current.values()) {
+controller.abort();
+}
+abortControllersRef.current.clear();
+}
+    // Note: Sub-agents continue running when main task is paused
     // Only global pause should freeze everything
     engineRef.current.abort();
     setStreaming(false);
@@ -1054,10 +1274,11 @@ saveMessages(session.id);
 
   // Global pause: freeze everything (main + sub-agents)
   const handleGlobalPause = () => {
-    if (abortRef.current) {
-      abortRef.current.abort();
-      abortRef.current = null;
+    // Abort all active sessions
+    for (const controller of abortControllersRef.current.values()) {
+      controller.abort();
     }
+    abortControllersRef.current.clear();
     try {
       const { getSubagentManager } = require("../core/subagent/subagent");
       const manager = getSubagentManager();
@@ -1103,7 +1324,7 @@ saveMessages(session.id);
               onTasks={() => setShowProjectManager(true)}
               onSkills={() => setShowSkillManager(true)}
               onNotebooks={() => setShowNotebookManager(true)}
-              onAutomations={() => setShowMcpManager(true)}
+              onAutomations={() => { setSettingsInitialTab("automation"); setShowSettings(true); }}
               onSearch={() => setShowSearchDialog(true)}
               onSettings={() => setShowSettings(true)}
               onNewChat={() => {
@@ -1130,27 +1351,9 @@ saveMessages(session.id);
                     onSkills={() => setShowSkillManager(true)}
                     onMemory={() => setShowMemoryManager(true)}
                     onNotebooks={() => setShowNotebookManager(true)}
+                    onAutomations={() => { setSettingsInitialTab("automation"); setShowSettings(true); }}
                     onRemoveProject={(id, name, path) => {
-                      setConfirmDialog({
-                        title: "Remove Project",
-                        message: `Remove project "${name}"?`,
-                        confirmLabel: "Remove Only",
-                        cancelLabel: "Delete Files",
-                        onConfirm: () => {
-                          useProjectStore.getState().deleteProject(id);
-                          setConfirmDialog(null);
-                        },
-                        onCancel: async () => {
-                          try {
-                            const { invoke } = (window as any).__TAURI__.core;
-                            await invoke("delete_directory", { path });
-                          } catch (e) {
-                            console.error("Failed to delete directory:", e);
-                          }
-                          useProjectStore.getState().deleteProject(id);
-                          setConfirmDialog(null);
-                        },
-                      });
+                      setRemoveProjectDialog({ id, name, path });
                     }}
                     fileExplorerProjectId={fileExplorerProjectId}
                     onToggleFileExplorer={handleToggleFileExplorer}
@@ -1220,8 +1423,9 @@ saveMessages(session.id);
                           providerId={currentProvider}
                           collaborationMode={collaborationMode}
                           onModeChange={setCollaborationMode}
-                          projectPath={currentProject?.path}
-                        />
+projectPath={currentProject?.path}
+currentSessionId={currentSession?.id}
+/>
                       )}
                       {bottomTab === "terminal" && (
                         <TerminalPanel cwd={currentProject?.path || appRoot} />
@@ -1243,27 +1447,9 @@ saveMessages(session.id);
                   onSkills={() => setShowSkillManager(true)}
                   onMemory={() => setShowMemoryManager(true)}
                   onNotebooks={() => setShowNotebookManager(true)}
+                  onAutomations={() => { setSettingsInitialTab("automation"); setShowSettings(true); }}
                   onRemoveProject={(id, name, path) => {
-                    setConfirmDialog({
-                      title: "Remove Project",
-                      message: `Remove project "${name}"?`,
-                      confirmLabel: "Remove Only",
-                      cancelLabel: "Delete Files",
-                      onConfirm: () => {
-                        useProjectStore.getState().deleteProject(id);
-                        setConfirmDialog(null);
-                      },
-                      onCancel: async () => {
-                        try {
-                          const { invoke } = (window as any).__TAURI__.core;
-                          await invoke("delete_directory", { path });
-                        } catch (e) {
-                          console.error("Failed to delete directory:", e);
-                        }
-                        useProjectStore.getState().deleteProject(id);
-                        setConfirmDialog(null);
-                      },
-                    });
+                    setRemoveProjectDialog({ id, name, path });
                   }}
                   fileExplorerProjectId={fileExplorerProjectId}
                   onToggleFileExplorer={handleToggleFileExplorer}
@@ -1332,8 +1518,9 @@ saveMessages(session.id);
                         providerId={currentProvider}
                         collaborationMode={collaborationMode}
                         onModeChange={setCollaborationMode}
-                        projectPath={currentProject?.path}
-                      />
+projectPath={currentProject?.path}
+currentSessionId={currentSession?.id}
+/>
                     )}
                     {bottomTab === "terminal" && (
                       <TerminalPanel cwd={currentProject?.path || appRoot} />
@@ -1355,28 +1542,9 @@ saveMessages(session.id);
           onSkills={() => setShowSkillManager(true)}
           onMemory={() => setShowMemoryManager(true)}
           onNotebooks={() => setShowNotebookManager(true)}
+          onAutomations={() => { setSettingsInitialTab("automation"); setShowSettings(true); }}
           onRemoveProject={(id, name, path) => {
-            setConfirmDialog({
-              title: "Remove Project",
-              message: `Remove project "${name}"?`,
-              confirmLabel: "Remove Only",
-              cancelLabel: "Delete Files",
-              onConfirm: () => {
-                useProjectStore.getState().deleteProject(id);
-                setConfirmDialog(null);
-              },
-              onCancel: async () => {
-                // Delete files from disk
-                try {
-                  const { invoke } = (window as any).__TAURI__.core;
-                  await invoke("delete_directory", { path });
-                } catch (e) {
-                  console.error("Failed to delete directory:", e);
-                }
-                useProjectStore.getState().deleteProject(id);
-                setConfirmDialog(null);
-              },
-            });
+            setRemoveProjectDialog({ id, name, path });
           }}
           fileExplorerProjectId={fileExplorerProjectId}
           onToggleFileExplorer={handleToggleFileExplorer}
@@ -1462,8 +1630,9 @@ saveMessages(session.id);
                 providerId={currentProvider}
                 collaborationMode={collaborationMode}
                 onModeChange={setCollaborationMode}
-                projectPath={currentProject?.path}
-              />
+projectPath={currentProject?.path}
+currentSessionId={currentSession?.id}
+/>
             )}
             {bottomTab === "terminal" && (
               <TerminalPanel cwd={currentProject?.path || appRoot} />
@@ -1474,10 +1643,11 @@ saveMessages(session.id);
             </>
           )}
 
-      {showSettings && (
-        <SettingsPanel
-          onClose={() => setShowSettings(false)}
-          onSessionRecovery={() => { setShowSettings(false); setShowSessionRecovery(true); }}
+{showSettings && (
+<SettingsPanel
+onClose={() => { setSettingsInitialTab("general"); setShowSettings(false); }}
+initialTab={settingsInitialTab}
+onSessionRecovery={() => { setShowSettings(false); setShowSessionRecovery(true); }}
           onUsageStats={() => { setShowSettings(false); setShowUsageStats(true); }}
         />
       )}
@@ -1583,12 +1753,12 @@ saveMessages(session.id);
         <PermissionDialog
           request={pendingPermission.request}
           onResolve={(allow, alwaysAllow) => {
-            pendingPermission.resolve({
-              requestId: pendingPermission.request.id,
-              action: allow ? "allow" : "deny",
-              alwaysAllow,
-            });
-            setPendingPermission(null);
+pendingPermission.resolve({
+requestId: pendingPermission.request.id,
+action: allow ? "allow" : "deny",
+alwaysAllow,
+});
+clearPendingPermission();
           }}
         />
       )}
@@ -1604,6 +1774,54 @@ saveMessages(session.id);
         />
       )}
 
+      {/* Safe project removal dialog — 3 options, click outside = cancel */}
+      {removeProjectDialog && (() => {
+        const { id, name, path } = removeProjectDialog;
+        return createPortal(
+          <div className="confirm-overlay" onClick={() => setRemoveProjectDialog(null)}>
+            <div className="confirm-dialog" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 420 }}>
+              <div className="confirm-title">{lang === "zh" ? "移除项目" : "Remove Project"}</div>
+              <div className="confirm-message" style={{ marginBottom: 16 }}>
+                {lang === "zh" ? `确定要移除项目 "${name}" 吗？` : `Remove project "${name}"?`}
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 8 }}>
+                <button
+                  style={{ padding: "10px 16px", borderRadius: 6, border: "1px solid var(--border-primary)", background: "var(--bg-tertiary)", color: "var(--text-primary)", cursor: "pointer", fontSize: 13, textAlign: "left" }}
+                  onClick={() => { useProjectStore.getState().deleteProject(id); setRemoveProjectDialog(null); }}
+                >
+                  <span style={{ fontWeight: 600 }}>📁 {lang === "zh" ? "仅移除项目" : "Remove Only"}</span>
+                  <div style={{ fontSize: 11, opacity: 0.7, marginTop: 2 }}>{lang === "zh" ? "从列表移除，不删除文件" : "Remove from list, keep files"}</div>
+                </button>
+                <button
+                  style={{ padding: "10px 16px", borderRadius: 6, border: "1px solid #e74c3c", background: "none", color: "#e74c3c", cursor: "pointer", fontSize: 13, textAlign: "left" }}
+                  onClick={async () => {
+                    try {
+                      const { invoke } = (window as any).__TAURI__.core;
+                      await invoke("delete_directory", { path });
+                    } catch (e) {
+                      console.error("Failed to move to recycle bin:", e);
+                    }
+                    useProjectStore.getState().deleteProject(id);
+                    setRemoveProjectDialog(null);
+                  }}
+                >
+                  <span style={{ fontWeight: 600 }}>🗑️ {lang === "zh" ? "移除并删除文件到回收站" : "Remove & Recycle"}</span>
+                  <div style={{ fontSize: 11, opacity: 0.7, marginTop: 2 }}>{lang === "zh" ? "从列表移除 + 文件送入回收站" : "Remove from list + send files to Recycle Bin"}</div>
+                </button>
+              </div>
+              <button
+                className="confirm-btn cancel"
+                style={{ width: "100%", padding: "8px 16px", borderRadius: 6 }}
+                onClick={() => setRemoveProjectDialog(null)}
+              >
+                {lang === "zh" ? "取消" : "Cancel"}
+              </button>
+            </div>
+          </div>,
+          document.body
+        );
+      })()}
+
       {showCloseConfirm && (
         <CloseConfirmDialog onChoose={handleCloseChoice} />
       )}
@@ -1611,29 +1829,29 @@ saveMessages(session.id);
       {/* S4: Diff Review Dialog for file overwrites */}
       {pendingWriteConfirm && (
         <div className="modal-overlay" onClick={() => {
-          pendingWriteConfirm.resolve({ action: "reject" });
-          setPendingWriteConfirm(null);
-        }}>
+pendingWriteConfirm.resolve({ action: "reject" });
+clearPendingWriteConfirm();
+}}>
           <div className="modal-editor" onClick={(e) => e.stopPropagation()} style={{ maxWidth: "90vw", width: "900px" }}>
             <DiffViewer
               filePath={pendingWriteConfirm.filePath}
               before={pendingWriteConfirm.existingContent}
               after={pendingWriteConfirm.newContent}
               onAccept={() => {
-                pendingWriteConfirm.resolve({ action: "accept" });
-                setPendingWriteConfirm(null);
+pendingWriteConfirm.resolve({ action: "accept" });
+clearPendingWriteConfirm();
               }}
               onReject={() => {
                 pendingWriteConfirm.resolve({ action: "reject" });
-                setPendingWriteConfirm(null);
+                clearPendingWriteConfirm();
               }}
               onCustom={(instruction) => {
                 pendingWriteConfirm.resolve({ action: "custom", instruction });
-                setPendingWriteConfirm(null);
+                clearPendingWriteConfirm();
               }}
               onClose={() => {
                 pendingWriteConfirm.resolve({ action: "reject" });
-                setPendingWriteConfirm(null);
+                clearPendingWriteConfirm();
               }}
             />
           </div>
@@ -1646,11 +1864,11 @@ saveMessages(session.id);
           questions={pendingInteractiveForm.questions}
           onSubmit={(answers) => {
             pendingInteractiveForm.resolve(answers);
-            setPendingInteractiveForm(null);
+            clearPendingInteractiveForm();
           }}
           onCancel={() => {
             pendingInteractiveForm.resolve({});
-            setPendingInteractiveForm(null);
+            clearPendingInteractiveForm();
           }}
         />
       )}
@@ -1666,11 +1884,11 @@ saveMessages(session.id);
               ? `Applied ${appliedChanges.length} prompt change(s): ${appliedChanges.map(c => c.name).join(", ")}`
               : "No changes were applied.";
             pendingPromptChanges.resolve({ applied: appliedChanges.length > 0, message: msg });
-            setPendingPromptChanges(null);
+            clearPendingPromptChanges();
           }}
           onCancel={() => {
             pendingPromptChanges.resolve({ applied: false, message: "User cancelled all changes." });
-            setPendingPromptChanges(null);
+            clearPendingPromptChanges();
           }}
         />
       )}

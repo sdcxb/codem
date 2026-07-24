@@ -1,0 +1,111 @@
+﻿
+> function NotebookSettingsSection() {
+    const lang = useLang();
+    const zh = lang === "zh";
+    const [config, setConfig] = useState(() => {
+      try {
+        return getNotebookConfig();
+      } catch {
+        return { maxChunkSize: 2000, overlapSize: 200, topK: 5, similarityThreshold: 0.3 };
+      }
+    });
+  
+    const updateConfig = (key: string, value: number) => {
+      const newConfig = { ...config, [key]: value };
+      setConfig(newConfig);
+      setSettingJSON('codem-notebook-config', newConfig);
+    };
+  
+    const inputStyle: React.CSSProperties = {
+      width: '100%',
+      padding: '6px 10px',
+      borderRadius: 6,
+      border: '1px solid var(--border-primary)',
+      background: 'var(--bg-secondary)',
+      color: 'var(--text-primary)',
+      fontSize: 13,
+      outline: 'none',
+    };
+  
+    const labelStyle: React.CSSProperties = {
+      fontSize: 12,
+      color: 'var(--text-secondary)',
+      marginBottom: 4,
+      display: 'block',
+    };
+  
+    return (
+      <div style={{ marginTop: 16, padding: 12, border: '1px solid var(--border-primary)', borderRadius: 8, background:
+ 'var(--bg-secondary)' }}>
+        <div className="settings-section-title" style={{ marginBottom: 12 }}>
+          {zh ? '📓 知识笔记本设置' : '📓 Notebook Knowledge Settings'}
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <div>
+            <label style={labelStyle}>
+              {zh ? '最大分块大小（字符）' : 'Max Chunk Size (chars)'}
+            </label>
+            <input
+              type="number"
+              min={500}
+              max={8000}
+              step={100}
+              value={config.maxChunkSize}
+              onChange={(e) => updateConfig('maxChunkSize', parseInt(e.target.value) || 2000)}
+              style={inputStyle}
+            />
+          </div>
+          <div>
+            <label style={labelStyle}>
+              {zh ? '重叠大小（字符）' : 'Overlap Size (chars)'}
+            </label>
+            <input
+              type="number"
+              min={0}
+              max={1000}
+              step={50}
+              value={config.overlapSize}
+              onChange={(e) => updateConfig('overlapSize', parseInt(e.target.value) || 200)}
+              style={inputStyle}
+            />
+          </div>
+          <div>
+            <label style={labelStyle}>
+              {zh ? '检索结果数量 (Top-K)' : 'Retrieval Top-K'}
+            </label>
+            <input
+              type="number"
+              min={1}
+              max={20}
+              step={1}
+              value={config.topK}
+              onChange={(e) => updateConfig('topK', parseInt(e.target.value) || 5)}
+              style={inputStyle}
+            />
+          </div>
+          <div>
+            <label style={labelStyle}>
+              {zh ? '相似度阈值' : 'Similarity Threshold'}
+            </label>
+            <input
+              type="number"
+              min={0}
+              max={1}
+              step={0.05}
+              value={config.similarityThreshold}
+              onChange={(e) => updateConfig('similarityThreshold', parseFloat(e.target.value) || 0.3)}
+              style={inputStyle}
+            />
+          </div>
+        </div>
+        <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 8, marginBottom: 0 }}>
+          {zh
+            ? '调整知识笔记本的文本分块和检索参数。较小的分块提供更精确的检索但可能丢失上下文；较大的分块保留更多上下文但可能引入噪声。'
+            : 'Adjust text chunking and retrieval parameters for knowledge notebooks. Smaller chunks provide more preci
+se retrieval but may lose context; larger chunks retain more context but may introduce noise.'}
+        </p>
+      </div>
+    );
+  }
+
+

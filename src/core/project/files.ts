@@ -6,7 +6,6 @@ import { readFile as apiReadFile, writeFile as apiWriteFile, executeCommand, lis
 const AGENTS_MD_FALLBACKS = [
   "AGENTS.override.md",
   "AGENTS.md",
-  "CLAUDE.md",       // Common alternative
   "TEAM_GUIDE.md",   // Team guide
   ".cursorrules",     // Cursor rules
   "CONTRIBUTING.md", // Contributing guide
@@ -21,7 +20,7 @@ const PROJECT_ROOT_MARKERS = [
   "Cargo.toml",
   "pyproject.toml",
   "go.mod",
-  ".mimo",
+  ".codem",
   "AGENTS.md",
 ];
 
@@ -58,10 +57,10 @@ export async function detectProjectRoot(startDir: string): Promise<string> {
 // ========== Project File Operations ==========
 
 export async function createProjectFiles(projectPath: string): Promise<void> {
-  // Create .mimo directory structure
-  await apiWriteFile(`${projectPath}\\.mimo\\skills\\.gitkeep`, "");
-  await apiWriteFile(`${projectPath}\\.mimo\\rules\\.gitkeep`, "");
-  await apiWriteFile(`${projectPath}\\.mimo\\memory\\.gitkeep`, "");
+  // Create .codem directory structure
+  await apiWriteFile(`${projectPath}\\.codem\\skills\\.gitkeep`, "");
+  await apiWriteFile(`${projectPath}\\.codem\\rules\\.gitkeep`, "");
+  await apiWriteFile(`${projectPath}\\.codem\\memory\\.gitkeep`, "");
 
   // Create default AGENTS.md
   await apiWriteFile(
@@ -71,13 +70,13 @@ export async function createProjectFiles(projectPath: string): Promise<void> {
 
   // Create default MEMORY.md
   await apiWriteFile(
-    `${projectPath}\\.mimo\\memory\\MEMORY.md`,
+    `${projectPath}\\.codem\\memory\\MEMORY.md`,
     `# 项目记忆\n\n- [项目介绍](project-intro.md) -- 项目基本信息\n`
   );
 
   // Create memory entry
   await apiWriteFile(
-    `${projectPath}\\.mimo\\memory\\project-intro.md`,
+    `${projectPath}\\.codem\\memory\\project-intro.md`,
     `---\nname: 项目介绍\n description: 项目基本信息\ntype: project\n---\n\n项目刚刚创建，等待填充信息。\n`
   );
 }
@@ -110,7 +109,7 @@ async function readWithFallbacks(dir: string, filenames: string[]): Promise<stri
  * 2. Project root: {projectPath}/AGENTS.md (or fallbacks)
  * 3. Current working directory: walk from project root to cwd, checking each level
  *
- * F2.3: Now supports fallback filenames (CLAUDE.md, TEAM_GUIDE.md, etc.)
+ * F2.3: Now supports fallback filenames (TEAM_GUIDE.md, .cursorrules, etc.)
  *
  * @param projectPath - The project root directory
  * @param cwd - The current working directory (optional, defaults to projectPath)
@@ -177,7 +176,7 @@ export async function loadHierarchicalProjectInstructions(
 
 export async function loadProjectSkills(projectPath: string): Promise<Array<{ name: string; content: string }>> {
   try {
-    const entries = await listDirectory(`${projectPath}\\.mimo\\skills`);
+    const entries = await listDirectory(`${projectPath}\\.codem\\skills`);
     const skills = [];
     for (const entry of entries) {
       if (entry.isDirectory) {
@@ -195,7 +194,7 @@ export async function loadProjectSkills(projectPath: string): Promise<Array<{ na
 
 export async function loadProjectMemory(projectPath: string): Promise<Array<{ name: string; content: string }>> {
   try {
-    const entries = await listDirectory(`${projectPath}\\.mimo\\memory`);
+    const entries = await listDirectory(`${projectPath}\\.codem\\memory`);
     const memories = [];
     for (const entry of entries) {
       if (!entry.isDirectory && entry.name.endsWith(".md")) {
@@ -522,9 +521,9 @@ function buildAgentsMdFromAnalysis(a: ProjectAnalysis): string {
 }
 
 export async function saveProjectSkill(projectPath: string, skillName: string, content: string): Promise<void> {
-  await apiWriteFile(`${projectPath}\\.mimo\\skills\\${skillName}\\SKILL.md`, content);
+  await apiWriteFile(`${projectPath}\\.codem\\skills\\${skillName}\\SKILL.md`, content);
 }
 
 export async function saveProjectMemory(projectPath: string, fileName: string, content: string): Promise<void> {
-  await apiWriteFile(`${projectPath}\\.mimo\\memory\\${fileName}`, content);
+  await apiWriteFile(`${projectPath}\\.codem\\memory\\${fileName}`, content);
 }

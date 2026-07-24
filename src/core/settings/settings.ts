@@ -3,9 +3,9 @@ export type SettingsSource =
   | "cli"           // Command line arguments (highest priority)
   | "policy"        // Enterprise/org policies
   | "flag"          // Feature flags (GrowthBook etc.)
-  | "user"          // User global settings (~/.mimocode/settings.json)
-  | "project"       // Project settings (.mimo/settings.json)
-  | "local"         // Local project settings (.mimo/settings.local.json)
+  | "user"          // User global settings (~/.codem/settings.json)
+  | "project"       // Project settings (.codem/settings.json)
+  | "local"         // Local project settings (.codem/settings.local.json)
   | "default";      // Built-in defaults (lowest priority)
 
 export interface SettingsSourceConfig {
@@ -27,6 +27,51 @@ export interface PermissionRule {
   tool: string;
   action: "allow" | "deny" | "ask";
   resource?: string;
+}
+
+// ========== G Series: Git Configuration ==========
+
+/** Git 偏好配置 */
+export interface GitConfig {
+  /** 分支前缀，如 "feature/"、"feat/"。创建新分支时自动添加此前缀 */
+  branchPrefix?: string;
+  /** PR 合并方法 */
+  mergeMethod?: "merge" | "squash" | "rebase";
+  /** 是否允许强制推送（force push）。默认 false */
+  forcePush?: boolean;
+  /** 是否默认创建草稿 PR */
+  draftPR?: boolean;
+  /** 提交信息生成指令（影响 AI 生成 commit message 的风格） */
+  commitMessageInstructions?: string;
+  /** PR 标题生成指令 */
+  prTitleInstructions?: string;
+  /** PR 描述生成指令 */
+  prDescriptionInstructions?: string;
+  /** GitHub Personal Access Token，用于 API 操作（创建仓库等） */
+  githubToken?: string;
+}
+
+// ========== ENV Series: Environment Scripts ==========
+
+/** 自定义操作（一键构建/启动/测试等） */
+export interface CustomOperation {
+  id: string;
+  /** 显示名称，如 "构建项目" */
+  name: string;
+  /** 执行命令，如 "npm run build" */
+  command: string;
+  /** 图标 emoji */
+  icon?: string;
+}
+
+/** 环境脚本配置 */
+export interface EnvironmentConfig {
+  /** 打开项目时自动执行的设置脚本（如安装依赖） */
+  setupScript?: string;
+  /** 关闭/切换项目时执行的清理脚本 */
+  cleanupScript?: string;
+  /** 自定义操作列表 */
+  customOperations?: CustomOperation[];
 }
 
 export interface ProjectSettings {
@@ -54,6 +99,10 @@ export interface ProjectSettings {
   instructions?: string;
   /** Feature flags */
   features?: Record<string, boolean>;
+  /** Git 偏好配置 (G series) */
+  git?: GitConfig;
+  /** 环境脚本配置 (ENV series) */
+  environment?: EnvironmentConfig;
 }
 
 export interface UserSettings {
@@ -115,9 +164,9 @@ export class SettingsManager {
   private initSources() {
     const sources: SettingsSourceConfig[] = [
       { source: "default", priority: 0, enabled: true },
-      { source: "local", priority: 1, enabled: true, path: `${this.projectPath}/.mimo/settings.local.json` },
-      { source: "project", priority: 2, enabled: true, path: `${this.projectPath}/.mimo/settings.json` },
-      { source: "user", priority: 3, enabled: true, path: "~/.mimocode/settings.json" },
+      { source: "local", priority: 1, enabled: true, path: `${this.projectPath}/.codem/settings.local.json` },
+      { source: "project", priority: 2, enabled: true, path: `${this.projectPath}/.codem/settings.json` },
+      { source: "user", priority: 3, enabled: true, path: "~/.codem/settings.json" },
       { source: "flag", priority: 4, enabled: true },
       { source: "policy", priority: 5, enabled: true },
       { source: "cli", priority: 6, enabled: true },

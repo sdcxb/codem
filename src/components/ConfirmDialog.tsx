@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 
 interface ConfirmDialogProps {
   title: string;
@@ -20,7 +21,10 @@ export function ConfirmDialog({ title, message, confirmLabel = "确定", cancelL
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [onCancel]);
 
-  return (
+  // Use Portal to render at document.body level — avoids backdrop-filter
+  // containing block issues in Dream skin where sidebar has backdrop-filter
+  // which would break position:fixed for children.
+  return createPortal(
     <div className="confirm-overlay" onClick={onCancel}>
       <div className="confirm-dialog" ref={dialogRef} onClick={(e) => e.stopPropagation()}>
         <div className="confirm-title">{title}</div>
@@ -30,6 +34,7 @@ export function ConfirmDialog({ title, message, confirmLabel = "确定", cancelL
           <button className="confirm-btn danger" onClick={onConfirm}>{confirmLabel}</button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

@@ -157,6 +157,27 @@
   display: none;
 }
 
+/* Dream 分段控件 — 使用 dream-accent 主题色 */
+[data-skin="dream"] .sidebar-tool-row {
+  background: color-mix(in srgb, var(--dream-accent, #e88c9a) 10%, transparent);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.06);
+}
+
+[data-skin="dream"] .sidebar-tool-item {
+  color: var(--dream-text-muted, #a88a8f);
+}
+
+[data-skin="dream"] .sidebar-tool-item:hover {
+  background: color-mix(in srgb, var(--dream-accent, #e88c9a) 15%, transparent);
+  color: var(--dream-text-main, #6c474d);
+}
+
+[data-skin="dream"] .sidebar-tool-item.active {
+  background: color-mix(in srgb, var(--dream-accent, #e88c9a) 20%, var(--dream-bg-card, rgba(255,255,255,0.65)));
+  color: var(--dream-text-main, #6c474d);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
 /* ========== 主面板区域 - 透明 ========== */
 [data-skin="dream"] .main-area {
   background: transparent !important;
@@ -327,31 +348,68 @@
 }
 
 /* ========== 模态框 / 设置面板 - 强制磨砂高不透明，确保文字可读 ========== */
-[data-skin="dream"] .modal-overlay {
-background: rgba(0, 0, 0, 0.35);
-backdrop-filter: blur(6px);
--webkit-backdrop-filter: blur(6px);
+[data-skin="dream"] .modal-overlay,
+[data-skin="dream"] .confirm-overlay,
+[data-skin="dream"] .permission-overlay,
+[data-skin="dream"] .search-overlay {
+  background: rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
 }
 
 [data-skin="dream"] .modal-editor,
 [data-skin="dream"] .settings-panel,
 [data-skin="dream"] .project-manager,
-[data-skin="dream"] .config-editor {
-background: rgba(255, 255, 255, 0.95) !important;
-backdrop-filter: blur(20px);
--webkit-backdrop-filter: blur(20px);
-border: 1px solid var(--dream-border-color, rgba(0, 0, 0, 0.12));
-box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
-color: var(--dream-text-main, #1a1a2e) !important;
+[data-skin="dream"] .config-editor,
+[data-skin="dream"] .confirm-dialog,
+[data-skin="dream"] .permission-dialog,
+[data-skin="dream"] .search-dialog {
+  background: rgba(255, 255, 255, 0.95) !important;
+  backdrop-filter: blur(var(--dream-blur-px, 12px));
+  -webkit-backdrop-filter: blur(var(--dream-blur-px, 12px));
+  border: 1px solid var(--dream-border-color, rgba(0, 0, 0, 0.12));
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
+  color: var(--dream-text-main, #1a1a2e) !important;
 }
 
 /* 暗色梦幻模式下模态框背景 */
 [data-skin="dream"][data-theme="dark"] .modal-editor,
 [data-skin="dream"][data-theme="dark"] .settings-panel,
 [data-skin="dream"][data-theme="dark"] .project-manager,
-[data-skin="dream"][data-theme="dark"] .config-editor {
-background: rgba(30, 30, 46, 0.95) !important;
-color: var(--dream-text-main, #e0d8e0) !important;
+[data-skin="dream"][data-theme="dark"] .config-editor,
+[data-skin="dream"][data-theme="dark"] .confirm-dialog,
+[data-skin="dream"][data-theme="dark"] .permission-dialog,
+[data-skin="dream"][data-theme="dark"] .search-dialog {
+  background: rgba(30, 30, 46, 0.95) !important;
+  color: var(--dream-text-main, #e0d8e0) !important;
+}
+
+/* ========== 底部控制栏下拉菜单 - 磨砂效果 ========== */
+[data-skin="dream"] .bottom-bar-dropdown {
+  background: rgba(255, 255, 255, 0.92) !important;
+  backdrop-filter: blur(var(--dream-blur-px, 12px));
+  -webkit-backdrop-filter: blur(var(--dream-blur-px, 12px));
+  border: 1px solid var(--dream-border-color, rgba(0, 0, 0, 0.12));
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+  color: var(--dream-text-main, #1a1a2e);
+}
+
+[data-skin="dream"][data-theme="dark"] .bottom-bar-dropdown {
+  background: rgba(30, 30, 46, 0.92) !important;
+  color: var(--dream-text-main, #e0d8e0);
+}
+
+[data-skin="dream"] .bottom-bar-dropdown-item {
+  color: var(--dream-text-main, #1a1a2e);
+}
+
+[data-skin="dream"] .bottom-bar-dropdown-item:hover {
+  background: rgba(232, 140, 154, 0.12);
+}
+
+[data-skin="dream"] .bottom-bar-dropdown-header {
+  color: var(--dream-text-muted, #a88a8f);
+  border-bottom-color: var(--dream-border-color, rgba(0, 0, 0, 0.08));
 }
 
 /* ========== 滚动条 ========== */
@@ -433,8 +491,8 @@ color: var(--dream-text-main, #e0d8e0) !important;
 /* ========== 技能选择弹窗 - 毛玻璃，确保文字可读 ========== */
 [data-skin="dream"] .skill-picker-popup {
   background: rgba(255, 255, 255, 0.95) !important;
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(var(--dream-blur-px, 12px));
+  -webkit-backdrop-filter: blur(var(--dream-blur-px, 12px));
   border: 1px solid var(--dream-border-color, rgba(0, 0, 0, 0.12));
   border-radius: 12px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
@@ -453,8 +511,8 @@ color: var(--dream-text-main, #e0d8e0) !important;
 [data-skin="dream"] .popup-menu,
 [data-skin="dream"] .context-menu {
   background: rgba(255, 255, 255, 0.95) !important;
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(var(--dream-blur-px, 12px));
+  -webkit-backdrop-filter: blur(var(--dream-blur-px, 12px));
   border: 1px solid var(--dream-border-color, rgba(0, 0, 0, 0.12));
   border-radius: 8px;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);

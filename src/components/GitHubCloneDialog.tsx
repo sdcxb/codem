@@ -4,6 +4,7 @@
  */
 
 import { useState } from "react";
+import { createPortal } from "react-dom";
 import { useLang } from "../core/i18n/lang";
 import { useProjectStore } from "../core/store";
 
@@ -80,8 +81,8 @@ export function GitHubCloneDialog({ onClose }: GitHubCloneDialogProps) {
     }
   }
 
-  return (
-    <div className="modal-overlay" onClick={onClose}>
+return createPortal(
+<div className="modal-overlay" onClick={onClose}>
       <div
         className="modal-editor"
         style={{ maxWidth: "500px", padding: "24px" }}
@@ -211,6 +212,7 @@ export function GitHubCloneDialog({ onClose }: GitHubCloneDialogProps) {
           </div>
         )}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

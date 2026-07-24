@@ -1,3 +1,17 @@
+/**
+ * Truncate ISO timestamp to minute precision for prompt cache stability.
+ * Same minute → identical string → KV cache prefix stays stable across iterations.
+ */
+function minutePrecisionDate(): string {
+  const now = new Date();
+  const y = now.getFullYear();
+  const mo = String(now.getMonth() + 1).padStart(2, "0");
+  const d = String(now.getDate()).padStart(2, "0");
+  const h = String(now.getHours()).padStart(2, "0");
+  const mi = String(now.getMinutes()).padStart(2, "0");
+  return `${y}-${mo}-${d}T${h}:${mi}:00.000Z`;
+}
+
 import { ProviderRegistry, createDefaultProviders } from "./provider";
 import { ToolRegistry, createDefaultToolRegistry } from "./tools";
 import { AgentRegistry, getAgentRegistry, type AgentDefinition } from "../agent/agent";
@@ -112,8 +126,10 @@ export class LLMEngine {
   readonly settings: SettingsManager;
   readonly profileManager: ReturnType<typeof getModelProfileManager>;
 
-  private agenticLoop: AgenticLoop | null = null;
-  private config: LLMEngineConfig;
+private agenticLoop: AgenticLoop | null = null;
+/** Per-session agentic loop pool for parallel execution */
+private loopPool: Map<string, AgenticLoop> = new Map();
+private config: LLMEngineConfig;
   private snapshots: Map<string, SnapshotService> = new Map();
 
   constructor(config?: LLMEngineConfig, projectPath?: string) {
@@ -177,8 +193,15 @@ export class LLMEngine {
     };
   }
 
-  /** Get or create an agentic loop */
-  getAgenticLoop(agentId?: string): AgenticLoop {
+  /** Get or create an agentic loop (per-session for parallel execution) */
+  getAgenticLoop(agentId?: string, sessionId?: string): AgenticLoop {
+    // Per-session loop pooling: each session gets its own AgenticLoop instance
+    // so parallel process() calls don't overwrite each other's loop.
+    if (sessionId) {
+      const existing = this.loopPool.get(sessionId);
+      if (existing) return existing;
+    }
+
     // E1: Read agent-specific model override
     const agent = agentId ? this.agents.get(agentId) : undefined;
 
@@ -192,7 +215,7 @@ export class LLMEngine {
     // Determine effective model: agent override > profile resolved > engine default
     const model = agent?.model || resolved.modelId;
 
-    this.agenticLoop = new AgenticLoop(
+    const loop = new AgenticLoop(
       provider,
       this.tools,
       {
@@ -221,7 +244,18 @@ export class LLMEngine {
       },
     );
 
-    return this.agenticLoop;
+    // Pool the loop per-session for parallel execution
+    if (sessionId) {
+      this.loopPool.set(sessionId, loop);
+    }
+    // Also keep as fallback for non-session callers
+    this.agenticLoop = loop;
+    return loop;
+  }
+
+  /** Clean up a session's loop from the pool (call when session ends) */
+  cleanupSessionLoop(sessionId: string): void {
+    this.loopPool.delete(sessionId);
   }
 
   /** Build system prompt for a session */
@@ -254,7 +288,7 @@ export class LLMEngine {
       identity,
       user,
       workingDirectory: cwd,
-      date: new Date().toISOString(),
+      date: minutePrecisionDate(),
       modelInfo: `${this.config.defaultProvider}/${this.config.defaultModel}`,
       memoryInstructions: memoryPrompt || undefined,
       skillInstructions: fullSkillPrompt,
@@ -300,13 +334,20 @@ export class LLMEngine {
 
     // Load hierarchical AGENTS.md instructions
     let projectInstructions: string | undefined;
+    // G series + ENV series: Load Git and Environment config
+    let gitConfig: import("../settings/settings").GitConfig | undefined;
+    let environmentConfig: import("../settings/settings").EnvironmentConfig | undefined;
     if (cwd) {
       try {
         const { loadHierarchicalProjectInstructions } = await import("../project/files");
         // F1.4: Read max bytes from settings (default 32KB)
-        const { getSetting } = await import("../storage/settings");
+        const { getSetting, getSettingJSON } = await import("../storage/settings");
         const maxBytes = parseInt(getSetting("agentsMdMaxBytes") || "32768", 10);
         projectInstructions = await loadHierarchicalProjectInstructions(cwd, cwd, maxBytes) || undefined;
+        // Load Git config (global setting, per-project override via .codem/settings.json)
+        gitConfig = getSettingJSON<import("../settings/settings").GitConfig | null>("codem-git-config", null) || undefined;
+        // Load Environment config
+        environmentConfig = getSettingJSON<import("../settings/settings").EnvironmentConfig | null>("codem-env-config", null) || undefined;
       } catch {}
     }
 
@@ -315,13 +356,15 @@ export class LLMEngine {
       identity,
       user,
       workingDirectory: cwd,
-      date: new Date().toISOString(),
+      date: minutePrecisionDate(),
       modelInfo: `${this.config.defaultProvider}/${this.config.defaultModel}`,
       memoryInstructions: memoryPrompt || undefined,
       projectInstructions,
       skillInstructions: fullSkillPrompt,
       mcpInstructions: mcpPrompt,
       knowledgeContext,
+      gitConfig,
+      environmentConfig,
     };
 
     const prompt = buildSystemPrompt(config);
@@ -445,7 +488,7 @@ The runtime automatically sets UTF-8 encoding (chcp 65001, PYTHONUTF8=1, PYTHONI
       userSelectedSkills?: string[];
     },
   ): AsyncGenerator<LoopEvent, void, unknown> {
-    const loop = this.getAgenticLoop(agentId);
+    const loop = this.getAgenticLoop(agentId, sessionId);
     if (options?.onPermissionRequest) {
       loop.updateConfig({ onPermissionRequest: options.onPermissionRequest });
     }
@@ -553,7 +596,7 @@ The runtime automatically sets UTF-8 encoding (chcp 65001, PYTHONUTF8=1, PYTHONI
     cwd: string,
     agentId: string,
   ): AsyncGenerator<LoopEvent, void, unknown> {
-    const loop = this.getAgenticLoop(agentId);
+    const loop = this.getAgenticLoop(agentId, sessionId);
     // Sub-agents should have fewer iterations to prevent loops
     loop.updateConfig({ maxIterations: 15 });
     const systemPrompt = this.buildSubagentSystemPrompt(agentId, cwd);

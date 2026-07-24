@@ -30,7 +30,7 @@ export interface MemoryConfig {
 }
 
 const DEFAULT_CONFIG: MemoryConfig = {
-  rootDir: ".mimo-memory",
+  rootDir: ".codem-memory",
   maxEntries: 1000,
   maxContentLength: 10000,
 };

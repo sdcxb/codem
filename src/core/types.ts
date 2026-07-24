@@ -18,6 +18,12 @@ export interface Session {
   model?: string;
   attachments?: Attachment[];
   pinned?: boolean;
+  /** Git worktree path for this session (worktree mode only) */
+  worktreePath?: string;
+  /** Execution mode: local shared workspace or isolated worktree */
+  executionMode?: "current_workspace" | "git_worktree";
+  /** Selected branch for worktree mode */
+  worktreeBranch?: string;
 }
 
 export interface Attachment {

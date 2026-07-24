@@ -12,6 +12,7 @@ import { useAppStore } from "../store";
 import { useProjectStore } from "../core/store";
 import * as SessionStorage from "../core/storage/session";
 import type { Session } from "../core/types";
+import { GitInfoPanel } from "./GitInfoPanel";
 
 interface HubRightSidebarProps {
   onNewChat?: () => void;
@@ -24,7 +25,7 @@ interface HubRightSidebarProps {
 export function RightSidebar({ onNewChat, onNewProject, onImportProject, onGitHubClone, onOpenSession }: HubRightSidebarProps) {
   const lang = useLang();
   const [collapsed, setCollapsed] = useState(false);
-  const { messages, isStreaming } = useAppStore();
+  const { messages, isStreaming, activeSessions } = useAppStore();
   const { projects, currentProject } = useProjectStore();
 
   // 获取所有项目的最近会话
@@ -77,6 +78,9 @@ export function RightSidebar({ onNewChat, onNewProject, onImportProject, onGitHu
   // 过滤掉隐藏的会话
   const visibleSessions = recentSessions.filter((s) => !hiddenSessions.has(s.id));
 
+  // Get active sessions for the active tasks panel
+  const activeSessionsList = visibleSessions.filter(s => activeSessions.has(s.id));
+
   // 收缩状态
   if (collapsed) {
     return (
@@ -127,6 +131,39 @@ export function RightSidebar({ onNewChat, onNewProject, onImportProject, onGitHu
           </p>
         </div>
       </div>
+
+      {/* Git 环境信息面板 */}
+      {currentProject && (
+        <div className="hub-git-info-panel" style={{ padding: "8px 12px", borderBottom: "1px solid var(--hub-border)" }}>
+          <GitInfoPanel />
+        </div>
+      )}
+
+      {/* 活跃任务面板 */}
+      {activeSessionsList.length > 0 && (
+        <div style={{ padding: "8px 12px", borderBottom: "1px solid var(--hub-border)" }}>
+          <div style={{ fontSize: 11, fontWeight: 600, color: "var(--hub-text-main)", marginBottom: 6 }}>
+            ⚡ {lang === "zh" ? "活跃任务" : "Active Tasks"} ({activeSessionsList.length})
+          </div>
+          {activeSessionsList.map(s => (
+            <div
+              key={s.id}
+              onClick={() => onOpenSession?.(s.id, s.projectId)}
+              style={{
+                display: "flex", alignItems: "center", gap: 6,
+                padding: "4px 6px", borderRadius: 4, cursor: "pointer",
+                background: "var(--hub-bg-card)", marginBottom: 4, fontSize: 11,
+              }}
+            >
+              <span className="session-running-dot" />
+              <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {s.title}
+              </span>
+              {s.executionMode === "git_worktree" && <span style={{ fontSize: 10 }}>🌲</span>}
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* 新手引导（无项目无对话时） */}
       {isNewUser && (

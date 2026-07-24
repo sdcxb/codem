@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { createPortal } from "react-dom";
 import { useLang, S } from "../core/i18n/lang";
 
 interface CloseConfirmDialogProps {
@@ -9,7 +10,7 @@ export function CloseConfirmDialog({ onChoose }: CloseConfirmDialogProps) {
   const lang = useLang();
   const [remember, setRemember] = useState(true);
 
-  return (
+  return createPortal(
     <div className="confirm-overlay">
       <div className="confirm-dialog" onClick={(e) => e.stopPropagation()} style={{ maxWidth: "420px" }}>
         <div className="confirm-title">{S.closeConfirm.title[lang]}</div>
@@ -80,6 +81,7 @@ export function CloseConfirmDialog({ onChoose }: CloseConfirmDialogProps) {
           {S.closeConfirm.remember[lang]}
         </label>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

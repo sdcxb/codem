@@ -1,6 +1,19 @@
+/* ========== Custom Fonts ========== */
+@font-face {
+  font-family: 'AlimamaFangYuanTi';
+  src: url('/fonts/AlimamaFangYuanTiVF-Thin.ttf') format('truetype-variations');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
 /* ========== Design Tokens ========== */
 /* Unified design system: radius, shadow, animation, z-index */
 :root {
+  /* Font family */
+  --font-family: 'AlimamaFangYuanTi', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-weight: 400;
+
   /* Radius scale */
   --radius-sm: 0.25rem;
   --radius: 0.5rem;
@@ -129,7 +142,8 @@
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif;
+  font-family: var(--font-family);
+  font-weight: var(--font-weight);
   background: transparent;
   color: var(--text-primary);
   overflow: hidden;
@@ -321,7 +335,7 @@ body {
   color: var(--text-muted);
 }
 
-/* ========== Sidebar Nav (Codex style) ========== */
+/* ========== Sidebar Nav ========== */
 .sidebar-nav {
   padding: 8px 12px;
   flex-shrink: 0;
@@ -347,13 +361,89 @@ body {
   background: var(--bg-hover);
 }
 
+/* Segmented control for MCP / Skills / Memory — accent-adaptive */
+.sidebar-tool-row {
+  display: flex;
+  gap: 2px;
+  margin: 4px 0;
+  padding: 3px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--accent, #7c6cf0) 8%, transparent);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.sidebar-tool-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  flex: 1;
+  padding: 7px 2px;
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--text-secondary);
+  transition: all 0.2s ease;
+  text-align: center;
+  line-height: 1.2;
+  position: relative;
+}
+
+.sidebar-tool-item:hover {
+  background: color-mix(in srgb, var(--accent, #7c6cf0) 12%, transparent);
+  color: var(--text-primary);
+}
+
+.sidebar-tool-item.active {
+  background: color-mix(in srgb, var(--accent, #7c6cf0) 18%, var(--bg-primary));
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  color: var(--text-primary);
+}
+
+.sidebar-tool-item-icon {
+  font-size: 16px;
+  line-height: 1;
+}
+
+.sidebar-tool-item-label {
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+/* ========== Independent Scroll Sections ========== */
+.sidebar-global-section {
+  flex-shrink: 0;
+  padding: 8px 12px 4px;
+}
+
+.sidebar-projects-section {
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 4px 12px 8px;
+}
+
+.sidebar-projects-section .sidebar-projects {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-y: auto;
+}
+
 .sidebar-nav-icon {
   font-size: 16px;
   width: 20px;
   text-align: center;
 }
 
-/* ========== Sidebar Projects (Codex style) ========== */
+/* ========== Sidebar Projects ========== */
 .sidebar-projects {
   padding: 0 12px;
 }
@@ -490,7 +580,7 @@ body {
 
 .sidebar-project-more-menu {
   display: none;
-  position: fixed;
+  position: absolute;
   background: var(--bg-secondary);
   border: 1px solid var(--border-primary);
   border-radius: 6px;
@@ -606,11 +696,28 @@ body {
 }
 
 .sidebar-session-title {
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 13px;
+flex: 1;
+overflow: hidden;
+text-overflow: ellipsis;
+white-space: nowrap;
+font-size: 13px;
+}
+
+/* Session running indicator dot */
+.session-running-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #22c55e;
+  margin-right: 6px;
+  flex-shrink: 0;
+  animation: session-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes session-pulse {
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.4); }
+  50% { opacity: 0.7; box-shadow: 0 0 0 4px rgba(34, 197, 94, 0); }
 }
 
 .sidebar-session-meta {
@@ -1913,9 +2020,10 @@ color: var(--text-secondary);
 .settings-panel,
 .project-manager,
 .config-editor {
-  width: 500px;
-  max-height: 80vh;
-  background: var(--bg-secondary);
+width: 760px;
+max-width: 95vw;
+max-height: 85vh;
+background: var(--bg-secondary);
   border: 1px solid var(--border-primary);
   border-radius: 16px;
   overflow: hidden;
@@ -2131,12 +2239,62 @@ color: var(--text-secondary);
 }
 
 .settings-body {
+  padding: 0;
+  display: flex;
+  flex-direction: row;
+  max-height: 60vh;
+  overflow: hidden;
+}
+
+.settings-sidebar {
+  width: 160px;
+  flex-shrink: 0;
+  padding: 12px 8px;
+  border-right: 1px solid var(--border-primary);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.settings-sidebar-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text-secondary);
+  transition: background 0.15s, color 0.15s;
+  border: none;
+  background: none;
+  text-align: left;
+  width: 100%;
+}
+
+.settings-sidebar-item:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.settings-sidebar-item.active {
+  background: var(--accent);
+  color: #fff;
+}
+
+.settings-sidebar-item .sidebar-icon {
+  font-size: 15px;
+  flex-shrink: 0;
+}
+
+.settings-content {
+  flex: 1;
   padding: 20px;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 16px;
-  max-height: 50vh;
-  overflow-y: auto;
 }
 
 .setting-group {
@@ -2884,7 +3042,7 @@ color: var(--text-primary);
   overflow: hidden;
 }
 
-/* ========== Step Progress (Codex Style) ========== */
+/* ========== Step Progress ========== */
 .step-progress-container {
   position: relative;
   display: flex;
@@ -3461,7 +3619,7 @@ background: rgba(124, 108, 240, 0.15);
   white-space: pre-wrap;
 }
 
-/* ========== Subagent Codex-style Execution View ========== */
+/* ========== Subagent Execution View ========== */
 
 .subagent-elapsed-section {
   display: flex;
@@ -6488,6 +6646,218 @@ border-bottom: 1px solid var(--accent);
   -webkit-backdrop-filter: blur(12px);
   padding: 10px 12px;
 }
+
+/* Slash Command Menu */
+.slash-command-menu {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  right: 0;
+  margin-bottom: 4px;
+  background: var(--dropdown-bg);
+  border: 1px solid var(--border-primary);
+  border-radius: 8px;
+  box-shadow: var(--shadow-popover);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  max-height: 260px;
+  overflow-y: auto;
+  z-index: 100;
+  padding: 4px;
+}
+
+.slash-command-header {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  padding: 4px 8px;
+  margin-bottom: 2px;
+}
+
+.slash-command-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  border-radius: 6px;
+  text-align: left;
+  transition: background 0.1s;
+}
+
+.slash-command-item:hover,
+.slash-command-item.selected {
+  background: var(--bg-hover);
+}
+
+.slash-command-icon {
+  font-size: 14px;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.slash-command-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+
+.slash-command-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.slash-command-desc {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.slash-command-empty {
+  padding: 12px 8px;
+  font-size: 13px;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+/* Input bottom control bar */
+.input-control-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-top: 1px solid var(--border-primary);
+  background: var(--bg-tertiary);
+  border-radius: 0 0 var(--radius) var(--radius);
+  flex-wrap: wrap;
+  min-height: 32px;
+}
+
+.input-control-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  border: 1px solid transparent;
+  background: none;
+  transition: background 0.1s, border-color 0.1s;
+  white-space: nowrap;
+}
+
+.input-control-item:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.input-control-item.active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.input-control-divider {
+  width: 1px;
+  height: 16px;
+  background: var(--border-primary);
+  flex-shrink: 0;
+}
+
+.project-indicator {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: border-color 0.15s;
+  max-width: 200px;
+}
+
+.project-indicator:hover {
+  border-color: var(--accent);
+}
+
+.project-indicator-name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Bottom bar dropdown menus (对标 wecode ProjectWorkBar dropdowns) */
+.bottom-bar-dropdown {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  border-radius: 8px;
+  padding: 4px;
+  z-index: 100;
+  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.25);
+}
+
+.bottom-bar-dropdown-header {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+  padding: 4px 8px 6px;
+  display: flex;
+  align-items: center;
+}
+
+.bottom-bar-dropdown-empty {
+  padding: 8px;
+  font-size: 11px;
+  opacity: 0.5;
+  text-align: center;
+}
+
+.bottom-bar-dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  color: var(--text-primary);
+  cursor: pointer;
+  border: 1px solid transparent;
+  background: none;
+  width: 100%;
+  text-align: left;
+  transition: background 0.1s, border-color 0.1s;
+}
+
+.bottom-bar-dropdown-item:hover {
+  background: var(--bg-hover);
+}
+
+.bottom-bar-dropdown-item.active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.bottom-bar-dropdown-item:disabled {
+  cursor: not-allowed;
+}
+
 .dropdown-menu-item {
   position: relative;
   display: flex;

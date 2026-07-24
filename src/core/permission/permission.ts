@@ -189,12 +189,12 @@ export class PermissionEvaluator {
     this.addRule({ tool: "write", action: "deny", resource: "**/.git/**" });
     this.addRule({ tool: "write", action: "deny", resource: "**/.env" });
     this.addRule({ tool: "write", action: "deny", resource: "**/.env.*" });
-    this.addRule({ tool: "write", action: "deny", resource: "**/.mimo-snapshots/**" });
+    this.addRule({ tool: "write", action: "deny", resource: "**/.codem-snapshots/**" });
     this.addRule({ tool: "write", action: "deny", resource: "**/node_modules/**" });
     this.addRule({ tool: "edit", action: "deny", resource: "**/.git/**" });
     this.addRule({ tool: "edit", action: "deny", resource: "**/.env" });
     this.addRule({ tool: "edit", action: "deny", resource: "**/.env.*" });
-    this.addRule({ tool: "edit", action: "deny", resource: "**/.mimo-snapshots/**" });
+    this.addRule({ tool: "edit", action: "deny", resource: "**/.codem-snapshots/**" });
     this.addRule({ tool: "edit", action: "deny", resource: "**/node_modules/**" });
   }
 }

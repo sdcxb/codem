@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { useAppStore } from "../store";
 import { useProjectStore } from "../core/store";
 import { AppIdentity } from "../core/types";
@@ -18,6 +19,7 @@ interface SidebarProps {
   onSkills?: () => void;
   onMemory?: () => void;
   onNotebooks?: () => void;
+  onAutomations?: () => void;
   onRemoveProject?: (projectId: string, projectName: string, projectPath: string) => void;
   fileExplorerProjectId?: string | null;
   onToggleFileExplorer?: (projectId: string) => void;
@@ -25,7 +27,7 @@ interface SidebarProps {
   collapsed?: boolean;
 }
 
-export function Sidebar({ identity, onSettings, onProjects, onConfig, onMcp, onSkills, onMemory, onNotebooks, onRemoveProject, fileExplorerProjectId, onToggleFileExplorer, onToggleSidebar, collapsed = false }: SidebarProps) {
+export function Sidebar({ identity, onSettings, onProjects, onConfig, onMcp, onSkills, onMemory, onNotebooks, onAutomations, onRemoveProject, fileExplorerProjectId, onToggleFileExplorer, onToggleSidebar, collapsed = false }: SidebarProps) {
   const lang = useLang();
   const { clearMessages, loadMessages } = useAppStore();
   const {
@@ -45,10 +47,26 @@ export function Sidebar({ identity, onSettings, onProjects, onConfig, onMcp, onS
   const [showSearch, setShowSearch] = useState(false);
   // #4: Right-click context menu state
   const [sessionContextMenu, setSessionContextMenu] = useState<{ session: any; x: number; y: number } | null>(null);
-  const [hoverMenuProjectId, setHoverMenuProjectId] = useState<string | null>(null);
-  const [clickedMenuProjectId, setClickedMenuProjectId] = useState<string | null>(null);
-  const [menuPosition, setMenuPosition] = useState<{ top: number; left: number } | null>(null);
-  const menuCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+const [hoverMenuProjectId, setHoverMenuProjectId] = useState<string | null>(null);
+const [clickedMenuProjectId, setClickedMenuProjectId] = useState<string | null>(null);
+const [menuDirection, setMenuDirection] = useState<'down' | 'up'>('down');
+const [menuPos, setMenuPos] = useState<{ top?: number; bottom?: number; left: number } | null>(null);
+const menuCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Close click-pinned menu when clicking outside the menu
+  useEffect(() => {
+    if (!clickedMenuProjectId) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      // If click is not on the more menu or its children, close the pinned menu
+      if (!target.closest('.sidebar-project-more-menu') && !target.closest('.sidebar-project-btn.more')) {
+        setClickedMenuProjectId(null);
+        setHoverMenuProjectId(null);
+      }
+    };
+    document.addEventListener('click', handleClickOutside, true);
+    return () => document.removeEventListener('click', handleClickOutside, true);
+  }, [clickedMenuProjectId]);
   // #9: Resizable sidebar width
   const [sidebarWidth, setSidebarWidth] = useState<number>(() => {
     const w = getSetting("codem-sidebar-width");
@@ -77,6 +95,16 @@ export function Sidebar({ identity, onSettings, onProjects, onConfig, onMcp, onS
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
     setSetting("codem-theme", theme);
+    // Apply saved font family
+    const savedFont = getSetting("codem-font-family");
+    if (savedFont) {
+      document.documentElement.style.setProperty("--font-family", savedFont);
+    }
+    // Apply saved font weight
+    const savedWeight = getSetting("codem-font-weight");
+    if (savedWeight) {
+      document.documentElement.style.setProperty("--font-weight", String(savedWeight));
+    }
   }, [theme]);
 
   useEffect(() => {
@@ -291,59 +319,66 @@ export function Sidebar({ identity, onSettings, onProjects, onConfig, onMcp, onS
 
       <div className="sidebar-header">
         <h3>{identity?.emoji || "⚡"} {identity?.name || "Codem"}</h3>
-        <button className="theme-toggle" onClick={toggleTheme} title={S.sidebar.toggleTheme[lang]}>
-          {theme === "dark" ? "☀️" : "🌙"}
-        </button>
-        {/* #9: Collapse toggle */}
-        {onToggleSidebar && (
-          <button className="sidebar-collapse-btn" onClick={onToggleSidebar} title={S.sidebar.collapseSidebar[lang]}>
-            ◀
+        <div style={{ display: "flex", alignItems: "center", gap: 2 }}>
+          <button onClick={() => setShowSearch(true)} title={S.sidebar.search[lang]} style={{ background: "none", border: "none", color: "var(--text-secondary)", cursor: "pointer", fontSize: 14, padding: "2px 4px", borderRadius: 4 }}>🔍</button>
+          <button onClick={onSettings} title={S.sidebar.settings[lang]} style={{ background: "none", border: "none", color: "var(--text-secondary)", cursor: "pointer", fontSize: 14, padding: "2px 4px", borderRadius: 4 }}>⚙️</button>
+          <button className="theme-toggle" onClick={toggleTheme} title={S.sidebar.toggleTheme[lang]} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 14, padding: "2px 4px", borderRadius: 4 }}>
+            {theme === "dark" ? "☀️" : "🌙"}
           </button>
-        )}
+          {onToggleSidebar && (
+            <button className="sidebar-collapse-btn" onClick={onToggleSidebar} title={S.sidebar.collapseSidebar[lang]} style={{ background: "none", border: "none", color: "var(--text-secondary)", cursor: "pointer", fontSize: 14, padding: "2px 4px", borderRadius: 4 }}>
+              ◀
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="sidebar-nav">
         <button className="sidebar-nav-item" onClick={() => {
           clearMessages();
-          // New chat creates a global session (no project context)
           useProjectStore.setState({ currentProject: null, currentSession: null, sessions: [] });
           createSession();
         }}>
           <span className="sidebar-nav-icon">✏️</span>
           <span>{S.sidebar.newChat[lang]}</span>
         </button>
-        <button className="sidebar-nav-item" onClick={() => setShowSearch(true)}>
-          <span className="sidebar-nav-icon">🔍</span>
-          <span>{S.sidebar.search[lang]}</span>
-        </button>
-        <button className="sidebar-nav-item" onClick={onMcp}>
-          <span className="sidebar-nav-icon">🔌</span>
-          <span>{S.sidebar.mcp[lang]}</span>
-        </button>
-        <button className="sidebar-nav-item" onClick={onSkills}>
-          <span className="sidebar-nav-icon">📚</span>
-          <span>{S.sidebar.skills[lang]}</span>
-        </button>
-        <button className="sidebar-nav-item" onClick={onMemory}>
-          <span className="sidebar-nav-icon">🧠</span>
-          <span>{S.sidebar.memory[lang]}</span>
-        </button>
+
         <button className="sidebar-nav-item" onClick={onNotebooks}>
           <span className="sidebar-nav-icon">📓</span>
           <span>{lang === 'zh' ? '知识笔记本' : 'Notebooks'}</span>
         </button>
-        <button className="sidebar-nav-item" onClick={onSettings}>
-          <span className="sidebar-nav-icon">⚙️</span>
-          <span>{S.sidebar.settings[lang]}</span>
-        </button>
+        {onAutomations && (
+          <button className="sidebar-nav-item" onClick={onAutomations}>
+            <span className="sidebar-nav-icon">⏰</span>
+            <span>{lang === 'zh' ? '自动化' : 'Automations'}</span>
+          </button>
+        )}
+
+        {/* Compact 3-in-a-row tool bar */}
+        <div className="sidebar-tool-row">
+          <button className="sidebar-tool-item" onClick={onMcp} title={S.sidebar.mcp[lang]}>
+            <span className="sidebar-tool-item-icon">🔌</span>
+            <span className="sidebar-tool-item-label">{S.sidebar.mcp[lang]}</span>
+          </button>
+          <button className="sidebar-tool-item" onClick={onSkills} title={S.sidebar.skills[lang]}>
+            <span className="sidebar-tool-item-icon">📚</span>
+            <span className="sidebar-tool-item-label">{S.sidebar.skills[lang]}</span>
+          </button>
+          <button className="sidebar-tool-item" onClick={onMemory} title={S.sidebar.memory[lang]}>
+            <span className="sidebar-tool-item-icon">🧠</span>
+            <span className="sidebar-tool-item-label">{S.sidebar.memory[lang]}</span>
+          </button>
+        </div>
       </div>
 
-      <div className="sidebar-scroll">
-      <div className="sidebar-section">
+      <div className="sidebar-section sidebar-global-section">
         <div className="sidebar-section-header">
           <span>{S.sidebar.globalChats[lang]}</span>
         </div>
-        <div className="sidebar-sessions">
+        <div className="sidebar-sessions" style={(() => {
+          const globalCount = (allSessions["__global__"] || []).length;
+          return globalCount > 3 ? { maxHeight: 144, overflowY: "auto" } : undefined;
+        })()}>
           {(() => {
             const globalSessions = (allSessions["__global__"] || []).slice().sort((a: any, b: any) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0));
             const { today, earlier } = groupSessionsByTime(globalSessions);
@@ -406,12 +441,12 @@ export function Sidebar({ identity, onSettings, onProjects, onConfig, onMcp, onS
         </div>
       </div>
 
-      <div className="sidebar-section">
+      <div className="sidebar-section sidebar-projects-section">
         <div className="sidebar-section-header">
           <span>{S.sidebar.projects[lang]}</span>
           <button className="sidebar-section-btn" onClick={onProjects} title={S.sidebar.addProject[lang]}>+</button>
         </div>
-        <div className="sidebar-projects">
+        <div className="sidebar-projects" style={{ flex: 1, overflowY: "auto" }}>
           {projects.length === 0 ? (
             <div className="sidebar-empty">{S.sidebar.noProjects[lang]}</div>
           ) : (
@@ -440,15 +475,18 @@ export function Sidebar({ identity, onSettings, onProjects, onConfig, onMcp, onS
                           clearTimeout(menuCloseTimer.current);
                           menuCloseTimer.current = null;
                         }
+                        if (clickedMenuProjectId) return;
                         const rect = e.currentTarget.getBoundingClientRect();
-                        setMenuPosition({ top: rect.bottom + 4, left: rect.right - 140 });
+                        const goUp = rect.bottom + 140 > window.innerHeight;
+                        setMenuDirection(goUp ? 'up' : 'down');
+                        setMenuPos(goUp ? { bottom: window.innerHeight - rect.top + 2, left: rect.right - 150 } : { top: rect.bottom + 2, left: rect.right - 150 });
                         setHoverMenuProjectId(project.id);
                       }}
                       onMouseLeave={() => {
-                        if (clickedMenuProjectId !== project.id) {
+                        if (!clickedMenuProjectId) {
                           menuCloseTimer.current = setTimeout(() => {
                             setHoverMenuProjectId(null);
-                          }, 500);
+                          }, 400);
                         }
                       }}
                     >
@@ -461,17 +499,26 @@ export function Sidebar({ identity, onSettings, onProjects, onConfig, onMcp, onS
                             setHoverMenuProjectId(null);
                           } else {
                             const rect = e.currentTarget.getBoundingClientRect();
-                            setMenuPosition({ top: rect.bottom + 4, left: rect.right - 140 });
+                            const goUp = rect.bottom + 140 > window.innerHeight;
+                            setMenuDirection(goUp ? 'up' : 'down');
+                            setMenuPos(goUp ? { bottom: window.innerHeight - rect.top + 2, left: rect.right - 150 } : { top: rect.bottom + 2, left: rect.right - 150 });
                             setClickedMenuProjectId(project.id);
                             setHoverMenuProjectId(project.id);
                           }
                         }}
                         title={S.sidebar.moreActions[lang]}
-                      >⋯</button>
-                      {(hoverMenuProjectId === project.id || clickedMenuProjectId === project.id) && menuPosition && (
+                        >⋯</button>
+                      {(hoverMenuProjectId === project.id || clickedMenuProjectId === project.id) && menuPos && createPortal(
                         <div
                           className="sidebar-project-more-menu"
-                          style={{ top: menuPosition.top, left: menuPosition.left }}
+                          style={{
+                            position: 'fixed',
+                            display: 'block',
+                            top: menuPos.top,
+                            bottom: menuPos.bottom,
+                            left: menuPos.left,
+                            zIndex: 10000,
+                          }}
                           onMouseEnter={() => {
                             if (menuCloseTimer.current) {
                               clearTimeout(menuCloseTimer.current);
@@ -479,10 +526,10 @@ export function Sidebar({ identity, onSettings, onProjects, onConfig, onMcp, onS
                             }
                           }}
                           onMouseLeave={() => {
-                            if (clickedMenuProjectId !== project.id) {
+                            if (!clickedMenuProjectId) {
                               menuCloseTimer.current = setTimeout(() => {
                                 setHoverMenuProjectId(null);
-                              }, 500);
+                              }, 400);
                             }
                           }}
                         >
@@ -495,7 +542,8 @@ export function Sidebar({ identity, onSettings, onProjects, onConfig, onMcp, onS
                           <button onClick={(e) => { e.stopPropagation(); onRemoveProject?.(project.id, project.name, project.path); setHoverMenuProjectId(null); setClickedMenuProjectId(null); }}>
                             {S.sidebar.removeProject[lang]}
                           </button>
-                        </div>
+                        </div>,
+                        document.body
                       )}
                     </div>
                   </div>
@@ -563,7 +611,6 @@ export function Sidebar({ identity, onSettings, onProjects, onConfig, onMcp, onS
             })
           )}
         </div>
-      </div>
       </div>
 
       {deleteConfirm && (
@@ -646,6 +693,8 @@ function SessionItem({
   onDelete: () => void;
   onPin: () => void;
 }) {
+  // Check if this session is currently running an agentic loop
+  const isActiveSession = useAppStore(s => s.activeSessions.has(session.id));
   // Inline rename mode
   if (isEditing) {
     return (
@@ -671,6 +720,10 @@ function SessionItem({
       onClick={onClick}
       onContextMenu={onContextMenu}
     >
+      {isActiveSession && <span className="session-running-dot" title={lang === "zh" ? "运行中" : "Running"} />}
+      {session.executionMode === "git_worktree" && (
+        <span style={{ fontSize: 11, flexShrink: 0 }} title={session.worktreePath || (lang === "zh" ? "工作树模式" : "Worktree mode")}>🌲</span>
+      )}
       <span className="sidebar-session-title">{session.title}</span>
       <div className="sidebar-session-actions">
         <button

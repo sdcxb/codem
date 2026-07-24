@@ -60,6 +60,8 @@ export type LLMStatus = "idle" | "connecting" | "streaming" | "executing_tools";
 interface AppState {
   messages: Message[];
   isStreaming: boolean;
+  /** Map of sessionId → true for sessions currently running an agentic loop */
+  activeSessions: Map<string, boolean>;
   currentModel: string;
   cwd: string;
   streamingMsgId: string | null;
@@ -77,6 +79,10 @@ interface AppState {
   addToolCall: (messageId: string, toolCall: ToolCall) => void;
   updateToolCall: (messageId: string, toolId: string, update: Partial<ToolCall>) => void;
   setStreaming: (v: boolean) => void;
+  /** Mark a session as active (running) or inactive */
+  setSessionActive: (sessionId: string, active: boolean) => void;
+  /** Check if any session is currently active */
+  hasActiveSessions: () => boolean;
   setCurrentModel: (m: string) => void;
   setCwd: (d: string) => void;
   clearMessages: () => void;
@@ -97,6 +103,7 @@ interface AppState {
 export const useAppStore = create<AppState>((set, get) => ({
   messages: [],
   isStreaming: false,
+  activeSessions: new Map<string, boolean>(),
   currentModel: "mimo-auto",
   cwd: "",
   streamingMsgId: null,
@@ -138,7 +145,24 @@ export const useAppStore = create<AppState>((set, get) => ({
     messages: s.messages.map((m) => m.id === messageId ? { ...m, toolCalls: (m.toolCalls || []).map((t) => t.id === toolId ? { ...t, ...update } : t) } : m),
   })),
 
-  setStreaming: (v) => set({ isStreaming: v, streamingMsgId: v ? get().streamingMsgId : null, stepProgress: v ? get().stepProgress : null, agentActivities: v ? get().agentActivities : [], streamStartTime: v ? get().streamStartTime : null, llmStatus: v ? get().llmStatus : "idle" }),
+  setStreaming: (v) => set((s) => {
+    // Only clear global streaming UI state, not per-session activeSessions
+    if (!v) {
+      return { isStreaming: s.activeSessions.size > 0, streamingMsgId: null, stepProgress: null, agentActivities: [], streamStartTime: null, llmStatus: "idle" as LLMStatus };
+    }
+    return { isStreaming: true };
+  }),
+  setSessionActive: (sessionId, active) => {
+    const next = new Map(get().activeSessions);
+    if (active) {
+      next.set(sessionId, true);
+    } else {
+      next.delete(sessionId);
+    }
+    // isStreaming = true if any session is active
+    set({ activeSessions: next, isStreaming: next.size > 0 });
+  },
+  hasActiveSessions: () => get().activeSessions.size > 0,
   setCurrentModel: (m) => set({ currentModel: m }),
   setCwd: (d) => set({ cwd: d }),
   clearMessages: () => set({ messages: [], streamingMsgId: null, stepProgress: null, agentActivities: [], streamStartTime: null }),

@@ -282,7 +282,7 @@ export function ContextMonitor({ sessionId, visible }: ContextMonitorProps) {
               className="context-compact-btn"
               onClick={handleManualCompact}
               disabled={compacting}
-              title="压缩上下文：移除旧消息并生成摘要，类似 Codex 的 /compact 命令"
+              title="压缩上下文：移除旧消息并生成摘要"
             >
               {compacting ? "⏳ 压缩中..." : "▼ 压缩上下文"}
             </button>

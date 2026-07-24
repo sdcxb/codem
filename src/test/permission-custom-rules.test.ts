@@ -74,8 +74,8 @@ describe("F3.5 自定义权限规则", () => {
       expect(evaluator.evaluate("edit", "project/.git/HEAD")).toBe("deny");
     });
 
-    it("edit .mimo-snapshots 默认禁止", () => {
-      expect(evaluator.evaluate("edit", "project/.mimo-snapshots/v1")).toBe("deny");
+    it("edit .codem-snapshots 默认禁止", () => {
+      expect(evaluator.evaluate("edit", "project/.codem-snapshots/v1")).toBe("deny");
     });
 
     it("普通 write 操作默认需要询问", () => {

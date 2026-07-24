@@ -89,8 +89,8 @@ const PROTECTED_PATH_PATTERNS = [
   /(^|\\)\.git\\/i,          // .git directory (Windows)
   /(^|\/|\\)\.env$/i,        // .env files
   /(^|\/|\\)\.env\./i,       // .env.* files
-  /(^|\/)\.mimo-snapshots\//i, // snapshot directory
-  /(^|\\)\.mimo-snapshots\\/i,
+  /(^|\/)\.codem-snapshots\//i, // snapshot directory
+  /(^|\\)\.codem-snapshots\\/i,
   /(^|\/)node_modules\//i,    // node_modules
   /(^|\\)node_modules\\/i,
 ];
@@ -515,7 +515,7 @@ export function createWriteFileTool(): ToolDef {
       if (isProtectedPath(path)) {
         return {
           title: `write: ${path}`,
-          output: `Error: This path is protected and cannot be written to. Protected paths include .git/, .env, .mimo-snapshots/, node_modules/. Use the 'edit' tool for modifying existing files in safe locations.`,
+          output: `Error: This path is protected and cannot be written to. Protected paths include .git/, .env, .codem-snapshots/, node_modules/. Use the 'edit' tool for modifying existing files in safe locations.`,
         };
       }
 
@@ -617,7 +617,7 @@ export function createEditFileTool(): ToolDef {
       if (isProtectedPath(path)) {
         return {
           title: `edit: ${path}`,
-          output: `Error: This path is protected and cannot be edited. Protected paths include .git/, .env, .mimo-snapshots/, node_modules/.`,
+          output: `Error: This path is protected and cannot be edited. Protected paths include .git/, .env, .codem-snapshots/, node_modules/.`,
         };
       }
 
@@ -684,7 +684,7 @@ export function createMultiEditTool(): ToolDef {
       if (isProtectedPath(path)) {
         return {
           title: `multi_edit: ${path}`,
-          output: `Error: This path is protected and cannot be edited. Protected paths include .git/, .env, .mimo-snapshots/, node_modules/.`,
+          output: `Error: This path is protected and cannot be edited. Protected paths include .git/, .env, .codem-snapshots/, node_modules/.`,
         };
       }
 

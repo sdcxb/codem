@@ -43,7 +43,7 @@ export interface SubagentTask {
   startedAt?: number;
   completedAt?: number;
   timeout?: number;
-  /** Real-time activity list for Codex-style execution view */
+  /** Real-time activity list for execution view */
   activities?: SubagentActivity[];
 }
 

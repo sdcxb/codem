@@ -1,3 +1,4 @@
+import { createPortal } from "react-dom";
 import type { PermissionRequest } from "../core/permission/permission";
 
 interface PermissionDialogProps {
@@ -65,8 +66,8 @@ export function PermissionDialog({ request, onResolve }: PermissionDialogProps) 
   const description = getToolDescription(request.tool, request.input);
   const riskLevel = getRiskLevel(request.tool, request.input);
 
-  return (
-    <div className="permission-overlay">
+return createPortal(
+<div className="permission-overlay">
       <div className="permission-dialog">
         <div className="permission-header">
           <span className="permission-icon">🔒</span>
@@ -115,6 +116,7 @@ export function PermissionDialog({ request, onResolve }: PermissionDialogProps) 
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

@@ -33,9 +33,9 @@ export interface SnapshotConfig {
 }
 
 const DEFAULT_CONFIG: SnapshotConfig = {
-  storageDir: ".mimo-snapshots",
+  storageDir: ".codem-snapshots",
   maxSnapshots: 50,
-  ignorePatterns: ["node_modules", ".git", ".mimo-snapshots"],
+  ignorePatterns: ["node_modules", ".git", ".codem-snapshots"],
 };
 
 // ========== Path Helper ==========

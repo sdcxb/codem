@@ -78,6 +78,20 @@ export async function deletePath(path: string): Promise<void> {
   }
 }
 
+export async function exists(path: string): Promise<boolean> {
+  try {
+    return await tauriInvoke("path_exists", { path });
+  } catch {
+    // Fallback: use PowerShell Test-Path (execute_command always wraps in PowerShell)
+    try {
+      const result = await executeCommand(`Test-Path -LiteralPath '${path.replace(/'/g, "''")}'`);
+      return result.stdout.trim().toLowerCase() === "true";
+    } catch {
+      return false;
+    }
+  }
+}
+
 export async function executeCommand(command: string, cwd?: string): Promise<{ stdout: string; stderr: string; exitCode?: number }> {
   return tauriInvoke("execute_command", { command, cwd });
 }

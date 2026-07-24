@@ -284,7 +284,7 @@ export class AgenticLoop {
   /**
    * Plan all steps for a task before the main loop.
    * Makes a lightweight non-streaming LLM call to get a structured plan.
-   * Returns an array of step titles, like Codex/Catpaw pre-planning.
+   * Returns an array of step titles for pre-planning.
    */
   private async planSteps(userMessage: string): Promise<StepPlan[] | null> {
     try {

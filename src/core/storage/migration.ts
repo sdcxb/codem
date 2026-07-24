@@ -25,6 +25,9 @@ function migrateSettingsKeys(): number {
     "mimo-identity": "codem-identity",
     "mimo-mcp-servers": "codem-mcp-servers",
     "mimo-cost-tracker": "codem-cost-tracker",
+    "mimo-worktree-settings": "codem-worktree-settings",
+    "mimo-project-execution-modes": "codem-project-execution-modes",
+    "mimo-automation-config": "codem-automation-config",
   };
 
   for (const [oldKey, newKey] of Object.entries(keyMap)) {

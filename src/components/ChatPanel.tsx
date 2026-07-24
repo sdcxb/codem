@@ -58,14 +58,16 @@ interface ChatPanelProps {
   onModelChange: (model: string) => void;
   mode?: "cli" | "api";
   providerId?: string;
-  collaborationMode?: CollaborationMode;
-  onModeChange?: (mode: CollaborationMode) => void;
-  projectPath?: string;
+collaborationMode?: CollaborationMode;
+onModeChange?: (mode: CollaborationMode) => void;
+projectPath?: string;
+/** Current session ID for per-session streaming state */
+currentSessionId?: string;
 }
 
-export function ChatPanel({ onSend, onCancel, onToggleSidebar, onFork, onRegenerate, connected, model, onModelChange, mode = "cli", providerId = "mimo", collaborationMode = "default", onModeChange, projectPath }: ChatPanelProps) {
+export function ChatPanel({ onSend, onCancel, onToggleSidebar, onFork, onRegenerate, connected, model, onModelChange, mode = "cli", providerId = "mimo", collaborationMode = "default", onModeChange, projectPath, currentSessionId }: ChatPanelProps) {
   const lang = useLang();
-  const { messages, isStreaming, removeGeneratedFiles, hasMoreMessages, isLoadingMore, loadMoreMessages, stepProgress, streamStartTime, llmStatus, displayMode, setDisplayMode } = useAppStore();
+  const { messages, isStreaming, activeSessions, removeGeneratedFiles, hasMoreMessages, isLoadingMore, loadMoreMessages, stepProgress, streamStartTime, llmStatus, displayMode, setDisplayMode } = useAppStore();
   const { currentSession, currentProject } = useProjectStore();
   const [showModelPicker, setShowModelPicker] = useState(false);
   const [showReasoning, setShowReasoning] = useState(true);
@@ -147,8 +149,8 @@ export function ChatPanel({ onSend, onCancel, onToggleSidebar, onFork, onRegener
     // Initial load
     updateAgents();
 
-    // Poll for updates frequently for real-time activity tracking
-    const interval = setInterval(updateAgents, 500);
+    // Poll for updates — 2s is sufficient for activity tracking (was 500ms, which caused high CPU)
+    const interval = setInterval(updateAgents, 2000);
     return () => clearInterval(interval);
   }, []);
 
@@ -504,7 +506,7 @@ export function ChatPanel({ onSend, onCancel, onToggleSidebar, onFork, onRegener
         </div>
       )}
 
-      <InputArea onSend={(msg, atts, skills) => { onSend(msg, atts, skills); setQuoteContext(null); }} onCancel={onCancel} disabled={isStreaming || !connected} isStreaming={isStreaming} collaborationMode={collaborationMode} onModeChange={onModeChange || (() => {})} projectPath={projectPath} quoteContext={quoteContext} onClearQuote={() => setQuoteContext(null)} />
+      <InputArea onSend={(msg, atts, skills) => { onSend(msg, atts, skills); setQuoteContext(null); }} onCancel={onCancel} disabled={(!currentSessionId || activeSessions.has(currentSessionId)) || !connected} isStreaming={!currentSessionId ? isStreaming : activeSessions.has(currentSessionId)} noSession={!currentSessionId} collaborationMode={collaborationMode} onModeChange={onModeChange || (() => {})} projectPath={projectPath} quoteContext={quoteContext} onClearQuote={() => setQuoteContext(null)} />
     </div>
   );
 }

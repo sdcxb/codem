@@ -1,6 +1,7 @@
 import type { AgentDefinition } from "../agent/agent";
 import type { AppIdentity, UserConfig } from "../types";
 import { getLang } from "../i18n/lang";
+import type { GitConfig, EnvironmentConfig } from "../settings/settings";
 
 // ========== System Prompt Builder ==========
 export interface SystemPromptConfig {
@@ -26,6 +27,10 @@ export interface SystemPromptConfig {
     retrievedContext?: string;
     retrievedSources?: { name: string; score: number }[];
   };
+  /** (G series) Git 偏好配置 */
+  gitConfig?: GitConfig;
+  /** (ENV series) 环境脚本配置 */
+  environmentConfig?: EnvironmentConfig;
 }
 
 export function buildSystemPrompt(config: SystemPromptConfig): string {
@@ -206,6 +211,62 @@ ${u.notes ? `- Notes: ${u.notes}` : ""}${u.context ? `\nContext:\n${u.context}` 
   // 4. Project instructions
   if (config.projectInstructions) {
     sections.push(`# Project Instructions\n\n${config.projectInstructions}`);
+  }
+
+  // G series: Git preferences
+  if (config.gitConfig) {
+    const gc = config.gitConfig;
+    const rules: string[] = [];
+    if (gc.branchPrefix) {
+      rules.push(`- When creating new branches, use the prefix "${gc.branchPrefix}" (e.g. ${gc.branchPrefix}feature-name).`);
+    }
+    if (gc.mergeMethod) {
+      const methodDesc: Record<string, string> = {
+        merge: "merge commit",
+        squash: "squash and merge",
+        rebase: "rebase and merge",
+      };
+      rules.push(`- When merging PRs, prefer ${methodDesc[gc.mergeMethod]} method.`);
+    }
+    if (gc.forcePush === false) {
+      rules.push(`- **NEVER** use force push (git push --force). It is disabled by configuration.`);
+    } else if (gc.forcePush === true) {
+      rules.push(`- Force push is allowed but still requires user confirmation per safety rules.`);
+    }
+    if (gc.draftPR) {
+      rules.push(`- When creating PRs, default to draft PR first.`);
+    }
+    if (gc.commitMessageInstructions) {
+      rules.push(`- Commit message style: ${gc.commitMessageInstructions}`);
+    }
+    if (gc.prTitleInstructions) {
+      rules.push(`- PR title style: ${gc.prTitleInstructions}`);
+    }
+    if (gc.prDescriptionInstructions) {
+      rules.push(`- PR description style: ${gc.prDescriptionInstructions}`);
+    }
+    if (rules.length > 0) {
+      sections.push(`# Git Preferences\n\nThe user has configured the following Git preferences. Follow them when performing Git operations:\n\n${rules.join("\n")}`);
+    }
+  }
+
+  // ENV series: Environment scripts info
+  if (config.environmentConfig) {
+    const ec = config.environmentConfig;
+    const envRules: string[] = [];
+    if (ec.setupScript) {
+      envRules.push(`- Setup script (runs on project open): \`${ec.setupScript}\``);
+    }
+    if (ec.cleanupScript) {
+      envRules.push(`- Cleanup script (runs on project close): \`${ec.cleanupScript}\``);
+    }
+    if (ec.customOperations && ec.customOperations.length > 0) {
+      const opsList = ec.customOperations.map(op => `  - ${op.name}: \`${op.command}\``).join("\n");
+      envRules.push(`- Custom operations available:\n${opsList}`);
+    }
+    if (envRules.length > 0) {
+      sections.push(`# Environment Scripts\n\nThis project has environment scripts configured:\n\n${envRules.join("\n")}\n\nThese scripts have already been configured by the user. You can reference them or suggest running them when appropriate.`);
+    }
   }
 
   // 5. Environment info

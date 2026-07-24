@@ -10,9 +10,9 @@ import { readFile as apiReadFile, writeFile as apiWriteFile, listDirectory } fro
 
 // ========== Config Directory Names ==========
 const CONFIG_DIRS: Record<ConfigLevel, string> = {
-  app: ".mimo-app",
-  project: ".mimo",
-  subfolder: ".mimo-sub",
+  app: ".codem-app",
+  project: ".codem",
+  subfolder: ".codem-sub",
 };
 
 // ========== File Read/Write Helpers ==========
@@ -299,8 +299,8 @@ export function saveAppIdentity(identity: AppIdentity): void {
 
 // ========== Bootstrap Detection ==========
 export async function hasBootstrap(projectPath: string): Promise<boolean> {
-  const appDir = `${projectPath}\\..\\.mimo-app`;
-  const projectDir = `${projectPath}\\.mimo`;
+  const appDir = `${projectPath}\\..\\.codem-app`;
+  const projectDir = `${projectPath}\\.codem`;
   const appBootstrap = await readFile(`${appDir}\\BOOTSTRAP.md`);
   const projectBootstrap = await readFile(`${projectDir}\\BOOTSTRAP.md`);
   return !!(appBootstrap || projectBootstrap);
