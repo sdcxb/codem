@@ -104,6 +104,7 @@ export class RetryExecutor {
 
   constructor(config?: Partial<RetryConfig>) {
     this.config = { ...DEFAULT_RETRY_CONFIG, ...config };
+    this.loadPersistedConfig();
     this.state = {
       attempt: 0,
       totalAttempts: this.config.maxAttempts,
@@ -111,6 +112,32 @@ export class RetryExecutor {
       lastRetryTime: 0,
       totalWaitTime: 0,
     };
+  }
+
+  /** Load persisted config from SQLite settings */
+  private loadPersistedConfig() {
+    try {
+      const { getSettingJSON } = require("../storage/settings");
+      const saved = getSettingJSON("codem-retry-config", null) as Partial<RetryConfig> | null;
+      if (saved) {
+        this.config = { ...this.config, ...saved };
+      }
+    } catch {}
+  }
+
+  /** Get current config */
+  getConfig(): Readonly<RetryConfig> {
+    return { ...this.config };
+  }
+
+  /** Update and persist config */
+  setConfig(updates: Partial<RetryConfig>) {
+    this.config = { ...this.config, ...updates };
+    this.state.totalAttempts = this.config.maxAttempts;
+    try {
+      const { setSettingJSON } = require("../storage/settings");
+      setSettingJSON("codem-retry-config", this.config);
+    } catch {}
   }
 
   /** Reset retry state */

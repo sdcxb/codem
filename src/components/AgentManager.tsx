@@ -1,0 +1,399 @@
+import { useState, useEffect } from "react";
+import {
+  getAgentRegistry,
+  type AgentDefinition,
+  type AgentMode,
+  type AgentPermission,
+  type CollaborationMode,
+} from "../core/agent/agent";
+import type { TaskSlot } from "../core/llm/model-profile";
+import { useLang } from "../core/i18n/lang";
+
+const MODE_LABELS: Record<AgentMode, string> = {
+  primary: "主智能体",
+  subagent: "子智能体",
+  all: "通用",
+};
+
+const SLOT_LABELS: Record<TaskSlot, string> = {
+  chat: "主对话 (chat)",
+  subagent: "子任务 (subagent)",
+  memory: "记忆提取 (memory)",
+  compaction: "上下文压缩 (compaction)",
+  tts: "语音合成 (tts)",
+  imageGen: "图像生成 (imageGen)",
+  embedding: "语义搜索 (embedding)",
+};
+
+function emptyAgent(): AgentDefinition {
+  return {
+    id: `agent-${Date.now()}`,
+    name: "",
+    description: "",
+    mode: "subagent",
+    prompt: "",
+    promptEn: "",
+    toolAllowlist: [],
+    permissions: [{ tool: "*", action: "allow" }],
+    canSpawnSubagents: false,
+    maxSteps: 10,
+    contextMode: "inline",
+    collaborationMode: "default",
+    modelSlot: "subagent",
+  };
+}
+
+export function AgentManager() {
+  const lang = useLang();
+  const zh = lang === "zh";
+  const [agents, setAgents] = useState<AgentDefinition[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [editing, setEditing] = useState<AgentDefinition | null>(null);
+  const [isNew, setIsNew] = useState(false);
+
+  const refresh = () => {
+    setAgents(getAgentRegistry().getAll());
+  };
+
+  useEffect(() => {
+    refresh();
+  }, []);
+
+  const selected = editing || (selectedId ? agents.find(a => a.id === selectedId) : null);
+  const isBuiltin = selected ? getAgentRegistry().isBuiltin(selected.id) : false;
+
+  const handleNew = () => {
+    setEditing(emptyAgent());
+    setIsNew(true);
+    setSelectedId(null);
+  };
+
+  const handleEdit = (agent: AgentDefinition) => {
+    setEditing({ ...agent });
+    setIsNew(false);
+    setSelectedId(agent.id);
+  };
+
+  const handleSave = () => {
+    if (!editing) return;
+    if (!editing.name.trim()) return;
+    const registry = getAgentRegistry();
+    if (isNew) {
+      registry.register(editing);
+    } else {
+      registry.update(editing.id, editing);
+    }
+    setEditing(null);
+    setIsNew(false);
+    refresh();
+  };
+
+  const handleDelete = (id: string) => {
+    if (!confirm(zh ? "确认删除此智能体？" : "Delete this agent?")) return;
+    getAgentRegistry().unregister(id);
+    if (selectedId === id) setSelectedId(null);
+    refresh();
+  };
+
+  const handleCancel = () => {
+    setEditing(null);
+    setIsNew(false);
+  };
+
+  const labelStyle: React.CSSProperties = {
+    fontSize: 11, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 3, display: "block",
+  };
+  const inputStyle: React.CSSProperties = {
+    padding: "5px 8px", borderRadius: 4, border: "1px solid var(--border-primary)",
+    background: "var(--bg-tertiary)", color: "var(--text-primary)", fontSize: 12, width: "100%",
+    outline: "none",
+  };
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div>
+          <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)" }}>
+            🤖 {zh ? "智能体定义管理" : "Agent Definition Management"}
+          </div>
+          <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 2 }}>
+            {zh ? "查看、创建和编辑智能体定义。内置智能体不可编辑/删除。" : "View, create, and edit agent definitions. Built-in agents are read-only."}
+          </div>
+        </div>
+        <button
+          onClick={handleNew}
+          style={{
+            padding: "6px 14px", borderRadius: 4, fontSize: 12,
+            border: "1px solid var(--accent)", background: "var(--accent)",
+            color: "#fff", cursor: "pointer", whiteSpace: "nowrap",
+          }}
+        >
+          + {zh ? "新建智能体" : "New Agent"}
+        </button>
+      </div>
+
+      {/* Agent list */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+        {agents.map(agent => {
+          const builtin = getAgentRegistry().isBuiltin(agent.id);
+          const active = selectedId === agent.id && !editing;
+          return (
+            <div
+              key={agent.id}
+              onClick={() => { if (!editing) setSelectedId(agent.id); }}
+              style={{
+                display: "flex", alignItems: "center", gap: 8, padding: "8px 10px",
+                borderRadius: 6, border: `1px solid ${active ? "var(--accent)" : "var(--border-primary)"}`,
+                background: active ? "rgba(99, 102, 241, 0.1)" : "var(--bg-tertiary)",
+                cursor: editing ? "default" : "pointer", fontSize: 12,
+              }}
+            >
+              <span style={{ fontSize: 14 }}>{agent.mode === "primary" ? "🦸" : "🤖"}</span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 600, color: "var(--text-primary)" }}>
+                  {agent.name || agent.id}
+                  {builtin && <span style={{ marginLeft: 6, fontSize: 10, color: "var(--text-muted)" }}>{zh ? "内置" : "built-in"}</span>}
+                </div>
+                <div style={{ fontSize: 10, color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {agent.description || agent.prompt.substring(0, 60) + "..."}
+                </div>
+              </div>
+              <span style={{ fontSize: 10, padding: "2px 6px", borderRadius: 3, background: "var(--bg-secondary)", color: "var(--text-secondary)" }}>
+                {MODE_LABELS[agent.mode]}
+              </span>
+              <button
+                onClick={(e) => { e.stopPropagation(); handleEdit(agent); }}
+                style={{ fontSize: 11, padding: "2px 8px", borderRadius: 4, border: "1px solid var(--border-primary)", background: "none", color: "var(--text-primary)", cursor: "pointer" }}
+              >
+                {zh ? "编辑" : "Edit"}
+              </button>
+              {!builtin && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); handleDelete(agent.id); }}
+                  style={{ fontSize: 11, padding: "2px 8px", borderRadius: 4, border: "1px solid #e74c3c", background: "none", color: "#e74c3c", cursor: "pointer" }}
+                >
+                  {zh ? "删除" : "Del"}
+                </button>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Detail view (read-only, when not editing) */}
+      {!editing && selected && (
+        <div style={{
+          padding: 12, borderRadius: 8, border: "1px solid var(--border-primary)",
+          background: "var(--bg-secondary)", fontSize: 12,
+        }}>
+          <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8, color: "var(--text-primary)" }}>
+            {selected.name} <span style={{ fontSize: 10, color: "var(--text-muted)" }}>({selected.id})</span>
+          </div>
+          <DetailRow label={zh ? "描述" : "Description"} value={selected.description} />
+          <DetailRow label={zh ? "模式" : "Mode"} value={MODE_LABELS[selected.mode]} />
+          <DetailRow label={zh ? "协作模式" : "Collaboration"} value={selected.collaborationMode === "plan" ? (zh ? "规划模式 (只读)" : "Plan (read-only)") : (zh ? "默认模式" : "Default")} />
+          <DetailRow label={zh ? "模型槽位" : "Model Slot"} value={selected.modelSlot ? SLOT_LABELS[selected.modelSlot] : "-"} />
+          <DetailRow label={zh ? "最大步数" : "Max Steps"} value={String(selected.maxSteps ?? "-")} />
+          <DetailRow label={zh ? "可生成子智能体" : "Can Spawn"} value={selected.canSpawnSubagents ? "✅" : "❌"} />
+          <DetailRow label={zh ? "工具白名单" : "Tool Allowlist"} value={selected.toolAllowlist && selected.toolAllowlist.length > 0 ? selected.toolAllowlist.join(", ") : (zh ? "全部工具" : "All tools")} />
+          <DetailRow label={zh ? "上下文模式" : "Context Mode"} value={selected.contextMode === "fork" ? (zh ? "隔离 (fork)" : "Fork (isolated)") : (zh ? "内联 (inline)" : "Inline")} />
+          {selected.model && <DetailRow label={zh ? "模型覆盖" : "Model Override"} value={selected.model} />}
+          {selected.temperature !== undefined && <DetailRow label={zh ? "温度" : "Temperature"} value={String(selected.temperature)} />}
+          {selected.maxTokens !== undefined && <DetailRow label={zh ? "最大 Token" : "Max Tokens"} value={String(selected.maxTokens)} />}
+          {selected.reasoningEffort && <DetailRow label={zh ? "推理强度" : "Reasoning Effort"} value={selected.reasoningEffort} />}
+
+          {/* Permissions */}
+          <div style={{ marginTop: 8, marginBottom: 4, fontWeight: 600, color: "var(--text-secondary)" }}>{zh ? "权限规则" : "Permissions"}</div>
+          {selected.permissions.map((p, i) => (
+            <div key={i} style={{ fontFamily: "monospace", fontSize: 11, padding: "3px 6px", background: "var(--bg-tertiary)", borderRadius: 3, marginBottom: 2 }}>
+              {p.tool} {p.resource && `→ ${p.resource}`} <span style={{ color: p.action === "allow" ? "var(--success)" : p.action === "deny" ? "var(--error)" : "var(--text-secondary)" }}>[{p.action}]</span>
+            </div>
+          ))}
+
+          {/* Prompt preview */}
+          <div style={{ marginTop: 8, marginBottom: 4, fontWeight: 600, color: "var(--text-secondary)" }}>{zh ? "系统提示词" : "System Prompt"}</div>
+          <pre style={{
+            fontSize: 10, padding: 8, background: "var(--bg-tertiary)", borderRadius: 4,
+            maxHeight: 200, overflow: "auto", whiteSpace: "pre-wrap", margin: 0,
+            color: "var(--text-secondary)",
+          }}>
+            {selected.prompt}
+          </pre>
+        </div>
+      )}
+
+      {/* Edit form */}
+      {editing && (
+        <div style={{
+          padding: 12, borderRadius: 8, border: "1px solid var(--accent)",
+          background: "var(--bg-secondary)", display: "flex", flexDirection: "column", gap: 10,
+        }}>
+          <div style={{ fontWeight: 700, fontSize: 13, color: "var(--text-primary)" }}>
+            {isNew ? (zh ? "新建智能体" : "New Agent") : (zh ? "编辑智能体" : "Edit Agent")}
+          </div>
+
+          {/* Basic info */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+            <div>
+              <label style={labelStyle}>{zh ? "名称" : "Name"}</label>
+              <input style={inputStyle} value={editing.name} onChange={e => setEditing({ ...editing, name: e.target.value })} placeholder="My Agent" />
+            </div>
+            <div>
+              <label style={labelStyle}>{zh ? "ID (只读)" : "ID (read-only)"}</label>
+              <input style={{ ...inputStyle, opacity: 0.6 }} value={editing.id} readOnly />
+            </div>
+          </div>
+
+          <div>
+            <label style={labelStyle}>{zh ? "描述" : "Description"}</label>
+            <input style={inputStyle} value={editing.description} onChange={e => setEditing({ ...editing, description: e.target.value })} placeholder={zh ? "智能体用途描述" : "What this agent does"} />
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+            <div>
+              <label style={labelStyle}>{zh ? "模式" : "Mode"}</label>
+              <select style={inputStyle} value={editing.mode} onChange={e => setEditing({ ...editing, mode: e.target.value as AgentMode })}>
+                <option value="primary">{zh ? "主智能体" : "Primary"}</option>
+                <option value="subagent">{zh ? "子智能体" : "Sub-agent"}</option>
+                <option value="all">{zh ? "通用" : "All"}</option>
+              </select>
+            </div>
+            <div>
+              <label style={labelStyle}>{zh ? "协作模式" : "Collaboration"}</label>
+              <select style={inputStyle} value={editing.collaborationMode || "default"} onChange={e => setEditing({ ...editing, collaborationMode: e.target.value as CollaborationMode })}>
+                <option value="default">{zh ? "默认（自主执行）" : "Default (autonomous)"}</option>
+                <option value="plan">{zh ? "规划（只读分析）" : "Plan (read-only)"}</option>
+              </select>
+            </div>
+            <div>
+              <label style={labelStyle}>{zh ? "模型槽位" : "Model Slot"}</label>
+              <select style={inputStyle} value={editing.modelSlot || "subagent"} onChange={e => setEditing({ ...editing, modelSlot: e.target.value as TaskSlot })}>
+                {Object.entries(SLOT_LABELS).map(([slot, label]) => (
+                  <option key={slot} value={slot}>{label}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+            <div>
+              <label style={labelStyle}>{zh ? "最大步数" : "Max Steps"}</label>
+              <input type="number" min={1} max={100} style={inputStyle} value={editing.maxSteps ?? 10} onChange={e => setEditing({ ...editing, maxSteps: parseInt(e.target.value) || 10 })} />
+            </div>
+            <div>
+              <label style={labelStyle}>{zh ? "最大 Token" : "Max Tokens"}</label>
+              <input type="number" min={0} style={inputStyle} value={editing.maxTokens ?? ""} onChange={e => setEditing({ ...editing, maxTokens: e.target.value ? parseInt(e.target.value) : undefined })} />
+            </div>
+            <div>
+              <label style={labelStyle}>{zh ? "温度" : "Temperature"}</label>
+              <input type="number" min={0} max={2} step={0.1} style={inputStyle} value={editing.temperature ?? ""} onChange={e => setEditing({ ...editing, temperature: e.target.value ? parseFloat(e.target.value) : undefined })} />
+            </div>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+            <div>
+              <label style={labelStyle}>{zh ? "推理强度" : "Reasoning Effort"}</label>
+              <select style={inputStyle} value={editing.reasoningEffort || ""} onChange={e => setEditing({ ...editing, reasoningEffort: (e.target.value || undefined) as "low" | "medium" | "high" | undefined })}>
+                <option value="">{zh ? "默认" : "Default"}</option>
+                <option value="low">{zh ? "低" : "Low"}</option>
+                <option value="medium">{zh ? "中" : "Medium"}</option>
+                <option value="high">{zh ? "高" : "High"}</option>
+              </select>
+            </div>
+            <div>
+              <label style={labelStyle}>{zh ? "上下文模式" : "Context Mode"}</label>
+              <select style={inputStyle} value={editing.contextMode || "inline"} onChange={e => setEditing({ ...editing, contextMode: e.target.value as "inline" | "fork" })}>
+                <option value="inline">{zh ? "内联（共享上下文）" : "Inline (shared)"}</option>
+                <option value="fork">{zh ? "隔离（独立上下文）" : "Fork (isolated)"}</option>
+              </select>
+            </div>
+          </div>
+
+          <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+            <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: 12 }}>
+              <input type="checkbox" checked={editing.canSpawnSubagents ?? false} onChange={e => setEditing({ ...editing, canSpawnSubagents: e.target.checked })} />
+              {zh ? "可生成子智能体" : "Can spawn sub-agents"}
+            </label>
+          </div>
+
+          {/* Tool allowlist */}
+          <div>
+            <label style={labelStyle}>{zh ? "工具白名单（逗号分隔，留空=全部工具）" : "Tool Allowlist (comma-separated, empty=all)"}</label>
+            <input style={inputStyle} value={(editing.toolAllowlist || []).join(", ")} onChange={e => setEditing({ ...editing, toolAllowlist: e.target.value.trim() ? e.target.value.split(",").map(s => s.trim()).filter(Boolean) : undefined })} placeholder="read, glob, grep, bash" />
+          </div>
+
+          {/* System prompt */}
+          <div>
+            <label style={labelStyle}>{zh ? "系统提示词 (中文)" : "System Prompt (Chinese)"}</label>
+            <textarea style={{ ...inputStyle, minHeight: 80, resize: "vertical", fontFamily: "monospace" }} value={editing.prompt} onChange={e => setEditing({ ...editing, prompt: e.target.value })} />
+          </div>
+          <div>
+            <label style={labelStyle}>{zh ? "系统提示词 (英文, 可选)" : "System Prompt (English, optional)"}</label>
+            <textarea style={{ ...inputStyle, minHeight: 60, resize: "vertical", fontFamily: "monospace" }} value={editing.promptEn || ""} onChange={e => setEditing({ ...editing, promptEn: e.target.value || undefined })} />
+          </div>
+
+          {/* Permissions editor */}
+          <div>
+            <label style={labelStyle}>{zh ? "权限规则" : "Permission Rules"}</label>
+            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+              {(editing.permissions || []).map((p, i) => (
+                <div key={i} style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                  <input style={{ ...inputStyle, flex: 2, fontFamily: "monospace" }} value={p.tool} onChange={e => {
+                    const perms = [...(editing.permissions || [])];
+                    perms[i] = { ...perms[i], tool: e.target.value };
+                    setEditing({ ...editing, permissions: perms });
+                  }} placeholder="bash / write / *" />
+                  <input style={{ ...inputStyle, flex: 2, fontFamily: "monospace" }} value={p.resource || ""} onChange={e => {
+                    const perms = [...(editing.permissions || [])];
+                    perms[i] = { ...perms[i], resource: e.target.value || undefined };
+                    setEditing({ ...editing, permissions: perms });
+                  }} placeholder="rm -rf* / **/.env" />
+                  <select style={{ ...inputStyle, flex: 1 }} value={p.action} onChange={e => {
+                    const perms = [...(editing.permissions || [])];
+                    perms[i] = { ...perms[i], action: e.target.value as "allow" | "deny" | "ask" };
+                    setEditing({ ...editing, permissions: perms });
+                  }}>
+                    <option value="allow">{zh ? "允许" : "Allow"}</option>
+                    <option value="deny">{zh ? "禁止" : "Deny"}</option>
+                    <option value="ask">{zh ? "询问" : "Ask"}</option>
+                  </select>
+                  <button onClick={() => {
+                    const perms = (editing.permissions || []).filter((_, idx) => idx !== i);
+                    setEditing({ ...editing, permissions: perms });
+                  }} style={{ fontSize: 14, padding: "4px 8px", border: "1px solid var(--border-primary)", background: "none", color: "var(--text-muted)", borderRadius: 4, cursor: "pointer" }}>✕</button>
+                </div>
+              ))}
+              <button onClick={() => setEditing({ ...editing, permissions: [...(editing.permissions || []), { tool: "*", action: "ask" }] })} style={{
+                fontSize: 11, padding: "4px 10px", borderRadius: 4, border: "1px solid var(--border-primary)",
+                background: "var(--bg-tertiary)", color: "var(--text-primary)", cursor: "pointer", alignSelf: "flex-start",
+              }}>+ {zh ? "添加规则" : "Add Rule"}</button>
+            </div>
+          </div>
+
+          {/* Action buttons */}
+          <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
+            <button onClick={handleSave} disabled={!editing.name.trim()} style={{
+              padding: "6px 16px", borderRadius: 4, fontSize: 12,
+              border: "1px solid var(--accent)", background: "var(--accent)",
+              color: "#fff", cursor: "pointer", opacity: editing.name.trim() ? 1 : 0.5,
+            }}>{zh ? "保存" : "Save"}</button>
+            <button onClick={handleCancel} style={{
+              padding: "6px 16px", borderRadius: 4, fontSize: 12,
+              border: "1px solid var(--border-primary)", background: "none",
+              color: "var(--text-primary)", cursor: "pointer",
+            }}>{zh ? "取消" : "Cancel"}</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DetailRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div style={{ display: "flex", gap: 8, marginBottom: 4 }}>
+      <span style={{ fontSize: 11, color: "var(--text-muted)", minWidth: 90 }}>{label}:</span>
+      <span style={{ fontSize: 11, color: "var(--text-primary)", flex: 1 }}>{value}</span>
+    </div>
+  );
+}

@@ -253,13 +253,40 @@ export class ActivityHeartbeat {
 // ========== Heartbeat Manager ==========
 export class HeartbeatManager {
   private heartbeats: Map<string, ActivityHeartbeat> = new Map();
+  private globalConfig: HeartbeatConfig | null = null;
 
-  /** Create a heartbeat for a session */
+  /** Get global heartbeat config (persisted) */
+  getGlobalConfig(): HeartbeatConfig {
+    if (this.globalConfig) return this.globalConfig;
+    try {
+      const { getSettingJSON } = require("../storage/settings");
+      const saved = getSettingJSON("codem-heartbeat-config", null) as HeartbeatConfig | null;
+      if (saved) {
+        this.globalConfig = { ...DEFAULT_CONFIG, ...saved };
+        return this.globalConfig;
+      }
+    } catch {}
+    this.globalConfig = { ...DEFAULT_CONFIG };
+    return this.globalConfig;
+  }
+
+  /** Set and persist global heartbeat config */
+  setGlobalConfig(config: Partial<HeartbeatConfig>): void {
+    const current = this.getGlobalConfig();
+    this.globalConfig = { ...current, ...config };
+    try {
+      const { setSettingJSON } = require("../storage/settings");
+      setSettingJSON("codem-heartbeat-config", this.globalConfig);
+    } catch {}
+  }
+
+  /** Create a heartbeat for a session (uses global config if not specified) */
   create(sessionId: string, config?: Partial<HeartbeatConfig>): ActivityHeartbeat {
     const existing = this.heartbeats.get(sessionId);
     if (existing) return existing;
 
-    const heartbeat = new ActivityHeartbeat(sessionId, config);
+    const mergedConfig = { ...this.getGlobalConfig(), ...config };
+    const heartbeat = new ActivityHeartbeat(sessionId, mergedConfig);
     this.heartbeats.set(sessionId, heartbeat);
     return heartbeat;
   }
@@ -289,6 +316,11 @@ export class HeartbeatManager {
   getActive(): ActivityHeartbeat[] {
     return Array.from(this.heartbeats.values())
       .filter((h) => h.getStatus() === "active");
+  }
+
+  /** Get all heartbeats (active + paused + stopped) */
+  getAll(): ActivityHeartbeat[] {
+    return Array.from(this.heartbeats.values());
   }
 
   /** Get stats */

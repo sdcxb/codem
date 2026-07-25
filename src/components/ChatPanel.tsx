@@ -10,6 +10,7 @@ import { AgentPanel } from "./AgentPanel";
 import { AgentDetail } from "./AgentDetail";
 import { SnapshotPanel } from "./SnapshotPanel";
 import { ContextMonitor } from "./ContextMonitor";
+import { GitInfoPanel } from "./GitInfoPanel";
 import { SubagentTask } from "../core/subagent/subagent";
 import { getSubagentManager } from "../core/subagent/subagent";
 import { useLang, S } from "../core/i18n/lang";
@@ -78,6 +79,7 @@ export function ChatPanel({ onSend, onCancel, onToggleSidebar, onFork, onRegener
   const [showAgentPanel, setShowAgentPanel] = useState(false);
   const [showSnapshotPanel, setShowSnapshotPanel] = useState(false);
   const [showContextMonitor, setShowContextMonitor] = useState(false);
+  const [showGitPanel, setShowGitPanel] = useState(false);
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [agents, setAgents] = useState<SubagentTask[]>([]);
   const [quoteContext, setQuoteContext] = useState<string | null>(null);
@@ -209,22 +211,29 @@ export function ChatPanel({ onSend, onCancel, onToggleSidebar, onFork, onRegener
         </button>
         <button
           className={`agent-toggle ${showAgentPanel ? "active" : ""}`}
-          onClick={() => { setShowAgentPanel(!showAgentPanel); setShowSnapshotPanel(false); setSelectedAgentId(null); }}
+          onClick={() => { setShowAgentPanel(!showAgentPanel); setShowSnapshotPanel(false); setShowGitPanel(false); setShowContextMonitor(false); setSelectedAgentId(null); }}
           title={S.chat.agentList[lang]}
         >
           🤖
           {runningCount > 0 && <span className="agent-badge">{runningCount}</span>}
         </button>
         <button
+          className={`agent-toggle ${showGitPanel ? "active" : ""}`}
+          onClick={() => { setShowGitPanel(!showGitPanel); setShowAgentPanel(false); setShowSnapshotPanel(false); setShowContextMonitor(false); setSelectedAgentId(null); }}
+          title={lang === "zh" ? "Git 信息" : "Git Info"}
+        >
+          🌿
+        </button>
+        <button
           className={`agent-toggle ${showSnapshotPanel ? "active" : ""}`}
-          onClick={() => { setShowSnapshotPanel(!showSnapshotPanel); setShowAgentPanel(false); setSelectedAgentId(null); }}
+          onClick={() => { setShowSnapshotPanel(!showSnapshotPanel); setShowAgentPanel(false); setShowGitPanel(false); setSelectedAgentId(null); }}
           title={S.chat.snapshot[lang]}
         >
           📸
         </button>
         <button
           className={`agent-toggle ${showContextMonitor ? "active" : ""}`}
-          onClick={() => { setShowContextMonitor(!showContextMonitor); setShowAgentPanel(false); setShowSnapshotPanel(false); setSelectedAgentId(null); }}
+          onClick={() => { setShowContextMonitor(!showContextMonitor); setShowAgentPanel(false); setShowSnapshotPanel(false); setShowGitPanel(false); setSelectedAgentId(null); }}
           title={S.chat.contextMonitor[lang]}
         >
           📊
@@ -415,6 +424,16 @@ export function ChatPanel({ onSend, onCancel, onToggleSidebar, onFork, onRegener
         {showContextMonitor && (
           <div className="agent-panel-container">
             <ContextMonitor sessionId={currentSession?.id || ""} visible={showContextMonitor} />
+          </div>
+        )}
+
+        {showGitPanel && (
+          <div className="agent-panel-container" style={{ maxHeight: "300px", overflowY: "auto", padding: "8px 12px", borderBottom: "1px solid var(--border-primary)" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+              <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text-primary)" }}>🌿 {lang === "zh" ? "Git 信息" : "Git Info"}</span>
+              <button onClick={() => setShowGitPanel(false)} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 14 }}>✕</button>
+            </div>
+            <GitInfoPanel />
           </div>
         )}
       </div>

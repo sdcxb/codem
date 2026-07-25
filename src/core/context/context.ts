@@ -236,9 +236,19 @@ export class ContextManager {
     };
   }
 
-  /** Update config */
+  /** Update config and persist */
   updateConfig(config: Partial<CompactionConfig>) {
     this.config = { ...this.config, ...config };
+    // Persist to settings
+    try {
+      const { setSettingJSON } = require("../storage/settings");
+      setSettingJSON("codem-context-config", this.config);
+    } catch {}
+  }
+
+  /** Get current config */
+  getConfig(): CompactionConfig {
+    return { ...this.config };
   }
 }
 
@@ -248,6 +258,14 @@ let instance: ContextManager | null = null;
 export function getContextManager(): ContextManager {
   if (!instance) {
     instance = new ContextManager();
+    // Load persisted config
+    try {
+      const { getSettingJSON } = require("../storage/settings");
+      const saved = getSettingJSON<any>("codem-context-config", null);
+      if (saved) {
+        instance.config = { ...instance.config, ...saved };
+      }
+    } catch {}
   }
   return instance;
 }

@@ -21,6 +21,7 @@ import { SkillManager } from "./components/SkillManager";
 import { MemoryManager } from "./components/MemoryManager";
 import { SessionRecovery } from "./components/SessionRecovery";
 import { UsageStats } from "./components/UsageStats";
+import { DelegationPanel } from "./components/DelegationPanel";
 import { DiffViewer } from "./components/DiffViewer";
 import { InteractiveFormDialog } from "./components/InteractiveFormDialog";
 import { PromptChangeReviewDialog } from "./components/PromptChangeReviewDialog";
@@ -29,6 +30,7 @@ import { GitHubCloneDialog } from "./components/GitHubCloneDialog";
 import { SearchDialog } from "./components/SearchDialog";
 import { usePetStore } from "./core/pet/pet-store";
 import { loadInstalledPets as loadInstalledPetsPets } from "./core/pet/pet-manager";
+import { getSessionMessageBus, getDelegationOrchestrator, executeSessionTurn, isSessionExecuting } from "./core/session";
 import type { InteractiveFormQuestion, PromptChange } from "./core/llm/tools";
 import { useAppStore } from "./store";
 import { useProjectStore } from "./core/store";
@@ -116,6 +118,7 @@ function App() {
   const [activeNotebookName, setActiveNotebookName] = useState<string>('');
   const [showSessionRecovery, setShowSessionRecovery] = useState(false);
   const [showUsageStats, setShowUsageStats] = useState(false);
+const [showDelegationPanel, setShowDelegationPanel] = useState(false);
   const [bottomTab, setBottomTab] = useState<BottomTab>("chat");
   const [fileExplorerProjectId, setFileExplorerProjectId] = useState<string | null>(null);
   const [fileExplorerRefreshKey, setFileExplorerRefreshKey] = useState(0);
@@ -283,6 +286,13 @@ request: PermissionRequest;
   }>>(new Map());
   // Convenience accessor: get the pending permission for the current session
   const pendingPermission = currentSession ? pendingPermissions.get(currentSession.id) : null;
+  // Background permission: first pending permission from a non-current session (delegation system)
+  const backgroundPermission = (() => {
+    for (const [sid, val] of pendingPermissions) {
+      if (!currentSession || sid !== currentSession.id) return { sessionId: sid, ...val };
+    }
+    return null;
+  })();
   const setPendingPermission = (val: any) => {
     if (!val || !currentSession) { return; }
     setPendingPermissions(prev => {
@@ -449,6 +459,71 @@ flushStreamBuffer(); // flush all on unmount
         });
       }
     })();
+  }, []);
+
+  // ========== 跨会话委派系统接入 ==========
+  // 监听 SessionMessageBus 的委派事件，当其他会话委派任务到当前项目会话时，
+  // 自动在后台执行 executeSessionTurn。
+  useEffect(() => {
+    const bus = getSessionMessageBus();
+    const orchestrator = getDelegationOrchestrator();
+
+    // 订阅所有会话的委派消息（通配符）
+    const unsub = bus.subscribeAll((msg) => {
+      if (msg.type !== "delegation") return;
+
+      // 委派请求到达：在目标会话后台执行
+      const { targetSessionId, task, taskId, sourceSessionId } = msg;
+      if (!task || !taskId) return;
+
+      // 防止重复执行
+      if (isSessionExecuting(targetSessionId)) {
+        console.log(`[Delegation] Session ${targetSessionId} is already executing, delegation ${taskId} queued`);
+        return;
+      }
+
+      // 获取目标会话信息
+      const session = useProjectStore.getState().sessions.find((s) => s.id === targetSessionId);
+      if (!session) {
+        console.warn(`[Delegation] Target session not found: ${targetSessionId}`);
+        orchestrator.failTask(taskId, `Target session not found: ${targetSessionId}`);
+        return;
+      }
+
+      // 获取工作目录
+      const project = useProjectStore.getState().currentProject;
+      let cwd = project?.path || "D:\\mimo";
+      if (session.worktreePath) {
+        cwd = session.worktreePath;
+      }
+
+      const engine = engineRef.current;
+
+      // 后台执行（不阻塞 UI）
+      executeSessionTurn({
+        sessionId: targetSessionId,
+        message: task,
+        cwd,
+        engine,
+        delegationTaskId: taskId,
+        onPermissionRequest: (request) => {
+          // 后台权限请求：放入 per-session Map，UI 显示通知
+          return new Promise((resolve) => {
+            setPendingPermissions((prev) => {
+              const next = new Map(prev);
+              next.set(targetSessionId, { request, resolve });
+              return next;
+            });
+          });
+        },
+      }).catch((err) => {
+        console.error(`[Delegation] executeSessionTurn failed for ${targetSessionId}:`, err);
+      });
+    });
+
+    return () => {
+      unsub();
+    };
   }, []);
 
   // Configure engine based on mode and settings
@@ -1412,6 +1487,7 @@ abortControllersRef.current.clear();
                     onMemory={() => setShowMemoryManager(true)}
                     onNotebooks={() => setShowNotebookManager(true)}
                     onAutomations={() => { setSettingsInitialTab("automation"); setShowSettings(true); }}
+                    onDelegation={() => setShowDelegationPanel(true)}
                     onRemoveProject={(id, name, path) => {
                       setRemoveProjectDialog({ id, name, path });
                     }}
@@ -1508,6 +1584,7 @@ currentSessionId={currentSession?.id}
                   onMemory={() => setShowMemoryManager(true)}
                   onNotebooks={() => setShowNotebookManager(true)}
                   onAutomations={() => { setSettingsInitialTab("automation"); setShowSettings(true); }}
+                  onDelegation={() => setShowDelegationPanel(true)}
                   onRemoveProject={(id, name, path) => {
                     setRemoveProjectDialog({ id, name, path });
                   }}
@@ -1603,6 +1680,7 @@ currentSessionId={currentSession?.id}
           onMemory={() => setShowMemoryManager(true)}
           onNotebooks={() => setShowNotebookManager(true)}
           onAutomations={() => { setSettingsInitialTab("automation"); setShowSettings(true); }}
+          onDelegation={() => setShowDelegationPanel(true)}
           onRemoveProject={(id, name, path) => {
             setRemoveProjectDialog({ id, name, path });
           }}
@@ -1788,6 +1866,14 @@ onSessionRecovery={() => { setShowSettings(false); setShowSessionRecovery(true);
         </div>
       )}
 
+      {showDelegationPanel && (
+        <div className="modal-overlay" onClick={() => setShowDelegationPanel(false)}>
+          <div className="modal-editor" onClick={(e) => e.stopPropagation()}>
+            <DelegationPanel onClose={() => setShowDelegationPanel(false)} />
+          </div>
+        </div>
+      )}
+
       {fileExplorerProjectId && currentProject && fileExplorerProjectId === currentProject.id && (
         <div className="floating-explorer">
           <div className="floating-explorer-header">
@@ -1819,6 +1905,25 @@ action: allow ? "allow" : "deny",
 alwaysAllow,
 });
 clearPendingPermission();
+          }}
+        />
+      )}
+
+      {/* Background session permission (from delegation system) */}
+      {!pendingPermission && backgroundPermission && (
+        <PermissionDialog
+          request={{ ...backgroundPermission.request, title: `[委派任务] ${backgroundPermission.request.title || backgroundPermission.request.tool || ''}` }}
+          onResolve={(allow, alwaysAllow) => {
+            backgroundPermission.resolve({
+              requestId: backgroundPermission.request.id,
+              action: allow ? "allow" : "deny",
+              alwaysAllow,
+            });
+            setPendingPermissions((prev) => {
+              const next = new Map(prev);
+              next.delete(backgroundPermission.sessionId);
+              return next;
+            });
           }}
         />
       )}

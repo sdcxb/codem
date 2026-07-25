@@ -2,7 +2,7 @@
 
 > **开发计划主线文档**：`docs/DEV-PLAN-UNIFIED.md`（统一开发计划，包含架构约束、影响分析、完整路线图）
 >
-> 以下为具体待办事项跟踪。Phase 0-4 + Phase B-D + Phase F-G 已全部完成，v0.88 已发布（含桌面宠物系统）。
+> 以下为具体待办事项跟踪。Phase 0-4 + Phase B-D + Phase F-G 已全部完成，v0.89 已发布（含跨会话委派编排 + 高级调试 UI + 冒烟测试）。
 
 ## 待开发
 
@@ -77,6 +77,59 @@
 - [ ] 在 `tauri.conf.json` 的 `bundle.windows.wix` 中配置 WiX 多语言（zh-CN + en-US）
 - [ ] 重新构建 MSI 安装包，确认安装向导界面支持中英文
 - [ ] 更新 Release 中的 MSI 文件
+
+### v0.89 发布 (2026-07-26)
+
+#### 跨会话 Agent 协作系统（Session Orchestration）
+- [x] `core/session/types.ts` — 类型定义（DelegationTask/SessionMessage/DelegationConfig）
+- [x] `core/session/bus.ts` — SessionMessageBus 跨会话事件总线（发布-订阅，4种消息类型）
+- [x] `core/session/orchestrator.ts` — DelegationOrchestrator 编排器（死锁检测/并发控制/超时管理）
+- [x] `core/session/executor.ts` — executeSessionTurn 程序化触发会话执行
+- [x] `core/session/delegation-storage.ts` — 委派任务 SQLite 持久化层
+- [x] `core/session/tools.ts` — 4个委派工具（delegate_to_session/wait_for_delegation/query_session_result/list_sessions）
+- [x] `core/session/index.ts` — 统一导出
+
+#### 高级功能 UI 面板（8 个新组件）
+- [x] `AgentManager.tsx` — 智能体管理面板（查看/编辑/注册自定义智能体）
+- [x] `HeartbeatMonitor.tsx` — 心跳监控面板（全局配置可视化）
+- [x] `RetryConfigPanel.tsx` — 重试配置面板（指数退避参数配置）
+- [x] `PromptDebugger.tsx` — 提示词调试面板（查看完整系统提示词）
+- [x] `LayeredSettingsPanel.tsx` — 分层设置面板（七层设置源展示）
+- [x] `RecoveryPanel.tsx` — 会话恢复面板（浏览/恢复/删除历史会话）
+- [x] `ToolManager.tsx` — 工具管理面板（查看已注册工具和权限规则）
+- [x] `DelegationPanel.tsx` — 委派任务面板（跨会话任务追踪）
+- [x] `SettingsPanel.tsx` — 新增「高级」Tab 集成 8 个面板
+
+#### 核心模块持久化增强
+- [x] `agent/agent.ts` — AgentRegistry loadCustomAgents/saveCustomAgents/update/unregister/isBuiltin
+- [x] `heartbeat/heartbeat.ts` — HeartbeatManager getGlobalConfig/setGlobalConfig
+- [x] `retry/retry.ts` — RetryExecutor getConfig/setConfig
+- [x] `recovery/recovery.ts` — SessionRecoveryService loadRecoveryData/saveRecoveryData
+
+#### 上下文压缩参数配置 UI（P1-1）
+- [x] `SettingsPanel.tsx` — 新增「上下文压缩」配置区域
+- [x] `context/context.ts` — 压缩参数可配置（阈值/槽位模型/最大保留/摘要长度）
+
+#### 冒烟测试（Smoke Test）
+- [x] `smoke-test.test.ts` — 30 个发布阻断级冒烟用例（SMOKE-001 ~ SMOKE-030）
+- [x] `TEST-CASES-REGRESSION-V2.md` — 新增第10节「冒烟测试」用例文档
+
+#### 回归测试 V2
+- [x] `regression-agent-registry.test.ts` — 20 个用例
+- [x] `regression-heartbeat.test.ts` — 15 个用例
+- [x] `regression-retry.test.ts` — 15 个用例
+- [x] `regression-settings-keys.test.ts` — 15 个用例
+- [x] `regression-git-worktree-env.test.ts` — 25 个用例
+- [x] `regression-message-chain.test.ts` — 20 个用例
+- [x] `regression-tool-permission.test.ts` — 20 个用例
+- [x] `regression-prompt-builder.test.ts` — 15 个用例
+- [x] `regression-session-recovery.test.ts` — 15 个用例
+- [x] 10 个核心功能测试文件（core-*.test.ts）
+
+#### Bug 修复
+- [x] 修复 `SessionMessageBus` 未导出导致黑屏
+- [x] 修复 `executor.ts` 导入路径错误（useAppStore）
+- [x] 修复 `tools.ts` 导入路径错误（ToolDef/getLang）
 
 ### v0.88 发布 (2026-07-24)
 

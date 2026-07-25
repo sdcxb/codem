@@ -18,6 +18,13 @@ import { getAutomationConfig, setAutomationConfig, refreshAutomationEngines, sto
 import { PetMarketDialog } from "./PetMarketDialog";
 import { usePetStore } from "../core/pet/pet-store";
 import { uninstallPet } from "../core/pet/pet-manager";
+import { ToolManager } from "./ToolManager";
+import { AgentManager } from "./AgentManager";
+import { HeartbeatMonitor } from "./HeartbeatMonitor";
+import { RetryConfigPanel } from "./RetryConfigPanel";
+import { PromptDebugger } from "./PromptDebugger";
+import { LayeredSettingsPanel } from "./LayeredSettingsPanel";
+import { RecoveryPanel } from "./RecoveryPanel";
 
 interface ProviderKey {
   id: string;
@@ -243,7 +250,8 @@ export function SettingsPanel({ onClose, onSessionRecovery, onUsageStats, initia
   const [testResult, setTestResult] = useState<string>("");
 const [showModelProfiles, setShowModelProfiles] = useState(false);
 const [showMultimodal, setShowMultimodal] = useState(false);
-const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security" | "git" | "environment" | "worktree" | "knowledge" | "automation" | "multimodal" | "pet">((initialTab as any) || "general");
+const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security" | "git" | "environment" | "worktree" | "knowledge" | "automation" | "multimodal" | "pet" | "tools" | "advanced">((initialTab as any) || "general");
+  const [advancedSubTab, setAdvancedSubTab] = useState<"agents" | "heartbeat" | "retry" | "prompt" | "settings" | "recovery">("agents");
   const [showPetMarket, setShowPetMarket] = useState(false);
   const runLoginTest = async () => {
     const lines: string[] = [];
@@ -418,8 +426,14 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
             <button className={`settings-sidebar-item ${activeTab === "multimodal" ? "active" : ""}`} onClick={() => setActiveTab("multimodal")}>
               <span className="sidebar-icon">🤖</span>{lang === "zh" ? "多模态" : "Multimodal"}
             </button>
+            <button className={`settings-sidebar-item ${activeTab === "tools" ? "active" : ""}`} onClick={() => setActiveTab("tools")}>
+              <span className="sidebar-icon">🔧</span>{lang === "zh" ? "工具" : "Tools"}
+            </button>
             <button className={`settings-sidebar-item ${activeTab === "pet" ? "active" : ""}`} onClick={() => setActiveTab("pet")}>
               <span className="sidebar-icon">🐾</span>{lang === "zh" ? "宠物" : "Pet"}
+            </button>
+            <button className={`settings-sidebar-item ${activeTab === "advanced" ? "active" : ""}`} onClick={() => setActiveTab("advanced")}>
+              <span className="sidebar-icon">⚡</span>{lang === "zh" ? "高级" : "Advanced"}
             </button>
           </div>
 
@@ -1021,6 +1035,47 @@ marginTop: 4,
 <>
 {/* Pet Settings */}
 <PetSettingsSection lang={lang} onOpenMarket={() => setShowPetMarket(true)} />
+</>
+)}
+{activeTab === "tools" && (
+<>
+{/* Tool Registry Management */}
+<ToolManager onClose={() => {}} />
+</>
+)}
+{activeTab === "advanced" && (
+<>
+{/* Advanced Settings with sub-tabs */}
+<div style={{ display: "flex", gap: 4, marginBottom: 12, flexWrap: "wrap" }}>
+  {[
+    { id: "agents", label: lang === "zh" ? "🤖 智能体" : "🤖 Agents" },
+    { id: "heartbeat", label: lang === "zh" ? "💓 心跳" : "💓 Heartbeat" },
+    { id: "retry", label: lang === "zh" ? "🔄 重试" : "🔄 Retry" },
+    { id: "prompt", label: lang === "zh" ? "📝 提示词" : "📝 Prompt" },
+    { id: "settings", label: lang === "zh" ? "🏗️ 分层设置" : "🏗️ Layered" },
+    { id: "recovery", label: lang === "zh" ? "🔄 恢复" : "🔄 Recovery" },
+  ].map(tab => (
+    <button
+      key={tab.id}
+      onClick={() => setAdvancedSubTab(tab.id as any)}
+      style={{
+        padding: "5px 12px", borderRadius: 4, fontSize: 12,
+        border: `1px solid ${advancedSubTab === tab.id ? "var(--accent)" : "var(--border-primary)"}`,
+        background: advancedSubTab === tab.id ? "var(--accent)" : "var(--bg-tertiary)",
+        color: advancedSubTab === tab.id ? "#fff" : "var(--text-primary)",
+        cursor: "pointer", whiteSpace: "nowrap",
+      }}
+    >
+      {tab.label}
+    </button>
+  ))}
+</div>
+{advancedSubTab === "agents" && <AgentManager />}
+{advancedSubTab === "heartbeat" && <HeartbeatMonitor />}
+{advancedSubTab === "retry" && <RetryConfigPanel />}
+{advancedSubTab === "prompt" && <PromptDebugger />}
+{advancedSubTab === "settings" && <LayeredSettingsPanel />}
+{advancedSubTab === "recovery" && <RecoveryPanel />}
 </>
 )}
           </div>

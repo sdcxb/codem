@@ -9,6 +9,7 @@ import { getSetting, setSetting } from "../core/storage/settings";
 import * as SessionStorage from "../core/storage/session";
 import { useLang, S } from "../core/i18n/lang";
 import { Tooltip, TooltipTrigger, TooltipContent } from "./ui/tooltip";
+import { getDelegationOrchestrator } from "../core/session";
 
 interface SidebarProps {
   identity: AppIdentity | null;
@@ -20,6 +21,7 @@ interface SidebarProps {
   onMemory?: () => void;
   onNotebooks?: () => void;
   onAutomations?: () => void;
+  onDelegation?: () => void;
   onRemoveProject?: (projectId: string, projectName: string, projectPath: string) => void;
   fileExplorerProjectId?: string | null;
   onToggleFileExplorer?: (projectId: string) => void;
@@ -27,7 +29,7 @@ interface SidebarProps {
   collapsed?: boolean;
 }
 
-export function Sidebar({ identity, onSettings, onProjects, onConfig, onMcp, onSkills, onMemory, onNotebooks, onAutomations, onRemoveProject, fileExplorerProjectId, onToggleFileExplorer, onToggleSidebar, collapsed = false }: SidebarProps) {
+export function Sidebar({ identity, onSettings, onProjects, onConfig, onMcp, onSkills, onMemory, onNotebooks, onAutomations, onDelegation, onRemoveProject, fileExplorerProjectId, onToggleFileExplorer, onToggleSidebar, collapsed = false }: SidebarProps) {
   const lang = useLang();
   const { clearMessages, loadMessages } = useAppStore();
   const {
@@ -368,6 +370,12 @@ const menuCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
             <span className="sidebar-tool-item-icon">🧠</span>
             <span className="sidebar-tool-item-label">{S.sidebar.memory[lang]}</span>
           </button>
+          {onDelegation && (
+            <button className="sidebar-tool-item" onClick={onDelegation} title={lang === 'zh' ? '委派任务' : 'Delegations'}>
+              <span className="sidebar-tool-item-icon">🔗</span>
+              <span className="sidebar-tool-item-label">{lang === 'zh' ? '委派' : 'Deleg.'}</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -724,6 +732,15 @@ function SessionItem({
       {session.executionMode === "git_worktree" && (
         <span style={{ fontSize: 11, flexShrink: 0 }} title={session.worktreePath || (lang === "zh" ? "工作树模式" : "Worktree mode")}>🌲</span>
       )}
+      {/* Delegation badge: show 🔗 if session has active delegations */}
+      {(() => {
+        try {
+          const orch = getDelegationOrchestrator();
+          const hasActive = orch.getDelegationsByTarget(session.id).some(d => d.status === 'pending' || d.status === 'running')
+            || orch.getDelegationsBySource(session.id).some(d => d.status === 'pending' || d.status === 'running');
+          return hasActive ? <span style={{ fontSize: 11, flexShrink: 0 }} title={lang === "zh" ? "委派任务进行中" : "Delegation active"}>🔗</span> : null;
+        } catch { return null; }
+      })()}
       <span className="sidebar-session-title">{session.title}</span>
       <div className="sidebar-session-actions">
         <button

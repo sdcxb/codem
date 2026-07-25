@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { getContextManager, type TokenBudget } from "../core/context/context";
+import { getContextManager, type TokenBudget, type CompactionConfig } from "../core/context/context";
 import { getCostTracker } from "../core/llm/cost-tracker";
 import { listMessages, deleteMessagesByIds, createMessage } from "../core/storage/message";
 import { getSettingJSON } from "../core/storage/settings";
@@ -113,6 +113,9 @@ export function ContextMonitor({ sessionId, visible }: ContextMonitorProps) {
   const [balanceLoading, setBalanceLoading] = useState(false);
   const [compacting, setCompacting] = useState(false);
   const [compactResult, setCompactResult] = useState<{ removed: number; kept: number } | null>(null);
+  const [showConfig, setShowConfig] = useState(false);
+  const [ctxConfig, setCtxConfig] = useState<CompactionConfig | null>(null);
+  const [savedConfig, setSavedConfig] = useState(false);
 
   // 更新 token 使用量和费用（每 3 秒）
   useEffect(() => {
@@ -188,6 +191,13 @@ export function ContextMonitor({ sessionId, visible }: ContextMonitorProps) {
     fetchBalances();
     const interval = setInterval(fetchBalances, 60000);
     return () => clearInterval(interval);
+  }, [visible]);
+
+  // 加载上下文配置
+  useEffect(() => {
+    if (!visible) return;
+    const cm = getContextManager();
+    setCtxConfig(cm.getConfig());
   }, [visible]);
 
   if (!visible) return null;
@@ -329,6 +339,93 @@ export function ContextMonitor({ sessionId, visible }: ContextMonitorProps) {
             <span>余额查询不支持: {unsupportedProviders.map((b) => b.provider).join("、")}</span>
           </div>
         )}
+
+        {/* 压缩参数配置 */}
+        <div style={{ marginTop: 8 }}>
+          <button
+            onClick={() => setShowConfig(!showConfig)}
+            style={{
+              background: "none", border: "1px solid var(--border-primary)", color: "var(--text-secondary)",
+              fontSize: 11, padding: "4px 10px", borderRadius: 4, cursor: "pointer", width: "100%",
+              textAlign: "left",
+            }}
+          >
+            {showConfig ? "▼" : "▶"} 压缩参数配置
+          </button>
+          {showConfig && ctxConfig && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 8, padding: 8, borderRadius: 6, background: "var(--bg-tertiary)", border: "1px solid var(--border-primary)" }}>
+              {/* 上下文窗口大小 */}
+              <label style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                <span style={{ fontSize: 11, color: "var(--text-secondary)" }}>上下文窗口 (tokens)</span>
+                <input type="number" min="8000" step="1000" value={ctxConfig.maxContextWindow}
+                  onChange={(e) => setCtxConfig({ ...ctxConfig, maxContextWindow: parseInt(e.target.value) || 128000 })}
+                  style={{ padding: "4px 8px", fontSize: 12, borderRadius: 4, border: "1px solid var(--border-primary)", background: "var(--bg-secondary)", color: "var(--text-primary)" }} />
+                <span style={{ fontSize: 10, color: "var(--text-muted)" }}>模型的最大上下文长度，如 128000</span>
+              </label>
+
+              {/* 压缩阈值 */}
+              <label style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                <span style={{ fontSize: 11, color: "var(--text-secondary)" }}>压缩阈值: {Math.round(ctxConfig.compactionThreshold * 100)}%</span>
+                <input type="range" min="0.5" max="0.95" step="0.05" value={ctxConfig.compactionThreshold}
+                  onChange={(e) => setCtxConfig({ ...ctxConfig, compactionThreshold: parseFloat(e.target.value) })}
+                  style={{ width: "100%" }} />
+                <span style={{ fontSize: 10, color: "var(--text-muted)" }}>达到此比例时自动触发压缩，默认 80%</span>
+              </label>
+
+              {/* 压缩后保留消息数 */}
+              <label style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                <span style={{ fontSize: 11, color: "var(--text-secondary)" }}>压缩后保留消息数</span>
+                <input type="number" min="5" max="100" value={ctxConfig.maxMessagesAfterCompaction}
+                  onChange={(e) => setCtxConfig({ ...ctxConfig, maxMessagesAfterCompaction: parseInt(e.target.value) || 20 })}
+                  style={{ padding: "4px 8px", fontSize: 12, borderRadius: 4, border: "1px solid var(--border-primary)", background: "var(--bg-secondary)", color: "var(--text-primary)" }} />
+                <span style={{ fontSize: 10, color: "var(--text-muted)" }}>压缩后保留最近多少条消息，默认 20</span>
+              </label>
+
+              {/* 输出预留 */}
+              <label style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                <span style={{ fontSize: 11, color: "var(--text-secondary)" }}>输出预留 (tokens)</span>
+                <input type="number" min="1024" step="512" value={ctxConfig.outputReserve}
+                  onChange={(e) => setCtxConfig({ ...ctxConfig, outputReserve: parseInt(e.target.value) || 4096 })}
+                  style={{ padding: "4px 8px", fontSize: 12, borderRadius: 4, border: "1px solid var(--border-primary)", background: "var(--bg-secondary)", color: "var(--text-primary)" }} />
+                <span style={{ fontSize: 10, color: "var(--text-muted)" }}>为模型输出预留的 token 数，默认 4096</span>
+              </label>
+
+              {/* 系统提示词预留 */}
+              <label style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                <span style={{ fontSize: 11, color: "var(--text-secondary)" }}>系统提示词预留 (tokens)</span>
+                <input type="number" min="500" step="500" value={ctxConfig.systemPromptTokens}
+                  onChange={(e) => setCtxConfig({ ...ctxConfig, systemPromptTokens: parseInt(e.target.value) || 2000 })}
+                  style={{ padding: "4px 8px", fontSize: 12, borderRadius: 4, border: "1px solid var(--border-primary)", background: "var(--bg-secondary)", color: "var(--text-primary)" }} />
+                <span style={{ fontSize: 10, color: "var(--text-muted)" }}>系统提示词的预估 token 数，默认 2000</span>
+              </label>
+
+              {/* 保留近期工具输出 */}
+              <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
+                <input type="checkbox" checked={ctxConfig.preserveRecentToolOutputs}
+                  onChange={(e) => setCtxConfig({ ...ctxConfig, preserveRecentToolOutputs: e.target.checked })}
+                  style={{ cursor: "pointer" }} />
+                <span style={{ fontSize: 11, color: "var(--text-secondary)" }}>压缩时保留近期工具输出</span>
+              </label>
+
+              {/* 保存按钮 */}
+              <button
+                onClick={() => {
+                  const cm = getContextManager();
+                  cm.updateConfig(ctxConfig);
+                  setSavedConfig(true);
+                  setTimeout(() => setSavedConfig(false), 2000);
+                }}
+                style={{
+                  padding: "6px 14px", borderRadius: 4, fontSize: 12, fontWeight: 500,
+                  border: "1px solid var(--accent)", background: "var(--accent)", color: "#fff",
+                  cursor: "pointer", alignSelf: "flex-start",
+                }}
+              >
+                {savedConfig ? "✅ 已保存" : "保存配置"}
+              </button>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

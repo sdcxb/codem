@@ -272,6 +272,49 @@ npm run tauri:build
 
 ## 更新日志
 
+### 2026-07-26（v0.89）
+
+> 本次更新引入跨会话 Agent 协作（委派/编排/执行器）、8 个高级功能 UI 面板、核心模块持久化增强、上下文压缩参数配置 UI，以及 30 个发布阻断级冒烟测试。
+
+**跨会话 Agent 协作系统（Session Orchestration）：**
+- **SessionMessageBus**：跨会话事件总线，支持 delegation/result/status/cancel 四种消息类型
+- **DelegationOrchestrator**：委派编排器，死锁检测（深度限制）、并发控制、超时管理
+- **executeSessionTurn**：程序化触发会话执行，支持 abort 取消
+- **DelegationStorage**：SQLite 持久化层，delegation_tasks 表 CRUD
+- **委派工具**：`delegate_to_session` / `wait_for_delegation` / `query_session_result` / `list_sessions` 四个 LLM 可调用工具
+
+**高级功能 UI 面板（8 个新组件）：**
+- **AgentManager**：智能体管理面板，查看/编辑/注册自定义智能体
+- **HeartbeatMonitor**：心跳监控面板，全局配置可视化
+- **RetryConfigPanel**：重试配置面板，指数退避参数配置
+- **PromptDebugger**：提示词调试面板，查看完整系统提示词
+- **LayeredSettingsPanel**：分层设置面板，七层设置源展示
+- **RecoveryPanel**：会话恢复面板，浏览/恢复/删除历史会话
+- **ToolManager**：工具管理面板，查看已注册工具和权限规则
+- **DelegationPanel**：委派任务面板，跨会话任务追踪
+
+**核心模块持久化增强：**
+- AgentRegistry：自定义智能体持久化到 SQLite
+- HeartbeatManager：心跳全局配置持久化
+- RetryExecutor：重试配置持久化
+- SessionRecoveryService：恢复数据持久化
+
+**上下文压缩参数配置 UI（P1-1）：**
+- 设置面板新增「上下文压缩」配置区域
+- 可配置压缩触发阈值、压缩槽位模型、最大保留消息数、摘要长度限制
+
+**冒烟测试（Smoke Test）：**
+- 新增 30 个发布阻断级冒烟用例，覆盖 6 大领域
+- 执行策略：`vitest run smoke`，30 秒内全部通过
+
+**Bug 修复：**
+- 修复 `SessionMessageBus` 未导出导致黑屏
+- 修复 `executor.ts` / `tools.ts` 导入路径错误
+
+**测试覆盖：**
+- 新增 185 个回归测试用例（含 30 个冒烟测试）
+- 新增 20 个测试文件，覆盖 AgentRegistry/Heartbeat/Retry/Settings/Git-Worktree/MessageChain/ToolPermission/PromptBuilder/SessionRecovery/Delegation
+
 ### 2026-07-20（v0.86）
 
 > 本次更新实现完整的皮肤系统（默认/Hub/梦幻三套皮肤）、Windows Mica 窗口毛玻璃效果、自定义标题栏，以及多处 UI 修复。
@@ -759,6 +802,16 @@ npm run tauri:build
 - 内置 LLM 引擎集成
 - 设置面板 + API Key 管理
 - 浮动文件浏览器 + 弹窗编辑器
+
+### 2026-07-26 (v0.89.0)
+
+- **跨会话 Agent 协作系统**：新增 `src/core/session/` 模块，SessionMessageBus 跨会话事件总线 + DelegationOrchestrator 编排器（死锁检测/并发控制/超时管理）+ executeSessionTurn 程序化执行器 + delegation_tasks SQLite 持久化 + 4 个委派工具（delegate_to_session/wait_for_delegation/query_session_result/list_sessions）
+- **高级功能 UI 面板**：新增 8 个组件（AgentManager/HeartbeatMonitor/RetryConfigPanel/PromptDebugger/LayeredSettingsPanel/RecoveryPanel/ToolManager/DelegationPanel），设置面板新增「高级」Tab
+- **核心模块持久化增强**：AgentRegistry（自定义智能体）、HeartbeatManager（全局配置）、RetryExecutor（重试配置）、SessionRecoveryService（恢复数据）均持久化到 SQLite
+- **上下文压缩参数配置 UI（P1-1）**：设置面板新增压缩触发阈值/槽位模型/最大保留消息数/摘要长度限制配置
+- **冒烟测试**：新增 30 个发布阻断级冒烟用例（`smoke-test.test.ts`），覆盖初始化/消息链路/工具注册/会话权限/新增模块/提示词上下文
+- **回归测试 V2**：新增 185 个回归测试用例（含冒烟测试），9 个回归测试文件 + 10 个核心功能测试文件
+- **Bug 修复**：修复 SessionMessageBus 未导出导致黑屏、executor.ts/tools.ts 导入路径错误
 
 ### 2026-07-24 (v0.88.0)
 

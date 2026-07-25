@@ -161,6 +161,9 @@ export class AgenticLoop {
   // Tracks subagent task IDs that have been spawned but NOT yet waited on.
   // Prevents the LLM from spawning endless subagents without collecting results.
   private spawnedSubagents: Set<string> = new Set(); // taskId (not yet waited on)
+  // Cross-session delegation tracking (same pattern as subagent tracking)
+  private delegatedTasks: Set<string> = new Set(); // delegation task IDs (not yet waited on)
+  private waitedDelegations: Map<string, string> = new Map(); // delegation taskId → cached result
   // Tracks which tool names have been called during this run().
   // Used by the task-completeness check to detect premature stopping
   // (e.g., user asked to "save as test3.txt" but no write tool was called).
@@ -626,6 +629,23 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
           // Continue the loop — don't stop
           continue;
         }
+        // Delegation guard: check if there are delegated tasks (cross-session)
+        // that haven't been waited on yet.
+        if (this.delegatedTasks.size > 0) {
+          const unwaitedDelIds = Array.from(this.delegatedTasks);
+          const delTaskList = unwaitedDelIds.map(id => `  - task_id: "${id}"`).join("\n");
+          const delReminder = `[SYSTEM REMINDER] You have ${unwaitedDelIds.length} delegation task(s) that were sent but NOT collected. You MUST call wait_for_delegation for each task ID below to collect their results.\n\nUn-waited delegation task IDs:\n${delTaskList}\n\nCall wait_for_delegation(task_id: "...") for EACH task ID above. Do NOT finish without collecting results.`;
+          MessageStorage.createMessage({
+            id: `del-reminder-${Date.now()}`,
+            role: "user",
+            content: delReminder,
+            timestamp: Date.now(),
+            status: "done",
+          }, sessionId);
+          this.msgCache = null;
+          console.warn(`[AgenticLoop] ${unwaitedDelIds.length} un-waited delegation(s) — injected wait_for_delegation reminder instead of stopping. IDs: ${unwaitedDelIds.join(", ")}`);
+          continue;
+        }
         // No un-waited sub-agents — safe to stop
         const result: LoopResult = {
           type: "stop",
@@ -695,6 +715,10 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
       run_test: "Running tests",
       web_fetch: "Fetching web",
       spawn_subagent: "Spawning sub-agent",
+      delegate_to_session: "Delegating to session",
+      wait_for_delegation: "Waiting for delegation",
+      query_session_result: "Querying session result",
+      list_sessions: "Listing sessions",
       create_file: "Creating file",
       delete_file: "Deleting file",
       file_search: "Searching files",
@@ -879,19 +903,26 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
     // the task IDs from spawn haven't been returned yet (the LLM would be
     // guessing task IDs). Reject wait calls with a clear error message.
     // This replaces 60+ lines of "NEVER spawn+wait in same response" prompt rules.
+    // Also applies to delegate_to_session + wait_for_delegation (cross-session).
     const hasSpawnInResponse = currentToolCalls.some(tc => tc.name === "spawn_subagent");
-    if (hasSpawnInResponse) {
+    const hasDelegateInResponse = currentToolCalls.some(tc => tc.name === "delegate_to_session");
+    if (hasSpawnInResponse || hasDelegateInResponse) {
       const waitCalls = currentToolCalls.filter(tc => tc.name === "wait_for_subagent");
-      if (waitCalls.length > 0) {
-        console.warn(`[AgenticLoop] P5: Rejected ${waitCalls.length} wait_for_subagent call(s) in same response as spawn_subagent — task IDs not available yet`);
-        for (const wtc of waitCalls) {
+      const delegationWaitCalls = currentToolCalls.filter(tc => tc.name === "wait_for_delegation");
+      const allWaitCalls = [...waitCalls, ...delegationWaitCalls];
+      if (allWaitCalls.length > 0) {
+        console.warn(`[AgenticLoop] P5: Rejected ${allWaitCalls.length} wait call(s) in same response as spawn/delegate — task IDs not available yet`);
+        for (const wtc of allWaitCalls) {
+          const isDelegation = wtc.name === "wait_for_delegation";
           yield {
             type: "tool_error",
             toolCall: wtc,
-            error: "Cannot wait_for_subagent in the same response as spawn_subagent — the task IDs are not available until the spawn results return. Send spawn_subagent calls first, then in your NEXT response use the returned task IDs to call wait_for_subagent.",
+            error: isDelegation
+              ? "Cannot wait_for_delegation in the same response as delegate_to_session — the task IDs are not available until the delegate results return. Send delegate_to_session calls first, then in your NEXT response use the returned task IDs to call wait_for_delegation."
+              : "Cannot wait_for_subagent in the same response as spawn_subagent — the task IDs are not available until the spawn results return. Send spawn_subagent calls first, then in your NEXT response use the returned task IDs to call wait_for_subagent.",
           };
         }
-        currentToolCalls = currentToolCalls.filter(tc => tc.name !== "wait_for_subagent");
+        currentToolCalls = currentToolCalls.filter(tc => tc.name !== "wait_for_subagent" && tc.name !== "wait_for_delegation");
       }
     }
 
@@ -906,8 +937,8 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
         }
         seenReadPaths.add(filePath);
       }
-      // Deduplicate wait_for_subagent with the same task_id
-      if (tc.name === "wait_for_subagent") {
+      // Deduplicate wait_for_subagent and wait_for_delegation with the same task_id
+      if (tc.name === "wait_for_subagent" || tc.name === "wait_for_delegation") {
         const taskId = tc.input?.task_id as string;
         // Within-response dedup: same task_id called multiple times in one response
         if (taskId && seenWaitTaskIds.has(taskId)) {
@@ -915,10 +946,10 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
           continue;
         }
         // Cross-iteration dedup: task_id already collected in a previous iteration.
-        // This prevents the LLM from re-waiting on completed sub-agents across
-        // iterations, which was the root cause of the "infinite wait" loop.
-        if (taskId && this.waitedSubagents.has(taskId)) {
-          console.warn(`[AgenticLoop] Single-response dedup: wait_for_subagent(${taskId}) already collected in previous iteration — skipping`);
+        const isSubagent = tc.name === "wait_for_subagent";
+        const cache = isSubagent ? this.waitedSubagents : this.waitedDelegations;
+        if (taskId && cache.has(taskId)) {
+          console.warn(`[AgenticLoop] Single-response dedup: ${tc.name}(${taskId}) already collected in previous iteration — skipping`);
           duplicateToolCalls.push(tc);
           continue;
         }
@@ -929,13 +960,13 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
     if (duplicateToolCalls.length > 0) {
       console.warn(`[AgenticLoop] Removed ${duplicateToolCalls.length} duplicate tool calls in same response`);
       for (const dtc of duplicateToolCalls) {
-        const isCrossIterWait = dtc.name === "wait_for_subagent" &&
-          this.waitedSubagents.has(dtc.input?.task_id as string);
+        const isCrossIterWait = (dtc.name === "wait_for_subagent" || dtc.name === "wait_for_delegation") &&
+          (this.waitedSubagents.has(dtc.input?.task_id as string) || this.waitedDelegations.has(dtc.input?.task_id as string));
         yield {
           type: "tool_error",
           toolCall: dtc,
           error: isCrossIterWait
-            ? `Skipped: wait_for_subagent for this task was already called in a previous iteration. The result was already collected. Do NOT call wait_for_subagent for this task again. Proceed to the next step (e.g., write the output file).`
+            ? `Skipped: ${dtc.name} for this task was already called in a previous iteration. The result was already collected. Do NOT call ${dtc.name} for this task again. Proceed to the next step (e.g., write the output file).`
             : "Skipped: Duplicate tool call in one response. This was automatically filtered out to prevent redundant operations.",
         };
       }
@@ -1142,25 +1173,26 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
           }
         }
 
-        // WAIT_FOR_SUBAGENT: if this task was already waited on in a previous iteration,
-        // return the cached result and tell the LLM to stop calling wait_for_subagent for it.
+        // WAIT_FOR_SUBAGENT / WAIT_FOR_DELEGATION: if this task was already waited on in a previous iteration,
+        // return the cached result and tell the LLM to stop calling wait for it.
         // This prevents the "infinite wait" loop where the LLM repeatedly calls
-        // wait_for_subagent for already-completed tasks across iterations.
-        if (name === "wait_for_subagent") {
+        // wait for already-completed tasks across iterations.
+        if (name === "wait_for_subagent" || name === "wait_for_delegation") {
           const taskId = typeof args.task_id === "string" ? args.task_id : "";
-          console.log(`[AgenticLoop] wait_for_subagent called: task_id="${taskId}", args=${JSON.stringify(args).substring(0, 200)}`);
+          console.log(`[AgenticLoop] ${name} called: task_id="${taskId}", args=${JSON.stringify(args).substring(0, 200)}`);
           if (!taskId) {
-            console.warn(`[AgenticLoop] wait_for_subagent called WITHOUT task_id! Full args:`, JSON.stringify(args));
+            console.warn(`[AgenticLoop] ${name} called WITHOUT task_id! Full args:`, JSON.stringify(args));
           }
-          if (taskId && this.waitedSubagents.has(taskId)) {
-            const cachedResult = this.waitedSubagents.get(taskId)!;
-            console.warn(`[AgenticLoop] wait_for_subagent(${taskId}) CACHE HIT — already collected in iteration ${this.state.iteration}`);
+          const cache = name === "wait_for_subagent" ? this.waitedSubagents : this.waitedDelegations;
+          if (taskId && cache.has(taskId)) {
+            const cachedResult = cache.get(taskId)!;
+            console.warn(`[AgenticLoop] ${name}(${taskId}) CACHE HIT — already collected in a previous iteration`);
             cacheHitCount++;
             return {
               id: "",
               name,
               input: args,
-              output: `[ALREADY COLLECTED] You already called wait_for_subagent for task ${taskId} in a previous iteration and received the result. Do NOT call wait_for_subagent for this task again. Use the result you already received. Here is the cached result for reference:\n\n${cachedResult}\n\nIf you have collected all sub-agent results, proceed to the next step (e.g., write the output file). Do NOT wait again.`,
+              output: `[ALREADY COLLECTED] You already called ${name} for task ${taskId} in a previous iteration and received the result. Do NOT call ${name} for this task again. Use the result you already received. Here is the cached result for reference:\n\n${cachedResult}\n\nIf you have collected all results, proceed to the next step (e.g., write the output file). Do NOT wait again.`,
               status: "completed" as const,
             };
           }
@@ -1190,12 +1222,17 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
           this.readCache.delete(filePath);
         }
 
-        // Track waited subagent results for cross-iteration deduplication
-        if (name === "wait_for_subagent" && result.output) {
+        // Track waited subagent/delegation results for cross-iteration deduplication
+        if ((name === "wait_for_subagent" || name === "wait_for_delegation") && result.output) {
           const taskId = typeof args.task_id === "string" ? args.task_id : "";
           if (taskId) {
-            this.waitedSubagents.set(taskId, result.output);
-            this.spawnedSubagents.delete(taskId); // Mark as waited on
+            if (name === "wait_for_subagent") {
+              this.waitedSubagents.set(taskId, result.output);
+              this.spawnedSubagents.delete(taskId); // Mark as waited on
+            } else {
+              this.waitedDelegations.set(taskId, result.output);
+              this.delegatedTasks.delete(taskId); // Mark as waited on
+            }
           }
         }
         // Track spawned subagent task IDs to prevent endless spawning
@@ -1205,6 +1242,15 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
           if (match && match[1]) {
             this.spawnedSubagents.add(match[1]);
             console.log(`[AgenticLoop] Tracked spawned subagent: ${match[1]} (total un-waited: ${this.spawnedSubagents.size})`);
+          }
+        }
+        // Track delegated task IDs to prevent endless delegation
+        if (name === "delegate_to_session" && result.output) {
+          // Extract task ID from the output (format: TASK_ID: del-xxx)
+          const match = result.output.match(/TASK_ID:\s*(del-[^\s\n]+)/);
+          if (match && match[1]) {
+            this.delegatedTasks.add(match[1]);
+            console.log(`[AgenticLoop] Tracked delegated task: ${match[1]} (total un-waited: ${this.delegatedTasks.size})`);
           }
         }
 

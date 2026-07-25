@@ -71,15 +71,69 @@ export interface AgentInfo {
 }
 
 // ========== Agent Registry ==========
+
+const BUILTIN_AGENT_IDS = new Set(["build", "plan", "explore", "general", "title", "summary"]);
+
 export class AgentRegistry {
   private agents: Map<string, AgentDefinition> = new Map();
 
   constructor() {
     this.registerBuiltinAgents();
+    this.loadCustomAgents();
   }
 
   register(agent: AgentDefinition) {
     this.agents.set(agent.id, agent);
+    if (!BUILTIN_AGENT_IDS.has(agent.id)) {
+      this.saveCustomAgents();
+    }
+  }
+
+  /** Update an existing agent definition (only custom agents) */
+  update(id: string, updates: Partial<AgentDefinition>): boolean {
+    const agent = this.agents.get(id);
+    if (!agent) return false;
+    if (BUILTIN_AGENT_IDS.has(id)) return false;
+    this.agents.set(id, { ...agent, ...updates, id });
+    this.saveCustomAgents();
+    return true;
+  }
+
+  /** Unregister / delete an agent (only custom agents) */
+  unregister(id: string): boolean {
+    if (BUILTIN_AGENT_IDS.has(id)) return false;
+    const existed = this.agents.delete(id);
+    if (existed) this.saveCustomAgents();
+    return existed;
+  }
+
+  /** Check if an agent is built-in */
+  isBuiltin(id: string): boolean {
+    return BUILTIN_AGENT_IDS.has(id);
+  }
+
+  /** Load custom agents from SQLite settings */
+  private loadCustomAgents() {
+    try {
+      const { getSettingJSON } = require("../storage/settings");
+      const custom = getSettingJSON("codem-custom-agents", []) as AgentDefinition[];
+      if (Array.isArray(custom)) {
+        for (const agent of custom) {
+          if (agent.id && !BUILTIN_AGENT_IDS.has(agent.id)) {
+            this.agents.set(agent.id, agent);
+          }
+        }
+      }
+    } catch {}
+  }
+
+  /** Save custom agents to SQLite settings */
+  private saveCustomAgents() {
+    try {
+      const { setSettingJSON } = require("../storage/settings");
+      const custom = this.getAll().filter(a => !BUILTIN_AGENT_IDS.has(a.id));
+      setSettingJSON("codem-custom-agents", custom);
+    } catch {}
   }
 
   get(id: string): AgentDefinition | undefined {

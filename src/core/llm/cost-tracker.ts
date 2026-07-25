@@ -110,6 +110,13 @@ export class CostTracker {
 
   constructor(config?: Partial<CostTrackerConfig>) {
     this.config = { ...DEFAULT_CONFIG, ...config };
+    // Load persisted limits
+    try {
+      const savedLimits = getSettingJSON<any>("codem-cost-limits", null);
+      if (savedLimits) {
+        this.config.limits = { ...this.config.limits, ...savedLimits };
+      }
+    } catch {}
     if (this.config.persist) {
       this.load();
     }
@@ -371,6 +378,20 @@ export class CostTracker {
     } catch {
       return false;
     }
+  }
+
+  /** Get current cost limits config */
+  getLimits(): CostTrackerConfig["limits"] {
+    return { ...this.config.limits };
+  }
+
+  /** Update cost limits and persist */
+  setLimits(limits: Partial<CostTrackerConfig["limits"]>): void {
+    this.config.limits = { ...this.config.limits, ...limits };
+    // Persist limits separately so they survive restarts
+    try {
+      setSettingJSON("codem-cost-limits", this.config.limits);
+    } catch {}
   }
 
   /** Format cost for display */

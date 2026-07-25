@@ -1,7 +1,7 @@
 # Codem 项目完整说明
 
 > **用途**：新对话快速理解项目全貌、架构、文件关联、当前状态。
-> 创建时间：2026-07-23 | 最后更新：2026-07-24 | 当前版本：v0.88（已发布，含桌面宠物系统 + 悬浮气泡通知 + 宠物市场 + 右键原生菜单）
+> 创建时间：2026-07-23 | 最后更新：2026-07-26 | 当前版本：v0.89（已发布，含跨会话委派编排 + 高级调试 UI + 冒烟测试）
 
 ---
 
@@ -13,7 +13,7 @@
 - **GitHub**：https://github.com/sdcxb/codem
 - **分发**：NSIS `.exe` + WiX `.msi`，一键安装无需依赖
 - **平台**：Windows 优先
-- **版本**：v0.88
+- **版本**：v0.89
 
 ---
 
@@ -23,34 +23,42 @@
 
 | 层 | 技术 | 说明 |
 |----|------|------|
-| **桌面框架** | Tauri v2 (Rust) | 原生窗口 + 文件系统 + 命令调用 |
+| **桌面框架** | Tauri v2 (Rust) | 原生窗口 + 文件系统 + 命令调用 + 多窗口（主窗口 + 宠物窗口） |
 | **前端框架** | React 18 + TypeScript | SPA，Vite 构建 |
-| **状态管理** | Zustand 5 | 两个 store：`useAppStore`（消息/流式/工具）+ `useProjectStore`（项目/会话/技能） |
-| **UI 组件** | Radix UI + Lucide React | Switch/Dialog/Tooltip/Popover + 图标库 |
+| **状态管理** | Zustand 5 | 三个 store：`useAppStore`（消息/流式/工具）+ `useProjectStore`（项目/会话/技能）+ `usePetStore`（宠物状态/气泡/窗口） |
+| **UI 组件** | Radix UI + Lucide React + Font Awesome | Switch/Dialog/Tooltip/Popover/Dropdown + 图标库 |
 | **Markdown** | react-markdown + remark-gfm | 消息渲染 + 代码高亮 |
 | **图表** | Mermaid 11 | 技能内置 Mermaid SVG 渲染 |
-| **终端** | xterm.js | CLI 模式终端 |
+| **终端** | xterm.js (@xterm/xterm + addon-fit + addon-web-links) | CLI 模式终端 |
 | **存储** | SQLite (sql.js) | 内存数据库 + Tauri 文件系统持久化到 AppData |
 | **嵌入模型** | ONNX Runtime (WASM) + @huggingface/transformers | 本地语义嵌入，零外部依赖 |
 | **压缩** | fflate | 技能 ZIP 包解压 |
+| **桌面宠物** | Petdex (MIT License) 集成 | 宠物包格式 + 市场 Manifest API + 精灵图帧动画 |
+| **Tauri 前端 API** | @tauri-apps/api + plugin-dialog + plugin-notification | IPC 通信 + 原生对话框 + 系统通知 |
 
 ### 2.2 前端依赖
 
 ```
-React 18 + Zustand 5 + Radix UI + Lucide React
+React 18 + Zustand 5 + Radix UI + Lucide React + Font Awesome 7
 react-markdown + remark-gfm + react-syntax-highlighter
 sql.js (SQLite) + @huggingface/transformers (ONNX)
-mermaid + @xterm/xterm + fflate + clsx + tailwind-merge
+mermaid + @xterm/xterm + addon-fit + addon-web-links + fflate + clsx + tailwind-merge
+@tauri-apps/api + @tauri-apps/plugin-dialog + @tauri-apps/plugin-notification
 ```
+
+**devDependencies:** TypeScript 5.6 + Vite 6 + Vitest 4 + happy-dom + jsdom + png-to-ico + sharp
 
 ### 2.3 Rust 依赖
 
 ```
 tauri 2 (devtools + tray-icon + image-png)
 tauri-plugin-shell/dialog/fs/notification
-reqwest (HTTP 代理) + tokio (async runtime)
+reqwest (HTTP 代理，json + stream) + tokio (async runtime, full)
+futures-util + tokio-util (io)
 serde/serde_json + uuid + window-vibrancy (Mica/Acrylic)
-rfd (原生文件对话框) + base64 + x25519-dalek (加密)
+rfd (原生文件对话框) + open (打开文件/URL)
+base64 + x25519-dalek (加密) + sha2 + aes-gcm + rand
+hostname (设备标识)
 ```
 
 ### 2.4 架构总览
@@ -80,24 +88,29 @@ rfd (原生文件对话框) + base64 + x25519-dalek (加密)
 │  │  ├── context/ ─ 上下文管理 + token计数 + 压缩              │  │
 │  │  ├── memory/ ─ 三级记忆 (project/session/global)          │  │
 │  │  ├── permission/ ─ 权限系统 + 安全模式                     │  │
-│  │  ├── environment/ ─ Git Worktree + 执行模式                │  │  │  │   ├── pet/ ─ 桌面宠物系统 (Petdex集成/状态映射/气泡通知)   │  │
-│  │  │   ├── automation/ ─ 自动任务 (定时器/文件监听)              │  │
+│  │  ├── environment/ ─ Git Worktree + 执行模式                │  │
+│  │  ├── pet/ ─ 桌面宠物 (Petdex集成/状态映射/气泡/市场)        │  │
+│  │  ├── automation/ ─ 自动任务 (定时器/文件监听)              │  │
 │  │  ├── knowledge/ ─ 笔记本知识管理 (RAG)                     │  │
 │  │  ├── skill/ ─ 技能系统 (SKILL.md + 注册)                   │  │
 │  │  ├── mcp/ ─ MCP 协议                                       │  │
 │  │  ├── theme/ ─ 皮肤系统 (默认/Hub/梦幻)                     │  │
 │  │  ├── storage/ ─ SQLite 持久化                              │  │
-│  │  └── prompt/ ─ 系统提示词构建                              │  │
+│  │  ├── prompt/ ─ 系统提示词构建                              │  │
+│  │  ├── settings/ ─ 数据层设置 (SettingsSource 层级)           │  │
+│  │  ├── recovery/ ─ 会话恢复                                  │  │
+│  │  └── i18n/ ─ 中英文双语                                    │  │
 │  │                                                            │  │
 │  │  状态管理                                                   │  │
 │  │  ├── store.ts (useAppStore) ─ 消息/流式/工具/步骤进度      │  │
-│  │  └── core/store.ts (useProjectStore) ─ 项目/会话/技能      │  │
+│  │  ├── core/store.ts (useProjectStore) ─ 项目/会话/技能      │  │
+│  │  └── pet/pet-store.ts (usePetStore) ─ 宠物状态/气泡/窗口  │  │
 │  └────────────────────────────────────────────────────────────┘  │
 │                          │ Tauri Commands (invoke)               │
 │  ┌───────────────────────┴─────────────────────────────────────┐ │
 │  │              Rust 后端 (src-tauri/src/lib.rs)               │ │  │  文件操作 / 命令执行 / HTTP代理 / 删除到回收站 /           │ │
 │  │  窗口管理 / Mica毛玻璃 / 路径检查 / 安装器检测 /            │ │
-│  │  宠物窗口管理 / 原生右键菜单 / 阴影控制                      │ │
+│  │  宠物窗口管理 / 原生右键菜单 / 阴影控制 / 系统托盘          │ │
 │  └─────────────────────────────────────────────────────────────┘ │
 │                          │                                        │
 │  ┌───────────────────────┴─────────────────────────────────────┐ │
@@ -110,7 +123,13 @@ rfd (原生文件对话框) + base64 + x25519-dalek (加密)
 外部 API：
 ├── MiMo CLI (小米账户登录 → CLI 模式)
 ├── OpenAI 兼容 API (多 Provider: DeepSeek/OpenAI/自定义)
-└── Embedding API (OpenAI/自定义 + 本地 ONNX 回退)
+├── Embedding API (OpenAI/自定义 + 本地 ONNX 回退)
+└── Petdex Manifest API (宠物市场目录 + 图片代理下载)
+
+★ 宠物窗口：独立 Tauri 透明窗口 (pet)
+  ├── PetWindowApp.tsx ─ 精灵图 + 气泡 + 拖拽 + 右键
+  ├── 通过 Tauri 事件与主窗口双向通信
+  └── Rust: create_pet_window / close_pet_window / show_pet_menu
 ```
 
 ---
@@ -121,7 +140,7 @@ rfd (原生文件对话框) + base64 + x25519-dalek (加密)
 mimo-gui/
 ├── src/                          # 前端源码
 │   ├── main.tsx                  # React 入口
-│   ├── App.tsx                   # 主应用组件（~1870行）
+│   ├── App.tsx                   # 主应用组件（~1850行）
 │   │                             #   handleSend → runAgenticLoop → engine.process
 │   │                             #   事件循环 (text_delta/tool_start/tool_complete/...)
 │   │                             #   per-session 隔离 (safeAddMessage/isViewingSession)
@@ -129,9 +148,14 @@ mimo-gui/
 │   │                             #   权限/写确认/提示词变更 per-session Map
 │   ├── store.ts                  # useAppStore (消息/流式/工具调用/步骤进度/activeSessions)
 │   ├── types.ts                  # 前端类型定义
+│   ├── types/                   # 类型声明
+│   │   └── sql.js.d.ts          # sql.js 类型补充声明
+│   ├── lib/                     # 工具函数
+│   │   └── utils.ts             # cn() Tailwind 类名合并 (clsx + tailwind-merge)
 │   ├── styles.css                # 全局样式（~8000行，含所有皮肤基础样式）
 │   ├── styles/
-│   │   └── skin-dream.css        # 梦幻皮肤样式（磨砂/背景图/动画）
+│   │   ├── skin-dream.css        # 梦幻皮肤样式（磨砂/背景图/动画）
+│   │   └── skin-hub.css          # Hub 皮肤样式（分段控件/卡片布局）
 │   │
 │   ├── components/               # UI 组件
 │   │   ├── ChatPanel.tsx         # 对话面板（消息列表 + InputArea + 轮次分组）
@@ -140,7 +164,7 @@ mimo-gui/
 │   │   ├── Sidebar.tsx           # 左侧栏（项目列表 + 会话列表 + 右键菜单 + 更多操作）
 │   │   ├── RightSidebar.tsx      # 右侧栏（活跃任务面板 + GitInfoPanel + 上下文监控）
 │   │   ├── GitInfoPanel.tsx      # Git 信息面板（分支/dirty/diff/commit/push/pull/worktree监控）
-│   │   ├── SettingsPanel.tsx     # 设置面板（9个Tab：通用/外观/安全/Git/环境/Worktree/知识/自动化/多模态）
+│   │   ├── SettingsPanel.tsx     # 设置面板（10个Tab：通用/外观/安全/Git/环境/Worktree/知识/自动化/多模态/宠物）
 │   │   ├── TopNavbar.tsx         # 顶部导航（皮肤切换/布局切换）
 │   │   ├── DreamLayout.tsx       # 梦幻皮肤布局
 │   │   ├── HubLayout.tsx         # Hub 皮肤布局
@@ -169,6 +193,14 @@ mimo-gui/
 │   │   ├── ContextMonitor.tsx   # 上下文监控
 │   │   ├── AgentPanel.tsx       # 智能体面板
 │   │   ├── AgentDetail.tsx      # 智能体详情
+│   │   ├── TitleBar.tsx         # 自定义标题栏（最小化/最大化/关闭）
+│   │   ├── TerminalPanel.tsx    # CLI 终端面板（xterm.js）
+│   │   ├── SkillManager.tsx     # 技能管理器
+│   │   ├── SnapshotPanel.tsx    # 快照面板
+│   │   ├── SessionRecovery.tsx  # 会话恢复面板
+│   │   ├── SelectionTooltip.tsx # 选中文字浮窗工具栏
+│   │   ├── UsageStats.tsx       # 用量统计面板
+│   │   ├── PetOverlay.tsx       # 宠物市场/设置浮层入口（主窗口内）
 │   │   └── ui/                  # Radix UI 封装组件
 │   │
 │   ├── core/                     # 核心引擎层
@@ -215,12 +247,12 @@ mimo-gui/
 │   │   │   ├── security-mode.ts  # 三级安全模式（ask/auto/full）
 │   │   │   └── index.ts          # 导出
 │   │   │
-│   │   ├── environment/           # 环境管理（★ 新增）
+│   │   ├── environment/           # 环境管理（v0.87）
 │   │   │   ├── worktree-manager.ts # Git Worktree 管理（create/remove/scan/limit）
 │   │   │   ├── environment-runner.ts # 环境运行器
 │   │   │   └── index.ts          # 导出（isGitRepo/getCurrentBranch/listBranches/...）
 │   │   │
-│   │   ├── automation/            # 自动任务（★ 新增）
+│   │   ├── automation/            # 自动任务（v0.87）
 │   │   │   └── automation-manager.ts # 定时器/文件监听 + 触发 + 历史 + 停止
 │   │   │
 │   │   ├── knowledge/             # 知识管理（RAG）
@@ -293,17 +325,31 @@ mimo-gui/
 │   │   │   └── lang.ts           # 中英文双语（getLang/setLang/S/Sidebar/Input）
 │   │   │
 │   │   ├── icons/                # 图标
+│   │   │   ├── icon-map.ts       # 图标名映射
+│   │   │   └── index.ts          # 导出
 │   │   ├── heartbeat/            # 心跳
+│   │   │   ├── heartbeat.ts      # 心跳逻辑
+│   │   │   └── index.ts
 │   │   ├── retry/                # 重试
+│   │   │   ├── retry.ts          # 指数退避重试逻辑
+│   │   │   └── index.ts
 │   │   ├── snapshot/             # 快照
-│   │   └── config/               # 配置加载
+│   │   │   ├── snapshot.ts       # 会话快照保存/恢复
+│   │   │   └── index.ts
+│   │   ├── config/               # 配置加载
+│   │   │   └── loader.ts         # 配置加载器
+│   │   │
+│   │   ├── settings/             # 数据层设置系统（★ v0.87 随重构新增）
+│   │   │   ├── settings.ts       # SettingsSource 层级 (cli/policy/flag/user/project/local/default) + PermissionRule
+│   │   │   └── index.ts          # 导出
+│   │   │
+│   │   ├── pet/                  # 桌面宠物系统（★ v0.88 新增）
+│   │   │   ├── pet-store.ts      # Zustand store (usePetStore: 状态映射/气泡/窗口管理)
+│   │   │   ├── pet-types.ts      # 类型定义 (PetDefinition/PetState/PetSettings)
+│   │   │   ├── pet-manager.ts    # 本地宠物安装/加载/卸载
+│   │   │   ├── pet-market-client.ts # Petdex 市场 API 客户端
+│   │   │   └── index.ts          # 导出
 │   │
-│   ├── core/pet/                 # 桌面宠物系统
-│   │   ├── pet-store.ts          # Zustand store (状态映射/气泡/窗口管理)
-│   │   ├── pet-types.ts          # 类型定义 (PetDefinition/PetState/PetSettings)
-│   │   ├── pet-manager.ts        # 本地宠物安装/加载/卸载
-│   │   ├── pet-market-client.ts  # Petdex 市场 API 客户端
-│   │   └── index.ts              # 导出
 │   └── test/                     # 测试文件
 │       ├── ui-batch-a-d.test.ts  # 188个UI批量测试
 │       ├── security-mode.test.ts # 安全模式测试
@@ -319,6 +365,8 @@ mimo-gui/
 │   │   │                         #   http_get / http_download / get_app_data_dir
 │   │   │                         #   get_installer_default_lang / ...
 │   │   │                         #   create_pet_window / close_pet_window / show_pet_menu
+│   │   │                         #   resize_pet_window / hide_to_tray / show_from_tray
+│   │   │                         #   quit_app / update_tray_language
 │   │   └── main.rs               # 程序入口
 │   ├── Cargo.toml                # Rust 依赖
 │   ├── tauri.conf.json           # Tauri 配置（窗口/CSP/Bundle/NSIS/WiX）
@@ -328,12 +376,14 @@ mimo-gui/
 ├── .wecode-ref/                  # 对标项目参考（微博 wecode 客户端）
 ├── public/                       # 静态资源
 │   ├── models/                   # ONNX 模型（Xenova/all-MiniLM-L6-v2）
-│   └── wasm/                     # WASM 运行时
+│   ├── wasm/                     # WASM 运行时
+│   └── fonts/                    # 全局字体（AlimamaFangYuanTiVF-Thin.ttf）
 ├── dist/                         # 构建输出
 ├── package.json                  # npm 依赖 + 脚本
 ├── vite.config.ts                # Vite 配置
 ├── tsconfig.json                # TypeScript 配置
 ├── vitest.config.ts             # 测试配置
+├── THIRD_PARTY_NOTICES.md        # 开源声明（Petdex MIT License）
 └── README.md                     # 项目 README
 ```
 
@@ -474,6 +524,37 @@ automation/automation-manager.ts
     → createSession 继承 executionMode → 可能创建 worktree
 ```
 
+### 4.7 宠物系统关联
+
+```
+主窗口 (App.tsx) ──Tauri 事件──→ 宠物窗口 (PetWindowApp.tsx)
+  │                                    │
+  ├─ setLLMStatus(status)              ├─ PetSprite.tsx (精灵图帧动画)
+  │   → usePetStore.onLLMStatus()      │   6种状态: idle/thinking/working/happy/sad/sleeping
+  │   → emit("pet-status-update")      │
+  │                                    ├─ 气泡 (useLayoutEffect 测量高度)
+  ├─ 流式事件 (text_delta/...)         │   → invoke("resize_pet_window", {width, height})
+  │   → usePetStore.onStreamEvent()    │   → invoke(setPosition) 增量位移 (宠物视觉不动)
+  │   → emit("pet-stream-event")       │
+  │                                    ├─ 右键 → invoke("show_pet_menu", {x, y})
+  ├─ Token 查询                        │   → Rust MenuBuilder (原生菜单, 不受窗口裁剪)
+  │   → emit("pet-check-tokens")       │   → 菜单项 → emit 回前端
+  │   → pet-store.showBubble(text)     │
+  │                                    └─ 拖拽 → setPosition (保存宠物位置)
+  ├─ SettingsPanel 🐾Tab                │
+  │   → usePetStore (启用/大小/透明度/市场)
+  │
+  └─ PetMarketDialog.tsx
+      → pet-market-client.ts → Petdex Manifest API
+      → pet-manager.ts (安装/卸载本地宠物包)
+
+Rust 后端 (lib.rs):
+  ├── create_pet_window()   → WebviewWindowBuilder + transparent + always_on_top
+  ├── close_pet_window()    → 关闭宠物窗口
+  ├── resize_pet_window()   → 动态调整宠物窗口尺寸 (气泡溢出修复)
+  └── show_pet_menu()       → MenuBuilder 原生右键菜单
+```
+
 ---
 
 ## 五、docs/ 文档说明
@@ -481,7 +562,7 @@ automation/automation-manager.ts
 | 文件 | 类型 | 说明 | 状态 |
 |------|------|------|------|
 | **PROJECT-GUIDE.md** | 📌本项目 | **本文档**，完整项目说明 | ✅ 最新 |
-| **PROJECT_STATUS.md** | 项目简介 | 项目概述+架构+功能清单+版本历史 | v0.87 |
+| **PROJECT_STATUS.md** | 项目简介 | 项目概述+架构+功能清单+版本历史 | v0.88 |
 | **PROJECT-CONTEXT.md** | 旧版交接 | v0.79 时的交接文档，已被 PROJECT_STATUS 替代 | 📦 归档 |
 | **TODO.md** | 待办跟踪 | Phase 0-G 全部完成记录 + v0.88 宠物系统 + Phase E 待办 | ✅ 最新 |
 | **DEV-PLAN-UNIFIED.md** | 主线计划 | 统一开发计划（1172行），整合了 ROADMAP + Benchmark + TODO | 📦 参考 |
@@ -490,10 +571,11 @@ automation/automation-manager.ts
 | **UI-UX-Wegent-Benchmark.md** | 对标分析 | UI/UX 对标分析（10项优化方向） | 📦 归档 |
 | **SKIN-SYSTEM-DESIGN.md** | 设计文档 | 皮肤系统设计（默认/Hub/梦幻三套） | ✅ 已实现 |
 | **WORKTREE-INPUTBAR-PLAN.md** | 计划文档 | InputArea 控制栏重构 + Git Worktree 集成计划 | ✅ 已实现 |
+| **GIT-WORKTREE-GUIDE.md** | 用户指南 | Git Worktree 使用指南 | ✅ 最新 |
 | **DEFERRED-WORKTREE-ANALYSIS.md** | 分析文档 | Worktree 早期审计（断链分析），已被 AUDIT 替代 | 📦 归档 |
 | **AUDIT-WORKTREE-PARALLEL.md** | 审计文档 | 自动化/并行/Worktree 全面审计（最终版） | ✅ 最新 |
 | **AUDIT-V3-FINAL.md** | 审计文档 | V3 最终审计 | 📦 归档 |
-| **REFACTOR-PROMPT-TO-DATA.md** | 重构计划 | 从提示词约束到数据层约束的整改计划 | ⏳ 待实施 |
+| **REFACTOR-PROMPT-TO-DATA.md** | 重构计划 | 从提示词约束到数据层约束的整改计划 | ✅ 已实现（P0-P5 全部落地，143个测试） |
 | **REGRESSION-TEST-CASES.md** | 测试用例 | 58组236步全覆盖回归测试用例 | ✅ 最新 |
 | **TEST-RESULTS.md** | 测试结果 | 上述测试用例的执行结果 + 发现的5个问题已修复 | ✅ 最新 |
 | **MANUAL-TEST-GUIDE.md** | 测试指南 | 手动测试指南 | 📦 参考 |
@@ -501,16 +583,18 @@ automation/automation-manager.ts
 | **CHANGELOG-v0.70.md** | 变更日志 | v0.70 变更记录 | 📦 归档 |
 | **CHANGELOG-v0.80.md** | 变更日志 | v0.80 变更记录 | 📦 归档 |
 | **CHANGELOG-v0.86.md** | 变更日志 | v0.86 变更记录 | 📦 归档 |
-| **CHANGELOG-v0.88.md** | 变更日志 | v0.88 变更记录 | ✅ 最新 |
 | **CHANGELOG-v0.87.md** | 变更日志 | v0.87 变更记录 | 📦 归档 |
+| **CHANGELOG-v0.88.md** | 变更日志 | v0.88 变更记录 | 📦 归档 |
+| **CHANGELOG-v0.89.md** | 变更日志 | v0.89 变更记录 | ✅ 最新 |
+| **TEST-CASES-REGRESSION-V2.md** | 测试用例 | 回归测试V2（含冒烟测试），185个用例 | ✅ 最新 |
 
 ### 文档优先级说明
 
 **新对话只需要阅读：**
 1. `PROJECT-GUIDE.md`（本文档）— 完整理解项目
 2. `TODO.md` — 了解当前待办
-3. `CHANGELOG-v0.88.md` — 了解最新版本变更
-4. `AUDIT-WORKTREE-PARALLEL.md` — 了解最近审计结果
+3. `CHANGELOG-v0.89.md` — 了解最新版本变更
+4. `TEST-CASES-REGRESSION-V2.md` — 了解回归测试用例（含冒烟测试）
 
 **其余文档均为历史归档或已完成计划的记录，不影响进度判断。**
 
@@ -530,8 +614,31 @@ automation/automation-manager.ts
 | v0.86 | 2026-07-20 | 皮肤系统 + Mica毛玻璃 + 自定义标题栏 |
 | v0.87 | 2026-07-24 | Worktree全链路 + 并行对话 + 自动任务 + GitHub Clone + 侧边栏重构 + 全局字体 + Prompt Cache优化 |
 | v0.88 | 2026-07-24 | 桌面宠物系统 + 宠物市场 + 悬浮气泡通知 + 右键原生菜单 + Token查询 |
+| v0.89 | 2026-07-26 | 跨会话委派编排 + 8个高级UI面板 + 核心模块持久化 + 上下文压缩配置UI + 冒烟测试 |
 
-### 6.2 v0.88 已发布功能
+### 6.2 v0.89 已发布功能
+
+以下功能均已包含在 v0.89 发布版本中：
+
+| 功能 | 关键文件 |
+|------|----------|
+| **跨会话委派编排** | `core/session/` (bus/orchestrator/executor/delegation-storage/tools) |
+| **AgentManager UI** | `components/AgentManager.tsx`, `SettingsPanel.tsx` (高级Tab) |
+| **HeartbeatMonitor UI** | `components/HeartbeatMonitor.tsx` |
+| **RetryConfigPanel UI** | `components/RetryConfigPanel.tsx` |
+| **PromptDebugger UI** | `components/PromptDebugger.tsx` |
+| **LayeredSettingsPanel UI** | `components/LayeredSettingsPanel.tsx` |
+| **RecoveryPanel UI** | `components/RecoveryPanel.tsx` |
+| **ToolManager UI** | `components/ToolManager.tsx` |
+| **DelegationPanel UI** | `components/DelegationPanel.tsx` |
+| **上下文压缩配置UI** | `components/SettingsPanel.tsx`, `core/context/context.ts` |
+| **AgentRegistry持久化** | `core/agent/agent.ts` (loadCustomAgents/saveCustomAgents) |
+| **HeartbeatManager持久化** | `core/heartbeat/heartbeat.ts` (getGlobalConfig/setGlobalConfig) |
+| **RetryExecutor持久化** | `core/retry/retry.ts` (getConfig/setConfig) |
+| **冒烟测试** | `test/smoke-test.test.ts` (30个发布阻断级用例) |
+| **回归测试V2** | `test/regression-*.test.ts` (9个文件, 155个用例) |
+
+### 6.2.1 v0.88 已发布功能
 
 以下功能均已包含在 v0.88 发布版本中：
 
@@ -575,21 +682,90 @@ automation/automation-manager.ts
 | 项目 | 状态 | 说明 |
 |------|------|------|
 | **桌面宠物系统** | ✅ 已完成 | v0.88 发布，基于 Petdex MIT 集成 |
-| **Phase E: Work 模式拆分** | ⏳ 远期 | Codex/Work 双模式切换 |
+| **跨会话委派编排** | ✅ 已完成 | v0.89 发布，SessionMessageBus + DelegationOrchestrator + executeSessionTurn |
+| **高级功能UI面板** | ✅ 已完成 | v0.89 发布，8个面板（AgentManager/HeartbeatMonitor/RetryConfig/PromptDebugger/LayeredSettings/Recovery/ToolManager/Delegation） |
+| **核心模块持久化** | ✅ 已完成 | v0.89 发布，AgentRegistry/HeartbeatManager/RetryExecutor/SessionRecoveryService |
+| **上下文压缩配置UI** | ✅ 已完成 | v0.89 发布，P1-1 压缩参数可视化配置 |
+| **冒烟测试** | ✅ 已完成 | v0.89 发布，30个发布阻断级冒烟用例 |
+| **REFACTOR-PROMPT-TO-DATA** | ✅ 已完成 | P0-P5 全部落地（编码运行时注入/cd拆分/Plan只读/频率限制/条件注册/子智能体拦截），143个测试 |
+| **数据层设置系统** | ✅ 已完成 | `core/settings/` SettingsSource 层级 (cli/policy/flag/user/project/local/default) |
+| **Phase E: Work 模式拆分** | ⏳ 远期 | Codex/Work 双模式切换（E1-E7） |
+| **MSI 中文向导** | ⏳ | WiX 多语言配置（zh-CN + en-US） |
 | **更多 Provider 测试** | ⏳ | 目前主要测试 DeepSeek + MiMo |
-| **REFACTOR-PROMPT-TO-DATA** | ⏳ | 提示词约束→数据层约束的重构计划 |
-| **MSI 中文向导** | ⏳ | WiX 多语言配置 |
-| **对话搜索完善** | ⏳ | 当前搜索功能基础 |
+| **对话搜索完善** | ⏳ | 当前 SearchDialog 仅搜索项目名，未搜索对话内容 |
 | **Vision API 图片理解** | ⏳ | 将粘贴的图片数据传给 vision 模型 |
 
 ### 6.4 关键技术决策
 
-1. **SQLite via sql.js**：内存数据库 + 500ms 防抖持久化到 AppData
-2. **handleSend 从 store 读取**：`useProjectStore.getState().currentSession` 避免闭包过期
-3. **弹窗用 createPortal**：绕过梦幻皮肤 `backdrop-filter` 的 containing block 问题
-4. **per-session Map 隔离**：所有 Promise-based UI（权限/写确认/提示词变更/表单）改为 `Map<sessionId, ...>`
-5. **删除文件到回收站**：`delete_directory` 用 PowerShell `Microsoft.VisualBasic.FileIO.FileSystem` 而非 `std::fs::remove_dir_all`
-6. **菜单用 position:absolute**：替代 `position:fixed`，避免梦幻皮肤 `backdrop-filter` 坐标偏移
+#### A. 架构与基础设施
+
+1. **SQLite via sql.js**：内存数据库 + 500ms 防抖持久化到 AppData，避免每次写操作都触发文件 IO
+2. **handleSend 从 store 读取**：`useProjectStore.getState().currentSession` 避免闭包过期，确保并行对话时拿到最新 session
+3. **弹窗用 createPortal**：绕过梦幻皮肤 `backdrop-filter` 的 containing block 问题，所有 Dialog/Menu 渲染到 `document.body`
+4. **per-session Map 隔离**：所有 Promise-based UI（权限/写确认/提示词变更/表单）改为 `Map<sessionId, ...>`，支持多会话并行不串扰
+5. **loopPool Map 隔离**：`llm/index.ts` 中 `loopPool: Map<sessionId, AgenticLoop>`，每个会话独立的迭代循环实例
+6. **删除文件到回收站**：`delete_directory` 用 PowerShell `Microsoft.VisualBasic.FileIO.FileSystem` 而非 `std::fs::remove_dir_all`，防止误删
+7. **菜单用 position:absolute**：替代 `position:fixed`，避免梦幻皮肤 `backdrop-filter` 坐标偏移
+
+#### B. LLM 引擎与上下文管理
+
+8. **OpenAI 兼容 Provider 统一**：所有 Provider（DeepSeek/OpenAI/MiMo/自定义）共用 `OpenAICompatibleProvider` 类，通过 `ProviderRegistry` 管理，新增 Provider 只需配置 baseUrl + apiKey
+9. **流式优先（SSE）**：所有 LLM 交互使用 `stream: true`，非流式仅保留 fallback；用户可随时通过 AbortController 取消
+10. **Prompt Cache 优化**：System Prompt 时间戳截断为分钟精度（`minutePrecisionDate()`），同分钟内多次迭代 KV Cache 前缀稳定，命中率大幅提升
+11. **reasoning_content 不回传**：历史 assistant 消息的 `reasoning_content`（DeepSeek 思考模式输出）不发送回 API，防止旧推理被当作隐式指令污染后续请求
+12. **DeepSeek 中文推理注入**：DeepSeek 模型 + 中文模式时，向 system prompt 追加强制中文思考指令（`reasoning_content` 默认英文）
+13. **Agentic Loop 迭代控制**：`maxIterations=20`、`maxConsecutiveErrors=3`，指数退避重试（5 次 / 1s 基础 / 2x 倍率 / 30s 上限 / 5min 总超时）
+14. **上下文压缩（Compaction）**：context pressure 达 80% 触发 LLM 摘要压缩，旧消息替换为 compaction marker，支持级联压缩（已有 marker 时追加），防止 `consecutiveCompactions` 死循环
+15. **优先级消息选择**：`selectMessagesByPriority()` 在 token 预算内智能选择保留哪些消息（system > recent > tool results > old user）
+16. **成本追踪与降级**：`CostTracker` 实时追踪 token/费用，80% 预算降级到 compaction 槽位模型，100% 硬停止
+17. **步数启发式估算**：`estimateSteps()` 分析用户消息关键词预估迭代次数（无需 LLM 调用），驱动 UI 进度条
+18. **回顾性分析**：连续 2 次以上错误后，`getRetrospectiveHint()` 建议用户更新 AGENTS.md
+
+#### C. 工具系统与安全
+
+19. **并发工具执行**：只读工具（read/glob/grep/codebase_search/file_search/list_directory/web_fetch）可并行，`maxConcurrent=5`，写工具串行
+20. **文件内容 LRU 缓存**：`FileContentCache` 50 条 / 60s TTL，write/edit 自动 invalidate，减少重复文件读取
+21. **bash cd 自动拆分**：`cd <path> && <command>` 自动拆分为 `workdir + command`，LLM 无需知道 workdir 参数
+22. **编码运行时注入**：所有 bash 命令自动 prepend `chcp 65001 + PYTHONUTF8=1 + PYTHONIOENCODING=utf-8`；`.bat/.cmd` 额外注入 `chcp 65001`
+23. **三级安全模式**：`ask`（全部确认）/ `auto`（安全操作自动放行）/ `full`（从不询问），全局 + 项目级
+24. **受保护路径**：`.git` / `.env` / `.mimo-snapshots` 等关键路径禁止写入
+25. **写入前 Diff 审查**：已存在文件先做 diff，用户通过 `DiffViewer` 确认后才覆写
+26. **沙箱路径白名单**：可选的 workspace 限制，`isPathWithinWorkspace()` 前端 + Rust 双重检查
+27. **自定义权限规则**：模式匹配 `allow/deny/ask`，按 tool + resource 粒度配置
+28. **参数密钥扫描**：write/bash 工具执行前扫描参数中的 API Key / 密码 / 私钥，检测到则警告（不阻断）
+
+#### D. 数据层约束重构（REFACTOR-PROMPT-TO-DATA）
+
+29. **Plan 模式 → 工具注册层强制**：Plan 模式下不注册 write/edit/multi_edit/tts/image_gen，API 层面 "tool not found"，不依赖提示词
+30. **read_attachment 条件注册**：仅当对话中存在文档附件时才注册，防止 LLM 对纯文本对话幻觉调用
+31. **子智能体两步运行时拦截**：同一 response 中同时有 `spawn_subagent` 和 `wait_for_subagent` 时，拒绝 wait 调用（task_id 尚未返回）
+32. **单响应去重**：同一 response 中重复 read 同一路径 / 重复 wait 同一 task_id 自动去重
+
+#### E. 记忆与知识管理
+
+33. **三级记忆系统**：project / session / global 三级作用域，SQLite 持久化，max 1000 条/作用域
+34. **记忆脱敏**：7 种正则模式（API Key / Bearer Token / 密码 / Secret / 私钥 / AWS Key / GitHub Token）在存储前自动 redact
+35. **记忆提取触发**：上下文压缩完成后 + 回合结束后自动触发记忆提取（可 `/memory on|off` 控制）
+36. **本地 ONNX Embedding**：WASM 后端零外部依赖，子分块 ≤128 token + mean pooling，7 种多领域模型可选，模型切换后旧索引自动跳过（维度不匹配保护）
+37. **纯 TypeScript PDF 提取**：零依赖实现 FlateDecode 解压，不引入 pdf-parse 等原生模块
+
+#### F. 子智能体与 MCP
+
+38. **Fork-Join 模型**：`spawn_subagent` 返回 task_id，下一轮 `wait_for_subagent` 收集结果；随机人名标识（40 个名字池）
+39. **未等待子智能体检测**：LLM 试图结束时检查 `spawnedSubagents` Set，有未 wait 的子智能体则注入提醒继续循环
+40. **MCP stdio 传输**：子进程生命周期管理 + auto-reconnect + timeout + 正常 cleanup
+
+#### G. 模型配置与设置
+
+41. **多槽位模型路由**：7 个 TaskSlot（chat/subagent/memory/compaction/tts/imageGen/embedding），未配置的槽位沿 fallback 链向上查找
+42. **七层设置源层级**：`cli > policy > flag > user > project > local > default`，支持企业策略覆盖用户配置
+
+#### H. 桌面宠物与窗口
+
+43. **独立透明宠物窗口**：`transparent + always_on_top + decorations:false + shadow(false)`，与主窗口通过 Tauri 事件双向通信
+44. **原生右键菜单**：Rust `MenuBuilder` 构建，避免浏览器菜单被透明窗口裁剪
+45. **气泡高度自适应**：`useLayoutEffect` 同步测量气泡 DOM 高度，`resize_pet_window` + `setPosition` 增量调整窗口尺寸，宠物视觉位置不动
+46. **系统托盘集成**：`tray-icon` feature + `build_tray_menu` 实现最小化到托盘 / 恢复 / 退出
 
 ---
 

@@ -276,6 +276,25 @@ CREATE INDEX IF NOT EXISTS idx_cost_records_timestamp ON cost_records(timestamp)
 CREATE INDEX IF NOT EXISTS idx_notebook_sources_notebook ON notebook_sources(notebook_id);
 CREATE INDEX IF NOT EXISTS idx_notebook_chunks_notebook ON notebook_chunks(notebook_id);
 CREATE INDEX IF NOT EXISTS idx_notebook_chunks_source ON notebook_chunks(source_id);
+
+CREATE TABLE IF NOT EXISTS delegation_tasks (
+  id TEXT PRIMARY KEY,
+  source_session_id TEXT NOT NULL,
+  target_session_id TEXT NOT NULL,
+  task TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending',
+  result TEXT,
+  error TEXT,
+  project_id TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  started_at INTEGER,
+  completed_at INTEGER
+);
+
+CREATE INDEX IF NOT EXISTS idx_delegation_source ON delegation_tasks(source_session_id);
+CREATE INDEX IF NOT EXISTS idx_delegation_target ON delegation_tasks(target_session_id);
+CREATE INDEX IF NOT EXISTS idx_delegation_project ON delegation_tasks(project_id);
+CREATE INDEX IF NOT EXISTS idx_delegation_status ON delegation_tasks(status);
 `;
 
 export async function initDatabase(): Promise<SqlJsDatabase> {

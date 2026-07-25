@@ -157,6 +157,36 @@ Sub-agents have the same tools as you. Don't pass file contents — just tell th
 - Running multiple independent analyses in parallel
 - Tasks that would flood your context with intermediate data`);
 
+  // 6.6 Cross-session delegation
+  sections.push(`# Cross-Session Delegation
+
+You can delegate tasks to OTHER chat sessions in the same project using:
+- \`list_sessions\`: List all available sessions with their IDs and status.
+- \`delegate_to_session\`: Send a task to another session's agent. Returns immediately with a task ID (non-blocking).
+- \`wait_for_delegation\`: Wait for a delegation task to complete and get the result. Blocks until the target session finishes.
+- \`query_session_result\`: Peek at another session's latest output without delegating.
+
+## How Cross-Session Delegation Works
+
+1. **Find target**: Call \`list_sessions\` to get available session IDs.
+2. **Delegate**: Call \`delegate_to_session(target_session_id, task)\` — returns a task ID.
+3. **Wait**: In your NEXT response, call \`wait_for_delegation(task_id)\` with the ID from step 2.
+
+The system prevents calling wait_for_delegation in the same response as delegate_to_session. Delegate first, then wait in the next response.
+
+Use the ACTUAL task_id from delegate results (format: \`TASK_ID: del-xxxxx\`).
+
+## When to Use Cross-Session Delegation
+- When another session has a different working directory (git worktree isolation)
+- When you need a different agent type to handle a specialized task
+- When the task requires independent context that shouldn't pollute your conversation
+
+## Important Notes
+- Delegation creates a circular dependency guard — A→B→A is automatically rejected.
+- The target session runs in the background. Its output is saved to the database.
+- If the target session needs permission for a tool, the user will be asked to approve it.
+- Maximum delegation depth is 2 (A→B→C is allowed, A→B→C→D is not).`);
+
   // 7. Context management — P6: Compaction is handled at runtime.
   // The compaction marker injected by agentic-loop already tells the LLM
   // not to redo completed work. The system prompt only needs a brief note.

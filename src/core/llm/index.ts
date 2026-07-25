@@ -152,6 +152,8 @@ private config: LLMEngineConfig;
 
     // Set up sub-agent spawner and register spawn tool
     this.setupSubagentSpawner();
+    // Set up cross-session delegation tools
+    this.setupDelegationTools();
   }
 
   private setupSubagentSpawner() {
@@ -163,6 +165,22 @@ private config: LLMEngineConfig;
         this.tools.register(createSpawnSubagentTool());
         this.tools.register(createWaitForSubagentTool());
       });
+    });
+  }
+
+  /** Register cross-session delegation tools (delegate_to_session, wait_for_delegation, etc.) */
+  private setupDelegationTools() {
+    import("../session").then(({
+      createDelegateToSessionTool,
+      createWaitForDelegationTool,
+      createQuerySessionResultTool,
+      createListSessionsTool,
+    }) => {
+      this.tools.register(createDelegateToSessionTool());
+      this.tools.register(createWaitForDelegationTool());
+      this.tools.register(createQuerySessionResultTool());
+      this.tools.register(createListSessionsTool());
+      console.log("[LLMEngine] Cross-session delegation tools registered");
     });
   }
 
