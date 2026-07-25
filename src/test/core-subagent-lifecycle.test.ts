@@ -32,24 +32,23 @@ import {
 
 function createMockSpawner(): SubagentSpawner {
   return {
-    async spawn(params) {
+    async spawn(params: any) {
       return {
-        id: params.id,
-        name: params.name || "test-subagent",
-        parentId: params.parentId,
-        agentId: params.agentId,
-        prompt: params.prompt,
-        cwd: params.cwd,
+        ...params,
+        id: `task-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
         status: "pending" as const,
         createdAt: Date.now(),
       } as SubagentTask;
     },
-    async abort(taskId: string) {},
+    async cancel(taskId: string) {},
     cancelAll() {},
-    onEvent(taskId: string, listener: (event: any) => void) {
-      return () => {};
+    getStatus(taskId: string) {
+      return "pending" as any;
     },
-  };
+    getResult(taskId: string) {
+      return undefined;
+    },
+  } as any;
 }
 
 // ========== 测试 ==========
@@ -90,7 +89,7 @@ describe("子智能体 — SubagentManager 生命周期", () => {
   // SUBA-004
   it("SUBA-004: completeTask 更新状态和结果", async () => {
     const task = await mgr.spawn("parent-sess", "build", "x", "/tmp");
-    const result: SubagentResult = { output: "完成结果", taskId: task.id };
+    const result: SubagentResult = { status: "success", summary: "完成", output: "完成结果", filesTouched: [], findings: [] };
     mgr.completeTask(task.id, result);
     expect(mgr.getTask(task.id)!.status).toBe("completed");
   });
@@ -125,7 +124,7 @@ describe("子智能体 — SubagentManager 生命周期", () => {
   it("SUBA-008: getRunningTasks 返回 running 任务", async () => {
     const t1 = await mgr.spawn("parent", "build", "x", "/tmp");
     const t2 = await mgr.spawn("parent", "build", "x", "/tmp");
-    mgr.completeTask(t1.id, { output: "done", taskId: t1.id });
+    mgr.completeTask(t1.id, { status: "success", summary: "done", output: "done", filesTouched: [], findings: [] });
 
     // After completing t1, only t2 should be non-completed
     const all = mgr.getAllTasks();
@@ -143,7 +142,7 @@ describe("子智能体 — SubagentManager 生命周期", () => {
   // SUBA-013
   it("SUBA-013: clearCompleted 清理已完成任务", async () => {
     const t1 = await mgr.spawn("p", "build", "x", "/tmp");
-    mgr.completeTask(t1.id, { output: "done", taskId: t1.id });
+    mgr.completeTask(t1.id, { status: "success", summary: "done", output: "done", filesTouched: [], findings: [] });
     const t2 = await mgr.spawn("p", "build", "y", "/tmp");
 
     mgr.clearCompleted();

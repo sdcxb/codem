@@ -482,9 +482,9 @@ describe("对话核心链路 — 消息存储与加载", () => {
     MessageStorage.createMessage(makeMessage({
       id: "multi-att",
       attachments: [
-        { id: "a1", name: "f1.txt", type: "file", content: "1", addedAt: Date.now() },
-        { id: "a2", name: "f2.py", type: "code", content: "print()", addedAt: Date.now() },
-        { id: "a3", name: "img.png", type: "image", preview: "data:image/png;base64,...", addedAt: Date.now() },
+        { id: "a1", name: "f1.txt", type: "file", content: "1" },
+        { id: "a2", name: "f2.py", type: "code", content: "print()" },
+        { id: "a3", name: "img.png", type: "image", preview: "data:image/png;base64,..." },
       ],
     }), SESSION_ID);
 

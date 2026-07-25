@@ -1912,7 +1912,7 @@ clearPendingPermission();
       {/* Background session permission (from delegation system) */}
       {!pendingPermission && backgroundPermission && (
         <PermissionDialog
-          request={{ ...backgroundPermission.request, title: `[委派任务] ${backgroundPermission.request.title || backgroundPermission.request.tool || ''}` }}
+          request={{ ...(backgroundPermission.request as any), title: `[委派任务] ${(backgroundPermission.request as any).title || backgroundPermission.request.tool || ''}` } as any}
           onResolve={(allow, alwaysAllow) => {
             backgroundPermission.resolve({
               requestId: backgroundPermission.request.id,

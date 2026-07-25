@@ -261,9 +261,9 @@ export function getContextManager(): ContextManager {
     // Load persisted config
     try {
       const { getSettingJSON } = require("../storage/settings");
-      const saved = getSettingJSON<any>("codem-context-config", null);
+      const saved = (getSettingJSON as any)("codem-context-config", null);
       if (saved) {
-        instance.config = { ...instance.config, ...saved };
+        (instance as any).config = { ...(instance as any).config, ...saved };
       }
     } catch {}
   }

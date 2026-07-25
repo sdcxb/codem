@@ -112,7 +112,7 @@ describe("冒烟测试（Smoke Test）— SMOKE-001 ~ SMOKE-030", () => {
       const msg = makeMessage({ id: "smoke-006", content: "创建测试" });
       MessageStorage.createMessage(msg, SESSION_ID);
       const msgs = MessageStorage.listMessages(SESSION_ID);
-      const found = msgs.find((m: any) => m.id === "smoke-006");
+      const found = msgs.find((m: any) => m.id === "smoke-006")!;
       expect(found).toBeDefined();
       expect(found.role).toBe("user");
       expect(found.content).toBe("创建测试");
@@ -123,7 +123,7 @@ describe("冒烟测试（Smoke Test）— SMOKE-001 ~ SMOKE-030", () => {
       MessageStorage.createMessage(msg, SESSION_ID);
       MessageStorage.updateMessage("smoke-007", { status: "done" });
       const msgs = MessageStorage.listMessages(SESSION_ID);
-      const found = msgs.find((m: any) => m.id === "smoke-007");
+      const found = msgs.find((m: any) => m.id === "smoke-007")!;
       expect(found.status).toBe("done");
     });
 
@@ -137,11 +137,11 @@ describe("冒烟测试（Smoke Test）— SMOKE-001 ~ SMOKE-030", () => {
         status: "running",
       });
       const msgs = MessageStorage.listMessages(SESSION_ID);
-      const found = msgs.find((m: any) => m.id === "smoke-008");
+      const found = msgs.find((m: any) => m.id === "smoke-008")!;
       expect(found).toBeDefined();
       expect(found.toolCalls).toBeDefined();
-      expect(found.toolCalls.length).toBeGreaterThan(0);
-      expect(found.toolCalls[0].tool).toBe("bash");
+      expect(found.toolCalls!.length).toBeGreaterThan(0);
+      expect(found.toolCalls![0].tool).toBe("bash");
     });
 
     it("SMOKE-009: 工具调用更新状态", () => {
@@ -158,8 +158,8 @@ describe("冒烟测试（Smoke Test）— SMOKE-001 ~ SMOKE-030", () => {
         result: "file content",
       });
       const msgs = MessageStorage.listMessages(SESSION_ID);
-      const found = msgs.find((m: any) => m.id === "smoke-009");
-      const tc = found.toolCalls.find((t: any) => t.id === "tc-smoke-009");
+      const found = msgs.find((m: any) => m.id === "smoke-009")!;
+      const tc = found.toolCalls!.find((t: any) => t.id === "tc-smoke-009")!;
       expect(tc.status).toBe("done");
       expect(tc.result).toBe("file content");
     });
@@ -168,7 +168,7 @@ describe("冒烟测试（Smoke Test）— SMOKE-001 ~ SMOKE-030", () => {
       const msg = makeMessage({ id: "smoke-010", content: "你好🌍🎉" });
       MessageStorage.createMessage(msg, SESSION_ID);
       const msgs = MessageStorage.listMessages(SESSION_ID);
-      const found = msgs.find((m: any) => m.id === "smoke-010");
+      const found = msgs.find((m: any) => m.id === "smoke-010")!;
       expect(found.content).toBe("你好🌍🎉");
     });
   });
@@ -231,7 +231,7 @@ describe("冒烟测试（Smoke Test）— SMOKE-001 ~ SMOKE-030", () => {
         messageCount: 0,
       });
       const sessions = SessionStorage.listSessions(PROJECT_ID);
-      const found = sessions.find((s: any) => s.id === "smoke-sess-016");
+      const found = sessions.find((s: any) => s.id === "smoke-sess-016")!;
       expect(found).toBeDefined();
       expect(found.id).toBe("smoke-sess-016");
     });
@@ -302,9 +302,9 @@ describe("冒烟测试（Smoke Test）— SMOKE-001 ~ SMOKE-030", () => {
 
     it("SMOKE-025: RetryExecutor 配置可读写", () => {
       const re = getRetryExecutor();
-      re.setConfig({ maxRetries: 5 });
+      re.setConfig({ maxAttempts: 5 });
       const config = re.getConfig();
-      expect(config.maxRetries).toBe(5);
+      expect(config.maxAttempts).toBe(5);
     });
   });
 
