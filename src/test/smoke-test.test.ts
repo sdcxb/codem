@@ -312,7 +312,7 @@ describe("冒烟测试（Smoke Test）— SMOKE-001 ~ SMOKE-030", () => {
   describe("系统提示词与上下文冒烟", () => {
     it("SMOKE-026: buildSystemPrompt 不崩溃", () => {
       const registry = getAgentRegistry();
-      const buildAgent = registry.get("build");
+      const buildAgent = registry.get("build")!;
       expect(() => {
         const prompt = buildSystemPrompt({ agent: buildAgent });
         expect(typeof prompt).toBe("string");
@@ -322,7 +322,7 @@ describe("冒烟测试（Smoke Test）— SMOKE-001 ~ SMOKE-030", () => {
 
     it("SMOKE-027: 提示词包含身份段", () => {
       const registry = getAgentRegistry();
-      const buildAgent = registry.get("build");
+      const buildAgent = registry.get("build")!;
       const prompt = buildSystemPrompt({ agent: buildAgent });
       expect(prompt).toMatch(/Identity|身份/i);
     });
