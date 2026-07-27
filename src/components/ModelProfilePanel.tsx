@@ -112,13 +112,13 @@ export function ModelProfilePanel({ onClose }: ModelProfilePanelProps) {
 
   return (
     <div className="settings-overlay" onClick={onClose}>
-      <div className="settings-panel" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 720 }}>
+      <div className="settings-panel" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 720, display: "flex", flexDirection: "column" }}>
         <div className="settings-header">
           <h3>{zh ? "模型配置方案" : "Model Profiles"}</h3>
           <button className="settings-close" onClick={onClose}>✕</button>
         </div>
 
-        <div className="settings-body">
+        <div style={{ padding: "20px", overflowY: "auto", flex: 1, display: "flex", flexDirection: "column", gap: 16 }}>
           {/* Active profile selector */}
           <div className="setting-group">
             <label style={{ fontWeight: 600, marginBottom: 8, display: "block" }}>
@@ -279,7 +279,7 @@ export function ModelProfilePanel({ onClose }: ModelProfilePanelProps) {
           ))}
         </div>
 
-        <div className="settings-footer">
+        <div style={{ display: "flex", justifyContent: "flex-end", padding: "12px 20px", borderTop: "1px solid var(--border-primary)" }}>
           <button className="save-btn" onClick={onClose}>
             {zh ? "完成" : "Done"}
           </button>

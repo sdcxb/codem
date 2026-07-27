@@ -1,4 +1,4 @@
-export { initDatabase, getDatabase, closeDatabase, exportDatabase, importDatabase, persistDatabase, resetDatabase } from "./database";
+export { initDatabase, getDatabase, closeDatabase, flushDatabase, exportDatabase, importDatabase, persistDatabase, resetDatabase } from "./database";
 export * as ProjectStorage from "./project";
 export * as SessionStorage from "./session";
 export * as MessageStorage from "./message";

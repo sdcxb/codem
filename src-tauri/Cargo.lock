@@ -562,7 +562,7 @@ dependencies = [
 
 [[package]]
 name = "codem"
-version = "0.89.0"
+version = "0.89.3"
 dependencies = [
  "aes-gcm",
  "base64 0.22.1",
@@ -585,6 +585,7 @@ dependencies = [
  "tokio-util",
  "uuid",
  "window-vibrancy",
+ "windows",
  "x25519-dalek",
 ]
 

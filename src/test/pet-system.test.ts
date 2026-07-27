@@ -38,6 +38,9 @@ const VALID_PET_JSON = JSON.stringify({
     { state: "happy", x: 0, y: 96, frameWidth: 32, frameHeight: 32, frames: 2, frameInterval: 300, loop: false },
     { state: "sad", x: 0, y: 128, frameWidth: 32, frameHeight: 32, frames: 2, frameInterval: 300, loop: false },
     { state: "sleeping", x: 0, y: 160, frameWidth: 32, frameHeight: 32, frames: 4, frameInterval: 500, loop: true },
+    { state: "waiting", x: 0, y: 192, frameWidth: 32, frameHeight: 32, frames: 4, frameInterval: 200, loop: true },
+    { state: "review", x: 0, y: 224, frameWidth: 32, frameHeight: 32, frames: 4, frameInterval: 200, loop: true },
+    { state: "waving", x: 0, y: 256, frameWidth: 32, frameHeight: 32, frames: 4, frameInterval: 200, loop: true },
   ],
 });
 
@@ -70,7 +73,7 @@ describe("宠物系统", () => {
       expect(result!.sheetWidth).toBe(256);
       expect(result!.sheetHeight).toBe(256);
       expect(result!.scale).toBe(2.0);
-      expect(result!.animations).toHaveLength(6);
+      expect(result!.animations).toHaveLength(9);
       expect(result!.tags).toEqual(["cat", "cute"]);
     });
 
@@ -132,7 +135,7 @@ describe("宠物系统", () => {
       json.animations.push({ state: "dancing", x: 0, y: 0, frameWidth: 32, frameHeight: 32, frames: 4, frameInterval: 200, loop: true });
       const result = parsePetJson(JSON.stringify(json));
       expect(result).not.toBeNull();
-      expect(result!.animations).toHaveLength(6); // dancing 被过滤掉
+      expect(result!.animations).toHaveLength(9); // dancing 被过滤掉
     });
 
     it("过滤掉缺少数值字段的动画", () => {
@@ -162,7 +165,7 @@ describe("宠物系统", () => {
       expect(result!.sheetWidth).toBe(1536); // Petdex 固定宽度
     });
 
-    it("Petdex 格式自动生成 6 个 Codem 状态动画", () => {
+    it("Petdex 格式自动生成 7 个 Codem 状态动画", () => {
       const petdexJson = JSON.stringify({
         id: "test-pet",
         displayName: "Test",
@@ -172,11 +175,15 @@ describe("宠物系统", () => {
       expect(result).not.toBeNull();
       const states = result!.animations.map(a => a.state);
       expect(states).toContain("idle");
-      expect(states).toContain("thinking");
       expect(states).toContain("working");
       expect(states).toContain("happy");
       expect(states).toContain("sad");
-      expect(states).toContain("sleeping");
+      expect(states).toContain("waiting");
+      expect(states).toContain("review");
+      expect(states).toContain("waving");
+      // thinking 和 sleeping 没有专用精灵图行，回退到 idle
+      expect(states).not.toContain("thinking");
+      expect(states).not.toContain("sleeping");
     });
 
     it("Petdex 格式生成的动画使用 192x208 帧尺寸", () => {
@@ -388,10 +395,40 @@ describe("宠物系统", () => {
       expect(usePetStore.getState().petState).toBe("working");
     });
 
-    it("stream event: tool_complete → thinking (from working)", () => {
+    it("stream event: tool_complete (read) → thinking (from working)", () => {
       usePetStore.getState().setPetState("working");
       usePetStore.getState().onStreamEvent({ type: "tool_complete", toolCall: { id: "1", name: "read" } });
       expect(usePetStore.getState().petState).toBe("thinking");
+    });
+
+    it("stream event: tool_complete (write) → review", () => {
+      usePetStore.getState().setPetState("working");
+      usePetStore.getState().onStreamEvent({ type: "tool_complete", toolCall: { id: "1", name: "write", input: { path: "src/test.ts" } } });
+      expect(usePetStore.getState().petState).toBe("review");
+    });
+
+    it("stream event: tool_complete (edit) → review", () => {
+      usePetStore.getState().setPetState("working");
+      usePetStore.getState().onStreamEvent({ type: "tool_complete", toolCall: { id: "1", name: "edit" } });
+      expect(usePetStore.getState().petState).toBe("review");
+    });
+
+    it("stream event: text_delta 覆盖 review 状态", () => {
+      usePetStore.getState().setPetState("review");
+      usePetStore.getState().onStreamEvent({ type: "text_delta", text: "next" });
+      expect(usePetStore.getState().petState).toBe("thinking");
+    });
+
+    it("stream event: text_delta 覆盖 waiting 状态", () => {
+      usePetStore.getState().setPetState("waiting");
+      usePetStore.getState().onStreamEvent({ type: "text_delta", text: "resume" });
+      expect(usePetStore.getState().petState).toBe("thinking");
+    });
+
+    it("waving 状态期间不响应 llm_status", () => {
+      usePetStore.getState().setPetState("waving");
+      usePetStore.getState().onLLMStatus("connecting");
+      expect(usePetStore.getState().petState).toBe("waving");
     });
 
     it("stream event: end (success) → happy", () => {
@@ -424,10 +461,18 @@ describe("宠物系统", () => {
       expect(usePetStore.getState().petState).toBe("sad");
     });
 
-    it("happy/sad 状态期间不响应 llm_status", () => {
+    it("happy/sad/waving 状态期间不响应 llm_status", () => {
       usePetStore.getState().setPetState("happy");
       usePetStore.getState().onLLMStatus("connecting");
       expect(usePetStore.getState().petState).toBe("happy"); // 保持不变
+
+      usePetStore.getState().setPetState("sad");
+      usePetStore.getState().onLLMStatus("streaming");
+      expect(usePetStore.getState().petState).toBe("sad"); // 保持不变
+
+      usePetStore.getState().setPetState("waving");
+      usePetStore.getState().onLLMStatus("executing_tools");
+      expect(usePetStore.getState().petState).toBe("waving"); // 保持不变
     });
 
     it("end 事件不覆盖已有的 sad 状态", () => {
@@ -563,8 +608,8 @@ describe("宠物系统", () => {
 
   // ===== 8. ALL_PET_STATES 常量测试 =====
   describe("ALL_PET_STATES — 状态枚举", () => {
-    it("包含所有 6 个状态", () => {
-      expect(ALL_PET_STATES).toHaveLength(6);
+    it("包含所有 9 个状态", () => {
+      expect(ALL_PET_STATES).toHaveLength(9);
     });
 
     it("包含 idle", () => {
@@ -589,6 +634,18 @@ describe("宠物系统", () => {
 
     it("包含 sleeping", () => {
       expect(ALL_PET_STATES).toContain("sleeping");
+    });
+
+    it("包含 waiting", () => {
+      expect(ALL_PET_STATES).toContain("waiting");
+    });
+
+    it("包含 review", () => {
+      expect(ALL_PET_STATES).toContain("review");
+    });
+
+    it("包含 waving", () => {
+      expect(ALL_PET_STATES).toContain("waving");
     });
   });
 });

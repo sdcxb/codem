@@ -2,7 +2,7 @@
 
 > **开发计划主线文档**：`docs/DEV-PLAN-UNIFIED.md`（统一开发计划，包含架构约束、影响分析、完整路线图）
 >
-> 以下为具体待办事项跟踪。Phase 0-4 + Phase B-D + Phase F-G 已全部完成，v0.89 已发布（含跨会话委派编排 + 高级调试 UI + 冒烟测试）。
+> 以下为具体待办事项跟踪。Phase 0-4 + Phase B-D + Phase F-G 已全部完成，v0.89 已发布（含跨会话委派编排 + 高级调试 UI + 冒烟测试），v0.89 发布后完成宠物窗口锚点 resize + 多页打包 + 模型持久化修复。
 
 ## 待开发
 
@@ -77,6 +77,31 @@
 - [ ] 在 `tauri.conf.json` 的 `bundle.windows.wix` 中配置 WiX 多语言（zh-CN + en-US）
 - [ ] 重新构建 MSI 安装包，确认安装向导界面支持中英文
 - [ ] 更新 Release 中的 MSI 文件
+
+### v0.89 发布后优化 (2026-07-26)
+
+#### 宠物窗口多页打包 + 内存优化
+- [x] `vite.config.ts` — `rollupOptions.input` 新增 `pet.html` 入口，多页打包分离宠物窗口
+- [x] `src/pet-main.tsx` — 宠物窗口专用轻量入口（仅 React + PetWindowApp + pet-window.css）
+- [x] `src/styles/pet-window.css` — 宠物窗口专用最小样式（透明背景 + 基础重置，不加载 8400 行主 CSS）
+- [x] JS Bundle 体积从 3.4MB 降至 5.7KB（-99.8%），WebView2 宠物进程内存大幅下降
+
+#### 宠物窗口锚点 resize（零漂移）
+- [x] `src-tauri/src/lib.rs` — 新增 `resize_pet_window_anchored` 命令，单次 `SetWindowPos` 原子设置位置+尺寸
+- [x] `src-tauri/src/lib.rs` — 新增 `set_pet_window_geometry` 命令（前端传 x/y/width/height）
+- [x] `src-tauri/Cargo.toml` — 新增 `windows` crate 依赖（Win32_UI_WindowsAndMessaging + Win32_Foundation）
+- [x] `src/components/PetWindowApp.tsx` — 重写为锚点定位策略：精灵图水平中心+底部为锚点，窗口尺寸变化时精灵图屏幕位置完全不动
+- [x] `src/components/PetWindowApp.tsx` — canvas `measureText` 精确测量气泡文本宽高（逐字符换行，兼容中英文混合）
+- [x] `src/components/PetWindowApp.tsx` — 初始尺寸 = 精灵图宽×(精灵图高+MIN_BUBBLE_HEIGHT)，事件气泡出现时动态扩展窗口
+
+#### 宠物状态扩展
+- [x] `src/components/PetOverlay.tsx` — `STATE_LABELS` 补全 waiting/review/waving 三个状态
+
+#### 模型/模式持久化修复
+- [x] `src/App.tsx` — DB 初始化完成后（`initDatabase` + `migrateFromLocalStorage` 之后）同步调用 `configureEngine()`，确保重启后正确恢复上次使用的模式（API/CLI）及对应模型
+- [x] `src/App.tsx` — `close-requested` 事件 + `handleCloseChoice` 中调用 `flushDatabase()`，确保 500ms 防抖写入在应用退出前立即刷盘
+- [x] `src/core/storage/index.ts` — 导出 `flushDatabase`
+- [x] 修复根因：之前 `configureEngine` 在 DB 未就绪时执行，读到空设置 fallback 到 `mimo-v2.5-pro`；关闭应用时未 flush DB 导致最后一次设置写入丢失
 
 ### v0.89 发布 (2026-07-26)
 

@@ -14,39 +14,61 @@ import { GitInfoPanel } from "./GitInfoPanel";
 import { SubagentTask } from "../core/subagent/subagent";
 import { getSubagentManager } from "../core/subagent/subagent";
 import { useLang, S } from "../core/i18n/lang";
+import { getSettingJSON } from "../core/storage/settings";
 
 const MIMO_MODELS = [
-  { id: "mimo-v2.5-pro", name: "MiMo v2.5 Pro" },
-  { id: "mimo-v2.5", name: "MiMo v2.5" },
-  { id: "mimo-v2-pro", name: "MiMo v2 Pro" },
-  { id: "mimo-v2-flash", name: "MiMo v2 Flash" },
+{ id: "mimo-v2.5-pro", name: "MiMo v2.5 Pro" },
+{ id: "mimo-v2.5", name: "MiMo v2.5" },
+{ id: "mimo-v2-pro", name: "MiMo v2 Pro" },
+{ id: "mimo-v2-flash", name: "MiMo v2 Flash" },
 ];
 
 const API_MODELS: Record<string, Array<{ id: string; name: string }>> = {
-  openai: [
-    { id: "gpt-4o", name: "GPT-4o" },
-    { id: "gpt-4o-mini", name: "GPT-4o Mini" },
-    { id: "o3", name: "o3" },
-  ],
-  anthropic: [
-    { id: "claude-sonnet-4-20250514", name: "Claude Sonnet 4" },
-    { id: "claude-opus-4-20250514", name: "Claude Opus 4" },
-  ],
-  deepseek: [
-    { id: "deepseek-v4-flash", name: "DeepSeek V4 Flash" },
-    { id: "deepseek-v4-pro", name: "DeepSeek V4 Pro" },
-  ],
-  moonshot: [
-    { id: "moonshot-v1-8k", name: "Moonshot v1 8K" },
-    { id: "moonshot-v1-32k", name: "Moonshot v1 32K" },
-    { id: "moonshot-v1-128k", name: "Moonshot v1 128K" },
-  ],
-  gemini: [
-    { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash" },
-    { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro" },
-    { id: "gemini-2.0-flash", name: "Gemini 2.0 Flash" },
-  ],
+openai: [
+{ id: "gpt-4o", name: "GPT-4o" },
+{ id: "gpt-4o-mini", name: "GPT-4o Mini" },
+{ id: "o3", name: "o3" },
+],
+anthropic: [
+{ id: "claude-sonnet-4-20250514", name: "Claude Sonnet 4" },
+{ id: "claude-opus-4-20250514", name: "Claude Opus 4" },
+],
+deepseek: [
+{ id: "deepseek-v4-flash", name: "DeepSeek V4 Flash" },
+{ id: "deepseek-v4-pro", name: "DeepSeek V4 Pro" },
+],
+moonshot: [
+{ id: "moonshot-v1-8k", name: "Moonshot v1 8K" },
+{ id: "moonshot-v1-32k", name: "Moonshot v1 32K" },
+{ id: "moonshot-v1-128k", name: "Moonshot v1 128K" },
+],
+gemini: [
+{ id: "gemini-2.5-flash", name: "Gemini 2.5 Flash" },
+{ id: "gemini-2.5-pro", name: "Gemini 2.5 Pro" },
+{ id: "gemini-2.0-flash", name: "Gemini 2.0 Flash" },
+],
 };
+
+/** 从 codem-settings 读取已配置 API Key 的 provider 列表，生成可选模型列表。
+ * 聊天头部用模型 ID 显示（如 deepseek-v4-pro），不用设置页的 provider-name 格式。
+ */
+function getConfiguredApiModels(): Array<{ id: string; name: string }> {
+try {
+const settings = getSettingJSON<any>("codem-settings", {});
+const providers = settings.providers || [];
+const result: Array<{ id: string; name: string }> = [];
+for (const p of providers) {
+if (p.apiKey && p.id !== "mimo" && API_MODELS[p.id]) {
+for (const m of API_MODELS[p.id]) {
+result.push({ id: m.id, name: m.id });
+}
+}
+}
+return result;
+} catch {
+return [];
+}
+}
 
 interface ChatPanelProps {
   onSend: (message: string, attachments?: MessageAttachment[], selectedSkills?: string[]) => void;
@@ -75,7 +97,7 @@ export function ChatPanel({ onSend, onCancel, onToggleSidebar, onFork, onRegener
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
 
-  const models = mode === "cli" ? MIMO_MODELS : (API_MODELS[providerId] || MIMO_MODELS);
+  const models = mode === "cli" ? MIMO_MODELS : getConfiguredApiModels();
   const [showAgentPanel, setShowAgentPanel] = useState(false);
   const [showSnapshotPanel, setShowSnapshotPanel] = useState(false);
   const [showContextMonitor, setShowContextMonitor] = useState(false);

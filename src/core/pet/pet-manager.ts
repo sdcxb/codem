@@ -105,17 +105,32 @@ const PETDEX_STATES = [
   { id: "review",         row: 8, frames: 6, durationMs: 1030 },
 ] as const;
 
-/** Petdex 状态 → Codem 状态映射 */
+/** Petdex 状态 → Codem 状态映射
+ *
+ * Petdex 精灵图 9 行对应 9 个 Codem 状态：
+ *   row 0: idle          → idle
+ *   row 1: running-right → working
+ *   row 2: running-left  → working (同一状态，跳过)
+ *   row 3: waving        → waving
+ *   row 4: jumping       → happy
+ *   row 5: failed        → sad
+ *   row 6: waiting       → waiting
+ *   row 7: running       → working (同一状态，跳过)
+ *   row 8: review        → review
+ *
+ * thinking 和 sleeping 没有专用精灵图行，回退到 idle 动画。
+ * sleeping 在 PetWindowApp 中通过 brightness(0.7) 滤镜区分。
+ */
 const PETDEX_TO_CODEM_STATE: Record<string, PetState> = {
   "idle":           "idle",
-  "review":         "thinking",
+  "review":         "review",
   "running":        "working",
   "running-right":  "working",
   "running-left":   "working",
-  "waving":         "happy",
+  "waving":         "waving",
   "jumping":        "happy",
   "failed":         "sad",
-  "waiting":        "sleeping",
+  "waiting":        "waiting",
 };
 
 /**
@@ -173,7 +188,7 @@ export function parsePetJson(content: string): PetDefinition | null {
     // 如果已有 animations 数组（Codem 扩展格式），直接使用
     let animations: PetDefinition["animations"];
     if (Array.isArray(raw.animations) && raw.animations.length > 0) {
-      const validStates = new Set(["idle", "thinking", "working", "happy", "sad", "sleeping"]);
+      const validStates = new Set(["idle", "thinking", "working", "happy", "sad", "sleeping", "waiting", "review", "waving"]);
       animations = raw.animations.filter((a: any) =>
         a && typeof a.state === "string" && validStates.has(a.state) &&
         typeof a.x === "number" && typeof a.y === "number" &&
@@ -415,15 +430,7 @@ export async function loadInstalledPets(): Promise<number> {
 /**
  * 获取宠物在指定状态下的动画配置。
  * 如果该状态没有配置，回退到 idle 状态。
+ *
+ * @deprecated 使用 pet-animation-utils.ts 中的同名函数（更轻量的依赖链）
  */
-export function getAnimationForState(
-  definition: PetDefinition,
-  state: PetState,
-): PetDefinition["animations"][0] | null {
-  const anim = definition.animations.find((a) => a.state === state);
-  if (anim) return anim;
-
-  // 回退到 idle
-  const idle = definition.animations.find((a) => a.state === "idle");
-  return idle || null;
-}
+export { getAnimationForState } from "./pet-animation-utils";

@@ -8,13 +8,18 @@
  * 主窗口通过 Tauri 事件同步状态到宠物窗口。
  *
  * 状态映射策略：
- * - llm_status: "idle"         → pet state: "idle"（或 sleeping 如果超时）
- * - llm_status: "connecting"   → pet state: "thinking"
- * - llm_status: "streaming"    → pet state: "thinking"
+ * - llm_status: "idle"            → pet state: "idle"（或 sleeping 如果超时）
+ * - llm_status: "connecting"      → pet state: "thinking"
+ * - llm_status: "streaming"       → pet state: "thinking"
  * - llm_status: "executing_tools" → pet state: "working"
- * - end event (success)        → pet state: "happy" → 2s 后回 "idle"
- * - error / tool_error         → pet state: "sad" → 2s 后回 "idle"
- * - idle 超时 (>60s)           → pet state: "sleeping"
+ * - tool_start                    → pet state: "working" + 工具气泡
+ * - tool_complete (文件修改)       → pet state: "review" → 1.5s 后回 "idle"
+ * - tool_complete (其他)           → pet state: "thinking"
+ * - end event (success)           → pet state: "happy" → 2s 后回 "idle"
+ * - end event (有文件变更)         → pet state: "waving" → 2s 后回 "idle"（由 App.tsx 触发）
+ * - error / tool_error            → pet state: "sad" + 错误详情气泡 → 2s 后回 "idle"
+ * - compaction_start              → pet state: "waiting" + 压缩气泡（由 App.tsx 触发）
+ * - idle 超时 (>60s)              → pet state: "sleeping"
  *
  * 基于 Petdex (MIT License) 开源项目集成并改造，适配 Codem 的 Agent 事件模型。
  * @see THIRD_PARTY_NOTICES.md — Petdex (MIT License) 集成声明
@@ -61,11 +66,134 @@ function emitPetClose() {
   tauri.event.emit("pet-close", {}).catch(() => {});
 }
 
-/** 向宠物窗口发送悬浮气泡通知 */
+/** 向宠物窗口发送悬浮气泡通知（底层 IPC，不经过队列） */
 function emitPetBubble(text: string, duration: number = 4000) {
   const tauri = (window as any).__TAURI__;
   if (!tauri?.event?.emit) return;
   tauri.event.emit("pet-bubble", { text, duration }).catch(() => {});
+}
+
+// ========== 气泡节流队列（P1-6）==========
+
+type BubblePriority = "low" | "normal" | "high";
+
+interface BubbleQueueItem {
+  text: string;
+  duration: number;
+  priority: BubblePriority;
+  timestamp: number;
+}
+
+/** 相同文本去重窗口（ms） */
+const BUBBLE_DEDUP_WINDOW = 3000;
+/** 两个气泡之间的最小间隔（ms） */
+const BUBBLE_MIN_INTERVAL = 1200;
+
+let bubbleQueue: BubbleQueueItem[] = [];
+let lastBubbleText = "";
+let lastBubbleTime = 0;
+let bubbleDispatchTimer: ReturnType<typeof setTimeout> | null = null;
+
+const PRIORITY_ORDER: Record<BubblePriority, number> = { high: 0, normal: 1, low: 2 };
+
+/** 实际发送气泡到宠物窗口 */
+function dispatchBubble(text: string, duration: number) {
+  lastBubbleText = text;
+  lastBubbleTime = Date.now();
+  emitPetBubble(text, duration);
+}
+
+/** 调度队列中下一个气泡 */
+function scheduleNextBubble() {
+  if (bubbleQueue.length === 0) {
+    bubbleDispatchTimer = null;
+    return;
+  }
+
+  const now = Date.now();
+  const elapsed = now - lastBubbleTime;
+  const wait = Math.max(0, BUBBLE_MIN_INTERVAL - elapsed);
+
+  bubbleDispatchTimer = setTimeout(() => {
+    // 按优先级排序，同优先级按时间排序
+    bubbleQueue.sort((a, b) => {
+      if (a.priority !== b.priority) {
+        return PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority];
+      }
+      return a.timestamp - b.timestamp;
+    });
+
+    const item = bubbleQueue.shift()!;
+    dispatchBubble(item.text, item.duration);
+
+    if (bubbleQueue.length > 0) {
+      scheduleNextBubble();
+    } else {
+      bubbleDispatchTimer = null;
+    }
+  }, wait);
+}
+
+/** 入队气泡（高优先级直接发送，低/正常优先级排队+去重） */
+function enqueueBubble(text: string, duration: number = 4000, priority: BubblePriority = "normal") {
+  const now = Date.now();
+
+  // 高优先级：清空队列并立即发送
+  if (priority === "high") {
+    bubbleQueue = [];
+    if (bubbleDispatchTimer) {
+      clearTimeout(bubbleDispatchTimer);
+      bubbleDispatchTimer = null;
+    }
+    dispatchBubble(text, duration);
+    return;
+  }
+
+  // 去重：相同文本在去重窗口内跳过
+  if (text === lastBubbleText && now - lastBubbleTime < BUBBLE_DEDUP_WINDOW) {
+    return;
+  }
+
+  // 入队
+  bubbleQueue.push({ text, duration, priority, timestamp: now });
+
+  if (!bubbleDispatchTimer) {
+    scheduleNextBubble();
+  }
+}
+
+// ========== 格式化辅助 ==========
+
+function truncateText(text: string, maxLen: number): string {
+  if (text.length <= maxLen) return text;
+  return text.slice(0, maxLen - 1) + "…";
+}
+
+function truncatePath(path: string, maxLen: number = 50): string {
+  if (path.length <= maxLen) return path;
+  const parts = path.split(/[/\\]/);
+  if (parts.length <= 2) return "…" + path.slice(-(maxLen - 1));
+  const fileName = parts[parts.length - 1];
+  const firstDir = parts[0];
+  const result = `${firstDir}/…/${fileName}`;
+  return result.length <= maxLen ? result : "…" + fileName;
+}
+
+const TOOL_NAME_MAP: Record<string, string> = {
+  read: "读取文件",
+  write: "写入文件",
+  edit: "编辑文件",
+  str_replace: "替换内容",
+  bash: "执行命令",
+  glob: "搜索文件",
+  grep: "搜索内容",
+  list: "列出目录",
+  web_fetch: "获取网页",
+  web_search: "搜索网络",
+};
+
+function formatToolName(name: string): string {
+  return TOOL_NAME_MAP[name] || name;
 }
 
 /** 读取用户称呼（设置中「想让我怎么叫你」） */
@@ -272,21 +400,22 @@ export const usePetStore = create<PetStoreState>((set, get) => ({
       clearIdleTimer();
     }
 
-    // happy/sad 状态 2 秒后回到 idle
+    // happy/sad/waving/review 状态自动回到 idle
     if (happyTimer) {
       clearTimeout(happyTimer);
       happyTimer = null;
     }
-    if (state === "happy" || state === "sad") {
+    if (state === "happy" || state === "sad" || state === "waving" || state === "review") {
+      const timeout = state === "review" ? 1500 : 2000;
       happyTimer = setTimeout(() => {
         const current = get().petState;
-        if (current === "happy" || current === "sad") {
+        if (current === "happy" || current === "sad" || current === "waving" || current === "review") {
           set({ petState: "idle" });
           emitPetStateLight("idle", get().scale, get().opacity);
           const settings = getPetSettings();
           scheduleIdleToSleeping(settings.idleTimeout);
         }
-      }, 2000);
+      }, timeout);
     }
 
     // 回到 idle 时重新启动 sleeping 定时器
@@ -300,8 +429,8 @@ export const usePetStore = create<PetStoreState>((set, get) => ({
     const state = get();
     if (!state.enabled || !state.activePet) return;
 
-    // happy/sad 状态期间不响应状态变化
-    if (state.petState === "happy" || state.petState === "sad") return;
+    // happy/sad/waving 状态期间不响应状态变化
+    if (state.petState === "happy" || state.petState === "sad" || state.petState === "waving") return;
 
     switch (status) {
       case "idle":
@@ -326,30 +455,61 @@ export const usePetStore = create<PetStoreState>((set, get) => ({
         const isError = result && (result.type === "error" || result.type === "overflow");
         if (isError) {
           state.setPetState("sad");
+          // P1-7: 错误详情气泡
+          const errMsg = result?.message || result?.error || "任务出错了";
+          enqueueBubble(`出错了：${truncateText(errMsg, 80)}`, 5000, "high");
         } else if (state.petState !== "sad") {
           state.setPetState("happy");
         }
         break;
       }
-      case "error":
+      case "error": {
+        state.setPetState("sad");
+        // P1-7: 错误详情气泡
+        const errMsg = (event as any).error || "未知错误";
+        enqueueBubble(`出错了：${truncateText(errMsg, 80)}`, 5000, "high");
+        break;
+      }
       case "tool_error": {
         state.setPetState("sad");
+        // P1-7: 工具错误详情气泡
+        const tc = (event as any).toolCall;
+        const errMsg = (event as any).error || "工具执行失败";
+        const toolName = tc?.name ? formatToolName(tc.name) : "工具";
+        enqueueBubble(`${toolName}失败：${truncateText(errMsg, 60)}`, 4000, "high");
         break;
       }
       case "start":
       case "text_delta":
       case "reasoning_delta": {
-        if (state.petState === "idle" || state.petState === "sleeping") {
+        // 可被覆盖的状态：idle, sleeping, waiting, review
+        const overridable = ["idle", "sleeping", "waiting", "review"];
+        if (overridable.includes(state.petState)) {
           state.setPetState("thinking");
         }
         break;
       }
       case "tool_start": {
         state.setPetState("working");
+        // P0-1: 工具执行气泡
+        const tc = (event as any).toolCall;
+        if (tc) {
+          const toolName = formatToolName(tc.name);
+          const filePath = tc.input?.path || tc.input?.name;
+          if (filePath) {
+            enqueueBubble(`${toolName}：${truncatePath(filePath)}`, 3000, "low");
+          } else {
+            enqueueBubble(`${toolName}…`, 3000, "low");
+          }
+        }
         break;
       }
       case "tool_complete": {
-        if (state.petState === "working") {
+        const tc = (event as any).toolCall;
+        // P0-5: 文件修改类工具完成后，短暂切到 review 状态
+        if (tc && (tc.name === "write" || tc.name === "edit" || tc.name === "str_replace")) {
+          state.setPetState("review");
+        } else if (state.petState === "working") {
           state.setPetState("thinking");
         }
         break;
@@ -416,11 +576,11 @@ export const usePetStore = create<PetStoreState>((set, get) => ({
     if (!get().enabled) return;
     const callBy = getUserCallBy();
     const text = callBy ? `${callBy}，${message}` : message;
-    emitPetBubble(text, duration);
+    enqueueBubble(text, duration, "normal");
   },
 
   showRawBubble: (text, duration = 4000) => {
     if (!get().enabled) return;
-    emitPetBubble(text, duration);
+    enqueueBubble(text, duration, "normal");
   },
 }));

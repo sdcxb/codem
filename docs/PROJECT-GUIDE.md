@@ -1,7 +1,7 @@
 # Codem 项目完整说明
 
 > **用途**：新对话快速理解项目全貌、架构、文件关联、当前状态。
-> 创建时间：2026-07-23 | 最后更新：2026-07-26 | 当前版本：v0.89（已发布，含跨会话委派编排 + 高级调试 UI + 冒烟测试）
+> 创建时间：2026-07-23 | 最后更新：2026-07-27 | 当前版本：v0.89.3（已发布，含宠物窗口锚点 resize + 多页打包 + 模型持久化修复）
 
 ---
 
@@ -13,7 +13,7 @@
 - **GitHub**：https://github.com/sdcxb/codem
 - **分发**：NSIS `.exe` + WiX `.msi`，一键安装无需依赖
 - **平台**：Windows 优先
-- **版本**：v0.89
+- **版本**：v0.89.3
 
 ---
 
@@ -59,6 +59,7 @@ serde/serde_json + uuid + window-vibrancy (Mica/Acrylic)
 rfd (原生文件对话框) + open (打开文件/URL)
 base64 + x25519-dalek (加密) + sha2 + aes-gcm + rand
 hostname (设备标识)
+windows (Win32 API: SetWindowPos 单次调用原子设置窗口位置+尺寸)
 ```
 
 ### 2.4 架构总览
@@ -295,7 +296,7 @@ mimo-gui/
 │   │   │   └── index.ts          # 导出
 │   │   │
 │   │   ├── storage/              # SQLite 持久化
-│   │   │   ├── database.ts       # SQLite 初始化 + 防抖持久化(500ms) + flushDatabase
+│   │   │   ├── database.ts       # SQLite 初始化 + 防抖持久化(500ms) + flushDatabase (关闭时刷盘)
 │   │   │   ├── session.ts        # 会话 CRUD
 │   │   │   ├── message.ts        # 消息 CRUD + messagesToLLMMessages
 │   │   │   ├── project.ts        # 项目 CRUD
@@ -365,7 +366,8 @@ mimo-gui/
 │   │   │                         #   http_get / http_download / get_app_data_dir
 │   │   │                         #   get_installer_default_lang / ...
 │   │   │                         #   create_pet_window / close_pet_window / show_pet_menu
-│   │   │                         #   resize_pet_window / hide_to_tray / show_from_tray
+│   │   │                         #   resize_pet_window / resize_pet_window_anchored
+│   │   │                         #   set_pet_window_geometry / hide_to_tray / show_from_tray
 │   │   │                         #   quit_app / update_tray_language
 │   │   └── main.rs               # 程序入口
 │   ├── Cargo.toml                # Rust 依赖
@@ -549,10 +551,12 @@ automation/automation-manager.ts
       → pet-manager.ts (安装/卸载本地宠物包)
 
 Rust 后端 (lib.rs):
-  ├── create_pet_window()   → WebviewWindowBuilder + transparent + always_on_top
-  ├── close_pet_window()    → 关闭宠物窗口
-  ├── resize_pet_window()   → 动态调整宠物窗口尺寸 (气泡溢出修复)
-  └── show_pet_menu()       → MenuBuilder 原生右键菜单
+  ├── create_pet_window()             → WebviewWindowBuilder + transparent + always_on_top
+  ├── close_pet_window()              → 关闭宠物窗口
+  ├── resize_pet_window()             → 动态调整宠物窗口尺寸
+  ├── resize_pet_window_anchored()    → 锚点 resize（单次 SetWindowPos，零漂移）
+  ├── set_pet_window_geometry()       → 原子化设置位置+尺寸
+  └── show_pet_menu()                 → MenuBuilder 原生右键菜单
 ```
 
 ---
@@ -585,6 +589,7 @@ Rust 后端 (lib.rs):
 | **CHANGELOG-v0.86.md** | 变更日志 | v0.86 变更记录 | 📦 归档 |
 | **CHANGELOG-v0.87.md** | 变更日志 | v0.87 变更记录 | 📦 归档 |
 | **CHANGELOG-v0.88.md** | 变更日志 | v0.88 变更记录 | 📦 归档 |
+| **CHANGELOG-v0.89.3.md** | 变更日志 | v0.89.3 变更记录 | ✅ 最新 |
 | **CHANGELOG-v0.89.md** | 变更日志 | v0.89 变更记录 | ✅ 最新 |
 | **TEST-CASES-REGRESSION-V2.md** | 测试用例 | 回归测试V2（含冒烟测试），185个用例 | ✅ 最新 |
 
@@ -615,6 +620,7 @@ Rust 后端 (lib.rs):
 | v0.87 | 2026-07-24 | Worktree全链路 + 并行对话 + 自动任务 + GitHub Clone + 侧边栏重构 + 全局字体 + Prompt Cache优化 |
 | v0.88 | 2026-07-24 | 桌面宠物系统 + 宠物市场 + 悬浮气泡通知 + 右键原生菜单 + Token查询 |
 | v0.89 | 2026-07-26 | 跨会话委派编排 + 8个高级UI面板 + 核心模块持久化 + 上下文压缩配置UI + 冒烟测试 |
+| v0.89.3 | 2026-07-27 | 宠物窗口多页打包(3.4MB→5.7KB) + 锚点 resize 零漂移 + 模型/模式持久化修复 |
 
 ### 6.2 v0.89 已发布功能
 
@@ -638,21 +644,24 @@ Rust 后端 (lib.rs):
 | **冒烟测试** | `test/smoke-test.test.ts` (30个发布阻断级用例) |
 | **回归测试V2** | `test/regression-*.test.ts` (9个文件, 155个用例) |
 
-### 6.2.1 v0.88 已发布功能
+### 6.2.1 v0.88 已发布功能（含 v0.89 期间的后续优化）
 
-以下功能均已包含在 v0.88 发布版本中：
+以下功能均已包含在 v0.88 发布版本中（v0.89 期间做了多项优化）：
 
 | 功能 | 关键文件 |
 |------|----------|
 | **桌面宠物系统** | `core/pet/pet-store.ts`, `PetWindowApp.tsx`, `PetSprite.tsx`, `lib.rs` (create_pet_window) |
 | **宠物市场** | `PetMarketDialog.tsx`, `core/pet/pet-market-client.ts` (Petdex Manifest API) |
-| **悬浮气泡通知** | `PetWindowApp.tsx` (useLayoutEffect测量高度+增量位置), `pet-store.ts` (showBubble/showRawBubble) |
+| **悬浮气泡通知** | `PetWindowApp.tsx` (canvas measureText精确测量+锚点resize), `pet-store.ts` (showBubble/showRawBubble) |
 | **右键原生菜单** | `lib.rs` (show_pet_menu + MenuBuilder), `PetWindowApp.tsx` (handleContextMenu) |
 | **Token查询** | `App.tsx` (pet-check-tokens-request事件), `pet-store.ts` (showBubble) |
 | **宠物设置面板** | `SettingsPanel.tsx` (🐾Tab, 启用开关/大小滑轨/透明度滑轨/市场入口) |
-| **精灵图动画** | `PetSprite.tsx` (CSS background-position帧动画, 6种状态) |
-| **Agent状态映射** | `pet-store.ts` (onLLMStatus/onStreamEvent → idle/thinking/working/happy/sad/sleeping) |
+| **精灵图动画** | `PetSprite.tsx` (CSS background-position帧动画, 9种状态含waiting/review/waving) |
+| **Agent状态映射** | `pet-store.ts` (onLLMStatus/onStreamEvent → idle/thinking/working/happy/sad/sleeping/waiting/review/waving) |
 | **开源声明** | `THIRD_PARTY_NOTICES.md` (Petdex MIT License) |
+| **多页打包优化** ★ | `vite.config.ts` (rollupOptions.input pet.html), `pet-main.tsx` (轻量入口), JS Bundle 3.4MB→5.7KB |
+| **锚点 resize（零漂移）** ★ | `lib.rs` (resize_pet_window_anchored + SetWindowPos), `PetWindowApp.tsx` (锚点定位+canvas测量) |
+| **模型/模式持久化修复** ★ | `App.tsx` (DB就绪后configureEngine + 关闭时flushDatabase) |
 
 ### 6.2.1 v0.87 已发布功能
 
@@ -762,10 +771,12 @@ Rust 后端 (lib.rs):
 
 #### H. 桌面宠物与窗口
 
-43. **独立透明宠物窗口**：`transparent + always_on_top + decorations:false + shadow(false)`，与主窗口通过 Tauri 事件双向通信
+43. **独立透明宠物窗口**：`transparent + always_on_top + decorations:false + shadow(false)`，与主窗口通过 Tauri 事件双向通信；多页打包（`pet.html` + `pet-main.tsx`），JS Bundle 仅 5.7KB，彻底切断对主应用 3.4MB 包的依赖
 44. **原生右键菜单**：Rust `MenuBuilder` 构建，避免浏览器菜单被透明窗口裁剪
-45. **气泡高度自适应**：`useLayoutEffect` 同步测量气泡 DOM 高度，`resize_pet_window` + `setPosition` 增量调整窗口尺寸，宠物视觉位置不动
+45. **气泡高度自适应（锚点 resize）**：canvas `measureText` 精确测量文本宽高 → 前端传目标 `width/height` → Rust `resize_pet_window_anchored` 单次 `SetWindowPos` 原子设置位置+尺寸，以精灵图水平中心+底部为锚点，窗口尺寸变化时精灵图屏幕位置完全不动（零漂移）
 46. **系统托盘集成**：`tray-icon` feature + `build_tray_menu` 实现最小化到托盘 / 恢复 / 退出
+47. **DB 关闭时 flush**：`close-requested` 事件 + `handleCloseChoice` 中调用 `flushDatabase()`，确保 500ms 防抖写入在应用退出前立即刷盘，防止设置丢失
+48. **模型/模式持久化修复**：DB 初始化完成后（`initDatabase` + `migrateFromLocalStorage` 之后）同步调用 `configureEngine()`，确保重启后正确恢复上次使用的模式（API/CLI）及对应模型
 
 ---
 

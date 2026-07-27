@@ -39,9 +39,9 @@ import { AppIdentity, type Session } from "./core/types";
 import { getLLMEngine } from "./core/llm";
 import { getMiMoAuth } from "./core/auth/mimo";
 import type { PermissionRequest, PermissionResult } from "./core/permission/permission";
-import { initDatabase, resetDatabase } from "./core/storage";
+import { initDatabase, resetDatabase, flushDatabase } from "./core/storage";
 import { migrateFromLocalStorage } from "./core/storage/migration";
-import { getSetting, setSetting, getSettingJSON } from "./core/storage/settings";
+import { getSetting, setSetting, getSettingJSON, setSettingJSON } from "./core/storage/settings";
 import { setLang, useLang, S } from "./core/i18n/lang";
 import * as MessageStorage from "./core/storage/message";
 import { formatAttachmentsInline } from "./core/llm/attachment-formatter";
@@ -126,9 +126,55 @@ const [showDelegationPanel, setShowDelegationPanel] = useState(false);
   const [appIdentity, setAppIdentity] = useState<AppIdentity | null>(null);
   const [showBootstrap, setShowBootstrap] = useState(false);
   const [showCloseConfirm, setShowCloseConfirm] = useState(false);
-  const [cliModel, setCliModel] = useState("mimo-v2.5-pro");
-  const [currentMode, setCurrentMode] = useState<"cli" | "api">("cli");
-  const [currentProvider, setCurrentProvider] = useState("mimo");
+  // Initialize from saved settings synchronously to avoid UI flash showing wrong model list.
+  // getMode() reads from SQLite synchronously; if DB not ready yet, falls back to "api".
+  const _initialSettings = (() => {
+    try {
+      return getSettingJSON<any>("codem-settings", {});
+    } catch {
+      return {};
+    }
+  })();
+  const _initialMode: "cli" | "api" = _initialSettings.mode || "api";
+  // For API mode, find the first provider with an API key (excluding mimo) and use its first model.
+  // This avoids defaulting to "gpt-4o" when the user hasn't configured an OpenAI key.
+  const _initialModel: string = (() => {
+    if (_initialSettings.mode === "cli") {
+      return _initialSettings.model || "mimo-v2.5-pro";
+    }
+    // API mode: use saved model if it belongs to a configured provider
+    const savedModel: string = _initialSettings.model || "";
+    if (savedModel) return savedModel;
+    // No saved model: find first provider with API key
+    const providers = _initialSettings.providers || [];
+    const defaultModels: Record<string, string> = {
+      openai: "gpt-4o",
+      anthropic: "claude-sonnet-4-20250514",
+      deepseek: "deepseek-v4-flash",
+      moonshot: "moonshot-v1-8k",
+      gemini: "gemini-2.5-flash",
+    };
+    for (const p of providers) {
+      if (p.apiKey && p.id !== "mimo" && defaultModels[p.id]) {
+        return defaultModels[p.id];
+      }
+    }
+    return "mimo-v2.5-pro"; // ultimate fallback
+  })();
+  const _initialProvider: string = (() => {
+    const model = _initialModel;
+    if (_initialMode === "cli") return "mimo";
+    if (model.startsWith("deepseek")) return "deepseek";
+    if (model.startsWith("claude")) return "anthropic";
+    if (model.startsWith("moonshot")) return "moonshot";
+    if (model.startsWith("gemini")) return "gemini";
+    if (model.startsWith("gpt") || model.startsWith("o3")) return "openai";
+    return "mimo";
+  })();
+
+  const [cliModel, setCliModel] = useState(_initialModel);
+  const [currentMode, setCurrentMode] = useState<"cli" | "api">(_initialMode);
+  const [currentProvider, setCurrentProvider] = useState(_initialProvider);
   const [collaborationMode, setCollaborationMode] = useState<CollaborationMode>("default");
   const windowVisibleRef = useRef(true);
   const [securityMode, setSecurityMode] = useState<SecurityMode>(getEffectiveSecurityMode(currentProject?.path));
@@ -278,6 +324,14 @@ abortControllersRef.current.clear();
       setCurrentProvider(provider);
       console.log(`[ModelChange] model=${model}, provider=${provider}`);
     }
+
+    // Persist the selected model to settings so it survives app restart
+    try {
+      const settings = getSettingJSON<any>("codem-settings", {});
+      setSettingJSON("codem-settings", { ...settings, model });
+    } catch (e) {
+      console.warn("[ModelChange] Failed to persist model:", e);
+    }
   }, []);
 const [compactionStatus, setCompactionStatus] = useState<{ active: boolean; messagesRemoved?: number } | null>(null);
 const [pendingPermissions, setPendingPermissions] = useState<Map<string, {
@@ -371,6 +425,9 @@ flushStreamBuffer(); // flush all on unmount
         await migrateFromLocalStorage();
         ThemeManager.init();
         useProjectStore.getState().loadFromDB();
+        // DB is now ready — re-configure engine to read the correct mode/model/provider.
+        // The initial configureEngine() in the other useEffect may have run before DB init.
+        configureEngine();
       } catch (err) {
         console.error("[App] Init failed:", err);
         useProjectStore.getState().loadFromDB();
@@ -542,8 +599,8 @@ flushStreamBuffer(); // flush all on unmount
       }
 
       if (settings.mode === "cli") {
-        // CLI mode: always use mimo model
-        const model = "mimo-v2.5-pro";
+        // CLI mode: use saved model or default to mimo-v2.5-pro
+        const model = settings.model || "mimo-v2.5-pro";
         engine.updateConfig({ defaultProvider: "mimo", defaultModel: model });
         setCliModel(model);
         setCurrentMode("cli");
@@ -622,6 +679,8 @@ flushStreamBuffer(); // flush all on unmount
     let unlisten: (() => void) | undefined;
     listen("close-requested", () => {
       const closeBehavior = getSetting("codem-close-behavior"); // "tray" | "close" | null
+      // Flush any pending DB writes before closing/minimizing
+      flushDatabase();
       if (closeBehavior === "tray") {
         // Minimize to tray
         const { invoke } = (window as any).__TAURI__?.core || {};
@@ -644,6 +703,8 @@ flushStreamBuffer(); // flush all on unmount
     if (remember) {
       setSetting("codem-close-behavior", action);
     }
+    // Flush DB to ensure settings are persisted before app exits
+    flushDatabase();
     const { invoke } = (window as any).__TAURI__?.core || {};
     if (action === "tray") {
       invoke?.("hide_to_tray");
@@ -1118,6 +1179,10 @@ flushStreamBuffer(session.id);
               title: event.title || "",
               steps: event.steps?.map(s => ({ title: s.title })) ?? null,
             });
+            // P0-2: 步骤进度气泡
+            const stepTitle = event.title || `步骤 ${event.step}`;
+            const stepTotal = event.total ? `/${event.total}` : "";
+            usePetStore.getState().showRawBubble(`${stepTitle}${stepTotal}`, 3000);
             break;
           }
 
@@ -1227,6 +1292,9 @@ saveMessages(session.id);
 
           case "compaction_start": {
             setCompactionStatus({ active: true });
+            // P1-8: 宠物切到 waiting 状态 + 压缩提示气泡
+            usePetStore.getState().setPetState("waiting");
+            usePetStore.getState().showRawBubble("正在压缩上下文…", 5000);
             break;
           }
 
@@ -1238,6 +1306,11 @@ saveMessages(session.id);
           loadMessages(session.id);
           saveMessages(session.id);
         }
+            // P1-8: 恢复宠物状态 + 压缩完成气泡
+            usePetStore.getState().setPetState("idle");
+            if (removed > 0) {
+              usePetStore.getState().showRawBubble(`已压缩 ${removed} 条消息`, 3000);
+            }
             // Auto-clear compaction status after 3 seconds
             setTimeout(() => setCompactionStatus(null), 3000);
             break;
@@ -1250,10 +1323,17 @@ saveMessages(session.id);
             const isOverflow = "result" in event && event.result?.type === "overflow";
             if (!isOverflow) {
               // Determine if tools were used (task with actions) vs simple chat
-              const hadToolCalls = generatedFilesRef.current.size > 0;
-              const bubbleMsg = hadToolCalls ? "任务做完了！" : "回复完成了！";
-              // Small delay so pet "happy" animation starts first
-              setTimeout(() => usePetStore.getState().showBubble(bubbleMsg), 300);
+              const fileCount = generatedFilesRef.current.size;
+              const hadToolCalls = fileCount > 0;
+              if (hadToolCalls) {
+                // P0-3 + P1-9: 有文件变更时用 waving 状态 + 文件数摘要
+                usePetStore.getState().setPetState("waving");
+                const bubbleMsg = fileCount === 1 ? "任务完成！修改了 1 个文件" : `任务完成！修改了 ${fileCount} 个文件`;
+                setTimeout(() => usePetStore.getState().showBubble(bubbleMsg), 300);
+              } else {
+                const bubbleMsg = "回复完成了！";
+                setTimeout(() => usePetStore.getState().showBubble(bubbleMsg), 300);
+              }
             }
             // Handle overflow result (context completely exhausted)
             if ("result" in event && event.result?.type === "overflow") {

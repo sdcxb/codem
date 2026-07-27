@@ -993,7 +993,7 @@ async fn create_pet_window(app: AppHandle) -> Result<(), String> {
     let window = tauri::WebviewWindowBuilder::new(
         &app,
         "pet",
-        tauri::WebviewUrl::App("index.html?window=pet".into()),
+        tauri::WebviewUrl::App("pet.html".into()),
     )
     .title("Pet")
     .inner_size(200.0, 250.0)
@@ -1100,6 +1100,80 @@ async fn resize_pet_window(app: AppHandle, width: f64, height: f64) -> Result<()
             .set_size(tauri::LogicalSize::new(width, height))
             .map_err(|e| e.to_string())?;
     }
+    Ok(())
+}
+
+/// Atomically sets the pet window's position and size in a single IPC call.
+/// Eliminates the visual flicker caused by separate set_position + set_size calls.
+#[tauri::command]
+async fn set_pet_window_geometry(app: AppHandle, x: f64, y: f64, width: f64, height: f64) -> Result<(), String> {
+    if let Some(window) = app.get_webview_window("pet") {
+        // set_position first (move window), then set_size (grow from new top-left).
+        // Both are synchronous Win32 SetWindowPos calls — no async gap between them.
+        window.set_position(tauri::LogicalPosition::new(x, y)).map_err(|e| e.to_string())?;
+        window.set_size(tauri::LogicalSize::new(width, height)).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+/// Resizes the pet window while keeping the sprite's screen position fixed.
+///
+/// Anchor = horizontal center of the current window + bottom of the current window
+/// (the sprite sits at the bottom-center of the window).
+///
+/// Uses a single Win32 `SetWindowPos` call to set position AND size simultaneously,
+/// eliminating any visual drift that occurs when `set_position` + `set_size` are
+/// called as two separate Win32 calls.
+#[tauri::command]
+async fn resize_pet_window_anchored(app: AppHandle, width: f64, height: f64) -> Result<(), String> {
+    let window = app.get_webview_window("pet").ok_or("Pet window not found")?;
+
+    // Read current physical position and size (synchronous Win32 GetWindowRect)
+    let pos = window.outer_position().map_err(|e| e.to_string())?;
+    let size = window.outer_size().map_err(|e| e.to_string())?;
+
+    // Anchor: sprite horizontal center + sprite bottom (in physical pixels)
+    let anchor_x = pos.x + (size.width as i32) / 2;
+    let anchor_y = pos.y + size.height as i32;
+
+    // Convert desired logical size to physical pixels
+    let scale = window.scale_factor().unwrap_or(1.0);
+    let phys_width = (width * scale).round() as i32;
+    let phys_height = (height * scale).round() as i32;
+
+    // New top-left so that the anchor stays fixed
+    let new_x = anchor_x - phys_width / 2;
+    let new_y = anchor_y - phys_height;
+
+    // Single SetWindowPos call: sets both position and size atomically.
+    // SWP_NOZORDER  — don't change z-order
+    // SWP_NOACTIVATE — don't activate the window
+    // SWP_NOCOPYBITS — don't copy old window content (prevents visual artifacts)
+    #[cfg(target_os = "windows")]
+    {
+        use windows::Win32::UI::WindowsAndMessaging::*;
+        use windows::Win32::Foundation::HWND;
+
+        let hwnd_raw = window.hwnd().map_err(|e| e.to_string())?;
+        let hwnd = HWND(hwnd_raw.0 as *mut _);
+
+        let flags = SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOCOPYBITS;
+        unsafe {
+            SetWindowPos(hwnd, None, new_x, new_y, phys_width, phys_height, flags)
+                .map_err(|e| format!("SetWindowPos failed: {}", e))?;
+        }
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        window
+            .set_position(tauri::PhysicalPosition::new(new_x, new_y))
+            .map_err(|e| e.to_string())?;
+        window
+            .set_size(tauri::PhysicalSize::new(phys_width, phys_height))
+            .map_err(|e| e.to_string())?;
+    }
+
     Ok(())
 }
 
@@ -1339,6 +1413,8 @@ path_exists,
             create_pet_window,
             close_pet_window,
             resize_pet_window,
+            set_pet_window_geometry,
+            resize_pet_window_anchored,
             show_pet_menu,
         ])
         .setup(|app| {

@@ -19,7 +19,7 @@
 
 import { useRef, useEffect, useState, useCallback, memo } from "react";
 import type { PetDefinition, PetState } from "../core/pet/pet-types";
-import { getAnimationForState } from "../core/pet/pet-manager";
+import { getAnimationForState } from "../core/pet/pet-animation-utils";
 
 interface PetSpriteProps {
   /** 宠物定义 */

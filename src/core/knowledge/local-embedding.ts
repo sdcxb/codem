@@ -139,9 +139,19 @@ export async function initLocalEmbedding(modelId?: string): Promise<void> {
       env.useBrowserCache = true;        // 远程模型使用浏览器缓存（IndexedDB）
 
       // WASM 运行时路径：指向随包打包的本地 WASM 文件
+      // ⚠ 必须使用对象格式（而非字符串），原因有二：
+      // 1. @huggingface/transformers v4 导入 onnxruntime-web/webgpu，该构建使用 asyncify 变体
+      //    （ort-wasm-simd-threaded.asyncify.wasm），不是 jsep 变体。
+      //    使用对象格式可以显式指定正确的文件名，避免变体不匹配。
+      // 2. 对象格式会触发 @huggingface/transformers 的 ensureWasmLoaded() 预加载机制
+      //    （检查 typeof wasmPaths === 'object' && wasmPaths.wasm && wasmPaths.mjs），
+      //    将 WASM 二进制缓存为 Blob URL，提升加载性能并支持离线使用。
       if (env.backends?.onnx?.wasm) {
         env.backends.onnx.wasm.numThreads = 1; // 单线程，避免多线程 WASM 文件加载问题
-        env.backends.onnx.wasm.wasmPaths = '/wasm/'; // 本地 WASM 路径（对应 public/wasm/）
+        env.backends.onnx.wasm.wasmPaths = {
+          mjs: '/wasm/ort-wasm-simd-threaded.asyncify.mjs',
+          wasm: '/wasm/ort-wasm-simd-threaded.asyncify.wasm',
+        };
       }
 
       emitStatus('loading', '正在初始化 ONNX Runtime...', 30);

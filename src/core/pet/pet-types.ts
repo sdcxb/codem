@@ -20,11 +20,14 @@
  * - idle:     Agent 空闲（llm_status === "idle"）
  * - thinking: Agent 正在连接或流式输出文本/推理（llm_status === "connecting" | "streaming"）
  * - working:  Agent 正在执行工具（llm_status === "executing_tools"）
- * - happy:    Agent 成功完成（end 事件，无错误）
+ * - happy:    Agent 成功完成（end 事件，无错误，无文件变更）
  * - sad:      Agent 出错（error 事件或 tool_error）
  * - sleeping: 长时间无活动（> 60s 空闲后自动进入）
+ * - waiting:  Agent 等待中（上下文压缩、等待审批等）
+ * - review:   Agent 生成了文件变更，等待用户审查
+ * - waving:   Agent 任务成功完成（伴随文件变更时的庆祝动画）
  */
-export type PetState = "idle" | "thinking" | "working" | "happy" | "sad" | "sleeping";
+export type PetState = "idle" | "thinking" | "working" | "happy" | "sad" | "sleeping" | "waiting" | "review" | "waving";
 
 /** 所有支持的宠物状态列表（用于迭代） */
 export const ALL_PET_STATES: PetState[] = [
@@ -34,6 +37,9 @@ export const ALL_PET_STATES: PetState[] = [
   "happy",
   "sad",
   "sleeping",
+  "waiting",
+  "review",
+  "waving",
 ];
 
 // ========== 宠物动画帧配置 ==========

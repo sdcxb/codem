@@ -29,6 +29,9 @@ const STATE_LABELS: Record<PetState, string> = {
   happy: "开心！",
   sad: "出错了...",
   sleeping: "睡觉中...",
+  waiting: "等待中...",
+  review: "请审查变更",
+  waving: "任务完成！",
 };
 
 /** 点击彩蛋：idle/sleeping 时点击循环切换状态 */

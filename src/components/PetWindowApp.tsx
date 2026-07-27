@@ -1,21 +1,21 @@
 /**
  * PetWindowApp — 独立宠物窗口的根组件。
  *
- * 运行在 Tauri 创建的透明、无边框、置顶窗口中，
- * 独立于主窗口，最小化主窗口时宠物仍然可见。
+ * ===== 窗口尺寸策略 =====
+ * - 初始（无气泡）：窗口 = 精灵图宽 × (精灵图高 + MIN_BUBBLE_HEIGHT)
+ * - 事件气泡出现：用 canvas 精确测量文本所需宽高，动态扩展窗口
+ * - 事件气泡消失：缩回初始紧凑尺寸
+ * - 悬停气泡：不触发 resize，在 MIN_BUBBLE_HEIGHT 预留空间内显示
  *
- * 数据流：
- * 1. 主窗口 pet-store 通过 Tauri 事件发送状态到宠物窗口
- * 2. 本组件监听事件，维护本地状态
- * 3. 渲染 PetSprite 精灵图动画
- * 4. 拖拽通过 Tauri startDragging 实现（原生窗口拖动）
- * 5. 右键菜单通过 Rust 原生弹出菜单（不受窗口边界裁剪）
- * 6. 悬浮气泡：监听 pet-bubble 事件，动态扩展窗口高度
+ * ===== 防漂移核心：Rust 端锚点计算 =====
+ * 前端只传目标 width/height 给 Rust 的 resize_pet_window_anchored 命令。
+ * Rust 端同步读取当前窗口位置 → 计算锚点（水平中心 + 底部）
+ * → 原子化设置新位置和尺寸。全程无异步间隙，无 tauri://move 事件竞态。
  *
  * 基于 Petdex (MIT License) 开源项目集成并改造。
  */
 
-import { useRef, useEffect, useState, useCallback, useLayoutEffect } from "react";
+import { useRef, useEffect, useState, useCallback, useMemo } from "react";
 import { PetSprite } from "./PetSprite";
 import type { PetDefinition, PetState } from "../core/pet/pet-types";
 
@@ -56,12 +56,86 @@ function tauriListen(event: string, handler: (payload: any) => void): (() => voi
 const FRAME_WIDTH = 192;
 const FRAME_HEIGHT = 208;
 
-/** 气泡与精灵图之间的间距 */
-const BUBBLE_GAP = 6;
-/** 气泡内容区固定宽度（逻辑像素），确保换行一致 */
-const BUBBLE_MAX_WIDTH = 280;
-/** 气泡可见时窗口至少需要的宽度（含 padding） */
-const BUBBLE_WINDOW_WIDTH = BUBBLE_MAX_WIDTH + 20;
+/** 气泡与精灵图之间的间距（含箭头高度 4px） */
+const BUBBLE_GAP = 8;
+/** 预留最小气泡高度（初始窗口高度 = spriteH + 此值） */
+const MIN_BUBBLE_HEIGHT = 34;
+/** 气泡最大宽度（px） */
+const BUBBLE_MAX_WIDTH = 240;
+/** 气泡 CSS 参数（须与 measureBubbleText 一致） */
+const BUBBLE_FONT = "11px sans-serif";
+const BUBBLE_PADDING_H = 10; // 每侧
+const BUBBLE_PADDING_V = 5;  // 每侧
+const BUBBLE_LINE_HEIGHT = 15; // ≈ 11px × 1.35
+
+/** 宠物状态 → 悬停时显示的中文描述 */
+const PET_STATE_TEXT: Record<PetState, string> = {
+  idle: "空闲中",
+  thinking: "思考中…",
+  working: "工作中…",
+  happy: "任务完成！",
+  sad: "出错了",
+  sleeping: "休眠中",
+  waiting: "等待中",
+  review: "请审查变更",
+  waving: "任务完成！",
+};
+
+// ========== 气泡文本测量（canvas 精确测量） ==========
+
+function measureBubbleText(text: string): { width: number; height: number } {
+  const paddingH = BUBBLE_PADDING_H * 2;
+  const paddingV = BUBBLE_PADDING_V * 2;
+  const innerMaxWidth = BUBBLE_MAX_WIDTH - paddingH;
+
+  const canvas = document.createElement("canvas");
+  const ctx = canvas.getContext("2d");
+
+  // fallback：无 canvas 时粗略估算
+  if (!ctx) {
+    const charW = 7;
+    const lines = Math.max(1, Math.ceil((text.length * charW) / innerMaxWidth));
+    return {
+      width: Math.min(text.length * charW + paddingH, BUBBLE_MAX_WIDTH),
+      height: lines * BUBBLE_LINE_HEIGHT + paddingV,
+    };
+  }
+
+  ctx.font = BUBBLE_FONT;
+
+  // 处理显式换行 + 自动换行
+  const explicitLines = text.split("\n");
+  const wrappedLines: string[] = [];
+
+  for (const line of explicitLines) {
+    if (line === "") {
+      wrappedLines.push("");
+      continue;
+    }
+    if (ctx.measureText(line).width <= innerMaxWidth) {
+      wrappedLines.push(line);
+      continue;
+    }
+    // 逐字符换行（兼容中英文混合）
+    let current = "";
+    for (let i = 0; i < line.length; i++) {
+      const test = current + line[i];
+      if (ctx.measureText(test).width > innerMaxWidth && current) {
+        wrappedLines.push(current);
+        current = line[i];
+      } else {
+        current = test;
+      }
+    }
+    if (current) wrappedLines.push(current);
+  }
+
+  const maxLineWidth = Math.max(...wrappedLines.map((l) => ctx.measureText(l).width));
+  return {
+    width: Math.ceil(Math.min(maxLineWidth + paddingH, BUBBLE_MAX_WIDTH)),
+    height: Math.ceil(wrappedLines.length * BUBBLE_LINE_HEIGHT + paddingV),
+  };
+}
 
 // ========== 组件 ==========
 
@@ -74,57 +148,38 @@ export function PetWindowApp() {
     opacity: 1.0,
   });
   const [bubble, setBubble] = useState<BubbleData>({ text: "", visible: false });
-  // 气泡实际测量高度（动态，随内容变化）
-  const [bubbleHeight, setBubbleHeight] = useState(48);
+  const [isHovering, setIsHovering] = useState(false);
+  const [ready, setReady] = useState(false);
+
   const winRef = useRef<any>(null);
   const bubbleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const bubbleRef = useRef<HTMLDivElement>(null);
-  // 记录当前窗口额外宽高增量（用于位置增量计算，保持宠物视觉静止）
-  const currentExtraWRef = useRef(0);
-  const currentExtraHRef = useRef(0);
 
-  // 获取当前 Tauri 窗口实例
+  // ===== 获取 Tauri 窗口实例 =====
   useEffect(() => {
-    winRef.current = getTauriWindow();
+    const win = getTauriWindow();
+    winRef.current = win;
+    if (win) setReady(true);
   }, []);
 
-  // 监听来自主窗口的事件
+  // ===== 事件监听 =====
   useEffect(() => {
     const unlistenState = tauriListen("pet-state-update", (data: any) => {
-      setState((prev) => ({
-        ...prev,
-        ...data,
-      }));
+      setState((prev) => ({ ...prev, ...data }));
     });
-
     const unlistenClose = tauriListen("pet-close", () => {
       const win = winRef.current;
-      if (win) {
-        win.close();
-      }
+      if (win) win.close();
     });
-
-    // 监听气泡通知事件
     const unlistenBubble = tauriListen("pet-bubble", (data: any) => {
       const { text, duration = 4000 } = data;
-
-      if (bubbleTimerRef.current) {
-        clearTimeout(bubbleTimerRef.current);
-      }
-
+      if (bubbleTimerRef.current) clearTimeout(bubbleTimerRef.current);
       setBubble({ text, visible: true });
-
       bubbleTimerRef.current = setTimeout(() => {
         setBubble((prev) => ({ ...prev, visible: false }));
       }, duration);
     });
-
-    // 通知主窗口：宠物窗口已就绪
     const tauri = (window as any).__TAURI__;
-    if (tauri?.event?.emit) {
-      tauri.event.emit("pet-window-ready", {});
-    }
-
+    if (tauri?.event?.emit) tauri.event.emit("pet-window-ready", {});
     return () => {
       if (unlistenState) unlistenState();
       if (unlistenClose) unlistenClose();
@@ -133,99 +188,102 @@ export function PetWindowApp() {
     };
   }, []);
 
-  // ========== 测量气泡实际高度（同步，在 paint 前完成） ==========
-  useLayoutEffect(() => {
-    if (!bubble.visible || !bubbleRef.current) return;
-    const h = bubbleRef.current.offsetHeight;
-    if (h > 0 && h !== bubbleHeight) {
-      setBubbleHeight(h);
-    }
+  // ===== 精确测量事件气泡尺寸 =====
+  const bubbleSize = useMemo(() => {
+    if (!bubble.visible || !bubble.text) return null;
+    return measureBubbleText(bubble.text);
   }, [bubble.visible, bubble.text]);
 
-  // ========== 窗口尺寸 + 位置：合并为一个 effect，用增量保证宠物不动 ==========
-  useEffect(() => {
-    if (!state.definition) return;
-    const win = winRef.current;
-    if (!win) return;
+  const eventBubbleActive = bubble.visible && bubbleSize !== null;
 
-    const TauriAPI = (window as any).__TAURI__?.window;
-    if (!TauriAPI?.LogicalSize || !TauriAPI?.LogicalPosition) return;
+  // ===== 显示气泡（事件优先 > 悬停）=====
+  const displayBubbleText = bubble.visible
+    ? bubble.text
+    : isHovering
+      ? (PET_STATE_TEXT[state.petState] ?? "")
+      : "";
+  const displayBubbleVisible = bubble.visible || isHovering;
+
+  // ===== geometry effect：调用 Rust 端锚点 resize =====
+  useEffect(() => {
+    if (!state.definition || !ready) return;
 
     const spriteW = FRAME_WIDTH * state.scale;
     const spriteH = FRAME_HEIGHT * state.scale;
 
-    // 气泡可见时，窗口需扩展宽度（给文字留空间）和高度（自适应）
-    const newExtraW = bubble.visible ? Math.max(0, BUBBLE_WINDOW_WIDTH - spriteW) : 0;
-    const newExtraH = bubble.visible ? bubbleHeight + BUBBLE_GAP : 0;
+    let windowW: number;
+    let windowH: number;
 
-    const windowW = spriteW + newExtraW;
-    const windowH = spriteH + newExtraH;
-
-    // 1) 调整窗口大小
-    win.setSize(new TauriAPI.LogicalSize(windowW, windowH)).catch(() => {});
-
-    // 2) 用增量调整窗口位置：上移 deltaH，左移 deltaW/2（居中扩展）
-    const deltaW = newExtraW - currentExtraWRef.current;
-    const deltaH = newExtraH - currentExtraHRef.current;
-
-    if (deltaW !== 0 || deltaH !== 0) {
-      win.outerPosition().then((physicalPos: any) => {
-        const dpr = window.devicePixelRatio || 1;
-        const logicalX = physicalPos.x / dpr;
-        const logicalY = physicalPos.y / dpr;
-        const newX = logicalX - deltaW / 2;
-        const newY = logicalY - deltaH;
-        win.setPosition(new TauriAPI.LogicalPosition(newX, newY)).catch(() => {});
-      }).catch(() => {});
+    if (eventBubbleActive && bubbleSize) {
+      // 事件气泡：窗口宽度取精灵图与气泡的较大值，高度 = 精灵图 + 气泡 + 间距
+      windowW = Math.max(spriteW, bubbleSize.width + 4); // +4 for border
+      windowH = spriteH + bubbleSize.height + BUBBLE_GAP;
+    } else {
+      // 无事件气泡：紧凑尺寸 + 预留最小气泡高度
+      windowW = spriteW;
+      windowH = spriteH + MIN_BUBBLE_HEIGHT;
     }
 
-    currentExtraWRef.current = newExtraW;
-    currentExtraHRef.current = newExtraH;
-  }, [state.definition, state.scale, bubble.visible, bubbleHeight]);
+    // ★ 调用 Rust 端命令：同步读取当前位置 → 计算锚点 → 设置新位置和尺寸
+    const invoke = (window as any).__TAURI__?.core?.invoke;
+    if (invoke) {
+      invoke("resize_pet_window_anchored", {
+        width: windowW,
+        height: windowH,
+      }).catch(() => {});
+    }
+  }, [state.definition, state.scale, ready, eventBubbleActive, bubbleSize]);
 
-  // 拖拽：使用 Tauri 原生窗口拖动
+  // ===== 交互处理 =====
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     if (e.button === 2) return;
     const win = winRef.current;
-    if (win) {
-      win.startDragging();
-    }
+    if (win) win.startDragging();
   }, []);
 
-  // 右键菜单：调用 Rust 原生弹出菜单
-  const handleContextMenu = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const { invoke } = (window as any).__TAURI__?.core || {};
-    if (invoke) {
-      const dpr = window.devicePixelRatio || 1;
-      invoke("show_pet_menu", {
-        x: e.clientX * dpr,
-        y: e.clientY * dpr,
-        petName: state.definition?.name ?? null,
-      }).catch((err: any) => {
-        console.warn("[PetWindowApp] Failed to show pet menu:", err);
-      });
-    }
-  }, [state.definition]);
+  const handleContextMenu = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const { invoke } = (window as any).__TAURI__?.core || {};
+      if (invoke) {
+        const dpr = window.devicePixelRatio || 1;
+        invoke("show_pet_menu", {
+          x: e.clientX * dpr,
+          y: e.clientY * dpr,
+          petName: state.definition?.name ?? null,
+        }).catch(() => {});
+      }
+    },
+    [state.definition]
+  );
 
-  // 如果没有收到定义，显示加载中
+  const handleMouseEnter = useCallback(() => setIsHovering(true), []);
+  const handleMouseLeave = useCallback(() => setIsHovering(false), []);
+
+  // ===== 渲染 =====
   if (!state.definition || !state.spritesheetUrl) {
     return (
-      <div style={{
-        width: "100%",
-        height: "100%",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        background: "transparent",
-        color: "rgba(136,136,136,0.5)",
-        fontSize: "10px",
-      }}>
+      <div
+        style={{
+          width: "100%",
+          height: "100%",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          background: "transparent",
+          color: "rgba(136,136,136,0.5)",
+          fontSize: "10px",
+        }}
+      >
         ...
       </div>
     );
   }
+
+  const spriteW = FRAME_WIDTH * state.scale;
+  const spriteH = FRAME_HEIGHT * state.scale;
+  const bubbleMaxW = eventBubbleActive ? BUBBLE_MAX_WIDTH : Math.max(spriteW - BUBBLE_PADDING_H * 2, 60);
 
   return (
     <div
@@ -233,64 +291,63 @@ export function PetWindowApp() {
         width: "100%",
         height: "100%",
         display: "flex",
-        alignItems: "flex-end",
-        justifyContent: "center",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "flex-end",
         background: "transparent",
         userSelect: "none",
         overflow: "hidden",
         position: "relative",
       }}
     >
-      {/* 悬浮气泡 — 绝对定位在精灵图上方，高度自适应内容 */}
-      {bubble.visible && (
+      {/* 气泡区域：占据精灵图上方空间 */}
+      {displayBubbleVisible && displayBubbleText && (
         <div
           style={{
-            position: "absolute",
-            top: 0,
-            left: 0,
-            right: 0,
+            flexShrink: 0,
             display: "flex",
             alignItems: "flex-end",
             justifyContent: "center",
-            paddingBottom: `${BUBBLE_GAP}px`,
+            paddingBottom: BUBBLE_GAP,
             zIndex: 10,
             pointerEvents: "none",
-            animation: "petBubbleIn 0.3s ease",
+            maxWidth: "100%",
+            animation: "petBubbleIn 0.2s ease",
           }}
         >
           <div
-            ref={bubbleRef}
             style={{
-              width: `${BUBBLE_MAX_WIDTH}px`,
-              flexShrink: 0,
-              padding: "6px 12px",
-              borderRadius: "12px",
+              maxWidth: `${bubbleMaxW}px`,
+              width: "fit-content",
+              padding: `${BUBBLE_PADDING_V}px ${BUBBLE_PADDING_H}px`,
+              borderRadius: "10px",
               background: "rgba(30, 30, 46, 0.92)",
               border: "1px solid rgba(255,255,255,0.12)",
-              boxShadow: "0 4px 16px rgba(0,0,0,0.35)",
+              boxShadow: "0 4px 12px rgba(0,0,0,0.3)",
               backdropFilter: "blur(8px)",
               color: "#e8e8f0",
-              fontSize: "12px",
-              lineHeight: "1.4",
+              fontFamily: "sans-serif",
+              fontSize: "11px",
+              lineHeight: `${BUBBLE_LINE_HEIGHT}px`,
               textAlign: "center",
               whiteSpace: "normal",
               wordBreak: "break-word",
               position: "relative",
             }}
           >
-            {bubble.text}
-            {/* 气泡小尾巴 */}
+            {displayBubbleText}
+            {/* 气泡箭头 */}
             <div
               style={{
                 position: "absolute",
-                bottom: "-5px",
+                bottom: "-4px",
                 left: "50%",
                 transform: "translateX(-50%)",
                 width: "0",
                 height: "0",
-                borderLeft: "5px solid transparent",
-                borderRight: "5px solid transparent",
-                borderTop: "5px solid rgba(30, 30, 46, 0.92)",
+                borderLeft: "4px solid transparent",
+                borderRight: "4px solid transparent",
+                borderTop: "4px solid rgba(30, 30, 46, 0.92)",
               }}
             />
           </div>
@@ -301,8 +358,10 @@ export function PetWindowApp() {
       <div
         onMouseDown={handleMouseDown}
         onContextMenu={handleContextMenu}
-        title={state.definition.name}
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={handleMouseLeave}
         style={{
+          flexShrink: 0,
           cursor: "grab",
           filter: state.petState === "sleeping" ? "brightness(0.7)" : "none",
           transition: "filter 0.3s ease",
@@ -317,17 +376,10 @@ export function PetWindowApp() {
         />
       </div>
 
-      {/* 气泡动画 keyframes */}
       <style>{`
         @keyframes petBubbleIn {
-          0% {
-            opacity: 0;
-            transform: translateY(8px) scale(0.9);
-          }
-          100% {
-            opacity: 1;
-            transform: translateY(0) scale(1);
-          }
+          0% { opacity: 0; transform: translateY(4px); }
+          100% { opacity: 1; transform: translateY(0); }
         }
       `}</style>
     </div>
