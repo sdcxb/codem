@@ -1,5 +1,15 @@
 import { create } from "zustand";
 import * as MessageStorage from "./core/storage/message";
+import type { FeedbackType } from "./core/storage/message";
+
+/** Auto-retrieved knowledge source (from notebook RAG, not from tool calls) */
+export interface RetrievedSource {
+  sourceId: string;
+  sourceName: string;
+  chunkIndex: number;
+  snippet: string;
+  score: number;
+}
 
 export interface Message {
   id: string;
@@ -12,12 +22,16 @@ export interface Message {
   attachments?: MessageAttachment[];
   status?: "pending" | "streaming" | "done" | "error";
   generatedFiles?: string[];
+  /** Sources auto-retrieved from notebook knowledge base (not from tool calls) */
+  retrievedSources?: RetrievedSource[];
+  /** Structured metadata (e.g. RAG source references, tool results) */
+  metadata?: Record<string, any>;
 }
 
 export interface MessageAttachment {
   id: string;
   name: string;
-  type: "file" | "image" | "code" | "url";
+  type: "file" | "image" | "code" | "url" | "video";
   content?: string;
   preview?: string;
   mimeType?: string;
@@ -33,6 +47,8 @@ export interface ToolCall {
   args: Record<string, unknown>;
   result?: string;
   status: "pending" | "running" | "done" | "error";
+  /** Structured metadata from tool result (e.g. search_notebook source citations) */
+  metadata?: Record<string, any>;
 }
 
 export interface StepItem {
@@ -57,6 +73,21 @@ export interface StepProgress {
 
 export type LLMStatus = "idle" | "connecting" | "streaming" | "executing_tools";
 
+/** A guidance message sent by the user during an active agent run */
+export interface GuidanceMessage {
+  id: string;
+  message: string;
+  timestamp: number;
+  /** Whether the guidance has been consumed by the agentic loop */
+  consumed: boolean;
+}
+
+/** Scroll position state for chat panel */
+export type ScrollPosition = "bottom" | "near-bottom" | "scrolled-up";
+
+/** Feedback state map: messageId -> 'like' | 'dislike' */
+type FeedbackMap = Record<string, FeedbackType>;
+
 interface AppState {
   messages: Message[];
   isStreaming: boolean;
@@ -72,6 +103,14 @@ interface AppState {
   streamStartTime: number | null;
   llmStatus: LLMStatus;
   displayMode: "segmented" | "unified";
+  /** Guidance messages sent during the current active run */
+  guidanceMessages: GuidanceMessage[];
+  /** P0: Message feedback map (messageId -> 'like' | 'dislike') */
+  feedback: FeedbackMap;
+  /** P0: Whether the user has scrolled up from the bottom of the chat */
+  scrollPosition: ScrollPosition;
+  /** P0: Whether there are new messages the user hasn't seen (because they scrolled up) */
+  hasUnreadMessages: boolean;
 
   addMessage: (msg: Message) => void;
   updateMessage: (id: string, update: Partial<Message>) => void;
@@ -98,6 +137,22 @@ interface AppState {
   setStreamStartTime: (time: number | null) => void;
   setLLMStatus: (status: LLMStatus) => void;
   setDisplayMode: (mode: "segmented" | "unified") => void;
+  /** Add a guidance message to the current run */
+  addGuidanceMessage: (msg: GuidanceMessage) => void;
+  /** Mark a guidance message as consumed by the loop */
+  markGuidanceConsumed: (id: string) => void;
+  /** Clear all guidance messages (called when run ends) */
+  clearGuidanceMessages: () => void;
+  /** P0: Set feedback for a message (persists to DB). sessionId is needed for DB persistence. */
+  setFeedback: (messageId: string, feedback: FeedbackType | null, sessionId?: string) => void;
+  /** P0: Load feedback for a message from DB */
+  loadFeedback: (messageId: string) => void;
+  /** P0: Remove messages after a given message (for inline edit) */
+  removeMessagesAfter: (messageId: string, includeSelf?: boolean) => void;
+  /** P0: Update scroll position state */
+  setScrollPosition: (pos: ScrollPosition) => void;
+  /** P0: Mark that there are unread messages */
+  setHasUnreadMessages: (v: boolean) => void;
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -114,6 +169,10 @@ export const useAppStore = create<AppState>((set, get) => ({
   streamStartTime: null,
   llmStatus: "idle" as LLMStatus,
   displayMode: "unified" as "segmented" | "unified",
+  guidanceMessages: [],
+  feedback: {},
+  scrollPosition: "bottom",
+  hasUnreadMessages: false,
 
   addMessage: (msg) => {
     set((s) => {
@@ -247,4 +306,69 @@ export const useAppStore = create<AppState>((set, get) => ({
   setStreamStartTime: (time) => set({ streamStartTime: time }),
   setLLMStatus: (status) => set({ llmStatus: status }),
   setDisplayMode: (mode) => set({ displayMode: mode }),
+  addGuidanceMessage: (msg) => set((s) => ({ guidanceMessages: [...s.guidanceMessages, msg] })),
+  markGuidanceConsumed: (id) => set((s) => ({
+    guidanceMessages: s.guidanceMessages.map((g) => g.id === id ? { ...g, consumed: true } : g),
+  })),
+  clearGuidanceMessages: () => set({ guidanceMessages: [] }),
+
+  setFeedback: (messageId, feedback, sessionId) => {
+    // Persist to database if we have a sessionId
+    if (sessionId) {
+      try {
+        MessageStorage.saveFeedback(messageId, sessionId, feedback);
+      } catch (e) {
+        console.warn("[setFeedback] DB save failed:", e);
+      }
+    }
+    // Update in-memory state
+    set((s) => {
+      const newFeedback = { ...s.feedback };
+      if (feedback === null) {
+        delete newFeedback[messageId];
+      } else {
+        newFeedback[messageId] = feedback;
+      }
+      return { feedback: newFeedback };
+    });
+  },
+
+  loadFeedback: (messageId) => {
+    try {
+      const fb = MessageStorage.loadFeedback(messageId);
+      if (fb) {
+        set((s) => ({ feedback: { ...s.feedback, [messageId]: fb } }));
+      }
+    } catch (e) {
+      console.warn("[loadFeedback] Failed:", e);
+    }
+  },
+
+  removeMessagesAfter: (messageId, includeSelf) => {
+    set((s) => {
+      const idx = s.messages.findIndex((m) => m.id === messageId);
+      if (idx === -1) return s;
+      const keepCount = includeSelf ? idx : idx + 1;
+      // P0 fix: also clean up feedback entries for removed messages
+      const removedMessages = s.messages.slice(keepCount);
+      if (removedMessages.length === 0) {
+        return { messages: s.messages.slice(0, keepCount) };
+      }
+      const newFeedback = { ...s.feedback };
+      for (const msg of removedMessages) {
+        delete newFeedback[msg.id];
+      }
+      return { messages: s.messages.slice(0, keepCount), feedback: newFeedback };
+    });
+  },
+
+  setScrollPosition: (pos) => set((s) => {
+    // When user scrolls to bottom, clear unread flag
+    if (pos === "bottom" || pos === "near-bottom") {
+      return { scrollPosition: pos, hasUnreadMessages: false };
+    }
+    return { scrollPosition: pos };
+  }),
+
+  setHasUnreadMessages: (v) => set({ hasUnreadMessages: v }),
 }));

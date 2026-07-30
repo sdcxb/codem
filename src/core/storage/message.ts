@@ -1,5 +1,5 @@
 import { getDatabase, persistDatabase } from "./database";
-import type { Message, ToolCall, MessageAttachment } from "../../store";
+import type { Message, ToolCall, MessageAttachment, RetrievedSource } from "../../store";
 
 export interface MessageRow {
   id: string;
@@ -14,6 +14,7 @@ export interface MessageRow {
   cost: number;
   status: string;
   generated_files: string | null;
+  retrieved_sources: string | null;
 }
 
 export interface ToolCallRow {
@@ -37,6 +38,7 @@ function rowToMessage(row: MessageRow, toolCalls: ToolCall[], attachments?: Mess
     toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
     attachments: attachments && attachments.length > 0 ? attachments : undefined,
     generatedFiles: row.generated_files ? JSON.parse(row.generated_files) : undefined,
+    retrievedSources: row.retrieved_sources ? JSON.parse(row.retrieved_sources) : undefined,
   };
 }
 
@@ -103,7 +105,7 @@ export function listMessages(sessionId: string, limit?: number): Message[] {
   const db = getDatabase();
   const limitClause = limit ? `LIMIT ${limit}` : "";
   const result = db.exec(
-    `SELECT id, session_id, role, content, timestamp, model, prompt_tokens, completion_tokens, cost, status, reasoning, generated_files FROM messages WHERE session_id = ? ORDER BY timestamp ASC ${limitClause}`,
+    `SELECT id, session_id, role, content, timestamp, model, prompt_tokens, completion_tokens, cost, status, reasoning, generated_files, retrieved_sources FROM messages WHERE session_id = ? ORDER BY timestamp ASC ${limitClause}`,
     [sessionId]
   );
   if (result.length === 0) return [];
@@ -123,6 +125,7 @@ export function listMessages(sessionId: string, limit?: number): Message[] {
         status: row[9] as string,
         reasoning: row[10] as string | null,
         generated_files: row[11] as string | null,
+        retrieved_sources: row[12] as string | null,
       };
       const toolCalls = loadToolCallsForMessage(db, messageRow.id);
       const attachments = loadAttachmentsForMessage(db, messageRow.id);
@@ -167,7 +170,7 @@ export function listAllAttachments(limit?: number): Array<MessageAttachment & { 
 
 export function getMessage(id: string): Message | null {
   const db = getDatabase();
-  const result = db.exec("SELECT id, session_id, role, content, timestamp, model, prompt_tokens, completion_tokens, cost, status, reasoning, generated_files FROM messages WHERE id = ?", [id]);
+  const result = db.exec("SELECT id, session_id, role, content, timestamp, model, prompt_tokens, completion_tokens, cost, status, reasoning, generated_files, retrieved_sources FROM messages WHERE id = ?", [id]);
   if (result.length === 0 || result[0].values.length === 0) return null;
 
   const row = result[0].values[0];
@@ -184,6 +187,7 @@ export function getMessage(id: string): Message | null {
     status: row[9] as string,
     reasoning: row[10] as string | null,
     generated_files: row[11] as string | null,
+    retrieved_sources: row[12] as string | null,
   };
 
   const toolCalls = loadToolCallsForMessage(db, id);
@@ -231,6 +235,15 @@ export function createMessage(message: Message, sessionId: string): void {
       db.run("UPDATE messages SET generated_files = ? WHERE id = ?", [JSON.stringify(message.generatedFiles), message.id]);
     } catch (e) {
       console.warn("[createMessage] generated_files column may not exist:", e);
+    }
+  }
+
+  // Persist retrieved_sources (auto-retrieved knowledge citations)
+  if (message.retrievedSources && message.retrievedSources.length > 0) {
+    try {
+      db.run("UPDATE messages SET retrieved_sources = ? WHERE id = ?", [JSON.stringify(message.retrievedSources), message.id]);
+    } catch (e) {
+      console.warn("[createMessage] retrieved_sources column may not exist:", e);
     }
   }
 
@@ -297,6 +310,15 @@ export function updateMessage(id: string, update: Partial<Message>): void {
       db.run("UPDATE messages SET generated_files = ? WHERE id = ?", [update.generatedFiles ? JSON.stringify(update.generatedFiles) : null, id]);
     } catch (e) {
       console.warn("[updateMessage] generated_files column may not exist:", e);
+    }
+  }
+
+  // Handle retrieved_sources separately to avoid failure if column missing
+  if (update.retrievedSources !== undefined) {
+    try {
+      db.run("UPDATE messages SET retrieved_sources = ? WHERE id = ?", [update.retrievedSources ? JSON.stringify(update.retrievedSources) : null, id]);
+    } catch (e) {
+      console.warn("[updateMessage] retrieved_sources column may not exist:", e);
     }
   }
 
@@ -390,6 +412,112 @@ export function getMessageCount(sessionId: string): number {
   const result = db.exec("SELECT COUNT(*) FROM messages WHERE session_id = ?", [sessionId]);
   if (result.length === 0) return 0;
   return result[0].values[0][0] as number;
+}
+
+// ========== P0: Message Feedback (like / dislike) ==========
+
+export type FeedbackType = "like" | "dislike";
+
+export interface FeedbackRecord {
+  id: string;
+  messageId: string;
+  sessionId: string;
+  feedback: FeedbackType;
+  timestamp: number;
+}
+
+/** Save or update feedback for a message. Passing null removes the feedback. */
+export function saveFeedback(messageId: string, sessionId: string, feedback: FeedbackType | null): void {
+  const db = getDatabase();
+  // Delete existing feedback for this message
+  try {
+    db.run("DELETE FROM message_feedback WHERE message_id = ?", [messageId]);
+  } catch (e) {
+    console.warn("[saveFeedback] Failed to delete existing:", e);
+  }
+  if (feedback) {
+    const id = `fb-${messageId}`;
+    try {
+      db.run(
+        "INSERT INTO message_feedback (id, message_id, session_id, feedback, timestamp) VALUES (?, ?, ?, ?, ?)",
+        [id, messageId, sessionId, feedback, Date.now()]
+      );
+    } catch (e) {
+      console.warn("[saveFeedback] Failed to insert:", e);
+    }
+  }
+  persistDatabase();
+}
+
+/** Load feedback for a specific message. Returns 'like', 'dislike', or null. */
+export function loadFeedback(messageId: string): FeedbackType | null {
+  const db = getDatabase();
+  try {
+    const result = db.exec("SELECT feedback FROM message_feedback WHERE message_id = ?", [messageId]);
+    if (result.length === 0 || result[0].values.length === 0) return null;
+    return result[0].values[0][0] as FeedbackType;
+  } catch (e) {
+    console.warn("[loadFeedback] Failed:", e);
+    return null;
+  }
+}
+
+// ========== P0: Delete Messages After (for inline edit & resend) ==========
+
+/**
+ * Delete a message and ALL messages that come after it in the same session.
+ * This is used by the inline-edit-and-resend feature: the user edits a message,
+ * and everything from that point onwards is deleted so the conversation can
+ * be re-run from the edited message.
+ *
+ * @returns the number of messages deleted (including the target message itself if includeSelf=true)
+ */
+export function deleteMessagesAfter(
+  sessionId: string,
+  messageId: string,
+  options?: { includeSelf?: boolean }
+): number {
+  const db = getDatabase();
+  const includeSelf = options?.includeSelf ?? false;
+
+  // Get the timestamp of the target message
+  const tsResult = db.exec(
+    "SELECT timestamp FROM messages WHERE id = ? AND session_id = ?",
+    [messageId, sessionId]
+  );
+  if (tsResult.length === 0 || tsResult[0].values.length === 0) return 0;
+  const targetTimestamp = tsResult[0].values[0][0] as number;
+
+  // Build the query: delete messages after (and optionally including) the target
+  const op = includeSelf ? ">=" : ">";
+  const result = db.exec(
+    `SELECT id FROM messages WHERE session_id = ? AND timestamp ${op} ?`,
+    [sessionId, targetTimestamp]
+  );
+  if (result.length === 0) return 0;
+  const ids = result[0].values.map((row: any[]) => row[0] as string);
+
+  // Delete tool_calls and messages for those IDs
+  for (const id of ids) {
+    db.run("DELETE FROM tool_calls WHERE message_id = ?", [id]);
+    db.run("DELETE FROM message_feedback WHERE message_id = ?", [id]);
+  }
+  db.run(
+    `DELETE FROM messages WHERE session_id = ? AND timestamp ${op} ?`,
+    [sessionId, targetTimestamp]
+  );
+  persistDatabase();
+  return ids.length;
+}
+
+/**
+ * Update a user message's content (for inline edit).
+ * This updates the content in-place without deleting the message.
+ */
+export function updateMessageContent(messageId: string, content: string): void {
+  const db = getDatabase();
+  db.run("UPDATE messages SET content = ? WHERE id = ?", [content, messageId]);
+  persistDatabase();
 }
 
 // ========== Agentic Loop Helper Functions ==========

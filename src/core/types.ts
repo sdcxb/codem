@@ -24,6 +24,12 @@ export interface Session {
   executionMode?: "current_workspace" | "git_worktree";
   /** Selected branch for worktree mode */
   worktreeBranch?: string;
+  /** P1: Correction mode flag */
+  correctionMode?: number;
+  /** P1: Deep thinking mode flag */
+  deepThinkingMode?: number;
+  /** P1: Preserve executor mode flag */
+  preserveExecutor?: number;
 }
 
 export interface Attachment {

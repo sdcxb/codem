@@ -3,8 +3,152 @@
 > **开发计划主线文档**：`docs/DEV-PLAN-UNIFIED.md`（统一开发计划，包含架构约束、影响分析、完整路线图）
 >
 > 以下为具体待办事项跟踪。Phase 0-4 + Phase B-D + Phase F-G 已全部完成，v0.89 已发布（含跨会话委派编排 + 高级调试 UI + 冒烟测试），v0.89 发布后完成宠物窗口锚点 resize + 多页打包 + 模型持久化修复。
+> v0.90.0 已发布：推理强度分档 + UI/UX 大幅优化 + 统一 + 按钮 + 新手引导完善 + 梦幻皮肤磨砂玻璃 + 架构培训文档。
+> v0.90.0 之后进入下一阶段开发。
 
 ## 待开发
+
+### v0.90.0 已发布（2026-07-31）
+
+#### 推理强度分档
+- [x] 修复 `engine.process()` 断点：`reasoningEffort` 参数正确传递到 LLM API
+- [x] 模型选择器底部新增推理强度分栏（低/中/高/超高）
+- [x] 超高档位映射为 `reasoning_effort: "high"` + `maxOutputTokens: 16384`
+- [x] 深度思考按钮从“⋯更多”菜单移除
+
+#### UI/UX 大幅优化
+- [x] 统一 + 按钮：上传文件 + 选择技能 + 生成图片 + 语音合成
+- [x] 发送器右侧上箭头按钮：快捷短语 + 提示词草稿（视觉一体化）
+- [x] 输入框内所有按钮垂直居中
+- [x] 赞/踩按钮内联到复制/收起同一行
+- [x] 快速访问 Agent 扩展：plan/explore/general 从 subagent 改为 all
+
+#### 新手引导完善
+- [x] 修复最后一步窗口太靠下看不全
+- [x] 改为仅首次打开显示
+- [x] 设置页新增「帮助」标签页，可重新播放
+
+#### 侧边弹窗统一
+- [x] 多模态/智能体/快照/上下文监控弹窗与主对话区同高居右
+- [x] CSS 变量动态测量 chat-body 边界
+- [x] 修复弹窗关闭按钮与主窗口重叠
+
+#### 梦幻皮肤磨砂玻璃
+- [x] 所有侧边浮动弹窗增加 `backdrop-filter: blur(20px) saturate(1.2)`
+- [x] 暗色梦幻模式弹窗背景适配
+
+#### 架构培训文档
+- [x] 新增 `docs/training/` 目录，8 章项目架构培训文档
+
+### v0.90.0 之后开发分支（未发布）
+
+#### P0: 滚动与 UX 基础
+- [x] `ScrollbarMarkers.tsx` — 滚动条消息标记组件
+- [x] `ScrollToBottomIndicator.tsx` — 滚动到底部指示器 + 未读消息计数
+- [x] `hooks/useScrollState.ts` — 滚动状态 Hook（位置追踪 + 未读计数）
+- [x] `ChatPanel.tsx` — 自动滚动优化（修复与未读指示器的交互冲突）
+- [x] `ChatPanel.tsx` — `handleEditAndResend` 修复 session 级别 isStreaming 检查
+- [x] `ChatPanel.tsx` — `reEditContent` 内部化管理（移除 App.tsx prop）
+
+#### P1: 高级 Agent 功能
+- [x] `CorrectionModeToggle.tsx` — 事实核查模式开关（ChatPanel 工具栏集成）
+- [x] `CorrectionResultPanel.tsx` — 核查结果展示面板
+- [x] `ClarificationForm.tsx` — AI 澄清交互表单组件
+- [x] `PipelineNextStepDialog.tsx` — 管道步骤选择对话框
+- [x] `TodoListDisplay.tsx` — Todo 列表可视化（分组展示 + 勾选 + DB 持久化）
+- [x] `show-todo.ts` — Todo 工具（saveTodoList/loadTodoList/updateTodoStatus）
+- [x] `ask-clarification.ts` — AI 澄清工具（表单数据收集）
+- [x] `fact-check.ts` — 事实核查工具（callCorrectionModel 占位）
+- [x] `GuidanceBlock.tsx` — 引导消息折叠展示块
+- [x] `guidance-queue.ts` — 引导消息队列管理
+- [x] `StreamingWaitIndicator.tsx` — 分阶段等待提示（thinking/searching/coding/reviewing）
+- [x] `Workbench.tsx` — 代码工作台（工具状态 + Git diff + 修改文件统计）
+- [x] `RegenerateModelPopover.tsx` — 重生成模型选择弹窗
+- [x] `FeedbackButtons.tsx` — 消息反馈按钮（赞/踩 + DB 持久化）
+- [x] `InlineMessageEdit.tsx` — 消息内联编辑
+- [x] `CapabilityGuard.tsx` + `capability-detector.ts` — 模型能力守卫
+- [x] `model-config.ts` — 模型配置集中管理（MIMO_MODELS/API_MODELS/getModelsForMode/getConfiguredApiModels）
+- [x] `model-resolver.ts` — 模型路由解析器
+- [x] `output-parser.ts` — 结构化输出解析器
+- [x] `agentic-loop.ts` — LoopEvent 扩展（clarification/correction_complete/pipeline_step_complete/todo_list_created）
+- [x] `types.ts` — Session 接口扩展（correctionMode/deepThinkingMode/preserveExecutor）
+- [x] `tools.ts` — 注册 ask_clarification/fact_check/show_todo 工具
+
+#### P2: 体验提升
+- [x] `QuickPhraseSelector.tsx` — 快捷短语选择器（分类 + 搜索 + 插入）
+- [x] `settings.ts` — 快捷短语 CRUD（saveQuickPhrase/loadQuickPhrases/deleteQuickPhrase/incrementQuickPhraseUsage）
+- [x] `PromptDraftPicker.tsx` — 提示词草稿版本选择器（A/B 对比 + 版本切换）
+- [x] `prompt-draft.ts` — 草稿存储（savePromptDraft/loadPromptDrafts/deletePromptDraft/comparePromptDrafts）
+- [x] `QuickAccessCards.tsx` — Agent 快速访问卡片（网格 + 收藏 + 搜索）
+- [x] `OnboardingTour.tsx` — 新手引导浮窗（4 步引导 + 首次启动检测）
+- [x] `SourceReferences.tsx` — RAG 来源引用展示（来源芯片 + 点击查看）
+
+#### P3: 多模态
+- [x] `ImageGallery.tsx` — 图片画廊预览（全屏 lightbox + 左右切换 + 下载）
+- [x] `VideoPlayer.tsx` — 视频播放器（进度条 + 下载）
+- [x] `GenerateModeSelector.tsx` — 生成模式选择器
+- [x] `ResolutionSelector.tsx` — 分辨率选择器
+- [x] `store.ts` — MessageAttachment.type 扩展 `"video"`
+
+#### P4: 智能输入
+- [x] `ContextBadgeList.tsx` — 上下文徽章列表（附件/技能展示）
+- [x] `MentionAutocomplete.tsx` — @ 提及自动补全（文件/笔记本）
+- [x] `SkillAutocomplete.tsx` — 技能自动补全
+- [x] `SourceSelector.tsx` — 知识来源选择器
+- [x] `InputArea.tsx` — @ 提及触发 + 上下文徽章集成
+
+#### 知识管理增强
+- [x] `note-manager.ts` — 笔记管理（CRUD + 版本历史）
+- [x] `flashcard-store.ts` — 闪卡存储与复习调度
+- [x] `graph-extractor.ts` — 知识图谱实体/关系提取
+- [x] `exporter.ts` — 知识导出（Markdown/JSON）
+- [x] `importer.ts` — 知识导入
+- [x] `study-path.ts` — 学习路径生成
+- [x] `ppt-generator.ts` + `ppt-types.ts` — PPT 内容生成
+- [x] `NoteEditor.tsx` — 笔记编辑器
+- [x] `KnowledgeGraphView.tsx` — 知识图谱可视化
+- [x] `FlashcardViewer.tsx` — 闪卡复习器
+- [x] `NotebookWorkspace.tsx` — 笔记本工作台
+- [x] `DocxViewer.tsx` — DOCX 文档查看器（mammoth 库）
+- [x] `PdfViewer.tsx` — PDF 文档查看器（pdfjs-dist 库）
+- [x] `SourceViewer.tsx` — 来源内容查看器
+- [x] `note-operations.ts` — 笔记操作工具
+- [x] `storage.ts` — +591 行（notes/note_links/flashcards/graph_nodes/graph_edges/notebook_groups/note_versions 表）
+- [x] `indexer.ts` — +359 行（摘要生成/建议问题/增量索引增强）
+- [x] `retriever.ts` — +35 行（检索增强）
+- [x] `types.ts` — +143 行（Note/Flashcard/GraphNode/GraphEdge 等类型）
+- [x] `NotebookManager.tsx` — +372 行增强
+
+#### 基础设施变更
+- [x] `database.ts` — +171 行，新增 10 张表（notes/note_links/flashcards/graph_nodes/graph_edges/notebook_groups/note_versions/message_feedback/quick_phrases/prompt_drafts/todo_lists）
+- [x] `lang.ts` — +141 行翻译键（correctionMode/workbench/todoList/guidance/quickPhrase/promptDraft/onboarding/quickAccess/sources/gallery/video/streaming/context/mention/skills 全部组件）
+- [x] `styles.css` — +1,327 行 CSS（P1-P4 全部组件样式）
+- [x] `store.ts` — Message 接口新增 `metadata` 属性
+- [x] `package.json` — 新依赖（katex/mammoth/pdfjs-dist/rehype-katex/remark-math）
+- [x] `App.tsx` — OnboardingTour 集成 + QuickAccessCards 导入
+- [x] `ChatPanel.tsx` — P1/P2 组件全量集成（CorrectionModeToggle/Workbench/GuidanceBlock/StreamingWaitIndicator/TodoListDisplay/QuickPhraseSelector/PromptDraftPicker）
+- [x] `MessageBubble.tsx` — P3/P2 组件集成（ImageGallery/VideoPlayer/SourceReferences/FeedbackButtons）
+- [x] `InputArea.tsx` — P4 组件集成（ContextBadgeList/MentionAutocomplete）
+
+#### 对标分析文档
+- [x] `docs/WECODE-REF-GAP-ANALYSIS.md` — 全局对标 wecode-ref 核心功能缺失分析
+- [x] `docs/IMPLEMENTATION-PLAN-FULL.md` — P0-P4 全量功能实施计划
+- [x] `docs/NOTEBOOK-FEATURE-GAP-ANALYSIS.md` — 笔记本功能差距分析（1066 行）
+- [x] `docs/NOTEBOOK-FEATURE-GAP-ANALYSIS-V2.md` — 笔记本功能差距分析V2（精简版）
+- [x] `docs/NOTEBOOK-UI-UX-BENCHMARK.md` — 笔记本 UI/UX 基准分析
+- [x] `docs/NOTEBOOK-UNIMPLEMENTED-FEATURES.md` — 笔记本未实现功能清单
+
+#### 待完成
+- [ ] **提交代码** — 全部修改尚未 commit，需要 git add + commit
+- [ ] **功能测试** — P1-P4 组件需要实际运行测试（目前仅 TS 编译 + lint 通过）
+- [ ] **GenerateModeSelector/ResolutionSelector 集成** — 组件已创建但未集成到具体 UI 入口
+- [ ] **SkillAutocomplete 集成** — 与现有 SlashCommandMenu 功能重叠，需决定保留方案
+- [ ] **SourceSelector 集成** — 组件已创建但未集成到具体 UI 入口
+- [ ] **QuickAccessCards 集成** — 组件已导入但未渲染到具体位置
+- [ ] **CorrectionResultPanel 集成** — 组件已创建但未集成到具体 UI 入口
+- [ ] **ClarificationForm 集成** — 组件已创建但未集成到具体 UI 入口
+- [ ] **PipelineNextStepDialog 集成** — 组件已创建但未集成到具体 UI 入口
+- [ ] **note-operations 工具注册** — 工具已创建但未在 tools.ts 中注册
 
 ### Phase B：工具/技能基础架构（1-2周）✅ 已完成
 

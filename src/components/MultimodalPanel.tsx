@@ -356,12 +356,13 @@ export function MultimodalPanel({ onClose }: MultimodalPanelProps) {
 
   return (
     <div
+      className="floating-overlay-panel"
       style={{
         position: "fixed",
-        top: 0,
+        top: "var(--chat-body-top, 48px)",
         right: 0,
         width: 480,
-        height: "100%",
+        bottom: "var(--chat-body-bottom, 140px)",
         background: "var(--bg-primary)",
         borderLeft: "1px solid var(--border-primary)",
         zIndex: 1000,

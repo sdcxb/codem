@@ -3,9 +3,10 @@ import { MessageAttachment } from "../store";
 
 interface FileUploadProps {
   onUpload: (attachments: MessageAttachment[]) => void;
+  hideButton?: boolean;
 }
 
-export function FileUpload({ onUpload }: FileUploadProps) {
+export function FileUpload({ onUpload, hideButton }: FileUploadProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
 
@@ -63,19 +64,22 @@ export function FileUpload({ onUpload }: FileUploadProps) {
     <>
       <input
         ref={fileInputRef}
+        id="file-upload-input"
         type="file"
         multiple
         style={{ display: "none" }}
         onChange={handleFileSelect}
       />
-      <button
-        className="upload-btn"
-        onClick={() => fileInputRef.current?.click()}
-        disabled={uploading}
-        title="上传文件"
-      >
-        {uploading ? "⏳" : "📎"}
-      </button>
+      {!hideButton && (
+        <button
+          className="upload-btn"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={uploading}
+          title="上传文件"
+        >
+          {uploading ? "⏳" : "📎"}
+        </button>
+      )}
     </>
   );
 }

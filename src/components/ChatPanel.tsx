@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useAppStore, MessageAttachment, type Message } from "../store";
 import { useProjectStore } from "../core/store";
 import { MessageBubble } from "./MessageBubble";
@@ -14,68 +14,41 @@ import { GitInfoPanel } from "./GitInfoPanel";
 import { SubagentTask } from "../core/subagent/subagent";
 import { getSubagentManager } from "../core/subagent/subagent";
 import { useLang, S } from "../core/i18n/lang";
-import { getSettingJSON } from "../core/storage/settings";
-
-const MIMO_MODELS = [
-{ id: "mimo-v2.5-pro", name: "MiMo v2.5 Pro" },
-{ id: "mimo-v2.5", name: "MiMo v2.5" },
-{ id: "mimo-v2-pro", name: "MiMo v2 Pro" },
-{ id: "mimo-v2-flash", name: "MiMo v2 Flash" },
-];
-
-const API_MODELS: Record<string, Array<{ id: string; name: string }>> = {
-openai: [
-{ id: "gpt-4o", name: "GPT-4o" },
-{ id: "gpt-4o-mini", name: "GPT-4o Mini" },
-{ id: "o3", name: "o3" },
-],
-anthropic: [
-{ id: "claude-sonnet-4-20250514", name: "Claude Sonnet 4" },
-{ id: "claude-opus-4-20250514", name: "Claude Opus 4" },
-],
-deepseek: [
-{ id: "deepseek-v4-flash", name: "DeepSeek V4 Flash" },
-{ id: "deepseek-v4-pro", name: "DeepSeek V4 Pro" },
-],
-moonshot: [
-{ id: "moonshot-v1-8k", name: "Moonshot v1 8K" },
-{ id: "moonshot-v1-32k", name: "Moonshot v1 32K" },
-{ id: "moonshot-v1-128k", name: "Moonshot v1 128K" },
-],
-gemini: [
-{ id: "gemini-2.5-flash", name: "Gemini 2.5 Flash" },
-{ id: "gemini-2.5-pro", name: "Gemini 2.5 Pro" },
-{ id: "gemini-2.0-flash", name: "Gemini 2.0 Flash" },
-],
-};
-
-/** 从 codem-settings 读取已配置 API Key 的 provider 列表，生成可选模型列表。
- * 聊天头部用模型 ID 显示（如 deepseek-v4-pro），不用设置页的 provider-name 格式。
- */
-function getConfiguredApiModels(): Array<{ id: string; name: string }> {
-try {
-const settings = getSettingJSON<any>("codem-settings", {});
-const providers = settings.providers || [];
-const result: Array<{ id: string; name: string }> = [];
-for (const p of providers) {
-if (p.apiKey && p.id !== "mimo" && API_MODELS[p.id]) {
-for (const m of API_MODELS[p.id]) {
-result.push({ id: m.id, name: m.id });
-}
-}
-}
-return result;
-} catch {
-return [];
-}
-}
+import { MIMO_MODELS, getConfiguredApiModels } from "../core/model-config";
+import { ScrollbarMarkers } from "./ScrollbarMarkers";
+import { ScrollToBottomIndicator } from "./ScrollToBottomIndicator";
+import { useScrollState, useUnreadMessagesTracker } from "../hooks/useScrollState";
+// P1: 高级功能组件
+import { CorrectionModeToggle } from "./CorrectionModeToggle";
+import { Workbench } from "./Workbench";
+import { GuidanceBlock } from "./GuidanceBlock";
+import { StreamingWaitIndicator } from "./StreamingWaitIndicator";
+import { TodoListDisplay } from "./TodoListDisplay";
+import { PanelSidebar } from "./PanelSidebar";
+// P2: 体验提升组件
+import { QuickPhraseSelector } from "./QuickPhraseSelector";
+import { PromptDraftPicker } from "./PromptDraftPicker";
+import { QuickAccessCards } from "./QuickAccessCards";
+// P2: 存储
+import { loadQuickPhrases, type QuickPhrase } from "../core/storage/settings";
+import { loadPromptDrafts, type PromptDraft } from "../core/storage/prompt-draft";
+import { getAgentRegistry } from "../core/agent/agent";
+import { getSettingJSON, setSettingJSON } from "../core/storage/settings";
 
 interface ChatPanelProps {
   onSend: (message: string, attachments?: MessageAttachment[], selectedSkills?: string[]) => void;
   onCancel: () => void;
+  /** Send a guidance message to the currently running agentic loop */
+  onSendGuidance?: (message: string) => void;
   onToggleSidebar: () => void;
   onFork?: (messageIndex: number) => void;
   onRegenerate?: (messageIndex: number) => void;
+  /** P0: Edit a message and resend from that point */
+  onEditAndResend?: (messageId: string, newContent: string) => void;
+  /** P0: Restore message content to input box — handled internally by ChatPanel */
+  onReEdit?: (content: string) => void;
+  /** P0: Session ID for DB persistence */
+  sessionId?: string;
   connected: boolean;
   model: string;
   onModelChange: (model: string) => void;
@@ -86,18 +59,56 @@ onModeChange?: (mode: CollaborationMode) => void;
 projectPath?: string;
 /** Current session ID for per-session streaming state */
 currentSessionId?: string;
+/** Called when user clicks a citation in notebook mode */
+onCitationClick?: (sourceName: string) => void;
+/** Called when user clicks a source in the metadata-driven sources panel */
+onSourceClick?: (sourceId: string, chunkIndex?: number) => void;
+/** P3/P4: Active notebook ID for source selector in InputArea */
+notebookId?: string;
 }
 
-export function ChatPanel({ onSend, onCancel, onToggleSidebar, onFork, onRegenerate, connected, model, onModelChange, mode = "cli", providerId = "mimo", collaborationMode = "default", onModeChange, projectPath, currentSessionId }: ChatPanelProps) {
+export function ChatPanel({ onSend, onCancel, onSendGuidance, onToggleSidebar, onFork, onRegenerate, onEditAndResend, onReEdit, sessionId, connected, model, onModelChange, mode = "cli", providerId = "mimo", collaborationMode = "default", onModeChange, projectPath, currentSessionId, onCitationClick, onSourceClick, notebookId }: ChatPanelProps) {
   const lang = useLang();
-  const { messages, isStreaming, activeSessions, removeGeneratedFiles, hasMoreMessages, isLoadingMore, loadMoreMessages, stepProgress, streamStartTime, llmStatus, displayMode, setDisplayMode } = useAppStore();
+  const { messages, isStreaming, activeSessions, removeGeneratedFiles, hasMoreMessages, isLoadingMore, loadMoreMessages, stepProgress, streamStartTime, llmStatus, displayMode, setDisplayMode, guidanceMessages } = useAppStore();
   const { currentSession, currentProject } = useProjectStore();
   const [showModelPicker, setShowModelPicker] = useState(false);
+  const [showEffortPicker, setShowEffortPicker] = useState(false);
   const [showReasoning, setShowReasoning] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
 
+  // P0: Scroll state tracking
+  useScrollState(messagesContainerRef, [messages.length]);
+  useUnreadMessagesTracker(messages.length, isStreaming);
+
+  // Measure chat-body bounds and set CSS vars for floating panel positioning
+  useEffect(() => {
+    const updateBounds = () => {
+      const header = document.querySelector('.chat-header');
+      const inputArea = document.querySelector('.input-area');
+      if (header) {
+        const rect = header.getBoundingClientRect();
+        document.documentElement.style.setProperty('--chat-body-top', `${rect.bottom}px`);
+      }
+      if (inputArea) {
+        const rect = inputArea.getBoundingClientRect();
+        document.documentElement.style.setProperty('--chat-body-bottom', `${window.innerHeight - rect.top}px`);
+      }
+    };
+    updateBounds();
+    window.addEventListener('resize', updateBounds);
+    const observer = new MutationObserver(updateBounds);
+    const inputArea = document.querySelector('.input-area');
+    if (inputArea) observer.observe(inputArea, { attributes: true, subtree: true });
+    return () => {
+      window.removeEventListener('resize', updateBounds);
+      observer.disconnect();
+    };
+  }, []);
+
   const models = mode === "cli" ? MIMO_MODELS : getConfiguredApiModels();
+  // Whether the current session is actively streaming (running an agentic loop)
+  const isSessionStreaming = !currentSessionId ? isStreaming : activeSessions.has(currentSessionId);
   const [showAgentPanel, setShowAgentPanel] = useState(false);
   const [showSnapshotPanel, setShowSnapshotPanel] = useState(false);
   const [showContextMonitor, setShowContextMonitor] = useState(false);
@@ -105,6 +116,36 @@ export function ChatPanel({ onSend, onCancel, onToggleSidebar, onFork, onRegener
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [agents, setAgents] = useState<SubagentTask[]>([]);
   const [quoteContext, setQuoteContext] = useState<string | null>(null);
+  // P0: Re-edit content is managed internally so onClearQuote can clear it immediately
+  const handleReEditInternal = useCallback((content: string) => {
+    setQuoteContext(content);
+    onReEdit?.(content);
+  }, [onReEdit]);
+  // A9: Chat history search
+  const [showSearch, setShowSearch] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  // Guidance input state
+  const [guidanceInput, setGuidanceInput] = useState('');
+  // P1: Correction mode toggle
+  // Correction/Clarification removed from main UI — correction config moved to Settings, clarification auto-triggers
+  // P1: Workbench panel
+  const [showWorkbench, setShowWorkbench] = useState(false);
+  // P1: RightSidebar (Git + Workbench per benchmark layer 4)
+  const [showRightSidebar, setShowRightSidebar] = useState(false);
+  // P1: Todo list display
+  const [activeTodoId, setActiveTodoId] = useState<string | null>(null);
+  const [activeTodos, setActiveTodos] = useState<any[]>([]);
+  // P2: Quick phrase selector
+  const [showQuickPhrase, setShowQuickPhrase] = useState(false);
+  const [quickPhrases, setQuickPhrases] = useState<QuickPhrase[]>([]);
+  // P2: Prompt draft picker
+  const [showDraftPicker, setShowDraftPicker] = useState(false);
+  const [promptDrafts, setPromptDrafts] = useState<PromptDraft[]>([]);
+  // P2: Quick access cards
+  const [showQuickAccess, setShowQuickAccess] = useState(true);
+  const [quickAccessFavorites, setQuickAccessFavorites] = useState<Set<string>>(() => {
+    try { return new Set(getSettingJSON<string[]>("codem-quick-access-favorites", [])); } catch { return new Set(); }
+  });
 
   // Auto-scroll to bottom only on initial load or new messages (not when loading history)
   const prevMessagesLenRef = useRef(0);
@@ -126,7 +167,13 @@ export function ChatPanel({ onSend, onCancel, onToggleSidebar, onFork, onRegener
         }
       }, 50);
     } else if (messages.length > prevMessagesLenRef.current) {
-      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+      // P0 fix: Only auto-scroll if user is already at/near bottom.
+      // If scrolled up, don't force-scroll — let the unread indicator show instead.
+      const container = messagesContainerRef.current;
+      const scrollPos = useAppStore.getState().scrollPosition;
+      if (container && (scrollPos === "bottom" || scrollPos === "near-bottom")) {
+        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+      }
       prevMessagesLenRef.current = messages.length;
     }
   }, [messages, isStreaming]);
@@ -137,6 +184,30 @@ export function ChatPanel({ onSend, onCancel, onToggleSidebar, onFork, onRegener
     prevMessagesLenRef.current = 0;
     loadingHistoryRef.current = false;
   }, [currentSession?.id]);
+
+  // P2: Load quick phrases on mount
+  useEffect(() => {
+    setQuickPhrases(loadQuickPhrases());
+  }, []);
+
+  // P2: Load prompt drafts when session changes
+  useEffect(() => {
+    if (currentSession?.id) {
+      setPromptDrafts(loadPromptDrafts(currentSession.id));
+    }
+  }, [currentSession?.id]);
+
+  // P2: Handle quick phrase selection
+  const handleQuickPhraseSelect = useCallback((content: string) => {
+    setQuoteContext(content);
+    setShowQuickPhrase(false);
+  }, []);
+
+  // P2: Handle prompt draft selection
+  const handleDraftSelect = useCallback((draft: PromptDraft) => {
+    setQuoteContext(draft.content);
+    setShowDraftPicker(false);
+  }, []);
 
   // Scroll detection for loading more messages (10 at a time)
   useEffect(() => {
@@ -221,6 +292,60 @@ export function ChatPanel({ onSend, onCancel, onToggleSidebar, onFork, onRegener
                   <span className="model-option-name">{m.name}</span>
                 </div>
               ))}
+              {/* Reasoning effort divider + selector */}
+              <div style={{ height: 1, background: "var(--border-primary)", margin: "6px 0" }} />
+              <div style={{ padding: "4px 12px", display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer", position: "relative" }}
+                onClick={(e) => { e.stopPropagation(); setShowEffortPicker(!showEffortPicker); }}
+              >
+                <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{lang === "zh" ? "推理强度" : "Reasoning Effort"}</span>
+                <span style={{ fontSize: 12, fontWeight: 600, color: "var(--accent)" }}>
+                  {(() => {
+                    const effort = getSettingJSON<string>("codem-reasoning-effort", "high");
+                    const labels: Record<string, { zh: string; en: string }> = {
+                      low: { zh: "低", en: "Low" },
+                      medium: { zh: "中", en: "Medium" },
+                      high: { zh: "高", en: "High" },
+                      ultra: { zh: "超高", en: "Ultra" },
+                    };
+                    return (labels[effort]?.[lang] || labels.high[lang]) + " ▾";
+                  })()}
+                </span>
+                {showEffortPicker && (
+                  <>
+                    <div style={{ position: "fixed", inset: 0, zIndex: 99 }} onClick={(e) => { e.stopPropagation(); setShowEffortPicker(false); }} />
+                    <div style={{
+                      position: "absolute", top: "100%", right: 0, marginTop: 4,
+                      minWidth: 120, zIndex: 100, padding: 4,
+                      background: "var(--bg-secondary)", border: "1px solid var(--border-primary)",
+                      borderRadius: 8, boxShadow: "0 4px 12px rgba(0,0,0,0.2)",
+                    }}>
+                      {([
+                        { id: "low", zh: "低", en: "Low" },
+                        { id: "medium", zh: "中", en: "Medium" },
+                        { id: "high", zh: "高", en: "High" },
+                        { id: "ultra", zh: "超高", en: "Ultra" },
+                      ] as const).map(opt => {
+                        const currentEffort = getSettingJSON<string>("codem-reasoning-effort", "high");
+                        return (
+                          <div key={opt.id}
+                            className={`model-option ${currentEffort === opt.id ? "active" : ""}`}
+                            style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSettingJSON("codem-reasoning-effort", opt.id);
+                              setShowEffortPicker(false);
+                              setShowModelPicker(false);
+                            }}
+                          >
+                            <span className="model-option-name">{lang === "zh" ? opt.zh : opt.en}</span>
+                            {opt.id === "ultra" && <span style={{ fontSize: 9, opacity: 0.5, marginLeft: 4 }}>max tokens</span>}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </>
+                )}
+              </div>
             </div>
           )}
         </div>
@@ -233,46 +358,90 @@ export function ChatPanel({ onSend, onCancel, onToggleSidebar, onFork, onRegener
         </button>
         <button
           className={`agent-toggle ${showAgentPanel ? "active" : ""}`}
-          onClick={() => { setShowAgentPanel(!showAgentPanel); setShowSnapshotPanel(false); setShowGitPanel(false); setShowContextMonitor(false); setSelectedAgentId(null); }}
+          onClick={() => { setShowAgentPanel(!showAgentPanel); setShowSnapshotPanel(false); setShowContextMonitor(false); setSelectedAgentId(null); }}
           title={S.chat.agentList[lang]}
         >
           🤖
           {runningCount > 0 && <span className="agent-badge">{runningCount}</span>}
         </button>
         <button
-          className={`agent-toggle ${showGitPanel ? "active" : ""}`}
-          onClick={() => { setShowGitPanel(!showGitPanel); setShowAgentPanel(false); setShowSnapshotPanel(false); setShowContextMonitor(false); setSelectedAgentId(null); }}
-          title={lang === "zh" ? "Git 信息" : "Git Info"}
-        >
-          🌿
-        </button>
-        <button
           className={`agent-toggle ${showSnapshotPanel ? "active" : ""}`}
-          onClick={() => { setShowSnapshotPanel(!showSnapshotPanel); setShowAgentPanel(false); setShowGitPanel(false); setSelectedAgentId(null); }}
+          onClick={() => { setShowSnapshotPanel(!showSnapshotPanel); setShowAgentPanel(false); setSelectedAgentId(null); }}
           title={S.chat.snapshot[lang]}
         >
           📸
         </button>
         <button
           className={`agent-toggle ${showContextMonitor ? "active" : ""}`}
-          onClick={() => { setShowContextMonitor(!showContextMonitor); setShowAgentPanel(false); setShowSnapshotPanel(false); setShowGitPanel(false); setSelectedAgentId(null); }}
+          onClick={() => { setShowContextMonitor(!showContextMonitor); setShowAgentPanel(false); setShowSnapshotPanel(false); setSelectedAgentId(null); }}
           title={S.chat.contextMonitor[lang]}
         >
           📊
         </button>
+        {/* Display mode toggle moved to Settings > Appearance — default unified mode */}
+        <span className="header-spacer" style={{ flex: 1 }} />
+        {/* Side panel toggle — header right */}
         <button
-          className={`agent-toggle ${displayMode === "unified" ? "active" : ""}`}
-          onClick={() => setDisplayMode(displayMode === "segmented" ? "unified" : "segmented")}
-          title={displayMode === "segmented"
-            ? S.chat.unifiedMode[lang] + " — " + S.chat.unifiedModeHint[lang]
-            : S.chat.segmentedMode[lang] + " — " + S.chat.segmentedModeHint[lang]}
+          className={`agent-toggle ${showRightSidebar ? "active" : ""}`}
+          onClick={() => setShowRightSidebar(!showRightSidebar)}
+          title={lang === "zh" ? "侧边面板" : "Side Panel"}
         >
-          {displayMode === "segmented" ? "⛓" : "🔗"}
+          ⊞
         </button>
         <span className={`status-dot ${connected ? "connected" : "disconnected"}`}>
           {connected ? "●" : "○"}
         </span>
       </div>
+
+      {/* Search — modal dialog instead of inline bar (per benchmark analysis) */}
+      {showSearch && (
+        <>
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 300 }} onClick={() => setShowSearch(false)} />
+          <div style={{
+            position: 'fixed', top: '20%', left: '50%', transform: 'translateX(-50%)',
+            width: '480px', maxWidth: '90vw', zIndex: 301,
+            background: 'var(--bg-secondary)', border: '1px solid var(--border-color)',
+            borderRadius: 12, padding: 16, boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+              <span style={{ fontSize: 14 }}>🔍</span>
+              <input
+                type="text"
+                autoFocus
+                placeholder={lang === 'zh' ? '搜索对话内容...' : 'Search messages...'}
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                style={{
+                  flex: 1,
+                  background: 'var(--bg-primary)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: 6,
+                  padding: '8px 12px',
+                  color: 'var(--text-primary)',
+                  fontSize: 13,
+                  outline: 'none',
+                }}
+              />
+              <button onClick={() => setShowSearch(false)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 16 }}>✕</button>
+            </div>
+            {searchQuery && (
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 8 }}>
+                {messages.filter(m => m.content.toLowerCase().includes(searchQuery.toLowerCase())).length} / {messages.length} {lang === 'zh' ? '条匹配' : 'matches'}
+              </div>
+            )}
+            {searchQuery && messages.filter(m => m.content.toLowerCase().includes(searchQuery.toLowerCase())).slice(0, 10).map(m => (
+              <div key={m.id} style={{ padding: '8px', borderRadius: 6, cursor: 'pointer', marginBottom: 4, background: 'var(--bg-tertiary)' }}
+                onClick={() => { setShowSearch(false); setSearchQuery(''); }}
+              >
+                <span style={{ fontSize: 10, opacity: 0.6 }}>{m.role}</span>
+                <div style={{ fontSize: 12, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {m.content.substring(0, 80)}
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
 
       <div className="chat-body">
         <div className="messages-container" ref={messagesContainerRef}>
@@ -294,6 +463,61 @@ export function ChatPanel({ onSend, onCancel, onToggleSidebar, onFork, onRegener
               {!connected && (
                 <p className="connecting-text">{S.chat.connecting[lang]}</p>
               )}
+              {/* P2: Quick access cards + quick phrases in empty state */}
+              {showQuickAccess && connected && !isSessionStreaming && (
+                <div style={{ marginTop: 16, maxWidth: 600, width: "100%", margin: "16px auto 0", display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  <QuickAccessCards
+                    agents={getAgentRegistry().getPrimary().map(a => ({
+                      id: a.id,
+                      name: a.name,
+                      description: a.description,
+                      icon: a.id === 'build' ? '🔨' : a.id === 'plan' ? '📋' : a.id === 'explore' ? '🔍' : '🤖',
+                    }))}
+                    favoriteIds={quickAccessFavorites}
+                    onSelect={(agentId) => {
+                      const agent = getAgentRegistry().get(agentId);
+                      if (agent) {
+                        // Per benchmark: fill input box instead of auto-send
+                        const prompt = lang === 'zh'
+                          ? `使用${agent.name}模式：${agent.description}`
+                          : `Use ${agent.name} mode: ${agent.description}`;
+                        setQuoteContext(prompt);
+                      }
+                      setShowQuickAccess(false);
+                    }}
+                    onToggleFavorite={(agentId) => {
+                      setQuickAccessFavorites(prev => {
+                        const next = new Set(prev);
+                        if (next.has(agentId)) next.delete(agentId);
+                        else next.add(agentId);
+                        setSettingJSON("codem-quick-access-favorites", Array.from(next));
+                        return next;
+                      });
+                    }}
+                  />
+                  {/* Quick phrase list in empty state (per benchmark plan) */}
+                  {quickPhrases.length > 0 && (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, justifyContent: 'center' }}>
+                      {quickPhrases.slice(0, 6).map((p, i) => (
+                        <button
+                          key={i}
+                          onClick={() => {
+                            setQuoteContext(p.content);
+                            setShowQuickAccess(false);
+                          }}
+                          style={{
+                            padding: '4px 10px', borderRadius: 16, border: '1px solid var(--border-color)',
+                            background: 'var(--bg-tertiary)', color: 'var(--text-secondary)',
+                            fontSize: 11, cursor: 'pointer', whiteSpace: 'nowrap',
+                          }}
+                        >
+                          {p.title || p.content.substring(0, 20)}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
           {/* In unified mode, merge consecutive assistant messages into one visual bubble.
@@ -301,21 +525,25 @@ export function ChatPanel({ onSend, onCancel, onToggleSidebar, onFork, onRegener
               but the UI merges them so the user sees one unified response. */}
           {(() => {
             const isUnified = displayMode === "unified";
+            // A9: Filter messages by search query
+            const displayMessages = showSearch && searchQuery.trim()
+              ? messages.filter(m => m.content.toLowerCase().includes(searchQuery.toLowerCase()))
+              : messages;
             // Build render list: each entry is either a single message or a merged group
             const renderList: { msg: Message; skip: boolean; isLastInGroup: boolean }[] = [];
-            for (let i = 0; i < messages.length; i++) {
-              const msg = messages[i];
+            for (let i = 0; i < displayMessages.length; i++) {
+              const msg = displayMessages[i];
               if (isUnified && msg.role === "assistant") {
                 // Check if this is the start of a consecutive assistant group
-                const prevMsg = messages[i - 1];
+                const prevMsg = displayMessages[i - 1];
                 const isGroupStart = !prevMsg || prevMsg.role !== "assistant";
                 if (isGroupStart) {
                   // Collect all consecutive assistant messages
                   const group: Message[] = [msg];
                   let lastIdx = i;
-                  for (let j = i + 1; j < messages.length; j++) {
-                    if (messages[j].role !== "assistant") break;
-                    group.push(messages[j]);
+                  for (let j = i + 1; j < displayMessages.length; j++) {
+                    if (displayMessages[j].role !== "assistant") break;
+                    group.push(displayMessages[j]);
                     lastIdx = j;
                   }
                   // Create merged message
@@ -379,13 +607,19 @@ export function ChatPanel({ onSend, onCancel, onToggleSidebar, onFork, onRegener
 
             return (
             <React.Fragment key={msg.id}>
-            <MessageBubble
-              message={msg}
-              index={index}
-              showReasoning={showReasoning}
-              onDeleteFiles={(files) => handleDeleteFiles(msg.id, files)}
-              isLastInTurn={isLastInTurn}
-            />
+<MessageBubble
+message={msg}
+index={index}
+showReasoning={showReasoning}
+onDeleteFiles={(files) => handleDeleteFiles(msg.id, files)}
+isLastInTurn={isLastInTurn}
+onCitationClick={onCitationClick}
+onSourceClick={onSourceClick}
+onEditAndResend={onEditAndResend}
+onReEdit={handleReEditInternal}
+sessionId={sessionId || currentSession?.id}
+canEdit={!isSessionStreaming}
+/>
             {isTurnEnd && !isStreaming && (
               <div className="qa-turn-footer">
                 {onFork && (
@@ -418,48 +652,114 @@ export function ChatPanel({ onSend, onCancel, onToggleSidebar, onFork, onRegener
             <StreamingTimer startTime={streamStartTime} lang={lang} llmStatus={llmStatus} />
           )}
           <div ref={messagesEndRef} />
+          {/* P0: Scrollbar markers for message navigation */}
+          <ScrollbarMarkers messages={messages} containerRef={messagesContainerRef} />
+
+          {/* P1: Streaming wait indicator + Guidance — inside message flow */}
+          {isSessionStreaming && !stepProgress && (
+            <StreamingWaitIndicator
+              phase={llmStatus === "connecting" ? "thinking" : "coding"}
+            />
+          )}
+          {isSessionStreaming && guidanceMessages.length > 0 && (
+            <GuidanceBlock
+              messages={guidanceMessages}
+            />
+          )}
         </div>
 
-        {showAgentPanel && (
-          <div className="agent-panel-container">
-            {selectedAgent ? (
-              <AgentDetail task={selectedAgent} onBack={handleBackToList} />
-            ) : (
-              <AgentPanel
-                agents={agents}
-                onClose={() => setShowAgentPanel(false)}
-                onSelectAgent={handleSelectAgent}
-              />
-            )}
-          </div>
-        )}
+        {/* P0: Scroll-to-bottom indicator */}
+        <ScrollToBottomIndicator
+          containerRef={messagesContainerRef}
+          messagesEndRef={messagesEndRef}
+        />
 
-        {showSnapshotPanel && (
-          <div className="agent-panel-container">
-            <SnapshotPanel
-              cwd={currentProject?.path || ""}
-              onClose={() => setShowSnapshotPanel(false)}
-            />
-          </div>
-        )}
-
-        {showContextMonitor && (
-          <div className="agent-panel-container">
-            <ContextMonitor sessionId={currentSession?.id || ""} visible={showContextMonitor} />
-          </div>
-        )}
-
-        {showGitPanel && (
-          <div className="agent-panel-container" style={{ maxHeight: "300px", overflowY: "auto", padding: "8px 12px", borderBottom: "1px solid var(--border-primary)" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-              <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text-primary)" }}>🌿 {lang === "zh" ? "Git 信息" : "Git Info"}</span>
-              <button onClick={() => setShowGitPanel(false)} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 14 }}>✕</button>
-            </div>
-            <GitInfoPanel />
-          </div>
+        {/* P1: Todo list display — stays in message flow */}
+        {activeTodoId && activeTodos.length > 0 && (
+          <TodoListDisplay
+            todoId={activeTodoId}
+            todos={activeTodos}
+          />
         )}
       </div>
 
+      {/* AgentPanel — floating overlay outside chat-body */}
+      {showAgentPanel && (
+        <div className="floating-overlay-panel" style={{
+          position: 'fixed', top: 'var(--chat-body-top, 48px)', right: 0, bottom: 'var(--chat-body-bottom, 140px)', width: 380,
+          zIndex: 200, overflowY: 'auto',
+          background: 'var(--bg-secondary)', border: '1px solid var(--border-color)',
+          borderRadius: 0, boxShadow: '0 4px 16px rgba(0,0,0,0.2)',
+        }}>
+          {selectedAgent ? (
+            <AgentDetail task={selectedAgent} onBack={handleBackToList} />
+          ) : (
+            <AgentPanel
+              agents={agents}
+              onClose={() => setShowAgentPanel(false)}
+              onSelectAgent={handleSelectAgent}
+            />
+          )}
+        </div>
+      )}
+
+      {/* SnapshotPanel — floating overlay */}
+      {showSnapshotPanel && (
+        <div className="floating-overlay-panel" style={{
+          position: 'fixed', top: 'var(--chat-body-top, 48px)', right: 0, bottom: 'var(--chat-body-bottom, 140px)', width: 380,
+          zIndex: 200, overflowY: 'auto',
+          background: 'var(--bg-secondary)', border: '1px solid var(--border-color)',
+          borderRadius: 0, boxShadow: '0 4px 16px rgba(0,0,0,0.2)',
+        }}>
+          <SnapshotPanel
+            cwd={currentProject?.path || ""}
+            onClose={() => setShowSnapshotPanel(false)}
+          />
+        </div>
+      )}
+
+      {/* ContextMonitor — floating overlay */}
+      {showContextMonitor && (
+        <div className="floating-overlay-panel" style={{
+          position: 'fixed', top: 'var(--chat-body-top, 48px)', right: 0, bottom: 'var(--chat-body-bottom, 140px)', width: 380,
+          zIndex: 200, overflowY: 'auto',
+          background: 'var(--bg-secondary)', border: '1px solid var(--border-color)',
+          borderRadius: 0, boxShadow: '0 4px 16px rgba(0,0,0,0.2)',
+        }}>
+          <ContextMonitor sessionId={currentSession?.id || ""} visible={showContextMonitor} />
+        </div>
+      )}
+
+      {/* RightSidebar — per benchmark plan layer 4: Git + Workbench tabs */}
+      <PanelSidebar open={showRightSidebar} onClose={() => setShowRightSidebar(false)} />
+
+      {showQuickPhrase && (
+        <div className="floating-overlay-panel" style={{
+          position: 'fixed', bottom: 80, right: 16, width: 300, maxHeight: 350,
+          zIndex: 200, overflowY: 'auto',
+        }}>
+          <QuickPhraseSelector
+            phrases={quickPhrases}
+            onSelect={handleQuickPhraseSelect}
+            onClose={() => setShowQuickPhrase(false)}
+          />
+        </div>
+      )}
+
+      {showDraftPicker && (
+        <div className="floating-overlay-panel" style={{
+          position: 'fixed', bottom: 80, right: 16, width: 360, maxHeight: 350,
+          zIndex: 200, overflowY: 'auto',
+        }}>
+          <PromptDraftPicker
+            drafts={promptDrafts}
+            onSelect={handleDraftSelect}
+            onClose={() => setShowDraftPicker(false)}
+          />
+        </div>
+      )}
+
+      {/* Step progress — standalone indicator */}
       {stepProgress && isStreaming && (
         <div className="step-progress-container">
           <div className="step-progress-pill">
@@ -547,7 +847,58 @@ export function ChatPanel({ onSend, onCancel, onToggleSidebar, onFork, onRegener
         </div>
       )}
 
-      <InputArea onSend={(msg, atts, skills) => { onSend(msg, atts, skills); setQuoteContext(null); }} onCancel={onCancel} disabled={(!currentSessionId || activeSessions.has(currentSessionId)) || !connected} isStreaming={!currentSessionId ? isStreaming : activeSessions.has(currentSessionId)} noSession={!currentSessionId} collaborationMode={collaborationMode} onModeChange={onModeChange || (() => {})} projectPath={projectPath} quoteContext={quoteContext} onClearQuote={() => setQuoteContext(null)} />
+      {/* Guidance messages display — shown when agent is running */}
+      {isSessionStreaming && guidanceMessages.length > 0 && (
+        <div className="guidance-messages-bar">
+          {guidanceMessages.map((g) => (
+            <div key={g.id} className={`guidance-bubble ${g.consumed ? 'consumed' : 'pending'}`}>
+              <span className="guidance-bubble-icon">{g.consumed ? '✓' : '📨'}</span>
+              <span className="guidance-bubble-text">{g.message}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Per benchmark plan: always show normal InputArea, guidance input shows above it */}
+      {isSessionStreaming && onSendGuidance && (
+        <div className="guidance-input-container" style={{ padding: '0 12px 4px' }}>
+          <input
+            type="text"
+            className="guidance-input"
+            placeholder={lang === "zh" ? "输入引导消息，将在下次迭代时注入..." : "Type guidance to inject at next iteration..."}
+            value={guidanceInput}
+            onChange={(e) => setGuidanceInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey && guidanceInput.trim()) {
+                e.preventDefault();
+                onSendGuidance(guidanceInput.trim());
+                setGuidanceInput('');
+              }
+            }}
+          />
+          <button
+            className="guidance-send-btn"
+            onClick={() => {
+              if (guidanceInput.trim()) {
+                onSendGuidance(guidanceInput.trim());
+                setGuidanceInput('');
+              }
+            }}
+            disabled={!guidanceInput.trim()}
+            title={lang === "zh" ? "发送引导" : "Send guidance"}
+          >
+            📨
+          </button>
+          <button
+            className="guidance-cancel-btn"
+            onClick={onCancel}
+            title={lang === "zh" ? "停止运行" : "Stop run"}
+          >
+            ■
+          </button>
+        </div>
+      )}
+      <InputArea onSend={(msg, atts, skills) => { onSend(msg, atts, skills); setQuoteContext(null); }} onCancel={onCancel} disabled={(!currentSessionId || activeSessions.has(currentSessionId)) || !connected} isStreaming={!currentSessionId ? isStreaming : activeSessions.has(currentSessionId)} noSession={!currentSessionId} collaborationMode={collaborationMode} onModeChange={onModeChange || (() => {})} projectPath={projectPath} quoteContext={quoteContext} onClearQuote={() => { setQuoteContext(null); }} notebookId={notebookId} onToggleRightSidebar={() => setShowRightSidebar(!showRightSidebar)} onToggleQuickPhrase={() => setShowQuickPhrase(!showQuickPhrase)} onToggleDraftPicker={() => setShowDraftPicker(!showDraftPicker)} hasDrafts={promptDrafts.length > 0} />
     </div>
   );
 }

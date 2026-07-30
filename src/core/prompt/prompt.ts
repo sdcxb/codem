@@ -424,8 +424,8 @@ Use tools when needed. Always verify changes by reading files after editing.`);
     parts.push(
       "",
       isZh
-        ? `## 回答规则\n- 优先使用笔记本中的知识回答问题\n- 引用来源时使用 [Source: 名称] 格式\n- 如果问题超出笔记本知识范围，明确告知用户\n- 可以使用 search_notebook 工具进行更精准的检索\n- 所有回答使用${langName}`
-        : `## Answer Rules\n- Use the notebook's knowledge as the primary source\n- Cite sources using [Source: name] format\n- If the question is outside the notebook's scope, clearly state so\n- You can use the search_notebook tool for more precise retrieval\n- Respond in ${langName}`,
+        ? `## 回答规则\n- 优先使用笔记本中的知识回答问题\n- 如果问题超出笔记本知识范围，明确告知用户\n- 可以使用 search_notebook 工具进行更精准的检索\n- 所有回答使用${langName}\n- 注意: 来源引用由系统自动生成，你无需在回复中手动标注来源格式`
+        : `## Answer Rules\n- Use the notebook's knowledge as the primary source\n- If the question is outside the notebook's scope, clearly state so\n- You can use the search_notebook tool for more precise retrieval\n- Respond in ${langName}\n- Note: Source citations are generated automatically by the system; you do not need to manually format citations in your response`,
     );
 
     sections.push(parts.filter((p) => p !== "").join("\n"));

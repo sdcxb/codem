@@ -6,6 +6,12 @@ import { createLoadSkillTool } from "./tools/load-skill";
 import { createWebSearchTool } from "./tools/web-search";
 import { createReadAttachmentTool } from "./tools/read-attachment";
 import { createSearchNotebookTool } from "./tools/search-notebook";
+// P1-6: AI 跨笔记操作工具 (对标 NotebookLM 笔记操作)
+import { createNoteOperationTools } from "./tools/note-operations";
+// P1: 澄清提问、事实核查、Todo 列表工具
+import { createClarificationTool } from "./tools/ask-clarification";
+import { createFactCheckTool } from "./tools/fact-check";
+import { createShowTodoTool } from "./tools/show-todo";
 
 // ========== S5: Sandbox Helpers ==========
 
@@ -912,6 +918,14 @@ export function createDefaultToolRegistry(): ToolRegistry {
   registry.register(createReadAttachmentTool());
   // F5: search_notebook tool for knowledge base mode
   registry.register(createSearchNotebookTool());
+  // P1-6: AI 跨笔记操作工具 (create_note / edit_note / link_notes)
+  for (const tool of createNoteOperationTools()) {
+    registry.register(tool);
+  }
+  // P1: 澄清提问、事实核查、Todo 列表工具
+  registry.register(createClarificationTool());
+  registry.register(createFactCheckTool());
+  registry.register(createShowTodoTool());
   return registry;
 }
 

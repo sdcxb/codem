@@ -7,20 +7,26 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
-import { BookOpen, Plus, Trash2, Search, ArrowLeft, FileText, Link as LinkIcon, Type, Loader2, AlertCircle, CheckCircle, MessageSquare } from 'lucide-react';
+import { BookOpen, Plus, Trash2, Search, ArrowLeft, FileText, Link as LinkIcon, Type, Loader2, AlertCircle, CheckCircle, MessageSquare, LayoutGrid, Edit2, Folder, FolderPlus, Upload, ChevronDown, ChevronRight } from 'lucide-react';
 import {
   listNotebooks,
   createNotebook,
   deleteNotebook,
   getNotebook,
+  updateNotebook,
   listSources,
   addSource,
   deleteSourceAndCleanup,
   indexSource,
   generateSummary,
   generateGuidedQuestions,
+  createGroup,
+  listGroups,
+  updateGroup,
+  deleteGroup,
+  importNotebookFromFile,
 } from '../core/knowledge';
-import type { Notebook, NotebookSource, IndexProgress } from '../core/knowledge';
+import type { Notebook, NotebookSource, IndexProgress, NotebookGroup } from '../core/knowledge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from './ui/dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from './ui/alert-dialog';
 import { Badge } from './ui/badge';
@@ -31,11 +37,17 @@ import { useLang, S } from '../core/i18n/lang';
 interface NotebookManagerProps {
   onClose: () => void;
   onOpenNotebookChat: (notebookId: string, notebookName: string) => void;
+  onOpenWorkspace?: (notebookId: string, notebookName: string) => void;
 }
 
-export function NotebookManager({ onClose, onOpenNotebookChat }: NotebookManagerProps) {
+export function NotebookManager({ onClose, onOpenNotebookChat, onOpenWorkspace }: NotebookManagerProps) {
   const lang = useLang();
   const [notebooks, setNotebooks] = useState<Notebook[]>([]);
+  const [groups, setGroups] = useState<NotebookGroup[]>([]);
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+  const [showCreateGroup, setShowCreateGroup] = useState(false);
+  const [newGroupName, setNewGroupName] = useState('');
+  const [importing, setImporting] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [showCreate, setShowCreate] = useState(false);
   const [newName, setNewName] = useState('');
@@ -53,9 +65,13 @@ export function NotebookManager({ onClose, onOpenNotebookChat }: NotebookManager
   const [sourceFilePath, setSourceFilePath] = useState('');
   const [guidedQuestions, setGuidedQuestions] = useState<string[]>([]);
   const [loadingQuestions, setLoadingQuestions] = useState(false);
+  // B13: Edit notebook description
+  const [editingDesc, setEditingDesc] = useState(false);
+  const [descInput, setDescInput] = useState('');
 
   const refreshNotebooks = useCallback(() => {
     setNotebooks(listNotebooks());
+    setGroups(listGroups());
   }, []);
 
   useEffect(() => {
@@ -85,6 +101,59 @@ export function NotebookManager({ onClose, onOpenNotebookChat }: NotebookManager
     setNewDesc('');
     setShowCreate(false);
     refreshNotebooks();
+  };
+
+  const handleCreateGroup = () => {
+    if (!newGroupName.trim()) return;
+    createGroup({ name: newGroupName.trim() });
+    setNewGroupName('');
+    setShowCreateGroup(false);
+    refreshNotebooks();
+  };
+
+  const handleDeleteGroup = (groupId: string) => {
+    deleteGroup(groupId);
+    refreshNotebooks();
+  };
+
+  const handleMoveNotebook = (notebookId: string, groupId: string | null) => {
+    updateNotebook(notebookId, { groupId: groupId ?? undefined });
+    refreshNotebooks();
+  };
+
+  const handleImport = async () => {
+    const isTauri = !!(window as any).__TAURI__;
+    if (!isTauri) return;
+    try {
+      const { open } = await import('@tauri-apps/plugin-dialog');
+      const selected = await open({
+        multiple: false,
+        filters: [{ name: 'Markdown', extensions: ['md'] }],
+      });
+      if (!selected) return;
+      const filePath = typeof selected === 'string' ? selected : (selected as any).path;
+      setImporting(true);
+      const result = await importNotebookFromFile(filePath);
+      refreshNotebooks();
+      alert(lang === 'zh'
+        ? `导入完成: ${result.sourcesCreated} 个来源, ${result.notesCreated} 个笔记${result.errors.length ? ', ' + result.errors.length + ' 个错误' : ''}`
+        : `Import complete: ${result.sourcesCreated} sources, ${result.notesCreated} notes${result.errors.length ? ', ' + result.errors.length + ' errors' : ''}`
+      );
+    } catch (e) {
+      console.error('Import failed:', e);
+      alert(lang === 'zh' ? `导入失败: ${e instanceof Error ? e.message : '未知错误'}` : `Import failed: ${e instanceof Error ? e.message : 'Unknown error'}`);
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const toggleGroup = (groupId: string) => {
+    setExpandedGroups(prev => {
+      const next = new Set(prev);
+      if (next.has(groupId)) next.delete(groupId);
+      else next.add(groupId);
+      return next;
+    });
   };
 
   const handleDelete = () => {
@@ -159,7 +228,7 @@ export function NotebookManager({ onClose, onOpenNotebookChat }: NotebookManager
       const { open } = await import('@tauri-apps/plugin-dialog');
       const selected = await open({
         multiple: false,
-        filters: [{ name: 'Text & Code', extensions: ['txt', 'md', 'json', 'yaml', 'xml', 'csv', 'ts', 'js', 'py', 'java', 'go', 'rs', 'c', 'cpp', 'sh', 'sql', 'html', 'css', 'log', 'pdf'] }],
+        filters: [{ name: 'Text & Code', extensions: ['txt', 'md', 'json', 'yaml', 'xml', 'csv', 'ts', 'js', 'py', 'java', 'go', 'rs', 'c', 'cpp', 'sh', 'sql', 'html', 'css', 'log', 'pdf', 'docx'] }],
       });
       if (selected) {
         const filePath = typeof selected === 'string' ? selected : (selected as any).path;
@@ -171,6 +240,16 @@ export function NotebookManager({ onClose, onOpenNotebookChat }: NotebookManager
     } catch (e) {
       console.error('File select error:', e);
     }
+  };
+
+  // B13: Save notebook description
+  const handleSaveDesc = () => {
+    if (!selectedNotebook) return;
+    updateNotebook(selectedNotebook.id, { description: descInput.trim() });
+    const updated = getNotebook(selectedNotebook.id);
+    if (updated) setSelectedNotebook(updated);
+    refreshNotebooks();
+    setEditingDesc(false);
   };
 
   const filteredNotebooks = notebooks.filter((nb) =>
@@ -188,6 +267,16 @@ export function NotebookManager({ onClose, onOpenNotebookChat }: NotebookManager
             <span>{lang === 'zh' ? '返回列表' : 'Back'}</span>
           </button>
           <h2 className="notebook-title">{selectedNotebook.name}</h2>
+          {onOpenWorkspace && (
+            <button
+              className="notebook-chat-btn"
+              onClick={() => onOpenWorkspace(selectedNotebook.id, selectedNotebook.name)}
+              style={{ marginRight: '6px' }}
+            >
+              <LayoutGrid className="w-4 h-4" />
+              <span>{lang === 'zh' ? '工作区' : 'Workspace'}</span>
+            </button>
+          )}
           <button
             className="notebook-chat-btn"
             onClick={() => onOpenNotebookChat(selectedNotebook.id, selectedNotebook.name)}
@@ -197,8 +286,40 @@ export function NotebookManager({ onClose, onOpenNotebookChat }: NotebookManager
           </button>
         </div>
 
-        {selectedNotebook.description && (
-          <p className="notebook-description">{selectedNotebook.description}</p>
+        {selectedNotebook.description && !editingDesc && (
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '6px' }}>
+            <p className="notebook-description" style={{ flex: 1 }}>{selectedNotebook.description}</p>
+            <button
+              onClick={() => { setDescInput(selectedNotebook.description || ''); setEditingDesc(true); }}
+              style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '2px', flexShrink: 0 }}
+              title={lang === 'zh' ? '编辑描述' : 'Edit description'}
+            >
+              <Edit2 className="w-3 h-3" />
+            </button>
+          </div>
+        )}
+        {(!selectedNotebook.description || editingDesc) && (
+          <div style={{ display: 'flex', gap: '6px', marginBottom: '8px' }}>
+            <input
+              className="notebook-input"
+              placeholder={lang === 'zh' ? '添加描述...' : 'Add description...'}
+              value={descInput}
+              onChange={(e) => setDescInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') handleSaveDesc(); if (e.key === 'Escape') setEditingDesc(false); }}
+              autoFocus={editingDesc}
+              style={{ flex: 1 }}
+            />
+            {editingDesc && (
+              <>
+                <button className="notebook-btn-confirm" onClick={handleSaveDesc} style={{ padding: '4px 12px', fontSize: '12px' }}>
+                  {lang === 'zh' ? '保存' : 'Save'}
+                </button>
+                <button className="notebook-btn-cancel" onClick={() => setEditingDesc(false)} style={{ padding: '4px 12px', fontSize: '12px' }}>
+                  {lang === 'zh' ? '取消' : 'Cancel'}
+                </button>
+              </>
+            )}
+          </div>
         )}
 
         {/* Summary */}
@@ -411,6 +532,14 @@ export function NotebookManager({ onClose, onOpenNotebookChat }: NotebookManager
               onChange={(e) => setSearchQuery(e.target.value)}
             />
           </div>
+          <button className="notebook-create-btn" onClick={() => setShowCreateGroup(true)} title={lang === 'zh' ? '新建分组' : 'New Group'}>
+            <FolderPlus className="w-4 h-4" />
+            {lang === 'zh' ? '分组' : 'Group'}
+          </button>
+          <button className="notebook-create-btn" onClick={handleImport} disabled={importing} title={lang === 'zh' ? '导入 Markdown' : 'Import Markdown'}>
+            {importing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+            {lang === 'zh' ? '导入' : 'Import'}
+          </button>
           <button className="notebook-create-btn" onClick={() => setShowCreate(true)}>
             <Plus className="w-4 h-4" />
             {lang === 'zh' ? '新建笔记本' : 'New Notebook'}
@@ -418,7 +547,7 @@ export function NotebookManager({ onClose, onOpenNotebookChat }: NotebookManager
         </div>
       </div>
 
-      {filteredNotebooks.length === 0 ? (
+      {filteredNotebooks.length === 0 && groups.length === 0 ? (
         <div className="notebook-empty-state">
           <BookOpen className="w-12 h-12 text-muted-foreground" />
           <p className="text-lg font-medium">
@@ -437,52 +566,70 @@ export function NotebookManager({ onClose, onOpenNotebookChat }: NotebookManager
           )}
         </div>
       ) : (
-        <div className="notebook-grid">
-          {filteredNotebooks.map((nb) => (
-            <div
-              key={nb.id}
-              className="notebook-card"
-              onClick={() => setSelectedNotebook(nb)}
-            >
-              <div className="notebook-card-header">
-                <BookOpen className="w-5 h-5 text-primary" />
-                <h3 className="notebook-card-title">{nb.name}</h3>
-                <button
-                  className="notebook-card-delete"
-                  onClick={(e) => { e.stopPropagation(); setDeleteTarget(nb); }}
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
-              </div>
-              {nb.description && (
-                <p className="notebook-card-desc">{nb.description}</p>
-              )}
-              {nb.summary && nb.summaryStatus === 'completed' && (
-                <p className="notebook-card-summary">{nb.summary.slice(0, 120)}...</p>
-              )}
-              <div className="notebook-card-stats">
-                <Badge variant="muted">
-                  <FileText className="w-3 h-3" />
-                  {nb.sourceCount}
-                </Badge>
-                <Badge variant="muted">
-                  {nb.chunkCount} {lang === 'zh' ? '块' : 'chunks'}
-                </Badge>
-                {nb.summaryStatus === 'completed' && (
-                  <Badge variant="success">
-                    <CheckCircle className="w-3 h-3" />
-                    {lang === 'zh' ? '已索引' : 'Indexed'}
-                  </Badge>
+        <div className="notebook-list-container">
+          {/* Grouped notebooks */}
+          {groups.map((group) => {
+            const groupNotebooks = filteredNotebooks.filter(nb => nb.groupId === group.id);
+            if (groupNotebooks.length === 0 && searchQuery) return null;
+            const isExpanded = expandedGroups.has(group.id);
+            return (
+              <div key={group.id} className="notebook-group-section">
+                <div className="notebook-group-header" onClick={() => toggleGroup(group.id)}>
+                  {isExpanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+                  <Folder className="w-4 h-4 text-primary" />
+                  <span className="notebook-group-name">{group.name}</span>
+                  <span className="nb-count-badge">{groupNotebooks.length}</span>
+                  <button
+                    className="notebook-card-delete"
+                    onClick={(e) => { e.stopPropagation(); handleDeleteGroup(group.id); }}
+                    title={lang === 'zh' ? '删除分组' : 'Delete Group'}
+                  >
+                    <Trash2 className="w-3 h-3" />
+                  </button>
+                </div>
+                {isExpanded && groupNotebooks.length > 0 && (
+                  <div className="notebook-grid">
+                    {groupNotebooks.map((nb) => (
+                      <NotebookCard
+                        key={nb.id}
+                        nb={nb}
+                        lang={lang}
+                        groups={groups}
+                        onOpen={() => onOpenWorkspace ? onOpenWorkspace(nb.id, nb.name) : onOpenNotebookChat(nb.id, nb.name)}
+                        onChat={() => onOpenNotebookChat(nb.id, nb.name)}
+                        onDelete={() => setDeleteTarget(nb)}
+                        onMove={handleMoveNotebook}
+                      />
+                    ))}
+                  </div>
                 )}
-                {nb.summaryStatus === 'generating' && (
-                  <Badge variant="warning">
-                    <Loader2 className="w-3 h-3 animate-spin" />
-                    {lang === 'zh' ? '处理中' : 'Processing'}
-                  </Badge>
+                {isExpanded && groupNotebooks.length === 0 && (
+                  <p className="notebook-group-empty">{lang === 'zh' ? '暂无笔记本' : 'No notebooks'}</p>
                 )}
               </div>
-            </div>
-          ))}
+            );
+          })}
+          {/* Ungrouped notebooks */}
+          {(() => {
+            const ungrouped = filteredNotebooks.filter(nb => !nb.groupId || !groups.find(g => g.id === nb.groupId));
+            if (ungrouped.length === 0) return null;
+            return (
+              <div className="notebook-grid" style={{ marginTop: groups.length > 0 ? '12px' : '0' }}>
+                {ungrouped.map((nb) => (
+                  <NotebookCard
+                    key={nb.id}
+                    nb={nb}
+                    lang={lang}
+                    groups={groups}
+                    onOpen={() => onOpenWorkspace ? onOpenWorkspace(nb.id, nb.name) : onOpenNotebookChat(nb.id, nb.name)}
+                    onChat={() => onOpenNotebookChat(nb.id, nb.name)}
+                    onDelete={() => setDeleteTarget(nb)}
+                    onMove={handleMoveNotebook}
+                  />
+                ))}
+              </div>
+            );
+          })()}
         </div>
       )}
 
@@ -538,6 +685,131 @@ export function NotebookManager({ onClose, onOpenNotebookChat }: NotebookManager
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Create Group Dialog (A14) */}
+      <Dialog open={showCreateGroup} onOpenChange={setShowCreateGroup}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{lang === 'zh' ? '新建分组' : 'New Group'}</DialogTitle>
+          </DialogHeader>
+          <div className="notebook-create-form">
+            <input
+              className="notebook-input"
+              placeholder={lang === 'zh' ? '分组名称' : 'Group name'}
+              value={newGroupName}
+              onChange={(e) => setNewGroupName(e.target.value)}
+              autoFocus
+              onKeyDown={(e) => { if (e.key === 'Enter') handleCreateGroup(); }}
+            />
+          </div>
+          <DialogFooter>
+            <button className="notebook-btn-cancel" onClick={() => setShowCreateGroup(false)}>
+              {lang === 'zh' ? '取消' : 'Cancel'}
+            </button>
+            <button className="notebook-btn-confirm" onClick={handleCreateGroup} disabled={!newGroupName.trim()}>
+              {lang === 'zh' ? '创建' : 'Create'}
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+// ========== Notebook Card Component (A14: with group assignment) ==========
+
+function NotebookCard({
+  nb, lang, groups, onOpen, onChat, onDelete, onMove,
+}: {
+  nb: Notebook;
+  lang: string;
+  groups: NotebookGroup[];
+  onOpen: () => void;
+  onChat: () => void;
+  onDelete: () => void;
+  onMove: (notebookId: string, groupId: string | null) => void;
+}) {
+  const [showMoveMenu, setShowMoveMenu] = useState(false);
+  const isZh = lang === 'zh';
+
+  return (
+    <div
+      className="notebook-card"
+      onClick={onOpen}
+    >
+      <div className="notebook-card-header">
+        <BookOpen className="w-5 h-5 text-primary" />
+        <h3 className="notebook-card-title">{nb.name}</h3>
+        <button
+          className="notebook-card-delete"
+          onClick={(e) => { e.stopPropagation(); onChat(); }}
+          title={isZh ? '直接对话' : 'Chat directly'}
+          style={{ marginRight: '2px' }}
+        >
+          <MessageSquare className="w-3.5 h-3.5" />
+        </button>
+        <div style={{ position: 'relative' }}>
+          <button
+            className="notebook-card-delete"
+            onClick={(e) => { e.stopPropagation(); setShowMoveMenu(!showMoveMenu); }}
+            title={isZh ? '移动到分组' : 'Move to group'}
+          >
+            <Folder className="w-3.5 h-3.5" />
+          </button>
+          {showMoveMenu && (
+            <div className="nb-move-menu" onClick={(e) => e.stopPropagation()}>
+              <button
+                className="nb-move-option"
+                onClick={() => { onMove(nb.id, null); setShowMoveMenu(false); }}
+              >
+                {isZh ? '无分组' : 'No group'}
+              </button>
+              {groups.map(g => (
+                <button
+                  key={g.id}
+                  className="nb-move-option"
+                  onClick={() => { onMove(nb.id, g.id); setShowMoveMenu(false); }}
+                >
+                  {g.name}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+        <button
+          className="notebook-card-delete"
+          onClick={(e) => { e.stopPropagation(); onDelete(); }}
+        >
+          <Trash2 className="w-4 h-4" />
+        </button>
+      </div>
+      {nb.description && (
+        <p className="notebook-card-desc">{nb.description}</p>
+      )}
+      {nb.summary && nb.summaryStatus === 'completed' && (
+        <p className="notebook-card-summary">{nb.summary.slice(0, 120)}...</p>
+      )}
+      <div className="notebook-card-stats">
+        <Badge variant="muted">
+          <FileText className="w-3 h-3" />
+          {nb.sourceCount}
+        </Badge>
+        <Badge variant="muted">
+          {nb.chunkCount} {isZh ? '块' : 'chunks'}
+        </Badge>
+        {nb.summaryStatus === 'completed' && (
+          <Badge variant="success">
+            <CheckCircle className="w-3 h-3" />
+            {isZh ? '已索引' : 'Indexed'}
+          </Badge>
+        )}
+        {nb.summaryStatus === 'generating' && (
+          <Badge variant="warning">
+            <Loader2 className="w-3 h-3 animate-spin" />
+            {isZh ? '处理中' : 'Processing'}
+          </Badge>
+        )}
+      </div>
     </div>
   );
 }

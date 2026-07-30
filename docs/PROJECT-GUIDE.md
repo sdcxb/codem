@@ -1,7 +1,7 @@
 # Codem 项目完整说明
 
 > **用途**：新对话快速理解项目全貌、架构、文件关联、当前状态。
-> 创建时间：2026-07-23 | 最后更新：2026-07-27 | 当前版本：v0.89.3（已发布，含宠物窗口锚点 resize + 多页打包 + 模型持久化修复）
+> 创建时间：2026-07-23 | 最后更新：2026-07-31 | 当前版本：v0.90.0（已发布）+ 未发布开发分支（UI/UX 大幅优化 + 推理强度分档 + 架构培训文档）
 
 ---
 
@@ -13,7 +13,7 @@
 - **GitHub**：https://github.com/sdcxb/codem
 - **分发**：NSIS `.exe` + WiX `.msi`，一键安装无需依赖
 - **平台**：Windows 优先
-- **版本**：v0.89.3
+- **版本**：v0.90.0（已发布）+ 开发分支（未发布）
 
 ---
 
@@ -27,11 +27,13 @@
 | **前端框架** | React 18 + TypeScript | SPA，Vite 构建 |
 | **状态管理** | Zustand 5 | 三个 store：`useAppStore`（消息/流式/工具）+ `useProjectStore`（项目/会话/技能）+ `usePetStore`（宠物状态/气泡/窗口） |
 | **UI 组件** | Radix UI + Lucide React + Font Awesome | Switch/Dialog/Tooltip/Popover/Dropdown + 图标库 |
-| **Markdown** | react-markdown + remark-gfm | 消息渲染 + 代码高亮 |
+| **Markdown** | react-markdown + remark-gfm + remark-math + rehype-katex | 消息渲染 + 代码高亮 + 数学公式 |
 | **图表** | Mermaid 11 | 技能内置 Mermaid SVG 渲染 |
 | **终端** | xterm.js (@xterm/xterm + addon-fit + addon-web-links) | CLI 模式终端 |
 | **存储** | SQLite (sql.js) | 内存数据库 + Tauri 文件系统持久化到 AppData |
 | **嵌入模型** | ONNX Runtime (WASM) + @huggingface/transformers | 本地语义嵌入，零外部依赖 |
+| **文档解析** | mammoth + pdfjs-dist | DOCX/PDF 文档内容提取 |
+| **数学公式** | KaTeX | Markdown 中的 LaTeX 公式渲染 |
 | **压缩** | fflate | 技能 ZIP 包解压 |
 | **桌面宠物** | Petdex (MIT License) 集成 | 宠物包格式 + 市场 Manifest API + 精灵图帧动画 |
 | **Tauri 前端 API** | @tauri-apps/api + plugin-dialog + plugin-notification | IPC 通信 + 原生对话框 + 系统通知 |
@@ -40,9 +42,10 @@
 
 ```
 React 18 + Zustand 5 + Radix UI + Lucide React + Font Awesome 7
-react-markdown + remark-gfm + react-syntax-highlighter
+react-markdown + remark-gfm + remark-math + rehype-katex + react-syntax-highlighter
 sql.js (SQLite) + @huggingface/transformers (ONNX)
 mermaid + @xterm/xterm + addon-fit + addon-web-links + fflate + clsx + tailwind-merge
+mammoth (DOCX) + pdfjs-dist (PDF) + katex (数学公式)
 @tauri-apps/api + @tauri-apps/plugin-dialog + @tauri-apps/plugin-notification
 ```
 
@@ -72,9 +75,9 @@ windows (Win32 API: SetWindowPos 单次调用原子设置窗口位置+尺寸)
 │  │                                                            │  │
 │  │  App.tsx ─ 主应用 (状态管理 + 事件处理 + handleSend)        │  │
 │  │  ├── Sidebar.tsx ─ 左侧栏 (项目/会话列表/导航)             │  │
-│  │  ├── ChatPanel.tsx ─ 对话面板 (消息列表 + InputArea)        │  │
-│  │  │   ├── MessageBubble.tsx ─ 消息气泡 (memo优化 + 子智能体) │  │
-│  │  │   └── InputArea.tsx ─ 输入区 (底部控制栏 + 模式/分支)   │  │
+│  │  ├── ChatPanel.tsx ─ 对话面板 (消息列表 + InputArea + P1-P4功能)│  │
+│  │  │   ├── MessageBubble.tsx ─ 消息气泡 (memo + 图片画廊 + 视频 + 反馈)│  │
+│  │  │   └── InputArea.tsx ─ 输入区 (底部控制栏 + @提及 + 上下文徽章)│  │
 │  │  ├── RightSidebar.tsx ─ 右侧栏 (活跃任务/GitInfoPanel)     │  │
 │  │  ├── SettingsPanel.tsx ─ 设置面板 (10个Tab，含宠物)        │  │
 │  │  ├── PetWindowApp.tsx ─ 独立宠物窗口 (透明/置顶/精灵图动画)  │  │
@@ -84,7 +87,7 @@ windows (Win32 API: SetWindowPos 单次调用原子设置窗口位置+尺寸)
 │  │  └── DreamLayout.tsx / HubLayout.tsx ─ 皮肤布局            │  │
 │  │                                                            │  │
 │  │  核心引擎层 (src/core/)                                     │  │
-│  │  ├── llm/ ─ LLM 引擎 (Provider/AgenticLoop/Tools/Memory)   │  │
+  │  │  ├── llm/ ─ LLM 引擎 (Provider/AgenticLoop/Tools/Memory/Guidance)│  │
 │  │  ├── subagent/ ─ 子智能体 spawn/wait                       │  │
 │  │  ├── context/ ─ 上下文管理 + token计数 + 压缩              │  │
 │  │  ├── memory/ ─ 三级记忆 (project/session/global)          │  │
@@ -92,11 +95,11 @@ windows (Win32 API: SetWindowPos 单次调用原子设置窗口位置+尺寸)
 │  │  ├── environment/ ─ Git Worktree + 执行模式                │  │
 │  │  ├── pet/ ─ 桌面宠物 (Petdex集成/状态映射/气泡/市场)        │  │
 │  │  ├── automation/ ─ 自动任务 (定时器/文件监听)              │  │
-│  │  ├── knowledge/ ─ 笔记本知识管理 (RAG)                     │  │
+│  │  ├── knowledge/ ─ 知识管理 (RAG + 笔记 + 闪卡 + 图谱 + PPT)  │  │
 │  │  ├── skill/ ─ 技能系统 (SKILL.md + 注册)                   │  │
 │  │  ├── mcp/ ─ MCP 协议                                       │  │
 │  │  ├── theme/ ─ 皮肤系统 (默认/Hub/梦幻)                     │  │
-│  │  ├── storage/ ─ SQLite 持久化                              │  │
+│  │  ├── storage/ ─ SQLite 持久化 (含快捷短语/草稿/Todo/反馈表)  │  │
 │  │  ├── prompt/ ─ 系统提示词构建                              │  │
 │  │  ├── settings/ ─ 数据层设置 (SettingsSource 层级)           │  │
 │  │  ├── recovery/ ─ 会话恢复                                  │  │
@@ -118,6 +121,8 @@ windows (Win32 API: SetWindowPos 单次调用原子设置窗口位置+尺寸)
 │  │              SQLite 数据库 (AppData/codem-db.bin)           │ │
 │  │  projects / sessions / messages / settings /                 │ │
 │  │  memory / notebooks / notebook_sources / notebook_chunks    │ │
+│  │  notes / note_links / flashcards / graph_nodes / graph_edges │ │
+│  │  quick_phrases / prompt_drafts / todo_lists / message_feedback│ │
 │  └─────────────────────────────────────────────────────────────┘ │
 └──────────────────────────────────────────────────────────────────┘
 
@@ -153,7 +158,7 @@ mimo-gui/
 │   │   └── sql.js.d.ts          # sql.js 类型补充声明
 │   ├── lib/                     # 工具函数
 │   │   └── utils.ts             # cn() Tailwind 类名合并 (clsx + tailwind-merge)
-│   ├── styles.css                # 全局样式（~8000行，含所有皮肤基础样式）
+│   ├── styles.css                # 全局样式（~9700行，含所有皮肤基础样式 + P1-P4组件样式）
 │   ├── styles/
 │   │   ├── skin-dream.css        # 梦幻皮肤样式（磨砂/背景图/动画）
 │   │   └── skin-hub.css          # Hub 皮肤样式（分段控件/卡片布局）
@@ -202,6 +207,54 @@ mimo-gui/
 │   │   ├── SelectionTooltip.tsx # 选中文字浮窗工具栏
 │   │   ├── UsageStats.tsx       # 用量统计面板
 │   │   ├── PetOverlay.tsx       # 宠物市场/设置浮层入口（主窗口内）
+│   │   │
+│   │   │  ── P0: 滚动与UX基础 ──
+│   │   ├── ScrollbarMarkers.tsx # 滚动条消息标记
+│   │   ├── ScrollToBottomIndicator.tsx # 滚动到底部指示器
+│   │   ├── hooks/useScrollState.ts # 滚动状态Hook
+│   │   │
+│   │   │  ── P1: 高级Agent功能 ──
+│   │   ├── CorrectionModeToggle.tsx  # 事实核查模式开关
+│   │   ├── CorrectionResultPanel.tsx # 核查结果展示面板
+│   │   ├── ClarificationForm.tsx     # AI澄清交互表单
+│   │   ├── PipelineNextStepDialog.tsx# 管道步骤选择对话框
+│   │   ├── TodoListDisplay.tsx       # Todo列表可视化
+│   │   ├── GuidanceBlock.tsx         # 引导消息展示块
+│   │   ├── StreamingWaitIndicator.tsx# 流式等待阶段提示
+│   │   ├── Workbench.tsx             # 代码工作台（Git diff + 工具状态）
+│   │   ├── RegenerateModelPopover.tsx# 重生成模型选择弹窗
+│   │   ├── FeedbackButtons.tsx       # 消息反馈按钮（赞/踩）
+│   │   ├── InlineMessageEdit.tsx     # 消息内联编辑
+│   │   ├── CapabilityGuard.tsx       # 模型能力守卫
+│   │   │
+│   │   │  ── P2: 体验提升 ──
+│   │   ├── QuickAccessCards.tsx      # Agent快速访问卡片
+│   │   ├── QuickPhraseSelector.tsx   # 快捷短语选择器
+│   │   ├── PromptDraftPicker.tsx     # 提示词草稿版本选择
+│   │   ├── OnboardingTour.tsx        # 新手引导浮窗
+│   │   ├── SourceReferences.tsx      # RAG来源引用展示
+│   │   │
+│   │   │  ── P3: 多模态 ──
+│   │   ├── ImageGallery.tsx          # 图片画廊预览
+│   │   ├── VideoPlayer.tsx           # 视频播放器
+│   │   ├── GenerateModeSelector.tsx  # 生成模式选择器
+│   │   ├── ResolutionSelector.tsx    # 分辨率选择器
+│   │   │
+│   │   │  ── P4: 智能输入 ──
+│   │   ├── ContextBadgeList.tsx      # 上下文徽章列表
+│   │   ├── MentionAutocomplete.tsx   # @提及自动补全
+│   │   ├── SkillAutocomplete.tsx     # 技能自动补全
+│   │   ├── SourceSelector.tsx        # 知识来源选择器
+│   │   │
+│   │   │  ── 知识管理扩展 ──
+│   │   ├── NotebookWorkspace.tsx     # 笔记本工作台
+│   │   ├── NoteEditor.tsx            # 笔记编辑器
+│   │   ├── KnowledgeGraphView.tsx    # 知识图谱可视化
+│   │   ├── FlashcardViewer.tsx       # 闪卡复习器
+│   │   ├── DocxViewer.tsx            # DOCX文档查看器
+│   │   ├── PdfViewer.tsx             # PDF文档查看器
+│   │   ├── SourceViewer.tsx          # 来源内容查看器
+│   │   ├── ppt/                      # PPT生成组件
 │   │   └── ui/                  # Radix UI 封装组件
 │   │
 │   ├── core/                     # 核心引擎层
@@ -214,12 +267,21 @@ mimo-gui/
 │   │   │   ├── agentic-loop.ts   # 多轮迭代循环（流式/工具调用/压缩/子智能体/任务完整性）
 │   │   │   ├── provider.ts      # API 适配（OpenAI/DeepSeek/MiMo SSE流式 + Prompt缓存）
 │   │   │   ├── streaming-executor.ts # 流式执行器（并发安全工具/密钥扫描）
-│   │   │   ├── tools.ts          # 工具定义（read/write/edit/bash/multi_edit/spawn_subagent/...）
+│   │   │   ├── tools.ts          # 工具定义（read/write/edit/bash/multi_edit/spawn_subagent/ask_clarification/fact_check/show_todo/...）
 │   │   │   ├── tools/            # 专用工具
 │   │   │   │   ├── load-skill.ts     # 懒加载技能
 │   │   │   │   ├── read-attachment.ts # 读取附件
 │   │   │   │   ├── search-notebook.ts # 笔记本搜索
+│   │   │   │   ├── ask-clarification.ts # AI澄清表单（P1）
+│   │   │   │   ├── fact-check.ts      # 事实核查（P1）
+│   │   │   │   ├── show-todo.ts       # Todo列表管理（P1）
+│   │   │   │   ├── note-operations.ts # 笔记操作（知识管理）
 │   │   │   │   └── web-search.ts     # Web 搜索
+│   │   │   ├── model-config.ts  # 模型配置集中管理（MIMO_MODELS/API_MODELS/getModelsForMode）
+│   │   │   ├── capability-detector.ts # 模型能力探测
+│   │   │   ├── guidance-queue.ts # 引导消息队列
+│   │   │   ├── model-resolver.ts # 模型解析器
+│   │   │   ├── output-parser.ts  # 输出解析器
 │   │   │   ├── processor.ts      # 请求处理器
 │   │   │   ├── session.ts       # 会话管理
 │   │   │   ├── cost-tracker.ts   # 成本追踪
@@ -256,15 +318,24 @@ mimo-gui/
 │   │   ├── automation/            # 自动任务（v0.87）
 │   │   │   └── automation-manager.ts # 定时器/文件监听 + 触发 + 历史 + 停止
 │   │   │
-│   │   ├── knowledge/             # 知识管理（RAG）
+│   │   ├── knowledge/             # 知识管理（RAG + 笔记 + 闪卡 + 图谱 + PPT）
 │   │   │   ├── chunker.ts        # 文本分块
 │   │   │   ├── extractor.ts      # 文本提取（txt/md/code/url/html）
 │   │   │   ├── pdf-extractor.ts  # PDF 提取（纯TS零依赖）
-│   │   │   ├── indexer.ts        # Embedding 索引管道
-│   │   │   ├── retriever.ts      # 语义检索
+│   │   │   ├── indexer.ts        # Embedding 索引管道（含摘要/建议问题/增量索引）
+│   │   │   ├── retriever.ts      # 语义检索（cosine + top-K + 阈值过滤）
 │   │   │   ├── local-embedding.ts # 本地 ONNX 嵌入
-│   │   │   ├── storage.ts        # 知识存储
-│   │   │   └── types.ts          # 类型
+│   │   │   ├── storage.ts        # 知识存储（含notes/flashcards/graph表）
+│   │   │   ├── types.ts          # 类型（含Note/Flashcard/GraphNode等）
+│   │   │   ├── exporter.ts       # 知识导出（Markdown/JSON）
+│   │   │   ├── importer.ts       # 知识导入
+│   │   │   ├── note-manager.ts   # 笔记管理（CRUD + 版本历史）
+│   │   │   ├── flashcard-store.ts# 闪卡存储与复习调度
+│   │   │   ├── graph-extractor.ts# 知识图谱实体/关系提取
+│   │   │   ├── study-path.ts     # 学习路径生成
+│   │   │   ├── ppt-generator.ts  # PPT内容生成
+│   │   │   ├── ppt-types.ts      # PPT类型定义
+│   │   │   └── index.ts          # 统一导出
 │   │   │
 │   │   ├── skill/                # 技能系统
 │   │   │   ├── skill.ts          # SKILL.md 解析 + 技能注册
@@ -296,11 +367,12 @@ mimo-gui/
 │   │   │   └── index.ts          # 导出
 │   │   │
 │   │   ├── storage/              # SQLite 持久化
-│   │   │   ├── database.ts       # SQLite 初始化 + 防抖持久化(500ms) + flushDatabase (关闭时刷盘)
+│   │   │   ├── database.ts       # SQLite 初始化 + 防抖持久化 + schema（含notes/flashcards/graph/quick_phrases/prompt_drafts/todo_lists/message_feedback表）
 │   │   │   ├── session.ts        # 会话 CRUD
-│   │   │   ├── message.ts        # 消息 CRUD + messagesToLLMMessages
+│   │   │   ├── message.ts        # 消息 CRUD + messagesToLLMMessages + 反馈存储
 │   │   │   ├── project.ts        # 项目 CRUD
-│   │   │   ├── settings.ts       # 键值设置存储
+│   │   │   ├── settings.ts       # 键值设置存储 + 快捷短语CRUD
+│   │   │   ├── prompt-draft.ts   # 提示词草稿版本存储（P2）
 │   │   │   ├── account.ts        # 账户存储
 │   │   │   ├── migration.ts      # 数据迁移
 │   │   │   └── v2-session.ts     # v2 会话
@@ -568,7 +640,7 @@ Rust 后端 (lib.rs):
 | **PROJECT-GUIDE.md** | 📌本项目 | **本文档**，完整项目说明 | ✅ 最新 |
 | **PROJECT_STATUS.md** | 项目简介 | 项目概述+架构+功能清单+版本历史 | v0.88 |
 | **PROJECT-CONTEXT.md** | 旧版交接 | v0.79 时的交接文档，已被 PROJECT_STATUS 替代 | 📦 归档 |
-| **TODO.md** | 待办跟踪 | Phase 0-G 全部完成记录 + v0.88 宠物系统 + Phase E 待办 | ✅ 最新 |
+| **TODO.md** | 待办跟踪 | Phase 0-G 全部完成记录 + v0.88 宠物系统 + v0.89.3后P0-P4开发分支 | ✅ 最新 |
 | **DEV-PLAN-UNIFIED.md** | 主线计划 | 统一开发计划（1172行），整合了 ROADMAP + Benchmark + TODO | 📦 参考 |
 | **ROADMAP-codex-alignment.md** | 历史路线图 | Codex 对标改进路线图（Phase 0-4 已完成） | 📦 归档 |
 | **TOOLS-SKILLS-BENCHMARK.md** | 对标分析 | 工具/技能/MCP 对标分析（66K，Phase B-D 已完成） | 📦 归档 |
@@ -592,14 +664,22 @@ Rust 后端 (lib.rs):
 | **CHANGELOG-v0.89.3.md** | 变更日志 | v0.89.3 变更记录 | ✅ 最新 |
 | **CHANGELOG-v0.89.md** | 变更日志 | v0.89 变更记录 | ✅ 最新 |
 | **TEST-CASES-REGRESSION-V2.md** | 测试用例 | 回归测试V2（含冒烟测试），185个用例 | ✅ 最新 |
+| **WECODE-REF-GAP-ANALYSIS.md** | 对标分析 | 全局对标 wecode-ref 核心功能缺失分析 | ✅ 最新 |
+| **IMPLEMENTATION-PLAN-FULL.md** | 实施计划 | P0-P4 全量功能实施计划（含文件修改/交互变更/存储架构） | ✅ 最新 |
+| **NOTEBOOK-FEATURE-GAP-ANALYSIS.md** | 对标分析 | 笔记本功能差距分析（1066行） | ✅ 最新 |
+| **NOTEBOOK-FEATURE-GAP-ANALYSIS-V2.md** | 对标分析 | 笔记本功能差距分析V2（精简版） | ✅ 最新 |
+| **NOTEBOOK-UI-UX-BENCHMARK.md** | 对标分析 | 笔记本UI/UX基准分析 | ✅ 最新 |
+| **NOTEBOOK-UNIMPLEMENTED-FEATURES.md** | 对标分析 | 笔记本未实现功能清单 | ✅ 最新 |
 
 ### 文档优先级说明
 
 **新对话只需要阅读：**
 1. `PROJECT-GUIDE.md`（本文档）— 完整理解项目
-2. `TODO.md` — 了解当前待办
-3. `CHANGELOG-v0.89.md` — 了解最新版本变更
-4. `TEST-CASES-REGRESSION-V2.md` — 了解回归测试用例（含冒烟测试）
+2. `TODO.md` — 了解当前待办（含未发布开发分支变更）
+3. `WECODE-REF-GAP-ANALYSIS.md` — 了解对标分析发现的功能缺失
+4. `IMPLEMENTATION-PLAN-FULL.md` — 了解 P0-P4 实施计划
+5. `CHANGELOG-v0.89.md` — 了解最新发布版本变更
+6. `TEST-CASES-REGRESSION-V2.md` — 了解回归测试用例（含冒烟测试）
 
 **其余文档均为历史归档或已完成计划的记录，不影响进度判断。**
 
@@ -621,6 +701,97 @@ Rust 后端 (lib.rs):
 | v0.88 | 2026-07-24 | 桌面宠物系统 + 宠物市场 + 悬浮气泡通知 + 右键原生菜单 + Token查询 |
 | v0.89 | 2026-07-26 | 跨会话委派编排 + 8个高级UI面板 + 核心模块持久化 + 上下文压缩配置UI + 冒烟测试 |
 | v0.89.3 | 2026-07-27 | 宠物窗口多页打包(3.4MB→5.7KB) + 锚点 resize 零漂移 + 模型/模式持久化修复 |
+
+### 6.2 未发布开发分支（v0.89.3 之后）
+
+> 自 v0.89.3 发布以来，工作区有大量未提交的修改。以下为变更全量清单。
+
+#### 变更统计
+- **已修改文件**：26 个（+5,415 行 / -2,156 行）
+- **新增文件**：40+ 个（组件/核心模块/文档/类型声明）
+- **TypeScript 编译**：0 错误
+- **Lint 检查**：0 错误
+
+#### 新增功能模块
+
+##### P0: 滚动与 UX 基础
+| 功能 | 关键文件 | 说明 |
+|------|---------|------|
+| 滚动条消息标记 | `ScrollbarMarkers.tsx`, `hooks/useScrollState.ts` | 滚动条上标注消息位置 |
+| 滚动到底部指示器 | `ScrollToBottomIndicator.tsx` | 未读消息提示 + 一键回到底部 |
+| 自动滚动优化 | `ChatPanel.tsx` | 修复滚动与未读指示器的交互冲突 |
+
+##### P1: 高级 Agent 功能
+| 功能 | 关键文件 | 说明 |
+|------|---------|------|
+| 事实核查模式 | `CorrectionModeToggle.tsx`, `CorrectionResultPanel.tsx`, `fact-check.ts` | 开启后 AI 回复自动核查 |
+| AI 澄清交互 | `ClarificationForm.tsx`, `ask-clarification.ts` | AI 主动提问收集信息 |
+| Todo 列表 | `TodoListDisplay.tsx`, `show-todo.ts` | AI 创建 Todo + 用户勾选 + DB 持久化 |
+| 引导消息块 | `GuidanceBlock.tsx`, `guidance-queue.ts` | 引导消息折叠展示 |
+| 流式等待提示 | `StreamingWaitIndicator.tsx` | 分阶段（思考/搜索/编码/审查）状态提示 |
+| 代码工作台 | `Workbench.tsx` | 工具执行状态 + Git diff + 修改文件统计 |
+| 模型选择弹窗 | `RegenerateModelPopover.tsx`, `model-config.ts` | 重生成时选择不同模型 |
+| 消息反馈 | `FeedbackButtons.tsx` | 赞/踩 + DB 持久化 (`message_feedback` 表) |
+| 消息内联编辑 | `InlineMessageEdit.tsx` | 点击编辑用户消息并重发 |
+| 模型能力守卫 | `CapabilityGuard.tsx`, `capability-detector.ts` | 检测模型是否支持特定功能 |
+| 管道步骤选择 | `PipelineNextStepDialog.tsx` | 多步骤任务上下文选择 |
+| 输出解析器 | `output-parser.ts` | 结构化输出解析 |
+| 模型解析器 | `model-resolver.ts` | 模型路由解析 |
+
+##### P2: 体验提升
+| 功能 | 关键文件 | 说明 |
+|------|---------|------|
+| 快捷短语 | `QuickPhraseSelector.tsx`, `settings.ts` (CRUD) | 分类短语模板 + `quick_phrases` 表 |
+| 提示词草稿 | `PromptDraftPicker.tsx`, `prompt-draft.ts` | 版本管理 + A/B 对比 + `prompt_drafts` 表 |
+| Agent 快速访问 | `QuickAccessCards.tsx` | 卡片网格 + 收藏 + 搜索 |
+| 新手引导 | `OnboardingTour.tsx` | 4 步浮窗引导 + 首次启动检测 |
+| RAG 来源引用 | `SourceReferences.tsx` | 消息底部来源芯片展示 |
+
+##### P3: 多模态
+| 功能 | 关键文件 | 说明 |
+|------|---------|------|
+| 图片画廊 | `ImageGallery.tsx` | 全屏 lightbox + 左右切换 + 下载 |
+| 视频播放器 | `VideoPlayer.tsx` | 进度条 + 下载 + `MessageAttachment.type` 扩展 `"video"` |
+| 生成模式选择 | `GenerateModeSelector.tsx` | 图片/视频生成模式切换 |
+| 分辨率选择 | `ResolutionSelector.tsx` | 输出分辨率选项 |
+
+##### P4: 智能输入
+| 功能 | 关键文件 | 说明 |
+|------|---------|------|
+| 上下文徽章 | `ContextBadgeList.tsx` | 显示当前附件/技能上下文 |
+| @ 提及补全 | `MentionAutocomplete.tsx` | 输入 `@` 触发文件/笔记本补全 |
+| 技能补全 | `SkillAutocomplete.tsx` | 输入 `/` 触发技能列表 |
+| 来源选择器 | `SourceSelector.tsx` | 知识来源选择 |
+
+##### 知识管理增强
+| 功能 | 关键文件 | 说明 |
+|------|---------|------|
+| 笔记管理 | `note-manager.ts`, `NoteEditor.tsx` | 笔记 CRUD + 版本历史 (`notes`/`note_versions` 表) |
+| 闪卡系统 | `flashcard-store.ts`, `FlashcardViewer.tsx` | 闪卡存储 + 复习调度 (`flashcards` 表) |
+| 知识图谱 | `graph-extractor.ts`, `KnowledgeGraphView.tsx` | 实体/关系提取 + 可视化 (`graph_nodes`/`graph_edges` 表) |
+| 知识导出 | `exporter.ts` | 导出为 Markdown/JSON |
+| 知识导入 | `importer.ts` | 批量导入来源 |
+| 学习路径 | `study-path.ts` | AI 生成学习路径 |
+| PPT 生成 | `ppt-generator.ts`, `ppt-types.ts`, `ppt/` | 从知识库生成 PPT |
+| DOCX 查看 | `DocxViewer.tsx` | mammoth 库解析 DOCX |
+| PDF 查看 | `PdfViewer.tsx` | pdfjs-dist 库渲染 PDF |
+| 来源查看 | `SourceViewer.tsx` | 知识来源内容查看 |
+| 笔记本工作台 | `NotebookWorkspace.tsx` | 统一笔记本工作界面 |
+| 笔记本管理增强 | `NotebookManager.tsx` | +372 行增强 |
+| 笔记本分组 | `storage.ts` | `notebook_groups` 表 |
+
+##### 基础设施变更
+| 变更 | 关键文件 | 说明 |
+|------|---------|------|
+| 模型配置集中化 | `model-config.ts` | `MIMO_MODELS`/`API_MODELS`/`getModelsForMode` 统一管理 |
+| Session 类型扩展 | `types.ts` | 新增 `correctionMode`/`deepThinkingMode`/`preserveExecutor` |
+| Message 类型扩展 | `store.ts` | 新增 `metadata` 属性 |
+| Attachment 类型扩展 | `store.ts` | `type` 新增 `"video"` |
+| AgenticLoop 事件扩展 | `agentic-loop.ts` | 新增 `clarification`/`correction_complete`/`pipeline_step_complete`/`todo_list_created` 事件 |
+| DB Schema 扩展 | `database.ts` | +171 行，新增 10 张表 |
+| i18n 扩展 | `lang.ts` | +141 行翻译键（P1-P4 全部组件） |
+| CSS 扩展 | `styles.css` | +1,327 行（P1-P4 全部组件样式） |
+| 新依赖 | `package.json` | katex/mammoth/pdfjs-dist/rehype-katex/remark-math |
 
 ### 6.2 v0.89 已发布功能
 
@@ -698,6 +869,9 @@ Rust 后端 (lib.rs):
 | **冒烟测试** | ✅ 已完成 | v0.89 发布，30个发布阻断级冒烟用例 |
 | **REFACTOR-PROMPT-TO-DATA** | ✅ 已完成 | P0-P5 全部落地（编码运行时注入/cd拆分/Plan只读/频率限制/条件注册/子智能体拦截），143个测试 |
 | **数据层设置系统** | ✅ 已完成 | `core/settings/` SettingsSource 层级 (cli/policy/flag/user/project/local/default) |
+| **P0-P4 全量功能集成** | 🔧 未发布 | 40+ 新组件已创建并集成到 ChatPanel/MessageBubble/InputArea/App.tsx，TS编译0错误，待提交 |
+| **知识管理增强** | 🔧 未发布 | 笔记/闪卡/图谱/PPT/导出导入/学习路径，10张新DB表，待提交 |
+| **对标分析文档** | 📝 最新 | wecode-ref全局对标 + 笔记本功能差距分析（6份新文档） |
 | **Phase E: Work 模式拆分** | ⏳ 远期 | Codex/Work 双模式切换（E1-E7） |
 | **MSI 中文向导** | ⏳ | WiX 多语言配置（zh-CN + en-US） |
 | **更多 Provider 测试** | ⏳ | 目前主要测试 DeepSeek + MiMo |

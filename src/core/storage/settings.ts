@@ -45,6 +45,77 @@ export function setSettingJSON(key: string, value: unknown): void {
   setSetting(key, JSON.stringify(value));
 }
 
+// ========== Quick Phrase Storage (P2) ==========
+
+export interface QuickPhrase {
+  id: string;
+  title: string;
+  content: string;
+  category: "coding" | "review" | "test" | "debug" | "other";
+  usageCount: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export function saveQuickPhrase(phrase: QuickPhrase): void {
+  const db = getDatabase();
+  const now = Date.now();
+
+  db.run(
+    `INSERT INTO quick_phrases (id, title, content, category, usage_count, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(id) DO UPDATE SET
+       title = excluded.title,
+       content = excluded.content,
+       category = excluded.category,
+       usage_count = excluded.usage_count + 1,
+       updated_at = excluded.updated_at`,
+    [phrase.id, phrase.title, phrase.content, phrase.category, phrase.usageCount + 1, phrase.createdAt || now, now]
+  );
+
+  persistDatabase();
+}
+
+export function loadQuickPhrases(): QuickPhrase[] {
+  try {
+    const db = getDatabase();
+    const result = db.exec(
+      "SELECT id, title, content, category, usage_count, created_at, updated_at FROM quick_phrases ORDER BY usage_count DESC, updated_at DESC"
+    );
+    if (result.length === 0) return [];
+    return result[0].values.map((row: any[]) => ({
+      id: row[0] as string,
+      title: row[1] as string,
+      content: row[2] as string,
+      category: row[3] as string as QuickPhrase["category"],
+      usageCount: row[4] as number,
+      createdAt: row[5] as number,
+      updatedAt: row[6] as number,
+    }));
+  } catch {
+    return [];
+  }
+}
+
+export function deleteQuickPhrase(phraseId: string): void {
+  try {
+    const db = getDatabase();
+    db.run("DELETE FROM quick_phrases WHERE id = ?", [phraseId]);
+    persistDatabase();
+  } catch {}
+}
+
+export function incrementQuickPhraseUsage(phraseId: string): void {
+  try {
+    const db = getDatabase();
+    db.run(
+      "UPDATE quick_phrases SET usage_count = usage_count + 1, updated_at = ? WHERE id = ?",
+      [Date.now(), phraseId]
+    );
+    persistDatabase();
+  } catch {}
+}
+
 // ========== MCP Server Storage ==========
 
 export interface McpServerConfig {

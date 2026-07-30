@@ -3,6 +3,8 @@ import type { ToolRegistry, ToolContext, WriteConfirmResult } from "./tools";
 import type { ToolExecutorConfig } from "./streaming-executor";
 import { StreamingToolExecutorImpl, type StreamingToolCall } from "./streaming-executor";
 import { RetryExecutor, classifyError, logRetry } from "../retry/retry";
+import { extractJSON } from "./output-parser";
+import { getGuidanceQueue, GUIDANCE_MESSAGE_TEMPLATE } from "./guidance-queue";
 import { getPermissionManager, type PermissionRequest, type PermissionResult } from "../permission/permission";
 import { getSnapshotService } from "../snapshot/snapshot";
 import * as MessageStorage from "../storage/message";
@@ -14,6 +16,25 @@ export type LoopResult =
   | { type: "overflow"; message: string; usage: TokenUsage }
   | { type: "aborted" }
   | { type: "error"; error: string };
+
+// ========== P1 Feature Types ==========
+
+/** Clarification form structure for AI to ask structured questions */
+export interface ClarificationFormData {
+  question: string;
+  type: "radio" | "checkbox" | "text";
+  options?: string[];
+  required: boolean;
+  formId: string;
+}
+
+/** Todo item for todo list tracking */
+export interface TodoItem {
+  id: string;
+  content: string;
+  status: "pending" | "in_progress" | "completed";
+  order: number;
+}
 
 export interface LoopState {
   iteration: number;
@@ -128,6 +149,7 @@ export type LoopEvent =
   | { type: "step_progress"; step: number; total: number | null; title: string; steps: StepPlan[] | null }
   | { type: "text_delta"; text: string }
   | { type: "reasoning_delta"; text: string }
+  | { type: "knowledge_sources"; sources: Array<{ sourceId: string; sourceName: string; chunkIndex: number; snippet: string; score: number }> }
   | { type: "tool_start"; toolCall: StreamingToolCall }
   | { type: "tool_complete"; toolCall: StreamingToolCall; result: any }
   | { type: "tool_error"; toolCall: StreamingToolCall; error: string }
@@ -136,6 +158,15 @@ export type LoopEvent =
   | { type: "compaction_end"; messagesRemoved: number }
   | { type: "retry"; attempt: number; delay: number; error: string; errorType: string | null }
   | { type: "usage"; usage: TokenUsage }
+  | { type: "guidance_received"; message: string; guidanceId: string }
+  // P1: Clarification form event — AI asks user a structured question
+  | { type: "clarification"; form: ClarificationFormData; resolve: (answers: string[]) => void }
+  // P1: Correction mode event — fact-check result ready for comparison
+  | { type: "correction_complete"; original: string; corrected: string; changes: string[] }
+  // P1: Pipeline step event — a pipeline step completed
+  | { type: "pipeline_step_complete"; stepId: string; stepTitle: string; result: string }
+  // P1: Todo list event — AI created a todo list for the user
+  | { type: "todo_list_created"; todoId: string; todos: TodoItem[] }
   | { type: "end"; result: LoopResult };
 
 // ========== Agentic Loop ==========
@@ -168,6 +199,12 @@ export class AgenticLoop {
   // Used by the task-completeness check to detect premature stopping
   // (e.g., user asked to "save as test3.txt" but no write tool was called).
   private toolsCalledInRun: Set<string> = new Set();
+
+  // Guidance queue — allows mid-turn message injection.
+  // Messages are consumed at iteration boundaries (before each LLM call),
+  // never during tool execution or subagent waiting.
+  private guidanceQueue = getGuidanceQueue();
+  private currentSessionId: string | null = null;
 
   // E3: Incremental message cache — avoids redundant full conversions
   private msgCache: {
@@ -328,14 +365,8 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
       };
 
       const response = await this.provider.complete(request);
-      let jsonStr = response.content.trim();
-      const jsonMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
-      if (jsonMatch) jsonStr = jsonMatch[1].trim();
-      // Also try to find a JSON array directly
-      const arrayMatch = jsonStr.match(/\[[\s\S]*\]/);
-      if (arrayMatch) jsonStr = arrayMatch[0];
-
-      const steps = JSON.parse(jsonStr) as StepPlan[];
+      // 健壮的 JSON 解析 — 使用 extractJSON 处理 markdown 包裹、中文标点、尾部逗号等
+      const steps = extractJSON<StepPlan[]>(response.content);
       if (Array.isArray(steps) && steps.length > 0) {
         const limited = steps.slice(0, 20);
         console.log(`[AgenticLoop] Planned ${limited.length} steps:`, limited.map(s => s.title));
@@ -355,6 +386,9 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
   ): AsyncGenerator<LoopEvent, LoopResult, unknown> {
     this.abortController = new AbortController();
     this.state = this.createInitialState();
+    this.currentSessionId = sessionId;
+    // Clear any stale guidance from a previous run for this session
+    this.guidanceQueue.expire(sessionId);
     // 每次新对话重置快照状态，确保每次对话独立创建快照
     this.resetSnapshot();
     // Reset tool deduplication state — new user message = new task, previous
@@ -536,7 +570,32 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
         this.state.consecutiveCompactions = 0;
       }
 
-      
+      // === Guidance injection (mid-turn steering) ===
+      // Consume one guidance item from the queue at this iteration boundary.
+      // This is the ONLY injection point — safe because:
+      // 1. Previous iteration's tools have fully completed
+      // 2. We're about to call the LLM, so the model will see it immediately
+      // 3. The message is ephemeral — NOT persisted to the message database
+      // 4. Does not corrupt msgCache (we create a new array, cache is untouched)
+      // 5. Does not interfere with wait_for_subagent (that runs inside tools)
+      const guidanceItem = this.guidanceQueue.consume(sessionId);
+      if (guidanceItem) {
+        const guidanceMsg = {
+          id: `guidance-${guidanceItem.id}`,
+          role: "user" as const,
+          content: GUIDANCE_MESSAGE_TEMPLATE(guidanceItem.message),
+        };
+        messagesForIteration = [...messagesForIteration, guidanceMsg];
+        console.log(
+          `[AgenticLoop] Injected guidance ${guidanceItem.id} at iteration ${this.state.iteration}: "${guidanceItem.message.substring(0, 80)}..."`
+        );
+        yield {
+          type: "guidance_received",
+          message: guidanceItem.message,
+          guidanceId: guidanceItem.id,
+        };
+      }
+
       // Execute iteration - yields events directly for real-time streaming
       let iterationToolCalls = 0;
       const spawnTaskIds: string[] = [];
@@ -1825,6 +1884,30 @@ ${truncatedConv}`;
   abort() {
     this.abortController?.abort();
     this.executor.abortAll();
+  }
+
+  /**
+   * Send a guidance message to the currently running agentic loop.
+   * The message will be consumed at the next iteration boundary (before
+   * the next LLM call), allowing the user to steer the agent mid-turn.
+   *
+   * If no run is active, the message is discarded (returns false).
+   */
+  sendGuidance(message: string): boolean {
+    if (!this.currentSessionId) {
+      console.warn("[AgenticLoop] Cannot send guidance — no active run");
+      return false;
+    }
+    this.guidanceQueue.enqueue(this.currentSessionId, message);
+    return true;
+  }
+
+  /**
+   * Check if there are pending guidance items waiting to be consumed.
+   */
+  hasPendingGuidance(): boolean {
+    if (!this.currentSessionId) return false;
+    return this.guidanceQueue.hasPending(this.currentSessionId);
   }
 
   /**

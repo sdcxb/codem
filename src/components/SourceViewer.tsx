@@ -1,0 +1,279 @@
+/**
+ * SourceViewer — 来源原文查看器
+ *
+ * 对标 NotebookLM 的引用精确定位 + 跳转原文功能
+ * 自研实现: 弹窗展示来源原文, 高亮引用的具体段落
+ *
+ * 功能:
+ * 1. 显示来源的完整文本内容
+ * 2. 高亮被引用的具体段落 (chunk)
+ * 3. 支持滚动浏览
+ * 4. 皮肤系统兼容 (CSS 变量)
+ */
+
+import { useState, useEffect, useMemo } from 'react';
+import { X, FileText, Search, FileWarning } from 'lucide-react';
+import { getSource, getChunks } from '../core/knowledge';
+import type { NotebookSource, NotebookChunk } from '../core/knowledge';
+import { PdfViewer } from './PdfViewer';
+import { DocxViewer } from './DocxViewer';
+
+interface SourceViewerProps {
+  sourceId: string;
+  notebookId: string;
+  highlightChunkIndex?: number;
+  highlightText?: string;
+  onClose: () => void;
+}
+
+export function SourceViewer({
+  sourceId,
+  notebookId,
+  highlightChunkIndex,
+  highlightText,
+  onClose,
+}: SourceViewerProps) {
+  const [source, setSource] = useState<NotebookSource | null>(null);
+  const [chunks, setChunks] = useState<NotebookChunk[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [viewMode, setViewMode] = useState<'text' | 'pdf' | 'docx'>('text');
+
+  useEffect(() => {
+    const src = getSource(sourceId);
+    if (src) setSource(src);
+
+    const allChunks = getChunks(notebookId).filter(c => c.sourceId === sourceId);
+    setChunks(allChunks);
+
+    // Auto-switch to PDF view for PDF file sources
+    if (src?.type === 'file' && src.filePath?.toLowerCase().endsWith('.pdf')) {
+      setViewMode('pdf');
+    } else if (src?.type === 'file' && src.filePath?.toLowerCase().endsWith('.docx')) {
+      setViewMode('docx');
+    }
+  }, [sourceId, notebookId]);
+
+  // Filter chunks by search query
+  const filteredChunks = useMemo(() => {
+    if (!searchQuery.trim()) return chunks;
+    const lower = searchQuery.toLowerCase();
+    return chunks.filter(c => c.content.toLowerCase().includes(lower));
+  }, [chunks, searchQuery]);
+
+  // Full text content (from source.content or concatenated chunks)
+  const fullText = useMemo(() => {
+    if (source?.content) return source.content;
+    return chunks.map(c => c.content).join('\n\n');
+  }, [source, chunks]);
+
+  // Highlighted text rendering
+  const renderContent = (text: string, isHighlighted: boolean, highlightSnippet?: string) => {
+    if (!highlightSnippet || !isHighlighted) return text;
+
+    // Highlight the matching snippet within the text
+    const lowerText = text.toLowerCase();
+    const lowerSnippet = highlightSnippet.toLowerCase();
+    const idx = lowerText.indexOf(lowerSnippet);
+
+    if (idx === -1) return text;
+
+    const before = text.substring(0, idx);
+    const match = text.substring(idx, idx + highlightSnippet.length);
+    const after = text.substring(idx + highlightSnippet.length);
+
+    return (
+      <>
+        {before}
+        <span className="nb-source-highlight">{match}</span>
+        {after}
+      </>
+    );
+  };
+
+  return (
+    <div className="nb-source-viewer-overlay" onClick={onClose}>
+      <div className="nb-source-viewer" onClick={(e) => e.stopPropagation()}>
+        {/* Header */}
+        <div className="nb-source-viewer-header">
+          <div className="nb-source-viewer-title">
+            <FileText className="w-4 h-4" style={{ color: 'var(--accent-primary, #6366f1)' }} />
+            <span>{source?.name || 'Loading...'}</span>
+            {source?.type && (
+              <span className="nb-source-type-tag" style={{ marginLeft: '8px' }}>
+                {source.type}
+              </span>
+            )}
+            {/* A1: PDF/text view toggle */}
+            {source?.type === 'file' && source.filePath?.toLowerCase().endsWith('.pdf') && (
+              <div style={{ display: 'flex', gap: '2px', marginLeft: '8px' }}>
+                <button
+                  onClick={() => setViewMode('text')}
+                  style={{
+                    padding: '2px 8px', fontSize: '10px', borderRadius: '3px', cursor: 'pointer',
+                    background: viewMode === 'text' ? 'var(--accent-primary, #6366f1)' : 'transparent',
+                    color: viewMode === 'text' ? '#fff' : 'var(--text-muted, #555)',
+                    border: '1px solid var(--border-color, #2a2a30)',
+                  }}
+                >
+                  Text
+                </button>
+                <button
+                  onClick={() => setViewMode('pdf')}
+                  style={{
+                    padding: '2px 8px', fontSize: '10px', borderRadius: '3px', cursor: 'pointer',
+                    background: viewMode === 'pdf' ? 'var(--accent-primary, #6366f1)' : 'transparent',
+                    color: viewMode === 'pdf' ? '#fff' : 'var(--text-muted, #555)',
+                    border: '1px solid var(--border-color, #2a2a30)',
+                  }}
+                >
+                  PDF
+                </button>
+              </div>
+            )}
+            {/* A16: DOCX view toggle */}
+            {source?.type === 'file' && source.filePath?.toLowerCase().endsWith('.docx') && (
+              <div style={{ display: 'flex', gap: '2px', marginLeft: '8px' }}>
+                <button
+                  onClick={() => setViewMode('text')}
+                  style={{
+                    padding: '2px 8px', fontSize: '10px', borderRadius: '3px', cursor: 'pointer',
+                    background: viewMode === 'text' ? 'var(--accent-primary, #6366f1)' : 'transparent',
+                    color: viewMode === 'text' ? '#fff' : 'var(--text-muted, #555)',
+                    border: '1px solid var(--border-color, #2a2a30)',
+                  }}
+                >
+                  Text
+                </button>
+                <button
+                  onClick={() => setViewMode('docx')}
+                  style={{
+                    padding: '2px 8px', fontSize: '10px', borderRadius: '3px', cursor: 'pointer',
+                    background: viewMode === 'docx' ? 'var(--accent-primary, #6366f1)' : 'transparent',
+                    color: viewMode === 'docx' ? '#fff' : 'var(--text-muted, #555)',
+                    border: '1px solid var(--border-color, #2a2a30)',
+                  }}
+                >
+                  Word
+                </button>
+              </div>
+            )}
+          </div>
+          <button className="nb-dialog-close" onClick={onClose}>
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Search bar */}
+        <div style={{
+          padding: '8px 16px',
+          borderBottom: '1px solid var(--border-color, #2a2a30)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+        }}>
+          <Search className="w-3.5 h-3.5" style={{ opacity: 0.5 }} />
+          <input
+            type="text"
+            placeholder="搜索来源内容..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            style={{
+              flex: 1,
+              background: 'var(--bg-primary, #0f0f10)',
+              border: '1px solid var(--border-color, #2a2a30)',
+              borderRadius: '4px',
+              padding: '4px 8px',
+              color: 'var(--text-primary, #e0e0e4)',
+              fontSize: '12px',
+              outline: 'none',
+            }}
+          />
+          <span style={{ fontSize: '11px', color: 'var(--text-muted, #555)' }}>
+            {filteredChunks.length} / {chunks.length} 段
+          </span>
+        </div>
+
+        {/* Body */}
+        {viewMode === 'pdf' && source?.filePath ? (
+          <div className="nb-source-viewer-body">
+            <PdfViewer
+              filePath={source.filePath}
+              highlightText={highlightText || searchQuery}
+              onClose={onClose}
+            />
+          </div>
+        ) : viewMode === 'docx' && source?.filePath ? (
+          <div className="nb-source-viewer-body">
+            <DocxViewer
+              filePath={source.filePath}
+              onClose={onClose}
+            />
+          </div>
+        ) : (
+        <div className="nb-source-viewer-body">
+          {chunks.length > 0 ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {filteredChunks.map((chunk, idx) => {
+    const isHighlighted = highlightChunkIndex !== undefined
+      ? chunk.chunkIndex === highlightChunkIndex
+      : Boolean(highlightText && chunk.content.includes(highlightText));
+
+                return (
+                  <div
+                    key={chunk.id}
+                    style={{
+                      padding: '12px 16px',
+                      background: isHighlighted
+                        ? 'rgba(255, 235, 59, 0.06)'
+                        : 'var(--bg-tertiary, #25252b)',
+                      border: isHighlighted
+                        ? '1px solid rgba(255, 235, 59, 0.3)'
+                        : '1px solid var(--border-color, #2a2a30)',
+                      borderRadius: '8px',
+                    }}
+                  >
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      marginBottom: '6px',
+                    }}>
+                      <span style={{
+                        fontSize: '10px',
+                        fontWeight: 600,
+                        color: 'var(--text-muted, #555)',
+                        textTransform: 'uppercase',
+                      }}>
+                      ¶ {chunk.chunkIndex + 1}
+                    </span>
+                    {isHighlighted && (
+                      <span style={{
+                        fontSize: '10px',
+                        color: 'rgba(255, 235, 59, 0.8)',
+                        fontWeight: 500,
+                      }}>
+                        ⚡ 引用段落
+                      </span>
+                    )}
+                    </div>
+                    <div
+                      className="nb-source-viewer-content"
+                      style={isHighlighted ? { color: 'var(--text-primary, #e0e0e4)' } : undefined}
+                    >
+                      {renderContent(chunk.content, isHighlighted, highlightText)}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+) : (
+            <div className="nb-source-viewer-content">
+              {fullText || '(无内容)'}
+            </div>
+          )}
+        </div>
+        )}
+      </div>
+    </div>
+  );
+}

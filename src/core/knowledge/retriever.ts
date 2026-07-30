@@ -1,6 +1,9 @@
 /**
  * 笔记本式知识管理 — 语义检索引擎
  *
+ * 对标 NotebookLM：源接地的 RAG 检索
+ * 借鉴 NotebookLM 的来源勾选过滤功能 (setActiveSourceFilter)
+ *
  * 流程：query embedding → 加载所有 chunk embedding → cosine 相似度排序 → top-K
  */
 
@@ -14,6 +17,19 @@ const NOTEBOOK_CONFIG_KEY = 'codem-notebook-config';
 
 function getConfig(): NotebookConfig {
   return { ...DEFAULT_CONFIG, ...getSettingJSON<Partial<NotebookConfig>>(NOTEBOOK_CONFIG_KEY, {}) };
+}
+
+// ========== 活跃来源过滤器 ==========
+// 当用户在工作区勾选了部分来源后，设置此过滤器以限制检索范围
+
+let activeSourceFilter: string[] | null = null;
+
+export function setActiveSourceFilter(sourceIds: string[] | null): void {
+  activeSourceFilter = sourceIds;
+}
+
+export function getActiveSourceFilter(): string[] | null {
+  return activeSourceFilter;
 }
 
 // ========== 检索缓存 ==========
@@ -46,12 +62,20 @@ export async function retrieve(
   query: string,
   notebookId: string,
   config?: Partial<NotebookConfig>,
+  sourceIds?: string[],
 ): Promise<RetrievalResult[]> {
   const cfg = { ...getConfig(), ...config };
 
   // Load all chunks for this notebook
-  const chunks = getChunks(notebookId);
+  let chunks = getChunks(notebookId);
   if (chunks.length === 0) return [];
+
+  // Filter by source IDs if provided, or use active filter
+  const effectiveSourceIds = sourceIds ?? activeSourceFilter;
+  if (effectiveSourceIds && effectiveSourceIds.length > 0) {
+    const idSet = new Set(effectiveSourceIds);
+    chunks = chunks.filter((c) => idSet.has(c.sourceId));
+  }
 
   // Filter chunks with embeddings
   const indexedChunks = chunks.filter((c) => c.embedding !== null);
@@ -121,16 +145,19 @@ export async function retrieveWithContext(
   query: string,
   notebookId: string,
   config?: Partial<NotebookConfig>,
+  sourceIds?: string[],
 ): Promise<{ context: string; sources: RetrievalResult[] }> {
-  const results = await retrieve(query, notebookId, config);
+  const results = await retrieve(query, notebookId, config, sourceIds);
 
   if (results.length === 0) {
     return { context: '', sources: [] };
   }
 
-  // Build context string with source citations
+  // Build context string with source references
+  // 使用中性分隔格式，避免与前端引用正则 [Source N: name] 冲突
+  // 模型不会模仿此格式在回复中嵌入引用标记
   const contextParts = results.map((r, i) => {
-    return `[Source ${i + 1}: ${r.sourceName}]\n${r.content}`;
+    return `--- 检索片段 ${i + 1} (来源: ${r.sourceName}) ---\n${r.content}`;
   });
 
   const context = contextParts.join('\n\n---\n\n');

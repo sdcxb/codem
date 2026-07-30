@@ -9,7 +9,14 @@ import { getSettingJSON } from "../core/storage/settings";
 import { getCustomOperations, runCustomOperation, getProjectExecutionMode, setProjectExecutionMode, getCurrentBranch, listBranches, isGitRepo, type ExecutionMode } from "../core/environment";
 import type { CustomOperation } from "../core/settings/settings";
 import { SlashCommandMenu, type SlashCommandItem } from "./SlashCommandMenu";
+import { getMultimodalSettings, type MultimodalProviderConfig } from "../core/llm/multimodal";
 import { useProjectStore } from "../core/store";
+import { ContextBadgeList } from "./ContextBadgeList";
+import { MentionAutocomplete, type MentionItem } from "./MentionAutocomplete";
+import { GenerateModeSelector } from "./GenerateModeSelector";
+import { ResolutionSelector } from "./ResolutionSelector";
+import { SourceSelector } from "./SourceSelector";
+import { listSources } from "../core/knowledge";
 
 interface InputAreaProps {
 onSend: (message: string, attachments?: MessageAttachment[], selectedSkills?: string[]) => void;
@@ -25,21 +32,46 @@ noSession?: boolean;
   /** #5: Quoted text from selection tooltip */
   quoteContext?: string | null;
   onClearQuote?: () => void;
+  /** P3: Active notebook ID for source selector */
+  notebookId?: string;
+  /** More-actions menu callbacks (per benchmark plan) */
+  onToggleSearch?: () => void;
+  onToggleQuickPhrase?: () => void;
+  onToggleDraftPicker?: () => void;
+  onToggleDisplayMode?: () => void;
+  onToggleGit?: () => void;
+  onToggleWorkbench?: () => void;
+  onToggleRightSidebar?: () => void;
+  hasDrafts?: boolean;
 }
 
-export function InputArea({ onSend, onCancel, disabled, isStreaming, noSession, collaborationMode, onModeChange, projectPath, quoteContext, onClearQuote }: InputAreaProps) {
+export function InputArea({ onSend, onCancel, disabled, isStreaming, noSession, collaborationMode, onModeChange, projectPath, quoteContext, onClearQuote, notebookId, onToggleSearch, onToggleWorkbench, onToggleQuickPhrase, onToggleDraftPicker, onToggleDisplayMode, onToggleGit, onToggleRightSidebar, hasDrafts }: InputAreaProps) {
   const lang = useLang();
   const [input, setInput] = useState("");
   const [pendingAttachments, setPendingAttachments] = useState<MessageAttachment[]>([]);
   const [showSecurityPicker, setShowSecurityPicker] = useState(false);
   const [securityMode, setSecurityMode] = useState<SecurityMode>(getEffectiveSecurityMode(projectPath));
-  const [showSkillPicker, setShowSkillPicker] = useState(false);
+  const [showPlusMenu, setShowPlusMenu] = useState(false);
+const [showSkillPicker, setShowSkillPicker] = useState(false);
   const [selectedSkills, setSelectedSkills] = useState<string[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [expanded, setExpanded] = useState(false);
   const [customOps, setCustomOps] = useState<CustomOperation[]>([]);
   const [runningOp, setRunningOp] = useState<string | null>(null);
   const [slashFilter, setSlashFilter] = useState<string | null>(null);
+  // P4: Mention autocomplete state
+  const [mentionQuery, setMentionQuery] = useState<string | null>(null);
+  const [mentionItems, setMentionItems] = useState<MentionItem[]>([]);
+  // P4: Context badges for current input
+  const [contextBadges, setContextBadges] = useState<Array<{ id: string; type: "notebook" | "file" | "url"; label: string; icon?: string }>>([]);
+  // P3: Multimodal generate mode + resolution
+  const [generateMode, setGenerateMode] = useState<"text" | "image" | "video">("text");
+  const [resolution, setResolution] = useState("1024x1024");
+  const [showMultimodal, setShowMultimodal] = useState(false);
+  // P4: Knowledge source selector (notebook mode)
+  const [showSourceSelector, setShowSourceSelector] = useState(false);
+  const [notebookSources, setNotebookSources] = useState<Array<{ id: string; name: string; type: "notebook" | "file" | "url" }>>([]);
+  const [selectedSourceIds, setSelectedSourceIds] = useState<Set<string>>(new Set());
   const { currentProject, projects, openProject, createSession, switchSession, getProjectSessions } = useProjectStore();
 
   // === Bottom bar state (对标 wecode ProjectWorkBar) ===
@@ -49,6 +81,7 @@ export function InputArea({ onSend, onCancel, disabled, isStreaming, noSession, 
   const [showProjectMenu, setShowProjectMenu] = useState(false);
   const [showModeMenu, setShowModeMenu] = useState(false);
   const [showBranchMenu, setShowBranchMenu] = useState(false);
+  const [showMoreActions, setShowMoreActions] = useState(false);
   const [isGitProject, setIsGitProject] = useState(false);
   const [branchLoading, setBranchLoading] = useState(false);
 
@@ -162,11 +195,22 @@ export function InputArea({ onSend, onCancel, disabled, isStreaming, noSession, 
 
   const handleSubmit = () => {
     if ((!input.trim() && pendingAttachments.length === 0) || disabled) return;
-    onSend(input.trim(), pendingAttachments.length > 0 ? pendingAttachments : undefined, selectedSkills.length > 0 ? selectedSkills : undefined);
+    // P3: Prepend generate mode hint for non-text modes
+    let message = input.trim();
+    if (showMultimodal && generateMode !== "text") {
+      const modeHint = generateMode === "image" ? `[Generate image at ${resolution}] ` : `[Generate video at ${resolution}] `;
+      message = modeHint + message;
+    }
+    onSend(message, pendingAttachments.length > 0 ? pendingAttachments : undefined, selectedSkills.length > 0 ? selectedSkills : undefined);
     setInput("");
     setPendingAttachments([]);
     setSelectedSkills([]);
     setSlashFilter(null);
+    // P3: Reset multimodal after send
+    if (showMultimodal && generateMode !== "text") {
+      setGenerateMode("text");
+      setShowMultimodal(false);
+    }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -308,18 +352,97 @@ const handleSelectProject = (projectId: string) => {
 
       {/* === input-wrapper: textarea + left-side controls (协作模式 + 安全模式) === */}
       <div className="input-wrapper">
-        <FileUpload onUpload={handleUpload} />
-
-        {/* Skill picker */}
+        {/* Unified + button — smaller, tight gap */}
         <div style={{ position: "relative" }}>
           <button
-            className={`mode-toggle-btn ${selectedSkills.length > 0 ? "active" : ""}`}
-            onClick={() => setShowSkillPicker(!showSkillPicker)}
-            title={zh ? "选择技能" : "Select skills"}
-            style={selectedSkills.length > 0 ? { background: "var(--accent)", color: "#fff" } : {}}
+            className="mode-toggle-btn"
+            onClick={() => setShowPlusMenu(!showPlusMenu)}
+            title={zh ? "添加" : "Add"}
+            style={showPlusMenu ? { background: "var(--accent)", color: "#fff", fontSize: 10, width: 18, height: 18, padding: 0, minWidth: 18 } : { fontSize: 10, width: 18, height: 18, padding: 0, minWidth: 18 }}
           >
-            {selectedSkills.length > 0 ? `🎯 ${selectedSkills.length}` : "🎯"}
+            ＋
           </button>
+          {showPlusMenu && (
+            <>
+              <div style={{ position: "fixed", inset: 0, zIndex: 99 }} onClick={() => setShowPlusMenu(false)} />
+              <div className="skill-picker-popup" style={{
+                position: "absolute", bottom: "100%", left: 0, marginBottom: 4,
+                minWidth: 200, zIndex: 100, padding: 4,
+              }}>
+                {/* Upload file */}
+                <button className="more-action-item" style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", cursor: "pointer", border: "none", background: "transparent", color: "var(--text-primary)", fontSize: 12, width: "100%", textAlign: "left" }}
+                  onClick={() => { setShowPlusMenu(false); document.getElementById('file-upload-input')?.click(); }}>
+                  📎 <span>{zh ? "上传文件" : "Upload file"}</span>
+                </button>
+                {/* Select skills */}
+                <button className="more-action-item" style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", cursor: "pointer", border: "none", background: "transparent", color: "var(--text-primary)", fontSize: 12, width: "100%", textAlign: "left" }}
+                  onClick={() => { setShowPlusMenu(false); setShowSkillPicker(true); }}>
+                  🎯 <span>{zh ? "选择技能" : "Select skills"}</span>
+                </button>
+                <div style={{ height: 1, background: "var(--border-color)", margin: "4px 0" }} />
+                {(() => {
+                  const mmSettings = getMultimodalSettings();
+                  const imageGenConfig = mmSettings.imageGen;
+                  const ttsConfig = mmSettings.tts;
+                  return (<>
+                    {/* Generate image */}
+                    <button
+                      disabled={!imageGenConfig}
+                      style={{
+                        display: "flex", alignItems: "center", gap: 8, padding: "8px 12px",
+                        cursor: imageGenConfig ? "pointer" : "not-allowed",
+                        border: "none", fontSize: 12, width: "100%", textAlign: "left",
+                        background: "transparent",
+                        color: imageGenConfig ? "var(--text-primary)" : "var(--text-muted)",
+                      }}
+                      title={imageGenConfig ? (zh ? "生成图片" : "Generate image") : (zh ? "请先在设置中配置图像生成模型" : "Please configure image generation model in Settings")}
+                      onClick={() => {
+                        if (!imageGenConfig) return;
+                        setShowPlusMenu(false);
+                        setShowMultimodal(true);
+                        setGenerateMode("image");
+                        textareaRef.current?.focus();
+                      }}
+                    >
+                      🖼️ <span>{zh ? "生成图片" : "Generate image"}</span>
+                      {!imageGenConfig && <span style={{ fontSize: 9, opacity: 0.6, marginLeft: "auto" }}>{zh ? "未配置" : "Not configured"}</span>}
+                    </button>
+                    {/* Voice synthesis */}
+                    <button
+                      disabled={!ttsConfig}
+                      style={{
+                        display: "flex", alignItems: "center", gap: 8, padding: "8px 12px",
+                        cursor: ttsConfig ? "pointer" : "not-allowed",
+                        border: "none", fontSize: 12, width: "100%", textAlign: "left",
+                        background: "transparent",
+                        color: ttsConfig ? "var(--text-primary)" : "var(--text-muted)",
+                      }}
+                      title={ttsConfig ? (zh ? "语音合成" : "Voice synthesis") : (zh ? "请先在设置中配置语音合成模型" : "Please configure TTS model in Settings")}
+                      onClick={() => {
+                        if (!ttsConfig) return;
+                        setShowPlusMenu(false);
+                        setShowMultimodal(true);
+                        setGenerateMode("text");
+                        // Prepend TTS instruction
+                        setInput((prev) => prev || (zh ? "请将以下文本转为语音：" : "Convert the following text to speech: "));
+                        textareaRef.current?.focus();
+                      }}
+                    >
+                      🔊 <span>{zh ? "语音合成" : "Voice synthesis"}</span>
+                      {!ttsConfig && <span style={{ fontSize: 9, opacity: 0.6, marginLeft: "auto" }}>{zh ? "未配置" : "Not configured"}</span>}
+                    </button>
+                  </>);
+                })()}
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* Hidden file upload input (triggered from + menu) */}
+        <FileUpload onUpload={handleUpload} hideButton />
+
+        {/* Skill picker popup (triggered from + menu) */}
+        <div style={{ position: "relative" }}>
           {showSkillPicker && (
             <>
               <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 99 }} onClick={() => setShowSkillPicker(false)} />
@@ -358,14 +481,48 @@ const handleSelectProject = (projectId: string) => {
           )}
         </div>
 
-        {/* 📋/⚡ Collaboration mode — back in input-wrapper left side */}
+        {/* 📋/⚡ Collaboration mode — restored to left toolbar next to skill picker */}
         <button
           className={`mode-toggle-btn ${collaborationMode}`}
-          onClick={() => onModeChange(collaborationMode === "default" ? "plan" : "default")}
+          onClick={() => onModeChange?.(collaborationMode === "default" ? "plan" : "default")}
           title={collaborationMode === "plan" ? (zh ? "计划模式（只读）— 点击切换到执行模式" : "Plan mode (read-only) — click to switch") : (zh ? "执行模式 — 点击切换到计划模式" : "Execute mode — click for plan mode")}
         >
           {collaborationMode === "plan" ? "📋" : "⚡"}
         </button>
+
+        {/* Multimodal 🎨 removed from left toolbar — per benchmark plan: only show in generate mode */}
+
+        {/* Old more-actions menu removed from here — now positioned left of send button */}
+
+        {/* P4: Knowledge source selector (notebook mode) */}
+        {notebookId && (
+          <button
+            className={`mode-toggle-btn ${showSourceSelector ? "active" : ""}`}
+            onClick={() => {
+              if (!showSourceSelector) {
+                // Load sources from notebook
+                try {
+                  const sources = listSources(notebookId);
+                  setNotebookSources(sources.map(s => ({ id: s.id, name: s.name, type: (s.type as any) || "file" })));
+                } catch {}
+              }
+              setShowSourceSelector(!showSourceSelector);
+            }}
+            title={zh ? "知识来源选择器" : "Knowledge source selector"}
+            style={showSourceSelector ? { background: "var(--accent)", color: "#fff" } : {}}
+          >
+            📚
+          </button>
+        )}
+        {showSourceSelector && notebookId && (
+          <div style={{ position: "absolute", bottom: "100%", left: 0, right: 0, zIndex: 100 }}>
+            <SourceSelector
+              sources={notebookSources}
+              selectedIds={selectedSourceIds}
+              onSelectionChange={setSelectedSourceIds}
+            />
+          </div>
+        )}
 
         {/* 🔒 Security mode — back in input-wrapper left side */}
         <button
@@ -425,6 +582,24 @@ const handleSelectProject = (projectId: string) => {
           </div>
         )}
 
+        {/* P4: Context badges showing active attachments and skills */}
+        <ContextBadgeList badges={contextBadges} />
+
+        {/* P4: Mention autocomplete dropdown */}
+        {mentionQuery !== null && (
+          <MentionAutocomplete
+            items={mentionItems}
+            onSelect={(item) => {
+              // Replace the @query with the selected item label
+              const newVal = input.replace(/@([^\s]*)$/, `@${item.label} `);
+              setInput(newVal);
+              setMentionQuery(null);
+              textareaRef.current?.focus();
+            }}
+            onTrigger={() => {}}
+          />
+        )}
+
         <textarea
           ref={textareaRef}
           className={`message-input ${expanded ? "expanded" : ""}`}
@@ -434,6 +609,31 @@ const handleSelectProject = (projectId: string) => {
             setInput(val);
             const slashMatch = val.match(/(?:^|\s)\/([^\s]*)$/);
             setSlashFilter(slashMatch ? slashMatch[1] : null);
+            // P4: Detect @ mention trigger
+            const mentionMatch = val.match(/(?:^|\s)@([^\s]*)$/);
+            if (mentionMatch) {
+              setMentionQuery(mentionMatch[1]);
+              // Load mentionable items (files, notebooks)
+              setMentionItems([
+                { id: "current-file", type: "file", label: "当前文件", icon: "📄" },
+                { id: "notebook", type: "notebook", label: "知识库", icon: "📒" },
+              ]);
+            } else {
+              setMentionQuery(null);
+            }
+            // P4: Update context badges based on attachments
+            const badges: Array<{ id: string; type: "notebook" | "file" | "url"; label: string; icon?: string }> = [];
+            if (pendingAttachments.length > 0) {
+              pendingAttachments.forEach((att) => {
+                badges.push({ id: att.id, type: "file", label: att.name, icon: "📄" });
+              });
+            }
+            if (selectedSkills.length > 0) {
+              selectedSkills.forEach((sid) => {
+                badges.push({ id: `skill-${sid}`, type: "url", label: sid, icon: "🔧" });
+              });
+            }
+            setContextBadges(badges);
           }}
           onKeyDown={handleKeyDown}
           onPaste={handlePaste}
@@ -450,15 +650,53 @@ const handleSelectProject = (projectId: string) => {
           {expanded ? "🗗" : "🗖"}
         </button>
 
-        {isStreaming ? (
-          <button className="send-btn cancel-btn" onClick={onCancel} title={S.input.cancel[lang]}>■</button>
-        ) : (
+        {/* Send button group: send + up-arrow, visually one unit */}
+        <div style={{ display: "flex", alignItems: "center", gap: 0, flexShrink: 0, position: "relative" }}>
+          {isStreaming ? (
+            <button className="send-btn cancel-btn" onClick={onCancel} title={S.input.cancel[lang]} style={{ borderRadius: "6px 0 0 6px" }}>■</button>
+          ) : (
+            <button
+              className={`send-btn ${disabled ? "disabled" : ""}`}
+              onClick={handleSubmit}
+              disabled={disabled || (!input.trim() && pendingAttachments.length === 0)}
+              style={{ borderRadius: "6px 0 0 6px" }}
+            >→</button>
+          )}
+
+          {/* Up-arrow — right side of send group */}
           <button
-            className={`send-btn ${disabled ? "disabled" : ""}`}
-            onClick={handleSubmit}
-            disabled={disabled || (!input.trim() && pendingAttachments.length === 0)}
-          >→</button>
-        )}
+            onClick={() => setShowMoreActions(!showMoreActions)}
+            title={zh ? "快捷短语 / 草稿" : "Quick phrases / Drafts"}
+            style={{
+              width: 18, height: 32, padding: 0, border: "none",
+              background: disabled ? "var(--bg-tertiary)" : (showMoreActions ? "var(--accent-hover)" : "var(--accent)"),
+              color: disabled ? "var(--text-muted)" : "white", fontSize: 9, cursor: "pointer",
+              borderRadius: "0 6px 6px 0", display: "flex", alignItems: "center", justifyContent: "center",
+            }}
+          >
+            ▲
+          </button>
+          {showMoreActions && (
+            <>
+              <div style={{ position: "fixed", inset: 0, zIndex: 99 }} onClick={() => setShowMoreActions(false)} />
+              <div className="skill-picker-popup" style={{
+                position: "absolute", bottom: "100%", right: 0, marginBottom: 4,
+                minWidth: 200, zIndex: 100, maxHeight: 400, overflowY: "auto",
+              }}>
+                {onToggleQuickPhrase && (
+                  <button className="more-action-item" onClick={() => { onToggleQuickPhrase(); setShowMoreActions(false); }} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", cursor: "pointer", border: "none", background: "transparent", color: "var(--text-primary)", fontSize: 12, width: "100%", textAlign: "left" }}>
+                    📋 <span>{zh ? "快捷短语" : "Quick Phrases"}</span>
+                  </button>
+                )}
+                {onToggleDraftPicker && hasDrafts && (
+                  <button className="more-action-item" onClick={() => { onToggleDraftPicker(); setShowMoreActions(false); }} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", cursor: "pointer", border: "none", background: "transparent", color: "var(--text-primary)", fontSize: 12, width: "100%", textAlign: "left" }}>
+                    📝 <span>{zh ? "提示词草稿" : "Prompt Drafts"}</span>
+                  </button>
+                )}
+              </div>
+            </>
+          )}
+        </div>
       </div>
 
       {/* === Bottom control bar (对标 wecode ProjectWorkBar) === */}

@@ -7,6 +7,11 @@ import { DefaultToolRenderer } from "../core/llm/tool-renderer";
 import { getSubagentManager } from "../core/subagent/subagent";
 import { getLang, useLang, S } from "../core/i18n/lang";
 import { Tooltip, TooltipTrigger, TooltipContent } from "./ui/tooltip";
+import { InlineMessageEdit } from "./InlineMessageEdit";
+import { FeedbackButtons } from "./FeedbackButtons";
+import { SourceReferences } from "./SourceReferences";
+import { ImageGallery } from "./ImageGallery";
+import { VideoPlayer } from "./VideoPlayer";
 
 // B6: Mermaid diagram renderer component
 const MermaidDiagram = memo(function MermaidDiagram({ chart }: { chart: string }) {
@@ -152,9 +157,21 @@ interface MessageBubbleProps {
   onDeleteFiles?: (files: string[]) => void;
   /** true if this is the last assistant message in the current Q&A turn */
   isLastInTurn?: boolean;
+  /** Called when user clicks a citation — opens SourceViewer */
+  onCitationClick?: (sourceName: string) => void;
+  /** Called when user clicks a source in the metadata-driven sources panel */
+  onSourceClick?: (sourceId: string, chunkIndex?: number) => void;
+  /** P0: Called when user edits a message and wants to resend */
+  onEditAndResend?: (messageId: string, newContent: string) => void;
+  /** P0: Called when user wants to restore a message to the input box */
+  onReEdit?: (content: string) => void;
+  /** P0: Session ID for DB persistence (feedback) */
+  sessionId?: string;
+  /** P0: Whether editing is allowed (e.g. disabled during streaming) */
+  canEdit?: boolean;
 }
 
-export const MessageBubble = memo(function MessageBubble({ message, index, showReasoning = true, onDeleteFiles, isLastInTurn }: MessageBubbleProps) {
+export const MessageBubble = memo(function MessageBubble({ message, index, showReasoning = true, onDeleteFiles, isLastInTurn, onCitationClick, onSourceClick, onEditAndResend, onReEdit, sessionId, canEdit = true }: MessageBubbleProps) {
 const lang = useLang();
   const displayMode = useAppStore((s) => s.displayMode);
   const [expanded, setExpanded] = useState(displayMode !== "unified");
@@ -162,7 +179,10 @@ const lang = useLang();
   const [showAttachment, setShowAttachment] = useState<string | null>(null);
   const [showFilesConfirm, setShowFilesConfirm] = useState(false);
   const [contentCollapsed, setContentCollapsed] = useState(false);
-  const [copied, setCopied] = useState(false);
+const [copied, setCopied] = useState(false);
+const [isEditing, setIsEditing] = useState(false);
+const [galleryImages, setGalleryImages] = useState<string[] | null>(null);
+const [galleryIndex, setGalleryIndex] = useState(0);
   const contentRef = useRef<HTMLDivElement>(null);
 
   const isUser = message.role === "user";
@@ -174,9 +194,48 @@ const lang = useLang();
   // markers), but the UI should only show the user's actual text — attachments are
   // already rendered as separate cards above. Without this, uploaded file content
   // (e.g. another AI's system prompt) would be fully displayed in the chat bubble.
-  const displayContent = isUser
+  const rawContent = isUser
     ? message.content.replace(/<attachment>[\s\S]*?<\/attachment>\s*/g, "").trim()
     : message.content;
+
+  // P1-2: Process citations — convert [Source N: name] to clickable markdown links
+  // This is a fallback for models that embed citations in text.
+  // Primary citation rendering is via structured metadata (see SourcesPanel below).
+  const displayContent = isUser
+    ? rawContent
+    : rawContent.replace(/\[Source\s+(\d+):\s*([^\]]+)\]/g, '[📖 $1](#cite-$1 "$2")');
+
+  // Extract source citations from both:
+  // 1. message.retrievedSources — auto-retrieved from notebook RAG (metadata-driven, not prompt-based)
+  // 2. search_notebook tool metadata — when LLM explicitly calls the search tool
+  const citationSources = useMemo(() => {
+    if (isUser) return [];
+    const sources: Array<{ index: number; sourceId: string; sourceName: string; chunkIndex: number; snippet: string }> = [];
+    // 1. Auto-retrieved sources from notebook knowledge context
+    for (const src of message.retrievedSources || []) {
+      if (!sources.find(s => s.sourceId === src.sourceId)) {
+        sources.push({
+          index: sources.length + 1,
+          sourceId: src.sourceId,
+          sourceName: src.sourceName,
+          chunkIndex: src.chunkIndex,
+          snippet: src.snippet,
+        });
+      }
+    }
+    // 2. Tool-call-based sources (search_notebook)
+    for (const tc of message.toolCalls || []) {
+      if (tc.tool === 'search_notebook' && tc.metadata?.sources && tc.status === 'done') {
+        for (const src of tc.metadata.sources) {
+          // Deduplicate by sourceId — keep the first occurrence
+          if (!sources.find(s => s.sourceId === src.sourceId)) {
+            sources.push(src);
+          }
+        }
+      }
+    }
+    return sources;
+  }, [message.retrievedSources, message.toolCalls, isUser]);
 
   // Memoize ReactMarkdown components config to prevent re-creation on every render
   const markdownComponents = useMemo(() => ({
@@ -216,6 +275,29 @@ const lang = useLang();
       );
     },
     a({ href, children, ...props }: any) {
+      // P1-2: Handle citation links
+      if (href && href.startsWith('#cite-')) {
+        const sourceName = props.title || '';
+        return (
+          <sup
+            className="nb-citation-link"
+            title={sourceName}
+            onClick={(e) => {
+              e.preventDefault();
+              if (onCitationClick) {
+                onCitationClick(sourceName);
+              } else {
+                // Fallback: toggle a visual indicator
+                const el = e.currentTarget;
+                el.classList.toggle('active');
+              }
+            }}
+            style={{ cursor: 'pointer' }}
+          >
+            {children}
+          </sup>
+        );
+      }
       return (
         <a
           {...props}
@@ -240,7 +322,7 @@ const lang = useLang();
         />
       );
     },
-  }), [lang]);
+  }), [lang, onCitationClick]);
 
   // Check if content should be collapsible (after render, not during streaming)
   useEffect(() => {
@@ -254,15 +336,18 @@ const lang = useLang();
     }
   }, [isStreaming, displayContent]);
 
-  const handleCopyMessage = useCallback(() => {
-    navigator.clipboard.writeText(displayContent).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    });
-  }, [displayContent]);
+const handleCopyMessage = useCallback(() => {
+navigator.clipboard.writeText(rawContent).then(() => {
+setCopied(true);
+setTimeout(() => setCopied(false), 2000);
+});
+}, [rawContent]);
 
   return (
-    <div className={`message ${isUser ? "user" : isSystem ? "system" : "assistant"} ${displayMode === "unified" ? "unified-mode" : ""}`}>
+    <div 
+      className={`message ${isUser ? "user" : isSystem ? "system" : "assistant"} ${displayMode === "unified" ? "unified-mode" : ""}`}
+      data-message-id={message.id}
+    >
       <div className="message-avatar">
         {isUser ? "👤" : isSystem ? "⚙️" : "🤖"}
       </div>
@@ -274,7 +359,17 @@ const lang = useLang();
             {message.attachments.map((att) => (
               <div key={att.id} className="message-attachment" onClick={() => setShowAttachment(showAttachment === att.id ? null : att.id)}>
                 {att.type === "image" && att.content ? (
-                  <img src={att.content} alt={att.name} className="attachment-image" />
+                  <img
+                    src={att.content}
+                    alt={att.name}
+                    className="attachment-image"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const imgs = message.attachments?.filter(a => a.type === "image" && a.content).map(a => a.content!) || [];
+                      setGalleryImages(imgs);
+                      setGalleryIndex(imgs.indexOf(att.content || ""));
+                    }}
+                  />
                 ) : (
                   <div className="attachment-file">
                     <span className="attachment-icon">{att.type === "image" ? "🖼️" : "📄"}</span>
@@ -290,10 +385,38 @@ const lang = useLang();
           </div>
         )}
 
+        {/* P3: Image gallery lightbox */}
+        {galleryImages && galleryImages.length > 0 && (
+          <ImageGallery
+            images={galleryImages}
+            initialIndex={galleryIndex}
+            onClose={() => setGalleryImages(null)}
+          />
+        )}
+
+        {/* P3: Video player for video attachments */}
+        {message.attachments?.filter(a => a.type === "video" && a.content).map(att => (
+          <VideoPlayer
+            key={`video-${att.id}`}
+            src={att.content!}
+            title={att.name}
+          />
+        ))}
+
         {/* Long message collapse wrapper (#3) */}
         <div
           className={`message-content-wrapper ${contentCollapsed && !isStreaming ? "collapsed" : ""}`}
         >
+          {isEditing && isUser ? (
+            <InlineMessageEdit
+              initialContent={rawContent}
+              onSave={(newContent) => {
+                setIsEditing(false);
+                onEditAndResend?.(message.id, newContent);
+              }}
+              onCancel={() => setIsEditing(false)}
+            />
+          ) : (
           <div className="message-content" ref={contentRef}>
             <ReactMarkdown
               components={{
@@ -304,8 +427,9 @@ const lang = useLang();
               {displayContent}
             </ReactMarkdown>
           </div>
+          )}
           {/* Collapse overlay with expand button */}
-          {contentCollapsed && !isStreaming && (
+          {!isEditing && contentCollapsed && !isStreaming && (
             <div className="collapse-overlay" onClick={() => setContentCollapsed(false)}>
               <span className="collapse-btn">{S.bubble.expand[lang]} ▼</span>
             </div>
@@ -313,10 +437,47 @@ const lang = useLang();
         </div>
 
         {/* Collapsed indicator (when collapsed, show a small expand hint) */}
-        {contentCollapsed && !isStreaming && (
+        {!isEditing && contentCollapsed && !isStreaming && (
           <button className="content-collapsed-hint" onClick={() => setContentCollapsed(false)}>
             {S.bubble.expand[lang]} · {contentRef.current?.scrollHeight ?? 0}px →
           </button>
+        )}
+
+        {/* Sources panel — structured metadata-driven citations (对标 NotebookLM) */}
+        {!isUser && citationSources.length > 0 && !isStreaming && (
+          <div className="nb-msg-sources" style={{ marginTop: '8px', display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+            <span style={{ fontSize: '11px', opacity: 0.5, alignSelf: 'center' }}>
+              {lang === 'zh' ? '来源:' : 'Sources:'}
+            </span>
+            {citationSources.map((src) => (
+              <button
+                key={src.sourceId}
+                className="nb-msg-source-chip"
+                onClick={() => onSourceClick?.(src.sourceId, src.chunkIndex)}
+                title={src.snippet}
+                style={{
+                  fontSize: '11px',
+                  padding: '2px 8px',
+                  background: 'var(--bg-tertiary, #25252b)',
+                  border: '1px solid var(--border-color, #2a2a30)',
+                  borderRadius: '10px',
+                  color: 'var(--text-secondary, #a0a0a8)',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.borderColor = 'var(--accent, #6366f1)';
+                  e.currentTarget.style.color = 'var(--accent, #6366f1)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.borderColor = 'var(--border-color, #2a2a30)';
+                  e.currentTarget.style.color = 'var(--text-secondary, #a0a0a8)';
+                }}
+              >
+                📖 {src.sourceName}
+              </button>
+            ))}
+          </div>
         )}
 
         {message.reasoning && showReasoning && (
@@ -333,8 +494,69 @@ const lang = useLang();
           </div>
         )}
 
-        {message.toolCalls && message.toolCalls.length > 0 && (
+        {message.toolCalls && message.toolCalls.length > 0 && (() => {
+// B9: Detect note operation tools for prominent display
+const noteOps = message.toolCalls!.filter(tc =>
+['create_note', 'edit_note', 'link_notes', 'delete_note'].includes(tc.tool)
+);
+          const hasNoteOps = noteOps.length > 0;
+          return (
           <div className="tool-calls">
+            {/* B9: Note operation notifications — always visible */}
+            {hasNoteOps && (
+              <div className="note-op-notifications" style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '4px',
+                marginBottom: '6px',
+              }}>
+                {noteOps.map((tc) => {
+                  const isDone = tc.status === 'done';
+                  const isError = tc.status === 'error';
+                  const zh = getLang() === 'zh';
+const opLabel = tc.tool === 'create_note'
+? (zh ? '创建笔记' : 'Created note')
+: tc.tool === 'edit_note'
+? (zh ? '编辑笔记' : 'Edited note')
+: tc.tool === 'delete_note'
+? (zh ? '删除笔记' : 'Deleted note')
+: (zh ? '链接笔记' : 'Linked notes');
+                  const title = tc.args?.title || tc.args?.targetTitle || '';
+                  return (
+                    <div
+                      key={tc.id}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        padding: '4px 10px',
+                        background: isError
+                          ? 'rgba(239, 68, 68, 0.1)'
+                          : isDone
+                          ? 'rgba(99, 102, 241, 0.1)'
+                          : 'rgba(234, 179, 8, 0.1)',
+                        border: `1px solid ${
+                          isError ? 'rgba(239, 68, 68, 0.3)'
+                          : isDone ? 'rgba(99, 102, 241, 0.3)'
+                          : 'rgba(234, 179, 8, 0.3)'
+                        }`,
+                        borderRadius: '6px',
+                        fontSize: '12px',
+                        color: 'var(--text-secondary, #a0a0a8)',
+                      }}
+                    >
+                      <span>{isError ? '❌' : isDone ? '📝' : '⏳'}</span>
+                      <span style={{ fontWeight: 500 }}>
+                        {opLabel}{title ? `: "${title}"` : ''}
+                      </span>
+                      {isDone && tc.result && (
+                        <span style={{ opacity: 0.6, fontSize: '11px' }}>✓</span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
             <button
               className="tool-toggle"
               onClick={() => setToolsExpanded(!toolsExpanded)}
@@ -382,7 +604,8 @@ const lang = useLang();
               </div>
             )}
           </div>
-        )}
+        );
+        })()}
 
         {message.generatedFiles && message.generatedFiles.length > 0 && (
           <div className="generated-files">
@@ -423,8 +646,28 @@ const lang = useLang();
         )}
 
         {/* #2: Floating toolbar — shown on hover, not during streaming */}
-        {!isStreaming && !isSystem && message.content && (
+        {!isStreaming && !isSystem && message.content && !isEditing && (
           <div className="message-toolbar">
+            {isUser && canEdit && onEditAndResend && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button className="toolbar-btn" onClick={() => setIsEditing(true)}>
+                    ✏️
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent>{S.bubble.editAndResend[lang]}</TooltipContent>
+              </Tooltip>
+            )}
+            {isUser && canEdit && onReEdit && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button className="toolbar-btn" onClick={() => onReEdit(rawContent)}>
+                    📝
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent>{S.bubble.reEdit[lang]}</TooltipContent>
+              </Tooltip>
+            )}
             <Tooltip>
               <TooltipTrigger asChild>
                 <button className="toolbar-btn" onClick={handleCopyMessage}>
@@ -453,7 +696,27 @@ const lang = useLang();
                 <TooltipContent>{S.bubble.collapse[lang]}</TooltipContent>
               </Tooltip>
             )}
+            {/* Feedback buttons inline in toolbar — same row as copy/collapse */}
+            {!isUser && !isSystem && !isStreaming && message.content && (
+              <FeedbackButtons message={message} sessionId={sessionId} inline />
+            )}
           </div>
+        )}
+
+        {/* P0: Feedback buttons removed from here — now inline in toolbar above */}
+
+        {/* P2: Source references for RAG-based messages */}
+        {!isUser && !isSystem && message.metadata?.sources && (message.metadata.sources as any[]).length > 0 && (
+          <SourceReferences
+            sources={(message.metadata.sources as any[]).map(s => ({
+              sourceId: s.sourceId || s.id || "",
+              sourceName: s.sourceName || s.name || "",
+              chunkIndex: s.chunkIndex || 0,
+              snippet: s.snippet || s.content || "",
+              score: s.score || 0,
+            }))}
+            onSourceClick={(sourceId, chunkIndex) => onSourceClick?.(sourceId, chunkIndex)}
+          />
         )}
       </div>
     </div>

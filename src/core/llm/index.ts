@@ -97,6 +97,7 @@ function redactSecrets(text: string): string {
 import { loadAppIdentity, loadUserConfig } from "../config/loader";
 import { getLang } from "../i18n/lang";
 import { getSettingJSON, setSettingJSON } from "../storage/settings";
+import { extractJSON } from "./output-parser";
 
 export interface LLMEngineConfig {
   defaultProvider?: string;
@@ -504,6 +505,8 @@ The runtime automatically sets UTF-8 encoding (chcp 65001, PYTHONUTF8=1, PYTHONI
       notebookId?: string;
       // User-selected skills for this message (injected with 🎯 marker)
       userSelectedSkills?: string[];
+      // Deep thinking: reasoning effort level (overrides agent default)
+      reasoningEffort?: "low" | "medium" | "high" | "ultra";
     },
   ): AsyncGenerator<LoopEvent, void, unknown> {
     const loop = this.getAgenticLoop(agentId, sessionId);
@@ -532,6 +535,15 @@ The runtime automatically sets UTF-8 encoding (chcp 65001, PYTHONUTF8=1, PYTHONI
     if (options?.onInteractiveForm) {
       loop.updateConfig({ onInteractiveForm: options.onInteractiveForm });
     }
+    // Deep thinking: override reasoning effort from user toggle
+    if (options?.reasoningEffort) {
+      const effort = options.reasoningEffort;
+      loop.updateConfig({
+        reasoningEffort: effort === "ultra" ? "high" : effort,
+        // Ultra: increase max tokens budget for deeper reasoning
+        ...(effort === "ultra" ? { maxOutputTokens: Math.max((loop as any).config?.maxOutputTokens || 4096, 16384) } : {}),
+      });
+    }
     // Phase F: Notebook knowledge mode
     if (options?.notebookId) {
       loop.updateConfig({ notebookId: options.notebookId });
@@ -554,6 +566,7 @@ The runtime automatically sets UTF-8 encoding (chcp 65001, PYTHONUTF8=1, PYTHONI
     });
     // F5: Build knowledge context if in notebook mode
     let knowledgeContext: SystemPromptConfig["knowledgeContext"] | undefined;
+    let autoRetrievedSources: Array<{ sourceId: string; sourceName: string; chunkIndex: number; snippet: string; score: number }> = [];
     if (options?.notebookId) {
       try {
         const { getNotebook } = await import("../knowledge/storage");
@@ -562,6 +575,14 @@ The runtime automatically sets UTF-8 encoding (chcp 65001, PYTHONUTF8=1, PYTHONI
         if (notebook) {
           // Auto-retrieve relevant context from the user's message
           const { context, sources } = await retrieveWithContext(message, options.notebookId);
+          // Keep full source metadata for the knowledge_sources event
+          autoRetrievedSources = sources.map((s) => ({
+            sourceId: s.sourceId,
+            sourceName: s.sourceName,
+            chunkIndex: s.chunkIndex,
+            snippet: s.content.slice(0, 150).replace(/\n/g, ' ').trim(),
+            score: s.score,
+          }));
           knowledgeContext = {
             notebookName: notebook.name,
             notebookDescription: notebook.description,
@@ -575,6 +596,11 @@ The runtime automatically sets UTF-8 encoding (chcp 65001, PYTHONUTF8=1, PYTHONI
       } catch (e) {
         console.error("[process] Failed to build knowledge context:", e);
       }
+    }
+
+    // Yield knowledge_sources event so App.tsx can attach citations to the message
+    if (autoRetrievedSources.length > 0) {
+      yield { type: "knowledge_sources", sources: autoRetrievedSources };
     }
 
     const systemPrompt = await this.buildSystemPromptAsync(sessionId, agentId, cwd, options?.collaborationMode, knowledgeContext, options?.userSelectedSkills);
@@ -659,10 +685,31 @@ The runtime automatically sets UTF-8 encoding (chcp 65001, PYTHONUTF8=1, PYTHONI
     }
   }
 
-  /** Abort current processing */
-  abort() {
-    this.agenticLoop?.abort();
-  }
+/** Abort current processing */
+abort() {
+this.agenticLoop?.abort();
+}
+
+/**
+ * Send a guidance message to the currently running agentic loop for a session.
+ * The message will be injected at the next iteration boundary, allowing
+ * the user to steer the agent mid-turn without interrupting tool execution.
+ */
+sendGuidance(sessionId: string, message: string): boolean {
+const loop = this.loopPool.get(sessionId);
+if (!loop) {
+console.warn(`[Engine] No active loop for session ${sessionId} — cannot send guidance`);
+return false;
+}
+return loop.sendGuidance(message);
+}
+
+/** Check if a session has pending guidance items */
+hasPendingGuidance(sessionId: string): boolean {
+const loop = this.loopPool.get(sessionId);
+if (!loop) return false;
+return loop.hasPendingGuidance();
+}
 
   /** Configure a provider */
   setProviderConfig(providerId: string, config: { apiKey: string; baseUrl?: string }) {
@@ -827,16 +874,12 @@ The runtime automatically sets UTF-8 encoding (chcp 65001, PYTHONUTF8=1, PYTHONI
         stream: false,
       });
 
-      // Parse JSON from response (handle markdown code blocks)
-      let jsonStr = response.content.trim();
-      const jsonMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
-      if (jsonMatch) jsonStr = jsonMatch[1].trim();
-
-      const memories = JSON.parse(jsonStr) as Array<{
-        key: string;
-        content: string;
-        tags?: string[];
-      }>;
+      // 健壮的 JSON 解析 — 使用 extractJSON 处理 markdown 包裹、中文标点、尾部逗号等
+      const memories = extractJSON<Array<{ key: string; content: string; tags?: string[] }>>(response.content);
+      if (!Array.isArray(memories)) {
+        console.warn("[extractMemories] Failed to parse memories from LLM response:", response.content.slice(0, 200));
+        return;
+      }
 
       // Save extracted memories
       for (const mem of memories) {

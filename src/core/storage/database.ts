@@ -277,6 +277,56 @@ CREATE INDEX IF NOT EXISTS idx_notebook_sources_notebook ON notebook_sources(not
 CREATE INDEX IF NOT EXISTS idx_notebook_chunks_notebook ON notebook_chunks(notebook_id);
 CREATE INDEX IF NOT EXISTS idx_notebook_chunks_source ON notebook_chunks(source_id);
 
+CREATE TABLE IF NOT EXISTS notes (
+  id TEXT PRIMARY KEY,
+  notebook_id TEXT NOT NULL,
+  source_id TEXT,
+  title TEXT NOT NULL,
+  content TEXT NOT NULL DEFAULT '',
+  content_type TEXT DEFAULT 'markdown',
+  tags TEXT,
+  pin_order INTEGER DEFAULT 0,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  FOREIGN KEY (notebook_id) REFERENCES notebooks(id) ON DELETE CASCADE,
+  FOREIGN KEY (source_id) REFERENCES notebook_sources(id) ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS note_links (
+  id TEXT PRIMARY KEY,
+  source_note_id TEXT NOT NULL,
+  target_note_id TEXT NOT NULL,
+  link_text TEXT,
+  created_at INTEGER NOT NULL,
+  FOREIGN KEY (source_note_id) REFERENCES notes(id) ON DELETE CASCADE,
+  FOREIGN KEY (target_note_id) REFERENCES notes(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_notes_notebook ON notes(notebook_id);
+CREATE INDEX IF NOT EXISTS idx_note_links_source ON note_links(source_note_id);
+CREATE INDEX IF NOT EXISTS idx_note_links_target ON note_links(target_note_id);
+
+-- A8: Flashcards table for spaced repetition
+CREATE TABLE IF NOT EXISTS flashcards (
+  id TEXT PRIMARY KEY,
+  notebook_id TEXT NOT NULL,
+  note_id TEXT,
+  front TEXT NOT NULL,
+  back TEXT NOT NULL,
+  tags TEXT,
+  ease_factor REAL NOT NULL DEFAULT 2.5,
+  interval_days INTEGER NOT NULL DEFAULT 0,
+  repetitions INTEGER NOT NULL DEFAULT 0,
+  next_review INTEGER NOT NULL,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  FOREIGN KEY (notebook_id) REFERENCES notebooks(id) ON DELETE CASCADE,
+  FOREIGN KEY (note_id) REFERENCES notes(id) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_flashcards_notebook ON flashcards(notebook_id);
+CREATE INDEX IF NOT EXISTS idx_flashcards_review ON flashcards(next_review);
+
 CREATE TABLE IF NOT EXISTS delegation_tasks (
   id TEXT PRIMARY KEY,
   source_session_id TEXT NOT NULL,
@@ -295,6 +345,118 @@ CREATE INDEX IF NOT EXISTS idx_delegation_source ON delegation_tasks(source_sess
 CREATE INDEX IF NOT EXISTS idx_delegation_target ON delegation_tasks(target_session_id);
 CREATE INDEX IF NOT EXISTS idx_delegation_project ON delegation_tasks(project_id);
 CREATE INDEX IF NOT EXISTS idx_delegation_status ON delegation_tasks(status);
+
+-- ========== 知识图谱表 ==========
+-- 借鉴思路来源: Understand-Anything (https://github.com/Egonex-AI/Understand-Anything)
+-- 该项目使用 React Flow + JSON 文件存储图谱数据;
+-- 我们自研实现: 使用 SQLite 存储图谱节点和边, Canvas 渲染力导向图
+
+CREATE TABLE IF NOT EXISTS graph_nodes (
+  id TEXT PRIMARY KEY,
+  notebook_id TEXT NOT NULL,
+  label TEXT NOT NULL,
+  entity_type TEXT NOT NULL DEFAULT 'concept',
+  description TEXT,
+  source_ids TEXT,
+  chunk_ids TEXT,
+  weight REAL DEFAULT 1.0,
+  community_id INTEGER,
+  created_at INTEGER NOT NULL,
+  FOREIGN KEY (notebook_id) REFERENCES notebooks(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS graph_edges (
+  id TEXT PRIMARY KEY,
+  notebook_id TEXT NOT NULL,
+  source_node_id TEXT NOT NULL,
+  target_node_id TEXT NOT NULL,
+  relation_type TEXT NOT NULL DEFAULT 'related',
+  weight REAL DEFAULT 1.0,
+  created_at INTEGER NOT NULL,
+  FOREIGN KEY (notebook_id) REFERENCES notebooks(id) ON DELETE CASCADE,
+  FOREIGN KEY (source_node_id) REFERENCES graph_nodes(id) ON DELETE CASCADE,
+  FOREIGN KEY (target_node_id) REFERENCES graph_nodes(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_graph_nodes_notebook ON graph_nodes(notebook_id);
+CREATE INDEX IF NOT EXISTS idx_graph_edges_notebook ON graph_edges(notebook_id);
+CREATE INDEX IF NOT EXISTS idx_graph_edges_source ON graph_edges(source_node_id);
+CREATE INDEX IF NOT EXISTS idx_graph_edges_target ON graph_edges(target_node_id);
+
+-- A14: 笔记本分组/文件夹
+CREATE TABLE IF NOT EXISTS notebook_groups (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  parent_id TEXT,
+  sort_order INTEGER DEFAULT 0,
+  created_at INTEGER NOT NULL,
+  FOREIGN KEY (parent_id) REFERENCES notebook_groups(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_notebook_groups_parent ON notebook_groups(parent_id);
+
+-- A17: 笔记版本历史 (快照与回滚)
+CREATE TABLE IF NOT EXISTS note_versions (
+  id TEXT PRIMARY KEY,
+  note_id TEXT NOT NULL,
+  title TEXT NOT NULL,
+  content TEXT NOT NULL,
+  tags TEXT,
+  version_note TEXT,
+  created_at INTEGER NOT NULL,
+  FOREIGN KEY (note_id) REFERENCES notes(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_note_versions_note ON note_versions(note_id);
+
+-- P0: Message feedback (like / dislike)
+CREATE TABLE IF NOT EXISTS message_feedback (
+  id TEXT PRIMARY KEY,
+  message_id TEXT NOT NULL,
+  session_id TEXT NOT NULL,
+  feedback TEXT NOT NULL CHECK (feedback IN ('like', 'dislike')),
+  timestamp INTEGER NOT NULL,
+  FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE CASCADE,
+  FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_message_feedback_message ON message_feedback(message_id);
+
+-- P0: Quick phrases for template inputs
+CREATE TABLE IF NOT EXISTS quick_phrases (
+  id TEXT PRIMARY KEY,
+  title TEXT NOT NULL,
+  content TEXT NOT NULL,
+  category TEXT,
+  usage_count INTEGER DEFAULT 0,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_quick_phrases_category ON quick_phrases(category);
+
+-- P1: Prompt drafts for version management
+CREATE TABLE IF NOT EXISTS prompt_drafts (
+  id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL,
+  version INTEGER NOT NULL DEFAULT 1,
+  content TEXT NOT NULL,
+  tags TEXT,
+  created_at INTEGER NOT NULL,
+  FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_prompt_drafts_session ON prompt_drafts(session_id);
+
+-- P1: Todo lists from todo_display tool
+CREATE TABLE IF NOT EXISTS todo_lists (
+  id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL,
+  message_id TEXT,
+  todos TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE,
+  FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_todo_lists_session ON todo_lists(session_id);
 `;
 
 export async function initDatabase(): Promise<SqlJsDatabase> {
@@ -330,11 +492,20 @@ export async function initDatabase(): Promise<SqlJsDatabase> {
 const migrations = [
 "ALTER TABLE messages ADD COLUMN reasoning TEXT",
 "ALTER TABLE messages ADD COLUMN generated_files TEXT",
+"ALTER TABLE messages ADD COLUMN retrieved_sources TEXT",
 "ALTER TABLE projects ADD COLUMN pinned INTEGER DEFAULT 0",
 "ALTER TABLE sessions ADD COLUMN pinned INTEGER DEFAULT 0",
 "ALTER TABLE attachments ADD COLUMN message_id TEXT",
 "ALTER TABLE attachments ADD COLUMN preview TEXT",
 "ALTER TABLE attachments ADD COLUMN sandbox_path TEXT",
+"ALTER TABLE notebook_sources ADD COLUMN summary TEXT",
+"ALTER TABLE notebook_sources ADD COLUMN key_topics TEXT",
+"ALTER TABLE notebooks ADD COLUMN group_id TEXT",
+"ALTER TABLE messages ADD COLUMN parent_message_id TEXT",
+"ALTER TABLE messages ADD COLUMN metadata TEXT",
+"ALTER TABLE sessions ADD COLUMN correction_mode INTEGER DEFAULT 0",
+"ALTER TABLE sessions ADD COLUMN deep_thinking_mode INTEGER DEFAULT 0",
+"ALTER TABLE sessions ADD COLUMN preserve_executor INTEGER DEFAULT 0",
 ];
   for (const sql of migrations) {
     try { db.run(sql); } catch (e) { /* column already exists */ }

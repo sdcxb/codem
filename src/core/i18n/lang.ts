@@ -219,6 +219,12 @@ search: { zh: "搜索", en: "Search" },
     copyMessage: { zh: "复制消息", en: "Copy message" },
     copied: { zh: "已复制", en: "Copied" },
     regenerate: { zh: "重新生成", en: "Regenerate" },
+    edit: { zh: "编辑", en: "Edit" },
+    editAndResend: { zh: "编辑并重发", en: "Edit & Resend" },
+    save: { zh: "保存", en: "Save" },
+    like: { zh: "赞", en: "Like" },
+    dislike: { zh: "踩", en: "Dislike" },
+    reEdit: { zh: "恢复到输入框", en: "Restore to input" },
   },
 
   // MessageBubble subagent status
@@ -227,6 +233,141 @@ search: { zh: "搜索", en: "Search" },
     completed: { zh: "完成", en: "completed" },
     failed: { zh: "失败", en: "failed" },
     running: { zh: "运行中...", en: "running..." },
+  },
+
+  // Scrollbar & navigation
+  scroll: {
+    scrollToBottom: { zh: "回到底部", en: "Scroll to bottom" },
+    newMessages: { zh: "条新消息", en: "new messages" },
+    markers: { zh: "消息标记", en: "Message markers" },
+  },
+
+  // P1: Correction Mode
+  correctionMode: {
+    label: { zh: "事实核查", en: "Fact Check" },
+    tooltip: { zh: "开启后 AI 回复会经过事实核查", en: "Enable fact-checking after AI responses" },
+  },
+  correction: {
+    title: { zh: "事实核查结果", en: "Fact Check Result" },
+    original: { zh: "原始回复", en: "Original" },
+    corrected: { zh: "修正后", en: "Corrected" },
+    noChanges: { zh: "无需修正", en: "No changes needed" },
+    tabDiff: { zh: "对比", en: "Diff" },
+    tabChanges: { zh: "变更", en: "Changes" },
+    apply: { zh: "应用修正", en: "Apply Correction" },
+    dismiss: { zh: "保留原回复", en: "Keep Original" },
+  },
+  clarification: {
+    required: { zh: "必填项", en: "Required" },
+    requiredMark: { zh: " *", en: " *" },
+    placeholder: { zh: "请输入您的回答...", en: "Enter your answer..." },
+    submit: { zh: "提交", en: "Submit" },
+    cancel: { zh: "取消", en: "Cancel" },
+  },
+  pipeline: {
+    title: { zh: "继续下一步", en: "Continue to Next Step" },
+    contextTitle: { zh: "选择上下文", en: "Select Context" },
+    promptTitle: { zh: "自定义提示", en: "Custom Prompt" },
+    promptPlaceholder: { zh: "输入您的提示（可选）...", en: "Enter your prompt (optional)..." },
+    modeTitle: { zh: "执行模式", en: "Execution Mode" },
+    modeNew: { zh: "新对话", en: "New Chat" },
+    modeAppend: { zh: "追加到当前对话", en: "Append to Current Chat" },
+    selectRequired: { zh: "请选择至少一项上下文或输入提示", en: "Select at least one context item or enter a prompt" },
+    message: { zh: "消息", en: "Message" },
+    notebook: { zh: "笔记", en: "Notebook" },
+    table: { zh: "表格", en: "Table" },
+    submit: { zh: "开始", en: "Start" },
+    cancel: { zh: "取消", en: "Cancel" },
+  },
+  workbench: {
+    title: { zh: "代码工作台", en: "Code Workbench" },
+    expand: { zh: "展开工作台", en: "Expand Workbench" },
+    activeTools: { zh: "执行中的工具", en: "Running Tools" },
+    modifiedFiles: { zh: "修改的文件", en: "Modified Files" },
+  },
+  todoList: {
+    title: { zh: "待办事项", en: "Todo List" },
+    pending: { zh: "待办", en: "Pending" },
+    inProgress: { zh: "进行中", en: "In Progress" },
+    completed: { zh: "已完成", en: "Completed" },
+  },
+  guidance: {
+    title: { zh: "引导消息", en: "Guidance Messages" },
+  },
+  regenerateModel: {
+    title: { zh: "选择重新生成模型", en: "Select Regenerate Model" },
+  },
+
+  // P2: Quick Access & Phrases
+  quickAccess: {
+    title: { zh: "快速访问", en: "Quick Access" },
+    search: { zh: "搜索...", en: "Search..." },
+    favorites: { zh: "收藏", en: "Favorites" },
+    allAgents: { zh: "所有 Agent", en: "All Agents" },
+  },
+  quickPhrase: {
+    title: { zh: "快捷短语", en: "Quick Phrases" },
+    all: { zh: "全部", en: "All" },
+    coding: { zh: "编程", en: "Coding" },
+    review: { zh: "代码审查", en: "Code Review" },
+    test: { zh: "测试", en: "Testing" },
+    debug: { zh: "调试", en: "Debugging" },
+    other: { zh: "其他", en: "Other" },
+  },
+  promptDraft: {
+    title: { zh: "Prompt 草稿", en: "Prompt Drafts" },
+    compareTitle: { zh: "版本对比", en: "Version Comparison" },
+    version: { zh: "版本", en: "Version" },
+    useThis: { zh: "使用此版本", en: "Use This Version" },
+    load: { zh: "加载", en: "Load" },
+    compare: { zh: "对比", en: "Compare" },
+  },
+  onboarding: {
+    skip: { zh: "跳过", en: "Skip" },
+    previous: { zh: "上一步", en: "Previous" },
+    next: { zh: "下一步", en: "Next" },
+    finish: { zh: "完成", en: "Finish" },
+  },
+  streaming: {
+    thinking: { zh: "思考中", en: "Thinking" },
+    searching: { zh: "搜索中", en: "Searching" },
+    coding: { zh: "编码中", en: "Coding" },
+    reviewing: { zh: "审查中", en: "Reviewing" },
+  },
+  sources: {
+    title: { zh: "来源引用", en: "Source References" },
+  },
+
+  // P3: Multimedia
+  gallery: {
+    download: { zh: "下载", en: "Download" },
+  },
+  video: {
+    download: { zh: "下载", en: "Download" },
+  },
+  generateMode: {
+    text: { zh: "文本", en: "Text" },
+    image: { zh: "图像", en: "Image" },
+    video: { zh: "视频", en: "Video" },
+  },
+  resolution: {
+    label: { zh: "分辨率", en: "Resolution" },
+  },
+
+  // P4: Advanced Features
+  context: {
+    prefix: { zh: "上下文：", en: "Context: " },
+  },
+  mention: {
+    title: { zh: "提及", en: "Mention" },
+    noResults: { zh: "无结果", en: "No results" },
+  },
+  skills: {
+    title: { zh: "技能", en: "Skills" },
+    noResults: { zh: "无结果", en: "No results" },
+  },
+  sourceSelector: {
+    title: { zh: "选择知识库来源", en: "Select Knowledge Sources" },
   },
 };
 

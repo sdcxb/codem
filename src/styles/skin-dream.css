@@ -526,3 +526,54 @@
   background: rgba(30, 30, 46, 0.95) !important;
   color: var(--dream-text-main, #e0d8e0) !important;
 }
+
+/* ========== 侧边浮动弹窗 - 强制磨砂玻璃效果 ========== */
+/* 浮动面板：AgentPanel, SnapshotPanel, ContextMonitor, MultimodalPanel */
+[data-skin="dream"] .floating-overlay-panel,
+[data-skin="dream"] .skill-picker-popup,
+[data-skin="dream"] .slash-command-menu,
+[data-skin="dream"] .model-picker {
+  background: rgba(255, 255, 255, 0.92) !important;
+  backdrop-filter: blur(var(--dream-blur-px, 20px)) saturate(1.2) !important;
+  -webkit-backdrop-filter: blur(var(--dream-blur-px, 20px)) saturate(1.2) !important;
+  border: 1px solid var(--dream-border-color, rgba(232, 140, 154, 0.2)) !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15) !important;
+  color: var(--dream-text-main, #1a1a2e) !important;
+}
+
+[data-skin="dream"][data-theme="dark"] .floating-overlay-panel,
+[data-skin="dream"][data-theme="dark"] .skill-picker-popup,
+[data-skin="dream"][data-theme="dark"] .slash-command-menu,
+[data-skin="dream"][data-theme="dark"] .model-picker {
+  background: rgba(30, 30, 46, 0.92) !important;
+  color: var(--dream-text-main, #e0d8e0) !important;
+}
+
+/* 弹窗内文字颜色强制可见 */
+[data-skin="dream"] .floating-overlay-panel *,
+[data-skin="dream"] .skill-picker-popup *,
+[data-skin="dream"] .slash-command-menu *,
+[data-skin="dream"] .model-picker * {
+  color: inherit;
+}
+
+[data-skin="dream"] .floating-overlay-panel h3,
+[data-skin="dream"] .floating-overlay-panel h4,
+[data-skin="dream"] .floating-overlay-panel label,
+[data-skin="dream"] .floating-overlay-panel span,
+[data-skin="dream"] .skill-picker-popup .slash-command-title,
+[data-skin="dream"] .skill-picker-popup .slash-command-desc,
+[data-skin="dream"] .model-picker .model-option-name {
+  color: var(--dream-text-main, #1a1a2e) !important;
+}
+
+[data-skin="dream"] .model-option:hover,
+[data-skin="dream"] .slash-command-item:hover,
+[data-skin="dream"] .more-action-item:hover {
+  background: rgba(232, 140, 154, 0.12) !important;
+}
+
+[data-skin="dream"] .model-option.active,
+[data-skin="dream"] .slash-command-item.selected {
+  background: rgba(232, 140, 154, 0.18) !important;
+}

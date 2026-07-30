@@ -5,6 +5,7 @@ import App from "./App";
 import "./styles.css";
 import "./styles/skin-hub.css";
 import "./styles/skin-dream.css";
+import "./styles/notebook-workspace.css";
 
 // Main window: render the full application
 // Pet window now uses a separate entry point (pet.html → pet-main.tsx)

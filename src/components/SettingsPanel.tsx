@@ -3,6 +3,7 @@ import type { IdentityConfig, UserConfig, AppIdentity } from "../core/types";
 import { saveAppIdentity } from "../core/config/loader";
 import { getMiMoAuth } from "../core/auth/mimo";
 import type { LoginResult } from "../core/auth/mimo";
+import { useAppStore } from "../store";
 import { getSettingJSON, setSettingJSON, getSetting, setSetting, removeSetting } from "../core/storage/settings";
 import { setLang, useLang, S, type Language } from "../core/i18n/lang";
 import { ModelProfilePanel } from "./ModelProfilePanel";
@@ -25,6 +26,7 @@ import { RetryConfigPanel } from "./RetryConfigPanel";
 import { PromptDebugger } from "./PromptDebugger";
 import { LayeredSettingsPanel } from "./LayeredSettingsPanel";
 import { RecoveryPanel } from "./RecoveryPanel";
+import { CorrectionModelConfig } from "./CorrectionModelConfig";
 
 interface ProviderKey {
   id: string;
@@ -70,6 +72,8 @@ interface SettingsPanelProps {
   onUsageStats?: () => void;
   /** Open a specific tab on mount (e.g. "automation") */
   initialTab?: string;
+  /** Replay onboarding tour from Help tab */
+  setShowOnboardingReplay?: (v: boolean) => void;
 }
 
 const defaultIdentity: IdentityConfig = {
@@ -91,7 +95,7 @@ const defaultUser: UserConfig = {
   raw: "",
 };
 
-export function SettingsPanel({ onClose, onSessionRecovery, onUsageStats, initialTab }: SettingsPanelProps) {
+export function SettingsPanel({ onClose, onSessionRecovery, onUsageStats, initialTab, setShowOnboardingReplay }: SettingsPanelProps) {
   const lang = useLang();
   const [settings, setSettings] = useState<Settings>(defaultSettings);
   const [identity, setIdentity] = useState<IdentityConfig>(defaultIdentity);
@@ -250,8 +254,8 @@ export function SettingsPanel({ onClose, onSessionRecovery, onUsageStats, initia
   const [testResult, setTestResult] = useState<string>("");
 const [showModelProfiles, setShowModelProfiles] = useState(false);
 const [showMultimodal, setShowMultimodal] = useState(false);
-const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security" | "git" | "environment" | "worktree" | "knowledge" | "automation" | "multimodal" | "pet" | "tools" | "advanced">((initialTab as any) || "general");
-  const [advancedSubTab, setAdvancedSubTab] = useState<"agents" | "heartbeat" | "retry" | "prompt" | "settings" | "recovery">("agents");
+const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security" | "git" | "environment" | "worktree" | "knowledge" | "automation" | "multimodal" | "pet" | "tools" | "advanced" | "help">((initialTab as any) || "general");
+  const [advancedSubTab, setAdvancedSubTab] = useState<"agents" | "heartbeat" | "retry" | "prompt" | "settings" | "recovery" | "correction">("agents");
   const [showPetMarket, setShowPetMarket] = useState(false);
   const runLoginTest = async () => {
     const lines: string[] = [];
@@ -434,6 +438,9 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
             </button>
             <button className={`settings-sidebar-item ${activeTab === "advanced" ? "active" : ""}`} onClick={() => setActiveTab("advanced")}>
               <span className="sidebar-icon">⚡</span>{lang === "zh" ? "高级" : "Advanced"}
+            </button>
+            <button className={`settings-sidebar-item ${activeTab === "help" ? "active" : ""}`} onClick={() => setActiveTab("help")}>
+              <span className="sidebar-icon">❓</span>{lang === "zh" ? "帮助" : "Help"}
             </button>
           </div>
 
@@ -688,6 +695,25 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
             </div>
             <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>
               {lang === "zh" ? "100=极细 · 400=常规 · 700=粗体 · 900=极粗" : "100=Thin · 400=Regular · 700=Bold · 900=Black"}
+            </div>
+          </div>
+
+          {/* Display mode toggle — moved from header per benchmark plan */}
+          <div className="setting-group">
+            <label>{lang === "zh" ? "对话显示模式" : "Message Display Mode"}</label>
+            <select
+              value={useAppStore.getState().displayMode}
+              onChange={(e) => {
+                useAppStore.getState().setDisplayMode(e.target.value as "unified" | "segmented");
+                setSettingJSON("codem-display-mode", e.target.value);
+              }}
+              style={{ padding: "6px 8px", fontSize: 13, background: "var(--bg-tertiary)", color: "var(--text-primary)", border: "1px solid var(--border-color)", borderRadius: 4 }}
+            >
+              <option value="unified">{lang === "zh" ? "统一模式（多轮回复合并为一个气泡）" : "Unified (merge multi-turn replies)"}</option>
+              <option value="segmented">{lang === "zh" ? "分段模式（每轮回复独立显示）" : "Segmented (each reply separate)"}</option>
+            </select>
+            <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>
+              {lang === "zh" ? "统一模式：AI 的多轮回复合并为一个连续气泡，阅读更连贯" : "Unified: merges AI multi-turn replies into one continuous bubble"}
             </div>
           </div>
 
@@ -1053,6 +1079,7 @@ marginTop: 4,
     { id: "retry", label: lang === "zh" ? "🔄 重试" : "🔄 Retry" },
     { id: "prompt", label: lang === "zh" ? "📝 提示词" : "📝 Prompt" },
     { id: "settings", label: lang === "zh" ? "🏗️ 分层设置" : "🏗️ Layered" },
+    { id: "correction", label: lang === "zh" ? "🔍 纠偏模型" : "🔍 Correction" },
     { id: "recovery", label: lang === "zh" ? "🔄 恢复" : "🔄 Recovery" },
   ].map(tab => (
     <button
@@ -1075,8 +1102,61 @@ marginTop: 4,
 {advancedSubTab === "retry" && <RetryConfigPanel />}
 {advancedSubTab === "prompt" && <PromptDebugger />}
 {advancedSubTab === "settings" && <LayeredSettingsPanel />}
+{advancedSubTab === "correction" && (
+  <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
+    <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>{lang === "zh" ? "纠偏模型配置" : "Correction Model Config"}</h3>
+    <p style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.5 }}>
+      {lang === "zh" ? "开启后，AI 每次回复后会自动调用纠偏模型进行事实核查，弹出对比弹窗供你确认。" : "When enabled, AI responses are automatically fact-checked by a correction model, showing a comparison dialog."}
+    </p>
+    <CorrectionModelConfig />
+  </div>
+)}
 {advancedSubTab === "recovery" && <RecoveryPanel />}
 </>
+)}
+{activeTab === "help" && (
+  <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 16, maxWidth: 500 }}>
+    <h3 style={{ margin: 0, fontSize: 16, fontWeight: 600 }}>{lang === "zh" ? "帮助" : "Help"}</h3>
+    
+    <div className="setting-group">
+      <label style={{ fontSize: 14, fontWeight: 500 }}>{lang === "zh" ? "新手引导" : "Onboarding Tour"}</label>
+      <p style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.5, marginTop: 4 }}>
+        {lang === "zh" ? "重新查看应用功能引导教程。" : "Replay the app feature tour."}
+      </p>
+      <button
+        onClick={() => {
+          setSetting("onboarding-completed", "");
+          setShowOnboardingReplay?.(true);
+        }}
+        style={{
+          padding: "8px 16px", fontSize: 13, cursor: "pointer",
+          background: "var(--accent)", color: "#fff",
+          border: "none", borderRadius: 6,
+        }}
+      >
+        {lang === "zh" ? "▶ 重新播放新手引导" : "▶ Replay Onboarding Tour"}
+      </button>
+    </div>
+
+    <div className="setting-group">
+      <label style={{ fontSize: 14, fontWeight: 500 }}>{lang === "zh" ? "快捷键" : "Keyboard Shortcuts"}</label>
+      <div style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 2 }}>
+        <div><kbd>Ctrl + K</kbd> — {lang === "zh" ? "搜索对话" : "Search chat"}</div>
+        <div><kbd>Ctrl + B</kbd> — {lang === "zh" ? "切换侧边栏" : "Toggle sidebar"}</div>
+        <div><kbd>Esc</kbd> — {lang === "zh" ? "关闭弹窗/取消" : "Close dialog/cancel"}</div>
+        <div><kbd>/</kbd> — {lang === "zh" ? "技能选择" : "Skill selector"}</div>
+      </div>
+    </div>
+
+    <div className="setting-group">
+      <label style={{ fontSize: 14, fontWeight: 500 }}>{lang === "zh" ? "关于" : "About"}</label>
+      <div style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.6 }}>
+        Codem (mimo-gui) v0.89.3
+        <br />
+        {lang === "zh" ? "AI 编程助手 — 本地优先，隐私安全" : "AI Coding Assistant — Local-first, Privacy-focused"}
+      </div>
+    </div>
+  </div>
 )}
           </div>
         </div>

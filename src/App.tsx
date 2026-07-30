@@ -26,6 +26,9 @@ import { DiffViewer } from "./components/DiffViewer";
 import { InteractiveFormDialog } from "./components/InteractiveFormDialog";
 import { PromptChangeReviewDialog } from "./components/PromptChangeReviewDialog";
 import { NotebookManager } from "./components/NotebookManager";
+import { NotebookWorkspace } from "./components/NotebookWorkspace";
+import { SourceViewer } from "./components/SourceViewer";
+import { setActiveSourceFilter as setNotebookSourceFilter, createNote, listSources } from "./core/knowledge";
 import { GitHubCloneDialog } from "./components/GitHubCloneDialog";
 import { SearchDialog } from "./components/SearchDialog";
 import { usePetStore } from "./core/pet/pet-store";
@@ -49,6 +52,13 @@ import { syncAttachmentsToWorkspace } from "./core/llm/attachment-sync";
 import { ThemeManager, useSkin } from "./core/theme";
 import { HubLayout } from "./components/HubLayout";
 import { DreamLayout } from "./components/DreamLayout";
+import { OnboardingTour } from "./components/OnboardingTour";
+import { QuickAccessCards } from "./components/QuickAccessCards";
+import { CorrectionResultPanel } from "./components/CorrectionResultPanel";
+import { ClarificationForm } from "./components/ClarificationForm";
+import { PipelineNextStepDialog } from "./components/PipelineNextStepDialog";
+import { getAgentRegistry } from "./core/agent/agent";
+import type { ClarificationFormData } from "./core/llm/agentic-loop";
 import { runSetupScript, runCleanupScript } from "./core/environment";
 
 /**
@@ -100,7 +110,7 @@ function getMode(): "cli" | "api" {
 
 function App() {
   const lang = useLang();
-  const { messages, addMessage, appendToMessage, setStreaming, isStreaming, addToolCall, updateToolCall, loadMessages, saveMessages, setLLMStatus } = useAppStore();
+  const { messages, addMessage, appendToMessage, setStreaming, isStreaming, addToolCall, updateToolCall, loadMessages, saveMessages, setLLMStatus, addGuidanceMessage, markGuidanceConsumed, clearGuidanceMessages } = useAppStore();
   const { currentProject, currentSession, createSession, dbReady, loadFromDB } = useProjectStore();
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [appRoot, setAppRoot] = useState<string>(APP_ROOT_FALLBACK);
@@ -114,8 +124,12 @@ function App() {
   const [showNotebookManager, setShowNotebookManager] = useState(false);
   const [showGitHubClone, setShowGitHubClone] = useState(false);
   const [showSearchDialog, setShowSearchDialog] = useState(false);
-  const [activeNotebookId, setActiveNotebookId] = useState<string | null>(null);
-  const [activeNotebookName, setActiveNotebookName] = useState<string>('');
+const [activeNotebookId, setActiveNotebookId] = useState<string | null>(null);
+const [activeNotebookName, setActiveNotebookName] = useState<string>('');
+const [notebookWorkspaceId, setNotebookWorkspaceId] = useState<string | null>(null);
+const [notebookWorkspaceName, setNotebookWorkspaceName] = useState<string>('');
+// Citation viewer — opens SourceViewer when user clicks [Source: name] in chat
+const [citationViewer, setCitationViewer] = useState<{ sourceId: string; notebookId: string; chunkIndex?: number } | null>(null);
   const [showSessionRecovery, setShowSessionRecovery] = useState(false);
   const [showUsageStats, setShowUsageStats] = useState(false);
 const [showDelegationPanel, setShowDelegationPanel] = useState(false);
@@ -126,6 +140,11 @@ const [showDelegationPanel, setShowDelegationPanel] = useState(false);
   const [appIdentity, setAppIdentity] = useState<AppIdentity | null>(null);
   const [showBootstrap, setShowBootstrap] = useState(false);
   const [showCloseConfirm, setShowCloseConfirm] = useState(false);
+  // P2: Onboarding tour — shown on first launch
+const [showOnboarding, setShowOnboarding] = useState(() => {
+try { return !getSetting("onboarding-completed"); } catch { return false; }
+});
+const [showOnboardingReplay, setShowOnboardingReplay] = useState(false);
   // Initialize from saved settings synchronously to avoid UI flash showing wrong model list.
   // getMode() reads from SQLite synchronously; if DB not ready yet, falls back to "api".
   const _initialSettings = (() => {
@@ -274,9 +293,39 @@ const setPendingInteractiveForm = (val: any) => {
   setPendingInteractiveForms(prev => { const next = new Map(prev); next.set(currentSession.id, val); return next; });
 };
 const clearPendingInteractiveForm = () => {
-  if (!currentSession) return;
-  setPendingInteractiveForms(prev => { const next = new Map(prev); next.delete(currentSession.id); return next; });
+if (!currentSession) return;
+setPendingInteractiveForms(prev => { const next = new Map(prev); next.delete(currentSession.id); return next; });
 };
+
+// P1: Per-session pending clarification forms (AI asks structured questions)
+const [pendingClarifications, setPendingClarifications] = useState<Map<string, { form: ClarificationFormData; resolve: (answers: string[]) => void }>>(new Map());
+const pendingClarification = currentSession ? pendingClarifications.get(currentSession.id) : null;
+const clearPendingClarification = () => {
+if (!currentSession) return;
+setPendingClarifications(prev => { const next = new Map(prev); next.delete(currentSession.id); return next; });
+};
+
+// P1: Per-session pending correction results (fact-check comparison)
+const [pendingCorrections, setPendingCorrections] = useState<Map<string, { original: string; corrected: string; changes: string[] }>>(new Map());
+const pendingCorrection = currentSession ? pendingCorrections.get(currentSession.id) : null;
+const clearPendingCorrection = () => {
+if (!currentSession) return;
+setPendingCorrections(prev => { const next = new Map(prev); next.delete(currentSession.id); return next; });
+};
+
+// P1: Per-session pending pipeline next-step dialog
+const [pendingPipelineSteps, setPendingPipelineSteps] = useState<Map<string, { contextItems: any[] }>>(new Map());
+const pendingPipelineStep = currentSession ? pendingPipelineSteps.get(currentSession.id) : null;
+const clearPendingPipelineStep = () => {
+if (!currentSession) return;
+setPendingPipelineSteps(prev => { const next = new Map(prev); next.delete(currentSession.id); return next; });
+};
+
+// P2: QuickAccessCards — agent quick access
+const [showQuickAccess, setShowQuickAccess] = useState(false);
+const [quickAccessFavorites, setQuickAccessFavorites] = useState<Set<string>>(() => {
+try { return new Set(getSettingJSON<string[]>("codem-quick-access-favorites", [])); } catch { return new Set(); }
+});
 
 // D2: Pending prompt changes — per-session for parallel safety
 const [pendingPromptChangesMap, setPendingPromptChangesMap] = useState<Map<string, {
@@ -915,10 +964,67 @@ if (!session) return;
       await runAgenticLoop(message, session, selectedSkills);
   };
 
+  // P1-5: Save last AI response as a note in the active notebook
+  const handleSaveAIResponseAsNote = () => {
+    if (!activeNotebookId) return;
+    // Find the last AI message
+    const lastAIMessage = [...messages].reverse().find(m => m.role === 'assistant' && m.content.trim());
+    if (!lastAIMessage) {
+      alert(lang === 'zh' ? '没有可保存的 AI 回复' : 'No AI response to save');
+      return;
+    }
+    const title = lang === 'zh'
+      ? `AI回复 ${new Date().toLocaleString('zh-CN')}`
+      : `AI Response ${new Date().toLocaleString('en-US')}`;
+    createNote({ notebookId: activeNotebookId, title, content: lastAIMessage.content });
+    alert(lang === 'zh' ? '已保存为笔记' : 'Saved as note');
+  };
+
+  // B4: Handle citation click — find source by name and open SourceViewer
+  const handleCitationClick = useCallback((sourceName: string) => {
+    if (!activeNotebookId) return;
+    const sources = listSources(activeNotebookId);
+    // Try exact match first, then partial match
+    const source = sources.find(s => s.name === sourceName)
+      || sources.find(s => s.name.toLowerCase() === sourceName.toLowerCase())
+      || sources.find(s => s.name.toLowerCase().includes(sourceName.toLowerCase()));
+    if (source) {
+      setCitationViewer({ sourceId: source.id, notebookId: activeNotebookId });
+    }
+  }, [activeNotebookId]);
+
+  // Handle source click from structured metadata — directly use sourceId (no name lookup needed)
+  const handleSourceClick = useCallback((sourceId: string, chunkIndex?: number) => {
+    if (!activeNotebookId) return;
+    setCitationViewer({ sourceId, notebookId: activeNotebookId, chunkIndex });
+  }, [activeNotebookId]);
+
   // Keep handleSendRef updated for automation callbacks (avoids stale closure)
   useEffect(() => {
     handleSendRef.current = handleSend;
   });
+
+  // ========== Guidance (mid-turn steering) ==========
+  // Send a guidance message to the currently running agentic loop.
+  // The message is enqueued and will be consumed at the next iteration boundary.
+  const handleSendGuidance = useCallback((message: string) => {
+    const session = useProjectStore.getState().currentSession;
+    if (!session) return;
+    const engine = engineRef.current;
+    const success = engine.sendGuidance(session.id, message);
+    if (success) {
+      // Add to guidance messages in the store for UI display
+      addGuidanceMessage({
+        id: `guide-${Date.now()}`,
+        message,
+        timestamp: Date.now(),
+        consumed: false,
+      });
+      console.log(`[Guidance] Sent to session ${session.id}: "${message.substring(0, 80)}..."`);
+    } else {
+      console.warn(`[Guidance] Failed to send — no active loop for session ${session.id}`);
+    }
+  }, [addGuidanceMessage]);
 
   /**
    * Run the agentic loop — shared by handleSend and handleRegenerate.
@@ -1074,6 +1180,14 @@ const safeUpdateMessage = (id: string, update: any) => {
             });
           });
         },
+        // Deep thinking: read reasoning effort from settings (set via model picker dropdown)
+        ...((() => {
+          const effort = getSettingJSON<string>("codem-reasoning-effort", "high");
+          if (effort && effort !== "off") {
+            return { reasoningEffort: effort as "low" | "medium" | "high" | "ultra" };
+          }
+          return {};
+        })()),
         // Security mode: three-tier approval policy
         securityMode,
         // D2: Prompt optimization callbacks
@@ -1108,6 +1222,29 @@ const safeUpdateMessage = (id: string, update: any) => {
         if (sessionAbort.signal.aborted) break;
 
         switch (event.type) {
+          case "knowledge_sources": {
+            // Auto-retrieved knowledge sources from notebook RAG
+            // Create assistant message if it doesn't exist yet (sources arrive before text)
+            if (!useAppStore.getState().messages.find((m) => m.id === assistantMsgId)) {
+              safeAddMessage({
+                id: assistantMsgId,
+                role: "assistant",
+                content: "",
+                timestamp: Date.now(),
+                status: "streaming",
+                retrievedSources: event.sources,
+              });
+            } else {
+              safeUpdateMessage(assistantMsgId, {
+                retrievedSources: event.sources,
+              } as any);
+            }
+            if (session) {
+              saveMessages(session.id);
+            }
+            break;
+          }
+
           case "reasoning_delta":
             reasoningContent += event.text;
             // Create assistant message if it doesn't exist yet (reasoning often arrives before text)
@@ -1246,10 +1383,15 @@ saveMessages(session.id);
             if (tc) {
               // Extract the output string from the result
               let resultStr: string;
+              let toolMetadata: Record<string, any> | undefined;
               if (typeof event.result === "string") {
                 resultStr = event.result;
               } else if (event.result && typeof event.result === "object" && "output" in event.result) {
                 resultStr = (event.result as any).output;
+                // 提取结构化元数据（如 search_notebook 的来源引用信息）
+                if ((event.result as any).metadata) {
+                  toolMetadata = (event.result as any).metadata;
+                }
               } else {
                 resultStr = JSON.stringify(event.result || "");
               }
@@ -1258,6 +1400,7 @@ saveMessages(session.id);
               if (isViewingSession()) updateToolCall(assistantMsgId, tc.id, {
                 status: "done",
                 result: resultStr,
+                metadata: toolMetadata,
               });
               // Track generated files from write tool
               if (tc.name === "write" && tc.input?.path) {
@@ -1313,6 +1456,73 @@ saveMessages(session.id);
             }
             // Auto-clear compaction status after 3 seconds
             setTimeout(() => setCompactionStatus(null), 3000);
+            break;
+          }
+
+          case "guidance_received": {
+            // Mark the guidance message as consumed in the store
+            markGuidanceConsumed(event.guidanceId);
+            // Show a brief toast/notification via pet system
+            usePetStore.getState().showRawBubble(`📨 引导消息已注入: ${event.message.substring(0, 40)}...`, 3000);
+            break;
+          }
+
+          case "clarification": {
+            // P1: AI asks the user a structured question via a form
+            setPendingClarifications(prev => {
+              const next = new Map(prev);
+              next.set(session.id, { form: event.form, resolve: event.resolve });
+              return next;
+            });
+            break;
+          }
+
+          case "correction_complete": {
+            // P1: Fact-check result is ready for user review
+            setPendingCorrections(prev => {
+              const next = new Map(prev);
+              next.set(session.id, { original: event.original, corrected: event.corrected, changes: event.changes });
+              return next;
+            });
+            break;
+          }
+
+          case "pipeline_step_complete": {
+            // P1: A pipeline step completed — offer context for next step
+            // Build context items from recent messages and notebook sources
+            const contextItems: any[] = [];
+            // Add recent user messages as context options
+            const recentMessages = useAppStore.getState().messages.slice(-5);
+            for (const msg of recentMessages) {
+              if (msg.content) {
+                contextItems.push({
+                  id: msg.id,
+                  type: 'message' as const,
+                  title: msg.content.substring(0, 60) + (msg.content.length > 60 ? '...' : ''),
+                  content: msg.content,
+                });
+              }
+            }
+            // If in notebook mode, add notebook as context
+            if (activeNotebookId) {
+              contextItems.push({
+                id: `notebook-${activeNotebookId}`,
+                type: 'notebook' as const,
+                title: activeNotebookName || 'Notebook',
+              });
+            }
+            setPendingPipelineSteps(prev => {
+              const next = new Map(prev);
+              next.set(session.id, { contextItems });
+              return next;
+            });
+            break;
+          }
+
+          case "todo_list_created": {
+            // P1: AI created a todo list — store will be updated via tool metadata
+            // The todo data is persisted by the show-todo tool to SQLite
+            // No additional UI action needed here — ChatPanel reads todos from DB
             break;
           }
 
@@ -1374,6 +1584,8 @@ saveMessages(session.id);
 flushStreamBuffer(session.id);
       // Clear step progress after a short delay so user sees the final state
       setTimeout(() => useAppStore.getState().setStepProgress(null), 2000);
+      // Clear guidance messages when the run ends
+      clearGuidanceMessages();
       // Clear stream start time
       useAppStore.getState().setStreamStartTime(null);
       
@@ -1466,7 +1678,53 @@ abortControllersRef.current.delete(session?.id || "");
     await runAgenticLoop(userMessage, session);
   };
 
-const handleCancel = () => {
+  /**
+   * P0: Edit a user message and resend — deletes the original message and all
+   * messages after it, then re-runs the agentic loop with the new content.
+   */
+  const handleEditAndResend = async (messageId: string, newContent: string) => {
+    const session = useProjectStore.getState().currentSession;
+    if (!session) return;
+    // P0 fix: use per-session active check instead of global isStreaming,
+    // so editing works even when another session is streaming.
+    const activeSessions = useAppStore.getState().activeSessions;
+    if (activeSessions.has(session.id)) return;
+
+    const allMessages = useAppStore.getState().messages;
+    const targetMessage = allMessages.find((m) => m.id === messageId);
+    if (!targetMessage || targetMessage.role !== "user") return;
+
+    // 1. Update the message content in the store
+    useAppStore.getState().updateMessage(messageId, { content: newContent });
+
+    // 2. Update in DB
+    try {
+      MessageStorage.updateMessageContent(messageId, newContent);
+    } catch (e) {
+      console.error("[EditAndResend] Failed to update message content:", e);
+    }
+
+    // 3. Delete all messages AFTER this message (from DB)
+    try {
+      const deletedCount = MessageStorage.deleteMessagesAfter(session.id, messageId);
+      console.log(`[EditAndResend] Deleted ${deletedCount} messages after edited message`);
+    } catch (e) {
+      console.error("[EditAndResend] Failed to delete subsequent messages:", e);
+    }
+
+    // 4. Remove messages after this one from the store
+    useAppStore.getState().removeMessagesAfter(messageId, false);
+
+    // 5. Re-run the agentic loop with the new content
+    await runAgenticLoop(newContent, session);
+  };
+
+  /**
+   * P0: Re-edit is now handled internally by ChatPanel — no parent state needed.
+   * The onReEdit prop is optional and not passed, so ChatPanel manages its own quoteContext.
+   */
+
+  const handleCancel = () => {
 // Abort the current session's streaming
 if (currentSession) {
 const controller = abortControllersRef.current.get(currentSession.id);
@@ -1600,16 +1858,21 @@ abortControllersRef.current.clear();
                       {activeNotebookId && (
                         <div className="notebook-mode-banner">
                           <span className="notebook-mode-icon">📓</span>
-                          <span>{lang === 'zh' ? `笔记本模式：${activeNotebookName}` : `Notebook Mode: ${activeNotebookName}`}</span>
-                          <button className="notebook-mode-close" onClick={() => { setActiveNotebookId(null); setActiveNotebookName(''); }}>✕</button>
-                        </div>
-                      )}
-                      {bottomTab === "chat" && (
+<span>{lang === 'zh' ? `笔记本模式：${activeNotebookName}` : `Notebook Mode: ${activeNotebookName}`}</span>
+<button className="notebook-mode-save" onClick={handleSaveAIResponseAsNote} title={lang === 'zh' ? '保存AI回复为笔记' : 'Save AI response as note'}>📝</button>
+<button className="notebook-mode-save" onClick={() => { setNotebookWorkspaceId(activeNotebookId); setNotebookWorkspaceName(activeNotebookName); }} title={lang === 'zh' ? '返回工作区' : 'Back to Workspace'}>📂</button>
+<button className="notebook-mode-close" onClick={() => { setActiveNotebookId(null); setActiveNotebookName(''); setNotebookSourceFilter(null); }}>✕</button>
+</div>
+)}
+{bottomTab === "chat" && (
                         <ChatPanel
                           onSend={handleSend}
                           onCancel={handleCancel}
+                          onSendGuidance={handleSendGuidance}
                           onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
                           onRegenerate={handleRegenerate}
+                          onEditAndResend={handleEditAndResend}
+                          sessionId={currentSession?.id}
                           onFork={(messageIndex) => {
                             if (currentSession && currentProject) {
                               const newSession = createSession('Fork: ' + currentSession.title);
@@ -1641,6 +1904,9 @@ abortControllersRef.current.clear();
                           onModeChange={setCollaborationMode}
 projectPath={currentProject?.path}
 currentSessionId={currentSession?.id}
+onCitationClick={activeNotebookId ? handleCitationClick : undefined}
+onSourceClick={activeNotebookId ? handleSourceClick : undefined}
+notebookId={activeNotebookId || undefined}
 />
                       )}
                       {bottomTab === "terminal" && (
@@ -1696,16 +1962,21 @@ currentSessionId={currentSession?.id}
                     {activeNotebookId && (
                       <div className="notebook-mode-banner">
                         <span className="notebook-mode-icon">📓</span>
-                        <span>{lang === 'zh' ? `笔记本模式：${activeNotebookName}` : `Notebook Mode: ${activeNotebookName}`}</span>
-                        <button className="notebook-mode-close" onClick={() => { setActiveNotebookId(null); setActiveNotebookName(''); }}>✕</button>
-                      </div>
-                    )}
-                    {bottomTab === "chat" && (
+<span>{lang === 'zh' ? `笔记本模式：${activeNotebookName}` : `Notebook Mode: ${activeNotebookName}`}</span>
+<button className="notebook-mode-save" onClick={handleSaveAIResponseAsNote} title={lang === 'zh' ? '保存AI回复为笔记' : 'Save AI response as note'}>📝</button>
+<button className="notebook-mode-save" onClick={() => { setNotebookWorkspaceId(activeNotebookId); setNotebookWorkspaceName(activeNotebookName); }} title={lang === 'zh' ? '返回工作区' : 'Back to Workspace'}>📂</button>
+<button className="notebook-mode-close" onClick={() => { setActiveNotebookId(null); setActiveNotebookName(''); setNotebookSourceFilter(null); }}>✕</button>
+</div>
+)}
+{bottomTab === "chat" && (
                       <ChatPanel
                         onSend={handleSend}
                         onCancel={handleCancel}
+                        onSendGuidance={handleSendGuidance}
                         onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
                         onRegenerate={handleRegenerate}
+                        onEditAndResend={handleEditAndResend}
+                        sessionId={currentSession?.id}
                         onFork={(messageIndex) => {
                           if (currentSession && currentProject) {
                             const newSession = createSession('Fork: ' + currentSession.title);
@@ -1737,6 +2008,9 @@ currentSessionId={currentSession?.id}
                         onModeChange={setCollaborationMode}
 projectPath={currentProject?.path}
 currentSessionId={currentSession?.id}
+onCitationClick={activeNotebookId ? handleCitationClick : undefined}
+onSourceClick={activeNotebookId ? handleSourceClick : undefined}
+notebookId={activeNotebookId || undefined}
 />
                     )}
                     {bottomTab === "terminal" && (
@@ -1794,20 +2068,29 @@ currentSessionId={currentSession?.id}
               <div className="notebook-mode-banner">
                 <span className="notebook-mode-icon">📓</span>
                 <span>{lang === 'zh' ? `笔记本模式：${activeNotebookName}` : `Notebook Mode: ${activeNotebookName}`}</span>
-                <button
-                  className="notebook-mode-close"
-                  onClick={() => { setActiveNotebookId(null); setActiveNotebookName(''); }}
-                >
-                  ✕
-                </button>
+<button className="notebook-mode-save" onClick={handleSaveAIResponseAsNote} title={lang === 'zh' ? '保存AI回复为笔记' : 'Save AI response as note'}>📝</button>
+<button
+  className="notebook-mode-save"
+  onClick={() => { setNotebookWorkspaceId(activeNotebookId); setNotebookWorkspaceName(activeNotebookName); }}
+  title={lang === 'zh' ? '返回工作区' : 'Back to Workspace'}
+>📂</button>
+<button
+  className="notebook-mode-close"
+  onClick={() => { setActiveNotebookId(null); setActiveNotebookName(''); setNotebookSourceFilter(null); }}
+>
+  ✕
+</button>
               </div>
             )}
             {bottomTab === "chat" && (
               <ChatPanel
                 onSend={handleSend}
                 onCancel={handleCancel}
+                onSendGuidance={handleSendGuidance}
                 onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
                 onRegenerate={handleRegenerate}
+                onEditAndResend={handleEditAndResend}
+                sessionId={currentSession?.id}
                 onFork={(messageIndex) => {
                   if (currentSession && currentProject) {
                     const newSession = createSession('Fork: ' + currentSession.title);
@@ -1850,6 +2133,9 @@ currentSessionId={currentSession?.id}
                 onModeChange={setCollaborationMode}
 projectPath={currentProject?.path}
 currentSessionId={currentSession?.id}
+onCitationClick={activeNotebookId ? handleCitationClick : undefined}
+onSourceClick={activeNotebookId ? handleSourceClick : undefined}
+notebookId={activeNotebookId || undefined}
 />
             )}
             {bottomTab === "terminal" && (
@@ -1867,6 +2153,7 @@ onClose={() => { setSettingsInitialTab("general"); setShowSettings(false); }}
 initialTab={settingsInitialTab}
 onSessionRecovery={() => { setShowSettings(false); setShowSessionRecovery(true); }}
           onUsageStats={() => { setShowSettings(false); setShowUsageStats(true); }}
+          setShowOnboardingReplay={(v) => { setShowOnboardingReplay(v); setShowSettings(false); }}
         />
       )}
       {showProjectManager && <ProjectManager onClose={() => setShowProjectManager(false)} />}
@@ -1915,20 +2202,52 @@ onSessionRecovery={() => { setShowSettings(false); setShowSessionRecovery(true);
         />
       )}
 
-      {showNotebookManager && (
-        <div className="modal-overlay" onClick={() => setShowNotebookManager(false)}>
-          <div className="modal-editor" style={{ maxWidth: '900px', height: '80vh' }} onClick={(e) => e.stopPropagation()}>
-            <NotebookManager
-              onClose={() => setShowNotebookManager(false)}
-              onOpenNotebookChat={(notebookId, notebookName) => {
-                setActiveNotebookId(notebookId);
-                setActiveNotebookName(notebookName);
-                setShowNotebookManager(false);
-              }}
-            />
-          </div>
+{showNotebookManager && (
+<div className="modal-overlay" onClick={() => setShowNotebookManager(false)}>
+<div className="modal-editor" style={{ maxWidth: '900px', height: '80vh' }} onClick={(e) => e.stopPropagation()}>
+<NotebookManager
+onClose={() => setShowNotebookManager(false)}
+onOpenWorkspace={(notebookId, notebookName) => {
+setNotebookWorkspaceId(notebookId);
+setNotebookWorkspaceName(notebookName);
+setShowNotebookManager(false);
+}}
+onOpenNotebookChat={(notebookId, notebookName) => {
+setActiveNotebookId(notebookId);
+setActiveNotebookName(notebookName);
+setShowNotebookManager(false);
+}}
+/>
+</div>
+</div>
+)}
+
+      {notebookWorkspaceId && (
+        <div className="nb-workspace-overlay">
+          <NotebookWorkspace
+            notebookId={notebookWorkspaceId}
+            notebookName={notebookWorkspaceName}
+            onBack={() => { setNotebookWorkspaceId(null); setShowNotebookManager(true); }}
+            onOpenChat={(id, name, selectedSourceIds) => {
+              setActiveNotebookId(id);
+              setActiveNotebookName(name);
+              setNotebookWorkspaceId(null);
+              // Set source filter for retrieval scope control
+              setNotebookSourceFilter(selectedSourceIds && selectedSourceIds.length > 0 ? selectedSourceIds : null);
+            }}
+          />
         </div>
       )}
+
+{/* B4: Citation viewer — opens SourceViewer when user clicks a source citation in chat */}
+{citationViewer && (
+<SourceViewer
+sourceId={citationViewer.sourceId}
+notebookId={citationViewer.notebookId}
+highlightChunkIndex={citationViewer.chunkIndex}
+onClose={() => setCitationViewer(null)}
+/>
+)}
 
       {showSessionRecovery && (
         <div className="modal-overlay" onClick={() => setShowSessionRecovery(false)}>
@@ -2118,6 +2437,105 @@ clearPendingWriteConfirm();
         />
       )}
 
+      {/* P1: Clarification Form — AI asks structured questions */}
+      {pendingClarification && (
+        <div className="dialog-overlay" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}
+          onClick={() => { pendingClarification.resolve([]); clearPendingClarification(); }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ maxWidth: "500px", width: "90vw" }}>
+            <ClarificationForm
+              form={pendingClarification.form}
+              onSubmit={(answers) => {
+                const flatAnswers = Object.values(answers).flatMap(a => Array.isArray(a) ? a : [a]) as string[];
+                pendingClarification.resolve(flatAnswers);
+                clearPendingClarification();
+              }}
+              onCancel={() => {
+                pendingClarification.resolve([]);
+                clearPendingClarification();
+              }}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* P1: Correction Result Panel — fact-check comparison */}
+      {pendingCorrection && (
+        <div className="dialog-overlay" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}
+          onClick={() => clearPendingCorrection()}>
+          <div onClick={(e) => e.stopPropagation()} style={{ maxWidth: "800px", width: "90vw", maxHeight: "80vh", overflowY: "auto" }}>
+            <CorrectionResultPanel
+              original={pendingCorrection.original}
+              corrected={pendingCorrection.corrected}
+              changes={pendingCorrection.changes}
+              onApply={() => {
+                // Replace the last assistant message content with the corrected version
+                const msgs = useAppStore.getState().messages;
+                const lastAssistant = [...msgs].reverse().find(m => m.role === 'assistant' && m.status === 'done');
+                if (lastAssistant) {
+                  useAppStore.getState().updateMessage(lastAssistant.id, { content: pendingCorrection.corrected });
+                  if (currentSession) saveMessages(currentSession.id);
+                }
+                clearPendingCorrection();
+              }}
+              onDismiss={() => {
+                clearPendingCorrection();
+              }}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* P1: Pipeline Next Step Dialog */}
+      {pendingPipelineStep && (
+        <PipelineNextStepDialog
+          contextItems={pendingPipelineStep.contextItems}
+          onSubmit={(_selectedContext, customPrompt, _mode) => {
+            if (customPrompt) {
+              handleSend(customPrompt);
+            }
+            clearPendingPipelineStep();
+          }}
+          onDismiss={() => {
+            clearPendingPipelineStep();
+          }}
+        />
+      )}
+
+      {/* P2: Quick Access Cards — show agent shortcuts */}
+      {showQuickAccess && messages.length === 0 && !isStreaming && (
+        <div style={{ padding: "12px 16px", maxWidth: "600px", margin: "0 auto" }}>
+          <QuickAccessCards
+            agents={getAgentRegistry().getPrimary().map(a => ({
+              id: a.id,
+              name: a.name,
+              description: a.description,
+              icon: a.id === 'build' ? '🔨' : a.id === 'plan' ? '📋' : a.id === 'explore' ? '🔍' : '🤖',
+            }))}
+            favoriteIds={quickAccessFavorites}
+            onSelect={(agentId) => {
+              const agent = getAgentRegistry().get(agentId);
+              if (agent) {
+                // Pre-fill input with agent context
+                const prompt = lang === 'zh'
+                  ? `使用${agent.name}模式：${agent.description}`
+                  : `Use ${agent.name} mode: ${agent.description}`;
+                handleSend(prompt);
+              }
+              setShowQuickAccess(false);
+            }}
+            onToggleFavorite={(agentId) => {
+              setQuickAccessFavorites(prev => {
+                const next = new Set(prev);
+                if (next.has(agentId)) next.delete(agentId);
+                else next.add(agentId);
+                setSettingJSON("codem-quick-access-favorites", Array.from(next));
+                return next;
+              });
+            }}
+          />
+        </div>
+      )}
+
       {/* D2: Prompt Change Review Dialog */}
       {pendingPromptChanges && (
         <PromptChangeReviewDialog
@@ -2134,6 +2552,28 @@ clearPendingWriteConfirm();
           onCancel={() => {
             pendingPromptChanges.resolve({ applied: false, message: "User cancelled all changes." });
             clearPendingPromptChanges();
+          }}
+        />
+      )}
+
+      {/* P2: Onboarding tour for first-time users or replay from Help */}
+      {(showOnboarding || showOnboardingReplay) && (
+        <OnboardingTour
+          steps={[
+            { target: ".chat-panel", title: lang === "zh" ? "对话面板" : "Chat Panel", content: lang === "zh" ? "在这里与 AI 进行对话交互" : "Chat with AI here", position: "right" },
+            { target: ".sidebar-toggle", title: lang === "zh" ? "侧边栏" : "Sidebar", content: lang === "zh" ? "管理会话历史和项目" : "Manage sessions and projects", position: "right" },
+            { target: ".model-selector", title: lang === "zh" ? "模型选择" : "Model Selector", content: lang === "zh" ? "切换不同的 AI 模型" : "Switch between AI models", position: "bottom" },
+            { target: ".message-input", title: lang === "zh" ? "输入区域" : "Input Area", content: lang === "zh" ? "输入你的问题或任务，支持附件上传和技能选择" : "Type your questions, upload files, and select skills", position: "top" },
+          ]}
+          onComplete={() => {
+            setSetting("onboarding-completed", "1");
+            setShowOnboarding(false);
+            setShowOnboardingReplay(false);
+          }}
+          onSkip={() => {
+            setSetting("onboarding-completed", "1");
+            setShowOnboarding(false);
+            setShowOnboardingReplay(false);
           }}
         />
       )}
