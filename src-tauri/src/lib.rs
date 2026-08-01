@@ -9,6 +9,186 @@ use tauri::menu::{ContextMenu, MenuBuilder, MenuItemBuilder, PredefinedMenuItem,
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::sync::{oneshot, Mutex as TokioMutex};
 
+// ========== PTY Manager ==========
+// Interactive terminal support using portable-pty.
+// Manages multiple PTY sessions with real-time I/O streaming via Tauri events.
+
+use portable_pty::{native_pty_system, CommandBuilder, PtySize};
+use std::io::{Read, Write};
+use std::thread;
+
+struct PtySession {
+    writer: Box<dyn Write + Send>,
+    _master: Box<dyn portable_pty::MasterPty + Send>,
+    _child: Box<dyn portable_pty::Child + Send>,
+    id: String,
+}
+
+type PtyMap = Arc<Mutex<HashMap<String, PtySession>>>;
+
+#[derive(Clone, serde::Serialize)]
+struct PtyOutputEvent {
+    id: String,
+    data: String,
+}
+
+#[tauri::command]
+fn spawn_pty(cwd: String, app: AppHandle, state: State<'_, PtyMap>) -> Result<String, String> {
+    let id = format!("pty-{}", uuid::Uuid::new_v4());
+    let pty_system = native_pty_system();
+
+    // Use shell appropriate for platform
+    #[cfg(windows)]
+    let mut cmd = CommandBuilder::new("cmd.exe");
+    #[cfg(not(windows))]
+    let mut cmd = CommandBuilder::new("/bin/bash");
+    cmd.cwd(cwd.clone());
+
+    let pair = pty_system
+        .openpty(PtySize {
+            rows: 24,
+            cols: 80,
+            pixel_width: 0,
+            pixel_height: 0,
+        })
+        .map_err(|e| format!("Failed to open PTY: {}", e))?;
+
+    let child = pair
+        .slave
+        .spawn_command(cmd)
+        .map_err(|e| format!("Failed to spawn shell: {}", e))?;
+
+    // Drop slave to allow child to use it
+    drop(pair.slave);
+
+    let master = pair.master;
+
+    // Take writer from master — MasterPty doesn't impl Write directly
+    let writer = master.take_writer().map_err(|e| format!("Failed to take writer: {}", e))?;
+
+    // Clone the reader and spawn output thread
+    let reader = master
+        .try_clone_reader()
+        .map_err(|e| format!("Failed to clone reader: {}", e))?;
+
+    let event_app = app.clone();
+    let event_id = id.clone();
+    thread::spawn(move || {
+        let mut buf = [0u8; 4096];
+        let mut reader = reader;
+        loop {
+            match reader.read(&mut buf) {
+                Ok(0) => break,
+                Ok(n) => {
+                    let data = String::from_utf8_lossy(&buf[..n]).to_string();
+                    let _ = event_app.emit(
+                        "pty-output",
+                        PtyOutputEvent {
+                            id: event_id.clone(),
+                            data,
+                        },
+                    );
+                }
+                Err(_) => break,
+            }
+        }
+    });
+
+    let session = PtySession {
+        writer,
+        _master: master,
+        _child: child,
+        id: id.clone(),
+    };
+    state
+        .lock()
+        .map_err(|e| format!("Lock error: {}", e))?
+        .insert(id.clone(), session);
+
+    Ok(id)
+}
+
+#[tauri::command]
+fn write_pty(id: String, data: String, state: State<'_, PtyMap>) -> Result<(), String> {
+    let mut map = state.lock().map_err(|e| format!("Lock error: {}", e))?;
+    let session = map
+        .get_mut(&id)
+        .ok_or_else(|| format!("PTY session not found: {}", id))?;
+    session
+        .writer
+        .write_all(data.as_bytes())
+        .map_err(|e| format!("Write failed: {}", e))
+}
+
+#[tauri::command]
+fn resize_pty(id: String, cols: u16, rows: u16, state: State<'_, PtyMap>) -> Result<(), String> {
+    let mut map = state.lock().map_err(|e| format!("Lock error: {}", e))?;
+    let session = map
+        .get_mut(&id)
+        .ok_or_else(|| format!("PTY session not found: {}", id))?;
+    session
+        ._master
+        .resize(PtySize {
+            rows,
+            cols,
+            pixel_width: 0,
+            pixel_height: 0,
+        })
+        .map_err(|e| format!("Resize failed: {}", e))
+}
+
+#[tauri::command]
+fn close_pty(id: String, state: State<'_, PtyMap>) -> Result<(), String> {
+    let mut map = state.lock().map_err(|e| format!("Lock error: {}", e))?;
+    if let Some(mut session) = map.remove(&id) {
+        // Kill child process
+        let _ = session._child.kill();
+        // Master and writer are dropped when session goes out of scope
+        drop(session);
+    }
+    Ok(())
+}
+
+// ========== Browser Panel ==========
+// Opens a URL in an embedded WebView window for frontend preview.
+
+#[tauri::command]
+async fn create_browser_window(app: AppHandle, url: String, title: Option<String>) -> Result<(), String> {
+    let window_title = title.unwrap_or_else(|| "Browser".to_string());
+
+    // If browser window already exists, navigate it
+    if let Some(existing) = app.get_webview_window("browser") {
+        existing.set_title(&window_title).map_err(|e| e.to_string())?;
+        // Reuse existing window — just focus it
+        existing.show().map_err(|e| e.to_string())?;
+        existing.set_focus().map_err(|e| e.to_string())?;
+        return Ok(());
+    }
+
+    let parsed_url = url::Url::parse(&url).map_err(|e| e.to_string())?;
+    let window = tauri::WebviewWindowBuilder::new(
+        &app,
+        "browser",
+        tauri::WebviewUrl::External(parsed_url),
+    )
+    .title(&window_title)
+    .inner_size(1024.0, 768.0)
+    .min_inner_size(400.0, 300.0)
+    .resizable(true)
+    .build()
+    .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+#[tauri::command]
+async fn close_browser_window(app: AppHandle) -> Result<(), String> {
+    if let Some(window) = app.get_webview_window("browser") {
+        window.close().map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 // ========== Types ==========
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1352,6 +1532,9 @@ let app = tauri::Builder::default()
 .plugin(tauri_plugin_shell::init())
 .plugin(tauri_plugin_fs::init())
 .plugin(tauri_plugin_notification::init())
+.plugin(tauri_plugin_updater::Builder::new().build())
+.plugin(tauri_plugin_process::init())
+        .manage(Arc::new(Mutex::new(HashMap::<String, PtySession>::new())) as PtyMap)
         .manage(AppState {
             providers: Mutex::new(vec![
                 ProviderConfig {
@@ -1416,6 +1599,12 @@ path_exists,
             set_pet_window_geometry,
             resize_pet_window_anchored,
             show_pet_menu,
+            spawn_pty,
+            write_pty,
+            resize_pty,
+            close_pty,
+            create_browser_window,
+            close_browser_window,
         ])
         .setup(|app| {
             // Apply window vibrancy (frosted glass effect)

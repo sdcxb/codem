@@ -2,8 +2,11 @@ import { useState } from "react";
 import { useLang } from "../core/i18n/lang";
 import { GitInfoPanel } from "./GitInfoPanel";
 import { Workbench } from "./Workbench";
+import { FileChangesList } from "./FileChangesList";
+import { FileExplorer } from "./FileExplorer";
+import { useProjectStore } from "../core/store";
 
-type SidebarTab = "git" | "workbench";
+type SidebarTab = "git" | "workbench" | "files" | "changes";
 
 interface RightSidebarProps {
   open: boolean;
@@ -14,23 +17,27 @@ export function PanelSidebar({ open, onClose }: RightSidebarProps) {
   const lang = useLang();
   const zh = lang === "zh";
   const [activeTab, setActiveTab] = useState<SidebarTab>("git");
+  const { currentProject, currentSession } = useProjectStore();
+  const currentSessionId = currentSession?.id || "";
 
   if (!open) return null;
 
   return (
-    <div style={{
-      position: "fixed",
-      top: 40,
-      right: 0,
-      bottom: 0,
-      width: 360,
-      zIndex: 150,
-      background: "var(--bg-secondary)",
-      borderLeft: "1px solid var(--border-color)",
-      display: "flex",
-      flexDirection: "column",
-      boxShadow: "-4px 0 16px rgba(0,0,0,0.15)",
-    }}>
+    <div
+      className="floating-overlay-panel"
+      style={{
+        position: "fixed",
+        top: "var(--chat-body-top, 48px)",
+        right: 0,
+        bottom: "var(--chat-body-bottom, 140px)",
+        width: 360,
+        zIndex: 150,
+        background: "var(--bg-secondary)",
+        borderLeft: "1px solid var(--border-color)",
+        display: "flex",
+        flexDirection: "column",
+        boxShadow: "-4px 0 16px rgba(0,0,0,0.15)",
+      }}>
       {/* Tab header */}
       <div style={{
         display: "flex",
@@ -57,6 +64,42 @@ export function PanelSidebar({ open, onClose }: RightSidebarProps) {
           }}
         >
           🌿 {zh ? "Git" : "Git"}
+        </button>
+        <button
+          onClick={() => setActiveTab("files")}
+          style={{
+            padding: "6px 12px",
+            fontSize: 12,
+            fontWeight: activeTab === "files" ? 600 : 400,
+            color: activeTab === "files" ? "var(--accent)" : "var(--text-muted)",
+            background: activeTab === "files" ? "var(--bg-tertiary)" : "transparent",
+            border: "none",
+            borderRadius: "6px 6px 0 0",
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            gap: 4,
+          }}
+        >
+          📁 {zh ? "文件" : "Files"}
+        </button>
+        <button
+          onClick={() => setActiveTab("changes")}
+          style={{
+            padding: "6px 12px",
+            fontSize: 12,
+            fontWeight: activeTab === "changes" ? 600 : 400,
+            color: activeTab === "changes" ? "var(--accent)" : "var(--text-muted)",
+            background: activeTab === "changes" ? "var(--bg-tertiary)" : "transparent",
+            border: "none",
+            borderRadius: "6px 6px 0 0",
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            gap: 4,
+          }}
+        >
+          📋 {zh ? "变更" : "Changes"}
         </button>
         <button
           onClick={() => setActiveTab("workbench")}
@@ -101,6 +144,16 @@ export function PanelSidebar({ open, onClose }: RightSidebarProps) {
             activeTools={[]}
             modifiedFiles={[]}
           />
+        )}
+        {activeTab === "files" && currentProject && (
+          <FileExplorer cwd={currentProject.path} onFileClick={(p) => {
+            const { invoke } = (window as any).__TAURI__.core;
+            // Trigger FileEditor via global event
+            window.dispatchEvent(new CustomEvent("codem:open-file", { detail: p }));
+          }} />
+        )}
+        {activeTab === "changes" && currentProject && (
+          <FileChangesList sessionId={currentSessionId || ""} workspace={currentProject.path} />
         )}
       </div>
     </div>

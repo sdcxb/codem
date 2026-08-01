@@ -1,1 +1,1 @@
-export { SubagentManager, getSubagentManager, parseTaskResult, type SubagentTask, type SubagentResult, type SubagentStatus, type SubagentConfig, type SubagentSpawner } from "./subagent";
+export { SubagentManager, getSubagentManager, parseTaskResult, type SubagentTask, type SubagentResult, type SubagentStatus, type SubagentConfig, type SubagentSpawner, type AgentProfile } from "./subagent";

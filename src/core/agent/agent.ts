@@ -240,6 +240,7 @@ When the user doesn't specify implementation details, choose the simplest approa
 Focus on understanding the codebase, identifying problems, and proposing solutions.
 Do NOT perform any write/edit operations.`,
       toolAllowlist: ["read", "glob", "grep", "bash"],
+      collaborationMode: "plan",
       permissions: [
         { tool: "read", action: "allow" },
         { tool: "glob", action: "allow" },

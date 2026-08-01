@@ -1151,10 +1151,40 @@ marginTop: 4,
     <div className="setting-group">
       <label style={{ fontSize: 14, fontWeight: 500 }}>{lang === "zh" ? "关于" : "About"}</label>
       <div style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.6 }}>
-        Codem (mimo-gui) v0.89.3
+        Codem (mimo-gui) v0.90.0
         <br />
         {lang === "zh" ? "AI 编程助手 — 本地优先，隐私安全" : "AI Coding Assistant — Local-first, Privacy-focused"}
       </div>
+      <button
+        id="check-update-btn"
+        className="save-btn"
+        style={{ marginTop: 8, background: "var(--accent)", color: "#fff", border: "none", padding: "6px 16px", borderRadius: 6, cursor: "pointer", fontSize: 12 }}
+        onClick={async () => {
+          const btn = document.getElementById("check-update-btn") as HTMLButtonElement;
+          if (!btn) return;
+          btn.disabled = true;
+          btn.textContent = lang === "zh" ? "检查中..." : "Checking...";
+          try {
+            const { check } = await import("@tauri-apps/plugin-updater");
+            const { relaunch } = await import("@tauri-apps/plugin-process");
+            const update = await check();
+            if (update?.available) {
+              btn.textContent = lang === "zh" ? `发现新版本 ${update.version}，下载中...` : `New version ${update.version} found, downloading...`;
+              await update.downloadAndInstall();
+              btn.textContent = lang === "zh" ? "安装完成，即将重启..." : "Installed, relaunching...";
+              await relaunch();
+            } else {
+              btn.textContent = lang === "zh" ? "已是最新版本" : "Up to date";
+              setTimeout(() => { btn.disabled = false; btn.textContent = lang === "zh" ? "检查更新" : "Check for Updates"; }, 2000);
+            }
+          } catch (err: any) {
+            btn.textContent = lang === "zh" ? `更新失败: ${err.message}` : `Update failed: ${err.message}`;
+            setTimeout(() => { btn.disabled = false; btn.textContent = lang === "zh" ? "检查更新" : "Check for Updates"; }, 3000);
+          }
+        }}
+      >
+        {lang === "zh" ? "检查更新" : "Check for Updates"}
+      </button>
     </div>
   </div>
 )}

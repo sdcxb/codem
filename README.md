@@ -272,6 +272,81 @@ npm run tauri:build
 
 ## 更新日志
 
+### 2026-08-01（v0.91.0）
+
+> 本次更新聚焦 Coding 工作台基础设施升级：终端从 one-shot 升级为 PTY 交互式、文件变更全量追踪+Artifact、文件树 Git 状态、自动 Commit、Agent Profile 持久化、Needs You 精确提问、异步 Agent 间通信、浏览器预览面板、Overview 可观测性。新增 4 张 SQLite 表、6 个 Rust 命令、4 个测试文件共 101 用例（全量 2770 通过）。
+
+**P0 — 终端从 one-shot 升级为 PTY 交互式（#1）：**
+- 新增 `portable-pty` Rust 依赖，实现 `spawn_pty` / `write_pty` / `resize_pty` / `close_pty` 四个 Tauri 命令
+- `TerminalPanel.tsx` 完全重写为 PTY 交互式终端，支持多会话 Tab（最多 5 个）+ 30min TTL 自动清理
+- `Ctrl+C` 改为只复制（无选区不发信号，不会误中断）；`Ctrl+Shift+C` 发送中断信号 `\x03`
+- 工具栏新增 ⏹ 停止按钮，可视化中断当前进程
+- `ResizeObserver` 自动跟随窗口大小调整 PTY 列数/行数
+
+**P0 — 文件变更追踪 + Artifact 快照（#2）：**
+- 新增 `turn_file_changes` SQLite 表，存储 `before_tree` / `after_tree` / `patch` / `patch_sha256` / `current_brief` / `changed_files`
+- 新建 `FileChangeTracker` — 迭代边界 `start()` 捕获 `git rev-parse HEAD^{tree}`，`finalize()` 生成 `git diff --binary` + SHA-256 + 存 SQLite + emit 事件
+- 新建 `FileChangeStorage` CRUD — `create` / `listBySession` / `getById` / `updateStatus` / `deleteBySession` / `parseChangedFiles`
+- `agentic-loop.ts` 在每次迭代 `executeIteration` 前后自动调用 start/finalize，yield `file_changes_tracked` 事件
+- `FileChangeTracker.revert()` 通过 `git apply --reverse` 回滚指定轮次变更
+- 非 Git 工作区优雅降级（跳过不报错）；patch 超 500KB 截断；独立于 messages JSON 不受上下文压缩影响
+
+**P0 — 文件树 Git 状态 + 自动刷新（#3）：**
+- `FileExplorer.tsx` 新增 `loadGitStatus()` 解析 `git status --porcelain`，缓存到 `gitStatusCache`
+- 文件名右侧显示 Git 状态徽章：M（橙）/ A（绿）/ D（红）/ U（蓝）/ R（紫）
+- 监听 `onFileChangesTracked` 事件，Agent 修改文件后自动刷新文件树 + Git 状态
+- `dirCache` 在变更事件触发时自动失效
+
+**P1 — Diff 面板 + Topic 视角（#4）：**
+- 新建 `FileChangesList.tsx` — 按轮次分组的变更历史面板，展开显示文件列表 + brief 摘要 + 回滚按钮
+- 点击文件行调用 `git show beforeTree:path` / `afterTree:path` 获取前后内容，打开 DiffViewer
+- `PanelSidebar.tsx` 新增"文件"和"变更"两个 Tab
+
+**P1 — 自动 Git Commit（#5）：**
+- 新建 `git-commit-service.ts` — `generateCommitMessage()` 支持 LLM 生成或启发式 fallback
+- `tryAutoCommit()` 在 `file_change_tracker.finalize()` 后自动触发（可通过 Settings 开关）
+- `GitInfoPanel.tsx` 监听 `onAutoCommitted` 事件自动刷新
+- 设置持久化到 `localStorage`（`auto_commit_enabled`）
+
+**P1 — Transcript 缓存（#6）：**
+- 新建 `transcript-cache.ts` — SHA-256 键缓存 LLM 请求/响应对，10min TTL，最多 100 条
+- `agentic-loop.ts` 在上下文压缩（`compaction_end`）时自动调用 `TranscriptCache.clear()`
+
+**P1 — Agent Profile 持久化（#7）：**
+- 新增 `agent_profiles` SQLite 表 — 存储 `identity` / `domain` / `scope` / `skills` / `experience_summary`
+- 新建 `AgentProfileStorage` CRUD + `SubagentTask.profile_id` 可选字段
+- `spawner.ts` 在生成子智能体时，若 `profile_id` 存在且 `persistent=true`，自动注入 Profile 到 system prompt
+
+**P1 — Needs You 精确提问机制（#8）：**
+- 新建 `needs-you-queue.ts` — Agent→Human 反向队列，迭代边界消费（不在工具回调内避免阻塞）
+- 新建 `NeedsYouPanel.tsx` — 显示当前工作 + 已确认事实 + 精确问题 + 候选选项 + 自定义回答
+- 新增 `needs_you_pending` SQLite 表，支持会话恢复
+- `agentic-loop.ts` 在迭代边界消费 needs_you，`waitForAnswer()` 异步等待用户回答
+- `App.tsx` 渲染 NeedsYouPanel，支持"跳过并继续"
+
+**P2 — 浏览器预览面板（#9）：**
+- 新增 `create_browser_window` / `close_browser_window` Rust 命令
+- 使用 `tauri::WebviewWindowBuilder` 创建独立 WebView 窗口，支持 URL 预览
+
+**P2 — 异步 Agent 间通信（#10）：**
+- 新建 `agent-message-queue.ts` — `send()` / `consume()` / `getReply()` / `onAgentMessage()`
+- 新增 `agent_messages` SQLite 表，独立于 messages JSON 不受压缩影响
+- `agentic-loop.ts` 在迭代边界消费 Agent 消息，yield `agent_message_received` 事件
+- 消息注入为 user message 供 LLM 在下一迭代看到
+
+**P2 — Overview 轻量可观测性（#11）：**
+- `Workbench.tsx` 重写为三视图：Status（执行中工具）/ Capacity（修改文件+增删行统计）/ Activity（变更时间线）
+- 遵循 "Signal is not Diagnosis" 原则 — 指标仅作为调查入口
+
+**P2 — Artifact 快照引用（#12）：**
+- `turn_file_changes` 表的 `id` 字段即为 artifact_id，`patch_sha256` 确保完整性
+- `agentic-loop.ts` yield `file_changes_tracked` 事件携带 artifactId + changedFiles
+
+**测试与质量：**
+- 新增 4 个测试文件共 101 用例：`regression-coding-p0.test.ts`（19）/ `p1`（28）/ `p2`（22）/ `cross-impact`（32）
+- 全量回归测试 2770/2770 通过，零回归
+- 交叉影响测试覆盖：agentic-loop 事件链顺序、database 表完整性+FK 约束、PanelSidebar Tab 不破坏现有面板、App.tsx 新增组件不破坏对话流、FileExplorer Git 状态不破坏文件树、spawner Profile 注入不破坏现有生成、Cargo.toml/Cargo.toml/lib.rs/styles.css 完整性
+
 ### 2026-07-31（v0.90.0）
 
 > 本次更新聚焦 UI/UX 大幅优化、推理强度分档、新手引导完善、梦幻皮肤磨砂玻璃效果，以及 8 章项目架构培训文档。

@@ -15,6 +15,7 @@ import type { CollaborationMode } from "./core/agent/agent";
 import { getEffectiveSecurityMode, type SecurityMode } from "./core/permission/security-mode";
 import { PermissionDialog } from "./components/PermissionDialog";
 import { ConfirmDialog } from "./components/ConfirmDialog";
+import { NeedsYouPanel } from "./components/NeedsYouPanel";
 import { CloseConfirmDialog } from "./components/CloseConfirmDialog";
 import { McpManager } from "./components/McpManager";
 import { SkillManager } from "./components/SkillManager";
@@ -2390,6 +2391,23 @@ clearPendingPermission();
         <CloseConfirmDialog onChoose={handleCloseChoice} />
       )}
 
+      {/* P1-8: Needs You — Agent proactively asks user a precise question */}
+      {currentSession && (
+        <NeedsYouPanel
+          sessionId={currentSession.id}
+          onAnswer={(itemId, answer) => {
+            import("./core/llm/needs-you-queue").then(({ getNeedsYouQueue }) => {
+              getNeedsYouQueue().answer(itemId, answer);
+            });
+          }}
+          onSkip={(sid) => {
+            import("./core/llm/needs-you-queue").then(({ getNeedsYouQueue }) => {
+              getNeedsYouQueue().skip(sid);
+            });
+          }}
+        />
+      )}
+
       {/* S4: Diff Review Dialog for file overwrites */}
       {pendingWriteConfirm && (
         <div className="modal-overlay" onClick={() => {
@@ -2515,7 +2533,13 @@ clearPendingWriteConfirm();
             onSelect={(agentId) => {
               const agent = getAgentRegistry().get(agentId);
               if (agent) {
-                // Pre-fill input with agent context
+                // Switch collaboration mode based on agent's config
+                if (agent.collaborationMode === "plan") {
+                  setCollaborationMode("plan");
+                } else {
+                  setCollaborationMode("default");
+                }
+                // Pre-fill input with agent context and send
                 const prompt = lang === 'zh'
                   ? `使用${agent.name}模式：${agent.description}`
                   : `Use ${agent.name} mode: ${agent.description}`;

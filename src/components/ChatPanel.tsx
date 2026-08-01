@@ -477,6 +477,12 @@ export function ChatPanel({ onSend, onCancel, onSendGuidance, onToggleSidebar, o
                     onSelect={(agentId) => {
                       const agent = getAgentRegistry().get(agentId);
                       if (agent) {
+                        // Switch collaboration mode based on agent's config
+                        if (agent.collaborationMode === "plan") {
+                          onModeChange?.("plan");
+                        } else {
+                          onModeChange?.("default");
+                        }
                         // Per benchmark: fill input box instead of auto-send
                         const prompt = lang === 'zh'
                           ? `使用${agent.name}模式：${agent.description}`
@@ -735,7 +741,7 @@ canEdit={!isSessionStreaming}
 
       {showQuickPhrase && (
         <div className="floating-overlay-panel" style={{
-          position: 'fixed', bottom: 80, right: 16, width: 300, maxHeight: 350,
+          position: 'fixed', top: 'var(--chat-body-top, 48px)', right: 0, bottom: 'var(--chat-body-bottom, 140px)', width: 300,
           zIndex: 200, overflowY: 'auto',
         }}>
           <QuickPhraseSelector
@@ -748,7 +754,7 @@ canEdit={!isSessionStreaming}
 
       {showDraftPicker && (
         <div className="floating-overlay-panel" style={{
-          position: 'fixed', bottom: 80, right: 16, width: 360, maxHeight: 350,
+          position: 'fixed', top: 'var(--chat-body-top, 48px)', right: 0, bottom: 'var(--chat-body-bottom, 140px)', width: 360,
           zIndex: 200, overflowY: 'auto',
         }}>
           <PromptDraftPicker

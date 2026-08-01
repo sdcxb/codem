@@ -14,6 +14,7 @@ import { useState, useEffect, useCallback } from "react";
 import { executeCommand } from "../core/file-api";
 import { useProjectStore } from "../core/store";
 import { useLang } from "../core/i18n/lang";
+import { onAutoCommitted } from "../core/environment/git-commit-service";
 
 interface GitStatus {
   branch: string;
@@ -126,7 +127,12 @@ export function GitInfoPanel() {
   useEffect(() => {
     refresh();
     const interval = setInterval(refresh, 10000); // Auto-refresh every 10s
-    return () => clearInterval(interval);
+    // P1-5: Refresh when auto-commit happens
+    const unsubscribe = onAutoCommitted(() => refresh());
+    return () => {
+      clearInterval(interval);
+      unsubscribe();
+    };
   }, [refresh]);
 
   const handleCommit = async () => {

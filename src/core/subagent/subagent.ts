@@ -28,6 +28,17 @@ function generateSubagentName(): string {
   return SUBAGENT_NAMES[index];
 }
 
+export interface AgentProfile {
+  id: string;
+  identity: string;
+  domain: string;
+  scope: string;
+  skills?: string[];
+  experience_summary?: string;
+  created_at: number;
+  updated_at: number;
+}
+
 export interface SubagentTask {
   id: string;
   name: string;
@@ -45,6 +56,8 @@ export interface SubagentTask {
   timeout?: number;
   /** Real-time activity list for execution view */
   activities?: SubagentActivity[];
+  /** P1-7: Agent Profile ID — links to agent_profiles table for persistent identity */
+  profile_id?: string;
 }
 
 export interface SubagentResult {

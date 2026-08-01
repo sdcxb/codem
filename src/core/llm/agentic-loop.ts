@@ -5,10 +5,15 @@ import { StreamingToolExecutorImpl, type StreamingToolCall } from "./streaming-e
 import { RetryExecutor, classifyError, logRetry } from "../retry/retry";
 import { extractJSON } from "./output-parser";
 import { getGuidanceQueue, GUIDANCE_MESSAGE_TEMPLATE } from "./guidance-queue";
+import { getNeedsYouQueue } from "./needs-you-queue";
+import { AgentMessageQueue } from "./agent-message-queue";
 import { getPermissionManager, type PermissionRequest, type PermissionResult } from "../permission/permission";
 import { getSnapshotService } from "../snapshot/snapshot";
 import * as MessageStorage from "../storage/message";
 import { evaluateWithSecurityMode } from "../permission/security-mode";
+import { FileChangeTracker } from "../environment/file-change-tracker";
+import { TranscriptCache } from "../storage/transcript-cache";
+import { tryAutoCommit } from "../environment/git-commit-service";
 
 // ========== Agentic Loop Types ==========
 export type LoopResult =
@@ -167,6 +172,12 @@ export type LoopEvent =
   | { type: "pipeline_step_complete"; stepId: string; stepTitle: string; result: string }
   // P1: Todo list event — AI created a todo list for the user
   | { type: "todo_list_created"; todoId: string; todos: TodoItem[] }
+  // P0: File changes tracked — per-turn git tree diff captured
+  | { type: "file_changes_tracked"; artifactId: string; changedFiles: Array<{ path: string; status: string }>; turnIndex: number }
+  // P1: Needs You — Agent proactively pauses and asks user a precise question
+  | { type: "needs_you"; question: string; context: string; confirmedFacts: string; options: Array<{ id: string; label: string }>; itemId: string }
+  // P2: Agent Message — async inter-agent communication received
+  | { type: "agent_message_received"; fromAgent: string; subject: string; body: string }
   | { type: "end"; result: LoopResult };
 
 // ========== Agentic Loop ==========
@@ -204,6 +215,9 @@ export class AgenticLoop {
   // Messages are consumed at iteration boundaries (before each LLM call),
   // never during tool execution or subagent waiting.
   private guidanceQueue = getGuidanceQueue();
+  private needsYouQueue = getNeedsYouQueue();
+  private fileChangeTracker: FileChangeTracker | null = null;
+  private agentId: string = "main";
   private currentSessionId: string | null = null;
 
   // E3: Incremental message cache — avoids redundant full conversions
@@ -558,6 +572,8 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
         yield { type: "compaction_start" };
         const compacted = await this.compactMessages(sessionId);
         yield { type: "compaction_end", messagesRemoved: compacted };
+        // P1-6: Clear transcript cache on compaction (cached responses no longer valid)
+        TranscriptCache.clear();
         // F1.2: Trigger memory extraction after compaction
         if (this.config.memoryEnabled && this.config.onCompactionComplete) {
           try { this.config.onCompactionComplete(); } catch {}
@@ -599,6 +615,12 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
       // Execute iteration - yields events directly for real-time streaming
       let iterationToolCalls = 0;
       const spawnTaskIds: string[] = [];
+
+      // P0: Start file change tracking at iteration boundary (before tools)
+      this.fileChangeTracker = new FileChangeTracker(
+        cwd, sessionId, assistantMsgId, this.state.iteration,
+      );
+      await this.fileChangeTracker.start();
       for await (const event of this.executeIteration(
         sessionId,
         assistantMsgId,
@@ -621,6 +643,68 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
         // Track spawn_subagent calls
         if (event.type === "tool_start" && event.toolCall?.name === "spawn_subagent") {
           // The task ID will be in the tool result, extract it later
+        }
+      }
+      // P0: Finalize file change tracking after tools complete
+      if (this.fileChangeTracker) {
+        const changeResult = await this.fileChangeTracker.finalize();
+        if (changeResult) {
+          yield {
+            type: "file_changes_tracked",
+            artifactId: changeResult.artifactId,
+            changedFiles: changeResult.changedFiles,
+            turnIndex: this.state.iteration,
+          };
+        }
+        this.fileChangeTracker = null;
+        // P1-5: Try auto-commit if enabled (after file changes tracked)
+        tryAutoCommit(cwd).catch((e) => {
+          console.warn("[AgenticLoop] auto-commit failed:", e);
+        });
+      }
+      // P1-8: Check needs_you queue at iteration boundary (Agent→Human)
+      const needsYouItem = this.needsYouQueue.consume(sessionId);
+      if (needsYouItem) {
+        yield {
+          type: "needs_you",
+          question: needsYouItem.question,
+          context: needsYouItem.context,
+          confirmedFacts: needsYouItem.confirmedFacts,
+          options: needsYouItem.options,
+          itemId: needsYouItem.id,
+        };
+        // Pause and wait for user answer
+        const answer = await this.needsYouQueue.waitForAnswer(needsYouItem.id);
+        // Inject answer as user message for next iteration
+        if (answer && answer !== "__skip__") {
+          const answerMsg = {
+            id: `needs-you-answer-${needsYouItem.id}`,
+            role: "user" as const,
+            content: `[User Decision] ${needsYouItem.question}\n\nAnswer: ${answer}\n\nContinue with this decision.`,
+          };
+          messagesForIteration = [...messagesForIteration, answerMsg];
+          this.msgCache = null;
+        }
+      }
+      // P2-10: Consume async agent messages at iteration boundary
+      const messages = AgentMessageQueue.consume(this.agentId);
+      if (messages.length > 0) {
+        for (const msg of messages) {
+          yield {
+            type: "agent_message_received",
+            fromAgent: msg.fromAgent,
+            subject: msg.subject,
+            body: msg.body,
+          };
+          // Inject message content for LLM to see
+          const msgContent = `[Message from ${msg.fromAgent}] Subject: ${msg.subject}\n\n${msg.body}`;
+          const agentMsg = {
+            id: `agent-msg-${msg.id}`,
+            role: "user" as const,
+            content: msgContent,
+          };
+          messagesForIteration = [...messagesForIteration, agentMsg];
+          this.msgCache = null;
         }
       }
       // Don't overwrite toolCallsInIteration if executeIteration already

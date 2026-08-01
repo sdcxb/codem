@@ -1814,6 +1814,45 @@ color: var(--text-secondary);
   white-space: nowrap;
 }
 
+/* Git status badges for file tree */
+.git-status-badge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 4px;
+  border-radius: 3px;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.git-status-modified {
+  background: rgba(255, 165, 0, 0.2);
+  color: #ffa500;
+}
+
+.git-status-added {
+  background: rgba(60, 200, 60, 0.2);
+  color: #3cc83c;
+}
+
+.git-status-deleted {
+  background: rgba(255, 80, 80, 0.2);
+  color: #ff5050;
+}
+
+.git-status-untracked {
+  background: rgba(100, 160, 255, 0.2);
+  color: #64a0ff;
+}
+
+.git-status-renamed {
+  background: rgba(200, 100, 255, 0.2);
+  color: #c864ff;
+}
+
+.file-entry.git-changed .file-name {
+  font-weight: 500;
+}
+
 .file-loading,
 .file-empty {
   padding: 12px 16px;
@@ -2004,7 +2043,468 @@ color: var(--text-secondary);
   background: var(--bg-primary);
 }
 
-/* ========== Settings Panel ========== */
+/* ========== Terminal Panel (PTY) ========== */
+.terminal-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: #0d1117;
+}
+
+.terminal-tab-bar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 8px 0;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.terminal-tab {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 6px 6px 0 0;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
+  transition: all 0.15s;
+}
+
+.terminal-tab:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+}
+
+.terminal-tab.active {
+  background: #0d1117;
+  color: #f0f6fc;
+  font-weight: 600;
+}
+
+.terminal-tab-label {
+  white-space: nowrap;
+}
+
+.terminal-tab-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 2px;
+  border-radius: 3px;
+}
+
+.terminal-tab-close:hover {
+  background: rgba(255, 107, 107, 0.2);
+  color: #ff6b6b;
+}
+
+.terminal-tab-new {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 4px;
+}
+
+.terminal-tab-new:hover {
+  background: var(--bg-tertiary);
+  color: var(--accent);
+}
+
+.terminal-stop-btn {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  font-size: 12px;
+  background: rgba(255, 107, 107, 0.1);
+  border: 1px solid rgba(255, 107, 107, 0.3);
+  color: #ff6b6b;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.terminal-stop-btn:hover {
+  background: rgba(255, 107, 107, 0.2);
+}
+
+.terminal-container-wrapper {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+}
+
+.terminal-container-wrapper > div {
+  height: 100%;
+}
+
+/* ========== File Changes List ========== */
+.file-changes-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.turn-change-group {
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.turn-change-group.reverted {
+  opacity: 0.5;
+}
+
+.turn-change-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--text-secondary);
+  background: var(--bg-tertiary);
+}
+
+.turn-change-header:hover {
+  background: var(--bg-hover);
+}
+
+.turn-label {
+  flex: 1;
+  font-weight: 500;
+}
+
+.reverted-tag {
+  font-size: 10px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: rgba(255, 80, 80, 0.2);
+  color: #ff5050;
+  margin-left: 4px;
+}
+
+.turn-file-count {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.turn-change-files {
+  padding: 4px 8px 4px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.turn-brief {
+  font-size: 11px;
+  color: var(--text-muted);
+  padding: 4px 0;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 4px;
+}
+
+.change-file-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 4px;
+  cursor: pointer;
+  border-radius: 3px;
+  font-size: 12px;
+}
+
+.change-file-row:hover {
+  background: var(--bg-hover);
+}
+
+.change-file-icon {
+  flex-shrink: 0;
+  opacity: 0.6;
+}
+
+.change-file-path {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.change-file-status {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+
+.revert-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  margin-top: 4px;
+  font-size: 11px;
+  background: rgba(255, 80, 80, 0.1);
+  border: 1px solid rgba(255, 80, 80, 0.2);
+  color: #ff5050;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.revert-btn:hover:not(:disabled) {
+  background: rgba(255, 80, 80, 0.2);
+}
+
+.revert-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.diff-viewer-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+}
+
+.diff-viewer-modal {
+  width: 90vw;
+  max-width: 900px;
+  max-height: 85vh;
+  overflow: auto;
+  background: var(--bg-secondary);
+  border-radius: 8px;
+}
+
+/* ========== Needs You Panel ========== */
+.needs-you-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 300;
+}
+
+.needs-you-dialog {
+  width: 520px;
+  max-width: 90vw;
+  background: var(--bg-secondary);
+  border-radius: 12px;
+  border: 1px solid var(--accent);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  overflow: hidden;
+}
+
+.needs-you-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border);
+}
+
+.needs-you-icon {
+  color: #ffa500;
+  flex-shrink: 0;
+}
+
+.needs-you-title {
+  font-weight: 600;
+  font-size: 14px;
+  flex: 1;
+}
+
+.needs-you-skip {
+  font-size: 11px;
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  padding: 3px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.needs-you-skip:hover {
+  background: var(--bg-hover);
+}
+
+.needs-you-section {
+  padding: 8px 16px;
+}
+
+.needs-you-section-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+
+.needs-you-section-content {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.needs-you-question {
+  background: rgba(255, 165, 0, 0.05);
+}
+
+.needs-you-question-text {
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.needs-you-options {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.needs-you-option {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text-secondary);
+  text-align: left;
+  transition: all 0.15s;
+}
+
+.needs-you-option:hover {
+  border-color: var(--accent);
+}
+
+.needs-you-option.selected {
+  border-color: var(--accent);
+  background: rgba(47, 129, 247, 0.1);
+}
+
+.needs-you-input {
+  width: 100%;
+  padding: 6px 8px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-primary);
+  font-size: 13px;
+  resize: vertical;
+  font-family: inherit;
+}
+
+.needs-you-actions {
+  padding: 8px 16px 16px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.needs-you-submit {
+  padding: 8px 20px;
+  background: var(--accent);
+  border: none;
+  color: white;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.needs-you-submit:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ========== Workbench Overview ========== */
+.workbench-view-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 4px 8px 0;
+}
+
+.workbench-view-tab {
+  flex: 1;
+  padding: 4px 8px;
+  font-size: 11px;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.workbench-view-tab.active {
+  background: var(--bg-tertiary);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.workbench-empty {
+  padding: 12px;
+  font-size: 12px;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.workbench-activity-entry {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 0;
+  font-size: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.activity-turn {
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.activity-files {
+  flex: 1;
+  color: var(--text-muted);
+}
+
+.activity-time {
+  font-size: 10px;
+  color: var(--text-muted);
+  opacity: 0.7;
+}
+
+.workbench-disclaimer {
+  padding: 4px 8px 8px;
+  font-size: 10px;
+  color: var(--text-muted);
+  opacity: 0.5;
+  text-align: center;
+}
 .settings-overlay {
   position: fixed;
   top: 0;

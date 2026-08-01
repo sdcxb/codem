@@ -1,7 +1,8 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
+import { X, Plus, Square } from "lucide-react";
 import "@xterm/xterm/css/xterm.css";
 
 async function tauriInvoke(command: string, args?: Record<string, unknown>): Promise<any> {
@@ -13,12 +14,31 @@ interface TerminalPanelProps {
   cwd: string;
 }
 
-export function TerminalPanel({ cwd }: TerminalPanelProps) {
-  const terminalRef = useRef<HTMLDivElement>(null);
-  const termRef = useRef<Terminal | null>(null);
+interface PtySession {
+  id: string;
+  term: Terminal;
+  fitAddon: FitAddon;
+  cwd: string;
+}
 
-  useEffect(() => {
-    if (!terminalRef.current) return;
+const MAX_SESSIONS = 5;
+const SESSION_TTL_MS = 30 * 60 * 1000; // 30 minutes
+
+export function TerminalPanel({ cwd }: TerminalPanelProps) {
+  const [sessions, setSessions] = useState<PtySession[]>([]);
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const sessionsRef = useRef<PtySession[]>([]);
+  const cleanupTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+
+  // Keep ref in sync
+  sessionsRef.current = sessions;
+
+  const createSession = useCallback(async () => {
+    if (sessionsRef.current.length >= MAX_SESSIONS) return;
+    if (!containerRef.current) return;
+
+    const { listen } = (window as any).__TAURI__.core;
 
     const term = new Terminal({
       theme: {
@@ -35,119 +55,236 @@ export function TerminalPanel({ cwd }: TerminalPanelProps) {
     const fitAddon = new FitAddon();
     term.loadAddon(fitAddon);
     term.loadAddon(new WebLinksAddon());
-    term.open(terminalRef.current);
+
+    // Create a temporary div for this terminal
+    const termDiv = document.createElement("div");
+    termDiv.style.height = "100%";
+    termDiv.style.width = "100%";
+    containerRef.current.appendChild(termDiv);
+    term.open(termDiv);
     fitAddon.fit();
-    termRef.current = term;
 
-    // Tauri mode — one-shot command execution
-    term.write("\r\n🔗 Codem 终端\r\n");
-    term.write(`📁 ${cwd}\r\n`);
-    term.write(`💡 Ctrl+V 粘贴 | Ctrl+C 复制选区 | 右键粘贴\r\n\r\n`);
-    term.write(`\x1b[36m${cwd}>\x1b[0m `);
+    // Spawn PTY
+    let ptyId: string;
+    try {
+      ptyId = await tauriInvoke("spawn_pty", { cwd });
+    } catch (e: any) {
+      term.write(`\x1b[31mFailed to spawn terminal: ${e.message}\x1b[0m\r\n`);
+      return;
+    }
 
-    let currentLine = "";
-    let isExecuting = false;
+    const session: PtySession = { id: ptyId, term, fitAddon, cwd };
+    const newSessions = [...sessionsRef.current, session];
+    setSessions(newSessions);
+    setActiveId(ptyId);
 
-    // Handle Ctrl+V (paste) and Ctrl+C (copy selection)
+    // Show only the active terminal div
+    sessionsRef.current.forEach((s) => {
+      const div = s.term.element?.parentElement;
+      if (div) div.style.display = s.id === ptyId ? "block" : "none";
+    });
+
+    term.write(`\r\n🔗 Codem 终端 (PTY)\r\n`);
+    term.write(`📁 ${cwd}\r\n\r\n`);
+
+    // Listen for PTY output
+    const unlisten = await listen("pty-output", (event: any) => {
+      const payload = event.payload as { id: string; data: string };
+      if (payload.id === ptyId) {
+        term.write(payload.data);
+      }
+    });
+
+    // Handle user input → write to PTY
+    const disposable = term.onData((data) => {
+      tauriInvoke("write_pty", { id: ptyId, data }).catch(() => {});
+    });
+
+    // Ctrl+C = copy only (no interrupt); Ctrl+Shift+C = interrupt
     term.attachCustomKeyEventHandler((event) => {
       if (event.type === "keydown") {
-        // Ctrl+V — paste from clipboard
-        if (event.ctrlKey && event.key === "v") {
+        // Ctrl+V — paste
+        if (event.ctrlKey && !event.shiftKey && event.key === "v") {
           navigator.clipboard.readText().then((text) => {
-            if (text && !isExecuting) {
-              // Replace newlines with spaces for single-line input
-              const pasteText = text.replace(/[\r\n]+/g, " ");
-              currentLine += pasteText;
-              term.write(pasteText);
+            if (text) {
+              tauriInvoke("write_pty", { id: ptyId, data: text }).catch(() => {});
             }
           }).catch(() => {});
-          return false; // Prevent default
+          return false;
         }
-        // Ctrl+C — copy selection if text is selected, otherwise allow default
-        if (event.ctrlKey && event.key === "c") {
+        // Ctrl+C — copy if selection exists, otherwise DO NOTHING (no interrupt)
+        if (event.ctrlKey && !event.shiftKey && event.key === "c") {
           const selection = term.getSelection();
           if (selection) {
             navigator.clipboard.writeText(selection).catch(() => {});
             term.clearSelection();
-            return false; // Prevent default — don't send Ctrl+C signal
+            return false; // Don't send Ctrl+C
           }
+          return false; // No selection → don't send Ctrl+C either (prevents accidental interrupt)
+        }
+        // Ctrl+Shift+C — interrupt (send \x03 to PTY)
+        if (event.ctrlKey && event.shiftKey && (event.key === "C" || event.key === "c")) {
+          tauriInvoke("write_pty", { id: ptyId, data: "\x03" }).catch(() => {});
+          return false;
         }
       }
-      return true; // Allow default for all other keys
+      return true;
     });
 
-    const disposable = term.onData((data) => {
-      if (isExecuting) return; // Ignore input while command is running
-      if (data === "\r") {
-        // Enter pressed
-        if (currentLine.trim()) {
-          isExecuting = true;
-          executeCommand(currentLine.trim(), term).finally(() => {
-            isExecuting = false;
-            currentLine = "";
-          });
-        } else {
-          term.write(`\r\n\x1b[36m${cwd}>\x1b[0m `);
-        }
-        currentLine = "";
-      } else if (data === "\x7f") {
-        // Backspace
-        if (currentLine.length > 0) {
-          currentLine = currentLine.slice(0, -1);
-          term.write("\b \b");
-        }
-      } else if (data === "\x03") {
-        // Ctrl+C signal (no selection) — cancel current line
-        if (currentLine.length > 0) {
-          term.write("^C");
-          currentLine = "";
-        }
-        term.write(`\r\n\x1b[36m${cwd}>\x1b[0m `);
-      } else if (data >= " ") {
-        currentLine += data;
-        term.write(data);
-      }
-    });
-
-    // Right-click paste
+    // Right-click: copy selection or paste
     const handleContextMenu = (e: MouseEvent) => {
       e.preventDefault();
       const selection = term.getSelection();
       if (selection) {
-        // If there's a selection, copy it
         navigator.clipboard.writeText(selection).catch(() => {});
         term.clearSelection();
       } else {
-        // No selection — paste from clipboard
         navigator.clipboard.readText().then((text) => {
-          if (text && !isExecuting) {
-            const pasteText = text.replace(/[\r\n]+/g, " ");
-            currentLine += pasteText;
-            term.write(pasteText);
+          if (text) {
+            tauriInvoke("write_pty", { id: ptyId, data: text }).catch(() => {});
           }
         }).catch(() => {});
       }
     };
-    terminalRef.current.addEventListener("contextmenu", handleContextMenu);
+    term.element?.addEventListener("contextmenu", handleContextMenu);
 
-    return () => {
+    // Resize handling
+    const resizeObserver = new ResizeObserver(() => {
+      try {
+        fitAddon.fit();
+        const cols = term.cols;
+        const rows = term.rows;
+        tauriInvoke("resize_pty", { id: ptyId, cols, rows }).catch(() => {});
+      } catch {}
+    });
+    if (term.element) {
+      resizeObserver.observe(term.element);
+    }
+
+    // Reset TTL timer on activity
+    const resetTtl = () => {
+      const existing = cleanupTimers.current.get(ptyId);
+      if (existing) clearTimeout(existing);
+      cleanupTimers.current.set(
+        ptyId,
+        setTimeout(() => {
+          closeSession(ptyId);
+        }, SESSION_TTL_MS),
+      );
+    };
+    term.onData(resetTtl);
+
+    // Store cleanup functions on the session object
+    (session as any)._cleanup = () => {
+      unlisten();
       disposable.dispose();
-      terminalRef.current?.removeEventListener("contextmenu", handleContextMenu);
+      resizeObserver.disconnect();
+      term.element?.removeEventListener("contextmenu", handleContextMenu);
+      const timer = cleanupTimers.current.get(ptyId);
+      if (timer) clearTimeout(timer);
+      cleanupTimers.current.delete(ptyId);
       term.dispose();
+      termDiv.remove();
     };
   }, [cwd]);
 
-  async function executeCommand(command: string, term: Terminal) {
-    term.write("\r\n");
-    try {
-      const result = await tauriInvoke("execute_command", { command, cwd });
-      if (result.stdout) term.write(result.stdout);
-      if (result.stderr) term.write(`\x1b[31m${result.stderr}\x1b[0m`);
-    } catch (error: any) {
-      term.write(`\x1b[31mError: ${error.message}\x1b[0m`);
+  const closeSession = useCallback((id: string) => {
+    const session = sessionsRef.current.find((s) => s.id === id);
+    if (session) {
+      (session as any)._cleanup?.();
+      tauriInvoke("close_pty", { id }).catch(() => {});
     }
-    term.write(`\r\n\x1b[36m${cwd}>\x1b[0m `);
-  }
+    const remaining = sessionsRef.current.filter((s) => s.id !== id);
+    setSessions(remaining);
+    if (activeId === id) {
+      const next = remaining[0];
+      if (next) {
+        setActiveId(next.id);
+        const div = next.term.element?.parentElement;
+        if (div) div.style.display = "block";
+      } else {
+        setActiveId(null);
+      }
+    }
+  }, [activeId]);
 
-  return <div ref={terminalRef} className="terminal-container" />;
+  const switchSession = useCallback((id: string) => {
+    sessionsRef.current.forEach((s) => {
+      const div = s.term.element?.parentElement;
+      if (div) div.style.display = s.id === id ? "block" : "none";
+    });
+    setActiveId(id);
+    const session = sessionsRef.current.find((s) => s.id === id);
+    if (session) {
+      session.fitAddon.fit();
+      tauriInvoke("resize_pty", { id, cols: session.term.cols, rows: session.term.rows }).catch(() => {});
+      session.term.focus();
+    }
+  }, []);
+
+  // Auto-create first session on mount
+  useEffect(() => {
+    if (sessions.length === 0) {
+      createSession();
+    }
+    return () => {
+      // Cleanup all sessions on unmount
+      sessionsRef.current.forEach((s) => {
+        (s as any)._cleanup?.();
+        tauriInvoke("close_pty", { id: s.id }).catch(() => {});
+      });
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const activeSession = sessions.find((s) => s.id === activeId);
+
+  return (
+    <div className="terminal-panel">
+      {/* Tab bar */}
+      <div className="terminal-tab-bar">
+        {sessions.map((s, i) => (
+          <div
+            key={s.id}
+            className={"terminal-tab " + s.id === activeId ? "active" : ""}
+            onClick={() => switchSession(s.id)}
+          >
+            <span className="terminal-tab-label">
+              {`终端 ${i + 1}`}
+            </span>
+            <button
+              className="terminal-tab-close"
+              onClick={(e) => {
+                e.stopPropagation();
+                closeSession(s.id);
+              }}
+            >
+              <X size={12} />
+            </button>
+          </div>
+        ))}
+        {sessions.length < MAX_SESSIONS && (
+          <button className="terminal-tab-new" onClick={() => createSession()} title="新建终端">
+            <Plus size={14} />
+          </button>
+        )}
+        {/* Stop button — sends Ctrl+C to active PTY */}
+        {activeSession && (
+          <button
+            className="terminal-stop-btn"
+            onClick={() => {
+              tauriInvoke("write_pty", { id: activeSession.id, data: "\x03" }).catch(() => {});
+            }}
+            title="停止当前进程 (Ctrl+Shift+C)"
+          >
+            <Square size={12} />
+            <span>停止</span>
+          </button>
+        )}
+      </div>
+
+      {/* Terminal containers */}
+      <div ref={containerRef} className="terminal-container-wrapper" />
+    </div>
+  );
 }

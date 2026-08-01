@@ -2,6 +2,7 @@ import type { SubagentSpawner, SubagentTask, SubagentResult, SubagentActivity } 
 import type { LLMEngine } from "../llm";
 import * as MessageStorage from "../storage/message";
 import { getLang } from "../i18n/lang";
+import { AgentProfileStorage } from "../storage/agent-profile-storage";
 
 function generateId(): string {
   return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
@@ -58,7 +59,21 @@ export class LLMSubagentSpawner implements SubagentSpawner {
       timeout: taskData.timeout,
       createdAt: Date.now(),
       activities: [],
+      profile_id: (taskData as any).profile_id,
     };
+
+    // P1-7: If profile_id provided, inject identity/domain/scope into prompt
+    if (task.profile_id) {
+      try {
+        const profile = AgentProfileStorage.getById(task.profile_id);
+        if (profile && task.persistent) {
+          const profilePrompt = `\n\n--- Agent Profile ---\nIdentity: ${profile.identity}\nDomain: ${profile.domain}\nScope: ${profile.scope}${profile.experience_summary ? `\nExperience: ${profile.experience_summary}` : ""}\n--- End Profile ---\n`;
+          task.prompt = profilePrompt + task.prompt;
+        }
+      } catch (e) {
+        console.warn("[SubagentSpawner] Failed to load profile:", e);
+      }
+    }
 
     // Store parent abort signal for cancellation propagation
     const parentAbortSignal = (taskData as any).parentAbortSignal as AbortSignal | undefined;

@@ -63,6 +63,8 @@ rfd (原生文件对话框) + open (打开文件/URL)
 base64 + x25519-dalek (加密) + sha2 + aes-gcm + rand
 hostname (设备标识)
 windows (Win32 API: SetWindowPos 单次调用原子设置窗口位置+尺寸)
+portable-pty 0.8 (PTY 交互式终端 — spawn/write/resize/close)
+url 2 (URL 解析 — 浏览器预览面板)
 ```
 
 ### 2.4 架构总览

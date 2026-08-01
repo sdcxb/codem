@@ -213,6 +213,58 @@ CREATE TABLE IF NOT EXISTS recovery_data (
   updated_at INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS turn_file_changes (
+  id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL,
+  message_id TEXT NOT NULL,
+  turn_index INTEGER NOT NULL,
+  before_tree TEXT,
+  after_tree TEXT,
+  patch TEXT,
+  changed_files TEXT,
+  patch_sha256 TEXT,
+  current_brief TEXT,
+  status TEXT DEFAULT 'completed',
+  created_at INTEGER NOT NULL,
+  FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS agent_profiles (
+  id TEXT PRIMARY KEY,
+  identity TEXT NOT NULL,
+  domain TEXT NOT NULL,
+  scope TEXT NOT NULL,
+  skills TEXT,
+  experience_summary TEXT,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS needs_you_pending (
+  id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL,
+  question TEXT NOT NULL,
+  context TEXT,
+  confirmed_facts TEXT,
+  options TEXT,
+  resume_path TEXT,
+  iteration INTEGER NOT NULL,
+  created_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS agent_messages (
+  id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL,
+  from_agent TEXT NOT NULL,
+  to_agent TEXT NOT NULL,
+  message_type TEXT NOT NULL,
+  subject TEXT,
+  body TEXT,
+  status TEXT DEFAULT 'pending',
+  sequence INTEGER NOT NULL,
+  created_at INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS cost_records (
   id TEXT PRIMARY KEY,
   session_id TEXT NOT NULL,
