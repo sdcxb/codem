@@ -704,7 +704,7 @@ Rust 后端 (lib.rs):
 | v0.89 | 2026-07-26 | 跨会话委派编排 + 8个高级UI面板 + 核心模块持久化 + 上下文压缩配置UI + 冒烟测试 |
 | v0.89.3 | 2026-07-27 | 宠物窗口多页打包(3.4MB→5.7KB) + 锚点 resize 零漂移 + 模型/模式持久化修复 |
 | v0.90.0 | 2026-07-31 | 推理强度分档 + UI/UX大幅优化 + P0-P4全量功能(滚动UX/高级Agent/体验提升/多模态/智能输入/知识管理增强) + 新手引导 + 梦幻皮肤磨砂玻璃 + 架构培训文档 |
-| v0.91.0 | 2026-08-01 | Coding工作台基础设施升级 — PTY交互式终端 + 文件变更追踪Artifact + 文件树Git状态 + 自动Commit + AgentProfile + NeedsYou + 异步Agent通信 + 浏览器面板 + Overview可观测性 + **集成与测试全部完成**（自动Commit开关UI / AgentProfile管理UI / PTY跨平台shell检测 / TranscriptCache统计面板 / FileChangeTracker大patch预检查 / P0-P4组件全量集成验证 49/49测试通过） |
+| v0.91.0 | 2026-08-01 | Coding工作台基础设施升级 — PTY交互式终端 + 文件变更追踪Artifact + 文件树Git状态 + 自动Commit + AgentProfile + NeedsYou + 异步Agent通信 + 浏览器面板 + Overview可观测性 + **集成与测试全部完成** + **UI设计完全版改造**（自定义缓动曲线 / transition:all清零 / 按钮按压反馈 / 弹窗transform-origin / 可访问性全覆盖 / 材质分层 / 入场动画现代化，对标 emilkowalski/skills + apple-design） |
 
 ### 6.2 v0.90.0 已发布功能（P0-P4 全量功能，commit 7435919，2026-07-31）
 
@@ -889,6 +889,7 @@ Rust 后端 (lib.rs):
 | **Transcript 缓存** | ✅ 已发布 | v0.91.0 发布，transcript-cache.ts SHA-256 键缓存 10min TTL |
 | **v0.91.0 集成与测试项** | ✅ 已完成 | 自动Commit开关UI（GitEnvSettings）/ AgentProfile管理UI（SettingsPanel Advanced tab）/ DiffViewer已集成 / PTY跨平台shell检测（$SHELL fallback）/ NeedsYouPanel已集成 / TranscriptCache统计面板 / FileChangeTracker大patch预检查 |
 | **P0-P4 组件集成项** | ✅ 已完成 | GenerateModeSelector/ResolutionSelector已渲染（InputArea多模态面板）/ SourceSelector已集成 / QuickAccessCards已集成 / CorrectionResultPanel已集成 / ClarificationForm已集成 / PipelineNextStepDialog已集成 / SkillAutocomplete由SlashCommandMenu覆盖 / note-operations已注册（tools.ts L922） |
+| **UI 设计完全版改造** | ✅ 已完成 | 自定义缓动曲线（cubic-bezier）/ transition:all清零（三皮肤51处）/ 按钮按压反馈scale(0.97) / 弹窗transform-origin / 可访问性reduced-motion+reduced-transparency / 材质分层blur(20px)+blur(12px) / @starting-style入场现代化 |
 | **Phase E: Work 模式拆分** | ⏳ 远期 | Codex/Work 双模式切换（E1-E7） |
 | **MSI 中文向导** | ⏳ | WiX 多语言配置（zh-CN + en-US） |
 | **更多 Provider 测试** | ⏳ | 目前主要测试 DeepSeek + MiMo |

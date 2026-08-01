@@ -357,6 +357,15 @@ npm run tauri:build
 - **P0-P4 组件集成验证** — 确认 SourceSelector/QuickAccessCards/CorrectionResultPanel/ClarificationForm/PipelineNextStepDialog/NeedsYouPanel 均已在 App.tsx/InputArea.tsx/ChatPanel.tsx 中集成，note-operations 工具已在 tools.ts 注册，SlashCommandMenu 已覆盖 SkillAutocomplete 功能
 - **回归测试** — P1-P2 回归测试 49/49 通过，TypeScript 编译 0 错误，Lint 0 错误
 
+**UI 设计完全版改造（2026-08-01 追加，对标 emilkowalski/skills + apple-design）：**
+- **自定义缓动曲线** — `:root` 新增 `--ease-out: cubic-bezier(0.23,1,0.32,1)` / `--ease-in-out` / `--ease-drawer` 四条强曲线，全局替换内置 `ease`，三皮肤自动继承
+- **全局 `transition: all` 清零** — `styles.css` 49 处 + `skin-hub.css` 1 处 + `skin-dream.css` 1 处全部替换为 `var(--transition-color)` 等具体属性预设
+- **按钮按压反馈** — 全局 `button:active { transform: scale(0.97) }` + `transition: transform 120ms var(--ease-out)`，所有可点击元素（含三皮肤）即时物理反馈
+- **弹窗 `transform-origin`** — `.context-menu` / `.dropdown-menu` / `.popover` 从触发源缩放（非中心），模态框保持居中例外
+- **可访问性全覆盖** — `@media (prefers-reduced-motion: reduce)` 全局降级为 opacity 过渡 + `@media (prefers-reduced-transparency: reduce)` 磨砂玻璃降纯色 + Dream 皮肤专属降级
+- **材质分层** — 导航/工具栏 `blur(20px) saturate(180%)` vs 弹出面板 `blur(12px) saturate(140%)`；滚动边缘渐变遮罩替代硬边框
+- **入场动画现代化** — `@keyframes` → `@starting-style` + transition（可中断可重定向），保留 legacy keyframe 向后兼容
+
 ### 2026-07-31（v0.90.0）
 
 > 本次更新聚焦 UI/UX 大幅优化、推理强度分档、新手引导完善、梦幻皮肤磨砂玻璃效果，以及 8 章项目架构培训文档。

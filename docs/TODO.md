@@ -6,6 +6,7 @@
 > v0.90.0 已发布：推理强度分档 + UI/UX 大幅优化 + 统一 + 按钮 + 新手引导完善 + 梦幻皮肤磨砂玻璃 + 架构培训文档 + **P0-P4 全量功能（滚动UX/高级Agent/体验提升/多模态/智能输入/知识管理增强）**。
 > v0.91.0 已发布：Coding 工作台基础设施升级 — 终端 PTY 交互式 + 文件变更追踪 Artifact + 文件树 Git 状态 + 自动 Commit + Agent Profile + Needs You + 异步 Agent 通信 + 浏览器面板 + Overview 可观测性。全量回归测试 2770 通过。集成与测试项全部完成（自动Commit开关UI / AgentProfile管理UI / PTY跨平台shell / TranscriptCache统计面板 / FileChangeTracker大patch预检查 / P0-P4组件全量集成 49/49测试通过）。
 > v0.91.0 集成与测试全部完成后，进入下一阶段开发。
+> v0.91.0 UI 设计完全版改造完成：自定义缓动曲线 + transition:all清零 + 按钮按压反馈 + 弹窗origin + 可访问性全覆盖 + 材质分层 + 入场动画现代化（对标 emilkowalski/skills + apple-design，三皮肤适配）。
 
 ## 待开发
 
