@@ -12,6 +12,10 @@ import { createNoteOperationTools } from "./tools/note-operations";
 import { createClarificationTool } from "./tools/ask-clarification";
 import { createFactCheckTool } from "./tools/fact-check";
 import { createShowTodoTool } from "./tools/show-todo";
+// D-MCP: Playwright + Figma + GitHub MCP tools
+import { createBrowserAutomateTool } from "./tools/browser-automate";
+import { createFigmaFetchTool } from "./tools/figma-fetch";
+import { createGitHubTool } from "./tools/github-tool";
 
 // ========== S5: Sandbox Helpers ==========
 
@@ -926,6 +930,10 @@ export function createDefaultToolRegistry(): ToolRegistry {
   registry.register(createClarificationTool());
   registry.register(createFactCheckTool());
   registry.register(createShowTodoTool());
+  // D-MCP: Playwright + Figma + GitHub integration tools
+  registry.register(createBrowserAutomateTool());
+  registry.register(createFigmaFetchTool());
+  registry.register(createGitHubTool());
   return registry;
 }
 
