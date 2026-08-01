@@ -32,10 +32,26 @@
   --duration-fast: 150ms;
   --duration-normal: 200ms;
   --duration-slow: 300ms;
+  /* Per-component durations (from apple-design / emil-design-eng standards) */
+  --duration-press: 120ms;        /* button :active feedback */
+  --duration-tooltip: 150ms;      /* tooltips, small popovers */
+  --duration-dropdown: 200ms;     /* dropdowns, selects */
+  --duration-modal: 300ms;        /* modals, drawers */
 
-  /* Transition defaults */
-  --transition-color: color var(--duration-fast) ease, background-color var(--duration-fast) ease, border-color var(--duration-fast) ease;
-  --transition-all: all var(--duration-normal) ease;
+  /* Easing curves �?strong, not built-in CSS easings */
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);        /* strong ease-out for UI entrances/exits */
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);    /* strong ease-in-out for on-screen movement */
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);     /* iOS-like drawer curve */
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);     /* Material standard */
+
+  /* Transition presets �?specific properties, never "all" */
+  --transition-color: color var(--duration-fast) var(--ease-out), background-color var(--duration-fast) var(--ease-out), border-color var(--duration-fast) var(--ease-out);
+  --transition-transform: transform var(--duration-press) var(--ease-out);
+  --transition-opacity: opacity var(--duration-fast) var(--ease-out);
+  --transition-dropdown: transform var(--duration-dropdown) var(--ease-out), opacity var(--duration-dropdown) var(--ease-out);
+  --transition-modal: transform var(--duration-modal) var(--ease-out), opacity var(--duration-modal) var(--ease-out);
+  /* Legacy alias �?keep for backward compat, but prefer specific presets above */
+  --transition-all: var(--transition-color);
 }
 
 /* ========== Theme Variables ========== */
@@ -139,6 +155,31 @@
   margin: 0;
   padding: 0;
   box-sizing: border-box;
+}
+
+/* ========== Global Interaction Polish ========== */
+/* D-3: Button press feedback — scale(0.97) on :active for instant physical response */
+button:not(:disabled):active,
+.clickable:not(:disabled):active,
+[role="button"]:not(:disabled):active {
+  transform: scale(0.97);
+  transition: transform var(--duration-press) var(--ease-out);
+}
+
+/* D-4: Popover/dropdown transform-origin — scale from trigger, not center */
+.context-menu,
+.dropdown-menu,
+.popover,
+.popup-menu {
+  transform-origin: var(--transform-origin, center top);
+}
+
+/* D-4: Modals are exempt — they appear centered, keep transform-origin: center */
+.modal,
+.modal-editor,
+.settings-panel,
+.confirm-dialog {
+  transform-origin: center;
 }
 
 body {
@@ -275,7 +316,7 @@ body {
   cursor: pointer;
   font-size: 13px;
   font-weight: 500;
-  transition: all 0.15s ease;
+  transition: var(--transition-color);
 }
 
 .tab:hover {
@@ -361,7 +402,7 @@ body {
   background: var(--bg-hover);
 }
 
-/* Segmented control for MCP / Skills / Memory — accent-adaptive */
+/* Segmented control for MCP / Skills / Memory �?accent-adaptive */
 .sidebar-tool-row {
   display: flex;
   gap: 2px;
@@ -386,7 +427,7 @@ body {
   cursor: pointer;
   font-size: 12px;
   color: var(--text-secondary);
-  transition: all 0.2s ease;
+  transition: var(--transition-color);
   text-align: center;
   line-height: 1.2;
   position: relative;
@@ -470,7 +511,7 @@ body {
   border-radius: 4px;
   cursor: pointer;
   font-size: 14px;
-  transition: all 0.15s ease;
+  transition: var(--transition-color);
 }
 
 .sidebar-projects-add:hover {
@@ -543,7 +584,7 @@ body {
   border-radius: 4px;
   cursor: pointer;
   font-size: 12px;
-  transition: all 0.15s ease;
+  transition: var(--transition-color);
   margin-left: 2px;
 }
 
@@ -653,7 +694,7 @@ body {
   border-radius: 4px;
   cursor: pointer;
   font-size: 12px;
-  transition: all 0.15s ease;
+  transition: var(--transition-color);
 }
 
 .sidebar-project-header:hover .sidebar-project-new {
@@ -795,11 +836,20 @@ font-size: 13px;
   border-radius: var(--radius, 6px);
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
   padding: 4px 0;
-  animation: context-menu-in 0.1s ease-out;
+  /* D-7: Replaced keyframes with transition for interruptibility */
+  opacity: 1;
+  transform: scale(1);
+  transition: var(--transition-dropdown);
+
+  @starting-style {
+    opacity: 0;
+    transform: scale(0.95);
+  }
 }
 
+/* Legacy keyframe kept for backward compat, but transition preferred */
 @keyframes context-menu-in {
-  from { opacity: 0; transform: scale(0.96); }
+  from { opacity: 0; transform: scale(0.95); }
   to { opacity: 1; transform: scale(1); }
 }
 
@@ -878,7 +928,7 @@ font-size: 13px;
   border-radius: 4px;
   cursor: pointer;
   font-size: 14px;
-  transition: all 0.15s ease;
+  transition: var(--transition-color);
 }
 
 .sidebar-section-btn:hover {
@@ -923,7 +973,7 @@ font-size: 13px;
   cursor: pointer;
   font-size: 13px;
   text-align: left;
-  transition: all 0.15s ease;
+  transition: var(--transition-color);
 }
 
 .project-open-btn:hover,
@@ -1552,7 +1602,7 @@ padding: 4px 8px;
 color: var(--text-secondary);
   font-size: 16px;
   line-height: 1;
-  transition: all 0.15s ease;
+  transition: var(--transition-color);
   flex-shrink: 0;
 }
 
@@ -1693,7 +1743,7 @@ color: var(--text-secondary);
   cursor: pointer;
   padding: 4px;
   border-radius: 4px;
-  transition: all 0.15s ease;
+  transition: var(--transition-color);
 }
 
 .upload-btn:hover {
@@ -2072,7 +2122,7 @@ color: var(--text-secondary);
   color: var(--text-muted);
   background: transparent;
   border: none;
-  transition: all 0.15s;
+  transition: var(--transition-color);
 }
 
 .terminal-tab:hover {
@@ -2396,7 +2446,7 @@ color: var(--text-secondary);
   font-size: 13px;
   color: var(--text-secondary);
   text-align: left;
-  transition: all 0.15s;
+  transition: var(--transition-color);
 }
 
 .needs-you-option:hover {
@@ -2563,7 +2613,7 @@ background: var(--bg-secondary);
   font-size: 14px;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: var(--transition-color);
 }
 
 .project-action-btn:hover {
@@ -2654,7 +2704,7 @@ background: var(--bg-secondary);
   padding: 4px 8px;
   border-radius: 4px;
   font-size: 14px;
-  transition: all 0.15s ease;
+  transition: var(--transition-color);
 }
 
 .project-item:hover .project-item-delete {
@@ -2921,7 +2971,7 @@ background: var(--bg-secondary);
   border: 2px solid var(--border-primary);
   border-radius: 8px;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: var(--transition-color);
 }
 
 .mode-btn:hover {
@@ -2990,7 +3040,7 @@ background: var(--bg-secondary);
   color: var(--text-primary);
   font-size: 12px;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: var(--transition-color);
 }
 
 .identity-option:hover {
@@ -3021,7 +3071,7 @@ background: var(--bg-secondary);
   border-radius: 8px;
   font-size: 20px;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: var(--transition-color);
 }
 
 .identity-emoji:hover {
@@ -3162,7 +3212,7 @@ background: var(--bg-secondary);
   cursor: pointer;
   font-size: 13px;
   font-weight: 500;
-  transition: all 0.15s ease;
+  transition: var(--transition-color);
 }
 
 .confirm-btn.cancel {
@@ -3216,7 +3266,7 @@ background: var(--bg-secondary);
   align-items: center;
   justify-content: center;
   font-size: 16px;
-  transition: all 0.15s ease;
+  transition: var(--transition-color);
 }
 
 .theme-toggle:hover {
@@ -3224,8 +3274,21 @@ background: var(--bg-secondary);
 }
 
 /* ========== Animation ========== */
+/* D-7: fadeIn modernized — use @starting-style for entry, transition for interruptibility */
+.fade-in-element {
+  opacity: 1;
+  transform: translateY(0);
+  transition: opacity var(--duration-fast) var(--ease-out), transform var(--duration-fast) var(--ease-out);
+
+  @starting-style {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+}
+
+/* Legacy keyframe kept for backward compat */
 @keyframes fadeIn {
-  from { opacity: 0; transform: translateY(-10px); }
+  from { opacity: 0; transform: translateY(-8px); }
   to { opacity: 1; transform: translateY(0); }
 }
 
@@ -3268,7 +3331,7 @@ background: var(--bg-secondary);
   height: 8px;
   border-radius: 50%;
   background: var(--bg-tertiary);
-  transition: all 0.3s ease;
+  transition: var(--transition-color);
 }
 
 .bootstrap-dot.active {
@@ -3346,7 +3409,7 @@ background: var(--bg-secondary);
   border-radius: 8px;
   color: var(--text-primary);
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: var(--transition-color);
 }
 
 .bootstrap-option:hover {
@@ -3378,7 +3441,7 @@ background: var(--bg-secondary);
   border-radius: 12px;
   font-size: 24px;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: var(--transition-color);
 }
 
 .bootstrap-emoji:hover {
@@ -3426,7 +3489,7 @@ background: var(--bg-secondary);
   font-size: 14px;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: var(--transition-color);
 }
 
 .bootstrap-btn.primary {
@@ -3487,7 +3550,7 @@ background: var(--bg-secondary);
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.15s ease;
+  transition: var(--transition-color);
 }
 
 .path-picker-btn:hover {
@@ -3505,7 +3568,7 @@ background: var(--bg-secondary);
   cursor: pointer;
   padding: 4px 8px;
   border-radius: 4px;
-  transition: all 0.15s ease;
+  transition: var(--transition-color);
 }
 
 .agent-toggle:hover {
@@ -4342,7 +4405,7 @@ background: rgba(124, 108, 240, 0.15);
   cursor: pointer;
   font-size: 13px;
   font-weight: 500;
-  transition: all 0.15s ease;
+  transition: var(--transition-color);
 }
 
 .permission-btn.deny {
@@ -4691,7 +4754,7 @@ background: rgba(124, 108, 240, 0.15);
   display: flex;
   align-items: center;
   gap: 6px;
-  transition: all 0.15s;
+  transition: var(--transition-color);
 }
 
 .mcp-action-btn:hover {
@@ -5090,7 +5153,7 @@ background: var(--accent-muted);
   color: var(--text-muted, #666);
   border: 1px dashed var(--border-primary, #444);
   border-radius: 8px;
-  transition: all 0.15s;
+  transition: var(--transition-color);
 }
 
 .skill-drop-zone.dragging {
@@ -5176,7 +5239,7 @@ background: var(--accent-muted);
   color: var(--text-secondary, #aaa);
   font-size: 13px;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: var(--transition-color);
 }
 
 .skill-detail-btn.delete:hover {
@@ -5394,7 +5457,7 @@ background: var(--accent-muted);
   cursor: pointer;
   font-size: 13px;
   font-weight: 500;
-  transition: all 0.15s;
+  transition: var(--transition-color);
   margin-bottom: -1px;
 }
 
@@ -5443,7 +5506,7 @@ background: var(--accent-muted);
   border: 1px solid var(--border-primary);
   border-radius: 10px;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: var(--transition-color);
 }
 
 .market-skill-card:hover {
@@ -5549,7 +5612,7 @@ background: var(--accent-muted);
   border-radius: 6px;
   color: var(--text-tertiary);
   cursor: pointer;
-  transition: all 0.15s;
+  transition: var(--transition-color);
 }
 
 .market-skill-link-btn:hover {
@@ -5569,7 +5632,7 @@ background: var(--accent-muted);
   font-size: 12px;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: var(--transition-color);
 }
 
 .market-skill-install-btn:hover:not(:disabled) {
@@ -5929,7 +5992,7 @@ background: var(--accent-muted);
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  transition: all 0.15s ease;
+  transition: var(--transition-color);
 }
 
 .memory-action-btn:hover {
@@ -6186,7 +6249,7 @@ background: var(--accent-muted);
   background: var(--bg-secondary);
   color: var(--text-primary);
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: var(--transition-color);
 }
 
 .context-compact-btn:hover:not(:disabled) {
@@ -6707,7 +6770,7 @@ border-bottom: 1px solid var(--accent);
   background: var(--error)10;
 }
 
-/* ========== Message Fork (legacy — removed, fork now in toolbar) ========== */
+/* ========== Message Fork (legacy �?removed, fork now in toolbar) ========== */
 
 /* ========== Thinking Indicator ========== */
 .thinking-indicator {
@@ -7027,14 +7090,14 @@ border-bottom: 1px solid var(--accent);
 .diff-stat-removed { color: var(--error); }
 .diff-viewer-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
 .diff-view-mode-toggle { display: flex; gap: 2px; background: var(--bg-primary); border-radius: 6px; padding: 2px; }
-.diff-mode-btn { padding: 4px 10px; font-size: 12px; border: none; background: transparent; color: var(--text-secondary); cursor: pointer; border-radius: 4px; transition: all 0.15s; }
+.diff-mode-btn { padding: 4px 10px; font-size: 12px; border: none; background: transparent; color: var(--text-secondary); cursor: pointer; border-radius: 4px; transition: var(--transition-color); }
 .diff-mode-btn:hover { color: var(--text-primary); background: var(--bg-hover); }
 .diff-mode-btn.active { background: var(--accent-muted); color: var(--accent); }
-.diff-accept-btn { padding: 5px 14px; font-size: 13px; font-weight: 600; border: none; background: rgba(63, 185, 80, 0.2); color: var(--success); cursor: pointer; border-radius: 6px; transition: all 0.15s; }
+.diff-accept-btn { padding: 5px 14px; font-size: 13px; font-weight: 600; border: none; background: rgba(63, 185, 80, 0.2); color: var(--success); cursor: pointer; border-radius: 6px; transition: var(--transition-color); }
 .diff-accept-btn:hover { background: rgba(63, 185, 80, 0.35); }
-.diff-reject-btn { padding: 5px 14px; font-size: 13px; font-weight: 600; border: none; background: rgba(248, 81, 73, 0.15); color: var(--error); cursor: pointer; border-radius: 6px; transition: all 0.15s; }
+.diff-reject-btn { padding: 5px 14px; font-size: 13px; font-weight: 600; border: none; background: rgba(248, 81, 73, 0.15); color: var(--error); cursor: pointer; border-radius: 6px; transition: var(--transition-color); }
 .diff-reject-btn:hover { background: rgba(248, 81, 73, 0.3); }
-.diff-close-btn { padding: 4px 8px; font-size: 14px; border: none; background: transparent; color: var(--text-secondary); cursor: pointer; border-radius: 4px; transition: all 0.15s; }
+.diff-close-btn { padding: 4px 8px; font-size: 14px; border: none; background: transparent; color: var(--text-secondary); cursor: pointer; border-radius: 4px; transition: var(--transition-color); }
 .diff-close-btn:hover { color: var(--text-primary); background: var(--bg-hover); }
 .diff-viewer-path { padding: 6px 16px; font-size: 11px; color: var(--text-muted); background: var(--bg-primary); border-bottom: 1px solid var(--border-secondary); font-family: monospace; flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .diff-viewer-body { flex: 1; overflow: auto; min-height: 200px; }
@@ -7083,7 +7146,7 @@ border-bottom: 1px solid var(--accent);
 .diff-empty { background: rgba(110, 118, 129, 0.05); }
 
 /* Custom Instruction Panel */
-.diff-custom-btn { padding: 5px 14px; font-size: 13px; font-weight: 600; border: none; background: rgba(210, 153, 34, 0.15); color: var(--warning); cursor: pointer; border-radius: 6px; transition: all 0.15s; }
+.diff-custom-btn { padding: 5px 14px; font-size: 13px; font-weight: 600; border: none; background: rgba(210, 153, 34, 0.15); color: var(--warning); cursor: pointer; border-radius: 6px; transition: var(--transition-color); }
 .diff-custom-btn:hover { background: rgba(210, 153, 34, 0.3); }
 .diff-custom-panel { padding: 12px 16px; background: var(--bg-primary); border-bottom: 1px solid var(--border-primary); }
 .diff-custom-label { font-size: 12px; color: var(--text-secondary); margin-bottom: 8px; }
@@ -7091,10 +7154,10 @@ border-bottom: 1px solid var(--accent);
 .diff-custom-textarea { width: 100%; padding: 8px 10px; font-size: 13px; font-family: inherit; background: var(--bg-secondary); color: var(--text-primary); border: 1px solid var(--border-primary); border-radius: 6px; resize: vertical; min-height: 50px; }
 .diff-custom-textarea:focus { outline: none; border-color: var(--accent); }
 .diff-custom-actions { display: flex; gap: 8px; }
-.diff-custom-submit-btn { padding: 6px 16px; font-size: 13px; font-weight: 600; border: none; background: rgba(47, 129, 247, 0.2); color: var(--accent); cursor: pointer; border-radius: 6px; transition: all 0.15s; }
+.diff-custom-submit-btn { padding: 6px 16px; font-size: 13px; font-weight: 600; border: none; background: rgba(47, 129, 247, 0.2); color: var(--accent); cursor: pointer; border-radius: 6px; transition: var(--transition-color); }
 .diff-custom-submit-btn:hover:not(:disabled) { background: rgba(47, 129, 247, 0.35); }
 .diff-custom-submit-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-.diff-custom-cancel-btn { padding: 6px 16px; font-size: 13px; font-weight: 600; border: none; background: var(--bg-hover); color: var(--text-secondary); cursor: pointer; border-radius: 6px; transition: all 0.15s; }
+.diff-custom-cancel-btn { padding: 6px 16px; font-size: 13px; font-weight: 600; border: none; background: var(--bg-hover); color: var(--text-secondary); cursor: pointer; border-radius: 6px; transition: var(--transition-color); }
 .diff-custom-cancel-btn:hover { color: var(--text-primary); }
 
 /* ========== Radix UI Component Styles ========== */
@@ -8681,7 +8744,7 @@ color: var(--accent-primary, #6366f1);
 background: rgba(99, 102, 241, 0.12);
 border-radius: 4px;
 cursor: pointer;
-transition: all 0.15s ease;
+transition: var(--transition-color);
 vertical-align: super;
 position: relative;
 }
@@ -8716,7 +8779,7 @@ box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
 }
 
 /* ========== Skin Selector ========== */
-/* 皮肤选择器卡片式选项卡样式 */
+/* 皮肤选择器卡片式选项卡样�?*/
 
 .skin-selector-grid {
 display: grid;
@@ -8731,7 +8794,7 @@ border: 2px solid var(--border-primary, #30363d);
 border-radius: var(--radius-md, 0.625rem);
 padding: 8px;
 cursor: pointer;
-transition: all var(--duration-fast, 100ms) ease;
+transition: var(--transition-color);
 display: flex;
 flex-direction: column;
 align-items: center;
@@ -8929,9 +8992,9 @@ line-height: 1.3;
 }
 
 /* ========== Pet Sprite Animation ==========
-   基于 Petdex (MIT) 的精灵图 CSS 动画方案。
-   精灵图是固定网格：192×208px 帧宽，8 列 1536px 总宽。
-   通过 CSS steps() 步进 background-position 实现帧动画。
+   基于 Petdex (MIT) 的精灵图 CSS 动画方案�?
+   精灵图是固定网格�?92×208px 帧宽�? �?1536px 总宽�?
+   通过 CSS steps() 步进 background-position 实现帧动画�?
 */
 
 .pet-sprite-card {
@@ -8967,8 +9030,8 @@ line-height: 1.3;
 }
 
 /* ========== Pet Window Mode ==========
-   独立宠物窗口的透明背景。
-   强制所有层级透明，消除 WebView2 可能残留的黑色背景/边框。
+   独立宠物窗口的透明背景�?
+   强制所有层级透明，消�?WebView2 可能残留的黑色背�?边框�?
 */
 html.pet-window-mode,
 html.pet-window-mode body,
@@ -8983,7 +9046,7 @@ html.pet-window-mode #root {
 
 /* ========== Guidance (Mid-Turn Steering) ========== */
 
-/* Guidance messages bar — shows pending/consumed guidance above the input */
+/* Guidance messages bar �?shows pending/consumed guidance above the input */
 .guidance-messages-bar {
   padding: 6px 12px;
   display: flex;
@@ -9041,7 +9104,7 @@ html.pet-window-mode #root {
   }
 }
 
-/* Guidance input container — replaces InputArea when agent is running */
+/* Guidance input container �?replaces InputArea when agent is running */
 .guidance-input-container {
   display: flex;
   align-items: center;
@@ -9148,7 +9211,7 @@ html.pet-window-mode #root {
   border: none;
   border-radius: var(--radius-sm, 4px);
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: var(--transition-color);
 }
 .inline-edit-btn.save {
   background: var(--accent, #6366f1);
@@ -9204,7 +9267,7 @@ html.pet-window-mode #root {
   border: 1px solid transparent;
   border-radius: var(--radius-full, 9999px);
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: var(--transition-color);
 }
 .feedback-btn:hover {
   background: var(--bg-hover, #1e1e24);
@@ -9242,7 +9305,7 @@ html.pet-window-mode #root {
   opacity: 0.4;
   cursor: pointer;
   pointer-events: auto;
-  transition: all 0.15s ease;
+  transition: var(--transition-color);
   transform: translateX(-1px);
 }
 .scrollbar-marker:hover {
@@ -9285,7 +9348,7 @@ html.pet-window-mode #root {
   border-radius: var(--radius-full, 9999px);
   color: var(--text-primary, #e0e0e0);
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: var(--transition-color);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
   position: relative;
 }
@@ -9342,7 +9405,7 @@ html.pet-window-mode #root {
   cursor: pointer;
   color: var(--text-muted, #6b6b7b);
   font-size: 11px;
-  transition: all 0.15s ease;
+  transition: var(--transition-color);
 }
 .correction-mode-toggle.enabled {
   background: rgba(99, 102, 241, 0.15);
@@ -9926,7 +9989,7 @@ html.pet-window-mode #root {
   color: var(--text-secondary, #a0a0a8);
   cursor: pointer;
   font-size: 11px;
-  transition: all 0.15s ease;
+  transition: var(--transition-color);
 }
 .source-chip:hover {
   border-color: var(--accent, #7c6cf0);
@@ -10247,4 +10310,68 @@ html.pet-window-mode #root {
   background: rgba(99, 102, 241, 0.15);
   border-color: var(--accent, #7c6cf0);
   color: var(--accent, #7c6cf0);
+}
+
+/* ========== D-5: Accessibility — Global Reduced Motion + Transparency + Hover Gating ========== */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  /* Keep opacity/color transitions for comprehension — gentler, not zero */
+  .fade-in-element,
+  .context-menu,
+  .dropdown-menu,
+  .popover {
+    transition: opacity 200ms ease !important;
+    transform: none !important;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .floating-overlay-panel,
+  .skill-picker-popup,
+  .slash-command-menu,
+  .model-picker {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    background: var(--bg-secondary) !important;
+  }
+}
+
+/* ========== D-6: Material Layering + Scroll Edge Effects ========== */
+/* Thicker material for navigation bars / toolbars */
+.nav-bar,
+.toolbar,
+.titlebar {
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+}
+
+/* Lighter material for small popovers/chips */
+.popover,
+.dropdown-menu,
+.context-menu {
+  backdrop-filter: blur(12px) saturate(140%);
+  -webkit-backdrop-filter: blur(12px) saturate(140%);
+}
+
+/* Scroll edge effect — fade where content meets floating chrome */
+.scroll-edge-top {
+  position: sticky;
+  top: 0;
+  height: 8px;
+  background: linear-gradient(to bottom, var(--bg-primary), transparent);
+  z-index: 10;
+  pointer-events: none;
+}
+.scroll-edge-bottom {
+  position: sticky;
+  bottom: 0;
+  height: 8px;
+  background: linear-gradient(to top, var(--bg-primary), transparent);
+  z-index: 10;
+  pointer-events: none;
 }

@@ -1,8 +1,8 @@
 /* ========== Hub Skin ========== */
-/* 基于 1.html 设计稿：深色科技感 Hub 界面，三栏布局 */
-/* 完全独立的 CSS，不依赖默认皮肤的 CSS 变量 */
+/* 基于 1.html 设计稿：深色科技�?Hub 界面，三栏布局 */
+/* 完全独立�?CSS，不依赖默认皮肤�?CSS 变量 */
 
-/* Hub 皮肤专属变量（使用 hub- 前缀，避免与默认皮肤冲突） */
+/* Hub 皮肤专属变量（使�?hub- 前缀，避免与默认皮肤冲突�?*/
 [data-skin="hub"] {
   --hub-bg-base: #0a0a0a;
   --hub-bg-panel: #121212;
@@ -17,7 +17,7 @@
   --hub-text-success: #4ade80;
   --hub-border-color: #2a2a2a;
 
-  /* 覆盖默认皮肤的 CSS 变量，让所有组件（模态框、按钮、输入框等）自动使用 Hub 配色 */
+  /* 覆盖默认皮肤�?CSS 变量，让所有组件（模态框、按钮、输入框等）自动使用 Hub 配色 */
   --bg-primary: #0a0a0a;
   --bg-secondary: #121212;
   --bg-tertiary: #1c1c1e;
@@ -52,7 +52,7 @@
   --shadow-popover: 0 8px 24px rgba(0, 0, 0, 0.7);
 }
 
-/* Hub 皮肤根容器 - 三栏 Grid 布局 */
+/* Hub 皮肤根容�?- 三栏 Grid 布局 */
 [data-skin="hub"] .hub-app {
   display: flex;
   flex-direction: column;
@@ -65,7 +65,7 @@
   font-size: 14px;
 }
 
-/* Hub 标题栏样式 */
+/* Hub 标题栏样�?*/
 [data-skin="hub"] .titlebar {
   background: transparent;
 }
@@ -98,7 +98,7 @@
   height: 100%;
 }
 
-/* 确保 Sidebar 在 Hub 下正确显示 */
+/* 确保 Sidebar �?Hub 下正确显�?*/
 [data-skin="hub"] .hub-sidebar-wrapper .sidebar {
   width: 260px !important;
   height: 100% !important;
@@ -112,9 +112,9 @@
   overflow: hidden;
 }
 
-/* ========== 覆盖默认皮肤组件在 Hub 下的样式 ========== */
+/* ========== 覆盖默认皮肤组件�?Hub 下的样式 ========== */
 
-/* Sidebar 在 Hub 下的颜色 */
+/* Sidebar �?Hub 下的颜色 */
 [data-skin="hub"] .sidebar {
   background: var(--hub-bg-panel) !important;
   color: var(--hub-text-main);
@@ -145,12 +145,12 @@
   border-top: 1px solid var(--hub-border-color);
 }
 
-/* 主题切换按钮在 Hub 下隐藏（Hub 固定暗色） */
+/* 主题切换按钮�?Hub 下隐藏（Hub 固定暗色�?*/
 [data-skin="hub"] .theme-toggle {
   display: none;
 }
 
-/* 主面板区域 */
+/* 主面板区�?*/
 [data-skin="hub"] .main-area {
   background: var(--hub-bg-base);
   flex: 1;
@@ -206,7 +206,7 @@
 }
 
 /* ========== 消息气泡 ========== */
-/* 只给 .message-content（内层）设置样式，.message（外层 flex 容器）保持无背景无边框 */
+/* 只给 .message-content（内层）设置样式�?message（外�?flex 容器）保持无背景无边�?*/
 [data-skin="hub"] .message-bubble,
 [data-skin="hub"] .message {
   background: transparent !important;
@@ -262,7 +262,7 @@
   color: var(--hub-text-muted);
 }
 
-/* 发送按钮 */
+/* 发送按�?*/
 [data-skin="hub"] .btn-send,
 [data-skin="hub"] .send-button {
   background: var(--hub-color-primary);
@@ -277,7 +277,7 @@
   background: var(--hub-color-primary-hover);
 }
 
-/* ========== 代码块 ========== */
+/* ========== 代码�?========== */
 [data-skin="hub"] pre,
 [data-skin="hub"] .code-block {
   background: #050505;
@@ -306,7 +306,7 @@
   color: var(--hub-text-main);
 }
 
-/* ========== 滚动条 ========== */
+/* ========== 滚动�?========== */
 [data-skin="hub"] ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -325,7 +325,7 @@
   background: #444;
 }
 
-/* ========== Hub 顶部导航栏 ========== */
+/* ========== Hub 顶部导航�?========== */
 [data-skin="hub"] .hub-navbar {
   height: 50px;
   display: flex;
@@ -402,7 +402,7 @@
   color: var(--hub-text-main);
 }
 
-/* ========== Hub 右侧栏 ========== */
+/* ========== Hub 右侧�?========== */
 [data-skin="hub"] .hub-right-sidebar {
   width: 300px;
   background: var(--hub-bg-panel);
@@ -528,14 +528,14 @@
   border-radius: 4px;
 }
 
-/* Hub 响应式：小屏隐藏右侧栏 */
+/* Hub 响应式：小屏隐藏右侧�?*/
 @media (max-width: 1024px) {
   [data-skin="hub"] .hub-right-sidebar {
     display: none;
   }
 }
 
-/* ========== 右侧栏收缩/展开按钮 ========== */
+/* ========== 右侧栏收�?展开按钮 ========== */
 [data-skin="hub"] .hub-sidebar-toggle {
   position: absolute;
   top: 12px;
@@ -551,7 +551,7 @@
   justify-content: center;
   cursor: pointer;
   z-index: 10;
-  transition: all 0.2s;
+  transition: var(--transition-color);
   font-size: 10px;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
 }
@@ -575,7 +575,7 @@
   left: auto;
 }
 
-/* 收缩状态 */
+/* 收缩状�?*/
 [data-skin="hub"] .hub-right-sidebar-collapsed {
   width: 32px !important;
   padding: 0 !important;
@@ -592,7 +592,7 @@
   left: auto;
 }
 
-/* 确保 hub-right-sidebar 有 position: relative 用于按钮定位 */
+/* 确保 hub-right-sidebar �?position: relative 用于按钮定位 */
 [data-skin="hub"] .hub-right-sidebar {
   position: relative;
 }
@@ -629,10 +629,10 @@
 }
 
 [data-skin="hub"] .hub-onboarding-item .hub-task-icon {
-  /* 颜色由 hub-task-icon-* 类控制 */
+  /* 颜色�?hub-task-icon-* 类控�?*/
 }
 
-/* ========== 最近对话 ========== */
+/* ========== 最近对�?========== */
 [data-skin="hub"] .hub-recent-item {
   transition: border-color 0.2s, background 0.2s;
 }
@@ -643,7 +643,7 @@
 }
 
 [data-skin="hub"] .hub-recent-item .hub-task-icon {
-  /* 颜色由 hub-task-icon-* 类控制 */
+  /* 颜色�?hub-task-icon-* 类控�?*/
 }
 
 /* 隐私隐藏按钮 */
