@@ -41,13 +41,13 @@ fn spawn_pty(cwd: String, app: AppHandle, state: State<'_, PtyMap>) -> Result<St
     #[cfg(windows)]
     let mut cmd = CommandBuilder::new("cmd.exe");
     #[cfg(not(windows))]
-    let shell = std::env::var("SHELL").unwrap_or_else(|_| {
-        // Fallback chain: zsh > bash > sh
-        if std::path::Path::new("/bin/zsh").exists() { "/bin/zsh".to_string() }
-        else if std::path::Path::new("/bin/bash").exists() { "/bin/bash".to_string() }
-        else { "/bin/sh".to_string() }
-    });
-    let mut cmd = CommandBuilder::new(shell);
+    let mut cmd = CommandBuilder::new(
+        std::env::var("SHELL").unwrap_or_else(|_| {
+            if std::path::Path::new("/bin/zsh").exists() { "/bin/zsh".to_string() }
+            else if std::path::Path::new("/bin/bash").exists() { "/bin/bash".to_string() }
+            else { "/bin/sh".to_string() }
+        })
+    );
     cmd.cwd(cwd.clone());
 
     let pair = pty_system
