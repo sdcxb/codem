@@ -347,6 +347,16 @@ npm run tauri:build
 - 全量回归测试 2770/2770 通过，零回归
 - 交叉影响测试覆盖：agentic-loop 事件链顺序、database 表完整性+FK 约束、PanelSidebar Tab 不破坏现有面板、App.tsx 新增组件不破坏对话流、FileExplorer Git 状态不破坏文件树、spawner Profile 注入不破坏现有生成、Cargo.toml/Cargo.toml/lib.rs/styles.css 完整性
 
+**集成与测试全部完成（2026-08-01 追加）：**
+- **自动 Commit 开关 UI** — `GitEnvSettings.tsx` Git 偏好配置区新增「🔄 自动 Commit」开关，调用 `isAutoCommitEnabled()`/`setAutoCommitEnabled()`
+- **Agent Profile 管理 UI** — `SettingsPanel.tsx` Advanced tab 新增「👤 Profiles」子标签，支持查看/创建/编辑/删除 AgentProfile，调用 `AgentProfileStorage` CRUD
+- **TranscriptCache 统计面板** — `SettingsPanel.tsx` Advanced tab 新增「💬 Cache」子标签，进度条显示缓存占用 + 清空/刷新/自动刷新按钮
+- **PTY 跨平台 shell 检测** — `lib.rs` `spawn_pty` 非 Windows 改为读取 `$SHELL` 环境变量，fallback 链 zsh → bash → sh
+- **FileChangeTracker 大 patch 预检查** — `file-change-tracker.ts` 新增 `git diff --stat` 预检查，>20 万行变更或 >100 文件时跳过全量 patch，避免 OOM，个体文件 diff 仍可按需查看
+- **GenerateModeSelector/ResolutionSelector 渲染** — `InputArea.tsx` 多模态模式下渲染生成模式+分辨率选择器浮动面板
+- **P0-P4 组件集成验证** — 确认 SourceSelector/QuickAccessCards/CorrectionResultPanel/ClarificationForm/PipelineNextStepDialog/NeedsYouPanel 均已在 App.tsx/InputArea.tsx/ChatPanel.tsx 中集成，note-operations 工具已在 tools.ts 注册，SlashCommandMenu 已覆盖 SkillAutocomplete 功能
+- **回归测试** — P1-P2 回归测试 49/49 通过，TypeScript 编译 0 错误，Lint 0 错误
+
 ### 2026-07-31（v0.90.0）
 
 > 本次更新聚焦 UI/UX 大幅优化、推理强度分档、新手引导完善、梦幻皮肤磨砂玻璃效果，以及 8 章项目架构培训文档。

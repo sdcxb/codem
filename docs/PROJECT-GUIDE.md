@@ -1,7 +1,7 @@
 # Codem 项目完整说明
 
 > **用途**：新对话快速理解项目全貌、架构、文件关联、当前状态。
-> 创建时间：2026-07-23 | 最后更新：2026-07-31 | 当前版本：v0.90.0（已发布）+ 未发布开发分支（UI/UX 大幅优化 + 推理强度分档 + 架构培训文档）
+> 创建时间：2026-07-23 | 最后更新：2026-08-01 | 当前版本：v0.91.0（已发布）
 
 ---
 
@@ -13,7 +13,7 @@
 - **GitHub**：https://github.com/sdcxb/codem
 - **分发**：NSIS `.exe` + WiX `.msi`，一键安装无需依赖
 - **平台**：Windows 优先
-- **版本**：v0.90.0（已发布）+ 开发分支（未发布）
+- **版本**：v0.91.0（已发布，2026-08-01）
 
 ---
 
@@ -703,10 +703,12 @@ Rust 后端 (lib.rs):
 | v0.88 | 2026-07-24 | 桌面宠物系统 + 宠物市场 + 悬浮气泡通知 + 右键原生菜单 + Token查询 |
 | v0.89 | 2026-07-26 | 跨会话委派编排 + 8个高级UI面板 + 核心模块持久化 + 上下文压缩配置UI + 冒烟测试 |
 | v0.89.3 | 2026-07-27 | 宠物窗口多页打包(3.4MB→5.7KB) + 锚点 resize 零漂移 + 模型/模式持久化修复 |
+| v0.90.0 | 2026-07-31 | 推理强度分档 + UI/UX大幅优化 + P0-P4全量功能(滚动UX/高级Agent/体验提升/多模态/智能输入/知识管理增强) + 新手引导 + 梦幻皮肤磨砂玻璃 + 架构培训文档 |
+| v0.91.0 | 2026-08-01 | Coding工作台基础设施升级 — PTY交互式终端 + 文件变更追踪Artifact + 文件树Git状态 + 自动Commit + AgentProfile + NeedsYou + 异步Agent通信 + 浏览器面板 + Overview可观测性 + **集成与测试全部完成**（自动Commit开关UI / AgentProfile管理UI / PTY跨平台shell检测 / TranscriptCache统计面板 / FileChangeTracker大patch预检查 / P0-P4组件全量集成验证 49/49测试通过） |
 
-### 6.2 未发布开发分支（v0.89.3 之后）
+### 6.2 v0.90.0 已发布功能（P0-P4 全量功能，commit 7435919，2026-07-31）
 
-> 自 v0.89.3 发布以来，工作区有大量未提交的修改。以下为变更全量清单。
+> v0.90.0 发布提交包含 P0-P4 全量功能 + 推理强度分档 + UI/UX 大幅优化 + 新手引导 + 梦幻皮肤磨砂玻璃 + 架构培训文档。以下为 P0-P4 变更全量清单。
 
 #### 变更统计
 - **已修改文件**：26 个（+5,415 行 / -2,156 行）
@@ -795,7 +797,7 @@ Rust 后端 (lib.rs):
 | CSS 扩展 | `styles.css` | +1,327 行（P1-P4 全部组件样式） |
 | 新依赖 | `package.json` | katex/mammoth/pdfjs-dist/rehype-katex/remark-math |
 
-### 6.2 v0.89 已发布功能
+### 6.3 v0.89 已发布功能
 
 以下功能均已包含在 v0.89 发布版本中：
 
@@ -817,7 +819,7 @@ Rust 后端 (lib.rs):
 | **冒烟测试** | `test/smoke-test.test.ts` (30个发布阻断级用例) |
 | **回归测试V2** | `test/regression-*.test.ts` (9个文件, 155个用例) |
 
-### 6.2.1 v0.88 已发布功能（含 v0.89 期间的后续优化）
+### 6.3.1 v0.88 已发布功能（含 v0.89 期间的后续优化）
 
 以下功能均已包含在 v0.88 发布版本中（v0.89 期间做了多项优化）：
 
@@ -836,7 +838,7 @@ Rust 后端 (lib.rs):
 | **锚点 resize（零漂移）** ★ | `lib.rs` (resize_pet_window_anchored + SetWindowPos), `PetWindowApp.tsx` (锚点定位+canvas测量) |
 | **模型/模式持久化修复** ★ | `App.tsx` (DB就绪后configureEngine + 关闭时flushDatabase) |
 
-### 6.2.1 v0.87 已发布功能
+### 6.3.2 v0.87 已发布功能
 
 以下功能均已包含在 v0.87 发布版本中：
 
@@ -859,7 +861,7 @@ Rust 后端 (lib.rs):
 | **Prompt Cache 优化** | `prompt.ts` (时间戳分钟精度) |
 | **分段控件主题适配** | `styles.css` (color-mix + --accent) |
 
-### 6.3 待办事项
+### 6.4 待办事项
 
 | 项目 | 状态 | 说明 |
 |------|------|------|
@@ -871,16 +873,29 @@ Rust 后端 (lib.rs):
 | **冒烟测试** | ✅ 已完成 | v0.89 发布，30个发布阻断级冒烟用例 |
 | **REFACTOR-PROMPT-TO-DATA** | ✅ 已完成 | P0-P5 全部落地（编码运行时注入/cd拆分/Plan只读/频率限制/条件注册/子智能体拦截），143个测试 |
 | **数据层设置系统** | ✅ 已完成 | `core/settings/` SettingsSource 层级 (cli/policy/flag/user/project/local/default) |
-| **P0-P4 全量功能集成** | 🔧 未发布 | 40+ 新组件已创建并集成到 ChatPanel/MessageBubble/InputArea/App.tsx，TS编译0错误，待提交 |
-| **知识管理增强** | 🔧 未发布 | 笔记/闪卡/图谱/PPT/导出导入/学习路径，10张新DB表，待提交 |
-| **对标分析文档** | 📝 最新 | wecode-ref全局对标 + 笔记本功能差距分析（6份新文档） |
+| **推理强度分档 + UI/UX 优化** | ✅ 已发布 | v0.90.0 发布，推理强度低/中/高/超高 + 统一按钮 + 新手引导 + 梦幻皮肤磨砂玻璃 |
+| **P0-P4 全量功能集成** | ✅ 已发布 | v0.90.0 发布（commit 7435919），40+ 新组件已集成到 ChatPanel/MessageBubble/InputArea/App.tsx |
+| **知识管理增强** | ✅ 已发布 | v0.90.0 发布，笔记/闪卡/图谱/PPT/导出导入/学习路径，10张新DB表 |
+| **对标分析文档** | ✅ 已发布 | v0.90.0 发布，wecode-ref全局对标 + 笔记本功能差距分析（6份新文档） |
+| **PTY 交互式终端** | ✅ 已发布 | v0.91.0 发布，portable-pty + 多会话 Tab + Ctrl+Shift+C 中断 + 停止按钮 |
+| **文件变更追踪 Artifact** | ✅ 已发布 | v0.91.0 发布，turn_file_changes 表 + FileChangeTracker + git diff + SHA-256 + 回滚 |
+| **文件树 Git 状态** | ✅ 已发布 | v0.91.0 发布，FileExplorer 解析 git status + 状态徽章 + 自动刷新 |
+| **自动 Git Commit** | ✅ 已发布 | v0.91.0 发布，git-commit-service + finalize 后自动触发 + GitInfoPanel 自动刷新 |
+| **Agent Profile 持久化** | ✅ 已发布 | v0.91.0 发布，agent_profiles 表 + SubagentTask.profile_id + spawner 注入 |
+| **Needs You 精确提问** | ✅ 已发布 | v0.91.0 发布，needs-you-queue + NeedsYouPanel + needs_you_pending 表 |
+| **异步 Agent 间通信** | ✅ 已发布 | v0.91.0 发布，agent-message-queue + agent_messages 表 + 迭代边界消费 |
+| **浏览器预览面板** | ✅ 已发布 | v0.91.0 发布，create_browser_window + WebviewWindow |
+| **Overview 可观测性** | ✅ 已发布 | v0.91.0 发布，Workbench 三视图（Status/Capacity/Activity） |
+| **Transcript 缓存** | ✅ 已发布 | v0.91.0 发布，transcript-cache.ts SHA-256 键缓存 10min TTL |
+| **v0.91.0 集成与测试项** | ✅ 已完成 | 自动Commit开关UI（GitEnvSettings）/ AgentProfile管理UI（SettingsPanel Advanced tab）/ DiffViewer已集成 / PTY跨平台shell检测（$SHELL fallback）/ NeedsYouPanel已集成 / TranscriptCache统计面板 / FileChangeTracker大patch预检查 |
+| **P0-P4 组件集成项** | ✅ 已完成 | GenerateModeSelector/ResolutionSelector已渲染（InputArea多模态面板）/ SourceSelector已集成 / QuickAccessCards已集成 / CorrectionResultPanel已集成 / ClarificationForm已集成 / PipelineNextStepDialog已集成 / SkillAutocomplete由SlashCommandMenu覆盖 / note-operations已注册（tools.ts L922） |
 | **Phase E: Work 模式拆分** | ⏳ 远期 | Codex/Work 双模式切换（E1-E7） |
 | **MSI 中文向导** | ⏳ | WiX 多语言配置（zh-CN + en-US） |
 | **更多 Provider 测试** | ⏳ | 目前主要测试 DeepSeek + MiMo |
 | **对话搜索完善** | ⏳ | 当前 SearchDialog 仅搜索项目名，未搜索对话内容 |
 | **Vision API 图片理解** | ⏳ | 将粘贴的图片数据传给 vision 模型 |
 
-### 6.4 关键技术决策
+### 6.5 关键技术决策
 
 #### A. 架构与基础设施
 

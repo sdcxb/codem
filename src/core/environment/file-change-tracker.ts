@@ -158,22 +158,47 @@ export class FileChangeTracker {
 
       const changedFiles = this.parseNameStatus(nameStatus);
 
-      // Generate binary patch
+      // Pre-check: get diff stat to estimate patch size before running full binary diff
+      // This avoids running a potentially huge git diff --binary for very large changes
       let patch = "";
       let patchTruncated = false;
       try {
-        const rawPatch = await runGit(this.workspace, [
+        // Get stat first to estimate size
+        const statOutput = await runGit(this.workspace, [
           "diff",
-          "--binary",
-          "--find-renames",
+          "--stat",
           this.beforeTree,
           afterTree,
         ]);
-        if (rawPatch.length > MAX_PATCH_BYTES) {
-          patch = rawPatch.slice(0, MAX_PATCH_BYTES);
+        // Estimate: if stat output mentions many files or large line counts, skip full patch
+        const statLines = statOutput.split("\n").filter(Boolean);
+        const summaryLine = statLines[statLines.length - 1] || "";
+        // Extract total insertions/deletions from summary like "10 files changed, 500 insertions(+), 200 deletions(-)"
+        const insertionMatch = summaryLine.match(/(\d+) insertion/);
+        const totalChanges = insertionMatch ? parseInt(insertionMatch[1]) : 0;
+        const fileCount = statLines.length > 1 ? statLines.length - 1 : 0;
+
+        // If estimated patch would be very large (> 2MB), skip full patch entirely
+        // Individual file diffs can still be viewed on demand via FileChangesList
+        const ESTIMATED_LARGE_THRESHOLD = 200_000; // ~200K line changes → likely > 2MB patch
+        if (totalChanges > ESTIMATED_LARGE_THRESHOLD || fileCount > 100) {
+          patch = `[Large diff: ${fileCount} files, ${totalChanges} line changes — use individual file diff viewer]`;
           patchTruncated = true;
         } else {
-          patch = rawPatch;
+          // Get the full binary patch
+          const rawPatch = await runGit(this.workspace, [
+            "diff",
+            "--binary",
+            "--find-renames",
+            this.beforeTree,
+            afterTree,
+          ]);
+          if (rawPatch.length > MAX_PATCH_BYTES) {
+            patch = rawPatch.slice(0, MAX_PATCH_BYTES);
+            patchTruncated = true;
+          } else {
+            patch = rawPatch;
+          }
         }
       } catch {
         // Binary diff may fail for some files — skip patch

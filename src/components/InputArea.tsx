@@ -582,6 +582,20 @@ const handleSelectProject = (projectId: string) => {
           </div>
         )}
 
+        {/* P3: Multimodal generate mode panel */}
+        {showMultimodal && generateMode !== "text" && (
+          <div style={{ position: "absolute", bottom: "100%", left: 0, right: 0, zIndex: 100, padding: "8px 12px", background: "var(--bg-secondary)", border: "1px solid var(--border-primary)", borderRadius: 6, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+            <GenerateModeSelector mode={generateMode} onModeChange={setGenerateMode} />
+            <ResolutionSelector resolution={resolution} onResolutionChange={setResolution} />
+            <button
+              onClick={() => { setShowMultimodal(false); setGenerateMode("text"); }}
+              style={{ marginLeft: "auto", padding: "4px 8px", fontSize: 11, cursor: "pointer", background: "transparent", border: "1px solid var(--border-primary)", borderRadius: 4 }}
+            >
+              ✕
+            </button>
+          </div>
+        )}
+
         {/* P4: Context badges showing active attachments and skills */}
         <ContextBadgeList badges={contextBadges} />
 

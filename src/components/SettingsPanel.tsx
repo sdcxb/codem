@@ -13,6 +13,8 @@ import { MultimodalPanel } from "./MultimodalPanel";
 import { getNotebookConfig } from "../core/knowledge";
 import { SkinSelector } from "./SkinSelector";
 import { GitConfigSection, EnvironmentConfigSection } from "./GitEnvSettings";
+import { AgentProfileStorage, type AgentProfile } from "../core/storage/agent-profile-storage";
+import { TranscriptCache } from "../core/storage/transcript-cache";
 import { getWorktreeSettings, setWorktreeSettings, type WorktreeInfo } from "../core/environment";
 import { useProjectStore } from "../core/store";
 import { getAutomationConfig, setAutomationConfig, refreshAutomationEngines, stopAutomationEngines, type AutomationTrigger, type TriggerType } from "../core/automation/automation-manager";
@@ -255,7 +257,7 @@ export function SettingsPanel({ onClose, onSessionRecovery, onUsageStats, initia
 const [showModelProfiles, setShowModelProfiles] = useState(false);
 const [showMultimodal, setShowMultimodal] = useState(false);
 const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security" | "git" | "environment" | "worktree" | "knowledge" | "automation" | "multimodal" | "pet" | "tools" | "advanced" | "help">((initialTab as any) || "general");
-  const [advancedSubTab, setAdvancedSubTab] = useState<"agents" | "heartbeat" | "retry" | "prompt" | "settings" | "recovery" | "correction">("agents");
+  const [advancedSubTab, setAdvancedSubTab] = useState<"agents" | "heartbeat" | "retry" | "prompt" | "settings" | "recovery" | "correction" | "profiles" | "transcript">("agents");
   const [showPetMarket, setShowPetMarket] = useState(false);
   const runLoginTest = async () => {
     const lines: string[] = [];
@@ -1080,6 +1082,8 @@ marginTop: 4,
     { id: "prompt", label: lang === "zh" ? "📝 提示词" : "📝 Prompt" },
     { id: "settings", label: lang === "zh" ? "🏗️ 分层设置" : "🏗️ Layered" },
     { id: "correction", label: lang === "zh" ? "🔍 纠偏模型" : "🔍 Correction" },
+    { id: "profiles", label: lang === "zh" ? "👤 Agent Profile" : "👤 Profiles" },
+    { id: "transcript", label: lang === "zh" ? "💬 缓存统计" : "💬 Cache" },
     { id: "recovery", label: lang === "zh" ? "🔄 恢复" : "🔄 Recovery" },
   ].map(tab => (
     <button
@@ -1112,6 +1116,8 @@ marginTop: 4,
   </div>
 )}
 {advancedSubTab === "recovery" && <RecoveryPanel />}
+{advancedSubTab === "profiles" && <AgentProfileSection lang={lang} />}
+{advancedSubTab === "transcript" && <TranscriptCacheStats lang={lang} />}
 </>
 )}
 {activeTab === "help" && (
@@ -2301,6 +2307,150 @@ function AutomationSettingsSection({ lang }: { lang: ReturnType<typeof useLang> 
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ========== Agent Profile Management Section ==========
+
+function AgentProfileSection({ lang }: { lang: Language }) {
+  const zh = lang === "zh";
+  const [profiles, setProfiles] = useState<AgentProfile[]>([]);
+  const [editing, setEditing] = useState<Partial<AgentProfile> | null>(null);
+
+  const refresh = () => setProfiles(AgentProfileStorage.listAll());
+  useEffect(() => { refresh(); }, []);
+
+  const handleSave = () => {
+    if (!editing || !editing.identity || !editing.domain) return;
+    if (editing.id) {
+      AgentProfileStorage.update(editing.id, {
+        identity: editing.identity,
+        domain: editing.domain,
+        scope: editing.scope || "",
+        skills: editing.skills,
+        experience_summary: editing.experience_summary,
+      });
+    } else {
+      AgentProfileStorage.create({
+        id: `profile-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        identity: editing.identity,
+        domain: editing.domain,
+        scope: editing.scope || "",
+        skills: editing.skills,
+        experience_summary: editing.experience_summary,
+      });
+    }
+    setEditing(null);
+    refresh();
+  };
+
+  const handleDelete = (id: string) => {
+    if (confirm(zh ? "确认删除此 Profile？" : "Delete this profile?")) {
+      AgentProfileStorage.delete(id);
+      refresh();
+    }
+  };
+
+  return (
+    <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>{zh ? "👤 Agent Profile 管理" : "👤 Agent Profile Management"}</h3>
+        <button
+          onClick={() => setEditing({ identity: "", domain: "", scope: "" })}
+          style={{ padding: "4px 12px", fontSize: 12, cursor: "pointer", background: "var(--accent)", color: "#fff", border: "none", borderRadius: 4 }}
+        >+ {zh ? "新建" : "New"}</button>
+      </div>
+      <p style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.5 }}>
+        {zh ? "Profile 是子智能体的持久化身份/领域/范围记录，生成子智能体时自动注入到 system prompt。" : "Profiles are persistent identity/domain/scope records for subagents, auto-injected into system prompt on spawn."}
+      </p>
+
+      {editing && (
+        <div style={{ padding: 12, borderRadius: 6, background: "var(--bg-tertiary)", border: "1px solid var(--border-primary)", display: "flex", flexDirection: "column", gap: 8 }}>
+          <input value={editing.identity || ""} onChange={(e) => setEditing({ ...editing, identity: e.target.value })} placeholder={zh ? "身份标识（如：前端专家）" : "Identity (e.g.: Frontend Expert)"} style={{ fontSize: 12, padding: "4px 8px" }} />
+          <input value={editing.domain || ""} onChange={(e) => setEditing({ ...editing, domain: e.target.value })} placeholder={zh ? "领域（如：React/TypeScript）" : "Domain (e.g.: React/TypeScript)"} style={{ fontSize: 12, padding: "4px 8px" }} />
+          <input value={editing.scope || ""} onChange={(e) => setEditing({ ...editing, scope: e.target.value })} placeholder={zh ? "范围（如：组件开发/性能优化）" : "Scope (e.g.: Components/Performance)"} style={{ fontSize: 12, padding: "4px 8px" }} />
+          <textarea value={editing.experience_summary || ""} onChange={(e) => setEditing({ ...editing, experience_summary: e.target.value })} placeholder={zh ? "经验摘要（可选）" : "Experience summary (optional)"} rows={2} style={{ fontSize: 12, padding: "4px 8px", resize: "vertical" }} />
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={handleSave} style={{ padding: "4px 12px", fontSize: 12, cursor: "pointer", background: "var(--accent)", color: "#fff", border: "none", borderRadius: 4 }}>{zh ? "保存" : "Save"}</button>
+            <button onClick={() => setEditing(null)} style={{ padding: "4px 12px", fontSize: 12, cursor: "pointer", background: "none", border: "1px solid var(--border-primary)", borderRadius: 4 }}>{zh ? "取消" : "Cancel"}</button>
+          </div>
+        </div>
+      )}
+
+      {profiles.length === 0 && !editing && (
+        <div style={{ fontSize: 12, color: "var(--text-muted)", textAlign: "center", padding: 16 }}>{zh ? "暂无 Agent Profile" : "No agent profiles yet"}</div>
+      )}
+
+      {profiles.map((p) => (
+        <div key={p.id} style={{ padding: 10, borderRadius: 6, background: "var(--bg-tertiary)", border: "1px solid var(--border-primary)", display: "flex", flexDirection: "column", gap: 4 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span style={{ fontSize: 13, fontWeight: 500 }}>{p.identity}</span>
+            <div style={{ display: "flex", gap: 4 }}>
+              <button onClick={() => setEditing(p)} style={{ fontSize: 11, padding: "2px 8px", cursor: "pointer", background: "transparent", border: "1px solid var(--border-primary)", borderRadius: 3 }}>{zh ? "编辑" : "Edit"}</button>
+              <button onClick={() => handleDelete(p.id)} style={{ fontSize: 11, padding: "2px 8px", cursor: "pointer", background: "transparent", border: "1px solid #e55", borderRadius: 3, color: "#e55" }}>{zh ? "删除" : "Delete"}</button>
+            </div>
+          </div>
+          <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{p.domain} · {p.scope}</div>
+          {p.experience_summary && <div style={{ fontSize: 11, color: "var(--text-secondary)", lineHeight: 1.4 }}>{p.experience_summary}</div>}
+          {p.skills && p.skills.length > 0 && (
+            <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+              {p.skills.map((s) => <span key={s} style={{ fontSize: 10, padding: "1px 6px", background: "var(--bg-secondary)", borderRadius: 3, border: "1px solid var(--border-primary)" }}>{s}</span>)}
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ========== TranscriptCache Stats Section ==========
+
+function TranscriptCacheStats({ lang }: { lang: Language }) {
+  const zh = lang === "zh";
+  const [stats, setStats] = useState({ size: 0, maxSize: 100 });
+  const [autoRefresh, setAutoRefresh] = useState(true);
+
+  useEffect(() => {
+    if (!autoRefresh) return;
+    const interval = setInterval(() => setStats(TranscriptCache.stats()), 2000);
+    return () => clearInterval(interval);
+  }, [autoRefresh]);
+
+  const pct = stats.maxSize > 0 ? Math.round((stats.size / stats.maxSize) * 100) : 0;
+
+  return (
+    <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
+      <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>{zh ? "💬 Transcript 缓存统计" : "💬 Transcript Cache Stats"}</h3>
+      <p style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.5 }}>
+        {zh ? "缓存 LLM 请求/响应对以减少 token 消耗。10 分钟 TTL，最多 100 条。上下文压缩时自动清空。" : "Caches LLM request/response pairs to reduce token waste. 10min TTL, max 100 entries. Auto-cleared on context compaction."}
+      </p>
+
+      <div style={{ padding: 16, borderRadius: 6, background: "var(--bg-tertiary)", border: "1px solid var(--border-primary)" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+          <span style={{ fontSize: 13, fontWeight: 500 }}>{zh ? "缓存占用" : "Cache Usage"}</span>
+          <span style={{ fontSize: 12, color: "var(--text-muted)" }}>{stats.size} / {stats.maxSize}</span>
+        </div>
+        <div style={{ height: 8, borderRadius: 4, background: "var(--bg-secondary)", overflow: "hidden" }}>
+          <div style={{ height: "100%", width: `${pct}%`, background: pct > 80 ? "#e55" : "var(--accent)", borderRadius: 4, transition: "width 0.3s" }} />
+        </div>
+        <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>{pct}% {zh ? "已使用" : "used"}</div>
+      </div>
+
+      <div style={{ display: "flex", gap: 8 }}>
+        <button
+          onClick={() => { TranscriptCache.clear(); setStats(TranscriptCache.stats()); }}
+          style={{ padding: "6px 12px", fontSize: 12, cursor: "pointer", background: "var(--bg-tertiary)", border: "1px solid var(--border-primary)", borderRadius: 4 }}
+        >{zh ? "🗑️ 清空缓存" : "🗑️ Clear Cache"}</button>
+        <button
+          onClick={() => setStats(TranscriptCache.stats())}
+          style={{ padding: "6px 12px", fontSize: 12, cursor: "pointer", background: "var(--bg-tertiary)", border: "1px solid var(--border-primary)", borderRadius: 4 }}
+        >{zh ? "🔄 刷新" : "🔄 Refresh"}</button>
+        <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, cursor: "pointer" }}>
+          <input type="checkbox" checked={autoRefresh} onChange={(e) => setAutoRefresh(e.target.checked)} />
+          {zh ? "自动刷新" : "Auto refresh"}
+        </label>
+      </div>
     </div>
   );
 }

@@ -3,6 +3,7 @@ import { useLang } from "../core/i18n/lang";
 import { getSettingJSON, setSettingJSON } from "../core/storage/settings";
 import type { GitConfig, EnvironmentConfig, CustomOperation } from "../core/settings/settings";
 import { runCustomOperation } from "../core/environment";
+import { isAutoCommitEnabled, setAutoCommitEnabled } from "../core/environment/git-commit-service";
 
 // ========== G Series: Git Configuration Section ==========
 
@@ -11,10 +12,12 @@ export function GitConfigSection() {
   const zh = lang === "zh";
   const [gitConfig, setGitConfig] = useState<GitConfig>({});
   const [saved, setSaved] = useState(false);
+  const [autoCommit, setAutoCommit] = useState(false);
 
   useEffect(() => {
     const stored = getSettingJSON<GitConfig | null>("codem-git-config", null);
     if (stored) setGitConfig(stored);
+    setAutoCommit(isAutoCommitEnabled());
   }, []);
 
   const handleSave = () => {
@@ -90,6 +93,27 @@ export function GitConfigSection() {
         <label htmlFor="git-draft-pr" style={{ fontSize: 12, cursor: "pointer" }}>
           {zh ? "默认创建草稿 PR" : "Default to draft PR"}
         </label>
+      </div>
+
+      {/* Auto Commit */}
+      <div style={{ marginBottom: 12, padding: "10px 12px", borderRadius: 6, background: "var(--bg-tertiary)", border: "1px solid var(--border-primary)" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div>
+            <label style={{ fontSize: 13, fontWeight: 500, cursor: "pointer" }} htmlFor="git-auto-commit">
+              {zh ? "🔄 自动 Commit" : "🔄 Auto Commit"}
+            </label>
+            <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>
+              {zh ? "Agent 每轮修改后自动 git add + commit（可通过 LLM 生成提交信息）" : "Auto git add + commit after each agent turn (LLM-generated message)"}
+            </div>
+          </div>
+          <input
+            type="checkbox"
+            id="git-auto-commit"
+            checked={autoCommit}
+            onChange={(e) => { setAutoCommit(e.target.checked); setAutoCommitEnabled(e.target.checked); }}
+            style={{ width: 18, height: 18, cursor: "pointer" }}
+          />
+        </div>
       </div>
 
       {/* GitHub Token */}

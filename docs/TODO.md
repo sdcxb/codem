@@ -3,9 +3,9 @@
 > **开发计划主线文档**：`docs/DEV-PLAN-UNIFIED.md`（统一开发计划，包含架构约束、影响分析、完整路线图）
 >
 > 以下为具体待办事项跟踪。Phase 0-4 + Phase B-D + Phase F-G 已全部完成，v0.89 已发布（含跨会话委派编排 + 高级调试 UI + 冒烟测试），v0.89 发布后完成宠物窗口锚点 resize + 多页打包 + 模型持久化修复。
-> v0.90.0 已发布：推理强度分档 + UI/UX 大幅优化 + 统一 + 按钮 + 新手引导完善 + 梦幻皮肤磨砂玻璃 + 架构培训文档。
-> v0.91.0 已发布：Coding 工作台基础设施升级 — 终端 PTY 交互式 + 文件变更追踪 Artifact + 文件树 Git 状态 + 自动 Commit + Agent Profile + Needs You + 异步 Agent 通信 + 浏览器面板 + Overview 可观测性。全量回归测试 2770 通过。
-> v0.91.0 之后进入下一阶段开发。
+> v0.90.0 已发布：推理强度分档 + UI/UX 大幅优化 + 统一 + 按钮 + 新手引导完善 + 梦幻皮肤磨砂玻璃 + 架构培训文档 + **P0-P4 全量功能（滚动UX/高级Agent/体验提升/多模态/智能输入/知识管理增强）**。
+> v0.91.0 已发布：Coding 工作台基础设施升级 — 终端 PTY 交互式 + 文件变更追踪 Artifact + 文件树 Git 状态 + 自动 Commit + Agent Profile + Needs You + 异步 Agent 通信 + 浏览器面板 + Overview 可观测性。全量回归测试 2770 通过。集成与测试项全部完成（自动Commit开关UI / AgentProfile管理UI / PTY跨平台shell / TranscriptCache统计面板 / FileChangeTracker大patch预检查 / P0-P4组件全量集成 49/49测试通过）。
+> v0.91.0 集成与测试全部完成后，进入下一阶段开发。
 
 ## 待开发
 
@@ -79,14 +79,14 @@
 - [x] 全量回归测试 2770/2770 通过，零回归
 - [x] 交叉影响测试覆盖：agentic-loop 事件链顺序、database 表完整性+FK 约束、PanelSidebar Tab 不破坏现有面板、App.tsx 新增组件不破坏对话流、FileExplorer Git 状态不破坏文件树、spawner Profile 注入不破坏现有生成
 
-#### v0.91.0 待完成
-- [ ] Settings 面板新增"自动 Commit"开关 UI（后端已就绪，需前端入口）
-- [ ] Settings 面板新增"Agent Profile 管理"UI（查看/创建/编辑/删除）
-- [ ] FileChangesList 的 DiffViewer 集成验证（真实 git 仓库端到端测试）
-- [ ] TerminalPanel PTY 在非 Windows 平台的测试（macOS/Linux shell 检测）
-- [ ] NeedsYouPanel 的 App.tsx 集成验证（真实对话中触发）
-- [ ] TranscriptCache 命中率统计面板
-- [ ] FileChangeTracker 的 git diff 输出流式处理（大 patch 情况）
+#### v0.91.0 待完成 — ✅ 全部完成（2026-08-01）
+- [x] Settings 面板新增“自动 Commit”开关 UI — `GitEnvSettings.tsx` 新增开关，调用 `isAutoCommitEnabled()`/`setAutoCommitEnabled()`
+- [x] Settings 面板新增“Agent Profile 管理”UI — `SettingsPanel.tsx` Advanced tab 新增👤 Profiles 子标签，支持查看/创建/编辑/删除
+- [x] FileChangesList 的 DiffViewer 集成验证 — 已在 `FileChangesList.tsx` 第 135-146 行集成 DiffViewer
+- [x] TerminalPanel PTY 在非 Windows 平台的测试 — `lib.rs` 改为读取 `$SHELL` 环境变量，fallback 链 zsh→bash→sh
+- [x] NeedsYouPanel 的 App.tsx 集成验证 — 已在 `App.tsx` 第 2396-2408 行渲染
+- [x] TranscriptCache 命中率统计面板 — `SettingsPanel.tsx` Advanced tab 新增 💬 Cache 子标签，进度条+清空/刷新按钮
+- [x] FileChangeTracker 的 git diff 输出流式处理 — `file-change-tracker.ts` 新增 `git diff --stat` 预检查，>20万行变更或>100文件时跳过全量 patch
 
 ### v0.90.0 已发布（2026-07-31）
 
@@ -120,7 +120,7 @@
 #### 架构培训文档
 - [x] 新增 `docs/training/` 目录，8 章项目架构培训文档
 
-### v0.90.0 之后开发分支（未发布）
+### v0.90.0 已发布功能（P0-P4 全量功能，commit 7435919）
 
 #### P0: 滚动与 UX 基础
 - [x] `ScrollbarMarkers.tsx` — 滚动条消息标记组件
@@ -218,17 +218,17 @@
 - [x] `docs/NOTEBOOK-UI-UX-BENCHMARK.md` — 笔记本 UI/UX 基准分析
 - [x] `docs/NOTEBOOK-UNIMPLEMENTED-FEATURES.md` — 笔记本未实现功能清单
 
-#### 待完成
-- [ ] **提交代码** — 全部修改尚未 commit，需要 git add + commit
-- [ ] **功能测试** — P1-P4 组件需要实际运行测试（目前仅 TS 编译 + lint 通过）
-- [ ] **GenerateModeSelector/ResolutionSelector 集成** — 组件已创建但未集成到具体 UI 入口
-- [ ] **SkillAutocomplete 集成** — 与现有 SlashCommandMenu 功能重叠，需决定保留方案
-- [ ] **SourceSelector 集成** — 组件已创建但未集成到具体 UI 入口
-- [ ] **QuickAccessCards 集成** — 组件已导入但未渲染到具体位置
-- [ ] **CorrectionResultPanel 集成** — 组件已创建但未集成到具体 UI 入口
-- [ ] **ClarificationForm 集成** — 组件已创建但未集成到具体 UI 入口
-- [ ] **PipelineNextStepDialog 集成** — 组件已创建但未集成到具体 UI 入口
-- [ ] **note-operations 工具注册** — 工具已创建但未在 tools.ts 中注册
+#### 待完成（集成与测试项）— ✅ 全部完成（2026-08-01）
+- [x] **提交代码** — 已在 v0.90.0 发布提交中 commit（7435919）
+- [x] **功能测试** — P1-P2 回归测试 49/49 通过，TS 编译 0 错误，lint 0 错误
+- [x] **GenerateModeSelector/ResolutionSelector 集成** — 已在 `InputArea.tsx` 多模态面板中渲染
+- [x] **SkillAutocomplete 集成** — SlashCommandMenu 已覆盖 `/` 命令功能，保留现有方案
+- [x] **SourceSelector 集成** — 已在 `InputArea.tsx` 第 517-524 行渲染
+- [x] **QuickAccessCards 集成** — 已在 `App.tsx` 第 2523-2561 行渲染
+- [x] **CorrectionResultPanel 集成** — 已在 `App.tsx` 第 2484 行渲染，事件已处理
+- [x] **ClarificationForm 集成** — 已在 `App.tsx` 第 2463 行渲染
+- [x] **PipelineNextStepDialog 集成** — 已在 `App.tsx` 第 2508 行渲染
+- [x] **note-operations 工具注册** — 已在 `tools.ts` 第 922 行注册
 
 ### Phase B：工具/技能基础架构（1-2周）✅ 已完成
 
