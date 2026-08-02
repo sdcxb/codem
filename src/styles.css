@@ -9335,7 +9335,7 @@ html.pet-window-mode #root {
 .scroll-to-bottom-wrapper {
   position: absolute;
   bottom: 80px;
-  left: 24px;
+  right: 24px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -9344,8 +9344,8 @@ html.pet-window-mode #root {
   pointer-events: auto;
 }
 .scroll-to-bottom-btn {
-  width: 36px;
-  height: 36px;
+  width: 28px;
+  height: 28px;
   display: flex;
   align-items: center;
   justify-content: center;
