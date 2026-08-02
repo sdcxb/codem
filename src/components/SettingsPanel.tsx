@@ -1157,7 +1157,7 @@ marginTop: 4,
     <div className="setting-group">
       <label style={{ fontSize: 14, fontWeight: 500 }}>{lang === "zh" ? "关于" : "About"}</label>
       <div style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.6 }}>
-        Codem (mimo-gui) v0.90.0
+        Codem (mimo-gui) v0.91.0
         <br />
         {lang === "zh" ? "AI 编程助手 — 本地优先，隐私安全" : "AI Coding Assistant — Local-first, Privacy-focused"}
       </div>
@@ -1174,7 +1174,7 @@ marginTop: 4,
             const { check } = await import("@tauri-apps/plugin-updater");
             const { relaunch } = await import("@tauri-apps/plugin-process");
             const update = await check();
-            if (update?.available) {
+            if (update && update.available) {
               btn.textContent = lang === "zh" ? `发现新版本 ${update.version}，下载中...` : `New version ${update.version} found, downloading...`;
               await update.downloadAndInstall();
               btn.textContent = lang === "zh" ? "安装完成，即将重启..." : "Installed, relaunching...";
@@ -1184,7 +1184,11 @@ marginTop: 4,
               setTimeout(() => { btn.disabled = false; btn.textContent = lang === "zh" ? "检查更新" : "Check for Updates"; }, 2000);
             }
           } catch (err: any) {
-            btn.textContent = lang === "zh" ? `更新失败: ${err.message}` : `Update failed: ${err.message}`;
+            const errMsg = typeof err === "string" ? err
+              : err?.message ? err.message
+              : err?.code ? `Code: ${err.code}`
+              : lang === "zh" ? "未知错误（请检查网络连接或稍后重试）" : "Unknown error (check network or retry)";
+            btn.textContent = lang === "zh" ? `更新失败: ${errMsg}` : `Update failed: ${errMsg}`;
             setTimeout(() => { btn.disabled = false; btn.textContent = lang === "zh" ? "检查更新" : "Check for Updates"; }, 3000);
           }
         }}

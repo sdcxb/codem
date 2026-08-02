@@ -32,8 +32,6 @@ export function PanelSidebar({ open, onClose }: RightSidebarProps) {
         bottom: "var(--chat-body-bottom, 140px)",
         width: 360,
         zIndex: 150,
-        background: "var(--bg-secondary)",
-        borderLeft: "1px solid var(--border-color)",
         display: "flex",
         flexDirection: "column",
         boxShadow: "-4px 0 16px rgba(0,0,0,0.15)",

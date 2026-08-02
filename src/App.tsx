@@ -141,11 +141,18 @@ const [showDelegationPanel, setShowDelegationPanel] = useState(false);
   const [appIdentity, setAppIdentity] = useState<AppIdentity | null>(null);
   const [showBootstrap, setShowBootstrap] = useState(false);
   const [showCloseConfirm, setShowCloseConfirm] = useState(false);
-  // P2: Onboarding tour — shown on first launch
-const [showOnboarding, setShowOnboarding] = useState(() => {
-try { return !getSetting("onboarding-completed"); } catch { return false; }
-});
-const [showOnboardingReplay, setShowOnboardingReplay] = useState(false);
+  // P2: Onboarding tour — shown on first launch (after DB is ready)
+  const [showOnboarding, setShowOnboarding] = useState(false);
+  const [showOnboardingReplay, setShowOnboardingReplay] = useState(false);
+  // Check onboarding flag after DB is initialized (dbReady transitions from false to true)
+  useEffect(() => {
+    if (dbReady) {
+      try {
+        const completed = getSetting("onboarding-completed");
+        if (!completed) setShowOnboarding(true);
+      } catch { /* DB not ready yet — will retry on next render */ }
+    }
+  }, [dbReady]);
   // Initialize from saved settings synchronously to avoid UI flash showing wrong model list.
   // getMode() reads from SQLite synchronously; if DB not ready yet, falls back to "api".
   const _initialSettings = (() => {
