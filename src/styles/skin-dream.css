@@ -539,7 +539,8 @@
 [data-skin="dream"] .skill-picker-popup,
 [data-skin="dream"] .slash-command-menu,
 [data-skin="dream"] .model-picker,
-[data-skin="dream"] .scroll-to-bottom-btn {
+[data-skin="dream"] .scroll-to-bottom-btn,
+[data-skin="dream"] .sidebar-project-more-menu {
   background: var(--dream-panel-bg) !important;
   backdrop-filter: blur(20px) saturate(1.5) !important;
   -webkit-backdrop-filter: blur(20px) saturate(1.5) !important;
@@ -552,7 +553,8 @@
 [data-skin="dream"][data-theme="dark"] .skill-picker-popup,
 [data-skin="dream"][data-theme="dark"] .slash-command-menu,
 [data-skin="dream"][data-theme="dark"] .model-picker,
-[data-skin="dream"][data-theme="dark"] .scroll-to-bottom-btn {
+[data-skin="dream"][data-theme="dark"] .scroll-to-bottom-btn,
+[data-skin="dream"][data-theme="dark"] .sidebar-project-more-menu {
   background: var(--dream-panel-bg) !important;
   color: var(--dream-text-main, #e0d8e0) !important;
 }
@@ -561,7 +563,8 @@
 [data-skin="dream"] .floating-overlay-panel *,
 [data-skin="dream"] .skill-picker-popup *,
 [data-skin="dream"] .slash-command-menu *,
-[data-skin="dream"] .model-picker * {
+[data-skin="dream"] .model-picker *,
+[data-skin="dream"] .sidebar-project-more-menu * {
   color: inherit;
 }
 
