@@ -15,10 +15,10 @@
 
 /* 梦幻皮肤根容�?- 透明，让背景层可�?*/
 [data-skin="dream"] {
-  --dream-panel-bg: rgba(255, 255, 255, 0.97);
+  --dream-panel-bg: rgba(255, 255, 255, 0.78);
 }
 [data-skin="dream"][data-theme="dark"] {
-  --dream-panel-bg: rgba(30, 30, 46, 0.97);
+  --dream-panel-bg: rgba(30, 30, 46, 0.82);
 }
 [data-skin="dream"] .app {
   position: relative;
