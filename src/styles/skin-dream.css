@@ -18,6 +18,11 @@
   position: relative;
   background: transparent !important;
   color: var(--dream-text-main, #6c474d);
+  --dream-panel-bg: rgba(255, 255, 255, 0.97);
+}
+
+[data-skin="dream"][data-theme="dark"] .app {
+  --dream-panel-bg: rgba(30, 30, 46, 0.97);
 }
 
 /* Dream 标题�?- 透明，配合背景图 */

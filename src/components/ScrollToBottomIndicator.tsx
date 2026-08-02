@@ -42,6 +42,11 @@ export const ScrollToBottomIndicator = memo(function ScrollToBottomIndicator({
         }`}
         onClick={handleClick}
         aria-label={S.scroll.scrollToBottom[lang]}
+        style={{
+          background: "var(--dream-panel-bg, var(--bg-secondary))",
+          backdropFilter: "blur(20px) saturate(1.5)",
+          WebkitBackdropFilter: "blur(20px) saturate(1.5)",
+        }}
       >
         <span className="scroll-arrow">↓</span>
         {hasUnreadMessages && (
