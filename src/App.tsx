@@ -2282,7 +2282,11 @@ onClose={() => setCitationViewer(null)}
       )}
 
       {fileExplorerProjectId && currentProject && fileExplorerProjectId === currentProject.id && (
-        <div className="floating-explorer">
+        <div className="floating-explorer" style={{
+          background: 'var(--dream-panel-bg, var(--bg-secondary))',
+          backdropFilter: 'blur(20px) saturate(1.5)',
+          WebkitBackdropFilter: 'blur(20px) saturate(1.5)',
+        }}>
           <div className="floating-explorer-header">
             <span>File Explorer</span>
             <button className="floating-explorer-close" onClick={() => setFileExplorerRefreshKey((k) => k + 1)} title="Refresh">🔄</button>

@@ -526,6 +526,12 @@ const menuCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
                             bottom: menuPos.bottom,
                             left: menuPos.left,
                             zIndex: 10000,
+                            background: 'var(--dream-panel-bg, rgba(255,255,255,0.85))',
+                            backdropFilter: 'blur(20px) saturate(1.5)',
+                            WebkitBackdropFilter: 'blur(20px) saturate(1.5)',
+                            border: '1px solid var(--dream-border-color, rgba(232,140,154,0.3))',
+                            borderRadius: '8px',
+                            boxShadow: '0 4px 16px rgba(0,0,0,0.15)',
                           }}
                           onMouseEnter={() => {
                             if (menuCloseTimer.current) {
