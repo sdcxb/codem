@@ -694,8 +694,7 @@ canEdit={!isSessionStreaming}
         <div className="floating-overlay-panel" style={{
           position: 'fixed', top: 'var(--chat-body-top, 48px)', right: 0, bottom: 'var(--chat-body-bottom, 140px)', width: 380,
           zIndex: 200, overflowY: 'auto',
-          background: 'var(--bg-secondary)', border: '1px solid var(--border-color)',
-          borderRadius: 0, boxShadow: '0 4px 16px rgba(0,0,0,0.2)',
+          borderRadius: 0,
         }}>
           {selectedAgent ? (
             <AgentDetail task={selectedAgent} onBack={handleBackToList} />
@@ -714,8 +713,7 @@ canEdit={!isSessionStreaming}
         <div className="floating-overlay-panel" style={{
           position: 'fixed', top: 'var(--chat-body-top, 48px)', right: 0, bottom: 'var(--chat-body-bottom, 140px)', width: 380,
           zIndex: 200, overflowY: 'auto',
-          background: 'var(--bg-secondary)', border: '1px solid var(--border-color)',
-          borderRadius: 0, boxShadow: '0 4px 16px rgba(0,0,0,0.2)',
+          borderRadius: 0,
         }}>
           <SnapshotPanel
             cwd={currentProject?.path || ""}
@@ -729,8 +727,7 @@ canEdit={!isSessionStreaming}
         <div className="floating-overlay-panel" style={{
           position: 'fixed', top: 'var(--chat-body-top, 48px)', right: 0, bottom: 'var(--chat-body-bottom, 140px)', width: 380,
           zIndex: 200, overflowY: 'auto',
-          background: 'var(--bg-secondary)', border: '1px solid var(--border-color)',
-          borderRadius: 0, boxShadow: '0 4px 16px rgba(0,0,0,0.2)',
+          borderRadius: 0,
         }}>
           <ContextMonitor sessionId={currentSession?.id || ""} visible={showContextMonitor} />
         </div>

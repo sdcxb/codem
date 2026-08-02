@@ -1184,12 +1184,30 @@ marginTop: 4,
               setTimeout(() => { btn.disabled = false; btn.textContent = lang === "zh" ? "检查更新" : "Check for Updates"; }, 2000);
             }
           } catch (err: any) {
-            const errMsg = typeof err === "string" ? err
+            const rawMsg = typeof err === "string" ? err
               : err?.message ? err.message
               : err?.code ? `Code: ${err.code}`
-              : lang === "zh" ? "未知错误（请检查网络连接或稍后重试）" : "Unknown error (check network or retry)";
-            btn.textContent = lang === "zh" ? `更新失败: ${errMsg}` : `Update failed: ${errMsg}`;
-            setTimeout(() => { btn.disabled = false; btn.textContent = lang === "zh" ? "检查更新" : "Check for Updates"; }, 3000);
+              : "";
+            // If the remote release JSON is missing, offer a direct GitHub link instead
+            const isNoRelease = rawMsg.includes("Could not fetch") || rawMsg.includes("release JSON");
+            if (isNoRelease) {
+              btn.textContent = lang === "zh" ? "自动更新不可用，正在打开下载页..." : "Auto-update unavailable, opening download page...";
+              try {
+                const { invoke } = (window as any).__TAURI__?.core ?? {};
+                if (invoke) {
+                  await invoke("plugin:shell|open", { path: "https://github.com/sdcxb/codem/releases" });
+                } else {
+                  window.open("https://github.com/sdcxb/codem/releases", "_blank");
+                }
+              } catch {
+                window.open("https://github.com/sdcxb/codem/releases", "_blank");
+              }
+              setTimeout(() => { btn.disabled = false; btn.textContent = lang === "zh" ? "检查更新" : "Check for Updates"; }, 3000);
+            } else {
+              const errMsg = rawMsg || (lang === "zh" ? "未知错误（请检查网络连接或稍后重试）" : "Unknown error (check network or retry)");
+              btn.textContent = lang === "zh" ? `更新失败: ${errMsg}` : `Update failed: ${errMsg}`;
+              setTimeout(() => { btn.disabled = false; btn.textContent = lang === "zh" ? "检查更新" : "Check for Updates"; }, 3000);
+            }
           }
         }}
       >

@@ -3609,6 +3609,7 @@ color: var(--text-primary);
   display: flex;
   min-height: 0;
   overflow: hidden;
+  position: relative;
 }
 
 /* ========== Step Progress ========== */
