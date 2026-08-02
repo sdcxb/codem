@@ -695,9 +695,6 @@ canEdit={!isSessionStreaming}
           position: 'fixed', top: 'var(--chat-body-top, 48px)', right: 0, bottom: 'var(--chat-body-bottom, 140px)', width: 380,
           zIndex: 200, overflowY: 'auto',
           borderRadius: 0,
-          background: 'var(--dream-panel-bg, var(--bg-secondary))',
-          backdropFilter: 'blur(20px) saturate(1.5)',
-          WebkitBackdropFilter: 'blur(20px) saturate(1.5)',
         }}>
           {selectedAgent ? (
             <AgentDetail task={selectedAgent} onBack={handleBackToList} />
@@ -717,9 +714,6 @@ canEdit={!isSessionStreaming}
           position: 'fixed', top: 'var(--chat-body-top, 48px)', right: 0, bottom: 'var(--chat-body-bottom, 140px)', width: 380,
           zIndex: 200, overflowY: 'auto',
           borderRadius: 0,
-          background: 'var(--dream-panel-bg, var(--bg-secondary))',
-          backdropFilter: 'blur(20px) saturate(1.5)',
-          WebkitBackdropFilter: 'blur(20px) saturate(1.5)',
         }}>
           <SnapshotPanel
             cwd={currentProject?.path || ""}
@@ -734,9 +728,6 @@ canEdit={!isSessionStreaming}
           position: 'fixed', top: 'var(--chat-body-top, 48px)', right: 0, bottom: 'var(--chat-body-bottom, 140px)', width: 380,
           zIndex: 200, overflowY: 'auto',
           borderRadius: 0,
-          background: 'var(--dream-panel-bg, var(--bg-secondary))',
-          backdropFilter: 'blur(20px) saturate(1.5)',
-          WebkitBackdropFilter: 'blur(20px) saturate(1.5)',
         }}>
           <ContextMonitor sessionId={currentSession?.id || ""} visible={showContextMonitor} />
         </div>
@@ -749,9 +740,6 @@ canEdit={!isSessionStreaming}
         <div className="floating-overlay-panel" style={{
           position: 'fixed', top: 'var(--chat-body-top, 48px)', right: 0, bottom: 'var(--chat-body-bottom, 140px)', width: 300,
           zIndex: 200, overflowY: 'auto',
-          background: 'var(--dream-panel-bg, var(--bg-secondary))',
-          backdropFilter: 'blur(20px) saturate(1.5)',
-          WebkitBackdropFilter: 'blur(20px) saturate(1.5)',
         }}>
           <QuickPhraseSelector
             phrases={quickPhrases}
@@ -765,9 +753,6 @@ canEdit={!isSessionStreaming}
         <div className="floating-overlay-panel" style={{
           position: 'fixed', top: 'var(--chat-body-top, 48px)', right: 0, bottom: 'var(--chat-body-bottom, 140px)', width: 360,
           zIndex: 200, overflowY: 'auto',
-          background: 'var(--dream-panel-bg, var(--bg-secondary))',
-          backdropFilter: 'blur(20px) saturate(1.5)',
-          WebkitBackdropFilter: 'blur(20px) saturate(1.5)',
         }}>
           <PromptDraftPicker
             drafts={promptDrafts}

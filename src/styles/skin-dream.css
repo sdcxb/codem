@@ -14,15 +14,16 @@
 */
 
 /* 梦幻皮肤根容�?- 透明，让背景层可�?*/
+[data-skin="dream"] {
+  --dream-panel-bg: rgba(255, 255, 255, 0.97);
+}
+[data-skin="dream"][data-theme="dark"] {
+  --dream-panel-bg: rgba(30, 30, 46, 0.97);
+}
 [data-skin="dream"] .app {
   position: relative;
   background: transparent !important;
   color: var(--dream-text-main, #6c474d);
-  --dream-panel-bg: rgba(255, 255, 255, 0.97);
-}
-
-[data-skin="dream"][data-theme="dark"] .app {
-  --dream-panel-bg: rgba(30, 30, 46, 0.97);
 }
 
 /* Dream 标题�?- 透明，配合背景图 */
@@ -537,11 +538,12 @@
 [data-skin="dream"] .floating-overlay-panel,
 [data-skin="dream"] .skill-picker-popup,
 [data-skin="dream"] .slash-command-menu,
-[data-skin="dream"] .model-picker {
-  background: rgba(255, 255, 255, 0.96) !important;
-  backdrop-filter: blur(var(--dream-blur-px, 20px)) saturate(1.5) !important;
-  -webkit-backdrop-filter: blur(var(--dream-blur-px, 20px)) saturate(1.5) !important;
-  border: 1px solid var(--dream-border-color, rgba(232, 140, 154, 0.2)) !important;
+[data-skin="dream"] .model-picker,
+[data-skin="dream"] .scroll-to-bottom-btn {
+  background: var(--dream-panel-bg) !important;
+  backdrop-filter: blur(20px) saturate(1.5) !important;
+  -webkit-backdrop-filter: blur(20px) saturate(1.5) !important;
+  border: 1px solid var(--dream-border-color, rgba(232, 140, 154, 0.3)) !important;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15) !important;
   color: var(--dream-text-main, #1a1a2e) !important;
 }
@@ -549,8 +551,9 @@
 [data-skin="dream"][data-theme="dark"] .floating-overlay-panel,
 [data-skin="dream"][data-theme="dark"] .skill-picker-popup,
 [data-skin="dream"][data-theme="dark"] .slash-command-menu,
-[data-skin="dream"][data-theme="dark"] .model-picker {
-  background: rgba(30, 30, 46, 0.96) !important;
+[data-skin="dream"][data-theme="dark"] .model-picker,
+[data-skin="dream"][data-theme="dark"] .scroll-to-bottom-btn {
+  background: var(--dream-panel-bg) !important;
   color: var(--dream-text-main, #e0d8e0) !important;
 }
 

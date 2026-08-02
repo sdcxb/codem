@@ -696,9 +696,6 @@ const handleSelectProject = (projectId: string) => {
               <div className="skill-picker-popup" style={{
                 position: "absolute", bottom: "100%", right: 0, marginBottom: 4,
                 minWidth: 200, zIndex: 100, maxHeight: 400, overflowY: "auto",
-                background: "var(--dream-panel-bg, var(--bg-secondary))",
-                backdropFilter: "blur(20px) saturate(1.5)",
-                WebkitBackdropFilter: "blur(20px) saturate(1.5)",
               }}>
                 {onToggleQuickPhrase && (
                   <button className="more-action-item" onClick={() => { onToggleQuickPhrase(); setShowMoreActions(false); }} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", cursor: "pointer", border: "none", background: "transparent", color: "var(--text-primary)", fontSize: 12, width: "100%", textAlign: "left" }}>

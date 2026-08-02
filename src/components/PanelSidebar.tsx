@@ -35,9 +35,6 @@ export function PanelSidebar({ open, onClose }: RightSidebarProps) {
         display: "flex",
         flexDirection: "column",
         boxShadow: "-4px 0 16px rgba(0,0,0,0.15)",
-        background: "var(--dream-panel-bg, var(--bg-secondary))",
-        backdropFilter: "blur(20px) saturate(1.5)",
-        WebkitBackdropFilter: "blur(20px) saturate(1.5)",
       }}>
       {/* Tab header */}
       <div style={{
