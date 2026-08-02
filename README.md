@@ -272,6 +272,39 @@ npm run tauri:build
 
 ## 更新日志
 
+### 2026-08-02（v0.92.0）
+
+> 本次更新聚焦 Codex use-cases 对标分析与工具链扩展：新增 Playwright/Figma/GitHub 三个 MCP 工具（可复现率 67%→81%），完成 101 个 use-cases 的逐项复现路径分析，梦幻皮肤磨砂效果修复，新手引导/更新检查/定位圆圈等 UX 优化。
+
+**新增工具：**
+- `browser_automate` — Playwright 浏览器自动化工具（导航/截图/点击/输入/JS执行/文本提取）
+- `figma_fetch` — Figma REST API 集成（文件结构/节点数据/图片导出/组件/样式）
+- `github_tool` — GitHub API 集成（PR 审查/代码搜索/Issue 搜索/漏洞扫描/提交历史）
+- 三个工具已在 `ToolRegistry` 中注册，TypeScript 编译 0 错误
+
+**Codex Use-Cases 对标分析：**
+- 抓取 Codex 官方 101 个 use-cases，创建 101 个独立分析文件 + 3 个分析文档
+- 可复现率：✅ 82 个（81%）/ ⚠️ 7 个（7%）/ ❌ 12 个（12%）
+- 纯 Chat 模型（DeepSeek）可完全复现 70 个（69%）
+- 新增 `ANALYSIS-V2.md`（统计+能力矩阵）、`REPRODUCTION-ANALYSIS.md`（逐项复现路径+DeepSeek 分析+改造方案）
+
+**梦幻皮肤磨砂效果修复：**
+- 根因 1：`floating-overlay-panel` 的内联 `background` 覆盖 CSS `!important`
+- 根因 2：文件浏览器用的是 `.floating-explorer` 类名而非 `.floating-overlay-panel`，CSS 选择器遗漏
+- 根因 3：`--dream-panel-bg` 变量定义在 `.app` 上而非 `<html>` 上，Portal 节点无法继承
+- 根因 4：透明度 0.97 太高，磨砂效果不可见
+- 修复：CSS 变量提到 `[data-skin="dream"]` 级别，透明度降至 0.78/0.82，所有弹窗类名加入选择器
+
+**UX 优化：**
+- 新手引导从"每次启动都弹出"修复为"仅首次启动"（根因：useState 在 DB 初始化前同步执行）
+- 检查更新从"undefined"修复为显示真实错误信息，无 release JSON 时自动打开 GitHub 下载页
+- 定位圆圈从右侧→左侧→右侧→中间，尺寸从 36px 缩小到 28px，梦幻皮肤下磨砂不透明
+
+**Codex Use-Cases 文档：**
+- `docs/codex-use-cases/` — 101 个 use-case 独立文件，按 7 个分类组织
+- `ANALYSIS.md` / `ANALYSIS-V2.md` — 可复现率统计与能力矩阵
+- `REPRODUCTION-ANALYSIS.md` — 82 个可复现项的复现方式/模型/工具链路 + DeepSeek 纯文本模型 70 个可复现项 + 19 个不可复现项的改造方案
+
 ### 2026-08-01（v0.91.0）
 
 > 本次更新聚焦 Coding 工作台基础设施升级：终端从 one-shot 升级为 PTY 交互式、文件变更全量追踪+Artifact、文件树 Git 状态、自动 Commit、Agent Profile 持久化、Needs You 精确提问、异步 Agent 间通信、浏览器预览面板、Overview 可观测性。新增 4 张 SQLite 表、6 个 Rust 命令、4 个测试文件共 101 用例（全量 2770 通过）。

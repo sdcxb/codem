@@ -1157,7 +1157,7 @@ marginTop: 4,
     <div className="setting-group">
       <label style={{ fontSize: 14, fontWeight: 500 }}>{lang === "zh" ? "关于" : "About"}</label>
       <div style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.6 }}>
-        Codem (mimo-gui) v0.91.0
+        Codem (mimo-gui) v0.92.0
         <br />
         {lang === "zh" ? "AI 编程助手 — 本地优先，隐私安全" : "AI Coding Assistant — Local-first, Privacy-focused"}
       </div>

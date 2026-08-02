@@ -7,8 +7,36 @@
 > v0.91.0 已发布：Coding 工作台基础设施升级 — 终端 PTY 交互式 + 文件变更追踪 Artifact + 文件树 Git 状态 + 自动 Commit + Agent Profile + Needs You + 异步 Agent 通信 + 浏览器面板 + Overview 可观测性。全量回归测试 2770 通过。集成与测试项全部完成（自动Commit开关UI / AgentProfile管理UI / PTY跨平台shell / TranscriptCache统计面板 / FileChangeTracker大patch预检查 / P0-P4组件全量集成 49/49测试通过）。
 > v0.91.0 集成与测试全部完成后，进入下一阶段开发。
 > v0.91.0 UI 设计完全版改造完成：自定义缓动曲线 + transition:all清零 + 按钮按压反馈 + 弹窗origin + 可访问性全覆盖 + 材质分层 + 入场动画现代化（对标 emilkowalski/skills + apple-design，三皮肤适配）。
+> v0.92.0 已发布：Codex use-cases 对标分析（101个use-case逐项复现路径） + Playwright/Figma/GitHub 三个MCP工具（可复现率67%→81%） + 梦幻皮肤磨砂效果彻底修复 + 新手引导仅首次启动 + 检查更新修复 + 定位圆圈优化。
 
 ## 待开发
+
+### v0.92.0 已发布（2026-08-02）
+
+#### 新增工具
+- [x] `browser_automate` — Playwright 浏览器自动化（导航/截图/点击/输入/JS执行/文本提取）
+- [x] `figma_fetch` — Figma REST API 集成（文件结构/节点/图片导出/组件/样式）
+- [x] `github_tool` — GitHub API 集成（PR审查/代码搜索/Issue搜索/漏洞扫描/提交历史）
+
+#### Codex Use-Cases 对标分析
+- [x] 抓取 Codex 官方 101 个 use-cases
+- [x] 创建 101 个独立分析文件 + 3 个分析文档
+- [x] 可复现率：✅ 82（81%）/ ⚠️ 7（7%）/ ❌ 12（12%）
+- [x] 纯 Chat 模型（DeepSeek）可复现 70（69%）
+- [x] `REPRODUCTION-ANALYSIS.md` — 逐项复现路径+工具链路+改造方案
+
+#### 梦幻皮肤磨砂效果修复
+- [x] CSS 变量 `--dream-panel-bg` 从 `.app` 提到 `[data-skin="dream"]`（html 级别）
+- [x] 透明度从 0.97 降至 0.78（亮色）/ 0.82（暗色）
+- [x] `.floating-explorer` 类名加入 CSS 选择器（文件浏览器根因）
+- [x] `.sidebar-project-more-menu` 加入选择器（更多操作弹窗根因）
+- [x] 删除所有内联 `background` 覆盖，让 CSS `!important` 生效
+- [x] 内联 style 双保险（Portal 节点直接设 background）
+
+#### UX 优化
+- [x] 新手引导仅首次启动显示（根因：useState 在 DB 初始化前同步执行）
+- [x] 检查更新 undefined 修复 + 无 JSON 时自动打开 GitHub 下载页
+- [x] 定位圆圈居中 + 缩小至 28px + 梦幻皮肤磨砂不透明
 
 ### v0.91.0 已发布（2026-08-01）
 
