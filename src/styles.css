@@ -9334,7 +9334,7 @@ html.pet-window-mode #root {
 .scroll-to-bottom-wrapper {
   position: absolute;
   bottom: 80px;
-  right: 24px;
+  left: 24px;
   display: flex;
   flex-direction: column;
   align-items: center;
