@@ -182,16 +182,17 @@ class ThemeManagerClass {
     if (!video) {
       video = document.createElement('video');
       video.id = 'dream-video-bg';
-      video.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;object-fit:cover;z-index:0;pointer-events:none;';
-      // Insert before app content
-      const appRoot = document.getElementById('root') || document.body;
-      appRoot.insertBefore(video, appRoot.firstChild);
+      // Insert directly into body (NOT #root) — React may overwrite #root children on re-render
+      video.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;object-fit:cover;z-index:-1;pointer-events:none;';
+      document.body.insertBefore(video, document.body.firstChild);
     }
+    // Set attributes for autoplay in packaged WebView
+    video.setAttribute('autoplay', '');
+    video.setAttribute('playsinline', '');
+    video.setAttribute('muted', config.videoAudioMode === 'muted' ? '' : '');
     video.src = config.backgroundImage || '';
     video.loop = true;
     video.playsInline = true;
-    video.muted = config.videoAudioMode === 'muted';
-    video.volume = config.videoVolume ?? 0.5;
 
     // Handle audio modes
     if (config.videoAudioMode === 'loop-sound') {
