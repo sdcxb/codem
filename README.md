@@ -272,6 +272,33 @@ npm run tauri:build
 
 ## 更新日志
 
+### 2026-08-03（v0.94.0）
+
+> 本次更新聚焦配置体验修复与梦幻皮肤动效升级：配置方案弹窗 Portal 渲染彻底修复遮挡 + 新建方案自动展开配置面板 + 名称描述行内编辑 + 持久化修复（DB初始化时序） + 梦幻皮肤支持 GIF 和视频背景 + 3 种音频模式 + 音量控制。
+
+**P0 — 配置方案体验修复（#1）：**
+- 配置方案弹窗改用 `createPortal(document.body)` 渲染，彻底脱离 SettingsPanel DOM 层级，z-index 2000 确保不被遮挡
+- 新建方案后自动展开 `SlotConfigTable` 配置面板（5 个可编辑槽位）
+- 内置方案新增"复制并编辑"按钮，复制后自动进入编辑模式
+- 编辑模式新增 `ProfileNameEditor` — 方案名称和描述行内编辑（失焦自动保存）
+
+**P0 — 持久化修复（#2）：**
+- 根因：`ModelProfileManager` 单例在 `initDatabase()` 之前创建 → `getDatabase()` 抛异常 → `load()` catch 块用默认值 → 自定义方案丢失
+- 修复：`ModelProfileManager` 新增 `reload()` 方法，在 `App.tsx` 的 `initDatabase()` 完成后调用
+- `save()` 方法增加 `flushDatabase()` 强制立即写入，不等待 500ms 防抖
+
+**P0 — 梦幻皮肤 GIF/视频背景（#3）：**
+- `DreamSkinConfig` 新增 `bgMediaType`（image/gif/video）、`videoAudioMode`（loop-sound/once-sound/muted）、`videoVolume`（0-1）
+- `ThemeManager.setDreamBackground()` 自动检测文件类型（data URL 前缀）
+- 静态图片和 GIF 走 CSS `background-image`；视频走动态创建 `<video>` 元素
+- 三种音频模式：永久循环+声音 / 仅首次播放声音后静音 / 静音循环
+- 音量滑轨控制（0-100%）
+
+**P1 — UI 优化：**
+- 上传按钮 accept 改为 `image/*,video/*`
+- 预览区根据媒体类型显示 `<video>` 或 `<img>` + 类型标签
+- 视频模式下显示音频模式下拉框 + 音量滑轨
+
 ### 2026-08-03（v0.93.0）
 
 > 本次更新聚焦多模态全通路实现：Vision Proxy 视觉代理让 DeepSeek 等纯文本模型具备图片理解能力，STT 语音转写代理通路，图片生成通路完善，多模态能力矩阵重构，配置方案新增视觉理解槽位。新增 89 个测试用例（全量 2859 通过）。

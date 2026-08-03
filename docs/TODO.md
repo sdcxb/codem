@@ -9,8 +9,29 @@
 > v0.91.0 UI 设计完全版改造完成：自定义缓动曲线 + transition:all清零 + 按钮按压反馈 + 弹窗origin + 可访问性全覆盖 + 材质分层 + 入场动画现代化（对标 emilkowalski/skills + apple-design，三皮肤适配）。
 > v0.92.0 已发布：Codex use-cases 对标分析（101个use-case逐项复现路径） + Playwright/Figma/GitHub 三个MCP工具（可复现率67%→81%） + 梦幻皮肤磨砂效果彻底修复 + 新手引导仅首次启动 + 检查更新修复 + 定位圆圈优化。
 > v0.93.0 已发布：Vision Proxy 视觉代理全链路 — DeepSeek 等纯文本模型支持图片理解 + STT 语音转写代理 + 图片生成通路 + 多模态能力矩阵重构 + TaskSlot 新增 vision + 89 新测试（全量 2859 通过）。
+> v0.94.0 已发布：配置方案 Portal 渲染彻底修复遮挡 + 新建方案自动展开配置面板 + 名称描述行内编辑 + 持久化修复（DB初始化时序） + 梦幻皮肤支持 GIF 和视频背景 + 3 种音频模式 + 音量控制。
 
 ## 待开发
+
+### v0.94.0 已发布（2026-08-03）
+
+#### 配置方案体验修复
+- [x] 配置方案弹窗改用 `createPortal(document.body)` 渲染，彻底脱离 SettingsPanel DOM 层级
+- [x] z-index 提升到 2000 确保不被遮挡
+- [x] 新建方案后自动展开 `SlotConfigTable` 配置面板
+- [x] 内置方案新增"复制并编辑"按钮
+- [x] 编辑模式新增 `ProfileNameEditor` — 方案名称和描述行内编辑
+
+#### 持久化修复
+- [x] `ModelProfileManager` 新增 `reload()` 方法，在 `initDatabase()` 完成后调用
+- [x] `save()` 方法增加 `flushDatabase()` 强制立即写入
+
+#### 梦幻皮肤 GIF/视频背景
+- [x] `DreamSkinConfig` 新增 `bgMediaType` / `videoAudioMode` / `videoVolume` 字段
+- [x] `setDreamBackground()` 自动检测文件类型（image/gif/video）
+- [x] 视频走动态创建 `<video>` 元素，全屏覆盖
+- [x] 三种音频模式：永久循环+声音 / 仅首次声音后静音 / 静音循环
+- [x] 音量滑轨控制（0-100%）
 
 ### v0.93.0 已发布（2026-08-03）
 
