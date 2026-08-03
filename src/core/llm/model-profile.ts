@@ -8,6 +8,7 @@
  * Fallback chain: tts/imageGen/embedding → chat, memory/compaction → subagent → chat
  */
 import { getSettingJSON, setSettingJSON } from "../storage/settings";
+import { flushDatabase } from "../storage/database";
 
 // ========== Types ==========
 
@@ -147,6 +148,9 @@ export class ModelProfileManager {
         profiles: this.profiles,
         activeProfileId: this.activeProfileId,
       });
+      // Force immediate flush instead of debounced 500ms delay
+      // This ensures profile changes are persisted before app close/reload
+      flushDatabase();
     } catch {}
   }
 
