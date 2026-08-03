@@ -310,6 +310,8 @@ describe("多模态模块", () => {
   describe("semanticSearch 语义搜索排序", () => {
     beforeEach(() => {
       saveMultimodalSettings({
+        vision: null,
+        stt: null,
         embedding: { providerId: "openai", apiKey: "sk-test", baseUrl: "", model: "v1", enabled: true },
         tts: null,
         imageGen: null,
@@ -600,10 +602,11 @@ describe("多模态模块", () => {
       expect(MULTIMODAL_MODELS.openai.imageGen).toContain("dall-e-2");
     });
 
-    it("MiMo 有全部三种模态", () => {
+    it("MiMo 只有 embedding，无 tts/imageGen/vision", () => {
       expect(MULTIMODAL_MODELS.mimo.embedding).toHaveLength(1);
-      expect(MULTIMODAL_MODELS.mimo.tts).toHaveLength(1);
-      expect(MULTIMODAL_MODELS.mimo.imageGen).toHaveLength(1);
+      expect(MULTIMODAL_MODELS.mimo.tts).toHaveLength(0);
+      expect(MULTIMODAL_MODELS.mimo.imageGen).toHaveLength(0);
+      expect(MULTIMODAL_MODELS.mimo.vision).toHaveLength(0);
     });
 
     it("DeepSeek 不支持多模态", () => {
@@ -639,6 +642,8 @@ describe("多模态模块", () => {
   describe("API 错误处理", () => {
     it("网络错误时 fetch reject", async () => {
       saveMultimodalSettings({
+        vision: null,
+        stt: null,
         embedding: { providerId: "openai", apiKey: "sk-test", baseUrl: "", model: "v1", enabled: true },
         tts: null,
         imageGen: null,
