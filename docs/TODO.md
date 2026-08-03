@@ -8,8 +8,48 @@
 > v0.91.0 集成与测试全部完成后，进入下一阶段开发。
 > v0.91.0 UI 设计完全版改造完成：自定义缓动曲线 + transition:all清零 + 按钮按压反馈 + 弹窗origin + 可访问性全覆盖 + 材质分层 + 入场动画现代化（对标 emilkowalski/skills + apple-design，三皮肤适配）。
 > v0.92.0 已发布：Codex use-cases 对标分析（101个use-case逐项复现路径） + Playwright/Figma/GitHub 三个MCP工具（可复现率67%→81%） + 梦幻皮肤磨砂效果彻底修复 + 新手引导仅首次启动 + 检查更新修复 + 定位圆圈优化。
+> v0.93.0 已发布：Vision Proxy 视觉代理全链路 — DeepSeek 等纯文本模型支持图片理解 + STT 语音转写代理 + 图片生成通路 + 多模态能力矩阵重构 + TaskSlot 新增 vision + 89 新测试（全量 2859 通过）。
 
 ## 待开发
+
+### v0.93.0 已发布（2026-08-03）
+
+#### Vision Proxy 视觉代理全链路
+- [x] 新建 `vision-proxy.ts` — 核心代理模块：检测图片 → 智能路由 → 视觉模型描述 → 替换为文字 → 转发主模型
+- [x] `message.ts` `messagesToLLMMessages()` 生成 `ContentBlock[]`（text + image block）
+- [x] `provider.ts` `toAPIMessage()` 支持 `ContentBlock[]` → OpenAI `image_url` array
+- [x] `agentic-loop.ts` 在 `provider.stream()` 前插入 Vision Proxy 拦截
+- [x] 智能路由：GPT-4o/Claude/Gemini 直接传图；DeepSeek/MiMo 代理描述
+
+#### 语音 STT 代理通路
+- [x] `vision-proxy.ts` 扩展为媒体代理：检测 audio → 调用 Whisper 转写 → 替换为文字
+- [x] `ContentBlock` 新增 `audio` 类型（message.ts + types.ts）
+- [x] `MessageAttachment` 新增 `audio` 类型（store.ts）
+- [x] `provider.ts` 支持 `input_audio` OpenAI 格式
+
+#### 图片生成通路
+- [x] `image_gen` 工具检查 ImageGen 配置，未配置返回错误提示
+- [x] DeepSeek 可调用 `image_gen` 工具生成图片
+
+#### 多模态能力矩阵重构
+- [x] `MultimodalSettings` 新增 `vision` 和 `stt` 字段
+- [x] `MULTIMODAL_MODELS` 重构为五维能力矩阵（vision/stt/embedding/tts/imageGen）
+- [x] 修正 MiMo 虚假 tts/imageGen 条目；Anthropic 新增 vision
+
+#### 配置方案增强
+- [x] `TaskSlot` 新增 `vision` + fallback 链 `vision → chat`
+- [x] 内置方案“DeepSeek + 视觉代理”
+- [x] `EDITABLE_SLOTS` 新增 vision
+- [x] 配置方案弹窗 z-index 修复
+
+#### 对话窗口体验
+- [x] 贴图时检测 vision 能力并显示提示
+- [x] 图片附件显示缩略图预览
+
+#### 测试
+- [x] 新增 `vision-proxy-media.test.ts`（89 用例）
+- [x] 修正 `multimodal.test.ts` 失效断言
+- [x] 全量 68 个测试文件 2859 用例全部通过
 
 ### v0.92.0 已发布（2026-08-02）
 

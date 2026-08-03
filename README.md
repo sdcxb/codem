@@ -272,6 +272,47 @@ npm run tauri:build
 
 ## 更新日志
 
+### 2026-08-03（v0.93.0）
+
+> 本次更新聚焦多模态全通路实现：Vision Proxy 视觉代理让 DeepSeek 等纯文本模型具备图片理解能力，STT 语音转写代理通路，图片生成通路完善，多模态能力矩阵重构，配置方案新增视觉理解槽位。新增 89 个测试用例（全量 2859 通过）。
+
+**P0 — Vision Proxy 视觉代理全链路（#1）：**
+- 新建 `vision-proxy.ts` — 核心代理模块：检测图片 → 智能路由（模型支持 vision 则直传，不支持则调用视觉模型描述图片 → 替换为文字描述 → 转发给主模型）
+- `message.ts` `messagesToLLMMessages()` 改造：图片附件生成 `ContentBlock[]`（text + image block），不再只返回纯文本
+- `provider.ts` `toAPIMessage()` 改造：`ContentBlock[]` → OpenAI `image_url` content array 格式
+- `agentic-loop.ts` 在 `provider.stream()` 调用前插入 Vision Proxy 拦截
+- 智能路由：GPT-4o/Claude/Gemini 原生支持 vision → 直接传图；DeepSeek/MiMo → 代理描述
+
+**P0 — 语音 STT 代理通路（#2）：**
+- `vision-proxy.ts` 扩展为媒体代理：检测 audio block → 调用 Whisper API 转写 → 替换为文字
+- `ContentBlock` 新增 `audio` 类型（message.ts + types.ts）
+- `MessageAttachment` 新增 `audio` 类型（store.ts）
+- `provider.ts` `toAPIMessage()` 支持 `input_audio` OpenAI 格式
+
+**P0 — 图片生成通路（#3）：**
+- `image_gen` 工具已有配置检查逻辑：未配置 ImageGen → 返回错误提示；已配置 → 调用 DALL-E 生成
+- DeepSeek 可调用 `image_gen` 工具生成图片，无需主模型支持多模态
+
+**P0 — 多模态能力矩阵重构（#4）：**
+- `MultimodalSettings` 新增 `vision` 和 `stt` 字段（输入能力）
+- `MULTIMODAL_MODELS` 重构为含 `vision`/`stt`/`embedding`/`tts`/`imageGen` 五维能力矩阵
+- 修正 MiMo 虚假的 tts/imageGen 条目；Anthropic 新增 vision 模型；OpenAI 新增 gpt-image-1
+
+**P1 — 配置方案增强（#5）：**
+- `TaskSlot` 新增 `vision` 类型 + fallback 链 `vision → chat`
+- 新增内置方案"DeepSeek + 视觉代理"（chat=deepseek, vision=gpt-4o-mini）
+- `EDITABLE_SLOTS` 新增 vision；Slot 标签/描述新增 vision
+- 配置方案弹窗 z-index 修复（1100 vs 1000 遮挡问题）
+
+**P1 — 对话窗口体验（#6）：**
+- 贴图时检测当前模型是否支持 vision，显示提示"将使用视觉代理"或"图片将以文字标注"
+- 图片附件显示缩略图预览
+
+**测试与质量：**
+- 新增 `vision-proxy-media.test.ts`（89 用例）：8 大分组覆盖 MultimodalSettings / MULTIMODAL_MODELS / ModelProfile / messagesToLLMMessages / provider toAPIMessage / VisionProxy 核心 / MessageAttachment / 回归
+- 修正 `multimodal.test.ts` 中 MiMo/Anthropic 失效断言
+- 全量 68 个测试文件 2859 用例全部通过
+
 ### 2026-08-02（v0.92.0）
 
 > 本次更新聚焦 Codex use-cases 对标分析与工具链扩展：新增 Playwright/Figma/GitHub 三个 MCP 工具（可复现率 67%→81%），完成 101 个 use-cases 的逐项复现路径分析，梦幻皮肤磨砂效果修复，新手引导/更新检查/定位圆圈等 UX 优化。
