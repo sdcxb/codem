@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { useLang } from "../core/i18n/lang";
 import {
   getModelProfileManager,
@@ -84,6 +85,19 @@ export function ModelProfilePanel({ onClose }: ModelProfilePanelProps) {
     window.dispatchEvent(new Event("codem-settings-changed"));
   };
 
+  const handleDuplicate = (profile: ModelProfile) => {
+    const newProfile = manager.createProfile({
+      name: `${profile.name} (副本)`,
+      description: profile.description,
+      enabled: true,
+      slots: { ...profile.slots },
+    });
+    manager.setActiveProfile(newProfile.id);
+    setEditingProfileId(newProfile.id);
+    refresh();
+    window.dispatchEvent(new Event("codem-settings-changed"));
+  };
+
   const handleDelete = (id: string) => {
     if (manager.deleteProfile(id)) {
       refresh();
@@ -113,9 +127,9 @@ export function ModelProfilePanel({ onClose }: ModelProfilePanelProps) {
 
   const slotLabels = zh ? SLOT_LABELS_ZH : SLOT_LABELS_EN;
 
-  return (
-    <div className="settings-overlay" onClick={onClose} style={{ zIndex: 1100 }}>
-      <div className="settings-panel" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 720, display: "flex", flexDirection: "column", zIndex: 1101 }}>
+  return createPortal(
+    <div className="settings-overlay" onClick={onClose} style={{ zIndex: 2000 }}>
+      <div className="settings-panel" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 720, display: "flex", flexDirection: "column", zIndex: 2001 }}>
         <div className="settings-header">
           <h3>{zh ? "模型配置方案" : "Model Profiles"}</h3>
           <button className="settings-close" onClick={onClose}>✕</button>
@@ -234,10 +248,21 @@ export function ModelProfilePanel({ onClose }: ModelProfilePanelProps) {
                       </button>
                     </>
                   )}
-                  {profile.isBuiltIn && activeProfileId === profile.id && (
-                    <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
-                      {zh ? "内置方案不可编辑槽位" : "Built-in profiles cannot be edited"}
-                    </span>
+                  {profile.isBuiltIn && (
+                    <button
+                      onClick={() => handleDuplicate(profile)}
+                      style={{
+                        padding: "4px 10px",
+                        borderRadius: 4,
+                        border: "1px solid var(--accent)",
+                        background: "transparent",
+                        color: "var(--accent)",
+                        cursor: "pointer",
+                        fontSize: 11,
+                      }}
+                    >
+                      {zh ? "复制并编辑" : "Duplicate & Edit"}
+                    </button>
                   )}
                 </div>
               </div>
@@ -288,7 +313,8 @@ export function ModelProfilePanel({ onClose }: ModelProfilePanelProps) {
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
