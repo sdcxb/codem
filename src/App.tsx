@@ -44,6 +44,7 @@ import { getLLMEngine } from "./core/llm";
 import { getMiMoAuth } from "./core/auth/mimo";
 import type { PermissionRequest, PermissionResult } from "./core/permission/permission";
 import { initDatabase, resetDatabase, flushDatabase } from "./core/storage";
+import { getModelProfileManager } from "./core/llm/model-profile";
 import { migrateFromLocalStorage } from "./core/storage/migration";
 import { getSetting, setSetting, getSettingJSON, setSettingJSON } from "./core/storage/settings";
 import { setLang, useLang, S } from "./core/i18n/lang";
@@ -485,6 +486,8 @@ flushStreamBuffer(); // flush all on unmount
         // DB is now ready — re-configure engine to read the correct mode/model/provider.
         // The initial configureEngine() in the other useEffect may have run before DB init.
         configureEngine();
+        // Reload model profiles from database — they may have been loaded before DB init
+        getModelProfileManager().reload();
       } catch (err) {
         console.error("[App] Init failed:", err);
         useProjectStore.getState().loadFromDB();

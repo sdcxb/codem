@@ -156,6 +156,11 @@ export class ModelProfileManager {
 
   // ========== Queries ==========
 
+  /** Reload from database — call after DB init is complete */
+  reload(): void {
+    this.load();
+  }
+
   /** Get all profiles */
   getAll(): ModelProfile[] {
     return [...this.profiles];
