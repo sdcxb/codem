@@ -18,11 +18,11 @@
 >
 
 
-![Codem 运行界面](docs/26720-1.jpg)
+![Codem 运行界面](docs/26720-1.png)
 
-![Codem Hub 皮肤](docs/26720-2.jpg)
+![Codem Hub 皮肤](docs/26720-2.png)
 
-![Codem 梦幻皮肤](docs/26720-3.jpg)
+![Codem 梦幻皮肤](docs/26720-3.png)
 
 ### 项目来源与借鉴
 
@@ -578,7 +578,7 @@ npm run tauri:build
 
 > 本次更新实现完整的皮肤系统（默认/Hub/梦幻三套皮肤）、Windows Mica 窗口毛玻璃效果、自定义标题栏，以及多处 UI 修复。
 
-![v0.86 更新](docs/26720-1.jpg)
+![v0.86 更新](docs/26720-1.png)
 
 **皮肤系统（三套皮肤完整实现）：**
 - **皮肤基础设施**：新增 `ThemeManager` 主题管理器 + `useSkin` Hook，CSS 变量分层驱动，`data-skin` 属性零 JS 重渲染切换
