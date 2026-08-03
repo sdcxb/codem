@@ -559,7 +559,8 @@ function stripSystemReminders(content: string): string {
 
 export type ContentBlock =
   | { type: "text"; text: string }
-  | { type: "image"; mediaType: string; data: string };
+  | { type: "image"; mediaType: string; data: string }
+  | { type: "audio"; mediaType: string; data: string };
 
 export interface LLMMessage {
   id: string;
@@ -582,31 +583,24 @@ export function messagesToLLMMessages(messages: Message[]): LLMMessage[] {
       const cleanContent = stripSystemReminders(msg.content || "(empty)");
       if (!cleanContent) continue;
 
-      // Check for image attachments — generate ContentBlock[] for multimodal
-      const imageAttachments = (msg.attachments || []).filter(
-        (a) => a.type === "image" && a.content
+      // Check for media attachments (image/audio) — generate ContentBlock[] for multimodal
+      const mediaAttachments = (msg.attachments || []).filter(
+        (a) => (a.type === "image" || a.type === "audio") && a.content
       );
-      if (imageAttachments.length > 0) {
+      if (mediaAttachments.length > 0) {
         const blocks: ContentBlock[] = [
           { type: "text", text: cleanContent },
         ];
-        for (const att of imageAttachments) {
-          // Extract base64 data from data URL or use raw content
+        for (const att of mediaAttachments) {
           let base64Data = att.content || "";
           const dataUrlMatch = base64Data.match(/^data:([^;]+);base64,(.+)$/);
-          if (dataUrlMatch) {
-            blocks.push({
-              type: "image",
-              mediaType: dataUrlMatch[1],
-              data: dataUrlMatch[2],
-            });
-          } else {
-            blocks.push({
-              type: "image",
-              mediaType: att.mimeType || "image/png",
-              data: base64Data,
-            });
-          }
+          const mediaType = dataUrlMatch ? dataUrlMatch[1] : (att.mimeType || (att.type === "audio" ? "audio/mpeg" : "image/png"));
+          const rawData = dataUrlMatch ? dataUrlMatch[2] : base64Data;
+          blocks.push({
+            type: att.type === "audio" ? "audio" : "image",
+            mediaType,
+            data: rawData,
+          });
         }
         result.push({
           id: msg.id,

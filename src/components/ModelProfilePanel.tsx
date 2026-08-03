@@ -114,8 +114,8 @@ export function ModelProfilePanel({ onClose }: ModelProfilePanelProps) {
   const slotLabels = zh ? SLOT_LABELS_ZH : SLOT_LABELS_EN;
 
   return (
-    <div className="settings-overlay" onClick={onClose}>
-      <div className="settings-panel" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 720, display: "flex", flexDirection: "column" }}>
+    <div className="settings-overlay" onClick={onClose} style={{ zIndex: 1100 }}>
+      <div className="settings-panel" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 720, display: "flex", flexDirection: "column", zIndex: 1101 }}>
         <div className="settings-header">
           <h3>{zh ? "模型配置方案" : "Model Profiles"}</h3>
           <button className="settings-close" onClick={onClose}>✕</button>

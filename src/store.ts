@@ -31,7 +31,7 @@ export interface Message {
 export interface MessageAttachment {
   id: string;
   name: string;
-  type: "file" | "image" | "code" | "url" | "video";
+  type: "file" | "image" | "code" | "url" | "video" | "audio";
   content?: string;
   preview?: string;
   mimeType?: string;

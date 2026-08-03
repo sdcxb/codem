@@ -339,6 +339,10 @@ export class OpenAICompatibleProvider implements LLMProvider {
           type: "image_url",
           image_url: { url: `data:${b.mediaType};base64,${b.data}` },
         };
+        if (b.type === "audio") return {
+          type: "input_audio",
+          input_audio: { data: b.data, format: b.mediaType.includes("wav") ? "wav" : "mp3" },
+        };
         return null;
       }).filter(Boolean);
 

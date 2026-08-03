@@ -61,7 +61,8 @@ export type ContentBlock =
   | { type: "text"; text: string }
   | { type: "tool_use"; id: string; name: string; input: Record<string, unknown> }
   | { type: "tool_result"; toolCallId: string; content: string; isError?: boolean }
-  | { type: "image"; mediaType: string; data: string };
+  | { type: "image"; mediaType: string; data: string }
+  | { type: "audio"; mediaType: string; data: string };
 
 // ========== Tool Types ==========
 export interface ToolDefinition {

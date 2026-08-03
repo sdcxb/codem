@@ -24,6 +24,13 @@ const VISION_SYSTEM_PROMPT = `你是一个视觉描述助手。请详细描述�
 
 输出格式：纯文本段落描述，不使用 Markdown 标题。`;
 
+const STT_SYSTEM_PROMPT = `你是一个语音转写助手。请将音频内容完整转写为文字，包括：
+1. 完整的对话或讲述内容
+2. 说话人识别（如果有多人）
+3. 重要停顿、语气词保留
+
+输出格式：纯文本。`;
+
 // ========== Types ==========
 
 export interface VisionProxyResult {
@@ -38,49 +45,67 @@ export interface VisionProxyResult {
 export class VisionProxy {
   /**
    * 处理消息列表：
-   * 1. 检查是否有 image block
-   * 2. 检查当前主模型是否支持 vision
-   * 3. 若不支持 → 调用视觉模型获取描述 → 替换 image block 为 text block
-   * 4. 若支持 → 直接传图，不处理
+   * 1. 检查是否有 image/audio block
+   * 2. 检查当前主模型是否支持 vision/audio
+   * 3. 若不支持 → 调用多模态模型获取描述/转写 → 替换为 text block
+   * 4. 若支持 → 直接传媒体，不处理
    */
   async processMessages(
     messages: LLMMessage[],
     chatModel: string,
     chatProvider: string,
   ): Promise<VisionProxyResult> {
-    // 1. 检查是否有 image block
-    const hasImages = messages.some(
-      (m) => Array.isArray(m.content) && m.content.some((b: any) => b.type === "image"),
+    // 1. 检查是否有 image/audio block
+    const hasMedia = messages.some(
+      (m) => Array.isArray(m.content) && m.content.some((b: any) => b.type === "image" || b.type === "audio"),
     );
-    if (!hasImages) return { messages, visionUsed: false };
+    if (!hasMedia) return { messages, visionUsed: false };
 
-    // 2. 检查当前主模型是否支持 vision
-    if (this.modelSupportsVision(chatModel, chatProvider)) {
-      // 模型原生支持 vision — 直接传图
+    // 2. 检查当前主模型是否支持 vision/audio
+    const supportsVision = this.modelSupportsVision(chatModel, chatProvider);
+    const hasAudio = messages.some(
+      (m) => Array.isArray(m.content) && m.content.some((b: any) => b.type === "audio"),
+    );
+    const supportsAudio = false; // 目前没有模型支持直接处理音频输入到chat/completions
+    const needsVisionProxy = messages.some(
+      (m) => Array.isArray(m.content) && m.content.some((b: any) => b.type === "image"),
+    ) && !supportsVision;
+    const needsAudioProxy = hasAudio && !supportsAudio;
+
+    if (!needsVisionProxy && !needsAudioProxy) {
+      // 模型原生支持所有媒体类型 — 直接传
       return { messages, visionUsed: false };
     }
 
-    // 3. 解析视觉模型配置
-    const visionConfig = this.resolveVisionConfig();
-    if (!visionConfig) {
-      // 没有可用的视觉模型 — 标注图片未处理
-      return {
-        messages: this.markUnprocessedImages(messages),
-        visionUsed: false,
-      };
+    // 3. 解析多模态模型配置
+    const visionConfig = needsVisionProxy ? this.resolveVisionConfig() : null;
+    const sttConfig = needsAudioProxy ? this.resolveSTTConfig() : null;
+
+    if (needsVisionProxy && !visionConfig) {
+      return { messages: this.markUnprocessedMedia(messages, "image"), visionUsed: false };
+    }
+    if (needsAudioProxy && !sttConfig) {
+      return { messages: this.markUnprocessedMedia(messages, "audio"), visionUsed: false };
     }
 
-    // 4. 并发处理所有 image block
-    const processedMessages = await this.replaceImagesWithDescriptions(
-      messages,
-      visionConfig,
-    );
+    // 4. 并发处理所有 media block
+    let processedMessages = messages;
+    if (needsVisionProxy && visionConfig) {
+      processedMessages = await this.replaceMediaWithDescriptions(
+        processedMessages, "image", visionConfig,
+      );
+    }
+    if (needsAudioProxy && sttConfig) {
+      processedMessages = await this.replaceMediaWithDescriptions(
+        processedMessages, "audio", sttConfig,
+      );
+    }
 
     return {
       messages: processedMessages,
       visionUsed: true,
-      visionModel: visionConfig.model,
-      visionProvider: visionConfig.providerId,
+      visionModel: visionConfig?.model || sttConfig?.model,
+      visionProvider: visionConfig?.providerId || sttConfig?.providerId,
     };
   }
 
@@ -143,10 +168,23 @@ export class VisionProxy {
   }
 
   /**
-   * 并发替换所有 image block 为文字描述
+   * 解析语音转写 (STT) 模型配置
+   * 优先级：MultimodalSettings stt > null
    */
-  private async replaceImagesWithDescriptions(
+  private resolveSTTConfig(): MultimodalProviderConfig | null {
+    const mmSettings = getMultimodalSettings();
+    if (mmSettings.stt?.enabled) {
+      return mmSettings.stt;
+    }
+    return null;
+  }
+
+  /**
+   * 并发替换所有指定类型的 media block 为文字描述
+   */
+  private async replaceMediaWithDescriptions(
     messages: LLMMessage[],
+    mediaType: "image" | "audio",
     config: MultimodalProviderConfig,
   ): Promise<LLMMessage[]> {
     return Promise.all(
@@ -155,17 +193,16 @@ export class VisionProxy {
 
         const newBlocks = await Promise.all(
           (msg.content as ContentBlock[]).map(async (block) => {
-            if (block.type !== "image") return block;
+            if (block.type !== mediaType) return block;
 
             try {
-              const description = await this.describeImage(
-                config,
-                block.data,
-                block.mediaType,
-              );
+              const description = mediaType === "image"
+                ? await this.describeImage(config, block.data, block.mediaType)
+                : await this.transcribeAudio(config, block.data, block.mediaType);
+              const prefix = mediaType === "image" ? "[图片描述" : "[语音转写";
               return {
                 type: "text" as const,
-                text: `[图片描述: ${description}]`,
+                text: `${prefix}: ${description}]`,
               };
             } catch (err) {
               return {
@@ -232,16 +269,60 @@ export class VisionProxy {
   }
 
   /**
-   * 没有视觉模型可用时，标注图片无法处理
+   * 调用语音转写 API 获取音频文字
    */
-  private markUnprocessedImages(messages: LLMMessage[]): LLMMessage[] {
+  private async transcribeAudio(
+    config: MultimodalProviderConfig,
+    base64Data: string,
+    mediaType: string,
+  ): Promise<string> {
+    const baseUrl = config.baseUrl || "https://api.openai.com/v1";
+    const headers: Record<string, string> = {};
+    if (config.apiKey) {
+      headers["Authorization"] = `Bearer ${config.apiKey}`;
+    }
+
+    // OpenAI Whisper API: audio/transcriptions endpoint
+    // Convert base64 to blob for multipart/form-data
+    const byteChars = atob(base64Data);
+    const bytes = new Uint8Array(byteChars.length);
+    for (let i = 0; i < byteChars.length; i++) bytes[i] = byteChars.charCodeAt(i);
+    const blob = new Blob([bytes], { type: mediaType });
+    const ext = mediaType.includes("mp3") ? "mp3" : mediaType.includes("wav") ? "wav" : "m4a";
+
+    const formData = new FormData();
+    formData.append("file", blob, `audio.${ext}`);
+    formData.append("model", config.model || "whisper-1");
+    formData.append("response_format", "text");
+
+    const response = await fetch(`${baseUrl}/audio/transcriptions`, {
+      method: "POST",
+      headers,
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`STT API error ${response.status}: ${error}`);
+    }
+
+    const text = await response.text();
+    return text || "(无法转写音频内容)";
+  }
+
+  /**
+   * 没有多模态模型可用时，标注媒体无法处理
+   */
+  private markUnprocessedMedia(messages: LLMMessage[], mediaType: "image" | "audio"): LLMMessage[] {
     return messages.map((msg) => {
       if (!Array.isArray(msg.content)) return msg;
       const newBlocks = (msg.content as ContentBlock[]).map((block) => {
-        if (block.type !== "image") return block;
+        if (block.type !== mediaType) return block;
+        const label = mediaType === "image" ? "图片" : "语音";
+        const setting = mediaType === "image" ? "视觉" : "语音输入(STT)";
         return {
           type: "text" as const,
-          text: "[图片内容未处理 — 当前模型不支持视觉理解，且未配置视觉代理模型。请在设置→多模态中配置视觉理解 Provider。]",
+          text: `[${label}内容未处理 — 当前模型不支持${label}理解，且未配置${setting}代理模型。请在设置→多模态中配置${setting} Provider。]`,
         };
       });
       return { ...msg, content: newBlocks };
