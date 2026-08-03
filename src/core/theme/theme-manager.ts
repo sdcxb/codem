@@ -114,24 +114,42 @@ class ThemeManagerClass {
     if (!imageSrc) {
       this.updateDreamConfig({
         backgroundImage: null,
+        bgMediaType: null,
         extractedPalette: null,
       });
       return;
     }
 
-    const compressed = await ThemeExtractor.compressImage(imageSrc);
+    // Detect media type from data URL prefix
+    let mediaType: 'image' | 'gif' | 'video' = 'image';
+    if (imageSrc.startsWith('data:video/') || imageSrc.startsWith('data:audio/')) {
+      mediaType = 'video';
+    } else if (imageSrc.startsWith('data:image/gif')) {
+      mediaType = 'gif';
+    }
 
+    // Only compress and extract palette for static images (not GIF/video)
+    let compressed = imageSrc;
     let palette: ExtractedPalette | null = null;
-    if (extractPalette) {
-      try {
-        palette = await ThemeExtractor.extractPalette(compressed);
-      } catch (e) {
-        console.warn('[ThemeManager] 主题色提取失败:', e);
+    if (mediaType === 'image') {
+      compressed = await ThemeExtractor.compressImage(imageSrc);
+      if (extractPalette) {
+        try {
+          palette = await ThemeExtractor.extractPalette(compressed);
+        } catch (e) {
+          console.warn('[ThemeManager] 主题色提取失败:', e);
+        }
       }
+    } else {
+      // For GIF, try to extract palette from first frame
+      try {
+        palette = await ThemeExtractor.extractPalette(imageSrc);
+      } catch {}
     }
 
     this.updateDreamConfig({
       backgroundImage: compressed,
+      bgMediaType: mediaType,
       extractedPalette: palette,
     });
   }
@@ -156,6 +174,61 @@ class ThemeManagerClass {
     }
   }
 
+  /**
+   * 创建或更新视频背景元素
+   */
+  private ensureVideoBg(config: DreamSkinConfig): void {
+    let video = document.getElementById('dream-video-bg') as HTMLVideoElement | null;
+    if (!video) {
+      video = document.createElement('video');
+      video.id = 'dream-video-bg';
+      video.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;object-fit:cover;z-index:0;pointer-events:none;';
+      // Insert before app content
+      const appRoot = document.getElementById('root') || document.body;
+      appRoot.insertBefore(video, appRoot.firstChild);
+    }
+    video.src = config.backgroundImage || '';
+    video.loop = true;
+    video.playsInline = true;
+    video.muted = config.videoAudioMode === 'muted';
+    video.volume = config.videoVolume ?? 0.5;
+
+    // Handle audio modes
+    if (config.videoAudioMode === 'loop-sound') {
+      // Permanent loop with sound
+      video.muted = false;
+      video.volume = config.videoVolume ?? 0.5;
+      video.loop = true;
+    } else if (config.videoAudioMode === 'once-sound') {
+      // Play once with sound, then mute and loop
+      video.muted = false;
+      video.volume = config.videoVolume ?? 0.5;
+      video.loop = false;
+      video.onended = () => {
+        video.muted = true;
+        video.loop = true;
+        video.play().catch(() => {});
+      };
+    } else {
+      // Muted
+      video.muted = true;
+      video.loop = true;
+      video.onended = null;
+    }
+
+    video.play().catch((e) => console.warn('[DreamSkin] Video autoplay blocked:', e));
+  }
+
+  /**
+   * 移除视频背景元素
+   */
+  private removeVideoBg(): void {
+    const video = document.getElementById('dream-video-bg');
+    if (video) {
+      video.remove();
+    }
+  }
+
   /** 只设置 data-skin 属性（兼容旧调用） */
   private applySkinAttribute(): void {
     this.applySkin();
@@ -172,11 +245,20 @@ class ThemeManagerClass {
     const config = this.dreamConfig;
     const palette = config.extractedPalette;
 
-    // 背景图
+    // 背景图/视频
     if (config.backgroundImage) {
-      root.style.setProperty('--dream-bg-image', `url(${config.backgroundImage})`);
+      if (config.bgMediaType === 'video') {
+        // Video: don't set CSS background-image, use <video> element instead
+        root.style.removeProperty('--dream-bg-image');
+        this.ensureVideoBg(config);
+      } else {
+        // Image or GIF: use CSS background-image
+        root.style.setProperty('--dream-bg-image', `url(${config.backgroundImage})`);
+        this.removeVideoBg();
+      }
     } else {
       root.style.removeProperty('--dream-bg-image');
+      this.removeVideoBg();
     }
 
     // 毛玻璃参数
@@ -284,6 +366,7 @@ class ThemeManagerClass {
     for (const varName of DREAM_CSS_VARS) {
       root.style.removeProperty(varName);
     }
+    this.removeVideoBg();
   }
 
   /** 通知监听器 */

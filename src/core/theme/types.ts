@@ -44,6 +44,12 @@ export interface SkinColors {
 /** 梦幻皮肤专属配置 */
 export interface DreamSkinConfig {
   backgroundImage: string | null;   // base64 data URL 或文件路径
+  /** 背景媒体类型：image / gif / video */
+  bgMediaType: 'image' | 'gif' | 'video' | null;
+  /** 视频音频模式 */
+  videoAudioMode: 'loop-sound' | 'once-sound' | 'muted';
+  /** 视频音量 (0-1) */
+  videoVolume: number;
   extractedPalette: ExtractedPalette | null;
   customAccent?: string;            // 用户自定义强调色（覆盖自动提取）
   blurRadius: number;               // 毛玻璃模糊度（px）

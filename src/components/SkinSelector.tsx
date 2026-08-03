@@ -102,7 +102,7 @@ function DreamConfigPanel() {
       await ThemeManager.setDreamBackground(dataUrl, true);
       setDreamConfig(ThemeManager.getDreamConfig());
     } catch (err) {
-      console.error("背景图上传失败:", err);
+      console.error("背景上传失败:", err);
     } finally {
       setUploading(false);
     }
@@ -115,11 +115,20 @@ function DreamConfigPanel() {
 
   return (
     <div className="dream-config-panel" style={{ marginTop: "12px" }}>
-      <label>{lang === "zh" ? "背景图片" : "Background Image"}</label>
+      <label>{lang === "zh" ? "背景图片/动图/视频" : "Background Image/GIF/Video"}</label>
       <div className="dream-bg-upload">
         {dreamConfig.backgroundImage ? (
           <div className="dream-bg-preview">
-            <img src={dreamConfig.backgroundImage} alt="背景预览" />
+            {dreamConfig.bgMediaType === 'video' ? (
+              <video src={dreamConfig.backgroundImage} autoPlay loop muted style={{ width: '100%', maxHeight: 120, objectFit: 'cover', borderRadius: 4 }} />
+            ) : (
+              <img src={dreamConfig.backgroundImage} alt="背景预览" />
+            )}
+            <span style={{ fontSize: 10, color: "var(--text-muted)", marginLeft: 4 }}>
+              {dreamConfig.bgMediaType === 'video' ? (lang === 'zh' ? '📹 视频' : '📹 Video')
+               : dreamConfig.bgMediaType === 'gif' ? (lang === 'zh' ? '🎞️ GIF' : '🎞️ GIF')
+               : (lang === 'zh' ? '🖼️ 图片' : '🖼️ Image')}
+            </span>
             <button className="btn-clear-bg" onClick={handleClearBackground}>
               {lang === "zh" ? "清除" : "Clear"}
             </button>
@@ -128,14 +137,40 @@ function DreamConfigPanel() {
           <label className="dream-bg-upload-area">
             <input
               type="file"
-              accept="image/*"
+              accept="image/*,video/*"
               onChange={handleFileUpload}
               style={{ display: "none" }}
             />
-            <span>{uploading ? "⏳..." : lang === "zh" ? "📷 点击上传背景图" : "📷 Click to upload"}</span>
+            <span>{uploading ? "⏳..." : lang === "zh" ? "📷 点击上传图片/GIF/视频" : "📷 Click to upload"}</span>
           </label>
         )}
       </div>
+
+      {/* Video audio controls */}
+      {dreamConfig.bgMediaType === 'video' && (
+        <div className="setting-group" style={{ marginTop: 8 }}>
+          <label>{lang === "zh" ? "音频模式" : "Audio Mode"}</label>
+          <select
+            value={dreamConfig.videoAudioMode}
+            onChange={(e) => updateConfig({ videoAudioMode: e.target.value as any })}
+            style={{ width: "100%", padding: "4px 8px", borderRadius: 4, border: "1px solid var(--border-primary)", background: "var(--bg-tertiary)", color: "var(--text-primary)" }}
+          >
+            <option value="loop-sound">{lang === "zh" ? "永久循环+声音" : "Loop with sound"}</option>
+            <option value="once-sound">{lang === "zh" ? "仅首次播放声音后静音" : "Play once with sound, then mute"}</option>
+            <option value="muted">{lang === "zh" ? "静音循环" : "Muted loop"}</option>
+          </select>
+          <label style={{ marginTop: 8, display: "block" }}>{lang === "zh" ? `音量: ${Math.round((dreamConfig.videoVolume ?? 0.5) * 100)}%` : `Volume: ${Math.round((dreamConfig.videoVolume ?? 0.5) * 100)}%`}</label>
+          <input
+            type="range"
+            min={0}
+            max={1}
+            step={0.05}
+            value={dreamConfig.videoVolume ?? 0.5}
+            onChange={(e) => updateConfig({ videoVolume: parseFloat(e.target.value) })}
+            style={{ width: "100%" }}
+          />
+        </div>
+      )}
 
       {dreamConfig.extractedPalette && (
         <div className="dream-palette-info">

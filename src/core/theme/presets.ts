@@ -92,6 +92,9 @@ export const HUB_SKIN: SkinConfig = {
 /** 梦幻皮肤默认配置 */
 export const DEFAULT_DREAM_CONFIG: DreamSkinConfig = {
   backgroundImage: null,
+  bgMediaType: null,
+  videoAudioMode: 'muted',
+  videoVolume: 0.5,
   extractedPalette: null,
   blurRadius: 2,
   cardOpacity: 0.3,
