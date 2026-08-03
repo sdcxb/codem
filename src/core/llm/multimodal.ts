@@ -23,9 +23,11 @@ export interface MultimodalProviderConfig {
 }
 
 export interface MultimodalSettings {
-  embedding: MultimodalProviderConfig | null;
-  tts: MultimodalProviderConfig | null;
-  imageGen: MultimodalProviderConfig | null;
+  vision: MultimodalProviderConfig | null;   // 输入：图片理解/OCR
+  stt: MultimodalProviderConfig | null;      // 输入：语音转文字（预留）
+  embedding: MultimodalProviderConfig | null; // 输出：向量嵌入
+  tts: MultimodalProviderConfig | null;       // 输出：语音合成
+  imageGen: MultimodalProviderConfig | null;  // 输出：图像生成
 }
 
 // ========== Settings Management ==========
@@ -33,6 +35,8 @@ export interface MultimodalSettings {
 const SETTINGS_KEY = "codem-multimodal-settings";
 
 const defaultSettings: MultimodalSettings = {
+  vision: null,
+  stt: null,
   embedding: null,
   tts: null,
   imageGen: null,
@@ -450,41 +454,57 @@ export async function generateImages(params: ImageGenParams): Promise<ImageGenRe
 // ========== Available Models per Provider ==========
 
 export const MULTIMODAL_MODELS: Record<string, {
-  embedding: string[];
-  tts: string[];
-  imageGen: string[];
+  vision: string[];      // 输入：模型能看图
+  stt: string[];          // 输入：模型能听音
+  embedding: string[];    // 输出：向量嵌入
+  tts: string[];          // 输出：语音合成
+  imageGen: string[];     // 输出：图像生成
 }> = {
   openai: {
+    vision:    ["gpt-4o", "gpt-4o-mini", "o3", "o4-mini"],
+    stt:       ["whisper-1"],
     embedding: ["text-embedding-3-small", "text-embedding-3-large", "text-embedding-ada-002"],
-    tts: ["tts-1", "tts-1-hd"],
-    imageGen: ["dall-e-3", "dall-e-2"],
+    tts:       ["tts-1", "tts-1-hd"],
+    imageGen:  ["dall-e-3", "dall-e-2", "gpt-image-1"],
   },
   mimo: {
+    vision:    [],  // MiMo 当前不支持图片理解
+    stt:       [],
     embedding: ["mimo-embedding-v1"],
-    tts: ["mimo-tts-v1"],
-    imageGen: ["mimo-imagegen-v1"],
+    tts:       [],
+    imageGen:  [],
   },
   deepseek: {
+    vision:    [],
+    stt:       [],
     embedding: [],
-    tts: [],
-    imageGen: [],
+    tts:       [],
+    imageGen:  [],
   },
   anthropic: {
+    vision:    ["claude-sonnet-4-20250514", "claude-opus-4-20250514"],
+    stt:       [],
     embedding: [],
-    tts: [],
-    imageGen: [],
+    tts:       [],
+    imageGen:  [],
   },
   gemini: {
+    vision:    ["gemini-2.5-flash", "gemini-2.5-pro"],
+    stt:       [],
     embedding: ["text-embedding-004", "gemini-embedding-001"],
-    tts: [],
-    imageGen: ["imagen-3.0"],
+    tts:       [],
+    imageGen:  ["imagen-3.0"],
   },
   moonshot: {
+    vision:    [],
+    stt:       [],
     embedding: [],
-    tts: [],
-    imageGen: [],
+    tts:       [],
+    imageGen:  [],
   },
   local: {
+    vision:    [],
+    stt:       [],
     embedding: [
       'Xenova/all-MiniLM-L6-v2',
       'Xenova/all-MiniLM-L12-v2',
@@ -494,7 +514,7 @@ export const MULTIMODAL_MODELS: Record<string, {
       'Xenova/gte-small',
       'Xenova/paraphrase-multilingual-MiniLM-L12-v2',
     ],
-    tts: [],
-    imageGen: [],
+    tts:       [],
+    imageGen:  [],
   },
 };

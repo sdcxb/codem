@@ -14,6 +14,7 @@ const SLOT_LABELS_ZH: Record<TaskSlot, string> = {
   subagent: "子智能体",
   memory: "记忆提取",
   compaction: "上下文压缩",
+  vision: "视觉理解",
   tts: "语音合成",
   imageGen: "图像生成",
   embedding: "向量嵌入",
@@ -24,6 +25,7 @@ const SLOT_LABELS_EN: Record<TaskSlot, string> = {
   subagent: "Sub-agent",
   memory: "Memory",
   compaction: "Compaction",
+  vision: "Vision",
   tts: "TTS",
   imageGen: "Image Gen",
   embedding: "Embedding",
@@ -34,6 +36,7 @@ const SLOT_DESCRIPTIONS_ZH: Record<TaskSlot, string> = {
   subagent: "子任务执行器（探索、搜索、通用任务）",
   memory: "从对话中提取持久化记忆",
   compaction: "上下文窗口压缩时的摘要生成",
+  vision: "图片理解代理 — 当主模型不支持视觉时，用此模型描述图片内容",
   tts: "文本转语音（预留）",
   imageGen: "图像生成（预留）",
   embedding: "语义搜索向量化（预留）",
@@ -48,7 +51,7 @@ const AVAILABLE_PROVIDERS = [
   { id: "gemini", name: "Gemini", models: ["gemini-2.5-flash", "gemini-2.5-pro"] },
 ];
 
-const EDITABLE_SLOTS: TaskSlot[] = ["chat", "subagent", "memory", "compaction"];
+const EDITABLE_SLOTS: TaskSlot[] = ["chat", "subagent", "memory", "compaction", "vision"];
 
 // ========== Component ==========
 

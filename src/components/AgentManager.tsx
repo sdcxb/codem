@@ -20,6 +20,7 @@ const SLOT_LABELS: Record<TaskSlot, string> = {
   subagent: "子任务 (subagent)",
   memory: "记忆提取 (memory)",
   compaction: "上下文压缩 (compaction)",
+  vision: "视觉理解 (vision)",
   tts: "语音合成 (tts)",
   imageGen: "图像生成 (imageGen)",
   embedding: "语义搜索 (embedding)",

@@ -342,11 +342,26 @@ const handleSelectProject = (projectId: string) => {
           {pendingAttachments.map((att) => (
             <div key={att.id} className="pending-attachment">
               <span className="attachment-icon">{att.type === "image" ? "🖼️" : "📄"}</span>
+              {att.type === "image" && att.content ? (
+                <img src={att.content} alt={att.name} style={{ width: 32, height: 32, objectFit: "cover", borderRadius: 4, marginRight: 4 }} />
+              ) : null}
               <span className="attachment-name">{att.name}</span>
               {att.size && <span className="attachment-size">{formatSize(att.size)}</span>}
               <button className="attachment-remove" onClick={() => removeAttachment(att.id)}>✕</button>
             </div>
           ))}
+          {pendingAttachments.some((a) => a.type === "image") && (() => {
+            const visionConfig = getMultimodalSettings().vision;
+            const settings = JSON.parse(localStorage.getItem("codem-settings") || "{}");
+            const currentModel = settings.model || "";
+            const supportsVision = currentModel.startsWith("gpt-4o") || currentModel.startsWith("claude-3") || currentModel.startsWith("claude-4") || currentModel.startsWith("gemini-1.5") || currentModel.startsWith("gemini-2") || currentModel.startsWith("o3") || currentModel.startsWith("o4");
+            if (!supportsVision && !visionConfig?.enabled) {
+              return <div style={{ fontSize: 11, color: "var(--text-muted)", padding: "4px 0" }}>💡 当前模型不支持视觉，图片将以文字标注发送。配置视觉代理请在 设置→多模态→Vision 中开启。</div>;
+            } else if (!supportsVision && visionConfig?.enabled) {
+              return <div style={{ fontSize: 11, color: "var(--text-muted)", padding: "4px 0" }}>💡 将使用视觉代理 ({visionConfig.model}) 描述图片内容</div>;
+            }
+            return null;
+          })()}
         </div>
       )}
 

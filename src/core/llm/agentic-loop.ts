@@ -8,6 +8,7 @@ import { getGuidanceQueue, GUIDANCE_MESSAGE_TEMPLATE } from "./guidance-queue";
 import { getNeedsYouQueue } from "./needs-you-queue";
 import { AgentMessageQueue } from "./agent-message-queue";
 import { getPermissionManager, type PermissionRequest, type PermissionResult } from "../permission/permission";
+import { getVisionProxy } from "./vision-proxy";
 import { getSnapshotService } from "../snapshot/snapshot";
 import * as MessageStorage from "../storage/message";
 import { evaluateWithSecurityMode } from "../permission/security-mode";
@@ -885,11 +886,27 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
     let usage: TokenUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
 
     try {
+      // Vision Proxy: process image blocks before sending to LLM
+      const visionProxy = getVisionProxy();
+      const visionResult = await visionProxy.processMessages(
+        apiMessages,
+        this.config.model || this.provider.id,
+        this.provider.id,
+      );
+      if (visionResult.visionUsed) {
+        console.log(`[AgenticLoop] Vision proxy used: ${visionResult.visionModel} via ${visionResult.visionProvider}`);
+        yield {
+          type: "llm_status",
+          status: "connecting",
+        } as any;
+      }
+      const processedMessages = visionResult.messages;
+
       const request: LLMRequest = {
         model: this.config.model || this.provider.id,
         messages: [
           { id: "system", role: "system", content: systemPrompt },
-          ...apiMessages,
+          ...processedMessages,
         ],
         tools: toolDefs.length > 0 ? toolDefs : undefined,
         temperature: this.config.temperature,

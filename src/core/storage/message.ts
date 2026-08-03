@@ -557,10 +557,14 @@ function stripSystemReminders(content: string): string {
   return content.replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, "").trim();
 }
 
+export type ContentBlock =
+  | { type: "text"; text: string }
+  | { type: "image"; mediaType: string; data: string };
+
 export interface LLMMessage {
   id: string;
   role: "system" | "user" | "assistant" | "tool";
-  content: string;
+  content: string | ContentBlock[];
   toolCallId?: string;
   name?: string;
   tool_calls?: Array<{
@@ -576,12 +580,46 @@ export function messagesToLLMMessages(messages: Message[]): LLMMessage[] {
   for (const msg of messages) {
     if (msg.role === "user") {
       const cleanContent = stripSystemReminders(msg.content || "(empty)");
-      if (!cleanContent) continue; // Skip empty messages after stripping
-      result.push({
-        id: msg.id,
-        role: "user",
-        content: cleanContent,
-      });
+      if (!cleanContent) continue;
+
+      // Check for image attachments — generate ContentBlock[] for multimodal
+      const imageAttachments = (msg.attachments || []).filter(
+        (a) => a.type === "image" && a.content
+      );
+      if (imageAttachments.length > 0) {
+        const blocks: ContentBlock[] = [
+          { type: "text", text: cleanContent },
+        ];
+        for (const att of imageAttachments) {
+          // Extract base64 data from data URL or use raw content
+          let base64Data = att.content || "";
+          const dataUrlMatch = base64Data.match(/^data:([^;]+);base64,(.+)$/);
+          if (dataUrlMatch) {
+            blocks.push({
+              type: "image",
+              mediaType: dataUrlMatch[1],
+              data: dataUrlMatch[2],
+            });
+          } else {
+            blocks.push({
+              type: "image",
+              mediaType: att.mimeType || "image/png",
+              data: base64Data,
+            });
+          }
+        }
+        result.push({
+          id: msg.id,
+          role: "user",
+          content: blocks,
+        });
+      } else {
+        result.push({
+          id: msg.id,
+          role: "user",
+          content: cleanContent,
+        });
+      }
     } else if (msg.role === "assistant") {
       const toolCalls = msg.toolCalls || [];
       const completedTools = toolCalls.filter((t) => t.status === "done" || t.status === "error");

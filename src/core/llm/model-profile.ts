@@ -17,6 +17,7 @@ export type TaskSlot =
   | "subagent"    // Sub-agent tasks (exploration, search, etc.)
   | "memory"      // Memory extraction (simple summaries)
   | "compaction"  // Context compaction summaries
+  | "vision"      // Vision proxy (image description for non-vision models)
   | "tts"         // Text-to-speech (future)
   | "imageGen"    // Image generation (future)
   | "embedding";  // Embedding/semantic search (future)
@@ -48,6 +49,7 @@ const SLOT_FALLBACK: Record<TaskSlot, TaskSlot | null> = {
   tts: "chat",
   imageGen: "chat",
   embedding: "chat",
+  vision: "chat",
   memory: "subagent",
   compaction: "subagent",
   subagent: "chat",
@@ -87,6 +89,17 @@ const BUILTIN_PROFILES: ModelProfile[] = [
       chat:     { provider: "anthropic", model: "claude-opus-4-20250514",  reasoningEffort: "high" },
       subagent: { provider: "openai",    model: "gpt-4o",                   reasoningEffort: "medium" },
       memory:   { provider: "openai",    model: "gpt-4o",                   reasoningEffort: "medium" },
+    },
+  },
+  {
+    id: "deepseek-vision-proxy",
+    name: "DeepSeek + 视觉代理",
+    description: "主对话用 DeepSeek，图片理解用 GPT-4o 代理描述",
+    enabled: false,
+    isBuiltIn: true,
+    slots: {
+      chat:   { provider: "deepseek", model: "deepseek-v4-flash", reasoningEffort: "medium" },
+      vision: { provider: "openai",   model: "gpt-4o-mini",       reasoningEffort: "low" },
     },
   },
 ];

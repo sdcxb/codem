@@ -330,10 +330,29 @@ export class OpenAICompatibleProvider implements LLMProvider {
 
   private toAPIMessage(msg: any) {
     const role = msg.role === "tool" ? "tool" : msg.role;
+
+    // Handle ContentBlock[] — generate OpenAI multimodal content array
+    if (Array.isArray(msg.content)) {
+      const apiContent = msg.content.map((b: any) => {
+        if (b.type === "text") return { type: "text", text: b.text };
+        if (b.type === "image") return {
+          type: "image_url",
+          image_url: { url: `data:${b.mediaType};base64,${b.data}` },
+        };
+        return null;
+      }).filter(Boolean);
+
+      if (role === "tool") {
+        return { role: "tool", content: apiContent.map((b: any) => b.text || "").join(""), tool_call_id: msg.toolCallId || msg.tool_call_id };
+      }
+      const result: any = { role, content: apiContent };
+      if (msg.name) result.name = msg.name;
+      if (msg.tool_calls) result.tool_calls = msg.tool_calls;
+      return result;
+    }
+
     let content = typeof msg.content === "string" ? msg.content : (msg.content ? this.serializeContent(msg.content) : "");
-    // Strip <system-reminder> tags injected by external CLI tools
     content = content.replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, "").trim();
-    // Truncate individual message content if too large (>200KB)
     if (content.length > 200000) {
       content = content.substring(0, 200000) + "\n... (truncated)";
     }
@@ -344,13 +363,6 @@ export class OpenAICompatibleProvider implements LLMProvider {
     const result: any = { role, content };
     if (msg.name) result.name = msg.name;
     if (msg.tool_calls) result.tool_calls = msg.tool_calls;
-    // NOTE: Do NOT send reasoning_content from previous assistant messages back to the API.
-    // reasoning_content is an OUTPUT field (DeepSeek thinking mode), not a standard INPUT field.
-    // Sending old reasoning back causes the LLM to treat previous thinking patterns as
-    // implicit instructions (e.g., old reasoning about "append not overwrite" gets carried
-    // forward to new requests where the user didn't ask for append).
-    // Only the current turn's reasoning is meaningful — past reasoning informed past responses
-    // and should not influence future turns.
     return result;
   }
 

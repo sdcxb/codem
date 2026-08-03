@@ -30,6 +30,8 @@ interface MultimodalPanelProps {
 
 export function MultimodalPanel({ onClose }: MultimodalPanelProps) {
   const [settings, setSettings] = useState<MultimodalSettings>({
+    vision: null,
+    stt: null,
     embedding: null,
     tts: null,
     imageGen: null,
@@ -56,7 +58,7 @@ export function MultimodalPanel({ onClose }: MultimodalPanelProps) {
   };
 
   const updateModality = (
-    modality: "embedding" | "tts" | "imageGen",
+    modality: "vision" | "stt" | "embedding" | "tts" | "imageGen",
     field: keyof MultimodalProviderConfig,
     value: string | boolean,
   ) => {
@@ -75,12 +77,14 @@ export function MultimodalPanel({ onClose }: MultimodalPanelProps) {
     });
   };
 
-  const toggleModality = (modality: "embedding" | "tts" | "imageGen", enabled: boolean) => {
+  const toggleModality = (modality: "vision" | "stt" | "embedding" | "tts" | "imageGen", enabled: boolean) => {
     if (enabled) {
       // Enable: create config from first provider with API key
       const provider = providerKeys.find(p => p.apiKey) || providerKeys[0];
       const models = MULTIMODAL_MODELS[provider?.id || "openai"];
-      const defaultModel = modality === "embedding" ? models?.embedding[0]
+      const defaultModel = modality === "vision" ? models?.vision[0]
+        : modality === "stt" ? models?.stt[0]
+        : modality === "embedding" ? models?.embedding[0]
         : modality === "tts" ? models?.tts[0]
         : models?.imageGen[0];
 
@@ -100,7 +104,7 @@ export function MultimodalPanel({ onClose }: MultimodalPanelProps) {
   };
 
   const renderModalityConfig = (
-    modality: "embedding" | "tts" | "imageGen",
+    modality: "vision" | "stt" | "embedding" | "tts" | "imageGen",
     title: string,
     icon: string,
     description: string,
@@ -108,7 +112,9 @@ export function MultimodalPanel({ onClose }: MultimodalPanelProps) {
     const config = settings[modality];
     const isEnabled = config !== null;
     const models = MULTIMODAL_MODELS[config?.providerId || "openai"];
-    const availableModels = modality === "embedding" ? models?.embedding
+    const availableModels = modality === "vision" ? models?.vision
+      : modality === "stt" ? models?.stt
+      : modality === "embedding" ? models?.embedding
       : modality === "tts" ? models?.tts
       : models?.imageGen;
 
@@ -399,6 +405,20 @@ export function MultimodalPanel({ onClose }: MultimodalPanelProps) {
           配置 Embedding（语义搜索）、TTS（语音合成）、ImageGen（图像生成）三种多模态能力。
           启用后 AI 助手可以在对话中使用这些能力。
         </div>
+
+        {renderModalityConfig(
+          "vision",
+          "Vision 图片理解",
+          "📷",
+          "图片理解/OCR。当主对话模型不支持视觉（如 DeepSeek）时，自动调用视觉模型描述图片内容，再将描述转发给主模型。支持视觉的模型（如 GPT-4o）则直接传图。",
+        )}
+
+        {renderModalityConfig(
+          "stt",
+          "STT 语音输入",
+          "🎤",
+          "将语音转为文字输入（预留功能，需要 Whisper 等模型支持）。",
+        )}
 
         {renderModalityConfig(
           "embedding",
