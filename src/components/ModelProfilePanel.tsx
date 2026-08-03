@@ -111,6 +111,12 @@ export function ModelProfilePanel({ onClose }: ModelProfilePanelProps) {
     }
   };
 
+  const handleRenameProfile = (id: string, name: string, description: string) => {
+    manager.updateProfile(id, { name, description });
+    refresh();
+    window.dispatchEvent(new Event("codem-settings-changed"));
+  };
+
   const handleCreateProfile = (name: string, description: string) => {
     const profile = manager.createProfile({
       name,
@@ -269,12 +275,20 @@ export function ModelProfilePanel({ onClose }: ModelProfilePanelProps) {
 
               {/* Slot configuration table */}
               {editingProfileId === profile.id && !profile.isBuiltIn && (
+                <>
+                {/* Editable name & description */}
+                <ProfileNameEditor
+                  profile={profile}
+                  zh={zh}
+                  onRename={(name, desc) => handleRenameProfile(profile.id, name, desc)}
+                />
                 <SlotConfigTable
                   profile={profile}
                   zh={zh}
                   slotLabels={slotLabels}
                   onUpdateSlot={handleUpdateSlot}
                 />
+                </>
               )}
 
               {/* Slot summary (read-only) */}
@@ -376,6 +390,48 @@ function CreateProfileForm({
       >
         {zh ? "创建并编辑槽位" : "Create & Edit Slots"}
       </button>
+    </div>
+  );
+}
+
+function ProfileNameEditor({
+  profile,
+  zh,
+  onRename,
+}: {
+  profile: ModelProfile;
+  zh: boolean;
+  onRename: (name: string, description: string) => void;
+}) {
+  const [name, setName] = useState(profile.name);
+  const [desc, setDesc] = useState(profile.description);
+
+  return (
+    <div style={{ marginBottom: 12, display: "flex", flexDirection: "column", gap: 6 }}>
+      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        <label style={{ fontSize: 11, color: "var(--text-secondary)", minWidth: 48 }}>
+          {zh ? "名称" : "Name"}
+        </label>
+        <input
+          type="text"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          onBlur={() => onRename(name, desc)}
+          style={{ flex: 1, padding: "4px 8px", borderRadius: 4, border: "1px solid var(--border-primary)", background: "var(--bg-tertiary)", color: "var(--text-primary)", fontSize: 13 }}
+        />
+      </div>
+      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        <label style={{ fontSize: 11, color: "var(--text-secondary)", minWidth: 48 }}>
+          {zh ? "描述" : "Desc"}
+        </label>
+        <input
+          type="text"
+          value={desc}
+          onChange={(e) => setDesc(e.target.value)}
+          onBlur={() => onRename(name, desc)}
+          style={{ flex: 1, padding: "4px 8px", borderRadius: 4, border: "1px solid var(--border-primary)", background: "var(--bg-tertiary)", color: "var(--text-primary)", fontSize: 13 }}
+        />
+      </div>
     </div>
   );
 }
