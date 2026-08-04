@@ -35,6 +35,38 @@ vi.mock("../core/file-api", () => ({
   isPathWithinWorkspace: vi.fn().mockReturnValue(true),
 }));
 
+// Mock LLMEngine to avoid full module init
+const mockEngineProviderConfigs: Record<string, { apiKey: string; baseUrl?: string }> = {};
+vi.mock("../core/llm", () => ({
+  getLLMEngine: () => ({
+    setProviderConfig: (id: string, config: { apiKey: string; baseUrl?: string }) => {
+      mockEngineProviderConfigs[id] = config;
+    },
+    getProviderConfig: (id: string) => mockEngineProviderConfigs[id] ?? null,
+  }),
+}));
+
+// Mock settings storage — use an in-memory store
+const mockSettingsStore: Record<string, any> = {};
+vi.mock("../core/storage/settings", () => ({
+  getSetting: vi.fn((key: string) => mockSettingsStore[key] ?? null),
+  setSetting: vi.fn((key: string, val: string) => { mockSettingsStore[key] = val; }),
+  getSettingJSON: vi.fn(<T>(key: string, def: T) => mockSettingsStore[key] ?? def),
+  setSettingJSON: vi.fn((key: string, val: unknown) => { mockSettingsStore[key] = val; }),
+  removeSetting: vi.fn((key: string) => { delete mockSettingsStore[key]; }),
+}));
+
+// Mock database to avoid SQLite init
+vi.mock("../core/storage/database", () => ({
+  getDatabase: vi.fn(() => { throw new Error("mock"); }),
+  persistDatabase: vi.fn(),
+  flushDatabase: vi.fn(),
+  initDatabase: vi.fn(),
+  closeDatabase: vi.fn(),
+  exportDatabase: vi.fn(() => null),
+  importDatabase: vi.fn(),
+}));
+
 const mockFetch = vi.fn();
 global.fetch = mockFetch as any;
 
@@ -118,7 +150,7 @@ function makeProviderConfig(): ProviderConfig {
 
 describe("A. MultimodalSettings vision/stt 字段", () => {
   beforeEach(() => {
-    localStorage.clear();
+    Object.keys(mockSettingsStore).forEach(k => delete mockSettingsStore[k]);
   });
 
   it("VP-001: 默认设置包含 vision=null", () => {
@@ -385,7 +417,7 @@ describe("C. ModelProfile vision slot", () => {
 
 describe("D. messagesToLLMMessages ContentBlock 生成", () => {
   beforeEach(() => {
-    localStorage.clear();
+    Object.keys(mockSettingsStore).forEach(k => delete mockSettingsStore[k]);
   });
 
   it("VP-036: 无附件的纯文本消息返回 string content", () => {
@@ -748,7 +780,7 @@ describe("F. VisionProxy 核心逻辑", () => {
   let proxy: ReturnType<typeof getVisionProxy>;
 
   beforeEach(() => {
-    localStorage.clear();
+    Object.keys(mockSettingsStore).forEach(k => delete mockSettingsStore[k]);
     proxy = getVisionProxy();
     mockFetch.mockReset();
   });
@@ -1136,7 +1168,7 @@ describe("G. MessageAttachment audio 类型", () => {
 
 describe("H. 回归：历史功能不受影响", () => {
   it("VP-106: 纯文本对话不受 vision proxy 影响", async () => {
-    localStorage.clear();
+    Object.keys(mockSettingsStore).forEach(k => delete mockSettingsStore[k]);
     const proxy = getVisionProxy();
     const messages: LLMMessage[] = [
       { id: "m1", role: "user", content: "hello" },
@@ -1274,7 +1306,7 @@ describe("H. 回归：历史功能不受影响", () => {
   });
 
   it("VP-119: isUsingLocalEmbedding 在未配置时返回 true", async () => {
-    localStorage.clear();
+    Object.keys(mockSettingsStore).forEach(k => delete mockSettingsStore[k]);
     const { isUsingLocalEmbedding } = await import("../core/llm/multimodal");
     expect(isUsingLocalEmbedding()).toBe(true);
   });
@@ -1289,5 +1321,531 @@ describe("H. 回归：历史功能不受影响", () => {
     const tool = createImageGenTool();
     const result = await tool.execute({ prompt: "test image" }, {} as any);
     expect((result as any).output).toContain("not configured");
+  });
+});
+
+// ========== I. 全场景端到端链路测试 ==========
+
+describe("I. 全场景端到端链路测试", () => {
+  let proxy: ReturnType<typeof getVisionProxy>;
+
+  beforeEach(() => {
+    // Clear all mock settings
+    Object.keys(mockSettingsStore).forEach(k => delete mockSettingsStore[k]);
+    Object.keys(mockEngineProviderConfigs).forEach(k => delete mockEngineProviderConfigs[k]);
+    proxy = getVisionProxy();
+    mockFetch.mockReset();
+  });
+
+  // Helper: 创建带图片的消息数组
+  function makeImageMessage(text: string, imgData = "imgdata"): LLMMessage[] {
+    return [{
+      id: "m1",
+      role: "user",
+      content: [
+        { type: "text", text },
+        { type: "image", mediaType: "image/png", data: imgData },
+      ],
+    }];
+  }
+
+  // Helper: 设置 codem-settings（API 模式）
+  function setApiSettings(providers: any[]) {
+    mockSettingsStore["codem-settings"] = { mode: "api", providers };
+  }
+
+  // Helper: mock vision API 返回图片描述
+  function mockVisionResponse(description: string) {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: () => Promise.resolve({
+        id: "vision-1",
+        choices: [{ message: { content: description } }],
+      }),
+    });
+  }
+
+  // Helper: 验证 fetch 调用的 URL 和 model
+  function expectFetchCalled(baseUrl: string, model: string) {
+    expect(mockFetch).toHaveBeenCalled();
+    const url = mockFetch.mock.calls[0][0];
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+    expect(url).toContain(baseUrl);
+    expect(body.model).toBe(model);
+  }
+
+  // --- 场景 1: CLI 模式 + 主模型 mimo-v2.5 → 图片直传，不触发代理 ---
+
+  it("E2E-001: CLI模式 + 主模型mimo-v2.5 → 图片直传不代理", async () => {
+    const msgs = makeImageMessage("看这张图");
+    const result = await proxy.processMessages(msgs, "mimo-v2.5", "mimo");
+    expect(result.visionUsed).toBe(false);
+    // 图片 block 保留
+    const blocks = result.messages[0].content as ContentBlock[];
+    expect(blocks.some(b => b.type === "image")).toBe(true);
+    // 没有调用 fetch
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  // --- 场景 2: CLI 模式 + 主模型 mimo-v2.5-pro → 需要代理，vision slot 配 mimo-v2.5 ---
+
+  it("E2E-002: CLI模式 + 主模型mimo-v2.5-pro + vision slot配mimo-v2.5 → 从engine获取token调用代理", async () => {
+    // 配置方案: vision slot = mimo-v2.5
+    const pm = getModelProfileManager();
+    const profile = pm.createProfile({
+      name: "test-cli-vision",
+      description: "test",
+      enabled: true,
+      slots: {
+        chat: { provider: "mimo", model: "mimo-v2.5-pro", reasoningEffort: "medium" },
+        vision: { provider: "mimo", model: "mimo-v2.5", reasoningEffort: "low" },
+      },
+    });
+    pm.setActiveProfile(profile.id);
+
+    // codem-settings 中 mimo apiKey 为空（CLI 模式）
+    setApiSettings([{ id: "mimo", name: "MiMo", apiKey: "", baseUrl: "https://api.mimo.ai/v1" }]);
+
+    // Mock LLMEngine.getProviderConfig returns CLI token
+    mockEngineProviderConfigs["mimo"] = { apiKey: "cli-token-xxx", baseUrl: "https://api.mimo.ai/v1" };
+
+    mockVisionResponse("这是一只可爱的小猫");
+
+    const msgs = makeImageMessage("看这张图");
+    const result = await proxy.processMessages(msgs, "mimo-v2.5-pro", "mimo");
+
+    expect(result.visionUsed).toBe(true);
+    expect(result.visionModel).toBe("mimo-v2.5");
+    expect(result.visionProvider).toBe("mimo");
+
+    // 验证 fetch 调用了 mimo API
+    expectFetchCalled("api.mimo.ai", "mimo-v2.5");
+
+    // 验证 API key 来自 engine（CLI token）
+    const headers = mockFetch.mock.calls[0][1].headers;
+    expect(headers["Authorization"]).toBe("Bearer cli-token-xxx");
+
+    // 验证图片被替换为文字描述
+    const blocks = result.messages[0].content as ContentBlock[];
+    expect(blocks.every(b => b.type === "text")).toBe(true);
+    const descBlock = blocks.find(b => b.text.includes("图片描述"));
+    expect(descBlock).toBeDefined();
+    expect(descBlock!.text).toContain("这是一只可爱的小猫");
+
+    // 清理
+    pm.deleteProfile(profile.id);
+  });
+
+  // --- 场景 3: CLI 模式 + 主模型 deepseek → 需要代理，vision slot 配 mimo-v2.5 ---
+
+  it("E2E-003: CLI模式 + 主模型deepseek + vision slot配mimo-v2.5 → MiMo代理描述图片", async () => {
+    const pm = getModelProfileManager();
+    const profile = pm.createProfile({
+      name: "test-cli-deepseek",
+      description: "test",
+      enabled: true,
+      slots: {
+        chat: { provider: "deepseek", model: "deepseek-v4-flash", reasoningEffort: "medium" },
+        vision: { provider: "mimo", model: "mimo-v2.5", reasoningEffort: "low" },
+      },
+    });
+    pm.setActiveProfile(profile.id);
+
+    setApiSettings([
+      { id: "mimo", name: "MiMo", apiKey: "", baseUrl: "https://api.mimo.ai/v1" },
+      { id: "deepseek", name: "DeepSeek", apiKey: "sk-ds-xxx", baseUrl: "https://api.deepseek.com/v1" },
+    ]);
+
+    mockEngineProviderConfigs["mimo"] = { apiKey: "cli-token-deepseek", baseUrl: "https://api.mimo.ai/v1" };
+
+    mockVisionResponse("图中是一段代码截图，内容为 function hello() { return 'world'; }");
+
+    const msgs = makeImageMessage("这段代码是什么？");
+    const result = await proxy.processMessages(msgs, "deepseek-v4-flash", "deepseek");
+
+    expect(result.visionUsed).toBe(true);
+    expect(result.visionModel).toBe("mimo-v2.5");
+
+    expectFetchCalled("api.mimo.ai", "mimo-v2.5");
+
+    const headers = mockFetch.mock.calls[0][1].headers;
+    expect(headers["Authorization"]).toBe("Bearer cli-token-deepseek");
+
+    // 图片描述包含代码内容
+    const blocks = result.messages[0].content as ContentBlock[];
+    const descBlock = blocks.find(b => b.text.includes("图片描述"));
+    expect(descBlock).toBeDefined();
+    expect(descBlock!.text).toContain("function hello");
+
+    pm.deleteProfile(profile.id);
+  });
+
+  // --- 场景 4: API 模式 + 主模型 mimo-v2.5 → 图片直传，不触发代理 ---
+
+  it("E2E-004: API模式 + 主模型mimo-v2.5 → 图片直传不代理", async () => {
+    setApiSettings([
+      { id: "mimo", name: "MiMo", apiKey: "sk-mimo-api", baseUrl: "https://api.mimo.ai/v1" },
+    ]);
+
+    const pm = getModelProfileManager();
+    pm.setActiveProfile("default");
+
+    const msgs = makeImageMessage("分析图片");
+    const result = await proxy.processMessages(msgs, "mimo-v2.5", "mimo");
+
+    expect(result.visionUsed).toBe(false);
+    const blocks = result.messages[0].content as ContentBlock[];
+    expect(blocks.some(b => b.type === "image")).toBe(true);
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  // --- 场景 5: API 模式 + 主模型 mimo-v2.5-pro → 需要代理，vision slot 配 mimo-v2.5 ---
+
+  it("E2E-005: API模式 + 主模型mimo-v2.5-pro + vision slot配mimo-v2.5 → 从codem-settings获取API Key", async () => {
+    setApiSettings([
+      { id: "mimo", name: "MiMo", apiKey: "sk-mimo-api-key", baseUrl: "https://api.mimo.ai/v1" },
+    ]);
+
+    const pm = getModelProfileManager();
+    const profile = pm.createProfile({
+      name: "test-api-mimo",
+      description: "test",
+      enabled: true,
+      slots: {
+        chat: { provider: "mimo", model: "mimo-v2.5-pro", reasoningEffort: "high" },
+        vision: { provider: "mimo", model: "mimo-v2.5", reasoningEffort: "low" },
+      },
+    });
+    pm.setActiveProfile(profile.id);
+
+    mockVisionResponse("这是一张架构图，包含前端、后端和数据库三层");
+
+    const msgs = makeImageMessage("分析这个架构图");
+    const result = await proxy.processMessages(msgs, "mimo-v2.5-pro", "mimo");
+
+    expect(result.visionUsed).toBe(true);
+    expect(result.visionModel).toBe("mimo-v2.5");
+
+    expectFetchCalled("api.mimo.ai", "mimo-v2.5");
+
+    // API Key 来自 codem-settings（API 模式）
+    const headers = mockFetch.mock.calls[0][1].headers;
+    expect(headers["Authorization"]).toBe("Bearer sk-mimo-api-key");
+
+    const blocks = result.messages[0].content as ContentBlock[];
+    const descBlock = blocks.find(b => b.text.includes("图片描述"));
+    expect(descBlock).toBeDefined();
+    expect(descBlock!.text).toContain("架构图");
+
+    pm.deleteProfile(profile.id);
+  });
+
+  // --- 场景 6: API 模式 + 主模型 deepseek → 需要代理，vision slot 配 mimo-v2.5 ---
+
+  it("E2E-006: API模式 + 主模型deepseek + vision slot配mimo-v2.5 → MiMo API代理", async () => {
+    setApiSettings([
+      { id: "deepseek", name: "DeepSeek", apiKey: "sk-ds-key", baseUrl: "https://api.deepseek.com/v1" },
+      { id: "mimo", name: "MiMo", apiKey: "sk-mimo-vision", baseUrl: "https://api.mimo.ai/v1" },
+    ]);
+
+    const pm = getModelProfileManager();
+    const profile = pm.createProfile({
+      name: "test-api-ds-mimo",
+      description: "test",
+      enabled: true,
+      slots: {
+        chat: { provider: "deepseek", model: "deepseek-v4-flash", reasoningEffort: "medium" },
+        vision: { provider: "mimo", model: "mimo-v2.5", reasoningEffort: "low" },
+      },
+    });
+    pm.setActiveProfile(profile.id);
+
+    mockVisionResponse("截图显示一个错误信息：TypeError: Cannot read property of undefined");
+
+    const msgs = makeImageMessage("这个报错是什么意思？");
+    const result = await proxy.processMessages(msgs, "deepseek-v4-flash", "deepseek");
+
+    expect(result.visionUsed).toBe(true);
+    expect(result.visionModel).toBe("mimo-v2.5");
+
+    expectFetchCalled("api.mimo.ai", "mimo-v2.5");
+
+    const headers = mockFetch.mock.calls[0][1].headers;
+    expect(headers["Authorization"]).toBe("Bearer sk-mimo-vision");
+
+    const blocks = result.messages[0].content as ContentBlock[];
+    const descBlock = blocks.find(b => b.text.includes("图片描述"));
+    expect(descBlock).toBeDefined();
+    expect(descBlock!.text).toContain("TypeError");
+
+    pm.deleteProfile(profile.id);
+  });
+
+  // --- 场景 7: API 模式 + 主模型 deepseek → 需要代理，vision slot 配 gpt-4o-mini ---
+
+  it("E2E-007: API模式 + 主模型deepseek + vision slot配gpt-4o-mini → OpenAI API代理", async () => {
+    setApiSettings([
+      { id: "deepseek", name: "DeepSeek", apiKey: "sk-ds-key", baseUrl: "https://api.deepseek.com/v1" },
+      { id: "openai", name: "OpenAI", apiKey: "sk-openai-vision", baseUrl: "https://api.openai.com/v1" },
+    ]);
+
+    const pm = getModelProfileManager();
+    const profile = pm.createProfile({
+      name: "test-api-ds-openai",
+      description: "test",
+      enabled: true,
+      slots: {
+        chat: { provider: "deepseek", model: "deepseek-v4-flash", reasoningEffort: "medium" },
+        vision: { provider: "openai", model: "gpt-4o-mini", reasoningEffort: "low" },
+      },
+    });
+    pm.setActiveProfile(profile.id);
+
+    mockVisionResponse("这是一张 UI 设计稿，包含一个登录表单和一个提交按钮");
+
+    const msgs = makeImageMessage("实现这个UI");
+    const result = await proxy.processMessages(msgs, "deepseek-v4-flash", "deepseek");
+
+    expect(result.visionUsed).toBe(true);
+    expect(result.visionModel).toBe("gpt-4o-mini");
+
+    expectFetchCalled("api.openai.com", "gpt-4o-mini");
+
+    const headers = mockFetch.mock.calls[0][1].headers;
+    expect(headers["Authorization"]).toBe("Bearer sk-openai-vision");
+
+    const blocks = result.messages[0].content as ContentBlock[];
+    const descBlock = blocks.find(b => b.text.includes("图片描述"));
+    expect(descBlock).toBeDefined();
+    expect(descBlock!.text).toContain("登录表单");
+
+    pm.deleteProfile(profile.id);
+  });
+
+  // --- 场景 8: 内置方案 deepseek-vision-proxy 可直接使用 ---
+
+  it("E2E-008: 内置方案deepseek-vision-proxy + API模式 → OpenAI代理链路通畅", async () => {
+    setApiSettings([
+      { id: "deepseek", name: "DeepSeek", apiKey: "sk-ds-key", baseUrl: "https://api.deepseek.com/v1" },
+      { id: "openai", name: "OpenAI", apiKey: "sk-openai-key", baseUrl: "https://api.openai.com/v1" },
+    ]);
+
+    const pm = getModelProfileManager();
+    pm.setActiveProfile("deepseek-vision-proxy");
+
+    mockVisionResponse("图片内容是一只小狗在草地上奔跑");
+
+    const msgs = makeImageMessage("描述这张图");
+    const result = await proxy.processMessages(msgs, "deepseek-v4-flash", "deepseek");
+
+    expect(result.visionUsed).toBe(true);
+    expect(result.visionModel).toBe("gpt-4o-mini");
+
+    expectFetchCalled("api.openai.com", "gpt-4o-mini");
+
+    const blocks = result.messages[0].content as ContentBlock[];
+    const descBlock = blocks.find(b => b.text.includes("图片描述"));
+    expect(descBlock).toBeDefined();
+    expect(descBlock!.text).toContain("小狗");
+
+    pm.setActiveProfile("default");
+  });
+
+  // --- 场景 9: 多图片场景 — 代理处理所有图片 ---
+
+  it("E2E-009: API模式 + 多图片 → 代理逐个描述所有图片", async () => {
+    setApiSettings([
+      { id: "deepseek", name: "DeepSeek", apiKey: "sk-ds", baseUrl: "https://api.deepseek.com/v1" },
+      { id: "openai", name: "OpenAI", apiKey: "sk-openai", baseUrl: "https://api.openai.com/v1" },
+    ]);
+
+    const pm = getModelProfileManager();
+    const profile = pm.createProfile({
+      name: "test-multi-img",
+      description: "test",
+      enabled: true,
+      slots: {
+        chat: { provider: "deepseek", model: "deepseek-v4-flash", reasoningEffort: "medium" },
+        vision: { provider: "openai", model: "gpt-4o-mini", reasoningEffort: "low" },
+      },
+    });
+    pm.setActiveProfile(profile.id);
+
+    // 两张图片 → 两次 fetch
+    mockVisionResponse("第一张图：一只猫");
+    mockVisionResponse("第二张图：一只狗");
+
+    const msgs: LLMMessage[] = [{
+      id: "m1",
+      role: "user",
+      content: [
+        { type: "text", text: "对比这两张图" },
+        { type: "image", mediaType: "image/png", data: "img1" },
+        { type: "image", mediaType: "image/png", data: "img2" },
+      ],
+    }];
+
+    const result = await proxy.processMessages(msgs, "deepseek-v4-flash", "deepseek");
+
+    expect(result.visionUsed).toBe(true);
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+
+    // 所有 image block 被替换为 text
+    const blocks = result.messages[0].content as ContentBlock[];
+    expect(blocks.every(b => b.type === "text")).toBe(true);
+
+    // 包含两个描述
+    const descBlocks = blocks.filter(b => b.text.includes("图片描述"));
+    expect(descBlocks).toHaveLength(2);
+    expect(descBlocks[0].text).toContain("一只猫");
+    expect(descBlocks[1].text).toContain("一只狗");
+
+    pm.deleteProfile(profile.id);
+  });
+
+  // --- 场景 10: vision slot fallback 到 chat slot ---
+
+  it("E2E-010: 未配置vision slot → fallback到chat slot的provider+model", async () => {
+    // default 方案没有 vision slot，fallback 到 chat slot
+    // default 方案的 chat slot = openai/gpt-4o → 支持 vision → 不触发代理
+    const pm = getModelProfileManager();
+    pm.setActiveProfile("default");
+
+    const msgs = makeImageMessage("看图");
+    const result = await proxy.processMessages(msgs, "gpt-4o", "openai");
+
+    // gpt-4o 支持 vision → 不需要代理
+    expect(result.visionUsed).toBe(false);
+    const blocks = result.messages[0].content as ContentBlock[];
+    expect(blocks.some(b => b.type === "image")).toBe(true);
+  });
+
+  // --- 场景 11: vision API 调用失败 → 图片标注错误信息 ---
+
+  it("E2E-011: vision API返回错误 → 图片标注为处理失败", async () => {
+    setApiSettings([
+      { id: "deepseek", name: "DeepSeek", apiKey: "sk-ds", baseUrl: "https://api.deepseek.com/v1" },
+      { id: "openai", name: "OpenAI", apiKey: "sk-openai", baseUrl: "https://api.openai.com/v1" },
+    ]);
+
+    const pm = getModelProfileManager();
+    const profile = pm.createProfile({
+      name: "test-vision-error",
+      description: "test",
+      enabled: true,
+      slots: {
+        chat: { provider: "deepseek", model: "deepseek-v4-flash", reasoningEffort: "medium" },
+        vision: { provider: "openai", model: "gpt-4o-mini", reasoningEffort: "low" },
+      },
+    });
+    pm.setActiveProfile(profile.id);
+
+    // Mock API 返回错误
+    mockFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 401,
+      text: () => Promise.resolve("Invalid API Key"),
+    });
+
+    const msgs = makeImageMessage("看图");
+    const result = await proxy.processMessages(msgs, "deepseek-v4-flash", "deepseek");
+
+    expect(result.visionUsed).toBe(true);
+
+    // 图片被替换为错误标注
+    const blocks = result.messages[0].content as ContentBlock[];
+    const errorBlock = blocks.find(b => b.type === "text" && b.text.includes("图片处理失败"));
+    expect(errorBlock).toBeDefined();
+    expect(errorBlock!.text).toContain("401");
+
+    pm.deleteProfile(profile.id);
+  });
+
+  // --- 场景 12: mimo-v2.5-pro 精确匹配不误判为支持 vision ---
+
+  it("E2E-012: mimo-v2.5-pro不误判为支持vision（精确匹配而非前缀）", async () => {
+    // mimo-v2.5-pro 不应该匹配 mimo-v2.5 的 vision 判断
+    const supports = (proxy as any).modelSupportsVision("mimo-v2.5-pro", "mimo");
+    expect(supports).toBe(false);
+
+    // mimo-v2.5 应该匹配
+    const supports2 = (proxy as any).modelSupportsVision("mimo-v2.5", "mimo");
+    expect(supports2).toBe(true);
+  });
+
+  // --- 场景 13: 完整链路 — 消息生成→代理处理→provider序列化 ---
+
+  it("E2E-013: 完整链路 messagesToLLMMessages→VisionProxy→provider序列化", async () => {
+    setApiSettings([
+      { id: "deepseek", name: "DeepSeek", apiKey: "sk-ds", baseUrl: "https://api.deepseek.com/v1" },
+      { id: "openai", name: "OpenAI", apiKey: "sk-openai", baseUrl: "https://api.openai.com/v1" },
+    ]);
+
+    const pm = getModelProfileManager();
+    const profile = pm.createProfile({
+      name: "test-full-chain",
+      description: "test",
+      enabled: true,
+      slots: {
+        chat: { provider: "deepseek", model: "deepseek-v4-flash", reasoningEffort: "medium" },
+        vision: { provider: "openai", model: "gpt-4o-mini", reasoningEffort: "low" },
+      },
+    });
+    pm.setActiveProfile(profile.id);
+
+    mockVisionResponse("这是一张流程图，从用户输入到AI响应共5个步骤");
+
+    // Step 1: 用户消息 + 图片附件 → messagesToLLMMessages
+    const userMsg = makeUserMessage("分析这个流程", [makeImageAttachment("data:image/png;base64,flowchart")]);
+    const llmMessages = messagesToLLMMessages([userMsg as any]);
+
+    // 验证生成了 ContentBlock[]
+    expect(Array.isArray(llmMessages[0].content)).toBe(true);
+    const blocks1 = llmMessages[0].content as ContentBlock[];
+    expect(blocks1.some(b => b.type === "image")).toBe(true);
+
+    // Step 2: VisionProxy 处理
+    const proxyResult = await proxy.processMessages(llmMessages, "deepseek-v4-flash", "deepseek");
+    expect(proxyResult.visionUsed).toBe(true);
+
+    // 验证图片被替换为文字
+    const blocks2 = proxyResult.messages[0].content as ContentBlock[];
+    expect(blocks2.every(b => b.type === "text")).toBe(true);
+    const descBlock = blocks2.find(b => b.text.includes("图片描述"));
+    expect(descBlock).toBeDefined();
+    expect(descBlock!.text).toContain("流程图");
+
+    // Step 3: provider 序列化 — 处理后的消息可以正确序列化为纯文本 JSON
+    const provider = new OpenAICompatibleProvider(makeProviderConfig());
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: () => Promise.resolve({
+        id: "main-1",
+        choices: [{ message: { content: "这个流程包含5个步骤" } }],
+      }),
+    });
+
+    await provider.complete({
+      model: "deepseek-v4-flash",
+      messages: proxyResult.messages,
+      stream: false,
+    });
+
+    // 验证发送给主模型的消息是纯文本（没有 image_url）
+    // Find the main model call (not the vision call) — it's the last fetch call
+    const lastCall = mockFetch.mock.calls[mockFetch.mock.calls.length - 1];
+    const callBody = JSON.parse(lastCall[1].body);
+    const msgContent = callBody.messages[0].content;
+    // 应该是纯字符串或 text array（不含 image_url）
+    if (typeof msgContent === "string") {
+      expect(msgContent).toContain("流程图");
+    } else {
+      expect(Array.isArray(msgContent)).toBe(true);
+      expect(msgContent.some((c: any) => c.type === "image_url")).toBe(false);
+      const textParts = msgContent.filter((c: any) => c.type === "text");
+      expect(textParts.some((c: any) => c.text.includes("流程图"))).toBe(true);
+    }
+
+    pm.deleteProfile(profile.id);
   });
 });
