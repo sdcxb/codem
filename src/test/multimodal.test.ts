@@ -602,11 +602,11 @@ describe("多模态模块", () => {
       expect(MULTIMODAL_MODELS.openai.imageGen).toContain("dall-e-2");
     });
 
-    it("MiMo 只有 embedding，无 tts/imageGen/vision", () => {
+    it("MiMo 有 embedding 和 vision(v2.5)，无 tts/imageGen", () => {
       expect(MULTIMODAL_MODELS.mimo.embedding).toHaveLength(1);
+      expect(MULTIMODAL_MODELS.mimo.vision).toEqual(["mimo-v2.5"]);
       expect(MULTIMODAL_MODELS.mimo.tts).toHaveLength(0);
       expect(MULTIMODAL_MODELS.mimo.imageGen).toHaveLength(0);
-      expect(MULTIMODAL_MODELS.mimo.vision).toHaveLength(0);
     });
 
     it("DeepSeek 不支持多模态", () => {

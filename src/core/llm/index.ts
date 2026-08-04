@@ -719,6 +719,18 @@ return loop.hasPendingGuidance();
     }
   }
 
+  /** Get provider config (apiKey, baseUrl) — used by Vision Proxy etc. */
+  getProviderConfig(providerId: string): { apiKey: string; baseUrl?: string } | null {
+    const existing = this.providers.get(providerId);
+    if (existing && "config" in existing) {
+      const config = (existing as any).config;
+      if (config?.apiKey) {
+        return { apiKey: config.apiKey, baseUrl: config.baseUrl };
+      }
+    }
+    return null;
+  }
+
   /** Update engine configuration */
   updateConfig(config: Partial<LLMEngineConfig>) {
     this.config = { ...this.config, ...config };

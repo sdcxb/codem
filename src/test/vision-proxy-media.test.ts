@@ -252,8 +252,9 @@ describe("B. MULTIMODAL_MODELS 能力矩阵", () => {
     expect(MULTIMODAL_MODELS.openai.stt).toContain("whisper-1");
   });
 
-  it("VP-015: MiMo 不支持 vision", () => {
-    expect(MULTIMODAL_MODELS.mimo.vision).toHaveLength(0);
+  it("VP-015: MiMo v2.5 支持 vision，v2.5-pro 不支持", () => {
+    expect(MULTIMODAL_MODELS.mimo.vision).toEqual(["mimo-v2.5"]);
+    expect(MULTIMODAL_MODELS.mimo.vision).not.toContain("mimo-v2.5-pro");
   });
 
   it("VP-016: MiMo 不支持 tts（修正后）", () => {

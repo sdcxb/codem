@@ -10,6 +10,7 @@
 
 import { getMultimodalSettings, type MultimodalProviderConfig } from "./multimodal";
 import { getModelProfileManager } from "./model-profile";
+import { getLLMEngine } from "./index";
 import { getSettingJSON } from "../storage/settings";
 import type { LLMMessage, ContentBlock } from "../storage/message";
 
@@ -129,6 +130,9 @@ export class VisionProxy {
     // Gemini
     if (modelLower.startsWith("gemini-1.5") || modelLower.startsWith("gemini-2")) return true;
 
+    // MiMo — 只有 mimo-v2.5 支持图片理解，mimo-v2.5-pro 不支持
+    if (modelLower === "mimo-v2.5") return true;
+
     return false;
   }
 
@@ -147,15 +151,31 @@ export class VisionProxy {
       const matched = providers.find(
         (p: any) => p.id === slotConfig.provider || p.name === slotConfig.provider,
       );
-      if (matched) {
+      if (matched && matched.apiKey) {
         return {
           providerId: slotConfig.provider,
-          apiKey: matched.apiKey || "",
+          apiKey: matched.apiKey,
           baseUrl: matched.baseUrl || "",
           model: slotConfig.model,
           enabled: true,
         };
       }
+
+      // CLI 模式下，mimo 的 API key 不在 codem-settings 中
+      // 从 LLMEngine 的 provider config 中获取（CLI 登录时通过 setProviderConfig 设置）
+      try {
+        const engine = getLLMEngine();
+        const engineConfig = engine.getProviderConfig(slotConfig.provider);
+        if (engineConfig && engineConfig.apiKey) {
+          return {
+            providerId: slotConfig.provider,
+            apiKey: engineConfig.apiKey,
+            baseUrl: engineConfig.baseUrl || "",
+            model: slotConfig.model,
+            enabled: true,
+          };
+        }
+      } catch {}
     }
 
     // 2. 从 MultimodalSettings 获取

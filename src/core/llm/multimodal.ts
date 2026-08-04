@@ -468,7 +468,7 @@ export const MULTIMODAL_MODELS: Record<string, {
     imageGen:  ["dall-e-3", "dall-e-2", "gpt-image-1"],
   },
   mimo: {
-    vision:    [],  // MiMo 当前不支持图片理解
+    vision:    ["mimo-v2.5"],  // MiMo v2.5 支持图片理解，v2.5-pro 不支持
     stt:       [],
     embedding: ["mimo-embedding-v1"],
     tts:       [],
