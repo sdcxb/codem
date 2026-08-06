@@ -10,8 +10,41 @@
 > v0.92.0 已发布：Codex use-cases 对标分析（101个use-case逐项复现路径） + Playwright/Figma/GitHub 三个MCP工具（可复现率67%→81%） + 梦幻皮肤磨砂效果彻底修复 + 新手引导仅首次启动 + 检查更新修复 + 定位圆圈优化。
 > v0.93.0 已发布：Vision Proxy 视觉代理全链路 — DeepSeek 等纯文本模型支持图片理解 + STT 语音转写代理 + 图片生成通路 + 多模态能力矩阵重构 + TaskSlot 新增 vision + 89 新测试（全量 2859 通过）。
 > v0.94.0 已发布：配置方案 Portal 渲染彻底修复遮挡 + 新建方案自动展开配置面板 + 名称描述行内编辑 + 持久化修复（DB初始化时序） + 梦幻皮肤支持 GIF 和视频背景 + 3 种音频模式 + 音量控制。
+> v0.95.0 已发布：Vision Proxy MiMo v2.5 支持图片输入 + CLI/API 双模式视觉代理全链路打通（engine 获取 CLI token） + CSP 全面修复 + 梦幻皮肤视频背景打包修复 + 仓库清理 + 13 个 E2E 全场景测试（156 通过）。
 
 ## 待开发
+
+### v0.95.0 已发布（2026-08-03）
+
+#### Vision Proxy MiMo v2.5 支持
+- [x] 修正 `MULTIMODAL_MODELS.mimo.vision`：`[]` → `["mimo-v2.5"]`
+- [x] 修正 `modelSupportsVision()`：新增 `mimo-v2.5` 精确匹配（pro 不误判）
+- [x] 修正 `resolveVisionConfig()`：从 `getLLMEngine().getProviderConfig()` 获取 CLI 模式 API Key
+- [x] `LLMEngine` 新增 `getProviderConfig()` 方法
+
+#### CSP 全面修复
+- [x] 新增 `media-src`（视频/音频 data URL）
+- [x] 新增 `font-src`（自定义字体打包后加载）
+- [x] 新增 `frame-src`（PDF 预览 iframe）
+- [x] `img-src` 补充 `blob:`（知识图谱/PPT/记忆导出）
+- [x] `connect-src` 补充 `asset.localhost`
+
+#### 梦幻皮肤视频背景打包修复
+- [x] 视频元素改为插入 `document.body`
+- [x] 设置 `autoplay`/`playsinline` 属性
+- [x] `z-index` 改为 `-1`
+
+#### UI 优化
+- [x] 花瓣装饰缩小：左上 60px，右下 75px
+- [x] README 图片修正：.jpg→.png，移到 screenshots/
+
+#### 仓库清理
+- [x] 移除 `.wecode-ref/`、`docs/codex-use-cases/`、`docs/training/`
+- [x] 移除 docs/ 下 58 个内部文档
+
+#### 测试
+- [x] 13 个 E2E 全场景链路测试（CLI/API + 各模型组合）
+- [x] 全量 156 测试通过
 
 ### v0.94.0 已发布（2026-08-03）
 

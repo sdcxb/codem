@@ -272,6 +272,44 @@ npm run tauri:build
 
 ## 更新日志
 
+### 2026-08-03（v0.95.0）
+
+> 本次更新聚焦 Vision Proxy 链路修复：MiMo v2.5 支持图片输入识别 + CLI/API 双模式视觉代理全链路打通 + 13 个 E2E 场景测试验证 + CSP 全面修复（media-src/font-src/frame-src/blob:/asset.localhost） + 梦幻皮肤视频背景打包修复 + 花瓣装饰缩小 + docs 清理 + README 图片修复。
+
+**P0 — Vision Proxy MiMo v2.5 支持（#1）：**
+- 修正 `MULTIMODAL_MODELS.mimo.vision`：`[]` → `["mimo-v2.5"]`（v2.5 支持图片理解，v2.5-pro 不支持）
+- 修正 `modelSupportsVision()`：新增 `mimo-v2.5` 精确匹配（不误判 pro）
+- 修正 `resolveVisionConfig()`：新增从 `getLLMEngine().getProviderConfig()` 获取 API Key 的 fallback（CLI 模式下 MiMo token 在 engine 而非 codem-settings）
+- `LLMEngine` 新增 `getProviderConfig()` 方法
+
+**P0 — CSP 全面修复（#2）：**
+- 新增 `media-src 'self' data: blob: https: asset.localhost`（解决打包后视频/音频 data URL 被阻止）
+- 新增 `font-src 'self' data: asset.localhost`（解决自定义字体打包后不加载）
+- 新增 `frame-src 'self' https: asset.localhost`（解决 PDF 预览 iframe 被阻止）
+- `img-src` 补充 `blob:`（解决知识图谱/PPT/记忆导出 blob 图片不显示）
+- `connect-src` 补充 `https://asset.localhost https://localhost:*`
+
+**P1 — 梦幻皮肤视频背景打包修复（#3）：**
+- 视频元素改为插入 `document.body`（不再插入 `#root`，避免 React 重渲染删除）
+- 设置 `autoplay`/`playsinline` 属性，确保 WebView2 自动播放
+- `z-index` 改为 `-1`，确保在最底层
+
+**P1 — UI 优化：**
+- 梦幻皮肤花瓣装饰缩小：左上 120px→60px，右下 150px→75px
+- README 图片修正：实际为 PNG 格式的 .jpg 文件重命名为 .png，移到 screenshots/ 目录
+
+**P1 — 仓库清理：**
+- 移除 `.wecode-ref/` 对标项目子模块
+- 移除 `docs/codex-use-cases/` 101 个对标分析文件
+- 移除 `docs/training/` 9 个培训文档
+- 移除 `docs/` 下 58 个内部分析/测试/计划文档（保留 PROJECT-GUIDE.md、TODO.md、字体文件）
+- `.gitignore` 添加例外规则保留 README 宣传图片
+
+**P2 — 测试：**
+- 13 个 E2E 全场景链路测试（E2E-001 ~ E2E-013）覆盖 CLI/API + 各模型组合
+- 验证链路：消息生成 → vision 能力判断 → 视觉模型配置解析 → fetch 调用 → API Key 来源 → 图片替换 → 描述内容 → provider 序列化
+- 全量 156 测试通过
+
 ### 2026-08-03（v0.94.0）
 
 > 本次更新聚焦配置体验修复与梦幻皮肤动效升级：配置方案弹窗 Portal 渲染彻底修复遮挡 + 新建方案自动展开配置面板 + 名称描述行内编辑 + 持久化修复（DB初始化时序） + 梦幻皮肤支持 GIF 和视频背景 + 3 种音频模式 + 音量控制。
