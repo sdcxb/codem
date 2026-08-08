@@ -18,6 +18,13 @@ import { MIMO_MODELS, getConfiguredApiModels } from "../core/model-config";
 import { ScrollbarMarkers } from "./ScrollbarMarkers";
 import { ScrollToBottomIndicator } from "./ScrollToBottomIndicator";
 import { useScrollState, useUnreadMessagesTracker } from "../hooks/useScrollState";
+// Lucide icons — replacing all emoji icons with professional vector icons
+import {
+  PanelLeftClose, ChevronDown, Brain, Bot, Camera, BarChart3, LayoutGrid,
+  Search, X, GitFork, RotateCcw, Check, Send, Square, Hammer, ClipboardList,
+} from "lucide-react";
+// P2 #38: framer-motion for smooth list animations
+import { motion, AnimatePresence } from "framer-motion";
 // P1: 高级功能组件
 import { CorrectionModeToggle } from "./CorrectionModeToggle";
 import { Workbench } from "./Workbench";
@@ -29,6 +36,9 @@ import { PanelSidebar } from "./PanelSidebar";
 import { QuickPhraseSelector } from "./QuickPhraseSelector";
 import { PromptDraftPicker } from "./PromptDraftPicker";
 import { QuickAccessCards } from "./QuickAccessCards";
+import { RunStatusBar } from "./RunStatusBar";
+import { NewChatPage } from "./NewChatPage";
+import type { RunPhase } from "../core/llm/run-status-tracker";
 // P2: 存储
 import { loadQuickPhrases, type QuickPhrase } from "../core/storage/settings";
 import { loadPromptDrafts, type PromptDraft } from "../core/storage/prompt-draft";
@@ -109,6 +119,14 @@ export function ChatPanel({ onSend, onCancel, onSendGuidance, onToggleSidebar, o
   const models = mode === "cli" ? MIMO_MODELS : getConfiguredApiModels();
   // Whether the current session is actively streaming (running an agentic loop)
   const isSessionStreaming = !currentSessionId ? isStreaming : activeSessions.has(currentSessionId);
+
+  // Derive RunPhase from llmStatus for RunStatusBar
+  const runPhase: RunPhase = isSessionStreaming
+    ? llmStatus === "connecting" ? "thinking"
+      : llmStatus === "executing_tools" ? "working"
+      : llmStatus === "streaming" ? "presenting"
+      : "thinking"
+    : "idle";
   const [showAgentPanel, setShowAgentPanel] = useState(false);
   const [showSnapshotPanel, setShowSnapshotPanel] = useState(false);
   const [showContextMonitor, setShowContextMonitor] = useState(false);
@@ -121,6 +139,17 @@ export function ChatPanel({ onSend, onCancel, onSendGuidance, onToggleSidebar, o
     setQuoteContext(content);
     onReEdit?.(content);
   }, [onReEdit]);
+  // P2 #31: Listen for paragraph-level quote events from RichContent
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail?.text) {
+        setQuoteContext(`> ${detail.text}\n\n`);
+      }
+    };
+    window.addEventListener("rich-content-quote", handler);
+    return () => window.removeEventListener("rich-content-quote", handler);
+  }, []);
   // A9: Chat history search
   const [showSearch, setShowSearch] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -143,6 +172,8 @@ export function ChatPanel({ onSend, onCancel, onSendGuidance, onToggleSidebar, o
   const [promptDrafts, setPromptDrafts] = useState<PromptDraft[]>([]);
   // P2: Quick access cards
   const [showQuickAccess, setShowQuickAccess] = useState(true);
+  // P2 #37: Task title dropdown
+  const [showTitleDropdown, setShowTitleDropdown] = useState(false);
   const [quickAccessFavorites, setQuickAccessFavorites] = useState<Set<string>>(() => {
     try { return new Set(getSettingJSON<string[]>("codem-quick-access-favorites", [])); } catch { return new Set(); }
   });
@@ -275,12 +306,46 @@ export function ChatPanel({ onSend, onCancel, onSendGuidance, onToggleSidebar, o
     <div className="chat-panel">
       <div className="chat-header">
         <button className="sidebar-toggle" onClick={onToggleSidebar}>
-          ☰
+          <PanelLeftClose size={18} />
         </button>
-        <span className="chat-title">Codem</span>
+        {/* P2 #37: Task title dropdown */}
+        <div style={{ position: "relative" }}>
+          <button
+            className="chat-title-dropdown-btn"
+            onClick={() => setShowTitleDropdown(!showTitleDropdown)}
+            style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-primary)", fontSize: 14, fontWeight: 600, display: "flex", alignItems: "center", gap: 4, padding: "2px 8px", borderRadius: 4 }}
+            title={currentSession?.title || "Codem"}
+          >
+            <span className="chat-title">{currentSession?.title || "Codem"}</span>
+            <ChevronDown size={12} style={{ opacity: 0.5 }} />
+          </button>
+          {showTitleDropdown && (
+            <>
+              <div style={{ position: "fixed", inset: 0, zIndex: 99 }} onClick={() => setShowTitleDropdown(false)} />
+              <div className="bottom-bar-dropdown" style={{ position: "absolute", top: "100%", left: 0, marginTop: 4, minWidth: 240, maxHeight: 300, overflowY: "auto", zIndex: 100 }}>
+                <div className="bottom-bar-dropdown-header">{lang === "zh" ? "切换会话" : "Switch Session"}</div>
+                {(() => {
+                  const sessions = currentProject
+                    ? useProjectStore.getState().getProjectSessions(currentProject.id)
+                    : [];
+                  if (sessions.length === 0) return <div className="bottom-bar-dropdown-empty">{lang === "zh" ? "无会话" : "No sessions"}</div>;
+                  return sessions.slice(0, 15).map(s => (
+                    <button
+                      key={s.id}
+                      className={`bottom-bar-dropdown-item ${currentSession?.id === s.id ? "active" : ""}`}
+                      onClick={() => { useProjectStore.getState().switchSession(s.id); setShowTitleDropdown(false); }}
+                    >
+                      <span style={{ fontSize: 12 }}>{s.title || (lang === "zh" ? "新对话" : "New Chat")}</span>
+                    </button>
+                  ));
+                })()}
+              </div>
+            </>
+          )}
+        </div>
         <div className="model-selector" onClick={() => setShowModelPicker(!showModelPicker)}>
           <span className="model-badge">{model}</span>
-          <span className="model-arrow">▾</span>
+          <span className="model-arrow"><ChevronDown size={10} /></span>
           {showModelPicker && (
             <div className="model-picker" onClick={(e) => e.stopPropagation()}>
               {models.map((m) => (
@@ -307,7 +372,7 @@ export function ChatPanel({ onSend, onCancel, onSendGuidance, onToggleSidebar, o
                       high: { zh: "高", en: "High" },
                       ultra: { zh: "超高", en: "Ultra" },
                     };
-                    return (labels[effort]?.[lang] || labels.high[lang]) + " ▾";
+                    return (labels[effort]?.[lang] || labels.high[lang]);
                   })()}
                 </span>
                 {showEffortPicker && (
@@ -354,14 +419,14 @@ export function ChatPanel({ onSend, onCancel, onSendGuidance, onToggleSidebar, o
           onClick={() => setShowReasoning(!showReasoning)}
           title={showReasoning ? S.chat.hideReasoning[lang] : S.chat.showReasoning[lang]}
         >
-          💭
+          <Brain size={16} />
         </button>
         <button
           className={`agent-toggle ${showAgentPanel ? "active" : ""}`}
           onClick={() => { setShowAgentPanel(!showAgentPanel); setShowSnapshotPanel(false); setShowContextMonitor(false); setSelectedAgentId(null); }}
           title={S.chat.agentList[lang]}
         >
-          🤖
+          <Bot size={16} />
           {runningCount > 0 && <span className="agent-badge">{runningCount}</span>}
         </button>
         <button
@@ -369,14 +434,14 @@ export function ChatPanel({ onSend, onCancel, onSendGuidance, onToggleSidebar, o
           onClick={() => { setShowSnapshotPanel(!showSnapshotPanel); setShowAgentPanel(false); setSelectedAgentId(null); }}
           title={S.chat.snapshot[lang]}
         >
-          📸
+          <Camera size={16} />
         </button>
         <button
           className={`agent-toggle ${showContextMonitor ? "active" : ""}`}
           onClick={() => { setShowContextMonitor(!showContextMonitor); setShowAgentPanel(false); setShowSnapshotPanel(false); setSelectedAgentId(null); }}
           title={S.chat.contextMonitor[lang]}
         >
-          📊
+          <BarChart3 size={16} />
         </button>
         {/* Display mode toggle moved to Settings > Appearance — default unified mode */}
         <span className="header-spacer" style={{ flex: 1 }} />
@@ -386,7 +451,7 @@ export function ChatPanel({ onSend, onCancel, onSendGuidance, onToggleSidebar, o
           onClick={() => setShowRightSidebar(!showRightSidebar)}
           title={lang === "zh" ? "侧边面板" : "Side Panel"}
         >
-          ⊞
+          <LayoutGrid size={16} />
         </button>
         <span className={`status-dot ${connected ? "connected" : "disconnected"}`}>
           {connected ? "●" : "○"}
@@ -404,7 +469,7 @@ export function ChatPanel({ onSend, onCancel, onSendGuidance, onToggleSidebar, o
             borderRadius: 12, padding: 16, boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-              <span style={{ fontSize: 14 }}>🔍</span>
+              <Search size={14} style={{ color: 'var(--text-muted)' }} />
               <input
                 type="text"
                 autoFocus
@@ -422,7 +487,7 @@ export function ChatPanel({ onSend, onCancel, onSendGuidance, onToggleSidebar, o
                   outline: 'none',
                 }}
               />
-              <button onClick={() => setShowSearch(false)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 16 }}>✕</button>
+              <button onClick={() => setShowSearch(false)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', display: 'flex', alignItems: 'center' }}><X size={16} /></button>
             </div>
             {searchQuery && (
               <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 8 }}>
@@ -443,8 +508,22 @@ export function ChatPanel({ onSend, onCancel, onSendGuidance, onToggleSidebar, o
         </>
       )}
 
-      <div className="chat-body">
+      {/* Connection lost banner */}
+      {!connected && messages.length > 0 && (
+        <div className="connection-lost-banner">
+          <span className="connection-lost-dot" />
+          <span>{lang === "zh" ? "连接已断开，正在重新连接..." : "Connection lost, reconnecting..."}</span>
+        </div>
+      )}
+
+      <div className={`chat-body ${showWorkbench ? "workbench-split-active" : ""}`}>
         <div className="messages-container" ref={messagesContainerRef}>
+          <RunStatusBar
+            phase={runPhase}
+            startedAt={streamStartTime}
+            isRunning={isSessionStreaming}
+            onClick={() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })}
+          />
           <SelectionTooltip containerRef={messagesContainerRef} onQuote={(text) => setQuoteContext(text)} />
           {hasMoreMessages && (
             <div className="load-more-indicator">
@@ -457,12 +536,11 @@ export function ChatPanel({ onSend, onCancel, onSendGuidance, onToggleSidebar, o
           )}
           {messages.length === 0 && (
             <div className="empty-state">
-              <div className="logo">⚡</div>
-              <h2>Codem</h2>
-              <p>{S.chat.emptyTitle[lang]}</p>
-              {!connected && (
-                <p className="connecting-text">{S.chat.connecting[lang]}</p>
-              )}
+              <NewChatPage
+                appName="Codem"
+                connected={connected}
+                onSuggestionClick={(prompt) => setQuoteContext(prompt)}
+              />
               {/* P2: Quick access cards + quick phrases in empty state */}
               {showQuickAccess && connected && !isSessionStreaming && (
                 <div style={{ marginTop: 16, maxWidth: 600, width: "100%", margin: "16px auto 0", display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -471,7 +549,7 @@ export function ChatPanel({ onSend, onCancel, onSendGuidance, onToggleSidebar, o
                       id: a.id,
                       name: a.name,
                       description: a.description,
-                      icon: a.id === 'build' ? '🔨' : a.id === 'plan' ? '📋' : a.id === 'explore' ? '🔍' : '🤖',
+                      icon: a.id === 'build' ? <Hammer size={20} /> : a.id === 'plan' ? <ClipboardList size={20} /> : a.id === 'explore' ? <Search size={20} /> : <Bot size={20} />,
                     }))}
                     favoriteIds={quickAccessFavorites}
                     onSelect={(agentId) => {
@@ -613,7 +691,13 @@ export function ChatPanel({ onSend, onCancel, onSendGuidance, onToggleSidebar, o
 
             return (
             <React.Fragment key={msg.id}>
-<MessageBubble
+            {/* P2 #38: framer-motion entrance animation for message bubbles */}
+            <motion.div
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.2, ease: "easeOut" }}
+            >
+            <MessageBubble
 message={msg}
 index={index}
 showReasoning={showReasoning}
@@ -626,13 +710,14 @@ onReEdit={handleReEditInternal}
 sessionId={sessionId || currentSession?.id}
 canEdit={!isSessionStreaming}
 />
-            {isTurnEnd && !isStreaming && (
+            </motion.div>
+{isTurnEnd && !isStreaming && (
               <div className="qa-turn-footer">
                 {onFork && (
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <button className="qa-turn-btn" onClick={() => onFork(index)}>
-                        🔀
+                        <GitFork size={14} />
                       </button>
                     </TooltipTrigger>
                     <TooltipContent>{S.bubble.fork[lang]}</TooltipContent>
@@ -642,7 +727,7 @@ canEdit={!isSessionStreaming}
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <button className="qa-turn-btn" onClick={() => onRegenerate(index)}>
-                        🔄
+                        <RotateCcw size={14} />
                       </button>
                     </TooltipTrigger>
                     <TooltipContent>{S.bubble.regenerate[lang]}</TooltipContent>
@@ -673,6 +758,18 @@ canEdit={!isSessionStreaming}
             />
           )}
         </div>
+
+        {/* P2 #39: Workbench split-screen panel */}
+        {showWorkbench && (
+          <div className="workbench-split-pane">
+            <Workbench
+              collapsed={false}
+              onToggle={() => setShowWorkbench(false)}
+              activeTools={[]}
+              modifiedFiles={[]}
+            />
+          </div>
+        )}
 
         {/* P0: Scroll-to-bottom indicator */}
         <ScrollToBottomIndicator
@@ -855,7 +952,7 @@ canEdit={!isSessionStreaming}
         <div className="guidance-messages-bar">
           {guidanceMessages.map((g) => (
             <div key={g.id} className={`guidance-bubble ${g.consumed ? 'consumed' : 'pending'}`}>
-              <span className="guidance-bubble-icon">{g.consumed ? '✓' : '📨'}</span>
+              <span className="guidance-bubble-icon">{g.consumed ? <Check size={12} /> : <Send size={12} />}</span>
               <span className="guidance-bubble-text">{g.message}</span>
             </div>
           ))}
@@ -890,14 +987,14 @@ canEdit={!isSessionStreaming}
             disabled={!guidanceInput.trim()}
             title={lang === "zh" ? "发送引导" : "Send guidance"}
           >
-            📨
+            <Send size={14} />
           </button>
           <button
             className="guidance-cancel-btn"
             onClick={onCancel}
             title={lang === "zh" ? "停止运行" : "Stop run"}
           >
-            ■
+            <Square size={14} />
           </button>
         </div>
       )}

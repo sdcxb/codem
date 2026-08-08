@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { useLang, S } from "../core/i18n/lang";
+import { MessageSquare } from "lucide-react";
 
 interface SelectionTooltipProps {
   containerRef: React.RefObject<HTMLElement | null>;
@@ -104,7 +105,7 @@ export function SelectionTooltip({ containerRef, onQuote }: SelectionTooltipProp
       onMouseDown={(e) => e.preventDefault()} // Prevent losing selection
     >
       <button className="selection-tooltip-btn" onClick={handleQuote}>
-        💬 {lang === "zh" ? "引用提问" : "Quote & Ask"}
+        <MessageSquare size={12} style={{ display: 'inline', verticalAlign: 'middle' }} /> {lang === "zh" ? "引用提问" : "Quote & Ask"}
       </button>
     </div>,
     containerRef.current || document.body

@@ -4,14 +4,14 @@
  * 显示常用 Agent 卡片网格，支持点击切换、收藏、搜索过滤
  */
 
-import { memo, useState } from "react";
+import { memo, useState, type ReactNode } from "react";
 import { useLang, S } from "../core/i18n/lang";
 
 interface Agent {
   id: string;
   name: string;
   description: string;
-  icon: string;
+  icon: ReactNode;
 }
 
 interface QuickAccessCardsProps {

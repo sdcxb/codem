@@ -1,0 +1,257 @@
+/**
+ * RichContent — 统一富内容 Markdown 渲染器
+ *
+ * 基于 react-markdown，集成以下富内容视图：
+ * - 代码块（语法高亮 + 复制 + 折叠 + 全屏）
+ * - 表格（滚动 + 行列统计）
+ * - Mermaid 图表（渲染 + 全屏）
+ * - 数学公式（KaTeX 渲染）
+ * - 图片（预览 + 全屏）
+ * - JSON（格式化 + 复制）
+ * - HTML（沙箱预览）
+ *
+ * 支持流式文本揭示动画。
+ * 使用 CSS 变量驱动，自动适配三套皮肤。
+ *
+ * 自主实现，组件命名和逻辑均独立编写。
+ */
+
+import { memo, useState, useCallback, useRef, useMemo, type ReactNode } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
+import rehypeKatex from "rehype-katex";
+import { Copy, Check, Quote } from "lucide-react";
+import { CodeBlockView } from "./CodeBlockView";
+import { TableScrollView } from "./TableScrollView";
+import { MermaidCanvasView } from "./MermaidCanvasView";
+import { ImagePreviewView } from "./ImagePreviewView";
+import { fixCjkBoldMarkdown } from "../../core/llm/stream-reveal";
+
+/**
+ * ParagraphWithActions — P2 #31: 段落级 hover 操作按钮
+ *
+ * 在鼠标悬停段落时显示复制和引用按钮。
+ */
+const ParagraphWithActions = memo(function ParagraphWithActions({ children }: { children: ReactNode }) {
+  const [copied, setCopied] = useState(false);
+  const pRef = useRef<HTMLParagraphElement>(null);
+
+  const handleCopy = useCallback(() => {
+    const text = pRef.current?.textContent || "";
+    navigator.clipboard.writeText(text).catch(() => {});
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }, []);
+
+  const handleQuote = useCallback(() => {
+    const text = pRef.current?.textContent || "";
+    // Dispatch a custom event that SelectionTooltip / ChatPanel can listen to
+    const selection = window.getSelection();
+    if (selection) {
+      // Use the QuoteProvider mechanism via custom event
+      window.dispatchEvent(new CustomEvent("rich-content-quote", { detail: { text } }));
+    }
+  }, []);
+
+  return (
+    <p className="rich-content-p" ref={pRef}>
+      {children}
+      <span className="paragraph-actions" contentEditable={false}>
+        <button
+          className="paragraph-action-btn"
+          onClick={handleCopy}
+          title="复制段落"
+          aria-label="复制段落"
+        >
+          {copied ? <Check size={12} /> : <Copy size={12} />}
+        </button>
+        <button
+          className="paragraph-action-btn"
+          onClick={handleQuote}
+          title="引用段落"
+          aria-label="引用段落"
+        >
+          <Quote size={12} />
+        </button>
+      </span>
+    </p>
+  );
+});
+
+// 延迟加载 KaTeX CSS（避免首屏加载开销）
+let katexCssLoaded = false;
+function ensureKatexCss() {
+  if (katexCssLoaded) return;
+  katexCssLoaded = true;
+  const link = document.createElement("link");
+  link.rel = "stylesheet";
+  link.href = "https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css";
+  link.crossOrigin = "anonymous";
+  document.head.appendChild(link);
+}
+
+export interface RichContentProps {
+  /** Markdown 内容 */
+  content: string;
+  /** 是否流式渲染中 */
+  streaming?: boolean;
+  /** 流式揭示尾部字素数 */
+  revealCount?: number;
+  /** 流式揭示修订号 */
+  revealRevision?: number;
+  /** 自定义类名 */
+  className?: string;
+}
+
+export const RichContent = memo(function RichContent({
+  content,
+  streaming = false,
+  revealCount = 0,
+  revealRevision = 0,
+  className = "",
+}: RichContentProps) {
+  const [fullscreenNode, setFullscreenNode] = useState<ReactNode | null>(null);
+
+  // 确保 KaTeX CSS 已加载（当内容包含数学公式时）
+  if (/\$\$|\\\(|\\\[/.test(content)) {
+    ensureKatexCss();
+  }
+
+  // P2 #30: 修复 CJK 粗体标记 — CommonMark 在 `**粗体**` 后紧跟 CJK 字符时不渲染粗体
+  const processedContent = useMemo(() => fixCjkBoldMarkdown(content), [content]);
+
+  // 代码块渲染器
+  const codeRenderer = useCallback(({ inline, className: cls, children, ...props }: any) => {
+    const match = /language-(\w+)/.exec(cls || "");
+    const language = match ? match[1] : "";
+    const code = String(children).replace(/\n$/, "");
+
+    // Mermaid 图表
+    if (language === "mermaid") {
+      return <MermaidCanvasView chart={code} />;
+    }
+
+    // JSON 视图
+    if (language === "json" && code.length > 50) {
+      try {
+        JSON.parse(code);
+        return <CodeBlockView code={code} language="json" streaming={streaming} />;
+      } catch {
+        // 非法 JSON，走普通代码块
+      }
+    }
+
+    // 内联代码
+    if (inline) {
+      return (
+        <code className="inline-code" {...props}>
+          {children}
+        </code>
+      );
+    }
+
+    // 普通代码块
+    return <CodeBlockView code={code} language={language} streaming={streaming} />;
+  }, [streaming]);
+
+  // 表格渲染器
+  const tableRenderer = useCallback(({ children }: any) => {
+    // 从 children 提取 headers 和 rows
+    let headers: string[] = [];
+    let rows: string[][] = [];
+
+    const extractText = (node: any): string => {
+      if (typeof node === "string") return node;
+      if (node?.props?.children) {
+        if (Array.isArray(node.props.children)) {
+          return node.props.children.map(extractText).join("");
+        }
+        return extractText(node.props.children);
+      }
+      return "";
+    };
+
+    const walk = (node: any) => {
+      if (!node) return;
+      const tag = node?.type;
+      if (tag === "thead") {
+        const tr = node.props?.children;
+        if (Array.isArray(tr)) {
+          const trNode = tr.find((c: any) => c?.type === "tr");
+          if (trNode?.props?.children) {
+            headers = (Array.isArray(trNode.props.children) ? trNode.props.children : [trNode.props.children])
+              .map((th: any) => extractText(th));
+          }
+        }
+      }
+      if (tag === "tbody") {
+        const trs = node.props?.children;
+        if (Array.isArray(trs)) {
+          rows = trs.filter((c: any) => c?.type === "tr").map((tr: any) => {
+            const tds = Array.isArray(tr.props?.children) ? tr.props.children : [tr.props.children];
+            return tds.map((td: any) => extractText(td));
+          });
+        }
+      }
+      if (node?.props?.children && Array.isArray(node.props.children)) {
+        node.props.children.forEach(walk);
+      }
+    };
+
+    if (Array.isArray(children)) {
+      children.forEach(walk);
+    }
+
+    if (headers.length > 0) {
+      return <TableScrollView headers={headers} rows={rows} />;
+    }
+
+    // 降级：使用原生 table
+    return <table className="content-table-fallback">{children}</table>;
+  }, []);
+
+  // 图片渲染器
+  const imageRenderer = useCallback(({ src, alt, title }: any) => {
+    if (typeof src === "string") {
+      return <ImagePreviewView src={src} alt={alt || ""} title={title} />;
+    }
+    return <img src={src} alt={alt} title={title} />;
+  }, []);
+
+  return (
+    <div
+      className={`rich-content ${streaming ? "streaming" : ""} ${className}`}
+      data-reveal-count={revealCount}
+      data-reveal-revision={revealRevision}
+    >
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm, remarkMath]}
+        rehypePlugins={[rehypeKatex]}
+        components={{
+          code: codeRenderer,
+          table: tableRenderer,
+          img: imageRenderer,
+          // 流式文本揭示：在最后一个文本节点尾部添加动画类
+          p: ({ children }) => (
+            <ParagraphWithActions>{children}</ParagraphWithActions>
+          ),
+          // 链接在新窗口打开
+          a: ({ href, children }) => (
+            <a href={href} target="_blank" rel="noopener noreferrer" className="rich-content-link">
+              {children}
+            </a>
+          ),
+          // 引用块样式
+          blockquote: ({ children }) => (
+            <blockquote className="rich-content-quote">{children}</blockquote>
+          ),
+          // 水平线
+          hr: () => <hr className="rich-content-hr" />,
+        }}
+      >
+        {processedContent}
+      </ReactMarkdown>
+    </div>
+  );
+});

@@ -11,8 +11,83 @@
 > v0.93.0 已发布：Vision Proxy 视觉代理全链路 — DeepSeek 等纯文本模型支持图片理解 + STT 语音转写代理 + 图片生成通路 + 多模态能力矩阵重构 + TaskSlot 新增 vision + 89 新测试（全量 2859 通过）。
 > v0.94.0 已发布：配置方案 Portal 渲染彻底修复遮挡 + 新建方案自动展开配置面板 + 名称描述行内编辑 + 持久化修复（DB初始化时序） + 梦幻皮肤支持 GIF 和视频背景 + 3 种音频模式 + 音量控制。
 > v0.95.0 已发布：Vision Proxy MiMo v2.5 支持图片输入 + CLI/API 双模式视觉代理全链路打通（engine 获取 CLI token） + CSP 全面修复 + 梦幻皮肤视频背景打包修复 + 仓库清理 + 13 个 E2E 全场景测试（156 通过）。
+> v0.96.0 已发布：主对话窗口 UI 大改版（对标 frakio-work/wecode）+ 内联 Diff 批量审批（替换弹窗）+ 三皮肤暗色模式深度修复 + 梦幻皮肤自适应主题（data-theme 基于 palette.isDark）+ 富内容渲染系统（9 组件）+ Shiki 语法高亮 + 39 个新组件 + 3 个新依赖（framer-motion/shiki/xlsx）。42 个文件修改（+4,599/-1,866 行）。
 
 ## 待开发
+
+### v0.96.0 已发布（2026-08-08）
+
+#### P0 — 主对话窗口样式大改版（对标 frakio-work / wecode）
+- [x] 消息容器居中 + `max-width` 限制 + `gap` 增至 24px
+- [x] AI 消息背景改为透明，内联 header 展示角色信息
+- [x] 用户消息样式调整，视觉层次分明
+- [x] 段落 hover 背景移除，改为消息级 hover 高亮
+- [x] 新建 `ShikiCodeBlock.tsx` — VS Code 级语法高亮（Shiki 替换 react-syntax-highlighter）
+- [x] 新建 `rich-content/` 渲染系统（9 个组件）：RichContent + ContentFrame + CodeBlockView + HtmlPreviewView + ImagePreviewView + JsonFormatView + MathFormulaView + MermaidCanvasView + TableScrollView + FullscreenViewer
+- [x] 新建 `ToolCallCard.tsx` + `ToolCallGroup.tsx` — pill 胶囊风格 + 内联展示 + 同类合并
+- [x] 推理过程展示改为胶囊按钮 + 自动折叠（ReasoningDisplay 重构）
+- [x] 新建 `MessageActions.tsx` — 消息操作工具栏绝对定位悬浮
+
+#### P0 — 内联 Diff 批量审批（替换弹窗式 DiffViewer）
+- [x] 新建 `InlineDiffReview.tsx` — 统一视图 + 预览视图双模式 diff
+- [x] 支持折叠/展开 + 自定义指令输入 + "全部接受"批量操作
+- [x] `App.tsx` `onWriteConfirm` 回调改造：检查 `autoApprove` 标志
+- [x] 多文件审批在同一轮对话中内联展示
+- [x] `writeConfirmStats` 状态追踪审批统计
+
+#### P0 — 三皮肤暗色模式深度修复
+- [x] 默认皮肤暗色模式：设置面板图标颜色修复（`color: inherit` + 暗色变量覆盖）
+- [x] 默认皮肤暗色模式：主对话框背景配色优化，文字对比度提升
+- [x] 命令类展示颜色从纯白调整为柔和色
+- [x] Hub 皮肤：右侧栏 toggle 与 TitleBar `rightRailOpen` 状态同步
+- [x] Hub 皮肤：TopNavbar 移除冗余搜索/设置按钮
+- [x] Dream 皮肤：`data-theme` 基于 `palette.isDark` 自适应设置
+- [x] Dream 皮肤：`TitleBar` 在 Dream 皮肤激活时跳过 `data-theme` 覆盖
+- [x] Dream 皮肤：`applyDreamCSS` 新增 glass/surface/tool-card/composer/rich-code token 覆盖
+- [x] 三皮肤统一添加 `--radius-*` / `--border-primary` / `--elevation-*` / `--accent-soft` / `--input-bg` CSS 变量
+
+#### P1 — 梦幻皮肤自适应主题
+- [x] `ThemeManager.applyDreamCSS` 根据调色板 `isDark` 自动切换明暗模式
+- [x] `ThemeManager.cleanDreamCSS` 恢复用户偏好主题
+- [x] 新建 `contrast-checker.ts` — 对比度检查器
+- [x] 梦幻皮肤设置面板图标颜色自适应修复
+
+#### P1 — 新增组件（39 个新文件）
+- [x] `BootSplash.tsx` — 启动加载画面
+- [x] `ToastNotification.tsx` — Toast 通知系统
+- [x] `Drawer.tsx` — 通用抽屉组件
+- [x] `NewChatPage.tsx` — 新对话首页
+- [x] `SpaceSwitcher.tsx` — 工作空间切换器
+- [x] `GitBranchSelector.tsx` — Git 分支选择器
+- [x] `AudioPlayer.tsx` — 音频播放器
+- [x] `ExcelViewer.tsx` — Excel 文件查看器
+- [x] `ErrorCard.tsx` — 错误卡片
+- [x] `RunStatusBar.tsx` — 运行状态栏
+- [x] `ActivityTimeline.tsx` — 活动时间线
+- [x] `AgentRoster.tsx` — 智能体花名册
+- [x] `ConversationOverview.tsx` — 对话概览
+- [x] `UsageVisuals.tsx` — 用量可视化
+- [x] `WorkspaceBackdrop.tsx` — 工作区背景
+- [x] `DecisionTray.tsx` — 决策托盘
+- [x] `SettingsParts.tsx` — 设置面板分区组件
+- [x] `ui/overlay-kit.tsx` — Overlay 工具包
+
+#### P1 — 核心引擎增强
+- [x] `run-status-tracker.ts` — 运行状态追踪器
+- [x] `stream-reveal.ts` — 流式内容逐步揭示
+- [x] `useDraftPersistence.ts` — 草稿持久化 Hook
+- [x] `usePaneResize.ts` — 面板尺寸调整 Hook
+
+#### P1 — 样式系统
+- [x] 新建 `codem-ui.css` — Codem UI 组件专用样式表
+- [x] `styles.css` +2,809 行大规模重构
+- [x] `skin-dream.css` +333 行
+- [x] `skin-hub.css` +300 行
+
+#### P2 — 新依赖
+- [x] `framer-motion` — 动画引擎
+- [x] `shiki` — VS Code 级语法高亮
+- [x] `xlsx` — Excel 文件解析
 
 ### v0.95.0 已发布（2026-08-03）
 

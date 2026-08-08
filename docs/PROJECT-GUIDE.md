@@ -1,7 +1,7 @@
 # Codem 项目完整说明
 
 > **用途**：新对话快速理解项目全貌、架构、文件关联、当前状态。
-> 创建时间：2026-07-23 | 最后更新：2026-08-03 | 当前版本：v0.95.0（已发布）
+> 创建时间：2026-07-23 | 最后更新：2026-08-08 | 当前版本：v0.96.0（已发布）
 
 ---
 
@@ -13,7 +13,7 @@
 - **GitHub**：https://github.com/sdcxb/codem
 - **分发**：NSIS `.exe` + WiX `.msi`，一键安装无需依赖
 - **平台**：Windows 优先
-- **版本**：v0.95.0（已发布，2026-08-03）
+- **版本**：v0.96.0（已发布，2026-08-08）
 
 ---
 
@@ -26,13 +26,13 @@
 | **桌面框架** | Tauri v2 (Rust) | 原生窗口 + 文件系统 + 命令调用 + 多窗口（主窗口 + 宠物窗口） |
 | **前端框架** | React 18 + TypeScript | SPA，Vite 构建 |
 | **状态管理** | Zustand 5 | 三个 store：`useAppStore`（消息/流式/工具）+ `useProjectStore`（项目/会话/技能）+ `usePetStore`（宠物状态/气泡/窗口） |
-| **UI 组件** | Radix UI + Lucide React + Font Awesome | Switch/Dialog/Tooltip/Popover/Dropdown + 图标库 |
-| **Markdown** | react-markdown + remark-gfm + remark-math + rehype-katex | 消息渲染 + 代码高亮 + 数学公式 |
+| **UI 组件** | Radix UI + Lucide React + Font Awesome + Framer Motion | Switch/Dialog/Tooltip/Popover/Dropdown + 图标库 + 动画引擎 |
+| **Markdown** | react-markdown + remark-gfm + remark-math + rehype-katex + Shiki | 消息渲染 + VS Code 级语法高亮 + 数学公式 |
 | **图表** | Mermaid 11 | 技能内置 Mermaid SVG 渲染 |
 | **终端** | xterm.js (@xterm/xterm + addon-fit + addon-web-links) | CLI 模式终端 |
 | **存储** | SQLite (sql.js) | 内存数据库 + Tauri 文件系统持久化到 AppData |
 | **嵌入模型** | ONNX Runtime (WASM) + @huggingface/transformers | 本地语义嵌入，零外部依赖 |
-| **文档解析** | mammoth + pdfjs-dist | DOCX/PDF 文档内容提取 |
+| **文档解析** | mammoth + pdfjs-dist + xlsx | DOCX/PDF/Excel 文档内容提取 |
 | **数学公式** | KaTeX | Markdown 中的 LaTeX 公式渲染 |
 | **压缩** | fflate | 技能 ZIP 包解压 |
 | **桌面宠物** | Petdex (MIT License) 集成 | 宠物包格式 + 市场 Manifest API + 精灵图帧动画 |
@@ -41,15 +41,16 @@
 ### 2.2 前端依赖
 
 ```
-React 18 + Zustand 5 + Radix UI + Lucide React + Font Awesome 7
-react-markdown + remark-gfm + remark-math + rehype-katex + react-syntax-highlighter
+React 18 + Zustand 5 + Radix UI + Lucide React + Font Awesome 7 + Framer Motion
+react-markdown + remark-gfm + remark-math + rehype-katex + Shiki (VS Code 级语法高亮)
 sql.js (SQLite) + @huggingface/transformers (ONNX)
 mermaid + @xterm/xterm + addon-fit + addon-web-links + fflate + clsx + tailwind-merge
-mammoth (DOCX) + pdfjs-dist (PDF) + katex (数学公式)
+mammoth (DOCX) + pdfjs-dist (PDF) + xlsx (Excel) + katex (数学公式)
 @tauri-apps/api + @tauri-apps/plugin-dialog + @tauri-apps/plugin-notification
 ```
 
 **devDependencies:** TypeScript 5.6 + Vite 6 + Vitest 4 + happy-dom + jsdom + png-to-ico + sharp
+**v0.96.0 新增:** framer-motion (动画引擎) + shiki (语法高亮) + xlsx (Excel 解析)
 
 ### 2.3 Rust 依赖
 
@@ -160,10 +161,11 @@ mimo-gui/
 │   │   └── sql.js.d.ts          # sql.js 类型补充声明
 │   ├── lib/                     # 工具函数
 │   │   └── utils.ts             # cn() Tailwind 类名合并 (clsx + tailwind-merge)
-│   ├── styles.css                # 全局样式（~9700行，含所有皮肤基础样式 + P1-P4组件样式）
+│   ├── styles.css                # 全局样式（~12500行，含所有皮肤基础样式 + P1-P4组件样式 + v0.96 UI重构）
 │   ├── styles/
-│   │   ├── skin-dream.css        # 梦幻皮肤样式（磨砂/背景图/动画）
-│   │   └── skin-hub.css          # Hub 皮肤样式（分段控件/卡片布局）
+│   │   ├── skin-dream.css        # 梦幻皮肤样式（磨砂/背景图/动画/自适应主题）
+│   │   ├── skin-hub.css          # Hub 皮肤样式（分段控件/卡片布局）
+│   │   └── codem-ui.css          # Codem UI 组件专用样式（v0.96 新增）
 │   │
 │   ├── components/               # UI 组件
 │   │   ├── ChatPanel.tsx         # 对话面板（消息列表 + InputArea + 轮次分组）
@@ -187,7 +189,8 @@ mimo-gui/
 │   │   ├── SlashCommandMenu.tsx  # / 命令菜单
 │   │   ├── FileExplorer.tsx      # 文件浏览器
 │   │   ├── FileEditor.tsx       # 文件编辑器
-│   │   ├── DiffViewer.tsx       # Diff 对比查看器
+│   │   ├── DiffViewer.tsx       # Diff 对比查看器（v0.96 被 InlineDiffReview 替代，保留兼容）
+│   │   ├── InlineDiffReview.tsx # 内联 Diff 审查（v0.96 新增，批量审批 + 统一/预览双视图）
 │   │   ├── FileUpload.tsx       # 文件上传组件
 │   │   ├── BootstrapWizard.tsx  # 初始化引导（AI身份 + 用户信息）
 │   │   ├── ProjectManager.tsx   # 项目管理器
@@ -209,6 +212,42 @@ mimo-gui/
 │   │   ├── SelectionTooltip.tsx # 选中文字浮窗工具栏
 │   │   ├── UsageStats.tsx       # 用量统计面板
 │   │   ├── PetOverlay.tsx       # 宠物市场/设置浮层入口（主窗口内）
+│   │   │
+│   │   │  ── v0.96 新增组件 ──
+│   │   ├── BootSplash.tsx       # 启动加载画面
+│   │   ├── ToastNotification.tsx# Toast 通知系统
+│   │   ├── Drawer.tsx           # 通用抽屉组件
+│   │   ├── NewChatPage.tsx      # 新对话首页
+│   │   ├── SpaceSwitcher.tsx    # 工作空间切换器
+│   │   ├── GitBranchSelector.tsx# Git 分支选择器
+│   │   ├── AudioPlayer.tsx      # 音频播放器
+│   │   ├── ExcelViewer.tsx      # Excel 文件查看器（xlsx）
+│   │   ├── ErrorCard.tsx        # 错误卡片
+│   │   ├── RunStatusBar.tsx     # 运行状态栏
+│   │   ├── ActivityTimeline.tsx # 活动时间线
+│   │   ├── AgentRoster.tsx      # 智能体花名册
+│   │   ├── ConversationOverview.tsx # 对话概览
+│   │   ├── UsageVisuals.tsx     # 用量可视化
+│   │   ├── WorkspaceBackdrop.tsx# 工作区背景
+│   │   ├── DecisionTray.tsx     # 决策托盘
+│   │   ├── SettingsParts.tsx    # 设置面板分区组件
+│   │   ├── ShikiCodeBlock.tsx   # Shiki 代码块（VS Code 级语法高亮）
+│   │   ├── ToolCallCard.tsx     # 工具调用卡片（pill 胶囊风格）
+│   │   ├── ToolCallGroup.tsx    # 工具调用组（内联展示 + 同类合并）
+│   │   ├── MessageActions.tsx   # 消息操作工具栏（绝对定位悬浮）
+│   │   ├── rich-content/        # 富内容渲染系统（v0.96 新增）
+│   │   │   ├── RichContent.tsx  # 富内容统一入口
+│   │   │   ├── ContentFrame.tsx # 内容框架
+│   │   │   ├── CodeBlockView.tsx# 代码块视图
+│   │   │   ├── HtmlPreviewView.tsx # HTML 预览
+│   │   │   ├── ImagePreviewView.tsx # 图片预览
+│   │   │   ├── JsonFormatView.tsx # JSON 格式化
+│   │   │   ├── MathFormulaView.tsx # 数学公式
+│   │   │   ├── MermaidCanvasView.tsx # Mermaid 图表
+│   │   │   ├── TableScrollView.tsx # 表格滚动视图
+│   │   │   └── FullscreenViewer.tsx # 全屏查看器
+│   │   ├── ui/
+│   │   │   └── overlay-kit.tsx  # Overlay 工具包（v0.96 新增）
 │   │   │
 │   │   │  ── P0: 滚动与UX基础 ──
 │   │   ├── ScrollbarMarkers.tsx # 滚动条消息标记
@@ -292,6 +331,8 @@ mimo-gui/
 │   │   │   ├── attachment-formatter.ts # 附件格式化
 │   │   │   ├── attachment-sync.ts     # 附件同步到工作区
 │   │   │   ├── tool-renderer.ts # 工具渲染
+│   │   │   ├── run-status-tracker.ts # 运行状态追踪器（v0.96 新增）
+│   │   │   ├── stream-reveal.ts # 流式内容逐步揭示（v0.96 新增）
 │   │   │   └── types.ts         # LLM 类型
 │   │   │
 │   │   ├── subagent/             # 子智能体
@@ -361,8 +402,9 @@ mimo-gui/
 │   │   │   └── index.ts          # 导出
 │   │   │
 │   │   ├── theme/                # 皮肤系统
-│   │   │   ├── theme-manager.ts  # 主题管理（背景图提取颜色）
+│   │   │   ├── theme-manager.ts  # 主题管理（背景图提取颜色 + v0.96 自适应data-theme）
 │   │   │   ├── theme-extractor.ts # 颜色提取器
+│   │   │   ├── contrast-checker.ts # 对比度检查器（v0.96 新增，确保文字可读性）
 │   │   │   ├── presets.ts        # 预设主题
 │   │   │   ├── use-skin.ts       # 皮肤 Hook
 │   │   │   ├── types.ts          # 类型
@@ -424,6 +466,10 @@ mimo-gui/
 │   │   │   ├── pet-manager.ts    # 本地宠物安装/加载/卸载
 │   │   │   ├── pet-market-client.ts # Petdex 市场 API 客户端
 │   │   │   └── index.ts          # 导出
+│   │
+│   ├── hooks/                    # React Hooks（v0.96 新增目录）
+│   │   ├── useDraftPersistence.ts # 草稿持久化 Hook
+│   │   └── usePaneResize.ts      # 面板尺寸调整 Hook
 │   │
 │   └── test/                     # 测试文件
 │       ├── ui-batch-a-d.test.ts  # 188个UI批量测试
@@ -530,13 +576,19 @@ core/store.ts (useProjectStore)
 
 ```
 theme/theme-manager.ts → 注入 CSS 变量 (--dream-bg-image, --dream-accent, ...)
+  ├── v0.96: applyDreamCSS 根据 palette.isDark 自适应设置 data-theme
+  ├── v0.96: cleanDreamCSS 恢复用户偏好主题
+  ├── v0.96: 注入 glass/surface/message-bubble/tool-card/composer/titlebar/rich-code token 覆盖
   ├── styles/skin-dream.css → [data-skin="dream"] 选择器
   │   ⚠ backdrop-filter 在 .sidebar 上 → 为 position:fixed 子元素创建 containing block
   │   → 所有弹窗组件必须用 createPortal 渲染到 document.body
+  ├── styles/codem-ui.css → Codem UI 组件专用样式（工具调用/推理块/InlineDiffReview）
   ├── DreamLayout.tsx → 梦幻皮肤布局
-  ├── HubLayout.tsx → Hub 皮肤布局
+  ├── HubLayout.tsx → Hub 皮肤布局（v0.96: rightRailOpen 状态同步）
   ├── TopNavbar.tsx → 皮肤切换
+  ├── TitleBar.tsx → v0.96: Dream 皮肤激活时跳过 data-theme 覆盖
   ├── SkinSelector.tsx → 皮肤选择器
+  ├── theme/contrast-checker.ts → v0.96: 对比度检查（确保文字可读性）
   └── 影响文件: App.tsx (data-skin 属性), 所有弹窗组件 (Portal)
 ```
 
@@ -680,7 +732,7 @@ Rust 后端 (lib.rs):
 2. `TODO.md` — 了解当前待办（含未发布开发分支变更）
 3. `WECODE-REF-GAP-ANALYSIS.md` — 了解对标分析发现的功能缺失
 4. `IMPLEMENTATION-PLAN-FULL.md` — 了解 P0-P4 实施计划
-5. `CHANGELOG-v0.89.md` — 了解最新发布版本变更
+5. `CHANGELOG-v0.89.md` — 了解最新发布版本变更（v0.96.0 变更见 README.md 更新日志）
 6. `TEST-CASES-REGRESSION-V2.md` — 了解回归测试用例（含冒烟测试）
 
 **其余文档均为历史归档或已完成计划的记录，不影响进度判断。**
@@ -709,6 +761,7 @@ Rust 后端 (lib.rs):
 | v0.93.0 | 2026-08-03 | Vision Proxy视觉代理全链路 — 纯文本模型(DeepSeek)支持图片理解（检测图片→智能路由→视觉模型描述→替换为文字→转发主模型） + STT语音转写代理通路 + 图片生成通路 + 多模态能力矩阵重构(vision/stt输入 + embedding/tts/imageGen输出) + TaskSlot新增vision + 内置方案DeepSeek+视觉代理 + 配置弹窗z-index修复 + 89新测试(全量2859通过) |
 | v0.94.0 | 2026-08-03 | 配置方案Portal渲染彻底修复遮挡 + 新建方案自动展开配置面板+名称描述行内编辑 + 持久化修复(ModelProfile单例在DB初始化后reload) + 梦幻皮肤支持GIF和视频背景(3种音频模式+音量滑轨) |
 | v0.95.0 | 2026-08-03 | Vision Proxy MiMo v2.5支持 + CLI/API双模式视觉代理全链路打通(engine获取token) + CSP全面修复(media/font/frame-src+blob+asset.localhost) + 梦幻皮肤视频背景打包修复 + 花瓣缩小 + 仓库清理(移除对标/培训/内部文档) + 13个E2E全场景测试(156通过) |
+| v0.96.0 | 2026-08-08 | 主对话窗口UI大改版(对标frakio-work/wecode) + 内联Diff批量审批(替换弹窗) + 三皮肤暗色模式深度修复 + 梦幻皮肤自适应主题(data-theme基于palette.isDark) + 富内容渲染系统(9组件) + Shiki语法高亮 + 39个新组件 + 3个新依赖(framer-motion/shiki/xlsx) |
 
 ### 6.2 v0.90.0 已发布功能（P0-P4 全量功能，commit 7435919，2026-07-31）
 
@@ -894,6 +947,7 @@ Rust 后端 (lib.rs):
 | **v0.91.0 集成与测试项** | ✅ 已完成 | 自动Commit开关UI（GitEnvSettings）/ AgentProfile管理UI（SettingsPanel Advanced tab）/ DiffViewer已集成 / PTY跨平台shell检测（$SHELL fallback）/ NeedsYouPanel已集成 / TranscriptCache统计面板 / FileChangeTracker大patch预检查 |
 | **P0-P4 组件集成项** | ✅ 已完成 | GenerateModeSelector/ResolutionSelector已渲染（InputArea多模态面板）/ SourceSelector已集成 / QuickAccessCards已集成 / CorrectionResultPanel已集成 / ClarificationForm已集成 / PipelineNextStepDialog已集成 / SkillAutocomplete由SlashCommandMenu覆盖 / note-operations已注册（tools.ts L922） |
 | **UI 设计完全版改造** | ✅ 已完成 | 自定义缓动曲线（cubic-bezier）/ transition:all清零（三皮肤51处）/ 按钮按压反馈scale(0.97) / 弹窗transform-origin / 可访问性reduced-motion+reduced-transparency / 材质分层blur(20px)+blur(12px) / @starting-style入场现代化 |
+| **v0.96 UI 大改版** | ✅ 已发布 | v0.96.0 发布，主对话窗口样式对标 frakio-work/wecode + 内联 Diff 批量审批 + 三皮肤暗色模式修复 + 梦幻皮肤自适应主题 + 富内容渲染系统 + Shiki 语法高亮 + 39 个新组件 |
 | **Phase E: Work 模式拆分** | ⏳ 远期 | Codex/Work 双模式切换（E1-E7） |
 | **MSI 中文向导** | ⏳ | WiX 多语言配置（zh-CN + en-US） |
 | **更多 Provider 测试** | ⏳ | 目前主要测试 DeepSeek + MiMo |
@@ -973,6 +1027,16 @@ Rust 后端 (lib.rs):
 46. **系统托盘集成**：`tray-icon` feature + `build_tray_menu` 实现最小化到托盘 / 恢复 / 退出
 47. **DB 关闭时 flush**：`close-requested` 事件 + `handleCloseChoice` 中调用 `flushDatabase()`，确保 500ms 防抖写入在应用退出前立即刷盘，防止设置丢失
 48. **模型/模式持久化修复**：DB 初始化完成后（`initDatabase` + `migrateFromLocalStorage` 之后）同步调用 `configureEngine()`，确保重启后正确恢复上次使用的模式（API/CLI）及对应模型
+
+#### I. v0.96 UI 大改版决策
+
+49. **内联 Diff 审查替代弹窗**：`InlineDiffReview` 在消息流内联展示 diff，支持批量审批 + 自定义指令，多文件审批不再逐个弹窗，用户体验显著提升
+50. **Shiki 替换 react-syntax-highlighter**：Shiki 提供 VS Code 级别语法高亮（TextMate 语法 + VS Code 主题），渲染质量更高，支持所有语言
+51. **富内容渲染系统**：`RichContent` + `ContentFrame` 统一管理代码/HTML/图片/JSON/数学公式/Mermaid/表格的渲染，每种内容类型有专用视图组件 + 全屏查看器
+52. **梦幻皮肤自适应主题**：`ThemeManager.applyDreamCSS` 根据提取的调色板 `isDark` 自动设置 `data-theme`，`TitleBar` 在 Dream 皮肤激活时跳过 `data-theme` 覆盖，确保主题一致性
+53. **工具调用 pill 胶囊风格**：`ToolCallCard` + `ToolCallGroup` 采用内联 pill 风格，同类工具合并展示，减少视觉噪音
+54. **Framer Motion 动画引擎**：Toast/Drawer/BootSplash 等组件统一使用 Framer Motion 管理入场/退场动画，替代 CSS animation
+55. **消息容器居中限宽**：`.messages-container` 添加 `max-width` + `margin: auto`，大屏下消息不会过宽，视觉节奏更清晰
 
 ---
 

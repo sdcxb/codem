@@ -1,20 +1,31 @@
-﻿/**
- * Hub 皮肤 - 右侧栏
- * 1. 无项目无对话时：显示新手引导任务
- * 2. 有项目有对话时：显示最新对话和任务
- * 3. 支持隐私隐藏（不在右侧栏显示）
- * 4. 支持收缩/展开
+﻿﻿﻿﻿/**
+ * RightSidebar — 上下文工具面板
+ *
+ * 设计参考 frakio-work 的 right-rail：
+ * - 纯上下文工具面板，只放需要和对话并排操作的工具
+ * - Files: 项目文件浏览
+ * - Browser: 内嵌网页浏览
+ * - 运行监控类内容（活动时间线、概览等）不在右侧栏，在主对话流中
+ *
+ * 变更说明：
+ * - 移除了 Activity / Overview / Git / Agents tab（与主对话或左侧栏重复）
+ * - 移除了底部 Agent 状态卡片、新手引导、最近对话、推荐下一步等区域
+ * - 只保留上下文工具：Files + Browser
  */
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useLang } from "../core/i18n/lang";
-import { useAppStore } from "../store";
+import { Folder, Globe, X, ChevronRight, ChevronLeft } from "lucide-react";
 import { useProjectStore } from "../core/store";
-import * as SessionStorage from "../core/storage/session";
-import type { Session } from "../core/types";
-import { GitInfoPanel } from "./GitInfoPanel";
+import { FileExplorer } from "./FileExplorer";
+import { usePaneResize } from "../hooks/usePaneResize";
 
-interface HubRightSidebarProps {
+interface RightSidebarProps {
+  /** 外部控制收起状态（由顶部 TitleBar 的 rightRailOpen 驱动） */
+  collapsed?: boolean;
+  /** 切换收起/展开（由顶部 TitleBar 按钮 驱动） */
+  onToggleCollapse?: () => void;
+  /** 未使用，保留兼容 */
   onNewChat?: () => void;
   onNewProject?: () => void;
   onImportProject?: () => void;
@@ -22,375 +33,152 @@ interface HubRightSidebarProps {
   onOpenSession?: (sessionId: string, projectId: string) => void;
 }
 
-export function RightSidebar({ onNewChat, onNewProject, onImportProject, onGitHubClone, onOpenSession }: HubRightSidebarProps) {
+export function RightSidebar(props: RightSidebarProps = {}) {
   const lang = useLang();
-  const [collapsed, setCollapsed] = useState(false);
-  const { messages, isStreaming, activeSessions } = useAppStore();
-  const { projects, currentProject } = useProjectStore();
+  const zh = lang === "zh";
+  const [internalCollapsed, setInternalCollapsed] = useState(false);
+  const [activeTab, setActiveTab] = useState<"files" | "browser">("files");
+  const { currentProject } = useProjectStore();
 
-  // 获取所有项目的最近会话
-  const [recentSessions, setRecentSessions] = useState<Session[]>([]);
-  // 隐藏的会话 ID 集合（隐私功能）
-  const [hiddenSessions, setHiddenSessions] = useState<Set<string>>(() => {
-    try {
-      const stored = localStorage.getItem("hub-hidden-sessions");
-      return stored ? new Set(JSON.parse(stored)) : new Set();
-    } catch {
-      return new Set();
-    }
-  });
-
-  useEffect(() => {
-    // 收集所有项目的最近会话
-    const allSessions: Session[] = [];
-    for (const project of projects) {
-      const sessions = SessionStorage.listSessions(project.id);
-      allSessions.push(...sessions);
-    }
-    // 按最后消息时间排序，取最近 5 条
-    allSessions.sort((a, b) => b.lastMessageAt - a.lastMessageAt);
-    setRecentSessions(allSessions.slice(0, 5));
-  }, [projects]);
-
-  // 保存隐藏列表
-  const toggleHideSession = (sessionId: string) => {
-    const newSet = new Set(hiddenSessions);
-    if (newSet.has(sessionId)) {
-      newSet.delete(sessionId);
+  // Support both external controlled mode (from TitleBar) and internal mode
+  const collapsed = props.collapsed ?? internalCollapsed;
+  const toggleCollapse = () => {
+    if (props.onToggleCollapse) {
+      props.onToggleCollapse();
     } else {
-      newSet.add(sessionId);
+      setInternalCollapsed(!internalCollapsed);
     }
-    setHiddenSessions(newSet);
-    localStorage.setItem("hub-hidden-sessions", JSON.stringify([...newSet]));
   };
 
-  // 当前任务
-  const lastAssistantMsg = [...messages].reverse().find((m: any) => m.role === "assistant");
-  const currentTask = lastAssistantMsg
-    ? (lastAssistantMsg as any).content?.slice(0, 80) || (lang === "zh" ? "处理中..." : "Processing...")
-    : lang === "zh" ? "空闲" : "Idle";
+  // Browser state
+  const [browserUrl, setBrowserUrl] = useState("");
+  const [browserInput, setBrowserInput] = useState("");
 
-  // 判断是否为新手（无项目且无对话）
-  const hasProjects = projects.length > 0;
-  const hasMessages = messages.length > 0;
-  const isNewUser = !hasProjects && !hasMessages;
+  const { width: sidebarWidth, isResizing, onResizeStart } = usePaneResize({
+    min: 280,
+    max: 500,
+    initial: 344,
+    storageKey: "right-sidebar-width",
+  });
 
-  // 过滤掉隐藏的会话
-  const visibleSessions = recentSessions.filter((s) => !hiddenSessions.has(s.id));
-
-  // Get active sessions for the active tasks panel
-  const activeSessionsList = visibleSessions.filter(s => activeSessions.has(s.id));
-
-  // 收缩状态
+  // Collapsed mode — thin rail with expand button
   if (collapsed) {
     return (
-      <aside className="hub-right-sidebar hub-right-sidebar-collapsed">
+      <aside className="right-sidebar right-sidebar-collapsed" style={{ width: 36 }}>
         <button
-          className="hub-sidebar-toggle hub-sidebar-toggle-collapsed"
-          onClick={() => setCollapsed(false)}
-          title={lang === "zh" ? "展开右侧栏" : "Expand sidebar"}
+          className="right-sidebar-toggle-collapsed"
+          onClick={toggleCollapse}
+          title={zh ? "展开右侧栏" : "Expand"}
+          aria-label={zh ? "展开右侧栏" : "Expand"}
         >
-          <i className="fas fa-chevron-left" />
+          <ChevronLeft size={16} />
         </button>
       </aside>
     );
   }
 
+  const tabs = [
+    { id: "files" as const, icon: Folder, label: zh ? "文件" : "Files" },
+    { id: "browser" as const, icon: Globe, label: zh ? "浏览器" : "Browser" },
+  ];
+
   return (
-    <aside className="hub-right-sidebar">
-      {/* 收缩按钮 */}
+    <aside className="right-sidebar" style={{ width: sidebarWidth, flexShrink: 0 }}>
+      {/* Resize handle */}
+      <div
+        className={`right-sidebar-resize-handle ${isResizing ? "active" : ""}`}
+        onPointerDown={onResizeStart}
+      />
+
+      {/* Collapse button */}
       <button
-        className="hub-sidebar-toggle hub-sidebar-toggle-open"
-        onClick={() => setCollapsed(true)}
-        title={lang === "zh" ? "收起右侧栏" : "Collapse sidebar"}
+        className="right-sidebar-toggle"
+        onClick={toggleCollapse}
+        title={zh ? "收起右侧栏" : "Collapse"}
+        aria-label={zh ? "收起右侧栏" : "Collapse"}
       >
-        <i className="fas fa-chevron-right" />
+        <ChevronRight size={14} />
       </button>
 
-      {/* Agent 状态卡片 */}
-      <div className="hub-agent-card">
-        <div style={{ textAlign: "left", marginBottom: "16px", fontWeight: 500, color: "var(--hub-text-main)" }}>
-          {lang === "zh" ? "正在工作的 Agent" : "Active Agent"}
-        </div>
-        <div className="hub-agent-image">
-          <i className="fas fa-robot" style={{ color: "#333", fontSize: "80px" }} />
-          <div style={{ position: "absolute", top: "35%", display: "flex", flexDirection: "column", gap: "4px", alignItems: "center" }}>
-            <span style={{ color: "var(--hub-color-primary)", fontSize: "18px", fontWeight: "bold", background: "#000", padding: "2px 8px", borderRadius: "4px" }}>
-              {">"} _
-            </span>
-          </div>
-        </div>
-        <div className="hub-agent-info">
-          <p>
-            <span className="hub-status-dot" /> codem {lang === "zh" ? "在线" : "Online"}
-          </p>
-          <p style={{ color: "var(--hub-text-muted)", marginTop: "8px", fontSize: "12px" }}>
-            {isStreaming
-              ? (lang === "zh" ? "正在执行: " : "Executing: ") + currentTask
-              : (lang === "zh" ? "就绪" : "Ready")}
-          </p>
-        </div>
+      {/* Tab header */}
+      <div className="right-sidebar-tabs">
+        {tabs.map((tab) => {
+          const Icon = tab.icon;
+          const active = activeTab === tab.id;
+          return (
+            <button
+              key={tab.id}
+              className={`right-sidebar-tab ${active ? "active" : ""}`}
+              onClick={() => setActiveTab(tab.id)}
+            >
+              <Icon size={13} />
+              <span>{tab.label}</span>
+            </button>
+          );
+        })}
       </div>
 
-      {/* Git 环境信息面板 */}
-      {currentProject && (
-        <div className="hub-git-info-panel" style={{ padding: "8px 12px", borderBottom: "1px solid var(--hub-border)" }}>
-          <GitInfoPanel />
-        </div>
-      )}
-
-      {/* 活跃任务面板 */}
-      {activeSessionsList.length > 0 && (
-        <div style={{ padding: "8px 12px", borderBottom: "1px solid var(--hub-border)" }}>
-          <div style={{ fontSize: 11, fontWeight: 600, color: "var(--hub-text-main)", marginBottom: 6 }}>
-            ⚡ {lang === "zh" ? "活跃任务" : "Active Tasks"} ({activeSessionsList.length})
-          </div>
-          {activeSessionsList.map(s => (
-            <div
-              key={s.id}
-              onClick={() => onOpenSession?.(s.id, s.projectId)}
-              style={{
-                display: "flex", alignItems: "center", gap: 6,
-                padding: "4px 6px", borderRadius: 4, cursor: "pointer",
-                background: "var(--hub-bg-card)", marginBottom: 4, fontSize: 11,
+      {/* Tab content */}
+      <div className="right-sidebar-content">
+        {activeTab === "files" && (
+          currentProject ? (
+            <FileExplorer
+              cwd={currentProject.path}
+              onFileClick={(p) => {
+                window.dispatchEvent(new CustomEvent("codem:open-file", { detail: p }));
               }}
-            >
-              <span className="session-running-dot" />
-              <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                {s.title}
-              </span>
-              {s.executionMode === "git_worktree" && <span style={{ fontSize: 10 }}>🌲</span>}
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* 新手引导（无项目无对话时） */}
-      {isNewUser && (
-        <div className="hub-onboarding">
-          <div className="hub-tasks-header">
-            <h3>
-              <i className="fas fa-rocket" style={{ color: "var(--hub-color-primary)", marginRight: "6px" }} />
-              {lang === "zh" ? "快速开始" : "Quick Start"}
-            </h3>
-          </div>
-          <div className="hub-task-list">
-            <div className="hub-task-item hub-onboarding-item" onClick={onNewChat} style={{ cursor: "pointer" }}>
-              <div className="hub-task-icon hub-task-icon-blue">
-                <i className="fas fa-comments" />
-              </div>
-              <div className="hub-task-content">
-                <h4>{lang === "zh" ? "开始聊天对话" : "Start a chat"}</h4>
-                <div className="hub-task-tags">
-                  <span>{lang === "zh" ? "推荐" : "Recommended"}</span>
-                </div>
-              </div>
-            </div>
-            <div className="hub-task-item hub-onboarding-item" onClick={onNewProject} style={{ cursor: "pointer" }}>
-              <div className="hub-task-icon hub-task-icon-green">
-                <i className="fas fa-folder-plus" />
-              </div>
-              <div className="hub-task-content">
-                <h4>{lang === "zh" ? "新建项目" : "Create a project"}</h4>
-                <div className="hub-task-tags">
-                  <span>{lang === "zh" ? "项目管理" : "Projects"}</span>
-                </div>
-              </div>
-            </div>
-            <div className="hub-task-item hub-onboarding-item" onClick={onImportProject} style={{ cursor: "pointer" }}>
-              <div className="hub-task-icon hub-task-icon-orange">
-                <i className="fas fa-file-import" />
-              </div>
-              <div className="hub-task-content">
-                <h4>{lang === "zh" ? "导入项目" : "Import a project"}</h4>
-                <div className="hub-task-tags">
-                  <span>{lang === "zh" ? "从本地" : "From local"}</span>
-                </div>
-              </div>
-            </div>
-            <div className="hub-task-item hub-onboarding-item" onClick={onGitHubClone} style={{ cursor: "pointer" }}>
-              <div className="hub-task-icon hub-task-icon-purple">
-                <i className="fab fa-github" />
-              </div>
-              <div className="hub-task-content">
-                <h4>{lang === "zh" ? "从 GitHub 拉取" : "Clone from GitHub"}</h4>
-                <div className="hub-task-tags">
-                  <span>Git</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 最新对话和任务（有项目有对话时） */}
-      {!isNewUser && (
-        <div className="hub-recent">
-          <div className="hub-tasks-header">
-            <h3>
-              <i className="fas fa-clock-rotate-left" style={{ color: "var(--hub-color-primary)", marginRight: "6px" }} />
-              {lang === "zh" ? "最近对话" : "Recent Chats"}
-            </h3>
-          </div>
-
-          {visibleSessions.length === 0 ? (
-            <div style={{ color: "var(--hub-text-muted)", fontSize: "13px", padding: "12px 0" }}>
-              {lang === "zh" ? "暂无对话记录" : "No conversations yet"}
-            </div>
+            />
           ) : (
-            <div className="hub-task-list">
-              {visibleSessions.map((session) => {
-                const project = projects.find((p) => p.id === session.projectId);
-                return (
-                  <div
-                    key={session.id}
-                    className="hub-task-item hub-recent-item"
-                    onClick={() => onOpenSession?.(session.id, session.projectId)}
-                    style={{ cursor: "pointer", position: "relative" }}
-                  >
-                    <div className="hub-task-icon hub-task-icon-blue">
-                      <i className="fas fa-comment-dots" />
-                    </div>
-                    <div className="hub-task-content" style={{ minWidth: 0, flex: 1 }}>
-                      <h4 style={{
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
-                      }}>
-                        {session.title || (lang === "zh" ? "新对话" : "New Chat")}
-                      </h4>
-                      <div className="hub-task-tags">
-                        {project && <span>{project.name}</span>}
-                        <span>{session.messageCount} {lang === "zh" ? "条" : "msgs"}</span>
-                      </div>
-                      <div style={{ fontSize: "11px", color: "var(--hub-text-muted)", marginTop: "4px" }}>
-                        {formatTime(session.lastMessageAt, lang)}
-                      </div>
-                    </div>
-                    {/* 隐私隐藏按钮 */}
-                    <button
-                      className="hub-hide-btn"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        toggleHideSession(session.id);
-                      }}
-                      title={lang === "zh" ? "不在此处显示" : "Hide from here"}
-                    >
-                      <i className="fas fa-eye-slash" style={{ fontSize: "11px" }} />
-                    </button>
-                  </div>
-                );
-              })}
+            <div className="right-sidebar-empty">
+              {zh ? "选择项目后可浏览文件" : "Select a project to browse files"}
             </div>
-          )}
+          )
+        )}
 
-          {/* 如果有隐藏的会话，显示恢复按钮 */}
-          {hiddenSessions.size > 0 && (
-            <button
-              className="hub-restore-btn"
-              onClick={() => {
-                setHiddenSessions(new Set());
-                localStorage.removeItem("hub-hidden-sessions");
-              }}
-              style={{
-                background: "none",
-                border: "none",
-                color: "var(--hub-text-muted)",
-                fontSize: "12px",
-                cursor: "pointer",
-                padding: "8px 0",
-                width: "100%",
-                textAlign: "center",
-              }}
-            >
-              {lang === "zh" ? `恢复 ${hiddenSessions.size} 条隐藏对话` : `Restore ${hiddenSessions.size} hidden`}
-            </button>
-          )}
-
-          {/* LLM 推荐下一步 */}
-          {!isStreaming && hasMessages && (
-            <>
-              <div className="hub-tasks-header" style={{ marginTop: "20px" }}>
-                <h3>
-                  <i className="fas fa-fire" style={{ color: "var(--hub-color-primary)", marginRight: "6px" }} />
-                  {lang === "zh" ? "推荐下一步" : "Recommended Next"}
-                </h3>
+        {activeTab === "browser" && (
+          <div className="right-sidebar-browser">
+            <div className="browser-url-bar">
+              <input
+                type="url"
+                placeholder="https://..."
+                value={browserInput}
+                onChange={(e) => setBrowserInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && browserInput.trim()) {
+                    const url = browserInput.trim().startsWith("http")
+                      ? browserInput.trim()
+                      : `https://${browserInput.trim()}`;
+                    setBrowserUrl(url);
+                  }
+                }}
+              />
+              <button
+                className="browser-go-btn"
+                onClick={() => {
+                  if (!browserInput.trim()) return;
+                  const url = browserInput.trim().startsWith("http")
+                    ? browserInput.trim()
+                    : `https://${browserInput.trim()}`;
+                  setBrowserUrl(url);
+                }}
+              >
+                Go
+              </button>
+            </div>
+            {browserUrl ? (
+              <iframe
+                src={browserUrl}
+                title="browser"
+                sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+              />
+            ) : (
+              <div className="right-sidebar-empty">
+                {zh ? "输入网址开始浏览" : "Enter a URL to browse"}
               </div>
-              <div className="hub-task-list">
-                <div className="hub-task-item">
-                  <div className="hub-task-icon hub-task-icon-green"><i className="fas fa-code-branch" /></div>
-                  <div className="hub-task-content">
-                    <h4>{lang === "zh" ? "审查代码变更" : "Review code changes"}</h4>
-                    <div className="hub-task-tags"><span>{lang === "zh" ? "代码审查" : "Code Review"}</span></div>
-                  </div>
-                </div>
-                <div className="hub-task-item">
-                  <div className="hub-task-icon hub-task-icon-orange"><i className="fas fa-vial" /></div>
-                  <div className="hub-task-content">
-                    <h4>{lang === "zh" ? "运行测试" : "Run tests"}</h4>
-                    <div className="hub-task-tags"><span>{lang === "zh" ? "测试" : "Testing"}</span></div>
-                  </div>
-                </div>
-                <div className="hub-task-item">
-                  <div className="hub-task-icon hub-task-icon-purple"><i className="fas fa-book" /></div>
-                  <div className="hub-task-content">
-                    <h4>{lang === "zh" ? "更新文档" : "Update docs"}</h4>
-                    <div className="hub-task-tags"><span>{lang === "zh" ? "文档" : "Docs"}</span></div>
-                  </div>
-                </div>
-              </div>
-            </>
-          )}
-
-          {/* 正在执行任务时 */}
-          {isStreaming && (
-            <>
-              <div className="hub-tasks-header" style={{ marginTop: "20px" }}>
-                <h3>
-                  <i className="fas fa-spinner fa-spin" style={{ color: "var(--hub-color-primary)", marginRight: "6px" }} />
-                  {lang === "zh" ? "当前任务" : "Current Task"}
-                </h3>
-              </div>
-              <div className="hub-task-list">
-                <div className="hub-task-item">
-                  <div className="hub-task-icon hub-task-icon-blue"><i className="fas fa-clock" /></div>
-                  <div className="hub-task-content">
-                    <h4 style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      {currentTask}
-                    </h4>
-                    <div className="hub-task-tags">
-                      <span>{lang === "zh" ? "执行中" : "Running"}</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </>
-          )}
-        </div>
-      )}
+            )}
+          </div>
+        )}
+      </div>
     </aside>
   );
-}
-
-/** 格式化时间 */
-function formatTime(timestamp: number, lang: string): string {
-  const now = Date.now();
-  const diff = now - timestamp;
-  const minutes = Math.floor(diff / 60000);
-  const hours = Math.floor(diff / 3600000);
-  const days = Math.floor(diff / 86400000);
-
-  if (lang === "zh") {
-    if (minutes < 1) return "刚刚";
-    if (minutes < 60) return `${minutes} 分钟前`;
-    if (hours < 24) return `${hours} 小时前`;
-    if (days < 7) return `${days} 天前`;
-    return new Date(timestamp).toLocaleDateString("zh-CN");
-  } else {
-    if (minutes < 1) return "just now";
-    if (minutes < 60) return `${minutes} min ago`;
-    if (hours < 24) return `${hours} hr ago`;
-    if (days < 7) return `${days} days ago`;
-    return new Date(timestamp).toLocaleDateString("en-US");
-  }
 }

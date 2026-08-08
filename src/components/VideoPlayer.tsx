@@ -6,6 +6,7 @@
 
 import { memo, useRef, useState } from "react";
 import { useLang, S } from "../core/i18n/lang";
+import { Play, Pause } from "lucide-react";
 
 interface VideoPlayerProps {
   /** Video URL or data URI */
@@ -59,7 +60,7 @@ export const VideoPlayer = memo(function VideoPlayer({
       />
       <div className="video-controls">
         <button className="video-btn play" onClick={togglePlay}>
-          {playing ? "⏸" : "▶"}
+          {playing ? <Pause size={16} /> : <Play size={16} />}
         </button>
         <input
           type="range"

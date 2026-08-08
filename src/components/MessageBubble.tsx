@@ -1,17 +1,24 @@
 import { useState, useEffect, useRef, useCallback, memo, useMemo } from "react";
 import { Message, useAppStore } from "../store";
 import ReactMarkdown from "react-markdown";
-import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
-import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
+// P1 #17: Shiki replaces Prism for code highlighting
+import { ShikiCodeBlock } from "./ShikiCodeBlock";
 import { DefaultToolRenderer } from "../core/llm/tool-renderer";
 import { getSubagentManager } from "../core/subagent/subagent";
 import { getLang, useLang, S } from "../core/i18n/lang";
 import { Tooltip, TooltipTrigger, TooltipContent } from "./ui/tooltip";
+import { splitGraphemes } from "../core/llm/stream-reveal";
 import { InlineMessageEdit } from "./InlineMessageEdit";
 import { FeedbackButtons } from "./FeedbackButtons";
 import { SourceReferences } from "./SourceReferences";
 import { ImageGallery } from "./ImageGallery";
 import { VideoPlayer } from "./VideoPlayer";
+import { RichContent } from "./rich-content/RichContent";
+import { Bot, CheckCircle, XCircle, Clock, FileText, Image as ImageIcon, Pencil, PencilLine, Clipboard, Check, BookOpen, BookX, Brain, ChevronDown, ChevronUp } from "lucide-react";
+import { MessageActions } from "./MessageActions";
+import { ErrorCard } from "./ErrorCard";
+import { ToolCallGroup } from "./ToolCallGroup";
+import type { ToolCallCardProps } from "./ToolCallCard";
 
 // B6: Mermaid diagram renderer component
 const MermaidDiagram = memo(function MermaidDiagram({ chart }: { chart: string }) {
@@ -137,12 +144,12 @@ const displayName = name || (zh ? "子智能体" : "Sub-agent");
 if (status === "init") return null;
 
 if (status === "completed") {
-    return <span className="subagent-status done">✅ {displayName} {zh ? "完成" : "completed"}{summary ? `: ${summary}` : ""}</span>;
+    return <span className="subagent-status done"><CheckCircle size={12} style={{ display: "inline", verticalAlign: "middle" }} /> {displayName} {zh ? "完成" : "completed"}{summary ? `: ${summary}` : ""}</span>;
   }
   if (status === "failed") {
-    return <span className="subagent-status failed">❌ {displayName} {zh ? "失败" : "failed"}</span>;
+    return <span className="subagent-status failed"><XCircle size={12} style={{ display: "inline", verticalAlign: "middle" }} /> {displayName} {zh ? "失败" : "failed"}</span>;
   }
-  return <span className="subagent-status running">⏳ {displayName} {zh ? "运行中..." : "running..."}</span>;
+  return <span className="subagent-status running"><Clock size={12} style={{ display: "inline", verticalAlign: "middle" }} /> {displayName} {zh ? "运行中..." : "running..."}</span>;
 }
 
 const toolRenderer = new DefaultToolRenderer({ maxOutputLength: 200 });
@@ -188,6 +195,7 @@ const [galleryIndex, setGalleryIndex] = useState(0);
   const isUser = message.role === "user";
   const isSystem = message.role === "system";
   const isStreaming = message.status === "streaming";
+  const isError = message.status === "error";
 
   // For user messages: strip <attachment> blocks from displayed content.
   // Attachment content is inlined into message.content for the LLM (with data-isolation
@@ -258,13 +266,10 @@ const [galleryIndex, setGalleryIndex] = useState(0);
                 {S.bubble.copy[lang]}
               </button>
             </div>
-            <SyntaxHighlighter
-              style={oneDark}
+            <ShikiCodeBlock
+              code={codeStr}
               language={match[1]}
-              PreTag="div"
-            >
-              {codeStr}
-            </SyntaxHighlighter>
+            />
           </div>
         );
       }
@@ -336,6 +341,29 @@ const [galleryIndex, setGalleryIndex] = useState(0);
     }
   }, [isStreaming, displayContent]);
 
+  // Auto-collapse reasoning block after streaming ends (aligned with wecode's 800ms delay)
+  const reasoningAutoCollapsedRef = useRef(false);
+  useEffect(() => {
+    if (isStreaming && message.reasoning) {
+      setExpanded(true);
+      reasoningAutoCollapsedRef.current = false;
+    } else if (!isStreaming && message.reasoning && !reasoningAutoCollapsedRef.current && expanded) {
+      const timer = setTimeout(() => {
+        setExpanded(false);
+        reasoningAutoCollapsedRef.current = true;
+      }, 800);
+      return () => clearTimeout(timer);
+    }
+  }, [isStreaming, message.reasoning]);
+
+  // P1: Stream reveal — compute reveal count for animation
+  const revealCount = useMemo(() => {
+    if (!isStreaming || !displayContent) return 0;
+    const graphemes = splitGraphemes(displayContent);
+    return Math.min(graphemes.length, 15);
+  }, [isStreaming, displayContent]);
+  const revealRevision = useMemo(() => displayContent.length, [displayContent.length]);
+
 const handleCopyMessage = useCallback(() => {
 navigator.clipboard.writeText(rawContent).then(() => {
 setCopied(true);
@@ -345,14 +373,22 @@ setTimeout(() => setCopied(false), 2000);
 
   return (
     <div 
-      className={`message ${isUser ? "user" : isSystem ? "system" : "assistant"} ${displayMode === "unified" ? "unified-mode" : ""}`}
+      className={`message message-bubble ${isUser ? "user" : isSystem ? "system" : "assistant"} ${displayMode === "unified" ? "unified-mode" : ""}`}
       data-message-id={message.id}
     >
-      <div className="message-avatar">
-        {isUser ? "👤" : isSystem ? "⚙️" : "🤖"}
-      </div>
-
       <div className="message-body">
+        {/* AI message inline header — replaces avatar (aligned with wecode/frakio) */}
+        {!isUser && !isSystem && (
+          <div className="ai-msg-header">
+            <Bot size={16} />
+            <span className="font-semibold">Codem</span>
+            {message.timestamp > 0 && (
+              <span className="ai-msg-time">
+                {new Date(message.timestamp).toLocaleTimeString(lang === "zh" ? "zh-CN" : "en-US", { hour: "2-digit", minute: "2-digit" })}
+              </span>
+            )}
+          </div>
+        )}
         {/* Attachments */}
         {message.attachments && message.attachments.length > 0 && (
           <div className="message-attachments">
@@ -372,7 +408,7 @@ setTimeout(() => setCopied(false), 2000);
                   />
                 ) : (
                   <div className="attachment-file">
-                    <span className="attachment-icon">{att.type === "image" ? "🖼️" : "📄"}</span>
+                    <span className="attachment-icon">{att.type === "image" ? <ImageIcon size={16} /> : <FileText size={16} />}</span>
                     <span className="attachment-name">{att.name}</span>
                     {att.size && <span className="attachment-size">{formatSize(att.size)}</span>}
                   </div>
@@ -403,6 +439,17 @@ setTimeout(() => setCopied(false), 2000);
           />
         ))}
 
+        {/* P1 #20: Error card for error messages */}
+        {isError && !isUser && (
+          <ErrorCard
+            title={lang === "zh" ? "执行出错" : "Execution Error"}
+            message={message.content || (lang === "zh" ? "未知错误" : "Unknown error")}
+            details={message.reasoning || undefined}
+            retryable
+            onRetry={() => { /* retry handled by parent via onEditAndResend */ }}
+          />
+        )}
+
         {/* Long message collapse wrapper (#3) */}
         <div
           className={`message-content-wrapper ${contentCollapsed && !isStreaming ? "collapsed" : ""}`}
@@ -418,14 +465,24 @@ setTimeout(() => setCopied(false), 2000);
             />
           ) : (
           <div className="message-content" ref={contentRef}>
-            <ReactMarkdown
-              components={{
-                ...markdownComponents,
-                hr: () => <div className="unified-separator" />,
-              }}
-            >
-              {displayContent}
-            </ReactMarkdown>
+            {!isUser && !isEditing ? (
+              <RichContent
+                content={displayContent}
+                streaming={isStreaming}
+                revealCount={revealCount}
+                revealRevision={revealRevision}
+                className=""
+              />
+            ) : (
+              <ReactMarkdown
+                components={{
+                  ...markdownComponents,
+                  hr: () => <div className="unified-separator" />,
+                }}
+              >
+                {displayContent}
+              </ReactMarkdown>
+            )}
           </div>
           )}
           {/* Collapse overlay with expand button */}
@@ -474,7 +531,7 @@ setTimeout(() => setCopied(false), 2000);
                   e.currentTarget.style.color = 'var(--text-secondary, #a0a0a8)';
                 }}
               >
-                📖 {src.sourceName}
+                <BookOpen size={14} style={{ display: "inline", verticalAlign: "middle" }} /> {src.sourceName}
               </button>
             ))}
           </div>
@@ -486,10 +543,22 @@ setTimeout(() => setCopied(false), 2000);
               className="reasoning-toggle"
               onClick={() => setExpanded(!expanded)}
             >
-              {S.bubble.reasoning[lang]} {expanded ? "▼" : "▶"}
+              <Brain className={`reasoning-icon ${isStreaming ? "streaming" : ""}`} />
+              <span>
+                {isStreaming
+                  ? (lang === "zh" ? "思考中..." : "Thinking...")
+                  : `${S.bubble.reasoning[lang]} · ${message.reasoning.length} ${lang === "zh" ? "字" : "chars"}`
+                }
+              </span>
+              {expanded
+                ? <ChevronUp size={14} />
+                : <ChevronDown size={14} />}
             </button>
             {expanded && (
-              <pre className="reasoning-content">{message.reasoning}</pre>
+              <div className="reasoning-content">
+                {message.reasoning}
+                {isStreaming && <span className="reasoning-cursor" />}
+              </div>
             )}
           </div>
         )}
@@ -545,64 +614,61 @@ const opLabel = tc.tool === 'create_note'
                         color: 'var(--text-secondary, #a0a0a8)',
                       }}
                     >
-                      <span>{isError ? '❌' : isDone ? '📝' : '⏳'}</span>
+                      <span>{isError ? <XCircle size={12} /> : isDone ? <FileText size={12} /> : <Clock size={12} />}</span>
                       <span style={{ fontWeight: 500 }}>
                         {opLabel}{title ? `: "${title}"` : ''}
                       </span>
                       {isDone && tc.result && (
-                        <span style={{ opacity: 0.6, fontSize: '11px' }}>✓</span>
+                        <span style={{ opacity: 0.6, fontSize: '11px' }}><Check size={10} /></span>
                       )}
                     </div>
                   );
                 })}
               </div>
             )}
-            <button
-              className="tool-toggle"
-              onClick={() => setToolsExpanded(!toolsExpanded)}
-            >
-              🔧 {message.toolCalls.length} {S.bubble.toolCalls[lang]} {toolsExpanded ? "▼" : "▶"}
-            </button>
-            {toolsExpanded && (
-              <div className="tool-list">
-                {message.toolCalls.map((tc) => {
-                  // Check if this is a spawn_subagent with a task ID
-                  const subagentTaskId = tc.tool === "spawn_subagent" && tc.result?.startsWith("SUBAGENT_TASK_ID:")
-                    ? tc.result.split("\n")[0].replace("SUBAGENT_TASK_ID:", "")
-                    : null;
-
-                  const rendered = tc.status === "done" && tc.result
-                    ? toolRenderer.renderToolResult({ id: tc.id, name: tc.tool, input: tc.args, output: tc.result, status: "completed" })
-                    : tc.status === "error"
-                    ? toolRenderer.renderToolError(tc.result || "Unknown error", tc.id)
-                    : toolRenderer.renderToolUse(tc.tool, tc.args, tc.id);
-
-                  // For spawn_subagent, show the agent name and type
-                  const agentId = tc.tool === "spawn_subagent" ? tc.args?.agentId as string : null;
-                  // Extract name from args or from result string
-                  let agentName = tc.tool === "spawn_subagent" ? tc.args?.name as string : null;
-                  if (!agentName && tc.tool === "spawn_subagent" && tc.result) {
-                    const nameMatch = tc.result.match(/(?:子智能体|Sub-agent)\s*"([^"]+)"/);
-                    if (nameMatch) agentName = nameMatch[1];
-                  }
-                  const displayName = agentId ? `${agentName || (getLang() === "zh" ? "子智能体" : "Sub-agent")} (${agentId})` : tc.tool;
-                  const displayIcon = agentId ? (agentId === "explore" ? "🔍" : agentId === "general" ? "🤖" : agentId === "build" ? "🔨" : "🔧") : rendered.icon;
-
-                  return (
-                    <div key={tc.id} className={`tool-item ${tc.status}`}>
-                      <span className="tool-name">{displayIcon} {displayName}</span>
-                      <span className="tool-status">
-                        {tc.status === "running" ? "⏳" : tc.status === "done" ? "✅" : "❌"}
-                      </span>
-                      {subagentTaskId && <SubagentStatus taskId={subagentTaskId} name={agentName || undefined} toolStatus={tc.status} />}
-                      {tc.status === "error" && tc.result && (
-                        <div className="tool-error-detail">{tc.result}</div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+            <ToolCallGroup
+              items={message.toolCalls.map((tc): ToolCallCardProps => {
+                const isSubagent = tc.tool === "spawn_subagent";
+                const agentId = isSubagent ? tc.args?.agentId as string : null;
+                let agentName = isSubagent ? tc.args?.name as string : null;
+                if (!agentName && isSubagent && tc.result) {
+                  const nameMatch = tc.result.match(/(?:子智能体|Sub-agent)\s*"([^"]+)"/);
+                  if (nameMatch) agentName = nameMatch[1];
+                }
+                const displayName = agentId
+                  ? `${agentName || (getLang() === "zh" ? "子智能体" : "Sub-agent")} (${agentId})`
+                  : tc.tool;
+                const rawSummary = tc.args
+                  ? (tc.args.query || tc.args.file || tc.args.path || tc.args.title || tc.args.command || "")
+                  : "";
+                return {
+                  toolName: displayName,
+                  toolArgs: tc.args ? JSON.stringify(tc.args, null, 2) : undefined,
+                  toolResult: tc.result || undefined,
+                  status: tc.status as "running" | "done" | "error",
+                  duration: (tc.metadata as any)?.duration,
+                  argsSummary: typeof rawSummary === "string" && rawSummary ? rawSummary : undefined,
+                };
+              })}
+              title={`${message.toolCalls.length} ${S.bubble.toolCalls[lang]}`}
+              defaultExpanded={toolsExpanded}
+            />
+            {/* Subagent status polling for spawn_subagent tasks */}
+            {message.toolCalls.filter(tc =>
+              tc.tool === "spawn_subagent" &&
+              tc.result?.startsWith("SUBAGENT_TASK_ID:")
+            ).map((tc) => {
+              const taskId = tc.result!.split("\n")[0].replace("SUBAGENT_TASK_ID:", "");
+              const agentName = tc.args?.name as string;
+              return (
+                <SubagentStatus
+                  key={`sub-${tc.id}`}
+                  taskId={taskId}
+                  name={agentName || undefined}
+                  toolStatus={tc.status}
+                />
+              );
+            })}
           </div>
         );
         })()}
@@ -647,12 +713,12 @@ const opLabel = tc.tool === 'create_note'
 
         {/* #2: Floating toolbar — shown on hover, not during streaming */}
         {!isStreaming && !isSystem && message.content && !isEditing && (
-          <div className="message-toolbar">
+          <div className="message-toolbar message-actions-bar">
             {isUser && canEdit && onEditAndResend && (
               <Tooltip>
                 <TooltipTrigger asChild>
                   <button className="toolbar-btn" onClick={() => setIsEditing(true)}>
-                    ✏️
+                    <Pencil size={14} />
                   </button>
                 </TooltipTrigger>
                 <TooltipContent>{S.bubble.editAndResend[lang]}</TooltipContent>
@@ -662,7 +728,7 @@ const opLabel = tc.tool === 'create_note'
               <Tooltip>
                 <TooltipTrigger asChild>
                   <button className="toolbar-btn" onClick={() => onReEdit(rawContent)}>
-                    📝
+                    <PencilLine size={14} />
                   </button>
                 </TooltipTrigger>
                 <TooltipContent>{S.bubble.reEdit[lang]}</TooltipContent>
@@ -671,7 +737,7 @@ const opLabel = tc.tool === 'create_note'
             <Tooltip>
               <TooltipTrigger asChild>
                 <button className="toolbar-btn" onClick={handleCopyMessage}>
-                  {copied ? "✓" : "📋"}
+                  {copied ? <Check size={14} /> : <Clipboard size={14} />}
                 </button>
               </TooltipTrigger>
               <TooltipContent>{copied ? S.bubble.copied[lang] : S.bubble.copyMessage[lang]}</TooltipContent>
@@ -680,7 +746,7 @@ const opLabel = tc.tool === 'create_note'
               <Tooltip>
                 <TooltipTrigger asChild>
                   <button className="toolbar-btn" onClick={() => setContentCollapsed(false)}>
-                    📖
+                    <BookOpen size={14} />
                   </button>
                 </TooltipTrigger>
                 <TooltipContent>{S.bubble.expand[lang]}</TooltipContent>
@@ -690,7 +756,7 @@ const opLabel = tc.tool === 'create_note'
               <Tooltip>
                 <TooltipTrigger asChild>
                   <button className="toolbar-btn" onClick={() => setContentCollapsed(true)}>
-                    📕
+                    <BookX size={14} />
                   </button>
                 </TooltipTrigger>
                 <TooltipContent>{S.bubble.collapse[lang]}</TooltipContent>

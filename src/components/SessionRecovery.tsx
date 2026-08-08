@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { getSessionRecoveryService } from "../core/recovery/recovery";
 import type { Session } from "../core/llm/session";
 import { useProjectStore } from "../core/store";
+import { RotateCcw, X, Clock, Undo, Trash2, User, Bot, Settings as SettingsIcon } from "lucide-react";
 
 interface SessionRecoveryProps {
   onClose: () => void;
@@ -71,10 +72,10 @@ export function SessionRecovery({ onClose }: SessionRecoveryProps) {
     <div className="session-recovery">
       <div className="session-recovery-header">
         <div className="session-recovery-title">
-          <span className="session-recovery-icon">🔄</span>
+          <span className="session-recovery-icon"><RotateCcw size={16} /></span>
           <span>会话恢复</span>
         </div>
-        <button className="session-recovery-close" onClick={onClose}>✕</button>
+        <button className="session-recovery-close" onClick={onClose}><X size={14} /></button>
       </div>
 
       {summary && (
@@ -159,7 +160,7 @@ export function SessionRecovery({ onClose }: SessionRecoveryProps) {
                   {selectedSession.messages.slice(-5).map((msg: any, i: number) => (
                     <div key={i} className={`session-preview-msg ${msg.role}`}>
                       <span className="session-preview-role">
-                        {msg.role === "user" ? "👤" : msg.role === "assistant" ? "🤖" : "⚙️"}
+                        {msg.role === "user" ? <User size={12} /> : msg.role === "assistant" ? <Bot size={12} /> : <SettingsIcon size={12} />}
                       </span>
                       <span className="session-preview-content">
                         {typeof msg.content === "string"
@@ -179,13 +180,13 @@ export function SessionRecovery({ onClose }: SessionRecoveryProps) {
                 onClick={() => handleRecover(selectedSession)}
                 disabled={recovering === selectedSession.id}
               >
-                {recovering === selectedSession.id ? "⏳ 恢复中..." : "↩️ 恢复此会话"}
+                {recovering === selectedSession.id ? <><Clock size={12} /> 恢复中...</> : <><Undo size={12} /> 恢复此会话</>}
               </button>
               <button
                 className="session-delete-btn"
                 onClick={() => handleDelete(selectedSession.id)}
               >
-                🗑️ 删除
+                <Trash2 size={12} /> 删除
               </button>
             </div>
           </div>

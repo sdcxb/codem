@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { getSnapshotService, type Snapshot } from "../core/snapshot/snapshot";
 import { DiffViewer } from "./DiffViewer";
 import { readFile } from "../core/file-api";
+import { Camera, X, Clock, RefreshCw, Search, Undo, Folder, ChevronDown, ChevronRight } from "lucide-react";
 
 interface SnapshotPanelProps {
   cwd: string;
@@ -62,9 +63,9 @@ export function SnapshotPanel({ cwd, onClose, onRestore }: SnapshotPanelProps) {
       if (addedCount > 0) parts.push(`写入 ${addedCount} 个文件`);
       if (deletedCount > 0) parts.push(`删除 ${deletedCount} 个文件`);
       const summary = parts.length > 0 ? parts.join("，") : "没有文件需要回滚";
-      setToast({ type: "success", text: `✅ 回滚成功！${summary}（共 ${restoredCount} 个文件）` });
+      setToast({ type: "success", text: `回滚成功！${summary}（共 ${restoredCount} 个文件）` });
     } catch (e: any) {
-      setToast({ type: "error", text: `❌ 回滚失败：${e?.message || "未知错误"}` });
+      setToast({ type: "error", text: `回滚失败：${e?.message || "未知错误"}` });
     }
     setRestoring(null);
     // 3秒后自动清除提示
@@ -85,7 +86,7 @@ export function SnapshotPanel({ cwd, onClose, onRestore }: SnapshotPanelProps) {
         after: currentContent,                    // current file content
       });
     } catch (e: any) {
-      setToast({ type: "error", text: `❌ 无法读取文件：${e?.message || "未知错误"}` });
+      setToast({ type: "error", text: `无法读取文件：${e?.message || "未知错误"}` });
       setTimeout(() => setToast(null), 3000);
     }
   };
@@ -94,10 +95,10 @@ export function SnapshotPanel({ cwd, onClose, onRestore }: SnapshotPanelProps) {
     <div className="snapshot-panel">
       <div className="snapshot-panel-header">
         <div className="snapshot-panel-title">
-          <span className="snapshot-panel-icon">📸</span>
+          <Camera size={16} style={{ color: 'var(--accent)' }} />
           <span>文件快照</span>
         </div>
-        <button className="snapshot-panel-close" onClick={onClose}>✕</button>
+        <button className="snapshot-panel-close" onClick={onClose}><X size={14} /></button>
       </div>
 
       {toast && (
@@ -108,7 +109,7 @@ export function SnapshotPanel({ cwd, onClose, onRestore }: SnapshotPanelProps) {
 
       <div className="snapshot-panel-actions">
         <button className="snapshot-refresh-btn" onClick={loadSnapshots} disabled={loading}>
-          {loading ? "⏳" : "🔄"} 刷新
+          {loading ? <Clock size={12} /> : <RefreshCw size={12} />} 刷新
         </button>
       </div>
 
@@ -131,10 +132,10 @@ export function SnapshotPanel({ cwd, onClose, onRestore }: SnapshotPanelProps) {
               </div>
               <div className="snapshot-item-meta">
                 <span className="snapshot-item-files">
-                  📁 {snapshot.files.length} 个文件
+                  <Folder size={12} style={{ display: 'inline', verticalAlign: 'middle' }} /> {snapshot.files.length} 个文件
                 </span>
                 <span className="snapshot-item-arrow">
-                  {expandedId === snapshot.id ? "▼" : "▶"}
+                  {expandedId === snapshot.id ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
                 </span>
               </div>
             </div>
@@ -167,7 +168,7 @@ export function SnapshotPanel({ cwd, onClose, onRestore }: SnapshotPanelProps) {
                             onClick={() => handleViewDiff(file.path, file.content, file.isNew || false)}
                             title="查看变更"
                           >
-                            🔍 Diff
+                            <Search size={12} style={{ display: 'inline', verticalAlign: 'middle' }} /> Diff
                           </button>
                         </li>
                       ))}
@@ -181,7 +182,7 @@ export function SnapshotPanel({ cwd, onClose, onRestore }: SnapshotPanelProps) {
                     onClick={() => handleRestore(snapshot.id)}
                     disabled={restoring === snapshot.id}
                   >
-                    {restoring === snapshot.id ? "⏳ 恢复中..." : "↩️ 回滚到此快照"}
+                    {restoring === snapshot.id ? <><Clock size={12} /> 恢复中...</> : <><Undo size={12} /> 回滚到此快照</>}
                   </button>
                 </div>
               </div>

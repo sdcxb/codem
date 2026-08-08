@@ -1,5 +1,9 @@
 import { useState, useEffect } from "react";
 import { getCostTracker, type UsageRecord } from "../core/llm/cost-tracker";
+import { TokenActivityGrid, UsageChart } from "./UsageVisuals";
+import { Activity, BarChart3, Wrench, ClipboardList, Calendar, CheckCircle, Infinity as InfinityIcon } from "lucide-react";
+import { ConversationOverview } from "./ConversationOverview";
+import { useProjectStore } from "../core/store";
 
 interface UsageStatsProps {
   onClose: () => void;
@@ -16,12 +20,14 @@ function formatTime(timestamp: number): string {
 }
 
 export function UsageStats({ onClose }: UsageStatsProps) {
+  const { currentSession } = useProjectStore();
   const [stats, setStats] = useState<ReturnType<typeof getCostTracker.prototype.getStats> | null>(null);
   const [costByModel, setCostByModel] = useState<Record<string, number>>({});
   const [records, setRecords] = useState<UsageRecord[]>([]);
   const [activeTab, setActiveTab] = useState<"overview" | "models" | "history" | "limits">("overview");
   const [limits, setLimits] = useState<ReturnType<typeof getCostTracker.prototype.getLimits> | null>(null);
   const [savingLimits, setSavingLimits] = useState(false);
+  const [vizRecords, setVizRecords] = useState<UsageRecord[]>([]);
 
   useEffect(() => {
     loadStats();
@@ -32,9 +38,12 @@ export function UsageStats({ onClose }: UsageStatsProps) {
     setStats(tracker.getStats());
     setCostByModel(tracker.getCostByModel());
     setLimits(tracker.getLimits());
-    // Get last 50 records from the last 7 days
+    // Get last 50 records from the last 7 days for history tab
     const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
     setRecords(tracker.getRecordsInRange(sevenDaysAgo, Date.now()).slice(-50).reverse());
+    // Get 28 days of records for visualizations
+    const twentyEightDaysAgo = Date.now() - 28 * 24 * 60 * 60 * 1000;
+    setVizRecords(tracker.getRecordsInRange(twentyEightDaysAgo, Date.now()));
   };
 
   if (!stats) return null;
@@ -45,7 +54,7 @@ export function UsageStats({ onClose }: UsageStatsProps) {
     <div className="usage-stats">
       <div className="usage-stats-header">
         <div className="usage-stats-title">
-          <span className="usage-stats-icon">📊</span>
+          <span className="usage-stats-icon"><BarChart3 size={18} /></span>
           <span>用量统计</span>
         </div>
         <button className="usage-stats-close" onClick={onClose}>✕</button>
@@ -66,6 +75,15 @@ export function UsageStats({ onClose }: UsageStatsProps) {
       <div className="usage-content">
         {activeTab === "overview" && (
           <div className="usage-overview">
+            {/* Conversation Overview */}
+            <div className="usage-viz-section">
+              <div className="usage-viz-section-header">
+                <span style={{ display: "flex", alignItems: "center", gap: 6 }}><BarChart3 size={14} /> 对话概览</span>
+              </div>
+              <ConversationOverview sessionId={currentSession?.id} showCostBar={true} />
+            </div>
+
+            {/* Stat cards */}
             <div className="usage-stat-card">
               <span className="usage-stat-label">总费用</span>
               <span className="usage-stat-value">${stats.totalCost.toFixed(4)}</span>
@@ -97,6 +115,24 @@ export function UsageStats({ onClose }: UsageStatsProps) {
             <div className="usage-stat-card">
               <span className="usage-stat-label">平均费用</span>
               <span className="usage-stat-value">${stats.averageCostPerCall.toFixed(6)}</span>
+            </div>
+
+            {/* Token Activity Heatmap */}
+            <div className="usage-viz-section">
+              <div className="usage-viz-section-header">
+                <Activity size={14} />
+                <span>Token 活跃度（近 28 天）</span>
+              </div>
+              <TokenActivityGrid records={vizRecords} days={28} />
+            </div>
+
+            {/* Daily Usage Chart */}
+            <div className="usage-viz-section">
+              <div className="usage-viz-section-header">
+                <BarChart3 size={14} />
+                <span>每日用量趋势（近 7 天）</span>
+              </div>
+              <UsageChart records={vizRecords} days={7} />
             </div>
           </div>
         )}
@@ -140,7 +176,7 @@ export function UsageStats({ onClose }: UsageStatsProps) {
                   <span>{formatTime(record.timestamp)}</span>
                   <span>{record.inputTokens}→{record.outputTokens} tokens</span>
                   <span>{formatDuration(record.duration)}</span>
-                  {record.toolCalls > 0 && <span>🔧 {record.toolCalls}</span>}
+                  {record.toolCalls > 0 && <span style={{ display: "flex", alignItems: "center", gap: 3 }}><Wrench size={11} /> {record.toolCalls}</span>}
                 </div>
                 {record.error && (
                   <div className="usage-record-error">{record.error}</div>
@@ -159,7 +195,7 @@ export function UsageStats({ onClose }: UsageStatsProps) {
             {/* Per-session limit */}
             <div className="usage-stat-card" style={{ flexDirection: "column", alignItems: "stretch", gap: 6 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span className="usage-stat-label">📋 每会话限额</span>
+                <span className="usage-stat-label" style={{ display: "flex", alignItems: "center", gap: 6 }}><ClipboardList size={16} /> 每会话限额</span>
                 <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
                   {stats.todayCost > 0 ? `今日已用 $${stats.todayCost.toFixed(4)}` : ""}
                 </span>
@@ -187,7 +223,7 @@ export function UsageStats({ onClose }: UsageStatsProps) {
             {/* Per-day limit */}
             <div className="usage-stat-card" style={{ flexDirection: "column", alignItems: "stretch", gap: 6 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span className="usage-stat-label">📅 每日限额</span>
+                <span className="usage-stat-label" style={{ display: "flex", alignItems: "center", gap: 6 }}><Calendar size={16} /> 每日限额</span>
                 <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
                   {stats.todayCost > 0 ? `今日已用 $${stats.todayCost.toFixed(4)}` : ""}
                 </span>
@@ -215,7 +251,7 @@ export function UsageStats({ onClose }: UsageStatsProps) {
             {/* Total limit */}
             <div className="usage-stat-card" style={{ flexDirection: "column", alignItems: "stretch", gap: 6 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span className="usage-stat-label">∞ 总限额</span>
+                <span className="usage-stat-label" style={{ display: "flex", alignItems: "center", gap: 6 }}><InfinityIcon size={16} /> 总限额</span>
                 <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
                   已用 $${stats.totalCost.toFixed(4)}
                 </span>
@@ -290,7 +326,7 @@ export function UsageStats({ onClose }: UsageStatsProps) {
                 cursor: "pointer",
               }}
             >
-              {savingLimits ? "✅ 已保存" : "保存限额"}
+              {savingLimits ? <span style={{ display: "flex", alignItems: "center", gap: 6, justifyContent: "center" }}><CheckCircle size={16} /> 已保存</span> : "保存限额"}
             </button>
           </div>
         )}

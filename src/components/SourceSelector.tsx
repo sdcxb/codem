@@ -6,6 +6,7 @@
 
 import { memo } from "react";
 import { useLang, S } from "../core/i18n/lang";
+import { Notebook, FileText, Link2, Paperclip } from "lucide-react";
 
 interface SourceItem {
   id: string;
@@ -64,7 +65,11 @@ export const SourceSelector = memo(function SourceSelector({
   );
 });
 
-function getSourceIcon(type: string): string {
-  const icons = { notebook: "📒", file: "📄", url: "🔗" };
-  return icons[type as keyof typeof icons] || "📎";
+function getSourceIcon(type: string): React.ReactNode {
+  const icons: Record<string, React.ReactNode> = {
+    notebook: <Notebook size={14} />,
+    file: <FileText size={14} />,
+    url: <Link2 size={14} />,
+  };
+  return icons[type] || <Paperclip size={14} />;
 }

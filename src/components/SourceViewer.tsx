@@ -17,6 +17,8 @@ import { getSource, getChunks } from '../core/knowledge';
 import type { NotebookSource, NotebookChunk } from '../core/knowledge';
 import { PdfViewer } from './PdfViewer';
 import { DocxViewer } from './DocxViewer';
+import { ExcelViewer } from './ExcelViewer';
+import { AudioPlayer } from './AudioPlayer';
 
 interface SourceViewerProps {
   sourceId: string;
@@ -36,7 +38,7 @@ export function SourceViewer({
   const [source, setSource] = useState<NotebookSource | null>(null);
   const [chunks, setChunks] = useState<NotebookChunk[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
-  const [viewMode, setViewMode] = useState<'text' | 'pdf' | 'docx'>('text');
+  const [viewMode, setViewMode] = useState<'text' | 'pdf' | 'docx' | 'excel' | 'audio'>('text');
 
   useEffect(() => {
     const src = getSource(sourceId);
@@ -208,6 +210,14 @@ export function SourceViewer({
               filePath={source.filePath}
               onClose={onClose}
             />
+          </div>
+        ) : viewMode === 'excel' && source?.filePath ? (
+          <div className="nb-source-viewer-body">
+            <ExcelViewer filePath={source.filePath} onClose={onClose} />
+          </div>
+        ) : viewMode === 'audio' && source?.filePath ? (
+          <div className="nb-source-viewer-body">
+            <AudioPlayer filePath={source.filePath} fileName={source.name} onClose={onClose} />
           </div>
         ) : (
         <div className="nb-source-viewer-body">

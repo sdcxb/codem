@@ -272,6 +272,82 @@ npm run tauri:build
 
 ## 更新日志
 
+### 2026-08-08（v0.96.0）
+
+> 本次更新为主对话窗口 UI 大改版：全面对标 frakio-work / wecode 的消息流展示样式 + 内联 Diff 批量审批替换弹窗 + 三皮肤暗色模式深度修复 + 梦幻皮肤自适应主题 + 富内容渲染系统 + 39 个新组件 + 3 个新依赖（framer-motion / shiki / xlsx）。42 个文件修改（+4,599 / -1,866 行），39 个新文件。
+
+**P0 — 主对话窗口样式大改版（对标 frakio-work / wecode）：**
+- 消息容器居中 + `max-width` 限制 + `gap` 增至 24px，视觉节奏更清晰
+- AI 消息背景改为透明，去除厚重卡片感，内联 header 展示角色信息
+- 用户消息样式调整，与 AI 消息视觉层次分明
+- 段落 hover 背景移除，改为消息级 hover 高亮
+- 代码块全面迁移至 Shiki（`ShikiCodeBlock.tsx`），VS Code 级别语法高亮
+- 新建 `rich-content/` 渲染系统（9 个组件）：`RichContent` + `ContentFrame` + `CodeBlockView` + `HtmlPreviewView` + `ImagePreviewView` + `JsonFormatView` + `MathFormulaView` + `MermaidCanvasView` + `TableScrollView` + `FullscreenViewer`
+- 工具调用展示改为 pill 胶囊风格（`ToolCallCard.tsx` + `ToolCallGroup.tsx`），内联展示 + 同类工具合并
+- 推理过程展示改为胶囊按钮 + 自动折叠 + 图标指示（`ReasoningDisplay` 重构）
+- 消息操作工具栏改为绝对定位悬浮（`MessageActions.tsx`）
+
+**P0 — 内联 Diff 批量审批（替换弹窗式 DiffViewer）：**
+- 新建 `InlineDiffReview.tsx` — 统一视图 + 预览视图双模式 diff 展示
+- 支持折叠/展开 + 自定义指令输入 + "全部接受"批量操作
+- `App.tsx` `onWriteConfirm` 回调改造：检查 `autoApprove` 标志，支持批量审批流程
+- 多文件审批在同一轮对话中内联展示，不再逐个弹窗
+- `writeConfirmStats` 状态追踪审批统计
+
+**P0 — 三皮肤暗色模式深度修复：**
+- 默认皮肤暗色模式：设置面板图标颜色修复（`color: inherit` + 暗色变量覆盖）
+- 默认皮肤暗色模式：主对话框背景配色优化，文字对比度提升
+- 命令类展示颜色从纯白调整为柔和色，降低视觉冲突
+- Hub 皮肤：右侧栏 toggle 按钮与 TitleBar `rightRailOpen` 状态同步
+- Hub 皮肤：TopNavbar 移除冗余的搜索/设置按钮
+- Dream 皮肤：`data-theme` 基于 `palette.isDark` 自适应设置
+- Dream 皮肤：`TitleBar` 在 Dream 皮肤激活时跳过 `data-theme` 覆盖
+- Dream 皮肤：`applyDreamCSS` 新增 glass/surface/message-bubble/tool-card/composer/titlebar/rich-code token 覆盖
+- 三皮肤统一添加 `--radius-*` / `--border-primary` / `--elevation-*` / `--accent-soft` / `--input-bg` CSS 变量
+
+**P1 — 梦幻皮肤自适应主题：**
+- `ThemeManager.applyDreamCSS` 根据提取的调色板 `isDark` 属性自动切换明暗模式
+- `ThemeManager.cleanDreamCSS` 恢复用户偏好主题
+- 新建 `contrast-checker.ts` — 对比度检查器，确保文字在动态背景上可读
+- 梦幻皮肤设置面板图标颜色自适应修复
+
+**P1 — 新增组件（39 个新文件）：**
+- `BootSplash.tsx` — 启动加载画面
+- `ToastNotification.tsx` — Toast 通知系统
+- `Drawer.tsx` — 通用抽屉组件
+- `NewChatPage.tsx` — 新对话首页
+- `SpaceSwitcher.tsx` — 工作空间切换器
+- `GitBranchSelector.tsx` — Git 分支选择器
+- `AudioPlayer.tsx` — 音频播放器
+- `ExcelViewer.tsx` — Excel 文件查看器（xlsx 依赖）
+- `ErrorCard.tsx` — 错误卡片
+- `RunStatusBar.tsx` — 运行状态栏
+- `ActivityTimeline.tsx` — 活动时间线
+- `AgentRoster.tsx` — 智能体花名册
+- `ConversationOverview.tsx` — 对话概览
+- `UsageVisuals.tsx` — 用量可视化
+- `WorkspaceBackdrop.tsx` — 工作区背景
+- `DecisionTray.tsx` — 决策托盘
+- `SettingsParts.tsx` — 设置面板分区组件
+- `ui/overlay-kit.tsx` — Overlay 工具包
+
+**P1 — 核心引擎增强：**
+- `run-status-tracker.ts` — 运行状态追踪器
+- `stream-reveal.ts` — 流式内容逐步揭示
+- `useDraftPersistence.ts` — 草稿持久化 Hook
+- `usePaneResize.ts` — 面板尺寸调整 Hook
+
+**P1 — 样式系统：**
+- 新建 `codem-ui.css` — Codem UI 组件专用样式表
+- `styles.css` +2,809 行大规模重构（消息容器/工具调用/推理块/工具栏/暗色模式）
+- `skin-dream.css` +333 行（透明消息/InlineDiffReview/变量补全）
+- `skin-hub.css` +300 行（透明消息/InlineDiffReview/变量补全）
+
+**P2 — 新依赖：**
+- `framer-motion` — 动画引擎（Toast/Drawer/BootSplash 等组件动画）
+- `shiki` — VS Code 级语法高亮（替换 react-syntax-highlighter）
+- `xlsx` — Excel 文件解析
+
 ### 2026-08-03（v0.95.0）
 
 > 本次更新聚焦 Vision Proxy 链路修复：MiMo v2.5 支持图片输入识别 + CLI/API 双模式视觉代理全链路打通 + 13 个 E2E 场景测试验证 + CSP 全面修复（media-src/font-src/frame-src/blob:/asset.localhost） + 梦幻皮肤视频背景打包修复 + 花瓣装饰缩小 + docs 清理 + README 图片修复。

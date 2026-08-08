@@ -1,5 +1,5 @@
 /**
- * Git Info Panel — Environment monitoring (对标 wecode 环境信息面板)
+ * Git Info Panel — Environment monitoring
  *
  * Shows:
  * - Current branch + dirty status

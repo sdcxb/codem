@@ -1251,7 +1251,8 @@ describe("跨模块集成测试", () => {
       expect(sidebarSrc).toContain("onNotebooks");
     });
     it("包含笔记本导航按钮", () => {
-      expect(sidebarSrc).toContain("📓");
+      // UI refactor: 📓 emoji replaced with lucide-react BookOpen icon
+      expect(sidebarSrc).toMatch(/BookOpen|Notebook/);
     });
     it("笔记本按钮调用 onNotebooks", () => {
       expect(sidebarSrc).toContain("onClick={onNotebooks}");

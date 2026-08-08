@@ -478,7 +478,8 @@ describe("技能触发机制三层改造", () => {
         "utf-8",
       );
       expect(src).toContain("showSkillPicker");
-      expect(src).toContain("🎯");
+      // UI refactor: 🎯 emoji replaced with lucide-react Target icon
+      expect(src).toContain("Target");
     });
 
     it("InputArea 导入 getSkillRegistry", () => {

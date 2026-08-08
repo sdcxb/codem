@@ -1,10 +1,12 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
+import { PanelLeftClose, Search, Settings, Sun, Moon, PencilLine, BookOpen, Clock, Plug, BookMarked, Brain, Link2, GitBranch, Pin, Folder, Pencil, Clipboard, Trash2, ChevronDown, ChevronRight, MoreHorizontal, User, Circle } from "lucide-react";
 import { useAppStore } from "../store";
 import { useProjectStore } from "../core/store";
 import { AppIdentity } from "../core/types";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { SearchDialog } from "./SearchDialog";
+import { SpaceSwitcher } from "./SpaceSwitcher";
 import { getSetting, setSetting } from "../core/storage/settings";
 import * as SessionStorage from "../core/storage/session";
 import { useLang, S } from "../core/i18n/lang";
@@ -38,9 +40,7 @@ export function Sidebar({ identity, onSettings, onProjects, onConfig, onMcp, onS
     openProject, getProjectSessions, updateProject,
     renameSession,
   } = useProjectStore();
-  const [theme, setTheme] = useState<"dark" | "light">(() => {
-    return (getSetting("codem-theme") as "dark" | "light") || "dark";
-  });
+  // Theme is now managed solely by TitleBar to avoid state conflicts.
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set());
   const [allSessions, setAllSessions] = useState<Record<string, Array<typeof currentSession & { lastMessageAt: number; messageCount: number }>>>({});
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
@@ -54,6 +54,25 @@ const [clickedMenuProjectId, setClickedMenuProjectId] = useState<string | null>(
 const [menuDirection, setMenuDirection] = useState<'down' | 'up'>('down');
 const [menuPos, setMenuPos] = useState<{ top?: number; bottom?: number; left: number } | null>(null);
 const menuCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+// P2 #29: DnD session sorting
+const [draggedSessionId, setDraggedSessionId] = useState<string | null>(null);
+const handleDragStart = useCallback((e: React.DragEvent, sessionId: string) => { setDraggedSessionId(sessionId); e.dataTransfer.effectAllowed = "move"; }, []);
+const handleDragOver = useCallback((e: React.DragEvent) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; }, []);
+const handleDrop = useCallback((e: React.DragEvent, targetSessionId: string, projectId: string) => {
+  e.preventDefault();
+  if (!draggedSessionId || draggedSessionId === targetSessionId) return;
+  // Reorder sessions in storage
+  const key = projectId === "__global__" ? "" : projectId;
+  const sessions = SessionStorage.listSessions(key);
+  const fromIdx = sessions.findIndex((s: any) => s.id === draggedSessionId);
+  const toIdx = sessions.findIndex((s: any) => s.id === targetSessionId);
+  if (fromIdx < 0 || toIdx < 0) return;
+  const [moved] = sessions.splice(fromIdx, 1);
+  sessions.splice(toIdx, 0, moved);
+  SessionStorage.reorderSessions(key, sessions.map((s: any) => s.id));
+  setDraggedSessionId(null);
+  loadAllSessions();
+}, [draggedSessionId]);
 
   // Close click-pinned menu when clicking outside the menu
   useEffect(() => {
@@ -94,20 +113,17 @@ const menuCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
     loadAllSessions();
   }, [projects.length, currentSession?.id, currentProject?.id]);
 
+  // Apply saved font family/weight on mount (theme is handled by TitleBar)
   useEffect(() => {
-    document.documentElement.setAttribute("data-theme", theme);
-    setSetting("codem-theme", theme);
-    // Apply saved font family
     const savedFont = getSetting("codem-font-family");
     if (savedFont) {
       document.documentElement.style.setProperty("--font-family", savedFont);
     }
-    // Apply saved font weight
     const savedWeight = getSetting("codem-font-weight");
     if (savedWeight) {
       document.documentElement.style.setProperty("--font-weight", String(savedWeight));
     }
-  }, [theme]);
+  }, []);
 
   useEffect(() => {
     if (currentProject) {
@@ -147,9 +163,6 @@ const menuCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
     };
   }, [isResizing]);
 
-  const toggleTheme = () => {
-    setTheme((prev) => (prev === "dark" ? "light" : "dark"));
-  };
 
   const toggleExpand = (projectId: string) => {
     setExpandedProjects((prev) => {
@@ -261,50 +274,96 @@ const menuCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
     return { today, earlier };
   };
 
-  // Collapsed sidebar mode
+  // Collapsed sidebar mode — enhanced Rail with Lucide icons
   if (collapsed) {
     return (
-      <div className="sidebar sidebar-collapsed">
+      <div className="sidebar-rail">
         <Tooltip>
           <TooltipTrigger asChild>
-            <button className="sidebar-collapse-toggle" onClick={onToggleSidebar}>
-              ☰
+            <button className="sidebar-rail-btn" onClick={onToggleSidebar}>
+              <PanelLeftClose size={18} />
             </button>
           </TooltipTrigger>
           <TooltipContent side="right">{S.sidebar.expandSidebar[lang]}</TooltipContent>
         </Tooltip>
-        <div className="sidebar-collapsed-icons">
+        <div className="sidebar-rail-divider" />
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button className="sidebar-rail-btn" onClick={() => { clearMessages(); if (currentProject) createSession(); }}>
+              <PencilLine size={18} />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="right">{S.sidebar.newChat[lang]}</TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button className="sidebar-rail-btn" onClick={() => setShowSearch(true)}>
+              <Search size={18} />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="right">{S.sidebar.search[lang]}</TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button className="sidebar-rail-btn" onClick={onNotebooks}>
+              <BookOpen size={18} />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="right">{lang === 'zh' ? '知识笔记本' : 'Notebooks'}</TooltipContent>
+        </Tooltip>
+        {onAutomations && (
           <Tooltip>
             <TooltipTrigger asChild>
-              <button className="sidebar-nav-icon-btn" onClick={() => { clearMessages(); if (currentProject) createSession(); }}>
-                ✏️
+              <button className="sidebar-rail-btn" onClick={onAutomations}>
+                <Clock size={18} />
               </button>
             </TooltipTrigger>
-            <TooltipContent side="right">{S.sidebar.newChat[lang]}</TooltipContent>
+            <TooltipContent side="right">{lang === 'zh' ? '自动化' : 'Automations'}</TooltipContent>
           </Tooltip>
+        )}
+        <div className="sidebar-rail-divider" />
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button className="sidebar-rail-btn" onClick={onMcp}>
+              <Plug size={18} />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="right">{S.sidebar.mcp[lang]}</TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button className="sidebar-rail-btn" onClick={onSkills}>
+              <BookMarked size={18} />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="right">{S.sidebar.skills[lang]}</TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button className="sidebar-rail-btn" onClick={onMemory}>
+              <Brain size={18} />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="right">{S.sidebar.memory[lang]}</TooltipContent>
+        </Tooltip>
+        {onDelegation && (
           <Tooltip>
             <TooltipTrigger asChild>
-              <button className="sidebar-nav-icon-btn" onClick={() => setShowSearch(true)}>
-                🔍
+              <button className="sidebar-rail-btn" onClick={onDelegation}>
+                <Link2 size={18} />
               </button>
             </TooltipTrigger>
-            <TooltipContent side="right">{S.sidebar.search[lang]}</TooltipContent>
+            <TooltipContent side="right">{lang === 'zh' ? '委派任务' : 'Delegations'}</TooltipContent>
           </Tooltip>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button className="sidebar-nav-icon-btn" onClick={onSettings}>
-                ⚙️
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="right">{S.sidebar.settings[lang]}</TooltipContent>
-          </Tooltip>
-        </div>
+        )}
+        <div className="sidebar-rail-spacer" />
         {showSearch && (
           <SearchDialog
             onClose={() => setShowSearch(false)}
             onSwitchProject={(projectId) => { openProject(projectId); setShowSearch(false); }}
             onNewSession={() => { if (currentProject) handleNewSession(currentProject.id); }}
             onOpenSkills={() => { onSkills?.(); setShowSearch(false); }}
+            onOpenSettings={() => { onSettings?.(); setShowSearch(false); }}
           />
         )}
       </div>
@@ -320,16 +379,11 @@ const menuCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
       />
 
       <div className="sidebar-header">
-        <h3>{identity?.emoji || "⚡"} {identity?.name || "Codem"}</h3>
+        <SpaceSwitcher onNewProject={onProjects} />
         <div style={{ display: "flex", alignItems: "center", gap: 2 }}>
-          <button onClick={() => setShowSearch(true)} title={S.sidebar.search[lang]} style={{ background: "none", border: "none", color: "var(--text-secondary)", cursor: "pointer", fontSize: 14, padding: "2px 4px", borderRadius: 4 }}>🔍</button>
-          <button onClick={onSettings} title={S.sidebar.settings[lang]} style={{ background: "none", border: "none", color: "var(--text-secondary)", cursor: "pointer", fontSize: 14, padding: "2px 4px", borderRadius: 4 }}>⚙️</button>
-          <button className="theme-toggle" onClick={toggleTheme} title={S.sidebar.toggleTheme[lang]} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 14, padding: "2px 4px", borderRadius: 4 }}>
-            {theme === "dark" ? "☀️" : "🌙"}
-          </button>
           {onToggleSidebar && (
-            <button className="sidebar-collapse-btn" onClick={onToggleSidebar} title={S.sidebar.collapseSidebar[lang]} style={{ background: "none", border: "none", color: "var(--text-secondary)", cursor: "pointer", fontSize: 14, padding: "2px 4px", borderRadius: 4 }}>
-              ◀
+            <button className="sidebar-collapse-btn" onClick={onToggleSidebar} title={S.sidebar.collapseSidebar[lang]} style={{ background: "none", border: "none", color: "var(--text-secondary)", cursor: "pointer", fontSize: 14, padding: "2px 4px", borderRadius: 4, display: "flex", alignItems: "center" }}>
+              <PanelLeftClose size={16} />
             </button>
           )}
         </div>
@@ -341,17 +395,17 @@ const menuCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
           useProjectStore.setState({ currentProject: null, currentSession: null, sessions: [] });
           createSession();
         }}>
-          <span className="sidebar-nav-icon">✏️</span>
+          <span className="sidebar-nav-icon"><PencilLine size={16} /></span>
           <span>{S.sidebar.newChat[lang]}</span>
         </button>
 
         <button className="sidebar-nav-item" onClick={onNotebooks}>
-          <span className="sidebar-nav-icon">📓</span>
+          <span className="sidebar-nav-icon"><BookOpen size={16} /></span>
           <span>{lang === 'zh' ? '知识笔记本' : 'Notebooks'}</span>
         </button>
         {onAutomations && (
           <button className="sidebar-nav-item" onClick={onAutomations}>
-            <span className="sidebar-nav-icon">⏰</span>
+            <span className="sidebar-nav-icon"><Clock size={16} /></span>
             <span>{lang === 'zh' ? '自动化' : 'Automations'}</span>
           </button>
         )}
@@ -359,20 +413,20 @@ const menuCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
         {/* Compact 3-in-a-row tool bar */}
         <div className="sidebar-tool-row">
           <button className="sidebar-tool-item" onClick={onMcp} title={S.sidebar.mcp[lang]}>
-            <span className="sidebar-tool-item-icon">🔌</span>
+            <span className="sidebar-tool-item-icon"><Plug size={16} /></span>
             <span className="sidebar-tool-item-label">{S.sidebar.mcp[lang]}</span>
           </button>
           <button className="sidebar-tool-item" onClick={onSkills} title={S.sidebar.skills[lang]}>
-            <span className="sidebar-tool-item-icon">📚</span>
+            <span className="sidebar-tool-item-icon"><BookMarked size={16} /></span>
             <span className="sidebar-tool-item-label">{S.sidebar.skills[lang]}</span>
           </button>
           <button className="sidebar-tool-item" onClick={onMemory} title={S.sidebar.memory[lang]}>
-            <span className="sidebar-tool-item-icon">🧠</span>
+            <span className="sidebar-tool-item-icon"><Brain size={16} /></span>
             <span className="sidebar-tool-item-label">{S.sidebar.memory[lang]}</span>
           </button>
           {onDelegation && (
             <button className="sidebar-tool-item" onClick={onDelegation} title={lang === 'zh' ? '委派任务' : 'Delegations'}>
-              <span className="sidebar-tool-item-icon">🔗</span>
+              <span className="sidebar-tool-item-icon"><Link2 size={16} /></span>
               <span className="sidebar-tool-item-label">{lang === 'zh' ? '委派' : 'Deleg.'}</span>
             </button>
           )}
@@ -468,8 +522,8 @@ const menuCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
                     className="sidebar-project-header"
                     onClick={() => toggleExpand(project.id)}
                   >
-                    <span className="sidebar-project-arrow">{isExpanded ? "▾" : "▸"}</span>
-                    <span className="sidebar-project-icon">{project.pinned ? "📌" : "📁"}</span>
+                    <span className="sidebar-project-arrow">{isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}</span>
+                    <span className="sidebar-project-icon">{project.pinned ? <Pin size={14} style={{ color: "var(--accent)" }} /> : <Folder size={14} />}</span>
                     <span className="sidebar-project-name">{project.name}</span>
                     <button
                       className="sidebar-project-btn"
@@ -515,7 +569,7 @@ const menuCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
                           }
                         }}
                         title={S.sidebar.moreActions[lang]}
-                        >⋯</button>
+                        ><MoreHorizontal size={14} /></button>
                       {(hoverMenuProjectId === project.id || clickedMenuProjectId === project.id) && menuPos && createPortal(
                         <div
                           className="sidebar-project-more-menu"
@@ -654,6 +708,7 @@ const menuCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
             onSkills?.();
             setShowSearch(false);
           }}
+          onOpenSettings={() => { onSettings?.(); setShowSearch(false); }}
         />
       )}
 
@@ -670,18 +725,33 @@ const menuCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
             style={{ top: sessionContextMenu.y, left: sessionContextMenu.x }}
           >
             <button onClick={() => { handleRenameSession(sessionContextMenu.session.id, sessionContextMenu.session.title); setSessionContextMenu(null); }}>
-              ✏️ {S.sidebar.renameSession[lang]}
+              <span style={{ display: "flex", alignItems: "center", gap: 6 }}><Pencil size={14} /> {S.sidebar.renameSession[lang]}</span>
             </button>
             <button onClick={() => { handleCopySessionId(sessionContextMenu.session.id); setSessionContextMenu(null); }}>
-              📋 {S.sidebar.copySessionId[lang]}
+              <span style={{ display: "flex", alignItems: "center", gap: 6 }}><Clipboard size={14} /> {S.sidebar.copySessionId[lang]}</span>
+            </button>
+            <button onClick={() => { SessionStorage.togglePinned(sessionContextMenu.session.id); loadAllSessions(); setSessionContextMenu(null); }}>
+              <span style={{ display: "flex", alignItems: "center", gap: 6 }}><Pin size={14} /> {sessionContextMenu.session.pinned ? (lang === 'zh' ? '取消置顶' : 'Unpin') : (lang === 'zh' ? '置顶' : 'Pin')}</span>
             </button>
             <div className="sidebar-context-menu-separator" />
             <button className="destructive" onClick={() => { setDeleteConfirm({ sessionId: sessionContextMenu.session.id, title: sessionContextMenu.session.title }); setSessionContextMenu(null); }}>
-              🗑️ {S.sidebar.deleteSession[lang]}
+              <span style={{ display: "flex", alignItems: "center", gap: 6 }}><Trash2 size={14} /> {S.sidebar.deleteSession[lang]}</span>
             </button>
           </div>
         </>
       )}
+      {/* P1 #8: Bottom user info area */}
+      <div className="sidebar-user-area">
+        <div className="sidebar-user-avatar">
+          {identity?.name
+            ? identity.name.charAt(0).toUpperCase()
+            : <User size={18} />}
+        </div>
+        <div className="sidebar-user-info">
+          <div className="sidebar-user-name">{identity?.name || (lang === 'zh' ? '未登录' : 'Guest')}</div>
+          <div className="sidebar-user-status">{lang === 'zh' ? '本地用户' : 'Local user'}</div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -691,6 +761,7 @@ function SessionItem({
   session, isActive, lang, onClick, onContextMenu,
   isEditing, editValue, onEditChange, onEditCommit, onEditCancel,
   onRename, onCopyId, onDelete, onPin,
+  onDragStart, onDragOver, onDrop,
 }: {
   session: any;
   isActive: boolean;
@@ -706,6 +777,9 @@ function SessionItem({
   onCopyId: () => void;
   onDelete: () => void;
   onPin: () => void;
+  onDragStart?: (e: React.DragEvent) => void;
+  onDragOver?: (e: React.DragEvent) => void;
+  onDrop?: (e: React.DragEvent) => void;
 }) {
   // Check if this session is currently running an agentic loop
   const isActiveSession = useAppStore(s => s.activeSessions.has(session.id));
@@ -733,10 +807,20 @@ function SessionItem({
       className={`sidebar-session ${isActive ? "active" : ""}`}
       onClick={onClick}
       onContextMenu={onContextMenu}
+      draggable
+      onDragStart={onDragStart}
+      onDragOver={onDragOver}
+      onDrop={onDrop}
     >
       {isActiveSession && <span className="session-running-dot" title={lang === "zh" ? "运行中" : "Running"} />}
+      {/* P1 #6: Unread message badge */}
+      {(() => {
+        const unread = (session.unreadCount as number) || 0;
+        if (unread <= 0) return null;
+        return <span className="session-unread-badge" title={lang === 'zh' ? `${unread} 条未读` : `${unread} unread`}>{unread > 99 ? '99+' : unread}</span>;
+      })()}
       {session.executionMode === "git_worktree" && (
-        <span style={{ fontSize: 11, flexShrink: 0 }} title={session.worktreePath || (lang === "zh" ? "工作树模式" : "Worktree mode")}>🌲</span>
+        <span style={{ fontSize: 11, flexShrink: 0, display: "flex", alignItems: "center" }} title={session.worktreePath || (lang === "zh" ? "工作树模式" : "Worktree mode")}><GitBranch size={12} /></span>
       )}
       {/* Delegation badge: show 🔗 if session has active delegations */}
       {(() => {
@@ -744,7 +828,7 @@ function SessionItem({
           const orch = getDelegationOrchestrator();
           const hasActive = orch.getDelegationsByTarget(session.id).some(d => d.status === 'pending' || d.status === 'running')
             || orch.getDelegationsBySource(session.id).some(d => d.status === 'pending' || d.status === 'running');
-          return hasActive ? <span style={{ fontSize: 11, flexShrink: 0 }} title={lang === "zh" ? "委派任务进行中" : "Delegation active"}>🔗</span> : null;
+          return hasActive ? <span style={{ fontSize: 11, flexShrink: 0, display: "flex", alignItems: "center" }} title={lang === "zh" ? "委派任务进行中" : "Delegation active"}><Link2 size={12} /></span> : null;
         } catch { return null; }
       })()}
       <span className="sidebar-session-title">{session.title}</span>
@@ -753,7 +837,7 @@ function SessionItem({
           className={`sidebar-session-pin ${session.pinned ? "pinned" : ""}`}
           onClick={(e) => { e.stopPropagation(); onPin(); }}
           title={session.pinned ? S.sidebar.unpinProject[lang] : S.sidebar.pinProject[lang]}
-        >{session.pinned ? "📍" : "📌"}</button>
+        >{session.pinned ? <Pin size={12} style={{ color: "var(--accent)" }} /> : <Pin size={12} />}</button>
         <button
           className="sidebar-session-delete"
           onClick={(e) => { e.stopPropagation(); onDelete(); }}

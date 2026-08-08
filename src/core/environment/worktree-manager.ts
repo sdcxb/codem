@@ -1,7 +1,7 @@
 /**
  * Git Worktree Manager — Cross-Platform (Windows/PowerShell Compatible)
  *
- * 对标 wecode-ref 的 worktree 管理体系：
+ * Worktree 管理体系：
  * - createWorktree: `git worktree add --detach <path> [branch]`
  * - removeWorktree: `git worktree remove --force` + PowerShell Remove-Item
  * - scanWorktrees: PowerShell Get-ChildItem -Directory

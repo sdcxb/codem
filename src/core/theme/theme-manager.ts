@@ -47,6 +47,33 @@ const DREAM_CSS_VARS = [
   '--user-bg',
   '--assistant-bg',
   '--system-bg',
+  // codem-ui.css glass/surface tokens
+  '--glass-bg',
+  '--glass-bg-strong',
+  '--glass-bg-subtle',
+  '--glass-border',
+  '--glass-border-strong',
+  '--surface-1',
+  '--surface-2',
+  '--surface-3',
+  '--surface-hover',
+  '--message-bubble-assistant',
+  '--message-bubble-user',
+  '--message-bubble-system',
+  '--message-actions-bg',
+  '--tool-card-bg',
+  '--tool-card-border',
+  '--tool-card-hover',
+  '--composer-bg',
+  '--composer-border',
+  '--titlebar-bg',
+  '--rich-code-bg',
+  '--rich-code-header-bg',
+  '--rich-code-border',
+  '--rich-table-bg',
+  '--rich-table-header-bg',
+  '--rich-table-border',
+  '--right-rail-bg',
 ];
 
 /** 皮肤切换监听器 */
@@ -236,15 +263,20 @@ class ThemeManagerClass {
   }
 
   /**
-   * 注入梦幻皮肤 CSS 变量
+   * 应用梦幻皮肤 CSS 变量
    * - 背景图 URL
    * - 提取的色板颜色（覆盖默认皮肤的 CSS 变量）
    * - 毛玻璃参数
+   * - 同时根据色板 isDark 设置 data-theme，确保所有组件自适应
    */
   private applyDreamCSS(): void {
     const root = document.documentElement;
     const config = this.dreamConfig;
     const palette = config.extractedPalette;
+
+    // 根据 palette 的 isDark 设置 data-theme，确保所有 CSS 选择器（包括 [data-theme="dark"]）正确生效
+    const isDark = palette ? palette.isDark : false;
+    root.setAttribute('data-theme', isDark ? 'dark' : 'light');
 
     // 背景图/视频
     if (config.backgroundImage) {
@@ -318,8 +350,37 @@ class ThemeManagerClass {
       root.style.setProperty('--border-secondary', borderColor);
 
       root.style.setProperty('--user-bg', isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.04)');
-      root.style.setProperty('--assistant-bg', isDark ? `rgba(30, 30, 46, ${opacity})` : `rgba(255, 255, 255, ${opacity})`);
+      root.style.setProperty('--assistant-bg', 'transparent');
       root.style.setProperty('--system-bg', isDark ? `rgba(40, 40, 56, ${Math.min(opacity + 0.05, 0.9)})` : `rgba(250, 250, 252, ${Math.min(opacity + 0.05, 0.9)})`);
+
+      // codem-ui.css glass/surface tokens
+      const glassBg = isDark ? `rgba(30, 30, 46, ${opacity})` : `rgba(255, 255, 255, ${opacity})`;
+      root.style.setProperty('--glass-bg', glassBg);
+      root.style.setProperty('--glass-bg-strong', isDark ? `rgba(30, 30, 46, ${Math.min(opacity + 0.1, 0.95)})` : `rgba(255, 255, 255, ${Math.min(opacity + 0.1, 0.95)})`);
+      root.style.setProperty('--glass-bg-subtle', isDark ? `rgba(30, 30, 46, ${Math.max(opacity - 0.2, 0.3)})` : `rgba(255, 255, 255, ${Math.max(opacity - 0.2, 0.3)})`);
+      root.style.setProperty('--glass-border', borderColor);
+      root.style.setProperty('--glass-border-strong', borderColorStrong);
+      root.style.setProperty('--surface-1', isDark ? `rgba(40, 40, 56, ${Math.max(opacity - 0.1, 0.3)})` : `rgba(255, 255, 255, ${Math.max(opacity - 0.1, 0.3)})`);
+      root.style.setProperty('--surface-2', isDark ? `rgba(40, 40, 56, ${opacity})` : `rgba(250, 250, 252, ${opacity})`);
+      root.style.setProperty('--surface-3', isDark ? `rgba(50, 50, 66, ${Math.min(opacity + 0.05, 0.9)})` : `rgba(245, 245, 248, ${Math.min(opacity + 0.05, 0.9)})`);
+      root.style.setProperty('--surface-hover', isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.05)');
+      root.style.setProperty('--message-bubble-assistant', 'transparent');
+      root.style.setProperty('--message-bubble-user', isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.04)');
+      root.style.setProperty('--message-bubble-system', isDark ? `rgba(40, 40, 56, ${opacity})` : `rgba(250, 250, 252, ${opacity})`);
+      root.style.setProperty('--message-actions-bg', isDark ? `rgba(40, 40, 56, ${Math.min(opacity + 0.1, 0.95)})` : `rgba(255, 255, 255, ${Math.min(opacity + 0.1, 0.95)})`);
+      root.style.setProperty('--tool-card-bg', isDark ? `rgba(40, 40, 56, ${Math.max(opacity - 0.1, 0.3)})` : `rgba(255, 255, 255, ${Math.max(opacity - 0.1, 0.3)})`);
+      root.style.setProperty('--tool-card-border', borderColor);
+      root.style.setProperty('--tool-card-hover', isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.05)');
+      root.style.setProperty('--composer-bg', glassBg);
+      root.style.setProperty('--composer-border', borderColorStrong);
+      root.style.setProperty('--titlebar-bg', 'transparent');
+      root.style.setProperty('--rich-code-bg', isDark ? `rgba(20, 20, 36, ${Math.min(opacity + 0.15, 0.95)})` : `rgba(245, 245, 248, ${Math.min(opacity + 0.15, 0.95)})`);
+      root.style.setProperty('--rich-code-header-bg', isDark ? `rgba(40, 40, 56, ${opacity})` : `rgba(250, 250, 252, ${opacity})`);
+      root.style.setProperty('--rich-code-border', borderColor);
+      root.style.setProperty('--rich-table-bg', glassBg);
+      root.style.setProperty('--rich-table-header-bg', isDark ? `rgba(40, 40, 56, ${opacity})` : `rgba(250, 250, 252, ${opacity})`);
+      root.style.setProperty('--rich-table-border', borderColor);
+      root.style.setProperty('--right-rail-bg', glassBg);
     } else {
       // 没有提取色板时，使用高对比度中性色（与有 palette 时一致）
       const defaultAccent = '#e88c9a';
@@ -356,8 +417,37 @@ class ThemeManagerClass {
       root.style.setProperty('--border-secondary', defaultBorder);
 
       root.style.setProperty('--user-bg', 'rgba(0, 0, 0, 0.04)');
-      root.style.setProperty('--assistant-bg', `rgba(255, 255, 255, ${opacity})`);
+      root.style.setProperty('--assistant-bg', 'transparent');
       root.style.setProperty('--system-bg', `rgba(250, 250, 252, ${Math.min(opacity + 0.05, 0.9)})`);
+
+      // codem-ui.css glass/surface tokens (light default)
+      const glassBgLight = `rgba(255, 255, 255, ${opacity})`;
+      root.style.setProperty('--glass-bg', glassBgLight);
+      root.style.setProperty('--glass-bg-strong', `rgba(255, 255, 255, ${Math.min(opacity + 0.1, 0.95)})`);
+      root.style.setProperty('--glass-bg-subtle', `rgba(255, 255, 255, ${Math.max(opacity - 0.2, 0.3)})`);
+      root.style.setProperty('--glass-border', defaultBorder);
+      root.style.setProperty('--glass-border-strong', defaultBorderStrong);
+      root.style.setProperty('--surface-1', `rgba(255, 255, 255, ${Math.max(opacity - 0.1, 0.3)})`);
+      root.style.setProperty('--surface-2', `rgba(250, 250, 252, ${opacity})`);
+      root.style.setProperty('--surface-3', `rgba(245, 245, 248, ${Math.min(opacity + 0.05, 0.9)})`);
+      root.style.setProperty('--surface-hover', 'rgba(0, 0, 0, 0.05)');
+      root.style.setProperty('--message-bubble-assistant', 'transparent');
+      root.style.setProperty('--message-bubble-user', 'rgba(0, 0, 0, 0.04)');
+      root.style.setProperty('--message-bubble-system', `rgba(250, 250, 252, ${opacity})`);
+      root.style.setProperty('--message-actions-bg', `rgba(255, 255, 255, ${Math.min(opacity + 0.1, 0.95)})`);
+      root.style.setProperty('--tool-card-bg', `rgba(255, 255, 255, ${Math.max(opacity - 0.1, 0.3)})`);
+      root.style.setProperty('--tool-card-border', defaultBorder);
+      root.style.setProperty('--tool-card-hover', 'rgba(0, 0, 0, 0.05)');
+      root.style.setProperty('--composer-bg', glassBgLight);
+      root.style.setProperty('--composer-border', defaultBorderStrong);
+      root.style.setProperty('--titlebar-bg', 'transparent');
+      root.style.setProperty('--rich-code-bg', `rgba(245, 245, 248, ${Math.min(opacity + 0.15, 0.95)})`);
+      root.style.setProperty('--rich-code-header-bg', `rgba(250, 250, 252, ${opacity})`);
+      root.style.setProperty('--rich-code-border', defaultBorder);
+      root.style.setProperty('--rich-table-bg', glassBgLight);
+      root.style.setProperty('--rich-table-header-bg', `rgba(250, 250, 252, ${opacity})`);
+      root.style.setProperty('--rich-table-border', defaultBorder);
+      root.style.setProperty('--right-rail-bg', glassBgLight);
     }
   }
 
@@ -368,6 +458,14 @@ class ThemeManagerClass {
       root.style.removeProperty(varName);
     }
     this.removeVideoBg();
+
+    // 恢复用户选择的主题
+    try {
+      const userTheme = getSetting('codem-theme') as 'dark' | 'light' | null;
+      if (userTheme) {
+        root.setAttribute('data-theme', userTheme);
+      }
+    } catch {}
   }
 
   /** 通知监听器 */

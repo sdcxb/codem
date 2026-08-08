@@ -259,22 +259,24 @@
 }
 
 [data-skin="dream"] .message-content {
-  background: var(--dream-bg-card, rgba(255, 255, 255, 0.88)) !important;
-  backdrop-filter: blur(var(--dream-blur-px, 12px));
-  -webkit-backdrop-filter: blur(var(--dream-blur-px, 12px));
-  border: 1px solid var(--dream-border-color, rgba(0, 0, 0, 0.1)) !important;
-  border-radius: 12px !important;
-  color: var(--dream-text-main, #1a1a2e) !important;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+color: var(--dream-text-main, #1a1a2e) !important;
 }
 
 [data-skin="dream"] .user .message-content {
-  background: rgba(0, 0, 0, 0.04) !important;
-  border-color: rgba(0, 0, 0, 0.08) !important;
+background: rgba(0, 0, 0, 0.04) !important;
+backdrop-filter: blur(var(--dream-blur-px, 12px));
+-webkit-backdrop-filter: blur(var(--dream-blur-px, 12px));
+border: 1px solid rgba(0, 0, 0, 0.08) !important;
+border-radius: 16px !important;
+box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
 }
 
 [data-skin="dream"] .assistant .message-content {
-  background: var(--dream-bg-card, rgba(255, 255, 255, 0.9)) !important;
+background: transparent !important;
+border: none !important;
+box-shadow: none !important;
+backdrop-filter: none !important;
+-webkit-backdrop-filter: none !important;
 }
 
 [data-skin="dream"] .system .message-content {
@@ -283,9 +285,10 @@
 }
 
 /* ========== 输入区域 - 透明毛玻�?========== */
-[data-skin="dream"] .chat-input-wrapper,
-[data-skin="dream"] .input-area,
-[data-skin="dream"] .input-wrapper {
+[data-skin="dream"] .input-area {
+  background: transparent !important;
+}
+[data-skin="dream"] .input-card-container {
   background: var(--dream-bg-card, rgba(255, 255, 255, 0.88)) !important;
   backdrop-filter: blur(var(--dream-blur-px, 12px));
   -webkit-backdrop-filter: blur(var(--dream-blur-px, 12px));
@@ -293,6 +296,12 @@
   border-radius: 16px;
   color: var(--dream-text-main, #1a1a2e);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
+}
+
+[data-skin="dream"] .input-wrapper {
+  background: transparent !important;
+  border: none !important;
+  border-radius: 16px 16px 0 0 !important;
 }
 
 [data-skin="dream"] .chat-input-wrapper input,
@@ -388,6 +397,15 @@
 [data-skin="dream"][data-theme="dark"] .search-dialog {
   background: rgba(30, 30, 46, 0.95) !important;
   color: var(--dream-text-main, #e0d8e0) !important;
+}
+
+/* Dream skin: ensure all icons in settings inherit the correct text color */
+[data-skin="dream"] .settings-panel svg,
+[data-skin="dream"] .settings-sidebar-item svg,
+[data-skin="dream"] .mode-btn svg,
+[data-skin="dream"] .mode-icon svg,
+[data-skin="dream"] .config-entry svg {
+  color: inherit !important;
 }
 
 /* ========== 底部控制栏下拉菜�?- 磨砂效果 ========== */
@@ -647,4 +665,293 @@
 }
 [data-skin="dream"][data-theme="dark"] .scroll-to-bottom-btn:hover {
   background: rgba(40, 40, 60, 1) !important;
+}
+
+/* ========== D-6: Dream glass token overrides for codem-ui components ========== */
+[data-skin="dream"] {
+  --glass-bg: var(--dream-bg-card, rgba(255, 255, 255, 0.72));
+  --glass-bg-strong: var(--dream-bg-panel, rgba(255, 255, 255, 0.88));
+  --glass-bg-subtle: rgba(255, 255, 255, 0.48);
+  --glass-border: var(--dream-border-color, rgba(232, 140, 154, 0.20));
+  --glass-border-strong: var(--dream-border-color, rgba(232, 140, 154, 0.30));
+  --glass-blur: var(--dream-blur-px, 16px);
+  --glass-blur-strong: calc(var(--dream-blur-px, 16px) + 8px);
+  --glass-blur-subtle: 8px;
+  --glass-saturate: 1.6;
+
+  --surface-1: rgba(255, 255, 255, 0.30);
+  --surface-2: rgba(255, 255, 255, 0.40);
+  --surface-3: rgba(255, 255, 255, 0.50);
+  --surface-hover: rgba(232, 140, 154, 0.12);
+
+  --message-bubble-assistant: var(--dream-bg-card, rgba(255, 255, 255, 0.60));
+  --message-bubble-user: rgba(232, 140, 154, 0.10);
+  --message-bubble-system: var(--dream-bg-panel, rgba(255, 255, 255, 0.70));
+  --message-actions-bg: var(--dream-bg-panel, rgba(255, 255, 255, 0.92));
+
+  --run-bar-bg: var(--dream-bg-panel, rgba(255, 255, 255, 0.85));
+  --tool-card-bg: var(--dream-bg-card, rgba(255, 255, 255, 0.50));
+  --tool-card-border: var(--dream-border-color, rgba(232, 140, 154, 0.20));
+  --tool-card-hover: rgba(232, 140, 154, 0.08);
+
+  --composer-bg: var(--dream-bg-panel, rgba(255, 255, 255, 0.72));
+  --composer-border: var(--dream-border-color, rgba(232, 140, 154, 0.20));
+  --composer-focus-border: var(--dream-accent, rgba(232, 140, 154, 0.50));
+  --composer-send-bg: var(--dream-accent, #e88c9a);
+  --composer-send-hover: var(--dream-accent, #d97a88);
+
+  --titlebar-bg: transparent;
+  --titlebar-btn-hover: rgba(232, 140, 154, 0.12);
+  --titlebar-tab-active: rgba(232, 140, 154, 0.15);
+  --titlebar-tab-hover: rgba(232, 140, 154, 0.08);
+
+  --right-rail-bg: var(--dream-bg-panel, rgba(255, 255, 255, 0.60));
+  --right-rail-tab-active: rgba(232, 140, 154, 0.12);
+  --right-rail-tab-hover: rgba(232, 140, 154, 0.08);
+
+  --rich-code-bg: var(--dream-bg-card, rgba(255, 255, 255, 0.85));
+  --rich-code-header-bg: rgba(255, 255, 255, 0.60);
+  --rich-code-border: var(--dream-border-color, rgba(232, 140, 154, 0.15));
+  --rich-table-bg: rgba(255, 255, 255, 0.40);
+  --rich-table-header-bg: rgba(255, 255, 255, 0.60);
+  --rich-table-border: var(--dream-border-color, rgba(232, 140, 154, 0.12));
+  --rich-link-color: var(--dream-accent, #e88c9a);
+  --stream-cursor-color: var(--dream-accent, #e88c9a);
+}
+
+[data-skin="dream"][data-theme="dark"] {
+  --glass-bg: var(--dream-bg-card, rgba(30, 30, 46, 0.72));
+  --glass-bg-strong: var(--dream-bg-panel, rgba(30, 30, 46, 0.88));
+  --glass-bg-subtle: rgba(30, 30, 46, 0.48);
+  --glass-border: var(--dream-border-color, rgba(232, 140, 154, 0.18));
+  --glass-border-strong: var(--dream-border-color, rgba(232, 140, 154, 0.28));
+
+  --surface-1: rgba(30, 30, 46, 0.30);
+  --surface-2: rgba(30, 30, 46, 0.40);
+  --surface-3: rgba(30, 30, 46, 0.50);
+  --surface-hover: rgba(232, 140, 154, 0.10);
+
+  --message-bubble-assistant: var(--dream-bg-card, rgba(30, 30, 46, 0.60));
+  --message-bubble-user: rgba(232, 140, 154, 0.08);
+  --message-bubble-system: var(--dream-bg-panel, rgba(30, 30, 46, 0.70));
+  --message-actions-bg: var(--dream-bg-panel, rgba(30, 30, 46, 0.92));
+
+  --run-bar-bg: var(--dream-bg-panel, rgba(30, 30, 46, 0.85));
+  --tool-card-bg: var(--dream-bg-card, rgba(30, 30, 46, 0.50));
+  --tool-card-hover: rgba(232, 140, 154, 0.06);
+
+  --composer-bg: var(--dream-bg-panel, rgba(30, 30, 46, 0.72));
+  --rich-code-bg: var(--dream-bg-card, rgba(30, 30, 46, 0.85));
+  --rich-code-header-bg: rgba(30, 30, 46, 0.60);
+  --rich-table-bg: rgba(30, 30, 46, 0.40);
+  --rich-table-header-bg: rgba(30, 30, 46, 0.60);
+
+  --titlebar-bg: transparent;
+  --right-rail-bg: var(--dream-bg-panel, rgba(30, 30, 46, 0.60));
+}
+
+/* Dream skin: native title bar transparent */
+[data-skin="dream"] .native-title-bar {
+  background: transparent;
+  border-bottom-color: var(--dream-border-color, rgba(232, 140, 154, 0.10));
+}
+
+/* Dream skin: ambient backdrop uses dream accent */
+[data-skin="dream"] .ambient-backdrop {
+  background: radial-gradient(
+    ellipse at top left,
+    rgba(232, 140, 154, 0.08),
+    transparent 50%
+  ),
+  radial-gradient(
+    ellipse at bottom right,
+    rgba(232, 140, 154, 0.05),
+    transparent 50%
+  );
+}
+
+/* ========== Dream Skin: InlineDiffReview 专属样式 ========== */
+/* Dream 风格：半透明毛玻璃，粉色强调，柔和阴影，大圆角 */
+
+/* 添加 Dream 缺失的 radius 和 border 变量 */
+[data-skin="dream"] {
+  --radius-sm: 6px;
+  --radius: 10px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-full: 9999px;
+  --border-primary: var(--dream-border-color, rgba(232, 140, 154, 0.20));
+  --elevation-1: 0 1px 3px rgba(0, 0, 0, 0.06), 0 0 0 1px rgba(232, 140, 154, 0.06);
+  --elevation-2: 0 4px 12px rgba(0, 0, 0, 0.08), 0 0 0 1px rgba(232, 140, 154, 0.08);
+  --accent-soft: rgba(232, 140, 154, 0.12);
+  --success-hover: #22c55e;
+  --input-bg: var(--dream-bg-card, rgba(255, 255, 255, 0.80));
+}
+
+/* Dream 暗色模式变量补充 */
+[data-skin="dream"][data-theme="dark"] {
+  --border-primary: var(--dream-border-color, rgba(232, 140, 154, 0.18));
+  --elevation-1: 0 1px 3px rgba(0, 0, 0, 0.20), 0 0 0 1px rgba(232, 140, 154, 0.06);
+  --elevation-2: 0 4px 12px rgba(0, 0, 0, 0.30), 0 0 0 1px rgba(232, 140, 154, 0.08);
+  --accent-soft: rgba(232, 140, 154, 0.10);
+  --input-bg: var(--dream-bg-card, rgba(30, 30, 46, 0.80));
+}
+
+/* 主容器：Dream 毛玻璃卡片 */
+[data-skin="dream"] .inline-diff-review {
+  background: var(--dream-bg-panel, rgba(255, 255, 255, 0.88));
+  backdrop-filter: blur(var(--dream-blur-px, 12px)) saturate(1.4);
+  -webkit-backdrop-filter: blur(var(--dream-blur-px, 12px)) saturate(1.4);
+  border: 1px solid var(--dream-border-color, rgba(232, 140, 154, 0.20));
+  border-radius: 16px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08), 0 0 0 1px rgba(232, 140, 154, 0.06);
+}
+[data-skin="dream"] .inline-diff-review:hover {
+  border-color: rgba(232, 140, 154, 0.40);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.10), 0 0 0 1px rgba(232, 140, 154, 0.12);
+}
+
+/* Dream 暗色模式主容器 */
+[data-skin="dream"][data-theme="dark"] .inline-diff-review {
+  background: var(--dream-bg-panel, rgba(30, 30, 46, 0.88));
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(232, 140, 154, 0.06);
+}
+
+/* 头部：Dream 柔和半透明 */
+[data-skin="dream"] .inline-diff-header {
+  background: rgba(232, 140, 154, 0.06);
+  border-bottom: 1px solid var(--dream-border-color, rgba(232, 140, 154, 0.15));
+}
+[data-skin="dream"] .inline-diff-header:hover {
+  background: rgba(232, 140, 154, 0.10);
+}
+
+/* 文件名/路径：Dream 粉色系文字 */
+[data-skin="dream"] .inline-diff-filename {
+  color: var(--dream-text-main, #6c474d);
+}
+[data-skin="dream"] .inline-diff-filepath {
+  color: var(--dream-text-muted, #a88a8f);
+}
+[data-skin="dream"] .inline-diff-file-icon {
+  color: var(--dream-accent, #e88c9a);
+}
+
+/* 序列徽章：Dream 粉色风格 */
+[data-skin="dream"] .inline-diff-sequence-badge {
+  background: rgba(232, 140, 154, 0.15);
+  color: var(--dream-accent, #e88c9a);
+}
+
+/* Diff 内容区：Dream 柔和背景 */
+[data-skin="dream"] .inline-diff-content {
+  background: var(--dream-bg-card, rgba(255, 255, 255, 0.60));
+}
+[data-skin="dream"] .inline-diff-added {
+  background: rgba(46, 204, 113, 0.06);
+}
+[data-skin="dream"] .inline-diff-removed {
+  background: rgba(231, 76, 60, 0.06);
+}
+
+/* Dream 暗色模式 diff 内容 */
+[data-skin="dream"][data-theme="dark"] .inline-diff-content {
+  background: var(--dream-bg-card, rgba(30, 30, 46, 0.60));
+}
+[data-skin="dream"][data-theme="dark"] .inline-diff-added {
+  background: rgba(46, 204, 113, 0.08);
+}
+[data-skin="dream"][data-theme="dark"] .inline-diff-removed {
+  background: rgba(231, 76, 60, 0.08);
+}
+
+/* 工具栏：Dream 柔和 */
+[data-skin="dream"] .inline-diff-toolbar {
+  background: rgba(232, 140, 154, 0.04);
+  border-bottom: 1px solid var(--dream-border-color, rgba(232, 140, 154, 0.12));
+}
+[data-skin="dream"] .inline-diff-mode-toggle {
+  background: rgba(232, 140, 154, 0.08);
+}
+[data-skin="dream"] .inline-diff-mode-btn.active {
+  background: rgba(232, 140, 154, 0.15);
+  color: var(--dream-accent, #e88c9a);
+}
+
+/* 预览区：Dream 毛玻璃 */
+[data-skin="dream"] .inline-diff-preview-content {
+  background: rgba(255, 255, 255, 0.50);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+[data-skin="dream"][data-theme="dark"] .inline-diff-preview-content {
+  background: rgba(30, 30, 46, 0.50);
+}
+
+/* 自定义指令输入：Dream 风格 */
+[data-skin="dream"] .inline-diff-custom-panel {
+  background: rgba(232, 140, 154, 0.04);
+  border-top: 1px solid var(--dream-border-color, rgba(232, 140, 154, 0.12));
+}
+[data-skin="dream"] .inline-diff-custom-textarea {
+  background: var(--dream-bg-card, rgba(255, 255, 255, 0.80));
+  border: 1px solid var(--dream-border-color, rgba(232, 140, 154, 0.20));
+  color: var(--dream-text-main, #6c474d);
+  border-radius: 10px;
+}
+[data-skin="dream"] .inline-diff-custom-textarea:focus {
+  border-color: var(--dream-accent, #e88c9a);
+  box-shadow: 0 0 0 3px rgba(232, 140, 154, 0.12);
+}
+
+/* 操作栏：Dream 柔和底色 */
+[data-skin="dream"] .inline-diff-actions {
+  background: rgba(232, 140, 154, 0.04);
+  border-top: 1px solid var(--dream-border-color, rgba(232, 140, 154, 0.12));
+}
+
+/* 批准按钮：Dream 柔和绿色 */
+[data-skin="dream"] .inline-diff-btn.accept {
+  background: rgba(46, 204, 113, 0.85);
+  color: white;
+  border-radius: 10px;
+}
+[data-skin="dream"] .inline-diff-btn.accept:hover {
+  background: #22c55e;
+}
+
+/* 拒绝按钮：Dream 柔和 */
+[data-skin="dream"] .inline-diff-btn.reject {
+  background: rgba(255, 255, 255, 0.40);
+  color: var(--dream-text-main, #6c474d);
+  border: 1px solid var(--dream-border-color, rgba(232, 140, 154, 0.20));
+  border-radius: 10px;
+}
+[data-skin="dream"][data-theme="dark"] .inline-diff-btn.reject {
+  background: rgba(30, 30, 46, 0.40);
+}
+
+/* 全部批准：Dream 粉色描边 */
+[data-skin="dream"] .inline-diff-btn.accept-all {
+  color: var(--dream-accent, #e88c9a);
+  border: 1px solid var(--dream-accent, #e88c9a);
+  border-radius: 10px;
+}
+[data-skin="dream"] .inline-diff-btn.accept-all:hover {
+  background: rgba(232, 140, 154, 0.12);
+}
+
+/* 自定义按钮 */
+[data-skin="dream"] .inline-diff-btn.custom {
+  color: var(--dream-text-muted, #a88a8f);
+  border: 1px solid var(--dream-border-color, rgba(232, 140, 154, 0.15));
+  border-radius: 10px;
+}
+
+/* 浮动容器：Dream 柔和阴影 */
+[data-skin="dream"] .inline-diff-container {
+  filter: drop-shadow(0 -4px 20px rgba(232, 140, 154, 0.08));
+}
+[data-skin="dream"][data-theme="dark"] .inline-diff-container {
+  filter: drop-shadow(0 -4px 20px rgba(0, 0, 0, 0.3));
 }

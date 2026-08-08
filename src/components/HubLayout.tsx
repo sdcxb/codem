@@ -11,12 +11,12 @@ import { RightSidebar } from "./RightSidebar";
 interface HubLayoutProps {
   sidebar: ReactNode;
   mainPanel: ReactNode;
+  rightRailOpen?: boolean;
+  onToggleRightRail?: () => void;
   onTasks?: () => void;
   onSkills?: () => void;
   onNotebooks?: () => void;
   onAutomations?: () => void;
-  onSearch?: () => void;
-  onSettings?: () => void;
   onNewChat?: () => void;
   onNewProject?: () => void;
   onImportProject?: () => void;
@@ -27,12 +27,12 @@ interface HubLayoutProps {
 export function HubLayout({
   sidebar,
   mainPanel,
+  rightRailOpen = true,
+  onToggleRightRail,
   onTasks,
   onSkills,
   onNotebooks,
   onAutomations,
-  onSearch,
-  onSettings,
   onNewChat,
   onNewProject,
   onImportProject,
@@ -46,13 +46,13 @@ export function HubLayout({
         onSkills={onSkills}
         onNotebooks={onNotebooks}
         onAutomations={onAutomations}
-        onSearch={onSearch}
-        onSettings={onSettings}
       />
       <div className="hub-body">
         <div className="hub-sidebar-wrapper">{sidebar}</div>
         <div className="hub-main-wrapper">{mainPanel}</div>
         <RightSidebar
+          collapsed={!rightRailOpen}
+          onToggleCollapse={onToggleRightRail}
           onNewChat={onNewChat}
           onNewProject={onNewProject}
           onImportProject={onImportProject}

@@ -1,7 +1,7 @@
 /**
  * Automation Manager — 自动任务触发器
  *
- * 对标 wecode-ref 的 subscription/trigger 体系：
+ * Subscription/trigger 体系：
  * - FileWatchTrigger: 监听文件变化 → 触发自动对话
  * - TimerTrigger: 定时器/cron → 触发自动对话
  * - 支持启用/禁用、多触发器并存

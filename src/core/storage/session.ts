@@ -116,3 +116,13 @@ export function searchSessions(query: string): Session[] {
   if (result.length === 0) return [];
   return result[0].values.map(rowToSessionFromAny);
 }
+
+/** P2 #29: Reorder sessions by a given list of IDs (for drag-and-drop sorting) */
+export function reorderSessions(projectId: string, orderedIds: string[]): void {
+  const db = getDatabase();
+  // Update sort_order for each session
+  for (let i = 0; i < orderedIds.length; i++) {
+    db.run("UPDATE sessions SET sort_order = ? WHERE id = ? AND project_id = ?", [i, orderedIds[i], projectId]);
+  }
+  persistDatabase();
+}

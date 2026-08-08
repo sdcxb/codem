@@ -1,11 +1,12 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import { useDraftPersistence } from "../hooks/useDraftPersistence";
 import { MessageAttachment } from "../store";
 import { FileUpload } from "./FileUpload";
 import { useLang, S } from "../core/i18n/lang";
 import type { CollaborationMode } from "../core/agent/agent";
 import { SECURITY_MODES, getEffectiveSecurityMode, setProjectSecurityMode, setGlobalSecurityMode, type SecurityMode } from "../core/permission/security-mode";
 import { getSkillRegistry } from "../core/skill/skill";
-import { getSettingJSON } from "../core/storage/settings";
+import { getSettingJSON, setSettingJSON } from "../core/storage/settings";
 import { getCustomOperations, runCustomOperation, getProjectExecutionMode, setProjectExecutionMode, getCurrentBranch, listBranches, isGitRepo, type ExecutionMode } from "../core/environment";
 import type { CustomOperation } from "../core/settings/settings";
 import { SlashCommandMenu, type SlashCommandItem } from "./SlashCommandMenu";
@@ -17,6 +18,21 @@ import { GenerateModeSelector } from "./GenerateModeSelector";
 import { ResolutionSelector } from "./ResolutionSelector";
 import { SourceSelector } from "./SourceSelector";
 import { listSources } from "../core/knowledge";
+import { MIMO_MODELS, getConfiguredApiModels, getModelsForMode, type ModelOption } from "../core/model-config";
+import {
+  MessageSquare, X, Image as ImageIcon, FileText, Paperclip, Target,
+  Volume2, ClipboardList, Zap, BookMarked, Minimize2, Maximize2,
+  Square, ArrowRight, ChevronUp, StickyNote, Folder, Globe,
+  Home, GitBranch, Clock, RefreshCw, Check, Wrench, Shield, Rocket,
+  Sparkles, Cpu, ChevronDown, Wifi, AlertCircle,
+} from "lucide-react";
+
+// Map security mode emoji icons to Lucide components
+const securityIconMap: Record<string, JSX.Element> = {
+  "🛡️": <Shield size={15} />,
+  "⚡": <Zap size={15} />,
+  "🚀": <Rocket size={15} />,
+};
 
 interface InputAreaProps {
 onSend: (message: string, attachments?: MessageAttachment[], selectedSkills?: string[]) => void;
@@ -43,9 +59,15 @@ noSession?: boolean;
   onToggleWorkbench?: () => void;
   onToggleRightSidebar?: () => void;
   hasDrafts?: boolean;
+  /** P0: Model selector props — model picker now lives in input area bottom bar */
+  model?: string;
+  onModelChange?: (model: string) => void;
+  mode?: "cli" | "api";
+  /** P1: Connection status indicator */
+  connected?: boolean;
 }
 
-export function InputArea({ onSend, onCancel, disabled, isStreaming, noSession, collaborationMode, onModeChange, projectPath, quoteContext, onClearQuote, notebookId, onToggleSearch, onToggleWorkbench, onToggleQuickPhrase, onToggleDraftPicker, onToggleDisplayMode, onToggleGit, onToggleRightSidebar, hasDrafts }: InputAreaProps) {
+export function InputArea({ onSend, onCancel, disabled, isStreaming, noSession, collaborationMode, onModeChange, projectPath, quoteContext, onClearQuote, notebookId, onToggleSearch, onToggleWorkbench, onToggleQuickPhrase, onToggleDraftPicker, onToggleDisplayMode, onToggleGit, onToggleRightSidebar, hasDrafts, model, onModelChange, mode = "cli", connected = true }: InputAreaProps) {
   const lang = useLang();
   const [input, setInput] = useState("");
   const [pendingAttachments, setPendingAttachments] = useState<MessageAttachment[]>([]);
@@ -72,9 +94,9 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
   const [showSourceSelector, setShowSourceSelector] = useState(false);
   const [notebookSources, setNotebookSources] = useState<Array<{ id: string; name: string; type: "notebook" | "file" | "url" }>>([]);
   const [selectedSourceIds, setSelectedSourceIds] = useState<Set<string>>(new Set());
-  const { currentProject, projects, openProject, createSession, switchSession, getProjectSessions } = useProjectStore();
+  const { currentProject, currentSession, projects, openProject, createSession, switchSession, getProjectSessions } = useProjectStore();
 
-  // === Bottom bar state (对标 wecode ProjectWorkBar) ===
+  // === Bottom bar state ===
   const [executionMode, setExecutionMode] = useState<ExecutionMode>("current_workspace");
   const [currentBranchName, setCurrentBranchName] = useState<string>("");
   const [branches, setBranches] = useState<string[]>([]);
@@ -82,10 +104,45 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
   const [showModeMenu, setShowModeMenu] = useState(false);
   const [showBranchMenu, setShowBranchMenu] = useState(false);
   const [showMoreActions, setShowMoreActions] = useState(false);
+  const [showModelMenu, setShowModelMenu] = useState(false);
   const [isGitProject, setIsGitProject] = useState(false);
   const [branchLoading, setBranchLoading] = useState(false);
-
+  // P0: IME composition state — prevents Enter from firing during Chinese/Japanese input
+  const compositionJustEndedRef = useRef(false);
+  // P1: Drag-over state for file drop zone — depth counter prevents flicker on nested elements
+  const [isDragOver, setIsDragOver] = useState(false);
+  const dragDepthRef = useRef(0);
   const zh = lang === "zh";
+
+  // P1 #12: Draft persistence — saves input per session
+  const draftKey = currentSession?.id || currentProject?.id || "__global__";
+  const { draft, setDraft, clearDraft } = useDraftPersistence(draftKey);
+
+  // P1 #15: Random tip text — rotates placeholder periodically
+  const tipList = useMemo(() => zh ? [
+    "输入问题开始对话 · / 选择技能",
+    "拖拽文件直接上传 · @ 提及文件",
+    "按 Enter 发送 · Shift+Enter 换行",
+    "输入 / 快速选择技能",
+    "粘贴图片自动识别并上传",
+  ] : [
+    "Ask anything · Type / for skills",
+    "Drop files to upload · @ to mention",
+    "Press Enter to send · Shift+Enter for newline",
+    "Type / to quickly select skills",
+    "Paste images to auto-upload",
+  ], [zh]);
+  const [tipIndex, setTipIndex] = useState(() => Math.floor(Math.random() * tipList.length));
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setTipIndex(prev => (prev + 1) % tipList.length);
+    }, 8000);
+    return () => clearInterval(timer);
+  }, [tipList.length]);
+  const dynamicPlaceholder = noSession
+    ? (lang === "zh" ? "请新建或选择历史对话后发起任务" : "Create or select a session to start")
+    : disabled ? S.sidebar.disabledHint[lang]
+    : tipList[tipIndex];
 
   // Load custom operations
   useEffect(() => {
@@ -202,6 +259,8 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
       message = modeHint + message;
     }
     onSend(message, pendingAttachments.length > 0 ? pendingAttachments : undefined, selectedSkills.length > 0 ? selectedSkills : undefined);
+    // P1 #12: Clear draft on send
+    clearDraft();
     setInput("");
     setPendingAttachments([]);
     setSelectedSkills([]);
@@ -213,8 +272,22 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
     }
   };
 
+  // P0: Model list for inline model selector
+  const modelList: ModelOption[] = getModelsForMode(mode);
+  const currentModelName = modelList.find(m => m.id === model)?.name || model || "";
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    // P0: IME composition guard — suppress Enter right after compositionEnd
+    if (compositionJustEndedRef.current) {
+      compositionJustEndedRef.current = false;
+      if (e.key === "Enter") {
+        e.preventDefault();
+        return;
+      }
+    }
     if (e.key === "Enter" && !e.shiftKey) {
+      // P0: Also check nativeEvent.isComposing for extra safety
+      if (e.nativeEvent.isComposing) return;
       e.preventDefault();
       handleSubmit();
     }
@@ -278,8 +351,8 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
         const dirty = await hasUncommittedChanges(projectPath);
         if (dirty) {
           if (!confirm(zh
-            ? "⚠️ 当前工作区有未提交的修改。切换模式可能导致修改丢失。确认切换？"
-            : "⚠️ The current workspace has uncommitted changes. Switching modes may cause loss. Continue?")) {
+? "当前工作区有未提交的修改。切换模式可能导致修改丢失。确认切换？"
+: "The current workspace has uncommitted changes. Switching modes may cause loss. Continue?")) {
             setShowModeMenu(false);
             return;
           }
@@ -318,6 +391,7 @@ const handleSelectProject = (projectId: string) => {
     setShowProjectMenu(false);
     setShowModeMenu(false);
     setShowBranchMenu(false);
+    setShowModelMenu(false);
   }, []);
 
   const currentModeInfo = SECURITY_MODES.find(m => m.mode === securityMode)!;
@@ -326,13 +400,40 @@ const handleSelectProject = (projectId: string) => {
   const modeLocked = isStreaming;
 
   return (
-    <div className="input-area">
+    <div className={`input-area input-card-container ${isDragOver ? "drag-over" : ""}`}
+      onDragEnter={(e) => {
+        e.preventDefault();
+        dragDepthRef.current++;
+        setIsDragOver(true);
+      }}
+      onDragOver={(e) => { e.preventDefault(); }}
+      onDragLeave={(e) => {
+        e.preventDefault();
+        dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
+        if (dragDepthRef.current === 0) setIsDragOver(false);
+      }}
+      onDrop={(e) => {
+        e.preventDefault();
+        dragDepthRef.current = 0;
+        setIsDragOver(false);
+        // P1: Handle file drop
+        const files = Array.from(e.dataTransfer.files);
+        if (files.length > 0) {
+          const atts: MessageAttachment[] = files.map(f => ({
+            id: `drop-${Date.now()}-${Math.random().toString(36).slice(2,8)}`,
+            name: f.name, type: f.type.startsWith("image/") ? "image" : "file",
+            content: "", mimeType: f.type, size: f.size,
+          }));
+          setPendingAttachments(prev => [...prev, ...atts]);
+        }
+      }}
+    >
       {/* Quote context banner */}
       {quoteContext && (
         <div className="quote-context-banner">
-          <span className="quote-context-icon">💬</span>
+          <span className="quote-context-icon"><MessageSquare size={14} /></span>
           <span className="quote-context-text">{quoteContext.length > 80 ? quoteContext.substring(0, 80) + "..." : quoteContext}</span>
-          <button className="quote-context-clear" onClick={() => onClearQuote?.()}>✕</button>
+          <button className="quote-context-clear" onClick={() => onClearQuote?.()}><X size={14} /></button>
         </div>
       )}
 
@@ -341,13 +442,13 @@ const handleSelectProject = (projectId: string) => {
         <div className="pending-attachments">
           {pendingAttachments.map((att) => (
             <div key={att.id} className="pending-attachment">
-              <span className="attachment-icon">{att.type === "image" ? "🖼️" : "📄"}</span>
+              <span className="attachment-icon">{att.type === "image" ? <ImageIcon size={14} /> : <FileText size={14} />}</span>
               {att.type === "image" && att.content ? (
                 <img src={att.content} alt={att.name} style={{ width: 32, height: 32, objectFit: "cover", borderRadius: 4, marginRight: 4 }} />
               ) : null}
               <span className="attachment-name">{att.name}</span>
               {att.size && <span className="attachment-size">{formatSize(att.size)}</span>}
-              <button className="attachment-remove" onClick={() => removeAttachment(att.id)}>✕</button>
+              <button className="attachment-remove" onClick={() => removeAttachment(att.id)}><X size={12} /></button>
             </div>
           ))}
           {pendingAttachments.some((a) => a.type === "image") && (() => {
@@ -356,9 +457,9 @@ const handleSelectProject = (projectId: string) => {
             const currentModel = settings.model || "";
             const supportsVision = currentModel.startsWith("gpt-4o") || currentModel.startsWith("claude-3") || currentModel.startsWith("claude-4") || currentModel.startsWith("gemini-1.5") || currentModel.startsWith("gemini-2") || currentModel.startsWith("o3") || currentModel.startsWith("o4");
             if (!supportsVision && !visionConfig?.enabled) {
-              return <div style={{ fontSize: 11, color: "var(--text-muted)", padding: "4px 0" }}>💡 当前模型不支持视觉，图片将以文字标注发送。配置视觉代理请在 设置→多模态→Vision 中开启。</div>;
+              return <div style={{ fontSize: 11, color: "var(--text-muted)", padding: "4px 0" }}>{zh ? "当前模型不支持视觉，图片将以文字标注发送。配置视觉代理请在 设置→多模态→Vision 中开启。" : "Current model doesn't support vision. Images will be sent as text. Configure vision proxy in Settings→Multimodal→Vision."}</div>;
             } else if (!supportsVision && visionConfig?.enabled) {
-              return <div style={{ fontSize: 11, color: "var(--text-muted)", padding: "4px 0" }}>💡 将使用视觉代理 ({visionConfig.model}) 描述图片内容</div>;
+              return <div style={{ fontSize: 11, color: "var(--text-muted)", padding: "4px 0" }}>{zh ? "将使用视觉代理 (" + visionConfig.model + ") 描述图片内容" : "Will use vision proxy (" + visionConfig.model + ") to describe image"}</div>;
             }
             return null;
           })()}
@@ -387,12 +488,12 @@ const handleSelectProject = (projectId: string) => {
                 {/* Upload file */}
                 <button className="more-action-item" style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", cursor: "pointer", border: "none", background: "transparent", color: "var(--text-primary)", fontSize: 12, width: "100%", textAlign: "left" }}
                   onClick={() => { setShowPlusMenu(false); document.getElementById('file-upload-input')?.click(); }}>
-                  📎 <span>{zh ? "上传文件" : "Upload file"}</span>
+                  <Paperclip size={14} /> <span>{zh ? "上传文件" : "Upload file"}</span>
                 </button>
                 {/* Select skills */}
                 <button className="more-action-item" style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", cursor: "pointer", border: "none", background: "transparent", color: "var(--text-primary)", fontSize: 12, width: "100%", textAlign: "left" }}
                   onClick={() => { setShowPlusMenu(false); setShowSkillPicker(true); }}>
-                  🎯 <span>{zh ? "选择技能" : "Select skills"}</span>
+                  <Target size={14} /> <span>{zh ? "选择技能" : "Select skills"}</span>
                 </button>
                 <div style={{ height: 1, background: "var(--border-color)", margin: "4px 0" }} />
                 {(() => {
@@ -419,7 +520,7 @@ const handleSelectProject = (projectId: string) => {
                         textareaRef.current?.focus();
                       }}
                     >
-                      🖼️ <span>{zh ? "生成图片" : "Generate image"}</span>
+                      <ImageIcon size={14} /> <span>{zh ? "生成图片" : "Generate image"}</span>
                       {!imageGenConfig && <span style={{ fontSize: 9, opacity: 0.6, marginLeft: "auto" }}>{zh ? "未配置" : "Not configured"}</span>}
                     </button>
                     {/* Voice synthesis */}
@@ -443,7 +544,7 @@ const handleSelectProject = (projectId: string) => {
                         textareaRef.current?.focus();
                       }}
                     >
-                      🔊 <span>{zh ? "语音合成" : "Voice synthesis"}</span>
+                      <Volume2 size={14} /> <span>{zh ? "语音合成" : "Voice synthesis"}</span>
                       {!ttsConfig && <span style={{ fontSize: 9, opacity: 0.6, marginLeft: "auto" }}>{zh ? "未配置" : "Not configured"}</span>}
                     </button>
                   </>);
@@ -502,7 +603,7 @@ const handleSelectProject = (projectId: string) => {
           onClick={() => onModeChange?.(collaborationMode === "default" ? "plan" : "default")}
           title={collaborationMode === "plan" ? (zh ? "计划模式（只读）— 点击切换到执行模式" : "Plan mode (read-only) — click to switch") : (zh ? "执行模式 — 点击切换到计划模式" : "Execute mode — click for plan mode")}
         >
-          {collaborationMode === "plan" ? "📋" : "⚡"}
+          {collaborationMode === "plan" ? <ClipboardList size={14} /> : <Zap size={14} />}
         </button>
 
         {/* Multimodal 🎨 removed from left toolbar — per benchmark plan: only show in generate mode */}
@@ -526,7 +627,7 @@ const handleSelectProject = (projectId: string) => {
             title={zh ? "知识来源选择器" : "Knowledge source selector"}
             style={showSourceSelector ? { background: "var(--accent)", color: "#fff" } : {}}
           >
-            📚
+            <BookMarked size={14} />
           </button>
         )}
         {showSourceSelector && notebookId && (
@@ -546,7 +647,7 @@ const handleSelectProject = (projectId: string) => {
           title={zh ? `安全策略: ${currentModeInfo.label_zh} — ${currentModeInfo.desc_zh}` : `Security: ${currentModeInfo.label_en} — ${currentModeInfo.desc_en}`}
           style={{ position: "relative", display: "flex", alignItems: "center", gap: 3, fontSize: 12, fontWeight: 600 }}
         >
-          <span style={{ fontSize: 15 }}>{currentModeInfo.icon}</span>
+          <span style={{ fontSize: 15, display: "flex", alignItems: "center" }}>{securityIconMap[currentModeInfo.icon] || currentModeInfo.icon}</span>
           <span>{zh ? currentModeInfo.label_zh : currentModeInfo.label_en}</span>
         </button>
 
@@ -569,7 +670,7 @@ const handleSelectProject = (projectId: string) => {
                   cursor: "pointer", fontSize: 11, display: "flex", flexDirection: "column",
                   alignItems: "center", gap: 4, minWidth: 90,
                 }} title={zh ? m.desc_zh : m.desc_en} >
-                  <span style={{ fontSize: 18 }}>{m.icon}</span>
+                  <span style={{ fontSize: 18, display: "flex", alignItems: "center" }}>{securityIconMap[m.icon] || m.icon}</span>
                   <span style={{ fontWeight: 600 }}>{zh ? m.label_zh : m.label_en}</span>
                   <span style={{ fontSize: 9, opacity: 0.7, textAlign: "center", lineHeight: 1.3 }}>
                     {zh ? m.desc_zh.substring(0, 20) + "…" : m.desc_en.substring(0, 25) + "…"}
@@ -606,7 +707,7 @@ const handleSelectProject = (projectId: string) => {
               onClick={() => { setShowMultimodal(false); setGenerateMode("text"); }}
               style={{ marginLeft: "auto", padding: "4px 8px", fontSize: 11, cursor: "pointer", background: "transparent", border: "1px solid var(--border-primary)", borderRadius: 4 }}
             >
-              ✕
+              <X size={14} />
             </button>
           </div>
         )}
@@ -632,9 +733,11 @@ const handleSelectProject = (projectId: string) => {
         <textarea
           ref={textareaRef}
           className={`message-input ${expanded ? "expanded" : ""}`}
-          value={input}
+          // P1 #12: Sync input with draft persistence
+          value={draft || input}
           onChange={(e) => {
             const val = e.target.value;
+            setDraft(val);
             setInput(val);
             const slashMatch = val.match(/(?:^|\s)\/([^\s]*)$/);
             setSlashFilter(slashMatch ? slashMatch[1] : null);
@@ -644,8 +747,8 @@ const handleSelectProject = (projectId: string) => {
               setMentionQuery(mentionMatch[1]);
               // Load mentionable items (files, notebooks)
               setMentionItems([
-                { id: "current-file", type: "file", label: "当前文件", icon: "📄" },
-                { id: "notebook", type: "notebook", label: "知识库", icon: "📒" },
+                { id: "current-file", type: "file", label: zh ? "当前文件" : "Current file", icon: "file" },
+                { id: "notebook", type: "notebook", label: zh ? "知识库" : "Notebook", icon: "book" },
               ]);
             } else {
               setMentionQuery(null);
@@ -654,19 +757,26 @@ const handleSelectProject = (projectId: string) => {
             const badges: Array<{ id: string; type: "notebook" | "file" | "url"; label: string; icon?: string }> = [];
             if (pendingAttachments.length > 0) {
               pendingAttachments.forEach((att) => {
-                badges.push({ id: att.id, type: "file", label: att.name, icon: "📄" });
+                badges.push({ id: att.id, type: "file", label: att.name, icon: "file" });
               });
             }
             if (selectedSkills.length > 0) {
               selectedSkills.forEach((sid) => {
-                badges.push({ id: `skill-${sid}`, type: "url", label: sid, icon: "🔧" });
+                badges.push({ id: `skill-${sid}`, type: "url", label: sid, icon: "tool" });
               });
             }
             setContextBadges(badges);
           }}
           onKeyDown={handleKeyDown}
+          onCompositionStart={() => { compositionJustEndedRef.current = false; }}
+          onCompositionEnd={() => {
+            // P0: Set flag so the next keydown (Enter) is suppressed
+            compositionJustEndedRef.current = true;
+            // Reset after a tick in case no keydown follows
+            setTimeout(() => { compositionJustEndedRef.current = false; }, 100);
+          }}
           onPaste={handlePaste}
-          placeholder={noSession ? (lang === "zh" ? "请新建或选择历史对话后发起任务" : "Create or select a session to start") : disabled ? S.sidebar.disabledHint[lang] : S.input.placeholder[lang]}
+          placeholder={dynamicPlaceholder}
           disabled={disabled}
           rows={1}
         />
@@ -676,20 +786,21 @@ const handleSelectProject = (projectId: string) => {
           onClick={() => setExpanded(!expanded)}
           title={expanded ? S.sidebar.collapseInput[lang] : S.sidebar.expandInput[lang]}
         >
-          {expanded ? "🗗" : "🗖"}
+          {expanded ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
         </button>
 
         {/* Send button group: send + up-arrow, visually one unit */}
         <div style={{ display: "flex", alignItems: "center", gap: 0, flexShrink: 0, position: "relative" }}>
           {isStreaming ? (
-            <button className="send-btn cancel-btn" onClick={onCancel} title={S.input.cancel[lang]} style={{ borderRadius: "6px 0 0 6px" }}>■</button>
+            <button className="send-btn cancel-btn" onClick={onCancel} title={S.input.cancel[lang]} style={{ borderRadius: "6px 0 0 6px" }}><Square size={14} fill="currentColor" /></button>
           ) : (
             <button
               className={`send-btn ${disabled ? "disabled" : ""}`}
               onClick={handleSubmit}
               disabled={disabled || (!input.trim() && pendingAttachments.length === 0)}
               style={{ borderRadius: "6px 0 0 6px" }}
-            >→</button>
+              title={zh ? "发送 (Enter)" : "Send (Enter)"}
+            ><ArrowRight size={16} /></button>
           )}
 
           {/* Up-arrow — right side of send group */}
@@ -703,7 +814,7 @@ const handleSelectProject = (projectId: string) => {
               borderRadius: "0 6px 6px 0", display: "flex", alignItems: "center", justifyContent: "center",
             }}
           >
-            ▲
+            <ChevronUp size={10} />
           </button>
           {showMoreActions && (
             <>
@@ -714,12 +825,12 @@ const handleSelectProject = (projectId: string) => {
               }}>
                 {onToggleQuickPhrase && (
                   <button className="more-action-item" onClick={() => { onToggleQuickPhrase(); setShowMoreActions(false); }} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", cursor: "pointer", border: "none", background: "transparent", color: "var(--text-primary)", fontSize: 12, width: "100%", textAlign: "left" }}>
-                    📋 <span>{zh ? "快捷短语" : "Quick Phrases"}</span>
+                    <ClipboardList size={14} /> <span>{zh ? "快捷短语" : "Quick Phrases"}</span>
                   </button>
                 )}
                 {onToggleDraftPicker && hasDrafts && (
                   <button className="more-action-item" onClick={() => { onToggleDraftPicker(); setShowMoreActions(false); }} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", cursor: "pointer", border: "none", background: "transparent", color: "var(--text-primary)", fontSize: 12, width: "100%", textAlign: "left" }}>
-                    📝 <span>{zh ? "提示词草稿" : "Prompt Drafts"}</span>
+                    <StickyNote size={14} /> <span>{zh ? "提示词草稿" : "Prompt Drafts"}</span>
                   </button>
                 )}
               </div>
@@ -728,9 +839,9 @@ const handleSelectProject = (projectId: string) => {
         </div>
       </div>
 
-      {/* === Bottom control bar (对标 wecode ProjectWorkBar) === */}
+      {/* === Bottom control bar — unified single-line with model selector === */}
       {/* Project dropdown backdrop */}
-      {(showProjectMenu || showModeMenu || showBranchMenu) && (
+      {(showProjectMenu || showModeMenu || showBranchMenu || showModelMenu) && (
         <div onClick={closeBottomMenus} style={{ position: "fixed", inset: 0, zIndex: 99 }} />
       )}
 
@@ -742,11 +853,11 @@ const handleSelectProject = (projectId: string) => {
             onClick={() => { setShowProjectMenu(!showProjectMenu); setShowModeMenu(false); setShowBranchMenu(false); }}
             title={currentProject ? currentProject.path : (zh ? "选择项目" : "Select project")}
           >
-            <span style={{ fontSize: 13 }}>{currentProject ? "📁" : "🌐"}</span>
+            <span style={{ fontSize: 13, display: "flex", alignItems: "center" }}>{currentProject ? <Folder size={13} /> : <Globe size={13} />}</span>
             <span className="project-indicator-name">
               {currentProject ? currentProject.name : (zh ? "全局对话" : "Global")}
             </span>
-            <span style={{ fontSize: 9, opacity: 0.5 }}>▾</span>
+            <span style={{ fontSize: 9, opacity: 0.5 }}><ChevronDown size={10} /></span>
           </button>
           {showProjectMenu && (
             <div className="bottom-bar-dropdown" style={{ position: "absolute", bottom: "100%", left: 0, marginBottom: 4, minWidth: 260, maxHeight: 240, overflowY: "auto" }}>
@@ -760,7 +871,7 @@ const handleSelectProject = (projectId: string) => {
                   className={`bottom-bar-dropdown-item ${currentProject?.id === p.id ? "active" : ""}`}
                   onClick={() => handleSelectProject(p.id)}
                 >
-                  <span style={{ fontSize: 14 }}>📁</span>
+                  <span style={{ fontSize: 14, display: "flex", alignItems: "center" }}><Folder size={14} /></span>
                   <div>
                     <div style={{ fontWeight: 600, fontSize: 12 }}>{p.name}</div>
                     <div style={{ fontSize: 10, opacity: 0.5 }}>{p.path}</div>
@@ -782,9 +893,9 @@ const handleSelectProject = (projectId: string) => {
             title={zh ? "执行模式" : "Execution mode"}
             style={{ opacity: modeLocked ? 0.5 : 1 }}
           >
-            <span style={{ fontSize: 13 }}>{executionMode === "git_worktree" ? "🌲" : "🏠"}</span>
+            <span style={{ fontSize: 13, display: "flex", alignItems: "center" }}>{executionMode === "git_worktree" ? <GitBranch size={13} /> : <Home size={13} />}</span>
             <span>{executionMode === "git_worktree" ? (zh ? "新工作树" : "Worktree") : (zh ? "本地处理" : "Local")}</span>
-            <span style={{ fontSize: 9, opacity: 0.5 }}>▾</span>
+            <span style={{ fontSize: 9, opacity: 0.5 }}><ChevronDown size={10} /></span>
           </button>
           {showModeMenu && (
             <div className="bottom-bar-dropdown" style={{ position: "absolute", bottom: "100%", left: 0, marginBottom: 4, minWidth: 200 }}>
@@ -793,7 +904,7 @@ const handleSelectProject = (projectId: string) => {
                 className={`bottom-bar-dropdown-item ${executionMode === "current_workspace" ? "active" : ""}`}
                 onClick={() => handleExecutionModeChange("current_workspace")}
               >
-                <span style={{ fontSize: 16 }}>🏠</span>
+                <span style={{ fontSize: 16, display: "flex", alignItems: "center" }}><Home size={16} /></span>
                 <div>
                   <div style={{ fontWeight: 600, fontSize: 12 }}>{zh ? "本地处理" : "Local workspace"}</div>
                   <div style={{ fontSize: 10, opacity: 0.6 }}>{zh ? "共享项目目录" : "Shared project directory"}</div>
@@ -806,7 +917,7 @@ const handleSelectProject = (projectId: string) => {
                 style={{ opacity: isGitProject ? 1 : 0.4 }}
                 title={isGitProject ? "" : (zh ? "需要 Git 仓库项目才能使用工作树模式" : "Git repository required for worktree mode")}
               >
-                <span style={{ fontSize: 16 }}>🌲</span>
+                <span style={{ fontSize: 16, display: "flex", alignItems: "center" }}><GitBranch size={16} /></span>
                 <div>
                   <div style={{ fontWeight: 600, fontSize: 12 }}>{zh ? "新工作树" : "New worktree"}</div>
                   <div style={{ fontSize: 10, opacity: 0.6 }}>{zh ? "每次任务独立隔离" : "Isolated per-task"}</div>
@@ -826,9 +937,9 @@ const handleSelectProject = (projectId: string) => {
                 onClick={() => { setShowBranchMenu(!showBranchMenu); setShowProjectMenu(false); setShowModeMenu(false); }}
                 title={zh ? "选择分支" : "Select branch"}
               >
-                <span style={{ fontSize: 13 }}>🌿</span>
+                <span style={{ fontSize: 13, display: "flex", alignItems: "center" }}><GitBranch size={13} /></span>
                 <span>{branchLoading ? "..." : (currentBranchName || (zh ? "分支" : "Branch"))}</span>
-                <span style={{ fontSize: 9, opacity: 0.5 }}>▾</span>
+                <span style={{ fontSize: 9, opacity: 0.5 }}><ChevronDown size={10} /></span>
               </button>
               {showBranchMenu && (
                 <div className="bottom-bar-dropdown" style={{ position: "absolute", bottom: "100%", left: 0, marginBottom: 4, minWidth: 200, maxHeight: 240, overflowY: "auto" }}>
@@ -838,7 +949,7 @@ const handleSelectProject = (projectId: string) => {
                       onClick={(e) => { e.stopPropagation(); refreshBranch(); }}
                       style={{ marginLeft: "auto", fontSize: 10, opacity: 0.6, cursor: "pointer", background: "none", border: "none", color: "inherit" }}
                     >
-                      {branchLoading ? "⏳" : "🔄"}
+                      {branchLoading ? <Clock size={12} /> : <RefreshCw size={12} />}
                     </button>
                   </div>
                   {branchLoading && <div className="bottom-bar-dropdown-empty">{zh ? "加载中..." : "Loading..."}</div>}
@@ -874,7 +985,7 @@ const handleSelectProject = (projectId: string) => {
                 setShowBranchMenu(false);
               }}
                     >
-                      <span style={{ fontSize: 14 }}>{br === currentBranchName ? "✓" : "🌿"}</span>
+                      <span style={{ fontSize: 14, display: "flex", alignItems: "center" }}>{br === currentBranchName ? <Check size={14} /> : <GitBranch size={14} />}</span>
                       <span style={{ fontSize: 12 }}>{br}</span>
                     </button>
                   ))}
@@ -888,7 +999,7 @@ const handleSelectProject = (projectId: string) => {
         {customOps.filter(op => op.command.trim()).length > 0 && (
           <>
             <div className="input-control-divider" />
-            {customOps.filter(op => op.command.trim()).slice(0, 3).map(op => (
+            {customOps.filter(op => op.command.trim()).slice(0, 2).map(op => (
               <button
                 key={op.id}
                 className="input-control-item"
@@ -897,23 +1008,88 @@ const handleSelectProject = (projectId: string) => {
                 title={`${op.name}: ${op.command}`}
                 style={{ opacity: runningOp === op.id ? 0.5 : 1 }}
               >
-                {runningOp === op.id ? "⏳" : (op.icon || "🔧")} {op.name}
+                {runningOp === op.id ? <Clock size={12} /> : <Wrench size={12} />} {op.name}
               </button>
             ))}
           </>
         )}
+
+        {/* P0: Model selector — now in bottom control bar */}
+        {onModelChange && model && (
+          <>
+            <div className="input-control-divider" />
+            <div style={{ position: "relative" }}>
+              <button
+                className="input-control-item model-selector-inline"
+                onClick={() => { setShowModelMenu(!showModelMenu); setShowProjectMenu(false); setShowModeMenu(false); setShowBranchMenu(false); }}
+                title={zh ? "选择模型" : "Select model"}
+              >
+                <Cpu size={13} />
+                <span>{currentModelName}</span>
+                <ChevronDown size={10} style={{ opacity: 0.5 }} />
+              </button>
+              {showModelMenu && (
+                <div className="bottom-bar-dropdown" style={{ position: "absolute", bottom: "100%", left: 0, marginBottom: 4, minWidth: 200, maxHeight: 280, overflowY: "auto" }}>
+                  <div className="bottom-bar-dropdown-header">{zh ? "选择模型" : "Select Model"}</div>
+                  {modelList.length === 0 && (
+                    <div className="bottom-bar-dropdown-empty">{zh ? "无可用模型" : "No models available"}</div>
+                  )}
+                  {modelList.map(m => (
+                    <button
+                      key={m.id}
+                      className={`bottom-bar-dropdown-item ${model === m.id ? "active" : ""}`}
+                      onClick={() => { onModelChange(m.id); setShowModelMenu(false); }}
+                    >
+                      <span style={{ fontSize: 14, display: "flex", alignItems: "center" }}>{model === m.id ? <Check size={14} /> : <Cpu size={14} />}</span>
+                      <span style={{ fontSize: 12 }}>{m.name}</span>
+                    </button>
+                  ))}
+                  {/* Reasoning effort selector */}
+                  <div style={{ height: 1, background: "var(--border-primary)", margin: "4px 0" }} />
+                  <div style={{ padding: "4px 12px", display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer", position: "relative" }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const current = getSettingJSON<string>("codem-reasoning-effort", "high");
+                      const efforts = ["low", "medium", "high", "ultra"] as const;
+                      const idx = efforts.indexOf(current as any);
+                      const next = efforts[(idx + 1) % efforts.length];
+                      setSettingJSON("codem-reasoning-effort", next);
+                    }}
+                  >
+                    <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{zh ? "推理强度" : "Reasoning"}</span>
+                    <span style={{ fontSize: 12, fontWeight: 600, color: "var(--accent)" }}>
+                      {(() => {
+                        const effort = getSettingJSON<string>("codem-reasoning-effort", "high");
+                        const labels: Record<string, { zh: string; en: string }> = { low: { zh: "低", en: "Low" }, medium: { zh: "中", en: "Medium" }, high: { zh: "高", en: "High" }, ultra: { zh: "超高", en: "Ultra" } };
+                        return labels[effort]?.[lang] || labels.high[lang];
+                      })()}
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
+          </>
+        )}
+
+        {/* P1: Connection status indicator */}
+        <div className="input-control-divider" />
+        <span className="input-control-item" style={{ cursor: "default", opacity: connected ? 0.7 : 1, color: connected ? "var(--text-muted)" : "var(--warning)" }}>
+          {connected ? <Wifi size={12} /> : <AlertCircle size={12} />}
+          <span>{connected ? (zh ? "已连接" : "Online") : (zh ? "离线" : "Offline")}</span>
+        </span>
 
         {/* Right side: skills + hint */}
         {selectedSkills.length > 0 && (
           <>
             <div className="input-control-divider" />
             <span className="input-control-item active">
-              🎯 {selectedSkills.length} {zh ? "技能" : "skills"}
+              <span style={{ display: "flex", alignItems: "center", gap: 4 }}><Target size={13} /> {selectedSkills.length} {zh ? "技能" : "skills"}</span>
             </span>
           </>
         )}
-        <div style={{ marginLeft: "auto", fontSize: 10, color: "var(--text-muted)" }}>
-          {zh ? "输入 / 选择技能" : "Type / for skills"}
+        <div style={{ marginLeft: "auto", fontSize: 10, color: "var(--text-muted)", display: "flex", alignItems: "center", gap: 4 }}>
+          <Sparkles size={10} />
+          {zh ? "输入 / 选择技能 · 拖拽文件上传" : "Type / for skills · Drop files"}
         </div>
       </div>
     </div>

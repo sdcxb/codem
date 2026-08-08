@@ -11,6 +11,7 @@ import { useState, useEffect, useMemo } from "react";
 import { getLLMEngine } from "../core/llm";
 import type { ToolDef } from "../core/llm/tools";
 import { getSettingJSON, setSettingJSON } from "../core/storage/settings";
+import { Wrench, Plug, Target, Link2, X, Lightbulb, ChevronDown, ChevronRight } from "lucide-react";
 
 interface ToolManagerProps {
   onClose: () => void;
@@ -22,11 +23,11 @@ interface ToolInfo {
   enabled: boolean;
 }
 
-const CATEGORY_LABELS: Record<string, { label: string; icon: string; color: string }> = {
-  builtin: { label: "内置工具", icon: "🔧", color: "#3b82f6" },
-  mcp: { label: "MCP 工具", icon: "🔌", color: "#8b5cf6" },
-  skill: { label: "技能工具", icon: "🎯", color: "#10b981" },
-  delegation: { label: "委派工具", icon: "🔗", color: "#f59e0b" },
+const CATEGORY_LABELS: Record<string, { label: string; icon: React.ReactNode; color: string }> = {
+  builtin: { label: "内置工具", icon: <Wrench size={14} />, color: "#3b82f6" },
+  mcp: { label: "MCP 工具", icon: <Plug size={14} />, color: "#8b5cf6" },
+  skill: { label: "技能工具", icon: <Target size={14} />, color: "#10b981" },
+  delegation: { label: "委派工具", icon: <Link2 size={14} />, color: "#f59e0b" },
 };
 
 // 内置工具 ID 列表
@@ -112,10 +113,10 @@ export function ToolManager({ onClose }: ToolManagerProps) {
     <div className="usage-stats" style={{ maxWidth: 700 }}>
       <div className="usage-stats-header">
         <div className="usage-stats-title">
-          <span className="usage-stats-icon">🔧</span>
+          <span className="usage-stats-icon"><Wrench size={16} /></span>
           <span>工具管理</span>
         </div>
-        <button className="usage-stats-close" onClick={onClose}>✕</button>
+        <button className="usage-stats-close" onClick={onClose}><X size={14} /></button>
       </div>
 
       {/* 搜索框 */}
@@ -229,7 +230,7 @@ export function ToolManager({ onClose }: ToolManagerProps) {
                     cursor: "pointer", fontSize: 12, padding: "2px 4px",
                   }}
                 >
-                  {isExpanded ? "▼" : "▶"}
+                  {isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
                 </button>
               </div>
 
@@ -288,7 +289,7 @@ export function ToolManager({ onClose }: ToolManagerProps) {
       </div>
 
       <div style={{ padding: "8px 16px", fontSize: 11, color: "var(--text-muted)", borderTop: "1px solid var(--border-primary)" }}>
-        💡 禁用的工具不会出现在 LLM 的可用工具列表中。内置工具禁用后可能影响核心功能。
+        <Lightbulb size={11} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 4 }} />禁用的工具不会出现在 LLM 的可用工具列表中。内置工具禁用后可能影响核心功能。
       </div>
     </div>
   );

@@ -1,12 +1,15 @@
 import { useState } from "react";
+import { Bot, GitBranch, FolderOpen, ListChecks, Wrench, X } from "lucide-react";
 import { useLang } from "../core/i18n/lang";
 import { GitInfoPanel } from "./GitInfoPanel";
 import { Workbench } from "./Workbench";
 import { FileChangesList } from "./FileChangesList";
 import { FileExplorer } from "./FileExplorer";
+import { AgentRoster } from "./AgentRoster";
 import { useProjectStore } from "../core/store";
+import { useAppStore } from "../store";
 
-type SidebarTab = "git" | "workbench" | "files" | "changes";
+type SidebarTab = "git" | "workbench" | "files" | "changes" | "agents";
 
 interface RightSidebarProps {
   open: boolean;
@@ -18,6 +21,7 @@ export function PanelSidebar({ open, onClose }: RightSidebarProps) {
   const zh = lang === "zh";
   const [activeTab, setActiveTab] = useState<SidebarTab>("git");
   const { currentProject, currentSession } = useProjectStore();
+  const { isStreaming, currentModel } = useAppStore();
   const currentSessionId = currentSession?.id || "";
 
   if (!open) return null;
@@ -37,98 +41,29 @@ export function PanelSidebar({ open, onClose }: RightSidebarProps) {
         boxShadow: "-4px 0 16px rgba(0,0,0,0.15)",
       }}>
       {/* Tab header */}
-      <div style={{
-        display: "flex",
-        alignItems: "center",
-        borderBottom: "1px solid var(--border-color)",
-        padding: "0 8px",
-        height: 40,
-        flexShrink: 0,
-      }}>
-        <button
-          onClick={() => setActiveTab("git")}
-          style={{
-            padding: "6px 12px",
-            fontSize: 12,
-            fontWeight: activeTab === "git" ? 600 : 400,
-            color: activeTab === "git" ? "var(--accent)" : "var(--text-muted)",
-            background: activeTab === "git" ? "var(--bg-tertiary)" : "transparent",
-            border: "none",
-            borderRadius: "6px 6px 0 0",
-            cursor: "pointer",
-            display: "flex",
-            alignItems: "center",
-            gap: 4,
-          }}
-        >
-          🌿 {zh ? "Git" : "Git"}
-        </button>
-        <button
-          onClick={() => setActiveTab("files")}
-          style={{
-            padding: "6px 12px",
-            fontSize: 12,
-            fontWeight: activeTab === "files" ? 600 : 400,
-            color: activeTab === "files" ? "var(--accent)" : "var(--text-muted)",
-            background: activeTab === "files" ? "var(--bg-tertiary)" : "transparent",
-            border: "none",
-            borderRadius: "6px 6px 0 0",
-            cursor: "pointer",
-            display: "flex",
-            alignItems: "center",
-            gap: 4,
-          }}
-        >
-          📁 {zh ? "文件" : "Files"}
-        </button>
-        <button
-          onClick={() => setActiveTab("changes")}
-          style={{
-            padding: "6px 12px",
-            fontSize: 12,
-            fontWeight: activeTab === "changes" ? 600 : 400,
-            color: activeTab === "changes" ? "var(--accent)" : "var(--text-muted)",
-            background: activeTab === "changes" ? "var(--bg-tertiary)" : "transparent",
-            border: "none",
-            borderRadius: "6px 6px 0 0",
-            cursor: "pointer",
-            display: "flex",
-            alignItems: "center",
-            gap: 4,
-          }}
-        >
-          📋 {zh ? "变更" : "Changes"}
-        </button>
-        <button
-          onClick={() => setActiveTab("workbench")}
-          style={{
-            padding: "6px 12px",
-            fontSize: 12,
-            fontWeight: activeTab === "workbench" ? 600 : 400,
-            color: activeTab === "workbench" ? "var(--accent)" : "var(--text-muted)",
-            background: activeTab === "workbench" ? "var(--bg-tertiary)" : "transparent",
-            border: "none",
-            borderRadius: "6px 6px 0 0",
-            cursor: "pointer",
-            display: "flex",
-            alignItems: "center",
-            gap: 4,
-          }}
-        >
-          🛠 {zh ? "工作台" : "Workbench"}
-        </button>
-        <button
-          onClick={onClose}
-          style={{
-            marginLeft: "auto",
-            background: "none",
-            border: "none",
-            color: "var(--text-muted)",
-            cursor: "pointer",
-            fontSize: 14,
-          }}
-        >
-          ✕
+      <div className="panel-sidebar-tabs">
+        {([
+          { id: "git" as const, icon: GitBranch, label: "Git" },
+          { id: "files" as const, icon: FolderOpen, label: zh ? "文件" : "Files" },
+          { id: "changes" as const, icon: ListChecks, label: zh ? "变更" : "Changes" },
+          { id: "workbench" as const, icon: Wrench, label: zh ? "工作台" : "Workbench" },
+          { id: "agents" as const, icon: Bot, label: zh ? "智能体" : "Agents" },
+        ]).map((tab) => {
+          const Icon = tab.icon;
+          const active = activeTab === tab.id;
+          return (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`panel-sidebar-tab ${active ? "active" : ""}`}
+            >
+              <Icon size={13} />
+              <span className="panel-sidebar-tab-label">{tab.label}</span>
+            </button>
+          );
+        })}
+        <button onClick={onClose} className="panel-sidebar-close" aria-label={zh ? "关闭" : "Close"}>
+          <X size={15} />
         </button>
       </div>
 
@@ -152,6 +87,13 @@ export function PanelSidebar({ open, onClose }: RightSidebarProps) {
         )}
         {activeTab === "changes" && currentProject && (
           <FileChangesList sessionId={currentSessionId || ""} workspace={currentProject.path} />
+        )}
+        {activeTab === "agents" && (
+          <AgentRoster
+            sessionId={currentSessionId}
+            mainModel={currentModel}
+            isRunning={isStreaming}
+          />
         )}
       </div>
     </div>

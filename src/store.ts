@@ -159,7 +159,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   messages: [],
   isStreaming: false,
   activeSessions: new Map<string, boolean>(),
-  currentModel: "mimo-auto",
+  currentModel: "codem-auto",
   cwd: "",
   streamingMsgId: null,
   hasMoreMessages: false,

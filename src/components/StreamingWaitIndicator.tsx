@@ -6,6 +6,7 @@
 
 import { memo } from "react";
 import { useLang, S } from "../core/i18n/lang";
+import { Brain, Search, Keyboard, Eye } from "lucide-react";
 
 type WaitPhase = "thinking" | "searching" | "coding" | "reviewing";
 
@@ -23,10 +24,10 @@ export const StreamingWaitIndicator = memo(function StreamingWaitIndicator({
   const lang = useLang();
 
   const phaseConfig = {
-    thinking: { icon: "💭", label: S.streaming.thinking[lang] },
-    searching: { icon: "🔍", label: S.streaming.searching[lang] },
-    coding: { icon: "⌨️", label: S.streaming.coding[lang] },
-    reviewing: { icon: "👁️", label: S.streaming.reviewing[lang] },
+    thinking: { icon: <Brain size={16} />, label: S.streaming.thinking[lang] },
+    searching: { icon: <Search size={16} />, label: S.streaming.searching[lang] },
+    coding: { icon: <Keyboard size={16} />, label: S.streaming.coding[lang] },
+    reviewing: { icon: <Eye size={16} />, label: S.streaming.reviewing[lang] },
   }[phase];
 
   return (

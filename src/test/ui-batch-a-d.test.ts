@@ -118,8 +118,8 @@ describe("批次 A: CSS 变量完整性", () => {
           --z-tooltip: 1100;
           --z-popover: 1200;
           --z-modal: 1300;
-          --tooltip-bg: rgba(33, 38, 45, 0.98);
-          --dropdown-bg: rgba(22, 27, 34, 0.98);
+          --tooltip-bg: rgba(33, 36, 36, 0.98);
+          --dropdown-bg: rgba(26, 28, 28, 0.98);
         }
       `;
     } else {
@@ -1712,7 +1712,8 @@ expect(appSrc).toMatch(/if \(!session \|\| isStreaming\) return/);
         "utf-8"
       );
       expect(src).toContain("handleCopyMessage");
-      expect(src).toContain("📋");
+      // UI refactor: 📋 emoji replaced with lucide-react Clipboard icon
+      expect(src).toContain("Clipboard");
     });
 
     it("折叠/展开按钮不受 isLastInTurn 影响", () => {

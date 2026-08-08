@@ -41,9 +41,12 @@ export function PromptChangeReviewDialog({ changes, onApply, onCancel }: PromptC
 
 return createPortal(
 <div className="modal-overlay" onClick={onCancel}>
-      <div
-        className="modal-editor"
-        onClick={(e) => e.stopPropagation()}
+<div
+className="modal-editor"
+role="dialog"
+aria-modal="true"
+aria-label="变更审查"
+onClick={(e) => e.stopPropagation()}
         style={{ maxWidth: "800px", width: "90vw", padding: "0", background: "var(--bg-secondary, #1a1a2e)" }}
       >
         {/* Header */}

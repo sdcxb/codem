@@ -11,11 +11,9 @@ interface TopNavbarProps {
   onSkills?: () => void;
   onNotebooks?: () => void;
   onAutomations?: () => void;
-  onSearch?: () => void;
-  onSettings?: () => void;
 }
 
-export function TopNavbar({ onHome, onTasks, onSkills, onNotebooks, onAutomations, onSearch, onSettings }: TopNavbarProps) {
+export function TopNavbar({ onHome, onTasks, onSkills, onNotebooks, onAutomations }: TopNavbarProps) {
   const lang = useLang();
 
   // 菜单映射到 codem 功能
@@ -49,10 +47,6 @@ export function TopNavbar({ onHome, onTasks, onSkills, onNotebooks, onAutomation
             {link.label}
           </a>
         ))}
-      </div>
-      <div className="hub-navbar-actions">
-        <i className="fas fa-search" title={lang === "zh" ? "搜索" : "Search"} onClick={onSearch} style={{ cursor: "pointer" }} />
-        <i className="fas fa-cog" title={lang === "zh" ? "设置" : "Settings"} onClick={onSettings} style={{ cursor: "pointer" }} />
       </div>
     </nav>
   );

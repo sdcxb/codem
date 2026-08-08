@@ -12,6 +12,7 @@ import { ThemeManager } from "../core/theme";
 import type { SkinId } from "../core/theme";
 import { getSetting, setSetting } from "../core/storage/settings";
 import { useLang, S } from "../core/i18n/lang";
+import { Film, Image as ImageIcon, Clock, Camera } from "lucide-react";
 
 export function SkinSelector() {
   const [skin, setSkin] = useState<SkinId>(ThemeManager.getSkin());
@@ -125,9 +126,9 @@ function DreamConfigPanel() {
               <img src={dreamConfig.backgroundImage} alt="背景预览" />
             )}
             <span style={{ fontSize: 10, color: "var(--text-muted)", marginLeft: 4 }}>
-              {dreamConfig.bgMediaType === 'video' ? (lang === 'zh' ? '📹 视频' : '📹 Video')
-               : dreamConfig.bgMediaType === 'gif' ? (lang === 'zh' ? '🎞️ GIF' : '🎞️ GIF')
-               : (lang === 'zh' ? '🖼️ 图片' : '🖼️ Image')}
+              {dreamConfig.bgMediaType === 'video' ? <><Film size={10} style={{ display: 'inline', verticalAlign: 'middle' }} /> {lang === 'zh' ? '视频' : 'Video'}</>
+               : dreamConfig.bgMediaType === 'gif' ? <><Film size={10} style={{ display: 'inline', verticalAlign: 'middle' }} /> GIF</>
+               : <><ImageIcon size={10} style={{ display: 'inline', verticalAlign: 'middle' }} /> {lang === 'zh' ? '图片' : 'Image'}</>}
             </span>
             <button className="btn-clear-bg" onClick={handleClearBackground}>
               {lang === "zh" ? "清除" : "Clear"}
@@ -141,7 +142,7 @@ function DreamConfigPanel() {
               onChange={handleFileUpload}
               style={{ display: "none" }}
             />
-            <span>{uploading ? "⏳..." : lang === "zh" ? "📷 点击上传图片/GIF/视频" : "📷 Click to upload"}</span>
+            <span>{uploading ? <><Clock size={12} />...</> : lang === "zh" ? <><Camera size={12} style={{ display: 'inline', verticalAlign: 'middle' }} /> 点击上传图片/GIF/视频</> : <><Camera size={12} style={{ display: 'inline', verticalAlign: 'middle' }} /> Click to upload</>}</span>
           </label>
         )}
       </div>

@@ -4,6 +4,7 @@ import { useProjectStore } from "../core/store";
 import { createProjectFiles, loadProjectInstructions, loadProjectSkills, loadProjectMemory } from "../core/project/files";
 import { getSettingJSON, setSettingJSON } from "../core/storage/settings";
 import type { EnvironmentConfig, GitConfig } from "../core/settings/settings";
+import { Folder, FolderOpen, X, Plus, Link as LinkIcon, Download, Server, Trash2, Lock, Globe, Clock, CheckCircle, XCircle } from "lucide-react";
 
 const isTauri = () => !!(window as any).__TAURI__;
 
@@ -292,26 +293,26 @@ export function ProjectManager({ onClose }: ProjectManagerProps) {
 
   return (
     <div className="settings-overlay" onClick={onClose}>
-      <div className="project-manager" onClick={(e) => e.stopPropagation()}>
+      <div className="project-manager" role="dialog" aria-modal="true" aria-label="项目管理" onClick={(e) => e.stopPropagation()}>
         <div className="settings-header">
-          <h3>📁 项目管理</h3>
-          <button className="settings-close" onClick={onClose}>✕</button>
+          <h3><Folder size={16} style={{ display: "inline", verticalAlign: "middle" }} /> 项目管理</h3>
+          <button className="settings-close" onClick={onClose}><X size={18} /></button>
         </div>
 
         {mode === "list" && (
           <div className="project-list-body">
             <div className="project-actions" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 12 }}>
               <button className="project-action-btn" onClick={() => setMode("create")}>
-                ➕ 新建项目
+                <Plus size={14} /> 新建项目
               </button>
               <button className="project-action-btn" onClick={() => setMode("import")}>
-                📂 导入文件夹
+                <FolderOpen size={14} /> 导入文件夹
               </button>
               <button className="project-action-btn" onClick={() => { setGitStatus("idle"); setGitStatusMsg(""); setMode("git-create"); }}>
-                🔗 新建 Git 项目
+                <LinkIcon size={14} /> 新建 Git 项目
               </button>
               <button className="project-action-btn" onClick={() => { setCloneStatus("idle"); setCloneMsg(""); setMode("git-clone"); }}>
-                📥 从 GitHub 拉取
+                <Download size={14} /> 从 GitHub 拉取
               </button>
             </div>
 
@@ -338,13 +339,14 @@ export function ProjectManager({ onClose }: ProjectManagerProps) {
                     title="环境配置"
                     style={{ marginRight: 4 }}
                   >
-                    🏗️
+                    <Server size={16} />
                   </button>
                   <button
                     className="project-item-delete"
                     onClick={(e) => { e.stopPropagation(); handleDelete(p.id); }}
+                    title="删除项目"
                   >
-                    🗑️
+                    <Trash2 size={16} />
                   </button>
                 </div>
               ))}
@@ -368,11 +370,11 @@ export function ProjectManager({ onClose }: ProjectManagerProps) {
                   placeholder="点击右边按钮选择文件夹"
                 />
                 <button className="path-picker-btn" onClick={handlePickFolder} title="选择文件夹">
-                  📁
+                  <Folder size={16} />
                 </button>
               </div>
               {isTauri() && (
-                <p className="project-form-hint">点击 📁 按钮打开系统文件选择器</p>
+                <p className="project-form-hint">点击文件夹按钮打开系统文件选择器</p>
               )}
             </div>
             <div className="setting-group">
@@ -398,11 +400,11 @@ export function ProjectManager({ onClose }: ProjectManagerProps) {
                   placeholder="点击右边按钮选择文件夹"
                 />
                 <button className="path-picker-btn" onClick={handlePickFolder} title="选择文件夹">
-                  📁
+                  <Folder size={16} />
                 </button>
               </div>
               {isTauri() && (
-                <p className="project-form-hint">点击 📁 按钮打开系统文件选择器</p>
+                <p className="project-form-hint">点击文件夹按钮打开系统文件选择器</p>
               )}
             </div>
             <p className="project-form-hint">导入已有文件夹作为项目，会自动创建 .codem 目录和 AGENTS.md</p>
@@ -449,11 +451,11 @@ export function ProjectManager({ onClose }: ProjectManagerProps) {
                         }
                       }
                     }} title="选择文件夹">
-                      📁
+                      <Folder size={16} />
                     </button>
                   </div>
                   {isTauri() && (
-                    <p className="project-form-hint">点击 📁 按钮打开系统文件选择器</p>
+                    <p className="project-form-hint">点击文件夹按钮打开系统文件选择器</p>
                   )}
                 </div>
                 <div className="setting-group">
@@ -469,7 +471,7 @@ export function ProjectManager({ onClose }: ProjectManagerProps) {
                         checked={gitIsPrivate}
                         onChange={() => setGitIsPrivate(true)}
                       />
-                      🔒 私有
+                      <Lock size={14} /> 私有
                     </label>
                     <label style={{ display: "flex", alignItems: "center", gap: 4, cursor: "pointer", fontSize: 13 }}>
                       <input
@@ -477,7 +479,7 @@ export function ProjectManager({ onClose }: ProjectManagerProps) {
                         checked={!gitIsPrivate}
                         onChange={() => setGitIsPrivate(false)}
                       />
-                      🌍 公开
+                      <Globe size={14} /> 公开
                     </label>
                   </div>
                 </div>
@@ -505,7 +507,7 @@ export function ProjectManager({ onClose }: ProjectManagerProps) {
                     onClick={handleGitCreate}
                     disabled={!gitRepoName.trim() || !gitProjectPath.trim() || !gitToken.trim()}
                   >
-                    🔗 创建并推送
+                    <LinkIcon size={14} /> 创建并推送
                   </button>
                 </div>
               </>
@@ -513,21 +515,21 @@ export function ProjectManager({ onClose }: ProjectManagerProps) {
 
             {gitStatus === "creating" && (
               <div style={{ textAlign: "center", padding: "40px 0" }}>
-                <div style={{ fontSize: 32, marginBottom: 16 }}>⏳</div>
+                <div style={{ fontSize: 32, marginBottom: 16, display: "flex", justifyContent: "center" }}><Clock size={32} /></div>
                 <p style={{ color: "var(--text-secondary)", fontSize: 14 }}>{gitStatusMsg}</p>
               </div>
             )}
 
             {gitStatus === "done" && (
               <div style={{ textAlign: "center", padding: "40px 0" }}>
-                <div style={{ fontSize: 32, marginBottom: 16 }}>✅</div>
+                <div style={{ fontSize: 32, marginBottom: 16, display: "flex", justifyContent: "center" }}><CheckCircle size={32} style={{ color: "var(--success, #22c55e)" }} /></div>
                 <p style={{ color: "var(--text-primary)", fontSize: 14, fontWeight: 500 }}>{gitStatusMsg}</p>
               </div>
             )}
 
             {gitStatus === "error" && (
               <div style={{ padding: "20px 0" }}>
-                <div style={{ color: "#ef4444", fontSize: 14, marginBottom: 12 }}>❌ 创建失败</div>
+                <div style={{ color: "#ef4444", fontSize: 14, marginBottom: 12, display: "flex", alignItems: "center", gap: 6 }}><XCircle size={14} /> 创建失败</div>
                 <pre style={{
                   background: "var(--bg-hover, #2a2a3a)",
                   padding: 12, borderRadius: 8, fontSize: 12, color: "#ef4444",
@@ -573,7 +575,7 @@ export function ProjectManager({ onClose }: ProjectManagerProps) {
                     onClick={handleClone}
                     disabled={!cloneUrl.trim()}
                   >
-                    📥 拉取
+                    <Download size={14} /> 拉取
                   </button>
                 </div>
               </>
@@ -581,21 +583,21 @@ export function ProjectManager({ onClose }: ProjectManagerProps) {
 
             {cloneStatus === "cloning" && (
               <div style={{ textAlign: "center", padding: "40px 0" }}>
-                <div style={{ fontSize: 32, marginBottom: 16 }}>⏳</div>
+                <div style={{ fontSize: 32, marginBottom: 16, display: "flex", justifyContent: "center" }}><Clock size={32} /></div>
                 <p style={{ color: "var(--text-secondary)", fontSize: 14 }}>{cloneMsg}</p>
               </div>
             )}
 
             {cloneStatus === "done" && (
               <div style={{ textAlign: "center", padding: "40px 0" }}>
-                <div style={{ fontSize: 32, marginBottom: 16 }}>✅</div>
+                <div style={{ fontSize: 32, marginBottom: 16, display: "flex", justifyContent: "center" }}><CheckCircle size={32} style={{ color: "var(--success, #22c55e)" }} /></div>
                 <p style={{ color: "var(--text-primary)", fontSize: 14, fontWeight: 500 }}>{cloneMsg}</p>
               </div>
             )}
 
             {cloneStatus === "error" && (
               <div style={{ padding: "20px 0" }}>
-                <div style={{ color: "#ef4444", fontSize: 14, marginBottom: 12 }}>❌ 克隆失败</div>
+                <div style={{ color: "#ef4444", fontSize: 14, marginBottom: 12, display: "flex", alignItems: "center", gap: 6 }}><XCircle size={14} /> 克隆失败</div>
                 <pre style={{
                   background: "var(--bg-hover, #2a2a3a)",
                   padding: 12, borderRadius: 8, fontSize: 12, color: "#ef4444",
@@ -618,7 +620,7 @@ export function ProjectManager({ onClose }: ProjectManagerProps) {
         {mode === "env" && (
           <div className="project-form">
             <div className="setting-group">
-              <label>🏗️ 环境脚本配置</label>
+              <label style={{ display: "flex", alignItems: "center", gap: 6 }}><Server size={16} /> 环境脚本配置</label>
               <p className="project-form-hint">配置打开/关闭项目时自动执行的脚本</p>
             </div>
             <div className="setting-group">
@@ -651,7 +653,7 @@ export function ProjectManager({ onClose }: ProjectManagerProps) {
                   setTimeout(() => { setEnvSaved(false); setMode("list"); }, 1000);
                 }}
               >
-                {envSaved ? "✅ 已保存" : "保存"}
+                {envSaved ? <span style={{ display: "flex", alignItems: "center", gap: 6, justifyContent: "center" }}><CheckCircle size={14} /> 已保存</span> : "保存"}
               </button>
             </div>
           </div>

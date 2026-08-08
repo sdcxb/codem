@@ -1,7 +1,11 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
+import { RefreshCw, X, MessageSquare, Terminal, BookOpen, Save, FolderOpen, PencilLine, Trash2, CheckCircle, Menu, Hammer, ClipboardList, Search, Bot } from "lucide-react";
 import { TooltipProvider } from "./components/ui/tooltip";
 import { TitleBar } from "./components/TitleBar";
+import { BootSplash } from "./components/BootSplash";
+import { WorkspaceBackdrop } from "./components/WorkspaceBackdrop";
+import { ToastContainer } from "./components/ToastNotification";
 import { ChatPanel } from "./components/ChatPanel";
 import { Sidebar } from "./components/Sidebar";
 import { TerminalPanel } from "./components/TerminalPanel";
@@ -14,6 +18,9 @@ import { BootstrapWizard } from "./components/BootstrapWizard";
 import type { CollaborationMode } from "./core/agent/agent";
 import { getEffectiveSecurityMode, type SecurityMode } from "./core/permission/security-mode";
 import { PermissionDialog } from "./components/PermissionDialog";
+import { DecisionTray, type ApprovalRequest } from "./components/DecisionTray";
+import { RightSidebar } from "./components/RightSidebar";
+import { Drawer } from "./components/Drawer";
 import { ConfirmDialog } from "./components/ConfirmDialog";
 import { NeedsYouPanel } from "./components/NeedsYouPanel";
 import { CloseConfirmDialog } from "./components/CloseConfirmDialog";
@@ -24,6 +31,7 @@ import { SessionRecovery } from "./components/SessionRecovery";
 import { UsageStats } from "./components/UsageStats";
 import { DelegationPanel } from "./components/DelegationPanel";
 import { DiffViewer } from "./components/DiffViewer";
+import { InlineDiffReview } from "./components/InlineDiffReview";
 import { InteractiveFormDialog } from "./components/InteractiveFormDialog";
 import { PromptChangeReviewDialog } from "./components/PromptChangeReviewDialog";
 import { NotebookManager } from "./components/NotebookManager";
@@ -115,6 +123,9 @@ function App() {
   const { messages, addMessage, appendToMessage, setStreaming, isStreaming, addToolCall, updateToolCall, loadMessages, saveMessages, setLLMStatus, addGuidanceMessage, markGuidanceConsumed, clearGuidanceMessages } = useAppStore();
   const { currentProject, currentSession, createSession, dbReady, loadFromDB } = useProjectStore();
   const [sidebarOpen, setSidebarOpen] = useState(true);
+const [rightRailOpen, setRightRailOpen] = useState(true);
+  // P3 #46: Mobile sidebar drawer
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [appRoot, setAppRoot] = useState<string>(APP_ROOT_FALLBACK);
   const [showSettings, setShowSettings] = useState(false);
   const [settingsInitialTab, setSettingsInitialTab] = useState<string>("general");
@@ -141,6 +152,8 @@ const [showDelegationPanel, setShowDelegationPanel] = useState(false);
   const [editingFile, setEditingFile] = useState<string | null>(null);
   const [appIdentity, setAppIdentity] = useState<AppIdentity | null>(null);
   const [showBootstrap, setShowBootstrap] = useState(false);
+  const [bootSplashVisible, setBootSplashVisible] = useState(true);
+  const [bootSplashPhase, setBootSplashPhase] = useState<"initializing" | "loading-db" | "loading-config" | "ready">("initializing");
   const [showCloseConfirm, setShowCloseConfirm] = useState(false);
   // P2: Onboarding tour — shown on first launch (after DB is ready)
   const [showOnboarding, setShowOnboarding] = useState(false);
@@ -272,13 +285,23 @@ const [showDelegationPanel, setShowDelegationPanel] = useState(false);
     newContent: string;
     resolve: (result: import("./core/llm/tools").WriteConfirmResult) => void;
   }>>(new Map());
+  // Track per-session file change count and auto-approve state for batch review
+  const [writeConfirmStats, setWriteConfirmStats] = useState<Map<string, { count: number; autoApprove: boolean }>>(new Map());
   // Convenience accessor: get the pending write confirm for the current session
   const pendingWriteConfirm = currentSession ? pendingWriteConfirms.get(currentSession.id) : null;
+  const writeConfirmStat = currentSession ? (writeConfirmStats.get(currentSession.id) || { count: 0, autoApprove: false }) : { count: 0, autoApprove: false };
   const setPendingWriteConfirm = (val: any) => {
     if (!val || !currentSession) { return; }
     setPendingWriteConfirms(prev => {
       const next = new Map(prev);
       next.set(currentSession.id, val);
+      return next;
+    });
+    // Increment count
+    setWriteConfirmStats(prev => {
+      const next = new Map(prev);
+      const cur = next.get(currentSession.id) || { count: 0, autoApprove: false };
+      next.set(currentSession.id, { ...cur, count: cur.count + 1 });
       return next;
     });
   };
@@ -287,6 +310,22 @@ const [showDelegationPanel, setShowDelegationPanel] = useState(false);
     setPendingWriteConfirms(prev => {
       const next = new Map(prev);
       next.delete(currentSession.id);
+      return next;
+    });
+  };
+  const setSessionAutoApprove = (autoApprove: boolean) => {
+    if (!currentSession) return;
+    setWriteConfirmStats(prev => {
+      const next = new Map(prev);
+      const cur = next.get(currentSession.id) || { count: 0, autoApprove: false };
+      next.set(currentSession.id, { ...cur, autoApprove });
+      return next;
+    });
+  };
+  const resetWriteConfirmStats = (sessionId: string) => {
+    setWriteConfirmStats(prev => {
+      const next = new Map(prev);
+      next.delete(sessionId);
       return next;
     });
   };
@@ -479,8 +518,10 @@ flushStreamBuffer(); // flush all on unmount
     // Initialize SQLite first, then load everything from database
     (async () => {
       try {
+        setBootSplashPhase("loading-db");
         await initDatabase();
         await migrateFromLocalStorage();
+        setBootSplashPhase("loading-config");
         ThemeManager.init();
         useProjectStore.getState().loadFromDB();
         // DB is now ready — re-configure engine to read the correct mode/model/provider.
@@ -575,6 +616,9 @@ flushStreamBuffer(); // flush all on unmount
           }
         });
       }
+
+      // All initialization complete — transition boot splash to ready
+      setBootSplashPhase("ready");
     })();
   }, []);
 
@@ -1180,13 +1224,25 @@ const safeUpdateMessage = (id: string, update: any) => {
           });
         },
         collaborationMode,
-        // S4: Wire up write confirmation for diff review
+        // S4: Wire up write confirmation for diff review (inline, non-modal)
         onWriteConfirm: (params) => {
+          // Check if user has enabled auto-approve for this session
+          const stat = writeConfirmStats.get(session.id);
+          if (stat?.autoApprove) {
+            return Promise.resolve({ action: "accept" as const });
+          }
           return new Promise((resolve) => {
             // Per-session: set write confirm for this specific session
             setPendingWriteConfirms(prev => {
               const next = new Map(prev);
               next.set(session.id, { ...params, resolve });
+              return next;
+            });
+            // Increment count for this session
+            setWriteConfirmStats(prev => {
+              const next = new Map(prev);
+              const cur = next.get(session.id) || { count: 0, autoApprove: false };
+              next.set(session.id, { ...cur, count: cur.count + 1 });
               return next;
             });
           });
@@ -1603,6 +1659,8 @@ flushStreamBuffer(session.id);
 setStreaming(false);
 if (session) {
 useAppStore.getState().setSessionActive(session.id, false);
+// Reset auto-approve flag when the turn ends
+resetWriteConfirmStats(session.id);
 }
 streamingSessionIdRef.current = null;
 abortControllersRef.current.delete(session?.id || "");
@@ -1790,7 +1848,26 @@ abortControllersRef.current.clear();
   return (
     <TooltipProvider delayDuration={300} skipDelayDuration={500}>
     <div className="app">
-      <TitleBar />
+      <BootSplash
+        visible={bootSplashVisible}
+        phase={bootSplashPhase}
+        progress={bootSplashPhase === "initializing" ? 15 : bootSplashPhase === "loading-db" ? 45 : bootSplashPhase === "loading-config" ? 75 : 100}
+        onComplete={() => setBootSplashVisible(false)}
+      />
+      <WorkspaceBackdrop />
+      <ToastContainer />
+      <TitleBar
+        sidebarOpen={sidebarOpen}
+        onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
+        onNewChat={() => {
+          useProjectStore.setState({ currentProject: null });
+          createSession();
+        }}
+        onSearch={() => setShowSearchDialog(true)}
+        onSettings={() => setShowSettings(true)}
+        rightRailOpen={rightRailOpen}
+        onToggleRightRail={() => setRightRailOpen(!rightRailOpen)}
+      />
       <div className="app-content">
       {!dbReady ? (
         <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", color: "var(--text-secondary)" }}>
@@ -1805,12 +1882,12 @@ abortControllersRef.current.clear();
           {/* 核心内容：Sidebar + MainArea，根据皮肤选择不同布局包裹 */}
           {skin === "hub" ? (
             <HubLayout
+              rightRailOpen={rightRailOpen}
+              onToggleRightRail={() => setRightRailOpen(!rightRailOpen)}
               onTasks={() => setShowProjectManager(true)}
               onSkills={() => setShowSkillManager(true)}
               onNotebooks={() => setShowNotebookManager(true)}
               onAutomations={() => { setSettingsInitialTab("automation"); setShowSettings(true); }}
-              onSearch={() => setShowSearchDialog(true)}
-              onSettings={() => setShowSettings(true)}
               onNewChat={() => {
                 // 新建全局对话（不属于任何项目）
                 useProjectStore.setState({ currentProject: null });
@@ -1850,10 +1927,10 @@ abortControllersRef.current.clear();
                   <div className="panel-right">
                     <div className="panel-tabs">
                       <button className={`tab ${bottomTab === "chat" ? "active" : ""}`} onClick={() => setBottomTab("chat")}>
-                        💬 {lang === "zh" ? "对话" : "Chat"}
+                        <MessageSquare size={14} /> {lang === "zh" ? "对话" : "Chat"}
                       </button>
                       <button className={`tab ${bottomTab === "terminal" ? "active" : ""}`} onClick={() => setBottomTab("terminal")}>
-                        ⌨️ {lang === "zh" ? "终端" : "Terminal"}
+                        <Terminal size={14} /> {lang === "zh" ? "终端" : "Terminal"}
                       </button>
                     </div>
                     <div className="panel-content">
@@ -1862,17 +1939,17 @@ abortControllersRef.current.clear();
                           {compactionStatus.active ? (
                             <><span className="compaction-spinner" /> 正在压缩上下文...</>
                           ) : (
-                            <>✅ 上下文已压缩{compactionStatus.messagesRemoved ? `（移除 ${compactionStatus.messagesRemoved} 条旧消息）` : ""}</>
+                            <><CheckCircle size={12} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 4 }} /> 上下文已压缩{compactionStatus.messagesRemoved ? `（移除 ${compactionStatus.messagesRemoved} 条旧消息）` : ""}</>
                           )}
                         </div>
                       )}
                       {activeNotebookId && (
                         <div className="notebook-mode-banner">
-                          <span className="notebook-mode-icon">📓</span>
+                          <span className="notebook-mode-icon"><BookOpen size={16} /></span>
 <span>{lang === 'zh' ? `笔记本模式：${activeNotebookName}` : `Notebook Mode: ${activeNotebookName}`}</span>
-<button className="notebook-mode-save" onClick={handleSaveAIResponseAsNote} title={lang === 'zh' ? '保存AI回复为笔记' : 'Save AI response as note'}>📝</button>
-<button className="notebook-mode-save" onClick={() => { setNotebookWorkspaceId(activeNotebookId); setNotebookWorkspaceName(activeNotebookName); }} title={lang === 'zh' ? '返回工作区' : 'Back to Workspace'}>📂</button>
-<button className="notebook-mode-close" onClick={() => { setActiveNotebookId(null); setActiveNotebookName(''); setNotebookSourceFilter(null); }}>✕</button>
+<button className="notebook-mode-save" onClick={handleSaveAIResponseAsNote} title={lang === 'zh' ? '保存AI回复为笔记' : 'Save AI response as note'}><Save size={14} /></button>
+<button className="notebook-mode-save" onClick={() => { setNotebookWorkspaceId(activeNotebookId); setNotebookWorkspaceName(activeNotebookName); }} title={lang === 'zh' ? '返回工作区' : 'Back to Workspace'}><FolderOpen size={14} /></button>
+<button className="notebook-mode-close" onClick={() => { setActiveNotebookId(null); setActiveNotebookName(''); setNotebookSourceFilter(null); }}><X size={14} /></button>
 </div>
 )}
 {bottomTab === "chat" && (
@@ -1954,10 +2031,10 @@ notebookId={activeNotebookId || undefined}
                 <div className="panel-right">
                   <div className="panel-tabs">
                     <button className={`tab ${bottomTab === "chat" ? "active" : ""}`} onClick={() => setBottomTab("chat")}>
-                      💬 {lang === "zh" ? "对话" : "Chat"}
+                      <MessageSquare size={14} /> {lang === "zh" ? "对话" : "Chat"}
                     </button>
                     <button className={`tab ${bottomTab === "terminal" ? "active" : ""}`} onClick={() => setBottomTab("terminal")}>
-                      ⌨️ {lang === "zh" ? "终端" : "Terminal"}
+                      <Terminal size={14} /> {lang === "zh" ? "终端" : "Terminal"}
                     </button>
                   </div>
                   <div className="panel-content">
@@ -1966,17 +2043,17 @@ notebookId={activeNotebookId || undefined}
                         {compactionStatus.active ? (
                           <><span className="compaction-spinner" /> 正在压缩上下文...</>
                         ) : (
-                          <>✅ 上下文已压缩{compactionStatus.messagesRemoved ? `（移除 ${compactionStatus.messagesRemoved} 条旧消息）` : ""}</>
+                          <><CheckCircle size={12} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 4 }} /> 上下文已压缩{compactionStatus.messagesRemoved ? `（移除 ${compactionStatus.messagesRemoved} 条旧消息）` : ""}</>
                         )}
                       </div>
                     )}
                     {activeNotebookId && (
                       <div className="notebook-mode-banner">
-                        <span className="notebook-mode-icon">📓</span>
+                        <span className="notebook-mode-icon"><BookOpen size={16} /></span>
 <span>{lang === 'zh' ? `笔记本模式：${activeNotebookName}` : `Notebook Mode: ${activeNotebookName}`}</span>
-<button className="notebook-mode-save" onClick={handleSaveAIResponseAsNote} title={lang === 'zh' ? '保存AI回复为笔记' : 'Save AI response as note'}>📝</button>
-<button className="notebook-mode-save" onClick={() => { setNotebookWorkspaceId(activeNotebookId); setNotebookWorkspaceName(activeNotebookName); }} title={lang === 'zh' ? '返回工作区' : 'Back to Workspace'}>📂</button>
-<button className="notebook-mode-close" onClick={() => { setActiveNotebookId(null); setActiveNotebookName(''); setNotebookSourceFilter(null); }}>✕</button>
+<button className="notebook-mode-save" onClick={handleSaveAIResponseAsNote} title={lang === 'zh' ? '保存AI回复为笔记' : 'Save AI response as note'}><Save size={14} /></button>
+<button className="notebook-mode-save" onClick={() => { setNotebookWorkspaceId(activeNotebookId); setNotebookWorkspaceName(activeNotebookName); }} title={lang === 'zh' ? '返回工作区' : 'Back to Workspace'}><FolderOpen size={14} /></button>
+<button className="notebook-mode-close" onClick={() => { setActiveNotebookId(null); setActiveNotebookName(''); setNotebookSourceFilter(null); }}><X size={14} /></button>
 </div>
 )}
 {bottomTab === "chat" && (
@@ -2029,11 +2106,30 @@ notebookId={activeNotebookId || undefined}
                     )}
                   </div>
                 </div>
-              </div>
-            </DreamLayout>
+            </div>
+          {/* Right sidebar for Dream skin */}
+          {rightRailOpen && (
+          <RightSidebar
+            onNewChat={() => { useProjectStore.setState({ currentProject: null }); createSession(); }}
+            onNewProject={() => setShowProjectManager(true)}
+            onImportProject={() => setShowProjectManager(true)}
+            onGitHubClone={() => setShowGitHubClone(true)}
+            onOpenSession={(sessionId, projectId) => { useProjectStore.getState().openProject(projectId); useProjectStore.getState().switchSession(sessionId); }}
+          />
+          )}
+          </DreamLayout>
           ) : (
             <>
               {/* 默认皮肤：原始布局，不受 ThemeManager 干预 */}
+          {/* P3 #46: Mobile sidebar hamburger button */}
+          <button
+            className="mobile-sidebar-toggle"
+            onClick={() => setMobileSidebarOpen(true)}
+            title={lang === "zh" ? "打开菜单" : "Open menu"}
+            style={{ display: "none" }}
+          >
+            <Menu size={20} />
+          </button>
           {sidebarOpen && (
                 <Sidebar
           identity={appIdentity}
@@ -2058,10 +2154,10 @@ notebookId={activeNotebookId || undefined}
         <div className="panel-right">
           <div className="panel-tabs">
             <button className={`tab ${bottomTab === "chat" ? "active" : ""}`} onClick={() => setBottomTab("chat")}>
-              💬 {lang === "zh" ? "对话" : "Chat"}
+              <MessageSquare size={14} /> {lang === "zh" ? "对话" : "Chat"}
             </button>
             <button className={`tab ${bottomTab === "terminal" ? "active" : ""}`} onClick={() => setBottomTab("terminal")}>
-              ⌨️ {lang === "zh" ? "终端" : "Terminal"}
+              <Terminal size={14} /> {lang === "zh" ? "终端" : "Terminal"}
             </button>
           </div>
 
@@ -2071,25 +2167,25 @@ notebookId={activeNotebookId || undefined}
                 {compactionStatus.active ? (
                   <><span className="compaction-spinner" /> 正在压缩上下文...</>
                 ) : (
-                  <>✅ 上下文已压缩{compactionStatus.messagesRemoved ? `（移除 ${compactionStatus.messagesRemoved} 条旧消息）` : ""}</>
+                  <><CheckCircle size={12} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 4 }} /> 上下文已压缩{compactionStatus.messagesRemoved ? `（移除 ${compactionStatus.messagesRemoved} 条旧消息）` : ""}</>
                 )}
               </div>
             )}
             {activeNotebookId && (
               <div className="notebook-mode-banner">
-                <span className="notebook-mode-icon">📓</span>
+                <span className="notebook-mode-icon"><BookOpen size={16} /></span>
                 <span>{lang === 'zh' ? `笔记本模式：${activeNotebookName}` : `Notebook Mode: ${activeNotebookName}`}</span>
-<button className="notebook-mode-save" onClick={handleSaveAIResponseAsNote} title={lang === 'zh' ? '保存AI回复为笔记' : 'Save AI response as note'}>📝</button>
+<button className="notebook-mode-save" onClick={handleSaveAIResponseAsNote} title={lang === 'zh' ? '保存AI回复为笔记' : 'Save AI response as note'}><Save size={14} /></button>
 <button
   className="notebook-mode-save"
   onClick={() => { setNotebookWorkspaceId(activeNotebookId); setNotebookWorkspaceName(activeNotebookName); }}
   title={lang === 'zh' ? '返回工作区' : 'Back to Workspace'}
->📂</button>
+><FolderOpen size={14} /></button>
 <button
   className="notebook-mode-close"
   onClick={() => { setActiveNotebookId(null); setActiveNotebookName(''); setNotebookSourceFilter(null); }}
 >
-  ✕
+  <X size={14} />
 </button>
               </div>
             )}
@@ -2155,8 +2251,45 @@ notebookId={activeNotebookId || undefined}
           </div>
         </div>
       </div>
-            </>
+
+          {/* Right sidebar for default skin */}
+          {rightRailOpen && (
+          <RightSidebar
+            onNewChat={() => { useProjectStore.setState({ currentProject: null }); createSession(); }}
+            onNewProject={() => setShowProjectManager(true)}
+            onImportProject={() => setShowProjectManager(true)}
+            onGitHubClone={() => setShowGitHubClone(true)}
+            onOpenSession={(sessionId, projectId) => { useProjectStore.getState().openProject(projectId); useProjectStore.getState().switchSession(sessionId); }}
+          />
           )}
+        </>
+          )}
+
+          {/* P3 #46: Mobile sidebar Drawer */}
+          <Drawer
+            open={mobileSidebarOpen}
+            onClose={() => setMobileSidebarOpen(false)}
+            side="left"
+            size={280}
+            title={lang === "zh" ? "菜单" : "Menu"}
+          >
+            <Sidebar
+              identity={appIdentity}
+              onSettings={() => { setShowSettings(true); setMobileSidebarOpen(false); }}
+              onProjects={() => { setShowProjectManager(true); setMobileSidebarOpen(false); }}
+              onConfig={() => { setShowConfigEditor(true); setMobileSidebarOpen(false); }}
+              onMcp={() => { setShowMcpManager(true); setMobileSidebarOpen(false); }}
+              onSkills={() => { setShowSkillManager(true); setMobileSidebarOpen(false); }}
+              onMemory={() => { setShowMemoryManager(true); setMobileSidebarOpen(false); }}
+              onNotebooks={() => { setShowNotebookManager(true); setMobileSidebarOpen(false); }}
+              onAutomations={() => { setSettingsInitialTab("automation"); setShowSettings(true); setMobileSidebarOpen(false); }}
+              onDelegation={() => { setShowDelegationPanel(true); setMobileSidebarOpen(false); }}
+              onRemoveProject={(id, name, path) => { setRemoveProjectDialog({ id, name, path }); setMobileSidebarOpen(false); }}
+              fileExplorerProjectId={fileExplorerProjectId}
+              onToggleFileExplorer={handleToggleFileExplorer}
+              onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
+            />
+          </Drawer>
 
 {showSettings && (
 <SettingsPanel
@@ -2292,8 +2425,8 @@ onClose={() => setCitationViewer(null)}
         }}>
           <div className="floating-explorer-header">
             <span>File Explorer</span>
-            <button className="floating-explorer-close" onClick={() => setFileExplorerRefreshKey((k) => k + 1)} title="Refresh">🔄</button>
-            <button className="floating-explorer-close" onClick={() => setFileExplorerProjectId(null)}>✕</button>
+            <button className="floating-explorer-close" onClick={() => setFileExplorerRefreshKey((k) => k + 1)} title="Refresh"><RefreshCw size={14} /></button>
+            <button className="floating-explorer-close" onClick={() => setFileExplorerProjectId(null)}><X size={14} /></button>
           </div>
           <div className="floating-explorer-body">
             <FileExplorer cwd={currentProject.path} onFileClick={(p) => setEditingFile(p)} refreshKey={fileExplorerRefreshKey} />
@@ -2309,21 +2442,33 @@ onClose={() => setCitationViewer(null)}
         </div>
       )}
 
-      {pendingPermission && (
-        <PermissionDialog
-          request={pendingPermission.request}
-          onResolve={(allow, alwaysAllow) => {
-pendingPermission.resolve({
-requestId: pendingPermission.request.id,
-action: allow ? "allow" : "deny",
-alwaysAllow,
-});
-clearPendingPermission();
-          }}
-        />
-      )}
+      {/* P1 #24: DecisionTray — inline decision UI replaces popup for main permissions */}
+      {pendingPermission && (() => {
+        const req = pendingPermission.request as any;
+        const approvalReq: ApprovalRequest = {
+          type: "approval",
+          id: req.id,
+          toolName: req.tool || req.title || "tool",
+          description: req.title || req.description || "",
+          args: typeof req.args === 'object' ? JSON.stringify(req.args, null, 2) : req.args,
+        };
+        return (
+          <DecisionTray
+            request={approvalReq}
+            onApprove={(id) => {
+              pendingPermission.resolve({ requestId: id, action: "allow", alwaysAllow: false });
+              clearPendingPermission();
+            }}
+            onReject={(id) => {
+              pendingPermission.resolve({ requestId: id, action: "deny", alwaysAllow: false });
+              clearPendingPermission();
+            }}
+            onClarify={() => {}}
+          />
+        );
+      })()}
 
-      {/* Background session permission (from delegation system) */}
+      {/* Background session permission (from delegation system) — still uses popup as fallback */}
       {!pendingPermission && backgroundPermission && (
         <PermissionDialog
           request={{ ...(backgroundPermission.request as any), title: `[委派任务] ${(backgroundPermission.request as any).title || backgroundPermission.request.tool || ''}` } as any}
@@ -2384,7 +2529,7 @@ clearPendingPermission();
                     setRemoveProjectDialog(null);
                   }}
                 >
-                  <span style={{ fontWeight: 600 }}>🗑️ {lang === "zh" ? "移除并删除文件到回收站" : "Remove & Recycle"}</span>
+                  <span style={{ fontWeight: 600 }}><Trash2 size={14} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 4 }} /> {lang === "zh" ? "移除并删除文件到回收站" : "Remove & Recycle"}</span>
                   <div style={{ fontSize: 11, opacity: 0.7, marginTop: 2 }}>{lang === "zh" ? "从列表移除 + 文件送入回收站" : "Remove from list + send files to Recycle Bin"}</div>
                 </button>
               </div>
@@ -2422,35 +2567,33 @@ clearPendingPermission();
         />
       )}
 
-      {/* S4: Diff Review Dialog for file overwrites */}
+      {/* S4: Inline Diff Review for file overwrites (replaces modal popup) */}
       {pendingWriteConfirm && (
-        <div className="modal-overlay" onClick={() => {
-pendingWriteConfirm.resolve({ action: "reject" });
-clearPendingWriteConfirm();
-}}>
-          <div className="modal-editor" onClick={(e) => e.stopPropagation()} style={{ maxWidth: "90vw", width: "900px" }}>
-            <DiffViewer
-              filePath={pendingWriteConfirm.filePath}
-              before={pendingWriteConfirm.existingContent}
-              after={pendingWriteConfirm.newContent}
-              onAccept={() => {
-pendingWriteConfirm.resolve({ action: "accept" });
-clearPendingWriteConfirm();
-              }}
-              onReject={() => {
-                pendingWriteConfirm.resolve({ action: "reject" });
-                clearPendingWriteConfirm();
-              }}
-              onCustom={(instruction) => {
-                pendingWriteConfirm.resolve({ action: "custom", instruction });
-                clearPendingWriteConfirm();
-              }}
-              onClose={() => {
-                pendingWriteConfirm.resolve({ action: "reject" });
-                clearPendingWriteConfirm();
-              }}
-            />
-          </div>
+        <div className="inline-diff-container">
+          <InlineDiffReview
+            filePath={pendingWriteConfirm.filePath}
+            before={pendingWriteConfirm.existingContent}
+            after={pendingWriteConfirm.newContent}
+            sequenceInfo={writeConfirmStat.count > 1 ? `文件 ${writeConfirmStat.count}` : undefined}
+            onAccept={() => {
+              pendingWriteConfirm.resolve({ action: "accept" });
+              clearPendingWriteConfirm();
+            }}
+            onReject={() => {
+              pendingWriteConfirm.resolve({ action: "reject" });
+              clearPendingWriteConfirm();
+            }}
+            onCustom={(instruction) => {
+              pendingWriteConfirm.resolve({ action: "custom", instruction });
+              clearPendingWriteConfirm();
+            }}
+            onAcceptAll={() => {
+              // Auto-approve this file and all future files in this turn
+              pendingWriteConfirm.resolve({ action: "accept" });
+              clearPendingWriteConfirm();
+              setSessionAutoApprove(true);
+            }}
+          />
         </div>
       )}
 
@@ -2541,7 +2684,7 @@ clearPendingWriteConfirm();
               id: a.id,
               name: a.name,
               description: a.description,
-              icon: a.id === 'build' ? '🔨' : a.id === 'plan' ? '📋' : a.id === 'explore' ? '🔍' : '🤖',
+              icon: a.id === 'build' ? <Hammer size={20} /> : a.id === 'plan' ? <ClipboardList size={20} /> : a.id === 'explore' ? <Search size={20} /> : <Bot size={20} />,
             }))}
             favoriteIds={quickAccessFavorites}
             onSelect={(agentId) => {

@@ -29,6 +29,45 @@ import { PromptDebugger } from "./PromptDebugger";
 import { LayeredSettingsPanel } from "./LayeredSettingsPanel";
 import { RecoveryPanel } from "./RecoveryPanel";
 import { CorrectionModelConfig } from "./CorrectionModelConfig";
+// P2 #34: Import reusable settings components
+import { SettingsNav, ConfigEntry, ToggleEntry } from "./SettingsParts";
+// P2 #35: Import UsageStats for embedding in settings
+import { UsageStats } from "./UsageStats";
+// P2 #38: framer-motion for animations
+import { motion, AnimatePresence } from "framer-motion";
+import {
+  Settings as SettingsIcon,
+  Palette,
+  Shield,
+  GitBranch as GitBranchIcon,
+  Server,
+  FolderTree,
+  BookOpen as BookOpenIcon,
+  Bot,
+  Layers,
+  Wrench,
+  PawPrint,
+  Zap,
+  HelpCircle,
+  Key,
+  Terminal,
+  CheckCircle,
+  LogIn,
+  Search as SearchIcon,
+  X,
+  Eye,
+  EyeOff,
+  HeartPulse,
+  RotateCcw,
+  FileText,
+  User,
+  MessageSquare,
+  Play,
+  Lightbulb,
+  AlertTriangle,
+  Folder,
+  Clock,
+} from "lucide-react";
 
 interface ProviderKey {
   id: string;
@@ -59,7 +98,7 @@ const defaultProviders: ProviderKey[] = [
 
 const defaultSettings: Settings = {
   mode: "api",
-  mimoPath: "D:\\mimo\\mimo.exe",
+  mimoPath: "",
   model: "mimo-v2.5-pro",
   theme: "dark",
   fontSize: 14,
@@ -256,7 +295,9 @@ export function SettingsPanel({ onClose, onSessionRecovery, onUsageStats, initia
   const [testResult, setTestResult] = useState<string>("");
 const [showModelProfiles, setShowModelProfiles] = useState(false);
 const [showMultimodal, setShowMultimodal] = useState(false);
-const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security" | "git" | "environment" | "worktree" | "knowledge" | "automation" | "multimodal" | "pet" | "tools" | "advanced" | "help">((initialTab as any) || "general");
+const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security" | "git" | "environment" | "worktree" | "knowledge" | "automation" | "multimodal" | "pet" | "tools" | "advanced" | "help" | "usage">((initialTab as any) || "general");
+  // P2 #36: Settings search
+  const [settingsSearch, setSettingsSearch] = useState("");
   const [advancedSubTab, setAdvancedSubTab] = useState<"agents" | "heartbeat" | "retry" | "prompt" | "settings" | "recovery" | "correction" | "profiles" | "transcript">("agents");
   const [showPetMarket, setShowPetMarket] = useState(false);
   const runLoginTest = async () => {
@@ -397,52 +438,70 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
 
   return (
     <div className="settings-overlay" onClick={onClose}>
-      <div className="settings-panel" onClick={(e) => e.stopPropagation()}>
+      <div className="settings-panel" role="dialog" aria-modal="true" aria-label="设置" onClick={(e) => e.stopPropagation()}>
         <div className="settings-header">
           <h3>{S.settings.title[lang]}</h3>
-          <button className="settings-close" onClick={onClose}>✕</button>
+          <button className="settings-close" onClick={onClose}><X size={18} /></button>
         </div>
 
         <div className="settings-body">
           <div className="settings-sidebar">
+            {/* P2 #36: Settings search */}
+            <div className="settings-search-box" style={{ padding: "8px 12px", borderBottom: "1px solid var(--border-color)" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, background: "var(--bg-tertiary)", borderRadius: 6, padding: "4px 8px" }}>
+                <SearchIcon size={14} style={{ color: "var(--text-muted)" }} />
+                <input
+                  type="text"
+                  placeholder={lang === "zh" ? "搜索设置..." : "Search settings..."}
+                  value={settingsSearch}
+                  onChange={(e) => setSettingsSearch(e.target.value)}
+                  style={{ flex: 1, background: "transparent", border: "none", color: "var(--text-primary)", fontSize: 12, outline: "none" }}
+                />
+                {settingsSearch && <button onClick={() => setSettingsSearch("")} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)" }}><X size={12} /></button>}
+              </div>
+            </div>
             <button className={`settings-sidebar-item ${activeTab === "general" ? "active" : ""}`} onClick={() => setActiveTab("general")}>
-              <span className="sidebar-icon">⚙️</span>{lang === "zh" ? "通用" : "General"}
+              <span className="sidebar-icon"><SettingsIcon size={16} /></span>{lang === "zh" ? "通用" : "General"}
             </button>
             <button className={`settings-sidebar-item ${activeTab === "appearance" ? "active" : ""}`} onClick={() => setActiveTab("appearance")}>
-              <span className="sidebar-icon">🎨</span>{lang === "zh" ? "外观" : "Appearance"}
+              <span className="sidebar-icon"><Palette size={16} /></span>{lang === "zh" ? "外观" : "Appearance"}
             </button>
             <button className={`settings-sidebar-item ${activeTab === "security" ? "active" : ""}`} onClick={() => setActiveTab("security")}>
-              <span className="sidebar-icon">🔒</span>{lang === "zh" ? "安全" : "Security"}
+              <span className="sidebar-icon"><Shield size={16} /></span>{lang === "zh" ? "安全" : "Security"}
             </button>
             <button className={`settings-sidebar-item ${activeTab === "git" ? "active" : ""}`} onClick={() => setActiveTab("git")}>
-              <span className="sidebar-icon">🔀</span>{lang === "zh" ? "Git" : "Git"}
+              <span className="sidebar-icon"><GitBranchIcon size={16} /></span>{lang === "zh" ? "Git" : "Git"}
             </button>
 <button className={`settings-sidebar-item ${activeTab === "environment" ? "active" : ""}`} onClick={() => setActiveTab("environment")}>
-<span className="sidebar-icon">🏗️</span>{lang === "zh" ? "环境" : "Environment"}
+<span className="sidebar-icon"><Server size={16} /></span>{lang === "zh" ? "环境" : "Environment"}
 </button>
 <button className={`settings-sidebar-item ${activeTab === "worktree" ? "active" : ""}`} onClick={() => setActiveTab("worktree")}>
-<span className="sidebar-icon">🌲</span>{lang === "zh" ? "工作树" : "Worktree"}
+<span className="sidebar-icon"><FolderTree size={16} /></span>{lang === "zh" ? "工作树" : "Worktree"}
 </button>
 <button className={`settings-sidebar-item ${activeTab === "knowledge" ? "active" : ""}`} onClick={() => setActiveTab("knowledge")}>
-<span className="sidebar-icon">📓</span>{lang === "zh" ? "知识" : "Knowledge"}
+<span className="sidebar-icon"><BookOpenIcon size={16} /></span>{lang === "zh" ? "知识" : "Knowledge"}
 </button>
 <button className={`settings-sidebar-item ${activeTab === "automation" ? "active" : ""}`} onClick={() => setActiveTab("automation")}>
-<span className="sidebar-icon">🤖</span>{lang === "zh" ? "自动化" : "Automation"}
+<span className="sidebar-icon"><Bot size={16} /></span>{lang === "zh" ? "自动化" : "Automation"}
 </button>
             <button className={`settings-sidebar-item ${activeTab === "multimodal" ? "active" : ""}`} onClick={() => setActiveTab("multimodal")}>
-              <span className="sidebar-icon">🤖</span>{lang === "zh" ? "多模态" : "Multimodal"}
+              <span className="sidebar-icon"><Layers size={16} /></span>{lang === "zh" ? "多模态" : "Multimodal"}
             </button>
             <button className={`settings-sidebar-item ${activeTab === "tools" ? "active" : ""}`} onClick={() => setActiveTab("tools")}>
-              <span className="sidebar-icon">🔧</span>{lang === "zh" ? "工具" : "Tools"}
+              <span className="sidebar-icon"><Wrench size={16} /></span>{lang === "zh" ? "工具" : "Tools"}
             </button>
             <button className={`settings-sidebar-item ${activeTab === "pet" ? "active" : ""}`} onClick={() => setActiveTab("pet")}>
-              <span className="sidebar-icon">🐾</span>{lang === "zh" ? "宠物" : "Pet"}
+              <span className="sidebar-icon"><PawPrint size={16} /></span>{lang === "zh" ? "宠物" : "Pet"}
             </button>
             <button className={`settings-sidebar-item ${activeTab === "advanced" ? "active" : ""}`} onClick={() => setActiveTab("advanced")}>
-              <span className="sidebar-icon">⚡</span>{lang === "zh" ? "高级" : "Advanced"}
+              <span className="sidebar-icon"><Zap size={16} /></span>{lang === "zh" ? "高级" : "Advanced"}
             </button>
             <button className={`settings-sidebar-item ${activeTab === "help" ? "active" : ""}`} onClick={() => setActiveTab("help")}>
-              <span className="sidebar-icon">❓</span>{lang === "zh" ? "帮助" : "Help"}
+              <span className="sidebar-icon"><HelpCircle size={16} /></span>{lang === "zh" ? "帮助" : "Help"}
+            </button>
+            {/* P2 #35: Usage stats tab */}
+            <button className={`settings-sidebar-item ${activeTab === "usage" ? "active" : ""}`} onClick={() => setActiveTab("usage")}>
+              <span className="sidebar-icon"><Zap size={16} /></span>{lang === "zh" ? "用量统计" : "Usage"}
             </button>
           </div>
 
@@ -461,7 +520,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
                   window.dispatchEvent(new Event("codem-settings-changed"));
                 }}
               >
-                <span className="mode-icon">🔑</span>
+                <span className="mode-icon"><Key size={20} /></span>
                 <span className="mode-title">{S.settings.apiMode[lang]}</span>
                 <span className="mode-desc">{S.settings.apiModeDesc[lang]}</span>
               </button>
@@ -474,7 +533,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
                   window.dispatchEvent(new Event("codem-settings-changed"));
                 }}
               >
-                <span className="mode-icon">⚡</span>
+                <span className="mode-icon"><Terminal size={20} /></span>
                 <span className="mode-title">{S.settings.cliMode[lang]}</span>
                 <span className="mode-desc">{S.settings.cliModeDesc[lang]}</span>
               </button>
@@ -499,7 +558,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
                   alignItems: "center",
                   justifyContent: "space-between",
                 }}>
-                  <span>✅ 已登录</span>
+                  <span style={{ display: "flex", alignItems: "center", gap: 4 }}><CheckCircle size={14} style={{ color: "var(--success)" }} /> 已登录</span>
                   <button
                     onClick={handleLogout}
                     style={{
@@ -529,7 +588,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
                     width: "100%",
                   }}
                 >
-                  {loginStatus === "loading" ? "正在打开浏览器..." : "⚡ 登录小米账号"}
+                  {loginStatus === "loading" ? "正在打开浏览器..." : <span style={{ display: "flex", alignItems: "center", gap: 6, justifyContent: "center" }}><LogIn size={16} /> 登录小米账号</span>}
                 </button>
               )}
 
@@ -556,7 +615,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
                   width: "100%",
                 }}
               >
-                🔍 运行登录测试
+                <span style={{ display: "flex", alignItems: "center", gap: 6, justifyContent: "center" }}><SearchIcon size={14} /> 运行登录测试</span>
               </button>
 
               {testResult && (
@@ -628,7 +687,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
                   whiteSpace: "nowrap",
                 }}
               >
-                {lang === "zh" ? "⚙️ 配置方案" : "⚙️ Profiles"}
+                {lang === "zh" ? <span style={{ display: "flex", alignItems: "center", gap: 4 }}><SettingsIcon size={14} /> 配置方案</span> : <span style={{ display: "flex", alignItems: "center", gap: 4 }}><SettingsIcon size={14} /> Profiles</span>}
               </button>
             </div>
           </div>
@@ -725,7 +784,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
           <>
           {/* Security Mode — three-tier approval policy */}
           <div className="setting-group">
-            <label>{lang === "zh" ? "🔒 安全策略" : "🔒 Security Policy"}</label>
+            <label style={{ display: "flex", alignItems: "center", gap: 6 }}>{lang === "zh" ? <><Shield size={16} /> 安全策略</> : <><Shield size={16} /> Security Policy</>}</label>
             <div style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 8 }}>
               {lang === "zh"
                 ? "控制 AI 执行操作时的审批级别。项目级设置可覆盖全局策略。"
@@ -924,7 +983,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
                     onClick={() => toggleShowKey(provider.id)}
                     title={showKeys[provider.id] ? "隐藏" : "显示"}
                   >
-                    {showKeys[provider.id] ? "🙈" : "👁️"}
+                    {showKeys[provider.id] ? <EyeOff size={14} /> : <Eye size={14} />}
                   </button>
                 </div>
               </div>
@@ -994,7 +1053,7 @@ marginTop: 4,
           <>
           {/* F4: Multimodal Settings Entry */}
           <div className="setting-group">
-            <label>{lang === "zh" ? "🎨 多模态能力" : "🎨 Multimodal"}</label>
+            <label><Palette size={14} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 4 }} />{lang === "zh" ? "多模态能力" : "Multimodal"}</label>
             <div style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 8 }}>
               {lang === "zh"
                 ? "配置 Embedding 语义搜索、TTS 语音合成、ImageGen 图像生成。"
@@ -1013,7 +1072,7 @@ marginTop: 4,
                 width: "100%",
               }}
             >
-              {lang === "zh" ? "🎨 多模态设置" : "🎨 Multimodal Settings"}
+              {lang === "zh" ? <><Palette size={12} style={{ display: 'inline', verticalAlign: 'middle' }} /> 多模态设置</> : <><Palette size={12} style={{ display: 'inline', verticalAlign: 'middle' }} /> Multimodal Settings</>}
             </button>
           </div>
 
@@ -1076,15 +1135,15 @@ marginTop: 4,
 {/* Advanced Settings with sub-tabs */}
 <div style={{ display: "flex", gap: 4, marginBottom: 12, flexWrap: "wrap" }}>
   {[
-    { id: "agents", label: lang === "zh" ? "🤖 智能体" : "🤖 Agents" },
-    { id: "heartbeat", label: lang === "zh" ? "💓 心跳" : "💓 Heartbeat" },
-    { id: "retry", label: lang === "zh" ? "🔄 重试" : "🔄 Retry" },
-    { id: "prompt", label: lang === "zh" ? "📝 提示词" : "📝 Prompt" },
-    { id: "settings", label: lang === "zh" ? "🏗️ 分层设置" : "🏗️ Layered" },
-    { id: "correction", label: lang === "zh" ? "🔍 纠偏模型" : "🔍 Correction" },
-    { id: "profiles", label: lang === "zh" ? "👤 Agent Profile" : "👤 Profiles" },
-    { id: "transcript", label: lang === "zh" ? "💬 缓存统计" : "💬 Cache" },
-    { id: "recovery", label: lang === "zh" ? "🔄 恢复" : "🔄 Recovery" },
+    { id: "agents", label: lang === "zh" ? "智能体" : "Agents", icon: <Bot size={12} style={{ display: 'inline', verticalAlign: 'middle' }} /> },
+    { id: "heartbeat", label: lang === "zh" ? "心跳" : "Heartbeat", icon: <HeartPulse size={12} style={{ display: 'inline', verticalAlign: 'middle' }} /> },
+    { id: "retry", label: lang === "zh" ? "重试" : "Retry", icon: <RotateCcw size={12} style={{ display: 'inline', verticalAlign: 'middle' }} /> },
+    { id: "prompt", label: lang === "zh" ? "提示词" : "Prompt", icon: <FileText size={12} style={{ display: 'inline', verticalAlign: 'middle' }} /> },
+    { id: "settings", label: lang === "zh" ? "分层设置" : "Layered", icon: <Layers size={12} style={{ display: 'inline', verticalAlign: 'middle' }} /> },
+    { id: "correction", label: lang === "zh" ? "纠偏模型" : "Correction", icon: <SearchIcon size={12} style={{ display: 'inline', verticalAlign: 'middle' }} /> },
+    { id: "profiles", label: "Agent Profile", icon: <User size={12} style={{ display: 'inline', verticalAlign: 'middle' }} /> },
+    { id: "transcript", label: lang === "zh" ? "缓存统计" : "Cache", icon: <MessageSquare size={12} style={{ display: 'inline', verticalAlign: 'middle' }} /> },
+    { id: "recovery", label: lang === "zh" ? "恢复" : "Recovery", icon: <RotateCcw size={12} style={{ display: 'inline', verticalAlign: 'middle' }} /> },
   ].map(tab => (
     <button
       key={tab.id}
@@ -1097,7 +1156,7 @@ marginTop: 4,
         cursor: "pointer", whiteSpace: "nowrap",
       }}
     >
-      {tab.label}
+      {tab.icon} {tab.label}
     </button>
   ))}
 </div>
@@ -1140,7 +1199,7 @@ marginTop: 4,
           border: "none", borderRadius: 6,
         }}
       >
-        {lang === "zh" ? "▶ 重新播放新手引导" : "▶ Replay Onboarding Tour"}
+        {lang === "zh" ? <><Play size={12} style={{ display: 'inline', verticalAlign: 'middle' }} /> 重新播放新手引导</> : <><Play size={12} style={{ display: 'inline', verticalAlign: 'middle' }} /> Replay Onboarding Tour</>}
       </button>
     </div>
 
@@ -1214,6 +1273,12 @@ marginTop: 4,
         {lang === "zh" ? "检查更新" : "Check for Updates"}
       </button>
     </div>
+  </div>
+)}
+{/* P2 #35: Usage stats embedded in settings */}
+{activeTab === "usage" && (
+  <div style={{ padding: 16 }}>
+    <UsageStats onClose={() => setActiveTab("general")} />
   </div>
 )}
           </div>
@@ -1520,7 +1585,7 @@ function PetSettingsSection({ lang, onOpenMarket }: { lang: Language; onOpenMark
             fontSize: "11px",
             color: "var(--text-secondary)",
           }}>
-            💡 {zh ? "提示：可以直接拖拽窗口中的宠物来移动位置。空闲时点击宠物有彩蛋。" : "Tip: Drag the pet in the window to reposition. Click the pet when idle for a surprise."}
+            <Lightbulb size={11} style={{ display: 'inline', verticalAlign: 'middle' }} /> {zh ? "提示：可以直接拖拽窗口中的宠物来移动位置。空闲时点击宠物有彩蛋。" : "Tip: Drag the pet in the window to reposition. Click the pet when idle for a surprise."}
           </div>
         </>
       )}
@@ -1570,9 +1635,9 @@ function PermissionRulesSection() {
   };
 
   const actionLabels: Record<PermissionAction, string> = {
-    allow: zh ? "✅ 允许" : "✅ Allow",
-    deny: zh ? "🚫 禁止" : "🚫 Deny",
-    ask: zh ? "❓ 询问" : "❓ Ask",
+    allow: zh ? "允许" : "Allow",
+    deny: zh ? "禁止" : "Deny",
+    ask: zh ? "询问" : "Ask",
   };
 
   const actionColors: Record<PermissionAction, string> = {
@@ -1961,7 +2026,7 @@ function WorktreeSettingsSection({ lang }: { lang: ReturnType<typeof useLang> })
               cursor: scanning ? "wait" : "pointer",
             }}
           >
-            {scanning ? "⏳" : "🔄"} {zh ? "扫描" : "Scan"}
+            {scanning ? <Clock size={12} style={{ display: 'inline', verticalAlign: 'middle' }} /> : <RotateCcw size={12} style={{ display: 'inline', verticalAlign: 'middle' }} />} {zh ? "扫描" : "Scan"}
           </button>
         </div>
         {!currentProject?.path && (
@@ -1981,12 +2046,12 @@ function WorktreeSettingsSection({ lang }: { lang: ReturnType<typeof useLang> })
                 border: "1px solid var(--border-primary)",
                 background: "var(--bg-tertiary)", fontSize: 12,
               }}>
-                <span style={{ fontSize: 14 }}>{wt.hasUncommitted ? "⚠️" : "🌲"}</span>
+                <span style={{ fontSize: 14 }}>{wt.hasUncommitted ? <AlertTriangle size={14} style={{ color: '#e67e22' }} /> : <GitBranchIcon size={14} style={{ color: '#10b981' }} />}</span>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontWeight: 600 }}>{wt.sessionId}</div>
                   <div style={{ fontSize: 10, opacity: 0.6, overflow: "hidden", textOverflow: "ellipsis" }}>{wt.path}</div>
                 </div>
-                <span style={{ fontSize: 10, opacity: 0.7 }}>🌿 {wt.branch}</span>
+                <span style={{ fontSize: 10, opacity: 0.7, display: 'flex', alignItems: 'center', gap: 2 }}><GitBranchIcon size={10} /> {wt.branch}</span>
                 {wt.hasUncommitted && (
                   <span style={{ fontSize: 10, color: "#e67e22" }}>
                     {zh ? "未提交" : "dirty"}
@@ -2202,7 +2267,7 @@ function AutomationSettingsSection({ lang }: { lang: ReturnType<typeof useLang> 
   return (
     <div className="setting-group">
       <label style={{ fontSize: 14, fontWeight: 700, marginBottom: 8, display: "block" }}>
-        🤖 {zh ? "自动化任务" : "Automation Triggers"}
+        <Bot size={14} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 4 }} /> {zh ? "自动化任务" : "Automation Triggers"}
       </label>
       <div style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 12 }}>
         {zh
@@ -2220,7 +2285,7 @@ function AutomationSettingsSection({ lang }: { lang: ReturnType<typeof useLang> 
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontWeight: 600 }}>{t.name}</div>
             <div style={{ fontSize: 10, opacity: 0.6, overflow: "hidden", textOverflow: "ellipsis" }}>
-              {t.type === "file_watch" ? "📁" : "⏰"} {t.message}
+              {t.type === "file_watch" ? <><Folder size={12} style={{ display: 'inline', verticalAlign: 'middle' }} /></> : <><Clock size={12} style={{ display: 'inline', verticalAlign: 'middle' }} /></>} {t.message}
             </div>
           </div>
           <button onClick={() => setEditing(t)} style={{ fontSize: 11, padding: "2px 8px", borderRadius: 4, border: "1px solid var(--border-primary)", background: "none", color: "var(--text-primary)", cursor: "pointer" }}>
@@ -2259,7 +2324,7 @@ function AutomationSettingsSection({ lang }: { lang: ReturnType<typeof useLang> 
             border: "1px solid #e74c3c", background: "none", color: "#e74c3c", cursor: "pointer",
           }}
         >
-          {enginesStopped ? "✅ " + (zh ? "已停止" : "Stopped") : (zh ? "停止所有" : "Stop All")}
+          {enginesStopped ? <><CheckCircle size={12} style={{ display: 'inline', verticalAlign: 'middle' }} /> {zh ? "已停止" : "Stopped"}</> : (zh ? "停止所有" : "Stop All")}
         </button>
       )}
 
