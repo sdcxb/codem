@@ -1,7 +1,7 @@
 # Codem 项目完整说明
 
 > **用途**：新对话快速理解项目全貌、架构、文件关联、当前状态。
-> 创建时间：2026-07-23 | 最后更新：2026-08-08 | 当前版本：v0.96.0（已发布）
+> 创建时间：2026-07-23 | 最后更新：2026-08-09 | 当前版本：v0.96.1（已发布）
 
 ---
 
@@ -13,7 +13,7 @@
 - **GitHub**：https://github.com/sdcxb/codem
 - **分发**：NSIS `.exe` + WiX `.msi`，一键安装无需依赖
 - **平台**：Windows 优先
-- **版本**：v0.96.0（已发布，2026-08-08）
+- **版本**：v0.96.1（已发布，2026-08-09）
 
 ---
 
@@ -51,6 +51,7 @@ mammoth (DOCX) + pdfjs-dist (PDF) + xlsx (Excel) + katex (数学公式)
 
 **devDependencies:** TypeScript 5.6 + Vite 6 + Vitest 4 + happy-dom + jsdom + png-to-ico + sharp
 **v0.96.0 新增:** framer-motion (动画引擎) + shiki (语法高亮) + xlsx (Excel 解析)
+**v0.96.1 新增:** createPortal (React DOM 悬浮窗口渲染)
 
 ### 2.3 Rust 依赖
 
@@ -1056,3 +1057,42 @@ npm test                   # 运行 Vitest 测试套件
 # 构建生产版
 npm run tauri build        # 构建 NSIS exe + MSI
 ```
+
+---
+
+## 八、版本历史
+
+### v0.96.1（2026-08-09）— 右侧栏文件浏览器优化 + 拖拽修复 + 暗色模式修复
+
+**右侧栏文件浏览器体系重构**
+- 右侧栏宽度对标 wecode（默认 420px，可调 360-620px）
+- 移除分栏膨胀逻辑（不再挤压主对话窗口）
+- 文件预览改为单栏替换模式（占满侧栏宽度 + 返回按钮）
+- 文件编辑器新增「放大浏览」悬浮窗口（createPortal + 90vw×90vh 全屏预览）
+- 右侧栏启动时默认收缩
+
+**文件拖拽修复**
+- 修复 Tauri v2 `dragDropEnabled` 默认拦截 HTML5 拖拽事件问题（`tauri.conf.json` 设为 `false`）
+- 修复 `InputArea` `onDragOver`/`onDragEnter` 缺少 `dropEffect = "copy"` 导致禁止符号
+- 修复 `usePaneResize` 拖拽方向反转（左边缘手柄 delta 计算修正）
+- 修复 `handleUp` 使用全局 `event` 变量 bug（改为从 PointerEvent 参数获取）
+
+**暗色模式 + 主题修复**
+- Hub 皮肤强制 `data-theme=dark`（ThemeManager + codem-ui.css 双保险）
+- TitleBar DB 初始化后重新读取保存的主题，避免状态与 DOM 不一致
+- 暗色模式 CSS 变量体系完善（glass-border / tool-card-border / composer-border 等）
+- 梦幻皮肤段落 hover 移除 + AI 消息 hover 磨砂高亮
+- ShikiCodeBlock 暗色模式代码块背景修复
+
+**文件编辑器增强**
+- 新增图片/PDF/Excel/Word/视频/音频/HTML 全格式预览
+- 代码编辑器 Shiki 语法高亮 + 行号 + Tab 缩进 + 自动配对括号
+- 文件保存（Ctrl+S）+ 修改状态指示
+
+**MentionAutocomplete 重写**
+- 输入 @ 弹出文件列表，支持过滤选择
+- 文件/文件夹/笔记本类型图标区分
+
+### v0.96.0（2026-08-08）— 主对话窗口 UI 大改版 + 内联 Diff + 富内容渲染
+
+（详见 TODO.md）

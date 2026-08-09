@@ -12,8 +12,53 @@
 > v0.94.0 已发布：配置方案 Portal 渲染彻底修复遮挡 + 新建方案自动展开配置面板 + 名称描述行内编辑 + 持久化修复（DB初始化时序） + 梦幻皮肤支持 GIF 和视频背景 + 3 种音频模式 + 音量控制。
 > v0.95.0 已发布：Vision Proxy MiMo v2.5 支持图片输入 + CLI/API 双模式视觉代理全链路打通（engine 获取 CLI token） + CSP 全面修复 + 梦幻皮肤视频背景打包修复 + 仓库清理 + 13 个 E2E 全场景测试（156 通过）。
 > v0.96.0 已发布：主对话窗口 UI 大改版（对标 frakio-work/wecode）+ 内联 Diff 批量审批（替换弹窗）+ 三皮肤暗色模式深度修复 + 梦幻皮肤自适应主题（data-theme 基于 palette.isDark）+ 富内容渲染系统（9 组件）+ Shiki 语法高亮 + 39 个新组件 + 3 个新依赖（framer-motion/shiki/xlsx）。42 个文件修改（+4,599/-1,866 行）。
+> v0.96.1 已发布：右侧栏文件浏览器体系重构（对标 wecode 固定宽度面板 420px）+ 文件拖拽修复（Tauri dragDropEnabled + dropEffect）+ 拖拽方向反转修复 + 文件编辑器悬浮窗口（createPortal 全屏预览）+ Hub 皮肤强制暗色 + TitleBar 主题初始化修复 + MentionAutocomplete 重写 + FileEditor 全格式预览（图片/PDF/Excel/Word/视频/音频/HTML）。19 个文件修改（+2,392/-414 行）。
 
 ## 待开发
+
+### v0.96.1 已发布（2026-08-09）
+
+#### P0 — 右侧栏文件浏览器体系重构（对标 wecode FileWorkspacePanel）
+- [x] 右侧栏宽度对标 wecode（默认 420px，可调 360-620px，替代原 280-700/344px）
+- [x] 移除分栏膨胀逻辑（`Math.max(sidebarWidth, 520)` → 固定宽度，不再挤压主对话窗口）
+- [x] 文件预览改为单栏替换模式（占满侧栏宽度 + `← 文件树` 返回按钮）
+- [x] 移除 `split-mode` / `right-sidebar-split` / `right-sidebar-tree-pane` 分栏 CSS
+- [x] 新增 `right-sidebar-file-preview` / `right-sidebar-back-btn` / `right-sidebar-preview-body` 单栏 CSS
+- [x] 右侧栏启动时默认收缩（`rightRailOpen` 初始值 `true` → `false`）
+
+#### P0 — 文件拖拽修复
+- [x] 修复 Tauri v2 `dragDropEnabled` 默认拦截 HTML5 拖拽事件（`tauri.conf.json` 设为 `false`）
+- [x] 修复 `InputArea` `onDragOver`/`onDragEnter` 缺少 `e.dataTransfer.dropEffect = "copy"` 导致禁止符号
+- [x] 修复 `usePaneResize` 拖拽方向反转（左边缘手柄：`delta = startX - clientX` 而非 `clientX - startX`）
+- [x] 修复 `handleUp` 使用全局 `event` 变量 bug（改为从 `PointerEvent` 参数获取 `clientX`）
+
+#### P1 — 文件编辑器悬浮窗口（放大浏览）
+- [x] 新增 `Maximize2` 按钮 — 点击弹出 90vw × 90vh 悬浮窗口（`createPortal` 渲染到 `document.body`）
+- [x] 悬浮窗口含完整文件预览/编辑功能 + `Minimize2` 缩小返回 + `X` 关闭
+- [x] 点击遮罩层关闭 + 淡入/缩放入场动画
+- [x] 新增 `.file-editor-floating-overlay` / `.file-editor-floating-window` / `.file-editor-floating-header` / `.file-editor-floating-body` CSS
+
+#### P1 — 暗色模式 + 主题修复
+- [x] Hub 皮肤强制 `data-theme=dark`（ThemeManager `applySkin` + codem-ui.css `[data-skin="hub"]` 双保险）
+- [x] TitleBar DB 初始化后重新读取保存的主题（`dbReady` useEffect 读取 `codem-theme`）
+- [x] 暗色模式 CSS 变量体系完善（glass-border / tool-card-border / composer-border / titlebar-btn-hover 等）
+- [x] 梦幻皮肤段落 hover 移除（`p:hover background: transparent !important`）+ AI 消息 hover 磨砂高亮
+- [x] ShikiCodeBlock 暗色模式代码块背景修复
+
+#### P1 — FileEditor 全格式预览增强
+- [x] 图片预览（缩放/旋转）— `FilePreviewImage`
+- [x] PDF 预览（iframe data URL）— `FilePreviewPdf`
+- [x] Excel 预览（SheetJS 解析表格 + 多 sheet 切换）— `FilePreviewExcel`
+- [x] Word 预览（JSZip 解压 docx 提取纯文本）— `FilePreviewWord`
+- [x] 视频/音频预览（HTML5 media player）— `FilePreviewMedia`
+- [x] HTML 沙箱预览（预览/源码切换）— `FilePreviewHtml`
+- [x] 二进制文件提示（系统应用打开）— `FilePreviewBinary`
+- [x] 代码编辑器 Shiki 高亮 + 行号 + Tab 缩进 + 自动配对括号 + Ctrl+S 保存
+
+#### P2 — MentionAutocomplete 重写
+- [x] 输入 @ 弹出文件列表，支持过滤选择
+- [x] 文件/文件夹/笔记本类型图标区分（FileText/FileCode/FileImage/Folder）
+- [x] 键盘导航（上下箭头 + Enter 选择 + Esc 关闭）
 
 ### v0.96.0 已发布（2026-08-08）
 

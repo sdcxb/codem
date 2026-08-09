@@ -910,3 +910,10 @@
 [data-skin="hub"] .inline-diff-container {
   filter: drop-shadow(0 -4px 20px rgba(0, 0, 0, 0.5));
 }
+
+/* ========== Hub 皮肤同步移除段落 hover 背景色 ========== */
+/* 与默认皮肤/梦幻皮肤保持一致，消除段落级 hover 不规则高亮 */
+[data-skin="hub"] .message-content p:hover,
+[data-skin="hub"] .markdown-body p:hover {
+  background: transparent !important;
+}

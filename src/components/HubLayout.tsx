@@ -22,6 +22,9 @@ interface HubLayoutProps {
   onImportProject?: () => void;
   onGitHubClone?: () => void;
   onOpenSession?: (sessionId: string, projectId: string) => void;
+  editingFile?: string | null;
+  onEditingFileChange?: (path: string | null) => void;
+  refreshKey?: number;
 }
 
 export function HubLayout({
@@ -38,6 +41,9 @@ export function HubLayout({
   onImportProject,
   onGitHubClone,
   onOpenSession,
+  editingFile,
+  onEditingFileChange,
+  refreshKey,
 }: HubLayoutProps) {
   return (
     <div className="hub-app">
@@ -58,6 +64,9 @@ export function HubLayout({
           onImportProject={onImportProject}
           onGitHubClone={onGitHubClone}
           onOpenSession={onOpenSession}
+          editingFile={editingFile}
+          onEditingFileChange={onEditingFileChange}
+          refreshKey={refreshKey}
         />
       </div>
     </div>

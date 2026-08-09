@@ -14,11 +14,13 @@ import { getMultimodalSettings, type MultimodalProviderConfig } from "../core/ll
 import { useProjectStore } from "../core/store";
 import { ContextBadgeList } from "./ContextBadgeList";
 import { MentionAutocomplete, type MentionItem } from "./MentionAutocomplete";
+import { ComposerBadges, type ComposerBadge } from "./ComposerBadges";
 import { GenerateModeSelector } from "./GenerateModeSelector";
 import { ResolutionSelector } from "./ResolutionSelector";
 import { SourceSelector } from "./SourceSelector";
 import { listSources } from "../core/knowledge";
 import { MIMO_MODELS, getConfiguredApiModels, getModelsForMode, type ModelOption } from "../core/model-config";
+import { listFilesForMention, getRelativePath } from "../core/file-mention";
 import {
   MessageSquare, X, Image as ImageIcon, FileText, Paperclip, Target,
   Volume2, ClipboardList, Zap, BookMarked, Minimize2, Maximize2,
@@ -84,6 +86,9 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
   // P4: Mention autocomplete state
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
   const [mentionItems, setMentionItems] = useState<MentionItem[]>([]);
+  // Composer badges: file refs, GitHub links, quotes, URLs
+  const [composerBadges, setComposerBadges] = useState<ComposerBadge[]>([]);
+  const fileMentionCache = useRef<{ cwd: string; items: MentionItem[]; ts: number } | null>(null);
   // P4: Context badges for current input
   const [contextBadges, setContextBadges] = useState<Array<{ id: string; type: "notebook" | "file" | "url"; label: string; icon?: string }>>([]);
   // P3: Multimodal generate mode + resolution
@@ -265,6 +270,7 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
     setPendingAttachments([]);
     setSelectedSkills([]);
     setSlashFilter(null);
+    setComposerBadges([]);
     // P3: Reset multimodal after send
     if (showMultimodal && generateMode !== "text") {
       setGenerateMode("text");
@@ -319,6 +325,57 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
   const handleUpload = (attachments: MessageAttachment[]) => {
     setPendingAttachments((prev) => [...prev, ...attachments]);
   };
+
+  // === Composer badge helpers ===
+
+  const addFileBadge = useCallback((path: string, name: string) => {
+    setComposerBadges((prev) => {
+      if (prev.some((b) => b.id === `file-${path}`)) return prev;
+      return [...prev, { id: `file-${path}`, type: "file" as const, label: name, meta: getRelativePath(path, currentProject?.path || ""), removable: true }];
+    });
+  }, [currentProject]);
+
+  const addGithubBadge = useCallback((url: string) => {
+    setComposerBadges((prev) => {
+      if (prev.some((b) => b.id === `github-${url}`)) return prev;
+      const match = url.match(/github\.com\/([^/\s?#]+)/);
+      const repoName = match ? match[1] : url;
+      return [...prev, { id: `github-${url}`, type: "github" as const, label: repoName, meta: url, removable: true }];
+    });
+  }, []);
+
+  const removeBadge = useCallback((id: string) => {
+    setComposerBadges((prev) => prev.filter((b) => b.id !== id));
+  }, []);
+
+  // === GitHub URL detection in text ===
+  const detectGithubUrls = useCallback((text: string) => {
+    const urlRegex = /https?:\/\/github\.com\/[^\s<>"']+/gi;
+    const matches = text.match(urlRegex);
+    if (matches) {
+      matches.forEach((url) => {
+        const cleaned = url.replace(/[),.;\]]+$/, "");
+        addGithubBadge(cleaned);
+      });
+    }
+  }, [addGithubBadge]);
+
+  // === Load files for @mention from real filesystem ===
+  const loadMentionFiles = useCallback(async (cwd: string) => {
+    const now = Date.now();
+    if (fileMentionCache.current && fileMentionCache.current.cwd === cwd && now - fileMentionCache.current.ts < 10000) {
+      return fileMentionCache.current.items;
+    }
+    const files = await listFilesForMention(cwd);
+    const items: MentionItem[] = files.map((f) => ({
+      id: f.id,
+      type: f.type === "folder" ? "notebook" as const : "file" as const,
+      label: f.label,
+      path: f.path,
+    }));
+    fileMentionCache.current = { cwd, items, ts: now };
+    return items;
+  }, []);
 
   const removeAttachment = (id: string) => {
     setPendingAttachments((prev) => prev.filter((a) => a.id !== id));
@@ -403,10 +460,11 @@ const handleSelectProject = (projectId: string) => {
     <div className={`input-area input-card-container ${isDragOver ? "drag-over" : ""}`}
       onDragEnter={(e) => {
         e.preventDefault();
+        e.dataTransfer.dropEffect = "copy";
         dragDepthRef.current++;
         setIsDragOver(true);
       }}
-      onDragOver={(e) => { e.preventDefault(); }}
+      onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; }}
       onDragLeave={(e) => {
         e.preventDefault();
         dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
@@ -416,7 +474,20 @@ const handleSelectProject = (projectId: string) => {
         e.preventDefault();
         dragDepthRef.current = 0;
         setIsDragOver(false);
-        // P1: Handle file drop
+        // Check for file path drag from FileExplorer (custom data type)
+        const filePath = e.dataTransfer.getData("application/x-file-path");
+        const fileName = e.dataTransfer.getData("application/x-file-name");
+        if (filePath && fileName) {
+          // File dragged from file browser → add as file reference badge
+          addFileBadge(filePath, fileName);
+          // Also insert @filename mention in text
+          const mention = `@${fileName} `;
+          const newVal = (input ? input + " " : "") + mention;
+          setInput(newVal);
+          setDraft(newVal);
+          return;
+        }
+        // P1: Handle OS-level file drop (files from outside the app)
         const files = Array.from(e.dataTransfer.files);
         if (files.length > 0) {
           const atts: MessageAttachment[] = files.map(f => ({
@@ -428,14 +499,22 @@ const handleSelectProject = (projectId: string) => {
         }
       }}
     >
-      {/* Quote context banner */}
+      {/* Quote context banner — enhanced reference card */}
       {quoteContext && (
-        <div className="quote-context-banner">
-          <span className="quote-context-icon"><MessageSquare size={14} /></span>
-          <span className="quote-context-text">{quoteContext.length > 80 ? quoteContext.substring(0, 80) + "..." : quoteContext}</span>
+        <div className="quote-context-banner quote-context-card">
+          <div className="quote-context-left">
+            <span className="quote-context-icon"><MessageSquare size={14} /></span>
+            <div className="quote-context-body">
+              <span className="quote-context-label">{zh ? "引用对话" : "Quoted message"}</span>
+              <span className="quote-context-text">{quoteContext.length > 120 ? quoteContext.substring(0, 120) + "..." : quoteContext}</span>
+            </div>
+          </div>
           <button className="quote-context-clear" onClick={() => onClearQuote?.()}><X size={14} /></button>
         </div>
       )}
+
+      {/* Composer badges — file refs, GitHub links, etc. */}
+      <ComposerBadges badges={composerBadges} onRemove={removeBadge} />
 
       {/* Pending Attachments */}
       {pendingAttachments.length > 0 && (
@@ -719,14 +798,20 @@ const handleSelectProject = (projectId: string) => {
         {mentionQuery !== null && (
           <MentionAutocomplete
             items={mentionItems}
+            query={mentionQuery}
             onSelect={(item) => {
               // Replace the @query with the selected item label
               const newVal = input.replace(/@([^\s]*)$/, `@${item.label} `);
               setInput(newVal);
+              setDraft(newVal);
               setMentionQuery(null);
+              // Add file badge if it's a file reference
+              if (item.type === "file" && item.path) {
+                addFileBadge(item.path, item.label);
+              }
               textareaRef.current?.focus();
             }}
-            onTrigger={() => {}}
+            onClose={() => setMentionQuery(null)}
           />
         )}
 
@@ -745,14 +830,15 @@ const handleSelectProject = (projectId: string) => {
             const mentionMatch = val.match(/(?:^|\s)@([^\s]*)$/);
             if (mentionMatch) {
               setMentionQuery(mentionMatch[1]);
-              // Load mentionable items (files, notebooks)
-              setMentionItems([
-                { id: "current-file", type: "file", label: zh ? "当前文件" : "Current file", icon: "file" },
-                { id: "notebook", type: "notebook", label: zh ? "知识库" : "Notebook", icon: "book" },
-              ]);
+              // Load real files from filesystem for @mention
+              if (currentProject?.path) {
+                loadMentionFiles(currentProject.path).then(setMentionItems);
+              }
             } else {
               setMentionQuery(null);
             }
+            // GitHub URL detection → badge
+            detectGithubUrls(val);
             // P4: Update context badges based on attachments
             const badges: Array<{ id: string; type: "notebook" | "file" | "url"; label: string; icon?: string }> = [];
             if (pendingAttachments.length > 0) {

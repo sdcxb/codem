@@ -123,7 +123,7 @@ function App() {
   const { messages, addMessage, appendToMessage, setStreaming, isStreaming, addToolCall, updateToolCall, loadMessages, saveMessages, setLLMStatus, addGuidanceMessage, markGuidanceConsumed, clearGuidanceMessages } = useAppStore();
   const { currentProject, currentSession, createSession, dbReady, loadFromDB } = useProjectStore();
   const [sidebarOpen, setSidebarOpen] = useState(true);
-const [rightRailOpen, setRightRailOpen] = useState(true);
+const [rightRailOpen, setRightRailOpen] = useState(false);
   // P3 #46: Mobile sidebar drawer
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [appRoot, setAppRoot] = useState<string>(APP_ROOT_FALLBACK);
@@ -248,6 +248,20 @@ const [showDelegationPanel, setShowDelegationPanel] = useState(false);
     window.addEventListener("codem-security-mode-changed", handler);
     return () => window.removeEventListener("codem-security-mode-changed", handler);
   }, [currentProject?.path]);
+
+  // 监听文件打开事件（来自侧边栏等所有文件浏览器），自动展开右侧栏显示分割窗口
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const path = (e as CustomEvent<string>).detail;
+      if (typeof path === "string" && path) {
+        setEditingFile(path);
+        // 确保右侧栏展开
+        setRightRailOpen(true);
+      }
+    };
+    window.addEventListener("codem:open-file", handler);
+    return () => window.removeEventListener("codem:open-file", handler);
+  }, []);
 
   // ENV series: Auto-run setup/cleanup scripts on project switch
   const prevProjectPathRef = useRef<string | null>(null);
@@ -1835,6 +1849,8 @@ abortControllersRef.current.clear();
     if (state.currentProject?.id !== projectId) {
       useProjectStore.getState().openProject(projectId);
     }
+    // 直接展开右侧栏并切换到文件 Tab（不再用浮动浏览器）
+    setRightRailOpen(true);
     setFileExplorerProjectId((prev) => (prev === projectId ? null : projectId));
   };
 
@@ -1901,6 +1917,9 @@ abortControllersRef.current.clear();
                 useProjectStore.getState().openProject(projectId);
                 useProjectStore.getState().switchSession(sessionId);
               }}
+              editingFile={editingFile}
+              onEditingFileChange={setEditingFile}
+              refreshKey={fileExplorerRefreshKey}
               sidebar={
                 sidebarOpen ? (
                   <Sidebar
@@ -2107,16 +2126,19 @@ notebookId={activeNotebookId || undefined}
                   </div>
                 </div>
             </div>
-          {/* Right sidebar for Dream skin */}
-          {rightRailOpen && (
-          <RightSidebar
-            onNewChat={() => { useProjectStore.setState({ currentProject: null }); createSession(); }}
-            onNewProject={() => setShowProjectManager(true)}
-            onImportProject={() => setShowProjectManager(true)}
-            onGitHubClone={() => setShowGitHubClone(true)}
-            onOpenSession={(sessionId, projectId) => { useProjectStore.getState().openProject(projectId); useProjectStore.getState().switchSession(sessionId); }}
-          />
-          )}
+{/* Right sidebar for Dream skin */}
+<RightSidebar
+collapsed={!rightRailOpen}
+onToggleCollapse={() => setRightRailOpen(!rightRailOpen)}
+onNewChat={() => { useProjectStore.setState({ currentProject: null }); createSession(); }}
+onNewProject={() => setShowProjectManager(true)}
+onImportProject={() => setShowProjectManager(true)}
+onGitHubClone={() => setShowGitHubClone(true)}
+onOpenSession={(sessionId, projectId) => { useProjectStore.getState().openProject(projectId); useProjectStore.getState().switchSession(sessionId); }}
+editingFile={editingFile}
+onEditingFileChange={setEditingFile}
+refreshKey={fileExplorerRefreshKey}
+/>
           </DreamLayout>
           ) : (
             <>
@@ -2252,16 +2274,19 @@ notebookId={activeNotebookId || undefined}
         </div>
       </div>
 
-          {/* Right sidebar for default skin */}
-          {rightRailOpen && (
-          <RightSidebar
-            onNewChat={() => { useProjectStore.setState({ currentProject: null }); createSession(); }}
-            onNewProject={() => setShowProjectManager(true)}
-            onImportProject={() => setShowProjectManager(true)}
-            onGitHubClone={() => setShowGitHubClone(true)}
-            onOpenSession={(sessionId, projectId) => { useProjectStore.getState().openProject(projectId); useProjectStore.getState().switchSession(sessionId); }}
-          />
-          )}
+{/* Right sidebar for default skin */}
+<RightSidebar
+collapsed={!rightRailOpen}
+onToggleCollapse={() => setRightRailOpen(!rightRailOpen)}
+onNewChat={() => { useProjectStore.setState({ currentProject: null }); createSession(); }}
+onNewProject={() => setShowProjectManager(true)}
+onImportProject={() => setShowProjectManager(true)}
+onGitHubClone={() => setShowGitHubClone(true)}
+onOpenSession={(sessionId, projectId) => { useProjectStore.getState().openProject(projectId); useProjectStore.getState().switchSession(sessionId); }}
+editingFile={editingFile}
+onEditingFileChange={setEditingFile}
+refreshKey={fileExplorerRefreshKey}
+/>
         </>
           )}
 
@@ -2417,30 +2442,7 @@ onClose={() => setCitationViewer(null)}
         </div>
       )}
 
-      {fileExplorerProjectId && currentProject && fileExplorerProjectId === currentProject.id && (
-        <div className="floating-explorer" style={{
-          background: 'var(--dream-panel-bg, var(--bg-secondary))',
-          backdropFilter: 'blur(20px) saturate(1.5)',
-          WebkitBackdropFilter: 'blur(20px) saturate(1.5)',
-        }}>
-          <div className="floating-explorer-header">
-            <span>File Explorer</span>
-            <button className="floating-explorer-close" onClick={() => setFileExplorerRefreshKey((k) => k + 1)} title="Refresh"><RefreshCw size={14} /></button>
-            <button className="floating-explorer-close" onClick={() => setFileExplorerProjectId(null)}><X size={14} /></button>
-          </div>
-          <div className="floating-explorer-body">
-            <FileExplorer cwd={currentProject.path} onFileClick={(p) => setEditingFile(p)} refreshKey={fileExplorerRefreshKey} />
-          </div>
-        </div>
-      )}
 
-      {editingFile && (
-        <div className="modal-overlay" onClick={() => setEditingFile(null)}>
-          <div className="modal-editor" onClick={(e) => e.stopPropagation()}>
-            <FileEditor filePath={editingFile} onClose={() => setEditingFile(null)} />
-          </div>
-        </div>
-      )}
 
       {/* P1 #24: DecisionTray — inline decision UI replaces popup for main permissions */}
       {pendingPermission && (() => {

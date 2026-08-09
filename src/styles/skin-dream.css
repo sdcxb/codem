@@ -955,3 +955,44 @@ backdrop-filter: none !important;
 [data-skin="dream"][data-theme="dark"] .inline-diff-container {
   filter: drop-shadow(0 -4px 20px rgba(0, 0, 0, 0.3));
 }
+
+/* ========== 梦幻皮肤段落 hover 修复 + 消息 hover 高亮 ========== */
+/* 移除段落级 hover 背景色 — 根因修复 */
+[data-skin="dream"] .message-content p:hover,
+[data-skin="dream"] .markdown-body p:hover {
+  background: transparent !important;
+}
+
+/* 梦幻皮肤：AI 消息 hover 时显示柔和磨砂高亮 */
+[data-skin="dream"] .assistant .message-content {
+  transition: background 0.2s ease, border-radius 0.2s ease;
+  border-radius: 12px;
+}
+[data-skin="dream"] .assistant:hover .message-content {
+  background: rgba(255, 255, 255, 0.15) !important;
+}
+[data-skin="dream"][data-theme="dark"] .assistant:hover .message-content {
+  background: rgba(30, 30, 46, 0.15) !important;
+}
+
+/* 梦幻皮肤：用户消息 hover 时增强磨砂效果 */
+[data-skin="dream"] .user:hover .message-content {
+  background: rgba(0, 0, 0, 0.06) !important;
+  border-color: var(--dream-accent, rgba(232, 140, 154, 0.30)) !important;
+}
+[data-skin="dream"][data-theme="dark"] .user:hover .message-content {
+  background: rgba(255, 255, 255, 0.06) !important;
+}
+
+/* ========== 梦幻皮肤 --bg-tertiary 变量补齐 ========== */
+/* 确保梦幻皮肤下 --bg-tertiary 有合理的值，避免继承默认皮肤的暗色值 */
+[data-skin="dream"] {
+  --bg-tertiary: rgba(255, 255, 255, 0.40);
+  --bg-secondary: rgba(255, 255, 255, 0.30);
+  --bg-hover: rgba(232, 140, 154, 0.10);
+}
+[data-skin="dream"][data-theme="dark"] {
+  --bg-tertiary: rgba(30, 30, 46, 0.40);
+  --bg-secondary: rgba(30, 30, 46, 0.30);
+  --bg-hover: rgba(232, 140, 154, 0.08);
+}

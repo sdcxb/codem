@@ -5,7 +5,8 @@
  * 使用 Shiki 的 VSCode 主题，支持流式渲染。
  */
 
-import { useState, useEffect, memo } from "react";
+import { useState, useEffect, memo, useSyncExternalStore } from "react";
+import { ThemeManager } from "../core/theme";
 
 // Cache the highlighter singleton
 let highlighterPromise: Promise<any> | null = null;
@@ -13,8 +14,8 @@ let highlighterPromise: Promise<any> | null = null;
 async function getHighlighter() {
   if (!highlighterPromise) {
     highlighterPromise = import("shiki").then(({ createHighlighter }) =>
-      createHighlighter({
-        themes: ["github-dark", "github-light"],
+createHighlighter({
+themes: ["github-dark-dimmed", "github-light"],
         langs: [
           "javascript", "typescript", "jsx", "tsx", "python", "rust",
           "go", "java", "c", "cpp", "csharp", "php", "ruby",
@@ -31,8 +32,8 @@ async function getHighlighter() {
 interface ShikiCodeBlockProps {
   code: string;
   language: string;
-  /** Theme to use — defaults to github-dark */
-  theme?: "github-dark" | "github-light";
+  /** Theme to use — defaults to github-dark-dimmed */
+  theme?: "github-dark-dimmed" | "github-light";
   /** Whether to show line numbers */
   showLineNumbers?: boolean;
 }
@@ -40,9 +41,17 @@ interface ShikiCodeBlockProps {
 export const ShikiCodeBlock = memo(function ShikiCodeBlock({
   code,
   language,
-  theme = "github-dark",
+  theme,
   showLineNumbers = false,
 }: ShikiCodeBlockProps) {
+  // 自动根据皮肤/主题推导 Shiki 高亮主题
+  const skin = useSyncExternalStore(
+    (cb) => ThemeManager.onChange(cb),
+    () => ThemeManager.getSkin(),
+    () => "default" as const,
+  );
+  const resolvedTheme = theme ?? (skin === "hub" ? "github-dark-dimmed" : (document.documentElement.getAttribute("data-theme") === "light" ? "github-light" : "github-dark-dimmed"));
+
   const [html, setHtml] = useState<string>("");
   const [loading, setLoading] = useState(true);
 
@@ -57,10 +66,10 @@ export const ShikiCodeBlock = memo(function ShikiCodeBlock({
         const loadedLangs = highlighter.getLoadedLanguages();
         const finalLang = loadedLangs.includes(lang) ? lang : "text";
 
-        const result = highlighter.codeToHtml(code, {
-          lang: finalLang,
-          theme,
-        });
+const result = highlighter.codeToHtml(code, {
+lang: finalLang,
+theme: resolvedTheme,
+});
 
         if (!cancelled) {
           setHtml(result);
@@ -75,7 +84,7 @@ export const ShikiCodeBlock = memo(function ShikiCodeBlock({
       }
     })();
     return () => { cancelled = true; };
-  }, [code, language, theme]);
+  }, [code, language, resolvedTheme]);
 
   if (loading) {
     return (

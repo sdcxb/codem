@@ -12,6 +12,7 @@ import { PanelLeftClose, PanelLeftOpen, PencilLine, Search, Settings, Sun, Moon,
 import { GitBranchSelector } from "./GitBranchSelector";
 import { getSetting, setSetting } from "../core/storage/settings";
 import { ThemeManager } from "../core/theme";
+import { useProjectStore } from "../core/store";
 
 export interface WorkspaceTab {
   id: string;
@@ -59,6 +60,23 @@ export function TitleBar({
   // P3: Detect platform for Mac-style window controls
   const isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 
+  // Bug fix: DB 初始化完成后重新读取保存的主题，避免状态与 DOM 不一致
+  const dbReady = useProjectStore((s) => s.dbReady);
+  useEffect(() => {
+    if (!dbReady) return;
+    try {
+      const saved = getSetting("codem-theme") as "dark" | "light" | null;
+      if (saved && saved !== theme) {
+        setTheme(saved);
+        // 只有默认皮肤才由 TitleBar 管理 data-theme
+        const skin = ThemeManager.getSkin();
+        if (skin !== 'dream' && skin !== 'hub') {
+          document.documentElement.setAttribute("data-theme", saved);
+        }
+      }
+    } catch {}
+  }, [dbReady]);
+
   const getWin = useCallback(() => {
     try {
       const tauri = (window as any).__TAURI__;
@@ -96,7 +114,9 @@ export function TitleBar({
   // P1: Apply theme on mount + handle theme toggle
   useEffect(() => {
     // 梦幻皮肤由 ThemeManager 管理 data-theme（根据背景图自适应），这里不覆盖
-    if (ThemeManager.getSkin() === 'dream') return;
+    // Hub 皮肤是暗色皮肤，由 ThemeManager 强制 data-theme=dark，不覆盖
+    const skin = ThemeManager.getSkin();
+    if (skin === 'dream' || skin === 'hub') return;
     document.documentElement.setAttribute("data-theme", theme);
   }, [theme]);
 
@@ -104,8 +124,9 @@ export function TitleBar({
     const next = theme === "dark" ? "light" : "dark";
     setTheme(next);
     setSetting("codem-theme", next);
-    // 梦幻皮肤由 ThemeManager 管理 data-theme，不覆盖
-    if (ThemeManager.getSkin() === 'dream') return;
+    // 梦幻皮肤和 Hub 皮肤由 ThemeManager 管理 data-theme，不覆盖
+    const skin = ThemeManager.getSkin();
+    if (skin === 'dream' || skin === 'hub') return;
     document.documentElement.setAttribute("data-theme", next);
   }, [theme]);
 

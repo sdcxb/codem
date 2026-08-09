@@ -1,5 +1,26 @@
-﻿import { useState, useEffect, useCallback, useRef, memo } from "react";
+﻿/**
+ * FileExplorer — 文件浏览器（对标 wecode WorkspaceFileTree）
+ *
+ * 特性：
+ * - 顶部搜索栏（筛选文件名）
+ * - 紧凑密度（item 高度 28px，对标 wecode compact density）
+ * - 目录优先排序 + 字母序
+ * - 文件类型 Lucide 图标（对标 wecode complete icon set）
+ * - Git 状态标签
+ * - 选中高亮
+ * - 支持拖拽文件到编辑窗
+ * - 空目录自动折叠
+ */
+
+import { useState, useEffect, useCallback, useRef, memo, useMemo } from "react";
 import { onFileChangesTracked } from "../core/environment/file-change-tracker";
+import {
+  Search, RefreshCw,
+  Folder, FolderOpen,
+  FileText, FileCode, FileJson, FileImage, FileVideo,
+  FileArchive, FileCog, FileTerminal, FileType, Database,
+  type LucideIcon,
+} from "lucide-react";
 
 interface FileEntry {
   name: string;
@@ -13,6 +34,10 @@ interface FileExplorerProps {
   cwd: string;
   onFileClick?: (path: string) => void;
   refreshKey?: number;
+  /** Called when a file is dragged out of the file explorer (for composer drop) */
+  onFileDragStart?: (path: string, name: string) => void;
+  /** Currently selected file path (for highlight) */
+  selectedPath?: string | null;
 }
 
 // Directory cache shared across instances
@@ -64,12 +89,88 @@ function getGitStatus(workspace: string, filePath: string): string | undefined {
   return statusMap.get(relative);
 }
 
-export function FileExplorer({ cwd, onFileClick, refreshKey }: FileExplorerProps) {
+// ==================== 文件类型图标映射（对标 wecode complete icon set） ====================
+
+const EXT_ICON_MAP: Record<string, LucideIcon> = {
+  // 代码
+  ts: FileCode, tsx: FileCode, js: FileCode, jsx: FileCode,
+  py: FileCode, rs: FileCode, go: FileCode, java: FileCode,
+  c: FileCode, cpp: FileCode, h: FileCode, hpp: FileCode,
+  cs: FileCode, rb: FileCode, php: FileCode, swift: FileCode,
+  kt: FileCode, lua: FileCode, r: FileCode, dart: FileCode,
+  scala: FileCode, clj: FileCode, vue: FileCode, svelte: FileCode,
+  graphql: FileCode, gql: FileCode, proto: FileCode,
+  // Web
+  html: FileCode, css: FileCode, scss: FileCode, less: FileCode,
+  // 数据/配置
+  json: FileJson, yaml: FileJson, yml: FileJson, toml: FileJson,
+  xml: FileCode, ini: FileCog, cfg: FileCog, conf: FileCog,
+  env: FileCog,
+  // 文档
+  md: FileText, txt: FileText, pdf: FileText,
+  doc: FileText, docx: FileText,
+  // 图片
+  png: FileImage, jpg: FileImage, jpeg: FileImage, gif: FileImage,
+  bmp: FileImage, svg: FileImage, webp: FileImage, ico: FileImage,
+  // 视频
+  mp4: FileVideo, webm: FileVideo, avi: FileVideo, mov: FileVideo,
+  mkv: FileVideo, ogv: FileVideo,
+  // 压缩
+  zip: FileArchive, tar: FileArchive, gz: FileArchive, rar: FileArchive, "7z": FileArchive,
+  // 脚本
+  sh: FileTerminal, bash: FileTerminal, bat: FileTerminal, ps1: FileTerminal,
+  // 数据库
+  sql: Database, db: Database, sqlite: Database,
+  // 字体
+  ttf: FileType, otf: FileType, woff: FileType, woff2: FileType,
+};
+
+function getFileIcon(name: string): LucideIcon {
+  const ext = name.split(".").pop()?.toLowerCase() || "";
+  return EXT_ICON_MAP[ext] || FileText;
+}
+
+// ==================== 排序：目录优先 + 字母序（对标 wecode sortEntries） ====================
+
+function sortEntries(entries: FileEntry[]): FileEntry[] {
+  return [...entries].sort((a, b) => {
+    if (a.isDirectory !== b.isDirectory) {
+      return a.isDirectory ? -1 : 1;
+    }
+    return a.name.localeCompare(b.name);
+  });
+}
+
+// ==================== 搜索过滤 ====================
+
+function filterTree(entries: FileEntry[], query: string): FileEntry[] {
+  if (!query) return entries;
+  const lower = query.toLowerCase();
+  const result: FileEntry[] = [];
+  for (const entry of entries) {
+    if (entry.isDirectory) {
+      const filteredChildren = entry.children ? filterTree(entry.children, query) : [];
+      if (entry.name.toLowerCase().includes(lower) || filteredChildren.length > 0) {
+        result.push({ ...entry, children: filteredChildren });
+      }
+    } else {
+      if (entry.name.toLowerCase().includes(lower)) {
+        result.push(entry);
+      }
+    }
+  }
+  return result;
+}
+
+// ==================== 主组件 ====================
+
+export function FileExplorer({ cwd, onFileClick, refreshKey, onFileDragStart, selectedPath }: FileExplorerProps) {
   const [tree, setTree] = useState<FileEntry[]>([]);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
   const [gitLoaded, setGitLoaded] = useState(false);
   const [refreshTick, setRefreshTick] = useState(0);
+  const [searchQuery, setSearchQuery] = useState("");
   const abortRef = useRef<AbortController | null>(null);
 
   // Load git status on mount and when cwd changes
@@ -77,7 +178,7 @@ export function FileExplorer({ cwd, onFileClick, refreshKey }: FileExplorerProps
     loadGitStatus(cwd).then(() => setGitLoaded(true));
   }, [cwd]);
 
-  // Listen for file change events 鈫?auto refresh
+  // Listen for file change events → auto refresh
   useEffect(() => {
     const unsubscribe = onFileChangesTracked(() => {
       loadGitStatus(cwd).then(() => {
@@ -145,14 +246,61 @@ export function FileExplorer({ cwd, onFileClick, refreshKey }: FileExplorerProps
     setExpanded(next);
   }, [expanded, tree, loadDirectory]);
 
+  // Sorted + filtered tree
+  const displayTree = useMemo(() => {
+    const sorted = sortEntries(tree);
+    return searchQuery ? filterTree(sorted, searchQuery) : sorted;
+  }, [tree, searchQuery]);
+
+  // Auto-expand all directories when searching (so filtered results are visible)
+  useEffect(() => {
+    if (searchQuery) {
+      const allDirs = new Set<string>();
+      const collectDirs = (entries: FileEntry[]) => {
+        for (const e of entries) {
+          if (e.isDirectory) {
+            allDirs.add(e.path);
+            if (e.children) collectDirs(e.children);
+          }
+        }
+      };
+      collectDirs(displayTree);
+      setExpanded(allDirs);
+    }
+  }, [searchQuery]); // eslint-disable-line react-hooks/exhaustive-deps
+
   return (
     <div className="file-explorer">
+      {/* 搜索栏 — 对标 wecode WorkspaceFileTree 搜索栏 */}
+      <div className="file-explorer-search">
+        <div className="file-explorer-search-bar">
+          <Search size={14} className="file-explorer-search-icon" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="筛选文件..."
+            className="file-explorer-search-input"
+          />
+          <button
+            className="file-explorer-search-refresh"
+            onClick={() => {
+              dirCache.clear();
+              setRefreshTick((t) => t + 1);
+            }}
+            title="刷新"
+          >
+            <RefreshCw size={14} />
+          </button>
+        </div>
+      </div>
+
       <div className="file-tree">
-        {loading && <div className="file-loading">鍔犺浇涓?..</div>}
-        {!loading && tree.length === 0 && (
-          <div className="file-empty">鏃犳硶鍔犺浇鐩綍</div>
+        {loading && <div className="file-loading">正在加载...</div>}
+        {!loading && displayTree.length === 0 && (
+          <div className="file-empty">{searchQuery ? "无匹配文件" : "无法加载目录"}</div>
         )}
-        {tree.map((entry) => (
+        {displayTree.map((entry) => (
           <FileEntryNode
             key={entry.path}
             entry={entry}
@@ -160,6 +308,8 @@ export function FileExplorer({ cwd, onFileClick, refreshKey }: FileExplorerProps
             expanded={expanded}
             onToggle={toggleExpand}
             onFileClick={onFileClick}
+            onFileDragStart={onFileDragStart}
+            selectedPath={selectedPath}
           />
         ))}
       </div>
@@ -167,12 +317,16 @@ export function FileExplorer({ cwd, onFileClick, refreshKey }: FileExplorerProps
   );
 }
 
+// ==================== 文件树节点 ====================
+
 interface FileEntryNodeProps {
   entry: FileEntry;
   depth: number;
   expanded: Set<string>;
   onToggle: (path: string) => void;
   onFileClick?: (path: string) => void;
+  onFileDragStart?: (path: string, name: string) => void;
+  selectedPath?: string | null;
 }
 
 const GIT_STATUS_BADGES: Record<string, { label: string; className: string }> = {
@@ -183,17 +337,32 @@ const GIT_STATUS_BADGES: Record<string, { label: string; className: string }> = 
   R: { label: "R", className: "git-status-renamed" },
 };
 
-const FileEntryNode = memo(function FileEntryNode({ entry, depth, expanded, onToggle, onFileClick }: FileEntryNodeProps) {
+const FileEntryNode = memo(function FileEntryNode({ entry, depth, expanded, onToggle, onFileClick, onFileDragStart, selectedPath }: FileEntryNodeProps) {
   const isExpanded = expanded.has(entry.path);
-  const icon = entry.isDirectory ? (isExpanded ? "馃搨" : "馃搧") : getFileIcon(entry.name);
+  const isSelected = selectedPath === entry.path;
+  const Icon = entry.isDirectory
+    ? (isExpanded ? FolderOpen : Folder)
+    : getFileIcon(entry.name);
   const gitBadge = entry.gitStatus ? GIT_STATUS_BADGES[entry.gitStatus] : null;
-  const className = "file-entry " + (entry.isDirectory ? "directory" : "file") + (entry.gitStatus ? " git-changed" : "");
+  const className = "file-entry " + (entry.isDirectory ? "directory" : "file")
+    + (entry.gitStatus ? " git-changed" : "")
+    + (isSelected ? " selected" : "");
 
   return (
     <div>
       <div
         className={className}
-        style={{ paddingLeft: (12 + depth * 16) + "px" }}
+        style={{ paddingLeft: (8 + depth * 14) + "px" }}
+        draggable={!entry.isDirectory}
+        onDragStart={(e) => {
+          if (entry.isDirectory) return;
+          // Set drag data for the composer to receive
+          e.dataTransfer.setData("application/x-file-path", entry.path);
+          e.dataTransfer.setData("application/x-file-name", entry.name);
+          e.dataTransfer.setData("text/plain", entry.path);
+          e.dataTransfer.effectAllowed = "copy";
+          onFileDragStart?.(entry.path, entry.name);
+        }}
         onClick={() => {
           if (entry.isDirectory) {
             onToggle(entry.path);
@@ -201,8 +370,9 @@ const FileEntryNode = memo(function FileEntryNode({ entry, depth, expanded, onTo
             onFileClick?.(entry.path);
           }
         }}
+        title={entry.path}
       >
-        <span className="file-icon">{icon}</span>
+        <Icon size={14} className="file-entry-icon" />
         <span className="file-name">{entry.name}</span>
         {gitBadge && (
           <span className={"git-status-badge " + gitBadge.className}>{gitBadge.label}</span>
@@ -210,7 +380,7 @@ const FileEntryNode = memo(function FileEntryNode({ entry, depth, expanded, onTo
       </div>
       {entry.isDirectory && isExpanded && entry.children && (
         <div className="file-children">
-          {entry.children.map((child) => (
+          {sortEntries(entry.children).map((child) => (
             <FileEntryNode
               key={child.path}
               entry={child}
@@ -218,6 +388,8 @@ const FileEntryNode = memo(function FileEntryNode({ entry, depth, expanded, onTo
               expanded={expanded}
               onToggle={onToggle}
               onFileClick={onFileClick}
+              onFileDragStart={onFileDragStart}
+              selectedPath={selectedPath}
             />
           ))}
         </div>
@@ -236,17 +408,3 @@ function findEntry(entries: FileEntry[], path: string): FileEntry | null {
   }
   return null;
 }
-
-function getFileIcon(name: string): string {
-  const ext = name.split(".").pop()?.toLowerCase();
-  const icons: Record<string, string> = {
-    ts: "\u{1F4D8}", tsx: "\u{1F4D8}", js: "\u{1F4D7}", jsx: "\u{1F4D7}",
-    json: "\u{1F4CB}", md: "\u{1F4DD}", css: "\u{1F3A8}", html: "\u{1F310}",
-    py: "\u{1F40D}", rs: "\u{1F980}", go: "\u{1F48E}", java: "\u2615",
-    sh: "\u2699\uFE0F", bat: "\u2699\uFE0F", exe: "\u2699\uFE0F",
-    png: "\u{1F5BC}\uFE0F", jpg: "\u{1F5BC}\uFE0F", gif: "\u{1F5BC}\uFE0F", svg: "\u{1F5BC}\uFE0F",
-    zip: "\u{1F4E6}", tar: "\u{1F4E6}",
-  };
-  return icons[ext || ""] || "\u{1F4C4}";
-}
-

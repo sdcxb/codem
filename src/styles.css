@@ -64,8 +64,8 @@
   --text-primary: #d4d4d4;
   --text-secondary: #b0b0b0;
   --text-muted: #888888;
-  --border-primary: rgba(42, 45, 45, 0.80);
-  --border-secondary: rgba(33, 36, 36, 0.80);
+  --border-primary: rgba(255, 255, 255, 0.10);
+  --border-secondary: rgba(255, 255, 255, 0.06);
   --accent: #7c6cf0;
   --accent-hover: #8b7df5;
   --accent-muted: rgba(124, 108, 240, 0.20);
@@ -77,11 +77,11 @@
   --user-bg: rgba(124, 108, 240, 1);
   --assistant-bg: transparent;
   --system-bg: rgba(33, 36, 36, 1);
-  --code-bg: rgba(13, 17, 23, 1);
+  --code-bg: rgba(22, 27, 34, 1);
   --sidebar-bg: rgba(26, 28, 28, 1);
-  --input-bg: rgba(13, 17, 23, 1);
+  --input-bg: rgba(22, 27, 34, 1);
   --scrollbar-track: rgba(26, 28, 28, 0.80);
-  --scrollbar-thumb: rgba(42, 45, 45, 0.90);
+  --scrollbar-thumb: rgba(255, 255, 255, 0.12);
   /* Shadows */
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
   --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.35);
@@ -97,10 +97,10 @@
   /* Tooltip */
   --tooltip-bg: rgba(33, 36, 36, 0.98);
   --tooltip-text: #d4d4d4;
-  --tooltip-border: rgba(42, 45, 45, 0.80);
+  --tooltip-border: rgba(255, 255, 255, 0.10);
   /* Dropdown */
   --dropdown-bg: rgba(26, 28, 28, 0.98);
-  --dropdown-hover: rgba(42, 45, 45, 0.90);
+  --dropdown-hover: rgba(255, 255, 255, 0.08);
 }
 
 [data-theme="light"] {
@@ -1165,16 +1165,16 @@ font-size: 13px;
 
 /* ========== Messages ========== */
 .messages-container {
-  flex: 1;
-  overflow-y: auto;
-  padding: 20px 24px;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  background: var(--bg-primary);
-  /* P1: Gradient fade at top for smooth scroll transition */
-  mask-image: linear-gradient(to bottom, transparent 0, transparent 0px, black 16px, black 100%);
-  -webkit-mask-image: linear-gradient(to bottom, transparent 0, transparent 0px, black 16px, black 100%);
+flex: 1;
+padding: 20px 24px;
+display: flex;
+flex-direction: column;
+gap: 24px;
+background: var(--bg-primary);
+/* 居中阅读流约束，对齐 wecode/frakio 的 max-w-3xl mx-auto */
+max-width: 768px;
+margin: 0 auto;
+width: 100%;
 }
 
 /* ========== Q&A Turn Container ========== */
@@ -1188,6 +1188,11 @@ font-size: 13px;
   padding: 2px 0 6px;
   margin-bottom: 14px;
   border-bottom: 1px solid var(--border-secondary);
+}
+
+/* 暗色模式：步骤间分割线稍微调亮，便于区分 */
+[data-theme="dark"] .qa-turn-footer {
+  border-bottom-color: rgba(255, 255, 255, 0.10);
 }
 
 /* Buttons hidden by default, shown on hover */
@@ -1325,9 +1330,17 @@ font-size: 13px;
   color: var(--text-primary);
 }
 
+/* Bug3 fix: 暗色模式下用户气泡增强对比度，使用 accent 色调背景与 AI 消息区分 */
+[data-theme="dark"] .user .message-content {
+  background: rgba(124, 108, 240, 0.15);
+  border: 1px solid rgba(124, 108, 240, 0.25);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
 /* AI message: no bubble — open document style */
+/* 对齐 wecode: px-5 pt-5 pb-10，底部空间预留给绝对定位工具栏 */
 .assistant .message-content {
-  padding: 0;
+  padding: 4px 20px 32px 20px;
   background: transparent;
   border: none;
 }
@@ -1358,13 +1371,21 @@ font-size: 13px;
 
 /* AI message content needs more generous spacing for readability */
 .assistant .message-content p {
-  margin: 8px 0;
+  margin: 0.75em 0;
 }
 .assistant .message-content h1,
 .assistant .message-content h2,
 .assistant .message-content h3 {
-  margin: 16px 0 8px;
+  margin: 1em 0 0.5em;
 }
+
+/* Heading 字体大小分级，对齐 wecode markdown.css */
+.message-content h1 { font-size: 1.25rem; font-weight: 600; }
+.message-content h2 { font-size: 1.125rem; font-weight: 600; }
+.message-content h3 { font-size: 1rem; font-weight: 600; }
+.message-content h4,
+.message-content h5,
+.message-content h6 { font-size: 0.875rem; font-weight: 600; }
 
 /* ========== Code Blocks ========== */
 .code-block {
@@ -1762,16 +1783,18 @@ color: var(--text-secondary);
 }
 
 .message-input {
-  flex: 1;
-  background: none;
-  border: none;
-  color: var(--text-primary);
-  font-size: 14px;
-  font-family: inherit;
-  resize: none;
-  outline: none;
-  max-height: 200px;
-  line-height: 1.5;
+flex: 1;
+background: none;
+border: none;
+color: var(--text-primary);
+font-size: 14px;
+font-family: inherit;
+resize: none;
+outline: none;
+min-height: 48px;
+max-height: 200px;
+line-height: 1.5;
+padding: 4px 0;
 }
 
 .message-input::placeholder {
@@ -1951,6 +1974,63 @@ color: var(--text-secondary);
   display: flex;
   flex-direction: column;
   height: 100%;
+  background: transparent;
+}
+
+/* 搜索栏 — 对标 wecode WorkspaceFileTree 搜索栏 */
+.file-explorer-search {
+  padding: 8px 10px 6px;
+  flex-shrink: 0;
+}
+
+.file-explorer-search-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid var(--border-primary);
+  border-radius: 8px;
+  background: var(--bg-primary);
+}
+
+.file-explorer-search-icon {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.file-explorer-search-input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  outline: none;
+  font-size: 12px;
+  color: var(--text-primary);
+}
+
+.file-explorer-search-input::placeholder {
+  color: var(--text-muted);
+}
+
+.file-explorer-search-refresh {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  border-radius: 6px;
+  flex-shrink: 0;
+  transition: background 0.1s;
+}
+
+.file-explorer-search-refresh:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
 }
 
 .floating-overlay-panel {
@@ -1966,28 +2046,53 @@ color: var(--text-secondary);
 }
 
 .file-tree {
-  flex: 1;
-  overflow-y: auto;
-  padding: 8px 0;
+flex: 1;
+overflow-y: auto;
+overflow-x: hidden;
+padding: 4px 6px 12px;
 }
 
 .file-entry {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 4px 12px;
-  cursor: pointer;
-  font-size: 13px;
-  transition: background 0.1s;
+display: flex;
+align-items: center;
+gap: 6px;
+height: 28px;
+padding: 0 6px;
+font-size: 13px;
+color: var(--text-secondary);
+cursor: pointer;
+border-radius: 6px;
+transition: background 0.1s, color 0.1s;
+user-select: none;
+}
+
+.file-entry.file {
+cursor: pointer;
+}
+
+.file-entry.file:active {
+cursor: grabbing;
 }
 
 .file-entry:hover {
-  background: var(--bg-hover);
+background: var(--bg-hover);
+color: var(--text-primary);
 }
 
-.file-icon {
-  font-size: 14px;
-  flex-shrink: 0;
+/* 选中状态 — 对标 wecode data-item-selected */
+.file-entry.selected {
+background: var(--bg-hover);
+color: var(--text-primary);
+box-shadow: 0 0 0 1px var(--border-primary), 0 1px 2px rgba(0,0,0,0.04);
+}
+
+.file-entry-icon {
+flex-shrink: 0;
+color: var(--text-muted);
+}
+
+.file-entry.directory .file-entry-icon {
+color: var(--accent);
 }
 
 .file-name {
@@ -2119,8 +2224,62 @@ color: var(--text-secondary);
 }
 
 .file-editor-body {
-  flex: 1;
-  overflow: hidden;
+flex: 1;
+overflow: hidden;
+}
+
+/* ========== File Editor Floating Preview ========== */
+.file-editor-floating-overlay {
+position: fixed;
+inset: 0;
+z-index: 9999;
+background: rgba(0, 0, 0, 0.5);
+backdrop-filter: blur(4px);
+display: flex;
+align-items: center;
+justify-content: center;
+animation: file-editor-fade-in 0.15s ease-out;
+}
+
+@keyframes file-editor-fade-in {
+from { opacity: 0; }
+to { opacity: 1; }
+}
+
+.file-editor-floating-window {
+width: 90vw;
+height: 90vh;
+max-width: 1400px;
+max-height: 900px;
+background: var(--bg-primary, #1a1a20);
+border: 1px solid var(--border-primary, #2a2a30);
+border-radius: 12px;
+box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+display: flex;
+flex-direction: column;
+overflow: hidden;
+animation: file-editor-scale-in 0.2s ease-out;
+}
+
+@keyframes file-editor-scale-in {
+from { transform: scale(0.95); opacity: 0; }
+to { transform: scale(1); opacity: 1; }
+}
+
+.file-editor-floating-header {
+display: flex;
+align-items: center;
+gap: 8px;
+padding: 10px 14px;
+border-bottom: 1px solid var(--border-primary, #2a2a30);
+background: var(--bg-secondary, #14141a);
+flex-shrink: 0;
+}
+
+.file-editor-floating-body {
+flex: 1;
+overflow: hidden;
+min-height: 0;
 }
 
 .file-editor-textarea {
@@ -2136,6 +2295,167 @@ color: var(--text-secondary);
   resize: none;
   outline: none;
   tab-size: 2;
+}
+
+/* ========== Code Editor (Shiki highlight + textarea overlay) ========== */
+.code-editor-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--bg-primary);
+  overflow: hidden;
+  position: relative;
+}
+
+/* 滚动区域：行号槽 + 编辑区水平排列 */
+.code-editor-scroll-area {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+  min-height: 0;
+}
+
+/* 行号槽 */
+.code-editor-gutter {
+  flex-shrink: 0;
+  width: 52px;
+  padding: 12px 0;
+  overflow: hidden;
+  background: var(--bg-secondary);
+  border-right: 1px solid var(--border-primary);
+  text-align: right;
+  user-select: none;
+  box-sizing: border-box;
+}
+
+.code-editor-line-number {
+  display: block;
+  padding: 0 10px 0 0;
+  font-family: "SF Mono", "Fira Code", "Consolas", monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-muted);
+  opacity: 0.6;
+}
+
+/* 主编辑区 */
+.code-editor-main {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Shiki 高亮层 */
+.code-editor-highlight {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  margin: 0;
+  padding: 12px;
+  font-family: "SF Mono", "Fira Code", "Consolas", monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  tab-size: 2;
+  overflow: auto;
+  pointer-events: none;
+  white-space: pre;
+  word-wrap: normal;
+  background: transparent !important;
+}
+
+.code-editor-highlight code,
+.code-editor-highlight pre {
+  font-family: inherit !important;
+  font-size: inherit !important;
+  line-height: inherit !important;
+  tab-size: 2;
+  background: transparent !important;
+}
+
+/* 透明 textarea 叠加层 */
+.code-editor-textarea {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  margin: 0;
+  padding: 12px;
+  font-family: "SF Mono", "Fira Code", "Consolas", monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  tab-size: 2;
+  border: none;
+  outline: none;
+  resize: none;
+  background: transparent;
+  white-space: pre;
+  word-wrap: normal;
+  overflow: auto;
+  z-index: 1;
+}
+
+/* 底部状态栏 */
+.code-editor-statusbar {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 4px 12px;
+  background: var(--bg-secondary);
+  border-top: 1px solid var(--border-primary);
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: "SF Mono", "Fira Code", "Consolas", monospace;
+}
+
+.code-editor-status-lang {
+  text-transform: uppercase;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.code-editor-status-info {
+  flex: 1;
+}
+
+.code-editor-status-modified {
+  color: var(--warning);
+  font-weight: 600;
+}
+
+/* 文件编辑器 header 增强样式 */
+.file-editor-icon {
+  display: flex;
+  align-items: center;
+  color: var(--accent);
+}
+
+.file-editor-modified-dot {
+  color: var(--warning);
+  margin-right: 4px;
+}
+
+.file-editor-btn.save-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.file-editor-btn.save-btn:disabled {
+  opacity: 0.4;
+}
+
+.file-editor-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  height: 100%;
+  color: var(--text-muted);
 }
 
 /* File Preview Styles */
@@ -3249,6 +3569,59 @@ color: var(--text-primary);
   z-index: 100;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
   overflow: hidden;
+  transition: width 0.2s ease;
+}
+
+/* 分割窗口模式：展开宽度，左侧文件预览 + 右侧文件树（对标 wecode FileWorkspacePanel） */
+.floating-explorer.split-mode {
+  width: min(900px, calc(100vw - 300px));
+}
+
+.floating-explorer-split {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+  min-height: 0;
+}
+
+/* 文件预览区域（左侧/主区域） */
+.floating-explorer-preview {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  border-right: 1px solid var(--border-primary);
+}
+
+/* 空状态占位 */
+.floating-explorer-placeholder {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--text-muted);
+  font-size: 13px;
+  border-right: 1px solid var(--border-primary);
+}
+
+/* 文件树区域（右侧，对标 wecode WorkspaceFileTree 的 w-[240px]） */
+.floating-explorer-tree-pane {
+  width: 260px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-left: 1px solid var(--border-primary);
+}
+
+/* 非分割模式时，文件树占满整个区域 */
+.floating-explorer:not(.split-mode) .floating-explorer-tree-pane {
+  width: 100%;
+  border-left: none;
+}
+.floating-explorer:not(.split-mode) .floating-explorer-split {
+  flex-direction: column;
 }
 
 .floating-explorer-header {
@@ -3745,11 +4118,12 @@ color: var(--text-primary);
 }
 
 .chat-body {
-  flex: 1;
-  display: flex;
-  min-height: 0;
-  overflow: hidden;
-  position: relative;
+flex: 1;
+display: flex;
+min-height: 0;
+overflow-y: auto;
+overflow-x: hidden;
+position: relative;
 }
 
 /* ========== Step Progress ========== */
@@ -7698,16 +8072,22 @@ border-bottom: 1px solid var(--accent);
   display: none; /* Hidden, overlay handles it */
 }
 
-/* Floating toolbar (#2) */
+/* Floating toolbar (#2) — 绝对定位，对齐 wecode BubbleTools */
 .message-body {
   position: relative;
+  /* 底部预留空间给绝对定位的工具栏（30px 按钮高 + 8px 偏移 = 38px，取 40px 留呼吸感），
+     对齐 wecode 的 pb-10 */
+  padding-bottom: 40px;
 }
 .message-toolbar {
-display: flex;
-gap: 4px;
-margin-top: 8px;
+  position: absolute;
+  bottom: 8px;
+  left: 8px;
+  display: flex;
+  gap: 4px;
   opacity: 0;
   transition: opacity var(--duration-fast) ease;
+  z-index: 10;
 }
 .message:hover .message-toolbar {
   opacity: 1;
@@ -7953,6 +8333,11 @@ border-color: var(--text-muted);
   background: linear-gradient(to right, transparent, var(--border-primary), transparent);
   margin: 12px 0;
   border: none;
+}
+
+/* 暗色模式：Markdown 步骤分割线稍微调亮 */
+[data-theme="dark"] .unified-separator {
+  background: linear-gradient(to right, transparent, rgba(255, 255, 255, 0.14), transparent);
 }
 
 /* ========== Unified Mode Reasoning (collapsed by default) ========== */
@@ -9567,14 +9952,13 @@ html.pet-window-mode #root {
   word-break: break-all;
 }
 
-/* Inline code: subtle background + accent text (aligned with wecode/frakio dark mode) */
+/* Inline code: subtle background + accent text (aligned with wecode/frakio) */
 .message-content code:not(pre code), .markdown-body code:not(pre code) {
   background: var(--bg-tertiary);
   color: var(--text-primary);
-  padding: 1px 6px;
-  border-radius: 4px;
-  font-size: 0.9em;
-  border: 1px solid var(--border-secondary);
+  padding: 0.125em 0.375em;
+  border-radius: 0.25rem;
+  font-size: 0.875em;
 }
 .message-content pre, .markdown-body pre {
   word-break: normal;
@@ -9582,14 +9966,10 @@ html.pet-window-mode #root {
 }
 
 /* ========== P2 #31: Paragraph-level hover actions ========== */
+/* 移除段落级 hover 背景色 — 消除梦幻皮肤下的不规则高亮 */
+/* 仅保留 position:relative 供段落操作按钮定位 */
 .message-content p, .markdown-body p {
   position: relative;
-  transition: background 0.15s ease;
-  border-radius: 4px;
-  padding: 2px 0;
-}
-.message-content p:hover, .markdown-body p:hover {
-  background: var(--bg-tertiary, rgba(255,255,255,0.03));
 }
 .message-paragraph-actions {
   position: absolute;
@@ -9819,7 +10199,202 @@ html.pet-window-mode #root {
   overflow: auto;
 }
 
-/* ========== P2 #28: Conversation overview rounds ========== */
+/* ========== File Preview Components ========== */
+.file-preview-image {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+.file-preview-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border-primary);
+  background: var(--bg-secondary);
+  flex-shrink: 0;
+}
+.file-preview-toolbar button {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+}
+.file-preview-toolbar button:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.file-preview-zoom {
+  font-size: 12px;
+  color: var(--text-muted);
+  min-width: 48px;
+  text-align: center;
+}
+.file-preview-image-body {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: auto;
+  padding: 16px;
+  background: var(--bg-primary);
+}
+.file-preview-embed {
+  height: 100%;
+  width: 100%;
+}
+.file-preview-excel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+.file-preview-excel-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border-primary);
+  background: var(--bg-secondary);
+  overflow-x: auto;
+  flex-shrink: 0;
+}
+.file-preview-excel-tabs button {
+  padding: 4px 12px;
+  font-size: 12px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  color: var(--text-secondary);
+  background: transparent;
+  white-space: nowrap;
+}
+.file-preview-excel-tabs button.active {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  font-weight: 600;
+}
+.file-preview-excel-body {
+  flex: 1;
+  overflow: auto;
+  background: var(--bg-primary);
+}
+.file-preview-excel-body table {
+  border-collapse: collapse;
+  font-size: 12px;
+  width: 100%;
+}
+.file-preview-excel-body td {
+  padding: 4px 8px;
+  border: 1px solid var(--border-primary);
+  min-width: 60px;
+  max-width: 300px;
+  color: var(--text-primary);
+}
+.file-preview-excel-body td.row-num {
+  width: 36px;
+  min-width: 36px;
+  text-align: right;
+  color: var(--text-muted);
+  font-size: 11px;
+  user-select: none;
+  position: sticky;
+  left: 0;
+  background: var(--bg-secondary);
+}
+.file-preview-excel-body tr.header-row {
+  background: var(--bg-secondary);
+}
+.file-preview-excel-body td.header-cell {
+  font-weight: 600;
+}
+.file-preview-excel-body .cell-content {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.file-preview-excel-footer {
+  padding: 4px 12px;
+  font-size: 11px;
+  color: var(--text-muted);
+  border-top: 1px solid var(--border-primary);
+  background: var(--bg-secondary);
+  flex-shrink: 0;
+}
+.file-preview-word {
+  height: 100%;
+  overflow: auto;
+  background: var(--bg-primary);
+}
+.file-preview-word-body {
+  padding: 24px;
+  max-width: 800px;
+  margin: 0 auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  line-height: 1.8;
+  color: var(--text-primary);
+  font-size: 14px;
+}
+.file-preview-video {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  background: #000;
+}
+.file-preview-audio {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  height: 100%;
+  background: var(--bg-primary);
+  color: var(--text-muted);
+}
+.file-preview-html {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+.file-preview-html-toolbar {
+  display: flex;
+  gap: 2px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border-primary);
+  background: var(--bg-secondary);
+  flex-shrink: 0;
+}
+.file-preview-html-toolbar button {
+  padding: 4px 12px;
+  font-size: 12px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  color: var(--text-secondary);
+  background: transparent;
+}
+.file-preview-html-toolbar button.active {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  font-weight: 600;
+}
+.file-preview-html-source {
+  flex: 1;
+  overflow: auto;
+  padding: 12px;
+  font-size: 13px;
+  font-family: "Cascadia Code", "Fira Code", "Consolas", monospace;
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: var(--text-primary);
+  background: var(--bg-primary);
+  margin: 0;
+}
 .conversation-overview-rounds {
   margin-top: 12px;
   padding-top: 8px;
@@ -10797,6 +11372,156 @@ color: var(--accent, #7c6cf0);
 }
 .mention-icon { font-size: 14px; }
 .mention-label { color: var(--text-primary, #e0e0e8); }
+.mention-path {
+  display: block;
+  font-size: 10px;
+  color: var(--text-muted, #6b6b7b);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 220px;
+}
+.mention-content {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+.mention-item.selected {
+  background: var(--accent-soft, rgba(124, 108, 240, 0.12));
+}
+.mention-query-hint {
+  color: var(--text-muted, #6b6b7b);
+  font-style: italic;
+}
+
+/* ========== Composer Badges — reference chips row ========== */
+.composer-badges-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 4px 12px 0;
+}
+.composer-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px 3px 10px;
+  border-radius: 9999px;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.4;
+  max-width: 240px;
+  transition: background 0.15s ease, border-color 0.15s ease;
+  cursor: default;
+  user-select: none;
+}
+.composer-badge-icon {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  opacity: 0.8;
+}
+.composer-badge-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.composer-badge-meta {
+  font-size: 10px;
+  opacity: 0.6;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100px;
+}
+.composer-badge-remove {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: inherit;
+  opacity: 0.5;
+  cursor: pointer;
+  padding: 0;
+  transition: opacity 0.15s ease, background 0.15s ease;
+}
+.composer-badge-remove:hover {
+  opacity: 1;
+  background: rgba(0, 0, 0, 0.15);
+}
+
+/* Badge type variants */
+.composer-badge-file {
+  background: var(--accent-soft, rgba(124, 108, 240, 0.10));
+  border: 1px solid color-mix(in srgb, var(--accent, #7c6cf0) 25%, transparent);
+  color: var(--text-primary, #e0e0e8);
+}
+.composer-badge-github {
+  background: rgba(110, 118, 129, 0.12);
+  border: 1px solid rgba(110, 118, 129, 0.30);
+  color: var(--text-primary, #e0e0e8);
+}
+.composer-badge-github .composer-badge-icon {
+  color: #6e7681;
+}
+.composer-badge-quote {
+  background: rgba(34, 197, 94, 0.10);
+  border: 1px solid rgba(34, 197, 94, 0.25);
+  color: var(--text-primary, #e0e0e8);
+}
+.composer-badge-url {
+  background: rgba(59, 130, 246, 0.10);
+  border: 1px solid rgba(59, 130, 246, 0.25);
+  color: var(--text-primary, #e0e0e8);
+}
+
+/* Quote context card — enhanced */
+.quote-context-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 12px;
+  margin-bottom: 4px;
+  background: var(--accent-soft, rgba(124, 108, 240, 0.08));
+  border: 1px solid color-mix(in srgb, var(--accent, #7c6cf0) 20%, transparent);
+  border-radius: 10px;
+  border-left: 3px solid var(--accent, #7c6cf0);
+}
+.quote-context-left {
+  display: flex;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+.quote-context-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.quote-context-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--accent, #7c6cf0);
+}
+.quote-context-card .quote-context-text {
+  font-style: normal;
+  font-size: 12px;
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  line-height: 1.4;
+}
 
 /* ========== P4: SkillAutocomplete ========== */
 .skill-autocomplete {
@@ -11411,6 +12136,42 @@ color: var(--accent, #7c6cf0);
   overflow: hidden;
   display: flex;
   flex-direction: column;
+}
+
+/* 文件预览模式：占满侧栏宽度，不挤压主对话区 */
+.right-sidebar-file-preview {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-height: 0;
+}
+
+.right-sidebar-back-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--border-primary, #2a2a30);
+  color: var(--text-secondary, #aaa);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+  flex-shrink: 0;
+}
+.right-sidebar-back-btn:hover {
+  background: var(--bg-hover, rgba(255,255,255,0.04));
+  color: var(--text-primary, #e8e8ea);
+}
+
+.right-sidebar-preview-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-height: 0;
 }
 
 .right-sidebar-empty {

@@ -48,20 +48,23 @@ export function usePaneResize(config: PaneResizeConfig) {
       if (frameRef.current !== null) return;
       frameRef.current = requestAnimationFrame(() => {
         frameRef.current = null;
-        const delta = ev.clientX - startRef.current.x;
+        // Resize handle is on the LEFT edge of the right sidebar:
+        // drag LEFT (negative delta) → wider, drag RIGHT (positive delta) → narrower
+        const delta = startRef.current.x - ev.clientX;
         const next = Math.max(config.min, Math.min(config.max, startRef.current.width + delta));
         setWidth(next);
       });
     };
 
-    const handleUp = () => {
+    const handleUp = (ev: PointerEvent) => {
       setIsResizing(false);
       document.removeEventListener("pointermove", handleMove);
       document.removeEventListener("pointerup", handleUp);
       document.body.classList.remove("resizing-columns");
       if (config.storageKey) {
         try {
-          const finalWidth = Math.max(config.min, Math.min(config.max, startRef.current.width + (event as any)?.clientX - startRef.current.x || width));
+          const delta = startRef.current.x - ev.clientX;
+          const finalWidth = Math.max(config.min, Math.min(config.max, startRef.current.width + delta));
           localStorage.setItem(config.storageKey, String(finalWidth));
         } catch {}
       }

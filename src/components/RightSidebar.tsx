@@ -1,4 +1,4 @@
-﻿﻿﻿﻿/**
+﻿﻿﻿﻿﻿﻿/**
  * RightSidebar — 上下文工具面板
  *
  * 设计参考 frakio-work 的 right-rail：
@@ -15,9 +15,10 @@
 
 import { useState } from "react";
 import { useLang } from "../core/i18n/lang";
-import { Folder, Globe, X, ChevronRight, ChevronLeft } from "lucide-react";
+import { Folder, Globe, X, ChevronRight, ChevronLeft, ArrowLeft } from "lucide-react";
 import { useProjectStore } from "../core/store";
 import { FileExplorer } from "./FileExplorer";
+import { FileEditor } from "./FileEditor";
 import { usePaneResize } from "../hooks/usePaneResize";
 
 interface RightSidebarProps {
@@ -31,6 +32,11 @@ interface RightSidebarProps {
   onImportProject?: () => void;
   onGitHubClone?: () => void;
   onOpenSession?: (sessionId: string, projectId: string) => void;
+  /** 当前正在编辑/预览的文件路径（由 App 级别管理，支持 codem:open-file 事件） */
+  editingFile?: string | null;
+  onEditingFileChange?: (path: string | null) => void;
+  /** 文件刷新 key */
+  refreshKey?: number;
 }
 
 export function RightSidebar(props: RightSidebarProps = {}) {
@@ -39,6 +45,8 @@ export function RightSidebar(props: RightSidebarProps = {}) {
   const [internalCollapsed, setInternalCollapsed] = useState(false);
   const [activeTab, setActiveTab] = useState<"files" | "browser">("files");
   const { currentProject } = useProjectStore();
+  const editingFile = props.editingFile ?? null;
+  const setEditingFile = props.onEditingFileChange ?? (() => {});
 
   // Support both external controlled mode (from TitleBar) and internal mode
   const collapsed = props.collapsed ?? internalCollapsed;
@@ -54,17 +62,20 @@ export function RightSidebar(props: RightSidebarProps = {}) {
   const [browserUrl, setBrowserUrl] = useState("");
   const [browserInput, setBrowserInput] = useState("");
 
-  const { width: sidebarWidth, isResizing, onResizeStart } = usePaneResize({
-    min: 280,
-    max: 500,
-    initial: 344,
-    storageKey: "right-sidebar-width",
-  });
+const { width: sidebarWidth, isResizing, onResizeStart } = usePaneResize({
+min: 360,
+max: 620,
+initial: 420,
+storageKey: "right-sidebar-width",
+});
+
+// 不再膨胀侧栏宽度——文件预览替换文件树，占满侧栏全部宽度
+const effectiveWidth = sidebarWidth;
 
   // Collapsed mode — thin rail with expand button
   if (collapsed) {
     return (
-      <aside className="right-sidebar right-sidebar-collapsed" style={{ width: 36 }}>
+      <aside className="right-sidebar right-sidebar-collapsed" style={{ width: 36, flexShrink: 0 }}>
         <button
           className="right-sidebar-toggle-collapsed"
           onClick={toggleCollapse}
@@ -83,7 +94,7 @@ export function RightSidebar(props: RightSidebarProps = {}) {
   ];
 
   return (
-    <aside className="right-sidebar" style={{ width: sidebarWidth, flexShrink: 0 }}>
+    <aside className="right-sidebar" style={{ width: effectiveWidth, flexShrink: 0 }}>
       {/* Resize handle */}
       <div
         className={`right-sidebar-resize-handle ${isResizing ? "active" : ""}`}
@@ -122,12 +133,28 @@ export function RightSidebar(props: RightSidebarProps = {}) {
       <div className="right-sidebar-content">
         {activeTab === "files" && (
           currentProject ? (
-            <FileExplorer
-              cwd={currentProject.path}
-              onFileClick={(p) => {
-                window.dispatchEvent(new CustomEvent("codem:open-file", { detail: p }));
-              }}
-            />
+            editingFile ? (
+              /* 文件预览模式：占满侧栏宽度，不膨胀侧栏，不挤压主对话区 */
+              <div className="right-sidebar-file-preview">
+                <button
+                  className="right-sidebar-back-btn"
+                  onClick={() => setEditingFile(null)}
+                  title={zh ? "返回文件树" : "Back to file tree"}
+                >
+                  <ArrowLeft size={14} />
+                  <span>{zh ? "文件树" : "Files"}</span>
+                </button>
+                <div className="right-sidebar-preview-body">
+                  <FileEditor filePath={editingFile} onClose={() => setEditingFile(null)} />
+                </div>
+              </div>
+            ) : (
+              <FileExplorer
+                cwd={currentProject.path}
+                onFileClick={(p) => setEditingFile(p)}
+                refreshKey={props.refreshKey}
+              />
+            )
           ) : (
             <div className="right-sidebar-empty">
               {zh ? "选择项目后可浏览文件" : "Select a project to browse files"}

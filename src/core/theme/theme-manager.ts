@@ -191,7 +191,20 @@ class ThemeManagerClass {
       // 默认皮肤：清除所有皮肤相关 DOM 痕迹
       root.removeAttribute('data-skin');
       this.cleanDreamCSS();
+      // 恢复用户保存的主题（codem-theme），cleanDreamCSS 中已处理但确保覆盖
+      try {
+        const userTheme = getSetting('codem-theme') as 'dark' | 'light' | null;
+        if (userTheme) {
+          root.setAttribute('data-theme', userTheme);
+        }
+      } catch {}
+    } else if (this.currentSkin === 'hub') {
+      // Hub 皮肤是暗色皮肤，强制 data-theme=dark 确保所有 dark 模式 CSS 变量生效
+      root.setAttribute('data-skin', 'hub');
+      root.setAttribute('data-theme', 'dark');
+      this.cleanDreamCSS();
     } else {
+      // Dream 皮肤：由 applyDreamCSS 根据 palette.isDark 自适应设置 data-theme
       root.setAttribute('data-skin', this.currentSkin);
       if (this.currentSkin === 'dream') {
         this.applyDreamCSS();

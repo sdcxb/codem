@@ -24,8 +24,8 @@
   --glass-bg: rgba(22, 27, 34, 0.72);
   --glass-bg-strong: rgba(22, 27, 34, 0.88);
   --glass-bg-subtle: rgba(22, 27, 34, 0.48);
-  --glass-border: rgba(255, 255, 255, 0.08);
-  --glass-border-strong: rgba(255, 255, 255, 0.12);
+  --glass-border: rgba(255, 255, 255, 0.10);
+  --glass-border-strong: rgba(255, 255, 255, 0.14);
   --glass-blur: 16px;
   --glass-blur-strong: 24px;
   --glass-blur-subtle: 8px;
@@ -59,7 +59,7 @@
 
   /* 工具调用令牌 */
   --tool-card-bg: rgba(28, 33, 40, 0.60);
-  --tool-card-border: rgba(48, 54, 61, 0.60);
+  --tool-card-border: rgba(255, 255, 255, 0.08);
   --tool-card-hover: rgba(40, 46, 54, 0.70);
   --tool-status-running: var(--info, #58a6ff);
   --tool-status-done: var(--success, #3fb950);
@@ -67,7 +67,7 @@
 
   /* Composer 令牌 */
   --composer-bg: rgba(22, 27, 34, 0.80);
-  --composer-border: rgba(48, 54, 61, 0.60);
+  --composer-border: rgba(255, 255, 255, 0.08);
   --composer-focus-border: rgba(124, 108, 240, 0.50);
   --composer-tool-btn-bg: transparent;
   --composer-tool-btn-hover: rgba(48, 54, 61, 0.50);
@@ -77,23 +77,23 @@
 
   /* 标题栏令牌 */
   --titlebar-bg: rgba(22, 27, 34, 0.80);
-  --titlebar-btn-hover: rgba(42, 45, 45, 0.50);
+  --titlebar-btn-hover: rgba(255, 255, 255, 0.08);
   --titlebar-btn-close-hover: #e81123;
   --titlebar-tab-active: rgba(124, 108, 240, 0.15);
-  --titlebar-tab-hover: rgba(42, 45, 45, 0.40);
+  --titlebar-tab-hover: rgba(255, 255, 255, 0.06);
 
   /* 右侧栏令牌 */
   --right-rail-bg: rgba(26, 28, 28, 0.60);
   --right-rail-tab-active: rgba(124, 108, 240, 0.12);
-  --right-rail-tab-hover: rgba(42, 45, 45, 0.40);
+  --right-rail-tab-hover: rgba(255, 255, 255, 0.06);
 
   /* 富内容令牌 */
-  --rich-code-bg: rgba(13, 17, 23, 0.90);
-  --rich-code-header-bg: rgba(33, 36, 36, 0.80);
-  --rich-code-border: rgba(42, 45, 45, 0.60);
+  --rich-code-bg: rgba(22, 27, 34, 0.90);
+  --rich-code-header-bg: rgba(33, 38, 45, 0.80);
+  --rich-code-border: rgba(255, 255, 255, 0.08);
   --rich-table-bg: rgba(26, 28, 28, 0.40);
-  --rich-table-header-bg: rgba(33, 36, 36, 0.60);
-  --rich-table-border: rgba(42, 45, 45, 0.40);
+  --rich-table-header-bg: rgba(33, 38, 45, 0.60);
+  --rich-table-border: rgba(255, 255, 255, 0.06);
   --rich-link-color: var(--accent, #7c6cf0);
 
   /* 流式动画令牌 */
@@ -256,6 +256,10 @@
   height: 1px;
   background: var(--border-primary);
   margin: 1.5em 0;
+}
+/* 暗色模式：Markdown 步骤分割线稍微调亮 */
+[data-theme="dark"] .rich-content-hr {
+  background: rgba(255, 255, 255, 0.16);
 }
 .rich-content ul,
 .rich-content ol {
@@ -3638,4 +3642,96 @@ background: var(--bg-secondary, var(--surface));
     opacity: 1;
     transform: translateX(-50%) translateY(0);
   }
+}
+
+/* ========== 19. Hub Skin — Force Dark Tokens ========== */
+/* Hub 皮肤永远是暗色，不受 data-theme 影响。
+   codem-ui.css 最后加载，:root 和 [data-theme="light"] 同优先级会覆盖 skin-hub.css 的值，
+   因此在此处用 [data-skin="hub"]（同优先级但后出现）强制写死 Hub 暗色变量。 */
+[data-skin="hub"] {
+  /* Glass tokens */
+  --glass-bg: rgba(18, 18, 18, 0.72);
+  --glass-bg-strong: rgba(28, 28, 30, 0.88);
+  --glass-bg-subtle: rgba(18, 18, 18, 0.48);
+  --glass-border: rgba(255, 255, 255, 0.06);
+  --glass-border-strong: rgba(255, 255, 255, 0.10);
+  --glass-blur: 20px;
+  --glass-blur-strong: 28px;
+  --glass-blur-subtle: 10px;
+  --glass-saturate: 1.2;
+
+  /* Surface tokens */
+  --surface-1: rgba(28, 28, 30, 0.50);
+  --surface-2: rgba(40, 40, 42, 0.60);
+  --surface-3: rgba(50, 50, 52, 0.70);
+  --surface-hover: rgba(42, 42, 42, 0.80);
+
+  /* Elevation tokens */
+  --elevation-1: 0 1px 2px rgba(0, 0, 0, 0.40), 0 0 0 1px rgba(255, 255, 255, 0.03);
+  --elevation-2: 0 2px 8px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(255, 255, 255, 0.04);
+  --elevation-3: 0 8px 24px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.05);
+  --elevation-4: 0 16px 48px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(255, 255, 255, 0.06);
+
+  /* Message tokens */
+  --message-bubble-assistant: rgba(28, 28, 30, 0.60);
+  --message-bubble-user: rgba(255, 107, 0, 0.08);
+  --message-bubble-system: rgba(18, 18, 18, 0.70);
+  --message-actions-bg: rgba(28, 28, 30, 0.95);
+  --message-actions-shadow: 0 2px 8px rgba(0, 0, 0, 0.40);
+
+  /* Run bar tokens */
+  --run-bar-bg: rgba(18, 18, 18, 0.90);
+  --run-bar-thinking: #58a6ff;
+  --run-bar-working: var(--hub-color-primary, #ff6b00);
+  --run-bar-presenting: var(--hub-text-success, #4ade80);
+  --run-bar-error: #f85149;
+
+  /* Tool card tokens */
+  --tool-card-bg: rgba(28, 28, 30, 0.60);
+  --tool-card-border: rgba(42, 42, 42, 0.80);
+  --tool-card-hover: rgba(42, 42, 42, 0.70);
+  --tool-status-running: #58a6ff;
+  --tool-status-done: var(--hub-text-success, #4ade80);
+  --tool-status-error: #f85149;
+
+  /* Composer tokens */
+  --composer-bg: rgba(21, 21, 21, 0.85);
+  --composer-border: rgba(42, 42, 42, 0.80);
+  --composer-focus-border: rgba(255, 107, 0, 0.40);
+  --composer-tool-btn-bg: transparent;
+  --composer-tool-btn-hover: rgba(42, 42, 42, 0.50);
+  --composer-send-bg: var(--hub-color-primary, #ff6b00);
+  --composer-send-hover: var(--hub-color-primary-hover, #e56000);
+  --composer-drag-overlay: rgba(255, 107, 0, 0.10);
+
+  /* Titlebar tokens */
+  --titlebar-bg: rgba(10, 10, 10, 0.85);
+  --titlebar-btn-hover: rgba(42, 42, 42, 0.50);
+  --titlebar-btn-close-hover: #e81123;
+  --titlebar-tab-active: rgba(255, 107, 0, 0.12);
+  --titlebar-tab-hover: rgba(42, 42, 42, 0.40);
+
+  /* Right rail tokens */
+  --right-rail-bg: rgba(18, 18, 18, 0.60);
+  --right-rail-tab-active: rgba(255, 107, 0, 0.10);
+  --right-rail-tab-hover: rgba(42, 42, 42, 0.40);
+
+  /* Rich content tokens */
+  --rich-code-bg: rgba(5, 5, 5, 0.92);
+  --rich-code-header-bg: rgba(28, 28, 30, 0.80);
+  --rich-code-border: rgba(255, 255, 255, 0.08);
+  --rich-table-bg: rgba(18, 18, 18, 0.40);
+  --rich-table-header-bg: rgba(28, 28, 30, 0.60);
+  --rich-table-border: rgba(42, 42, 42, 0.40);
+  --rich-link-color: var(--hub-color-primary, #ff6b00);
+
+  /* Stream tokens */
+  --stream-cursor-color: var(--hub-color-primary, #ff6b00);
+  --stream-cursor-width: 2px;
+  --stream-fade-duration: 300ms;
+
+  /* Security tokens */
+  --security-ask: #3b82f6;
+  --security-auto: #8b5cf6;
+  --security-full: #4ade80;
 }
