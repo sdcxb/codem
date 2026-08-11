@@ -1,7 +1,7 @@
 # Codem 项目完整说明
 
 > **用途**：新对话快速理解项目全貌、架构、文件关联、当前状态。
-> 创建时间：2026-07-23 | 最后更新：2026-08-09 | 当前版本：v0.96.1（已发布）
+> 创建时间：2026-07-23 | 最后更新：2026-08-10 | 当前版本：v0.96.1（已发布，图标修复版）
 
 ---
 
@@ -13,7 +13,7 @@
 - **GitHub**：https://github.com/sdcxb/codem
 - **分发**：NSIS `.exe` + WiX `.msi`，一键安装无需依赖
 - **平台**：Windows 优先
-- **版本**：v0.96.1（已发布，2026-08-09）
+- **版本**：v0.96.1（已发布，2026-08-10，图标修复版）
 
 ---
 
@@ -763,6 +763,7 @@ Rust 后端 (lib.rs):
 | v0.94.0 | 2026-08-03 | 配置方案Portal渲染彻底修复遮挡 + 新建方案自动展开配置面板+名称描述行内编辑 + 持久化修复(ModelProfile单例在DB初始化后reload) + 梦幻皮肤支持GIF和视频背景(3种音频模式+音量滑轨) |
 | v0.95.0 | 2026-08-03 | Vision Proxy MiMo v2.5支持 + CLI/API双模式视觉代理全链路打通(engine获取token) + CSP全面修复(media/font/frame-src+blob+asset.localhost) + 梦幻皮肤视频背景打包修复 + 花瓣缩小 + 仓库清理(移除对标/培训/内部文档) + 13个E2E全场景测试(156通过) |
 | v0.96.0 | 2026-08-08 | 主对话窗口UI大改版(对标frakio-work/wecode) + 内联Diff批量审批(替换弹窗) + 三皮肤暗色模式深度修复 + 梦幻皮肤自适应主题(data-theme基于palette.isDark) + 富内容渲染系统(9组件) + Shiki语法高亮 + 39个新组件 + 3个新依赖(framer-motion/shiki/xlsx) |
+| v0.96.1 | 2026-08-10 | 右侧栏文件浏览器体系重构(对标wecode固定宽度420px) + 文件拖拽修复(Tauri dragDropEnabled + dropEffect) + 文件编辑器悬浮窗口(createPortal全屏预览) + 全格式文件预览(图片/PDF/Excel/Word/视频/音频/HTML) + 应用Logo替换(codem.ico紫色图标) + NSIS安装器图标修复(installerIcon配置 + sharp/png-to-ico生成BMP格式ICO) + GitHub Release更新 |
 
 ### 6.2 v0.90.0 已发布功能（P0-P4 全量功能，commit 7435919，2026-07-31）
 
@@ -1062,7 +1063,7 @@ npm run tauri build        # 构建 NSIS exe + MSI
 
 ## 八、版本历史
 
-### v0.96.1（2026-08-09）— 右侧栏文件浏览器优化 + 拖拽修复 + 暗色模式修复
+### v0.96.1（2026-08-10）— 右侧栏文件浏览器优化 + 拖拽修复 + 暗色模式修复 + Logo替换
 
 **右侧栏文件浏览器体系重构**
 - 右侧栏宽度对标 wecode（默认 420px，可调 360-620px）
@@ -1092,6 +1093,13 @@ npm run tauri build        # 构建 NSIS exe + MSI
 **MentionAutocomplete 重写**
 - 输入 @ 弹出文件列表，支持过滤选择
 - 文件/文件夹/笔记本类型图标区分
+
+**应用 Logo 替换 + 安装包图标修复**
+- 应用 Logo 替换为 `icos/codem.ico`（紫色渐变背景 + 代码括号图标）
+- 使用 `sharp` + `png-to-ico` 从 `codem-1024.png` 生成 **BMP 格式**多尺寸 ICO（16/24/32/48/64/128/256），解决 `tauri icon` 生成的 PNG 格式 ICO 在 Windows 资源编译器下颜色损坏问题
+- `tauri.conf.json` NSIS 配置新增 `installerIcon` 字段，显式指定安装器图标路径
+- 全量 `cargo clean` + 重新构建，确保 `resource.lib` 正确嵌入新图标
+- GitHub Release v0.96.1 安装包已更新为图标修复版
 
 ### v0.96.0（2026-08-08）— 主对话窗口 UI 大改版 + 内联 Diff + 富内容渲染
 

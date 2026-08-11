@@ -1,7 +1,7 @@
 {
   "name": "codem",
   "private": true,
-  "version": "0.96.1",
+  "version": "0.96.2",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -53,6 +53,10 @@
     "zustand": "^5.0.0"
   },
   "devDependencies": {
+    "@tauri-apps/cli": "^2.11.4",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.3",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@types/react-syntax-highlighter": "^15.5.13",

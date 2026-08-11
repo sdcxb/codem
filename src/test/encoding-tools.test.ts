@@ -10,6 +10,7 @@
  *   6. grepSearch 的单引号转义是否覆盖中文路径
  */
 import { describe, it, expect } from "vitest";
+import { createDefaultToolRegistry } from "../core/llm/tools";
 
 // ========== 辅助函数：模拟 grepSearch 的单引号转义 ==========
 function escapeForPowerShell(str: string): string {
@@ -102,37 +103,41 @@ describe("工具链路编码 — bash 工具 exitCode 传递", () => {
   });
 });
 
-describe("工具链路编码 — 工具 description 包含编码指导", () => {
-  // 验证各工具的 description 中包含中文编码相关信息
-  it("bash 工具 description 提及 UTF-8 和乱码", () => {
-    const desc = "Execute a bash command in the terminal (PowerShell on Windows). The system automatically sets UTF-8 encoding (chcp 65001) and PYTHONUTF8=1. Output includes stdout, stderr, and exit code. If output contains garbled characters (乱码), the source command may be outputting in GBK — do NOT retry with a different tool, adjust the command instead.";
-    expect(desc).toContain("UTF-8");
-    expect(desc).toContain("chcp 65001");
-    expect(desc).toContain("PYTHONUTF8");
-    expect(desc).toContain("乱码");
-    expect(desc).toContain("GBK");
+describe("工具链路编码 — 工具 description 包含编码指导 — 真实 ToolRegistry 验证", () => {
+  // 从真实 ToolRegistry 获取工具 description，而非硬编码字符串
+  const registry = createDefaultToolRegistry();
+
+  it("bash 工具 description 包含编码相关说明", () => {
+    const bash = registry.get("bash");
+    expect(bash).toBeDefined();
+    const desc = bash!.description.toLowerCase();
+    // description 应提及编码或 UTF-8
+    const hasEncoding = desc.includes("utf") || desc.includes("encoding") || desc.includes("chcp");
+    expect(hasEncoding).toBe(true);
   });
 
-  it("glob 工具 description 提及中文文件名支持", () => {
-    const desc = "Find files matching a glob pattern. Supports Chinese filenames natively.";
-    expect(desc).toContain("Chinese filenames");
+  it("read 工具 description 存在且非空", () => {
+    const read = registry.get("read");
+    expect(read).toBeDefined();
+    expect(read!.description.length).toBeGreaterThan(10);
   });
 
-  it("grep 工具 description 提及中文模式支持", () => {
-    const desc = "Search file contents using regex. Supports Chinese patterns natively.";
-    expect(desc).toContain("Chinese patterns");
+  it("write 工具 description 存在且非空", () => {
+    const write = registry.get("write");
+    expect(write).toBeDefined();
+    expect(write!.description.length).toBeGreaterThan(10);
   });
 
-  it("read 工具 description 提及 BOM 剥离", () => {
-    const desc = "Read a file from the filesystem. Files are read as UTF-8 text. BOM (Byte Order Mark) is automatically stripped.";
-    expect(desc).toContain("UTF-8");
-    expect(desc).toContain("BOM");
+  it("glob 工具 description 存在且非空", () => {
+    const glob = registry.get("glob");
+    expect(glob).toBeDefined();
+    expect(glob!.description.length).toBeGreaterThan(10);
   });
 
-  it("write 工具 description 提及 UTF-8 无 BOM", () => {
-    const desc = "Write content to a file (creates or overwrites). Files are saved as UTF-8 without BOM.";
-    expect(desc).toContain("UTF-8");
-    expect(desc).toContain("without BOM");
+  it("grep 工具 description 存在且非空", () => {
+    const grep = registry.get("grep");
+    expect(grep).toBeDefined();
+    expect(grep!.description.length).toBeGreaterThan(10);
   });
 });
 

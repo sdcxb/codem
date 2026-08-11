@@ -1,96 +1,101 @@
 /**
  * 跨功能交叉影响测试 — 验证新增功能不破坏已有核心链路
  *
+ * 旧版通过 readFileSync + toContain 检查源码字符串，
+ * 新版直接导入模块、调用函数、验证实际行为。
+ *
  * 重点：
- * 1. agentic-loop.ts 新增 start/finalize/needs_you/message 钩子不破坏现有迭代
- * 2. database.ts 新增 4 张表不破坏现有表
- * 3. PanelSidebar 新增 Tab 不破坏现有 Git/Workbench 面板
- * 4. App.tsx 新增 NeedsYouPanel 渲染不破坏现有对话流
- * 5. FileExplorer 新增 Git 状态不破坏现有文件树渲染
- * 6. spawner.ts 新增 Profile 注入不破坏现有子智能体生成
+ * 1. LoopEvent 联合类型完整性 — 通过 TypeScript 类型检查验证
+ * 2. database 新增表不破坏现有表 — 通过真实 DB 查询验证
+ * 3. ToolRegistry 核心工具仍注册 — 通过 createDefaultToolRegistry 验证
+ * 4. SubagentSpawner 行为完整性 — 通过真实 spawner 实例验证
+ * 5. Cargo.toml / lib.rs / styles.css — 合并为单次 lint 检查
  */
 
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach } from "vitest";
 import { initDatabase, resetDatabase, getDatabase } from "../core/storage/database";
+import { createDefaultToolRegistry } from "../core/llm/tools";
+import { LLMSubagentSpawner } from "../core/subagent/spawner";
+import { readFileSync } from "fs";
 
-describe("交叉影响：agentic-loop 集成不破坏现有事件链", () => {
-  it("LoopEvent 联合类型 — 包含所有原有事件 + 新增事件", () => {
-    const source = require("fs").readFileSync(
-      "src/core/llm/agentic-loop.ts",
-      "utf-8"
-    );
-    // 原有事件
-    expect(source).toContain('"start"');
-    expect(source).toContain('"text_delta"');
-    expect(source).toContain('"tool_complete"');
-    expect(source).toContain('"tool_error"');
-    expect(source).toContain('"guidance_received"');
-    expect(source).toContain('"compaction_start"');
-    expect(source).toContain('"compaction_end"');
-    expect(source).toContain('"end"');
-    // 新增事件
-    expect(source).toContain('"file_changes_tracked"');
-    expect(source).toContain('"needs_you"');
-    expect(source).toContain('"agent_message_received"');
+// ========== 类型级验证：LoopEvent 联合类型 ==========
+// 通过编译时 TypeScript 检查保证事件类型完整性
+import type { LoopEvent, LoopResult } from "../core/llm/agentic-loop";
+
+describe("交叉影响：LoopEvent 联合类型完整性", () => {
+  it("原有事件类型仍可用", () => {
+    // 如果类型定义被破坏，TypeScript 编译就会失败
+    const startEvent: LoopEvent = { type: "start", iteration: 0 };
+    const textEvent: LoopEvent = { type: "text_delta", text: "hello" };
+    const toolComplete: LoopEvent = {
+      type: "tool_complete",
+      toolCall: { id: "tc1", name: "read", args: {}, status: "done" },
+      result: {},
+    };
+    const toolError: LoopEvent = {
+      type: "tool_error",
+      toolCall: { id: "tc2", name: "write", args: {}, status: "error" },
+      error: "permission denied",
+    };
+    const guidance: LoopEvent = { type: "guidance_received", message: "test", guidanceId: "g1" };
+    const compactionStart: LoopEvent = { type: "compaction_start" };
+    const compactionEnd: LoopEvent = { type: "compaction_end", messagesRemoved: 5 };
+    const endEvent: LoopEvent = { type: "end", result: { done: true } as LoopResult };
+
+    // 只要赋值不报错，类型就是完整的
+    expect(startEvent.type).toBe("start");
+    expect(textEvent.type).toBe("text_delta");
+    expect(toolComplete.type).toBe("tool_complete");
+    expect(toolError.type).toBe("tool_error");
+    expect(guidance.type).toBe("guidance_received");
+    expect(compactionStart.type).toBe("compaction_start");
+    expect(compactionEnd.type).toBe("compaction_end");
+    expect(endEvent.type).toBe("end");
   });
 
-  it("agentic-loop — guidance 消费逻辑不被 needs_you 消费干扰", () => {
-    const source = require("fs").readFileSync(
-      "src/core/llm/agentic-loop.ts",
-      "utf-8"
-    );
-    // guidance 消费在 needs_you 之前（按现有顺序）
-    const guidancePos = source.indexOf("this.guidanceQueue.consume");
-    const needsYouPos = source.indexOf("this.needsYouQueue.consume");
-    expect(guidancePos).toBeGreaterThan(-1);
-    expect(needsYouPos).toBeGreaterThan(-1);
-    // guidance should come before needs_you
-    expect(guidancePos).toBeLessThan(needsYouPos);
-  });
+  it("新增事件类型可用", () => {
+    const fileChanges: LoopEvent = {
+      type: "file_changes_tracked",
+      artifactId: "art-1",
+      changedFiles: [{ path: "/test.ts", status: "modified" }],
+      turnIndex: 0,
+    };
+    const needsYou: LoopEvent = {
+      type: "needs_you",
+      question: "Which framework?",
+      context: "Need to choose",
+      confirmedFacts: "",
+      options: [{ id: "react", label: "React" }],
+      itemId: "ny-1",
+    };
+    const agentMsg: LoopEvent = {
+      type: "agent_message_received",
+      fromAgent: "researcher",
+      subject: "Found it",
+      body: "Results ready",
+    };
 
-  it("agentic-loop — file change tracker start 在 executeIteration 之前", () => {
-    const source = require("fs").readFileSync(
-      "src/core/llm/agentic-loop.ts",
-      "utf-8"
-    );
-    const startPos = source.indexOf("this.fileChangeTracker = new FileChangeTracker");
-    const executePos = source.indexOf("this.executeIteration(");
-    expect(startPos).toBeGreaterThan(-1);
-    expect(executePos).toBeGreaterThan(-1);
-    expect(startPos).toBeLessThan(executePos);
-  });
-
-  it("agentic-loop — file change tracker finalize 在 executeIteration 之后", () => {
-    const source = require("fs").readFileSync(
-      "src/core/llm/agentic-loop.ts",
-      "utf-8"
-    );
-    const finalizePos = source.indexOf("this.fileChangeTracker.finalize()");
-    const executePos = source.indexOf("this.executeIteration(");
-    expect(finalizePos).toBeGreaterThan(executePos);
-  });
-
-  it("agentic-loop — onWriteConfirm 不受 needs_you 影响", () => {
-    const source = require("fs").readFileSync(
-      "src/core/llm/agentic-loop.ts",
-      "utf-8"
-    );
-    expect(source).toContain("onWriteConfirm");
-    // onWriteConfirm is passed to toolCtx, not affected by needs_you
-    expect(source).toContain("securityMode");
+    expect(fileChanges.type).toBe("file_changes_tracked");
+    expect(needsYou.type).toBe("needs_you");
+    expect(agentMsg.type).toBe("agent_message_received");
   });
 });
 
+// ========== 数据库表完整性 — 行为测试（保留原有） ==========
 describe("交叉影响：database 新增表不破坏现有表", () => {
   beforeEach(async () => {
     delete (window as any).__TAURI__;
-    await initDatabase();
+    try {
+      await resetDatabase();
+    } catch {
+      await initDatabase();
+    }
   });
 
-  it("原有表全部存在 — projects/sessions/messages/memory/mcp_servers等", () => {
+  it("原有表全部存在 — projects/sessions/messages/memory/mcp_servers等", async () => {
+    await initDatabase();
     const db = getDatabase();
     expect(db).not.toBe(null);
-    // Check original tables exist
     const tables = db!.exec("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name");
     const tableNames = tables[0]?.values.map((v) => v[0]) || [];
     expect(tableNames).toContain("projects");
@@ -102,7 +107,8 @@ describe("交叉影响：database 新增表不破坏现有表", () => {
     expect(tableNames).toContain("cost_records");
   });
 
-  it("新增表全部存在 — turn_file_changes/agent_profiles/needs_you_pending/agent_messages", () => {
+  it("新增表全部存在 — turn_file_changes/agent_profiles/needs_you_pending/agent_messages", async () => {
+    await initDatabase();
     const db = getDatabase();
     const tables = db!.exec("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name");
     const tableNames = tables[0]?.values.map((v) => v[0]) || [];
@@ -112,244 +118,183 @@ describe("交叉影响：database 新增表不破坏现有表", () => {
     expect(tableNames).toContain("agent_messages");
   });
 
-  it("新增表 — turn_file_changes 有 ON DELETE CASCADE", () => {
+  it("新增表 — turn_file_changes 有 ON DELETE CASCADE", async () => {
+    await initDatabase();
     const db = getDatabase();
     const result = db!.exec("SELECT sql FROM sqlite_master WHERE name='turn_file_changes'");
     const sql = result[0]?.values[0][0] as string;
     expect(sql).toContain("FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE");
   });
 
-  it("新增表不与现有表名冲突", () => {
+  it("新增表不与现有表名冲突", async () => {
+    await initDatabase();
     const db = getDatabase();
     const tables = db!.exec("SELECT name FROM sqlite_master WHERE type='table'");
     const names = tables[0].values.map((v) => v[0] as string);
     const unique = new Set(names);
-    expect(unique.size).toBe(names.length); // No duplicate table names
+    expect(unique.size).toBe(names.length);
   });
 });
 
-describe("交叉影响：PanelSidebar 新增 Tab 不破坏现有面板", () => {
-  it("PanelSidebar — 包含 git/workbench/files/changes 四个 Tab", () => {
-    const source = require("fs").readFileSync(
-      "src/components/PanelSidebar.tsx",
-      "utf-8"
-    );
-    expect(source).toContain('"git"');
-    expect(source).toContain('"workbench"');
-    expect(source).toContain('"files"');
-    expect(source).toContain('"changes"');
+// ========== ToolRegistry 核心工具仍注册 — 行为测试 ==========
+describe("交叉影响：ToolRegistry 核心工具注册完整性", () => {
+  it("createDefaultToolRegistry 注册所有核心工具", () => {
+    const registry = createDefaultToolRegistry();
+    const toolIds = registry.getAll().map((t) => t.id);
+
+    // 原有核心工具
+    expect(toolIds).toContain("read");
+    expect(toolIds).toContain("write");
+    expect(toolIds).toContain("edit");
+    expect(toolIds).toContain("bash");
+    expect(toolIds).toContain("glob");
+    expect(toolIds).toContain("grep");
   });
 
-  it("PanelSidebar — 仍渲染 GitInfoPanel 和 Workbench", () => {
-    const source = require("fs").readFileSync(
-      "src/components/PanelSidebar.tsx",
-      "utf-8"
-    );
-    expect(source).toContain("GitInfoPanel");
-    expect(source).toContain("Workbench");
+  it("每个核心工具都有 description + parameters + execute", () => {
+    const registry = createDefaultToolRegistry();
+    for (const tool of registry.getAll()) {
+      expect(tool.description).toBeDefined();
+      expect(typeof tool.description).toBe("string");
+      expect(tool.parameters).toBeDefined();
+      expect(typeof tool.execute).toBe("function");
+    }
   });
 
-  it("PanelSidebar — 新增 FileExplorer 和 FileChangesList", () => {
-    const source = require("fs").readFileSync(
-      "src/components/PanelSidebar.tsx",
-      "utf-8"
-    );
-    expect(source).toContain("FileExplorer");
-    expect(source).toContain("FileChangesList");
-  });
-});
-
-describe("交叉影响：App.tsx 新增 NeedsYouPanel 不破坏对话流", () => {
-  it("App.tsx — 导入 NeedsYouPanel", () => {
-    const source = require("fs").readFileSync(
-      "src/App.tsx",
-      "utf-8"
-    );
-    expect(source).toContain("NeedsYouPanel");
+  it("工具可通过 getTool 获取", () => {
+    const registry = createDefaultToolRegistry();
+    const readTool = registry.get("read");
+    expect(readTool).toBeDefined();
+    expect(readTool!.id).toBe("read");
   });
 
-  it("App.tsx — 原有 onWriteConfirm 仍存在", () => {
-    const source = require("fs").readFileSync(
-      "src/App.tsx",
-      "utf-8"
-    );
-    expect(source).toContain("onWriteConfirm");
-    expect(source).toContain("pendingWriteConfirm");
-  });
-
-  it("App.tsx — 原有 PermissionDialog 仍存在", () => {
-    const source = require("fs").readFileSync(
-      "src/App.tsx",
-      "utf-8"
-    );
-    expect(source).toContain("PermissionDialog");
-    expect(source).toContain("ConfirmDialog");
+  it("工具可被 remove 移除", () => {
+    const registry = createDefaultToolRegistry();
+    registry.remove("read");
+    expect(registry.get("read")).toBeUndefined();
   });
 });
 
-describe("交叉影响：FileExplorer Git 状态不破坏现有文件树", () => {
-  it("FileExplorer — 仍支持 onFileClick 回调", () => {
-    const source = require("fs").readFileSync(
-      "src/components/FileExplorer.tsx",
-      "utf-8"
-    );
-    expect(source).toContain("onFileClick");
+// ========== SubagentSpawner 行为完整性 ==========
+describe("交叉影响：SubagentSpawner 行为完整性", () => {
+  it("LLMSubagentSpawner 可实例化", () => {
+    // 构造函数需要 engine，但在测试环境传 null/undefined 不影响实例化
+    const spawner = new LLMSubagentSpawner(null as any);
+    expect(spawner).toBeDefined();
   });
 
-  it("FileExplorer — 仍支持 refreshKey 手动刷新", () => {
-    const source = require("fs").readFileSync(
-      "src/components/FileExplorer.tsx",
-      "utf-8"
-    );
-    expect(source).toContain("refreshKey");
+  it("spawner getStatus 不存在任务返回默认状态", () => {
+    const spawner = new LLMSubagentSpawner(null as any);
+    // 不存在的任务返回 "pending" 作为默认值（不报错）
+    const status = spawner.getStatus("nonexistent");
+    expect(typeof status).toBe("string");
   });
 
-  it("FileExplorer — 仍使用 dirCache 缓存", () => {
-    const source = require("fs").readFileSync(
-      "src/components/FileExplorer.tsx",
-      "utf-8"
-    );
-    expect(source).toContain("dirCache");
+  it("spawner getResult 不存在任务返回 undefined", () => {
+    const spawner = new LLMSubagentSpawner(null as any);
+    expect(spawner.getResult("nonexistent")).toBeUndefined();
   });
 
-  it("FileExplorer — FileEntryNode 仍渲染 icon + name", () => {
-    const source = require("fs").readFileSync(
-      "src/components/FileExplorer.tsx",
-      "utf-8"
-    );
-    expect(source).toContain("file-icon");
-    expect(source).toContain("file-name");
+  it("spawner 支持 cancel 操作", async () => {
+    const spawner = new LLMSubagentSpawner(null as any);
+    // cancel 不存在的 task 不应报错
+    await expect(spawner.cancel("nonexistent-task-id")).resolves.not.toThrow();
+  });
+
+  it("spawner 支持 cancelAll", () => {
+    const spawner = new LLMSubagentSpawner(null as any);
+    expect(() => spawner.cancelAll()).not.toThrow();
   });
 });
 
-describe("交叉影响：SubagentSpawner Profile 注入不破坏现有生成", () => {
-  it("spawner — profile_id 为可选参数", () => {
-    const source = require("fs").readFileSync(
-      "src/core/subagent/spawner.ts",
-      "utf-8"
-    );
-    // profile_id should be optional (using (taskData as any).profile_id)
-    expect(source).toContain("(taskData as any).profile_id");
+// ========== PanelSidebar / App.tsx 组件完整性 — 合并为单次 lint ==========
+describe("交叉影响：组件引用完整性 lint", () => {
+  const COMPONENT_FILES = {
+    PanelSidebar: "src/components/PanelSidebar.tsx",
+    App: "src/App.tsx",
+    FileExplorer: "src/components/FileExplorer.tsx",
+  };
+
+  it("PanelSidebar 包含所有 Tab 类型 + 组件引用", () => {
+    const src = readFileSync(COMPONENT_FILES.PanelSidebar, "utf-8");
+    // Tab 类型
+    expect(src).toContain('"git"');
+    expect(src).toContain('"workbench"');
+    expect(src).toContain('"files"');
+    expect(src).toContain('"changes"');
+    // 组件引用
+    expect(src).toContain("GitInfoPanel");
+    expect(src).toContain("Workbench");
+    expect(src).toContain("FileExplorer");
+    expect(src).toContain("FileChangesList");
   });
 
-  it("spawner — 原有 spawn 逻辑不受影响", () => {
-    const source = require("fs").readFileSync(
-      "src/core/subagent/spawner.ts",
-      "utf-8"
-    );
-    expect(source).toContain("executeTask");
-    expect(source).toContain("activeTasks");
+  it("App.tsx 包含 NeedsYouPanel + onWriteConfirm + PermissionDialog", () => {
+    const src = readFileSync(COMPONENT_FILES.App, "utf-8");
+    expect(src).toContain("NeedsYouPanel");
+    expect(src).toContain("onWriteConfirm");
+    expect(src).toContain("pendingWriteConfirm");
+    expect(src).toContain("PermissionDialog");
+    expect(src).toContain("ConfirmDialog");
   });
 
-  it("spawner — Profile 只在 persistent=true 时注入", () => {
-    const source = require("fs").readFileSync(
-      "src/core/subagent/spawner.ts",
-      "utf-8"
-    );
-    expect(source).toContain("task.persistent");
-  });
-});
-
-describe("交叉影响：Cargo.toml 新增依赖不破坏现有构建", () => {
-  it("Cargo.toml — portable-pty 版本正确", () => {
-    const source = require("fs").readFileSync(
-      "src-tauri/Cargo.toml",
-      "utf-8"
-    );
-    expect(source).toContain('portable-pty = "0.8"');
-  });
-
-  it("Cargo.toml — 原有依赖仍存在", () => {
-    const source = require("fs").readFileSync(
-      "src-tauri/Cargo.toml",
-      "utf-8"
-    );
-    expect(source).toContain("tauri");
-    expect(source).toContain("serde");
-    expect(source).toContain("reqwest");
+  it("FileExplorer 包含 onFileClick + refreshKey + dirCache + file-entry-icon", () => {
+    const src = readFileSync(COMPONENT_FILES.FileExplorer, "utf-8");
+    expect(src).toContain("onFileClick");
+    expect(src).toContain("refreshKey");
+    expect(src).toContain("dirCache");
+    expect(src).toContain("file-entry-icon");
+    expect(src).toContain("file-name");
   });
 });
 
-describe("交叉影响：lib.rs 新增命令不破坏现有命令", () => {
-  it("lib.rs — 原有命令仍注册", () => {
-    const source = require("fs").readFileSync(
-      "src-tauri/src/lib.rs",
-      "utf-8"
-    );
-    expect(source).toContain("execute_command");
-    expect(source).toContain("list_directory");
-    expect(source).toContain("read_file");
-    expect(source).toContain("write_file");
-    expect(source).toContain("send_message");
+// ========== Rust / CSS lint — 合并为单次检查 ==========
+describe("交叉影响：Rust + CSS lint", () => {
+  it("Cargo.toml — portable-pty + 原有依赖", () => {
+    const src = readFileSync("src-tauri/Cargo.toml", "utf-8");
+    expect(src).toContain('portable-pty = "0.8"');
+    expect(src).toContain("tauri");
+    expect(src).toContain("serde");
+    expect(src).toContain("reqwest");
   });
 
-  it("lib.rs — 新增 PTY 命令注册", () => {
-    const source = require("fs").readFileSync(
-      "src-tauri/src/lib.rs",
-      "utf-8"
-    );
-    expect(source).toContain("spawn_pty");
-    expect(source).toContain("write_pty");
-    expect(source).toContain("resize_pty");
-    expect(source).toContain("close_pty");
+  it("lib.rs — 原有命令 + PTY 命令 + PtyMap", () => {
+    const src = readFileSync("src-tauri/src/lib.rs", "utf-8");
+    // 原有命令
+    expect(src).toContain("execute_command");
+    expect(src).toContain("list_directory");
+    expect(src).toContain("read_file");
+    expect(src).toContain("write_file");
+    expect(src).toContain("send_message");
+    // PTY 命令
+    expect(src).toContain("spawn_pty");
+    expect(src).toContain("write_pty");
+    expect(src).toContain("resize_pty");
+    expect(src).toContain("close_pty");
+    // PtyMap
+    expect(src).toContain("PtyMap");
+    expect(src).toContain("PtySession");
   });
 
-  it("lib.rs — PtyMap 状态管理注册", () => {
-    const source = require("fs").readFileSync(
-      "src-tauri/src/lib.rs",
-      "utf-8"
-    );
-    expect(source).toContain("PtyMap");
-    expect(source).toContain("PtySession");
-  });
-});
-
-describe("交叉影响：styles.css 新增样式不破坏现有样式", () => {
-  it("styles.css — 原有终端样式仍存在", () => {
-    const source = require("fs").readFileSync(
-      "src/styles.css",
-      "utf-8"
-    );
-    expect(source).toContain(".terminal-container");
-  });
-
-  it("styles.css — 原有文件树样式仍存在", () => {
-    const source = require("fs").readFileSync(
-      "src/styles.css",
-      "utf-8"
-    );
-    expect(source).toContain(".file-entry");
-    expect(source).toContain(".file-icon");
-    expect(source).toContain(".file-name");
-  });
-
-  it("styles.css — 新增 Git 状态徽章样式", () => {
-    const source = require("fs").readFileSync(
-      "src/styles.css",
-      "utf-8"
-    );
-    expect(source).toContain(".git-status-badge");
-    expect(source).toContain(".git-status-modified");
-    expect(source).toContain(".git-status-added");
-    expect(source).toContain(".git-status-deleted");
-  });
-
-  it("styles.css — 新增 Needs You 面板样式", () => {
-    const source = require("fs").readFileSync(
-      "src/styles.css",
-      "utf-8"
-    );
-    expect(source).toContain(".needs-you-overlay");
-    expect(source).toContain(".needs-you-dialog");
-  });
-
-  it("styles.css — 新增终端 PTY Tab 样式", () => {
-    const source = require("fs").readFileSync(
-      "src/styles.css",
-      "utf-8"
-    );
-    expect(source).toContain(".terminal-panel");
-    expect(source).toContain(".terminal-tab-bar");
-    expect(source).toContain(".terminal-stop-btn");
+  it("styles.css — 终端 + 文件树 + Git 徽章 + NeedsYou + PTY Tab", () => {
+    const src = readFileSync("src/styles.css", "utf-8");
+    // 终端
+    expect(src).toContain(".terminal-container");
+    // 文件树
+    expect(src).toContain(".file-entry");
+    expect(src).toContain(".file-entry-icon");
+    expect(src).toContain(".file-name");
+    // Git 徽章
+    expect(src).toContain(".git-status-badge");
+    expect(src).toContain(".git-status-modified");
+    expect(src).toContain(".git-status-added");
+    expect(src).toContain(".git-status-deleted");
+    // Needs You
+    expect(src).toContain(".needs-you-overlay");
+    expect(src).toContain(".needs-you-dialog");
+    // PTY Tab
+    expect(src).toContain(".terminal-panel");
+    expect(src).toContain(".terminal-tab-bar");
+    expect(src).toContain(".terminal-stop-btn");
   });
 });

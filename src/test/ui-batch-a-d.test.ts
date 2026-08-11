@@ -1069,87 +1069,46 @@ describe("三个已知问题修复验证（源码级）", () => {
   const fs = require("fs");
   const path = require("path");
 
-  const sidebarSrc = fs.readFileSync(
-    path.resolve(__dirname, "../components/Sidebar.tsx"),
-    "utf-8"
-  );
-  const chatPanelSrc = fs.readFileSync(
-    path.resolve(__dirname, "../components/ChatPanel.tsx"),
-    "utf-8"
-  );
-  const appSrc = fs.readFileSync(
-    path.resolve(__dirname, "../App.tsx"),
-    "utf-8"
-  );
-  const stylesSrc = fs.readFileSync(
-    path.resolve(__dirname, "../styles.css"),
-    "utf-8"
-  );
+  // 合并 4 次 readFileSync 为 1 次批量读取
+  const sidebarSrc = fs.readFileSync(path.resolve(__dirname, "../components/Sidebar.tsx"), "utf-8");
+  const chatPanelSrc = fs.readFileSync(path.resolve(__dirname, "../components/ChatPanel.tsx"), "utf-8");
+  const appSrc = fs.readFileSync(path.resolve(__dirname, "../App.tsx"), "utf-8");
+  const stylesSrc = fs.readFileSync(path.resolve(__dirname, "../styles.css"), "utf-8");
 
   // --- 修复1: 会话重命名 UI ---
   describe("修复1: 会话重命名 UI", () => {
-    it("SessionItem 接受 isEditing/editValue/onEditChange/onEditCommit/onEditCancel props", () => {
+    it("SessionItem 接受编辑相关 props + 渲染 input + 键盘处理 + onBlur + renameSession", () => {
+      // 合并 5 个 it 为 1 个，减少断言次数
       expect(sidebarSrc).toContain("isEditing");
       expect(sidebarSrc).toContain("editValue");
       expect(sidebarSrc).toContain("onEditChange");
       expect(sidebarSrc).toContain("onEditCommit");
       expect(sidebarSrc).toContain("onEditCancel");
-    });
-
-    it("SessionItem 在 isEditing 模式渲染 sidebar-session-edit-input", () => {
       expect(sidebarSrc).toContain("sidebar-session-edit-input");
       expect(sidebarSrc).toContain("autoFocus");
-    });
-
-    it("键盘处理: Enter 提交, Escape 取消", () => {
       expect(sidebarSrc).toContain('e.key === "Enter"');
       expect(sidebarSrc).toContain('e.key === "Escape"');
-    });
-
-    it("onBlur 自动提交", () => {
       expect(sidebarSrc).toContain("onBlur={onEditCommit}");
-    });
-
-    it("handleSaveRename 调用 renameSession 持久化", () => {
       expect(sidebarSrc).toContain("renameSession");
       expect(sidebarSrc).toContain("handleSaveRename");
-    });
-
-    it("CSS 包含 sidebar-session-edit-input 样式", () => {
       expect(stylesSrc).toContain(".sidebar-session-edit-input");
     });
   });
 
   // --- 修复2: 右键菜单触发 ---
   describe("修复2: 右键菜单触发", () => {
-    it("移除了不工作的 Radix DropdownMenu（不再 import）", () => {
-      // Sidebar.tsx 不再 import DropdownMenu 相关组件
+    it("移除 Radix DropdownMenu + 自定义 context menu + 3 个操作 + Escape 关闭 + CSS", () => {
       const dropdownImport = sidebarSrc.match(/import.*DropdownMenu.*from/m);
       expect(dropdownImport).toBeNull();
-    });
-
-    it("handleSessionContextMenu 设置 sessionContextMenu state（含 x/y 坐标）", () => {
       expect(sidebarSrc).toContain("sessionContextMenu");
       expect(sidebarSrc).toContain("setSessionContextMenu");
-    });
-
-    it("渲染 sidebar-session-context-menu 定位菜单", () => {
       expect(sidebarSrc).toContain("sidebar-session-context-menu");
       expect(sidebarSrc).toContain("context-menu-overlay");
-    });
-
-    it("菜单包含三个操作: 重命名/复制ID/删除", () => {
       expect(sidebarSrc).toContain("renameSession");
       expect(sidebarSrc).toContain("copySessionId");
       expect(sidebarSrc).toContain("deleteSession");
-    });
-
-    it("Escape 键关闭菜单", () => {
       expect(sidebarSrc).toContain('e.key === "Escape"');
       expect(sidebarSrc).toContain("setSessionContextMenu(null)");
-    });
-
-    it("CSS 包含 context-menu-overlay 和 sidebar-session-context-menu 样式", () => {
       expect(stylesSrc).toContain(".context-menu-overlay");
       expect(stylesSrc).toContain(".sidebar-session-context-menu");
     });
@@ -1157,20 +1116,10 @@ describe("三个已知问题修复验证（源码级）", () => {
 
   // --- 修复3: 重新生成功能 ---
   describe("修复3: 重新生成功能", () => {
-    it("ChatPanel 接口包含 onRegenerate prop", () => {
+    it("ChatPanel onRegenerate + onFork + qa-turn-footer 完整性", () => {
       expect(chatPanelSrc).toContain("onRegenerate?");
-    });
-
-    it("ChatPanel 解构 onRegenerate", () => {
-      expect(chatPanelSrc).toMatch(/onRegenerate/);
-    });
-
-    it("ChatPanel 在轮次底部渲染 onRegenerate 按钮", () => {
       expect(chatPanelSrc).toContain("isLastInTurn");
       expect(chatPanelSrc).toContain("onRegenerate");
-    });
-
-    it("ChatPanel 在轮次底部渲染 onFork 按钮", () => {
       expect(chatPanelSrc).toContain("onFork");
       expect(chatPanelSrc).toContain("qa-turn-footer");
     });

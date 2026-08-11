@@ -12,7 +12,7 @@
 > v0.94.0 已发布：配置方案 Portal 渲染彻底修复遮挡 + 新建方案自动展开配置面板 + 名称描述行内编辑 + 持久化修复（DB初始化时序） + 梦幻皮肤支持 GIF 和视频背景 + 3 种音频模式 + 音量控制。
 > v0.95.0 已发布：Vision Proxy MiMo v2.5 支持图片输入 + CLI/API 双模式视觉代理全链路打通（engine 获取 CLI token） + CSP 全面修复 + 梦幻皮肤视频背景打包修复 + 仓库清理 + 13 个 E2E 全场景测试（156 通过）。
 > v0.96.0 已发布：主对话窗口 UI 大改版（对标 frakio-work/wecode）+ 内联 Diff 批量审批（替换弹窗）+ 三皮肤暗色模式深度修复 + 梦幻皮肤自适应主题（data-theme 基于 palette.isDark）+ 富内容渲染系统（9 组件）+ Shiki 语法高亮 + 39 个新组件 + 3 个新依赖（framer-motion/shiki/xlsx）。42 个文件修改（+4,599/-1,866 行）。
-> v0.96.1 已发布：右侧栏文件浏览器体系重构（对标 wecode 固定宽度面板 420px）+ 文件拖拽修复（Tauri dragDropEnabled + dropEffect）+ 拖拽方向反转修复 + 文件编辑器悬浮窗口（createPortal 全屏预览）+ Hub 皮肤强制暗色 + TitleBar 主题初始化修复 + MentionAutocomplete 重写 + FileEditor 全格式预览（图片/PDF/Excel/Word/视频/音频/HTML）。19 个文件修改（+2,392/-414 行）。
+> v0.96.1 已发布：右侧栏文件浏览器体系重构（对标 wecode 固定宽度面板 420px）+ 文件拖拽修复（Tauri dragDropEnabled + dropEffect）+ 拖拽方向反转修复 + 文件编辑器悬浮窗口（createPortal 全屏预览）+ Hub 皮肤强制暗色 + TitleBar 主题初始化修复 + MentionAutocomplete 重写 + FileEditor 全格式预览（图片/PDF/Excel/Word/视频/音频/HTML）+ **应用 Logo 替换**（icos/codem.ico 紫色图标）+ **NSIS 安装包图标修复**（sharp/png-to-ico 生成 BMP 格式 ICO + installerIcon 配置）。19 个文件修改（+2,392/-414 行）。
 
 ## 待开发
 
@@ -59,6 +59,15 @@
 - [x] 输入 @ 弹出文件列表，支持过滤选择
 - [x] 文件/文件夹/笔记本类型图标区分（FileText/FileCode/FileImage/Folder）
 - [x] 键盘导航（上下箭头 + Enter 选择 + Esc 关闭）
+
+#### P1 — 应用 Logo 替换 + 安装包图标修复
+- [x] 应用 Logo 替换为 `icos/codem.ico`（紫色渐变背景 + 代码括号图标）
+- [x] 使用 `sharp` + `png-to-ico` 从 `codem-1024.png` 生成 BMP 格式多尺寸 ICO（16/24/32/48/64/128/256），解决 `tauri icon` 生成的 PNG 格式 ICO 在 Windows 资源编译器下颜色损坏问题
+- [x] 生成所有 PNG 图标文件（32x32 / 64x64 / 128x128 / 128x128@2x / icon.png / Square 系列 / StoreLogo）
+- [x] `tauri.conf.json` NSIS 配置新增 `installerIcon` 字段，显式指定安装器图标路径
+- [x] 全量 `cargo clean` + 重新构建，确保 `resource.lib` 正确嵌入新图标
+- [x] 验证安装包图标、codem.exe 图标、icon.ico 三者像素级一致（R=206 G=200 B=227 紫色）
+- [x] GitHub Release v0.96.1 安装包已更新为图标修复版
 
 ### v0.96.0 已发布（2026-08-08）
 
