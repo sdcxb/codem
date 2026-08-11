@@ -13,8 +13,66 @@
 > v0.95.0 已发布：Vision Proxy MiMo v2.5 支持图片输入 + CLI/API 双模式视觉代理全链路打通（engine 获取 CLI token） + CSP 全面修复 + 梦幻皮肤视频背景打包修复 + 仓库清理 + 13 个 E2E 全场景测试（156 通过）。
 > v0.96.0 已发布：主对话窗口 UI 大改版（对标 frakio-work/wecode）+ 内联 Diff 批量审批（替换弹窗）+ 三皮肤暗色模式深度修复 + 梦幻皮肤自适应主题（data-theme 基于 palette.isDark）+ 富内容渲染系统（9 组件）+ Shiki 语法高亮 + 39 个新组件 + 3 个新依赖（framer-motion/shiki/xlsx）。42 个文件修改（+4,599/-1,866 行）。
 > v0.96.1 已发布：右侧栏文件浏览器体系重构（对标 wecode 固定宽度面板 420px）+ 文件拖拽修复（Tauri dragDropEnabled + dropEffect）+ 拖拽方向反转修复 + 文件编辑器悬浮窗口（createPortal 全屏预览）+ Hub 皮肤强制暗色 + TitleBar 主题初始化修复 + MentionAutocomplete 重写 + FileEditor 全格式预览（图片/PDF/Excel/Word/视频/音频/HTML）+ **应用 Logo 替换**（icos/codem.ico 紫色图标）+ **NSIS 安装包图标修复**（sharp/png-to-ico 生成 BMP 格式 ICO + installerIcon 配置）。19 个文件修改（+2,392/-414 行）。
+> v0.96.2 已发布：CodeGraph 代码知识图谱集成（自动检测 .codegraph/ → MCP Server 注册 → 系统提示词注入 codegraph_explore 指导 → 设置页面"代码图谱"标签页）+ 测试套件改造（readFileSync+toContain → 真实模块行为验证）+ CI Workflow（tsc + vitest + cargo check）+ Vite watch EBUSY 修复 + CodeGraph 集成测试（49 用例 4 层覆盖）。全量 72 文件 / 2872 用例通过。
 
 ## 待开发
+
+### v0.96.2 已发布（2026-08-11）
+
+#### P0 — CodeGraph 代码知识图谱集成
+- [x] MCP 层自动检测与注册（`src/core/mcp/mcp.ts`）
+  - [x] `isCodeGraphEnabled()` / `setCodeGraphEnabled()` — 设置开关（默认启用，持久化到 SQLite）
+  - [x] `hasCodeGraphIndex(projectPath)` — 检测项目 `.codegraph/` 目录（调用 Rust `path_exists`）
+  - [x] `isCodeGraphInstalled()` — 检测 `codegraph` CLI 是否安装
+  - [x] `autoDetectCodeGraph(registry, projectPath)` — 自动连接 CodeGraph MCP Server（stdio: `codegraph mcp`）
+  - [x] `disconnectCodeGraph(registry)` — 断开连接（支持异常安全）
+  - [x] `hasCodeGraphTools(registry)` — 检查 codegraph 工具可用性（server name 或 tool name 前缀匹配）
+- [x] 系统提示词增强（`src/core/prompt/prompt.ts`）
+  - [x] `SystemPromptConfig` 新增 `codeGraphEnabled?: boolean` 字段
+  - [x] `buildSystemPrompt()` 注入 `# CodeGraph 代码图谱` / `# CodeGraph Code Intelligence` 指导
+  - [x] 中英文双语支持
+  - [x] 指导 agent 优先使用 `codegraph_explore` 替代多次 grep+read
+- [x] LLMEngine 集成（`src/core/llm/index.ts`）
+  - [x] `buildSystemPrompt()` 调用 `hasCodeGraphTools()` 检测当前工具状态
+  - [x] `buildSystemPromptAsync()` 在加载项目配置时调用 `autoDetectCodeGraph(this.mcp, cwd)`
+  - [x] 导出 `autoDetectCodeGraph` / `hasCodeGraphTools` / `isCodeGraphEnabled` 供外部调用
+- [x] 设置页面"代码图谱"标签页（`SettingsPanel.tsx` → `CodeGraphSettingsSection`）
+  - [x] 启用/禁用开关（实时生效，断开 MCP 连接）
+  - [x] CLI 状态检测（`codegraph --version`，显示已安装/未安装 + 安装命令）
+  - [x] 当前项目索引状态（检测 `.codegraph/` 是否存在）
+  - [x] 一键构建代码图谱（`codegraph init`）
+  - [x] 基准数据展示（88% 工具调用减少 / 62% token 节省等）
+
+#### P0 — 测试套件改造（表面测试 → 行为测试）
+- [x] `phase-b-f-regression.test.ts` B1-B3+B8
+  - [x] B1: `readFileSync` + `toContain` → `parseSkillMarkdown()` 解析真实 SKILL.md 验证返回字段
+  - [x] B2: 读 `provider.ts` 检查方法名 → `getSkillToolRegistry()` + `getBuiltinProviderFactory()` 行为验证
+  - [x] B3: 读 6 个文件检查 `export function` → `await import()` 动态加载验证导出
+  - [x] B8: 读 `skill.ts` 检查 `buildSkillPrompt` 字符串 → `getSkillRegistry().buildSkillPrompt()` 返回字符串
+- [x] `encoding-tools.test.ts` — 硬编码 description 字符串 → `createDefaultToolRegistry().get("bash")` 真实工具验证
+- [x] `context-consistency.test.ts` P0-1 — 模拟 `buildMemoryPrompt` → `getMemoryService().buildMemoryPrompt("project")` 真实调用
+- [x] `refactor-prompt-to-data.test.ts` — 真实 `buildSubagentSystemPrompt()` 输出验证
+- [x] `regression-coding-cross-impact.test.ts` — LoopEvent 类型检查 + ToolRegistry 行为验证
+- [x] `ui-batch-a-d.test.ts` — 合并 13 个碎 `it` 为 3 个完整性检查
+
+#### P1 — CI Workflow + 构建修复
+- [x] 新增 `.github/workflows/ci.yml`（4 步：`npm ci` + `tsc --noEmit` + `vitest run` + `cargo check`）
+- [x] 修复 Vite dev server EBUSY 错误（`vite.config.ts` 添加 `watch.ignored: ["**/src-tauri/target/**"]`）
+- [x] CI 命令本地逐条验证通过
+
+#### P0 — CodeGraph 集成测试
+- [x] 新增 `src/test/codegraph-integration.test.ts` — 49 个用例
+  - [x] MCP 层（22 用例）：设置读写、索引检测、CLI 检测、自动连接、断开、工具匹配、幂等性
+  - [x] Prompt 层（7 用例）：中英文注入、禁用不注入、MCP Tools 共存
+  - [x] LLMEngine 集成（6 用例）：导出验证、工具联动
+  - [x] 端到端流程（3 用例）：启用→检测→连接→工具→提示词、禁用→不检测、断开→工具消失
+  - [x] 边界场景（11 用例）：null/undefined 路径、空格/中文路径、重复设置、双匹配规则、项目切换
+
+#### 验证
+- [x] `tsc --noEmit`：零错误
+- [x] `vitest run`：72 文件 / 2872 用例全部通过
+- [x] `cargo check`：Exit 0
+- [x] GitHub Release v0.96.2 安装包已上传（NSIS + MSI）
 
 ### v0.96.1 已发布（2026-08-09）
 

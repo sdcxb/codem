@@ -272,6 +272,28 @@ npm run tauri:build
 
 ## 更新日志
 
+### 2026-08-11（v0.96.2）
+
+> 本次更新为 CodeGraph 代码知识图谱集成 + 测试套件从"表面测试"改造为"行为测试" + CI Workflow + CodeGraph 集成测试（49 用例 4 层覆盖）。全量 72 文件 / 2872 用例通过。
+
+**P0 — CodeGraph 代码知识图谱集成：**
+- MCP 层自动检测与注册：打开含 `.codegraph/` 目录的项目时，自动连接 CodeGraph MCP Server（stdio: `codegraph mcp`），agent 获得 `codegraph_explore` 工具
+- 系统提示词增强：注入"优先使用 codegraph_explore 替代多次 grep+read"指导，中英文双语
+- 设置页面新增"代码图谱"标签页：启用/禁用开关、CLI 状态检测、项目索引状态、一键构建（`codegraph init`）、安装命令引导
+- LLMEngine 集成：`buildSystemPromptAsync()` 打开项目时自动检测 `.codegraph/` 并连接 MCP Server
+
+**P0 — 测试套件改造（表面测试 → 行为测试）：**
+- `phase-b-f-regression.test.ts` B1-B3+B8：`readFileSync` + `toContain` 改为 `parseSkillMarkdown()` / `getSkillToolRegistry()` / `await import()` / `buildSkillPrompt()` 真实模块调用
+- `encoding-tools.test.ts`：硬编码 description 字符串改为 `createDefaultToolRegistry().get("bash")` 真实工具验证
+- `context-consistency.test.ts` P0-1：模拟 `buildMemoryPrompt` 改为 `getMemoryService().buildMemoryPrompt("project")` 真实调用
+
+**P1 — CI Workflow + 构建修复：**
+- 新增 `.github/workflows/ci.yml`（`npm ci` + `tsc --noEmit` + `vitest run` + `cargo check`）
+- 修复 Vite dev server EBUSY 错误（`vite.config.ts` 添加 `watch.ignored: ["**/src-tauri/target/**"]`）
+
+**P0 — CodeGraph 集成测试：**
+- 新增 `src/test/codegraph-integration.test.ts` — 49 个用例，4 层覆盖（MCP 层 / Prompt 层 / LLMEngine 集成 / 端到端 + 边界场景）
+
 ### 2026-08-08（v0.96.0）
 
 > 本次更新为主对话窗口 UI 大改版：全面对标 frakio-work / wecode 的消息流展示样式 + 内联 Diff 批量审批替换弹窗 + 三皮肤暗色模式深度修复 + 梦幻皮肤自适应主题 + 富内容渲染系统 + 39 个新组件 + 3 个新依赖（framer-motion / shiki / xlsx）。42 个文件修改（+4,599 / -1,866 行），39 个新文件。

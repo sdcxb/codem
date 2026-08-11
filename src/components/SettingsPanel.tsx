@@ -46,6 +46,7 @@ import {
   Bot,
   Layers,
   Wrench,
+  Network,
   PawPrint,
   Zap,
   HelpCircle,
@@ -295,7 +296,7 @@ export function SettingsPanel({ onClose, onSessionRecovery, onUsageStats, initia
   const [testResult, setTestResult] = useState<string>("");
 const [showModelProfiles, setShowModelProfiles] = useState(false);
 const [showMultimodal, setShowMultimodal] = useState(false);
-const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security" | "git" | "environment" | "worktree" | "knowledge" | "automation" | "multimodal" | "pet" | "tools" | "advanced" | "help" | "usage">((initialTab as any) || "general");
+const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security" | "git" | "environment" | "worktree" | "knowledge" | "automation" | "multimodal" | "pet" | "tools" | "codegraph" | "advanced" | "help" | "usage">((initialTab as any) || "general");
   // P2 #36: Settings search
   const [settingsSearch, setSettingsSearch] = useState("");
   const [advancedSubTab, setAdvancedSubTab] = useState<"agents" | "heartbeat" | "retry" | "prompt" | "settings" | "recovery" | "correction" | "profiles" | "transcript">("agents");
@@ -489,6 +490,9 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
             </button>
             <button className={`settings-sidebar-item ${activeTab === "tools" ? "active" : ""}`} onClick={() => setActiveTab("tools")}>
               <span className="sidebar-icon"><Wrench size={16} /></span>{lang === "zh" ? "工具" : "Tools"}
+            </button>
+            <button className={`settings-sidebar-item ${activeTab === "codegraph" ? "active" : ""}`} onClick={() => setActiveTab("codegraph")}>
+              <span className="sidebar-icon"><Network size={16} /></span>{lang === "zh" ? "代码图谱" : "CodeGraph"}
             </button>
             <button className={`settings-sidebar-item ${activeTab === "pet" ? "active" : ""}`} onClick={() => setActiveTab("pet")}>
               <span className="sidebar-icon"><PawPrint size={16} /></span>{lang === "zh" ? "宠物" : "Pet"}
@@ -1129,6 +1133,9 @@ marginTop: 4,
 {/* Tool Registry Management */}
 <ToolManager onClose={() => {}} />
 </>
+)}
+{activeTab === "codegraph" && (
+<CodeGraphSettingsSection lang={lang} />
 )}
 {activeTab === "advanced" && (
 <>
@@ -2537,6 +2544,176 @@ function TranscriptCacheStats({ lang }: { lang: Language }) {
           <input type="checkbox" checked={autoRefresh} onChange={(e) => setAutoRefresh(e.target.checked)} />
           {zh ? "自动刷新" : "Auto refresh"}
         </label>
+      </div>
+    </div>
+  );
+}
+
+// ========== CodeGraph Settings Section ==========
+
+function CodeGraphSettingsSection({ lang }: { lang: ReturnType<typeof useLang> }) {
+  const zh = lang === "zh";
+  const [enabled, setEnabled] = useState(() => {
+    try {
+      const { isCodeGraphEnabled } = require("../core/mcp/mcp");
+      return isCodeGraphEnabled();
+    } catch { return true; }
+  });
+  const [status, setStatus] = useState<"checking" | "installed" | "not_installed">("checking");
+  const [projectPath, setProjectPath] = useState("");
+  const [hasIndex, setHasIndex] = useState(false);
+  const [initRunning, setInitRunning] = useState(false);
+  const [initOutput, setInitOutput] = useState("");
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const { invoke } = (window as any).__TAURI__.core;
+        const result = await invoke("execute_command", {
+          command: "codegraph --version",
+          cwd: null,
+        });
+        const stderr = result.stderr || "";
+        if (stderr.includes("not recognized") || stderr.includes("not found")) {
+          setStatus("not_installed");
+        } else {
+          setStatus("installed");
+        }
+      } catch {
+        setStatus("not_installed");
+      }
+    })();
+  }, []);
+
+  useEffect(() => {
+    try {
+      const { getSetting } = require("../core/storage/settings");
+      const p = getSetting("codem-current-project-path") || "";
+      setProjectPath(p);
+      if (p) {
+        const { invoke } = (window as any).__TAURI__.core;
+        invoke("path_exists", { path: `${p}/.codegraph` }).then((exists: boolean) => {
+          setHasIndex(exists);
+        }).catch(() => setHasIndex(false));
+      }
+    } catch {}
+  }, []);
+
+  const handleToggle = (checked: boolean) => {
+    setEnabled(checked);
+    try {
+      const { setCodeGraphEnabled, disconnectCodeGraph, getMCPRegistry } = require("../core/mcp/mcp");
+      setCodeGraphEnabled(checked);
+      if (!checked) {
+        disconnectCodeGraph(getMCPRegistry());
+      }
+      window.dispatchEvent(new CustomEvent("codem-codegraph-config-changed", { detail: { enabled: checked } }));
+    } catch {}
+  };
+
+  const handleInit = async () => {
+    if (!projectPath) return;
+    setInitRunning(true);
+    setInitOutput(zh ? "正在构建代码图谱..." : "Building code graph...");
+    try {
+      const { invoke } = (window as any).__TAURI__.core;
+      const result = await invoke("execute_command", {
+          command: "codegraph init",
+          cwd: projectPath,
+        });
+      setInitOutput(result.stdout || result.stderr || (zh ? "完成" : "Done"));
+      setHasIndex(true);
+    } catch (e: any) {
+      setInitOutput(zh ? `失败: ${e.message || e}` : `Failed: ${e.message || e}`);
+    } finally {
+      setInitRunning(false);
+    }
+  };
+
+  return (
+    <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 16 }}>
+      <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>
+        {zh ? "🔗 CodeGraph 代码知识图谱" : "🔗 CodeGraph Code Intelligence"}
+      </h3>
+      <p style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.6, margin: 0 }}>
+        {zh
+          ? "CodeGraph 把代码库从\"文件集合\"转换成\"可查询的关系图\"，帮助 AI 更快理解大型项目。Agent 用一次 codegraph_explore 调用替代 10-20 次 grep+read，大幅减少 token 消耗。"
+          : "CodeGraph transforms your codebase from a \"collection of files\" into a \"queryable relationship graph\", helping AI understand large projects faster. One codegraph_explore call replaces 10-20 grep+read calls, dramatically reducing token usage."}
+      </p>
+
+      <div style={{ padding: 16, borderRadius: 6, background: "var(--bg-tertiary)", border: "1px solid var(--border-primary)" }}>
+        <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontSize: 13 }}>
+          <input type="checkbox" checked={enabled} onChange={(e) => handleToggle(e.target.checked)} style={{ width: 16, height: 16 }} />
+          <span style={{ fontWeight: 600 }}>{zh ? "启用 CodeGraph 集成" : "Enable CodeGraph Integration"}</span>
+        </label>
+        <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4, marginLeft: 24 }}>
+          {zh
+            ? "开启后，打开包含 .codegraph/ 目录的项目时自动连接 CodeGraph MCP Server，agent 将获得 codegraph_explore 工具。"
+            : "When enabled, opening a project with a .codegraph/ directory auto-connects the CodeGraph MCP Server. The agent gains the codegraph_explore tool."}
+        </div>
+      </div>
+
+      <div style={{ padding: 16, borderRadius: 6, background: "var(--bg-tertiary)", border: "1px solid var(--border-primary)" }}>
+        <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 8 }}>{zh ? "CLI 状态" : "CLI Status"}</div>
+        {status === "checking" && <div style={{ fontSize: 12, color: "var(--text-muted)" }}>{zh ? "检测中..." : "Checking..."}</div>}
+        {status === "installed" && <div style={{ fontSize: 12, color: "#22c55e" }}>✓ {zh ? "codegraph CLI 已安装" : "codegraph CLI is installed"}</div>}
+        {status === "not_installed" && (
+          <div>
+            <div style={{ fontSize: 12, color: "#e74c3c", marginBottom: 8 }}>✗ {zh ? "codegraph CLI 未安装" : "codegraph CLI is not installed"}</div>
+            <div style={{ fontSize: 11, color: "var(--text-muted)", lineHeight: 1.5 }}>
+              {zh ? "安装命令（PowerShell）：" : "Install command (PowerShell):"}
+              <br />
+              <code style={{ background: "var(--bg-secondary)", padding: "2px 6px", borderRadius: 3, fontSize: 11 }}>
+                irm https://raw.githubusercontent.com/colbymchenry/codegraph/main/install.ps1 | iex
+              </code>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {projectPath && (
+        <div style={{ padding: 16, borderRadius: 6, background: "var(--bg-tertiary)", border: "1px solid var(--border-primary)" }}>
+          <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 8 }}>{zh ? "当前项目" : "Current Project"}</div>
+          <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 8, wordBreak: "break-all" }}>{projectPath}</div>
+          <div style={{ fontSize: 12, marginBottom: 8 }}>
+            {hasIndex ? (
+              <span style={{ color: "#22c55e" }}>✓ {zh ? "已有 .codegraph/ 索引" : ".codegraph/ index exists"}</span>
+            ) : (
+              <span style={{ color: "#e74c3c" }}>✗ {zh ? "未找到 .codegraph/ 索引" : ".codegraph/ index not found"}</span>
+            )}
+          </div>
+          {!hasIndex && status === "installed" && (
+            <button
+              onClick={handleInit}
+              disabled={initRunning}
+              style={{
+                padding: "8px 16px", fontSize: 12, cursor: initRunning ? "wait" : "pointer",
+                background: "var(--accent)", border: "none", borderRadius: 4, color: "white",
+                fontWeight: 500, opacity: initRunning ? 0.6 : 1,
+              }}
+            >
+              {initRunning ? (zh ? "构建中..." : "Building...") : (zh ? "🔨 构建代码图谱" : "🔨 Build Code Graph")}
+            </button>
+          )}
+          {initOutput && (
+            <pre style={{ marginTop: 8, padding: 8, background: "var(--bg-secondary)", borderRadius: 4, fontSize: 11, overflow: "auto", maxHeight: 200, whiteSpace: "pre-wrap" }}>
+              {initOutput}
+            </pre>
+          )}
+        </div>
+      )}
+
+      <div style={{ padding: 16, borderRadius: 6, background: "var(--bg-secondary)", border: "1px solid var(--border-primary)" }}>
+        <div style={{ fontSize: 12, fontWeight: 500, marginBottom: 8 }}>
+          {zh ? "📊 实测效果（7 个真实项目基准）" : "📊 Measured Results (7 real-world repos)"}
+        </div>
+        <div style={{ fontSize: 11, color: "var(--text-muted)", lineHeight: 1.6 }}>
+          {zh ? "• 工具调用次数减少 88%（28 次 → 2 次）" : "• Tool calls reduced 88% (28 → 2)"}<br />
+          {zh ? "• 文件读取次数降为零（19 次 → 0 次）" : "• File reads reduced to zero (19 → 0)"}<br />
+          {zh ? "• Token 消耗减少 62%" : "• Token usage reduced 62%"}<br />
+          {zh ? "• 费用降低 44%" : "• Cost reduced 44%"}<br />
+          {zh ? "• 响应时间快 53%" : "• Response time 53% faster"}
+        </div>
       </div>
     </div>
   );

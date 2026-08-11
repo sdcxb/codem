@@ -1063,6 +1063,48 @@ npm run tauri build        # 构建 NSIS exe + MSI
 
 ## 八、版本历史
 
+### v0.96.2（2026-08-11）— CodeGraph 集成 + 测试改造 + CI Workflow
+
+**CodeGraph 代码知识图谱集成**
+- 新增 CodeGraph 自动检测与 MCP Server 注册（`src/core/mcp/mcp.ts`）
+  - `isCodeGraphEnabled()` / `setCodeGraphEnabled()` — 设置开关（默认启用）
+  - `hasCodeGraphIndex(projectPath)` — 检测项目 `.codegraph/` 目录
+  - `autoDetectCodeGraph(registry, projectPath)` — 自动连接 CodeGraph MCP Server（stdio: `codegraph mcp`）
+  - `disconnectCodeGraph(registry)` — 断开连接
+  - `hasCodeGraphTools(registry)` — 检查 codegraph 工具可用性
+- 系统提示词增强（`src/core/prompt/prompt.ts`）— `codeGraphEnabled` 字段注入"优先使用 codegraph_explore"指导
+- LLMEngine 集成（`src/core/llm/index.ts`）— `buildSystemPromptAsync()` 打开项目时自动检测 `.codegraph/` 并连接 MCP Server
+- 设置页面新增"代码图谱"标签页（`SettingsPanel.tsx` → `CodeGraphSettingsSection`）
+  - 启用/禁用开关
+  - CLI 状态检测（`codegraph --version`）
+  - 当前项目索引状态 + 一键构建（`codegraph init`）
+  - 安装命令引导 + 基准数据展示
+
+**测试套件改造 — 表面测试 → 行为测试**
+- `phase-b-f-regression.test.ts` B1-B3+B8：`readFileSync` + `toContain` 改为真实模块调用
+  - B1: `parseSkillMarkdown()` 解析测试 SKILL.md 验证返回字段
+  - B2: `getSkillToolRegistry()` + `getBuiltinProviderFactory()` 行为验证
+  - B3: `await import()` 动态加载验证导出
+  - B8: `getSkillRegistry().buildSkillPrompt()` 返回字符串验证
+- `encoding-tools.test.ts`：硬编码 description 字符串改为 `createDefaultToolRegistry().get("bash")` 真实工具验证
+- `context-consistency.test.ts` P0-1：模拟 `buildMemoryPrompt` 改为 `getMemoryService().buildMemoryPrompt("project")` 真实调用
+
+**CI Workflow + 构建修复**
+- 新增 `.github/workflows/ci.yml`（`npm ci` + `tsc --noEmit` + `vitest run` + `cargo check`）
+- 修复 Vite dev server EBUSY 错误（`vite.config.ts` 添加 `watch.ignored: ["**/src-tauri/target/**"]`）
+
+**CodeGraph 集成测试**
+- 新增 `src/test/codegraph-integration.test.ts` — 49 个用例，4 层覆盖：
+  - MCP 层（22 用例）：设置读写、索引检测、CLI 检测、自动连接、断开、工具匹配
+  - Prompt 层（7 用例）：中英文注入、禁用不注入、MCP Tools 共存
+  - LLMEngine 集成（6 用例）：导出验证、工具联动
+  - 端到端 + 边界场景（14 用例）：完整流程、null/undefined 路径、中文路径、幂等性、项目切换
+
+**验证结果**
+- `tsc --noEmit`：零错误
+- `vitest run`：72 文件 / 2872 用例全部通过
+- `cargo check`：Exit 0
+
 ### v0.96.1（2026-08-10）— 右侧栏文件浏览器优化 + 拖拽修复 + 暗色模式修复 + Logo替换
 
 **右侧栏文件浏览器体系重构**

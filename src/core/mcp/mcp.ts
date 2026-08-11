@@ -1,5 +1,5 @@
 // ========== MCP Types ==========
-import { getSettingJSON, setSettingJSON } from "../storage/settings";
+import { getSettingJSON, setSettingJSON, getSetting, setSetting } from "../storage/settings";
 
 export interface MCPServerConfig {
   /** Server name */
@@ -411,6 +411,102 @@ export class MCPRegistry {
   getClient(): MCPClient {
     return this.client;
   }
+}
+
+// ========== CodeGraph Auto-Detection ==========
+
+/** The MCP server name used for CodeGraph integration */
+export const CODEGRAPH_SERVER_NAME = "codegraph";
+
+/** Check if CodeGraph is enabled in settings (default: true) */
+export function isCodeGraphEnabled(): boolean {
+  try {
+    return getSetting("codem-codegraph-enabled") !== "false";
+  } catch {
+    return true;
+  }
+}
+
+/** Enable or disable CodeGraph integration */
+export function setCodeGraphEnabled(enabled: boolean): void {
+  try {
+    setSetting("codem-codegraph-enabled", enabled ? "true" : "false");
+  } catch {}
+}
+
+/** Check if a project has a .codegraph/ directory (graph already built) */
+export async function hasCodeGraphIndex(projectPath: string): Promise<boolean> {
+  try {
+    const { invoke } = (window as any).__TAURI__.core;
+    return await invoke("path_exists", { path: `${projectPath}/.codegraph` });
+  } catch {
+    return false;
+  }
+}
+
+/** Check if codegraph CLI is available on the system */
+export async function isCodeGraphInstalled(): Promise<boolean> {
+  try {
+    const { invoke } = (window as any).__TAURI__.core;
+    const result = await invoke("execute_command", {
+      command: "codegraph --version",
+      cwd: null,
+    });
+    return !result.stderr?.includes("not recognized");
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Auto-detect CodeGraph in a project and register as MCP server.
+ * Called when a project is opened or a chat session starts.
+ * Returns true if CodeGraph MCP was connected (or already connected).
+ */
+export async function autoDetectCodeGraph(
+  registry: MCPRegistry,
+  projectPath: string
+): Promise<boolean> {
+  if (!isCodeGraphEnabled()) return false;
+  if (!projectPath) return false;
+
+  // Check if .codegraph/ exists in the project
+  const hasIndex = await hasCodeGraphIndex(projectPath);
+  if (!hasIndex) return false;
+
+  // Check if already connected
+  const existing = registry.getClient().getStatus(CODEGRAPH_SERVER_NAME);
+  if (existing?.status === "connected") return true;
+
+  // Connect to codegraph MCP server (stdio transport)
+  try {
+    await registry.connect({
+      name: CODEGRAPH_SERVER_NAME,
+      transport: "stdio",
+      command: "codegraph",
+      args: ["mcp"],
+      autoReconnect: true,
+    });
+    return true;
+  } catch (error) {
+    console.error("[CodeGraph] Failed to connect MCP server:", error);
+    return false;
+  }
+}
+
+/** Disconnect CodeGraph MCP server (when disabled or project changes) */
+export async function disconnectCodeGraph(registry: MCPRegistry): Promise<void> {
+  try {
+    await registry.disconnect(CODEGRAPH_SERVER_NAME);
+  } catch {}
+}
+
+/** Check if CodeGraph MCP tools are currently available */
+export function hasCodeGraphTools(registry: MCPRegistry): boolean {
+  const tools = registry.getAllTools();
+  return tools.some(
+    (t) => t.server === CODEGRAPH_SERVER_NAME || t.name.startsWith("codegraph_")
+  );
 }
 
 // ========== Singleton ==========

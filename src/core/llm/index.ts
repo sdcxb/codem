@@ -20,7 +20,7 @@ import { ContextManager, getContextManager, type CompactionConfig } from "../con
 import { MemoryService, getMemoryService, type MemoryScope } from "../memory/memory";
 import { RetryExecutor, getRetryExecutor } from "../retry/retry";
 import { buildSystemPrompt, type SystemPromptConfig } from "../prompt/prompt";
-import { MCPRegistry, getMCPRegistry, type MCPServerConfig, type MCPTool } from "../mcp/mcp";
+import { MCPRegistry, getMCPRegistry, type MCPServerConfig, type MCPTool, autoDetectCodeGraph, hasCodeGraphTools, isCodeGraphEnabled } from "../mcp/mcp";
 import { SkillRegistry, getSkillRegistry, type SkillDefinition } from "../skill/skill";
 import { SnapshotService, getSnapshotService, type Snapshot, type FileChange } from "../snapshot/snapshot";
 import { SubagentManager, getSubagentManager, type SubagentTask, type SubagentResult } from "../subagent/subagent";
@@ -51,7 +51,7 @@ export { ContextManager, getContextManager } from "../context/context";
 export { MemoryService, getMemoryService } from "../memory/memory";
 export { RetryExecutor, getRetryExecutor, logRetry } from "../retry/retry";
 export { buildSystemPrompt } from "../prompt/prompt";
-export { MCPRegistry, getMCPRegistry } from "../mcp/mcp";
+export { MCPRegistry, getMCPRegistry, autoDetectCodeGraph, hasCodeGraphTools, isCodeGraphEnabled } from "../mcp/mcp";
 export { SkillRegistry, getSkillRegistry } from "../skill/skill";
 export { SnapshotService, getSnapshotService } from "../snapshot/snapshot";
 export { SubagentManager, getSubagentManager } from "../subagent/subagent";
@@ -292,6 +292,7 @@ private config: LLMEngineConfig;
     const mcpPrompt = mcpTools.length > 0
       ? mcpTools.map((t) => `- **${t.server}/${t.name}**: ${t.description}`).join("\n")
       : "";
+    const codeGraphActive = hasCodeGraphTools(this.mcp);
 
     const identity = loadAppIdentity();
     const user = loadUserConfig();
@@ -312,6 +313,7 @@ private config: LLMEngineConfig;
       memoryInstructions: memoryPrompt || undefined,
       skillInstructions: fullSkillPrompt,
       mcpInstructions: mcpPrompt,
+      codeGraphEnabled: codeGraphActive,
     };
 
     const prompt = buildSystemPrompt(config);
@@ -343,6 +345,7 @@ private config: LLMEngineConfig;
     const mcpPrompt = mcpTools.length > 0
       ? mcpTools.map((t) => `- **${t.server}/${t.name}**: ${t.description}`).join("\n")
       : "";
+    const codeGraphActive = hasCodeGraphTools(this.mcp);
 
     const identity = loadAppIdentity();
     const user = loadUserConfig();
@@ -367,6 +370,13 @@ private config: LLMEngineConfig;
         gitConfig = getSettingJSON<import("../settings/settings").GitConfig | null>("codem-git-config", null) || undefined;
         // Load Environment config
         environmentConfig = getSettingJSON<import("../settings/settings").EnvironmentConfig | null>("codem-env-config", null) || undefined;
+
+        // Auto-detect CodeGraph: if .codegraph/ exists, connect MCP server
+        try {
+          await autoDetectCodeGraph(this.mcp, cwd);
+        } catch (e) {
+          console.log("[CodeGraph] auto-detect skipped:", e);
+        }
       } catch {}
     }
 
@@ -381,6 +391,7 @@ private config: LLMEngineConfig;
       projectInstructions,
       skillInstructions: fullSkillPrompt,
       mcpInstructions: mcpPrompt,
+      codeGraphEnabled: codeGraphActive || hasCodeGraphTools(this.mcp),
       knowledgeContext,
       gitConfig,
       environmentConfig,
