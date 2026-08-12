@@ -194,7 +194,8 @@ async function getHover(
   }
 
   // If not found in file, search workspace
-  const defResult = await findDefinition(symbol, file.substring(0, file.lastIndexOf(/[\\/]/.test(file) ? /[\\/]/ : "/")));
+  const lastSep = /[\\/]/.test(file) ? file.lastIndexOf(/[\\/]/.exec(file)![0]) : file.lastIndexOf("/");
+  const defResult = await findDefinition(symbol, file.substring(0, lastSep));
   return defResult;
 }
 

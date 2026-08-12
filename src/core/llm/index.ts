@@ -993,10 +993,16 @@ return loop.hasPendingGuidance();
       content: userMessage,
     });
 
+    // Prepend system prompt as a system message
+    forkedMessages.unshift({
+      id: `fork-system-${Date.now()}`,
+      role: "system" as const,
+      content: systemPrompt,
+    });
+
     try {
       const response = await provider.complete({
         model: resolved.modelId,
-        systemPrompt,
         messages: forkedMessages,
         temperature: options?.temperature ?? 0.3,
         stream: false,

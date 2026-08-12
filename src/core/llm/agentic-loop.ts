@@ -515,7 +515,7 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
         return { type: "aborted" };
       }
 
-      const apiMessages = this.buildMessages(sessionId);
+      const apiMessages = await this.buildMessages(sessionId);
       // P2/P4: Filter tool definitions based on runtime context.
       // - Plan mode: write/edit/multi_edit/tts/image_gen tools are hidden (enforced at registration layer)
       // - read_attachment: only available when conversation has document attachments
@@ -608,7 +608,7 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
         if (this.config.memoryEnabled && this.config.onCompactionComplete) {
           try { this.config.onCompactionComplete(); } catch {}
         }
-        messagesForIteration = this.buildMessages(sessionId);
+        messagesForIteration = await this.buildMessages(sessionId);
         this.state.compactedThisIteration = true;
         this.state.consecutiveCompactions++;
       } else {
@@ -1217,7 +1217,7 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
         messageId: assistantMsgId,
         cwd,
         // P1-6: Don't use ctx.abort — let each tool have its own abortController
-        abort: undefined,
+        abort: undefined as any,
         // NOTE: Do NOT call buildMessages() here — it would pollute the cache
         // with a fingerprint where tool calls are still "running" (no results yet).
         // The next iteration's buildMessages would then get a cache hit and return
@@ -1570,7 +1570,7 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
    *   - Priority 2 (MEDIUM): Recent assistant+tool messages
    *   - Priority 1 (LOW): Old tool results and assistant text — drop first
    */
-  private buildMessages(sessionId: string): any[] {
+  private async buildMessages(sessionId: string): Promise<any[]> {
     const messages = MessageStorage.listMessages(sessionId);
 
     // --- E3: Incremental message building ---
