@@ -176,19 +176,17 @@ describe("Git Worktree 影响 — 环境模式与消息链路", () => {
   });
 
   // IMPACT-011
-  it("IMPACT-011: Session updateSession 忽略未知字段 executionMode", () => {
-    // executionMode is not a DB column — updateSession should silently ignore it
+  it("IMPACT-011: Session updateSession 更新 executionMode", () => {
     SessionStorage.updateSession(SESSION_ID, { executionMode: "git_worktree" } as any);
     const sess = SessionStorage.getSession(SESSION_ID);
-    expect(sess).toBeDefined();
+    expect((sess as any).executionMode).toBe("git_worktree");
   });
 
   // IMPACT-012
-  it("IMPACT-012: Session updateSession 忽略未知字段 worktreePath", () => {
-    // worktreePath is not a DB column — updateSession should silently ignore it
+  it("IMPACT-012: Session updateSession 设置 worktreePath", () => {
     SessionStorage.updateSession(SESSION_ID, { worktreePath: "/tmp/wt-1" } as any);
     const sess = SessionStorage.getSession(SESSION_ID);
-    expect(sess).toBeDefined();
+    expect((sess as any).worktreePath).toBe("/tmp/wt-1");
   });
 
   // IMPACT-013

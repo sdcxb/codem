@@ -558,6 +558,9 @@ const migrations = [
 "ALTER TABLE sessions ADD COLUMN correction_mode INTEGER DEFAULT 0",
 "ALTER TABLE sessions ADD COLUMN deep_thinking_mode INTEGER DEFAULT 0",
 "ALTER TABLE sessions ADD COLUMN preserve_executor INTEGER DEFAULT 0",
+"ALTER TABLE sessions ADD COLUMN execution_mode TEXT",
+"ALTER TABLE sessions ADD COLUMN worktree_path TEXT",
+"ALTER TABLE sessions ADD COLUMN worktree_branch TEXT",
 ];
   for (const sql of migrations) {
     try { db.run(sql); } catch (e) { /* column already exists */ }

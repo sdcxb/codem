@@ -10,6 +10,12 @@ export interface SessionRow {
   last_message_at: number;
   message_count: number;
   pinned: number;
+  execution_mode?: string | null;
+  worktree_path?: string | null;
+  worktree_branch?: string | null;
+  correction_mode?: number | null;
+  deep_thinking_mode?: number | null;
+  preserve_executor?: number | null;
 }
 
 function rowToSession(row: SessionRow): Session {
@@ -22,6 +28,12 @@ function rowToSession(row: SessionRow): Session {
     lastMessageAt: row.last_message_at,
     messageCount: row.message_count,
     pinned: row.pinned === 1,
+    executionMode: (row.execution_mode as Session["executionMode"]) ?? undefined,
+    worktreePath: row.worktree_path ?? undefined,
+    worktreeBranch: row.worktree_branch ?? undefined,
+    correctionMode: row.correction_mode ?? undefined,
+    deepThinkingMode: row.deep_thinking_mode ?? undefined,
+    preserveExecutor: row.preserve_executor === 1 ? true : row.preserve_executor === 0 ? false : undefined,
   };
 }
 
@@ -34,9 +46,16 @@ function rowToSessionFromAny(row: any[]): Session {
     created_at: row[4] as number,
     last_message_at: row[5] as number,
     message_count: row[6] as number,
-    pinned: row[7] as number ?? 0,
+    pinned: row[7] as number,
+    correction_mode: row[8] as number | null,
+    deep_thinking_mode: row[9] as number | null,
+    preserve_executor: row[10] as number | null,
+    execution_mode: row[11] as string | null,
+    worktree_path: row[12] as string | null,
+    worktree_branch: row[13] as string | null,
   });
 }
+
 
 export function listSessions(projectId: string): Session[] {
   const db = getDatabase();
@@ -58,7 +77,7 @@ export function getSession(id: string): Session | null {
 export function createSession(session: Session): void {
   const db = getDatabase();
   db.run(
-    "INSERT INTO sessions (id, project_id, title, model, created_at, last_message_at, message_count, pinned) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+    "INSERT INTO sessions (id, project_id, title, model, created_at, last_message_at, message_count, pinned, execution_mode, worktree_path, worktree_branch, correction_mode, deep_thinking_mode, preserve_executor) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     [
       session.id,
       session.projectId,
@@ -68,6 +87,12 @@ export function createSession(session: Session): void {
       session.lastMessageAt,
       session.messageCount,
       session.pinned ? 1 : 0,
+      session.executionMode ?? null,
+      session.worktreePath ?? null,
+      session.worktreeBranch ?? null,
+      session.correctionMode ?? null,
+      session.deepThinkingMode ?? null,
+      session.preserveExecutor === true ? 1 : session.preserveExecutor === false ? 0 : null,
     ]
   );
   persistDatabase();
@@ -83,6 +108,12 @@ export function updateSession(id: string, update: Partial<Session>): void {
   if (update.lastMessageAt !== undefined) { fields.push("last_message_at = ?"); values.push(update.lastMessageAt); }
   if (update.messageCount !== undefined) { fields.push("message_count = ?"); values.push(update.messageCount); }
   if (update.pinned !== undefined) { fields.push("pinned = ?"); values.push(update.pinned ? 1 : 0); }
+  if (update.executionMode !== undefined) { fields.push("execution_mode = ?"); values.push(update.executionMode ?? null); }
+  if (update.worktreePath !== undefined) { fields.push("worktree_path = ?"); values.push(update.worktreePath ?? null); }
+  if (update.worktreeBranch !== undefined) { fields.push("worktree_branch = ?"); values.push(update.worktreeBranch ?? null); }
+  if (update.correctionMode !== undefined) { fields.push("correction_mode = ?"); values.push(update.correctionMode ?? null); }
+  if (update.deepThinkingMode !== undefined) { fields.push("deep_thinking_mode = ?"); values.push(update.deepThinkingMode ?? null); }
+  if (update.preserveExecutor !== undefined) { fields.push("preserve_executor = ?"); values.push(update.preserveExecutor ? 1 : 0); }
 
   if (fields.length === 0) return;
   values.push(id);
