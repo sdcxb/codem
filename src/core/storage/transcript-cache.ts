@@ -38,6 +38,8 @@ export interface TranscriptCacheKey {
   model: string;
   temperature: number;
   systemPrompt: string;
+  /** P0-2: Tool names included in the request (affects cache validity) */
+  toolNames?: string[];
 }
 
 export interface TranscriptCacheResult {
@@ -57,6 +59,9 @@ export const TranscriptCache = {
       model: params.model,
       temp: params.temperature,
       sp: params.systemPrompt.slice(0, 500),
+      // P0-2: Include tool names in cache key — if the set of available tools
+      // changes (e.g. deferred tool loaded via tool_search), the cache must invalidate.
+      tools: params.toolNames ? params.toolNames.sort() : [],
     });
     return sha256(serialized);
   },

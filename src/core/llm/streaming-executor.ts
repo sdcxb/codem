@@ -1,4 +1,5 @@
 import type { ToolCallResult, LLMMessage } from "../llm/types";
+import { maybePersistToolResult, NEVER_PERSIST_TOOLS } from "./tool-result-storage";
 
 // ========== F2.5: Parameter Security Scanner ==========
 
@@ -50,7 +51,7 @@ export interface ToolExecutorConfig {
 const DEFAULT_CONFIG: ToolExecutorConfig = {
   maxConcurrent: 5,
   // E5: Extended concurrency-safe tools — all read-only tools can run in parallel
-  concurrencySafeTools: ["read", "glob", "grep", "codebase_search", "file_search", "list_directory", "web_fetch"],
+  concurrencySafeTools: ["read", "glob", "grep", "codebase_search", "file_search", "list_directory", "web_fetch", "lsp"],
   toolTimeout: 60000, // 60 seconds for regular tools
   abortSiblingsOnError: false,
 };
@@ -154,6 +155,19 @@ export class StreamingToolExecutorImpl {
               (result as any).output = securityWarning;
             }
 
+            // P1-5: Persist large tool results to disk
+            if (result.output && !NEVER_PERSIST_TOOLS.has(tc.name)) {
+              const persistResult = await maybePersistToolResult(
+                tc.name,
+                result.output,
+                ctx.sessionId,
+                ctx.cwd,
+              );
+              if (persistResult.persisted) {
+                result.output = persistResult.output;
+              }
+            }
+
             tc.status = "completed";
             tc.result = result;
             results.push(result);
@@ -227,6 +241,19 @@ export class StreamingToolExecutorImpl {
         result.output = `${securityWarning}\n\n${result.output}`;
       } else if (securityWarning) {
         (result as any).output = securityWarning;
+      }
+
+      // P1-5: Persist large tool results to disk
+      if (result.output && !NEVER_PERSIST_TOOLS.has(tc.name)) {
+        const persistResult = await maybePersistToolResult(
+          tc.name,
+          result.output,
+          ctx.sessionId,
+          ctx.cwd,
+        );
+        if (persistResult.persisted) {
+          result.output = persistResult.output;
+        }
       }
 
       tc.status = "completed";

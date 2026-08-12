@@ -55,6 +55,8 @@ export interface LoopState {
   compactedThisIteration: boolean;
   /** Count of consecutive compactions to prevent infinite loops */
   consecutiveCompactions: number;
+  /** P0-3: True if micro-compact has been applied in this run (prevents re-compacting) */
+  microCompactedThisRun: boolean;
   /** E8: True if cost degradation has been activated (switched to cheaper model) */
   costDegraded: boolean;
   /** S4: True if a write confirmation was rejected by the user — stops the loop to prevent retries */
@@ -142,6 +144,9 @@ const DEFAULT_LOOP_CONFIG: LoopConfig = {
   memoryEnabled: false,
   collaborationMode: "default",
 };
+
+/** P0-3: Minimum message count before micro-compact kicks in */
+const KEEP_RECENT_MESSAGES_FOR_MICRO_COMPACT = 12;
 
 export interface StepPlan {
   title: string;
@@ -264,6 +269,7 @@ export class AgenticLoop {
       isCompacting: false,
       compactedThisIteration: false,
       consecutiveCompactions: 0,
+      microCompactedThisRun: false,
       costDegraded: false,
       writeRejected: false,
     };
@@ -414,6 +420,7 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
     this.spawnedSubagents.clear();
     this.toolsCalledInRun.clear();
     this.taskReminderSent = false;
+    this.state.microCompactedThisRun = false;
     console.log(`[AgenticLoop.run] sessionId: ${sessionId}, userMessage: ${userMessage.substring(0, 80)}...`);
 
     // User message is saved by App.tsx (main session) or already in DB (sub-agent)
@@ -513,7 +520,10 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
       // - Plan mode: write/edit/multi_edit/tts/image_gen tools are hidden (enforced at registration layer)
       // - read_attachment: only available when conversation has document attachments
       //   (matches Wegent's ChatContext._build_extra_tools has_attachments pattern)
-      const allToolDefs = this.tools.getDefinitions();
+      // P0-2: Use core definitions (non-deferred) + deferred hints to save tokens.
+      // Deferred tools (like lsp) are loaded on-demand via tool_search.
+      const allToolDefs = this.tools.getCoreDefinitions();
+      const deferredHints = this.tools.getDeferredDefinitions();
       const writeToolNames = new Set(["write", "edit", "multi_edit", "tts", "image_gen"]);
 
       // P4: Check if any message in this session has a document attachment.
@@ -528,7 +538,26 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
         if (conditionalToolNames.has(t.name)) return false;
         return true;
       });
-      console.log(`[AgenticLoop] collaborationMode=${this.config.collaborationMode}, hasAttachment=${hasDocumentAttachment}, tools available: ${toolDefs.length}/${allToolDefs.length}`, toolDefs.map(t => t.name));
+
+      // P0-2: Inject deferred tool hints into system prompt so the LLM knows
+      // these tools exist and can call tool_search to load them.
+      if (deferredHints.length > 0) {
+        const hintLines = deferredHints
+          .map((t) => `  - ${t.name}: ${t.searchHint}`)
+          .join("\n");
+        const deferredPrompt =
+          `\n\n## Deferred Tools (load on demand)\n` +
+          `The following tools are available but not loaded by default to save tokens.\n` +
+          `To use one, first call \`tool_search\` with the tool name, then use the tool.\n\n` +
+          `${hintLines}\n`;
+        if (apiMessages.length > 0 && apiMessages[0].role === "system") {
+          if (typeof apiMessages[0].content === "string") {
+            apiMessages[0].content += deferredPrompt;
+          }
+        }
+      }
+
+      console.log(`[AgenticLoop] collaborationMode=${this.config.collaborationMode}, hasAttachment=${hasDocumentAttachment}, tools available: ${toolDefs.length}/${allToolDefs.length} (deferred: ${deferredHints.length})`, toolDefs.map(t => t.name));
 
       // B3: Inject pending skill prompts (from load_skill tool)
       const { consumePendingSkillPrompts, getLoadedSkillPrompts, tickSessionSkills } = await import("./tools/load-skill");
@@ -868,6 +897,7 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
       file_search: "Searching files",
       todo_write: "Updating tasks",
       codebase_search: "Searching codebase",
+      lsp: "Code navigation",
     };
     return titleMap[toolName] || toolName;
   }
@@ -1180,32 +1210,32 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
     // If ALL tool calls in this iteration were cache hits, we treat it as
     // a no-op iteration so the loop can check stop conditions and exit.
     let cacheHitCount = 0;
-    // Notify UI that we've transitioned from LLM streaming to tool execution
-    yield { type: "llm_status", status: "executing_tools" };
-
-    const toolCtx: ToolContext = {
-      sessionId,
-      messageId: assistantMsgId,
-      cwd,
-      abort: this.abortController!.signal,
-      // NOTE: Do NOT call buildMessages() here — it would pollute the cache
-      // with a fingerprint where tool calls are still "running" (no results yet).
-      // The next iteration's buildMessages would then get a cache hit and return
-      // stale messages WITHOUT tool results, causing the LLM to retry tool calls.
-      // No tool currently reads ctx.messages, so passing empty is safe.
-      messages: [],
-      metadata: () => {},
-      // S4: Pass write confirmation callback for diff review
-      onWriteConfirm: this.config.onWriteConfirm,
-      // Security mode: controls whether write confirmation and permission checks are active
-      securityMode: this.config.securityMode || "ask",
-      // Phase D: Interactive form & prompt optimization callbacks
-      getSystemPrompt: this.config.getSystemPrompt,
-      onPromptChangeSubmit: this.config.onPromptChangeSubmit,
-      onInteractiveForm: this.config.onInteractiveForm,
-      // Phase F: Notebook knowledge mode
-      notebookId: this.config.notebookId,
-    };
+          // Notify UI that we've transitioned from LLM streaming to tool execution
+      yield { type: "llm_status", status: "executing_tools" };
+      const toolCtx: ToolContext = {
+        sessionId,
+        messageId: assistantMsgId,
+        cwd,
+        // P1-6: Don't use ctx.abort — let each tool have its own abortController
+        abort: undefined,
+        // NOTE: Do NOT call buildMessages() here — it would pollute the cache
+        // with a fingerprint where tool calls are still "running" (no results yet).
+        // The next iteration's buildMessages would then get a cache hit and return
+        // stale messages WITHOUT tool results, causing the LLM to retry tool calls.
+        // No tool currently reads ctx.messages, so passing empty is safe.
+        messages: [],
+        metadata: () => {},
+        // S4: Pass write confirmation callback for diff review
+        onWriteConfirm: this.config.onWriteConfirm,
+        // Security mode: controls whether write confirmation and permission checks are active
+        securityMode: this.config.securityMode || "ask",
+        // Phase D: Interactive form & prompt optimization callbacks
+        getSystemPrompt: this.config.getSystemPrompt,
+        onPromptChangeSubmit: this.config.onPromptChangeSubmit,
+        onInteractiveForm: this.config.onInteractiveForm,
+                // Phase F: Notebook knowledge mode
+        notebookId: this.config.notebookId,
+      };
 
     for await (const event of this.executor.execute(
       currentToolCalls,
@@ -1237,7 +1267,23 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
             : typeof args.command === "string" ? args.command
             : undefined;
           const permissionManager = getPermissionManager();
-          const rawAction = permissionManager.getEvaluator().evaluate(name, resource);
+          let rawAction = permissionManager.getEvaluator().evaluate(name, resource);
+
+          // P1-7: Bash deep security analysis — detect dangerous patterns
+          // that existing rules don't cover (command substitution, pipe to shell, etc.)
+          // If dangerous, override to "ask" regardless of user rules
+          if (name === "bash" && typeof args.command === "string") {
+            try {
+              const { evaluateWithBashAnalysis } = await import("../permission/bash-analyzer");
+              const bashResult = evaluateWithBashAnalysis(args.command, rawAction);
+              if (bashResult.action === "ask" && rawAction === "allow") {
+                console.log(`[AgenticLoop] Bash analyzer upgraded action to "ask": ${bashResult.reason}`);
+                rawAction = "ask";
+              }
+            } catch (bashErr: any) {
+              console.warn(`[AgenticLoop] Bash analyzer error (non-blocking): ${bashErr.message}`);
+            }
+          }
 
           // Apply security mode to the evaluated action
           const action = evaluateWithSecurityMode(secMode, name, resource, rawAction);
@@ -1358,11 +1404,62 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
           }
         }
 
-        const result = await tool.execute(args, ctx);
+        // P0-4: PreToolUse hooks — run after permission check, before execution
+        // Hooks can deny (block) or modify the tool input
+        let effectiveArgs = args;
+        try {
+          const { getHookManager } = await import("../hooks/hook-manager");
+          const hookManager = getHookManager();
+          const preHookResult = await hookManager.executePreToolHooks(name, args, {
+            sessionId: ctx.sessionId,
+            toolName: name,
+            input: args,
+            cwd: ctx.cwd,
+          });
+          if (preHookResult.action === "deny") {
+            console.log(`[AgenticLoop] Tool "${name}" denied by hook: ${preHookResult.denyMessage}`);
+            return {
+              id: "",
+              name,
+              input: args,
+              output: `Blocked by hook: ${preHookResult.denyMessage}`,
+              status: "error" as const,
+            };
+          }
+          if (preHookResult.action === "modify" && preHookResult.modifiedInput) {
+            effectiveArgs = preHookResult.modifiedInput;
+            console.log(`[AgenticLoop] Tool "${name}" input modified by hook`);
+          }
+        } catch (hookErr: any) {
+          console.warn(`[AgenticLoop] PreToolUse hook error (non-blocking): ${hookErr.message}`);
+        }
+
+        const result = await tool.execute(effectiveArgs, ctx);
 
         // Track which tools have been called in this run() for task-completeness check
         this.toolsCalledInRun.add(name);
-        console.log(`[AgenticLoop] Tool executed: ${name}, path: ${args.path || args.command || "(none)"}, output length: ${result.output?.length || 0}`);
+        console.log(`[AgenticLoop] Tool executed: ${name}, path: ${effectiveArgs.path || effectiveArgs.command || "(none)"}, output length: ${result.output?.length || 0}`);
+
+        // P0-4: PostToolUse hooks — run after execution, may modify output
+        if (result.output) {
+          try {
+            const { getHookManager } = await import("../hooks/hook-manager");
+            const hookManager = getHookManager();
+            const hookedOutput = await hookManager.executePostToolHooks(name, effectiveArgs, result.output, {
+              sessionId: ctx.sessionId,
+              toolName: name,
+              input: effectiveArgs,
+              result: result.output,
+              cwd: ctx.cwd,
+            });
+            if (hookedOutput !== result.output) {
+              result.output = hookedOutput;
+              console.log(`[AgenticLoop] Tool "${name}" output modified by PostToolUse hook`);
+            }
+          } catch (hookErr: any) {
+            console.warn(`[AgenticLoop] PostToolUse hook error (non-blocking): ${hookErr.message}`);
+          }
+        }
 
         // ===== Update state after tool execution =====
         // Record read content for future cache hits
@@ -1372,8 +1469,8 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
         // Record written content and invalidate read cache for that file
         if ((name === "write" || name === "edit" || name === "multi_edit") && filePath &&
             result.output && result.output.includes("Successfully")) {
-          if (name === "write" && typeof args.content === "string") {
-            this.writeCache.set(filePath, args.content);
+          if (name === "write" && typeof effectiveArgs.content === "string") {
+            this.writeCache.set(filePath, effectiveArgs.content);
           } else {
             // For edit/multi_edit, we don't know the full final content, so just invalidate
             this.writeCache.delete(filePath);
@@ -1588,9 +1685,26 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
       }
     }
 
-    console.log(`[buildMessages] raw: ${messages.length}, llm: ${llmMessages.length}, selected: ${valid.length}`);
+    // P0-3: Micro-compact — replace old tool result content with placeholders
+    // to reduce context pressure without expensive LLM summarization.
+    // This runs BEFORE the pressure check in run(), so if micro-compact
+    // reduces pressure enough, full compaction is avoided.
+    // Only applies when context is getting crowded.
+    let finalMessages = valid;
+    if (valid.length > KEEP_RECENT_MESSAGES_FOR_MICRO_COMPACT) {
+      const { microCompact, isAlreadyMicroCompacted } = await import("./micro-compact");
+      if (!isAlreadyMicroCompacted(valid)) {
+        const microResult = microCompact(valid);
+        if (microResult.compactedCount > 0) {
+          finalMessages = microResult.messages;
+          this.state.microCompactedThisRun = true;
+        }
+      }
+    }
+
+    console.log(`[buildMessages] raw: ${messages.length}, llm: ${llmMessages.length}, selected: ${valid.length}, final: ${finalMessages.length}`);
     // Diagnostic: dump the messages that will be sent to the LLM
-    for (const m of valid) {
+    for (const m of finalMessages) {
       if (m.role === "tool") {
         console.log(`  [buildMessages] tool result: toolCallId=${m.toolCallId}, content_len=${(m.content || "").length}, preview=${(m.content || "").substring(0, 120)}`);
       } else if (m.role === "assistant" && m.tool_calls) {
@@ -1599,7 +1713,7 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
         console.log(`  [buildMessages] user ${m.id}: content_len=${(m.content || "").length}, preview=${(m.content || "").substring(0, 80)}`);
       }
     }
-    return valid;
+    return finalMessages;
   }
 
   /** Convert raw DB messages to LLM API format, stripping system-reminder tags and stale custom instructions */

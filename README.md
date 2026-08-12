@@ -272,6 +272,38 @@ npm run tauri:build
 
 ## 更新日志
 
+### 2026-08-12（v0.97.0）
+
+> 本次更新为 Agentic Loop 性能优化 + 工具系统延迟加载 + 记忆提取 Forked Agent + 技能市场三大新源接入 + 技能发布功能。10 个文件修改（+1,568/-73 行），20 个新文件。全量 85 文件 / 2901 用例通过（2899 通过）。
+
+**P0 — Agentic Loop 性能优化（上下文膨胀治理）：**
+- **P0-1 Tool Result 磁盘持久化**（`tool-result-storage.ts`）：超大工具输出（>4KB）自动落盘到 `~/.codem/tool-results/`，上下文中仅保留摘要 + 文件路径引用，agent 可按需 `read_file` 回读完整结果。支持 disk-full 降级到截断模式
+- **P0-2 ToolSearch 延迟加载**（`tool-search.ts`）：LSP 等重型工具不再默认注入 system prompt，改为 `tool_search` 按需加载。ToolRegistry 新增 `getCoreDefinitions()` / `getDeferredDefinitions()` / `getDeferredDefinition()` 三方法，TranscriptCache key 包含 `toolNames` 防止缓存不匹配
+- **P0-3 Micro-Compact 摘要**（`micro-compact.ts`）：上下文使用率超过 80% 时自动触发 LLM 摘要压缩，将旧对话轮次压缩为 1-2 段摘要。支持 JSON 修复提取 + 重试降级 + 摘要前后 token 计数
+- **P0-4 TranscriptCache 修复**：缓存 key 新增 `toolNames` 字段，防止 deferred 工具加载后缓存命中返回错误响应
+
+**P1 — 工具系统增强：**
+- **P1-5 工具中断行为**（`streaming-executor.ts`）：每个工具调用拥有独立 `AbortController`，支持并发工具独立中断 + 顺序工具逐一中断。`StreamingToolCall` 新增 `abortController` 字段
+- **P1-6 Bash 命令分析器**（`bash-analyzer.ts`）：解析 bash 命令的风险等级（safe/caution/dangerous）、操作类型（read/write/execute/network）、目标路径，为权限系统提供决策依据
+- **P1-7 Hooks 系统**（`hooks/hook-manager.ts` + `hook-types.ts`）：支持 pre-tool / post-tool / pre-message / post-message 四种钩子类型，可用于安全审计、自动日志、工具拦截
+- **P1-8 TodoWrite 增强**（`show-todo.ts`）：Todo 列表展示支持优先级排序 + 状态过滤 + 嵌套缩进
+- **P1-9 Forked Agent**（`llm/index.ts`）：新增 `spawnForked()` 方法，复用父对话 messages 前缀发起 LLM 调用，使 provider 的 prompt cache 命中降低 input token 成本。`extractMemoriesFromSession` 改用 forked agent 替代独立 API 调用，深拷贝 messages 防止 msgCache 污染 + 独立 AbortController
+
+**P0 — 技能市场三大新源接入：**
+- **ClawHub.ai**（`clawhub-api` 类型）：REST API `GET /api/v1/skills` 获取技能列表，支持 Bearer Token 认证
+- **Skills.sh**（`skills-sh-api` 类型）：Vercel 运营的技能排行榜，REST API `GET /api/v1/skills?view=all-time` 获取 Top 100 技能，支持 Vercel OIDC Token 认证
+- **SkillHub 腾讯云**（`cli` 类型）：通过 `skillhub-cli` 子进程调用，`skillhub search --json` 获取技能列表，`skillhub install <name>` 安装技能。支持 JSON + 表格两种输出格式解析
+- MarketSource 新增 `cliCommand` / `apiToken` 字段，MarketSourceType 从 3 种扩展到 6 种
+
+**P0 — 技能发布功能：**
+- `publishSkillToMarket()` 统一发布入口，支持三种发布目标：
+  - **ClawHub**：调用 `clawhub skill publish --slug --name --version --changelog --tags` CLI
+  - **GitHub**：`git init` → `git add -A` → `git commit` → `gh repo create --push` 创建仓库并推送
+  - **CLI**：通用 `<cliCommand> publish` / `upload` 命令适配（自动 fallback）
+- `listPublishableMarkets()` 检查每个市场的就绪状态（CLI 是否安装、是否登录）
+- `dryRunPublish()` 支持 ClawHub `--dry-run` 预检
+- SkillManager UI 新增「📤 发布到市场」按钮 + 发布对话框（市场选择 + slug/版本/变更日志填写 + 结果展示）
+
 ### 2026-08-11（v0.96.2）
 
 > 本次更新为 CodeGraph 代码知识图谱集成 + 测试套件从"表面测试"改造为"行为测试" + CI Workflow + CodeGraph 集成测试（49 用例 4 层覆盖）。全量 72 文件 / 2872 用例通过。

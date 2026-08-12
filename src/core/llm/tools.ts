@@ -16,6 +16,10 @@ import { createShowTodoTool } from "./tools/show-todo";
 import { createBrowserAutomateTool } from "./tools/browser-automate";
 import { createFigmaFetchTool } from "./tools/figma-fetch";
 import { createGitHubTool } from "./tools/github-tool";
+// P0-1: LSP tool for code navigation
+import { createLSPTool } from "./tools/lsp-tool";
+// P0-2: tool_search for deferred tool loading
+import { createToolSearchTool } from "./tools/tool-search";
 
 // ========== S5: Sandbox Helpers ==========
 
@@ -243,6 +247,34 @@ export interface ToolDef {
   description: string;
   parameters: Record<string, unknown>; // JSON Schema
   execute(args: Record<string, unknown>, ctx: ToolContext): Promise<ToolExecuteResult>;
+  /**
+   * Maximum result size in characters before the output is persisted to disk.
+   * If the result exceeds this size, it is saved to a file and the LLM
+   * receives a preview + file path instead of the full content.
+   *
+   * - Default (undefined): uses DEFAULT_MAX_RESULT_SIZE_CHARS (50KB)
+   * - Infinity: never persist (used by 'read' tool to prevent loops)
+   *
+   * See: tool-result-storage.ts
+   */
+  maxResultSizeChars?: number;
+
+  /**
+   * P0-2: If true, this tool's full schema is NOT sent to the LLM upfront.
+   * Instead, a compact description (searchHint) is sent, and the LLM must
+   * call `tool_search` to retrieve the full schema before using the tool.
+   *
+   * This reduces token usage for rarely-used tools with large schemas (e.g. LSP).
+   * Default: false (full schema always sent).
+   */
+  shouldDefer?: boolean;
+
+  /**
+   * P0-2: Short description used when shouldDefer=true.
+   * The LLM sees this instead of the full description+parameters.
+   * Should include enough info for the LLM to know WHEN to search for this tool.
+   */
+  searchHint?: string;
 }
 
 // ========== Tool Registry ==========
@@ -272,6 +304,50 @@ export class ToolRegistry {
       description: t.description,
       parameters: t.parameters,
     }));
+  }
+
+  /**
+   * P0-2: Get definitions for tools that are NOT deferred (shouldDefer=false).
+   * These tools have their full schema sent to the LLM.
+   * Also includes tool_search itself.
+   */
+  getCoreDefinitions(): ToolDefinition[] {
+    return this.getAll()
+      .filter((t) => !t.shouldDefer)
+      .map((t) => ({
+        name: t.id,
+        description: t.description,
+        parameters: t.parameters,
+      }));
+  }
+
+  /**
+   * P0-2: Get compact definitions for deferred tools (shouldDefer=true).
+   * Returns minimal info: name + searchHint.
+   * The LLM uses tool_search to retrieve the full schema when needed.
+   */
+  getDeferredDefinitions(): Array<{ name: string; searchHint: string }> {
+    return this.getAll()
+      .filter((t) => t.shouldDefer)
+      .map((t) => ({
+        name: t.id,
+        searchHint: t.searchHint || t.description.substring(0, 120),
+      }));
+  }
+
+  /**
+   * P0-2: Get the full definition of a single deferred tool by name.
+   * Used by tool_search to return the schema when the LLM requests it.
+   * Returns undefined if the tool doesn't exist or is not deferred.
+   */
+  getDeferredDefinition(name: string): ToolDefinition | undefined {
+    const tool = this.tools.get(name);
+    if (!tool || !tool.shouldDefer) return undefined;
+    return {
+      name: tool.id,
+      description: tool.description,
+      parameters: tool.parameters,
+    };
   }
 
   async execute(
@@ -433,6 +509,9 @@ export function createReadFileTool(): ToolDef {
   return {
     id: "read",
     description: "Read a file from the filesystem. Files are read as UTF-8 text. BOM (Byte Order Mark) is automatically stripped. Chinese and emoji content is fully supported.",
+    // Never persist read results to disk — prevents infinite loops
+    // (read → result too large → persist → LLM reads persisted file → result too large → ...)
+    maxResultSizeChars: Infinity,
     parameters: {
       type: "object",
       properties: {
@@ -934,6 +1013,10 @@ export function createDefaultToolRegistry(): ToolRegistry {
   registry.register(createBrowserAutomateTool());
   registry.register(createFigmaFetchTool());
   registry.register(createGitHubTool());
+  // P0-1: LSP tool for code navigation (definition, references, hover, symbols)
+  registry.register(createLSPTool());
+  // P0-2: tool_search for deferred tool loading (must be registered AFTER deferred tools)
+  registry.register(createToolSearchTool(registry));
   return registry;
 }
 

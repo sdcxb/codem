@@ -71,9 +71,35 @@ export function createShowTodoTool(): ToolDef {
         // Save to database
         saveTodoList(ctx.sessionId, todoId, todos);
 
+        // P1-8: Calculate completion statistics
+        const completed = todos.filter(t => t.status === "completed").length;
+        const inProgress = todos.filter(t => t.status === "in_progress").length;
+        const pending = todos.filter(t => t.status === "pending").length;
+        const allCompleted = completed === todos.length && todos.length > 0;
+
+        // P1-8: Verification nudge — when all tasks are completed,
+        // remind the LLM to verify its work before declaring completion
+        let output = `已创建 Todo 列表（${todos.length} 项任务）\n` +
+          `✅ 已完成: ${completed} | 🔄 进行中: ${inProgress} | ⏳ 待办: ${pending}`;
+
+        if (allCompleted) {
+          output += `\n\n⚠️ 所有任务已标记为完成。在向用户报告完成之前，请验证：\n` +
+            `1. 所有修改的文件是否已保存且无语法错误\n` +
+            `2. 是否有遗漏的测试或验证步骤\n` +
+            `3. 改动是否完整实现了用户的需求\n` +
+            `如果验证通过，可以向用户报告完成。如果发现问题，请更新 Todo 状态并继续修复。`;
+        }
+
         return {
-          title: "Todo List Created",
-          output: `已创建 Todo 列表（${todos.length} 项任务）`,
+          title: allCompleted ? "Todo List — All Completed" : "Todo List Created",
+          output,
+          metadata: {
+            totalTasks: todos.length,
+            completed,
+            inProgress,
+            pending,
+            verificationNudgeNeeded: allCompleted,
+          },
         };
       } catch (error) {
         return {

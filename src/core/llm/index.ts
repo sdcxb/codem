@@ -850,23 +850,14 @@ return loop.hasPendingGuidance();
     const provider = this.providers.get(resolved.providerId);
     if (!provider || !provider.isConfigured()) return;
 
-    // Build conversation text (limit to last 50 messages to control cost)
-    const recentMessages = messages.slice(-50);
-    const convParts: string[] = [];
-    for (const msg of recentMessages) {
-      if (msg.role === "user") {
-        const content = (msg.content || "").substring(0, 300);
-        if (content.trim()) convParts.push(`用户: ${content}`);
-      } else if (msg.role === "assistant") {
-        const content = (msg.content || "").substring(0, 300);
-        if (content.trim()) convParts.push(`AI: ${content}`);
-      }
-    }
-    const conversationText = convParts.join("\n").substring(0, 8000);
+    // P1-9: Use forked agent instead of independent API call.
+    // This reuses the parent conversation's messages → provider's prompt cache
+    // can hit on the shared prefix → lower input token cost.
+    // Independent AbortController so forked agent can be cancelled if the
+    // user closes the session or starts a new conversation.
+    const forkedAbort = new AbortController();
 
-    if (conversationText.length < 100) return;
-
-    const systemPrompt = `你是一个记忆提取专家。从以下对话中提取值得长期记住的事实。
+    const memoryExtractionPrompt = `请从以上对话中提取值得长期记住的事实。
 
 只提取以下类型的信息：
 - 用户偏好（语言、代码风格、工具选择、回复方式等）
@@ -887,20 +878,26 @@ return loop.hasPendingGuidance();
 如果没有值得提取的记忆，返回空数组 []`;
 
     try {
-      const response = await provider.complete({
-        model: resolved.modelId,
-        messages: [
-          { id: "system", role: "system", content: systemPrompt },
-          { id: "user", role: "user", content: conversationText },
-        ],
-        temperature: 0.3,
-        stream: false,
-      });
+      const responseText = await this.spawnForked(
+        sessionId,
+        "You are a memory extraction assistant.", // Minimal system prompt — parent messages provide context
+        memoryExtractionPrompt,
+        {
+          temperature: 0.3,
+          abortSignal: forkedAbort.signal,
+          maxMessages: 50,
+        },
+      );
+
+      if (!responseText || responseText.trim().length === 0) {
+        console.log("[extractMemories] Forked agent returned empty response");
+        return;
+      }
 
       // 健壮的 JSON 解析 — 使用 extractJSON 处理 markdown 包裹、中文标点、尾部逗号等
-      const memories = extractJSON<Array<{ key: string; content: string; tags?: string[] }>>(response.content);
+      const memories = extractJSON<Array<{ key: string; content: string; tags?: string[] }>>(responseText);
       if (!Array.isArray(memories)) {
-        console.warn("[extractMemories] Failed to parse memories from LLM response:", response.content.slice(0, 200));
+        console.warn("[extractMemories] Failed to parse memories from forked agent response:", responseText.substring(0, 200));
         return;
       }
 
@@ -941,6 +938,77 @@ return loop.hasPendingGuidance();
       }
     } catch (err) {
       console.warn("[extractMemories] Failed to extract memories:", err);
+    }
+  }
+
+  /**
+   * P1-9: Forked Agent — 复用父对话的 messages + system prompt 发起 LLM 调用。
+   *
+   * 与独立 API 调用不同，forked agent 复用父对话的前缀，使 provider 的 prompt cache
+   * 可以命中，从而降低 input token 成本（通常半价）。
+   *
+   * @param parentSessionId - 父会话 ID（用于读取 messages）
+   * @param systemPrompt - 系统提示词（可以是父对话的，也可以是自定义的）
+   * @param userMessage - 追加到对话末尾的新 user 消息
+   * @param options - 可选配置（temperature, abort signal, maxMessages）
+   * @returns LLM 响应文本
+   */
+  async spawnForked(
+    parentSessionId: string,
+    systemPrompt: string,
+    userMessage: string,
+    options?: {
+      temperature?: number;
+      abortSignal?: AbortSignal;
+      maxMessages?: number;
+    },
+  ): Promise<string> {
+    const resolved = this.resolveSlot("memory");
+    const provider = this.providers.get(resolved.providerId);
+    if (!provider || !provider.isConfigured()) {
+      throw new Error("Provider not configured for forked agent");
+    }
+
+    // Read parent conversation messages
+    const parentMessages = MessageStorage.listMessages(parentSessionId);
+
+    // Convert to LLM messages format — deep copy to prevent msgCache pollution
+    const llmMessages = MessageStorage.messagesToLLMMessages(parentMessages);
+
+    // Limit number of messages to control cost
+    const maxMsgs = options?.maxMessages ?? 50;
+    const recentMessages = llmMessages.slice(-maxMsgs);
+
+    // Deep copy each message to prevent any mutation of cached objects
+    const forkedMessages = recentMessages.map((m: any) => ({
+      id: `${m.id}-fork`,
+      role: m.role,
+      content: typeof m.content === "string" ? m.content : JSON.parse(JSON.stringify(m.content)),
+    }));
+
+    // Append the new user message at the end
+    forkedMessages.push({
+      id: `fork-user-${Date.now()}`,
+      role: "user" as const,
+      content: userMessage,
+    });
+
+    try {
+      const response = await provider.complete({
+        model: resolved.modelId,
+        systemPrompt,
+        messages: forkedMessages,
+        temperature: options?.temperature ?? 0.3,
+        stream: false,
+      });
+
+      return response.content || "";
+    } catch (err: any) {
+      if (options?.abortSignal?.aborted) {
+        console.log("[spawnForked] Aborted");
+        return "";
+      }
+      throw err;
     }
   }
 

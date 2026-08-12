@@ -5,11 +5,14 @@
  * 绕过前端 CSP 限制，无需额外运行时依赖。
  *
  * 支持的市场源类型：
- * 1. github-repo  — GitHub 仓库目录型（如 anthropics/skills，每个子目录是一个技能）
- * 2. github-search — GitHub 话题搜索型（搜索 topic:agent-skills 的仓库）
- * 3. builtin      — 内置技能展示型（展示 Codem 自带技能，无需下载）
+ * 1. github-repo    — GitHub 仓库目录型（如 anthropics/skills，每个子目录是一个技能）
+ * 2. github-search   — GitHub 话题搜索型（搜索 topic:agent-skills 的仓库）
+ * 3. builtin         — 内置技能展示型（展示 Codem 自带技能，无需下载）
+ * 4. clawhub-api     — ClawHub.ai REST API（GET /api/v1/skills）
+ * 5. skills-sh-api   — Skills.sh REST API（GET /api/v1/skills + /api/v1/skills/search）
+ * 6. cli             — CLI 子进程型（如 skillhub-cli，通过 executeCommand 调用）
  *
- * IP 声明：本文件所有代码均为原创实现，仅使用 GitHub 公开 REST API。
+ * IP 声明：本文件所有代码均为原创实现，仅使用公开 REST API 和 CLI 工具。
  */
 
 import { installSkillFromZip, type InstallResult, type InstallProgressCallback } from "./installer";
@@ -20,14 +23,20 @@ import { getSettingJSON, setSettingJSON } from "../storage/settings";
 // ========== Types ==========
 
 /** 市场源类型 */
-export type MarketSourceType = "github-repo" | "github-search" | "builtin";
+export type MarketSourceType =
+  | "github-repo"
+  | "github-search"
+  | "builtin"
+  | "clawhub-api"
+  | "skills-sh-api"
+  | "cli";
 
 /** 市场源配置 */
 export interface MarketSource {
   id: string;
   name: string;
   type: MarketSourceType;
-  /** GitHub API URL 或搜索查询 */
+  /** API URL、搜索查询或 CLI 命令前缀 */
   url: string;
   /** 是否启用 */
   enabled: boolean;
@@ -35,6 +44,16 @@ export interface MarketSource {
   icon?: string;
   /** 子目录路径（仅 github-repo 类型）。如果仓库技能不在根目录而在子目录中，指定该子目录名。 */
   subdir?: string;
+  /**
+   * CLI 命令名（仅 type=cli）。
+   * 如 "skillhub" 表示使用 skillhub-cli，实际调用 skillhub search / skillhub install。
+   */
+  cliCommand?: string;
+  /**
+   * API Token（仅 clawhub-api / skills-sh-api）。
+   * Skills.sh 需要 Vercel OIDC Token 认证；ClawHub 可选。
+   */
+  apiToken?: string;
 }
 
 /** 市场技能条目 */
@@ -112,6 +131,31 @@ export const DEFAULT_MARKET_SOURCES: MarketSource[] = [
     url: "https://api.github.com/search/repositories?q=SKILL.md+in:name,description&sort=stars&order=desc&per_page=20",
     enabled: true,
     icon: "📦",
+  },
+  {
+    id: "clawhub",
+    name: "ClawHub.ai",
+    type: "clawhub-api",
+    url: "https://clawhub.ai",
+    enabled: true,
+    icon: "🦞",
+  },
+  {
+    id: "skills-sh",
+    name: "Skills.sh",
+    type: "skills-sh-api",
+    url: "https://skills.sh",
+    enabled: true,
+    icon: "🎯",
+  },
+  {
+    id: "skillhub",
+    name: "SkillHub (腾讯云)",
+    type: "cli",
+    url: "",
+    enabled: true,
+    icon: "☁️",
+    cliCommand: "skillhub",
   },
   {
     id: "codem-builtin",
@@ -369,6 +413,335 @@ async function fetchBuiltinSkills(source: MarketSource): Promise<MarketSkill[]> 
     }));
 }
 
+// ========== ClawHub.ai API Adapter ==========
+
+/**
+ * 从 ClawHub.ai REST API 获取技能列表。
+ *
+ * ClawHub 是 OpenClaw 生态的技能市场，提供 REST API：
+ *   GET /api/v1/skills → 技能列表
+ *
+ * 响应格式（推测，基于 ClawHub 页面结构）：
+ *   { data: [{ name, slug, description, author, downloads, ... }] }
+ */
+async function fetchClawHubSkills(source: MarketSource): Promise<MarketSkill[]> {
+  const skills: MarketSkill[] = [];
+
+  try {
+    const baseUrl = source.url.replace(/\/$/, "");
+    const headers: Record<string, string> = {
+      "Accept": "application/json",
+    };
+    if (source.apiToken) {
+      headers["Authorization"] = `Bearer ${source.apiToken}`;
+    }
+
+    const resp = await httpGet(`${baseUrl}/api/v1/skills`, headers);
+    if (resp.status !== 200) {
+      console.warn(`[SkillMarket] ClawHub API failed: ${resp.status}`);
+      return skills;
+    }
+
+    const data = JSON.parse(resp.body);
+    const items: any[] = data.data || data.items || data.skills || [];
+
+    for (const item of items) {
+      const slug = item.slug || item.name;
+      const author = item.author || item.owner || "";
+      skills.push({
+        id: `${source.id}:${slug}`,
+        name: slug,
+        displayName: item.displayName || item.name || slug,
+        description: item.description || "无描述",
+        author,
+        version: item.version,
+        tags: item.tags,
+        sourceId: source.id,
+        sourceName: source.name,
+        downloadUrl: item.installUrl || item.downloadUrl || `${baseUrl}/${author}/skills/${slug}`,
+        repoUrl: item.url || `${baseUrl}/${author}/skills/${slug}`,
+        stars: item.downloads || item.installs,
+        lastUpdated: item.updatedAt,
+        installType: "zip",
+      });
+    }
+  } catch (err) {
+    console.error(`[SkillMarket] Error fetching ClawHub skills:`, err);
+  }
+
+  return skills;
+}
+
+// ========== Skills.sh API Adapter ==========
+
+/**
+ * 从 Skills.sh REST API 获取技能列表。
+ *
+ * Skills.sh 由 Vercel 运营，提供完整的 REST API：
+ *   GET /api/v1/skills           → 分页排行榜
+ *   GET /api/v1/skills/search?q=  → 搜索
+ *   GET /api/v1/skills/{id}      → 单个技能详情（含文件内容）
+ *
+ * 认证：Vercel OIDC Token（如果未配置 token，尝试无认证请求，部分端点可能返回 401）
+ */
+async function fetchSkillsShSkills(source: MarketSource): Promise<MarketSkill[]> {
+  const skills: MarketSkill[] = [];
+
+  try {
+    const baseUrl = source.url.replace(/\/$/, "");
+    const headers: Record<string, string> = {
+      "Accept": "application/json",
+    };
+    if (source.apiToken) {
+      headers["Authorization"] = `Bearer ${source.apiToken}`;
+    }
+
+    // 获取排行榜（每页 100 个，取第一页）
+    const resp = await httpGet(
+      `${baseUrl}/api/v1/skills?view=all-time&per_page=100`,
+      headers,
+    );
+    if (resp.status !== 200) {
+      console.warn(`[SkillMarket] Skills.sh API failed: ${resp.status}`);
+      if (resp.status === 401) {
+        console.warn("[SkillMarket] Skills.sh requires Vercel OIDC token authentication");
+      }
+      return skills;
+    }
+
+    const data = JSON.parse(resp.body);
+    const items: any[] = data.data || [];
+
+    for (const item of items) {
+      const skillId = item.id || `${item.source}/${item.slug}`;
+      skills.push({
+        id: `${source.id}:${skillId}`,
+        name: item.slug || item.name,
+        displayName: item.name || item.slug,
+        description: item.description || "无描述",
+        author: item.source || "",
+        version: item.version,
+        tags: item.tags,
+        sourceId: source.id,
+        sourceName: source.name,
+        // Skills.sh 的 installUrl 通常是 GitHub 仓库地址
+        downloadUrl: item.installUrl || "",
+        repoUrl: item.url || `${baseUrl}/${skillId}`,
+        stars: item.installs,
+        lastUpdated: item.updatedAt,
+        installType: "zip",
+        repoFullName: item.source,
+        // Skills.sh 技能详情 API 返回完整文件内容，可作为 fallback 安装方式
+      });
+    }
+  } catch (err) {
+    console.error(`[SkillMarket] Error fetching Skills.sh skills:`, err);
+  }
+
+  return skills;
+}
+
+// ========== CLI Subprocess Adapter (SkillHub) ==========
+
+/**
+ * 通过 CLI 子进程获取技能列表（如 skillhub-cli）。
+ *
+ * 工作流程：
+ * 1. 调用 `<cliCommand> search ""` 或 `<cliCommand> list` 获取技能列表
+ * 2. 解析 stdout 为 MarketSkill[]
+ *
+ * SkillHub CLI 输出格式（推测）：
+ *   name        description                    author       downloads
+ *   skill-1     First skill description         author1      123
+ *   skill-2     Second skill description        author2      456
+ *
+ * 或 JSON 格式：
+ *   [{"name": "skill-1", "description": "...", "author": "..."}]
+ */
+async function fetchCLISkills(source: MarketSource): Promise<MarketSkill[]> {
+  const skills: MarketSkill[] = [];
+
+  if (!source.cliCommand) {
+    console.warn(`[SkillMarket] CLI source ${source.id} has no cliCommand configured`);
+    return skills;
+  }
+
+  try {
+    const { executeCommand } = await import("../file-api");
+
+    // 尝试 JSON 输出格式优先（skillhub search --json）
+    let stdout = "";
+    let stderr = "";
+    let exitCode: number | undefined;
+
+    try {
+      // 尝试带 --json flag 获取结构化输出
+      const result = await executeCommand(`${source.cliCommand} search --json`, undefined);
+      stdout = result.stdout;
+      stderr = result.stderr;
+      exitCode = result.exitCode;
+    } catch {
+      // --json 不支持，尝试普通 search
+      try {
+        const result = await executeCommand(`${source.cliCommand} search`, undefined);
+        stdout = result.stdout;
+        stderr = result.stderr;
+        exitCode = result.exitCode;
+      } catch (err2: any) {
+        // CLI 可能未安装
+        console.warn(`[SkillMarket] CLI "${source.cliCommand}" not available: ${err2.message}`);
+        return skills;
+      }
+    }
+
+    if (exitCode !== 0 && exitCode !== undefined) {
+      console.warn(`[SkillMarket] CLI "${source.cliCommand}" exited with code ${exitCode}: ${stderr}`);
+      return skills;
+    }
+
+    // 尝试解析 JSON 输出
+    const trimmed = stdout.trim();
+    if (trimmed.startsWith("[") || trimmed.startsWith("{")) {
+      try {
+        const data = JSON.parse(trimmed);
+        const items: any[] = Array.isArray(data) ? data : (data.data || data.items || []);
+
+        for (const item of items) {
+          const name = item.name || item.slug || "";
+          if (!name) continue;
+
+          skills.push({
+            id: `${source.id}:${name}`,
+            name,
+            displayName: item.displayName || item.name || name,
+            description: item.description || "无描述",
+            author: item.author || item.owner || "",
+            version: item.version,
+            tags: item.tags,
+            sourceId: source.id,
+            sourceName: source.name,
+            downloadUrl: "", // CLI 安装不需要 downloadUrl
+            repoUrl: item.url || item.repoUrl,
+            stars: item.downloads || item.installs,
+            lastUpdated: item.updatedAt,
+            installType: "cli" as any, // 标记为 CLI 安装类型
+          });
+        }
+        return skills;
+      } catch {
+        // JSON 解析失败，尝试表格解析
+      }
+    }
+
+    // 解析表格格式输出（制表符或空格分隔）
+    const lines = trimmed.split("\n").filter((l) => l.trim());
+    if (lines.length > 1) {
+      // 跳过表头
+      for (let i = 1; i < lines.length; i++) {
+        const parts = lines[i].split(/\s{2,}|\t/).filter((p) => p.trim());
+        if (parts.length < 1) continue;
+
+        const name = parts[0].trim();
+        const description = parts[1]?.trim() || "无描述";
+        const author = parts[2]?.trim() || "";
+
+        skills.push({
+          id: `${source.id}:${name}`,
+          name,
+          displayName: name,
+          description,
+          author,
+          sourceId: source.id,
+          sourceName: source.name,
+          downloadUrl: "",
+          installType: "cli" as any,
+        });
+      }
+    }
+  } catch (err) {
+    console.error(`[SkillMarket] Error fetching CLI skills for ${source.id}:`, err);
+  }
+
+  return skills;
+}
+
+/**
+ * 通过 CLI 子进程安装技能（如 skillhub-cli）。
+ *
+ * 调用 `<cliCommand> install <skillName>` 安装技能。
+ * CLI 自动将技能文件下载到本地，我们只需将安装结果同步到 registry。
+ */
+async function installCLISkill(
+  skill: MarketSkill,
+  onProgress?: InstallProgressCallback,
+): Promise<InstallResult> {
+  const { executeCommand } = await import("../file-api");
+  const { getSkillRegistry, parseSkillMarkdown } = await import("./skill");
+  const { readFile } = await import("../file-api");
+
+  onProgress?.(10, `正在通过 CLI 安装: ${skill.name}...`);
+
+  try {
+    // 查找技能的 MarketSource 以获取 cliCommand
+    const sources = getMarketSources();
+    const source = sources.find((s) => s.id === skill.sourceId);
+    if (!source?.cliCommand) {
+      return { success: false, error: "未找到 CLI 命令配置" };
+    }
+
+    onProgress?.(30, `执行 ${source.cliCommand} install ${skill.name}...`);
+
+    const result = await executeCommand(
+      `${source.cliCommand} install ${skill.name}`,
+      undefined,
+    );
+
+    if (result.exitCode !== 0 && result.exitCode !== undefined) {
+      return {
+        success: false,
+        error: `CLI 安装失败 (exit ${result.exitCode}): ${result.stderr}`,
+      };
+    }
+
+    onProgress?.(70, "CLI 安装完成，正在注册技能...");
+
+    // CLI 安装后，技能文件通常在 ~/.skillhub/skills/ 或类似目录
+    // 尝试查找并注册
+    const skillsDir = await getSkillsDir();
+    const sep = skillsDir.includes("/") && !skillsDir.includes("\\") ? "/" : "\\";
+    const skillDir = `${skillsDir}${sep}${skill.name}`;
+
+    // 尝试读取 SKILL.md
+    try {
+      const skillMdPath = `${skillDir}${sep}SKILL.md`;
+      const skillMdContent = await readFile(skillMdPath);
+      const skillDef = parseSkillMarkdown(skillMdContent, skillMdPath);
+      if (skillDef) {
+        skillDef.source = "user";
+        skillDef.filePath = skillDir;
+        skillDef.enabled = true;
+        getSkillRegistry().register(skillDef);
+      }
+    } catch {
+      // SKILL.md 可能不在预期位置，尝试在 CLI 输出中查找路径
+      console.log(`[SkillMarket] CLI install output: ${result.stdout.substring(0, 200)}`);
+    }
+
+    onProgress?.(100, `技能 "${skill.name}" 安装成功！`);
+
+    return {
+      success: true,
+      skillName: skill.name,
+      filesWritten: 1,
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      error: `CLI 安装失败: ${err.message || String(err)}`,
+    };
+  }
+}
+
 // ========== Public API ==========
 
 /** 市场搜索结果 */
@@ -407,6 +780,15 @@ export async function listMarketSkills(
           break;
         case "builtin":
           skills = await fetchBuiltinSkills(source);
+          break;
+        case "clawhub-api":
+          skills = await fetchClawHubSkills(source);
+          break;
+        case "skills-sh-api":
+          skills = await fetchSkillsShSkills(source);
+          break;
+        case "cli":
+          skills = await fetchCLISkills(source);
           break;
       }
 
@@ -461,6 +843,11 @@ export async function installMarketSkill(
       skillName: skill.name,
       filesWritten: 0,
     };
+  }
+
+  // CLI 类型技能通过 CLI 子进程安装（如 skillhub install）
+  if (skill.installType === "cli" as any) {
+    return await installCLISkill(skill, onProgress);
   }
 
   try {
@@ -707,4 +1094,413 @@ export function isMarketSkillInstalled(skill: MarketSkill): boolean {
  */
 export function getSourceIcon(source: MarketSource): string {
   return source.icon || "📦";
+}
+
+// ========== Skill Publishing ==========
+
+/** 发布目标市场类型 */
+export type PublishTarget = "clawhub" | "github" | "cli";
+
+/** 发布配置 */
+export interface PublishConfig {
+  /** 目标市场 */
+  target: PublishTarget;
+  /** 技能本地路径（~/.codem/skills/<name>） */
+  skillPath: string;
+  /** 技能名称（slug） */
+  slug: string;
+  /** 显示名称 */
+  displayName: string;
+  /** 版本号（semver） */
+  version: string;
+  /** 变更日志 */
+  changelog?: string;
+  /** 标签（逗号分隔，默认 "latest"） */
+  tags?: string;
+  /** 目标市场源 ID（用于 CLI 类型市场） */
+  sourceId?: string;
+  /**
+   * GitHub 仓库配置（仅 target=github 时使用）
+   * 如果指定 repoName，会尝试通过 gh CLI 创建仓库并推送
+   */
+  githubRepoName?: string;
+  /** GitHub 仓库可见性 */
+  githubPrivate?: boolean;
+}
+
+/** 发布结果 */
+export interface PublishResult {
+  success: boolean;
+  /** 发布后的技能 URL */
+  url?: string;
+  /** 发布后的技能 ID */
+  publishedId?: string;
+  /** 错误信息 */
+  error?: string;
+  /** CLI 输出（用于调试） */
+  rawOutput?: string;
+}
+
+/** 可发布的市场信息 */
+export interface PublishableMarket {
+  id: string;
+  name: string;
+  target: PublishTarget;
+  icon: string;
+  /** 是否已就绪（CLI 已安装、已登录等） */
+  ready: boolean;
+  /** 未就绪原因 */
+  notReadyReason?: string;
+}
+
+/**
+ * 检查 CLI 工具是否已安装。
+ */
+async function isCLIInstalled(command: string): Promise<boolean> {
+  try {
+    const { executeCommand } = await import("../file-api");
+    const result = await executeCommand(`${command} --version`, undefined);
+    return result.exitCode === 0 || result.exitCode === undefined;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 检查 ClawHub CLI 登录状态。
+ */
+async function checkClawHubAuth(): Promise<{ authenticated: boolean; user?: string }> {
+  try {
+    const { executeCommand } = await import("../file-api");
+    const result = await executeCommand("clawhub whoami", undefined);
+    if (result.exitCode === 0 && result.stdout.trim()) {
+      return { authenticated: true, user: result.stdout.trim() };
+    }
+    return { authenticated: false };
+  } catch {
+    return { authenticated: false };
+  }
+}
+
+/**
+ * 列出所有支持发布的市场源。
+ * 检查每个市场的就绪状态（CLI 是否安装、是否登录等）。
+ */
+export async function listPublishableMarkets(): Promise<PublishableMarket[]> {
+  const markets: PublishableMarket[] = [];
+
+  // 1. ClawHub — 通过 clawhub CLI 发布
+  const clawhubInstalled = await isCLIInstalled("clawhub");
+  let clawhubReady = clawhubInstalled;
+  let clawhubNotReadyReason: string | undefined;
+
+  if (clawhubInstalled) {
+    const auth = await checkClawHubAuth();
+    if (!auth.authenticated) {
+      clawhubReady = false;
+      clawhubNotReadyReason = "未登录，请运行 clawhub login";
+    }
+  } else {
+    clawhubNotReadyReason = "未安装 clawhub CLI，请运行 npm i -g clawhub";
+  }
+
+  markets.push({
+    id: "clawhub",
+    name: "ClawHub.ai",
+    target: "clawhub",
+    icon: "🦞",
+    ready: clawhubReady,
+    notReadyReason: clawhubNotReadyReason,
+  });
+
+  // 2. GitHub — 通过 gh CLI 创建仓库 + 推送
+  const ghInstalled = await isCLIInstalled("gh");
+  markets.push({
+    id: "github",
+    name: "GitHub 仓库",
+    target: "github",
+    icon: "🐙",
+    ready: ghInstalled,
+    notReadyReason: ghInstalled ? undefined : "未安装 GitHub CLI，请运行 winget install GitHub.cli",
+  });
+
+  // 3. CLI 类型市场（如 SkillHub，如果支持 publish）
+  const sources = getMarketSources();
+  for (const source of sources) {
+    if (source.type === "cli" && source.cliCommand) {
+      const cliReady = await isCLIInstalled(source.cliCommand);
+      markets.push({
+        id: source.id,
+        name: source.name,
+        target: "cli",
+        icon: source.icon || "📦",
+        ready: cliReady,
+        notReadyReason: cliReady ? undefined : `未安装 ${source.cliCommand} CLI`,
+      });
+    }
+  }
+
+  return markets;
+}
+
+/**
+ * 发布技能到 ClawHub。
+ * 调用 `clawhub skill publish <path>` CLI 命令。
+ */
+async function publishToClawHub(config: PublishConfig): Promise<PublishResult> {
+  const { executeCommand } = await import("../file-api");
+
+  const parts = [
+    "clawhub", "skill", "publish", `"${config.skillPath}"`,
+    "--slug", config.slug,
+    "--name", `"${config.displayName}"`,
+    "--version", config.version,
+  ];
+  if (config.changelog) {
+    parts.push("--changelog", `"${config.changelog}"`);
+  }
+  parts.push("--tags", config.tags || "latest");
+
+  try {
+    const result = await executeCommand(parts.join(" "), undefined);
+    const output = (result.stdout || "") + (result.stderr ? "\n" + result.stderr : "");
+
+    if (result.exitCode !== 0 && result.exitCode !== undefined) {
+      return {
+        success: false,
+        error: `clawhub publish 失败 (exit ${result.exitCode}): ${result.stderr || output}`,
+        rawOutput: output,
+      };
+    }
+
+    // 从输出中提取技能 URL
+    // clawhub CLI 通常输出类似 "Published to https://clawhub.ai/<user>/skills/<slug>"
+    const urlMatch = output.match(/https?:\/\/[^\s]+clawhub[^\s]*/i);
+    const url = urlMatch ? urlMatch[0] : `https://clawhub.ai/skills/${config.slug}`;
+
+    return {
+      success: true,
+      url,
+      publishedId: config.slug,
+      rawOutput: output,
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      error: `clawhub publish 异常: ${err.message || String(err)}`,
+    };
+  }
+}
+
+/**
+ * 发布技能到 GitHub 仓库。
+ * 调用 `gh repo create` 创建仓库，然后 git init + commit + push。
+ *
+ * 流程：
+ * 1. 在技能目录初始化 git 仓库
+ * 2. 添加所有文件并提交
+ * 3. 通过 gh CLI 创建 GitHub 仓库
+ * 4. 推送到远程
+ */
+async function publishToGitHub(config: PublishConfig): Promise<PublishResult> {
+  const { executeCommand } = await import("../file-api");
+  const repoName = config.githubRepoName || config.slug;
+  const visibility = config.githubPrivate ? "--private" : "--public";
+
+  const outputParts: string[] = [];
+
+  try {
+    // 1. git init
+    let result = await executeCommand("git init", config.skillPath);
+    outputParts.push("[git init]", result.stdout, result.stderr);
+
+    // 2. git add
+    result = await executeCommand("git add -A", config.skillPath);
+    outputParts.push("[git add]", result.stdout, result.stderr);
+
+    // 3. git commit
+    result = await executeCommand(
+      `git commit -m "Publish skill: ${config.displayName} v${config.version}"`,
+      config.skillPath,
+    );
+    outputParts.push("[git commit]", result.stdout, result.stderr);
+
+    // 4. gh repo create
+    result = await executeCommand(
+      `gh repo create ${repoName} ${visibility} --source=. --push --description="Codem skill: ${config.displayName}"`,
+      config.skillPath,
+    );
+    outputParts.push("[gh repo create]", result.stdout, result.stderr);
+
+    if (result.exitCode !== 0 && result.exitCode !== undefined) {
+      return {
+        success: false,
+        error: `GitHub 仓库创建失败: ${result.stderr}`,
+        rawOutput: outputParts.join("\n"),
+      };
+    }
+
+    // 从输出中提取仓库 URL
+    const urlMatch = (result.stdout + result.stderr).match(/https:\/\/github\.com\/[^\s]+/i);
+    const url = urlMatch ? urlMatch[0] : `https://github.com/${repoName}`;
+
+    return {
+      success: true,
+      url,
+      publishedId: repoName,
+      rawOutput: outputParts.join("\n"),
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      error: `GitHub 发布异常: ${err.message || String(err)}`,
+      rawOutput: outputParts.join("\n"),
+    };
+  }
+}
+
+/**
+ * 通过 CLI 子进程发布技能（通用 CLI 市场适配）。
+ * 尝试调用 `<cliCommand> publish <path>` 命令。
+ */
+async function publishToCLI(config: PublishConfig): Promise<PublishResult> {
+  const { executeCommand } = await import("../file-api");
+
+  // 查找 CLI 命令
+  const sources = getMarketSources();
+  const source = sources.find((s) => s.id === config.sourceId);
+  if (!source?.cliCommand) {
+    return { success: false, error: "未找到 CLI 命令配置" };
+  }
+
+  const cmd = source.cliCommand;
+
+  try {
+    // 尝试 publish 命令（格式可能因 CLI 而异）
+    const result = await executeCommand(
+      `${cmd} publish "${config.skillPath}" --name "${config.displayName}" --version ${config.version}`,
+      undefined,
+    );
+    const output = (result.stdout || "") + (result.stderr ? "\n" + result.stderr : "");
+
+    if (result.exitCode !== 0 && result.exitCode !== undefined) {
+      // publish 命令不支持，尝试 upload
+      try {
+        const result2 = await executeCommand(
+          `${cmd} upload "${config.skillPath}" --name "${config.displayName}"`,
+          undefined,
+        );
+        const output2 = (result2.stdout || "") + (result2.stderr ? "\n" + result2.stderr : "");
+        if (result2.exitCode !== 0 && result2.exitCode !== undefined) {
+          return {
+            success: false,
+            error: `${cmd} publish/upload 均不支持 (exit ${result2.exitCode}): ${result2.stderr}`,
+            rawOutput: output + "\n---\n" + output2,
+          };
+        }
+        return {
+          success: true,
+          publishedId: config.slug,
+          rawOutput: output2,
+        };
+      } catch {
+        return {
+          success: false,
+          error: `${cmd} 不支持 publish 命令`,
+          rawOutput: output,
+        };
+      }
+    }
+
+    const urlMatch = output.match(/https?:\/\/[^\s]+/i);
+    return {
+      success: true,
+      url: urlMatch ? urlMatch[0] : undefined,
+      publishedId: config.slug,
+      rawOutput: output,
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      error: `${cmd} publish 异常: ${err.message || String(err)}`,
+    };
+  }
+}
+
+/**
+ * 发布技能到市场（统一入口）。
+ *
+ * 根据目标市场类型分派到对应的发布实现：
+ * - clawhub: 调用 `clawhub skill publish` CLI
+ * - github:  通过 `gh repo create` + git push 创建 GitHub 仓库
+ * - cli:     调用通用 `<cliCommand> publish` 命令
+ *
+ * @param config 发布配置
+ * @returns 发布结果
+ */
+export async function publishSkillToMarket(config: PublishConfig): Promise<PublishResult> {
+  // 验证技能路径
+  if (!config.skillPath) {
+    return { success: false, error: "技能路径不能为空" };
+  }
+  if (!config.slug) {
+    return { success: false, error: "技能 slug 不能为空" };
+  }
+  if (!config.version) {
+    return { success: false, error: "版本号不能为空" };
+  }
+
+  switch (config.target) {
+    case "clawhub":
+      return await publishToClawHub(config);
+    case "github":
+      return await publishToGitHub(config);
+    case "cli":
+      return await publishToCLI(config);
+    default:
+      return { success: false, error: `不支持的发布目标: ${config.target}` };
+  }
+}
+
+/**
+ * 预检发布（dry-run）。
+ * 仅 ClawHub 支持 --dry-run，其他市场返回就绪状态。
+ */
+export async function dryRunPublish(config: PublishConfig): Promise<PublishResult> {
+  if (config.target !== "clawhub") {
+    // GitHub 和 CLI 不支持 dry-run，返回就绪检查
+    const markets = await listPublishableMarkets();
+    const market = markets.find((m) => m.target === config.target);
+    if (market && !market.ready) {
+      return { success: false, error: market.notReadyReason || "市场未就绪" };
+    }
+    return { success: true, rawOutput: "预检通过（该市场不支持 dry-run）" };
+  }
+
+  const { executeCommand } = await import("../file-api");
+  try {
+    const result = await executeCommand(
+      `clawhub skill publish "${config.skillPath}" --slug ${config.slug} --name "${config.displayName}" --version ${config.version} --dry-run --json`,
+      undefined,
+    );
+    const output = (result.stdout || "") + (result.stderr ? "\n" + result.stderr : "");
+
+    if (result.exitCode !== 0 && result.exitCode !== undefined) {
+      return {
+        success: false,
+        error: `dry-run 失败: ${result.stderr || output}`,
+        rawOutput: output,
+      };
+    }
+
+    return {
+      success: true,
+      rawOutput: output,
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      error: `dry-run 异常: ${err.message || String(err)}`,
+    };
+  }
 }

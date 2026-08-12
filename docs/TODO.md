@@ -14,50 +14,76 @@
 > v0.96.0 已发布：主对话窗口 UI 大改版（对标 frakio-work/wecode）+ 内联 Diff 批量审批（替换弹窗）+ 三皮肤暗色模式深度修复 + 梦幻皮肤自适应主题（data-theme 基于 palette.isDark）+ 富内容渲染系统（9 组件）+ Shiki 语法高亮 + 39 个新组件 + 3 个新依赖（framer-motion/shiki/xlsx）。42 个文件修改（+4,599/-1,866 行）。
 > v0.96.1 已发布：右侧栏文件浏览器体系重构（对标 wecode 固定宽度面板 420px）+ 文件拖拽修复（Tauri dragDropEnabled + dropEffect）+ 拖拽方向反转修复 + 文件编辑器悬浮窗口（createPortal 全屏预览）+ Hub 皮肤强制暗色 + TitleBar 主题初始化修复 + MentionAutocomplete 重写 + FileEditor 全格式预览（图片/PDF/Excel/Word/视频/音频/HTML）+ **应用 Logo 替换**（icos/codem.ico 紫色图标）+ **NSIS 安装包图标修复**（sharp/png-to-ico 生成 BMP 格式 ICO + installerIcon 配置）。19 个文件修改（+2,392/-414 行）。
 > v0.96.2 已发布：CodeGraph 代码知识图谱集成（自动检测 .codegraph/ → MCP Server 注册 → 系统提示词注入 codegraph_explore 指导 → 设置页面"代码图谱"标签页）+ 测试套件改造（readFileSync+toContain → 真实模块行为验证）+ CI Workflow（tsc + vitest + cargo check）+ Vite watch EBUSY 修复 + CodeGraph 集成测试（49 用例 4 层覆盖）。全量 72 文件 / 2872 用例通过。
+> v0.97.0 已发布：Agentic Loop 性能优化（Tool Result 磁盘持久化 + ToolSearch 延迟加载 + Micro-Compact 摘要 + TranscriptCache 修复）+ 工具系统增强（工具中断行为 + Bash 分析器 + Hooks 系统 + TodoWrite 增强 + Forked Agent 记忆提取）+ 技能市场三大新源接入（ClawHub.ai / Skills.sh / SkillHub CLI）+ 技能发布功能（publishSkillToMarket 三种目标 + UI 发布对话框）。全量 85 文件 / 2901 用例通过（2899 通过）。
 
 ## 待开发
 
-### v0.96.2 已发布（2026-08-11）
+### v0.97.0 已发布（2026-08-12）
 
-#### P0 — CodeGraph 代码知识图谱集成
-- [x] MCP 层自动检测与注册（`src/core/mcp/mcp.ts`）
-  - [x] `isCodeGraphEnabled()` / `setCodeGraphEnabled()` — 设置开关（默认启用，持久化到 SQLite）
-  - [x] `hasCodeGraphIndex(projectPath)` — 检测项目 `.codegraph/` 目录（调用 Rust `path_exists`）
-  - [x] `isCodeGraphInstalled()` — 检测 `codegraph` CLI 是否安装
-  - [x] `autoDetectCodeGraph(registry, projectPath)` — 自动连接 CodeGraph MCP Server（stdio: `codegraph mcp`）
-  - [x] `disconnectCodeGraph(registry)` — 断开连接（支持异常安全）
-  - [x] `hasCodeGraphTools(registry)` — 检查 codegraph 工具可用性（server name 或 tool name 前缀匹配）
-- [x] 系统提示词增强（`src/core/prompt/prompt.ts`）
-  - [x] `SystemPromptConfig` 新增 `codeGraphEnabled?: boolean` 字段
-  - [x] `buildSystemPrompt()` 注入 `# CodeGraph 代码图谱` / `# CodeGraph Code Intelligence` 指导
-  - [x] 中英文双语支持
-  - [x] 指导 agent 优先使用 `codegraph_explore` 替代多次 grep+read
-- [x] LLMEngine 集成（`src/core/llm/index.ts`）
-  - [x] `buildSystemPrompt()` 调用 `hasCodeGraphTools()` 检测当前工具状态
-  - [x] `buildSystemPromptAsync()` 在加载项目配置时调用 `autoDetectCodeGraph(this.mcp, cwd)`
-  - [x] 导出 `autoDetectCodeGraph` / `hasCodeGraphTools` / `isCodeGraphEnabled` 供外部调用
-- [x] 设置页面"代码图谱"标签页（`SettingsPanel.tsx` → `CodeGraphSettingsSection`）
-  - [x] 启用/禁用开关（实时生效，断开 MCP 连接）
-  - [x] CLI 状态检测（`codegraph --version`，显示已安装/未安装 + 安装命令）
-  - [x] 当前项目索引状态（检测 `.codegraph/` 是否存在）
-  - [x] 一键构建代码图谱（`codegraph init`）
-  - [x] 基准数据展示（88% 工具调用减少 / 62% token 节省等）
+#### P0 — Agentic Loop 性能优化（上下文膨胀治理）
+- [x] P0-1 Tool Result 磁盘持久化（`tool-result-storage.ts`）
+  - [x] 超大工具输出（>4KB）自动落盘到 `~/.codem/tool-results/`
+  - [x] 上下文中仅保留摘要 + 文件路径引用
+  - [x] agent 可按需 `read_file` 回读完整结果
+  - [x] disk-full 降级到截断模式
+- [x] P0-2 ToolSearch 延迟加载（`tool-search.ts` + `tools/lsp-tool.ts`）
+  - [x] LSP 等重型工具标记 `shouldDefer: true`
+  - [x] ToolRegistry 新增 `getCoreDefinitions()` / `getDeferredDefinitions()` / `getDeferredDefinition()`
+  - [x] `tool_search` 工具按名称/关键词搜索 deferred 工具的完整 schema
+  - [x] TranscriptCache key 包含 `toolNames` 防止缓存不匹配
+  - [x] Deferred 工具提示注入 system prompt
+- [x] P0-3 Micro-Compact 摘要（`micro-compact.ts`）
+  - [x] 上下文使用率超过 80% 时自动触发 LLM 摘要压缩
+  - [x] 旧对话轮次压缩为 1-2 段摘要
+  - [x] JSON 修复提取 + 重试降级
+  - [x] 摘要前后 token 计数
+- [x] P0-4 TranscriptCache 修复
+  - [x] 缓存 key 新增 `toolNames` 字段
 
-#### P0 — 测试套件改造（表面测试 → 行为测试）
-- [x] `phase-b-f-regression.test.ts` B1-B3+B8
-  - [x] B1: `readFileSync` + `toContain` → `parseSkillMarkdown()` 解析真实 SKILL.md 验证返回字段
-  - [x] B2: 读 `provider.ts` 检查方法名 → `getSkillToolRegistry()` + `getBuiltinProviderFactory()` 行为验证
-  - [x] B3: 读 6 个文件检查 `export function` → `await import()` 动态加载验证导出
-  - [x] B8: 读 `skill.ts` 检查 `buildSkillPrompt` 字符串 → `getSkillRegistry().buildSkillPrompt()` 返回字符串
-- [x] `encoding-tools.test.ts` — 硬编码 description 字符串 → `createDefaultToolRegistry().get("bash")` 真实工具验证
-- [x] `context-consistency.test.ts` P0-1 — 模拟 `buildMemoryPrompt` → `getMemoryService().buildMemoryPrompt("project")` 真实调用
-- [x] `refactor-prompt-to-data.test.ts` — 真实 `buildSubagentSystemPrompt()` 输出验证
-- [x] `regression-coding-cross-impact.test.ts` — LoopEvent 类型检查 + ToolRegistry 行为验证
-- [x] `ui-batch-a-d.test.ts` — 合并 13 个碎 `it` 为 3 个完整性检查
+#### P1 — 工具系统增强
+- [x] P1-5 工具中断行为（`streaming-executor.ts`）
+  - [x] 每个工具调用拥有独立 `AbortController`
+  - [x] 并发工具独立中断 + 顺序工具逐一中断
+  - [x] `StreamingToolCall` 新增 `abortController` 字段
+- [x] P1-6 Bash 命令分析器（`permission/bash-analyzer.ts`）
+  - [x] 解析 bash 命令的风险等级（safe/caution/dangerous）
+  - [x] 操作类型（read/write/execute/network）
+  - [x] 目标路径提取
+- [x] P1-7 Hooks 系统（`hooks/hook-manager.ts` + `hook-types.ts`）
+  - [x] pre-tool / post-tool / pre-message / post-message 四种钩子类型
+  - [x] 安全审计、自动日志、工具拦截
+- [x] P1-8 TodoWrite 增强（`tools/show-todo.ts`）
+  - [x] 优先级排序 + 状态过滤 + 嵌套缩进
+- [x] P1-9 Forked Agent（`llm/index.ts`）
+  - [x] 新增 `spawnForked()` 方法，复用父对话 messages 前缀
+  - [x] provider prompt cache 命中降低 input token 成本
+  - [x] `extractMemoriesFromSession` 改用 forked agent
+  - [x] 深拷贝 messages 防止 msgCache 污染
+  - [x] 独立 AbortController
 
-#### P1 — CI Workflow + 构建修复
-- [x] 新增 `.github/workflows/ci.yml`（4 步：`npm ci` + `tsc --noEmit` + `vitest run` + `cargo check`）
-- [x] 修复 Vite dev server EBUSY 错误（`vite.config.ts` 添加 `watch.ignored: ["**/src-tauri/target/**"]`）
+#### P0 — 技能市场三大新源接入
+- [x] ClawHub.ai（`clawhub-api` 类型）
+  - [x] REST API `GET /api/v1/skills` 获取技能列表
+  - [x] 支持 Bearer Token 认证
+- [x] Skills.sh（`skills-sh-api` 类型）
+  - [x] REST API `GET /api/v1/skills?view=all-time` 获取 Top 100
+  - [x] Vercel OIDC Token 认证 + 401 错误处理
+- [x] SkillHub 腾讯云（`cli` 类型）
+  - [x] `skillhub search --json` 获取技能列表
+  - [x] `skillhub install <name>` 安装技能
+  - [x] JSON + 表格两种输出格式解析
+  - [x] CLI 不可用时优雅降级
+- [x] MarketSource 新增 `cliCommand` / `apiToken` 字段
+- [x] MarketSourceType 从 3 种扩展到 6 种
+
+#### P0 — 技能发布功能
+- [x] `publishSkillToMarket()` 统一发布入口
+  - [x] ClawHub：`clawhub skill publish --slug --name --version --changelog --tags`
+  - [x] GitHub：`git init` → `git add -A` → `git commit` → `gh repo create --push`
+  - [x] CLI：通用 `<cliCommand> publish` / `upload` 命令适配（自动 fallback）
+- [x] `listPublishableMarkets()` 检查市场就绪状态
+- [x] `dryRunPublish()` 支持 ClawHub `--dry-run` 预检
+- [x] SkillManager UI 发布按钮 + 发布对话框 + CSS 样式
 - [x] CI 命令本地逐条验证通过
 
 #### P0 — CodeGraph 集成测试

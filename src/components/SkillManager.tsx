@@ -7,8 +7,12 @@ import {
   isMarketSkillInstalled,
   getMarketSources,
   getSourceIcon,
+  publishSkillToMarket,
+  listPublishableMarkets,
   type MarketSkill,
   type MarketSource,
+  type PublishTarget,
+  type PublishableMarket,
 } from "../core/skill/skill-market-client";
 import { getSetting, setSetting, getSettingJSON, setSettingJSON } from "../core/storage/settings";
 import { PanelIcons, ActionIcons, SkillSourceIcons, StatusIcons, CommonIcons, MarketIcons } from "../core/icons/icon-map";
@@ -93,6 +97,20 @@ export function SkillManager({ onClose }: SkillManagerProps) {
   const [installingSkillId, setInstallingSkillId] = useState<string | null>(null);
   const [marketInstallProgress, setMarketInstallProgress] = useState<{ value: number; message: string } | null>(null);
   const [selectedMarketSkill, setSelectedMarketSkill] = useState<MarketSkill | null>(null);
+
+  // ===== Publish State =====
+  const [publishTarget, setPublishTarget] = useState<SkillDefinition | null>(null);
+  const [publishMarkets, setPublishMarkets] = useState<PublishableMarket[]>([]);
+  const [publishLoading, setPublishLoading] = useState(false);
+  const [publishResult, setPublishResult] = useState<{ success: boolean; url?: string; error?: string } | null>(null);
+  const [publishForm, setPublishForm] = useState({
+    target: "clawhub" as PublishTarget,
+    slug: "",
+    displayName: "",
+    version: "1.0.0",
+    changelog: "",
+    githubPrivate: false,
+  });
 
   // ===== My Skills Logic =====
   const loadSkills = useCallback(() => {
@@ -547,9 +565,29 @@ export function SkillManager({ onClose }: SkillManagerProps) {
                   <pre className="skill-detail-prompt">{selectedSkill.prompt}</pre>
                 </div>
 
-                {/* Delete button (only for non-builtin) */}
+                {/* Delete + Publish buttons (only for non-builtin) */}
                 {selectedSkill.source !== "builtin" && (
                   <div className="skill-detail-actions">
+                    <button
+                      className="skill-detail-btn publish"
+                      onClick={() => {
+                        setPublishTarget(selectedSkill);
+                        setPublishForm({
+                          target: "clawhub",
+                          slug: selectedSkill.name,
+                          displayName: selectedSkill.displayName || selectedSkill.name,
+                          version: selectedSkill.version || "1.0.0",
+                          changelog: "",
+                          githubPrivate: false,
+                        });
+                        setPublishResult(null);
+                        // Load publishable markets
+                        listPublishableMarkets().then(setPublishMarkets);
+                      }}
+                    >
+                      <span>📤</span>
+                      发布到市场
+                    </button>
                     <button
                       className="skill-detail-btn delete"
                       onClick={() => setDeleteTarget(selectedSkill)}
@@ -843,6 +881,176 @@ export function SkillManager({ onClose }: SkillManagerProps) {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* ===== Publish Dialog ===== */}
+      {publishTarget && (
+        <Dialog open={true} onOpenChange={(open) => { if (!open) setPublishTarget(null); }}>
+          <DialogContent className="publish-dialog">
+            <DialogHeader>
+              <DialogTitle>📤 发布技能到市场</DialogTitle>
+              <DialogDescription>
+                将「{publishTarget.displayName || publishTarget.name}」发布到技能市场，供其他用户安装使用。
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="publish-form">
+              {/* Target market selector */}
+              <div className="publish-field">
+                <label>目标市场</label>
+                <div className="publish-market-list">
+                  {publishMarkets.map((m) => (
+                    <button
+                      key={m.id}
+                      className={`publish-market-item ${publishForm.target === m.target ? "active" : ""}`}
+                      onClick={() => setPublishForm({ ...publishForm, target: m.target })}
+                      disabled={!m.ready}
+                      title={m.notReadyReason || ""}
+                    >
+                      <span className="publish-market-icon">{m.icon}</span>
+                      <span className="publish-market-name">{m.name}</span>
+                      {!m.ready && <span className="publish-market-unavailable">未就绪</span>}
+                      {m.ready && publishForm.target === m.target && <span className="publish-market-check">✓</span>}
+                    </button>
+                  ))}
+                  {publishMarkets.length === 0 && (
+                    <p className="publish-no-markets">正在检查可用市场...</p>
+                  )}
+                </div>
+              </div>
+
+              {/* Slug */}
+              <div className="publish-field">
+                <label>技能标识 (slug)</label>
+                <input
+                  type="text"
+                  value={publishForm.slug}
+                  onChange={(e) => setPublishForm({ ...publishForm, slug: e.target.value })}
+                  placeholder="my-skill"
+                  className="publish-input"
+                />
+              </div>
+
+              {/* Display name */}
+              <div className="publish-field">
+                <label>显示名称</label>
+                <input
+                  type="text"
+                  value={publishForm.displayName}
+                  onChange={(e) => setPublishForm({ ...publishForm, displayName: e.target.value })}
+                  placeholder="My Skill"
+                  className="publish-input"
+                />
+              </div>
+
+              {/* Version */}
+              <div className="publish-field">
+                <label>版本号</label>
+                <input
+                  type="text"
+                  value={publishForm.version}
+                  onChange={(e) => setPublishForm({ ...publishForm, version: e.target.value })}
+                  placeholder="1.0.0"
+                  className="publish-input"
+                />
+              </div>
+
+              {/* Changelog */}
+              <div className="publish-field">
+                <label>变更日志（可选）</label>
+                <textarea
+                  value={publishForm.changelog}
+                  onChange={(e) => setPublishForm({ ...publishForm, changelog: e.target.value })}
+                  placeholder="本次发布包含的改动..."
+                  className="publish-textarea"
+                  rows={3}
+                />
+              </div>
+
+              {/* GitHub private toggle */}
+              {publishForm.target === "github" && (
+                <div className="publish-field publish-field-inline">
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={publishForm.githubPrivate}
+                      onChange={(e) => setPublishForm({ ...publishForm, githubPrivate: e.target.checked })}
+                    />
+                    创建为私有仓库
+                  </label>
+                </div>
+              )}
+
+              {/* Not-ready warnings */}
+              {publishMarkets.find((m) => m.target === publishForm.target)?.notReadyReason && (
+                <div className="publish-warning">
+                  ⚠️ {publishMarkets.find((m) => m.target === publishForm.target)?.notReadyReason}
+                </div>
+              )}
+
+              {/* Publish result */}
+              {publishResult && (
+                <div className={`publish-result ${publishResult.success ? "success" : "error"}`}>
+                  {publishResult.success ? (
+                    <>
+                      <p>✅ 发布成功！</p>
+                      {publishResult.url && (
+                        <a href={publishResult.url} target="_blank" rel="noopener noreferrer">
+                          {publishResult.url}
+                        </a>
+                      )}
+                    </>
+                  ) : (
+                    <p>❌ {publishResult.error}</p>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <DialogFooter>
+              <button
+                className="skill-upload-btn"
+                onClick={() => setPublishTarget(null)}
+                disabled={publishLoading}
+              >
+                关闭
+              </button>
+              <button
+                className="skill-detail-btn publish"
+                onClick={async () => {
+                  setPublishLoading(true);
+                  setPublishResult(null);
+                  try {
+                    const result = await publishSkillToMarket({
+                      target: publishForm.target,
+                      skillPath: publishTarget.filePath || "",
+                      slug: publishForm.slug,
+                      displayName: publishForm.displayName,
+                      version: publishForm.version,
+                      changelog: publishForm.changelog || undefined,
+                      githubPrivate: publishForm.githubPrivate,
+                    });
+                    setPublishResult({
+                      success: result.success,
+                      url: result.url,
+                      error: result.error,
+                    });
+                  } catch (err: any) {
+                    setPublishResult({
+                      success: false,
+                      error: err.message || String(err),
+                    });
+                  } finally {
+                    setPublishLoading(false);
+                  }
+                }}
+                disabled={publishLoading || !publishForm.slug || !publishForm.version}
+              >
+                {publishLoading ? "发布中..." : "确认发布"}
+              </button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 }
