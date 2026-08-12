@@ -29,8 +29,8 @@ jobs:
       - name: Run tests
         run: |
           npm test 2>&1 | tee test-output.txt
-          # Check if all test files passed (ignore EnvironmentTeardownError)
-          grep -E "Test Files\s+\d+ passed" test-output.txt || exit 1
+          # Strip ANSI codes then check if all test files passed (ignore EnvironmentTeardownError)
+          sed 's/\x1b\[[0-9;]*m//g' test-output.txt | grep -E "Test Files.*passed" || exit 1
         env:
           CI: true
 
