@@ -131,7 +131,7 @@ export class StreamingToolExecutorImpl {
           this.running.set(tc.id, tc);
 
           try {
-            if (ctx.abort.aborted || tc.abortController.signal.aborted) {
+            if (ctx.abort?.aborted || tc.abortController.signal.aborted) {
               throw new Error("Aborted");
             }
 
@@ -219,7 +219,7 @@ export class StreamingToolExecutorImpl {
     this.running.set(tc.id, tc);
 
     try {
-      if (ctx.abort.aborted || tc.abortController.signal.aborted) {
+      if (ctx.abort?.aborted || tc.abortController.signal.aborted) {
         throw new Error("Aborted");
       }
 

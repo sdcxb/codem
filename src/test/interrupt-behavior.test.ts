@@ -92,6 +92,6 @@ describe("P1-6: 工具中断行为", () => {
 
     expect(results.length).toBeGreaterThanOrEqual(1);
     // Result should be completed (mock handler always returns completed)
-    expect(results[0]).toBeDefined();
+    expect(results[0].status).toBe("completed");
   });
 });
