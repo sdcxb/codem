@@ -33,7 +33,7 @@ function rowToSession(row: SessionRow): Session {
     worktreeBranch: row.worktree_branch ?? undefined,
     correctionMode: row.correction_mode ?? undefined,
     deepThinkingMode: row.deep_thinking_mode ?? undefined,
-    preserveExecutor: row.preserve_executor === 1 ? true : row.preserve_executor === 0 ? false : undefined,
+    preserveExecutor: row.preserve_executor ?? undefined,
   };
 }
 
@@ -92,7 +92,7 @@ export function createSession(session: Session): void {
       session.worktreeBranch ?? null,
       session.correctionMode ?? null,
       session.deepThinkingMode ?? null,
-      session.preserveExecutor === true ? 1 : session.preserveExecutor === false ? 0 : null,
+      session.preserveExecutor ?? null,
     ]
   );
   persistDatabase();
@@ -113,7 +113,7 @@ export function updateSession(id: string, update: Partial<Session>): void {
   if (update.worktreeBranch !== undefined) { fields.push("worktree_branch = ?"); values.push(update.worktreeBranch ?? null); }
   if (update.correctionMode !== undefined) { fields.push("correction_mode = ?"); values.push(update.correctionMode ?? null); }
   if (update.deepThinkingMode !== undefined) { fields.push("deep_thinking_mode = ?"); values.push(update.deepThinkingMode ?? null); }
-  if (update.preserveExecutor !== undefined) { fields.push("preserve_executor = ?"); values.push(update.preserveExecutor ? 1 : 0); }
+  if (update.preserveExecutor !== undefined) { fields.push("preserve_executor = ?"); values.push(update.preserveExecutor ?? null); }
 
   if (fields.length === 0) return;
   values.push(id);
