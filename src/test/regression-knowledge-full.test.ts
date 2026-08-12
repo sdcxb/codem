@@ -277,12 +277,7 @@ describe("知识管理 — 闪卡存储", () => {
     expect(intervals).toEqual([0, 1, 2, 3, 4, 5]);
   });
 
-  // KM-021 ~ KM-025
-  for (let i = 21; i <= 25; i++) {
-    it(`KM-0${i}: 闪卡扩展 ${i - 20}`, () => {
-      expect(true).toBe(true);
-    });
-  }
+  // KM-021 ~ KM-025 removed — were empty placeholders
 });
 
 // ========== C. 知识图谱 ==========
@@ -344,12 +339,7 @@ describe("知识管理 — 知识图谱", () => {
     expect(result[0].values[0][0]).toBe("depends_on");
   });
 
-  // KM-031 ~ KM-035
-  for (let i = 31; i <= 35; i++) {
-    it(`KM-0${i}: 图谱扩展 ${i - 30}`, () => {
-      expect(true).toBe(true);
-    });
-  }
+  // KM-031 ~ KM-035 removed — were empty placeholders
 });
 
 // ========== D. 导出/导入 ==========
@@ -373,12 +363,7 @@ describe("知识管理 — 导出/导入", () => {
     expect(mod).toBeDefined();
   });
 
-  // KM-038 ~ KM-045
-  for (let i = 38; i <= 45; i++) {
-    it(`KM-0${i}: 导出/导入扩展 ${i - 37}`, () => {
-      expect(true).toBe(true);
-    });
-  }
+  // KM-038 ~ KM-045 removed — were empty placeholders
 });
 
 // ========== E. 学习路径 + PPT ==========
@@ -402,12 +387,7 @@ describe("知识管理 — 学习路径 + PPT", () => {
     expect(mod).toBeDefined();
   });
 
-  // KM-049 ~ KM-055
-  for (let i = 49; i <= 55; i++) {
-    it(`KM-0${i}: 学习路径/PPT 扩展 ${i - 48}`, () => {
-      expect(true).toBe(true);
-    });
-  }
+  // KM-049 ~ KM-055 removed — were empty placeholders
 });
 
 // ========== F. 笔记操作工具执行 ==========
@@ -600,13 +580,8 @@ describe("知识管理 — UI 组件导入", () => {
 
   for (const c of uiComponents) {
     it(`KM-${String(c.id).padStart(3, "0")}: ${c.name} 组件可导入`, async () => {
-      try {
-        const mod = await import(c.path);
-        expect(mod[c.name]).toBeDefined();
-      } catch {
-        // Heavy UI components with complex deps may fail import in test env
-        expect(true).toBe(true);
-      }
+      const mod = await import(c.path);
+      expect(mod[c.name]).toBeDefined();
     });
   }
 

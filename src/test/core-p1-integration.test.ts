@@ -32,6 +32,8 @@ import { initDatabase, resetDatabase, getDatabase } from "../core/storage/databa
 import { createDefaultToolRegistry, type ToolDef } from "../core/llm/tools";
 import type { ClarificationFormData } from "../core/llm/agentic-loop";
 import { loadTodoList, updateTodoStatus } from "../core/llm/tools/show-todo";
+import { useAppStore } from "../store";
+import { createMessage as _createMessage, updateMessageContent as _updateMessageContent, getMessage as _getMessage } from "../core/storage/message";
 import { getDatabase } from "../core/storage/database";
 import type { TodoItem } from "../core/llm/agentic-loop";
 
@@ -245,103 +247,73 @@ describe("P1 集成 — CorrectionResultPanel 数据结构", () => {
 
   // P1INT-015
   it("P1INT-015: 修正应用 — 更新消息内容", () => {
-    try {
-      const useAppStore = require("../store").useAppStore;
-      useAppStore.getState().addMessage({
-        id: "msg-cor-1", role: "assistant", content: "原始内容",
-        timestamp: Date.now(), status: "done",
-      });
-      useAppStore.getState().updateMessage("msg-cor-1", { content: "修正后内容" });
-      const msg = useAppStore.getState().messages.find((m: any) => m.id === "msg-cor-1");
-      expect(msg.content).toBe("修正后内容");
-    } catch {
-      expect(true).toBe(true);
-    }
+    useAppStore.getState().addMessage({
+      id: "msg-cor-1", role: "assistant", content: "原始内容",
+      timestamp: Date.now(), status: "done",
+    });
+    useAppStore.getState().updateMessage("msg-cor-1", { content: "修正后内容" });
+    const msg = useAppStore.getState().messages.find((m: any) => m.id === "msg-cor-1");
+    expect(msg.content).toBe("修正后内容");
   });
 
   // P1INT-016
   it("P1INT-016: 修正应用后消息状态保持 done", () => {
-    try {
-      const useAppStore = require("../store").useAppStore;
-      useAppStore.getState().addMessage({
-        id: "msg-cor-2", role: "assistant", content: "原始",
-        timestamp: Date.now(), status: "done",
-      });
-      useAppStore.getState().updateMessage("msg-cor-2", { content: "修正" });
-      const msg = useAppStore.getState().messages.find((m: any) => m.id === "msg-cor-2");
-      expect(msg.status).toBe("done");
-    } catch {
-      expect(true).toBe(true);
-    }
+    useAppStore.getState().addMessage({
+      id: "msg-cor-2", role: "assistant", content: "原始",
+      timestamp: Date.now(), status: "done",
+    });
+    useAppStore.getState().updateMessage("msg-cor-2", { content: "修正" });
+    const msg = useAppStore.getState().messages.find((m: any) => m.id === "msg-cor-2");
+    expect(msg.status).toBe("done");
   });
 
   // P1INT-017
   it("P1INT-017: 修正取消 — 消息内容不变", () => {
-    try {
-      const useAppStore = require("../store").useAppStore;
-      useAppStore.getState().addMessage({
-        id: "msg-cor-3", role: "assistant", content: "保留内容",
-        timestamp: Date.now(), status: "done",
-      });
-      const msg = useAppStore.getState().messages.find((m: any) => m.id === "msg-cor-3");
-      expect(msg.content).toBe("保留内容");
-    } catch {
-      expect(true).toBe(true);
-    }
+    useAppStore.getState().addMessage({
+      id: "msg-cor-3", role: "assistant", content: "保留内容",
+      timestamp: Date.now(), status: "done",
+    });
+    const msg = useAppStore.getState().messages.find((m: any) => m.id === "msg-cor-3");
+    expect(msg.content).toBe("保留内容");
   });
 
   // P1INT-018
   it("P1INT-018: correction 事件不影响其他消息", () => {
-    try {
-      const useAppStore = require("../store").useAppStore;
-      useAppStore.getState().addMessage({
-        id: "msg-a", role: "assistant", content: "内容A",
-        timestamp: Date.now(), status: "done",
-      });
-      useAppStore.getState().addMessage({
-        id: "msg-b", role: "assistant", content: "内容B",
-        timestamp: Date.now(), status: "done",
-      });
-      useAppStore.getState().updateMessage("msg-a", { content: "修正A" });
-      const msgB = useAppStore.getState().messages.find((m: any) => m.id === "msg-b");
-      expect(msgB.content).toBe("内容B");
-    } catch {
-      expect(true).toBe(true);
-    }
+    useAppStore.getState().addMessage({
+      id: "msg-a", role: "assistant", content: "内容A",
+      timestamp: Date.now(), status: "done",
+    });
+    useAppStore.getState().addMessage({
+      id: "msg-b", role: "assistant", content: "内容B",
+      timestamp: Date.now(), status: "done",
+    });
+    useAppStore.getState().updateMessage("msg-a", { content: "修正A" });
+    const msgB = useAppStore.getState().messages.find((m: any) => m.id === "msg-b");
+    expect(msgB.content).toBe("内容B");
   });
 
   // P1INT-019
   it("P1INT-019: 多轮修正 — 每次修正基于上一次结果", () => {
-    try {
-      const useAppStore = require("../store").useAppStore;
-      useAppStore.getState().addMessage({
-        id: "msg-multi-cor", role: "assistant", content: "v1",
-        timestamp: Date.now(), status: "done",
-      });
-      useAppStore.getState().updateMessage("msg-multi-cor", { content: "v2" });
-      useAppStore.getState().updateMessage("msg-multi-cor", { content: "v3" });
-      const msg = useAppStore.getState().messages.find((m: any) => m.id === "msg-multi-cor");
-      expect(msg.content).toBe("v3");
-    } catch {
-      expect(true).toBe(true);
-    }
+    useAppStore.getState().addMessage({
+      id: "msg-multi-cor", role: "assistant", content: "v1",
+      timestamp: Date.now(), status: "done",
+    });
+    useAppStore.getState().updateMessage("msg-multi-cor", { content: "v2" });
+    useAppStore.getState().updateMessage("msg-multi-cor", { content: "v3" });
+    const msg = useAppStore.getState().messages.find((m: any) => m.id === "msg-multi-cor");
+    expect(msg.content).toBe("v3");
   });
 
   // P1INT-020
   it("P1INT-020: 修正后的内容持久化到 DB", () => {
-    try {
-      setupBase();
-      const MessageStorage = require("../core/storage/message");
-      MessageStorage.createMessage({
-        id: "msg-db-cor", role: "assistant", content: "原始",
-        timestamp: Date.now(), status: "done",
-      }, SESSION_ID);
-      MessageStorage.updateMessageContent("msg-db-cor", "修正后");
-      const loaded = MessageStorage.getMessage("msg-db-cor");
-      expect(loaded.content).toBe("修正后");
-    } catch {
-      expect(true).toBe(true);
-    }
+    setupBase();
+    _createMessage({
+      id: "msg-db-cor", role: "assistant", content: "原始",
+      timestamp: Date.now(), status: "done",
+    }, SESSION_ID);
+    _updateMessageContent("msg-db-cor", "修正后");
+    const loaded = _getMessage("msg-db-cor");
+    expect(loaded.content).toBe("修正后");
   });
 });
 
@@ -399,45 +371,35 @@ describe("P1 集成 — PipelineNextStepDialog 上下文构建", () => {
 
   // P1INT-025
   it("P1INT-025: 从最近消息构建上下文项列表", () => {
-    try {
-      const useAppStore = require("../store").useAppStore;
-      useAppStore.getState().addMessage({
-        id: "msg-recent-1", role: "user", content: "最近消息1",
-        timestamp: Date.now(), status: "done",
-      });
-      useAppStore.getState().addMessage({
-        id: "msg-recent-2", role: "assistant", content: "最近回复2",
-        timestamp: Date.now(), status: "done",
-      });
-      const recent = useAppStore.getState().messages.slice(-5);
-      const contextItems = recent
-        .filter((m: any) => m.content)
-        .map((m: any) => ({
-          id: m.id,
-          type: "message" as const,
-          title: m.content.substring(0, 60),
-          content: m.content,
-        }));
-      expect(contextItems.length).toBe(2);
-    } catch {
-      expect(true).toBe(true);
-    }
+    useAppStore.setState({ messages: [] });
+    useAppStore.getState().addMessage({
+      id: "msg-recent-1", role: "user", content: "最近消息1",
+      timestamp: Date.now(), status: "done",
+    });
+    useAppStore.getState().addMessage({
+      id: "msg-recent-2", role: "assistant", content: "最近回复2",
+      timestamp: Date.now(), status: "done",
+    });
+    const recent = useAppStore.getState().messages.slice(-5);
+    const contextItems = recent
+      .filter((m: any) => m.content)
+      .map((m: any) => ({
+        id: m.id,
+        type: "message" as const,
+        title: m.content.substring(0, 60),
+        content: m.content,
+      }));
+    expect(contextItems.length).toBeGreaterThanOrEqual(2);
   });
 
   // P1INT-026
   it("P1INT-026: 空消息列表构建空上下文", () => {
-    try {
-      const useAppStore = require("../store").useAppStore;
-      // Clear messages to ensure empty state
-      useAppStore.getState().messages.length = 0;
-      const recent = useAppStore.getState().messages.slice(-5);
-      const contextItems = recent
-        .filter((m: any) => m.content)
-        .map((m: any) => ({ id: m.id, type: "message" as const, title: m.content }));
-      expect(contextItems).toEqual([]);
-    } catch {
-      expect(true).toBe(true);
-    }
+    useAppStore.getState().messages.length = 0;
+    const recent = useAppStore.getState().messages.slice(-5);
+    const contextItems = recent
+      .filter((m: any) => m.content)
+      .map((m: any) => ({ id: m.id, type: "message" as const, title: m.content }));
+    expect(contextItems).toEqual([]);
   });
 
   // P1INT-027

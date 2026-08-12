@@ -32,6 +32,7 @@ import { initDatabase, resetDatabase, getDatabase } from "../core/storage/databa
 import * as MessageStorage from "../core/storage/message";
 import * as SessionStorage from "../core/storage/session";
 import * as ProjectStorage from "../core/storage/project";
+import { setSetting, getSetting } from "../core/storage/settings";
 import type { Message } from "../store";
 import type { Session } from "../core/types";
 
@@ -175,27 +176,19 @@ describe("Git Worktree 影响 — 环境模式与消息链路", () => {
   });
 
   // IMPACT-011
-  it("IMPACT-011: Session updateSession 更新 executionMode", () => {
-    try {
-      SessionStorage.updateSession(SESSION_ID, { executionMode: "git_worktree" } as any);
-      const sess = SessionStorage.getSession(SESSION_ID);
-      expect((sess as any).executionMode).toBe("git_worktree");
-    } catch {
-      // executionMode column may not exist in all schema versions
-      expect(true).toBe(true);
-    }
+  it("IMPACT-011: Session updateSession 忽略未知字段 executionMode", () => {
+    // executionMode is not a DB column — updateSession should silently ignore it
+    SessionStorage.updateSession(SESSION_ID, { executionMode: "git_worktree" } as any);
+    const sess = SessionStorage.getSession(SESSION_ID);
+    expect(sess).toBeDefined();
   });
 
   // IMPACT-012
-  it("IMPACT-012: Session updateSession 设置 worktreePath", () => {
-    try {
-      SessionStorage.updateSession(SESSION_ID, { worktreePath: "/tmp/wt-1" } as any);
-      const sess = SessionStorage.getSession(SESSION_ID);
-      expect((sess as any).worktreePath).toBe("/tmp/wt-1");
-    } catch {
-      // worktreePath column may not exist in all schema versions
-      expect(true).toBe(true);
-    }
+  it("IMPACT-012: Session updateSession 忽略未知字段 worktreePath", () => {
+    // worktreePath is not a DB column — updateSession should silently ignore it
+    SessionStorage.updateSession(SESSION_ID, { worktreePath: "/tmp/wt-1" } as any);
+    const sess = SessionStorage.getSession(SESSION_ID);
+    expect(sess).toBeDefined();
   });
 
   // IMPACT-013
@@ -438,33 +431,24 @@ describe("新增 DB 表对已有存储无副作用", () => {
 
   // IMPACT-041
   it("IMPACT-041: 项目 CRUD 在新增表后正常", () => {
-    try {
-      ProjectStorage.createProject({
-        id: "proj-new-table", name: "新表后", path: "D:/nt",
-        createdAt: Date.now(), lastAccessedAt: Date.now(),
-      });
-      expect(ProjectStorage.getProject("proj-new-table")).toBeDefined();
-      ProjectStorage.deleteProject("proj-new-table");
-      expect(ProjectStorage.getProject("proj-new-table")).toBeUndefined();
-    } catch (e) {
-      // Project CRUD may have schema requirements
-      expect(true).toBe(true);
-    }
+    ProjectStorage.createProject({
+      id: "proj-new-table", name: "新表后", path: "D:/nt",
+      createdAt: Date.now(), lastAccessedAt: Date.now(),
+    });
+    expect(ProjectStorage.getProject("proj-new-table")).toBeDefined();
+    ProjectStorage.deleteProject("proj-new-table");
+    expect(ProjectStorage.getProject("proj-new-table")).toBeNull();
   });
 
   // IMPACT-042
   it("IMPACT-042: Session CRUD 在新增表后正常", () => {
-    try {
-      SessionStorage.createSession({
-        id: "sess-new-table", projectId: PROJECT_ID, title: "新表后会话",
-        createdAt: Date.now(), lastMessageAt: Date.now(), messageCount: 0,
-      });
-      expect(SessionStorage.getSession("sess-new-table")).toBeDefined();
-      SessionStorage.deleteSession("sess-new-table");
-      expect(SessionStorage.getSession("sess-new-table")).toBeUndefined();
-    } catch {
-      expect(true).toBe(true);
-    }
+    SessionStorage.createSession({
+      id: "sess-new-table", projectId: PROJECT_ID, title: "新表后会话",
+      createdAt: Date.now(), lastMessageAt: Date.now(), messageCount: 0,
+    });
+    expect(SessionStorage.getSession("sess-new-table")).toBeDefined();
+    SessionStorage.deleteSession("sess-new-table");
+    expect(SessionStorage.getSession("sess-new-table")).toBeNull();
   });
 
   // IMPACT-043
@@ -476,12 +460,8 @@ describe("新增 DB 表对已有存储无副作用", () => {
 
   // IMPACT-044
   it("IMPACT-044: 设置 CRUD 在新增表后正常", () => {
-    try {
-      setSetting("test-after-new-tables", "value");
-      expect(getSetting("test-after-new-tables")).toBe("value");
-    } catch {
-      expect(true).toBe(true);
-    }
+    setSetting("test-after-new-tables", "value");
+    expect(getSetting("test-after-new-tables")).toBe("value");
   });
 
   // IMPACT-045
@@ -498,14 +478,10 @@ describe("新增 DB 表对已有存储无副作用", () => {
 
   // IMPACT-046
   it("IMPACT-046: DB 防抖持久化不丢失数据", () => {
-    try {
-      setSetting("debounce-test", "v1");
-      setSetting("debounce-test", "v2");
-      setSetting("debounce-test", "v3");
-      expect(getSetting("debounce-test")).toBe("v3");
-    } catch {
-      expect(true).toBe(true);
-    }
+    setSetting("debounce-test", "v1");
+    setSetting("debounce-test", "v2");
+    setSetting("debounce-test", "v3");
+    expect(getSetting("debounce-test")).toBe("v3");
   });
 
   // IMPACT-047
@@ -524,30 +500,22 @@ describe("新增 DB 表对已有存储无副作用", () => {
   // IMPACT-048
   it("IMPACT-048: todo_lists 表可写入和读取", () => {
     const db = getDatabase();
-    try {
-      db.run("INSERT INTO todo_lists (id, session_id, todos, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
-        ["todo-db-test", SESSION_ID, JSON.stringify([{ id: "t1", text: "test", completed: false, status: "pending" }]), Date.now(), Date.now()]);
-      const result = db.exec("SELECT todos FROM todo_lists WHERE id = ?", ["todo-db-test"]);
-      const todos = JSON.parse(result[0].values[0][0] as string);
-      expect(todos[0].text).toBe("test");
-    } catch {
-      // FK constraint requires valid session_id — just verify table exists
-      expect(true).toBe(true);
-    }
+    db.run("INSERT INTO todo_lists (id, session_id, todos, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+      ["todo-db-test", SESSION_ID, JSON.stringify([{ id: "t1", text: "test", completed: false, status: "pending" }]), Date.now(), Date.now()]);
+    const result = db.exec("SELECT todos FROM todo_lists WHERE id = ?", ["todo-db-test"]);
+    const todos = JSON.parse(result[0].values[0][0] as string);
+    expect(todos[0].text).toBe("test");
   });
 
   // IMPACT-049
   it("IMPACT-049: message_feedback 表可写入和读取", () => {
     const db = getDatabase();
-    try {
-      db.run("INSERT INTO message_feedback (message_id, session_id, feedback, timestamp) VALUES (?, ?, ?, ?)",
-        ["msg-fb-db-test", SESSION_ID, "like", Date.now()]);
-      const result = db.exec("SELECT feedback FROM message_feedback WHERE message_id = ?", ["msg-fb-db-test"]);
-      expect(result[0].values[0][0]).toBe("like");
-    } catch {
-      // FK constraint requires valid message_id — just verify table exists
-      expect(true).toBe(true);
-    }
+    // Insert a valid message first to satisfy FK constraint
+    MessageStorage.createMessage(makeMsg({ id: "msg-fb-db-test" }), SESSION_ID);
+    db.run("INSERT INTO message_feedback (message_id, session_id, feedback, timestamp) VALUES (?, ?, ?, ?)",
+      ["msg-fb-db-test", SESSION_ID, "like", Date.now()]);
+    const result = db.exec("SELECT feedback FROM message_feedback WHERE message_id = ?", ["msg-fb-db-test"]);
+    expect(result[0].values[0][0]).toBe("like");
   });
 
   // IMPACT-050

@@ -128,23 +128,18 @@ ${existingSummary.includes("React") ? "- 选用 React + TypeScript 前端技术�
 // ========== 测试 ==========
 
 describe("P0-1: MemoryService 接入系统提示词 — 真实 MemoryService 验证", () => {
-  // 调用真实 MemoryService.buildMemoryPrompt
-  let memoryService: any;
-  try { memoryService = getMemoryService(); } catch { memoryService = null; }
+  const memoryService = getMemoryService();
 
   it("buildMemoryPrompt 空记忆返回空字符串", () => {
-    if (!memoryService) { expect(true).toBe(true); return; }
     const prompt = memoryService.buildMemoryPrompt("project");
     expect(typeof prompt).toBe("string");
   });
 
   it("buildMemoryPrompt 是可调用函数", () => {
-    if (!memoryService) { expect(true).toBe(true); return; }
     expect(typeof memoryService.buildMemoryPrompt).toBe("function");
   });
 
   it("MemoryService 有 listByScope 方法", () => {
-    if (!memoryService) { expect(true).toBe(true); return; }
     expect(typeof memoryService.listByScope).toBe("function");
   });
 

@@ -113,11 +113,11 @@ describe("P0-2: FileChangeTracker — 文件变更追踪", () => {
     expect(src).toContain("MAX_FILES_LIST_BYTES");
   });
 
-  it("finalize() — REMOVED broken behavior test placeholder", async () => {
-    // This slot was previously a behavior test that failed due to mock returning
-    // strings instead of {stdout, stderr, exitCode} objects.
-    // The behavior is covered by integration tests in regression-coding-cross-impact.test.ts
-    expect(true).toBe(true);
+  it("finalize() — emit 事件通过 listeners 触发", async () => {
+    const src = require("fs").readFileSync("src/core/environment/file-change-tracker.ts", "utf-8");
+    expect(src).toContain("function emit(result: FileChangeResult)");
+    expect(src).toContain("listeners.forEach");
+    expect(src).toContain("emit(result)");
   });
 
   it("finalize() — emit file_changes_tracked 事件", async () => {

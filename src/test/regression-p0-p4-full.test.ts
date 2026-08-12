@@ -292,22 +292,12 @@ describe("P1 高级Agent — 组件导入与工具注册", () => {
   });
 
   it("REG-FULL-043: model-config 模块可导入", async () => {
-    try {
-      const mod = await import("../core/model-config");
-      expect(mod).toBeDefined();
-    } catch {
-      // File may not exist at expected path
-      expect(true).toBe(true);
-    }
+    const mod = await import("../core/model-config");
+    expect(mod).toBeDefined();
   });
   it("REG-FULL-044: capability-detector 模块可导入", async () => {
-    try {
-      const mod = await import(/* @vite-ignore */ "../core/llm/capability-detector");
-      expect(mod).toBeDefined();
-    } catch {
-      // File may not exist
-      expect(true).toBe(true);
-    }
+    const mod = await import("../core/llm/capability-detector");
+    expect(mod).toBeDefined();
   });
   it("REG-FULL-045: model-resolver 模块可导入", async () => {
     const mod = await import("../core/llm/model-resolver");
@@ -496,45 +486,40 @@ describe("P2 体验提升 — 组件导入", () => {
   });
 
   it("REG-FULL-087: saveQuickPhrase + loadQuickPhrases", async () => {
-    try {
-      const { saveQuickPhrase, loadQuickPhrases } = await import("../core/storage/settings");
-      saveQuickPhrase({ id: "qp-87", text: "test", category: "cat" } as any);
-      expect(loadQuickPhrases().find(p => p.id === "qp-87")).toBeDefined();
-    } catch { expect(true).toBe(true); }
+    const { saveQuickPhrase, loadQuickPhrases } = await import("../core/storage/settings");
+    saveQuickPhrase({ id: "qp-87", title: "test", content: "test", category: "cat", usageCount: 0, createdAt: Date.now(), updatedAt: Date.now() });
+    expect(loadQuickPhrases().find(p => p.id === "qp-87")).toBeDefined();
   });
 
   it("REG-FULL-088: deleteQuickPhrase 删除短语", async () => {
-    try {
-      const { saveQuickPhrase, loadQuickPhrases, deleteQuickPhrase } = await import("../core/storage/settings");
-      saveQuickPhrase({ id: "qp-88", text: "del", category: "cat" } as any);
-      deleteQuickPhrase("qp-88");
-      expect(loadQuickPhrases().find(p => p.id === "qp-88")).toBeUndefined();
-    } catch { expect(true).toBe(true); }
+    const { saveQuickPhrase, loadQuickPhrases, deleteQuickPhrase } = await import("../core/storage/settings");
+    saveQuickPhrase({ id: "qp-88", title: "del", content: "del", category: "cat", usageCount: 0, createdAt: Date.now(), updatedAt: Date.now() });
+    deleteQuickPhrase("qp-88");
+    expect(loadQuickPhrases().find(p => p.id === "qp-88")).toBeUndefined();
   });
 
   it("REG-FULL-089: savePromptDraft + loadPromptDrafts", async () => {
-    try {
-      const { savePromptDraft, loadPromptDrafts } = await import("../core/storage/prompt-draft");
-      savePromptDraft({ id: "pd-89", content: "draft", sessionId: "s1", createdAt: Date.now() });
-      expect(loadPromptDrafts("s1").find(d => d.id === "pd-89")).toBeDefined();
-    } catch { expect(true).toBe(true); }
+    const { savePromptDraft, loadPromptDrafts } = await import("../core/storage/prompt-draft");
+    const db = getDatabase();
+    db.run("INSERT INTO projects (id, name, path, created_at, last_accessed_at) VALUES (?, ?, ?, ?, ?)",
+      ["proj-r89", "p", "D:/p", Date.now(), Date.now()]);
+    db.run("INSERT INTO sessions (id, project_id, title, created_at, last_message_at, message_count) VALUES (?, ?, ?, ?, ?, ?)",
+      ["s1", "proj-r89", "s", Date.now(), Date.now(), 0]);
+    const draftId = savePromptDraft("s1", "draft");
+    expect(loadPromptDrafts("s1").find(d => d.id === draftId)).toBeDefined();
   });
 
   it("REG-FULL-090: deletePromptDraft 删除草稿", async () => {
-    try {
-      const { savePromptDraft, loadPromptDrafts, deletePromptDraft } = await import("../core/storage/prompt-draft");
-      savePromptDraft({ id: "pd-90", content: "del", sessionId: "s90", createdAt: Date.now() });
-      deletePromptDraft("pd-90");
-      expect(loadPromptDrafts("s90").find(d => d.id === "pd-90")).toBeUndefined();
-    } catch { expect(true).toBe(true); }
+    const { savePromptDraft, loadPromptDrafts, deletePromptDraft } = await import("../core/storage/prompt-draft");
+    const db = getDatabase();
+    db.run("INSERT INTO projects (id, name, path, created_at, last_accessed_at) VALUES (?, ?, ?, ?, ?)",
+      ["proj-r90", "p", "D:/p", Date.now(), Date.now()]);
+    db.run("INSERT INTO sessions (id, project_id, title, created_at, last_message_at, message_count) VALUES (?, ?, ?, ?, ?, ?)",
+      ["s90", "proj-r90", "s", Date.now(), Date.now(), 0]);
+    const draftId = savePromptDraft("s90", "del");
+    deletePromptDraft(draftId);
+    expect(loadPromptDrafts("s90").find(d => d.id === draftId)).toBeUndefined();
   });
-
-  // REG-FULL-091 ~ 110
-  for (let i = 91; i <= 110; i++) {
-    it("REG-FULL-" + String(i).padStart(3, "0") + ": P2 扩展 " + (i - 90), () => {
-      expect(true).toBe(true);
-    });
-  }
 });
 
 // ========== D. P3 多模态 ==========
@@ -565,11 +550,6 @@ describe("P3 多模态 — 组件导入", () => {
     expect(att.type).toBe("video");
   });
 
-  for (let i = 116; i <= 130; i++) {
-    it("REG-FULL-" + String(i).padStart(3, "0") + ": P3 扩展 " + (i - 115), () => {
-      expect(true).toBe(true);
-    });
-  }
 });
 
 // ========== E. P4 智能输入 ==========
@@ -592,11 +572,6 @@ describe("P4 智能输入 — 组件导入", () => {
     expect(mod.SourceSelector).toBeDefined();
   });
 
-  for (let i = 135; i <= 150; i++) {
-    it("REG-FULL-" + String(i).padStart(3, "0") + ": P4 扩展 " + (i - 134), () => {
-      expect(true).toBe(true);
-    });
-  }
 });
 
 // ========== F. Store/Types 扩展 ==========
@@ -694,11 +669,7 @@ describe("Store/Types 扩展 — 新字段验证", () => {
     expect(g?.consumed).toBe(true);
   });
 
-  for (let i = 166; i <= 170; i++) {
-    it("REG-FULL-" + String(i).padStart(3, "0") + ": Store 扩展 " + (i - 165), () => {
-      expect(true).toBe(true);
-    });
-  }
+  // REG-FULL-166 ~ 170 removed — were empty placeholders
 });
 
 // ========== H. i18n 新增翻译键 ==========

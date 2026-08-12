@@ -237,8 +237,7 @@ This is the prompt content.
 
   // ===== B4: ToolRegistry + createDefaultToolRegistry =====
   describe("B4: ToolRegistry 和工具注册 — 行为验证", () => {
-    let registry: any;
-    try { registry = createDefaultToolRegistry(); } catch { registry = { getAll: () => [], remove: () => {}, get: () => undefined }; }
+    const registry = createDefaultToolRegistry();
     const toolIds = registry.getAll().map((t: any) => t.id);
 
     it("ToolRegistry 包含 remove 方法", () => {
@@ -345,21 +344,15 @@ This is the prompt content.
 
   // ===== B8: buildSkillPrompt 禁用过滤 — 行为验证 =====
   describe("B8: buildSkillPrompt 禁用过滤 — 行为验证", () => {
-    let reg: any;
-    try { reg = getSkillRegistry(); } catch { reg = null; }
+    const reg = getSkillRegistry();
 
     it("buildSkillPrompt 是可调用函数", () => {
-      if (reg) { expect(typeof reg.buildSkillPrompt).toBe("function"); }
-      else { expect(true).toBe(true); }
+      expect(typeof reg.buildSkillPrompt).toBe("function");
     });
 
     it("buildSkillPrompt 返回字符串", () => {
-      if (reg) {
-        const prompt = reg.buildSkillPrompt();
-        expect(typeof prompt).toBe("string");
-      } else {
-        expect(true).toBe(true);
-      }
+      const prompt = reg.buildSkillPrompt();
+      expect(typeof prompt).toBe("string");
     });
   });
 });
@@ -1487,10 +1480,8 @@ describe("跨模块集成测试", () => {
     });
 it("PDF 提取不依赖 pdfjs-dist (使用纯 TS 实现；查看器可使用)", () => {
 const deps = { ...packageJson.dependencies, ...packageJson.devDependencies };
-// pdfjs-dist is allowed for PDF viewing (PdfViewer component), but text extraction should remain pure TS
-// This test verifies the extraction pipeline doesn't use pdfjs-dist directly
-// The presence of pdfjs-dist for viewing is acceptable
-expect(true).toBe(true); // Constraint relaxed: pdfjs-dist allowed for UI viewing
+  // pdfjs-dist is allowed for PDF viewing (PdfViewer component), but text extraction should remain pure TS
+  expect(deps["pdfjs-dist"]).toBeDefined();
 });
   });
 });

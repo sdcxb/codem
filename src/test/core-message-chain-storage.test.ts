@@ -487,6 +487,18 @@ describe("消息链路 — 设置/快捷短语/草稿/反馈存储", () => {
   beforeEach(async () => {
     try { await resetDatabase(); } catch { await initDatabase(); }
     localStorage.clear();
+    // Create base project + session for FK constraints
+    const db = getDatabase();
+    db.run("INSERT INTO projects (id, name, path, created_at, last_accessed_at) VALUES (?, ?, ?, ?, ?)",
+      [PROJECT_ID, "链路测试", "D:/chain", Date.now(), Date.now()]);
+    db.run("INSERT INTO sessions (id, project_id, title, created_at, last_message_at, message_count) VALUES (?, ?, ?, ?, ?, ?)",
+      [SESSION_ID, PROJECT_ID, "链路测试会话", Date.now(), Date.now(), 0]);
+    db.run("INSERT INTO sessions (id, project_id, title, created_at, last_message_at, message_count) VALUES (?, ?, ?, ?, ?, ?)",
+      ["sess-del", PROJECT_ID, "删除测试", Date.now(), Date.now(), 0]);
+    db.run("INSERT INTO sessions (id, project_id, title, created_at, last_message_at, message_count) VALUES (?, ?, ?, ?, ?, ?)",
+      ["sess-A", PROJECT_ID, "会话A", Date.now(), Date.now(), 0]);
+    db.run("INSERT INTO sessions (id, project_id, title, created_at, last_message_at, message_count) VALUES (?, ?, ?, ?, ?, ?)",
+      ["sess-B", PROJECT_ID, "会话B", Date.now(), Date.now(), 0]);
   });
 
   // CHAIN-046
@@ -509,46 +521,30 @@ describe("消息链路 — 设置/快捷短语/草稿/反馈存储", () => {
 
   // CHAIN-049
   it("CHAIN-049: saveQuickPhrase + loadQuickPhrases 快捷短语 CRUD", () => {
-    try {
-      saveQuickPhrase({ id: "qp-1", text: "短语1", category: "常用" } as any);
-      const phrases = loadQuickPhrases();
-      expect(phrases.length).toBe(1);
-    } catch {
-      expect(true).toBe(true);
-    }
+    saveQuickPhrase({ id: "qp-1", title: "短语1", content: "短语1", category: "常用", usageCount: 0, createdAt: Date.now(), updatedAt: Date.now() });
+    const phrases = loadQuickPhrases();
+    expect(phrases.find(p => p.id === "qp-1")).toBeDefined();
   });
 
   // CHAIN-050
   it("CHAIN-050: deleteQuickPhrase 删除快捷短语", () => {
-    try {
-      saveQuickPhrase({ id: "qp-del", text: "待删", category: "常用" } as any);
-      deleteQuickPhrase("qp-del");
-      expect(loadQuickPhrases().find(p => p.id === "qp-del")).toBeUndefined();
-    } catch {
-      expect(true).toBe(true);
-    }
+    saveQuickPhrase({ id: "qp-del", title: "待删", content: "待删", category: "常用", usageCount: 0, createdAt: Date.now(), updatedAt: Date.now() });
+    deleteQuickPhrase("qp-del");
+    expect(loadQuickPhrases().find(p => p.id === "qp-del")).toBeUndefined();
   });
 
   // CHAIN-051
   it("CHAIN-051: savePromptDraft + loadPromptDrafts 草稿 CRUD", () => {
-    try {
-      savePromptDraft({ id: "pd-1", content: "草稿内容", sessionId: "sess-1", createdAt: Date.now() });
-      const drafts = loadPromptDrafts("sess-1");
-      expect(drafts.find(d => d.id === "pd-1")).toBeDefined();
-    } catch {
-      expect(true).toBe(true);
-    }
+    const draftId = savePromptDraft(SESSION_ID, "草稿内容");
+    const drafts = loadPromptDrafts(SESSION_ID);
+    expect(drafts.find(d => d.content === "草稿内容")).toBeDefined();
   });
 
   // CHAIN-052
   it("CHAIN-052: deletePromptDraft 删除草稿", () => {
-    try {
-      savePromptDraft({ id: "pd-del", content: "待删", sessionId: "sess-del", createdAt: Date.now() });
-      deletePromptDraft("pd-del");
-      expect(loadPromptDrafts("sess-del").find(d => d.id === "pd-del")).toBeUndefined();
-    } catch {
-      expect(true).toBe(true);
-    }
+    const draftId = savePromptDraft("sess-del", "待删");
+    deletePromptDraft(draftId);
+    expect(loadPromptDrafts("sess-del").find(d => d.id === draftId)).toBeUndefined();
   });
 
   // CHAIN-053
@@ -566,27 +562,19 @@ describe("消息链路 — 设置/快捷短语/草稿/反馈存储", () => {
 
   // CHAIN-055
   it("CHAIN-055: 多条快捷短语按分类存储", () => {
-    try {
-      saveQuickPhrase({ id: "qp-c1", text: "常用1", category: "常用" } as any);
-      saveQuickPhrase({ id: "qp-c2", text: "常用2", category: "常用" } as any);
-      saveQuickPhrase({ id: "qp-e1", text: "English1", category: "English" } as any);
-      const phrases = loadQuickPhrases();
-      expect(phrases.length).toBe(3);
-    } catch {
-      expect(true).toBe(true);
-    }
+    saveQuickPhrase({ id: "qp-c1", title: "常用1", content: "常用1", category: "常用", usageCount: 0, createdAt: Date.now(), updatedAt: Date.now() });
+    saveQuickPhrase({ id: "qp-c2", title: "常用2", content: "常用2", category: "常用", usageCount: 0, createdAt: Date.now(), updatedAt: Date.now() });
+    saveQuickPhrase({ id: "qp-e1", title: "English1", content: "English1", category: "English", usageCount: 0, createdAt: Date.now(), updatedAt: Date.now() });
+    const phrases = loadQuickPhrases();
+    expect(phrases.length).toBeGreaterThanOrEqual(3);
   });
 
   // CHAIN-056
   it("CHAIN-056: 多个草稿按 session 隔离", () => {
-    try {
-      savePromptDraft({ id: "pd-s1", content: "S1草稿", sessionId: "sess-A", createdAt: Date.now() });
-      savePromptDraft({ id: "pd-s2", content: "S2草稿", sessionId: "sess-B", createdAt: Date.now() });
-      expect(loadPromptDrafts("sess-A").find(d => d.id === "pd-s1")).toBeDefined();
-      expect(loadPromptDrafts("sess-B").find(d => d.id === "pd-s2")).toBeDefined();
-    } catch {
-      expect(true).toBe(true);
-    }
+    savePromptDraft("sess-A", "S1草稿");
+    savePromptDraft("sess-B", "S2草稿");
+    expect(loadPromptDrafts("sess-A").find(d => d.content === "S1草稿")).toBeDefined();
+    expect(loadPromptDrafts("sess-B").find(d => d.content === "S2草稿")).toBeDefined();
   });
 
   // CHAIN-057
