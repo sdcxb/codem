@@ -14,7 +14,7 @@
 > v0.96.0 已发布：主对话窗口 UI 大改版（对标 frakio-work/wecode）+ 内联 Diff 批量审批（替换弹窗）+ 三皮肤暗色模式深度修复 + 梦幻皮肤自适应主题（data-theme 基于 palette.isDark）+ 富内容渲染系统（9 组件）+ Shiki 语法高亮 + 39 个新组件 + 3 个新依赖（framer-motion/shiki/xlsx）。42 个文件修改（+4,599/-1,866 行）。
 > v0.96.1 已发布：右侧栏文件浏览器体系重构（对标 wecode 固定宽度面板 420px）+ 文件拖拽修复（Tauri dragDropEnabled + dropEffect）+ 拖拽方向反转修复 + 文件编辑器悬浮窗口（createPortal 全屏预览）+ Hub 皮肤强制暗色 + TitleBar 主题初始化修复 + MentionAutocomplete 重写 + FileEditor 全格式预览（图片/PDF/Excel/Word/视频/音频/HTML）+ **应用 Logo 替换**（icos/codem.ico 紫色图标）+ **NSIS 安装包图标修复**（sharp/png-to-ico 生成 BMP 格式 ICO + installerIcon 配置）。19 个文件修改（+2,392/-414 行）。
 > v0.96.2 已发布：CodeGraph 代码知识图谱集成（自动检测 .codegraph/ → MCP Server 注册 → 系统提示词注入 codegraph_explore 指导 → 设置页面"代码图谱"标签页）+ 测试套件改造（readFileSync+toContain → 真实模块行为验证）+ CI Workflow（tsc + vitest + cargo check）+ Vite watch EBUSY 修复 + CodeGraph 集成测试（49 用例 4 层覆盖）。全量 72 文件 / 2872 用例通过。
-> v0.97.0 已发布：Agentic Loop 性能优化（Tool Result 磁盘持久化 + ToolSearch 延迟加载 + Micro-Compact 摘要 + TranscriptCache 修复）+ 工具系统增强（工具中断行为 + Bash 分析器 + Hooks 系统 + TodoWrite 增强 + Forked Agent 记忆提取）+ 技能市场三大新源接入（ClawHub.ai / Skills.sh / SkillHub CLI）+ 技能发布功能（publishSkillToMarket 三种目标 + UI 发布对话框）。全量 85 文件 / 2901 用例通过（2899 通过）。
+> v0.97.0 已发布：Agentic Loop 性能优化（Tool Result 磁盘持久化 + ToolSearch 延迟加载 + Micro-Compact 摘要 + TranscriptCache 修复）+ 工具系统增强（工具中断行为 + Bash 分析器 + Hooks 系统 + TodoWrite 增强 + Forked Agent 记忆提取）+ 技能市场三大新源接入（ClawHub.ai / Skills.sh / SkillHub CLI）+ 技能发布功能（publishSkillToMarket 三种目标 + UI 发布对话框）。**补丁修复（同版本重新构建）：** ctx.abort 空指针 + Session 持久化缺失（executionMode/worktreePath/worktreeBranch）+ preserveExecutor 类型错误 + 移除 57 个假测试 + 重写 61 个源码字符串匹配测试为真实行为测试。全量 84 文件 / 2924 用例全部通过（0 失败）。
 
 ## 待开发
 

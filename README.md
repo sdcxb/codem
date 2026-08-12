@@ -275,6 +275,8 @@ npm run tauri:build
 ### 2026-08-12（v0.97.0）
 
 > 本次更新为 Agentic Loop 性能优化 + 工具系统延迟加载 + 记忆提取 Forked Agent + 技能市场三大新源接入 + 技能发布功能。10 个文件修改（+1,568/-73 行），20 个新文件。全量 85 文件 / 2901 用例通过（2899 通过）。
+>
+> **2026-08-12 补丁（同版本重新构建）：** 修复 CI 测试中发现的 3 个代码 bug + 移除 57 个假测试 + 重写 61 个源码字符串匹配测试为真实行为测试。全量 84 文件 / 2924 用例全部通过（0 失败）。
 
 **P0 — Agentic Loop 性能优化（上下文膨胀治理）：**
 - **P0-1 Tool Result 磁盘持久化**（`tool-result-storage.ts`）：超大工具输出（>4KB）自动落盘到 `~/.codem/tool-results/`，上下文中仅保留摘要 + 文件路径引用，agent 可按需 `read_file` 回读完整结果。支持 disk-full 降级到截断模式
@@ -303,6 +305,17 @@ npm run tauri:build
 - `listPublishableMarkets()` 检查每个市场的就绪状态（CLI 是否安装、是否登录）
 - `dryRunPublish()` 支持 ClawHub `--dry-run` 预检
 - SkillManager UI 新增「📤 发布到市场」按钮 + 发布对话框（市场选择 + slug/版本/变更日志填写 + 结果展示）
+
+**2026-08-12 补丁 — 代码 Bug 修复（CI 测试驱动）：**
+- **Bug 1 `ctx.abort` 空指针**（`streaming-executor.ts`）：`executeBatch` / `executeSingle` 中 `ctx.abort.aborted` 未做空值保护，改为 `ctx.abort?.aborted`
+- **Bug 2 Session 持久化缺失**（`database.ts` + `session.ts`）：`Session` 类型定义了 `executionMode` / `worktreePath` / `worktreeBranch` 字段，但 DB schema、`createSession`、`updateSession`、`rowToSession` 全部忽略了这些字段。添加 3 条 DB migration（`execution_mode` / `worktree_path` / `worktree_branch` 列）+ 修复全链路 CRUD
+- **Bug 3 `preserveExecutor` 类型错误**（`session.ts`）：`preserveExecutor` 在 `Session` 类型中为 `number`，但代码中错误地当 `boolean` 处理（`=== true ? 1 : === false ? 0`），导致 TypeScript 编译失败
+
+**2026-08-12 补丁 — 测试质量治理：**
+- 移除 57 个 `expect(true).toBe(true)` 空壳测试（`p1-6-architecture.test.ts` 整文件删除，13 个空壳已被 `interrupt-behavior-architecture.test.ts` 覆盖）
+- 重写 4 个纯源码字符串匹配测试文件为真实行为测试（`forked-agent.test.ts` / `interrupt-behavior-architecture.test.ts` / `skill-publish.test.ts` / `skill-market-new-sources.test.ts`，共 61 个测试从 `readFileSync + toContain` 改为 `import + 实际调用`）
+- 修复 6 个测试参数类型不匹配（`saveQuickPhrase` / `savePromptDraft` 调用参数与函数签名不一致）
+- 移除 70 个 for 循环生成的空壳测试（`regression-p0-p4-full.test.ts` / `regression-knowledge-full.test.ts`）
 
 ### 2026-08-11（v0.96.2）
 
