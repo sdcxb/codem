@@ -71,7 +71,7 @@ describe("P1-9: Forked Agent — 架构验证", () => {
   it("spawnForked 方法应该存在于 LLMEngine 类中", async () => {
     // 通过读取源代码验证 spawnForked 方法存在
     const fs = require("fs");
-    const content = fs.readFileSync("c:/mimo-gui/src/core/llm/index.ts", "utf-8");
+    const content = fs.readFileSync("src/core/llm/index.ts", "utf-8");
 
     // 检查 spawnForked 方法定义
     expect(content).toMatch(/async\s+spawnForked\s*\(/);
@@ -86,7 +86,7 @@ describe("P1-9: Forked Agent — 架构验证", () => {
 
   it("spawnForked 应该深拷贝 messages 防止 msgCache 污染", async () => {
     const fs = require("fs");
-    const content = fs.readFileSync("c:/mimo-gui/src/core/llm/index.ts", "utf-8");
+    const content = fs.readFileSync("src/core/llm/index.ts", "utf-8");
 
     // 检查深拷贝逻辑
     expect(content).toMatch(/JSON\.parse\(JSON\.stringify/);
@@ -96,7 +96,7 @@ describe("P1-9: Forked Agent — 架构验证", () => {
 
   it("spawnForked 应该支持独立 AbortController", async () => {
     const fs = require("fs");
-    const content = fs.readFileSync("c:/mimo-gui/src/core/llm/index.ts", "utf-8");
+    const content = fs.readFileSync("src/core/llm/index.ts", "utf-8");
 
     // 检查 abortSignal 参数
     expect(content).toMatch(/abortSignal\?:\s*AbortSignal/);
@@ -106,7 +106,7 @@ describe("P1-9: Forked Agent — 架构验证", () => {
 
   it("extractMemoriesFromSession 应该使用 spawnForked 而非独立 API 调用", async () => {
     const fs = require("fs");
-    const content = fs.readFileSync("c:/mimo-gui/src/core/llm/index.ts", "utf-8");
+    const content = fs.readFileSync("src/core/llm/index.ts", "utf-8");
 
     // 检查 extractMemoriesFromSession 调用 spawnForked
     const extractMemoriesSection = content.substring(
@@ -125,7 +125,7 @@ describe("P1-9: Forked Agent — 架构验证", () => {
 
   it("extractMemoriesFromSession 应该创建独立 AbortController", async () => {
     const fs = require("fs");
-    const content = fs.readFileSync("c:/mimo-gui/src/core/llm/index.ts", "utf-8");
+    const content = fs.readFileSync("src/core/llm/index.ts", "utf-8");
 
     const extractMemoriesSection = content.substring(
       content.indexOf("async extractMemoriesFromSession"),
@@ -140,7 +140,7 @@ describe("P1-9: Forked Agent — 架构验证", () => {
 
   it("spawnForked 应该限制最大消息数", async () => {
     const fs = require("fs");
-    const content = fs.readFileSync("c:/mimo-gui/src/core/llm/index.ts", "utf-8");
+    const content = fs.readFileSync("src/core/llm/index.ts", "utf-8");
 
     // 检查 maxMessages 参数和默认值
     expect(content).toMatch(/maxMessages\?:\s*number/);
@@ -151,7 +151,7 @@ describe("P1-9: Forked Agent — 架构验证", () => {
 
   it("spawnForked 应该追加新的 user 消息到末尾", async () => {
     const fs = require("fs");
-    const content = fs.readFileSync("c:/mimo-gui/src/core/llm/index.ts", "utf-8");
+    const content = fs.readFileSync("src/core/llm/index.ts", "utf-8");
 
     // 检查在 forkedMessages 末尾追加 user 消息
     expect(content).toMatch(/forkedMessages\.push\(/);
@@ -160,7 +160,7 @@ describe("P1-9: Forked Agent — 架构验证", () => {
 
   it("spawnForked 应该调用 provider.complete 而非 agentic loop", async () => {
     const fs = require("fs");
-    const content = fs.readFileSync("c:/mimo-gui/src/core/llm/index.ts", "utf-8");
+    const content = fs.readFileSync("src/core/llm/index.ts", "utf-8");
 
     // spawnForked 应该直接调用 provider.complete，不走 agentic loop
     const spawnForkedSection = content.substring(
@@ -185,7 +185,7 @@ describe("P1-9: Forked Agent — 架构验证", () => {
     // 7. 返回响应文本
 
     const fs = require("fs");
-    const content = fs.readFileSync("c:/mimo-gui/src/core/llm/index.ts", "utf-8");
+    const content = fs.readFileSync("src/core/llm/index.ts", "utf-8");
 
     const spawnForkedSection = content.substring(
       content.indexOf("async spawnForked("),

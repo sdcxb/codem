@@ -37,7 +37,7 @@ describe("Skill Publishing — Architecture Verification", () => {
   describe("PublishConfig 类型", () => {
     it("应该包含所有必要的发布配置字段", async () => {
       const fs = require("fs");
-      const content = fs.readFileSync("c:/mimo-gui/src/core/skill/skill-market-client.ts", "utf-8");
+      const content = fs.readFileSync("src/core/skill/skill-market-client.ts", "utf-8");
 
       expect(content).toContain("export type PublishTarget");
       expect(content).toContain("\"clawhub\"");
@@ -60,7 +60,7 @@ describe("Skill Publishing — Architecture Verification", () => {
   describe("PublishResult 类型", () => {
     it("应该包含结果字段", async () => {
       const fs = require("fs");
-      const content = fs.readFileSync("c:/mimo-gui/src/core/skill/skill-market-client.ts", "utf-8");
+      const content = fs.readFileSync("src/core/skill/skill-market-client.ts", "utf-8");
 
       expect(content).toContain("export interface PublishResult");
       expect(content).toContain("success: boolean");
@@ -74,7 +74,7 @@ describe("Skill Publishing — Architecture Verification", () => {
   describe("PublishableMarket 类型", () => {
     it("应该包含可发布市场信息字段", async () => {
       const fs = require("fs");
-      const content = fs.readFileSync("c:/mimo-gui/src/core/skill/skill-market-client.ts", "utf-8");
+      const content = fs.readFileSync("src/core/skill/skill-market-client.ts", "utf-8");
 
       expect(content).toContain("export interface PublishableMarket");
       expect(content).toContain("ready: boolean");
@@ -85,7 +85,7 @@ describe("Skill Publishing — Architecture Verification", () => {
   describe("listPublishableMarkets", () => {
     it("应该检查 ClawHub CLI 安装和登录状态", async () => {
       const fs = require("fs");
-      const content = fs.readFileSync("c:/mimo-gui/src/core/skill/skill-market-client.ts", "utf-8");
+      const content = fs.readFileSync("src/core/skill/skill-market-client.ts", "utf-8");
 
       expect(content).toContain("async function isCLIInstalled");
       expect(content).toContain("async function checkClawHubAuth");
@@ -95,7 +95,7 @@ describe("Skill Publishing — Architecture Verification", () => {
 
     it("应该包含 ClawHub 市场", async () => {
       const fs = require("fs");
-      const content = fs.readFileSync("c:/mimo-gui/src/core/skill/skill-market-client.ts", "utf-8");
+      const content = fs.readFileSync("src/core/skill/skill-market-client.ts", "utf-8");
 
       // 检查 ClawHub 被添加到 markets 列表
       const listSection = content.substring(
@@ -108,7 +108,7 @@ describe("Skill Publishing — Architecture Verification", () => {
 
     it("应该包含 GitHub 仓库选项", async () => {
       const fs = require("fs");
-      const content = fs.readFileSync("c:/mimo-gui/src/core/skill/skill-market-client.ts", "utf-8");
+      const content = fs.readFileSync("src/core/skill/skill-market-client.ts", "utf-8");
 
       const listSection = content.substring(
         content.indexOf("export async function listPublishableMarkets"),
@@ -120,7 +120,7 @@ describe("Skill Publishing — Architecture Verification", () => {
 
     it("应该检查 CLI 类型市场", async () => {
       const fs = require("fs");
-      const content = fs.readFileSync("c:/mimo-gui/src/core/skill/skill-market-client.ts", "utf-8");
+      const content = fs.readFileSync("src/core/skill/skill-market-client.ts", "utf-8");
 
       const listSection = content.substring(
         content.indexOf("export async function listPublishableMarkets"),
@@ -134,7 +134,7 @@ describe("Skill Publishing — Architecture Verification", () => {
   describe("publishToClawHub", () => {
     it("应该调用 clawhub skill publish 命令", async () => {
       const fs = require("fs");
-      const content = fs.readFileSync("c:/mimo-gui/src/core/skill/skill-market-client.ts", "utf-8");
+      const content = fs.readFileSync("src/core/skill/skill-market-client.ts", "utf-8");
 
       const clawhubSection = content.substring(
         content.indexOf("async function publishToClawHub"),
@@ -153,7 +153,7 @@ describe("Skill Publishing — Architecture Verification", () => {
 
     it("应该从输出中提取技能 URL", async () => {
       const fs = require("fs");
-      const content = fs.readFileSync("c:/mimo-gui/src/core/skill/skill-market-client.ts", "utf-8");
+      const content = fs.readFileSync("src/core/skill/skill-market-client.ts", "utf-8");
 
       const clawhubSection = content.substring(
         content.indexOf("async function publishToClawHub"),
@@ -168,7 +168,7 @@ describe("Skill Publishing — Architecture Verification", () => {
   describe("publishToGitHub", () => {
     it("应该执行 git init + add + commit + gh repo create", async () => {
       const fs = require("fs");
-      const content = fs.readFileSync("c:/mimo-gui/src/core/skill/skill-market-client.ts", "utf-8");
+      const content = fs.readFileSync("src/core/skill/skill-market-client.ts", "utf-8");
 
       const githubSection = content.substring(
         content.indexOf("async function publishToGitHub"),
@@ -184,7 +184,7 @@ describe("Skill Publishing — Architecture Verification", () => {
 
     it("应该支持公开/私有仓库选项", async () => {
       const fs = require("fs");
-      const content = fs.readFileSync("c:/mimo-gui/src/core/skill/skill-market-client.ts", "utf-8");
+      const content = fs.readFileSync("src/core/skill/skill-market-client.ts", "utf-8");
 
       const githubSection = content.substring(
         content.indexOf("async function publishToGitHub"),
@@ -199,7 +199,7 @@ describe("Skill Publishing — Architecture Verification", () => {
   describe("publishToCLI", () => {
     it("应该尝试 publish 命令并 fallback 到 upload", async () => {
       const fs = require("fs");
-      const content = fs.readFileSync("c:/mimo-gui/src/core/skill/skill-market-client.ts", "utf-8");
+      const content = fs.readFileSync("src/core/skill/skill-market-client.ts", "utf-8");
 
       const cliSection = content.substring(
         content.indexOf("async function publishToCLI"),
@@ -215,7 +215,7 @@ describe("Skill Publishing — Architecture Verification", () => {
   describe("publishSkillToMarket 统一入口", () => {
     it("应该根据 target 分派到对应的发布函数", async () => {
       const fs = require("fs");
-      const content = fs.readFileSync("c:/mimo-gui/src/core/skill/skill-market-client.ts", "utf-8");
+      const content = fs.readFileSync("src/core/skill/skill-market-client.ts", "utf-8");
 
       const dispatchSection = content.substring(
         content.indexOf("export async function publishSkillToMarket"),
@@ -232,7 +232,7 @@ describe("Skill Publishing — Architecture Verification", () => {
 
     it("应该验证必填字段", async () => {
       const fs = require("fs");
-      const content = fs.readFileSync("c:/mimo-gui/src/core/skill/skill-market-client.ts", "utf-8");
+      const content = fs.readFileSync("src/core/skill/skill-market-client.ts", "utf-8");
 
       const dispatchSection = content.substring(
         content.indexOf("export async function publishSkillToMarket"),
@@ -248,7 +248,7 @@ describe("Skill Publishing — Architecture Verification", () => {
   describe("dryRunPublish", () => {
     it("应该支持 ClawHub 的 --dry-run", async () => {
       const fs = require("fs");
-      const content = fs.readFileSync("c:/mimo-gui/src/core/skill/skill-market-client.ts", "utf-8");
+      const content = fs.readFileSync("src/core/skill/skill-market-client.ts", "utf-8");
 
       const dryRunSection = content.substring(
         content.indexOf("export async function dryRunPublish"),
@@ -260,7 +260,7 @@ describe("Skill Publishing — Architecture Verification", () => {
 
     it("非 ClawHub 市场应返回就绪检查", async () => {
       const fs = require("fs");
-      const content = fs.readFileSync("c:/mimo-gui/src/core/skill/skill-market-client.ts", "utf-8");
+      const content = fs.readFileSync("src/core/skill/skill-market-client.ts", "utf-8");
 
       const dryRunSection = content.substring(
         content.indexOf("export async function dryRunPublish"),
@@ -274,7 +274,7 @@ describe("Skill Publishing — Architecture Verification", () => {
   describe("Re-exports", () => {
     it("应该在 skill/index.ts 中导出发布相关 API", async () => {
       const fs = require("fs");
-      const content = fs.readFileSync("c:/mimo-gui/src/core/skill/index.ts", "utf-8");
+      const content = fs.readFileSync("src/core/skill/index.ts", "utf-8");
 
       expect(content).toContain("publishSkillToMarket");
       expect(content).toContain("dryRunPublish");
@@ -289,7 +289,7 @@ describe("Skill Publishing — Architecture Verification", () => {
   describe("UI 集成", () => {
     it("SkillManager 应该导入发布 API", async () => {
       const fs = require("fs");
-      const content = fs.readFileSync("c:/mimo-gui/src/components/SkillManager.tsx", "utf-8");
+      const content = fs.readFileSync("src/components/SkillManager.tsx", "utf-8");
 
       expect(content).toContain("publishSkillToMarket");
       expect(content).toContain("listPublishableMarkets");
@@ -299,7 +299,7 @@ describe("Skill Publishing — Architecture Verification", () => {
 
     it("应该有发布状态管理", async () => {
       const fs = require("fs");
-      const content = fs.readFileSync("c:/mimo-gui/src/components/SkillManager.tsx", "utf-8");
+      const content = fs.readFileSync("src/components/SkillManager.tsx", "utf-8");
 
       expect(content).toContain("publishTarget");
       expect(content).toContain("publishMarkets");
@@ -310,7 +310,7 @@ describe("Skill Publishing — Architecture Verification", () => {
 
     it("应该有发布按钮", async () => {
       const fs = require("fs");
-      const content = fs.readFileSync("c:/mimo-gui/src/components/SkillManager.tsx", "utf-8");
+      const content = fs.readFileSync("src/components/SkillManager.tsx", "utf-8");
 
       expect(content).toContain("发布到市场");
       expect(content).toContain("skill-detail-btn publish");
@@ -318,7 +318,7 @@ describe("Skill Publishing — Architecture Verification", () => {
 
     it("应该有发布对话框", async () => {
       const fs = require("fs");
-      const content = fs.readFileSync("c:/mimo-gui/src/components/SkillManager.tsx", "utf-8");
+      const content = fs.readFileSync("src/components/SkillManager.tsx", "utf-8");
 
       expect(content).toContain("Publish Dialog");
       expect(content).toContain("publish-dialog");
@@ -328,7 +328,7 @@ describe("Skill Publishing — Architecture Verification", () => {
 
     it("应该有 CSS 样式", async () => {
       const fs = require("fs");
-      const content = fs.readFileSync("c:/mimo-gui/src/styles.css", "utf-8");
+      const content = fs.readFileSync("src/styles.css", "utf-8");
 
       expect(content).toContain(".skill-detail-btn.publish");
       expect(content).toContain(".publish-dialog");
@@ -341,7 +341,7 @@ describe("Skill Publishing — Architecture Verification", () => {
   describe("完整发布流程验证", () => {
     it("ClawHub 发布流程: 构建命令 → 执行 → 提取URL → 返回结果", async () => {
       const fs = require("fs");
-      const content = fs.readFileSync("c:/mimo-gui/src/core/skill/skill-market-client.ts", "utf-8");
+      const content = fs.readFileSync("src/core/skill/skill-market-client.ts", "utf-8");
 
       const clawhubSection = content.substring(
         content.indexOf("async function publishToClawHub"),
@@ -363,7 +363,7 @@ describe("Skill Publishing — Architecture Verification", () => {
 
     it("GitHub 发布流程: git init → add → commit → gh repo create → push", async () => {
       const fs = require("fs");
-      const content = fs.readFileSync("c:/mimo-gui/src/core/skill/skill-market-client.ts", "utf-8");
+      const content = fs.readFileSync("src/core/skill/skill-market-client.ts", "utf-8");
 
       const githubSection = content.substring(
         content.indexOf("async function publishToGitHub"),
