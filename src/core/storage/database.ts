@@ -509,6 +509,83 @@ CREATE TABLE IF NOT EXISTS todo_lists (
   FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS idx_todo_lists_session ON todo_lists(session_id);
+
+CREATE TABLE IF NOT EXISTS squads (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  leader_agent_id TEXT NOT NULL,
+  instructions TEXT,
+  project_id TEXT,
+  archived INTEGER DEFAULT 0,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS squad_members (
+  id TEXT PRIMARY KEY,
+  squad_id TEXT NOT NULL,
+  member_type TEXT NOT NULL DEFAULT 'agent',
+  member_id TEXT NOT NULL,
+  member_name TEXT NOT NULL,
+  role_description TEXT,
+  created_at INTEGER NOT NULL,
+  FOREIGN KEY (squad_id) REFERENCES squads(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_squad_members_squad ON squad_members(squad_id);
+
+CREATE TABLE IF NOT EXISTS issues (
+  id TEXT PRIMARY KEY,
+  title TEXT NOT NULL,
+  description TEXT,
+  status TEXT NOT NULL DEFAULT 'todo',
+  priority TEXT DEFAULT 'normal',
+  assignee_type TEXT,
+  assignee_id TEXT,
+  project_id TEXT,
+  squad_id TEXT,
+  session_id TEXT,
+  labels TEXT,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS issue_comments (
+  id TEXT PRIMARY KEY,
+  issue_id TEXT NOT NULL,
+  author_type TEXT NOT NULL DEFAULT 'user',
+  author_id TEXT,
+  author_name TEXT,
+  content TEXT NOT NULL,
+  is_system INTEGER DEFAULT 0,
+  created_at INTEGER NOT NULL,
+  FOREIGN KEY (issue_id) REFERENCES issues(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_issues_project ON issues(project_id);
+CREATE INDEX IF NOT EXISTS idx_issues_status ON issues(status);
+CREATE INDEX IF NOT EXISTS idx_issues_squad ON issues(squad_id);
+CREATE INDEX IF NOT EXISTS idx_issue_comments_issue ON issue_comments(issue_id);
+
+CREATE TABLE IF NOT EXISTS inbox (
+  id TEXT PRIMARY KEY,
+  category TEXT NOT NULL,
+  title TEXT NOT NULL,
+  body TEXT,
+  source_type TEXT,
+  source_id TEXT,
+  project_id TEXT,
+  squad_id TEXT,
+  issue_id TEXT,
+  priority TEXT DEFAULT 'normal',
+  read INTEGER DEFAULT 0,
+  archived INTEGER DEFAULT 0,
+  created_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_inbox_read ON inbox(read);
+CREATE INDEX IF NOT EXISTS idx_inbox_project ON inbox(project_id);
+CREATE INDEX IF NOT EXISTS idx_inbox_created ON inbox(created_at);
 `;
 
 export async function initDatabase(): Promise<SqlJsDatabase> {

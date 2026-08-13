@@ -78,6 +78,111 @@ export interface MicroCompactResult {
   messages: any[];
 }
 
+// ========== Structured Tool Summary Generator ==========
+
+/**
+ * Generate a structured summary for a compacted tool result.
+ * Instead of a generic placeholder, this produces tool-specific metadata
+ * that helps the LLM understand what happened without re-reading the full output.
+ */
+function generateToolSummary(toolName: string, content: string): string {
+  const originalLength = content.length;
+  const lines = content.split("\n");
+  const totalLines = lines.length;
+
+  switch (toolName) {
+    case "read": {
+      // Try to extract file path from common output patterns
+      const pathMatch = content.match(/^(?:---\s*)?(.+?\.\w+)(?:\s*---)?$/m);
+      const filePath = pathMatch ? pathMatch[1].trim() : "file";
+      // Extract key indicators from the content
+      const hasError = content.toLowerCase().includes("error") || content.toLowerCase().includes("not found");
+      const keyLines = lines.slice(0, 3).map(l => l.substring(0, 200)).join("\n");
+      return `[Tool result compacted — read ${filePath} (${totalLines} lines, ${originalLength.toLocaleString()} chars)]\n` +
+        `${hasError ? "Status: contains error/not-found\n" : ""}` +
+        `Opening lines:\n${keyLines}\n` +
+        `[Use 'read' to retrieve full content if needed]`;
+    }
+
+    case "bash": {
+      // Extract exit code and command
+      const exitMatch = content.match(/(?:exit code|exit_code|Exit code)\s*[:=]\s*(\d+)/i);
+      const exitCode = exitMatch ? exitMatch[1] : "?";
+      const cmdMatch = content.match(/^(?:Command|CMD|cmd|command)\s*[:=]\s*(.+)$/im);
+      const cmd = cmdMatch ? cmdMatch[1].trim() : "command";
+      const outputLines = lines.filter(l => l.trim()).slice(0, 5).map(l => l.substring(0, 200)).join("\n");
+      return `[Tool result compacted — bash: ${cmd.substring(0, 80)} (exit ${exitCode}, ${originalLength.toLocaleString()} chars)]\n` +
+        `Output preview:\n${outputLines}\n` +
+        `[Re-run the command if you need fresh output]`;
+    }
+
+    case "grep": {
+      // Count matches
+      const matchCount = lines.filter(l => l.trim() && !l.startsWith("grep:")).length;
+      const sampleMatches = lines.filter(l => l.trim() && !l.startsWith("grep:")).slice(0, 3).join("\n");
+      return `[Tool result compacted — grep: ${matchCount} matches (${originalLength.toLocaleString()} chars)]\n` +
+        `Sample matches:\n${sampleMatches}\n` +
+        `[Use 'grep' to re-search if needed]`;
+    }
+
+    case "glob": {
+      const fileCount = lines.filter(l => l.trim()).length;
+      const sampleFiles = lines.filter(l => l.trim()).slice(0, 5).join("\n");
+      return `[Tool result compacted — glob: ${fileCount} files found (${originalLength.toLocaleString()} chars)]\n` +
+        `Sample paths:\n${sampleFiles}\n` +
+        `[Use 'glob' to re-search if needed]`;
+    }
+
+    case "web_fetch":
+    case "web_search": {
+      const resultCount = content.match(/<result>/g)?.length || content.match(/^Title:/gm)?.length || totalLines;
+      const preview = lines.slice(0, 4).map(l => l.substring(0, 200)).join("\n");
+      return `[Tool result compacted — ${toolName}: ~${resultCount} results (${originalLength.toLocaleString()} chars)]\n` +
+        `Preview:\n${preview}\n` +
+        `[Re-run ${toolName} if you need the full content]`;
+    }
+
+    case "lsp":
+    case "lsp_tool": {
+      const symbolCount = content.match(/^Symbol:|^\s+[A-Za-z]/gm)?.length || totalLines;
+      const preview = lines.slice(0, 4).map(l => l.substring(0, 200)).join("\n");
+      return `[Tool result compacted — ${toolName}: ~${symbolCount} symbols/results (${originalLength.toLocaleString()} chars)]\n` +
+        `Preview:\n${preview}\n` +
+        `[Use 'lsp_tool' to re-query if needed]`;
+    }
+
+    case "codebase_search":
+    case "tool_search": {
+      const resultCount = lines.filter(l => l.match(/^\d+\.|^- |^File:|^Path:/)).length || totalLines;
+      const preview = lines.slice(0, 4).map(l => l.substring(0, 200)).join("\n");
+      return `[Tool result compacted — ${toolName}: ~${resultCount} results (${originalLength.toLocaleString()} chars)]\n` +
+        `Preview:\n${preview}\n` +
+        `[Re-run search if needed]`;
+    }
+
+    case "spawn_subagent":
+    case "wait_for_subagent": {
+      // Sub-agent results — extract key outcome
+      const taskIdMatch = content.match(/SUBAGENT_TASK_ID:(\S+)/);
+      const taskId = taskIdMatch ? taskIdMatch[1] : "?";
+      const statusMatch = content.match(/(completed|failed|aborted|timeout)/i);
+      const status = statusMatch ? statusMatch[1] : "done";
+      const preview = lines.slice(0, 4).map(l => l.substring(0, 200)).join("\n");
+      return `[Tool result compacted — ${toolName}: task ${taskId} (${status}, ${originalLength.toLocaleString()} chars)]\n` +
+        `Result preview:\n${preview}\n` +
+        `[The sub-agent's work is recorded in its session]`;
+    }
+
+    default: {
+      // Generic fallback — still better than blank placeholder
+      const preview = content.substring(0, 150);
+      return `[Tool result compacted — ${toolName}: ${originalLength.toLocaleString()} chars, ${totalLines} lines]\n` +
+        `Preview: ${preview}...\n` +
+        `[Re-run the tool if you need the full output]`;
+    }
+  }
+}
+
 // ========== Core Logic ==========
 
 /**
@@ -138,16 +243,11 @@ export function microCompact(llmMessages: any[]): MicroCompactResult {
     if (content.length < MIN_RESULT_SIZE_TO_COMPACT) continue;
 
     // Skip if already compacted (contains the placeholder)
-    if (content.startsWith("[Tool result compacted]")) continue;
+    if (content.startsWith("[Tool result compacted")) continue;
 
-    // Replace with a placeholder
+    // Replace with a structured tool-specific summary
     const originalLength = content.length;
-    const preview = content.substring(0, 100);
-    const placeholder =
-      `[Tool result compacted — saved ${originalLength.toLocaleString()} chars]\n` +
-      `Tool: ${toolName}\n` +
-      `Preview: ${preview}...\n` +
-      `[Use the 'read' tool or 'grep' to retrieve this content if needed]`;
+    const placeholder = generateToolSummary(toolName, content);
 
     result[i] = {
       ...msg,

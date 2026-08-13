@@ -29,6 +29,7 @@ export type MarketSourceType =
   | "builtin"
   | "clawhub-api"
   | "skills-sh-api"
+  | "skillhub-api"
   | "cli";
 
 /** 市场源配置 */
@@ -52,6 +53,7 @@ export interface MarketSource {
   /**
    * API Token（仅 clawhub-api / skills-sh-api）。
    * Skills.sh 需要 Vercel OIDC Token 认证；ClawHub 可选。
+   * skillhub-api 类型无需认证，直接使用公开 REST API。
    */
   apiToken?: string;
 }
@@ -150,12 +152,11 @@ export const DEFAULT_MARKET_SOURCES: MarketSource[] = [
   },
   {
     id: "skillhub",
-    name: "SkillHub (腾讯云)",
-    type: "cli",
-    url: "",
+    name: "SkillHub",
+    type: "skillhub-api",
+    url: "https://skills.palebluedot.live",
     enabled: true,
     icon: "☁️",
-    cliCommand: "skillhub",
   },
   {
     id: "codem-builtin",
@@ -419,13 +420,19 @@ async function fetchBuiltinSkills(source: MarketSource): Promise<MarketSkill[]> 
  * 从 ClawHub.ai REST API 获取技能列表。
  *
  * ClawHub 是 OpenClaw 生态的技能市场，提供 REST API：
- *   GET /api/v1/skills → 技能列表
+ *   GET /api/v1/skills?limit=&cursor=&sort= → 技能列表（游标分页）
  *
- * 响应格式（推测，基于 ClawHub 页面结构）：
- *   { data: [{ name, slug, description, author, downloads, ... }] }
+ * 响应格式：
+ *   { data: [{ name, slug, description, author, downloads, ... }], nextCursor: "..." }
+ *
+ * API 文档：https://docs.openclaw.ai/clawhub/api
+ * 公共读取无需认证，IP 级限流 3000/min。
  */
 async function fetchClawHubSkills(source: MarketSource): Promise<MarketSkill[]> {
   const skills: MarketSkill[] = [];
+  const MAX_PAGES = 20; // 最多 20 页 × 100 条/页 = 2000 条
+  const PAGE_SIZE = 100;
+  let pageNum = 0;
 
   try {
     const baseUrl = source.url.replace(/\/$/, "");
@@ -436,59 +443,103 @@ async function fetchClawHubSkills(source: MarketSource): Promise<MarketSkill[]> 
       headers["Authorization"] = `Bearer ${source.apiToken}`;
     }
 
-    const resp = await httpGet(`${baseUrl}/api/v1/skills`, headers);
-    if (resp.status !== 200) {
-      console.warn(`[SkillMarket] ClawHub API failed: ${resp.status}`);
-      return skills;
-    }
+    let cursor: string | null = null;
 
-    const data = JSON.parse(resp.body);
-    const items: any[] = data.data || data.items || data.skills || [];
+    while (pageNum < MAX_PAGES) {
+      // 构建带分页参数的 URL
+      const params = new URLSearchParams();
+      params.set("limit", String(PAGE_SIZE));
+      params.set("sort", "downloads");
+      if (cursor) {
+        params.set("cursor", cursor);
+      }
 
-    for (const item of items) {
-      const slug = item.slug || item.name;
-      const author = item.author || item.owner || "";
-      skills.push({
-        id: `${source.id}:${slug}`,
-        name: slug,
-        displayName: item.displayName || item.name || slug,
-        description: item.description || "无描述",
-        author,
-        version: item.version,
-        tags: item.tags,
-        sourceId: source.id,
-        sourceName: source.name,
-        downloadUrl: item.installUrl || item.downloadUrl || `${baseUrl}/${author}/skills/${slug}`,
-        repoUrl: item.url || `${baseUrl}/${author}/skills/${slug}`,
-        stars: item.downloads || item.installs,
-        lastUpdated: item.updatedAt,
-        installType: "zip",
-      });
+      const resp = await httpGet(`${baseUrl}/api/v1/skills?${params.toString()}`, headers);
+      if (resp.status !== 200) {
+        console.warn(`[SkillMarket] ClawHub API failed (page ${pageNum}): ${resp.status}`);
+        break;
+      }
+
+      const data = JSON.parse(resp.body);
+      // 兼容多种响应格式
+      const items: any[] = data.data || data.items || data.skills || [];
+      if (items.length === 0) break;
+
+      for (const item of items) {
+        const slug = item.slug || item.name;
+        if (!slug) continue;
+        const author = item.author || item.owner || "";
+        skills.push({
+          id: `${source.id}:${slug}`,
+          name: slug,
+          displayName: item.displayName || item.name || slug,
+          description: item.description || "无描述",
+          author,
+          version: item.version,
+          tags: item.tags,
+          sourceId: source.id,
+          sourceName: source.name,
+          downloadUrl: item.installUrl || item.downloadUrl || `${baseUrl}/${author}/skills/${slug}`,
+          repoUrl: item.url || `${baseUrl}/${author}/skills/${slug}`,
+          stars: item.downloads || item.installs,
+          lastUpdated: item.updatedAt,
+          installType: "zip",
+        });
+      }
+
+      // 检查是否有下一页游标
+      cursor = data.nextCursor || data.cursor || data.next_cursor || null;
+      if (!cursor) break;
+      pageNum++;
     }
   } catch (err) {
     console.error(`[SkillMarket] Error fetching ClawHub skills:`, err);
   }
 
+  console.log(`[SkillMarket] ClawHub: fetched ${skills.length} skills across ${pageNum + 1} page(s)`);
   return skills;
 }
 
 // ========== Skills.sh API Adapter ==========
 
 /**
- * 从 Skills.sh REST API 获取技能列表。
+ * 从 Skills.sh 获取技能列表。
  *
- * Skills.sh 由 Vercel 运营，提供完整的 REST API：
- *   GET /api/v1/skills           → 分页排行榜
- *   GET /api/v1/skills/search?q=  → 搜索
- *   GET /api/v1/skills/{id}      → 单个技能详情（含文件内容）
+ * Skills.sh 由 Vercel 运营，提供 REST API：
+ *   GET /api/v1/skills?view=all-time&page=0&per_page=100 → 分页排行榜
  *
- * 认证：Vercel OIDC Token（如果未配置 token，尝试无认证请求，部分端点可能返回 401）
+ * 认证：Vercel OIDC Token（桌面应用无法获取）。
+ * 策略：
+ *   1. 先尝试 API 无认证请求（部分端点可能允许匿名访问）
+ *   2. 若 401，fallback 到网页版 HTML 爬取（解析排行榜页面中的技能数据）
+ *   3. 网页版支持多视图：all-time / trending / hot
+ *
+ * API 文档：https://skills.sh/docs/api
  */
 async function fetchSkillsShSkills(source: MarketSource): Promise<MarketSkill[]> {
+  const baseUrl = source.url.replace(/\/$/, "");
+
+  // 策略 1：尝试 API 无认证请求
+  const apiSkills = await fetchSkillsShViaAPI(source, baseUrl);
+  if (apiSkills.length > 0) {
+    return apiSkills;
+  }
+
+  // 策略 2：fallback 到网页版 HTML 爬取
+  console.log("[SkillMarket] Skills.sh API failed or returned 0, falling back to HTML scrape");
+  return await fetchSkillsShViaHTML(source, baseUrl);
+}
+
+/**
+ * 通过 Skills.sh REST API 获取技能（带分页）。
+ * API 可能需要 Vercel OIDC 认证，尝试无认证请求。
+ */
+async function fetchSkillsShViaAPI(source: MarketSource, baseUrl: string): Promise<MarketSkill[]> {
   const skills: MarketSkill[] = [];
+  const MAX_PAGES = 10; // 最多 10 页 × 500 条/页 = 5000 条
+  const PER_PAGE = 500;
 
   try {
-    const baseUrl = source.url.replace(/\/$/, "");
     const headers: Record<string, string> = {
       "Accept": "application/json",
     };
@@ -496,52 +547,336 @@ async function fetchSkillsShSkills(source: MarketSource): Promise<MarketSkill[]>
       headers["Authorization"] = `Bearer ${source.apiToken}`;
     }
 
-    // 获取排行榜（每页 100 个，取第一页）
-    const resp = await httpGet(
-      `${baseUrl}/api/v1/skills?view=all-time&per_page=100`,
-      headers,
-    );
-    if (resp.status !== 200) {
-      console.warn(`[SkillMarket] Skills.sh API failed: ${resp.status}`);
+    let page = 0;
+    let hasMore = true;
+
+    while (hasMore && page < MAX_PAGES) {
+      const resp = await httpGet(
+        `${baseUrl}/api/v1/skills?view=all-time&page=${page}&per_page=${PER_PAGE}`,
+        headers,
+      );
       if (resp.status === 401) {
-        console.warn("[SkillMarket] Skills.sh requires Vercel OIDC token authentication");
+        console.warn("[SkillMarket] Skills.sh API requires Vercel OIDC token authentication");
+        return skills; // 返回已获取的（可能为空）
       }
-      return skills;
+      if (resp.status !== 200) {
+        console.warn(`[SkillMarket] Skills.sh API failed (page ${page}): ${resp.status}`);
+        return skills;
+      }
+
+      const data = JSON.parse(resp.body);
+      const items: any[] = data.data || [];
+      if (items.length === 0) break;
+
+      for (const item of items) {
+        const skillId = item.id || `${item.source}/${item.slug}`;
+        skills.push({
+          id: `${source.id}:${skillId}`,
+          name: item.slug || item.name,
+          displayName: item.name || item.slug,
+          description: item.description || "无描述",
+          author: item.source || "",
+          version: item.version,
+          tags: item.tags,
+          sourceId: source.id,
+          sourceName: source.name,
+          downloadUrl: item.installUrl || "",
+          repoUrl: item.url || `${baseUrl}/${skillId}`,
+          stars: item.installs,
+          lastUpdated: item.updatedAt,
+          installType: "zip",
+          repoFullName: item.source,
+        });
+      }
+
+      // 检查分页信息
+      const pagination = data.pagination;
+      hasMore = pagination ? pagination.hasMore === true : false;
+      page++;
     }
 
-    const data = JSON.parse(resp.body);
-    const items: any[] = data.data || [];
-
-    for (const item of items) {
-      const skillId = item.id || `${item.source}/${item.slug}`;
-      skills.push({
-        id: `${source.id}:${skillId}`,
-        name: item.slug || item.name,
-        displayName: item.name || item.slug,
-        description: item.description || "无描述",
-        author: item.source || "",
-        version: item.version,
-        tags: item.tags,
-        sourceId: source.id,
-        sourceName: source.name,
-        // Skills.sh 的 installUrl 通常是 GitHub 仓库地址
-        downloadUrl: item.installUrl || "",
-        repoUrl: item.url || `${baseUrl}/${skillId}`,
-        stars: item.installs,
-        lastUpdated: item.updatedAt,
-        installType: "zip",
-        repoFullName: item.source,
-        // Skills.sh 技能详情 API 返回完整文件内容，可作为 fallback 安装方式
-      });
-    }
+    console.log(`[SkillMarket] Skills.sh API: fetched ${skills.length} skills across ${page} page(s)`);
   } catch (err) {
-    console.error(`[SkillMarket] Error fetching Skills.sh skills:`, err);
+    console.error(`[SkillMarket] Error fetching Skills.sh via API:`, err);
   }
 
   return skills;
 }
 
-// ========== CLI Subprocess Adapter (SkillHub) ==========
+/**
+ * 通过爬取 Skills.sh 网页版 HTML 获取技能列表。
+ *
+ * Skills.sh 网站服务端渲染了排行榜数据，HTML 中包含技能名、来源、安装数等信息。
+ * 解析 HTML 中的技能链接和文本内容。
+ */
+async function fetchSkillsShViaHTML(source: MarketSource, baseUrl: string): Promise<MarketSkill[]> {
+  const skills: MarketSkill[] = [];
+
+  try {
+    // 爬取多个视图页面
+    const views = [
+      { path: "", label: "all-time" },
+      { path: "/trending", label: "trending" },
+      { path: "/hot", label: "hot" },
+    ];
+
+    const seenSlugs = new Set<string>();
+
+    for (const view of views) {
+      try {
+        const resp = await httpGet(`${baseUrl}${view.path}`, {
+          "Accept": "text/html",
+        });
+        if (resp.status !== 200) {
+          console.warn(`[SkillMarket] Skills.sh HTML scrape failed for ${view.label}: ${resp.status}`);
+          continue;
+        }
+
+        const html = resp.body;
+
+        // Skills.sh 页面中技能链接格式：/vercel-labs/skills/find-skills
+        // 匹配所有技能详情页链接
+        const skillLinkPattern = /href="\/([^/]+\/[^/]+)\/([^/"]+)"/g;
+        let match: RegExpExecArray | null;
+
+        while ((match = skillLinkPattern.exec(html)) !== null) {
+          const source_path = match[1]; // e.g., "vercel-labs/skills"
+          const slug = match[2]; // e.g., "find-skills"
+
+          // 过滤非技能链接（如 /agent/xxx, /topic/xxx, /docs 等）
+          if (source_path.startsWith("agent/") ||
+              source_path.startsWith("topic/") ||
+              source_path.startsWith("docs") ||
+              source_path === "packs" ||
+              slug === "official" ||
+              slug === "audits") {
+            continue;
+          }
+
+          const skillId = `${source_path}/${slug}`;
+          if (seenSlugs.has(skillId)) continue;
+          seenSlugs.add(skillId);
+
+          // 尝试从页面文本中提取安装数
+          // 技能名后面通常跟着安装数（如 "2.9M", "840.3K" 等）
+          const installPattern = new RegExp(
+            `${slug.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}[^<]*?([\\d.]+[KM]?)`,
+            "i",
+          );
+          const installMatch = html.match(installPattern);
+          let stars: number | undefined;
+          if (installMatch) {
+            const num = installMatch[1];
+            if (num.endsWith("K")) {
+              stars = Math.round(parseFloat(num) * 1000);
+            } else if (num.endsWith("M")) {
+              stars = Math.round(parseFloat(num) * 1000000);
+            } else {
+              stars = parseInt(num, 10) || undefined;
+            }
+          }
+
+          // 显示名：将 slug 转为可读名称
+          const displayName = slug
+            .split("-")
+            .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+            .join(" ");
+
+          skills.push({
+            id: `${source.id}:${skillId}`,
+            name: slug,
+            displayName,
+            description: `Skills.sh skill from ${source_path}`,
+            author: source_path,
+            sourceId: source.id,
+            sourceName: source.name,
+            downloadUrl: `https://github.com/${source_path}`,
+            repoUrl: `${baseUrl}/${source_path}/${slug}`,
+            stars,
+            installType: "zip",
+            repoFullName: source_path,
+            branch: "main",
+          });
+        }
+      } catch (err) {
+        console.warn(`[SkillMarket] Skills.sh HTML scrape error for ${view.label}:`, err);
+      }
+    }
+
+    console.log(`[SkillMarket] Skills.sh HTML: scraped ${skills.length} skills`);
+  } catch (err) {
+    console.error(`[SkillMarket] Error scraping Skills.sh HTML:`, err);
+  }
+
+  return skills;
+}
+
+// ========== SkillHub API Adapter ==========
+
+/**
+ * 从 SkillHub REST API 获取技能列表。
+ *
+ * SkillHub 是开源 AI Agent 技能市场（skills.palebluedot.live），
+ * 索引了 25 万+ 技能，提供公开 REST API（无需认证）：
+ *   GET /api/skills?q=&limit=&page=    → 搜索 + 分页
+ *   GET /api/skills/featured            → 精选技能
+ *   GET /api/skills/:id                 → 技能详情
+ *   GET /api/skill-files/zip?skillId=   → 下载 ZIP
+ *
+ * 匿名限流：120 请求/分钟（读）、60 请求/分钟（搜索）
+ *
+ * API 文档：https://skills.palebluedot.live/en/docs/api
+ */
+async function fetchSkillHubAPISkills(source: MarketSource): Promise<MarketSkill[]> {
+  const skills: MarketSkill[] = [];
+  const MAX_PAGES = 20; // 最多 20 页 × 100 条/页 = 2000 条
+  const PAGE_SIZE = 100;
+
+  try {
+    const baseUrl = source.url.replace(/\/$/, "");
+    const headers: Record<string, string> = {
+      "Accept": "application/json",
+    };
+
+    // 策略 1：先获取精选技能
+    const featuredSkills = await fetchSkillHubEndpoint(
+      `${baseUrl}/api/skills/featured`,
+      source,
+      headers,
+      skills,
+    );
+    console.log(`[SkillMarket] SkillHub featured: ${featuredSkills} skills`);
+
+    // 策略 2：分页获取全部技能（按下载量排序）
+    let page = 0;
+    let total = 0;
+    const seenIds = new Set(skills.map((s) => s.id));
+
+    while (page < MAX_PAGES) {
+      const params = new URLSearchParams();
+      params.set("limit", String(PAGE_SIZE));
+      params.set("page", String(page));
+      params.set("sort", "downloads");
+
+      const resp = await httpGet(`${baseUrl}/api/skills?${params.toString()}`, headers);
+      if (resp.status !== 200) {
+        console.warn(`[SkillMarket] SkillHub API failed (page ${page}): ${resp.status}`);
+        break;
+      }
+
+      const data = JSON.parse(resp.body);
+      const items: any[] = data.data || data.skills || data.items || (Array.isArray(data) ? data : []);
+      if (items.length === 0) break;
+
+      // 记录总数
+      if (data.total && !total) total = data.total;
+
+      for (const item of items) {
+        const skillId = item.id || item._id || `${item.owner || item.source}/${item.slug || item.name}`;
+        const skillKey = `${source.id}:${skillId}`;
+        if (seenIds.has(skillKey)) continue;
+        seenIds.add(skillKey);
+
+        const slug = item.slug || item.name || skillId;
+        const author = item.owner || item.source || item.author || "";
+        const downloadUrl = item.zipUrl || item.downloadUrl ||
+          (item._id || item.id ?
+            `${baseUrl}/api/skill-files/zip?skillId=${item._id || item.id}` :
+            `${baseUrl}/api/skill-files/zip?skillId=${slug}`);
+
+        skills.push({
+          id: skillKey,
+          name: slug,
+          displayName: item.displayName || item.name || slug,
+          description: item.description || item.summary || "无描述",
+          author,
+          version: item.version,
+          tags: item.tags || item.categories,
+          sourceId: source.id,
+          sourceName: source.name,
+          downloadUrl,
+          repoUrl: item.url || item.repoUrl || (author ? `https://github.com/${author}` : undefined),
+          stars: item.downloads || item.installs || item.stars,
+          lastUpdated: item.updatedAt || item.updated_at,
+          installType: "zip",
+          repoFullName: item.repoFullName || (author ? `${author}/${slug}` : undefined),
+          branch: item.branch || "main",
+        });
+      }
+
+      // 检查分页
+      const hasMore = data.hasMore !== undefined ? data.hasMore :
+        (data.pagination ? data.pagination.hasMore : undefined);
+      if (hasMore === false) break;
+      if (items.length < PAGE_SIZE) break;
+      page++;
+    }
+
+    console.log(`[SkillMarket] SkillHub API: fetched ${skills.length} skills (total indexed: ${total || "unknown"})`);
+  } catch (err) {
+    console.error(`[SkillMarket] Error fetching SkillHub skills:`, err);
+  }
+
+  return skills;
+}
+
+/**
+ * 从 SkillHub 指定端点获取技能并追加到 skills 数组。
+ * 返回本次获取到的技能数量。
+ */
+async function fetchSkillHubEndpoint(
+  url: string,
+  source: MarketSource,
+  headers: Record<string, string>,
+  skills: MarketSkill[],
+): Promise<number> {
+  const before = skills.length;
+  const baseUrl = source.url.replace(/\/$/, "");
+
+  try {
+    const resp = await httpGet(url, headers);
+    if (resp.status !== 200) {
+      console.warn(`[SkillMarket] SkillHub endpoint failed: ${resp.status} for ${url}`);
+      return 0;
+    }
+
+    const data = JSON.parse(resp.body);
+    const items: any[] = data.data || data.skills || (Array.isArray(data) ? data : []);
+
+    for (const item of items) {
+      const skillId = item.id || item._id || `${item.owner || item.source}/${item.slug || item.name}`;
+      const slug = item.slug || item.name || skillId;
+      const author = item.owner || item.source || item.author || "";
+      const downloadUrl = item.zipUrl || item.downloadUrl ||
+        `${baseUrl}/api/skill-files/zip?skillId=${item._id || item.id || slug}`;
+
+      skills.push({
+        id: `${source.id}:${skillId}`,
+        name: slug,
+        displayName: item.displayName || item.name || slug,
+        description: item.description || item.summary || "无描述",
+        author,
+        version: item.version,
+        tags: item.tags || item.categories,
+        sourceId: source.id,
+        sourceName: source.name,
+        downloadUrl,
+        repoUrl: item.url || item.repoUrl || (author ? `https://github.com/${author}` : undefined),
+        stars: item.downloads || item.installs || item.stars,
+        lastUpdated: item.updatedAt || item.updated_at,
+        installType: "zip",
+        repoFullName: item.repoFullName || (author ? `${author}/${slug}` : undefined),
+        branch: item.branch || "main",
+      });
+    }
+  } catch (err) {
+    console.warn(`[SkillMarket] SkillHub endpoint error for ${url}:`, err);
+  }
+
+  return skills.length - before;
+}
+
+// ========== CLI Subprocess Adapter (Generic) ==========
 
 /**
  * 通过 CLI 子进程获取技能列表（如 skillhub-cli）。
@@ -588,9 +923,10 @@ async function fetchCLISkills(source: MarketSource): Promise<MarketSkill[]> {
         stderr = result.stderr;
         exitCode = result.exitCode;
       } catch (err2: any) {
-        // CLI 可能未安装
-        console.warn(`[SkillMarket] CLI "${source.cliCommand}" not available: ${err2.message}`);
-        return skills;
+        // CLI 未安装，抛出描述性错误以便 UI 展示
+        const errMsg = `CLI "${source.cliCommand}" 未安装。请运行 npm i -g ${source.cliCommand} 安装后重试。`;
+        console.warn(`[SkillMarket] ${errMsg}`);
+        throw new Error(errMsg);
       }
     }
 
@@ -786,6 +1122,9 @@ export async function listMarketSkills(
           break;
         case "skills-sh-api":
           skills = await fetchSkillsShSkills(source);
+          break;
+        case "skillhub-api":
+          skills = await fetchSkillHubAPISkills(source);
           break;
         case "cli":
           skills = await fetchCLISkills(source);

@@ -260,7 +260,7 @@ describe("Git Worktree — 扫描与配额", () => {
   it("WTR-015: getWorktreeSettings 返回默认值", () => {
     removeSetting("codem-worktree-settings");
     const settings = getWorktreeSettings();
-    expect(settings.maxWorktrees).toBe(15);
+    expect(settings.maxWorktrees).toBe(30);
     expect(settings.autoCleanOldest).toBe(true);
     expect(settings.warnOnDirty).toBe(true);
   });

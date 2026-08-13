@@ -192,6 +192,20 @@ export class DelegationOrchestrator {
 
     this.notifyListeners(task);
     console.log(`[DelegationOrchestrator] Task ${taskId} completed, result length: ${result.length}`);
+
+    // Write to Inbox
+    try {
+      const { getInboxManager } = require("../inbox/inbox");
+      getInboxManager().add({
+        category: "delegation",
+        title: `委派任务完成: ${task.task.substring(0, 60)}`,
+        body: result.substring(0, 200),
+        sourceType: "delegation",
+        sourceId: taskId,
+        projectId: task.projectId || undefined,
+        priority: "normal",
+      });
+    } catch {}
   }
 
   /** 标记任务失败 */
@@ -219,6 +233,20 @@ export class DelegationOrchestrator {
 
     this.notifyListeners(task);
     console.log(`[DelegationOrchestrator] Task ${taskId} failed: ${error}`);
+
+    // Write to Inbox
+    try {
+      const { getInboxManager } = require("../inbox/inbox");
+      getInboxManager().add({
+        category: "delegation",
+        title: `委派任务失败: ${task.task.substring(0, 60)}`,
+        body: error,
+        sourceType: "delegation",
+        sourceId: taskId,
+        projectId: task.projectId || undefined,
+        priority: "high",
+      });
+    } catch {}
   }
 
   /** 取消任务 */

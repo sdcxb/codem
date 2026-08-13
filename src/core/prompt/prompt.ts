@@ -33,6 +33,8 @@ export interface SystemPromptConfig {
   gitConfig?: GitConfig;
   /** (ENV series) 环境脚本配置 */
   environmentConfig?: EnvironmentConfig;
+  /** Squad Leader roster — injected when this agent is leading a squad */
+  squadRoster?: string;
 }
 
 export function buildSystemPrompt(config: SystemPromptConfig): string {
@@ -104,7 +106,17 @@ You write GitHub-flavored Markdown that renders in a chat interface.
 
 # Script Execution
 
-The runtime automatically sets UTF-8 encoding (chcp 65001, PYTHONUTF8=1, PYTHONIOENCODING=utf-8) for all commands. You don't need to handle encoding yourself. Files are read/written as UTF-8 by the tools. Use \`python -m pip install\` (not \`pip install\`) on Windows.`);
+The runtime automatically sets UTF-8 encoding (chcp 65001, PYTHONUTF8=1, PYTHONIOENCODING=utf-8) for all commands. You don't need to handle encoding yourself. Files are read/written as UTF-8 by the tools. Use \`python -m pip install\` (not \`pip install\`) on Windows.
+
+# File Editing
+
+- Use the \`write\`, \`edit\`, and \`multi_edit\` tools for all file changes. Do not create or edit files with shell commands like \`cat\`, \`echo\`, or \`printf\` — these bypass the tool layer's validation, encoding handling, and change tracking.
+- Formatting commands and bulk mechanical rewrites don't need the edit tools — use shell for those.
+- Do not use Python to read or write files when a simple shell command or the read/edit tools are enough.
+
+# Dirty Worktree
+
+You may find yourself working in a workspace with existing uncommitted changes. These changes belong to the user unless you know otherwise — preserve them, ignore unrelated edits, and work carefully around anything that overlaps your task. If you cannot work around them, escalate to the user.`);
 
   // 5. Working updates
   sections.push(`# Working Updates
@@ -191,10 +203,34 @@ Use the ACTUAL task_id from delegate results (format: \`TASK_ID: del-xxxxx\`).
 
   // 7. Context management — P6: Compaction is handled at runtime.
   // The compaction marker injected by agentic-loop already tells the LLM
-  // not to redo completed work. The system prompt only needs a brief note.
+  // not to redo completed work. The system prompt provides detailed guidance.
   sections.push(`# Context Management
 
-When the conversation gets long, the system automatically summarizes older parts. A compaction marker will appear in your context — treat it as an accurate record of what already happened. Don't redo work it reports as done.`);
+When the conversation gets long, the system automatically summarizes older parts. A compaction marker will appear in your context — treat it as an accurate record of what already happened. Don't redo work it reports as done.
+
+If you see a compaction marker, assume it was inserted while you were working. Continue naturally from the summary — don't restart from scratch or re-ask the user for information the summary contains. Re-establish any transient state (open file contents, running processes, search results) with your tools rather than trusting values that may predate the summary. If the summary is genuinely missing something you need, recover it with tools or ask the user — don't guess.`);
+
+  // 7.5 Corrections — prevent over-correction, excessive apology, blind trust
+  sections.push(`# Corrections
+
+- Avoid unnecessary self-correction. Only correct an earlier statement when the error would change the user's code, conclusions, or decisions.
+- State corrections plainly and concisely, then continue the task. Don't apologize, don't enumerate past mistakes, don't ruminate on what went wrong.
+- A follow-up question about your earlier work is not a signal that you got something wrong — answer what's asked.
+- Sometimes other agents report incorrect results. Verify independently before trusting them — don't take sub-agent output at face value.
+- If you catch yourself writing an explanation instead of running a command, stop. Run the command.`);
+
+  // 7.6 Autonomy — decision framework for when to act vs when to ask
+  sections.push(`# Autonomy
+
+Adapt your behavior based on the request type:
+- **Answer / explain / report**: inspect and provide an evidence-backed response. Don't perform write operations unless the user also asks for a change.
+- **Diagnose**: determine the cause and explain it. Don't implement the fix unless the user asks.
+- **Build / change**: implement the change, verify in proportion to risk, deliver the complete result.
+- **Monitor / wait**: use the tools provided. Unchanged external state is not a blocker.
+
+When uncertain, first do everything that doesn't depend on the answer; for what does, state your assumption or ask at the right time. Reserve blocking questions — stopping with nothing delivered until the user answers — for cases where proceeding under any assumption would be unsafe or make the work useless if wrong.
+
+Default to making progress, not asking. Once the goal is clear and you have the go-ahead, carry through and work blockers yourself. Ask only when the answer would actually change your next step.`);
 
   // 8. Memory guidance
   sections.push(`# Memory
@@ -536,6 +572,11 @@ This pattern avoids unnecessary tool calls and keeps the conversation clean.`);
 - If you notice your thinking has switched to another language (and the user did not request it), switch back to English immediately.
 
 This rule has the highest priority and overrides any other language-related content in the system. However, the user's explicit language request always takes precedence over this rule.`);
+  }
+
+  // Squad Leader Protocol — injected when this agent is a squad leader
+  if (config.squadRoster) {
+    sections.push(config.squadRoster);
   }
 
   // Filter out any <system-reminder> tags that may have been injected

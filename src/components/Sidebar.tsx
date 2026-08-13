@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
-import { PanelLeftClose, Search, Settings, Sun, Moon, PencilLine, BookOpen, Clock, Plug, BookMarked, Brain, Link2, GitBranch, Pin, Folder, Pencil, Clipboard, Trash2, ChevronDown, ChevronRight, MoreHorizontal, User, Circle } from "lucide-react";
+import { PanelLeftClose, Search, Settings, Sun, Moon, PencilLine, BookOpen, Clock, Plug, BookMarked, Brain, Link2, GitBranch, Pin, Folder, Pencil, Clipboard, Trash2, ChevronDown, ChevronRight, MoreHorizontal, User, Circle, ClipboardList, Bot } from "lucide-react";
 import { useAppStore } from "../store";
 import { useProjectStore } from "../core/store";
 import { AppIdentity } from "../core/types";
@@ -12,6 +12,7 @@ import * as SessionStorage from "../core/storage/session";
 import { useLang, S } from "../core/i18n/lang";
 import { Tooltip, TooltipTrigger, TooltipContent } from "./ui/tooltip";
 import { getDelegationOrchestrator } from "../core/session";
+import { getInboxManager } from "../core/inbox/inbox";
 
 interface SidebarProps {
   identity: AppIdentity | null;
@@ -22,8 +23,8 @@ interface SidebarProps {
   onSkills?: () => void;
   onMemory?: () => void;
   onNotebooks?: () => void;
-  onAutomations?: () => void;
-  onDelegation?: () => void;
+  onTaskCenter?: () => void;
+  onAgents?: () => void;
   onRemoveProject?: (projectId: string, projectName: string, projectPath: string) => void;
   fileExplorerProjectId?: string | null;
   onToggleFileExplorer?: (projectId: string) => void;
@@ -31,7 +32,18 @@ interface SidebarProps {
   collapsed?: boolean;
 }
 
-export function Sidebar({ identity, onSettings, onProjects, onConfig, onMcp, onSkills, onMemory, onNotebooks, onAutomations, onDelegation, onRemoveProject, fileExplorerProjectId, onToggleFileExplorer, onToggleSidebar, collapsed = false }: SidebarProps) {
+export function Sidebar({ identity, onSettings, onProjects, onConfig, onMcp, onSkills, onMemory, onNotebooks, onTaskCenter, onAgents, onRemoveProject, fileExplorerProjectId, onToggleFileExplorer, onToggleSidebar, collapsed = false }: SidebarProps) {
+  const [inboxUnread, setInboxUnread] = useState(0);
+
+  // Track inbox unread count
+  useEffect(() => {
+    const updateCount = () => {
+      try { setInboxUnread(getInboxManager().getUnreadCount()); } catch {}
+    };
+    updateCount();
+    const interval = setInterval(updateCount, 5000);
+    return () => clearInterval(interval);
+  }, []);
   const lang = useLang();
   const { clearMessages, loadMessages } = useAppStore();
   const {
@@ -311,14 +323,23 @@ const handleDrop = useCallback((e: React.DragEvent, targetSessionId: string, pro
           </TooltipTrigger>
           <TooltipContent side="right">{lang === 'zh' ? '知识笔记本' : 'Notebooks'}</TooltipContent>
         </Tooltip>
-        {onAutomations && (
+        {onTaskCenter && (
           <Tooltip>
             <TooltipTrigger asChild>
-              <button className="sidebar-rail-btn" onClick={onAutomations}>
-                <Clock size={18} />
+              <button className="sidebar-rail-btn" onClick={onTaskCenter} style={{ position: "relative" }}>
+                <ClipboardList size={18} />
+                {inboxUnread > 0 && (
+                  <span style={{
+                    position: "absolute", top: -2, right: -2,
+                    fontSize: 9, fontWeight: 700, color: "#fff",
+                    background: "#ef4444", borderRadius: 8,
+                    minWidth: 16, height: 16, display: "flex",
+                    alignItems: "center", justifyContent: "center", padding: "0 4px",
+                  }}>{inboxUnread}</span>
+                )}
               </button>
             </TooltipTrigger>
-            <TooltipContent side="right">{lang === 'zh' ? '自动化' : 'Automations'}</TooltipContent>
+            <TooltipContent side="right">{lang === 'zh' ? '任务管理' : 'Task Center'}</TooltipContent>
           </Tooltip>
         )}
         <div className="sidebar-rail-divider" />
@@ -346,16 +367,6 @@ const handleDrop = useCallback((e: React.DragEvent, targetSessionId: string, pro
           </TooltipTrigger>
           <TooltipContent side="right">{S.sidebar.memory[lang]}</TooltipContent>
         </Tooltip>
-        {onDelegation && (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button className="sidebar-rail-btn" onClick={onDelegation}>
-                <Link2 size={18} />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="right">{lang === 'zh' ? '委派任务' : 'Delegations'}</TooltipContent>
-          </Tooltip>
-        )}
         <div className="sidebar-rail-spacer" />
         {showSearch && (
           <SearchDialog
@@ -403,10 +414,26 @@ const handleDrop = useCallback((e: React.DragEvent, targetSessionId: string, pro
           <span className="sidebar-nav-icon"><BookOpen size={16} /></span>
           <span>{lang === 'zh' ? '知识笔记本' : 'Notebooks'}</span>
         </button>
-        {onAutomations && (
-          <button className="sidebar-nav-item" onClick={onAutomations}>
-            <span className="sidebar-nav-icon"><Clock size={16} /></span>
-            <span>{lang === 'zh' ? '自动化' : 'Automations'}</span>
+        {onTaskCenter && (
+          <button className="sidebar-nav-item" onClick={onTaskCenter}>
+            <span className="sidebar-nav-icon" style={{ position: "relative" }}>
+              <ClipboardList size={16} />
+              {inboxUnread > 0 && (
+                <span style={{
+                  position: "absolute", top: -4, right: -6,
+                  fontSize: 9, fontWeight: 700, color: "#fff",
+                  background: "#ef4444", borderRadius: 8,
+                  minWidth: 14, height: 14, display: "flex",
+                  alignItems: "center", justifyContent: "center", padding: "0 3px",
+                }}>{inboxUnread}</span>
+              )}
+            </span>
+            <span>{lang === 'zh' ? '任务管理' : 'Task Center'}</span>
+            {inboxUnread > 0 && (
+              <span style={{ marginLeft: "auto", fontSize: 10, fontWeight: 700, color: "#ef4444" }}>
+                {inboxUnread}
+              </span>
+            )}
           </button>
         )}
 
@@ -424,10 +451,10 @@ const handleDrop = useCallback((e: React.DragEvent, targetSessionId: string, pro
             <span className="sidebar-tool-item-icon"><Brain size={16} /></span>
             <span className="sidebar-tool-item-label">{S.sidebar.memory[lang]}</span>
           </button>
-          {onDelegation && (
-            <button className="sidebar-tool-item" onClick={onDelegation} title={lang === 'zh' ? '委派任务' : 'Delegations'}>
-              <span className="sidebar-tool-item-icon"><Link2 size={16} /></span>
-              <span className="sidebar-tool-item-label">{lang === 'zh' ? '委派' : 'Deleg.'}</span>
+          {onAgents && (
+            <button className="sidebar-tool-item" onClick={onAgents} title={lang === 'zh' ? '智能体' : 'Agents'}>
+              <span className="sidebar-tool-item-icon"><Bot size={16} /></span>
+              <span className="sidebar-tool-item-label">{lang === 'zh' ? '智能体' : 'Agents'}</span>
             </button>
           )}
         </div>

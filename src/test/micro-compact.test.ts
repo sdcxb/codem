@@ -92,9 +92,9 @@ describe("P0-3: Micro-compact", () => {
       m => m.role === "tool" && m.content.startsWith("[Tool result compacted"),
     );
     expect(compactedMsg).toBeDefined();
-    expect(compactedMsg!.content).toContain("Tool: bash");
-    expect(compactedMsg!.content).toContain("saved");
-    expect(compactedMsg!.content).toContain("Preview:");
+    expect(compactedMsg!.content).toContain("bash");
+    expect(compactedMsg!.content).toContain("chars");
+    expect(compactedMsg!.content).toContain("preview");
   });
 
   it("should detect already compacted messages", () => {

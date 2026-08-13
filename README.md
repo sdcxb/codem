@@ -272,6 +272,42 @@ npm run tauri:build
 
 ## 更新日志
 
+### 2026-08-13（v0.98.0）
+
+> 本次更新是 Codem 迄今为止最大规模的功能扩展：从单 Agent 工具调用平台升级为多智能体协同工作台。新增 5 张 DB 表、7 个 LLM 工具、8 Tab 统一任务管理中心（概览/Issues/看板/Squads/委派/子智能体/自动化/收件箱）、4 种自动化触发器、Inbox 全局通知聚合中心、Squad Leader-Member 协同协议。30 个新文件，20 个修改文件，180 个测试全部通过。
+
+**Phase 1 — TaskCenter 统一任务管理中心：**
+- 概览页聚合委派/子智能体/自动化/Issue/Inbox 全景统计 + 快速跳转卡片
+- 委派 Tab（跨会话委派任务列表）+ 子智能体 Tab（生命周期追踪）+ 自动化 Tab（触发器配置 + 历史）
+
+**Phase 2 — Squad 多智能体协同：**
+- Squad Leader-Member 架构 + Roster 协议（操作协议 + 成员表 + Leader 指令）
+- 3 个 LLM 工具（`squad_list` / `squad_dispatch` / `squad_status`）
+- Squad dispatch 路由：监听 `codem-squad-dispatch` 事件 → 创建 Leader 会话 → `executeSessionTurn`
+- SquadsTab UI（创建/展开/添加成员/归档）+ 系统提示词 `squadRoster` 注入 + `getSquadCost` 成本汇总
+- Worktree 限额 15→30（支持 Squad 多 worktree 并行）
+
+**Phase 3 — Issue 追踪 + 看板视图：**
+- 7 种状态（backlog/todo/in_progress/in_review/done/blocked/cancelled）+ 4 种优先级 + 评论系统 + 状态自动流转
+- 4 个 LLM 工具（`issue_create` / `issue_update` / `issue_comment` / `issue_list`）
+- IssuesTab（列表视图 + 状态筛选）+ BoardTab（5 列看板 + 拖拽改变状态）+ IssueDetailPanel（详情 + 评论 + **分配给 Squad**）
+
+**Phase 4 — Autopilot 自动化扩展：**
+- Cron 引擎（5 段 cron 表达式：通配符/步长/范围/列表，每 30 秒检查）
+- Issue 状态触发器（IssueManager.update → `notifyIssueStatusChange` → 匹配触发器自动执行，支持 `{issue_id}` / `{status}` 占位符）
+- AutomationTab UI 新增 Cron + Issue 状态两种触发器类型和配置表单
+
+**Phase 5 — Inbox 全局通知聚合中心：**
+- 6 种分类（issue/squad/delegation/automation/system/agent）+ 优先级 + 已读/归档
+- 事件填充集成：委派完成/失败、Issue 状态变更、自动化触发（4 种引擎）全部写入 Inbox
+- Sidebar 未读计数角标（展开态 + 折叠态，5 秒轮询）+ 概览页统计卡片
+
+**Phase 6 — AgentManager 扩展 + 死代码清理：**
+- Squad Leader 适配复选框 + Sidebar "智能体"入口按钮
+- 清理 DelegationPanel/AutomationSettingsSection/onAutomations/\_\_pendingSquadDispatch 死代码
+- TopNavbar "tasks" → "项目"/"Projects" 消除双 Tasks 入口混淆
+- micro-compact bug 修复：preview 行截断 200 字符 + 去重前缀修复
+
 ### 2026-08-12（v0.97.0）
 
 > 本次更新为 Agentic Loop 性能优化 + 工具系统延迟加载 + 记忆提取 Forked Agent + 技能市场三大新源接入 + 技能发布功能。10 个文件修改（+1,568/-73 行），20 个新文件。全量 85 文件 / 2901 用例通过（2899 通过）。

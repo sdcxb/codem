@@ -183,6 +183,32 @@ private config: LLMEngineConfig;
       this.tools.register(createListSessionsTool());
       console.log("[LLMEngine] Cross-session delegation tools registered");
     });
+
+    // Register squad tools
+    import("../squad/squad-tools").then(({
+      createSquadListTool,
+      createSquadDispatchTool,
+      createSquadStatusTool,
+    }) => {
+      this.tools.register(createSquadListTool());
+      this.tools.register(createSquadDispatchTool());
+      this.tools.register(createSquadStatusTool());
+      console.log("[LLMEngine] Squad tools registered");
+    });
+
+    // Register issue tools
+    import("../issue/issue-tools").then(({
+      createIssueCreateTool,
+      createIssueUpdateTool,
+      createIssueCommentTool,
+      createIssueListTool,
+    }) => {
+      this.tools.register(createIssueCreateTool());
+      this.tools.register(createIssueUpdateTool());
+      this.tools.register(createIssueCommentTool());
+      this.tools.register(createIssueListTool());
+      console.log("[LLMEngine] Issue tools registered");
+    });
   }
 
   /**
@@ -245,6 +271,9 @@ private config: LLMEngineConfig;
         // Pass through agent-level overrides (Phase 0 fields)
         reasoningEffort: agent?.reasoningEffort || resolved.reasoningEffort,
         collaborationMode: agent?.collaborationMode,
+        // Pass agent ID and tool allowlist for tool filtering
+        agentId: agentId || "build",
+        toolAllowlist: agent?.toolAllowlist,
         // M1: Pass slot resolver so compaction can use a different model
         resolveProvider: (slot: string) => {
           const slotResolved = this.resolveSlot(slot as TaskSlot);

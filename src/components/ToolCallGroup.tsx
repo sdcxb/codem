@@ -2,11 +2,18 @@
  * ToolCallGroup — 工具调用组
  *
  * 对标 wecode：去外框，inline 排列，连续相同工具自动合并为 "ToolName x N"。
+ * 渲染折叠：连续 3+ 个只读操作（read/grep/glob）自动折叠前面的，只展开最后一个。
  */
 
 import { memo, useState, useMemo } from "react";
 import { ChevronDown, ChevronRight, Wrench, LoaderCircle } from "lucide-react";
 import { ToolCallCard, type ToolCallCardProps } from "./ToolCallCard";
+
+/** 只读工具列表 — 这些工具的连续调用可以自动折叠 */
+const READ_ONLY_TOOLS = new Set(["read", "Read File", "grep", "Search Code", "glob", "Find Files"]);
+
+/** 当连续只读操作达到此数量时，自动折叠前面的 */
+const COLLAPSE_THRESHOLD = 3;
 
 interface ToolCallGroupProps {
   items: ToolCallCardProps[];
@@ -54,6 +61,17 @@ export const ToolCallGroup = memo(function ToolCallGroup({
         });
       }
     }
+
+    // 渲染折叠：将连续的只读操作分组成折叠段
+    // 当一组连续的只读操作达到 COLLAPSE_THRESHOLD 时，
+    // 前面的默认折叠，只展开最后一个
+    for (const merged of result) {
+      if (READ_ONLY_TOOLS.has(merged.toolName) && merged.count >= COLLAPSE_THRESHOLD) {
+        // 标记前面的 items 为折叠状态（通过添加 collapsed 标记）
+        (merged as any).autoCollapse = true;
+      }
+    }
+
     return result;
   }, [items]);
 
@@ -88,9 +106,13 @@ export const ToolCallGroup = memo(function ToolCallGroup({
           {mergedItems.map((merged, idx) =>
             merged.count > 1 ? (
               <div key={idx} className="tool-merged-group">
-                {merged.items.map((item, subIdx) => (
-                  <ToolCallCard key={subIdx} {...item} />
-                ))}
+                {/* 渲染折叠：只读操作组达到阈值时，前面的默认折叠 */}
+                {(merged as any).autoCollapse
+                  ? <CollapsedReadGroup merged={merged} />
+                  : merged.items.map((item, subIdx) => (
+                      <ToolCallCard key={subIdx} {...item} />
+                    ))
+                }
                 <span className="tool-merged-badge">
                   {merged.isRunning ? `${merged.doneCount}/${merged.count}` : `x ${merged.count}`}
                 </span>
@@ -102,5 +124,67 @@ export const ToolCallGroup = memo(function ToolCallGroup({
         </div>
       )}
     </div>
+  );
+});
+
+/**
+ * CollapsedReadGroup — 折叠的连续只读操作组
+ *
+ * 当连续的 read/grep/glob 操作达到阈值时，前面的操作默认折叠，
+ * 只展开最后一个。用户可以点击展开全部。
+ */
+const CollapsedReadGroup = memo(function CollapsedReadGroup({ merged }: { merged: MergedItem }) {
+  const [showAll, setShowAll] = useState(false);
+  const items = merged.items;
+  const lastItem = items[items.length - 1];
+  const hiddenCount = items.length - 1;
+
+  if (showAll) {
+    return (
+      <>
+        {items.map((item, subIdx) => (
+          <ToolCallCard key={subIdx} {...item} />
+        ))}
+        <button
+          className="tool-collapse-toggle"
+          onClick={() => setShowAll(false)}
+          style={{
+            background: "none",
+            border: "none",
+            color: "var(--text-secondary, #a0a0a8)",
+            cursor: "pointer",
+            fontSize: "11px",
+            padding: "2px 6px",
+          }}
+        >
+          <ChevronDown size={10} style={{ display: "inline", marginRight: 2 }} />
+          {hiddenCount} earlier {merged.toolName} calls — click to collapse
+        </button>
+      </>
+    );
+  }
+
+  return (
+    <>
+      <button
+        className="tool-collapse-toggle"
+        onClick={() => setShowAll(true)}
+        style={{
+          background: "none",
+          border: "none",
+          color: "var(--text-secondary, #a0a0a8)",
+          cursor: "pointer",
+          fontSize: "11px",
+          padding: "2px 6px",
+          display: "flex",
+          alignItems: "center",
+          gap: "4px",
+        }}
+      >
+        <ChevronRight size={10} />
+        {hiddenCount} earlier {merged.toolName} calls collapsed
+      </button>
+      <ToolCallCard {...lastItem} />
+    </>
   );
 });

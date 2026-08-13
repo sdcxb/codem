@@ -7,6 +7,7 @@ import {
   type CollaborationMode,
 } from "../core/agent/agent";
 import type { TaskSlot } from "../core/llm/model-profile";
+import { Bot, Plus } from "lucide-react";
 import { useLang } from "../core/i18n/lang";
 
 const MODE_LABELS: Record<AgentMode, string> = {
@@ -26,6 +27,39 @@ const SLOT_LABELS: Record<TaskSlot, string> = {
   embedding: "语义搜索 (embedding)",
 };
 
+// 必选工具 — 新建 agent 时默认勾选且不可取消
+const REQUIRED_TOOLS = ["read", "glob", "grep"];
+
+// 预置工具列表（用于 UI 复选框展示）
+const BUILTIN_TOOL_NAMES = [
+  "bash",
+  "read",
+  "write",
+  "edit",
+  "multi_edit",
+  "glob",
+  "grep",
+  "tts",
+  "image_gen",
+  "load_skill",
+  "web_search",
+  "read_attachment",
+  "search_notebook",
+  "create_note",
+  "edit_note",
+  "link_notes",
+  "ask_clarification",
+  "fact_check",
+  "show_todo",
+  "browser_automate",
+  "figma_fetch",
+  "github_tool",
+  "lsp_tool",
+  "tool_search",
+  "spawn_subagent",
+  "wait_for_subagent",
+];
+
 function emptyAgent(): AgentDefinition {
   return {
     id: `agent-${Date.now()}`,
@@ -34,7 +68,7 @@ function emptyAgent(): AgentDefinition {
     mode: "subagent",
     prompt: "",
     promptEn: "",
-    toolAllowlist: [],
+    toolAllowlist: [...REQUIRED_TOOLS],
     permissions: [{ tool: "*", action: "allow" }],
     canSpawnSubagents: false,
     maxSteps: 10,
@@ -114,8 +148,8 @@ export function AgentManager() {
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <div>
-          <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)" }}>
-            🤖 {zh ? "智能体定义管理" : "Agent Definition Management"}
+          <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)", display: "flex", alignItems: "center", gap: 6 }}>
+            <Bot size={16} style={{ color: "var(--accent, #7c3aed)" }} /> {zh ? "智能体定义管理" : "Agent Definition Management"}
           </div>
           <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 2 }}>
             {zh ? "查看、创建和编辑智能体定义。内置智能体不可编辑/删除。" : "View, create, and edit agent definitions. Built-in agents are read-only."}
@@ -149,7 +183,7 @@ export function AgentManager() {
                 cursor: editing ? "default" : "pointer", fontSize: 12,
               }}
             >
-              <span style={{ fontSize: 14 }}>{agent.mode === "primary" ? "🦸" : "🤖"}</span>
+              <span style={{ fontSize: 14 }}>{agent.mode === "primary" ? <Bot size={14} style={{ color: "var(--accent, #7c3aed)", display: "inline", verticalAlign: "middle" }} /> : <Bot size={14} style={{ color: "var(--text-secondary)", display: "inline", verticalAlign: "middle" }} />}</span>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontWeight: 600, color: "var(--text-primary)" }}>
                   {agent.name || agent.id}
@@ -195,8 +229,8 @@ export function AgentManager() {
           <DetailRow label={zh ? "协作模式" : "Collaboration"} value={selected.collaborationMode === "plan" ? (zh ? "规划模式 (只读)" : "Plan (read-only)") : (zh ? "默认模式" : "Default")} />
           <DetailRow label={zh ? "模型槽位" : "Model Slot"} value={selected.modelSlot ? SLOT_LABELS[selected.modelSlot] : "-"} />
           <DetailRow label={zh ? "最大步数" : "Max Steps"} value={String(selected.maxSteps ?? "-")} />
-          <DetailRow label={zh ? "可生成子智能体" : "Can Spawn"} value={selected.canSpawnSubagents ? "✅" : "❌"} />
-          <DetailRow label={zh ? "工具白名单" : "Tool Allowlist"} value={selected.toolAllowlist && selected.toolAllowlist.length > 0 ? selected.toolAllowlist.join(", ") : (zh ? "全部工具" : "All tools")} />
+          <DetailRow label={zh ? "可生成子智能体" : "Can Spawn"} value={selected.canSpawnSubagents ? (zh ? "是" : "Yes") : (zh ? "否" : "No")} />
+          <DetailRow label={zh ? "工具白名单" : "Tool Allowlist"} value={selected.toolAllowlist && selected.toolAllowlist.length > 0 ? selected.toolAllowlist.map(t => REQUIRED_TOOLS.includes(t) ? `${t}🔒` : t).join(", ") : (zh ? "全部工具" : "All tools")} />
           <DetailRow label={zh ? "上下文模式" : "Context Mode"} value={selected.contextMode === "fork" ? (zh ? "隔离 (fork)" : "Fork (isolated)") : (zh ? "内联 (inline)" : "Inline")} />
           {selected.model && <DetailRow label={zh ? "模型覆盖" : "Model Override"} value={selected.model} />}
           {selected.temperature !== undefined && <DetailRow label={zh ? "温度" : "Temperature"} value={String(selected.temperature)} />}
@@ -310,17 +344,76 @@ export function AgentManager() {
             </div>
           </div>
 
-          <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+          <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
             <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: 12 }}>
               <input type="checkbox" checked={editing.canSpawnSubagents ?? false} onChange={e => setEditing({ ...editing, canSpawnSubagents: e.target.checked })} />
               {zh ? "可生成子智能体" : "Can spawn sub-agents"}
             </label>
+            <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: 12 }}>
+              <input type="checkbox" checked={editing.mode === "primary"} onChange={e => setEditing({ ...editing, mode: e.target.checked ? "primary" : "subagent" })} />
+              {zh ? "Squad Leader 适配" : "Squad Leader compatible"}
+            </label>
+            {(editing.canSpawnSubagents || editing.mode === "primary") && (
+              <span style={{ fontSize: 10, color: "var(--text-muted)" }}>
+                {zh ? "此 agent 可作为 Squad Leader 使用（任务管理 → Squads）" : "This agent can be used as a Squad Leader (Task Center → Squads)"}
+              </span>
+            )}
           </div>
 
-          {/* Tool allowlist */}
+          {/* Tool allowlist — checkbox grid with required tools locked */}
           <div>
-            <label style={labelStyle}>{zh ? "工具白名单（逗号分隔，留空=全部工具）" : "Tool Allowlist (comma-separated, empty=all)"}</label>
-            <input style={inputStyle} value={(editing.toolAllowlist || []).join(", ")} onChange={e => setEditing({ ...editing, toolAllowlist: e.target.value.trim() ? e.target.value.split(",").map(s => s.trim()).filter(Boolean) : undefined })} placeholder="read, glob, grep, bash" />
+            <label style={labelStyle}>{zh ? "工具权限" : "Tool Permissions"}</label>
+            <div style={{
+              display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))",
+              gap: 4, marginTop: 4, padding: "8px 12px",
+              background: "var(--bg-secondary)", borderRadius: 6,
+              border: "1px solid var(--border-primary)",
+            }}>
+              {BUILTIN_TOOL_NAMES.map((toolName) => {
+                const isRequired = REQUIRED_TOOLS.includes(toolName);
+                const currentAllowlist = editing.toolAllowlist || [];
+                const isChecked = isRequired || currentAllowlist.includes(toolName);
+                return (
+                  <label
+                    key={toolName}
+                    style={{
+                      display: "flex", alignItems: "center", gap: 4,
+                      cursor: isRequired ? "not-allowed" : "pointer",
+                      fontSize: 12, opacity: isRequired ? 0.6 : 1,
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={isChecked}
+                      disabled={isRequired}
+                      onChange={(e) => {
+                        const current = new Set(currentAllowlist);
+                        if (e.target.checked) {
+                          current.add(toolName);
+                        } else {
+                          current.delete(toolName);
+                        }
+                        const newAllowlist = Array.from(current);
+                        setEditing({
+                          ...editing,
+                          toolAllowlist: newAllowlist.length > 0 ? newAllowlist : undefined,
+                        });
+                      }}
+                    />
+                    <span style={{
+                      color: isRequired ? "var(--text-muted)" : "var(--text-primary)",
+                      fontFamily: "monospace",
+                    }}>
+                      {toolName}
+                      {isRequired && <span style={{ fontSize: 10, marginLeft: 2 }}>🔒</span>}
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
+            <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>
+              {zh ? "🔒 标记的工具为必选工具，不可取消。留空=全部工具权限。外部技能加载的工具也会自动可用。" : "🔒 Required tools cannot be unchecked. Empty = all tools. Skill tools are auto-available."}
+            </div>
           </div>
 
           {/* System prompt */}

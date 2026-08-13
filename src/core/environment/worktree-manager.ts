@@ -65,7 +65,7 @@ export interface WorktreeSettings {
 }
 
 const DEFAULT_SETTINGS: WorktreeSettings = {
-  maxWorktrees: 15,
+  maxWorktrees: 30,
   autoCleanOldest: true,
   warnOnDirty: true,
 };

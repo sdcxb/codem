@@ -315,6 +315,27 @@ export class CostTracker {
       .reduce((sum, r) => sum + r.cost, 0);
   }
 
+  /**
+   * Aggregate cost across multiple sessions (e.g., all squad member sessions).
+   * Returns total cost and token usage for the given session IDs.
+   */
+  getSquadCost(sessionIds: string[]): { totalCost: number; totalInputTokens: number; totalOutputTokens: number; apiCalls: number } {
+    let totalCost = 0;
+    let totalInputTokens = 0;
+    let totalOutputTokens = 0;
+    let apiCalls = 0;
+    for (const sid of sessionIds) {
+      const sc = this.sessionCosts.get(sid);
+      if (sc) {
+        totalCost += sc.totalCost;
+        totalInputTokens += sc.totalInputTokens;
+        totalOutputTokens += sc.totalOutputTokens;
+        apiCalls += sc.apiCalls;
+      }
+    }
+    return { totalCost, totalInputTokens, totalOutputTokens, apiCalls };
+  }
+
   /** Get cost breakdown by model */
   getCostByModel(): Record<string, number> {
     const breakdown: Record<string, number> = {};

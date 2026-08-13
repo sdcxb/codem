@@ -135,7 +135,32 @@ const defaultUser: UserConfig = {
   notes: "",
   context: "",
   raw: "",
+  avatar: "",
 };
+
+// DiceBear 开源头像预设 (MIT License, https://dicebear.com)
+const PRESET_AVATARS: string[] = [
+  "https://api.dicebear.com/9.x/adventurer/svg?seed=Lily",
+  "https://api.dicebear.com/9.x/adventurer/svg?seed=Alex",
+  "https://api.dicebear.com/9.x/adventurer/svg?seed=Mia",
+  "https://api.dicebear.com/9.x/avataaars/svg?seed=Coco",
+  "https://api.dicebear.com/9.x/avataaars/svg?seed=Riley",
+  "https://api.dicebear.com/9.x/avataaars/svg?seed=Sage",
+  "https://api.dicebear.com/9.x/bottts/svg?seed=Pixel",
+  "https://api.dicebear.com/9.x/bottts/svg?seed=Echo",
+  "https://api.dicebear.com/9.x/bottts/svg?seed=Vex",
+  "https://api.dicebear.com/9.x/fun-emoji/svg?seed=Sunny",
+  "https://api.dicebear.com/9.x/fun-emoji/svg?seed=Cloud",
+  "https://api.dicebear.com/9.x/fun-emoji/svg?seed=Star",
+  "https://api.dicebear.com/9.x/lorelei/svg?seed=Aria",
+  "https://api.dicebear.com/9.x/lorelei/svg?seed=Finn",
+  "https://api.dicebear.com/9.x/lorelei/svg?seed=Jade",
+  "https://api.dicebear.com/9.x/thumbs/svg?seed=Max",
+  "https://api.dicebear.com/9.x/thumbs/svg?seed=Nova",
+  "https://api.dicebear.com/9.x/thumbs/svg?seed=Orion",
+  "https://api.dicebear.com/9.x/pixel-art/svg?seed=Bit",
+  "https://api.dicebear.com/9.x/pixel-art/svg?seed=Dash",
+];
 
 export function SettingsPanel({ onClose, onSessionRecovery, onUsageStats, initialTab, setShowOnboardingReplay }: SettingsPanelProps) {
   const lang = useLang();
@@ -199,6 +224,7 @@ export function SettingsPanel({ onClose, onSessionRecovery, onUsageStats, initia
         notes: storedUser.notes || "",
         context: storedUser.context || "",
         raw: storedUser.raw || "",
+        avatar: storedUser.avatar || "",
       });
     }
 
@@ -243,6 +269,7 @@ export function SettingsPanel({ onClose, onSessionRecovery, onUsageStats, initia
       notes: userConfig.notes || "",
       context: userConfig.context || "",
       raw: userConfig.raw || "",
+      avatar: userConfig.avatar || "",
     };
     setSettingJSON("codem-user", userToSave);
 
@@ -933,6 +960,90 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
           <div className="settings-section-title">{S.settings.aboutYou[lang]}</div>
 
           <div className="setting-group">
+            <label>{lang === "zh" ? "头像" : "Avatar"}</label>
+            <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
+              <div className="user-avatar-preview" style={{
+                width: 48, height: 48, borderRadius: "50%", overflow: "hidden",
+                background: "var(--bg-tertiary)", display: "flex", alignItems: "center",
+                justifyContent: "center", flexShrink: 0, border: "2px solid var(--border-primary)",
+              }}>
+                {userConfig.avatar ? (
+                  <img src={userConfig.avatar} alt="avatar" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                ) : (
+                  <User size={24} style={{ color: "var(--text-muted)" }} />
+                )}
+              </div>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <button
+                  onClick={() => document.getElementById("avatar-upload-input")?.click()}
+                  style={{
+                    padding: "6px 12px", borderRadius: 6,
+                    border: "1px solid var(--border-primary)",
+                    background: "var(--bg-secondary)", color: "var(--text-primary)",
+                    cursor: "pointer", fontSize: 12,
+                    display: "flex", alignItems: "center", gap: 4,
+                  }}
+                >
+                  {lang === "zh" ? "上传头像" : "Upload"}
+                </button>
+                {userConfig.avatar && (
+                  <button
+                    onClick={() => setUserConfig({ ...userConfig, avatar: "" })}
+                    style={{
+                      padding: "6px 12px", borderRadius: 6,
+                      border: "1px solid var(--border-primary)",
+                      background: "var(--bg-secondary)", color: "var(--text-primary)",
+                      cursor: "pointer", fontSize: 12,
+                    }}
+                  >
+                    {lang === "zh" ? "清除" : "Clear"}
+                  </button>
+                )}
+              </div>
+              <input
+                id="avatar-upload-input"
+                type="file"
+                accept="image/png,image/jpeg,image/gif,image/svg+xml,image/webp"
+                style={{ display: "none" }}
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  if (file.size > 2 * 1024 * 1024) {
+                    alert(lang === "zh" ? "头像大小不能超过 2MB" : "Avatar must be under 2MB");
+                    return;
+                  }
+                  const reader = new FileReader();
+                  reader.onload = () => {
+                    setUserConfig({ ...userConfig, avatar: reader.result as string });
+                  };
+                  reader.readAsDataURL(file);
+                }}
+              />
+            </div>
+            <div className="preset-avatar-grid" style={{
+              display: "grid", gridTemplateColumns: "repeat(10, 1fr)", gap: 8, marginTop: 8,
+            }}>
+              {PRESET_AVATARS.map((url) => (
+                <button
+                  key={url}
+                  onClick={() => setUserConfig({ ...userConfig, avatar: url })}
+                  style={{
+                    width: 36, height: 36, borderRadius: "50%", padding: 0,
+                    border: userConfig.avatar === url ? "2px solid var(--accent)" : "2px solid transparent",
+                    background: "var(--bg-tertiary)", cursor: "pointer", overflow: "hidden",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                  }}
+                >
+                  <img src={url} alt="preset" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                </button>
+              ))}
+            </div>
+            <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 6 }}>
+              {lang === "zh" ? "预设头像来自 DiceBear (MIT)，也可上传自定义图片（≤2MB）" : "Presets from DiceBear (MIT), or upload your own (≤2MB)"}
+            </div>
+          </div>
+
+          <div className="setting-group">
             <label>{S.settings.yourName[lang]}</label>
             <input
               type="text"
@@ -1094,8 +1205,14 @@ marginTop: 4,
 )}
 {activeTab === "automation" && (
 <>
-{/* Automation triggers */}
-<AutomationSettingsSection lang={lang} />
+<div style={{ padding: "40px 20px", textAlign: "center" }}>
+  <div style={{ fontSize: 14, color: "var(--text-secondary)", marginBottom: 12 }}>
+    {lang === "zh" ? "自动化任务已移至任务管理面板。" : "Automation tasks have moved to Task Center."}
+  </div>
+  <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
+    {lang === "zh" ? "请在侧边栏点击“任务管理” → “自动化” Tab。" : "Click \"Task Center\" in the sidebar → \"Automation\" tab."}
+  </div>
+</div>
 </>
 )}
           {activeTab === "security" && (
@@ -2196,214 +2313,8 @@ function NotebookSettingsSection() {
 }
 
 // ========== Automation Settings Section ==========
-
-function AutomationSettingsSection({ lang }: { lang: ReturnType<typeof useLang> }) {
-  const zh = lang === "zh";
-  const [triggers, setTriggers] = useState<AutomationTrigger[]>([]);
-  const [editing, setEditing] = useState<Partial<AutomationTrigger> | null>(null);
-  const [history, setHistory] = useState<any[]>([]);
-  const [enginesStopped, setEnginesStopped] = useState(false);
-
-  useEffect(() => {
-    const config = getAutomationConfig();
-    setTriggers(config.triggers);
-    setHistory(config.history || []);
-    const handler = () => {
-      const c = getAutomationConfig();
-      setTriggers(c.triggers);
-      setHistory(c.history || []);
-    };
-    window.addEventListener("codem-automation-config-changed", handler);
-    return () => window.removeEventListener("codem-automation-config-changed", handler);
-  }, []);
-
-  const handleAdd = () => {
-    setEditing({
-      id: `trigger-${Date.now()}`,
-      name: "",
-      type: "timer",
-      enabled: true,
-      message: "",
-      intervalMs: 3600000,
-      cooldownMs: 30000,
-    });
-  };
-
-  const handleSave = () => {
-    if (!editing || !editing.name || !editing.message) return;
-    const config = getAutomationConfig();
-    const existing = config.triggers.findIndex(t => t.id === editing.id);
-    if (existing >= 0) {
-      config.triggers[existing] = editing as AutomationTrigger;
-    } else {
-      config.triggers.push(editing as AutomationTrigger);
-    }
-    setAutomationConfig(config);
-    setTriggers(config.triggers);
-    setEditing(null);
-    // Refresh engines so changes take effect immediately
-    refreshAutomationEngines();
-  };
-
-  const handleToggle = (id: string) => {
-    const t = triggers.find(t => t.id === id);
-    if (!t) return;
-    const config = getAutomationConfig();
-    config.triggers = config.triggers.map(t => t.id === id ? { ...t, enabled: !t.enabled } : t);
-    setAutomationConfig(config);
-    setTriggers(config.triggers);
-    refreshAutomationEngines();
-  };
-
-  const handleDelete = (id: string) => {
-    const config = getAutomationConfig();
-    config.triggers = config.triggers.filter(t => t.id !== id);
-    setAutomationConfig(config);
-    setTriggers(config.triggers);
-    refreshAutomationEngines();
-  };
-
-  const labelStyle: React.CSSProperties = {
-    fontSize: 12, fontWeight: 600, color: "var(--text-primary)", marginBottom: 4, display: "block",
-  };
-  const inputStyle: React.CSSProperties = {
-    padding: "6px 10px", borderRadius: 4, border: "1px solid var(--border-primary)",
-    background: "var(--bg-tertiary)", color: "var(--text-primary)", fontSize: 13, width: "100%",
-  };
-
-  return (
-    <div className="setting-group">
-      <label style={{ fontSize: 14, fontWeight: 700, marginBottom: 8, display: "block" }}>
-        <Bot size={14} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 4 }} /> {zh ? "自动化任务" : "Automation Triggers"}
-      </label>
-      <div style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 12 }}>
-        {zh
-          ? "配置文件监听和定时器触发器，自动创建会话并发送预设消息。支持工作树模式并行隔离。"
-          : "Configure file-watch and timer triggers to automatically create sessions and send preset messages. Supports worktree mode for parallel isolation."}
-      </div>
-
-      {triggers.map(t => (
-        <div key={t.id} style={{
-          display: "flex", alignItems: "center", gap: 8, padding: "8px",
-          borderRadius: 4, border: "1px solid var(--border-primary)",
-          background: "var(--bg-tertiary)", marginBottom: 8, fontSize: 12,
-        }}>
-          <input type="checkbox" checked={t.enabled} onChange={() => handleToggle(t.id)} style={{ width: 16, height: 16 }} />
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontWeight: 600 }}>{t.name}</div>
-            <div style={{ fontSize: 10, opacity: 0.6, overflow: "hidden", textOverflow: "ellipsis" }}>
-              {t.type === "file_watch" ? <><Folder size={12} style={{ display: 'inline', verticalAlign: 'middle' }} /></> : <><Clock size={12} style={{ display: 'inline', verticalAlign: 'middle' }} /></>} {t.message}
-            </div>
-          </div>
-          <button onClick={() => setEditing(t)} style={{ fontSize: 11, padding: "2px 8px", borderRadius: 4, border: "1px solid var(--border-primary)", background: "none", color: "var(--text-primary)", cursor: "pointer" }}>
-            {zh ? "编辑" : "Edit"}
-          </button>
-          <button onClick={() => handleDelete(t.id)} style={{ fontSize: 11, padding: "2px 8px", borderRadius: 4, border: "1px solid #e74c3c", background: "none", color: "#e74c3c", cursor: "pointer" }}>
-            {zh ? "删除" : "Del"}
-          </button>
-        </div>
-      ))}
-
-      {triggers.length === 0 && (
-        <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 8 }}>
-          {zh ? "无触发器。点击下方按钮添加。" : "No triggers. Click below to add one."}
-        </div>
-      )}
-
-      <button onClick={handleAdd} style={{
-        padding: "8px 16px", borderRadius: 6, fontSize: 13,
-        border: "1px solid var(--border-primary)",
-        background: "var(--bg-secondary)", color: "var(--text-primary)", cursor: "pointer",
-      }}>
-        + {zh ? "添加触发器" : "Add Trigger"}
-      </button>
-
-      {/* Stop all engines button */}
-      {triggers.length > 0 && (
-        <button
-          onClick={() => {
-            stopAutomationEngines();
-            setEnginesStopped(true);
-            setTimeout(() => setEnginesStopped(false), 3000);
-          }}
-          style={{
-            marginLeft: 8, padding: "8px 16px", borderRadius: 6, fontSize: 13,
-            border: "1px solid #e74c3c", background: "none", color: "#e74c3c", cursor: "pointer",
-          }}
-        >
-          {enginesStopped ? <><CheckCircle size={12} style={{ display: 'inline', verticalAlign: 'middle' }} /> {zh ? "已停止" : "Stopped"}</> : (zh ? "停止所有" : "Stop All")}
-        </button>
-      )}
-
-      {/* Trigger history */}
-      {history.length > 0 && (
-        <div style={{ marginTop: 16 }}>
-          <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 6 }}>
-            📜 {zh ? "触发历史" : "Trigger History"} ({history.length})
-          </div>
-          <div style={{ maxHeight: 200, overflowY: "auto", display: "flex", flexDirection: "column", gap: 4 }}>
-            {history.slice(0, 20).map((h, i) => (
-              <div key={i} style={{ fontSize: 10, padding: "4px 6px", borderRadius: 4, background: "var(--bg-tertiary)" }}>
-                <span style={{ color: "var(--accent)", fontWeight: 600 }}>{new Date(h.timestamp).toLocaleString()}</span>
-                <span style={{ marginLeft: 6 }}>{h.triggerName}</span>
-                <span style={{ marginLeft: 6, opacity: 0.6, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "inline-block", maxWidth: 200 }}>
-                  {h.message}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {editing && (
-        <div style={{
-          marginTop: 16, padding: 12, borderRadius: 8,
-          border: "1px solid var(--border-primary)", background: "var(--bg-secondary)",
-        }}>
-          <div style={{ marginBottom: 8 }}>
-            <label style={labelStyle}>{zh ? "名称" : "Name"}</label>
-            <input value={editing.name || ""} onChange={e => setEditing({ ...editing, name: e.target.value })} style={inputStyle} />
-          </div>
-          <div style={{ marginBottom: 8 }}>
-            <label style={labelStyle}>{zh ? "类型" : "Type"}</label>
-            <select value={editing.type} onChange={e => setEditing({ ...editing, type: e.target.value as TriggerType })} style={inputStyle}>
-              <option value="timer">{zh ? "定时器" : "Timer"}</option>
-              <option value="file_watch">{zh ? "文件监听" : "File Watch"}</option>
-            </select>
-          </div>
-          <div style={{ marginBottom: 8 }}>
-            <label style={labelStyle}>{zh ? "触发消息" : "Trigger Message"}</label>
-            <textarea value={editing.message || ""} onChange={e => setEditing({ ...editing, message: e.target.value })} style={{ ...inputStyle, minHeight: 60 }} />
-          </div>
-          {editing.type === "file_watch" && (
-            <div style={{ marginBottom: 8 }}>
-              <label style={labelStyle}>{zh ? "监听文件路径" : "Watch Path"}</label>
-              <input value={editing.watchPath || ""} onChange={e => setEditing({ ...editing, watchPath: e.target.value })} style={inputStyle} placeholder={zh ? "C:\\path\\to\\file" : "/path/to/file"} />
-            </div>
-          )}
-          {editing.type === "timer" && (
-            <div style={{ marginBottom: 8 }}>
-              <label style={labelStyle}>{zh ? "间隔（毫秒）" : "Interval (ms)"}</label>
-              <input type="number" value={editing.intervalMs || 3600000} onChange={e => setEditing({ ...editing, intervalMs: parseInt(e.target.value) || 3600000 })} style={{ ...inputStyle, width: 120 }} />
-            </div>
-          )}
-          <div style={{ display: "flex", gap: 8 }}>
-            <button onClick={handleSave} disabled={!editing.name || !editing.message} style={{
-              padding: "6px 16px", borderRadius: 4, fontSize: 12,
-              border: "1px solid var(--accent)", background: "var(--accent)",
-              color: "#fff", cursor: "pointer", opacity: (!editing.name || !editing.message) ? 0.5 : 1,
-            }}>{zh ? "保存" : "Save"}</button>
-            <button onClick={() => setEditing(null)} style={{
-              padding: "6px 16px", borderRadius: 4, fontSize: 12,
-              border: "1px solid var(--border-primary)", background: "none",
-              color: "var(--text-primary)", cursor: "pointer",
-            }}>{zh ? "取消" : "Cancel"}</button>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
+// NOTE: AutomationSettingsSection has been moved to TaskCenter → AutomationTab.
+// The settings panel now shows a redirect message instead.
 
 // ========== Agent Profile Management Section ==========
 

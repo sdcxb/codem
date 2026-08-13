@@ -119,6 +119,8 @@ export interface UserConfig {
   notes: string;
   context: string;
   raw: string;
+  /** 用户头像 URL 或 base64 data URI（空字符串表示使用默认头像） */
+  avatar?: string;
 }
 
 export interface MergedConfig {

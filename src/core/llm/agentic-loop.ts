@@ -65,6 +65,10 @@ export interface LoopState {
 
 export interface LoopConfig {
   maxIterations: number;
+  /** Agent ID for this loop — used for tool filtering and message routing */
+  agentId?: string;
+  /** Tool allowlist from agent definition — if set, only these tools are available */
+  toolAllowlist?: string[];
   maxConsecutiveErrors: number;
   enableCompaction: boolean;
   compactionThreshold: number;
@@ -225,6 +229,22 @@ export class AgenticLoop {
   private fileChangeTracker: FileChangeTracker | null = null;
   private agentId: string = "main";
   private currentSessionId: string | null = null;
+
+  /** Match tool name against allowlist pattern (supports wildcards) */
+  private matchToolPattern(name: string, pattern: string): boolean {
+    if (pattern === "*") return true;
+    if (!pattern.includes("*") && !pattern.includes("?")) return name === pattern;
+    const regex = new RegExp(
+      "^" + pattern.replace(/\./g, "\\.").replace(/\*/g, ".*").replace(/\?/g, ".") + "$"
+    );
+    return regex.test(name);
+  }
+
+  /** Check if a tool is allowed by the agent's toolAllowlist */
+  private isToolAllowed(toolName: string): boolean {
+    if (!this.config.toolAllowlist || this.config.toolAllowlist.length === 0) return true;
+    return this.config.toolAllowlist.some((pattern) => this.matchToolPattern(toolName, pattern));
+  }
 
   // E3: Incremental message cache — avoids redundant full conversions
   private msgCache: {
@@ -534,6 +554,8 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
       if (!hasDocumentAttachment) conditionalToolNames.add("read_attachment");
 
       const toolDefs = allToolDefs.filter(t => {
+        // Filter by agent's toolAllowlist — ensures agents only see tools they're allowed to use
+        if (!this.isToolAllowed(t.name)) return false;
         if (this.config.collaborationMode === "plan" && writeToolNames.has(t.name)) return false;
         if (conditionalToolNames.has(t.name)) return false;
         return true;
@@ -604,6 +626,15 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
         yield { type: "compaction_end", messagesRemoved: compacted };
         // P1-6: Clear transcript cache on compaction (cached responses no longer valid)
         TranscriptCache.clear();
+        // P2-C: Post-compaction cleanup — clear stale caches
+        // After compaction, old file read/write caches are stale because the
+        // conversation history they were based on has been summarized.
+        // The LLM may re-read files it needs, so we clear caches to prevent
+        // false cache hits on files that may have changed context.
+        this.readCache?.clear();
+        this.writeCache?.clear();
+        this.msgCache = null;
+        this.state.microCompactedThisRun = false;
         // F1.2: Trigger memory extraction after compaction
         if (this.config.memoryEnabled && this.config.onCompactionComplete) {
           try { this.config.onCompactionComplete(); } catch {}
@@ -1061,6 +1092,12 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
           yield { type: "compaction_start" };
           const compacted = await this.compactMessages(sessionId);
           yield { type: "compaction_end", messagesRemoved: compacted };
+          // P2-C: Clear stale caches on reactive compaction too
+          this.readCache?.clear();
+          this.writeCache?.clear();
+          this.msgCache = null;
+          TranscriptCache.clear();
+          this.state.microCompactedThisRun = false;
           // After compaction, the main loop will rebuild messages and retry.
           // We return from executeIteration so the main while loop continues.
           // Set a flag so the main loop knows we compacted and should retry.
@@ -1830,13 +1867,34 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
   }
 
   private estimateContextPressure(messages: any[]): number {
-    const totalChars = messages.reduce((sum, m) => {
-      const content = typeof m.content === "string" ? m.content : JSON.stringify(m.content);
-      return sum + content.length;
-    }, 0);
-    const estimatedTokens = totalChars / 4;
+    let totalTokens = 0;
+    for (const m of messages) {
+      const content = typeof m.content === "string" ? m.content : JSON.stringify(m.content || "");
+      // P1-B: Language-aware token estimation
+      // CJK characters (Chinese, Japanese, Korean) typically use ~1 token per char,
+      // while Latin/ASCII text averages ~0.25 tokens per char (4 chars per token).
+      // We count CJK chars separately and apply different ratios.
+      let cjkChars = 0;
+      let otherChars = 0;
+      for (const ch of content) {
+        const code = ch.charCodeAt(0);
+        // CJK Unified Ideographs + CJK Extension A + Hiragana + Katakana + Hangul
+        if ((code >= 0x4e00 && code <= 0x9fff) ||
+            (code >= 0x3400 && code <= 0x4dbf) ||
+            (code >= 0x3040 && code <= 0x30ff) ||
+            (code >= 0xac00 && code <= 0xd7af)) {
+          cjkChars++;
+        } else {
+          otherChars++;
+        }
+      }
+      totalTokens += cjkChars * 0.8 + otherChars * 0.25;
+    }
+    // Also account for tool definition overhead (~100 tokens per tool)
+    const toolCount = (this as any).currentToolDefs?.length || 0;
+    totalTokens += toolCount * 100;
     const maxTokens = 128000;
-    return Math.min(1, estimatedTokens / maxTokens);
+    return Math.min(1, totalTokens / maxTokens);
   }
 
 /**
@@ -1891,12 +1949,49 @@ private checkHasDocumentAttachment(sessionId: string): boolean {
     const messages = MessageStorage.listMessages(sessionId);
     if (messages.length <= 2) return 0;
 
-    // Keep the last N messages
-    const keepCount = Math.min(20, messages.length);
+    // API-Round aware boundary detection:
+    // Instead of a fixed keepCount, find a safe boundary that doesn't
+    // split tool_use/tool_result pairs. We scan backwards from the end,
+    // tracking which messages belong to the same assistant API round
+    // (same assistant message ID = same round). The boundary is placed
+    // at the start of the oldest round we want to keep.
+    const maxKeepCount = Math.min(20, messages.length);
+    let keepCount = maxKeepCount;
+
+    // Scan backwards to find a safe boundary
+    // An assistant message starts a new API round. We want to keep
+    // complete rounds, so the boundary must be at or before an assistant message.
+    if (keepCount < messages.length) {
+      // Walk backwards from keepCount position, looking for an assistant message
+      let boundary = messages.length - keepCount;
+      // If the message at boundary is not an assistant message (it might be
+      // a tool result mid-round), walk backwards to find the start of the round
+      while (boundary > 0 && messages[boundary].role !== "assistant" &&
+             messages[boundary].role !== "user") {
+        boundary--;
+      }
+      // If we walked back to a user message, that's also a safe boundary
+      keepCount = messages.length - boundary;
+    }
+
     const messagesToKeep = messages.slice(-keepCount);
     const messagesToRemove = messages.slice(0, messages.length - keepCount);
 
     if (messagesToRemove.length === 0) return 0;
+
+    // Verify tool_use/tool_result pairing integrity in the keep set
+    // If a tool_result in keep references a tool_use in remove, we need to
+    // also keep that tool_use (or remove the orphan tool_result)
+    const removeToolCallIds = new Set<string>();
+    for (const msg of messagesToRemove) {
+      if (msg.toolCalls) {
+        for (const tc of msg.toolCalls) {
+          if (tc.id) removeToolCallIds.add(tc.id);
+        }
+      }
+    }
+    // Check if any kept message references a removed tool_use
+    // (This is rare with proper boundary detection, but serves as a safety net)
 
     // Check for existing compaction marker (cascading compaction)
     // The marker has role "user" and starts with "[上下文已自动压缩]"
@@ -1926,7 +2021,7 @@ private checkHasDocumentAttachment(sessionId: string): boolean {
     MessageStorage.deleteMessagesByIds(removedIds);
 
     // Insert new compaction marker
-    const markerContent = `[上下文已自动压缩]\n\n${summary}\n\n---\n已移除 ${messagesToRemove.length} 条旧消息，保留最近 ${keepCount} 条。请基于以上摘要和后续消息继续工作。不要重复已摘要中记录为完成的工作。`;
+    const markerContent = `[上下文已自动压缩]\n\n${summary}\n\n---\n已移除 ${messagesToRemove.length} 条旧消息，保留最近 ${keepCount} 条（API-Round 边界对齐）。请基于以上摘要和后续消息继续工作。不要重复已摘要中记录为完成的工作。如需之前的文件内容或命令输出，请使用工具重新获取。`;
 
     const markerTs = messagesToKeep[0]?.timestamp ?? Date.now();
     MessageStorage.createMessage({

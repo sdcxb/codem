@@ -1,6 +1,67 @@
 import type { ToolCallResult, LLMMessage } from "../llm/types";
 import { maybePersistToolResult, NEVER_PERSIST_TOOLS } from "./tool-result-storage";
 
+// ========== P1-A: Per-message Tool Result Budget ==========
+
+/**
+ * Maximum aggregate size in chars for all tool_result blocks within a single
+ * assistant response (one batch of parallel tool results). When exceeded,
+ * the largest results are persisted to disk and replaced with previews
+ * until under budget. Prevents N parallel tools from collectively producing
+ * e.g. 10 × 40K = 400K in one turn's user message.
+ */
+const MAX_TOOL_RESULTS_PER_MESSAGE_CHARS = 200_000;
+
+// ========== P2-D: Error Message Smart Truncation ==========
+
+/**
+ * Truncate long error messages: keep head and tail, replace middle with
+ * a truncation notice. Prevents long compilation errors / test outputs
+ * from consuming excessive context tokens.
+ */
+const MAX_ERROR_MESSAGE_CHARS = 10_000;
+const ERROR_HEAD_TAIL_CHARS = 5_000;
+
+function truncateErrorMessage(message: string): string {
+  if (message.length <= MAX_ERROR_MESSAGE_CHARS) return message;
+  const start = message.slice(0, ERROR_HEAD_TAIL_CHARS);
+  const end = message.slice(-ERROR_HEAD_TAIL_CHARS);
+  const truncated = message.length - MAX_ERROR_MESSAGE_CHARS;
+  return `${start}\n\n... [${truncated} characters truncated] ...\n\n${end}`;
+}
+
+/**
+ * After a batch of tool results is collected, check if their aggregate size
+ * exceeds the per-message budget. If so, persist the largest results to disk
+ * and replace with previews until under budget.
+ */
+async function enforcePerMessageBudget(
+  results: ToolCallResult[],
+  ctx: ToolExecutorContext,
+): Promise<void> {
+  let totalSize = results.reduce((sum, r) => sum + (r.output?.length || 0), 0);
+  if (totalSize <= MAX_TOOL_RESULTS_PER_MESSAGE_CHARS) return;
+
+  // Sort by output size descending — persist largest first
+  const sortable = results
+    .filter(r => r.output && !NEVER_PERSIST_TOOLS.has(r.name))
+    .sort((a, b) => (b.output?.length || 0) - (a.output?.length || 0));
+
+  for (const r of sortable) {
+    if (totalSize <= MAX_TOOL_RESULTS_PER_MESSAGE_CHARS) break;
+    if (!r.output) continue;
+    const originalSize = r.output.length;
+    const persistResult = await maybePersistToolResult(
+      r.name, r.output, ctx.sessionId, ctx.cwd,
+    );
+    if (persistResult.persisted) {
+      const newSize = persistResult.output.length;
+      totalSize -= originalSize - newSize;
+      r.output = persistResult.output;
+    }
+  }
+}
+
 // ========== F2.5: Parameter Security Scanner ==========
 
 /** Patterns that indicate sensitive data in tool parameters */
@@ -181,7 +242,7 @@ export class StreamingToolExecutorImpl {
               id: tc.id,
               name: tc.name,
               input: tc.input,
-              output: `Error: ${error.message}`,
+              output: truncateErrorMessage(`Error: ${error.message}`),
               status: "error",
               error: error.message,
             };
@@ -203,6 +264,9 @@ export class StreamingToolExecutorImpl {
           yield { type: "tool_error", toolCall: item.toolCall, error: item.error };
         }
       }
+
+      // P1-A: Enforce per-message tool result budget after each batch
+      await enforcePerMessageBudget(results, ctx);
     }
   }
 
@@ -269,7 +333,7 @@ export class StreamingToolExecutorImpl {
         id: tc.id,
         name: tc.name,
         input: tc.input,
-        output: `Error: ${error.message}`,
+        output: truncateErrorMessage(`Error: ${error.message}`),
         status: "error",
         error: error.message,
       };

@@ -72,7 +72,7 @@ export interface AgentInfo {
 
 // ========== Agent Registry ==========
 
-const BUILTIN_AGENT_IDS = new Set(["build", "plan", "explore", "general", "title", "summary"]);
+const BUILTIN_AGENT_IDS = new Set(["build", "plan", "explore", "general", "title", "summary", "verify"]);
 
 export class AgentRegistry {
   private agents: Map<string, AgentDefinition> = new Map();
@@ -239,13 +239,16 @@ When the user doesn't specify implementation details, choose the simplest approa
       promptEn: `You are a planning assistant. You analyze code and create plans, but do NOT make actual changes.
 Focus on understanding the codebase, identifying problems, and proposing solutions.
 Do NOT perform any write/edit operations.`,
-      toolAllowlist: ["read", "glob", "grep", "bash"],
+      toolAllowlist: ["read", "glob", "grep", "bash", "lsp_tool", "tool_search", "web_search"],
       collaborationMode: "plan",
       permissions: [
         { tool: "read", action: "allow" },
         { tool: "glob", action: "allow" },
         { tool: "grep", action: "allow" },
         { tool: "bash", action: "allow", resource: "git*" },
+        { tool: "lsp_tool", action: "allow" },
+        { tool: "tool_search", action: "allow" },
+        { tool: "web_search", action: "allow" },
         { tool: "write", action: "deny" },
         { tool: "edit", action: "deny" },
       ],
@@ -265,14 +268,20 @@ Do NOT perform any write/edit operations.`,
       promptEn: `You are a codebase exploration assistant. You quickly search and analyze code.
 Use glob and grep to find relevant files and code patterns.
 Report findings concisely, including file paths and line numbers.`,
-      toolAllowlist: ["read", "glob", "grep"],
+      toolAllowlist: ["read", "glob", "grep", "bash", "lsp_tool", "tool_search", "web_search"],
       permissions: [
         { tool: "read", action: "allow" },
         { tool: "glob", action: "allow" },
         { tool: "grep", action: "allow" },
+        { tool: "bash", action: "allow" },
+        { tool: "lsp_tool", action: "allow" },
+        { tool: "tool_search", action: "allow" },
+        { tool: "web_search", action: "allow" },
         { tool: "write", action: "deny" },
         { tool: "edit", action: "deny" },
-        { tool: "bash", action: "deny" },
+        { tool: "multi_edit", action: "deny" },
+        { tool: "tts", action: "deny" },
+        { tool: "image_gen", action: "deny" },
       ],
       maxSteps: 15,
       modelSlot: "subagent",
@@ -329,6 +338,79 @@ Keep it under 200 words.`,
       maxSteps: 1,
       maxTokens: 500,
       modelSlot: "memory",
+    });
+
+    // Verification agent (runs builds/tests/linters, produces PASS/FAIL verdict)
+    this.register({
+      id: "verify",
+      name: "Verify",
+      description: "Verification specialist — runs builds, tests, and linters to verify implementation correctness",
+      mode: "all",
+      prompt: `你是一个验证专家。你的职责是验证实现是否正确，而不是确认实现能工作——而是尝试找出问题。
+
+你的工作流程：
+1. 读取项目的 README / CLAUDE.md 了解构建和测试命令
+2. 运行构建（如适用）——构建失败即 FAIL
+3. 运行测试套件——测试失败即 FAIL
+4. 运行 linter / 类型检查器（如已配置）
+5. 检查相关代码是否有回归
+
+验证策略（根据变更类型选择）：
+- 前端变更：启动开发服务器 → 检查浏览器自动化工具 → 截图、点击、读取控制台
+- 后端/API 变更：启动服务器 → curl/fetch 端点 → 验证响应格式
+- CLI/脚本变更：运行代表性输入 → 验证 stdout/stderr/exit code
+- Bug 修复：复现原始 bug → 验证修复 → 运行回归测试
+
+对抗性测试（至少运行一个）：
+- 并发请求测试
+- 边界值测试（0, -1, 空字符串, 超长字符串）
+- 幂等性测试
+- 不存在的资源访问测试
+
+输出格式（每个检查必须包含）：
+### 检查：[验证内容]
+**执行命令：** [确切命令]
+**观察输出：** [实际输出]
+**结果：PASS** 或 **FAIL**（附预期 vs 实际）
+
+最终输出以下之一：
+VERDICT: PASS
+VERDICT: FAIL
+VERDICT: PARTIAL
+
+PARTIAL 仅用于环境限制（无测试框架、工具不可用等）。`,
+      promptEn: `You are a verification specialist. Your job is to try to break the implementation, not to confirm it works.
+
+Your workflow:
+1. Read project README/CLAUDE.md for build/test commands
+2. Run build (if applicable) — broken build is automatic FAIL
+3. Run test suite — failing tests are automatic FAIL
+4. Run linters/type-checkers if configured
+5. Check for regressions in related code
+
+Then apply type-specific verification strategy (frontend/backend/CLI/bug-fix).
+
+Run at least one adversarial probe (concurrency, boundary, idempotency, orphan op).
+
+End with exactly: VERDICT: PASS or VERDICT: FAIL or VERDICT: PARTIAL`,
+      toolAllowlist: ["read", "glob", "grep", "bash", "lsp_tool", "tool_search", "web_search"],
+      permissions: [
+        { tool: "read", action: "allow" },
+        { tool: "glob", action: "allow" },
+        { tool: "grep", action: "allow" },
+        { tool: "bash", action: "allow" },
+        { tool: "lsp_tool", action: "allow" },
+        { tool: "tool_search", action: "allow" },
+        { tool: "web_search", action: "allow" },
+        { tool: "write", action: "deny" },
+        { tool: "edit", action: "deny" },
+        { tool: "multi_edit", action: "deny" },
+        { tool: "tts", action: "deny" },
+        { tool: "image_gen", action: "deny" },
+      ],
+      canSpawnSubagents: false,
+      maxSteps: 15,
+      modelSlot: "subagent",
     });
   }
 }

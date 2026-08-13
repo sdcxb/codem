@@ -14,11 +14,39 @@ import { SourceReferences } from "./SourceReferences";
 import { ImageGallery } from "./ImageGallery";
 import { VideoPlayer } from "./VideoPlayer";
 import { RichContent } from "./rich-content/RichContent";
-import { Bot, CheckCircle, XCircle, Clock, FileText, Image as ImageIcon, Pencil, PencilLine, Clipboard, Check, BookOpen, BookX, Brain, ChevronDown, ChevronUp } from "lucide-react";
+import { Bot, CheckCircle, XCircle, Clock, FileText, Image as ImageIcon, Pencil, PencilLine, Clipboard, Check, BookOpen, BookX, Brain, ChevronDown, ChevronUp, User } from "lucide-react";
+import { getSettingJSON } from "../core/storage/settings";
+import type { UserConfig } from "../core/types";
 import { MessageActions } from "./MessageActions";
 import { ErrorCard } from "./ErrorCard";
 import { ToolCallGroup } from "./ToolCallGroup";
 import type { ToolCallCardProps } from "./ToolCallCard";
+
+/** User avatar component — reads avatar from settings, shows circle on user messages */
+function UserAvatar() {
+  const userConfig = getSettingJSON<UserConfig>("codem-user", { name: "", callBy: "", pronouns: "", timezone: "", notes: "", context: "", raw: "", avatar: "" });
+  const avatar = userConfig.avatar;
+
+  if (avatar) {
+    return (
+      <div className="user-msg-avatar" style={{
+        width: 32, height: 32, borderRadius: "50%", overflow: "hidden",
+        flexShrink: 0, border: "2px solid var(--border-primary)",
+      }}>
+        <img src={avatar} alt="me" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+      </div>
+    );
+  }
+  return (
+    <div className="user-msg-avatar" style={{
+      width: 32, height: 32, borderRadius: "50%", flexShrink: 0,
+      background: "var(--bg-tertiary)", border: "2px solid var(--border-primary)",
+      display: "flex", alignItems: "center", justifyContent: "center",
+    }}>
+      <User size={16} style={{ color: "var(--text-muted)" }} />
+    </div>
+  );
+}
 
 // B6: Mermaid diagram renderer component
 const MermaidDiagram = memo(function MermaidDiagram({ chart }: { chart: string }) {
@@ -376,6 +404,7 @@ setTimeout(() => setCopied(false), 2000);
       className={`message message-bubble ${isUser ? "user" : isSystem ? "system" : "assistant"} ${displayMode === "unified" ? "unified-mode" : ""}`}
       data-message-id={message.id}
     >
+      {isUser && <UserAvatar />}
       <div className="message-body">
         {/* AI message inline header — replaces avatar (aligned with wecode/frakio) */}
         {!isUser && !isSystem && (

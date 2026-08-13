@@ -16,7 +16,7 @@ interface HubLayoutProps {
   onTasks?: () => void;
   onSkills?: () => void;
   onNotebooks?: () => void;
-  onAutomations?: () => void;
+  onTaskCenter?: () => void;
   onNewChat?: () => void;
   onNewProject?: () => void;
   onImportProject?: () => void;
@@ -35,7 +35,7 @@ export function HubLayout({
   onTasks,
   onSkills,
   onNotebooks,
-  onAutomations,
+  onTaskCenter,
   onNewChat,
   onNewProject,
   onImportProject,
@@ -51,7 +51,7 @@ export function HubLayout({
         onTasks={onTasks}
         onSkills={onSkills}
         onNotebooks={onNotebooks}
-        onAutomations={onAutomations}
+        onTaskCenter={onTaskCenter}
       />
       <div className="hub-body">
         <div className="hub-sidebar-wrapper">{sidebar}</div>

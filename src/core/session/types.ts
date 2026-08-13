@@ -51,6 +51,10 @@ export interface DelegationTask {
   createdAt: number;
   startedAt?: number;
   completedAt?: number;
+  /** Squad ID if this delegation is part of a squad (optional, for squad routing) */
+  squadId?: string;
+  /** Member ID if this delegation targets a specific squad member */
+  memberId?: string;
 }
 
 // ========== 编排器配置 ==========

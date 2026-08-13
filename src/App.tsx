@@ -29,7 +29,8 @@ import { SkillManager } from "./components/SkillManager";
 import { MemoryManager } from "./components/MemoryManager";
 import { SessionRecovery } from "./components/SessionRecovery";
 import { UsageStats } from "./components/UsageStats";
-import { DelegationPanel } from "./components/DelegationPanel";
+import { TaskCenter, type TaskCenterTab } from "./components/TaskCenter";
+import { AgentManager } from "./components/AgentManager";
 import { DiffViewer } from "./components/DiffViewer";
 import { InlineDiffReview } from "./components/InlineDiffReview";
 import { InteractiveFormDialog } from "./components/InteractiveFormDialog";
@@ -145,7 +146,9 @@ const [notebookWorkspaceName, setNotebookWorkspaceName] = useState<string>('');
 const [citationViewer, setCitationViewer] = useState<{ sourceId: string; notebookId: string; chunkIndex?: number } | null>(null);
   const [showSessionRecovery, setShowSessionRecovery] = useState(false);
   const [showUsageStats, setShowUsageStats] = useState(false);
-const [showDelegationPanel, setShowDelegationPanel] = useState(false);
+const [showTaskCenter, setShowTaskCenter] = useState(false);
+const [taskCenterTab, setTaskCenterTab] = useState<TaskCenterTab>("overview");
+const [showAgentManager, setShowAgentManager] = useState(false);
   const [bottomTab, setBottomTab] = useState<BottomTab>("chat");
   const [fileExplorerProjectId, setFileExplorerProjectId] = useState<string | null>(null);
   const [fileExplorerRefreshKey, setFileExplorerRefreshKey] = useState(0);
@@ -698,6 +701,79 @@ flushStreamBuffer(); // flush all on unmount
 
     return () => {
       unsub();
+    };
+  }, []);
+
+  // ========== Squad Dispatch 路由 ==========
+  // 监听 squad_dispatch 工具发出的事件，创建 Leader 会话并后台执行。
+  useEffect(() => {
+    const handleSquadDispatch = async (event: Event) => {
+      const detail = (event as CustomEvent).detail;
+      if (!detail || !detail.squadId || !detail.task) return;
+
+      const { squadId, task, originalTask, sourceSessionId, projectId } = detail;
+      console.log(`[Squad] Dispatch received: squad=${squadId}, task=${originalTask.substring(0, 60)}...`);
+
+      // Get squad info
+      const { getSquadManager } = await import("./core/squad/squad");
+      const mgr = getSquadManager();
+      const squad = mgr.getSquad(squadId);
+      if (!squad) {
+        console.error(`[Squad] Squad not found: ${squadId}`);
+        return;
+      }
+
+      // Create a new session for the leader
+      const leaderSessionTitle = `[Squad] ${squad.name}: ${originalTask.substring(0, 40)}`;
+      const state = useProjectStore.getState();
+      const targetProjectId = projectId || state.currentProject?.id || "";
+
+      // Switch to the target project if needed
+      if (targetProjectId && state.currentProject?.id !== targetProjectId) {
+        state.openProject(targetProjectId);
+      }
+
+      // Create a new session
+      const newSession = state.createSession();
+      const newSessionId = newSession.id;
+      console.log(`[Squad] Leader session created: ${newSessionId} for squad ${squad.name}`);
+
+      // Wait a tick for the session to be available
+      setTimeout(async () => {
+        const session = useProjectStore.getState().sessions.find((s) => s.id === newSessionId);
+        if (!session) {
+          console.error(`[Squad] Leader session not found after creation: ${newSessionId}`);
+          return;
+        }
+
+        // Determine cwd: use worktree path if session has one, otherwise project path
+        const project = useProjectStore.getState().currentProject;
+        let cwd = session.worktreePath || project?.path || "";
+
+        // Execute the task in the leader session
+        executeSessionTurn({
+          sessionId: newSessionId,
+          message: task,
+          cwd,
+          engine: engineRef.current,
+          onPermissionRequest: (request) => {
+            return new Promise((resolve) => {
+              setPendingPermissions((prev) => {
+                const next = new Map(prev);
+                next.set(newSessionId, { request, resolve });
+                return next;
+              });
+            });
+          },
+        }).catch((err) => {
+          console.error(`[Squad] Leader executeSessionTurn failed for ${newSessionId}:`, err);
+        });
+      }, 200);
+    };
+
+    window.addEventListener("codem-squad-dispatch", handleSquadDispatch as EventListener);
+    return () => {
+      window.removeEventListener("codem-squad-dispatch", handleSquadDispatch as EventListener);
     };
   }, []);
 
@@ -1903,7 +1979,7 @@ abortControllersRef.current.clear();
               onTasks={() => setShowProjectManager(true)}
               onSkills={() => setShowSkillManager(true)}
               onNotebooks={() => setShowNotebookManager(true)}
-              onAutomations={() => { setSettingsInitialTab("automation"); setShowSettings(true); }}
+onTaskCenter={() => { setTaskCenterTab("overview"); setShowTaskCenter(true); }}
               onNewChat={() => {
                 // 新建全局对话（不属于任何项目）
                 useProjectStore.setState({ currentProject: null });
@@ -1931,11 +2007,11 @@ abortControllersRef.current.clear();
                     onSkills={() => setShowSkillManager(true)}
                     onMemory={() => setShowMemoryManager(true)}
                     onNotebooks={() => setShowNotebookManager(true)}
-                    onAutomations={() => { setSettingsInitialTab("automation"); setShowSettings(true); }}
-                    onDelegation={() => setShowDelegationPanel(true)}
-                    onRemoveProject={(id, name, path) => {
-                      setRemoveProjectDialog({ id, name, path });
-                    }}
+onTaskCenter={() => { setTaskCenterTab("overview"); setShowTaskCenter(true); }}
+onAgents={() => setShowAgentManager(true)}
+onRemoveProject={(id, name, path) => {
+  setRemoveProjectDialog({ id, name, path });
+}}
                     fileExplorerProjectId={fileExplorerProjectId}
                     onToggleFileExplorer={handleToggleFileExplorer}
                   />
@@ -2036,11 +2112,11 @@ notebookId={activeNotebookId || undefined}
                   onSkills={() => setShowSkillManager(true)}
                   onMemory={() => setShowMemoryManager(true)}
                   onNotebooks={() => setShowNotebookManager(true)}
-                  onAutomations={() => { setSettingsInitialTab("automation"); setShowSettings(true); }}
-                  onDelegation={() => setShowDelegationPanel(true)}
-                  onRemoveProject={(id, name, path) => {
-                    setRemoveProjectDialog({ id, name, path });
-                  }}
+onTaskCenter={() => { setTaskCenterTab("overview"); setShowTaskCenter(true); }}
+onAgents={() => setShowAgentManager(true)}
+onRemoveProject={(id, name, path) => {
+  setRemoveProjectDialog({ id, name, path });
+}}
                   fileExplorerProjectId={fileExplorerProjectId}
                   onToggleFileExplorer={handleToggleFileExplorer}
                 />
@@ -2162,11 +2238,11 @@ refreshKey={fileExplorerRefreshKey}
           onSkills={() => setShowSkillManager(true)}
           onMemory={() => setShowMemoryManager(true)}
           onNotebooks={() => setShowNotebookManager(true)}
-          onAutomations={() => { setSettingsInitialTab("automation"); setShowSettings(true); }}
-          onDelegation={() => setShowDelegationPanel(true)}
-          onRemoveProject={(id, name, path) => {
-            setRemoveProjectDialog({ id, name, path });
-          }}
+onTaskCenter={() => { setTaskCenterTab("overview"); setShowTaskCenter(true); }}
+onAgents={() => setShowAgentManager(true)}
+onRemoveProject={(id, name, path) => {
+  setRemoveProjectDialog({ id, name, path });
+}}
           fileExplorerProjectId={fileExplorerProjectId}
           onToggleFileExplorer={handleToggleFileExplorer}
         />
@@ -2307,8 +2383,8 @@ refreshKey={fileExplorerRefreshKey}
               onSkills={() => { setShowSkillManager(true); setMobileSidebarOpen(false); }}
               onMemory={() => { setShowMemoryManager(true); setMobileSidebarOpen(false); }}
               onNotebooks={() => { setShowNotebookManager(true); setMobileSidebarOpen(false); }}
-              onAutomations={() => { setSettingsInitialTab("automation"); setShowSettings(true); setMobileSidebarOpen(false); }}
-              onDelegation={() => { setShowDelegationPanel(true); setMobileSidebarOpen(false); }}
+onTaskCenter={() => { setTaskCenterTab("overview"); setShowTaskCenter(true); setMobileSidebarOpen(false); }}
+onAgents={() => { setShowAgentManager(true); setMobileSidebarOpen(false); }}
               onRemoveProject={(id, name, path) => { setRemoveProjectDialog({ id, name, path }); setMobileSidebarOpen(false); }}
               fileExplorerProjectId={fileExplorerProjectId}
               onToggleFileExplorer={handleToggleFileExplorer}
@@ -2434,10 +2510,36 @@ onClose={() => setCitationViewer(null)}
         </div>
       )}
 
-      {showDelegationPanel && (
-        <div className="modal-overlay" onClick={() => setShowDelegationPanel(false)}>
-          <div className="modal-editor" onClick={(e) => e.stopPropagation()}>
-            <DelegationPanel onClose={() => setShowDelegationPanel(false)} />
+      {showTaskCenter && (
+        <TaskCenter
+          onClose={() => setShowTaskCenter(false)}
+          initialTab={taskCenterTab}
+          subagentTasks={(() => {
+            try {
+              const { getSubagentManager } = require("./core/subagent/subagent");
+              return getSubagentManager().getAllTasks();
+            } catch { return []; }
+          })()}
+          onSelectSubagent={() => {
+            setShowTaskCenter(false);
+          }}
+        />
+      )}
+
+      {showAgentManager && (
+        <div className="modal-overlay" onClick={() => setShowAgentManager(false)}>
+          <div className="modal-editor" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 900, maxHeight: "85vh" }}>
+            <AgentManager />
+            <div style={{ display: "flex", justifyContent: "flex-end", padding: "8px 16px" }}>
+              <button
+                onClick={() => setShowAgentManager(false)}
+                style={{
+                  padding: "6px 16px", borderRadius: 4, fontSize: 12,
+                  border: "1px solid var(--border-primary)", background: "none",
+                  color: "var(--text-primary)", cursor: "pointer",
+                }}
+              >{lang === "zh" ? "关闭" : "Close"}</button>
+            </div>
           </div>
         </div>
       )}

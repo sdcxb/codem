@@ -182,10 +182,116 @@ this.load();
 
     const lines = entries.slice(0, 20).map((e) => {
       const date = new Date(e.timestamp).toISOString().split("T")[0];
-      return `- [${date}] ${e.key}: ${e.content.substring(0, 200)}`;
+      // P-Link: Resolve [[name]] links to show related memory references
+      const resolvedContent = this.resolveLinks(e);
+      return `- [${date}] ${e.key}: ${resolvedContent.substring(0, 200)}`;
     });
 
     return `## ${scope.charAt(0).toUpperCase() + scope.slice(1)} Memory\n\n${lines.join("\n")}`;
+  }
+
+  // ========== Bidirectional Memory Links ==========
+
+  /**
+   * Extract [[link-name]] references from a memory entry's content.
+   * Returns an array of link target names (without brackets).
+   */
+  extractLinks(content: string): string[] {
+    const linkPattern = /\[\[([^\]]+?)\]\]/g;
+    const links: string[] = [];
+    let match;
+    while ((match = linkPattern.exec(content)) !== null) {
+      links.push(match[1].trim());
+    }
+    return links;
+  }
+
+  /**
+   * Resolve [[link-name]] references in a memory entry's content.
+   * Replaces [[name]] with the actual content snippet from the linked entry.
+   * If the link target doesn't exist, leaves it as-is (visible to the LLM).
+   */
+  private resolveLinks(entry: MemoryEntry): string {
+    const links = this.extractLinks(entry.content);
+    if (links.length === 0) return entry.content;
+
+    let resolved = entry.content;
+    for (const linkName of links) {
+      // Find the linked entry by key (case-insensitive)
+      const target = Array.from(this.entries.values()).find(
+        e => e.key.toLowerCase() === linkName.toLowerCase()
+      );
+      if (target) {
+        const snippet = target.content.substring(0, 100);
+        resolved = resolved.replace(
+          new RegExp(`\\[\\[${linkName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\]\\]`, 'gi'),
+          `[→ ${target.key}: ${snippet}...]`
+        );
+      }
+    }
+    return resolved;
+  }
+
+  /**
+   * Find all entries that link TO the given entry (reverse links).
+   * This enables "related memories" discovery.
+   */
+  findBacklinks(entryId: string): MemoryEntry[] {
+    const target = this.entries.get(entryId);
+    if (!target) return [];
+
+    const targetKey = target.key.toLowerCase();
+    const backlinks: MemoryEntry[] = [];
+
+    for (const entry of this.entries.values()) {
+      if (entry.id === entryId) continue;
+      const links = this.extractLinks(entry.content);
+      if (links.some(link => link.toLowerCase() === targetKey)) {
+        backlinks.push(entry);
+      }
+    }
+
+    return backlinks.sort((a, b) => b.timestamp - a.timestamp);
+  }
+
+  /**
+   * Get related entries for a given entry — both forward links and backlinks.
+   * Used during memory loading to enrich context with connected knowledge.
+   */
+  getRelatedEntries(entryId: string, maxDepth: number = 1): MemoryEntry[] {
+    const visited = new Set<string>([entryId]);
+    const result: MemoryEntry[] = [];
+
+    const collect = (id: string, depth: number) => {
+      if (depth > maxDepth) return;
+      const entry = this.entries.get(id);
+      if (!entry) return;
+
+      // Forward links
+      const linkNames = this.extractLinks(entry.content);
+      for (const name of linkNames) {
+        const target = Array.from(this.entries.values()).find(
+          e => e.key.toLowerCase() === name.toLowerCase()
+        );
+        if (target && !visited.has(target.id)) {
+          visited.add(target.id);
+          result.push(target);
+          collect(target.id, depth + 1);
+        }
+      }
+
+      // Backlinks
+      for (const backlinker of this.findBacklinks(id)) {
+        if (!visited.has(backlinker.id)) {
+          visited.add(backlinker.id);
+          result.push(backlinker);
+          collect(backlinker.id, depth + 1);
+        }
+      }
+    };
+
+    collect(entryId, 0);
+    return result;
   }
 
   /** Build checkpoint for session */

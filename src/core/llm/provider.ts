@@ -301,27 +301,47 @@ export class OpenAICompatibleProvider implements LLMProvider {
   }
 
   /**
-   * E7: Mark system prompt and early messages as cacheable.
-   * For Anthropic-compatible APIs, adds cache_control markers.
+   * E7: Mark system prompt and key messages as cacheable.
+   * For Anthropic-compatible APIs, adds cache_control markers at strategic
+   * breakpoints to maximize cache hit rate.
+   *
+   * Layered caching strategy (Anthropic supports up to 4 cache_control breakpoints):
+   * - Breakpoint 1: System message (covers system prompt + tool definitions)
+   * - Breakpoint 2: Second-to-last user message (covers the stable conversation prefix)
+   * - Breakpoint 3: Last user message (covers the latest turn)
+   *
    * For OpenAI-compatible APIs, this is a no-op (caching is automatic).
    */
   private markCacheableMessages(messages: LLMMessage[]): LLMMessage[] {
     // Only apply cache markers for Anthropic provider
     if (this.id !== "anthropic") return messages;
 
+    // Find indices of user messages for strategic cache breakpoints
+    const userMsgIndices: number[] = [];
+    for (let i = 0; i < messages.length; i++) {
+      if (messages[i].role === "user") userMsgIndices.push(i);
+    }
+
+    // Determine which messages get cache_control markers
+    // Breakpoint 1: system message (index 0) — always
+    // Breakpoint 2: second-to-last user message — covers stable conversation prefix
+    // Breakpoint 3: last user message — covers latest turn
+    // (Total: 3 breakpoints, within Anthropic's 4-breakpoint limit)
+    const cacheIndices = new Set<number>();
+    cacheIndices.add(0); // System message
+    if (userMsgIndices.length >= 2) {
+      cacheIndices.add(userMsgIndices[userMsgIndices.length - 2]); // Second-to-last user msg
+    }
+    if (userMsgIndices.length >= 1) {
+      cacheIndices.add(userMsgIndices[userMsgIndices.length - 1]); // Last user msg
+    }
+
     return messages.map((msg, i) => {
-      // Mark the system message and the first user message as cacheable
-      if (i === 0 || (i === 1 && msg.role === "user")) {
+      if (cacheIndices.has(i) && typeof msg.content === "string") {
         return {
           ...msg,
           // Anthropic cache_control marker — the API will cache this prefix
-          content: typeof msg.content === "string"
-            ? msg.content
-            : msg.content,
-          // Add cache_control as a sidecar property (Anthropic API supports this)
-          ...(typeof msg.content === "string" ? {
-            content: [{ type: "text", text: msg.content, cache_control: { type: "ephemeral" } }],
-          } : {}),
+          content: [{ type: "text", text: msg.content, cache_control: { type: "ephemeral" } }],
         } as any;
       }
       return msg;

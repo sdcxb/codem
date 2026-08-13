@@ -1169,7 +1169,7 @@ flex: 1;
 padding: 20px 24px;
 display: flex;
 flex-direction: column;
-gap: 24px;
+gap: 10px;
 background: var(--bg-primary);
 /* 居中阅读流约束，对齐 wecode/frakio 的 max-w-3xl mx-auto */
 max-width: 768px;
@@ -1269,8 +1269,11 @@ width: 100%;
 }
 
 .message.user {
-  align-self: flex-end;
-  max-width: 75%;
+align-self: flex-end;
+max-width: 75%;
+flex-direction: row !important;
+align-items: flex-start;
+gap: 8px;
 }
 
 .message.assistant {
@@ -1285,10 +1288,21 @@ width: 100%;
 
 /* Avatar removed — AI uses inline header, user has no avatar */
 .message-avatar {
-  display: none;
+display: none;
+}
+
+.user-msg-avatar {
+flex-shrink: 0;
+margin-top: 2px;
 }
 
 .message-body {
+  flex: 1;
+  min-width: 0;
+}
+
+/* User message: avatar + body in a row */
+.user .message-body {
   flex: 1;
   min-width: 0;
 }
