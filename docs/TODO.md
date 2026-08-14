@@ -16,7 +16,7 @@
 > v0.96.2 已发布：CodeGraph 代码知识图谱集成（自动检测 .codegraph/ → MCP Server 注册 → 系统提示词注入 codegraph_explore 指导 → 设置页面"代码图谱"标签页）+ 测试套件改造（readFileSync+toContain → 真实模块行为验证）+ CI Workflow（tsc + vitest + cargo check）+ Vite watch EBUSY 修复 + CodeGraph 集成测试（49 用例 4 层覆盖）。全量 72 文件 / 2872 用例通过。
 > v0.97.0 已发布：Agentic Loop 性能优化（Tool Result 磁盘持久化 + ToolSearch 延迟加载 + Micro-Compact 摘要 + TranscriptCache 修复）+ 工具系统增强（工具中断行为 + Bash 分析器 + Hooks 系统 + TodoWrite 增强 + Forked Agent 记忆提取）+ 技能市场三大新源接入（ClawHub.ai / Skills.sh / SkillHub CLI）+ 技能发布功能（publishSkillToMarket 三种目标 + UI 发布对话框）。**补丁修复（同版本重新构建）：** ctx.abort 空指针 + Session 持久化缺失（executionMode/worktreePath/worktreeBranch）+ preserveExecutor 类型错误 + 移除 57 个假测试 + 重写 61 个源码字符串匹配测试为真实行为测试。全量 84 文件 / 2924 用例全部通过（0 失败）。
 > v0.98.0 已发布：多智能体协同架构 — Phase 1 TaskCenter 统一任务管理中心（概览/委派/子智能体/自动化 4 Tab）+ Phase 2 Squad 多智能体协同（Leader-Member + Roster 协议 + 3 个 LLM 工具 + dispatch 路由）+ Phase 3 Issue 追踪 + 看板（7 状态 + 4 优先级 + 评论 + 看板拖拽 + 4 个 LLM 工具 + 分配给 Squad）+ Phase 4 Autopilot 扩展（Cron 引擎 + Issue 状态触发器）+ Phase 5 Inbox 全局通知聚合中心（6 分类 + 事件填充集成 + Sidebar 未读角标）+ Phase 6 AgentManager 扩展 + 死代码清理（DelegationPanel/AutomationSettingsSection/onAutomations/__pendingSquadDispatch 移除 + TopNavbar 双 Tasks 修复 + micro-compact bug 修复）。5 张新 DB 表、7 个新 LLM 工具、8 Tab 全景、30 个新文件、20 个修改文件。全量 87 文件 / 3057 用例通过。
-> v0.99.0 已发布：**对标 DeepSeek Harness 全量升级** — 31 项差距系统性追平。P0 架构基础（事件溯源会话日志 + 5 层工具管线 + Plan Mode exit_plan_mode 增强 + 测试覆盖率门控）+ P1 功能增强（Windows ACL 沙箱 + Code Mode run_code + Session Query FTS5 + 防御性文档 + ADR）+ P2 架构提升（Capability Seam 三角色 + Workflow 编排 + Goal 自动续行 + Replay 测试 + Telemetry + 代码质量工具 + Bash 后台模式 + 终端 LLM 工具组 + Postmortem + 测试分层补齐）+ P3 远期完善（MCP 市场 + 语音 STT/TTS + Ollama 本地 LLM + CI/CD 管理 + 技能安全沙箱 + 远程同步引擎 + i18n 提示词重构 + Adaptive Idle Tracker + 事件系统增强）。25 文件修改（+1721/-313 行），50+ 新文件。全量 99 文件 / 3234 用例全部通过。
+> v0.99.0 已发布：**对标 DeepSeek Harness 全量升级** — 31 项差距系统性追平。P0 架构基础（事件溯源会话日志 + 5 层工具管线 + Plan Mode exit_plan_mode 增强 + 测试覆盖率门控）+ P1 功能增强（Windows ACL 沙箱 + Code Mode run_code + Session Query FTS5 + 防御性文档 + ADR）+ P2 架构提升（Capability Seam 三角色 + Workflow 编排 + Goal 自动续行 + Replay 测试 + Telemetry + 代码质量工具 + Bash 后台模式 + 终端 LLM 工具组 + Postmortem + 测试分层补齐）+ P3 远期完善（MCP 市场 + 语音 STT/TTS + Ollama 本地 LLM + CI/CD 管理 + 技能安全沙箱 + 远程同步引擎 + i18n 提示词重构 + Adaptive Idle Tracker + 事件系统增强）。25 文件修改（+1721/-313 行），50+ 新文件。全量 99 文件 / 3234 用例全部通过。**补丁修复（同版本重新构建）：** 上下游关联修复 — provider.ts toAPIMessage 补全 ContentBlock tool_use/tool_result 块处理（事件投影路径工具调用信息丢失修复）+ agentic-loop.ts 事件投影消息映射补全 tool_calls 属性（下游优先级排序/孤儿过滤/micro-compact 全链路修复）+ tools.ts readViaSeam + local-fs-provider.ts readFile 相对路径 cwd 解析修复。全量 99 文件 / 3235 用例全部通过。
 
 ## 待开发
 
@@ -212,6 +212,13 @@
 - [x] `useSpeechSynthesis.test.ts` — 语音合成 Hook 测试
 - [x] i18n 测试期望更新（`git-env-config.test.ts` + `refactor-prompt-to-data.test.ts`）
 - [x] 全量 99 文件 / 3234 用例全部通过
+
+#### 补丁修复 — 上下游关联修复（同版本重新构建 2026-08-14）
+- [x] **provider.ts `toAPIMessage`** — 补全 `ContentBlock[]` 中 `tool_use`/`tool_result` 块的处理：事件投影路径产生的工具调用信息不再丢失（从 `tool_use` 块提取 `tool_calls`，从 `tool_result` 块生成 `tool` 角色消息，与 `ollama-provider.ts` 实现对齐）
+- [x] **agentic-loop.ts `buildMessages` 事件投影映射** — 补全 `tool_calls`（OpenAI snake_case）属性生成：下游 `selectMessagesByPriority`、孤儿工具消息过滤、`micro-compact` 工具名称映射全部恢复正常工作；`tool_result` 消息正确保持 `tool` 角色和 `toolCallId`
+- [x] **tools.ts `readViaSeam` + local-fs-provider.ts `readFile`** — 相对路径 `cwd` 解析修复：`LocalFileSystemProvider.readFile` 不再忽略 `cwd` 参数，`readViaSeam` 回退路径也正确解析相对路径
+- [x] 测试更新：`event-sourcing.test.ts` 断言改为检查 `ContentBlock tool_use` 块（匹配新数据模型）+ `s0-seam-integration.test.ts` mock 数据和断言对齐实际实现
+- [x] 全量 99 文件 / 3235 用例全部通过
 
 #### P0 — Agentic Loop 性能优化（上下文膨胀治理）
 - [x] P0-1 Tool Result 磁盘持久化（`tool-result-storage.ts`）

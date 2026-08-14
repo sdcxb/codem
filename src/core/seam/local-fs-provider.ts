@@ -15,9 +15,13 @@ export class LocalFileSystemProvider implements FileSystemSeam {
     return true;
   }
 
-  async readFile(path: string, _cwd?: string): Promise<string> {
+  async readFile(path: string, cwd?: string): Promise<string> {
     const { readFile } = await import("../file-api");
-    return readFile(path);
+    // Resolve relative paths against cwd if provided
+    const resolvedPath = (cwd && !path.startsWith("/") && !path.match(/^[A-Za-z]:/)) 
+      ? `${cwd.replace(/[/\\]+$/, "")}/${path}` 
+      : path;
+    return readFile(resolvedPath);
   }
 
   async writeFile(path: string, content: string, cwd?: string): Promise<void> {

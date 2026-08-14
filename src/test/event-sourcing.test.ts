@@ -195,11 +195,14 @@ describe("P0-1: Event Sourcing", () => {
       });
 
       const messages = projection.projectAll("sess1");
-      // user + assistant(with tool_calls) + tool result
+      // user + assistant(with tool_use content block) + tool result
       expect(messages.length).toBe(3);
       expect(messages[0].role).toBe("user");
       expect(messages[1].role).toBe("assistant");
-      expect((messages[1] as any).tool_calls?.length).toBe(1);
+      // Tool calls are now stored as ContentBlock[] with tool_use type
+      const assistantContent = Array.isArray(messages[1].content) ? messages[1].content : [];
+      const toolUseBlocks = assistantContent.filter((b: any) => b.type === "tool_use");
+      expect(toolUseBlocks.length).toBe(1);
       expect(messages[2].role).toBe("tool");
       expect(messages[2].content).toBe("file content here");
     });

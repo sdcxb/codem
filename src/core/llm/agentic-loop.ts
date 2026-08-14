@@ -1636,22 +1636,52 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
       const eventMessages = deriveMessagesFromEvents(sessionId);
       if (eventMessages.length > 0) {
         // Convert LLMMessage[] to internal message format for the cache logic below
-        messages = eventMessages.map(m => ({
-          id: m.id,
-          role: m.role,
-          content: typeof m.content === "string" ? m.content : (m.content as any[]).filter(b => b.type === "text").map(b => b.text).join(""),
-          toolCalls: Array.isArray(m.content) ? m.content
-            .filter((b: any) => b.type === "tool_use")
-            .map((b: any) => ({
+        messages = eventMessages.map(m => {
+          const toolUseBlocks = Array.isArray(m.content) ? m.content
+            .filter((b: any) => b.type === "tool_use") : [];
+          const toolResultBlocks = Array.isArray(m.content) ? m.content
+            .filter((b: any) => b.type === "tool_result") : [];
+
+          // If this is a tool result message, preserve it with tool role
+          if (m.role === "tool" || toolResultBlocks.length > 0) {
+            const trBlock = toolResultBlocks[0] as any;
+            return {
+              id: m.id,
+              role: "tool" as const,
+              content: trBlock ? trBlock.content : (typeof m.content === "string" ? m.content : ""),
+              toolCallId: trBlock ? trBlock.toolCallId : m.toolCallId,
+              status: "done",
+              model: undefined,
+            };
+          }
+
+          const toolCallsArr = toolUseBlocks.map((b: any) => ({
+            id: b.id,
+            tool: b.name || "",
+            args: b.input || {},
+            status: "completed" as const,
+            result: undefined as any,
+          }));
+
+          return {
+            id: m.id,
+            role: m.role,
+            content: typeof m.content === "string" ? m.content : (m.content as any[]).filter(b => b.type === "text").map(b => b.text).join(""),
+            toolCalls: toolCallsArr.length > 0 ? toolCallsArr : undefined,
+            // Also expose tool_calls (OpenAI format) for downstream code that checks this property
+            // (selectMessagesByPriority, orphan filter, micro-compact)
+            tool_calls: toolUseBlocks.length > 0 ? toolUseBlocks.map((b: any) => ({
               id: b.id,
-              tool: b.name || "",
-              args: b.input || {},
-              status: "completed" as const,
-              result: undefined as any,
+              type: "function",
+              function: {
+                name: b.name || "",
+                arguments: JSON.stringify(b.input || {}),
+              },
             })) : undefined,
-          status: "done",
-          model: undefined,
-        }));
+            status: "done",
+            model: undefined,
+          };
+        });
       } else {
         messages = MessageStorage.listMessages(sessionId);
       }

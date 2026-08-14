@@ -1,7 +1,7 @@
 # Codem 项目完整说明
 
 > **用途**：新对话快速理解项目全貌、架构、文件关联、当前状态。
-> 创建时间：2026-07-23 | 最后更新：2026-08-14 | 当前版本：v0.99.0（对标 DeepSeek Harness 全量升级 — 事件溯源 + 5 层工具管线 + Capability Seam + Plan Mode 增强 + Code Mode + Session Query + Goal 续行 + Workflow 编排 + Replay 测试 + Telemetry + MCP 市场 + 语音 + Ollama + CI/CD + 技能沙箱 + 远程同步）
+> 创建时间：2026-07-23 | 最后更新：2026-08-14 | 当前版本：v0.99.0（对标 DeepSeek Harness 全量升级 — 事件溯源 + 5 层工具管线 + Capability Seam + Plan Mode 增强 + Code Mode + Session Query + Goal 续行 + Workflow 编排 + Replay 测试 + Telemetry + MCP 市场 + 语音 + Ollama + CI/CD + 技能沙箱 + 远程同步 + 上下游关联修复补丁）
 
 ---
 
@@ -13,7 +13,7 @@
 - **GitHub**：https://github.com/sdcxb/codem
 - **分发**：NSIS `.exe` + WiX `.msi`，一键安装无需依赖
 - **平台**：Windows 优先
-- **版本**：v0.99.0（对标 DeepSeek Harness 全量升级，2026-08-14，事件溯源 + 5 层工具管线 + Capability Seam + Plan Mode 增强 + Code Mode + Session Query + Goal 续行 + Workflow 编排 + Replay 测试 + Telemetry + MCP 市场 + 语音 + Ollama + CI/CD + 技能沙箱 + 远程同步 + i18n 提示词重构 + 12 新文档 + 99 文件 / 3234 用例全部通过）
+- **版本**：v0.99.0（对标 DeepSeek Harness 全量升级，2026-08-14，事件溯源 + 5 层工具管线 + Capability Seam + Plan Mode 增强 + Code Mode + Session Query + Goal 续行 + Workflow 编排 + Replay 测试 + Telemetry + MCP 市场 + 语音 + Ollama + CI/CD + 技能沙箱 + 远程同步 + i18n 提示词重构 + 12 新文档 + 99 文件 / 3235 用例全部通过。**补丁修复：** provider.ts toAPIMessage ContentBlock 块处理 + agentic-loop.ts 事件投影 tool_calls 映射 + tools.ts readViaSeam 相对路径解析）
 
 ---
 
@@ -767,7 +767,7 @@ Rust 后端 (lib.rs):
 | v0.96.2 | 2026-08-11 | CodeGraph代码知识图谱集成(自动检测.codegraph/→MCP Server注册→系统提示词注入→设置页面标签页) + 测试套件改造(readFileSync+toContain→真实模块行为验证) + CI Workflow(tsc+vitest+cargo check) + CodeGraph集成测试(49用例4层覆盖) |
 | v0.97.0 | 2026-08-12 | Agentic Loop性能优化(Tool Result磁盘持久化+ToolSearch延迟加载+Micro-Compact摘要+TranscriptCache修复) + 工具系统增强(工具中断行为+Bash分析器+Hooks系统+TodoWrite增强+Forked Agent记忆提取) + 技能市场三大新源接入(ClawHub.ai/Skills.sh/SkillHub CLI) + 技能发布功能。**补丁修复：** ctx.abort空指针 + Session持久化缺失(executionMode/worktreePath/worktreeBranch) + preserveExecutor类型错误 + 移除57个假测试 + 重写61个源码字符串匹配测试为真实行为测试。全量84文件/2924用例通过 |
 | v0.98.0 | 2026-08-13 | 多智能体协同架构 — TaskCenter统一任务管理中心(概览/委派/子智能体/自动化4Tab) + Squad多智能体协同(Leader-Member+Roster协议+3个LLM工具+dispatch路由) + Issue追踪+看板(7状态+4优先级+评论+看板拖拽+4个LLM工具) + Autopilot扩展(Cron引擎+Issue状态触发器) + Inbox全局通知聚合中心(6分类+事件填充+Sidebar未读角标) + AgentManager扩展+死代码清理。5张新DB表、7个新LLM工具、8Tab全景、30新文件、20修改文件。全量87文件/3057用例通过 |
-| v0.99.0 | 2026-08-14 | **对标DeepSeek Harness全量升级** — 事件溯源会话日志(SessionEvent+deriveMessages+Replay+Fork+Projection) + 5层工具管线(pre-execute/monotonic-guards/execute/post-execute/finalize) + Plan Mode增强(exit_plan_mode工具+对齐dsh 6段提示词规范+PlanApprovalCard审批UI) + Capability Seam(ServiceDefinition/Provider/Consumer三角色+LocalFs/LocalShell Provider+SeamRegistry) + Code Mode(run_code TypeScript执行器+ToolSDK) + Session Query(FTS5全文搜索) + Goal自动续行(create/get/update_goal+Goals表) + Workflow编排(JavaScript fan-out子智能体) + Snapshot测试(ReplayAdapter录制/回放) + Telemetry(OpenTelemetry采集+telemetry_events表+PerformanceDashboard) + Bash后台模式(JobManager+job_list/output/kill) + 终端LLM工具组(terminal_open/send/signal/close) + i18n提示词重构(prompt.ts→i18n-templates.ts双语模板) + MCP市场(catalog+一键安装+分类搜索) + 语音STT/TTS(useSpeechRecognition/useSpeechSynthesis浏览器原生) + Ollama本地LLM Provider(REST API+动态模型发现+离线推理) + CI/CD管理(GitHub Actions workflow生成+运行监控+重试/取消) + 技能安全沙箱(内容预检+哈希签名+权限声明+安装审计) + 远程同步引擎(seq增量同步+Supabase/REST后端) + 代码质量工具(knip死代码+jscpd重复检测) + 测试分层补齐(snapshot+e2e配置) + 防御性文档+ADR+Postmortem体系。25文件修改(+1721/-313行)，50+新文件。全量99文件/3234用例全部通过 |
+| v0.99.0 | 2026-08-14 | **对标DeepSeek Harness全量升级** — 事件溯源会话日志(SessionEvent+deriveMessages+Replay+Fork+Projection) + 5层工具管线(pre-execute/monotonic-guards/execute/post-execute/finalize) + Plan Mode增强(exit_plan_mode工具+对齐dsh 6段提示词规范+PlanApprovalCard审批UI) + Capability Seam(ServiceDefinition/Provider/Consumer三角色+LocalFs/LocalShell Provider+SeamRegistry) + Code Mode(run_code TypeScript执行器+ToolSDK) + Session Query(FTS5全文搜索) + Goal自动续行(create/get/update_goal+Goals表) + Workflow编排(JavaScript fan-out子智能体) + Snapshot测试(ReplayAdapter录制/回放) + Telemetry(OpenTelemetry采集+telemetry_events表+PerformanceDashboard) + Bash后台模式(JobManager+job_list/output/kill) + 终端LLM工具组(terminal_open/send/signal/close) + i18n提示词重构(prompt.ts→i18n-templates.ts双语模板) + MCP市场(catalog+一键安装+分类搜索) + 语音STT/TTS(useSpeechRecognition/useSpeechSynthesis浏览器原生) + Ollama本地LLM Provider(REST API+动态模型发现+离线推理) + CI/CD管理(GitHub Actions workflow生成+运行监控+重试/取消) + 技能安全沙箱(内容预检+哈希签名+权限声明+安装审计) + 远程同步引擎(seq增量同步+Supabase/REST后端) + 代码质量工具(knip死代码+jscpd重复检测) + 测试分层补齐(snapshot+e2e配置) + 防御性文档+ADR+Postmortem体系。25文件修改(+1721/-313行)，50+新文件。全量99文件/3234用例全部通过。**补丁修复（同版本重新构建）：** provider.ts toAPIMessage补全ContentBlock tool_use/tool_result块处理（事件投影路径工具调用信息丢失修复）+ agentic-loop.ts事件投影消息映射补全tool_calls属性（下游优先级排序/孤儿过滤/micro-compact全链路修复）+ tools.ts readViaSeam+local-fs-provider.ts readFile相对路径cwd解析修复。全量99文件/3235用例全部通过 |
 
 ### 6.2 v0.90.0 已发布功能（P0-P4 全量功能，commit 7435919，2026-07-31）
 

@@ -29,7 +29,11 @@ async function readViaSeam(path: string, cwd?: string): Promise<string> {
   } catch {
     // Seam not initialized — fall through to direct import
   }
-  return readFile(path);
+  // Fallback: resolve relative paths against cwd
+  const resolvedPath = (cwd && !path.startsWith("/") && !path.match(/^[A-Za-z]:/))
+    ? `${cwd.replace(/[/\\]+$/, "")}/${path}`
+    : path;
+  return readFile(resolvedPath);
 }
 import { createBrowserAutomateTool } from "./tools/browser-automate";
 import { createFigmaFetchTool } from "./tools/figma-fetch";

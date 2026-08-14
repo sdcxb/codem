@@ -399,6 +399,20 @@ export class OpenAICompatibleProvider implements LLMProvider {
 
     // Handle ContentBlock[] — generate OpenAI multimodal content array
     if (Array.isArray(msg.content)) {
+      // Extract tool_use and tool_result blocks (from event projection path)
+      const toolUseParts = msg.content.filter((b: any) => b.type === "tool_use");
+      const toolResultParts = msg.content.filter((b: any) => b.type === "tool_result");
+
+      // If this message has tool_result blocks, treat as a tool response
+      if (toolResultParts.length > 0) {
+        return {
+          role: "tool",
+          content: toolResultParts[0].content,
+          tool_call_id: toolResultParts[0].toolCallId || msg.toolCallId || msg.tool_call_id,
+        };
+      }
+
+      // Build OpenAI multimodal content array (text, image, audio only)
       const apiContent = msg.content.map((b: any) => {
         if (b.type === "text") return { type: "text", text: b.text };
         if (b.type === "image") return {
@@ -412,12 +426,26 @@ export class OpenAICompatibleProvider implements LLMProvider {
         return null;
       }).filter(Boolean);
 
+      // If this is a tool message without tool_result blocks (old CRUD path)
       if (role === "tool") {
         return { role: "tool", content: apiContent.map((b: any) => b.text || "").join(""), tool_call_id: msg.toolCallId || msg.tool_call_id };
       }
+
       const result: any = { role, content: apiContent };
       if (msg.name) result.name = msg.name;
-      if (msg.tool_calls) result.tool_calls = msg.tool_calls;
+      // Prefer explicit tool_calls (from old CRUD path), then fall back to ContentBlock tool_use
+      if (msg.tool_calls) {
+        result.tool_calls = msg.tool_calls;
+      } else if (toolUseParts.length > 0) {
+        result.tool_calls = toolUseParts.map((tu: any) => ({
+          id: tu.id,
+          type: "function",
+          function: {
+            name: tu.name,
+            arguments: JSON.stringify(tu.input),
+          },
+        }));
+      }
       return result;
     }
 
