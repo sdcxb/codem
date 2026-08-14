@@ -1,5 +1,30 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
+
+// ====== Cordis 插件系统初始化（P4.3） ======
+// 创建全局 Cordis Context 并加载桥接插件。
+// 所有核心服务（LLM、Tools、Session 等）通过 ctx.provide() 注册为可替换的服务。
+import { Context } from "./core/cordis/src/index.ts";
+import { SlotsService } from "./core/slots/index.ts";
+import { bridgePlugin } from "./core/provider/bridge-plugin";
+import { setActiveContext } from "./core/consumer";
+
+// 全局 Cordis Context（App 生命周期内唯一）
+let _codemCtx: Context | null = null;
+
+async function getCordisContext(): Promise<Context> {
+  if (_codemCtx) return _codemCtx;
+  const ctx = new Context();
+  // 安装 Slot Registry Service
+  ctx.plugin(SlotsService as any);
+  // 加载桥接插件（注册 18 个核心服务）
+  ctx.plugin(bridgePlugin as any);
+  // 设置活跃 Context，让工具 Consumer 包可以使用
+  setActiveContext(ctx);
+  _codemCtx = ctx;
+  return ctx;
+}
+// ====== Cordis 插件系统初始化结束 ======
 import { RefreshCw, X, MessageSquare, Terminal, BookOpen, Save, FolderOpen, PencilLine, Trash2, CheckCircle, Menu, Hammer, ClipboardList, Search, Bot } from "lucide-react";
 import { TooltipProvider } from "./components/ui/tooltip";
 import { TitleBar } from "./components/TitleBar";
@@ -127,6 +152,21 @@ function App() {
   const lang = useLang();
   const { messages, addMessage, appendToMessage, setStreaming, isStreaming, addToolCall, updateToolCall, loadMessages, saveMessages, setLLMStatus, addGuidanceMessage, markGuidanceConsumed, clearGuidanceMessages } = useAppStore();
   const { currentProject, currentSession, createSession, dbReady, loadFromDB } = useProjectStore();
+
+  // P4.3: 初始化 Cordis 插件系统
+  // 在 App 挂载时创建全局 Context，加载桥接插件和 Slot Registry。
+  // 所有核心服务通过 ctx.provide() 注册后，插件可以通过 ctx.get() 消费。
+  const [cordisReady, setCordisReady] = useState(false);
+  useEffect(() => {
+    getCordisContext().then(() => {
+      setCordisReady(true);
+    }).catch((err) => {
+      console.error("Failed to initialize Cordis context:", err);
+      // 即使 Cordis 初始化失败，也继续运行现有功能
+      setCordisReady(true);
+    });
+  }, []);
+
   const [sidebarOpen, setSidebarOpen] = useState(true);
 const [rightRailOpen, setRightRailOpen] = useState(false);
   // P3 #46: Mobile sidebar drawer
