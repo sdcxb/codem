@@ -70,15 +70,30 @@
 ### 核心特性
 
 - **双模式运行**：CLI 模式（读取 mimocode auth.json）和 API 模式（配置第三方 API Key）
+- **Ollama 本地 LLM**：连接本地 Ollama 服务，离线运行开源模型，零 API 成本
 - **Codex 风格侧栏**：项目管理、对话历史、文件浏览器统一在左侧面板
-- **多模型支持**：MiMo Auto / v2.5 Pro / v2.5 / v2 Pro / v2 Flash
+- **多模型支持**：MiMo Auto / v2.5 Pro / v2.5 / v2 Pro / v2 Flash + Ollama 本地模型
 - **内置 LLM 内核**：从 CLI 源码移植的核心引擎，支持 Provider 注册、工具调用、上下文管理
-- **6 个内置工具**：bash / read / write / edit / glob / grep，API 模式下自动调用
+- **事件溯源会话日志**：append-only 事件流，支持 Fork/Replay/Projection，对标 DeepSeek Harness
+- **5 层工具管线**：pre-execute → monotonic guards → execute → post-execute → finalize 瀑布式管线
+- **Capability Seam**：ServiceDefinition/Provider/Consumer 三角色抽象，Provider 可热切换
+- **20+ 内置工具**：bash / read / write / edit / glob / grep / run_code / session_search / workflow / goal / exit_plan_mode / job_list / terminal_open 等
+- **Plan Mode**：只读分析模式 + exit_plan_mode 工具提交计划给用户审批
+- **Code Mode**：TypeScript 代码执行工具，SDK 内可调用 bash/read/write 等
+- **Workflow 编排**：JavaScript 工作流工具，fan-out 子智能体并行执行
+- **Goal 自动续行**：create/get/update_goal 目标管理 + 自动续行驱动
+- **MCP 市场**：30+ 预设 MCP 服务器目录，分类搜索 + 一键安装
+- **语音 STT/TTS**：浏览器原生 Web Speech API 语音识别/合成
+- **CI/CD 管理**：GitHub Actions workflow 生成 + 运行监控 + 重试/取消
+- **Telemetry 监控**：OpenTelemetry 采集 + PerformanceDashboard 性能仪表盘
+- **Snapshot 测试**：ReplayAdapter 录制/回放 LLM 响应，确定性零成本测试
+- **技能安全沙箱**：内容预检 + 哈希签名 + 权限声明 + 安装审计
+- **远程同步引擎**：基于 seq 增量同步，Supabase/REST 后端
 - **项目系统**：支持新建/导入项目，项目级 AGENTS.md 指令、技能、记忆
-- **会话管理**：对话历史持久化、重命名、删除带确认、分叉新对话
+- **会话管理**：对话历史持久化、重命名、删除带确认、分叉新对话、FTS5 全文搜索
 - **浮动文件浏览器**：点击项目按钮切换显示，不占泳道
 - **弹窗文件编辑**：点击文件弹出居中窗口，支持 Ctrl+S 保存
-- **设置面板**：模式切换、API Key 配置、模型选择、主题切换、身份配置
+- **设置面板**：模式切换、API Key 配置、模型选择、主题切换、身份配置、语音配置、Ollama 配置
 - **身份配置**：叫我什么/我是什么/什么风格/我的标志/关于你，可随时修改
 - **图片粘贴**：Ctrl+V 粘贴截图到聊天框，自动识别为图片附件
 - **一键启动**：Tauri Sidecar 自动拉起后端服务，安装即用
@@ -199,6 +214,26 @@ codem/
 - [x] 悬浮气泡通知（任务完成/Token 查询，自定义称呼，高度自适应，增量位置调整）
 - [x] 宠物右键原生菜单（关闭/置顶切换/重置位置/查看 Token，不受窗口边界裁剪）
 - [x] 宠物设置面板（启用开关 + 大小滑轨 + 透明度滑轨 + 市场入口 + 已安装列表）
+- [x] 事件溯源会话日志（append-only 事件流 + 14 种 SessionEvent + deriveMessages 投影 + Fork/Replay）
+- [x] 5 层工具管线（pre-execute → monotonic guards → execute → post-execute → finalize）
+- [x] Plan Mode 增强（exit_plan_mode 工具 + PlanApprovalCard 审批 UI + 对齐 dsh 6 段提示词）
+- [x] Capability Seam（ServiceDefinition/Provider/Consumer 三角色 + LocalFs/LocalShell Provider）
+- [x] Code Mode（run_code TypeScript 执行器 + ToolSDK）
+- [x] Session Query（FTS5 跨会话全文搜索）
+- [x] Goal 自动续行（create/get/update_goal + goals DB 表）
+- [x] Workflow 编排（JavaScript fan-out 子智能体）
+- [x] Snapshot 测试（ReplayAdapter 录制/回放 LLM 响应）
+- [x] Telemetry（TelemetryCollector + telemetry_events 表 + PerformanceDashboard UI）
+- [x] Bash 后台模式（JobManager + job_list/output/kill）
+- [x] 终端 LLM 工具组（terminal_open/send/signal/close）
+- [x] MCP 市场（30+ 预设目录 + 分类搜索 + 一键安装）
+- [x] 语音 STT/TTS（Web Speech API 语音识别/合成 + VoiceSettingsPanel）
+- [x] Ollama 本地 LLM Provider（REST API + 动态模型发现 + 离线推理）
+- [x] CI/CD 管理（GitHub Actions workflow 生成 + 运行监控 + 重试/取消）
+- [x] 技能安全沙箱（内容预检 + 哈希签名 + 权限声明 + 安装审计）
+- [x] 远程同步引擎（seq 增量同步 + Supabase/REST 后端）
+- [x] i18n 提示词重构（prompt.ts → i18n-templates.ts 双语模板）
+- [x] 防御性文档 + ADR + Postmortem 体系
 
 ### 进行中
 
@@ -271,6 +306,45 @@ npm run tauri:build
 - 两种模式均使用内置 LLM 引擎直连 API，无需依赖外部进程
 
 ## 更新日志
+
+### 2026-08-14（v0.99.0）
+
+> 本次更新是 Codem 内核架构史上最大规模的对标升级：以 DeepSeek Harness (dsh) 为唯一对标对象，系统性追平 31 项差距。25 文件修改（+1721/-313 行），50+ 新文件。全量 99 文件 / 3234 用例全部通过。
+
+**P0 — 架构基础（对标 dsh 内核范式）：**
+- **事件溯源会话日志**（`event-types.ts` + `event-log.ts` + `event-projection.ts`）：从 SQLite CRUD 升级为 append-only 事件流。14 种 `SessionEvent` 类型 + `deriveMessages()` 投影函数 + Fork/Replay 支持 + 运行时不变量。对标 dsh 的 session-persistence + event-replay
+- **5 层工具管线**（`tool-pipeline.ts`）：从 2 层 + hooks 升级为 pre-execute（权限/hooks/bash-analyzer）→ monotonic guards（沙箱/受保护路径）→ execute（超时/重试/metrics）→ post-execute（接受/拒绝/替换/附加上下文）→ finalize（冻结结果写入事件流）。`streaming-executor.ts` 全量路由通过管线。对标 dsh 的 5-layer waterfall pipeline
+- **Plan Mode 增强**（`exit-plan-mode.ts` + `PlanApprovalCard.tsx`）：新增 `exit_plan_mode` 工具，模型提交计划 → 用户审批 → 自动切换模式。对齐 dsh 6 段提示词规范（模式声明 / 探索优先 / 工具目录不变 / ask_user 限制 / 计划完整性 / exit_plan_mode 调用方式）
+- **测试覆盖率门控**（`vitest.config.ts`）：v8 coverage provider + per-file 阈值配置
+
+**P1 — 功能增强：**
+- **进程级沙箱**：Windows ACL 沙箱路径检查 + `SandboxGuard` 中间件集成到 5 层管线第 2 层。对标 dsh 的 Landlock + Windows ACL
+- **Code Mode**（`run-code.ts`）：TypeScript 代码执行工具，`ToolSDK` 接口提供 bash/read/write/glob/grep/fetch，超时保护。对标 dsh 的 code-runtime
+- **Session Query**（`session-search.ts`）：基于 SQLite FTS5 的跨会话全文搜索，支持短语/布尔/前缀/NEAR 查询。对标 dsh 的 session_event_read/search/trace
+- **防御性模式文档**（`docs/defensive-patterns.md`）：7+ 条防御规则
+- **ADR 架构决策记录**（`docs/adr/`）：3 篇决策记录（事件溯源 / 工具管线 / Plan Mode 对齐）
+
+**P2 — 架构提升 + 功能补齐：**
+- **Capability Seam**（`seam/types.ts` + `local-fs-provider.ts` + `local-shell-provider.ts`）：ServiceDefinition/Provider/Consumer 三角色抽象 + `SeamRegistry` + `initDefaultSeams()`。对标 dsh 的 50+ seam 三角色体系
+- **Workflow 编排**（`workflow-engine.ts`）：JavaScript 工作流工具，`WorkflowSDK` 支持 spawn/wait/bash/read/write，并行 fan-out 子智能体。对标 dsh 的 workflow-worker-thread
+- **Goal 自动续行**（`goal/goal.ts` + `goal-tools.ts`）：`create_goal` / `get_goal` / `update_goal` + `goals` DB 表。对标 dsh 的 goal-round-driver
+- **Snapshot 测试**（`replay-adapter.ts`）：LLM 录制/回放适配器，指纹匹配 + 内存快照。对标 dsh 的 vitest.snapshot.config.ts
+- **Telemetry**（`telemetry/telemetry.ts`）：`TelemetryCollector` 批量采集 + `telemetry_events` DB 表 + OpenTelemetry 导出 + `PerformanceDashboard` UI（总览/趋势/会话/时延 P50/P95）。对标 dsh 的 session-telemetry-otel
+- **代码质量工具**（`knip.json` + `.jscpd.json`）：knip 死代码 + jscpd 重复检测
+- **Bash 后台模式**（`job-manager.ts` + `job-tools.ts`）：`background: true` + `job_list` / `job_output` / `job_kill`。对标 dsh 的 background job tools
+- **终端 LLM 工具组**（`terminal-tools.ts`）：`terminal_open` / `terminal_send` / `terminal_signal` / `terminal_close`。对标 dsh 的 6 个终端工具
+- **Postmortem 体系**（`docs/postmortem/`）：事故复盘文档体系
+- **测试分层补齐**（`vitest.e2e.config.ts` + `vitest.snapshot.config.ts`）
+
+**P3 — 远期完善：**
+- **MCP 市场**（`mcp-registry-catalog.ts` + `McpMarketplace.tsx`）：30+ 预设 MCP 服务器目录 + 分类搜索 + 一键安装
+- **语音 STT/TTS**（`useSpeechRecognition.ts` + `useSpeechSynthesis.ts` + `VoiceSettingsPanel.tsx`）：浏览器原生 Web Speech API 语音识别/合成
+- **Ollama 本地 LLM**（`ollama-provider.ts` + `OllamaSettingsPanel.tsx`）：REST API 连接 + 动态模型发现 + 离线推理
+- **CI/CD 管理**（`cicd/pipeline.ts` + `CicdPanel.tsx`）：GitHub Actions workflow 生成 + 运行监控 + 重试/取消
+- **技能安全沙箱**（`skill/sandbox.ts` + `SkillAuditDialog.tsx`）：内容预检 + 哈希签名 + 权限声明 + safe/warning/danger 三级
+- **远程同步引擎**（`sync-engine.ts`）：基于 seq 的增量同步 + Supabase/REST 后端
+- **i18n 提示词重构**（`prompt/i18n-templates.ts`）：系统提示词从硬编码英文提取为双语模板（17 个模板段）
+- **Adaptive Idle Tracker**（`idle-tracker.ts`）：替代硬超时的自适应空闲追踪
 
 ### 2026-08-13（v0.98.0）
 

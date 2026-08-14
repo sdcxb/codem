@@ -13,6 +13,24 @@ import { createClarificationTool } from "./tools/ask-clarification";
 import { createFactCheckTool } from "./tools/fact-check";
 import { createShowTodoTool } from "./tools/show-todo";
 // D-MCP: Playwright + Figma + GitHub MCP tools
+
+// S0-3: Seam-aware file reading helper
+// Uses FileSystemSeam if registered, falls back to direct import
+async function readViaSeam(path: string, cwd?: string): Promise<string> {
+  try {
+    const { getSeamRegistry } = await import("../seam/types");
+    const registry = getSeamRegistry();
+    if (registry.hasProvider("filesystem")) {
+      const fs = registry.getProvider<{
+        readFile: (path: string, cwd?: string) => Promise<string>;
+      }>("filesystem");
+      return fs.readFile(path, cwd);
+    }
+  } catch {
+    // Seam not initialized — fall through to direct import
+  }
+  return readFile(path);
+}
 import { createBrowserAutomateTool } from "./tools/browser-automate";
 import { createFigmaFetchTool } from "./tools/figma-fetch";
 import { createGitHubTool } from "./tools/github-tool";
@@ -20,6 +38,19 @@ import { createGitHubTool } from "./tools/github-tool";
 import { createLSPTool } from "./tools/lsp-tool";
 // P0-2: tool_search for deferred tool loading
 import { createToolSearchTool } from "./tools/tool-search";
+// P0-3: exit_plan_mode tool for Plan Mode approval flow
+import { createExitPlanModeTool } from "./tools/exit-plan-mode";
+// P1-6: run_code tool for TypeScript code execution
+import { createRunCodeTool } from "./tools/run-code";
+// P1-7: session_search tool for FTS5 full-text search
+import { createSessionSearchTool } from "./tools/session-search";
+// P2-12: Goal tools for automatic continuation
+import { createGoalTools } from "./tools/goal-tools";
+// P2-11: Workflow tool for JS-based task orchestration
+import { createWorkflowTool } from "./workflow-engine";
+// P2-19/20: Job and Terminal tools for background task & terminal management
+import { createJobTools } from "./tools/job-tools";
+import { createTerminalOpenTool, createTerminalSendTool, createTerminalSignalTool, createTerminalCloseTool } from "./tools/terminal-tools";
 
 // ========== S5: Sandbox Helpers ==========
 
@@ -535,11 +566,12 @@ export function createReadFileTool(): ToolDef {
           if (cached !== null) {
             content = cached;
           } else {
-            content = await readFile(path);
+            // S0-3: Use FileSystemSeam if registered, fallback to direct import
+            content = await readViaSeam(path, ctx.cwd);
             fileCache.set(path, content);
           }
         } else {
-          content = await readFile(path);
+          content = await readViaSeam(path, ctx.cwd);
         }
         const lines = content.split("\n");
         const sliced = lines.slice(offset - 1, offset - 1 + limit);
@@ -1017,6 +1049,26 @@ export function createDefaultToolRegistry(): ToolRegistry {
   registry.register(createLSPTool());
   // P0-2: tool_search for deferred tool loading (must be registered AFTER deferred tools)
   registry.register(createToolSearchTool(registry));
+  // P0-3: exit_plan_mode tool — submit plan for user approval in Plan mode
+  registry.register(createExitPlanModeTool());
+  // P1-6: run_code tool — execute TypeScript code with tool SDK access
+  registry.register(createRunCodeTool());
+  // P1-7: session_search tool — FTS5 full-text search across session history
+  registry.register(createSessionSearchTool());
+  // P2-12: Goal tools — create/get/update goals for automatic continuation
+  for (const tool of createGoalTools()) {
+    registry.register(tool);
+  }
+  // P2-11: Workflow tool — JS-based task orchestration
+  registry.register(createWorkflowTool());
+  // P2-19/20: Job and Terminal tools
+  for (const tool of createJobTools()) {
+    registry.register(tool);
+  }
+  registry.register(createTerminalOpenTool());
+  registry.register(createTerminalSendTool());
+  registry.register(createTerminalSignalTool());
+  registry.register(createTerminalCloseTool());
   return registry;
 }
 

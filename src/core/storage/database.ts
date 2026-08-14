@@ -586,6 +586,52 @@ CREATE TABLE IF NOT EXISTS inbox (
 CREATE INDEX IF NOT EXISTS idx_inbox_read ON inbox(read);
 CREATE INDEX IF NOT EXISTS idx_inbox_project ON inbox(project_id);
 CREATE INDEX IF NOT EXISTS idx_inbox_created ON inbox(created_at);
+
+-- ========== P0-1: Event Sourcing — append-only session event log ==========
+-- Design (对标 DeepSeek Harness event-sourcing):
+-- - Events are the source of truth; messages are derived projections
+-- - Append-only: events are never deleted or updated (except on session deletion)
+-- - Supports replay, fork, and projection
+CREATE TABLE IF NOT EXISTS session_events (
+  seq INTEGER PRIMARY KEY AUTOINCREMENT,
+  session_id TEXT NOT NULL,
+  event_type TEXT NOT NULL,
+  payload TEXT NOT NULL,
+  timestamp INTEGER NOT NULL,
+  FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_session_events_session ON session_events(session_id, seq);
+
+-- ========== P2-12: Goals table for goal-driven auto-continuation ==========
+CREATE TABLE IF NOT EXISTS goals (
+  id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL,
+  title TEXT NOT NULL,
+  description TEXT,
+  status TEXT NOT NULL DEFAULT 'pending',
+  priority TEXT DEFAULT 'normal',
+  parent_id TEXT,
+  success_criteria TEXT,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  completed_at INTEGER,
+  FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE,
+  FOREIGN KEY (parent_id) REFERENCES goals(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_goals_session ON goals(session_id);
+CREATE INDEX IF NOT EXISTS idx_goals_status ON goals(status);
+
+-- ========== P2-14: Telemetry events table ==========
+CREATE TABLE IF NOT EXISTS telemetry_events (
+  id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL,
+  event_name TEXT NOT NULL,
+  event_data TEXT,
+  timestamp INTEGER NOT NULL,
+  FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_telemetry_session ON telemetry_events(session_id);
+CREATE INDEX IF NOT EXISTS idx_telemetry_name ON telemetry_events(event_name);
 `;
 
 export async function initDatabase(): Promise<SqlJsDatabase> {
@@ -604,6 +650,21 @@ export async function initDatabase(): Promise<SqlJsDatabase> {
 
   db.run("PRAGMA foreign_keys = ON");
   db.run(SCHEMA);
+
+  // FTS5 full-text search table — created separately because sql.js (asm)
+  // may not support FTS5. Non-critical: session_search tool will degrade gracefully.
+  try {
+    db.run(`CREATE VIRTUAL TABLE IF NOT EXISTS session_fts USING fts5(
+  session_id UNINDEXED,
+  message_id UNINDEXED,
+  content,
+  role,
+  timestamp UNINDEXED,
+  tokenize = 'unicode61'
+);`);
+  } catch (e) {
+    console.warn("[Database] FTS5 not supported, session full-text search will be unavailable:", e);
+  }
 
   // Seed a global project record (id="") so that global chat sessions
   // (projectId="") satisfy the sessions.project_id foreign key constraint.

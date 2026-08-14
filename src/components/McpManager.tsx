@@ -20,6 +20,7 @@ import {
   DialogFooter,
 } from "./ui/dialog";
 import { Badge } from "./ui/badge";
+import { McpMarketplace } from "./McpMarketplace";
 
 interface McpManagerProps {
   onClose: () => void;
@@ -41,6 +42,7 @@ export function McpManager({ onClose }: McpManagerProps) {
   const [showJsonImport, setShowJsonImport] = useState(false);
   const [jsonInput, setJsonInput] = useState("");
   const [jsonError, setJsonError] = useState<string | null>(null);
+  const [showMarketplace, setShowMarketplace] = useState(false);
 
   const loadServers = useCallback(() => {
     const registry = getMCPRegistry();
@@ -168,6 +170,10 @@ export function McpManager({ onClose }: McpManagerProps) {
 
       {/* Actions */}
       <div className="mcp-manager-actions">
+        <button className="mcp-action-btn marketplace-btn" onClick={() => setShowMarketplace(true)}>
+          <span style={{ marginRight: 4 }}>🏪</span>
+          服务器目录
+        </button>
         <button className="mcp-action-btn" onClick={handleConnectAll}>
           <RefreshIcon size={14} />
           全部连接
@@ -340,6 +346,11 @@ export function McpManager({ onClose }: McpManagerProps) {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* MCP Marketplace */}
+      {showMarketplace && (
+        <McpMarketplace onClose={() => { setShowMarketplace(false); loadServers(); }} />
+      )}
     </div>
   );
 }

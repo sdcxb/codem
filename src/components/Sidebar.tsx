@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
-import { PanelLeftClose, Search, Settings, Sun, Moon, PencilLine, BookOpen, Clock, Plug, BookMarked, Brain, Link2, GitBranch, Pin, Folder, Pencil, Clipboard, Trash2, ChevronDown, ChevronRight, MoreHorizontal, User, Circle, ClipboardList, Bot } from "lucide-react";
+import { PanelLeftClose, Search, Settings, Sun, Moon, PencilLine, BookOpen, Clock, Plug, BookMarked, Brain, Link2, GitBranch, Pin, Folder, Pencil, Clipboard, Trash2, ChevronDown, ChevronRight, MoreHorizontal, User, Circle, ClipboardList, Bot, Activity } from "lucide-react";
 import { useAppStore } from "../store";
 import { useProjectStore } from "../core/store";
 import { AppIdentity } from "../core/types";
@@ -25,6 +25,8 @@ interface SidebarProps {
   onNotebooks?: () => void;
   onTaskCenter?: () => void;
   onAgents?: () => void;
+  onCicd?: () => void;
+  onPerf?: () => void;
   onRemoveProject?: (projectId: string, projectName: string, projectPath: string) => void;
   fileExplorerProjectId?: string | null;
   onToggleFileExplorer?: (projectId: string) => void;
@@ -32,7 +34,7 @@ interface SidebarProps {
   collapsed?: boolean;
 }
 
-export function Sidebar({ identity, onSettings, onProjects, onConfig, onMcp, onSkills, onMemory, onNotebooks, onTaskCenter, onAgents, onRemoveProject, fileExplorerProjectId, onToggleFileExplorer, onToggleSidebar, collapsed = false }: SidebarProps) {
+export function Sidebar({ identity, onSettings, onProjects, onConfig, onMcp, onSkills, onMemory, onNotebooks, onTaskCenter, onAgents, onCicd, onPerf, onRemoveProject, fileExplorerProjectId, onToggleFileExplorer, onToggleSidebar, collapsed = false }: SidebarProps) {
   const [inboxUnread, setInboxUnread] = useState(0);
 
   // Track inbox unread count
@@ -367,6 +369,26 @@ const handleDrop = useCallback((e: React.DragEvent, targetSessionId: string, pro
           </TooltipTrigger>
           <TooltipContent side="right">{S.sidebar.memory[lang]}</TooltipContent>
         </Tooltip>
+        {onCicd && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button className="sidebar-rail-btn" onClick={onCicd}>
+                <GitBranch size={18} />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="right">{S.sidebar.cicd[lang]}</TooltipContent>
+          </Tooltip>
+        )}
+        {onPerf && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button className="sidebar-rail-btn" onClick={onPerf}>
+                <Activity size={18} />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="right">{S.sidebar.perf[lang]}</TooltipContent>
+          </Tooltip>
+        )}
         <div className="sidebar-rail-spacer" />
         {showSearch && (
           <SearchDialog
@@ -455,6 +477,18 @@ const handleDrop = useCallback((e: React.DragEvent, targetSessionId: string, pro
             <button className="sidebar-tool-item" onClick={onAgents} title={lang === 'zh' ? '智能体' : 'Agents'}>
               <span className="sidebar-tool-item-icon"><Bot size={16} /></span>
               <span className="sidebar-tool-item-label">{lang === 'zh' ? '智能体' : 'Agents'}</span>
+            </button>
+          )}
+          {onCicd && (
+            <button className="sidebar-tool-item" onClick={onCicd} title={S.sidebar.cicd[lang]}>
+              <span className="sidebar-tool-item-icon"><GitBranch size={16} /></span>
+              <span className="sidebar-tool-item-label">{S.sidebar.cicd[lang]}</span>
+            </button>
+          )}
+          {onPerf && (
+            <button className="sidebar-tool-item" onClick={onPerf} title={S.sidebar.perf[lang]}>
+              <span className="sidebar-tool-item-icon"><Activity size={16} /></span>
+              <span className="sidebar-tool-item-label">{S.sidebar.perf[lang]}</span>
             </button>
           )}
         </div>

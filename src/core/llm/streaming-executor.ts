@@ -1,5 +1,6 @@
 import type { ToolCallResult, LLMMessage } from "../llm/types";
 import { maybePersistToolResult, NEVER_PERSIST_TOOLS } from "./tool-result-storage";
+import { getToolPipeline } from "./tool-pipeline";
 
 // ========== P1-A: Per-message Tool Result Budget ==========
 
@@ -185,8 +186,15 @@ export class StreamingToolExecutorImpl {
     }
 
     for (const batch of batches) {
-      const batchResults = await Promise.all(
-        batch.map(async (tc) => {
+      // P-OPT2: Model-ordered result submission
+      // Tools execute in parallel, but results are committed in model-order
+      // to preserve prefix cache stability for the next LLM request.
+      // We collect results into slots indexed by their position in the batch,
+      // then yield them in original order once all complete.
+      const slots: (ToolCallResult | { error: string; tc: StreamingToolCall })[] = new Array(batch.length);
+
+      await Promise.all(
+        batch.map(async (tc, idx) => {
           tc.status = "running";
           tc.abortController = new AbortController();
           this.running.set(tc.id, tc);
@@ -204,8 +212,23 @@ export class StreamingToolExecutorImpl {
             const noTimeoutTools = ["bash", "wait_for_subagent", "spawn_subagent", "write", "edit", "multi_edit"];
             const useTimeout = !noTimeoutTools.includes(tc.name);
 
+            // P0-2: Route through ToolPipeline if initialized (5-layer waterfall)
+            const pipeline = getToolPipeline();
+            const pipelineResult = pipeline.execute(
+              tc.name, tc.input, { ...ctx, abort: tc.abortController.signal }, toolHandler,
+            );
+
             const result = await Promise.race([
-              toolHandler(tc.name, tc.input, { ...ctx, abort: tc.abortController.signal }),
+              pipelineResult.then(pr => {
+                // S0-1 fix: Pipeline catches tool exceptions internally and returns
+                // status:"error" results. Re-throw to trigger catch block for
+                // tool_error event emission, preserving the original error message.
+                if (pr.result.status === "error") {
+                  const errMsg = pr.result.error || pr.result.output || "Tool execution failed";
+                  throw new Error(errMsg);
+                }
+                return pr.result;
+              }),
               useTimeout ? this.timeout(this.config.toolTimeout) : new Promise<never>(() => {}),
             ]);
 
@@ -231,7 +254,7 @@ export class StreamingToolExecutorImpl {
 
             tc.status = "completed";
             tc.result = result;
-            results.push(result);
+            slots[idx] = result;
 
             return { type: "complete" as const, toolCall: tc, result };
           } catch (error: any) {
@@ -246,7 +269,7 @@ export class StreamingToolExecutorImpl {
               status: "error",
               error: error.message,
             };
-            results.push(errorResult);
+            slots[idx] = { error: error.message, tc };
 
             return { type: "error" as const, toolCall: tc, error: error.message };
           } finally {
@@ -255,13 +278,19 @@ export class StreamingToolExecutorImpl {
         })
       );
 
-      for (const item of batchResults) {
-        if (item.type === "complete") {
-          yield { type: "tool_start", toolCall: item.toolCall };
-          yield { type: "tool_complete", toolCall: item.toolCall, result: item.result };
-        } else {
-          yield { type: "tool_start", toolCall: item.toolCall };
-          yield { type: "tool_error", toolCall: item.toolCall, error: item.error };
+      // P-OPT2: Yield results in model-order (batch array order)
+      // This ensures the event log records tool results in the same
+      // order the model emitted them, preserving prefix stability.
+      for (let i = 0; i < batch.length; i++) {
+        const slot = slots[i];
+        const tc = batch[i];
+        if (slot && "error" in slot && typeof slot.error === "string") {
+          yield { type: "tool_start", toolCall: tc };
+          yield { type: "tool_error", toolCall: tc, error: slot.error };
+        } else if (slot) {
+          yield { type: "tool_start", toolCall: tc };
+          yield { type: "tool_complete", toolCall: tc, result: slot as ToolCallResult };
+          results.push(slot as ToolCallResult);
         }
       }
 
@@ -295,8 +324,24 @@ export class StreamingToolExecutorImpl {
       const noTimeoutTools = ["bash", "wait_for_subagent", "spawn_subagent", "write", "edit", "multi_edit"];
       const useTimeout = !noTimeoutTools.includes(tc.name);
 
+      // S0-1: Route through ToolPipeline (same as executeBatch) to ensure
+      // all tools go through the 5-layer waterfall, including EventLog finalize.
+      const pipeline = getToolPipeline();
+      const pipelineResult = pipeline.execute(
+        tc.name, tc.input, { ...ctx, abort: tc.abortController.signal }, toolHandler,
+      );
+
       const result = await Promise.race([
-        toolHandler(tc.name, tc.input, { ...ctx, abort: tc.abortController.signal }),
+        pipelineResult.then(pr => {
+          // S0-1 fix: Pipeline catches tool exceptions internally and returns
+          // status:"error" results. Re-throw to trigger catch block for
+          // tool_error event emission, preserving the original error message.
+          if (pr.result.status === "error") {
+            const errMsg = pr.result.error || pr.result.output || "Tool execution failed";
+            throw new Error(errMsg);
+          }
+          return pr.result;
+        }),
         useTimeout ? this.timeout(this.config.toolTimeout) : new Promise<never>(() => {}),
       ]);
 

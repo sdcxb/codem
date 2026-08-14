@@ -14,7 +14,10 @@ import { SourceReferences } from "./SourceReferences";
 import { ImageGallery } from "./ImageGallery";
 import { VideoPlayer } from "./VideoPlayer";
 import { RichContent } from "./rich-content/RichContent";
-import { Bot, CheckCircle, XCircle, Clock, FileText, Image as ImageIcon, Pencil, PencilLine, Clipboard, Check, BookOpen, BookX, Brain, ChevronDown, ChevronUp, User } from "lucide-react";
+// P3-26: Voice output (TTS) — browser speech synthesis hook
+import { useSpeechSynthesis } from "../hooks/useSpeechSynthesis";
+import { getMultimodalSettings, textToSpeech, playTTSAudio } from "../core/llm/multimodal";
+import { Bot, CheckCircle, XCircle, Clock, FileText, Image as ImageIcon, Pencil, PencilLine, Clipboard, Check, BookOpen, BookX, Brain, ChevronDown, ChevronUp, User, Volume2, Square as StopIcon } from "lucide-react";
 import { getSettingJSON } from "../core/storage/settings";
 import type { UserConfig } from "../core/types";
 import { MessageActions } from "./MessageActions";
@@ -219,6 +222,65 @@ const [isEditing, setIsEditing] = useState(false);
 const [galleryImages, setGalleryImages] = useState<string[] | null>(null);
 const [galleryIndex, setGalleryIndex] = useState(0);
   const contentRef = useRef<HTMLDivElement>(null);
+
+  // P3-26: TTS — text-to-speech for message content
+  const { isSpeaking, isSupported: ttsSupported, speak: ttsSpeak, cancel: ttsCancel } = useSpeechSynthesis();
+  const [isTtsLoading, setIsTtsLoading] = useState(false);
+  const [ttsMessageId, setTtsMessageId] = useState<string | null>(null);
+
+  // Handle read aloud button click
+  const handleReadAloud = useCallback(async () => {
+    if (!message.content?.trim()) return;
+
+    // If currently speaking for this message, stop
+    if (isSpeaking && ttsMessageId === message.id) {
+      ttsCancel();
+      setTtsMessageId(null);
+      return;
+    }
+
+    // Cancel any existing speech
+    ttsCancel();
+    setTtsMessageId(message.id);
+
+    // Strip markdown formatting for better TTS output
+    const plainText = message.content
+      .replace(/```[\s\S]*?```/g, " code block ") // Replace code blocks
+      .replace(/`([^`]+)`/g, "$1")               // Inline code
+      .replace(/!\[.*?\]\(.*?\)/g, "")             // Images
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")   // Links → text
+      .replace(/#{1,6}\s/g, "")                    // Headers
+      .replace(/\*{1,3}([^*]+)\*{1,3}/g, "$1")   // Bold/italic
+      .replace(/\n{3,}/g, "\n\n")                  // Excessive newlines
+      .trim();
+
+    if (!plainText) return;
+
+    // Check if cloud TTS is preferred and configured
+    const mmSettings = getMultimodalSettings();
+    const cloudTtsConfigured = mmSettings.tts && mmSettings.tts.enabled && mmSettings.tts.apiKey;
+    const preferCloudTts = getSettingJSON<boolean>("codem-prefer-cloud-tts", false);
+
+    if (preferCloudTts && cloudTtsConfigured) {
+      // Use cloud TTS API
+      setIsTtsLoading(true);
+      try {
+        const result = await textToSpeech({ text: plainText });
+        const audio = playTTSAudio(result);
+        audio.onended = () => {
+          setTtsMessageId(null);
+        };
+      } catch (err) {
+        // Fallback to browser TTS
+        ttsSpeak(plainText);
+      } finally {
+        setIsTtsLoading(false);
+      }
+    } else {
+      // Use browser built-in TTS
+      ttsSpeak(plainText);
+    }
+  }, [message.id, message.content, isSpeaking, ttsMessageId, ttsCancel, ttsSpeak]);
 
   const isUser = message.role === "user";
   const isSystem = message.role === "system";
@@ -771,6 +833,32 @@ const opLabel = tc.tool === 'create_note'
               </TooltipTrigger>
               <TooltipContent>{copied ? S.bubble.copied[lang] : S.bubble.copyMessage[lang]}</TooltipContent>
             </Tooltip>
+            {/* P3-26: Read aloud (TTS) — only for assistant messages */}
+            {!isUser && !isSystem && ttsSupported && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    className="toolbar-btn"
+                    onClick={handleReadAloud}
+                    disabled={isTtsLoading}
+                    style={isTtsLoading ? { opacity: 0.5 } : {}}
+                  >
+                    {isSpeaking && ttsMessageId === message.id
+                      ? <StopIcon size={14} fill="currentColor" />
+                      : isTtsLoading
+                      ? <Clock size={14} />
+                      : <Volume2 size={14} />
+                    }
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  {isSpeaking && ttsMessageId === message.id
+                    ? S.voice.stopReading[lang]
+                    : S.voice.readAloud[lang]
+                  }
+                </TooltipContent>
+              </Tooltip>
+            )}
             {contentCollapsed && (
               <Tooltip>
                 <TooltipTrigger asChild>

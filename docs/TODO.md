@@ -16,10 +16,202 @@
 > v0.96.2 已发布：CodeGraph 代码知识图谱集成（自动检测 .codegraph/ → MCP Server 注册 → 系统提示词注入 codegraph_explore 指导 → 设置页面"代码图谱"标签页）+ 测试套件改造（readFileSync+toContain → 真实模块行为验证）+ CI Workflow（tsc + vitest + cargo check）+ Vite watch EBUSY 修复 + CodeGraph 集成测试（49 用例 4 层覆盖）。全量 72 文件 / 2872 用例通过。
 > v0.97.0 已发布：Agentic Loop 性能优化（Tool Result 磁盘持久化 + ToolSearch 延迟加载 + Micro-Compact 摘要 + TranscriptCache 修复）+ 工具系统增强（工具中断行为 + Bash 分析器 + Hooks 系统 + TodoWrite 增强 + Forked Agent 记忆提取）+ 技能市场三大新源接入（ClawHub.ai / Skills.sh / SkillHub CLI）+ 技能发布功能（publishSkillToMarket 三种目标 + UI 发布对话框）。**补丁修复（同版本重新构建）：** ctx.abort 空指针 + Session 持久化缺失（executionMode/worktreePath/worktreeBranch）+ preserveExecutor 类型错误 + 移除 57 个假测试 + 重写 61 个源码字符串匹配测试为真实行为测试。全量 84 文件 / 2924 用例全部通过（0 失败）。
 > v0.98.0 已发布：多智能体协同架构 — Phase 1 TaskCenter 统一任务管理中心（概览/委派/子智能体/自动化 4 Tab）+ Phase 2 Squad 多智能体协同（Leader-Member + Roster 协议 + 3 个 LLM 工具 + dispatch 路由）+ Phase 3 Issue 追踪 + 看板（7 状态 + 4 优先级 + 评论 + 看板拖拽 + 4 个 LLM 工具 + 分配给 Squad）+ Phase 4 Autopilot 扩展（Cron 引擎 + Issue 状态触发器）+ Phase 5 Inbox 全局通知聚合中心（6 分类 + 事件填充集成 + Sidebar 未读角标）+ Phase 6 AgentManager 扩展 + 死代码清理（DelegationPanel/AutomationSettingsSection/onAutomations/__pendingSquadDispatch 移除 + TopNavbar 双 Tasks 修复 + micro-compact bug 修复）。5 张新 DB 表、7 个新 LLM 工具、8 Tab 全景、30 个新文件、20 个修改文件。全量 87 文件 / 3057 用例通过。
+> v0.99.0 已发布：**对标 DeepSeek Harness 全量升级** — 31 项差距系统性追平。P0 架构基础（事件溯源会话日志 + 5 层工具管线 + Plan Mode exit_plan_mode 增强 + 测试覆盖率门控）+ P1 功能增强（Windows ACL 沙箱 + Code Mode run_code + Session Query FTS5 + 防御性文档 + ADR）+ P2 架构提升（Capability Seam 三角色 + Workflow 编排 + Goal 自动续行 + Replay 测试 + Telemetry + 代码质量工具 + Bash 后台模式 + 终端 LLM 工具组 + Postmortem + 测试分层补齐）+ P3 远期完善（MCP 市场 + 语音 STT/TTS + Ollama 本地 LLM + CI/CD 管理 + 技能安全沙箱 + 远程同步引擎 + i18n 提示词重构 + Adaptive Idle Tracker + 事件系统增强）。25 文件修改（+1721/-313 行），50+ 新文件。全量 99 文件 / 3234 用例全部通过。
 
 ## 待开发
 
-### v0.97.0 已发布（2026-08-12）
+### v0.99.0 已发布（2026-08-14）— 对标 DeepSeek Harness 全量升级
+
+#### P0 — 架构基础（对标 dsh 内核范式）
+- [x] P0-1 事件溯源会话日志（`event-types.ts` + `event-log.ts` + `event-projection.ts`）
+  - [x] 14 种 SessionEvent 类型定义（user_message / assistant_text / assistant_reasoning / tool_call / tool_result / compaction / turn_start / turn_end / memory_update / session_meta / permission_granted / permission_denied / error / abort）
+  - [x] `session_events` DB 表（append-only，seq 自增，session_id + event_type + payload + timestamp）
+  - [x] `deriveMessages()` 投影函数（从事件流投影出 LLM 消息列表）
+  - [x] Fork 支持（从任意历史点 fork 新会话）
+  - [x] Replay 支持（从事件流重放重建完整状态）
+  - [x] 运行时不变量（"模型可见即已记录" 断言）
+  - [x] 双写过渡期（旧 CRUD + 新事件流同时写入，messages 表保留为 fallback）
+- [x] P0-2 5 层工具管线（`tool-pipeline.ts`）
+  - [x] 第 1 层 pre-execute（waterfall）：hooks + permission + bash-analyzer → 可 deny/modify
+  - [x] 第 2 层 monotonic guards（frozen order）：sandbox + 受保护路径 + 覆盖保护 → 不可重排序
+  - [x] 第 3 层 execute（waterfall）：tool.execute() + 超时 + 重试 + metrics
+  - [x] 第 4 层 post-execute（waterfall）：hooks → result accept/reject/replace/append
+  - [x] 第 5 层 finalize（freeze）：finalizeContent → 写入事件流 → 返回权威结果
+  - [x] `streaming-executor.ts` 全量路由通过管线（executeSingle + executeBatch）
+  - [x] 管线错误重新抛出确保 `tool_error` 事件正确发送
+  - [x] `agentic-loop.ts` 移除冗余 permission/plan 检查（已由管线处理）
+- [x] P0-3 Plan Mode 增强（`exit-plan-mode.ts` + `PlanApprovalCard.tsx`）
+  - [x] `exit_plan_mode` 工具定义（plan_markdown 参数，提交计划给用户审批）
+  - [x] `setPlanApprovalCallback` / `clearPlanApprovalCallback` 回调注册
+  - [x] `PlanApprovalCard` UI 组件（createPortal 弹窗，Approve/Reject + 反馈输入）
+  - [x] 提示词对齐 dsh 6 段规范（模式声明 / 探索优先 / 工具目录不变 / ask_user 限制 / 计划完整性 / exit_plan_mode 调用方式）
+  - [x] App.tsx 集成 exit_plan_mode 回调 + PlanApprovalCard 渲染
+- [x] P0-4 测试覆盖率门控（`vitest.config.ts`）
+  - [x] v8 coverage provider 配置
+  - [x] per-file 阈值（lines/functions/branches/statements 70%）
+  - [x] exclude 配置（src/test/** + src/**/*.d.ts）
+
+#### P1 — 功能增强
+- [x] P1-5 进程级沙箱
+  - [x] Windows ACL 沙箱路径检查
+  - [x] `SandboxGuard` 中间件集成到 5 层管线第 2 层（monotonic guards）
+  - [x] `PlanModeGuard` 中间件（Plan 模式下拦截 write/edit 工具）
+- [x] P1-6 Code Mode（`run-code.ts`）
+  - [x] TypeScript 代码执行工具
+  - [x] `ToolSDK` 接口（bash / read / write / glob / grep / fetch）
+  - [x] 超时保护（默认 30s，可配置）
+  - [x] console 代理（log/error/warn/info 重定向到 stdout/stderr）
+  - [x] async IIFE 包装执行
+- [x] P1-7 Session Query（`session-search.ts`）
+  - [x] SQLite FTS5 虚拟表（session_fts: session_id / message_id / content / role / timestamp）
+  - [x] `session_search` LLM 工具（FTS5 查询语法：短语/布尔/前缀/NEAR）
+  - [x] 消息自动索引（`message.ts` createMessage 中写入 FTS5）
+  - [x] 返回匹配消息片段 + 会话标题
+  - [x] FTS5 表创建隔离（database.ts 独立 try-catch，兼容浏览器环境）
+- [x] P1-8 防御性模式文档（`docs/defensive-patterns.md`）
+  - [x] 7+ 条防御规则文档化
+- [x] P1-9 Agent Notes/ADR（`docs/adr/`）
+  - [x] `0001-event-sourcing.md` — 事件溯源决策记录
+  - [x] `0002-tool-pipeline.md` — 工具管线决策记录
+  - [x] `0003-plan-mode-alignment.md` — Plan Mode 对齐决策记录
+
+#### P2 — 架构提升 + 功能补齐
+- [x] P2-10 Capability Seam（`seam/types.ts` + `local-fs-provider.ts` + `local-shell-provider.ts`）
+  - [x] `SeamServiceDefinition<T>` 接口定义（契约）
+  - [x] `SeamProvider` 接口（id + isAvailable）
+  - [x] `SeamConsumer` 接口（seamName）
+  - [x] `SeamRegistry` 注册表（registerDefinition / registerProvider / getProvider / hasProvider）
+  - [x] `FileSystemSeam` + `LocalFsProvider`（readFile / writeFile / listDirectory / exists）
+  - [x] `ShellSeam` + `LocalShellProvider`（executeCommand）
+  - [x] `initDefaultSeams()` 应用初始化（App.tsx 调用）
+  - [x] `read` 工具通过 `readViaSeam` fallback 访问文件系统
+- [x] P2-11 Workflow 编排（`workflow-engine.ts`）
+  - [x] `workflow` LLM 工具定义（code 参数）
+  - [x] `WorkflowSDK` 接口（spawn / wait / bash / read / write）
+  - [x] 并行 fan-out 子智能体支持
+  - [x] 复用 `executeCode` 执行引擎
+- [x] P2-12 Goal 自动续行（`goal/goal.ts` + `goal-tools.ts`）
+  - [x] `goals` DB 表（id / sessionId / title / description / status / priority / successCriteria / createdAt / updatedAt）
+  - [x] `createGoal` / `getGoal` / `listGoals` / `updateGoal` 管理器
+  - [x] `create_goal` / `get_goal` / `update_goal` 三个 LLM 工具
+  - [x] 优先级（low / normal / high）+ 状态（in_progress / completed / failed / cancelled）
+- [x] P2-13 Snapshot 测试（`replay-adapter.ts`）
+  - [x] `ReplayAdapter` 类（recordMode + replayMode）
+  - [x] `fingerprintRequest` 指纹匹配（model + messages hash + tools hash）
+  - [x] `addResponse()` 内存快照（无需文件 I/O）
+  - [x] 完整 `LLMProvider` 实现（name / listModels / isConfigured / complete / completeStream）
+  - [x] `vitest.snapshot.config.ts` 配置文件
+- [x] P2-14 Telemetry（`telemetry/telemetry.ts`）
+  - [x] `TelemetryEvent` 类型定义
+  - [x] `TelemetryCollector` 类（record / flush / batch 50 / 5s 定时）
+  - [x] `telemetry_events` DB 表
+  - [x] `PerformanceDashboard` UI 组件（总览 / 趋势图 / 会话统计 / 时延 P50/P95）
+  - [x] OTel JSON 导出
+  - [x] 自动刷新（10s）
+  - [x] Sidebar 入口按钮
+- [x] P2-15 代码质量工具
+  - [x] `knip.json` 配置（死代码检测）
+  - [x] `.jscpd.json` 配置（重复代码检测）
+  - [x] `package.json` verify 脚本（vitest run --coverage && knip && jscpd）
+- [x] P2-16 Bash 后台模式（`job-manager.ts` + `job-tools.ts`）
+  - [x] `JobManager` 类（start / getOutput / kill / listJobs）
+  - [x] `jobs` DB 表
+  - [x] `job_list` / `job_output` / `job_kill` 三个 LLM 工具
+  - [x] `background: true` 参数支持
+- [x] P2-17 终端 LLM 工具组（`terminal-tools.ts`）
+  - [x] `TerminalManager` 类（open / send / signal / close / list）
+  - [x] `terminal_open` / `terminal_send` / `terminal_signal` / `terminal_close` 四个 LLM 工具
+  - [x] 与 xterm.js PTY 共享会话（CustomEvent 通信）
+- [x] P2-18 测试分层补齐
+  - [x] `vitest.e2e.config.ts` 配置文件
+  - [x] `vitest.snapshot.config.ts` 配置文件
+  - [x] `package.json` test:e2e / test:snapshot 脚本
+- [x] P2-19 Postmortem 体系（`docs/postmortem/README.md`）
+  - [x] 事故复盘文档模板
+
+#### P3 — 远期完善
+- [x] P3-20 MCP 市场（`mcp-registry-catalog.ts` + `McpMarketplace.tsx`）
+  - [x] `MCPRegistryEntry` 类型定义（id / name / description / category / transport / command / args / env）
+  - [x] `MCPCategory` 分类（filesystem / database / search / developer-tools / communication / productivity / data / cloud / other）
+  - [x] 30+ 预设 MCP 服务器目录
+  - [x] `getCatalog` / `getCategories` / `searchCatalog` / `installCatalogEntry` / `uninstallCatalogEntry` / `isEntryInstalled`
+  - [x] `McpMarketplace` UI 组件（搜索 + 分类筛选 + 安装/卸载 + 状态追踪）
+  - [x] McpManager 集成入口
+- [x] P3-21 语音 STT/TTS（`useSpeechRecognition.ts` + `useSpeechSynthesis.ts` + `VoiceSettingsPanel.tsx`）
+  - [x] `useSpeechRecognition` Hook（Web Speech API STT，实时识别 + 连续模式 + 语言跟随 i18n）
+  - [x] `useSpeechSynthesis` Hook（Web Speech API TTS，语音选择 / 语速 / 音调 / 音量）
+  - [x] `VoiceSettingsPanel` 设置面板（语音选择 + 参数配置 + 试听 + 云端 TTS 优先级）
+  - [x] SettingsPanel 新增"语音"标签页
+- [x] P3-22 Ollama 本地 LLM（`ollama-provider.ts` + `OllamaSettingsPanel.tsx`）
+  - [x] `OllamaProvider` 类（实现 `LLMProvider` 接口）
+  - [x] REST API 连接（GET /api/tags 获取模型列表）
+  - [x] OpenAI 兼容端点推理（POST /v1/chat/completions）
+  - [x] streaming + non-streaming 支持
+  - [x] 健康检查（`checkConnection`）
+  - [x] `OllamaSettingsPanel` UI（Base URL + 连接检测 + 自动检测 + 模型列表）
+  - [x] SettingsPanel 新增"Ollama"标签页
+- [x] P3-23 CI/CD 管理（`cicd/pipeline.ts` + `CicdPanel.tsx`）
+  - [x] `generateWorkflow` — 根据项目类型生成 GitHub Actions YAML（node / python / rust / go / java / generic）
+  - [x] `listWorkflowRuns` — 获取最近 workflow runs（GitHub API）
+  - [x] `getWorkflowJobs` — 获取 workflow job 详情
+  - [x] `retryWorkflowRun` / `cancelWorkflowRun` — 重试/取消
+  - [x] `triggerWorkflowDispatch` — 手动触发
+  - [x] `CicdPanel` UI（仓库输入 + 状态概览 + run 列表 + job 展开 + YAML 模板生成 + 自动刷新）
+  - [x] Sidebar 入口按钮
+- [x] P3-24 技能安全沙箱（`skill/sandbox.ts` + `SkillAuditDialog.tsx`）
+  - [x] `AuditLevel` 类型（safe / warning / danger）
+  - [x] `auditSkill` 函数（内容预检：远程脚本 / iframe / eval / document.cookie / fetch 恶意调用）
+  - [x] `validatePermissions` 函数（权限声明验证）
+  - [x] `InstallAuditEntry` 类型 + 安装审计日志
+  - [x] 哈希签名验证（`hashSkillContent`）
+  - [x] `SkillAuditDialog` UI（safe 直接安装 / warning 确认 / danger 阻止）
+- [x] P3-25 远程同步引擎（`sync-engine.ts`）
+  - [x] `RemoteBackendType` 类型（supabase / rest-api / none）
+  - [x] `SyncConfig` 配置（后端类型 / URL / Key / 自动同步 / 间隔 / 方向 / sessionIds）
+  - [x] `SyncState` 状态（lastPushedSeq / lastPulledSeq / lastSyncTime / error）
+  - [x] push（本地新事件 → 远程）
+  - [x] pull（远程新事件 → 本地）
+  - [x] last-write-wins 冲突解决
+  - [x] 自动同步定时器
+- [x] P3-26 i18n 提示词重构（`prompt/i18n-templates.ts`）
+  - [x] `PromptTemplates` 接口（17 个模板段：identity / language / personality / formatting / finalAnswer / scriptExecution / fileEditing / dirtyWorktree / workingUpdates / parallelToolCalls / contextManagement / corrections / autonomy / memory / safety / collaborationModePlan / collaborationModeDefault / safetyRules / languageRule）
+  - [x] `getPromptTemplates(lang)` 函数
+  - [x] `ZH_TEMPLATES` + `EN_TEMPLATES` 完整双语模板
+  - [x] `prompt.ts` 改为调用 `getPromptTemplates()`
+  - [x] 测试期望更新（英文 → 中文 prompt 对齐）
+- [x] P3-27 Adaptive Idle Tracker（`idle-tracker.ts`）
+  - [x] `IdleTracker` 接口（pulse / expired / idleMs / dispose）
+  - [x] `createIdleTracker` 工厂函数
+  - [x] 只在无数据流入时计时（收到数据 pulse 重置）
+  - [x] `provider.ts` 集成 idle tracker
+- [x] P3-28 事件系统增强（`hook-types.ts`）
+  - [x] 新增 `GuardHook` 类型（monotonic guard 层钩子）
+  - [x] 新增 `FinalizeHook` 类型（finalize 层钩子）
+- [x] P3-29 消息存储增强（`message.ts`）
+  - [x] FTS5 自动索引（createMessage 中写入 session_fts 表）
+  - [x] 事件流双写（createMessage 同时写入 session_events 表）
+- [x] P3-30 数据库初始化修复（`database.ts`）
+  - [x] FTS5 表创建隔离（独立 try-catch，兼容浏览器环境 sql.js asm 版本）
+  - [x] `session_events` 表新增
+  - [x] `goals` 表新增
+  - [x] `jobs` 表新增
+  - [x] `telemetry_events` 表新增
+
+#### 测试
+- [x] `tool-pipeline.test.ts` — 5 层管线功能测试
+- [x] `s0-pipeline-integration.test.ts` — 管线集成测试（hooks / permissions / plan mode）
+- [x] `s0-seam-integration.test.ts` — Seam 注册表和 provider 集成测试
+- [x] `s0-regression-full.test.ts` — S0 变更影响链全量回归测试
+- [x] `event-sourcing.test.ts` — 事件溯源测试
+- [x] `replay-adapter.test.ts` — Replay 适配器测试
+- [x] `sync-engine.test.ts` — 远程同步引擎测试
+- [x] `skill-sandbox.test.ts` — 技能安全沙箱测试
+- [x] `mcp-marketplace.test.ts` — MCP 市场测试
+- [x] `ollama-provider.test.ts` — Ollama Provider 测试
+- [x] `useSpeechRecognition.test.ts` — 语音识别 Hook 测试
+- [x] `useSpeechSynthesis.test.ts` — 语音合成 Hook 测试
+- [x] i18n 测试期望更新（`git-env-config.test.ts` + `refactor-prompt-to-data.test.ts`）
+- [x] 全量 99 文件 / 3234 用例全部通过
 
 #### P0 — Agentic Loop 性能优化（上下文膨胀治理）
 - [x] P0-1 Tool Result 磁盘持久化（`tool-result-storage.ts`）

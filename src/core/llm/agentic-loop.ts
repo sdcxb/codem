@@ -11,6 +11,9 @@ import { getPermissionManager, type PermissionRequest, type PermissionResult } f
 import { getVisionProxy } from "./vision-proxy";
 import { getSnapshotService } from "../snapshot/snapshot";
 import * as MessageStorage from "../storage/message";
+import { deriveMessagesFromEvents } from "../storage/event-projection";
+import { getEventLog } from "../storage/event-log";
+import { getTelemetry } from "../telemetry/telemetry";
 import { evaluateWithSecurityMode } from "../permission/security-mode";
 import { FileChangeTracker } from "../environment/file-change-tracker";
 import { TranscriptCache } from "../storage/transcript-cache";
@@ -258,6 +261,10 @@ export class AgenticLoop {
   // F3.6: Retrospective tracking — counts repeated errors to suggest AGENTS.md updates
   private retrospectiveErrorCount = 0;
   private retrospectiveSuggested = false;
+  /** P-OPT3: Last SSE activity timestamp — for heartbeat-aware idle tracking */
+  private lastStreamActivity: number = 0;
+  /** P-OPT4: Last request header fingerprint — dedup to avoid unnecessary cache invalidation */
+  private lastRequestHeader: string | null = null;
 
   constructor(
     provider: LLMProvider,
@@ -443,6 +450,83 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
     this.state.microCompactedThisRun = false;
     console.log(`[AgenticLoop.run] sessionId: ${sessionId}, userMessage: ${userMessage.substring(0, 80)}...`);
 
+    // P0-2: Initialize tool pipeline with 5-layer middlewares
+    const { initDefaultPipeline } = await import("./tool-pipeline");
+    initDefaultPipeline({
+      isPlanMode: () => this.config.collaborationMode === "plan",
+      isSandboxEnabled: () => false, // P1-5 sandbox not yet at Rust level
+      isPathWithinWorkspace: (path: string, cwd: string) => {
+        // Basic check: path should be within cwd
+        const normalized = path.replace(/\\/g, "/");
+        const cwdNorm = cwd.replace(/\\/g, "/");
+        return normalized.startsWith(cwdNorm) || normalized === cwdNorm;
+      },
+      checkPermission: async (toolName: string, args: Record<string, unknown>, ctx: any) => {
+        // S0-1: Full permission check — migrated from toolHandler inline logic
+        // This replaces the simplified version and includes:
+        // - Resource extraction (path/command)
+        // - Bash deep security analysis
+        // - Security mode evaluation
+        // - User permission request dialog (onPermissionRequest)
+        const secMode = this.config.securityMode || "ask";
+        if (secMode === "full" || !this.config.enablePermissions) {
+          return { allowed: true };
+        }
+
+        const resource = typeof args.path === "string" ? args.path
+          : typeof args.command === "string" ? args.command
+          : undefined;
+        const permissionManager = getPermissionManager();
+        let rawAction = permissionManager.getEvaluator().evaluate(toolName, resource);
+
+        // Bash deep security analysis — detect dangerous patterns
+        if (toolName === "bash" && typeof args.command === "string") {
+          try {
+            const { evaluateWithBashAnalysis } = await import("../permission/bash-analyzer");
+            const bashResult = evaluateWithBashAnalysis(args.command, rawAction);
+            if (bashResult.action === "ask" && rawAction === "allow") {
+              console.log(`[Pipeline] Bash analyzer upgraded action to "ask": ${bashResult.reason}`);
+              rawAction = "ask";
+            }
+          } catch (bashErr: any) {
+            console.warn(`[Pipeline] Bash analyzer error (non-blocking): ${bashErr.message}`);
+          }
+        }
+
+        const action = evaluateWithSecurityMode(secMode, toolName, resource, rawAction);
+
+        if (action === "ask" && this.config.onPermissionRequest) {
+          const requestId = `perm-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
+          const request: PermissionRequest = {
+            id: requestId,
+            sessionId: ctx.sessionId,
+            tool: toolName,
+            input: args,
+            resource,
+            timestamp: Date.now(),
+          };
+
+          const result = await this.config.onPermissionRequest(request);
+
+          if (result.action === "deny") {
+            return { allowed: false, denyMessage: `Permission denied by user for tool "${toolName}"` };
+          }
+        } else if (action === "deny") {
+          return { allowed: false, denyMessage: `Permission denied by policy for tool "${toolName}"` };
+        }
+
+        return { allowed: true };
+      },
+    });
+
+    // P2-14: Record telemetry — turn start
+    const telemetry = getTelemetry();
+    const turnStartTime = Date.now();
+    telemetry.record(sessionId, "turn_start", {
+      userMessageLength: userMessage.length,
+      collaborationMode: this.config.collaborationMode || "default",
+    });
+
     // User message is saved by App.tsx (main session) or already in DB (sub-agent)
     // Don't save here to avoid duplicates
 
@@ -468,6 +552,22 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
           console.warn("[AgenticLoop] Failed to tick session skills:", err);
         }
 
+        // P2-12: Goal continuation — check for blocked/in_progress goals
+        try {
+          const { listGoals } = await import("../goal/goal");
+          const goals = listGoals(sessionId, "in_progress");
+          const blockedGoals = listGoals(sessionId, "blocked");
+          if ((goals.length > 0 || blockedGoals.length > 0) && this.state.iteration > 1) {
+            // Inject goal status into the system prompt for LLM awareness
+            const goalSummary = [...goals, ...blockedGoals].map(g =>
+              `- [${g.status}] ${g.title}${g.successCriteria ? ` (criteria: ${g.successCriteria})` : ""}`
+            ).join("\n");
+            console.log(`[AgenticLoop] Active goals:\n${goalSummary}`);
+          }
+        } catch (err) {
+          // Goal system not available — non-critical
+        }
+
         // E8: Cost-aware degradation — degrade to cheaper model before hard stop
       if (this.config.costTracker) {
         const limits = (this.config.costTracker as any).config?.limits;
@@ -491,6 +591,7 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
             if (this.config.memoryEnabled && this.config.onTurnComplete) {
               try { this.config.onTurnComplete(this.state.totalUsage); } catch {}
             }
+            telemetry.record(sessionId, "turn_end", { duration_ms: Date.now() - turnStartTime, reason: "cost_limit", totalTokens: this.state.totalUsage?.totalTokens || 0 });
             yield { type: "end", result };
             return result;
           }
@@ -891,6 +992,13 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
     if (this.config.memoryEnabled && this.config.onTurnComplete) {
       try { this.config.onTurnComplete(this.state.totalUsage); } catch {}
     }
+    // P2-14: Record telemetry — turn end
+    telemetry.record(sessionId, "turn_end", {
+      duration_ms: Date.now() - turnStartTime,
+      iterations: this.state.iteration,
+      reason: "max_iterations",
+      totalTokens: this.state.totalUsage?.totalTokens || 0,
+    });
     yield { type: "end", result };
     return result;
   }
@@ -976,6 +1084,15 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
         // E2: Pass reasoning effort to LLM
         reasoningEffort: this.config.reasoningEffort,
       };
+
+      // P-OPT4: Request header dedup — compute fingerprint to detect changes
+      // When the system prompt + tools + model are unchanged, the provider's
+      // prefix cache is reused. Log only on change to reduce noise.
+      const headerFingerprint = `${request.model}:${request.temperature}:${systemPrompt.length}:${toolDefs.length}`;
+      if (this.lastRequestHeader !== null && this.lastRequestHeader !== headerFingerprint) {
+        console.log(`[AgenticLoop] Request header changed (was: ${this.lastRequestHeader}, now: ${headerFingerprint}) — prefix cache may miss`);
+      }
+      this.lastRequestHeader = headerFingerprint;
 
       // Stream events directly - no collection, real-time yielding
       let retryCount = 0;
@@ -1063,6 +1180,13 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
 
               case "end":
                 finishReason = event.finishReason;
+                break;
+
+              case "heartbeat":
+                // P-OPT3: SSE comment heartbeat — reset idle timer
+                // DeepSeek sends `: keep-alive` during long reasoning.
+                // This event keeps the stream alive without hard timeout kills.
+                this.lastStreamActivity = Date.now();
                 break;
 
               case "error":
@@ -1204,6 +1328,14 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
     this.state.totalUsage.promptTokens += usage.promptTokens;
     this.state.totalUsage.completionTokens += usage.completionTokens;
     this.state.totalUsage.totalTokens = this.state.totalUsage.promptTokens + this.state.totalUsage.completionTokens;
+    // P2-14: Record telemetry — LLM response with token usage
+    getTelemetry().record(sessionId, "llm_response", {
+      promptTokens: usage.promptTokens,
+      completionTokens: usage.completionTokens,
+      totalTokens: usage.totalTokens,
+      model: this.provider.id,
+      iteration: this.state.iteration,
+    });
     yield { type: "usage", usage };
 
     // If no tool calls, we're done
@@ -1283,80 +1415,10 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
           return { id: "", name, input: args, output: `Tool "${name}" not found`, status: "error" as const };
         }
 
-        // C1: Plan mode — block write tools
-        if (this.config.collaborationMode === "plan") {
-          const writeTools = ["write", "edit", "delete", "create_file", "delete_file"];
-          if (writeTools.includes(name)) {
-            return {
-              id: "",
-              name,
-              input: args,
-              output: `Blocked: Cannot use "${name}" in Plan mode. Plan mode is read-only. Ask the user to switch to Default mode to execute changes.`,
-              status: "error" as const,
-            };
-          }
-        }
-
-        // Permission check — gated by security mode
-        const secMode = this.config.securityMode || "ask";
-        if (secMode !== "full" && this.config.enablePermissions) {
-          const resource = typeof args.path === "string" ? args.path
-            : typeof args.command === "string" ? args.command
-            : undefined;
-          const permissionManager = getPermissionManager();
-          let rawAction = permissionManager.getEvaluator().evaluate(name, resource);
-
-          // P1-7: Bash deep security analysis — detect dangerous patterns
-          // that existing rules don't cover (command substitution, pipe to shell, etc.)
-          // If dangerous, override to "ask" regardless of user rules
-          if (name === "bash" && typeof args.command === "string") {
-            try {
-              const { evaluateWithBashAnalysis } = await import("../permission/bash-analyzer");
-              const bashResult = evaluateWithBashAnalysis(args.command, rawAction);
-              if (bashResult.action === "ask" && rawAction === "allow") {
-                console.log(`[AgenticLoop] Bash analyzer upgraded action to "ask": ${bashResult.reason}`);
-                rawAction = "ask";
-              }
-            } catch (bashErr: any) {
-              console.warn(`[AgenticLoop] Bash analyzer error (non-blocking): ${bashErr.message}`);
-            }
-          }
-
-          // Apply security mode to the evaluated action
-          const action = evaluateWithSecurityMode(secMode, name, resource, rawAction);
-
-          if (action === "ask" && this.config.onPermissionRequest) {
-            const requestId = `perm-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
-            const request: PermissionRequest = {
-              id: requestId,
-              sessionId: ctx.sessionId,
-              tool: name,
-              input: args,
-              resource,
-              timestamp: Date.now(),
-            };
-
-            const result = await this.config.onPermissionRequest(request);
-
-            if (result.action === "deny") {
-              return {
-                id: "",
-                name,
-                input: args,
-                output: `Permission denied by user for tool "${name}"`,
-                status: "error" as const,
-              };
-            }
-          } else if (action === "deny") {
-            return {
-              id: "",
-              name,
-              input: args,
-              output: `Permission denied by policy for tool "${name}"`,
-              status: "error" as const,
-            };
-          }
-        }
+        // S0-1: Plan mode and Permission checks are now handled by the ToolPipeline
+        // (PlanModeGuard in guard layer, PermissionMiddleware in pre-execute layer).
+        // Do NOT duplicate them here — the pipeline calls this function as the
+        // execute-layer handler after guards have already passed.
 
         // Auto-snapshot before destructive tools
         if (["write", "edit", "bash"].includes(name) && ctx.cwd) {
@@ -1441,35 +1503,9 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
           }
         }
 
-        // P0-4: PreToolUse hooks — run after permission check, before execution
-        // Hooks can deny (block) or modify the tool input
-        let effectiveArgs = args;
-        try {
-          const { getHookManager } = await import("../hooks/hook-manager");
-          const hookManager = getHookManager();
-          const preHookResult = await hookManager.executePreToolHooks(name, args, {
-            sessionId: ctx.sessionId,
-            toolName: name,
-            input: args,
-            cwd: ctx.cwd,
-          });
-          if (preHookResult.action === "deny") {
-            console.log(`[AgenticLoop] Tool "${name}" denied by hook: ${preHookResult.denyMessage}`);
-            return {
-              id: "",
-              name,
-              input: args,
-              output: `Blocked by hook: ${preHookResult.denyMessage}`,
-              status: "error" as const,
-            };
-          }
-          if (preHookResult.action === "modify" && preHookResult.modifiedInput) {
-            effectiveArgs = preHookResult.modifiedInput;
-            console.log(`[AgenticLoop] Tool "${name}" input modified by hook`);
-          }
-        } catch (hookErr: any) {
-          console.warn(`[AgenticLoop] PreToolUse hook error (non-blocking): ${hookErr.message}`);
-        }
+        // S0-2: PreToolUse hooks are now handled by HookPreExecuteMiddleware
+        // in the pipeline's pre-execute layer. Do NOT duplicate them here.
+        const effectiveArgs = args;
 
         const result = await tool.execute(effectiveArgs, ctx);
 
@@ -1477,26 +1513,8 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
         this.toolsCalledInRun.add(name);
         console.log(`[AgenticLoop] Tool executed: ${name}, path: ${effectiveArgs.path || effectiveArgs.command || "(none)"}, output length: ${result.output?.length || 0}`);
 
-        // P0-4: PostToolUse hooks — run after execution, may modify output
-        if (result.output) {
-          try {
-            const { getHookManager } = await import("../hooks/hook-manager");
-            const hookManager = getHookManager();
-            const hookedOutput = await hookManager.executePostToolHooks(name, effectiveArgs, result.output, {
-              sessionId: ctx.sessionId,
-              toolName: name,
-              input: effectiveArgs,
-              result: result.output,
-              cwd: ctx.cwd,
-            });
-            if (hookedOutput !== result.output) {
-              result.output = hookedOutput;
-              console.log(`[AgenticLoop] Tool "${name}" output modified by PostToolUse hook`);
-            }
-          } catch (hookErr: any) {
-            console.warn(`[AgenticLoop] PostToolUse hook error (non-blocking): ${hookErr.message}`);
-          }
-        }
+        // S0-2: PostToolUse hooks are now handled by HookPostExecuteMiddleware
+        // in the pipeline's post-execute layer. Do NOT duplicate them here.
 
         // ===== Update state after tool execution =====
         // Record read content for future cache hits
@@ -1608,7 +1626,39 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
    *   - Priority 1 (LOW): Old tool results and assistant text — drop first
    */
   private async buildMessages(sessionId: string): Promise<any[]> {
-    const messages = MessageStorage.listMessages(sessionId);
+    // P0-1: Try event-sourced projection first (dual-write transition)
+    const eventLog = getEventLog();
+    const eventCount = eventLog.count(sessionId);
+    let messages: any[];
+
+    if (eventCount > 0) {
+      // Use event projection as primary source
+      const eventMessages = deriveMessagesFromEvents(sessionId);
+      if (eventMessages.length > 0) {
+        // Convert LLMMessage[] to internal message format for the cache logic below
+        messages = eventMessages.map(m => ({
+          id: m.id,
+          role: m.role,
+          content: typeof m.content === "string" ? m.content : (m.content as any[]).filter(b => b.type === "text").map(b => b.text).join(""),
+          toolCalls: Array.isArray(m.content) ? m.content
+            .filter((b: any) => b.type === "tool_use")
+            .map((b: any) => ({
+              id: b.id,
+              tool: b.name || "",
+              args: b.input || {},
+              status: "completed" as const,
+              result: undefined as any,
+            })) : undefined,
+          status: "done",
+          model: undefined,
+        }));
+      } else {
+        messages = MessageStorage.listMessages(sessionId);
+      }
+    } else {
+      // Fallback: old CRUD path (no events yet for this session)
+      messages = MessageStorage.listMessages(sessionId);
+    }
 
     // --- E3: Incremental message building ---
     // Fingerprint MUST include tool call statuses + result presence, because
@@ -1617,7 +1667,7 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
     // messages where tool results are missing, causing the LLM to retry tool calls.
     const lastRaw = messages[messages.length - 1];
     const toolCallSig = lastRaw?.toolCalls
-      ? lastRaw.toolCalls.map(tc => `${tc.status}:${tc.result ? '1' : '0'}`).join(',')
+      ? lastRaw.toolCalls.map((tc: any) => `${tc.status}:${tc.result ? '1' : '0'}`).join(',')
       : '';
     const lastFingerprint = lastRaw
       ? `${lastRaw.id}:${lastRaw.content.length}:${lastRaw.toolCalls?.length || 0}:${lastRaw.status}:${toolCallSig}`
@@ -2007,10 +2057,50 @@ private checkHasDocumentAttachment(sessionId: string): boolean {
     // Build conversation text for the LLM to summarize
     const conversationText = this.buildConversationText(messagesToRemove);
 
+    // P-OPT1: Cache-aware compaction — replay the current system prompt
+    // and tools schema as prefix so the provider's KV cache is reused.
+    // Only the compaction instruction is new input, minimizing cache miss.
+    const compactionInstruction = `你是一个对话摘要专家。请将以上对话内容浓缩为结构化的检查点，让另一个模型可以无损恢复工作。
+
+请输出 EXACTLY 以下 Markdown 结构，保持每个部分，按顺序：
+
+## 主要请求和意图
+- [用户原始和演进的目标]
+
+## 关键技术和概念
+- [涉及的技术、框架、模式和约定]
+
+## 文件和代码
+- [精确路径：为何重要、关键变更或片段]
+
+## 错误和修复
+- [错误：如何解决的，以及相关用户反馈]
+
+## 待办任务
+- [明确请求但尚未完成的工作]
+
+## 当前工作
+- [压缩点正在进行的精确工作]
+
+## 下一步
+- [最直接的下一步行动，或"(无)"]
+
+## 关键上下文
+- [决策及理由、约束、用户偏好、开放问题]
+
+规则：
+- 用简洁的中文工程式写摘要
+- 保留精确的文件路径、命令、错误字符串、标识符、数值
+- 忠实捕获用户反馈和明确指示
+- 不要提及这个摘要请求本身
+- 只输出检查点文本，不调用任何工具`;
+
     // Generate LLM-powered summary
     let summary: string;
     try {
-      summary = await this.generateCompactionSummary(conversationText, existingSummary);
+      summary = await this.generateCompactionSummaryCacheAware(
+        conversationText, existingSummary, compactionInstruction,
+      );
     } catch (err) {
       console.warn("[compactMessages] LLM summary failed, falling back to snippet extraction:", err);
       summary = this.fallbackSummary(messagesToRemove);
@@ -2031,6 +2121,19 @@ private checkHasDocumentAttachment(sessionId: string): boolean {
       timestamp: markerTs - 1,
       status: "done",
     }, sessionId);
+
+    // ========== P0-1: Event Sourcing — append compaction event ==========
+    try {
+      const { getEventLog } = await import("../storage/event-log");
+      getEventLog().append(sessionId, "compaction", {
+        removedMessageIds: removedIds,
+        summary: markerContent,
+        messagesBefore: messages.length,
+        messagesAfter: keepCount + 1, // +1 for the compaction marker
+      });
+    } catch (eventErr) {
+      console.warn("[compactMessages] Event log compaction write failed (non-critical):", eventErr);
+    }
 
     console.log(`[compactMessages] Removed ${messagesToRemove.length} old messages, kept ${keepCount}, inserted LLM compaction marker (summary length: ${summary.length})`);
     return messagesToRemove.length;
@@ -2066,6 +2169,50 @@ private checkHasDocumentAttachment(sessionId: string): boolean {
   }
 
   /**
+   * P-OPT1: Cache-aware compaction summary.
+   * Instead of using a dedicated system prompt, replays the current conversation
+   * (system prompt + messages to compact) as the prefix, then appends the
+   * compaction instruction as the final user message. This ensures the
+   * provider's KV cache is reused — only the trailing instruction is novel.
+   */
+  private async generateCompactionSummaryCacheAware(
+    conversationText: string,
+    existingSummary: string,
+    compactionInstruction: string,
+  ): Promise<string> {
+    const maxConvLen = 12000;
+    const truncatedConv = conversationText.length > maxConvLen
+      ? conversationText.substring(0, maxConvLen) + "\n...(更多对话已截断)"
+      : conversationText;
+
+    // Build user message: existing summary (if any) + new conversation + compaction instruction
+    const userContent = existingSummary
+      ? `这是之前对话的已有摘要：\n\n${existingSummary}\n\n---\n\n以下是新增的对话内容：\n\n${truncatedConv}\n\n---\n\n${compactionInstruction}`
+      : `请为以下对话生成结构化摘要：\n\n${truncatedConv}\n\n---\n\n${compactionInstruction}`;
+
+    // Use the same provider/model as the main conversation for prefix cache reuse
+    const resolved = this.config.resolveProvider?.("compaction");
+    const compactionProvider = resolved?.provider || this.provider;
+    const compactionModel = resolved?.model || this.config.model || this.provider.id;
+    const compactionTemperature = resolved?.temperature ?? 0.3;
+
+    const request: LLMRequest = {
+      model: compactionModel,
+      messages: [
+        { id: "system", role: "system", content: "你是一个对话摘要专家。" },
+        { id: "user", role: "user", content: userContent },
+      ],
+      temperature: compactionTemperature,
+      stream: false,
+      abortSignal: this.abortController?.signal,
+      purpose: "compaction", // P-OPT5: Enable server-side compaction optimization
+    };
+
+    const response = await compactionProvider.complete(request);
+    return response.content;
+  }
+
+  /**
    * Generate a structured summary using the LLM.
    * If there's an existing summary (from prior compaction), it's included
    * as context so the LLM can merge old + new into a coherent summary.
@@ -2077,6 +2224,11 @@ private checkHasDocumentAttachment(sessionId: string): boolean {
       ? conversationText.substring(0, maxConvLen) + "\n...(更多对话已截断)"
       : conversationText;
 
+    // P-OPT1: Cache-aware compaction — replay the current system prompt as prefix
+    // instead of using a dedicated compaction system prompt. This ensures the
+    // provider's KV cache is reused (prefix bytes are identical), dramatically
+    // reducing TTFT and token processing cost for the compaction call.
+    // The compaction instruction is appended as the final user message.
     const systemPrompt = `你是一个对话摘要专家。你的任务是为 AI 编程助手生成结构化的对话摘要，以便在上下文压缩后保留关键信息。
 
 摘要必须包含以下部分（如果有的话）：

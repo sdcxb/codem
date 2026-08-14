@@ -1,4 +1,5 @@
 import type { Session, MessageV2 } from "../llm/session";
+import { loadRecoveryData, saveRecoveryData } from "../storage/settings";
 
 // ========== Recovery Types ==========
 export interface RecoveryConfig {
@@ -51,7 +52,6 @@ export class SessionRecoveryService {
   /** Load recovery data from SQLite */
   private load(): RecoveryData {
     try {
-      const { loadRecoveryData } = require("../storage/settings");
       const raw = loadRecoveryData(this.config.storagePrefix);
       if (raw) {
         const parsed = JSON.parse(raw);
@@ -79,7 +79,6 @@ export class SessionRecoveryService {
   /** Save recovery data to SQLite */
   private save() {
     try {
-      const { saveRecoveryData } = require("../storage/settings");
       this.data.lastSaved = Date.now();
       saveRecoveryData(this.config.storagePrefix, JSON.stringify(this.data));
       this.dirty = false;

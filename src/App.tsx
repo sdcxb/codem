@@ -40,6 +40,10 @@ import { NotebookWorkspace } from "./components/NotebookWorkspace";
 import { SourceViewer } from "./components/SourceViewer";
 import { setActiveSourceFilter as setNotebookSourceFilter, createNote, listSources } from "./core/knowledge";
 import { GitHubCloneDialog } from "./components/GitHubCloneDialog";
+import { CicdPanel } from "./components/CicdPanel";
+import { PerformanceDashboard } from "./components/PerformanceDashboard";
+import { PlanApprovalCard } from "./components/PlanApprovalCard";
+import { setPlanApprovalCallback, clearPlanApprovalCallback } from "./core/llm/tools/exit-plan-mode";
 import { SearchDialog } from "./components/SearchDialog";
 import { usePetStore } from "./core/pet/pet-store";
 import { loadInstalledPets as loadInstalledPetsPets } from "./core/pet/pet-manager";
@@ -137,6 +141,9 @@ const [rightRailOpen, setRightRailOpen] = useState(false);
   const [showMemoryManager, setShowMemoryManager] = useState(false);
   const [showNotebookManager, setShowNotebookManager] = useState(false);
   const [showGitHubClone, setShowGitHubClone] = useState(false);
+const [showCicdPanel, setShowCicdPanel] = useState(false);
+const [showPerfDashboard, setShowPerfDashboard] = useState(false);
+const [planApproval, setPlanApproval] = useState<{ plan: string; resolve: (result: { approved: boolean; feedback?: string }) => void } | null>(null);
   const [showSearchDialog, setShowSearchDialog] = useState(false);
 const [activeNotebookId, setActiveNotebookId] = useState<string | null>(null);
 const [activeNotebookName, setActiveNotebookName] = useState<string>('');
@@ -251,6 +258,16 @@ const [showAgentManager, setShowAgentManager] = useState(false);
     window.addEventListener("codem-security-mode-changed", handler);
     return () => window.removeEventListener("codem-security-mode-changed", handler);
   }, [currentProject?.path]);
+
+  // P0-3: Register plan approval callback — connects exit_plan_mode tool to UI
+  useEffect(() => {
+    setPlanApprovalCallback(async (plan: string) => {
+      return new Promise<{ approved: boolean; feedback?: string }>((resolve) => {
+        setPlanApproval({ plan, resolve });
+      });
+    });
+    return () => clearPlanApprovalCallback();
+  }, []);
 
   // 监听文件打开事件（来自侧边栏等所有文件浏览器），自动展开右侧栏显示分割窗口
   useEffect(() => {
@@ -541,6 +558,11 @@ flushStreamBuffer(); // flush all on unmount
         setBootSplashPhase("loading-config");
         ThemeManager.init();
         useProjectStore.getState().loadFromDB();
+        // S0-3: Initialize Capability Seam — register default local providers
+        // for filesystem and shell. Tools can now access these capabilities
+        // through the seam registry instead of hard-importing file-api.
+        const { initDefaultSeams } = await import("./core/seam/types");
+        await initDefaultSeams();
         // DB is now ready — re-configure engine to read the correct mode/model/provider.
         // The initial configureEngine() in the other useEffect may have run before DB init.
         configureEngine();
@@ -2009,6 +2031,8 @@ onTaskCenter={() => { setTaskCenterTab("overview"); setShowTaskCenter(true); }}
                     onNotebooks={() => setShowNotebookManager(true)}
 onTaskCenter={() => { setTaskCenterTab("overview"); setShowTaskCenter(true); }}
 onAgents={() => setShowAgentManager(true)}
+onCicd={() => setShowCicdPanel(true)}
+onPerf={() => setShowPerfDashboard(true)}
 onRemoveProject={(id, name, path) => {
   setRemoveProjectDialog({ id, name, path });
 }}
@@ -2114,6 +2138,8 @@ notebookId={activeNotebookId || undefined}
                   onNotebooks={() => setShowNotebookManager(true)}
 onTaskCenter={() => { setTaskCenterTab("overview"); setShowTaskCenter(true); }}
 onAgents={() => setShowAgentManager(true)}
+onCicd={() => setShowCicdPanel(true)}
+onPerf={() => setShowPerfDashboard(true)}
 onRemoveProject={(id, name, path) => {
   setRemoveProjectDialog({ id, name, path });
 }}
@@ -2240,6 +2266,8 @@ refreshKey={fileExplorerRefreshKey}
           onNotebooks={() => setShowNotebookManager(true)}
 onTaskCenter={() => { setTaskCenterTab("overview"); setShowTaskCenter(true); }}
 onAgents={() => setShowAgentManager(true)}
+onCicd={() => setShowCicdPanel(true)}
+onPerf={() => setShowPerfDashboard(true)}
 onRemoveProject={(id, name, path) => {
   setRemoveProjectDialog({ id, name, path });
 }}
@@ -2385,6 +2413,8 @@ refreshKey={fileExplorerRefreshKey}
               onNotebooks={() => { setShowNotebookManager(true); setMobileSidebarOpen(false); }}
 onTaskCenter={() => { setTaskCenterTab("overview"); setShowTaskCenter(true); setMobileSidebarOpen(false); }}
 onAgents={() => { setShowAgentManager(true); setMobileSidebarOpen(false); }}
+onCicd={() => { setShowCicdPanel(true); setMobileSidebarOpen(false); }}
+onPerf={() => { setShowPerfDashboard(true); setMobileSidebarOpen(false); }}
               onRemoveProject={(id, name, path) => { setRemoveProjectDialog({ id, name, path }); setMobileSidebarOpen(false); }}
               fileExplorerProjectId={fileExplorerProjectId}
               onToggleFileExplorer={handleToggleFileExplorer}
@@ -2436,6 +2466,29 @@ onSessionRecovery={() => { setShowSettings(false); setShowSessionRecovery(true);
 
       {showGitHubClone && (
         <GitHubCloneDialog onClose={() => setShowGitHubClone(false)} />
+      )}
+
+      {showCicdPanel && (
+        <CicdPanel onClose={() => setShowCicdPanel(false)} />
+      )}
+
+      {showPerfDashboard && (
+        <PerformanceDashboard onClose={() => setShowPerfDashboard(false)} />
+      )}
+
+      {/* P0-3: Plan Approval Card — shown when model calls exit_plan_mode */}
+      {planApproval && (
+        <PlanApprovalCard
+          plan={planApproval.plan}
+          onApprove={() => {
+            planApproval.resolve({ approved: true });
+            setPlanApproval(null);
+          }}
+          onReject={(feedback) => {
+            planApproval.resolve({ approved: false, feedback });
+            setPlanApproval(null);
+          }}
+        />
       )}
 
       {showSearchDialog && (

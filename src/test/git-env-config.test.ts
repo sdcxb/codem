@@ -759,8 +759,8 @@ describe("Git 配置 + 环境脚本 — 枚举测试", () => {
       const prompt = buildSystemPrompt(basePromptConfig);
       expect(prompt).not.toContain("Git Preferences");
       expect(prompt).not.toContain("Environment Scripts");
-      // 核心段仍然存在
-      expect(prompt).toContain("Identity");
+      // 核心段仍然存在（i18n 后默认中文，"身份" 对应英文 "Identity"）
+      expect(prompt).toContain("身份");
       expect(prompt).toContain("Available Tools");
     });
 

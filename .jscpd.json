@@ -1,0 +1,17 @@
+{
+  "threshold": 5,
+  "reporters": ["console", "html"],
+  "output": "./jscpd-report",
+  "format": ["typescript", "javascript", "tsx", "jsx"],
+  "ignore": [
+    "**/node_modules/**",
+    "**/dist/**",
+    "**/src-tauri/target/**",
+    "**/.deepseek-harness-ref/**",
+    "**/src/test/**",
+    "**/*.test.ts",
+    "**/*.test.tsx"
+  ],
+  "minLines": 5,
+  "maxLines": 500
+}

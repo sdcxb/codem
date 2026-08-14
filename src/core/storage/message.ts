@@ -1,4 +1,6 @@
 import { getDatabase, persistDatabase } from "./database";
+import { getEventLog } from "./event-log";
+import type { SessionEventType } from "./event-types";
 import type { Message, ToolCall, MessageAttachment, RetrievedSource } from "../../store";
 
 export interface MessageRow {
@@ -282,6 +284,61 @@ export function createMessage(message: Message, sessionId: string): void {
       }
     }
   }
+  // ========== P0-1: Event Sourcing dual-write ==========
+  // Append events to the event log alongside the CRUD write.
+  // This enables gradual migration: buildMessages() can read from
+  // either the old CRUD or the new event projection.
+  try {
+    const eventLog = getEventLog();
+    if (message.role === "user") {
+      eventLog.append(sessionId, "user_message", {
+        messageId: message.id,
+        content: message.content,
+      });
+    } else if (message.role === "assistant") {
+      if (message.content) {
+        eventLog.append(sessionId, "assistant_text", {
+          messageId: message.id,
+          content: message.content,
+          model: message.model,
+        });
+      }
+      if (message.toolCalls) {
+        for (const tc of message.toolCalls) {
+          eventLog.append(sessionId, "tool_call", {
+            toolCallId: tc.id,
+            messageId: message.id,
+            tool: tc.tool,
+            args: tc.args,
+            status: tc.status,
+          });
+          if (tc.result) {
+            eventLog.append(sessionId, "tool_result", {
+              toolCallId: tc.id,
+              messageId: message.id,
+              result: tc.result,
+              status: "completed",
+            });
+          }
+        }
+      }
+    }
+
+    // Also index in FTS5 for session search (P1-7)
+    try {
+      const db = getDatabase();
+      db.run(
+        "INSERT INTO session_fts (session_id, message_id, content, role, timestamp) VALUES (?, ?, ?, ?, ?)",
+        [sessionId, message.id, message.content, message.role, message.timestamp],
+      );
+    } catch (ftsErr) {
+      // FTS5 table might not exist in older databases — non-critical
+      console.warn("[createMessage] FTS indexing failed (non-critical):", ftsErr);
+    }
+  } catch (eventErr) {
+    console.warn("[createMessage] Event log dual-write failed (non-critical):", eventErr);
+  }
+
   persistDatabase();
 }
 

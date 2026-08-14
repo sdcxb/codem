@@ -28,6 +28,8 @@ export interface LLMRequest {
   abortSignal?: AbortSignal;
   /** Reasoning effort level (E2): controls how much the model "thinks" before responding */
   reasoningEffort?: "low" | "medium" | "high";
+  /** P-OPT5: Request purpose — used to add provider-specific headers (e.g. compaction) */
+  purpose?: "conversation" | "compaction" | "session-title";
 }
 
 export interface LLMResponse {
@@ -90,7 +92,8 @@ export type StreamEvent =
   | { type: "tool_use_end"; id: string; name?: string; input?: Record<string, unknown> }
   | { type: "usage"; usage: TokenUsage }
   | { type: "end"; finishReason: string }
-  | { type: "error"; error: string };
+  | { type: "error"; error: string }
+  | { type: "heartbeat" };
 
 // ========== Provider Interface ==========
 export interface LLMProvider {

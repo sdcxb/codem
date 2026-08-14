@@ -8,6 +8,8 @@ import type {
   LLMMessage,
 } from "./types";
 import { getLang } from "../i18n/lang";
+import { createIdleTimeout } from "./idle-tracker";
+import { OllamaProvider } from "./ollama-provider";
 
 // ========== OpenAI-Compatible Provider ==========
 export class OpenAICompatibleProvider implements LLMProvider {
@@ -41,6 +43,10 @@ export class OpenAICompatibleProvider implements LLMProvider {
     }
     // E7: Prompt caching — flag the system prompt for caching when supported
     const messages = this.markCacheableMessages(request.messages);
+    // P-OPT5: Add compaction header for DeepSeek API
+    if (request.purpose === "compaction") {
+      headers["x-deepseek-harness-compact"] = "1";
+    }
     const response = await fetch(`${baseUrl}/chat/completions`, {
       method: "POST",
       headers,
@@ -94,6 +100,11 @@ export class OpenAICompatibleProvider implements LLMProvider {
     }
     const url = `${baseUrl}/chat/completions`;
     const tools = request.tools?.length ? request.tools.map((t) => this.toAPITool(t)) : undefined;
+
+    // P-OPT5: Add compaction header for DeepSeek API to enable server-side optimizations
+    if (request.purpose === "compaction") {
+      headers["x-deepseek-harness-compact"] = "1";
+    }
 
     // For DeepSeek reasoning models, inject a language hint to control reasoning language
     let messages = this.markCacheableMessages(request.messages);
@@ -162,7 +173,21 @@ export class OpenAICompatibleProvider implements LLMProvider {
     let currentToolCalls: Record<string, { id: string; name: string; arguments: string }> = {};
     let streamEnded = false;
 
+    // P-OPT6: Adaptive idle timeout — replaces hard timeout
+    // Only triggers when NO data arrives for idleThresholdMs (default 120s).
+    // Any SSE chunk (including heartbeat comments) resets the timer.
+    // This avoids killing long reasoning calls that produce data intermittently.
+    const idleTimeout = createIdleTimeout(120_000);
+    if (request.abortSignal) {
+      request.abortSignal.addEventListener("abort", () => idleTimeout.dispose(), { once: true });
+    }
+
     yield { type: "start", id: msgId, model: request.model };
+
+    // Race the reader loop against the idle timeout
+    const idlePromise = idleTimeout.promise.catch(() => {
+      throw new Error("LLM stream idle timeout — no data received for 120 seconds. The connection may have stalled.");
+    });
 
     // === No idle timeout ===
     // We deliberately do NOT use any time-based idle timeout here.
@@ -181,14 +206,33 @@ export class OpenAICompatibleProvider implements LLMProvider {
     // This is zero-risk: no normal request will ever be killed by a timer.
 
     while (true) {
-      const { done, value } = await reader.read();
+      // P-OPT6: Race read() against idle timeout
+      // If no data arrives within 120s, the idle timeout fires
+      const { done, value } = await Promise.race([
+        reader.read(),
+        idlePromise,
+      ]);
       if (done) break;
+
+      // Data received — reset idle timer
+      idleTimeout.pulse();
 
       buffer += decoder.decode(value, { stream: true });
       const lines = buffer.split("\n");
       buffer = lines.pop() || "";
 
       for (const line of lines) {
+        // P-OPT3: SSE comment heartbeat detection
+        // DeepSeek API sends `: keep-alive` comments during long reasoning
+        // to indicate the connection is still alive. We detect these and
+        // yield a heartbeat event so the consumer can reset idle timers.
+        if (line.startsWith(":")) {
+          // P-OPT3: SSE comment heartbeat — reset idle timer
+          idleTimeout.pulse();
+          yield { type: "heartbeat" } as StreamEvent;
+          continue;
+        }
+
         if (!line.startsWith("data: ")) continue;
         const data = line.slice(6).trim();
         if (data === "[DONE]") continue;
@@ -298,6 +342,8 @@ export class OpenAICompatibleProvider implements LLMProvider {
     if (request.abortSignal) {
       request.abortSignal.removeEventListener("abort", abortHandler);
     }
+    // P-OPT6: Clean up idle timeout
+    idleTimeout.dispose();
   }
 
   /**
@@ -512,6 +558,9 @@ export function createDefaultProviders(): ProviderRegistry {
       { id: "gemini-2.0-flash", name: "Gemini 2.0 Flash", contextWindow: 1000000, maxOutputTokens: 65536, supportsTools: true, supportsStreaming: true },
     ],
   }));
+
+  // P3-31: Ollama (Local LLM — offline mode)
+  registry.register(new OllamaProvider());
 
   return registry;
 }

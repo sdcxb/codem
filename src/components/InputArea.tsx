@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useDraftPersistence } from "../hooks/useDraftPersistence";
+import { useSpeechRecognition } from "../hooks/useSpeechRecognition";
 import { MessageAttachment } from "../store";
 import { FileUpload } from "./FileUpload";
 import { useLang, S } from "../core/i18n/lang";
@@ -27,6 +28,7 @@ import {
   Square, ArrowRight, ChevronUp, StickyNote, Folder, Globe,
   Home, GitBranch, Clock, RefreshCw, Check, Wrench, Shield, Rocket,
   Sparkles, Cpu, ChevronDown, Wifi, AlertCircle,
+  Mic, Square as SquareIcon,
 } from "lucide-react";
 
 // Map security mode emoji icons to Lucide components
@@ -80,6 +82,63 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
   const [selectedSkills, setSelectedSkills] = useState<string[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [expanded, setExpanded] = useState(false);
+
+  // P3-26: Voice input — Web Speech API STT
+  const {
+    isListening: isListeningVoice,
+    interimTranscript: voiceInterim,
+    isSupported: voiceSupported,
+    start: startVoice,
+    stop: stopVoice,
+    reset: resetVoice,
+  } = useSpeechRecognition({
+    continuous: true,
+    interimResults: true,
+    onFinalResult: (text) => {
+      // Append recognized text to current input
+      setInput(prev => {
+        const newVal = prev + text;
+        setDraft(newVal);
+        return newVal;
+      });
+    },
+    onInterimResult: (text) => {
+      // Show interim text in a subtle indicator (state is tracked via interimTranscript)
+      // We don't modify the input directly during interim to avoid cursor jumping
+    },
+  });
+
+  // Handle voice start/stop toggle
+  const handleVoiceToggle = useCallback(() => {
+    if (!voiceSupported) return;
+    if (isListeningVoice) {
+      stopVoice();
+      // Flush any interim text
+      if (voiceInterim) {
+        setInput(prev => {
+          const newVal = prev + voiceInterim;
+          setDraft(newVal);
+          return newVal;
+        });
+      }
+    } else {
+      resetVoice();
+      startVoice();
+    }
+  }, [voiceSupported, isListeningVoice, stopVoice, startVoice, resetVoice, voiceInterim]);
+
+  // Auto-focus textarea after voice stops
+  useEffect(() => {
+    if (!isListeningVoice) {
+      // Refocus textarea and place cursor at end
+      const ta = textareaRef.current;
+      if (ta) {
+        ta.focus();
+        const len = ta.value.length;
+        ta.setSelectionRange(len, len);
+      }
+    }
+  }, [isListeningVoice]);
   const [customOps, setCustomOps] = useState<CustomOperation[]>([]);
   const [runningOp, setRunningOp] = useState<string | null>(null);
   const [slashFilter, setSlashFilter] = useState<string | null>(null);
@@ -817,7 +876,7 @@ const handleSelectProject = (projectId: string) => {
 
         <textarea
           ref={textareaRef}
-          className={`message-input ${expanded ? "expanded" : ""}`}
+          className={`message-input ${expanded ? "expanded" : ""} ${isListeningVoice ? "voice-listening" : ""}`}
           // P1 #12: Sync input with draft persistence
           value={draft || input}
           onChange={(e) => {
@@ -866,6 +925,53 @@ const handleSelectProject = (projectId: string) => {
           disabled={disabled}
           rows={1}
         />
+
+        {/* P3-26: Voice interim text indicator */}
+        {isListeningVoice && voiceInterim && (
+          <span style={{
+            position: "absolute",
+            right: 60,
+            bottom: 8,
+            fontSize: 11,
+            color: "var(--text-muted)",
+            fontStyle: "italic",
+            opacity: 0.7,
+            pointerEvents: "none",
+            maxWidth: 200,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}>
+            {voiceInterim}
+          </span>
+        )}
+
+        {/* P3-26: Microphone button for voice input */}
+        <button
+          className={`mode-toggle-btn ${isListeningVoice ? "voice-rec-active" : ""}`}
+          onClick={handleVoiceToggle}
+          disabled={disabled || !voiceSupported}
+          title={voiceSupported
+            ? (isListeningVoice ? S.voice.stopListening[lang] : S.voice.startListening[lang])
+            : S.voice.speechUnsupported[lang]
+          }
+          style={{
+            color: isListeningVoice ? "var(--danger, #ef4444)" : undefined,
+            opacity: voiceSupported ? 1 : 0.3,
+          }}
+        >
+          {isListeningVoice ? <SquareIcon size={14} fill="currentColor" /> : <Mic size={14} />}
+        </button>
+        {isListeningVoice && (
+          <span style={{
+            fontSize: 10,
+            color: "var(--danger, #ef4444)",
+            animation: "pulse 1.5s ease-in-out infinite",
+            whiteSpace: "nowrap",
+          }}>
+            {S.voice.listening[lang]}
+          </span>
+        )}
 
         <button
           className="mode-toggle-btn"

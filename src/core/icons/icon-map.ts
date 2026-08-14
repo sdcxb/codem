@@ -194,6 +194,7 @@ export const ActionIcons = {
   copy: Copy,
   confirm: Check,
   close: X,
+  search: Search,
 } as const;
 
 // ============================================================

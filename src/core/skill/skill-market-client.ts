@@ -19,6 +19,13 @@ import { installSkillFromZip, type InstallResult, type InstallProgressCallback }
 import { getSkillRegistry, parseSkillMarkdown, type SkillDefinition } from "./skill";
 import { writeFile, readFile, deletePath } from "../file-api";
 import { getSettingJSON, setSettingJSON } from "../storage/settings";
+// P3-27: 增强安全沙箱
+import {
+  auditSkillInstallation,
+  computeContentHash,
+  addInstallAuditEntry,
+  type SkillAuditResult,
+} from "./sandbox";
 
 // ========== Types ==========
 
@@ -1230,7 +1237,33 @@ export async function installMarketSkill(
     }
 
     // 普通 ZIP 安装
-    return await installSkillFromZip(zipData, onProgress, overwrite, skill.name);
+    const result = await installSkillFromZip(zipData, onProgress, overwrite, skill.name);
+
+    // P3-27: Record audit entry on successful install
+    if (result.success) {
+      try {
+        const { unzipSync, strFromU8 } = await import("fflate");
+        const files = unzipSync(new Uint8Array(zipData));
+        const fileMap = new Map<string, string>();
+        for (const [path, data] of Object.entries(files)) {
+          if (path.endsWith("/") || (data as Uint8Array).length > 1024 * 1024) continue;
+          try { fileMap.set(path, strFromU8(data as Uint8Array)); } catch {}
+        }
+        const hash = computeContentHash(fileMap);
+        addInstallAuditEntry({
+          skillName: result.skillName || skill.name,
+          sourceId: skill.sourceId,
+          installedAt: Date.now(),
+          auditLevel: "safe",
+          filesWritten: result.filesWritten || 0,
+          contentHash: hash,
+          version: skill.version,
+          author: skill.author,
+        });
+      } catch {}
+    }
+
+    return result;
   } catch (err: any) {
     return {
       success: false,
@@ -1426,6 +1459,110 @@ async function installSkillFromZipFiltered(
 export function isMarketSkillInstalled(skill: MarketSkill): boolean {
   const registry = getSkillRegistry();
   return registry.getAll().some((s) => s.name === skill.name);
+}
+
+/**
+ * P3-27: 预检安装 — 在下载 ZIP 后、实际安装前进行安全审计。
+ *
+ * 工作流程：
+ * 1. 解压 ZIP 但不写入文件系统
+ * 2. 提取所有文件内容
+ * 3. 执行安全审计（恶意代码检测、权限声明验证）
+ * 4. 返回审计结果 + 解压后的文件数据（供后续安装使用）
+ *
+ * @param skill 市场技能条目
+ * @param onProgress 进度回调
+ * @returns 审计结果 + 文件数据，或 null（下载失败时）
+ */
+export async function preAuditSkill(
+  skill: MarketSkill,
+  onProgress?: InstallProgressCallback,
+): Promise<{ audit: SkillAuditResult; files: Map<string, string>; skillMdPath: string } | null> {
+  if (skill.installType === "builtin") {
+    return { audit: { overall: "safe", findings: [], declaredPermissions: [], timestamp: Date.now() }, files: new Map(), skillMdPath: "" };
+  }
+  if (skill.installType === "cli" as any) {
+    return { audit: { overall: "safe", findings: [], declaredPermissions: [], timestamp: Date.now() }, files: new Map(), skillMdPath: "" };
+  }
+  try {
+    onProgress?.(5, "Downloading skill package...");
+    const skillsDir = await getSkillsDir();
+    const sep = skillsDir.includes("/") && !skillsDir.includes("\\") ? "/" : "\\";
+    const tempZipPath = `${skillsDir}${sep}.tmp${sep}${skill.sourceId}-${skill.name}.zip`;
+
+    onProgress?.(15, `Downloading: ${skill.displayName}...`);
+    await httpDownload(skill.downloadUrl, tempZipPath, githubApiHeaders());
+
+    onProgress?.(40, "Reading downloaded file...");
+    const { invoke } = (window as any).__TAURI__?.core || {};
+    const base64Data = await invoke("read_file", { path: tempZipPath, encoding: "base64" });
+    const binaryString = atob(base64Data);
+    const zipData = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) { zipData[i] = binaryString.charCodeAt(i); }
+    try { await deletePath(tempZipPath); } catch {}
+
+    onProgress?.(55, "Extracting and auditing...");
+    const { unzipSync, strFromU8 } = await import("fflate");
+    const rawFiles = unzipSync(zipData);
+    const allPaths = Object.keys(rawFiles);
+
+    let targetPaths = allPaths;
+    let rootPrefix = "";
+
+    if (skill.installType === "dir" && skill.dirPath) {
+      const targetSegments = skill.dirPath.split("/").filter(Boolean);
+      targetPaths = allPaths.filter((p) => {
+        const parts = p.replace(/\\/g, "/").split("/").filter(Boolean);
+        if (parts.length < targetSegments.length + 1) return false;
+        for (let i = 1; i <= parts.length - targetSegments.length; i++) {
+          let match = true;
+          for (let j = 0; j < targetSegments.length; j++) { if (parts[i + j] !== targetSegments[j]) { match = false; break; } }
+          if (match) return true;
+        }
+        return false;
+      });
+      const firstPath = targetPaths[0]?.replace(/\\/g, "/") || "";
+      const firstParts = firstPath.split("/").filter(Boolean);
+      let segStartIdx = -1;
+      for (let i = 0; i <= firstParts.length - targetSegments.length; i++) {
+        let match = true;
+        for (let j = 0; j < targetSegments.length; j++) { if (firstParts[i + j] !== targetSegments[j]) { match = false; break; } }
+        if (match) { segStartIdx = i; break; }
+      }
+      rootPrefix = segStartIdx > 0 ? firstParts.slice(0, segStartIdx).join("/") + "/" : "";
+    } else {
+      const skillMdPath = allPaths.find(p => p.endsWith("SKILL.md"));
+      if (skillMdPath) {
+        const parts = skillMdPath.replace(/\\/g, "/").split("/");
+        if (parts.length > 1) { rootPrefix = parts.slice(0, -1).join("/") + "/"; }
+      }
+    }
+
+    const skillMdPath = targetPaths.find(p => p.replace(/\\/g, "/").endsWith("SKILL.md"));
+    if (!skillMdPath) return null;
+
+    const skillMdContent = strFromU8(rawFiles[skillMdPath]);
+
+    const allowedExtensions = new Set([".md",".txt",".json",".yaml",".yml",".ts",".tsx",".js",".jsx",".mjs",".py",".sh",".bat",".ps1",".css",".html",".svg",".toml",".ini",".cfg"]);
+    const fileMap = new Map<string, string>();
+    for (const zipPath of targetPaths) {
+      if (zipPath.endsWith("/") || zipPath.endsWith("\\")) continue;
+      const relativePath = zipPath.replace(/\\/g, "/").replace(rootPrefix, "");
+      if (!relativePath) continue;
+      const ext = relativePath.substring(relativePath.lastIndexOf(".")).toLowerCase();
+      if (!allowedExtensions.has(ext)) continue;
+      const fileData = rawFiles[zipPath];
+      if (fileData.length > 1024 * 1024) continue;
+      try { fileMap.set(relativePath, strFromU8(fileData)); } catch {}
+    }
+
+    const audit = auditSkillInstallation(fileMap, skillMdContent);
+    onProgress?.(100, "Audit complete");
+    return { audit, files: fileMap, skillMdPath };
+  } catch (err) {
+    console.error("[SkillMarket] Pre-audit failed:", err);
+    return null;
+  }
 }
 
 /**

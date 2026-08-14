@@ -1,7 +1,7 @@
 {
   "name": "codem",
   "private": true,
-  "version": "0.98.0",
+  "version": "0.99.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -11,7 +11,11 @@
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "test:e2e": "vitest run --config vitest.e2e.config.ts",
+    "test:snapshot": "vitest run --config vitest.snapshot.config.ts",
+    "verify": "vitest run --coverage && npx knip && npx jscpd"
   },
   "dependencies": {
     "@fortawesome/fontawesome-free": "^7.3.1",

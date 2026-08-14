@@ -855,6 +855,96 @@ async fn path_exists(path: String) -> Result<bool, String> {
 
 // ========== MCP Stdio Commands ==========
 
+// ========== P1-5: Sandbox Commands ==========
+/// Check if a path is within the allowed workspace directory.
+/// This is the Rust-side enforcement that complements the JS-side check.
+#[tauri::command]
+async fn check_path_in_workspace(path: String, workspace: String) -> Result<bool, String> {
+    let abs_path = std::path::Path::new(&path)
+        .canonicalize()
+        .map_err(|e| format!("Cannot canonicalize path {}: {}", path, e))?;
+    let abs_workspace = std::path::Path::new(&workspace)
+        .canonicalize()
+        .map_err(|e| format!("Cannot canonicalize workspace {}: {}", workspace, e))?;
+    Ok(abs_path.starts_with(&abs_workspace))
+}
+
+/// Get the current process's security context (for debugging sandbox issues).
+#[cfg(target_os = "windows")]
+#[tauri::command]
+async fn get_process_token_info() -> Result<String, String> {
+    // On Windows, we can check if the process is running elevated
+    // This is a simple check — full ACL manipulation requires the windows-sys crate
+    match std::process::Command::new("whoami")
+        .arg("/groups")
+        .output()
+    {
+        Ok(output) => {
+            if output.status.success() {
+                let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+                Ok(stdout)
+            } else {
+                Err("Failed to get process token info".to_string())
+            }
+        }
+        Err(e) => Err(format!("Failed to run whoami: {}", e)),
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+#[tauri::command]
+async fn get_process_token_info() -> Result<String, String> {
+    Ok("Process token info not available on this platform".to_string())
+}
+
+/// List files in a directory with sandbox enforcement.
+/// If sandbox is enabled, only files within the workspace are returned.
+#[tauri::command]
+async fn list_directory_sandboxed(path: String, workspace: String, sandbox_enabled: bool) -> Result<Vec<FileInfo>, String> {
+    if sandbox_enabled {
+        let abs_path = std::path::Path::new(&path)
+            .canonicalize()
+            .map_err(|e| format!("Cannot canonicalize path: {}", e))?;
+        let abs_workspace = std::path::Path::new(&workspace)
+            .canonicalize()
+            .map_err(|e| format!("Cannot canonicalize workspace: {}", e))?;
+        if !abs_path.starts_with(&abs_workspace) {
+            return Err(format!("Sandbox: Path {} is outside workspace {}", path, workspace));
+        }
+    }
+
+    let mut files = Vec::new();
+    let entries = std::fs::read_dir(&path).map_err(|e| format!("Failed to read directory {}: {}", path, e))?;
+
+    for entry in entries {
+        let entry = entry.map_err(|e| format!("Failed to read entry: {}", e))?;
+        let file_type = entry.file_type().map_err(|e| format!("Failed to get file type: {}", e))?;
+        files.push(FileInfo {
+            name: entry.file_name().to_string_lossy().to_string(),
+            is_dir: file_type.is_dir(),
+            is_file: file_type.is_file(),
+            size: entry.metadata().map(|m| m.len()).unwrap_or(0),
+        });
+    }
+
+    files.sort_by(|a, b| {
+        if a.is_dir && !b.is_dir { std::cmp::Ordering::Less }
+        else if !a.is_dir && b.is_dir { std::cmp::Ordering::Greater }
+        else { a.name.cmp(&b.name) }
+    });
+
+    Ok(files)
+}
+
+#[derive(Clone, serde::Serialize)]
+struct FileInfo {
+    name: String,
+    is_dir: bool,
+    is_file: bool,
+    size: u64,
+}
+
+
 /// Spawn an MCP stdio child process and start reading its stdout.
 #[tauri::command]
 async fn mcp_stdio_connect(
@@ -1611,6 +1701,10 @@ path_exists,
             close_pty,
             create_browser_window,
             close_browser_window,
+            // P1-5: Sandbox commands
+            check_path_in_workspace,
+            get_process_token_info,
+            list_directory_sandboxed,
         ])
         .setup(|app| {
             // Apply window vibrancy (frosted glass effect)

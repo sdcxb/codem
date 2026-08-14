@@ -11,7 +11,14 @@
 
 // ========== Event Types ==========
 
-export type HookEventType = "PreToolUse" | "PostToolUse" | "SessionStart" | "Stop";
+export type HookEventType =
+  | "PreToolUse"    // P0-2: Layer 1 pre-execute (existing)
+  | "PostToolUse"   // P0-2: Layer 4 post-execute (existing)
+  | "SessionStart"  // Session lifecycle (existing)
+  | "Stop"          // Session lifecycle (existing)
+  // P0-2: New guard and finalize event types for the 5-layer pipeline
+  | "Guard"         // Layer 2: monotonic guard (can deny, cannot modify)
+  | "Finalize";     // Layer 5: post-execution finalization (read-only)
 
 // ========== Hook Definition ==========
 

@@ -9,6 +9,7 @@
  */
 
 import { useState } from "react";
+import { createPortal } from "react-dom";
 import { X, LayoutDashboard, Link2, Bot, Clock, ClipboardList, Columns, Users, Inbox as InboxIcon } from "lucide-react";
 import { useLang } from "../core/i18n/lang";
 import { OverviewTab } from "./task-center/OverviewTab";
@@ -46,14 +47,16 @@ export function TaskCenter({ onClose, initialTab = "overview", subagentTasks = [
     { id: "inbox", label: zh ? "收件箱" : "Inbox", icon: InboxIcon, available: true },
   ];
 
-  return (
-    <div className="task-center-overlay" onClick={onClose}>
+  const panel = (
+    <div className="modal-overlay" onClick={onClose}>
       <div
         className="task-center-panel"
         onClick={(e) => e.stopPropagation()}
         style={{
           width: "min(960px, 92vw)",
+          maxWidth: "95vw",
           height: "min(720px, 88vh)",
+          maxHeight: "90vh",
           background: "var(--bg-secondary, #1e1e2e)",
           borderRadius: "12px",
           border: "1px solid var(--border-color, #333344)",
@@ -181,4 +184,6 @@ export function TaskCenter({ onClose, initialTab = "overview", subagentTasks = [
       </div>
     </div>
   );
+
+  return createPortal(panel, document.body);
 }

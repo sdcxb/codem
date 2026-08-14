@@ -8,6 +8,36 @@ export default defineConfig({
     globals: true,
     setupFiles: ["./src/test/setup.ts", "./src/test/setup-dom.ts"],
     include: ["src/test/**/*.test.ts", "src/test/**/*.test.tsx"],
+    // P0-4: Coverage configuration with per-file thresholds
+    coverage: {
+      provider: "v8",
+      reporter: ["text", "text-summary", "lcov"],
+      reportsDirectory: "./coverage",
+      // Per-file coverage thresholds — fail if any file drops below these
+      thresholds: {
+        lines: 50,
+        functions: 50,
+        branches: 40,
+        statements: 50,
+        perFile: true,
+      },
+      // Exclude non-source files from coverage
+      exclude: [
+        "src/test/**",
+        "src/**/*.d.ts",
+        "src/**/*.test.ts",
+        "src/**/*.test.tsx",
+        "src/main.tsx",
+        "src/pet.tsx",
+        "src/vite-env.d.ts",
+        "src-tauri/**",
+        "node_modules/**",
+        "dist/**",
+        ".deepseek-harness-ref/**",
+      ],
+      // Include only core source files
+      include: ["src/core/**/*.ts", "src/store/**/*.ts"],
+    },
   },
   resolve: {
     alias: {

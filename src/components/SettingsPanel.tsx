@@ -10,6 +10,8 @@ import { ModelProfilePanel } from "./ModelProfilePanel";
 import { getPermissionManager, type PermissionRule, type PermissionAction } from "../core/permission/permission";
 import { SECURITY_MODES, getGlobalSecurityMode, setGlobalSecurityMode, type SecurityMode } from "../core/permission/security-mode";
 import { MultimodalPanel } from "./MultimodalPanel";
+import { VoiceSettingsPanel } from "./VoiceSettingsPanel";
+import { OllamaSettingsPanel } from "./OllamaSettingsPanel";
 import { getNotebookConfig } from "../core/knowledge";
 import { SkinSelector } from "./SkinSelector";
 import { GitConfigSection, EnvironmentConfigSection } from "./GitEnvSettings";
@@ -68,6 +70,7 @@ import {
   AlertTriangle,
   Folder,
   Clock,
+  Mic,
 } from "lucide-react";
 
 interface ProviderKey {
@@ -323,7 +326,7 @@ export function SettingsPanel({ onClose, onSessionRecovery, onUsageStats, initia
   const [testResult, setTestResult] = useState<string>("");
 const [showModelProfiles, setShowModelProfiles] = useState(false);
 const [showMultimodal, setShowMultimodal] = useState(false);
-const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security" | "git" | "environment" | "worktree" | "knowledge" | "automation" | "multimodal" | "pet" | "tools" | "codegraph" | "advanced" | "help" | "usage">((initialTab as any) || "general");
+const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security" | "git" | "environment" | "worktree" | "knowledge" | "automation" | "multimodal" | "voice" | "ollama" | "pet" | "tools" | "codegraph" | "advanced" | "help" | "usage">((initialTab as any) || "general");
   // P2 #36: Settings search
   const [settingsSearch, setSettingsSearch] = useState("");
   const [advancedSubTab, setAdvancedSubTab] = useState<"agents" | "heartbeat" | "retry" | "prompt" | "settings" | "recovery" | "correction" | "profiles" | "transcript">("agents");
@@ -512,9 +515,15 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
 <button className={`settings-sidebar-item ${activeTab === "automation" ? "active" : ""}`} onClick={() => setActiveTab("automation")}>
 <span className="sidebar-icon"><Bot size={16} /></span>{lang === "zh" ? "自动化" : "Automation"}
 </button>
-            <button className={`settings-sidebar-item ${activeTab === "multimodal" ? "active" : ""}`} onClick={() => setActiveTab("multimodal")}>
-              <span className="sidebar-icon"><Layers size={16} /></span>{lang === "zh" ? "多模态" : "Multimodal"}
-            </button>
+<button className={`settings-sidebar-item ${activeTab === "multimodal" ? "active" : ""}`} onClick={() => setActiveTab("multimodal")}>
+<span className="sidebar-icon"><Layers size={16} /></span>{lang === "zh" ? "多模态" : "Multimodal"}
+</button>
+<button className={`settings-sidebar-item ${activeTab === "voice" ? "active" : ""}`} onClick={() => setActiveTab("voice")}>
+<span className="sidebar-icon"><Mic size={16} /></span>{lang === "zh" ? "语音" : "Voice"}
+</button>
+<button className={`settings-sidebar-item ${activeTab === "ollama" ? "active" : ""}`} onClick={() => setActiveTab("ollama")}>
+<span className="sidebar-icon"><Server size={16} /></span>{lang === "zh" ? "Ollama" : "Ollama"}
+</button>
             <button className={`settings-sidebar-item ${activeTab === "tools" ? "active" : ""}`} onClick={() => setActiveTab("tools")}>
               <span className="sidebar-icon"><Wrench size={16} /></span>{lang === "zh" ? "工具" : "Tools"}
             </button>
@@ -1243,6 +1252,18 @@ marginTop: 4,
 <>
 {/* Pet Settings */}
 <PetSettingsSection lang={lang} onOpenMarket={() => setShowPetMarket(true)} />
+</>
+)}
+{activeTab === "voice" && (
+<>
+{/* P3-26: Voice Settings */}
+<VoiceSettingsPanel />
+</>
+)}
+{activeTab === "ollama" && (
+<>
+{/* P3-31: Ollama Local LLM Settings */}
+<OllamaSettingsPanel />
 </>
 )}
 {activeTab === "tools" && (

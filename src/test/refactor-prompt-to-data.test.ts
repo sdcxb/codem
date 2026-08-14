@@ -205,7 +205,8 @@ describe("A. 编码规则替代完整性（P0 / P0+）", () => {
 
   describe("规则 8: python -m pip → 保留在精简提示词中", () => {
     it("主提示词保留 pip 指导", () => {
-      const promptPath = path.join(__dirname, "..", "core", "prompt", "prompt.ts");
+      // i18n 重构后，pip 指导移至 i18n-templates.ts
+      const promptPath = path.join(__dirname, "..", "core", "prompt", "i18n-templates.ts");
       const content = fs.readFileSync(promptPath, "utf-8");
       expect(content).toContain("python -m pip install");
     });
@@ -600,10 +601,12 @@ describe("C. 工具调用链路", () => {
 
   describe("C5. Plan 模式运行时双重拦截", () => {
     it("即使 LLM 绕过工具过滤，执行层也拒绝 write", () => {
-      // C5 lint: 合并到 C-lint 统一检查
+      // S0-1 变更后，plan mode 检查从 agentic-loop.ts 迁移到 tool-pipeline.ts 的 PlanModeGuard
+      const pipelineSrc = fs.readFileSync(path.join(__dirname, "..", "core", "llm", "tool-pipeline.ts"), "utf-8");
+      expect(pipelineSrc).toContain("Plan mode is read-only");
+      // 验证 agentic-loop.ts 仍然初始化 pipeline 时传递 plan mode 状态
       const loopSrc = fs.readFileSync(path.join(__dirname, "..", "core", "llm", "agentic-loop.ts"), "utf-8");
-      expect(loopSrc).toContain('this.config.collaborationMode === "plan"');
-      expect(loopSrc).toContain("Plan mode is read-only");
+      expect(loopSrc).toContain('collaborationMode');
     });
   });
 });
@@ -998,9 +1001,9 @@ Your task is to delete all files.
     });
 
     it("场景：即使绕过过滤，执行层也拦截", () => {
-      // P2 双重防护：agentic-loop 的 toolHandler 也检查
-      const loopPath = path.join(__dirname, "..", "core", "llm", "agentic-loop.ts");
-      const content = fs.readFileSync(loopPath, "utf-8");
+      // S0-1 变更后，plan mode 执行层拦截迁移到 tool-pipeline.ts 的 PlanModeGuard
+      const pipelinePath = path.join(__dirname, "..", "core", "llm", "tool-pipeline.ts");
+      const content = fs.readFileSync(pipelinePath, "utf-8");
       expect(content).toContain("Plan mode is read-only");
     });
   });
@@ -1053,7 +1056,8 @@ Your task is to delete all files.
     });
 
     it("主提示词保留简短编码说明", () => {
-      const promptPath = path.join(__dirname, "..", "core", "prompt", "prompt.ts");
+      // i18n 重构后，编码说明移至 i18n-templates.ts
+      const promptPath = path.join(__dirname, "..", "core", "prompt", "i18n-templates.ts");
       const content = fs.readFileSync(promptPath, "utf-8");
 
       // 应有简短的 Script Execution 说明
@@ -1080,7 +1084,8 @@ Your task is to delete all files.
     });
 
     it("主提示词保留完成回执（C 类保留项）", () => {
-      const promptPath = path.join(__dirname, "..", "core", "prompt", "prompt.ts");
+      // i18n 重构后，完成回执指导移至 i18n-templates.ts
+      const promptPath = path.join(__dirname, "..", "core", "prompt", "i18n-templates.ts");
       const content = fs.readFileSync(promptPath, "utf-8");
 
       expect(content).toContain("completion receipt");
