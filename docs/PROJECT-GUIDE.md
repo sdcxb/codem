@@ -1177,6 +1177,14 @@ npm run tauri build        # 构建 NSIS exe + MSI
 - `plugin-dependency-graph.test.ts`（24+ 用例）— 依赖图注册 + 拓扑排序 + 级联启停 + 锁定机制
 - `plugin-disable-impact.test.ts`（40+ 用例）— 核心/能力/UI 插件关闭对系统功能、信息流、数据流的影响
 
+**补丁修复（同版本重新构建）：**
+- **SlotBridge 泛型类型修复**（`SlotBridge.tsx`）：原实现使用 `[key: string]: any` 索引签名 + `// @ts-nocheck`，导致所有回调参数类型退化为 `any`，引发 49 个 `TS7006` 隐式 any 错误。修复为泛型函数 `SlotBridge<P>`，从 `fallback` 组件 Props 自动推断参数类型，移除 `// @ts-nocheck`，恢复严格类型检查
+- **恢复 `noImplicitAny` 严格检查**（`tsconfig.json`）：撤回临时关闭的 `noImplicitAny: false`，恢复 `strict: true` 完整类型安全保护
+- **App.tsx 参数类型精确化**：`onResolve` 的 `alwaysAllow` 参数修正为可选匹配 `PermissionDialogProps`；`onOpenSession` 两处补充 `string` 类型注解
+- **SettingsPanel.tsx**：`AgentManager` 渲染补充 `onClose` 必选属性
+- **files.ts**：`skills`/`memories` 数组初始化补充类型声明，修复 `never[]` 推断导致的 `TS2345`
+- **验证**：`tsc --noEmit` 零错误 + `vite build` 成功
+
 ### v0.96.0（2026-08-08）— 主对话窗口 UI 大改版 + 内联 Diff + 富内容渲染
 
 （详见 TODO.md）

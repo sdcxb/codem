@@ -334,6 +334,13 @@ npm run tauri:build
 - **历史用例适配**：`full-regression-smoke` + `phase-b-f-regression` 适配新架构（`SlotBridge` + `icon-map`）
 - **测试方法扩充**：快照测试 + 性能基线 + 交互流程闭环 + CSS 布局一致性 + i18n 覆盖率 + 核心模块稳定性 + 数据库初始化不崩溃 + 读写闭环
 
+**补丁修复（同版本重新构建）：**
+- **SlotBridge 泛型类型修复**（`SlotBridge.tsx`）：原实现使用 `[key: string]: any` 索引签名 + `// @ts-nocheck`，导致所有回调参数类型退化为 `any`，引发 49 个 `TS7006` 隐式 any 错误。修复为泛型函数 `SlotBridge<P>`，从 `fallback` 组件 Props 自动推断参数类型，移除 `// @ts-nocheck`
+- **恢复 `noImplicitAny` 严格检查**：撤回临时关闭的 `noImplicitAny: false`，恢复 `strict: true` 完整类型安全
+- **App.tsx 参数类型精确化**：`onResolve` 的 `alwaysAllow` 修正为可选匹配 `PermissionDialogProps`；`onOpenSession` 补充类型注解
+- **SettingsPanel.tsx**：`AgentManager` 补充 `onClose` 必选属性；**files.ts**：数组初始化补充类型声明修复 `never[]` 推断
+- **验证**：`tsc --noEmit` 零错误 + `vite build` 成功
+
 ### 2026-08-14（v0.99.0）
 
 > 本次更新是 Codem 内核架构史上最大规模的对标升级：以 DeepSeek Harness (dsh) 为唯一对标对象，系统性追平 31 项差距。25 文件修改（+1721/-313 行），50+ 新文件。全量 99 文件 / 3234 用例全部通过。

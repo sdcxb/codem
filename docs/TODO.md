@@ -17,7 +17,7 @@
 > v0.97.0 已发布：Agentic Loop 性能优化（Tool Result 磁盘持久化 + ToolSearch 延迟加载 + Micro-Compact 摘要 + TranscriptCache 修复）+ 工具系统增强（工具中断行为 + Bash 分析器 + Hooks 系统 + TodoWrite 增强 + Forked Agent 记忆提取）+ 技能市场三大新源接入（ClawHub.ai / Skills.sh / SkillHub CLI）+ 技能发布功能（publishSkillToMarket 三种目标 + UI 发布对话框）。**补丁修复（同版本重新构建）：** ctx.abort 空指针 + Session 持久化缺失（executionMode/worktreePath/worktreeBranch）+ preserveExecutor 类型错误 + 移除 57 个假测试 + 重写 61 个源码字符串匹配测试为真实行为测试。全量 84 文件 / 2924 用例全部通过（0 失败）。
 > v0.98.0 已发布：多智能体协同架构 — Phase 1 TaskCenter 统一任务管理中心（概览/委派/子智能体/自动化 4 Tab）+ Phase 2 Squad 多智能体协同（Leader-Member + Roster 协议 + 3 个 LLM 工具 + dispatch 路由）+ Phase 3 Issue 追踪 + 看板（7 状态 + 4 优先级 + 评论 + 看板拖拽 + 4 个 LLM 工具 + 分配给 Squad）+ Phase 4 Autopilot 扩展（Cron 引擎 + Issue 状态触发器）+ Phase 5 Inbox 全局通知聚合中心（6 分类 + 事件填充集成 + Sidebar 未读角标）+ Phase 6 AgentManager 扩展 + 死代码清理（DelegationPanel/AutomationSettingsSection/onAutomations/__pendingSquadDispatch 移除 + TopNavbar 双 Tasks 修复 + micro-compact bug 修复）。5 张新 DB 表、7 个新 LLM 工具、8 Tab 全景、30 个新文件、20 个修改文件。全量 87 文件 / 3057 用例通过。
 > v0.99.0 已发布：**对标 DeepSeek Harness 全量升级** — 31 项差距系统性追平。P0 架构基础（事件溯源会话日志 + 5 层工具管线 + Plan Mode exit_plan_mode 增强 + 测试覆盖率门控）+ P1 功能增强（Windows ACL 沙箱 + Code Mode run_code + Session Query FTS5 + 防御性文档 + ADR）+ P2 架构提升（Capability Seam 三角色 + Workflow 编排 + Goal 自动续行 + Replay 测试 + Telemetry + 代码质量工具 + Bash 后台模式 + 终端 LLM 工具组 + Postmortem + 测试分层补齐）+ P3 远期完善（MCP 市场 + 语音 STT/TTS + Ollama 本地 LLM + CI/CD 管理 + 技能安全沙箱 + 远程同步引擎 + i18n 提示词重构 + Adaptive Idle Tracker + 事件系统增强）。25 文件修改（+1721/-313 行），50+ 新文件。全量 99 文件 / 3234 用例全部通过。**补丁修复（同版本重新构建）：** 上下游关联修复 — provider.ts toAPIMessage 补全 ContentBlock tool_use/tool_result 块处理（事件投影路径工具调用信息丢失修复）+ agentic-loop.ts 事件投影消息映射补全 tool_calls 属性（下游优先级排序/孤儿过滤/micro-compact 全链路修复）+ tools.ts readViaSeam + local-fs-provider.ts readFile 相对路径 cwd 解析修复。全量 99 文件 / 3235 用例全部通过。
-> v1.0.0 已发布：**UI/UX 标准化 + 插件系统架构 + 测试体系全面升级** — P4 Cordis DI + Slot Registry + Plugin Loader + 18 Capability Seams + P5 全能力族拆分（FS/Shell/Sandbox/Web/Skill/Subagent + 凭证/附件/知识/调度/目标/计划/后台任务）+ P6 UI 插件包化（7 个 UI 插件包 + Self-Referential Runtime + 插件市场基础设施）+ 补齐遗漏能力模块（compaction/approval/permissions/hooks/automation + fs-sandbox + tool-todo/ask-user/lsp/run-code/workflow/goal/schedule/knowledge + skin-default/pet/ui-pet + Preset/Bundle/SDK/ACP/Host/Client）+ 全弹窗 UI/UX 标准化（modal-overlay + modal-editor + 统一关闭按钮 + 图标映射体系 + CSS 变量替代硬编码 + Tailwind 类替代 + SVG 图标对齐）+ 测试体系升级（5 个新测试文件 / 271+ 用例：图标标准化 97 用例 / 工具触发-调用-执行闭环 30+ 用例 / 综合质量套件 80 用例 / 插件依赖图 24+ 用例 / 插件关闭影响 40+ 用例）+ 历史用例适配（full-regression-smoke + phase-b-f-regression 适配 SlotBridge + icon-map）。67 文件修改（+1112/-641 行）。全量 104 文件 / 3552 用例全部通过。
+> v1.0.0 已发布：**UI/UX 标准化 + 插件系统架构 + 测试体系全面升级** — P4 Cordis DI + Slot Registry + Plugin Loader + 18 Capability Seams + P5 全能力族拆分（FS/Shell/Sandbox/Web/Skill/Subagent + 凭证/附件/知识/调度/目标/计划/后台任务）+ P6 UI 插件包化（7 个 UI 插件包 + Self-Referential Runtime + 插件市场基础设施）+ 补齐遗漏能力模块（compaction/approval/permissions/hooks/automation + fs-sandbox + tool-todo/ask-user/lsp/run-code/workflow/goal/schedule/knowledge + skin-default/pet/ui-pet + Preset/Bundle/SDK/ACP/Host/Client）+ 全弹窗 UI/UX 标准化（modal-overlay + modal-editor + 统一关闭按钮 + 图标映射体系 + CSS 变量替代硬编码 + Tailwind 类替代 + SVG 图标对齐）+ 测试体系升级（5 个新测试文件 / 271+ 用例：图标标准化 97 用例 / 工具触发-调用-执行闭环 30+ 用例 / 综合质量套件 80 用例 / 插件依赖图 24+ 用例 / 插件关闭影响 40+ 用例）+ 历史用例适配（full-regression-smoke + phase-b-f-regression 适配 SlotBridge + icon-map）。67 文件修改（+1112/-641 行）。全量 104 文件 / 3552 用例全部通过。**补丁修复（同版本重新构建）：** SlotBridge 泛型类型修复（`[key: string]: any` + `@ts-nocheck` → 泛型 `SlotBridge<P>` 从 fallback Props 自动推断参数类型）+ 恢复 `noImplicitAny` 严格检查 + App.tsx 参数类型精确化（`onResolve` alwaysAllow 可选 + `onOpenSession` 类型注解）+ SettingsPanel AgentManager onClose + files.ts 数组类型声明。`tsc --noEmit` 零错误 + `vite build` 成功。
 
 ## 待开发
 
@@ -63,6 +63,14 @@
 - [x] T-5 plugin-disable-impact.test.ts（40+ 用例）— 插件关闭对系统功能/信息流/数据流影响
 - [x] T-6 历史用例适配 — full-regression-smoke + phase-b-f-regression 适配 SlotBridge + icon-map
 - [x] T-7 全量测试执行与修复 — 3552 用例全部通过 + vite build 零错误
+
+#### 补丁修复（同版本重新构建）
+- [x] PATCH-1 SlotBridge 泛型类型修复 — 从 `[key: string]: any` + `// @ts-nocheck` 改为泛型 `SlotBridge<P>`，从 `fallback` 组件 Props 自动推断参数类型
+- [x] PATCH-2 恢复 `noImplicitAny` 严格检查 — 撤回 `tsconfig.json` 中的 `noImplicitAny: false`
+- [x] PATCH-3 App.tsx 参数类型精确化 — `onResolve` 的 `alwaysAllow` 修正为可选 + `onOpenSession` 补充 `string` 注解
+- [x] PATCH-4 SettingsPanel.tsx — `AgentManager` 补充 `onClose` 必选属性
+- [x] PATCH-5 files.ts — 数组初始化补充 `Array<{ name: string; content: string }>` 类型声明
+- [x] PATCH-6 验证 — `tsc --noEmit` 零错误 + `vite build` 成功 + 重新构建安装包推送 GitHub
 
 ### v0.99.0 已发布（2026-08-14）— 对标 DeepSeek Harness 全量升级
 
