@@ -17,10 +17,21 @@ async function getCordisContext(): Promise<Context> {
   const ctx = new Context();
   // 安装 Slot Registry Service
   ctx.plugin(SlotsService as any);
-  // 加载桥接插件（注册 18 个核心服务）
+  // 加载桥接插件（注册 49 个核心服务）
   ctx.plugin(bridgePlugin as any);
   // 设置活跃 Context，让工具 Consumer 包可以使用
   setActiveContext(ctx);
+
+  // === P6: 接入 PluginLoader + UI 插件 ===
+  const { PluginLoader } = await import("./core/plugin-loader/index.ts");
+  const { loadUIPlugins } = await import("./core/ui-plugins/index.ts");
+  // PluginLoader 可扫描和加载插件包
+  const loader = new PluginLoader(ctx);
+  await loader.scan();
+  // 暂不调用 loader.load()，因为插件已在 bridgePlugin 中注册
+  // 加载所有 UI 插件包（注册到 Slot Registry）
+  loadUIPlugins(ctx);
+
   _codemCtx = ctx;
   return ctx;
 }

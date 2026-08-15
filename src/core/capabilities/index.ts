@@ -215,6 +215,61 @@ declare module '../cordis/src/context.ts' {
   interface Context { theme: ThemeService }
 }
 
+// ==================== 19. Compaction (遗漏补齐) ====================
+export interface CompactionService {
+  check(messages: any[]): Promise<{ needCompact: boolean; tokenCount: number }>
+  compact(messages: any[]): Promise<any[]>
+  getThreshold(): number
+  setThreshold(tokens: number): void
+}
+declare module '../cordis/src/context.ts' {
+  interface Context { compaction: CompactionService }
+}
+
+// ==================== 20. Approval (遗漏补齐) ====================
+export interface ApprovalService {
+  request(action: string, resource?: any): Promise<{ approved: boolean; reason?: string }>
+  getPending(): Array<{ id: string; action: string; resource?: any }>
+  resolve(id: string, approved: boolean, reason?: string): void
+}
+declare module '../cordis/src/context.ts' {
+  interface Context { approval: ApprovalService }
+}
+
+// ==================== 21. Permissions (遗漏补齐, 区别于 #8 Permission) ====================
+export interface PermissionsService {
+  presets(): Array<{ id: string; label: string; rules: any[] }>
+  applyPreset(presetId: string): void
+  getCurrentPreset(): string
+  registerPreset(preset: { id: string; label: string; rules: any[] }): void
+}
+declare module '../cordis/src/context.ts' {
+  interface Context { permissions: PermissionsService }
+}
+
+// ==================== 22. Hooks (遗漏补齐) ====================
+export interface HooksService {
+  on(event: string, handler: (...args: any[]) => void): () => void
+  before(event: string, handler: (...args: any[]) => any): () => void
+  after(event: string, handler: (...args: any[]) => any): () => void
+  emit(event: string, ...args: any[]): void
+}
+declare module '../cordis/src/context.ts' {
+  interface Context { hooks: HooksService }
+}
+
+// ==================== 23. Automation (遗漏补齐) ====================
+export interface AutomationService {
+  registerTrigger(name: string, config: any): void
+  removeTrigger(name: string): void
+  listTriggers(): Array<{ name: string; config: any }>
+  enable(name: string): void
+  disable(name: string): void
+}
+declare module '../cordis/src/context.ts' {
+  interface Context { automation: AutomationService }
+}
+
 // ==================== P5 能力族 ====================
 // FS 能力族
 export * from './fs/index.ts'
@@ -234,3 +289,5 @@ export * from './misc/index.ts'
 export * from './extra/index.ts'
 // P6: Self-Referential Runtime (dynamicCordisRunner)
 export * from './extensions/index.ts'
+// P6 遗漏补齐: Preset/Bundle/SDK/ACP/Host/Client
+export * from './infra/index.ts'

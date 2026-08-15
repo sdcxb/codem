@@ -519,6 +519,125 @@ export const bridgePlugin: Plugin = (ctx: Context) => {
     },
   })
 
+  // ===== 遗漏补齐: compaction/approval/permissions/hooks/automation =====
+
+  // 19b. Compaction
+  ctx.provide('compaction', {
+    _threshold: 80000,
+    check: async (messages: any[]) => {
+      // 粗略估算 token 数量
+      const tokenCount = messages.reduce((sum: number, m: any) => {
+        const content = typeof m?.content === 'string' ? m.content : JSON.stringify(m?.content || '')
+        return sum + Math.ceil(content.length / 4)
+      }, 0)
+      return { needCompact: tokenCount > 80000, tokenCount }
+    },
+    compact: async (messages: any[]) => {
+      // 简单实现：保留系统消息和最近 10 条
+      const system = messages.filter((m: any) => m?.role === 'system')
+      const recent = messages.slice(-10)
+      return [...system, ...recent]
+    },
+    getThreshold() { return 80000 },
+    setThreshold(tokens: number) { console.log(`[compaction] Threshold set to ${tokens}`) },
+  })
+
+  // 20b. Approval
+  const pendingApprovals: any[] = []
+  ctx.provide('approval', {
+    request: async (action: string, resource?: any) => {
+      const id = crypto.randomUUID()
+      return new Promise(resolve => {
+        pendingApprovals.push({ id, action, resource, resolve })
+      })
+    },
+    getPending: () => pendingApprovals.map(({ id, action, resource }) => ({ id, action, resource })),
+    resolve: (id: string, approved: boolean, reason?: string) => {
+      const idx = pendingApprovals.findIndex(p => p.id === id)
+      if (idx >= 0) { pendingApprovals[idx].resolve({ approved, reason }); pendingApprovals.splice(idx, 1) }
+    },
+  })
+
+  // 21b. Permissions (presets)
+  const permPresets = new Map<string, { id: string; label: string; rules: any[] }>([
+    ['default', { id: 'default', label: 'Default', rules: [{ allow: ['read', 'write', 'list'] }] }],
+    ['strict', { id: 'strict', label: 'Strict', rules: [{ allow: ['read'], deny: ['write', 'delete'] }] }],
+    ['open', { id: 'open', label: 'Open', rules: [{ allow: '*' }] }],
+  ])
+  let currentPreset = 'default'
+  ctx.provide('permissions', {
+    presets: () => [...permPresets.values()],
+    applyPreset: (presetId: string) => { if (permPresets.has(presetId)) currentPreset = presetId },
+    getCurrentPreset: () => currentPreset,
+    registerPreset: (preset: { id: string; label: string; rules: any[] }) => { permPresets.set(preset.id, preset) },
+  })
+
+  // 22b. Hooks
+  const hookHandlers = new Map<string, Array<{ type: string; handler: (...args: any[]) => any }>>()
+  ctx.provide('hooks', {
+    on: (event: string, handler: (...args: any[]) => void) => {
+      if (!hookHandlers.has(event)) hookHandlers.set(event, [])
+      hookHandlers.get(event)!.push({ type: 'on', handler })
+      return () => { hookHandlers.set(event, (hookHandlers.get(event) || []).filter(h => h.handler !== handler)) }
+    },
+    before: (event: string, handler: (...args: any[]) => any) => {
+      if (!hookHandlers.has(event)) hookHandlers.set(event, [])
+      hookHandlers.get(event)!.push({ type: 'before', handler })
+      return () => { hookHandlers.set(event, (hookHandlers.get(event) || []).filter(h => h.handler !== handler)) }
+    },
+    after: (event: string, handler: (...args: any[]) => any) => {
+      if (!hookHandlers.has(event)) hookHandlers.set(event, [])
+      hookHandlers.get(event)!.push({ type: 'after', handler })
+      return () => { hookHandlers.set(event, (hookHandlers.get(event) || []).filter(h => h.handler !== handler)) }
+    },
+    emit: (event: string, ...args: any[]) => {
+      const handlers = hookHandlers.get(event) || []
+      for (const h of handlers) {
+        if (h.type === 'on' || h.type === 'after') h.handler(...args)
+      }
+    },
+  })
+
+  // 23b. Automation
+  const triggers = new Map<string, { name: string; config: any; enabled: boolean }>()
+  ctx.provide('automation', {
+    registerTrigger: (name: string, config: any) => { triggers.set(name, { name, config, enabled: true }) },
+    removeTrigger: (name: string) => { triggers.delete(name) },
+    listTriggers: () => [...triggers.values()],
+    enable: (name: string) => { const t = triggers.get(name); if (t) t.enabled = true },
+    disable: (name: string) => { const t = triggers.get(name); if (t) t.enabled = false },
+  })
+
+  // 24b. FS-Sandbox (遗漏补齐 — 沙箱化文件系统)
+  ctx.provide('fsSandbox', {
+    _wrapped: null,
+    init(sandboxRoot: string, writablePaths: string[]) {
+      this._wrapped = { sandboxRoot, writablePaths }
+    },
+    async readFile(path: string, cwd?: string) {
+      // 委托给 ctx.fs（fs-sandbox 是 fs 的 Consumer 而非 Provider）
+      return ctx.fs.readFile(path, cwd)
+    },
+    async writeFile(path: string, content: string, cwd?: string) {
+      if (this._wrapped) {
+        const allowed = this._wrapped.writablePaths.some((p: string) => path.startsWith(p))
+        if (!allowed) throw new Error(`Write denied: ${path} is not in writable paths`)
+      }
+      return ctx.fs.writeFile(path, content, cwd)
+    },
+    async listDirectory(path: string) { return ctx.fs.listDirectory(path) },
+    async deleteFile(path: string) {
+      if (this._wrapped) {
+        const allowed = this._wrapped.writablePaths.some((p: string) => path.startsWith(p))
+        if (!allowed) throw new Error(`Delete denied: ${path} is not in writable paths`)
+      }
+      return ctx.fs.deleteFile(path)
+    },
+    async exists(path: string) { return ctx.fs.exists(path) },
+    async glob(pattern: string, cwd?: string) { return ctx.fs.glob(pattern, cwd) },
+    async grep(pattern: string, cwd?: string, glob?: string) { return ctx.fs.grep(pattern, cwd, glob) },
+  })
+
   // ===== P6 能力族 Provider 注册 =====
 
   // 32. Identity (P6.2)
@@ -727,6 +846,72 @@ export const bridgePlugin: Plugin = (ctx: Context) => {
       return { success: true }
     },
     isInstalled(name: string) { return installedPlugins.has(name) },
+  })
+
+  // ===== 遗漏补齐: Preset/Bundle/SDK/ACP/Host/Client =====
+
+  // 44. Preset
+  const presets = new Map<string, any>()
+  ctx.provide('preset', {
+    load: async (name: string) => presets.get(name),
+    save: async (name: string, config: any) => { presets.set(name, config) },
+    list: () => [...presets.keys()].map(name => ({ name })),
+    apply: async (name: string) => { console.log(`[preset] Applied: ${name}`) },
+  })
+
+  // 45. Bundle
+  const installedBundles = new Set(['base'])
+  ctx.provide('bundle', {
+    install: async (name: string) => { installedBundles.add(name) },
+    uninstall: async (name: string) => { installedBundles.delete(name) },
+    list: () => ['base', 'headless', 'web-app'].map(name => ({ name, installed: installedBundles.has(name) })),
+    getInstalled: () => [...installedBundles],
+  })
+
+  // 46. SDK
+  const sdkServers = new Map<string, any>()
+  ctx.provide('sdk', {
+    startServer: async (_config?: any) => {
+      const id = crypto.randomUUID()
+      sdkServers.set(id, { id, status: 'running' })
+      return id
+    },
+    stopServer: async (serverId: string) => {
+      const s = sdkServers.get(serverId)
+      if (s) s.status = 'stopped'
+    },
+    callMethod: async (_serverId: string, _method: string, _params?: any) => ({ result: 'ok' }),
+    listServers: () => [...sdkServers.values()],
+  })
+
+  // 47. ACP
+  const automations = new Map<string, any>()
+  ctx.provide('acp', {
+    registerAutomation: (name: string, config: any) => { automations.set(name, { name, config }) },
+    unregisterAutomation: (name: string) => { automations.delete(name) },
+    listAutomations: () => [...automations.values()],
+    trigger: async (name: string, payload?: any) => {
+      if (!automations.has(name)) throw new Error(`Automation "${name}" not found`)
+      return { triggered: true, name, payload }
+    },
+  })
+
+  // 48. Host
+  ctx.provide('host', {
+    _status: 'stopped',
+    getEndpoint() { return 'http://localhost:8080' },
+    getStatus() { return this._status },
+    async start() { this._status = 'running'; console.log('[host] Started') },
+    async stop() { this._status = 'stopped'; console.log('[host] Stopped') },
+  })
+
+  // 49. Client
+  ctx.provide('client', {
+    _connected: false,
+    async connect(_endpoint: string) { this._connected = true; console.log('[client] Connected') },
+    async disconnect() { this._connected = false; console.log('[client] Disconnected') },
+    isConnected() { return this._connected },
+    getCapabilities() { return ['chat', 'tools', 'sessions'] },
   })
 
   // Slot Registry

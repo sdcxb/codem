@@ -17,6 +17,7 @@ import { apply as settingsApply } from './ui-settings/index.ts'
 import { apply as themeApply } from './ui-theme/index.ts'
 import { apply as miscApply } from './ui-misc/index.ts'
 import { apply as marketApply } from './ui-market/index.ts'
+import { apply as skinApply } from './ui-skin/index.ts'
 
 /**
  * UI 插件聚合器 — 加载所有 UI 插件包。
@@ -36,6 +37,7 @@ export function loadUIPlugins(ctx: Context) {
     { name: 'ui-settings', apply: settingsApply },
     { name: 'ui-misc', apply: miscApply },
     { name: 'ui-market', apply: marketApply },
+    { name: 'ui-skin', apply: skinApply },
   ]
 
   for (const { name, apply } of plugins) {
