@@ -239,6 +239,286 @@ export const bridgePlugin: Plugin = (ctx: Context) => {
     onThemeChange: (cb: (theme: string) => void) => themeMgr.onThemeChange(cb),
   })
 
+  // ===== P5 能力族 Provider 注册 =====
+
+  // 19. FileSystem (P5.1)
+  ctx.provide('fs', {
+    readFile: async (path: string, cwd?: string) => {
+      const { readFile } = await import('../file-api')
+      const resolvedPath = (cwd && !path.startsWith('/') && !path.match(/^[A-Za-z]:/))
+        ? `${cwd.replace(/[/\\]+$/, '')}/${path}` : path
+      return readFile(resolvedPath)
+    },
+    writeFile: async (path: string, content: string, cwd?: string) => {
+      const { writeFile } = await import('../file-api')
+      return writeFile(path, content, { workspace: cwd })
+    },
+    listDirectory: async (path: string) => {
+      const { listDirectory } = await import('../file-api')
+      const entries = await listDirectory(path)
+      return entries.map(e => ({ name: e.name, isDir: e.isDirectory, size: 0 }))
+    },
+    deleteFile: async (path: string) => {
+      const { invoke } = (window as any).__TAURI__?.core || {}
+      if (invoke) await invoke('delete_file', { path })
+    },
+    exists: async (path: string) => {
+      try {
+        const { listDirectory } = await import('../file-api')
+        const parent = path.split(/[\\/]/).slice(0, -1).join('/') || '/'
+        const name = path.split(/[\\/]/).pop() || ''
+        const entries = await listDirectory(parent)
+        return entries.some(e => e.name === name)
+      } catch { return false }
+    },
+    glob: async (pattern: string, cwd?: string) => {
+      const { invoke } = (window as any).__TAURI__?.core || {}
+      if (invoke) return await invoke('glob_files', { pattern, cwd: cwd || '.' })
+      return []
+    },
+    grep: async (pattern: string, cwd?: string, glob?: string) => {
+      const { invoke } = (window as any).__TAURI__?.core || {}
+      if (invoke) return await invoke('grep_files', { pattern, cwd: cwd || '.', glob: glob || '*' })
+      return []
+    },
+  })
+
+  // 20. Shell (P5.2)
+  ctx.provide('shell', {
+    execute: async (command: string, cwd: string, timeoutMs?: number) => {
+      const { invoke } = (window as any).__TAURI__?.core || {}
+      if (invoke) {
+        try {
+          return await invoke('execute_command', { command, cwd, timeoutMs: timeoutMs || 30000 })
+        } catch (err: any) {
+          return { stdout: '', stderr: String(err), exitCode: 1 }
+        }
+      }
+      return { stdout: '', stderr: 'Tauri not available', exitCode: 1 }
+    },
+  })
+
+  // 21. Sandbox (P5.3)
+  const sandboxInstances = new Map<string, any>()
+  ctx.provide('sandbox', {
+    create: async (config?: any) => {
+      const id = crypto.randomUUID()
+      const instance = {
+        id,
+        rootPath: config?.rootPath || '/tmp/sandbox-' + id,
+        writablePaths: config?.writablePaths || [],
+        env: config?.env || {},
+        isActive: true,
+      }
+      sandboxInstances.set(id, instance)
+      return instance
+    },
+    destroy: async (id: string) => {
+      const inst = sandboxInstances.get(id)
+      if (inst) { inst.isActive = false; sandboxInstances.delete(id) }
+    },
+    list: () => [...sandboxInstances.values()],
+  })
+
+  // 22. Web (P5.4)
+  ctx.provide('web', {
+    search: async (query: string) => {
+      // 委托给现有 web-search 工具的实现
+      try {
+        const { webSearch } = await import('../llm/tools/web-search')
+        return await webSearch(query)
+      } catch { return [] }
+    },
+    fetch: async (url: string) => {
+      const response = await globalThis.fetch(url)
+      return response.text()
+    },
+  })
+
+  // 23. Subagents (P5.6) — 与 P4 的 subagent 不同，这是新接口
+  ctx.provide('subagents', {
+    spawn: async (parentSessionId: string, agentId: string, prompt: string, cwd: string, abort?: AbortSignal) => {
+      const task = await subagentMgr.spawn({ parentSessionId, agentId, prompt, cwd, abort } as any)
+      return { id: task.id, name: task.name }
+    },
+    getTask: (taskId: string) => subagentMgr.getResult(taskId),
+    waitForTask: async (taskId: string, abort?: AbortSignal) => subagentMgr.waitForTask(taskId, abort),
+  })
+
+  // 24. Skills (P5.5) — 新接口，与 P4 的 skill 不同
+  ctx.provide('skills', {
+    loadInstalled: async () => {
+      const { loadInstalledSkills } = await import('../skill/installer')
+      await loadInstalledSkills()
+    },
+    search: async (query: string) => {
+      const all = skillRegistry.listSkills()
+      return all
+        .filter((s: any) => s.name.toLowerCase().includes(query.toLowerCase()) || s.description?.toLowerCase().includes(query.toLowerCase()))
+        .map((s: any) => ({ id: s.id, name: s.name, description: s.description || '', source: s.source }))
+    },
+    get: (skillId: string) => skillRegistry.getSkill(skillId),
+    install: async (zipPath: string, onProgress?: (p: number) => void) => {
+      const { installSkillFromZip } = await import('../skill/installer')
+      return installSkillFromZip(zipPath, onProgress)
+    },
+    uninstall: async (skillId: string) => {
+      const { uninstallSkill } = await import('../skill/installer')
+      await uninstallSkill(skillId)
+    },
+    listMarket: async () => {
+      const { listMarketSkills } = await import('../skill/skill-market-client')
+      return listMarketSkills()
+    },
+    installFromMarket: async (skillId: string) => {
+      const { installMarketSkill } = await import('../skill/skill-market-client')
+      await installMarketSkill(skillId)
+      return { success: true }
+    },
+  })
+
+  // 25. Credentials (P5.7)
+  const credStore: Record<string, string> = {}
+  ctx.provide('credentials', {
+    get: (key: string) => credStore[key] || process.env?.[key] || undefined,
+    set: (key: string, value: string) => { credStore[key] = value },
+    delete: (key: string) => { delete credStore[key] },
+    list: () => Object.keys(credStore),
+  })
+
+  // 26. Attachments (P5.7)
+  const attachmentStore = new Map<string, string | Uint8Array>()
+  ctx.provide('attachments', {
+    store: async (content: string | Uint8Array) => {
+      const data = typeof content === 'string' ? new TextEncoder().encode(content) : content
+      const hashBuffer = await crypto.subtle.digest('SHA-256', data)
+      const hash = [...new Uint8Array(hashBuffer)].map(b => b.toString(16).padStart(2, '0')).join('')
+      attachmentStore.set(hash, content)
+      return hash
+    },
+    get: async (hash: string) => attachmentStore.get(hash),
+    delete: async (hash: string) => { attachmentStore.delete(hash) },
+  })
+
+  // 27. Knowledge (P5.7)
+  const knowledgeItems: Array<{ id: string; text: string; metadata?: Record<string, unknown> }> = []
+  ctx.provide('knowledge', {
+    add: async (text: string, metadata?: Record<string, unknown>) => {
+      const id = crypto.randomUUID()
+      knowledgeItems.push({ id, text, metadata })
+      return id
+    },
+    search: async (query: string, limit: number = 10) => {
+      const q = query.toLowerCase()
+      return knowledgeItems
+        .map(item => ({ id: item.id, text: item.text, score: item.text.toLowerCase().includes(q) ? 1 : 0 }))
+        .filter(r => r.score > 0)
+        .slice(0, limit)
+    },
+    remove: async (id: string) => {
+      const idx = knowledgeItems.findIndex(i => i.id === id)
+      if (idx >= 0) knowledgeItems.splice(idx, 1)
+    },
+  })
+
+  // 28. Schedule (P5.7)
+  const reminders: Array<{ id: string; time: Date; message: string; sessionId?: string; timer?: any }> = []
+  ctx.provide('schedule', {
+    addReminder: (time: Date, message: string, sessionId?: string) => {
+      const id = crypto.randomUUID()
+      const delay = time.getTime() - Date.now()
+      const reminder: any = { id, time, message, sessionId }
+      if (delay > 0) {
+        reminder.timer = setTimeout(() => {
+          console.log(`[Schedule] Reminder: ${message}`)
+          const idx = reminders.findIndex(r => r.id === id)
+          if (idx >= 0) reminders.splice(idx, 1)
+        }, delay)
+      }
+      reminders.push(reminder)
+      return id
+    },
+    listReminders: (sessionId?: string) => {
+      return reminders
+        .filter(r => !sessionId || r.sessionId === sessionId)
+        .map(({ id, time, message }) => ({ id, time, message }))
+    },
+    removeReminder: (id: string) => {
+      const r = reminders.find(r => r.id === id)
+      if (r?.timer) clearTimeout(r.timer)
+      const idx = reminders.findIndex(r => r.id === id)
+      if (idx >= 0) reminders.splice(idx, 1)
+    },
+  })
+
+  // 29. Goals (P5.7)
+  const goalsStore: Array<{ id: string; title: string; description?: string; criteria?: string[]; status: string }> = []
+  ctx.provide('goals', {
+    set: (goal: { title: string; description?: string; criteria?: string[] }) => {
+      const id = crypto.randomUUID()
+      goalsStore.push({ id, ...goal, status: 'active' })
+      return id
+    },
+    get: (goalId: string) => goalsStore.find(g => g.id === goalId),
+    list: () => goalsStore.map(({ id, title, status }) => ({ id, title, status })),
+    update: (goalId: string, status: string) => {
+      const g = goalsStore.find(g => g.id === goalId)
+      if (g) g.status = status
+    },
+    remove: (goalId: string) => {
+      const idx = goalsStore.findIndex(g => g.id === goalId)
+      if (idx >= 0) goalsStore.splice(idx, 1)
+    },
+  })
+
+  // 30. Plans (P5.7)
+  const plansStore: Array<{ id: string; title: string; steps: Array<{ text: string; done: boolean }> }> = []
+  ctx.provide('plans', {
+    create: (title: string, steps: string[]) => {
+      const id = crypto.randomUUID()
+      plansStore.push({ id, title, steps: steps.map(text => ({ text, done: false })) })
+      return id
+    },
+    get: (planId: string) => plansStore.find(p => p.id === planId),
+    list: () => plansStore.map(p => ({
+      id: p.id, title: p.title,
+      progress: p.steps.filter(s => s.done).length / p.steps.length,
+    })),
+    updateStep: (planId: string, stepIndex: number, done: boolean) => {
+      const p = plansStore.find(p => p.id === planId)
+      if (p && p.steps[stepIndex]) p.steps[stepIndex].done = done
+    },
+    remove: (planId: string) => {
+      const idx = plansStore.findIndex(p => p.id === planId)
+      if (idx >= 0) plansStore.splice(idx, 1)
+    },
+  })
+
+  // 31. Jobs (P5.7)
+  const jobsStore = new Map<string, { id: string; name: string; status: string; result?: any; error?: string; abortController: AbortController }>()
+  ctx.provide('jobs', {
+    start: (task: { name: string; fn: () => Promise<any> }) => {
+      const id = crypto.randomUUID()
+      const abortController = new AbortController()
+      const job: any = { id, name: task.name, status: 'running', abortController }
+      jobsStore.set(id, job)
+      task.fn()
+        .then(result => { job.status = 'completed'; job.result = result })
+        .catch(err => { job.status = 'failed'; job.error = err.message })
+      return id
+    },
+    get: (jobId: string) => {
+      const j = jobsStore.get(jobId)
+      if (!j) return undefined
+      return { id: j.id, name: j.name, status: j.status, result: j.result, error: j.error }
+    },
+    list: () => [...jobsStore.values()].map(j => ({ id: j.id, name: j.name, status: j.status })),
+    cancel: (jobId: string) => {
+      const j = jobsStore.get(jobId)
+      if (j) { j.abortController.abort(); j.status = 'cancelled' }
+    },
+  })
+
   // Slot Registry
   // SlotsService 在构造函数中自动注册为 ctx.slots
   // 需要在 bridgePlugin 之外单独加载

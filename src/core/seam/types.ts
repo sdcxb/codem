@@ -1,4 +1,8 @@
 /**
+ * @deprecated SeamRegistry 已被 P5 能力族替代。
+ * 新代码应使用 ctx.fs / ctx.shell / ctx.web / ctx.subagents 等 Cordis Service。
+ * 此文件保留仅为向后兼容，将在 P6 阶段删除。
+ *
  * Capability Seam — 三角色抽象
  *
  * Design (对标 DeepSeek Harness capability seams):

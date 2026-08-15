@@ -214,3 +214,19 @@ export interface ThemeService {
 declare module '../cordis/src/context.ts' {
   interface Context { theme: ThemeService }
 }
+
+// ==================== P5 能力族 ====================
+// FS 能力族
+export * from './fs/index.ts'
+// Shell 能力族
+export * from './shell/index.ts'
+// Sandbox 能力族
+export * from './sandbox/index.ts'
+// Web 能力族
+export * from './web/index.ts'
+// Subagent 能力族（新接口，与 #13 SubagentService 共存）
+export * from './subagent/index.ts'
+// Skill 能力族（新接口，与 #10 SkillService 共存）
+export * from './skill/index.ts'
+// 凭证/附件/知识/调度/目标/计划/后台任务
+export * from './misc/index.ts'
