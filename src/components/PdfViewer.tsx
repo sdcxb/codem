@@ -12,7 +12,8 @@
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { X, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Search, FileText } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Search, FileText } from 'lucide-react';
+import { PanelIcons, ActionIcons } from '../core/icons/icon-map';
 import { useLang } from '../core/i18n/lang';
 
 interface PdfViewerProps {
@@ -28,6 +29,7 @@ interface PdfViewerProps {
 export function PdfViewer({ filePath, pdfData, highlightText, onClose }: PdfViewerProps) {
   const lang = useLang();
   const isZh = lang === 'zh';
+  const CloseIcon = ActionIcons.close;
 
   const [pdfDoc, setPdfDoc] = useState<any>(null);
   const [currentPage, setCurrentPage] = useState(1);
@@ -210,7 +212,7 @@ export function PdfViewer({ filePath, pdfData, highlightText, onClose }: PdfView
       <div className="nb-source-viewer-overlay" onClick={onClose}>
         <div className="nb-source-viewer" onClick={(e) => e.stopPropagation()} style={{ alignItems: 'center', justifyContent: 'center' }}>
           <div style={{ textAlign: 'center', padding: '40px' }}>
-            <FileText className="w-8 h-8 animate-pulse" style={{ margin: '0 auto 12px', opacity: 0.5 }} />
+            <FileText size={32} className="animate-pulse" style={{ margin: '0 auto 12px', opacity: 0.5 }} />
             <p style={{ opacity: 0.6 }}>{isZh ? '正在加载 PDF...' : 'Loading PDF...'}</p>
           </div>
         </div>
@@ -224,13 +226,13 @@ export function PdfViewer({ filePath, pdfData, highlightText, onClose }: PdfView
         <div className="nb-source-viewer" onClick={(e) => e.stopPropagation()}>
           <div className="nb-source-viewer-header">
             <h3 className="nb-source-viewer-title">
-              <FileText className="w-4 h-4" style={{ color: 'var(--accent-primary, #6366f1)' }} />
+              <FileText size={16} style={{ color: 'var(--accent)' }} />
               <span>PDF Viewer</span>
             </h3>
-            <button className="nb-dialog-close" onClick={onClose}><X className="w-4 h-4" /></button>
+            <button className="nb-dialog-close" onClick={onClose}><CloseIcon size={16} /></button>
           </div>
           <div style={{ padding: '40px', textAlign: 'center' }}>
-            <p style={{ color: '#ef4444', fontSize: '14px' }}>{error}</p>
+            <p style={{ color: 'var(--error)', fontSize: '14px' }}>{error}</p>
             <p style={{ opacity: 0.5, fontSize: '12px', marginTop: '8px' }}>
               {isZh ? '提示：确保文件路径正确且 Tauri 已配置 PDF 读取权限' : 'Tip: Ensure the file path is correct and Tauri has PDF read permissions'}
             </p>
@@ -246,14 +248,14 @@ export function PdfViewer({ filePath, pdfData, highlightText, onClose }: PdfView
         {/* Header */}
         <div className="nb-source-viewer-header">
           <div className="nb-source-viewer-title">
-            <FileText className="w-4 h-4" style={{ color: 'var(--accent-primary, #6366f1)' }} />
+            <FileText size={16} style={{ color: 'var(--accent)' }} />
             <span>PDF Viewer</span>
             <span className="nb-source-type-tag" style={{ marginLeft: '8px' }}>
               {currentPage} / {numPages}
             </span>
           </div>
           <button className="nb-dialog-close" onClick={onClose}>
-            <X className="w-4 h-4" />
+            <CloseIcon size={16} />
           </button>
         </div>
 
@@ -274,7 +276,7 @@ export function PdfViewer({ filePath, pdfData, highlightText, onClose }: PdfView
               opacity: currentPage <= 1 ? 0.3 : 1, color: 'var(--text-secondary, #a0a0a8)',
             }}
           >
-            <ChevronLeft className="w-3.5 h-3.5" />
+            <ChevronLeft size={14} />
           </button>
           <span style={{ fontSize: '11px', color: 'var(--text-muted, #555)', minWidth: '40px', textAlign: 'center' }}>
             {currentPage} / {numPages}
@@ -288,14 +290,14 @@ export function PdfViewer({ filePath, pdfData, highlightText, onClose }: PdfView
               opacity: currentPage >= numPages ? 0.3 : 1, color: 'var(--text-secondary, #a0a0a8)',
             }}
           >
-            <ChevronRight className="w-3.5 h-3.5" />
+            <ChevronRight size={14} />
           </button>
           <div style={{ width: '1px', height: '16px', background: 'var(--border-color, #2a2a30)' }} />
           <button
             onClick={() => setScale(Math.max(0.5, scale - 0.2))}
             style={{ background: 'none', border: '1px solid var(--border-color, #2a2a30)', borderRadius: '4px', padding: '3px 6px', cursor: 'pointer', color: 'var(--text-secondary, #a0a0a8)' }}
           >
-            <ZoomOut className="w-3.5 h-3.5" />
+            <ZoomOut size={14} />
           </button>
           <span style={{ fontSize: '11px', color: 'var(--text-muted, #555)', minWidth: '36px', textAlign: 'center' }}>
             {Math.round(scale * 100)}%
@@ -304,11 +306,11 @@ export function PdfViewer({ filePath, pdfData, highlightText, onClose }: PdfView
             onClick={() => setScale(Math.min(3, scale + 0.2))}
             style={{ background: 'none', border: '1px solid var(--border-color, #2a2a30)', borderRadius: '4px', padding: '3px 6px', cursor: 'pointer', color: 'var(--text-secondary, #a0a0a8)' }}
           >
-            <ZoomIn className="w-3.5 h-3.5" />
+            <ZoomIn size={14} />
           </button>
           <div style={{ flex: 1 }} />
           <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-            <Search className="w-3 h-3" style={{ opacity: 0.4 }} />
+            <Search size={12} style={{ opacity: 0.4 }} />
             <input
               type="text"
               placeholder={isZh ? '搜索...' : 'Search...'}

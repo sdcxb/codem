@@ -307,6 +307,33 @@ npm run tauri:build
 
 ## 更新日志
 
+### 2026-08-15（v1.0.0）
+
+> 本次更新是 Codem 从 0.x 迈向 1.0 的里程碑版本。以 P4-P6 架构升级为基础，系统性完成了全弹窗 UI/UX 标准化、图标映射体系、插件依赖图谱与级联管控、以及覆盖功能触发-调用-执行闭环的全量测试体系。67 文件修改（+1112/-641 行），5 个新测试文件，3552 用例全部通过。
+
+**P4 — Cordis DI + Slot Registry + Plugin Loader + 18 Capability Seams：**
+- **Cordis DI 容器**（`slots/index.ts`）：`SlotRegistry` 注册表 + `initSlots()` 初始化 18 个 Capability Seam（FS/Shell/Sandbox/Web/Skill/Subagent/凭证/附件/知识/调度/目标/计划/后台任务等）
+- **Plugin Loader**（`plugin-loader/index.ts`）：扫描 + 拓扑排序 + 加载/卸载 + 生命周期管理
+- **App.tsx 接入**：`PluginLoader` 初始化 + `loadUIPlugins()` 动态加载 UI 插件包
+
+**P5 — 全能力族拆分：**
+- 将 v0.99.0 的单文件能力模块拆分为 13 个独立能力族（FS/Shell/Sandbox/Web/Skill/Subagent + 凭证/附件/知识/调度/目标/计划/后台任务），每个族有独立的 Provider/Consumer/ServiceDefinition
+
+**P6 — UI 插件包化 + 插件市场基础设施：**
+- 7 个 UI 插件包（ui-conversation/ui-market/ui-misc/ui-settings/ui-sidebar/ui-skin/ui-tool）+ Self-Referential Runtime + 插件市场 Manifest + 安装/卸载流程
+- 补齐遗漏能力模块：compaction/approval/permissions/hooks/automation + fs-sandbox + tool-todo/ask-user/lsp/run-code/workflow/goal/schedule/knowledge + skin-default/pet/ui-pet + Preset/Bundle/SDK/ACP/Host/Client
+
+**UI/UX 全面标准化：**
+- **弹窗统一结构**：所有弹窗统一 `modal-overlay` + `modal-editor` 容器 + 标准 header + 标准关闭按钮（`ActionIcons.close`），涉及 35+ 组件
+- **图标映射体系**：`icon-map.ts` 统一图标包（7 个图标集 + `ToolEmojis`），消除所有直接 `lucide-react` 导入和 emoji 图标，新增运行时完整性测试防止引用不存在的图标属性
+- **CSS 样式标准化**：硬编码颜色 → CSS 变量（`var(--error)` / `var(--success)` / `var(--warning)` 等）+ Tailwind 类 → `size` 属性/CSS 类 + 补齐缺失 CSS 规则 + SVG 图标 flexbox 对齐
+- **核心插件保护**：riskLevel + locked + core 属性标识 + 关闭核心插件二次确认
+
+**测试体系全面升级：**
+- **5 个新测试文件 / 271+ 用例**：图标标准化测试（97 用例）+ 工具触发-调用-执行闭环测试（30+ 用例）+ 综合质量套件（80 用例：快照/性能/交互/CSS/i18n/稳定性）+ 插件依赖图测试（24+ 用例）+ 插件关闭影响测试（40+ 用例）
+- **历史用例适配**：`full-regression-smoke` + `phase-b-f-regression` 适配新架构（`SlotBridge` + `icon-map`）
+- **测试方法扩充**：快照测试 + 性能基线 + 交互流程闭环 + CSS 布局一致性 + i18n 覆盖率 + 核心模块稳定性 + 数据库初始化不崩溃 + 读写闭环
+
 ### 2026-08-14（v0.99.0）
 
 > 本次更新是 Codem 内核架构史上最大规模的对标升级：以 DeepSeek Harness (dsh) 为唯一对标对象，系统性追平 31 项差距。25 文件修改（+1721/-313 行），50+ 新文件。全量 99 文件 / 3234 用例全部通过。

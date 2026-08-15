@@ -78,7 +78,7 @@ export function SquadsTab() {
       {/* Header */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "16px" }}>
         <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-          <Users size={16} style={{ color: "var(--accent, #7c3aed)" }} />
+          <Users size={16} style={{ color: "var(--accent)" }} />
           <span style={{ fontSize: "14px", fontWeight: 600, color: "var(--text-primary)" }}>
             {zh ? "Squads" : "Squads"} ({squads.length})
           </span>
@@ -92,8 +92,8 @@ export function SquadsTab() {
             padding: "6px 14px",
             borderRadius: 6,
             fontSize: 13,
-            border: "1px solid var(--accent, #7c3aed)",
-            background: "var(--accent, #7c3aed)",
+            border: "1px solid var(--accent)",
+            background: "var(--accent)",
             color: "#fff",
             cursor: "pointer",
           }}
@@ -116,8 +116,8 @@ export function SquadsTab() {
             style={{
               padding: "14px 16px",
               borderRadius: 8,
-              background: "var(--bg-tertiary, #181828)",
-              border: "1px solid var(--border-color, #2a2a3a)",
+              background: "var(--bg-tertiary)",
+              border: "1px solid var(--border-primary)",
             }}
           >
             <div
@@ -130,8 +130,8 @@ export function SquadsTab() {
                 fontSize: "10px",
                 padding: "2px 8px",
                 borderRadius: 3,
-                background: "var(--accent, #7c3aed)22",
-                color: "var(--accent, #7c3aed)",
+                background: "var(--accent)22",
+                color: "var(--accent)",
               }}>
                 {squad.members.length} {zh ? "成员" : "members"}
               </span>
@@ -152,17 +152,17 @@ export function SquadsTab() {
 
             {/* Leader info */}
             <div style={{ display: "flex", alignItems: "center", gap: "6px", marginTop: "8px", fontSize: "12px", color: "var(--text-secondary)" }}>
-              <Crown size={12} style={{ color: "#f59e0b" }} />
+              <Crown size={12} style={{ color: "var(--warning)" }} />
               <span>{zh ? "Leader:" : "Leader:"}</span>
               <span style={{ fontWeight: 600, color: "var(--text-primary)" }}>{squad.leader?.name || squad.leaderAgentId}</span>
             </div>
 
             {/* Expanded detail */}
             {selectedSquad === squad.id && (
-              <div style={{ marginTop: "12px", paddingTop: "12px", borderTop: "1px solid var(--border-color, #2a2a3a)" }}>
+              <div style={{ marginTop: "12px", paddingTop: "12px", borderTop: "1px solid var(--border-primary)" }}>
                 {/* Instructions */}
                 {squad.instructions && (
-                  <div style={{ fontSize: "12px", color: "var(--text-secondary)", marginBottom: "12px", padding: "8px", background: "var(--bg-secondary, #1e1e2e)", borderRadius: 4 }}>
+                  <div style={{ fontSize: "12px", color: "var(--text-secondary)", marginBottom: "12px", padding: "8px", background: "var(--bg-secondary)", borderRadius: 4 }}>
                     {squad.instructions}
                   </div>
                 )}
@@ -172,21 +172,21 @@ export function SquadsTab() {
                   {zh ? "成员列表" : "Members"}
                 </div>
                 {squad.members.map((m) => (
-                  <div key={m.id} style={{ display: "flex", alignItems: "center", gap: "8px", padding: "6px 8px", marginBottom: "4px", borderRadius: 4, background: "var(--bg-secondary, #1e1e2e)", fontSize: "12px" }}>
+                  <div key={m.id} style={{ display: "flex", alignItems: "center", gap: "8px", padding: "6px 8px", marginBottom: "4px", borderRadius: 4, background: "var(--bg-secondary)", fontSize: "12px" }}>
                     {m.memberType === "agent" ? <Bot size={12} style={{ color: "var(--text-secondary)" }} /> : <User size={12} style={{ color: "var(--text-secondary)" }} />}
                     <span style={{ fontWeight: 600, color: "var(--text-primary)" }}>{m.memberName}</span>
                     {m.id !== squad.members[0]?.id && (
                       <span style={{ fontSize: "10px", color: "var(--text-muted)" }}>{m.roleDescription}</span>
                     )}
                     {m.id === squad.members[0]?.id && (
-                      <span style={{ fontSize: "9px", padding: "1px 6px", borderRadius: 3, background: "#f59e0b22", color: "#f59e0b" }}>
+                      <span style={{ fontSize: "9px", padding: "1px 6px", borderRadius: 3, background: "var(--warning)22", color: "var(--warning)" }}>
                         {zh ? "Leader" : "Leader"}
                       </span>
                     )}
                     {m.id !== squad.members[0]?.id && (
                       <button
                         onClick={() => handleRemoveMember(m.id, squad.id)}
-                        style={{ marginLeft: "auto", background: "none", border: "none", color: "#ef4444", cursor: "pointer", padding: "2px" }}
+                        style={{ marginLeft: "auto", background: "none", border: "none", color: "var(--error)", cursor: "pointer", padding: "2px" }}
                       >
                         <Trash2 size={12} />
                       </button>
@@ -219,8 +219,8 @@ export function SquadsTab() {
           marginTop: 16,
           padding: 16,
           borderRadius: 8,
-          border: "1px solid var(--border-color, #2a2a3a)",
-          background: "var(--bg-secondary, #1e1e2e)",
+          border: "1px solid var(--border-primary)",
+          background: "var(--bg-secondary)",
         }}>
           <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 12, color: "var(--text-primary)" }}>
             {zh ? "新建 Squad" : "Create Squad"}
@@ -262,7 +262,7 @@ export function SquadsTab() {
               disabled={!editing.name || !editing.leaderAgentId}
               style={{
                 padding: "6px 16px", borderRadius: 4, fontSize: 12,
-                border: "1px solid var(--accent, #7c3aed)", background: "var(--accent, #7c3aed)",
+                border: "1px solid var(--accent)", background: "var(--accent)",
                 color: "#fff", cursor: "pointer", opacity: !editing.name || !editing.leaderAgentId ? 0.5 : 1,
               }}
             >

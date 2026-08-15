@@ -17,7 +17,8 @@
  */
 
 import { useRef, useEffect, useState, useCallback } from 'react';
-import { Loader2, Search, Share2, ZoomIn, ZoomOut, Maximize2, Download, Edit3, Trash2, Plus, X } from 'lucide-react';
+import { Loader2, Search, Share2, ZoomIn, ZoomOut, Maximize2, Download, Edit3, Trash2, Plus } from 'lucide-react';
+import { ActionIcons } from '../core/icons/icon-map';
 import { useSkin } from '../core/theme';
 import { getGraphData, updateGraphNode, deleteGraphNode, deleteGraphEdge, addGraphEdge } from '../core/knowledge';
 import type { GraphData, GraphNode, GraphEdge, EntityType, RelationType } from '../core/knowledge';
@@ -583,7 +584,7 @@ export function KnowledgeGraphView({ notebookId, onNodeSelect }: KnowledgeGraphV
   if (loading) {
     return (
       <div className="kg-loading" style={{ background: bgColor, color: textColor }}>
-        <Loader2 className="w-6 h-6 animate-spin" style={{ color: accentColor }} />
+        <Loader2 size={24} className="animate-spin" style={{ color: accentColor }} />
         <span style={{ color: textSecondaryColor }}>
           {isZh ? '正在提取知识图谱...' : 'Extracting knowledge graph...'}
         </span>
@@ -594,7 +595,7 @@ export function KnowledgeGraphView({ notebookId, onNodeSelect }: KnowledgeGraphV
   if (graphData.nodes.length === 0) {
     return (
       <div className="kg-empty" style={{ background: bgColor, color: textSecondaryColor }}>
-        <Share2 className="w-12 h-12 opacity-30" />
+        <Share2 size={48} style={{ opacity: 0.3 }} />
         <p>{isZh ? '暂无图谱数据，请先添加并索引来源' : 'No graph data. Add and index sources first.'}</p>
         <button
           onClick={loadGraph}
@@ -612,7 +613,7 @@ export function KnowledgeGraphView({ notebookId, onNodeSelect }: KnowledgeGraphV
       {/* Toolbar */}
       <div className="kg-toolbar" style={{ background: bgSecondary, borderBottom: `1px solid ${borderColor}` }}>
         <div className="kg-search-wrapper">
-          <Search className="w-3.5 h-3.5" style={{ color: textSecondaryColor }} />
+          <Search size={14} style={{ color: textSecondaryColor }} />
           <input
             className="kg-search-input"
             placeholder={isZh ? '搜索节点...' : 'Search nodes...'}
@@ -623,13 +624,13 @@ export function KnowledgeGraphView({ notebookId, onNodeSelect }: KnowledgeGraphV
         </div>
         <div className="kg-toolbar-actions">
           <button className="kg-tool-btn" onClick={handleZoomIn} title={isZh ? '放大' : 'Zoom In'}>
-            <ZoomIn className="w-4 h-4" />
+            <ZoomIn size={16} />
           </button>
           <button className="kg-tool-btn" onClick={handleZoomOut} title={isZh ? '缩小' : 'Zoom Out'}>
-            <ZoomOut className="w-4 h-4" />
+            <ZoomOut size={16} />
           </button>
           <button className="kg-tool-btn" onClick={handleReset} title={isZh ? '重置' : 'Reset'}>
-            <Maximize2 className="w-4 h-4" />
+            <Maximize2 size={16} />
           </button>
           <button
             className="kg-tool-btn kg-refresh-btn"
@@ -637,7 +638,7 @@ export function KnowledgeGraphView({ notebookId, onNodeSelect }: KnowledgeGraphV
             title={isZh ? '重新提取图谱' : 'Re-extract Graph'}
             style={{ color: accentColor }}
           >
-            <Loader2 className="w-4 h-4" />
+            <Loader2 size={16} />
           </button>
           {/* B7: 导出图谱 */}
           <button
@@ -652,7 +653,7 @@ export function KnowledgeGraphView({ notebookId, onNodeSelect }: KnowledgeGraphV
             }}
             title={isZh ? '导出为 PNG' : 'Export as PNG'}
           >
-            <Download className="w-4 h-4" />
+            <Download size={16} />
           </button>
           <button
             className="kg-tool-btn"
@@ -763,7 +764,7 @@ export function KnowledgeGraphView({ notebookId, onNodeSelect }: KnowledgeGraphV
                   fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px', justifyContent: 'center',
                 }}
               >
-                <Edit3 className="w-3 h-3" />
+                <Edit3 size={12} />
                 {isZh ? '编辑节点' : 'Edit Node'}
               </button>
               <button
@@ -784,7 +785,7 @@ export function KnowledgeGraphView({ notebookId, onNodeSelect }: KnowledgeGraphV
                   fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px', justifyContent: 'center',
                 }}
               >
-                <Plus className="w-3 h-3" />
+                <Plus size={12} />
                 {edgeCreateFrom === selectedNode.id
                   ? (isZh ? '取消连线' : 'Cancel Link')
                   : (isZh ? '创建连线' : 'Create Link')}
@@ -798,7 +799,7 @@ export function KnowledgeGraphView({ notebookId, onNodeSelect }: KnowledgeGraphV
                   fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px', justifyContent: 'center',
                 }}
               >
-                <Trash2 className="w-3 h-3" />
+                <Trash2 size={12} />
                 {isZh ? '删除节点' : 'Delete Node'}
               </button>
             </div>
@@ -923,7 +924,7 @@ export function KnowledgeGraphView({ notebookId, onNodeSelect }: KnowledgeGraphV
                     borderRadius: '4px', textAlign: 'left',
                   }}
                 >
-                  <Edit3 className="w-3 h-3" />
+                  <Edit3 size={12} />
                   {isZh ? '编辑标签' : 'Edit Label'}
                 </button>
                 <button
@@ -939,7 +940,7 @@ export function KnowledgeGraphView({ notebookId, onNodeSelect }: KnowledgeGraphV
                     borderRadius: '4px', textAlign: 'left',
                   }}
                 >
-                  <Plus className="w-3 h-3" />
+                  <Plus size={12} />
                   {isZh ? '创建连线' : 'Create Link'}
                 </button>
                 <div style={{ height: '1px', background: borderColor, margin: '2px 0' }} />
@@ -953,7 +954,7 @@ export function KnowledgeGraphView({ notebookId, onNodeSelect }: KnowledgeGraphV
                     borderRadius: '4px', textAlign: 'left',
                   }}
                 >
-                  <Trash2 className="w-3 h-3" />
+                  <Trash2 size={12} />
                   {isZh ? '删除节点' : 'Delete Node'}
                 </button>
               </>
@@ -969,7 +970,7 @@ export function KnowledgeGraphView({ notebookId, onNodeSelect }: KnowledgeGraphV
                   borderRadius: '4px', textAlign: 'left',
                 }}
               >
-                <Trash2 className="w-3 h-3" />
+                <Trash2 size={12} />
                 {isZh ? '删除连线' : 'Delete Edge'}
               </button>
             )}

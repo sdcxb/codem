@@ -13,6 +13,5 @@ const ToolCallGroup = lazy(() => import('../../../components/ToolCallGroup'))
 export function apply() {
   const ctx = useCtx()
 
-  ctx.slots.register('conversation.node.tool', ToolCallCard)
-  ctx.slots.register('conversation.details.tool', ToolCallGroup)
+  ctx.slots.register({ name: 'conversation.details.tool', id: 'default-tool-group', priority: 0 }, ToolCallGroup)
 }

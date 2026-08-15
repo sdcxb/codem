@@ -2,7 +2,8 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
-import { X, Plus, Square } from "lucide-react";
+import { Plus, Square } from "lucide-react";
+import { ActionIcons } from "../core/icons/icon-map";
 import "@xterm/xterm/css/xterm.css";
 
 async function tauriInvoke(command: string, args?: Record<string, unknown>): Promise<any> {
@@ -259,7 +260,7 @@ export function TerminalPanel({ cwd }: TerminalPanelProps) {
                 closeSession(s.id);
               }}
             >
-              <X size={12} />
+              <ActionIcons.close size={12} />
             </button>
           </div>
         ))}

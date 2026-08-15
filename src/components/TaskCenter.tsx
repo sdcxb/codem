@@ -10,7 +10,8 @@
 
 import { useState } from "react";
 import { createPortal } from "react-dom";
-import { X, LayoutDashboard, Link2, Bot, Clock, ClipboardList, Columns, Users, Inbox as InboxIcon } from "lucide-react";
+import { LayoutDashboard, Link2, Bot, Clock, ClipboardList, Columns, Users, Inbox as InboxIcon } from "lucide-react";
+import { ActionIcons } from "../core/icons/icon-map";
 import { useLang } from "../core/i18n/lang";
 import { OverviewTab } from "./task-center/OverviewTab";
 import { DelegationTab } from "./task-center/DelegationTab";
@@ -97,7 +98,7 @@ export function TaskCenter({ onClose, initialTab = "overview", subagentTasks = [
             onMouseEnter={(e) => (e.currentTarget.style.background = "var(--bg-tertiary, #2a2a3a)")}
             onMouseLeave={(e) => (e.currentTarget.style.background = "none")}
           >
-            <X size={18} />
+            <ActionIcons.close size={18} />
           </button>
         </div>
 

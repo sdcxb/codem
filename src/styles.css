@@ -3244,10 +3244,12 @@ background: var(--bg-secondary);
   background: none;
   border: none;
   color: var(--text-secondary);
-  font-size: 18px;
   cursor: pointer;
-  padding: 4px 8px;
+  padding: 4px;
   border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .settings-close:hover {
@@ -4344,9 +4346,11 @@ background: rgba(124, 108, 240, 0.15);
   border: none;
   color: var(--text-secondary);
   cursor: pointer;
-  padding: 4px 8px;
+  padding: 4px;
   border-radius: 4px;
-  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .agent-panel-close:hover {
@@ -5003,9 +5007,11 @@ background: rgba(124, 108, 240, 0.15);
   border: none;
   color: var(--text-secondary);
   cursor: pointer;
-  padding: 4px 8px;
+  padding: 4px;
   border-radius: 4px;
-  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .snapshot-panel-close:hover {
@@ -5971,11 +5977,11 @@ color: var(--text-on-accent);
   border: none;
   color: var(--text-secondary);
   cursor: pointer;
-  padding: 4px 8px;
+  padding: 4px;
   border-radius: 4px;
-  font-size: 14px;
   display: flex;
   align-items: center;
+  justify-content: center;
 }
 
 .skill-manager-close:hover {
@@ -6530,8 +6536,8 @@ color: var(--text-on-accent);
 }
 
 .skill-tab-btn.active {
-  color: var(--accent-color, #6366f1);
-  border-bottom-color: var(--accent-color, #6366f1);
+  color: var(--accent);
+  border-bottom-color: var(--accent);
 }
 
 /* ========== Skill Market ========== */
@@ -6572,12 +6578,12 @@ color: var(--text-on-accent);
 }
 
 .market-skill-card:hover {
-  border-color: var(--accent-color, #6366f1);
+  border-color: var(--accent);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
 }
 
 .market-skill-card.selected {
-  border-color: var(--accent-color, #6366f1);
+  border-color: var(--accent);
   box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.15);
 }
 
@@ -6687,7 +6693,7 @@ color: var(--text-on-accent);
   align-items: center;
   gap: 4px;
   padding: 4px 12px;
-  background: var(--accent-color, #6366f1);
+  background: var(--accent);
   border: none;
   border-radius: 6px;
   color: white;
@@ -6718,7 +6724,7 @@ color: var(--text-on-accent);
   display: flex;
   align-items: center;
   gap: 6px;
-  color: var(--accent-color, #6366f1);
+  color: var(--accent);
   text-decoration: none;
   font-size: 12px;
   word-break: break-all;
@@ -6753,7 +6759,9 @@ color: var(--text-on-accent);
 }
 
 .memory-manager-icon {
-  font-size: 16px;
+  display: flex;
+  align-items: center;
+  color: var(--accent);
 }
 
 .memory-manager-close {
@@ -6761,9 +6769,11 @@ color: var(--text-on-accent);
   border: none;
   color: var(--text-secondary);
   cursor: pointer;
-  padding: 4px 8px;
+  padding: 4px;
   border-radius: 4px;
-  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .memory-manager-close:hover {
@@ -6836,6 +6846,9 @@ color: var(--text-on-accent);
   border: 1px solid var(--border-primary);
   border-radius: 6px;
   cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .memory-search button:hover {
@@ -7423,9 +7436,11 @@ border-bottom: 1px solid var(--accent);
   border: none;
   color: var(--text-secondary);
   cursor: pointer;
-  padding: 4px 8px;
+  padding: 4px;
   border-radius: 4px;
-  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .session-recovery-close:hover {
@@ -7622,9 +7637,11 @@ border-bottom: 1px solid var(--accent);
   border: none;
   color: var(--text-secondary);
   cursor: pointer;
-  padding: 4px 8px;
+  padding: 4px;
   border-radius: 4px;
-  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .usage-stats-close:hover {
@@ -8159,7 +8176,7 @@ border-bottom: 1px solid var(--accent);
 .diff-accept-btn:hover { background: rgba(63, 185, 80, 0.35); }
 .diff-reject-btn { padding: 5px 14px; font-size: 13px; font-weight: 600; border: none; background: rgba(248, 81, 73, 0.15); color: var(--error); cursor: pointer; border-radius: 6px; transition: var(--transition-color); }
 .diff-reject-btn:hover { background: rgba(248, 81, 73, 0.3); }
-.diff-close-btn { padding: 4px 8px; font-size: 14px; border: none; background: transparent; color: var(--text-secondary); cursor: pointer; border-radius: 4px; transition: var(--transition-color); }
+.diff-close-btn { padding: 4px; border: none; background: transparent; color: var(--text-secondary); cursor: pointer; border-radius: 4px; transition: var(--transition-color); display: flex; align-items: center; justify-content: center; }
 .diff-close-btn:hover { color: var(--text-primary); background: var(--bg-hover); }
 .diff-viewer-path { padding: 6px 16px; font-size: 11px; color: var(--text-muted); background: var(--bg-primary); border-bottom: 1px solid var(--border-secondary); font-family: monospace; flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .diff-viewer-body { flex: 1; overflow: auto; min-height: 200px; }
@@ -9218,15 +9235,71 @@ border-color: var(--text-muted);
 .notebook-close-btn {
   background: none;
   border: none;
-  font-size: 20px;
   cursor: pointer;
   color: var(--text-muted, #888);
-  padding: 4px 8px;
+  padding: 4px;
   border-radius: 4px;
   transition: background 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 .notebook-close-btn:hover {
   background: var(--hover, rgba(255,255,255,0.06));
+}
+
+/* Standard dialog close button (PdfViewer, SourceViewer, FlashcardViewer, etc.) */
+.nb-dialog-close {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+}
+.nb-dialog-close:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+/* Pipeline dialog close button */
+.pipeline-close {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+}
+.pipeline-close:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+/* Fullscreen viewer close button (CodeBlock, Mermaid, Image, FullscreenViewer) */
+.content-fullscreen-close {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+}
+.content-fullscreen-close:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
 }
 
 .notebook-manager-toolbar {
@@ -9377,6 +9450,14 @@ border-color: var(--text-muted);
 }
 .notebook-empty-state p {
   margin: 0;
+}
+.notebook-empty-hint {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.notebook-empty-title {
+  font-size: 18px;
+  font-weight: 500;
 }
 
 /* ========== Notebook Detail View ========== */
@@ -11124,7 +11205,11 @@ html.pet-window-mode #root {
   border: none;
   color: var(--text-muted, #6b6b7b);
   cursor: pointer;
-  font-size: 14px;
+  padding: 4px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 .workbench-toggle.collapsed {
   padding: 4px 8px;
@@ -12093,7 +12178,11 @@ color: var(--accent, #7c6cf0);
   border: none;
   color: var(--text-muted, #6b6b7b);
   cursor: pointer;
-  font-size: 12px;
+  padding: 2px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 .skill-empty {
   padding: 8px 10px;
@@ -12782,3 +12871,11 @@ color: var(--accent, #7c6cf0);
 .voice-settings .config-entry { margin-bottom: 12px; }
 .voice-settings select:disabled, .voice-settings input[type=range]:disabled { opacity: 0.4; cursor: not-allowed; }
 @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+
+/* ========== SlotBridge Loading Fallback ========== */
+.slot-loading {
+  padding: 8px;
+  color: var(--text-muted);
+  font-size: 13px;
+  text-align: center;
+}

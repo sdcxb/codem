@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { getCostTracker, type UsageRecord } from "../core/llm/cost-tracker";
 import { TokenActivityGrid, UsageChart } from "./UsageVisuals";
 import { Activity, BarChart3, Wrench, ClipboardList, Calendar, CheckCircle, Infinity as InfinityIcon } from "lucide-react";
+import { PanelIcons, ActionIcons } from "../core/icons/icon-map";
 import { ConversationOverview } from "./ConversationOverview";
 import { useProjectStore } from "../core/store";
 
@@ -20,6 +21,8 @@ function formatTime(timestamp: number): string {
 }
 
 export function UsageStats({ onClose }: UsageStatsProps) {
+  const CloseIcon = ActionIcons.close;
+  const UsageIcon = PanelIcons.usage;
   const { currentSession } = useProjectStore();
   const [stats, setStats] = useState<ReturnType<typeof getCostTracker.prototype.getStats> | null>(null);
   const [costByModel, setCostByModel] = useState<Record<string, number>>({});
@@ -54,10 +57,10 @@ export function UsageStats({ onClose }: UsageStatsProps) {
     <div className="usage-stats">
       <div className="usage-stats-header">
         <div className="usage-stats-title">
-          <span className="usage-stats-icon"><BarChart3 size={18} /></span>
+          <span className="usage-stats-icon"><UsageIcon size={18} /></span>
           <span>用量统计</span>
         </div>
-        <button className="usage-stats-close" onClick={onClose}>✕</button>
+        <button className="usage-stats-close" onClick={onClose}><CloseIcon size={18} /></button>
       </div>
 
       <div className="usage-tabs">
@@ -78,7 +81,7 @@ export function UsageStats({ onClose }: UsageStatsProps) {
             {/* Conversation Overview */}
             <div className="usage-viz-section">
               <div className="usage-viz-section-header">
-                <span style={{ display: "flex", alignItems: "center", gap: 6 }}><BarChart3 size={14} /> 对话概览</span>
+                <span style={{ display: "flex", alignItems: "center", gap: 6 }}><UsageIcon size={14} /> 对话概览</span>
               </div>
               <ConversationOverview sessionId={currentSession?.id} showCostBar={true} />
             </div>
@@ -129,7 +132,7 @@ export function UsageStats({ onClose }: UsageStatsProps) {
             {/* Daily Usage Chart */}
             <div className="usage-viz-section">
               <div className="usage-viz-section-header">
-                <BarChart3 size={14} />
+                <UsageIcon size={14} />
                 <span>每日用量趋势（近 7 天）</span>
               </div>
               <UsageChart records={vizRecords} days={7} />

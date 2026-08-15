@@ -6,6 +6,7 @@
 
 import { memo, useState } from "react";
 import { useLang, S } from "../core/i18n/lang";
+import { ActionIcons } from "../core/icons/icon-map";
 
 interface PipelineContextItem {
   id: string;
@@ -29,6 +30,7 @@ export const PipelineNextStepDialog = memo(function PipelineNextStepDialog({
   onDismiss,
 }: PipelineNextStepDialogProps) {
   const lang = useLang();
+  const CloseIcon = ActionIcons.close;
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [customPrompt, setCustomPrompt] = useState("");
   const [mode, setMode] = useState<"new" | "append">("new");
@@ -52,7 +54,7 @@ export const PipelineNextStepDialog = memo(function PipelineNextStepDialog({
       <div className="pipeline-dialog">
         <div className="pipeline-header">
           <h3>{S.pipeline.title[lang]}</h3>
-          <button className="pipeline-close" onClick={onDismiss}>✕</button>
+          <button className="pipeline-close" onClick={onDismiss}><CloseIcon size={18} /></button>
         </div>
 
         <div className="pipeline-content">

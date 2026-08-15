@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { Bot, GitBranch, FolderOpen, ListChecks, Wrench, X } from "lucide-react";
+import { Bot, GitBranch, FolderOpen, ListChecks, Wrench } from "lucide-react";
+import { ActionIcons } from "../core/icons/icon-map";
 import { useLang } from "../core/i18n/lang";
 import { GitInfoPanel } from "./GitInfoPanel";
 import { Workbench } from "./Workbench";
@@ -63,7 +64,7 @@ export function PanelSidebar({ open, onClose }: RightSidebarProps) {
           );
         })}
         <button onClick={onClose} className="panel-sidebar-close" aria-label={zh ? "关闭" : "Close"}>
-          <X size={15} />
+          <ActionIcons.close size={15} />
         </button>
       </div>
 

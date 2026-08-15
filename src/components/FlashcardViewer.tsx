@@ -9,7 +9,8 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
-import { X, Layers, RotateCw, Plus, Trash2, Sparkles, Loader2 } from 'lucide-react';
+import { Layers, RotateCw, Plus, Trash2, Sparkles, Loader2 } from 'lucide-react';
+import { ActionIcons } from '../core/icons/icon-map';
 import {
   listFlashcards, getDueFlashcards, createFlashcard, deleteFlashcard,
   reviewFlashcard, listFlashcardsByNote, getDueFlashcardsByNote,
@@ -27,6 +28,7 @@ interface FlashcardViewerProps {
 export function FlashcardViewer({ notebookId, noteId, onClose }: FlashcardViewerProps) {
   const lang = useLang();
   const isZh = lang === 'zh';
+  const CloseIcon = ActionIcons.close;
 
   const [cards, setCards] = useState<Flashcard[]>([]);
   const [dueCards, setDueCards] = useState<Flashcard[]>([]);
@@ -112,14 +114,14 @@ export function FlashcardViewer({ notebookId, noteId, onClose }: FlashcardViewer
         <div className="nb-dialog" style={{ width: '600px', maxWidth: '90vw' }} onClick={(e) => e.stopPropagation()}>
           <div className="nb-dialog-header">
             <h3 className="nb-dialog-title">
-              <Layers className="w-4 h-4" />
+              <Layers size={16} />
               {isZh ? '闪卡复习' : 'Flashcard Review'}
               <span style={{ fontSize: '12px', opacity: 0.5, marginLeft: '8px' }}>
                 {currentIdx + 1} / {dueCards.length}
               </span>
             </h3>
             <button className="nb-dialog-close" onClick={() => setMode('list')}>
-              <X className="w-4 h-4" />
+              <CloseIcon size={16} />
             </button>
           </div>
           <div style={{ padding: '24px', minHeight: '300px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
@@ -188,8 +190,8 @@ export function FlashcardViewer({ notebookId, noteId, onClose }: FlashcardViewer
       <div className="nb-dialog-overlay" onClick={onClose}>
         <div className="nb-dialog" style={{ width: '500px' }} onClick={(e) => e.stopPropagation()}>
           <div className="nb-dialog-header">
-            <h3 className="nb-dialog-title"><Plus className="w-4 h-4" />{isZh ? '创建闪卡' : 'Create Flashcard'}</h3>
-            <button className="nb-dialog-close" onClick={() => setMode('list')}><X className="w-4 h-4" /></button>
+            <h3 className="nb-dialog-title"><Plus size={16} />{isZh ? '创建闪卡' : 'Create Flashcard'}</h3>
+            <button className="nb-dialog-close" onClick={() => setMode('list')}><CloseIcon size={16} /></button>
           </div>
           <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
             <div>
@@ -216,30 +218,30 @@ export function FlashcardViewer({ notebookId, noteId, onClose }: FlashcardViewer
       <div className="nb-dialog" style={{ width: '700px', maxWidth: '90vw', maxHeight: '80vh' }} onClick={(e) => e.stopPropagation()}>
         <div className="nb-dialog-header">
           <h3 className="nb-dialog-title">
-            <Layers className="w-4 h-4" />
+            <Layers size={16} />
             {isZh ? (noteId ? '笔记闪卡' : '闪卡') : (noteId ? 'Note Flashcards' : 'Flashcards')}
             <span className="nb-count-badge">{cards.length}</span>
           </h3>
-          <button className="nb-dialog-close" onClick={onClose}><X className="w-4 h-4" /></button>
+          <button className="nb-dialog-close" onClick={onClose}><CloseIcon size={16} /></button>
         </div>
         <div style={{ padding: '12px 20px', borderBottom: '1px solid var(--border-color)', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
           <button className="nb-studio-btn" onClick={handleStartReview} disabled={cards.length === 0} style={{ fontSize: '12px', padding: '4px 12px' }}>
-            <RotateCw className="w-3.5 h-3.5" />
+            <RotateCw size={14} />
             {isZh ? `复习 (${dueCards.length})` : `Review (${dueCards.length} due)`}
           </button>
           <button className="nb-studio-btn" onClick={() => setMode('create')} style={{ fontSize: '12px', padding: '4px 12px' }}>
-            <Plus className="w-3.5 h-3.5" />
+            <Plus size={14} />
             {isZh ? '新建' : 'New'}
           </button>
           <button className="nb-studio-btn" onClick={handleAIGenerate} disabled={generating} style={{ fontSize: '12px', padding: '4px 12px' }}>
-            {generating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+            {generating ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
             {isZh ? (noteId ? '从笔记生成' : 'AI 生成') : (noteId ? 'From Note' : 'AI Generate')}
           </button>
         </div>
         <div style={{ overflow: 'auto', maxHeight: '50vh', padding: '12px 20px' }}>
           {cards.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted, #555)' }}>
-              <Layers className="w-8 h-8" style={{ margin: '0 auto 8px', opacity: 0.5 }} />
+              <Layers size={32} style={{ margin: '0 auto 8px', opacity: 0.5 }} />
               <p>{isZh ? '暂无闪卡，点击「新建」或「AI 生成」创建' : 'No flashcards yet. Click "New" or "AI Generate"'}</p>
             </div>
           ) : (
@@ -254,7 +256,7 @@ export function FlashcardViewer({ notebookId, noteId, onClose }: FlashcardViewer
                         <p style={{ fontSize: '12px', opacity: 0.6, margin: 0 }}>{card.back}</p>
                       </div>
                       <button onClick={() => { deleteFlashcard(card.id); refresh(); }} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '2px', flexShrink: 0 }}>
-                        <Trash2 className="w-3 h-3" />
+                        <Trash2 size={12} />
                       </button>
                     </div>
                     <div style={{ display: 'flex', gap: '6px', marginTop: '6px', fontSize: '10px', opacity: 0.5 }}>

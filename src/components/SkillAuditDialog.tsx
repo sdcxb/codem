@@ -13,7 +13,8 @@ import { useState, useEffect } from "react";
 import { useLang } from "../core/i18n/lang";
 import type { SkillAuditResult, AuditFinding } from "../core/skill/sandbox";
 import { getPermissionDescription, validatePermissions } from "../core/skill/sandbox";
-import { Shield, AlertTriangle, ShieldAlert, Check, X, FileWarning } from "lucide-react";
+import { Shield, AlertTriangle, ShieldAlert, FileWarning } from "lucide-react";
+import { ActionIcons, StatusIcons } from "../core/icons/icon-map";
 
 export interface SkillAuditDialogProps {
   /** 审计结果 */
@@ -57,9 +58,9 @@ export function SkillAuditDialog({
     : audit.overall === "warning" ? "#f59e0b"
     : "#22c55e";
 
-  const overallIcon = audit.overall === "danger" ? <ShieldAlert size={24} />
-    : audit.overall === "warning" ? <AlertTriangle size={24} />
-    : <Shield size={24} />;
+const overallIcon = audit.overall === "danger" ? <ShieldAlert size={24} />
+: audit.overall === "warning" ? <StatusIcons.danger size={24} />
+: <Shield size={24} />;
 
   const overallText = audit.overall === "danger"
     ? (zh ? "⚠ 高风险" : "⚠ High Risk")
@@ -181,7 +182,7 @@ export function SkillAuditDialog({
               color: "#22c55e",
               fontSize: 12,
             }}>
-              <Check size={16} />
+              <ActionIcons.confirm size={16} />
               {zh ? "未检测到安全问题" : "No security issues detected"}
             </div>
           )}

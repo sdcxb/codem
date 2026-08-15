@@ -17,6 +17,7 @@
  */
 
 import { useRef, useEffect, useState, useCallback } from "react";
+import { ActionIcons } from "../core/icons/icon-map";
 import { PetSprite } from "./PetSprite";
 import { usePetStore } from "../core/pet/pet-store";
 import type { PetState } from "../core/pet/pet-types";
@@ -38,6 +39,7 @@ const STATE_LABELS: Record<PetState, string> = {
 const CLICK_STATES: PetState[] = ["happy", "idle", "thinking", "working", "sad", "sleeping"];
 
 export function PetOverlay() {
+  const CloseIcon = ActionIcons.close;
   const {
     enabled,
     activePet,
@@ -305,13 +307,13 @@ export function PetOverlay() {
                 borderRadius: "4px",
                 cursor: "pointer",
                 fontSize: "13px",
-                color: "#f87171",
+                color: "var(--error)",
                 transition: "background 0.15s",
               }}
               onMouseEnter={(e) => e.currentTarget.style.background = "rgba(239,68,68,0.1)"}
               onMouseLeave={(e) => e.currentTarget.style.background = "none"}
             >
-              <span>✕</span>
+              <CloseIcon size={14} />
               <span>关闭宠物</span>
             </div>
           </div>

@@ -9,7 +9,8 @@
 
 import { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
-import { Check, X, Star, HelpCircle } from "lucide-react";
+import { Check, Star, HelpCircle } from "lucide-react";
+import { ActionIcons } from "../core/icons/icon-map";
 import type { InteractiveFormQuestion } from "../core/llm/tools";
 
 interface InteractiveFormDialogProps {
@@ -108,7 +109,7 @@ return createPortal(
             onClick={onCancel}
             style={{ marginLeft: "auto", background: "none", border: "none", cursor: "pointer", color: "var(--text-secondary, #888)" }}
           >
-            <X size={18} />
+            <ActionIcons.close size={18} />
           </button>
         </div>
 

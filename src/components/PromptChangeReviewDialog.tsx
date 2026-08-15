@@ -9,7 +9,8 @@
 
 import { useState } from "react";
 import { createPortal } from "react-dom";
-import { Check, X, ChevronDown, ChevronRight, FileText } from "lucide-react";
+import { FileText } from "lucide-react";
+import { ActionIcons } from "../core/icons/icon-map";
 import type { PromptChange } from "../core/llm/tools";
 
 interface PromptChangeReviewDialogProps {
@@ -67,7 +68,7 @@ onClick={(e) => e.stopPropagation()}
             onClick={onCancel}
             style={{ marginLeft: "auto", background: "none", border: "none", cursor: "pointer", color: "var(--text-secondary, #888)" }}
           >
-            <X size={18} />
+            <ActionIcons.close size={18} />
           </button>
         </div>
 
@@ -106,7 +107,7 @@ onClick={(e) => e.stopPropagation()}
                   }}
                   onClick={() => toggleExpand(idx)}
                 >
-                  {expanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                  {expanded ? <ActionIcons.expand size={16} /> : <ActionIcons.collapse size={16} />}
                   <span style={{ fontSize: "14px", fontWeight: 500 }}>
                     {change.name} ({change.type})
                   </span>
@@ -127,7 +128,7 @@ onClick={(e) => e.stopPropagation()}
                         fontWeight: 500,
                       }}
                     >
-                      <Check size={12} style={{ display: "inline", marginRight: "4px" }} />
+                      <ActionIcons.confirm size={12} style={{ display: "inline", marginRight: "4px" }} />
                       应用
                     </button>
                     <button
@@ -146,7 +147,7 @@ onClick={(e) => e.stopPropagation()}
                         fontWeight: 500,
                       }}
                     >
-                      <X size={12} style={{ display: "inline", marginRight: "4px" }} />
+                      <ActionIcons.close size={12} style={{ display: "inline", marginRight: "4px" }} />
                       跳过
                     </button>
                   </div>

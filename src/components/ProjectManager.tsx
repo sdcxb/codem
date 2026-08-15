@@ -4,7 +4,8 @@ import { useProjectStore } from "../core/store";
 import { createProjectFiles, loadProjectInstructions, loadProjectSkills, loadProjectMemory } from "../core/project/files";
 import { getSettingJSON, setSettingJSON } from "../core/storage/settings";
 import type { EnvironmentConfig, GitConfig } from "../core/settings/settings";
-import { Folder, FolderOpen, X, Plus, Link as LinkIcon, Download, Server, Trash2, Lock, Globe, Clock, CheckCircle, XCircle } from "lucide-react";
+import { Folder, FolderOpen, Link as LinkIcon, Download, Server, Lock, Globe } from "lucide-react";
+import { ActionIcons, StatusIcons } from "../core/icons/icon-map";
 
 const isTauri = () => !!(window as any).__TAURI__;
 
@@ -296,14 +297,14 @@ export function ProjectManager({ onClose }: ProjectManagerProps) {
       <div className="project-manager" role="dialog" aria-modal="true" aria-label="项目管理" onClick={(e) => e.stopPropagation()}>
         <div className="settings-header">
           <h3><Folder size={16} style={{ display: "inline", verticalAlign: "middle" }} /> 项目管理</h3>
-          <button className="settings-close" onClick={onClose}><X size={18} /></button>
+          <button className="settings-close" onClick={onClose}><ActionIcons.close size={18} /></button>
         </div>
 
         {mode === "list" && (
           <div className="project-list-body">
             <div className="project-actions" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 12 }}>
               <button className="project-action-btn" onClick={() => setMode("create")}>
-                <Plus size={14} /> 新建项目
+                <ActionIcons.add size={14} /> 新建项目
               </button>
               <button className="project-action-btn" onClick={() => setMode("import")}>
                 <FolderOpen size={14} /> 导入文件夹
@@ -346,7 +347,7 @@ export function ProjectManager({ onClose }: ProjectManagerProps) {
                     onClick={(e) => { e.stopPropagation(); handleDelete(p.id); }}
                     title="删除项目"
                   >
-                    <Trash2 size={16} />
+                    <ActionIcons.delete size={16} />
                   </button>
                 </div>
               ))}
@@ -515,24 +516,24 @@ export function ProjectManager({ onClose }: ProjectManagerProps) {
 
             {gitStatus === "creating" && (
               <div style={{ textAlign: "center", padding: "40px 0" }}>
-                <div style={{ fontSize: 32, marginBottom: 16, display: "flex", justifyContent: "center" }}><Clock size={32} /></div>
+                <div style={{ fontSize: 32, marginBottom: 16, display: "flex", justifyContent: "center" }}><StatusIcons.pending size={32} /></div>
                 <p style={{ color: "var(--text-secondary)", fontSize: 14 }}>{gitStatusMsg}</p>
               </div>
             )}
 
             {gitStatus === "done" && (
               <div style={{ textAlign: "center", padding: "40px 0" }}>
-                <div style={{ fontSize: 32, marginBottom: 16, display: "flex", justifyContent: "center" }}><CheckCircle size={32} style={{ color: "var(--success, #22c55e)" }} /></div>
+                <div style={{ fontSize: 32, marginBottom: 16, display: "flex", justifyContent: "center" }}><StatusIcons.success size={32} style={{ color: "var(--success)" }} /></div>
                 <p style={{ color: "var(--text-primary)", fontSize: 14, fontWeight: 500 }}>{gitStatusMsg}</p>
               </div>
             )}
 
             {gitStatus === "error" && (
               <div style={{ padding: "20px 0" }}>
-                <div style={{ color: "#ef4444", fontSize: 14, marginBottom: 12, display: "flex", alignItems: "center", gap: 6 }}><XCircle size={14} /> 创建失败</div>
+                <div style={{ color: "var(--error)", fontSize: 14, marginBottom: 12, display: "flex", alignItems: "center", gap: 6 }}><StatusIcons.error size={14} /> 创建失败</div>
                 <pre style={{
                   background: "var(--bg-hover, #2a2a3a)",
-                  padding: 12, borderRadius: 8, fontSize: 12, color: "#ef4444",
+                  padding: 12, borderRadius: 8, fontSize: 12, color: "var(--error)",
                   maxHeight: 150, overflow: "auto", whiteSpace: "pre-wrap", wordBreak: "break-all",
                 }}>
                   {gitStatusMsg}
@@ -583,24 +584,24 @@ export function ProjectManager({ onClose }: ProjectManagerProps) {
 
             {cloneStatus === "cloning" && (
               <div style={{ textAlign: "center", padding: "40px 0" }}>
-                <div style={{ fontSize: 32, marginBottom: 16, display: "flex", justifyContent: "center" }}><Clock size={32} /></div>
+                <div style={{ fontSize: 32, marginBottom: 16, display: "flex", justifyContent: "center" }}><StatusIcons.pending size={32} /></div>
                 <p style={{ color: "var(--text-secondary)", fontSize: 14 }}>{cloneMsg}</p>
               </div>
             )}
 
             {cloneStatus === "done" && (
               <div style={{ textAlign: "center", padding: "40px 0" }}>
-                <div style={{ fontSize: 32, marginBottom: 16, display: "flex", justifyContent: "center" }}><CheckCircle size={32} style={{ color: "var(--success, #22c55e)" }} /></div>
+                <div style={{ fontSize: 32, marginBottom: 16, display: "flex", justifyContent: "center" }}><StatusIcons.success size={32} style={{ color: "var(--success)" }} /></div>
                 <p style={{ color: "var(--text-primary)", fontSize: 14, fontWeight: 500 }}>{cloneMsg}</p>
               </div>
             )}
 
             {cloneStatus === "error" && (
               <div style={{ padding: "20px 0" }}>
-                <div style={{ color: "#ef4444", fontSize: 14, marginBottom: 12, display: "flex", alignItems: "center", gap: 6 }}><XCircle size={14} /> 克隆失败</div>
+                <div style={{ color: "var(--error)", fontSize: 14, marginBottom: 12, display: "flex", alignItems: "center", gap: 6 }}><StatusIcons.error size={14} /> 克隆失败</div>
                 <pre style={{
                   background: "var(--bg-hover, #2a2a3a)",
-                  padding: 12, borderRadius: 8, fontSize: 12, color: "#ef4444",
+                  padding: 12, borderRadius: 8, fontSize: 12, color: "var(--error)",
                   maxHeight: 150, overflow: "auto", whiteSpace: "pre-wrap", wordBreak: "break-all",
                 }}>
                   {cloneMsg}
@@ -653,7 +654,7 @@ export function ProjectManager({ onClose }: ProjectManagerProps) {
                   setTimeout(() => { setEnvSaved(false); setMode("list"); }, 1000);
                 }}
               >
-                {envSaved ? <span style={{ display: "flex", alignItems: "center", gap: 6, justifyContent: "center" }}><CheckCircle size={14} /> 已保存</span> : "保存"}
+                {envSaved ? <span style={{ display: "flex", alignItems: "center", gap: 6, justifyContent: "center" }}><StatusIcons.success size={14} /> 已保存</span> : "保存"}
               </button>
             </div>
           </div>

@@ -16,12 +16,12 @@ import { useProjectStore } from "../../core/store";
 import { useLang } from "../../core/i18n/lang";
 
 const CATEGORY_CONFIG: Record<InboxCategory, { Icon: typeof InboxIcon; color: string }> = {
-  issue: { Icon: ClipboardList, color: "#6366f1" },
-  squad: { Icon: Users, color: "#8b5cf6" },
-  delegation: { Icon: Link2, color: "#3b82f6" },
-  automation: { Icon: Clock, color: "#f59e0b" },
-  system: { Icon: AlertTriangle, color: "#ef4444" },
-  agent: { Icon: Bot, color: "#10b981" },
+  issue: { Icon: ClipboardList, color: "var(--accent)" },
+  squad: { Icon: Users, color: "var(--accent)" },
+  delegation: { Icon: Link2, color: "var(--accent)" },
+  automation: { Icon: Clock, color: "var(--warning)" },
+  system: { Icon: AlertTriangle, color: "var(--error)" },
+  agent: { Icon: Bot, color: "var(--success)" },
 };
 
 function formatTime(timestamp: number, zh: boolean): string {
@@ -87,14 +87,14 @@ export function InboxTab() {
       {/* Header */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "16px" }}>
         <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-          <InboxIcon size={16} style={{ color: "var(--accent, #7c3aed)" }} />
+          <InboxIcon size={16} style={{ color: "var(--accent)" }} />
           <span style={{ fontSize: "14px", fontWeight: 600, color: "var(--text-primary)" }}>
             {zh ? "收件箱" : "Inbox"}
           </span>
           {unreadCount > 0 && (
             <span style={{
               fontSize: "11px", fontWeight: 700, color: "#fff",
-              background: "#ef4444", padding: "1px 8px", borderRadius: 10,
+              background: "var(--error)", padding: "1px 8px", borderRadius: 10,
             }}>
               {unreadCount}
             </span>
@@ -123,9 +123,9 @@ export function InboxTab() {
             onClick={() => setFilter(f.value)}
             style={{
               padding: "4px 12px", borderRadius: 4, fontSize: 12,
-              border: `1px solid ${filter === f.value ? "var(--accent, #7c3aed)" : "var(--border-color, #2a2a3a)"}`,
-              background: filter === f.value ? "var(--accent, #7c3aed)22" : "none",
-              color: filter === f.value ? "var(--accent, #7c3aed)" : "var(--text-secondary)",
+              border: `1px solid ${filter === f.value ? "var(--accent)" : "var(--border-primary)"}`,
+              background: filter === f.value ? "var(--accent)22" : "none",
+              color: filter === f.value ? "var(--accent)" : "var(--text-secondary)",
               cursor: "pointer",
             }}
           >
@@ -151,8 +151,8 @@ export function InboxTab() {
                 style={{
                   display: "flex", alignItems: "flex-start", gap: "10px",
                   padding: "10px 12px", borderRadius: 6,
-                  background: item.read ? "var(--bg-tertiary, #181828)" : "var(--bg-secondary, #1e1e2e)",
-                  border: `1px solid ${item.read ? "var(--border-color, #2a2a3a)" : `${catConfig.color}44`}`,
+                  background: item.read ? "var(--bg-tertiary)" : "var(--bg-secondary)",
+                  border: `1px solid ${item.read ? "var(--border-primary)" : `${catConfig.color}44`}`,
                   borderLeft: `3px solid ${catConfig.color}`,
                   cursor: "pointer", fontSize: "12px",
                 }}
@@ -161,7 +161,7 @@ export function InboxTab() {
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
                     {!item.read && (
-                      <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#3b82f6", flexShrink: 0 }} />
+                      <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--accent)", flexShrink: 0 }} />
                     )}
                     <span style={{
                       fontWeight: item.read ? 400 : 600,

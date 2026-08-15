@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
-import { PanelLeftClose, Search, Settings, Sun, Moon, PencilLine, BookOpen, Clock, Plug, BookMarked, Brain, Link2, GitBranch, Pin, Folder, Pencil, Clipboard, Trash2, ChevronDown, ChevronRight, MoreHorizontal, User, Circle, ClipboardList, Bot, Activity } from "lucide-react";
+import { PanelLeftClose, Search, Settings, Sun, Moon, PencilLine, BookOpen, Clock, Plug, BookMarked, Brain, Link2, GitBranch, Pin, Folder, Pencil, Clipboard, Trash2, ChevronDown, ChevronRight, MoreHorizontal, User, Circle, ClipboardList, Bot, Activity, Puzzle } from "lucide-react";
 import { useAppStore } from "../store";
 import { useProjectStore } from "../core/store";
 import { AppIdentity } from "../core/types";
@@ -20,6 +20,7 @@ interface SidebarProps {
   onProjects?: () => void;
   onConfig?: () => void;
   onMcp?: () => void;
+  onPlugins?: () => void;
   onSkills?: () => void;
   onMemory?: () => void;
   onNotebooks?: () => void;
@@ -34,7 +35,7 @@ interface SidebarProps {
   collapsed?: boolean;
 }
 
-export function Sidebar({ identity, onSettings, onProjects, onConfig, onMcp, onSkills, onMemory, onNotebooks, onTaskCenter, onAgents, onCicd, onPerf, onRemoveProject, fileExplorerProjectId, onToggleFileExplorer, onToggleSidebar, collapsed = false }: SidebarProps) {
+export function Sidebar({ identity, onSettings, onProjects, onConfig, onMcp, onPlugins, onSkills, onMemory, onNotebooks, onTaskCenter, onAgents, onCicd, onPerf, onRemoveProject, fileExplorerProjectId, onToggleFileExplorer, onToggleSidebar, collapsed = false }: SidebarProps) {
   const [inboxUnread, setInboxUnread] = useState(0);
 
   // Track inbox unread count
@@ -464,6 +465,10 @@ const handleDrop = useCallback((e: React.DragEvent, targetSessionId: string, pro
           <button className="sidebar-tool-item" onClick={onMcp} title={S.sidebar.mcp[lang]}>
             <span className="sidebar-tool-item-icon"><Plug size={16} /></span>
             <span className="sidebar-tool-item-label">{S.sidebar.mcp[lang]}</span>
+          </button>
+          <button className="sidebar-tool-item" onClick={onPlugins} title={S.sidebar.pluginManager[lang]}>
+            <span className="sidebar-tool-item-icon"><Puzzle size={16} /></span>
+            <span className="sidebar-tool-item-label">{S.sidebar.plugins[lang]}</span>
           </button>
           <button className="sidebar-tool-item" onClick={onSkills} title={S.sidebar.skills[lang]}>
             <span className="sidebar-tool-item-icon"><BookMarked size={16} /></span>

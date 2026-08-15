@@ -119,8 +119,8 @@ export function AutomationTab() {
             gap: 8,
             padding: "10px 12px",
             borderRadius: 8,
-            border: "1px solid var(--border-color, #2a2a3a)",
-            background: "var(--bg-tertiary, #181828)",
+            border: "1px solid var(--border-primary)",
+            background: "var(--bg-tertiary)",
             marginBottom: 8,
             fontSize: 12,
           }}
@@ -160,9 +160,9 @@ export function AutomationTab() {
               fontSize: 11,
               padding: "4px 10px",
               borderRadius: 4,
-              border: "1px solid #e74c3c",
+              border: "1px solid var(--error)",
               background: "none",
-              color: "#e74c3c",
+              color: "var(--error)",
               cursor: "pointer",
             }}
           >
@@ -184,8 +184,8 @@ export function AutomationTab() {
             padding: "8px 16px",
             borderRadius: 6,
             fontSize: 13,
-            border: "1px solid var(--accent, #7c3aed)",
-            background: "var(--accent, #7c3aed)",
+            border: "1px solid var(--accent)",
+            background: "var(--accent)",
             color: "#fff",
             cursor: "pointer",
             display: "flex",
@@ -207,9 +207,9 @@ export function AutomationTab() {
               padding: "8px 16px",
               borderRadius: 6,
               fontSize: 13,
-              border: "1px solid #e74c3c",
+              border: "1px solid var(--error)",
               background: "none",
-              color: "#e74c3c",
+              color: "var(--error)",
               cursor: "pointer",
             }}
           >
@@ -236,7 +236,7 @@ export function AutomationTab() {
                   fontSize: 11,
                   padding: "6px 8px",
                   borderRadius: 4,
-                  background: "var(--bg-tertiary, #181828)",
+                  background: "var(--bg-tertiary)",
                 }}
               >
                 <span style={{ color: "var(--accent)", fontWeight: 600 }}>
@@ -269,8 +269,8 @@ export function AutomationTab() {
             marginTop: 16,
             padding: 16,
             borderRadius: 8,
-            border: "1px solid var(--border-color, #2a2a3a)",
-            background: "var(--bg-secondary, #1e1e2e)",
+            border: "1px solid var(--border-primary)",
+            background: "var(--bg-secondary)",
           }}
         >
           <div style={{ marginBottom: 8 }}>
@@ -368,8 +368,8 @@ export function AutomationTab() {
                 padding: "6px 16px",
                 borderRadius: 4,
                 fontSize: 12,
-                border: "1px solid var(--accent, #7c3aed)",
-                background: "var(--accent, #7c3aed)",
+                border: "1px solid var(--accent)",
+                background: "var(--accent)",
                 color: "#fff",
                 cursor: "pointer",
                 opacity: !editing.name || !editing.message ? 0.5 : 1,

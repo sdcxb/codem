@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿﻿/**
+﻿﻿﻿﻿﻿﻿﻿﻿/**
  * RightSidebar — 上下文工具面板
  *
  * 设计参考 frakio-work 的 right-rail：
@@ -15,7 +15,8 @@
 
 import { useState } from "react";
 import { useLang } from "../core/i18n/lang";
-import { Folder, Globe, X, ChevronRight, ChevronLeft, ArrowLeft } from "lucide-react";
+import { Folder, Globe, ChevronRight, ChevronLeft, ArrowLeft } from "lucide-react";
+import { ActionIcons } from "../core/icons/icon-map";
 import { useProjectStore } from "../core/store";
 import { FileExplorer } from "./FileExplorer";
 import { FileEditor } from "./FileEditor";

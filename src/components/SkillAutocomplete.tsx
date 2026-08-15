@@ -6,6 +6,7 @@
 
 import { memo, useState } from "react";
 import { useLang, S } from "../core/i18n/lang";
+import { ActionIcons } from "../core/icons/icon-map";
 
 interface SkillItem {
   id: string;
@@ -25,6 +26,7 @@ export const SkillAutocomplete = memo(function SkillAutocomplete({
   onSelect,
 }: SkillAutocompleteProps) {
   const lang = useLang();
+  const CloseIcon = ActionIcons.close;
   const [query, setQuery] = useState("");
   const [visible, setVisible] = useState(false);
 
@@ -42,7 +44,7 @@ export const SkillAutocomplete = memo(function SkillAutocomplete({
               className="skill-close"
               onClick={() => setVisible(false)}
             >
-              ✕
+              <CloseIcon size={14} />
             </button>
           </div>
           {filtered.length === 0 ? (

@@ -11,7 +11,8 @@ import { useState, useEffect, useMemo } from "react";
 import { getLLMEngine } from "../core/llm";
 import type { ToolDef } from "../core/llm/tools";
 import { getSettingJSON, setSettingJSON } from "../core/storage/settings";
-import { Wrench, Plug, Target, Link2, X, Lightbulb, ChevronDown, ChevronRight } from "lucide-react";
+import { Wrench, Plug, Target, Link2, Lightbulb, ChevronDown, ChevronRight } from "lucide-react";
+import { ActionIcons } from "../core/icons/icon-map";
 
 interface ToolManagerProps {
   onClose: () => void;
@@ -42,6 +43,7 @@ const DELEGATION_TOOL_IDS = new Set([
 ]);
 
 export function ToolManager({ onClose }: ToolManagerProps) {
+  const CloseIcon = ActionIcons.close;
   const [tools, setTools] = useState<ToolInfo[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [filterCategory, setFilterCategory] = useState<string>("all");
@@ -116,7 +118,7 @@ export function ToolManager({ onClose }: ToolManagerProps) {
           <span className="usage-stats-icon"><Wrench size={16} /></span>
           <span>工具管理</span>
         </div>
-        <button className="usage-stats-close" onClick={onClose}><X size={14} /></button>
+        <button className="usage-stats-close" onClick={onClose}><CloseIcon size={14} /></button>
       </div>
 
       {/* 搜索框 */}

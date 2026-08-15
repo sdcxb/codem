@@ -12,11 +12,11 @@ import { useLang } from "../../core/i18n/lang";
 import { IssueCard } from "./IssueCard";
 
 const COLUMNS: { status: IssueStatus; labelZh: string; labelEn: string; color: string }[] = [
-  { status: "backlog", labelZh: "Backlog", labelEn: "Backlog", color: "#6b7280" },
-  { status: "todo", labelZh: "待办", labelEn: "Todo", color: "#6366f1" },
-  { status: "in_progress", labelZh: "进行中", labelEn: "In Progress", color: "#3b82f6" },
-  { status: "in_review", labelZh: "待审查", labelEn: "In Review", color: "#f59e0b" },
-  { status: "done", labelZh: "已完成", labelEn: "Done", color: "#10b981" },
+  { status: "backlog", labelZh: "Backlog", labelEn: "Backlog", color: "var(--text-muted)" },
+  { status: "todo", labelZh: "待办", labelEn: "Todo", color: "var(--accent)" },
+  { status: "in_progress", labelZh: "进行中", labelEn: "In Progress", color: "var(--accent)" },
+  { status: "in_review", labelZh: "待审查", labelEn: "In Review", color: "var(--warning)" },
+  { status: "done", labelZh: "已完成", labelEn: "Done", color: "var(--success)" },
 ];
 
 export function BoardTab() {
@@ -81,8 +81,8 @@ export function BoardTab() {
                 gap: "8px",
                 borderRadius: "8px",
                 padding: "8px",
-                background: isDragOver ? "var(--accent, #7c3aed)11" : "var(--bg-secondary, #1e1e2e)",
-                border: isDragOver ? "1px dashed var(--accent, #7c3aed)" : "1px solid var(--border-color, #2a2a3a)",
+                background: isDragOver ? "var(--accent)11" : "var(--bg-secondary)",
+                border: isDragOver ? "1px dashed var(--accent)" : "1px solid var(--border-primary)",
                 transition: "background 0.2s, border 0.2s",
               }}
             >
@@ -97,7 +97,7 @@ export function BoardTab() {
                 </span>
                 <span style={{
                   fontSize: "10px", color: "var(--text-secondary)",
-                  background: "var(--bg-tertiary, #181828)", padding: "1px 6px", borderRadius: 3,
+                  background: "var(--bg-tertiary)", padding: "1px 6px", borderRadius: 3,
                 }}>
                   {colIssues.length}
                 </span>

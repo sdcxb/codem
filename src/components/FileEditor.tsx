@@ -17,7 +17,8 @@
 
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { createPortal } from "react-dom";
-import { Save, X, FileText, Image as ImageIcon, FileX, Eye, ZoomIn, ZoomOut, RotateCw, Download, ExternalLink, Sheet, Music, Video, FileCode, Maximize2, Minimize2 } from "lucide-react";
+import { Save, FileText, Image as ImageIcon, FileX, Eye, ZoomIn, ZoomOut, RotateCw, Download, ExternalLink, Sheet, Music, Video, FileCode, Maximize2, Minimize2 } from "lucide-react";
+import { ActionIcons } from "../core/icons/icon-map";
 
 interface FileEditorProps {
   filePath: string;
@@ -792,7 +793,7 @@ export function FileEditor({ filePath, onClose }: FileEditorProps) {
             <Maximize2 size={14} />
           </button>
           <button className="file-editor-btn close" onClick={onClose} title="关闭 (Esc)">
-            <X size={14} />
+            <ActionIcons.close size={14} />
           </button>
         </div>
       </div>
@@ -852,7 +853,7 @@ export function FileEditor({ filePath, onClose }: FileEditorProps) {
                   <Minimize2 size={14} />
                 </button>
                 <button className="file-editor-btn close" onClick={onClose} title="关闭">
-                  <X size={14} />
+                  <ActionIcons.close size={14} />
                 </button>
               </div>
             </div>

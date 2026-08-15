@@ -13,6 +13,7 @@
 import { memo, useState, useEffect } from "react";
 import { useLang, S } from "../core/i18n/lang";
 import { onFileChangesTracked, type FileChangeResult } from "../core/environment/file-change-tracker";
+import { ActionIcons } from "../core/icons/icon-map";
 
 interface WorkbenchProps {
   collapsed: boolean;
@@ -37,6 +38,7 @@ export const Workbench = memo(function Workbench({
   const lang = useLang();
   const [activities, setActivities] = useState<ActivityEntry[]>([]);
   const [activeView, setActiveView] = useState<"status" | "capacity" | "activity">("status");
+  const CloseIcon = ActionIcons.close;
 
   // Listen for file change events → add to activity timeline
   useEffect(() => {
@@ -69,7 +71,7 @@ export const Workbench = memo(function Workbench({
     <div className="workbench">
       <div className="workbench-header">
         <span>{S.workbench.title[lang]}</span>
-        <button className="workbench-toggle" onClick={onToggle}>✕</button>
+        <button className="workbench-toggle" onClick={onToggle}><CloseIcon size={18} /></button>
       </div>
 
       {/* View tabs */}

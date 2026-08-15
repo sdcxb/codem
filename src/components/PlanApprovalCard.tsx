@@ -7,7 +7,8 @@
 
 import { useState } from "react";
 import { createPortal } from "react-dom";
-import { Check, X, ClipboardList } from "lucide-react";
+import { ClipboardList } from "lucide-react";
+import { ActionIcons } from "../core/icons/icon-map";
 import { useLang } from "../core/i18n/lang";
 
 interface PlanApprovalCardProps {
@@ -96,19 +97,19 @@ export function PlanApprovalCard({ plan, onApprove, onReject }: PlanApprovalCard
               <button onClick={() => { setShowFeedback(false); setFeedback(""); }} style={btnStyle}>
                 {lang === "zh" ? "返回" : "Back"}
               </button>
-              <button onClick={() => onReject(feedback)} style={{ ...btnStyle, background: "#ef4444", color: "#fff", border: "none" }}>
-                <X size={14} />
+              <button onClick={() => onReject(feedback)} style={{ ...btnStyle, background: "var(--error)", color: "#fff", border: "none" }}>
+                <ActionIcons.close size={14} />
                 {lang === "zh" ? "拒绝计划" : "Reject Plan"}
               </button>
             </>
           ) : (
             <>
               <button onClick={() => setShowFeedback(true)} style={btnStyle}>
-                <X size={14} />
+                <ActionIcons.close size={14} />
                 {lang === "zh" ? "拒绝" : "Reject"}
               </button>
-              <button onClick={onApprove} style={{ ...btnStyle, background: "#22c55e", color: "#fff", border: "none" }}>
-                <Check size={14} />
+              <button onClick={onApprove} style={{ ...btnStyle, background: "var(--success)", color: "#fff", border: "none" }}>
+                <ActionIcons.confirm size={14} />
                 {lang === "zh" ? "批准并执行" : "Approve & Execute"}
               </button>
             </>

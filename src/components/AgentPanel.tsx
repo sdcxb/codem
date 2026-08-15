@@ -1,4 +1,5 @@
 import { SubagentTask, SubagentStatus } from "../core/subagent/subagent";
+import { PanelIcons, ActionIcons } from "../core/icons/icon-map";
 
 interface AgentPanelProps {
   agents: SubagentTask[];
@@ -45,6 +46,8 @@ function formatTime(timestamp: number): string {
 }
 
 export function AgentPanel({ agents, onClose, onSelectAgent }: AgentPanelProps) {
+  const AgentIcon = PanelIcons.agent;
+  const CloseIcon = ActionIcons.close;
   const runningCount = agents.filter((a) => a.status === "running").length;
   const completedCount = agents.filter((a) => a.status === "completed").length;
 
@@ -52,10 +55,10 @@ export function AgentPanel({ agents, onClose, onSelectAgent }: AgentPanelProps) 
     <div className="agent-panel">
       <div className="agent-panel-header">
         <div className="agent-panel-title">
-          <span className="agent-panel-icon">🤖</span>
+          <span className="agent-panel-icon"><AgentIcon size={20} /></span>
           <span>智能体工作列表</span>
         </div>
-        <button className="agent-panel-close" onClick={onClose}>✕</button>
+        <button className="agent-panel-close" onClick={onClose}><CloseIcon size={18} /></button>
       </div>
 
       <div className="agent-panel-stats">

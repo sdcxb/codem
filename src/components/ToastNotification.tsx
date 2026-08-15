@@ -8,7 +8,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
-import { CheckCircle, XCircle, AlertTriangle, Info, X } from "lucide-react";
+import { ActionIcons, StatusIcons, CommonIcons } from "../core/icons/icon-map";
 
 export type ToastType = "success" | "error" | "warning" | "info";
 
@@ -44,10 +44,10 @@ export function dismissToast(id: string) {
 }
 
 const iconMap = {
-  success: <CheckCircle size={18} />,
-  error: <XCircle size={18} />,
-  warning: <AlertTriangle size={18} />,
-  info: <Info size={18} />,
+  success: <StatusIcons.success size={18} />,
+  error: <StatusIcons.error size={18} />,
+  warning: <StatusIcons.danger size={18} />,
+  info: <CommonIcons.info size={18} />,
 };
 
 const colorMap = {
@@ -81,7 +81,7 @@ export function ToastContainer() {
           </span>
           <span className="toast-message">{toast.message}</span>
           <button className="toast-close" onClick={() => handleDismiss(toast.id)}>
-            <X size={14} />
+            <ActionIcons.close size={14} />
           </button>
         </div>
       ))}

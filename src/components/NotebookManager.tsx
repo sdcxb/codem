@@ -8,6 +8,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { BookOpen, Plus, Trash2, Search, ArrowLeft, FileText, Link as LinkIcon, Type, Loader2, AlertCircle, CheckCircle, MessageSquare, LayoutGrid, Edit2, Folder, FolderPlus, Upload, ChevronDown, ChevronRight } from 'lucide-react';
+import { PanelIcons, ActionIcons } from '../core/icons/icon-map';
 import {
   listNotebooks,
   createNotebook,
@@ -42,6 +43,7 @@ interface NotebookManagerProps {
 
 export function NotebookManager({ onClose, onOpenNotebookChat, onOpenWorkspace }: NotebookManagerProps) {
   const lang = useLang();
+  const CloseIcon = ActionIcons.close;
   const [notebooks, setNotebooks] = useState<Notebook[]>([]);
   const [groups, setGroups] = useState<NotebookGroup[]>([]);
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
@@ -263,7 +265,7 @@ export function NotebookManager({ onClose, onOpenNotebookChat, onOpenWorkspace }
       <div className="notebook-detail-view">
         <div className="notebook-detail-header">
           <button className="notebook-back-btn" onClick={() => setSelectedNotebook(null)}>
-            <ArrowLeft className="w-4 h-4" />
+            <ArrowLeft size={16} />
             <span>{lang === 'zh' ? '返回列表' : 'Back'}</span>
           </button>
           <h2 className="notebook-title">{selectedNotebook.name}</h2>
@@ -273,7 +275,7 @@ export function NotebookManager({ onClose, onOpenNotebookChat, onOpenWorkspace }
               onClick={() => onOpenWorkspace(selectedNotebook.id, selectedNotebook.name)}
               style={{ marginRight: '6px' }}
             >
-              <LayoutGrid className="w-4 h-4" />
+              <LayoutGrid size={16} />
               <span>{lang === 'zh' ? '工作区' : 'Workspace'}</span>
             </button>
           )}
@@ -281,7 +283,7 @@ export function NotebookManager({ onClose, onOpenNotebookChat, onOpenWorkspace }
             className="notebook-chat-btn"
             onClick={() => onOpenNotebookChat(selectedNotebook.id, selectedNotebook.name)}
           >
-            <MessageSquare className="w-4 h-4" />
+            <MessageSquare size={16} />
             <span>{lang === 'zh' ? '开始对话' : 'Chat'}</span>
           </button>
         </div>
@@ -294,7 +296,7 @@ export function NotebookManager({ onClose, onOpenNotebookChat, onOpenWorkspace }
               style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '2px', flexShrink: 0 }}
               title={lang === 'zh' ? '编辑描述' : 'Edit description'}
             >
-              <Edit2 className="w-3 h-3" />
+              <Edit2 size={12} />
             </button>
           </div>
         )}
@@ -326,7 +328,7 @@ export function NotebookManager({ onClose, onOpenNotebookChat, onOpenWorkspace }
         {selectedNotebook.summary && selectedNotebook.summaryStatus === 'completed' && (
           <div className="notebook-summary-section">
             <h3 className="notebook-section-title">
-              <BookOpen className="w-4 h-4" />
+              <BookOpen size={16} />
               {lang === 'zh' ? '笔记本摘要' : 'Summary'}
             </h3>
             <p className="notebook-summary-text">{selectedNotebook.summary}</p>
@@ -334,7 +336,7 @@ export function NotebookManager({ onClose, onOpenNotebookChat, onOpenWorkspace }
         )}
         {selectedNotebook.summaryStatus === 'generating' && (
           <div className="notebook-summary-section">
-            <Loader2 className="w-4 h-4 animate-spin" />
+            <Loader2 size={16} className="animate-spin" />
             <span>{lang === 'zh' ? '正在生成摘要...' : 'Generating summary...'}</span>
           </div>
         )}
@@ -343,7 +345,7 @@ export function NotebookManager({ onClose, onOpenNotebookChat, onOpenWorkspace }
         <div className="notebook-sources-section">
           <div className="notebook-section-header">
             <h3 className="notebook-section-title">
-              <FileText className="w-4 h-4" />
+              <FileText size={16} />
               {lang === 'zh' ? '来源' : 'Sources'}
               <Badge variant="muted">{sources.length}</Badge>
             </h3>
@@ -352,14 +354,14 @@ export function NotebookManager({ onClose, onOpenNotebookChat, onOpenWorkspace }
               onClick={() => setShowAddSource(true)}
               disabled={indexing}
             >
-              <Plus className="w-4 h-4" />
+              <Plus size={16} />
               {lang === 'zh' ? '添加来源' : 'Add Source'}
             </button>
           </div>
 
           {sources.length === 0 && !indexing && (
             <div className="notebook-empty-state">
-              <FileText className="w-8 h-8 text-muted-foreground" />
+              <FileText size={32} style={{ color: 'var(--text-muted)' }} />
               <p>{lang === 'zh' ? '暂无来源，添加文件/文本/URL 开始知识化' : 'No sources yet. Add files, text, or URLs to get started.'}</p>
             </div>
           )}
@@ -377,7 +379,7 @@ export function NotebookManager({ onClose, onOpenNotebookChat, onOpenWorkspace }
           {/* Indexing progress */}
           {indexing && indexProgress && (
             <div className="notebook-indexing-progress">
-              <Loader2 className="w-4 h-4 animate-spin" />
+              <Loader2 size={16} className="animate-spin" />
               <span>
                 {lang === 'zh' ? '正在索引' : 'Indexing'}: {indexProgress.sourceName}
                 {indexProgress.totalChunks ? ` (${indexProgress.currentChunk}/${indexProgress.totalChunks})` : ''}
@@ -393,7 +395,7 @@ export function NotebookManager({ onClose, onOpenNotebookChat, onOpenWorkspace }
         {guidedQuestions.length > 0 && (
           <div className="notebook-guided-questions">
             <h3 className="notebook-section-title">
-              <MessageSquare className="w-4 h-4" />
+              <MessageSquare size={16} />
               {lang === 'zh' ? '建议问题' : 'Suggested Questions'}
             </h3>
             <div className="notebook-question-list">
@@ -411,7 +413,7 @@ export function NotebookManager({ onClose, onOpenNotebookChat, onOpenWorkspace }
         )}
         {loadingQuestions && sources.length > 0 && (
           <div className="notebook-guided-questions">
-            <Loader2 className="w-4 h-4 animate-spin" />
+            <Loader2 size={16} className="animate-spin" />
             <span>{lang === 'zh' ? '正在生成建议问题...' : 'Generating questions...'}</span>
           </div>
         )}
@@ -439,21 +441,21 @@ export function NotebookManager({ onClose, onOpenNotebookChat, onOpenWorkspace }
                     className={`source-type-tab ${sourceType === 'text' ? 'active' : ''}`}
                     onClick={() => setSourceType('text')}
                   >
-                    <Type className="w-4 h-4" />
+                    <Type size={16} />
                     {lang === 'zh' ? '文本' : 'Text'}
                   </button>
                   <button
                     className={`source-type-tab ${sourceType === 'file' ? 'active' : ''}`}
                     onClick={() => setSourceType('file')}
                   >
-                    <FileText className="w-4 h-4" />
+                    <FileText size={16} />
                     {lang === 'zh' ? '文件' : 'File'}
                   </button>
                   <button
                     className={`source-type-tab ${sourceType === 'url' ? 'active' : ''}`}
                     onClick={() => setSourceType('url')}
                   >
-                    <LinkIcon className="w-4 h-4" />
+                    <LinkIcon size={16} />
                     URL
                   </button>
                 </div>
@@ -478,7 +480,7 @@ export function NotebookManager({ onClose, onOpenNotebookChat, onOpenWorkspace }
                 {sourceType === 'file' && (
                   <div className="notebook-file-select">
                     <button className="notebook-file-btn" onClick={handleFileSelect}>
-                      <FileText className="w-4 h-4" />
+                      <FileText size={16} />
                       {lang === 'zh' ? '选择文件' : 'Choose File'}
                     </button>
                     {sourceFilePath && (
@@ -517,14 +519,14 @@ export function NotebookManager({ onClose, onOpenNotebookChat, onOpenWorkspace }
       <div className="notebook-manager-header">
         <div className="notebook-manager-title-row">
           <h2 className="notebook-manager-title">
-            <BookOpen className="w-5 h-5" />
+            <BookOpen size={20} style={{ color: 'var(--accent)' }} />
             {lang === 'zh' ? '知识笔记本' : 'Knowledge Notebooks'}
           </h2>
-          <button className="notebook-close-btn" onClick={onClose}>✕</button>
+          <button className="notebook-close-btn" onClick={onClose}><CloseIcon size={18} /></button>
         </div>
         <div className="notebook-manager-toolbar">
           <div className="notebook-search-box">
-            <Search className="w-4 h-4 text-muted-foreground" />
+            <Search size={14} />
             <input
               type="text"
               placeholder={lang === 'zh' ? '搜索笔记本...' : 'Search notebooks...'}
@@ -533,15 +535,15 @@ export function NotebookManager({ onClose, onOpenNotebookChat, onOpenWorkspace }
             />
           </div>
           <button className="notebook-create-btn" onClick={() => setShowCreateGroup(true)} title={lang === 'zh' ? '新建分组' : 'New Group'}>
-            <FolderPlus className="w-4 h-4" />
+            <FolderPlus size={16} />
             {lang === 'zh' ? '分组' : 'Group'}
           </button>
           <button className="notebook-create-btn" onClick={handleImport} disabled={importing} title={lang === 'zh' ? '导入 Markdown' : 'Import Markdown'}>
-            {importing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+            {importing ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
             {lang === 'zh' ? '导入' : 'Import'}
           </button>
           <button className="notebook-create-btn" onClick={() => setShowCreate(true)}>
-            <Plus className="w-4 h-4" />
+            <Plus size={16} />
             {lang === 'zh' ? '新建笔记本' : 'New Notebook'}
           </button>
         </div>
@@ -549,18 +551,18 @@ export function NotebookManager({ onClose, onOpenNotebookChat, onOpenWorkspace }
 
       {filteredNotebooks.length === 0 && groups.length === 0 ? (
         <div className="notebook-empty-state">
-          <BookOpen className="w-12 h-12 text-muted-foreground" />
-          <p className="text-lg font-medium">
+          <BookOpen size={48} style={{ color: 'var(--text-muted)' }} />
+          <p className="notebook-empty-title">
             {searchQuery
               ? (lang === 'zh' ? '未找到匹配的笔记本' : 'No matching notebooks found')
               : (lang === 'zh' ? '暂无笔记本' : 'No notebooks yet')}
           </p>
-          <p className="text-sm text-muted-foreground">
+          <p className="notebook-empty-hint">
             {lang === 'zh' ? '创建一个笔记本，上传文件进行知识化处理' : 'Create a notebook and upload files to get started'}
           </p>
           {!searchQuery && (
             <button className="notebook-create-btn" onClick={() => setShowCreate(true)}>
-              <Plus className="w-4 h-4" />
+              <Plus size={16} />
               {lang === 'zh' ? '新建笔记本' : 'New Notebook'}
             </button>
           )}
@@ -575,8 +577,8 @@ export function NotebookManager({ onClose, onOpenNotebookChat, onOpenWorkspace }
             return (
               <div key={group.id} className="notebook-group-section">
                 <div className="notebook-group-header" onClick={() => toggleGroup(group.id)}>
-                  {isExpanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
-                  <Folder className="w-4 h-4 text-primary" />
+                  {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                  <Folder size={16} style={{ color: 'var(--accent)' }} />
                   <span className="notebook-group-name">{group.name}</span>
                   <span className="nb-count-badge">{groupNotebooks.length}</span>
                   <button
@@ -584,7 +586,7 @@ export function NotebookManager({ onClose, onOpenNotebookChat, onOpenWorkspace }
                     onClick={(e) => { e.stopPropagation(); handleDeleteGroup(group.id); }}
                     title={lang === 'zh' ? '删除分组' : 'Delete Group'}
                   >
-                    <Trash2 className="w-3 h-3" />
+                    <Trash2 size={12} />
                   </button>
                 </div>
                 {isExpanded && groupNotebooks.length > 0 && (
@@ -738,7 +740,7 @@ function NotebookCard({
       onClick={onOpen}
     >
       <div className="notebook-card-header">
-        <BookOpen className="w-5 h-5 text-primary" />
+        <BookOpen size={20} style={{ color: 'var(--accent)' }} />
         <h3 className="notebook-card-title">{nb.name}</h3>
         <button
           className="notebook-card-delete"
@@ -746,7 +748,7 @@ function NotebookCard({
           title={isZh ? '直接对话' : 'Chat directly'}
           style={{ marginRight: '2px' }}
         >
-          <MessageSquare className="w-3.5 h-3.5" />
+          <MessageSquare size={14} />
         </button>
         <div style={{ position: 'relative' }}>
           <button
@@ -754,7 +756,7 @@ function NotebookCard({
             onClick={(e) => { e.stopPropagation(); setShowMoveMenu(!showMoveMenu); }}
             title={isZh ? '移动到分组' : 'Move to group'}
           >
-            <Folder className="w-3.5 h-3.5" />
+            <Folder size={14} />
           </button>
           {showMoveMenu && (
             <div className="nb-move-menu" onClick={(e) => e.stopPropagation()}>
@@ -780,7 +782,7 @@ function NotebookCard({
           className="notebook-card-delete"
           onClick={(e) => { e.stopPropagation(); onDelete(); }}
         >
-          <Trash2 className="w-4 h-4" />
+          <Trash2 size={16} />
         </button>
       </div>
       {nb.description && (
@@ -791,7 +793,7 @@ function NotebookCard({
       )}
       <div className="notebook-card-stats">
         <Badge variant="muted">
-          <FileText className="w-3 h-3" />
+          <FileText size={12} />
           {nb.sourceCount}
         </Badge>
         <Badge variant="muted">
@@ -799,13 +801,13 @@ function NotebookCard({
         </Badge>
         {nb.summaryStatus === 'completed' && (
           <Badge variant="success">
-            <CheckCircle className="w-3 h-3" />
+            <CheckCircle size={12} />
             {isZh ? '已索引' : 'Indexed'}
           </Badge>
         )}
         {nb.summaryStatus === 'generating' && (
           <Badge variant="warning">
-            <Loader2 className="w-3 h-3 animate-spin" />
+            <Loader2 size={12} className="animate-spin" />
             {isZh ? '处理中' : 'Processing'}
           </Badge>
         )}
@@ -819,9 +821,9 @@ function NotebookCard({
 function SourceItem({ source, onDelete }: { source: NotebookSource; onDelete: () => void }) {
   const lang = useLang();
 
-  const icon = source.type === 'file' ? <FileText className="w-4 h-4" /> :
-    source.type === 'url' ? <LinkIcon className="w-4 h-4" /> :
-    <Type className="w-4 h-4" />;
+  const icon = source.type === 'file' ? <FileText size={16} /> :
+    source.type === 'url' ? <LinkIcon size={16} /> :
+    <Type size={16} />;
 
   return (
     <div className="notebook-source-item">
@@ -830,9 +832,9 @@ function SourceItem({ source, onDelete }: { source: NotebookSource; onDelete: ()
         <span className="notebook-source-name">{source.name}</span>
         <div className="notebook-source-meta">
           <Badge variant={source.status === 'indexed' ? 'success' : source.status === 'failed' ? 'danger' : 'muted'}>
-            {source.status === 'indexed' ? <CheckCircle className="w-3 h-3" /> :
-             source.status === 'failed' ? <AlertCircle className="w-3 h-3" /> :
-             <Loader2 className="w-3 h-3 animate-spin" />}
+            {source.status === 'indexed' ? <CheckCircle size={12} /> :
+             source.status === 'failed' ? <AlertCircle size={12} /> :
+             <Loader2 size={12} className="animate-spin" />}
             {source.status}
           </Badge>
           {source.chunkCount > 0 && (
@@ -844,7 +846,7 @@ function SourceItem({ source, onDelete }: { source: NotebookSource; onDelete: ()
         </div>
       </div>
       <button className="notebook-source-delete" onClick={onDelete}>
-        <Trash2 className="w-3.5 h-3.5" />
+        <Trash2 size={14} />
       </button>
     </div>
   );

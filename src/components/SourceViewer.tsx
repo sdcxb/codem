@@ -12,7 +12,8 @@
  */
 
 import { useState, useEffect, useMemo } from 'react';
-import { X, FileText, Search, FileWarning } from 'lucide-react';
+import { FileText, Search, FileWarning } from 'lucide-react';
+import { ActionIcons } from '../core/icons/icon-map';
 import { getSource, getChunks } from '../core/knowledge';
 import type { NotebookSource, NotebookChunk } from '../core/knowledge';
 import { PdfViewer } from './PdfViewer';
@@ -35,6 +36,7 @@ export function SourceViewer({
   highlightText,
   onClose,
 }: SourceViewerProps) {
+  const CloseIcon = ActionIcons.close;
   const [source, setSource] = useState<NotebookSource | null>(null);
   const [chunks, setChunks] = useState<NotebookChunk[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -98,7 +100,7 @@ export function SourceViewer({
         {/* Header */}
         <div className="nb-source-viewer-header">
           <div className="nb-source-viewer-title">
-            <FileText className="w-4 h-4" style={{ color: 'var(--accent-primary, #6366f1)' }} />
+            <FileText size={16} style={{ color: 'var(--accent)' }} />
             <span>{source?.name || 'Loading...'}</span>
             {source?.type && (
               <span className="nb-source-type-tag" style={{ marginLeft: '8px' }}>
@@ -161,7 +163,7 @@ export function SourceViewer({
             )}
           </div>
           <button className="nb-dialog-close" onClick={onClose}>
-            <X className="w-4 h-4" />
+            <CloseIcon size={16} />
           </button>
         </div>
 
@@ -173,7 +175,7 @@ export function SourceViewer({
           alignItems: 'center',
           gap: '8px',
         }}>
-          <Search className="w-3.5 h-3.5" style={{ opacity: 0.5 }} />
+          <Search size={14} style={{ opacity: 0.5 }} />
           <input
             type="text"
             placeholder="搜索来源内容..."

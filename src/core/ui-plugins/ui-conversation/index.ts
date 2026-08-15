@@ -15,8 +15,8 @@ const ToolCallCard = lazy(() => import('../../../components/ToolCallCard'))
 export function apply() {
   const ctx = useCtx()
 
-  ctx.slots.register('app.conversation', ChatPanel)
-  ctx.slots.register('conversation.messages', MessageBubble)
-  ctx.slots.register('conversation.input', InputArea)
-  ctx.slots.register('conversation.node.tool', ToolCallCard)
+  ctx.slots.register({ name: 'app.conversation', id: 'default-chat', priority: 0 }, ChatPanel)
+  ctx.slots.register({ name: 'conversation.messages', id: 'default-messages', priority: 0 }, MessageBubble)
+  ctx.slots.register({ name: 'conversation.input', id: 'default-input', priority: 0 }, InputArea)
+  ctx.slots.register({ name: 'conversation.node.tool', id: 'default-tool-card', priority: 0 }, ToolCallCard)
 }

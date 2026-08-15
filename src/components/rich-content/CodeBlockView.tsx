@@ -10,6 +10,7 @@ import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark, oneLight } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { ContentFrame } from "./ContentFrame";
 import { getSetting } from "../../core/storage/settings";
+import { ActionIcons } from "../../core/icons/icon-map";
 
 interface CodeBlockViewProps {
   code: string;
@@ -27,6 +28,7 @@ export const CodeBlockView = memo(function CodeBlockView({
   collapsible = true,
 }: CodeBlockViewProps) {
   const [fullscreen, setFullscreen] = useState(false);
+  const CloseIcon = ActionIcons.close;
   const theme = (typeof getSetting === "function" ? getSetting("codem-theme") : "dark") as string;
   const isDark = theme !== "light";
 
@@ -43,7 +45,7 @@ export const CodeBlockView = memo(function CodeBlockView({
         <div className="content-fullscreen" onClick={(e) => e.stopPropagation()}>
           <div className="content-fullscreen-header">
             <span className="content-fullscreen-title">{language || "code"}</span>
-            <button className="content-fullscreen-close" onClick={() => setFullscreen(false)}>✕</button>
+            <button className="content-fullscreen-close" onClick={() => setFullscreen(false)}><CloseIcon size={18} /></button>
           </div>
           <div className="content-fullscreen-body">
             <SyntaxHighlighter

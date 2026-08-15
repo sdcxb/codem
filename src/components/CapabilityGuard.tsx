@@ -6,7 +6,8 @@
  */
 
 import { useState, useEffect, type ReactNode } from 'react';
-import { AlertTriangle, X } from 'lucide-react';
+import { AlertTriangle } from 'lucide-react';
+import { ActionIcons } from '../core/icons/icon-map';
 import { checkFeatureAvailability } from '../core/llm/capability-detector';
 import { useLang } from '../core/i18n/lang';
 
@@ -65,13 +66,13 @@ export function CapabilityGuard({ feature, children, fallbackRender = true, onUn
               lineHeight: '1.4',
             }}
           >
-            <AlertTriangle className="w-3 h-3 flex-shrink-0 mt-0.5" style={{ color: '#eab308' }} />
+            <AlertTriangle size={12} className="flex-shrink-0 mt-0.5" style={{ color: 'var(--warning)' }} />
             <span style={{ flex: 1 }}>{isZh ? w.zh : w.en}</span>
             <button
               onClick={() => setDismissed(true)}
               style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', padding: 0, flexShrink: 0 }}
             >
-              <X className="w-3 h-3" />
+              <ActionIcons.close size={12} />
             </button>
           </div>
         ))}

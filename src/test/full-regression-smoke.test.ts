@@ -353,8 +353,9 @@ describe("UI 入口 — HubLayout 清理", () => {
 describe("UI 入口 — AgentManager 变更", () => {
   const amSource = readFile("components/AgentManager.tsx");
 
-  it("Bot 图标已 import", () => {
-    expect(amSource).toContain("import { Bot");
+  it("Agent 图标已通过 icon-map 引用", () => {
+    // 架构变更：lucide-react 直接 import → icon-map.ts 集中映射
+    expect(amSource).toContain("PanelIcons.agent");
   });
 
   it("不再使用 emoji (🤖🦸✅❌)", () => {

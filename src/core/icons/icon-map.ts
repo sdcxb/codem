@@ -20,6 +20,19 @@ import {
   Sparkles,        // 技能管理标题
   Server,          // MCP 管理标题
   Wrench,          // 工具管理标题
+  Brain,           // 记忆管理标题
+  BookOpen,        // 笔记本管理标题
+  BarChart3,       // 用量统计标题
+  Bot,             // 智能体面板标题
+  GitCompare,      // Diff 审查标题
+  GitBranch,       // Pipeline 对话框标题
+  PawPrint,        // 宠物市场标题
+  FileType,        // PDF 查看器标题
+  Image,           // 图片预览标题
+  Network,         // Mermaid 图表标题
+  Code2,           // 代码块标题
+  Maximize2,       // 全屏查看器标题
+  Puzzle,          // 插件管理标题
 
   // ── 工具类别图标（管理界面用） ──
   Terminal,        // bash / shell
@@ -28,18 +41,14 @@ import {
   FileEdit,        // edit
   Search,          // glob / search
   Globe,           // webfetch / websearch
-  BookOpen,        // notebook
+  // BookOpen, Bot, Brain, Image, Code2, GitBranch, Network — already imported above
   ClipboardList,   // plan / task
   HelpCircle,      // question
-  Bot,             // actor / agent
-  Brain,           // memory
   Workflow,        // workflow
   Radio,           // lsp
   Database,        // database query
-  Image,           // image generation
   Video,           // video generation
-  Code2,           // code execution
-  GitBranch,       // git operations
+  // Code2, GitBranch — already imported above
   Download,        // download / export
   Upload,          // upload / import
   Mail,            // email / inbox
@@ -87,7 +96,7 @@ import {
   Plug,            // MCP 连接
   PlugZap,         // MCP 已连接（带电）
   Unplug,          // MCP 断开
-  Network,         // MCP 网络 / 传输
+  // Network — already imported above
   ShieldCheck,     // MCP 权限 / 安全
   Boxes,           // MCP 资源列表
   FileJson,        // JSON 配置导入
@@ -111,6 +120,19 @@ export const PanelIcons = {
   skills: Sparkles,
   mcp: Server,
   tools: Wrench,
+  memory: Brain,
+  notebook: BookOpen,
+  usage: BarChart3,
+  agent: Bot,
+  diff: GitCompare,
+  pipeline: GitBranch,
+  petMarket: PawPrint,
+  pdf: FileType,
+  image: Image,
+  mermaid: Network,
+  code: Code2,
+  fullscreen: Maximize2,
+  plugins: Puzzle,
 } as const;
 
 // ============================================================
@@ -237,6 +259,7 @@ export const CommonIcons = {
   filter: Filter,
   tag: Tag,
   info: Info,
+  package: Package,
 } as const;
 
 // ============================================================

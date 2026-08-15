@@ -12,7 +12,8 @@
  */
 
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { X, FileText, Search, Loader2, AlertCircle, Copy, Save } from 'lucide-react';
+import { FileText, Search, Loader2, AlertCircle, Copy, Save } from 'lucide-react';
+import { ActionIcons } from '../core/icons/icon-map';
 import { useLang } from '../core/i18n/lang';
 
 interface DocxViewerProps {
@@ -27,6 +28,7 @@ interface DocxViewerProps {
 export function DocxViewer({ filePath, data, onClose, onSaveAsNote }: DocxViewerProps) {
   const lang = useLang();
   const isZh = lang === 'zh';
+  const CloseIcon = ActionIcons.close;
 
   const [html, setHtml] = useState('');
   const [text, setText] = useState('');
@@ -103,7 +105,7 @@ export function DocxViewer({ filePath, data, onClose, onSaveAsNote }: DocxViewer
       <div className="nb-source-viewer-overlay" onClick={onClose}>
         <div className="nb-source-viewer" onClick={(e) => e.stopPropagation()} style={{ alignItems: 'center', justifyContent: 'center' }}>
           <div style={{ textAlign: 'center', padding: '40px' }}>
-            <Loader2 className="w-8 h-8 animate-spin" style={{ margin: '0 auto 12px', opacity: 0.5 }} />
+            <Loader2 size={32} className="animate-spin" style={{ margin: '0 auto 12px', opacity: 0.5 }} />
             <p style={{ opacity: 0.6 }}>{isZh ? '正在加载 Word 文档...' : 'Loading Word document...'}</p>
           </div>
         </div>
@@ -117,14 +119,14 @@ export function DocxViewer({ filePath, data, onClose, onSaveAsNote }: DocxViewer
         <div className="nb-source-viewer" onClick={(e) => e.stopPropagation()}>
           <div className="nb-source-viewer-header">
             <h3 className="nb-source-viewer-title">
-              <FileText className="w-4 h-4" style={{ color: 'var(--accent-primary, #6366f1)' }} />
+              <FileText size={16} style={{ color: 'var(--accent)' }} />
               <span>Word Document Viewer</span>
             </h3>
-            <button className="nb-dialog-close" onClick={onClose}><X className="w-4 h-4" /></button>
+            <button className="nb-dialog-close" onClick={onClose}><CloseIcon size={16} /></button>
           </div>
           <div style={{ padding: '40px', textAlign: 'center' }}>
-            <AlertCircle className="w-8 h-8" style={{ color: '#ef4444', margin: '0 auto 12px' }} />
-            <p style={{ color: '#ef4444', fontSize: '14px' }}>{error}</p>
+            <AlertCircle size={32} style={{ color: 'var(--error)', margin: '0 auto 12px' }} />
+            <p style={{ color: 'var(--error)', fontSize: '14px' }}>{error}</p>
           </div>
         </div>
       </div>
@@ -137,7 +139,7 @@ export function DocxViewer({ filePath, data, onClose, onSaveAsNote }: DocxViewer
         {/* Header */}
         <div className="nb-source-viewer-header">
           <div className="nb-source-viewer-title">
-            <FileText className="w-4 h-4" style={{ color: 'var(--accent-primary, #6366f1)' }} />
+            <FileText size={16} style={{ color: 'var(--accent)' }} />
             <span>Word Document</span>
           </div>
           <div style={{ display: 'flex', gap: '6px' }}>
@@ -152,7 +154,7 @@ export function DocxViewer({ filePath, data, onClose, onSaveAsNote }: DocxViewer
                   display: 'flex', alignItems: 'center', gap: '4px',
                 }}
               >
-                <Save className="w-3 h-3" />
+                <Save size={12} />
                 {isZh ? '存为笔记' : 'Save'}
               </button>
             )}
@@ -166,11 +168,11 @@ export function DocxViewer({ filePath, data, onClose, onSaveAsNote }: DocxViewer
                 display: 'flex', alignItems: 'center', gap: '4px',
               }}
             >
-              <Copy className="w-3 h-3" />
+              <Copy size={12} />
               {isZh ? '复制' : 'Copy'}
             </button>
             <button className="nb-dialog-close" onClick={onClose}>
-              <X className="w-4 h-4" />
+              <CloseIcon size={16} />
             </button>
           </div>
         </div>
@@ -183,7 +185,7 @@ export function DocxViewer({ filePath, data, onClose, onSaveAsNote }: DocxViewer
           alignItems: 'center',
           gap: '8px',
         }}>
-          <Search className="w-3.5 h-3.5" style={{ opacity: 0.5 }} />
+          <Search size={14} style={{ opacity: 0.5 }} />
           <input
             type="text"
             placeholder={isZh ? '搜索文档内容...' : 'Search document...'}

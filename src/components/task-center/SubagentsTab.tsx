@@ -16,11 +16,11 @@ interface SubagentsTabProps {
 }
 
 const STATUS_ICONS: Record<SubagentStatus, { Icon: typeof CheckCircle2; color: string }> = {
-  running: { Icon: Loader2, color: "#3b82f6" },
-  completed: { Icon: CheckCircle2, color: "#10b981" },
-  failed: { Icon: XCircle, color: "#ef4444" },
-  cancelled: { Icon: Ban, color: "#f59e0b" },
-  pending: { Icon: Timer, color: "#6b7280" },
+  running: { Icon: Loader2, color: "var(--accent)" },
+  completed: { Icon: CheckCircle2, color: "var(--success)" },
+  failed: { Icon: XCircle, color: "var(--error)" },
+  cancelled: { Icon: Ban, color: "var(--warning)" },
+  pending: { Icon: Timer, color: "var(--text-muted)" },
 };
 
 function getStatusLabel(status: SubagentStatus, zh: boolean): string {
@@ -61,19 +61,19 @@ export function SubagentsTab({ agents, onSelectAgent }: SubagentsTabProps) {
       {/* Stats */}
       <div style={{ display: "flex", gap: "12px", marginBottom: "16px", flexWrap: "wrap" }}>
         {[
-          { label: zh ? "运行中" : "Running", value: runningCount, color: "#3b82f6" },
-          { label: zh ? "已完成" : "Completed", value: completedCount, color: "#10b981" },
-          { label: zh ? "失败" : "Failed", value: failedCount, color: "#ef4444" },
-          { label: zh ? "总计" : "Total", value: agents.length, color: "#6366f1" },
+{ label: zh ? "运行中" : "Running", value: runningCount, color: "var(--accent)" },
+    { label: zh ? "已完成" : "Completed", value: completedCount, color: "var(--success)" },
+    { label: zh ? "失败" : "Failed", value: failedCount, color: "var(--error)" },
+    { label: zh ? "总计" : "Total", value: agents.length, color: "var(--accent)" },
         ].map((s) => (
           <div key={s.label} style={{
-            background: "var(--bg-tertiary, #181828)",
+            background: "var(--bg-tertiary)",
             borderRadius: "6px",
             padding: "8px 14px",
             display: "flex",
             alignItems: "center",
             gap: "8px",
-            border: "1px solid var(--border-color, #2a2a3a)",
+            border: "1px solid var(--border-primary)",
           }}>
             <span style={{ fontSize: "18px", fontWeight: 700, color: s.color }}>{s.value}</span>
             <span style={{ fontSize: "11px", color: "var(--text-secondary, #888)" }}>{s.label}</span>
@@ -90,7 +90,7 @@ export function SubagentsTab({ agents, onSelectAgent }: SubagentsTabProps) {
           fontSize: "14px",
         }}>
           {zh ? "暂无子智能体任务。在对话中使用 " : "No sub-agent tasks. Use "}
-          <code style={{ color: "var(--accent, #7c3aed)" }}>spawn_subagent</code>
+          <code style={{ color: "var(--accent)" }}>spawn_subagent</code>
           {zh ? " 工具来创建子智能体。" : " tool to create sub-agents."}
         </div>
       ) : (
@@ -106,20 +106,20 @@ export function SubagentsTab({ agents, onSelectAgent }: SubagentsTabProps) {
                 style={{
                   padding: "12px 14px",
                   borderRadius: "8px",
-                  background: "var(--bg-tertiary, #181828)",
-                  border: "1px solid var(--border-color, #2a2a3a)",
+                  background: "var(--bg-tertiary)",
+                  border: "1px solid var(--border-primary)",
                   cursor: "pointer",
                   display: "flex",
                   flexDirection: "column",
                   gap: "6px",
                   transition: "border-color 0.2s",
                 }}
-                onMouseEnter={(e) => (e.currentTarget.style.borderColor = "var(--accent, #7c3aed)")}
-                onMouseLeave={(e) => (e.currentTarget.style.borderColor = "var(--border-color, #2a2a3a)")}
+                onMouseEnter={(e) => (e.currentTarget.style.borderColor = "var(--accent)")}
+                onMouseLeave={(e) => (e.currentTarget.style.borderColor = "var(--border-primary)")}
               >
                 <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
                   <AgentIcon size={14} style={{ color: "var(--text-secondary)" }} />
-                  <span style={{ fontSize: "13px", fontWeight: 600, color: "var(--text-primary, #e0e0e0)" }}>
+                  <span style={{ fontSize: "13px", fontWeight: 600, color: "var(--text-primary)" }}>
                     {agent.name || agent.agentId}
                   </span>
                   {agent.persistent && (
@@ -130,8 +130,8 @@ export function SubagentsTab({ agents, onSelectAgent }: SubagentsTabProps) {
                       fontSize: "9px",
                       padding: "1px 6px",
                       borderRadius: "3px",
-                      background: "var(--accent, #7c3aed)22",
-                      color: "var(--accent, #7c3aed)",
+                      background: "var(--accent)22",
+                      color: "var(--accent)",
                     }}>
                       <Pin size={9} /> {zh ? "持久" : "persistent"}
                     </span>
@@ -147,7 +147,7 @@ export function SubagentsTab({ agents, onSelectAgent }: SubagentsTabProps) {
                   fontSize: "12px",
                   color: "var(--text-secondary, #aaa)",
                   padding: "4px 8px",
-                  background: "var(--bg-secondary, #1e1e2e)",
+                  background: "var(--bg-secondary)",
                   borderRadius: "4px",
                   overflow: "hidden",
                   textOverflow: "ellipsis",

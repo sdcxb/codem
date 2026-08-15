@@ -8,7 +8,8 @@
  */
 
 import { useState, useEffect, useCallback } from "react";
-import { PanelLeftClose, PanelLeftOpen, PencilLine, Search, Settings, Sun, Moon, PanelRight, PanelRightOpen, X } from "lucide-react";
+import { PanelLeftClose, PanelLeftOpen, PencilLine, Search, Settings, Sun, Moon, PanelRight, PanelRightOpen } from "lucide-react";
+import { ActionIcons } from "../core/icons/icon-map";
 import { GitBranchSelector } from "./GitBranchSelector";
 import { getSetting, setSetting } from "../core/storage/settings";
 import { ThemeManager } from "../core/theme";
@@ -199,7 +200,7 @@ export function TitleBar({
                   onClick={() => onCloseTab(tab.id)}
                   aria-label={`关闭 ${tab.title}`}
                 >
-                  <X size={12} />
+                  <ActionIcons.close size={12} />
                 </button>
               )}
             </div>

@@ -1,50 +1,238 @@
-# Codem 插件组合配置
-# 用户可编辑此文件来定义插件组合
+# codem.yml — Codem 插件清单
+# 
+# 声明所有内置插件包，PluginLoader 会读取此文件并按拓扑排序加载。
+# 第三方插件可以通过在 node_modules/@codem/ 目录下放置 package.json 注册。
 
-# 核心框架（必选）
-core:
-  - @codem/cordis
-  - @codem/core-runtime
-  - @codem/ui-slots
+plugins:
+  # ===== Core Providers =====
+  - name: "@codem/llm"
+    provides: ["llm"]
+    inject: []
+    priority: 0
+    hot: true
 
-# LLM 能力族
-llm:
-  provider: @codem/llm-deepseek
-  # provider: @codem/llm-ollama  # 切换到本地模型
+  - name: "@codem/tools"
+    provides: ["tools"]
+    inject: []
+    priority: 0
+    hot: true
 
-# 文件系统能力族
-fs:
-  provider: @codem/fs-local
-  # provider: @codem/fs-sandbox  # 切换到沙箱
+  - name: "@codem/session"
+    provides: ["session"]
+    inject: []
+    priority: 0
+    hot: true
 
-# Shell 能力族
-shell:
-  provider: @codem/shell-local
+  - name: "@codem/storage"
+    provides: ["storage"]
+    inject: []
+    priority: 0
+    hot: true
 
-# Web 能力族
-web:
-  provider: @codem/web-search-deepseek
+  - name: "@codem/memory"
+    provides: ["memory"]
+    inject: []
+    priority: 0
+    hot: true
 
-# 工具
-tools:
-  - @codem/tool-fs
-  - @codem/tool-bash
-  - @codem/tool-web
-  - @codem/tool-skill
-  - @codem/tool-cordis
+  - name: "@codem/permission"
+    provides: ["permission"]
+    inject: []
+    priority: 0
+    hot: true
 
-# UI 插件
-ui:
-  - @codem/ui-sidebar
-  - @codem/ui-conversation
-  - @codem/ui-tool
-  - @codem/ui-settings
-  - @codem/ui-theme
-  - @codem/ui-misc
-  - @codem/ui-market
-  - @codem/ui-cordis
+  - name: "@codem/mcp"
+    provides: ["mcp"]
+    inject: []
+    priority: 0
+    hot: true
 
-# Self-Referential Runtime
-extensions:
-  - @codem/extensions
-  - @codem/cordis-host-runner
+  - name: "@codem/skill"
+    provides: ["skill"]
+    inject: []
+    priority: 0
+    hot: true
+
+  - name: "@codem/subagent"
+    provides: ["subagent"]
+    inject: []
+    priority: 0
+    hot: true
+
+  - name: "@codem/settings"
+    provides: ["settings"]
+    inject: []
+    priority: 0
+    hot: true
+
+  - name: "@codem/theme"
+    provides: ["theme"]
+    inject: []
+    priority: 0
+    hot: true
+
+  # ===== Capability Providers =====
+  - name: "@codem/fs-local"
+    provides: ["fs"]
+    inject: []
+    priority: 0
+    hot: true
+
+  - name: "@codem/shell-local"
+    provides: ["shell"]
+    inject: []
+    priority: 0
+    hot: true
+
+  - name: "@codem/sandbox-local"
+    provides: ["sandbox"]
+    inject: []
+    priority: 0
+    hot: true
+
+  - name: "@codem/web-search"
+    provides: ["web"]
+    inject: []
+    priority: 0
+    hot: true
+
+  - name: "@codem/compaction"
+    provides: ["compaction"]
+    inject: []
+    priority: 0
+    hot: true
+
+  - name: "@codem/hooks"
+    provides: ["hooks"]
+    inject: []
+    priority: 0
+    hot: true
+
+  - name: "@codem/approval"
+    provides: ["approval"]
+    inject: []
+    priority: 0
+    hot: true
+
+  - name: "@codem/permissions"
+    provides: ["permissions"]
+    inject: []
+    priority: 0
+    hot: true
+
+  - name: "@codem/automation"
+    provides: ["automation"]
+    inject: []
+    priority: 0
+    hot: true
+
+  # ===== P6 Providers =====
+  - name: "@codem/identity"
+    provides: ["identity"]
+    inject: []
+    priority: 0
+
+  - name: "@codem/lsp"
+    provides: ["lsp"]
+    inject: []
+    priority: 0
+
+  - name: "@codem/code-runtime"
+    provides: ["codeRuntime"]
+    inject: []
+    priority: 0
+
+  - name: "@codem/workflow"
+    provides: ["workflow"]
+    inject: []
+    priority: 0
+
+  - name: "@codem/context-info"
+    provides: ["contextInfo"]
+    inject: []
+    priority: 0
+
+  - name: "@codem/commands"
+    provides: ["commands"]
+    inject: []
+    priority: 0
+
+  - name: "@codem/user-questions"
+    provides: ["userQuestions"]
+    inject: []
+    priority: 0
+
+  - name: "@codem/notebook"
+    provides: ["notebook"]
+    inject: []
+    priority: 0
+
+  - name: "@codem/squad"
+    provides: ["squad"]
+    inject: []
+    priority: 0
+
+  - name: "@codem/dynamic-runner"
+    provides: ["dynamicCordisRunner"]
+    inject: []
+    priority: 0
+
+  - name: "@codem/plugin-registry"
+    provides: ["pluginRegistry"]
+    inject: []
+    priority: 0
+
+  # ===== dsh Compat =====
+  - name: "@codem/dsh-compat"
+    provides: ["dshLlm", "dshShell", "dshFs", "dshTools", "dshSessions", "dshEvents", "dshCredentials"]
+    inject: ["llm", "shell", "fs", "tools", "session"]
+    priority: 0
+    optional: true
+
+  # ===== UI Plugins =====
+  - name: "@codem/ui-sidebar"
+    provides: []
+    inject: ["slots"]
+    slots: ["app.sidebar"]
+    priority: 0
+
+  - name: "@codem/ui-conversation"
+    provides: []
+    inject: ["slots"]
+    slots: ["app.conversation", "conversation.messages", "conversation.input", "conversation.node.tool"]
+    priority: 0
+
+  - name: "@codem/ui-tool"
+    provides: []
+    inject: ["slots"]
+    slots: ["conversation.details.tool"]
+    priority: 0
+
+  - name: "@codem/ui-settings"
+    provides: []
+    inject: ["slots"]
+    slots: ["app.settings"]
+    priority: 0
+
+  - name: "@codem/ui-misc"
+    provides: []
+    inject: ["slots"]
+    slots: ["app.overlay", "app.monitor", "app.goal"]
+    priority: 0
+
+  - name: "@codem/ui-market"
+    provides: []
+    inject: ["slots"]
+    slots: ["app.skill-manager", "app.mcp-manager", "app.plugin-manager"]
+    priority: 0
+
+  - name: "@codem/ui-theme"
+    provides: []
+    inject: []
+    priority: 0
+
+  - name: "@codem/ui-skin"
+    provides: []
+    inject: ["slots"]
+    slots: ["app.overlay"]
+    priority: 0

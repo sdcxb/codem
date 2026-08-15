@@ -13,6 +13,7 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from "react";
+import { ActionIcons } from "../core/icons/icon-map";
 import type { MarketPet } from "../core/pet/pet-types";
 import { listMarketPets, installMarketPet, isMarketPetInstalled, fetchPetImageAsDataUrl } from "../core/pet/pet-market-client";
 import { uninstallPet, isPetInstalled } from "../core/pet/pet-manager";
@@ -124,6 +125,7 @@ interface InstallProgress {
 }
 
 export function PetMarketDialog({ open, onClose }: PetMarketDialogProps) {
+  const CloseIcon = ActionIcons.close;
   const [pets, setPets] = useState<MarketPet[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -276,14 +278,16 @@ export function PetMarketDialog({ open, onClose }: PetMarketDialogProps) {
               border: "none",
               color: "var(--text-secondary, #888)",
               cursor: "pointer",
-              fontSize: "18px",
-              padding: "4px 8px",
+              padding: "4px",
               borderRadius: "4px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
             }}
             onMouseEnter={(e) => e.currentTarget.style.background = "rgba(255,255,255,0.1)"}
             onMouseLeave={(e) => e.currentTarget.style.background = "none"}
           >
-            ✕
+            <CloseIcon size={16} />
           </button>
         </div>
 

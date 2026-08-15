@@ -7,7 +7,7 @@ import {
   type CollaborationMode,
 } from "../core/agent/agent";
 import type { TaskSlot } from "../core/llm/model-profile";
-import { Bot, Plus } from "lucide-react";
+import { PanelIcons, ActionIcons } from "../core/icons/icon-map";
 import { useLang } from "../core/i18n/lang";
 
 const MODE_LABELS: Record<AgentMode, string> = {
@@ -78,9 +78,12 @@ function emptyAgent(): AgentDefinition {
   };
 }
 
-export function AgentManager() {
+export function AgentManager({ onClose }: { onClose: () => void }) {
   const lang = useLang();
   const zh = lang === "zh";
+  const AgentIcon = PanelIcons.agent;
+  const CloseIcon = ActionIcons.close;
+  const AddIcon = ActionIcons.add;
   const [agents, setAgents] = useState<AgentDefinition[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [editing, setEditing] = useState<AgentDefinition | null>(null);
@@ -145,30 +148,35 @@ export function AgentManager() {
   };
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <div>
-          <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)", display: "flex", alignItems: "center", gap: 6 }}>
-            <Bot size={16} style={{ color: "var(--accent, #7c3aed)" }} /> {zh ? "智能体定义管理" : "Agent Definition Management"}
-          </div>
-          <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 2 }}>
-            {zh ? "查看、创建和编辑智能体定义。内置智能体不可编辑/删除。" : "View, create, and edit agent definitions. Built-in agents are read-only."}
-          </div>
+    <div className="skill-manager">
+      {/* Header */}
+      <div className="skill-manager-header">
+        <div className="skill-manager-title">
+          <AgentIcon size={20} className="skill-manager-icon-svg" />
+          <span>{zh ? "智能体定义管理" : "Agent Management"}</span>
         </div>
-        <button
-          onClick={handleNew}
-          style={{
-            padding: "6px 14px", borderRadius: 4, fontSize: 12,
-            border: "1px solid var(--accent)", background: "var(--accent)",
-            color: "#fff", cursor: "pointer", whiteSpace: "nowrap",
-          }}
-        >
-          + {zh ? "新建智能体" : "New Agent"}
+        <button className="skill-manager-close" onClick={onClose}>
+          <CloseIcon size={18} />
         </button>
       </div>
 
-      {/* Agent list */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+      {/* Toolbar */}
+      <div className="skill-manager-toolbar">
+        <div style={{ fontSize: 11, color: "var(--text-secondary)" }}>
+          {zh ? "查看、创建和编辑智能体定义。内置智能体不可编辑/删除。" : "View, create, and edit agent definitions. Built-in agents are read-only."}
+        </div>
+        <button
+          onClick={handleNew}
+          className="market-skill-link-btn"
+          style={{ whiteSpace: "nowrap" }}
+        >
+          <AddIcon size={12} /> {zh ? "新建" : "New"}
+        </button>
+      </div>
+
+      {/* Agent list + detail/edit form (scrollable) */}
+      <div style={{ flex: 1, overflowY: "auto", padding: "12px 16px", display: "flex", flexDirection: "column", gap: 12 }}>
+        <div className="skill-market-grid" style={{ overflow: "visible", flex: "none", padding: 0 }}>
         {agents.map(agent => {
           const builtin = getAgentRegistry().isBuiltin(agent.id);
           const active = selectedId === agent.id && !editing;
@@ -176,40 +184,42 @@ export function AgentManager() {
             <div
               key={agent.id}
               onClick={() => { if (!editing) setSelectedId(agent.id); }}
-              style={{
-                display: "flex", alignItems: "center", gap: 8, padding: "8px 10px",
-                borderRadius: 6, border: `1px solid ${active ? "var(--accent)" : "var(--border-primary)"}`,
-                background: active ? "rgba(99, 102, 241, 0.1)" : "var(--bg-tertiary)",
-                cursor: editing ? "default" : "pointer", fontSize: 12,
-              }}
+              className={`market-skill-card ${active ? "selected" : ""}`}
             >
-              <span style={{ fontSize: 14 }}>{agent.mode === "primary" ? <Bot size={14} style={{ color: "var(--accent, #7c3aed)", display: "inline", verticalAlign: "middle" }} /> : <Bot size={14} style={{ color: "var(--text-secondary)", display: "inline", verticalAlign: "middle" }} />}</span>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontWeight: 600, color: "var(--text-primary)" }}>
-                  {agent.name || agent.id}
-                  {builtin && <span style={{ marginLeft: 6, fontSize: 10, color: "var(--text-muted)" }}>{zh ? "内置" : "built-in"}</span>}
+              <div className="market-skill-card-header">
+                <span className="market-skill-icon">
+                  <AgentIcon size={14} style={{ color: agent.mode === "primary" ? "var(--accent)" : "var(--text-secondary)" }} />
+                </span>
+                <div className="market-skill-card-title">
+                  <span className="market-skill-name">{agent.name || agent.id}</span>
+                  {builtin && <span style={{ fontSize: 10, color: "var(--text-muted)" }}>{zh ? "内置" : "built-in"}</span>}
                 </div>
-                <div style={{ fontSize: 10, color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {agent.description || agent.prompt.substring(0, 60) + "..."}
+                <span style={{ fontSize: 10, padding: "2px 6px", borderRadius: 3, background: "var(--bg-secondary)", color: "var(--text-secondary)" }}>
+                  {MODE_LABELS[agent.mode]}
+                </span>
+              </div>
+              <div className="market-skill-desc">
+                {agent.description || agent.prompt.substring(0, 60) + "..."}
+              </div>
+              <div className="market-skill-card-footer">
+                <div className="market-skill-meta">
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handleEdit(agent); }}
+                    className="market-skill-link-btn"
+                  >
+                    {zh ? "编辑" : "Edit"}
+                  </button>
+                  {!builtin && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); handleDelete(agent.id); }}
+                      className="market-skill-link-btn"
+                      style={{ color: "var(--error)" }}
+                    >
+                      {zh ? "删除" : "Del"}
+                    </button>
+                  )}
                 </div>
               </div>
-              <span style={{ fontSize: 10, padding: "2px 6px", borderRadius: 3, background: "var(--bg-secondary)", color: "var(--text-secondary)" }}>
-                {MODE_LABELS[agent.mode]}
-              </span>
-              <button
-                onClick={(e) => { e.stopPropagation(); handleEdit(agent); }}
-                style={{ fontSize: 11, padding: "2px 8px", borderRadius: 4, border: "1px solid var(--border-primary)", background: "none", color: "var(--text-primary)", cursor: "pointer" }}
-              >
-                {zh ? "编辑" : "Edit"}
-              </button>
-              {!builtin && (
-                <button
-                  onClick={(e) => { e.stopPropagation(); handleDelete(agent.id); }}
-                  style={{ fontSize: 11, padding: "2px 8px", borderRadius: 4, border: "1px solid #e74c3c", background: "none", color: "#e74c3c", cursor: "pointer" }}
-                >
-                  {zh ? "删除" : "Del"}
-                </button>
-              )}
             </div>
           );
         })}
@@ -454,7 +464,7 @@ export function AgentManager() {
                   <button onClick={() => {
                     const perms = (editing.permissions || []).filter((_, idx) => idx !== i);
                     setEditing({ ...editing, permissions: perms });
-                  }} style={{ fontSize: 14, padding: "4px 8px", border: "1px solid var(--border-primary)", background: "none", color: "var(--text-muted)", borderRadius: 4, cursor: "pointer" }}>✕</button>
+                  }} style={{ display: "flex", alignItems: "center", padding: "4px 8px", border: "1px solid var(--border-primary)", background: "none", color: "var(--text-muted)", borderRadius: 4, cursor: "pointer" }}><CloseIcon size={14} /></button>
                 </div>
               ))}
               <button onClick={() => setEditing({ ...editing, permissions: [...(editing.permissions || []), { tool: "*", action: "ask" }] })} style={{
@@ -479,6 +489,9 @@ export function AgentManager() {
           </div>
         </div>
       )}
+
+      {/* End of scrollable container */}
+      </div>
     </div>
   );
 }

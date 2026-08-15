@@ -5,7 +5,8 @@
  */
 
 import { useState, useEffect, useCallback } from "react";
-import { ClipboardList, Plus, X } from "lucide-react";
+import { ClipboardList } from "lucide-react";
+import { ActionIcons } from "../../core/icons/icon-map";
 import { getIssueManager, type Issue } from "../../core/issue/issue";
 import type { IssueStatus } from "../../core/issue/issue-storage";
 import { useProjectStore } from "../../core/store";
@@ -77,7 +78,7 @@ export function IssuesTab() {
       {/* Header */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "16px" }}>
         <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-          <ClipboardList size={16} style={{ color: "var(--accent, #7c3aed)" }} />
+          <ClipboardList size={16} style={{ color: "var(--accent)" }} />
           <span style={{ fontSize: "14px", fontWeight: 600, color: "var(--text-primary)" }}>
             Issues ({issues.length})
           </span>
@@ -87,11 +88,11 @@ export function IssuesTab() {
           style={{
             display: "flex", alignItems: "center", gap: 4,
             padding: "6px 14px", borderRadius: 6, fontSize: 13,
-            border: "1px solid var(--accent, #7c3aed)", background: "var(--accent, #7c3aed)",
+            border: "1px solid var(--accent)", background: "var(--accent)",
             color: "#fff", cursor: "pointer",
           }}
         >
-          {creating ? <X size={14} /> : <Plus size={14} />}
+          {creating ? <ActionIcons.close size={14} /> : <ActionIcons.add size={14} />}
           {zh ? "新建 Issue" : "New Issue"}
         </button>
       </div>
@@ -100,7 +101,7 @@ export function IssuesTab() {
       {creating && (
         <div style={{
           marginBottom: 16, padding: 16, borderRadius: 8,
-          border: "1px solid var(--border-color, #2a2a3a)", background: "var(--bg-secondary, #1e1e2e)",
+          border: "1px solid var(--border-primary)", background: "var(--bg-secondary)",
         }}>
           <input
             value={newTitle}
@@ -129,7 +130,7 @@ export function IssuesTab() {
               disabled={!newTitle.trim()}
               style={{
                 padding: "6px 16px", borderRadius: 4, fontSize: 12,
-                border: "1px solid var(--accent, #7c3aed)", background: "var(--accent, #7c3aed)",
+                border: "1px solid var(--accent)", background: "var(--accent)",
                 color: "#fff", cursor: "pointer", opacity: newTitle.trim() ? 1 : 0.5,
               }}
             >
@@ -157,9 +158,9 @@ export function IssuesTab() {
             onClick={() => setFilter(f.value)}
             style={{
               padding: "4px 12px", borderRadius: 4, fontSize: 12,
-              border: `1px solid ${filter === f.value ? "var(--accent, #7c3aed)" : "var(--border-color, #2a2a3a)"}`,
-              background: filter === f.value ? "var(--accent, #7c3aed)22" : "none",
-              color: filter === f.value ? "var(--accent, #7c3aed)" : "var(--text-secondary)",
+              border: `1px solid ${filter === f.value ? "var(--accent)" : "var(--border-primary)"}`,
+              background: filter === f.value ? "var(--accent)22" : "none",
+              color: filter === f.value ? "var(--accent)" : "var(--text-secondary)",
               cursor: "pointer",
             }}
           >

@@ -1,7 +1,7 @@
 # Codem 项目完整说明
 
 > **用途**：新对话快速理解项目全貌、架构、文件关联、当前状态。
-> 创建时间：2026-07-23 | 最后更新：2026-08-14 | 当前版本：v0.99.0（对标 DeepSeek Harness 全量升级 — 事件溯源 + 5 层工具管线 + Capability Seam + Plan Mode 增强 + Code Mode + Session Query + Goal 续行 + Workflow 编排 + Replay 测试 + Telemetry + MCP 市场 + 语音 + Ollama + CI/CD + 技能沙箱 + 远程同步 + 上下游关联修复补丁）
+> 创建时间：2026-07-23 | 最后更新：2026-08-15 | 当前版本：v1.0.0（UI/UX 标准化 + 插件系统架构 + 测试体系全面升级 — Cordis DI + Slot Registry + Plugin Loader + 18 Capability Seams + 全能力族拆分 + UI 插件包化 + 全弹窗标准化 + 图标映射体系 + 插件依赖图谱 + 3552 用例全部通过）
 
 ---
 
@@ -13,7 +13,7 @@
 - **GitHub**：https://github.com/sdcxb/codem
 - **分发**：NSIS `.exe` + WiX `.msi`，一键安装无需依赖
 - **平台**：Windows 优先
-- **版本**：v0.99.0（对标 DeepSeek Harness 全量升级，2026-08-14，事件溯源 + 5 层工具管线 + Capability Seam + Plan Mode 增强 + Code Mode + Session Query + Goal 续行 + Workflow 编排 + Replay 测试 + Telemetry + MCP 市场 + 语音 + Ollama + CI/CD + 技能沙箱 + 远程同步 + i18n 提示词重构 + 12 新文档 + 99 文件 / 3235 用例全部通过。**补丁修复：** provider.ts toAPIMessage ContentBlock 块处理 + agentic-loop.ts 事件投影 tool_calls 映射 + tools.ts readViaSeam 相对路径解析）
+- **版本**：v1.0.0（UI/UX 标准化 + 插件系统架构 + 测试体系全面升级，2026-08-15，Cordis DI + Slot Registry + Plugin Loader + 18 Capability Seams + 全能力族拆分（FS/Shell/Sandbox/Web/Skill/Subagent + 凭证/附件/知识/调度/目标/计划/后台任务）+ UI 插件包化（7 个 UI 插件包）+ 全弹窗标准化（modal-overlay + modal-editor + 统一关闭按钮）+ 图标映射体系（icon-map.ts 7 个图标集 + 运行时完整性测试）+ 插件依赖图谱与级联管控 + 测试体系升级（5 个新测试文件 / 271+ 用例：图标标准化 / 工具触发-调用-执行闭环 / 综合质量套件 / 插件依赖图 / 插件关闭影响）+ 补齐遗漏能力模块（compaction/approval/permissions/hooks/automation + fs-sandbox + tool-todo/ask-user/lsp/run-code/workflow/goal/schedule/knowledge + skin-default/pet/ui-pet + Preset/Bundle/SDK/ACP/Host/Client）。104 文件 / 3552 用例全部通过）
 
 ---
 
@@ -1146,6 +1146,36 @@ npm run tauri build        # 构建 NSIS exe + MSI
 - `tauri.conf.json` NSIS 配置新增 `installerIcon` 字段，显式指定安装器图标路径
 - 全量 `cargo clean` + 重新构建，确保 `resource.lib` 正确嵌入新图标
 - GitHub Release v0.96.1 安装包已更新为图标修复版
+
+### v1.0.0（2026-08-15）— UI/UX 标准化 + 插件系统架构 + 测试体系全面升级
+
+> 本次更新是 Codem 从 0.x 迈向 1.0 的里程碑版本。以 P4-P6 架构升级为基础，系统性完成了全弹窗 UI/UX 标准化、图标映射体系、插件依赖图谱与级联管控、以及覆盖功能触发-调用-执行闭环的全量测试体系。67 文件修改（+1112/-641 行），5 个新测试文件，3552 用例全部通过。
+
+**P4 — Cordis DI + Slot Registry + Plugin Loader + 18 Capability Seams：**
+- **Cordis DI 容器**（`slots/index.ts`）：`SlotRegistry` 注册表 + `initSlots()` 初始化 18 个 Capability Seam
+- **Plugin Loader**（`plugin-loader/index.ts`）：扫描 + 拓扑排序 + 加载/卸载 + 生命周期管理
+- **App.tsx 接入**：`PluginLoader` 初始化 + `loadUIPlugins()` 动态加载 UI 插件包
+
+**P5 — 全能力族拆分（13 个独立能力族）：**
+- FS / Shell / Sandbox / Web / Skill / Subagent + 凭证 / 附件 / 知识 / 调度 / 目标 / 计划 / 后台任务
+
+**P6 — UI 插件包化 + 插件市场基础设施：**
+- 7 个 UI 插件包（ui-conversation / ui-market / ui-misc / ui-settings / ui-sidebar / ui-skin / ui-tool）
+- Self-Referential Runtime + 插件市场 Manifest + 安装/卸载流程
+- 补齐遗漏能力模块：compaction / approval / permissions / hooks / automation + fs-sandbox + tool-todo / ask-user / lsp / run-code / workflow / goal / schedule / knowledge + skin-default / pet / ui-pet + Preset / Bundle / SDK / ACP / Host / Client
+
+**UI/UX 全面标准化：**
+- **弹窗统一结构**：所有弹窗统一 `modal-overlay` + `modal-editor` + 标准 header + 标准关闭按钮（`ActionIcons.close`），涉及 35+ 组件
+- **图标映射体系**：`icon-map.ts` 统一图标包（7 个图标集 + `ToolEmojis`），消除所有直接 `lucide-react` 导入和 emoji 图标，新增 `ICON-RUN-001/002` 运行时完整性测试
+- **CSS 样式标准化**：硬编码颜色 → CSS 变量 + Tailwind 类 → `size` 属性/CSS 类 + 补齐缺失 CSS 规则 + SVG 图标 flexbox 对齐
+- **核心插件保护**：riskLevel + locked + core 属性标识 + 关闭核心插件二次确认
+
+**测试体系全面升级（5 个新测试文件 / 271+ 用例）：**
+- `icon-standardization.test.ts`（97 用例）— 图标映射完整性 + 无 emoji 拘留 + 关闭按钮 + CSS 变量 + 运行时完整性
+- `trigger-call-execute-loop.test.ts`（30+ 用例）— 工具管线 5 层闭环 + Agent 循环事件流 + 消息存储 + 插件加载
+- `extended-quality-suite.test.tsx`（80 用例）— 快照 + 性能基线 + 交互流程 + CSS 布局 + i18n + 核心模块稳定性
+- `plugin-dependency-graph.test.ts`（24+ 用例）— 依赖图注册 + 拓扑排序 + 级联启停 + 锁定机制
+- `plugin-disable-impact.test.ts`（40+ 用例）— 核心/能力/UI 插件关闭对系统功能、信息流、数据流的影响
 
 ### v0.96.0（2026-08-08）— 主对话窗口 UI 大改版 + 内联 Diff + 富内容渲染
 

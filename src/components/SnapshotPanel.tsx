@@ -2,7 +2,8 @@ import { useState, useEffect } from "react";
 import { getSnapshotService, type Snapshot } from "../core/snapshot/snapshot";
 import { DiffViewer } from "./DiffViewer";
 import { readFile } from "../core/file-api";
-import { Camera, X, Clock, RefreshCw, Search, Undo, Folder, ChevronDown, ChevronRight } from "lucide-react";
+import { Camera, Clock, RefreshCw, Search, Undo, Folder, ChevronDown, ChevronRight } from "lucide-react";
+import { ActionIcons } from "../core/icons/icon-map";
 
 interface SnapshotPanelProps {
   cwd: string;
@@ -24,6 +25,7 @@ interface ToastMsg {
 }
 
 export function SnapshotPanel({ cwd, onClose, onRestore }: SnapshotPanelProps) {
+  const CloseIcon = ActionIcons.close;
   const [snapshots, setSnapshots] = useState<Snapshot[]>([]);
   const [loading, setLoading] = useState(true);
   const [restoring, setRestoring] = useState<string | null>(null);
@@ -98,7 +100,7 @@ export function SnapshotPanel({ cwd, onClose, onRestore }: SnapshotPanelProps) {
           <Camera size={16} style={{ color: 'var(--accent)' }} />
           <span>文件快照</span>
         </div>
-        <button className="snapshot-panel-close" onClick={onClose}><X size={14} /></button>
+        <button className="snapshot-panel-close" onClick={onClose}><CloseIcon size={14} /></button>
       </div>
 
       {toast && (

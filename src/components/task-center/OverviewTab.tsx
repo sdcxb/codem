@@ -77,9 +77,9 @@ export function OverviewTab({ onNavigate }: OverviewTabProps) {
       const Icon = t.status === "completed" ? CheckCircle2 :
                    t.status === "running" ? Loader2 :
                    t.status === "failed" ? XCircle : Timer;
-      const iconColor = t.status === "completed" ? "#10b981" :
-                        t.status === "running" ? "#3b82f6" :
-                        t.status === "failed" ? "#ef4444" : "#6b7280";
+const iconColor = t.status === "completed" ? "var(--success)" :
+    t.status === "running" ? "var(--accent)" :
+    t.status === "failed" ? "var(--error)" : "var(--text-muted)";
       const taskLabel = zh ? "委派任务" : "Delegation";
       allActivities.push({
         icon: Icon,
@@ -93,7 +93,7 @@ export function OverviewTab({ onNavigate }: OverviewTabProps) {
     for (const h of (config.history || []).slice(0, 10)) {
       allActivities.push({
         icon: FileClock,
-        iconColor: "#f59e0b",
+        iconColor: "var(--warning)",
         text: `${zh ? "自动化" : "Automation"}: ${h.triggerName}`,
         timestamp: h.timestamp,
       });
@@ -125,7 +125,7 @@ export function OverviewTab({ onNavigate }: OverviewTabProps) {
       icon: InboxIcon,
       label: zh ? "收件箱" : "Inbox",
       stats: [
-        { label: zh ? "未读" : "Unread", value: inboxUnread, color: inboxUnread > 0 ? "#ef4444" : "#6b7280" },
+        { label: zh ? "未读" : "Unread", value: inboxUnread, color: inboxUnread > 0 ? "var(--error)" : "var(--text-muted)" },
       ],
     },
     {
@@ -133,9 +133,9 @@ export function OverviewTab({ onNavigate }: OverviewTabProps) {
       icon: ClipboardList,
       label: zh ? "Issues" : "Issues",
       stats: [
-        { label: zh ? "进行中" : "Active", value: issueStats.inProgress, color: "#3b82f6" },
-        { label: zh ? "待审查" : "Review", value: issueStats.inReview, color: "#f59e0b" },
-        { label: zh ? "已完成" : "Done", value: issueStats.done, color: "#10b981" },
+{ label: zh ? "进行中" : "Active", value: issueStats.inProgress, color: "var(--accent)" },
+    { label: zh ? "待审查" : "Review", value: issueStats.inReview, color: "var(--warning)" },
+    { label: zh ? "已完成" : "Done", value: issueStats.done, color: "var(--success)" },
       ],
     },
     {
@@ -143,9 +143,9 @@ export function OverviewTab({ onNavigate }: OverviewTabProps) {
       icon: Link2,
       label: zh ? "委派任务" : "Delegation",
       stats: [
-        { label: zh ? "运行中" : "Running", value: delegationStats.running, color: "#3b82f6" },
-        { label: zh ? "已完成" : "Completed", value: delegationStats.completed, color: "#10b981" },
-        { label: zh ? "等待中" : "Pending", value: delegationStats.pending, color: "#6b7280" },
+{ label: zh ? "运行中" : "Running", value: delegationStats.running, color: "var(--accent)" },
+    { label: zh ? "已完成" : "Completed", value: delegationStats.completed, color: "var(--success)" },
+        { label: zh ? "等待中" : "Pending", value: delegationStats.pending, color: "var(--text-muted)" },
       ],
     },
     {
@@ -153,9 +153,9 @@ export function OverviewTab({ onNavigate }: OverviewTabProps) {
       icon: Clock,
       label: zh ? "自动化" : "Automation",
       stats: [
-        { label: zh ? "活跃" : "Active", value: automationCount.active, color: "#10b981" },
-        { label: zh ? "总计" : "Total", value: automationCount.total, color: "#6366f1" },
-        { label: zh ? "今日触发" : "Today", value: automationCount.todayTriggered, color: "#f59e0b" },
+        { label: zh ? "活跃" : "Active", value: automationCount.active, color: "var(--success)" },
+        { label: zh ? "总计" : "Total", value: automationCount.total, color: "var(--accent)" },
+        { label: zh ? "今日触发" : "Today", value: automationCount.todayTriggered, color: "var(--warning)" },
       ],
     },
   ];
@@ -172,19 +172,19 @@ export function OverviewTab({ onNavigate }: OverviewTabProps) {
               onClick={() => onNavigate(card.tab)}
               style={{
                 flex: "1 1 200px",
-                background: "var(--bg-tertiary, #181828)",
+                background: "var(--bg-tertiary)",
                 borderRadius: "8px",
-                border: "1px solid var(--border-color, #2a2a3a)",
+                border: "1px solid var(--border-primary)",
                 padding: "16px",
                 cursor: "pointer",
                 transition: "border-color 0.2s",
               }}
-              onMouseEnter={(e) => (e.currentTarget.style.borderColor = "var(--accent, #7c3aed)")}
-              onMouseLeave={(e) => (e.currentTarget.style.borderColor = "var(--border-color, #2a2a3a)")}
+              onMouseEnter={(e) => (e.currentTarget.style.borderColor = "var(--accent)")}
+              onMouseLeave={(e) => (e.currentTarget.style.borderColor = "var(--border-primary)")}
             >
               <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "12px" }}>
-                <Icon size={16} style={{ color: "var(--accent, #7c3aed)" }} />
-                <span style={{ fontSize: "14px", fontWeight: 600, color: "var(--text-primary, #e0e0e0)" }}>
+                <Icon size={16} style={{ color: "var(--accent)" }} />
+                <span style={{ fontSize: "14px", fontWeight: 600, color: "var(--text-primary)" }}>
                   {card.label}
                 </span>
                 <ChevronRight size={14} style={{ marginLeft: "auto", color: "var(--text-secondary, #666)" }} />
@@ -204,7 +204,7 @@ export function OverviewTab({ onNavigate }: OverviewTabProps) {
 
       {/* Recent activity timeline */}
       <div>
-        <div style={{ fontSize: "14px", fontWeight: 600, color: "var(--text-primary, #e0e0e0)", marginBottom: "12px" }}>
+        <div style={{ fontSize: "14px", fontWeight: 600, color: "var(--text-primary)", marginBottom: "12px" }}>
           {zh ? "最近活动" : "Recent Activity"}
         </div>
         {activities.length === 0 ? (
@@ -222,7 +222,7 @@ export function OverviewTab({ onNavigate }: OverviewTabProps) {
                   gap: "10px",
                   padding: "8px 12px",
                   borderRadius: "6px",
-                  background: "var(--bg-tertiary, #181828)",
+                  background: "var(--bg-tertiary)",
                   fontSize: "12px",
                 }}
               >

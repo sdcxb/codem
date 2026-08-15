@@ -8,7 +8,7 @@
 
 import { memo, type ReactNode } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X } from "lucide-react";
+import { ActionIcons } from "../core/icons/icon-map";
 
 interface DrawerProps {
   /** 是否打开 */
@@ -107,7 +107,7 @@ export const Drawer = memo(function Drawer({
               <div className="drawer-header" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", borderBottom: "1px solid var(--border-primary, #333)" }}>
                 <span style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary, #e0e0e0)" }}>{title}</span>
                 <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted, #888)", padding: 4, borderRadius: 4 }}>
-                  <X size={16} />
+                  <ActionIcons.close size={16} />
                 </button>
               </div>
             )}

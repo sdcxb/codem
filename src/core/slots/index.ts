@@ -288,6 +288,23 @@ export class SlotCore {
     return this.records.get(key)?.spec as SlotSpec<SlotMap[K]> | undefined
   }
 
+  /**
+   * Declare a top-level slot directly (without needing a parent entry).
+   * This is used by the framework to declare well-known slots before
+   * any plugin registers into them.
+   */
+  declareSlot(key: string, spec: SlotSpec<SlotEntryDef>, declaredBy?: string): void {
+    const rec = this.record(key)
+    if (rec.spec) {
+      throw new Error(`slot "${key}" is already declared (by ${rec.declaredBy ?? 'an unknown entry'})`)
+    }
+    rec.spec = spec
+    rec.declaredBy = declaredBy ?? '(framework)'
+    rec.declarationEpoch += 1
+    this.markDirty(key, rec)
+    this.notifyDeclaration(rec)
+  }
+
   /** Dynamic-key escape hatch for spec lookup. */
   specDynamic(key: string): SlotSpec<SlotEntryDef> | undefined {
     return this.records.get(key)?.spec
@@ -465,6 +482,11 @@ export class SlotsService extends Service {
 
   /** The underlying SlotCore instance (for advanced use). */
   get core$() { return this.core }
+
+  /** Declare a top-level slot directly. */
+  declareSlot(key: string, spec: SlotSpec<SlotEntryDef>, declaredBy?: string): void {
+    this.core.declareSlot(key, spec, declaredBy)
+  }
 
   /** Register a component into a slot. */
   register<K extends keyof SlotMap & string>(

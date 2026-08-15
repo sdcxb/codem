@@ -6,7 +6,7 @@
  */
 
 import { memo, useEffect, useRef, useState } from "react";
-import { Network as NetworkIcon } from "lucide-react";
+import { PanelIcons, ActionIcons } from "../../core/icons/icon-map";
 import { ContentFrame } from "./ContentFrame";
 
 interface MermaidCanvasViewProps {
@@ -15,6 +15,8 @@ interface MermaidCanvasViewProps {
 }
 
 export const MermaidCanvasView = memo(function MermaidCanvasView({ chart, id }: MermaidCanvasViewProps) {
+  const MermaidIcon = PanelIcons.mermaid;
+  const CloseIcon = ActionIcons.close;
   const containerRef = useRef<HTMLDivElement>(null);
   const [svg, setSvg] = useState("");
   const [error, setError] = useState("");
@@ -69,7 +71,7 @@ export const MermaidCanvasView = memo(function MermaidCanvasView({ chart, id }: 
         <div className="content-fullscreen mermaid-fullscreen" onClick={(e) => e.stopPropagation()}>
           <div className="content-fullscreen-header">
             <span className="content-fullscreen-title">Mermaid 图表</span>
-            <button className="content-fullscreen-close" onClick={() => setFullscreen(false)}>✕</button>
+            <button className="content-fullscreen-close" onClick={() => setFullscreen(false)}><CloseIcon size={18} /></button>
           </div>
           <div className="content-fullscreen-body mermaid-fullscreen-body">
             {content}
@@ -82,7 +84,7 @@ export const MermaidCanvasView = memo(function MermaidCanvasView({ chart, id }: 
   return (
     <ContentFrame
       title="Mermaid"
-      icon={<NetworkIcon size={14} />}
+      icon={<MermaidIcon size={14} />}
       fullscreenable
       onFullscreen={() => setFullscreen(true)}
       className="mermaid-canvas-view"

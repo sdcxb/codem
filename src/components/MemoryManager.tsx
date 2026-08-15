@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { PanelIcons, ActionIcons } from "../core/icons/icon-map";
 import { getMemoryService, type MemoryEntry, type MemoryScope, type MemorySearchResult } from "../core/memory/memory";
 import { getLLMEngine } from "../core/llm";
 
@@ -43,6 +44,12 @@ const EMPTY_FORM: EditForm = {
   tags: "",
   filePath: "",
 };
+
+const MemoryIcon = PanelIcons.memory;
+const CloseIcon = ActionIcons.close;
+const SearchIcon = ActionIcons.search;
+const EditIcon = ActionIcons.edit;
+const DeleteIcon = ActionIcons.delete;
 
 export function MemoryManager({ onClose }: MemoryManagerProps) {
   const [entries, setEntries] = useState<MemoryEntry[]>([]);
@@ -211,7 +218,7 @@ export function MemoryManager({ onClose }: MemoryManagerProps) {
     <div className="memory-manager">
       <div className="memory-manager-header">
         <div className="memory-manager-title">
-          <span className="memory-manager-icon">🧠</span>
+          <span className="memory-manager-icon"><MemoryIcon size={18} /></span>
           <span>记忆系统</span>
         </div>
         <div className="memory-manager-actions">
@@ -251,7 +258,7 @@ export function MemoryManager({ onClose }: MemoryManagerProps) {
               </button>
             </>
           )}
-          <button className="memory-manager-close" onClick={onClose}>✕</button>
+          <button className="memory-manager-close" onClick={onClose}><CloseIcon size={18} /></button>
         </div>
       </div>
 
@@ -345,7 +352,7 @@ export function MemoryManager({ onClose }: MemoryManagerProps) {
               onKeyDown={(e) => e.key === "Enter" && handleSearch()}
               placeholder="搜索记忆..."
             />
-            <button onClick={handleSearch}>🔍</button>
+            <button onClick={handleSearch}><SearchIcon size={16} /></button>
           </div>
 
           <div className="memory-filters">
@@ -448,13 +455,13 @@ export function MemoryManager({ onClose }: MemoryManagerProps) {
                   className="memory-edit-btn"
                   onClick={() => handleStartEdit(selectedEntry)}
                 >
-                  ✏️ 编辑
+                  <EditIcon size={14} /> 编辑
                 </button>
                 <button
                   className="memory-delete-btn"
                   onClick={() => handleDelete(selectedEntry.id)}
                 >
-                  🗑️ 删除
+                  <DeleteIcon size={14} /> 删除
                 </button>
               </div>
             </div>

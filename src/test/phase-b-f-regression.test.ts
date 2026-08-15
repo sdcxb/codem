@@ -1272,7 +1272,9 @@ describe("跨模块集成测试", () => {
       expect(appSrc).toContain("onNotebooks");
     });
     it("渲染 NotebookManager modal", () => {
-      expect(appSrc).toContain("<NotebookManager");
+      // 架构变更：直接 JSX 渲染 → SlotBridge 插件化渲染
+      expect(appSrc).toContain("NotebookManager");
+      expect(appSrc).toMatch(/SlotBridge.*notebook-manager|<NotebookManager/);
     });
   });
 

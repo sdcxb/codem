@@ -5,7 +5,7 @@
  */
 
 import { type ReactNode, useEffect } from "react";
-import { X } from "lucide-react";
+import { ActionIcons } from "../../core/icons/icon-map";
 
 interface FullscreenViewerProps {
   open: boolean;
@@ -15,6 +15,7 @@ interface FullscreenViewerProps {
 }
 
 export function FullscreenViewer({ open, onClose, title, children }: FullscreenViewerProps) {
+  const CloseIcon = ActionIcons.close;
   useEffect(() => {
     if (!open) return;
     const handleKey = (e: KeyboardEvent) => {
@@ -32,7 +33,7 @@ export function FullscreenViewer({ open, onClose, title, children }: FullscreenV
         <div className="content-fullscreen-header">
           <span className="content-fullscreen-title">{title}</span>
           <button className="content-fullscreen-close" onClick={onClose} aria-label="关闭全屏">
-            <X size={16} />
+            <CloseIcon size={16} />
           </button>
         </div>
         <div className="content-fullscreen-body">

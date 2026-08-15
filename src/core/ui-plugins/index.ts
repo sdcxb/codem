@@ -7,6 +7,7 @@
  */
 
 import type { Context, Plugin } from '../cordis/src/index.ts'
+import { declareAppSlots } from '../slots/declare-slots.ts'
 import './slots.ts'  // 声明所有 UI 槽位类型
 
 // 导入所有 UI 插件包
@@ -27,6 +28,9 @@ export function loadUIPlugins(ctx: Context) {
   // 设置全局 Context
   const { setActiveContext } = require('../consumer/index.ts')
   setActiveContext(ctx)
+
+  // 先声明所有 App 级别的 Slot
+  declareAppSlots(ctx)
 
   // 按顺序加载 UI 插件
   const plugins = [

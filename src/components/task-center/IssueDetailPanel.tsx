@@ -88,7 +88,7 @@ export function IssueDetailPanel({ issue, onClose, onRefresh }: IssueDetailPanel
         <span style={{ fontFamily: "monospace" }}>{currentIssue.id}</span>
         <span>{zh ? "优先级" : "Priority"}: <strong style={{ color: "var(--text-primary)" }}>{currentIssue.priority}</strong></span>
         {currentIssue.assigneeId && (
-          <span>{zh ? "分配给" : "Assigned to"}: <strong style={{ color: "var(--accent, #7c3aed)" }}>{currentIssue.assigneeType}/{currentIssue.assigneeId.substring(0, 16)}</strong></span>
+          <span>{zh ? "分配给" : "Assigned to"}: <strong style={{ color: "var(--accent)" }}>{currentIssue.assigneeType}/{currentIssue.assigneeId.substring(0, 16)}</strong></span>
         )}
         {currentIssue.labels.length > 0 && (
           <span>{zh ? "标签" : "Labels"}: {currentIssue.labels.join(", ")}</span>
@@ -99,7 +99,7 @@ export function IssueDetailPanel({ issue, onClose, onRefresh }: IssueDetailPanel
       {currentIssue.description && (
         <div style={{
           padding: "12px 14px", borderRadius: 8, marginBottom: "16px",
-          background: "var(--bg-tertiary, #181828)", border: "1px solid var(--border-color, #2a2a3a)",
+          background: "var(--bg-tertiary)", border: "1px solid var(--border-primary)",
           fontSize: "13px", color: "var(--text-secondary)", lineHeight: 1.6,
         }}>
           {currentIssue.description}
@@ -123,7 +123,7 @@ export function IssueDetailPanel({ issue, onClose, onRefresh }: IssueDetailPanel
                 style={{
                   display: "inline-flex", alignItems: "center", gap: 4,
                   padding: "4px 10px", borderRadius: 4, fontSize: 11,
-                  border: `1px solid ${isActive ? cfg.color : "var(--border-color, #2a2a3a)"}`,
+                  border: `1px solid ${isActive ? cfg.color : "var(--border-primary)"}`,
                   background: isActive ? `${cfg.color}22` : "none",
                   color: isActive ? cfg.color : "var(--text-secondary)",
                   cursor: "pointer",
@@ -140,9 +140,9 @@ export function IssueDetailPanel({ issue, onClose, onRefresh }: IssueDetailPanel
             style={{
               display: "inline-flex", alignItems: "center", gap: 4,
               padding: "4px 10px", borderRadius: 4, fontSize: 11,
-              border: `1px solid ${currentIssue.squadId ? "var(--accent, #7c3aed)" : "var(--border-color, #2a2a3a)"}`,
-              background: currentIssue.squadId ? "var(--accent, #7c3aed)22" : "none",
-              color: currentIssue.squadId ? "var(--accent, #7c3aed)" : "var(--text-secondary)",
+              border: `1px solid ${currentIssue.squadId ? "var(--accent)" : "var(--border-primary)"}`,
+              background: currentIssue.squadId ? "var(--accent)22" : "none",
+              color: currentIssue.squadId ? "var(--accent)" : "var(--text-secondary)",
               cursor: "pointer", marginLeft: "auto",
             }}
           >
@@ -152,7 +152,7 @@ export function IssueDetailPanel({ issue, onClose, onRefresh }: IssueDetailPanel
         </div>
         {/* Squad picker dropdown */}
         {showSquadPicker && (
-          <div style={{ marginTop: 8, padding: 8, borderRadius: 6, background: "var(--bg-tertiary, #181828)", border: "1px solid var(--border-color, #2a2a3a)" }}>
+          <div style={{ marginTop: 8, padding: 8, borderRadius: 6, background: "var(--bg-tertiary)", border: "1px solid var(--border-primary)" }}>
             {availableSquads.length === 0 ? (
               <div style={{ fontSize: 12, color: "var(--text-muted)", padding: "4px" }}>
                 {zh ? "暂无 Squad。请先在 Squads Tab 创建。" : "No squads. Create one in the Squads tab first."}
@@ -165,13 +165,13 @@ export function IssueDetailPanel({ issue, onClose, onRefresh }: IssueDetailPanel
                   style={{
                     padding: "6px 10px", borderRadius: 4, fontSize: 12,
                     cursor: "pointer", color: "var(--text-primary)",
-                    background: "var(--bg-secondary, #1e1e2e)", marginBottom: 4,
+                    background: "var(--bg-secondary)", marginBottom: 4,
                     display: "flex", alignItems: "center", gap: 6,
                   }}
-                  onMouseEnter={(e) => (e.currentTarget.style.background = "var(--accent, #7c3aed)22")}
-                  onMouseLeave={(e) => (e.currentTarget.style.background = "var(--bg-secondary, #1e1e2e)")}
+                  onMouseEnter={(e) => (e.currentTarget.style.background = "var(--accent)22")}
+                  onMouseLeave={(e) => (e.currentTarget.style.background = "var(--bg-secondary)")}
                 >
-                  <Users size={12} style={{ color: "var(--accent, #7c3aed)" }} />
+                  <Users size={12} style={{ color: "var(--accent)" }} />
                   <span style={{ fontWeight: 600 }}>{sq.name}</span>
                   <span style={{ fontSize: 10, color: "var(--text-muted)" }}>{sq.members.length} {zh ? "成员" : "members"}</span>
                 </div>
@@ -197,8 +197,8 @@ export function IssueDetailPanel({ issue, onClose, onRefresh }: IssueDetailPanel
               return (
                 <div key={c.id} style={{
                   padding: "8px 12px", borderRadius: 6,
-                  background: isSystem ? "var(--bg-secondary, #1e1e2e)" : "var(--bg-tertiary, #181828)",
-                  borderLeft: isSystem ? "2px solid var(--text-muted)" : `2px solid ${c.authorType === "agent" ? "#3b82f6" : "#7c3aed"}`,
+                  background: isSystem ? "var(--bg-secondary)" : "var(--bg-tertiary)",
+                  borderLeft: isSystem ? "2px solid var(--text-muted)" : `2px solid ${c.authorType === "agent" ? "var(--accent)" : "var(--accent)"}`,
                   fontSize: "12px",
                 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "4px" }}>
@@ -238,7 +238,7 @@ export function IssueDetailPanel({ issue, onClose, onRefresh }: IssueDetailPanel
           style={{
             display: "flex", alignItems: "center", gap: 4,
             padding: "8px 14px", borderRadius: 6, fontSize: 13,
-            border: "1px solid var(--accent, #7c3aed)", background: "var(--accent, #7c3aed)",
+            border: "1px solid var(--accent)", background: "var(--accent)",
             color: "#fff", cursor: "pointer", opacity: commentText.trim() ? 1 : 0.5,
           }}
         >

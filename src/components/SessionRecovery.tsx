@@ -2,7 +2,8 @@ import { useState, useEffect } from "react";
 import { getSessionRecoveryService } from "../core/recovery/recovery";
 import type { Session } from "../core/llm/session";
 import { useProjectStore } from "../core/store";
-import { RotateCcw, X, Clock, Undo, Trash2, User, Bot, Settings as SettingsIcon } from "lucide-react";
+import { RotateCcw, Clock, Undo, Trash2, User, Bot, Settings as SettingsIcon } from "lucide-react";
+import { ActionIcons } from "../core/icons/icon-map";
 
 interface SessionRecoveryProps {
   onClose: () => void;
@@ -20,6 +21,7 @@ function formatDuration(start: number, end?: number): string {
 }
 
 export function SessionRecovery({ onClose }: SessionRecoveryProps) {
+  const CloseIcon = ActionIcons.close;
   const [sessions, setSessions] = useState<Session[]>([]);
   const [selectedSession, setSelectedSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
@@ -75,7 +77,7 @@ export function SessionRecovery({ onClose }: SessionRecoveryProps) {
           <span className="session-recovery-icon"><RotateCcw size={16} /></span>
           <span>会话恢复</span>
         </div>
-        <button className="session-recovery-close" onClick={onClose}><X size={14} /></button>
+        <button className="session-recovery-close" onClick={onClose}><CloseIcon size={14} /></button>
       </div>
 
       {summary && (

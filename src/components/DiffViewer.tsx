@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import { ActionIcons } from "../core/icons/icon-map";
 
 // ========== S4: Diff Review UI ==========
 
@@ -88,6 +89,7 @@ function computeDiff(before: string, after: string): DiffLine[] {
 }
 
 export function DiffViewer({ filePath, before, after, onAccept, onReject, onCustom, onClose }: DiffViewerProps) {
+  const CloseIcon = ActionIcons.close;
   const [viewMode, setViewMode] = useState<"preview" | "unified" | "split">("preview");
   const [showCustomInput, setShowCustomInput] = useState(false);
   const [customInstruction, setCustomInstruction] = useState("");
@@ -148,7 +150,7 @@ export function DiffViewer({ filePath, before, after, onAccept, onReject, onCust
             </button>
           )}
           {onClose && (
-            <button className="diff-close-btn" onClick={onClose}>✕</button>
+            <button className="diff-close-btn" onClick={onClose}><CloseIcon size={18} /></button>
           )}
         </div>
       </div>

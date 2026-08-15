@@ -6,7 +6,8 @@
  */
 
 import { useState, useCallback, memo } from "react";
-import { ShieldAlert, MessageSquare, Check, X, Send, ChevronDown } from "lucide-react";
+import { ShieldAlert, MessageSquare, Send } from "lucide-react";
+import { ActionIcons } from "../core/icons/icon-map";
 
 export interface ApprovalRequest {
   type: "approval";
@@ -74,7 +75,7 @@ export const DecisionTray = memo(function DecisionTray({
           onClick={() => setExpanded((e) => !e)}
           aria-label={expanded ? "折叠" : "展开"}
         >
-          <ChevronDown size={14} className={expanded ? "" : "rotated"} />
+          <ActionIcons.expand size={14} className={expanded ? "" : "rotated"} />
         </button>
         {request.type === "approval" ? (
           <>
@@ -118,14 +119,14 @@ export const DecisionTray = memo(function DecisionTray({
                   className="decision-tray-btn approve"
                   onClick={handleApprove}
                 >
-                  <Check size={14} />
+                  <ActionIcons.confirm size={14} />
                   <span>批准</span>
                 </button>
                 <button
                   className="decision-tray-btn reject"
                   onClick={handleReject}
                 >
-                  <X size={14} />
+                  <ActionIcons.close size={14} />
                   <span>{showRejectInput ? "确认拒绝" : "拒绝"}</span>
                 </button>
               </div>
