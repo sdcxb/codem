@@ -177,7 +177,7 @@ export async function loadHierarchicalProjectInstructions(
 export async function loadProjectSkills(projectPath: string): Promise<Array<{ name: string; content: string }>> {
   try {
     const entries = await listDirectory(`${projectPath}\\.codem\\skills`);
-    const skills = [];
+    const skills: Array<{ name: string; content: string }> = [];
     for (const entry of entries) {
       if (entry.isDirectory) {
         try {
@@ -195,7 +195,7 @@ export async function loadProjectSkills(projectPath: string): Promise<Array<{ na
 export async function loadProjectMemory(projectPath: string): Promise<Array<{ name: string; content: string }>> {
   try {
     const entries = await listDirectory(`${projectPath}\\.codem\\memory`);
-    const memories = [];
+    const memories: Array<{ name: string; content: string }> = [];
     for (const entry of entries) {
       if (!entry.isDirectory && entry.name.endsWith(".md")) {
         try {

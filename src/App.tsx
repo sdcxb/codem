@@ -2597,7 +2597,7 @@ setShowNotebookManager(false);
             notebookId={notebookWorkspaceId}
             notebookName={notebookWorkspaceName}
             onBack={() => { setNotebookWorkspaceId(null); setShowNotebookManager(true); }}
-            onOpenChat={(id, name, selectedSourceIds) => {
+            onOpenChat={(id: string, name: string, selectedSourceIds?: string[]) => {
               setActiveNotebookId(id);
               setActiveNotebookName(name);
               setNotebookWorkspaceId(null);
@@ -2673,11 +2673,11 @@ onClose={() => setCitationViewer(null)}
         return (
           <SlotBridge name="app.decision-tray" fallback={DecisionTray}
             request={approvalReq}
-            onApprove={(id) => {
+            onApprove={(id: string) => {
               pendingPermission.resolve({ requestId: id, action: "allow", alwaysAllow: false });
               clearPendingPermission();
             }}
-            onReject={(id) => {
+            onReject={(id: string) => {
               pendingPermission.resolve({ requestId: id, action: "deny", alwaysAllow: false });
               clearPendingPermission();
             }}
@@ -2690,7 +2690,7 @@ onClose={() => setCitationViewer(null)}
       {!pendingPermission && backgroundPermission && (
         <SlotBridge name="app.permission-dialog" fallback={PermissionDialog}
           request={{ ...(backgroundPermission.request as any), title: `[委派任务] ${(backgroundPermission.request as any).title || backgroundPermission.request.tool || ''}` } as any}
-          onResolve={(allow, alwaysAllow) => {
+          onResolve={(allow: boolean, alwaysAllow: boolean) => {
             backgroundPermission.resolve({
               requestId: backgroundPermission.request.id,
               action: allow ? "allow" : "deny",
@@ -2772,12 +2772,12 @@ onClose={() => setCitationViewer(null)}
       {currentSession && (
         <SlotBridge name="app.needs-you-panel" fallback={NeedsYouPanel}
           sessionId={currentSession.id}
-          onAnswer={(itemId, answer) => {
+          onAnswer={(itemId: string, answer: string) => {
             import("./core/llm/needs-you-queue").then(({ getNeedsYouQueue }) => {
               getNeedsYouQueue().answer(itemId, answer);
             });
           }}
-          onSkip={(sid) => {
+          onSkip={(sid: string) => {
             import("./core/llm/needs-you-queue").then(({ getNeedsYouQueue }) => {
               getNeedsYouQueue().skip(sid);
             });
@@ -2801,7 +2801,7 @@ onClose={() => setCitationViewer(null)}
               pendingWriteConfirm.resolve({ action: "reject" });
               clearPendingWriteConfirm();
             }}
-            onCustom={(instruction) => {
+            onCustom={(instruction: string) => {
               pendingWriteConfirm.resolve({ action: "custom", instruction });
               clearPendingWriteConfirm();
             }}
@@ -2819,7 +2819,7 @@ onClose={() => setCitationViewer(null)}
       {pendingInteractiveForm && (
         <SlotBridge name="app.interactive-form-dialog" fallback={InteractiveFormDialog}
           questions={pendingInteractiveForm.questions}
-          onSubmit={(answers) => {
+          onSubmit={(answers: Record<string, any>) => {
             pendingInteractiveForm.resolve(answers);
             clearPendingInteractiveForm();
           }}
@@ -2837,8 +2837,8 @@ onClose={() => setCitationViewer(null)}
           <div onClick={(e) => e.stopPropagation()} style={{ maxWidth: "500px", width: "90vw" }}>
             <SlotBridge name="app.clarification-form" fallback={ClarificationForm}
               form={pendingClarification.form}
-              onSubmit={(answers) => {
-                const flatAnswers = Object.values(answers).flatMap(a => Array.isArray(a) ? a : [a]) as string[];
+              onSubmit={(answers: Record<string, any>) => {
+                const flatAnswers = Object.values(answers).flatMap((a: any) => Array.isArray(a) ? a : [a]) as string[];
                 pendingClarification.resolve(flatAnswers);
                 clearPendingClarification();
               }}
@@ -2882,7 +2882,7 @@ onClose={() => setCitationViewer(null)}
       {pendingPipelineStep && (
         <SlotBridge name="app.pipeline-next-step-dialog" fallback={PipelineNextStepDialog}
           contextItems={pendingPipelineStep.contextItems}
-          onSubmit={(_selectedContext, customPrompt, _mode) => {
+          onSubmit={(_selectedContext: any, customPrompt: string, _mode: any) => {
             if (customPrompt) {
               handleSend(customPrompt);
             }
@@ -2905,7 +2905,7 @@ onClose={() => setCitationViewer(null)}
               icon: a.id === 'build' ? <Hammer size={20} /> : a.id === 'plan' ? <ClipboardList size={20} /> : a.id === 'explore' ? <Search size={20} /> : <Bot size={20} />,
             }))}
             favoriteIds={quickAccessFavorites}
-            onSelect={(agentId) => {
+            onSelect={(agentId: string) => {
               const agent = getAgentRegistry().get(agentId);
               if (agent) {
                 // Switch collaboration mode based on agent's config
@@ -2922,7 +2922,7 @@ onClose={() => setCitationViewer(null)}
               }
               setShowQuickAccess(false);
             }}
-            onToggleFavorite={(agentId) => {
+            onToggleFavorite={(agentId: string) => {
               setQuickAccessFavorites(prev => {
                 const next = new Set(prev);
                 if (next.has(agentId)) next.delete(agentId);
@@ -2939,11 +2939,11 @@ onClose={() => setCitationViewer(null)}
       {pendingPromptChanges && (
         <SlotBridge name="app.prompt-change-review-dialog" fallback={PromptChangeReviewDialog}
           changes={pendingPromptChanges.changes}
-          onApply={(appliedChanges) => {
+          onApply={(appliedChanges: any[]) => {
             // Here you would apply the changes to the actual system prompt
             // For now, we just confirm what was applied
             const msg = appliedChanges.length > 0
-              ? `Applied ${appliedChanges.length} prompt change(s): ${appliedChanges.map(c => c.name).join(", ")}`
+              ? `Applied ${appliedChanges.length} prompt change(s): ${appliedChanges.map((c: any) => c.name).join(", ")}`
               : "No changes were applied.";
             pendingPromptChanges.resolve({ applied: appliedChanges.length > 0, message: msg });
             clearPendingPromptChanges();

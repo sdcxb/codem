@@ -1305,7 +1305,7 @@ marginTop: 4,
     </button>
   ))}
 </div>
-{advancedSubTab === "agents" && <AgentManager />}
+{advancedSubTab === "agents" && <AgentManager onClose={() => {}} />}
 {advancedSubTab === "heartbeat" && <HeartbeatMonitor />}
 {advancedSubTab === "retry" && <RetryConfigPanel />}
 {advancedSubTab === "prompt" && <PromptDebugger />}
