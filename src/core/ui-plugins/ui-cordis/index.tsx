@@ -1,0 +1,64 @@
+// @ts-nocheck
+/**
+ * @codem/ui-cordis — Cordis 管理面板 UI 插件
+ *
+ * 提供查看/管理动态加载插件的 UI 面板。
+ */
+import { useState, useEffect, useCallback } from 'react'
+import { useCtx } from '../../consumer/index.ts'
+
+export function CordisPanel() {
+  const ctx = useCtx()
+  const [plugins, setPlugins] = useState<any[]>([])
+  const [services, setServices] = useState<string[]>([])
+  const [dynamicList, setDynamicList] = useState<string[]>([])
+
+  const refresh = useCallback(() => {
+    if (!ctx?.dynamicCordisRunner) return
+    const info = ctx.dynamicCordisRunner.inspect()
+    setPlugins(info.plugins)
+    setServices(info.services)
+    setDynamicList(ctx.dynamicCordisRunner.list())
+  }, [ctx])
+
+  useEffect(() => {
+    refresh()
+  }, [refresh])
+
+  const handleRetract = (name: string) => {
+    ctx.dynamicCordisRunner.retract(name)
+    refresh()
+  }
+
+  return (
+    <div className="cordis-panel">
+      <h3>Cordis Runtime</h3>
+
+      <section>
+        <h4>Services ({services.length})</h4>
+        <ul>
+          {services.map(s => <li key={s}>{s}</li>)}
+        </ul>
+      </section>
+
+      <section>
+        <h4>Dynamic Plugins ({dynamicList.length})</h4>
+        <ul>
+          {dynamicList.map(name => (
+            <li key={name}>
+              {name}
+              <button onClick={() => handleRetract(name)}>Retract</button>
+            </li>
+          ))}
+        </ul>
+      </section>
+
+      <button onClick={refresh}>Refresh</button>
+    </div>
+  )
+}
+
+export function apply() {
+  const ctx = useCtx()
+  ctx.slots.register('app.cordis', CordisPanel)
+}

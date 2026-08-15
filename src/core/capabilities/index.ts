@@ -230,3 +230,7 @@ export * from './subagent/index.ts'
 export * from './skill/index.ts'
 // 凭证/附件/知识/调度/目标/计划/后台任务
 export * from './misc/index.ts'
+// P6: 剩余后端能力 (identity/guard/LSP/code-runtime/workflow/context/commands/user-questions/notebook/squad)
+export * from './extra/index.ts'
+// P6: Self-Referential Runtime (dynamicCordisRunner)
+export * from './extensions/index.ts'

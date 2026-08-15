@@ -1,0 +1,50 @@
+# Codem 插件组合配置
+# 用户可编辑此文件来定义插件组合
+
+# 核心框架（必选）
+core:
+  - @codem/cordis
+  - @codem/core-runtime
+  - @codem/ui-slots
+
+# LLM 能力族
+llm:
+  provider: @codem/llm-deepseek
+  # provider: @codem/llm-ollama  # 切换到本地模型
+
+# 文件系统能力族
+fs:
+  provider: @codem/fs-local
+  # provider: @codem/fs-sandbox  # 切换到沙箱
+
+# Shell 能力族
+shell:
+  provider: @codem/shell-local
+
+# Web 能力族
+web:
+  provider: @codem/web-search-deepseek
+
+# 工具
+tools:
+  - @codem/tool-fs
+  - @codem/tool-bash
+  - @codem/tool-web
+  - @codem/tool-skill
+  - @codem/tool-cordis
+
+# UI 插件
+ui:
+  - @codem/ui-sidebar
+  - @codem/ui-conversation
+  - @codem/ui-tool
+  - @codem/ui-settings
+  - @codem/ui-theme
+  - @codem/ui-misc
+  - @codem/ui-market
+  - @codem/ui-cordis
+
+# Self-Referential Runtime
+extensions:
+  - @codem/extensions
+  - @codem/cordis-host-runner

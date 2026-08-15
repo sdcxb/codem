@@ -519,6 +519,216 @@ export const bridgePlugin: Plugin = (ctx: Context) => {
     },
   })
 
+  // ===== P6 能力族 Provider 注册 =====
+
+  // 32. Identity (P6.2)
+  ctx.provide('identity', {
+    _id: crypto.randomUUID(),
+    getId() { return this._id },
+    getName() { return 'Anonymous' },
+  })
+
+  // 33. Guard (P6.2)
+  const callHistory = new Map<string, any[]>()
+  ctx.provide('guard', {
+    checkRepeat(toolName: string, args: any) {
+      const argStr = JSON.stringify(args)
+      const now = Date.now()
+      const history = callHistory.get('global') || []
+      const recent = history.filter((h: any) => h.tool === toolName && h.args === argStr && now - h.time < 5000)
+      if (recent.length > 0) return { isRepeat: true, message: `Tool "${toolName}" was called with the same args recently` }
+      history.push({ tool: toolName, args: argStr, time: now })
+      if (history.length > 100) history.shift()
+      callHistory.set('global', history)
+      return { isRepeat: false }
+    },
+    checkDeadline(_sessionId: string) { return { exceeded: false } },
+  })
+
+  // 34. LSP (P6.2)
+  ctx.provide('lsp', {
+    async start(_workspace: string) { return crypto.randomUUID() },
+    async stop(_id: string) {},
+    async getDiagnostics(_file: string) { return [] },
+    async hover(_file: string, _line: number, _col: number) { return null },
+    async completions(_file: string, _line: number, _col: number) { return [] },
+  })
+
+  // 35. Code Runtime (P6.2)
+  ctx.provide('codeRuntime', {
+    async execute(_code: string, _language: string, _cwd?: string) {
+      return { stdout: '', stderr: 'Code runtime not available in browser', exitCode: 1 }
+    },
+  })
+
+  // 36. Workflow (P6.2)
+  const workflows = new Map<string, any>()
+  ctx.provide('workflow', {
+    create(steps: any[]) {
+      const id = crypto.randomUUID()
+      workflows.set(id, { id, steps, status: 'pending', step: 0, results: [] })
+      return id
+    },
+    async run(workflowId: string) {
+      const wf = workflows.get(workflowId)
+      if (!wf) return { success: false, results: [] }
+      wf.status = 'running'
+      for (let i = 0; i < wf.steps.length; i++) {
+        wf.step = i
+        try {
+          const result = await wf.steps[i].fn()
+          wf.results.push(result)
+        } catch { wf.status = 'failed'; return { success: false, results: wf.results } }
+      }
+      wf.status = 'completed'
+      return { success: true, results: wf.results }
+    },
+    get(workflowId: string) {
+      const wf = workflows.get(workflowId)
+      return wf ? { id: wf.id, status: wf.status, step: wf.step } : undefined
+    },
+  })
+
+  // 37. Context Info (P6.2)
+  ctx.provide('contextInfo', {
+    getInstructions() { return 'You are a helpful AI coding assistant.' },
+    getTime() { return new Date().toISOString() },
+    getWorkspace() { return '/' },
+    assemble() {
+      return `${this.getInstructions()}\n\nCurrent time: ${this.getTime()}\nWorkspace: ${this.getWorkspace()}`
+    },
+  })
+
+  // 38. Commands (P6.2)
+  const commandsMap = new Map<string, any>()
+  ctx.provide('commands', {
+    register(name: string, handler: any, description?: string) { commandsMap.set(name, { handler, description }) },
+    execute(name: string, args?: any) { return commandsMap.get(name)?.handler(args) },
+    list() { return [...commandsMap.entries()].map(([name, { description }]) => ({ name, description })) },
+  })
+
+  // 39. User Questions (P6.2)
+  const pendingQuestions: any[] = []
+  ctx.provide('userQuestions', {
+    ask(question: string, options?: string[]) {
+      const id = crypto.randomUUID()
+      return new Promise(resolve => { pendingQuestions.push({ id, question, options, resolve }) })
+    },
+    getPending() { return pendingQuestions.map(({ id, question, options }) => ({ id, question, options })) },
+    answer(id: string, answer: string) {
+      const idx = pendingQuestions.findIndex(p => p.id === id)
+      if (idx >= 0) { pendingQuestions[idx].resolve(answer); pendingQuestions.splice(idx, 1) }
+    },
+  })
+
+  // 40. Notebook (P6.2)
+  const notebooks = new Map<string, any>()
+  ctx.provide('notebook', {
+    create(title: string) { const id = crypto.randomUUID(); notebooks.set(id, { id, title, entries: [] }); return id },
+    addEntry(notebookId: string, content: string) { notebooks.get(notebookId)?.entries.push(content) },
+    get(notebookId: string) { return notebooks.get(notebookId) },
+    list() { return [...notebooks.values()].map(({ id, title }) => ({ id, title })) },
+    remove(notebookId: string) { notebooks.delete(notebookId) },
+  })
+
+  // 41. Squad (P6.2)
+  const squads = new Map<string, any>()
+  ctx.provide('squad', {
+    create(name: string, members: string[]) { const id = crypto.randomUUID(); squads.set(id, { id, name, members }); return id },
+    get(squadId: string) { return squads.get(squadId) },
+    list() { return [...squads.values()].map(s => ({ id: s.id, name: s.name, memberCount: s.members.length })) },
+    addMember(squadId: string, member: string) { const s = squads.get(squadId); if (s && !s.members.includes(member)) s.members.push(member) },
+    removeMember(squadId: string, member: string) { const s = squads.get(squadId); if (s) s.members = s.members.filter((m: string) => m !== member) },
+    disband(squadId: string) { squads.delete(squadId) },
+  })
+
+  // 42. Dynamic Cordis Runner (P6.3 — Self-Referential Runtime)
+  const dynamicPlugins = new Map<string, any>()
+  ctx.provide('dynamicCordisRunner', {
+    inspect() {
+      const plugins = [...dynamicPlugins.values()].map(p => ({ name: p.name, provides: p.provides || [], inject: p.inject || [], isDynamic: true }))
+      const services = Object.keys(ctx).filter(k => !k.startsWith('_') && typeof (ctx as any)[k] !== 'undefined')
+      return { plugins, services }
+    },
+    async define(name: string, code: string) {
+      if (dynamicPlugins.has(name)) return { success: false, error: `Plugin "${name}" already defined` }
+      try {
+        const wrappedCode = `const module = { exports: {} }; const exports = module.exports; ${code}; return module.exports;`
+        const compiled = new Function('ctx', wrappedCode)
+        dynamicPlugins.set(name, { name, code, compiled })
+        return { success: true }
+      } catch (err: any) { return { success: false, error: err.message } }
+    },
+    async run(name: string, args?: any) {
+      const p = dynamicPlugins.get(name)
+      if (!p) return { success: false, error: `Plugin "${name}" not found` }
+      try {
+        const result = p.compiled(ctx)
+        if (result && typeof result.apply === 'function') result.apply(ctx)
+        return { success: true, result }
+      } catch (err: any) { return { success: false, error: err.message } }
+    },
+    retract(name: string) {
+      if (!dynamicPlugins.has(name)) return { success: false, error: `Plugin "${name}" not found` }
+      dynamicPlugins.delete(name)
+      return { success: true }
+    },
+    list() { return [...dynamicPlugins.keys()] },
+  })
+
+  // 43. Plugin Registry + Installer (P6.4)
+  const pluginMeta = new Map<string, any>()
+  const installedPlugins = new Set<string>()
+  ctx.provide('pluginRegistry', {
+    register(meta: any) { pluginMeta.set(meta.name, meta) },
+    unregister(name: string) { pluginMeta.delete(name) },
+    get(name: string) { return pluginMeta.get(name) },
+    search(query: string, limit: number = 20) {
+      const q = query.toLowerCase()
+      return [...pluginMeta.values()].filter(p =>
+        p.name.toLowerCase().includes(q) || p.description.toLowerCase().includes(q) ||
+        p.keywords?.some((k: string) => k.toLowerCase().includes(q))
+      ).slice(0, limit)
+    },
+    list() { return [...pluginMeta.values()] },
+    listByCapability(cap: string) { return [...pluginMeta.values()].filter(p => p.provides?.includes(cap) || p.inject?.includes(cap)) },
+  })
+
+  // 注册已知插件元数据
+  const knownPlugins = [
+    { name: '@codem/llm', version: '1.0.0', description: 'LLM Service Definition', provides: ['llm'], inject: [], keywords: ['llm', 'ai'] },
+    { name: '@codem/llm-deepseek', version: '1.0.0', description: 'DeepSeek LLM Provider', provides: ['llm'], inject: [], keywords: ['llm', 'deepseek'] },
+    { name: '@codem/fs', version: '1.0.0', description: 'FileSystem Service Definition', provides: ['fs'], inject: [], keywords: ['fs', 'file'] },
+    { name: '@codem/fs-local', version: '1.0.0', description: 'Local FileSystem Provider', provides: ['fs'], inject: [], keywords: ['fs', 'local'] },
+    { name: '@codem/shell', version: '1.0.0', description: 'Shell Service Definition', provides: ['shell'], inject: [], keywords: ['shell'] },
+    { name: '@codem/shell-local', version: '1.0.0', description: 'Local Shell Provider', provides: ['shell'], inject: [], keywords: ['shell'] },
+    { name: '@codem/web', version: '1.0.0', description: 'Web Service Definition', provides: ['web'], inject: [], keywords: ['web'] },
+    { name: '@codem/tool-fs', version: '1.0.0', description: 'File tools (read/write/glob/grep)', provides: [], inject: ['fs', 'tools'], keywords: ['tool', 'file'] },
+    { name: '@codem/tool-bash', version: '1.0.0', description: 'Bash tool', provides: [], inject: ['shell', 'tools'], keywords: ['tool', 'bash'] },
+    { name: '@codem/tool-web', version: '1.0.0', description: 'Web tools (search/fetch)', provides: [], inject: ['web', 'tools'], keywords: ['tool', 'web'] },
+    { name: '@codem/extensions', version: '1.0.0', description: 'Self-Referential Runtime', provides: ['dynamicCordisRunner'], inject: [], keywords: ['runtime', 'dynamic'] },
+    { name: '@codem/tool-cordis', version: '1.0.0', description: 'Cordis management tools', provides: [], inject: ['dynamicCordisRunner', 'tools'], keywords: ['tool', 'cordis'] },
+  ]
+  for (const meta of knownPlugins) { pluginMeta.set(meta.name, meta) }
+
+  ctx.provide('pluginInstaller', {
+    async install(name: string, _source?: string) {
+      if (!pluginMeta.has(name)) return { success: false, error: `Plugin "${name}" not found` }
+      installedPlugins.add(name)
+      return { success: true }
+    },
+    async uninstall(name: string) {
+      if (!installedPlugins.has(name)) return { success: false, error: `Plugin "${name}" not installed` }
+      installedPlugins.delete(name)
+      return { success: true }
+    },
+    async update(name: string) {
+      if (!installedPlugins.has(name)) return { success: false, error: `Plugin "${name}" not installed` }
+      return { success: true }
+    },
+    isInstalled(name: string) { return installedPlugins.has(name) },
+  })
+
   // Slot Registry
   // SlotsService 在构造函数中自动注册为 ctx.slots
   // 需要在 bridgePlugin 之外单独加载
