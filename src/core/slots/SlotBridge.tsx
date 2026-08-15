@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * SlotBridge — 连接 App.tsx 和 Cordis Slot Registry 的桥梁组件。
  *
@@ -20,41 +19,42 @@ import { useSyncExternalStore, Suspense, lazy, type ComponentType, type ReactNod
 import { tryGetCtx } from '../consumer/index.ts'
 import type { StoredEntry } from '../slots/index.ts'
 
-interface SlotBridgeProps {
-  /** Slot 名称 */
-  name: string
-  /** 回退组件（如果 Slot 中没有注册的组件） */
-  fallback?: ComponentType<any>
-  /** 传递给组件的 props */
-  [key: string]: any
-}
-
-export function SlotBridge({ name, fallback: Fallback, ...props }: SlotBridgeProps): ReactNode {
+/**
+ * 泛型 SlotBridge：从 fallback 组件的 Props 类型自动推断 props 类型。
+ *
+ * 使用泛型参数 P 捕获 fallback 组件的 props 类型，
+ * 这样调用方的回调参数能获得精确的类型推断，
+ * 而不是全部退化为 any。
+ */
+export function SlotBridge<P extends Record<string, any>>(
+  props: { name: string } & { fallback?: ComponentType<P> } & P
+): ReactNode {
+  const { name, fallback: Fallback, ...rest } = props
   const ctx = tryGetCtx()
 
   // 如果 Cordis Context 未初始化或 Slot 服务不可用，使用 fallback
   if (!ctx?.slots) {
-    return Fallback ? <Fallback {...props} /> : null
+    return Fallback ? <Fallback {...(rest as unknown as P)} /> : null
   }
 
   const entries = useSlotEntries(ctx, name)
 
   if (entries.length === 0) {
     // 没有注册的组件，使用 fallback
-    return Fallback ? <Fallback {...props} /> : null
+    return Fallback ? <Fallback {...(rest as unknown as P)} /> : null
   }
 
   // 取最高优先级的注册组件
   const entry = entries[entries.length - 1]
-  const Component = entry.component as ComponentType<any>
+  const Component = entry.component as ComponentType<P>
 
   if (!Component) {
-    return Fallback ? <Fallback {...props} /> : null
+    return Fallback ? <Fallback {...(rest as unknown as P)} /> : null
   }
 
   return (
     <Suspense fallback={<div className="slot-loading">Loading...</div>}>
-      <Component {...props} />
+      <Component {...(rest as unknown as P)} />
     </Suspense>
   )
 }
@@ -63,7 +63,10 @@ export function SlotBridge({ name, fallback: Fallback, ...props }: SlotBridgePro
  * 渲染 list 类型 slot 中的所有组件。
  * 用于 overlay 类型的 slot（如 app.overlay）。
  */
-export function SlotListBridge({ name, ...props }: { name: string } & Record<string, any>): ReactNode {
+export function SlotListBridge<P extends Record<string, any>>(
+  props: { name: string } & P
+): ReactNode {
+  const { name, ...rest } = props
   const ctx = tryGetCtx()
 
   if (!ctx?.slots) {
@@ -77,11 +80,11 @@ export function SlotListBridge({ name, ...props }: { name: string } & Record<str
   }
 
   return entries.map((entry, i) => {
-    const Component = entry.component as ComponentType<any>
+    const Component = entry.component as ComponentType<P>
     if (!Component) return null
     return (
       <Suspense key={entry.options.id || i} fallback={null}>
-        <Component {...props} />
+        <Component {...(rest as unknown as P)} />
       </Suspense>
     )
   })

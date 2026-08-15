@@ -2297,7 +2297,7 @@ onNewChat={() => { useProjectStore.setState({ currentProject: null }); createSes
 onNewProject={() => setShowProjectManager(true)}
 onImportProject={() => setShowProjectManager(true)}
 onGitHubClone={() => setShowGitHubClone(true)}
-onOpenSession={(sessionId, projectId) => { useProjectStore.getState().openProject(projectId); useProjectStore.getState().switchSession(sessionId); }}
+onOpenSession={(sessionId: string, projectId: string) => { useProjectStore.getState().openProject(projectId); useProjectStore.getState().switchSession(sessionId); }}
 editingFile={editingFile}
 onEditingFileChange={setEditingFile}
 refreshKey={fileExplorerRefreshKey}
@@ -2448,7 +2448,7 @@ onNewChat={() => { useProjectStore.setState({ currentProject: null }); createSes
 onNewProject={() => setShowProjectManager(true)}
 onImportProject={() => setShowProjectManager(true)}
 onGitHubClone={() => setShowGitHubClone(true)}
-onOpenSession={(sessionId, projectId) => { useProjectStore.getState().openProject(projectId); useProjectStore.getState().switchSession(sessionId); }}
+onOpenSession={(sessionId: string, projectId: string) => { useProjectStore.getState().openProject(projectId); useProjectStore.getState().switchSession(sessionId); }}
 editingFile={editingFile}
 onEditingFileChange={setEditingFile}
 refreshKey={fileExplorerRefreshKey}
@@ -2690,7 +2690,7 @@ onClose={() => setCitationViewer(null)}
       {!pendingPermission && backgroundPermission && (
         <SlotBridge name="app.permission-dialog" fallback={PermissionDialog}
           request={{ ...(backgroundPermission.request as any), title: `[委派任务] ${(backgroundPermission.request as any).title || backgroundPermission.request.tool || ''}` } as any}
-          onResolve={(allow: boolean, alwaysAllow: boolean) => {
+          onResolve={(allow: boolean, alwaysAllow?: boolean) => {
             backgroundPermission.resolve({
               requestId: backgroundPermission.request.id,
               action: allow ? "allow" : "deny",
