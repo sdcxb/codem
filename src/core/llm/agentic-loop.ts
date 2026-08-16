@@ -725,6 +725,31 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
         }
       }
 
+      // 差距 3: Catalog 每轮刷新 — digest 对比，变更才注入
+      const { buildCatalogMessage } = await import("./tools/load-skill");
+      const catalogMessage = buildCatalogMessage(sessionId);
+      if (catalogMessage) {
+        if (apiMessages.length > 0 && apiMessages[0].role === "system") {
+          const sysMsg = apiMessages[0];
+          if (typeof sysMsg.content === "string") {
+            sysMsg.content += "\n\n" + catalogMessage;
+          }
+        }
+        console.log("[AgenticLoop] Injected skill catalog:", catalogMessage.length, "chars");
+      }
+
+      // 差距 2: /skill-name 用户手势 — 检测并自动加载技能
+      const { processSkillGestures } = await import("./tools/load-skill");
+      const gestureInjection = processSkillGestures(sessionId, userMessage);
+      if (gestureInjection) {
+        // 注入为用户消息（在消息列表末尾追加）
+        apiMessages.push({
+          role: "user",
+          content: gestureInjection,
+        });
+        console.log("[AgenticLoop] Processed /skill-name gesture:", gestureInjection.length, "chars");
+      }
+
       this.state.contextPressure = this.estimateContextPressure(apiMessages);
 
       let messagesForIteration = apiMessages;

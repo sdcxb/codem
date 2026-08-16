@@ -8,13 +8,19 @@
  * 4. 如果技能有 Provider，加载工具到 ToolRegistry
  * 5. 技能保持 N 轮（默认 5），超时自动卸载
  *
+ * DSH 对齐：
+ * - 返回 <skill_content> 结构化格式（含 <skill_resources> + <skill_instructions>）
+ * - 支持 /skill-name 用户手势自动加载
+ * - Catalog 每轮刷新（digest 对比 + 替换消息）
+ *
  * 历史恢复：从聊天历史中恢复已加载的技能状态。
  */
 
 import type { ToolDef, ToolContext, ToolExecuteResult } from "../tools";
-import { getSkillRegistry } from "../../skill/skill";
+import { getSkillRegistry, type SkillDefinition } from "../../skill/skill";
 import { getSkillToolRegistry } from "../../skill/registry";
 import type { ToolRegistry } from "../tools";
+import * as path from "path";
 
 // ========== Session-level Skill Cache ==========
 
@@ -182,7 +188,7 @@ export function getLoadedSkillPrompts(sessionId: string): string {
   for (const name of skillNames) {
     const skill = registry.get(name);
     if (skill) {
-      sections.push(`### Skill: ${skill.name}\n\n${skill.prompt}`);
+      sections.push(renderSkillContent(skill));
     }
   }
   return sections.length > 0 ? `\n\n## Active Skill Instructions\n\n${sections.join("\n\n")}` : "";
@@ -201,6 +207,225 @@ export async function tickSessionSkills(sessionId: string, toolRegistry: ToolReg
     await skillToolRegistry.unloadProvider(skillName, toolRegistry);
     console.log(`[load_skill] Skill "${skillName}" expired and unloaded.`);
   }
+}
+
+// ========== DSH-aligned <skill_content> rendering ==========
+
+/**
+ * 转义 XML 属性值中的特殊字符。
+ */
+function escapeAttr(value: string): string {
+  return value.replaceAll("&", "&amp;").replaceAll('"', "&quot;").replaceAll("<", "&lt;");
+}
+
+/**
+ * 转义 XML 文本内容中的特殊字符。
+ */
+function escapeText(value: string): string {
+  return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+}
+
+/**
+ * 渲染 skill 的资源提示信息。
+ */
+function renderResourceHint(skill: SkillDefinition): string[] {
+  if (skill.filePath) {
+    const baseDir = skill.filePath.replace(/[/\\]SKILL\.md$/i, "");
+    return [
+      `Base directory for this skill: ${escapeText(baseDir)}`,
+      "Resolve relative paths mentioned by this skill against the base directory before using them. Load referenced resources only as needed.",
+    ];
+  }
+  return [
+    `Resources for this skill are managed internally.`,
+    "Load referenced resources only as needed.",
+  ];
+}
+
+/**
+ * 渲染一个已加载的技能为 <skill_content> 格式（DSH-aligned）。
+ * 模型看到统一的结构化包装，不管技能是从工具调用还是 /skill-name 手势加载的。
+ */
+export function renderSkillContent(skill: SkillDefinition): string {
+  const resourceHint = renderResourceHint(skill);
+  return [
+    `<skill_content name="${escapeAttr(skill.name)}">`,
+    "<skill_resources>",
+    ...resourceHint,
+    "</skill_resources>",
+    "",
+    "<skill_instructions>",
+    skill.prompt,
+    "</skill_instructions>",
+    "</skill_content>",
+  ].join("\n");
+}
+
+// ========== Catalog digest (差距 3: 每轮刷新) ==========
+
+import { createHash } from "crypto";
+
+interface CatalogEntry {
+  name: string;
+  description: string;
+}
+
+/**
+ * 计算 catalog 的 digest（SHA-256）。
+ * 只有 entries 变化才会触发重新注入。
+ */
+function digestCatalogEntries(entries: CatalogEntry[]): string {
+  const canonical = entries.map(e => JSON.stringify([e.name, e.description])).join("\n");
+  return createHash("sha256").update(canonical).digest("hex");
+}
+
+/** 会话级 catalog 历史 — 记录上次注入的 digest，避免重复注入 */
+const catalogHistory = new Map<string, { digest: string; published: boolean }>();
+
+/**
+ * 构建 catalog 消息文本。
+ * 在每轮对话开始时调用，通过 digest 对比决定是否注入。
+ *
+ * @param sessionId 会话 ID
+ * @returns catalog 消息文本，空字符串表示未变更无需注入
+ */
+export function buildCatalogMessage(sessionId: string): string {
+  const registry = getSkillRegistry();
+  const allSkills = registry.getAll().filter((s) => s.enabled !== false);
+
+  const entries: CatalogEntry[] = allSkills.map(s => ({
+    name: s.name,
+    description: s.description.length > 500
+      ? s.description.slice(0, 497) + "..."
+      : s.description,
+  }));
+
+  const digest = digestCatalogEntries(entries);
+  const history = catalogHistory.get(sessionId);
+
+  // 未变更 — 不注入
+  if (history && history.digest === digest) {
+    return "";
+  }
+
+  // 更新历史
+  catalogHistory.set(sessionId, { digest, published: true });
+
+  const isFirst = !history?.published;
+  const catalogLines = entries.map(e => `- \`${e.name}\`: ${escapeText(e.description)}`);
+
+  if (isFirst) {
+    return [
+      "<system-reminder>",
+      "A skill is a reusable set of task-specific instructions. The following skills are available in this session:",
+      "",
+      "<available_skills>",
+      ...catalogLines,
+      "</available_skills>",
+      "",
+      "If the user names a skill, or the task clearly matches a skill's description, call the `load_skill` tool with the exact skill name before taking task actions. Load all applicable skills, then follow their full instructions. This catalog contains summaries only; do not infer or follow a skill's instructions until it has been loaded.",
+      "A user may also invoke a skill directly by typing /skill-name; its <skill_content> block then appears in this conversation. Follow it, and do not call the `load_skill` tool again for that skill.",
+      "</system-reminder>",
+    ].join("\n");
+  } else {
+    // 替换 catalog
+    return [
+      "<system-reminder>",
+      "The available skill catalog changed. This complete catalog replaces every earlier available-skills list in this session:",
+      "",
+      "<available_skills>",
+      ...catalogLines,
+      "</available_skills>",
+      "",
+      entries.length === 0
+        ? "No skills are currently available through the `load_skill` tool. Do not use names from earlier skill catalogs."
+        : "Use only names in this replacement catalog. If the user names a listed skill, or the task clearly matches its description, call the `load_skill` tool with the exact name before acting.",
+      "A user may also invoke a skill directly by typing /skill-name; its <skill_content> block then appears in this conversation. Follow it, and do not call the `load_skill` tool again for that skill.",
+      "</system-reminder>",
+    ].join("\n");
+  }
+}
+
+/**
+ * 清除会话的 catalog 历史（会话结束时调用）。
+ */
+export function clearCatalogHistory(sessionId: string): void {
+  catalogHistory.delete(sessionId);
+}
+
+// ========== 差距 2: /skill-name 用户手势 ==========
+
+/**
+ * 匹配 /skill-name 手势的正则。
+ * 空白分隔的 /kebab-case-name，避免匹配文件路径和分数。
+ */
+const SKILL_GESTURE = /(^|\s)\/([a-z0-9]+(?:-[a-z0-9]+)*)(?=\s|$)/g;
+
+/**
+ * 从用户消息中提取 /skill-name 手势。
+ * 返回去重后的技能名列表（未验证，仅提取候选）。
+ */
+export function extractSkillGestures(message: string): string[] {
+  const names: string[] = [];
+  for (const match of message.matchAll(SKILL_GESTURE)) {
+    const name = match[2];
+    if (name !== undefined && !names.includes(name)) {
+      names.push(name);
+    }
+  }
+  return names;
+}
+
+/**
+ * 处理用户消息中的 /skill-name 手势。
+ * 如果找到匹配的技能，注入 <skill_content> 到会话。
+ *
+ * @param sessionId 会话 ID
+ * @param userMessage 用户消息原文
+ * @returns 要注入的 <skill_content> 文本，空字符串表示无手势
+ */
+export function processSkillGestures(sessionId: string, userMessage: string): string {
+  const gestureNames = extractSkillGestures(userMessage);
+  if (gestureNames.length === 0) return "";
+
+  const registry = getSkillRegistry();
+  const injections: string[] = [];
+
+  for (const name of gestureNames) {
+    // 先查名称，再查别名
+    let skill = registry.get(name);
+    if (!skill) {
+      skill = registry.getByAlias(name);
+    }
+
+    if (!skill) {
+      // 技能不存在 — 保持为普通文本
+      continue;
+    }
+
+    // 加载到会话缓存
+    const result = sessionCache.load(sessionId, skill.name, skill.prompt, 0);
+    if (result.cached) {
+      // 已加载，不需要重新注入
+      continue;
+    }
+
+    // 注入 <skill_content>
+    injections.push(renderSkillContent(skill));
+
+    // 如果技能有 Provider，加载工具
+    if (skill.provider || skill.tools?.length) {
+      // 异步加载，不阻塞
+      const skillToolRegistry = getSkillToolRegistry();
+      // 工具注册需要 ToolRegistry，但手势处理在 agentic-loop 之前
+      // 工具会在下一轮 load_skill 调用时加载
+      console.log(`[load_skill] Skill "${skill.name}" invoked via /${name} gesture, tools will be loaded on next call`);
+    }
+  }
+
+  if (injections.length === 0) return "";
+
+  return `\n\n## Skill Invoked by User\n\n${injections.join("\n\n")}`;
 }
 
 // ========== Tool Definition ==========
@@ -297,11 +522,11 @@ export function createLoadSkillTool(toolRegistry: ToolRegistry): ToolDef {
         };
       }
 
-      // 首次加载：注入 prompt
-      const promptText = `### Skill: ${skill.name}\n\n${skill.prompt}`;
+      // 首次加载：注入 <skill_content> 结构化格式（差距 1: DSH-aligned）
+      const skillContent = renderSkillContent(skill);
       pendingPromptInjections.set(
         ctx.sessionId,
-        (pendingPromptInjections.get(ctx.sessionId) || "") + "\n\n" + promptText,
+        (pendingPromptInjections.get(ctx.sessionId) || "") + "\n\n" + skillContent,
       );
 
       // 如果技能有 Provider，加载工具
