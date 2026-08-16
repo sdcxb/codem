@@ -2,6 +2,100 @@
 
 import { getSettingJSON } from "../storage/settings";
 
+// ========== A1: Skill Discovery Provider Interface (DSH-aligned) ==========
+//
+// This section defines the pluggable skill discovery provider interface,
+// aligned with DSH's SkillProvider/SkillRegistry architecture.
+// Unlike SkillToolProvider (which carries tools), these providers are
+// responsible for *discovering* skills from different sources
+// (local files, remote registries, market, etc.).
+
+/** Caller context for cwd-sensitive and abortable skill discovery. */
+export interface SkillLookupOptions {
+  /** Workspace selector for the current lookup. */
+  readonly cwd?: string | undefined;
+  /** Abort discovery or loading work for the current caller. */
+  readonly signal?: AbortSignal | undefined;
+}
+
+/** Skill invocation controls — determines visibility to model and user. */
+export interface SkillInvocationPolicy {
+  /** Whether model-facing catalogs and loaders include this skill. */
+  readonly modelInvocable: boolean;
+  /** Whether human-facing command catalogs and loaders include this skill. */
+  readonly userInvocable: boolean;
+}
+
+/** Optional provider-specific base for resolving relative resources. */
+export type SkillResourceBase =
+  | { readonly kind: "directory"; readonly path: string }
+  | { readonly kind: "url"; readonly url: string }
+  | { readonly kind: "opaque"; readonly description: string };
+
+/** Invocation-neutral skill metadata returned by list(). */
+export interface SkillSummary {
+  /** Kebab-case identifier. */
+  readonly name: string;
+  /** Short routing description. */
+  readonly description: string;
+  /** Optional extra routing guidance. */
+  readonly whenToUse?: string;
+  /** Resolved invocation controls. */
+  readonly invocation: SkillInvocationPolicy;
+  /** Discovery source. */
+  readonly source: string;
+  /** Provider that owns this skill body. */
+  readonly provider: string;
+  /** Provider-specific base for relative resources. */
+  readonly resourceBase?: SkillResourceBase;
+}
+
+/** Provider catalog entry — un-loaded skill metadata with a locator handle. */
+export interface SkillCandidate extends SkillSummary {
+  /** Lower ranks win duplicate skill names. */
+  readonly rank: number;
+  /** Opaque provider-owned handle passed back to provider.get(). */
+  readonly locator: unknown;
+  /** Absolute file path when the provider has one. */
+  readonly path?: string;
+  /** Parsed optional metadata from frontmatter. */
+  readonly metadata?: Readonly<Record<string, unknown>>;
+}
+
+/** Provider candidates plus whether discovery is authoritative. */
+export interface SkillProviderObservation {
+  /** Candidates from this provider. */
+  readonly candidates: readonly SkillCandidate[];
+  /** Whether discovery completed and candidates may be cached. */
+  readonly complete: boolean;
+}
+
+/** Registration-scoped lifecycle and invalidation control. */
+export interface SkillProviderControl {
+  /** Aborts if registration fails or when the provider is disposed. */
+  readonly signal: AbortSignal;
+  /** Invalidate completed catalogs and notify consumers. */
+  readonly invalidate: () => void;
+}
+
+/** Provider interface for one source of skills (files, remote, market, etc.). */
+export interface SkillDiscoveryProvider {
+  /** Unique provider name. */
+  readonly name: string;
+  /** List available skill candidates. */
+  readonly list: (options: SkillLookupOptions) => Promise<readonly SkillCandidate[] | SkillProviderObservation>;
+  /** Load a complete skill body for a candidate. */
+  readonly get: (candidate: SkillCandidate, options: SkillLookupOptions) => Promise<SkillDefinition | undefined>;
+}
+
+/** Snapshot of the skill catalog at a point in time. */
+export interface SkillCatalogSnapshot {
+  /** Sorted invocation-neutral summaries. */
+  readonly skills: SkillSummary[];
+  /** Whether every registered provider completed. */
+  readonly complete: boolean;
+}
+
 /** Settings key for persisting disabled skill names */
 const DISABLED_SKILLS_KEY = "codem-disabled-skills";
 
@@ -479,6 +573,16 @@ export function parseSkillMarkdown(content: string, filePath: string): SkillDefi
 export class SkillRegistry {
   private skills: Map<string, SkillDefinition> = new Map();
 
+  // ===== A2: Provider-based discovery (DSH-aligned) =====
+  /** Registered discovery providers. */
+  private discoveryProviders: Map<string, { provider: SkillDiscoveryProvider; order: number }> = new Map();
+  /** Monotonic counter for provider registration order. */
+  private nextProviderOrder = 0;
+  /** Catalog revision — bumped on any change to invalidate caches. */
+  private catalogRevision = 0;
+  /** Change listeners for the 'skills/change' event. */
+  private changeListeners: Set<() => void> = new Set();
+
   constructor(_config?: Partial<SkillConfig>) {
     this.registerBuiltinSkills();
   }
@@ -506,6 +610,163 @@ export class SkillRegistry {
   /** Get all skills */
   getAll(): SkillDefinition[] {
     return Array.from(this.skills.values());
+  }
+
+  // ===== A2: Provider-based discovery methods (DSH-aligned) =====
+
+  /**
+   * Register a pluggable skill discovery provider.
+   * Providers supply skills from different sources (files, remote, market).
+   * Returns a disposer function to unregister the provider.
+   */
+  registerProvider(create: (control: SkillProviderControl) => SkillDiscoveryProvider): () => void {
+    const lifecycle = new AbortController();
+    let registration: { name: string } | undefined;
+
+    const control: SkillProviderControl = {
+      signal: lifecycle.signal,
+      invalidate: () => {
+        if (registration !== undefined) {
+          this.invalidateCache();
+        }
+      },
+    };
+
+    try {
+      const provider = create(control);
+      const name = provider.name;
+      const order = this.nextProviderOrder++;
+      this.discoveryProviders.set(name, { provider, order });
+      registration = { name };
+
+      this.invalidateCache();
+
+      return () => {
+        registration = undefined;
+        this.discoveryProviders.delete(name);
+        this.invalidateCache();
+        lifecycle.abort(new Error(`skill provider "${name}" disposed`));
+      };
+    } catch (error) {
+      lifecycle.abort(error);
+      throw error;
+    }
+  }
+
+  /**
+   * List invocation-neutral skill summaries from all sources.
+   * Merges builtin skills with provider-discovered skills.
+   */
+  async listSummaries(options: SkillLookupOptions = {}): Promise<SkillSummary[]> {
+    return (await this.snapshot(options)).skills;
+  }
+
+  /**
+   * Observe the current invocation-neutral catalog and discovery completeness.
+   */
+  async snapshot(options: SkillLookupOptions = {}): Promise<SkillCatalogSnapshot> {
+    // Collect from builtin/runtime skills first
+    const summaries: SkillSummary[] = [];
+    for (const skill of this.skills.values()) {
+      summaries.push(this.toSummary(skill));
+    }
+
+    // Collect from registered providers
+    let complete = true;
+    for (const { provider } of this.discoveryProviders.values()) {
+      try {
+        const output = await provider.list(options);
+        const observation = this.normalizeObservation(output, provider.name);
+        if (!observation.complete) complete = false;
+        for (const candidate of observation.candidates) {
+          summaries.push(this.candidateToSummary(candidate));
+        }
+      } catch (error) {
+        complete = false;
+        console.warn(`[SkillRegistry] Provider "${provider.name}" skipped: ${error}`);
+      }
+    }
+
+    // Sort by name for stable ordering
+    summaries.sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
+
+    return { skills: summaries, complete };
+  }
+
+  /**
+   * Load a complete skill definition by name from all sources.
+   */
+  async getSkill(name: string, options: SkillLookupOptions = {}): Promise<SkillDefinition | undefined> {
+    // Check builtin/runtime skills first
+    const builtin = this.skills.get(name);
+    if (builtin) return builtin;
+
+    // Check providers
+    for (const { provider } of this.discoveryProviders.values()) {
+      const list = await provider.list(options);
+      const observation = this.normalizeObservation(list, provider.name);
+      const candidate = observation.candidates.find(c => c.name === name);
+      if (candidate) {
+        const definition = await provider.get(candidate, options);
+        if (definition) return definition;
+      }
+    }
+
+    return undefined;
+  }
+
+  /** Register a change listener. */
+  onSkillsChange(callback: () => void): () => void {
+    this.changeListeners.add(callback);
+    return () => { this.changeListeners.delete(callback); };
+  }
+
+  /** Invalidate caches and notify change listeners. */
+  private invalidateCache(): void {
+    this.catalogRevision++;
+    for (const callback of this.changeListeners) {
+      try { callback(); } catch (error) {
+        console.warn(`[SkillRegistry] skills/change listener failed: ${error}`);
+      }
+    }
+  }
+
+  /** Get the current catalog revision (for cache invalidation). */
+  getCatalogRevision(): number {
+    return this.catalogRevision;
+  }
+
+  /** Convert a SkillDefinition to a SkillSummary. */
+  private toSummary(skill: SkillDefinition): SkillSummary {
+    return {
+      name: skill.name,
+      description: skill.description,
+      ...(skill.whenToUse ? { whenToUse: skill.whenToUse } : {}),
+      invocation: { modelInvocable: true, userInvocable: true },
+      source: skill.source,
+      provider: "runtime",
+    };
+  }
+
+  /** Convert a SkillCandidate to a SkillSummary. */
+  private candidateToSummary(candidate: SkillCandidate): SkillSummary {
+    const { name, description, whenToUse, invocation, source, provider, resourceBase } = candidate;
+    return { name, description, ...(whenToUse ? { whenToUse } : {}), invocation, source, provider, ...(resourceBase ? { resourceBase } : {}) };
+  }
+
+  /** Normalize provider output to a SkillProviderObservation. */
+  private normalizeObservation(output: unknown, providerName: string): SkillProviderObservation {
+    if (Array.isArray(output)) {
+      return { candidates: output as readonly SkillCandidate[], complete: true };
+    }
+    if (output === null || typeof output !== "object") {
+      throw new TypeError(`skill provider "${providerName}" list() must return an array or { candidates, complete } observation`);
+    }
+    const observation = output as Partial<SkillProviderObservation>;
+    if (!Array.isArray(observation.candidates) || typeof observation.complete !== "boolean") {
+      throw new TypeError(`skill provider "${providerName}" list() must return an array or { candidates, complete } observation`);
+    }
+    return observation as SkillProviderObservation;
   }
 
   /** Get skills by source */
@@ -658,50 +919,174 @@ export class SkillRegistry {
   }
 
   private registerBuiltinSkills() {
-    // Code Review skill
+    // ===== Cross-reference network =====
+    // code-review → prose-standard (for prose quality checks)
+    // code-review → trim-cot-leakage (for leaked reasoning transcript detection)
+    // refactor → find-simplifications (for simplification discovery before refactoring)
+    // refactor → code-review (for post-refactor verification)
+    // document → prose-standard (for coverage rules and editorial quality)
+    // document → trim-cot-leakage (for doc prose hygiene)
+    // test → pre-push-checks (for test selection strategy)
+    // test → code-review (for assertion strength verification)
+    // pre-push-checks → prose-standard (for prose gate)
+    // pre-push-checks → test (for test gate)
+    // find-simplifications → refactor (for applying changes)
+    // prose-standard → trim-cot-leakage (for leakage-specific hunting)
+    // trim-cot-leakage → prose-standard (for the complete-proposition rule)
+
+    // Code Review skill (v2: absorbs DSH review dimensions + prose-standard)
     this.register({
       name: "code-review",
-      description: "Perform a thorough code review with security and quality checks",
+      description: "Perform a thorough code review with security, lifecycle, and quality checks. Use when reviewing a PR, code changes, or auditing code quality. Covers bugs, security, performance, lifecycle, concurrency, prose quality, and interface contracts.",
       aliases: ["review", "cr"],
       allowedTools: ["read", "grep", "glob"],
-      prompt: `You are a code review expert. Analyze the provided code for:
+      prompt: `# Code Review
 
-1. **Bugs and Logic Errors**: Look for incorrect logic, edge cases, null checks
+**This skill is guidance, not a complete checklist.** Prioritize correctness, lifecycle, security, and broken required behavior over style; a short review with one substantiated blocker is better than a list of nits.
+
+## Blocking Requirements
+
+1. **New prose receives semantic review.** Use \`prose-standard\` to critically review every added or changed Markdown passage, JSDoc, comment, prompt, description, diagnostic, and visible string. Verify required coverage, accuracy, placement, and editorial quality against the owning code or behavior.
+
+2. **Docs match the code.** Config, defaults, errors, wire fields, events, and public behavior update the package README and JSDoc in the same diff. Comments state non-obvious contracts; flag implementation narration, test walkthroughs, review history, and duplicated rationale for deletion or a link to their one home.
+
+3. **Registrations clean up.** Verify each new registry contribution passes the disposal tests.
+
+4. **Required evidence exists.** Verify the author ran the relevant local checks for the diff.
+
+## Manual Checks
+
+### Intent and interface contracts
+Trace both sides of every changed interface. Confirm the implementation matches the PR, including errors, cancellation, ownership, and disposal.
+
+### Lifecycle and concurrency
+For async setup, callbacks, processes, or teardown, check:
+- Races before publication
+- Cancellation during awaits
+- Independent error reporting
+- Callback containment
+- Ownership before reentry
+- Complete detach cleanup
+- Quiescent disposal
+
+### Capability and consumer fit
+Trace every current consumer, then flag consumer-specific behavior leaking into the interface. Flag the inverse too: a new public method on a generic service whose only caller is one internal consumer is an unnecessary API expansion.
+
+### Scope, ownership, and necessity
+Map each abstraction, state machine, option, defensive copy, and compatibility path to its current contract, production consumer, and owning plugin or service. Challenge unrelated features and speculative generality.
+
+### Configuration and public choices
+Ask what current-consumer evidence or prior art supports each default, public operation set, format, or imported external concept.
+
+### Model perspective
+Inspect the exact prompts, tool schemas, results, and diagnostics the model receives. Flag concepts outside the model's task, then verify stable text verbatim and dynamic behavior through snapshots or end-to-end coverage.
+
+### Enforcement
+Follow every denial path to the operation that executes it; exercise direct and alternate callers that can bypass schemas, prompts, facades, wrappers, or listener ordering.
+
+### Borrowed and derived state
+Determine whether each retained value is borrowed or owned under the package contract, then trace notifications and every cache, prompt, UI echo, replay, and query view to the documented success point and authoritative source.
+
+### Bounds cover the final operation
+Locate the owner of the complete emitted or retained result, including wrappers and metadata. Probe tiny and exact limits, oversized single chunks, and multibyte text for byte limits.
+
+### Real entry path
+Tests exercise the shipped Loader, bin, worker, or subprocess where relevant. A hand-mounted plugin does not catch invalid Loader exports.
+
+### Test strength
+Assertions fail on the intended regression and verify external state, logs, events, or disposal rather than restating the implementation or trusting an agent's report.
+
+## Classic Dimensions
+
+1. **Bugs and Logic Errors**: incorrect logic, edge cases, null checks
 2. **Security Issues**: SQL injection, XSS, command injection, path traversal
-3. **Performance**: Unnecessary loops, memory leaks, N+1 queries
-4. **Code Style**: Naming conventions, DRY principle, SOLID principles
-5. **Error Handling**: Missing error handling, swallowed exceptions
+3. **Performance**: unnecessary loops, memory leaks, N+1 queries
+4. **Code Style**: naming conventions, DRY principle, SOLID principles
+5. **Error Handling**: missing error handling, swallowed exceptions
 
-Provide specific file paths and line numbers for each issue found.
+## Reporting findings
+
+State the defect, location, impact, and evidence. Place a localized defect inline on the tightest relevant diff range; use a PR-level comment for cross-cutting architecture, scope, or review-wide synthesis. Separate blockers from suggestions and omit issues already enforced by a green gate.
+
 Rate severity: Critical, High, Medium, Low, Info.`,
       contextMode: "inline",
       source: "builtin",
+      tags: ["review", "security", "quality", "audit"],
+      version: "2.0.0",
+      whenToUse: "When reviewing a PR, code changes, or auditing code quality for bugs, security, performance, lifecycle, concurrency, prose quality, or interface contracts.",
     });
 
-    // Refactor skill
+    // Refactor skill (v2: absorbs DSH find-simplifications methodology)
     this.register({
       name: "refactor",
-      description: "Refactor code to improve structure without changing behavior",
+      description: "Refactor code to improve structure without changing behavior. Identifies simplification opportunities, dead code, unnecessary abstractions, and applies common refactoring patterns incrementally.",
       aliases: ["rf"],
       allowedTools: ["read", "write", "edit", "grep", "glob"],
-      prompt: `You are a refactoring expert. Improve code structure while preserving behavior.
+      prompt: `# Refactor
 
-Common refactoring patterns:
+You are a refactoring and simplification expert. Improve code structure while preserving behavior.
+
+## Simplification Discovery
+
+Before refactoring, identify simplification opportunities:
+
+### Dead code and unreachable paths
+- Unused exports, functions, variables, types, and fields
+- Unreachable branches (e.g., type-narrowed conditions that always pass)
+- Commented-out code blocks
+- Empty catch/finally blocks that swallow errors
+
+### Unnecessary abstractions
+- Single-implementation interfaces with no planned second implementation
+- Wrapper functions that only forward to a single callee
+- Factory methods that always return the same type
+- Generic parameters that are never varied
+- Adapter layers where the adapted interface is identical to the target
+
+### Redundant state and indirection
+- Cached values that are always recomputed before use
+- Intermediate variables that add no clarity
+- Property getters that mirror private fields with no validation
+- Config objects that are always passed with the same values
+
+### Structural simplification
+- Conditionals that can be replaced with lookup tables or early returns
+- Nested callbacks that can be flattened with async/await
+- Repeated logic that can be extracted to a shared helper
+- Over-engineered state machines that can be simplified
+
+## Common Refactoring Patterns
+
 - Extract Method/Function
 - Extract Variable
 - Rename (with proper IDE support)
 - Move/Inline
 - Replace Temp with Query
 - Introduce Parameter Object
+- Replace Conditional with Polymorphism/Dispatch
+- Replace Inheritance with Composition
 
-Always:
-1. Read the code first
-2. Understand the current behavior
-3. Make incremental changes
-4. Verify each change compiles/runs
-5. Keep changes minimal and focused`,
+## Workflow
+
+1. **Read the code first** — understand the current behavior and all callers
+2. **Enumerate simplification candidates** — list each with its evidence (caller count, usage frequency, structural benefit)
+3. **Prioritize by impact** — high-impact, low-risk first; preserve all behavior contracts
+4. **Make incremental changes** — one simplification at a time
+5. **Verify each change compiles/runs** — run the narrow relevant tests after each step
+6. **Keep changes minimal and focused** — do not bundle unrelated refactors
+
+## Guardrails
+
+- **Never change public API without tracing all consumers.** A simplification that breaks a caller is not a simplification.
+- **Preserve all behavioral contracts** — return values, error conditions, side effects, timing, and ordering.
+- **Challenge every abstraction** — if you cannot name a second concrete need, the abstraction may be premature.
+- **Delete dead code with confidence** — but verify with grep across the full scope first.
+- **Link large refactors to an issue** — do not leave half-done restructuring.`,
       contextMode: "inline",
       source: "builtin",
+      tags: ["refactor", "simplification", "cleanup", "dead-code"],
+      version: "2.0.0",
+      whenToUse: "When refactoring code, finding simplification opportunities, removing dead code, or reducing unnecessary abstractions while preserving behavior.",
     });
 
     // Debug skill
@@ -725,55 +1110,123 @@ Always explain WHY the fix works, not just WHAT to change.`,
       source: "builtin",
     });
 
-    // Document skill
+    // Document skill (v2: absorbs DSH doc-standards methodology)
     this.register({
       name: "document",
-      description: "Generate or improve documentation for code",
+      description: "Generate or improve documentation for code. Covers JSDoc, README, cookbook, CHANGELOG, API docs. Applies prose-standard coverage rules, placement discipline, and editorial quality.",
       aliases: ["doc"],
       allowedTools: ["read", "write", "edit"],
-      prompt: `You are a documentation expert. Create clear, comprehensive documentation.
+      prompt: `# Document
 
-For code:
-- Add/update JSDoc/docstrings
-- Explain complex logic
-- Document parameters and return values
-- Add usage examples
+You are a documentation expert. Create clear, comprehensive documentation that preserves every factual clause.
 
-For projects:
-- Update README
-- Create/update CHANGELOG
-- Document API endpoints
-- Write setup instructions
+## Coverage Rules by Location
 
-Use appropriate format (Markdown, JSDoc, etc.) based on context.`,
+### Public JSDoc
+Document caller-visible return distinctions, throws or rejections, side effects, ownership, timing, cancellation, and durability. A JSDoc that only restates the function name is worse than no JSDoc.
+
+### Internal comments
+Orient non-local structure and obviously complicated local structure: invariants, race ordering, ownership, security boundaries, and surprising failure behavior. Delete control-flow narration and code restatement.
+
+### Module comments
+State the module's role, dependencies, responsibilities, and non-obvious architecture choices. Link architecture choices to their owning explanation.
+
+### Tests
+Explain only non-obvious test design — why a fixture, assertion, platform accommodation, real entry path, or indirect observation is necessary. Delete walkthroughs and inventories.
+
+### Cookbooks
+Include prerequisites, required actions, the real entry path, observable verification, and concise warnings.
+
+### READMEs
+Include the consumer contract: configuration, semantics, failures, limitations, extension points, and model-visible effects. Quote stable model-visible text owned by the package; link generated catalogs and cross-package owners. Keep durable gaps and maintainer traps, not ordinary cleanup inventories.
+
+### Skills and agent instructions
+State behavioral guardrails and explicit scope limitations. Keep the workflow concise and link its source of truth.
+
+### Diagnostics
+Name the failing subject or path, violated rule, and correction when it is non-obvious. Remove internal execution narration.
+
+## Editorial Principles
+
+1. **One explanation has one home.** Essential contract facts may repeat locally; architecture, rationale, algorithms, history, and extended examples link to their owning document.
+2. **Comments describe non-obvious contracts or rationale that code cannot express.** They do not restate what code already implies.
+3. **Write enough to preserve the contract, then remove reasoning transcripts, repetition, and decoration.**
+4. **Update the owner before derivative artifacts.** Generated catalogs, snapshots, and fixtures are derivative — edit the owning source or scenario first.
+5. **Match the language of the surrounding code.** Chinese codebase → Chinese docs; English codebase → English docs.
+
+## Workflow
+
+1. Read the code and identify what needs documenting
+2. Determine the appropriate documentation type (JSDoc, README, cookbook, etc.)
+3. Draft following the coverage rules above
+4. Verify every factual claim against the actual code behavior
+5. Link to owning documents for architecture and rationale
+6. Run relevant checks (lint, type-check) to verify no broken references`,
       contextMode: "inline",
       source: "builtin",
+      tags: ["documentation", "jsdoc", "readme", "quality"],
+      version: "2.0.0",
+      whenToUse: "When generating or improving documentation — JSDoc, README, cookbook, CHANGELOG, API docs — with coverage rules and editorial discipline.",
     });
 
-    // Test skill
+    // Test skill (v2: absorbs DSH pre-push-checks test selection strategy)
     this.register({
       name: "test",
-      description: "Write and run tests for code",
+      description: "Write and run tests for code. Selects the narrow relevant tests, verifies real entry paths, and ensures assertions fail on the intended regression rather than restating the implementation.",
       aliases: ["t"],
       allowedTools: ["read", "write", "edit", "bash", "grep", "glob"],
-      prompt: `You are a testing expert. Write comprehensive tests.
+      prompt: `# Test
 
-Test types:
-- Unit tests for individual functions
-- Integration tests for component interaction
-- Edge case tests
-- Error handling tests
+You are a testing expert. Write comprehensive tests and select the narrow relevant suite for each change.
 
-Best practices:
+## Test Selection Strategy
+
+Before running tests, determine the narrow relevant set:
+
+1. **Map the diff to test files** — use import graphs or grep to find every test that exercises the changed code path.
+2. **Include disposal and lifecycle tests** — every new registry contribution, plugin, or service needs a disposal test that verifies cleanup.
+3. **Include cross-cutting tests** — when the change affects a shared interface, include every consumer's test.
+4. **Exclude unrelated suites** — running the full suite wastes time and hides failures; run only what the diff touches plus a type-check.
+5. **Run a type-check first** — \`tsc --noEmit\` catches interface breaks faster than the full suite.
+
+## Test Types
+
+- **Unit tests** for individual functions and branches
+- **Integration tests** for component interaction and real entry paths
+- **Disposal tests** for lifecycle and cleanup verification
+- **Edge case tests** for boundary conditions
+- **Error handling tests** for failure modes and recovery
+
+## Real Entry Path
+
+Tests exercise the shipped Loader, bin, worker, or subprocess where relevant. A hand-mounted plugin does not catch invalid Loader exports. Use the real registration path, not a test-only shortcut.
+
+## Assertion Strength
+
+- **Assertions fail on the intended regression.** If the test passes after reverting the fix, the assertion is too weak.
+- **Verify external state** — logs, events, disposal, observable output — rather than restating the implementation or trusting an agent's report.
+- **One regression per test** — a test that fails for two reasons is harder to triage.
+- **Use descriptive test names** — name the behavior being tested, not the implementation detail.
+
+## Best Practices
+
 - Follow existing test patterns in the project
-- Use descriptive test names
-- Test one thing per test
-- Use appropriate assertions
-- Mock external dependencies
+- Mock external dependencies, not the code under test
+- Run tests after writing to verify they pass
+- Add a regression test for every bug fix — the test should fail without the fix
 
-Run tests after writing to verify they pass.`,
+## Workflow
+
+1. Read the code under test and understand all branches
+2. Identify the narrow relevant existing tests
+3. Write new tests for uncovered paths
+4. Run the narrow suite + type-check
+5. Verify each test fails without the fix (for regression tests)`,
       contextMode: "inline",
       source: "builtin",
+      tags: ["test", "regression", "lifecycle", "disposal"],
+      version: "2.0.0",
+      whenToUse: "When writing or running tests, selecting the narrow relevant test suite for a change, verifying disposal/lifecycle, or ensuring assertion strength.",
     });
 
     // Explain skill

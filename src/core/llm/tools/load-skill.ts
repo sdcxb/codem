@@ -237,19 +237,53 @@ export function createLoadSkillTool(toolRegistry: ToolRegistry): ToolDef {
 
       const registry = getSkillRegistry();
 
-      // 查找技能（支持别名）
+      // 查找技能（支持别名）— 先查本地 builtin/runtime
       let skill = registry.get(skillName);
       if (!skill) {
         skill = registry.getByAlias(skillName);
       }
 
+      // A4: 如果本地没找到，尝试从 Provider 异步加载
       if (!skill) {
-        // 列出可用技能帮助 LLM 选择
+        try {
+          skill = await registry.getSkill(skillName) ?? undefined;
+        } catch {
+          // Provider 查询失败，继续走 catalog 流程
+        }
+      }
+
+      if (!skill) {
+        // A4: Catalog 模式 — 返回 DSH 风格的技能目录
         const allSkills = registry.getAll().filter((s) => s.enabled !== false);
-        const skillList = allSkills.map((s) => `  - ${s.name}: ${s.description}`).join("\n");
+        const catalogEntries = allSkills.map((s) => {
+          const parts = [`${s.name}`];
+          if (s.description) parts.push(s.description);
+          if (s.whenToUse) parts.push(`whenToUse: ${s.whenToUse}`);
+          return parts.join(" — ");
+        });
+
+        // 也尝试从 Provider 获取 catalog
+        let providerCatalog = "";
+        try {
+          const summaries = await registry.listSummaries();
+          const externalSummaries = summaries.filter(
+            (s) => !allSkills.some((b) => b.name === s.name)
+          );
+          if (externalSummaries.length > 0) {
+            providerCatalog = "\n\nExternal skills:\n" +
+              externalSummaries.map((s) => {
+                const parts = [s.name];
+                if (s.description) parts.push(s.description);
+                return parts.join(" — ");
+              }).join("\n");
+          }
+        } catch {
+          // Provider catalog 查询失败，忽略
+        }
+
         return {
           title: "load_skill",
-          output: `Skill "${skillName}" not found. Available skills:\n${skillList}`,
+          output: `Skill "${skillName}" not found. Available skills:\n${catalogEntries.join("\n")}${providerCatalog}`,
         };
       }
 
