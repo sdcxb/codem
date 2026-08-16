@@ -176,7 +176,9 @@ function App() {
   // 所有核心服务通过 ctx.provide() 注册后，插件可以通过 ctx.get() 消费。
   const [cordisReady, setCordisReady] = useState(false);
   useEffect(() => {
-    getCordisContext().then(() => {
+    getCordisContext().then((ctx) => {
+      // R4: 将 Cordis Context 传给 LLMEngine，让 AgenticLoop 通过 ctx.get() 消费服务
+      getLLMEngine(ctx);
       setCordisReady(true);
     }).catch((err) => {
       console.error("Failed to initialize Cordis context:", err);

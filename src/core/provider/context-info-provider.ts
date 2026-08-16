@@ -1,6 +1,15 @@
 // @ts-nocheck
 /**
- * Context Info Provider 插件 — 上下文信息服务，可独立加载/卸载/热替换。
+ * Context Info Provider 插件 — 上下文信息服务。
+ *
+ * ⚠️ STUB — 无真实实现源。当前返回硬编码字符串。
+ *
+ * 开发计划：
+ * - 将 prompt.ts 的 buildSystemPrompt() 上下文组装逻辑适配为 ContextService 接口
+ * - getInstructions() 返回动态上下文（当前项目、文件树、Git 状态等）
+ * - getTime() 返回格式化的当前时间
+ * - getWorkspace() 返回工作区信息（路径、打开的文件、光标位置等）
+ * - 支持第三方插件通过 ctx.contextInfo 注入自定义上下文
  */
 import type { Plugin } from '../cordis/src/index.ts'
 

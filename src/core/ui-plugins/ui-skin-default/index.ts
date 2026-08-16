@@ -1,13 +1,10 @@
 // @ts-nocheck
 /**
  * @codem/skin-default — 默认皮肤插件
- * @codem/skin-pet — 宠物皮肤插件
- * @codem/ui-pet — 宠物覆盖层 UI 插件
+ *
+ * 注入 CSS 变量定义默认配色方案。
+ * 可独立加载/卸载/热替换 — 第三方可替换为自定义皮肤。
  */
-import { lazy } from 'react'
-import { useCtx } from '../../consumer/index.ts'
-
-// ========== skin-default ==========
 export function applySkinDefault() {
   const root = document.documentElement
 
@@ -31,22 +28,6 @@ export function applySkinDefault() {
   console.log('[skin-default] Default skin applied')
 }
 
-// ========== skin-pet ==========
-export function applySkinPet() {
-  console.log('[skin-pet] Pet skin registered (inactive by default)')
-}
-
-// ========== ui-pet ==========
-export function applyUIPet() {
-  const ctx = useCtx()
-  const PetOverlay = lazy(() => import('../../../components/PetOverlay'))
-  ctx.slots.register({ name: 'app.overlay', id: 'pet-overlay-skin', order: 100, priority: 50 }, PetOverlay)
-  console.log('[ui-pet] Pet overlay registered')
-}
-
-// ========== 统一入口 ==========
 export function apply() {
   applySkinDefault()
-  applySkinPet()
-  applyUIPet()
 }

@@ -1,6 +1,16 @@
 // @ts-nocheck
 /**
- * Sandbox Provider 插件 — 沙箱服务，可独立加载/卸载/热替换。
+ * Sandbox Provider 插件 — 沙箱隔离服务。
+ *
+ * ⚠️ STUB — 无真实实现源。当前仅 Map CRUD，无真实隔离。
+ *
+ * 开发计划：
+ * - 将 native/landlock-run/ 的 Landlock（Linux）/Seatbelt（macOS）接入 ctx
+ * - create() 创建真实沙箱实例（文件系统隔离 + 进程限制）
+ * - destroy() 销毁沙箱实例，清理资源
+ * - list() 列出活跃沙箱实例
+ * - exec() 在指定沙箱中执行命令
+ * - 支持 Docker/containerd 作为远程沙箱后端
  */
 import type { Plugin } from '../cordis/src/index.ts'
 

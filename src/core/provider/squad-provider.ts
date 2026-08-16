@@ -1,19 +1,48 @@
 // @ts-nocheck
 /**
- * Squad Provider 插件 — 多 Agent 编组服务，可独立加载/卸载/热替换。
+ * Squad Provider 插件 — 包装真实 Squad 管理器并接入 ctx。
+ *
+ * 真实实现源：
+ * - src/core/squad/squad.ts（200+ 行完整实现：SquadManager + Leader-Member 编排 + worktree）
+ * - src/core/squad/squad-storage.ts（SQLite 持久化）
+ * - src/core/squad/squad-tools.ts（squad_* LLM 工具）
+ *
+ * 接入点：
+ * - LLM 工具 squad_* 系列通过 ctx.squad 管理小队
+ * - AgenticLoop 可通过 ctx.squad 启动子智能体并行工作
+ * - UI 小队管理面板通过 ctx.squad.list() 展示小队列表
  */
 import type { Plugin } from '../cordis/src/index.ts'
+import { SquadManager } from '../squad/squad.ts'
 
 export const squadProvider: Plugin = (ctx: any) => {
-  const squads = new Map<string, any>()
+  const manager = new SquadManager(ctx)
 
   const dispose = ctx.provide('squad', {
-    create(name: string, members: string[]) { const id = crypto.randomUUID(); squads.set(id, { id, name, members }); return id },
-    get(squadId: string) { return squads.get(squadId) },
-    list() { return [...squads.values()].map(s => ({ id: s.id, name: s.name, memberCount: s.members.length })) },
-    addMember(squadId: string, member: string) { const s = squads.get(squadId); if (s && !s.members.includes(member)) s.members.push(member) },
-    removeMember(squadId: string, member: string) { const s = squads.get(squadId); if (s) s.members = s.members.filter((m: string) => m !== member) },
-    disband(squadId: string) { squads.delete(squadId) },
+    async create(name: string, config?: any): Promise<string> {
+      return manager.createSquad(name, config)
+    },
+    async disband(squadId: string): Promise<void> {
+      return manager.disbandSquad(squadId)
+    },
+    async list(): Promise<any[]> {
+      return manager.listSquads()
+    },
+    async get(squadId: string): Promise<any> {
+      return manager.getSquad(squadId)
+    },
+    async assignTask(squadId: string, memberId: string, task: string): Promise<void> {
+      return manager.assignTask(squadId, memberId, task)
+    },
+    async getResults(squadId: string): Promise<any[]> {
+      return manager.getSquadResults(squadId)
+    },
+    async addMember(squadId: string, memberConfig: any): Promise<string> {
+      return manager.addMember(squadId, memberConfig)
+    },
+    async removeMember(squadId: string, memberId: string): Promise<void> {
+      return manager.removeMember(squadId, memberId)
+    },
   })
 
   return dispose

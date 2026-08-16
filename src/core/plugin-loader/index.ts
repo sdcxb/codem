@@ -51,6 +51,11 @@ export function registerBuiltinPlugin(name: string, meta: PluginMeta, apply: () 
   builtinPlugins.set(name, { meta, apply })
 }
 
+/** 获取已注册内置插件数量。 */
+export function getBuiltinPluginCount(): number {
+  return builtinPlugins.size
+}
+
 /**
  * 插件加载器 — 扫描、排序、加载插件包。
  */

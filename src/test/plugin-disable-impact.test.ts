@@ -75,7 +75,9 @@ function buildSystemGraph(): PluginDependencyGraph {
     { name: "@codem/ui-misc", provides: [], inject: ["slots"], slots: ["app.overlay"], riskLevel: "safe" },
     { name: "@codem/ui-market", provides: [], inject: ["slots"], slots: ["app.skill-manager"], riskLevel: "safe" },
     { name: "@codem/ui-theme", provides: [], inject: [], riskLevel: "safe" },
-    { name: "@codem/ui-skin", provides: [], inject: ["slots"], slots: ["app.overlay"], riskLevel: "safe" },
+    { name: "@codem/ui-skin-default", provides: [], inject: [], riskLevel: "safe" },
+    { name: "@codem/ui-skin-pet", provides: [], inject: [], riskLevel: "safe" },
+    { name: "@codem/ui-pet", provides: [], inject: ["slots"], slots: ["app.overlay"], riskLevel: "safe" },
   ];
   for (const p of uiPlugins) g.register(p);
 
@@ -306,10 +308,12 @@ describe("插件关闭对系统影响测试 — PDI-001 ~ PDI-040", () => {
         "@codem/ui-settings",
         "@codem/ui-tool",
         "@codem/ui-misc",
-        "@codem/ui-market",
-        "@codem/ui-theme",
-        "@codem/ui-skin",
-      ];
+      "@codem/ui-market",
+      "@codem/ui-theme",
+      "@codem/ui-skin-default",
+      "@codem/ui-skin-pet",
+      "@codem/ui-pet",
+    ];
       for (const name of uiPlugins) {
         const result = graph.getCascadeDisable(name);
         // 关闭后不应影响核心

@@ -8,6 +8,7 @@ import type {
   LLMMessage,
 } from "./types";
 import { getLang } from "../i18n/lang";
+import type { Context } from "../cordis/src/index.ts";
 import { createIdleTimeout } from "./idle-tracker";
 import { OllamaProvider } from "./ollama-provider";
 
@@ -507,15 +508,25 @@ export class ProviderRegistry {
 }
 
 // ========== Create Default Providers ==========
-export function createDefaultProviders(): ProviderRegistry {
+export function createDefaultProviders(ctx?: Context): ProviderRegistry {
   const registry = new ProviderRegistry();
+
+  // R4: 如果 ctx 可用，从 ctx.get('credentials') 获取 API keys
+  const getApiKey = (providerId: string): string => {
+    if (ctx) {
+      try {
+        const credentials = ctx.get('credentials')
+        if (credentials) return credentials.get(providerId.toUpperCase() + '_API_KEY') || ""
+      } catch {}
+    }
+    return ""
+  };
 
   // OpenAI
   registry.register(new OpenAICompatibleProvider({
     id: "openai",
     name: "OpenAI",
-    apiKey: "",
-    baseUrl: "https://api.openai.com/v1",
+    apiKey: getApiKey("openai"),
     models: [
       { id: "gpt-4o", name: "GPT-4o", contextWindow: 128000, maxOutputTokens: 16384, supportsTools: true, supportsStreaming: true },
       { id: "gpt-4o-mini", name: "GPT-4o Mini", contextWindow: 128000, maxOutputTokens: 16384, supportsTools: true, supportsStreaming: true },
@@ -527,8 +538,7 @@ export function createDefaultProviders(): ProviderRegistry {
   registry.register(new OpenAICompatibleProvider({
     id: "anthropic",
     name: "Anthropic",
-    apiKey: "",
-    baseUrl: "https://api.anthropic.com/v1",
+    apiKey: getApiKey("anthropic"),
     models: [
       { id: "claude-sonnet-4-20250514", name: "Claude Sonnet 4", contextWindow: 200000, maxOutputTokens: 64000, supportsTools: true, supportsStreaming: true },
       { id: "claude-opus-4-20250514", name: "Claude Opus 4", contextWindow: 200000, maxOutputTokens: 32000, supportsTools: true, supportsStreaming: true },
@@ -539,7 +549,7 @@ export function createDefaultProviders(): ProviderRegistry {
   registry.register(new OpenAICompatibleProvider({
     id: "mimo",
     name: "MiMo",
-    apiKey: "",
+    apiKey: getApiKey("mimo"),
     baseUrl: "https://api.xiaomimimo.com/v1",
     models: [
       { id: "mimo-v2.5-pro", name: "MiMo v2.5 Pro", contextWindow: 1000000, maxOutputTokens: 64000, supportsTools: true, supportsStreaming: true },
@@ -553,7 +563,7 @@ export function createDefaultProviders(): ProviderRegistry {
   registry.register(new OpenAICompatibleProvider({
     id: "deepseek",
     name: "DeepSeek",
-    apiKey: "",
+    apiKey: getApiKey("deepseek"),
     baseUrl: "https://api.deepseek.com",
     models: [
       { id: "deepseek-v4-flash", name: "DeepSeek V4 Flash", contextWindow: 1000000, maxOutputTokens: 384000, supportsTools: true, supportsStreaming: true },
@@ -565,7 +575,7 @@ export function createDefaultProviders(): ProviderRegistry {
   registry.register(new OpenAICompatibleProvider({
     id: "moonshot",
     name: "Moonshot",
-    apiKey: "",
+    apiKey: getApiKey("moonshot"),
     baseUrl: "https://api.moonshot.cn/v1",
     models: [
       { id: "moonshot-v1-8k", name: "Moonshot v1 8K", contextWindow: 8192, maxOutputTokens: 4096, supportsTools: true, supportsStreaming: true },
@@ -578,7 +588,7 @@ export function createDefaultProviders(): ProviderRegistry {
   registry.register(new OpenAICompatibleProvider({
     id: "gemini",
     name: "Google Gemini",
-    apiKey: "",
+    apiKey: getApiKey("gemini"),
     baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai",
     models: [
       { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash", contextWindow: 1000000, maxOutputTokens: 65536, supportsTools: true, supportsStreaming: true },

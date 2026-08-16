@@ -14,6 +14,7 @@ function minutePrecisionDate(): string {
 
 import { ProviderRegistry, createDefaultProviders } from "./provider";
 import { ToolRegistry, createDefaultToolRegistry } from "./tools";
+import type { Context } from "../cordis/src/index.ts";
 import { AgentRegistry, getAgentRegistry, type AgentDefinition } from "../agent/agent";
 import { PermissionManager, getPermissionManager } from "../permission/permission";
 import { ContextManager, getContextManager, type CompactionConfig } from "../context/context";
@@ -130,13 +131,17 @@ export class LLMEngine {
 private agenticLoop: AgenticLoop | null = null;
 /** Per-session agentic loop pool for parallel execution */
 private loopPool: Map<string, AgenticLoop> = new Map();
-private config: LLMEngineConfig;
+  private config: LLMEngineConfig;
   private snapshots: Map<string, SnapshotService> = new Map();
+  // R4: Cordis Context — 当传入时通过 ctx.get() 消费服务
+  private ctx: Context | null = null;
 
-  constructor(config?: LLMEngineConfig, projectPath?: string) {
+  constructor(config?: LLMEngineConfig, projectPath?: string, ctx?: Context) {
     this.config = config || {};
-    this.providers = createDefaultProviders();
-    this.tools = createDefaultToolRegistry();
+    // R4: 如果 ctx 可用，传递给 createDefaultProviders 和 createDefaultToolRegistry
+    if (ctx) this.ctx = ctx;
+    this.providers = createDefaultProviders(ctx || undefined);
+    this.tools = createDefaultToolRegistry(ctx || undefined);
     this.agents = getAgentRegistry();
     this.permissions = getPermissionManager();
     this.context = getContextManager();
@@ -290,6 +295,7 @@ private config: LLMEngineConfig;
         // E8: Pass cost tracker for cost-aware degradation
         costTracker: this.costTracker,
       },
+      this.ctx || undefined, // R4: 传递 Cordis Context 给 AgenticLoop
     );
 
     // Pool the loop per-session for parallel execution
@@ -1146,7 +1152,8 @@ return loop.hasPendingGuidance();
 // ========== Singleton ==========
 let engineInstance: LLMEngine | null = null;
 
-export function getLLMEngine(): LLMEngine {
+/** R4: 获取 LLMEngine — 如果传入了 ctx，引擎通过 ctx.get() 消费服务 */
+export function getLLMEngine(ctx?: Context): LLMEngine {
   if (!engineInstance) {
     engineInstance = new LLMEngine({
       defaultProvider: "openai",
@@ -1155,12 +1162,16 @@ export function getLLMEngine(): LLMEngine {
       temperature: 0.7,
       maxTokens: 4096,
       maxToolCalls: 20,
-    });
+    }, undefined, ctx);
+  } else if (ctx && !engineInstance['ctx']) {
+    // R4: 引擎已存在但未设置 ctx — 后续传入 ctx 时补充设置
+    // 使用方括号访问避免 TypeScript 访问私有成员
+    (engineInstance as any).ctx = ctx;
   }
   return engineInstance;
 }
 
-export function createLLMEngine(config?: LLMEngineConfig): LLMEngine {
-  engineInstance = new LLMEngine(config);
+export function createLLMEngine(config?: LLMEngineConfig, ctx?: Context): LLMEngine {
+  engineInstance = new LLMEngine(config, undefined, ctx);
   return engineInstance;
 }

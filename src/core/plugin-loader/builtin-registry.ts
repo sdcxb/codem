@@ -6,9 +6,9 @@
  * 而不需要真实的 node_modules 包。
  */
 
-import { registerBuiltinPlugin } from './index.ts'
+import { registerBuiltinPlugin, getBuiltinPluginCount } from './index.ts'
 
-// Provider 插件
+// Core Providers
 import { llmProvider } from '../provider/llm-provider'
 import { toolsProvider } from '../provider/tools-provider'
 import { sessionProvider } from '../provider/session-provider'
@@ -20,6 +20,8 @@ import { skillProvider } from '../provider/skill-provider'
 import { subagentProvider } from '../provider/subagent-provider'
 import { settingsProvider } from '../provider/settings-provider'
 import { themeProvider } from '../provider/theme-provider'
+
+// Capability Providers
 import { fsProvider } from '../provider/fs-provider'
 import { shellProvider } from '../provider/shell-provider'
 import { sandboxProvider } from '../provider/sandbox-provider'
@@ -29,6 +31,8 @@ import { hooksProvider } from '../provider/hooks-provider'
 import { approvalProvider } from '../provider/approval-provider'
 import { permissionsProvider } from '../provider/permissions-provider'
 import { automationProvider } from '../provider/automation-provider'
+
+// P6 Providers
 import { identityProvider } from '../provider/identity-provider'
 import { lspProvider } from '../provider/lsp-provider'
 import { codeRuntimeProvider } from '../provider/code-runtime-provider'
@@ -40,6 +44,26 @@ import { notebookProvider } from '../provider/notebook-provider'
 import { squadProvider } from '../provider/squad-provider'
 import { dynamicRunnerProvider } from '../provider/dynamic-runner-provider'
 import { pluginRegistryProvider } from '../provider/plugin-registry-provider'
+
+// R1 Providers (从 bridge-plugin.ts 迁移)
+import { guardProvider } from '../provider/guard-provider'
+import { credentialsProvider } from '../provider/credentials-provider'
+import { attachmentsProvider } from '../provider/attachments-provider'
+import { scheduleProvider } from '../provider/schedule-provider'
+import { plansProvider } from '../provider/plans-provider'
+import { presetProvider } from '../provider/preset-provider'
+import { hostClientProvider } from '../provider/host-client-provider'
+
+// R4 Providers (AgenticLoop 迁移到 ctx 消费)
+import { visionProxyProvider } from '../provider/vision-proxy-provider'
+import { messageStorageProvider } from '../provider/message-storage-provider'
+import { eventLogProvider } from '../provider/event-log-provider'
+import { telemetryProvider } from '../provider/telemetry-provider'
+import { securityModeProvider } from '../provider/security-mode-provider'
+import { fileChangeTrackerProvider } from '../provider/file-change-tracker-provider'
+import { transcriptCacheProvider } from '../provider/transcript-cache-provider'
+import { agentEngineProvider } from '../provider/agent-engine-provider'
+import { i18nProvider } from '../provider/i18n-provider'
 
 /** 注册所有内置插件到 PluginLoader */
 export function registerBuiltinPlugins() {
@@ -80,6 +104,26 @@ export function registerBuiltinPlugins() {
   registerBuiltinPlugin('@codem/dynamic-runner', { provides: ['dynamicCordisRunner'], inject: [], priority: 0 }, () => dynamicRunnerProvider)
   registerBuiltinPlugin('@codem/plugin-registry', { provides: ['pluginRegistry'], inject: [], priority: 0 }, () => pluginRegistryProvider)
 
+  // R1 Providers (从 bridge-plugin.ts 迁移)
+  registerBuiltinPlugin('@codem/guard', { provides: ['guard'], inject: [], priority: 0 }, () => guardProvider)
+  registerBuiltinPlugin('@codem/credentials', { provides: ['credentials'], inject: [], priority: 0 }, () => credentialsProvider)
+  registerBuiltinPlugin('@codem/attachments', { provides: ['attachments'], inject: [], priority: 0 }, () => attachmentsProvider)
+  registerBuiltinPlugin('@codem/schedule', { provides: ['schedule'], inject: [], priority: 0 }, () => scheduleProvider)
+  registerBuiltinPlugin('@codem/plans', { provides: ['plans'], inject: [], priority: 0 }, () => plansProvider)
+  registerBuiltinPlugin('@codem/preset', { provides: ['preset'], inject: [], priority: 0 }, () => presetProvider)
+  registerBuiltinPlugin('@codem/host-client', { provides: ['bundle', 'sdk', 'acp', 'host', 'client', 'pluginInstaller'], inject: [], priority: 0 }, () => hostClientProvider)
+
+  // R4 Providers (AgenticLoop 迁移到 ctx 消费)
+  registerBuiltinPlugin('@codem/vision-proxy', { provides: ['visionProxy'], inject: [], priority: 0, hot: true }, () => visionProxyProvider)
+  registerBuiltinPlugin('@codem/message-storage', { provides: ['messageStorage'], inject: [], priority: 0, hot: true }, () => messageStorageProvider)
+  registerBuiltinPlugin('@codem/event-log', { provides: ['eventLog'], inject: [], priority: 0, hot: true }, () => eventLogProvider)
+  registerBuiltinPlugin('@codem/telemetry', { provides: ['telemetry'], inject: [], priority: 0, hot: true }, () => telemetryProvider)
+  registerBuiltinPlugin('@codem/security-mode', { provides: ['securityMode'], inject: [], priority: 0, hot: true }, () => securityModeProvider)
+  registerBuiltinPlugin('@codem/file-change-tracker', { provides: ['fileChangeTracker'], inject: [], priority: 0, hot: true }, () => fileChangeTrackerProvider)
+  registerBuiltinPlugin('@codem/transcript-cache', { provides: ['transcriptCache'], inject: [], priority: 0, hot: true }, () => transcriptCacheProvider)
+  registerBuiltinPlugin('@codem/agent-engine', { provides: ['agentEngine'], inject: [], priority: 0, hot: true }, () => agentEngineProvider)
+  registerBuiltinPlugin('@codem/i18n', { provides: ['i18n'], inject: [], priority: 0, hot: true }, () => i18nProvider)
+
   // UI Plugins
   registerBuiltinPlugin('@codem/ui-sidebar', { provides: [], inject: ['slots'], slots: ['app.sidebar'], priority: 0 }, () => {
     const { apply } = require('../ui-plugins/ui-sidebar/index.ts')
@@ -109,8 +153,16 @@ export function registerBuiltinPlugins() {
     const { apply } = require('../ui-plugins/ui-theme/index.ts')
     return { apply: () => apply() }
   })
-  registerBuiltinPlugin('@codem/ui-skin', { provides: [], inject: ['slots'], slots: ['app.overlay'], priority: 0 }, () => {
-    const { apply } = require('../ui-plugins/ui-skin/index.ts')
+  registerBuiltinPlugin('@codem/ui-skin-default', { provides: [], inject: [], priority: 0 }, () => {
+    const { apply } = require('../ui-plugins/ui-skin-default/index.ts')
+    return { apply: () => apply() }
+  })
+  registerBuiltinPlugin('@codem/ui-skin-pet', { provides: [], inject: [], priority: 0 }, () => {
+    const { apply } = require('../ui-plugins/ui-skin-pet/index.ts')
+    return { apply: () => apply() }
+  })
+  registerBuiltinPlugin('@codem/ui-pet', { provides: [], inject: ['slots'], slots: ['app.overlay'], priority: 0 }, () => {
+    const { apply } = require('../ui-plugins/ui-pet/index.ts')
     return { apply: () => apply() }
   })
 
@@ -118,6 +170,5 @@ export function registerBuiltinPlugins() {
 }
 
 function builtinPluginCount(): number {
-  // 内部辅助函数
-  return 42 // 大约的插件数量
+  return getBuiltinPluginCount()
 }

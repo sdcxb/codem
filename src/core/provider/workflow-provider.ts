@@ -1,35 +1,21 @@
 // @ts-nocheck
 /**
- * Workflow Provider 插件 — 工作流引擎，可独立加载/卸载/热替换。
+ * Workflow Provider 插件 — 包装真实 Workflow 引擎并接入 ctx。
+ *
+ * 真实实现源：src/core/llm/workflow-engine.ts（133 行完整实现）
+ * 支持：fan-out 子智能体 + WorkflowSDK + 并行/串行执行
+ *
+ * 接入点：
+ * - LLM 工具通过 ctx.workflow 启动工作流
+ * - AgenticLoop 可通过 ctx.workflow 编排多智能体协作
  */
 import type { Plugin } from '../cordis/src/index.ts'
+import { execWorkflow } from '../llm/workflow-engine.ts'
 
 export const workflowProvider: Plugin = (ctx: any) => {
-  const workflows = new Map<string, any>()
-
   const dispose = ctx.provide('workflow', {
-    create(steps: any[]) {
-      const id = crypto.randomUUID()
-      workflows.set(id, { id, steps, status: 'pending', step: 0, results: [] })
-      return id
-    },
-    async run(workflowId: string) {
-      const wf = workflows.get(workflowId)
-      if (!wf) return { success: false, results: [] }
-      wf.status = 'running'
-      for (let i = 0; i < wf.steps.length; i++) {
-        wf.step = i
-        try {
-          const result = await wf.steps[i].fn()
-          wf.results.push(result)
-        } catch { wf.status = 'failed'; return { success: false, results: wf.results } }
-      }
-      wf.status = 'completed'
-      return { success: true, results: wf.results }
-    },
-    get(workflowId: string) {
-      const wf = workflows.get(workflowId)
-      return wf ? { id: wf.id, status: wf.status, step: wf.step } : undefined
+    async run(steps: any[], options?: { mode?: 'parallel' | 'serial' }) {
+      return execWorkflow(steps, options)
     },
   })
 

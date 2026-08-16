@@ -476,7 +476,7 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
         const resource = typeof args.path === "string" ? args.path
           : typeof args.command === "string" ? args.command
           : undefined;
-        const permissionManager = getPermissionManager();
+        const permissionManager = this.getPermissionManager();
         let rawAction = permissionManager.getEvaluator().evaluate(toolName, resource);
 
         // Bash deep security analysis — detect dangerous patterns
@@ -493,7 +493,7 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
           }
         }
 
-        const action = evaluateWithSecurityMode(secMode, toolName, resource, rawAction);
+        const action = this.evaluateSecurityMode(secMode, toolName, resource, rawAction);
 
         if (action === "ask" && this.config.onPermissionRequest) {
           const requestId = `perm-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
@@ -520,7 +520,7 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
     });
 
     // P2-14: Record telemetry — turn start
-    const telemetry = getTelemetry();
+    const telemetry = this.getTelemetry();
     const turnStartTime = Date.now();
     telemetry.record(sessionId, "turn_start", {
       userMessageLength: userMessage.length,
@@ -726,7 +726,8 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
         const compacted = await this.compactMessages(sessionId);
         yield { type: "compaction_end", messagesRemoved: compacted };
         // P1-6: Clear transcript cache on compaction (cached responses no longer valid)
-        TranscriptCache.clear();
+        this.getTranscriptCache().clear();
+
         // P2-C: Post-compaction cleanup — clear stale caches
         // After compaction, old file read/write caches are stale because the
         // conversation history they were based on has been summarized.
@@ -903,7 +904,7 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
         const taskCheck = this.checkTaskCompleteness(userMessage);
         if (taskCheck) {
           console.log(`[AgenticLoop] Task incomplete — injecting reminder: ${taskCheck.substring(0, 100)}...`);
-          MessageStorage.createMessage({
+          this.getMessageStorage().createMessage({
             id: `task-reminder-${Date.now()}`,
             role: "user",
             content: taskCheck,
@@ -921,7 +922,7 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
           const taskList = unwaitedIds.map(id => `  - task_id: "${id}"`).join("\n");
           const reminder = `[SYSTEM REMINDER] You have ${unwaitedIds.length} sub-agent(s) that were spawned but NOT waited on. You MUST call wait_for_subagent for each task ID below to collect their results.\n\nUn-waited task IDs:\n${taskList}\n\nCall wait_for_subagent(task_id: "...") for EACH task ID above. Do NOT spawn new sub-agents. Do NOT finish without collecting results.`;
           // Inject the reminder as a user message so the LLM sees it
-          MessageStorage.createMessage({
+          this.getMessageStorage().createMessage({
             id: `reminder-${Date.now()}`,
             role: "user",
             content: reminder,
@@ -940,7 +941,7 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
           const unwaitedDelIds = Array.from(this.delegatedTasks);
           const delTaskList = unwaitedDelIds.map(id => `  - task_id: "${id}"`).join("\n");
           const delReminder = `[SYSTEM REMINDER] You have ${unwaitedDelIds.length} delegation task(s) that were sent but NOT collected. You MUST call wait_for_delegation for each task ID below to collect their results.\n\nUn-waited delegation task IDs:\n${delTaskList}\n\nCall wait_for_delegation(task_id: "...") for EACH task ID above. Do NOT finish without collecting results.`;
-          MessageStorage.createMessage({
+          this.getMessageStorage().createMessage({
             id: `del-reminder-${Date.now()}`,
             role: "user",
             content: delReminder,
@@ -1056,7 +1057,7 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
 
     try {
       // Vision Proxy: process image blocks before sending to LLM
-      const visionProxy = getVisionProxy();
+      const visionProxy = this.getVisionProxy();
       const visionResult = await visionProxy.processMessages(
         apiMessages,
         this.config.model || this.provider.id,
@@ -1220,7 +1221,8 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
           this.readCache?.clear();
           this.writeCache?.clear();
           this.msgCache = null;
-          TranscriptCache.clear();
+          this.getTranscriptCache().clear();
+
           this.state.microCompactedThisRun = false;
           // After compaction, the main loop will rebuild messages and retry.
           // We return from executeIteration so the main while loop continues.
@@ -1329,7 +1331,7 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
     this.state.totalUsage.completionTokens += usage.completionTokens;
     this.state.totalUsage.totalTokens = this.state.totalUsage.promptTokens + this.state.totalUsage.completionTokens;
     // P2-14: Record telemetry — LLM response with token usage
-    getTelemetry().record(sessionId, "llm_response", {
+    this.getTelemetry().record(sessionId, "llm_response", {
       promptTokens: usage.promptTokens,
       completionTokens: usage.completionTokens,
       totalTokens: usage.totalTokens,
@@ -1426,7 +1428,7 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
           if ((name === "write" || name === "edit") && typeof args.path === "string" && this.currentSnapshotId) {
             try {
               const { readFile } = await import("../file-api");
-              const snapshotService = getSnapshotService(ctx.cwd);
+                const snapshotService = this.getSnapshotService(ctx.cwd);
               let content = "";
               let isNew = false;
               try {
@@ -1627,7 +1629,7 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
    */
   private async buildMessages(sessionId: string): Promise<any[]> {
     // P0-1: Try event-sourced projection first (dual-write transition)
-    const eventLog = getEventLog();
+    const eventLog = this.getEventLog();
     const eventCount = eventLog.count(sessionId);
     let messages: any[];
 
@@ -1683,11 +1685,11 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
           };
         });
       } else {
-        messages = MessageStorage.listMessages(sessionId);
+        messages = this.getMessageStorage().listMessages(sessionId);
       }
     } else {
       // Fallback: old CRUD path (no events yet for this session)
-      messages = MessageStorage.listMessages(sessionId);
+      messages = this.getMessageStorage().listMessages(sessionId);
     }
 
     // --- E3: Incremental message building ---
@@ -1835,7 +1837,7 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
 
   /** Convert raw DB messages to LLM API format, stripping system-reminder tags and stale custom instructions */
   private convertMessagesToLLM(messages: any[]): any[] {
-    const llmMessages = MessageStorage.messagesToLLMMessages(messages);
+    const llmMessages = this.getMessageStorage().messagesToLLMMessages(messages);
     for (const msg of llmMessages) {
       if (typeof msg.content === "string") {
         // Strip system-reminder tags
@@ -1988,7 +1990,7 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
  */
 private checkHasDocumentAttachment(sessionId: string): boolean {
   try {
-    const messages = MessageStorage.listMessages(sessionId);
+    const messages = this.getMessageStorage().listMessages(sessionId);
     for (const msg of messages) {
       // 1. Check attachments array (persisted in DB)
       if (msg.attachments && msg.attachments.length > 0) {
@@ -2026,7 +2028,7 @@ private checkHasDocumentAttachment(sessionId: string): boolean {
    * key context across many days of conversation.
    */
   private async compactMessages(sessionId: string): Promise<number> {
-    const messages = MessageStorage.listMessages(sessionId);
+    const messages = this.getMessageStorage().listMessages(sessionId);
     if (messages.length <= 2) return 0;
 
     // API-Round aware boundary detection:
@@ -2138,13 +2140,13 @@ private checkHasDocumentAttachment(sessionId: string): boolean {
 
     // Delete old messages from the database (including old marker)
     const removedIds = messagesToRemove.map(m => m.id);
-    MessageStorage.deleteMessagesByIds(removedIds);
+    this.getMessageStorage().deleteMessagesByIds(removedIds);
 
     // Insert new compaction marker
     const markerContent = `[上下文已自动压缩]\n\n${summary}\n\n---\n已移除 ${messagesToRemove.length} 条旧消息，保留最近 ${keepCount} 条（API-Round 边界对齐）。请基于以上摘要和后续消息继续工作。不要重复已摘要中记录为完成的工作。如需之前的文件内容或命令输出，请使用工具重新获取。`;
 
     const markerTs = messagesToKeep[0]?.timestamp ?? Date.now();
-    MessageStorage.createMessage({
+    this.getMessageStorage().createMessage({
       id: `compact-${Date.now()}`,
       role: "user",
       content: markerContent,
@@ -2155,7 +2157,7 @@ private checkHasDocumentAttachment(sessionId: string): boolean {
     // ========== P0-1: Event Sourcing — append compaction event ==========
     try {
       const { getEventLog } = await import("../storage/event-log");
-      getEventLog().append(sessionId, "compaction", {
+      this.getEventLog().append(sessionId, "compaction", {
         removedMessageIds: removedIds,
         summary: markerContent,
         messagesBefore: messages.length,
@@ -2354,7 +2356,7 @@ ${truncatedConv}`;
 
   private async ensureSnapshot(cwd: string, sessionId: string): Promise<void> {
     if (!this.currentSnapshotId || this.lastCwd !== cwd) {
-      const snapshotService = getSnapshotService(cwd);
+      const snapshotService = this.getSnapshotService(cwd);
       const snapshot = await snapshotService.create(
         sessionId,
         this.state.iteration,

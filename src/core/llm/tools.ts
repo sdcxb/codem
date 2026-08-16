@@ -2,6 +2,57 @@ import type { ToolDefinition, ToolCallResult, LLMMessage } from "./types";
 import { readFile, writeFile, executeCommand, globSearch, grepSearch, isPathWithinWorkspace } from "../file-api";
 import { getLang } from "../i18n/lang";
 import { getSetting } from "../storage/settings";
+import type { Context } from "../cordis/src/index.ts";
+
+// R4: 可选的 ctx 消费层 — 当 ctx 可用时优先通过 ctx.get() 消费服务
+let _ctx: Context | null = null;
+
+/** R4: 设置 Cordis Context — 传入后工具通过 ctx.get() 消费服务 */
+export function setToolContext(ctx: Context) { _ctx = ctx }
+
+/** R4: 从 ctx 获取文件系统服务 */
+function getFs() {
+  if (_ctx) {
+    try {
+      const fs = _ctx.get('fs')
+      if (fs) return fs
+    } catch {}
+  }
+  return { readFile, writeFile, globSearch, grepSearch, isPathWithinWorkspace }
+}
+
+/** R4: 从 ctx 获取 Shell 服务 */
+function getShell() {
+  if (_ctx) {
+    try {
+      const shell = _ctx.get('shell')
+      if (shell) return shell
+    } catch {}
+  }
+  return { execute: (cmd: string, cwd?: string) => executeCommand(cmd, cwd ? { workspace: cwd } : undefined) }
+}
+
+/** R4: 从 ctx 获取设置服务 */
+function getSettings() {
+  if (_ctx) {
+    try {
+      const settings = _ctx.get('settings')
+      if (settings) return settings
+    } catch {}
+  }
+  return { get: (key: string) => getSetting(key) }
+}
+
+/** R4: 从 ctx 获取 i18n 服务 */
+function getI18n() {
+  if (_ctx) {
+    try {
+      const i18n = _ctx.get('i18n')
+      if (i18n) return i18n
+    } catch {}
+  }
+  return { getLang: () => getLang() }
+}
 import { createLoadSkillTool } from "./tools/load-skill";
 import { createWebSearchTool } from "./tools/web-search";
 import { createReadAttachmentTool } from "./tools/read-attachment";
@@ -1018,7 +1069,9 @@ export function createImageGenTool(): ToolDef {
   };
 }
 
-export function createDefaultToolRegistry(): ToolRegistry {
+export function createDefaultToolRegistry(ctx?: Context): ToolRegistry {
+  // R4: 如果传入了 ctx，设置全局工具上下文
+  if (ctx) setToolContext(ctx)
   const registry = new ToolRegistry();
   registry.register(createBashTool());
   registry.register(createReadFileTool());

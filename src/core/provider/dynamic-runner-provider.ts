@@ -1,7 +1,15 @@
 // @ts-nocheck
 /**
- * Dynamic Runner Provider 插件 — Self-Referential Runtime，可独立加载/卸载/热替换。
- * Agent 运行时通过此服务自行定义和加载插件。
+ * Dynamic Runner Provider 插件 — Self-Referential Runtime。
+ *
+ * ⚠️ STUB — 无真实实现源。当前使用 new Function() 编译运行，缺少安全沙箱。
+ *
+ * 开发计划：
+ * - 使用 Worker 隔离动态代码执行（当前 new Function 不安全）
+ * - 实现插件代码沙箱编译（AST 验证 + 依赖注入）
+ * - 支持 Agent 运行时自行定义和加载插件
+ * - 实现插件生命周期管理（加载/热更新/卸载）
+ * - 支持插件间依赖声明和拓扑排序
  */
 import type { Plugin } from '../cordis/src/index.ts'
 
