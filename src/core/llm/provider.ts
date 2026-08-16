@@ -600,5 +600,19 @@ export function createDefaultProviders(ctx?: Context): ProviderRegistry {
   // P3-31: Ollama (Local LLM — offline mode)
   registry.register(new OllamaProvider());
 
+  // R3-Snapshot: Replay adapter — when CODEM_REPLAY_MODE=1, register a replay provider
+  // that serves recorded LLM responses. Used for deterministic testing without API calls.
+  if (process.env.CODEM_REPLAY_MODE === "1") {
+    try {
+      const { ReplayAdapter } = require("./replay-adapter");
+      const replayAdapter = new ReplayAdapter();
+      // Replay adapter is ready to use — add responses via adapter.addResponse() in tests
+      registry.register(replayAdapter.createProvider());
+      console.log("[provider] Replay adapter registered (CODEM_REPLAY_MODE=1)");
+    } catch (e: any) {
+      console.warn("[provider] Failed to register replay adapter:", e.message);
+    }
+  }
+
   return registry;
 }

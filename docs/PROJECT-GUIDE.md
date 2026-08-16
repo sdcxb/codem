@@ -1,7 +1,9 @@
 # Codem 项目完整说明
 
 > **用途**：新对话快速理解项目全貌、架构、文件关联、当前状态。
-> 创建时间：2026-07-23 | 最后更新：2026-08-15 | 当前版本：v1.0.0（UI/UX 标准化 + 插件系统架构 + 测试体系全面升级 — Cordis DI + Slot Registry + Plugin Loader + 18 Capability Seams + 全能力族拆分 + UI 插件包化 + 全弹窗标准化 + 图标映射体系 + 插件依赖图谱 + 3552 用例全部通过）
+> 创建时间：2026-07-23 | 最后更新：2026-08-16 | 当前版本：v1.1.0（DSH 对标全面整改 + 测试体系深化 + Bug 修复 — Phase A-D 全部完成：孤岛模块接入 10 项 + 重复实现统一 4 项 + 缺失功能补齐 5 项 + 5 个 Bug 修复 + 4 个新测试文件 / 118 用例 + 模糊/属性/契约/链路探针测试方法 — 107 文件 / 3624 用例全部通过）
+>
+> **版本历程概览**：v0.70 基础存储 → v0.80 轮次架构 → v0.87 Worktree/并行 → v0.88 桌面宠物 → v0.89 跨会话委派 → v0.90 P0-P4 全量功能 → v0.91 Coding 工作台 → v0.92 Codex 对标 → v0.93 Vision Proxy → v0.94 配置修复 → v0.95 CLI/API 视觉代理 → v0.96 UI 大改版 → v0.97 Agentic Loop 性能优化 → v0.98 多智能体协同 → v0.99 DSH 全量升级 → v1.0.0 插件系统架构 + UI/UX 标准化 → v1.1.0 DSH 对标整改 + 测试深化
 
 ---
 
@@ -13,7 +15,7 @@
 - **GitHub**：https://github.com/sdcxb/codem
 - **分发**：NSIS `.exe` + WiX `.msi`，一键安装无需依赖
 - **平台**：Windows 优先
-- **版本**：v1.0.0（UI/UX 标准化 + 插件系统架构 + 测试体系全面升级，2026-08-15，Cordis DI + Slot Registry + Plugin Loader + 18 Capability Seams + 全能力族拆分（FS/Shell/Sandbox/Web/Skill/Subagent + 凭证/附件/知识/调度/目标/计划/后台任务）+ UI 插件包化（7 个 UI 插件包）+ 全弹窗标准化（modal-overlay + modal-editor + 统一关闭按钮）+ 图标映射体系（icon-map.ts 7 个图标集 + 运行时完整性测试）+ 插件依赖图谱与级联管控 + 测试体系升级（5 个新测试文件 / 271+ 用例：图标标准化 / 工具触发-调用-执行闭环 / 综合质量套件 / 插件依赖图 / 插件关闭影响）+ 补齐遗漏能力模块（compaction/approval/permissions/hooks/automation + fs-sandbox + tool-todo/ask-user/lsp/run-code/workflow/goal/schedule/knowledge + skin-default/pet/ui-pet + Preset/Bundle/SDK/ACP/Host/Client）。104 文件 / 3552 用例全部通过）
+- **版本**：v1.1.0（DSH 对标全面整改 + 测试体系深化 + Bug 修复，2026-08-16，Phase A-D 全部完成：孤岛模块接入 10 项（compaction-control / output-contract / feedback / type-safety / event-system-strict / cookbook / persistence-provider / replay-adapter / preset-discovery / agent-message-）+ 重复实现统一 4 项（capabilities vs provider / Telemetry-CostTracker / projectedTokens / seam-dsh-compat deprecation）+ 缺失功能补齐 5 项（代理指令分层 / 进程级沙箱 ACL / Dynamic Plugin 工具 / 测试分层框架 / 包不变量检查）+ 5 个 Bug 修复（preset require / fire-and-forget import / TranscriptCache / 网络命令阻断 / 敏感变量）+ 4 个新测试文件 / 118 用例（dsh-integration-full 53 用例 / plugin-disable-impact 18 用例 / functional-chain-closed-loop 12 用例 / extended-test-methods 35 用例：模糊测试 + 属性测试 + 契约测试 + 链路探针）。107 文件 / 3624 用例全部通过）
 
 ---
 
@@ -37,6 +39,10 @@
 | **压缩** | fflate | 技能 ZIP 包解压 |
 | **桌面宠物** | Petdex (MIT License) 集成 | 宠物包格式 + 市场 Manifest API + 精灵图帧动画 |
 | **Tauri 前端 API** | @tauri-apps/api + plugin-dialog + plugin-notification | IPC 通信 + 原生对话框 + 系统通知 |
+| **依赖注入** | Cordis DI 容器 | SlotRegistry + 18 Capability Seam + Plugin Loader |
+| **插件系统** | Plugin Loader + Plugin Market | 拓扑排序加载/卸载 + 生命周期管理 + 插件市场 |
+| **终端** | portable-pty 0.8 (Rust) | PTY 交互式终端 — spawn/write/resize/close |
+| **测试** | Vitest 4 + happy-dom + jsdom | 单元/快照/E2E/模糊/属性/契约/链路探针测试 |
 
 ### 2.2 前端依赖
 
@@ -52,6 +58,11 @@ mammoth (DOCX) + pdfjs-dist (PDF) + xlsx (Excel) + katex (数学公式)
 **devDependencies:** TypeScript 5.6 + Vite 6 + Vitest 4 + happy-dom + jsdom + png-to-ico + sharp
 **v0.96.0 新增:** framer-motion (动画引擎) + shiki (语法高亮) + xlsx (Excel 解析)
 **v0.96.1 新增:** createPortal (React DOM 悬浮窗口渲染)
+**v0.97.0 新增:** portable-pty (PTY 终端交互) + Cordis DI 容器框架
+**v0.98.0 新增:** 多智能体协同架构（Squad/Issue/Inbox/Autopilot 扩展）
+**v0.99.0 新增:** 事件溯源 + 5 层工具管线 + Capability Seam + Telemetry + Ollama Provider + 语音 STT/TTS
+**v1.0.0 新增:** Cordis DI 容器 + Plugin Loader + 18 Capability Seam + UI 插件包化
+**v1.1.0 新增:** compaction-control / output-contract / feedback / type-safety / event-system-strict / runtime-invariants / request-header / postmortem / sandbox-acl / instruction-layers / dynamic-plugin-tools / test-layers / token-tracker / spill-policy / spill-store / surface-manager / repeat-tool-reminder / time-context / preset-discovery / persistence-provider
 
 ### 2.3 Rust 依赖
 
@@ -67,6 +78,7 @@ hostname (设备标识)
 windows (Win32 API: SetWindowPos 单次调用原子设置窗口位置+尺寸)
 portable-pty 0.8 (PTY 交互式终端 — spawn/write/resize/close)
 url 2 (URL 解析 — 浏览器预览面板)
+regex (正则表达式 — 沙箱路径模式匹配)
 ```
 
 ### 2.4 架构总览
@@ -78,12 +90,12 @@ url 2 (URL 解析 — 浏览器预览面板)
 │  │                    React 前端 (SPA)                         │  │
 │  │                                                            │  │
 │  │  App.tsx ─ 主应用 (状态管理 + 事件处理 + handleSend)        │  │
-│  │  ├── Sidebar.tsx ─ 左侧栏 (项目/会话列表/导航)             │  │
-│  │  ├── ChatPanel.tsx ─ 对话面板 (消息列表 + InputArea + P1-P4功能)│  │
+│  │  ├── Sidebar.tsx ─ 左侧栏 (项目/会话列表/导航/Inbox未读角标) │  │
+│  │  ├── ChatPanel.tsx ─ 对话面板 (消息列表 + InputArea + P1-P4) │  │
 │  │  │   ├── MessageBubble.tsx ─ 消息气泡 (memo + 图片画廊 + 视频 + 反馈)│  │
 │  │  │   └── InputArea.tsx ─ 输入区 (底部控制栏 + @提及 + 上下文徽章)│  │
-│  │  ├── RightSidebar.tsx ─ 右侧栏 (活跃任务/GitInfoPanel)     │  │
-│  │  ├── SettingsPanel.tsx ─ 设置面板 (10个Tab，含宠物)        │  │
+│  │  ├── RightSidebar.tsx ─ 右侧栏 (文件浏览器/活跃任务/GitInfo) │  │
+│  │  ├── SettingsPanel.tsx ─ 设置面板 (10+Tab，含宠物/CodeGraph) │  │
 │  │  ├── PetWindowApp.tsx ─ 独立宠物窗口 (透明/置顶/精灵图动画)  │  │
 │  │  ├── PetSprite.tsx ─ 宠物精灵图帧动画渲染                    │  │
 │  │  ├── PetMarketDialog.tsx ─ 宠物市场 (Petdex API)             │  │
@@ -91,23 +103,55 @@ url 2 (URL 解析 — 浏览器预览面板)
 │  │  └── DreamLayout.tsx / HubLayout.tsx ─ 皮肤布局            │  │
 │  │                                                            │  │
 │  │  核心引擎层 (src/core/)                                     │  │
-  │  │  ├── llm/ ─ LLM 引擎 (Provider/AgenticLoop/Tools/Memory/Guidance)│  │
+│  │  ├── llm/ ─ LLM 引擎 (Provider/AgenticLoop/Tools/Spill/     │  │
+│  │  │              TokenTracker/CompactionControl/             │  │
+│  │  │              RuntimeInvariants/RequestHeader/            │  │
+│  │  │              Postmortem/AgentMessageQueue/               │  │
+│  │  │              OutputContract/Feedback/TypeSafety/         │  │
+│  │  │              EventSystemStrict/Cookbook/                 │  │
+│  │  │              SurfaceManager/RepeatToolReminder/          │  │
+│  │  │              TimeContext/TestLayers/                     │  │
+│  │  │              DynamicPluginTools)                         │  │
 │  │  ├── subagent/ ─ 子智能体 spawn/wait                       │  │
 │  │  ├── context/ ─ 上下文管理 + token计数 + 压缩              │  │
 │  │  ├── memory/ ─ 三级记忆 (project/session/global)          │  │
 │  │  ├── permission/ ─ 权限系统 + 安全模式                     │  │
-│  │  ├── environment/ ─ Git Worktree + 执行模式                │  │
+│  │  ├── environment/ ─ Git Worktree + 执行模式 + FileChange    │  │
 │  │  ├── pet/ ─ 桌面宠物 (Petdex集成/状态映射/气泡/市场)        │  │
-│  │  ├── automation/ ─ 自动任务 (定时器/文件监听)              │  │
+│  │  ├── automation/ ─ 自动任务 (定时器/文件监听/Cron引擎)     │  │
 │  │  ├── knowledge/ ─ 知识管理 (RAG + 笔记 + 闪卡 + 图谱 + PPT)  │  │
-│  │  ├── skill/ ─ 技能系统 (SKILL.md + 注册)                   │  │
-│  │  ├── mcp/ ─ MCP 协议                                       │  │
+│  │  ├── skill/ ─ 技能系统 (SKILL.md + 注册 + 安全沙箱)        │  │
+│  │  ├── mcp/ ─ MCP 协议 + CodeGraph + MCP市场                │  │
 │  │  ├── theme/ ─ 皮肤系统 (默认/Hub/梦幻)                     │  │
-│  │  ├── storage/ ─ SQLite 持久化 (含快捷短语/草稿/Todo/反馈表)  │  │
-│  │  ├── prompt/ ─ 系统提示词构建                              │  │
+│  │  ├── storage/ ─ 事件溯源 + SQLite 持久化 (EventLog/         │  │
+│  │  │              EventProjection/SessionEvents/             │  │
+│  │  │              PersistenceProvider/SyncEngine)            │  │
+│  │  ├── prompt/ ─ 系统提示词构建 + 指令分层 + i18n模板        │  │
 │  │  ├── settings/ ─ 数据层设置 (SettingsSource 层级)           │  │
 │  │  ├── recovery/ ─ 会话恢复                                  │  │
-│  │  └── i18n/ ─ 中英文双语                                    │  │
+│  │  ├── i18n/ ─ 中英文双语                                    │  │
+│  │  ├── agent/ ─ Agent定义 + PresetDiscovery                  │  │
+│  │  ├── session/ ─ 跨会话委派编排 (Bus/Orchestrator/Executor)  │  │
+│  │  ├── sandbox/ ─ 进程级沙箱 ACL (路径/命令/环境变量过滤)    │  │
+│  │  ├── hooks/ ─ Hook 系统 (GuardHook/FinalizeHook)           │  │
+│  │  ├── goal/ ─ Goal 自动续行 (create/get/update_goal)        │  │
+│  │  ├── issue/ ─ Issue 追踪 + 看板 (7状态/4优先级)            │  │
+│  │  ├── squad/ ─ 多智能体协同 (Leader-Member/Roster协议)      │  │
+│  │  ├── inbox/ ─ 全局通知聚合中心 (6分类)                     │  │
+│  │  ├── telemetry/ ─ 遥测采集 + PerformanceDashboard          │  │
+│  │  ├── cicd/ ─ CI/CD 管理 (GitHub Actions)                   │  │
+│  │  ├── cordis/ ─ Cordis DI 容器 (依赖注入框架)               │  │
+│  │  ├── slots/ ─ SlotRegistry (18 Capability Seam 注册表)     │  │
+│  │  ├── plugin-loader/ ─ 插件加载器 (拓扑排序/生命周期)       │  │
+│  │  ├── plugin-market/ ─ 插件市场 (Manifest/安装/卸载)        │  │
+│  │  ├── provider/ ─ 46 个 Provider 实现 (Canonical 实现)       │  │
+│  │  ├── capabilities/ ─ 能力族接口定义 (Provider 接口)        │  │
+│  │  ├── seam/ ─ 遗留 Seam (@deprecated → provider/)          │  │
+│  │  ├── dsh-compat/ ─ DSH 兼容层 (@deprecated)              │  │
+│  │  ├── ui-plugins/ ─ 14 个 UI 插件包                        │  │
+│  │  ├── consumer/ ─ Consumer 工具                             │  │
+│  │  ├── file-mention.ts ─ 文件提及解析                        │  │
+│  │  └── model-config.ts ─ 模型配置集中管理                    │  │
 │  │                                                            │  │
 │  │  状态管理                                                   │  │
 │  │  ├── store.ts (useAppStore) ─ 消息/流式/工具/步骤进度      │  │
@@ -118,7 +162,8 @@ url 2 (URL 解析 — 浏览器预览面板)
 │  ┌───────────────────────┴─────────────────────────────────────┐ │
 │  │              Rust 后端 (src-tauri/src/lib.rs)               │ │  │  文件操作 / 命令执行 / HTTP代理 / 删除到回收站 /           │ │
 │  │  窗口管理 / Mica毛玻璃 / 路径检查 / 安装器检测 /            │ │
-│  │  宠物窗口管理 / 原生右键菜单 / 阴影控制 / 系统托盘          │ │
+│  │  宠物窗口管理 / 原生右键菜单 / 阴影控制 / 系统托盘 /        │ │
+│  │  PTY 终端 (portable-pty) / 浏览器窗口                       │ │
 │  └─────────────────────────────────────────────────────────────┘ │
 │                          │                                        │
 │  ┌───────────────────────┴─────────────────────────────────────┐ │
@@ -127,19 +172,32 @@ url 2 (URL 解析 — 浏览器预览面板)
 │  │  memory / notebooks / notebook_sources / notebook_chunks    │ │
 │  │  notes / note_links / flashcards / graph_nodes / graph_edges │ │
 │  │  quick_phrases / prompt_drafts / todo_lists / message_feedback│ │
+│  │  session_events / goals / jobs / telemetry_events /          │ │
+│  │  agent_profiles / agent_messages / needs_you_pending /       │ │
+│  │  turn_file_changes / issues / issue_comments / inbox_items /  │ │
+│  │  sync_state / notebook_groups                                 │ │
 │  └─────────────────────────────────────────────────────────────┘ │
 └──────────────────────────────────────────────────────────────────┘
 
 外部 API：
 ├── MiMo CLI (小米账户登录 → CLI 模式)
-├── OpenAI 兼容 API (多 Provider: DeepSeek/OpenAI/自定义)
+├── OpenAI 兼容 API (多 Provider: DeepSeek/OpenAI/MiMo/自定义)
+├── Ollama 本地 LLM (REST API + 离线推理)
 ├── Embedding API (OpenAI/自定义 + 本地 ONNX 回退)
-└── Petdex Manifest API (宠物市场目录 + 图片代理下载)
+├── Petdex Manifest API (宠物市场目录 + 图片代理下载)
+├── MCP 市场 (30+ 预设 MCP 服务器目录)
+└── CodeGraph MCP Server (代码知识图谱)
 
 ★ 宠物窗口：独立 Tauri 透明窗口 (pet)
   ├── PetWindowApp.tsx ─ 精灵图 + 气泡 + 拖拽 + 右键
   ├── 通过 Tauri 事件与主窗口双向通信
   └── Rust: create_pet_window / close_pet_window / show_pet_menu
+
+★ Cordis DI 容器：v1.0.0 引入
+  ├── SlotRegistry ─ 18 Capability Seam 注册表
+  ├── PluginLoader ─ 拓扑排序 + 加载/卸载 + 生命周期
+  ├── 46 个 Provider 实现 (provider/ 目录)
+  └── 14 个 UI 插件包 (ui-plugins/ 目录)
 ```
 
 ---
@@ -467,17 +525,125 @@ mimo-gui/
 │   │   │   ├── pet-manager.ts    # 本地宠物安装/加载/卸载
 │   │   │   ├── pet-market-client.ts # Petdex 市场 API 客户端
 │   │   │   └── index.ts          # 导出
+│   │   │
+│   │   ├── session/             # 跨会话委派编排（★ v0.89 新增）
+│   │   │   ├── bus.ts            # SessionMessageBus
+│   │   │   ├── orchestrator.ts   # DelegationOrchestrator
+│   │   │   ├── executor.ts       # executeSessionTurn + EventLog 双写
+│   │   │   ├── delegation-storage.ts # 委派存储
+│   │   │   ├── tools.ts          # 委派工具
+│   │   │   ├── types.ts          # 类型
+│   │   │   └── index.ts          # 导出
+│   │   │
+│   │   ├── sandbox/              # 进程级沙箱 ACL（★ v1.1.0 新增）
+│   │   │   └── sandbox-acl.ts    # 前端 ACL 层（路径/命令/环境变量过滤 + strict 策略）
+│   │   │
+│   │   ├── hooks/               # Hook 系统（★ v0.99 新增）
+│   │   │   ├── hook-manager.ts   # Hook 管理器
+│   │   │   └── hook-types.ts     # GuardHook / FinalizeHook 类型
+│   │   │
+│   │   ├── goal/                # Goal 自动续行（★ v0.99 新增）
+│   │   │   └── goal.ts           # create/get/update_goal + goals DB 表
+│   │   │
+│   │   ├── issue/               # Issue 追踪 + 看板（★ v0.98 新增）
+│   │   │   ├── issue.ts          # 7 状态 + 4 优先级
+│   │   │   ├── issue-storage.ts  # Issue 存储
+│   │   │   ├── issue-tools.ts    # 4 个 LLM 工具
+│   │   │   └── index.ts
+│   │   │
+│   │   ├── squad/               # 多智能体协同（★ v0.98 新增）
+│   │   │   ├── squad.ts          # Leader-Member + Roster 协议
+│   │   │   ├── squad-tools.ts   # 3 个 LLM 工具
+│   │   │   └── index.ts
+│   │   │
+│   │   ├── inbox/              # 全局通知聚合（★ v0.98 新增）
+│   │   │   ├── inbox.ts          # 6 分类通知
+│   │   │   ├── inbox-storage.ts  # 通知存储
+│   │   │   └── index.ts
+│   │   │
+│   │   ├── telemetry/          # 遥测采集（★ v0.99 新增）
+│   │   │   └── telemetry.ts     # TelemetryCollector + PerformanceDashboard
+│   │   │
+│   │   ├── cicd/               # CI/CD 管理（★ v0.99 新增）
+│   │   │   ├── pipeline.ts      # GitHub Actions workflow 生成
+│   │   │   └── index.ts
+│   │   │
+│   │   ├── cordis/             # Cordis DI 容器（★ v1.0.0 新增）
+│   │   │   ├── src/             # DI 容器核心
+│   │   │   └── cosmokit/src/    # 工具集
+│   │   │
+│   │   ├── slots/              # SlotRegistry（★ v1.0.0 新增）
+│   │   │   └── index.ts        # 18 Capability Seam 注册表
+│   │   │
+│   │   ├── plugin-loader/      # 插件加载器（★ v1.0.0 新增）
+│   │   │   └── index.ts        # 拓扑排序 + 加载/卸载
+│   │   │
+│   │   ├── plugin-market/      # 插件市场（★ v1.0.0 新增）
+│   │   │   └── ...
+│   │   │
+│   │   ├── provider/           # 46 个 Provider 实现（★ v1.0.0 Canonical 实现）
+│   │   │   ├── index.ts         # Provider 注册导出
+│   │   │   ├── fs-provider.ts   # 文件系统
+│   │   │   ├── shell-provider.ts # Shell
+│   │   │   ├── sandbox-provider.ts # 沙箱
+│   │   │   ├── llm-provider.ts  # LLM
+│   │   │   └── ... (43 个更多 Provider)
+│   │   │
+│   │   ├── capabilities/        # 能力族接口定义（★ v1.0.0 — Provider 接口定义）
+│   │   │   ├── index.ts         # 统一导出
+│   │   │   ├── fs/              # 文件系统能力族
+│   │   │   ├── shell/           # Shell 能力族
+│   │   │   ├── sandbox/         # 沙箱能力族
+│   │   │   ├── subagent/        # 子智能体能力族
+│   │   │   ├── skill/           # 技能能力族
+│   │   │   ├── web/             # Web 能力族
+│   │   │   ├── extensions/      # 扩展能力族
+│   │   │   ├── extra/           # 额外能力族
+│   │   │   ├── infra/           # 基础设施能力族
+│   │   │   └── misc/            # 杂项能力族
+│   │   │
+│   │   ├── seam/               # 遗留 Seam（@deprecated → provider/）
+│   │   │   ├── types.ts        # ServiceDefinition/Provider/Consumer
+│   │   │   ├── local-fs-provider.ts  # @deprecated
+│   │   │   └── local-shell-provider.ts # @deprecated
+│   │   │
+│   │   ├── dsh-compat/         # DSH 兼容层（@deprecated）
+│   │   │   ├── dsh-types.ts
+│   │   │   └── index.ts
+│   │   │
+│   │   ├── ui-plugins/         # 14 个 UI 插件包（★ v1.0.0 新增）
+│   │   │   └── ...
+│   │   │
+│   │   ├── consumer/           # Consumer 工具
+│   │   │   └── index.ts
+│   │   ├── file-mention.ts     # 文件提及解析
+│   │   └── model-config.ts     # 模型配置集中管理（MIMO_MODELS/API_MODELS/getModelsForMode）
 │   │
 │   ├── hooks/                    # React Hooks（v0.96 新增目录）
 │   │   ├── useDraftPersistence.ts # 草稿持久化 Hook
-│   │   └── usePaneResize.ts      # 面板尺寸调整 Hook
+│   │   ├── usePaneResize.ts      # 面板尺寸调整 Hook
+│   │   ├── useSpeechRecognition.ts # 语音识别 Hook（v0.99 新增）
+│   │   └── useSpeechSynthesis.ts  # 语音合成 Hook（v0.99 新增）
 │   │
-│   └── test/                     # 测试文件
-│       ├── ui-batch-a-d.test.ts  # 188个UI批量测试
+│   └── test/                     # 测试文件（107 文件 / 3624 用例）
+│       ├── ui-batch-a-d.test.ts  # UI 批量测试
 │       ├── security-mode.test.ts # 安全模式测试
 │       ├── git-env-config.test.ts # Git环境配置测试
 │       ├── pet-system.test.ts    # 宠物系统测试
-│       └── ...                   # 其他测试
+│       ├── event-sourcing.test.ts # 事件溯源测试
+│       ├── tool-pipeline.test.ts  # 5层工具管线测试
+│       ├── codegraph-integration.test.ts # CodeGraph 集成测试（49 用例）
+│       ├── icon-standardization.test.ts # 图标标准化测试（97 用例）
+│       ├── trigger-call-execute-loop.test.ts # 工具管线 5 层闭环测试
+│       ├── extended-quality-suite.test.tsx # 快照+性能+交互+i18n 测试（80 用例）
+│       ├── plugin-dependency-graph.test.ts # 插件依赖图谱测试
+│       ├── plugin-disable-impact.test.ts # 插件禁用影响测试
+│       ├── dsh-integration-full.test.ts # DSH 对标整改集成测试（53 用例）
+│       ├── functional-chain-closed-loop.test.ts # 功能链路闭环测试（12 用例）
+│       ├── extended-test-methods.test.ts # 模糊+属性+契约+链路探针测试（35 用例）
+│       ├── r3-snapshot-tests.ts  # R3 快照测试
+│       ├── smoke-test.test.ts    # 冒烟测试（30 用例）
+│       └── ...                   # 其他测试（共 107 文件）
 │
 ├── src-tauri/                    # Rust 后端
 │   ├── src/
@@ -490,13 +656,17 @@ mimo-gui/
 │   │   │                         #   resize_pet_window / resize_pet_window_anchored
 │   │   │                         #   set_pet_window_geometry / hide_to_tray / show_from_tray
 │   │   │                         #   quit_app / update_tray_language
+│   │   │                         #   create_browser_window (v0.91 浏览器预览)
+│   │   │                         #   pty_spawn / pty_write / pty_resize / pty_close (v0.91 PTY 终端)
 │   │   └── main.rs               # 程序入口
 │   ├── Cargo.toml                # Rust 依赖
 │   ├── tauri.conf.json           # Tauri 配置（窗口/CSP/Bundle/NSIS/WiX）
 │   └── capabilities/             # Tauri 权限配置
 │
-├── docs/                         # 文档目录（详见第四节）
-├── .wecode-ref/                  # 对标项目参考（微博 wecode 客户端）
+├── docs/                         # 文档目录（详见第五节）
+├── scripts/                      # 脚本
+│   └── verify-package-invariants.ts # 包不变量检查（v1.1.0 新增）
+├── .wecode-ref/                  # ⚠ 对标参考项目（微博 wecode 客户端），非本项目代码，仅供对标分析参考
 ├── public/                       # 静态资源
 │   ├── models/                   # ONNX 模型（Xenova/all-MiniLM-L6-v2）
 │   ├── wasm/                     # WASM 运行时
@@ -506,6 +676,11 @@ mimo-gui/
 ├── vite.config.ts                # Vite 配置
 ├── tsconfig.json                # TypeScript 配置
 ├── vitest.config.ts             # 测试配置
+├── vitest.e2e.config.ts         # E2E 测试配置（v0.99 新增）
+├── vitest.snapshot.config.ts    # 快照测试配置（v0.99 新增）
+├── knip.json                    # 死代码检测配置（v0.99 新增）
+├── .jscpd.json                  # 重复代码检测配置（v0.99 新增）
+├── .github/workflows/ci.yml     # CI Workflow（v0.96.2 新增）
 ├── THIRD_PARTY_NOTICES.md        # 开源声明（Petdex MIT License）
 └── README.md                     # 项目 README
 ```
@@ -695,7 +870,41 @@ Rust 后端 (lib.rs):
 | **PROJECT-GUIDE.md** | 📌本项目 | **本文档**，完整项目说明 | ✅ 最新 |
 | **PROJECT_STATUS.md** | 项目简介 | 项目概述+架构+功能清单+版本历史 | v0.88 |
 | **PROJECT-CONTEXT.md** | 旧版交接 | v0.79 时的交接文档，已被 PROJECT_STATUS 替代 | 📦 归档 |
-| **TODO.md** | 待办跟踪 | Phase 0-G 全部完成记录 + v0.88 宠物系统 + v0.89.3后P0-P4开发分支 | ✅ 最新 |
+| **TODO.md** | 待办跟踪 | Phase 0-G 全部完成记录 + v0.88-v1.1.0 全部版本变更 | ✅ 最新 |
+
+| **deepseek-harness-analysis.md** | 对标分析 | DSH 第一轮对标分析文档 | ✅ 最新 |
+| **deepseek-harness-round2.md** | 对标分析 | DSH 第二轮对标分析文档 | ✅ 最新 |
+| **dsh-round3-analysis.md** | 对标分析 | DSH 第三轮深度对标分析文档 | ✅ 最新 |
+| **dsh-audit-final-report.md** | 审计报告 | DSH 对标整改最终审计报告（Phase A-D 全部完成） | ✅ 最新 |
+| **dsh-gap-coverage-final.md** | 对标分析 | DSH 差距覆盖最终文档 | ✅ 最新 |
+| **dsh-improvement-dev-plan.md** | 开发计划 | DSH 整改开发计划 | ✅ 已实现 |
+| **dsh-post-refactor-dev-plan.md** | 开发计划 | DSH 重构后开发计划 | ✅ 已实现 |
+| **dsh-post-refactor-gap-analysis.md** | 对标分析 | DSH 重构后差距分析 | ✅ 最新 |
+| **dsh-skill-fusion-plan.md** | 计划文档 | DSH 技能融合计划 | ✅ 最新 |
+| **dsh-skill-gap-analysis.md** | 对标分析 | DSH 技能差距分析 | ✅ 最新 |
+| **plugin-reality-audit.md** | 审计文档 | 插件现实审计（1111行） | ✅ 最新 |
+| **harness-comparative-analysis.md** | 对标分析 | Harness 比较分析 | ✅ 最新 |
+| **BETTER-HARNESS-INTEGRATION-ANALYSIS.md** | 对标分析 | 更好的 Harness 集成分析 | ✅ 最新 |
+
+| **CHANGELOG-v0.70.md** | 变更日志 | v0.70 变更记录 | 📦 归档 |
+| **CHANGELOG-v0.80.md** | 变更日志 | v0.80 变更记录 | 📦 归档 |
+| **CHANGELOG-v0.86.md** | 变更日志 | v0.86 变更记录 | 📦 归档 |
+| **CHANGELOG-v0.87.md** | 变更日志 | v0.87 变更记录 | 📦 归档 |
+| **CHANGELOG-v0.88.md** | 变更日志 | v0.88 变更记录 | 📦 归档 |
+| **CHANGELOG-v0.89.3.md** | 变更日志 | v0.89.3 变更记录 | 📦 归档 |
+| **CHANGELOG-v0.89.md** | 变更日志 | v0.89 变更记录 | 📦 归档 |
+| **CHANGELOG-v0.98.0.md** | 变更日志 | v0.98.0 变更记录 | ✅ 最新 |
+| **CHANGELOG-v1.0.0.md** | 变更日志 | v1.0.0 变更记录 | ✅ 最新 |
+| **CHANGELOG-v1.1.0.md** | 变更日志 | v1.1.0 变更记录（DSH 对标整改 + 测试深化 + Bug 修复） | ✅ 最新 |
+
+| **defensive-patterns.md** | 防御文档 | 7+ 条防御规则文档化 | ✅ 最新 |
+| **adr/0001-event-sourcing.md** | 架构决策记录 | 事件溯源 ADR | ✅ 最新 |
+| **adr/0002-tool-pipeline.md** | 架构决策记录 | 5层工具管线 ADR | ✅ 最新 |
+| **adr/0003-plan-mode-alignment.md** | 架构决策记录 | Plan Mode 对齐 ADR | ✅ 最新 |
+| **postmortem/README.md** | 事故复盘 | 事故复盘文档体系 | ✅ 最新 |
+| **p3-roadmap.md** | 路线图 | P3 远期路线图 | ✅ 最新 |
+| **coding-improvement-final.md** | 改进计划 | 编码改进最终版（598行） | ✅ 最新 |
+| **release-notes-v0.97.0-patch.md** | 补丁说明 | v0.97.0 补丁修复说明 | ✅ 最新 |
 | **DEV-PLAN-UNIFIED.md** | 主线计划 | 统一开发计划（1172行），整合了 ROADMAP + Benchmark + TODO | 📦 参考 |
 | **ROADMAP-codex-alignment.md** | 历史路线图 | Codex 对标改进路线图（Phase 0-4 已完成） | 📦 归档 |
 | **TOOLS-SKILLS-BENCHMARK.md** | 对标分析 | 工具/技能/MCP 对标分析（66K，Phase B-D 已完成） | 📦 归档 |
@@ -730,13 +939,21 @@ Rust 后端 (lib.rs):
 
 **新对话只需要阅读：**
 1. `PROJECT-GUIDE.md`（本文档）— 完整理解项目
-2. `TODO.md` — 了解当前待办（含未发布开发分支变更）
-3. `WECODE-REF-GAP-ANALYSIS.md` — 了解对标分析发现的功能缺失
-4. `IMPLEMENTATION-PLAN-FULL.md` — 了解 P0-P4 实施计划
-5. `CHANGELOG-v0.89.md` — 了解最新发布版本变更（v0.96.0 变更见 README.md 更新日志）
-6. `TEST-CASES-REGRESSION-V2.md` — 了解回归测试用例（含冒烟测试）
+2. `TODO.md` — 了解当前待办（含 v1.1.0 变更）
+3. `CHANGELOG-v1.1.0.md` — 了解最新发布版本变更
+4. `dsh-audit-final-report.md` — 了解 DSH 对标整改审计结果
+5. `WECODE-REF-GAP-ANALYSIS.md` — 了解对标分析发现的功能缺失
+6. `IMPLEMENTATION-PLAN-FULL.md` — 了解 P0-P4 实施计划
+7. `TEST-CASES-REGRESSION-V2.md` — 了解回归测试用例（含冒烟测试）
 
 **其余文档均为历史归档或已完成计划的记录，不影响进度判断。**
+
+**DSH 对标系列文档阅读顺序：**
+1. `deepseek-harness-analysis.md` — 第一轮对标
+2. `deepseek-harness-round2.md` — 第二轮对标
+3. `dsh-round3-analysis.md` — 第三轮深度对标
+4. `dsh-audit-final-report.md` — 整改审计报告（最终）
+5. `dsh-gap-coverage-final.md` — 差距覆盖最终文档
 
 ---
 
@@ -768,6 +985,8 @@ Rust 后端 (lib.rs):
 | v0.97.0 | 2026-08-12 | Agentic Loop性能优化(Tool Result磁盘持久化+ToolSearch延迟加载+Micro-Compact摘要+TranscriptCache修复) + 工具系统增强(工具中断行为+Bash分析器+Hooks系统+TodoWrite增强+Forked Agent记忆提取) + 技能市场三大新源接入(ClawHub.ai/Skills.sh/SkillHub CLI) + 技能发布功能。**补丁修复：** ctx.abort空指针 + Session持久化缺失(executionMode/worktreePath/worktreeBranch) + preserveExecutor类型错误 + 移除57个假测试 + 重写61个源码字符串匹配测试为真实行为测试。全量84文件/2924用例通过 |
 | v0.98.0 | 2026-08-13 | 多智能体协同架构 — TaskCenter统一任务管理中心(概览/委派/子智能体/自动化4Tab) + Squad多智能体协同(Leader-Member+Roster协议+3个LLM工具+dispatch路由) + Issue追踪+看板(7状态+4优先级+评论+看板拖拽+4个LLM工具) + Autopilot扩展(Cron引擎+Issue状态触发器) + Inbox全局通知聚合中心(6分类+事件填充+Sidebar未读角标) + AgentManager扩展+死代码清理。5张新DB表、7个新LLM工具、8Tab全景、30新文件、20修改文件。全量87文件/3057用例通过 |
 | v0.99.0 | 2026-08-14 | **对标DeepSeek Harness全量升级** — 事件溯源会话日志(SessionEvent+deriveMessages+Replay+Fork+Projection) + 5层工具管线(pre-execute/monotonic-guards/execute/post-execute/finalize) + Plan Mode增强(exit_plan_mode工具+对齐dsh 6段提示词规范+PlanApprovalCard审批UI) + Capability Seam(ServiceDefinition/Provider/Consumer三角色+LocalFs/LocalShell Provider+SeamRegistry) + Code Mode(run_code TypeScript执行器+ToolSDK) + Session Query(FTS5全文搜索) + Goal自动续行(create/get/update_goal+Goals表) + Workflow编排(JavaScript fan-out子智能体) + Snapshot测试(ReplayAdapter录制/回放) + Telemetry(OpenTelemetry采集+telemetry_events表+PerformanceDashboard) + Bash后台模式(JobManager+job_list/output/kill) + 终端LLM工具组(terminal_open/send/signal/close) + i18n提示词重构(prompt.ts→i18n-templates.ts双语模板) + MCP市场(catalog+一键安装+分类搜索) + 语音STT/TTS(useSpeechRecognition/useSpeechSynthesis浏览器原生) + Ollama本地LLM Provider(REST API+动态模型发现+离线推理) + CI/CD管理(GitHub Actions workflow生成+运行监控+重试/取消) + 技能安全沙箱(内容预检+哈希签名+权限声明+安装审计) + 远程同步引擎(seq增量同步+Supabase/REST后端) + 代码质量工具(knip死代码+jscpd重复检测) + 测试分层补齐(snapshot+e2e配置) + 防御性文档+ADR+Postmortem体系。25文件修改(+1721/-313行)，50+新文件。全量99文件/3234用例全部通过。**补丁修复（同版本重新构建）：** provider.ts toAPIMessage补全ContentBlock tool_use/tool_result块处理（事件投影路径工具调用信息丢失修复）+ agentic-loop.ts事件投影消息映射补全tool_calls属性（下游优先级排序/孤儿过滤/micro-compact全链路修复）+ tools.ts readViaSeam+local-fs-provider.ts readFile相对路径cwd解析修复。全量99文件/3235用例全部通过 |
+| v1.0.0 | 2026-08-15 | **UI/UX 标准化 + 插件系统架构 + 测试体系全面升级** — P4 Cordis DI容器+SlotRegistry+PluginLoader+18 Capability Seam + P5 全能力族拆分(13个独立能力族) + P6 UI插件包化+插件市场基础设施(7个UI插件包+Self-Referential Runtime+插件市场Manifest) + 全弹窗UI/UX标准化(modal-overlay+modal-editor统一结构) + 图标映射体系(7图标集+ToolEmojis+消除直接lucide-react导入) + CSS样式标准化(硬编码→CSS变量+Tailwind→size属性) + 核心插件保护(riskLevel+locked+core) + 5个新测试文件/271+用例(图标标准化97用例+工具管线闭环30+用例+质量套件80用例+插件依赖图24+用例+插件禁用影响40+用例) + SlotBridge泛型类型修复+恢复noImplicitAny严格检查。67文件修改(+1112/-641行)。全量100文件/3552用例通过 |
+| v1.1.0 | 2026-08-16 | **DSH对标全面整改 + 测试体系深化 + Bug修复** — Phase A-D全部完成：孤岛模块接入10项(compaction-control/output-contract/feedback/type-safety/event-system-strict/cookbook/persistence-provider/replay-adapter/preset-discovery/agent-message-queue) + 重复实现统一4项(capabilities vs provider/Telemetry-CostTracker/projectedTokens/seam-dsh-compat deprecation) + 缺失功能补齐5项(代理指令分层/进程级沙箱ACL/Dynamic Plugin工具/测试分层框架/包不变量检查) + 5个Bug修复(ESM require→import/fire-and-forget .catch()/TranscriptCache.clear/网络命令阻断/敏感变量) + 4个新测试文件/118用例(dsh-integration-full 53+plugin-disable-impact 18+functional-chain-closed-loop 12+extended-test-methods 35:模糊/属性/契约/链路探针) + 消息存储双轨制统一(C5) + 系统提示词分层加载(D1)。22文件修改，24新文件。全量107文件/3624用例通过 |
 
 ### 6.2 v0.90.0 已发布功能（P0-P4 全量功能，commit 7435919，2026-07-31）
 
@@ -954,11 +1173,18 @@ Rust 后端 (lib.rs):
 | **P0-P4 组件集成项** | ✅ 已完成 | GenerateModeSelector/ResolutionSelector已渲染（InputArea多模态面板）/ SourceSelector已集成 / QuickAccessCards已集成 / CorrectionResultPanel已集成 / ClarificationForm已集成 / PipelineNextStepDialog已集成 / SkillAutocomplete由SlashCommandMenu覆盖 / note-operations已注册（tools.ts L922） |
 | **UI 设计完全版改造** | ✅ 已完成 | 自定义缓动曲线（cubic-bezier）/ transition:all清零（三皮肤51处）/ 按钮按压反馈scale(0.97) / 弹窗transform-origin / 可访问性reduced-motion+reduced-transparency / 材质分层blur(20px)+blur(12px) / @starting-style入场现代化 |
 | **v0.96 UI 大改版** | ✅ 已发布 | v0.96.0 发布，主对话窗口样式对标 frakio-work/wecode + 内联 Diff 批量审批 + 三皮肤暗色模式修复 + 梦幻皮肤自适应主题 + 富内容渲染系统 + Shiki 语法高亮 + 39 个新组件 |
+| **v0.96.1 文件浏览器+Logo** | ✅ 已发布 | v0.96.1 发布，右侧栏文件浏览器体系重构 + 文件拖拽修复 + 全格式文件预览 + 应用Logo替换 + NSIS安装器图标修复 |
+| **v0.96.2 CodeGraph+CI** | ✅ 已发布 | v0.96.2 发布，CodeGraph 代码知识图谱集成 + 测试套件改造(表面→行为) + CI Workflow |
+| **v0.97.0 Agentic Loop 性能** | ✅ 已发布 | v0.97.0 发布，Tool Result 磁盘持久化 + ToolSearch 延迟加载 + Micro-Compact 摘要 + TranscriptCache 修复 + 工具系统增强 + 技能市场三大新源 + 技能发布 |
+| **v0.98.0 多智能体协同** | ✅ 已发布 | v0.98.0 发布，TaskCenter 统一任务管理 + Squad 多智能体协同 + Issue 追踪+看板 + Autopilot 扩展 + Inbox 全局通知 + 5张新DB表 + 7个新LLM工具 |
+| **v0.99.0 DSH 全量升级** | ✅ 已发布 | v0.99.0 发布，事件溯源 + 5层工具管线 + Plan Mode增强 + Capability Seam + Code Mode + Session Query + Goal 续行 + Workflow 编排 + Snapshot测试 + Telemetry + Bash后台 + 终端工具组 + i18n提示词 + MCP市场 + 语音STT/TTS + Ollama + CI/CD管理 + 技能安全沙箱 + 远程同步 + 代码质量工具 |
+| **v1.0.0 插件系统+UI标准化** | ✅ 已发布 | v1.0.0 发布，Cordis DI 容器 + Plugin Loader + 18 Capability Seam + UI 插件包化 + 全弹窗 UI/UX 标准化 + 图标映射体系 + CSS 样式标准化 + 5个新测试文件/271+用例 + SlotBridge 泛型类型修复 |
+| **DSH 对标全面整改** | ✅ 已完成 | v1.1.0 发布，Phase A-D 全部完成（孤岛模块接入 10 项 + 重复实现统一 4 项 + 缺失功能补齐 5 项）+ 5 Bug 修复 + 4 新测试文件 / 118 用例 |
 | **Phase E: Work 模式拆分** | ⏳ 远期 | Codex/Work 双模式切换（E1-E7） |
 | **MSI 中文向导** | ⏳ | WiX 多语言配置（zh-CN + en-US） |
-| **更多 Provider 测试** | ⏳ | 目前主要测试 DeepSeek + MiMo |
-| **对话搜索完善** | ⏳ | 当前 SearchDialog 仅搜索项目名，未搜索对话内容 |
-| **Vision API 图片理解** | ⏳ | 将粘贴的图片数据传给 vision 模型 |
+| **更多 Provider 测试** | ⏳ | 目前主要测试 DeepSeek + MiMo + Ollama |
+| **对话搜索完善** | ✅ 已完成 | v0.99.0 Session Query（FTS5 全文搜索）已实现 |
+| **Vision API 图片理解** | ✅ 已完成 | v0.93.0 Vision Proxy 视觉代理全链路已实现 |
 
 ### 6.5 关键技术决策
 
@@ -1044,6 +1270,57 @@ Rust 后端 (lib.rs):
 54. **Framer Motion 动画引擎**：Toast/Drawer/BootSplash 等组件统一使用 Framer Motion 管理入场/退场动画，替代 CSS animation
 55. **消息容器居中限宽**：`.messages-container` 添加 `max-width` + `margin: auto`，大屏下消息不会过宽，视觉节奏更清晰
 
+#### J. v0.97 Agentic Loop 性能优化
+
+56. **Tool Result 磁盘持久化**：`tool-result-storage.ts` 将工具执行结果持久化到磁盘，减少重复工具调用的 token 消耗
+57. **ToolSearch 延迟加载**：工具定义懒加载，仅在 LLM 首次请求时注册，减少初始化开销
+58. **Micro-Compact 摘要**：`micro-compact.ts` 在完整压缩之前先做轻量级摘要，减少 LLM 调用次数
+59. **TranscriptCache**：`transcript-cache.ts` SHA-256 键缓存 10min TTL，相同请求直接命中缓存
+60. **工具中断行为**：工具执行过程中支持中断（ctx.abort），清理半完成状态
+61. **Bash 分析器**：`bash-analyzer.ts` 分析 bash 命令意图（读/写/网络/危险），辅助安全决策
+
+#### K. v0.98 多智能体协同
+
+62. **Squad Leader-Member 协议**：Leader 智能体可以 dispatch 任务给 Member 智能体，Member 完成后通过 Roster 协议汇报
+63. **Issue 看板状态机**：7 状态（backlog/todo/in_progress/in_review/done/wont_fix/blocked）+ 4 优先级，看板拖拽改变状态
+64. **Inbox 事件填充**：6 分类通知（delegation/issue/automation/error/system/goal），通过事件自动填充而非手动创建
+65. **Autopilot Cron 引擎**：Cron 表达式解析 + 每 30 秒检查 + Issue 状态触发器，实现自动化任务调度
+
+#### L. v0.99 DSH 全量升级
+
+66. **事件溯源（Event Sourcing）**：`session_events` 表为唯一真相源，14 种 SessionEvent 类型 + `deriveMessages()` 投影函数，messages 表保留为 fallback
+67. **5 层工具管线**：pre-execute（权限/hooks/bash-analyzer）→ monotonic guards（沙箱/受保护路径）→ execute（超时/重试/metrics）→ post-execute（接受/拒绝/替换/附加上下文）→ finalize（冻结结果写入事件流）
+68. **Plan Mode 工具注册层强制**：Plan 模式下不注册 write/edit/multi_edit，API 层面 "tool not found"，不依赖提示词
+69. **Capability Seam 三角色**：ServiceDefinition（接口）/ Provider（实现）/ Consumer（调用方），`SeamRegistry` 管理注册
+70. **FTS5 全文搜索**：`session-search.ts` 基于 SQLite FTS5 实现跨会话搜索，支持短语/布尔/前缀/NEAR 查询
+71. **ReplayAdapter 快照测试**：`fingerprintRequest` 指纹匹配 + `addResponse()` 内存快照，LLM 调用录制/回放
+72. **Telemetry OpenTelemetry 格式**：`TelemetryCollector` 批量采集 + `telemetry_events` DB 表 + P50/P95 时延分析
+73. **技能安全沙箱**：内容预检（远程脚本/iframe/eval 检测）+ 哈希签名验证 + 权限声明 + 安装审计日志
+
+#### M. v1.0.0 插件系统架构
+
+74. **Cordis DI 容器**：`SlotRegistry` 注册 18 个 Capability Seam + `PluginLoader` 拓扑排序加载/卸载 + 生命周期管理
+75. **46 个 Provider 实现**：`provider/` 目录下 46 个 Provider 作为 Canonical 实现，`capabilities/` 仅保留接口定义
+76. **UI 插件包化**：7 个 UI 插件包（ui-conversation/ui-market/ui-misc/ui-settings/ui-sidebar/ui-skin/ui-tool）+ Self-Referential Runtime
+77. **弹窗统一结构**：所有弹窗统一 `modal-overlay` + `modal-editor` + 标准 header + 标准关闭按钮，涉及 35+ 组件
+78. **图标映射体系**：`icon-map.ts` 统一图标包（7 个图标集 + `ToolEmojis`），消除所有直接 `lucide-react` 导入
+79. **核心插件保护**：`riskLevel` + `locked` + `core` 属性标识 + 关闭核心插件二次确认
+80. **SlotBridge 泛型类型**：从 `fallback` 组件 Props 自动推断参数类型，移除 `@ts-nocheck`，恢复严格类型检查
+
+#### N. v1.1.0 DSH 对标整改
+
+81. **CompactionControl 崩溃修复**：`repairCrashedSession()` 检测并修复上一会话未完成的工具调用，防止状态不一致
+82. **Runtime Invariants**：debug 模式下检查 "visible = recorded" 不变量，确保模型可见的内容都已写入事件流
+83. **Request Header 指纹追踪**：`trackRequestHeader()` 记录每次 LLM 请求的头指纹，检测缓存失效
+84. **AgentMessageQueue 迭代边界消费**：Agent 间异步消息在迭代边界（非循环中间）消费，避免打断当前迭代
+85. **OutputContractValidationMiddleware**：工具输出在 finalize 层验证契约（非空/合法类型/大小限制）
+86. **TypedEventBus 严格事件系统**：事件发射前类型检查 + 作用域过滤（session 级 vs 全局级）
+87. **指令分层加载**：global→deploy→project→session 四级分层加载，`buildSystemPrompt` 优先使用 `layeredInstructions`
+88. **进程级沙箱 ACL**：前端 ACL 层（路径白名单/命令过滤/环境变量屏蔽），strict 策略阻止网络命令和敏感变量
+89. **Dynamic Plugin 工具**：`cordis_define/inspect/run/stop/undefine` 五个工具，支持运行时动态加载/卸载 Cordis 插件
+90. **包不变量检查**：`scripts/verify-package-invariants.ts` 检查包导出完整性和单例唯一性，CI 友好
+91. **测试分层框架**：`test-layers.ts` 提供 snapshot + real-API e2e 框架，`shouldRunLayer()` / `shouldUpdateSnapshots()` / `isE2EMode()`
+
 ---
 
 ## 七、启动与测试
@@ -1057,7 +1334,11 @@ npx tsc --noEmit           # TypeScript 编译检查
 cd src-tauri && cargo check # Rust 编译检查
 
 # 测试
-npm test                   # 运行 Vitest 测试套件
+npm test                   # 运行 Vitest 测试套件（全量 107 文件 / 3624 用例）
+npm run test:coverage      # 测试 + 覆盖率报告
+npm run test:e2e           # E2E 测试
+npm run test:snapshot      # 快照测试
+npm run verify             # 测试 + 覆盖率 + knip 死代码 + jscpd 重复检测
 
 # 构建生产版
 npm run tauri build        # 构建 NSIS exe + MSI
@@ -1066,6 +1347,38 @@ npm run tauri build        # 构建 NSIS exe + MSI
 ---
 
 ## 八、版本历史
+
+### v1.1.0（2026-08-16）— DSH 对标全面整改 + 测试体系深化 + Bug 修复
+
+> Phase A-D 全部完成，消除所有功能孤岛、统一重复实现、补齐缺失功能。22 文件修改，24 个新文件。全量 107 文件 / 3624 用例全部通过。
+
+**Phase A — 孤岛模块接入（10 项）**：compaction-control（崩溃修复）/ output-contract（finalize 层验证）/ feedback（EventLog 双写）/ type-safety（Branded 类型）/ event-system-strict（TypedEventBus）/ cookbook（re-export）/ persistence-provider（后端切换）/ replay-adapter（CODEM_REPLAY_MODE）/ preset-discovery（AgentRegistry 构造函数）/ agent-message-queue（迭代边界消费）
+
+**Phase B — 运行时不变量 + 请求头追踪 + 事后复盘（10 项）**：runtime-invariants / request-header / postmortem / type-safety 增补 / event-system-strict 增补 / cookbook 增补 / persistence-provider 增补 / replay-adapter 增补 / preset-discovery 增补 / agent-message-queue 增补
+
+**Phase C — 重复实现统一（4 项）**：capabilities/ vs provider/ 统一（provider/ 为 Canonical）/ Telemetry-CostTracker 统一 / projectedTokens 补齐 / seam-dsh-compat deprecation
+
+**Phase D — 缺失功能补齐（5 项）**：代理指令分层（`instruction-layers.ts`）/ 进程级沙箱 ACL（`sandbox-acl.ts`）/ Dynamic Plugin 工具（`dynamic-plugin-tools.ts`）/ 测试分层框架（`test-layers.ts`）/ 包不变量检查（`verify-package-invariants.ts`）
+
+**Bug 修复（5 个）**：ESM require→import / fire-and-forget .catch() / TranscriptCache.clear() / 网络命令阻断 / 敏感环境变量屏蔽
+
+**测试体系深化（4 文件 / 118 用例）**：dsh-integration-full（53）/ plugin-disable-impact（18）/ functional-chain-closed-loop（12）/ extended-test-methods（35：模糊+属性+契约+链路探针）
+
+### v1.0.0（2026-08-15）— UI/UX 标准化 + 插件系统架构 + 测试体系全面升级
+
+> Codem 从 0.x 迈向 1.0 的里程碑版本。67 文件修改（+1112/-641 行），5 个新测试文件，3552 用例全部通过。
+
+**P4 — Cordis DI + Slot Registry + Plugin Loader + 18 Capability Seam**：`SlotRegistry` 注册表 + `initSlots()` 初始化 18 个 Capability Seam + `PluginLoader` 拓扑排序 + 加载/卸载 + 生命周期管理
+
+**P5 — 全能力族拆分（13 个独立能力族）**：FS / Shell / Sandbox / Web / Skill / Subagent + 凭证 / 附件 / 知识 / 调度 / 目标 / 计划 / 后台任务
+
+**P6 — UI 插件包化 + 插件市场基础设施**：7 个 UI 插件包 + Self-Referential Runtime + 插件市场 Manifest + 安装/卸载流程
+
+**UI/UX 全面标准化**：弹窗统一 `modal-overlay` + `modal-editor` + 标准 header + 标准关闭按钮（35+ 组件）/ 图标映射体系（7 图标集 + ToolEmojis）/ CSS 样式标准化（硬编码→CSS 变量）/ 核心插件保护（riskLevel + locked + core）
+
+**测试体系全面升级（5 文件 / 271+ 用例）**：icon-standardization（97）/ trigger-call-execute-loop（30+）/ extended-quality-suite（80）/ plugin-dependency-graph（24+）/ plugin-disable-impact（40+）
+
+**补丁修复**：SlotBridge 泛型类型修复（`[key: string]: any` → 泛型函数 `SlotBridge<P>`）+ 恢复 `noImplicitAny` 严格检查 + App.tsx 参数类型精确化
 
 ### v0.96.2（2026-08-11）— CodeGraph 集成 + 测试改造 + CI Workflow
 
@@ -1147,87 +1460,30 @@ npm run tauri build        # 构建 NSIS exe + MSI
 - 全量 `cargo clean` + 重新构建，确保 `resource.lib` 正确嵌入新图标
 - GitHub Release v0.96.1 安装包已更新为图标修复版
 
+### v0.99.0（2026-08-14）— 对标 DeepSeek Harness 全量升级
+
+> 本次更新是 Codem 内核架构史上最大规模的对标升级：以 DeepSeek Harness (dsh) 为唯一对标对象，系统性追平 31 项差距。25 文件修改（+1721/-313 行），50+ 新文件。全量 99 文件 / 3234 用例全部通过。
+
+**P0 — 架构基础（4 项）：** 事件溯源会话日志（14 种 SessionEvent + deriveMessages() 投影 + Fork/Replay）/ 5 层工具管线 / Plan Mode 增强（exit_plan_mode 工具 + dsh 6 段提示词规范 + PlanApprovalCard 审批 UI）/ 测试覆盖率门控（v8 coverage + per-file 阈值 70%+）
+
+**P1 — 功能增强（5 项）：** 进程级沙箱（Windows ACL + SandboxGuard 中间件）/ Code Mode（TypeScript 执行器 + ToolSDK）/ Session Query（FTS5 全文搜索）/ 防御性模式文档（7+ 条规则）/ Agent Notes/ADR（3 篇架构决策记录）
+
+**P2 — 架构提升 + 功能补齐（14 项）：** Capability Seam（三角色抽象）/ Workflow 编排（JavaScript fan-out 子智能体）/ Goal 自动续行（3 个 LLM 工具 + goals DB 表）/ Snapshot 测试（ReplayAdapter 录制/回放）/ Telemetry（OpenTelemetry 采集 + PerformanceDashboard）/ 代码质量工具（knip + jscpd）/ Bash 后台模式（JobManager + 3 个工具）/ 终端 LLM 工具组（4 个工具）/ Postmortem 体系 / 测试分层补齐（e2e + snapshot 配置）
+
+**P3 — 远期完善（12 项）：** MCP 市场（30+ 预设目录 + 一键安装）/ 语音 STT/TTS（Web Speech API）/ Ollama 本地 LLM（REST API + 离线推理）/ CI/CD 管理（GitHub Actions）/ 技能安全沙箱（内容预检 + 哈希签名）/ 远程同步引擎（seq 增量同步）/ i18n 提示词重构（17 个模板段）/ Adaptive Idle Tracker / Cron 引擎增强 / 事件系统增强（GuardHook/FinalizeHook）/ 消息存储增强（FTS5 + 事件流双写）/ 数据库初始化修复
+
 ### v1.0.0（2026-08-15）— UI/UX 标准化 + 插件系统架构 + 测试体系全面升级
 
-> 本次更新是 Codem 从 0.x 迈向 1.0 的里程碑版本。以 P4-P6 架构升级为基础，系统性完成了全弹窗 UI/UX 标准化、图标映射体系、插件依赖图谱与级联管控、以及覆盖功能触发-调用-执行闭环的全量测试体系。67 文件修改（+1112/-641 行），5 个新测试文件，3552 用例全部通过。
-
-**P4 — Cordis DI + Slot Registry + Plugin Loader + 18 Capability Seams：**
-- **Cordis DI 容器**（`slots/index.ts`）：`SlotRegistry` 注册表 + `initSlots()` 初始化 18 个 Capability Seam
-- **Plugin Loader**（`plugin-loader/index.ts`）：扫描 + 拓扑排序 + 加载/卸载 + 生命周期管理
-- **App.tsx 接入**：`PluginLoader` 初始化 + `loadUIPlugins()` 动态加载 UI 插件包
-
-**P5 — 全能力族拆分（13 个独立能力族）：**
-- FS / Shell / Sandbox / Web / Skill / Subagent + 凭证 / 附件 / 知识 / 调度 / 目标 / 计划 / 后台任务
-
-**P6 — UI 插件包化 + 插件市场基础设施：**
-- 7 个 UI 插件包（ui-conversation / ui-market / ui-misc / ui-settings / ui-sidebar / ui-skin / ui-tool）
-- Self-Referential Runtime + 插件市场 Manifest + 安装/卸载流程
-- 补齐遗漏能力模块：compaction / approval / permissions / hooks / automation + fs-sandbox + tool-todo / ask-user / lsp / run-code / workflow / goal / schedule / knowledge + skin-default / pet / ui-pet + Preset / Bundle / SDK / ACP / Host / Client
-
-**UI/UX 全面标准化：**
-- **弹窗统一结构**：所有弹窗统一 `modal-overlay` + `modal-editor` + 标准 header + 标准关闭按钮（`ActionIcons.close`），涉及 35+ 组件
-- **图标映射体系**：`icon-map.ts` 统一图标包（7 个图标集 + `ToolEmojis`），消除所有直接 `lucide-react` 导入和 emoji 图标，新增 `ICON-RUN-001/002` 运行时完整性测试
-- **CSS 样式标准化**：硬编码颜色 → CSS 变量 + Tailwind 类 → `size` 属性/CSS 类 + 补齐缺失 CSS 规则 + SVG 图标 flexbox 对齐
-- **核心插件保护**：riskLevel + locked + core 属性标识 + 关闭核心插件二次确认
-
-**测试体系全面升级（5 个新测试文件 / 271+ 用例）：**
-- `icon-standardization.test.ts`（97 用例）— 图标映射完整性 + 无 emoji 拘留 + 关闭按钮 + CSS 变量 + 运行时完整性
-- `trigger-call-execute-loop.test.ts`（30+ 用例）— 工具管线 5 层闭环 + Agent 循环事件流 + 消息存储 + 插件加载
-- `extended-quality-suite.test.tsx`（80 用例）— 快照 + 性能基线 + 交互流程 + CSS 布局 + i18n + 核心模块稳定性
-- `plugin-dependency-graph.test.ts`（24+ 用例）— 依赖图注册 + 拓扑排序 + 级联启停 + 锁定机制
-- `plugin-disable-impact.test.ts`（40+ 用例）— 核心/能力/UI 插件关闭对系统功能、信息流、数据流的影响
-
-**补丁修复（同版本重新构建）：**
-- **SlotBridge 泛型类型修复**（`SlotBridge.tsx`）：原实现使用 `[key: string]: any` 索引签名 + `// @ts-nocheck`，导致所有回调参数类型退化为 `any`，引发 49 个 `TS7006` 隐式 any 错误。修复为泛型函数 `SlotBridge<P>`，从 `fallback` 组件 Props 自动推断参数类型，移除 `// @ts-nocheck`，恢复严格类型检查
-- **恢复 `noImplicitAny` 严格检查**（`tsconfig.json`）：撤回临时关闭的 `noImplicitAny: false`，恢复 `strict: true` 完整类型安全保护
-- **App.tsx 参数类型精确化**：`onResolve` 的 `alwaysAllow` 参数修正为可选匹配 `PermissionDialogProps`；`onOpenSession` 两处补充 `string` 类型注解
-- **SettingsPanel.tsx**：`AgentManager` 渲染补充 `onClose` 必选属性
-- **files.ts**：`skills`/`memories` 数组初始化补充类型声明，修复 `never[]` 推断导致的 `TS2345`
-- **验证**：`tsc --noEmit` 零错误 + `vite build` 成功
+> Codem 从 0.x 迈向 1.0 的里程碑版本。67 文件修改（+1112/-641 行），5 个新测试文件，3552 用例全部通过。（详见上方版本历史摘要）
 
 ### v0.96.0（2026-08-08）— 主对话窗口 UI 大改版 + 内联 Diff + 富内容渲染
 
 （详见 TODO.md）
 
-### v0.99.0（2026-08-14）— 对标 DeepSeek Harness 全量升级
+### v0.96.1（2026-08-10）— 右侧栏文件浏览器优化 + 拖拽修复 + 暗色模式修复 + Logo替换
 
-> 本次更新是 Codem 内核架构史上最大规模的对标升级：以 DeepSeek Harness (dsh) 为唯一对标对象，系统性追平 31 项差距。涵盖 P0 架构基础（事件溯源 + 5 层工具管线 + Plan Mode 增强 + 覆盖率门控）、P1 功能增强（Windows ACL 沙箱 + Code Mode + Session Query + 防御性文档 + ADR）、P2 架构提升（Capability Seam + Workflow 编排 + Goal 续行 + Replay 测试 + Telemetry + Bash 后台 + 终端工具组 + Postmortem）、P3 远期完善（MCP 市场 + 语音 + Ollama + CI/CD + 技能沙箱 + 远程同步 + 代码质量工具 + i18n 提示词重构）。25 文件修改（+1721/-313 行），50+ 新文件。全量 99 文件 / 3234 用例全部通过。
+（详见上方版本历史摘要）
 
-**P0 — 架构基础（4 项）：**
-- **事件溯源会话日志**（`event-types.ts` + `event-log.ts` + `event-projection.ts`）：从 SQLite CRUD 升级为 append-only 事件流。14 种 SessionEvent 类型 + `deriveMessages()` 投影函数 + Fork/Replay 支持 + 运行时不变量。`session_events` 表为唯一真相源，messages 表保留为 fallback
-- **5 层工具管线**（`tool-pipeline.ts`）：从 2 层 + hooks 升级为 pre-execute（权限/hooks/bash-analyzer）→ monotonic guards（沙箱/受保护路径）→ execute（超时/重试/metrics）→ post-execute（接受/拒绝/替换/附加上下文）→ finalize（冻结结果写入事件流）。`streaming-executor.ts` 全量路由通过管线
-- **Plan Mode 增强**（`exit-plan-mode.ts` + `PlanApprovalCard.tsx`）：新增 `exit_plan_mode` 工具，模型提交计划 → 用户审批 → 自动切换模式。对齐 dsh 6 段提示词规范（模式声明 / 探索优先 / 工具目录不变 / ask_user 限制 / 计划完整性 / exit_plan_mode 调用方式）
-- **测试覆盖率门控**（`vitest.config.ts`）：添加 v8 coverage provider + per-file 阈值配置 + lines/functions/branches/statements 70%+
+### v0.96.2（2026-08-11）— CodeGraph 集成 + 测试改造 + CI Workflow
 
-**P1 — 功能增强（5 项）：**
-- **进程级沙箱**：Windows ACL 沙箱路径检查 + `SandboxGuard` 中间件集成到 5 层管线的第 2 层（monotonic guards）
-- **Code Mode**（`run-code.ts`）：TypeScript 代码执行工具，`ToolSDK` 接口提供 bash/read/write/glob/grep/fetch，超时保护 + console 代理
-- **Session Query**（`session-search.ts`）：基于 SQLite FTS5 的跨会话全文搜索工具，支持短语/布尔/前缀/NEAR 查询
-- **防御性模式文档**（`docs/defensive-patterns.md`）：7+ 条防御规则文档化
-- **Agent Notes/ADR**（`docs/adr/0001-event-sourcing.md` + `0002-tool-pipeline.md` + `0003-plan-mode-alignment.md`）：3 篇架构决策记录
-
-**P2 — 架构提升 + 功能补齐（14 项）：**
-- **Capability Seam**（`seam/types.ts` + `local-fs-provider.ts` + `local-shell-provider.ts`）：ServiceDefinition/Provider/Consumer 三角色抽象 + `SeamRegistry` 注册表 + `initDefaultSeams()` 应用初始化 + `read` 工具通过 seam 访问文件系统
-- **Workflow 编排**（`workflow-engine.ts`）：JavaScript 工作流工具，`WorkflowSDK` 支持 `spawn/wait/bash/read/write`，并行 fan-out 子智能体
-- **Goal 自动续行**（`goal/goal.ts` + `goal-tools.ts`）：`create_goal` / `get_goal` / `update_goal` 三个 LLM 工具 + `goals` DB 表 + 优先级/状态管理
-- **Snapshot 测试**（`replay-adapter.ts`）：LLM 录制/回放适配器，`fingerprintRequest` 指纹匹配 + `addResponse()` 内存快照 + 完整 `LLMProvider` 实现
-- **Telemetry**（`telemetry/telemetry.ts`）：`TelemetryCollector` 批量采集 + `telemetry_events` DB 表 + OpenTelemetry 格式导出 + `PerformanceDashboard` UI（总览/趋势/会话/时延 P50/P95）
-- **代码质量工具**（`knip.json` + `.jscpd.json`）：knip 死代码检测 + jscpd 重复代码检测 + `verify` 脚本
-- **Bash 后台模式**（`job-manager.ts` + `job-tools.ts`）：`background: true` 参数 + `job_list` / `job_output` / `job_kill` 三个工具 + `jobs` DB 表
-- **终端 LLM 工具组**（`terminal-tools.ts`）：`terminal_open` / `terminal_send` / `terminal_signal` / `terminal_close` 四个工具，与 xterm.js PTY 共享会话
-- **Postmortem**（`docs/postmortem/README.md`）：事故复盘文档体系
-- **测试分层补齐**（`vitest.e2e.config.ts` + `vitest.snapshot.config.ts`）：e2e + snapshot 测试配置
-
-**P3 — 远期完善（12 项）：**
-- **MCP 市场**（`mcp-registry-catalog.ts` + `McpMarketplace.tsx`）：30+ 预设 MCP 服务器目录 + 分类搜索 + 一键安装/卸载 + 安装状态追踪
-- **语音 STT/TTS**（`useSpeechRecognition.ts` + `useSpeechSynthesis.ts` + `VoiceSettingsPanel.tsx`）：浏览器原生 Web Speech API 语音识别/合成 + 语音选择/语速/音调/音量配置 + 云端 TTS 优先级
-- **Ollama 本地 LLM**（`ollama-provider.ts` + `OllamaSettingsPanel.tsx`）：REST API 连接本地 Ollama + 动态模型发现（GET /api/tags）+ OpenAI 兼容端点推理 + 健康检查 + 离线运行
-- **CI/CD 管理**（`cicd/pipeline.ts` + `CicdPanel.tsx`）：GitHub Actions workflow YAML 生成（6 种项目类型模板）+ 运行状态监控 + 重试/取消/手动触发 + 自动刷新
-- **技能安全沙箱**（`skill/sandbox.ts` + `SkillAuditDialog.tsx`）：内容预检（远程脚本/iframe/eval 检测）+ 哈希签名验证 + 权限声明 + 安装审计日志 + safe/warning/danger 三级
-- **远程同步引擎**（`sync-engine.ts`）：基于 seq 的增量同步 + push/pull/both 方向 + Supabase/REST 后端 + last-write-wins 冲突解决
-- **i18n 提示词重构**（`prompt/i18n-templates.ts`）：系统提示词从 `prompt.ts` 硬编码英文提取为 `i18n-templates.ts` 双语模板（17 个模板段），支持 zh/en 切换
-- **Adaptive Idle Tracker**（`idle-tracker.ts`）：替代硬超时的自适应空闲追踪，只在无数据流入时计时
-- **Cron 引擎增强**：Cron 表达式解析 + 每 30 秒检查 + Issue 状态触发器占位符
-- **事件系统增强**（`hook-types.ts`）：新增 GuardHook / FinalizeHook 类型
-- **消息存储增强**（`message.ts`）：FTS5 自动索引 + 事件流双写
-- **数据库初始化修复**（`database.ts`）：FTS5 表创建隔离 + session_events / goals / jobs / telemetry_events 四张新表
+（详见上方版本历史摘要）

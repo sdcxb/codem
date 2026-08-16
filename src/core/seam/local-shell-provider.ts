@@ -1,4 +1,7 @@
 /**
+ * @deprecated R3-Audit: This seam provider is deprecated and unreferenced.
+ * Use src/core/provider/shell-provider.ts instead.
+ *
  * LocalShellProvider — Default Shell Seam Provider
  *
  * S0-3: Implements the ShellSeam interface using the local file-api's

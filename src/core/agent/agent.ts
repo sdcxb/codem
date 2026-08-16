@@ -80,6 +80,40 @@ export class AgentRegistry {
   constructor() {
     this.registerBuiltinAgents();
     this.loadCustomAgents();
+    // R3-2.3: Fire-and-forget preset discovery (async, can't await in constructor)
+    this.loadPresets().catch(() => {});
+  }
+
+  /**
+   * R3-2.3: Load agent presets from directory discovery.
+   * Scans for agent.cordis.yml files in preset root directories.
+   */
+  private async loadPresets() {
+    try {
+      const { discoverPresets, getDefaultRoots } = await import("./preset-discovery");
+      const roots = getDefaultRoots();
+      const presets = await discoverPresets(roots);
+      for (const preset of presets) {
+        if (!this.agents.has(preset.id)) {
+          // Only register presets that don't collide with built-in agents
+          // Convert AgentPreset to AgentDefinition
+          this.agents.set(preset.id, {
+            id: preset.id,
+            name: preset.displayName || preset.id,
+            description: preset.description || "",
+            mode: "subagent",
+            prompt: preset.composition?.prompt || "",
+            modelSlot: preset.composition?.modelSlot,
+          });
+        }
+      }
+      if (presets.length > 0) {
+        console.log(`[AgentRegistry] Loaded ${presets.length} agent preset(s) from discovery`);
+      }
+    } catch (e: any) {
+      // Non-critical — presets are optional
+      console.warn("[AgentRegistry] Preset discovery failed:", e.message);
+    }
   }
 
   register(agent: AgentDefinition) {

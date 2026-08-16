@@ -699,6 +699,8 @@ const migrations = [
 "ALTER TABLE sessions ADD COLUMN execution_mode TEXT",
 "ALTER TABLE sessions ADD COLUMN worktree_path TEXT",
 "ALTER TABLE sessions ADD COLUMN worktree_branch TEXT",
+"ALTER TABLE sessions ADD COLUMN parent_id TEXT", // R3-2.2: Fork support
+"ALTER TABLE sessions ADD COLUMN sort_order INTEGER DEFAULT 0", // P2 #29: session reordering
 ];
   for (const sql of migrations) {
     try { db.run(sql); } catch (e) { /* column already exists */ }

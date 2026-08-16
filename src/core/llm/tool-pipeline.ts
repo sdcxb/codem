@@ -4,10 +4,18 @@
  * Design (对标 DeepSeek Harness 5-layer tool pipeline):
  *
  * 1. pre-execute (waterfall): hooks, permission, bash-analyzer → can deny/modify
+ *    R3-1.4: AbortSignal check — if already aborted, return ABORTED_BEFORE_DISPATCH
  * 2. monotonic guards (frozen order): sandbox, protected path, overwrite protection
  * 3. execute (waterfall): tool.execute() + timeout + retry + metrics
+ *    R3-1.4: AbortSignal forwarded into toolHandler, catches AbortError → ABORTED
  * 4. post-execute (waterfall): hooks → result accept/reject/replace/append
  * 5. finalize (freeze): finalizeContent → write event → return authoritative result
+ *
+ * R3-1.5: Parallel execution classification
+ * - Tools can declare `isConcurrencySafe(args)` returning true
+ * - Concurrency-safe calls may overlap in a bounded rolling pool
+ * - Exclusive calls run alone as ordering barriers
+ * - Classification is unary: unknown/invalid/throwing → exclusive
  *
  * Layers are executed in strict order. Each layer can:
  * - Pass through (return the input unchanged)
@@ -55,8 +63,10 @@ export interface PostExecuteResult {
 /** Final result of the pipeline */
 export interface PipelineResult {
   result: ToolCallResult;
-  /** Events emitted during execution (for telemetry/replay) */
+  /** Events emitted during during execution (for telemetry/replay) */
   events: PipelineEvent[];
+  /** R3-1.5: Whether this call is concurrency-safe (can overlap with siblings) */
+  concurrencySafe?: boolean;
 }
 
 /** Internal event log for telemetry and replay */
@@ -101,7 +111,7 @@ export interface PostExecuteMiddleware {
   ): Promise<PostExecuteResult>;
 }
 
-/** Finalize middleware: runs after all post-execute, before returning */
+  /** Finalize middleware: runs after all post-execute, before returning */
 export interface FinalizeMiddleware {
   name: string;
   execute(
@@ -113,6 +123,28 @@ export interface FinalizeMiddleware {
   ): Promise<ToolCallResult>;
 }
 
+// R3-1.5: Concurrency classification
+
+/** A function that classifies whether a tool call is safe to run concurrently */
+export type ConcurrencyClassifier = (args: Record<string, unknown>) => boolean;
+
+/** R3-1.5: Tool concurrency registration — declares if a tool's calls can overlap */
+interface ToolConcurrencyRegistration {
+  toolName: string;
+  classifier: ConcurrencyClassifier;
+}
+
+// R3-1.4: Abort error names to detect
+const ABORT_ERROR_NAMES = new Set(["AbortError", "AbortErrorError"]);
+
+/** Check if an error was caused by an abort */
+function isAbortError(error: any): boolean {
+  if (!error) return false;
+  if (ABORT_ERROR_NAMES.has(error.name)) return true;
+  if (error.name === "TimeoutError" && error.cause?.name === "AbortError") return true;
+  return false;
+}
+
 // ========== Pipeline Implementation ==========
 
 export class ToolPipeline {
@@ -120,6 +152,8 @@ export class ToolPipeline {
   private guardMiddlewares: GuardMiddleware[] = [];
   private postExecuteMiddlewares: PostExecuteMiddleware[] = [];
   private finalizeMiddlewares: FinalizeMiddleware[] = [];
+  // R3-1.5: Tool concurrency registrations
+  private concurrencyRegistrations: Map<string, ConcurrencyClassifier> = new Map();
 
   /** Register a pre-execute middleware */
   registerPreExecute(m: PreExecuteMiddleware): void {
@@ -141,6 +175,23 @@ export class ToolPipeline {
     this.finalizeMiddlewares.push(m);
   }
 
+  // R3-1.5: Register a concurrency classifier for a tool
+  registerConcurrency(toolName: string, classifier: ConcurrencyClassifier): void {
+    this.concurrencyRegistrations.set(toolName, classifier);
+  }
+
+  // R3-1.5: Classify whether a tool call is concurrency-safe
+  // Returns true ONLY when the classifier returns exactly true; unknown/invalid/throwing → false (exclusive)
+  classifyConcurrency(toolName: string, args: Record<string, unknown>): boolean {
+    const classifier = this.concurrencyRegistrations.get(toolName);
+    if (!classifier) return false;
+    try {
+      return classifier(args) === true;
+    } catch {
+      return false;
+    }
+  }
+
   /**
    * Execute a tool through the full 5-layer pipeline.
    *
@@ -159,6 +210,30 @@ export class ToolPipeline {
     const events: PipelineEvent[] = [];
     let currentName = toolName;
     let currentArgs = args;
+
+    // ===== R3-1.4: Abort check — if signal already aborted, return ABORTED_BEFORE_DISPATCH =====
+    if (ctx.abort?.aborted) {
+      events.push({
+        layer: "pre-execute",
+        middleware: "abort-check",
+        action: "aborted_before_dispatch",
+        timestamp: Date.now(),
+      });
+      return {
+        result: {
+          id: ctx.messageId,
+          name: currentName,
+          input: currentArgs,
+          output: "Error: tool call aborted before dispatch",
+          status: "error",
+          error: "ABORTED_BEFORE_DISPATCH",
+        },
+        events,
+      };
+    }
+
+    // ===== R3-1.5: Concurrency classification =====
+    const concurrencySafe = this.classifyConcurrency(currentName, currentArgs);
 
     // ===== Layer 1: pre-execute (waterfall) =====
     for (const mw of this.preExecuteMiddlewares) {
@@ -217,6 +292,7 @@ export class ToolPipeline {
     }
 
     // ===== Layer 3: execute =====
+    // R3-1.4: AbortSignal is already on ctx.abort — tools that forward it can cooperatively cancel.
     let result: ToolCallResult;
     try {
       result = await toolHandler(currentName, currentArgs, ctx);
@@ -228,21 +304,39 @@ export class ToolPipeline {
         data: { outputLength: result.output?.length || 0 },
       });
     } catch (error: any) {
-      result = {
-        id: ctx.messageId,
-        name: currentName,
-        input: currentArgs,
-        output: `Error: ${error.message}`,
-        status: "error",
-        error: error.message,
-      };
-      events.push({
-        layer: "execute",
-        middleware: "tool",
-        action: "error",
-        timestamp: Date.now(),
-        data: { error: error.message },
-      });
+      // R3-1.4: Detect abort during execution → ABORTED status
+      if (isAbortError(error) || ctx.abort?.aborted) {
+        result = {
+          id: ctx.messageId,
+          name: currentName,
+          input: currentArgs,
+          output: "Error: tool call was aborted",
+          status: "error",
+          error: "ABORTED",
+        };
+        events.push({
+          layer: "execute",
+          middleware: "tool",
+          action: "aborted",
+          timestamp: Date.now(),
+        });
+      } else {
+        result = {
+          id: ctx.messageId,
+          name: currentName,
+          input: currentArgs,
+          output: `Error: ${error.message}`,
+          status: "error",
+          error: error.message,
+        };
+        events.push({
+          layer: "execute",
+          middleware: "tool",
+          action: "error",
+          timestamp: Date.now(),
+          data: { error: error.message },
+        });
+      }
     }
 
     // ===== Layer 4: post-execute (waterfall) =====
@@ -293,15 +387,16 @@ export class ToolPipeline {
       timestamp: Date.now(),
     });
 
-    return { result, events };
+    return { result, events, concurrencySafe };
   }
 
-  /** Clear all middlewares */
+  /** Clear all middlewares and concurrency registrations */
   clear(): void {
     this.preExecuteMiddlewares = [];
     this.guardMiddlewares = [];
     this.postExecuteMiddlewares = [];
     this.finalizeMiddlewares = [];
+    this.concurrencyRegistrations.clear();
   }
 }
 
@@ -531,6 +626,35 @@ export class HookPostExecuteMiddleware implements PostExecuteMiddleware {
 }
 
 /**
+ * R3-3.5: Output Contract Validation finalize middleware
+ * Validates tool output against declared OutputContract schema (if declared).
+ * Non-declared tools pass through unchanged (backward compatible).
+ */
+export class OutputContractValidationMiddleware implements FinalizeMiddleware {
+  name = "output-contract";
+
+  async execute(
+    toolName: string,
+    args: Record<string, unknown>,
+    result: ToolCallResult,
+    _ctx: ToolExecutorContext,
+    _events: PipelineEvent[],
+  ): Promise<ToolCallResult> {
+    if (result.status === "error" || !result.output) return result;
+    try {
+      const { validateToolOutput } = require("./output-contract");
+      const validation = validateToolOutput(toolName, result.output);
+      if (!validation.valid) {
+        console.warn(`[output-contract] ${toolName} output validation failed:`, validation.errors.join("; "));
+      }
+    } catch {
+      // output-contract module not available or no contract declared — pass through
+    }
+    return result;
+  }
+}
+
+/**
  * Event log finalize middleware (finalize layer)
  * Writes tool_call and tool_result events to the event log.
  */
@@ -595,9 +719,19 @@ export function initDefaultPipeline(config: {
     args: Record<string, unknown>,
     ctx: ToolExecutorContext,
   ) => Promise<{ allowed: boolean; denyMessage?: string }>;
+  /** R3-1.1: Spill policy — 超过此字节大小的纯文本工具输出被溢出存储 + 替换为预览 */
+  maxInlineBytes?: number;
 }): ToolPipeline {
   const pipeline = getToolPipeline();
   pipeline.clear();
+
+  // R3-1.5: Register concurrency classifiers for read-only tools.
+  // These tools are safe to run concurrently — they don't mutate state.
+  // Write tools (write, edit, multi_edit, delete_file, bash) are exclusive by default (no registration).
+  const readOnlyTools = ["read", "read_file", "grep", "glob", "list_dir", "web_search", "web_fetch"];
+  for (const toolName of readOnlyTools) {
+    pipeline.registerConcurrency(toolName, () => true);
+  }
 
   // Layer 1: pre-execute
   pipeline.registerPreExecute(new PermissionMiddleware(config.checkPermission));
@@ -612,10 +746,23 @@ export function initDefaultPipeline(config: {
   // Layer 3: execute (handled by toolHandler in pipeline.execute())
 
   // Layer 4: post-execute
-  // S0-2: HookManager PostToolUse hooks as post-execute middleware
+  // R3-1.2: RepeatToolReminder — 连续相同调用检测 + 升级提醒
+  // 放在 hooks 之前：先检测重复，再让 hooks 处理结果
+  const { RepeatToolReminderMiddleware } = require("./repeat-tool-reminder");
+  pipeline.registerPostExecute(new RepeatToolReminderMiddleware());
+
+  // R3-1.1: SpillPolicy — 必须在 hooks 之前注册（prepend 语义），
+  // 因为 spill 需要先委托下游（hooks）处理后再 bound 最终结果。
+  // 但我们的管线是顺序执行（非 prepend），所以 spill 放在 hooks 之后
+  // — hooks 可能修改输出，spill 再 bound 修改后的结果。
   pipeline.registerPostExecute(new HookPostExecuteMiddleware());
+  if (config.maxInlineBytes !== undefined && config.maxInlineBytes > 0) {
+    const { SpillPolicyMiddleware } = require("./spill-policy");
+    pipeline.registerPostExecute(new SpillPolicyMiddleware({ maxInlineBytes: config.maxInlineBytes }));
+  }
 
   // Layer 5: finalize
+  pipeline.registerFinalize(new OutputContractValidationMiddleware());
   pipeline.registerFinalize(new EventLogFinalizeMiddleware());
 
   return pipeline;

@@ -148,6 +148,65 @@ export function searchSessions(query: string): Session[] {
   return result[0].values.map(rowToSessionFromAny);
 }
 
+/**
+ * R3-2.2: Fork a session — create a child session that inherits the event log
+ * of the source session. The child session has parent_id set to the source.
+ *
+ * This is the API-level fork (not a model tool): it creates a new session row,
+ * copies the event log, and optionally copies messages for backward compat.
+ *
+ * @param sourceSessionId The parent session to fork from
+ * @param newSessionId The new session ID for the forked child
+ * @param projectId The project the child belongs to
+ * @param title Optional title for the child session
+ * @returns The created child Session, or null if the source doesn't exist
+ */
+export function forkSession(
+  sourceSessionId: string,
+  newSessionId: string,
+  projectId: string,
+  title?: string,
+): Session | null {
+  const source = getSession(sourceSessionId);
+  if (!source) return null;
+
+  const now = Date.now();
+  const child: Session = {
+    id: newSessionId,
+    projectId,
+    title: title || `${source.title} (fork)`,
+    model: source.model,
+    createdAt: now,
+    lastMessageAt: now,
+    messageCount: source.messageCount,
+    pinned: false,
+  };
+
+  // Create the child session row with parent_id
+  const db = getDatabase();
+  db.run(
+    "INSERT INTO sessions (id, project_id, title, model, created_at, last_message_at, message_count, pinned, parent_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    [
+      child.id,
+      child.projectId,
+      child.title,
+      child.model ?? null,
+      child.createdAt,
+      child.lastMessageAt,
+      child.messageCount,
+      0,
+      sourceSessionId, // parent_id
+    ],
+  );
+  persistDatabase();
+
+  // Copy the event log from source to child
+  const { getEventLog } = require("./event-log");
+  getEventLog().forkSession(sourceSessionId, newSessionId);
+
+  return child;
+}
+
 /** P2 #29: Reorder sessions by a given list of IDs (for drag-and-drop sorting) */
 export function reorderSessions(projectId: string, orderedIds: string[]): void {
   const db = getDatabase();

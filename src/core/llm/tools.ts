@@ -98,7 +98,7 @@ import { createExitPlanModeTool } from "./tools/exit-plan-mode";
 // P1-6: run_code tool for TypeScript code execution
 import { createRunCodeTool } from "./tools/run-code";
 // P1-7: session_search tool for FTS5 full-text search
-import { createSessionSearchTool } from "./tools/session-search";
+import { createSessionSearchTool, createSessionEventSearchTool, createSessionTraceTool, createSessionEventReadTool } from "./tools/session-search";
 // P2-12: Goal tools for automatic continuation
 import { createGoalTools } from "./tools/goal-tools";
 // P2-11: Workflow tool for JS-based task orchestration
@@ -106,6 +106,8 @@ import { createWorkflowTool } from "./workflow-engine";
 // P2-19/20: Job and Terminal tools for background task & terminal management
 import { createJobTools } from "./tools/job-tools";
 import { createTerminalOpenTool, createTerminalSendTool, createTerminalSignalTool, createTerminalCloseTool } from "./tools/terminal-tools";
+// D3: Dynamic Plugin tools
+import { createDynamicPluginTools } from "./dynamic-plugin-tools";
 
 // ========== S5: Sandbox Helpers ==========
 
@@ -1110,8 +1112,12 @@ export function createDefaultToolRegistry(ctx?: Context): ToolRegistry {
   registry.register(createExitPlanModeTool());
   // P1-6: run_code tool — execute TypeScript code with tool SDK access
   registry.register(createRunCodeTool());
-  // P1-7: session_search tool — FTS5 full-text search across session history
-  registry.register(createSessionSearchTool());
+// P1-7: session_search tool — FTS5 full-text search across session history
+registry.register(createSessionSearchTool());
+// R3-2.1: session query tools — event search, trace, and read
+registry.register(createSessionEventSearchTool());
+registry.register(createSessionTraceTool());
+registry.register(createSessionEventReadTool());
   // P2-12: Goal tools — create/get/update goals for automatic continuation
   for (const tool of createGoalTools()) {
     registry.register(tool);
@@ -1126,6 +1132,10 @@ export function createDefaultToolRegistry(ctx?: Context): ToolRegistry {
   registry.register(createTerminalSendTool());
   registry.register(createTerminalSignalTool());
   registry.register(createTerminalCloseTool());
+  // D3: Dynamic Plugin tools — cordis_define/inspect/run/stop/undefine
+  for (const tool of createDynamicPluginTools()) {
+    registry.register(tool);
+  }
   return registry;
 }
 

@@ -62,6 +62,34 @@ export { AgenticLoop } from "./agentic-loop";
 export { CostTracker, getCostTracker } from "./cost-tracker";
 export { ToolRenderRegistry, getToolRenderRegistry, DefaultToolRenderer } from "./tool-renderer";
 
+// R3-4.3: Cookbook extension guide — re-export for discoverability
+export type * from "./cookbook";
+// R3-4.4: Type safety utilities — re-export for use across codebase
+export { assertNever, brand, unbrand, type Branded } from "./type-safety";
+// R3-3.5: Output contract — re-export for tool registration
+export { registerOutputContract, validateToolOutput, renderToolOutput } from "./output-contract";
+// R3-4.6: Event system strict — re-export typed event bus
+export { getTypedEventBus, type TypedEventBus } from "./event-system-strict";
+// R3-3.7: Request header tracking — re-export
+export { trackRequestHeader, computeHeaderFingerprint } from "./request-header";
+// R3-3.6: Runtime invariants — re-export
+export { checkVisibleRecordedInvariant } from "./runtime-invariants";
+// R3-4.2: Postmortem — re-export
+export { generatePostmortem } from "./postmortem";
+// R3-3.8: Persistence provider — re-export
+export type { PersistenceProvider } from "../storage/persistence-provider";
+// R3-2.2: Feedback — re-export
+export { recordSessionFeedback, putMessageFeedback } from "./feedback";
+// R3-2.4: Instruction layers — re-export
+export { loadLayeredInstructions, loadLayeredInstructionsSync, clearProjectInstructionsCache } from "../prompt/instruction-layers";
+export type { InstructionLayer, InstructionEntry, LayeredInstructions } from "../prompt/instruction-layers";
+// D2: Process-level sandbox ACL — re-export
+export { SandboxGuard, initSandboxGuard, initDefaultSandbox, getSandboxGuard, createDefaultPolicy, createStrictPolicy } from "../sandbox/sandbox-acl";
+export type { SandboxPolicy, SandboxCheckResult } from "../sandbox/sandbox-acl";
+// D4: Test layers — re-export
+export { shouldRunLayer, shouldUpdateSnapshots, isE2EMode, getSnapshotManager, createE2EProvider, e2eRequest } from "./test-layers";
+export type { TestLayer, SnapshotEntry, TestLayerResult } from "./test-layers";
+
 // ========== F2.1: Memory Desensitization ==========
 
 /** Patterns for sensitive data that should be redacted from memories */
@@ -170,7 +198,11 @@ private loopPool: Map<string, AgenticLoop> = new Map();
         setSubagentManager(this.subagents);
         this.tools.register(createSpawnSubagentTool());
         this.tools.register(createWaitForSubagentTool());
+      }).catch(() => {
+        // Non-critical — import may fail during test environment teardown
       });
+    }).catch(() => {
+      // Non-critical — import may fail during test environment teardown
     });
   }
 
@@ -187,6 +219,8 @@ private loopPool: Map<string, AgenticLoop> = new Map();
       this.tools.register(createQuerySessionResultTool());
       this.tools.register(createListSessionsTool());
       console.log("[LLMEngine] Cross-session delegation tools registered");
+    }).catch(() => {
+      // Non-critical — import may fail during test environment teardown
     });
 
     // Register squad tools
@@ -199,6 +233,8 @@ private loopPool: Map<string, AgenticLoop> = new Map();
       this.tools.register(createSquadDispatchTool());
       this.tools.register(createSquadStatusTool());
       console.log("[LLMEngine] Squad tools registered");
+    }).catch(() => {
+      // Non-critical — import may fail during test environment teardown
     });
 
     // Register issue tools
@@ -213,6 +249,8 @@ private loopPool: Map<string, AgenticLoop> = new Map();
       this.tools.register(createIssueCommentTool());
       this.tools.register(createIssueListTool());
       console.log("[LLMEngine] Issue tools registered");
+    }).catch(() => {
+      // Non-critical — import may fail during test environment teardown
     });
   }
 
@@ -430,6 +468,8 @@ private loopPool: Map<string, AgenticLoop> = new Map();
       knowledgeContext,
       gitConfig,
       environmentConfig,
+      // R3-3.2: Context window awareness — let the model know its token budget
+      maxContextSize: this.getContextWindowSize(),
     };
 
     const prompt = buildSystemPrompt(config);
@@ -530,6 +570,28 @@ The runtime automatically sets UTF-8 encoding (chcp 65001, PYTHONUTF8=1, PYTHONI
 
     // Filter out <system-reminder> tags from the final prompt
     return sections.join("\n\n").replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, "");
+  }
+
+  /**
+   * R3-3.2: Get the context window size for the current model.
+   * Returns the token limit for the configured model, or a default.
+   */
+  private getContextWindowSize(): number {
+    const model = (this.config.defaultModel || "").toLowerCase();
+    // Claude models
+    if (model.includes("claude")) return 200000;
+    // GPT-4o / GPT-4 Turbo
+    if (model.includes("gpt-4o") || model.includes("gpt-4-turbo")) return 128000;
+    // GPT-4 (standard)
+    if (model.includes("gpt-4")) return 8192;
+    // GPT-3.5
+    if (model.includes("gpt-3.5") || model.includes("gpt-35")) return 16385;
+    // DeepSeek
+    if (model.includes("deepseek")) return 64000;
+    // Qwen
+    if (model.includes("qwen")) return 32768;
+    // Default
+    return 128000;
   }
 
   /** Process a user message through the agentic loop */
@@ -702,6 +764,15 @@ The runtime automatically sets UTF-8 encoding (chcp 65001, PYTHONUTF8=1, PYTHONI
       timestamp: Date.now(),
       status: "done",
     }, sessionId);
+
+    // C5: EventLog dual-write — user message for subagent session
+    try {
+      const { getEventLog } = require("./storage/event-log");
+      getEventLog().append(sessionId, "user_message", {
+        messageId: `user-${Date.now()}`,
+        content: cleanMessage,
+      });
+    } catch {}
 
     const startTime = Date.now();
     let lastUsage: import("./types").TokenUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };

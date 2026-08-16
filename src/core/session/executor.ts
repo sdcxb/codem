@@ -124,6 +124,15 @@ export async function executeSessionTurn(params: ExecuteSessionTurnParams): Prom
       status: "done",
     }, sessionId);
 
+    // C5: EventLog dual-write — user message
+    try {
+      const { getEventLog } = require("../storage/event-log");
+      getEventLog().append(sessionId, "user_message", {
+        messageId: userMsgId,
+        content: prefix + message,
+      });
+    } catch {}
+
     for await (const event of engine.process(sessionId, message, cwd, undefined, {
       onPermissionRequest: onPermissionRequest || ((_req) => {
         // 默认策略：后台执行时自动拒绝需要权限的操作
@@ -251,6 +260,14 @@ export async function executeSessionTurn(params: ExecuteSessionTurnParams): Prom
         content: assistantContent,
         reasoning: reasoningContent || undefined,
       });
+      // C5: EventLog dual-write — assistant text
+      try {
+        const { getEventLog } = require("../storage/event-log");
+        getEventLog().append(sessionId, "assistant_text", {
+          messageId: currentAssistantMsgId,
+          content: assistantContent,
+        });
+      } catch {}
     }
 
     // 如果用户正在查看这个会话，刷新消息列表

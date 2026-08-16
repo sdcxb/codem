@@ -1149,6 +1149,41 @@ if (!session) return;
       return;
     }
 
+    // R3-2.2: /feedback command — record session-level feedback
+    if (trimmedMessage.startsWith("/feedback")) {
+      const feedbackText = trimmedMessage.slice("/feedback".length).trim();
+      if (!feedbackText) {
+        addMessage({
+          id: `system-${Date.now()}`,
+          role: "system",
+          content: "用法：/feedback <反馈内容>\n示例：/feedback 这个会话非常有帮助，帮我解决了架构问题。",
+          timestamp: Date.now(),
+          status: "done",
+        });
+        return;
+      }
+      try {
+        const { recordSessionFeedback } = await import("./core/llm/feedback");
+        recordSessionFeedback(session.id, feedbackText);
+        addMessage({
+          id: `system-${Date.now()}`,
+          role: "system",
+          content: `✅ 反馈已记录到会话 ${session.id.substring(0, 8)}... 的事件日志中。`,
+          timestamp: Date.now(),
+          status: "done",
+        });
+      } catch (e: any) {
+        addMessage({
+          id: `system-${Date.now()}`,
+          role: "system",
+          content: `❌ 记录反馈失败：${e?.message || e}`,
+          timestamp: Date.now(),
+          status: "done",
+        });
+      }
+      return;
+    }
+
     useProjectStore.getState().updateSession(session.id, {
       messageCount: session.messageCount + 1,
       lastMessageAt: Date.now(),

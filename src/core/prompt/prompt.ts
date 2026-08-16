@@ -10,16 +10,22 @@ export interface SystemPromptConfig {
   identity?: AppIdentity;
   user?: UserConfig;
   projectInstructions?: string;
+  /** R3-2.4: Layered instructions (global→deploy→project→session) — overrides projectInstructions */
+  layeredInstructions?: string;
+  /** R3-2.4: Session-level instructions (runtime injected) */
+  sessionInstructions?: string;
   memoryInstructions?: string;
   skillInstructions?: string;
   mcpInstructions?: string;
   /** CodeGraph tools are available — inject usage guidance */
   codeGraphEnabled?: boolean;
-  workingDirectory?: string;
-  gitBranch?: string;
-  date?: string;
-  modelInfo?: string;
-  /** (F5) Knowledge notebook context — when set, switches to notebook mode */
+workingDirectory?: string;
+gitBranch?: string;
+date?: string;
+modelInfo?: string;
+/** R3-3.2: Context window size in tokens — injected so the model knows its budget */
+maxContextSize?: number;
+/** (F5) Knowledge notebook context — when set, switches to notebook mode */
   knowledgeContext?: {
     notebookName: string;
     notebookDescription?: string;
@@ -158,8 +164,11 @@ Use the ACTUAL task_id from delegate results (format: \`TASK_ID: del-xxxxx\`).
 ${u.notes ? `- Notes: ${u.notes}` : ""}${u.context ? `\nContext:\n${u.context}` : ""}`);
   }
 
-  // 4. Project instructions
-  if (config.projectInstructions) {
+  // 4. Layered instructions (R3-2.4: global→deploy→project→session)
+  // If layeredInstructions is provided, use it; otherwise fall back to projectInstructions
+  if (config.layeredInstructions) {
+    sections.push(config.layeredInstructions);
+  } else if (config.projectInstructions) {
     sections.push(`# Project Instructions\n\n${config.projectInstructions}`);
   }
 
@@ -230,9 +239,13 @@ ${u.notes ? `- Notes: ${u.notes}` : ""}${u.context ? `\nContext:\n${u.context}` 
   if (config.date) {
     envInfo.push(`Current date: ${config.date}`);
   }
-  if (config.modelInfo) {
-    envInfo.push(`Model: ${config.modelInfo}`);
-  }
+if (config.modelInfo) {
+envInfo.push(`Model: ${config.modelInfo}`);
+}
+// R3-3.2: Context window awareness — let the model know its token budget
+if (config.maxContextSize) {
+envInfo.push(`Context window: ${config.maxContextSize} tokens`);
+}
   if (envInfo.length > 0) {
     sections.push(`# Environment\n\n${envInfo.join("\n")}`);
   }

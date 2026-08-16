@@ -1,4 +1,7 @@
 /**
+ * @deprecated R3-Audit: This seam provider is deprecated and unreferenced.
+ * Use src/core/provider/fs-provider.ts instead.
+ *
  * LocalFileSystemProvider — Default FileSystem Seam Provider
  *
  * S0-3: Implements the FileSystemSeam interface using the local file-api.

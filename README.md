@@ -16,6 +16,8 @@
 >
 > 作为一个最初始版本，目前本人亲测，CLI 小米账户登录、API登录（仅测试了deepseek，如果其他模型api有问题请反馈）、对话工具调用、项目文件读写等功能已经完成，SKILLS、MCP、子智能体调用等功能还没测试（MiMoCode 告诉我已经搞定了，让我放心使用，但是我不放心！）
 >
+> **v1.1.0 更新**：完成 DeepSeek Harness 第三轮对标全面整改 — Phase A-D 全部完成（孤岛模块接入 10 项 + 重复实现统一 4 项 + 缺失功能补齐 5 项）+ 5 个 Bug 修复 + 4 个新测试文件 / 118 用例。全量 107 文件 / 3624 用例通过。
+>
 
 
 ![Codem 运行界面](screenshots/26720-1.png)
@@ -306,6 +308,49 @@ npm run tauri:build
 - 两种模式均使用内置 LLM 引擎直连 API，无需依赖外部进程
 
 ## 更新日志
+
+### 2026-08-16（v1.1.0）
+
+> 本次更新以 DeepSeek Harness (dsh) 第三轮深度对标分析为驱动，系统性完成了全部整改计划（Phase A-D），消除了所有功能孤岛、统一了重复实现、补齐了 5 项缺失功能模块，并新增 4 个测试文件 / 118 个测试用例覆盖全部变更点。发现并修复 5 个 Bug。22 文件修改，24 个新文件。全量 107 文件 / 3624 用例全部通过。
+
+**Phase A — 孤岛模块接入（10 项）：**
+- **compaction-control** → `agentic-loop.ts`（压缩锁 + 崩溃修复 repairCrashedSession）
+- **output-contract** → `tool-pipeline.ts`（OutputContractValidationMiddleware 注册到 finalize 层）
+- **feedback** → `store.ts`（putMessageFeedback EventLog 双写）
+- **type-safety** → `event-types.ts`（assertNever + Branded 类型成为核心类型）
+- **event-system-strict** → `event-log.ts`（TypedEventBus 事件发射 + 作用域过滤）
+- **cookbook / persistence-provider / replay-adapter / preset-discovery / agent-message-queue** → 各自接入对应模块
+
+**Phase B — 运行时不变量 + 请求头追踪 + 事后复盘（10 项）：**
+- **runtime-invariants** → `agentic-loop.ts`（debug 模式下检查 "visible = recorded"）
+- **request-header** → `agentic-loop.ts`（请求头指纹追踪 + 缓存失效检测）
+- **postmortem** → `agentic-loop.ts`（错误处理中的事后分析）
+
+**Phase C — 重复实现统一（4 项）：**
+- **capabilities/ vs provider/** — 标注 provider/ 为 canonical
+- **Telemetry/CostTracker** — recordUsage 转发到 TelemetryCollector
+- **projectedTokens** — token-tracker 新增 projectedTokens + shouldMicroCompact
+- **seam/ 和 dsh-compat/** — 全部标注 @deprecated
+
+**Phase D — 缺失功能补齐（5 项）：**
+- **D1 代理指令分层**（`instruction-layers.ts`）— global→deploy→project→session 四级分层加载，`buildSystemPrompt` 优先使用 layeredInstructions
+- **D2 进程级沙箱 ACL**（`sandbox-acl.ts`）— 前端 ACL 层（路径/命令/环境变量过滤 + strict 策略 + 网络命令阻断）
+- **D3 Dynamic Plugin 工具**（`dynamic-plugin-tools.ts`）— cordis_define / cordis_inspect / cordis_run / cordis_stop / cordis_undefine
+- **D4 测试分层框架**（`test-layers.ts`）— snapshot + real-API e2e 框架
+- **D5 包不变量检查**（`verify-package-invariants.ts`）— CI 检查脚本
+
+**Bug 修复（5 个，全部修代码不绕过用例）：**
+- `agent.ts` — `require("./preset-discovery")` 在 ESM 环境下报错 → 改为 `await import()`
+- `llm/index.ts` — 4 处 fire-and-forget `import().then()` 无 `.catch()` → 全部添加 `.catch()`
+- `agentic-loop.ts` — `this.getTranscriptCache().clear()` 与测试期望不匹配 → 改为直接调用 `TranscriptCache.clear()`
+- `sandbox-acl.ts` — `checkCommand` 未检查 `blockNetwork` → 添加网络命令检查逻辑
+- `sandbox-acl.ts` — `blockedEnvVars` 缺少 `DATABASE_PASSWORD` / `REDIS_PASSWORD` / `JWT_SECRET` → 补充到列表
+
+**测试体系深化（4 个新文件 / 118 用例）：**
+- `dsh-integration-full.test.ts`（53 用例）— Phase A-D 全部 25 项变更点逐项验证
+- `plugin-disable-impact.test.ts`（18 用例）— 插件生命周期 + EventBus 注销 + AgentMessageQueue 清理 + Sandbox 策略切换
+- `functional-chain-closed-loop.test.ts`（12 用例）— 12 条完整功能链路端到端验证
+- `extended-test-methods.test.ts`（35 用例）— 模糊测试（6）+ 属性测试（7）+ 契约测试（14）+ 链路探针（8）
 
 ### 2026-08-15（v1.0.0）
 

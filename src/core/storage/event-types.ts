@@ -28,6 +28,63 @@ export type SessionEventType =
   | "abort"              // Session was aborted
   ;
 
+// ========== R3-3.1: Runtime Event Type Registry ==========
+//
+// DSH uses TypeScript declaration merging (SessionEventMap interface) to
+// let plugins register custom event types at compile time. Since we don't
+// use Cordis DI, we use a runtime registry instead: plugins call
+// registerCustomEventType() at load time.
+
+/** Built-in event types that cannot be overridden */
+const BUILTIN_EVENT_TYPES = new Set<SessionEventType>([
+  "user_message", "assistant_text", "assistant_reasoning",
+  "tool_call", "tool_result", "compaction",
+  "turn_start", "turn_end", "memory_update",
+  "session_meta", "permission_granted", "permission_denied",
+  "error", "abort",
+]);
+
+/** Registered custom event types */
+const customEventTypes = new Map<string, { description?: string }>();
+
+/**
+ * Register a custom event type at runtime.
+ * Plugins call this to declare events the event log should accept.
+ * Cannot override built-in types.
+ *
+ * @param typeName The event type name (e.g. "feedback/record", "custom/my_event")
+ * @param metadata Optional description
+ * @throws if typeName collides with a built-in type
+ */
+export function registerCustomEventType(
+  typeName: string,
+  metadata?: { description?: string },
+): void {
+  if (BUILTIN_EVENT_TYPES.has(typeName as SessionEventType)) {
+    throw new Error(
+      `Cannot register custom event type "${typeName}" — it is a built-in type`,
+    );
+  }
+  if (!customEventTypes.has(typeName)) {
+    customEventTypes.set(typeName, metadata || {});
+  }
+}
+
+/**
+ * Check if a string is a valid (registered or built-in) event type.
+ */
+export function isValidEventType(typeName: string): boolean {
+  return BUILTIN_EVENT_TYPES.has(typeName as SessionEventType) ||
+    customEventTypes.has(typeName);
+}
+
+/**
+ * List all registered custom event types.
+ */
+export function listCustomEventTypes(): string[] {
+  return [...customEventTypes.keys()];
+}
+
 // ========== Event Payload Interfaces ==========
 
 export interface UserMessagePayload {
@@ -126,8 +183,8 @@ export interface SessionEvent {
   seq: number;
   /** Session this event belongs to */
   sessionId: string;
-  /** Event type */
-  type: SessionEventType;
+  /** Event type (built-in SessionEventType or a registered custom type string) */
+  type: SessionEventType | string;
   /** Event payload (type-specific) */
   payload: Record<string, unknown>;
   /** Timestamp (ms since epoch) */
@@ -155,3 +212,8 @@ export function isToolResult(e: SessionEvent): e is SessionEvent & { payload: To
 export function isCompaction(e: SessionEvent): e is SessionEvent & { payload: CompactionPayload } {
   return e.type === "compaction";
 }
+
+// ========== R3-4.4: Type Safety Re-exports ==========
+// Re-export assertNever + Branded types from type-safety module
+// so they are available from the core types entry point.
+export { assertNever, brand, unbrand, Branded, SessionId, ToolCallId, MessageId } from "../llm/type-safety";

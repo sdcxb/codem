@@ -162,3 +162,245 @@ Returns matching messages with snippets showing the matched content.`,
     },
   };
 }
+
+/**
+ * session_event_search — 搜索单个会话内的事件
+ *
+ * 对标 DSH session_event_search 工具。
+ * 在指定会话的事件日志中搜索匹配的事件。
+ */
+export function createSessionEventSearchTool(): ToolDef {
+  return {
+    id: "session_event_search",
+    description: `Search events within a specific session's event log.
+Returns matching events with their sequence numbers, types, and content snippets.
+Use this to find specific actions or messages within a known session.`,
+    parameters: {
+      type: "object",
+      properties: {
+        session_id: {
+          type: "string",
+          description: "The session to search within.",
+        },
+        query: {
+          type: "string",
+          description: "Search query — matches against event payload content (case-insensitive).",
+        },
+        event_type: {
+          type: "string",
+          description: "Optional: filter by event type (user_message, assistant_text, tool_result, etc.)",
+        },
+        limit: {
+          type: "number",
+          description: "Maximum results to return (default: 20, max: 100)",
+        },
+      },
+      required: ["session_id", "query"],
+    },
+    async execute(args: Record<string, unknown>, _ctx: ToolContext): Promise<ToolExecuteResult> {
+      const sessionId = args.session_id as string;
+      const query = (args.query as string).toLowerCase();
+      const eventType = args.event_type as string | undefined;
+      const limit = Math.min(args.limit as number || 20, 100);
+
+      try {
+        const { getEventLog } = await import("../../storage/event-log");
+        const events = getEventLog().readAll(sessionId);
+
+        const matching = events.filter((evt) => {
+          if (eventType && evt.type !== eventType) return false;
+          const payloadStr = JSON.stringify(evt.payload).toLowerCase();
+          return payloadStr.includes(query);
+        }).slice(0, limit);
+
+        if (matching.length === 0) {
+          return {
+            title: "session_event_search",
+            output: `No events found matching "${query}" in session ${sessionId}.`,
+          };
+        }
+
+        const formatted = matching.map((evt, i) => {
+          const time = new Date(evt.timestamp).toLocaleString();
+          const preview = JSON.stringify(evt.payload).slice(0, 200);
+          return `${i + 1}. [seq=${evt.seq}] ${evt.type} (${time})\n   ${preview}${evt.payload && JSON.stringify(evt.payload).length > 200 ? "…" : ""}`;
+        }).join("\n\n");
+
+        return {
+          title: `session_event_search: ${query}`,
+          output: `Found ${matching.length} event(s) in session ${sessionId}:\n\n${formatted}`,
+        };
+      } catch (err: any) {
+        return {
+          title: "session_event_search",
+          output: `Error: ${err.message}`,
+        };
+      }
+    },
+  };
+}
+
+/**
+ * session_trace — 读取会话的完整谱系
+ *
+ * 对标 DSH session_trace 工具。
+ * 返回会话的祖先和后代关系（fork 关系链）。
+ */
+export function createSessionTraceTool(): ToolDef {
+  return {
+    id: "session_trace",
+    description: `Read the complete lineage of a session, including fork ancestors and descendants.
+Use this to understand session relationships and history.`,
+    parameters: {
+      type: "object",
+      properties: {
+        session_id: {
+          type: "string",
+          description: "The session to trace.",
+        },
+      },
+      required: ["session_id"],
+    },
+    async execute(args: Record<string, unknown>, _ctx: ToolContext): Promise<ToolExecuteResult> {
+      const sessionId = args.session_id as string;
+
+      try {
+        const { getDatabase } = await import("../../storage/database");
+        const db = getDatabase();
+
+        // Get session info including parent
+        const sessionResult = db.exec(
+          "SELECT id, title, parent_id, created_at FROM sessions WHERE id = ?",
+          [sessionId],
+        );
+
+        if (sessionResult.length === 0 || sessionResult[0].values.length === 0) {
+          return {
+            title: "session_trace",
+            output: `Session ${sessionId} not found.`,
+          };
+        }
+
+        const session = sessionResult[0].values[0];
+        const parentId = session[2] as string | null;
+
+        // Trace ancestors
+        const ancestors: string[] = [];
+        let currentParent = parentId;
+        while (currentParent) {
+          ancestors.push(currentParent);
+          const parentResult = db.exec(
+            "SELECT parent_id FROM sessions WHERE id = ?",
+            [currentParent],
+          );
+          if (parentResult.length === 0 || parentResult[0].values.length === 0) break;
+          currentParent = parentResult[0].values[0][0] as string | null;
+        }
+
+        // Trace descendants
+        const descendantsResult = db.exec(
+          "SELECT id, title FROM sessions WHERE parent_id = ? ORDER BY created_at",
+          [sessionId],
+        );
+        const descendants = descendantsResult.length > 0
+          ? descendantsResult[0].values.map((row) => `${row[0]} (${row[1] || "untitled"})`)
+          : [];
+
+        const lines: string[] = [];
+        lines.push(`Session: ${sessionId}`);
+        lines.push(`Title: ${session[1] || "untitled"}`);
+        lines.push(`Created: ${new Date(session[3] as number).toLocaleString()}`);
+        lines.push(`Parent: ${parentId || "(root)"}`);
+        if (ancestors.length > 1) {
+          lines.push(`Ancestors: ${ancestors.join(" → ")}`);
+        }
+        lines.push(`Descendants: ${descendants.length > 0 ? descendants.join(", ") : "(none)"}`);
+
+        return {
+          title: `session_trace: ${sessionId.substring(0, 8)}`,
+          output: lines.join("\n"),
+        };
+      } catch (err: any) {
+        return {
+          title: "session_trace",
+          output: `Error: ${err.message}`,
+        };
+      }
+    },
+  };
+}
+
+/**
+ * session_event_read — 读取单个完整事件及其上下文窗口
+ *
+ * 对标 DSH session_event_read 工具。
+ */
+export function createSessionEventReadTool(): ToolDef {
+  return {
+    id: "session_event_read",
+    description: `Read one full event and optional neighboring events from a session's event log.
+Use this to inspect a specific event in detail, including its surrounding context.`,
+    parameters: {
+      type: "object",
+      properties: {
+        session_id: {
+          type: "string",
+          description: "The session to read from.",
+        },
+        seq: {
+          type: "number",
+          description: "The event sequence number to read.",
+        },
+        before: {
+          type: "number",
+          description: "Number of preceding events to include (default: 0, max: 10)",
+        },
+        after: {
+          type: "number",
+          description: "Number of following events to include (default: 0, max: 10)",
+        },
+      },
+      required: ["session_id", "seq"],
+    },
+    async execute(args: Record<string, unknown>, _ctx: ToolContext): Promise<ToolExecuteResult> {
+      const sessionId = args.session_id as string;
+      const seq = args.seq as number;
+      const before = Math.min(args.before as number || 0, 10);
+      const after = Math.min(args.after as number || 0, 10);
+
+      try {
+        const { getEventLog } = await import("../../storage/event-log");
+        const log = getEventLog();
+        const events = log.readRange(sessionId, seq - before, seq + after);
+
+        if (events.length === 0) {
+          return {
+            title: "session_event_read",
+            output: `Event seq=${seq} not found in session ${sessionId}.`,
+          };
+        }
+
+        const formatted = events.map((evt) => {
+          const time = new Date(evt.timestamp).toLocaleString();
+          const isTarget = evt.seq === seq;
+          const marker = isTarget ? "▶" : " ";
+          const payloadStr = JSON.stringify(evt.payload, null, 2);
+          const truncated = payloadStr.length > 1000
+            ? payloadStr.slice(0, 1000) + "\n  …(truncated)"
+            : payloadStr;
+          return `${marker} [seq=${evt.seq}] ${evt.type} (${time})\n  ${truncated}`;
+        }).join("\n\n");
+
+        return {
+          title: `session_event_read: seq=${seq}`,
+          output: formatted,
+        };
+      } catch (err: any) {
+        return {
+          title: "session_event_read",
+          output: `Error: ${err.message}`,
+        };
+      }
+    },
+  };
+}

@@ -453,6 +453,43 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
     this.abortController = new AbortController();
     this.state = this.createInitialState();
     this.currentSessionId = sessionId;
+
+    // R3-3.4: Crash repair — fix incomplete tool calls from previous session
+    try {
+      const { repairCrashedSession } = await import("./compaction-control");
+      const repairResult = repairCrashedSession(sessionId);
+      if (repairResult.repairedCount > 0) {
+        console.log(`[AgenticLoop.run] Crash repair: fixed ${repairResult.repairedCount} incomplete tool calls`);
+      }
+    } catch (crashErr) {
+      console.warn("[AgenticLoop.run] Crash repair failed (non-critical):", crashErr);
+    }
+
+    // R3-3.6: Runtime invariants — check "visible = recorded" in debug mode
+    if (process.env.NODE_ENV === "development" || process.env.DEBUG_INVARIANTS === "1") {
+      try {
+        const { checkVisibleRecordedInvariant } = await import("./runtime-invariants");
+        const result = checkVisibleRecordedInvariant(sessionId);
+        if (!result.passed) {
+          console.warn(`[AgenticLoop.run] Invariant violations detected:`, result.violations);
+        }
+      } catch (invErr) {
+        // Non-critical — invariants are debugging tool
+      }
+    }
+
+    // D2: Initialize process-level sandbox ACL guard
+    try {
+      const { initDefaultSandbox, getSandboxGuard } = await import("../sandbox/sandbox-acl");
+      if (!getSandboxGuard()) {
+        initDefaultSandbox(cwd);
+        console.log(`[AgenticLoop.run] Sandbox ACL initialized for workspace: ${cwd}`);
+      }
+    } catch (sandboxErr) {
+      // Non-critical — sandbox is defense-in-depth
+      console.warn("[AgenticLoop.run] Sandbox init failed:", sandboxErr);
+    }
+
     // Clear any stale guidance from a previous run for this session
     this.guidanceQueue.expire(sessionId);
     // 每次新对话重置快照状态，确保每次对话独立创建快照
@@ -535,6 +572,8 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
 
         return { allowed: true };
       },
+      // R3-1.1: Spill policy — 32KB 上限，超过的纯文本工具输出被溢出存储
+      maxInlineBytes: 32768,
     });
 
     // P2-14: Record telemetry — turn start
@@ -750,6 +789,28 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
         console.log("[AgenticLoop] Processed /skill-name gesture:", gestureInjection.length, "chars");
       }
 
+      // R3-1.3: Time context — 每轮注入时间戳 + 时区 + 经过时间
+      const { buildTimeContext } = await import("./time-context");
+      const timeContextMessage = buildTimeContext(sessionId, this.state.iteration, 1);
+      if (timeContextMessage) {
+        if (apiMessages.length > 0 && apiMessages[0].role === "system") {
+          const sysMsg = apiMessages[0];
+          if (typeof sysMsg.content === "string") {
+            sysMsg.content += "\n\n" + timeContextMessage;
+          }
+        }
+      }
+
+      // R3-3.1: Surface notice — 让模型知道当前上下文窗口状态
+      const { getSurfaceManager } = await import("./surface-manager");
+      const surfaceNotice = getSurfaceManager().buildSurfaceNotice(sessionId);
+      if (surfaceNotice && apiMessages.length > 0 && apiMessages[0].role === "system") {
+        const sysMsg = apiMessages[0];
+        if (typeof sysMsg.content === "string") {
+          sysMsg.content += "\n" + surfaceNotice;
+        }
+      }
+
       this.state.contextPressure = this.estimateContextPressure(apiMessages);
 
       let messagesForIteration = apiMessages;
@@ -769,7 +830,7 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
         const compacted = await this.compactMessages(sessionId);
         yield { type: "compaction_end", messagesRemoved: compacted };
         // P1-6: Clear transcript cache on compaction (cached responses no longer valid)
-        this.getTranscriptCache().clear();
+        TranscriptCache.clear();
 
         // P2-C: Post-compaction cleanup — clear stale caches
         // After compaction, old file read/write caches are stale because the
@@ -816,6 +877,27 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
           message: guidanceItem.message,
           guidanceId: guidanceItem.id,
         };
+      }
+
+      // R3-B10: Consume pending agent messages at iteration boundary
+      // Agent messages are similar to guidance — injected as user-role context
+      try {
+        const { AgentMessageQueue } = await import("./agent-message-queue");
+        const pendingMessages = AgentMessageQueue.consume("primary");
+        if (pendingMessages.length > 0) {
+          const agentMsgContent = pendingMessages.map(m =>
+            `[Agent: ${m.fromAgent} → ${m.toAgent}] ${m.subject}: ${m.body}`
+          ).join("\n\n");
+          const agentMsg = {
+            id: `agent-msg-${Date.now()}`,
+            role: "user" as const,
+            content: agentMsgContent,
+          };
+          messagesForIteration = [...messagesForIteration, agentMsg];
+          console.log(`[AgenticLoop] Injected ${pendingMessages.length} agent message(s) at iteration ${this.state.iteration}`);
+        }
+      } catch {
+        // Agent message queue not available — non-critical
       }
 
       // Execute iteration - yields events directly for real-time streaming
@@ -954,6 +1036,8 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
             timestamp: Date.now(),
             status: "done",
           }, sessionId);
+          // C5: EventLog dual-write
+          try { this.getEventLog().append(sessionId, "user_message", { messageId: `task-reminder-${Date.now()}`, content: taskCheck }); } catch {}
           this.msgCache = null;
           // Continue the loop — don't stop
           continue;
@@ -972,6 +1056,8 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
             timestamp: Date.now(),
             status: "done",
           }, sessionId);
+          // C5: EventLog dual-write
+          try { this.getEventLog().append(sessionId, "user_message", { messageId: `reminder-${Date.now()}`, content: reminder }); } catch {}
           // Invalidate message cache so the reminder is included
           this.msgCache = null;
           console.warn(`[AgenticLoop] ${unwaitedIds.length} un-waited sub-agent(s) — injected wait_for_subagent reminder instead of stopping. IDs: ${unwaitedIds.join(", ")}`);
@@ -984,6 +1070,7 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
           const unwaitedDelIds = Array.from(this.delegatedTasks);
           const delTaskList = unwaitedDelIds.map(id => `  - task_id: "${id}"`).join("\n");
           const delReminder = `[SYSTEM REMINDER] You have ${unwaitedDelIds.length} delegation task(s) that were sent but NOT collected. You MUST call wait_for_delegation for each task ID below to collect their results.\n\nUn-waited delegation task IDs:\n${delTaskList}\n\nCall wait_for_delegation(task_id: "...") for EACH task ID above. Do NOT finish without collecting results.`;
+          // C5: EventLog dual-write for delegation reminder will follow
           this.getMessageStorage().createMessage({
             id: `del-reminder-${Date.now()}`,
             role: "user",
@@ -1129,14 +1216,20 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
         reasoningEffort: this.config.reasoningEffort,
       };
 
-      // P-OPT4: Request header dedup — compute fingerprint to detect changes
-      // When the system prompt + tools + model are unchanged, the provider's
-      // prefix cache is reused. Log only on change to reduce noise.
-      const headerFingerprint = `${request.model}:${request.temperature}:${systemPrompt.length}:${toolDefs.length}`;
-      if (this.lastRequestHeader !== null && this.lastRequestHeader !== headerFingerprint) {
-        console.log(`[AgenticLoop] Request header changed (was: ${this.lastRequestHeader}, now: ${headerFingerprint}) — prefix cache may miss`);
+      // R3-3.7: Request header tracking — use dedicated module for fingerprint + change detection
+      const { trackRequestHeader, computeHeaderFingerprint } = await import("./request-header");
+      const currentHeader = {
+        model: request.model,
+        systemPromptLength: systemPrompt.length,
+        toolCount: toolDefs.length,
+        temperature: request.temperature || 1.0,
+        reasoningEffort: (request as any).reasoning_effort,
+      };
+      const headerChange = trackRequestHeader(sessionId, currentHeader);
+      if (headerChange) {
+        console.log(`[AgenticLoop] Request header changed: ${headerChange.reason} — prefix cache may miss`);
       }
-      this.lastRequestHeader = headerFingerprint;
+      this.lastRequestHeader = computeHeaderFingerprint(currentHeader);
 
       // Stream events directly - no collection, real-time yielding
       let retryCount = 0;
@@ -1264,7 +1357,7 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
           this.readCache?.clear();
           this.writeCache?.clear();
           this.msgCache = null;
-          this.getTranscriptCache().clear();
+          TranscriptCache.clear();
 
           this.state.microCompactedThisRun = false;
           // After compaction, the main loop will rebuild messages and retry.
@@ -1281,6 +1374,14 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
       this.state.consecutiveErrors++;
       this.state.lastError = error.message;
       yield { type: "tool_error", toolCall: { id: "", name: "", input: {}, status: "error" }, error: error.message };
+
+      // R3-4.2: Generate postmortem report on critical errors
+      try {
+        const { generatePostmortem } = await import("./postmortem");
+        await generatePostmortem(sessionId, error.message);
+      } catch (pmErr) {
+        // Non-critical — postmortem is best-effort
+      }
       return;
     }
 
@@ -1370,10 +1471,15 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
     }
 
     // Update usage
-    this.state.totalUsage.promptTokens += usage.promptTokens;
-    this.state.totalUsage.completionTokens += usage.completionTokens;
-    this.state.totalUsage.totalTokens = this.state.totalUsage.promptTokens + this.state.totalUsage.completionTokens;
-    // P2-14: Record telemetry — LLM response with token usage
+      this.state.totalUsage.promptTokens += usage.promptTokens;
+      this.state.totalUsage.completionTokens += usage.completionTokens;
+      this.state.totalUsage.totalTokens = this.state.totalUsage.promptTokens + this.state.totalUsage.completionTokens;
+      // R3-1.6: Record actual usage in TokenTracker for pressure estimation
+      const { getTokenTracker, estimateToolDefinitionTokens } = require("./token-tracker");
+      const tracker = getTokenTracker();
+      const toolDefTokens = estimateToolDefinitionTokens(toolDefs);
+      tracker.recordActualUsage(usage, toolDefTokens, this.lastRequestHeader || "");
+      // P2-14: Record telemetry — LLM response with token usage
     this.getTelemetry().record(sessionId, "llm_response", {
       promptTokens: usage.promptTokens,
       completionTokens: usage.completionTokens,
@@ -1992,34 +2098,14 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
   }
 
   private estimateContextPressure(messages: any[]): number {
-    let totalTokens = 0;
-    for (const m of messages) {
-      const content = typeof m.content === "string" ? m.content : JSON.stringify(m.content || "");
-      // P1-B: Language-aware token estimation
-      // CJK characters (Chinese, Japanese, Korean) typically use ~1 token per char,
-      // while Latin/ASCII text averages ~0.25 tokens per char (4 chars per token).
-      // We count CJK chars separately and apply different ratios.
-      let cjkChars = 0;
-      let otherChars = 0;
-      for (const ch of content) {
-        const code = ch.charCodeAt(0);
-        // CJK Unified Ideographs + CJK Extension A + Hiragana + Katakana + Hangul
-        if ((code >= 0x4e00 && code <= 0x9fff) ||
-            (code >= 0x3400 && code <= 0x4dbf) ||
-            (code >= 0x3040 && code <= 0x30ff) ||
-            (code >= 0xac00 && code <= 0xd7af)) {
-          cjkChars++;
-        } else {
-          otherChars++;
-        }
-      }
-      totalTokens += cjkChars * 0.8 + otherChars * 0.25;
-    }
-    // Also account for tool definition overhead (~100 tokens per tool)
+    // R3-1.6: Use TokenTracker for more precise estimation
+    const { getTokenTracker, estimateTokens, estimateToolDefinitionTokens } = require("./token-tracker");
+    const tracker = getTokenTracker();
     const toolCount = (this as any).currentToolDefs?.length || 0;
-    totalTokens += toolCount * 100;
-    const maxTokens = 128000;
-    return Math.min(1, totalTokens / maxTokens);
+    const tools = (this as any).currentToolDefs || [];
+    
+    // Try tracker's pressure estimation (uses actual usage if available)
+    return tracker.estimatePressure(messages, tools);
   }
 
 /**
@@ -2071,6 +2157,26 @@ private checkHasDocumentAttachment(sessionId: string): boolean {
    * key context across many days of conversation.
    */
   private async compactMessages(sessionId: string): Promise<number> {
+    // R3-3.3: Acquire compaction lock — prevent concurrent compaction
+    const { acquireCompactionLock, releaseCompactionLock, isCompactionBoundarySafe } =
+      await import("./compaction-control");
+    if (!acquireCompactionLock(sessionId)) {
+      console.log("[compactMessages] Compaction already in progress, skipping");
+      return 0;
+    }
+
+    try {
+      const result = await this.doCompactMessages(sessionId, isCompactionBoundarySafe);
+      return result;
+    } finally {
+      releaseCompactionLock(sessionId);
+    }
+  }
+
+  private async doCompactMessages(
+    sessionId: string,
+    isBoundarySafe: (events: any[], seq: number) => { safe: boolean; reason?: string },
+  ): Promise<number> {
     const messages = this.getMessageStorage().listMessages(sessionId);
     if (messages.length <= 2) return 0;
 

@@ -140,6 +140,24 @@ export async function loadHierarchicalProjectInstructions(
     }
   } catch {}
 
+  // R3-2.4 Layer 1.5: Deployment instructions (~/.codem/deployment/AGENTS.md)
+  // 对标 DSH context/agent-instructions 的部署层级
+  try {
+    const homeDir = await executeCommand("echo %USERPROFILE%", undefined)
+      .then(r => r.stdout.trim())
+      .catch(() => "");
+    if (homeDir) {
+      const deploymentContent = await readWithFallbacks(`${homeDir}\\.codem\\deployment`, AGENTS_MD_FALLBACKS);
+      if (deploymentContent.trim()) {
+        const bytes = Buffer.byteLength(deploymentContent, "utf-8");
+        if (totalBytes + bytes <= maxBytes) {
+          sections.push(`<!-- Deployment Instructions -->\n${deploymentContent}`);
+          totalBytes += bytes;
+        }
+      }
+    }
+  } catch {}
+
   // Layer 2: Project root AGENTS.md (with fallbacks)
   {
     const projectContent = await readWithFallbacks(projectPath, AGENTS_MD_FALLBACKS);
@@ -170,6 +188,29 @@ export async function loadHierarchicalProjectInstructions(
       }
     }
   }
+
+  // R3-2.4 Layer 4: Session-level instructions
+  // 对标 DSH context/agent-instructions 的会话层级
+  // 从事件日志中读取会话级 AGENTS.md 覆盖
+  try {
+    const { getEventLog } = require("../storage/event-log");
+    const events = getEventLog().readAll(""); // session-agnostic global event log
+    // Look for the latest session_meta action=instructions_override
+    for (let i = events.length - 1; i >= 0; i--) {
+      const evt = events[i];
+      if (evt.type === "session_meta" && (evt.payload as any)?.action === "instructions_override") {
+        const content = (evt.payload as any).content as string;
+        if (content && content.trim()) {
+          const bytes = Buffer.byteLength(content, "utf-8");
+          if (totalBytes + bytes <= maxBytes) {
+            sections.push(`<!-- Session Instructions -->\n${content}`);
+            totalBytes += bytes;
+          }
+        }
+        break;
+      }
+    }
+  } catch {}
 
   return sections.join("\n\n---\n\n");
 }

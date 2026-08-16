@@ -2,6 +2,10 @@
 /**
  * dsh-compat — DeepSeek Harness 接口兼容适配层。
  *
+ * @deprecated R3-Audit: This compatibility layer is no longer referenced by any
+ * production code. It is kept for reference but should not be used in new code.
+ * The canonical implementations are in src/core/provider/ and src/core/capabilities/.
+ *
  * 将 Codem 的服务接口适配为 dsh 标准接口签名，
  * 使 dsh 插件可以直接在 Codem 运行时中加载和运行。
  *

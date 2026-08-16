@@ -2,17 +2,17 @@
 /**
  * Codem 能力族定义 (Capability Seam Definitions)。
  *
- * 将 18 个核心 Agent 能力拆分为 Service Definition（契约），
- * 通过 Cordis 的 `declare module` 扩展 Context 接口，
- * 让每个能力可以通过插件替换。
- *
- * 现有实现（src/core/下的模块）将在 P4.2 后续步骤中
- * 包装为 Cordis Provider 插件。
+ * R3-Audit: This directory contains Service Definition interfaces (Cordis declarations).
+ * The canonical implementations are in src/core/provider/ — this directory is kept
+ * for interface definitions only. The local.ts files in subdirectories are legacy
+ * wrappers that delegate to provider/ implementations.
  *
  * 三层架构：
  * 1. Service Definition (本文件) — 纯接口契约
- * 2. Provider (src/core/provider/) — 默认实现
+ * 2. Provider (src/core/provider/) — 默认实现 ← CANONICAL
  * 3. Consumer (src/core/consumer/) — 工具消费层
+ *
+ * 新代码应直接从 src/core/provider/ 导入。
  */
 
 import type { Context, Service } from '../cordis/src/index.ts'

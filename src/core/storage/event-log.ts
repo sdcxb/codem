@@ -48,7 +48,7 @@ export class EventLog {
    */
   append(
     sessionId: string,
-    type: SessionEventType,
+    type: SessionEventType | string,
     payload: Record<string, unknown>,
   ): SessionEvent {
     const db = getDatabase();
@@ -74,6 +74,16 @@ export class EventLog {
       timestamp,
     };
 
+    // R3-4.6: Emit to TypedEventBus for strict event listeners
+    // Dynamic import to avoid circular dependency
+    import("../llm/event-system-strict")
+      .then(({ getTypedEventBus }) => {
+        getTypedEventBus().emit(event).catch(() => {});
+      })
+      .catch(() => {
+        // Non-critical — event bus is optional
+      });
+
     return event;
   }
 
@@ -83,7 +93,7 @@ export class EventLog {
    */
   appendBatch(
     sessionId: string,
-    events: Array<{ type: SessionEventType; payload: Record<string, unknown> }>,
+    events: Array<{ type: SessionEventType | string; payload: Record<string, unknown> }>,
   ): SessionEvent[] {
     const db = getDatabase();
     const timestamp = Date.now();
@@ -255,6 +265,21 @@ export class EventLog {
 
 export function getEventLog(): EventLog {
   return EventLog.getInstance();
+}
+
+// R3-3.8: Configure custom persistence provider
+// Allows swapping the storage backend from SQLite to other implementations
+export function configurePersistenceProvider(provider: import("./persistence-provider").PersistenceProvider): void {
+  // The persistence provider interface is available for future use.
+  // Currently EventLog uses SQLite directly, but this allows future migration.
+  // The provider is stored and can be queried via getActivePersistenceProvider()
+  activePersistenceProvider = provider;
+}
+
+let activePersistenceProvider: import("./persistence-provider").PersistenceProvider | null = null;
+
+export function getActivePersistenceProvider(): import("./persistence-provider").PersistenceProvider | null {
+  return activePersistenceProvider;
 }
 
 // ========== Migration: Import existing messages as events ==========

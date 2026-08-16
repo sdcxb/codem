@@ -284,6 +284,217 @@ export class EventProjection {
     }
     state.toolCallIndex = newToolCallIndex;
   }
+
+  // ========== R3-2.3: Replay Validation ==========
+
+  /**
+   * R3-2.3: Validate that an event log replays without structural errors.
+   *
+   * Checks:
+   * - Every tool_result has a preceding tool_call with matching toolCallId
+   * - No duplicate seq numbers
+   * - Compaction events don't reference non-existent messages
+   * - Event types are known
+   *
+   * @returns An array of validation errors (empty = valid)
+   */
+  validateReplay(sessionId: string): string[] {
+    const events = getEventLog().readAll(sessionId);
+    const errors: string[] = [];
+    const seenSeqs = new Set<number>();
+    const pendingToolCalls = new Set<string>();
+
+    for (const event of events) {
+      // Check for duplicate seq
+      if (seenSeqs.has(event.seq)) {
+        errors.push(`Duplicate seq: ${event.seq}`);
+      }
+      seenSeqs.add(event.seq);
+
+      switch (event.type) {
+        case "tool_call": {
+          const payload = event.payload as unknown as ToolCallPayload;
+          pendingToolCalls.add(payload.toolCallId);
+          break;
+        }
+        case "tool_result": {
+          const payload = event.payload as unknown as ToolResultPayload;
+          if (!pendingToolCalls.has(payload.toolCallId)) {
+            errors.push(
+              `tool_result at seq ${event.seq} references unknown toolCallId: ${payload.toolCallId}`,
+            );
+          }
+          // Remove from pending (a call can have only one result)
+          pendingToolCalls.delete(payload.toolCallId);
+          break;
+        }
+        case "compaction": {
+          const payload = event.payload as unknown as CompactionPayload;
+          // Check that removedMessageIds is an array
+          if (!Array.isArray(payload.removedMessageIds)) {
+            errors.push(
+              `compaction at seq ${event.seq} has invalid removedMessageIds`,
+            );
+          }
+          break;
+        }
+        case "user_message":
+        case "assistant_text":
+        case "assistant_reasoning":
+        case "turn_start":
+        case "turn_end":
+        case "memory_update":
+        case "session_meta":
+        case "permission_granted":
+        case "permission_denied":
+        case "error":
+        case "abort":
+          // Known types — no validation needed
+          break;
+        default:
+          errors.push(
+            `Unknown event type "${event.type}" at seq ${event.seq}`,
+          );
+      }
+    }
+
+    // Unresolved tool calls (call without result) are a warning, not error
+    if (pendingToolCalls.size > 0) {
+      // This is OK during an active session — the call is still in progress
+    }
+
+    return errors;
+  }
+
+  /**
+   * R3-2.3: Project the "surface" — the current visible state of the session.
+   *
+   * The surface is the set of messages the model would see right now,
+   * after applying all events including compaction.
+   * This is the same as projectAll, but also returns metadata about
+   * what was compacted/removed.
+   */
+  projectSurface(sessionId: string): {
+    messages: LLMMessage[];
+    totalEvents: number;
+    compactedMessageIds: string[];
+    lastSeq: number;
+  } {
+    const events = getEventLog().readAll(sessionId);
+    const state: ProjectionState = {
+      messages: [],
+      toolCallIndex: new Map(),
+      compactionSummary: null,
+      removedMessageIds: new Set(),
+      lastSeq: 0,
+    };
+
+    for (const event of events) {
+      this.applyEvent(state, event);
+    }
+
+    // Build final messages with compaction summary prepended
+    let messages = state.messages;
+    if (state.compactionSummary) {
+      const summaryMsg: LLMMessage = {
+        id: "compaction-summary",
+        role: "system",
+        content: `[Previous conversation summary]\n\n${state.compactionSummary}`,
+      };
+      messages = [summaryMsg, ...messages];
+    }
+
+    return {
+      messages,
+      totalEvents: events.length,
+      compactedMessageIds: Array.from(state.removedMessageIds),
+      lastSeq: state.lastSeq,
+    };
+  }
+
+  // ========== R3-3.2: Generation Tracking + replaceGeneration ==========
+
+  /**
+   * R3-3.2: Track "generations" — each assistant message is a generation.
+   *
+   * A generation = one assistant response (may contain text + tool calls).
+   * When a generation is replaced (e.g. by compaction or user edit),
+   * its events remain in the log but are marked as superseded.
+   *
+   * This method returns the current active generation's seq range.
+   */
+  getActiveGenerations(sessionId: string): Array<{
+    messageId: string;
+    startSeq: number;
+    endSeq: number;
+    isSuperseded: boolean;
+  }> {
+    const events = getEventLog().readAll(sessionId);
+    const generations: Array<{
+      messageId: string;
+      startSeq: number;
+      endSeq: number;
+      isSuperseded: boolean;
+    }> = [];
+
+    let currentGen: { messageId: string; startSeq: number } | null = null;
+    const supersededMessages = new Set<string>();
+
+    for (const event of events) {
+      // Track compaction to mark superseded messages
+      if (event.type === "compaction") {
+        const payload = event.payload as unknown as CompactionPayload;
+        for (const id of payload.removedMessageIds) {
+          supersededMessages.add(id);
+        }
+      }
+
+      if (event.type === "assistant_text" || event.type === "assistant_reasoning") {
+        const payload = event.payload as unknown as AssistantTextPayload;
+        if (!currentGen || currentGen.messageId !== payload.messageId) {
+          if (currentGen) {
+            generations.push({
+              ...currentGen,
+              endSeq: event.seq - 1,
+              isSuperseded: supersededMessages.has(currentGen.messageId),
+            });
+          }
+          currentGen = { messageId: payload.messageId, startSeq: event.seq };
+        }
+      }
+    }
+
+    // Close last generation
+    if (currentGen) {
+      generations.push({
+        ...currentGen,
+        endSeq: events.length > 0 ? events[events.length - 1].seq : currentGen.startSeq,
+        isSuperseded: supersededMessages.has(currentGen.messageId),
+      });
+    }
+
+    return generations;
+  }
+
+  /**
+   * R3-3.2: Replace a generation — mark an assistant message as superseded
+   * by appending a compaction event that removes it.
+   *
+   * This doesn't delete events from the log (append-only), but marks the
+   * generation as no longer active in the surface projection.
+   */
+  replaceGeneration(
+    sessionId: string,
+    messageId: string,
+    replacementSummary?: string,
+  ): void {
+    getEventLog().append(sessionId, "compaction", {
+      removedMessageIds: [messageId],
+      summary: replacementSummary || "(generation replaced)",
+      messagesBefore: 1,
+      messagesAfter: 0,
+    });
+  }
 }
 
 // ========== Singleton Access ==========

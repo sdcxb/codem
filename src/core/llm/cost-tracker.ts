@@ -180,6 +180,23 @@ export class CostTracker {
 
     this.records.push(record);
 
+    // R3-Audit C2: Forward to TelemetryCollector for unified logging
+    // This eliminates the dual-track recording problem — CostTracker is the
+    // source of truth for cost, TelemetryCollector receives a forwarded copy.
+    try {
+      const { getTelemetry } = require("./telemetry");
+      const telemetry = getTelemetry();
+      telemetry.record(params.sessionId, "cost_tracked", {
+        recordId: record.id,
+        model: record.model,
+        cost: record.cost,
+        inputTokens: record.inputTokens,
+        outputTokens: record.outputTokens,
+      });
+    } catch {
+      // Telemetry not available — non-critical
+    }
+
     // Update session cost
     this.updateSessionCost(record);
 
