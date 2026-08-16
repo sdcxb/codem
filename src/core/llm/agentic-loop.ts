@@ -233,6 +233,24 @@ export class AgenticLoop {
   private agentId: string = "main";
   private currentSessionId: string | null = null;
 
+  // ===== R1-R4: Singleton accessors (DI migration bridge) =====
+  // These wrap global singletons so they can be swapped with ctx.get() later.
+  private getPermissionManager() { return getPermissionManager(); }
+  private evaluateSecurityMode(
+    mode: string,
+    tool: string,
+    resource: string | undefined,
+    normalEvaluation: "allow" | "deny" | "ask",
+  ): "allow" | "deny" | "ask" {
+    return evaluateWithSecurityMode(mode as any, tool, resource, normalEvaluation);
+  }
+  private getTelemetry() { return getTelemetry(); }
+  private getTranscriptCache() { return TranscriptCache; }
+  private getMessageStorage() { return MessageStorage; }
+  private getVisionProxy() { return getVisionProxy(); }
+  private getSnapshotService(cwd?: string) { return getSnapshotService(cwd || this.lastCwd || "."); }
+  private getEventLog() { return getEventLog(); }
+
   /** Match tool name against allowlist pattern (supports wildcards) */
   private matchToolPattern(name: string, pattern: string): boolean {
     if (pattern === "*") return true;
