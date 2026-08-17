@@ -349,28 +349,49 @@ export function PluginManager({ onClose }: PluginManagerProps) {
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' | 'warning' } | null>(null)
   const [selectedPlugin, setSelectedPlugin] = useState<string | null>(null)
 
-  // 初始化 PluginManagerService
+  // 初始化 PluginManagerService — 带重试机制，等待 Cordis Context 就绪
   useEffect(() => {
-    const ctx = tryGetCtx()
-    if (!ctx) {
-      setToast({ msg: 'Cordis Context 尚未初始化', type: 'error' })
-      return
-    }
+    let cancelled = false
+    let retryTimer: ReturnType<typeof setTimeout> | null = null
 
-    const graph = new PluginDependencyGraph()
-    const registry = ctx.get?.('pluginRegistry')
-    if (registry) {
-      for (const meta of registry.list()) {
-        graph.register(meta)
+    function attemptInit(retryCount: number = 0) {
+      if (cancelled) return
+      const ctx = tryGetCtx()
+      if (!ctx) {
+        // Cordis Context 尚未初始化 — 延迟重试（最多 50 次 = 5 秒）
+        if (retryCount < 50) {
+          retryTimer = setTimeout(() => attemptInit(retryCount + 1), 100)
+        } else {
+          setToast({ msg: 'Cordis Context 尚未初始化，请稍后重试', type: 'error' })
+        }
+        return
       }
+
+      const graph = new PluginDependencyGraph()
+      // Cordis Context 是 Proxy，直接访问属性而非 ctx.get()
+      const registry = (ctx as any).pluginRegistry
+      if (registry) {
+        for (const meta of registry.list()) {
+          graph.register(meta)
+        }
+      }
+
+      initPluginManager(ctx, graph).then(mgr => {
+        if (cancelled) return
+        setManager(mgr)
+      }).catch(err => {
+        if (cancelled) return
+        console.error('Failed to init PluginManager:', err)
+        setToast({ msg: '初始化失败: ' + err.message, type: 'error' })
+      })
     }
 
-    initPluginManager(ctx, graph).then(mgr => {
-      setManager(mgr)
-    }).catch(err => {
-      console.error('Failed to init PluginManager:', err)
-      setToast({ msg: '初始化失败: ' + err.message, type: 'error' })
-    })
+    attemptInit()
+
+    return () => {
+      cancelled = true
+      if (retryTimer) clearTimeout(retryTimer)
+    }
   }, [])
 
   // 订阅状态变化

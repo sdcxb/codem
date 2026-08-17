@@ -325,6 +325,10 @@ export class PluginManagerService {
 
   private notifyListeners(): void {
     for (const fn of [...this.listeners]) fn()
+    // 通知 App 层刷新插件按钮状态
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('codem:plugin-state-changed'))
+    }
   }
 
   // ===== localStorage 持久化 =====
@@ -343,6 +347,10 @@ export class PluginManagerService {
       .filter(([, s]) => s.status === 'disabled')
       .map(([n]) => n)
     localStorage.setItem(this.STORAGE_KEY, JSON.stringify(disabled))
+    // 通知 App 层刷新插件按钮状态
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('codem:plugin-state-changed'))
+    }
   }
 }
 

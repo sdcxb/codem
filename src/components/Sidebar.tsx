@@ -370,24 +370,14 @@ const handleDrop = useCallback((e: React.DragEvent, targetSessionId: string, pro
           </TooltipTrigger>
           <TooltipContent side="right">{S.sidebar.memory[lang]}</TooltipContent>
         </Tooltip>
-        {onCicd && (
+        {onPlugins && (
           <Tooltip>
             <TooltipTrigger asChild>
-              <button className="sidebar-rail-btn" onClick={onCicd}>
-                <GitBranch size={18} />
+              <button className="sidebar-rail-btn" onClick={onPlugins}>
+                <Puzzle size={18} />
               </button>
             </TooltipTrigger>
-            <TooltipContent side="right">{S.sidebar.cicd[lang]}</TooltipContent>
-          </Tooltip>
-        )}
-        {onPerf && (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button className="sidebar-rail-btn" onClick={onPerf}>
-                <Activity size={18} />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="right">{S.sidebar.perf[lang]}</TooltipContent>
+            <TooltipContent side="right">{S.sidebar.pluginManager[lang]}</TooltipContent>
           </Tooltip>
         )}
         <div className="sidebar-rail-spacer" />
@@ -460,15 +450,11 @@ const handleDrop = useCallback((e: React.DragEvent, targetSessionId: string, pro
           </button>
         )}
 
-        {/* Compact 3-in-a-row tool bar */}
+        {/* Compact tool bar — 插件/CI/CD/性能 已移至其他位置 */}
         <div className="sidebar-tool-row">
           <button className="sidebar-tool-item" onClick={onMcp} title={S.sidebar.mcp[lang]}>
             <span className="sidebar-tool-item-icon"><Plug size={16} /></span>
             <span className="sidebar-tool-item-label">{S.sidebar.mcp[lang]}</span>
-          </button>
-          <button className="sidebar-tool-item" onClick={onPlugins} title={S.sidebar.pluginManager[lang]}>
-            <span className="sidebar-tool-item-icon"><Puzzle size={16} /></span>
-            <span className="sidebar-tool-item-label">{S.sidebar.plugins[lang]}</span>
           </button>
           <button className="sidebar-tool-item" onClick={onSkills} title={S.sidebar.skills[lang]}>
             <span className="sidebar-tool-item-icon"><BookMarked size={16} /></span>
@@ -482,18 +468,6 @@ const handleDrop = useCallback((e: React.DragEvent, targetSessionId: string, pro
             <button className="sidebar-tool-item" onClick={onAgents} title={lang === 'zh' ? '智能体' : 'Agents'}>
               <span className="sidebar-tool-item-icon"><Bot size={16} /></span>
               <span className="sidebar-tool-item-label">{lang === 'zh' ? '智能体' : 'Agents'}</span>
-            </button>
-          )}
-          {onCicd && (
-            <button className="sidebar-tool-item" onClick={onCicd} title={S.sidebar.cicd[lang]}>
-              <span className="sidebar-tool-item-icon"><GitBranch size={16} /></span>
-              <span className="sidebar-tool-item-label">{S.sidebar.cicd[lang]}</span>
-            </button>
-          )}
-          {onPerf && (
-            <button className="sidebar-tool-item" onClick={onPerf} title={S.sidebar.perf[lang]}>
-              <span className="sidebar-tool-item-icon"><Activity size={16} /></span>
-              <span className="sidebar-tool-item-label">{S.sidebar.perf[lang]}</span>
             </button>
           )}
         </div>
@@ -806,7 +780,7 @@ const handleDrop = useCallback((e: React.DragEvent, targetSessionId: string, pro
           </div>
         </>
       )}
-      {/* P1 #8: Bottom user info area */}
+      {/* P1 #8: Bottom user info area + 插件管理按钮 */}
       <div className="sidebar-user-area">
         <div className="sidebar-user-avatar">
           {identity?.name
@@ -817,6 +791,29 @@ const handleDrop = useCallback((e: React.DragEvent, targetSessionId: string, pro
           <div className="sidebar-user-name">{identity?.name || (lang === 'zh' ? '未登录' : 'Guest')}</div>
           <div className="sidebar-user-status">{lang === 'zh' ? '本地用户' : 'Local user'}</div>
         </div>
+        {onPlugins && (
+          <button className="sidebar-user-plugin-btn" onClick={onPlugins} title={S.sidebar.pluginManager[lang]}
+            style={{
+              marginLeft: 'auto',
+              background: 'var(--bg-hover)',
+              border: '1px solid var(--border-primary)',
+              borderRadius: 6,
+              cursor: 'pointer',
+              padding: '6px 10px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 4,
+              fontSize: 12,
+              color: 'var(--text-secondary)',
+              transition: 'background 0.15s, color 0.15s',
+            }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--bg-active)'; e.currentTarget.style.color = 'var(--text-primary)'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = 'var(--bg-hover)'; e.currentTarget.style.color = 'var(--text-secondary)'; }}
+          >
+            <Puzzle size={14} />
+            <span>{S.sidebar.pluginManager[lang]}</span>
+          </button>
+        )}
       </div>
     </div>
   );

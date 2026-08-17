@@ -42,7 +42,7 @@ async function getCordisContext(): Promise<Context> {
   return ctx;
 }
 // ====== Cordis 插件系统初始化结束 ======
-import { RefreshCw, X, MessageSquare, Terminal, BookOpen, Save, FolderOpen, PencilLine, Trash2, CheckCircle, Menu, Hammer, ClipboardList, Search, Bot } from "lucide-react";
+import { RefreshCw, X, MessageSquare, Terminal, BookOpen, Save, FolderOpen, PencilLine, Trash2, CheckCircle, Menu, Hammer, ClipboardList, Search, Bot, Activity } from "lucide-react";
 import { TooltipProvider } from "./components/ui/tooltip";
 import { TitleBar } from "./components/TitleBar";
 import { BootSplash } from "./components/BootSplash";
@@ -139,7 +139,7 @@ async function getAppRoot(): Promise<string> {
 
 // 同步 fallback：在异步 getAppRoot 完成前使用
 const APP_ROOT_FALLBACK = "D:\\mimo";
-type BottomTab = "chat" | "terminal";
+type BottomTab = "chat" | "terminal" | "perf";
 
 function getCliSessionKey(projectId: string, sessionId: string) {
   return `codem-cli-session-${projectId}-${sessionId}`;
@@ -204,6 +204,41 @@ const [showPluginManager, setShowPluginManager] = useState(false);
   const [showGitHubClone, setShowGitHubClone] = useState(false);
 const [showCicdPanel, setShowCicdPanel] = useState(false);
 const [showPerfDashboard, setShowPerfDashboard] = useState(false);
+// 插件启用状态 — 控制按钮/面板的显示与隐藏
+const [pluginDisabledList, setPluginDisabledList] = useState<string[]>(() => {
+  try {
+    const raw = localStorage.getItem('codem:disabled-plugins');
+    return raw ? JSON.parse(raw) : [];
+  } catch { return []; }
+});
+// 监听插件状态变化（PluginManagerService 写入 localStorage 后触发）
+useEffect(() => {
+  const onStorage = (e: StorageEvent) => {
+    if (e.key === 'codem:disabled-plugins') {
+      try { setPluginDisabledList(e.newValue ? JSON.parse(e.newValue) : []); } catch {}
+    }
+  };
+  // 也监听自定义事件（同窗口内 PluginManager 操作不会触发 storage 事件）
+  const onPluginChange = () => {
+    try {
+      const raw = localStorage.getItem('codem:disabled-plugins');
+      setPluginDisabledList(raw ? JSON.parse(raw) : []);
+    } catch {}
+  };
+  window.addEventListener('storage', onStorage);
+  window.addEventListener('codem:plugin-state-changed', onPluginChange);
+  return () => {
+    window.removeEventListener('storage', onStorage);
+    window.removeEventListener('codem:plugin-state-changed', onPluginChange);
+  };
+}, []);
+// 插件是否被禁用
+const isPluginDisabled = useCallback((name: string) => pluginDisabledList.includes(name), [pluginDisabledList]);
+// CI/CD 对应插件 @codem/ui-misc，性能对应 @codem/ui-misc
+// 插件管理对应 @codem/plugin-registry
+const cicdEnabled = !isPluginDisabled('@codem/ui-misc');
+const perfEnabled = !isPluginDisabled('@codem/ui-misc');
+const pluginMgrEnabled = !isPluginDisabled('@codem/plugin-registry');
 const [planApproval, setPlanApproval] = useState<{ plan: string; resolve: (result: { approved: boolean; feedback?: string }) => void } | null>(null);
   const [showSearchDialog, setShowSearchDialog] = useState(false);
 const [activeNotebookId, setActiveNotebookId] = useState<string | null>(null);
@@ -218,6 +253,10 @@ const [showTaskCenter, setShowTaskCenter] = useState(false);
 const [taskCenterTab, setTaskCenterTab] = useState<TaskCenterTab>("overview");
 const [showAgentManager, setShowAgentManager] = useState(false);
   const [bottomTab, setBottomTab] = useState<BottomTab>("chat");
+// 如果性能 tab 被禁用但当前选中它，回退到对话
+useEffect(() => {
+  if (bottomTab === "perf" && !perfEnabled) setBottomTab("chat");
+}, [bottomTab, perfEnabled]);
   const [fileExplorerProjectId, setFileExplorerProjectId] = useState<string | null>(null);
   const [fileExplorerRefreshKey, setFileExplorerRefreshKey] = useState(0);
   const [editingFile, setEditingFile] = useState<string | null>(null);
@@ -2122,7 +2161,7 @@ onTaskCenter={() => { setTaskCenterTab("overview"); setShowTaskCenter(true); }}
                     onProjects={() => setShowProjectManager(true)}
                     onConfig={() => setShowConfigEditor(true)}
                     onMcp={() => setShowMcpManager(true)}
-          onPlugins={() => setShowPluginManager(true)}
+          onPlugins={pluginMgrEnabled ? () => setShowPluginManager(true) : undefined}
                     onSkills={() => setShowSkillManager(true)}
                     onMemory={() => setShowMemoryManager(true)}
                     onNotebooks={() => setShowNotebookManager(true)}
@@ -2145,9 +2184,14 @@ onRemoveProject={(id, name, path) => {
                       <button className={`tab ${bottomTab === "chat" ? "active" : ""}`} onClick={() => setBottomTab("chat")}>
                         <MessageSquare size={14} /> {lang === "zh" ? "对话" : "Chat"}
                       </button>
-                      <button className={`tab ${bottomTab === "terminal" ? "active" : ""}`} onClick={() => setBottomTab("terminal")}>
-                        <Terminal size={14} /> {lang === "zh" ? "终端" : "Terminal"}
-                      </button>
+<button className={`tab ${bottomTab === "terminal" ? "active" : ""}`} onClick={() => setBottomTab("terminal")}>
+<Terminal size={14} /> {lang === "zh" ? "终端" : "Terminal"}
+</button>
+{perfEnabled && (
+<button className={`tab ${bottomTab === "perf" ? "active" : ""}`} onClick={() => setBottomTab("perf")}>
+<Activity size={14} /> {lang === "zh" ? "性能" : "Perf"}
+</button>
+)}
                     </div>
                     <div className="panel-content">
                       {compactionStatus && (
@@ -2213,9 +2257,12 @@ onSourceClick={activeNotebookId ? handleSourceClick : undefined}
 notebookId={activeNotebookId || undefined}
 />
                       )}
-                      {bottomTab === "terminal" && (
-                        <SlotBridge name="app.terminal" fallback={TerminalPanel} cwd={currentProject?.path || appRoot} />
-                      )}
+{bottomTab === "terminal" && (
+<SlotBridge name="app.terminal" fallback={TerminalPanel} cwd={currentProject?.path || appRoot} />
+)}
+{perfEnabled && bottomTab === "perf" && (
+<SlotBridge name="app.performance-dashboard" fallback={PerformanceDashboard} onClose={() => setBottomTab("chat")} />
+)}
                     </div>
                   </div>
                 </div>
@@ -2230,14 +2277,14 @@ notebookId={activeNotebookId || undefined}
                   onProjects={() => setShowProjectManager(true)}
                   onConfig={() => setShowConfigEditor(true)}
                   onMcp={() => setShowMcpManager(true)}
-          onPlugins={() => setShowPluginManager(true)}
+          onPlugins={pluginMgrEnabled ? () => setShowPluginManager(true) : undefined}
                   onSkills={() => setShowSkillManager(true)}
                   onMemory={() => setShowMemoryManager(true)}
                   onNotebooks={() => setShowNotebookManager(true)}
 onTaskCenter={() => { setTaskCenterTab("overview"); setShowTaskCenter(true); }}
 onAgents={() => setShowAgentManager(true)}
-onCicd={() => setShowCicdPanel(true)}
-onPerf={() => setShowPerfDashboard(true)}
+onCicd={cicdEnabled ? () => setShowCicdPanel(true) : undefined}
+onPerf={perfEnabled ? () => setShowPerfDashboard(true) : undefined}
 onRemoveProject={(id, name, path) => {
   setRemoveProjectDialog({ id, name, path });
 }}
@@ -2252,9 +2299,14 @@ onRemoveProject={(id, name, path) => {
                     <button className={`tab ${bottomTab === "chat" ? "active" : ""}`} onClick={() => setBottomTab("chat")}>
                       <MessageSquare size={14} /> {lang === "zh" ? "对话" : "Chat"}
                     </button>
-                    <button className={`tab ${bottomTab === "terminal" ? "active" : ""}`} onClick={() => setBottomTab("terminal")}>
-                      <Terminal size={14} /> {lang === "zh" ? "终端" : "Terminal"}
-                    </button>
+<button className={`tab ${bottomTab === "terminal" ? "active" : ""}`} onClick={() => setBottomTab("terminal")}>
+<Terminal size={14} /> {lang === "zh" ? "终端" : "Terminal"}
+</button>
+{perfEnabled && (
+<button className={`tab ${bottomTab === "perf" ? "active" : ""}`} onClick={() => setBottomTab("perf")}>
+<Activity size={14} /> {lang === "zh" ? "性能" : "Perf"}
+</button>
+)}
                   </div>
                   <div className="panel-content">
                     {compactionStatus && (
@@ -2320,9 +2372,12 @@ onSourceClick={activeNotebookId ? handleSourceClick : undefined}
 notebookId={activeNotebookId || undefined}
 />
                     )}
-                    {bottomTab === "terminal" && (
-                      <SlotBridge name="app.terminal" fallback={TerminalPanel} cwd={currentProject?.path || appRoot} />
-                    )}
+{bottomTab === "terminal" && (
+<SlotBridge name="app.terminal" fallback={TerminalPanel} cwd={currentProject?.path || appRoot} />
+)}
+{perfEnabled && bottomTab === "perf" && (
+<SlotBridge name="app.performance-dashboard" fallback={PerformanceDashboard} onClose={() => setBottomTab("chat")} />
+)}
                   </div>
                 </div>
             </div>
@@ -2359,14 +2414,14 @@ refreshKey={fileExplorerRefreshKey}
           onProjects={() => setShowProjectManager(true)}
           onConfig={() => setShowConfigEditor(true)}
           onMcp={() => setShowMcpManager(true)}
-          onPlugins={() => setShowPluginManager(true)}
+          onPlugins={pluginMgrEnabled ? () => setShowPluginManager(true) : undefined}
           onSkills={() => setShowSkillManager(true)}
           onMemory={() => setShowMemoryManager(true)}
           onNotebooks={() => setShowNotebookManager(true)}
 onTaskCenter={() => { setTaskCenterTab("overview"); setShowTaskCenter(true); }}
 onAgents={() => setShowAgentManager(true)}
-onCicd={() => setShowCicdPanel(true)}
-onPerf={() => setShowPerfDashboard(true)}
+onCicd={cicdEnabled ? () => setShowCicdPanel(true) : undefined}
+onPerf={perfEnabled ? () => setShowPerfDashboard(true) : undefined}
 onRemoveProject={(id, name, path) => {
   setRemoveProjectDialog({ id, name, path });
 }}
@@ -2381,9 +2436,14 @@ onRemoveProject={(id, name, path) => {
             <button className={`tab ${bottomTab === "chat" ? "active" : ""}`} onClick={() => setBottomTab("chat")}>
               <MessageSquare size={14} /> {lang === "zh" ? "对话" : "Chat"}
             </button>
-            <button className={`tab ${bottomTab === "terminal" ? "active" : ""}`} onClick={() => setBottomTab("terminal")}>
-              <Terminal size={14} /> {lang === "zh" ? "终端" : "Terminal"}
-            </button>
+<button className={`tab ${bottomTab === "terminal" ? "active" : ""}`} onClick={() => setBottomTab("terminal")}>
+<Terminal size={14} /> {lang === "zh" ? "终端" : "Terminal"}
+</button>
+{perfEnabled && (
+<button className={`tab ${bottomTab === "perf" ? "active" : ""}`} onClick={() => setBottomTab("perf")}>
+<Activity size={14} /> {lang === "zh" ? "性能" : "Perf"}
+</button>
+)}
           </div>
 
           <div className="panel-content">
@@ -2470,9 +2530,12 @@ onSourceClick={activeNotebookId ? handleSourceClick : undefined}
 notebookId={activeNotebookId || undefined}
 />
             )}
-            {bottomTab === "terminal" && (
-              <SlotBridge name="app.terminal" fallback={TerminalPanel} cwd={currentProject?.path || appRoot} />
-            )}
+{bottomTab === "terminal" && (
+<SlotBridge name="app.terminal" fallback={TerminalPanel} cwd={currentProject?.path || appRoot} />
+)}
+{perfEnabled && bottomTab === "perf" && (
+<SlotBridge name="app.performance-dashboard" fallback={PerformanceDashboard} onClose={() => setBottomTab("chat")} />
+)}
           </div>
         </div>
       </div>
@@ -2507,14 +2570,14 @@ refreshKey={fileExplorerRefreshKey}
               onProjects={() => { setShowProjectManager(true); setMobileSidebarOpen(false); }}
               onConfig={() => { setShowConfigEditor(true); setMobileSidebarOpen(false); }}
               onMcp={() => { setShowMcpManager(true); setMobileSidebarOpen(false); }}
-            onPlugins={() => { setShowPluginManager(true); setMobileSidebarOpen(false); }}
+            onPlugins={pluginMgrEnabled ? () => { setShowPluginManager(true); setMobileSidebarOpen(false); } : undefined}
               onSkills={() => { setShowSkillManager(true); setMobileSidebarOpen(false); }}
               onMemory={() => { setShowMemoryManager(true); setMobileSidebarOpen(false); }}
               onNotebooks={() => { setShowNotebookManager(true); setMobileSidebarOpen(false); }}
 onTaskCenter={() => { setTaskCenterTab("overview"); setShowTaskCenter(true); setMobileSidebarOpen(false); }}
 onAgents={() => { setShowAgentManager(true); setMobileSidebarOpen(false); }}
-onCicd={() => { setShowCicdPanel(true); setMobileSidebarOpen(false); }}
-onPerf={() => { setShowPerfDashboard(true); setMobileSidebarOpen(false); }}
+onCicd={cicdEnabled ? () => { setShowCicdPanel(true); setMobileSidebarOpen(false); } : undefined}
+onPerf={perfEnabled ? () => { setShowPerfDashboard(true); setMobileSidebarOpen(false); } : undefined}
               onRemoveProject={(id, name, path) => { setRemoveProjectDialog({ id, name, path }); setMobileSidebarOpen(false); }}
               fileExplorerProjectId={fileExplorerProjectId}
               onToggleFileExplorer={handleToggleFileExplorer}
