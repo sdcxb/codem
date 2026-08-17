@@ -20,6 +20,7 @@ export function apply() {
       required: ['query'],
     },
     async execute({ query }: { query: string }) {
+      if (!ctx.skills) return 'Skills not available'
       const results = await ctx.skills.search(query)
       return results.map(r => `[${r.name}] ${r.description} (${r.id})`).join('\n')
     },
@@ -35,6 +36,7 @@ export function apply() {
     },
     requirePermission: true,
     async execute({ skillId }: { skillId: string }) {
+      if (!ctx.skills) return 'Skills not available'
       const result = await ctx.skills.installFromMarket(skillId)
       return result.success ? `Skill ${skillId} installed successfully` : `Failed: ${result.error}`
     },

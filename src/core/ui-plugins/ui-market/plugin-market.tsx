@@ -5,10 +5,11 @@
  * 浏览/搜索/安装/卸载/更新插件的 UI 面板。
  */
 import { useState, useEffect, useCallback } from 'react'
-import { useCtx } from '../consumer/index.ts'
+import { tryGetCtx } from '../consumer/index.ts'
 
 export function PluginMarketPanel() {
-  const ctx = useCtx()
+  // 使用 tryGetCtx 避免在 Context 未初始化时抛出错误
+  const ctx = tryGetCtx()
   const [plugins, setPlugins] = useState<any[]>([])
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState<'all' | 'installed' | 'available'>('all')
@@ -89,7 +90,8 @@ export function PluginMarketPanel() {
 }
 
 export function PluginManagerPanel() {
-  const ctx = useCtx()
+  // 使用 tryGetCtx 避免在 Context 未初始化时抛出错误
+  const ctx = tryGetCtx()
   const [installed, setInstalled] = useState<string[]>([])
 
   useEffect(() => {

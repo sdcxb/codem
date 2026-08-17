@@ -19,8 +19,28 @@
 > v0.99.0 已发布：**对标 DeepSeek Harness 全量升级** — 31 项差距系统性追平。P0 架构基础（事件溯源会话日志 + 5 层工具管线 + Plan Mode exit_plan_mode 增强 + 测试覆盖率门控）+ P1 功能增强（Windows ACL 沙箱 + Code Mode run_code + Session Query FTS5 + 防御性文档 + ADR）+ P2 架构提升（Capability Seam 三角色 + Workflow 编排 + Goal 自动续行 + Replay 测试 + Telemetry + 代码质量工具 + Bash 后台模式 + 终端 LLM 工具组 + Postmortem + 测试分层补齐）+ P3 远期完善（MCP 市场 + 语音 STT/TTS + Ollama 本地 LLM + CI/CD 管理 + 技能安全沙箱 + 远程同步引擎 + i18n 提示词重构 + Adaptive Idle Tracker + 事件系统增强）。25 文件修改（+1721/-313 行），50+ 新文件。全量 99 文件 / 3234 用例全部通过。**补丁修复（同版本重新构建）：** 上下游关联修复 — provider.ts toAPIMessage 补全 ContentBlock tool_use/tool_result 块处理（事件投影路径工具调用信息丢失修复）+ agentic-loop.ts 事件投影消息映射补全 tool_calls 属性（下游优先级排序/孤儿过滤/micro-compact 全链路修复）+ tools.ts readViaSeam + local-fs-provider.ts readFile 相对路径 cwd 解析修复。全量 99 文件 / 3235 用例全部通过。
 > v1.0.0 已发布：**UI/UX 标准化 + 插件系统架构 + 测试体系全面升级** — P4 Cordis DI + Slot Registry + Plugin Loader + 18 Capability Seams + P5 全能力族拆分（FS/Shell/Sandbox/Web/Skill/Subagent + 凭证/附件/知识/调度/目标/计划/后台任务）+ P6 UI 插件包化（7 个 UI 插件包 + Self-Referential Runtime + 插件市场基础设施）+ 补齐遗漏能力模块（compaction/approval/permissions/hooks/automation + fs-sandbox + tool-todo/ask-user/lsp/run-code/workflow/goal/schedule/knowledge + skin-default/pet/ui-pet + Preset/Bundle/SDK/ACP/Host/Client）+ 全弹窗 UI/UX 标准化（modal-overlay + modal-editor + 统一关闭按钮 + 图标映射体系 + CSS 变量替代硬编码 + Tailwind 类替代 + SVG 图标对齐）+ 测试体系升级（5 个新测试文件 / 271+ 用例：图标标准化 97 用例 / 工具触发-调用-执行闭环 30+ 用例 / 综合质量套件 80 用例 / 插件依赖图 24+ 用例 / 插件关闭影响 40+ 用例）+ 历史用例适配（full-regression-smoke + phase-b-f-regression 适配 SlotBridge + icon-map）。67 文件修改（+1112/-641 行）。全量 104 文件 / 3552 用例全部通过。**补丁修复（同版本重新构建）：** SlotBridge 泛型类型修复（`[key: string]: any` + `@ts-nocheck` → 泛型 `SlotBridge<P>` 从 fallback Props 自动推断参数类型）+ 恢复 `noImplicitAny` 严格检查 + App.tsx 参数类型精确化（`onResolve` alwaysAllow 可选 + `onOpenSession` 类型注解）+ SettingsPanel AgentManager onClose + files.ts 数组类型声明。`tsc --noEmit` 零错误 + `vite build` 成功。
 > v1.1.0 已发布：**DSH 对标全面整改 + 测试体系深化 + Bug 修复** — Phase A-D 全部完成。孤岛模块接入 10 项（compaction-control / output-contract / feedback / type-safety / event-system-strict / cookbook / persistence-provider / replay-adapter / preset-discovery / agent-message-queue）+ 重复实现统一 4 项（capabilities vs provider / Telemetry-CostTracker / projectedTokens / seam-dsh-compat deprecation）+ 缺失功能补齐 5 项（代理指令分层 / 进程级沙箱 ACL / Dynamic Plugin 工具 / 测试分层框架 / 包不变量检查）+ 5 个 Bug 修复（ESM require→import / fire-and-forget .catch() / TranscriptCache.clear / 网络命令阻断 / 敏感变量）+ 4 个新测试文件 / 118 用例（dsh-integration-full 53 / plugin-disable-impact 18 / functional-chain-closed-loop 12 / extended-test-methods 35：模糊+属性+契约+链路探针）+ 消息存储双轨制统一（C5）+ 系统提示词分层加载（D1）。22 文件修改，24 新文件。全量 107 文件 / 3624 用例全部通过。
+> v1.1.1 已发布：**UI 布局优化 + 插件条件渲染 + 宠物窗口 Bug 修复 + 工具调用防御性检查** — 插件管理按钮移至左下角 + CI/CD 移至右侧边栏 + 性能移至主对话框顶端 + 插件启用/禁用与按钮/面板联动显示 + 宠物窗口关闭 Bug 修复（Rust CloseRequested 拦截器）+ 插件管理面板 Cordis Context 初始化时序修复（重试机制+直接属性访问）+ UI 组件 useCtx→tryGetCtx 防御 + 6 个工具 Consumer 文件 execute 回调 null 检查防御（tool-fs/tool-bash/tool-web/tool-skill/tool-cordis/tool-extra）。15 文件修改。编译零错误。
 
 ## 待开发
+
+### v1.1.1 已发布（2026-08-17）— UI 布局优化 + 插件条件渲染 + 宠物窗口 Bug 修复 + 工具调用防御性检查
+
+#### Bug 修复（4 项）
+- [x] BUG-1 宠物右键关闭/设置关闭导致应用窗口也退出 → Rust `CloseRequested` 拦截器区分宠物窗口和应用窗口（`src-tauri/src/lib.rs`）
+- [x] BUG-2 插件管理面板打开提示"Cordis Context 尚未初始化"，插件列表全为 0 → 添加重试机制等待 Context 就绪 + 修正 `ctx.get?.()` 为直接属性访问（`PluginManager.tsx`）
+- [x] BUG-3 UI 组件 `CordisPanel`/`PluginMarketPanel`/`PluginManagerPanel` 在 Context 未初始化时渲染会抛出异常 → 改为 `tryGetCtx()` 返回 null（`ui-cordis/index.tsx`、`plugin-market.tsx`）
+- [x] BUG-4 6 个工具 Consumer 文件 execute 回调缺少服务 null 检查 → 添加 `if (!ctx.xxx) return 'not available'` 防御（`tool-fs.ts`/`tool-bash.ts`/`tool-web.ts`/`tool-skill.ts`/`tool-cordis.ts`/`tool-extra.ts`）
+
+#### UI 布局优化（3 项）
+- [x] UI-1 插件管理按钮从左侧边栏功能区域移至左下角用户信息右侧，重命名为「插件管理」（`Sidebar.tsx`）
+- [x] UI-2 CI/CD 按钮从左侧边栏移至右侧浮动面板 PanelSidebar，与 Git/文件/变更/工作台/智能体 并列（`PanelSidebar.tsx`）
+- [x] UI-3 性能按钮从左侧边栏移至主对话框顶端 panel-tabs，与「对话」「终端」并列（`App.tsx`）
+
+#### 插件条件渲染
+- [x] COND-1 `App.tsx` 添加 `pluginDisabledList` state，监听 `localStorage` 变化和 `codem:plugin-state-changed` 自定义事件
+- [x] COND-2 `plugin-manager-service.ts` 在 `saveDisabledList()` 和 `notifyListeners()` 中 dispatch 事件通知 UI 层
+- [x] COND-3 根据 `cicdEnabled`/`perfEnabled`/`pluginMgrEnabled` 动态传递 props 给 Sidebar 和其他组件
+- [x] COND-4 当 tab 对应插件被禁用时自动回退到默认 tab
 
 ### v1.1.0 已发布（2026-08-16）— DSH 对标全面整改 + 测试体系深化 + Bug 修复
 

@@ -22,6 +22,7 @@ export function apply() {
         required: ['path'],
       },
       async execute({ path }: { path: string }) {
+        if (!ctx.fs) return 'FS not available'
         return ctx.fs.readFile(path)
       },
     }),
@@ -37,6 +38,7 @@ export function apply() {
         required: ['path', 'content'],
       },
       async execute({ path, content }: { path: string; content: string }) {
+        if (!ctx.fs) return 'FS not available'
         await ctx.fs.writeFile(path, content)
         return `Written to ${path}`
       },
@@ -50,6 +52,7 @@ export function apply() {
         required: ['path'],
       },
       async execute({ path }: { path: string }) {
+        if (!ctx.fs) return 'FS not available'
         const entries = await ctx.fs.listDirectory(path)
         return entries.map(e => `${e.isDir ? '📁' : '📄'} ${e.name}`).join('\n')
       },
@@ -66,6 +69,7 @@ export function apply() {
         required: ['pattern'],
       },
       async execute({ pattern, cwd }: { pattern: string; cwd?: string }) {
+        if (!ctx.fs) return 'FS not available'
         const files = await ctx.fs.glob(pattern, cwd)
         return files.join('\n')
       },
@@ -83,6 +87,7 @@ export function apply() {
         required: ['pattern'],
       },
       async execute({ pattern, cwd, glob }: { pattern: string; cwd?: string; glob?: string }) {
+        if (!ctx.fs) return 'FS not available'
         const results = await ctx.fs.grep(pattern, cwd, glob)
         return results.map(r => `${r.file}:${r.line}: ${r.content}`).join('\n')
       },

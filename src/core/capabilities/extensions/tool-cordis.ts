@@ -20,6 +20,7 @@ export function apply() {
       properties: {},
     },
     async execute() {
+      if (!ctx.dynamicCordisRunner) return 'Dynamic Cordis Runner not available'
       const result = ctx.dynamicCordisRunner.inspect()
       return JSON.stringify(result, null, 2)
     },
@@ -38,6 +39,7 @@ export function apply() {
     },
     requirePermission: true,
     async execute({ name, code }: { name: string; code: string }) {
+      if (!ctx.dynamicCordisRunner) return 'Dynamic Cordis Runner not available'
       const result = await ctx.dynamicCordisRunner.define(name, code)
       return result.success
         ? `Plugin "${name}" defined successfully`
@@ -57,6 +59,7 @@ export function apply() {
       required: ['name'],
     },
     async execute({ name, args }: { name: string; args?: string }) {
+      if (!ctx.dynamicCordisRunner) return 'Dynamic Cordis Runner not available'
       const parsedArgs = args ? JSON.parse(args) : undefined
       const result = await ctx.dynamicCordisRunner.run(name, parsedArgs)
       return result.success
@@ -77,6 +80,7 @@ export function apply() {
     },
     requirePermission: true,
     async execute({ name }: { name: string }) {
+      if (!ctx.dynamicCordisRunner) return 'Dynamic Cordis Runner not available'
       const result = ctx.dynamicCordisRunner.retract(name)
       return result.success
         ? `Plugin "${name}" retracted`

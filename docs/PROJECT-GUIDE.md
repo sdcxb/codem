@@ -1,9 +1,9 @@
 # Codem 项目完整说明
 
 > **用途**：新对话快速理解项目全貌、架构、文件关联、当前状态。
-> 创建时间：2026-07-23 | 最后更新：2026-08-16 | 当前版本：v1.1.0（DSH 对标全面整改 + 测试体系深化 + Bug 修复 — Phase A-D 全部完成：孤岛模块接入 10 项 + 重复实现统一 4 项 + 缺失功能补齐 5 项 + 5 个 Bug 修复 + 4 个新测试文件 / 118 用例 + 模糊/属性/契约/链路探针测试方法 — 107 文件 / 3624 用例全部通过）
+> 创建时间：2026-07-23 | 最后更新：2026-08-17 | 当前版本：v1.1.1（UI 布局优化 + 插件条件渲染 + 宠物窗口 Bug 修复 + 工具调用防御性检查 — 插件管理按钮移至左下角 + CI/CD 移至右侧边栏 + 性能移至主对话框顶端 + 插件启用/禁用与按钮联动 + 宠物窗口关闭修复 + 插件面板初始化时序修复 + 全工具 execute null 检查防御）
 >
-> **版本历程概览**：v0.70 基础存储 → v0.80 轮次架构 → v0.87 Worktree/并行 → v0.88 桌面宠物 → v0.89 跨会话委派 → v0.90 P0-P4 全量功能 → v0.91 Coding 工作台 → v0.92 Codex 对标 → v0.93 Vision Proxy → v0.94 配置修复 → v0.95 CLI/API 视觉代理 → v0.96 UI 大改版 → v0.97 Agentic Loop 性能优化 → v0.98 多智能体协同 → v0.99 DSH 全量升级 → v1.0.0 插件系统架构 + UI/UX 标准化 → v1.1.0 DSH 对标整改 + 测试深化
+> **版本历程概览**：v0.70 基础存储 → v0.80 轮次架构 → v0.87 Worktree/并行 → v0.88 桌面宠物 → v0.89 跨会话委派 → v0.90 P0-P4 全量功能 → v0.91 Coding 工作台 → v0.92 Codex 对标 → v0.93 Vision Proxy → v0.94 配置修复 → v0.95 CLI/API 视觉代理 → v0.96 UI 大改版 → v0.97 Agentic Loop 性能优化 → v0.98 多智能体协同 → v0.99 DSH 全量升级 → v1.0.0 插件系统架构 + UI/UX 标准化 → v1.1.0 DSH 对标整改 + 测试深化 → v1.1.1 UI 布局优化 + 插件条件渲染 + Bug 修复
 
 ---
 
@@ -15,7 +15,7 @@
 - **GitHub**：https://github.com/sdcxb/codem
 - **分发**：NSIS `.exe` + WiX `.msi`，一键安装无需依赖
 - **平台**：Windows 优先
-- **版本**：v1.1.0（DSH 对标全面整改 + 测试体系深化 + Bug 修复，2026-08-16，Phase A-D 全部完成：孤岛模块接入 10 项（compaction-control / output-contract / feedback / type-safety / event-system-strict / cookbook / persistence-provider / replay-adapter / preset-discovery / agent-message-）+ 重复实现统一 4 项（capabilities vs provider / Telemetry-CostTracker / projectedTokens / seam-dsh-compat deprecation）+ 缺失功能补齐 5 项（代理指令分层 / 进程级沙箱 ACL / Dynamic Plugin 工具 / 测试分层框架 / 包不变量检查）+ 5 个 Bug 修复（preset require / fire-and-forget import / TranscriptCache / 网络命令阻断 / 敏感变量）+ 4 个新测试文件 / 118 用例（dsh-integration-full 53 用例 / plugin-disable-impact 18 用例 / functional-chain-closed-loop 12 用例 / extended-test-methods 35 用例：模糊测试 + 属性测试 + 契约测试 + 链路探针）。107 文件 / 3624 用例全部通过）
+- **版本**：v1.1.1（UI 布局优化 + 插件条件渲染 + 宠物窗口 Bug 修复 + 工具调用防御性检查，2026-08-17，插件管理按钮移至左下角 + CI/CD 移至右侧边栏 + 性能移至主对话框顶端 + 插件启用/禁用与按钮/面板联动显示 + 宠物窗口关闭 Bug 修复 + 插件管理面板 Cordis Context 初始化时序修复 + UI 组件 useCtx → tryGetCtx + 6 个工具 Consumer 文件 execute 回调 null 检查防御）
 
 ---
 
@@ -63,6 +63,7 @@ mammoth (DOCX) + pdfjs-dist (PDF) + xlsx (Excel) + katex (数学公式)
 **v0.99.0 新增:** 事件溯源 + 5 层工具管线 + Capability Seam + Telemetry + Ollama Provider + 语音 STT/TTS
 **v1.0.0 新增:** Cordis DI 容器 + Plugin Loader + 18 Capability Seam + UI 插件包化
 **v1.1.0 新增:** compaction-control / output-contract / feedback / type-safety / event-system-strict / runtime-invariants / request-header / postmortem / sandbox-acl / instruction-layers / dynamic-plugin-tools / test-layers / token-tracker / spill-policy / spill-store / surface-manager / repeat-tool-reminder / time-context / preset-discovery / persistence-provider
+**v1.1.1 新增:** 插件条件渲染联动 + UI 布局调整 + 全工具 execute null 检查防御
 
 ### 2.3 Rust 依赖
 
@@ -896,6 +897,7 @@ Rust 后端 (lib.rs):
 | **CHANGELOG-v0.98.0.md** | 变更日志 | v0.98.0 变更记录 | ✅ 最新 |
 | **CHANGELOG-v1.0.0.md** | 变更日志 | v1.0.0 变更记录 | ✅ 最新 |
 | **CHANGELOG-v1.1.0.md** | 变更日志 | v1.1.0 变更记录（DSH 对标整改 + 测试深化 + Bug 修复） | ✅ 最新 |
+| **CHANGELOG-v1.1.1.md** | 变更日志 | v1.1.1 变更记录（UI 布局优化 + 插件条件渲染 + Bug 修复） | ✅ 最新 |
 
 | **defensive-patterns.md** | 防御文档 | 7+ 条防御规则文档化 | ✅ 最新 |
 | **adr/0001-event-sourcing.md** | 架构决策记录 | 事件溯源 ADR | ✅ 最新 |
@@ -939,8 +941,8 @@ Rust 后端 (lib.rs):
 
 **新对话只需要阅读：**
 1. `PROJECT-GUIDE.md`（本文档）— 完整理解项目
-2. `TODO.md` — 了解当前待办（含 v1.1.0 变更）
-3. `CHANGELOG-v1.1.0.md` — 了解最新发布版本变更
+2. `TODO.md` — 了解当前待办（含 v1.1.1 变更）
+3. `CHANGELOG-v1.1.1.md` — 了解最新发布版本变更
 4. `dsh-audit-final-report.md` — 了解 DSH 对标整改审计结果
 5. `WECODE-REF-GAP-ANALYSIS.md` — 了解对标分析发现的功能缺失
 6. `IMPLEMENTATION-PLAN-FULL.md` — 了解 P0-P4 实施计划
@@ -987,6 +989,7 @@ Rust 后端 (lib.rs):
 | v0.99.0 | 2026-08-14 | **对标DeepSeek Harness全量升级** — 事件溯源会话日志(SessionEvent+deriveMessages+Replay+Fork+Projection) + 5层工具管线(pre-execute/monotonic-guards/execute/post-execute/finalize) + Plan Mode增强(exit_plan_mode工具+对齐dsh 6段提示词规范+PlanApprovalCard审批UI) + Capability Seam(ServiceDefinition/Provider/Consumer三角色+LocalFs/LocalShell Provider+SeamRegistry) + Code Mode(run_code TypeScript执行器+ToolSDK) + Session Query(FTS5全文搜索) + Goal自动续行(create/get/update_goal+Goals表) + Workflow编排(JavaScript fan-out子智能体) + Snapshot测试(ReplayAdapter录制/回放) + Telemetry(OpenTelemetry采集+telemetry_events表+PerformanceDashboard) + Bash后台模式(JobManager+job_list/output/kill) + 终端LLM工具组(terminal_open/send/signal/close) + i18n提示词重构(prompt.ts→i18n-templates.ts双语模板) + MCP市场(catalog+一键安装+分类搜索) + 语音STT/TTS(useSpeechRecognition/useSpeechSynthesis浏览器原生) + Ollama本地LLM Provider(REST API+动态模型发现+离线推理) + CI/CD管理(GitHub Actions workflow生成+运行监控+重试/取消) + 技能安全沙箱(内容预检+哈希签名+权限声明+安装审计) + 远程同步引擎(seq增量同步+Supabase/REST后端) + 代码质量工具(knip死代码+jscpd重复检测) + 测试分层补齐(snapshot+e2e配置) + 防御性文档+ADR+Postmortem体系。25文件修改(+1721/-313行)，50+新文件。全量99文件/3234用例全部通过。**补丁修复（同版本重新构建）：** provider.ts toAPIMessage补全ContentBlock tool_use/tool_result块处理（事件投影路径工具调用信息丢失修复）+ agentic-loop.ts事件投影消息映射补全tool_calls属性（下游优先级排序/孤儿过滤/micro-compact全链路修复）+ tools.ts readViaSeam+local-fs-provider.ts readFile相对路径cwd解析修复。全量99文件/3235用例全部通过 |
 | v1.0.0 | 2026-08-15 | **UI/UX 标准化 + 插件系统架构 + 测试体系全面升级** — P4 Cordis DI容器+SlotRegistry+PluginLoader+18 Capability Seam + P5 全能力族拆分(13个独立能力族) + P6 UI插件包化+插件市场基础设施(7个UI插件包+Self-Referential Runtime+插件市场Manifest) + 全弹窗UI/UX标准化(modal-overlay+modal-editor统一结构) + 图标映射体系(7图标集+ToolEmojis+消除直接lucide-react导入) + CSS样式标准化(硬编码→CSS变量+Tailwind→size属性) + 核心插件保护(riskLevel+locked+core) + 5个新测试文件/271+用例(图标标准化97用例+工具管线闭环30+用例+质量套件80用例+插件依赖图24+用例+插件禁用影响40+用例) + SlotBridge泛型类型修复+恢复noImplicitAny严格检查。67文件修改(+1112/-641行)。全量100文件/3552用例通过 |
 | v1.1.0 | 2026-08-16 | **DSH对标全面整改 + 测试体系深化 + Bug修复** — Phase A-D全部完成：孤岛模块接入10项(compaction-control/output-contract/feedback/type-safety/event-system-strict/cookbook/persistence-provider/replay-adapter/preset-discovery/agent-message-queue) + 重复实现统一4项(capabilities vs provider/Telemetry-CostTracker/projectedTokens/seam-dsh-compat deprecation) + 缺失功能补齐5项(代理指令分层/进程级沙箱ACL/Dynamic Plugin工具/测试分层框架/包不变量检查) + 5个Bug修复(ESM require→import/fire-and-forget .catch()/TranscriptCache.clear/网络命令阻断/敏感变量) + 4个新测试文件/118用例(dsh-integration-full 53+plugin-disable-impact 18+functional-chain-closed-loop 12+extended-test-methods 35:模糊/属性/契约/链路探针) + 消息存储双轨制统一(C5) + 系统提示词分层加载(D1)。22文件修改，24新文件。全量107文件/3624用例通过 |
+| v1.1.1 | 2026-08-17 | **UI布局优化 + 插件条件渲染 + Bug修复** — 插件管理按钮移至左下角 + CI/CD移至右侧边栏 + 性能移至主对话框顶端 + 插件启用/禁用与按钮/面板联动显示 + 宠物窗口关闭Bug修复(Rust CloseRequested拦截器) + 插件管理面板Cordis Context初始化时序修复(重试机制+直接属性访问) + UI组件useCtx→tryGetCtx防御 + 6个工具Consumer文件execute回调null检查防御(tool-fs/tool-bash/tool-web/tool-skill/tool-cordis/tool-extra)。15文件修改。编译零错误 |
 
 ### 6.2 v0.90.0 已发布功能（P0-P4 全量功能，commit 7435919，2026-07-31）
 
@@ -1180,6 +1183,7 @@ Rust 后端 (lib.rs):
 | **v0.99.0 DSH 全量升级** | ✅ 已发布 | v0.99.0 发布，事件溯源 + 5层工具管线 + Plan Mode增强 + Capability Seam + Code Mode + Session Query + Goal 续行 + Workflow 编排 + Snapshot测试 + Telemetry + Bash后台 + 终端工具组 + i18n提示词 + MCP市场 + 语音STT/TTS + Ollama + CI/CD管理 + 技能安全沙箱 + 远程同步 + 代码质量工具 |
 | **v1.0.0 插件系统+UI标准化** | ✅ 已发布 | v1.0.0 发布，Cordis DI 容器 + Plugin Loader + 18 Capability Seam + UI 插件包化 + 全弹窗 UI/UX 标准化 + 图标映射体系 + CSS 样式标准化 + 5个新测试文件/271+用例 + SlotBridge 泛型类型修复 |
 | **DSH 对标全面整改** | ✅ 已完成 | v1.1.0 发布，Phase A-D 全部完成（孤岛模块接入 10 项 + 重复实现统一 4 项 + 缺失功能补齐 5 项）+ 5 Bug 修复 + 4 新测试文件 / 118 用例 |
+| **UI 布局优化 + 插件条件渲染** | ✅ 已完成 | v1.1.1 发布，插件管理移至左下角 + CI/CD 移至右侧边栏 + 性能移至主对话框顶端 + 插件启用/禁用与按钮联动 + 宠物窗口关闭修复 + 工具 null 检查防御 |
 | **Phase E: Work 模式拆分** | ⏳ 远期 | Codex/Work 双模式切换（E1-E7） |
 | **MSI 中文向导** | ⏳ | WiX 多语言配置（zh-CN + en-US） |
 | **更多 Provider 测试** | ⏳ | 目前主要测试 DeepSeek + MiMo + Ollama |
@@ -1347,6 +1351,26 @@ npm run tauri build        # 构建 NSIS exe + MSI
 ---
 
 ## 八、版本历史
+
+### v1.1.1（2026-08-17）— UI 布局优化 + 插件条件渲染 + 宠物窗口 Bug 修复 + 工具调用防御性检查
+
+> v1.1.0 的增量修复版本。修复宠物右键关闭导致应用退出的问题，优化 UI 布局，实现插件启用/禁用状态与按钮/面板的联动显示，修复插件管理面板 Cordis Context 初始化时序问题，并为所有工具 execute 回调添加服务 null 检查防御。
+
+**Bug 修复（4 项）：**
+- 宠物窗口关闭 Bug — Rust `CloseRequested` 拦截器区分宠物窗口和应用窗口（`src-tauri/src/lib.rs`）
+- 插件管理面板初始化失败 — 添加重试机制等待 Context 就绪 + 修正 `ctx.get?.()` 为直接属性访问（`PluginManager.tsx`）
+- UI 组件 useCtx() 崩溃 — 改为 `tryGetCtx()` 返回 null（`ui-cordis/index.tsx`、`plugin-market.tsx`）
+- 工具 execute 回调缺少 null 检查 — 6 个工具 Consumer 文件添加 `if (!ctx.xxx) return 'not available'` 防御
+
+**UI 布局优化（3 项）：**
+- 插件管理按钮移至左下角用户信息右侧（`Sidebar.tsx`）
+- CI/CD 移至右侧浮动面板 PanelSidebar（`PanelSidebar.tsx`）
+- 性能移至主对话框顶端 panel-tabs（`App.tsx`）
+
+**插件条件渲染：**
+- 插件关闭后对应按钮和面板自动隐藏，启用后重新显示
+- `App.tsx` 监听 `codem:plugin-state-changed` 事件 + `localStorage` 变化
+- 当 tab 对应插件被禁用时自动回退到默认 tab
 
 ### v1.1.0（2026-08-16）— DSH 对标全面整改 + 测试体系深化 + Bug 修复
 

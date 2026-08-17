@@ -5,10 +5,11 @@
  * 提供查看/管理动态加载插件的 UI 面板。
  */
 import { useState, useEffect, useCallback } from 'react'
-import { useCtx } from '../../consumer/index.ts'
+import { tryGetCtx } from '../../consumer/index.ts'
 
 export function CordisPanel() {
-  const ctx = useCtx()
+  // 使用 tryGetCtx 避免在 Context 未初始化时抛出错误
+  const ctx = tryGetCtx()
   const [plugins, setPlugins] = useState<any[]>([])
   const [services, setServices] = useState<string[]>([])
   const [dynamicList, setDynamicList] = useState<string[]>([])
@@ -26,6 +27,7 @@ export function CordisPanel() {
   }, [refresh])
 
   const handleRetract = (name: string) => {
+    if (!ctx?.dynamicCordisRunner) return
     ctx.dynamicCordisRunner.retract(name)
     refresh()
   }

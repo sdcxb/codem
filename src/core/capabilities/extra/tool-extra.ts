@@ -38,6 +38,7 @@ export function applyTodo() {
     async execute({ todos }: { todos: any[] }) {
       // 存储到 ctx.storage
       const ctx = useCtx()
+      if (!ctx.storage) return 'Storage not available'
       ctx.storage.set('todos', todos)
       return `Updated ${todos.length} todo items`
     },

@@ -18,6 +18,8 @@
 >
 > **v1.1.0 更新**：完成 DeepSeek Harness 第三轮对标全面整改 — Phase A-D 全部完成（孤岛模块接入 10 项 + 重复实现统一 4 项 + 缺失功能补齐 5 项）+ 5 个 Bug 修复 + 4 个新测试文件 / 118 用例。全量 107 文件 / 3624 用例通过。
 >
+> **v1.1.1 更新**：UI 布局优化（插件管理移至左下角 + CI/CD 移至右侧边栏 + 性能移至主对话框顶端）+ 插件条件渲染（关闭插件隐藏按钮/面板，启用后恢复）+ 宠物窗口关闭 Bug 修复 + 插件管理面板初始化时序修复 + 全工具 execute 回调 null 检查防御。
+>
 
 
 ![Codem 运行界面](screenshots/26720-1.png)
@@ -308,6 +310,27 @@ npm run tauri:build
 - 两种模式均使用内置 LLM 引擎直连 API，无需依赖外部进程
 
 ## 更新日志
+
+### 2026-08-17（v1.1.1）
+
+> 本次更新为 v1.1.0 的增量修复版本。修复宠物右键关闭导致应用退出的问题，优化 UI 布局（插件管理按钮移至左下角、CI/CD 移至右侧边栏、性能移至主对话框顶端），实现插件启用/禁用状态与按钮/面板的联动显示，修复插件管理面板 Cordis Context 初始化时序问题，并为所有工具 execute 回调添加服务 null 检查防御。
+
+**Bug 修复（4 项）：**
+- **宠物窗口关闭 Bug**：右键关闭宠物或设置中关闭宠物时应用窗口也退出 → Rust `CloseRequested` 拦截器区分宠物窗口和应用窗口（`src-tauri/src/lib.rs`）
+- **插件管理面板初始化失败**：打开提示"Cordis Context 尚未初始化"，插件列表全为 0 → 添加重试机制等待 Context 就绪 + 修正 `ctx.get?.()` 为直接属性访问（`PluginManager.tsx`）
+- **UI 组件 useCtx() 崩溃**：`CordisPanel`/`PluginMarketPanel` 等组件在 Context 未初始化时渲染会抛出异常 → 改为 `tryGetCtx()` 返回 null（`ui-cordis/index.tsx`、`plugin-market.tsx`）
+- **工具 execute 回调缺少 null 检查**：6 个工具 Consumer 文件的 execute 回调直接访问 ctx 服务属性，服务未注册时崩溃 → 添加 `if (!ctx.xxx) return 'not available'` 防御（`tool-fs.ts`/`tool-bash.ts`/`tool-web.ts`/`tool-skill.ts`/`tool-cordis.ts`/`tool-extra.ts`）
+
+**UI 布局优化（3 项）：**
+- **插件管理按钮移至左下角**：从左侧边栏功能区域移至左下角用户信息右侧，重命名为「插件管理」（`Sidebar.tsx`）
+- **CI/CD 移至右侧边栏**：从左侧边栏移至右侧浮动面板，与 Git/文件/变更/工作台/智能体 并列（`PanelSidebar.tsx`）
+- **性能移至主对话框顶端**：从左侧边栏移至 panel-tabs，与「对话」「终端」并列（`App.tsx`）
+
+**插件条件渲染：**
+- 插件关闭后对应按钮和面板自动隐藏，插件启用后重新显示
+- `App.tsx` 监听 `codem:plugin-state-changed` 事件 + `localStorage` 变化
+- `plugin-manager-service.ts` 在状态变更时 dispatch 事件通知 UI 层
+- 当 tab 对应插件被禁用时自动回退到默认 tab
 
 ### 2026-08-16（v1.1.0）
 
