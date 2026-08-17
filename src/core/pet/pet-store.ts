@@ -564,10 +564,13 @@ export const usePetStore = create<PetStoreState>((set, get) => ({
       }
     } else {
       clearIdleTimer();
-      // 关闭宠物窗口
-      emitPetClose();
+      // 关闭宠物窗口 — 只通过 Rust 端命令关闭，避免双路径竞态
+      // (close_pet_window 调用 window.close()，Rust 端对 pet 窗口不再 prevent_close)
       if (invoke) {
         invoke("close_pet_window").catch(() => {});
+      } else {
+        // Fallback: 通过事件通知宠物窗口前端自行关闭
+        emitPetClose();
       }
     }
   },

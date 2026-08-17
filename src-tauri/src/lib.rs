@@ -1807,9 +1807,14 @@ path_exists,
                 event: WinEvent::CloseRequested { api, .. },
                 ..
             } => {
-                // Always prevent the default close
+                // Pet window: allow close immediately (no tray logic)
+                if label == "pet" {
+                    // Let the default close proceed — do NOT call prevent_close()
+                    return;
+                }
+                // Main window: prevent default close and let frontend decide
+                // (tray minimize vs. quit app)
                 api.prevent_close();
-                // Notify frontend to handle close behavior
                 if let Some(window) = app_handle.get_webview_window(&label) {
                     let _ = window.emit("close-requested", ());
                 }
