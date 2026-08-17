@@ -96,15 +96,15 @@ export class AgentRegistry {
       for (const preset of presets) {
         if (!this.agents.has(preset.id)) {
           // Only register presets that don't collide with built-in agents
-          // Convert AgentPreset to AgentDefinition
-          this.agents.set(preset.id, {
-            id: preset.id,
-            name: preset.displayName || preset.id,
-            description: preset.description || "",
-            mode: "subagent",
-            prompt: preset.composition?.prompt || "",
-            modelSlot: preset.composition?.modelSlot,
-          });
+          // Use the parsed agentDefinition if available
+          if (preset.agentDefinition) {
+            this.agents.set(preset.id, {
+              ...preset.agentDefinition,
+              id: preset.id,
+              name: preset.displayName || preset.agentDefinition.name || preset.id,
+              description: preset.description || preset.agentDefinition.description || "",
+            });
+          }
         }
       }
       if (presets.length > 0) {

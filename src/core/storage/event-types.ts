@@ -216,4 +216,5 @@ export function isCompaction(e: SessionEvent): e is SessionEvent & { payload: Co
 // ========== R3-4.4: Type Safety Re-exports ==========
 // Re-export assertNever + Branded types from type-safety module
 // so they are available from the core types entry point.
-export { assertNever, brand, unbrand, Branded, SessionId, ToolCallId, MessageId } from "../llm/type-safety";
+export { assertNever, brand, unbrand, SessionId, ToolCallId, MessageId } from "../llm/type-safety";
+export type { Branded } from "../llm/type-safety";

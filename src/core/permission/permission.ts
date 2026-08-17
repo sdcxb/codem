@@ -279,3 +279,12 @@ export function getPermissionManager(): PermissionManager {
   }
   return instance;
 }
+
+/** Returns available security modes for the permissions provider */
+export function getSecurityModes(): Array<{ name: string; description: string; riskLevel: string }> {
+  return [
+    { name: "ask", description: "Ask before executing potentially dangerous operations", riskLevel: "medium" },
+    { name: "auto-approve", description: "Automatically approve all operations (use with caution)", riskLevel: "high" },
+    { name: "strict", description: "Deny all operations that modify files or execute commands", riskLevel: "low" },
+  ];
+}

@@ -130,3 +130,10 @@ console.log(JSON.stringify(results, null, 2));
     },
   };
 }
+
+/** Convenience wrapper for executing workflows from providers */
+export async function execWorkflow(code: string, options?: { timeout?: number }): Promise<string> {
+  const tool = createWorkflowTool();
+  const result = await tool.execute({ code, timeout_ms: options?.timeout }, {} as any);
+  return result.output;
+}

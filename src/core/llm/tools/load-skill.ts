@@ -263,8 +263,6 @@ export function renderSkillContent(skill: SkillDefinition): string {
 
 // ========== Catalog digest (差距 3: 每轮刷新) ==========
 
-import { createHash } from "crypto";
-
 interface CatalogEntry {
   name: string;
   description: string;
@@ -274,9 +272,13 @@ interface CatalogEntry {
  * 计算 catalog 的 digest（SHA-256）。
  * 只有 entries 变化才会触发重新注入。
  */
-function digestCatalogEntries(entries: CatalogEntry[]): string {
+async function digestCatalogEntries(entries: CatalogEntry[]): Promise<string> {
   const canonical = entries.map(e => JSON.stringify([e.name, e.description])).join("\n");
-  return createHash("sha256").update(canonical).digest("hex");
+  const encoder = new TextEncoder();
+  const data = encoder.encode(canonical);
+  const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, "0")).join("");
 }
 
 /** 会话级 catalog 历史 — 记录上次注入的 digest，避免重复注入 */
@@ -289,7 +291,7 @@ const catalogHistory = new Map<string, { digest: string; published: boolean }>()
  * @param sessionId 会话 ID
  * @returns catalog 消息文本，空字符串表示未变更无需注入
  */
-export function buildCatalogMessage(sessionId: string): string {
+export async function buildCatalogMessage(sessionId: string): Promise<string> {
   const registry = getSkillRegistry();
   const allSkills = registry.getAll().filter((s) => s.enabled !== false);
 
@@ -300,7 +302,7 @@ export function buildCatalogMessage(sessionId: string): string {
       : s.description,
   }));
 
-  const digest = digestCatalogEntries(entries);
+  const digest = await digestCatalogEntries(entries);
   const history = catalogHistory.get(sessionId);
 
   // 未变更 — 不注入

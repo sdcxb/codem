@@ -10,6 +10,9 @@ let _ctx: Context | null = null;
 /** R4: 设置 Cordis Context — 传入后工具通过 ctx.get() 消费服务 */
 export function setToolContext(ctx: Context) { _ctx = ctx }
 
+/** R4: 获取 Cordis Context */
+export function getToolContext(): Context | null { return _ctx }
+
 /** R4: 从 ctx 获取文件系统服务 */
 function getFs() {
   if (_ctx) {
@@ -29,7 +32,7 @@ function getShell() {
       if (shell) return shell
     } catch {}
   }
-  return { execute: (cmd: string, cwd?: string) => executeCommand(cmd, cwd ? { workspace: cwd } : undefined) }
+  return { execute: (cmd: string, cwd?: string) => executeCommand(cmd, cwd) }
 }
 
 /** R4: 从 ctx 获取设置服务 */

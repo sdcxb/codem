@@ -125,12 +125,11 @@ function loadSessionInstructions(sessionInstructions?: string): InstructionEntry
 
 async function getGlobalInstructionsPath(): Promise<string | null> {
   try {
-    const os = await import("os");
-    const path = await import("path");
-    const home = os.homedir();
+    const home = process.env.USERPROFILE || process.env.HOME || "";
+    if (!home) return null;
     const candidates = [
-      path.join(home, ".codem", "instructions.md"),
-      path.join(home, ".codem", "agent-instructions.md"),
+      `${home}/.codem/instructions.md`,
+      `${home}/.codem/agent-instructions.md`,
     ];
     const { exists } = await import("../file-api");
     for (const p of candidates) {

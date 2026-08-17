@@ -185,7 +185,7 @@ export async function e2eRequest(
   messages: import("./types").LLMMessage[],
   tools: import("./types").ToolDefinition[] = [],
 ): Promise<import("./types").LLMResponse> {
-  const model = provider.config?.models?.[0]?.id || "gpt-4o-mini";
+  const model = (provider as any).config?.models?.[0]?.id || "gpt-4o-mini";
   const events: import("./types").StreamEvent[] = [];
 
   for await (const event of provider.stream({
@@ -207,18 +207,18 @@ export async function e2eRequest(
   for (const event of events) {
     if (event.type === "text_delta") content += event.text;
     if (event.type === "reasoning_delta") reasoning += event.text;
-    if (event.type === "tool_call_delta" && event.toolCall) toolCalls.push(event.toolCall);
+    if (event.type === "tool_use_end") toolCalls.push({ id: event.id, name: event.name || "", input: event.input || {} });
     if (event.type === "usage") usage = event.usage;
   }
 
   return {
+    id: "e2e-response",
     content,
-    reasoning: reasoning || undefined,
     toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
     usage,
     finishReason: "stop",
     model,
-  };
+  } as import("./types").LLMResponse;
 }
 
 // ========== Test Result Reporter ==========

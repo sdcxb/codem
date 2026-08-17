@@ -382,3 +382,10 @@ export function createLSPTool(): ToolDef {
     },
   };
 }
+
+/** Convenience wrapper for executing LSP operations from providers */
+export async function execLspTool(operation: string, args: Record<string, unknown>): Promise<string> {
+  const tool = createLSPTool();
+  const result = await tool.execute({ operation, ...args }, {} as any);
+  return result.output;
+}

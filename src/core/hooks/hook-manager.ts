@@ -37,7 +37,7 @@ const DEFAULT_HOOK_TIMEOUT_MS = 10_000;
 
 // ========== Hook Manager ==========
 
-class HookManager {
+export class HookManager {
   private config: HookConfig;
   /** Whether hooks are enabled globally */
   private enabled: boolean = true;

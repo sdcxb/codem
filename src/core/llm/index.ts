@@ -333,7 +333,6 @@ private loopPool: Map<string, AgenticLoop> = new Map();
         // E8: Pass cost tracker for cost-aware degradation
         costTracker: this.costTracker,
       },
-      this.ctx || undefined, // R4: 传递 Cordis Context 给 AgenticLoop
     );
 
     // Pool the loop per-session for parallel execution

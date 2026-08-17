@@ -176,3 +176,20 @@ Timeout: 30 seconds.`,
     },
   };
 }
+
+/** Convenience wrapper for executing code from providers */
+export async function execRunCode(code: string, options?: { timeout?: number; cwd?: string }): Promise<{ stdout: string; stderr: string; error?: string }> {
+  const sdk: ToolSDK = {
+    bash: async (cmd: string) => {
+      const { executeCommand } = await import("../../file-api");
+      const result = await executeCommand(cmd, options?.cwd);
+      return { stdout: result.stdout, stderr: result.stderr, exitCode: result.exitCode ?? 0 };
+    },
+    read: async (path: string) => { const { readFile } = await import("../../file-api"); return readFile(path); },
+    write: async (path: string, content: string) => { const { writeFile } = await import("../../file-api"); return writeFile(path, content); },
+    glob: async (pattern: string) => { const { globSearch } = await import("../../file-api"); return globSearch(pattern); },
+    grep: async (pattern: string) => { const { grepSearch } = await import("../../file-api"); const results = await grepSearch(pattern); return results.map((r: any) => ({ file: r.file || r.path || "", line: r.line || 0, content: r.content || r.line_text || "" })); },
+    fetch: async (url: string) => { const res = await fetch(url); return res.text(); },
+  };
+  return executeCode(code, sdk, options?.timeout ?? 30_000);
+}

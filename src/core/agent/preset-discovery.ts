@@ -21,39 +21,36 @@
  * - 挂载通过 session_meta 事件记录
  */
 
-import * as fs from "fs";
-import * as path from "path";
-import * as os from "os";
 import type { AgentDefinition } from "./agent";
 
 // ========== Types ==========
 
 /** 预设根目录配置 */
 export interface PresetRoot {
-  /** 根目录路径 */
-  path: string;
-  /** 信任级别：shipped（内置）或 user（用户自定义） */
-  trust: "shipped" | "user";
+/** 根目录路径 */
+path: string;
+/** 信任级别：shipped（内置）或 user（用户自定义） */
+trust: "shipped" | "user";
 }
 
 /** 发现的预设 */
 export interface AgentPreset {
-  /** preset id = 目录名 */
-  id: string;
-  /** 信任级别 */
-  trust: "shipped" | "user";
-  /** 组合文件路径 */
-  path: string;
-  /** 显示名称（来自 metadata.yml，回退到 id） */
-  displayName?: string;
-  /** 描述文本 */
-  description?: string;
-  /** 排序权重 */
-  order?: number;
-  /** 损坏原因（undefined = 健康） */
-  broken?: string;
-  /** 解析后的 agent 定义（broken 时为 null） */
-  agentDefinition?: AgentDefinition | null;
+/** preset id = 目录名 */
+id: string;
+/** 信任级别 */
+trust: "shipped" | "user";
+/** 组合文件路径 */
+path: string;
+/** 显示名称（来自 metadata.yml，回退到 id） */
+displayName?: string;
+/** 描述文本 */
+description?: string;
+/** 排序权重 */
+order?: number;
+/** 损坏原因（undefined = 健康） */
+broken?: string;
+/** 解析后的 agent 定义（broken 时为 null） */
+agentDefinition?: AgentDefinition | null;
 }
 
 // ========== Constants ==========
@@ -154,7 +151,8 @@ function parseMetadata(text: string): { displayName?: string; description?: stri
  */
 async function isFile(filePath: string): Promise<boolean> {
   try {
-    return (await fs.promises.stat(filePath)).isFile();
+    const { exists } = await import("../file-api");
+    return await exists(filePath);
   } catch {
     return false;
   }
@@ -164,10 +162,11 @@ async function isFile(filePath: string): Promise<boolean> {
  * 读取元数据文件（如果存在）
  */
 async function readMetadata(dir: string): Promise<{ displayName?: string; description?: string; order?: number }> {
-  const metaPath = path.join(dir, METADATA_FILE);
+  const metaPath = `${dir}/${METADATA_FILE}`;
   if (!(await isFile(metaPath))) return {};
   try {
-    const content = await fs.promises.readFile(metaPath, "utf8");
+    const { readFile } = await import("../file-api");
+    const content = await readFile(metaPath);
     return parseMetadata(content);
   } catch {
     return {};
@@ -213,10 +212,11 @@ function parseComposition(text: string, presetId: string): { definition: AgentDe
  * 扫描一个根目录
  */
 async function scanRoot(root: PresetRoot): Promise<AgentPreset[]> {
-  const dir = path.resolve(root.path);
-  let children: fs.Dirent[];
+  const dir = root.path;
+  let children: Array<{ name: string; path: string; isDirectory: boolean }>;
   try {
-    children = await fs.promises.readdir(dir, { withFileTypes: true });
+    const { listDirectory } = await import("../file-api");
+    children = await listDirectory(dir);
   } catch {
     return [];
   }
@@ -224,10 +224,10 @@ async function scanRoot(root: PresetRoot): Promise<AgentPreset[]> {
   const found: AgentPreset[] = [];
 
   for (const child of children) {
-    if (!child.isDirectory() || !PRESET_ID.test(child.name)) continue;
+    if (!child.isDirectory || !PRESET_ID.test(child.name)) continue;
 
-    const directory = path.join(dir, child.name);
-    const compositionPath = path.join(directory, COMPOSITION_FILE);
+    const directory = `${dir}/${child.name}`;
+    const compositionPath = `${directory}/${COMPOSITION_FILE}`;
 
     if (!(await isFile(compositionPath))) {
       // 目录存在但没有 composition 文件 — 跳过
@@ -239,7 +239,8 @@ async function scanRoot(root: PresetRoot): Promise<AgentPreset[]> {
     let broken: string | undefined;
 
     try {
-      const content = await fs.promises.readFile(compositionPath, "utf8");
+      const { readFile } = await import("../file-api");
+      const content = await readFile(compositionPath);
       const result = parseComposition(content, child.name);
       if ("error" in result) {
         broken = result.error;
@@ -298,12 +299,14 @@ export function getDefaultRoots(appDir?: string): PresetRoot[] {
   const roots: PresetRoot[] = [];
 
   // 用户预设目录
-  const userDir = path.join(os.homedir(), USER_PRESET_DIR);
-  roots.push({ path: userDir, trust: "user" });
+  const home = process.env.USERPROFILE || process.env.HOME || "";
+  if (home) {
+    roots.push({ path: `${home}/${USER_PRESET_DIR}`, trust: "user" });
+  }
 
   // 应用内置预设目录
   if (appDir) {
-    roots.push({ path: path.join(appDir, "presets"), trust: "shipped" });
+    roots.push({ path: `${appDir}/presets`, trust: "shipped" });
   }
 
   return roots;

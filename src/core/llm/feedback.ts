@@ -19,7 +19,6 @@
 
 import { getDatabase, persistDatabase } from "../storage/database";
 import { getEventLog } from "../storage/event-log";
-import { randomUUID } from "crypto";
 
 // ========== Types ==========
 
@@ -179,7 +178,7 @@ export function putMessageFeedback(
     return { ok: true, item: existing };
   }
 
-  const newVersion = randomUUID();
+  const newVersion = crypto.randomUUID();
 
   // 删除现有
   db.run("DELETE FROM message_feedback WHERE message_id = ?", [messageId]);

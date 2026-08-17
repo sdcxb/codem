@@ -59,4 +59,18 @@ export default defineConfig({
   worker: {
     format: "es",
   },
+  resolve: {
+    alias: {
+      // Stub Node.js built-in modules for browser compatibility
+      // These are used by server-side modules (postmortem, preset-discovery, instruction-layers)
+      // but are not needed in the Tauri browser environment — Tauri IPC is used instead
+      fs: resolve(__dirname, "src/stubs/node-fs-stub.ts"),
+      path: resolve(__dirname, "src/stubs/node-path-stub.ts"),
+      os: resolve(__dirname, "src/stubs/node-os-stub.ts"),
+      "node:fs": resolve(__dirname, "src/stubs/node-fs-stub.ts"),
+      "node:path": resolve(__dirname, "src/stubs/node-path-stub.ts"),
+      "node:os": resolve(__dirname, "src/stubs/node-os-stub.ts"),
+      "node:crypto": resolve(__dirname, "src/stubs/node-crypto-stub.ts"),
+    },
+  },
 });

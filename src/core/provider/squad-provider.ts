@@ -13,10 +13,10 @@
  * - UI 小队管理面板通过 ctx.squad.list() 展示小队列表
  */
 import type { Plugin } from '../cordis/src/index.ts'
-import { SquadManager } from '../squad/squad.ts'
+import { getSquadManager } from '../squad/squad.ts'
 
 export const squadProvider: Plugin = (ctx: any) => {
-  const manager = new SquadManager(ctx)
+  const manager = getSquadManager()
 
   const dispose = ctx.provide('squad', {
     async create(name: string, config?: any): Promise<string> {

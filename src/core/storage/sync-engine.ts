@@ -254,7 +254,7 @@ export class SyncEngine {
         localSeq: e.seq,
         deviceId,
         sessionId: e.sessionId,
-        eventType: e.type,
+        eventType: e.type as SessionEventType,
         payload: e.payload,
         timestamp: e.timestamp,
       }));

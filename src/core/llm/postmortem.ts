@@ -15,8 +15,6 @@
  * 报告存储在 `~/.codem/postmortem/` 目录下。
  */
 
-import * as fs from "fs";
-import * as path from "path";
 import { getEventLog } from "../storage/event-log";
 
 // ========== Types ==========
@@ -56,15 +54,15 @@ export interface PostmortemReport {
 /** postmortem 报告存储目录 */
 function getPostmortemDir(): string {
   const home = process.env.USERPROFILE || process.env.HOME || ".";
-  const dir = path.join(home, ".codem", "postmortem");
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-  }
-  return dir;
+  return `${home}/.codem/postmortem`;
 }
 
 /** 报告中包含的最后 N 个事件 */
 const MAX_EVENTS_IN_REPORT = 20;
+
+// ========== In-Memory Store (fallback when file I/O unavailable) ==========
+
+const inMemoryReports: PostmortemReport[] = [];
 
 // ========== Report Generation ==========
 
@@ -73,9 +71,9 @@ const MAX_EVENTS_IN_REPORT = 20;
  *
  * @param sessionId 出问题的会话
  * @param error 错误描述
- * @returns 生成的报告
+ * @returns 生成的报告（同时也尝试保存到文件，非关键路径失败不阻塞）
  */
-export function generatePostmortem(sessionId: string, error: string): PostmortemReport {
+export async function generatePostmortem(sessionId: string, error: string): Promise<PostmortemReport> {
   const eventLog = getEventLog();
   const events = eventLog.readAll(sessionId);
 
@@ -154,9 +152,22 @@ export function generatePostmortem(sessionId: string, error: string): Postmortem
     possibleCauses,
   };
 
-  // 保存报告到文件
-  const reportPath = path.join(getPostmortemDir(), `${report.id}.json`);
-  fs.writeFileSync(reportPath, JSON.stringify(report, null, 2), "utf-8");
+  // 保存到内存存储（文件 I/O 不可用时的回退路径）
+  inMemoryReports.push(report);
+
+  // 保存报告到文件（非关键路径，失败不阻塞）
+  try {
+    const { writeFile, exists } = await import("../file-api");
+    const reportPath = `${getPostmortemDir()}/${report.id}.json`;
+    // 确保目录存在（Tauri IPC 不支持 mkdir，但 writeFile 会自动创建父目录）
+    if (!await exists(getPostmortemDir())) {
+      // 尝试写入一个 .gitkeep 文件来创建目录
+      await writeFile(`${getPostmortemDir()}/.gitkeep`, "").catch(() => {});
+    }
+    await writeFile(reportPath, JSON.stringify(report, null, 2));
+  } catch {
+    // 非关键路径 — 报告已生成在内存中
+  }
 
   return report;
 }
@@ -164,38 +175,55 @@ export function generatePostmortem(sessionId: string, error: string): Postmortem
 /**
  * 列出所有 postmortem 报告。
  */
-export function listPostmortems(): Array<{ id: string; sessionId: string; timestamp: number; error: string }> {
-  const dir = getPostmortemDir();
-  const files = fs.readdirSync(dir).filter((f) => f.endsWith(".json"));
-  const reports: Array<{ id: string; sessionId: string; timestamp: number; error: string }> = [];
+export async function listPostmortems(): Promise<Array<{ id: string; sessionId: string; timestamp: number; error: string }>> {
+  let fileReports: Array<{ id: string; sessionId: string; timestamp: number; error: string }> = [];
+  try {
+    const { listDirectory, readFile } = await import("../file-api");
+    const dir = getPostmortemDir();
+    const entries = await listDirectory(dir).catch(() => []);
+    const jsonFiles = entries.filter((e) => e.name.endsWith(".json"));
 
-  for (const file of files) {
-    try {
-      const content = fs.readFileSync(path.join(dir, file), "utf-8");
-      const report = JSON.parse(content);
-      reports.push({
-        id: report.id,
-        sessionId: report.sessionId,
-        timestamp: report.timestamp,
-        error: report.error,
-      });
-    } catch {
-      // 跳过损坏的报告
+    for (const entry of jsonFiles) {
+      try {
+        const content = await readFile(`${dir}/${entry.name}`);
+        const report = JSON.parse(content);
+        fileReports.push({
+          id: report.id,
+          sessionId: report.sessionId,
+          timestamp: report.timestamp,
+          error: report.error,
+        });
+      } catch {
+        // 跳过损坏的报告
+      }
     }
+  } catch {
+    // 文件 I/O 不可用
   }
 
-  return reports.sort((a, b) => b.timestamp - a.timestamp);
+  // 合并文件报告和内存报告（去重：文件优先）
+  const fileIds = new Set(fileReports.map(r => r.id));
+  const memReports = inMemoryReports
+    .filter(r => !fileIds.has(r.id))
+    .map(r => ({ id: r.id, sessionId: r.sessionId, timestamp: r.timestamp, error: r.error }));
+
+  return [...fileReports, ...memReports].sort((a, b) => b.timestamp - a.timestamp);
 }
 
 /**
  * 读取一份完整的 postmortem 报告。
  */
-export function getPostmortem(reportId: string): PostmortemReport | null {
-  const reportPath = path.join(getPostmortemDir(), `${reportId}.json`);
-  if (!fs.existsSync(reportPath)) return null;
+export async function getPostmortem(reportId: string): Promise<PostmortemReport | null> {
   try {
-    return JSON.parse(fs.readFileSync(reportPath, "utf-8"));
+    const { readFile, exists } = await import("../file-api");
+    const reportPath = `${getPostmortemDir()}/${reportId}.json`;
+    if (await exists(reportPath)) {
+      const content = await readFile(reportPath);
+      return JSON.parse(content);
+    }
   } catch {
-    return null;
+    // 文件 I/O 不可用
   }
+  // 回退到内存存储
+  return inMemoryReports.find(r => r.id === reportId) || null;
 }

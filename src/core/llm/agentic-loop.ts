@@ -766,7 +766,7 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
 
       // 差距 3: Catalog 每轮刷新 — digest 对比，变更才注入
       const { buildCatalogMessage } = await import("./tools/load-skill");
-      const catalogMessage = buildCatalogMessage(sessionId);
+      const catalogMessage = await buildCatalogMessage(sessionId);
       if (catalogMessage) {
         if (apiMessages.length > 0 && apiMessages[0].role === "system") {
           const sysMsg = apiMessages[0];

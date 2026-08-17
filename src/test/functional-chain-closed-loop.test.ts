@@ -156,7 +156,7 @@ describe("功能触发→调用→执行闭环测试", () => {
       log.append("sess-pm", "tool_result", { toolCallId: "tc1", status: "error", result: "Permission denied" });
       log.append("sess-pm", "error", { message: "Write failed" });
 
-      const report = generatePostmortem("sess-pm", "Write failed");
+      const report = await generatePostmortem("sess-pm", "Write failed");
       expect(report.sessionId).toBe("sess-pm");
       expect(report.error).toBe("Write failed");
       expect(report.eventSummary.totalEvents).toBe(4);

@@ -116,8 +116,8 @@ class BundledScriptRegistry {
           env: { ...process.env, ...options.env },
           timeout,
           maxBuffer: 1024 * 1024, // 1MB
-          input: options.stdin,
-        },
+          ...(options.stdin ? { input: options.stdin } : {}),
+        } as Parameters<typeof execFileAsync>[2],
       );
 
       return {

@@ -280,7 +280,7 @@ describe("B3: Postmortem — 事后复盘", () => {
     );
     mockDb.seq = 3;
 
-    const report = generatePostmortem("sess-pm", "Permission denied");
+    const report = await generatePostmortem("sess-pm", "Permission denied");
     expect(report.sessionId).toBe("sess-pm");
     expect(report.error).toBe("Permission denied");
     expect(report.eventSummary.totalEvents).toBeGreaterThan(0);
@@ -289,7 +289,7 @@ describe("B3: Postmortem — 事后复盘", () => {
     expect(report.possibleCauses.some(c => c.includes("unpaired"))).toBe(true);
 
     // 验证可通过 listPostmortems 检索
-    const list = listPostmortems();
+    const list = await listPostmortems();
     expect(list.length).toBeGreaterThan(0);
   });
 });

@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import * as MessageStorage from "./core/storage/message";
 import type { FeedbackType } from "./core/storage/message";
+import { putMessageFeedback } from "./core/llm/feedback";
 
 /** Auto-retrieved knowledge source (from notebook RAG, not from tool calls) */
 export interface RetrievedSource {
@@ -340,9 +341,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       try {
         MessageStorage.saveFeedback(messageId, sessionId, feedback);
         // R3-2.2: Also record through the feedback module for event log integration
-        import("./core/llm/feedback").then(({ putMessageFeedback }) => {
-          putMessageFeedback(messageId, feedback === "like" ? "like" : feedback === "dislike" ? "dislike" : "neutral", sessionId).catch(() => {});
-        }).catch(() => {});
+        try {
+          putMessageFeedback(sessionId, messageId, feedback === "like" ? "like" : feedback === "dislike" ? "dislike" : "neutral");
+        } catch { /* non-critical */ }
       } catch (e) {
         console.warn("[setFeedback] DB save failed:", e);
       }
