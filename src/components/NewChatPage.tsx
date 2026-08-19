@@ -33,7 +33,7 @@ const SUGGESTIONS_ZH: SuggestionItem[] = [
     icon: Code2,
     title: "编写代码",
     desc: "让我帮你编写、重构或调试代码",
-    prompt: "帮我编写一个 ",
+    prompt: "帮我编写代码：",
   },
   {
     icon: FileSearch,
@@ -60,7 +60,7 @@ const SUGGESTIONS_EN: SuggestionItem[] = [
     icon: Code2,
     title: "Write Code",
     desc: "Let me help you write, refactor, or debug code",
-    prompt: "Help me write a ",
+    prompt: "Help me write code: ",
   },
   {
     icon: FileSearch,

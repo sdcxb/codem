@@ -134,7 +134,7 @@ export function PanelSidebar({ open, onClose }: RightSidebarProps) {
           />
         )}
         {effectiveTab === "cicd" && cicdEnabled && (
-          <CicdPanel onClose={onClose} />
+          <CicdPanel />
         )}
       </div>
     </div>

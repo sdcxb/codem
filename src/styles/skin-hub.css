@@ -241,13 +241,13 @@
 [data-skin="hub"] .input-card-container {
   background: var(--hub-bg-input);
   border: 1px solid var(--hub-border-color);
-  border-radius: 16px;
+  border-radius: 12px;
   color: var(--hub-text-main);
 }
 [data-skin="hub"] .input-wrapper {
   background: transparent;
   border: none;
-  border-radius: 16px 16px 0 0;
+  border-radius: 12px 12px 0 0;
 }
 
 [data-skin="hub"] .chat-input-wrapper input,

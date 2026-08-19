@@ -23,7 +23,7 @@ import {
 } from "../core/cicd";
 
 interface CicdPanelProps {
-  onClose: () => void;
+  onClose?: () => void;
 }
 
 const STATUS_COLORS: Record<string, string> = {
@@ -241,21 +241,6 @@ export function CicdPanel({ onClose }: CicdPanelProps) {
         overflow: "hidden",
       }}
     >
-        {/* Header */}
-        <div style={{
-          display: "flex", alignItems: "center", justifyContent: "space-between",
-          padding: "12px 16px", borderBottom: "1px solid var(--border-color, #333)",
-          flexShrink: 0,
-        }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <GitBranch size={18} />
-            <span style={{ fontSize: 16, fontWeight: 700 }}>{S.cicd.title[lang]}</span>
-          </div>
-          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "inherit" }}>
-            <X size={20} />
-          </button>
-        </div>
-
         {/* Repo Input */}
         <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--border-color, #333)", flexShrink: 0, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
           <input

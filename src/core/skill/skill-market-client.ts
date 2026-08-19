@@ -437,7 +437,7 @@ async function fetchBuiltinSkills(source: MarketSource): Promise<MarketSkill[]> 
  */
 async function fetchClawHubSkills(source: MarketSource): Promise<MarketSkill[]> {
   const skills: MarketSkill[] = [];
-  const MAX_PAGES = 20; // 最多 20 页 × 100 条/页 = 2000 条
+  const MAX_PAGES = 3; // 最多 3 页 × 100 条/页 = 300 条（避免多页串行请求导致加载慢）
   const PAGE_SIZE = 100;
   let pageNum = 0;
 
@@ -543,7 +543,7 @@ async function fetchSkillsShSkills(source: MarketSource): Promise<MarketSkill[]>
  */
 async function fetchSkillsShViaAPI(source: MarketSource, baseUrl: string): Promise<MarketSkill[]> {
   const skills: MarketSkill[] = [];
-  const MAX_PAGES = 10; // 最多 10 页 × 500 条/页 = 5000 条
+  const MAX_PAGES = 2; // 最多 2 页 × 500 条/页 = 1000 条（避免多页串行请求导致加载慢）
   const PER_PAGE = 500;
 
   try {
@@ -743,7 +743,7 @@ async function fetchSkillsShViaHTML(source: MarketSource, baseUrl: string): Prom
  */
 async function fetchSkillHubAPISkills(source: MarketSource): Promise<MarketSkill[]> {
   const skills: MarketSkill[] = [];
-  const MAX_PAGES = 20; // 最多 20 页 × 100 条/页 = 2000 条
+  const MAX_PAGES = 3; // 最多 3 页 × 100 条/页 = 300 条（避免多页串行请求导致加载慢）
   const PAGE_SIZE = 100;
 
   try {

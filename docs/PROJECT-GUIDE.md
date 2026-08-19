@@ -1,9 +1,9 @@
 # Codem 项目完整说明
 
 > **用途**：新对话快速理解项目全貌、架构、文件关联、当前状态。
-> 创建时间：2026-07-23 | 最后更新：2026-08-19 | 当前版本：v1.4.0（Cordis 插件系统对标 DSH 全面整改 — 死 slot 从 29 个降至 0 个 + 7 个 UI provider inject 声明依赖 + Conversation slot 层级对标 DSH 完整建立 + slots.inject() 消费声明 + 11 个重复 slot 注册移除 + MessageBubble/InputArea/ChatPanel/Sidebar 全面接入 SlotBridge）
+> 创建时间：2026-07-23 | 最后更新：2026-08-19 | 当前版本：v1.4.1（插件管理 Cordis Context 初始化彻底修复 + 技能市场加载性能优化 + 默认模型持久化修复 + CI/CD 面板/底部按钮/编辑框圆角/首页自适应/对话区域自适应 9 项 Bug 修复）
 >
-> **版本历程概览**：v0.70 基础存储 → v0.80 轮次架构 → v0.87 Worktree/并行 → v0.88 桌面宠物 → v0.89 跨会话委派 → v0.90 P0-P4 全量功能 → v0.91 Coding 工作台 → v0.92 Codex 对标 → v0.93 Vision Proxy → v0.94 配置修复 → v0.95 CLI/API 视觉代理 → v0.96 UI 大改版 → v0.97 Agentic Loop 性能优化 → v0.98 多智能体协同 → v0.99 DSH 全量升级 → v1.0.0 插件系统架构 + UI/UX 标准化 → v1.1.0 DSH 对标整改 + 测试深化 → v1.1.1 UI 布局优化 + 插件条件渲染 + Bug 修复 → v1.2.0 Cordis 架构对齐 DSH + 安全加固 + 全量测试重构 → v1.3.0 Cordis 插件系统对标 DSH 全面整改 + Slot 消费闭环 + inject 依赖对齐 → v1.4.0 UI/UX 体验优化 11 项 Bug 修复 + 性能/CI-CD 面板切换化 + 梦幻皮肤一致性修复
+> **版本历程概览**：v0.70 基础存储 → v0.80 轮次架构 → v0.87 Worktree/并行 → v0.88 桌面宠物 → v0.89 跨会话委派 → v0.90 P0-P4 全量功能 → v0.91 Coding 工作台 → v0.92 Codex 对标 → v0.93 Vision Proxy → v0.94 配置修复 → v0.95 CLI/API 视觉代理 → v0.96 UI 大改版 → v0.97 Agentic Loop 性能优化 → v0.98 多智能体协同 → v0.99 DSH 全量升级 → v1.0.0 插件系统架构 + UI/UX 标准化 → v1.1.0 DSH 对标整改 + 测试深化 → v1.1.1 UI 布局优化 + 插件条件渲染 + Bug 修复 → v1.2.0 Cordis 架构对齐 DSH + 安全加固 + 全量测试重构 → v1.3.0 Cordis 插件系统对标 DSH 全面整改 + Slot 消费闭环 + inject 依赖对齐 → v1.4.0 UI/UX 体验优化 11 项 Bug 修复 + 性能/CI-CD 面板切换化 + 梦幻皮肤一致性修复 → v1.4.1 插件管理初始化修复 + 技能市场性能优化 + 对话区域自适应 9 项 Bug 修复
 
 ---
 
@@ -15,7 +15,7 @@
 - **GitHub**：https://github.com/sdcxb/codem
 - **分发**：NSIS `.exe` + WiX `.msi`，一键安装无需依赖
 - **平台**：Windows 优先
-- **版本**：v1.4.0（UI/UX 体验优化 11 项 Bug 修复 + 性能/CI-CD 面板切换化 + 梦幻皮肤一致性修复 + 技能市场乱码修复，2026-08-19）
+- **版本**：v1.4.1（插件管理初始化修复 + 技能市场性能优化 + 默认模型持久化 + 对话区域自适应，2026-08-19）
 
 ---
 
@@ -1511,6 +1511,28 @@ npm run tauri build        # 构建 NSIS exe + MSI
 ### v0.96.2（2026-08-11）— CodeGraph 集成 + 测试改造 + CI Workflow
 
 （详见上方版本历史摘要）
+
+### v1.4.1（2026-08-19）— 插件管理初始化修复 + 技能市场性能优化 + 对话区域自适应 9 项 Bug 修复
+
+> 针对用户实际使用反馈的 9 项 Bug 修复。同 v1.4.0 补丁（不更新版本号）。10 文件修改，`tsc --noEmit` 零错误。
+
+**Bug 1 — 插件管理页面“Cordis Context 尚未初始化”彻底修复**：`getCordisContext()` 在 `loadDefaultProviders(ctx)` 后加 `await new Promise(setTimeout 0)` 等待 fiber 激活；`PluginManager.tsx` 重试次数 50→100，最终失败用 non-strict fallback。
+
+**Bug 2 — 技能市场 ClawHub/Skills.sh/SkillHub 加载很慢**：三大市场源 MAX_PAGES 大幅减少 — ClawHub 20→3、Skills.sh 10→2、SkillHub 20→3。
+
+**Bug 3 — 启动后默认模型显示 mimo-v2.5-pro 而非上次保存的 deepseek**：`configureEngine` 在 `saved` 为 null（DB 未就绪）时也重试（200ms 间隔）。
+
+**Bug 4 — CI/CD 面板太靠右被遮挡 + 界面元素太大有关闭按钮**：去掉 `CicdPanel` 的 header 和关闭按钮，`onClose` 改为可选 prop。
+
+**Bug 5 — 对话框编辑框圆角太大 + 梦幻皮肤毛玻璃未适配**：三套皮肤 `.input-card-container` 圆角统一为 12px（基础 20px、梦幻 16px、Hub 16px → 12px）。
+
+**Bug 6 — 首页区域未自适应窗口分辨率**：`.empty-state` 和 `.new-chat-page` 的 `justify-content: center`→`flex-start`，去掉 `height: 100%`，加 `padding` 和 `width: 100%`。
+
+**Bug 7 — 首页 Write Code 显示不全 + Tips 消失**：prompt 从半句改为完整提示语 `"Help me write code: "` / `"帮我编写代码："`。
+
+**Bug 8 — 顶部对话/终端/性能区域多了 CI/CD 按钮**：从底部面板 tab 栏移除 CI/CD 按钮和面板渲染（CI/CD 保留在右侧边栏 PanelSidebar 中）。
+
+**Bug 9 — 对话区域不按窗口大小自适应**：`.chat-body` 添加 `flex-direction: column`；`.messages-container` 和 `.input-area > .input-card-container` 的 `max-width` 从 `clamp(100%, 75vw, 1100px)` 改为 `clamp(100%, 90vw, 1400px)`。
 
 ### v1.4.0（2026-08-19）— UI/UX 体验优化 11 项 Bug 修复 + 性能/CI-CD 面板切换化 + 梦幻皮肤一致性修复
 

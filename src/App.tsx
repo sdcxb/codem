@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useCallback } from "react";
+﻿import { useEffect, useState, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 
 // D1-4: 全局错误边界 — 捕获未处理的同步错误和 Promise rejection
@@ -30,8 +30,11 @@ async function getCordisContext(): Promise<Context> {
   ctx.plugin(SlotsService as any);
   // 加载独立 Provider 插件（每个服务可独立热替换）
   loadDefaultProviders(ctx);
+  // 等待所有 Provider fiber 变为 ACTIVE。
+  // ctx.plugin() 是同步注册但异步激活的（fiber effect runner 需要微任务）。
+  // 不等待会导致 ctx.get('pluginRegistry') 等返回 undefined（strict 模式下 fiber 非 ACTIVE）。
+  await new Promise(resolve => setTimeout(resolve, 0));
   // 尽早设置活跃 Context，让工具 Consumer 包可以使用已注册的服务。
-  // 放在 await 之前，确保即使后续动态 import 失败，Consumer 也能正常工作。
   setActiveContext(ctx);
 
   try {
@@ -991,6 +994,12 @@ flushStreamBuffer(); // flush all on unmount
     if (!engine) {
       console.warn('[App] engine not available, will retry in 200ms');
       // 重试等待 engine 初始化完成
+      setTimeout(() => { configureEngine(); }, 200);
+      return;
+    }
+    // DB 尚未就绪 — saved 为 null，需要重试等待 DB 初始化
+    if (!saved) {
+      console.warn('[App] settings not loaded yet (DB not ready), will retry in 200ms');
       setTimeout(() => { configureEngine(); }, 200);
       return;
     }
@@ -2263,7 +2272,6 @@ onTaskCenter={() => { setTaskCenterTab("overview"); setShowTaskCenter(true); }}
                     onNotebooks={() => setShowNotebookManager(true)}
 onTaskCenter={() => { setTaskCenterTab("overview"); setShowTaskCenter(true); }}
                     onAgents={() => setShowAgentManager(true)}
-                    onCicd={cicdEnabled ? () => setBottomTab("cicd") : undefined}
                     onPerf={perfEnabled ? () => setBottomTab("perf") : undefined}
 onRemoveProject={(id, name, path) => {
   setRemoveProjectDialog({ id, name, path });
@@ -2286,11 +2294,6 @@ onRemoveProject={(id, name, path) => {
 {perfEnabled && (
 <button className={`tab ${bottomTab === "perf" ? "active" : ""}`} onClick={() => setBottomTab("perf")}>
 <Activity size={14} /> {lang === "zh" ? "性能" : "Perf"}
-</button>
-)}
-{cicdEnabled && (
-<button className={`tab ${bottomTab === "cicd" ? "active" : ""}`} onClick={() => setBottomTab("cicd")}>
-<GitBranch size={14} /> {lang === "zh" ? "CI/CD" : "CI/CD"}
 </button>
 )}
                     {/* SlotListBridge 消费 bottom-panel.tabs — list 类型，允许插件注入底部面板 tab */}
@@ -2366,9 +2369,6 @@ notebookId={activeNotebookId || undefined}
 {perfEnabled && bottomTab === "perf" && (
 <SlotBridge name="app.performance-dashboard" fallback={PerformanceDashboard} onClose={() => setBottomTab("chat")}  showDegraded />
 )}
-{cicdEnabled && bottomTab === "cicd" && (
-<SlotBridge name="app.cicd-panel" fallback={CicdPanel} onClose={() => setBottomTab("chat")}  showDegraded />
-)}
                     </div>
                   </div>
                 </div>
@@ -2389,7 +2389,6 @@ notebookId={activeNotebookId || undefined}
                   onNotebooks={() => setShowNotebookManager(true)}
 onTaskCenter={() => { setTaskCenterTab("overview"); setShowTaskCenter(true); }}
 onAgents={() => setShowAgentManager(true)}
-onCicd={cicdEnabled ? () => setBottomTab("cicd") : undefined}
 onPerf={perfEnabled ? () => setBottomTab("perf") : undefined}
 onRemoveProject={(id, name, path) => {
   setRemoveProjectDialog({ id, name, path });
@@ -2411,11 +2410,6 @@ onRemoveProject={(id, name, path) => {
 {perfEnabled && (
 <button className={`tab ${bottomTab === "perf" ? "active" : ""}`} onClick={() => setBottomTab("perf")}>
 <Activity size={14} /> {lang === "zh" ? "性能" : "Perf"}
-</button>
-)}
-{cicdEnabled && (
-<button className={`tab ${bottomTab === "cicd" ? "active" : ""}`} onClick={() => setBottomTab("cicd")}>
-<GitBranch size={14} /> CI/CD
 </button>
 )}
                   </div>
@@ -2489,9 +2483,6 @@ notebookId={activeNotebookId || undefined}
 {perfEnabled && bottomTab === "perf" && (
 <SlotBridge name="app.performance-dashboard" fallback={PerformanceDashboard} onClose={() => setBottomTab("chat")}  showDegraded />
 )}
-{cicdEnabled && bottomTab === "cicd" && (
-<SlotBridge name="app.cicd-panel" fallback={CicdPanel} onClose={() => setBottomTab("chat")}  showDegraded />
-)}
                   </div>
                 </div>
             </div>
@@ -2534,7 +2525,6 @@ refreshKey={fileExplorerRefreshKey}
           onNotebooks={() => setShowNotebookManager(true)}
 onTaskCenter={() => { setTaskCenterTab("overview"); setShowTaskCenter(true); }}
 onAgents={() => setShowAgentManager(true)}
-onCicd={cicdEnabled ? () => setBottomTab("cicd") : undefined}
 onPerf={perfEnabled ? () => setBottomTab("perf") : undefined}
 onRemoveProject={(id, name, path) => {
   setRemoveProjectDialog({ id, name, path });
@@ -2556,11 +2546,6 @@ onRemoveProject={(id, name, path) => {
 {perfEnabled && (
 <button className={`tab ${bottomTab === "perf" ? "active" : ""}`} onClick={() => setBottomTab("perf")}>
 <Activity size={14} /> {lang === "zh" ? "性能" : "Perf"}
-</button>
-)}
-{cicdEnabled && (
-<button className={`tab ${bottomTab === "cicd" ? "active" : ""}`} onClick={() => setBottomTab("cicd")}>
-<GitBranch size={14} /> CI/CD
 </button>
 )}
           </div>
@@ -2655,9 +2640,6 @@ notebookId={activeNotebookId || undefined}
 {perfEnabled && bottomTab === "perf" && (
 <SlotBridge name="app.performance-dashboard" fallback={PerformanceDashboard} onClose={() => setBottomTab("chat")}  showDegraded />
 )}
-{cicdEnabled && bottomTab === "cicd" && (
-<SlotBridge name="app.cicd-panel" fallback={CicdPanel} onClose={() => setBottomTab("chat")}  showDegraded />
-)}
           </div>
         </div>
       </div>
@@ -2698,7 +2680,6 @@ refreshKey={fileExplorerRefreshKey}
               onNotebooks={() => { setShowNotebookManager(true); setMobileSidebarOpen(false); }}
 onTaskCenter={() => { setTaskCenterTab("overview"); setShowTaskCenter(true); setMobileSidebarOpen(false); }}
 onAgents={() => { setShowAgentManager(true); setMobileSidebarOpen(false); }}
-onCicd={cicdEnabled ? () => { setBottomTab("cicd"); setMobileSidebarOpen(false); } : undefined}
 onPerf={perfEnabled ? () => { setBottomTab("perf"); setMobileSidebarOpen(false); } : undefined}
               onRemoveProject={(id, name, path) => { setRemoveProjectDialog({ id, name, path }); setMobileSidebarOpen(false); }}
               fileExplorerProjectId={fileExplorerProjectId}

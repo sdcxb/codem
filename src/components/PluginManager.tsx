@@ -395,8 +395,8 @@ export function PluginManager({ onClose }: PluginManagerProps) {
       if (cancelled) return
       const ctx = tryGetCtx()
       if (!ctx) {
-        // Cordis Context 尚未初始化 — 延迟重试（最多 50 次 = 5 秒）
-        if (retryCount < 50) {
+        // Cordis Context 尚未初始化 — 延迟重试（最多 100 次 = 10 秒）
+        if (retryCount < 100) {
           retryTimer = setTimeout(() => attemptInit(retryCount + 1), 100)
         } else {
           setToast({ msg: 'Cordis Context 尚未初始化，请稍后重试', type: 'error' })
@@ -414,10 +414,27 @@ export function PluginManager({ onClose }: PluginManagerProps) {
         const registry = ctx.get('pluginRegistry')
         if (!registry) {
           // Provider 的 Fiber 可能还在异步加载中 — 重试
-          if (retryCount < 50) {
+          if (retryCount < 100) {
             retryTimer = setTimeout(() => attemptInit(retryCount + 1), 100)
           } else {
-            setToast({ msg: '插件注册表服务尚未就绪，请稍后重试', type: 'error' })
+            // 最后手段：尝试 non-strict 模式获取（不破坏架构，仅极端 fallback）
+            const fallbackRegistry = ctx.get('pluginRegistry', false)
+            if (fallbackRegistry) {
+              const graph = new PluginDependencyGraph()
+              for (const meta of fallbackRegistry.list()) {
+                graph.register(meta)
+              }
+              initPluginManager(ctx, graph).then(mgr => {
+                if (cancelled) return
+                setManager(mgr)
+              }).catch(err => {
+                if (cancelled) return
+                console.error('Failed to init PluginManager:', err)
+                setToast({ msg: '初始化失败: ' + err.message, type: 'error' })
+              })
+            } else {
+              setToast({ msg: '插件注册表服务尚未就绪，请稍后重试', type: 'error' })
+            }
           }
           return
         }
@@ -436,9 +453,9 @@ export function PluginManager({ onClose }: PluginManagerProps) {
           setToast({ msg: '初始化失败: ' + err.message, type: 'error' })
         })
       } catch (err: any) {
-        if (cancelled) return
-        console.error('[PluginManager] attemptInit error:', err)
-        if (retryCount < 50) {
+      if (cancelled) return
+      console.error('[PluginManager] attemptInit error:', err)
+      if (retryCount < 100) {
           retryTimer = setTimeout(() => attemptInit(retryCount + 1), 100)
         } else {
           setToast({ msg: '初始化失败: ' + err.message, type: 'error' })

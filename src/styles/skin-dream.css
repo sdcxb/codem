@@ -314,7 +314,7 @@ backdrop-filter: none !important;
   backdrop-filter: blur(var(--dream-blur-px, 12px)) saturate(1.4) !important;
   -webkit-backdrop-filter: blur(var(--dream-blur-px, 12px)) saturate(1.4) !important;
   border: 1px solid var(--dream-border-color, rgba(0, 0, 0, 0.12));
-  border-radius: 16px;
+  border-radius: 12px;
   color: var(--dream-text-main, #1a1a2e);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
 }
@@ -325,7 +325,7 @@ backdrop-filter: none !important;
 [data-skin="dream"] .input-wrapper {
   background: transparent !important;
   border: none !important;
-  border-radius: 16px 16px 0 0 !important;
+  border-radius: 12px 12px 0 0 !important;
 }
 
 [data-skin="dream"] .chat-input-wrapper input,

@@ -2542,9 +2542,9 @@ body.resizing-columns * {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   min-height: 100%;
-  height: 100%;
+  width: 100%;
   padding: 32px;
   gap: 24px;
   overflow-y: auto;

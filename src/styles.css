@@ -1171,8 +1171,8 @@ display: flex;
 flex-direction: column;
 gap: 10px;
 background: var(--bg-primary);
-/* 响应式宽度：小屏占满，大屏逐步扩展至上限，减少宽屏两侧留白 */
-max-width: clamp(100%, 75vw, 1100px);
+/* 自适应窗口宽度：小屏占满，大屏限制最大宽度避免阅读过宽，但上限更大 */
+max-width: clamp(100%, 90vw, 1400px);
 margin: 0 auto;
 width: 100%;
 }
@@ -1237,9 +1237,10 @@ width: 100%;
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   min-height: 100%;
-  height: 100%;
+  width: 100%;
+  padding: 40px 20px;
   color: var(--text-secondary);
   overflow-y: auto;
 }
@@ -1719,18 +1720,18 @@ background: transparent;
 flex-shrink: 0;
 }
 
-/* P-UI: 输入框区域最大宽度限制（对标 DSH composer max-width = chat-content-width + 32px） */
+/* P-UI: 输入框区域最大宽度限制（与对话区域 messages-container 同步） */
 .input-area > .input-card-container {
-  max-width: clamp(100%, 75vw, 1132px);
+  max-width: clamp(100%, 90vw, 1432px);
   margin: 0 auto;
   width: 100%;
 }
 
-/* P-UI: Card container — 对标 DSH floating capsule (border-radius: 22px) */
+/* P-UI: Card container — 对标 DSH floating capsule */
 .input-card-container {
   background: var(--bg-secondary);
   border: 1px solid var(--border-primary);
-  border-radius: 20px;
+  border-radius: 12px;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08), 0 0 0 1px rgba(0, 0, 0, 0.02);
   transition: box-shadow 0.2s ease, border-color 0.2s ease;
   overflow: visible;
@@ -4183,6 +4184,7 @@ color: var(--text-primary);
 .chat-body {
 flex: 1;
 display: flex;
+flex-direction: column;
 min-height: 0;
 overflow-y: auto;
 overflow-x: hidden;
