@@ -16,6 +16,7 @@ export function CordisPanel() {
 
   const refresh = useCallback(() => {
     if (!ctx) return
+    // strict 模式：确保 Provider fiber 完全 ACTIVE 后才消费
     const runner = ctx.get('dynamicCordisRunner')
     if (!runner) return
     const info = runner.inspect()
@@ -25,8 +26,19 @@ export function CordisPanel() {
   }, [ctx])
 
   useEffect(() => {
-    refresh()
-  }, [refresh])
+    // 重试机制：等待 Provider fiber 变为 ACTIVE
+    let retry = 0
+    const timer = setInterval(() => {
+      const runner = ctx?.get('dynamicCordisRunner')
+      if (runner) {
+        clearInterval(timer)
+        refresh()
+      } else if (++retry > 50) {
+        clearInterval(timer)
+      }
+    }, 100)
+    return () => clearInterval(timer)
+  }, [ctx, refresh])
 
   const handleRetract = (name: string) => {
     if (!ctx) return
@@ -64,8 +76,7 @@ export function CordisPanel() {
   )
 }
 
-export function apply() {
-  const ctx = useCtx()
+export function apply(ctx: any) {
   const slots = ctx.get('slots')
   slots.register('app.cordis', CordisPanel)
 }

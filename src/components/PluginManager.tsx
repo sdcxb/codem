@@ -406,8 +406,11 @@ export function PluginManager({ onClose }: PluginManagerProps) {
 
       try {
         // 通过 ctx.get() 正式 API 获取 pluginRegistry 服务
-        // 不使用 Proxy 属性访问 (ctx.pluginRegistry)，因为在非插件 fiber 上下文中
-        // Proxy get handler 的行为路径复杂，ctx.get() 直接走 ReflectService 更可靠
+        // 使用 strict 默认模式（true），确保 fiber 处于 ACTIVE 状态时才消费服务。
+        // 这是对标 DSH Cordis 「一切皆插件」架构的正确做法：
+        // 服务消费者必须等待 Provider 完全激活后才能访问。
+        // 当 fiber 还在 LOADING/PENDING 时，ctx.get() 返回 undefined，
+        // 通过重试机制等待就绪，而非用 strict=false 绕过状态检查。
         const registry = ctx.get('pluginRegistry')
         if (!registry) {
           // Provider 的 Fiber 可能还在异步加载中 — 重试

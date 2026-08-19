@@ -1425,6 +1425,27 @@ transition: border-color var(--duration-fast) var(--ease-out), box-shadow var(--
 .composer-tool-btn.security-ask { color: var(--security-ask); }
 .composer-tool-btn.security-auto { color: var(--security-auto); }
 .composer-tool-btn.security-full { color: var(--security-full); }
+
+/* Bug10: 安全策略按钮 — 深色模式下使用紫色边框样式，避免白色底色 */
+.security-mode-btn {
+  border: 1px solid var(--border-primary);
+  background: transparent;
+  color: var(--text-secondary);
+}
+.security-mode-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-soft, rgba(124,58,237,0.08));
+}
+[data-theme="dark"] .security-mode-btn {
+  border-color: var(--accent, #7c3aed);
+  color: var(--accent, #a78bfa);
+  background: transparent;
+}
+[data-theme="dark"] .security-mode-btn:hover {
+  background: var(--accent-soft, rgba(124,58,237,0.15));
+  color: var(--accent, #c4b5fd);
+}
 .composer-tool-label {
   max-width: 100px;
   overflow: hidden;
@@ -2522,9 +2543,11 @@ body.resizing-columns * {
   flex-direction: column;
   align-items: center;
   justify-content: center;
+  min-height: 100%;
   height: 100%;
   padding: 32px;
   gap: 24px;
+  overflow-y: auto;
 }
 .new-chat-logo {
   display: flex;

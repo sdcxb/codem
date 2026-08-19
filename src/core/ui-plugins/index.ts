@@ -52,7 +52,11 @@ export function loadUIPlugins(ctx: Context) {
 
   for (const { name, apply } of plugins) {
     try {
-      apply()
+      // 通过 ctx.plugin() 注册为正式 Cordis 插件，
+      // 让 Cordis 的 fiber 机制管理依赖注入和生命周期。
+      // apply 函数接收 fiber ctx 参数，ctx.get('slots') 在 fiber 上下文中执行，
+      // Cordis 确保 inject 声明的依赖全部 ACTIVE 后才调用 apply。
+      ctx.plugin({ inject: ['slots'], apply: (pluginCtx: any) => apply(pluginCtx) } as any)
       console.log(`[UI Plugins] Loaded: ${name}`)
     } catch (err) {
       console.warn(`[UI Plugins] Failed to load ${name}:`, err)

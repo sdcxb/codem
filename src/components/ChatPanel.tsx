@@ -138,6 +138,8 @@ export function ChatPanel({ onSend, onCancel, onSendGuidance, onToggleSidebar, o
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [agents, setAgents] = useState<SubagentTask[]>([]);
   const [quoteContext, setQuoteContext] = useState<string | null>(null);
+  // Bug9: 建议卡片直接设置输入框内容
+  const [suggestionPrompt, setSuggestionPrompt] = useState<string | null>(null);
   // P0: Re-edit content is managed internally so onClearQuote can clear it immediately
   const handleReEditInternal = useCallback((content: string) => {
     setQuoteContext(content);
@@ -561,7 +563,7 @@ export function ChatPanel({ onSend, onCancel, onSendGuidance, onToggleSidebar, o
               <NewChatPage
                 appName="Codem"
                 connected={connected}
-                onSuggestionClick={(prompt) => setQuoteContext(prompt)}
+                onSuggestionClick={(prompt) => setSuggestionPrompt(prompt)}
               />
               {/* P2: Quick access cards + quick phrases in empty state */}
               {showQuickAccess && connected && !isSessionStreaming && (
@@ -1046,7 +1048,7 @@ canEdit={!isSessionStreaming}
           </button>
         </div>
       )}
-      <InputArea onSend={(msg, atts, skills) => { onSend(msg, atts, skills); setQuoteContext(null); }} onCancel={onCancel} disabled={(!currentSessionId || activeSessions.has(currentSessionId)) || !connected} isStreaming={!currentSessionId ? isStreaming : activeSessions.has(currentSessionId)} noSession={!currentSessionId} collaborationMode={collaborationMode} onModeChange={onModeChange || (() => {})} projectPath={projectPath} quoteContext={quoteContext} onClearQuote={() => { setQuoteContext(null); }} notebookId={notebookId} onToggleRightSidebar={() => setShowRightSidebar(!showRightSidebar)} onToggleQuickPhrase={() => setShowQuickPhrase(!showQuickPhrase)} onToggleDraftPicker={() => setShowDraftPicker(!showDraftPicker)} hasDrafts={promptDrafts.length > 0} />
+      <InputArea onSend={(msg, atts, skills) => { onSend(msg, atts, skills); setQuoteContext(null); }} onCancel={onCancel} disabled={(!currentSessionId || activeSessions.has(currentSessionId)) || !connected} isStreaming={!currentSessionId ? isStreaming : activeSessions.has(currentSessionId)} noSession={!currentSessionId} collaborationMode={collaborationMode} onModeChange={onModeChange || (() => {})} projectPath={projectPath} quoteContext={quoteContext} onClearQuote={() => { setQuoteContext(null); }} suggestionPrompt={suggestionPrompt} onSuggestionConsumed={() => setSuggestionPrompt(null)} notebookId={notebookId} onToggleRightSidebar={() => setShowRightSidebar(!showRightSidebar)} onToggleQuickPhrase={() => setShowQuickPhrase(!showQuickPhrase)} onToggleDraftPicker={() => setShowDraftPicker(!showDraftPicker)} hasDrafts={promptDrafts.length > 0} />
     </div>
   );
 }

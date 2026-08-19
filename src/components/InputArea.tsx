@@ -58,6 +58,9 @@ noSession?: boolean;
   /** #5: Quoted text from selection tooltip */
   quoteContext?: string | null;
   onClearQuote?: () => void;
+  /** Bug9: 建议卡片点击时直接替换输入框内容 */
+  suggestionPrompt?: string | null;
+  onSuggestionConsumed?: () => void;
   /** P3: Active notebook ID for source selector */
   notebookId?: string;
   /** More-actions menu callbacks (per benchmark plan) */
@@ -77,7 +80,7 @@ noSession?: boolean;
   connected?: boolean;
 }
 
-export function InputArea({ onSend, onCancel, disabled, isStreaming, noSession, collaborationMode, onModeChange, projectPath, quoteContext, onClearQuote, notebookId, onToggleSearch, onToggleWorkbench, onToggleQuickPhrase, onToggleDraftPicker, onToggleDisplayMode, onToggleGit, onToggleRightSidebar, hasDrafts, model, onModelChange, mode = "cli", connected = true }: InputAreaProps) {
+export function InputArea({ onSend, onCancel, disabled, isStreaming, noSession, collaborationMode, onModeChange, projectPath, quoteContext, onClearQuote, suggestionPrompt, onSuggestionConsumed, notebookId, onToggleSearch, onToggleWorkbench, onToggleQuickPhrase, onToggleDraftPicker, onToggleDisplayMode, onToggleGit, onToggleRightSidebar, hasDrafts, model, onModelChange, mode = "cli", connected = true }: InputAreaProps) {
   const lang = useLang();
   const [input, setInput] = useState("");
   const [pendingAttachments, setPendingAttachments] = useState<MessageAttachment[]>([]);
@@ -302,6 +305,16 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
       setTimeout(() => textareaRef.current?.focus(), 50);
     }
   }, [quoteContext]);
+
+  // Bug9: 建议卡片点击时直接替换输入框内容（而非追加）
+  useEffect(() => {
+    if (suggestionPrompt) {
+      setInput(suggestionPrompt);
+      setDraft(suggestionPrompt);
+      setTimeout(() => textareaRef.current?.focus(), 50);
+      onSuggestionConsumed?.();
+    }
+  }, [suggestionPrompt, onSuggestionConsumed]);
 
   useEffect(() => {
     setSecurityMode(getEffectiveSecurityMode(projectPath));

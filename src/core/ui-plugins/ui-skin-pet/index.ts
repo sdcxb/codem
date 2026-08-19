@@ -10,6 +10,6 @@ export function applySkinPet() {
   // TODO: 宠物皮肤配色变体注册到 ThemeManager，供用户选择切换
 }
 
-export function apply() {
+export function apply(_ctx?: any) {
   applySkinPet()
 }

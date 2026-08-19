@@ -4,7 +4,6 @@ import ReactMarkdown from "react-markdown";
 // P1 #17: Shiki replaces Prism for code highlighting
 import { ShikiCodeBlock } from "./ShikiCodeBlock";
 import { DefaultToolRenderer } from "../core/llm/tool-renderer";
-import { getSubagentManager } from "../core/subagent/subagent";
 import { tryGetCtx } from "../core/consumer";
 import { getLang, useLang, S } from "../core/i18n/lang";
 import { Tooltip, TooltipTrigger, TooltipContent } from "./ui/tooltip";
@@ -148,7 +147,15 @@ const [status, setStatus] = useState<string>("init");
 const [summary, setSummary] = useState<string>("");
 
 useEffect(() => {
-const manager = (() => { const ctx = tryGetCtx(); return (ctx?.get('subagent') ?? getSubagentManager()) as any; })();
+// D2-1: 不回退到全局单例 — Provider 未就绪时使用 toolStatus 降级
+const manager = (() => { const ctx = tryGetCtx(); return ctx?.get('subagent') as any; })();
+if (!manager) {
+// Provider 未就绪 — 用 toolStatus 降级显示
+if (toolStatus === "done") setStatus("completed");
+else if (toolStatus === "error") setStatus("failed");
+else setStatus("running");
+return;
+}
 const check = () => {
 const task = manager.getTask(taskId);
 if (task) {
@@ -185,12 +192,13 @@ if (status === "completed") {
   return <span className="subagent-status running"><Clock size={12} style={{ display: "inline", verticalAlign: "middle" }} /> {displayName} {zh ? "运行中..." : "running..."}</span>;
 }
 
-const toolRenderer = (() => {
+// D2-1: 不在模块加载时获取服务 — 改为延迟获取，确保 Provider ACTIVE 后才消费
+const getToolRenderer = () => {
     const ctx = tryGetCtx();
     const tr = ctx?.get('toolRender');
     if (tr) return { render: (r: any, c: any) => tr.render('default', r, c) };
     return new DefaultToolRenderer({ maxOutputLength: 200 });
-  })();
+  };
 
 // Threshold for long message collapse (in pixels)
 const COLLAPSE_THRESHOLD = 400;

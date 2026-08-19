@@ -6,16 +6,14 @@
  * 可独立加载/卸载/热替换 — 不影响默认皮肤和其他 UI 组件。
  */
 import { lazy } from 'react'
-import { useCtx } from '../../consumer/index.ts'
 
-export function applyUIPet() {
-  const ctx = useCtx()
+export function applyUIPet(ctx: any) {
   const slots = ctx.get('slots')
   const PetOverlay = lazy(() => import('../../../components/PetOverlay'))
   slots.register({ name: 'app.overlay', id: 'pet-overlay-skin', order: 100, priority: 50 }, PetOverlay)
   console.log('[ui-pet] Pet overlay registered')
 }
 
-export function apply() {
-  applyUIPet()
+export function apply(ctx: any) {
+  applyUIPet(ctx)
 }

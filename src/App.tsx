@@ -59,7 +59,7 @@ async function getCordisContext(): Promise<Context> {
   return ctx;
 }
 // ====== Cordis 插件系统初始化结束 ======
-import { RefreshCw, X, MessageSquare, Terminal, BookOpen, Save, FolderOpen, PencilLine, Trash2, CheckCircle, Menu, Hammer, ClipboardList, Search, Bot, Activity } from "lucide-react";
+import { RefreshCw, X, MessageSquare, Terminal, BookOpen, Save, FolderOpen, PencilLine, Trash2, CheckCircle, Menu, Hammer, ClipboardList, Search, Bot, Activity, GitBranch } from "lucide-react";
 import { TooltipProvider } from "./components/ui/tooltip";
 import { TitleBar } from "./components/TitleBar";
 import { BootSplash } from "./components/BootSplash";
@@ -157,7 +157,7 @@ async function getAppRoot(): Promise<string> {
 
 // 同步 fallback：在异步 getAppRoot 完成前使用
 const APP_ROOT_FALLBACK = "D:\\mimo";
-type BottomTab = "chat" | "terminal" | "perf" | "files" | "jobs";
+type BottomTab = "chat" | "terminal" | "perf" | "files" | "jobs" | "cicd";
 
 function getCliSessionKey(projectId: string, sessionId: string) {
   return `codem-cli-session-${projectId}-${sessionId}`;
@@ -670,7 +670,22 @@ const [removeProjectDialog, setRemoveProjectDialog] = useState<{
 id: string; name: string; path: string;
 } | null>(null);
 // D2-1: 一切插件化 — 不回退到模块级单例，Provider 禁用时 engineRef 为 null
-const engineRef = useRef(getCtxService('llmEngine') || null);
+// 使用 useEffect + 重试机制等待 Provider fiber 变为 ACTIVE
+const engineRef = useRef<any>(null);
+useEffect(() => {
+  let retry = 0
+  const timer = setInterval(() => {
+    const engine = getCtxService('llmEngine')
+    if (engine) {
+      engineRef.current = engine
+      clearInterval(timer)
+    } else if (++retry > 50) {
+      console.warn('[App] llmEngine provider not available after 5s')
+      clearInterval(timer)
+    }
+  }, 100)
+  return () => clearInterval(timer)
+}, [])
 // Per-session abort controllers for parallel execution
 const abortControllersRef = useRef<Map<string, AbortController>>(new Map());
 // handleSend ref for automation callbacks (avoids stale closure)
@@ -731,7 +746,13 @@ flushStreamBuffer(); // flush all on unmount
         // The initial configureEngine() in the other useEffect may have run before DB init.
         configureEngine();
         // Reload model profiles from database — they may have been loaded before DB init
-        { const mp = getCtxService('modelProfile'); if (mp) mp.reload(); }
+        // 重试等待 Provider fiber 变为 ACTIVE
+        { const tryReload = (retry = 0) => {
+            const mp = getCtxService('modelProfile')
+            if (mp) { mp.reload(); }
+            else if (retry < 50) { setTimeout(() => tryReload(retry + 1), 100); }
+          }; tryReload();
+        }
       } catch (err) {
         console.error("[App] Init failed:", err);
         useProjectStore.getState().loadFromDB();
@@ -966,7 +987,13 @@ flushStreamBuffer(); // flush all on unmount
   // Configure engine based on mode and settings
   const configureEngine = useCallback(async () => {
     const saved = getSettingJSON<any>("codem-settings", null);
-    const engine = engineRef.current; if (!engine) { console.warn('[App] engine not available'); return; }
+    const engine = engineRef.current;
+    if (!engine) {
+      console.warn('[App] engine not available, will retry in 200ms');
+      // 重试等待 engine 初始化完成
+      setTimeout(() => { configureEngine(); }, 200);
+      return;
+    }
 
     if (saved) {
       const settings = saved;
@@ -986,8 +1013,9 @@ flushStreamBuffer(); // flush all on unmount
         setCurrentMode("cli");
         setCurrentProvider("mimo");
         // D2-1: 一切插件化 — 不回退到 getMiMoAuth() 单例
-const auth = getCtxService('mimoAuth');
-if (!auth) { console.warn('[App] mimoAuth provider not available'); return; }
+        // 重试等待 Provider fiber 变为 ACTIVE
+        const auth = getCtxService('mimoAuth');
+        if (!auth) { console.warn('[App] mimoAuth provider not available'); return; }
         let account = auth.getActiveAccount();
         if (!account) {
           account = await auth.loadFromAuthJson();
@@ -1420,8 +1448,8 @@ if (!session) return;
 
     if (mode === "cli") {
       // D2-1: 一切插件化 — 不回退到 getMiMoAuth() 单例
-const auth = getCtxService('mimoAuth');
-if (!auth) { console.warn('[App] mimoAuth provider not available'); return; }
+      const auth = getCtxService('mimoAuth');
+      if (!auth) { console.warn('[App] mimoAuth provider not available'); return; }
       let account = auth.getActiveAccount();
       if (!account) {
         account = await auth.loadFromAuthJson();
@@ -2235,8 +2263,8 @@ onTaskCenter={() => { setTaskCenterTab("overview"); setShowTaskCenter(true); }}
                     onNotebooks={() => setShowNotebookManager(true)}
 onTaskCenter={() => { setTaskCenterTab("overview"); setShowTaskCenter(true); }}
                     onAgents={() => setShowAgentManager(true)}
-                    onCicd={cicdEnabled ? () => setShowCicdPanel(true) : undefined}
-                    onPerf={perfEnabled ? () => setShowPerfDashboard(true) : undefined}
+                    onCicd={cicdEnabled ? () => setBottomTab("cicd") : undefined}
+                    onPerf={perfEnabled ? () => setBottomTab("perf") : undefined}
 onRemoveProject={(id, name, path) => {
   setRemoveProjectDialog({ id, name, path });
 }}
@@ -2260,7 +2288,12 @@ onRemoveProject={(id, name, path) => {
 <Activity size={14} /> {lang === "zh" ? "性能" : "Perf"}
 </button>
 )}
-                      {/* SlotListBridge 消费 bottom-panel.tabs — list 类型，允许插件注入底部面板 tab */}
+{cicdEnabled && (
+<button className={`tab ${bottomTab === "cicd" ? "active" : ""}`} onClick={() => setBottomTab("cicd")}>
+<GitBranch size={14} /> {lang === "zh" ? "CI/CD" : "CI/CD"}
+</button>
+)}
+                    {/* SlotListBridge 消费 bottom-panel.tabs — list 类型，允许插件注入底部面板 tab */}
                       <SlotListBridge name="bottom-panel.tabs" />
                     </div>
                     <div className="panel-content">
@@ -2333,6 +2366,9 @@ notebookId={activeNotebookId || undefined}
 {perfEnabled && bottomTab === "perf" && (
 <SlotBridge name="app.performance-dashboard" fallback={PerformanceDashboard} onClose={() => setBottomTab("chat")}  showDegraded />
 )}
+{cicdEnabled && bottomTab === "cicd" && (
+<SlotBridge name="app.cicd-panel" fallback={CicdPanel} onClose={() => setBottomTab("chat")}  showDegraded />
+)}
                     </div>
                   </div>
                 </div>
@@ -2353,8 +2389,8 @@ notebookId={activeNotebookId || undefined}
                   onNotebooks={() => setShowNotebookManager(true)}
 onTaskCenter={() => { setTaskCenterTab("overview"); setShowTaskCenter(true); }}
 onAgents={() => setShowAgentManager(true)}
-onCicd={cicdEnabled ? () => setShowCicdPanel(true) : undefined}
-onPerf={perfEnabled ? () => setShowPerfDashboard(true) : undefined}
+onCicd={cicdEnabled ? () => setBottomTab("cicd") : undefined}
+onPerf={perfEnabled ? () => setBottomTab("perf") : undefined}
 onRemoveProject={(id, name, path) => {
   setRemoveProjectDialog({ id, name, path });
 }}
@@ -2375,6 +2411,11 @@ onRemoveProject={(id, name, path) => {
 {perfEnabled && (
 <button className={`tab ${bottomTab === "perf" ? "active" : ""}`} onClick={() => setBottomTab("perf")}>
 <Activity size={14} /> {lang === "zh" ? "性能" : "Perf"}
+</button>
+)}
+{cicdEnabled && (
+<button className={`tab ${bottomTab === "cicd" ? "active" : ""}`} onClick={() => setBottomTab("cicd")}>
+<GitBranch size={14} /> CI/CD
 </button>
 )}
                   </div>
@@ -2448,6 +2489,9 @@ notebookId={activeNotebookId || undefined}
 {perfEnabled && bottomTab === "perf" && (
 <SlotBridge name="app.performance-dashboard" fallback={PerformanceDashboard} onClose={() => setBottomTab("chat")}  showDegraded />
 )}
+{cicdEnabled && bottomTab === "cicd" && (
+<SlotBridge name="app.cicd-panel" fallback={CicdPanel} onClose={() => setBottomTab("chat")}  showDegraded />
+)}
                   </div>
                 </div>
             </div>
@@ -2490,8 +2534,8 @@ refreshKey={fileExplorerRefreshKey}
           onNotebooks={() => setShowNotebookManager(true)}
 onTaskCenter={() => { setTaskCenterTab("overview"); setShowTaskCenter(true); }}
 onAgents={() => setShowAgentManager(true)}
-onCicd={cicdEnabled ? () => setShowCicdPanel(true) : undefined}
-onPerf={perfEnabled ? () => setShowPerfDashboard(true) : undefined}
+onCicd={cicdEnabled ? () => setBottomTab("cicd") : undefined}
+onPerf={perfEnabled ? () => setBottomTab("perf") : undefined}
 onRemoveProject={(id, name, path) => {
   setRemoveProjectDialog({ id, name, path });
 }}
@@ -2512,6 +2556,11 @@ onRemoveProject={(id, name, path) => {
 {perfEnabled && (
 <button className={`tab ${bottomTab === "perf" ? "active" : ""}`} onClick={() => setBottomTab("perf")}>
 <Activity size={14} /> {lang === "zh" ? "性能" : "Perf"}
+</button>
+)}
+{cicdEnabled && (
+<button className={`tab ${bottomTab === "cicd" ? "active" : ""}`} onClick={() => setBottomTab("cicd")}>
+<GitBranch size={14} /> CI/CD
 </button>
 )}
           </div>
@@ -2606,6 +2655,9 @@ notebookId={activeNotebookId || undefined}
 {perfEnabled && bottomTab === "perf" && (
 <SlotBridge name="app.performance-dashboard" fallback={PerformanceDashboard} onClose={() => setBottomTab("chat")}  showDegraded />
 )}
+{cicdEnabled && bottomTab === "cicd" && (
+<SlotBridge name="app.cicd-panel" fallback={CicdPanel} onClose={() => setBottomTab("chat")}  showDegraded />
+)}
           </div>
         </div>
       </div>
@@ -2646,8 +2698,8 @@ refreshKey={fileExplorerRefreshKey}
               onNotebooks={() => { setShowNotebookManager(true); setMobileSidebarOpen(false); }}
 onTaskCenter={() => { setTaskCenterTab("overview"); setShowTaskCenter(true); setMobileSidebarOpen(false); }}
 onAgents={() => { setShowAgentManager(true); setMobileSidebarOpen(false); }}
-onCicd={cicdEnabled ? () => { setShowCicdPanel(true); setMobileSidebarOpen(false); } : undefined}
-onPerf={perfEnabled ? () => { setShowPerfDashboard(true); setMobileSidebarOpen(false); } : undefined}
+onCicd={cicdEnabled ? () => { setBottomTab("cicd"); setMobileSidebarOpen(false); } : undefined}
+onPerf={perfEnabled ? () => { setBottomTab("perf"); setMobileSidebarOpen(false); } : undefined}
               onRemoveProject={(id, name, path) => { setRemoveProjectDialog({ id, name, path }); setMobileSidebarOpen(false); }}
               fileExplorerProjectId={fileExplorerProjectId}
               onToggleFileExplorer={handleToggleFileExplorer}
@@ -2707,14 +2759,6 @@ onSessionRecovery={() => { setShowSettings(false); setShowSessionRecovery(true);
 
       {showGitHubClone && (
         <SlotBridge name="app.github-clone-dialog" fallback={GitHubCloneDialog} onClose={() => setShowGitHubClone(false)}  showDegraded />
-      )}
-
-      {showCicdPanel && (
-        <SlotBridge name="app.cicd-panel" fallback={CicdPanel} onClose={() => setShowCicdPanel(false)}  showDegraded />
-      )}
-
-      {showPerfDashboard && (
-        <SlotBridge name="app.performance-dashboard" fallback={PerformanceDashboard} onClose={() => setShowPerfDashboard(false)}  showDegraded />
       )}
 
       {/* P0-3: Plan Approval Card — shown when model calls exit_plan_mode */}
@@ -3069,7 +3113,7 @@ onClose={() => setCitationViewer(null)}
       {showQuickAccess && messages.length === 0 && !isStreaming && (
         <div style={{ padding: "12px 16px", maxWidth: "600px", margin: "0 auto" }}>
           <SlotBridge name="app.quick-access-cards" fallback={QuickAccessCards}
-            agents={((getCtxService('agentRegistry') as any) || { getPrimary: () => [] }).getPrimary().map((a: any) => ({
+            agents={((getCtxService('agentRegistry') as any) || { getPrimary: () => [] as any[] }).getPrimary().map((a: any) => ({
               id: a.id,
               name: a.name,
               description: a.description,

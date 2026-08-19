@@ -4,11 +4,9 @@
  *
  * 主题管理 + CSS 变量注入。
  */
-import { useCtx } from '../../consumer/index.ts'
 import { ThemeManager } from '../../theme/index.ts'
 
-export function apply() {
-  const ctx = useCtx()
+export function apply(ctx: any) {
   const themeMgr = new ThemeManager()
 
   // 注入默认主题 CSS 变量

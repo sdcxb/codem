@@ -5,14 +5,12 @@
  * 将 SkillManager/McpManager/PluginManager 注册到 Slot Registry。
  */
 import { lazy } from 'react'
-import { useCtx } from '../../consumer/index.ts'
 
 const SkillManager = lazy(() => import('../../../components/SkillManager'))
 const McpManager = lazy(() => import('../../../components/McpManager'))
 const PluginManager = lazy(() => import('../../../components/PluginManager'))
 
-export function apply() {
-  const ctx = useCtx()
+export function apply(ctx: any) {
   const slots = ctx.get('slots')
 
   slots.register({ name: 'app.skill-manager', id: 'default-skill-mgr', priority: 0 }, SkillManager)

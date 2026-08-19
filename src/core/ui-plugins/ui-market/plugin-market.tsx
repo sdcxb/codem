@@ -16,6 +16,8 @@ export function PluginMarketPanel() {
 
   const refresh = useCallback(() => {
     if (!ctx) return
+    // 使用 strict 默认模式（true），确保 Provider fiber 处于 ACTIVE 状态。
+    // 对标 DSH Cordis 架构：消费者必须等待服务完全就绪后才访问。
     const registry = ctx.get('pluginRegistry')
     if (!registry) return
     const results = search
@@ -24,7 +26,21 @@ export function PluginMarketPanel() {
     setPlugins(results)
   }, [ctx, search])
 
-  useEffect(() => { refresh() }, [refresh])
+  useEffect(() => {
+    // 重试机制：Provider fiber 可能还在 LOADING 中，
+    // 等待其变为 ACTIVE 后 ctx.get() 才会返回服务实例。
+    let retry = 0
+    const timer = setInterval(() => {
+      const ok = ctx?.get('pluginRegistry')
+      if (ok) {
+        clearInterval(timer)
+        refresh()
+      } else if (++retry > 50) {
+        clearInterval(timer)
+      }
+    }, 100)
+    return () => clearInterval(timer)
+  }, [ctx, refresh])
 
   const handleInstall = async (name: string) => {
     if (!ctx) return
@@ -105,11 +121,21 @@ export function PluginManagerPanel() {
 
   useEffect(() => {
     if (!ctx) return
-    const registry = ctx.get('pluginRegistry')
-    const installer = ctx.get('pluginInstaller')
-    if (!registry || !installer) return
-    const all = registry.list()
-    setInstalled(all.filter(p => installer.isInstalled(p.name)).map(p => p.name))
+    // 重试机制：等待 Provider fiber 变为 ACTIVE
+    let retry = 0
+    const timer = setInterval(() => {
+      // strict 模式：确保 Provider 完全 ACTIVE 后才消费
+      const registry = ctx.get('pluginRegistry')
+      const installer = ctx.get('pluginInstaller')
+      if (registry && installer) {
+        clearInterval(timer)
+        const all = registry.list()
+        setInstalled(all.filter(p => installer.isInstalled(p.name)).map(p => p.name))
+      } else if (++retry > 50) {
+        clearInterval(timer)
+      }
+    }, 100)
+    return () => clearInterval(timer)
   }, [ctx])
 
   return (
@@ -127,8 +153,7 @@ export function PluginManagerPanel() {
   )
 }
 
-export function apply() {
-  const ctx = useCtx()
+export function apply(ctx: any) {
   const slots = ctx.get('slots')
   slots.register('app.plugin-market', PluginMarketPanel)
   slots.register('app.plugin-manager', PluginManagerPanel)

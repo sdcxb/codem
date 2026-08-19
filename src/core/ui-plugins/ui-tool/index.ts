@@ -6,13 +6,11 @@
  * conversation.details.tool slot 现在在 ChatPanel 中通过 SlotBridge 消费。
  */
 import { lazy } from 'react'
-import { useCtx } from '../../consumer/index.ts'
 
 const ToolCallCard = lazy(() => import('../../../components/ToolCallCard'))
 const ToolCallGroup = lazy(() => import('../../../components/ToolCallGroup'))
 
-export function apply() {
-  const ctx = useCtx()
+export function apply(ctx: any) {
   const slots = ctx.get('slots')
 
   // conversation.details.tool slot — 在 ChatPanel 中通过 SlotBridge 消费

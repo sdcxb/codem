@@ -28,6 +28,6 @@ export function applySkinDefault() {
   console.log('[skin-default] Default skin applied')
 }
 
-export function apply() {
+export function apply(_ctx?: any) {
   applySkinDefault()
 }

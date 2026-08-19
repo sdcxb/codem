@@ -24,6 +24,8 @@
 >
 > **v1.3.0 更新**：Cordis 插件系统对标 DSH 全面整改 — 死 slot 从 29 个降至 0 个；7 个 UI provider 添加 `inject` 声明依赖，移除全部 null 检查；创建 ConversationRoot/Session/Composer 对标 DSH conversation slot 层级；新增 `slots.inject()` 消费声明方法；移除 11 个重复/无消费点 slot 注册；MessageBubble/InputArea/ChatPanel/Sidebar 全面接入 SlotBridge/SlotListBridge 消费 conversation 子 slot。30+ 文件修改，10 个新组件。`tsc --noEmit` 零错误 + `vite build` 通过。
 >
+> **v1.4.0 更新**：UI/UX 体验优化 11 项 Bug 修复 + 编译 Warnings 清零 — ①技能市场 skill.sh 插件内容乱码修复（收紧 HTML 爬取正则）②外部技能加载超时优化（http_get 30s→15s）③智能体新建编辑区滚动定位 ④启动后模型选择默认值修复（configureEngine 重试）⑤CI/CD 面板从弹窗改为面板切换 ⑥梦幻皮肤对话编辑框毛玻璃效果修复 ⑦梦幻皮肤侧边栏圆角与主对话框统一 ⑧首页区域自适应窗口大小 ⑨建议卡片点击替换式输入（不再追加）⑩深色模式安全策略按钮紫色边框样式 ⑪性能面板从弹窗改为面板切换。Rust 编译 4 个 warnings 全部清零。15 文件修改。`tsc --noEmit` 零错误 + `tauri build` 零 warning。
+>
 
 
 ![Codem 运行界面](screenshots/26720-1.png)

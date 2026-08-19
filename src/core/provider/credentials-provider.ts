@@ -163,12 +163,12 @@ export const credentialsProvider: Plugin = (ctx: any) => {
     },
   })
 
-  // D1-2: 初始化时自动迁移
+  // D1-2: 初始化时自动迁移 — 使用闭包变量替代 ctx 上的私有状态
+  let migrationDone = false
   try {
-    const migrated = (ctx as any)._credentialMigrationDone
-    if (!migrated) {
+    if (!migrationDone) {
       const count = (dispose as any) // no-op, migration done above
-      ;(ctx as any)._credentialMigrationDone = true
+      migrationDone = true
     }
   } catch (e) { console.warn('[credentials-provider] migration check failed', e) }
 

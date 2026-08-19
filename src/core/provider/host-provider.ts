@@ -15,6 +15,9 @@ class HostService {
   private status: 'stopped' | 'starting' | 'running' | 'stopping' = 'stopped'
   private port: number = 0
   private config: any = null
+  private ctx: any = null
+
+  setContext(ctx: any) { this.ctx = ctx }
 
   getEndpoint(): string {
     return this.port > 0 ? `http://localhost:${this.port}` : 'http://localhost:8080'
@@ -28,8 +31,8 @@ class HostService {
     this.status = 'starting'
 
     try {
-      // 如果 hostWebserver 服务可用，委托给它
-      const webserver = (globalThis as any).__codemCtx?.get?.('hostWebserver')
+      // 通过 Cordis ctx.get('hostWebserver') 获取服务（strict 模式）
+      const webserver = this.ctx?.get?.('hostWebserver')
       if (webserver) {
         const port = await webserver.start(config?.port)
         this.port = port
@@ -61,7 +64,8 @@ class HostService {
   async stop(): Promise<void> {
     this.status = 'stopping'
     try {
-      const webserver = (globalThis as any).__codemCtx?.get?.('hostWebserver')
+      // 通过 Cordis ctx.get('hostWebserver') 获取服务（strict 模式）
+      const webserver = this.ctx?.get?.('hostWebserver')
       if (webserver) {
         await webserver.stop()
       }
@@ -74,7 +78,7 @@ class HostService {
 
 export const hostProvider: Plugin = (ctx: any) => {
   const service = new HostService()
-  ;(globalThis as any).__codemCtx = ctx
+  service.setContext(ctx)
 
   const dispose = ctx.provide('host', {
     _active: true,

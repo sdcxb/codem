@@ -12,6 +12,9 @@ import type { Plugin } from '../cordis/src/index.ts'
 
 class SpawnInProcessManager {
   private tasks: Map<string, any> = new Map()
+  private ctx: any
+
+  constructor(ctx: any) { this.ctx = ctx }
 
   async spawn(taskId: string, config: any): Promise<string> {
     const task = {
@@ -35,8 +38,7 @@ class SpawnInProcessManager {
 
   private async executeTask(task: any) {
     try {
-      const ctx = (globalThis as any).__codemCtx
-      const llm = ctx?.get('llm')
+      const llm = this.ctx?.get('llm')
       if (!llm) throw new Error('LLM service not available')
 
       const response = await llm.complete({
@@ -66,7 +68,7 @@ class SpawnInProcessManager {
 }
 
 export const subagentSpawnInProcessProvider: Plugin = (ctx: any) => {
-  const manager = new SpawnInProcessManager()
+const manager = new SpawnInProcessManager(ctx)
 
   const dispose = ctx.provide('subagentSpawnInProcess', {
     async spawn(taskId: string, config: any) { return manager.spawn(taskId, config) },

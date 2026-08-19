@@ -49,7 +49,9 @@ export const dynamicRunnerProvider: Plugin = (ctx: any) => {
         inject: p.inject || [],
         isDynamic: true,
       }))
-      const services = Object.keys(ctx).filter(k => !k.startsWith('_') && typeof (ctx as any)[k] !== 'undefined')
+      // 通过 ReflectService.store 获取已注册的服务列表，而非直接枚举 ctx 属性
+      const store = ctx.reflect?.store ?? {}
+      const services = Object.values(store).map((impl: any) => impl?.name).filter(Boolean) as string[]
       return { plugins, services }
     },
 

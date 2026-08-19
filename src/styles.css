@@ -1238,8 +1238,10 @@ width: 100%;
   flex-direction: column;
   align-items: center;
   justify-content: center;
+  min-height: 100%;
   height: 100%;
   color: var(--text-secondary);
+  overflow-y: auto;
 }
 
 .empty-state .logo {

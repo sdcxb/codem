@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   getAgentRegistry,
   type AgentDefinition,
@@ -88,6 +88,7 @@ export function AgentManager({ onClose }: { onClose: () => void }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [editing, setEditing] = useState<AgentDefinition | null>(null);
   const [isNew, setIsNew] = useState(false);
+  const editorRef = useRef<HTMLDivElement>(null);
 
   const refresh = () => {
     setAgents(getAgentRegistry().getAll());
@@ -104,12 +105,20 @@ export function AgentManager({ onClose }: { onClose: () => void }) {
     setEditing(emptyAgent());
     setIsNew(true);
     setSelectedId(null);
+    // 滚动到编辑区域，确保用户看到新建表单
+    setTimeout(() => {
+      editorRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 50);
   };
 
   const handleEdit = (agent: AgentDefinition) => {
     setEditing({ ...agent });
     setIsNew(false);
     setSelectedId(agent.id);
+    // 滚动到编辑区域
+    setTimeout(() => {
+      editorRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 50);
   };
 
   const handleSave = () => {
@@ -269,7 +278,7 @@ export function AgentManager({ onClose }: { onClose: () => void }) {
 
       {/* Edit form */}
       {editing && (
-        <div style={{
+        <div ref={editorRef} style={{
           padding: 12, borderRadius: 8, border: "1px solid var(--accent)",
           background: "var(--bg-secondary)", display: "flex", flexDirection: "column", gap: 10,
         }}>

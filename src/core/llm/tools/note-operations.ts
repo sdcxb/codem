@@ -60,7 +60,7 @@ export function createCreateNoteTool(): ToolDef {
         };
       }
 
-      const notebookId = (ctx as any).notebookId as string | undefined;
+      const notebookId = ctx.notebookId;
       if (!notebookId) {
         return {
           title: 'Create Note',
@@ -150,7 +150,7 @@ export function createEditNoteTool(): ToolDef {
         };
       }
 
-      const notebookId = (ctx as any).notebookId as string | undefined;
+      const notebookId = ctx.notebookId;
       if (!notebookId) {
         return {
           title: 'Edit Note',
@@ -319,7 +319,7 @@ export function createDeleteNoteTool(): ToolDef {
       }
 
       // Get notebook ID from context
-      const notebookId = (ctx as any).notebookId as string | undefined;
+      const notebookId = ctx.notebookId;
       if (!notebookId) {
         return {
           title: 'Delete Note',

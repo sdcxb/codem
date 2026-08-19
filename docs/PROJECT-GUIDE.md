@@ -1,9 +1,9 @@
 # Codem 项目完整说明
 
 > **用途**：新对话快速理解项目全貌、架构、文件关联、当前状态。
-> 创建时间：2026-07-23 | 最后更新：2026-08-19 | 当前版本：v1.3.0（Cordis 插件系统对标 DSH 全面整改 — 死 slot 从 29 个降至 0 个 + 7 个 UI provider inject 声明依赖 + Conversation slot 层级对标 DSH 完整建立 + slots.inject() 消费声明 + 11 个重复 slot 注册移除 + MessageBubble/InputArea/ChatPanel/Sidebar 全面接入 SlotBridge）
+> 创建时间：2026-07-23 | 最后更新：2026-08-19 | 当前版本：v1.4.0（Cordis 插件系统对标 DSH 全面整改 — 死 slot 从 29 个降至 0 个 + 7 个 UI provider inject 声明依赖 + Conversation slot 层级对标 DSH 完整建立 + slots.inject() 消费声明 + 11 个重复 slot 注册移除 + MessageBubble/InputArea/ChatPanel/Sidebar 全面接入 SlotBridge）
 >
-> **版本历程概览**：v0.70 基础存储 → v0.80 轮次架构 → v0.87 Worktree/并行 → v0.88 桌面宠物 → v0.89 跨会话委派 → v0.90 P0-P4 全量功能 → v0.91 Coding 工作台 → v0.92 Codex 对标 → v0.93 Vision Proxy → v0.94 配置修复 → v0.95 CLI/API 视觉代理 → v0.96 UI 大改版 → v0.97 Agentic Loop 性能优化 → v0.98 多智能体协同 → v0.99 DSH 全量升级 → v1.0.0 插件系统架构 + UI/UX 标准化 → v1.1.0 DSH 对标整改 + 测试深化 → v1.1.1 UI 布局优化 + 插件条件渲染 + Bug 修复 → v1.2.0 Cordis 架构对齐 DSH + 安全加固 + 全量测试重构 → v1.3.0 Cordis 插件系统对标 DSH 全面整改 + Slot 消费闭环 + inject 依赖对齐
+> **版本历程概览**：v0.70 基础存储 → v0.80 轮次架构 → v0.87 Worktree/并行 → v0.88 桌面宠物 → v0.89 跨会话委派 → v0.90 P0-P4 全量功能 → v0.91 Coding 工作台 → v0.92 Codex 对标 → v0.93 Vision Proxy → v0.94 配置修复 → v0.95 CLI/API 视觉代理 → v0.96 UI 大改版 → v0.97 Agentic Loop 性能优化 → v0.98 多智能体协同 → v0.99 DSH 全量升级 → v1.0.0 插件系统架构 + UI/UX 标准化 → v1.1.0 DSH 对标整改 + 测试深化 → v1.1.1 UI 布局优化 + 插件条件渲染 + Bug 修复 → v1.2.0 Cordis 架构对齐 DSH + 安全加固 + 全量测试重构 → v1.3.0 Cordis 插件系统对标 DSH 全面整改 + Slot 消费闭环 + inject 依赖对齐 → v1.4.0 UI/UX 体验优化 11 项 Bug 修复 + 性能/CI-CD 面板切换化 + 梦幻皮肤一致性修复
 
 ---
 
@@ -15,7 +15,7 @@
 - **GitHub**：https://github.com/sdcxb/codem
 - **分发**：NSIS `.exe` + WiX `.msi`，一键安装无需依赖
 - **平台**：Windows 优先
-- **版本**：v1.3.0（Cordis 插件系统对标 DSH 全面整改，2026-08-19，死 slot 从 29 个降至 0 个 + 7 个 UI provider inject 声明依赖 + Conversation slot 层级对标 DSH 完整建立 + slots.inject() 消费声明 + 11 个重复 slot 注册移除 + MessageBubble/InputArea/ChatPanel/Sidebar 全面接入 SlotBridge）
+- **版本**：v1.4.0（UI/UX 体验优化 11 项 Bug 修复 + 性能/CI-CD 面板切换化 + 梦幻皮肤一致性修复 + 技能市场乱码修复，2026-08-19）
 
 ---
 
@@ -1511,3 +1511,32 @@ npm run tauri build        # 构建 NSIS exe + MSI
 ### v0.96.2（2026-08-11）— CodeGraph 集成 + 测试改造 + CI Workflow
 
 （详见上方版本历史摘要）
+
+### v1.4.0（2026-08-19）— UI/UX 体验优化 11 项 Bug 修复 + 性能/CI-CD 面板切换化 + 梦幻皮肤一致性修复
+
+> 针对用户实际使用反馈的 11 项 Bug 修复 + 编译 warnings 全部清零。15 文件修改，`tsc --noEmit` 零错误 + `tauri build` 零 warning。
+
+**Bug 1 — 技能市场 skill.sh 插件内容显示乱码**：Skills.sh HTML 爬取正则匹配范围过宽，会匹配到 HTML 标签属性。收紧正则为只匹配字母数字和连字符组成的路径段 + 增加二次清洗过滤残留非法字符。
+
+**Bug 2 — 技能市场外部技能加载很慢**：Rust 层 `http_get` 超时从 30s 减为 15s，`http_download` 从 120s 减为 60s。
+
+**Bug 3 — 智能体定义管理窗口点击新建后视觉锚点未滚动**：增加 `editorRef`，在 `handleNew`/`handleEdit` 中调用 `scrollIntoView` 滚动到编辑区域。
+
+**Bug 4 — 启动后模型选择默认显示 mimo-v2.5-pro**：`configureEngine` 在 engine 未就绪时增加 200ms 自动重试逻辑。
+
+**Bug 5 — 右侧栏 CI/CD 管理面板太靠右被遮挡且弹窗改为面板切换**：`BottomTab` 类型增加 `cicd`，`CicdPanel` 从 `createPortal` 弹窗模式改为内嵌面板模式。
+
+**Bug 6 — 梦幻皮肤下对话编辑框区域透明度未适配毛玻璃**：`backdrop-filter` 加上 `!important` 和 `saturate(1.4)`，增加深色模式背景色覆盖。
+
+**Bug 7 — 梦幻皮肤下主对话框圆角与边栏直角风格不一致**：`.sidebar` 增加 `border-radius: 16px` 和 `margin: 8px`，`.right-sidebar` 增加毛玻璃背景和圆角。
+
+**Bug 8 — 首页区域未自适应窗口分辨率**：`.new-chat-page` 和 `.empty-state` 增加 `min-height: 100%` 和 `overflow-y: auto`。
+
+**Bug 9 — 首页点击 write code 等按钮编辑框内容未清理和显示不全**：新增 `suggestionPrompt` + `onSuggestionConsumed` prop 机制，建议卡片点击时直接替换输入框内容。
+
+**Bug 10 — 深色模式下安全策略按钮白色底色突兀**：给 compact 按钮加上 `security-mode-btn` class，深色模式下使用紫色边框透明背景样式。
+
+**Bug 11 — 性能面板应改为面板切换而非弹窗**：`PerformanceDashboard` 从 `createPortal` 弹窗模式改为内嵌面板模式。移除了 `showPerfDashboard` 弹窗渲染。
+
+**编译 Warnings 清零**：修复 4 个 Rust warnings — 多余分号、未使用变量 `window`→`_window`、未读取字段 `id`→`_id`、`Cargo.toml` 添加 `[lints.rust]` 配置 `linker_messages = allow`。
+

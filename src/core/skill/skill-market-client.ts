@@ -642,8 +642,8 @@ async function fetchSkillsShViaHTML(source: MarketSource, baseUrl: string): Prom
         const html = resp.body;
 
         // Skills.sh 页面中技能链接格式：/vercel-labs/skills/find-skills
-        // 匹配所有技能详情页链接
-        const skillLinkPattern = /href="\/([^/]+\/[^/]+)\/([^/"]+)"/g;
+        // 匹配所有技能详情页链接 — 只匹配字母数字和连字符组成的路径段
+        const skillLinkPattern = /href="\/([a-zA-Z0-9][\w.-]*\/[a-zA-Z0-9][\w.-]*)\/([a-zA-Z0-9][\w.-]*)"/g;
         let match: RegExpExecArray | null;
 
         while ((match = skillLinkPattern.exec(html)) !== null) {
@@ -660,7 +660,14 @@ async function fetchSkillsShViaHTML(source: MarketSource, baseUrl: string): Prom
             continue;
           }
 
-          const skillId = `${source_path}/${slug}`;
+          // 清洗 source_path：去除可能残留的 HTML 标签和属性
+          // 正则可能匹配到 href 值中包含的额外 HTML 属性（如 link rel=...）
+          const cleanSourcePath = source_path.replace(/[^a-zA-Z0-9._\-\/]/g, "");
+          if (!cleanSourcePath || cleanSourcePath.includes("link") || cleanSourcePath.includes("svg")) {
+            continue;
+          }
+
+          const skillId = `${cleanSourcePath}/${slug}`;
           if (seenSlugs.has(skillId)) continue;
           seenSlugs.add(skillId);
 
@@ -693,15 +700,15 @@ async function fetchSkillsShViaHTML(source: MarketSource, baseUrl: string): Prom
             id: `${source.id}:${skillId}`,
             name: slug,
             displayName,
-            description: `Skills.sh skill from ${source_path}`,
-            author: source_path,
+            description: `Skills.sh skill from ${cleanSourcePath}`,
+            author: cleanSourcePath,
             sourceId: source.id,
             sourceName: source.name,
-            downloadUrl: `https://github.com/${source_path}`,
-            repoUrl: `${baseUrl}/${source_path}/${slug}`,
+            downloadUrl: `https://github.com/${cleanSourcePath}`,
+            repoUrl: `${baseUrl}/${cleanSourcePath}/${slug}`,
             stars,
             installType: "zip",
-            repoFullName: source_path,
+            repoFullName: cleanSourcePath,
             branch: "main",
           });
         }

@@ -193,6 +193,27 @@
   overflow: hidden;
 }
 
+/* Bug7: 梦幻皮肤 — 主对话框圆角与边栏直角风格统一 */
+[data-skin="dream"] .sidebar {
+  border-radius: 16px;
+  margin: 8px 0 8px 8px;
+  border: 1px solid var(--dream-border-color, rgba(232, 140, 154, 0.15));
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+[data-skin="dream"] .right-sidebar {
+  background: var(--dream-bg-card, rgba(255, 255, 255, 0.65)) !important;
+  backdrop-filter: blur(var(--dream-blur-px, 12px));
+  -webkit-backdrop-filter: blur(var(--dream-blur-px, 12px));
+  border: 1px solid var(--dream-border-color, rgba(0, 0, 0, 0.12));
+  border-radius: 16px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  margin: 8px 8px 8px 0;
+}
+[data-skin="dream"][data-theme="dark"] .right-sidebar {
+  background: var(--dream-bg-card, rgba(30, 30, 46, 0.65)) !important;
+}
+
 [data-skin="dream"] .panel-right {
   background: var(--dream-bg-card, rgba(255, 255, 255, 0.88)) !important;
   backdrop-filter: blur(var(--dream-blur-px, 12px));
@@ -290,12 +311,15 @@ backdrop-filter: none !important;
 }
 [data-skin="dream"] .input-card-container {
   background: var(--dream-bg-card, rgba(255, 255, 255, 0.88)) !important;
-  backdrop-filter: blur(var(--dream-blur-px, 12px));
-  -webkit-backdrop-filter: blur(var(--dream-blur-px, 12px));
+  backdrop-filter: blur(var(--dream-blur-px, 12px)) saturate(1.4) !important;
+  -webkit-backdrop-filter: blur(var(--dream-blur-px, 12px)) saturate(1.4) !important;
   border: 1px solid var(--dream-border-color, rgba(0, 0, 0, 0.12));
   border-radius: 16px;
   color: var(--dream-text-main, #1a1a2e);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
+}
+[data-skin="dream"][data-theme="dark"] .input-card-container {
+  background: var(--dream-bg-card, rgba(30, 30, 46, 0.82)) !important;
 }
 
 [data-skin="dream"] .input-wrapper {

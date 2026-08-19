@@ -6,12 +6,10 @@
  * 组件来源可替换：其他插件可以注册更高优先级的组件来替换侧边栏。
  */
 import { lazy } from 'react'
-import { useCtx } from '../../consumer/index.ts'
 
 const Sidebar = lazy(() => import('../../../components/Sidebar'))
 
-export function apply() {
-  const ctx = useCtx()
+export function apply(ctx: any) {
   const slots = ctx.get('slots')
   slots.register({ name: 'app.sidebar', id: 'default-sidebar', priority: 0 }, Sidebar)
 }

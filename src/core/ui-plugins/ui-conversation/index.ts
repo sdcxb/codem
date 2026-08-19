@@ -9,7 +9,6 @@
  * 内部声明子 slot 层级（conversation.session, conversation.composer 等）。
  */
 import { lazy } from 'react'
-import { useCtx } from '../../consumer/index.ts'
 
 const ConversationRoot = lazy(() => import('../../../components/ConversationRoot'))
 const ChatPanel = lazy(() => import('../../../components/ChatPanel'))
@@ -17,8 +16,7 @@ const MessageBubble = lazy(() => import('../../../components/MessageBubble'))
 const InputArea = lazy(() => import('../../../components/InputArea'))
 const ToolCallCard = lazy(() => import('../../../components/ToolCallCard'))
 
-export function apply() {
-  const ctx = useCtx()
+export function apply(ctx: any) {
   const slots = ctx.get('slots')
 
   // 注册 ConversationRoot 到 app.conversation slot，并声明子 slot 层级

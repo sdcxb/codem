@@ -6,12 +6,10 @@
  * 使用 single 模式（整个设置面板作为一个整体注册）。
  */
 import { lazy } from 'react'
-import { useCtx } from '../../consumer/index.ts'
 
 const SettingsPanel = lazy(() => import('../../../components/SettingsPanel'))
 
-export function apply() {
-  const ctx = useCtx()
+export function apply(ctx: any) {
   const slots = ctx.get('slots')
 
   slots.register({ name: 'app.settings', id: 'default-settings', priority: 0 }, SettingsPanel)

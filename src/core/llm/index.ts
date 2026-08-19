@@ -199,6 +199,16 @@ private loopPool: Map<string, AgenticLoop> = new Map();
     this.setupDelegationTools();
   }
 
+  /** R4: 后续补充设置 Cordis Context — 替代 (engineInstance as any).ctx = ctx 的非标准用法 */
+  setContext(ctx: Context): void {
+    if (!this.ctx) this.ctx = ctx;
+  }
+
+  /** 检查是否已设置 ctx */
+  hasContext(): boolean {
+    return this.ctx !== null;
+  }
+
   private setupSubagentSpawner() {
     import("../subagent/spawner").then(({ LLMSubagentSpawner }) => {
       import("./tools").then(({ setSubagentManager, createSpawnSubagentTool, createWaitForSubagentTool }) => {
@@ -1271,10 +1281,9 @@ export function getLLMEngine(ctx?: Context): LLMEngine {
       maxTokens: 4096,
       maxToolCalls: 20,
     }, undefined, ctx);
-  } else if (ctx && !engineInstance['ctx']) {
+  } else if (ctx && !engineInstance.hasContext()) {
     // R4: 引擎已存在但未设置 ctx — 后续传入 ctx 时补充设置
-    // 使用方括号访问避免 TypeScript 访问私有成员
-    (engineInstance as any).ctx = ctx;
+    engineInstance.setContext(ctx);
   }
   return engineInstance;
 }

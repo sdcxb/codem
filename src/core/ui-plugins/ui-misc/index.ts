@@ -6,15 +6,13 @@
  * 使用 inject 声明依赖 slots 服务。
  */
 import { lazy } from 'react'
-import { useCtx } from '../../consumer/index.ts'
 
 const PetOverlay = lazy(() => import('../../../components/PetOverlay'))
 const ContextMonitor = lazy(() => import('../../../components/ContextMonitor'))
 const PerformanceDashboard = lazy(() => import('../../../components/PerformanceDashboard'))
 const TodoListDisplay = lazy(() => import('../../../components/TodoListDisplay'))
 
-export function apply() {
-  const ctx = useCtx()
+export function apply(ctx: any) {
   const slots = ctx.get('slots')
 
   // 宠物覆盖层 — list 类型 slot

@@ -13,13 +13,15 @@ import type { Plugin } from '../cordis/src/index.ts'
 
 class SessionTitleLLM {
   private pendingTitles: Map<string, { message: string; resolve: (title: string) => void }[]> = new Map()
+  private ctx: any
+
+  constructor(ctx: any) { this.ctx = ctx }
 
   async generateTitle(sessionId: string, firstMessage: string): Promise<string> {
     // 尝试从 LLM 生成标题
     try {
-      const ctx = (globalThis as any).__codemCtx
-      if (ctx) {
-        const llm = ctx.get('llm')
+      if (this.ctx) {
+        const llm = this.ctx.get('llm')
         if (llm) {
           const response = await llm.complete({
             messages: [
@@ -42,7 +44,7 @@ class SessionTitleLLM {
 }
 
 export const sessionTitleLLMProvider: Plugin = (ctx: any) => {
-  const service = new SessionTitleLLM()
+  const service = new SessionTitleLLM(ctx)
 
   const dispose = ctx.provide('sessionTitleLLM', {
     async generateTitle(sessionId: string, firstMessage: string) {

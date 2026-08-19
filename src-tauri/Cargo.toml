@@ -1,9 +1,12 @@
 [package]
 name = "codem"
-version = "1.3.0"
+version = "1.4.0"
 description = "Codem - AI Coding Assistant"
 authors = ["Codem"]
 edition = "2021"
+
+[lints.rust]
+linker_messages = "allow"
 
 [lib]
 name = "codem_lib"

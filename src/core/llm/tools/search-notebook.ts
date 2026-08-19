@@ -59,7 +59,7 @@ export function createSearchNotebookTool(): ToolDef {
       }
 
       // Get notebook ID from context
-      const notebookId = (ctx as any).notebookId as string | undefined;
+      const notebookId = ctx.notebookId;
       if (!notebookId) {
         return {
           title: "Search Notebook",

@@ -47,8 +47,8 @@ export function createFactCheckTool(): ToolDef {
 
       try {
         // Get correction provider/model from context (added by App.tsx)
-        const correctionProvider = (ctx as any).correctionProvider || "openai";
-        const correctionModel = (ctx as any).correctionModel || "gpt-4-turbo";
+        const correctionProvider = ctx.correctionProvider || "openai";
+        const correctionModel = ctx.correctionModel || "gpt-4-turbo";
 
         // Call correction model
         const result = await callCorrectionModel(content, correctionProvider, correctionModel);

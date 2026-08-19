@@ -13,7 +13,6 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { createPortal } from "react-dom";
 import {
   X, RefreshCw, Activity, Clock, Gauge, BarChart3,
   Trash2, Download, Zap,
@@ -109,17 +108,15 @@ export function PerformanceDashboard({ onClose }: PerformanceDashboardProps) {
   const barWidth = chartWidth / Math.max(1, timeSeries.length);
 
   const panel = (
-    <div className="modal-overlay" onClick={onClose}>
-      <div
-        className="perf-dashboard"
-        onClick={e => e.stopPropagation()}
-        style={{
-          width: "90vw", maxWidth: 960, height: "85vh", maxHeight: 800,
-          background: "var(--bg-primary, #1e1e2e)",
-          borderRadius: 12, display: "flex", flexDirection: "column",
-          border: "1px solid var(--border-color, #333)", overflow: "hidden",
-        }}
-      >
+    <div
+      className="perf-dashboard perf-dashboard-inline"
+      style={{
+        width: "100%", height: "100%",
+        background: "var(--bg-primary, #1e1e2e)",
+        display: "flex", flexDirection: "column",
+        overflow: "hidden",
+      }}
+    >
         {/* Header */}
         <div style={{
           display: "flex", alignItems: "center", justifyContent: "space-between",
@@ -347,10 +344,9 @@ export function PerformanceDashboard({ onClose }: PerformanceDashboardProps) {
           </div>
         )}
       </div>
-    </div>
   );
 
-  return createPortal(panel, document.body);
+  return panel;
 }
 
 // ========== Components ==========

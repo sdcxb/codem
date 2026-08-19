@@ -295,6 +295,11 @@ export interface ToolContext {
 
   /** (F5) Active notebook ID for knowledge base mode. When set, search_notebook tool is available. */
   notebookId?: string;
+
+  /** Correction model provider name (set by App.tsx for fact_check tool) */
+  correctionProvider?: string;
+  /** Correction model name (set by App.tsx for fact_check tool) */
+  correctionModel?: string;
 }
 
 export interface ToolExecuteResult {

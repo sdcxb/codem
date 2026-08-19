@@ -21,7 +21,7 @@ struct PtySession {
     writer: Box<dyn Write + Send>,
     _master: Box<dyn portable_pty::MasterPty + Send>,
     _child: Box<dyn portable_pty::Child + Send>,
-    id: String,
+    _id: String,
 }
 
 type PtyMap = Arc<Mutex<HashMap<String, PtySession>>>;
@@ -104,7 +104,7 @@ fn spawn_pty(cwd: String, app: AppHandle, state: State<'_, PtyMap>) -> Result<St
         writer,
         _master: master,
         _child: child,
-        id: id.clone(),
+        _id: id.clone(),
     };
     state
         .lock()
@@ -172,7 +172,7 @@ async fn create_browser_window(app: AppHandle, url: String, title: Option<String
     }
 
     let parsed_url = url::Url::parse(&url).map_err(|e| e.to_string())?;
-    let window = tauri::WebviewWindowBuilder::new(
+    let _window = tauri::WebviewWindowBuilder::new(
         &app,
         "browser",
         tauri::WebviewUrl::External(parsed_url),
@@ -1519,7 +1519,7 @@ async fn http_get(
 ) -> Result<HttpResponse, String> {
     let client = reqwest::Client::builder()
         .user_agent("Codem/1.0 (Skill Market)")
-        .timeout(std::time::Duration::from_secs(30))
+        .timeout(std::time::Duration::from_secs(15))
         .build()
         .map_err(|e| e.to_string())?;
 
@@ -1591,7 +1591,7 @@ async fn http_download(
 ) -> Result<String, String> {
     let client = reqwest::Client::builder()
         .user_agent("Codem/1.0 (Skill Market)")
-        .timeout(std::time::Duration::from_secs(120))
+        .timeout(std::time::Duration::from_secs(60))
         .build()
         .map_err(|e| e.to_string())?;
 

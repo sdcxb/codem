@@ -13,12 +13,14 @@ import type { Plugin } from '../cordis/src/index.ts'
 
 class ForkInProcessManager {
   private tasks: Map<string, any> = new Map()
+  private ctx: any
+
+  constructor(ctx: any) { this.ctx = ctx }
 
   async fork(taskId: string, config: any): Promise<string> {
-    const ctx = (globalThis as any).__codemCtx
-    if (!ctx) throw new Error('Cordis Context not available')
+    if (!this.ctx) throw new Error('Cordis Context not available')
 
-    const agentRegistry = ctx.get('agentRegistry')
+    const agentRegistry = this.ctx.get('agentRegistry')
     const agent = agentRegistry?.get(config.agentId || 'general')
     if (!agent) throw new Error(`Agent "${config.agentId}" not found`)
 
@@ -44,8 +46,7 @@ class ForkInProcessManager {
 
   private async executeTask(task: any) {
     try {
-      const ctx = (globalThis as any).__codemCtx
-      const agentEngine = ctx?.get('agentEngine')
+      const agentEngine = this.ctx?.get('agentEngine')
       if (!agentEngine) throw new Error('AgentEngine not available')
 
       const events = agentEngine.process(
@@ -76,7 +77,7 @@ class ForkInProcessManager {
 }
 
 export const subagentForkInProcessProvider: Plugin = (ctx: any) => {
-  const manager = new ForkInProcessManager()
+  const manager = new ForkInProcessManager(ctx)
 
   const dispose = ctx.provide('subagentForkInProcess', {
     async fork(taskId: string, config: any) { return manager.fork(taskId, config) },

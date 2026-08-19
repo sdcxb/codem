@@ -6,7 +6,6 @@
  * 每个组件通过 lazy import 延迟加载，降低首屏开销。
  */
 import { lazy } from 'react'
-import { useCtx } from '../../consumer/index.ts'
 
 // 布局组件
 const TitleBar = lazy(() => import('../../../components/TitleBar'))
@@ -73,8 +72,7 @@ const DeliverableFiles = lazy(() => import('../../../components/DeliverableFiles
 const JobsBadge = lazy(() => import('../../../components/JobsBadge')) // DSH ui-jobs (会话头部任务列表)
 const TrajectoryPanel = lazy(() => import('../../../components/TrajectoryPanel')) // DSH ui-trajectory (对话轨迹详情)
 
-export function apply() {
-  const ctx = useCtx()
+export function apply(ctx: any) {
   const slots = ctx.get('slots')
 
   // 布局组件
