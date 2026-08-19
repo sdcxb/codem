@@ -151,7 +151,7 @@ export class ModelProfileManager {
       // Force immediate flush instead of debounced 500ms delay
       // This ensures profile changes are persisted before app close/reload
       flushDatabase();
-    } catch {}
+    } catch (e) { console.warn('[model-profile.ts]', e) }
   }
 
   // ========== Queries ==========

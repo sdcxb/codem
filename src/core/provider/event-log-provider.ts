@@ -16,6 +16,7 @@ export const eventLogProvider: Plugin = (ctx: any) => {
   const log = getEventLog()
 
   const dispose = ctx.provide('eventLog', {
+    _active: true,
     log(event: string, data?: any): void {
       return log.log(event, data)
     },
@@ -27,5 +28,10 @@ export const eventLogProvider: Plugin = (ctx: any) => {
     },
   })
 
-  return dispose
+  // Composite dispose — stop underlying log to eliminate double-track
+  const compositeDispose = () => {
+    if (log.dispose) log.dispose()
+    dispose()
+  }
+  return compositeDispose
 }

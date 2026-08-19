@@ -12,6 +12,7 @@ import type { Plugin } from '../cordis/src/index.ts'
 import { getTelemetry } from '../telemetry/telemetry.ts'
 
 export const telemetryProvider: Plugin = (ctx: any) => {
+  // 使用全局 getTelemetry() 获取单例实例
   const collector = getTelemetry()
 
   const dispose = ctx.provide('telemetry', {

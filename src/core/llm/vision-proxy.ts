@@ -175,7 +175,7 @@ export class VisionProxy {
             enabled: true,
           };
         }
-      } catch {}
+      } catch (e) { console.warn('[vision-proxy.ts]', e) }
     }
 
     // 2. 从 MultimodalSettings 获取

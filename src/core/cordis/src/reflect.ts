@@ -1,5 +1,4 @@
-﻿// @ts-nocheck
-import { defineProperty, isNullable } from '../cosmokit/src/index.ts'
+﻿﻿import { defineProperty, isNullable } from '../cosmokit/src/index.ts'
 import type { Dict } from '../cosmokit/src/index.ts'
 import { Context } from './context.ts'
 import { getTraceable, symbols, withProps } from './utils.ts'

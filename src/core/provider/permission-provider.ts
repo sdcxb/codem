@@ -3,10 +3,11 @@
  * Permission Provider 插件 — 可独立加载/卸载/热替换。
  */
 import type { Plugin } from '../cordis/src/index.ts'
-import { getPermissionManager } from '../permission/permission'
+import { PermissionManager } from '../permission/permission'
 
 export const permissionProvider: Plugin = (ctx: any) => {
-  const permMgr = getPermissionManager()
+  // 在 Provider 内部创建实例，生命周期与 fiber 绑定
+  const permMgr = new PermissionManager()
 
   const dispose = ctx.provide('permission', {
     check: (action: string, resource?: any) => permMgr.check(action, resource),

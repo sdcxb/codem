@@ -17,6 +17,7 @@ export const approvalProvider: Plugin = (ctx: any) => {
   const manager = getPermissionManager(ctx)
 
   const dispose = ctx.provide('approval', {
+    _active: true,
     async request(request: { type: string; description: string; riskLevel: string; details?: any }): Promise<{ approved: boolean; reason?: string }> {
       return manager.requestApproval(request)
     },
@@ -28,5 +29,10 @@ export const approvalProvider: Plugin = (ctx: any) => {
     },
   })
 
-  return dispose
+  // Composite dispose — stop underlying manager to eliminate double-track
+  const compositeDispose = () => {
+    if (manager.dispose) manager.dispose()
+    dispose()
+  }
+  return compositeDispose
 }

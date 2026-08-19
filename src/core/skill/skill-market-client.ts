@@ -1247,7 +1247,7 @@ export async function installMarketSkill(
         const fileMap = new Map<string, string>();
         for (const [path, data] of Object.entries(files)) {
           if (path.endsWith("/") || (data as Uint8Array).length > 1024 * 1024) continue;
-          try { fileMap.set(path, strFromU8(data as Uint8Array)); } catch {}
+          try { fileMap.set(path, strFromU8(data as Uint8Array)); } catch (e) { console.warn('[skill-market-client.ts]', e) }
         }
         const hash = computeContentHash(fileMap);
         addInstallAuditEntry({
@@ -1260,7 +1260,7 @@ export async function installMarketSkill(
           version: skill.version,
           author: skill.author,
         });
-      } catch {}
+      } catch (e) { console.warn('[skill-market-client.ts]', e) }
     }
 
     return result;
@@ -1499,7 +1499,7 @@ export async function preAuditSkill(
     const binaryString = atob(base64Data);
     const zipData = new Uint8Array(binaryString.length);
     for (let i = 0; i < binaryString.length; i++) { zipData[i] = binaryString.charCodeAt(i); }
-    try { await deletePath(tempZipPath); } catch {}
+    try { await deletePath(tempZipPath); } catch (e) { console.warn('[skill-market-client.ts]', e) }
 
     onProgress?.(55, "Extracting and auditing...");
     const { unzipSync, strFromU8 } = await import("fflate");
@@ -1553,7 +1553,7 @@ export async function preAuditSkill(
       if (!allowedExtensions.has(ext)) continue;
       const fileData = rawFiles[zipPath];
       if (fileData.length > 1024 * 1024) continue;
-      try { fileMap.set(relativePath, strFromU8(fileData)); } catch {}
+      try { fileMap.set(relativePath, strFromU8(fileData)); } catch (e) { console.warn('[skill-market-client.ts]', e) }
     }
 
     const audit = auditSkillInstallation(fileMap, skillMdContent);

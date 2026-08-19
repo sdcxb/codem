@@ -205,7 +205,7 @@ export class DelegationOrchestrator {
         projectId: task.projectId || undefined,
         priority: "normal",
       });
-    } catch {}
+    } catch (e) { console.warn('[orchestrator.ts]', e) }
   }
 
   /** 标记任务失败 */
@@ -246,7 +246,7 @@ export class DelegationOrchestrator {
         projectId: task.projectId || undefined,
         priority: "high",
       });
-    } catch {}
+    } catch (e) { console.warn('[orchestrator.ts]', e) }
   }
 
   /** 取消任务 */

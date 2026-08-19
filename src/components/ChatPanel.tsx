@@ -44,6 +44,10 @@ import { loadQuickPhrases, type QuickPhrase } from "../core/storage/settings";
 import { loadPromptDrafts, type PromptDraft } from "../core/storage/prompt-draft";
 import { getAgentRegistry } from "../core/agent/agent";
 import { getSettingJSON, setSettingJSON } from "../core/storage/settings";
+import { SlotBridge, SlotListBridge } from "../core/slots/SlotBridge";
+import { JobsBadge, type JobView } from "./JobsBadge";
+import { DeliverableFiles } from "./DeliverableFiles";
+import { TrajectoryPanel } from "./TrajectoryPanel";
 
 interface ChatPanelProps {
   onSend: (message: string, attachments?: MessageAttachment[], selectedSkills?: string[]) => void;
@@ -343,6 +347,24 @@ export function ChatPanel({ onSend, onCancel, onSendGuidance, onToggleSidebar, o
             </>
           )}
         </div>
+        {/* SlotBridge 消费 app.jobs-badge — 会话头部任务指示器 */}
+        <SlotBridge
+          name="app.jobs-badge"
+          fallback={null}
+          jobs={agents.map((a): JobView => ({
+            id: a.id,
+            kind: a.agentId || 'subagent',
+            label: a.name || a.prompt?.slice(0, 40) || a.id,
+            status: a.status === 'running' ? 'running' : a.status === 'completed' ? 'completed' : a.status === 'failed' ? 'failed' : 'cancelled',
+            startedAt: a.startedAt || a.createdAt || Date.now(),
+            finishedAt: a.completedAt,
+            detail: a.error,
+          }))}
+          onSelectJob={(jobId: string) => {
+            setSelectedAgentId(jobId)
+            setShowAgentPanel(true)
+          }}
+        />
         <div className="model-selector" onClick={() => setShowModelPicker(!showModelPicker)}>
           <span className="model-badge">{model}</span>
           <span className="model-arrow"><ChevronDown size={10} /></span>
@@ -742,6 +764,32 @@ canEdit={!isSessionStreaming}
           {isStreaming && (
             <StreamingTimer startTime={streamStartTime} lang={lang} llmStatus={llmStatus} />
           )}
+          {/* SlotListBridge 消费 conversation.messages slot — 允许插件注入额外消息渲染器 */}
+          <SlotListBridge name="conversation.messages" />
+          {/* SlotBridge 消费 conversation.details.tool slot — 工具调用详情 */}
+          <SlotBridge name="conversation.details.tool" fallback={null} />
+          {/* SlotBridge 消费 app.deliverable-files — Turn tail 交付物文件列表 */}
+          <SlotBridge
+            name="app.deliverable-files"
+            fallback={null}
+            sessionId={sessionId || currentSession?.id || ''}
+            workspace={projectPath || currentProject?.path || ''}
+            onOpenFile={(path: string) => {
+              // 打开文件 — 复用 App.tsx 的事件机制
+              window.dispatchEvent(new CustomEvent('codem-open-file', { detail: { path } }))
+            }}
+            onViewDiff={(record: any, file: any) => {
+              // 触发 diff review — 复用 App.tsx 的事件机制
+              window.dispatchEvent(new CustomEvent('codem-view-diff', { detail: { record, file } }))
+            }}
+          />
+          {/* SlotBridge 消费 app.trajectory-panel — 执行轨迹详情面板 */}
+          <SlotBridge
+            name="app.trajectory-panel"
+            fallback={null}
+            messages={messages}
+            defaultExpanded={false}
+          />
           <div ref={messagesEndRef} />
           {/* P0: Scrollbar markers for message navigation */}
           <ScrollbarMarkers messages={messages} containerRef={messagesContainerRef} />

@@ -123,7 +123,8 @@ export class SpillStore {
    */
   async saveText(input: SaveTextSpill): Promise<SpillRef> {
     const dir = sessionDir(this.root, input.owner.sessionId);
-    fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+    // D6-3: 同步改异步 — 防止阻塞事件循环
+    await fs.promises.mkdir(dir, { recursive: true, mode: 0o700 });
 
     const safeName = encodeSegment(input.suggestedName);
     // 随机前缀 + 安全名 — 不可预测（防符号链接植入）且可读
@@ -131,7 +132,8 @@ export class SpillStore {
     const filePath = path.join(dir, fileName);
 
     const bytes = Buffer.byteLength(input.content, "utf8");
-    fs.writeFileSync(filePath, input.content, { encoding: "utf8", mode: 0o600 });
+    // D6-3: 同步改异步
+    await fs.promises.writeFile(filePath, input.content, { encoding: "utf8", mode: 0o600 });
 
     const retrievalHint = "Use read with offset/limit, or grep this path to search within it.";
 

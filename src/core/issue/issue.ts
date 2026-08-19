@@ -156,7 +156,7 @@ class IssueManagerClass {
           issueId: id,
           priority: updates.status === "blocked" ? "high" : "normal",
         });
-      } catch {}
+      } catch (e) { console.warn('[issue.ts]', e) }
     }
     if (updates.assigneeId !== undefined) {
       this.addSystemComment(id, `Assignee changed to: ${updates.assigneeId || "unassigned"}`);

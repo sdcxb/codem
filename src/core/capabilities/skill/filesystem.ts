@@ -2,6 +2,9 @@
 /**
  * @codem/skill-filesystem — 文件系统技能 Provider
  *
+ * P2-2/F3: 消除架构级重复 — 被 provider/skill-filesystem-provider.ts 包装后注册到 ctx。
+ * @deprecated 新代码请直接从 provider/ 导入。
+ *
  * 使用本地文件系统管理技能。
  * 包装现有 skill/registry.ts + skill/installer.ts 的实现。
  */

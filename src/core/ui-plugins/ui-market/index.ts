@@ -13,10 +13,11 @@ const PluginManager = lazy(() => import('../../../components/PluginManager'))
 
 export function apply() {
   const ctx = useCtx()
+  const slots = ctx.get('slots')
 
-  ctx.slots.register({ name: 'app.skill-manager', id: 'default-skill-mgr', priority: 0 }, SkillManager)
-  ctx.slots.register({ name: 'app.mcp-manager', id: 'default-mcp-mgr', priority: 0 }, McpManager)
-  ctx.slots.register({ name: 'app.plugin-manager', id: 'default-plugin-mgr', priority: 0 }, PluginManager)
+  slots.register({ name: 'app.skill-manager', id: 'default-skill-mgr', priority: 0 }, SkillManager)
+  slots.register({ name: 'app.mcp-manager', id: 'default-mcp-mgr', priority: 0 }, McpManager)
+  slots.register({ name: 'app.plugin-manager', id: 'default-plugin-mgr', priority: 0 }, PluginManager)
 
   console.log('[ui-market] Registered market UI plugins')
 }

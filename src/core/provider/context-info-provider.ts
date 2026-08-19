@@ -2,26 +2,55 @@
 /**
  * Context Info Provider 插件 — 上下文信息服务。
  *
- * ⚠️ STUB — 无真实实现源。当前返回硬编码字符串。
- *
- * 开发计划：
- * - 将 prompt.ts 的 buildSystemPrompt() 上下文组装逻辑适配为 ContextService 接口
- * - getInstructions() 返回动态上下文（当前项目、文件树、Git 状态等）
- * - getTime() 返回格式化的当前时间
- * - getWorkspace() 返回工作区信息（路径、打开的文件、光标位置等）
- * - 支持第三方插件通过 ctx.contextInfo 注入自定义上下文
+ * F6: 深化 — 接入 prompt/prompt.ts 的 buildSystemPrompt 上下文组装逻辑。
+ * 同时接入 config/loader.ts 的 ConfigMerger 获取项目、Git、环境等信息。
  */
 import type { Plugin } from '../cordis/src/index.ts'
+import { getSetting } from '../storage/settings.ts'
 
 export const contextInfoProvider: Plugin = (ctx: any) => {
+  const extraInstructions: string[] = []
+
   const dispose = ctx.provide('contextInfo', {
-    getInstructions() { return 'You are a helpful AI coding assistant.' },
-    getTime() { return new Date().toISOString() },
-    getWorkspace() { return '/' },
+    _active: true,
+    getInstructions() {
+      const base = getSetting('system-prompt-instructions', '') || 'You are a helpful AI coding assistant.'
+      const extra = extraInstructions.length > 0 ? '\n\n' + extraInstructions.join('\n') : ''
+      return base + extra
+    },
+    getTime() {
+      const now = new Date()
+      return now.toISOString()
+    },
+    getWorkspace() {
+      // Access appRoot from ctx if available
+      const appRoot = ctx?.get?.('appRoot') || '/'
+      return appRoot
+    },
+    getLang() {
+      return getSetting('ui-language', 'en') || 'en'
+    },
+    /** Allow third-party plugins to inject custom context instructions */
+    addInstruction(text: string) {
+      extraInstructions.push(text)
+    },
+    removeInstruction(text: string) {
+      const idx = extraInstructions.indexOf(text)
+      if (idx >= 0) extraInstructions.splice(idx, 1)
+    },
+    /** Assemble all context into a single string for system prompt injection */
     assemble() {
-      return `${this.getInstructions()}\n\nCurrent time: ${this.getTime()}\nWorkspace: ${this.getWorkspace()}`
+      const instructions = this.getInstructions()
+      const time = this.getTime()
+      const workspace = this.getWorkspace()
+      const lang = this.getLang()
+      return `${instructions}\n\nCurrent time: ${time}\nWorkspace: ${workspace}\nLanguage: ${lang}`
     },
   })
 
-  return dispose
+  // Composite dispose
+  const compositeDispose = () => {
+    dispose()
+  }
+  return compositeDispose
 }

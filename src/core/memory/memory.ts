@@ -55,7 +55,7 @@ for (const [id, entry] of Object.entries(parsed)) {
 this.entries.set(id, entry as MemoryEntry);
 }
 }
-} catch {}
+} catch (e) { console.warn('[memory.ts]', e) }
 }
 
 /** Reload memory from SQLite (call when DB is ready) */
@@ -72,7 +72,7 @@ this.load();
     }
     try {
       saveMemory(JSON.stringify(obj));
-    } catch {}
+    } catch (e) { console.warn('[memory.ts]', e) }
   }
 
   /** Add a memory entry */

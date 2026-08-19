@@ -43,14 +43,14 @@ export function extractJSON<T = any>(raw: string): T | null {
   // Step 3: 尝试直接解析
   try {
     return JSON.parse(text) as T;
-  } catch {}
+  } catch (e) { console.warn('[output-parser.ts]', e) }
 
   // Step 4: 去除尾部逗号 (JSON5 风格)
   const noTrailingComma = text
     .replace(/,\s*([\]}])/g, '$1');
   try {
     return JSON.parse(noTrailingComma) as T;
-  } catch {}
+  } catch (e) { console.warn('[output-parser.ts]', e) }
 
   // Step 5: 提取第一个 JSON 对象 { ... }
   const objMatch = text.match(/\{[\s\S]*\}/);
@@ -59,7 +59,7 @@ export function extractJSON<T = any>(raw: string): T | null {
       const cleaned = objMatch[0]
         .replace(/,\s*([\]}])/g, '$1'); // 尾部逗号
       return JSON.parse(cleaned) as T;
-    } catch {}
+    } catch (e) { console.warn('[output-parser.ts]', e) }
   }
 
   // Step 6: 提取第一个 JSON 数组 [ ... ]
@@ -69,7 +69,7 @@ export function extractJSON<T = any>(raw: string): T | null {
       const cleaned = arrMatch[0]
         .replace(/,\s*([\]}])/g, '$1');
       return JSON.parse(cleaned) as T;
-    } catch {}
+    } catch (e) { console.warn('[output-parser.ts]', e) }
   }
 
   // Step 7: 逐步缩小范围 — 模型可能在 JSON 后添加了说明文字
@@ -81,7 +81,7 @@ export function extractJSON<T = any>(raw: string): T | null {
       .replace(/,\s*([\]}])/g, '$1');
     try {
       return JSON.parse(subset) as T;
-    } catch {}
+    } catch (e) { console.warn('[output-parser.ts]', e) }
   }
 
   return null;

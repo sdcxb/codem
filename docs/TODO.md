@@ -20,8 +20,73 @@
 > v1.0.0 已发布：**UI/UX 标准化 + 插件系统架构 + 测试体系全面升级** — P4 Cordis DI + Slot Registry + Plugin Loader + 18 Capability Seams + P5 全能力族拆分（FS/Shell/Sandbox/Web/Skill/Subagent + 凭证/附件/知识/调度/目标/计划/后台任务）+ P6 UI 插件包化（7 个 UI 插件包 + Self-Referential Runtime + 插件市场基础设施）+ 补齐遗漏能力模块（compaction/approval/permissions/hooks/automation + fs-sandbox + tool-todo/ask-user/lsp/run-code/workflow/goal/schedule/knowledge + skin-default/pet/ui-pet + Preset/Bundle/SDK/ACP/Host/Client）+ 全弹窗 UI/UX 标准化（modal-overlay + modal-editor + 统一关闭按钮 + 图标映射体系 + CSS 变量替代硬编码 + Tailwind 类替代 + SVG 图标对齐）+ 测试体系升级（5 个新测试文件 / 271+ 用例：图标标准化 97 用例 / 工具触发-调用-执行闭环 30+ 用例 / 综合质量套件 80 用例 / 插件依赖图 24+ 用例 / 插件关闭影响 40+ 用例）+ 历史用例适配（full-regression-smoke + phase-b-f-regression 适配 SlotBridge + icon-map）。67 文件修改（+1112/-641 行）。全量 104 文件 / 3552 用例全部通过。**补丁修复（同版本重新构建）：** SlotBridge 泛型类型修复（`[key: string]: any` + `@ts-nocheck` → 泛型 `SlotBridge<P>` 从 fallback Props 自动推断参数类型）+ 恢复 `noImplicitAny` 严格检查 + App.tsx 参数类型精确化（`onResolve` alwaysAllow 可选 + `onOpenSession` 类型注解）+ SettingsPanel AgentManager onClose + files.ts 数组类型声明。`tsc --noEmit` 零错误 + `vite build` 成功。
 > v1.1.0 已发布：**DSH 对标全面整改 + 测试体系深化 + Bug 修复** — Phase A-D 全部完成。孤岛模块接入 10 项（compaction-control / output-contract / feedback / type-safety / event-system-strict / cookbook / persistence-provider / replay-adapter / preset-discovery / agent-message-queue）+ 重复实现统一 4 项（capabilities vs provider / Telemetry-CostTracker / projectedTokens / seam-dsh-compat deprecation）+ 缺失功能补齐 5 项（代理指令分层 / 进程级沙箱 ACL / Dynamic Plugin 工具 / 测试分层框架 / 包不变量检查）+ 5 个 Bug 修复（ESM require→import / fire-and-forget .catch() / TranscriptCache.clear / 网络命令阻断 / 敏感变量）+ 4 个新测试文件 / 118 用例（dsh-integration-full 53 / plugin-disable-impact 18 / functional-chain-closed-loop 12 / extended-test-methods 35：模糊+属性+契约+链路探针）+ 消息存储双轨制统一（C5）+ 系统提示词分层加载（D1）。22 文件修改，24 新文件。全量 107 文件 / 3624 用例全部通过。
 > v1.1.1 已发布：**UI 布局优化 + 插件条件渲染 + 宠物窗口 Bug 修复 + 工具调用防御性检查** — 插件管理按钮移至左下角 + CI/CD 移至右侧边栏 + 性能移至主对话框顶端 + 插件启用/禁用与按钮/面板联动显示 + 宠物窗口关闭 Bug 修复（Rust CloseRequested 拦截器）+ 插件管理面板 Cordis Context 初始化时序修复（重试机制+直接属性访问）+ UI 组件 useCtx→tryGetCtx 防御 + 6 个工具 Consumer 文件 execute 回调 null 检查防御（tool-fs/tool-bash/tool-web/tool-skill/tool-cordis/tool-extra）。15 文件修改。编译零错误。
+> v1.2.0 已发布：**Cordis 架构全面对齐 DSH + 安全加固 + 全量测试重构** — 移除 Cordis 核心 `@ts-nocheck`（对齐 DSH 模式，`declare module` 类型声明全面生效，`ctx.get()` 返回强类型）+ `getCtxService` 对齐 DSH `ReflectService.get` keyof 推断模式 + `declare module` 声明对齐 DSH 非 optional 模式 + 泛型 `<T>` 回退 `<T,>` hack + 安全加固（AST 代码验证 + Worker 隔离 + XOR 密钥混淆 + SandboxGuard 覆盖读操作）+ 生命周期管理（复合 Dispose + LRU 淘汰 + 异步 I/O + 空 catch 日志）+ Bug 修复（React Hooks 顺序违规 + `useSyncExternalStore` 无限循环 + `import type` 语法错误 + 注释 `*/` 提前闭合 + context.ts Symbol 索引类型）+ UI 改进（输入框两行布局 + 全局错误监听）+ 全量测试重构 109 套件 3690 测试通过 + 66 个架构变更新用例。
+> v1.3.0 已发布：**Cordis 插件系统对标 DSH 全面整改 + Slot 消费闭环 + inject 依赖对齐** — 死 slot 从 29 个降至 0 个 + 7 个 UI provider 添加 `inject` 声明依赖 + Conversation slot 层级对标 DSH 完整建立（ConversationRoot/Session/Composer + 5 个子 slot）+ `slots.inject()` 消费声明方法 + 11 个重复/无消费点 slot 注册移除 + MessageBubble/InputArea/ChatPanel/Sidebar 全面接入 SlotBridge/SlotListBridge 消费 conversation 子 slot + SlotBridge 泛型类型推断修复。30+ 文件修改，10 个新组件。`tsc --noEmit` 零错误 + `vite build` 通过。
 
 ## 待开发
+
+### v1.3.0 已发布（2026-08-19）— Cordis 插件系统对标 DSH 全面整改 + Slot 消费闭环 + inject 依赖对齐
+
+#### SlotBridge 消费闭环（阶段 2）
+- [x] SLOT-1 InputArea 中 `app.model-selector`/`app.permission-preset-selector`/`app.plan-mode-chip` 通过 SlotBridge 消费
+- [x] SLOT-2 ChatPanel 中 `app.jobs-badge`/`app.deliverable-files`/`app.trajectory-panel` 通过 SlotBridge 消费
+- [x] SLOT-3 语义映射修正（uiGoal→GoalBar、uiJobs→JobsBadge、uiDeliverables→DeliverableFiles、uiPlan→PlanModeChip+PlanApprovalCard）
+
+#### inject 依赖对齐（阶段 4）
+- [x] INJECT-1 7 个核心 UI provider 添加 `inject: ['slots']` 属性声明
+- [x] INJECT-2 移除所有 UI provider 内部的 `if (slots && slots.register)` null 检查
+- [x] INJECT-3 `SlotsService` 新增 `slots.inject()` 消费声明方法
+
+#### Conversation Slot 层级（阶段 3）
+- [x] CONV-1 创建 ConversationRoot 组件（对标 DSH，声明 5 个子 slot 层级）
+- [x] CONV-2 创建 ConversationSession 组件（消费 `conversation.session.header.actions`）
+- [x] CONV-3 创建 ConversationComposer 组件（消费 `conversation.composer.bar`/`conversation.composer.dock`）
+- [x] CONV-4 子 slot 注册（composer.bar ← ModelSelector/PlanModeChip/PermissionPreset、session.header.actions ← JobsBadge）
+
+#### 消除剩余死 slot（阶段 5）
+- [x] DEAD-1 App.tsx 添加 6 个全局 slot 消费（overlay/monitor/goal/subagent/user-questions/workflow-run）
+- [x] DEAD-2 组件内 slot 消费（conversation.node.tool/app.message-feedback/conversation.messages/conversation.details.tool/app.ui-commands/conversation.input/app.attachment）
+- [x] DEAD-3 布局 slot 消费（sidebar.tabs/bottom-panel.tabs）
+- [x] DEAD-4 移除 11 个重复/无消费点 slot 注册
+- [x] DEAD-5 Provider inject 对齐补充（uiSubagent/uiUserQuestions/uiWorkflowRun）
+
+#### 审计结果
+- [x] 死 slot 从 29 个降至 0 个
+- [x] `tsc --noEmit` 零错误
+- [x] `vite build` 通过
+
+### v1.2.0 已发布（2026-08-18）— Cordis 架构全面对齐 DSH + 安全加固 + 全量测试重构
+
+#### 架构对齐 DSH（4 项）
+- [x] ARCH-1 移除 Cordis 核心 `@ts-nocheck` — 对齐 DSH 模式（DSH 完全不用 `@ts-nocheck`），使 `declare module` 类型声明生效，`ctx.get()` 返回强类型
+- [x] ARCH-2 `getCtxService` 对齐 DSH `ReflectService.get` keyof 推断模式 — 签名改为 `<K extends string & keyof Context>(name: K): Context[K] | null`
+- [x] ARCH-3 `declare module` 声明对齐 DSH 非 optional 模式 — 统一为 `xxx: XxxService`（非 `xxx?`）
+- [x] ARCH-4 泛型 `<T>` 回退 `<T,>` hack — DSH 不需要逗号 hack（DSH tsconfig 不设 `jsx`，`.ts` 文件中 `<T>` 不被当作 JSX）
+
+#### 安全加固（3 项）
+- [x] SEC-1 代码运行时 AST 验证 + Worker 线程隔离 — `validateCode()` 正则匹配危险 API + Worker 内受限 `require` 白名单
+- [x] SEC-2 API Key XOR + Base64 混淆存储 — 密钥不再明文存储 + `migrateToObfuscated` 自动迁移
+- [x] SEC-3 SandboxGuard 扩展覆盖读操作 — `read_file`/`list_dir`/`grep`/`glob` 等读操作纳入沙箱检查
+
+#### 生命周期管理（4 项）
+- [x] LIFE-1 复合 Dispose 模式 — `hooks-provider.ts`/`automation-provider.ts` dispose 时设置 `_active = false`
+- [x] LIFE-2 LRU 缓存淘汰 — `agent-loop-provider.ts` `loopPool` 上限 20 LRU 淘汰
+- [x] LIFE-3 异步文件 I/O — `spill-store.ts` 从同步 `fs.mkdirSync` 改为异步 `fs.promises.mkdir`
+- [x] LIFE-4 空 catch 块日志 — 8 个文件的裸 `catch {}` 块全部添加 `console.warn` 日志
+
+#### Bug 修复（5 项）
+- [x] BUG-1 React Hooks 顺序违规 — `SlotBridge.tsx` 中 `useSlotEntries` 在条件 `return` 之后被调用
+- [x] BUG-2 `useSyncExternalStore` getSnapshot 不稳定导致无限循环 — `noopGetSnapshot` 每次返回新数组
+- [x] BUG-3 `import type` 语法错误 — `consumer/index.ts` 中 `import type '../provider/service-types'` 缺少 `from` 关键字
+- [x] BUG-4 `capabilities/index.ts` 注释中 `*/` 提前关闭块注释 — 路径 `capabilities/*/local.ts` 中的 `*/`
+- [x] BUG-5 `context.ts` static 块 Symbol 索引类型错误 — `TS7053`，添加 `as any` cast 对齐 DSH `noImplicitAny: false`
+
+#### UI 改进（2 项）
+- [x] UI-1 输入框两行布局 — `InputArea.tsx` 和 `styles.css`
+- [x] UI-2 全局错误监听 — `App.tsx` 添加 `unhandledrejection` 事件监听器
+
+#### 测试重构
+- [x] 全量 109 套件 3690 测试通过 + 66 个架构变更新用例
 
 ### v1.1.1 已发布（2026-08-17）— UI 布局优化 + 插件条件渲染 + 宠物窗口 Bug 修复 + 工具调用防御性检查
 

@@ -170,19 +170,28 @@ private loopPool: Map<string, AgenticLoop> = new Map();
     if (ctx) this.ctx = ctx;
     this.providers = createDefaultProviders(ctx || undefined);
     this.tools = createDefaultToolRegistry(ctx || undefined);
-    this.agents = getAgentRegistry();
-    this.permissions = getPermissionManager();
+    // P0-7.2: ctx 可用时完全使用 ctx.get()，服务不存在则 throw；无 ctx 时回退（仅测试环境）
+    const _getOrThrow = <T,>(name: string, fallback: () => T): T => {
+      if (ctx) {
+        const s = ctx.get(name) as T;
+        if (s) return s;
+        throw new Error(`[LLMEngine] Service "${name}" not available in Cordis Context`);
+      }
+      return fallback();
+    };
+    this.agents = _getOrThrow('agentRegistry', getAgentRegistry) as any;
+    this.permissions = _getOrThrow('permission', getPermissionManager) as any;
     this.context = getContextManager();
-    this.memory = getMemoryService();
-    this.retry = getRetryExecutor();
-    this.mcp = getMCPRegistry();
-    this.skills = getSkillRegistry();
-    this.subagents = getSubagentManager();
-    this.recovery = getSessionRecoveryService();
-    this.costTracker = getCostTracker();
-    this.toolRenderer = getToolRenderRegistry();
-    this.settings = getSettingsManager(projectPath) || new SettingsManager(projectPath || ".");
-    this.profileManager = getModelProfileManager();
+    this.memory = _getOrThrow('memory', getMemoryService) as any;
+    this.retry = _getOrThrow('retry', getRetryExecutor) as any;
+    this.mcp = _getOrThrow('mcp', getMCPRegistry) as any;
+    this.skills = _getOrThrow('skill', getSkillRegistry) as any;
+    this.subagents = _getOrThrow('subagent', getSubagentManager) as any;
+    this.recovery = _getOrThrow('recovery', getSessionRecoveryService) as any;
+    this.costTracker = _getOrThrow('costTracker', getCostTracker) as any;
+    this.toolRenderer = _getOrThrow('toolRender', getToolRenderRegistry) as any;
+    this.settings = _getOrThrow('settings', () => getSettingsManager(projectPath) ?? new SettingsManager(projectPath || ".")) as any;
+    this.profileManager = _getOrThrow('modelProfile', getModelProfileManager) as any;
 
     // Set up sub-agent spawner and register spawn tool
     this.setupSubagentSpawner();
@@ -283,6 +292,18 @@ private loopPool: Map<string, AgenticLoop> = new Map();
 
   /** Get or create an agentic loop (per-session for parallel execution) */
   getAgenticLoop(agentId?: string, sessionId?: string): AgenticLoop {
+    // F5: Check if Cordis agentLoop provider is active — if so, delegate to it
+    if (this.ctx) {
+      const agentLoopSvc = this.ctx.get('agentLoop')
+      if (agentLoopSvc?._active) {
+        const loop = agentLoopSvc.getLoop?.(agentId, sessionId)
+        if (loop) return loop
+        // If provider is active but returned null, don't fall through to new AgenticLoop
+        // This eliminates the dual-track problem
+        throw new Error('agentLoop provider is active but getLoop returned null — check provider configuration')
+      }
+    }
+
     // Per-session loop pooling: each session gets its own AgenticLoop instance
     // so parallel process() calls don't overwrite each other's loop.
     if (sessionId) {
@@ -334,6 +355,9 @@ private loopPool: Map<string, AgenticLoop> = new Map();
         costTracker: this.costTracker,
       },
     );
+
+    // R5: 将 Cordis Context 传入 AgenticLoop
+    if (this.ctx) loop.setContext(this.ctx);
 
     // Pool the loop per-session for parallel execution
     if (sessionId) {
@@ -449,7 +473,7 @@ private loopPool: Map<string, AgenticLoop> = new Map();
         } catch (e) {
           console.log("[CodeGraph] auto-detect skipped:", e);
         }
-      } catch {}
+      } catch (e) { console.warn('[index.ts]', e) }
     }
 
     const config: SystemPromptConfig = {
@@ -616,7 +640,14 @@ The runtime automatically sets UTF-8 encoding (chcp 65001, PYTHONUTF8=1, PYTHONI
       reasoningEffort?: "low" | "medium" | "high" | "ultra";
     },
   ): AsyncGenerator<LoopEvent, void, unknown> {
-    const loop = this.getAgenticLoop(agentId, sessionId);
+    // P0-3: 优先从 ctx.get('agentLoop') 获取（Provider 模式），回退到内部 getAgenticLoop
+    const _agentLoopSvc = this.ctx?.get('agentLoop')
+    let loop: AgenticLoop
+    if (_agentLoopSvc?.getLoop) {
+      loop = _agentLoopSvc.getLoop(agentId, sessionId) || this.getAgenticLoop(agentId, sessionId)
+    } else {
+      loop = this.getAgenticLoop(agentId, sessionId)
+    }
     if (options?.onPermissionRequest) {
       loop.updateConfig({ onPermissionRequest: options.onPermissionRequest });
     }
@@ -747,7 +778,14 @@ The runtime automatically sets UTF-8 encoding (chcp 65001, PYTHONUTF8=1, PYTHONI
     cwd: string,
     agentId: string,
   ): AsyncGenerator<LoopEvent, void, unknown> {
-    const loop = this.getAgenticLoop(agentId, sessionId);
+    // P0-3: 优先从 ctx.get('agentLoop') 获取（Provider 模式）
+    const _agentLoopSvc = this.ctx?.get('agentLoop')
+    let loop: AgenticLoop
+    if (_agentLoopSvc?.getLoop) {
+      loop = _agentLoopSvc.getLoop(agentId, sessionId) || this.getAgenticLoop(agentId, sessionId)
+    } else {
+      loop = this.getAgenticLoop(agentId, sessionId)
+    }
     // Sub-agents should have fewer iterations to prevent loops
     loop.updateConfig({ maxIterations: 15 });
     const systemPrompt = this.buildSubagentSystemPrompt(agentId, cwd);
@@ -771,7 +809,7 @@ The runtime automatically sets UTF-8 encoding (chcp 65001, PYTHONUTF8=1, PYTHONI
         messageId: `user-${Date.now()}`,
         content: cleanMessage,
       });
-    } catch {}
+    } catch (e) { console.warn('[index.ts]', e) }
 
     const startTime = Date.now();
     let lastUsage: import("./types").TokenUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };

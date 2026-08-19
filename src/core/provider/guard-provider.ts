@@ -17,9 +17,20 @@ import type { Plugin } from '../cordis/src/index.ts'
 
 export const guardProvider: Plugin = (ctx: any) => {
   const callHistory = new Map<string, any[]>()
+  const sessionDeadlines = new Map<string, { maxIterations: number; startedAt: number; iterations: number }>()
 
   const dispose = ctx.provide('guard', {
+    _active: true,
     checkRepeat(toolName: string, args: any): { isRepeat: boolean; message?: string } {
+      // 委托给 repeatToolReminder（如果可用），提供更精细的重复检测
+      try {
+        const reminder = ctx.get('repeatToolReminder')
+        if (reminder) {
+          reminder.record('global', toolName, JSON.stringify(args))
+          return reminder.check('global')
+        }
+      } catch (e) { console.warn('[guard-provider.ts]', e) }
+      // 基础去重实现（5 秒窗口）
       const argStr = JSON.stringify(args)
       const now = Date.now()
       const history = callHistory.get('global') || []
@@ -32,11 +43,41 @@ export const guardProvider: Plugin = (ctx: any) => {
       callHistory.set('global', history)
       return { isRepeat: false }
     },
-    checkDeadline(_sessionId: string): { exceeded: boolean; remaining?: number } {
-      // TODO: 接入 AgenticLoop 的 maxIterations 检查
-      return { exceeded: false }
+
+    /** Track session iterations and check deadline */
+    setDeadline(sessionId: string, maxIterations: number) {
+      sessionDeadlines.set(sessionId, { maxIterations, startedAt: Date.now(), iterations: 0 })
+    },
+
+    /** Increment iteration counter for a session */
+    tick(sessionId: string) {
+      const d = sessionDeadlines.get(sessionId)
+      if (d) {
+        d.iterations++
+        return d.iterations
+      }
+      return 0
+    },
+
+    /** Check if session has exceeded its iteration deadline */
+    checkDeadline(sessionId: string): { exceeded: boolean; remaining?: number } {
+      const d = sessionDeadlines.get(sessionId)
+      if (!d) return { exceeded: false }
+      const remaining = d.maxIterations - d.iterations
+      return { exceeded: d.iterations >= d.maxIterations, remaining: Math.max(0, remaining) }
+    },
+
+    /** Clear deadline for a session */
+    clearDeadline(sessionId: string) {
+      sessionDeadlines.delete(sessionId)
     },
   })
 
-  return dispose
+  // Composite dispose
+  const compositeDispose = () => {
+    callHistory.clear()
+    sessionDeadlines.clear()
+    dispose()
+  }
+  return compositeDispose
 }

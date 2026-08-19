@@ -6,6 +6,7 @@
  */
 
 import { getDatabase } from "./database";
+import { safeJsonParse } from "../utils/safe-json";
 
 export interface AgentProfile {
   id: string;
@@ -24,7 +25,7 @@ function rowToProfile(row: any): AgentProfile {
     identity: row.identity,
     domain: row.domain,
     scope: row.scope,
-    skills: row.skills ? JSON.parse(row.skills) : undefined,
+    skills: row.skills ? safeJsonParse(row.skills, undefined) : undefined,
     experience_summary: row.experience_summary,
     created_at: row.created_at,
     updated_at: row.updated_at,

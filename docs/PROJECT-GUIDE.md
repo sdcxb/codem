@@ -1,9 +1,9 @@
 # Codem 项目完整说明
 
 > **用途**：新对话快速理解项目全貌、架构、文件关联、当前状态。
-> 创建时间：2026-07-23 | 最后更新：2026-08-17 | 当前版本：v1.1.1（UI 布局优化 + 插件条件渲染 + 宠物窗口 Bug 修复 + 工具调用防御性检查 — 插件管理按钮移至左下角 + CI/CD 移至右侧边栏 + 性能移至主对话框顶端 + 插件启用/禁用与按钮联动 + 宠物窗口关闭修复 + 插件面板初始化时序修复 + 全工具 execute null 检查防御）
+> 创建时间：2026-07-23 | 最后更新：2026-08-19 | 当前版本：v1.3.0（Cordis 插件系统对标 DSH 全面整改 — 死 slot 从 29 个降至 0 个 + 7 个 UI provider inject 声明依赖 + Conversation slot 层级对标 DSH 完整建立 + slots.inject() 消费声明 + 11 个重复 slot 注册移除 + MessageBubble/InputArea/ChatPanel/Sidebar 全面接入 SlotBridge）
 >
-> **版本历程概览**：v0.70 基础存储 → v0.80 轮次架构 → v0.87 Worktree/并行 → v0.88 桌面宠物 → v0.89 跨会话委派 → v0.90 P0-P4 全量功能 → v0.91 Coding 工作台 → v0.92 Codex 对标 → v0.93 Vision Proxy → v0.94 配置修复 → v0.95 CLI/API 视觉代理 → v0.96 UI 大改版 → v0.97 Agentic Loop 性能优化 → v0.98 多智能体协同 → v0.99 DSH 全量升级 → v1.0.0 插件系统架构 + UI/UX 标准化 → v1.1.0 DSH 对标整改 + 测试深化 → v1.1.1 UI 布局优化 + 插件条件渲染 + Bug 修复
+> **版本历程概览**：v0.70 基础存储 → v0.80 轮次架构 → v0.87 Worktree/并行 → v0.88 桌面宠物 → v0.89 跨会话委派 → v0.90 P0-P4 全量功能 → v0.91 Coding 工作台 → v0.92 Codex 对标 → v0.93 Vision Proxy → v0.94 配置修复 → v0.95 CLI/API 视觉代理 → v0.96 UI 大改版 → v0.97 Agentic Loop 性能优化 → v0.98 多智能体协同 → v0.99 DSH 全量升级 → v1.0.0 插件系统架构 + UI/UX 标准化 → v1.1.0 DSH 对标整改 + 测试深化 → v1.1.1 UI 布局优化 + 插件条件渲染 + Bug 修复 → v1.2.0 Cordis 架构对齐 DSH + 安全加固 + 全量测试重构 → v1.3.0 Cordis 插件系统对标 DSH 全面整改 + Slot 消费闭环 + inject 依赖对齐
 
 ---
 
@@ -15,7 +15,7 @@
 - **GitHub**：https://github.com/sdcxb/codem
 - **分发**：NSIS `.exe` + WiX `.msi`，一键安装无需依赖
 - **平台**：Windows 优先
-- **版本**：v1.1.1（UI 布局优化 + 插件条件渲染 + 宠物窗口 Bug 修复 + 工具调用防御性检查，2026-08-17，插件管理按钮移至左下角 + CI/CD 移至右侧边栏 + 性能移至主对话框顶端 + 插件启用/禁用与按钮/面板联动显示 + 宠物窗口关闭 Bug 修复 + 插件管理面板 Cordis Context 初始化时序修复 + UI 组件 useCtx → tryGetCtx + 6 个工具 Consumer 文件 execute 回调 null 检查防御）
+- **版本**：v1.3.0（Cordis 插件系统对标 DSH 全面整改，2026-08-19，死 slot 从 29 个降至 0 个 + 7 个 UI provider inject 声明依赖 + Conversation slot 层级对标 DSH 完整建立 + slots.inject() 消费声明 + 11 个重复 slot 注册移除 + MessageBubble/InputArea/ChatPanel/Sidebar 全面接入 SlotBridge）
 
 ---
 

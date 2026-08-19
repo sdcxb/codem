@@ -1,5 +1,4 @@
-﻿// @ts-nocheck
-import type { Dict } from '../cosmokit/src/index.ts'
+﻿﻿import type { Dict } from '../cosmokit/src/index.ts'
 import { EventsService } from './events.ts'
 import { LoggerService } from './logger.ts'
 import { ReflectService } from './reflect.ts'
@@ -64,7 +63,7 @@ export class Context {
   }
 
   static {
-    Context.is[Symbol.toPrimitive] = () => Symbol.for('cordis.is')
+    ;(Context.is as any)[Symbol.toPrimitive] = () => Symbol.for('cordis.is')
     Context.prototype[Context.is as any] = true
   }
 

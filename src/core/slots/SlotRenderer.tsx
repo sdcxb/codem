@@ -30,11 +30,12 @@ export function SlotRenderer({
   filter?: (entry: StoredEntry) => boolean
 }): ReactNode {
   const ctx = tryGetCtx()
-  if (!ctx?.slots) {
+  const slots = ctx?.get('slots')
+  if (!slots) {
     return fallback
   }
 
-  const entries = useSlotEntries(ctx, name, entryKey, filter)
+  const entries = useSlotEntries(slots, name, entryKey, filter)
   if (entries.length === 0) {
     return fallback
   }
@@ -67,11 +68,12 @@ export function SlotListRenderer({
   filter?: (entry: StoredEntry) => boolean
 }): ReactNode {
   const ctx = tryGetCtx()
-  if (!ctx?.slots) {
+  const slots = ctx?.get('slots')
+  if (!slots) {
     return fallback
   }
 
-  const entries = useSlotEntries(ctx, name, undefined, filter)
+  const entries = useSlotEntries(slots, name, undefined, filter)
   if (entries.length === 0) {
     return fallback
   }
@@ -91,15 +93,15 @@ export function SlotListRenderer({
  * Hook: 订阅 Slot 的 entries 变化，使用 useSyncExternalStore 保证一致性。
  */
 function useSlotEntries(
-  ctx: any,
+  slots: any,
   key: string,
   entryKey?: string,
   filter?: (entry: StoredEntry) => boolean,
 ): StoredEntry[] {
   return useSyncExternalStore(
-    (onChange) => ctx.slots.subscribe(key, onChange),
+    (onChange) => slots.subscribe(key, onChange),
     () => {
-      let entries = ctx.slots.entriesOfSlot(key) as StoredEntry[]
+      let entries = slots.entriesOfSlot(key) as StoredEntry[]
       if (entryKey) {
         entries = entries.filter(e => e.options.key === entryKey)
       }

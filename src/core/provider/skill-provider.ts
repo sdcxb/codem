@@ -6,10 +6,11 @@
  * 保留 getSkillRegistry() 向后兼容，同时暴露 registerProvider/snapshot 等新 API。
  */
 import type { Plugin } from '../cordis/src/index.ts'
-import { getSkillRegistry } from '../skill/skill'
+import { SkillRegistry } from '../skill/skill'
 
 export const skillProvider: Plugin = (ctx: any) => {
-  const skillRegistry = getSkillRegistry()
+  // 在 Provider 内部创建实例，生命周期与 fiber 绑定
+  const skillRegistry = new SkillRegistry()
 
   // 暴露完整的 SkillRegistry 能力到 ctx.skills
   const skillService = {

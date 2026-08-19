@@ -91,10 +91,10 @@ export class JSONLWriter {
       let existing = "";
       try {
         existing = await readFile(this.filePath);
-      } catch {}
+      } catch (e) { console.warn('[multi-layer.ts]', e) }
       const newContent = existing ? existing + "\n" + lines : lines;
       await writeFile(this.filePath, newContent);
-    } catch {}
+    } catch (e) { console.warn('[multi-layer.ts]', e) }
   }
 
   /** Read all entries from the JSONL file */
@@ -161,7 +161,7 @@ export class MultiLayerRecovery {
           this.sessions.set(id, session as Session);
         }
       }
-    } catch {}
+    } catch (e) { console.warn('[multi-layer.ts]', e) }
 
     // Load from JSONL file (Layer 3: file) - async, will update on next sync
     if (this.config.enableJSONL) {
@@ -241,14 +241,14 @@ export class MultiLayerRecovery {
         sessionsObj[id] = session;
       }
       saveRecoveryData(`${this.config.storagePrefix}-sessions`, JSON.stringify(sessionsObj));
-    } catch {}
+    } catch (e) { console.warn('[multi-layer.ts]', e) }
   }
 
   /** Save state */
   private saveState(): void {
     try {
       saveRecoveryData(`${this.config.storagePrefix}-state`, JSON.stringify(this.state));
-    } catch {}
+    } catch (e) { console.warn('[multi-layer.ts]', e) }
   }
 
   /** Save a session */
@@ -300,7 +300,7 @@ export class MultiLayerRecovery {
           return session;
         }
       }
-    } catch {}
+    } catch (e) { console.warn('[multi-layer.ts]', e) }
 
     // Layer 3: JSONL file (slowest)
     if (this.writer) {

@@ -122,7 +122,7 @@ export class RetryExecutor {
       if (saved) {
         this.config = { ...this.config, ...saved };
       }
-    } catch {}
+    } catch (e) { console.warn('[retry.ts]', e) }
   }
 
   /** Get current config */
@@ -137,7 +137,7 @@ export class RetryExecutor {
     try {
       const { setSettingJSON } = require("../storage/settings");
       setSettingJSON("codem-retry-config", this.config);
-    } catch {}
+    } catch (e) { console.warn('[retry.ts]', e) }
   }
 
   /** Reset retry state */

@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { PanelLeftClose, Search, Settings, Sun, Moon, PencilLine, BookOpen, Clock, Plug, BookMarked, Brain, Link2, GitBranch, Pin, Folder, Pencil, Clipboard, Trash2, ChevronDown, ChevronRight, MoreHorizontal, User, Circle, ClipboardList, Bot, Activity, Puzzle } from "lucide-react";
+import { SlotListBridge } from "../core/slots/SlotBridge";
 import { useAppStore } from "../store";
 import { useProjectStore } from "../core/store";
 import { AppIdentity } from "../core/types";
@@ -780,6 +781,8 @@ const handleDrop = useCallback((e: React.DragEvent, targetSessionId: string, pro
           </div>
         </>
       )}
+      {/* SlotListBridge 消费 sidebar.tabs — list 类型，允许插件注入侧边栏 tab */}
+      <SlotListBridge name="sidebar.tabs" />
       {/* P1 #8: Bottom user info area + 插件管理按钮 */}
       <div className="sidebar-user-area">
         <div className="sidebar-user-avatar">

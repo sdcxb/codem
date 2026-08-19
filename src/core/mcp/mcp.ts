@@ -98,7 +98,7 @@ export class MCPClient {
       try {
         const { invoke } = (window as any).__TAURI__.core;
         await invoke("mcp_stdio_disconnect", { name: serverName });
-      } catch {}
+      } catch (e) { console.warn('[mcp.ts]', e) }
     }
 
     connection.status = "disconnected";
@@ -301,14 +301,14 @@ export class MCPRegistry {
   private loadConfigs() {
     try {
       this.configs = getSettingJSON<MCPServerConfig[]>("codem-mcp-servers", []);
-    } catch {}
+    } catch (e) { console.warn('[mcp.ts]', e) }
   }
 
   /** Save configs to SQLite */
   private saveConfigs() {
     try {
       setSettingJSON("codem-mcp-servers", this.configs);
-    } catch {}
+    } catch (e) { console.warn('[mcp.ts]', e) }
   }
 
   /** Add a server config */
@@ -431,7 +431,7 @@ export function isCodeGraphEnabled(): boolean {
 export function setCodeGraphEnabled(enabled: boolean): void {
   try {
     setSetting("codem-codegraph-enabled", enabled ? "true" : "false");
-  } catch {}
+  } catch (e) { console.warn('[mcp.ts]', e) }
 }
 
 /** Check if a project has a .codegraph/ directory (graph already built) */
@@ -498,7 +498,7 @@ export async function autoDetectCodeGraph(
 export async function disconnectCodeGraph(registry: MCPRegistry): Promise<void> {
   try {
     await registry.disconnect(CODEGRAPH_SERVER_NAME);
-  } catch {}
+  } catch (e) { console.warn('[mcp.ts]', e) }
 }
 
 /** Check if CodeGraph MCP tools are currently available */

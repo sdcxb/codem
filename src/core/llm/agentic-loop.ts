@@ -6,6 +6,7 @@ import { RetryExecutor, classifyError, logRetry } from "../retry/retry";
 import { extractJSON } from "./output-parser";
 import { getGuidanceQueue, GUIDANCE_MESSAGE_TEMPLATE } from "./guidance-queue";
 import { getNeedsYouQueue } from "./needs-you-queue";
+import { tryGetCtx } from "../consumer/index.ts";
 import { AgentMessageQueue } from "./agent-message-queue";
 import { getPermissionManager, type PermissionRequest, type PermissionResult } from "../permission/permission";
 import { getVisionProxy } from "./vision-proxy";
@@ -227,15 +228,71 @@ export class AgenticLoop {
   // Guidance queue — allows mid-turn message injection.
   // Messages are consumed at iteration boundaries (before each LLM call),
   // never during tool execution or subagent waiting.
-  private guidanceQueue = getGuidanceQueue();
-  private needsYouQueue = getNeedsYouQueue();
+  private guidanceQueue: any = null;
+  private needsYouQueue: any = null;
   private fileChangeTracker: FileChangeTracker | null = null;
   private agentId: string = "main";
   private currentSessionId: string | null = null;
 
-  // ===== R1-R4: Singleton accessors (DI migration bridge) =====
-  // These wrap global singletons so they can be swapped with ctx.get() later.
-  private getPermissionManager() { return getPermissionManager(); }
+  // ===== P0-7.1: DI accessors — 完全通过 ctx.get() 消费服务 =====
+  // 当 Fiber Context 可用时使用 ctx.get()，无 ctx 时回退到单例（仅测试环境）
+  private _ctx: any = null;
+
+  /** 设置 Cordis Context，设置后所有服务通过 ctx.get() 消费 */
+  setContext(ctx: any) {
+    this._ctx = ctx;
+    // P2-6.5建议5: 链路自愈机制 — 监听 service/unload 事件
+    // Provider 卸载 → 事件触发 → 检查是否影响当前会话 → 影响则记录警告
+    if (ctx && ctx.on) {
+      try {
+        ctx.on('service/unload', (data: any) => {
+          const serviceName = data?.name || 'unknown';
+          const critical = ['llm', 'tools', 'messageStorage'];
+          if (critical.includes(serviceName)) {
+            console.warn(`[AgenticLoop] Critical service "${serviceName}" unloaded during session, will check on next iteration`);
+          }
+        });
+      } catch (e) { console.warn('[agentic-loop.ts]', e) }
+    }
+  }
+
+  /** P0-7.1 / 6.5建议2: Provider 健康检查 — 每轮迭代开始时检查关键服务 */
+  private checkCriticalServices(): boolean {
+    if (!this._ctx) return true;
+    const critical = ['llm', 'tools', 'messageStorage'];
+    for (const name of critical) {
+      if (!this._ctx.get(name)) {
+        console.error(`[AgenticLoop] Critical service "${name}" not available`);
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /** P1-6.5建议3: 优雅降级提示 — 返回降级警告消息 */
+  private getDegradationWarning(): string | null {
+    if (!this._ctx) return null;
+    const warnings: string[] = [];
+    if (!this._ctx.get('permission')) {
+      warnings.push('⚠️ 权限服务不可用，所有工具调用将需要确认');
+    }
+    if (!this._ctx.get('costTracker')) {
+      warnings.push('⚠️ 费用追踪不可用，可能产生额外费用');
+    }
+    if (!this._ctx.get('compaction') && !this._ctx.get('compactionBasic')) {
+      warnings.push('⚠️ 上下文压缩不可用，上下文溢出时将直接停止');
+    }
+    if (!this._ctx.get('retry') && !this._ctx.get('llmRetry')) {
+      warnings.push('⚠️ 重试策略不可用，LLM 调用失败将直接报错');
+    }
+    return warnings.length > 0 ? warnings.join('\n') : null;
+  }
+
+  private getPermissionManager() {
+    // P0-7.1: ctx 可用时完全使用 ctx.get()，不再回退单例
+    if (this._ctx) { const s = this._ctx.get('permission'); if (s) return s; throw new Error('[AgenticLoop] Service "permission" not available in Cordis Context'); }
+    return getPermissionManager();
+  }
   private evaluateSecurityMode(
     mode: string,
     tool: string,
@@ -244,12 +301,36 @@ export class AgenticLoop {
   ): "allow" | "deny" | "ask" {
     return evaluateWithSecurityMode(mode as any, tool, resource, normalEvaluation);
   }
-  private getTelemetry() { return getTelemetry(); }
-  private getTranscriptCache() { return TranscriptCache; }
-  private getMessageStorage() { return MessageStorage; }
-  private getVisionProxy() { return getVisionProxy(); }
-  private getSnapshotService(cwd?: string) { return getSnapshotService(cwd || this.lastCwd || "."); }
-  private getEventLog() { return getEventLog(); }
+  private getTelemetry() {
+    // P0-7.1: ctx 可用时完全使用 ctx.get()，不再回退单例
+    if (this._ctx) { const s = this._ctx.get('telemetry'); if (s) return s; throw new Error('[AgenticLoop] Service "telemetry" not available in Cordis Context'); }
+    return getTelemetry();
+  }
+  private getTranscriptCache() {
+    // P0-7.1: ctx 可用时完全使用 ctx.get()，不再回退单例
+    if (this._ctx) { const s = this._ctx.get('transcriptCache'); if (s) return s; throw new Error('[AgenticLoop] Service "transcriptCache" not available in Cordis Context'); }
+    return TranscriptCache;
+  }
+  private getMessageStorage() {
+    // P0-7.1: ctx 可用时完全使用 ctx.get()，不再回退单例
+    if (this._ctx) { const s = this._ctx.get('messageStorage'); if (s) return s; throw new Error('[AgenticLoop] Service "messageStorage" not available in Cordis Context'); }
+    return MessageStorage;
+  }
+  private getVisionProxy() {
+    // P0-7.1: ctx 可用时完全使用 ctx.get()，不再回退单例
+    if (this._ctx) { const s = this._ctx.get('visionProxy'); if (s) return s; throw new Error('[AgenticLoop] Service "visionProxy" not available in Cordis Context'); }
+    return getVisionProxy();
+  }
+  private getSnapshotService(cwd?: string) {
+    // P0-7.1: ctx 可用时完全使用 ctx.get()，不再回退单例
+    if (this._ctx) { const s = this._ctx.get('snapshot'); if (s) return s; throw new Error('[AgenticLoop] Service "snapshot" not available in Cordis Context'); }
+    return getSnapshotService(cwd || this.lastCwd || ".");
+  }
+  private getEventLog() {
+    // P0-7.1: ctx 可用时完全使用 ctx.get()，不再回退单例
+    if (this._ctx) { const s = this._ctx.get('eventLog'); if (s) return s; throw new Error('[AgenticLoop] Service "eventLog" not available in Cordis Context'); }
+    return getEventLog();
+  }
 
   /** Match tool name against allowlist pattern (supports wildcards) */
   private matchToolPattern(name: string, pattern: string): boolean {
@@ -292,6 +373,11 @@ export class AgenticLoop {
     this.provider = provider;
     this.tools = tools;
     this.config = { ...DEFAULT_LOOP_CONFIG, ...config };
+    // R5: 尝试从 Cordis Context 获取服务，回退到单例
+    const ctx = tryGetCtx();
+    if (ctx) this._ctx = ctx;
+    this.guidanceQueue = getGuidanceQueue();
+    this.needsYouQueue = getNeedsYouQueue();
     this.executor = new StreamingToolExecutorImpl(config?.toolExecutor);
     this.retryExecutor = new RetryExecutor({
       maxAttempts: 5,
@@ -601,6 +687,26 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
         this.state.toolCallsInIteration = 0;
         this.state.compactedThisIteration = false;
 
+        // P0-7.1 / 6.5建议2: 每轮迭代检查关键服务可用性
+        if (!this.checkCriticalServices()) {
+          const result: LoopResult = {
+            type: "stop",
+            reason: "critical_service_unavailable",
+            usage: this.state.totalUsage,
+          };
+          yield { type: "text_delta", text: "\n\n⚠️ **关键服务不可用**，已停止执行。请在插件管理中检查 LLM/工具/消息存储服务是否正常加载。" };
+          yield { type: "end", result };
+          return result;
+        }
+
+        // P1-6.5建议3: 第一轮迭代时输出版本降级警告
+        if (this.state.iteration === 1) {
+          const warning = this.getDegradationWarning();
+          if (warning) {
+            yield { type: "text_delta", text: `\n${warning}\n` };
+          }
+        }
+
         // B3: Tick session skills — decrement TTL and unload expired skills
         try {
           const { tickSessionSkills } = await import("./tools/load-skill");
@@ -646,7 +752,7 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
               usage: this.state.totalUsage,
             };
             if (this.config.memoryEnabled && this.config.onTurnComplete) {
-              try { this.config.onTurnComplete(this.state.totalUsage); } catch {}
+              try { this.config.onTurnComplete(this.state.totalUsage); } catch (e) { console.warn('[agentic-loop.ts]', e) }
             }
             telemetry.record(sessionId, "turn_end", { duration_ms: Date.now() - turnStartTime, reason: "cost_limit", totalTokens: this.state.totalUsage?.totalTokens || 0 });
             yield { type: "end", result };
@@ -843,7 +949,7 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
         this.state.microCompactedThisRun = false;
         // F1.2: Trigger memory extraction after compaction
         if (this.config.memoryEnabled && this.config.onCompactionComplete) {
-          try { this.config.onCompactionComplete(); } catch {}
+          try { this.config.onCompactionComplete(); } catch (e) { console.warn('[agentic-loop.ts]', e) }
         }
         messagesForIteration = await this.buildMessages(sessionId);
         this.state.compactedThisIteration = true;
@@ -1014,7 +1120,7 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
           usage: this.state.totalUsage,
         };
         if (this.config.memoryEnabled && this.config.onTurnComplete) {
-          try { this.config.onTurnComplete(this.state.totalUsage); } catch {}
+          try { this.config.onTurnComplete(this.state.totalUsage); } catch (e) { console.warn('[agentic-loop.ts]', e) }
         }
         yield { type: "end", result };
         return result;
@@ -1037,7 +1143,7 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
             status: "done",
           }, sessionId);
           // C5: EventLog dual-write
-          try { this.getEventLog().append(sessionId, "user_message", { messageId: `task-reminder-${Date.now()}`, content: taskCheck }); } catch {}
+          try { this.getEventLog().append(sessionId, "user_message", { messageId: `task-reminder-${Date.now()}`, content: taskCheck }); } catch (e) { console.warn('[agentic-loop.ts]', e) }
           this.msgCache = null;
           // Continue the loop — don't stop
           continue;
@@ -1057,7 +1163,7 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
             status: "done",
           }, sessionId);
           // C5: EventLog dual-write
-          try { this.getEventLog().append(sessionId, "user_message", { messageId: `reminder-${Date.now()}`, content: reminder }); } catch {}
+          try { this.getEventLog().append(sessionId, "user_message", { messageId: `reminder-${Date.now()}`, content: reminder }); } catch (e) { console.warn('[agentic-loop.ts]', e) }
           // Invalidate message cache so the reminder is included
           this.msgCache = null;
           console.warn(`[AgenticLoop] ${unwaitedIds.length} un-waited sub-agent(s) — injected wait_for_subagent reminder instead of stopping. IDs: ${unwaitedIds.join(", ")}`);
@@ -1090,7 +1196,7 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
         };
         // F1.3: Trigger memory extraction after turn completes
         if (this.config.memoryEnabled && this.config.onTurnComplete) {
-          try { this.config.onTurnComplete(this.state.totalUsage); } catch {}
+          try { this.config.onTurnComplete(this.state.totalUsage); } catch (e) { console.warn('[agentic-loop.ts]', e) }
         }
         yield { type: "end", result };
         return result;
@@ -1104,7 +1210,7 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
         };
         // F1.3: Trigger memory extraction even on error stop
         if (this.config.memoryEnabled && this.config.onTurnComplete) {
-          try { this.config.onTurnComplete(this.state.totalUsage); } catch {}
+          try { this.config.onTurnComplete(this.state.totalUsage); } catch (e) { console.warn('[agentic-loop.ts]', e) }
         }
         yield { type: "end", result };
         return result;
@@ -1121,7 +1227,7 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
     };
     // F1.3: Trigger memory extraction on max iterations stop
     if (this.config.memoryEnabled && this.config.onTurnComplete) {
-      try { this.config.onTurnComplete(this.state.totalUsage); } catch {}
+      try { this.config.onTurnComplete(this.state.totalUsage); } catch (e) { console.warn('[agentic-loop.ts]', e) }
     }
     // P2-14: Record telemetry — turn end
     telemetry.record(sessionId, "turn_end", {
@@ -1587,7 +1693,7 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
                 isNew = true;
               }
               await snapshotService.recordFile(this.currentSnapshotId, args.path, content, isNew);
-            } catch {}
+            } catch (e) { console.warn('[agentic-loop.ts]', e) }
           }
         }
 
@@ -2228,7 +2334,7 @@ private checkHasDocumentAttachment(sessionId: string): boolean {
     // The marker has role "user" and starts with "[上下文已自动压缩]"
     let existingSummary = "";
     const oldMarkerIdx = messagesToRemove.findIndex(
-      m => m.role === "user" && (m.content || "").startsWith("[上下文已自动压缩]")
+      (m: any) => m.role === "user" && (m.content || "").startsWith("[上下文已自动压缩]")
     );
     if (oldMarkerIdx >= 0) {
       existingSummary = messagesToRemove[oldMarkerIdx].content || "";
@@ -2288,7 +2394,7 @@ private checkHasDocumentAttachment(sessionId: string): boolean {
     }
 
     // Delete old messages from the database (including old marker)
-    const removedIds = messagesToRemove.map(m => m.id);
+    const removedIds = messagesToRemove.map((m: any) => m.id);
     this.getMessageStorage().deleteMessagesByIds(removedIds);
 
     // Insert new compaction marker

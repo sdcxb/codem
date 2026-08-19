@@ -102,7 +102,7 @@ export function deleteQuickPhrase(phraseId: string): void {
     const db = getDatabase();
     db.run("DELETE FROM quick_phrases WHERE id = ?", [phraseId]);
     persistDatabase();
-  } catch {}
+  } catch (e) { console.warn('[settings.ts]', e) }
 }
 
 export function incrementQuickPhraseUsage(phraseId: string): void {
@@ -113,7 +113,7 @@ export function incrementQuickPhraseUsage(phraseId: string): void {
       [Date.now(), phraseId]
     );
     persistDatabase();
-  } catch {}
+  } catch (e) { console.warn('[settings.ts]', e) }
 }
 
 // ========== MCP Server Storage ==========

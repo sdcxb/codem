@@ -19,7 +19,7 @@ function getFs() {
     try {
       const fs = _ctx.get('fs')
       if (fs) return fs
-    } catch {}
+    } catch (e) { console.warn('[tools.ts]', e) }
   }
   return { readFile, writeFile, globSearch, grepSearch, isPathWithinWorkspace }
 }
@@ -30,7 +30,7 @@ function getShell() {
     try {
       const shell = _ctx.get('shell')
       if (shell) return shell
-    } catch {}
+    } catch (e) { console.warn('[tools.ts]', e) }
   }
   return { execute: (cmd: string, cwd?: string) => executeCommand(cmd, cwd) }
 }
@@ -41,7 +41,7 @@ function getSettings() {
     try {
       const settings = _ctx.get('settings')
       if (settings) return settings
-    } catch {}
+    } catch (e) { console.warn('[tools.ts]', e) }
   }
   return { get: (key: string) => getSetting(key) }
 }
@@ -52,7 +52,7 @@ function getI18n() {
     try {
       const i18n = _ctx.get('i18n')
       if (i18n) return i18n
-    } catch {}
+    } catch (e) { console.warn('[tools.ts]', e) }
   }
   return { getLang: () => getLang() }
 }

@@ -4,15 +4,16 @@
  *
  * R3-Audit: This directory contains Service Definition interfaces (Cordis declarations).
  * The canonical implementations are in src/core/provider/ — this directory is kept
- * for interface definitions only. The local.ts files in subdirectories are legacy
- * wrappers that delegate to provider/ implementations.
+ * for interface definitions only. The local.ts files in subdirectories now re-export
+ * from provider/ (P2-2 消除架构级重复).
  *
  * 三层架构：
  * 1. Service Definition (本文件) — 纯接口契约
  * 2. Provider (src/core/provider/) — 默认实现 ← CANONICAL
  * 3. Consumer (src/core/consumer/) — 工具消费层
  *
- * 新代码应直接从 src/core/provider/ 导入。
+ * P2-2: capabilities/local.ts 文件现在 re-export provider/ 的实现，
+ * 不再维护并行实现。新代码应直接从 src/core/provider/ 导入。
  */
 
 import type { Context, Service } from '../cordis/src/index.ts'
@@ -42,9 +43,13 @@ declare module '../cordis/src/context.ts' {
 
 // ==================== 3. Agent Loop ====================
 export interface AgentLoopService {
+  _active: boolean
   run(sessionId: string, config?: any): Promise<any>
   stop(sessionId: string): void
   getState(sessionId: string): any
+  getLoop(agentId?: string, sessionId?: string): any
+  cleanupSession(sessionId: string): void
+  getActiveSessions(): string[]
 }
 declare module '../cordis/src/context.ts' {
   interface Context { agentLoop: AgentLoopService }

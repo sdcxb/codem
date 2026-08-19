@@ -19,6 +19,7 @@ export const squadProvider: Plugin = (ctx: any) => {
   const manager = getSquadManager()
 
   const dispose = ctx.provide('squad', {
+    _active: true,
     async create(name: string, config?: any): Promise<string> {
       return manager.createSquad(name, config)
     },
@@ -45,5 +46,10 @@ export const squadProvider: Plugin = (ctx: any) => {
     },
   })
 
-  return dispose
+  // Composite dispose — stop underlying manager to eliminate double-track
+  const compositeDispose = () => {
+    if (manager.dispose) manager.dispose()
+    dispose()
+  }
+  return compositeDispose
 }

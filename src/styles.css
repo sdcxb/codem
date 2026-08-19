@@ -1717,11 +1717,18 @@ background: transparent;
 flex-shrink: 0;
 }
 
-/* P0: Card container — rounded-3xl floating card */
+/* P-UI: 输入框区域最大宽度限制（对标 DSH composer max-width） */
+.input-area > .input-card-container {
+  max-width: 880px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+/* P-UI: Card container — 对标 DSH floating capsule (border-radius: 22px) */
 .input-card-container {
   background: var(--bg-secondary);
   border: 1px solid var(--border-primary);
-  border-radius: 16px;
+  border-radius: 20px;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08), 0 0 0 1px rgba(0, 0, 0, 0.02);
   transition: box-shadow 0.2s ease, border-color 0.2s ease;
   overflow: visible;
@@ -1739,17 +1746,53 @@ flex-shrink: 0;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.12);
 }
 
+/* P-UI: 两行结构 — textarea 上方独占一行，action row 下方 */
 .input-wrapper {
-display: flex;
-align-items: center;
-  gap: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
   background: transparent;
   border: none;
-  border-radius: 16px 16px 0 0;
-  padding: 10px 12px 8px;
+  border-radius: 20px 20px 0 0;
+  padding: 0;
   transition: none;
   position: relative;
+}
+
+/* P-UI: textarea 行 — 独占全部宽度 */
+.input-textarea-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  padding: 12px 16px 4px;
+  position: relative;
+}
+
+/* P-UI: action 行 — 左侧工具 + 右侧发送 */
+.input-action-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 10px 8px;
+  min-width: 0;
+}
+
+/* P-UI: 左侧工具组 */
+.input-tools-left {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
   flex-wrap: wrap;
+}
+
+/* P-UI: 右侧发送组 */
+.input-tools-right {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
 }
 
 /* Focus state now handled by .input-card-container:focus-within */
@@ -1796,19 +1839,21 @@ color: var(--text-secondary);
   color: var(--security-full);
 }
 
+/* P-UI: textarea 更大更舒适 — 对标 DSH 16px/24px line-height */
 .message-input {
-flex: 1;
-background: none;
-border: none;
-color: var(--text-primary);
-font-size: 14px;
-font-family: inherit;
-resize: none;
-outline: none;
-min-height: 48px;
-max-height: 200px;
-line-height: 1.5;
-padding: 4px 0;
+  flex: 1;
+  background: none;
+  border: none;
+  color: var(--text-primary);
+  font-size: 15px;
+  font-family: inherit;
+  resize: none;
+  outline: none;
+  min-height: 56px;
+  max-height: 280px;
+  line-height: 24px;
+  padding: 4px 0;
+  width: 100%;
 }
 
 .message-input::placeholder {
@@ -8811,10 +8856,10 @@ border-color: var(--text-muted);
   user-select: none;
 }
 
-/* #10: Input area expand/collapse */
+/* P-UI: 展开模式 — 更大的编辑区域 */
 .message-input.expanded {
   min-height: 200px;
-  max-height: 400px;
+  max-height: 480px;
 }
 
 /* #10: Disabled state hint */

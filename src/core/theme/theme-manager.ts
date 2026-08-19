@@ -171,7 +171,7 @@ class ThemeManagerClass {
       // For GIF, try to extract palette from first frame
       try {
         palette = await ThemeExtractor.extractPalette(imageSrc);
-      } catch {}
+      } catch (e) { console.warn('[theme-manager.ts]', e) }
     }
 
     this.updateDreamConfig({
@@ -197,7 +197,7 @@ class ThemeManagerClass {
         if (userTheme) {
           root.setAttribute('data-theme', userTheme);
         }
-      } catch {}
+      } catch (e) { console.warn('[theme-manager.ts]', e) }
     } else if (this.currentSkin === 'hub') {
       // Hub 皮肤是暗色皮肤，强制 data-theme=dark 确保所有 dark 模式 CSS 变量生效
       root.setAttribute('data-skin', 'hub');
@@ -478,7 +478,7 @@ class ThemeManagerClass {
       if (userTheme) {
         root.setAttribute('data-theme', userTheme);
       }
-    } catch {}
+    } catch (e) { console.warn('[theme-manager.ts]', e) }
   }
 
   /** 通知监听器 */

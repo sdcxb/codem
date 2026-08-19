@@ -15,30 +15,39 @@ export function PluginMarketPanel() {
   const [filter, setFilter] = useState<'all' | 'installed' | 'available'>('all')
 
   const refresh = useCallback(() => {
-    if (!ctx?.pluginRegistry) return
+    if (!ctx) return
+    const registry = ctx.get('pluginRegistry')
+    if (!registry) return
     const results = search
-      ? ctx.pluginRegistry.search(search)
-      : ctx.pluginRegistry.list()
+      ? registry.search(search)
+      : registry.list()
     setPlugins(results)
   }, [ctx, search])
 
   useEffect(() => { refresh() }, [refresh])
 
   const handleInstall = async (name: string) => {
-    if (!ctx?.pluginInstaller) return
-    await ctx.pluginInstaller.install(name)
+    if (!ctx) return
+    const installer = ctx.get('pluginInstaller')
+    if (!installer) return
+    await installer.install(name)
     refresh()
   }
 
   const handleUninstall = async (name: string) => {
-    if (!ctx?.pluginInstaller) return
-    await ctx.pluginInstaller.uninstall(name)
+    if (!ctx) return
+    const installer = ctx.get('pluginInstaller')
+    if (!installer) return
+    await installer.uninstall(name)
     refresh()
   }
 
   const filteredPlugins = plugins.filter(p => {
-    if (filter === 'installed') return ctx?.pluginInstaller?.isInstalled(p.name)
-    if (filter === 'available') return !ctx?.pluginInstaller?.isInstalled(p.name)
+    if (!ctx) return true
+    const installer = ctx.get('pluginInstaller')
+    if (!installer) return true
+    if (filter === 'installed') return installer.isInstalled(p.name)
+    if (filter === 'available') return !installer.isInstalled(p.name)
     return true
   })
 
@@ -76,7 +85,7 @@ export function PluginMarketPanel() {
               </div>
             )}
             <div className="actions">
-              {ctx?.pluginInstaller?.isInstalled(p.name) ? (
+              {ctx?.get('pluginInstaller')?.isInstalled(p.name) ? (
                 <button onClick={() => handleUninstall(p.name)}>Uninstall</button>
               ) : (
                 <button onClick={() => handleInstall(p.name)}>Install</button>
@@ -95,9 +104,12 @@ export function PluginManagerPanel() {
   const [installed, setInstalled] = useState<string[]>([])
 
   useEffect(() => {
-    if (!ctx?.pluginRegistry || !ctx?.pluginInstaller) return
-    const all = ctx.pluginRegistry.list()
-    setInstalled(all.filter(p => ctx.pluginInstaller.isInstalled(p.name)).map(p => p.name))
+    if (!ctx) return
+    const registry = ctx.get('pluginRegistry')
+    const installer = ctx.get('pluginInstaller')
+    if (!registry || !installer) return
+    const all = registry.list()
+    setInstalled(all.filter(p => installer.isInstalled(p.name)).map(p => p.name))
   }, [ctx])
 
   return (
@@ -107,7 +119,7 @@ export function PluginManagerPanel() {
         {installed.map(name => (
           <li key={name}>
             {name}
-            <button onClick={() => ctx.pluginInstaller.uninstall(name)}>Uninstall</button>
+            <button onClick={() => ctx.get('pluginInstaller')?.uninstall(name)}>Uninstall</button>
           </li>
         ))}
       </ul>
@@ -117,6 +129,7 @@ export function PluginManagerPanel() {
 
 export function apply() {
   const ctx = useCtx()
-  ctx.slots.register('app.plugin-market', PluginMarketPanel)
-  ctx.slots.register('app.plugin-manager', PluginManagerPanel)
+  const slots = ctx.get('slots')
+  slots.register('app.plugin-market', PluginMarketPanel)
+  slots.register('app.plugin-manager', PluginManagerPanel)
 }

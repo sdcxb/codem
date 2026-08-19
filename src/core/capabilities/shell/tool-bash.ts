@@ -26,8 +26,9 @@ export function apply() {
     },
     requirePermission: true,
     async execute({ command, cwd, timeout }: { command: string; cwd?: string; timeout?: number }) {
-      if (!ctx.shell) return 'Shell not available'
-      const result = await ctx.shell.execute(command, cwd || '.', timeout)
+      const shell = ctx.get('shell')
+      if (!shell) return 'Shell not available'
+      const result = await shell.execute(command, cwd || '.', timeout)
       const output = []
       if (result.stdout) output.push(result.stdout)
       if (result.stderr) output.push(result.stderr)

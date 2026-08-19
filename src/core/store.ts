@@ -87,14 +87,14 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     const project = get().projects.find((p) => p.id === projectId);
     if (!project) return;
     let sessions: Session[] = [];
-    try { sessions = SessionStorage.listSessions(projectId); } catch {}
-    try { ProjectStorage.updateProject(projectId, { lastAccessedAt: Date.now() }); } catch {}
+    try { sessions = SessionStorage.listSessions(projectId); } catch (e) { console.warn('[store.ts]', e) }
+    try { ProjectStorage.updateProject(projectId, { lastAccessedAt: Date.now() }); } catch (e) { console.warn('[store.ts]', e) }
     set({ currentProject: { ...project, lastAccessedAt: Date.now() }, currentSession: null, sessions });
   },
 
   deleteProject: (projectId) => {
-    try { ProjectStorage.deleteProject(projectId); } catch {}
-    try { for (const s of SessionStorage.listSessions(projectId)) SessionStorage.deleteSession(s.id); } catch {}
+    try { ProjectStorage.deleteProject(projectId); } catch (e) { console.warn('[store.ts]', e) }
+    try { for (const s of SessionStorage.listSessions(projectId)) SessionStorage.deleteSession(s.id); } catch (e) { console.warn('[store.ts]', e) }
     set({
       projects: get().projects.filter((p) => p.id !== projectId),
       currentProject: get().currentProject?.id === projectId ? null : get().currentProject,
@@ -104,7 +104,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   setProjects: (projects) => set({ projects }),
 
   updateProject: (projectId, update) => {
-    try { ProjectStorage.updateProject(projectId, { ...update, lastAccessedAt: Date.now() }); } catch {}
+    try { ProjectStorage.updateProject(projectId, { ...update, lastAccessedAt: Date.now() }); } catch (e) { console.warn('[store.ts]', e) }
     const projects = get().projects.map((p) => p.id === projectId ? { ...p, ...update, lastAccessedAt: Date.now() } : p);
     set({ projects, currentProject: get().currentProject?.id === projectId ? { ...get().currentProject!, ...update } : get().currentProject });
   },
@@ -138,7 +138,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       try {
         const execMode = getProjectExecutionMode(project.path);
         session.executionMode = execMode;
-      } catch {}
+      } catch (e) { console.warn('[store.ts]', e) }
     }
     try { SessionStorage.createSession(session); } catch (e) { console.error("[Store] createSession failed:", e); }
     const updated = [...get().sessions, session];
@@ -164,7 +164,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         newSession.executionMode = "current_workspace";
       }
     }
-    try { SessionStorage.createSession(newSession); } catch {}
+    try { SessionStorage.createSession(newSession); } catch (e) { console.warn('[store.ts]', e) }
     const updated = [...get().sessions, newSession];
     set({ sessions: updated, currentSession: newSession });
     return newSession;
@@ -186,21 +186,21 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       const { getLLMEngine } = require("../llm");
       const engine = getLLMEngine();
       engine.cleanupSessionLoop?.(sessionId);
-    } catch {}
+    } catch (e) { console.warn('[store.ts]', e) }
     // Clean up abort controller if present
     try {
       const { useAppStore } = require("../store");
       const abortControllers = (useAppStore.getState() as any).abortControllers;
       // This is in App.tsx's ref, not in store — skip if not available
-    } catch {}
-    try { SessionStorage.deleteSession(sessionId); } catch {}
+    } catch (e) { console.warn('[store.ts]', e) }
+    try { SessionStorage.deleteSession(sessionId); } catch (e) { console.warn('[store.ts]', e) }
     set({ sessions: get().sessions.filter((s) => s.id !== sessionId), currentSession: get().currentSession?.id === sessionId ? null : get().currentSession });
   },
 
   setSessions: (sessions) => set({ sessions }),
 
   updateSession: (sessionId, update) => {
-    try { SessionStorage.updateSession(sessionId, { ...update, lastMessageAt: Date.now() }); } catch {}
+    try { SessionStorage.updateSession(sessionId, { ...update, lastMessageAt: Date.now() }); } catch (e) { console.warn('[store.ts]', e) }
     const updated = get().sessions.map((s) => s.id === sessionId ? { ...s, ...update, lastMessageAt: Date.now() } : s);
     set({ sessions: updated, currentSession: get().currentSession?.id === sessionId ? { ...get().currentSession!, ...update } : get().currentSession });
   },
@@ -248,7 +248,7 @@ function createWorktreeSync(projectPath: string, sessionId: string, branch?: str
     try {
       const store = useProjectStore.getState();
       store.updateSession(sessionId, { executionMode: "current_workspace" });
-    } catch {}
+    } catch (e) { console.warn('[store.ts]', e) }
   });
   // Return predicted path immediately (will be confirmed by async callback)
   return worktreePath;

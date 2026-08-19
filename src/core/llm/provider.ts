@@ -157,7 +157,7 @@ export class OpenAICompatibleProvider implements LLMProvider {
     // any pending reader.read() call. Without this, the reader could block
     // forever even after abort.
     const abortHandler = () => {
-      try { reader.cancel(); } catch {}
+      try { reader.cancel(); } catch (e) { console.warn('[provider.ts]', e) }
     };
     if (request.abortSignal) {
       if (request.abortSignal.aborted) {
@@ -307,7 +307,7 @@ export class OpenAICompatibleProvider implements LLMProvider {
 
             yield { type: "end", finishReason: finishReason === "tool_calls" ? "tool_use" : finishReason };
           }
-        } catch {}
+        } catch (e) { console.warn('[provider.ts]', e) }
       }
     }
 
@@ -517,7 +517,7 @@ export function createDefaultProviders(ctx?: Context): ProviderRegistry {
       try {
         const credentials = ctx.get('credentials')
         if (credentials) return credentials.get(providerId.toUpperCase() + '_API_KEY') || ""
-      } catch {}
+      } catch (e) { console.warn('[provider.ts]', e) }
     }
     return ""
   };

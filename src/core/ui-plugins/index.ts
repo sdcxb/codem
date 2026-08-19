@@ -17,6 +17,7 @@ import { apply as toolApply } from './ui-tool/index.ts'
 import { apply as settingsApply } from './ui-settings/index.ts'
 import { apply as themeApply } from './ui-theme/index.ts'
 import { apply as miscApply } from './ui-misc/index.ts'
+import { apply as panelsApply } from './ui-panels/index.ts'
 import { apply as marketApply } from './ui-market/index.ts'
 import { apply as skinDefaultApply } from './ui-skin-default/index.ts'
 import { apply as skinPetApply } from './ui-skin-pet/index.ts'
@@ -42,6 +43,7 @@ export function loadUIPlugins(ctx: Context) {
     { name: 'ui-tool', apply: toolApply },
     { name: 'ui-settings', apply: settingsApply },
     { name: 'ui-misc', apply: miscApply },
+    { name: 'ui-panels', apply: panelsApply },
     { name: 'ui-market', apply: marketApply },
     { name: 'ui-skin-default', apply: skinDefaultApply },
     { name: 'ui-skin-pet', apply: skinPetApply },

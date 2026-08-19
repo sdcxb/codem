@@ -2,6 +2,9 @@
 /**
  * @codem/subagent-in-process — 进程内子智能体 Provider
  *
+ * P2-2/F3: 消除架构级重复 — 被 provider/subagent-fork-in-process-provider.ts 包装后注册到 ctx。
+ * @deprecated 新代码请直接从 provider/ 导入。
+ *
  * 在当前进程中运行子智能体。
  * 包装现有 subagent/ 下的实现。
  */

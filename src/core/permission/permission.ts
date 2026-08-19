@@ -85,7 +85,7 @@ export class PermissionEvaluator {
           }
         }
       }
-    } catch {}
+    } catch (e) { console.warn('[permission.ts]', e) }
   }
 
   /** F3.5: Save custom rules to storage */
@@ -93,7 +93,7 @@ export class PermissionEvaluator {
     try {
       const custom = this.getCustomRules();
       setSettingJSON(CUSTOM_RULES_KEY, custom);
-    } catch {}
+    } catch (e) { console.warn('[permission.ts]', e) }
   }
 
   /** Clear all rules */

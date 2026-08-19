@@ -62,7 +62,7 @@ async function apiMkdir(path: string): Promise<void> {
     try {
       const { invoke } = (window as any).__TAURI__.core;
       await invoke("execute_command", { command: `mkdir "${path}"` });
-    } catch {}
+    } catch (e) { console.warn('[snapshot.ts]', e) }
   }
 }
 
@@ -144,7 +144,7 @@ export class SnapshotService {
       }
 
       await apiWrite(snapshotPath, JSON.stringify(snapshot, null, 2));
-    } catch {}
+    } catch (e) { console.warn('[snapshot.ts]', e) }
   }
 
   async restore(snapshotId: string): Promise<FileChange[]> {
@@ -160,7 +160,7 @@ export class SnapshotService {
       try {
         before = await apiGet(file.path);
         fileExists = true;
-      } catch {}
+      } catch (e) { console.warn('[snapshot.ts]', e) }
 
       if (file.isNew) {
         // 新建的文件 → 回滚时删除
@@ -197,7 +197,7 @@ export class SnapshotService {
           try {
             const data = await apiGet(entry.path);
             snapshots.push(JSON.parse(data));
-          } catch {}
+          } catch (e) { console.warn('[snapshot.ts]', e) }
         }
       }
       return snapshots.sort((a, b) => b.timestamp - a.timestamp);
@@ -223,7 +223,7 @@ export class SnapshotService {
       for (const snapshot of toDelete) {
         await apiDelete(this.getSnapshotPath(snapshot.id));
       }
-    } catch {}
+    } catch (e) { console.warn('[snapshot.ts]', e) }
   }
 }
 

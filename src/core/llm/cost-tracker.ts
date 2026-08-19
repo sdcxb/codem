@@ -116,7 +116,7 @@ export class CostTracker {
       if (savedLimits) {
         this.config.limits = { ...this.config.limits, ...savedLimits };
       }
-    } catch {}
+    } catch (e) { console.warn('[cost-tracker.ts]', e) }
     if (this.config.persist) {
       this.load();
     }
@@ -130,7 +130,7 @@ export class CostTracker {
         this.records = parsed.records || [];
         this.sessionCosts = new Map(parsed.sessionCosts || []);
       }
-    } catch {}
+    } catch (e) { console.warn('[cost-tracker.ts]', e) }
   }
 
   /** Save records to SQLite */
@@ -147,7 +147,7 @@ export class CostTracker {
         records: this.records,
         sessionCosts: Array.from(this.sessionCosts.entries()),
       });
-    } catch {}
+    } catch (e) { console.warn('[cost-tracker.ts]', e) }
   }
 
   /** Record an API call */
@@ -429,7 +429,7 @@ export class CostTracker {
     // Persist limits separately so they survive restarts
     try {
       setSettingJSON("codem-cost-limits", this.config.limits);
-    } catch {}
+    } catch (e) { console.warn('[cost-tracker.ts]', e) }
   }
 
   /** Format cost for display */

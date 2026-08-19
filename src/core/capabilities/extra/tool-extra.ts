@@ -38,8 +38,9 @@ export function applyTodo() {
     async execute({ todos }: { todos: any[] }) {
       // 存储到 ctx.storage
       const ctx = useCtx()
-      if (!ctx.storage) return 'Storage not available'
-      ctx.storage.set('todos', todos)
+      const storage = ctx.get('storage')
+      if (!storage) return 'Storage not available'
+      storage.set('todos', todos)
       return `Updated ${todos.length} todo items`
     },
   })
@@ -60,8 +61,9 @@ export function applyAskUser() {
     },
     async execute({ question, options }: { question: string; options?: string[] }) {
       const ctx = useCtx()
-      if (ctx.userQuestions) {
-        return await ctx.userQuestions.ask(question, options)
+      const userQuestions = ctx.get('userQuestions')
+      if (userQuestions) {
+        return await userQuestions.ask(question, options)
       }
       return 'User interaction not available'
     },
@@ -80,8 +82,9 @@ export function applyLSP() {
     },
     async execute({ file }: { file: string }) {
       const ctx = useCtx()
-      if (!ctx.lsp) return 'LSP not available'
-      const diags = await ctx.lsp.getDiagnostics(file)
+      const lsp = ctx.get('lsp')
+      if (!lsp) return 'LSP not available'
+      const diags = await lsp.getDiagnostics(file)
       return diags.map(d => `${d.line}:${d.col} [${d.severity}] ${d.message}`).join('\n') || 'No diagnostics'
     },
   })
@@ -100,8 +103,9 @@ export function applyLSP() {
     },
     async execute({ file, line, col }: { file: string; line: number; col: number }) {
       const ctx = useCtx()
-      if (!ctx.lsp) return 'LSP not available'
-      return await ctx.lsp.hover(file, line, col) || 'No hover info'
+      const lsp = ctx.get('lsp')
+      if (!lsp) return 'LSP not available'
+      return await lsp.hover(file, line, col) || 'No hover info'
     },
   })
 
@@ -119,8 +123,9 @@ export function applyLSP() {
     },
     async execute({ file, line, col }: { file: string; line: number; col: number }) {
       const ctx = useCtx()
-      if (!ctx.lsp) return 'LSP not available'
-      const completions = await ctx.lsp.completions(file, line, col)
+      const lsp = ctx.get('lsp')
+      if (!lsp) return 'LSP not available'
+      const completions = await lsp.completions(file, line, col)
       return completions.map(c => c.label || c.name).join('\n') || 'No completions'
     },
   })
@@ -143,8 +148,9 @@ export function applyRunCode() {
     requirePermission: true,
     async execute({ code, language, cwd }: { code: string; language: string; cwd?: string }) {
       const ctx = useCtx()
-      if (!ctx.codeRuntime) return 'Code runtime not available'
-      const result = await ctx.codeRuntime.execute(code, language, cwd)
+      const codeRuntime = ctx.get('codeRuntime')
+      if (!codeRuntime) return 'Code runtime not available'
+      const result = await codeRuntime.execute(code, language, cwd)
       return result.stdout || result.stderr || '(no output)'
     },
   })
@@ -173,8 +179,9 @@ export function applyWorkflow() {
     },
     async execute({ steps }: { steps: any[] }) {
       const ctx = useCtx()
-      if (!ctx.workflow) return 'Workflow not available'
-      const id = ctx.workflow.create(steps.map(s => ({
+      const workflow = ctx.get('workflow')
+      if (!workflow) return 'Workflow not available'
+      const id = workflow.create(steps.map(s => ({
         name: s.name,
         fn: async () => s.action,
       })))
@@ -192,8 +199,9 @@ export function applyWorkflow() {
     },
     async execute({ workflowId }: { workflowId: string }) {
       const ctx = useCtx()
-      if (!ctx.workflow) return 'Workflow not available'
-      const result = await ctx.workflow.run(workflowId)
+      const workflow = ctx.get('workflow')
+      if (!workflow) return 'Workflow not available'
+      const result = await workflow.run(workflowId)
       return result.success ? 'Workflow completed' : 'Workflow failed'
     },
   })
@@ -215,8 +223,9 @@ export function applyGoal() {
     },
     async execute({ title, description, criteria }: { title: string; description?: string; criteria?: string[] }) {
       const ctx = useCtx()
-      if (!ctx.goals) return 'Goals not available'
-      const id = ctx.goals.set({ title, description, criteria })
+      const goals = ctx.get('goals')
+      if (!goals) return 'Goals not available'
+      const id = goals.set({ title, description, criteria })
       return `Goal set: ${id}`
     },
   })
@@ -227,8 +236,9 @@ export function applyGoal() {
     inputSchema: { type: 'object', properties: {} },
     async execute() {
       const ctx = useCtx()
-      if (!ctx.goals) return 'Goals not available'
-      return ctx.goals.list().map(g => `[${g.status}] ${g.id}: ${g.title}`).join('\n') || 'No goals'
+      const goals = ctx.get('goals')
+      if (!goals) return 'Goals not available'
+      return goals.list().map(g => `[${g.status}] ${g.id}: ${g.title}`).join('\n') || 'No goals'
     },
   })
 }
@@ -248,8 +258,9 @@ export function applySchedule() {
     },
     async execute({ time, message }: { time: string; message: string }) {
       const ctx = useCtx()
-      if (!ctx.schedule) return 'Schedule not available'
-      const id = ctx.schedule.addReminder(new Date(time), message)
+      const schedule = ctx.get('schedule')
+      if (!schedule) return 'Schedule not available'
+      const id = schedule.addReminder(new Date(time), message)
       return `Reminder scheduled: ${id}`
     },
   })
@@ -270,8 +281,9 @@ export function applyKnowledge() {
     },
     async execute({ text, metadata }: { text: string; metadata?: any }) {
       const ctx = useCtx()
-      if (!ctx.knowledge) return 'Knowledge not available'
-      const id = await ctx.knowledge.add(text, metadata)
+      const knowledge = ctx.get('knowledge')
+      if (!knowledge) return 'Knowledge not available'
+      const id = await knowledge.add(text, metadata)
       return `Knowledge added: ${id}`
     },
   })
@@ -289,8 +301,9 @@ export function applyKnowledge() {
     },
     async execute({ query, limit }: { query: string; limit?: number }) {
       const ctx = useCtx()
-      if (!ctx.knowledge) return 'Knowledge not available'
-      const results = await ctx.knowledge.search(query, limit)
+      const knowledge = ctx.get('knowledge')
+      if (!knowledge) return 'Knowledge not available'
+      const results = await knowledge.search(query, limit)
       return results.map(r => `${r.id}: ${r.text}`).join('\n') || 'No results'
     },
   })

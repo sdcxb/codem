@@ -2,6 +2,7 @@ import { getDatabase, persistDatabase } from "./database";
 import { getEventLog } from "./event-log";
 import type { SessionEventType } from "./event-types";
 import type { Message, ToolCall, MessageAttachment, RetrievedSource } from "../../store";
+import { safeJsonParse } from "../utils/safe-json";
 
 export interface MessageRow {
   id: string;
@@ -39,8 +40,8 @@ function rowToMessage(row: MessageRow, toolCalls: ToolCall[], attachments?: Mess
     status: row.status as Message["status"],
     toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
     attachments: attachments && attachments.length > 0 ? attachments : undefined,
-    generatedFiles: row.generated_files ? JSON.parse(row.generated_files) : undefined,
-    retrievedSources: row.retrieved_sources ? JSON.parse(row.retrieved_sources) : undefined,
+    generatedFiles: row.generated_files ? safeJsonParse(row.generated_files, undefined) : undefined,
+    retrievedSources: row.retrieved_sources ? safeJsonParse(row.retrieved_sources, undefined) : undefined,
   };
 }
 

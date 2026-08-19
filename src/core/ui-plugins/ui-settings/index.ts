@@ -12,6 +12,7 @@ const SettingsPanel = lazy(() => import('../../../components/SettingsPanel'))
 
 export function apply() {
   const ctx = useCtx()
+  const slots = ctx.get('slots')
 
-  ctx.slots.register({ name: 'app.settings', id: 'default-settings', priority: 0 }, SettingsPanel)
+  slots.register({ name: 'app.settings', id: 'default-settings', priority: 0 }, SettingsPanel)
 }

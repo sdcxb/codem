@@ -2,6 +2,9 @@
 /**
  * @codem/web-search-deepseek — DeepSeek 搜索 Provider
  *
+ * P2-2/F3: 消除架构级重复 — 被 provider/web-search-mimo-provider.ts 包装后注册到 ctx。
+ * @deprecated 新代码请直接从 provider/ 导入。
+ *
  * 使用 DeepSeek 的搜索 API 实现 Web 接口。
  * 包装现有 llm/tools/web-search.ts 的实现。
  */

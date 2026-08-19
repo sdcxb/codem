@@ -134,7 +134,7 @@ export class Processor {
                 try {
                   const input = JSON.parse(currentToolInput);
                   toolCalls.push({ id: currentToolCallId, name: currentToolName, input });
-                } catch {}
+                } catch (e) { console.warn('[processor.ts]', e) }
                 currentToolCallId = null;
                 currentToolName = null;
                 currentToolInput = "";

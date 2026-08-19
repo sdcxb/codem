@@ -829,7 +829,7 @@ export class SkillRegistry {
     try {
       const { getSettingJSON } = settingsModule;
       disabled = getSettingJSON<string[]>(DISABLED_SKILLS_KEY, []);
-    } catch {}
+    } catch (e) { console.warn('[skill.ts]', e) }
     const disabledSet = new Set(disabled);
 
     const skills = this.getAll().filter((s) => !disabledSet.has(s.name));
@@ -886,7 +886,7 @@ export class SkillRegistry {
               this.register(skill);
               loaded++;
             }
-          } catch {}
+          } catch (e) { console.warn('[skill.ts]', e) }
         } else if (entry.name.endsWith(".md") && entry.name !== "AGENTS.md") {
           // Direct .md file
           try {
@@ -897,10 +897,10 @@ export class SkillRegistry {
               this.register(skill);
               loaded++;
             }
-          } catch {}
+          } catch (e) { console.warn('[skill.ts]', e) }
         }
       }
-    } catch {}
+    } catch (e) { console.warn('[skill.ts]', e) }
     return loaded;
   }
 

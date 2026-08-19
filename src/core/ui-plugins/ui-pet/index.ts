@@ -10,8 +10,9 @@ import { useCtx } from '../../consumer/index.ts'
 
 export function applyUIPet() {
   const ctx = useCtx()
+  const slots = ctx.get('slots')
   const PetOverlay = lazy(() => import('../../../components/PetOverlay'))
-  ctx.slots.register({ name: 'app.overlay', id: 'pet-overlay-skin', order: 100, priority: 50 }, PetOverlay)
+  slots.register({ name: 'app.overlay', id: 'pet-overlay-skin', order: 100, priority: 50 }, PetOverlay)
   console.log('[ui-pet] Pet overlay registered')
 }
 

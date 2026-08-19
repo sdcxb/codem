@@ -12,7 +12,8 @@ import type { Plugin } from '../cordis/src/index.ts'
 import { addTrigger, removeTrigger, getAutomationConfig, startAutomationEngines, stopAutomationEngines, refreshAutomationEngines } from '../automation/automation-manager.ts'
 
 export const automationProvider: Plugin = (ctx: any) => {
-  const dispose = ctx.provide('automation', {
+  const service = {
+    _active: true,
     registerTrigger(config: { type: string; [key: string]: any }): string {
       const id = config.id || `trigger-${Date.now()}`
       addTrigger({ ...config, id } as any)
@@ -33,7 +34,16 @@ export const automationProvider: Plugin = (ctx: any) => {
     refresh(): void {
       refreshAutomationEngines()
     },
-  })
+  }
 
-  return dispose
+  const dispose = ctx.provide('automation', service)
+
+  // D3-2: Composite dispose — 停止所有定时器和轮询器
+  const compositeDispose = () => {
+    // D3-2: 标记为非活跃
+    service._active = false
+    try { stopAutomationEngines() } catch (e) { console.warn('[automation-provider]', e) }
+    dispose()
+  }
+  return compositeDispose
 }

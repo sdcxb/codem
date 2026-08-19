@@ -1,6 +1,16 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 
+// D1-4: 全局错误边界 — 捕获未处理的同步错误和 Promise rejection
+if (typeof window !== 'undefined') {
+  window.addEventListener('error', (e: ErrorEvent) => {
+    console.error('[Global Error]', e.error || e.message);
+  });
+  window.addEventListener('unhandledrejection', (e: PromiseRejectionEvent) => {
+    console.error('[Unhandled Rejection]', e.reason);
+  });
+}
+
 // ====== Cordis 插件系统初始化（P4.3） ======
 // 创建全局 Cordis Context 并加载独立 Provider 插件。
 // 所有核心服务（LLM、Tools、Session 等）通过独立 Provider 注册为可替换的服务。
@@ -20,23 +30,30 @@ async function getCordisContext(): Promise<Context> {
   ctx.plugin(SlotsService as any);
   // 加载独立 Provider 插件（每个服务可独立热替换）
   loadDefaultProviders(ctx);
-  // 加载 dsh 兼容适配层（使 dsh 插件可以在 Codem 运行时中加载）
-  const { dshCompatPlugin } = await import("./core/dsh-compat/index.ts");
-  ctx.plugin(dshCompatPlugin as any);
-  // 设置活跃 Context，让工具 Consumer 包可以使用
+  // 尽早设置活跃 Context，让工具 Consumer 包可以使用已注册的服务。
+  // 放在 await 之前，确保即使后续动态 import 失败，Consumer 也能正常工作。
   setActiveContext(ctx);
 
-  // === P6: 接入 PluginLoader + UI 插件 ===
-  const { PluginLoader } = await import("./core/plugin-loader/index.ts");
-  const { registerBuiltinPlugins } = await import("./core/plugin-loader/builtin-registry.ts");
-  const { loadUIPlugins } = await import("./core/ui-plugins/index.ts");
-  // 注册内置插件到 PluginLoader
-  registerBuiltinPlugins();
-  // PluginLoader 扫描和加载插件包
-  const loader = new PluginLoader(ctx);
-  await loader.scan();
-  // 加载所有 UI 插件包（注册到 Slot Registry）
-  loadUIPlugins(ctx);
+  try {
+    // 加载 dsh 兼容适配层（使 dsh 插件可以在 Codem 运行时中加载）
+    const { dshCompatPlugin } = await import("./core/dsh-compat/index.ts");
+    ctx.plugin(dshCompatPlugin as any);
+
+    // === P6: 接入 PluginLoader + UI 插件 ===
+    const { PluginLoader } = await import("./core/plugin-loader/index.ts");
+    const { registerBuiltinPlugins } = await import("./core/plugin-loader/builtin-registry.ts");
+    const { loadUIPlugins } = await import("./core/ui-plugins/index.ts");
+    // 注册内置插件到 PluginLoader
+    registerBuiltinPlugins();
+    // PluginLoader 扫描和加载插件包
+    const loader = new PluginLoader(ctx);
+    await loader.scan();
+    // 加载所有 UI 插件包（注册到 Slot Registry）
+    loadUIPlugins(ctx);
+  } catch (err) {
+    console.error("[Cordis] Failed to load optional plugins (dsh-compat/plugin-loader/ui-plugins):", err);
+    // 不抛出 — 核心 Provider 已注册，Context 仍可用
+  }
 
   _codemCtx = ctx;
   return ctx;
@@ -59,6 +76,7 @@ import { ConfigEditor } from "./components/ConfigEditor";
 import { BootstrapWizard } from "./components/BootstrapWizard";
 import type { CollaborationMode } from "./core/agent/agent";
 import { getEffectiveSecurityMode, type SecurityMode } from "./core/permission/security-mode";
+import { tryGetCtx } from "./core/consumer";
 import { PermissionDialog } from "./components/PermissionDialog";
 import { DecisionTray, type ApprovalRequest } from "./components/DecisionTray";
 import { RightSidebar } from "./components/RightSidebar";
@@ -139,7 +157,7 @@ async function getAppRoot(): Promise<string> {
 
 // 同步 fallback：在异步 getAppRoot 完成前使用
 const APP_ROOT_FALLBACK = "D:\\mimo";
-type BottomTab = "chat" | "terminal" | "perf";
+type BottomTab = "chat" | "terminal" | "perf" | "files" | "jobs";
 
 function getCliSessionKey(projectId: string, sessionId: string) {
   return `codem-cli-session-${projectId}-${sessionId}`;
@@ -223,7 +241,7 @@ useEffect(() => {
     try {
       const raw = localStorage.getItem('codem:disabled-plugins');
       setPluginDisabledList(raw ? JSON.parse(raw) : []);
-    } catch {}
+    } catch (e) { console.warn('[App] catch', e) }
   };
   window.addEventListener('storage', onStorage);
   window.addEventListener('codem:plugin-state-changed', onPluginChange);
@@ -234,11 +252,38 @@ useEffect(() => {
 }, []);
 // 插件是否被禁用
 const isPluginDisabled = useCallback((name: string) => pluginDisabledList.includes(name), [pluginDisabledList]);
-// CI/CD 对应插件 @codem/ui-misc，性能对应 @codem/ui-misc
-// 插件管理对应 @codem/plugin-registry
+// P1-3: 扩展条件渲染 — 从 3 个插件扩展到所有 UI 影响插件
+// CI/CD 和性能面板由 @codem/ui-misc 提供
 const cicdEnabled = !isPluginDisabled('@codem/ui-misc');
 const perfEnabled = !isPluginDisabled('@codem/ui-misc');
-const pluginMgrEnabled = !isPluginDisabled('@codem/plugin-registry');
+// 插件管理由 @codem/plugin-registry 和 @codem/ui-slots 提供
+const pluginMgrEnabled = !isPluginDisabled('@codem/plugin-registry') && !isPluginDisabled('@codem/ui-slots');
+// 插件市场由 @codem/ui-settings-plugin-inventory 提供
+const pluginMarketEnabled = !isPluginDisabled('@codem/ui-settings-plugin-inventory');
+// 主题切换由 @codem/ui-theme 提供
+const themeEnabled = !isPluginDisabled('@codem/ui-theme');
+// 侧边栏由 @codem/ui-sidebar 提供
+const sidebarEnabled = !isPluginDisabled('@codem/ui-sidebar');
+// 对话面板由 @codem/ui-conversation 提供
+const conversationEnabled = !isPluginDisabled('@codem/ui-conversation');
+// 设置面板由 @codem/ui-settings 提供
+const settingsEnabled = !isPluginDisabled('@codem/ui-settings');
+// 工具详情由 @codem/ui-tool 提供
+const toolDetailsEnabled = !isPluginDisabled('@codem/ui-tool');
+// Cordis 管理由 @codem/ui-cordis 提供
+const cordisPanelEnabled = !isPluginDisabled('@codem/ui-cordis');
+// 子 Agent 面板由 @codem/ui-subagent 提供
+const subagentPanelEnabled = !isPluginDisabled('@codem/ui-subagent');
+// 附件 UI 由 @codem/ui-attachment 提供
+const attachmentEnabled = !isPluginDisabled('@codem/ui-attachment');
+// 目标面板由 @codem/ui-goal 提供
+const goalPanelEnabled = !isPluginDisabled('@codem/ui-goal');
+// Jobs 面板由 @codem/ui-jobs 提供
+const jobsPanelEnabled = !isPluginDisabled('@codem/ui-jobs');
+// 计划面板由 @codem/ui-plan 提供
+const planPanelEnabled = !isPluginDisabled('@codem/ui-plan');
+// 工作区面板由 @codem/ui-workspace 提供
+const workspacePanelEnabled = !isPluginDisabled('@codem/ui-workspace');
 const [planApproval, setPlanApproval] = useState<{ plan: string; resolve: (result: { approved: boolean; feedback?: string }) => void } | null>(null);
   const [showSearchDialog, setShowSearchDialog] = useState(false);
 const [activeNotebookId, setActiveNotebookId] = useState<string | null>(null);
@@ -256,7 +301,10 @@ const [showAgentManager, setShowAgentManager] = useState(false);
 // 如果性能 tab 被禁用但当前选中它，回退到对话
 useEffect(() => {
   if (bottomTab === "perf" && !perfEnabled) setBottomTab("chat");
-}, [bottomTab, perfEnabled]);
+  // P1-3: 其他 tab 的降级回退
+  if (bottomTab === "files" && !workspacePanelEnabled) setBottomTab("chat");
+  if (bottomTab === "jobs" && !jobsPanelEnabled) setBottomTab("chat");
+}, [bottomTab, perfEnabled, workspacePanelEnabled, jobsPanelEnabled]);
   const [fileExplorerProjectId, setFileExplorerProjectId] = useState<string | null>(null);
   const [fileExplorerRefreshKey, setFileExplorerRefreshKey] = useState(0);
   const [editingFile, setEditingFile] = useState<string | null>(null);
@@ -329,6 +377,21 @@ useEffect(() => {
   const [collaborationMode, setCollaborationMode] = useState<CollaborationMode>("default");
   const windowVisibleRef = useRef(true);
   const [securityMode, setSecurityMode] = useState<SecurityMode>(getEffectiveSecurityMode(currentProject?.path));
+  // P0-2: 消除双轨制 — Provider 关闭时不再静默回退到单例。
+  // ctx 可用时返回 ctx.get(name)；不可用（初始化前）或服务不存在时返回 null。
+  // 调用方应检查 null 并展示降级 UI。
+  // DSH 对齐: 使用 ctx.get 的 keyof 推断模式，和 DSH 的 ReflectService.get 签名一致。
+  const getCtxService = <K extends string & keyof Context>(name: K): Context[K] | null => {
+    const ctx = tryGetCtx();
+    if (ctx) {
+      const s = ctx.get(name) as Context[K] | null;
+      if (s) return s;
+      // Provider 被禁用 — 不回退到单例，返回 null 让调用方处理降级
+      console.warn(`[App] Service "${name}" not available (provider disabled?)`);
+      return null;
+    }
+    return null;
+  };
 
   // Track window visibility for task completion notifications
   useEffect(() => {
@@ -539,7 +602,7 @@ abortControllersRef.current.clear();
     }
 
     setCliModel(model);
-    const engine = engineRef.current;
+    const engine = engineRef.current; if (!engine) { console.warn('[App] engine not available'); return; }
     engine.updateConfig({ defaultModel: model });
 
     // Determine provider from model
@@ -606,7 +669,8 @@ onCancel: () => void;
 const [removeProjectDialog, setRemoveProjectDialog] = useState<{
 id: string; name: string; path: string;
 } | null>(null);
-const engineRef = useRef(getLLMEngine());
+// D2-1: 一切插件化 — 不回退到模块级单例，Provider 禁用时 engineRef 为 null
+const engineRef = useRef(getCtxService('llmEngine') || null);
 // Per-session abort controllers for parallel execution
 const abortControllersRef = useRef<Map<string, AbortController>>(new Map());
 // handleSend ref for automation callbacks (avoids stale closure)
@@ -667,7 +731,7 @@ flushStreamBuffer(); // flush all on unmount
         // The initial configureEngine() in the other useEffect may have run before DB init.
         configureEngine();
         // Reload model profiles from database — they may have been loaded before DB init
-        getModelProfileManager().reload();
+        { const mp = getCtxService('modelProfile'); if (mp) mp.reload(); }
       } catch (err) {
         console.error("[App] Init failed:", err);
         useProjectStore.getState().loadFromDB();
@@ -730,7 +794,7 @@ flushStreamBuffer(); // flush all on unmount
       if (tauriForPet?.event?.listen) {
         tauriForPet.event.listen("pet-check-tokens-request", async () => {
           try {
-            const engine = engineRef.current;
+            const engine = engineRef.current; if (!engine) { console.warn('[App] engine not available'); return; }
             if (!engine) {
               usePetStore.getState().showBubble("引擎未初始化");
               return;
@@ -797,14 +861,14 @@ flushStreamBuffer(); // flush all on unmount
         cwd = session.worktreePath;
       }
 
-      const engine = engineRef.current;
+      const engine = engineRef.current; if (!engine) { console.warn('[App] engine not available'); return; }
 
       // 后台执行（不阻塞 UI）
       executeSessionTurn({
         sessionId: targetSessionId,
         message: task,
         cwd,
-        engine,
+        engine: engine as any,
         delegationTaskId: taskId,
         onPermissionRequest: (request) => {
           // 后台权限请求：放入 per-session Map，UI 显示通知
@@ -877,7 +941,7 @@ flushStreamBuffer(); // flush all on unmount
           sessionId: newSessionId,
           message: task,
           cwd,
-          engine: engineRef.current,
+          engine: engineRef.current as any,
           onPermissionRequest: (request) => {
             return new Promise((resolve) => {
               setPendingPermissions((prev) => {
@@ -902,7 +966,7 @@ flushStreamBuffer(); // flush all on unmount
   // Configure engine based on mode and settings
   const configureEngine = useCallback(async () => {
     const saved = getSettingJSON<any>("codem-settings", null);
-    const engine = engineRef.current;
+    const engine = engineRef.current; if (!engine) { console.warn('[App] engine not available'); return; }
 
     if (saved) {
       const settings = saved;
@@ -921,7 +985,9 @@ flushStreamBuffer(); // flush all on unmount
         setCliModel(model);
         setCurrentMode("cli");
         setCurrentProvider("mimo");
-        const auth = getMiMoAuth();
+        // D2-1: 一切插件化 — 不回退到 getMiMoAuth() 单例
+const auth = getCtxService('mimoAuth');
+if (!auth) { console.warn('[App] mimoAuth provider not available'); return; }
         let account = auth.getActiveAccount();
         if (!account) {
           account = await auth.loadFromAuthJson();
@@ -1088,7 +1154,7 @@ if (!session) return;
     if (trimmedMessage.startsWith("/memory")) {
       const parts = trimmedMessage.split(/\s+/);
       const subcommand = parts[1]?.toLowerCase();
-      const engineInstance = engineRef.current;
+      const engineInstance = engineRef.current; if (!engineInstance) { console.warn('[App] engine not available'); return; }
       const sessionId = session.id;
 
       if (subcommand === "off" || subcommand === "disable") {
@@ -1113,7 +1179,7 @@ if (!session) return;
         return;
       } else if (subcommand === "status") {
         const enabled = engineInstance.isMemoryEnabled(sessionId);
-        const stats = engineInstance.getMemoryConsolidationStats();
+        const stats = engineInstance.getMemoryConsolidationStats(sessionId);
         addMessage({
           id: `system-${Date.now()}`,
           role: "system",
@@ -1123,7 +1189,7 @@ if (!session) return;
         });
         return;
       } else if (subcommand === "consolidate" || subcommand === "clean") {
-        const result = engineInstance.consolidateMemories();
+        const result = await engineInstance.consolidateMemories(sessionId);
         addMessage({
           id: `system-${Date.now()}`,
           role: "system",
@@ -1312,7 +1378,7 @@ if (!session) return;
   const handleSendGuidance = useCallback((message: string) => {
     const session = useProjectStore.getState().currentSession;
     if (!session) return;
-    const engine = engineRef.current;
+    const engine = engineRef.current; if (!engine) { console.warn('[App] engine not available'); return; }
     const success = engine.sendGuidance(session.id, message);
     if (success) {
       // Add to guidance messages in the store for UI display
@@ -1337,7 +1403,7 @@ if (!session) return;
     if (!session) return;
 
     const mode = getMode();
-    const engine = engineRef.current;
+    const engine = engineRef.current; if (!engine) { console.warn('[App] engine not available'); return; }
 
     
 
@@ -1353,7 +1419,9 @@ if (!session) return;
     }
 
     if (mode === "cli") {
-      const auth = getMiMoAuth();
+      // D2-1: 一切插件化 — 不回退到 getMiMoAuth() 单例
+const auth = getCtxService('mimoAuth');
+if (!auth) { console.warn('[App] mimoAuth provider not available'); return; }
       let account = auth.getActiveAccount();
       if (!account) {
         account = await auth.loadFromAuthJson();
@@ -1937,7 +2005,7 @@ abortControllersRef.current.delete(session?.id || "");
                 const result = await tauri.core.invoke("plugin:notification|request_permission");
                 granted = result === 2 || result === "granted";
               }
-            } catch {}
+            } catch (e) { console.warn('[App] catch', e) }
             if (granted) {
               const sessionTitle = session.title || "对话";
               const userQuestion = message.length > 30 ? message.substring(0, 30) + "..." : message;
@@ -2057,7 +2125,7 @@ abortControllersRef.current.clear();
 }
     // Note: Sub-agents continue running when main task is paused
     // Only global pause should freeze everything
-    engineRef.current.abort();
+    engineRef.current?.abort();
     setStreaming(false);
   };
 
@@ -2072,8 +2140,8 @@ abortControllersRef.current.clear();
       const { getSubagentManager } = require("../core/subagent/subagent");
       const manager = getSubagentManager();
       manager.cancelAll();
-    } catch {}
-    engineRef.current.abort();
+    } catch (e) { console.warn('[App] catch', e) }
+    engineRef.current?.abort();
     setStreaming(false);
   };
 
@@ -2103,8 +2171,8 @@ abortControllersRef.current.clear();
         progress={bootSplashPhase === "initializing" ? 15 : bootSplashPhase === "loading-db" ? 45 : bootSplashPhase === "loading-config" ? 75 : 100}
         onComplete={() => setBootSplashVisible(false)}
       />
-      <SlotBridge name="app.workspace-backdrop" fallback={WorkspaceBackdrop} />
-      <SlotBridge name="app.toast-container" fallback={ToastContainer} />
+      <SlotBridge name="app.workspace-backdrop" fallback={WorkspaceBackdrop} showDegraded />
+      <SlotBridge name="app.toast-container" fallback={ToastContainer}  showDegraded />
       <SlotBridge name="app.titlebar" fallback={TitleBar}
         sidebarOpen={sidebarOpen}
         onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
@@ -2113,7 +2181,7 @@ abortControllersRef.current.clear();
           createSession();
         }}
         onSearch={() => setShowSearchDialog(true)}
-        onSettings={() => setShowSettings(true)}
+        onSettings={settingsEnabled ? () => setShowSettings(true) : undefined}
         rightRailOpen={rightRailOpen}
         onToggleRightRail={() => setRightRailOpen(!rightRailOpen)}
       />
@@ -2125,7 +2193,7 @@ abortControllersRef.current.clear();
       ) : (
         <>
           {showBootstrap && (
-            <SlotBridge name="app.bootstrap-wizard" fallback={BootstrapWizard} appRoot={appRoot} onComplete={handleBootstrapComplete} />
+            <SlotBridge name="app.bootstrap-wizard" fallback={BootstrapWizard} appRoot={appRoot} onComplete={handleBootstrapComplete}  showDegraded />
           )}
 
           {/* 核心内容：Sidebar + MainArea，根据皮肤选择不同布局包裹 */}
@@ -2157,7 +2225,7 @@ onTaskCenter={() => { setTaskCenterTab("overview"); setShowTaskCenter(true); }}
                 sidebarOpen ? (
                   <SlotBridge name="app.sidebar" fallback={Sidebar}
                     identity={appIdentity}
-                    onSettings={() => setShowSettings(true)}
+                    onSettings={settingsEnabled ? () => setShowSettings(true) : undefined}
                     onProjects={() => setShowProjectManager(true)}
                     onConfig={() => setShowConfigEditor(true)}
                     onMcp={() => setShowMcpManager(true)}
@@ -2167,8 +2235,8 @@ onTaskCenter={() => { setTaskCenterTab("overview"); setShowTaskCenter(true); }}
                     onNotebooks={() => setShowNotebookManager(true)}
 onTaskCenter={() => { setTaskCenterTab("overview"); setShowTaskCenter(true); }}
                     onAgents={() => setShowAgentManager(true)}
-                    onCicd={() => setShowCicdPanel(true)}
-                    onPerf={() => setShowPerfDashboard(true)}
+                    onCicd={cicdEnabled ? () => setShowCicdPanel(true) : undefined}
+                    onPerf={perfEnabled ? () => setShowPerfDashboard(true) : undefined}
 onRemoveProject={(id, name, path) => {
   setRemoveProjectDialog({ id, name, path });
 }}
@@ -2192,6 +2260,8 @@ onRemoveProject={(id, name, path) => {
 <Activity size={14} /> {lang === "zh" ? "性能" : "Perf"}
 </button>
 )}
+                      {/* SlotListBridge 消费 bottom-panel.tabs — list 类型，允许插件注入底部面板 tab */}
+                      <SlotListBridge name="bottom-panel.tabs" />
                     </div>
                     <div className="panel-content">
                       {compactionStatus && (
@@ -2258,10 +2328,10 @@ notebookId={activeNotebookId || undefined}
 />
                       )}
 {bottomTab === "terminal" && (
-<SlotBridge name="app.terminal" fallback={TerminalPanel} cwd={currentProject?.path || appRoot} />
+<SlotBridge name="app.terminal" fallback={TerminalPanel} cwd={currentProject?.path || appRoot}  showDegraded />
 )}
 {perfEnabled && bottomTab === "perf" && (
-<SlotBridge name="app.performance-dashboard" fallback={PerformanceDashboard} onClose={() => setBottomTab("chat")} />
+<SlotBridge name="app.performance-dashboard" fallback={PerformanceDashboard} onClose={() => setBottomTab("chat")}  showDegraded />
 )}
                     </div>
                   </div>
@@ -2269,11 +2339,11 @@ notebookId={activeNotebookId || undefined}
               }
             />
           ) : skin === "dream" ? (
-            <SlotBridge name="app.skin-layout" fallback={DreamLayout}>
+            <SlotBridge name="app.skin-layout" fallback={DreamLayout} showDegraded>
               {sidebarOpen && (
                 <SlotBridge name="app.sidebar" fallback={Sidebar}
                   identity={appIdentity}
-                  onSettings={() => setShowSettings(true)}
+                  onSettings={settingsEnabled ? () => setShowSettings(true) : undefined}
                   onProjects={() => setShowProjectManager(true)}
                   onConfig={() => setShowConfigEditor(true)}
                   onMcp={() => setShowMcpManager(true)}
@@ -2373,10 +2443,10 @@ notebookId={activeNotebookId || undefined}
 />
                     )}
 {bottomTab === "terminal" && (
-<SlotBridge name="app.terminal" fallback={TerminalPanel} cwd={currentProject?.path || appRoot} />
+<SlotBridge name="app.terminal" fallback={TerminalPanel} cwd={currentProject?.path || appRoot}  showDegraded />
 )}
 {perfEnabled && bottomTab === "perf" && (
-<SlotBridge name="app.performance-dashboard" fallback={PerformanceDashboard} onClose={() => setBottomTab("chat")} />
+<SlotBridge name="app.performance-dashboard" fallback={PerformanceDashboard} onClose={() => setBottomTab("chat")}  showDegraded />
 )}
                   </div>
                 </div>
@@ -2410,7 +2480,7 @@ refreshKey={fileExplorerRefreshKey}
           {sidebarOpen && (
                 <SlotBridge name="app.sidebar" fallback={Sidebar}
           identity={appIdentity}
-          onSettings={() => setShowSettings(true)}
+          onSettings={settingsEnabled ? () => setShowSettings(true) : undefined}
           onProjects={() => setShowProjectManager(true)}
           onConfig={() => setShowConfigEditor(true)}
           onMcp={() => setShowMcpManager(true)}
@@ -2531,10 +2601,10 @@ notebookId={activeNotebookId || undefined}
 />
             )}
 {bottomTab === "terminal" && (
-<SlotBridge name="app.terminal" fallback={TerminalPanel} cwd={currentProject?.path || appRoot} />
+<SlotBridge name="app.terminal" fallback={TerminalPanel} cwd={currentProject?.path || appRoot}  showDegraded />
 )}
 {perfEnabled && bottomTab === "perf" && (
-<SlotBridge name="app.performance-dashboard" fallback={PerformanceDashboard} onClose={() => setBottomTab("chat")} />
+<SlotBridge name="app.performance-dashboard" fallback={PerformanceDashboard} onClose={() => setBottomTab("chat")}  showDegraded />
 )}
           </div>
         </div>
@@ -2594,7 +2664,7 @@ onSessionRecovery={() => { setShowSettings(false); setShowSessionRecovery(true);
           setShowOnboardingReplay={(v) => { setShowOnboardingReplay(v); setShowSettings(false); }}
         />
       )}
-      {showProjectManager && <SlotBridge name="app.project-manager" fallback={ProjectManager} onClose={() => setShowProjectManager(false)} />}
+      {showProjectManager && <SlotBridge name="app.project-manager" fallback={ProjectManager} onClose={() => setShowProjectManager(false)}  showDegraded />}
       {showConfigEditor && currentProject && (
         <SlotBridge name="app.config-editor" fallback={ConfigEditor}
           appRoot={appRoot}
@@ -2606,7 +2676,7 @@ onSessionRecovery={() => { setShowSettings(false); setShowSessionRecovery(true);
       {showMcpManager && (
         <div className="modal-overlay" onClick={() => setShowMcpManager(false)}>
           <div className="modal-editor" onClick={(e) => e.stopPropagation()}>
-            <SlotBridge name="app.mcp-manager" fallback={McpManager} onClose={() => setShowMcpManager(false)} />
+            <SlotBridge name="app.mcp-manager" fallback={McpManager} onClose={() => setShowMcpManager(false)}  showDegraded />
           </div>
         </div>
       )}
@@ -2614,7 +2684,7 @@ onSessionRecovery={() => { setShowSettings(false); setShowSessionRecovery(true);
       {showPluginManager && (
         <div className="modal-overlay" onClick={() => setShowPluginManager(false)}>
           <div className="modal-editor" onClick={(e) => e.stopPropagation()}>
-            <SlotBridge name="app.plugin-manager" fallback={PluginManager} onClose={() => setShowPluginManager(false)} />
+            <SlotBridge name="app.plugin-manager" fallback={PluginManager} onClose={() => setShowPluginManager(false)}  showDegraded />
           </div>
         </div>
       )}
@@ -2622,7 +2692,7 @@ onSessionRecovery={() => { setShowSettings(false); setShowSessionRecovery(true);
       {showSkillManager && (
         <div className="modal-overlay" onClick={() => setShowSkillManager(false)}>
           <div className="modal-editor" onClick={(e) => e.stopPropagation()}>
-            <SlotBridge name="app.skill-manager" fallback={SkillManager} onClose={() => setShowSkillManager(false)} />
+            <SlotBridge name="app.skill-manager" fallback={SkillManager} onClose={() => setShowSkillManager(false)}  showDegraded />
           </div>
         </div>
       )}
@@ -2630,21 +2700,21 @@ onSessionRecovery={() => { setShowSettings(false); setShowSessionRecovery(true);
       {showMemoryManager && (
         <div className="modal-overlay" onClick={() => setShowMemoryManager(false)}>
           <div className="modal-editor" onClick={(e) => e.stopPropagation()}>
-            <SlotBridge name="app.memory-manager" fallback={MemoryManager} onClose={() => setShowMemoryManager(false)} />
+            <SlotBridge name="app.memory-manager" fallback={MemoryManager} onClose={() => setShowMemoryManager(false)}  showDegraded />
           </div>
         </div>
       )}
 
       {showGitHubClone && (
-        <SlotBridge name="app.github-clone-dialog" fallback={GitHubCloneDialog} onClose={() => setShowGitHubClone(false)} />
+        <SlotBridge name="app.github-clone-dialog" fallback={GitHubCloneDialog} onClose={() => setShowGitHubClone(false)}  showDegraded />
       )}
 
       {showCicdPanel && (
-        <SlotBridge name="app.cicd-panel" fallback={CicdPanel} onClose={() => setShowCicdPanel(false)} />
+        <SlotBridge name="app.cicd-panel" fallback={CicdPanel} onClose={() => setShowCicdPanel(false)}  showDegraded />
       )}
 
       {showPerfDashboard && (
-        <SlotBridge name="app.performance-dashboard" fallback={PerformanceDashboard} onClose={() => setShowPerfDashboard(false)} />
+        <SlotBridge name="app.performance-dashboard" fallback={PerformanceDashboard} onClose={() => setShowPerfDashboard(false)}  showDegraded />
       )}
 
       {/* P0-3: Plan Approval Card — shown when model calls exit_plan_mode */}
@@ -2721,7 +2791,7 @@ onClose={() => setCitationViewer(null)}
       {showSessionRecovery && (
         <div className="modal-overlay" onClick={() => setShowSessionRecovery(false)}>
           <div className="modal-editor" onClick={(e) => e.stopPropagation()}>
-            <SlotBridge name="app.session-recovery" fallback={SessionRecovery} onClose={() => setShowSessionRecovery(false)} />
+            <SlotBridge name="app.session-recovery" fallback={SessionRecovery} onClose={() => setShowSessionRecovery(false)}  showDegraded />
           </div>
         </div>
       )}
@@ -2729,7 +2799,7 @@ onClose={() => setCitationViewer(null)}
       {showUsageStats && (
         <div className="modal-overlay" onClick={() => setShowUsageStats(false)}>
           <div className="modal-editor" onClick={(e) => e.stopPropagation()}>
-            <SlotBridge name="app.usage-stats" fallback={UsageStats} onClose={() => setShowUsageStats(false)} />
+            <SlotBridge name="app.usage-stats" fallback={UsageStats} onClose={() => setShowUsageStats(false)}  showDegraded />
           </div>
         </div>
       )}
@@ -2753,7 +2823,7 @@ onClose={() => setCitationViewer(null)}
       {showAgentManager && (
         <div className="modal-overlay" onClick={() => setShowAgentManager(false)}>
           <div className="modal-editor" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 900, maxHeight: "85vh" }}>
-            <SlotBridge name="app.agent-manager" fallback={AgentManager} onClose={() => setShowAgentManager(false)} />
+            <SlotBridge name="app.agent-manager" fallback={AgentManager} onClose={() => setShowAgentManager(false)}  showDegraded />
           </div>
         </div>
       )}
@@ -2813,7 +2883,7 @@ onClose={() => setCitationViewer(null)}
           cancelLabel={confirmDialog.cancelLabel}
           onConfirm={confirmDialog.onConfirm}
           onCancel={confirmDialog.onCancel}
-        />
+         showDegraded />
       )}
 
       {/* Safe project removal dialog — 3 options, click outside = cancel */}
@@ -2865,7 +2935,7 @@ onClose={() => setCitationViewer(null)}
       })()}
 
       {showCloseConfirm && (
-        <SlotBridge name="app.close-confirm-dialog" fallback={CloseConfirmDialog} onChoose={handleCloseChoice} />
+        <SlotBridge name="app.close-confirm-dialog" fallback={CloseConfirmDialog} onChoose={handleCloseChoice}  showDegraded />
       )}
 
       {/* P1-8: Needs You — Agent proactively asks user a precise question */}
@@ -2893,6 +2963,7 @@ onClose={() => setCitationViewer(null)}
             before={pendingWriteConfirm.existingContent}
             after={pendingWriteConfirm.newContent}
             sequenceInfo={writeConfirmStat.count > 1 ? `文件 ${writeConfirmStat.count}` : undefined}
+            showDegraded
             onAccept={() => {
               pendingWriteConfirm.resolve({ action: "accept" });
               clearPendingWriteConfirm();
@@ -2998,7 +3069,7 @@ onClose={() => setCitationViewer(null)}
       {showQuickAccess && messages.length === 0 && !isStreaming && (
         <div style={{ padding: "12px 16px", maxWidth: "600px", margin: "0 auto" }}>
           <SlotBridge name="app.quick-access-cards" fallback={QuickAccessCards}
-            agents={getAgentRegistry().getPrimary().map(a => ({
+            agents={((getCtxService('agentRegistry') as any) || { getPrimary: () => [] }).getPrimary().map((a: any) => ({
               id: a.id,
               name: a.name,
               description: a.description,
@@ -3006,7 +3077,7 @@ onClose={() => setCitationViewer(null)}
             }))}
             favoriteIds={quickAccessFavorites}
             onSelect={(agentId: string) => {
-              const agent = getAgentRegistry().get(agentId);
+              const agent = ((getCtxService('agentRegistry') as any) || { get: () => null }).get(agentId);
               if (agent) {
                 // Switch collaboration mode based on agent's config
                 if (agent.collaborationMode === "plan") {
@@ -3079,6 +3150,19 @@ onClose={() => setCitationViewer(null)}
         </>
       )}
       </div>
+
+      {/* 全局覆盖层 slot — list 类型，PetOverlay 等 */}
+      <SlotListBridge name="app.overlay" />
+      {/* 全局监控面板 slot — ContextMonitor 等 */}
+      <SlotBridge name="app.monitor" fallback={null} />
+      {/* 全局目标/TODO 面板 slot — TodoListDisplay 等 */}
+      <SlotBridge name="app.goal" fallback={null} />
+      {/* Subagent 面板 slot — DelegationPanel */}
+      <SlotBridge name="app.subagent" fallback={null} />
+      {/* User Questions slot — InteractiveFormDialog（已由条件渲染消费，此处保留 slot 消费声明） */}
+      <SlotBridge name="app.user-questions" fallback={null} />
+      {/* Workflow Run slot — ActivityTimeline */}
+      <SlotBridge name="app.workflow-run" fallback={null} />
 
 </div>
 </TooltipProvider>

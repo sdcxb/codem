@@ -12,5 +12,6 @@ const Sidebar = lazy(() => import('../../../components/Sidebar'))
 
 export function apply() {
   const ctx = useCtx()
-  ctx.slots.register({ name: 'app.sidebar', id: 'default-sidebar', priority: 0 }, Sidebar)
+  const slots = ctx.get('slots')
+  slots.register({ name: 'app.sidebar', id: 'default-sidebar', priority: 0 }, Sidebar)
 }

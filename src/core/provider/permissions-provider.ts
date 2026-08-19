@@ -19,6 +19,7 @@ export const permissionsProvider: Plugin = (ctx: any) => {
   const modes = getSecurityModes()
 
   const dispose = ctx.provide('permissions', {
+    _active: true,
     check(toolName: string, args: any, mode?: string): { allowed: boolean; reason?: string } {
       return manager.checkPermission(toolName, args, mode)
     },
@@ -39,5 +40,10 @@ export const permissionsProvider: Plugin = (ctx: any) => {
     },
   })
 
-  return dispose
+  // Composite dispose — stop underlying manager to eliminate double-track
+  const compositeDispose = () => {
+    if (manager.dispose) manager.dispose()
+    dispose()
+  }
+  return compositeDispose
 }

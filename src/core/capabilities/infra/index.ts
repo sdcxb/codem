@@ -2,6 +2,11 @@
 /**
  * P6 遗漏补齐 — Preset/Bundle/SDK/ACP/Host/Client 能力族
  *
+ * P2-2/F3: 消除架构级重复 — 这些实现类被 provider/ 中的对应 Provider 包装后注册到 ctx。
+ * 新代码应直接使用 src/core/provider/ 中的 Provider。
+ *
+ * @deprecated 新代码请直接从 provider/ 导入。
+ *
  * 这些能力族在计划文档 P6.2 中列出但未实现。
  */
 import type { Context, Plugin } from '../cordis/src/index.ts'

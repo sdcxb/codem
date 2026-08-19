@@ -483,6 +483,44 @@ export class SlotsService extends Service {
   /** The underlying SlotCore instance (for advanced use). */
   get core$() { return this.core }
 
+  /**
+   * Declare a slot dependency: register only when the parent slot exists.
+   *
+   * 对标 DSH 的 slots.inject() 模式。
+   * 当 parentSlot 存在时执行 registerFn()，当 parentSlot 被注销时自动清除注册。
+   * 返回一个 dispose 函数，用于手动清除。
+   */
+  inject(parentSlot: string, registerFn: () => () => void): () => void {
+    let unreg: (() => void) | undefined
+    const tryRegister = () => {
+      const parentSpec = this.core.specDynamic(parentSlot)
+      if (parentSpec) {
+        if (!unreg) {
+          unreg = registerFn()
+        }
+      } else {
+        if (unreg) {
+          try { unreg() } catch { /* ignore */ }
+          unreg = undefined
+        }
+      }
+    }
+    // 初始尝试注册
+    tryRegister()
+    // 监听父 slot 的声明变化
+    const unsub = this.core.subscribeDeclaration(parentSlot, () => {
+      tryRegister()
+    })
+    // 返回 dispose 函数
+    return () => {
+      unsub()
+      if (unreg) {
+        try { unreg() } catch { /* ignore */ }
+        unreg = undefined
+      }
+    }
+  }
+
   /** Declare a top-level slot directly. */
   declareSlot(key: string, spec: SlotSpec<SlotEntryDef>, declaredBy?: string): void {
     this.core.declareSlot(key, spec, declaredBy)

@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Codem 核心工具 Consumer 包。
  *
@@ -23,6 +22,7 @@
  */
 
 import type { Context } from '../cordis/src/index.ts'
+import type {} from '../provider/service-types'
 
 /** 当前活跃的 Cordis Context（由 App.tsx 初始化时设置）。 */
 let _activeCtx: Context | null = null

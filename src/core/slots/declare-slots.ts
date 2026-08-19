@@ -9,7 +9,11 @@ import type { SlotSpec, SlotEntryDef } from '../slots/index.ts'
 
 /** 声明所有 App 级别的 UI 槽位 */
 export function declareAppSlots(ctx: Context): void {
-  const slots = ctx.slots
+  const slots = ctx.get('slots')
+  if (!slots) {
+    console.warn('[declareAppSlots] Slots service not yet available, skipping slot declarations')
+    return
+  }
 
   // ===== 布局槽位 =====
   slots.declareSlot('app.titlebar', { kind: 'single', scope: 'root' }, 'framework')
@@ -96,6 +100,12 @@ export function declareAppSlots(ctx: Context): void {
   slots.declareSlot('app.workspace', { kind: 'single', scope: 'root' }, 'framework')
   slots.declareSlot('app.permission-presets', { kind: 'single', scope: 'root' }, 'framework')
   slots.declareSlot('app.ui-commands', { kind: 'single', scope: 'root' }, 'framework')
+
+  // ===== R8 UI 插件槽位 =====
+  slots.declareSlot('app.subagent', { kind: 'single', scope: 'root' }, 'framework')
+  slots.declareSlot('app.user-questions', { kind: 'single', scope: 'root' }, 'framework')
+  slots.declareSlot('app.workflow-run', { kind: 'single', scope: 'root' }, 'framework')
+  slots.declareSlot('app.attachment', { kind: 'single', scope: 'root' }, 'framework')
 
   // ===== 设置面板的 tab 槽位（keyed） =====
   slots.declareSlot('app.settings.general', { kind: 'single', scope: 'root' }, 'framework')

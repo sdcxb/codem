@@ -12,10 +12,12 @@
  * 第三方可通过注册更高优先级的 agentEngine Provider 来替换引擎。
  */
 import type { Plugin } from '../cordis/src/index.ts'
-import { LLMEngine, getLLMEngine } from '../llm/index.ts'
+import { LLMEngine } from '../llm/index.ts'
 
 export const agentEngineProvider: Plugin = (ctx: any) => {
-  const engine = getLLMEngine()
+  // 在 Provider 内部创建实例，生命周期与 fiber 绑定
+  // 不再调用 getLLMEngine() 模块级单例
+  const engine = new LLMEngine({}, undefined, ctx)
 
   const dispose = ctx.provide('agentEngine', {
     async process(message: string, options?: any): Promise<any> {

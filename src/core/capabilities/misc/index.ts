@@ -2,6 +2,11 @@
 /**
  * P5.7 剩余能力族 — 凭证/附件/知识/调度/目标/计划/后台任务
  *
+ * P2-2/F3: 消除架构级重复 — 这些实现类被 provider/ 中的对应 Provider 包装后注册到 ctx。
+ * 新代码应直接使用 src/core/provider/ 中的 Provider。
+ *
+ * @deprecated 新代码请直接从 provider/ 导入。
+ *
  * 这些能力族均为新建，没有需要迁移的现有代码。
  * 每个能力族定义 Service Definition + 默认 Provider。
  */

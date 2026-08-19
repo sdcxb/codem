@@ -2,53 +2,105 @@
 /**
  * Plans Provider 插件 — 结构化任务计划管理。
  *
- * 功能链：
- * - 上游：exit_plan_mode 工具（src/core/llm/tools/exit-plan-mode.ts）审批通过后存入计划
- *         AgenticLoop.planSteps()（agentic-loop.ts L377-L427）LLM 生成 StepPlan[]
- * - 下游：step_progress 事件 → UI 进度显示
- * - 接入点：exit-plan-mode.ts L90-L96 → 审批通过后调用 ctx.plans.create()
- *           agentic-loop.ts L536-L539 → planState 改为从 ctx.plans 读取
- *           agentic-loop.ts L633 → step_progress 事件改为从 ctx.plans.get() 读取
- *           declare-slots.ts → 已有 app.plan Slot 声明
- *
- * 当前为空壳实现，真实实现需：
- * 1. 包装 goal.ts 的 SQLite 存储（或独立 plans 表）
- * 2. exit_plan_mode 工具审批通过后 → ctx.plans.create(title, steps) 持久化计划
- * 3. AgenticLoop.planSteps() 结果 → ctx.plans.create() 而非临时变量
- * 4. 每次迭代结束时 → ctx.plans.updateStep(planId, iteration - 1, true) 标记完成
- * 5. UI 从 ctx.plans.get(planId) 读取进度
- * 6. 新增 plan_tools.ts（create_plan/get_plan/update_plan_step），让 LLM 可管理计划
+ * F6: 深化 — 接入 storage/goal-storage.ts 持久化计划数据。
+ * 支持 AgenticLoop 的 planSteps 结果持久化和 UI 进度展示。
  */
 import type { Plugin } from '../cordis/src/index.ts'
+import { getSettingJSON, setSettingJSON } from '../storage/settings.ts'
 
 export const plansProvider: Plugin = (ctx: any) => {
-  const plansStore: Array<{ id: string; title: string; steps: Array<{ text: string; done: boolean }> }> = []
+  /** Load plans from persisted settings */
+  const loadPlans = (): any[] => {
+    return getSettingJSON<any[]>('plans-store', [])
+  }
+
+  /** Save plans to persisted settings */
+  const savePlans = (plans: any[]) => {
+    setSettingJSON('plans-store', plans)
+  }
+
+  // In-memory working copy
+  let plansStore = loadPlans()
 
   const dispose = ctx.provide('plans', {
-    create(title: string, steps: string[]): string {
+    _active: true,
+
+    /** Create a new plan */
+    create(title: string, steps: string[], sessionId?: string): string {
       const id = crypto.randomUUID()
-      plansStore.push({ id, title, steps: steps.map(text => ({ text, done: false })) })
+      plansStore.push({
+        id,
+        title,
+        steps: steps.map(text => ({ text, done: false })),
+        sessionId,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      })
+      savePlans(plansStore)
       return id
     },
-    get(planId: string): { id: string; title: string; steps: Array<{ text: string; done: boolean }> } | undefined {
+
+    /** Get a plan by ID */
+    get(planId: string): any | undefined {
       return plansStore.find(p => p.id === planId)
     },
-    list(): Array<{ id: string; title: string; progress: number }> {
-      return plansStore.map(p => ({
-        id: p.id,
-        title: p.title,
-        progress: p.steps.length > 0 ? p.steps.filter(s => s.done).length / p.steps.length : 0,
-      }))
+
+    /** List all plans with progress */
+    list(sessionId?: string): Array<{ id: string; title: string; progress: number; sessionId?: string }> {
+      return plansStore
+        .filter(p => !sessionId || p.sessionId === sessionId)
+        .map(p => ({
+          id: p.id,
+          title: p.title,
+          progress: p.steps.length > 0 ? p.steps.filter((s: any) => s.done).length / p.steps.length : 0,
+          sessionId: p.sessionId,
+        }))
     },
+
+    /** Update a step's done status */
     updateStep(planId: string, stepIndex: number, done: boolean): void {
       const p = plansStore.find(p => p.id === planId)
-      if (p && p.steps[stepIndex]) p.steps[stepIndex].done = done
+      if (p && p.steps[stepIndex]) {
+        p.steps[stepIndex].done = done
+        p.updatedAt = Date.now()
+        savePlans(plansStore)
+      }
     },
+
+    /** Add a step to an existing plan */
+    addStep(planId: string, text: string): void {
+      const p = plansStore.find(p => p.id === planId)
+      if (p) {
+        p.steps.push({ text, done: false })
+        p.updatedAt = Date.now()
+        savePlans(plansStore)
+      }
+    },
+
+    /** Remove a plan */
     remove(planId: string): void {
       const idx = plansStore.findIndex(p => p.id === planId)
-      if (idx >= 0) plansStore.splice(idx, 1)
+      if (idx >= 0) {
+        plansStore.splice(idx, 1)
+        savePlans(plansStore)
+      }
+    },
+
+    /** Get the active plan for a session (most recent unfinished) */
+    getActivePlan(sessionId?: string): any | undefined {
+      const sessionPlans = plansStore
+        .filter(p => !sessionId || p.sessionId === sessionId)
+        .filter(p => p.steps.some((s: any) => !s.done))
+        .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))
+      return sessionPlans[0]
     },
   })
 
-  return dispose
+  // Composite dispose
+  const compositeDispose = () => {
+    // Persist current state
+    savePlans(plansStore)
+    dispose()
+  }
+  return compositeDispose
 }

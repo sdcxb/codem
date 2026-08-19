@@ -15,11 +15,13 @@ export function CordisPanel() {
   const [dynamicList, setDynamicList] = useState<string[]>([])
 
   const refresh = useCallback(() => {
-    if (!ctx?.dynamicCordisRunner) return
-    const info = ctx.dynamicCordisRunner.inspect()
+    if (!ctx) return
+    const runner = ctx.get('dynamicCordisRunner')
+    if (!runner) return
+    const info = runner.inspect()
     setPlugins(info.plugins)
     setServices(info.services)
-    setDynamicList(ctx.dynamicCordisRunner.list())
+    setDynamicList(runner.list())
   }, [ctx])
 
   useEffect(() => {
@@ -27,8 +29,10 @@ export function CordisPanel() {
   }, [refresh])
 
   const handleRetract = (name: string) => {
-    if (!ctx?.dynamicCordisRunner) return
-    ctx.dynamicCordisRunner.retract(name)
+    if (!ctx) return
+    const runner = ctx.get('dynamicCordisRunner')
+    if (!runner) return
+    runner.retract(name)
     refresh()
   }
 
@@ -62,5 +66,6 @@ export function CordisPanel() {
 
 export function apply() {
   const ctx = useCtx()
-  ctx.slots.register('app.cordis', CordisPanel)
+  const slots = ctx.get('slots')
+  slots.register('app.cordis', CordisPanel)
 }

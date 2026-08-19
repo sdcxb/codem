@@ -20,8 +20,9 @@ export function apply() {
       properties: {},
     },
     async execute() {
-      if (!ctx.dynamicCordisRunner) return 'Dynamic Cordis Runner not available'
-      const result = ctx.dynamicCordisRunner.inspect()
+      const runner = ctx.get('dynamicCordisRunner')
+      if (!runner) return 'Dynamic Cordis Runner not available'
+      const result = runner.inspect()
       return JSON.stringify(result, null, 2)
     },
   })
@@ -39,8 +40,9 @@ export function apply() {
     },
     requirePermission: true,
     async execute({ name, code }: { name: string; code: string }) {
-      if (!ctx.dynamicCordisRunner) return 'Dynamic Cordis Runner not available'
-      const result = await ctx.dynamicCordisRunner.define(name, code)
+      const runner = ctx.get('dynamicCordisRunner')
+      if (!runner) return 'Dynamic Cordis Runner not available'
+      const result = await runner.define(name, code)
       return result.success
         ? `Plugin "${name}" defined successfully`
         : `Failed: ${result.error}`
@@ -59,9 +61,10 @@ export function apply() {
       required: ['name'],
     },
     async execute({ name, args }: { name: string; args?: string }) {
-      if (!ctx.dynamicCordisRunner) return 'Dynamic Cordis Runner not available'
+      const runner = ctx.get('dynamicCordisRunner')
+      if (!runner) return 'Dynamic Cordis Runner not available'
       const parsedArgs = args ? JSON.parse(args) : undefined
-      const result = await ctx.dynamicCordisRunner.run(name, parsedArgs)
+      const result = await runner.run(name, parsedArgs)
       return result.success
         ? `Result: ${JSON.stringify(result.result)}`
         : `Failed: ${result.error}`
@@ -80,8 +83,9 @@ export function apply() {
     },
     requirePermission: true,
     async execute({ name }: { name: string }) {
-      if (!ctx.dynamicCordisRunner) return 'Dynamic Cordis Runner not available'
-      const result = ctx.dynamicCordisRunner.retract(name)
+      const runner = ctx.get('dynamicCordisRunner')
+      if (!runner) return 'Dynamic Cordis Runner not available'
+      const result = runner.retract(name)
       return result.success
         ? `Plugin "${name}" retracted`
         : `Failed: ${result.error}`

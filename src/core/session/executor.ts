@@ -131,7 +131,7 @@ export async function executeSessionTurn(params: ExecuteSessionTurnParams): Prom
         messageId: userMsgId,
         content: prefix + message,
       });
-    } catch {}
+    } catch (e) { console.warn('[executor.ts]', e) }
 
     for await (const event of engine.process(sessionId, message, cwd, undefined, {
       onPermissionRequest: onPermissionRequest || ((_req) => {
@@ -267,7 +267,7 @@ export async function executeSessionTurn(params: ExecuteSessionTurnParams): Prom
           messageId: currentAssistantMsgId,
           content: assistantContent,
         });
-      } catch {}
+      } catch (e) { console.warn('[executor.ts]', e) }
     }
 
     // 如果用户正在查看这个会话，刷新消息列表

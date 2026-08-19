@@ -5,43 +5,78 @@
  * 1. 从 Slot Registry 获取注册的组件（如果存在）
  * 2. 如果存在，渲染该组件并传递所有 props
  * 3. 如果不存在，渲染 fallback 组件并传递所有 props
+ * 4. P1-2: 当 showDegraded=true 且使用 fallback 时，显示降级提示横幅
  *
- * 这样实现了"组件来源可替换"：插件可以注册更高优先级的组件来替换默认实现，
- * 同时保持了 props 的完整传递，不影响现有功能。
+ * 动态 Fallback 机制：
+ * - useSyncExternalStore 订阅 Slot entries 变化
+ * - 插件 disable → fiber.dispose() → slot 注销 → entries 变空 → 自动回退到 fallback
+ * - 插件 enable → fiber 重新加载 → slot 注册 → entries 恢复 → 自动切回插件组件
  *
  * 使用方式：
  * ```tsx
  * <SlotBridge name="app.sidebar" fallback={Sidebar} {...sidebarProps} />
- * <SlotBridge name="app.conversation" fallback={ChatPanel} {...chatProps} />
+ * <SlotBridge name="app.conversation" fallback={ChatPanel} showDegraded {...chatProps} />
  * ```
  */
-import { useSyncExternalStore, Suspense, lazy, type ComponentType, type ReactNode } from 'react'
+import { useSyncExternalStore, Suspense, lazy, useState, useEffect, type ComponentType, type ReactNode, Component } from 'react'
 import { tryGetCtx } from '../consumer/index.ts'
 import type { StoredEntry } from '../slots/index.ts'
 
 /**
- * 泛型 SlotBridge：从 fallback 组件的 Props 类型自动推断 props 类型。
- *
- * 使用泛型参数 P 捕获 fallback 组件的 props 类型，
- * 这样调用方的回调参数能获得精确的类型推断，
- * 而不是全部退化为 any。
+ * D4-4: 级联降级错误边界 — 当 Fallback 组件本身依赖被禁用的 Provider 而崩溃时，显示错误提示而非白屏。
  */
-export function SlotBridge<P extends Record<string, any>>(
-  props: { name: string } & { fallback?: ComponentType<P> } & P
+class FallbackErrorBoundary extends Component<{ children: ReactNode; slotName: string }, { hasError: boolean; error?: Error }> {
+  state: { hasError: boolean; error?: Error } = { hasError: false }
+
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error }
+  }
+
+  componentDidCatch(error: Error) {
+    console.warn(`[SlotBridge] Fallback component crashed for slot "${this.props.slotName}":`, error.message)
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{ padding: '8px 12px', fontSize: 12, color: 'var(--text-muted)' }}>
+          ⚠️ 此面板不可用（组件依赖的服务被禁用）
+        </div>
+      )
+    }
+    return this.props.children
+  }
+}
+
+/**
+ * 泛型 SlotBridge：从 fallback 组件的 Props 类型自动推断 props 类型。
+ */
+export function SlotBridge<P extends Record<string, any> = Record<string, any>>(
+  props: { name: string } & { fallback?: ComponentType<P> | null; showDegraded?: boolean } & P
 ): ReactNode {
-  const { name, fallback: Fallback, ...rest } = props
+  const { name, fallback: Fallback, showDegraded, ...rest } = props
   const ctx = tryGetCtx()
 
   // 如果 Cordis Context 未初始化或 Slot 服务不可用，使用 fallback
-  if (!ctx?.slots) {
-    return Fallback ? <Fallback {...(rest as unknown as P)} /> : null
+  const slots = ctx?.get('slots') ?? null
+
+  // D7-1 修复: Hook 必须无条件调用，避免 React Hooks 顺序违规
+  // 当 slots 为 null 时返回空数组，保证 Hook 调用顺序一致
+  const entries = useSlotEntriesSafe(slots, name)
+  const isDegraded = entries.length === 0
+
+  if (!slots) {
+    return Fallback ? <FallbackErrorBoundary slotName={name}><Fallback {...(rest as unknown as P)} /></FallbackErrorBoundary> : null
   }
 
-  const entries = useSlotEntries(ctx, name)
-
-  if (entries.length === 0) {
+  if (isDegraded) {
     // 没有注册的组件，使用 fallback
-    return Fallback ? <Fallback {...(rest as unknown as P)} /> : null
+    return (
+      <>
+        {showDegraded && <DegradedBanner slotName={name} />}
+        {Fallback ? <FallbackErrorBoundary slotName={name}><Fallback {...(rest as unknown as P)} /></FallbackErrorBoundary> : null}
+      </>
+    )
   }
 
   // 取最高优先级的注册组件
@@ -49,13 +84,55 @@ export function SlotBridge<P extends Record<string, any>>(
   const Component = entry.component as ComponentType<P>
 
   if (!Component) {
-    return Fallback ? <Fallback {...(rest as unknown as P)} /> : null
+    return (
+      <>
+        {showDegraded && <DegradedBanner slotName={name} />}
+        {Fallback ? <FallbackErrorBoundary slotName={name}><Fallback {...(rest as unknown as P)} /></FallbackErrorBoundary> : null}
+      </>
+    )
   }
 
   return (
     <Suspense fallback={<div className="slot-loading">Loading...</div>}>
       <Component {...(rest as unknown as P)} />
     </Suspense>
+  )
+}
+
+/**
+ * P1-2: 降级提示横幅 — 当插件被关闭导致 Slot 空时显示提示。
+ */
+function DegradedBanner({ slotName }: { slotName: string }) {
+  const [dismissed, setDismissed] = useState(false)
+
+  // 监听插件状态变化，重置 dismissed
+  useEffect(() => {
+    const handler = () => setDismissed(false)
+    window.addEventListener('codem:plugin-state-changed', handler)
+    return () => window.removeEventListener('codem:plugin-state-changed', handler)
+  }, [])
+
+  if (dismissed) return null
+
+  return (
+    <div style={{
+      padding: '4px 12px',
+      background: 'color-mix(in srgb, var(--warning) 8%, transparent)',
+      borderBottom: '1px solid color-mix(in srgb, var(--warning) 20%, transparent)',
+      fontSize: 11,
+      color: 'var(--text-secondary)',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+    }}>
+      <span>⚠️ 此面板使用默认组件（插件已关闭：{slotName}）</span>
+      <button
+        onClick={() => setDismissed(true)}
+        style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 11 }}
+      >
+        ×
+      </button>
+    </div>
   )
 }
 
@@ -69,11 +146,12 @@ export function SlotListBridge<P extends Record<string, any>>(
   const { name, ...rest } = props
   const ctx = tryGetCtx()
 
-  if (!ctx?.slots) {
+  const slots = ctx?.get('slots')
+  if (!slots) {
     return null
   }
 
-  const entries = useSlotEntries(ctx, name)
+  const entries = useSlotEntries(slots, name)
 
   if (entries.length === 0) {
     return null
@@ -91,15 +169,35 @@ export function SlotListBridge<P extends Record<string, any>>(
 }
 
 /**
- * Hook: 订阅 Slot 的 entries 变化。
- */
-function useSlotEntries(ctx: any, key: string): StoredEntry[] {
+* D7-1: 当 slots 为 null 时使用的 no-op 订阅 — getSnapshot 必须返回缓存的稳定引用，
+* 否则 useSyncExternalStore 会无限循环（React 要求 getSnapshot 返回值引用稳定）。
+*/
+const EMPTY_ENTRIES: StoredEntry[] = []
+const noopSubscribe = (_onChange: () => void) => () => {}
+const noopGetSnapshot = () => EMPTY_ENTRIES
+
+/**
+* Hook: 订阅 Slot 的 entries 变化。
+* 当 slots 为 null 时返回空数组（避免 Hooks 顺序违规）。
+*/
+function useSlotEntriesSafe(slots: any, key: string): StoredEntry[] {
   return useSyncExternalStore(
-    (onChange) => ctx.slots.subscribe(key, onChange),
-    () => {
-      const entries = ctx.slots.entriesOfSlot(key) as StoredEntry[]
-      return entries
-    },
-    () => [] as StoredEntry[],
+    slots ? (onChange) => slots.subscribe(key, onChange) : noopSubscribe,
+    slots ? () => slots.entriesOfSlot(key) as StoredEntry[] : noopGetSnapshot,
+    noopGetSnapshot,
   )
+}
+
+/**
+* Hook: 订阅 Slot 的 entries 变化（原版，保留向后兼容）。
+*/
+function useSlotEntries(slots: any, key: string): StoredEntry[] {
+return useSyncExternalStore(
+(onChange) => slots.subscribe(key, onChange),
+() => {
+const entries = slots.entriesOfSlot(key) as StoredEntry[]
+return entries
+},
+() => [] as StoredEntry[],
+)
 }

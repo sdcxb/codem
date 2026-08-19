@@ -404,7 +404,7 @@ export class SettingsManager {
     try {
       const { writeFile } = await import("../file-api");
       await writeFile(path, JSON.stringify(data, null, 2));
-    } catch {}
+    } catch (e) { console.warn('[settings.ts]', e) }
   }
 
   /** Export all settings */

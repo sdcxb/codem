@@ -20,8 +20,9 @@ export function apply() {
       required: ['query'],
     },
     async execute({ query }: { query: string }) {
-      if (!ctx.web) return 'Web service not available'
-      const results = await ctx.web.search(query)
+      const web = ctx.get('web')
+      if (!web) return 'Web service not available'
+      const results = await web.search(query)
       return results.map(r => `[${r.title}](${r.url})\n${r.snippet}`).join('\n\n')
     },
   })
@@ -35,8 +36,9 @@ export function apply() {
       required: ['url'],
     },
     async execute({ url }: { url: string }) {
-      if (!ctx.web) return 'Web service not available'
-      return ctx.web.fetch(url)
+      const web = ctx.get('web')
+      if (!web) return 'Web service not available'
+      return web.fetch(url)
     },
   })
 }

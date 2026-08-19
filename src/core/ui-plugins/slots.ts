@@ -23,6 +23,14 @@ declare module '../slots/index.ts' {
     'app.jobs': SlotEntryDef & { kind: 'single' }
     'app.model-selection': SlotEntryDef & { kind: 'single' }
     'app.right-panel': SlotEntryDef & { kind: 'single' }
+    'app.subagent': SlotEntryDef & { kind: 'single' }
+    'app.user-questions': SlotEntryDef & { kind: 'single' }
+    'app.workflow-run': SlotEntryDef & { kind: 'single' }
+    'app.attachment': SlotEntryDef & { kind: 'single' }
+    'app.workspace': SlotEntryDef & { kind: 'single' }
+    'app.settings.general': SlotEntryDef & { kind: 'single' }
+    'app.settings.models': SlotEntryDef & { kind: 'single' }
+    'app.settings.plugins': SlotEntryDef & { kind: 'single' }
   }
 }
 

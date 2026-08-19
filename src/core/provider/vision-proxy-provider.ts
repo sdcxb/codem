@@ -15,6 +15,7 @@ export const visionProxyProvider: Plugin = (ctx: any) => {
   const proxy = getVisionProxy()
 
   const dispose = ctx.provide('visionProxy', {
+    _active: true,
     async analyzeImage(imageData: string, prompt?: string): Promise<string> {
       return proxy.analyze(imageData, prompt)
     },
@@ -26,5 +27,10 @@ export const visionProxyProvider: Plugin = (ctx: any) => {
     },
   })
 
-  return dispose
+  // Composite dispose — stop underlying proxy to eliminate double-track
+  const compositeDispose = () => {
+    if (proxy.dispose) proxy.dispose()
+    dispose()
+  }
+  return compositeDispose
 }

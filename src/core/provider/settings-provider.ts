@@ -3,10 +3,11 @@
  * Settings Provider 插件 — 可独立加载/卸载/热替换。
  */
 import type { Plugin } from '../cordis/src/index.ts'
-import { getSettingsManager } from '../settings/settings'
+import { SettingsManager } from '../settings/settings'
 
 export const settingsProvider: Plugin = (ctx: any) => {
-  const settingsMgr = getSettingsManager()
+  // 在 Provider 内部创建实例，生命周期与 fiber 绑定
+  const settingsMgr = new SettingsManager()
 
   const dispose = ctx.provide('settings', {
     get: <T>(key: string, defaultValue?: T) => settingsMgr.get(key, defaultValue),

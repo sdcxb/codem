@@ -43,6 +43,17 @@ export interface PluginMeta {
   riskLevel?: 'safe' | 'caution' | 'danger'
   /** 风险描述：关闭后会导致什么功能不可用 */
   riskDescription?: string
+  /** UI 影响声明：关闭此插件会影响哪些 UI 元素 */
+  uiImpact?: {
+    /** 影响的 Slot 名称（如 'app.sidebar', 'app.conversation'） */
+    slots?: string[]
+    /** 影响的按钮（如 'cicd', 'perf', 'plugin-manager'） */
+    buttons?: string[]
+    /** 影响的面板（如 'settings', 'terminal'） */
+    panels?: string[]
+    /** UI 降级说明：关闭后 UI 会如何变化 */
+    degradedTo?: string
+  }
 }
 
 /** 风险等级说明 */
@@ -79,6 +90,15 @@ export interface PluginDependencyInfo {
   inject: string[]
   /** 依赖描述（人类可读） */
   dependencyDescription: string
+  /** P2-3: UI 依赖 — 此插件关闭后哪些 UI 元素受影响（来自 uiImpact） */
+  uiDepends?: {
+    slots: string[]
+    buttons: string[]
+    panels: string[]
+    degradedTo?: string
+  }
+  /** P2-3: 此插件被哪些 UI 插件依赖（反向：UI 插件 inject 了此插件 provides 的服务） */
+  uiAffectedBy?: string[]
 }
 
 export interface CascadeDisableResult {
@@ -225,7 +245,7 @@ export class PluginDependencyGraph {
   }
 
   /**
-   * 获取完整的依赖信息（含人类可读描述）。
+   * 获取完整的依赖信息（含人类可读描述和 UI 影响）。
    */
   getDependencyInfo(name: string): PluginDependencyInfo {
     const meta = this.plugins.get(name)
@@ -251,6 +271,38 @@ export class PluginDependencyGraph {
       if (desc) desc += '；'
       desc += `被依赖: ${dependents.join(', ')}`
     }
+
+    // P2-3: 计算 UI 依赖 — 从 uiImpact 提取
+    let uiDepends: PluginDependencyInfo['uiDepends'] | undefined
+    if (meta.uiImpact) {
+      uiDepends = {
+        slots: meta.uiImpact.slots ?? [],
+        buttons: meta.uiImpact.buttons ?? [],
+        panels: meta.uiImpact.panels ?? [],
+        degradedTo: meta.uiImpact.degradedTo,
+      }
+      if (uiDepends.slots.length > 0 || uiDepends.buttons.length > 0 || uiDepends.panels.length > 0) {
+        if (desc) desc += '；'
+        const parts: string[] = []
+        if (uiDepends.slots.length > 0) parts.push(`UI 槽位: ${uiDepends.slots.join(', ')}`)
+        if (uiDepends.buttons.length > 0) parts.push(`按钮: ${uiDepends.buttons.join(', ')}`)
+        if (uiDepends.panels.length > 0) parts.push(`面板: ${uiDepends.panels.join(', ')}`)
+        desc += `UI 影响: ${parts.join(', ')}`
+        if (uiDepends.degradedTo) desc += `（降级为: ${uiDepends.degradedTo}）`
+      }
+    }
+
+    // P2-3: 计算 UI 反向依赖 — 哪些 UI 插件 inject 了此插件 provides 的服务
+    const uiAffectedBy: string[] = []
+    for (const svc of meta.provides ?? []) {
+      for (const [pluginName, pluginMeta] of this.plugins) {
+        if (pluginName === name) continue
+        if (pluginMeta.inject?.includes(svc) && pluginMeta.tags?.includes('ui')) {
+          uiAffectedBy.push(pluginName)
+        }
+      }
+    }
+
     if (!desc) desc = '无依赖关系'
 
     return {
@@ -259,6 +311,8 @@ export class PluginDependencyGraph {
       provides: meta.provides ?? [],
       inject: meta.inject ?? [],
       dependencyDescription: desc,
+      uiDepends,
+      uiAffectedBy: uiAffectedBy.length > 0 ? [...new Set(uiAffectedBy)] : undefined,
     }
   }
 
@@ -310,10 +364,34 @@ export class PluginDependencyGraph {
 
     collectDependents(name, '用户主动关闭')
 
+    // P2-3: 在 affected 列表中追加 UI 降级提示
+    for (const item of affected) {
+      const itemMeta = this.plugins.get(item.name)
+      if (itemMeta?.uiImpact) {
+        const uiParts: string[] = []
+        if (itemMeta.uiImpact.slots?.length) uiParts.push(`槽位: ${itemMeta.uiImpact.slots.join(', ')}`)
+        if (itemMeta.uiImpact.buttons?.length) uiParts.push(`按钮: ${itemMeta.uiImpact.buttons.join(', ')}`)
+        if (itemMeta.uiImpact.panels?.length) uiParts.push(`面板: ${itemMeta.uiImpact.panels.join(', ')}`)
+        if (uiParts.length > 0) {
+          item.reason += `；UI 影响: ${uiParts.join(', ')}`
+          if (itemMeta.uiImpact.degradedTo) {
+            item.reason += `（降级为: ${itemMeta.uiImpact.degradedTo}）`
+          }
+        }
+      }
+    }
+
     return {
       toDisable: [...toDisable],
       affected,
-      needsConfirmation: affected.length > 1,
+      needsConfirmation: affected.length > 1 || affected.some(a => {
+        const m = this.plugins.get(a.name)
+        return m?.uiImpact && (
+          (m.uiImpact.slots?.length ?? 0) > 0 ||
+          (m.uiImpact.buttons?.length ?? 0) > 0 ||
+          (m.uiImpact.panels?.length ?? 0) > 0
+        )
+      }),
     }
   }
 

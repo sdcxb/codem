@@ -85,7 +85,7 @@ export async function loadProjectInstructions(projectPath: string): Promise<stri
   // Try project root AGENTS.md
   try {
     return await apiReadFile(`${projectPath}\\AGENTS.md`);
-  } catch {}
+  } catch (e) { console.warn('[files.ts]', e) }
   return "";
 }
 
@@ -98,7 +98,7 @@ async function readWithFallbacks(dir: string, filenames: string[]): Promise<stri
     try {
       const content = await apiReadFile(`${dir}\\${name}`);
       if (content.trim()) return content;
-    } catch {}
+    } catch (e) { console.warn('[files.ts]', e) }
   }
   return "";
 }
@@ -138,7 +138,7 @@ export async function loadHierarchicalProjectInstructions(
         }
       }
     }
-  } catch {}
+  } catch (e) { console.warn('[files.ts]', e) }
 
   // R3-2.4 Layer 1.5: Deployment instructions (~/.codem/deployment/AGENTS.md)
   // 对标 DSH context/agent-instructions 的部署层级
@@ -156,7 +156,7 @@ export async function loadHierarchicalProjectInstructions(
         }
       }
     }
-  } catch {}
+  } catch (e) { console.warn('[files.ts]', e) }
 
   // Layer 2: Project root AGENTS.md (with fallbacks)
   {
@@ -210,7 +210,7 @@ export async function loadHierarchicalProjectInstructions(
         break;
       }
     }
-  } catch {}
+  } catch (e) { console.warn('[files.ts]', e) }
 
   return sections.join("\n\n---\n\n");
 }
@@ -224,7 +224,7 @@ export async function loadProjectSkills(projectPath: string): Promise<Array<{ na
         try {
           const content = await apiReadFile(`${entry.path}\\SKILL.md`);
           skills.push({ name: entry.name, content });
-        } catch {}
+        } catch (e) { console.warn('[files.ts]', e) }
       }
     }
     return skills;
@@ -242,7 +242,7 @@ export async function loadProjectMemory(projectPath: string): Promise<Array<{ na
         try {
           const content = await apiReadFile(entry.path);
           memories.push({ name: entry.name, content });
-        } catch {}
+        } catch (e) { console.warn('[files.ts]', e) }
       }
     }
     return memories;
@@ -333,10 +333,10 @@ async function analyzeProject(projectPath: string): Promise<ProjectAnalysis> {
 
     analysis.packageManager = "npm";
     // Check for lock files
-    try { await apiReadFile(`${projectPath}\\pnpm-lock.yaml`); analysis.packageManager = "pnpm"; } catch {}
-    try { await apiReadFile(`${projectPath}\\yarn.lock`); analysis.packageManager = "yarn"; } catch {}
-    try { await apiReadFile(`${projectPath}\\bun.lockb`); analysis.packageManager = "bun"; } catch {}
-  } catch {}
+    try { await apiReadFile(`${projectPath}\\pnpm-lock.yaml`); analysis.packageManager = "pnpm"; } catch (e) { console.warn('[files.ts]', e) }
+    try { await apiReadFile(`${projectPath}\\yarn.lock`); analysis.packageManager = "yarn"; } catch (e) { console.warn('[files.ts]', e) }
+    try { await apiReadFile(`${projectPath}\\bun.lockb`); analysis.packageManager = "bun"; } catch (e) { console.warn('[files.ts]', e) }
+  } catch (e) { console.warn('[files.ts]', e) }
 
   // --- Detect from Cargo.toml (Rust) ---
   try {
@@ -352,7 +352,7 @@ async function analyzeProject(projectPath: string): Promise<ProjectAnalysis> {
     // Extract crate name
     const nameMatch = cargoContent.match(/name\s*=\s*"([^"]+)"/);
     if (nameMatch) analysis.name = nameMatch[1];
-  } catch {}
+  } catch (e) { console.warn('[files.ts]', e) }
 
   // --- Detect from pyproject.toml / setup.py (Python) ---
   try {
@@ -363,14 +363,14 @@ async function analyzeProject(projectPath: string): Promise<ProjectAnalysis> {
     analysis.testCommand = analysis.testCommand || "pytest";
     analysis.lintCommand = analysis.lintCommand || "ruff check";
     analysis.formatCommand = analysis.formatCommand || "ruff format";
-  } catch {}
+  } catch (e) { console.warn('[files.ts]', e) }
 
   try {
     await apiReadFile(`${projectPath}\\setup.py`);
     analysis.languages.push("Python");
     analysis.techStack.push("Python");
     analysis.packageManager = analysis.packageManager || "pip";
-  } catch {}
+  } catch (e) { console.warn('[files.ts]', e) }
 
   // --- Detect from go.mod (Go) ---
   try {
@@ -382,7 +382,7 @@ async function analyzeProject(projectPath: string): Promise<ProjectAnalysis> {
     analysis.testCommand = analysis.testCommand || "go test ./...";
     const modMatch = goMod.match(/^module\s+(\S+)/m);
     if (modMatch) analysis.name = modMatch[1].split("/").pop() || analysis.name;
-  } catch {}
+  } catch (e) { console.warn('[files.ts]', e) }
 
   // --- Detect key directories ---
   const knownDirs: Record<string, string> = {
@@ -425,7 +425,7 @@ async function analyzeProject(projectPath: string): Promise<ProjectAnalysis> {
         analysis.keyDirectories.push({ name: entry.name, description: desc });
       }
     }
-  } catch {}
+  } catch (e) { console.warn('[files.ts]', e) }
 
   // --- Generate conventions based on detected stack ---
   if (analysis.languages.includes("TypeScript")) {

@@ -725,7 +725,7 @@ export async function resetDatabase(): Promise<SqlJsDatabase> {
   if (isTauri()) {
     const { invoke } = (window as any).__TAURI__.core;
     const path = await getDbPath();
-    try { await invoke("delete_file", { path }); } catch {}
+    try { await invoke("delete_file", { path }); } catch (e) { console.warn('[database.ts]', e) }
   }
   return initDatabase();
 }

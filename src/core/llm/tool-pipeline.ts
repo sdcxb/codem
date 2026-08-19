@@ -461,8 +461,11 @@ export class SandboxGuard implements GuardMiddleware {
   ): Promise<GuardResult> {
     if (!this.isEnabled()) return { action: "proceed" };
 
+    // D1-3: 扩展覆盖读操作 — 限制敏感路径的读取
     const writeTools = ["write", "edit", "multi_edit", "delete_file"];
-    if (!writeTools.includes(toolName)) return { action: "proceed" };
+    const readTools = ["read", "read_file", "cat", "head", "tail", "grep", "find", "list_dir", "glob"];
+    const allProtectedTools = [...writeTools, ...readTools];
+    if (!allProtectedTools.includes(toolName)) return { action: "proceed" };
 
     const path = (args.path || args.file_path) as string;
     if (!path) return { action: "proceed" };

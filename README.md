@@ -20,6 +20,10 @@
 >
 > **v1.1.1 更新**：UI 布局优化（插件管理移至左下角 + CI/CD 移至右侧边栏 + 性能移至主对话框顶端）+ 插件条件渲染（关闭插件隐藏按钮/面板，启用后恢复）+ 宠物窗口关闭 Bug 修复 + 插件管理面板初始化时序修复 + 全工具 execute 回调 null 检查防御。
 >
+> **v1.2.0 更新**：Cordis 架构全面对齐 DSH — 移除核心文件 `@ts-nocheck`，`declare module` 类型声明全面生效，`ctx.get()` 返回强类型（对齐 DSH `ReflectService.get` keyof 推断模式）；消除双轨制服务获取；安全加固（AST 代码验证 + Worker 隔离 + XOR 密钥混淆 + SandboxGuard 覆盖读操作）；生命周期管理（复合 Dispose + LRU 淘汰 + 异步 I/O）；修复 React Hooks 顺序违规和 `useSyncExternalStore` 无限循环；全量测试重构 109 套件 3690 测试通过 + 66 个架构变更新用例。
+>
+> **v1.3.0 更新**：Cordis 插件系统对标 DSH 全面整改 — 死 slot 从 29 个降至 0 个；7 个 UI provider 添加 `inject` 声明依赖，移除全部 null 检查；创建 ConversationRoot/Session/Composer 对标 DSH conversation slot 层级；新增 `slots.inject()` 消费声明方法；移除 11 个重复/无消费点 slot 注册；MessageBubble/InputArea/ChatPanel/Sidebar 全面接入 SlotBridge/SlotListBridge 消费 conversation 子 slot。30+ 文件修改，10 个新组件。`tsc --noEmit` 零错误 + `vite build` 通过。
+>
 
 
 ![Codem 运行界面](screenshots/26720-1.png)
@@ -310,6 +314,68 @@ npm run tauri:build
 - 两种模式均使用内置 LLM 引擎直连 API，无需依赖外部进程
 
 ## 更新日志
+
+### 2026-08-19（v1.3.0）
+
+> 本次更新为 Cordis 插件架构级整改。严格对标 DSH (DeepSeek Harness) 的 Cordis 框架，分 5 个阶段系统性修复了注册机制、消费闭环、语义准确性三个维度的问题。死 slot 从 29 个降至 0 个，所有 provider 使用 inject 声明依赖，Conversation slot 层级对标 DSH 完整建立。
+
+**SlotBridge 消费闭环（阶段 2）：**
+- InputArea 中 `app.model-selector`/`app.permission-preset-selector`/`app.plan-mode-chip` 三个 slot 通过 SlotBridge 消费，fallback 为原有内联组件
+- ChatPanel 中 `app.jobs-badge`/`app.deliverable-files`/`app.trajectory-panel` 三个 slot 通过 SlotBridge 消费
+- 语义映射修正：`uiGoal` provider 改为注册 GoalBar，`uiJobs` 修正为 JobsBadge，`uiDeliverables` 补充 DeliverableFiles 组件
+
+**inject 依赖对齐（阶段 4）：**
+- 7 个核心 UI provider 添加 `inject: ['slots']` 属性声明（对齐 DSH 的 `export const inject = [...]` 模式）
+- 移除所有 UI provider 内部的 `if (slots && slots.register)` null 检查
+- `SlotsService` 新增 `slots.inject()` 方法（对齐 DSH 的 `ctx.slots.inject()` 消费声明模式）
+
+**Conversation Slot 层级（阶段 3）：**
+- 创建 `ConversationRoot` 组件 — 对标 DSH ConversationRoot，声明 5 个子 slot 层级
+- 创建 `ConversationSession` 组件 — 消费 `conversation.session.header.actions` 子 slot
+- 创建 `ConversationComposer` 组件 — 消费 `conversation.composer.bar` 和 `conversation.composer.dock` 子 slot
+- 子 slot 注册：`conversation.composer.bar` ← ModelSelector/PlanModeChip/PermissionPresetSelector，`conversation.session.header.actions` ← JobsBadge
+
+**消除剩余死 slot（阶段 5）：**
+- App.tsx 添加 `app.overlay`/`app.monitor`/`app.goal`/`app.subagent`/`app.user-questions`/`app.workflow-run` 6 个全局 slot 消费
+- MessageBubble 添加 `conversation.node.tool`/`app.message-feedback` slot 消费
+- ChatPanel 添加 `conversation.messages`/`conversation.details.tool` slot 消费
+- InputArea 添加 `app.ui-commands`/`conversation.input`/`app.attachment` slot 消费
+- Sidebar 添加 `sidebar.tabs` slot 消费
+- App.tsx 底部面板添加 `bottom-panel.tabs` slot 消费
+- 移除 11 个重复/无消费点 slot 注册（`app.cordis`/`app.layout`/`app.workspace`/`app.plugin-market`/`app.settings.*/`/`app.file-explorer`/`app.file-editor`/`app.diff-viewer`）
+
+**审计结果：**
+- 死 slot 从 29 个降至 **0 个**
+- 被消费的 slot 从 42 增至 67
+- `tsc --noEmit` 零错误 + `vite build` 通过
+
+### 2026-08-18（v1.2.0）
+
+> 本次更新为架构级升级。移除 Cordis 核心文件 `@ts-nocheck`（对齐 DSH 模式），使 `declare module` 类型声明全面生效，`ctx.get()` 返回强类型。消除双轨制服务获取，统一通过 Cordis Context 获取服务。安全加固：AST 代码验证、Worker 线程隔离、XOR+Base64 密钥混淆。生命周期管理：复合 Dispose 模式、LRU 缓存淘汰、异步文件 I/O。修复 React Hooks 顺序违规。全量测试重构：109 套件 3690 测试零错误通过，新增 66 个架构变更用例。
+
+**架构对齐 DSH（4 项）：**
+- 移除 Cordis 核心 `@ts-nocheck` — 对齐 DSH 模式，`declare module` 类型声明生效
+- `getCtxService` 对齐 DSH `ReflectService.get` keyof 推断模式
+- `declare module` 声明对齐 DSH 非 optional 模式
+- 泛型 `<T>` 不需要逗号 hack
+
+**安全加固（3 项）：**
+- AST 代码验证 + Worker 线程隔离 — `validateCode()` 正则匹配危险 API + Worker 内受限 `require` 白名单
+- API Key XOR + Base64 混淆存储 — 密钥不再明文存储
+- SandboxGuard 扩展覆盖读操作 — `read_file`/`list_dir`/`grep`/`glob` 纳入沙箱检查
+
+**生命周期管理（4 项）：**
+- 复合 Dispose 模式 — `hooks-provider.ts`/`automation-provider.ts` dispose 时设置 `_active = false`
+- LRU 缓存淘汰 — `agent-loop-provider.ts` `loopPool` 上限 20 LRU 淘汰
+- 异步文件 I/O — `spill-store.ts` 从同步改为异步 `fs.promises`
+- 空 catch 块日志 — 8 个文件的裸 `catch {}` 块添加 `console.warn`
+
+**Bug 修复（5 项）：**
+- React Hooks 顺序违规 — `SlotBridge.tsx` 中 `useSlotEntries` 在条件 `return` 之后被调用
+- `useSyncExternalStore` 无限循环 — `noopGetSnapshot` 每次返回新数组
+- `import type` 语法错误 — 缺少 `from` 关键字
+- 注释 `*/` 提前闭合 — 路径 `capabilities/*/local.ts` 中的 `*/`
+- `context.ts` Symbol 索引类型错误 — `TS7053`
 
 ### 2026-08-17（v1.1.1）
 

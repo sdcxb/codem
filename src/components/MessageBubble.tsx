@@ -5,11 +5,13 @@ import ReactMarkdown from "react-markdown";
 import { ShikiCodeBlock } from "./ShikiCodeBlock";
 import { DefaultToolRenderer } from "../core/llm/tool-renderer";
 import { getSubagentManager } from "../core/subagent/subagent";
+import { tryGetCtx } from "../core/consumer";
 import { getLang, useLang, S } from "../core/i18n/lang";
 import { Tooltip, TooltipTrigger, TooltipContent } from "./ui/tooltip";
 import { splitGraphemes } from "../core/llm/stream-reveal";
 import { InlineMessageEdit } from "./InlineMessageEdit";
 import { FeedbackButtons } from "./FeedbackButtons";
+import { SlotBridge } from "../core/slots/SlotBridge";
 import { SourceReferences } from "./SourceReferences";
 import { ImageGallery } from "./ImageGallery";
 import { VideoPlayer } from "./VideoPlayer";
@@ -146,7 +148,7 @@ const [status, setStatus] = useState<string>("init");
 const [summary, setSummary] = useState<string>("");
 
 useEffect(() => {
-const manager = getSubagentManager();
+const manager = (() => { const ctx = tryGetCtx(); return (ctx?.get('subagent') ?? getSubagentManager()) as any; })();
 const check = () => {
 const task = manager.getTask(taskId);
 if (task) {
@@ -183,7 +185,12 @@ if (status === "completed") {
   return <span className="subagent-status running"><Clock size={12} style={{ display: "inline", verticalAlign: "middle" }} /> {displayName} {zh ? "运行中..." : "running..."}</span>;
 }
 
-const toolRenderer = new DefaultToolRenderer({ maxOutputLength: 200 });
+const toolRenderer = (() => {
+    const ctx = tryGetCtx();
+    const tr = ctx?.get('toolRender');
+    if (tr) return { render: (r: any, c: any) => tr.render('default', r, c) };
+    return new DefaultToolRenderer({ maxOutputLength: 200 });
+  })();
 
 // Threshold for long message collapse (in pixels)
 const COLLAPSE_THRESHOLD = 400;
@@ -717,7 +724,10 @@ const opLabel = tc.tool === 'create_note'
                 })}
               </div>
             )}
-            <ToolCallGroup
+            {/* SlotBridge 消费 conversation.node.tool slot — fallback 到 ToolCallGroup */}
+            <SlotBridge
+              name="conversation.node.tool"
+              fallback={ToolCallGroup}
               items={message.toolCalls.map((tc): ToolCallCardProps => {
                 const isSubagent = tc.tool === "spawn_subagent";
                 const agentId = isSubagent ? tc.args?.agentId as string : null;
@@ -881,7 +891,7 @@ const opLabel = tc.tool === 'create_note'
             )}
             {/* Feedback buttons inline in toolbar — same row as copy/collapse */}
             {!isUser && !isSystem && !isStreaming && message.content && (
-              <FeedbackButtons message={message} sessionId={sessionId} inline />
+              <SlotBridge name="app.message-feedback" fallback={FeedbackButtons} message={message} sessionId={sessionId} inline />
             )}
           </div>
         )}

@@ -210,6 +210,43 @@ function PluginCard({
               </div>
             </div>
           )}
+          {/* UI 影响声明 — P1-1 */}
+          {plugin.uiImpact && (
+            <div style={{ marginTop: 6, padding: '6px 8px', borderRadius: 4, background: 'color-mix(in srgb, var(--accent) 8%, transparent)', border: '1px solid color-mix(in srgb, var(--accent) 20%, transparent)' }}>
+              <div style={{ fontWeight: 600, marginBottom: 4, color: 'var(--accent)' }}>
+                🖥️ UI 影响
+              </div>
+              {plugin.uiImpact.slots?.length > 0 && (
+                <div style={{ marginBottom: 4 }}>
+                  <span style={{ color: 'var(--text-muted)' }}>影响槽位：</span>
+                  {plugin.uiImpact.slots.map((slot: string) => (
+                    <Badge key={slot} variant="default">{slot}</Badge>
+                  ))}
+                </div>
+              )}
+              {plugin.uiImpact.buttons?.length > 0 && (
+                <div style={{ marginBottom: 4 }}>
+                  <span style={{ color: 'var(--text-muted)' }}>影响按钮：</span>
+                  {plugin.uiImpact.buttons.map((btn: string) => (
+                    <Badge key={btn} variant="warning">{btn}</Badge>
+                  ))}
+                </div>
+              )}
+              {plugin.uiImpact.panels?.length > 0 && (
+                <div style={{ marginBottom: 4 }}>
+                  <span style={{ color: 'var(--text-muted)' }}>影响面板：</span>
+                  {plugin.uiImpact.panels.map((panel: string) => (
+                    <Badge key={panel} variant="info">{panel}</Badge>
+                  ))}
+                </div>
+              )}
+              {plugin.uiImpact.degradedTo && (
+                <div style={{ color: 'var(--text-secondary)' }}>
+                  ↳ 降级为：{plugin.uiImpact.degradedTo}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 
@@ -367,23 +404,43 @@ export function PluginManager({ onClose }: PluginManagerProps) {
         return
       }
 
-      const graph = new PluginDependencyGraph()
-      // Cordis Context 是 Proxy，直接访问属性而非 ctx.get()
-      const registry = (ctx as any).pluginRegistry
-      if (registry) {
+      try {
+        // 通过 ctx.get() 正式 API 获取 pluginRegistry 服务
+        // 不使用 Proxy 属性访问 (ctx.pluginRegistry)，因为在非插件 fiber 上下文中
+        // Proxy get handler 的行为路径复杂，ctx.get() 直接走 ReflectService 更可靠
+        const registry = ctx.get('pluginRegistry')
+        if (!registry) {
+          // Provider 的 Fiber 可能还在异步加载中 — 重试
+          if (retryCount < 50) {
+            retryTimer = setTimeout(() => attemptInit(retryCount + 1), 100)
+          } else {
+            setToast({ msg: '插件注册表服务尚未就绪，请稍后重试', type: 'error' })
+          }
+          return
+        }
+
+        const graph = new PluginDependencyGraph()
         for (const meta of registry.list()) {
           graph.register(meta)
         }
-      }
 
-      initPluginManager(ctx, graph).then(mgr => {
+        initPluginManager(ctx, graph).then(mgr => {
+          if (cancelled) return
+          setManager(mgr)
+        }).catch(err => {
+          if (cancelled) return
+          console.error('Failed to init PluginManager:', err)
+          setToast({ msg: '初始化失败: ' + err.message, type: 'error' })
+        })
+      } catch (err: any) {
         if (cancelled) return
-        setManager(mgr)
-      }).catch(err => {
-        if (cancelled) return
-        console.error('Failed to init PluginManager:', err)
-        setToast({ msg: '初始化失败: ' + err.message, type: 'error' })
-      })
+        console.error('[PluginManager] attemptInit error:', err)
+        if (retryCount < 50) {
+          retryTimer = setTimeout(() => attemptInit(retryCount + 1), 100)
+        } else {
+          setToast({ msg: '初始化失败: ' + err.message, type: 'error' })
+        }
+      }
     }
 
     attemptInit()
