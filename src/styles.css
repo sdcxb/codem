@@ -1171,8 +1171,8 @@ display: flex;
 flex-direction: column;
 gap: 10px;
 background: var(--bg-primary);
-/* 居中阅读流约束，对齐 wecode/frakio 的 max-w-3xl mx-auto */
-max-width: 768px;
+/* 响应式宽度：小屏占满，大屏逐步扩展至上限，减少宽屏两侧留白 */
+max-width: clamp(100%, 75vw, 1100px);
 margin: 0 auto;
 width: 100%;
 }
@@ -1717,9 +1717,9 @@ background: transparent;
 flex-shrink: 0;
 }
 
-/* P-UI: 输入框区域最大宽度限制（对标 DSH composer max-width） */
+/* P-UI: 输入框区域最大宽度限制（对标 DSH composer max-width = chat-content-width + 32px） */
 .input-area > .input-card-container {
-  max-width: 880px;
+  max-width: clamp(100%, 75vw, 1132px);
   margin: 0 auto;
   width: 100%;
 }
