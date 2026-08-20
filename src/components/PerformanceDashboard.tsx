@@ -132,9 +132,6 @@ export function PerformanceDashboard({ onClose }: PerformanceDashboardProps) {
               <RefreshCw size={14} />
               {S.perf.refresh[lang]}
             </button>
-            <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "inherit" }}>
-              <X size={20} />
-            </button>
           </div>
         </div>
 

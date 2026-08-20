@@ -7,10 +7,11 @@
  */
 import type { Plugin } from '../cordis/src/index.ts'
 
-export const pluginRegistryProvider: Plugin = (ctx: any) => {
-  const pluginMeta = new Map<string, any>()
-
-  const knownPlugins = [
+/**
+ * 模块级常量：所有已知插件的元数据列表。
+ * 在模块加载时即可用，不依赖 Cordis fiber 激活时序。
+ */
+const KNOWN_PLUGINS = [
     // ===== 核心系统插件（不可关闭） =====
     { name: '@codem/slots', version: '1.0.0', description: 'Slot Registry — UI 插件槽位注册系统，所有 UI 插件的基础设施', provides: ['slots'], inject: [], keywords: ['slots', 'registry', 'ui'], category: 'core', tags: ['infra', 'ui'], core: true, locked: true, icon: '🧩', author: 'Codem Team', riskLevel: 'danger', riskDescription: '关闭将导致所有 UI 插件失效，界面无法正常渲染' },
 
@@ -268,8 +269,18 @@ export const pluginRegistryProvider: Plugin = (ctx: any) => {
     { name: '@codem/tool-jobs', version: '1.0.0', description: 'Jobs 工具，独立插件形式的后台任务管理工具', provides: ['toolJobs'], inject: ['tools', 'automation'], keywords: ['tool', 'jobs'], category: 'provider', tags: ['provider', 'tool'], hot: true, icon: '📋', author: 'Codem Team', riskLevel: 'safe', riskDescription: '关闭后 Jobs 工具不可用' },
     { name: '@codem/storage-domain', version: '1.0.0', description: '存储域定义，分域存储命名空间管理', provides: ['storageDomain'], inject: ['storage'], keywords: ['storage', 'domain', 'namespace'], category: 'provider', tags: ['provider', 'storage'], hot: true, icon: '🗂️', author: 'Codem Team', riskLevel: 'safe', riskDescription: '关闭后存储域不可用' },
     { name: '@codem/storage-json', version: '1.0.0', description: 'JSON 存储后端，基于 JSON 文件的键值存储', provides: ['storageJson'], inject: ['storage'], keywords: ['storage', 'json'], category: 'provider', tags: ['provider', 'storage'], hot: true, icon: '📄', author: 'Codem Team', riskLevel: 'safe', riskDescription: '关闭后 JSON 存储后端不可用' },
-  ]
-  for (const p of knownPlugins) { pluginMeta.set(p.name, p) }
+    ]
+
+/**
+ * 运行时副本：模块加载时即填充，不依赖 fiber 激活。
+ * PluginManager 在 ctx.get('pluginRegistry') 不可用时直接 import 使用。
+ */
+export const runtimePluginList: any[] = [...KNOWN_PLUGINS]
+
+export const pluginRegistryProvider: Plugin = (ctx: any) => {
+  const pluginMeta = new Map<string, any>()
+
+  for (const p of KNOWN_PLUGINS) { pluginMeta.set(p.name, p) }
 
   const dispose = ctx.provide('pluginRegistry', {
     _active: true,

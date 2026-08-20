@@ -56,6 +56,17 @@ export const GitBranchSelector = memo(function GitBranchSelector({
     setError("");
     try {
       const safeDir = workDir.replace(/'/g, "''");
+      // 先检查是否是 git 仓库
+      const isGitResult = await executeCommand(
+        `git -C '${safeDir}' rev-parse --is-inside-work-tree`
+      );
+      if (isGitResult.stdout.trim() !== "true") {
+        // 不是 git 仓库 — 清空状态，不报错
+        setCurrentBranch("");
+        setBranches([]);
+        setIsDirty(false);
+        return;
+      }
       // 获取当前分支
       const branchResult = await executeCommand(
         `git -C '${safeDir}' rev-parse --abbrev-ref HEAD`
@@ -83,7 +94,10 @@ export const GitBranchSelector = memo(function GitBranchSelector({
         }));
       setBranches(allBranches);
     } catch (err: any) {
-      setError(err.message || String(err));
+      // git 命令失败 — 可能不是 git 仓库，静默处理
+      setCurrentBranch("");
+      setBranches([]);
+      setIsDirty(false);
     } finally {
       setLoading(false);
     }
@@ -93,12 +107,13 @@ export const GitBranchSelector = memo(function GitBranchSelector({
     refresh();
   }, [refresh]);
 
+  // 自动刷新 — 仅在有分支时才定时刷新（避免非 git 仓库时频繁重试）
   useEffect(() => {
-    if (refreshInterval > 0) {
+    if (refreshInterval > 0 && currentBranch) {
       const timer = setInterval(refresh, refreshInterval);
       return () => clearInterval(timer);
     }
-  }, [refreshInterval, refresh]);
+  }, [refreshInterval, refresh, currentBranch]);
 
   // 点击外部关闭下拉
   useEffect(() => {
@@ -164,7 +179,23 @@ export const GitBranchSelector = memo(function GitBranchSelector({
     }
   }, [workDir, newBranchName]);
 
-  if (!workDir) return null;
+  if (!workDir) {
+    // Bug2: 不返回 null（会导致按钮消失），显示占位状态
+    return (
+      <div className="git-branch-selector" ref={dropdownRef}>
+        <button
+          className="git-branch-btn clean"
+          disabled
+          title="No repository"
+        >
+          <GitBranch size={14} />
+          {!compact && (
+            <span className="git-branch-name">No Git</span>
+          )}
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="git-branch-selector" ref={dropdownRef}>

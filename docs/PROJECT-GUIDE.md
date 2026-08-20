@@ -1,9 +1,9 @@
 # Codem 项目完整说明
 
 > **用途**：新对话快速理解项目全貌、架构、文件关联、当前状态。
-> 创建时间：2026-07-23 | 最后更新：2026-08-19 | 当前版本：v1.4.1（插件管理 Cordis Context 初始化彻底修复 + 技能市场加载性能优化 + 默认模型持久化修复 + CI/CD 面板/底部按钮/编辑框圆角/首页自适应/对话区域自适应 9 项 Bug 修复）
+> 创建时间：2026-07-23 | 最后更新：2026-08-20 | 当前版本：v1.4.2（10 项 Bug 修复 + Cordis 插件时序改进 + SlotBridge 降级机制增强 + 头像系统升级）
 >
-> **版本历程概览**：v0.70 基础存储 → v0.80 轮次架构 → v0.87 Worktree/并行 → v0.88 桌面宠物 → v0.89 跨会话委派 → v0.90 P0-P4 全量功能 → v0.91 Coding 工作台 → v0.92 Codex 对标 → v0.93 Vision Proxy → v0.94 配置修复 → v0.95 CLI/API 视觉代理 → v0.96 UI 大改版 → v0.97 Agentic Loop 性能优化 → v0.98 多智能体协同 → v0.99 DSH 全量升级 → v1.0.0 插件系统架构 + UI/UX 标准化 → v1.1.0 DSH 对标整改 + 测试深化 → v1.1.1 UI 布局优化 + 插件条件渲染 + Bug 修复 → v1.2.0 Cordis 架构对齐 DSH + 安全加固 + 全量测试重构 → v1.3.0 Cordis 插件系统对标 DSH 全面整改 + Slot 消费闭环 + inject 依赖对齐 → v1.4.0 UI/UX 体验优化 11 项 Bug 修复 + 性能/CI-CD 面板切换化 + 梦幻皮肤一致性修复 → v1.4.1 插件管理初始化修复 + 技能市场性能优化 + 对话区域自适应 9 项 Bug 修复
+> **版本历程概览**：v0.70 基础存储 → v0.80 轮次架构 → v0.87 Worktree/并行 → v0.88 桌面宠物 → v0.89 跨会话委派 → v0.90 P0-P4 全量功能 → v0.91 Coding 工作台 → v0.92 Codex 对标 → v0.93 Vision Proxy → v0.94 配置修复 → v0.95 CLI/API 视觉代理 → v0.96 UI 大改版 → v0.97 Agentic Loop 性能优化 → v0.98 多智能体协同 → v0.99 DSH 全量升级 → v1.0.0 插件系统架构 + UI/UX 标准化 → v1.1.0 DSH 对标整改 + 测试深化 → v1.1.1 UI 布局优化 + 插件条件渲染 + Bug 修复 → v1.2.0 Cordis 架构对齐 DSH + 安全加固 + 全量测试重构 → v1.3.0 Cordis 插件系统对标 DSH 全面整改 + Slot 消费闭环 + inject 依赖对齐 → v1.4.0 UI/UX 体验优化 11 项 Bug 修复 + 性能/CI-CD 面板切换化 + 梦幻皮肤一致性修复 → v1.4.1 插件管理初始化修复 + 技能市场性能优化 + 对话区域自适应 9 项 Bug 修复 → v1.4.2 10 项 Bug 修复 + Cordis 插件时序改进 + SlotBridge 降级机制增强 + 头像系统升级
 
 ---
 
@@ -15,7 +15,7 @@
 - **GitHub**：https://github.com/sdcxb/codem
 - **分发**：NSIS `.exe` + WiX `.msi`，一键安装无需依赖
 - **平台**：Windows 优先
-- **版本**：v1.4.1（插件管理初始化修复 + 技能市场性能优化 + 默认模型持久化 + 对话区域自适应，2026-08-19）
+- **版本**：v1.4.2（10 项 Bug 修复 + Cordis 插件时序改进 + SlotBridge 降级机制增强 + 头像系统升级，2026-08-20）
 
 ---
 
@@ -1511,6 +1511,36 @@ npm run tauri build        # 构建 NSIS exe + MSI
 ### v0.96.2（2026-08-11）— CodeGraph 集成 + 测试改造 + CI Workflow
 
 （详见上方版本历史摘要）
+
+### v1.4.2（2026-08-20）— 10 项 Bug 修复 + Cordis 插件时序改进 + SlotBridge 降级机制增强 + 头像系统升级
+
+> 针对用户实际使用反馈的 10 项 Bug 修复 + 3 项架构增强。20+ 文件修改，`tsc --noEmit` 零错误 + `vitest run` 全量通过。
+
+**Bug 1 — 默认模型显示错误（彻底修复）**：`dbReady` 时同步读取 settings 更新 model/mode/provider；`engineRef` 的 `useEffect` 在 DB 就绪后重新调用 `configureEngine`；`model-badge` 显示友好名称；`getConfiguredApiModels` 中 `name` 属性从 `m.id` 改为 `m.name`。
+
+**Bug 2 — 右侧边栏 CI/CD 面板被外窗口遮挡（彻底修复）**：`PanelSidebar` 使用 `createPortal` 渲染到 `document.body`，提升 `z-index`；调整 `right` 和 `maxWidth` 确保 CI/CD 面板完整可见。
+
+**Bug 3 — 默认皮肤底部栏 UI 不一致 + 多余模型选择器**：删除 `InputArea` 底部栏的 `ModelSelector` 渲染逻辑；调整 `.input-control-bar` 样式。
+
+**Bug 4 — 输入框聚焦时出现紫色边框**：`.composer-inner:focus-within` 的 `border-color` 改为 `transparent`。
+
+**Bug 5 — 技能市场加载慢（缓存机制）**：实现技能市场缓存机制 — 首次加载后缓存列表信息，再次进入时先加载缓存快速显示；刷新按钮改名为"检查更新"，点击时更新列表并覆盖缓存。
+
+**Bug 6 — Git 分支按钮未居中 + 一直刷新**：为 `.titlebar-center` 添加居中样式；修复 `GitBranchSelector` 的 `refreshInterval` 逻辑，添加是否为 git 仓库的检查；`!workDir` 时返回占位按钮而非 `null`。
+
+**Bug 7 — 右侧边栏边缘白色背景 + 拖拽影响左侧边栏**：移除 `.app-content` 的 `padding-right`；给 `.sidebar` 添加 `position: relative`。
+
+**Bug 8 — 顶部栏左侧和左侧边栏之间空白区域**：删除 `.sidebar-header`，将收起按钮移入 `.sidebar-nav`；恢复 `.titlebar-icon` 和 `.titlebar-title` 的显示。
+
+**Bug 9 — CicdPanel 白色背景**：`CicdPanel` 背景改为 `transparent`。
+
+**Bug 10 — 顶部栏右侧按钮被居中（Bug 6 修复副作用）**：为 `.titlebar-left` 和 `.titlebar-nav-actions` 添加 `flex-shrink: 0`；修改 `.titlebar` flex 布局使 Git 分支按钮居中、右侧按钮靠右。
+
+**增强 1 — Cordis 插件系统时序改进（三步方案）**：第一步，`getCordisContext()` 中将 `setTimeout(0)` 替换为显式等待所有 fiber 就绪 (`fibers.map(f => f.await())`)；第二步，`consumer/index.ts` 中为关键服务获取函数添加重试等待机制 (`getServiceAsync`)；第三步，`loadDefaultProviders()` 中添加 `internal/status` 事件监听器记录 fiber 状态变更日志。
+
+**增强 2 — SlotBridge 降级机制健壮性增强**：新增 `SlotErrorBoundary` 包裹插件组件，崩溃时自动回退到 fallback；为关键 slot 添加 `showDegraded` prop，异常时显示降级提示；`SlotListBridge` 在 slots 服务不可用时输出警告日志。
+
+**增强 3 — 头像系统升级**：从 Multiavatar 切换回 DiceBear API（URL 生成方式，无需 npm 依赖）；预设头像从 12 个扩展到 50 个，混合 13 种 DiceBear 风格。
 
 ### v1.4.1（2026-08-19）— 插件管理初始化修复 + 技能市场性能优化 + 对话区域自适应 9 项 Bug 修复
 

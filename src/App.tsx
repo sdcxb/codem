@@ -1,4 +1,4 @@
-﻿import { useEffect, useState, useRef, useCallback } from "react";
+﻿﻿import { useEffect, useState, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 
 // D1-4: 全局错误边界 — 捕获未处理的同步错误和 Promise rejection
@@ -15,6 +15,7 @@ if (typeof window !== 'undefined') {
 // 创建全局 Cordis Context 并加载独立 Provider 插件。
 // 所有核心服务（LLM、Tools、Session 等）通过独立 Provider 注册为可替换的服务。
 import { Context } from "./core/cordis/src/index.ts";
+import type { Fiber } from "./core/cordis/src/fiber.ts";
 import { SlotsService } from "./core/slots/index.ts";
 import { loadDefaultProviders } from "./core/provider/index.ts";
 import { setActiveContext } from "./core/consumer";
@@ -30,10 +31,30 @@ async function getCordisContext(): Promise<Context> {
   ctx.plugin(SlotsService as any);
   // 加载独立 Provider 插件（每个服务可独立热替换）
   loadDefaultProviders(ctx);
-  // 等待所有 Provider fiber 变为 ACTIVE。
-  // ctx.plugin() 是同步注册但异步激活的（fiber effect runner 需要微任务）。
-  // 不等待会导致 ctx.get('pluginRegistry') 等返回 undefined（strict 模式下 fiber 非 ACTIVE）。
+  // 显式等待所有 fiber 就绪：替换不可靠的 setTimeout(0)。
+  // fiber 的 effect runner 需要微任务来激活，await 一个微任务即可让所有同步注册的 fiber 开始加载。
   await new Promise(resolve => setTimeout(resolve, 0));
+  // 进一步等待所有 fiber 的 inertia（加载/卸载操作）完成。
+  // 这确保 ctx.get('pluginRegistry') 等不会返回 undefined。
+  try {
+    const fibers: Fiber[] = [];
+    ctx.registry.forEach((runtime: any) => {
+      for (const fiber of runtime.fibers) {
+        fibers.push(fiber);
+      }
+    });
+    if (fibers.length > 0) {
+      await Promise.allSettled(fibers.map(f => f.await ? f.await() : Promise.resolve()));
+      const pending = fibers.filter(f => f.state === 0 /* PENDING */);
+      if (pending.length > 0) {
+        console.warn(`[Cordis] ${pending.length} fibers still PENDING after await:`, pending.map(f => f.name));
+      }
+      const active = fibers.filter(f => f.state === 2 /* ACTIVE */);
+      console.log(`[Cordis] ${active.length}/${fibers.length} fibers ACTIVE`);
+    }
+  } catch (err) {
+    console.warn('[Cordis] Error while waiting for fibers:', err);
+  }
   // 尽早设置活跃 Context，让工具 Consumer 包可以使用已注册的服务。
   setActiveContext(ctx);
 
@@ -320,12 +341,63 @@ useEffect(() => {
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [showOnboardingReplay, setShowOnboardingReplay] = useState(false);
   // Check onboarding flag after DB is initialized (dbReady transitions from false to true)
+  // 同时从 settings 重新读取 model/mode/provider，修正首次渲染时 DB 未就绪导致的错误默认值
   useEffect(() => {
     if (dbReady) {
       try {
         const completed = getSetting("onboarding-completed");
         if (!completed) setShowOnboarding(true);
       } catch { /* DB not ready yet — will retry on next render */ }
+      // P0: DB 就绪后立即从 settings 同步读取正确的 model/mode/provider
+      // 避免依赖 configureEngine 的异步重试链（engine 可能耗时才激活）
+      try {
+        const settings = getSettingJSON<any>("codem-settings", {});
+        let mode: "cli" | "api" = settings.mode === "cli" ? "cli" : "api";
+        // 修正历史脏数据
+        if (mode === "cli") {
+          const m = settings.model || "";
+          if (m.startsWith("deepseek") || m.startsWith("claude") ||
+            m.startsWith("gpt") || m.startsWith("o3") || m.startsWith("gemini") ||
+            m.startsWith("moonshot")) {
+            mode = "api";
+          }
+        }
+        let model: string;
+        if (mode === "cli") {
+          model = settings.model || "mimo-v2.5-pro";
+        } else {
+          model = settings.model || "";
+          if (!model) {
+            const providers = settings.providers || [];
+            const defaultModels: Record<string, string> = {
+              openai: "gpt-4o", anthropic: "claude-sonnet-4-20250514",
+              deepseek: "deepseek-v4-flash", moonshot: "moonshot-v1-8k",
+              gemini: "gemini-2.5-flash",
+            };
+            for (const p of providers) {
+              if (p.apiKey && p.id !== "mimo" && defaultModels[p.id]) {
+                model = defaultModels[p.id];
+                break;
+              }
+            }
+            if (!model) model = "mimo-v2.5-pro";
+          }
+        }
+        let provider = "mimo";
+        if (mode === "api") {
+          if (model.startsWith("deepseek")) provider = "deepseek";
+          else if (model.startsWith("claude")) provider = "anthropic";
+          else if (model.startsWith("moonshot")) provider = "moonshot";
+          else if (model.startsWith("gemini")) provider = "gemini";
+          else if (model.startsWith("gpt") || model.startsWith("o3")) provider = "openai";
+        }
+        console.log(`[dbReady] syncing model from settings: mode=${mode}, model=${model}, provider=${provider}`);
+        setCliModel(model);
+        setCurrentMode(mode);
+        setCurrentProvider(provider);
+      } catch (e) {
+        console.warn("[dbReady] Failed to sync model from settings:", e);
+      }
     }
   }, [dbReady]);
   // Initialize from saved settings synchronously to avoid UI flash showing wrong model list.
@@ -337,11 +409,24 @@ useEffect(() => {
       return {};
     }
   })();
-  const _initialMode: "cli" | "api" = _initialSettings.mode || "api";
+  const _initialMode: "cli" | "api" = (() => {
+    const m = _initialSettings.mode;
+    if (m === "cli" || m === "api") {
+      // 如果 mode=cli 但 model 是 API 模型的前缀，修正为 api（修复历史脏数据）
+      const model = _initialSettings.model || "";
+      if (m === "cli" && (model.startsWith("deepseek") || model.startsWith("claude") ||
+        model.startsWith("gpt") || model.startsWith("o3") || model.startsWith("gemini") ||
+        model.startsWith("moonshot"))) {
+        return "api";
+      }
+      return m;
+    }
+    return "api";
+  })();
   // For API mode, find the first provider with an API key (excluding mimo) and use its first model.
   // This avoids defaulting to "gpt-4o" when the user hasn't configured an OpenAI key.
   const _initialModel: string = (() => {
-    if (_initialSettings.mode === "cli") {
+    if (_initialMode === "cli") {
       return _initialSettings.model || "mimo-v2.5-pro";
     }
     // API mode: use saved model if it belongs to a configured provider
@@ -622,14 +707,15 @@ abortControllersRef.current.clear();
       console.log(`[ModelChange] model=${model}, provider=${provider}`);
     }
 
-    // Persist the selected model to settings so it survives app restart
+    // Persist the selected model and mode to settings so it survives app restart
     try {
       const settings = getSettingJSON<any>("codem-settings", {});
-      setSettingJSON("codem-settings", { ...settings, model });
+      const mode = getMode();
+      setSettingJSON("codem-settings", { ...settings, model, mode });
     } catch (e) {
       console.warn("[ModelChange] Failed to persist model:", e);
     }
-  }, []);
+  }, [currentMode]);
 const [compactionStatus, setCompactionStatus] = useState<{ active: boolean; messagesRemoved?: number } | null>(null);
 const [pendingPermissions, setPendingPermissions] = useState<Map<string, {
 request: PermissionRequest;
@@ -682,6 +768,9 @@ useEffect(() => {
     if (engine) {
       engineRef.current = engine
       clearInterval(timer)
+      // engine 可用后立即尝试 configureEngine — 从 DB 读取正确的 model/mode
+      // 避免 UI 长时间显示 _initialModel 的错误默认值
+      configureEngine();
     } else if (++retry > 50) {
       console.warn('[App] llmEngine provider not available after 5s')
       clearInterval(timer)
@@ -1006,21 +1095,45 @@ flushStreamBuffer(); // flush all on unmount
 
     if (saved) {
       const settings = saved;
+      console.log(`[configureEngine] settings: mode=${settings.mode}, model=${settings.model}, providers=${(settings.providers||[]).map((p:any)=>p.id+':'+(p.apiKey?'Y':'N')).join(',')}`);
+      // 修正历史脏数据：如果 mode=cli 但 model 是 API 模型前缀，推断为 api
+      let effectiveMode = settings.mode;
+      if (effectiveMode === "cli") {
+        const m = settings.model || "";
+        if (m.startsWith("deepseek") || m.startsWith("claude") ||
+          m.startsWith("gpt") || m.startsWith("o3") || m.startsWith("gemini") ||
+          m.startsWith("moonshot")) {
+          effectiveMode = "api";
+          console.log(`[configureEngine] dirty-data fix: mode cli→api (model=${m})`);
+        }
+      }
+      // 如果 mode 未设置，默认为 api
+      if (effectiveMode !== "cli" && effectiveMode !== "api") {
+        effectiveMode = "api";
+      }
       const prevMode = getMode();
-      const modeChanged = settings.mode !== prevMode;
+      const modeChanged = effectiveMode !== prevMode;
 
       // Save messages before switching modes
       if (modeChanged && currentProject && currentSession && messages.length > 0) {
         saveMessages(currentSession.id);
       }
 
-      if (settings.mode === "cli") {
+      if (effectiveMode === "cli") {
         // CLI mode: use saved model or default to mimo-v2.5-pro
         const model = settings.model || "mimo-v2.5-pro";
+        console.log(`[configureEngine] CLI mode: setting model=${model}`);
         engine.updateConfig({ defaultProvider: "mimo", defaultModel: model });
         setCliModel(model);
         setCurrentMode("cli");
         setCurrentProvider("mimo");
+        // Persist mode + model so it survives restart
+        try {
+          const s = getSettingJSON<any>("codem-settings", {});
+          setSettingJSON("codem-settings", { ...s, mode: "cli", model });
+        } catch (e) {
+          console.warn("[Engine] Failed to persist cli mode:", e);
+        }
         // D2-1: 一切插件化 — 不回退到 getMiMoAuth() 单例
         // 重试等待 Provider fiber 变为 ACTIVE
         const auth = getCtxService('mimoAuth');
@@ -1075,9 +1188,17 @@ flushStreamBuffer(); // flush all on unmount
           }
         }
         engine.updateConfig({ defaultProvider: provider, defaultModel: finalModel });
+        console.log(`[configureEngine] API mode: setting model=${finalModel}, provider=${provider}`);
         setCliModel(finalModel);
         setCurrentMode("api");
         setCurrentProvider(provider);
+        // Persist mode + model so it survives restart
+        try {
+          const s = getSettingJSON<any>("codem-settings", {});
+          setSettingJSON("codem-settings", { ...s, mode: "api", model: finalModel });
+        } catch (e) {
+          console.warn("[Engine] Failed to persist api mode:", e);
+        }
         console.log(`[Engine] API mode: provider=${provider}, model=${finalModel}`);
       }
     }
@@ -2202,7 +2323,7 @@ abortControllersRef.current.clear();
   return (
     <TooltipProvider delayDuration={300} skipDelayDuration={500}>
     <div className="app">
-      <SlotBridge name="app.boot-splash" fallback={BootSplash}
+      <SlotBridge name="app.boot-splash" fallback={BootSplash} showDegraded
         visible={bootSplashVisible}
         phase={bootSplashPhase}
         progress={bootSplashPhase === "initializing" ? 15 : bootSplashPhase === "loading-db" ? 45 : bootSplashPhase === "loading-config" ? 75 : 100}
@@ -2210,7 +2331,7 @@ abortControllersRef.current.clear();
       />
       <SlotBridge name="app.workspace-backdrop" fallback={WorkspaceBackdrop} showDegraded />
       <SlotBridge name="app.toast-container" fallback={ToastContainer}  showDegraded />
-      <SlotBridge name="app.titlebar" fallback={TitleBar}
+      <SlotBridge name="app.titlebar" fallback={TitleBar} showDegraded
         sidebarOpen={sidebarOpen}
         onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
         onNewChat={() => {
@@ -2235,7 +2356,7 @@ abortControllersRef.current.clear();
 
           {/* 核心内容：Sidebar + MainArea，根据皮肤选择不同布局包裹 */}
           {skin === "hub" ? (
-            <SlotBridge name="app.skin-layout" fallback={HubLayout}
+            <SlotBridge name="app.skin-layout" fallback={HubLayout} showDegraded
               rightRailOpen={rightRailOpen}
               onToggleRightRail={() => setRightRailOpen(!rightRailOpen)}
               onTasks={() => setShowProjectManager(true)}
@@ -2260,7 +2381,7 @@ onTaskCenter={() => { setTaskCenterTab("overview"); setShowTaskCenter(true); }}
               refreshKey={fileExplorerRefreshKey}
               sidebar={
                 sidebarOpen ? (
-                  <SlotBridge name="app.sidebar" fallback={Sidebar}
+                  <SlotBridge name="app.sidebar" fallback={Sidebar} showDegraded
                     identity={appIdentity}
                     onSettings={settingsEnabled ? () => setShowSettings(true) : undefined}
                     onProjects={() => setShowProjectManager(true)}
@@ -2319,7 +2440,7 @@ onRemoveProject={(id, name, path) => {
 </div>
 )}
 {bottomTab === "chat" && (
-                        <SlotBridge name="app.conversation" fallback={ChatPanel}
+                        <SlotBridge name="app.conversation" fallback={ChatPanel} showDegraded
                           onSend={handleSend}
                           onCancel={handleCancel}
                           onSendGuidance={handleSendGuidance}
@@ -2377,8 +2498,8 @@ notebookId={activeNotebookId || undefined}
           ) : skin === "dream" ? (
             <SlotBridge name="app.skin-layout" fallback={DreamLayout} showDegraded>
               {sidebarOpen && (
-                <SlotBridge name="app.sidebar" fallback={Sidebar}
-                  identity={appIdentity}
+<SlotBridge name="app.sidebar" fallback={Sidebar} showDegraded
+identity={appIdentity}
                   onSettings={settingsEnabled ? () => setShowSettings(true) : undefined}
                   onProjects={() => setShowProjectManager(true)}
                   onConfig={() => setShowConfigEditor(true)}
@@ -2433,8 +2554,8 @@ onRemoveProject={(id, name, path) => {
 </div>
 )}
 {bottomTab === "chat" && (
-                      <SlotBridge name="app.conversation" fallback={ChatPanel}
-                        onSend={handleSend}
+<SlotBridge name="app.conversation" fallback={ChatPanel} showDegraded
+onSend={handleSend}
                         onCancel={handleCancel}
                         onSendGuidance={handleSendGuidance}
                         onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
@@ -2513,8 +2634,8 @@ refreshKey={fileExplorerRefreshKey}
             <Menu size={20} />
           </button>
           {sidebarOpen && (
-                <SlotBridge name="app.sidebar" fallback={Sidebar}
-          identity={appIdentity}
+<SlotBridge name="app.sidebar" fallback={Sidebar} showDegraded
+identity={appIdentity}
           onSettings={settingsEnabled ? () => setShowSettings(true) : undefined}
           onProjects={() => setShowProjectManager(true)}
           onConfig={() => setShowConfigEditor(true)}
@@ -2579,8 +2700,8 @@ onRemoveProject={(id, name, path) => {
               </div>
             )}
             {bottomTab === "chat" && (
-              <SlotBridge name="app.conversation" fallback={ChatPanel}
-                onSend={handleSend}
+<SlotBridge name="app.conversation" fallback={ChatPanel} showDegraded
+onSend={handleSend}
                 onCancel={handleCancel}
                 onSendGuidance={handleSendGuidance}
                 onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
@@ -2668,8 +2789,8 @@ refreshKey={fileExplorerRefreshKey}
             size={280}
             title={lang === "zh" ? "菜单" : "Menu"}
           >
-            <SlotBridge name="app.sidebar" fallback={Sidebar}
-              identity={appIdentity}
+<SlotBridge name="app.sidebar" fallback={Sidebar} showDegraded
+identity={appIdentity}
               onSettings={() => { setShowSettings(true); setMobileSidebarOpen(false); }}
               onProjects={() => { setShowProjectManager(true); setMobileSidebarOpen(false); }}
               onConfig={() => { setShowConfigEditor(true); setMobileSidebarOpen(false); }}
@@ -3182,7 +3303,7 @@ onClose={() => setCitationViewer(null)}
       <SlotBridge name="app.monitor" fallback={null} />
       {/* 全局目标/TODO 面板 slot — TodoListDisplay 等 */}
       <SlotBridge name="app.goal" fallback={null} />
-      {/* Subagent 面板 slot — DelegationPanel */}
+      {/* Subagent 面板 slot */}
       <SlotBridge name="app.subagent" fallback={null} />
       {/* User Questions slot — InteractiveFormDialog（已由条件渲染消费，此处保留 slot 消费声明） */}
       <SlotBridge name="app.user-questions" fallback={null} />

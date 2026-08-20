@@ -368,7 +368,7 @@ export function ChatPanel({ onSend, onCancel, onSendGuidance, onToggleSidebar, o
           }}
         />
         <div className="model-selector" onClick={() => setShowModelPicker(!showModelPicker)}>
-          <span className="model-badge">{model}</span>
+          <span className="model-badge">{models.find(m => m.id === model)?.name || model}</span>
           <span className="model-arrow"><ChevronDown size={10} /></span>
           {showModelPicker && (
             <div className="model-picker" onClick={(e) => e.stopPropagation()}>
@@ -567,7 +567,7 @@ export function ChatPanel({ onSend, onCancel, onSendGuidance, onToggleSidebar, o
               />
               {/* P2: Quick access cards + quick phrases in empty state */}
               {showQuickAccess && connected && !isSessionStreaming && (
-                <div style={{ marginTop: 16, maxWidth: 600, width: "100%", margin: "16px auto 0", display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <div style={{ width: "100%", maxWidth: 600, margin: "0 auto", display: 'flex', flexDirection: 'column', gap: 8 }}>
                   <QuickAccessCards
                     agents={getAgentRegistry().getPrimary().map(a => ({
                       id: a.id,
@@ -1048,7 +1048,7 @@ canEdit={!isSessionStreaming}
           </button>
         </div>
       )}
-      <InputArea onSend={(msg, atts, skills) => { onSend(msg, atts, skills); setQuoteContext(null); }} onCancel={onCancel} disabled={(!currentSessionId || activeSessions.has(currentSessionId)) || !connected} isStreaming={!currentSessionId ? isStreaming : activeSessions.has(currentSessionId)} noSession={!currentSessionId} collaborationMode={collaborationMode} onModeChange={onModeChange || (() => {})} projectPath={projectPath} quoteContext={quoteContext} onClearQuote={() => { setQuoteContext(null); }} suggestionPrompt={suggestionPrompt} onSuggestionConsumed={() => setSuggestionPrompt(null)} notebookId={notebookId} onToggleRightSidebar={() => setShowRightSidebar(!showRightSidebar)} onToggleQuickPhrase={() => setShowQuickPhrase(!showQuickPhrase)} onToggleDraftPicker={() => setShowDraftPicker(!showDraftPicker)} hasDrafts={promptDrafts.length > 0} />
+      <InputArea onSend={(msg, atts, skills) => { onSend(msg, atts, skills); setQuoteContext(null); }} onCancel={onCancel} disabled={(!currentSessionId || activeSessions.has(currentSessionId)) || !connected} isStreaming={!currentSessionId ? isStreaming : activeSessions.has(currentSessionId)} noSession={!currentSessionId} collaborationMode={collaborationMode} onModeChange={onModeChange || (() => {})} projectPath={projectPath} quoteContext={quoteContext} onClearQuote={() => { setQuoteContext(null); }} suggestionPrompt={suggestionPrompt} onSuggestionConsumed={() => setSuggestionPrompt(null)} notebookId={notebookId} onToggleRightSidebar={() => setShowRightSidebar(!showRightSidebar)} onToggleQuickPhrase={() => setShowQuickPhrase(!showQuickPhrase)} onToggleDraftPicker={() => setShowDraftPicker(!showDraftPicker)} hasDrafts={promptDrafts.length > 0} model={model} onModelChange={onModelChange} mode={mode} />
     </div>
   );
 }

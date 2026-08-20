@@ -390,5 +390,24 @@ export function loadDefaultProviders(ctx: Context): string[] {
     })
   } catch (e) { console.warn('[index.ts]', e) }
 
+  // ====== Fiber 状态变更诊断日志 ======
+  // 监听 internal/status 事件，当 fiber 状态变化时输出日志。
+  // 让时序问题从"玄学"变"可见"：哪个 fiber 卡在 PENDING，哪个 FAILED，一目了然。
+  try {
+    const stateNames = ['PENDING', 'LOADING', 'ACTIVE', 'FAILED', 'DISPOSED', 'UNLOADING']
+    ctx.on('internal/status', (fiber: any, oldState: number) => {
+      const name = fiber?.name || 'unknown'
+      const newState = stateNames[fiber?.state] || `UNKNOWN(${fiber?.state})`
+      const oldName = stateNames[oldState] || `UNKNOWN(${oldState})`
+      // 只在状态变化为非 ACTIVE 或从非 ACTIVE 变为 ACTIVE 时输出（减少噪音）
+      if (newState === 'FAILED') {
+        console.error(`[Fiber] ${name}: ${oldName} → ${newState}`, fiber?._error || '')
+      } else if (newState === 'PENDING' && oldState !== 0) {
+        // 从其他状态变回 PENDING，说明依赖丢失
+        console.warn(`[Fiber] ${name}: ${oldName} → ${newState} (dependency lost)`)
+      }
+    })
+  } catch (e) { console.warn('[index.ts] Failed to register fiber status listener:', e) }
+
   return loaded
 }

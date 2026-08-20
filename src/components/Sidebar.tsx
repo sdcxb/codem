@@ -403,18 +403,11 @@ const handleDrop = useCallback((e: React.DragEvent, targetSessionId: string, pro
         onMouseDown={startResize}
       />
 
-      <div className="sidebar-header">
-        <SpaceSwitcher onNewProject={onProjects} />
-        <div style={{ display: "flex", alignItems: "center", gap: 2 }}>
-          {onToggleSidebar && (
-            <button className="sidebar-collapse-btn" onClick={onToggleSidebar} title={S.sidebar.collapseSidebar[lang]} style={{ background: "none", border: "none", color: "var(--text-secondary)", cursor: "pointer", fontSize: 14, padding: "2px 4px", borderRadius: 4, display: "flex", alignItems: "center" }}>
-              <PanelLeftClose size={16} />
-            </button>
-          )}
-        </div>
-      </div>
+      {/* Bug8: 删除左上角项目选择区域 SpaceSwitcher */}
+      {/* Bug4: 删除 sidebar-header 空白区域，sidebar-nav 直接作为第一个元素 */}
 
       <div className="sidebar-nav">
+        {/* Bug7: 新建对话按钮 — 在知识笔计本上方 */}
         <button className="sidebar-nav-item" onClick={() => {
           clearMessages();
           useProjectStore.setState({ currentProject: null, currentSession: null, sessions: [] });
@@ -477,6 +470,15 @@ const handleDrop = useCallback((e: React.DragEvent, targetSessionId: string, pro
       <div className="sidebar-section sidebar-global-section">
         <div className="sidebar-section-header">
           <span>{S.sidebar.globalChats[lang]}</span>
+          <button
+            className="sidebar-project-btn sidebar-add-btn"
+            onClick={() => {
+              clearMessages();
+              useProjectStore.setState({ currentProject: null, currentSession: null, sessions: [] });
+              createSession();
+            }}
+            title={S.sidebar.newChat[lang]}
+          >+</button>
         </div>
         <div className="sidebar-sessions" style={(() => {
           const globalCount = (allSessions["__global__"] || []).length;

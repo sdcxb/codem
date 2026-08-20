@@ -2,6 +2,65 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.4.2] - 2026-08-20
+
+### Bug 修复 + 架构增强（14 项）
+
+#### Bug 1 — 默认模型显示错误（彻底修复）
+- **根因**：`App.tsx` 中 `_initialModel` 计算和 `configureEngine` 逻辑在 DB 未就绪时无法正确读取已保存的模型配置，导致启动时始终显示 CLI 默认模型 `mimo-v2.5-pro` 而非上次保存的 API 模型
+- **修复**：`dbReady` 时同步读取 settings 更新 model/mode/provider；`engineRef` 的 `useEffect` 在 DB 就绪后重新调用 `configureEngine`；`model-badge` 显示友好名称；`getConfiguredApiModels` 中 `name` 属性从 `m.id` 改为 `m.name`
+
+#### Bug 2 — 右侧边栏 CI/CD 面板被外窗口遮挡（彻底修复）
+- **根因**：`PanelSidebar` 使用常规 DOM 渲染，被主对话框的滚动条和层级遮挡；且 `right` 和 `maxWidth` 计算不准确
+- **修复**：`PanelSidebar` 使用 `createPortal` 渲染到 `document.body`，提升 `z-index`；调整 `right` 和 `maxWidth` 确保 CI/CD 面板完整可见
+
+#### Bug 3 — 默认皮肤底部栏 UI 不一致 + 多余模型选择器
+- **根因**：`InputArea` 底部栏有独立的 `ModelSelector`，与顶部模型选择器重复且样式不一致
+- **修复**：删除 `InputArea` 底部栏的 `ModelSelector` 渲染逻辑；调整 `.input-control-bar` 样式
+
+#### Bug 4 — 输入框聚焦时出现紫色边框
+- **根因**：`.composer-inner:focus-within` 的 `border-color` 使用了紫色主题色
+- **修复**：`.composer-inner:focus-within` 的 `border-color` 改为 `transparent`
+
+#### Bug 5 — 技能市场加载慢（缓存机制）
+- **根因**：每次进入技能市场都从三大源（ClawHub/Skills.sh/SkillHub）实时请求，无缓存
+- **修复**：实现技能市场缓存机制 — 首次加载后缓存列表信息，再次进入时先加载缓存快速显示；刷新按钮改名为"检查更新"，点击时更新列表并覆盖缓存
+
+#### Bug 6 — Git 分支按钮未居中 + 一直刷新
+- **根因**：`.titlebar-center` 缺少居中样式；`GitBranchSelector` 的 `refreshInterval` 逻辑有 bug，且未检查是否为 git 仓库
+- **修复**：为 `.titlebar-center` 添加居中样式；修复 `GitBranchSelector` 的 `refreshInterval` 逻辑，添加是否为 git 仓库的检查；`!workDir` 时返回占位按钮而非 `null`
+
+#### Bug 7 — 右侧边栏边缘白色背景 + 拖拽影响左侧边栏
+- **根因**：`.app-content` 有 `padding-right` 导致右侧露出白色背景；`.sidebar` 缺少 `position: relative` 导致拖拽事件冒泡影响左侧边栏宽度
+- **修复**：移除 `.app-content` 的 `padding-right`；给 `.sidebar` 添加 `position: relative`
+
+#### Bug 8 — 顶部栏左侧和左侧边栏之间空白区域
+- **根因**：`.sidebar-header` 占据空间但在新版布局中已不需要
+- **修复**：删除 `.sidebar-header`，将收起按钮移入 `.sidebar-nav`；恢复 `.titlebar-icon` 和 `.titlebar-title` 的显示
+
+#### Bug 9 — CicdPanel 白色背景
+- **根因**：`CicdPanel` 有硬编码的白色背景
+- **修复**：`CicdPanel` 背景改为 `transparent`
+
+#### Bug 10 — 顶部栏右侧按钮被居中（Bug 6 修复副作用）
+- **根因**：修复 Git 分支按钮居中时，`.titlebar-left` 和 `.titlebar-nav-actions` 缺少 `flex-shrink: 0`，导致右侧按钮也被居中
+- **修复**：为 `.titlebar-left` 和 `.titlebar-nav-actions` 添加 `flex-shrink: 0`；修改 `.titlebar` flex 布局使 Git 分支按钮居中、右侧按钮靠右
+
+#### 增强 1 — Cordis 插件系统时序改进（三步方案）
+- **第一步**：`getCordisContext()` 中将 `setTimeout(0)` 替换为显式等待所有 fiber 就绪 (`fibers.map(f => f.await())`)，并添加 fiber 状态日志
+- **第二步**：`consumer/index.ts` 中为关键服务获取函数（`callLLM`、`callTool`）添加重试等待机制 (`getServiceAsync`)，`_ctxReady` 状态追踪
+- **第三步**：`loadDefaultProviders()` 中添加 `internal/status` 事件监听器，记录 fiber 状态变更日志，便于诊断时序问题
+
+#### 增强 2 — SlotBridge 降级机制健壮性增强
+- 新增 `SlotErrorBoundary` 包裹插件组件，崩溃时自动回退到 fallback
+- `renderFallback` 函数统一处理 fallback 逻辑，`fallback={null}` 时输出诊断日志而非静默失败
+- 为关键 slot（`app.sidebar`、`app.conversation`、`app.titlebar`、`app.boot-splash`、Hub 皮肤 `app.skin-layout`）添加 `showDegraded` prop，异常时显示降级提示
+- `SlotListBridge` 在 slots 服务不可用时输出警告日志
+
+#### 增强 3 — 头像系统升级
+- 从 Multiavatar 切换回 DiceBear API（URL 生成方式，无需 npm 依赖）
+- 预设头像从 12 个扩展到 50 个，混合多种 DiceBear 风格（adventurer/avataaars/big-ears/big-smile/bottts/croodles/fun-emoji/lorelei/micah/miniavs/open-peeps/personas/pixel-art）
+
 ## [1.4.1] - 2026-08-19
 
 ### Bug 修复（9 项）

@@ -165,16 +165,7 @@ export function TitleBar({
             {sidebarOpen ? <PanelLeftClose size={16} /> : <PanelLeftOpen size={16} />}
           </button>
         )}
-        {onNewChat && (
-          <button
-            className="titlebar-action-btn"
-            onClick={onNewChat}
-            title="新对话"
-            aria-label="新对话"
-          >
-            <PencilLine size={16} />
-          </button>
-        )}
+        {/* Bug9: 新建对话按钮已移至侧边栏全局对话栏右侧，此处删除 */}
         <span className="titlebar-icon" data-tauri-drag-region>◆</span>
         <span className="titlebar-title" data-tauri-drag-region>Codem</span>
       </div>

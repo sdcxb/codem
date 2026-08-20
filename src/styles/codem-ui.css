@@ -1360,8 +1360,8 @@ overflow: visible;
 transition: border-color var(--duration-fast) var(--ease-out), box-shadow var(--duration-fast) var(--ease-out);
 }
 .composer-inner:focus-within {
-  border-color: var(--composer-focus-border);
-  box-shadow: 0 0 0 3px rgba(124, 108, 240, 0.10);
+  border-color: transparent;
+  box-shadow: none;
 }
 .composer.drag-active .composer-inner {
   border-color: var(--accent);
@@ -2542,43 +2542,44 @@ body.resizing-columns * {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: flex-start;
-  min-height: 100%;
+  justify-content: center;
+  flex: 1;
+  min-height: 0;
   width: 100%;
-  padding: 32px;
-  gap: 24px;
-  overflow-y: auto;
+  padding: 16px;
+  gap: clamp(8px, 2vh, 20px);
+  overflow: hidden;
 }
 .new-chat-logo {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 72px;
-  height: 72px;
+  width: clamp(48px, 8vw, 72px);
+  height: clamp(48px, 8vw, 72px);
   border-radius: var(--radius-lg);
   background: var(--accent-muted);
   color: var(--accent);
-  font-size: 32px;
+  font-size: clamp(20px, 4vw, 32px);
 }
 .new-chat-title {
-  font-size: 28px;
+  font-size: clamp(18px, 3vw, 28px);
   font-weight: 700;
   color: var(--text-primary);
   margin: 0;
   letter-spacing: -0.02em;
 }
 .new-chat-subtitle {
-  font-size: 15px;
+  font-size: clamp(12px, 1.5vw, 15px);
   color: var(--text-secondary);
   margin: 0;
   text-align: center;
   max-width: 480px;
-  line-height: 1.6;
+  line-height: 1.5;
 }
 .new-chat-suggestions {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: 10px;
+  gap: clamp(6px, 1vw, 10px);
   max-width: 600px;
   width: 100%;
 }
@@ -2586,7 +2587,7 @@ body.resizing-columns * {
   display: flex;
   align-items: flex-start;
   gap: 10px;
-  padding: 14px 16px;
+  padding: clamp(8px, 1.5vw, 14px) clamp(10px, 1.5vw, 16px);
   border: 1px solid var(--glass-border);
   background: var(--surface-1);
   border-radius: var(--radius-md);
@@ -3197,18 +3198,23 @@ select:focus-visible,
 
 /* ========== 18. Panel Sidebar Tabs ========== */
 .panel-sidebar-tabs {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  padding: 0 6px;
-  height: 38px;
-  flex-shrink: 0;
-  border-bottom: 1px solid var(--border-color);
-  overflow-x: auto;
-  scrollbar-width: none;
+display: flex;
+align-items: center;
+gap: 2px;
+padding: 0 6px;
+height: 38px;
+flex-shrink: 0;
+border-bottom: 1px solid var(--border-color);
+overflow-x: auto;
 }
+
 .panel-sidebar-tabs::-webkit-scrollbar {
-  display: none;
+height: 3px;
+}
+
+.panel-sidebar-tabs::-webkit-scrollbar-thumb {
+background: var(--text-muted);
+border-radius: 2px;
 }
 
 .panel-sidebar-tab {

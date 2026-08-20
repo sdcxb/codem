@@ -27,12 +27,43 @@ import type {} from '../provider/service-types'
 /** 当前活跃的 Cordis Context（由 App.tsx 初始化时设置）。 */
 let _activeCtx: Context | null = null
 
+/** 是否已设置过 active context（用于诊断日志）。 */
+let _ctxReady = false
+
+// ====== Cordis 服务获取增强：重试 + fallback ======
+
+/**
+ * 等待服务可用，最多重试 maxRetries 次。
+ * 每次 retry 之间等待 delay 毫秒（用 setTimeout 让出控制权）。
+ * 返回 service 或 null（如果超时仍未就绪）。
+ */
+async function waitForService<T>(
+  name: string,
+  maxRetries = 3,
+  delay = 16,
+): Promise<T | null> {
+  for (let i = 0; i < maxRetries; i++) {
+    const ctx = tryGetCtx()
+    if (ctx) {
+      try {
+        const svc = ctx.get(name)
+        if (svc) return svc as T
+      } catch {}
+    }
+    // 让出控制权，等待 fiber 激活
+    await new Promise(r => setTimeout(r, delay))
+  }
+  return null
+}
+
 /**
  * 设置活跃的 Cordis Context。
  * 在 App.tsx 的 getCordisContext() 中调用。
  */
 export function setActiveContext(ctx: Context) {
   _activeCtx = ctx
+  _ctxReady = true
+  console.log('[Consumer] Active context set — services ready')
 }
 
 /**
@@ -51,6 +82,36 @@ export function useCtx(): Context {
  */
 export function tryGetCtx(): Context | null {
   return _activeCtx
+}
+
+/**
+ * 异步获取 Cordis 服务，带重试等待。
+ * 当 fiber 尚未 ACTIVE 时，ctx.get() 返回 undefined。
+ * 此函数会重试几次，给 fiber 时间完成激活。
+ */
+export async function getServiceAsync<T = any>(name: string): Promise<T | null> {
+  if (!_activeCtx) {
+    console.warn(`[Consumer] Context not set when requesting service "${name}"`)
+    return null
+  }
+  try {
+    const svc = _activeCtx.get(name)
+    if (svc) return svc as T
+  } catch {}
+  // 第一次获取失败，重试等待
+  return waitForService<T>(name)
+}
+
+/**
+ * 同步获取 Cordis 服务，失败时返回 null 并发出警告。
+ */
+export function getServiceSync<T = any>(name: string): T | null {
+  if (!_activeCtx) return null
+  try {
+    return (_activeCtx.get(name) as T) ?? null
+  } catch {
+    return null
+  }
 }
 
 /** 工具定义接口。 */
@@ -117,11 +178,16 @@ export function defineToolPlugin(
 /**
  * 通过 Cordis Context 调用 LLM。
  * 工具内部使用，避免直接 import ProviderRegistry。
+ * 带重试等待：如果 fiber 尚未 ACTIVE，会重试几次。
  */
 export async function callLLM(request: any): Promise<any> {
   const ctx = useCtx()
-  const llm = ctx.get('llm')
-  if (!llm) throw new Error('LLM service not available')
+  let llm: any = ctx.get('llm')
+  if (!llm) {
+    // fiber 可能尚未 ACTIVE，重试等待
+    llm = await getServiceAsync('llm')
+    if (!llm) throw new Error('LLM service not available after retries')
+  }
   return llm.complete(request)
 }
 
@@ -130,8 +196,11 @@ export async function callLLM(request: any): Promise<any> {
  */
 export async function callTool(name: string, input: any): Promise<any> {
   const ctx = useCtx()
-  const tools = ctx.get('tools')
-  if (!tools) throw new Error('Tools service not available')
+  let tools: any = ctx.get('tools')
+  if (!tools) {
+    tools = await getServiceAsync('tools')
+    if (!tools) throw new Error('Tools service not available after retries')
+  }
   return tools.execute(name, input)
 }
 

@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { Bot, GitBranch, FolderOpen, ListChecks, Wrench, Activity } from "lucide-react";
 import { ActionIcons } from "../core/icons/icon-map";
 import { useLang } from "../core/i18n/lang";
@@ -53,8 +54,6 @@ export function PanelSidebar({ open, onClose }: RightSidebarProps) {
   const disabledPlugins = useDisabledPlugins();
   const cicdEnabled = !disabledPlugins.includes('@codem/ui-misc');
 
-  if (!open) return null;
-
   // 构建 tab 列表 — CI/CD tab 根据插件状态条件渲染
   const tabs: Array<{ id: SidebarTab; icon: typeof GitBranch; label: string }> = [
     { id: "git", icon: GitBranch, label: "Git" },
@@ -70,20 +69,27 @@ export function PanelSidebar({ open, onClose }: RightSidebarProps) {
   // 如果当前 activeTab 被隐藏了，回退到 git
   const effectiveTab = tabs.some(t => t.id === activeTab) ? activeTab : "git";
 
-  return (
+  if (!open) return null;
+
+  // Bug1: 用 Portal 渲染到 body，避免祖先 backdrop-filter/overflow:hidden 导致 fixed 定位失效
+  const panelContent = (
     <div
       className="floating-overlay-panel"
       style={{
         position: "fixed",
         top: "var(--chat-body-top, 48px)",
-        right: 0,
+        right: 8,
         bottom: "var(--chat-body-bottom, 140px)",
-        width: 360,
-        zIndex: 150,
+        width: 420,
+        maxWidth: "calc(100vw - 16px)",
+        zIndex: 500,
         display: "flex",
         flexDirection: "column",
         boxShadow: "-4px 0 16px rgba(0,0,0,0.15)",
-      }}>
+        borderRadius: "var(--radius, 12px)",
+        overflow: "hidden",
+      }}
+    >
       {/* Tab header */}
       <div className="panel-sidebar-tabs">
         {tabs.map((tab) => {
@@ -139,4 +145,6 @@ export function PanelSidebar({ open, onClose }: RightSidebarProps) {
       </div>
     </div>
   );
+
+  return createPortal(panelContent, document.body);
 }

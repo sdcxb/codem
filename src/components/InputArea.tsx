@@ -1203,21 +1203,6 @@ const handleSelectProject = (projectId: string) => {
           </>
         )}
 
-        {/* P0: Model selector — SlotBridge 消费 app.model-selector */}
-        {onModelChange && model && (
-          <>
-            <div className="input-control-divider" />
-            <SlotBridge
-              name="app.model-selector"
-              fallback={ModelSelector}
-              model={model}
-              models={modelList}
-              onModelChange={onModelChange}
-              locked={isStreaming}
-            />
-          </>
-        )}
-
         {/* P1: Connection status indicator */}
         <div className="input-control-divider" />
         <span className="input-control-item" style={{ cursor: "default", opacity: connected ? 0.7 : 1, color: connected ? "var(--text-muted)" : "var(--warning)" }}>

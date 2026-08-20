@@ -31,6 +31,7 @@ import {
   initPluginManager,
 } from '../core/plugin-loader/plugin-manager-service'
 import { tryGetCtx } from '../core/consumer'
+import { runtimePluginList } from '../core/provider/plugin-registry-provider'
 
 interface PluginManagerProps {
   onClose: () => void
@@ -395,46 +396,47 @@ export function PluginManager({ onClose }: PluginManagerProps) {
       if (cancelled) return
       const ctx = tryGetCtx()
       if (!ctx) {
-        // Cordis Context 尚未初始化 — 延迟重试（最多 100 次 = 10 秒）
+        // Cordis Context 尚未初始化 — 使用模块级 fallback 数据立即渲染
+        try {
+          const graph = new PluginDependencyGraph()
+          for (const meta of runtimePluginList) {
+            graph.register(meta)
+          }
+          initPluginManager(null as any, graph).then(mgr => {
+            if (cancelled) return
+            setManager(mgr)
+          }).catch(err => {
+            if (cancelled) return
+            console.error('[PluginManager] fallback init error:', err)
+          })
+        } catch (err: any) {
+          if (cancelled) return
+          console.error('[PluginManager] fallback error:', err)
+        }
+        // 同时延迟重试，ctx 就绪后用真实数据刷新
         if (retryCount < 100) {
           retryTimer = setTimeout(() => attemptInit(retryCount + 1), 100)
-        } else {
-          setToast({ msg: 'Cordis Context 尚未初始化，请稍后重试', type: 'error' })
         }
         return
       }
 
       try {
         // 通过 ctx.get() 正式 API 获取 pluginRegistry 服务
-        // 使用 strict 默认模式（true），确保 fiber 处于 ACTIVE 状态时才消费服务。
-        // 这是对标 DSH Cordis 「一切皆插件」架构的正确做法：
-        // 服务消费者必须等待 Provider 完全激活后才能访问。
-        // 当 fiber 还在 LOADING/PENDING 时，ctx.get() 返回 undefined，
-        // 通过重试机制等待就绪，而非用 strict=false 绕过状态检查。
         const registry = ctx.get('pluginRegistry')
         if (!registry) {
-          // Provider 的 Fiber 可能还在异步加载中 — 重试
+          // Fiber 还在加载 — 先用 fallback 数据渲染，后台继续重试
+          if (retryCount === 0) {
+            const graph = new PluginDependencyGraph()
+            for (const meta of runtimePluginList) {
+              graph.register(meta)
+            }
+            initPluginManager(ctx, graph).then(mgr => {
+              if (cancelled) return
+              setManager(mgr)
+            }).catch(() => {})
+          }
           if (retryCount < 100) {
             retryTimer = setTimeout(() => attemptInit(retryCount + 1), 100)
-          } else {
-            // 最后手段：尝试 non-strict 模式获取（不破坏架构，仅极端 fallback）
-            const fallbackRegistry = ctx.get('pluginRegistry', false)
-            if (fallbackRegistry) {
-              const graph = new PluginDependencyGraph()
-              for (const meta of fallbackRegistry.list()) {
-                graph.register(meta)
-              }
-              initPluginManager(ctx, graph).then(mgr => {
-                if (cancelled) return
-                setManager(mgr)
-              }).catch(err => {
-                if (cancelled) return
-                console.error('Failed to init PluginManager:', err)
-                setToast({ msg: '初始化失败: ' + err.message, type: 'error' })
-              })
-            } else {
-              setToast({ msg: '插件注册表服务尚未就绪，请稍后重试', type: 'error' })
-            }
           }
           return
         }

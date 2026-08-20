@@ -228,11 +228,29 @@ export function SkillManager({ onClose }: SkillManagerProps) {
     return variants[source] || "default";
   }
 
+  // ===== Market Cache =====
+  const MARKET_CACHE_KEY = "codem-market-skills-cache";
+
+  /** 从缓存加载市场技能列表（快速显示） */
+  const loadCachedMarketSkills = useCallback(() => {
+    try {
+      const cached = getSettingJSON<{ skills: MarketSkill[]; sources: MarketSource[]; ts: number } | null>(MARKET_CACHE_KEY, null);
+      if (cached && cached.skills && cached.skills.length > 0) {
+        setMarketSkills(cached.skills);
+        setMarketSources(cached.sources || []);
+        return true;
+      }
+    } catch {}
+    return false;
+  }, []);
+
   // ===== Market Logic =====
-  const loadMarketSkills = useCallback(async () => {
-    setMarketLoading(true);
-    setMarketError(null);
-    setMarketSkills([]);
+  const loadMarketSkills = useCallback(async (silent: boolean = false) => {
+    if (!silent) {
+      setMarketLoading(true);
+      setMarketError(null);
+    }
+    // 不清空列表 — 保留已有数据避免闪烁
 
     try {
       const sources = getMarketSources();
@@ -251,6 +269,11 @@ export function SkillManager({ onClose }: SkillManagerProps) {
       // 最终更新
       setMarketSkills(result.skills);
 
+      // 缓存到 settings
+      try {
+        setSettingJSON(MARKET_CACHE_KEY, { skills: result.skills, sources, ts: Date.now() });
+      } catch {}
+
       if (result.errors.length > 0) {
         const errorMessages = result.errors
           .map((e) => `${e.sourceName}: ${e.error}`)
@@ -264,12 +287,15 @@ export function SkillManager({ onClose }: SkillManagerProps) {
     }
   }, []);
 
-  // 切换到市场 Tab 时自动加载
+  // 切换到市场 Tab 时先从缓存快速加载，再后台检查更新
   useEffect(() => {
     if (activeTab === "market" && marketSkills.length === 0 && !marketLoading) {
-      loadMarketSkills();
+      // 先从缓存快速加载
+      const hasCache = loadCachedMarketSkills();
+      // 后台静默检查更新（不显示 loading）
+      loadMarketSkills(true);
     }
-  }, [activeTab, marketSkills.length, marketLoading, loadMarketSkills]);
+  }, [activeTab, marketSkills.length, marketLoading, loadCachedMarketSkills, loadMarketSkills]);
 
   const filteredMarketSkills = marketSkills.filter((s) => {
     if (marketSourceFilter !== "all" && s.sourceId !== marketSourceFilter) return false;
@@ -620,11 +646,11 @@ export function SkillManager({ onClose }: SkillManagerProps) {
             </div>
             <button
               className="skill-upload-btn"
-              onClick={loadMarketSkills}
+              onClick={() => loadMarketSkills(false)}
               disabled={marketLoading}
             >
               <RefreshIcon size={16} className={marketLoading ? "spin" : ""} />
-              <span>刷新</span>
+              <span>{marketLoading ? "检查中..." : "检查更新"}</span>
             </button>
           </div>
 
@@ -679,7 +705,7 @@ export function SkillManager({ onClose }: SkillManagerProps) {
           <div className="skill-market-grid">
             {filteredMarketSkills.length === 0 && !marketLoading && (
               <div className="skill-empty">
-                {marketSearchQuery ? "未找到匹配的技能" : "暂无市场技能，点击刷新重试"}
+                {marketSearchQuery ? "未找到匹配的技能" : "暂无市场技能，点击检查更新重试"}
               </div>
             )}
             {filteredMarketSkills.map((skill) => (

@@ -141,28 +141,65 @@ const defaultUser: UserConfig = {
   avatar: "",
 };
 
-// DiceBear 开源头像预设 (MIT License, https://dicebear.com)
+// DiceBear 开源头像 (MIT License, https://dicebear.com)
+// 50 个预设头像 — 混合多种风格
 const PRESET_AVATARS: string[] = [
+  // adventurer 风格 (10)
   "https://api.dicebear.com/9.x/adventurer/svg?seed=Lily",
   "https://api.dicebear.com/9.x/adventurer/svg?seed=Alex",
   "https://api.dicebear.com/9.x/adventurer/svg?seed=Mia",
+  "https://api.dicebear.com/9.x/adventurer/svg?seed=Oliver",
+  "https://api.dicebear.com/9.x/adventurer/svg?seed=Zoe",
+  "https://api.dicebear.com/9.x/adventurer/svg?seed=Leo",
+  "https://api.dicebear.com/9.x/adventurer/svg?seed=Ivy",
+  "https://api.dicebear.com/9.x/adventurer/svg?seed=Max",
+  "https://api.dicebear.com/9.x/adventurer/svg?seed=Ruby",
+  "https://api.dicebear.com/9.x/adventurer/svg?seed=Finn",
+  // avataaars 风格 (10)
   "https://api.dicebear.com/9.x/avataaars/svg?seed=Coco",
   "https://api.dicebear.com/9.x/avataaars/svg?seed=Riley",
   "https://api.dicebear.com/9.x/avataaars/svg?seed=Sage",
-  "https://api.dicebear.com/9.x/bottts/svg?seed=Pixel",
-  "https://api.dicebear.com/9.x/bottts/svg?seed=Echo",
-  "https://api.dicebear.com/9.x/bottts/svg?seed=Vex",
+  "https://api.dicebear.com/9.x/avataaars/svg?seed=Jade",
+  "https://api.dicebear.com/9.x/avataaars/svg?seed=Orion",
+  "https://api.dicebear.com/9.x/avataaars/svg?seed=Nova",
+  "https://api.dicebear.com/9.x/avataaars/svg?seed=Eli",
+  "https://api.dicebear.com/9.x/avataaars/svg?seed=Maya",
+  "https://api.dicebear.com/9.x/avataaars/svg?seed=Theo",
+  "https://api.dicebear.com/9.x/avataaars/svg?seed=Luna",
+  // lorelei 风格 (10)
+  "https://api.dicebear.com/9.x/lorelei/svg?seed=Aria",
+  "https://api.dicebear.com/9.x/lorelei/svg?seed=Kai",
+  "https://api.dicebear.com/9.x/lorelei/svg?seed=Iris",
+  "https://api.dicebear.com/9.x/lorelei/svg?seed=Hugo",
+  "https://api.dicebear.com/9.x/lorelei/svg?seed=Piper",
+  "https://api.dicebear.com/9.x/lorelei/svg?seed=Quinn",
+  "https://api.dicebear.com/9.x/lorelei/svg?seed=Vera",
+  "https://api.dicebear.com/9.x/lorelei/svg?seed=Wren",
+  "https://api.dicebear.com/9.x/lorelei/svg?seed=Yuki",
+  "https://api.dicebear.com/9.x/lorelei/svg?seed=Zane",
+  // thumbs 风格 (8)
+  "https://api.dicebear.com/9.x/thumbs/svg?seed=Asa",
+  "https://api.dicebear.com/9.x/thumbs/svg?seed=Brio",
+  "https://api.dicebear.com/9.x/thumbs/svg?seed=Cleo",
+  "https://api.dicebear.com/9.x/thumbs/svg?seed=Dori",
+  "https://api.dicebear.com/9.x/thumbs/svg?seed=Eve",
+  "https://api.dicebear.com/9.x/thumbs/svg?seed=Glen",
+  "https://api.dicebear.com/9.x/thumbs/svg?seed=Halo",
+  "https://api.dicebear.com/9.x/thumbs/svg?seed=Juno",
+  // fun-emoji 风格 (6)
   "https://api.dicebear.com/9.x/fun-emoji/svg?seed=Sunny",
   "https://api.dicebear.com/9.x/fun-emoji/svg?seed=Cloud",
   "https://api.dicebear.com/9.x/fun-emoji/svg?seed=Star",
-  "https://api.dicebear.com/9.x/lorelei/svg?seed=Aria",
-  "https://api.dicebear.com/9.x/lorelei/svg?seed=Finn",
-  "https://api.dicebear.com/9.x/lorelei/svg?seed=Jade",
-  "https://api.dicebear.com/9.x/thumbs/svg?seed=Max",
-  "https://api.dicebear.com/9.x/thumbs/svg?seed=Nova",
-  "https://api.dicebear.com/9.x/thumbs/svg?seed=Orion",
+  "https://api.dicebear.com/9.x/fun-emoji/svg?seed=Sky",
+  "https://api.dicebear.com/9.x/fun-emoji/svg?seed=Tay",
+  "https://api.dicebear.com/9.x/fun-emoji/svg?seed=Uri",
+  // pixel-art 风格 (6)
   "https://api.dicebear.com/9.x/pixel-art/svg?seed=Bit",
   "https://api.dicebear.com/9.x/pixel-art/svg?seed=Dash",
+  "https://api.dicebear.com/9.x/pixel-art/svg?seed=Kira",
+  "https://api.dicebear.com/9.x/pixel-art/svg?seed=Lio",
+  "https://api.dicebear.com/9.x/pixel-art/svg?seed=Nyx",
+  "https://api.dicebear.com/9.x/pixel-art/svg?seed=Onyx",
 ];
 
 export function SettingsPanel({ onClose, onSessionRecovery, onUsageStats, initialTab, setShowOnboardingReplay }: SettingsPanelProps) {

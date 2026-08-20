@@ -193,22 +193,34 @@
   overflow: hidden;
 }
 
-/* Bug7: 梦幻皮肤 — 主对话框圆角与边栏直角风格统一 */
+/* Bug5: 梦幻皮肤 — app-content 加 padding+gap 创造间距 */
+[data-skin="dream"] .app-content {
+  padding: 8px 8px 8px 8px;
+  gap: 8px;
+}
+
+/* Bug5: 梦幻皮肤 — 边栏圆角+毛玻璃，不再单独设 margin（由 app-content 的 padding 统一控制） */
 [data-skin="dream"] .sidebar {
-  border-radius: 16px;
-  margin: 8px 0 8px 8px;
-  border: 1px solid var(--dream-border-color, rgba(232, 140, 154, 0.15));
+  border-radius: var(--radius, 12px) !important;
+  border: 1px solid var(--dream-border-color, rgba(232, 140, 154, 0.15)) !important;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  margin: 0 !important;
+}
+
+[data-skin="dream"] .main-area {
+  margin: 0 !important;
+  overflow: hidden;
+  border-radius: var(--radius, 12px);
 }
 
 [data-skin="dream"] .right-sidebar {
   background: var(--dream-bg-card, rgba(255, 255, 255, 0.65)) !important;
-  backdrop-filter: blur(var(--dream-blur-px, 12px));
-  -webkit-backdrop-filter: blur(var(--dream-blur-px, 12px));
-  border: 1px solid var(--dream-border-color, rgba(0, 0, 0, 0.12));
-  border-radius: 16px;
+  backdrop-filter: blur(var(--dream-blur-px, 12px)) !important;
+  -webkit-backdrop-filter: blur(var(--dream-blur-px, 12px)) !important;
+  border: 1px solid var(--dream-border-color, rgba(0, 0, 0, 0.12)) !important;
+  border-radius: var(--radius, 12px) !important;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
-  margin: 8px 8px 8px 0;
+  margin: 0 !important;
 }
 [data-skin="dream"][data-theme="dark"] .right-sidebar {
   background: var(--dream-bg-card, rgba(30, 30, 46, 0.65)) !important;
@@ -216,12 +228,12 @@
 
 [data-skin="dream"] .panel-right {
   background: var(--dream-bg-card, rgba(255, 255, 255, 0.88)) !important;
-  backdrop-filter: blur(var(--dream-blur-px, 12px));
-  -webkit-backdrop-filter: blur(var(--dream-blur-px, 12px));
-  border: 1px solid var(--dream-border-color, rgba(0, 0, 0, 0.12));
-  border-radius: 16px;
+  backdrop-filter: blur(var(--dream-blur-px, 12px)) !important;
+  -webkit-backdrop-filter: blur(var(--dream-blur-px, 12px)) !important;
+  border: 1px solid var(--dream-border-color, rgba(0, 0, 0, 0.12)) !important;
+  border-radius: var(--radius, 12px) !important;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
-  margin: 8px;
+  margin: 0 !important;
   overflow: hidden;
   flex: 1;
   display: flex;
@@ -309,23 +321,28 @@ backdrop-filter: none !important;
 [data-skin="dream"] .input-area {
   background: transparent !important;
 }
+/* Bug4: 梦幻皮肤 — 输入框融入对话面板，与 panel-right 背景一致 */
 [data-skin="dream"] .input-card-container {
   background: var(--dream-bg-card, rgba(255, 255, 255, 0.88)) !important;
   backdrop-filter: blur(var(--dream-blur-px, 12px)) saturate(1.4) !important;
   -webkit-backdrop-filter: blur(var(--dream-blur-px, 12px)) saturate(1.4) !important;
-  border: 1px solid var(--dream-border-color, rgba(0, 0, 0, 0.12));
-  border-radius: 12px;
-  color: var(--dream-text-main, #1a1a2e);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
+  border: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  overflow: hidden !important;
 }
 [data-skin="dream"][data-theme="dark"] .input-card-container {
-  background: var(--dream-bg-card, rgba(30, 30, 46, 0.82)) !important;
+  background: var(--dream-bg-card, rgba(30, 30, 46, 0.88)) !important;
 }
 
 [data-skin="dream"] .input-wrapper {
   background: transparent !important;
   border: none !important;
-  border-radius: 12px 12px 0 0 !important;
+  border-radius: 0 !important;
+}
+
+[data-skin="dream"] .input-textarea-row {
+  border-top: 1px solid var(--dream-border-color, rgba(0, 0, 0, 0.06)) !important;
 }
 
 [data-skin="dream"] .chat-input-wrapper input,

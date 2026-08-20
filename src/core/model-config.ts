@@ -58,7 +58,7 @@ export function getConfiguredApiModels(): ModelOption[] {
     for (const p of providers) {
       if (p.apiKey && p.id !== "mimo" && API_MODELS[p.id]) {
         for (const m of API_MODELS[p.id]) {
-          result.push({ id: m.id, name: m.id });
+          result.push({ id: m.id, name: m.name });
         }
       }
     }

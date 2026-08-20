@@ -26,6 +26,10 @@
 >
 > **v1.4.0 更新**：UI/UX 体验优化 11 项 Bug 修复 + 编译 Warnings 清零 — ①技能市场 skill.sh 插件内容乱码修复（收紧 HTML 爬取正则）②外部技能加载超时优化（http_get 30s→15s）③智能体新建编辑区滚动定位 ④启动后模型选择默认值修复（configureEngine 重试）⑤CI/CD 面板从弹窗改为面板切换 ⑥梦幻皮肤对话编辑框毛玻璃效果修复 ⑦梦幻皮肤侧边栏圆角与主对话框统一 ⑧首页区域自适应窗口大小 ⑨建议卡片点击替换式输入（不再追加）⑩深色模式安全策略按钮紫色边框样式 ⑪性能面板从弹窗改为面板切换。Rust 编译 4 个 warnings 全部清零。15 文件修改。`tsc --noEmit` 零错误 + `tauri build` 零 warning。
 >
+> **v1.4.1 更新**：插件管理初始化修复 + 技能市场性能优化 + 对话区域自适应 9 项 Bug 修复 — Cordis Context fiber 激活时序修复（await 微任务等待）+ PluginManager 重试增强（50→100 + non-strict fallback）+ 三大技能市场 MAX_PAGES 减少 + configureEngine DB 未就绪重试 + CicdPanel 去除 header/关闭按钮 + 三套皮肤圆角统一 12px + 首页布局 flex-start 修复 + Write Code prompt 完整化 + 底部 CI/CD 按钮移除 + 对话区域 max-width 扩展。10 文件修改，`tsc --noEmit` 零错误。
+>
+> **v1.4.2 更新**：10 项 Bug 修复 + 3 项架构增强 — ①默认模型显示彻底修复（dbReady 同步读取 + engineRef 重试 + model-badge 友好名称 + getConfiguredApiModels name 属性修正）②右侧边栏 CI/CD 面板遮挡彻底修复（createPortal + z-index + right/maxWidth 调整）③底部栏多余模型选择器删除 ④输入框聚焦紫色边框→透明 ⑤技能市场缓存机制（先加载缓存快速显示 + "检查更新"按钮覆盖缓存）⑥Git 分支按钮居中 + 刷新逻辑修复 ⑦右侧边栏白色背景 + 拖拽影响左侧修复 ⑧顶部栏空白区域消除 ⑨CicdPanel 白色背景修复 ⑩顶部栏右侧按钮居中副作用修复。**架构增强**：Cordis 插件系统时序改进三步方案（fiber.await() 显式等待 + consumer 重试机制 + fiber 状态日志）+ SlotBridge 降级机制健壮性增强（SlotErrorBoundary + 降级提示 + 诊断日志）+ 头像系统升级（DiceBear API 50 个预设混合 13 种风格）。20+ 文件修改，`tsc --noEmit` 零错误 + `vitest run` 全量通过。
+>
 
 
 ![Codem 运行界面](screenshots/26720-1.png)

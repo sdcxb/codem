@@ -209,22 +209,37 @@ body {
 
 /* 自定义标题栏：透明背景，让 Mica 透出 */
 .titlebar {
-  height: 36px;
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  background: transparent;
-  -webkit-app-region: drag;
-  user-select: none;
-  z-index: 9999;
+height: 36px;
+flex-shrink: 0;
+display: flex;
+align-items: center;
+background: transparent;
+-webkit-app-region: drag;
+user-select: none;
+z-index: 9999;
+position: relative;
 }
 
 .titlebar-left {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding-left: 12px;
+display: flex;
+align-items: center;
+gap: 8px;
+padding-left: 12px;
+flex: 1;
+justify-content: flex-start;
+}
+
+/* Bug6: 标题栏居中区域 — Git 分支选择器 */
+/* Bug2: 用 absolute 居中，不受左右内容宽度影响 */
+.titlebar-center {
+position: absolute;
+left: 50%;
+transform: translateX(-50%);
+display: flex;
+align-items: center;
+justify-content: center;
+-webkit-app-region: no-drag;
+z-index: 2;
 }
 
 .titlebar-icon {
@@ -248,11 +263,13 @@ body {
 
 /* P1: Top navigation actions in title bar */
 .titlebar-nav-actions {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  -webkit-app-region: no-drag;
-  margin-right: 8px;
+display: flex;
+align-items: center;
+gap: 4px;
+-webkit-app-region: no-drag;
+margin-right: 8px;
+flex: 1;
+justify-content: flex-end;
 }
 
 .titlebar-action-btn {
@@ -298,9 +315,9 @@ body {
 
 /* 内容区域 */
 .app-content {
-  flex: 1;
-  display: flex;
-  overflow: hidden;
+flex: 1;
+display: flex;
+overflow: hidden;
 }
 
 .main-area {
@@ -372,22 +389,23 @@ body {
 
 /* ========== Sidebar ========== */
 .sidebar {
-  width: 260px;
-  background: var(--sidebar-bg);
-  border-right: 1px solid var(--border-primary);
-  display: flex;
-  flex-direction: column;
-  flex-shrink: 0;
-  overflow: hidden;
+position: relative;
+width: 260px;
+background: var(--sidebar-bg);
+border-right: 1px solid var(--border-primary);
+display: flex;
+flex-direction: column;
+flex-shrink: 0;
+overflow: hidden;
 }
 
 .sidebar-header {
-  padding: 16px;
-  border-bottom: 1px solid var(--border-primary);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-shrink: 0;
+padding: 4px 8px;
+border-bottom: 1px solid var(--border-primary);
+display: flex;
+align-items: center;
+justify-content: flex-end;
+flex-shrink: 0;
 }
 
 .sidebar-header h3 {
@@ -405,8 +423,8 @@ body {
 
 /* ========== Sidebar Nav ========== */
 .sidebar-nav {
-  padding: 8px 12px;
-  flex-shrink: 0;
+padding: 4px 12px;
+flex-shrink: 0;
 }
 
 .sidebar-nav-item {
@@ -613,6 +631,17 @@ body {
   font-size: 12px;
   transition: var(--transition-color);
   margin-left: 2px;
+}
+
+/* 全局对话栏的新建按钮 — 始终可见 */
+.sidebar-add-btn {
+  opacity: 1 !important;
+  border-color: var(--glass-border-strong, var(--border-primary));
+}
+.sidebar-add-btn:hover {
+  background: var(--surface-hover, rgba(0,0,0,0.04));
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
 .sidebar-project-btn.active {
@@ -1166,7 +1195,7 @@ font-size: 13px;
 /* ========== Messages ========== */
 .messages-container {
 flex: 1;
-padding: 20px 24px;
+padding: 20px clamp(24px, 4vw, 48px);
 display: flex;
 flex-direction: column;
 gap: 10px;
@@ -1237,12 +1266,13 @@ width: 100%;
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: flex-start;
-  min-height: 100%;
+  justify-content: center;
+  flex: 1;
+  min-height: 0;
   width: 100%;
-  padding: 40px 20px;
+  padding: 16px;
   color: var(--text-secondary);
-  overflow-y: auto;
+  overflow: hidden;
 }
 
 .empty-state .logo {
@@ -1714,7 +1744,7 @@ margin-top: 8px;
 
 /* ========== Input Area — Card Design (P0) ========== */
 .input-area {
-padding: 8px 16px 12px;
+padding: 8px 20px 12px;
 border-top: none;
 background: transparent;
 flex-shrink: 0;
@@ -1727,25 +1757,24 @@ flex-shrink: 0;
   width: 100%;
 }
 
-/* P-UI: Card container — 对标 DSH floating capsule */
+/* P-UI: Card container — 融入 panel-right，无边框无圆角 */
 .input-card-container {
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-primary);
-  border-radius: 12px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08), 0 0 0 1px rgba(0, 0, 0, 0.02);
-  transition: box-shadow 0.2s ease, border-color 0.2s ease;
-  overflow: visible;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  transition: none;
+  overflow: hidden;
 }
 
 .input-card-container:focus-within {
-  border-color: var(--accent);
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.12), 0 0 0 2px color-mix(in srgb, var(--accent) 20%, transparent);
+  border-color: transparent;
+  box-shadow: none;
 }
 
 /* P1: Drag-over state */
 .input-card-container.drag-over {
-  border-color: var(--accent);
-  border-style: dashed;
+  border: 2px dashed var(--accent);
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.12);
 }
 
@@ -1756,7 +1785,7 @@ flex-shrink: 0;
   gap: 0;
   background: transparent;
   border: none;
-  border-radius: 20px 20px 0 0;
+  border-radius: 0;
   padding: 0;
   transition: none;
   position: relative;
@@ -1767,8 +1796,9 @@ flex-shrink: 0;
   display: flex;
   align-items: flex-end;
   gap: 6px;
-  padding: 12px 16px 4px;
+  padding: 10px 14px 2px;
   position: relative;
+  border-top: 1px solid var(--border-primary, rgba(0,0,0,0.06));
 }
 
 /* P-UI: action 行 — 左侧工具 + 右侧发送 */
@@ -1776,8 +1806,8 @@ flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  padding: 4px 10px 8px;
+  gap: 6px;
+  padding: 4px 14px 8px;
   min-width: 0;
 }
 
@@ -1802,12 +1832,12 @@ flex-shrink: 0;
 
 /* C1: Collaboration mode toggle */
 .mode-toggle-btn {
-background: none;
-border: 1px solid var(--border-primary);
-border-radius: 6px;
-cursor: pointer;
-padding: 4px 8px;
-color: var(--text-secondary);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  padding: 4px 8px;
+  color: var(--text-secondary);
   font-size: 16px;
   line-height: 1;
   transition: var(--transition-color);
@@ -1815,7 +1845,8 @@ color: var(--text-secondary);
 }
 
 .mode-toggle-btn:hover {
-  border-color: var(--accent);
+  border-color: var(--glass-border-strong, var(--border-primary));
+  background: var(--surface-hover, rgba(0,0,0,0.04));
 }
 
 .mode-toggle-btn.plan {
@@ -1870,7 +1901,7 @@ color: var(--text-secondary);
 .send-btn {
   width: 32px;
   height: 32px;
-  border-radius: 6px;
+  border-radius: var(--radius-sm, 8px);
   border: none;
   background: var(--accent);
   color: white;
@@ -8424,15 +8455,15 @@ border-bottom: 1px solid var(--accent);
 
 /* Input bottom control bar — unified single-line inside the card */
 .input-control-bar {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 6px 12px;
-  border-top: 1px solid var(--border-primary);
-  background: var(--bg-tertiary);
-  border-radius: 0 0 16px 16px;
-  flex-wrap: wrap;
-  min-height: 36px;
+display: flex;
+align-items: center;
+gap: 4px;
+padding: 6px 12px;
+border-top: 1px solid var(--border-primary);
+background: transparent;
+border-radius: 0;
+flex-wrap: wrap;
+min-height: 36px;
 }
 
 /* P0: Model selector inline button */

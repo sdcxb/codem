@@ -236,7 +236,7 @@ export function CicdPanel({ onClose }: CicdPanelProps) {
       className="cicd-panel cicd-panel-inline"
       style={{
         width: "100%", height: "100%",
-        background: "var(--bg-primary, #1e1e2e)",
+        background: "transparent",
         display: "flex", flexDirection: "column",
         overflow: "hidden",
       }}
