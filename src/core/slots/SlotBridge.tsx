@@ -7,6 +7,12 @@
  * 3. 如果不存在，渲染 fallback 组件并传递所有 props
  * 4. 当 showDegraded=true 且使用 fallback 时，显示降级提示横幅
  *
+ * 时序修复：
+ * - React 首次渲染时 Cordis Context 可能尚未初始化（getCordisContext 是 async）
+ * - useCtxReady hook 检测 ctx 从 null → 有效 的变化，触发重渲染
+ * - ctx 就绪后 useSyncExternalStore 正确订阅 slot entries 变化
+ * - 这不破坏 Cordis 架构：仍然通过 tryGetCtx() 获取 ctx，不静态 import 任何插件
+ *
  * 健壮性增强：
  * - 插件组件渲染崩溃时，由 SlotErrorBoundary 捕获，自动回退到 fallback
  * - Context 未初始化时，fallback 正常渲染（不静默 null）
@@ -27,6 +33,35 @@
 import { useSyncExternalStore, Suspense, useState, useEffect, type ComponentType, type ReactNode, Component } from 'react'
 import { tryGetCtx } from '../consumer/index.ts'
 import type { StoredEntry } from '../slots/index.ts'
+
+/**
+ * 检测 Cordis Context 是否已就绪。
+ *
+ * React 首次渲染时 getCordisContext() 可能还在执行（async），
+ * tryGetCtx() 返回 null。此 hook 在 ctx 就绪后触发重渲染，
+ * 让 useSyncExternalStore 正确订阅 slot entries 变化。
+ *
+ * 不破坏 Cordis 架构：仅通过 tryGetCtx() 轮询，不静态 import 任何模块。
+ */
+function useCtxReady(): boolean {
+  const [ready, setReady] = useState(() => tryGetCtx() !== null)
+  useEffect(() => {
+    if (ready) return // 已就绪，无需轮询
+    let cancelled = false
+    const check = () => {
+      if (cancelled) return
+      if (tryGetCtx() !== null) {
+        setReady(true)
+      } else {
+        // 每 16ms (一帧) 检查一次，直到 ctx 就绪
+        setTimeout(check, 16)
+      }
+    }
+    setTimeout(check, 16)
+    return () => { cancelled = true }
+  }, [ready])
+  return ready
+}
 
 /**
  * 插件组件错误边界 — 当插件组件本身崩溃时，自动回退到 fallback。
@@ -137,18 +172,23 @@ export function SlotBridge<P extends Record<string, any> = Record<string, any>>(
   props: { name: string } & { fallback?: ComponentType<P> | null; showDegraded?: boolean } & P
 ): ReactNode {
   const { name, fallback: Fallback, showDegraded, ...rest } = props
+
+  // 时序修复：检测 ctx 是否已就绪。
+  // React 首次渲染时 getCordisContext() 可能还在执行，tryGetCtx() 返回 null。
+  // useCtxReady 在 ctx 就绪后触发重渲染，让 useSyncExternalStore 正确订阅。
+  const ctxReady = useCtxReady()
   const ctx = tryGetCtx()
 
-  // 如果 Cordis Context 未初始化或 Slot 服务不可用，使用 fallback
+  // 如果 Cordis Context 未初始化或 Slot 服务不可用，使用 fallback（不显示降级横幅）
   const slots = ctx?.get('slots') ?? null
 
   // D7-1 修复: Hook 必须无条件调用，避免 React Hooks 顺序违规
   const entries = useSlotEntriesSafe(slots, name)
   const isDegraded = entries.length === 0
 
-  if (!slots) {
-    // Context 未初始化 — 使用 fallback，不静默返回 null
-    return renderFallback(Fallback, rest as Record<string, any>, name, showDegraded)
+  // ctx 未就绪时渲染 fallback 但不显示降级横幅（这是正常的启动延迟，不是插件关闭）
+  if (!ctxReady || !slots) {
+    return renderFallback(Fallback, rest as Record<string, any>, name, false /* 不显示降级横幅 */)
   }
 
   if (isDegraded) {
@@ -225,12 +265,14 @@ export function SlotListBridge<P extends Record<string, any>>(
   props: { name: string } & P
 ): ReactNode {
   const { name, ...rest } = props
+
+  // 时序修复：检测 ctx 是否已就绪
+  const ctxReady = useCtxReady()
   const ctx = tryGetCtx()
 
   const slots = ctx?.get('slots')
-  if (!slots) {
-    // 健壮性增强：slots 服务不可用时输出警告，而非静默返回 null
-    console.warn(`[SlotListBridge] Slots service not available for "${name}" — rendering nothing`)
+  if (!ctxReady || !slots) {
+    // ctx 未就绪时不渲染（启动期间，slot 组件尚未注册）
     return null
   }
 

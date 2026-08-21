@@ -50,9 +50,9 @@ describe('功能闭环: SlotBridge Hooks 顺序安全', () => {
   it('源码中 useSlotEntriesSafe 在条件 return 之前被调用', async () => {
     const src = await vi.importActual('fs')
     const code = src.readFileSync('src/core/slots/SlotBridge.tsx', 'utf8')
-    // 验证 useSlotEntriesSafe 调用在 if (!slots) return 之前
+    // 验证 useSlotEntriesSafe 调用在条件 return 之前
     const entriesCall = code.indexOf('useSlotEntriesSafe(slots')
-    const ifNotSlots = code.indexOf('if (!slots)')
+    const ifNotSlots = code.indexOf('if (!ctxReady || !slots)')
     expect(entriesCall).toBeGreaterThan(-1)
     expect(ifNotSlots).toBeGreaterThan(-1)
     expect(entriesCall).toBeLessThan(ifNotSlots)
