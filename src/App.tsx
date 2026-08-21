@@ -72,6 +72,7 @@ async function getCordisContext(): Promise<Context> {
     // PluginLoader 扫描和加载插件包
     const loader = new PluginLoader(ctx);
     await loader.scan();
+    await loader.load();
     // 加载所有 UI 插件包（注册到 Slot Registry）
     loadUIPlugins(ctx);
 
@@ -246,14 +247,19 @@ function App() {
     getCordisContext().then((ctx) => {
       // R4: 将 Cordis Context 传给 LLMEngine，让 AgenticLoop 通过 ctx.get() 消费服务
       const engine = getLLMEngine(ctx);
-      // D2-1: 将 LLMEngine 注册为 Cordis 服务，让 getCtxService('llmEngine') 可以获取到。
+      // D2-1: 将 LLMEngine 和 MiMoAuth 注册为 Cordis 服务，让 getCtxService() 可以获取到。
       // 这遵循"一切皆插件"架构：服务通过 ctx.provide() 注册，消费者通过 ctx.get() 获取。
       try {
         ctx.provide('llmEngine', engine);
         console.log('[Cordis] llmEngine service provided');
       } catch (e) {
-        // 可能已被注册（热重载场景），忽略
         console.warn('[Cordis] llmEngine provide failed:', e);
+      }
+      try {
+        ctx.provide('mimoAuth', getMiMoAuth());
+        console.log('[Cordis] mimoAuth service provided');
+      } catch (e) {
+        console.warn('[Cordis] mimoAuth provide failed:', e);
       }
       setCordisReady(true);
     }).catch((err) => {
