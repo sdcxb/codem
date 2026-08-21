@@ -13,6 +13,7 @@ export function createGoalTools(): ToolDef[] {
     // create_goal
     {
       id: "create_goal",
+      guidance: "Use create_goal to set up a multi-step task with structured progress tracking. Useful for complex tasks that need automatic continuation.",
       description: `Create a new goal for the current task. Goals help track progress and enable automatic continuation.
 
 Use this when you have a multi-step task that needs structured tracking. After creating a goal, work towards completing it and use update_goal to mark progress.`,
@@ -45,6 +46,7 @@ Use this when you have a multi-step task that needs structured tracking. After c
     // get_goal
     {
       id: "get_goal",
+      guidance: "Use get_goal to check the status of a goal or list all goals for the current session.",
       description: `Get details of a specific goal by ID, or list all goals for the current session if no ID is provided.`,
       parameters: {
         type: "object",
@@ -79,6 +81,7 @@ Use this when you have a multi-step task that needs structured tracking. After c
     // update_goal
     {
       id: "update_goal",
+      guidance: "Use update_goal to mark progress, change status, or add notes to an existing goal.",
       description: `Update a goal's status, title, or other fields.
 
 Status transitions:

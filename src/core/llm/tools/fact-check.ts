@@ -23,6 +23,7 @@ interface FactCheckResult {
 export function createFactCheckTool(): ToolDef {
   return {
     id: "fact_check",
+    guidance: "Use fact_check to verify a claim against known sources. Returns whether the claim is supported, contradicted, or uncertain.",
     description: "对 AI 回复进行事实核查，返回修正建议。需要提供待核查的内容。",
     parameters: {
       type: "object",

@@ -1494,16 +1494,35 @@ The user can then apply or cancel each change independently.
         "Create new skills, modify and improve existing skills, and measure skill performance. Use when users want to create a skill from scratch, edit or optimize an existing skill, run evals to test a skill, benchmark skill performance, or optimize a skill's description for better triggering accuracy.",
       aliases: ["create-skill", "skill-eval"],
       allowedTools: ["read", "write", "edit", "bash", "grep", "glob"],
-      prompt: `A skill for creating new skills and iteratively improving them.
+      prompt: `A skill for creating, installing, and iteratively improving skills.
 
 ## Core Loop
 
 1. Figure out what the skill is about (capture intent from the user)
 2. Draft or edit the SKILL.md
-3. Run test prompts with the skill
-4. Evaluate outputs (qualitative + quantitative)
-5. Improve based on feedback
-6. Repeat until satisfied
+3. Install the skill to the local skills directory
+4. Run test prompts with the skill
+5. Evaluate outputs (qualitative + quantitative)
+6. Improve based on feedback
+7. Repeat until satisfied
+
+## Skill Installation Directory
+
+Skills are stored as directories containing a \`SKILL.md\` file. The local skills directory is:
+
+\`\`\`
+~/.codem/skills/<skill-name>/SKILL.md
+\`\`\`
+
+On Windows, \`~\` is the user's home directory (e.g. \`C:\\\\Users\\\\<username>\\\\.codem\\\\skills\\\\\`).
+On macOS/Linux, it is \`/home/<username>/.codem/skills/\` or \`~/.codem/skills/\`.
+
+To find the exact path at runtime, run:
+\`\`\`bash
+echo $HOME/.codem/skills
+\`\`\`
+
+The system scans this directory at startup and when \`load_skill\` is called. Any \`SKILL.md\` file placed in a subdirectory of this location will be automatically discovered and become available as a skill.
 
 ## Creating a Skill
 
@@ -1519,6 +1538,31 @@ Fill in these components:
 - **description**: When to trigger, what it does. Include both what the skill does AND specific contexts for when to use it. Make descriptions "pushy" to combat undertriggering.
 - **prompt**: The actual instructions for the AI when this skill is loaded.
 
+### SKILL.md Format
+
+\`\`\`markdown
+---
+name: my-skill
+description: "What this skill does and when to trigger it"
+version: "1.0.0"
+author: "Author Name"
+tags: ["category1", "category2"]
+---
+
+# Skill Name
+
+## Instructions
+
+Write the skill instructions here. This is the prompt that gets loaded
+when the skill is triggered.
+
+## Workflow
+
+1. Step one
+2. Step two
+3. Step three
+\`\`\`
+
 ### Skill Structure
 \`\`\`
 skill-name/
@@ -1531,6 +1575,19 @@ skill-name/
     └── assets/     - Files used in output (templates, icons)
 \`\`\`
 
+### YAML Frontmatter Fields
+
+| Field         | Required | Description                 | Example                                         |
+| ------------- | -------- | --------------------------- | ----------------------------------------------- |
+| \`name\`         | Yes      | Skill identifier (kebab-case) | \`my-skill\`                                      |
+| \`description\`  | Yes      | When to trigger, what it does | \`"Debug Python code with breakpoint support"\`     |
+| \`displayName\`  | No       | Display name shown in UI     | \`"Python 调试器"\`                                 |
+| \`version\`      | No       | Semantic version number     | \`"1.0.0"\`                                        |
+| \`author\`       | No       | Author name                 | \`"Your Name"\`                                    |
+| \`tags\`         | No       | Category tags (array)       | \`["python", "debugging"]\`                       |
+| \`aliases\`      | No       | Alternative trigger names   | \`["debug-py", "py-debug"]\`                      |
+| \`whenToUse\`    | No       | Extra routing guidance      | \`"When debugging Python code"\`                  |
+
 ### Progressive Disclosure
 Skills use a three-level loading system:
 1. **Metadata** (name + description) - Always in context
@@ -1538,6 +1595,77 @@ Skills use a three-level loading system:
 3. **Bundled resources** - As needed
 
 Keep SKILL.md under 500 lines. Reference files clearly with guidance on when to read them.
+
+## Installing a Skill
+
+After writing the SKILL.md content, install it to the local skills directory so it becomes available as a skill.
+
+### Installation Steps
+
+1. **Determine the skills directory path**:
+   \`\`\`bash
+   SKILLS_DIR="$HOME/.codem/skills"
+   mkdir -p "$SKILLS_DIR/<skill-name>"
+   \`\`\`
+
+2. **Write the SKILL.md file** to the skill directory:
+   Use the \`write\` tool with path \`$HOME/.codem/skills/<skill-name>/SKILL.md\` and the full SKILL.md content.
+
+3. **Write any bundled resources** (scripts, references, assets) to the same directory:
+   \`\`\`
+   $HOME/.codem/skills/<skill-name>/
+   ├── SKILL.md
+   ├── scripts/
+   │   └── helper.py
+   └── references/
+       └── api-docs.md
+   \`\`\`
+
+4. **Verify installation** by reading the file back:
+   \`\`\`
+   read(path="$HOME/.codem/skills/<skill-name>/SKILL.md")
+   \`\`\`
+
+5. **The skill will be available** in the next \`load_skill\` call. The system scans the skills directory on each \`load_skill\` invocation, so newly created skills are automatically discovered.
+
+### Installing from a URL or Chat Link
+
+When a user says "install this skill: <URL>" or shares a skill link:
+
+1. **Download the SKILL.md content** from the URL using \`bash\`:
+   \`\`\`bash
+   curl -sL "<URL>" -o /tmp/skill-download.md
+   \`\`\`
+
+2. **Read the downloaded content** to verify it's a valid SKILL.md:
+   \`\`\`
+   read(path="/tmp/skill-download.md")
+   \`\`\`
+
+3. **Extract the skill name** from the YAML frontmatter \`name\` field.
+
+4. **Create the skill directory** and write the file:
+   \`\`\`bash
+   mkdir -p "$HOME/.codem/skills/<skill-name>"
+   \`\`\`
+   Then use \`write\` to save the content to \`$HOME/.codem/skills/<skill-name>/SKILL.md\`.
+
+5. **If the URL points to a ZIP file**, download and extract it:
+   \`\`\`bash
+   curl -sL "<URL>" -o /tmp/skill.zip
+   unzip /tmp/skill.zip -d "$HOME/.codem/skills/<skill-name>/"
+   \`\`\`
+
+6. **If the URL is a GitHub repository**, clone or download specific files:
+   \`\`\`bash
+   git clone --depth 1 "<URL>" /tmp/skill-repo
+   # Copy the skill directory
+   cp -r /tmp/skill-repo/<skill-dir> "$HOME/.codem/skills/<skill-name>/"
+   \`\`\`
+
+7. **Verify** by reading the installed SKILL.md and confirming the frontmatter is valid.
+
+8. **Tell the user** the skill has been installed and is available via \`load_skill\`.
 
 ## Test Cases
 
@@ -1600,8 +1728,8 @@ When the skill is complete, package it as a .zip file:
 - Present to user for installation`,
       contextMode: "inline",
       source: "builtin",
-      tags: ["skill", "creator", "eval", "optimization"],
-      version: "1.0.0",
+      tags: ["skill", "creator", "eval", "optimization", "install"],
+      version: "2.0.0",
       displayName: "技能创建器",
     });
   }

@@ -420,6 +420,8 @@ private loopPool: Map<string, AgenticLoop> = new Map();
       skillInstructions: fullSkillPrompt,
       mcpInstructions: mcpPrompt,
       codeGraphEnabled: codeGraphActive,
+      // Synchronous tool guidance — fallback when async collection isn't available
+      toolGuidance: this.collectToolGuidanceSync(),
     };
 
     const prompt = buildSystemPrompt(config);
@@ -503,12 +505,98 @@ private loopPool: Map<string, AgenticLoop> = new Map();
       environmentConfig,
       // R3-3.2: Context window awareness — let the model know its token budget
       maxContextSize: this.getContextWindowSize(),
+      // Dynamic tool guidance — collected from systemPrompt service.
+      // Each registered tool with a `guidance` field auto-registers a prompt section.
+      toolGuidance: await this.collectToolGuidance(),
     };
 
     const prompt = buildSystemPrompt(config);
     const lang = getLang();
     console.log("[buildSystemPromptAsync] prompt length:", prompt.length, "lang:", lang, "has zh rule:", prompt.includes("语言规则"));
     return prompt;
+  }
+
+  /**
+   * Collect tool guidance from the systemPrompt service.
+   *
+   * This follows the DSH pattern: each tool with a `guidance` field auto-registers
+   * a prompt section via toolsProvider. This method assembles those sections
+   * into a single string for injection into the system prompt.
+   *
+   * If the systemPrompt service is not available (e.g. in legacy mode), falls
+   * back to collecting guidance directly from the ToolRegistry.
+   */
+  async collectToolGuidance(): Promise<string | undefined> {
+    // Try Cordis systemPrompt service first
+    if (this.ctx) {
+      try {
+        const sp = this.ctx.get('systemPrompt');
+        if (sp && typeof sp.assemble === 'function') {
+          const assembly = await sp.assemble();
+          // Filter for tool-related sections (name starts with "tool:" or "tools:")
+          const toolSections = assembly.sections.filter(
+            (s: { name: string; text: string }) =>
+              s.name.startsWith('tool:') || s.name.startsWith('tools:')
+          );
+          if (toolSections.length > 0) {
+            return toolSections
+              .map((s: { name: string; text: string }) => s.text)
+              .filter((t: string) => t.length > 0)
+              .join('\n\n');
+          }
+        }
+      } catch (e) {
+        console.warn('[collectToolGuidance] systemPrompt service error:', e);
+      }
+    }
+
+    // Fallback: collect guidance directly from ToolRegistry
+    const allTools = this.tools.getAll();
+    const guidanceParts = allTools
+      .filter(t => t.guidance)
+      .map(t => t.guidance!);
+
+    if (guidanceParts.length === 0) return undefined;
+
+    const toolList = allTools
+      .map(t => `- **${t.id}**: ${t.description.split('\n')[0]}`)
+      .join('\n');
+
+    return `## Available Tools\n\n${toolList}\n\n## Tool Usage Guide\n\n${guidanceParts.join('\n\n')}`;
+  }
+
+  /**
+   * Synchronous tool guidance collection — used by the sync buildSystemPrompt.
+   * Tries systemPrompt.buildSync() first, falls back to ToolRegistry.
+   */
+  collectToolGuidanceSync(): string | undefined {
+    // Try Cordis systemPrompt service (sync mode)
+    if (this.ctx) {
+      try {
+        const sp = this.ctx.get('systemPrompt');
+        if (sp && typeof sp.buildSync === 'function') {
+          // buildSync returns the full prompt; we only want tool sections.
+          // Since buildSync joins all sections, we can't filter here.
+          // Instead, try to get sections directly.
+        }
+      } catch (e) {
+        // ignore
+      }
+    }
+
+    // Fallback: collect guidance directly from ToolRegistry
+    const allTools = this.tools.getAll();
+    const guidanceParts = allTools
+      .filter(t => t.guidance)
+      .map(t => t.guidance!);
+
+    if (guidanceParts.length === 0) return undefined;
+
+    const toolList = allTools
+      .map(t => `- **${t.id}**: ${t.description.split('\n')[0]}`)
+      .join('\n');
+
+    return `## Available Tools\n\n${toolList}\n\n## Tool Usage Guide\n\n${guidanceParts.join('\n\n')}`;
   }
 
   /** Build minimal system prompt for sub-agents (no personality/safety rules) */

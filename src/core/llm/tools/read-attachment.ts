@@ -116,6 +116,7 @@ function formatAttachmentContent(att: Attachment, offset: number, limit: number)
 export function createReadAttachmentTool(): ToolDef {
   return {
     id: "read_attachment",
+    guidance: "Use read_attachment to read the content of a document attached to the conversation (PDF, DOCX, images, etc.). Only available when attachments exist.",
     description:
       "Read the full content of a file or attachment uploaded by the user. " +
       "When an attachment in the user message is marked 'Truncated: yes', call this tool with the filename to read the complete content. " +

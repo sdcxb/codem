@@ -116,6 +116,7 @@ async function callPlaywrightTool(toolName: string, args: Record<string, unknown
 export function createBrowserAutomateTool(): ToolDef {
   return {
     id: "browser_automate",
+    guidance: "Use browser_automate to control a web browser (navigate, click, type, screenshot). Useful for web scraping, testing, and UI automation.",
     description:
       "Control a headless browser using Playwright. Actions: navigate to a URL, take screenshots, click elements, fill inputs, extract text, execute JavaScript, wait for elements, hover, and select options. " +
       "Use for: QA testing, visual comparison of UI implementations against references, browser game testing, and form validation. " +

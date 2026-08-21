@@ -22,6 +22,7 @@ import { useProjectStore } from "../store";
 export function createDelegateToSessionTool(): ToolDef {
   return {
     id: "delegate_to_session",
+  guidance: "Use delegate_to_session to send a task to another session for execution. The target session runs independently.",
     description:
       "Delegate a task to another session's agent. The target session will auto-start processing in the background. " +
       "Returns immediately with a delegation task ID. Use wait_for_delegation to get the result when the target session completes. " +
@@ -88,6 +89,7 @@ export function createDelegateToSessionTool(): ToolDef {
 export function createWaitForDelegationTool(): ToolDef {
   return {
     id: "wait_for_delegation",
+  guidance: "Use wait_for_delegation to block until a delegated session task completes.",
     description:
       "Wait for a delegation task to complete and get its result. Blocks until the target session finishes. " +
       "Use after delegate_to_session with the task_id returned by it.",
@@ -151,6 +153,7 @@ export function createWaitForDelegationTool(): ToolDef {
 export function createQuerySessionResultTool(): ToolDef {
   return {
     id: "query_session_result",
+  guidance: "Use query_session_result to retrieve the result of a completed session delegation.",
     description:
       "Query the latest assistant output from a target session without delegating. " +
       "Useful for checking what another session has produced so far. Does not trigger new execution.",
@@ -210,6 +213,7 @@ export function createQuerySessionResultTool(): ToolDef {
 export function createListSessionsTool(): ToolDef {
   return {
     id: "list_sessions",
+  guidance: "Use list_sessions to see all active sessions and their statuses.",
     description:
       "List all sessions in the current project with their status. " +
       "Use this to find available target session IDs for delegate_to_session.",

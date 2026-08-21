@@ -14,6 +14,7 @@ import type { ClarificationFormData } from "../agentic-loop";
 export function createClarificationTool(): ToolDef {
   return {
     id: "ask_clarification",
+    guidance: "Use ask_clarification when the user's request is ambiguous and you need more information to proceed. Asks the user a question.",
     description: "向用户提出结构化问题以获取缺失信息。支持单选、多选、文本输入。",
     parameters: {
       type: "object",

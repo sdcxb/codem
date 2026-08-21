@@ -42,6 +42,12 @@ maxContextSize?: number;
   environmentConfig?: EnvironmentConfig;
   /** Squad Leader roster — injected when this agent is leading a squad */
   squadRoster?: string;
+  /**
+   * Dynamic tool guidance — collected from the systemPrompt service.
+   * Each registered tool with a `guidance` field contributes a section.
+   * This replaces the old hardcoded "Available Tools" list.
+   */
+  toolGuidance?: string;
 }
 
 export function buildSystemPrompt(config: SystemPromptConfig): string {
@@ -250,28 +256,22 @@ envInfo.push(`Context window: ${config.maxContextSize} tokens`);
     sections.push(`# Environment\n\n${envInfo.join("\n")}`);
   }
 
-  // 6. Tool instructions
-  sections.push(`# Available Tools
+  // 6. Tool guidance — dynamically injected from systemPrompt service.
+  //    This replaces the old hardcoded "Available Tools" section.
+  //    Each tool's guidance is auto-registered via toolsProvider.
+  if (config.toolGuidance) {
+    sections.push(config.toolGuidance);
+  } else {
+    // Fallback: minimal tool list for backward compatibility
+    sections.push(`# Available Tools
 
-You have access to these tools:
-- **bash**: Execute shell commands
-- **read**: Read file contents
-- **write**: Create or overwrite files
-- **edit**: Edit files by replacing exact strings
-- **glob**: Find files by pattern
-- **grep**: Search file contents
-- **spawn_subagent**: Spawn a sub-agent for parallel work
-- **wait_for_subagent**: Wait for a sub-agent to complete and get its result
+You have access to tools for file operations (read, write, edit, glob, grep),
+shell execution (bash), and various specialized capabilities.
+Use tools when needed. Always verify changes by reading files after editing.`);
+  }
 
-## Tool Call Guidelines
-
-- When writing a file, include the COMPLETE final content in a single write call.
-- The write tool overwrites by default. If the user wants to append, they will say so explicitly.
-- After a write/edit succeeds, report the result to the user. Don't re-read the file you just wrote — the tool result confirms success.
-- Each write request is independent. Custom instructions from a previous write result apply only to that specific operation.
-- Use tools when needed. Always verify changes by reading files after editing.
-
-## File Attachments — Inline Preview + On-Demand Tool
+  // 6.1 File attachment rules (kept here — not tool-specific guidance)
+  sections.push(`# File Attachments — Inline Preview + On-Demand Tool
 
 When a user uploads a file, the message contains an \`<attachment>\` block with the file content (or a preview).
 
@@ -283,35 +283,7 @@ When a user uploads a file, the message contains an \`<attachment>\` block with 
 **Rules:**
 - Do NOT fabricate or guess file content. If the inline preview is truncated and you need more, call \`read_attachment\`.
 - If the inline content is complete (\`Truncated: no\`), proceed directly with your analysis.
-- Use \`offset\` and \`limit\` parameters on \`read_attachment\` for pagination of very large files.
-
-## Multimodal Tools (Auto-detect user intent)
-
-You also have access to multimodal tools. **You should automatically detect the user's intent from their natural language and call the appropriate tool — the user does NOT need to use any commands.**
-
-### Text-to-Speech (tts)
-**When to use**: The user asks you to:
-- Read text aloud, speak, or generate audio/voice (朗读、语音、读出来、配音、生成声音、朗读这段文字)
-- Convert text to speech (转语音、转为音频)
-- When the user uploads an audio file and asks about it (the TTS tool can generate audio responses)
-- Any mention of 语音、声音、朗读、配音、音频 in the context of generating or converting
-
-**How**: Call the \`tts\` tool with the text to convert. The audio will play automatically.
-
-### Image Generation (image_gen)
-**When to use**: The user asks you to:
-- Generate, create, or draw an image (生成图片、画一幅图、画图、生成图像、帮我画)
-- Create visual content from a description (根据描述生成图片、做个示意图)
-- Any mention of 图片、图像、画、插图、海报、图标 in the context of creating or generating
-
-**How**: Call the \`image_gen\` tool with a detailed description of the desired image.
-
-### Embedding / Semantic Search
-When the user asks for semantic code search or similarity matching, use embeddings to find relevant code. This is integrated into the search tools.
-
-**IMPORTANT**: Do NOT tell the user to use commands like "/tts" or "/image". Just detect their intent and call the tool directly. If a multimodal tool is not configured, inform the user and suggest they configure it in Settings → Multimodal.
-
-Use tools when needed. Always verify changes by reading files after editing.`);
+- Use \`offset\` and \`limit\` parameters on \`read_attachment\` for pagination of very large files.`);
 
   // 7. Memory instructions
   if (config.memoryInstructions) {

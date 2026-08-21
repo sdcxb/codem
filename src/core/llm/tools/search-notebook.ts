@@ -25,6 +25,7 @@ export interface CitationSource {
 export function createSearchNotebookTool(): ToolDef {
   return {
     id: "search_notebook",
+    guidance: "Use search_notebook to search the current knowledge notebook for relevant information using semantic search. Use this when you need to find specific information from the notebook's sources.",
     description:
       "Search the current knowledge notebook for relevant information using semantic search. " +
       "Use this when you need to find specific information from the notebook's sources to answer the user's question. " +

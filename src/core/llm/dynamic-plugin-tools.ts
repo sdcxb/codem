@@ -22,6 +22,7 @@ import type { ToolDef } from "./tools";
 export function createCordisDefineTool(): ToolDef {
   return {
     id: "cordis_define",
+  guidance: "Use cordis_define to dynamically define a Cordis plugin at runtime. Useful for creating custom tools or services on-the-fly.",
     description: "Define a dynamic Cordis plugin at runtime. The plugin code is compiled and registered in the runtime. Use this when you need to create custom functionality that doesn't exist as a built-in tool.",
     parameters: {
       type: "object",
@@ -65,6 +66,7 @@ export function createCordisDefineTool(): ToolDef {
 export function createCordisInspectTool(): ToolDef {
   return {
     id: "cordis_inspect",
+  guidance: "Use cordis_inspect to list or query dynamically defined Cordis plugins.",
     description: "Inspect all registered dynamic plugins and available Cordis services. Returns a list of plugins and services.",
     parameters: {
       type: "object",
@@ -112,6 +114,7 @@ export function createCordisInspectTool(): ToolDef {
 export function createCordisRunTool(): ToolDef {
   return {
     id: "cordis_run",
+  guidance: "Use cordis_run to execute a dynamically defined Cordis plugin.",
     description: "Run a previously defined dynamic Cordis plugin by name.",
     parameters: {
       type: "object",
@@ -156,6 +159,7 @@ export function createCordisRunTool(): ToolDef {
 export function createCordisStopTool(): ToolDef {
   return {
     id: "cordis_stop",
+  guidance: "Use cordis_stop to stop a running Cordis plugin.",
     description: "Stop a running dynamic Cordis plugin. The plugin's dispose function is called if available.",
     parameters: {
       type: "object",
@@ -196,6 +200,7 @@ export function createCordisStopTool(): ToolDef {
 export function createCordisUndefineTool(): ToolDef {
   return {
     id: "cordis_undefine",
+  guidance: "Use cordis_undefine to remove a dynamically defined Cordis plugin.",
     description: "Remove a defined dynamic Cordis plugin from the runtime.",
     parameters: {
       type: "object",

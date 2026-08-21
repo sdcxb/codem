@@ -31,6 +31,7 @@ export interface WorkflowSDK {
 export function createWorkflowTool(): ToolDef {
   return {
     id: "workflow",
+  guidance: "Use workflow to define and execute multi-step automated workflows. Workflows can chain tools, run conditionals, and loop.",
     description: `Execute a JavaScript workflow that can fan-out sub-agents and collect results.
 
 The workflow code receives an \`sdk\` object with:

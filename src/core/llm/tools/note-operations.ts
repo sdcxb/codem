@@ -22,6 +22,7 @@ import { getNotebook } from '../../knowledge/storage';
 export function createCreateNoteTool(): ToolDef {
   return {
     id: 'create_note',
+    guidance: "Use create_note to create a new note in the current notebook. Use this when the user asks to save information, or when you want to persist important findings or summaries.",
     description:
       'Create a new note in the current notebook. Use this when the user asks to save information as a note, ' +
       'or when you want to persist important findings, summaries, or insights as a note. ' +
@@ -108,6 +109,7 @@ export function createCreateNoteTool(): ToolDef {
 export function createEditNoteTool(): ToolDef {
   return {
     id: 'edit_note',
+    guidance: "Use edit_note to modify the content of an existing note in the notebook.",
     description:
       'Edit an existing note in the current notebook. You can update the title, content, or tags. ' +
       'Use this when the user asks to modify a note, or when you want to update a note with new information.',
@@ -208,6 +210,7 @@ export function createEditNoteTool(): ToolDef {
 export function createLinkNotesTool(): ToolDef {
   return {
     id: 'link_notes',
+    guidance: "Use link_notes to create a cross-reference link between two notes in the notebook.",
     description:
       'Create a link between two notes in the current notebook. ' +
       'Use this to establish bidirectional relationships between related notes. ' +
@@ -292,6 +295,7 @@ export function createLinkNotesTool(): ToolDef {
 export function createDeleteNoteTool(): ToolDef {
   return {
     id: 'delete_note',
+    guidance: "Use delete_note to remove a note from the notebook.",
     description:
       'Delete an existing note in the current notebook. Use this when the user asks to remove a note, ' +
       'or when a note is outdated, incorrect, or no longer needed. This action cannot be undone.',

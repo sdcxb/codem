@@ -19,6 +19,7 @@ import type { IssueStatus, IssuePriority } from "./issue-storage";
 export function createIssueCreateTool(): ToolDef {
   return {
     id: "issue_create",
+  guidance: "Use issue_create to create a new issue in the issue tracker.",
     description:
       "Create a new issue (structured task) with a title, description, and optional assignee. " +
       "Issues are persistent work items that can be assigned to agents, squads, or users. " +
@@ -90,6 +91,7 @@ export function createIssueCreateTool(): ToolDef {
 export function createIssueUpdateTool(): ToolDef {
   return {
     id: "issue_update",
+  guidance: "Use issue_update to modify an existing issue (status, assignee, labels, etc.).",
     description:
       "Update an issue's status, priority, assignee, or description. " +
       "Common status transitions: todo → in_progress → in_review → done. " +
@@ -151,6 +153,7 @@ export function createIssueUpdateTool(): ToolDef {
 export function createIssueCommentTool(): ToolDef {
   return {
     id: "issue_comment",
+  guidance: "Use issue_comment to add a comment to an existing issue.",
     description:
       "Add a comment to an issue. Comments are visible to all participants. " +
       "Agents should use this to report progress, ask questions, or share results. " +
@@ -194,6 +197,7 @@ export function createIssueCommentTool(): ToolDef {
 export function createIssueListTool(): ToolDef {
   return {
     id: "issue_list",
+  guidance: "Use issue_list to list issues from the tracker, optionally filtered by status or assignee.",
     description:
       "List all issues in the current project. Optionally filter by status. " +
       "Returns issue ID, title, status, priority, and assignee for each issue.",

@@ -17,10 +17,46 @@
  */
 
 import type { ToolDef, ToolContext, ToolExecuteResult } from "../tools";
-import { getSkillRegistry, type SkillDefinition } from "../../skill/skill";
+import { getSkillRegistry, parseSkillMarkdown, type SkillDefinition } from "../../skill/skill";
 import { getSkillToolRegistry } from "../../skill/registry";
 import type { ToolRegistry } from "../tools";
 import * as path from "path";
+
+// ========== Filesystem Fallback for Skill Discovery ==========
+
+/**
+ * 从 ~/.codem/skills/<skill-name>/SKILL.md 加载技能。
+ * 当技能在注册表和 Provider 中都找不到时调用。
+ * 这使得 LLM 通过 write/bash 工具创建的技能能被发现和加载。
+ */
+async function loadSkillFromFilesystem(skillName: string): Promise<SkillDefinition | undefined> {
+  try {
+    const { readFile, listDirectory } = await import("../../file-api");
+    // 获取 home 目录
+    const invoke = (window as any)?.__TAURI__?.core?.invoke;
+    if (!invoke) return undefined;
+    const home = await invoke("get_default_cwd");
+    const sep = home.includes("/") && !home.includes("\\") ? "/" : "\\";
+    const skillsDir = `${home}${sep}.codem${sep}skills`;
+    const skillDir = `${skillsDir}${sep}${skillName}`;
+    const skillMdPath = `${skillDir}${sep}SKILL.md`;
+    // 尝试读取 SKILL.md
+    const content = await readFile(skillMdPath);
+    const skill = parseSkillMarkdown(content, skillMdPath);
+    if (skill) {
+      skill.source = "user";
+      skill.filePath = skillDir;
+      skill.enabled = true;
+      // 注册到注册表以便后续调用直接命中
+      getSkillRegistry().register(skill);
+      console.log(`[load_skill] Discovered skill "${skillName}" from filesystem: ${skillMdPath}`);
+      return skill;
+    }
+  } catch {
+    // 文件不存在或读取失败
+  }
+  return undefined;
+}
 
 // ========== Session-level Skill Cache ==========
 
@@ -439,6 +475,7 @@ export function processSkillGestures(sessionId: string, userMessage: string): st
 export function createLoadSkillTool(toolRegistry: ToolRegistry): ToolDef {
   return {
     id: "load_skill",
+    guidance: "Use load_skill to activate a skill by name. Skills provide specialized instructions and capabilities. After loading, follow the skill's instructions.",
     description:
       "Load a skill by name to get its full instructions and tools. " +
       "Use this when you need detailed guidance for a specific task. " +
@@ -477,6 +514,12 @@ export function createLoadSkillTool(toolRegistry: ToolRegistry): ToolDef {
         } catch {
           // Provider 查询失败，继续走 catalog 流程
         }
+      }
+
+      // Filesystem fallback: 尝试从 ~/.codem/skills/ 目录加载
+      // 这使得 LLM 通过 write/bash 工具创建的技能能被发现
+      if (!skill) {
+        skill = await loadSkillFromFilesystem(skillName);
       }
 
       if (!skill) {

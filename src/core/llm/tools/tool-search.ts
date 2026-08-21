@@ -25,6 +25,7 @@ interface ToolSearchInput {
 export function createToolSearchTool(registry: ToolRegistry): ToolDef {
   return {
     id: "tool_search",
+    guidance: "Use tool_search to load the full schema of a deferred tool (e.g. lsp). Some tools are not loaded by default to save tokens. Call this before using a tool you haven't seen in the available tools list.",
     description:
       "Search for and load a deferred tool's full schema. " +
       "Some tools (like 'lsp') are not loaded by default to save tokens. " +

@@ -31,6 +31,7 @@ export interface SessionSearchResult {
 export function createSessionSearchTool(): ToolDef {
   return {
     id: "session_search",
+    guidance: "Use session_search to find past conversation sessions by keyword. Returns matching session IDs and previews.",
     description: `Search across all conversation history using full-text search.
 
 Use this tool to find previous discussions, solutions, or context from past sessions.
@@ -172,6 +173,7 @@ Returns matching messages with snippets showing the matched content.`,
 export function createSessionEventSearchTool(): ToolDef {
   return {
     id: "session_event_search",
+    guidance: "Use session_event_search to search within a session's events (tool calls, messages) for specific content.",
     description: `Search events within a specific session's event log.
 Returns matching events with their sequence numbers, types, and content snippets.
 Use this to find specific actions or messages within a known session.`,
@@ -249,6 +251,7 @@ Use this to find specific actions or messages within a known session.`,
 export function createSessionTraceTool(): ToolDef {
   return {
     id: "session_trace",
+    guidance: "Use session_trace to get the full execution trace of a session, showing all steps and tool calls.",
     description: `Read the complete lineage of a session, including fork ancestors and descendants.
 Use this to understand session relationships and history.`,
     parameters: {
@@ -338,6 +341,7 @@ Use this to understand session relationships and history.`,
 export function createSessionEventReadTool(): ToolDef {
   return {
     id: "session_event_read",
+    guidance: "Use session_event_read to read the details of a specific event in a session's trace.",
     description: `Read one full event and optional neighboring events from a session's event log.
 Use this to inspect a specific event in detail, including its surrounding context.`,
     parameters: {

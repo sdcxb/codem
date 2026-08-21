@@ -2,6 +2,55 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.5.0] - 2026-08-21
+
+### 架构升级 — Cordis "一切插件化" 工具发现机制
+
+对标 DSH (DeepSeek Harness) 的 `ctx.systemPrompt.section()` + `ctx.tools.schemas()` 模式，彻底解决 LLM 工具发现断档问题。工具注册时自带使用引导（guidance），自动注册到 systemPrompt 服务，系统提示词动态收集这些引导来生成工具列表 — 不再硬编码。
+
+#### 1. ToolDef 增加 guidance 字段
+- 在 `ToolDef` 接口中新增 `guidance?: string` 字段
+- 每个工具自带使用引导，告诉 LLM **何时**和**如何**使用该工具
+- 遵循 DSH `defineTool` 的设计理念：工具自描述，而非系统提示词硬编码
+
+#### 2. toolsProvider 改造 — 自动注册工具引导到 systemPrompt
+- 对标 DSH `ToolsService` 构造函数中的 `ctx.systemPrompt.tools(provider)` 调用
+- **工具注册时**：自动将 `guidance` 注册为 `systemPrompt` 的 prompt section（name: `tool:<id>`, order: 110）
+- **工具卸载时**：自动移除对应 prompt section，遵循 Cordis fiber 生命周期
+- **动态工具目录**：注册 `tools:catalog` section（order: 100），实时收集所有注册工具的名称和描述
+- **延迟注册**：`systemPrompt` 服务尚未可用时，通过 `ctx.effect` 延迟重试
+
+#### 3. buildSystemPrompt 改造 — 工具列表动态生成
+- 删除 `prompt.ts` 中硬编码的 "Available Tools" 段（仅列 8 个工具 + 多模态工具说明）
+- 新增 `toolGuidance` 配置字段，由 `LLMEngine.collectToolGuidance()` 动态注入
+- 回退路径：当 `toolGuidance` 为空时使用最小化 fallback
+- 文件附件规则保留为独立段（非工具特定引导）
+
+#### 4. LLMEngine 新增工具引导收集方法
+- `collectToolGuidance()`（异步）：优先从 `systemPrompt.assemble()` 收集所有 `tool:*` 和 `tools:*` 段
+- `collectToolGuidanceSync()`（同步）：从 `ToolRegistry.getAll()` 直接收集 `guidance` 字段
+- 两条路径都有完整的工具列表 + 使用引导输出
+
+#### 5. 全部 31 个工具补充 guidance 文案
+- **核心工具**（11 个）：bash, read, write, edit, multi_edit, glob, grep, tts, image_gen, spawn_subagent, wait_for_subagent
+- **能力工具**（8 个）：load_skill, web_search, read_attachment, search_notebook, ask_clarification, fact_check, show_todo, exit_plan_mode
+- **高级工具**（6 个）：lsp, run_code, tool_search, browser_automate, figma_fetch, github_tool
+- **笔记工具**（4 个）：create_note, edit_note, link_notes, delete_note
+- **会话工具**（4 个）：session_search, session_event_search, session_trace, session_event_read
+- **目标工具**（3 个）：create_goal, get_goal, update_goal
+- **终端工具**（4 个）：terminal_open, terminal_send, terminal_signal, terminal_close
+- **任务工具**（2 个）：job_list, job_output
+- **协同工具**（4 个）：delegate_to_session, wait_for_delegation, query_session_result, list_sessions
+- **小队工具**（3 个）：squad_list, squad_dispatch, squad_status
+- **Issue 工具**（4 个）：issue_create, issue_update, issue_comment, issue_list
+- **工作流工具**（1 个）：workflow
+- **动态插件工具**（5 个）：cordis_define, cordis_inspect, cordis_run, cordis_stop, cordis_undefine
+
+#### 6. skill-creator 技能增强
+- 更新 `SKILL.md`，增加详细的技能安装指令
+- 指导 LLM 使用 `write`/`bash` 工具从 URL 或 ZIP 安装技能到 `~/.codem/skills/`
+- 在 `load_skill` 工具中增加文件系统回退机制，自动扫描 `~/.codem/skills/` 发现新创建的技能
+
 ## [1.4.2] - 2026-08-20
 
 ### Bug 修复 + 架构增强（14 项）

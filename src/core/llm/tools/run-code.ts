@@ -87,6 +87,7 @@ export async function executeCode(
 export function createRunCodeTool(): ToolDef {
   return {
     id: "run_code",
+    guidance: "Use run_code to execute Python/JavaScript code in a sandboxed environment. Useful for calculations, data processing, quick scripts, and verifying logic.",
     description: `Execute TypeScript code in a sandboxed environment. The code can use the \`sdk\` object to call other tools:
 - sdk.bash(command) — execute a shell command
 - sdk.read(path) — read a file

@@ -263,6 +263,7 @@ async function executeSearch(query: string): Promise<{ results: SearchResult[]; 
 export function createWebSearchTool(): ToolDef {
   return {
     id: "web_search",
+    guidance: "Use web_search when the user asks about current information, recent events, or when you need to look up something you don't know. Returns search results with titles, URLs, and snippets.",
     description:
       "Search the web for information. Automatically uses the configured provider (CLI/API mode) — no separate API key needed. " +
       "In CLI mode, uses the MiMo API. In API mode with Gemini, uses Google Search grounding. " +

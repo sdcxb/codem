@@ -126,6 +126,7 @@ async function fetchVulnerabilityAlerts(owner: string, repo: string, token: stri
 export function createGitHubTool(): ToolDef {
   return {
     id: "github_tool",
+    guidance: "Use github_tool to interact with GitHub: PR reviews, code search, issue tracking, repository info. Requires a GitHub token in settings.",
     description:
       "Interact with GitHub using the REST/GraphQL API. " +
       "Actions: 'pr_review' (get PR details + diff + files + reviews), 'search_code' (search code across repos), 'search_issues' (search issues/PRs), 'repo_info' (get repository metadata), 'commits' (get recent commits), 'vulnerability_scan' (check dependency vulnerabilities). " +

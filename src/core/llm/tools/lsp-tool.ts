@@ -257,6 +257,7 @@ function escapeRegex(str: string): string {
 export function createLSPTool(): ToolDef {
   return {
     id: "lsp",
+    guidance: "Use lsp for code navigation: find definitions, references, type info, diagnostics. Supports multiple languages. This tool is deferred — call tool_search first to load its schema.",
     // P0-2: LSP is a deferred tool — its full schema is large (~400 tokens).
     // The LLM gets a compact searchHint instead, and must call tool_search("lsp")
     // to retrieve the full schema before using it.

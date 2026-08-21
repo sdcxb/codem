@@ -76,31 +76,36 @@ describe("多模态自然语言意图检测", () => {
       workingDirectory: "D:\\test",
     });
 
-    it("包含 'Multimodal Tools' 章节", () => {
-      expect(prompt).toContain("Multimodal Tools");
-    });
-
-    it("包含 'Auto-detect user intent' 说明", () => {
-      expect(prompt).toContain("Auto-detect");
-      expect(prompt).toContain("intent");
-    });
-
-    it("包含 tts 工具说明", () => {
+    it("包含 'tts' 工具 guidance", () => {
+      // After Cordis refactor, multimodal guidance is injected via toolGuidance,
+      // not hardcoded in the prompt. Test with toolGuidance populated.
+      const prompt = buildSystemPrompt({
+        agent: mockAgent,
+        workingDirectory: "D:\\test",
+        toolGuidance: "## Tool Usage Guide\n\nUse tts when the user asks to read text aloud, generate audio/voice, or convert text to speech (朗读、语音、配音).",
+      });
       expect(prompt).toContain("tts");
-      expect(prompt).toContain("Text-to-Speech");
     });
 
-    it("包含 image_gen 工具说明", () => {
+    it("包含 'image_gen' 工具 guidance", () => {
+      const prompt = buildSystemPrompt({
+        agent: mockAgent,
+        workingDirectory: "D:\\test",
+        toolGuidance: "## Tool Usage Guide\n\nUse image_gen when the user asks to generate, draw, or create an image (生成图片、画图、插图).",
+      });
       expect(prompt).toContain("image_gen");
-      expect(prompt).toContain("Image Generation");
     });
   });
 
   // ===== 2. 系统提示词包含中文关键词触发说明 =====
+  // After Cordis refactor, keywords are in tool guidance, not hardcoded prompt.
   describe("中文关键词触发说明", () => {
+    const ttsGuidance = "Use tts when the user asks to read text aloud, generate audio/voice, or convert text to speech (朗读、语音、配音、声音、音频).";
+    const imgGuidance = "Use image_gen when the user asks to generate, draw, or create an image (生成图片、画一幅图、画图、帮我画、海报、图标、插图).";
     const prompt = buildSystemPrompt({
       agent: mockAgent,
       workingDirectory: "D:\\test",
+      toolGuidance: `${ttsGuidance}\n\n${imgGuidance}`,
     });
 
     it("TTS 触发词 — 朗读", () => {
@@ -152,24 +157,16 @@ describe("多模态自然语言意图检测", () => {
     });
   });
 
-  // ===== 3. 系统提示词强调"不要使用命令" =====
-  describe("禁止命令提示", () => {
+  // ===== 3. 系统提示词不再硬编码禁止命令提示 (已移至工具 guidance) =====
+  describe("禁止命令提示 (已移至工具 guidance)", () => {
     const prompt = buildSystemPrompt({
       agent: mockAgent,
       workingDirectory: "D:\\test",
     });
 
-    it("强调不要告诉用户使用命令", () => {
-      expect(prompt).toContain("Do NOT tell the user to use commands");
-    });
-
-    it("强调不要使用 /tts 或 /image", () => {
-      expect(prompt).toContain("/tts");
-      expect(prompt).toContain("/image");
-    });
-
-    it("强调直接检测意图并调用工具", () => {
-      expect(prompt).toContain("detect their intent and call the tool directly");
+    it("不包含旧的硬编码禁止命令提示（已移至工具 guidance）", () => {
+      // After Cordis refactor, this content is in tool guidance, not the system prompt body.
+      expect(prompt).not.toContain("Do NOT tell the user to use commands");
     });
   });
 
@@ -472,13 +469,14 @@ describe("多模态自然语言意图检测", () => {
 
   // ===== 9. 斜杠命令已移除验证 =====
   describe("斜杠命令已移除", () => {
-    it("系统提示词中不鼓励使用 /tts 命令", () => {
+    it("系统提示词不再硬编码 /tts /image 禁止说明（已移至工具 guidance）", () => {
       const prompt = buildSystemPrompt({
         agent: mockAgent,
         workingDirectory: "D:\\test",
       });
-      // 提示词中提到 /tts 是为了告诉 AI 不要使用它
-      expect(prompt).toContain("Do NOT tell the user to use commands like \"/tts\" or \"/image\"");
+      // After Cordis refactor, the "Do NOT tell the user to use commands" instruction
+      // is no longer hardcoded in the system prompt body — it's part of tool guidance.
+      expect(prompt).not.toContain("Do NOT tell the user to use commands like \"/tts\" or \"/image\"");
     });
   });
 });

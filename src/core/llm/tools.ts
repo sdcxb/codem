@@ -371,6 +371,21 @@ export interface ToolDef {
    * Should include enough info for the LLM to know WHEN to search for this tool.
    */
   searchHint?: string;
+
+  /**
+   * Tool usage guidance — tells the LLM WHEN and HOW to use this tool.
+   *
+   * This text is automatically registered to the systemPrompt service as a
+   * prompt section (name: `tool:<id>`, order: 100–199) when the tool is
+   * registered via toolsProvider. It follows the DSH pattern where each
+   * tool owns its usage guidance, so the system prompt's tool list is
+   * assembled dynamically from registered tools — never hardcoded.
+   *
+   * Leave undefined for internal/infrastructure tools that should not be
+   * advertised to the LLM directly (e.g. spawn_subagent is documented in
+   * its own dedicated prompt section).
+   */
+  guidance?: string;
 }
 
 // ========== Tool Registry ==========
@@ -492,6 +507,7 @@ export function createBashTool(): ToolDef {
   return {
     id: "bash",
     description: "Execute a bash command in the terminal (PowerShell on Windows). The system automatically sets UTF-8 encoding (chcp 65001) and PYTHONUTF8=1. Output includes stdout, stderr, and exit code. If output contains garbled characters (乱码), the source command may be outputting in GBK — do NOT retry with a different tool, adjust the command instead. For long-running commands (builds, tests, dependency installations), set a higher timeout_ms.",
+    guidance: "Use bash for any shell command: build, test, git, install dependencies, run scripts. Prefer workdir over `cd`. For long-running commands, set a higher timeout_ms.",
     parameters: {
       type: "object",
       properties: {
@@ -604,6 +620,7 @@ export function createBashTool(): ToolDef {
 export function createReadFileTool(): ToolDef {
   return {
     id: "read",
+    guidance: "Use read to view file contents. Use offset/limit for large files. After a write or edit, the tool result confirms success — do NOT re-read the file you just wrote.",
     description: "Read a file from the filesystem. Files are read as UTF-8 text. BOM (Byte Order Mark) is automatically stripped. Chinese and emoji content is fully supported.",
     // Never persist read results to disk — prevents infinite loops
     // (read → result too large → persist → LLM reads persisted file → result too large → ...)
@@ -684,6 +701,7 @@ export function createReadFileTool(): ToolDef {
 export function createWriteFileTool(): ToolDef {
   return {
     id: "write",
+    guidance: "Use write to create new files or completely replace existing ones. Include the COMPLETE final content in a single call. For appending or small changes, use edit instead.",
     description: "Write content to a file (creates or overwrites). Files are saved as UTF-8 without BOM. Chinese and emoji content is fully supported. For Python scripts, include '# -*- coding: utf-8 -*-' as the first line. WARNING: This tool overwrites the entire file. If the file already exists and you only need to change a few lines, use the 'edit' tool instead to avoid losing existing content.",
     parameters: {
       type: "object",
@@ -784,6 +802,7 @@ export function createWriteFileTool(): ToolDef {
 export function createEditFileTool(): ToolDef {
   return {
     id: "edit",
+    guidance: "Use edit to modify existing files by replacing exact strings. The old_string must match exactly (including whitespace). For multiple edits in one file, use multi_edit instead.",
     description: "Edit a file by replacing exact string matches. This is preferred over 'write' for modifying existing files because it preserves the rest of the file content.",
     parameters: {
       type: "object",
@@ -842,6 +861,7 @@ export function createEditFileTool(): ToolDef {
 export function createMultiEditTool(): ToolDef {
   return {
     id: "multi_edit",
+    guidance: "Use multi_edit to make several edits to the same file in one operation. Each edit is applied in sequence on the result of the previous one.",
     description: "Apply multiple exact-string replacements to a file in one operation. Each edit replaces the first occurrence of oldString with newString. Edits are applied sequentially. Use this when you need to make several targeted changes to the same file.",
     parameters: {
       type: "object",
@@ -923,6 +943,7 @@ export function createMultiEditTool(): ToolDef {
 export function createGlobTool(): ToolDef {
   return {
     id: "glob",
+    guidance: "Use glob to find files by name pattern (e.g. `**/*.ts`). Use grep to search file contents instead.",
     description: "Find files matching a glob pattern. Supports Chinese filenames natively. Patterns: * (wildcard), ? (single char), {a,b} (alternatives), ** (recursive). Example: glob(pattern=\"*.py\") or glob(pattern=\"测试*.md\", path=\"D:\\\\项目\")",
     parameters: {
       type: "object",
@@ -957,6 +978,7 @@ export function createGlobTool(): ToolDef {
 export function createGrepTool(): ToolDef {
   return {
     id: "grep",
+    guidance: "Use grep to search file contents with a regular expression. Returns matching lines with line numbers.",
     description: "Search file contents using regex. Supports Chinese patterns natively. Uses PowerShell Select-String under the hood. Example: grep(pattern=\"中文\", path=\"D:\\\\项目\") or grep(pattern=\"function.*中文\", include=\"*.py\")",
     parameters: {
       type: "object",
@@ -993,6 +1015,7 @@ export function createGrepTool(): ToolDef {
 export function createTTSTool(): ToolDef {
   return {
     id: "tts",
+    guidance: "Use tts when the user asks to read text aloud, generate audio/voice, or convert text to speech (朗读、语音、配音).",
     description: "Convert text to speech audio and play it. Call this tool when the user wants to: read text aloud (朗读), generate voice/audio (生成语音/声音/音频), convert text to speech (转语音), do voiceover (配音), or any request involving generating audio from text. The tool detects intent from natural language — no commands needed. The audio will be played automatically.",
     parameters: {
       type: "object",
@@ -1033,6 +1056,7 @@ export function createTTSTool(): ToolDef {
 export function createImageGenTool(): ToolDef {
   return {
     id: "image_gen",
+    guidance: "Use image_gen when the user asks to generate, draw, or create an image (生成图片、画图、插图).",
     description: "Generate images from a text description. Call this tool when the user wants to: generate/create an image (生成图片/图像), draw something (画一幅图/画图/帮我画), create a poster/icon/illustration (海报/图标/插图), or any request involving creating visual content from a description. The tool detects intent from natural language — no commands needed. Returns the generated image for display.",
     parameters: {
       type: "object",
@@ -1158,6 +1182,7 @@ export function createSpawnSubagentTool(): ToolDef {
   return {
     id: "spawn_subagent",
     description: "Spawn a sub-agent to work on a task in the background. Returns immediately with task ID. Use wait_for_subagent to get the result when the sub-agent completes.",
+    guidance: "Use spawn_subagent to delegate a task to a sub-agent (explore for search, general for analysis, build for implementation). The sub-agent runs independently — call wait_for_subagent to get the result.",
     parameters: {
       type: "object",
       properties: {
@@ -1198,6 +1223,7 @@ export function createWaitForSubagentTool(): ToolDef {
   return {
     id: "wait_for_subagent",
     description: "Wait for a sub-agent to complete and get its result. Blocks until the sub-agent finishes. Use after spawn_subagent.",
+    guidance: "Use wait_for_subagent to block until a previously spawned sub-agent finishes. Pass the task ID from spawn_subagent.",
     parameters: {
       type: "object",
       properties: {

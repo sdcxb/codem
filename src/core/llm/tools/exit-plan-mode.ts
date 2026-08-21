@@ -45,6 +45,7 @@ export function clearPlanApprovalCallback(): void {
 export function createExitPlanModeTool(): ToolDef {
   return {
     id: "exit_plan_mode",
+    guidance: "Use exit_plan_mode to transition from planning to execution. Call this when the plan is ready and you want to start implementing.",
     description: `Exit Plan Mode by submitting your plan for user approval.
 
 Call this tool when you have completed your analysis and are ready to present your plan.

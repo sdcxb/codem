@@ -20,6 +20,7 @@ import { getLang } from "../i18n/lang";
 export function createSquadListTool(): ToolDef {
   return {
     id: "squad_list",
+  guidance: "Use squad_list to see all available agent squads and their members.",
     description:
       "List all squads in the current project. Returns each squad's name, leader, members, and instructions. " +
       "Use this before squad_dispatch to find available squad IDs.",
@@ -73,6 +74,7 @@ export function createSquadListTool(): ToolDef {
 export function createSquadDispatchTool(): ToolDef {
   return {
     id: "squad_dispatch",
+  guidance: "Use squad_dispatch to send a task to a squad of agents for parallel processing.",
     description:
       "Dispatch a task to a squad's leader agent. The leader will receive the task along with the squad roster " +
       "(member names, roles, and mention links) and decide which member should handle the work. " +
@@ -163,6 +165,7 @@ export function createSquadDispatchTool(): ToolDef {
 export function createSquadStatusTool(): ToolDef {
   return {
     id: "squad_status",
+  guidance: "Use squad_status to check the progress of a dispatched squad task.",
     description:
       "Check the status of a squad — lists all members and whether they are currently executing tasks. " +
       "Use this to monitor squad progress after dispatching work.",

@@ -13,6 +13,7 @@ export function createJobTools(): ToolDef[] {
     // job_list
     {
       id: "job_list",
+    guidance: "Use job_list to list all background jobs and their statuses.",
       description: `List all background jobs (bash commands running in the background).
 
 Returns a list of jobs with their ID, command, status, and start time.`,
@@ -32,6 +33,7 @@ Returns a list of jobs with their ID, command, status, and start time.`,
     // job_output
     {
       id: "job_output",
+    guidance: "Use job_output to read the output of a background job started with bash run_in_background.",
       description: `Get the output (stdout/stderr) of a background job by ID.
 
 Use this to check on long-running background commands.`,

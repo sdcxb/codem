@@ -87,6 +87,7 @@ function getTerminalManager(): TerminalManager {
 export function createTerminalOpenTool(): ToolDef {
   return {
     id: "terminal_open",
+    guidance: "Use terminal_open to open a persistent terminal session for interactive commands. Use bash for one-off commands instead.",
     description: "Open a new terminal session. Returns a terminal ID for use with terminal_send, terminal_signal, and terminal_close.",
     parameters: {
       type: "object",
@@ -109,6 +110,7 @@ export function createTerminalOpenTool(): ToolDef {
 export function createTerminalSendTool(): ToolDef {
   return {
     id: "terminal_send",
+    guidance: "Use terminal_send to type text into an open terminal session. Use terminal_signal to send Ctrl+C.",
     description: "Send input to a terminal session (like typing in the terminal).",
     parameters: {
       type: "object",
@@ -133,6 +135,7 @@ export function createTerminalSendTool(): ToolDef {
 export function createTerminalSignalTool(): ToolDef {
   return {
     id: "terminal_signal",
+    guidance: "Use terminal_signal to send control signals (Ctrl+C, Ctrl+D, etc.) to an open terminal session.",
     description: "Send a signal to a terminal session (Ctrl+C, Ctrl+D, Ctrl+Z).",
     parameters: {
       type: "object",
@@ -157,6 +160,7 @@ export function createTerminalSignalTool(): ToolDef {
 export function createTerminalCloseTool(): ToolDef {
   return {
     id: "terminal_close",
+    guidance: "Use terminal_close to close a persistent terminal session opened with terminal_open.",
     description: "Close a terminal session.",
     parameters: {
       type: "object",
