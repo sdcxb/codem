@@ -28,9 +28,9 @@ import { apply as uiPetApply } from './ui-pet/index.ts'
  * 在 Cordis Context 启动后调用。
  */
 export function loadUIPlugins(ctx: Context) {
-  // 设置全局 Context
-  const { setActiveContext } = require('../consumer/index.ts')
-  setActiveContext(ctx)
+  // 设置全局 Context — 通过参数传入，而非 require/import consumer 模块。
+  // consumer 的 setActiveContext 已在 getCordisContext() 中由 App.tsx 调用，
+  // 此处不需要重复设置。Cordis Context 通过参数传递，遵循"一切皆插件"原则。
 
   // 先声明所有 App 级别的 Slot
   declareAppSlots(ctx)

@@ -1,4 +1,4 @@
-﻿﻿import { useEffect, useState, useRef, useCallback } from "react";
+﻿﻿﻿﻿import { useEffect, useState, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 
 // D1-4: 全局错误边界 — 捕获未处理的同步错误和 Promise rejection
@@ -74,6 +74,31 @@ async function getCordisContext(): Promise<Context> {
     await loader.scan();
     // 加载所有 UI 插件包（注册到 Slot Registry）
     loadUIPlugins(ctx);
+
+    // 等待 UI 插件 fiber 完成激活，确保 slot 注册在 React 渲染前完成。
+    // Cordis fiber 的 _reload 在 await Promise.resolve() 后才执行 apply()，
+    // 如果不等待，SlotBridge 可能在 UI 插件注册前渲染，显示 fallback 横幅。
+    await new Promise(resolve => setTimeout(resolve, 0));
+    try {
+      const uiFibers: Fiber[] = [];
+      ctx.registry.forEach((runtime: any) => {
+        for (const fiber of runtime.fibers) {
+          // 只等待新注册的 fiber（state 非 DISPOSED 且有 inertia）
+          if (fiber.inertia) {
+            uiFibers.push(fiber);
+          }
+        }
+      });
+      if (uiFibers.length > 0) {
+        await Promise.allSettled(uiFibers.map(f => f.await ? f.await() : Promise.resolve()));
+        const failed = uiFibers.filter(f => f.state === 3 /* FAILED */);
+        if (failed.length > 0) {
+          console.warn(`[Cordis] ${failed.length} UI fibers FAILED:`, failed.map(f => f.name));
+        }
+      }
+    } catch (err) {
+      console.warn('[Cordis] Error while waiting for UI fibers:', err);
+    }
   } catch (err) {
     console.error("[Cordis] Failed to load optional plugins (dsh-compat/plugin-loader/ui-plugins):", err);
     // 不抛出 — 核心 Provider 已注册，Context 仍可用
