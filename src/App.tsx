@@ -1,4 +1,4 @@
-﻿﻿﻿﻿import { useEffect, useState, useRef, useCallback } from "react";
+﻿﻿﻿﻿﻿﻿import { useEffect, useState, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 
 // D1-4: 全局错误边界 — 捕获未处理的同步错误和 Promise rejection
@@ -245,7 +245,16 @@ function App() {
   useEffect(() => {
     getCordisContext().then((ctx) => {
       // R4: 将 Cordis Context 传给 LLMEngine，让 AgenticLoop 通过 ctx.get() 消费服务
-      getLLMEngine(ctx);
+      const engine = getLLMEngine(ctx);
+      // D2-1: 将 LLMEngine 注册为 Cordis 服务，让 getCtxService('llmEngine') 可以获取到。
+      // 这遵循"一切皆插件"架构：服务通过 ctx.provide() 注册，消费者通过 ctx.get() 获取。
+      try {
+        ctx.provide('llmEngine', engine);
+        console.log('[Cordis] llmEngine service provided');
+      } catch (e) {
+        // 可能已被注册（热重载场景），忽略
+        console.warn('[Cordis] llmEngine provide failed:', e);
+      }
       setCordisReady(true);
     }).catch((err) => {
       console.error("Failed to initialize Cordis context:", err);
