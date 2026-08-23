@@ -73,7 +73,7 @@ import { toolRenderProvider } from '../provider/tool-render-provider'
 import { agentRegistryProvider } from '../provider/agent-registry-provider'
 import { recoveryProvider } from '../provider/recovery-provider'
 import { retryProvider } from '../provider/retry-provider'
-import { squadProvider as squadManagerProvider } from '../provider/squad-provider'
+import { squadManagerProvider } from '../provider/squad-provider'
 import { issueProvider } from '../provider/issue-provider'
 import { inboxProvider } from '../provider/inbox-provider'
 
@@ -82,6 +82,7 @@ import { storeProvider } from '../provider/store-provider'
 
 // P1-7.4: LLM Provider 插件
 import { llmMimoProvider } from '../provider/llm-mimo-provider'
+import { mimoAuthProvider } from '../provider/mimo-auth-provider'
 import { llmOpenAIProvider } from '../provider/llm-openai-provider'
 import { llmRetryProvider } from '../provider/llm-retry-provider'
 import { tokenMeterProvider } from '../provider/token-meter-provider'
@@ -168,6 +169,18 @@ import { remoteClientProvider } from '../provider/remote-client-provider'
 // R7-7: CLI 入口插件
 import { cliProvider } from '../provider/cli-provider'
 
+// UI Plugins — static imports (browser-compatible, no require())
+import { apply as uiSidebarApply } from '../ui-plugins/ui-sidebar/index.ts'
+import { apply as uiConversationApply } from '../ui-plugins/ui-conversation/index.ts'
+import { apply as uiToolApply } from '../ui-plugins/ui-tool/index.ts'
+import { apply as uiSettingsApply } from '../ui-plugins/ui-settings/index.ts'
+import { apply as uiMiscApply } from '../ui-plugins/ui-misc/index.ts'
+import { apply as uiMarketApply } from '../ui-plugins/ui-market/index.ts'
+import { apply as uiThemeApply } from '../ui-plugins/ui-theme/index.ts'
+import { apply as uiSkinDefaultApply } from '../ui-plugins/ui-skin-default/index.ts'
+import { apply as uiSkinPetApply } from '../ui-plugins/ui-skin-pet/index.ts'
+import { apply as uiPetApply } from '../ui-plugins/ui-pet/index.ts'
+
 // R8: 78 个 DSH 缺失插件补全
 import { agentLoopProvider } from '../provider/agent-loop-provider'
 import { agentProvider } from '../provider/agent-provider'
@@ -251,17 +264,18 @@ import { storageJsonProvider } from '../provider/storage-json-provider'
 /** 注册所有内置插件到 PluginLoader */
 export function registerBuiltinPlugins() {
   // Core Providers
-  registerBuiltinPlugin('@codem/llm', { provides: ['llm'], inject: [], priority: 0, hot: true }, () => llmProvider)
-  registerBuiltinPlugin('@codem/tools', { provides: ['tools'], inject: [], priority: 0, hot: true }, () => toolsProvider)
+  registerBuiltinPlugin('@codem/llm', { provides: ['llm'], inject: ['llmEngine'], priority: 0, hot: true }, () => llmProvider)
+  registerBuiltinPlugin('@codem/tools', { provides: ['tools'], inject: ['llmEngine'], priority: 0, hot: true }, () => toolsProvider)
   registerBuiltinPlugin('@codem/session', { provides: ['session'], inject: [], priority: 0, hot: true }, () => sessionProvider)
   registerBuiltinPlugin('@codem/storage', { provides: ['storage'], inject: [], priority: 0, hot: true }, () => storageProvider)
-  registerBuiltinPlugin('@codem/memory', { provides: ['memory'], inject: [], priority: 0, hot: true }, () => memoryProvider)
-  registerBuiltinPlugin('@codem/permission', { provides: ['permission'], inject: [], priority: 0, hot: true }, () => permissionProvider)
-  registerBuiltinPlugin('@codem/mcp', { provides: ['mcp'], inject: [], priority: 0, hot: true }, () => mcpProvider)
-  registerBuiltinPlugin('@codem/skill', { provides: ['skill'], inject: [], priority: 0, hot: true }, () => skillProvider)
-  registerBuiltinPlugin('@codem/subagent', { provides: ['subagent'], inject: [], priority: 0, hot: true }, () => subagentProvider)
-  registerBuiltinPlugin('@codem/settings', { provides: ['settings'], inject: [], priority: 0, hot: true }, () => settingsProvider)
+  registerBuiltinPlugin('@codem/memory', { provides: ['memory'], inject: ['llmEngine'], priority: 0, hot: true }, () => memoryProvider)
+  registerBuiltinPlugin('@codem/permission', { provides: ['permission'], inject: ['llmEngine'], priority: 0, hot: true }, () => permissionProvider)
+  registerBuiltinPlugin('@codem/mcp', { provides: ['mcp'], inject: ['llmEngine'], priority: 0, hot: true }, () => mcpProvider)
+  registerBuiltinPlugin('@codem/skill', { provides: ['skill'], inject: ['llmEngine'], priority: 0, hot: true }, () => skillProvider)
+  registerBuiltinPlugin('@codem/subagent', { provides: ['subagent'], inject: ['llmEngine'], priority: 0, hot: true }, () => subagentProvider)
+  registerBuiltinPlugin('@codem/settings', { provides: ['settings'], inject: ['llmEngine'], priority: 0, hot: true }, () => settingsProvider)
   registerBuiltinPlugin('@codem/theme', { provides: ['theme'], inject: [], priority: 0, hot: true }, () => themeProvider)
+registerBuiltinPlugin('@codem/mimo-auth', { provides: ['mimoAuth'], inject: [], priority: 0, hot: true }, () => mimoAuthProvider)
 
   // Capability Providers
   registerBuiltinPlugin('@codem/fs-local', { provides: ['fs'], inject: [], priority: 0, hot: true }, () => fsProvider)
@@ -294,7 +308,7 @@ export function registerBuiltinPlugins() {
   registerBuiltinPlugin('@codem/schedule', { provides: ['schedule'], inject: [], priority: 0 }, () => scheduleProvider)
   registerBuiltinPlugin('@codem/plans', { provides: ['plans'], inject: [], priority: 0 }, () => plansProvider)
   registerBuiltinPlugin('@codem/preset', { provides: ['preset'], inject: [], priority: 0 }, () => presetProvider)
-  registerBuiltinPlugin('@codem/host-client', { provides: ['bundle', 'sdk', 'acp', 'host', 'client', 'pluginInstaller'], inject: [], priority: 0 }, () => hostClientProvider)
+  registerBuiltinPlugin('@codem/host-client', { provides: ['hostClient', 'pluginInstaller', 'bundle', 'sdk', 'acp', 'host', 'client'], inject: [], priority: 0 }, () => hostClientProvider)
 
   // R4 Providers (AgenticLoop 迁移到 ctx 消费)
   registerBuiltinPlugin('@codem/vision-proxy', { provides: ['visionProxy'], inject: [], priority: 0, hot: true }, () => visionProxyProvider)
@@ -307,56 +321,28 @@ export function registerBuiltinPlugins() {
   registerBuiltinPlugin('@codem/agent-engine', { provides: ['agentEngine'], inject: [], priority: 0, hot: true }, () => agentEngineProvider)
   registerBuiltinPlugin('@codem/i18n', { provides: ['i18n'], inject: [], priority: 0, hot: true }, () => i18nProvider)
 
-  // UI Plugins
-  registerBuiltinPlugin('@codem/ui-sidebar', { provides: [], inject: ['slots'], slots: ['app.sidebar'], priority: 0 }, () => {
-    const { apply } = require('../ui-plugins/ui-sidebar/index.ts')
-    return { apply: () => apply() }
-  })
-  registerBuiltinPlugin('@codem/ui-conversation', { provides: [], inject: ['slots'], slots: ['app.conversation'], priority: 0 }, () => {
-    const { apply } = require('../ui-plugins/ui-conversation/index.ts')
-    return { apply: () => apply() }
-  })
-  registerBuiltinPlugin('@codem/ui-tool', { provides: [], inject: ['slots'], slots: ['conversation.details.tool'], priority: 0 }, () => {
-    const { apply } = require('../ui-plugins/ui-tool/index.ts')
-    return { apply: () => apply() }
-  })
-  registerBuiltinPlugin('@codem/ui-settings', { provides: [], inject: ['slots'], slots: ['app.settings'], priority: 0 }, () => {
-    const { apply } = require('../ui-plugins/ui-settings/index.ts')
-    return { apply: () => apply() }
-  })
-  registerBuiltinPlugin('@codem/ui-misc', { provides: [], inject: ['slots'], slots: ['app.overlay', 'app.monitor'], priority: 0 }, () => {
-    const { apply } = require('../ui-plugins/ui-misc/index.ts')
-    return { apply: () => apply() }
-  })
-  registerBuiltinPlugin('@codem/ui-market', { provides: [], inject: ['slots'], slots: ['app.skill-manager', 'app.mcp-manager', 'app.plugin-manager'], priority: 0 }, () => {
-    const { apply } = require('../ui-plugins/ui-market/index.ts')
-    return { apply: () => apply() }
-  })
-  registerBuiltinPlugin('@codem/ui-theme', { provides: [], inject: [], priority: 0 }, () => {
-    const { apply } = require('../ui-plugins/ui-theme/index.ts')
-    return { apply: () => apply() }
-  })
-  registerBuiltinPlugin('@codem/ui-skin-default', { provides: [], inject: [], priority: 0 }, () => {
-    const { apply } = require('../ui-plugins/ui-skin-default/index.ts')
-    return { apply: () => apply() }
-  })
-  registerBuiltinPlugin('@codem/ui-skin-pet', { provides: [], inject: [], priority: 0 }, () => {
-    const { apply } = require('../ui-plugins/ui-skin-pet/index.ts')
-    return { apply: () => apply() }
-  })
-  registerBuiltinPlugin('@codem/ui-pet', { provides: [], inject: ['slots'], slots: ['app.overlay'], priority: 0 }, () => {
-    const { apply } = require('../ui-plugins/ui-pet/index.ts')
-    return { apply: () => apply() }
-  })
+  // UI Plugins — 对标 DSH 的 ui-* 插件包：
+  // 每个 UI 插件的 apply 函数接收 ctx 参数，通过 ctx.get('slots') 注册组件。
+  // 包装为 { inject: ['slots'], apply: fn } 对象，确保 Cordis 在 slots 服务 ACTIVE 后才调用 apply。
+  registerBuiltinPlugin('@codem/ui-sidebar', { provides: [], inject: ['slots'], slots: ['app.sidebar'], priority: 0 }, () => ({ inject: ['slots'], apply: (ctx: any) => uiSidebarApply(ctx) }))
+  registerBuiltinPlugin('@codem/ui-conversation', { provides: [], inject: ['slots'], slots: ['app.conversation'], priority: 0 }, () => ({ inject: ['slots'], apply: (ctx: any) => uiConversationApply(ctx) }))
+  registerBuiltinPlugin('@codem/ui-tool', { provides: [], inject: ['slots'], slots: ['conversation.details.tool'], priority: 0 }, () => ({ inject: ['slots'], apply: (ctx: any) => uiToolApply(ctx) }))
+  registerBuiltinPlugin('@codem/ui-settings', { provides: [], inject: ['slots'], slots: ['app.settings'], priority: 0 }, () => ({ inject: ['slots'], apply: (ctx: any) => uiSettingsApply(ctx) }))
+  registerBuiltinPlugin('@codem/ui-misc', { provides: [], inject: ['slots'], slots: ['app.overlay', 'app.monitor'], priority: 0 }, () => ({ inject: ['slots'], apply: (ctx: any) => uiMiscApply(ctx) }))
+  registerBuiltinPlugin('@codem/ui-market', { provides: [], inject: ['slots'], slots: ['app.skill-manager', 'app.mcp-manager', 'app.plugin-manager'], priority: 0 }, () => ({ inject: ['slots'], apply: (ctx: any) => uiMarketApply(ctx) }))
+  registerBuiltinPlugin('@codem/ui-theme', { provides: [], inject: [], priority: 0 }, () => ({ apply: (ctx: any) => uiThemeApply(ctx) }))
+  registerBuiltinPlugin('@codem/ui-skin-default', { provides: [], inject: [], priority: 0 }, () => ({ apply: (ctx: any) => uiSkinDefaultApply(ctx) }))
+  registerBuiltinPlugin('@codem/ui-skin-pet', { provides: [], inject: [], priority: 0 }, () => ({ apply: (ctx: any) => uiSkinPetApply(ctx) }))
+  registerBuiltinPlugin('@codem/ui-pet', { provides: [], inject: ['slots'], slots: ['app.overlay'], priority: 0 }, () => ({ inject: ['slots'], apply: (ctx: any) => uiPetApply(ctx) }))
 
   // R5 Providers (从模块级单例升级为 Cordis 服务)
-  registerBuiltinPlugin('@codem/cost-tracker', { provides: ['costTracker'], inject: [], priority: 0, hot: true }, () => costTrackerProvider)
-  registerBuiltinPlugin('@codem/model-profile', { provides: ['modelProfile'], inject: [], priority: 0, hot: true }, () => modelProfileProvider)
+  registerBuiltinPlugin('@codem/cost-tracker', { provides: ['costTracker'], inject: ['llmEngine'], priority: 0, hot: true }, () => costTrackerProvider)
+  registerBuiltinPlugin('@codem/model-profile', { provides: ['modelProfile'], inject: ['llmEngine'], priority: 0, hot: true }, () => modelProfileProvider)
   registerBuiltinPlugin('@codem/streaming-executor', { provides: ['streamingExecutor'], inject: [], priority: 0, hot: true }, () => streamingExecutorProvider)
-  registerBuiltinPlugin('@codem/tool-render', { provides: ['toolRender'], inject: [], priority: 0, hot: true }, () => toolRenderProvider)
-  registerBuiltinPlugin('@codem/agent-registry', { provides: ['agentRegistry'], inject: [], priority: 0, hot: true }, () => agentRegistryProvider)
-  registerBuiltinPlugin('@codem/recovery', { provides: ['recovery'], inject: [], priority: 0, hot: true }, () => recoveryProvider)
-  registerBuiltinPlugin('@codem/retry', { provides: ['retry'], inject: [], priority: 0, hot: true }, () => retryProvider)
+  registerBuiltinPlugin('@codem/tool-render', { provides: ['toolRender'], inject: ['llmEngine'], priority: 0, hot: true }, () => toolRenderProvider)
+  registerBuiltinPlugin('@codem/agent-registry', { provides: ['agentRegistry'], inject: ['llmEngine'], priority: 0, hot: true }, () => agentRegistryProvider)
+  registerBuiltinPlugin('@codem/recovery', { provides: ['recovery'], inject: ['llmEngine'], priority: 0, hot: true }, () => recoveryProvider)
+  registerBuiltinPlugin('@codem/retry', { provides: ['retry'], inject: ['llmEngine'], priority: 0, hot: true }, () => retryProvider)
   registerBuiltinPlugin('@codem/squad-manager', { provides: ['squadManager'], inject: [], priority: 0, hot: true }, () => squadManagerProvider)
   registerBuiltinPlugin('@codem/issue', { provides: ['issue'], inject: [], priority: 0, hot: true }, () => issueProvider)
   registerBuiltinPlugin('@codem/inbox', { provides: ['inbox'], inject: [], priority: 0, hot: true }, () => inboxProvider)
@@ -367,7 +353,7 @@ export function registerBuiltinPlugins() {
   // P1-7.4: LLM Provider 插件
   registerBuiltinPlugin('@codem/llm-mimo', { provides: ['llmMimo'], inject: ['llm'], priority: 0, hot: true }, () => llmMimoProvider)
   registerBuiltinPlugin('@codem/llm-openai', { provides: ['llmOpenAI'], inject: ['llm'], priority: 0, hot: true }, () => llmOpenAIProvider)
-  registerBuiltinPlugin('@codem/llm-retry', { provides: ['llmRetry'], inject: ['llm'], priority: 0, hot: true }, () => llmRetryProvider)
+  registerBuiltinPlugin('@codem/llm-retry', { provides: ['llmRetry'], inject: ['llm', 'llmEngine'], priority: 0, hot: true }, () => llmRetryProvider)
   registerBuiltinPlugin('@codem/token-meter', { provides: ['tokenMeter'], inject: [], priority: 0, hot: true }, () => tokenMeterProvider)
 
   // P1-7.5: 会话层插件

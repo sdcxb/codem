@@ -101,6 +101,11 @@ export class OllamaProvider implements LLMProvider {
     }
   }
 
+  /** Ollama's listModels already fetches from the server — just delegate */
+  async fetchModelsFromServer(): Promise<ModelConfig[]> {
+    return this.listModels();
+  }
+
   /** 将 Ollama 模型信息转换为 ModelConfig */
   private toModelConfig(m: OllamaModel): ModelConfig {
     // 估算 context window — Ollama 默认 2048，但很多模型支持更大

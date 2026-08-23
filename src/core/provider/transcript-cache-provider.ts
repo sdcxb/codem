@@ -1,6 +1,6 @@
 // @ts-nocheck
 /**
- * Transcript Cache Provider 插件 — 包装真实对话缓存并接入 ctx。
+ * Transcript Cache Provider 插件 — 直接暴露 TranscriptCache 对象到 ctx。
  *
  * 真实实现源：src/core/storage/transcript-cache.ts（TranscriptCache 对象）
  *
@@ -12,23 +12,8 @@ import type { Plugin } from '../cordis/src/index.ts'
 import { TranscriptCache } from '../storage/transcript-cache.ts'
 
 export const transcriptCacheProvider: Plugin = (ctx: any) => {
-  const dispose = ctx.provide('transcriptCache', {
-    get(key: any): any {
-      return TranscriptCache.get(key)
-    },
-    set(key: any, value: any): void {
-      return TranscriptCache.set(key, value)
-    },
-    has(key: any): boolean {
-      return TranscriptCache.has(key)
-    },
-    delete(key: any): void {
-      return TranscriptCache.delete(key)
-    },
-    clear(): void {
-      return TranscriptCache.clear()
-    },
-  })
+  // 直接暴露对象 — 与 DSH 模式一致
+  const dispose = ctx.provide('transcriptCache', TranscriptCache)
 
   return dispose
 }

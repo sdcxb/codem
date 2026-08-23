@@ -1,6 +1,6 @@
 // @ts-nocheck
 /**
- * Telemetry Provider 插件 — 包装真实遥测服务并接入 ctx。
+ * Telemetry Provider 插件 — 直接暴露 TelemetryCollector 实例到 ctx。
  *
  * 真实实现源：src/core/telemetry/telemetry.ts（TelemetryCollector + getTelemetry()）
  *
@@ -12,23 +12,10 @@ import type { Plugin } from '../cordis/src/index.ts'
 import { getTelemetry } from '../telemetry/telemetry.ts'
 
 export const telemetryProvider: Plugin = (ctx: any) => {
-  // 使用全局 getTelemetry() 获取单例实例
   const collector = getTelemetry()
 
-  const dispose = ctx.provide('telemetry', {
-    record(metric: string, value: any): void {
-      return collector.record(metric, value)
-    },
-    increment(metric: string, value?: number): void {
-      return collector.increment(metric, value)
-    },
-    getMetrics(): any {
-      return collector.getMetrics()
-    },
-    flush(): void {
-      return collector.flush?.()
-    },
-  })
+  // 直接暴露实例 — 与 DSH 模式一致
+  const dispose = ctx.provide('telemetry', collector)
 
   return dispose
 }

@@ -1,4 +1,5 @@
 import type { MessageV2 } from "../llm/session";
+import { getSettingJSON, setSettingJSON } from "../storage/settings";
 
 // ========== Token Budget ==========
 export interface TokenBudget {
@@ -241,7 +242,6 @@ export class ContextManager {
     this.config = { ...this.config, ...config };
     // Persist to settings
     try {
-      const { setSettingJSON } = require("../storage/settings");
       setSettingJSON("codem-context-config", this.config);
     } catch {}
   }
@@ -260,10 +260,9 @@ export function getContextManager(): ContextManager {
     instance = new ContextManager();
     // Load persisted config
     try {
-      const { getSettingJSON } = require("../storage/settings");
-      const saved = (getSettingJSON as any)("codem-context-config", null);
-      if (saved) {
-        (instance as any).config = { ...(instance as any).config, ...saved };
+      const saved = getSettingJSON("codem-context-config", null);
+      if (saved && typeof saved === 'object') {
+        (instance as any).config = { ...(instance as any).config, ...(saved as object) };
       }
     } catch {}
   }

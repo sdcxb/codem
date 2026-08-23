@@ -282,29 +282,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     try {
       const msgs = get().messages;
       for (const msg of msgs) {
+        // createMessage handles dedup internally: new messages get INSERT + event log append,
+        // existing messages get UPDATE only (no duplicate event).
         MessageStorage.createMessage(msg, sessionId);
-      }
-      // C5: EventLog dual-write — append user_message and assistant_text events
-      // EventLog is the source of truth; MessageStorage is the projection cache.
-      try {
-        const { getEventLog } = require("./core/storage/event-log");
-        const eventLog = getEventLog();
-        for (const msg of msgs) {
-          if (msg.role === "user") {
-            eventLog.append(sessionId, "user_message", {
-              messageId: msg.id,
-              content: msg.content || "",
-            });
-          } else if (msg.role === "assistant") {
-            eventLog.append(sessionId, "assistant_text", {
-              messageId: msg.id,
-              content: msg.content || "",
-              model: msg.model,
-            });
-          }
-        }
-      } catch (e) {
-        // EventLog write failure is non-critical — CRUD still works
       }
     } catch (e) {
       console.error("[Store] saveMessages failed:", e);

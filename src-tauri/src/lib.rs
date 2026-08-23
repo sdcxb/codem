@@ -513,12 +513,36 @@ async fn get_app_data_dir(app: tauri::AppHandle) -> Result<String, String> {
 }
 
 #[tauri::command]
-async fn get_default_cwd() -> Result<String, String> {
-    // Return user's home directory as default working directory
-    let home = std::env::var("USERPROFILE")
-        .or_else(|_| std::env::var("HOME"))
-        .map_err(|_| "Cannot determine home directory")?;
-    Ok(home)
+async fn get_default_cwd(app: tauri::AppHandle) -> Result<String, String> {
+    // Return app data dir + "workspace" as the default working directory.
+    // This is the global chat workspace — it contains AGENTS.md and other
+    // project instruction files, so the LLM has context even without a project.
+    let data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    let workspace = data_dir.join("workspace");
+    std::fs::create_dir_all(&workspace).map_err(|e| e.to_string())?;
+
+    // Ensure AGENTS.md exists with default content if not present
+    let agents_md = workspace.join("AGENTS.md");
+    if !agents_md.exists() {
+        let default_content = r#"# Codem 工作目录
+
+这是 Codem 的全局工作目录。所有全局对话的文件操作都基于此目录。
+
+## 注意事项
+
+- 你可以在当前工作目录下创建和编辑文件
+- 使用 `ls` 查看目录内容
+- 使用 `read_file` 读取文件
+- 使用 `write_file` 创建新文件
+"#;
+        std::fs::write(&agents_md, default_content).map_err(|e| e.to_string())?;
+    }
+
+    let mut dir_str = workspace.to_string_lossy().to_string();
+    if !dir_str.ends_with(std::path::MAIN_SEPARATOR) {
+        dir_str.push(std::path::MAIN_SEPARATOR);
+    }
+    Ok(dir_str)
 }
 
 #[tauri::command]

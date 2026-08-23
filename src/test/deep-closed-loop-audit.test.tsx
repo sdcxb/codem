@@ -62,7 +62,7 @@ describe('功能闭环: SlotBridge Hooks 顺序安全', () => {
     const src = await vi.importActual('fs')
     const code = src.readFileSync('src/core/slots/SlotBridge.tsx', 'utf8')
     expect(code).toContain('noopSubscribe')
-    expect(code).toContain('noopGetSnapshot')
+    expect(code).toContain('noopGetVersion')
   })
 })
 

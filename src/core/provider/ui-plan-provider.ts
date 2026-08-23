@@ -10,11 +10,9 @@
  *
  * inject: ['slots'] — 框架保证 ctx.get('slots') 可用后才执行 apply。
  */
-import { lazy } from 'react'
 import type { Plugin } from '../cordis/src/index.ts'
-
-const PlanModeChip = lazy(() => import('../../components/PlanModeChip'))
-const PlanApprovalCard = lazy(() => import('../../components/PlanApprovalCard'))
+import { PlanModeChip } from '../../components/PlanModeChip'
+import { PlanApprovalCard } from '../../components/PlanApprovalCard'
 
 export const uiPlanProvider: Plugin = Object.assign(
   (ctx: any) => {

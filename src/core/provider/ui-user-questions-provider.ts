@@ -5,10 +5,7 @@
  * app.user-questions slot 现在在 App.tsx 中通过 SlotBridge 消费（fallback 为 null）。
  * 使用 inject 声明依赖 slots 服务。
  */
-import { lazy } from 'react'
 import type { Plugin } from '../cordis/src/index.ts'
-
-const InteractiveFormDialog = lazy(() => import('../../components/InteractiveFormDialog'))
 
 export const uiUserQuestionsProvider: Plugin = Object.assign(
   (ctx: any) => {
@@ -18,14 +15,15 @@ export const uiUserQuestionsProvider: Plugin = Object.assign(
       async batchAsk(questions) { return questions.map(q=>({question:q,answer:'simulated'})) },
     }
 
-    const slots = ctx.get('slots')
-    const unreg = slots.register({ name: 'app.user-questions', id: 'r8-interactiveformdialog', priority: 5 }, InteractiveFormDialog)
+    // 不在此注册 InteractiveFormDialog 到 app.user-questions slot。
+    // InteractiveFormDialog 需要 questions/onSubmit/onCancel props，
+    // 而 App.tsx 中的 SlotBridge 以无 props 方式消费该 slot，会导致崩溃。
+    // InteractiveFormDialog 应通过 App.tsx 中的条件渲染路径使用。
 
     const disp = ctx.provide('uiUserQuestions', s)
 
     return () => {
       if (disp) disp()
-      if (unreg) unreg()
     }
   },
   { inject: ['slots'] }

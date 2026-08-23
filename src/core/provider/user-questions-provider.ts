@@ -14,7 +14,8 @@ import type { Plugin } from '../cordis/src/index.ts'
 import { NeedsYouQueue } from '../llm/needs-you-queue.ts'
 
 export const userQuestionsProvider: Plugin = (ctx: any) => {
-  const queue = new NeedsYouQueue(ctx)
+  // NeedsYouQueue is a singleton object, not a class — use directly
+  const queue = NeedsYouQueue
 
   const dispose = ctx.provide('userQuestions', {
     async enqueue(question: { text: string; options?: string[]; sessionId?: string }): Promise<string> {

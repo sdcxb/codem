@@ -8,10 +8,8 @@
  *
  * inject: ['slots'] — 框架保证 ctx.get('slots') 可用后才执行。
  */
-import { lazy } from 'react'
 import type { Plugin } from '../cordis/src/index.ts'
-
-const TrajectoryPanel = lazy(() => import('../../components/TrajectoryPanel'))
+import { TrajectoryPanel } from '../../components/TrajectoryPanel'
 
 interface TrajectoryStep {
   id: string

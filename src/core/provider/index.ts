@@ -19,164 +19,193 @@
 import type { Context, Plugin } from '../cordis/src/index.ts'
 
 // ===== Core Providers =====
-export { llmProvider } from './llm-provider'
-export { toolsProvider } from './tools-provider'
-export { sessionProvider } from './session-provider'
-export { storageProvider } from './storage-provider'
-export { memoryProvider } from './memory-provider'
-export { permissionProvider } from './permission-provider'
-export { mcpProvider } from './mcp-provider'
-export { skillProvider } from './skill-provider'
-export { subagentProvider } from './subagent-provider'
-export { settingsProvider } from './settings-provider'
-export { themeProvider } from './theme-provider'
+import { llmProvider } from './llm-provider'
+import { toolsProvider } from './tools-provider'
+import { sessionProvider } from './session-provider'
+import { storageProvider } from './storage-provider'
+import { memoryProvider } from './memory-provider'
+import { permissionProvider } from './permission-provider'
+import { mcpProvider } from './mcp-provider'
+import { skillProvider } from './skill-provider'
+import { subagentProvider } from './subagent-provider'
+import { settingsProvider } from './settings-provider'
+import { themeProvider } from './theme-provider'
 
 // ===== Capability Providers =====
-export { fsProvider } from './fs-provider'
-export { shellProvider } from './shell-provider'
-export { sandboxProvider } from './sandbox-provider'
-export { webProvider } from './web-provider'
-export { compactionProvider } from './compaction-provider'
-export { hooksProvider } from './hooks-provider'
-export { approvalProvider } from './approval-provider'
-export { permissionsProvider } from './permissions-provider'
-export { automationProvider } from './automation-provider'
+import { fsProvider } from './fs-provider'
+import { shellProvider } from './shell-provider'
+import { sandboxProvider } from './sandbox-provider'
+import { webProvider } from './web-provider'
+import { compactionProvider } from './compaction-provider'
+import { hooksProvider } from './hooks-provider'
+import { approvalProvider } from './approval-provider'
+import { permissionsProvider } from './permissions-provider'
+import { automationProvider } from './automation-provider'
 
 // ===== P6 Providers =====
-export { identityProvider } from './identity-provider'
-export { lspProvider } from './lsp-provider'
-export { codeRuntimeProvider } from './code-runtime-provider'
-export { workflowProvider } from './workflow-provider'
-export { contextInfoProvider } from './context-info-provider'
-export { commandsProvider } from './commands-provider'
-export { userQuestionsProvider } from './user-questions-provider'
-export { notebookProvider } from './notebook-provider'
-export { squadProvider } from './squad-provider'
-export { dynamicRunnerProvider } from './dynamic-runner-provider'
-export { pluginRegistryProvider } from './plugin-registry-provider'
+import { identityProvider } from './identity-provider'
+import { lspProvider } from './lsp-provider'
+import { codeRuntimeProvider } from './code-runtime-provider'
+import { workflowProvider } from './workflow-provider'
+import { contextInfoProvider } from './context-info-provider'
+import { commandsProvider } from './commands-provider'
+import { userQuestionsProvider } from './user-questions-provider'
+import { notebookProvider } from './notebook-provider'
+import { squadProvider } from './squad-provider'
+import { squadManagerProvider } from './squad-provider'
+import { dynamicRunnerProvider } from './dynamic-runner-provider'
+import { pluginRegistryProvider } from './plugin-registry-provider'
 
 // ===== R1 Providers (从 bridge-plugin.ts 迁移的独有服务) =====
-export { guardProvider } from './guard-provider'
-export { credentialsProvider } from './credentials-provider'
-export { attachmentsProvider } from './attachments-provider'
-export { scheduleProvider } from './schedule-provider'
-export { plansProvider } from './plans-provider'
-export { presetProvider } from './preset-provider'
-export { hostClientProvider } from './host-client-provider'
+import { guardProvider } from './guard-provider'
+import { credentialsProvider } from './credentials-provider'
+import { attachmentsProvider } from './attachments-provider'
+import { scheduleProvider } from './schedule-provider'
+import { plansProvider } from './plans-provider'
+import { presetProvider } from './preset-provider'
+import { hostClientProvider } from './host-client-provider'
 
 // ===== R4 Providers (AgenticLoop 迁移到 ctx 消费的新增 Provider) =====
-export { visionProxyProvider } from './vision-proxy-provider'
-export { messageStorageProvider } from './message-storage-provider'
-export { eventLogProvider } from './event-log-provider'
-export { telemetryProvider } from './telemetry-provider'
-export { securityModeProvider } from './security-mode-provider'
-export { fileChangeTrackerProvider } from './file-change-tracker-provider'
-export { transcriptCacheProvider } from './transcript-cache-provider'
-export { agentEngineProvider } from './agent-engine-provider'
-export { i18nProvider } from './i18n-provider'
+import { visionProxyProvider } from './vision-proxy-provider'
+import { messageStorageProvider } from './message-storage-provider'
+import { eventLogProvider } from './event-log-provider'
+import { telemetryProvider } from './telemetry-provider'
+import { securityModeProvider } from './security-mode-provider'
+import { fileChangeTrackerProvider } from './file-change-tracker-provider'
+import { transcriptCacheProvider } from './transcript-cache-provider'
+import { agentEngineProvider } from './agent-engine-provider'
+import { i18nProvider } from './i18n-provider'
 
 // ===== R5 Providers: 从模块级单例升级为 Cordis 服务 =====
-export { costTrackerProvider } from './cost-tracker-provider'
-export { modelProfileProvider } from './model-profile-provider'
-export { streamingExecutorProvider } from './streaming-executor-provider'
-export { toolRenderProvider } from './tool-render-provider'
-export { agentRegistryProvider } from './agent-registry-provider'
-export { recoveryProvider } from './recovery-provider'
-export { retryProvider } from './retry-provider'
-export { squadProvider as squadManagerProvider } from './squad-provider'
-export { issueProvider } from './issue-provider'
-export { inboxProvider } from './inbox-provider'
+import { costTrackerProvider } from './cost-tracker-provider'
+import { modelProfileProvider } from './model-profile-provider'
+import { streamingExecutorProvider } from './streaming-executor-provider'
+import { toolRenderProvider } from './tool-render-provider'
+import { agentRegistryProvider } from './agent-registry-provider'
+import { recoveryProvider } from './recovery-provider'
+import { retryProvider } from './retry-provider'
+import { issueProvider } from './issue-provider'
+import { inboxProvider } from './inbox-provider'
 
 // ===== R6: Zustand Store Cordis 服务化 =====
-export { storeProvider } from './store-provider'
+import { storeProvider } from './store-provider'
 
 // ===== P1-7.4: LLM Provider 插件 =====
-export { llmMimoProvider } from './llm-mimo-provider'
-export { llmOpenAIProvider } from './llm-openai-provider'
-export { llmRetryProvider } from './llm-retry-provider'
-export { tokenMeterProvider } from './token-meter-provider'
+import { llmMimoProvider } from './llm-mimo-provider'
+import { llmOpenAIProvider } from './llm-openai-provider'
+import { llmRetryProvider } from './llm-retry-provider'
+import { tokenMeterProvider } from './token-meter-provider'
 
 // ===== P1-7.5: 会话层插件 =====
-export { sessionPersistenceSqliteProvider } from './session-persistence-sqlite-provider'
-export { sessionProjectionProvider } from './session-projection-provider'
-export { sessionStatsProvider } from './session-stats-provider'
-export { sessionTitleLLMProvider } from './session-title-llm-provider'
-export { sessionCheckpointProvider } from './session-checkpoint-provider'
+import { sessionPersistenceSqliteProvider } from './session-persistence-sqlite-provider'
+import { sessionProjectionProvider } from './session-projection-provider'
+import { sessionStatsProvider } from './session-stats-provider'
+import { sessionTitleLLMProvider } from './session-title-llm-provider'
+import { sessionCheckpointProvider } from './session-checkpoint-provider'
 
 // ===== P1-7.6: Shell/终端插件 =====
-export { pwshLocalProvider } from './pwsh-local-provider'
-export { bashSandboxProvider } from './bash-sandbox-provider'
-export { terminalBashProvider } from './terminal-bash-provider'
+import { pwshLocalProvider } from './pwsh-local-provider'
+import { bashSandboxProvider } from './bash-sandbox-provider'
+import { terminalBashProvider } from './terminal-bash-provider'
 
 // ===== P1-7.7: 沙箱/安全插件 =====
-export { sandboxPolicyProvider } from './sandbox-policy-provider'
-export { subprocessProvider } from './subprocess-provider'
+import { sandboxPolicyProvider } from './sandbox-policy-provider'
+import { subprocessProvider } from './subprocess-provider'
 
 // ===== P1-7.8: 子 Agent 插件 =====
-export { subagentForkInProcessProvider } from './subagent-fork-in-process-provider'
-export { subagentSpawnInProcessProvider } from './subagent-spawn-in-process-provider'
-export { toolSubagentControlProvider } from './tool-subagent-control-provider'
+import { subagentForkInProcessProvider } from './subagent-fork-in-process-provider'
+import { subagentSpawnInProcessProvider } from './subagent-spawn-in-process-provider'
+import { toolSubagentControlProvider } from './tool-subagent-control-provider'
 
 // ===== P1-7.9: 上下文/压缩插件 =====
-export { compactionBasicProvider } from './compaction-basic-provider'
-export { compactionToolResultPrunerProvider } from './compaction-tool-result-pruner-provider'
-export { commandCompactProvider } from './command-compact-provider'
+import { compactionBasicProvider } from './compaction-basic-provider'
+import { compactionToolResultPrunerProvider } from './compaction-tool-result-pruner-provider'
+import { commandCompactProvider } from './command-compact-provider'
 
 // ===== P1-7.10: 目标/计划/工作流插件 =====
-export { goalRoundDriverProvider } from './goal-round-driver-provider'
-export { commandGoalProvider } from './command-goal-provider'
-export { planModeProvider } from './plan-mode-provider'
+import { goalRoundDriverProvider } from './goal-round-driver-provider'
+import { commandGoalProvider } from './command-goal-provider'
+import { planModeProvider } from './plan-mode-provider'
 
 // ===== P2-7.11: Web/搜索插件 =====
-export { webFetchHttpProvider } from './web-fetch-http-provider'
-export { webSearchMimoProvider } from './web-search-mimo-provider'
+import { webFetchHttpProvider } from './web-fetch-http-provider'
+import { webSearchMimoProvider } from './web-search-mimo-provider'
 
 // ===== P2-7.12: Guard/保护插件 =====
-export { repeatToolReminderProvider } from './repeat-tool-reminder-provider'
-export { timeoutGuardProvider } from './timeout-guard-provider'
-export { invariantsGuardProvider } from './invariants-guard-provider'
+import { repeatToolReminderProvider } from './repeat-tool-reminder-provider'
+import { timeoutGuardProvider } from './timeout-guard-provider'
+import { invariantsGuardProvider } from './invariants-guard-provider'
 
 // ===== P2-7.13: Host/Client 架构插件 =====
-export { hostWebserverProvider } from './host-webserver-provider'
-export { hostPluginInventoryProvider } from './host-plugin-inventory-provider'
-export { sdkProtocolProvider } from './sdk-protocol-provider'
+import { hostWebserverProvider } from './host-webserver-provider'
+import { hostPluginInventoryProvider } from './host-plugin-inventory-provider'
+import { sdkProtocolProvider } from './sdk-protocol-provider'
 
 // ===== P2-7.14: UI 原语和面板插件 =====
-export { uiPrimitivesProvider } from './ui-primitives-provider'
-export { uiInputTriggerProvider } from './ui-input-trigger-provider'
-export { uiAgentPresetProvider } from './ui-agent-preset-provider'
-export { uiSkillPanelProvider } from './ui-skill-panel-provider'
+import { uiPrimitivesProvider } from './ui-primitives-provider'
+import { uiInputTriggerProvider } from './ui-input-trigger-provider'
+import { uiAgentPresetProvider } from './ui-agent-preset-provider'
+import { uiSkillPanelProvider } from './ui-skill-panel-provider'
 
 // ===== P2-7.15: Typert 类型系统插件 =====
-export { typertGeneratorProvider } from './typert-generator-provider'
-export { typertLoaderProvider } from './typert-loader-provider'
-export { typertProtocolProvider } from './typert-protocol-provider'
-export { typertRegistryProvider } from './typert-registry-provider'
+import { typertGeneratorProvider } from './typert-generator-provider'
+import { typertLoaderProvider } from './typert-loader-provider'
+import { typertProtocolProvider } from './typert-protocol-provider'
+import { typertRegistryProvider } from './typert-registry-provider'
 
 // ===== R7-1: 缺失 LLM 多模型适配器 =====
-export { llmClaudeProvider } from './llm-claude-provider'
-export { llmGeminiProvider } from './llm-gemini-provider'
-export { llmOllamaProvider } from './llm-ollama-provider'
+import { llmClaudeProvider } from './llm-claude-provider'
+import { llmGeminiProvider } from './llm-gemini-provider'
+import { llmOllamaProvider } from './llm-ollama-provider'
 
 // ===== R7-2: 会话恢复插件 =====
-export { sessionRecoveryProvider } from './session-recovery-provider'
+import { sessionRecoveryProvider } from './session-recovery-provider'
 
 // ===== R7-3: 缺失 UI 组件插件 =====
-export { uiDirectoryPickerProvider } from './ui-directory-picker-provider'
-export { uiMessageFeedbackProvider } from './ui-message-feedback-provider'
-export { uiModelSelectionProvider } from './ui-model-selection-provider'
-export { uiPermissionPresetsProvider } from './ui-permission-presets-provider'
-export { uiTrajectoryProvider } from './ui-trajectory-provider'
-export { uiDeliverablesProvider } from './ui-deliverables-provider'
+import { uiDirectoryPickerProvider } from './ui-directory-picker-provider'
+import { uiMessageFeedbackProvider } from './ui-message-feedback-provider'
+import { uiModelSelectionProvider } from './ui-model-selection-provider'
+import { uiPermissionPresetsProvider } from './ui-permission-presets-provider'
+import { uiTrajectoryProvider } from './ui-trajectory-provider'
+import { uiDeliverablesProvider } from './ui-deliverables-provider'
 
 // ===== R7-4: Host/Client 链路拆分 =====
-export { bundleProvider } from './bundle-provider'
-export { acpProvider } from './acp-provider'
-export { hostProvider } from './host-provider'
-export { remoteClientProvider } from './remote-client-provider'
+import { bundleProvider } from './bundle-provider'
+import { acpProvider } from './acp-provider'
+import { hostProvider } from './host-provider'
+import { remoteClientProvider } from './remote-client-provider'
 
 // ===== R7-7: CLI 入口插件 =====
-export { cliProvider } from './cli-provider'
+import { cliProvider } from './cli-provider'
+
+// Re-export all providers for external consumers
+export {
+  llmProvider, toolsProvider, sessionProvider, storageProvider, memoryProvider,
+  permissionProvider, mcpProvider, skillProvider, subagentProvider, settingsProvider, themeProvider,
+  fsProvider, shellProvider, sandboxProvider, webProvider, compactionProvider, hooksProvider,
+  approvalProvider, permissionsProvider, automationProvider, identityProvider, lspProvider,
+  codeRuntimeProvider, workflowProvider, contextInfoProvider, commandsProvider, userQuestionsProvider,
+  notebookProvider, squadProvider, dynamicRunnerProvider, pluginRegistryProvider, guardProvider,
+  credentialsProvider, attachmentsProvider, scheduleProvider, plansProvider, presetProvider,
+  hostClientProvider, visionProxyProvider, messageStorageProvider, eventLogProvider, telemetryProvider,
+  securityModeProvider, fileChangeTrackerProvider, transcriptCacheProvider, agentEngineProvider,
+  i18nProvider, costTrackerProvider, modelProfileProvider, streamingExecutorProvider, toolRenderProvider,
+  agentRegistryProvider, recoveryProvider, retryProvider, squadManagerProvider, issueProvider,
+  inboxProvider, storeProvider, llmMimoProvider, llmOpenAIProvider, llmRetryProvider, tokenMeterProvider,
+  sessionPersistenceSqliteProvider, sessionProjectionProvider, sessionStatsProvider, sessionTitleLLMProvider,
+  sessionCheckpointProvider, pwshLocalProvider, bashSandboxProvider, terminalBashProvider,
+  sandboxPolicyProvider, subprocessProvider, subagentForkInProcessProvider, subagentSpawnInProcessProvider,
+  toolSubagentControlProvider, compactionBasicProvider, compactionToolResultPrunerProvider,
+  commandCompactProvider, goalRoundDriverProvider, commandGoalProvider, planModeProvider,
+  webFetchHttpProvider, webSearchMimoProvider, repeatToolReminderProvider, timeoutGuardProvider,
+  invariantsGuardProvider, hostWebserverProvider, hostPluginInventoryProvider, sdkProtocolProvider,
+  uiPrimitivesProvider, uiInputTriggerProvider, uiAgentPresetProvider, uiSkillPanelProvider,
+  typertGeneratorProvider, typertLoaderProvider, typertProtocolProvider, typertRegistryProvider,
+  llmClaudeProvider, llmGeminiProvider, llmOllamaProvider, sessionRecoveryProvider,
+  uiDirectoryPickerProvider, uiMessageFeedbackProvider, uiModelSelectionProvider,
+  uiPermissionPresetsProvider, uiTrajectoryProvider, uiDeliverablesProvider,
+  bundleProvider, acpProvider, hostProvider, remoteClientProvider, cliProvider,
+}
 
 /**
  * 加载所有默认 Provider。

@@ -8,10 +8,8 @@
  *
  * inject: ['slots', 'modelProfile'] — 框架保证依赖可用后才执行。
  */
-import { lazy } from 'react'
 import type { Plugin } from '../cordis/src/index.ts'
-
-const ModelSelector = lazy(() => import('../../components/ModelSelector'))
+import { ModelSelector } from '../../components/ModelSelector'
 
 class ModelSelectionService {
   private currentModel: string | null = null
@@ -59,13 +57,24 @@ export const uiModelSelectionProvider: Plugin = Object.assign(
     try {
       const modelProfile = ctx.get('modelProfile')
       if (modelProfile) {
+        // Extract models from profile slot configurations (not profile IDs)
         const profiles = modelProfile.listProfiles?.() || []
-        const models = profiles.map((p: any) => ({
-          id: p.id,
-          name: p.name,
-          provider: p.provider,
-          contextWindow: p.contextWindow,
-        }))
+        const models: Array<{ id: string; name: string; provider: string; contextWindow?: number }> = []
+        const seen = new Set<string>()
+        for (const profile of profiles) {
+          if (profile?.slots) {
+            for (const slot of Object.values(profile.slots)) {
+              if (slot?.model && !seen.has(slot.model)) {
+                seen.add(slot.model)
+                models.push({
+                  id: slot.model,
+                  name: slot.model,
+                  provider: slot.provider || 'unknown',
+                })
+              }
+            }
+          }
+        }
         service.setAvailableModels(models)
       }
     } catch (e) { console.warn('[ui-model-selection-provider.ts]', e) }

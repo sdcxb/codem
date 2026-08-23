@@ -440,7 +440,10 @@ describe("死代码清除", () => {
 
   it("App.tsx 不再有 DelegationPanel render block", () => {
     const source = readFile("App.tsx");
-    expect(source).not.toContain("DelegationPanel");
+    // 排除注释行后检查是否还有 DelegationPanel 引用
+    const lines = source.split('\n').filter(l => !l.trim().startsWith('//') && !l.trim().startsWith('{/*'));
+    const nonCommentCode = lines.join('\n');
+    expect(nonCommentCode).not.toContain("DelegationPanel");
   });
 
   it("SettingsPanel 不再有 AutomationSettingsSection 函数定义", () => {

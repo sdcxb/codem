@@ -1173,9 +1173,9 @@ export async function listMarketSkills(
  * 获取技能安装目录。
  */
 async function getSkillsDir(): Promise<string> {
-  const home = await tauriInvoke("get_default_cwd");
-  const sep = home.includes("/") && !home.includes("\\") ? "/" : "\\";
-  return `${home}${sep}.codem${sep}skills`;
+  const dataDir = await tauriInvoke("get_app_data_dir");
+  const sep = dataDir.includes("/") && !dataDir.includes("\\") ? "/" : "\\";
+  return `${dataDir}.codem${sep}skills`;
 }
 
 /**

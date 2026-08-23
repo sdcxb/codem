@@ -11,7 +11,7 @@
  * 使用 CSS 变量驱动，自动适配三套皮肤。
  */
 
-import { useState, useEffect, memo } from "react";
+import { useState, useEffect, useRef, memo } from "react";
 import { LoaderCircle, Sparkles, CheckCircle2 } from "lucide-react";
 
 interface BootSplashProps {
@@ -44,6 +44,13 @@ export const BootSplash = memo(function BootSplash({
   const [fadingOut, setFadingOut] = useState(false);
   const [hidden, setHidden] = useState(false);
 
+  // 用 ref 存 onComplete，避免每次渲染传入新闭包导致 useEffect 重置 timer。
+  // 根因：App.tsx 中 onComplete={() => setBootSplashVisible(false)} 每次渲染都是新引用，
+  // 如果放入 useEffect 依赖数组，Cordis 初始化期间频繁重渲染会不断清除/重设 timer，
+  // 导致 300ms 延迟永远无法到期，渐隐动画永不启动，卡在"就绪 100%"。
+  const onCompleteRef = useRef(onComplete);
+  onCompleteRef.current = onComplete;
+
   useEffect(() => {
     if (!visible) {
       setHidden(true);
@@ -53,19 +60,23 @@ export const BootSplash = memo(function BootSplash({
     setFadingOut(false);
   }, [visible]);
 
-  // 当 phase 变为 ready 时，启动渐隐动画
+  // 当 phase 变为 ready 时，启动渐隐动画。
   useEffect(() => {
     if (phase === "ready" && visible) {
-      const timer = setTimeout(() => {
+      let innerTimer: ReturnType<typeof setTimeout> | undefined;
+      const outerTimer = setTimeout(() => {
         setFadingOut(true);
-        setTimeout(() => {
+        innerTimer = setTimeout(() => {
           setHidden(true);
-          onComplete?.();
+          onCompleteRef.current?.();
         }, 400);
       }, 300);
-      return () => clearTimeout(timer);
+      return () => {
+        clearTimeout(outerTimer);
+        if (innerTimer) clearTimeout(innerTimer);
+      };
     }
-  }, [phase, visible, onComplete]);
+  }, [phase, visible]);
 
   if (hidden) return null;
 

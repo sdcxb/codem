@@ -5,10 +5,7 @@
  * app.workflow-run slot 现在在 App.tsx 中通过 SlotBridge 消费（fallback 为 null）。
  * 使用 inject 声明依赖 slots 服务。
  */
-import { lazy } from 'react'
 import type { Plugin } from '../cordis/src/index.ts'
-
-const ActivityTimeline = lazy(() => import('../../components/ActivityTimeline'))
 
 export const uiWorkflowRunProvider: Plugin = Object.assign(
   (ctx: any) => {
@@ -19,14 +16,15 @@ export const uiWorkflowRunProvider: Plugin = Object.assign(
       async cancel(id) { const wf=ctx.get('workflow'); if(wf&&wf.cancel)return wf.cancel(id); return true },
     }
 
-    const slots = ctx.get('slots')
-    const unreg = slots.register({ name: 'app.workflow-run', id: 'r8-activitytimeline', priority: 5 }, ActivityTimeline)
+    // 不在此注册 ActivityTimeline 到 app.workflow-run slot。
+    // ActivityTimeline 需要 items prop，
+    // 而 App.tsx 中的 SlotBridge 以无 props 方式消费该 slot，会导致崩溃。
+    // ActivityTimeline 应通过 TrajectoryPanel 等内部路径使用。
 
     const disp = ctx.provide('uiWorkflowRun', s)
 
     return () => {
       if (disp) disp()
-      if (unreg) unreg()
     }
   },
   { inject: ['slots'] }

@@ -28,6 +28,8 @@
  * - 回归：设置 CODEM_UPDATE_SNAPSHOTS=1 更新快照
  */
 
+import { getSettingJSON, setSettingJSON } from "../storage/settings";
+
 // ========== Layer Selection ==========
 
 export type TestLayer = "unit" | "snapshot" | "e2e";
@@ -110,7 +112,6 @@ export class SnapshotManager {
   /** 持久化到 SQLite settings */
   private persist(): void {
     try {
-      const { setSettingJSON } = require("../storage/settings");
       setSettingJSON(this.storageKey, [...this.snapshots.values()]);
     } catch {
       // Non-critical — snapshots are test-only
@@ -120,7 +121,6 @@ export class SnapshotManager {
   /** 从 SQLite settings 加载 */
   load(): void {
     try {
-      const { getSettingJSON } = require("../storage/settings");
       const entries = getSettingJSON(this.storageKey, []) as SnapshotEntry[];
       if (Array.isArray(entries)) {
         for (const entry of entries) {

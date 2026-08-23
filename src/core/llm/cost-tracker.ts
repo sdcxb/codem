@@ -1,5 +1,6 @@
 import type { TokenUsage } from "./types";
 import { getSettingJSON, setSettingJSON } from "../storage/settings";
+import { getTelemetry } from "../telemetry/telemetry";
 
 // ========== Cost Types ==========
 export interface ModelCost {
@@ -184,7 +185,6 @@ export class CostTracker {
     // This eliminates the dual-track recording problem — CostTracker is the
     // source of truth for cost, TelemetryCollector receives a forwarded copy.
     try {
-      const { getTelemetry } = require("./telemetry");
       const telemetry = getTelemetry();
       telemetry.record(params.sessionId, "cost_tracked", {
         recordId: record.id,

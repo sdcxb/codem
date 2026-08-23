@@ -35,7 +35,7 @@ import { fixCjkBoldMarkdown } from "../../core/llm/stream-reveal";
  */
 const ParagraphWithActions = memo(function ParagraphWithActions({ children }: { children: ReactNode }) {
   const [copied, setCopied] = useState(false);
-  const pRef = useRef<HTMLParagraphElement>(null);
+  const pRef = useRef<HTMLDivElement>(null);
 
   const handleCopy = useCallback(() => {
     const text = pRef.current?.textContent || "";
@@ -55,7 +55,7 @@ const ParagraphWithActions = memo(function ParagraphWithActions({ children }: { 
   }, []);
 
   return (
-    <p className="rich-content-p" ref={pRef}>
+    <div className="rich-content-p" ref={pRef}>
       {children}
       <span className="paragraph-actions" contentEditable={false}>
         <button
@@ -75,7 +75,7 @@ const ParagraphWithActions = memo(function ParagraphWithActions({ children }: { 
           <Quote size={12} />
         </button>
       </span>
-    </p>
+    </div>
   );
 });
 

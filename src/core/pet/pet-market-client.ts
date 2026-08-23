@@ -282,9 +282,9 @@ export async function installMarketPet(
 
     // 3. 下载 spritesheet 到临时路径
     //    从 URL 推断文件扩展名（.webp 或 .png）
-    const home = await tauriInvoke("get_default_cwd");
-    const sep = home.includes("/") && !home.includes("\\") ? "/" : "\\";
-    const tempDir = `${home}${sep}.codem${sep}pets${sep}.tmp`;
+    const dataDir = await tauriInvoke("get_app_data_dir");
+    const sep = dataDir.includes("/") && !dataDir.includes("\\") ? "/" : "\\";
+    const tempDir = `${dataDir}.codem${sep}pets${sep}.tmp`;
     const spriteExt = pet.spritesheetUrl.match(/\.(webp|png)$/i)?.[1]?.toLowerCase() || "png";
     const tempSpritesheetPath = `${tempDir}${sep}${pet.slug}-spritesheet.${spriteExt}`;
 
@@ -362,9 +362,9 @@ export async function fetchPetImageAsDataUrl(
   mimeType: string = "image/webp",
 ): Promise<string | null> {
   try {
-    const home = await tauriInvoke("get_default_cwd");
-    const sep = home.includes("/") && !home.includes("\\") ? "/" : "\\";
-    const tempDir = `${home}${sep}.codem${sep}pets${sep}.tmp`;
+    const dataDir = await tauriInvoke("get_app_data_dir");
+    const sep = dataDir.includes("/") && !dataDir.includes("\\") ? "/" : "\\";
+    const tempDir = `${dataDir}.codem${sep}pets${sep}.tmp`;
     const ext = mimeType === "image/png" ? "png" : "webp";
     const tempPath = `${tempDir}${sep}preview-${Date.now()}.${ext}`;
 

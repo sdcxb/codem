@@ -1,0 +1,35 @@
+# Codem Desktop Bundle — 桌面应用（Tauri）覆盖层
+#
+# 在 codem.base.yml 之上增加/覆盖插件配置。
+# 对标 DSH 的 headless/web-app bundle patch。
+
+# 桌面模式下启用本地文件系统（base 层已加载，这里只覆盖 config 如果需要）
+
+# 桌面模式下禁用 Web 服务器（Tauri 不需要 HTTP 服务）
+- id: host-webserver
+  disabled: true
+
+- id: host-apiproxy
+  disabled: true
+
+- id: host-frontend-static
+  disabled: true
+
+- id: api-gateway
+  disabled: true
+
+- id: remote-client
+  disabled: true
+
+- id: cordis-client-runner
+  disabled: true
+
+- id: cordis-host-runner
+  disabled: true
+
+- id: cli
+  disabled: true
+
+# host 依赖 hostWebserver（已禁用），桌面模式无需 host 服务
+- id: host
+  disabled: true

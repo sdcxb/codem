@@ -1,4 +1,6 @@
 // ========== Error Types ==========
+import { setSettingJSON } from "../storage/settings";
+
 export type RetryableErrorType =
   | "rate_limit"        // HTTP 429
   | "server_error"      // HTTP 5xx
@@ -117,12 +119,15 @@ export class RetryExecutor {
   /** Load persisted config from SQLite settings */
   private loadPersistedConfig() {
     try {
-      const { getSettingJSON } = require("../storage/settings");
-      const saved = getSettingJSON("codem-retry-config", null) as Partial<RetryConfig> | null;
-      if (saved) {
-        this.config = { ...this.config, ...saved };
+      // Use globalThis to access settings if available (set by App.tsx after DB init)
+      const settings = (globalThis as any).__codemSettings?.getSettingJSON;
+      if (typeof settings === 'function') {
+        const saved = settings("codem-retry-config", null) as Partial<RetryConfig> | null;
+        if (saved) {
+          this.config = { ...this.config, ...saved };
+        }
       }
-    } catch (e) { console.warn('[retry.ts]', e) }
+    } catch (e) { /* settings not yet available — safe to ignore */ }
   }
 
   /** Get current config */
@@ -135,7 +140,6 @@ export class RetryExecutor {
     this.config = { ...this.config, ...updates };
     this.state.totalAttempts = this.config.maxAttempts;
     try {
-      const { setSettingJSON } = require("../storage/settings");
       setSettingJSON("codem-retry-config", this.config);
     } catch (e) { console.warn('[retry.ts]', e) }
   }

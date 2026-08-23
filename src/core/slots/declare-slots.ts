@@ -118,4 +118,13 @@ export function declareAppSlots(ctx: Context): void {
 
   // ===== 底部面板 tab 槽位（list 类型） =====
   slots.declareSlot('bottom-panel.tabs', { kind: 'list', scope: 'root' }, 'framework')
+
+  // ===== UI 插件使用的额外槽位（与上面的简短名称是不同的 slot） =====
+  slots.declareSlot('app.goal-bar', { kind: 'single', scope: 'root' }, 'framework')
+  slots.declareSlot('app.jobs-badge', { kind: 'single', scope: 'root' }, 'framework')
+  slots.declareSlot('app.plan-mode-chip', { kind: 'single', scope: 'root' }, 'framework')
+  slots.declareSlot('app.model-selector', { kind: 'single', scope: 'root' }, 'framework')
+  slots.declareSlot('app.permission-preset-selector', { kind: 'single', scope: 'root' }, 'framework')
+  slots.declareSlot('app.trajectory-panel', { kind: 'single', scope: 'root' }, 'framework')
+  slots.declareSlot('app.deliverable-files', { kind: 'single', scope: 'root' }, 'framework')
 }

@@ -1,4 +1,5 @@
 import { readFile as apiReadFile, writeFile as apiWriteFile, executeCommand, listDirectory } from "../file-api";
+import { getEventLog } from "../storage/event-log";
 
 // ========== F2.3: AGENTS.md Fallback Filenames ==========
 
@@ -93,12 +94,20 @@ export async function loadProjectInstructions(projectPath: string): Promise<stri
  * F2.3: Try to read a file from a list of fallback filenames.
  * Returns the first successfully read file's content, or empty string.
  */
+/**
+ * Joins a directory path with a filename, normalizing any trailing separators.
+ */
+function joinPath(dir: string, name: string): string {
+  const trimmed = dir.replace(/[\\/]+$/, "");
+  return `${trimmed}\\${name}`;
+}
+
 async function readWithFallbacks(dir: string, filenames: string[]): Promise<string> {
   for (const name of filenames) {
     try {
-      const content = await apiReadFile(`${dir}\\${name}`);
+      const content = await apiReadFile(joinPath(dir, name));
       if (content.trim()) return content;
-    } catch (e) { console.warn('[files.ts]', e) }
+    } catch (e) { /* file not found is expected, skip silently */ }
   }
   return "";
 }
@@ -123,15 +132,14 @@ export async function loadHierarchicalProjectInstructions(
   const sections: string[] = [];
   let totalBytes = 0;
 
-  // Layer 1: Global instructions (~/.codem/AGENTS.md or fallbacks)
+  // Layer 1: Global instructions (app_data/.codem/AGENTS.md or fallbacks)
   try {
-    const homeDir = await executeCommand("echo %USERPROFILE%", undefined)
-      .then(r => r.stdout.trim())
-      .catch(() => "");
-    if (homeDir) {
-      const globalContent = await readWithFallbacks(`${homeDir}\\.codem`, AGENTS_MD_FALLBACKS);
+    const { getAppDataDir } = await import("../file-api");
+    const dataDir = await getAppDataDir().catch(() => "");
+    if (dataDir) {
+      const globalContent = await readWithFallbacks(`${dataDir}.codem`, AGENTS_MD_FALLBACKS);
       if (globalContent.trim()) {
-        const bytes = Buffer.byteLength(globalContent, "utf-8");
+        const bytes = new TextEncoder().encode(globalContent).length;
         if (totalBytes + bytes <= maxBytes) {
           sections.push(`<!-- Global Instructions -->\n${globalContent}`);
           totalBytes += bytes;
@@ -140,16 +148,15 @@ export async function loadHierarchicalProjectInstructions(
     }
   } catch (e) { console.warn('[files.ts]', e) }
 
-  // R3-2.4 Layer 1.5: Deployment instructions (~/.codem/deployment/AGENTS.md)
+  // R3-2.4 Layer 1.5: Deployment instructions (app_data/.codem/deployment/AGENTS.md)
   // 对标 DSH context/agent-instructions 的部署层级
   try {
-    const homeDir = await executeCommand("echo %USERPROFILE%", undefined)
-      .then(r => r.stdout.trim())
-      .catch(() => "");
-    if (homeDir) {
-      const deploymentContent = await readWithFallbacks(`${homeDir}\\.codem\\deployment`, AGENTS_MD_FALLBACKS);
+    const { getAppDataDir } = await import("../file-api");
+    const dataDir = await getAppDataDir().catch(() => "");
+    if (dataDir) {
+      const deploymentContent = await readWithFallbacks(`${dataDir}.codem\\deployment`, AGENTS_MD_FALLBACKS);
       if (deploymentContent.trim()) {
-        const bytes = Buffer.byteLength(deploymentContent, "utf-8");
+        const bytes = new TextEncoder().encode(deploymentContent).length;
         if (totalBytes + bytes <= maxBytes) {
           sections.push(`<!-- Deployment Instructions -->\n${deploymentContent}`);
           totalBytes += bytes;
@@ -162,7 +169,7 @@ export async function loadHierarchicalProjectInstructions(
   {
     const projectContent = await readWithFallbacks(projectPath, AGENTS_MD_FALLBACKS);
     if (projectContent.trim()) {
-      const bytes = Buffer.byteLength(projectContent, "utf-8");
+      const bytes = new TextEncoder().encode(projectContent).length;
       if (totalBytes + bytes <= maxBytes) {
         sections.push(`<!-- Project Instructions -->\n${projectContent}`);
         totalBytes += bytes;
@@ -177,10 +184,10 @@ export async function loadHierarchicalProjectInstructions(
     let currentPath = projectPath;
 
     for (const dir of relativePath) {
-      currentPath = `${currentPath}\\${dir}`;
+      currentPath = joinPath(currentPath, dir);
       const nestedContent = await readWithFallbacks(currentPath, AGENTS_MD_FALLBACKS);
       if (nestedContent.trim()) {
-        const bytes = Buffer.byteLength(nestedContent, "utf-8");
+        const bytes = new TextEncoder().encode(nestedContent).length;
         if (totalBytes + bytes <= maxBytes) {
           sections.push(`<!-- ${dir} Instructions -->\n${nestedContent}`);
           totalBytes += bytes;
@@ -193,7 +200,6 @@ export async function loadHierarchicalProjectInstructions(
   // 对标 DSH context/agent-instructions 的会话层级
   // 从事件日志中读取会话级 AGENTS.md 覆盖
   try {
-    const { getEventLog } = require("../storage/event-log");
     const events = getEventLog().readAll(""); // session-agnostic global event log
     // Look for the latest session_meta action=instructions_override
     for (let i = events.length - 1; i >= 0; i--) {
@@ -201,7 +207,7 @@ export async function loadHierarchicalProjectInstructions(
       if (evt.type === "session_meta" && (evt.payload as any)?.action === "instructions_override") {
         const content = (evt.payload as any).content as string;
         if (content && content.trim()) {
-          const bytes = Buffer.byteLength(content, "utf-8");
+          const bytes = new TextEncoder().encode(content).length;
           if (totalBytes + bytes <= maxBytes) {
             sections.push(`<!-- Session Instructions -->\n${content}`);
             totalBytes += bytes;

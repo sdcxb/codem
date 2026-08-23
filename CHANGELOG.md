@@ -2,6 +2,59 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.5.1] - 2026-08-23
+
+### DSH 架构对标深度整改 + 严重 Bug 修复 + YAML 声明式插件加载
+
+#### 1. YAML 声明式插件加载器（对标 DSH cordis.patch.yml）
+- 新增 `yaml-loader.ts`：解析 YAML 声明（id, name, inject, disabled, when, config, core），按条件过滤平台、通过 id 查找 Plugin 对象、拓扑排序后加载到 Cordis Context
+- 新增 `config/codem.base.yml`：所有运行模式共享的核心插件清单（80+ 插件声明，对标 DSH base bundle）
+- 新增 `config/codem.desktop.yml`：桌面应用（Tauri）覆盖层（UI 插件 + 桌面专用配置）
+- `App.tsx` 启动流程重构：对标 DSH `boot()` → `loadFromEntries(ctx, mergedEntries)` → `assertActivated(ctx, 'codem')` 流程
+- `provider/index.ts` 改造：从 `export` 改为 `import + re-export`，确保所有 Provider 在 YAML 加载前完成静态导入
+
+#### 2. 严重 Bug — LLM 回答重复问题（根因修复）
+- **根因**：`saveMessages` 函数全量遍历所有消息并无去重地追加到事件日志，导致事件日志中存在大量重复的 `user_message` 和 `assistant_text` 事件。`buildMessages` 优先使用 `deriveMessagesFromEvents`（事件投影），导致重复消息被传给 LLM
+- **修复**：
+  - 移除 `saveMessages` 中对事件日志的全量重复追加逻辑，现在只负责 DB CRUD
+  - `buildMessages` 移除事件投影路径，强制只从 DB 读取消息（DB 为单一读取源）
+  - `applyUserMessage` 和 `applyToolResult` 添加去重检查，防止重复事件在投影时产生重复消息
+  - 流式助手消息保存逻辑优化：仅在 `text_delta` 或 `tool_start` 时才调用 `saveMessages`
+
+#### 3. 严重 Bug — llmEngine 未注册为 Cordis 服务
+- **根因**：`getCtxService('llmEngine')` 永远返回 null，因为 `llmEngine` 从未通过 `ctx.provide()` 注册
+- **修复**：在 `getLLMEngine(ctx)` 后调用 `ctx.provide('llmEngine', engine)` 注册为 Cordis 服务，在 YAML 加载之前完成注册
+
+#### 4. 严重 Bug — mimoAuth 服务未注册 + PluginLoader.load() 未调用
+- **根因**：`mimoAuth` 从未通过 `ctx.provide()` 注册；`PluginLoader.scan()` 后未调用 `loader.load()`
+- **修复**：新增 `mimo-auth-provider.ts` 并通过 YAML 声明注册；所有插件改由 YAML 加载器加载，PluginLoader 只做元数据发现
+
+#### 5. SlotBridge / SlotRenderer 对标 DSH 重构
+- `SlotBridge` 对标 DSH `scoped-slots.tsx` 的 `SlotOutlet` + `renderOutletContent` 模式重写
+- `SlotRenderer` 对标 DSH：`useSyncExternalStore` 仅用于版本通知，`entries` 在渲染体中读取，`WeakMap` 缓存 subscribe/getVersion 闭包
+- 新增 `SlotErrorBoundary` 错误边界：插件组件渲染崩溃时自动回退到 fallback
+- fiber `await()` 添加超时保护（5s/10s），避免单个 fiber 永不 resolve 导致启动卡死
+- `useCtxReady` hook 优化：Cordis Context 就绪后立即触发重渲染
+
+#### 6. Provider 架构全面整改
+- 30+ 个 Provider 文件统一改造：从 `export const xxxProvider` 改为 `import` 后在 `provider/index.ts` 中集中 re-export
+- `squadProvider` 拆分为 `squadProvider` + `squadManagerProvider`（消除别名混乱）
+- `llm/index.ts` 中 `_getOrThrow` 改为 `_getOrFallback`：ctx.get() 返回 undefined 时回退到模块级单例（容错）
+- 所有 Provider 的 `inject` 声明对齐 DSH 模式
+
+#### 7. LLMEngine Provider 增强
+- `provider.ts` 新增 `toAPIMessage` 的完整 ContentBlock 处理（tool_use/tool_result）
+- `agentic-loop.ts` 精简：移除事件投影路径，消息构建只依赖 DB
+- `ollama-provider.ts` 新增本地 LLM 支持
+- `replay-adapter.ts` 增强：回放测试支持
+
+#### 8. 其他改进
+- `vite.config.ts` 优化构建配置
+- `node-crypto-stub.ts` 增强浏览器环境兼容性
+- `buffer-polyfill.ts` 新增 Buffer polyfill
+- `vite-env.d.ts` 新增类型声明
+- 新增 `cordis-architecture-guard.test.ts` / `cordis-extended-methods.test.ts` / `cordis-functional-loop.test.ts` 测试文件
+
 ## [1.5.0] - 2026-08-21
 
 ### 架构升级 — Cordis "一切插件化" 工具发现机制

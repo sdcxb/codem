@@ -6,7 +6,8 @@ import type { Plugin } from '../cordis/src/index.ts'
 import { ThemeManager } from '../theme'
 
 export const themeProvider: Plugin = (ctx: any) => {
-  const themeMgr = new ThemeManager()
+  // ThemeManager is a singleton instance, not a class — use directly
+  const themeMgr = ThemeManager
 
   const dispose = ctx.provide('theme', {
     getCurrent: () => themeMgr.getCurrent(),

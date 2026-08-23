@@ -47,7 +47,6 @@ import { getSettingJSON, setSettingJSON } from "../core/storage/settings";
 import { SlotBridge, SlotListBridge } from "../core/slots/SlotBridge";
 import { JobsBadge, type JobView } from "./JobsBadge";
 import { DeliverableFiles } from "./DeliverableFiles";
-import { TrajectoryPanel } from "./TrajectoryPanel";
 
 interface ChatPanelProps {
   onSend: (message: string, attachments?: MessageAttachment[], selectedSkills?: string[]) => void;
@@ -785,13 +784,14 @@ canEdit={!isSessionStreaming}
               window.dispatchEvent(new CustomEvent('codem-view-diff', { detail: { record, file } }))
             }}
           />
-          {/* SlotBridge 消费 app.trajectory-panel — 执行轨迹详情面板 */}
+          {/* 执行轨迹面板 — 调试时启用，生产环境隐藏以避免空白区域
           <SlotBridge
             name="app.trajectory-panel"
             fallback={null}
             messages={messages}
             defaultExpanded={false}
           />
+          */}
           <div ref={messagesEndRef} />
           {/* P0: Scrollbar markers for message navigation */}
           <ScrollbarMarkers messages={messages} containerRef={messagesContainerRef} />
@@ -1048,7 +1048,7 @@ canEdit={!isSessionStreaming}
           </button>
         </div>
       )}
-      <InputArea onSend={(msg, atts, skills) => { onSend(msg, atts, skills); setQuoteContext(null); }} onCancel={onCancel} disabled={(!currentSessionId || activeSessions.has(currentSessionId)) || !connected} isStreaming={!currentSessionId ? isStreaming : activeSessions.has(currentSessionId)} noSession={!currentSessionId} collaborationMode={collaborationMode} onModeChange={onModeChange || (() => {})} projectPath={projectPath} quoteContext={quoteContext} onClearQuote={() => { setQuoteContext(null); }} suggestionPrompt={suggestionPrompt} onSuggestionConsumed={() => setSuggestionPrompt(null)} notebookId={notebookId} onToggleRightSidebar={() => setShowRightSidebar(!showRightSidebar)} onToggleQuickPhrase={() => setShowQuickPhrase(!showQuickPhrase)} onToggleDraftPicker={() => setShowDraftPicker(!showDraftPicker)} hasDrafts={promptDrafts.length > 0} model={model} onModelChange={onModelChange} mode={mode} />
+      <InputArea sessionKey={currentSessionId} onSend={(msg, atts, skills) => { onSend(msg, atts, skills); setQuoteContext(null); }} onCancel={onCancel} disabled={(!currentSessionId || activeSessions.has(currentSessionId)) || !connected} isStreaming={!currentSessionId ? isStreaming : activeSessions.has(currentSessionId)} noSession={!currentSessionId} collaborationMode={collaborationMode} onModeChange={onModeChange || (() => {})} projectPath={projectPath} quoteContext={quoteContext} onClearQuote={() => { setQuoteContext(null); }} suggestionPrompt={suggestionPrompt} onSuggestionConsumed={() => setSuggestionPrompt(null)} notebookId={notebookId} onToggleRightSidebar={() => setShowRightSidebar(!showRightSidebar)} onToggleQuickPhrase={() => setShowQuickPhrase(!showQuickPhrase)} onToggleDraftPicker={() => setShowDraftPicker(!showDraftPicker)} hasDrafts={promptDrafts.length > 0} model={model} onModelChange={onModelChange} mode={mode} />
     </div>
   );
 }

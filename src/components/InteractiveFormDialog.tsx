@@ -19,7 +19,7 @@ interface InteractiveFormDialogProps {
   onCancel: () => void;
 }
 
-export function InteractiveFormDialog({ questions, onSubmit, onCancel }: InteractiveFormDialogProps) {
+export function InteractiveFormDialog({ questions = [], onSubmit, onCancel }: Partial<InteractiveFormDialogProps>) {
   const [answers, setAnswers] = useState<Record<string, unknown>>({});
   const [customInputs, setCustomInputs] = useState<Record<string, string>>({});
   const [useCustom, setUseCustom] = useState<Record<string, boolean>>({});
@@ -79,7 +79,7 @@ export function InteractiveFormDialog({ questions, onSubmit, onCancel }: Interac
         }
       }
     }
-    onSubmit(answers);
+    onSubmit?.(answers);
   };
 
   const isSingleQuestion = questions.length === 1;

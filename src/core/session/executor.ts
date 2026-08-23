@@ -22,6 +22,7 @@ import { getDelegationOrchestrator } from "./orchestrator";
 import type { DelegationTask } from "./types";
 import { useAppStore } from "../../store";
 import { useProjectStore } from "../store";
+import { getEventLog } from "../storage/event-log";
 import { getLang } from "../i18n/lang";
 
 // ========== 类型 ==========
@@ -126,7 +127,6 @@ export async function executeSessionTurn(params: ExecuteSessionTurnParams): Prom
 
     // C5: EventLog dual-write — user message
     try {
-      const { getEventLog } = require("../storage/event-log");
       getEventLog().append(sessionId, "user_message", {
         messageId: userMsgId,
         content: prefix + message,
@@ -262,7 +262,7 @@ export async function executeSessionTurn(params: ExecuteSessionTurnParams): Prom
       });
       // C5: EventLog dual-write — assistant text
       try {
-        const { getEventLog } = require("../storage/event-log");
+        const { getEventLog } = await import("../storage/event-log");
         getEventLog().append(sessionId, "assistant_text", {
           messageId: currentAssistantMsgId,
           content: assistantContent,

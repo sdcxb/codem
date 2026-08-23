@@ -209,6 +209,9 @@ export function SettingsPanel({ onClose, onSessionRecovery, onUsageStats, initia
   const [userConfig, setUserConfig] = useState<UserConfig>(defaultUser);
   const [saved, setSaved] = useState(false);
   const [showKeys, setShowKeys] = useState<Record<string, boolean>>({});
+  const [dynamicModels, setDynamicModels] = useState<Record<string, Array<{ id: string; name: string }>>>({});
+  const [refreshingModels, setRefreshingModels] = useState<Record<string, boolean>>({});
+  const [refreshStatus, setRefreshStatus] = useState<Record<string, string>>({});
   const [mimoAccount, setMimoAccount] = useState<{ email: string; uid: string } | null>(null);
   const [loginStatus, setLoginStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [loginError, setLoginError] = useState<string | null>(null);
@@ -232,6 +235,14 @@ export function SettingsPanel({ onClose, onSessionRecovery, onUsageStats, initia
       }
       setSettings({ ...defaultSettings, ...parsed });
     }
+
+    // Load dynamically fetched models from DB cache
+    try {
+      const stored = getSettingJSON<Record<string, Array<{ id: string; name: string }>>>("codem-dynamic-models", {});
+      if (stored && Object.keys(stored).length > 0) {
+        setDynamicModels(stored);
+      }
+    } catch (e) { console.warn('[SettingsPanel] load dynamic models:', e) }
 
     // Load language setting (also stored separately for fast access)
     const storedLang = getSetting("codem-language");
@@ -500,6 +511,73 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
     });
   };
 
+  /** Fetch models from the provider's /models endpoint and cache them */
+  const refreshProviderModels = async (providerId: string) => {
+    const provider = settings.providers.find((p) => p.id === providerId);
+    if (!provider || !provider.apiKey) {
+      setRefreshStatus((prev) => ({ ...prev, [providerId]: "请先配置 API Key" }));
+      return;
+    }
+
+    setRefreshingModels((prev) => ({ ...prev, [providerId]: true }));
+    setRefreshStatus((prev) => ({ ...prev, [providerId]: "" }));
+
+    const baseUrl = (provider.baseUrl || "").replace(/\/+$/, "");
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${provider.apiKey}`,
+    };
+
+    // Try /models and /v1/models endpoints
+    const endpoints = [`${baseUrl}/models`, `${baseUrl}/v1/models`];
+    let success = false;
+
+    for (const url of endpoints) {
+      try {
+        const response = await fetch(url, {
+          method: "GET",
+          headers,
+          signal: AbortSignal.timeout(15000),
+        });
+        if (!response.ok) continue;
+
+        const data = await response.json();
+        const serverModels = data.data || data.models || [];
+        if (!Array.isArray(serverModels) || serverModels.length === 0) continue;
+
+        // Convert to {id, name} format
+        const models = serverModels.map((sm: any) => ({
+          id: sm.id,
+          name: sm.id,
+        }));
+
+        // Update state
+        setDynamicModels((prev) => ({ ...prev, [providerId]: models }));
+        setRefreshStatus((prev) => ({ ...prev, [providerId]: `✓ 获取到 ${models.length} 个模型` }));
+
+        // Persist to DB cache (merge with existing)
+        try {
+          const existing = getSettingJSON<Record<string, any>>("codem-dynamic-models", {});
+          setSettingJSON("codem-dynamic-models", { ...existing, [providerId]: models });
+        } catch (e) { console.warn('[SettingsPanel] persist models:', e) }
+
+        // Notify engine to reload
+        window.dispatchEvent(new Event("codem-settings-changed"));
+        success = true;
+        break;
+      } catch (e: any) {
+        console.warn(`[SettingsPanel] refresh ${providerId} ${url}:`, e.message);
+        continue;
+      }
+    }
+
+    if (!success) {
+      setRefreshStatus((prev) => ({ ...prev, [providerId]: "✗ 获取失败，使用内置列表" }));
+    }
+
+    setRefreshingModels((prev) => ({ ...prev, [providerId]: false }));
+  };
+
   const toggleShowKey = (id: string) => {
     setShowKeys((prev) => ({ ...prev, [id]: !prev[id] }));
   };
@@ -731,7 +809,15 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
               ) : (
                 <>
                   {settings.providers.filter(p => p.apiKey).map(p => {
-                    const models: Record<string, Array<{id: string, name: string}>> = {
+                    // Use dynamic models if available, otherwise fall back to static list
+                    const dynModels = dynamicModels[p.id];
+                    if (dynModels && dynModels.length > 0) {
+                      return dynModels.map(m => (
+                        <option key={m.id} value={m.id}>{p.name} - {m.name}</option>
+                      ));
+                    }
+                    // Static fallback
+                    const staticModels: Record<string, Array<{id: string, name: string}>> = {
                       openai: [{id:"gpt-4o",name:"GPT-4o"},{id:"gpt-4o-mini",name:"GPT-4o Mini"},{id:"o3",name:"o3"}],
                       anthropic: [{id:"claude-sonnet-4-20250514",name:"Claude Sonnet 4"},{id:"claude-opus-4-20250514",name:"Claude Opus 4"}],
                       deepseek: [
@@ -741,7 +827,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
                       moonshot: [{id:"moonshot-v1-8k",name:"Moonshot 8K"},{id:"moonshot-v1-32k",name:"Moonshot 32K"},{id:"moonshot-v1-128k",name:"Moonshot 128K"}],
                       gemini: [{id:"gemini-2.5-flash",name:"Gemini 2.5 Flash"},{id:"gemini-2.5-pro",name:"Gemini 2.5 Pro"},{id:"gemini-2.0-flash",name:"Gemini 2.0 Flash"}],
                     };
-                    return (models[p.id] || []).map(m => (
+                    return (staticModels[p.id] || []).map(m => (
                       <option key={m.id} value={m.id}>{p.name} - {m.name}</option>
                     ));
                   })}
@@ -1156,6 +1242,35 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
                   value={provider.baseUrl}
                   onChange={(e) => updateProvider(provider.id, { baseUrl: e.target.value })}
                 />
+              </div>
+
+              <div className="setting-group" style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                <button
+                  onClick={() => refreshProviderModels(provider.id)}
+                  disabled={refreshingModels[provider.id]}
+                  style={{
+                    padding: "4px 12px",
+                    background: refreshingModels[provider.id] ? "var(--bg-tertiary)" : "var(--accent)",
+                    color: "var(--text-on-accent)",
+                    border: "1px solid var(--border-primary)",
+                    borderRadius: 4,
+                    fontSize: 12,
+                    cursor: refreshingModels[provider.id] ? "not-allowed" : "pointer",
+                    opacity: refreshingModels[provider.id] ? 0.6 : 1,
+                  }}
+                >
+                  {refreshingModels[provider.id] ? "获取中..." : "刷新模型列表"}
+                </button>
+                {refreshStatus[provider.id] && (
+                  <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                    {refreshStatus[provider.id]}
+                  </span>
+                )}
+                {dynamicModels[provider.id] && dynamicModels[provider.id].length > 0 && !refreshStatus[provider.id] && (
+                  <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                    ✓ {dynamicModels[provider.id].length} 个动态模型
+                  </span>
+                )}
               </div>
 
               <button

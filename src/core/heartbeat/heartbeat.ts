@@ -1,4 +1,6 @@
 // ========== Heartbeat Types ==========
+import { getSettingJSON, setSettingJSON } from "../storage/settings";
+
 export type HeartbeatStatus = "active" | "idle" | "paused" | "stopped";
 
 export interface HeartbeatConfig {
@@ -259,8 +261,7 @@ export class HeartbeatManager {
   getGlobalConfig(): HeartbeatConfig {
     if (this.globalConfig) return this.globalConfig;
     try {
-      const { getSettingJSON } = require("../storage/settings");
-      const saved = getSettingJSON("codem-heartbeat-config", null) as HeartbeatConfig | null;
+const saved = getSettingJSON("codem-heartbeat-config", null) as HeartbeatConfig | null;
       if (saved) {
         this.globalConfig = { ...DEFAULT_CONFIG, ...saved };
         return this.globalConfig;
@@ -275,8 +276,7 @@ export class HeartbeatManager {
     const current = this.getGlobalConfig();
     this.globalConfig = { ...current, ...config };
     try {
-      const { setSettingJSON } = require("../storage/settings");
-      setSettingJSON("codem-heartbeat-config", this.globalConfig);
+setSettingJSON("codem-heartbeat-config", this.globalConfig);
     } catch {}
   }
 

@@ -8,6 +8,10 @@
  * WebView2 进程内存从 ~150MB 降至 ~30-50MB。
  */
 
+// Buffer polyfill — must be first import so globalThis.Buffer is set before any code uses it
+import { Buffer } from "./stubs/buffer-polyfill";
+(globalThis as any).Buffer = Buffer;
+
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { PetWindowApp } from "./components/PetWindowApp";

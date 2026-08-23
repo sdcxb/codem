@@ -6,17 +6,22 @@ import type {
   LLMResponse,
   StreamEvent,
   LLMMessage,
+  ApiProtocol,
+  ServerModelInfo,
 } from "./types";
 import { getLang } from "../i18n/lang";
 import type { Context } from "../cordis/src/index.ts";
 import { createIdleTimeout } from "./idle-tracker";
 import { OllamaProvider } from "./ollama-provider";
+import { ReplayAdapter } from "./replay-adapter";
 
 // ========== OpenAI-Compatible Provider ==========
 export class OpenAICompatibleProvider implements LLMProvider {
   id: string;
   name: string;
   private config: ProviderConfig;
+  /** Dynamically fetched models (cached after fetchModelsFromServer) */
+  private dynamicModels: ModelConfig[] | null = null;
 
   constructor(config: ProviderConfig) {
     this.id = config.id;
@@ -31,11 +36,112 @@ export class OpenAICompatibleProvider implements LLMProvider {
   }
 
   async listModels(): Promise<ModelConfig[]> {
+    // Return dynamic models if available, otherwise fall back to static config
+    if (this.dynamicModels && this.dynamicModels.length > 0) {
+      return [...this.dynamicModels, ...this.config.models.filter(
+        (m) => !this.dynamicModels!.some((dm) => dm.id === m.id)
+      )];
+    }
     return this.config.models;
   }
 
+  /**
+   * Fetch models from the server's /models or /v1/models endpoint.
+   * Caches the result in this.dynamicModels.
+   * Falls back to static models if the request fails.
+   */
+  async fetchModelsFromServer(): Promise<ModelConfig[]> {
+    const baseUrl = (this.config.baseUrl || "https://api.openai.com/v1").replace(/\/+$/, "");
+    if (!this.isConfigured()) {
+      console.log(`[Provider:${this.id}] Not configured, skipping fetchModelsFromServer`);
+      return this.config.models;
+    }
+
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+    if (this.config.apiKey) {
+      headers["Authorization"] = `Bearer ${this.config.apiKey}`;
+    }
+
+    // Try /models and /v1/models endpoints (some providers use one or the other)
+    const endpoints = [
+      `${baseUrl}/models`,
+      `${baseUrl}/v1/models`,
+    ];
+
+    for (const url of endpoints) {
+      try {
+        console.log(`[Provider:${this.id}] Fetching models from ${url}...`);
+        const response = await fetch(url, {
+          method: "GET",
+          headers,
+          signal: AbortSignal.timeout(15000),
+        });
+
+        if (!response.ok) {
+          console.log(`[Provider:${this.id}] ${url} returned ${response.status}`);
+          continue;
+        }
+
+        const data = await response.json();
+        const serverModels: ServerModelInfo[] = data.data || data.models || [];
+        if (!Array.isArray(serverModels) || serverModels.length === 0) {
+          console.log(`[Provider:${this.id}] ${url} returned empty or invalid model list`);
+          continue;
+        }
+
+        // Convert server model info to ModelConfig
+        const models: ModelConfig[] = serverModels.map((sm) => {
+          // Try to match with existing static config to preserve metadata
+          const staticMatch = this.config.models.find((m) => m.id === sm.id);
+          return {
+            id: sm.id,
+            name: staticMatch?.name || sm.id,
+            contextWindow: staticMatch?.contextWindow || 128000,
+            maxOutputTokens: staticMatch?.maxOutputTokens || 16384,
+            supportsTools: staticMatch?.supportsTools ?? true,
+            supportsStreaming: staticMatch?.supportsStreaming ?? true,
+            costPer1kInput: staticMatch?.costPer1kInput,
+            costPer1kOutput: staticMatch?.costPer1kOutput,
+            dynamic: true,
+          };
+        });
+
+        this.dynamicModels = models;
+        console.log(`[Provider:${this.id}] Fetched ${models.length} models from server:`, models.map((m) => m.id).join(", "));
+        return models;
+      } catch (e: any) {
+        console.log(`[Provider:${this.id}] ${url} failed: ${e.message}`);
+        continue;
+      }
+    }
+
+    // All endpoints failed — fall back to static models
+    console.warn(`[Provider:${this.id}] All model endpoints failed, using static models`);
+    return this.config.models;
+  }
+
+  /**
+   * Resolve the API endpoint path based on protocol type.
+   * Supports: /chat/completions (default), /responses (OpenAI responses API)
+   */
+  private getEndpointPath(): string {
+    const protocol: ApiProtocol = (this.config as any).protocol || "chat-completions";
+    switch (protocol) {
+      case "responses":
+        return "/responses";
+      case "custom":
+        // For custom protocols, the baseUrl should include the full path
+        return "";
+      case "chat-completions":
+      default:
+        return "/chat/completions";
+    }
+  }
+
   async complete(request: LLMRequest): Promise<LLMResponse> {
-    const baseUrl = this.config.baseUrl || "https://api.openai.com/v1";
+    const baseUrl = (this.config.baseUrl || "https://api.openai.com/v1").replace(/\/+$/, "");
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
     };
@@ -48,7 +154,7 @@ export class OpenAICompatibleProvider implements LLMProvider {
     if (request.purpose === "compaction") {
       headers["x-deepseek-harness-compact"] = "1";
     }
-    const response = await fetch(`${baseUrl}/chat/completions`, {
+    const response = await fetch(`${baseUrl}${this.getEndpointPath()}`, {
       method: "POST",
       headers,
       body: JSON.stringify({
@@ -92,14 +198,14 @@ export class OpenAICompatibleProvider implements LLMProvider {
   }
 
   async *stream(request: LLMRequest): AsyncGenerator<StreamEvent, void, unknown> {
-    const baseUrl = this.config.baseUrl || "https://api.openai.com/v1";
+    const baseUrl = (this.config.baseUrl || "https://api.openai.com/v1").replace(/\/+$/, "");
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
     };
     if (this.config.apiKey) {
       headers["Authorization"] = `Bearer ${this.config.apiKey}`;
     }
-    const url = `${baseUrl}/chat/completions`;
+    const url = `${baseUrl}${this.getEndpointPath()}`;
     const tools = request.tools?.length ? request.tools.map((t) => this.toAPITool(t)) : undefined;
 
     // P-OPT5: Add compaction header for DeepSeek API to enable server-side optimizations
@@ -135,7 +241,7 @@ export class OpenAICompatibleProvider implements LLMProvider {
       bodyObj.max_tokens = request.maxTokens;
     }
     const body = JSON.stringify(bodyObj);
-    console.log("[Provider] stream:", url, "model:", request.model, "msgs:", request.messages.length, "tools:", tools?.length || 0);
+    console.log(`[Provider] stream: id=${this.id} baseUrl=${this.config.baseUrl} url=${url} model:`, request.model, "msgs:", request.messages.length, "tools:", tools?.length || 0);
     const response = await fetch(url, {
       method: "POST",
       headers,
@@ -498,6 +604,11 @@ export class ProviderRegistry {
     return this.providers.get(id);
   }
 
+  /** Remove a provider by id — used by llm.registerProvider's dispose */
+  remove(id: string): boolean {
+    return this.providers.delete(id);
+  }
+
   getAll(): LLMProvider[] {
     return Array.from(this.providers.values());
   }
@@ -602,9 +713,9 @@ export function createDefaultProviders(ctx?: Context): ProviderRegistry {
 
   // R3-Snapshot: Replay adapter — when CODEM_REPLAY_MODE=1, register a replay provider
   // that serves recorded LLM responses. Used for deterministic testing without API calls.
-  if (process.env.CODEM_REPLAY_MODE === "1") {
+  const replayMode = typeof process !== 'undefined' ? process.env?.CODEM_REPLAY_MODE : undefined;
+  if (replayMode === "1") {
     try {
-      const { ReplayAdapter } = require("./replay-adapter");
       const replayAdapter = new ReplayAdapter();
       // Replay adapter is ready to use — add responses via adapter.addResponse() in tests
       registry.register(replayAdapter.createProvider());

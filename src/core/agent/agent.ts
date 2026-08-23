@@ -1,6 +1,7 @@
 // Agent types
 
 import type { TaskSlot } from "../llm/model-profile";
+import { getSettingJSON, setSettingJSON } from "../storage/settings";
 
 // ========== Agent Types ==========
 export type AgentMode = "primary" | "subagent" | "all";
@@ -149,7 +150,6 @@ export class AgentRegistry {
   /** Load custom agents from SQLite settings */
   private loadCustomAgents() {
     try {
-      const { getSettingJSON } = require("../storage/settings");
       const custom = getSettingJSON("codem-custom-agents", []) as AgentDefinition[];
       if (Array.isArray(custom)) {
         for (const agent of custom) {
@@ -164,7 +164,6 @@ export class AgentRegistry {
   /** Save custom agents to SQLite settings */
   private saveCustomAgents() {
     try {
-      const { setSettingJSON } = require("../storage/settings");
       const custom = this.getAll().filter(a => !BUILTIN_AGENT_IDS.has(a.id));
       setSettingJSON("codem-custom-agents", custom);
     } catch {}

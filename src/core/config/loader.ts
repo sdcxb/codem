@@ -289,7 +289,7 @@ export function loadAppIdentity(): AppIdentity {
 
 export function loadUserConfig(): UserConfig | undefined {
   const config = getSettingJSON<UserConfig | null>("codem-user", null);
-  console.log("[loadUserConfig] loaded:", JSON.stringify(config));
+  if (config) console.debug("[loadUserConfig] loaded:", JSON.stringify(config));
   return config || undefined;
 }
 

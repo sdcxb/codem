@@ -43,8 +43,8 @@ export function GitHubCloneDialog({ onClose }: GitHubCloneDialogProps) {
 
       const { invoke } = (window as any).__TAURI__.core;
 
-      // 获取用户主目录
-      const home = await invoke("get_default_cwd");
+      // 获取 app data 目录作为项目存放位置
+      const home = await invoke("get_app_data_dir");
 
       // 创建项目目录
       const projectDir = `${home}\\${name}`;

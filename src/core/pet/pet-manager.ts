@@ -36,17 +36,17 @@ async function tauriInvoke(command: string, args?: Record<string, unknown>): Pro
   return invoke(command, args);
 }
 
-/** 获取宠物安装根目录 (~/.codem/pets/) */
+/** 获取宠物安装根目录 (app_data/.codem/pets/) */
 async function getPetsDir(): Promise<string> {
-  const home = await tauriInvoke("get_default_cwd");
-  const sep = home.includes("/") && !home.includes("\\") ? "/" : "\\";
-  return `${home}${sep}.codem${sep}pets`;
+  const dataDir = await tauriInvoke("get_app_data_dir");
+  const sep = dataDir.includes("/") && !dataDir.includes("\\") ? "/" : "\\";
+  return `${dataDir}.codem${sep}pets`;
 }
 
 /** 获取路径分隔符 */
 async function getPathSep(): Promise<string> {
-  const home = await tauriInvoke("get_default_cwd");
-  return home.includes("/") && !home.includes("\\") ? "/" : "\\";
+  const dataDir = await tauriInvoke("get_app_data_dir");
+  return dataDir.includes("/") && !dataDir.includes("\\") ? "/" : "\\";
 }
 
 // ========== 设置管理 ==========

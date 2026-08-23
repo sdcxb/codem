@@ -22,6 +22,7 @@
  */
 
 import type { AgentDefinition } from "./agent";
+import { getEventLog } from "../storage/event-log";
 
 // ========== Types ==========
 
@@ -299,7 +300,7 @@ export function getDefaultRoots(appDir?: string): PresetRoot[] {
   const roots: PresetRoot[] = [];
 
   // 用户预设目录
-  const home = process.env.USERPROFILE || process.env.HOME || "";
+  const home = (typeof process !== 'undefined' ? (process.env?.USERPROFILE || process.env?.HOME) : undefined) || "";
   if (home) {
     roots.push({ path: `${home}/${USER_PRESET_DIR}`, trust: "user" });
   }
@@ -319,8 +320,7 @@ export function getDefaultRoots(appDir?: string): PresetRoot[] {
  * 记录到事件日志的 session_meta 事件中。
  */
 export function selectPresetForSession(sessionId: string, presetId: string): void {
-  const { getEventLog } = require("../storage/event-log");
-  getEventLog().append(sessionId, "session_meta", {
+getEventLog().append(sessionId, "session_meta", {
     action: "preset_selected",
     presetId,
   });
@@ -331,8 +331,7 @@ export function selectPresetForSession(sessionId: string, presetId: string): voi
  * 从事件日志中查找最后一次 preset_selected。
  */
 export function getSessionPreset(sessionId: string): string | null {
-  const { getEventLog } = require("../storage/event-log");
-  const events = getEventLog().readAll(sessionId);
+const events = getEventLog().readAll(sessionId);
   for (let i = events.length - 1; i >= 0; i--) {
     const evt = events[i];
     if (

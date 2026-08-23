@@ -76,6 +76,19 @@ export class ReplayAdapter {
         ];
       },
 
+      async fetchModelsFromServer(): Promise<ModelConfig[]> {
+        return [
+          {
+            id: "replay-mock",
+            name: "Replay Mock Model",
+            contextWindow: 128_000,
+            maxOutputTokens: 4096,
+            supportsTools: true,
+            supportsStreaming: true,
+          },
+        ];
+      },
+
       async complete(request: LLMRequest): Promise<LLMResponse> {
         const fp = fingerprintRequest(request);
         if (self.recordMode) {

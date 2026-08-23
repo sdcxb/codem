@@ -6,10 +6,8 @@
  * Provider 同时通过 ctx.provide() 注册服务接口 和 ctx.get('slots').register() 注册 React 组件。
  * 关闭此 Provider 后，Slot 中的组件被移除，SlotBridge 自动回退到 fallback 组件。
  */
-import { lazy } from 'react'
 import type { Plugin } from '../cordis/src/index.ts'
-
-const PluginManager = lazy(() => import('../../components/PluginManager'))
+import { PluginManager } from '../../components/PluginManager'
 
 export const uiSlotsProvider: Plugin = (ctx: any) => {
   const s = {

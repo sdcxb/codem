@@ -2,12 +2,9 @@
 /**
  * @codem/ui-sidebar — 侧边栏 UI 插件包
  *
- * 将 Sidebar.tsx 组件注册到 ctx.slots['app.sidebar']。
- * 组件来源可替换：其他插件可以注册更高优先级的组件来替换侧边栏。
+ * 对标 DSH：组件同步导入，不用 React.lazy。
  */
-import { lazy } from 'react'
-
-const Sidebar = lazy(() => import('../../../components/Sidebar'))
+import { Sidebar } from '../../../components/Sidebar'
 
 export function apply(ctx: any) {
   const slots = ctx.get('slots')

@@ -126,6 +126,7 @@ function redactSecrets(text: string): string {
 import { loadAppIdentity, loadUserConfig } from "../config/loader";
 import { getLang } from "../i18n/lang";
 import { getSettingJSON, setSettingJSON } from "../storage/settings";
+import { getEventLog } from "../storage/event-log";
 import { extractJSON } from "./output-parser";
 
 export interface LLMEngineConfig {
@@ -170,28 +171,30 @@ private loopPool: Map<string, AgenticLoop> = new Map();
     if (ctx) this.ctx = ctx;
     this.providers = createDefaultProviders(ctx || undefined);
     this.tools = createDefaultToolRegistry(ctx || undefined);
-    // P0-7.2: ctx 可用时完全使用 ctx.get()，服务不存在则 throw；无 ctx 时回退（仅测试环境）
-    const _getOrThrow = <T,>(name: string, fallback: () => T): T => {
+    // P0-7.2-fix: ctx 可用时优先 ctx.get(name)（Cordis 标准模式），
+    // 服务不存在时回退到模块级单例（容错）。
+    // 使用 ctx.get(name) 而非 ctx.xxx mixin accessor，因为 LLMEngine 不是 Cordis 插件，
+    // 没有 inject 声明。ctx.get 在服务不存在或 fiber 未 ACTIVE 时返回 undefined。
+    const _getOrFallback = <T,>(name: string, fallback: () => T): T => {
       if (ctx) {
-        const s = ctx.get(name) as T;
+        const s = ctx.get(name) as T | undefined;
         if (s) return s;
-        throw new Error(`[LLMEngine] Service "${name}" not available in Cordis Context`);
       }
       return fallback();
     };
-    this.agents = _getOrThrow('agentRegistry', getAgentRegistry) as any;
-    this.permissions = _getOrThrow('permission', getPermissionManager) as any;
+    this.agents = _getOrFallback('agentRegistry', getAgentRegistry) as any;
+    this.permissions = _getOrFallback('permission', getPermissionManager) as any;
     this.context = getContextManager();
-    this.memory = _getOrThrow('memory', getMemoryService) as any;
-    this.retry = _getOrThrow('retry', getRetryExecutor) as any;
-    this.mcp = _getOrThrow('mcp', getMCPRegistry) as any;
-    this.skills = _getOrThrow('skill', getSkillRegistry) as any;
-    this.subagents = _getOrThrow('subagent', getSubagentManager) as any;
-    this.recovery = _getOrThrow('recovery', getSessionRecoveryService) as any;
-    this.costTracker = _getOrThrow('costTracker', getCostTracker) as any;
-    this.toolRenderer = _getOrThrow('toolRender', getToolRenderRegistry) as any;
-    this.settings = _getOrThrow('settings', () => getSettingsManager(projectPath) ?? new SettingsManager(projectPath || ".")) as any;
-    this.profileManager = _getOrThrow('modelProfile', getModelProfileManager) as any;
+    this.memory = _getOrFallback('memory', getMemoryService) as any;
+    this.retry = _getOrFallback('retry', getRetryExecutor) as any;
+    this.mcp = _getOrFallback('mcp', getMCPRegistry) as any;
+    this.skills = _getOrFallback('skill', getSkillRegistry) as any;
+    this.subagents = _getOrFallback('subagent', getSubagentManager) as any;
+    this.recovery = _getOrFallback('recovery', getSessionRecoveryService) as any;
+    this.costTracker = _getOrFallback('costTracker', getCostTracker) as any;
+    this.toolRenderer = _getOrFallback('toolRender', getToolRenderRegistry) as any;
+    this.settings = _getOrFallback('settings', () => getSettingsManager(projectPath) ?? new SettingsManager(projectPath || ".")) as any;
+    this.profileManager = _getOrFallback('modelProfile', getModelProfileManager) as any;
 
     // Set up sub-agent spawner and register spawn tool
     this.setupSubagentSpawner();
@@ -284,6 +287,7 @@ private loopPool: Map<string, AgenticLoop> = new Map();
       // Verify provider exists
       const provider = this.providers.get(slotConfig.provider);
       if (provider && provider.isConfigured()) {
+        console.log(`[LLMEngine.resolveSlot] slot=${slot} → profile: provider=${slotConfig.provider}, model=${slotConfig.model}`);
         return {
           providerId: slotConfig.provider,
           modelId: slotConfig.model,
@@ -292,8 +296,10 @@ private loopPool: Map<string, AgenticLoop> = new Map();
           maxTokens: slotConfig.maxTokens,
         };
       }
+      console.log(`[LLMEngine.resolveSlot] slot=${slot} → profile found but provider not ready: ${slotConfig.provider} (exists=${!!provider}, configured=${provider?.isConfigured?.()})`);
     }
     // Fallback to engine default
+    console.log(`[LLMEngine.resolveSlot] slot=${slot} → fallback: provider=${this.config.defaultProvider}, model=${this.config.defaultModel}`);
     return {
       providerId: this.config.defaultProvider || "openai",
       modelId: this.config.defaultModel || "gpt-4o",
@@ -303,14 +309,19 @@ private loopPool: Map<string, AgenticLoop> = new Map();
   /** Get or create an agentic loop (per-session for parallel execution) */
   getAgenticLoop(agentId?: string, sessionId?: string): AgenticLoop {
     // F5: Check if Cordis agentLoop provider is active — if so, delegate to it
-    if (this.ctx) {
+    // 但要防止无限递归：agentLoopProvider.getLoop() 会回调本方法，
+    // 用 _inGetAgenticLoop 标志打破循环。
+    if (this.ctx && !(this as any)._inGetAgenticLoop) {
       const agentLoopSvc = this.ctx.get('agentLoop')
       if (agentLoopSvc?._active) {
-        const loop = agentLoopSvc.getLoop?.(agentId, sessionId)
-        if (loop) return loop
-        // If provider is active but returned null, don't fall through to new AgenticLoop
-        // This eliminates the dual-track problem
-        throw new Error('agentLoop provider is active but getLoop returned null — check provider configuration')
+        (this as any)._inGetAgenticLoop = true
+        try {
+          const loop = agentLoopSvc.getLoop?.(agentId, sessionId)
+          if (loop) return loop
+          // If provider is active but returned null, fall through to create locally
+        } finally {
+          (this as any)._inGetAgenticLoop = false
+        }
       }
     }
 
@@ -333,6 +344,8 @@ private loopPool: Map<string, AgenticLoop> = new Map();
 
     // Determine effective model: agent override > profile resolved > engine default
     const model = agent?.model || resolved.modelId;
+
+    console.log(`[LLMEngine.getAgenticLoop] agentId=${agentId}, sessionId=${sessionId}, slot=${slot}, resolved: provider=${resolved.providerId}, model=${resolved.modelId}, effective model=${model}, engine default: provider=${this.config.defaultProvider}, model=${this.config.defaultModel}, provider.id=${(provider as any).id}, provider.baseUrl=${(provider as any).config?.baseUrl}`);
 
     const loop = new AgenticLoop(
       provider,
@@ -738,14 +751,10 @@ The runtime automatically sets UTF-8 encoding (chcp 65001, PYTHONUTF8=1, PYTHONI
       reasoningEffort?: "low" | "medium" | "high" | "ultra";
     },
   ): AsyncGenerator<LoopEvent, void, unknown> {
-    // P0-3: 优先从 ctx.get('agentLoop') 获取（Provider 模式），回退到内部 getAgenticLoop
-    const _agentLoopSvc = this.ctx?.get('agentLoop')
+    // 直接使用 getAgenticLoop — getAgenticLoop 内部已有 ctx.get('agentLoop') 委托逻辑
+    // （防止无限递归）
     let loop: AgenticLoop
-    if (_agentLoopSvc?.getLoop) {
-      loop = _agentLoopSvc.getLoop(agentId, sessionId) || this.getAgenticLoop(agentId, sessionId)
-    } else {
-      loop = this.getAgenticLoop(agentId, sessionId)
-    }
+    loop = this.getAgenticLoop(agentId, sessionId)
     if (options?.onPermissionRequest) {
       loop.updateConfig({ onPermissionRequest: options.onPermissionRequest });
     }
@@ -876,14 +885,9 @@ The runtime automatically sets UTF-8 encoding (chcp 65001, PYTHONUTF8=1, PYTHONI
     cwd: string,
     agentId: string,
   ): AsyncGenerator<LoopEvent, void, unknown> {
-    // P0-3: 优先从 ctx.get('agentLoop') 获取（Provider 模式）
-    const _agentLoopSvc = this.ctx?.get('agentLoop')
+    // 直接使用 getAgenticLoop — 防止通过 ctx.get('agentLoop') 导致无限递归
     let loop: AgenticLoop
-    if (_agentLoopSvc?.getLoop) {
-      loop = _agentLoopSvc.getLoop(agentId, sessionId) || this.getAgenticLoop(agentId, sessionId)
-    } else {
-      loop = this.getAgenticLoop(agentId, sessionId)
-    }
+    loop = this.getAgenticLoop(agentId, sessionId)
     // Sub-agents should have fewer iterations to prevent loops
     loop.updateConfig({ maxIterations: 15 });
     const systemPrompt = this.buildSubagentSystemPrompt(agentId, cwd);
@@ -902,7 +906,6 @@ The runtime automatically sets UTF-8 encoding (chcp 65001, PYTHONUTF8=1, PYTHONI
 
     // C5: EventLog dual-write — user message for subagent session
     try {
-      const { getEventLog } = require("./storage/event-log");
       getEventLog().append(sessionId, "user_message", {
         messageId: `user-${Date.now()}`,
         content: cleanMessage,
@@ -963,12 +966,96 @@ if (!loop) return false;
 return loop.hasPendingGuidance();
 }
 
-  /** Configure a provider */
+/** Configure a provider */
   setProviderConfig(providerId: string, config: { apiKey: string; baseUrl?: string }) {
     const existing = this.providers.get(providerId);
     if (existing && "config" in existing) {
-      (existing as any).config = { ...(existing as any).config, ...config };
+      const current = (existing as any).config;
+      // Only override baseUrl if a non-empty value is provided — prevent undefined overwriting defaults
+      const newConfig: any = { apiKey: config.apiKey };
+      if (config.baseUrl) newConfig.baseUrl = config.baseUrl;
+      (existing as any).config = { ...current, ...newConfig };
     }
+  }
+
+  /**
+   * Refresh models from the server for a specific provider (or all configured providers).
+   * Fetches the model list from the server's /models endpoint, caches it in the provider,
+   * and persists it to the database for future use.
+   * Returns a map of providerId → ModelConfig[].
+   */
+  async refreshModels(providerId?: string): Promise<Record<string, import("./types").ModelConfig[]>> {
+    const result: Record<string, import("./types").ModelConfig[]> = {};
+    const providers = providerId
+      ? [this.providers.get(providerId)].filter(Boolean)
+      : this.providers.getAll();
+
+    for (const provider of providers) {
+      if (!provider) continue;
+      if (!provider.isConfigured()) {
+        console.log(`[LLMEngine.refreshModels] Skipping ${provider.id} — not configured`);
+        continue;
+      }
+      try {
+        const models = await provider.fetchModelsFromServer();
+        result[provider.id] = models;
+        console.log(`[LLMEngine.refreshModels] ${provider.id}: fetched ${models.length} models`);
+      } catch (e: any) {
+        console.error(`[LLMEngine.refreshModels] ${provider.id} failed:`, e.message);
+        result[provider.id] = await provider.listModels();
+      }
+    }
+
+    // Persist to DB
+    try {
+      const existing = getSettingJSON<Record<string, import("./types").ModelConfig[]>>("codem-dynamic-models", {});
+      setSettingJSON("codem-dynamic-models", { ...existing, ...result });
+      console.log(`[LLMEngine.refreshModels] Persisted models for ${Object.keys(result).length} providers`);
+    } catch (e) {
+      console.warn("[LLMEngine.refreshModels] Failed to persist:", e);
+    }
+
+    return result;
+  }
+
+  /**
+   * Load dynamically fetched models from DB and inject them into providers.
+   * Called during engine initialization.
+   */
+  loadDynamicModels(): void {
+    try {
+      const stored = getSettingJSON<Record<string, import("./types").ModelConfig[]>>("codem-dynamic-models", {});
+      for (const [providerId, models] of Object.entries(stored)) {
+        const provider = this.providers.get(providerId);
+        if (provider && "dynamicModels" in provider && Array.isArray(models)) {
+          (provider as any).dynamicModels = models;
+          console.log(`[LLMEngine.loadDynamicModels] Loaded ${models.length} models for ${providerId}`);
+        }
+      }
+    } catch (e) {
+      console.warn("[LLMEngine.loadDynamicModels] Failed:", e);
+    }
+  }
+
+  /**
+   * Set the API protocol for a provider (e.g. "chat-completions", "responses").
+   * This controls which endpoint path is used for API calls.
+   */
+  setProviderProtocol(providerId: string, protocol: import("./types").ApiProtocol): void {
+    const existing = this.providers.get(providerId);
+    if (existing && "config" in existing) {
+      (existing as any).config = { ...(existing as any).config, protocol };
+      console.log(`[LLMEngine.setProviderProtocol] ${providerId}: protocol=${protocol}`);
+    }
+  }
+
+  /**
+   * Get the list of models for a provider (dynamic + static).
+   */
+  async getProviderModels(providerId: string): Promise<import("./types").ModelConfig[]> {
+    const provider = this.providers.get(providerId);
+    if (!provider) return [];
+    return provider.listModels();
   }
 
   /** Get provider config (apiKey, baseUrl) — used by Vision Proxy etc. */

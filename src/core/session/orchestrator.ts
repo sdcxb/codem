@@ -24,6 +24,7 @@ import {
   type DelegationConfig,
   DEFAULT_DELEGATION_CONFIG,
 } from "./types";
+import { getInboxManager } from "../inbox/inbox";
 import {
   createDelegationTask,
   updateDelegationTaskStatus,
@@ -195,7 +196,6 @@ export class DelegationOrchestrator {
 
     // Write to Inbox
     try {
-      const { getInboxManager } = require("../inbox/inbox");
       getInboxManager().add({
         category: "delegation",
         title: `委派任务完成: ${task.task.substring(0, 60)}`,
@@ -236,7 +236,6 @@ export class DelegationOrchestrator {
 
     // Write to Inbox
     try {
-      const { getInboxManager } = require("../inbox/inbox");
       getInboxManager().add({
         category: "delegation",
         title: `委派任务失败: ${task.task.substring(0, 60)}`,

@@ -1,20 +1,21 @@
 // @ts-nocheck
 /**
  * Memory Provider 插件 — 可独立加载/卸载/热替换。
+ *
+ * 不创建独立实例，而是从 ctx.get('llmEngine') 获取
+ * LLMEngine 实例的 MemoryService，确保共享同一个实例。
  */
 import type { Plugin } from '../cordis/src/index.ts'
-import { MemoryService } from '../memory/memory'
 
-export const memoryProvider: Plugin = (ctx: any) => {
-  // 在 Provider 内部创建实例，生命周期与 fiber 绑定
-  const memory = new MemoryService()
-
-  const dispose = ctx.provide('memory', {
-    add: (entry: any) => memory.add(entry),
-    query: (filter: any) => memory.query(filter),
-    clear: () => memory.clear(),
-    getScopes: () => ['global', 'session', 'project'],
-  })
-
-  return dispose
-}
+export const memoryProvider: Plugin = Object.assign(
+  (ctx: any) => {
+    const engine = ctx.get('llmEngine')
+    if (!engine?.memory) {
+      console.warn('[memoryProvider] llmEngine not available')
+      return () => {}
+    }
+    const dispose = ctx.provide('memory', engine.memory)
+    return dispose
+  },
+  { inject: ['llmEngine'] as const }
+)

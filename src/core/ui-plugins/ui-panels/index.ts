@@ -2,75 +2,72 @@
 /**
  * @codem/ui-panels — 面板/对话框 UI 插件包
  *
- * 将所有剩余的 App 级别面板和对话框组件注册到 Slot Registry。
- * 每个组件通过 lazy import 延迟加载，降低首屏开销。
+ * 对标 DSH：组件同步导入，不用 React.lazy。
+ * 所有组件直接 import，slot.register() 传入组件本身。
  */
-import { lazy } from 'react'
 
 // 布局组件
-const TitleBar = lazy(() => import('../../../components/TitleBar'))
-const BootSplash = lazy(() => import('../../../components/BootSplash'))
-const WorkspaceBackdrop = lazy(() => import('../../../components/WorkspaceBackdrop'))
-const ToastContainer = lazy(() => import('../../../components/ToastNotification'))
-const TerminalPanel = lazy(() => import('../../../components/TerminalPanel'))
-const FileExplorer = lazy(() => import('../../../components/FileExplorer'))
-const FileEditor = lazy(() => import('../../../components/FileEditor'))
-const RightSidebar = lazy(() => import('../../../components/RightSidebar'))
-const Drawer = lazy(() => import('../../../components/Drawer'))
+import { TitleBar } from '../../../components/TitleBar'
+import { BootSplash } from '../../../components/BootSplash'
+import { WorkspaceBackdrop } from '../../../components/WorkspaceBackdrop'
+import { ToastContainer } from '../../../components/ToastNotification'
+import { TerminalPanel } from '../../../components/TerminalPanel'
+import { FileExplorer } from '../../../components/FileExplorer'
+import { FileEditor } from '../../../components/FileEditor'
+import { RightSidebar } from '../../../components/RightSidebar'
+import { Drawer } from '../../../components/Drawer'
 
 // 模态对话框
-const ProjectManager = lazy(() => import('../../../components/ProjectManager'))
-const ConfigEditor = lazy(() => import('../../../components/ConfigEditor'))
-const BootstrapWizard = lazy(() => import('../../../components/BootstrapWizard'))
-const PermissionDialog = lazy(() => import('../../../components/PermissionDialog'))
-const DecisionTray = lazy(() => import('../../../components/DecisionTray'))
-const ConfirmDialog = lazy(() => import('../../../components/ConfirmDialog'))
-const CloseConfirmDialog = lazy(() => import('../../../components/CloseConfirmDialog'))
-const NeedsYouPanel = lazy(() => import('../../../components/NeedsYouPanel'))
+import { ProjectManager } from '../../../components/ProjectManager'
+import { ConfigEditor } from '../../../components/ConfigEditor'
+import { BootstrapWizard } from '../../../components/BootstrapWizard'
+import { PermissionDialog } from '../../../components/PermissionDialog'
+import { DecisionTray } from '../../../components/DecisionTray'
+import { ConfirmDialog } from '../../../components/ConfirmDialog'
+import { CloseConfirmDialog } from '../../../components/CloseConfirmDialog'
+import { NeedsYouPanel } from '../../../components/NeedsYouPanel'
 
 // 管理器面板
-const SessionRecovery = lazy(() => import('../../../components/SessionRecovery'))
-const NotebookManager = lazy(() => import('../../../components/NotebookManager'))
-const NotebookWorkspace = lazy(() => import('../../../components/NotebookWorkspace'))
-const UsageStats = lazy(() => import('../../../components/UsageStats'))
-const TaskCenter = lazy(() => import('../../../components/TaskCenter'))
-const AgentManager = lazy(() => import('../../../components/AgentManager'))
-const ModelProfilePanel = lazy(() => import('../../../components/ModelProfilePanel'))
-const MemoryManager = lazy(() => import('../../../components/MemoryManager'))
+import { SessionRecovery } from '../../../components/SessionRecovery'
+import { NotebookManager } from '../../../components/NotebookManager'
+import { NotebookWorkspace } from '../../../components/NotebookWorkspace'
+import { UsageStats } from '../../../components/UsageStats'
+import { TaskCenter } from '../../../components/TaskCenter'
+import { AgentManager } from '../../../components/AgentManager'
+import { ModelProfilePanel } from '../../../components/ModelProfilePanel'
+import { MemoryManager } from '../../../components/MemoryManager'
 
 // 扩展面板
-const SourceViewer = lazy(() => import('../../../components/SourceViewer'))
-const GitHubCloneDialog = lazy(() => import('../../../components/GitHubCloneDialog'))
-const CiCdPanel = lazy(() => import('../../../components/CiCdPanel'))
-const DiffViewer = lazy(() => import('../../../components/DiffViewer'))
-const InlineDiffReview = lazy(() => import('../../../components/InlineDiffReview'))
-const InteractiveFormDialog = lazy(() => import('../../../components/InteractiveFormDialog'))
-const PromptChangeReviewDialog = lazy(() => import('../../../components/PromptChangeReviewDialog'))
-const PlanApprovalCard = lazy(() => import('../../../components/PlanApprovalCard'))
-const OnboardingTour = lazy(() => import('../../../components/OnboardingTour'))
-const QuickAccessCards = lazy(() => import('../../../components/QuickAccessCards'))
-const CorrectionResultPanel = lazy(() => import('../../../components/CorrectionResultPanel'))
-const ClarificationForm = lazy(() => import('../../../components/ClarificationForm'))
-const PipelineNextStepDialog = lazy(() => import('../../../components/PipelineNextStepDialog'))
+import { SourceViewer } from '../../../components/SourceViewer'
+import { GitHubCloneDialog } from '../../../components/GitHubCloneDialog'
+import { CicdPanel } from '../../../components/CicdPanel'
+import { DiffViewer } from '../../../components/DiffViewer'
+import { InlineDiffReview } from '../../../components/InlineDiffReview'
+import { InteractiveFormDialog } from '../../../components/InteractiveFormDialog'
+import { PromptChangeReviewDialog } from '../../../components/PromptChangeReviewDialog'
+import { PlanApprovalCard } from '../../../components/PlanApprovalCard'
+import { OnboardingTour } from '../../../components/OnboardingTour'
+import { QuickAccessCards } from '../../../components/QuickAccessCards'
+import { CorrectionResultPanel } from '../../../components/CorrectionResultPanel'
+import { ClarificationForm } from '../../../components/ClarificationForm'
+import { PipelineNextStepDialog } from '../../../components/PipelineNextStepDialog'
 
-// 能力监控面板 — 对标 DSH ui-* 插件包
-// 情况 A: 命名不一致 — 组件已存在但名字不同
-const MessageFeedback = lazy(() => import('../../../components/FeedbackButtons')) // DSH ui-message-feedback
-const PluginMarket = lazy(() => import('../../../components/PluginManager')) // DSH 无对应 (已有 ui-market/plugin-market.tsx)
-const SettingsGeneral = lazy(() => import('../../../components/SettingsPanel')) // DSH ui-settings-general
-const SettingsModels = lazy(() => import('../../../components/ModelProfilePanel')) // DSH ui-settings-models
-const SettingsPlugins = lazy(() => import('../../../components/SettingsPanel')) // DSH ui-settings-plugins
-const UICommands = lazy(() => import('../../../components/SlashCommandMenu')) // DSH ui-commands
+// 能力监控面板
+import { FeedbackButtons as MessageFeedback } from '../../../components/FeedbackButtons'
+import { SlashCommandMenu as UICommands } from '../../../components/SlashCommandMenu'
 
-// 情况 B: 功能嵌入其他组件 — 已提取为独立组件注册到 Slot
-const PlanModeChip = lazy(() => import('../../../components/PlanModeChip')) // DSH ui-plan (composer chip)
-const ModelSelector = lazy(() => import('../../../components/ModelSelector')) // DSH ui-model-selection (composer dropdown)
-const PermissionPresetSelector = lazy(() => import('../../../components/PermissionPresetSelector')) // DSH ui-permission-presets
-const DeliverableFiles = lazy(() => import('../../../components/DeliverableFiles')) // DSH ui-deliverables (turn-tail)
+// B类: 从嵌入组件提取的独立组件
+import { PlanModeChip } from '../../../components/PlanModeChip'
+import { ModelSelector } from '../../../components/ModelSelector'
+import { PermissionPresetSelector } from '../../../components/PermissionPresetSelector'
+import { DeliverableFiles } from '../../../components/DeliverableFiles'
 
-// 情况 C: 功能尚未实现 — 已对标 DSH 创建独立组件
-const JobsBadge = lazy(() => import('../../../components/JobsBadge')) // DSH ui-jobs (会话头部任务列表)
-const TrajectoryPanel = lazy(() => import('../../../components/TrajectoryPanel')) // DSH ui-trajectory (对话轨迹详情)
+// C类: 对标 DSH 创建的独立组件
+import { JobsBadge } from '../../../components/JobsBadge'
+import { TrajectoryPanel } from '../../../components/TrajectoryPanel'
+
+// R8 默认 fallback 组件
+import { FileUpload } from '../../../components/FileUpload'
 
 export function apply(ctx: any) {
   const slots = ctx.get('slots')
@@ -81,9 +78,6 @@ export function apply(ctx: any) {
   slots.register({ name: 'app.workspace-backdrop', id: 'default-workspace-backdrop', priority: 0 }, WorkspaceBackdrop)
   slots.register({ name: 'app.toast-container', id: 'default-toast', priority: 0 }, ToastContainer)
   slots.register({ name: 'app.terminal', id: 'default-terminal', priority: 0 }, TerminalPanel)
-  // app.file-explorer / app.file-editor / app.diff-viewer slot 注册已移除
-  // 这些组件在 RightSidebar 中直接使用，没有独立消费点
-
 
   // 模态对话框
   slots.register({ name: 'app.project-manager', id: 'default-project-mgr', priority: 0 }, ProjectManager)
@@ -107,8 +101,7 @@ export function apply(ctx: any) {
   // 扩展面板
   slots.register({ name: 'app.source-viewer', id: 'default-source-viewer', priority: 0 }, SourceViewer)
   slots.register({ name: 'app.github-clone-dialog', id: 'default-github-clone', priority: 0 }, GitHubCloneDialog)
-  slots.register({ name: 'app.cicd-panel', id: 'default-cicd', priority: 0 }, CiCdPanel)
-  // app.diff-viewer slot 注册已移除 — DiffViewer 在 RightSidebar 中直接使用，无独立消费点
+  slots.register({ name: 'app.cicd-panel', id: 'default-cicd', priority: 0 }, CicdPanel)
   slots.register({ name: 'app.inline-diff-review', id: 'default-inline-diff', priority: 0 }, InlineDiffReview)
   slots.register({ name: 'app.interactive-form-dialog', id: 'default-interactive-form', priority: 0 }, InteractiveFormDialog)
   slots.register({ name: 'app.prompt-change-review-dialog', id: 'default-prompt-change-review', priority: 0 }, PromptChangeReviewDialog)
@@ -119,26 +112,16 @@ export function apply(ctx: any) {
   slots.register({ name: 'app.clarification-form', id: 'default-clarification', priority: 0 }, ClarificationForm)
   slots.register({ name: 'app.pipeline-next-step-dialog', id: 'default-pipeline-next-step', priority: 0 }, PipelineNextStepDialog)
 
-  // 能力监控面板 — 注册存在的组件到 slot
-  // 注意: ToolPanel 已由 ui-tool/index.ts 注册到 conversation.details.tool slot
-  //       WorkspacePanel 已注册到 app.file-explorer slot
-  //       MessageFeedback 功能已由 FeedbackButtons 在 ChatPanel 中内联渲染
-  //       PlanApprovalCard 已注册到 app.plan-approval-card slot
-  //       InlineDiffReview 已注册到 app.inline-diff-review slot (含 Deliverables 功能)
-  // 这里注册的是独立 slot，供 App.tsx SlotBridge 消费
+  // 能力监控面板
   slots.register({ name: 'app.message-feedback', id: 'default-message-feedback', priority: 0 }, MessageFeedback)
   slots.register({ name: 'app.ui-commands', id: 'default-ui-commands', priority: 0 }, UICommands)
 
   // R8 UI 插件新增 Slot — 注册低优先级默认 fallback 组件
-  // 当 R8 Provider 关闭时，这些默认组件仍然可用
-  slots.register({ name: 'app.subagent', id: 'default-subagent', priority: 0 },
-    lazy(() => import('../../../components/DelegationPanel')))
-  slots.register({ name: 'app.user-questions', id: 'default-user-questions', priority: 0 },
-    lazy(() => import('../../../components/InteractiveFormDialog')))
-  slots.register({ name: 'app.workflow-run', id: 'default-workflow-run', priority: 0 },
-    lazy(() => import('../../../components/ActivityTimeline')))
-  slots.register({ name: 'app.attachment', id: 'default-attachment', priority: 0 },
-    lazy(() => import('../../../components/FileUpload')))
+  // 注意：app.user-questions、app.workflow-run、app.subagent 不在此注册
+  // 因为这些 slot 在 App.tsx 中以无 props 方式消费，
+  // 而 InteractiveFormDialog/ActivityTimeline/DelegationPanel 都需要特定 props，
+  // 注册后会导致崩溃或意外弹出模态框。
+  slots.register({ name: 'app.attachment', id: 'default-attachment', priority: 0 }, FileUpload)
 
   // B类: 从嵌入组件提取的独立组件
   slots.register({ name: 'app.plan-mode-chip', id: 'default-plan-mode-chip', priority: 0 }, PlanModeChip)
@@ -149,24 +132,6 @@ export function apply(ctx: any) {
   // C类: 对标 DSH 创建的独立组件
   slots.register({ name: 'app.jobs-badge', id: 'default-jobs-badge', priority: 0 }, JobsBadge)
   slots.register({ name: 'app.trajectory-panel', id: 'default-trajectory-panel', priority: 0 }, TrajectoryPanel)
-
-  // app.plugin-market slot 注册已移除 — PluginManager 已注册到 app.plugin-manager slot
-
-// 设置子面板注册已移除 — SettingsPanel 已通过 app.settings slot 消费，内部 tab 逻辑不需要额外 slot
-
-  // sidebar tabs (list type — 多插件可贡献)
-  // TODO: 对标 DSH ui-sidebar 创建 FilesTab/SearchTab/MemoryTab 组件
-  // slots.register({ name: 'sidebar.tabs', id: 'default-sidebar-tab-files', priority: 0, order: 0 },
-  //   lazy(() => import('../../../components/sidebar/FilesTab')))
-  // slots.register({ name: 'sidebar.tabs', id: 'default-sidebar-tab-search', priority: 0, order: 10 },
-  //   lazy(() => import('../../../components/sidebar/SearchTab')))
-  // slots.register({ name: 'sidebar.tabs', id: 'default-sidebar-tab-memory', priority: 0, order: 20 },
-  //   lazy(() => import('../../../components/sidebar/MemoryTab')))
-
-  // bottom panel tabs (list type)
-  // TODO: 对标 DSH 创建 TerminalTab 组件
-  // slots.register({ name: 'bottom-panel.tabs', id: 'default-bottom-tab-terminal', priority: 0, order: 0 },
-  //   lazy(() => import('../../../components/bottom-panel/TerminalTab')))
 
   console.log('[ui-panels] Registered all panel/dialog UI plugins')
 }

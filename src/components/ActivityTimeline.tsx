@@ -39,9 +39,9 @@ const STATUS_LABEL = {
 };
 
 export const ActivityTimeline = memo(function ActivityTimeline({
-  items,
+  items = [],
   defaultExpanded = true,
-}: ActivityTimelineProps) {
+}: Partial<ActivityTimelineProps>) {
   const [expanded, setExpanded] = useState(defaultExpanded);
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
 

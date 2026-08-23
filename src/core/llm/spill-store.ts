@@ -18,6 +18,7 @@
  * - 模型可用 read 工具按 offset/limit 读取溢出文件
  */
 
+// Node.js modules — aliased to browser stubs via vite.config.ts
 import * as fs from "fs";
 import * as path from "path";
 import { createHash, randomBytes } from "crypto";

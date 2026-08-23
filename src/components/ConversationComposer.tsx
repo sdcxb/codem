@@ -21,6 +21,8 @@ export interface ConversationComposerProps {
   disabled: boolean
   isStreaming: boolean
   noSession?: boolean
+  /** Session ID — when this changes, internal state (attachments, skills, draft) is reset */
+  sessionKey?: string
   collaborationMode: CollaborationMode
   onModeChange: (mode: CollaborationMode) => void
   projectPath?: string

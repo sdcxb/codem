@@ -1,74 +1,30 @@
 /**
  * SlotBridge — 连接 App.tsx 和 Cordis Slot Registry 的桥梁组件。
  *
- * 工作原理：
- * 1. 从 Slot Registry 获取注册的组件（如果存在）
- * 2. 如果存在，渲染该组件并传递所有 props
- * 3. 如果不存在，渲染 fallback 组件并传递所有 props
- * 4. 当 showDegraded=true 且使用 fallback 时，显示降级提示横幅
+ * 对标 DSH scoped-slots.tsx 的 SlotOutlet + renderOutletContent 模式：
+ * - useSyncExternalStore 订阅 slot version 变化
+ * - 渲染体中读取 entries，按 kind 分派
+ * - SlotErrorBoundary 按入 entry-identity 做 key，崩溃时自动回退
+ * - 不使用 React.lazy / Suspense — DSH 完全不用 lazy，组件同步导入
  *
- * 时序修复：
- * - React 首次渲染时 Cordis Context 可能尚未初始化（getCordisContext 是 async）
- * - useCtxReady hook 检测 ctx 从 null → 有效 的变化，触发重渲染
- * - ctx 就绪后 useSyncExternalStore 正确订阅 slot entries 变化
- * - 这不破坏 Cordis 架构：仍然通过 tryGetCtx() 获取 ctx，不静态 import 任何插件
- *
- * 健壮性增强：
- * - 插件组件渲染崩溃时，由 SlotErrorBoundary 捕获，自动回退到 fallback
- * - Context 未初始化时，fallback 正常渲染（不静默 null）
- * - fallback={null} 的 slot 在 entries 为空时输出诊断日志
- * - SlotListBridge 在 slots 服务不可用时输出警告
- *
- * 动态 Fallback 机制：
- * - useSyncExternalStore 订阅 Slot entries 变化
- * - 插件 disable → fiber.dispose() → slot 注销 → entries 变空 → 自动回退到 fallback
- * - 插件 enable → fiber 重新加载 → slot 注册 → entries 恢复 → 自动切回插件组件
- *
- * 使用方式：
- * ```tsx
- * <SlotBridge name="app.sidebar" fallback={Sidebar} showDegraded {...sidebarProps} />
- * <SlotBridge name="app.conversation" fallback={ChatPanel} showDegraded {...chatProps} />
- * ```
+ * DSH scoped-slots.tsx 的核心设计：
+ * 1. subscribe / getSnapshot 闭包用 WeakMap 按 source 身份缓存
+ * 2. getSnapshot 返回 number（版本号），值类型天然引用稳定
+ * 3. entries 在渲染体中读取，不在 getSnapshot 中
+ * 4. 每个 entry 用 SlotErrorBoundary 包裹，key=entryKeyOf(entry)
+ * 5. 崩溃的 entry 通过 reportEntryError abdicate，触发重渲染到下一个 survivor
  */
-import { useSyncExternalStore, Suspense, useState, useEffect, type ComponentType, type ReactNode, Component } from 'react'
-import { tryGetCtx } from '../consumer/index.ts'
+import { useSyncExternalStore, useState, useEffect, type ComponentType, type ReactNode, Component } from 'react'
+import { tryGetCtx, onCtxReady, useCtxReady } from '../consumer/index.ts'
 import type { StoredEntry } from '../slots/index.ts'
 
 /**
- * 检测 Cordis Context 是否已就绪。
- *
- * React 首次渲染时 getCordisContext() 可能还在执行（async），
- * tryGetCtx() 返回 null。此 hook 在 ctx 就绪后触发重渲染，
- * 让 useSyncExternalStore 正确订阅 slot entries 变化。
- *
- * 不破坏 Cordis 架构：仅通过 tryGetCtx() 轮询，不静态 import 任何模块。
- */
-function useCtxReady(): boolean {
-  const [ready, setReady] = useState(() => tryGetCtx() !== null)
-  useEffect(() => {
-    if (ready) return // 已就绪，无需轮询
-    let cancelled = false
-    const check = () => {
-      if (cancelled) return
-      if (tryGetCtx() !== null) {
-        setReady(true)
-      } else {
-        // 每 16ms (一帧) 检查一次，直到 ctx 就绪
-        setTimeout(check, 16)
-      }
-    }
-    setTimeout(check, 16)
-    return () => { cancelled = true }
-  }, [ready])
-  return ready
-}
-
-/**
- * 插件组件错误边界 — 当插件组件本身崩溃时，自动回退到 fallback。
- * 与 FallbackErrorBoundary 不同：这个包裹的是插件组件，不是 fallback。
+ * 插件组件错误边界 — 对标 DSH scoped-slots.tsx SlotErrorBoundary。
+ * 当插件组件崩溃时，自动回退到 fallback。
+ * entryKey 变化时重置错误状态（entry 替换、abdicate 后回退到下一个 survivor）。
  */
 class SlotErrorBoundary extends Component<
-  { children: ReactNode; slotName: string; fallback?: ReactNode },
+  { children: ReactNode; slotName: string; fallback?: ReactNode; entryKey?: string | number },
   { hasError: boolean; error?: Error }
 > {
   state: { hasError: boolean; error?: Error } = { hasError: false }
@@ -78,35 +34,37 @@ class SlotErrorBoundary extends Component<
   }
 
   componentDidCatch(error: Error) {
-    console.error(`[SlotBridge] Plugin component crashed for slot "${this.props.slotName}":`, error.message)
+    console.error(`[SlotBridge] Plugin component crashed for slot "${this.props.slotName}":`, error)
   }
 
-  componentDidUpdate() {
-    // 当 children 变化时重置 error 状态，让插件有机会重新渲染
-    if (this.state.hasError && this.props.children !== this._lastChildren) {
-      this._lastChildren = this.props.children
+  componentDidUpdate(prevProps: Readonly<{ children: ReactNode; slotName: string; fallback?: ReactNode; entryKey?: string | number }>) {
+    // 对标 DSH scoped-slots.tsx:296 entryKeyOf 模式：
+    // entry 变化时重置错误状态，让新组件有机会正常渲染。
+    if (this.state.hasError && prevProps.entryKey !== this.props.entryKey) {
       this.setState({ hasError: false, error: undefined })
     }
   }
-  _lastChildren: ReactNode = null
 
   render() {
     if (this.state.hasError) {
-      // 如果有 fallback，使用 fallback；否则显示错误提示
       if (this.props.fallback) return this.props.fallback
       return (
-        <div style={{ padding: '8px 12px', fontSize: 12, color: 'var(--text-muted)' }}>
+        <div data-slot-error={this.props.slotName} style={{ padding: '8px 12px', fontSize: 12, color: 'var(--text-muted)' }}>
           ⚠️ 插件组件崩溃（slot: {this.props.slotName}）
+          {this.state.error && (
+            <div style={{ marginTop: 4, fontSize: 11, opacity: 0.7 }}>
+              {this.state.error.message}
+            </div>
+          )}
         </div>
       )
     }
-    this._lastChildren = this.props.children
     return this.props.children
   }
 }
 
 /**
- * D4-4: 级联降级错误边界 — 当 Fallback 组件本身依赖被禁用的 Provider 而崩溃时，显示错误提示而非白屏。
+ * 级联降级错误边界 — 当 Fallback 组件本身崩溃时，显示错误提示而非白屏。
  */
 class FallbackErrorBoundary extends Component<{ children: ReactNode; slotName: string }, { hasError: boolean; error?: Error }> {
   state: { hasError: boolean; error?: Error } = { hasError: false }
@@ -116,14 +74,19 @@ class FallbackErrorBoundary extends Component<{ children: ReactNode; slotName: s
   }
 
   componentDidCatch(error: Error) {
-    console.warn(`[SlotBridge] Fallback component crashed for slot "${this.props.slotName}":`, error.message)
+    console.warn(`[SlotBridge] Fallback component crashed for slot "${this.props.slotName}":`, error)
   }
 
   render() {
     if (this.state.hasError) {
       return (
-        <div style={{ padding: '8px 12px', fontSize: 12, color: 'var(--text-muted)' }}>
+        <div data-slot-error={this.props.slotName} style={{ padding: '8px 12px', fontSize: 12, color: 'var(--text-muted)' }}>
           ⚠️ 此面板不可用（组件依赖的服务被禁用）
+          {this.state.error && (
+            <div style={{ marginTop: 4, fontSize: 11, opacity: 0.7 }}>
+              {this.state.error.message}
+            </div>
+          )}
         </div>
       )
     }
@@ -147,7 +110,6 @@ function renderFallback(
           <Fallback {...rest} />
         </FallbackErrorBoundary>
       ) : (
-        // fallback={null} 的 slot — 输出诊断日志，不静默消失
         <NullFallbackDiagnostic slotName={name} />
       )}
     </>
@@ -156,7 +118,6 @@ function renderFallback(
 
 /**
  * 当 fallback={null} 且 entries 为空时，输出一次性诊断日志。
- * 不渲染任何可见 UI，但在控制台留下痕迹。
  */
 function NullFallbackDiagnostic({ slotName }: { slotName: string }) {
   useEffect(() => {
@@ -167,36 +128,37 @@ function NullFallbackDiagnostic({ slotName }: { slotName: string }) {
 
 /**
  * 泛型 SlotBridge：从 fallback 组件的 Props 类型自动推断 props 类型。
+ *
+ * 对标 DSH scoped-slots.tsx SlotOutlet：
+ * - useSyncExternalStore 订阅 slot version
+ * - 渲染体中读取 entries
+ * - 取 winner entry，用 SlotErrorBoundary 包裹
+ * - 不使用 Suspense — 组件同步导入
  */
 export function SlotBridge<P extends Record<string, any> = Record<string, any>>(
   props: { name: string } & { fallback?: ComponentType<P> | null; showDegraded?: boolean } & P
 ): ReactNode {
   const { name, fallback: Fallback, showDegraded, ...rest } = props
 
-  // 时序修复：检测 ctx 是否已就绪。
-  // React 首次渲染时 getCordisContext() 可能还在执行，tryGetCtx() 返回 null。
-  // useCtxReady 在 ctx 就绪后触发重渲染，让 useSyncExternalStore 正确订阅。
   const ctxReady = useCtxReady()
   const ctx = tryGetCtx()
 
-  // 如果 Cordis Context 未初始化或 Slot 服务不可用，使用 fallback（不显示降级横幅）
   const slots = ctx?.get('slots') ?? null
 
   // D7-1 修复: Hook 必须无条件调用，避免 React Hooks 顺序违规
   const entries = useSlotEntriesSafe(slots, name)
   const isDegraded = entries.length === 0
 
-  // ctx 未就绪时渲染 fallback 但不显示降级横幅（这是正常的启动延迟，不是插件关闭）
+  // ctx 未就绪时渲染 fallback 但不显示降级横幅
   if (!ctxReady || !slots) {
-    return renderFallback(Fallback, rest as Record<string, any>, name, false /* 不显示降级横幅 */)
+    return renderFallback(Fallback, rest as Record<string, any>, name, false)
   }
 
   if (isDegraded) {
-    // 没有注册的组件，使用 fallback
     return renderFallback(Fallback, rest as Record<string, any>, name, showDegraded)
   }
 
-  // 取最高优先级的注册组件
+  // 取最高优先级的注册组件（对标 DSH entriesOfSlot 的 shadowing winner）
   const entry = entries[entries.length - 1]
   const Component = entry.component as ComponentType<P>
 
@@ -204,7 +166,9 @@ export function SlotBridge<P extends Record<string, any> = Record<string, any>>(
     return renderFallback(Fallback, rest as Record<string, any>, name, showDegraded)
   }
 
-  // 插件组件用 SlotErrorBoundary 包裹：崩溃时自动回退到 fallback
+  // 对标 DSH scoped-slots.tsx:296 entryKeyOf 模式
+  const entryKey = entry.options.id ?? entry.options.priority ?? 0
+
   const fallbackNode = Fallback ? (
     <FallbackErrorBoundary slotName={name}>
       <Fallback {...(rest as unknown as P)} />
@@ -212,21 +176,18 @@ export function SlotBridge<P extends Record<string, any> = Record<string, any>>(
   ) : null
 
   return (
-    <Suspense fallback={<div className="slot-loading">Loading...</div>}>
-      <SlotErrorBoundary slotName={name} fallback={fallbackNode}>
-        <Component {...(rest as unknown as P)} />
-      </SlotErrorBoundary>
-    </Suspense>
+    <SlotErrorBoundary slotName={name} fallback={fallbackNode} entryKey={entryKey}>
+      <Component {...(rest as unknown as P)} />
+    </SlotErrorBoundary>
   )
 }
 
 /**
- * P1-2: 降级提示横幅 — 当插件被关闭导致 Slot 空时显示提示。
+ * P1-2: 降级提示横幅
  */
 function DegradedBanner({ slotName }: { slotName: string }) {
   const [dismissed, setDismissed] = useState(false)
 
-  // 监听插件状态变化，重置 dismissed
   useEffect(() => {
     const handler = () => setDismissed(false)
     window.addEventListener('codem:plugin-state-changed', handler)
@@ -259,72 +220,80 @@ function DegradedBanner({ slotName }: { slotName: string }) {
 
 /**
  * 渲染 list 类型 slot 中的所有组件。
- * 用于 overlay 类型的 slot（如 app.overlay）。
+ * 对标 DSH scoped-slots.tsx list 分支。
  */
 export function SlotListBridge<P extends Record<string, any>>(
   props: { name: string } & P
 ): ReactNode {
   const { name, ...rest } = props
 
-  // 时序修复：检测 ctx 是否已就绪
   const ctxReady = useCtxReady()
   const ctx = tryGetCtx()
 
-  const slots = ctx?.get('slots')
-  if (!ctxReady || !slots) {
-    // ctx 未就绪时不渲染（启动期间，slot 组件尚未注册）
-    return null
-  }
+  const slots = ctx?.get('slots') ?? null
 
-  const entries = useSlotEntries(slots, name)
+  const entries = useSlotEntriesSafe(slots, name)
 
-  if (entries.length === 0) {
+  if (!ctxReady || !slots || entries.length === 0) {
     return null
   }
 
   return entries.map((entry, i) => {
     const Component = entry.component as ComponentType<P>
     if (!Component) return null
+    const entryKey = entry.options.id ?? i
     return (
-      <Suspense key={entry.options.id || i} fallback={null}>
-        <SlotErrorBoundary slotName={`${name}[${i}]`} fallback={null}>
-          <Component {...(rest as unknown as P)} />
-        </SlotErrorBoundary>
-      </Suspense>
+      <SlotErrorBoundary key={entry.options.id || i} slotName={`${name}[${i}]`} fallback={null} entryKey={entryKey}>
+        <Component {...(rest as unknown as P)} />
+      </SlotErrorBoundary>
     )
   })
 }
 
 /**
-* D7-1: 当 slots 为 null 时使用的 no-op 订阅 — getSnapshot 必须返回缓存的稳定引用，
-* 否则 useSyncExternalStore 会无限循环（React 要求 getSnapshot 返回值引用稳定）。
-*/
-const EMPTY_ENTRIES: StoredEntry[] = []
+ * DSH-aligned: useSyncExternalStore 仅用于变更通知，getSnapshot 返回 number（版本号）。
+ *
+ * DSH 的设计（scoped-slots.tsx:661 + bind.ts:18）：
+ * - subscribe / getSnapshot 闭包用 WeakMap 按 source 身份缓存，永不在渲染中重建
+ * - getSnapshot 返回 number（版本号），值类型天然引用稳定
+ * - entries 在渲染体中读取，不在 getSnapshot 中
+ */
+const EMPTY_ENTRIES: readonly StoredEntry[] = Object.freeze([])
 const noopSubscribe = (_onChange: () => void) => () => {}
-const noopGetSnapshot = () => EMPTY_ENTRIES
+const noopGetVersion = () => 0
 
-/**
-* Hook: 订阅 Slot 的 entries 变化。
-* 当 slots 为 null 时返回空数组（避免 Hooks 顺序违规）。
-*/
-function useSlotEntriesSafe(slots: any, key: string): StoredEntry[] {
-  return useSyncExternalStore(
-    slots ? (onChange) => slots.subscribe(key, onChange) : noopSubscribe,
-    slots ? () => slots.entriesOfSlot(key) as StoredEntry[] : noopGetSnapshot,
-    noopGetSnapshot,
-  )
+/** 按 (slots, key) 缓存 subscribe + getSnapshot 闭包对，对齐 DSH 的 WeakMap 模式 */
+interface CachedSubscription {
+  subscribe: (onChange: () => void) => () => void
+  getVersion: () => number
+}
+const subscriptionCache = new WeakMap<object, Map<string, CachedSubscription>>()
+
+function getSubscription(slots: any, key: string): CachedSubscription {
+  if (!slots) return { subscribe: noopSubscribe, getVersion: noopGetVersion }
+  let perSlots = subscriptionCache.get(slots)
+  if (!perSlots) {
+    perSlots = new Map()
+    subscriptionCache.set(slots, perSlots)
+  }
+  let cached = perSlots.get(key)
+  if (!cached) {
+    cached = {
+      subscribe: (onChange: () => void) => slots.subscribe(key, onChange),
+      getVersion: () => slots.getVersion(key),
+    }
+    perSlots.set(key, cached)
+  }
+  return cached
 }
 
 /**
-* Hook: 订阅 Slot 的 entries 变化（原版，保留向后兼容）。
-*/
-function useSlotEntries(slots: any, key: string): StoredEntry[] {
-  return useSyncExternalStore(
-    (onChange) => slots.subscribe(key, onChange),
-    () => {
-      const entries = slots.entriesOfSlot(key) as StoredEntry[]
-      return entries
-    },
-    () => [] as StoredEntry[],
-  )
+ * Hook: 订阅 Slot 的 version 变化，在渲染体中读取 entries。
+ * 当 slots 为 null 时返回空数组（避免 Hooks 顺序违规）。
+ */
+function useSlotEntriesSafe(slots: any, key: string): readonly StoredEntry[] {
+  const sub = getSubscription(slots, key)
+  useSyncExternalStore(sub.subscribe, sub.getVersion, noopGetVersion)
+  if (!slots) return EMPTY_ENTRIES
+  return slots.entriesOfSlot(key) as readonly StoredEntry[]
 }

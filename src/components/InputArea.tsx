@@ -51,6 +51,8 @@ disabled: boolean;
 isStreaming: boolean;
 /** No session selected — show "select or create session" hint */
 noSession?: boolean;
+/** Session ID — when this changes, internal state (attachments, skills, draft) is reset */
+sessionKey?: string;
   collaborationMode: CollaborationMode;
   onModeChange: (mode: CollaborationMode) => void;
   /** Project path for per-project security mode */
@@ -80,7 +82,7 @@ noSession?: boolean;
   connected?: boolean;
 }
 
-export function InputArea({ onSend, onCancel, disabled, isStreaming, noSession, collaborationMode, onModeChange, projectPath, quoteContext, onClearQuote, suggestionPrompt, onSuggestionConsumed, notebookId, onToggleSearch, onToggleWorkbench, onToggleQuickPhrase, onToggleDraftPicker, onToggleDisplayMode, onToggleGit, onToggleRightSidebar, hasDrafts, model, onModelChange, mode = "cli", connected = true }: InputAreaProps) {
+export function InputArea({ onSend, onCancel, disabled, isStreaming, noSession, sessionKey, collaborationMode, onModeChange, projectPath, quoteContext, onClearQuote, suggestionPrompt, onSuggestionConsumed, notebookId, onToggleSearch, onToggleWorkbench, onToggleQuickPhrase, onToggleDraftPicker, onToggleDisplayMode, onToggleGit, onToggleRightSidebar, hasDrafts, model, onModelChange, mode = "cli", connected = true }: InputAreaProps) {
   const lang = useLang();
   const [input, setInput] = useState("");
   const [pendingAttachments, setPendingAttachments] = useState<MessageAttachment[]>([]);
@@ -190,6 +192,23 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
   // P1 #12: Draft persistence — saves input per session
   const draftKey = currentSession?.id || currentProject?.id || "__global__";
   const { draft, setDraft, clearDraft } = useDraftPersistence(draftKey);
+
+  // Reset internal state when session changes (new chat / switch session)
+  // DSH 对齐: DSH 的 InputBar 中附件状态来自 useInput (session 级别 store)，
+  // session 切换时自动重置。mimo-gui 的 InputArea 使用组件内部 state，
+  // 需要手动监听 sessionKey 变化并重置。
+  const prevSessionKey = useRef(sessionKey);
+  useEffect(() => {
+    if (prevSessionKey.current !== sessionKey) {
+      prevSessionKey.current = sessionKey;
+      setPendingAttachments([]);
+      setSelectedSkills([]);
+      setInput("");
+      setSlashFilter(null);
+      setComposerBadges([]);
+      clearDraft();
+    }
+  }, [sessionKey]);
 
   // P1 #15: Random tip text — rotates placeholder periodically
   const tipList = useMemo(() => zh ? [

@@ -5,6 +5,19 @@ export interface ProviderConfig {
   apiKey: string;
   baseUrl?: string;
   models: ModelConfig[];
+  /** API protocol type — controls endpoint path. Defaults to "chat-completions". */
+  protocol?: ApiProtocol;
+}
+
+/** Supported API protocol types */
+export type ApiProtocol = "chat-completions" | "responses" | "custom";
+
+/** Dynamic model info returned by the server's /v1/models or /models endpoint */
+export interface ServerModelInfo {
+  id: string;
+  owned_by?: string;
+  object?: string;
+  created?: number;
 }
 
 export interface ModelConfig {
@@ -16,6 +29,8 @@ export interface ModelConfig {
   supportsStreaming: boolean;
   costPer1kInput?: number;
   costPer1kOutput?: number;
+  /** Whether this model was discovered dynamically from the server */
+  dynamic?: boolean;
 }
 
 export interface LLMRequest {
@@ -100,8 +115,11 @@ export interface LLMProvider {
   id: string;
   name: string;
 
-  /** List available models */
+  /** List available models (from cache or static) */
   listModels(): Promise<ModelConfig[]>;
+
+  /** Fetch models from the server's /models endpoint and cache them */
+  fetchModelsFromServer(): Promise<ModelConfig[]>;
 
   /** Non-streaming completion */
   complete(request: LLMRequest): Promise<LLMResponse>;

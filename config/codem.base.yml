@@ -1,0 +1,797 @@
+# Codem Base Bundle — 所有运行模式共享的核心插件清单
+#
+# 对标 DSH 的 cordis.patch.yml，声明式定义：
+# - 插件 ID、名称、依赖关系
+# - 平台条件禁用 (when: platform)
+# - 插件配置 (config)
+# - 核心/可选标记 (core: true)
+#
+# 加载器读取此文件后通过 builtin-registry 注册的映射表查找对应 Plugin 对象。
+
+# ===== 核心服务（不可关闭） =====
+# slots 服务在 App.tsx 中直接加载（SlotsService），不通过 builtinPlugins
+# - id: slots
+#   name: '@codem/slots'
+#   core: true
+
+- id: llm
+  name: '@codem/llm'
+  core: true
+  inject: [llmEngine]
+  config:
+    defaultProvider: deepseek
+
+- id: tools
+  name: '@codem/tools'
+  core: true
+  inject: [llmEngine]
+
+- id: session
+  name: '@codem/session'
+  core: true
+
+- id: storage
+  name: '@codem/storage'
+  core: true
+
+- id: store
+  name: '@codem/store'
+  core: true
+
+- id: settings
+  name: '@codem/settings'
+  inject: [llmEngine]
+
+- id: memory
+  name: '@codem/memory'
+  inject: [llmEngine]
+
+- id: permission
+  name: '@codem/permission'
+  inject: [llmEngine]
+
+- id: mcp
+  name: '@codem/mcp'
+  inject: [llmEngine]
+
+- id: skill
+  name: '@codem/skill'
+  inject: [llmEngine]
+
+- id: subagent
+  name: '@codem/subagent'
+  inject: [llmEngine]
+
+- id: theme
+  name: '@codem/theme'
+
+- id: mimo-auth
+  name: '@codem/mimo-auth'
+
+# ===== 文件系统 / Shell =====
+- id: fs-local
+  name: '@codem/fs-local'
+  core: true
+
+- id: shell-local
+  name: '@codem/shell-local'
+  core: true
+
+# 平台条件：PowerShell 仅 Windows
+- id: pwsh-local
+  name: '@codem/pwsh-local'
+  when: platform == 'win32'
+  inject: [shell]
+
+# 平台条件：Bash 仅非 Windows
+- id: bash-sandbox
+  name: '@codem/bash-sandbox'
+  when: platform != 'win32'
+  inject: [shell, sandbox]
+
+- id: terminal-bash
+  name: '@codem/terminal-bash'
+  when: platform != 'win32'
+  inject: [shell]
+
+# 平台条件：pwsh-sandbox 仅 Windows
+- id: pwsh-sandbox
+  name: '@codem/pwsh-sandbox'
+  when: platform == 'win32'
+  inject: [shell, sandbox]
+
+# ===== 沙箱 / 安全 =====
+- id: sandbox-local
+  name: '@codem/sandbox-local'
+
+- id: sandbox-policy
+  name: '@codem/sandbox-policy'
+  inject: [sandbox]
+
+- id: subprocess
+  name: '@codem/subprocess'
+
+- id: security-mode
+  name: '@codem/security-mode'
+
+- id: permissions
+  name: '@codem/permissions'
+
+# ===== Agent 引擎 =====
+- id: agent-engine
+  name: '@codem/agent-engine'
+  core: true
+  inject: [llmEngine]
+
+- id: agent-registry
+  name: '@codem/agent-registry'
+  core: true
+  inject: [llmEngine]
+
+- id: streaming-executor
+  name: '@codem/streaming-executor'
+  core: true
+
+- id: agent-loop
+  name: '@codem/agent-loop'
+  core: true
+  inject: [llm, tools, agentEngine]
+
+- id: agent
+  name: '@codem/agent'
+  core: true
+  inject: [agentRegistry]
+
+- id: agent-default-model
+  name: '@codem/agent-default-model'
+  inject: [modelProfile]
+
+- id: agent-instructions
+  name: '@codem/agent-instructions'
+
+- id: agent-tool-presentation
+  name: '@codem/agent-tool-presentation'
+  inject: [toolRender]
+
+- id: system-prompt
+  name: '@codem/system-prompt'
+  core: true
+  inject: [agentInstructions]
+
+- id: scope
+  name: '@codem/scope'
+
+# ===== 会话持久化 =====
+- id: message-storage
+  name: '@codem/message-storage'
+  core: true
+
+- id: session-persistence-sqlite
+  name: '@codem/session-persistence-sqlite'
+  inject: [session]
+
+- id: session-persistence-jsonl
+  name: '@codem/session-persistence-jsonl'
+  inject: [session]
+
+- id: session-projection
+  name: '@codem/session-projection'
+  inject: [session]
+
+- id: session-projection-cache
+  name: '@codem/session-projection-cache'
+  inject: [sessionProjection]
+
+- id: session-query-sqlite
+  name: '@codem/session-query-sqlite'
+  inject: [session]
+  config:
+    path: ':memory:'
+    openAt: never
+
+- id: session-stats
+  name: '@codem/session-stats'
+  inject: [session]
+
+- id: session-title-llm
+  name: '@codem/session-title-llm'
+  inject: [llm, session]
+
+- id: session-title-first-prompt-llm
+  name: '@codem/session-title-first-prompt-llm'
+  inject: [llm, session]
+
+- id: session-title-all-prompts-llm
+  name: '@codem/session-title-all-prompts-llm'
+  inject: [llm, session]
+
+- id: session-checkpoint
+  name: '@codem/session-checkpoint'
+  inject: [session]
+
+- id: session-checkpoint-policy
+  name: '@codem/session-checkpoint-policy'
+  inject: [sessionCheckpoint]
+
+- id: session-log-export
+  name: '@codem/session-log-export'
+  inject: [session]
+
+- id: session-reference
+  name: '@codem/session-reference'
+  inject: [session]
+
+- id: session-recovery
+  name: '@codem/session-recovery'
+  inject: [session]
+
+- id: session-telemetry-otel
+  name: '@codem/session-telemetry-otel'
+  inject: [telemetry]
+  config:
+    mode: disabled
+
+# ===== LLM 适配器 =====
+- id: llm-retry
+  name: '@codem/llm-retry'
+  inject: [llm, llmEngine]
+
+- id: token-meter
+  name: '@codem/token-meter'
+
+- id: llm-mimo
+  name: '@codem/llm-mimo'
+  inject: [llm]
+
+- id: llm-openai
+  name: '@codem/llm-openai'
+  inject: [llm]
+
+- id: llm-claude
+  name: '@codem/llm-claude'
+  inject: [llm]
+
+- id: llm-gemini
+  name: '@codem/llm-gemini'
+  inject: [llm]
+
+- id: llm-ollama
+  name: '@codem/llm-ollama'
+  inject: [llm]
+
+- id: llm-deepseek
+  name: '@codem/llm-deepseek'
+  inject: [llm]
+
+- id: llm-pi-ai
+  name: '@codem/llm-pi-ai'
+  inject: [llm]
+
+# ===== Web / 搜索 =====
+- id: web
+  name: '@codem/web-search'
+
+- id: web-fetch-http
+  name: '@codem/web-fetch-http'
+  inject: [web]
+
+- id: web-search-mimo
+  name: '@codem/web-search-mimo'
+  inject: [web]
+
+- id: web-search-exa
+  name: '@codem/web-search-exa'
+  inject: [web]
+
+- id: web-search-perplexity
+  name: '@codem/web-search-perplexity'
+  inject: [web]
+
+# ===== 上下文 / 压缩 =====
+- id: compaction
+  name: '@codem/compaction'
+
+- id: compaction-basic
+  name: '@codem/compaction-basic'
+  inject: [compaction]
+
+- id: compaction-tool-result-pruner
+  name: '@codem/compaction-tool-result-pruner'
+  inject: [compaction]
+  config:
+    thresholdChars: 8192
+    headChars: 4096
+    tailChars: 1024
+
+- id: command-compact
+  name: '@codem/command-compact'
+  inject: [compaction, commands]
+
+# ===== Guard / 保护 =====
+- id: guard
+  name: '@codem/guard'
+
+- id: repeat-tool-reminder
+  name: '@codem/repeat-tool-reminder'
+  inject: [guard]
+  config:
+    thresholds: [3, 5, 8]
+    argumentsPreviewChars: 500
+
+- id: timeout-guard
+  name: '@codem/timeout-guard'
+  inject: [guard]
+
+- id: invariants-guard
+  name: '@codem/invariants-guard'
+  inject: [guard]
+
+- id: tool-call-timeout-policy
+  name: '@codem/tool-call-timeout-policy'
+  inject: [timeoutGuard]
+
+# ===== 目标 / 计划 / 工作流 =====
+- id: goal-round-driver
+  name: '@codem/goal-round-driver'
+
+- id: command-goal
+  name: '@codem/command-goal'
+  inject: [commands]
+
+- id: plan-mode
+  name: '@codem/plan-mode'
+  inject: [plans]
+
+- id: plans
+  name: '@codem/plans'
+
+# ===== 命令 / 技能 =====
+- id: commands
+  name: '@codem/commands'
+  inject: [skill]
+
+- id: command-feedback
+  name: '@codem/command-feedback'
+
+- id: skill-filesystem
+  name: '@codem/skill-filesystem'
+  inject: [skill, fs]
+
+- id: skill-badge
+  name: '@codem/skill-badge'
+  inject: [skill]
+  disabled: true
+
+# ===== 用户交互 =====
+- id: user-questions
+  name: '@codem/user-questions'
+
+- id: user-approval
+  name: '@codem/user-approval'
+  inject: [approval]
+
+- id: approval
+  name: '@codem/approval'
+
+# ===== 凭证 / 附件 =====
+- id: credentials
+  name: '@codem/credentials'
+  core: true
+
+- id: attachments
+  name: '@codem/attachments'
+
+# ===== 其他服务 =====
+- id: hooks
+  name: '@codem/hooks'
+
+- id: automation
+  name: '@codem/automation'
+
+- id: identity
+  name: '@codem/identity'
+
+- id: lsp
+  name: '@codem/lsp'
+
+- id: lsp-stdio
+  name: '@codem/lsp-stdio'
+  inject: [lsp]
+
+- id: code-runtime
+  name: '@codem/code-runtime'
+
+- id: code-runtime-worker-thread
+  name: '@codem/code-runtime-worker-thread'
+  inject: [codeRuntime]
+
+- id: workflow
+  name: '@codem/workflow'
+
+- id: workflow-worker-thread
+  name: '@codem/workflow-worker-thread'
+  inject: [workflow]
+
+- id: context-info
+  name: '@codem/context-info'
+  inject: [settings]
+
+- id: notebook
+  name: '@codem/notebook'
+
+- id: squad
+  name: '@codem/squad'
+
+- id: squad-manager
+  name: '@codem/squad-manager'
+
+- id: dynamic-runner
+  name: '@codem/dynamic-runner'
+
+- id: plugin-registry
+  name: '@codem/plugin-registry'
+
+# ===== R1-R6 服务 =====
+- id: event-log
+  name: '@codem/event-log'
+
+- id: telemetry
+  name: '@codem/telemetry'
+
+- id: file-change-tracker
+  name: '@codem/file-change-tracker'
+
+- id: transcript-cache
+  name: '@codem/transcript-cache'
+
+- id: i18n
+  name: '@codem/i18n'
+
+- id: cost-tracker
+  name: '@codem/cost-tracker'
+  inject: [llmEngine]
+
+- id: model-profile
+  name: '@codem/model-profile'
+  inject: [llmEngine]
+
+- id: tool-render
+  name: '@codem/tool-render'
+  inject: [llmEngine]
+
+- id: recovery
+  name: '@codem/recovery'
+  inject: [llmEngine]
+
+- id: retry
+  name: '@codem/retry'
+  inject: [llmEngine]
+
+- id: issue
+  name: '@codem/issue'
+
+- id: inbox
+  name: '@codem/inbox'
+
+- id: schedule
+  name: '@codem/schedule'
+  inject: [inbox]
+
+- id: preset
+  name: '@codem/preset'
+
+- id: vision-proxy
+  name: '@codem/vision-proxy'
+
+- id: spill
+  name: '@codem/spill'
+
+- id: spill-local
+  name: '@codem/spill-local'
+  inject: [spill]
+
+- id: spill-policy
+  name: '@codem/spill-policy'
+  inject: [spill]
+  config:
+    maxInlineBytes: 50000
+
+- id: persona
+  name: '@codem/persona'
+
+# ===== 工具插件 =====
+- id: tool-jobs
+  name: '@codem/tool-jobs'
+  inject: [tools, automation]
+
+- id: tool-fs-search
+  name: '@codem/tool-fs-search'
+  inject: [fs, tools]
+
+- id: tool-str-replace-editor
+  name: '@codem/tool-str-replace-editor'
+  inject: [fs, tools]
+
+- id: tool-ralph
+  name: '@codem/tool-ralph'
+  inject: [workflow, tools]
+
+# 注：tool-web 在 builtinPlugins 中不存在，web 搜索工具分散在 web-search-* 插件中
+# DSH 中 tool-web 是独立的工具注册插件，我们的工具注册在 toolsProvider 内部
+
+- id: tool-bash-persistent
+  name: '@codem/tool-bash-persistent'
+  inject: [shell]
+
+- id: tool-subagent-control
+  name: '@codem/subagent-control'
+  inject: [subagent]
+
+- id: tool-subagent-report
+  name: '@codem/tool-subagent-report'
+  inject: [subagent]
+
+- id: atomic-write
+  name: '@codem/atomic-write'
+  inject: [fs]
+
+# ===== 子 Agent =====
+- id: subagent-fork-in-process
+  name: '@codem/subagent-fork-in-process'
+  inject: [subagent]
+
+- id: subagent-spawn-in-process
+  name: '@codem/subagent-spawn-in-process'
+  inject: [subagent]
+
+- id: subagent-in-process-driver
+  name: '@codem/subagent-in-process-driver'
+  inject: [subagent]
+
+- id: subagent-acp
+  name: '@codem/subagent-acp'
+  inject: [subagent, acp]
+
+- id: subagent-claude-code
+  name: '@codem/subagent-claude-code'
+  inject: [subagent, llm]
+
+- id: subagent-codex
+  name: '@codem/subagent-codex'
+  inject: [subagent, llm]
+
+- id: subagent-dsh-sdk
+  name: '@codem/subagent-dsh-sdk'
+  inject: [subagent, sdkProtocol]
+
+# ===== E2B (可选，远程沙箱) =====
+- id: e2b
+  name: '@codem/e2b'
+  disabled: true
+
+- id: fs-e2b
+  name: '@codem/fs-e2b'
+  inject: [e2b]
+  disabled: true
+
+- id: subprocess-e2b
+  name: '@codem/subprocess-e2b'
+  inject: [e2b, subprocess]
+  disabled: true
+
+- id: subprocess-local
+  name: '@codem/subprocess-local'
+  inject: [subprocess]
+
+# ===== 沙箱扩展 =====
+- id: sandbox-windows-acl
+  name: '@codem/sandbox-windows-acl'
+  when: platform == 'win32'
+  inject: [sandbox]
+
+- id: fs-observation-policy
+  name: '@codem/fs-observation-policy'
+
+- id: fs-sandbox
+  name: '@codem/fs-sandbox'
+  inject: [fs, sandbox]
+
+- id: tmux-context
+  name: '@codem/tmux-context'
+  when: platform != 'win32'
+  inject: [shell]
+
+# ===== 时间上下文 =====
+- id: time-context
+  name: '@codem/time-context'
+
+# ===== Host/Client 架构 =====
+- id: host-client
+  name: '@codem/host-client'
+
+- id: host-webserver
+  name: '@codem/host-webserver'
+  inject: [hostClient]
+
+- id: host-plugin-inventory
+  name: '@codem/host-plugin-inventory'
+  inject: [hostClient]
+
+- id: host-apiproxy
+  name: '@codem/host-apiproxy'
+  inject: [hostWebserver]
+
+- id: host-frontend-static
+  name: '@codem/host-frontend-static'
+  inject: [hostWebserver]
+
+- id: sdk-protocol
+  name: '@codem/sdk-protocol'
+  inject: [hostClient]
+
+- id: sdk-client
+  name: '@codem/sdk-client'
+  inject: [sdkProtocol]
+
+- id: api-gateway
+  name: '@codem/api-gateway'
+  inject: [hostWebserver]
+
+- id: api-remotes
+  name: '@codem/api-remotes'
+  inject: [sdkProtocol]
+
+- id: bundle
+  name: '@codem/bundle'
+
+- id: acp
+  name: '@codem/acp'
+  inject: [automation]
+
+- id: host
+  name: '@codem/host'
+  inject: [hostWebserver]
+
+- id: remote-client
+  name: '@codem/remote-client'
+  inject: [sdkProtocol]
+
+- id: cordis-client-runner
+  name: '@codem/cordis-client-runner'
+  inject: [sdkClient]
+
+- id: cordis-host-runner
+  name: '@codem/cordis-host-runner'
+  inject: [host]
+
+- id: cli
+  name: '@codem/cli'
+  inject: [session, tools, pluginRegistry]
+
+# ===== Typert =====
+- id: typert-registry
+  name: '@codem/typert-registry'
+
+- id: typert-loader
+  name: '@codem/typert-loader'
+
+- id: typert-generator
+  name: '@codem/typert-generator'
+
+- id: typert-protocol
+  name: '@codem/typert-protocol'
+
+# ===== 存储扩展 =====
+- id: storage-domain
+  name: '@codem/storage-domain'
+  inject: [storage]
+
+- id: storage-json
+  name: '@codem/storage-json'
+  inject: [storage]
+
+# ===== DSH 兼容层 =====
+# dsh-compat 在 App.tsx 中动态 import 加载，不通过 builtinPlugins
+# 因为它需要在所有核心服务就绪后加载
+# - id: dsh-compat
+#   name: '@codem/dsh-compat'
+#   inject: [llm, shell, fs, tools]
+
+# ===== UI 插件 =====
+# UI 插件不通过 YAML 加载，由 App.tsx 中的 loadUIPlugins() 函数加载。
+# loadUIPlugins() 先调用 declareAppSlots() 声明所有 slot，然后加载 UI 插件。
+# 如果通过 YAML 加载，slot 声明还未执行，会导致 "slot is not declared" 错误。
+# - id: ui-sidebar
+#   name: '@codem/ui-sidebar'
+#   inject: [slots]
+# - id: ui-conversation
+#   name: '@codem/ui-conversation'
+#   inject: [slots]
+# - id: ui-tool
+#   name: '@codem/ui-tool'
+#   inject: [slots]
+# - id: ui-settings
+#   name: '@codem/ui-settings'
+#   inject: [slots]
+# - id: ui-misc
+#   name: '@codem/ui-misc'
+#   inject: [slots]
+# - id: ui-market
+#   name: '@codem/ui-market'
+#   inject: [slots]
+# - id: ui-theme
+#   name: '@codem/ui-theme'
+# - id: ui-skin-default
+#   name: '@codem/ui-skin-default'
+# - id: ui-skin-pet
+#   name: '@codem/ui-skin-pet'
+# - id: ui-pet
+#   name: '@codem/ui-pet'
+#   inject: [slots]
+# - id: ui-primitives
+#   name: '@codem/ui-primitives'
+# - id: ui-input-trigger
+#   name: '@codem/ui-input-trigger'
+# - id: ui-agent-preset
+#   name: '@codem/ui-agent-preset'
+# - id: ui-skill-panel
+#   name: '@codem/ui-skill-panel'
+# - id: ui-attachment
+#   name: '@codem/ui-attachment'
+#   inject: [slots]
+# - id: ui-cordis
+#   name: '@codem/ui-cordis'
+#   inject: [slots]
+# - id: ui-goal
+#   name: '@codem/ui-goal'
+#   inject: [slots]
+# - id: ui-jobs
+#   name: '@codem/ui-jobs'
+#   inject: [slots]
+# - id: ui-layout
+#   name: '@codem/ui-layout'
+#   inject: [slots]
+# - id: ui-plan
+#   name: '@codem/ui-plan'
+#   inject: [slots]
+# - id: ui-settings-general
+#   name: '@codem/ui-settings-general'
+#   inject: [slots]
+# - id: ui-settings-models
+#   name: '@codem/ui-settings-models'
+#   inject: [slots]
+# - id: ui-settings-plugin-inventory
+#   name: '@codem/ui-settings-plugin-inventory'
+#   inject: [slots]
+# - id: ui-settings-plugins
+#   name: '@codem/ui-settings-plugins'
+#   inject: [slots]
+# - id: ui-slots
+#   name: '@codem/ui-slots'
+#   inject: [slots]
+# - id: ui-subagent
+#   name: '@codem/ui-subagent'
+#   inject: [slots]
+# - id: ui-user-questions
+#   name: '@codem/ui-user-questions'
+#   inject: [slots]
+# - id: ui-workflow-run
+#   name: '@codem/ui-workflow-run'
+#   inject: [slots]
+# - id: ui-workspace
+#   name: '@codem/ui-workspace'
+#   inject: [slots]
+# - id: ui-directory-picker
+#   name: '@codem/ui-directory-picker'
+# - id: ui-message-feedback
+#   name: '@codem/ui-message-feedback'
+# - id: ui-model-selection
+#   name: '@codem/ui-model-selection'
+#   inject: [modelProfile]
+# - id: ui-permission-presets
+#   name: '@codem/ui-permission-presets'
+#   inject: [permission]
+# - id: ui-trajectory
+#   name: '@codem/ui-trajectory'
+# - id: ui-deliverables
+#   name: '@codem/ui-deliverables'

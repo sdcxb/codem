@@ -234,10 +234,13 @@ export const systemPromptProvider: Plugin = (ctx: any) => {
   // 注册默认变量 — 参考 DSH agent-loop/index.ts:351-353
   const agentEngine = ctx.get('agentEngine')
   if (agentEngine) {
-    service.addVariable('provider', () => agentEngine.getEngine?.()?.config?.providerId || 'unknown')
-    service.addVariable('model', () => agentEngine.getEngine?.()?.config?.model || 'unknown')
+    service.addVariable('provider', () => agentEngine.getEngine?.()?.config?.defaultProvider || 'unknown')
+    service.addVariable('model', () => agentEngine.getEngine?.()?.config?.defaultModel || 'unknown')
   }
-  service.addVariable('cwd', () => process.cwd?.() || '/')
+  service.addVariable('cwd', () => {
+    try { return (typeof process !== 'undefined' && process.cwd?.()) || '/' }
+    catch { return '/' }
+  })
 
   return ctx.provide('systemPrompt', service)
 }

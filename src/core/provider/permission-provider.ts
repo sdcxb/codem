@@ -1,20 +1,21 @@
 // @ts-nocheck
 /**
  * Permission Provider 插件 — 可独立加载/卸载/热替换。
+ *
+ * 不创建独立实例，而是从 ctx.get('llmEngine') 获取
+ * LLMEngine 实例的 PermissionManager，确保共享同一个实例。
  */
 import type { Plugin } from '../cordis/src/index.ts'
-import { PermissionManager } from '../permission/permission'
 
-export const permissionProvider: Plugin = (ctx: any) => {
-  // 在 Provider 内部创建实例，生命周期与 fiber 绑定
-  const permMgr = new PermissionManager()
-
-  const dispose = ctx.provide('permission', {
-    check: (action: string, resource?: any) => permMgr.check(action, resource),
-    request: async (action: string, resource?: any) => permMgr.request(action, resource),
-    grant: (action: string) => permMgr.grant(action),
-    revoke: (action: string) => permMgr.revoke(action),
-  })
-
-  return dispose
-}
+export const permissionProvider: Plugin = Object.assign(
+  (ctx: any) => {
+    const engine = ctx.get('llmEngine')
+    if (!engine?.permissions) {
+      console.warn('[permissionProvider] llmEngine not available')
+      return () => {}
+    }
+    const dispose = ctx.provide('permission', engine.permissions)
+    return dispose
+  },
+  { inject: ['llmEngine'] as const }
+)

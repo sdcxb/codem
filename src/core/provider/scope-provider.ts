@@ -70,8 +70,8 @@ export const scopeProvider: Plugin = (ctx: any) => {
       return layer
     },
 
-    /** 获取 scope */
-    get(id: string): ScopeLayer | undefined {
+    /** 获取 scope 层 — 重命名以避免与下面的 get(k, scopeId) 冲突 */
+    getScope(id: string): ScopeLayer | undefined {
       return layers.get(id)
     },
 

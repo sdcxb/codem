@@ -1,9 +1,9 @@
 # Codem 项目完整说明
 
 > **用途**：新对话快速理解项目全貌、架构、文件关联、当前状态。
-> 创建时间：2026-07-23 | 最后更新：2026-08-21 | 当前版本：v1.5.0（Cordis "一切插件化" 工具发现机制 — ToolDef guidance + systemPrompt 动态收集）
+> 创建时间：2026-07-23 | 最后更新：2026-08-23 | 当前版本：v1.5.1（DSH 架构对标深度整改 + YAML 声明式插件加载 + 严重 Bug 修复）
 >
-> **版本历程概览**：v0.70 基础存储 → v0.80 轮次架构 → v0.87 Worktree/并行 → v0.88 桌面宠物 → v0.89 跨会话委派 → v0.90 P0-P4 全量功能 → v0.91 Coding 工作台 → v0.92 Codex 对标 → v0.93 Vision Proxy → v0.94 配置修复 → v0.95 CLI/API 视觉代理 → v0.96 UI 大改版 → v0.97 Agentic Loop 性能优化 → v0.98 多智能体协同 → v0.99 DSH 全量升级 → v1.0.0 插件系统架构 + UI/UX 标准化 → v1.1.0 DSH 对标整改 + 测试深化 → v1.1.1 UI 布局优化 + 插件条件渲染 + Bug 修复 → v1.2.0 Cordis 架构对齐 DSH + 安全加固 + 全量测试重构 → v1.3.0 Cordis 插件系统对标 DSH 全面整改 + Slot 消费闭环 + inject 依赖对齐 → v1.4.0 UI/UX 体验优化 11 项 Bug 修复 + 性能/CI-CD 面板切换化 + 梦幻皮肤一致性修复 → v1.4.1 插件管理初始化修复 + 技能市场性能优化 + 对话区域自适应 9 项 Bug 修复 → v1.4.2 10 项 Bug 修复 + Cordis 插件时序改进 + SlotBridge 降级机制增强 + 头像系统升级 → v1.5.0 Cordis "一切插件化" 工具发现机制 — ToolDef guidance + toolsProvider 自动注册 systemPrompt section + buildSystemPrompt 动态收集 + 31 个工具补充 guidance + skill-creator 技能安装增强
+> **版本历程概览**：v0.70 基础存储 → v0.80 轮次架构 → v0.87 Worktree/并行 → v0.88 桌面宠物 → v0.89 跨会话委派 → v0.90 P0-P4 全量功能 → v0.91 Coding 工作台 → v0.92 Codex 对标 → v0.93 Vision Proxy → v0.94 配置修复 → v0.95 CLI/API 视觉代理 → v0.96 UI 大改版 → v0.97 Agentic Loop 性能优化 → v0.98 多智能体协同 → v0.99 DSH 全量升级 → v1.0.0 插件系统架构 + UI/UX 标准化 → v1.1.0 DSH 对标整改 + 测试深化 → v1.1.1 UI 布局优化 + 插件条件渲染 + Bug 修复 → v1.2.0 Cordis 架构对齐 DSH + 安全加固 + 全量测试重构 → v1.3.0 Cordis 插件系统对标 DSH 全面整改 + Slot 消费闭环 + inject 依赖对齐 → v1.4.0 UI/UX 体验优化 11 项 Bug 修复 + 性能/CI-CD 面板切换化 + 梦幻皮肤一致性修复 → v1.4.1 插件管理初始化修复 + 技能市场性能优化 + 对话区域自适应 9 项 Bug 修复 → v1.4.2 10 项 Bug 修复 + Cordis 插件时序改进 + SlotBridge 降级机制增强 + 头像系统升级 → v1.5.0 Cordis "一切插件化" 工具发现机制 — ToolDef guidance + toolsProvider 自动注册 systemPrompt section + buildSystemPrompt 动态收集 + 31 个工具补充 guidance + skill-creator 技能安装增强 → v1.5.1 DSH 架构对标深度整改 + YAML 声明式插件加载 + LLM 回答重复根因修复 + llmEngine/mimoAuth 注册修复 + SlotBridge/SlotRenderer 对标 DSH 重写
 
 ---
 
@@ -15,7 +15,7 @@
 - **GitHub**：https://github.com/sdcxb/codem
 - **分发**：NSIS `.exe` + WiX `.msi`，一键安装无需依赖
 - **平台**：Windows 优先
-- **版本**：v1.5.0（Cordis "一切插件化" 工具发现机制 — ToolDef guidance + systemPrompt 动态收集，2026-08-21）
+- **版本**：v1.5.1（DSH 架构对标深度整改 + YAML 声明式插件加载 + 严重 Bug 修复，2026-08-23）
 
 ---
 
@@ -990,6 +990,13 @@ Rust 后端 (lib.rs):
 | v1.0.0 | 2026-08-15 | **UI/UX 标准化 + 插件系统架构 + 测试体系全面升级** — P4 Cordis DI容器+SlotRegistry+PluginLoader+18 Capability Seam + P5 全能力族拆分(13个独立能力族) + P6 UI插件包化+插件市场基础设施(7个UI插件包+Self-Referential Runtime+插件市场Manifest) + 全弹窗UI/UX标准化(modal-overlay+modal-editor统一结构) + 图标映射体系(7图标集+ToolEmojis+消除直接lucide-react导入) + CSS样式标准化(硬编码→CSS变量+Tailwind→size属性) + 核心插件保护(riskLevel+locked+core) + 5个新测试文件/271+用例(图标标准化97用例+工具管线闭环30+用例+质量套件80用例+插件依赖图24+用例+插件禁用影响40+用例) + SlotBridge泛型类型修复+恢复noImplicitAny严格检查。67文件修改(+1112/-641行)。全量100文件/3552用例通过 |
 | v1.1.0 | 2026-08-16 | **DSH对标全面整改 + 测试体系深化 + Bug修复** — Phase A-D全部完成：孤岛模块接入10项(compaction-control/output-contract/feedback/type-safety/event-system-strict/cookbook/persistence-provider/replay-adapter/preset-discovery/agent-message-queue) + 重复实现统一4项(capabilities vs provider/Telemetry-CostTracker/projectedTokens/seam-dsh-compat deprecation) + 缺失功能补齐5项(代理指令分层/进程级沙箱ACL/Dynamic Plugin工具/测试分层框架/包不变量检查) + 5个Bug修复(ESM require→import/fire-and-forget .catch()/TranscriptCache.clear/网络命令阻断/敏感变量) + 4个新测试文件/118用例(dsh-integration-full 53+plugin-disable-impact 18+functional-chain-closed-loop 12+extended-test-methods 35:模糊/属性/契约/链路探针) + 消息存储双轨制统一(C5) + 系统提示词分层加载(D1)。22文件修改，24新文件。全量107文件/3624用例通过 |
 | v1.1.1 | 2026-08-17 | **UI布局优化 + 插件条件渲染 + Bug修复** — 插件管理按钮移至左下角 + CI/CD移至右侧边栏 + 性能移至主对话框顶端 + 插件启用/禁用与按钮/面板联动显示 + 宠物窗口关闭Bug修复(Rust CloseRequested拦截器) + 插件管理面板Cordis Context初始化时序修复(重试机制+直接属性访问) + UI组件useCtx→tryGetCtx防御 + 6个工具Consumer文件execute回调null检查防御(tool-fs/tool-bash/tool-web/tool-skill/tool-cordis/tool-extra)。15文件修改。编译零错误 |
+| v1.2.0 | 2026-08-18 | **Cordis 架构全面对齐 DSH + 安全加固 + 全量测试重构** — 移除核心 `@ts-nocheck`（`declare module` 类型声明全面生效）+ `getCtxService` 对齐 DSH `ReflectService.get` keyof 推断 + 安全加固（AST 代码验证 + Worker 隔离 + XOR 密钥混淆 + SandboxGuard 覆盖读操作）+ 生命周期管理（复合 Dispose + LRU 淘汰）+ Bug 修复（React Hooks 顺序 + `useSyncExternalStore` 无限循环）+ 全量测试重构 109 套件 3690 测试通过 |
+| v1.3.0 | 2026-08-19 | **Cordis 插件系统对标 DSH 全面整改 + Slot 消费闭环 + inject 依赖对齐** — 死 slot 从 29 个降至 0 个 + 7 个 UI provider 添加 `inject` 声明依赖 + Conversation slot 层级对标 DSH 完整建立 + `slots.inject()` 消费声明方法 + 11 个重复/无消费点 slot 注册移除 + SlotBridge 泛型类型推断修复。30+ 文件修改，10 个新组件 |
+| v1.4.0 | 2026-08-19 | **UI/UX 体验优化 11 项 Bug 修复 + 编译 Warnings 清零** — 技能市场乱码修复 + http_get 超时优化 + 智能体管理滚动 + 模型默认值修复 + CI/CD 面板切换化 + 梦幻皮肤毛玻璃 + 圆角一致性 + 首页自适应 + write code 修复 + 安全策略按钮 + 性能面板切换化 + 编译 warnings 清零 |
+| v1.4.1 | 2026-08-20 | **插件管理初始化修复 + 技能市场性能优化 + 对话区域自适应 9 项 Bug 修复** — Cordis Context fiber 激活时序修复 + PluginManager 重试增强 + 三大技能市场 MAX_PAGES 减少 + configureEngine DB 未就绪重试 + CicdPanel 去除 header/关闭按钮 + 三套皮肤圆角统一 + 首页布局 + Write Code prompt 完整化 + 底部 CI/CD 按钮移除 + 对话区域 max-width 扩展 |
+| v1.4.2 | 2026-08-20 | **10 项 Bug 修复 + 3 项架构增强** — ①默认模型显示彻底修复 ②右侧边栏 CI/CD 面板遮挡彻底修复 ③底部栏多余模型选择器删除 ④输入框聚焦紫色边框→透明 ⑤技能市场缓存机制 ⑥Git 分支按钮居中 + 刷新逻辑修复 ⑦右侧边栏白色背景修复 ⑧顶部栏空白区域消除 ⑨CicdPanel 白色背景修复 ⑩顶部栏右侧按钮居中副作用修复。架构增强：Cordis 插件系统时序改进三步方案 + SlotBridge 降级机制增强 + 头像系统升级 |
+| v1.5.0 | 2026-08-21 | **Cordis "一切插件化" 工具发现机制** — `ToolDef` 新增 `guidance` 字段 + `toolsProvider` 自动注册 systemPrompt section + `buildSystemPrompt` 动态收集 + 全部 31 个工具补充 guidance + `skill-creator` 技能安装增强。31 文件修改，全量测试通过 |
+| v1.5.1 | 2026-08-23 | **DSH 架构对标深度整改 + YAML 声明式插件加载 + 严重 Bug 修复** — ①YAML 声明式插件加载器（对标 DSH `cordis.patch.yml`，`config/codem.base.yml` + `codem.desktop.yml` 分层 bundle，80+ 插件声明式加载 + 拓扑排序 + `assertActivated` fail-loud 验证）②修复 LLM 回答重复问题（`saveMessages` 全量追加事件日志导致重复 → 移除事件投影路径强制只从 DB 读取 + 事件投影去重）③修复 llmEngine 未注册为 Cordis 服务 ④修复 mimoAuth 未注册 + PluginLoader.load() 未调用 ⑤SlotBridge/SlotRenderer 对标 DSH 重写（SlotErrorBoundary + fiber await 超时保护）⑥30+ Provider 文件统一改造（import + re-export + inject 声明对齐）⑦新增 `mimo-auth-provider.ts` + `buffer-polyfill.ts` + 3 个测试文件。118 文件修改（+2359/-1583 行） |
 
 ### 6.2 v0.90.0 已发布功能（P0-P4 全量功能，commit 7435919，2026-07-31）
 

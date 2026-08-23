@@ -7,7 +7,8 @@
 import { ThemeManager } from '../../theme/index.ts'
 
 export function apply(ctx: any) {
-  const themeMgr = new ThemeManager()
+  // ThemeManager 已是单例实例，不需要 new
+  const themeMgr = ThemeManager
 
   // 注入默认主题 CSS 变量
   const root = document.documentElement

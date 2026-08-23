@@ -29,6 +29,8 @@
 import type { ToolCallResult } from "./types";
 import type { ToolContext, ToolDef } from "./tools";
 import type { ToolExecutorContext } from "./streaming-executor";
+import { validateToolOutput } from "./output-contract";
+import { RepeatToolReminderMiddleware } from "./repeat-tool-reminder";
 
 // ========== Pipeline Types ==========
 
@@ -645,7 +647,6 @@ export class OutputContractValidationMiddleware implements FinalizeMiddleware {
   ): Promise<ToolCallResult> {
     if (result.status === "error" || !result.output) return result;
     try {
-      const { validateToolOutput } = require("./output-contract");
       const validation = validateToolOutput(toolName, result.output);
       if (!validation.valid) {
         console.warn(`[output-contract] ${toolName} output validation failed:`, validation.errors.join("; "));
@@ -713,7 +714,7 @@ export function getToolPipeline(): ToolPipeline {
  * Initialize the default tool pipeline with built-in middlewares.
  * Called once during application startup.
  */
-export function initDefaultPipeline(config: {
+export async function initDefaultPipeline(config: {
   isPlanMode: () => boolean;
   isSandboxEnabled: () => boolean;
   isPathWithinWorkspace: (path: string, cwd: string) => boolean;
@@ -724,7 +725,7 @@ export function initDefaultPipeline(config: {
   ) => Promise<{ allowed: boolean; denyMessage?: string }>;
   /** R3-1.1: Spill policy — 超过此字节大小的纯文本工具输出被溢出存储 + 替换为预览 */
   maxInlineBytes?: number;
-}): ToolPipeline {
+}): Promise<ToolPipeline> {
   const pipeline = getToolPipeline();
   pipeline.clear();
 
@@ -751,7 +752,6 @@ export function initDefaultPipeline(config: {
   // Layer 4: post-execute
   // R3-1.2: RepeatToolReminder — 连续相同调用检测 + 升级提醒
   // 放在 hooks 之前：先检测重复，再让 hooks 处理结果
-  const { RepeatToolReminderMiddleware } = require("./repeat-tool-reminder");
   pipeline.registerPostExecute(new RepeatToolReminderMiddleware());
 
   // R3-1.1: SpillPolicy — 必须在 hooks 之前注册（prepend 语义），
@@ -760,7 +760,7 @@ export function initDefaultPipeline(config: {
   // — hooks 可能修改输出，spill 再 bound 修改后的结果。
   pipeline.registerPostExecute(new HookPostExecuteMiddleware());
   if (config.maxInlineBytes !== undefined && config.maxInlineBytes > 0) {
-    const { SpillPolicyMiddleware } = require("./spill-policy");
+    const { SpillPolicyMiddleware } = await import("./spill-policy");
     pipeline.registerPostExecute(new SpillPolicyMiddleware({ maxInlineBytes: config.maxInlineBytes }));
   }
 

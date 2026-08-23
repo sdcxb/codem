@@ -1,4 +1,5 @@
 import { getDatabase, persistDatabase } from "./database";
+import { getEventLog } from "./event-log";
 import type { Session } from "../types";
 
 export interface SessionRow {
@@ -201,7 +202,6 @@ export function forkSession(
   persistDatabase();
 
   // Copy the event log from source to child
-  const { getEventLog } = require("./event-log");
   getEventLog().forkSession(sourceSessionId, newSessionId);
 
   return child;

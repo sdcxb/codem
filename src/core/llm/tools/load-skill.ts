@@ -31,13 +31,13 @@ import * as path from "path";
  */
 async function loadSkillFromFilesystem(skillName: string): Promise<SkillDefinition | undefined> {
   try {
-    const { readFile, listDirectory } = await import("../../file-api");
-    // 获取 home 目录
+    const { readFile, listDirectory, getAppDataDir } = await import("../../file-api");
+    // 获取 app data 目录
     const invoke = (window as any)?.__TAURI__?.core?.invoke;
     if (!invoke) return undefined;
-    const home = await invoke("get_default_cwd");
-    const sep = home.includes("/") && !home.includes("\\") ? "/" : "\\";
-    const skillsDir = `${home}${sep}.codem${sep}skills`;
+    const dataDir = await getAppDataDir();
+    const sep = dataDir.includes("/") && !dataDir.includes("\\") ? "/" : "\\";
+    const skillsDir = `${dataDir}.codem${sep}skills`;
     const skillDir = `${skillsDir}${sep}${skillName}`;
     const skillMdPath = `${skillDir}${sep}SKILL.md`;
     // 尝试读取 SKILL.md

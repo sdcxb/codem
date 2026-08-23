@@ -1,6 +1,8 @@
 import initSqlJs, { type Database as SqlJsDatabase } from "sql.js/dist/sql-asm.js";
 
 let db: SqlJsDatabase | null = null;
+/** FTS5 可用性标志 — sql.js (asm) 可能不支持 FTS5，创建失败后避免重复报错 */
+let ftsAvailable = false;
 // DB_STORAGE_KEY was used in old localStorage-based persistence; now using Tauri file system
 // const DB_STORAGE_KEY = "codem-sqlite-db";
 const DB_FILE_NAME = "codem-db.bin";
@@ -47,7 +49,7 @@ async function saveDatabase(): Promise<void> {
     const path = await getDbPath();
     const base64 = uint8ToBase64(data);
     await invoke("write_file", { path, content: base64, encoding: "base64" });
-    console.log(`[Database] Saved ${data.length} bytes to file`);
+    console.debug(`[Database] Saved ${data.length} bytes to file`);
   } catch (e) {
     console.error("[Database] Failed to save:", e);
   }
@@ -651,19 +653,22 @@ export async function initDatabase(): Promise<SqlJsDatabase> {
   db.run("PRAGMA foreign_keys = ON");
   db.run(SCHEMA);
 
-  // FTS5 full-text search table — created separately because sql.js (asm)
-  // may not support FTS5. Non-critical: session_search tool will degrade gracefully.
+  // FTS full-text search table — created using fts4 for compatibility with sql.js
+  // (sql.js does not include FTS5 support). FTS4 supports the same core features:
+  // MATCH, snippet(), UNINDEXED columns, and unicode61 tokenizer.
   try {
-    db.run(`CREATE VIRTUAL TABLE IF NOT EXISTS session_fts USING fts5(
+    db.run(`CREATE VIRTUAL TABLE IF NOT EXISTS session_fts USING fts4(
   session_id UNINDEXED,
   message_id UNINDEXED,
   content,
   role,
   timestamp UNINDEXED,
-  tokenize = 'unicode61'
+  tokenize=unicode61
 );`);
+    ftsAvailable = true;
   } catch (e) {
-    console.warn("[Database] FTS5 not supported, session full-text search will be unavailable:", e);
+    console.warn("[Database] FTS not supported, session full-text search will be unavailable:", e);
+    ftsAvailable = false;
   }
 
   // Seed a global project record (id="") so that global chat sessions
@@ -746,6 +751,10 @@ export function flushDatabase(): void {
     saveDebounceTimer = null;
     saveDatabase().catch(e => console.error("[Database] Flush save failed:", e));
   }
+}
+
+export function isFts5Available(): boolean {
+  return ftsAvailable;
 }
 
 export function closeDatabase(): void {

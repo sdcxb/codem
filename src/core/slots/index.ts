@@ -466,7 +466,8 @@ export class SlotCore {
  * methods for plugins to contribute UI components to dynamic slot positions.
  */
 export class SlotsService extends Service {
-  static readonly inject = ['events'] as const
+  // events 是 Cordis Context 的内置属性 (ctx.events)，不需要通过 inject 机制获取
+  // static readonly inject = ['events'] as const
 
   private core: SlotCore
 

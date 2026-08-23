@@ -1,32 +1,40 @@
 // @ts-nocheck
 /**
  * Subagent Provider 插件 — 可独立加载/卸载/热替换。
+ *
+ * 不创建独立实例，而是从 ctx.get('llmEngine') 获取
+ * LLMEngine 实例的 SubagentManager，确保共享同一个实例。
+ * 策略委托通过 setSpawner 机制注入。
  */
 import type { Plugin } from '../cordis/src/index.ts'
-import { SubagentManager } from '../subagent/subagent'
 
-export const subagentProvider: Plugin = (ctx: any) => {
-  // 在 Provider 内部创建实例，生命周期与 fiber 绑定
-  const subagentMgr = new SubagentManager()
+export const subagentProvider: Plugin = Object.assign(
+  (ctx: any) => {
+    const engine = ctx.get('llmEngine')
+    if (!engine?.subagents) {
+      console.warn('[subagentProvider] llmEngine not available')
+      return () => {}
+    }
+    const subagentMgr = engine.subagents
 
-  const dispose = ctx.provide('subagent', {
-    spawn: async (task: any) => {
-      // 委托给具体策略插件（如果可用）
-      try {
-        const spawnStrategy = ctx.get('subagentSpawnInProcess')
-        if (spawnStrategy) return await spawnStrategy.spawn(task.id || crypto.randomUUID(), task)
-      } catch (e) { console.warn('[subagent-provider.ts]', e) }
-      try {
-        const forkStrategy = ctx.get('subagentForkInProcess')
-        if (forkStrategy) return await forkStrategy.fork(task)
-      } catch (e) { console.warn('[subagent-provider.ts]', e) }
-      // 默认实现
-      return subagentMgr.spawn(task)
-    },
-    list: () => subagentMgr.list(),
-    getResult: (id: string) => subagentMgr.getResult(id),
-    kill: (id: string) => subagentMgr.kill(id),
-  })
+    // 尝试注入策略插件（如果可用）
+    try {
+      const spawnStrategy = ctx.get('subagentSpawnInProcess')
+      if (spawnStrategy) {
+        subagentMgr.setSpawner({
+          spawn: (task: any) => spawnStrategy.spawn(task.id || crypto.randomUUID(), task),
+          cancel: async (id: string) => { /* delegated */ },
+          cancelAll: () => { /* delegated */ },
+          getStatus: (id: string) => subagentMgr.getStatus(id),
+          getResult: (id: string) => subagentMgr.getResult(id),
+        })
+      }
+    } catch (e) { console.warn('[subagent-provider.ts] spawn strategy:', e) }
 
-  return dispose
-}
+    // 直接暴露 SubagentManager 实例
+    const dispose = ctx.provide('subagent', subagentMgr)
+
+    return dispose
+  },
+  { inject: ['llmEngine'] as const }
+)

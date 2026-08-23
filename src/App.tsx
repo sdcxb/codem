@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿﻿import { useEffect, useState, useRef, useCallback } from "react";
+﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿import { useEffect, useState, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 
 // D1-4: 全局错误边界 — 捕获未处理的同步错误和 Promise rejection
@@ -17,25 +17,78 @@ if (typeof window !== 'undefined') {
 import { Context } from "./core/cordis/src/index.ts";
 import type { Fiber } from "./core/cordis/src/fiber.ts";
 import { SlotsService } from "./core/slots/index.ts";
-import { loadDefaultProviders } from "./core/provider/index.ts";
+// YAML 声明式配置加载器（对标 DSH cordis.patch.yml）
+import { loadFromEntries, mergeYamlEntries } from "./core/plugin-loader/yaml-loader.ts";
+// @ts-ignore — Vite ?raw import
+import baseYml from "../config/codem.base.yml?raw";
+// @ts-ignore — Vite ?raw import
+import desktopYml from "../config/codem.desktop.yml?raw";
 import { setActiveContext } from "./core/consumer";
 import { SlotBridge, SlotListBridge } from "./core/slots/SlotBridge";
 
 // 全局 Cordis Context（App 生命周期内唯一）
 let _codemCtx: Context | null = null;
+let _codemCtxPromise: Promise<Context> | null = null;
 
 async function getCordisContext(): Promise<Context> {
   if (_codemCtx) return _codemCtx;
+  if (_codemCtxPromise) return _codemCtxPromise;
+  console.log('[Cordis] getCordisContext started');
+
+  _codemCtxPromise = (async () => {
   const ctx = new Context();
-  // 安装 Slot Registry Service
+  console.log('[Cordis] Context created');
+
+  // ====== 对标 DSH boot() 流程 ======
+  // 1. 安装 Slot Registry Service（基础 UI 槽位系统）
   ctx.plugin(SlotsService as any);
-  // 加载独立 Provider 插件（每个服务可独立热替换）
-  loadDefaultProviders(ctx);
-  // 显式等待所有 fiber 就绪：替换不可靠的 setTimeout(0)。
-  // fiber 的 effect runner 需要微任务来激活，await 一个微任务即可让所有同步注册的 fiber 开始加载。
+  console.log('[Cordis] SlotsService loaded');
+
+  // 2. 注册内置插件到 PluginLoader 注册表
+  const { registerBuiltinPlugins } = await import("./core/plugin-loader/builtin-registry.ts");
+  registerBuiltinPlugins();
+  console.log('[Cordis] registerBuiltinPlugins done');
+
+  // 2.5. 注册 LLMEngine 为 Cordis 服务。
+  //    必须在 YAML 加载之前完成，因为大量插件声明了 inject: [llmEngine]，
+  //    它们在 loadFromEntries 时就需要 ctx.get('llmEngine') 返回有效实例。
+  //    如果在 YAML 加载之后才 provide，这些插件会永远 PENDING。
+  try {
+    const { getLLMEngine } = await import("./core/llm/index.ts");
+    const engine = getLLMEngine(ctx);
+    console.log('[Cordis] getLLMEngine succeeded, engine:', !!engine);
+    ctx.provide('llmEngine', engine);
+    console.log('[Cordis] llmEngine service provided (pre-YAML)');
+  } catch (e: any) {
+    console.error('[Cordis] getLLMEngine failed:', e);
+    // 引擎创建失败时仍提供错误消息给用户
+    try {
+      ctx.provide('llmEngine', {
+        getDefaultProvider: () => 'none',
+        getDefaultModel: () => 'none',
+        providers: { get: () => undefined },
+        process: async function* () {
+          yield { type: 'error', content: `[Engine Init Error] ${e?.message || e}` } as any;
+        },
+        abort: () => {},
+        updateConfig: () => {},
+        setProviderConfig: () => {},
+        buildSystemPrompt: () => '',
+      });
+    } catch (e2) {
+      console.warn('[Cordis] llmEngine fallback provide failed:', e2);
+    }
+  }
+
+  // 3. 从 YAML 声明式配置加载（对标 DSH cordis.patch.yml）
+  //    合并 base + desktop bundle，按条件过滤、拓扑排序后加载
+  const mergedEntries = mergeYamlEntries(baseYml, desktopYml);
+  const yamlResult = loadFromEntries(ctx, mergedEntries);
+  console.log(`[Cordis] YAML loader: ${yamlResult.loaded.length} loaded, ${yamlResult.skipped.length} skipped`);
+
+  // 4. 等待所有 fiber 就绪（对标 DSH ctx.get('loader')?.await()）
   await new Promise(resolve => setTimeout(resolve, 0));
-  // 进一步等待所有 fiber 的 inertia（加载/卸载操作）完成。
-  // 这确保 ctx.get('pluginRegistry') 等不会返回 undefined。
+  console.log('[Cordis] microtask flush done, collecting fibers...');
   try {
     const fibers: Fiber[] = [];
     ctx.registry.forEach((runtime: any) => {
@@ -43,38 +96,65 @@ async function getCordisContext(): Promise<Context> {
         fibers.push(fiber);
       }
     });
+    console.log(`[Cordis] collected ${fibers.length} fibers, awaiting...`);
     if (fibers.length > 0) {
-      await Promise.allSettled(fibers.map(f => f.await ? f.await() : Promise.resolve()));
-      const pending = fibers.filter(f => f.state === 0 /* PENDING */);
-      if (pending.length > 0) {
-        console.warn(`[Cordis] ${pending.length} fibers still PENDING after await:`, pending.map(f => f.name));
-      }
-      const active = fibers.filter(f => f.state === 2 /* ACTIVE */);
-      console.log(`[Cordis] ${active.length}/${fibers.length} fibers ACTIVE`);
+      const awaitWithTimeout = (f: Fiber) => {
+        const p = f.await ? f.await() : Promise.resolve();
+        return Promise.race([
+          p,
+          new Promise((_, reject) => setTimeout(() => reject(new Error(`fiber ${f.name} await timeout`)), 5000))
+        ]).catch(err => { console.warn(`[Cordis] fiber await failed: ${f.name}`, err); });
+      };
+      await Promise.allSettled(fibers.map(awaitWithTimeout));
     }
   } catch (err) {
     console.warn('[Cordis] Error while waiting for fibers:', err);
   }
-  // 尽早设置活跃 Context，让工具 Consumer 包可以使用已注册的服务。
+
+  // 5. fail-loud 验证：对标 DSH assertEntriesActivated
+  //    检查所有 fiber 是否 ACTIVE，PENDING/FAILED 的会抛出错误
+  try {
+    const { assertActivated } = await import("./core/plugin-loader/yaml-loader.ts");
+    await assertActivated(ctx, 'codem');
+    console.log('[Cordis] assertActivated passed — all fibers ACTIVE');
+  } catch (err: any) {
+    // 不终止启动，但明确报告问题（桌面应用不能直接 exit(1)）
+    console.error('[Cordis] assertActivated FAILED:', err.message);
+  }
+
+  // 6. llmEngine 已在步骤 2.5（YAML 加载前）注册到 Context。
+  //    mimoAuth 现在通过 YAML 插件 @codem/mimo-auth 注册，不再在此直接 provide。
+  //    如果 YAML 加载失败，getCtxService('mimoAuth') 会返回 null，调用方已有 null 检查。
+
+  // 7. 对标 DSH boot() 的时序：在 YAML 加载和 assert 之后立即设置 active context。
+  //    这样后续的 dsh-compat、PluginLoader、UI 插件加载时，
+  //    consumer 包中的 tryGetCtx() 可以立即返回有效 ctx，
+  //    SlotBridge 的 useCtxReady 可以立即触发，无需轮询等待。
   setActiveContext(ctx);
+  console.log('[Cordis] setActiveContext done');
 
   try {
     // 加载 dsh 兼容适配层（使 dsh 插件可以在 Codem 运行时中加载）
+    console.log('[Cordis] loading dsh-compat...');
     const { dshCompatPlugin } = await import("./core/dsh-compat/index.ts");
     ctx.plugin(dshCompatPlugin as any);
+    console.log('[Cordis] dsh-compat loaded');
 
     // === P6: 接入 PluginLoader + UI 插件 ===
+    console.log('[Cordis] loading PluginLoader...');
     const { PluginLoader } = await import("./core/plugin-loader/index.ts");
-    const { registerBuiltinPlugins } = await import("./core/plugin-loader/builtin-registry.ts");
     const { loadUIPlugins } = await import("./core/ui-plugins/index.ts");
-    // 注册内置插件到 PluginLoader
-    registerBuiltinPlugins();
-    // PluginLoader 扫描和加载插件包
+    console.log('[Cordis] PluginLoader imported');
+    // registerBuiltinPlugins 已在上方 YAML 加载前完成
+    // PluginLoader 只做元数据发现（不重复加载已通过 YAML 加载的插件）
     const loader = new PluginLoader(ctx);
+    console.log('[Cordis] loader.scan()...');
     await loader.scan();
-    await loader.load();
+    console.log('[Cordis] loader.scan() done');
+    // 不调用 loader.load() — 所有插件已通过 YAML 声明式加载器加载
     // 加载所有 UI 插件包（注册到 Slot Registry）
     loadUIPlugins(ctx);
+    console.log('[Cordis] loadUIPlugins done');
 
     // 等待 UI 插件 fiber 完成激活，确保 slot 注册在 React 渲染前完成。
     // Cordis fiber 的 _reload 在 await Promise.resolve() 后才执行 apply()，
@@ -91,7 +171,16 @@ async function getCordisContext(): Promise<Context> {
         }
       });
       if (uiFibers.length > 0) {
-        await Promise.allSettled(uiFibers.map(f => f.await ? f.await() : Promise.resolve()));
+        // 对标 DSH assertEntriesActive：等待 fiber 完成但加超时，
+        // 避免 fiber await() 永不 resolve 导致整个启动卡死
+        const awaitWithTimeout = (f: Fiber) => {
+          const p = f.await ? f.await() : Promise.resolve();
+          return Promise.race([
+            p,
+            new Promise((_, reject) => setTimeout(() => reject(new Error(`UI fiber ${f.name} await timeout`)), 10000))
+          ]).catch(err => { console.warn(`[Cordis] UI fiber await failed: ${f.name}`, err); });
+        };
+        await Promise.allSettled(uiFibers.map(awaitWithTimeout));
         const failed = uiFibers.filter(f => f.state === 3 /* FAILED */);
         if (failed.length > 0) {
           console.warn(`[Cordis] ${failed.length} UI fibers FAILED:`, failed.map(f => f.name));
@@ -106,7 +195,11 @@ async function getCordisContext(): Promise<Context> {
   }
 
   _codemCtx = ctx;
+  console.log('[Cordis] getCordisContext completed successfully');
   return ctx;
+  })();
+
+  return _codemCtxPromise;
 }
 // ====== Cordis 插件系统初始化结束 ======
 import { RefreshCw, X, MessageSquare, Terminal, BookOpen, Save, FolderOpen, PencilLine, Trash2, CheckCircle, Menu, Hammer, ClipboardList, Search, Bot, Activity, GitBranch } from "lucide-react";
@@ -244,23 +337,8 @@ function App() {
   // 所有核心服务通过 ctx.provide() 注册后，插件可以通过 ctx.get() 消费。
   const [cordisReady, setCordisReady] = useState(false);
   useEffect(() => {
-    getCordisContext().then((ctx) => {
-      // R4: 将 Cordis Context 传给 LLMEngine，让 AgenticLoop 通过 ctx.get() 消费服务
-      const engine = getLLMEngine(ctx);
-      // D2-1: 将 LLMEngine 和 MiMoAuth 注册为 Cordis 服务，让 getCtxService() 可以获取到。
-      // 这遵循"一切皆插件"架构：服务通过 ctx.provide() 注册，消费者通过 ctx.get() 获取。
-      try {
-        ctx.provide('llmEngine', engine);
-        console.log('[Cordis] llmEngine service provided');
-      } catch (e) {
-        console.warn('[Cordis] llmEngine provide failed:', e);
-      }
-      try {
-        ctx.provide('mimoAuth', getMiMoAuth());
-        console.log('[Cordis] mimoAuth service provided');
-      } catch (e) {
-        console.warn('[Cordis] mimoAuth provide failed:', e);
-      }
+    getCordisContext().then(() => {
+      // LLMEngine 和 MiMoAuth 已在 getCordisContext 内部注册为 Cordis 服务。
       setCordisReady(true);
     }).catch((err) => {
       console.error("Failed to initialize Cordis context:", err);
@@ -506,16 +584,14 @@ useEffect(() => {
   const windowVisibleRef = useRef(true);
   const [securityMode, setSecurityMode] = useState<SecurityMode>(getEffectiveSecurityMode(currentProject?.path));
   // P0-2: 消除双轨制 — Provider 关闭时不再静默回退到单例。
-  // ctx 可用时返回 ctx.get(name)；不可用（初始化前）或服务不存在时返回 null。
-  // 调用方应检查 null 并展示降级 UI。
-  // DSH 对齐: 使用 ctx.get 的 keyof 推断模式，和 DSH 的 ReflectService.get 签名一致。
+  // ctx 可用时返回 ctx.get(name)（Cordis 标准模式：可选依赖用 ctx.get，不存在时返回 undefined）；
+  // 不可用时返回 null。
   const getCtxService = <K extends string & keyof Context>(name: K): Context[K] | null => {
     const ctx = tryGetCtx();
     if (ctx) {
       const s = ctx.get(name) as Context[K] | null;
       if (s) return s;
-      // Provider 被禁用 — 不回退到单例，返回 null 让调用方处理降级
-      console.warn(`[App] Service "${name}" not available (provider disabled?)`);
+      console.warn(`[App] Service "${String(name)}" not available (provider disabled?)`);
       return null;
     }
     return null;
@@ -806,13 +882,14 @@ useEffect(() => {
   const timer = setInterval(() => {
     const engine = getCtxService('llmEngine')
     if (engine) {
+      console.log(`[App] llmEngine acquired after ${retry * 100}ms`);
       engineRef.current = engine
       clearInterval(timer)
       // engine 可用后立即尝试 configureEngine — 从 DB 读取正确的 model/mode
       // 避免 UI 长时间显示 _initialModel 的错误默认值
       configureEngine();
     } else if (++retry > 50) {
-      console.warn('[App] llmEngine provider not available after 5s')
+      console.warn('[App] llmEngine provider not available after 5s — check console for provide errors')
       clearInterval(timer)
     }
   }, 100)
@@ -865,6 +942,12 @@ flushStreamBuffer(); // flush all on unmount
       try {
         setBootSplashPhase("loading-db");
         await initDatabase();
+        // Expose settings functions via globalThis for Cordis Provider plugins that
+        // need settings access but can't use require() in browser (ESM) environment.
+        // This acts as a service locator bridge — Provider plugins can opt-in via
+        // (globalThis as any).__codemSettings?.getSettingJSON(...)
+        const { getSettingJSON, setSettingJSON, getSetting, setSetting } = await import("./core/storage/settings");
+        (globalThis as any).__codemSettings = { getSettingJSON, setSettingJSON, getSetting, setSetting };
         await migrateFromLocalStorage();
         setBootSplashPhase("loading-config");
         ThemeManager.init();
@@ -981,7 +1064,9 @@ flushStreamBuffer(); // flush all on unmount
   // ========== 跨会话委派系统接入 ==========
   // 监听 SessionMessageBus 的委派事件，当其他会话委派任务到当前项目会话时，
   // 自动在后台执行 executeSessionTurn。
+  // 依赖 dbReady：等 DB 初始化后再创建 Orchestrator，避免 getDatabase() 报错。
   useEffect(() => {
+    if (!dbReady) return;
     const bus = getSessionMessageBus();
     const orchestrator = getDelegationOrchestrator();
 
@@ -1041,7 +1126,7 @@ flushStreamBuffer(); // flush all on unmount
     return () => {
       unsub();
     };
-  }, []);
+  }, [dbReady]);
 
   // ========== Squad Dispatch 路由 ==========
   // 监听 squad_dispatch 工具发出的事件，创建 Leader 会话并后台执行。
@@ -1118,24 +1203,28 @@ flushStreamBuffer(); // flush all on unmount
 
   // Configure engine based on mode and settings
   const configureEngine = useCallback(async () => {
-    const saved = getSettingJSON<any>("codem-settings", null);
     const engine = engineRef.current;
     if (!engine) {
-      console.warn('[App] engine not available, will retry in 200ms');
-      // 重试等待 engine 初始化完成
-      setTimeout(() => { configureEngine(); }, 200);
+      // engine 还不可用 — engineRef useEffect 会在获取后调用 configureEngine
       return;
     }
-    // DB 尚未就绪 — saved 为 null，需要重试等待 DB 初始化
+    const saved = getSettingJSON<any>("codem-settings", null);
     if (!saved) {
-      console.warn('[App] settings not loaded yet (DB not ready), will retry in 200ms');
-      setTimeout(() => { configureEngine(); }, 200);
+      // DB 尚未就绪 — dbReady useEffect 会在 DB 初始化后调用 configureEngine
       return;
     }
 
     if (saved) {
       const settings = saved;
       console.log(`[configureEngine] settings: mode=${settings.mode}, model=${settings.model}, providers=${(settings.providers||[]).map((p:any)=>p.id+':'+(p.apiKey?'Y':'N')).join(',')}`);
+
+      // Load dynamically fetched models from DB (cached from previous refreshModels calls)
+      try {
+        engine.loadDynamicModels();
+      } catch (e) {
+        console.warn('[configureEngine] loadDynamicModels failed:', e);
+      }
+
       // 修正历史脏数据：如果 mode=cli 但 model 是 API 模型前缀，推断为 api
       let effectiveMode = settings.mode;
       if (effectiveMode === "cli") {
@@ -1601,20 +1690,27 @@ if (!session) return;
     if (!session) return;
 
     const mode = getMode();
-    const engine = engineRef.current; if (!engine) { console.warn('[App] engine not available'); return; }
+    const engine = engineRef.current;
+    if (!engine) {
+      console.warn('[App] engine not available — llmEngine provider not registered');
+      addMessage({
+        id: 'err-' + Date.now(),
+        role: 'system',
+        content: '[Error] LLM Engine 未初始化。请检查控制台日志中的 [Cordis] 错误信息。',
+        timestamp: Date.now(),
+        status: 'error',
+      });
+      return;
+    }
 
     
 
     const provider = engine.getDefaultProvider();
     const model = engine.getDefaultModel();
-    
+    console.log(`[runAgenticLoop] provider=${provider}, model=${model}, mode=${mode}`);
 
     const providerObj = engine.providers.get(provider);
     
-
-    if (provider === "openai" && model === "gpt-4o") {
-      configureEngine();
-    }
 
     if (mode === "cli") {
       // D2-1: 一切插件化 — 不回退到 getMiMoAuth() 单例
@@ -1644,19 +1740,36 @@ streamingSessionIdRef.current = session.id;
 
     const providerName = engine.getDefaultProvider();
     const modelName = engine.getDefaultModel();
-    
+    console.log(`[runAgenticLoop] pre-process check: provider=${providerName}, model=${modelName}`);
 
     const providerObj2 = engine.providers.get(providerName);
-    if (providerObj2 && !providerObj2.isConfigured()) {
-      
-setStreaming(false);
-useAppStore.getState().setSessionActive(session.id, false);
-streamingSessionIdRef.current = null;
-addMessage({
-id: 'err-' + Date.now(),
-role: 'system',
-content: '[Error] ' + providerName + ' not configured. Please set API Key in Settings.',
-timestamp: Date.now(),
+
+    // 从 DB 重新加载 provider API keys（修复 configureEngine 时序竞争）
+    try {
+      const _savedSettings = getSettingJSON<any>("codem-settings", null);
+      if (_savedSettings?.providers) {
+        for (const p of _savedSettings.providers) {
+          if (p.apiKey) {
+            engine.setProviderConfig(p.id, { apiKey: p.apiKey, baseUrl: p.baseUrl });
+          }
+        }
+      }
+    } catch (e) { console.warn('[runAgenticLoop] failed to reload provider keys:', e) }
+
+    console.log(`[runAgenticLoop] provider=${providerName}, isConfigured=${providerObj2?.isConfigured()}`);
+
+    if (providerObj2 && !providerObj2.isConfigured() && providerName !== "mimo") {
+      const savedSettings = getSettingJSON<any>("codem-settings", null);
+      const providerInfo = savedSettings?.providers?.find((p:any) => p.id === providerName);
+      console.warn(`[runAgenticLoop] ${providerName} not configured. DB has apiKey: ${!!providerInfo?.apiKey}`);
+      setStreaming(false);
+      useAppStore.getState().setSessionActive(session.id, false);
+      streamingSessionIdRef.current = null;
+      addMessage({
+        id: 'err-' + Date.now(),
+        role: 'system',
+        content: `[Error] ${providerName} not configured.\n\nDebug: DB has settings=${!!savedSettings}, providers=${savedSettings?.providers?.length || 0}, ${providerName} hasKey=${!!providerInfo?.apiKey}`,
+        timestamp: Date.now(),
         status: 'error',
       });
       return;
@@ -1707,6 +1820,7 @@ timestamp: Date.now(),
     useAppStore.getState().setStreamStartTime(Date.now());
 
     try {
+console.log(`[runAgenticLoop] starting engine.process for session=${session.id}`);
 const sessionAbort = new AbortController();
 abortControllersRef.current.set(session.id, sessionAbort);
 
@@ -1814,13 +1928,14 @@ const safeUpdateMessage = (id: string, update: any) => {
                 status: "streaming",
                 retrievedSources: event.sources,
               });
+              // Don't saveMessages here — the empty streaming message will be
+              // persisted when text_delta or tool_start arrives with actual content.
+              // Saving an empty message triggers unnecessary DB writes and event log
+              // duplication during streaming.
             } else {
               safeUpdateMessage(assistantMsgId, {
                 retrievedSources: event.sources,
               } as any);
-            }
-            if (session) {
-              saveMessages(session.id);
             }
             break;
           }
@@ -1836,9 +1951,10 @@ const safeUpdateMessage = (id: string, update: any) => {
                 timestamp: Date.now(),
                 status: "streaming",
               });
-if (session) {
-saveMessages(session.id);
-}
+              // Don't saveMessages for streaming-only updates — reasoning content
+              // is display-only and not sent back to the LLM (messagesToLLMMessages
+              // strips reasoning). The message will be persisted when text_delta or
+              // tool_start arrives with actual content.
             }
             // Update message with reasoning content
             safeUpdateMessage(assistantMsgId, {
@@ -3343,12 +3459,11 @@ onClose={() => setCitationViewer(null)}
       <SlotBridge name="app.monitor" fallback={null} />
       {/* 全局目标/TODO 面板 slot — TodoListDisplay 等 */}
       <SlotBridge name="app.goal" fallback={null} />
-      {/* Subagent 面板 slot */}
-      <SlotBridge name="app.subagent" fallback={null} />
-      {/* User Questions slot — InteractiveFormDialog（已由条件渲染消费，此处保留 slot 消费声明） */}
-      <SlotBridge name="app.user-questions" fallback={null} />
-      {/* Workflow Run slot — ActivityTimeline */}
-      <SlotBridge name="app.workflow-run" fallback={null} />
+      {/* app.subagent 不在此渲染 — DelegationPanel 是模态弹窗，需要 onClose prop，不能放在无 props 的 SlotBridge 中 */}
+      {/* app.user-questions 和 app.workflow-run 不在此渲染。
+          InteractiveFormDialog 需要 questions/onSubmit/onCancel props，
+          ActivityTimeline 需要 items prop，
+          二者均通过各自的条件渲染路径使用，不能放在无 props 的 SlotBridge 中。 */}
 
 </div>
 </TooltipProvider>

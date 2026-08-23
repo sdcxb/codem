@@ -2,16 +2,16 @@
  * session_search 工具 — 历史会话全文搜索
  *
  * Design (对标 DeepSeek Harness session_query):
- * - 使用 SQLite FTS5 全文搜索引擎
+ * - 使用 SQLite FTS4 全文搜索引擎
  * - 支持跨会话搜索历史消息
  * - 返回匹配的消息片段和相关会话信息
  *
- * FTS5 表在 database.ts 中定义:
- *   CREATE VIRTUAL TABLE session_fts USING fts5(
- *     session_id, message_id, content, role, timestamp, tokenize = 'unicode61'
+ * FTS4 表在 database.ts 中定义:
+ *   CREATE VIRTUAL TABLE session_fts USING fts4(
+ *     session_id, message_id, content, role, timestamp, tokenize=unicode61
  *   );
  *
- * 消息在 message.ts createMessage() 中自动索引到 FTS5 表。
+ * 消息在 message.ts createMessage() 中自动索引到 FTS4 表。
  */
 
 import type { ToolDef, ToolContext, ToolExecuteResult } from "../tools";
@@ -86,7 +86,7 @@ Returns matching messages with snippets showing the matched content.`,
           matchExpr = `content MATCH '${sanitizedQuery}' AND session_id = '${sessionIdFilter.replace(/'/g, "''")}'`;
         }
 
-        // Execute FTS5 search with snippet generation
+        // Execute FTS4 search with snippet generation
         const db = getDatabase();
         const sql = sessionIdFilter
           ? `SELECT s.session_id, s.message_id, s.role, s.timestamp,

@@ -40,7 +40,9 @@ export const dshCompatPlugin: Plugin = (ctx: any) => {
   // ===== 1. LLM 适配 =====
   // dsh 的 LLM 接口使用 GenerateOptions 和 StreamChunk
   // 我们将 dsh 的调用转换为 Codem 的 complete/stream 调用
-  const originalLlm = ctx.llm
+  // 使用 ctx.get() 读取服务（Cordis 标准模式：可选依赖用 ctx.get，不存在时返回 undefined）
+  // 不使用 inject 声明是因为 dsh-compat 是适配层，各服务都是可选的
+  const originalLlm = ctx.get('llm')
   if (originalLlm) {
     // 在 ctx 上注册 dsh 标准的 LLM 接口
     disposers.push(ctx.provide('dshLlm', {
@@ -111,7 +113,7 @@ export const dshCompatPlugin: Plugin = (ctx: any) => {
 
   // ===== 2. Shell 适配 =====
   // dsh 的 Shell 接口使用 resolve/start/run/sandboxMode
-  const originalShell = ctx.shell
+  const originalShell = ctx.get('shell')
   if (originalShell) {
     disposers.push(ctx.provide('dshShell', {
       sandboxMode: undefined as string | undefined,
@@ -159,7 +161,7 @@ export const dshCompatPlugin: Plugin = (ctx: any) => {
 
   // ===== 3. FileSystem 适配 =====
   // dsh 的 FS 接口使用 path-based API，与我们的类似
-  const originalFs = ctx.fs
+  const originalFs = ctx.get('fs')
   if (originalFs) {
     disposers.push(ctx.provide('dshFs', {
       async readFile(path: string): Promise<string> {
@@ -183,7 +185,7 @@ export const dshCompatPlugin: Plugin = (ctx: any) => {
 
   // ===== 4. Tools 适配 =====
   // dsh 的 Tools 接口使用 execute({ callId, name, arguments })
-  const originalTools = ctx.tools
+  const originalTools = ctx.get('tools')
   if (originalTools) {
     disposers.push(ctx.provide('dshTools', {
       async execute(call: { callId?: string; name: string; arguments?: any; signal?: AbortSignal }): Promise<any> {
@@ -205,7 +207,7 @@ export const dshCompatPlugin: Plugin = (ctx: any) => {
 
   // ===== 5. Session 适配 =====
   // dsh 使用 ctx.sessions (SessionStore)，我们使用 ctx.session
-  const originalSession = ctx.session
+  const originalSession = ctx.get('session')
   if (originalSession) {
     disposers.push(ctx.provide('dshSessions', {
       create(config?: any) { return originalSession.create(config) },
@@ -217,7 +219,8 @@ export const dshCompatPlugin: Plugin = (ctx: any) => {
 
   // ===== 6. Events 适配 =====
   // dsh 使用 waterfall/emit 模式
-  // 我们的 Cordis 已经有 emit，只需确保兼容
+  // Cordis 已经有完整的 events 系统（ctx.events.waterfall/emit/serial/bail），
+  // 直接代理到 Cordis 的实现，而非简化假实现。
   disposers.push(ctx.provide('dshEvents', {
     emit(event: string, ...args: any[]): void {
       ctx.emit(event, ...args)
@@ -225,13 +228,19 @@ export const dshCompatPlugin: Plugin = (ctx: any) => {
     on(event: string, handler: (...args: any[]) => void): () => void {
       return ctx.on(event, handler)
     },
-    async waterfall(event: string, ...args: any[]): Promise<any[]> {
-      // 简单实现：顺序调用所有监听器
-      const results: any[] = []
-      // Cordis 的 on() 返回 disposer，我们无法直接获取所有监听器
-      // 这是简化实现
-      ctx.emit(event, ...args)
-      return results
+    waterfall(event: string, ...args: any[]): Promise<any[]> {
+      // 直接代理到 Cordis 的 waterfall——
+      // 它会顺序调用所有监听器，每个监听器的返回值覆盖第一个参数。
+      return ctx.waterfall(event, ...args)
+    },
+    serial(event: string, ...args: any[]): Promise<void> {
+      return ctx.serial(event, ...args)
+    },
+    bail(event: string, ...args: any[]): Promise<any> {
+      return ctx.bail(event, ...args)
+    },
+    parallel(event: string, ...args: any[]): Promise<any[]> {
+      return ctx.parallel(event, ...args)
     },
   }))
 
@@ -244,15 +253,17 @@ export const dshCompatPlugin: Plugin = (ctx: any) => {
   disposers.push(ctx.provide('dshCredentials', {
     async get(provider: string): Promise<string | undefined> {
       try {
-        const settings = ctx.settings?.getAll?.() || {}
-        const providers = settings.providers || []
+        const settings = ctx.get('settings') as any
+        const all = settings?.getAll?.() || {}
+        const providers = all.providers || []
         const p = providers.find((p: any) => p.id === provider)
         return p?.apiKey
       } catch { return undefined }
     },
     async set(provider: string, key: string): Promise<void> {
       // 委托给 settings
-      ctx.settings?.set?.(`credential:${provider}`, key)
+      const settings = ctx.get('settings') as any
+      settings?.set?.(`credential:${provider}`, key)
     },
   }))
 

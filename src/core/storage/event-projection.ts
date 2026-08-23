@@ -162,6 +162,10 @@ export class EventProjection {
     // Skip if this message was removed by compaction
     if (state.removedMessageIds.has(payload.messageId)) return;
 
+    // Dedup: skip if a message with the same ID was already projected
+    // (defensive guard against duplicate events in the log)
+    if (state.messages.some(m => m.id === payload.messageId)) return;
+
     state.messages.push({
       id: payload.messageId,
       role: "user",
@@ -250,9 +254,13 @@ export class EventProjection {
 
     if (state.removedMessageIds.has(payload.messageId)) return;
 
+    // Dedup: skip if a tool result with the same toolCallId was already projected
+    const toolResultId = `tool-result-${payload.toolCallId}`;
+    if (state.messages.some(m => m.id === toolResultId)) return;
+
     // Create a tool message with the result
     const toolMessage: LLMMessage = {
-      id: `tool-result-${payload.toolCallId}`,
+      id: toolResultId,
       role: "tool",
       toolCallId: payload.toolCallId,
       content: payload.result || payload.error || "",

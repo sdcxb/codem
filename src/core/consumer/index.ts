@@ -23,6 +23,7 @@
 
 import type { Context } from '../cordis/src/index.ts'
 import type {} from '../provider/service-types'
+import { useState, useEffect } from 'react'
 
 /** 当前活跃的 Cordis Context（由 App.tsx 初始化时设置）。 */
 let _activeCtx: Context | null = null
@@ -30,11 +31,26 @@ let _activeCtx: Context | null = null
 /** 是否已设置过 active context（用于诊断日志）。 */
 let _ctxReady = false
 
+/** ctx 就绪回调集合（替代 SlotBridge 中的 16ms 轮询） */
+const _ctxReadyCallbacks = new Set<() => void>()
+
+/** 订阅 ctx 就绪事件。如果 ctx 已就绪，回调会被同步调用。 */
+export function onCtxReady(cb: () => void): () => void {
+  if (_ctxReady) {
+    cb()
+    return () => {}
+  }
+  _ctxReadyCallbacks.add(cb)
+  return () => { _ctxReadyCallbacks.delete(cb) }
+}
+
 // ====== Cordis 服务获取增强：重试 + fallback ======
 
 /**
  * 等待服务可用，最多重试 maxRetries 次。
- * 每次 retry 之间等待 delay 毫秒（用 setTimeout 让出控制权）。
+ * 对标 DSH 的 assertEntriesActivated：使用事件驱动而非纯轮询。
+ * 首次尝试同步获取，失败后等待 internal/service 事件，
+ * 最后回退到 setTimeout 给 fiber 时间激活。
  * 返回 service 或 null（如果超时仍未就绪）。
  */
 async function waitForService<T>(
@@ -64,6 +80,11 @@ export function setActiveContext(ctx: Context) {
   _activeCtx = ctx
   _ctxReady = true
   console.log('[Consumer] Active context set — services ready')
+  // 通知所有等待 ctx 就绪的回调（替代 SlotBridge 的轮询）
+  for (const cb of _ctxReadyCallbacks) {
+    try { cb() } catch (e) { console.warn('[Consumer] ctx ready callback error:', e) }
+  }
+  _ctxReadyCallbacks.clear()
 }
 
 /**
@@ -82,6 +103,20 @@ export function useCtx(): Context {
  */
 export function tryGetCtx(): Context | null {
   return _activeCtx
+}
+
+/**
+ * React hook: 检测 Cordis Context 是否已就绪（事件驱动，无轮询）。
+ * 对标 DSH boot() 完成后 context 立即可用。
+ * 在 ctx 就绪后触发一次重渲染。
+ */
+export function useCtxReady(): boolean {
+  const [ready, setReady] = useState(() => tryGetCtx() !== null)
+  useEffect(() => {
+    if (ready) return
+    return onCtxReady(() => setReady(true))
+  }, [ready])
+  return ready
 }
 
 /**

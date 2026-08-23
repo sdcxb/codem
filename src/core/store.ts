@@ -183,15 +183,16 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     }
     // Clean up the engine's per-session loop pool to free memory
     try {
-      const { getLLMEngine } = require("../llm");
-      const engine = getLLMEngine();
-      engine.cleanupSessionLoop?.(sessionId);
+      // ESM: dynamic import instead of require
+      import("./llm").then(({ getLLMEngine }) => {
+        const engine = getLLMEngine();
+        engine.cleanupSessionLoop?.(sessionId);
+      }).catch(() => {});
     } catch (e) { console.warn('[store.ts]', e) }
     // Clean up abort controller if present
     try {
-      const { useAppStore } = require("../store");
-      const abortControllers = (useAppStore.getState() as any).abortControllers;
-      // This is in App.tsx's ref, not in store — skip if not available
+      // useAppStore is in this module — no need to import from elsewhere
+      // Abort controllers are managed in App.tsx's ref, not in store
     } catch (e) { console.warn('[store.ts]', e) }
     try { SessionStorage.deleteSession(sessionId); } catch (e) { console.warn('[store.ts]', e) }
     set({ sessions: get().sessions.filter((s) => s.id !== sessionId), currentSession: get().currentSession?.id === sessionId ? null : get().currentSession });

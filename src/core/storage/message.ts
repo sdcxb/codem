@@ -1,4 +1,4 @@
-import { getDatabase, persistDatabase } from "./database";
+import { getDatabase, persistDatabase, isFts5Available } from "./database";
 import { getEventLog } from "./event-log";
 import type { SessionEventType } from "./event-types";
 import type { Message, ToolCall, MessageAttachment, RetrievedSource } from "../../store";
@@ -326,15 +326,17 @@ export function createMessage(message: Message, sessionId: string): void {
     }
 
     // Also index in FTS5 for session search (P1-7)
-    try {
-      const db = getDatabase();
-      db.run(
-        "INSERT INTO session_fts (session_id, message_id, content, role, timestamp) VALUES (?, ?, ?, ?, ?)",
-        [sessionId, message.id, message.content, message.role, message.timestamp],
-      );
-    } catch (ftsErr) {
-      // FTS5 table might not exist in older databases — non-critical
-      console.warn("[createMessage] FTS indexing failed (non-critical):", ftsErr);
+    if (isFts5Available()) {
+      try {
+        const db = getDatabase();
+        db.run(
+          "INSERT INTO session_fts (session_id, message_id, content, role, timestamp) VALUES (?, ?, ?, ?, ?)",
+          [sessionId, message.id, message.content, message.role, message.timestamp],
+        );
+      } catch (ftsErr) {
+        // FTS5 table might not exist in older databases — non-critical
+        console.warn("[createMessage] FTS indexing failed (non-critical):", ftsErr);
+      }
     }
   } catch (eventErr) {
     console.warn("[createMessage] Event log dual-write failed (non-critical):", eventErr);

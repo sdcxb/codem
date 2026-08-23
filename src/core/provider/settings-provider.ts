@@ -1,20 +1,21 @@
 // @ts-nocheck
 /**
  * Settings Provider 插件 — 可独立加载/卸载/热替换。
+ *
+ * 不创建独立实例，而是从 ctx.get('llmEngine') 获取
+ * LLMEngine 实例的 SettingsManager，确保共享同一个实例。
  */
 import type { Plugin } from '../cordis/src/index.ts'
-import { SettingsManager } from '../settings/settings'
 
-export const settingsProvider: Plugin = (ctx: any) => {
-  // 在 Provider 内部创建实例，生命周期与 fiber 绑定
-  const settingsMgr = new SettingsManager()
-
-  const dispose = ctx.provide('settings', {
-    get: <T>(key: string, defaultValue?: T) => settingsMgr.get(key, defaultValue),
-    set: <T>(key: string, value: T) => settingsMgr.set(key, value),
-    getAll: () => settingsMgr.getAll(),
-    watch: (key: string, cb: (value: any) => void) => settingsMgr.watch(key, cb),
-  })
-
-  return dispose
-}
+export const settingsProvider: Plugin = Object.assign(
+  (ctx: any) => {
+    const engine = ctx.get('llmEngine')
+    if (!engine?.settings) {
+      console.warn('[settingsProvider] llmEngine not available')
+      return () => {}
+    }
+    const dispose = ctx.provide('settings', engine.settings)
+    return dispose
+  },
+  { inject: ['llmEngine'] as const }
+)

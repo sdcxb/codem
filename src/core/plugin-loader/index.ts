@@ -44,7 +44,7 @@ export interface LoadedPlugin {
 }
 
 // 内置插件注册表
-const builtinPlugins: Map<string, { meta: PluginMeta; apply: () => any }> = new Map()
+export const builtinPlugins: Map<string, { meta: PluginMeta; apply: () => any }> = new Map()
 
 /** 注册一个内置插件（用于非 package.json 场景）。 */
 export function registerBuiltinPlugin(name: string, meta: PluginMeta, apply: () => any) {

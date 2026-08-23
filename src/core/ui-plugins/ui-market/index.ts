@@ -2,13 +2,11 @@
 /**
  * @codem/ui-market — 插件市场 UI 插件包
  *
- * 将 SkillManager/McpManager/PluginManager 注册到 Slot Registry。
+ * 对标 DSH：组件同步导入，不用 React.lazy。
  */
-import { lazy } from 'react'
-
-const SkillManager = lazy(() => import('../../../components/SkillManager'))
-const McpManager = lazy(() => import('../../../components/McpManager'))
-const PluginManager = lazy(() => import('../../../components/PluginManager'))
+import { SkillManager } from '../../../components/SkillManager'
+import { McpManager } from '../../../components/McpManager'
+import { PluginManager } from '../../../components/PluginManager'
 
 export function apply(ctx: any) {
   const slots = ctx.get('slots')

@@ -58,8 +58,8 @@ export function createDefaultPolicy(workspacePath: string): SandboxPolicy {
       "/tmp",
       "/var/tmp",
       // Windows temp
-      `${process.env.TEMP || ""}`.replace(/\\/g, "/"),
-      `${process.env.TMP || ""}`.replace(/\\/g, "/"),
+      `${(typeof process !== 'undefined' && process.env?.TEMP) || ""}`.replace(/\\/g, "/"),
+      `${(typeof process !== 'undefined' && process.env?.TMP) || ""}`.replace(/\\/g, "/"),
     ].filter(Boolean),
     blockedPaths: [
       // 系统关键目录

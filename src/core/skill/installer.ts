@@ -19,13 +19,15 @@ import { unzipSync, strFromU8 } from "fflate";
 import { getSkillRegistry, parseSkillMarkdown, type SkillDefinition } from "./skill";
 import { writeFile, deletePath, listDirectory, readFile } from "../file-api";
 
-/** 技能安装目录（~/.codem/skills/） */
+import { getAppDataDir } from "../file-api";
+
+/** 技能安装目录（app_data/.codem/skills/） */
 async function getSkillsDir(): Promise<string> {
   const { invoke } = (window as any).__TAURI__?.core || {};
   if (invoke) {
-    const home = await invoke("get_default_cwd");
-    const sep = home.includes("/") && !home.includes("\\") ? "/" : "\\";
-    return `${home}${sep}.codem${sep}skills`;
+    const dataDir = await getAppDataDir();
+    const sep = dataDir.includes("/") && !dataDir.includes("\\") ? "/" : "\\";
+    return `${dataDir}.codem${sep}skills`;
   }
   return ".codem/skills";
 }

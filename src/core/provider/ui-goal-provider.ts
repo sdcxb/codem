@@ -12,10 +12,8 @@
  *
  * inject: ['slots'] — 框架保证 ctx.get('slots') 可用后才执行。
  */
-import { lazy } from 'react'
 import type { Plugin } from '../cordis/src/index.ts'
-
-const GoalBar = lazy(() => import('../../components/GoalBar'))
+import { GoalBar } from '../../components/GoalBar'
 
 export const uiGoalProvider: Plugin = Object.assign(
   (ctx: any) => {

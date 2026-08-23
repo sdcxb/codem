@@ -207,7 +207,7 @@ export function ProjectManager({ onClose }: ProjectManagerProps) {
 
     try {
       const { invoke } = (window as any).__TAURI__.core;
-      const home = await invoke("get_default_cwd");
+      const home = await invoke("get_app_data_dir");
       const projectDir = `${home}\\${name}`;
 
       // Check git available

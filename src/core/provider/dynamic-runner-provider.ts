@@ -12,12 +12,10 @@
  *   retract(name) → disposes plugin
  */
 import type { Plugin } from '../cordis/src/index.ts'
+import { validateCode } from './code-runtime-worker-thread-provider.ts'
 
 export const dynamicRunnerProvider: Plugin = (ctx: any) => {
   const dynamicPlugins = new Map<string, any>()
-
-  // D1-1: 复用公共验证函数（从 code-runtime-worker-thread-provider 提取）
-  const { validateCode } = require('./code-runtime-worker-thread-provider.ts')
 
   /** 尝试在 Worker 中执行代码（Node.js worker_threads 环境） */
   const createWorker = (code: string, ctxData: any): Promise<any> => {

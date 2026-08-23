@@ -2,17 +2,10 @@
 /**
  * @codem/ui-tool — 工具调用展示 UI 插件包
  *
- * 将 ToolCallCard/ToolCallGroup 组件注册到 Slot Registry。
- * conversation.details.tool slot 现在在 ChatPanel 中通过 SlotBridge 消费。
+ * 对标 DSH：ToolCallGroup 是 ChatPanel 的内部组件，不通过 slot 注册。
+ * 此包保留为占位，未来可用于注册第三方工具渲染扩展。
  */
-import { lazy } from 'react'
-
-const ToolCallCard = lazy(() => import('../../../components/ToolCallCard'))
-const ToolCallGroup = lazy(() => import('../../../components/ToolCallGroup'))
 
 export function apply(ctx: any) {
-  const slots = ctx.get('slots')
-
-  // conversation.details.tool slot — 在 ChatPanel 中通过 SlotBridge 消费
-  slots.register({ name: 'conversation.details.tool', id: 'default-tool-group', priority: 0 }, ToolCallGroup)
+  // ToolCallGroup 由 ChatPanel 直接渲染，不经过 slot 系统
 }

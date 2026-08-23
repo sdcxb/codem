@@ -14,6 +14,11 @@ export async function getDefaultCwd(): Promise<string> {
   return tauriInvoke("get_default_cwd");
 }
 
+/** 获取 app data 目录（用户配置/安装路径，非工作目录） */
+export async function getAppDataDir(): Promise<string> {
+  return tauriInvoke("get_app_data_dir");
+}
+
 // ========== File Operations ==========
 
 export async function readFile(path: string): Promise<string> {

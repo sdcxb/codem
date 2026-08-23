@@ -32,6 +32,8 @@
 >
 > **v1.5.0 更新**：Cordis "一切插件化" 工具发现机制 — 对标 DSH `ctx.systemPrompt.section()` + `ctx.tools.schemas()` 模式，彻底解决 LLM 工具发现断档问题。①`ToolDef` 新增 `guidance` 字段，工具自带使用引导 ②`toolsProvider` 改造：工具注册时自动将 guidance 注册为 `systemPrompt` prompt section，工具卸载时自动移除 ③`buildSystemPrompt` 删除硬编码工具列表，改为从 `systemPrompt.assemble()` 动态收集 ④`LLMEngine` 新增 `collectToolGuidance()` / `collectToolGuidanceSync()` 双路径收集方法 ⑤全部 31 个工具补充 guidance 文案（核心 11 + 能力 8 + 高级 6 + 笔记 4 + 会话 4 + 目标 3 + 终端 4 + 任务 2 + 协同 4 + 小队 3 + Issue 4 + 工作流 1 + 动态插件 5）⑥`skill-creator` 技能增强：LLM 可通过 `write`/`bash` 工具从 URL 或 ZIP 安装技能，`load_skill` 增加文件系统回退自动发现新技能。31 文件修改，`tsc --noEmit` 零错误 + 全量测试通过。
 >
+> **v1.5.1 更新**：DSH 架构对标深度整改 + 严重 Bug 修复 + YAML 声明式插件加载 — ①新增 YAML 声明式插件加载器（对标 DSH `cordis.patch.yml`），`config/codem.base.yml` + `codem.desktop.yml` 分层 bundle，80+ 插件声明式加载 + 拓扑排序 + `assertActivated` fail-loud 验证 ②修复 LLM 回答重复问题（根因：`saveMessages` 全量追加事件日志导致重复，`buildMessages` 移除事件投影路径强制只从 DB 读取 + 事件投影去重）③修复 llmEngine 未注册为 Cordis 服务（`ctx.provide('llmEngine', engine)` 在 YAML 加载前完成）④修复 mimoAuth 未注册 + PluginLoader.load() 未调用 ⑤SlotBridge/SlotRenderer 对标 DSH `scoped-slots.tsx` 重写（SlotErrorBoundary + fiber await 超时保护）⑥30+ Provider 文件统一改造（import + re-export + inject 声明对齐）⑦新增 `mimo-auth-provider.ts` + `buffer-polyfill.ts` + 3 个测试文件。118 文件修改（+2359/-1583 行），`tsc --noEmit` 零错误。
+>
 
 
 ![Codem 运行界面](screenshots/26720-1.png)

@@ -1,6 +1,6 @@
 // @ts-nocheck
 /**
- * Event Log Provider 插件 — 包装真实事件日志并接入 ctx。
+ * Event Log Provider 插件 — 直接暴露 EventLog 实例到 ctx。
  *
  * 真实实现源：src/core/storage/event-log.ts（EventLog 类 + getEventLog()）
  *
@@ -10,28 +10,13 @@
  * - 替代直接 import { getEventLog }
  */
 import type { Plugin } from '../cordis/src/index.ts'
-import { EventLog, getEventLog } from '../storage/event-log.ts'
+import { getEventLog } from '../storage/event-log.ts'
 
 export const eventLogProvider: Plugin = (ctx: any) => {
-  const log = getEventLog()
+  const eventLog = getEventLog()
 
-  const dispose = ctx.provide('eventLog', {
-    _active: true,
-    log(event: string, data?: any): void {
-      return log.log(event, data)
-    },
-    getEvents(filter?: any): any[] {
-      return log.getEvents(filter)
-    },
-    clear(): void {
-      return log.clear()
-    },
-  })
+  // 直接暴露实例 — 与 DSH 模式一致
+  const dispose = ctx.provide('eventLog', eventLog)
 
-  // Composite dispose — stop underlying log to eliminate double-track
-  const compositeDispose = () => {
-    if (log.dispose) log.dispose()
-    dispose()
-  }
-  return compositeDispose
+  return dispose
 }

@@ -2,7 +2,9 @@ import type { LLMProvider, LLMRequest, ToolDefinition, TokenUsage } from "./type
 import type { ToolRegistry, ToolContext, WriteConfirmResult } from "./tools";
 import type { ToolExecutorConfig } from "./streaming-executor";
 import { StreamingToolExecutorImpl, type StreamingToolCall } from "./streaming-executor";
+import { initDefaultPipeline } from "./tool-pipeline";
 import { RetryExecutor, classifyError, logRetry } from "../retry/retry";
+import { getTokenTracker, estimateTokens, estimateToolDefinitionTokens } from "./token-tracker";
 import { extractJSON } from "./output-parser";
 import { getGuidanceQueue, GUIDANCE_MESSAGE_TEMPLATE } from "./guidance-queue";
 import { getNeedsYouQueue } from "./needs-you-queue";
@@ -12,7 +14,7 @@ import { getPermissionManager, type PermissionRequest, type PermissionResult } f
 import { getVisionProxy } from "./vision-proxy";
 import { getSnapshotService } from "../snapshot/snapshot";
 import * as MessageStorage from "../storage/message";
-import { deriveMessagesFromEvents } from "../storage/event-projection";
+// deriveMessagesFromEvents removed — DB CRUD is the single source of truth for LLM messages
 import { getEventLog } from "../storage/event-log";
 import { getTelemetry } from "../telemetry/telemetry";
 import { evaluateWithSecurityMode } from "../permission/security-mode";
@@ -289,8 +291,8 @@ export class AgenticLoop {
   }
 
   private getPermissionManager() {
-    // P0-7.1: ctx 可用时完全使用 ctx.get()，不再回退单例
-    if (this._ctx) { const s = this._ctx.get('permission'); if (s) return s; throw new Error('[AgenticLoop] Service "permission" not available in Cordis Context'); }
+    // P0-7.1: ctx 可用时优先 ctx.get()，服务未就绪时回退到单例（容错）
+    if (this._ctx) { const s = this._ctx.get('permission'); if (s) return s; console.warn('[AgenticLoop] Service "permission" not available, falling back to singleton'); }
     return getPermissionManager();
   }
   private evaluateSecurityMode(
@@ -302,33 +304,33 @@ export class AgenticLoop {
     return evaluateWithSecurityMode(mode as any, tool, resource, normalEvaluation);
   }
   private getTelemetry() {
-    // P0-7.1: ctx 可用时完全使用 ctx.get()，不再回退单例
-    if (this._ctx) { const s = this._ctx.get('telemetry'); if (s) return s; throw new Error('[AgenticLoop] Service "telemetry" not available in Cordis Context'); }
+    // P0-7.1: ctx 可用时优先 ctx.get()，服务未就绪时回退到单例（容错）
+    if (this._ctx) { const s = this._ctx.get('telemetry'); if (s) return s; console.warn('[AgenticLoop] Service "telemetry" not available, falling back to singleton'); }
     return getTelemetry();
   }
   private getTranscriptCache() {
-    // P0-7.1: ctx 可用时完全使用 ctx.get()，不再回退单例
-    if (this._ctx) { const s = this._ctx.get('transcriptCache'); if (s) return s; throw new Error('[AgenticLoop] Service "transcriptCache" not available in Cordis Context'); }
+    // P0-7.1: ctx 可用时优先 ctx.get()，服务未就绪时回退到单例（容错）
+    if (this._ctx) { const s = this._ctx.get('transcriptCache'); if (s) return s; console.warn('[AgenticLoop] Service "transcriptCache" not available, falling back to singleton'); }
     return TranscriptCache;
   }
   private getMessageStorage() {
-    // P0-7.1: ctx 可用时完全使用 ctx.get()，不再回退单例
-    if (this._ctx) { const s = this._ctx.get('messageStorage'); if (s) return s; throw new Error('[AgenticLoop] Service "messageStorage" not available in Cordis Context'); }
+    // P0-7.1: ctx 可用时优先 ctx.get()，服务未就绪时回退到单例（容错）
+    if (this._ctx) { const s = this._ctx.get('messageStorage'); if (s) return s; console.warn('[AgenticLoop] Service "messageStorage" not available, falling back to singleton'); }
     return MessageStorage;
   }
   private getVisionProxy() {
-    // P0-7.1: ctx 可用时完全使用 ctx.get()，不再回退单例
-    if (this._ctx) { const s = this._ctx.get('visionProxy'); if (s) return s; throw new Error('[AgenticLoop] Service "visionProxy" not available in Cordis Context'); }
+    // P0-7.1: ctx 可用时优先 ctx.get()，服务未就绪时回退到单例（容错）
+    if (this._ctx) { const s = this._ctx.get('visionProxy'); if (s) return s; console.warn('[AgenticLoop] Service "visionProxy" not available, falling back to singleton'); }
     return getVisionProxy();
   }
   private getSnapshotService(cwd?: string) {
-    // P0-7.1: ctx 可用时完全使用 ctx.get()，不再回退单例
-    if (this._ctx) { const s = this._ctx.get('snapshot'); if (s) return s; throw new Error('[AgenticLoop] Service "snapshot" not available in Cordis Context'); }
+    // P0-7.1: ctx 可用时优先 ctx.get()，服务未就绪或未注册时回退到单例（容错）
+    if (this._ctx) { const s = this._ctx.get('snapshot'); if (s) return s; console.warn('[AgenticLoop] Service "snapshot" not available, falling back to singleton'); }
     return getSnapshotService(cwd || this.lastCwd || ".");
   }
   private getEventLog() {
-    // P0-7.1: ctx 可用时完全使用 ctx.get()，不再回退单例
-    if (this._ctx) { const s = this._ctx.get('eventLog'); if (s) return s; throw new Error('[AgenticLoop] Service "eventLog" not available in Cordis Context'); }
+    // P0-7.1: ctx 可用时优先 ctx.get()，服务未就绪时回退到单例（容错）
+    if (this._ctx) { const s = this._ctx.get('eventLog'); if (s) return s; console.warn('[AgenticLoop] Service "eventLog" not available, falling back to singleton'); }
     return getEventLog();
   }
 
@@ -592,8 +594,7 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
     console.log(`[AgenticLoop.run] sessionId: ${sessionId}, userMessage: ${userMessage.substring(0, 80)}...`);
 
     // P0-2: Initialize tool pipeline with 5-layer middlewares
-    const { initDefaultPipeline } = await import("./tool-pipeline");
-    initDefaultPipeline({
+    await initDefaultPipeline({
       isPlanMode: () => this.config.collaborationMode === "plan",
       isSandboxEnabled: () => false, // P1-5 sandbox not yet at Rust level
       isPathWithinWorkspace: (path: string, cwd: string) => {
@@ -1450,6 +1451,7 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
         }
       }
     } catch (error: any) {
+      console.error(`[AgenticLoop] executeIteration error (iteration ${this.state.iteration}):`, error?.name, error?.message, error?.stack);
       if (error.name === "AbortError") {
         return;
       }
@@ -1581,7 +1583,6 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
       this.state.totalUsage.completionTokens += usage.completionTokens;
       this.state.totalUsage.totalTokens = this.state.totalUsage.promptTokens + this.state.totalUsage.completionTokens;
       // R3-1.6: Record actual usage in TokenTracker for pressure estimation
-      const { getTokenTracker, estimateToolDefinitionTokens } = require("./token-tracker");
       const tracker = getTokenTracker();
       const toolDefTokens = estimateToolDefinitionTokens(toolDefs);
       tracker.recordActualUsage(usage, toolDefTokens, this.lastRequestHeader || "");
@@ -1883,69 +1884,12 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
    *   - Priority 1 (LOW): Old tool results and assistant text — drop first
    */
   private async buildMessages(sessionId: string): Promise<any[]> {
-    // P0-1: Try event-sourced projection first (dual-write transition)
-    const eventLog = this.getEventLog();
-    const eventCount = eventLog.count(sessionId);
+    // DB CRUD is the single source of truth for LLM messages.
+    // The event log (session_events table) is used for telemetry and audit only,
+    // NOT for message projection — duplicate events in the log caused repeated
+    // messages that made the LLM re-answer previous questions.
     let messages: any[];
-
-    if (eventCount > 0) {
-      // Use event projection as primary source
-      const eventMessages = deriveMessagesFromEvents(sessionId);
-      if (eventMessages.length > 0) {
-        // Convert LLMMessage[] to internal message format for the cache logic below
-        messages = eventMessages.map(m => {
-          const toolUseBlocks = Array.isArray(m.content) ? m.content
-            .filter((b: any) => b.type === "tool_use") : [];
-          const toolResultBlocks = Array.isArray(m.content) ? m.content
-            .filter((b: any) => b.type === "tool_result") : [];
-
-          // If this is a tool result message, preserve it with tool role
-          if (m.role === "tool" || toolResultBlocks.length > 0) {
-            const trBlock = toolResultBlocks[0] as any;
-            return {
-              id: m.id,
-              role: "tool" as const,
-              content: trBlock ? trBlock.content : (typeof m.content === "string" ? m.content : ""),
-              toolCallId: trBlock ? trBlock.toolCallId : m.toolCallId,
-              status: "done",
-              model: undefined,
-            };
-          }
-
-          const toolCallsArr = toolUseBlocks.map((b: any) => ({
-            id: b.id,
-            tool: b.name || "",
-            args: b.input || {},
-            status: "completed" as const,
-            result: undefined as any,
-          }));
-
-          return {
-            id: m.id,
-            role: m.role,
-            content: typeof m.content === "string" ? m.content : (m.content as any[]).filter(b => b.type === "text").map(b => b.text).join(""),
-            toolCalls: toolCallsArr.length > 0 ? toolCallsArr : undefined,
-            // Also expose tool_calls (OpenAI format) for downstream code that checks this property
-            // (selectMessagesByPriority, orphan filter, micro-compact)
-            tool_calls: toolUseBlocks.length > 0 ? toolUseBlocks.map((b: any) => ({
-              id: b.id,
-              type: "function",
-              function: {
-                name: b.name || "",
-                arguments: JSON.stringify(b.input || {}),
-              },
-            })) : undefined,
-            status: "done",
-            model: undefined,
-          };
-        });
-      } else {
-        messages = this.getMessageStorage().listMessages(sessionId);
-      }
-    } else {
-      // Fallback: old CRUD path (no events yet for this session)
-      messages = this.getMessageStorage().listMessages(sessionId);
-    }
+    messages = this.getMessageStorage().listMessages(sessionId);
 
     // --- E3: Incremental message building ---
     // Fingerprint MUST include tool call statuses + result presence, because
@@ -2205,7 +2149,6 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
 
   private estimateContextPressure(messages: any[]): number {
     // R3-1.6: Use TokenTracker for more precise estimation
-    const { getTokenTracker, estimateTokens, estimateToolDefinitionTokens } = require("./token-tracker");
     const tracker = getTokenTracker();
     const toolCount = (this as any).currentToolDefs?.length || 0;
     const tools = (this as any).currentToolDefs || [];
