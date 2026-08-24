@@ -243,6 +243,21 @@
 .rich-content-link:hover {
   border-bottom-color: var(--rich-link-color);
 }
+/* File path links — clickable to open in file manager */
+.file-path-link {
+  cursor: pointer;
+  border-bottom: 1px dashed var(--rich-link-color);
+  padding: 0 2px;
+  border-radius: 2px;
+  transition: background var(--duration-fast) var(--ease-out);
+}
+.file-path-link:hover {
+  background: color-mix(in srgb, var(--rich-link-color) 12%, transparent);
+  border-bottom-style: solid;
+}
+.file-path-link:active {
+  background: color-mix(in srgb, var(--rich-link-color) 20%, transparent);
+}
 .rich-content-quote {
   margin: 0.75em 0;
   padding: 0.5em 1em;

@@ -27,6 +27,7 @@ import { TableScrollView } from "./TableScrollView";
 import { MermaidCanvasView } from "./MermaidCanvasView";
 import { ImagePreviewView } from "./ImagePreviewView";
 import { fixCjkBoldMarkdown } from "../../core/llm/stream-reveal";
+import { handleFileLinkClick, handleFileLinkContextMenu } from "../../utils/file-link";
 
 /**
  * ParagraphWithActions — P2 #31: 段落级 hover 操作按钮
@@ -236,12 +237,30 @@ export const RichContent = memo(function RichContent({
           p: ({ children }) => (
             <ParagraphWithActions>{children}</ParagraphWithActions>
           ),
-          // 链接在新窗口打开
-          a: ({ href, children }) => (
-            <a href={href} target="_blank" rel="noopener noreferrer" className="rich-content-link">
-              {children}
-            </a>
-          ),
+          // 链接：文件路径通过 Tauri 打开文件管理器，外部 URL 在浏览器打开
+          a: ({ href, children, ...props }) => {
+            const isExternal = href && (/^https?:\/\//i.test(href) || /^mailto:/i.test(href));
+            if (isExternal) {
+              return (
+                <a href={href} target="_blank" rel="noopener noreferrer" className="rich-content-link" {...props}>
+                  {children}
+                </a>
+              );
+            }
+            // File path — intercept click and context menu
+            return (
+              <a
+                {...props}
+                href={href}
+                onClick={(e) => handleFileLinkClick(e, href || "")}
+                onContextMenu={(e) => handleFileLinkContextMenu(e, href || "")}
+                className="rich-content-link file-path-link"
+                title={`点击打开文件位置: ${href}`}
+              >
+                {children}
+              </a>
+            );
+          },
           // 引用块样式
           blockquote: ({ children }) => (
             <blockquote className="rich-content-quote">{children}</blockquote>

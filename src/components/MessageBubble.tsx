@@ -111,64 +111,8 @@ const MermaidDiagram = memo(function MermaidDiagram({ chart }: { chart: string }
   );
 });
 
-// Handle link clicks - open files in file manager, external URLs in browser
-async function handleLinkClick(e: React.MouseEvent<HTMLAnchorElement>, href: string) {
-  e.preventDefault();
-  e.stopPropagation();
-  console.log("[handleLinkClick] href:", href);
-  if (!href) return;
-
-  const { invoke } = (window as any).__TAURI__?.core || {};
-  if (!invoke) {
-    console.error("[handleLinkClick] Tauri not available");
-    return;
-  }
-
-  // Check if it's a URL (http://, https://, etc.)
-  if (/^https?:\/\//i.test(href) || /^mailto:/i.test(href)) {
-    console.log("[handleLinkClick] opening URL:", href);
-    window.open(href, "_blank");
-    return;
-  }
-
-  // Everything else is treated as a file path.
-  // Could be absolute (C:\..., /home/...) or relative (xxx.md, docs/readme.md)
-  let absPath = href;
-
-  // If relative path, resolve against current project directory or app root
-  if (!href.startsWith("/") && !/^[A-Z]:[\\/]/i.test(href)) {
-    try {
-      // Try to get the current working directory from Tauri
-      const cwd = (await invoke("get_default_cwd")) as string;
-      // Simple path join: if href contains forward slashes (Unix-style relative),
-      // join with cwd. Otherwise just append.
-      if (href.includes("/")) {
-        absPath = cwd.replace(/[\\/]+$/, "") + "/" + href;
-      } else {
-        absPath = cwd.replace(/[\\/]+$/, "") + "/" + href;
-      }
-      // Normalize: if on Windows, convert forward slashes in the cwd part
-      if (/^[A-Z]:\\/i.test(cwd)) {
-        absPath = cwd.replace(/[\\/]+$/, "") + "\\" + href.replace(/\//g, "\\");
-      }
-      console.log("[handleLinkClick] resolved relative path:", absPath);
-    } catch (err) {
-      console.error("[handleLinkClick] Failed to get CWD:", err);
-    }
-  }
-
-  // Try to reveal the file in file manager (highlights the file)
-  console.log("[handleLinkClick] revealing in folder:", absPath);
-  invoke("reveal_item_in_dir", { path: absPath }).then(() => {
-    console.log("[handleLinkClick] file revealed successfully");
-  }).catch((err: any) => {
-    // If reveal fails (e.g. file doesn't exist), try opening the parent directory
-    console.error("[handleLinkClick] reveal failed, trying open_file_external:", err);
-    invoke("open_file_external", { path: absPath }).catch((err2: any) => {
-      console.error("[handleLinkClick] open_file_external also failed:", err2);
-    });
-  });
-}
+// Handle link clicks — delegates to shared file-link utility
+import { handleFileLinkClick, handleFileLinkContextMenu } from "../utils/file-link";
 
 // Sub-agent status indicator
 function SubagentStatus({ taskId, name, toolStatus }: { taskId: string; name?: string; toolStatus?: string }) {
@@ -443,7 +387,8 @@ const [galleryIndex, setGalleryIndex] = useState(0);
         <a
           {...props}
           href={href}
-          onClick={(e: React.MouseEvent<HTMLAnchorElement>) => handleLinkClick(e, href || "")}
+          onClick={(e: React.MouseEvent<HTMLAnchorElement>) => handleFileLinkClick(e, href || "")}
+          onContextMenu={(e: React.MouseEvent<HTMLAnchorElement>) => handleFileLinkContextMenu(e, href || "")}
           style={{ color: "var(--accent)", cursor: "pointer", textDecoration: "underline" }}
         >
           {children}
@@ -465,14 +410,23 @@ const [galleryIndex, setGalleryIndex] = useState(0);
     },
   }), [lang, onCitationClick]);
 
+  // Track whether this message was ever streamed (i.e. it's the "latest" answer,
+  // not a historical message loaded from DB). Historical messages default to
+  // collapsed; streamed messages stay expanded even after streaming ends.
+  const wasStreamedRef = useRef(false);
+  if (isStreaming) wasStreamedRef.current = true;
+
   // Check if content should be collapsible (after render, not during streaming)
   useEffect(() => {
     if (isStreaming) {
       setContentCollapsed(false);
       return;
     }
+    // Only auto-collapse historical messages (never streamed).
+    // The latest answer that just finished streaming should stay expanded
+    // so the user can read it immediately.
+    if (wasStreamedRef.current) return;
     if (contentRef.current && contentRef.current.scrollHeight > COLLAPSE_THRESHOLD) {
-      // Auto-collapse long messages, but only once per message
       setContentCollapsed(true);
     }
   }, [isStreaming, displayContent]);

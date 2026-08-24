@@ -219,33 +219,44 @@ export function createReadAttachmentTool(): ToolDef {
       // entire file into memory. For large files (hundreds of MB), readFile
       // would freeze the JS event loop. readFileLines only returns the
       // requested line range from Rust's BufReader.
+      //
+      // Robustness: Resolve diskPath FIRST, only import & call readFileLines
+      // when we actually have a path. This avoids unnecessary dynamic import
+      // when the attachment has neither sandboxPath nor path — in that case
+      // we fall through to the "no readable content" branch below.
       if (!target.content && target.type !== "url" && target.type !== "image") {
-        try {
-          const { readFileLines, getDefaultCwd } = await import("../../file-api");
-
-          let diskPath: string | undefined;
-          // 1. Try sandbox path (workspace-relative)
-          if (target.sandboxPath) {
+        // 1. Determine disk path before touching file-api
+        let diskPath: string | undefined;
+        if (target.sandboxPath) {
+          try {
+            const { getDefaultCwd } = await import("../../file-api");
             const cwd = await getDefaultCwd();
             diskPath = `${cwd}/${target.sandboxPath}`.replace(/\\/g, "/");
+          } catch (err: any) {
+            return {
+              title: `read_attachment: ${target.name}`,
+              output: `Failed to resolve workspace path for "${target.sandboxPath}": ${err.message}`,
+            };
           }
-          // 2. Try absolute path
-          else if (target.path) {
-            diskPath = target.path;
-          }
+        } else if (target.path) {
+          diskPath = target.path;
+        }
 
-          if (diskPath) {
+        // 2. Only import readFileLines when we have a path to read
+        if (diskPath) {
+          try {
+            const { readFileLines } = await import("../../file-api");
             // Convert character offset to approximate line offset (1 line ≈ 80 chars)
             const lineOffset = Math.max(1, Math.floor(offset / 80));
             const lineLimit = Math.max(1, Math.ceil(limit / 80));
             const result = await readFileLines(diskPath, lineOffset, lineLimit, limit);
             target.content = result.text;
+          } catch (err: any) {
+            return {
+              title: `read_attachment: ${target.name}`,
+              output: `Failed to read file "${target.sandboxPath || target.path}": ${err.message}`,
+            };
           }
-        } catch (err: any) {
-          return {
-            title: `read_attachment: ${target.name}`,
-            output: `Failed to read file "${target.sandboxPath || target.path}": ${err.message}`,
-          };
         }
       }
 

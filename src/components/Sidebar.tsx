@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
-import { PanelLeftClose, Search, Settings, Sun, Moon, PencilLine, BookOpen, Clock, Plug, BookMarked, Brain, Link2, GitBranch, Pin, Folder, Pencil, Clipboard, Trash2, ChevronDown, ChevronRight, MoreHorizontal, User, Circle, ClipboardList, Bot, Activity, Puzzle } from "lucide-react";
+import { PanelLeftClose, Search, Settings, Sun, Moon, PencilLine, BookOpen, Clock, Plug, BookMarked, Brain, Link2, GitBranch, Pin, Folder, FolderOpen, Pencil, Clipboard, Trash2, ChevronDown, ChevronRight, MoreHorizontal, User, Circle, ClipboardList, Bot, Activity, Puzzle } from "lucide-react";
 import { SlotListBridge } from "../core/slots/SlotBridge";
 import { useAppStore } from "../store";
 import { useProjectStore } from "../core/store";
@@ -649,6 +649,26 @@ const handleDrop = useCallback((e: React.DragEvent, targetSessionId: string, pro
                           </button>
                           <button onClick={(e) => { e.stopPropagation(); onToggleFileExplorer?.(project.id); setHoverMenuProjectId(null); setClickedMenuProjectId(null); }}>
                             {S.sidebar.fileBrowser[lang]}
+                          </button>
+                          <button onClick={async (e) => {
+                            e.stopPropagation();
+                            setHoverMenuProjectId(null);
+                            setClickedMenuProjectId(null);
+                            const { invoke } = (window as any).__TAURI__?.core || {};
+                            if (!invoke) return;
+                            // For directories, open_file_external opens the folder in explorer.
+                            // If that fails (e.g. path issues), fall back to reveal_item_in_dir.
+                            try {
+                              await invoke("open_file_external", { path: project.path });
+                            } catch {
+                              try {
+                                await invoke("reveal_item_in_dir", { path: project.path });
+                              } catch (err) {
+                                console.error("[Sidebar] Failed to open file manager:", err);
+                              }
+                            }
+                          }}>
+                            {S.sidebar.openInFileManager[lang]}
                           </button>
                           <button onClick={(e) => { e.stopPropagation(); onRemoveProject?.(project.id, project.name, project.path); setHoverMenuProjectId(null); setClickedMenuProjectId(null); }}>
                             {S.sidebar.removeProject[lang]}
