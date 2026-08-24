@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿import { useEffect, useState, useRef, useCallback } from "react";
+﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿import { useEffect, useState, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 
 // D1-4: 全局错误边界 — 捕获未处理的同步错误和 Promise rejection
@@ -807,21 +807,25 @@ abortControllersRef.current.clear();
 
     setCliModel(model);
     const engine = engineRef.current; if (!engine) { console.warn('[App] engine not available'); return; }
-    engine.updateConfig({ defaultModel: model });
 
     // Determine provider from model
     const mode = getMode();
+    let provider = "openai";
     if (mode === "api") {
-      let provider = "openai";
       if (model.startsWith("deepseek")) provider = "deepseek";
       else if (model.startsWith("claude")) provider = "anthropic";
       else if (model.startsWith("moonshot")) provider = "moonshot";
       else if (model.startsWith("gemini")) provider = "gemini";
       else if (model.startsWith("gpt") || model.startsWith("o3")) provider = "openai";
-      engine.updateConfig({ defaultProvider: provider });
       setCurrentProvider(provider);
       console.log(`[ModelChange] model=${model}, provider=${provider}`);
     }
+
+    // P0-FIX: Update model AND provider in a single call so loopPool sync is atomic.
+    // Previously these were two separate updateConfig calls, causing a brief window
+    // where the loop's model was new but provider was stale (or vice versa),
+    // leading to dual-model token consumption.
+    engine.updateConfig({ defaultModel: model, defaultProvider: provider });
 
     // Persist the selected model and mode to settings so it survives app restart
     try {

@@ -143,8 +143,35 @@ export const RichContent = memo(function RichContent({
       }
     }
 
-    // 内联代码
+    // 内联代码 — 对单个单词/短词组降级为普通文本样式
+    // LLM 常用反引号包裹工具名、文件名等单个词组（如 `read`、`bash`），
+    // 这些不需要代码框样式，渲染为普通文本即可（保留等宽字体但不带背景框）
     if (inline) {
+      const text = String(children);
+      // 判断是否为“单个单词或短词组”：不含换行、不含分号/大括号/管道符等代码结构
+      const isSimpleWord =
+        text.length <= 60 &&
+        !text.includes("\n") &&
+        !text.includes(";") &&
+        !text.includes("{") &&
+        !text.includes("}") &&
+        !text.includes("|") &&
+        !text.includes("=>") &&
+        !text.includes("==") &&
+        !text.includes("!=") &&
+        !text.includes("//") &&
+        !text.includes("/*") &&
+        // 不含多行代码特征（连等号赋值、函数调用括号等）
+        !(text.includes("(") && text.includes(")"));
+      if (isSimpleWord) {
+        // 单个单词/词组：渲染为普通文本，不带代码框样式
+        return (
+          <span className="inline-term" {...props}>
+            {children}
+          </span>
+        );
+      }
+      // 真正的内联代码表达式：保留代码样式
       return (
         <code className="inline-code" {...props}>
           {children}

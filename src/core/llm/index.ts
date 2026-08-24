@@ -1072,7 +1072,43 @@ return loop.hasPendingGuidance();
 
   /** Update engine configuration */
   updateConfig(config: Partial<LLMEngineConfig>) {
+    const oldDefaultModel = this.config.defaultModel;
+    const oldDefaultProvider = this.config.defaultProvider;
     this.config = { ...this.config, ...config };
+
+    // P0-FIX: When default model/provider changes, sync all pooled AgenticLoop instances
+    // so they use the new model. Without this, the loopPool cache returns stale loops
+    // that still use the old model (e.g. pro), causing dual-model token consumption
+    // when the user switches models mid-session.
+    if (config.defaultModel !== undefined || config.defaultProvider !== undefined) {
+      const newModel = this.config.defaultModel || oldDefaultModel || "gpt-4o";
+      const newProviderId = this.config.defaultProvider || oldDefaultProvider || "openai";
+      const newProvider = this.providers.get(newProviderId);
+
+      for (const [sessionId, loop] of this.loopPool) {
+        const loopConfig = (loop as any).config;
+        if (loopConfig) {
+          // Update the model on the loop so it uses the new model for the next iteration
+          loopConfig.model = newModel;
+          // Also update the provider if it changed
+          if (newProvider && newProvider.isConfigured()) {
+            (loop as any).provider = newProvider;
+          }
+          console.log(`[LLMEngine.updateConfig] Synced loop for session ${sessionId}: model → ${newModel}, provider → ${newProviderId}`);
+        }
+      }
+
+      // Also clear the fallback agenticLoop reference
+      if (this.agenticLoop) {
+        const loopConfig = (this.agenticLoop as any).config;
+        if (loopConfig) {
+          loopConfig.model = newModel;
+          if (newProvider && newProvider.isConfigured()) {
+            (this.agenticLoop as any).provider = newProvider;
+          }
+        }
+      }
+    }
   }
 
   getDefaultProvider(): string {

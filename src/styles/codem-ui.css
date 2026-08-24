@@ -312,6 +312,12 @@
   color: var(--accent);
 }
 
+/* Simple inline term — single words/short phrases without code-box styling */
+.rich-content .inline-term {
+  font-family: inherit;
+  color: inherit;
+}
+
 /* Content frame shared wrapper */
 .content-frame {
   border: 1px solid var(--rich-code-border);

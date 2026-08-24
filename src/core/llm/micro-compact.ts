@@ -67,6 +67,52 @@ const KEEP_RECENT_MESSAGES = 10;
  */
 const MIN_RESULT_SIZE_TO_COMPACT = 500;
 
+/**
+ * Head/tail retention sizes for the DSH-style prune strategy.
+ * Instead of extracting a "summary" (which loses the actual content),
+ * we retain the first HEAD_CHARS and last TAIL_CHARS of the tool result,
+ * replacing the middle with a prune marker.
+ *
+ * This mirrors DSH's ToolResultPruner defaults (head=4096, tail=1024),
+ * but scaled down slightly for our smaller context windows.
+ */
+const HEAD_CHARS = 3000;
+const TAIL_CHARS = 800;
+
+/** Marker substituted for the removed middle span (aligned with DSH's PRUNE_MARKER). */
+const PRUNE_MARKER = '\n\n[... tool result middle pruned ...]\n\n';
+
+/** Lines that belong to the anti-injection wrapper — skipped when extracting summaries. */
+const WRAPPER_PATTERNS = [
+  /^╔+/,
+  /^║/,
+  /^╚+/,
+];
+
+/**
+ * Check if a line is part of the anti-injection data-marker wrapper.
+ */
+function isWrapperLine(line: string): boolean {
+  return WRAPPER_PATTERNS.some(p => p.test(line.trim()));
+}
+
+/**
+ * Skip leading wrapper lines and return the index of the first real content line.
+ */
+function skipWrapper(lines: string[]): number {
+  let i = 0;
+  // Skip wrapper header (╔══, ║ ..., ╚══, empty lines, "文件: xxx" line)
+  while (i < lines.length) {
+    const trimmed = lines[i].trim();
+    if (trimmed === '') { i++; continue; }
+    if (isWrapperLine(lines[i])) { i++; continue; }
+    // Skip the "文件: xxx" metadata line that follows the wrapper
+    if (trimmed.startsWith('文件:') || trimmed.startsWith('File:')) { i++; continue; }
+    break;
+  }
+  return i;
+}
+
 // ========== Types ==========
 
 export interface MicroCompactResult {
@@ -81,105 +127,95 @@ export interface MicroCompactResult {
 // ========== Structured Tool Summary Generator ==========
 
 /**
- * Generate a structured summary for a compacted tool result.
- * Instead of a generic placeholder, this produces tool-specific metadata
- * that helps the LLM understand what happened without re-reading the full output.
+ * Generate a pruned version of a tool result using DSH's head/tail strategy.
+ *
+ * Instead of extracting a "summary" (which loses actual content and can be
+ * fooled by anti-injection wrapper lines), we retain the first HEAD_CHARS
+ * and last TAIL_CHARS of the actual content, replacing the middle with
+ * a prune marker.
+ *
+ * For read results wrapped in anti-injection markers (╔══...╚══),
+ * the wrapper is preserved and the head/tail are taken from the file content
+ * inside the wrapper.
  */
-function generateToolSummary(toolName: string, content: string): string {
+function pruneToolResult(toolName: string, content: string): string {
   const originalLength = content.length;
   const lines = content.split("\n");
   const totalLines = lines.length;
 
-  switch (toolName) {
-    case "read": {
-      // Try to extract file path from common output patterns
-      const pathMatch = content.match(/^(?:---\s*)?(.+?\.\w+)(?:\s*---)?$/m);
-      const filePath = pathMatch ? pathMatch[1].trim() : "file";
-      // Extract key indicators from the content
-      const hasError = content.toLowerCase().includes("error") || content.toLowerCase().includes("not found");
-      const keyLines = lines.slice(0, 3).map(l => l.substring(0, 200)).join("\n");
-      return `[Tool result compacted — read ${filePath} (${totalLines} lines, ${originalLength.toLocaleString()} chars)]\n` +
-        `${hasError ? "Status: contains error/not-found\n" : ""}` +
-        `Opening lines:\n${keyLines}\n` +
-        `[Use 'read' to retrieve full content if needed]`;
-    }
+  // For 'read' results, skip the anti-injection wrapper to find real content
+  const contentStartIdx = toolName === "read" || toolName === "read_file"
+    ? skipWrapper(lines)
+    : 0;
 
+  // Extract the real content (after wrapper header, before wrapper footer)
+  let realContentStart = contentStartIdx;
+  let realContentEnd = lines.length;
+  if (contentStartIdx > 0) {
+    // Find the closing wrapper (╔══ ... ╚══)
+    for (let i = lines.length - 1; i >= contentStartIdx; i--) {
+      if (isWrapperLine(lines[i])) {
+        realContentEnd = i;
+        break;
+      }
+    }
+  }
+
+  const realLines = lines.slice(realContentStart, realContentEnd);
+  const realContent = realLines.join("\n");
+
+  // If real content is short enough, keep it all (just the wrapper + content)
+  if (realContent.length <= HEAD_CHARS + TAIL_CHARS + 200) {
+    return content; // Don't prune — content is small enough
+  }
+
+  // Head/tail prune: keep first HEAD_CHARS and last TAIL_CHARS of real content
+  const headText = realContent.substring(0, HEAD_CHARS);
+  const tailText = realContent.substring(realContent.length - TAIL_CHARS);
+  const prunedContent = headText + PRUNE_MARKER + tailText;
+
+  // Reconstruct with wrapper if present
+  if (contentStartIdx > 0) {
+    const wrapperHeader = lines.slice(0, contentStartIdx).join("\n");
+    const wrapperFooter = lines.slice(realContentEnd).join("\n");
+    return `[Tool result pruned — ${toolName}: ${totalLines} lines, ${originalLength.toLocaleString()} chars → ${prunedContent.length.toLocaleString()} chars]\n` +
+      wrapperHeader + "\n" +
+      prunedContent + "\n" +
+      wrapperFooter;
+  }
+
+  // Tool-specific prefix for non-read tools
+  const toolLabel = getToolLabel(toolName, content, totalLines, originalLength);
+  return `[Tool result pruned — ${toolLabel}]\n` +
+    prunedContent;
+}
+
+/** Generate a short tool label for the prune prefix. */
+function getToolLabel(toolName: string, content: string, totalLines: number, originalLength: number): string {
+  switch (toolName) {
+    case "read":
+    case "read_file": {
+      const pathMatch = content.match(/(?:文件|File):\s*(.+)/i);
+      const filePath = pathMatch ? pathMatch[1].trim() : "file";
+      return `read ${filePath} (${totalLines} lines, ${originalLength.toLocaleString()} chars)`;
+    }
     case "bash": {
-      // Extract exit code and command
       const exitMatch = content.match(/(?:exit code|exit_code|Exit code)\s*[:=]\s*(\d+)/i);
       const exitCode = exitMatch ? exitMatch[1] : "?";
       const cmdMatch = content.match(/^(?:Command|CMD|cmd|command)\s*[:=]\s*(.+)$/im);
-      const cmd = cmdMatch ? cmdMatch[1].trim() : "command";
-      const outputLines = lines.filter(l => l.trim()).slice(0, 5).map(l => l.substring(0, 200)).join("\n");
-      return `[Tool result compacted — bash: ${cmd.substring(0, 80)} (exit ${exitCode}, ${originalLength.toLocaleString()} chars)]\n` +
-        `Output preview:\n${outputLines}\n` +
-        `[Re-run the command if you need fresh output]`;
+      const cmd = cmdMatch ? cmdMatch[1].trim().substring(0, 80) : "command";
+      return `bash: ${cmd} (exit ${exitCode}, ${originalLength.toLocaleString()} chars)`;
     }
-
     case "grep": {
-      // Count matches
-      const matchCount = lines.filter(l => l.trim() && !l.startsWith("grep:")).length;
-      const sampleMatches = lines.filter(l => l.trim() && !l.startsWith("grep:")).slice(0, 3).join("\n");
-      return `[Tool result compacted — grep: ${matchCount} matches (${originalLength.toLocaleString()} chars)]\n` +
-        `Sample matches:\n${sampleMatches}\n` +
-        `[Use 'grep' to re-search if needed]`;
+      const matchCount = content.split("\n").filter(l => l.trim() && !l.startsWith("grep:")).length;
+      return `grep: ${matchCount} matches (${originalLength.toLocaleString()} chars)`;
     }
-
     case "glob": {
-      const fileCount = lines.filter(l => l.trim()).length;
-      const sampleFiles = lines.filter(l => l.trim()).slice(0, 5).join("\n");
-      return `[Tool result compacted — glob: ${fileCount} files found (${originalLength.toLocaleString()} chars)]\n` +
-        `Sample paths:\n${sampleFiles}\n` +
-        `[Use 'glob' to re-search if needed]`;
+      const fileCount = content.split("\n").filter(l => l.trim()).length;
+      return `glob: ${fileCount} files (${originalLength.toLocaleString()} chars)`;
     }
-
-    case "web_fetch":
-    case "web_search": {
-      const resultCount = content.match(/<result>/g)?.length || content.match(/^Title:/gm)?.length || totalLines;
-      const preview = lines.slice(0, 4).map(l => l.substring(0, 200)).join("\n");
-      return `[Tool result compacted — ${toolName}: ~${resultCount} results (${originalLength.toLocaleString()} chars)]\n` +
-        `Preview:\n${preview}\n` +
-        `[Re-run ${toolName} if you need the full content]`;
-    }
-
-    case "lsp":
-    case "lsp_tool": {
-      const symbolCount = content.match(/^Symbol:|^\s+[A-Za-z]/gm)?.length || totalLines;
-      const preview = lines.slice(0, 4).map(l => l.substring(0, 200)).join("\n");
-      return `[Tool result compacted — ${toolName}: ~${symbolCount} symbols/results (${originalLength.toLocaleString()} chars)]\n` +
-        `Preview:\n${preview}\n` +
-        `[Use 'lsp_tool' to re-query if needed]`;
-    }
-
-    case "codebase_search":
-    case "tool_search": {
-      const resultCount = lines.filter(l => l.match(/^\d+\.|^- |^File:|^Path:/)).length || totalLines;
-      const preview = lines.slice(0, 4).map(l => l.substring(0, 200)).join("\n");
-      return `[Tool result compacted — ${toolName}: ~${resultCount} results (${originalLength.toLocaleString()} chars)]\n` +
-        `Preview:\n${preview}\n` +
-        `[Re-run search if needed]`;
-    }
-
-    case "spawn_subagent":
-    case "wait_for_subagent": {
-      // Sub-agent results — extract key outcome
-      const taskIdMatch = content.match(/SUBAGENT_TASK_ID:(\S+)/);
-      const taskId = taskIdMatch ? taskIdMatch[1] : "?";
-      const statusMatch = content.match(/(completed|failed|aborted|timeout)/i);
-      const status = statusMatch ? statusMatch[1] : "done";
-      const preview = lines.slice(0, 4).map(l => l.substring(0, 200)).join("\n");
-      return `[Tool result compacted — ${toolName}: task ${taskId} (${status}, ${originalLength.toLocaleString()} chars)]\n` +
-        `Result preview:\n${preview}\n` +
-        `[The sub-agent's work is recorded in its session]`;
-    }
-
-    default: {
-      // Generic fallback — still better than blank placeholder
-      const preview = content.substring(0, 150);
-      return `[Tool result compacted — ${toolName}: ${originalLength.toLocaleString()} chars, ${totalLines} lines]\n` +
-        `Preview: ${preview}...\n` +
-        `[Re-run the tool if you need the full output]`;
-    }
+    default:
+      return `${toolName}: ${originalLength.toLocaleString()} chars, ${totalLines} lines`;
   }
 }
 
@@ -242,12 +278,15 @@ export function microCompact(llmMessages: any[]): MicroCompactResult {
     const content = msg.content || "";
     if (content.length < MIN_RESULT_SIZE_TO_COMPACT) continue;
 
-    // Skip if already compacted (contains the placeholder)
-    if (content.startsWith("[Tool result compacted")) continue;
+    // Skip if already pruned (contains the prune marker)
+    if (content.startsWith("[Tool result pruned")) continue;
 
-    // Replace with a structured tool-specific summary
+    // Replace with a pruned version using head/tail strategy (DSH-aligned)
     const originalLength = content.length;
-    const placeholder = generateToolSummary(toolName, content);
+    const placeholder = pruneToolResult(toolName, content);
+
+    // If pruneToolResult returned the content unchanged (too short), skip
+    if (placeholder === content) continue;
 
     result[i] = {
       ...msg,
