@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿import { useEffect, useState, useRef, useCallback } from "react";
+﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿import { useEffect, useState, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 
 // D1-4: 全局错误边界 — 捕获未处理的同步错误和 Promise rejection
@@ -2479,15 +2479,15 @@ abortControllersRef.current.clear();
   return (
     <TooltipProvider delayDuration={300} skipDelayDuration={500}>
     <div className="app">
-      <SlotBridge name="app.boot-splash" fallback={BootSplash} showDegraded
+      <SlotBridge name="app.boot-splash" fallback={BootSplash}
         visible={bootSplashVisible}
         phase={bootSplashPhase}
         progress={bootSplashPhase === "initializing" ? 15 : bootSplashPhase === "loading-db" ? 45 : bootSplashPhase === "loading-config" ? 75 : 100}
         onComplete={() => setBootSplashVisible(false)}
       />
-      <SlotBridge name="app.workspace-backdrop" fallback={WorkspaceBackdrop} showDegraded />
-      <SlotBridge name="app.toast-container" fallback={ToastContainer}  showDegraded />
-      <SlotBridge name="app.titlebar" fallback={TitleBar} showDegraded
+      <SlotBridge name="app.workspace-backdrop" fallback={WorkspaceBackdrop} />
+      <SlotBridge name="app.toast-container" fallback={ToastContainer}  />
+      <SlotBridge name="app.titlebar" fallback={TitleBar}
         sidebarOpen={sidebarOpen}
         onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
         onNewChat={() => {
@@ -2507,12 +2507,12 @@ abortControllersRef.current.clear();
       ) : (
         <>
           {showBootstrap && (
-            <SlotBridge name="app.bootstrap-wizard" fallback={BootstrapWizard} appRoot={appRoot} onComplete={handleBootstrapComplete}  showDegraded />
+            <SlotBridge name="app.bootstrap-wizard" fallback={BootstrapWizard} appRoot={appRoot} onComplete={handleBootstrapComplete}  />
           )}
 
           {/* 核心内容：Sidebar + MainArea，根据皮肤选择不同布局包裹 */}
           {skin === "hub" ? (
-            <SlotBridge name="app.skin-layout" fallback={HubLayout} showDegraded
+            <SlotBridge name="app.skin-layout" fallback={HubLayout}
               rightRailOpen={rightRailOpen}
               onToggleRightRail={() => setRightRailOpen(!rightRailOpen)}
               onTasks={() => setShowProjectManager(true)}
@@ -2537,7 +2537,7 @@ onTaskCenter={() => { setTaskCenterTab("overview"); setShowTaskCenter(true); }}
               refreshKey={fileExplorerRefreshKey}
               sidebar={
                 sidebarOpen ? (
-                  <SlotBridge name="app.sidebar" fallback={Sidebar} showDegraded
+                  <SlotBridge name="app.sidebar" fallback={Sidebar}
                     identity={appIdentity}
                     onSettings={settingsEnabled ? () => setShowSettings(true) : undefined}
                     onProjects={() => setShowProjectManager(true)}
@@ -2596,7 +2596,7 @@ onRemoveProject={(id, name, path) => {
 </div>
 )}
 {bottomTab === "chat" && (
-                        <SlotBridge name="app.conversation" fallback={ChatPanel} showDegraded
+                        <SlotBridge name="app.conversation" fallback={ChatPanel}
                           onSend={handleSend}
                           onCancel={handleCancel}
                           onSendGuidance={handleSendGuidance}
@@ -2641,10 +2641,10 @@ notebookId={activeNotebookId || undefined}
 />
                       )}
 {bottomTab === "terminal" && (
-<SlotBridge name="app.terminal" fallback={TerminalPanel} cwd={currentProject?.path || appRoot}  showDegraded />
+<SlotBridge name="app.terminal" fallback={TerminalPanel} cwd={currentProject?.path || appRoot}  />
 )}
 {perfEnabled && bottomTab === "perf" && (
-<SlotBridge name="app.performance-dashboard" fallback={PerformanceDashboard} onClose={() => setBottomTab("chat")}  showDegraded />
+<SlotBridge name="app.performance-dashboard" fallback={PerformanceDashboard} onClose={() => setBottomTab("chat")}  />
 )}
                     </div>
                   </div>
@@ -2652,9 +2652,9 @@ notebookId={activeNotebookId || undefined}
               }
             />
           ) : skin === "dream" ? (
-            <SlotBridge name="app.skin-layout" fallback={DreamLayout} showDegraded>
+            <SlotBridge name="app.skin-layout" fallback={DreamLayout}>
               {sidebarOpen && (
-<SlotBridge name="app.sidebar" fallback={Sidebar} showDegraded
+<SlotBridge name="app.sidebar" fallback={Sidebar}
 identity={appIdentity}
                   onSettings={settingsEnabled ? () => setShowSettings(true) : undefined}
                   onProjects={() => setShowProjectManager(true)}
@@ -2710,7 +2710,7 @@ onRemoveProject={(id, name, path) => {
 </div>
 )}
 {bottomTab === "chat" && (
-<SlotBridge name="app.conversation" fallback={ChatPanel} showDegraded
+<SlotBridge name="app.conversation" fallback={ChatPanel}
 onSend={handleSend}
                         onCancel={handleCancel}
                         onSendGuidance={handleSendGuidance}
@@ -2755,10 +2755,10 @@ notebookId={activeNotebookId || undefined}
 />
                     )}
 {bottomTab === "terminal" && (
-<SlotBridge name="app.terminal" fallback={TerminalPanel} cwd={currentProject?.path || appRoot}  showDegraded />
+<SlotBridge name="app.terminal" fallback={TerminalPanel} cwd={currentProject?.path || appRoot}  />
 )}
 {perfEnabled && bottomTab === "perf" && (
-<SlotBridge name="app.performance-dashboard" fallback={PerformanceDashboard} onClose={() => setBottomTab("chat")}  showDegraded />
+<SlotBridge name="app.performance-dashboard" fallback={PerformanceDashboard} onClose={() => setBottomTab("chat")}  />
 )}
                   </div>
                 </div>
@@ -2790,7 +2790,7 @@ refreshKey={fileExplorerRefreshKey}
             <Menu size={20} />
           </button>
           {sidebarOpen && (
-<SlotBridge name="app.sidebar" fallback={Sidebar} showDegraded
+<SlotBridge name="app.sidebar" fallback={Sidebar}
 identity={appIdentity}
           onSettings={settingsEnabled ? () => setShowSettings(true) : undefined}
           onProjects={() => setShowProjectManager(true)}
@@ -2856,7 +2856,7 @@ onRemoveProject={(id, name, path) => {
               </div>
             )}
             {bottomTab === "chat" && (
-<SlotBridge name="app.conversation" fallback={ChatPanel} showDegraded
+<SlotBridge name="app.conversation" fallback={ChatPanel}
 onSend={handleSend}
                 onCancel={handleCancel}
                 onSendGuidance={handleSendGuidance}
@@ -2912,10 +2912,10 @@ notebookId={activeNotebookId || undefined}
 />
             )}
 {bottomTab === "terminal" && (
-<SlotBridge name="app.terminal" fallback={TerminalPanel} cwd={currentProject?.path || appRoot}  showDegraded />
+<SlotBridge name="app.terminal" fallback={TerminalPanel} cwd={currentProject?.path || appRoot}  />
 )}
 {perfEnabled && bottomTab === "perf" && (
-<SlotBridge name="app.performance-dashboard" fallback={PerformanceDashboard} onClose={() => setBottomTab("chat")}  showDegraded />
+<SlotBridge name="app.performance-dashboard" fallback={PerformanceDashboard} onClose={() => setBottomTab("chat")}  />
 )}
           </div>
         </div>
@@ -2945,7 +2945,7 @@ refreshKey={fileExplorerRefreshKey}
             size={280}
             title={lang === "zh" ? "菜单" : "Menu"}
           >
-<SlotBridge name="app.sidebar" fallback={Sidebar} showDegraded
+<SlotBridge name="app.sidebar" fallback={Sidebar}
 identity={appIdentity}
               onSettings={() => { setShowSettings(true); setMobileSidebarOpen(false); }}
               onProjects={() => { setShowProjectManager(true); setMobileSidebarOpen(false); }}
@@ -2974,7 +2974,7 @@ onSessionRecovery={() => { setShowSettings(false); setShowSessionRecovery(true);
           setShowOnboardingReplay={(v) => { setShowOnboardingReplay(v); setShowSettings(false); }}
         />
       )}
-      {showProjectManager && <SlotBridge name="app.project-manager" fallback={ProjectManager} onClose={() => setShowProjectManager(false)}  showDegraded />}
+      {showProjectManager && <SlotBridge name="app.project-manager" fallback={ProjectManager} onClose={() => setShowProjectManager(false)}  />}
       {showConfigEditor && currentProject && (
         <SlotBridge name="app.config-editor" fallback={ConfigEditor}
           appRoot={appRoot}
@@ -2986,7 +2986,7 @@ onSessionRecovery={() => { setShowSettings(false); setShowSessionRecovery(true);
       {showMcpManager && (
         <div className="modal-overlay" onClick={() => setShowMcpManager(false)}>
           <div className="modal-editor" onClick={(e) => e.stopPropagation()}>
-            <SlotBridge name="app.mcp-manager" fallback={McpManager} onClose={() => setShowMcpManager(false)}  showDegraded />
+            <SlotBridge name="app.mcp-manager" fallback={McpManager} onClose={() => setShowMcpManager(false)}  />
           </div>
         </div>
       )}
@@ -2994,7 +2994,7 @@ onSessionRecovery={() => { setShowSettings(false); setShowSessionRecovery(true);
       {showPluginManager && (
         <div className="modal-overlay" onClick={() => setShowPluginManager(false)}>
           <div className="modal-editor" onClick={(e) => e.stopPropagation()}>
-            <SlotBridge name="app.plugin-manager" fallback={PluginManager} onClose={() => setShowPluginManager(false)}  showDegraded />
+            <SlotBridge name="app.plugin-manager" fallback={PluginManager} onClose={() => setShowPluginManager(false)}  />
           </div>
         </div>
       )}
@@ -3002,7 +3002,7 @@ onSessionRecovery={() => { setShowSettings(false); setShowSessionRecovery(true);
       {showSkillManager && (
         <div className="modal-overlay" onClick={() => setShowSkillManager(false)}>
           <div className="modal-editor" onClick={(e) => e.stopPropagation()}>
-            <SlotBridge name="app.skill-manager" fallback={SkillManager} onClose={() => setShowSkillManager(false)}  showDegraded />
+            <SlotBridge name="app.skill-manager" fallback={SkillManager} onClose={() => setShowSkillManager(false)}  />
           </div>
         </div>
       )}
@@ -3010,13 +3010,13 @@ onSessionRecovery={() => { setShowSettings(false); setShowSessionRecovery(true);
       {showMemoryManager && (
         <div className="modal-overlay" onClick={() => setShowMemoryManager(false)}>
           <div className="modal-editor" onClick={(e) => e.stopPropagation()}>
-            <SlotBridge name="app.memory-manager" fallback={MemoryManager} onClose={() => setShowMemoryManager(false)}  showDegraded />
+            <SlotBridge name="app.memory-manager" fallback={MemoryManager} onClose={() => setShowMemoryManager(false)}  />
           </div>
         </div>
       )}
 
       {showGitHubClone && (
-        <SlotBridge name="app.github-clone-dialog" fallback={GitHubCloneDialog} onClose={() => setShowGitHubClone(false)}  showDegraded />
+        <SlotBridge name="app.github-clone-dialog" fallback={GitHubCloneDialog} onClose={() => setShowGitHubClone(false)}  />
       )}
 
       {/* P0-3: Plan Approval Card — shown when model calls exit_plan_mode */}
@@ -3093,7 +3093,7 @@ onClose={() => setCitationViewer(null)}
       {showSessionRecovery && (
         <div className="modal-overlay" onClick={() => setShowSessionRecovery(false)}>
           <div className="modal-editor" onClick={(e) => e.stopPropagation()}>
-            <SlotBridge name="app.session-recovery" fallback={SessionRecovery} onClose={() => setShowSessionRecovery(false)}  showDegraded />
+            <SlotBridge name="app.session-recovery" fallback={SessionRecovery} onClose={() => setShowSessionRecovery(false)}  />
           </div>
         </div>
       )}
@@ -3101,7 +3101,7 @@ onClose={() => setCitationViewer(null)}
       {showUsageStats && (
         <div className="modal-overlay" onClick={() => setShowUsageStats(false)}>
           <div className="modal-editor" onClick={(e) => e.stopPropagation()}>
-            <SlotBridge name="app.usage-stats" fallback={UsageStats} onClose={() => setShowUsageStats(false)}  showDegraded />
+            <SlotBridge name="app.usage-stats" fallback={UsageStats} onClose={() => setShowUsageStats(false)}  />
           </div>
         </div>
       )}
@@ -3125,7 +3125,7 @@ onClose={() => setCitationViewer(null)}
       {showAgentManager && (
         <div className="modal-overlay" onClick={() => setShowAgentManager(false)}>
           <div className="modal-editor" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 900, maxHeight: "85vh" }}>
-            <SlotBridge name="app.agent-manager" fallback={AgentManager} onClose={() => setShowAgentManager(false)}  showDegraded />
+            <SlotBridge name="app.agent-manager" fallback={AgentManager} onClose={() => setShowAgentManager(false)}  />
           </div>
         </div>
       )}
@@ -3185,7 +3185,7 @@ onClose={() => setCitationViewer(null)}
           cancelLabel={confirmDialog.cancelLabel}
           onConfirm={confirmDialog.onConfirm}
           onCancel={confirmDialog.onCancel}
-         showDegraded />
+         />
       )}
 
       {/* Safe project removal dialog — 3 options, click outside = cancel */}
@@ -3237,7 +3237,7 @@ onClose={() => setCitationViewer(null)}
       })()}
 
       {showCloseConfirm && (
-        <SlotBridge name="app.close-confirm-dialog" fallback={CloseConfirmDialog} onChoose={handleCloseChoice}  showDegraded />
+        <SlotBridge name="app.close-confirm-dialog" fallback={CloseConfirmDialog} onChoose={handleCloseChoice}  />
       )}
 
       {/* P1-8: Needs You — Agent proactively asks user a precise question */}
@@ -3265,7 +3265,6 @@ onClose={() => setCitationViewer(null)}
             before={pendingWriteConfirm.existingContent}
             after={pendingWriteConfirm.newContent}
             sequenceInfo={writeConfirmStat.count > 1 ? `文件 ${writeConfirmStat.count}` : undefined}
-            showDegraded
             onAccept={() => {
               pendingWriteConfirm.resolve({ action: "accept" });
               clearPendingWriteConfirm();
