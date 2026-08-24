@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿import { useEffect, useState, useRef, useCallback } from "react";
+﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿import { useEffect, useState, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 
 // D1-4: 全局错误边界 — 捕获未处理的同步错误和 Promise rejection
@@ -904,10 +904,12 @@ const mimoSessionRef = useRef<string | null>(null);
   /** Tracks which session is currently streaming — for parallel message isolation */
   const streamingSessionIdRef = useRef<string | null>(null);
   
-  // Streaming buffer - batch text updates to reduce re-renders
-  // Keyed by sessionId for parallel isolation — each session has its own buffer
-  const streamBufferRef = useRef<Map<string, { id: string; text: string; timer: ReturnType<typeof setTimeout> | null }>>(new Map());
-  const generatedFilesRef = useRef<Set<string>>(new Set());
+// Streaming buffer - batch text updates to reduce re-renders
+// Keyed by sessionId for parallel isolation — each session has its own buffer
+const streamBufferRef = useRef<Map<string, { id: string; text: string; timer: ReturnType<typeof setTimeout> | null }>>(new Map());
+// Reasoning buffer — same pattern as text buffer, batch reasoning updates to 100ms
+const reasoningBufferRef = useRef<Map<string, { id: string; text: string; timer: ReturnType<typeof setTimeout> | null }>>(new Map());
+const generatedFilesRef = useRef<Set<string>>(new Set());
   const flushStreamBuffer = useCallback((sessionId?: string) => {
     const buffers = streamBufferRef.current;
     // If sessionId given, flush only that session's buffer; otherwise flush all
@@ -925,6 +927,23 @@ const mimoSessionRef = useRef<string | null>(null);
       buffer.timer = null;
     }
   }, [appendToMessage]);
+
+  // Flush reasoning buffer — batch reasoning_delta updates to reduce re-renders
+  const flushReasoningBuffer = useCallback((sessionId?: string) => {
+    const buffers = reasoningBufferRef.current;
+    const toFlush = sessionId ? [buffers.get(sessionId)].filter(Boolean) : Array.from(buffers.values());
+    for (const buffer of toFlush) {
+      if (!buffer) continue;
+      if (buffer.id && buffer.text) {
+        const viewing = useProjectStore.getState().currentSession?.id;
+        if (viewing === sessionId) {
+          useAppStore.getState().updateMessage(buffer.id, { reasoning: buffer.text } as any);
+        }
+        buffer.text = "";
+      }
+      buffer.timer = null;
+    }
+  }, []);
 
   // Flush all buffers on unmount
   useEffect(() => {
@@ -1951,15 +1970,19 @@ const safeUpdateMessage = (id: string, update: any) => {
                 timestamp: Date.now(),
                 status: "streaming",
               });
-              // Don't saveMessages for streaming-only updates — reasoning content
-              // is display-only and not sent back to the LLM (messagesToLLMMessages
-              // strips reasoning). The message will be persisted when text_delta or
-              // tool_start arrives with actual content.
             }
-            // Update message with reasoning content
-            safeUpdateMessage(assistantMsgId, {
-              reasoning: reasoningContent
-            } as any);
+            // Batch reasoning updates to 100ms — same pattern as text_delta buffer.
+            // Without this, every reasoning token triggers a store update and
+            // full message list re-render, causing UI freeze on long responses.
+            {
+              let rbuf = reasoningBufferRef.current.get(session.id);
+              if (!rbuf) { rbuf = { id: "", text: "", timer: null }; reasoningBufferRef.current.set(session.id, rbuf); }
+              rbuf.id = assistantMsgId;
+              rbuf.text = reasoningContent; // full reasoning content (replace, not append)
+              if (!rbuf.timer) {
+                rbuf.timer = setTimeout(() => flushReasoningBuffer(session.id), 100);
+              }
+            }
             break;
 
           case "start": {
@@ -1976,6 +1999,7 @@ const safeUpdateMessage = (id: string, update: any) => {
             if (iter > 1) {
 // Finalize previous, create new message — same for both modes
 flushStreamBuffer(session.id);
+flushReasoningBuffer(session.id);
               if (useAppStore.getState().messages.find((m) => m.id === assistantMsgId)) {
                 safeUpdateMessage(assistantMsgId, {
                   status: "done",
@@ -2042,6 +2066,7 @@ flushStreamBuffer(session.id);
 
           case "tool_start": {
             flushStreamBuffer(session.id);
+            flushReasoningBuffer(session.id);
             // Bridge to pet system
             usePetStore.getState().onStreamEvent(event);
             const tc = "toolCall" in event ? event.toolCall : null;
@@ -2278,6 +2303,7 @@ saveMessages(session.id);
     } finally {
 // Flush any remaining buffered text for this session
 flushStreamBuffer(session.id);
+flushReasoningBuffer(session.id);
       // Clear step progress after a short delay so user sees the final state
       setTimeout(() => useAppStore.getState().setStepProgress(null), 2000);
       // Clear guidance messages when the run ends

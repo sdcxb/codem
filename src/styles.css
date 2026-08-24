@@ -1906,6 +1906,7 @@ flex-shrink: 0;
   background: var(--accent);
   color: white;
   font-size: 14px;
+  line-height: 1;
   cursor: pointer;
   display: flex;
   align-items: center;

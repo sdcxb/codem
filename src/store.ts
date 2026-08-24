@@ -182,14 +182,29 @@ export const useAppStore = create<AppState>((set, get) => ({
     });
   },
 
-  updateMessage: (id, update) => set((s) => ({ messages: s.messages.map((m) => m.id === id ? { ...m, ...update } : m) })),
+  updateMessage: (id, update) => set((s) => {
+    // Only create a new object for the updated message; keep all other
+    // message references identical so React.memo on MessageBubble can skip
+    // re-rendering unchanged rows. This is critical for streaming performance
+    // — without it, every text_delta/reasoning_delta token causes ALL
+    // MessageBubbles to re-render (O(n) per token).
+    let found = false;
+    const messages = s.messages.map((m) => {
+      if (m.id === id) { found = true; return { ...m, ...update }; }
+      return m;
+    });
+    if (!found) return s;
+    return { messages };
+  }),
 
   appendToMessage: (id, content) => set((s) => {
-    const msg = s.messages.find((m) => m.id === id);
-    if (!msg) return s;
-    return {
-      messages: s.messages.map((m) => m.id === id && content ? { ...m, content: m.content + content } : m),
-    };
+    let found = false;
+    const messages = s.messages.map((m) => {
+      if (m.id === id && content) { found = true; return { ...m, content: m.content + content }; }
+      return m;
+    });
+    if (!found) return s;
+    return { messages };
   }),
 
   addToolCall: (messageId, toolCall) => set((s) => {
