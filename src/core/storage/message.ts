@@ -143,13 +143,20 @@ export function listMessages(sessionId: string, limit?: number): Message[] {
 /**
  * List all attachments across all sessions (for cross-session reuse).
  * Returns attachments with their owning session_id and message_id.
+ *
+ * P0-FIX: Excludes the `content` column from the listing query. Previously
+ * this SELECT loaded every attachment's FULL TEXT CONTENT into memory —
+ * for a 2000-page document that's tens of MB per row. Now only metadata is
+ * loaded; content is fetched on demand via {@link getAttachmentContent}.
+ * Also adds a default LIMIT of 200 to prevent unbounded result sets.
  */
 export function listAllAttachments(limit?: number): Array<MessageAttachment & { sessionId: string; messageId: string }> {
   const db = getDatabase();
-  const limitClause = limit ? `LIMIT ${limit}` : "";
+  const effectiveLimit = limit ?? 200;
+  const limitClause = `LIMIT ${effectiveLimit}`;
   try {
     const result = db.exec(
-      `SELECT id, session_id, message_id, name, type, path, content, preview, sandbox_path, mime_type, size FROM attachments ORDER BY added_at DESC ${limitClause}`
+      `SELECT id, session_id, message_id, name, type, path, preview, sandbox_path, mime_type, size FROM attachments ORDER BY added_at DESC ${limitClause}`
     );
     if (result.length === 0) return [];
     return result[0].values.map((row: any[]) => ({
@@ -159,15 +166,36 @@ export function listAllAttachments(limit?: number): Array<MessageAttachment & { 
       name: row[3] as string,
       type: row[4] as "file" | "image" | "code" | "url",
       path: row[5] as string | undefined,
-      content: row[6] as string | undefined,
-      preview: row[7] as string | undefined,
-      sandboxPath: row[8] as string | undefined,
-      mimeType: row[9] as string | undefined,
-      size: row[10] as number | undefined,
+      content: undefined, // Lazy-loaded via getAttachmentContent
+      preview: row[6] as string | undefined,
+      sandboxPath: row[7] as string | undefined,
+      mimeType: row[8] as string | undefined,
+      size: row[9] as number | undefined,
     }));
   } catch (e) {
     console.warn("[listAllAttachments] Failed:", e);
     return [];
+  }
+}
+
+/**
+ * P0-FIX: Lazy-load a single attachment's content by ID. This prevents the
+ * listing query from pulling every attachment's full text into memory —
+ * only the specific attachment the LLM requested is loaded.
+ */
+export function getAttachmentContent(id: string): string | undefined {
+  const db = getDatabase();
+  try {
+    const result = db.exec(
+      `SELECT content FROM attachments WHERE id = ?`,
+      [id]
+    );
+    if (result.length === 0 || result[0].values.length === 0) return undefined;
+    const content = result[0].values[0][0];
+    return content ? (content as string) : undefined;
+  } catch (e) {
+    console.warn("[getAttachmentContent] Failed:", e);
+    return undefined;
   }
 }
 

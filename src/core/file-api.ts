@@ -25,6 +25,35 @@ export async function readFile(path: string): Promise<string> {
   return tauriInvoke("read_file", { path });
 }
 
+/** Result of a paginated file read via read_file_lines. */
+export interface ReadFileLinesResult {
+  /** The numbered text (lines with "N: " prefix, joined by \n). */
+  text: string;
+  /** Total number of lines in the file. */
+  totalLines: number;
+  /** Whether there are more lines after the returned range. */
+  hasMore: boolean;
+}
+
+/**
+ * Read a file with line-level pagination (calls Rust `read_file_lines`).
+ * Only the requested [offset, offset+limit) lines are loaded into memory.
+ * Use this for any large file — the full file is never transferred through IPC.
+ *
+ * @param path     File path to read.
+ * @param offset   1-indexed line number to start from (default: 1).
+ * @param limit    Maximum lines to read (default: 2000).
+ * @param maxChars Hard cap on output length in chars (default: 100000).
+ */
+export async function readFileLines(
+  path: string,
+  offset?: number,
+  limit?: number,
+  maxChars?: number,
+): Promise<ReadFileLinesResult> {
+  return tauriInvoke("read_file_lines", { path, offset, limit, maxChars });
+}
+
 export async function writeFile(path: string, content: string, options?: { encoding?: string; workspace?: string }): Promise<void> {
   // S5: Frontend sandbox check — reject writes outside workspace before hitting Rust backend
   if (options?.workspace) {

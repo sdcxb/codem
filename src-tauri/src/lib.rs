@@ -344,22 +344,154 @@ async fn set_default_agent(
     Ok(())
 }
 
+/// Maximum bytes that `read_file` (full-file mode) will return in one shot.
+/// Files larger than this cause `read_file` to return an error directing the
+/// caller to use `read_file_lines` with offset/limit instead. This is NOT a
+/// hard limit on what files the user can work with — it only prevents
+/// accidentally pulling a 200 MB string through IPC into the JS heap when
+/// the caller didn't specify pagination. `read_file_lines` has no such limit.
+///
+/// 50 MB — generous enough for any source file the LLM might read whole,
+/// while keeping IPC + JS string handling under ~500 ms.
+const READ_FILE_FULL_MAX_BYTES: u64 = 50 * 1024 * 1024;
+
+/// Result of a paginated file read. The total_lines field lets the frontend
+/// show "line X of Y" without a second round-trip.
+#[derive(serde::Serialize)]
+struct ReadFileLinesResult {
+    /// The numbered text (lines with "N: " prefix, joined by \n).
+    text: String,
+    /// Total number of lines in the file.
+    total_lines: usize,
+    /// Whether there are more lines after the returned range.
+    has_more: bool,
+}
+
+/// Read a file with line-level pagination. Only the requested [offset, offset+limit)
+/// lines are read into memory and returned — the full file is never loaded into
+/// the JS heap. This is the backend for the `read` tool when offset/limit are
+/// specified, and the recommended path for any large file.
+///
+/// Design rationale (对标 DSH TextRetainer): DSH's OutputCollector and
+/// TextRetainer only materialise the bytes they need — head, tail, or a
+/// window — rather than reading the entire stream. This command applies the
+/// same principle to file I/O: BufReader iterates lines lazily, skipping
+/// `offset` lines and collecting only `limit` more. Memory is O(limit), not
+/// O(file_size).
+#[tauri::command]
+async fn read_file_lines(
+    path: String,
+    offset: Option<usize>,
+    limit: Option<usize>,
+    max_chars: Option<usize>,
+) -> Result<ReadFileLinesResult, String> {
+    let offset = offset.unwrap_or(1).max(1);
+    let limit = limit.unwrap_or(2000);
+    let max_chars = max_chars.unwrap_or(100_000);
+
+    let path_cloned = path.clone();
+    let result = tokio::task::spawn_blocking(move || -> Result<(String, usize, bool), String> {
+        use std::io::{BufRead, BufReader};
+        use std::fs::File;
+
+        let file = File::open(&path_cloned).map_err(|e| e.to_string())?;
+        let reader = BufReader::new(file);
+
+        let mut parts: Vec<String> = Vec::new();
+        let mut total_lines = 0usize;
+        let mut total_chars = 0usize;
+        let mut has_more = false;
+        let mut collected = 0usize;
+
+        for (idx, line_result) in reader.lines().enumerate() {
+            let line_idx = idx + 1; // 1-indexed
+            total_lines = line_idx;
+
+            if line_idx < offset {
+                continue; // skip lines before the requested offset
+            }
+
+            if collected >= limit {
+                has_more = true;
+                // Continue counting lines for total_lines — but stop early
+                // if we've already confirmed has_more and don't need exact total.
+                // For correctness we keep counting (the file is being read anyway).
+                continue;
+            }
+
+            let line = line_result.map_err(|e| e.to_string())?;
+            let numbered = format!("{}: {}", line_idx, line);
+
+            if total_chars + numbered.len() > max_chars {
+                has_more = true;
+                break;
+            }
+
+            total_chars += numbered.len() + 1; // +1 for \n
+            parts.push(numbered);
+            collected += 1;
+        }
+
+        let text = parts.join("\n");
+        Ok((text, total_lines, has_more))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())?;
+
+    let (text, total_lines, has_more) = result;
+
+    Ok(ReadFileLinesResult {
+        text,
+        total_lines,
+        has_more,
+    })
+}
+
 #[tauri::command]
 async fn read_file(path: String, encoding: Option<String>) -> Result<String, String> {
     match encoding.as_deref() {
         Some("base64") => {
             // Read binary file and encode as base64
             use base64::Engine;
-            let bytes = std::fs::read(&path).map_err(|e| e.to_string())?;
+            let bytes = tokio::task::spawn_blocking(move || std::fs::read(&path))
+                .await
+                .map_err(|e| e.to_string())?
+                .map_err(|e| e.to_string())?;
             Ok(base64::engine::general_purpose::STANDARD.encode(&bytes))
         }
         _ => {
             // Read as UTF-8 text, strip BOM if present
-            let mut content = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
-            // Strip UTF-8 BOM (EF BB BF) — some Windows tools (Notepad, VS Code) add it
-            if content.starts_with('\u{FEFF}') {
-                content = content.trim_start_matches('\u{FEFF}').to_string();
+            let p = std::path::Path::new(&path);
+
+            // Size guard for full-file reads. Large files should use
+            // read_file_lines (paginated) instead. This is not a user-facing
+            // restriction — the frontend `read` tool automatically routes
+            // to read_file_lines when offset/limit are specified.
+            let metadata = tokio::fs::metadata(&p).await.map_err(|e| e.to_string())?;
+            if metadata.len() > READ_FILE_FULL_MAX_BYTES {
+                return Err(format!(
+                    "File is large ({} bytes). Use read tool with offset/limit parameters for paginated reading, or use grep_search to find specific content.",
+                    metadata.len()
+                ));
             }
+
+            // Use spawn_blocking so the synchronous read_to_string does not
+            // stall the Tauri async runtime's worker thread.
+            let path_for_blocking = path.clone();
+            let content = tokio::task::spawn_blocking(move || {
+                std::fs::read_to_string(&path_for_blocking)
+            })
+            .await
+            .map_err(|e| e.to_string())?
+            .map_err(|e| e.to_string())?;
+
+            // Strip UTF-8 BOM (EF BB BF) — some Windows tools (Notepad, VS Code) add it
+            let content = if content.starts_with('\u{FEFF}') {
+                content.trim_start_matches('\u{FEFF}').to_string()
+            } else {
+                content
+            };
             Ok(content)
         }
     }
@@ -1716,6 +1848,7 @@ let app = tauri::Builder::default()
             get_default_agent,
             set_default_agent,
             read_file,
+            read_file_lines,
             write_file,
             append_file,
             list_directory,

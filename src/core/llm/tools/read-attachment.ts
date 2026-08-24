@@ -18,6 +18,7 @@ import type { Attachment } from "../../types";
 import { useAppStore } from "../../../store";
 import { useProjectStore } from "../../store";
 import * as MessageStorage from "../../storage/message";
+import { getAttachmentContent } from "../../storage/message";
 
 /** 默认每次读取的最大字符数 */
 const MAX_CHARS_PER_READ = 8000;
@@ -201,22 +202,44 @@ export function createReadAttachmentTool(): ToolDef {
         };
       }
 
-      // If attachment has a file path but no content, try to read it from disk
-      // Priority: 1) sandbox path (workspace-relative) 2) absolute path
+      // If attachment has no content in memory (common after P0-FIX: listing
+      // query no longer loads content), lazy-load it from the DB.
+      // P0-FIX: This replaces the old pattern where listAllAttachments()
+      // loaded every attachment's full text content into memory at once.
+      if (!target.content && target.type !== "url" && target.type !== "image") {
+        // 1. Try lazy-loading from DB by attachment ID
+        const dbContent = getAttachmentContent(target.id);
+        if (dbContent) {
+          target.content = dbContent;
+        }
+      }
+
+      // If still no content, try to read it from disk using paginated API
+      // P0-FIX: Use readFileLines instead of readFile to avoid loading the
+      // entire file into memory. For large files (hundreds of MB), readFile
+      // would freeze the JS event loop. readFileLines only returns the
+      // requested line range from Rust's BufReader.
       if (!target.content && target.type !== "url" && target.type !== "image") {
         try {
-          const { readFile } = await import("../../file-api");
-          const { getDefaultCwd } = await import("../../file-api");
+          const { readFileLines, getDefaultCwd } = await import("../../file-api");
 
+          let diskPath: string | undefined;
           // 1. Try sandbox path (workspace-relative)
           if (target.sandboxPath) {
             const cwd = await getDefaultCwd();
-            const fullPath = `${cwd}/${target.sandboxPath}`.replace(/\\/g, "/");
-            target.content = await readFile(fullPath);
+            diskPath = `${cwd}/${target.sandboxPath}`.replace(/\\/g, "/");
           }
           // 2. Try absolute path
           else if (target.path) {
-            target.content = await readFile(target.path);
+            diskPath = target.path;
+          }
+
+          if (diskPath) {
+            // Convert character offset to approximate line offset (1 line ≈ 80 chars)
+            const lineOffset = Math.max(1, Math.floor(offset / 80));
+            const lineLimit = Math.max(1, Math.ceil(limit / 80));
+            const result = await readFileLines(diskPath, lineOffset, lineLimit, limit);
+            target.content = result.text;
           }
         } catch (err: any) {
           return {
