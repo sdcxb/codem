@@ -63,21 +63,39 @@ const BUILTIN_PROFILES: ModelProfile[] = [
   {
     id: "default",
     name: "默认（统一模型）",
-    description: "所有任务使用同一个模型，与当前行为一致",
+    description: "所有任务使用同一个模型，视觉理解用 DeepSeek 多模态模型",
     enabled: true,
     isBuiltIn: true,
-    slots: {}, // No slots configured → all fall back to engine default
+    slots: {
+      vision: { provider: "deepseek", model: "DeepSeek-V4-Flash-Vision-Exp" },
+    },
+  },
+  {
+    id: "standard",
+    name: "常规模式",
+    description: "主对话用 DeepSeek Pro，子任务用 Flash 降本，含视觉代理",
+    enabled: false,
+    isBuiltIn: true,
+    slots: {
+      chat:       { provider: "deepseek", model: "deepseek-v4-pro" },
+      subagent:   { provider: "deepseek", model: "deepseek-v4-flash", reasoningEffort: "low" },
+      memory:     { provider: "deepseek", model: "deepseek-v4-flash", reasoningEffort: "low" },
+      compaction: { provider: "deepseek", model: "deepseek-v4-pro" },
+      vision:     { provider: "deepseek", model: "DeepSeek-V4-Flash-Vision-Exp" },
+    },
   },
   {
     id: "economy",
     name: "经济模式",
-    description: "主对话用标准模型，子任务用 mini/flash 降本",
+    description: "全部使用 Flash 模型，最大程度降本",
     enabled: false,
     isBuiltIn: true,
     slots: {
-      subagent:   { provider: "openai",   model: "gpt-4o-mini",   reasoningEffort: "low" },
-      memory:     { provider: "openai",   model: "gpt-4o-mini",   reasoningEffort: "low" },
-      compaction: { provider: "mimo",     model: "mimo-v2-flash", reasoningEffort: "low" },
+      chat:       { provider: "deepseek", model: "deepseek-v4-flash" },
+      subagent:   { provider: "deepseek", model: "deepseek-v4-flash", reasoningEffort: "low" },
+      memory:     { provider: "deepseek", model: "deepseek-v4-flash", reasoningEffort: "low" },
+      compaction: { provider: "deepseek", model: "deepseek-v4-pro" },
+      vision:     { provider: "deepseek", model: "DeepSeek-V4-Flash-Vision-Exp" },
     },
   },
   {
@@ -90,17 +108,6 @@ const BUILTIN_PROFILES: ModelProfile[] = [
       chat:     { provider: "anthropic", model: "claude-opus-4-20250514",  reasoningEffort: "high" },
       subagent: { provider: "openai",    model: "gpt-4o",                   reasoningEffort: "medium" },
       memory:   { provider: "openai",    model: "gpt-4o",                   reasoningEffort: "medium" },
-    },
-  },
-  {
-    id: "deepseek-vision-proxy",
-    name: "DeepSeek + 视觉代理",
-    description: "主对话用 DeepSeek，图片理解用 GPT-4o 代理描述",
-    enabled: false,
-    isBuiltIn: true,
-    slots: {
-      chat:   { provider: "deepseek", model: "deepseek-v4-flash", reasoningEffort: "medium" },
-      vision: { provider: "openai",   model: "gpt-4o-mini",       reasoningEffort: "low" },
     },
   },
 ];

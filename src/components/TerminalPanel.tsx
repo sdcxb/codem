@@ -39,7 +39,7 @@ export function TerminalPanel({ cwd }: TerminalPanelProps) {
     if (sessionsRef.current.length >= MAX_SESSIONS) return;
     if (!containerRef.current) return;
 
-    const { listen } = (window as any).__TAURI__.core;
+    const { listen } = (window as any).__TAURI__?.event || {};
 
     const term = new Terminal({
       theme: {

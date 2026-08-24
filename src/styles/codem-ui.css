@@ -1179,14 +1179,20 @@
 
 /* ========== 8. Decision Tray ========== */
 .decision-tray {
-  margin: 8px 0;
+  position: fixed;
+  bottom: 80px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(680px, calc(100vw - 32px));
+  z-index: 9000;
   border: 1px solid var(--glass-border);
   border-radius: var(--radius-md);
   overflow: hidden;
   background: var(--glass-bg);
   backdrop-filter: blur(var(--glass-blur));
   -webkit-backdrop-filter: blur(var(--glass-blur));
-  box-shadow: var(--elevation-2);
+  box-shadow: var(--elevation-3);
+  animation: slideUp 0.2s ease;
 }
 .decision-tray-header {
   display: flex;

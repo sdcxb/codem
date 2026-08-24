@@ -49,14 +49,32 @@ export const API_MODELS: Record<string, ModelOption[]> = {
 
 /** 从 codem-settings 读取已配置 API Key 的 provider 列表，生成可选模型列表。
  * 聊天头部用模型 ID 显示（如 deepseek-v4-pro），不用设置页的 provider-name 格式。
+ *
+ * 模型列表优先从 codem-dynamic-models 存储读取（设置页面刷新时写入），
+ * 回退到 API_MODELS 静态列表。
  */
 export function getConfiguredApiModels(): ModelOption[] {
   try {
     const settings = getSettingJSON<any>("codem-settings", {});
     const providers = settings.providers || [];
+
+    // 读取设置页面从 API 服务器获取并持久化的动态模型列表
+    type DynamicModelMap = { [providerId: string]: Array<{ id: string; name: string }> };
+    const dynamicModels = getSettingJSON<DynamicModelMap>("codem-dynamic-models", {});
+
     const result: ModelOption[] = [];
     for (const p of providers) {
-      if (p.apiKey && p.id !== "mimo" && API_MODELS[p.id]) {
+      if (!p.apiKey || p.id === "mimo") continue;
+
+      // 优先使用动态模型列表（从 API 服务器获取并存储的）
+      const dynModels = dynamicModels[p.id];
+      if (dynModels && dynModels.length > 0) {
+        for (const m of dynModels) {
+          result.push({ id: m.id, name: m.name });
+        }
+      }
+      // 回退到静态列表
+      else if (API_MODELS[p.id]) {
         for (const m of API_MODELS[p.id]) {
           result.push({ id: m.id, name: m.name });
         }

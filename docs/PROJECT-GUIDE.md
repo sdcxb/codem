@@ -1,9 +1,9 @@
 # Codem 项目完整说明
 
 > **用途**：新对话快速理解项目全貌、架构、文件关联、当前状态。
-> 创建时间：2026-07-23 | 最后更新：2026-08-23 | 当前版本：v1.5.1（DSH 架构对标深度整改 + YAML 声明式插件加载 + 严重 Bug 修复）
+> 创建时间：2026-07-23 | 最后更新：2026-08-24 | 当前版本：v1.5.2（大文件性能修复 + Agent Loop 无上限改造 + 模型系统动态化 + Skills 增量搜索）
 >
-> **版本历程概览**：v0.70 基础存储 → v0.80 轮次架构 → v0.87 Worktree/并行 → v0.88 桌面宠物 → v0.89 跨会话委派 → v0.90 P0-P4 全量功能 → v0.91 Coding 工作台 → v0.92 Codex 对标 → v0.93 Vision Proxy → v0.94 配置修复 → v0.95 CLI/API 视觉代理 → v0.96 UI 大改版 → v0.97 Agentic Loop 性能优化 → v0.98 多智能体协同 → v0.99 DSH 全量升级 → v1.0.0 插件系统架构 + UI/UX 标准化 → v1.1.0 DSH 对标整改 + 测试深化 → v1.1.1 UI 布局优化 + 插件条件渲染 + Bug 修复 → v1.2.0 Cordis 架构对齐 DSH + 安全加固 + 全量测试重构 → v1.3.0 Cordis 插件系统对标 DSH 全面整改 + Slot 消费闭环 + inject 依赖对齐 → v1.4.0 UI/UX 体验优化 11 项 Bug 修复 + 性能/CI-CD 面板切换化 + 梦幻皮肤一致性修复 → v1.4.1 插件管理初始化修复 + 技能市场性能优化 + 对话区域自适应 9 项 Bug 修复 → v1.4.2 10 项 Bug 修复 + Cordis 插件时序改进 + SlotBridge 降级机制增强 + 头像系统升级 → v1.5.0 Cordis "一切插件化" 工具发现机制 — ToolDef guidance + toolsProvider 自动注册 systemPrompt section + buildSystemPrompt 动态收集 + 31 个工具补充 guidance + skill-creator 技能安装增强 → v1.5.1 DSH 架构对标深度整改 + YAML 声明式插件加载 + LLM 回答重复根因修复 + llmEngine/mimoAuth 注册修复 + SlotBridge/SlotRenderer 对标 DSH 重写
+> **版本历程概览**：v0.70 基础存储 → v0.80 轮次架构 → v0.87 Worktree/并行 → v0.88 桌面宠物 → v0.89 跨会话委派 → v0.90 P0-P4 全量功能 → v0.91 Coding 工作台 → v0.92 Codex 对标 → v0.93 Vision Proxy → v0.94 配置修复 → v0.95 CLI/API 视觉代理 → v0.96 UI 大改版 → v0.97 Agentic Loop 性能优化 → v0.98 多智能体协同 → v0.99 DSH 全量升级 → v1.0.0 插件系统架构 + UI/UX 标准化 → v1.1.0 DSH 对标整改 + 测试深化 → v1.1.1 UI 布局优化 + 插件条件渲染 + Bug 修复 → v1.2.0 Cordis 架构对齐 DSH + 安全加固 + 全量测试重构 → v1.3.0 Cordis 插件系统对标 DSH 全面整改 + Slot 消费闭环 + inject 依赖对齐 → v1.4.0 UI/UX 体验优化 11 项 Bug 修复 + 性能/CI-CD 面板切换化 + 梦幻皮肤一致性修复 → v1.4.1 插件管理初始化修复 + 技能市场性能优化 + 对话区域自适应 9 项 Bug 修复 → v1.4.2 10 项 Bug 修复 + Cordis 插件时序改进 + SlotBridge 降级机制增强 + 头像系统升级 → v1.5.0 Cordis "一切插件化" 工具发现机制 — ToolDef guidance + toolsProvider 自动注册 systemPrompt section + buildSystemPrompt 动态收集 + 31 个工具补充 guidance + skill-creator 技能安装增强 → v1.5.1 DSH 架构对标深度整改 + YAML 声明式插件加载 + LLM 回答重复根因修复 + llmEngine/mimoAuth 注册修复 + SlotBridge/SlotRenderer 对标 DSH 重写 → v1.5.2 大文件流式分页读取 + Agent Loop 无上限改造（对标 DSH） + 模型系统动态化 + Skills 市场增量搜索
 
 ---
 
@@ -15,7 +15,7 @@
 - **GitHub**：https://github.com/sdcxb/codem
 - **分发**：NSIS `.exe` + WiX `.msi`，一键安装无需依赖
 - **平台**：Windows 优先
-- **版本**：v1.5.1（DSH 架构对标深度整改 + YAML 声明式插件加载 + 严重 Bug 修复，2026-08-23）
+- **版本**：v1.5.2（大文件性能修复 + Agent Loop 无上限改造 + 模型系统动态化 + Skills 增量搜索，2026-08-24）
 
 ---
 
@@ -997,6 +997,7 @@ Rust 后端 (lib.rs):
 | v1.4.2 | 2026-08-20 | **10 项 Bug 修复 + 3 项架构增强** — ①默认模型显示彻底修复 ②右侧边栏 CI/CD 面板遮挡彻底修复 ③底部栏多余模型选择器删除 ④输入框聚焦紫色边框→透明 ⑤技能市场缓存机制 ⑥Git 分支按钮居中 + 刷新逻辑修复 ⑦右侧边栏白色背景修复 ⑧顶部栏空白区域消除 ⑨CicdPanel 白色背景修复 ⑩顶部栏右侧按钮居中副作用修复。架构增强：Cordis 插件系统时序改进三步方案 + SlotBridge 降级机制增强 + 头像系统升级 |
 | v1.5.0 | 2026-08-21 | **Cordis "一切插件化" 工具发现机制** — `ToolDef` 新增 `guidance` 字段 + `toolsProvider` 自动注册 systemPrompt section + `buildSystemPrompt` 动态收集 + 全部 31 个工具补充 guidance + `skill-creator` 技能安装增强。31 文件修改，全量测试通过 |
 | v1.5.1 | 2026-08-23 | **DSH 架构对标深度整改 + YAML 声明式插件加载 + 严重 Bug 修复** — ①YAML 声明式插件加载器（对标 DSH `cordis.patch.yml`，`config/codem.base.yml` + `codem.desktop.yml` 分层 bundle，80+ 插件声明式加载 + 拓扑排序 + `assertActivated` fail-loud 验证）②修复 LLM 回答重复问题（`saveMessages` 全量追加事件日志导致重复 → 移除事件投影路径强制只从 DB 读取 + 事件投影去重）③修复 llmEngine 未注册为 Cordis 服务 ④修复 mimoAuth 未注册 + PluginLoader.load() 未调用 ⑤SlotBridge/SlotRenderer 对标 DSH 重写（SlotErrorBoundary + fiber await 超时保护）⑥30+ Provider 文件统一改造（import + re-export + inject 声明对齐）⑦新增 `mimo-auth-provider.ts` + `buffer-polyfill.ts` + 3 个测试文件。118 文件修改（+2359/-1583 行） |
+| v1.5.2 | 2026-08-24 | **大文件性能修复 + Agent Loop 无上限改造 + 模型系统动态化 + Skills 增量搜索** — ①Rust 新增 `read_file_lines` 分页读取（对标 DSH TextRetainer，O(limit) 内存）②Agent Loop 移除 `maxIterations` 硬上限，改为 `while(true)` + 三重安全阀（无进展检测 10 次 + Token 上限 2M + 子智能体有限迭代）③修复 `spawnForked` 深拷贝丢失 `tool_calls`/`toolCallId` 导致 API 400 ④模型选择器动态化（`codem-dynamic-models` 存储）⑤Skills 市场增量搜索（本地缓存 TTL 30min + 自动联网搜索）⑥终端切换崩溃修复⑦权限弹窗 fixed 定位⑧技能市场 tags 防御。11 文件修改（+558/-90 行），113 套件 3947 测试通过 |
 
 ### 6.2 v0.90.0 已发布功能（P0-P4 全量功能，commit 7435919，2026-07-31）
 

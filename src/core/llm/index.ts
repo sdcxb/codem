@@ -351,7 +351,7 @@ private loopPool: Map<string, AgenticLoop> = new Map();
       provider,
       this.tools,
       {
-        maxIterations: this.config.maxToolCalls || 50,
+        maxIterations: 0, // 0 = no cap (DSH-aligned); safety valves handle runaway
         temperature: agent?.temperature ?? resolved.temperature ?? this.config.temperature,
         maxOutputTokens: agent?.maxTokens || resolved.maxTokens || this.config.maxTokens || 4096,
         model,
@@ -1305,14 +1305,40 @@ return loop.hasPendingGuidance();
 
     // Limit number of messages to control cost
     const maxMsgs = options?.maxMessages ?? 50;
-    const recentMessages = llmMessages.slice(-maxMsgs);
+    let recentMessages = llmMessages.slice(-maxMsgs);
 
-    // Deep copy each message to prevent any mutation of cached objects
-    const forkedMessages = recentMessages.map((m: any) => ({
-      id: `${m.id}-fork`,
-      role: m.role,
-      content: typeof m.content === "string" ? m.content : JSON.parse(JSON.stringify(m.content)),
-    }));
+    // Fix: If the slice cut an assistant+tool_calls pair, the leading tool
+    // messages are now orphans (no preceding assistant with matching tool_calls).
+    // Remove them to avoid API 400 "missing field tool_call_id".
+    {
+      const knownToolCallIds = new Set<string>();
+      for (const m of recentMessages) {
+        if (m.role === "assistant" && m.tool_calls) {
+          for (const tc of m.tool_calls) knownToolCallIds.add(tc.id);
+        }
+      }
+      recentMessages = recentMessages.filter((m: any) => {
+        if (m.role === "tool") {
+          return m.toolCallId && knownToolCallIds.has(m.toolCallId);
+        }
+        return true;
+      });
+    }
+
+    // Deep copy each message to prevent any mutation of cached objects.
+    // Must preserve tool_calls (on assistant) and toolCallId (on tool role)
+    // to avoid API 400 errors about missing tool_call_id.
+    const forkedMessages = recentMessages.map((m: any) => {
+      const copy: any = {
+        id: `${m.id}-fork`,
+        role: m.role,
+        content: typeof m.content === "string" ? m.content : JSON.parse(JSON.stringify(m.content)),
+      };
+      if (m.tool_calls) copy.tool_calls = JSON.parse(JSON.stringify(m.tool_calls));
+      if (m.toolCallId) copy.toolCallId = m.toolCallId;
+      if (m.name) copy.name = m.name;
+      return copy;
+    });
 
     // Append the new user message at the end
     forkedMessages.push({

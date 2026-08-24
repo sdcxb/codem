@@ -378,7 +378,7 @@ async function fetchGitHubSearchSkills(source: MarketSource): Promise<MarketSkil
         description: description || "无描述",
         author,
         version,
-        tags: tags || repo.topics,
+        tags: Array.isArray(tags) ? tags : (Array.isArray(repo.topics) ? repo.topics : []),
         sourceId: source.id,
         sourceName: source.name,
         downloadUrl: `https://api.github.com/repos/${repo.full_name}/zipball/${repo.default_branch || "main"}`,
@@ -483,7 +483,7 @@ async function fetchClawHubSkills(source: MarketSource): Promise<MarketSkill[]> 
           description: item.description || "无描述",
           author,
           version: item.version,
-          tags: item.tags,
+          tags: Array.isArray(item.tags) ? item.tags : [],
           sourceId: source.id,
           sourceName: source.name,
           downloadUrl: item.installUrl || item.downloadUrl || `${baseUrl}/${author}/skills/${slug}`,
@@ -584,7 +584,7 @@ async function fetchSkillsShViaAPI(source: MarketSource, baseUrl: string): Promi
           description: item.description || "无描述",
           author: item.source || "",
           version: item.version,
-          tags: item.tags,
+          tags: Array.isArray(item.tags) ? item.tags : [],
           sourceId: source.id,
           sourceName: source.name,
           downloadUrl: item.installUrl || "",
@@ -805,7 +805,7 @@ async function fetchSkillHubAPISkills(source: MarketSource): Promise<MarketSkill
           description: item.description || item.summary || "无描述",
           author,
           version: item.version,
-          tags: item.tags || item.categories,
+          tags: Array.isArray(item.tags) ? item.tags : (Array.isArray(item.categories) ? item.categories : []),
           sourceId: source.id,
           sourceName: source.name,
           downloadUrl,
@@ -1466,6 +1466,190 @@ async function installSkillFromZipFiltered(
 export function isMarketSkillInstalled(skill: MarketSkill): boolean {
   const registry = getSkillRegistry();
   return registry.getAll().some((s) => s.name === skill.name);
+}
+
+/**
+ * 增量联网搜索：在所有启用的市场源中搜索关键词。
+ *
+ * 与 listMarketSkills 不同，此函数会利用支持搜索 API 的市场源（如 SkillHub、Skills.sh）
+ * 直接在服务端搜索，而非拉取全量列表后在本地过滤。
+ *
+ * 对于不支持服务端搜索的源（如 GitHub repo），仍然拉取全量后本地过滤。
+ *
+ * @param query 搜索关键词
+ * @param sources 可选，默认使用 getMarketSources()
+ * @param onSourceLoaded 每个源搜索完成时的回调
+ */
+export async function searchMarketSkillsOnline(
+  query: string,
+  sources?: MarketSource[],
+  onSourceLoaded?: (sourceId: string, skills: MarketSkill[]) => void,
+): Promise<MarketSearchResult> {
+  const activeSources = (sources || getMarketSources()).filter((s) => s.enabled);
+  const allSkills: MarketSkill[] = [];
+  const errors: Array<{ sourceId: string; sourceName: string; error: string }> = [];
+
+  // 获取已安装技能名列表
+  const registry = getSkillRegistry();
+  const installedNames = new Set(registry.getAll().map((s) => s.name));
+
+  const q = query.toLowerCase().trim();
+
+  const promises = activeSources.map(async (source) => {
+    try {
+      let skills: MarketSkill[] = [];
+
+      // 对于 SkillHub，利用其服务端搜索 API
+      if (source.type === "skillhub-api") {
+        skills = await fetchSkillHubSearch(source, q);
+      } else {
+        // 其他源：全量拉取后在本地过滤
+        skills = await fetchSkillsFromSource(source);
+        // 本地过滤
+        if (q) {
+          skills = skills.filter((s) => {
+            const tags = Array.isArray(s.tags) ? s.tags : [];
+            return (
+              s.name.toLowerCase().includes(q) ||
+              s.displayName.toLowerCase().includes(q) ||
+              s.description.toLowerCase().includes(q) ||
+              (s.author?.toLowerCase().includes(q) ?? false) ||
+              tags.some((t) => t.toLowerCase().includes(q))
+            );
+          });
+        }
+      }
+
+      // 标记已安装状态
+      for (const skill of skills) {
+        if (installedNames.has(skill.name)) {
+          skill.installed = true;
+        }
+      }
+
+      allSkills.push(...skills);
+      onSourceLoaded?.(source.id, skills);
+    } catch (err: any) {
+      errors.push({
+        sourceId: source.id,
+        sourceName: source.name,
+        error: err.message || String(err),
+      });
+      onSourceLoaded?.(source.id, []);
+    }
+  });
+
+  await Promise.all(promises);
+
+  return { skills: allSkills, errors };
+}
+
+/**
+ * 从单个市场源获取技能（复用现有适配器）。
+ */
+async function fetchSkillsFromSource(source: MarketSource): Promise<MarketSkill[]> {
+  switch (source.type) {
+    case "github-repo":
+      return await fetchGitHubRepoSkills(source);
+    case "github-search":
+      return await fetchGitHubSearchSkills(source);
+    case "builtin":
+      return await fetchBuiltinSkills(source);
+    case "clawhub-api":
+      return await fetchClawHubSkills(source);
+    case "skills-sh-api":
+      return await fetchSkillsShSkills(source);
+    case "skillhub-api":
+      return await fetchSkillHubAPISkills(source);
+    case "cli":
+      return await fetchCLISkills(source);
+    default:
+      return [];
+  }
+}
+
+/**
+ * 通过 SkillHub 服务端搜索 API 搜索技能。
+ * GET /api/skills?q=<query>&limit=50&page=0
+ */
+async function fetchSkillHubSearch(source: MarketSource, query: string): Promise<MarketSkill[]> {
+  const skills: MarketSkill[] = [];
+  const MAX_PAGES = 2;
+  const PAGE_SIZE = 50;
+
+  try {
+    const baseUrl = source.url.replace(/\/$/, "");
+    const headers: Record<string, string> = {
+      "Accept": "application/json",
+    };
+
+    let page = 0;
+    let hasMore = true;
+    const seenIds = new Set<string>();
+
+    while (hasMore && page < MAX_PAGES) {
+      const params = new URLSearchParams();
+      params.set("q", query);
+      params.set("limit", String(PAGE_SIZE));
+      params.set("page", String(page));
+      params.set("sort", "downloads");
+
+      const resp = await httpGet(`${baseUrl}/api/skills?${params.toString()}`, headers);
+      if (resp.status !== 200) {
+        console.warn(`[SkillMarket] SkillHub search failed (page ${page}): ${resp.status}`);
+        break;
+      }
+
+      const data = JSON.parse(resp.body);
+      const items: any[] = data.data || data.skills || data.items || (Array.isArray(data) ? data : []);
+      if (items.length === 0) break;
+
+      for (const item of items) {
+        const skillId = item.id || item._id || `${item.owner || item.source}/${item.slug || item.name}`;
+        const skillKey = `${source.id}:${skillId}`;
+        if (seenIds.has(skillKey)) continue;
+        seenIds.add(skillKey);
+
+        const slug = item.slug || item.name || skillId;
+        const author = item.owner || item.source || item.author || "";
+        const downloadUrl = item.zipUrl || item.downloadUrl ||
+          (item._id || item.id ?
+            `${baseUrl}/api/skill-files/zip?skillId=${item._id || item.id}` :
+            `${baseUrl}/api/skill-files/zip?skillId=${slug}`);
+
+        skills.push({
+          id: skillKey,
+          name: slug,
+          displayName: item.displayName || item.name || slug,
+          description: item.description || item.summary || "无描述",
+          author,
+          version: item.version,
+          tags: Array.isArray(item.tags) ? item.tags : (Array.isArray(item.categories) ? item.categories : []),
+          sourceId: source.id,
+          sourceName: source.name,
+          downloadUrl,
+          repoUrl: item.url || item.repoUrl || (author ? `https://github.com/${author}` : undefined),
+          stars: item.downloads || item.installs || item.stars,
+          lastUpdated: item.updatedAt || item.updated_at,
+          installType: "zip",
+          repoFullName: item.repoFullName || (author ? `${author}/${slug}` : undefined),
+          branch: item.branch || "main",
+        });
+      }
+
+      const hasMoreFlag = data.hasMore !== undefined ? data.hasMore :
+        (data.pagination ? data.pagination.hasMore : undefined);
+      if (hasMoreFlag === false) break;
+      if (items.length < PAGE_SIZE) break;
+      page++;
+    }
+
+    console.log(`[SkillMarket] SkillHub search "${query}": found ${skills.length} skills`);
+  } catch (err) {
+    console.error(`[SkillMarket] Error searching SkillHub:`, err);
+  }
+
+  return skills;
 }
 
 /**

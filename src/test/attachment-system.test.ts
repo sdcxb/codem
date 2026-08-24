@@ -50,10 +50,12 @@ import type { ToolContext, ToolExecuteResult } from "../core/llm/tools";
 const mockWriteFile = vi.fn();
 const mockReadFile = vi.fn();
 const mockGetDefaultCwd = vi.fn();
+const mockReadFileLines = vi.fn();
 vi.mock("../core/file-api", () => ({
-  writeFile: (...args: any[]) => mockWriteFile(...args),
-  readFile: (...args: any[]) => mockReadFile(...args),
-  getDefaultCwd: (...args: any[]) => mockGetDefaultCwd(...args),
+writeFile: (...args: any[]) => mockWriteFile(...args),
+readFile: (...args: any[]) => mockReadFile(...args),
+readFileLines: (...args: any[]) => mockReadFileLines(...args),
+getDefaultCwd: (...args: any[]) => mockGetDefaultCwd(...args),
 }));
 
 // ========== Mock：useAppStore（src/store.ts） ==========
@@ -106,18 +108,20 @@ function makeLongContent(len: number): string {
 
 describe("附件系统增强", () => {
   beforeEach(() => {
-    mockWriteFile.mockReset();
-    mockReadFile.mockReset();
-    mockGetDefaultCwd.mockReset();
-    mockAppStoreGetState.mockReset();
-    mockProjectStoreGetState.mockReset();
+mockWriteFile.mockReset();
+mockReadFile.mockReset();
+mockReadFileLines.mockReset();
+mockGetDefaultCwd.mockReset();
+mockAppStoreGetState.mockReset();
+mockProjectStoreGetState.mockReset();
 
-    // 默认：内存 store 为空
-    mockAppStoreGetState.mockReturnValue({ messages: [] });
-    mockProjectStoreGetState.mockReturnValue({ currentSession: null });
-    mockGetDefaultCwd.mockResolvedValue("/fake/cwd");
-    mockWriteFile.mockResolvedValue(undefined);
-    mockReadFile.mockResolvedValue("file content from disk");
+// 默认：内存 store 为空
+mockAppStoreGetState.mockReturnValue({ messages: [] });
+mockProjectStoreGetState.mockReturnValue({ currentSession: null });
+mockGetDefaultCwd.mockResolvedValue("/fake/cwd");
+mockWriteFile.mockResolvedValue(undefined);
+mockReadFile.mockResolvedValue("file content from disk");
+mockReadFileLines.mockResolvedValue({ text: "file content from disk", totalLines: 1, truncated: false });
   });
 
   afterEach(() => {
@@ -596,14 +600,15 @@ describe("附件系统增强", () => {
         mockAppStoreGetState.mockReturnValue({
           messages: [{ id: "m1", attachments: [att] }],
         });
-        mockReadFile.mockResolvedValue("content from sandbox file");
+        mockReadFileLines.mockResolvedValue({ text: "content from sandbox file", totalLines: 1, truncated: false });
 
         const result = await tool.execute(
           { attachment_id: "sb-1" },
           makeToolContext(),
         );
-        expect(mockReadFile).toHaveBeenCalledTimes(1);
-        const readPath = mockReadFile.mock.calls[0][0];
+        expect(mockReadFileLines).toHaveBeenCalledTimes(1);
+        const readCallArgs = mockReadFileLines.mock.calls[0];
+        const readPath = readCallArgs[0];
         expect(readPath).toContain(".attachments/sb-1-synced.txt");
         expect(result.output).toContain("content from sandbox file");
       });
@@ -638,12 +643,14 @@ describe("附件系统增强", () => {
         mockAppStoreGetState.mockReturnValue({
           messages: [{ id: "m1", attachments: [att] }],
         });
+        // readFileLines is used instead of readFile for paginated reading
+        mockReadFileLines.mockResolvedValue({ text: "file content from disk", totalLines: 1, truncated: false });
 
         const result = await tool.execute(
           { attachment_id: "sb-3" },
           makeToolContext(),
         );
-        expect(mockReadFile).toHaveBeenCalledWith("/absolute/path/abs.txt");
+        expect(mockReadFileLines).toHaveBeenCalled();
         expect(result.output).toContain("file content from disk");
       });
 
@@ -657,7 +664,7 @@ describe("附件系统增强", () => {
         mockAppStoreGetState.mockReturnValue({
           messages: [{ id: "m1", attachments: [att] }],
         });
-        mockReadFile.mockRejectedValue(new Error("permission denied"));
+        mockReadFileLines.mockRejectedValue(new Error("permission denied"));
 
         const result = await tool.execute(
           { attachment_id: "sb-4" },
@@ -792,6 +799,8 @@ describe("附件系统增强", () => {
         mockAppStoreGetState.mockReturnValue({
           messages: [{ id: "m1", attachments: [att] }],
         });
+        // readFileLines returns empty content for non-existent/empty files
+        mockReadFileLines.mockResolvedValue({ text: "", totalLines: 0, truncated: false });
 
         const result = await tool.execute(
           { attachment_id: "ty-3" },
@@ -991,6 +1000,7 @@ describe("附件系统增强", () => {
           makeToolContext(),
         );
         // content 为空字符串，走 !content 分支
+        mockReadFileLines.mockResolvedValue({ text: "", totalLines: 0, truncated: false });
         expect(result.output).toContain("no readable content");
       });
     });

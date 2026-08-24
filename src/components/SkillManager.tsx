@@ -3,6 +3,7 @@ import { getSkillRegistry, type SkillDefinition } from "../core/skill/skill";
 import { installSkillFromZip, uninstallSkill, readZipFile, type InstallResult } from "../core/skill/installer";
 import {
   listMarketSkills,
+  searchMarketSkillsOnline,
   installMarketSkill,
   isMarketSkillInstalled,
   getMarketSources,
@@ -230,12 +231,13 @@ export function SkillManager({ onClose }: SkillManagerProps) {
 
   // ===== Market Cache =====
   const MARKET_CACHE_KEY = "codem-market-skills-cache";
+  const MARKET_CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
 
   /** 从缓存加载市场技能列表（快速显示） */
   const loadCachedMarketSkills = useCallback(() => {
     try {
       const cached = getSettingJSON<{ skills: MarketSkill[]; sources: MarketSource[]; ts: number } | null>(MARKET_CACHE_KEY, null);
-      if (cached && cached.skills && cached.skills.length > 0) {
+      if (cached && cached.skills && Array.isArray(cached.skills) && cached.skills.length > 0) {
         setMarketSkills(cached.skills);
         setMarketSources(cached.sources || []);
         return true;
@@ -258,7 +260,10 @@ export function SkillManager({ onClose }: SkillManagerProps) {
 
       const result = await listMarketSkills(sources, (sourceId, sourceSkills) => {
         // 渐进式更新：每加载完一个源就更新列表
+        // 防御性检查：确保 sourceSkills 是数组
+        if (!Array.isArray(sourceSkills)) return;
         setMarketSkills((prev) => {
+          if (!Array.isArray(prev)) return sourceSkills;
           // 移除该源的旧数据
           const filtered = prev.filter((s) => s.sourceId !== sourceId);
           // 添加新数据
@@ -287,13 +292,24 @@ export function SkillManager({ onClose }: SkillManagerProps) {
     }
   }, []);
 
-  // 切换到市场 Tab 时先从缓存快速加载，再后台检查更新
+  // 切换到市场 Tab 时先从缓存快速加载，再后台增量更新
   useEffect(() => {
     if (activeTab === "market" && marketSkills.length === 0 && !marketLoading) {
       // 先从缓存快速加载
       const hasCache = loadCachedMarketSkills();
-      // 后台静默检查更新（不显示 loading）
-      loadMarketSkills(true);
+      // 后台静默增量更新（仅在缓存超过 TTL 或无缓存时才联网）
+      if (!hasCache) {
+        loadMarketSkills(false);
+      } else {
+        // 缓存在 TTL 内不再自动联网，用户可手动点"检查更新"
+        // 如果缓存过期则后台静默更新
+        try {
+          const cached = getSettingJSON<{ ts: number } | null>(MARKET_CACHE_KEY, null);
+          if (cached && Date.now() - cached.ts > MARKET_CACHE_TTL_MS) {
+            loadMarketSkills(true);
+          }
+        } catch {}
+      }
     }
   }, [activeTab, marketSkills.length, marketLoading, loadCachedMarketSkills, loadMarketSkills]);
 
@@ -301,16 +317,84 @@ export function SkillManager({ onClose }: SkillManagerProps) {
     if (marketSourceFilter !== "all" && s.sourceId !== marketSourceFilter) return false;
     if (marketSearchQuery) {
       const q = marketSearchQuery.toLowerCase();
+      const tags = Array.isArray(s.tags) ? s.tags : [];
       return (
         s.name.toLowerCase().includes(q) ||
         s.displayName.toLowerCase().includes(q) ||
         s.description.toLowerCase().includes(q) ||
-        s.author?.toLowerCase().includes(q) ||
-        s.tags?.some((t) => t.toLowerCase().includes(q))
+        (s.author?.toLowerCase().includes(q) ?? false) ||
+        tags.some((t) => t.toLowerCase().includes(q))
       );
     }
     return true;
   });
+
+  // ===== Incremental Online Search =====
+  // 当本地搜索无结果时，自动触发联网搜索
+  const [onlineSearching, setOnlineSearching] = useState(false);
+  const [onlineSearchTriggered, setOnlineSearchTriggered] = useState(false);
+  const lastOnlineSearchRef = useRef("");
+
+  useEffect(() => {
+    const q = marketSearchQuery.trim();
+    if (!q || q.length < 2) {
+      setOnlineSearchTriggered(false);
+      lastOnlineSearchRef.current = "";
+      return;
+    }
+
+    // 本地有结果时不触发联网
+    if (filteredMarketSkills.length > 0) {
+      setOnlineSearchTriggered(false);
+      lastOnlineSearchRef.current = q;
+      return;
+    }
+
+    // 已经搜索过相同关键词，不重复触发
+    if (lastOnlineSearchRef.current === q && onlineSearchTriggered) return;
+    lastOnlineSearchRef.current = q;
+
+    // 本地无结果，触发增量联网搜索
+    let cancelled = false;
+    setOnlineSearching(true);
+    setOnlineSearchTriggered(true);
+
+    // 防抖延迟
+    const timer = setTimeout(async () => {
+      if (cancelled) return;
+      try {
+        const sources = getMarketSources();
+        const result = await searchMarketSkillsOnline(q, sources);
+        if (cancelled) return;
+
+        if (result.skills.length > 0) {
+          // 合并新结果到 marketSkills（去重）
+          setMarketSkills((prev) => {
+            const existingIds = new Set(prev.map((s) => s.id));
+            const newSkills = result.skills.filter((s) => !existingIds.has(s.id));
+            if (newSkills.length > 0) {
+              // 更新缓存
+              const updated = [...prev, ...newSkills];
+              try {
+                setSettingJSON(MARKET_CACHE_KEY, { skills: updated, sources, ts: Date.now() });
+              } catch {}
+              return updated;
+            }
+            return prev;
+          });
+        }
+      } catch (err) {
+        console.warn("[SkillManager] Incremental online search failed:", err);
+      } finally {
+        if (!cancelled) setOnlineSearching(false);
+      }
+    }, 600);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [marketSearchQuery, filteredMarketSkills.length, onlineSearchTriggered]);
 
   const handleMarketInstall = async (skill: MarketSkill) => {
     if (skill.installed) return;
@@ -703,9 +787,14 @@ export function SkillManager({ onClose }: SkillManagerProps) {
 
           {/* Market Skills Grid */}
           <div className="skill-market-grid">
-            {filteredMarketSkills.length === 0 && !marketLoading && (
+            {filteredMarketSkills.length === 0 && !marketLoading && !onlineSearching && (
               <div className="skill-empty">
                 {marketSearchQuery ? "未找到匹配的技能" : "暂无市场技能，点击检查更新重试"}
+              </div>
+            )}
+            {filteredMarketSkills.length === 0 && onlineSearching && (
+              <div className="skill-empty">
+                正在联网搜索 "{marketSearchQuery}"...
               </div>
             )}
             {filteredMarketSkills.map((skill) => (

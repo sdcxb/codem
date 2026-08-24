@@ -50,6 +50,13 @@ export interface TodoItem {
 
 export interface LoopState {
   iteration: number;
+  /**
+   * Hard iteration cap (0 = no cap). Only used as a runaway safety valve,
+   * NOT as a normal stop condition. The loop stops when the model produces
+   * no tool calls (natural completion), matching DSH's "no built-in turn
+   * budget" design.
+   * Sub-agents set a finite cap to prevent recursive runaway.
+   */
   maxIterations: number;
   totalUsage: TokenUsage;
   toolCallsInIteration: number;
@@ -67,9 +74,21 @@ export interface LoopState {
   costDegraded: boolean;
   /** S4: True if a write confirmation was rejected by the user — stops the loop to prevent retries */
   writeRejected: boolean;
+  /**
+   * Runaway detection: consecutive iterations with tool calls but zero
+   * effective progress (no text output AND no new tool results). If this
+   * reaches MAX_NO_PROGRESS, the loop stops to prevent infinite loops.
+   * Reset whenever the model produces text or a tool returns new output.
+   */
+  consecutiveNoProgress: number;
 }
 
 export interface LoopConfig {
+  /**
+   * Hard iteration cap (0 = no cap, default). Only used as a runaway safety
+   * valve — the loop stops naturally when the model produces no tool calls.
+   * Sub-agents set a finite cap to prevent recursive runaway.
+   */
   maxIterations: number;
   /** Agent ID for this loop — used for tool filtering and message routing */
   agentId?: string;
@@ -141,8 +160,23 @@ export interface LoopConfig {
   notebookId?: string;
 }
 
+/**
+ * Consecutive iterations with tool calls but zero progress (no text output
+ * and no new tool results) before the loop is stopped as a runaway safety valve.
+ * Matches DSH's philosophy: let the model work as long as it's making progress,
+ * but stop if it's stuck in a loop.
+ */
+const MAX_CONSECUTIVE_NO_PROGRESS = 10;
+
+/**
+ * Hard cap on total token consumption (input + output) per loop run.
+ * Prevents cost runaway if the model keeps generating without converging.
+ * 2M tokens is a generous safety valve — typical complex tasks use <500K.
+ */
+const MAX_TOTAL_TOKENS_PER_RUN = 2_000_000;
+
 const DEFAULT_LOOP_CONFIG: LoopConfig = {
-  maxIterations: 20,
+  maxIterations: 0,
   maxConsecutiveErrors: 3,
   enableCompaction: true,
   compactionThreshold: 0.8,
@@ -405,6 +439,7 @@ export class AgenticLoop {
       microCompactedThisRun: false,
       costDegraded: false,
       writeRejected: false,
+      consecutiveNoProgress: 0,
     };
   }
 
@@ -682,8 +717,29 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
     const planState = this.estimateSteps(userMessage);
     console.log(`[AgenticLoop] Estimated ${planState.total ?? 0} steps:`, planState.plan?.map(s => s.title));
 
-      // Main loop
-      while (this.state.iteration < this.state.maxIterations) {
+      // Main loop — DSH-aligned: no built-in turn budget.
+      // The loop runs until the model produces no tool calls (natural completion).
+      // Safety valves (checked at the top of each iteration):
+      //   1. maxIterations (if > 0): hard cap, used by sub-agents to prevent recursive runaway
+      //   2. consecutiveNoProgress: stop if model is stuck in a loop with no progress
+      //   3. MAX_TOTAL_TOKENS_PER_RUN: stop if token consumption exceeds safety limit
+      while (true) {
+        // Safety valve 1: hard iteration cap (sub-agent runaway prevention)
+        if (this.state.maxIterations > 0 && this.state.iteration >= this.state.maxIterations) {
+          break;
+        }
+        // Safety valve 2: token consumption safety limit
+        if (this.state.totalUsage.totalTokens >= MAX_TOTAL_TOKENS_PER_RUN) {
+          console.warn(`[AgenticLoop] Token safety limit reached: ${this.state.totalUsage.totalTokens} >= ${MAX_TOTAL_TOKENS_PER_RUN}`);
+          yield { type: "text_delta", text: `\n\n⚠️ **Token 消耗已达安全上限** (${(MAX_TOTAL_TOKENS_PER_RUN / 1000).toFixed(0)}K tokens)，任务停止以防止成本失控。如需继续，请重新发送指令。` };
+          break;
+        }
+        // Safety valve 3: consecutive no-progress detection
+        if (this.state.consecutiveNoProgress >= MAX_CONSECUTIVE_NO_PROGRESS) {
+          console.warn(`[AgenticLoop] Runaway detected: ${MAX_CONSECUTIVE_NO_PROGRESS} consecutive iterations with no progress`);
+          yield { type: "text_delta", text: `\n\n⚠️ **检测到循环停滞**（连续 ${MAX_CONSECUTIVE_NO_PROGRESS} 次迭代无进展），任务已停止以防止死循环。请检查模型是否陷入重复操作。` };
+          break;
+        }
         this.state.iteration++;
         this.state.toolCallsInIteration = 0;
         this.state.compactedThisIteration = false;
@@ -1009,6 +1065,7 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
 
       // Execute iteration - yields events directly for real-time streaming
       let iterationToolCalls = 0;
+      let iterationHadText = false;
       const spawnTaskIds: string[] = [];
 
       // P0: Start file change tracking at iteration boundary (before tools)
@@ -1026,6 +1083,7 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
       )) {
         yield event;
         if (event.type === "tool_start") iterationToolCalls++;
+        if (event.type === "text_delta" && event.text.trim()) iterationHadText = true;
         // Update step title when we see the first tool call in this iteration
         if (event.type === "tool_start" && iterationToolCalls === 1) {
           // Use planned title if available, fall back to tool name
@@ -1111,6 +1169,13 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
         this.state.toolCallsInIteration = iterationToolCalls;
       }
       console.log(`[AgenticLoop] Iteration ${this.state.iteration} completed: ${iterationToolCalls} tool calls (effective: ${this.state.toolCallsInIteration}), ${this.state.consecutiveErrors} consecutive errors`);
+      // Runaway detection: track whether this iteration made any progress.
+      // Progress = text output OR at least one effective tool call.
+      if (iterationHadText || this.state.toolCallsInIteration > 0) {
+        this.state.consecutiveNoProgress = 0;
+      } else {
+        this.state.consecutiveNoProgress++;
+      }
       // S4: If a write was rejected by the user, stop the loop immediately
       // This prevents the LLM from retrying the write in subsequent iterations
       if (this.state.writeRejected) {
@@ -1221,11 +1286,29 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
       assistantMsgId = `msg-${Date.now() + this.state.iteration + 100}`;
     }
 
+    // We only reach here if a safety valve triggered a break.
+    // Determine the stop reason based on which safety valve fired.
+    let stopReason = "safety_valve";
+    let stopMessage = "";
+    if (this.state.maxIterations > 0 && this.state.iteration >= this.state.maxIterations) {
+      stopReason = "max_iterations";
+      stopMessage = `\n\n⚠️ **已达到迭代上限 (${this.state.maxIterations})**，任务停止。如需继续，请重新发送指令。`;
+    } else if (this.state.totalUsage.totalTokens >= MAX_TOTAL_TOKENS_PER_RUN) {
+      stopReason = "token_limit";
+      stopMessage = `\n\n⚠️ **Token 消耗已达安全上限**，任务停止以防止成本失控。如需继续，请重新发送指令。`;
+    } else if (this.state.consecutiveNoProgress >= MAX_CONSECUTIVE_NO_PROGRESS) {
+      stopReason = "no_progress";
+      stopMessage = `\n\n⚠️ **检测到循环停滞**（连续 ${MAX_CONSECUTIVE_NO_PROGRESS} 次迭代无进展），任务已停止以防止死循环。`;
+    }
+
     const result: LoopResult = {
       type: "stop",
-      reason: "max_iterations",
+      reason: stopReason,
       usage: this.state.totalUsage,
     };
+    if (stopMessage) {
+      yield { type: "text_delta", text: stopMessage };
+    }
     // F1.3: Trigger memory extraction on max iterations stop
     if (this.config.memoryEnabled && this.config.onTurnComplete) {
       try { this.config.onTurnComplete(this.state.totalUsage); } catch (e) { console.warn('[agentic-loop.ts]', e) }
@@ -1234,7 +1317,7 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
     telemetry.record(sessionId, "turn_end", {
       duration_ms: Date.now() - turnStartTime,
       iterations: this.state.iteration,
-      reason: "max_iterations",
+      reason: stopReason,
       totalTokens: this.state.totalUsage?.totalTokens || 0,
     });
     yield { type: "end", result };

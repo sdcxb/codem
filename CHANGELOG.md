@@ -2,6 +2,69 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.5.2] - 2026-08-24
+
+### 大文件性能修复 + Agent Loop 无上限改造 + 模型系统动态化 + Skills 增量搜索
+
+#### 1. 大文件流式分页读取（对标 DSH TextRetainer）
+- Rust 新增 `read_file_lines` 命令：使用 `BufReader` 逐行扫描，内存占用 O(limit) 而非 O(file_size)
+- 前端 `read` 工具优先调用分页 API：有 offset/limit 参数时走 `readFileLines`，避免大字符串跨进程传输
+- `read_attachment` 工具改用 `readFileLines`：磁盘读取不再全量加载 content
+- `listAllAttachments` 查询排除 `content` 大字段，仅在读取时按 ID 获取（懒加载）
+- 全量读取 50MB 上限保护：超过则返回错误引导使用分页路径
+- **彻底解决**数百 MB 文件分析时前后台卡死问题
+
+#### 2. Agentic Loop 无上限改造（对标 DSH）
+- 移除硬编码 `maxIterations` 上限（原 20 轮），改为 `while(true)` 无限循环
+- 新增三重安全阀：
+  - **连续无进展检测**（MAX_CONSECUTIVE_NO_PROGRESS = 10）：连续 10 次迭代有工具调用但无文本输出且无新工具结果时停止
+  - **Token 消耗安全阀**（MAX_TOTAL_TOKENS_PER_RUN = 2,000,000）：总 Token 消耗超过 2M 时停止
+  - **子智能体有限迭代**：子智能体仍保留有限 maxIterations 防止递归失控
+- 根据触发原因（迭代上限/Token 限制/无进展）输出不同停止提示
+
+#### 3. 记忆提取 API 400 修复
+- **根因**：`spawnForked` 深拷贝消息时丢失 `tool_calls`（assistant 消息）和 `toolCallId`（tool 消息）字段
+- **修复**：深拷贝逻辑保留 `tool_calls`（JSON.parse/stringify）、`toolCallId`、`name` 字段
+- 截断消息列表后清理孤儿 `tool` 消息：检查 `toolCallId` 是否在已知 `tool_calls` ID 集合中
+
+#### 4. 模型系统动态化
+- `getConfiguredApiModels` 改为优先读取 `codem-dynamic-models` 存储（设置页面 API 刷新时写入）
+- 回退到静态 `API_MODELS` 列表（兼容旧配置）
+- `ModelProfilePanel` 移除写死的 `AVAILABLE_PROVIDERS`，改为动态获取
+- 更新内置方案：
+  - "经济模式"重命名为"常规模式"，主对话用 DeepSeek Pro，子任务用 Flash
+  - 新增"经济模式"（全部使用 Flash 模型）
+  - "默认模式"和"常规模式"添加视觉理解 slot（DeepSeek-V4-Flash-Vision-Exp）
+  - 删除旧的"DeepSeek +视觉代理"和"DeepSeek +视觉代理(MIMO)"模式
+
+#### 5. Skills 市场增量搜索
+- 搜索优先查本地缓存（`codem-market-skills-cache`，TTL 30 分钟）
+- 本地无结果时自动触发增量联网搜索（600ms 防抖）
+- 新增 `searchMarketSkillsOnline` 函数：SkillHub 使用服务端搜索 API（`GET /api/skills?q=`），其他源全量拉取后本地过滤
+- 搜索结果合并到本地缓存（去重），下次搜索同一关键词直接命中本地
+- `tags` 字段全面规范化防御（`Array.isArray()` 检查）
+- 渐进式更新回调中添加 `Array.isArray(sourceSkills)` 检查
+
+#### 6. 终端切换崩溃修复
+- **根因**：`TerminalPanel.tsx` 中 `listen` 函数从 `__TAURI__.core` 获取（错误）
+- **修复**：改为从 `__TAURI__.event` 获取
+
+#### 7. 权限弹窗位置修复
+- `DecisionTray` 从普通块级元素改为 `position: fixed` 定位（bottom: 80px, 居中）
+- 不再挤压主对话布局，新增 `slideUp` 动画
+- `z-index: 9000` 确保覆盖在对话区域上方
+
+#### 8. 技能市场搜索崩溃修复
+- **根因**：`s.tags?.some()` 调用失败，因为 `s.tags` 可能不是数组
+- **修复**：`SkillManager.tsx` 过滤逻辑中添加 `Array.isArray(s.tags)` 检查
+- `skill-market-client.ts` 中所有 `tags` 字段规范化为 `Array.isArray() ? tags : []`
+
+#### 测试
+- 修复 `attachment-system.test.ts`：mock 添加 `readFileLines` 导出
+- 修复 `vision-proxy-media.test.ts`：更新内置 profile 模型名称断言
+- 新增 `v1.5.2-full-regression.test.ts`：100 个测试用例，覆盖 19 个测试维度
+- 全量 113 套件 3947 测试全部通过
+
 ## [1.5.1] - 2026-08-23
 
 ### DSH 架构对标深度整改 + 严重 Bug 修复 + YAML 声明式插件加载

@@ -350,46 +350,47 @@ describe("C. ModelProfile vision slot", () => {
     expect(slots).toContain("vision");
   });
 
-  it("VP-027: 内置方案包含 deepseek-vision-proxy", () => {
+  it("VP-027: 内置方案包含 standard (常规模式)", () => {
     const pm = getModelProfileManager();
     const profiles = pm.getAll();
-    const found = profiles.find(p => p.id === "deepseek-vision-proxy");
+    const found = profiles.find(p => p.id === "standard");
     expect(found).toBeDefined();
-    expect(found!.name).toContain("DeepSeek");
+    expect(found!.name).toContain("常规");
   });
 
-  it("VP-028: deepseek-vision-proxy 方案配置了 chat 和 vision slot", () => {
+  it("VP-028: standard 方案配置了 chat 和 vision slot", () => {
     const pm = getModelProfileManager();
     const profiles = pm.getAll();
-    const found = profiles.find(p => p.id === "deepseek-vision-proxy");
+    const found = profiles.find(p => p.id === "standard");
     expect(found!.slots.chat).toBeDefined();
     expect(found!.slots.chat!.provider).toBe("deepseek");
     expect(found!.slots.vision).toBeDefined();
-    expect(found!.slots.vision!.provider).toBe("openai");
-    expect(found!.slots.vision!.model).toBe("gpt-4o-mini");
+    expect(found!.slots.vision!.provider).toBe("deepseek");
+    expect(found!.slots.vision!.model).toBe("DeepSeek-V4-Flash-Vision-Exp");
   });
 
-  it("VP-029: resolveSlot('vision') fallback 到 chat", () => {
+  it("VP-029: resolveSlot('vision') 在默认方案返回配置的 vision slot", () => {
     const pm = getModelProfileManager();
     pm.setActiveProfile("default");
     const result = pm.resolveSlot("vision" as TaskSlot);
-    // Default profile has no vision slot configured → fallback to chat → also not configured → null
-    // But the fallback chain should work
-    expect(result).toBeNull(); // default profile has no slots
+    // Default profile now has vision slot configured
+    expect(result).not.toBeNull();
+    expect(result!.provider).toBe("deepseek");
+    expect(result!.model).toBe("DeepSeek-V4-Flash-Vision-Exp");
   });
 
-  it("VP-030: resolveSlot('vision') 返回配置的 slot", () => {
+  it("VP-030: resolveSlot('vision') 返回 standard 方案配置的 slot", () => {
     const pm = getModelProfileManager();
-    pm.setActiveProfile("deepseek-vision-proxy");
+    pm.setActiveProfile("standard");
     const result = pm.resolveSlot("vision" as TaskSlot);
     expect(result).not.toBeNull();
-    expect(result!.provider).toBe("openai");
-    expect(result!.model).toBe("gpt-4o-mini");
+    expect(result!.provider).toBe("deepseek");
+    expect(result!.model).toBe("DeepSeek-V4-Flash-Vision-Exp");
   });
 
   it("VP-031: vision slot 可被 resolveSlot 解析", () => {
     const pm = getModelProfileManager();
-    pm.setActiveProfile("deepseek-vision-proxy");
+    pm.setActiveProfile("standard");
     // chat slot
     const chatSlot = pm.resolveSlot("chat");
     expect(chatSlot!.provider).toBe("deepseek");
@@ -398,17 +399,17 @@ describe("C. ModelProfile vision slot", () => {
     expect(visionSlot).not.toBeNull();
   });
 
-  it("VP-032: 默认方案的 vision slot 未配置", () => {
+  it("VP-032: 默认方案的 vision slot 已配置", () => {
     const pm = getModelProfileManager();
     pm.setActiveProfile("default");
     const profile = pm.getAll().find(p => p.id === "default");
-    expect(profile!.slots.vision).toBeUndefined();
+    expect(profile!.slots.vision).toBeDefined();
+    expect(profile!.slots.vision!.model).toBe("DeepSeek-V4-Flash-Vision-Exp");
   });
 
-  it("VP-033: EDITABLE_SLOTS 在 ModelProfilePanel 中包含 vision", () => {
-    // This is tested by verifying the built-in profile "deepseek-vision-proxy" has vision in slots
+  it("VP-033: standard 方案的 slots 中包含 vision", () => {
     const pm = getModelProfileManager();
-    const profile = pm.getAll().find(p => p.id === "deepseek-vision-proxy");
+    const profile = pm.getAll().find(p => p.id === "standard");
     expect(profile!.slots).toHaveProperty("vision");
   });
 });
@@ -1271,7 +1272,7 @@ describe("H. 回归：历史功能不受影响", () => {
     pm.setActiveProfile("economy");
     const memorySlot = pm.resolveSlot("memory");
     expect(memorySlot).not.toBeNull();
-    expect(memorySlot!.model).toBe("gpt-4o-mini");
+    expect(memorySlot!.model).toBe("deepseek-v4-flash");
   });
 
   it("VP-115: 压缩 slot 仍可解析", () => {
@@ -1279,7 +1280,7 @@ describe("H. 回归：历史功能不受影响", () => {
     pm.setActiveProfile("economy");
     const compactionSlot = pm.resolveSlot("compaction");
     expect(compactionSlot).not.toBeNull();
-    expect(compactionSlot!.model).toBe("mimo-v2-flash");
+    expect(compactionSlot!.model).toBe("deepseek-v4-pro");
   });
 
   it("VP-116: 性能方案 slot 仍可解析", () => {
@@ -1622,26 +1623,25 @@ describe("I. 全场景端到端链路测试", () => {
     pm.deleteProfile(profile.id);
   });
 
-  // --- 场景 8: 内置方案 deepseek-vision-proxy 可直接使用 ---
+  // --- 场景 8: 内置方案 standard 可直接使用 ---
 
-  it("E2E-008: 内置方案deepseek-vision-proxy + API模式 → OpenAI代理链路通畅", async () => {
+  it("E2E-008: 内置方案standard + API模式 → DeepSeek视觉代理链路通畅", async () => {
     setApiSettings([
       { id: "deepseek", name: "DeepSeek", apiKey: "sk-ds-key", baseUrl: "https://api.deepseek.com/v1" },
-      { id: "openai", name: "OpenAI", apiKey: "sk-openai-key", baseUrl: "https://api.openai.com/v1" },
     ]);
 
     const pm = getModelProfileManager();
-    pm.setActiveProfile("deepseek-vision-proxy");
+    pm.setActiveProfile("standard");
 
     mockVisionResponse("图片内容是一只小狗在草地上奔跑");
 
     const msgs = makeImageMessage("描述这张图");
-    const result = await proxy.processMessages(msgs, "deepseek-v4-flash", "deepseek");
+    const result = await proxy.processMessages(msgs, "deepseek-v4-pro", "deepseek");
 
     expect(result.visionUsed).toBe(true);
-    expect(result.visionModel).toBe("gpt-4o-mini");
+    expect(result.visionModel).toBe("DeepSeek-V4-Flash-Vision-Exp");
 
-    expectFetchCalled("api.openai.com", "gpt-4o-mini");
+    expectFetchCalled("api.deepseek.com", "DeepSeek-V4-Flash-Vision-Exp");
 
     const blocks = result.messages[0].content as ContentBlock[];
     const descBlock = blocks.find(b => b.text.includes("图片描述"));

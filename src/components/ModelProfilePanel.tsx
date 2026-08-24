@@ -7,6 +7,8 @@ import {
   type TaskSlot,
   type ModelSlotConfig,
 } from "../core/llm/model-profile";
+import { getSettingJSON } from "../core/storage/settings";
+import { MIMO_MODELS } from "../core/model-config";
 
 // ========== Constants ==========
 
@@ -43,14 +45,60 @@ const SLOT_DESCRIPTIONS_ZH: Record<TaskSlot, string> = {
   embedding: "语义搜索向量化（预留）",
 };
 
-const AVAILABLE_PROVIDERS = [
-  { id: "openai", name: "OpenAI", models: ["gpt-4o", "gpt-4o-mini", "o3"] },
-  { id: "anthropic", name: "Anthropic", models: ["claude-sonnet-4-20250514", "claude-opus-4-20250514"] },
-  { id: "mimo", name: "MiMo", models: ["mimo-v2.5-pro", "mimo-v2.5", "mimo-v2-flash"] },
-  { id: "deepseek", name: "DeepSeek", models: ["deepseek-v4-flash", "deepseek-v4-pro"] },
-  { id: "moonshot", name: "Moonshot", models: ["moonshot-v1-8k", "moonshot-v1-32k"] },
-  { id: "gemini", name: "Gemini", models: ["gemini-2.5-flash", "gemini-2.5-pro"] },
-];
+/**
+ * 从存储读取已配置 API Key 的 provider 列表和动态模型列表。
+ * Provider 列表来自 codem-settings.providers，模型列表来自 codem-dynamic-models。
+ * 如果动态模型不存在，回退到 API_MODELS 静态列表。
+ */
+interface ProviderWithModels {
+  id: string;
+  name: string;
+  models: Array<{ id: string; name: string }>;
+}
+
+function getAvailableProviders(): ProviderWithModels[] {
+  try {
+    const settings = getSettingJSON<any>("codem-settings", {});
+    const providers = settings.providers || [];
+    const dynamicModels = getSettingJSON<Record<string, Array<{ id: string; name: string }>>>("codem-dynamic-models", {});
+
+    const result: ProviderWithModels[] = [];
+
+    // MiMo provider 始终可用（CLI 模式），用静态列表
+    result.push({
+      id: "mimo",
+      name: "MiMo",
+      models: MIMO_MODELS.map(m => ({ id: m.id, name: m.name })),
+    });
+
+    // 已配置 API Key 的 provider
+    for (const p of providers) {
+      if (!p.apiKey || p.id === "mimo") continue;
+      // 优先使用动态模型列表
+      const dynModels = dynamicModels[p.id];
+      if (dynModels && dynModels.length > 0) {
+        result.push({ id: p.id, name: p.name || p.id, models: dynModels });
+      }
+      // 回退到静态列表
+      else if (API_MODELS_FALLBACK[p.id]) {
+        result.push({ id: p.id, name: p.name || p.id, models: API_MODELS_FALLBACK[p.id] });
+      }
+    }
+
+    return result;
+  } catch {
+    return [{ id: "mimo", name: "MiMo", models: MIMO_MODELS.map(m => ({ id: m.id, name: m.name })) }];
+  }
+}
+
+/** 静态回退模型列表 */
+const API_MODELS_FALLBACK: Record<string, Array<{ id: string; name: string }>> = {
+  openai: [{ id: "gpt-4o", name: "GPT-4o" }, { id: "gpt-4o-mini", name: "GPT-4o Mini" }, { id: "o3", name: "o3" }],
+  anthropic: [{ id: "claude-sonnet-4-20250514", name: "Claude Sonnet 4" }, { id: "claude-opus-4-20250514", name: "Claude Opus 4" }],
+  deepseek: [{ id: "deepseek-v4-flash", name: "DeepSeek V4 Flash" }, { id: "deepseek-v4-pro", name: "DeepSeek V4 Pro" }],
+  moonshot: [{ id: "moonshot-v1-8k", name: "Moonshot 8K" }, { id: "moonshot-v1-32k", name: "Moonshot 32K" }],
+  gemini: [{ id: "gemini-2.5-flash", name: "Gemini 2.5 Flash" }, { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro" }],
+};
 
 const EDITABLE_SLOTS: TaskSlot[] = ["chat", "subagent", "memory", "compaction", "vision"];
 
@@ -506,11 +554,13 @@ function SlotConfigRow({
   onUpdate: (config: ModelSlotConfig | null) => void;
 }) {
   const [enabled, setEnabled] = useState(!!config);
-  const [provider, setProvider] = useState(config?.provider || "openai");
-  const [model, setModel] = useState(config?.model || "gpt-4o-mini");
+  const [provider, setProvider] = useState(config?.provider || "mimo");
+  const [model, setModel] = useState(config?.model || "mimo-v2.5-pro");
   const [reasoning, setReasoning] = useState(config?.reasoningEffort || "medium");
 
-  const providerModels = AVAILABLE_PROVIDERS.find((p) => p.id === provider)?.models || [];
+  // 从存储读取动态 provider 和模型列表
+  const availableProviders = getAvailableProviders();
+  const providerModels = availableProviders.find((p) => p.id === provider)?.models || [];
 
   const handleToggle = () => {
     const newEnabled = !enabled;
@@ -524,8 +574,8 @@ function SlotConfigRow({
 
   const handleProviderChange = (newProvider: string) => {
     setProvider(newProvider);
-    const newModels = AVAILABLE_PROVIDERS.find((p) => p.id === newProvider)?.models || [];
-    const newModel = newModels[0] || "";
+    const newModels = availableProviders.find((p) => p.id === newProvider)?.models || [];
+    const newModel = newModels[0]?.id || "";
     setModel(newModel);
     if (enabled) {
       onUpdate({ provider: newProvider, model: newModel, reasoningEffort: reasoning as "low" | "medium" | "high" });
@@ -561,7 +611,7 @@ function SlotConfigRow({
             onChange={(e) => handleProviderChange(e.target.value)}
             style={{ width: "100%", fontSize: 12 }}
           >
-            {AVAILABLE_PROVIDERS.map((p) => (
+            {availableProviders.map((p) => (
               <option key={p.id} value={p.id}>
                 {p.name}
               </option>
@@ -579,8 +629,8 @@ function SlotConfigRow({
             style={{ width: "100%", fontSize: 12 }}
           >
             {providerModels.map((m) => (
-              <option key={m} value={m}>
-                {m}
+              <option key={m.id} value={m.id}>
+                {m.name}
               </option>
             ))}
           </select>
