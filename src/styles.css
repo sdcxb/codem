@@ -1238,7 +1238,23 @@ width: 100%;
 
 /* Last turn: always show buttons at reduced opacity */
 .qa-turn-footer:last-of-type .qa-turn-btn {
-  opacity: 0.5;
+opacity: 0.5;
+}
+
+/* Task complete badge — always visible at turn end */
+.task-complete-badge {
+display: inline-flex;
+align-items: center;
+gap: 4px;
+margin-right: auto;
+padding: 2px 10px;
+font-size: 12px;
+font-weight: 500;
+color: var(--accent, #6366f1);
+background: color-mix(in srgb, var(--accent, #6366f1) 12%, transparent);
+border: 1px solid color-mix(in srgb, var(--accent, #6366f1) 25%, transparent);
+border-radius: 12px;
+user-select: none;
 }
 
 .qa-turn-btn {

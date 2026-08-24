@@ -770,6 +770,10 @@ canEdit={!isSessionStreaming}
             </motion.div>
 {isTurnEnd && !isStreaming && (
               <div className="qa-turn-footer">
+                <span className="task-complete-badge">
+                  <Check size={13} />
+                  {lang === "zh" ? "任务完成" : "Done"}
+                </span>
                 {onFork && (
                   <Tooltip>
                     <TooltipTrigger asChild>
