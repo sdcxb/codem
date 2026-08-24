@@ -111,34 +111,63 @@ const MermaidDiagram = memo(function MermaidDiagram({ chart }: { chart: string }
   );
 });
 
-// Handle link clicks - open files with system default app, external URLs in browser
-function handleLinkClick(e: React.MouseEvent<HTMLAnchorElement>, href: string) {
+// Handle link clicks - open files in file manager, external URLs in browser
+async function handleLinkClick(e: React.MouseEvent<HTMLAnchorElement>, href: string) {
   e.preventDefault();
   e.stopPropagation();
   console.log("[handleLinkClick] href:", href);
   if (!href) return;
-  
-  // Check if it's a file path (starts with / or C:\ or contains path separators)
-  const isFilePath = href.startsWith("/") || /^[A-Z]:\\/i.test(href) || href.includes("\\");
-  
-  if (isFilePath) {
-    // Open file with system default app via Tauri
-    const { invoke } = (window as any).__TAURI__?.core || {};
-    if (invoke) {
-      console.log("[handleLinkClick] opening file:", href);
-      invoke("open_file_external", { path: href }).then(() => {
-        console.log("[handleLinkClick] file opened successfully");
-      }).catch((err: any) => {
-        console.error("[handleLinkClick] Failed to open file:", err);
-      });
-    } else {
-      console.error("[handleLinkClick] Tauri not available");
-    }
-  } else {
-    // Open external URL in default browser
+
+  const { invoke } = (window as any).__TAURI__?.core || {};
+  if (!invoke) {
+    console.error("[handleLinkClick] Tauri not available");
+    return;
+  }
+
+  // Check if it's a URL (http://, https://, etc.)
+  if (/^https?:\/\//i.test(href) || /^mailto:/i.test(href)) {
     console.log("[handleLinkClick] opening URL:", href);
     window.open(href, "_blank");
+    return;
   }
+
+  // Everything else is treated as a file path.
+  // Could be absolute (C:\..., /home/...) or relative (xxx.md, docs/readme.md)
+  let absPath = href;
+
+  // If relative path, resolve against current project directory or app root
+  if (!href.startsWith("/") && !/^[A-Z]:[\\/]/i.test(href)) {
+    try {
+      // Try to get the current working directory from Tauri
+      const cwd = (await invoke("get_default_cwd")) as string;
+      // Simple path join: if href contains forward slashes (Unix-style relative),
+      // join with cwd. Otherwise just append.
+      if (href.includes("/")) {
+        absPath = cwd.replace(/[\\/]+$/, "") + "/" + href;
+      } else {
+        absPath = cwd.replace(/[\\/]+$/, "") + "/" + href;
+      }
+      // Normalize: if on Windows, convert forward slashes in the cwd part
+      if (/^[A-Z]:\\/i.test(cwd)) {
+        absPath = cwd.replace(/[\\/]+$/, "") + "\\" + href.replace(/\//g, "\\");
+      }
+      console.log("[handleLinkClick] resolved relative path:", absPath);
+    } catch (err) {
+      console.error("[handleLinkClick] Failed to get CWD:", err);
+    }
+  }
+
+  // Try to reveal the file in file manager (highlights the file)
+  console.log("[handleLinkClick] revealing in folder:", absPath);
+  invoke("reveal_item_in_dir", { path: absPath }).then(() => {
+    console.log("[handleLinkClick] file revealed successfully");
+  }).catch((err: any) => {
+    // If reveal fails (e.g. file doesn't exist), try opening the parent directory
+    console.error("[handleLinkClick] reveal failed, trying open_file_external:", err);
+    invoke("open_file_external", { path: absPath }).catch((err2: any) => {
+      console.error("[handleLinkClick] open_file_external also failed:", err2);
+    });
+  });
 }
 
 // Sub-agent status indicator
@@ -227,7 +256,10 @@ interface MessageBubbleProps {
 export const MessageBubble = memo(function MessageBubble({ message, index, showReasoning = true, onDeleteFiles, isLastInTurn, onCitationClick, onSourceClick, onEditAndResend, onReEdit, sessionId, canEdit = true }: MessageBubbleProps) {
 const lang = useLang();
   const displayMode = useAppStore((s) => s.displayMode);
-  const [expanded, setExpanded] = useState(displayMode !== "unified");
+  const isStreaming = message.status === "streaming";
+  // Historical messages (not streaming) default to collapsed reasoning.
+  // Streaming messages start expanded — the streaming effect will keep it open.
+  const [expanded, setExpanded] = useState(isStreaming ? true : (displayMode === "unified"));
   const [toolsExpanded, setToolsExpanded] = useState(displayMode !== "unified");
   const [showAttachment, setShowAttachment] = useState<string | null>(null);
   const [showFilesConfirm, setShowFilesConfirm] = useState(false);
@@ -299,7 +331,6 @@ const [galleryIndex, setGalleryIndex] = useState(0);
 
   const isUser = message.role === "user";
   const isSystem = message.role === "system";
-  const isStreaming = message.status === "streaming";
   const isError = message.status === "error";
 
   // For user messages: strip <attachment> blocks from displayed content.
@@ -446,19 +477,21 @@ const [galleryIndex, setGalleryIndex] = useState(0);
     }
   }, [isStreaming, displayContent]);
 
-  // Auto-collapse reasoning block after streaming ends (aligned with wecode's 800ms delay)
+  // Reasoning collapse logic:
+  // - During streaming: keep expanded (user sees reasoning in real-time)
+  // - After streaming ends: keep expanded (user just received this answer, wants to read it)
+  // - Historical messages (loaded from DB, never streamed): default collapsed
   const reasoningAutoCollapsedRef = useRef(false);
+  const hasStreamedRef = useRef(false);
   useEffect(() => {
     if (isStreaming && message.reasoning) {
       setExpanded(true);
+      hasStreamedRef.current = true;
       reasoningAutoCollapsedRef.current = false;
-    } else if (!isStreaming && message.reasoning && !reasoningAutoCollapsedRef.current && expanded) {
-      const timer = setTimeout(() => {
-        setExpanded(false);
-        reasoningAutoCollapsedRef.current = true;
-      }, 800);
-      return () => clearTimeout(timer);
     }
+    // When streaming ends, do NOT auto-collapse — the user just watched this answer
+    // being generated and wants to read the reasoning. Only historical messages
+    // (which were never in streaming state) should be collapsed by default.
   }, [isStreaming, message.reasoning]);
 
   // P1: Stream reveal — compute reveal count for animation

@@ -821,6 +821,38 @@ async fn open_file_external(path: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+async fn reveal_item_in_dir(path: String) -> Result<(), String> {
+    let p = std::path::Path::new(&path);
+    if !p.exists() {
+        return Err(format!("File not found: {}", path));
+    }
+    let abs = p.canonicalize().map_err(|e| e.to_string())?;
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("explorer.exe")
+            .args(["/select,", &abs.to_string_lossy()])
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .args(["-R", &abs.to_string_lossy()])
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        let parent = abs.parent().unwrap_or(std::path::Path::new("/"));
+        std::process::Command::new("xdg-open")
+            .arg(parent)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
 async fn get_system_info() -> Result<serde_json::Value, String> {
     let home = std::env::var("USERPROFILE")
         .or_else(|_| std::env::var("HOME"))
@@ -1691,6 +1723,7 @@ let app = tauri::Builder::default()
             execute_command,
             open_folder_dialog,
             open_file_external,
+            reveal_item_in_dir,
             get_system_info,
             mimo_read_auth,
             mimo_delete_auth,
