@@ -214,6 +214,40 @@ export function ChatPanel({ onSend, onCancel, onSendGuidance, onToggleSidebar, o
     }
   }, [messages, isStreaming]);
 
+  // When streaming ends (task complete), scroll to the latest assistant answer
+  // so the user sees the conclusion immediately. The answer content is ABOVE the
+  // reasoning and tool calls in our layout, so we scroll the answer into view at
+  // the top of the viewport — not to the bottom of the message list.
+  const prevStreamingRef = useRef(false);
+  useEffect(() => {
+    const wasStreaming = prevStreamingRef.current;
+    prevStreamingRef.current = isSessionStreaming;
+    if (wasStreaming && !isSessionStreaming) {
+      // Streaming just ended — find the last assistant message and scroll it
+      // into view at the top so the user sees the answer, not the tools below.
+      setTimeout(() => {
+        const container = messagesContainerRef.current;
+        if (!container) return;
+        // Find the last assistant message bubble in the DOM
+        const bubbles = container.querySelectorAll('[data-message-id]');
+        let lastAssistant: HTMLElement | null = null;
+        for (let i = bubbles.length - 1; i >= 0; i--) {
+          const el = bubbles[i] as HTMLElement;
+          if (el.classList.contains('assistant')) {
+            lastAssistant = el;
+            break;
+          }
+        }
+        if (lastAssistant) {
+          lastAssistant.scrollIntoView({ behavior: "smooth", block: "start" });
+        } else {
+          // Fallback: scroll to bottom
+          messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+        }
+      }, 150);
+    }
+  }, [isSessionStreaming]);
+
   // Reset initial load flag when session changes
   useEffect(() => {
     isInitialLoadRef.current = true;
