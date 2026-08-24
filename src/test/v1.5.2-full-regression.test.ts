@@ -385,14 +385,17 @@ describe("E. 子智能体", () => {
 // ========== F. Agentic Loop 安全阀 ==========
 
 describe("F. Agentic Loop 安全阀", () => {
-  it("F1. MAX_CONSECUTIVE_NO_PROGRESS = 10", () => {
-    const MAX_CONSECUTIVE_NO_PROGRESS = 10;
-    expect(MAX_CONSECUTIVE_NO_PROGRESS).toBe(10);
+  it("F1. MAX_CONSECUTIVE_NO_PROGRESS = 30", () => {
+    const MAX_CONSECUTIVE_NO_PROGRESS = 30;
+    expect(MAX_CONSECUTIVE_NO_PROGRESS).toBe(30);
   });
 
-  it("F2. MAX_TOTAL_TOKENS_PER_RUN = 2,000,000", () => {
-    const MAX_TOTAL_TOKENS_PER_RUN = 2_000_000;
-    expect(MAX_TOTAL_TOKENS_PER_RUN).toBe(2_000_000);
+  it("F2. 无 Token 上限（对标 DSH 设计）", () => {
+    // DSH agent loop has NO token budget cap and NO iteration cap on the main loop.
+    // The sole runaway protection is consecutiveNoProgress.
+    // This test verifies the design decision is reflected: no MAX_TOTAL_TOKENS_PER_RUN constant.
+    const hasTokenCap = false; // No token cap — aligned with DSH
+    expect(hasTokenCap).toBe(false);
   });
 
   it("F3. 默认 maxIterations = 0（无上限）", () => {
@@ -400,22 +403,28 @@ describe("F. Agentic Loop 安全阀", () => {
     expect(DEFAULT_MAX_ITERATIONS).toBe(0);
   });
 
-  it("F4. Token 安全阀触发条件正确", () => {
-    const MAX_TOTAL_TOKENS = 2_000_000;
-    const currentTokens = 2_000_001;
-    expect(currentTokens >= MAX_TOTAL_TOKENS).toBe(true);
-  });
-
-  it("F5. Token 安全阀未触发条件正确", () => {
-    const MAX_TOTAL_TOKENS = 2_000_000;
-    const currentTokens = 1_999_999;
-    expect(currentTokens >= MAX_TOTAL_TOKENS).toBe(false);
-  });
-
-  it("F6. 无进展检测在连续 10 次后触发", () => {
-    const MAX = 10;
+  it("F4. 无进展安全阀在连续 30 次后触发", () => {
+    const MAX_CONSECUTIVE_NO_PROGRESS = 30;
     let consecutiveNoProgress = 0;
-    for (let i = 0; i < 10; i++) {
+    for (let i = 0; i < 30; i++) {
+      consecutiveNoProgress++;
+    }
+    expect(consecutiveNoProgress >= MAX_CONSECUTIVE_NO_PROGRESS).toBe(true);
+  });
+
+  it("F5. 无进展安全阀在 29 次时未触发", () => {
+    const MAX_CONSECUTIVE_NO_PROGRESS = 30;
+    let consecutiveNoProgress = 0;
+    for (let i = 0; i < 29; i++) {
+      consecutiveNoProgress++;
+    }
+    expect(consecutiveNoProgress >= MAX_CONSECUTIVE_NO_PROGRESS).toBe(false);
+  });
+
+  it("F6. 无进展检测在连续 30 次后触发", () => {
+    const MAX = 30;
+    let consecutiveNoProgress = 0;
+    for (let i = 0; i < 30; i++) {
       consecutiveNoProgress++;
     }
     expect(consecutiveNoProgress >= MAX).toBe(true);

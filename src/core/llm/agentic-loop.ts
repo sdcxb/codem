@@ -165,15 +165,15 @@ export interface LoopConfig {
  * and no new tool results) before the loop is stopped as a runaway safety valve.
  * Matches DSH's philosophy: let the model work as long as it's making progress,
  * but stop if it's stuck in a loop.
+ *
+ * DSH has NO token budget cap and NO iteration cap on the main loop — it only
+ * stops on natural completion (no tool calls) or user abort. We align with this:
+ * the main loop runs indefinitely as long as the model is making progress.
+ * The no-progress valve is the sole runaway protection for the main loop.
+ * 30 iterations is generous enough for complex multi-step tasks while still
+ * catching genuine infinite loops.
  */
-const MAX_CONSECUTIVE_NO_PROGRESS = 10;
-
-/**
- * Hard cap on total token consumption (input + output) per loop run.
- * Prevents cost runaway if the model keeps generating without converging.
- * 2M tokens is a generous safety valve — typical complex tasks use <500K.
- */
-const MAX_TOTAL_TOKENS_PER_RUN = 2_000_000;
+const MAX_CONSECUTIVE_NO_PROGRESS = 30;
 
 const DEFAULT_LOOP_CONFIG: LoopConfig = {
   maxIterations: 0,
@@ -717,24 +717,21 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
     const planState = this.estimateSteps(userMessage);
     console.log(`[AgenticLoop] Estimated ${planState.total ?? 0} steps:`, planState.plan?.map(s => s.title));
 
-      // Main loop — DSH-aligned: no built-in turn budget.
+      // Main loop — DSH-aligned: no built-in turn budget, no token cap.
       // The loop runs until the model produces no tool calls (natural completion).
+      // DSH's agent loop has NO token budget cap and NO iteration cap on the main
+      // loop — it only stops on natural completion or user abort. We align with this.
       // Safety valves (checked at the top of each iteration):
-      //   1. maxIterations (if > 0): hard cap, used by sub-agents to prevent recursive runaway
+      //   1. maxIterations (if > 0): hard cap, ONLY used by sub-agents to prevent recursive runaway
       //   2. consecutiveNoProgress: stop if model is stuck in a loop with no progress
-      //   3. MAX_TOTAL_TOKENS_PER_RUN: stop if token consumption exceeds safety limit
       while (true) {
-        // Safety valve 1: hard iteration cap (sub-agent runaway prevention)
+        // Safety valve 1: hard iteration cap (sub-agent runaway prevention only)
         if (this.state.maxIterations > 0 && this.state.iteration >= this.state.maxIterations) {
           break;
         }
-        // Safety valve 2: token consumption safety limit
-        if (this.state.totalUsage.totalTokens >= MAX_TOTAL_TOKENS_PER_RUN) {
-          console.warn(`[AgenticLoop] Token safety limit reached: ${this.state.totalUsage.totalTokens} >= ${MAX_TOTAL_TOKENS_PER_RUN}`);
-          yield { type: "text_delta", text: `\n\n⚠️ **Token 消耗已达安全上限** (${(MAX_TOTAL_TOKENS_PER_RUN / 1000).toFixed(0)}K tokens)，任务停止以防止成本失控。如需继续，请重新发送指令。` };
-          break;
-        }
-        // Safety valve 3: consecutive no-progress detection
+        // Safety valve 2: consecutive no-progress detection
+        // This is the sole runaway protection for the main loop, matching DSH's
+        // design of no token budget cap and no iteration cap on the main loop.
         if (this.state.consecutiveNoProgress >= MAX_CONSECUTIVE_NO_PROGRESS) {
           console.warn(`[AgenticLoop] Runaway detected: ${MAX_CONSECUTIVE_NO_PROGRESS} consecutive iterations with no progress`);
           yield { type: "text_delta", text: `\n\n⚠️ **检测到循环停滞**（连续 ${MAX_CONSECUTIVE_NO_PROGRESS} 次迭代无进展），任务已停止以防止死循环。请检查模型是否陷入重复操作。` };
@@ -1293,9 +1290,6 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
     if (this.state.maxIterations > 0 && this.state.iteration >= this.state.maxIterations) {
       stopReason = "max_iterations";
       stopMessage = `\n\n⚠️ **已达到迭代上限 (${this.state.maxIterations})**，任务停止。如需继续，请重新发送指令。`;
-    } else if (this.state.totalUsage.totalTokens >= MAX_TOTAL_TOKENS_PER_RUN) {
-      stopReason = "token_limit";
-      stopMessage = `\n\n⚠️ **Token 消耗已达安全上限**，任务停止以防止成本失控。如需继续，请重新发送指令。`;
     } else if (this.state.consecutiveNoProgress >= MAX_CONSECUTIVE_NO_PROGRESS) {
       stopReason = "no_progress";
       stopMessage = `\n\n⚠️ **检测到循环停滞**（连续 ${MAX_CONSECUTIVE_NO_PROGRESS} 次迭代无进展），任务已停止以防止死循环。`;
