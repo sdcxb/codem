@@ -1915,20 +1915,26 @@ flex-shrink: 0;
 }
 
 .send-btn {
-  width: 32px;
-  height: 32px;
-  border-radius: var(--radius-sm, 8px);
-  border: none;
-  background: var(--accent);
-  color: white;
-  font-size: 14px;
-  line-height: 1;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  transition: background 0.15s ease;
+width: 32px;
+height: 32px;
+border-radius: var(--radius-sm, 8px);
+border: none;
+background: var(--accent);
+color: white;
+font-size: 14px;
+line-height: 1;
+cursor: pointer;
+display: flex;
+align-items: center;
+justify-content: center;
+flex-shrink: 0;
+padding: 0;
+transition: background 0.15s ease;
+}
+
+/* P0-FIX: Ensure SVG icons inside send-btn are vertically centered */
+.send-btn svg {
+display: block;
 }
 
 .send-btn:hover:not(.disabled) {

@@ -97,17 +97,29 @@ function isWrapperLine(line: string): boolean {
 }
 
 /**
- * Skip leading wrapper lines and return the index of the first real content line.
+ * Skip leading wrapper/prefix lines and return the index of the first real content line.
+ * Handles multiple layers of prefix:
+ *   1. [CACHE HIT] / [ALREADY COLLECTED] prefix from AgenticLoop dedup
+ *   2. [Tool result pruned ...] prefix from prior micro-compact pass
+ *   3. Anti-injection wrapper (╔══, ║ ..., ╚══, empty lines, "文件: xxx")
  */
 function skipWrapper(lines: string[]): number {
   let i = 0;
-  // Skip wrapper header (╔══, ║ ..., ╚══, empty lines, "文件: xxx" line)
+  // Skip [CACHE HIT] / [ALREADY COLLECTED] prefix block
   while (i < lines.length) {
     const trimmed = lines[i].trim();
     if (trimmed === '') { i++; continue; }
+    if (trimmed.startsWith('[CACHE HIT]') || trimmed.startsWith('[ALREADY COLLECTED]')) { i++; continue; }
+    if (trimmed.startsWith('File:') || trimmed.startsWith('文件:')) { i++; continue; }
+    // Skip "Use the content below" guidance text
+    if (trimmed.startsWith('Use the content') || trimmed.startsWith('Do NOT call')) { i++; continue; }
+    if (trimmed.startsWith('You already called') || trimmed.startsWith('If you have collected')) { i++; continue; }
+    if (trimmed.startsWith('Here is the cached') || trimmed.startsWith('The sub-agent')) { i++; continue; }
+    if (trimmed.startsWith('If you have collected') || trimmed.startsWith('proceed to the next')) { i++; continue; }
+    // Skip [Tool result pruned ...] prefix from prior micro-compact
+    if (trimmed.startsWith('[Tool result pruned')) { i++; continue; }
+    // Skip anti-injection wrapper (╔══, ║ ..., ╚══)
     if (isWrapperLine(lines[i])) { i++; continue; }
-    // Skip the "文件: xxx" metadata line that follows the wrapper
-    if (trimmed.startsWith('文件:') || trimmed.startsWith('File:')) { i++; continue; }
     break;
   }
   return i;
@@ -316,6 +328,7 @@ export function microCompact(llmMessages: any[]): MicroCompactResult {
  */
 export function isAlreadyMicroCompacted(llmMessages: any[]): boolean {
   return llmMessages.some(
-    (msg) => msg.role === "tool" && typeof msg.content === "string" && msg.content.startsWith("[Tool result compacted"),
+    (msg) => msg.role === "tool" && typeof msg.content === "string" &&
+    (msg.content.startsWith("[Tool result pruned") || msg.content.startsWith("[Tool result compacted")),
   );
 }

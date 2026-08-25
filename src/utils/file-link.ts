@@ -12,6 +12,14 @@
  * - Right-clicking a file link shows "Open Containing Folder" and "Open File".
  */
 
+/** Global cwd — set by App.tsx when project changes. */
+let globalCwd: string = "";
+
+/** Set the current working directory for file link resolution. */
+export function setGlobalCwd(cwd: string): void {
+  globalCwd = cwd;
+}
+
 /** Check if a string looks like an absolute path (Windows or Unix). */
 function isAbsolutePath(p: string): boolean {
   return /^[A-Za-z]:[/\\]/.test(p) || p.startsWith("/") || p.startsWith("\\\\");
@@ -48,28 +56,52 @@ export async function openFileLink(href: string): Promise<void> {
   // Resolve relative paths against workspace cwd
   let absPath = href;
   if (!isAbsolutePath(href)) {
-    try {
-      const cwd = (await invoke("get_default_cwd")) as string;
+    // Use globalCwd first (set by App.tsx), then fall back to Tauri command
+    let cwd = globalCwd;
+    if (!cwd) {
+      try {
+        cwd = (await invoke("get_default_cwd")) as string;
+      } catch (err) {
+        console.error("[openFileLink] Failed to get CWD:", err);
+      }
+    }
+    if (cwd) {
       absPath = resolveWorkspacePath(cwd, href);
       // Normalize separators for Windows
       if (/^[A-Z]:\\/i.test(cwd)) {
         absPath = cwd.replace(/[\\/]+$/, "") + "\\" + href.replace(/\//g, "\\");
       }
-    } catch (err) {
-      console.error("[openFileLink] Failed to get CWD:", err);
     }
   }
+
+  console.log(`[openFileLink] href=${href}, absPath=${absPath}`);
 
   // Try to reveal the file in file manager (highlights the file)
   try {
     await invoke("reveal_item_in_dir", { path: absPath });
-  } catch {
-    // If reveal fails (e.g. file doesn't exist), try opening the parent directory
-    try {
-      await invoke("open_file_external", { path: absPath });
-    } catch (err2) {
-      console.error("[openFileLink] Both reveal and open failed:", err2);
+    return;
+  } catch (err) {
+    console.warn("[openFileLink] reveal_item_in_dir failed:", err);
+  }
+
+  // If reveal fails, try opening the parent directory
+  // Strip the filename and try to open the directory
+  try {
+    const lastSep = Math.max(absPath.lastIndexOf("\\"), absPath.lastIndexOf("/"));
+    if (lastSep > 0) {
+      const dirPath = absPath.substring(0, lastSep);
+      await invoke("open_file_external", { path: dirPath });
+      return;
     }
+  } catch (err) {
+    console.warn("[openFileLink] open parent dir failed:", err);
+  }
+
+  // Last resort: try opening the file itself
+  try {
+    await invoke("open_file_external", { path: absPath });
+  } catch (err2) {
+    console.error("[openFileLink] All methods failed:", err2);
   }
 }
 

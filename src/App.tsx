@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿import { useEffect, useState, useRef, useCallback } from "react";
+﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿import { useEffect, useState, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 
 // D1-4: 全局错误边界 — 捕获未处理的同步错误和 Promise rejection
@@ -255,6 +255,7 @@ import { getSessionMessageBus, getDelegationOrchestrator, executeSessionTurn, is
 import type { InteractiveFormQuestion, PromptChange } from "./core/llm/tools";
 import { useAppStore } from "./store";
 import { useProjectStore } from "./core/store";
+import { setGlobalCwd } from "./utils/file-link";
 import { loadAppIdentity } from "./core/config/loader";
 import { AppIdentity, type Session } from "./core/types";
 import { getLLMEngine } from "./core/llm";
@@ -331,6 +332,11 @@ function App() {
   const lang = useLang();
   const { messages, addMessage, appendToMessage, setStreaming, isStreaming, addToolCall, updateToolCall, loadMessages, saveMessages, setLLMStatus, addGuidanceMessage, markGuidanceConsumed, clearGuidanceMessages } = useAppStore();
   const { currentProject, currentSession, createSession, dbReady, loadFromDB } = useProjectStore();
+
+// P0-FIX: Sync global cwd for file-link resolution — without this, clicking
+// file links in markdown output resolves paths against the wrong base dir
+// (get_default_cwd returns the global workspace, not the project dir).
+setGlobalCwd(currentProject?.path || "");
 
   // P4.3: 初始化 Cordis 插件系统
   // 在 App 挂载时创建全局 Context，加载桥接插件和 Slot Registry。

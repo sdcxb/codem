@@ -119,6 +119,23 @@ export const RichContent = memo(function RichContent({
     ensureKatexCss();
   }
 
+  // P2 #33: 判断内联代码是否为"单个单词或短词组"
+  // 如果是，降级为普通文本样式，不渲染代码框
+  const isSimpleInlineTerm = useCallback((text: string): boolean => {
+    return text.length <= 80 &&
+      !text.includes("\n") &&
+      !text.includes(";") &&
+      !text.includes("{") &&
+      !text.includes("}") &&
+      !text.includes("|") &&
+      !text.includes("=>") &&
+      !text.includes("==") &&
+      !text.includes("!=") &&
+      !text.includes("//") &&
+      !text.includes("/*") &&
+      !(text.includes("(") && text.includes(")"));
+  }, []);
+
   // P2 #30: 修复 CJK 粗体标记 — CommonMark 在 `**粗体**` 后紧跟 CJK 字符时不渲染粗体
   const processedContent = useMemo(() => fixCjkBoldMarkdown(content), [content]);
 
@@ -149,20 +166,7 @@ export const RichContent = memo(function RichContent({
     if (inline) {
       const text = String(children);
       // 判断是否为“单个单词或短词组”：不含换行、不含分号/大括号/管道符等代码结构
-      const isSimpleWord =
-        text.length <= 60 &&
-        !text.includes("\n") &&
-        !text.includes(";") &&
-        !text.includes("{") &&
-        !text.includes("}") &&
-        !text.includes("|") &&
-        !text.includes("=>") &&
-        !text.includes("==") &&
-        !text.includes("!=") &&
-        !text.includes("//") &&
-        !text.includes("/*") &&
-        // 不含多行代码特征（连等号赋值、函数调用括号等）
-        !(text.includes("(") && text.includes(")"));
+      const isSimpleWord = isSimpleInlineTerm(text);
       if (isSimpleWord) {
         // 单个单词/词组：渲染为普通文本，不带代码框样式
         return (
@@ -177,6 +181,19 @@ export const RichContent = memo(function RichContent({
           {children}
         </code>
       );
+    }
+
+    // 块级代码块 — 如果只有 1 行且是简单词组，也降级为内联文本
+    // LLM 有时用三反引号围栏包裹单个单词（如 ```read```），这会被解析为块级代码
+    if (!inline && !language && code.split("\n").length === 1) {
+      const text = code.trim();
+      if (isSimpleInlineTerm(text)) {
+        return (
+          <span className="inline-term" {...props}>
+            {text}
+          </span>
+        );
+      }
     }
 
     // 普通代码块
