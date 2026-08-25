@@ -486,11 +486,13 @@ async function fetchClawHubSkills(source: MarketSource): Promise<MarketSkill[]> 
           tags: Array.isArray(item.tags) ? item.tags : [],
           sourceId: source.id,
           sourceName: source.name,
-          downloadUrl: item.installUrl || item.downloadUrl || `${baseUrl}/${author}/skills/${slug}`,
+          downloadUrl: item.installUrl || item.downloadUrl || (item.repoFullName ? `https://api.github.com/repos/${item.repoFullName}/zipball/main` : `${baseUrl}/${author}/skills/${slug}`),
           repoUrl: item.url || `${baseUrl}/${author}/skills/${slug}`,
           stars: item.downloads || item.installs,
           lastUpdated: item.updatedAt,
           installType: "zip",
+          repoFullName: item.repoFullName,
+          branch: item.branch || "main",
         });
       }
 
@@ -587,12 +589,13 @@ async function fetchSkillsShViaAPI(source: MarketSource, baseUrl: string): Promi
           tags: Array.isArray(item.tags) ? item.tags : [],
           sourceId: source.id,
           sourceName: source.name,
-          downloadUrl: item.installUrl || "",
+          downloadUrl: item.installUrl || (item.source ? `https://api.github.com/repos/${item.source}/zipball/main` : ""),
           repoUrl: item.url || `${baseUrl}/${skillId}`,
           stars: item.installs,
           lastUpdated: item.updatedAt,
-          installType: "zip",
+          installType: item.source ? "dir" : "zip",
           repoFullName: item.source,
+          dirPath: item.slug || item.name,
         });
       }
 
@@ -707,9 +710,10 @@ async function fetchSkillsShViaHTML(source: MarketSource, baseUrl: string): Prom
             downloadUrl: `https://github.com/${cleanSourcePath}`,
             repoUrl: `${baseUrl}/${cleanSourcePath}/${slug}`,
             stars,
-            installType: "zip",
+            installType: "dir",
             repoFullName: cleanSourcePath,
             branch: "main",
+            dirPath: slug,
           });
         }
       } catch (err) {
@@ -1211,10 +1215,27 @@ export async function installMarketSkill(
     const sep = skillsDir.includes("/") && !skillsDir.includes("\\") ? "/" : "\\";
     const tempZipPath = `${skillsDir}${sep}.tmp${sep}${skill.sourceId}-${skill.name}.zip`;
 
+    // 修正 downloadUrl：确保是有效的 ZIP 下载链接
+    let downloadUrl = skill.downloadUrl;
+    if (!downloadUrl) {
+      return {
+        success: false,
+        error: "该技能没有可用的下载链接（downloadUrl 为空）。请尝试其他来源。",
+      };
+    }
+
+    // Skills.sh HTML 抓取的 downloadUrl 是 GitHub 仓库主页（https://github.com/owner/repo）
+    // 需要转换为 zipball URL
+    if (downloadUrl.startsWith("https://github.com/") && !downloadUrl.includes("/zipball/") && !downloadUrl.includes("/archive/")) {
+      const repoPath = downloadUrl.replace("https://github.com/", "");
+      const branch = skill.branch || "main";
+      downloadUrl = `https://api.github.com/repos/${repoPath}/zipball/${branch}`;
+    }
+
     onProgress?.(15, `正在下载技能包: ${skill.displayName}...`);
 
     // 通过 Rust 层下载 ZIP 文件
-    await httpDownload(skill.downloadUrl, tempZipPath, githubApiHeaders());
+    await httpDownload(downloadUrl, tempZipPath, githubApiHeaders());
 
     onProgress?.(40, "正在读取下载文件...");
 
