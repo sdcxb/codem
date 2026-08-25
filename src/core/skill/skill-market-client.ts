@@ -345,50 +345,58 @@ async function fetchGitHubSearchSkills(source: MarketSource): Promise<MarketSkil
     const data = JSON.parse(resp.body);
     if (!data.items || !Array.isArray(data.items)) return skills;
 
-    for (const repo of data.items) {
-      // 尝试获取 SKILL.md 内容以提取元数据
-      let description = repo.description || "";
-      let displayName = repo.name;
-      let author = repo.owner?.login || "";
-      let tags: string[] | undefined;
-      let version: string | undefined;
+    // 并行获取每个仓库的 SKILL.md（之前是串行，30 个仓库需要 60+ 个请求）
+    const repoSkills = await Promise.allSettled(
+      data.items.map(async (repo: any) => {
+        let description = repo.description || "";
+        let displayName = repo.name;
+        let author = repo.owner?.login || "";
+        let tags: string[] | undefined;
+        let version: string | undefined;
 
-      try {
-        const branch = await getDefaultBranch(repo.full_name);
-        const skillMdUrl = `https://raw.githubusercontent.com/${repo.full_name}/${branch}/SKILL.md`;
-        const mdResp = await httpGet(skillMdUrl);
-        if (mdResp.status === 200) {
-          const skillDef = parseSkillMarkdown(mdResp.body, "");
-          if (skillDef) {
-            displayName = skillDef.displayName || skillDef.name || displayName;
-            description = skillDef.description || description;
-            author = skillDef.author || author;
-            version = skillDef.version;
-            tags = skillDef.tags;
+        try {
+          const branch = repo.default_branch || "main";
+          const skillMdUrl = `https://raw.githubusercontent.com/${repo.full_name}/${branch}/SKILL.md`;
+          const mdResp = await httpGet(skillMdUrl);
+          if (mdResp.status === 200) {
+            const skillDef = parseSkillMarkdown(mdResp.body, "");
+            if (skillDef) {
+              displayName = skillDef.displayName || skillDef.name || displayName;
+              description = skillDef.description || description;
+              author = skillDef.author || author;
+              version = skillDef.version;
+              tags = skillDef.tags;
+            }
           }
+        } catch {
+          // SKILL.md not found — use repo metadata only
         }
-      } catch {
-        // SKILL.md not found — use repo metadata only
-      }
 
-      skills.push({
-        id: `${source.id}:${repo.full_name}`,
-        name: repo.name,
-        displayName,
-        description: description || "无描述",
-        author,
-        version,
-        tags: Array.isArray(tags) ? tags : (Array.isArray(repo.topics) ? repo.topics : []),
-        sourceId: source.id,
-        sourceName: source.name,
-        downloadUrl: `https://api.github.com/repos/${repo.full_name}/zipball/${repo.default_branch || "main"}`,
-        repoUrl: repo.html_url,
-        stars: repo.stargazers_count,
-        lastUpdated: repo.updated_at,
-        installType: "zip",
-        repoFullName: repo.full_name,
-        branch: repo.default_branch || "main",
-      });
+        return {
+          id: `${source.id}:${repo.full_name}`,
+          name: repo.name,
+          displayName,
+          description: description || "无描述",
+          author,
+          version,
+          tags: Array.isArray(tags) ? tags : (Array.isArray(repo.topics) ? repo.topics : []),
+          sourceId: source.id,
+          sourceName: source.name,
+          downloadUrl: `https://api.github.com/repos/${repo.full_name}/zipball/${repo.default_branch || "main"}`,
+          repoUrl: repo.html_url,
+          stars: repo.stargazers_count,
+          lastUpdated: repo.updated_at,
+          installType: "zip" as const,
+          repoFullName: repo.full_name,
+          branch: repo.default_branch || "main",
+        };
+      }),
+    );
+
+    for (const result of repoSkills) {
+      if (result.status === "fulfilled") {
+        skills.push(result.value);
+      }
     }
   } catch (err) {
     console.error(`[SkillMarket] Error fetching search skills for ${source.id}:`, err);
@@ -747,7 +755,7 @@ async function fetchSkillsShViaHTML(source: MarketSource, baseUrl: string): Prom
  */
 async function fetchSkillHubAPISkills(source: MarketSource): Promise<MarketSkill[]> {
   const skills: MarketSkill[] = [];
-  const MAX_PAGES = 3; // 最多 3 页 × 100 条/页 = 300 条（避免多页串行请求导致加载慢）
+  const MAX_PAGES = 2; // 最多 2 页 × 100 条/页 = 200 条
   const PAGE_SIZE = 100;
 
   try {
@@ -756,81 +764,66 @@ async function fetchSkillHubAPISkills(source: MarketSource): Promise<MarketSkill
       "Accept": "application/json",
     };
 
-    // 策略 1：先获取精选技能
-    const featuredSkills = await fetchSkillHubEndpoint(
-      `${baseUrl}/api/skills/featured`,
-      source,
-      headers,
-      skills,
-    );
-    console.log(`[SkillMarket] SkillHub featured: ${featuredSkills} skills`);
-
-    // 策略 2：分页获取全部技能（按下载量排序）
-    let page = 0;
-    let total = 0;
-    const seenIds = new Set(skills.map((s) => s.id));
-
-    while (page < MAX_PAGES) {
-      const params = new URLSearchParams();
-      params.set("limit", String(PAGE_SIZE));
-      params.set("page", String(page));
-      params.set("sort", "downloads");
-
-      const resp = await httpGet(`${baseUrl}/api/skills?${params.toString()}`, headers);
-      if (resp.status !== 200) {
-        console.warn(`[SkillMarket] SkillHub API failed (page ${page}): ${resp.status}`);
-        break;
-      }
-
-      const data = JSON.parse(resp.body);
-      const items: any[] = data.data || data.skills || data.items || (Array.isArray(data) ? data : []);
-      if (items.length === 0) break;
-
-      // 记录总数
-      if (data.total && !total) total = data.total;
-
-      for (const item of items) {
-        const skillId = item.id || item._id || `${item.owner || item.source}/${item.slug || item.name}`;
-        const skillKey = `${source.id}:${skillId}`;
-        if (seenIds.has(skillKey)) continue;
-        seenIds.add(skillKey);
-
-        const slug = item.slug || item.name || skillId;
-        const author = item.owner || item.source || item.author || "";
-        const downloadUrl = item.zipUrl || item.downloadUrl ||
-          (item._id || item.id ?
-            `${baseUrl}/api/skill-files/zip?skillId=${item._id || item.id}` :
-            `${baseUrl}/api/skill-files/zip?skillId=${slug}`);
-
-        skills.push({
-          id: skillKey,
-          name: slug,
-          displayName: item.displayName || item.name || slug,
-          description: item.description || item.summary || "无描述",
-          author,
-          version: item.version,
-          tags: Array.isArray(item.tags) ? item.tags : (Array.isArray(item.categories) ? item.categories : []),
-          sourceId: source.id,
-          sourceName: source.name,
-          downloadUrl,
-          repoUrl: item.url || item.repoUrl || (author ? `https://github.com/${author}` : undefined),
-          stars: item.downloads || item.installs || item.stars,
-          lastUpdated: item.updatedAt || item.updated_at,
-          installType: "zip",
-          repoFullName: item.repoFullName || (author ? `${author}/${slug}` : undefined),
-          branch: item.branch || "main",
-        });
-      }
-
-      // 检查分页
-      const hasMore = data.hasMore !== undefined ? data.hasMore :
-        (data.pagination ? data.pagination.hasMore : undefined);
-      if (hasMore === false) break;
-      if (items.length < PAGE_SIZE) break;
-      page++;
+    // 并行请求 featured + 各页数据（之前是串行，4 个请求 × 15s 超时 = 最长 60s）
+    const pageUrls: string[] = [];
+    pageUrls.push(`${baseUrl}/api/skills/featured`);
+    for (let p = 0; p < MAX_PAGES; p++) {
+      pageUrls.push(`${baseUrl}/api/skills?limit=${PAGE_SIZE}&page=${p}&sort=downloads`);
     }
 
-    console.log(`[SkillMarket] SkillHub API: fetched ${skills.length} skills (total indexed: ${total || "unknown"})`);
+    const results = await Promise.allSettled(
+      pageUrls.map(url => httpGet(url, headers)),
+    );
+
+    const seenIds = new Set<string>();
+
+    for (const result of results) {
+      if (result.status !== "fulfilled") continue;
+      const resp = result.value;
+      if (resp.status !== 200) continue;
+
+      try {
+        const data = JSON.parse(resp.body);
+        const items: any[] = data.data || data.skills || data.items || (Array.isArray(data) ? data : []);
+
+        for (const item of items) {
+          const skillId = item.id || item._id || `${item.owner || item.source}/${item.slug || item.name}`;
+          const skillKey = `${source.id}:${skillId}`;
+          if (seenIds.has(skillKey)) continue;
+          seenIds.add(skillKey);
+
+          const slug = item.slug || item.name || skillId;
+          const author = item.owner || item.source || item.author || "";
+          const downloadUrl = item.zipUrl || item.downloadUrl ||
+            (item._id || item.id ?
+              `${baseUrl}/api/skill-files/zip?skillId=${item._id || item.id}` :
+              `${baseUrl}/api/skill-files/zip?skillId=${slug}`);
+
+          skills.push({
+            id: skillKey,
+            name: slug,
+            displayName: item.displayName || item.name || slug,
+            description: item.description || item.summary || "无描述",
+            author,
+            version: item.version,
+            tags: Array.isArray(item.tags) ? item.tags : (Array.isArray(item.categories) ? item.categories : []),
+            sourceId: source.id,
+            sourceName: source.name,
+            downloadUrl,
+            repoUrl: item.url || item.repoUrl || (author ? `https://github.com/${author}` : undefined),
+            stars: item.downloads || item.installs || item.stars,
+            lastUpdated: item.updatedAt || item.updated_at,
+            installType: "zip",
+            repoFullName: item.repoFullName || (author ? `${author}/${slug}` : undefined),
+            branch: item.branch || "main",
+          });
+        }
+      } catch (e) {
+        console.warn("[SkillMarket] SkillHub parse error:", e);
+      }
+    }
+
+    console.log(`[SkillMarket] SkillHub API: fetched ${skills.length} skills`);
   } catch (err) {
     console.error(`[SkillMarket] Error fetching SkillHub skills:`, err);
   }
@@ -1121,11 +1114,13 @@ export async function listMarketSkills(
   const registry = getSkillRegistry();
   const installedNames = new Set(registry.getAll().map((s) => s.name));
 
-  // 并行加载所有源
+  // 并行加载所有源（每个源 12 秒超时保护）
+  const LIST_SOURCE_TIMEOUT_MS = 12_000;
   const promises = activeSources.map(async (source) => {
     try {
       let skills: MarketSkill[] = [];
-      switch (source.type) {
+      const sourcePromise = (async () => {
+        switch (source.type) {
         case "github-repo":
           skills = await fetchGitHubRepoSkills(source);
           break;
@@ -1148,6 +1143,19 @@ export async function listMarketSkills(
           skills = await fetchCLISkills(source);
           break;
       }
+        return skills;
+      })();
+
+      // 超时保护：单个源超过 12 秒则返回空结果
+      skills = await Promise.race([
+        sourcePromise,
+        new Promise<MarketSkill[]>((resolve) =>
+          setTimeout(() => {
+            console.warn(`[SkillMarket] Source "${source.name}" timed out after ${LIST_SOURCE_TIMEOUT_MS}ms`);
+            resolve([]);
+          }, LIST_SOURCE_TIMEOUT_MS)
+        ),
+      ]);
 
       // 标记已安装状态
       for (const skill of skills) {
@@ -1517,7 +1525,7 @@ export async function searchMarketSkillsOnline(
   const q = query.toLowerCase().trim();
 
   // 为每个源设置超时，避免单个慢源卡住全部搜索
-  const SOURCE_TIMEOUT_MS = 20_000; // 20 秒超时
+  const SOURCE_TIMEOUT_MS = 12_000; // 12 秒超时（略短于 Rust 端 15s http_get 超时）
 
   const promises = activeSources.map(async (source) => {
     try {

@@ -372,7 +372,23 @@ return true;
       if (cancelled) return;
       try {
         const sources = getMarketSources();
-        const result = await searchMarketSkillsOnline(q, sources);
+        const result = await searchMarketSkillsOnline(q, sources, (sourceId, sourceSkills) => {
+          // 渐进式更新：每搜完一个源就立即合并结果到列表
+          if (sourceSkills.length > 0) {
+            setMarketSkills((prev) => {
+              const existingIds = new Set(prev.map((s) => s.id));
+              const newSkills = sourceSkills.filter((s) => !existingIds.has(s.id));
+              if (newSkills.length > 0) {
+                const updated = [...prev, ...newSkills];
+                try {
+                  setSettingJSON(MARKET_CACHE_KEY, { skills: updated, sources, ts: Date.now() });
+                } catch {}
+                return updated;
+              }
+              return prev;
+            });
+          }
+        });
         if (cancelled) return;
 
         if (result.skills.length > 0) {
