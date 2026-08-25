@@ -30,6 +30,7 @@
     "fs:default",
     "fs:read-all",
     "fs:write-all",
+    "dialog:default",
     "notification:default",
     "notification:allow-notify",
     "notification:allow-is-permission-granted",

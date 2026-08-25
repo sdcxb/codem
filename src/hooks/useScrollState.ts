@@ -19,8 +19,10 @@ export function useScrollState(
   const handleScroll = useCallback(() => {
     const container = containerRef.current;
     if (!container) return;
+    // .chat-body 是真正的滚动容器，.messages-container 不滚动
+    const scrollEl = container.parentElement || container;
 
-    const { scrollTop, scrollHeight, clientHeight } = container;
+    const { scrollTop, scrollHeight, clientHeight } = scrollEl;
     const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
 
     let newPos: ScrollPosition;
@@ -42,13 +44,14 @@ export function useScrollState(
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
+    const scrollEl = container.parentElement || container;
 
-    container.addEventListener("scroll", handleScroll, { passive: true });
+    scrollEl.addEventListener("scroll", handleScroll, { passive: true });
     // Initial check
     handleScroll();
 
     return () => {
-      container.removeEventListener("scroll", handleScroll);
+      scrollEl.removeEventListener("scroll", handleScroll);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [containerRef, handleScroll, ...deps]);

@@ -292,25 +292,28 @@ setStepTooltipLocked(false);
   useEffect(() => {
     const container = messagesContainerRef.current;
     if (!container) return;
+    // .chat-body 是真正的滚动容器（overflow-y: auto），.messages-container 不滚动
+    const scrollContainer = container.parentElement as HTMLElement | null;
+    if (!scrollContainer) return;
 
     let scrollTimer: ReturnType<typeof setTimeout> | null = null;
     const handleScroll = () => {
       if (scrollTimer) return;
       scrollTimer = setTimeout(() => {
         scrollTimer = null;
-        if (container.scrollTop < 50 && hasMoreMessages && !isLoadingMore) {
+        if (scrollContainer.scrollTop < 50 && hasMoreMessages && !isLoadingMore) {
           loadingHistoryRef.current = true;
           loadMoreMessages(currentSession?.id || "", 10);
         }
       }, 200);
     };
 
-    container.addEventListener("scroll", handleScroll);
+    scrollContainer.addEventListener("scroll", handleScroll);
     return () => {
-      container.removeEventListener("scroll", handleScroll);
+      scrollContainer.removeEventListener("scroll", handleScroll);
       if (scrollTimer) clearTimeout(scrollTimer);
     };
-  }, [hasMoreMessages, isLoadingMore, loadMoreMessages]);
+  }, [hasMoreMessages, isLoadingMore, loadMoreMessages, currentSession?.id]);
 
   // Subscribe to SubagentManager updates
   useEffect(() => {

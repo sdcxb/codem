@@ -1516,34 +1516,52 @@ export async function searchMarketSkillsOnline(
 
   const q = query.toLowerCase().trim();
 
+  // 为每个源设置超时，避免单个慢源卡住全部搜索
+  const SOURCE_TIMEOUT_MS = 20_000; // 20 秒超时
+
   const promises = activeSources.map(async (source) => {
     try {
       let skills: MarketSkill[] = [];
 
-      // 对于 SkillHub，利用其服务端搜索 API
-      if (source.type === "skillhub-api") {
-        skills = await fetchSkillHubSearch(source, q);
-      } else {
-        // 其他源：全量拉取后在本地过滤
-        skills = await fetchSkillsFromSource(source);
-        // 本地过滤
-        if (q) {
-          skills = skills.filter((s) => {
-            const tags = Array.isArray(s.tags) ? s.tags : [];
-            const name = String(s.name || "");
-            const displayName = String(s.displayName || "");
-            const description = String(s.description || "");
-            const author = s.author ? String(s.author) : "";
-            return (
-              name.toLowerCase().includes(q) ||
-              displayName.toLowerCase().includes(q) ||
-              description.toLowerCase().includes(q) ||
-              author.toLowerCase().includes(q) ||
-              tags.some((t) => String(t).toLowerCase().includes(q))
-            );
-          });
+      // 为单个源设置超时
+      const sourcePromise = (async () => {
+        // 对于 SkillHub，利用其服务端搜索 API
+        if (source.type === "skillhub-api") {
+          skills = await fetchSkillHubSearch(source, q);
+        } else {
+          // 其他源：全量拉取后在本地过滤
+          skills = await fetchSkillsFromSource(source);
+          // 本地过滤
+          if (q) {
+            skills = skills.filter((s) => {
+              const tags = Array.isArray(s.tags) ? s.tags : [];
+              const name = String(s.name || "");
+              const displayName = String(s.displayName || "");
+              const description = String(s.description || "");
+              const author = s.author ? String(s.author) : "";
+              return (
+                name.toLowerCase().includes(q) ||
+                displayName.toLowerCase().includes(q) ||
+                description.toLowerCase().includes(q) ||
+                author.toLowerCase().includes(q) ||
+                tags.some((t) => String(t).toLowerCase().includes(q))
+              );
+            });
+          }
         }
-      }
+        return skills;
+      })();
+
+      // 超时保护：如果单个源超过 20 秒，返回空结果
+      skills = await Promise.race([
+        sourcePromise,
+        new Promise<MarketSkill[]>((resolve) =>
+          setTimeout(() => {
+            console.warn(`[SkillMarket] Source "${source.name}" timed out after ${SOURCE_TIMEOUT_MS}ms`);
+            resolve([]);
+          }, SOURCE_TIMEOUT_MS)
+        ),
+      ]);
 
       // 标记已安装状态
       for (const skill of skills) {
