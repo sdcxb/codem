@@ -833,14 +833,18 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
         }
       }
 
-      // Dynamically adjust if we exceed the plan
-      if (planState.total !== null && this.state.iteration > planState.total) {
-        planState.total = this.state.iteration + 1;
-        // Append a generic step to the plan
-        if (planState.plan) {
-          planState.plan.push({ title: `Step ${this.state.iteration}` });
-        }
-      }
+// Dynamically adjust if we exceed the plan
+if (planState.total !== null && this.state.iteration > planState.total) {
+  planState.total = this.state.iteration + 1;
+  // Append a step to the plan with a meaningful title
+  // Instead of generic "Step N", use a descriptive title
+  if (planState.plan) {
+    const isZh = /[\u4e00-\u9fa5]/.test(userMessage);
+    planState.plan.push({ title: this.state.iteration <= 1
+      ? (isZh ? "分析任务" : "Analyze task")
+      : `${isZh ? "继续执行" : "Continue"} (${this.state.iteration})` });
+  }
+}
 
       yield { type: "start", iteration: this.state.iteration };
       // Emit step progress — deterministic, based on iteration count
@@ -1081,15 +1085,23 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
         yield event;
         if (event.type === "tool_start") iterationToolCalls++;
         if (event.type === "text_delta" && event.text.trim()) iterationHadText = true;
-        // Update step title when we see the first tool call in this iteration
-        if (event.type === "tool_start" && iterationToolCalls === 1) {
-          // Use planned title if available, fall back to tool name
-          const plannedTitle = planState.plan && planState.plan[this.state.iteration - 1]
-            ? planState.plan[this.state.iteration - 1].title
-            : "";
-          const toolTitle = plannedTitle || this.getToolTitle(event.toolCall.name);
-          yield { type: "step_progress", step: this.state.iteration, total: planState.total, title: toolTitle, steps: planState.plan };
-        }
+// Update step title when we see the first tool call in this iteration
+if (event.type === "tool_start" && iterationToolCalls === 1) {
+// Use planned title if available, fall back to tool name
+// For appended steps (iteration > original plan), prefer tool name over generic title
+const plannedTitle = planState.plan && planState.plan[this.state.iteration - 1]
+? planState.plan[this.state.iteration - 1].title
+: "";
+const isAppendedStep = planState.total !== null && this.state.iteration > (planState.plan?.length ?? 0);
+const toolTitle = isAppendedStep
+? this.getToolTitle(event.toolCall.name)
+    : (plannedTitle || this.getToolTitle(event.toolCall.name));
+// Update the plan with the better title
+if (planState.plan && this.state.iteration - 1 < planState.plan.length) {
+planState.plan[this.state.iteration - 1].title = toolTitle;
+}
+yield { type: "step_progress", step: this.state.iteration, total: planState.total, title: toolTitle, steps: planState.plan };
+}
         // Track spawn_subagent calls
         if (event.type === "tool_start" && event.toolCall?.name === "spawn_subagent") {
           // The task ID will be in the tool result, extract it later

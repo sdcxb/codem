@@ -564,10 +564,21 @@ const handleDrop = useCallback((e: React.DragEvent, targetSessionId: string, pro
                   <div
                     className="sidebar-project-header"
                     onClick={() => toggleExpand(project.id)}
+                    onContextMenu={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      // Reuse the same menu logic as the ... button
+                      const rect = e.currentTarget.getBoundingClientRect();
+                      const goUp = rect.bottom + 140 > window.innerHeight;
+                      setMenuDirection(goUp ? 'up' : 'down');
+                      setMenuPos(goUp ? { bottom: window.innerHeight - rect.top + 2, left: rect.right - 150 } : { top: rect.bottom + 2, left: rect.right - 150 });
+                      setClickedMenuProjectId(project.id);
+                      setHoverMenuProjectId(project.id);
+                    }}
                   >
                     <span className="sidebar-project-arrow">{isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}</span>
                     <span className="sidebar-project-icon">{project.pinned ? <Pin size={14} style={{ color: "var(--accent)" }} /> : <Folder size={14} />}</span>
-                    <span className="sidebar-project-name">{project.name}</span>
+                    <span className="sidebar-project-name" title={project.name}>{project.name}</span>
                     <button
                       className="sidebar-project-btn"
                       onClick={(e) => { e.stopPropagation(); handleNewSession(project.id); }}
@@ -919,7 +930,7 @@ function SessionItem({
           return hasActive ? <span style={{ fontSize: 11, flexShrink: 0, display: "flex", alignItems: "center" }} title={lang === "zh" ? "委派任务进行中" : "Delegation active"}><Link2 size={12} /></span> : null;
         } catch { return null; }
       })()}
-      <span className="sidebar-session-title">{session.title}</span>
+      <span className="sidebar-session-title" title={session.title}>{session.title}</span>
       <div className="sidebar-session-actions">
         <button
           className={`sidebar-session-pin ${session.pinned ? "pinned" : ""}`}

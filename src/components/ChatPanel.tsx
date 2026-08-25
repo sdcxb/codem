@@ -87,6 +87,7 @@ export function ChatPanel({ onSend, onCancel, onSendGuidance, onToggleSidebar, o
   const [showModelPicker, setShowModelPicker] = useState(false);
   const [showEffortPicker, setShowEffortPicker] = useState(false);
   const [showReasoning, setShowReasoning] = useState(true);
+  const [stepTooltipLocked, setStepTooltipLocked] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
 
@@ -222,8 +223,10 @@ export function ChatPanel({ onSend, onCancel, onSendGuidance, onToggleSidebar, o
   useEffect(() => {
     const wasStreaming = prevStreamingRef.current;
     prevStreamingRef.current = isSessionStreaming;
-    if (wasStreaming && !isSessionStreaming) {
-      // Streaming just ended — find the last assistant message and scroll it
+if (wasStreaming && !isSessionStreaming) {
+// Reset step tooltip lock when streaming ends
+setStepTooltipLocked(false);
+// Streaming just ended — find the last assistant message and scroll it
       // into view at the top so the user sees the answer, not the tools below.
       setTimeout(() => {
         const container = messagesContainerRef.current;
@@ -949,8 +952,12 @@ canEdit={!isSessionStreaming}
 
       {/* Step progress — standalone indicator */}
       {stepProgress && isStreaming && (
-        <div className="step-progress-container">
-          <div className="step-progress-pill">
+        <div className={`step-progress-container ${stepTooltipLocked ? "tooltip-locked" : ""}`}>
+          <div
+            className="step-progress-pill"
+            onClick={() => setStepTooltipLocked(v => !v)}
+            style={{ cursor: "pointer" }}
+          >
             {/* Mini circular indicator */}
             <svg className="step-progress-ring" width="16" height="16" viewBox="0 0 16 16">
               <circle cx="8" cy="8" r="6" fill="none" stroke="var(--bg-tertiary)" strokeWidth="2" />

@@ -4334,9 +4334,14 @@ position: relative;
   transition: opacity 0.12s ease, visibility 0.12s ease;
 }
 
-.step-progress-container:hover .step-tooltip {
-  opacity: 1;
-  visibility: visible;
+.step-progress-container:hover .step-tooltip,
+.step-progress-container.tooltip-locked .step-tooltip {
+opacity: 1;
+visibility: visible;
+}
+
+.step-progress-container.tooltip-locked .step-tooltip {
+pointer-events: auto;
 }
 
 .step-tooltip::after {
