@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿import { useEffect, useState, useRef, useCallback } from "react";
+﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿import { useEffect, useState, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 
 // D1-4: 全局错误边界 — 捕获未处理的同步错误和 Promise rejection
@@ -3071,8 +3071,8 @@ onSessionRecovery={() => { setShowSettings(false); setShowSessionRecovery(true);
       )}
 
 {showNotebookManager && (
-<div className="modal-overlay" onClick={() => setShowNotebookManager(false)}>
-<div className="modal-editor" style={{ maxWidth: '900px', height: '80vh' }} onClick={(e) => e.stopPropagation()}>
+<div className="modal-overlay notebook-modal-overlay" onClick={() => setShowNotebookManager(false)}>
+<div className="modal-editor" style={{ maxWidth: '900px', height: '80vh', maxHeight: 'calc(100vh - 36px)' }} onClick={(e) => e.stopPropagation()}>
 <SlotBridge name="app.notebook-manager" fallback={NotebookManager}
 onClose={() => setShowNotebookManager(false)}
 onOpenWorkspace={(notebookId, notebookName) => {

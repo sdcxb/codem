@@ -3786,6 +3786,11 @@ color: var(--text-primary);
   z-index: 200;
 }
 
+/* 知识笔记本模态框：避开标题栏（36px 高） */
+.modal-overlay.notebook-modal-overlay {
+  top: 36px;
+}
+
 .modal-editor {
   width: 80vw;
   max-width: 1000px;
