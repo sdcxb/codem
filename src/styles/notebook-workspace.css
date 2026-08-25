@@ -473,7 +473,7 @@
 
 .nb-source-error {
   font-size: 10px;
-  color: var(var(--destructive, #ef4444);
+  color: var(--destructive, #ef4444);
   margin-top: 3px;
   padding: 2px 4px;
   background: rgba(239, 68, 68, 0.08);
@@ -496,7 +496,7 @@
 }
 
 .nb-source-delete:hover {
-  color: var(var(--destructive, #ef4444);
+  color: var(--destructive, #ef4444);
   background: rgba(239, 68, 68, 0.1);
 }
 
@@ -702,7 +702,7 @@
 }
 
 .nb-note-delete:hover {
-  color: var(var(--destructive, #ef4444);
+  color: var(--destructive, #ef4444);
 }
 
 .nb-note-preview {
@@ -1009,8 +1009,8 @@ top: 36px;
   display: flex;
   gap: 2px;
   padding: 0 16px;
-  background: var(--bg-secondary));
-  border-bottom: 1px solid var(--border-primary));
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-primary);
   flex-shrink: 0;
 }
 
@@ -1022,31 +1022,31 @@ top: 36px;
   background: transparent;
   border: none;
   border-bottom: 2px solid transparent;
-  color: var(--text-secondary));
+  color: var(--text-secondary);
   font-size: 13px;
   cursor: pointer;
   transition: all 0.15s;
 }
 
 .nb-view-tab:hover {
-  color: var(--text-primary));
-  background: var(--bg-hover));
+  color: var(--text-primary);
+  background: var(--bg-hover);
 }
 
 .nb-view-tab.active {
-  color: var(--accent));
-  border-bottom-color: var(--accent));
+  color: var(--accent);
+  border-bottom-color: var(--accent);
 }
 
 /* ========== Studio Divider ========== */
 .nb-studio-divider {
   height: 1px;
-  background: var(--border-primary));
+  background: var(--border-primary);
   margin: 4px 0;
 }
 
 .nb-studio-ppt {
-  color: var(#ff6b00));
+  color: #ff6b00;
 }
 
 /* ========== Knowledge Graph View ========== */
@@ -1112,17 +1112,17 @@ top: 36px;
   justify-content: center;
   width: 32px;
   height: 32px;
-  background: var(--bg-tertiary));
-  border: 1px solid var(--border-primary));
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-primary);
   border-radius: 6px;
-  color: var(--text-secondary));
+  color: var(--text-secondary);
   cursor: pointer;
   transition: all 0.15s;
 }
 
 .kg-tool-btn:hover {
-  color: var(--text-primary));
-  background: var(--bg-hover));
+  color: var(--text-primary);
+  background: var(--bg-hover);
 }
 
 .kg-body {
@@ -1276,7 +1276,7 @@ top: 36px;
 }
 
 .ppt-back-btn:hover {
-  background: var(--bg-hover));
+  background: var(--bg-hover);
 }
 
 .ppt-title-input {
@@ -1306,16 +1306,16 @@ top: 36px;
   justify-content: center;
   width: 32px;
   height: 32px;
-  background: var(--bg-tertiary));
-  border: 1px solid var(--border-primary));
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-primary);
   border-radius: 6px;
-  color: var(--text-secondary));
+  color: var(--text-secondary);
   cursor: pointer;
 }
 
 .ppt-action-btn:hover {
-  color: var(--text-primary));
-  background: var(--bg-hover));
+  color: var(--text-primary);
+  background: var(--bg-hover);
 }
 
 .ppt-save-btn {
@@ -1406,7 +1406,7 @@ top: 36px;
   width: 100%;
   max-width: 960px;
   aspect-ratio: 16 / 9;
-  border: 1px solid var(--border-primary));
+  border: 1px solid var(--border-primary);
   border-radius: 8px;
   background: white;
   box-shadow: 0 4px 24px rgba(0, 0, 0, 0.2);
@@ -1426,7 +1426,7 @@ top: 36px;
   justify-content: center;
   width: 32px;
   height: 32px;
-  border: 1px solid var(--border-primary));
+  border: 1px solid var(--border-primary);
   border-radius: 6px;
   cursor: pointer;
 }
@@ -2193,13 +2193,13 @@ top: 36px;
 .nb-study-path-title {
   font-size: 18px;
   font-weight: 600;
-  color: var(--text-primary));
+  color: var(--text-primary);
   margin: 0 0 6px;
 }
 
 .nb-study-path-desc {
   font-size: 13px;
-  color: var(--text-secondary));
+  color: var(--text-secondary);
 }
 
 .nb-study-path-list {
@@ -2214,14 +2214,14 @@ top: 36px;
   align-items: flex-start;
   gap: 12px;
   padding: 14px 16px;
-  background: var(--bg-secondary));
-  border: 1px solid var(--border-primary));
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
   border-radius: 8px;
   transition: all 0.15s;
 }
 
 .nb-study-path-item:hover {
-  border-color: var(--accent));
+  border-color: var(--accent);
   background: rgba(124, 108, 240, 0.04);
 }
 
@@ -2231,7 +2231,7 @@ top: 36px;
   justify-content: center;
   width: 28px;
   height: 28px;
-  background: var(--accent));
+  background: var(--accent);
   color: white;
   border-radius: 50%;
   font-size: 13px;
@@ -2246,19 +2246,19 @@ top: 36px;
 .nb-study-path-item-title {
   font-size: 14px;
   font-weight: 500;
-  color: var(--text-primary));
+  color: var(--text-primary);
   margin: 0 0 4px;
 }
 
 .nb-study-path-item-desc {
   font-size: 12px;
-  color: var(--text-secondary));
+  color: var(--text-secondary);
   line-height: 1.4;
 }
 
 .nb-study-path-connector {
   width: 2px;
   height: 16px;
-  background: var(--border-primary));
+  background: var(--border-primary);
   margin-left: 13px;
 }
