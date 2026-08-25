@@ -131,11 +131,15 @@ export function SkillManager({ onClose }: SkillManagerProps) {
     if (filter !== "all" && s.source !== filter) return false;
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
+      const name = String(s.name || "");
+      const description = String(s.description || "");
+      const aliases = Array.isArray(s.aliases) ? s.aliases : [];
+      const tags = Array.isArray(s.tags) ? s.tags : [];
       return (
-        s.name.toLowerCase().includes(q) ||
-        s.description.toLowerCase().includes(q) ||
-        s.aliases?.some((a) => a.toLowerCase().includes(q)) ||
-        s.tags?.some((t) => t.toLowerCase().includes(q))
+        name.toLowerCase().includes(q) ||
+        description.toLowerCase().includes(q) ||
+        aliases.some((a) => String(a).toLowerCase().includes(q)) ||
+        tags.some((t) => String(t).toLowerCase().includes(q))
       );
     }
     return true;
@@ -313,21 +317,25 @@ export function SkillManager({ onClose }: SkillManagerProps) {
     }
   }, [activeTab, marketSkills.length, marketLoading, loadCachedMarketSkills, loadMarketSkills]);
 
-  const filteredMarketSkills = marketSkills.filter((s) => {
-    if (marketSourceFilter !== "all" && s.sourceId !== marketSourceFilter) return false;
-    if (marketSearchQuery) {
-      const q = marketSearchQuery.toLowerCase();
-      const tags = Array.isArray(s.tags) ? s.tags : [];
-      return (
-        s.name.toLowerCase().includes(q) ||
-        s.displayName.toLowerCase().includes(q) ||
-        s.description.toLowerCase().includes(q) ||
-        (s.author?.toLowerCase().includes(q) ?? false) ||
-        tags.some((t) => t.toLowerCase().includes(q))
-      );
-    }
-    return true;
-  });
+const filteredMarketSkills = marketSkills.filter((s) => {
+if (marketSourceFilter !== "all" && s.sourceId !== marketSourceFilter) return false;
+if (marketSearchQuery) {
+const q = marketSearchQuery.toLowerCase();
+const tags = Array.isArray(s.tags) ? s.tags : [];
+const name = String(s.name || "");
+const displayName = String(s.displayName || "");
+const description = String(s.description || "");
+const author = s.author ? String(s.author) : "";
+return (
+name.toLowerCase().includes(q) ||
+displayName.toLowerCase().includes(q) ||
+description.toLowerCase().includes(q) ||
+author.toLowerCase().includes(q) ||
+tags.some((t) => String(t).toLowerCase().includes(q))
+);
+}
+return true;
+});
 
   // ===== Incremental Online Search =====
   // 当本地搜索无结果时，自动触发联网搜索

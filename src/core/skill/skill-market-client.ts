@@ -1509,12 +1509,16 @@ export async function searchMarketSkillsOnline(
         if (q) {
           skills = skills.filter((s) => {
             const tags = Array.isArray(s.tags) ? s.tags : [];
+            const name = String(s.name || "");
+            const displayName = String(s.displayName || "");
+            const description = String(s.description || "");
+            const author = s.author ? String(s.author) : "";
             return (
-              s.name.toLowerCase().includes(q) ||
-              s.displayName.toLowerCase().includes(q) ||
-              s.description.toLowerCase().includes(q) ||
-              (s.author?.toLowerCase().includes(q) ?? false) ||
-              tags.some((t) => t.toLowerCase().includes(q))
+              name.toLowerCase().includes(q) ||
+              displayName.toLowerCase().includes(q) ||
+              description.toLowerCase().includes(q) ||
+              author.toLowerCase().includes(q) ||
+              tags.some((t) => String(t).toLowerCase().includes(q))
             );
           });
         }

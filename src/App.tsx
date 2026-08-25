@@ -2334,17 +2334,8 @@ abortControllersRef.current.delete(session?.id || "");
       }
       // Task completion notification when app is in background or minimized
       if (!windowVisibleRef.current) {
-        // Use Tauri internal API to show window and bring to front
-        try {
-          const tauri = (window as any).__TAURI__;
-          if (tauri?.core?.invoke) {
-            await tauri.core.invoke("plugin:window|show", { label: "main" });
-            await tauri.core.invoke("plugin:window|set_focus", { label: "main" });
-            await tauri.core.invoke("plugin:window|unminimize", { label: "main" });
-            console.log("[Notify] Window shown and focused");
-          }
-        } catch (e) { console.warn("[Notify] Window show failed:", e); }
-        // Send native notification
+        // Only send a native notification — do NOT steal focus / unminimize the window
+        // (用户已切到其他应用办公，弹窗会打断操作；已有完成提示标签即可)
         try {
           const tauri = (window as any).__TAURI__;
           if (tauri?.core?.invoke) {
@@ -2355,14 +2346,14 @@ abortControllersRef.current.delete(session?.id || "");
                 const result = await tauri.core.invoke("plugin:notification|request_permission");
                 granted = result === 2 || result === "granted";
               }
-            } catch (e) { console.warn('[App] catch', e) }
+            } catch (e) { console.warn('[App] notification permission check failed', e) }
             if (granted) {
               const sessionTitle = session.title || "对话";
               const userQuestion = message.length > 30 ? message.substring(0, 30) + "..." : message;
               await tauri.core.invoke("plugin:notification|notify", {
                 options: { title: `任务完成 — ${sessionTitle}`, body: `"${userQuestion}" 执行完毕，点击查看结果` }
               });
-              console.log("[Notify] Notification sent");
+              console.log("[Notify] Notification sent (window NOT focused)");
             }
           }
         } catch (e) { console.warn("[Notify] Native notification failed:", e); }

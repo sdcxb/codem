@@ -226,26 +226,32 @@ export function ChatPanel({ onSend, onCancel, onSendGuidance, onToggleSidebar, o
 if (wasStreaming && !isSessionStreaming) {
 // Reset step tooltip lock when streaming ends
 setStepTooltipLocked(false);
-// Streaming just ended — find the last assistant message and scroll it
-      // into view at the top so the user sees the answer, not the tools below.
+      // Streaming just ended — scroll to the "task complete" badge so the user
+      // sees the completion footer (产出物位置不固定，锚定到标签最稳定).
       setTimeout(() => {
         const container = messagesContainerRef.current;
         if (!container) return;
-        // Find the last assistant message bubble in the DOM
-        const bubbles = container.querySelectorAll('[data-message-id]');
-        let lastAssistant: HTMLElement | null = null;
-        for (let i = bubbles.length - 1; i >= 0; i--) {
-          const el = bubbles[i] as HTMLElement;
-          if (el.classList.contains('assistant')) {
-            lastAssistant = el;
-            break;
-          }
-        }
-        if (lastAssistant) {
-          lastAssistant.scrollIntoView({ behavior: "smooth", block: "start" });
+        // Find the last qa-turn-footer (task complete badge) in the DOM
+        const footers = container.querySelectorAll('.qa-turn-footer');
+        const lastFooter = footers.length > 0 ? footers[footers.length - 1] as HTMLElement : null;
+        if (lastFooter) {
+          lastFooter.scrollIntoView({ behavior: "smooth", block: "start" });
         } else {
-          // Fallback: scroll to bottom
-          messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+          // Fallback: find last assistant message
+          const bubbles = container.querySelectorAll('[data-message-id]');
+          let lastAssistant: HTMLElement | null = null;
+          for (let i = bubbles.length - 1; i >= 0; i--) {
+            const el = bubbles[i] as HTMLElement;
+            if (el.classList.contains('assistant')) {
+              lastAssistant = el;
+              break;
+            }
+          }
+          if (lastAssistant) {
+            lastAssistant.scrollIntoView({ behavior: "smooth", block: "start" });
+          } else {
+            messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+          }
         }
       }, 150);
     }
@@ -771,7 +777,7 @@ sessionId={sessionId || currentSession?.id}
 canEdit={!isSessionStreaming}
 />
             </motion.div>
-{isTurnEnd && !isStreaming && (
+{isTurnEnd && !isSessionStreaming && (
               <div className="qa-turn-footer">
                 <span className="task-complete-badge">
                   <Check size={13} />
