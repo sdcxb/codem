@@ -114,9 +114,9 @@ export function SourceViewer({
                   onClick={() => setViewMode('text')}
                   style={{
                     padding: '2px 8px', fontSize: '10px', borderRadius: '3px', cursor: 'pointer',
-                    background: viewMode === 'text' ? 'var(--accent-primary, #6366f1)' : 'transparent',
-                    color: viewMode === 'text' ? '#fff' : 'var(--text-muted, #555)',
-                    border: '1px solid var(--border-color, #2a2a30)',
+                    background: viewMode === 'text' ? 'var(--accent)' : 'transparent',
+                    color: viewMode === 'text' ? 'var(--text-on-accent)' : 'var(--text-muted)',
+                    border: '1px solid var(--border-primary)',
                   }}
                 >
                   Text
@@ -125,9 +125,9 @@ export function SourceViewer({
                   onClick={() => setViewMode('pdf')}
                   style={{
                     padding: '2px 8px', fontSize: '10px', borderRadius: '3px', cursor: 'pointer',
-                    background: viewMode === 'pdf' ? 'var(--accent-primary, #6366f1)' : 'transparent',
-                    color: viewMode === 'pdf' ? '#fff' : 'var(--text-muted, #555)',
-                    border: '1px solid var(--border-color, #2a2a30)',
+                    background: viewMode === 'pdf' ? 'var(--accent)' : 'transparent',
+                    color: viewMode === 'pdf' ? 'var(--text-on-accent)' : 'var(--text-muted)',
+                    border: '1px solid var(--border-primary)',
                   }}
                 >
                   PDF
@@ -141,9 +141,9 @@ export function SourceViewer({
                   onClick={() => setViewMode('text')}
                   style={{
                     padding: '2px 8px', fontSize: '10px', borderRadius: '3px', cursor: 'pointer',
-                    background: viewMode === 'text' ? 'var(--accent-primary, #6366f1)' : 'transparent',
-                    color: viewMode === 'text' ? '#fff' : 'var(--text-muted, #555)',
-                    border: '1px solid var(--border-color, #2a2a30)',
+                    background: viewMode === 'text' ? 'var(--accent)' : 'transparent',
+                    color: viewMode === 'text' ? 'var(--text-on-accent)' : 'var(--text-muted)',
+                    border: '1px solid var(--border-primary)',
                   }}
                 >
                   Text
@@ -152,9 +152,9 @@ export function SourceViewer({
                   onClick={() => setViewMode('docx')}
                   style={{
                     padding: '2px 8px', fontSize: '10px', borderRadius: '3px', cursor: 'pointer',
-                    background: viewMode === 'docx' ? 'var(--accent-primary, #6366f1)' : 'transparent',
-                    color: viewMode === 'docx' ? '#fff' : 'var(--text-muted, #555)',
-                    border: '1px solid var(--border-color, #2a2a30)',
+                    background: viewMode === 'docx' ? 'var(--accent)' : 'transparent',
+                    color: viewMode === 'docx' ? 'var(--text-on-accent)' : 'var(--text-muted)',
+                    border: '1px solid var(--border-primary)',
                   }}
                 >
                   Word
@@ -170,7 +170,7 @@ export function SourceViewer({
         {/* Search bar */}
         <div style={{
           padding: '8px 16px',
-          borderBottom: '1px solid var(--border-color, #2a2a30)',
+          borderBottom: '1px solid var(--border-primary)',
           display: 'flex',
           alignItems: 'center',
           gap: '8px',
@@ -183,11 +183,11 @@ export function SourceViewer({
             onChange={(e) => setSearchQuery(e.target.value)}
             style={{
               flex: 1,
-              background: 'var(--bg-primary, #0f0f10)',
-              border: '1px solid var(--border-color, #2a2a30)',
+              background: 'var(--bg-primary)',
+              border: '1px solid var(--border-primary)',
               borderRadius: '4px',
               padding: '4px 8px',
-              color: 'var(--text-primary, #e0e0e4)',
+              color: 'var(--text-primary)',
               fontSize: '12px',
               outline: 'none',
             }}
@@ -237,10 +237,10 @@ export function SourceViewer({
                       padding: '12px 16px',
                       background: isHighlighted
                         ? 'rgba(255, 235, 59, 0.06)'
-                        : 'var(--bg-tertiary, #25252b)',
+                        : 'var(--bg-tertiary)',
                       border: isHighlighted
                         ? '1px solid rgba(255, 235, 59, 0.3)'
-                        : '1px solid var(--border-color, #2a2a30)',
+                        : '1px solid var(--border-primary)',
                       borderRadius: '8px',
                     }}
                   >
@@ -253,7 +253,7 @@ export function SourceViewer({
                       <span style={{
                         fontSize: '10px',
                         fontWeight: 600,
-                        color: 'var(--text-muted, #555)',
+                        color: 'var(--text-muted)',
                         textTransform: 'uppercase',
                       }}>
                       ¶ {chunk.chunkIndex + 1}

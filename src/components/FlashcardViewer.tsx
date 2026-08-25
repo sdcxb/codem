@@ -129,8 +129,8 @@ export function FlashcardViewer({ notebookId, noteId, onClose }: FlashcardViewer
               onClick={() => setShowAnswer(!showAnswer)}
               style={{
                 width: '100%', minHeight: '200px', padding: '24px',
-                background: 'var(--bg-tertiary, #25252b)',
-                border: '1px solid var(--border-color, #2a2a30)',
+                background: 'var(--bg-tertiary)',
+                border: '1px solid var(--border-primary)',
                 borderRadius: '12px', cursor: 'pointer',
                 display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
                 textAlign: 'center', transition: 'all 0.2s ease',
@@ -196,11 +196,11 @@ export function FlashcardViewer({ notebookId, noteId, onClose }: FlashcardViewer
           <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
             <div>
               <label style={{ fontSize: '12px', opacity: 0.6, marginBottom: '4px', display: 'block' }}>{isZh ? '正面（问题）' : 'Front (Question)'}</label>
-              <textarea style={{ width: '100%', minHeight: '80px', padding: '8px', background: 'var(--bg-tertiary, #25252b)', border: '1px solid var(--border-color, #2a2a30)', borderRadius: '6px', color: 'var(--text-primary, #e0e0e4)', fontSize: '13px', resize: 'vertical' }} value={front} onChange={(e) => setFront(e.target.value)} placeholder={isZh ? '输入问题...' : 'Enter question...'} />
+              <textarea style={{ width: '100%', minHeight: '80px', padding: '8px', background: 'var(--bg-tertiary)', border: '1px solid var(--border-primary)', borderRadius: '6px', color: 'var(--text-primary)', fontSize: '13px', resize: 'vertical' }} value={front} onChange={(e) => setFront(e.target.value)} placeholder={isZh ? '输入问题...' : 'Enter question...'} />
             </div>
             <div>
               <label style={{ fontSize: '12px', opacity: 0.6, marginBottom: '4px', display: 'block' }}>{isZh ? '背面（答案）' : 'Back (Answer)'}</label>
-              <textarea style={{ width: '100%', minHeight: '80px', padding: '8px', background: 'var(--bg-tertiary, #25252b)', border: '1px solid var(--border-color, #2a2a30)', borderRadius: '6px', color: 'var(--text-primary, #e0e0e4)', fontSize: '13px', resize: 'vertical' }} value={back} onChange={(e) => setBack(e.target.value)} placeholder={isZh ? '输入答案...' : 'Enter answer...'} />
+              <textarea style={{ width: '100%', minHeight: '80px', padding: '8px', background: 'var(--bg-tertiary)', border: '1px solid var(--border-primary)', borderRadius: '6px', color: 'var(--text-primary)', fontSize: '13px', resize: 'vertical' }} value={back} onChange={(e) => setBack(e.target.value)} placeholder={isZh ? '输入答案...' : 'Enter answer...'} />
             </div>
             <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '8px' }}>
               <button className="nb-btn-cancel" onClick={() => setMode('list')}>{isZh ? '取消' : 'Cancel'}</button>
@@ -240,7 +240,7 @@ export function FlashcardViewer({ notebookId, noteId, onClose }: FlashcardViewer
         </div>
         <div style={{ overflow: 'auto', maxHeight: '50vh', padding: '12px 20px' }}>
           {cards.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted, #555)' }}>
+            <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>
               <Layers size={32} style={{ margin: '0 auto 8px', opacity: 0.5 }} />
               <p>{isZh ? '暂无闪卡，点击「新建」或「AI 生成」创建' : 'No flashcards yet. Click "New" or "AI Generate"'}</p>
             </div>
@@ -249,7 +249,7 @@ export function FlashcardViewer({ notebookId, noteId, onClose }: FlashcardViewer
               {cards.map((card) => {
                 const isDue = card.nextReview <= Date.now();
                 return (
-                  <div key={card.id} style={{ padding: '12px', background: 'var(--bg-tertiary, #25252b)', border: '1px solid var(--border-color, #2a2a30)', borderRadius: '8px' }}>
+                  <div key={card.id} style={{ padding: '12px', background: 'var(--bg-tertiary)', border: '1px solid var(--border-primary)', borderRadius: '8px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
                       <div style={{ flex: 1 }}>
                         <p style={{ fontSize: '13px', fontWeight: 500, margin: '0 0 4px' }}>{card.front}</p>

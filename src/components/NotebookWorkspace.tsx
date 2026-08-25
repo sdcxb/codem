@@ -760,10 +760,10 @@ setViewingSource({ sourceId: chunk.sourceId, chunkIndex: chunk.chunkIndex });
                       width: '100%',
                       padding: '4px 8px',
                       fontSize: '12px',
-                      background: 'var(--bg-tertiary, #25252b)',
-                      border: '1px solid var(--border-color, #2a2a30)',
+                      background: 'var(--bg-tertiary)',
+                      border: '1px solid var(--border-primary)',
                       borderRadius: '6px',
-                      color: 'var(--text-primary, #e0e0e4)',
+                      color: 'var(--text-primary)',
                       outline: 'none',
                     }}
                   />
@@ -790,9 +790,9 @@ setViewingSource({ sourceId: chunk.sourceId, chunkIndex: chunk.chunkIndex });
                         padding: '2px 8px',
                         borderRadius: '10px',
                         fontSize: '10px',
-                        border: '1px solid var(--border-color, #2a2a30)',
-                        background: !tagFilter ? 'var(--accent-primary, #6366f1)' : 'transparent',
-                        color: !tagFilter ? '#fff' : 'var(--text-secondary, #a0a0a8)',
+                        border: '1px solid var(--border-primary)',
+                        background: !tagFilter ? 'var(--accent)' : 'transparent',
+                        color: !tagFilter ? 'var(--text-on-accent)' : 'var(--text-secondary)',
                         cursor: 'pointer',
                       }}
                       onClick={() => setTagFilter(null)}
@@ -806,9 +806,9 @@ setViewingSource({ sourceId: chunk.sourceId, chunkIndex: chunk.chunkIndex });
                           padding: '2px 8px',
                           borderRadius: '10px',
                           fontSize: '10px',
-                          border: '1px solid var(--border-color, #2a2a30)',
-                          background: tagFilter === tag ? 'var(--accent-primary, #6366f1)' : 'transparent',
-                          color: tagFilter === tag ? '#fff' : 'var(--text-secondary, #a0a0a8)',
+                          border: '1px solid var(--border-primary)',
+                          background: tagFilter === tag ? 'var(--accent)' : 'transparent',
+                          color: tagFilter === tag ? 'var(--text-on-accent)' : 'var(--text-secondary)',
                           cursor: 'pointer',
                         }}
                         onClick={() => setTagFilter(tagFilter === tag ? null : tag)}
@@ -913,7 +913,7 @@ setViewingSource({ sourceId: chunk.sourceId, chunkIndex: chunk.chunkIndex });
             </div>
             <div className="nb-study-path">
               {studyPath.length === 0 ? (
-                <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted, #555)' }}>
+                <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>
                   <Map className="w-8 h-8" style={{ margin: '0 auto 8px', opacity: 0.5 }} />
                   <p>{isZh ? '请先生成知识图谱后再使用学习路径' : 'Please generate a knowledge graph first'}</p>
                 </div>
@@ -950,7 +950,7 @@ setViewingSource({ sourceId: chunk.sourceId, chunkIndex: chunk.chunkIndex });
                               setShowStudyPath(false);
                             }
                           }}
-                          onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'var(--bg-tertiary, #25252b)'; }}
+                          onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'var(--bg-tertiary)'; }}
                           onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = ''; }}
                         >
                           <div className="nb-study-path-num">{item.order}</div>
@@ -1042,16 +1042,16 @@ setViewingSource({ sourceId: chunk.sourceId, chunkIndex: chunk.chunkIndex });
             <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: studioPreviewMode === 'split' ? 'row' : 'column' }}>
               {/* 编辑区 */}
               {studioPreviewMode !== 'preview' && (
-                <div style={{ flex: 1, overflow: 'auto', padding: '12px 16px', borderRight: studioPreviewMode === 'split' ? '1px solid var(--border-color, #2a2a30)' : 'none' }}>
+                <div style={{ flex: 1, overflow: 'auto', padding: '12px 16px', borderRight: studioPreviewMode === 'split' ? '1px solid var(--border-primary)' : 'none' }}>
                   <textarea
                     value={studioPreviewContent}
                     onChange={(e) => setStudioPreviewContent(e.target.value)}
                     style={{
                       width: '100%', height: '100%', minHeight: '400px',
                       padding: '8px', fontSize: '13px', lineHeight: '1.6',
-                      background: 'var(--bg-tertiary, #25252b)',
-                      border: '1px solid var(--border-color, #2a2a30)',
-                      borderRadius: '6px', color: 'var(--text-primary, #e0e0e4)',
+                      background: 'var(--bg-tertiary)',
+                      border: '1px solid var(--border-primary)',
+                      borderRadius: '6px', color: 'var(--text-primary)',
                       outline: 'none', resize: 'none', fontFamily: 'var(--font-mono, monospace)',
                     }}
                     placeholder={isZh ? '编辑内容...' : 'Edit content...'}
@@ -1072,11 +1072,11 @@ setViewingSource({ sourceId: chunk.sourceId, chunkIndex: chunk.chunkIndex });
                             const codeStr = String(children).replace(/\n$/, '');
                             if (match && match[1] === 'mermaid') {
                               return (
-                                <div style={{ padding: '8px', background: 'var(--bg-tertiary, #25252b)', borderRadius: '6px', margin: '8px 0' }}>
-                                  <pre style={{ margin: 0, whiteSpace: 'pre-wrap', fontSize: '12px', color: 'var(--text-secondary, #a0a0a8)' }}>
+                                <div style={{ padding: '8px', background: 'var(--bg-tertiary)', borderRadius: '6px', margin: '8px 0' }}>
+                                  <pre style={{ margin: 0, whiteSpace: 'pre-wrap', fontSize: '12px', color: 'var(--text-secondary)' }}>
                                     {codeStr}
                                   </pre>
-                                  <p style={{ fontSize: '10px', color: 'var(--text-muted, #555)', marginTop: '4px' }}>
+                                  <p style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '4px' }}>
                                     {isZh ? '保存为笔记后可查看渲染的 Mermaid 图表' : 'Save as note to view rendered Mermaid diagram'}
                                   </p>
                                 </div>
@@ -1089,7 +1089,7 @@ setViewingSource({ sourceId: chunk.sourceId, chunkIndex: chunk.chunkIndex });
                         {studioPreviewContent}
                       </ReactMarkdown>
                     ) : (
-                      <p style={{ color: 'var(--text-muted, #555)', textAlign: 'center', padding: '40px' }}>
+                      <p style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '40px' }}>
                         {isZh ? '内容为空' : 'Content is empty'}
                       </p>
                     )}
@@ -1099,8 +1099,8 @@ setViewingSource({ sourceId: chunk.sourceId, chunkIndex: chunk.chunkIndex });
             </div>
 
             {/* 底部操作栏 */}
-            <div className="nb-dialog-footer" style={{ padding: '12px 20px', borderTop: '1px solid var(--border-color, #2a2a30)' }}>
-              <span style={{ fontSize: '11px', color: 'var(--text-muted, #555)', marginRight: 'auto' }}>
+            <div className="nb-dialog-footer" style={{ padding: '12px 20px', borderTop: '1px solid var(--border-primary)' }}>
+              <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginRight: 'auto' }}>
                 {isZh ? '预览满意后点击保存，或切换到编辑模式修改内容' : 'Preview, then save. Switch to edit mode to modify.'}
               </span>
               <button className="nb-btn-cancel" onClick={() => setStudioPreview(null)}>
@@ -1215,9 +1215,9 @@ function SourceCard({
               marginTop: '6px',
               padding: '3px 8px',
               background: 'transparent',
-              border: '1px solid var(--border-color, #2a2a30)',
+              border: '1px solid var(--border-primary)',
               borderRadius: '4px',
-              color: 'var(--text-secondary, #a0a0a8)',
+              color: 'var(--text-secondary)',
               fontSize: '10px',
               cursor: 'pointer',
               transition: 'all 0.15s ease',
@@ -1239,9 +1239,9 @@ function SourceCard({
               marginLeft: source.status === 'indexed' ? '6px' : '0',
               padding: '3px 8px',
               background: 'transparent',
-              border: '1px solid var(--border-color, #2a2a30)',
+              border: '1px solid var(--border-primary)',
               borderRadius: '4px',
-              color: 'var(--text-muted, #555)',
+              color: 'var(--text-muted)',
               fontSize: '10px',
               cursor: 'pointer',
               transition: 'all 0.15s ease',
@@ -1284,7 +1284,7 @@ function NoteCard({
     <div
       className="nb-note-card"
       onClick={isPPT && onEditPPT ? onEditPPT : onEdit}
-      style={isPinned ? { borderLeft: '2px solid var(--accent-primary, #6366f1)' } : undefined}
+      style={isPinned ? { borderLeft: '2px solid var(--accent)' } : undefined}
     >
       <div className="nb-note-card-header">
         {isPPT ? (
@@ -1293,7 +1293,7 @@ function NoteCard({
           <StickyNote className="w-3 h-3 text-primary" />
         )}
         <span className="nb-note-title">{note.title}</span>
-        {isPinned && <Pin className="w-3 h-3" style={{ color: 'var(--accent-primary, #6366f1)' }} />}
+        {isPinned && <Pin className="w-3 h-3" style={{ color: 'var(--accent)' }} />}
         <button
           className="nb-note-delete"
           onClick={(e) => { e.stopPropagation(); onTogglePin?.(); }}
@@ -1314,10 +1314,10 @@ function NoteCard({
               key={tag}
               style={{
                 padding: '1px 5px',
-                background: 'var(--bg-tertiary, #25252b)',
+                background: 'var(--bg-tertiary)',
                 borderRadius: '8px',
                 fontSize: '9px',
-                color: 'var(--text-muted, #555)',
+                color: 'var(--text-muted)',
               }}
             >
               {tag}
@@ -1337,7 +1337,7 @@ function NoteCard({
             style={{
               display: 'inline-flex', alignItems: 'center', gap: '2px',
               padding: '0 4px', background: 'transparent', border: 'none',
-              color: 'var(--text-muted, #555)', cursor: 'pointer', fontSize: '10px',
+              color: 'var(--text-muted)', cursor: 'pointer', fontSize: '10px',
             }}
           >
             <Layers className="w-2.5 h-2.5" />
