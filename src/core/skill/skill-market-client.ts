@@ -222,12 +222,32 @@ async function httpDownload(url: string, destPath: string, headers?: Record<stri
 
 // ========== GitHub API Helpers ==========
 
-/** GitHub API 请求头（包含 Accept header 用于获取 JSON） */
+/** GitHub API 请求头（包含 Accept header + 用户配置的 Token 认证） */
 function githubApiHeaders(): Record<string, string> {
-  return {
+  const headers: Record<string, string> = {
     "Accept": "application/vnd.github+json",
     "X-GitHub-Api-Version": "2022-11-28",
   };
+  // 读取用户在 Git 配置中设置的 GitHub Token，避免未认证限流（60 次/小时 → 5000 次/小时）
+  try {
+    const gitConfig = getSettingJSON<{ githubToken?: string } | null>("codem-git-config", null);
+    if (gitConfig?.githubToken) {
+      headers["Authorization"] = `Bearer ${gitConfig.githubToken}`;
+    }
+  } catch {
+    // DB 未就绪等情况忽略
+  }
+  return headers;
+}
+
+/** 检查是否配置了 GitHub Token */
+function hasGithubToken(): boolean {
+  try {
+    const gitConfig = getSettingJSON<{ githubToken?: string } | null>("codem-git-config", null);
+    return !!gitConfig?.githubToken;
+  } catch {
+    return false;
+  }
 }
 
 /** 获取仓库默认分支 */
@@ -720,7 +740,6 @@ async function fetchSkillsShViaHTML(source: MarketSource, baseUrl: string): Prom
             stars,
             installType: "dir",
             repoFullName: cleanSourcePath,
-            branch: "main",
             dirPath: slug,
           });
         }
@@ -1350,14 +1369,18 @@ async function installSkillFromGitHubDir(
     // 获取仓库默认分支
     onProgress?.(10, `正在获取仓库信息: ${repoFullName}...`);
     let branch = skill.branch || "main";
+    let branchResolved = false;
     try {
       const repoResp = await httpGet(`https://api.github.com/repos/${repoFullName}`, githubApiHeaders());
       if (repoResp.status === 200) {
         const repoInfo = JSON.parse(repoResp.body);
         branch = repoInfo.default_branch || branch;
+        branchResolved = true;
+      } else {
+        console.warn(`[SkillMarket] GitHub API returned ${repoResp.status} for ${repoFullName}, falling back to branch "${branch}"`);
       }
     } catch (err) {
-      console.warn(`[SkillMarket] Failed to get default branch for ${repoFullName}, using ${branch}:`, err);
+      console.warn(`[SkillMarket] Failed to get default branch for ${repoFullName}, using "${branch}":`, err);
     }
 
     // 递归遍历目录，收集所有文件
@@ -1379,11 +1402,30 @@ async function installSkillFromGitHubDir(
       ".toml", ".ini", ".cfg",
     ]);
 
-    async function traverseDir(subPath: string): Promise<void> {
+    const traverseDir: (subPath: string, isInitialCall?: boolean) => Promise<void> = async (subPath, isInitialCall) => {
       const contentsUrl = `https://api.github.com/repos/${repoFullName}/contents/${subPath}?ref=${branch}`;
       const resp = await httpGet(contentsUrl, githubApiHeaders());
       if (resp.status !== 200) {
-        console.warn(`[SkillMarket] Contents API failed for ${subPath}: ${resp.status}`);
+        console.warn(`[SkillMarket] Contents API failed for ${subPath} (branch=${branch}): ${resp.status}`);
+        // 如果是首次调用且返回 404，尝试重新获取默认分支后重试
+        if (isInitialCall && resp.status === 404 && !branchResolved) {
+          console.log(`[SkillMarket] 404 on branch "${branch}", trying to resolve correct default branch...`);
+          try {
+            const repoResp = await httpGet(`https://api.github.com/repos/${repoFullName}`, githubApiHeaders());
+            if (repoResp.status === 200) {
+              const repoInfo = JSON.parse(repoResp.body);
+              const correctBranch = repoInfo.default_branch;
+              if (correctBranch && correctBranch !== branch) {
+                console.log(`[SkillMarket] Correct branch is "${correctBranch}", retrying...`);
+                branch = correctBranch;
+                branchResolved = true;
+                return await traverseDir(subPath, false);
+              }
+            }
+          } catch (err) {
+            console.warn(`[SkillMarket] Retry failed to get default branch:`, err);
+          }
+        }
         return;
       }
       const items = JSON.parse(resp.body);
@@ -1411,12 +1453,15 @@ async function installSkillFromGitHubDir(
       }
     }
 
-    await traverseDir(dirPath);
+    await traverseDir(dirPath, true);
 
     if (files.length === 0) {
+      const tokenHint = hasGithubToken()
+        ? ""
+        : `\n\n⚠️ 您尚未配置 GitHub Token（当前为未认证模式，限流 60 次/小时）。请前往 设置 → Git 偏好配置 → GitHub Token 填写 Token（需要 repo 权限），可将限流提升至 5000 次/小时。`;
       return {
         success: false,
-        error: `目录 "${dirPath}" 中未找到可安装的文件。请检查技能路径是否正确。`,
+        error: `目录 "${dirPath}"（分支: ${branch}）中未找到可安装的文件。可能原因：1) 仓库默认分支不是 "${branch}" 2) GitHub API 限流 3) 目录路径不正确。${tokenHint}`,
       };
     }
 

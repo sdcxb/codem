@@ -129,7 +129,7 @@ export function GitConfigSection() {
           style={{ width: "100%", fontSize: 12, fontFamily: "monospace" }}
         />
         <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>
-          {zh ? "用于创建远程仓库等操作。需要 repo 权限。" : "Used for creating repositories etc. Requires repo scope."}
+          {zh ? "用于创建远程仓库、技能市场 API 认证等操作。需要 repo 权限。配置后可将 GitHub API 限流从 60 次/小时提升至 5000 次/小时。" : "Used for creating repositories, skill market API auth, etc. Requires repo scope. Raises API rate limit from 60 to 5000 req/hour."}
         </div>
       </div>
 

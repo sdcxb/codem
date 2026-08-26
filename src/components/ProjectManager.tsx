@@ -217,9 +217,17 @@ export function ProjectManager({ onClose }: ProjectManagerProps) {
         throw new Error("未找到 git，请先安装 Git");
       }
 
-      // git clone
+      // git clone（如果配置了 Token，注入到 URL 中用于认证）
+      const savedToken = getSettingJSON<GitConfig>("codem-git-config", {}).githubToken || "";
+      let cloneUrlFinal = cloneUrl.trim();
+      if (savedToken) {
+        const match = cloneUrlFinal.match(/^(https:\/\/)(github\.com\/.+)$/);
+        if (match) {
+          cloneUrlFinal = `${match[1]}${savedToken}@${match[2]}`;
+        }
+      }
       const result = await invoke("execute_command", {
-        command: `git clone "${cloneUrl.trim()}" "${projectDir}"`,
+        command: `git clone "${cloneUrlFinal}" "${projectDir}"`,
       });
       const stderr = (result as any)?.stderr || "";
       if (stderr.includes("fatal") || stderr.includes("error")) {

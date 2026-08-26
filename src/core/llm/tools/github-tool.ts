@@ -9,8 +9,21 @@
  */
 
 import type { ToolDef, ToolExecuteResult } from "../tools";
-import { getSetting } from "../../storage/settings";
+import { getSettingJSON } from "../../storage/settings";
+import type { GitConfig } from "../../settings/settings";
 import { getLang } from "../../i18n/lang";
+
+// ========== Token Helper ==========
+
+/** 从 codem-git-config 读取用户配置的 GitHub Token */
+function getGithubToken(): string {
+  try {
+    const gitConfig = getSettingJSON<GitConfig | null>("codem-git-config", null);
+    return gitConfig?.githubToken || "";
+  } catch {
+    return "";
+  }
+}
 
 // ========== GitHub API ==========
 
@@ -167,14 +180,14 @@ export function createGitHubTool(): ToolDef {
       const zh = getLang() === "zh";
       const action = args.action as string;
 
-      // Get GitHub token from settings
-      const token = getSetting("codem-github-token") || "";
+      // Get GitHub token from Git preferences settings (codem-git-config)
+      const token = getGithubToken();
       if (!token) {
         return {
           title: "github_tool",
           output: zh
-            ? "错误：未配置 GitHub token。请在设置面板中配置 GitHub Personal Access Token。\n获取方式：GitHub → Settings → Developer settings → Personal access tokens → Fine-grained tokens\n所需权限：repo, read:user, security_events"
-            : "Error: GitHub token not configured. Please configure GitHub Personal Access Token in Settings.\nGet it from: GitHub → Settings → Developer settings → Personal access tokens → Fine-grained tokens\nRequired scopes: repo, read:user, security_events",
+            ? "错误：未配置 GitHub Token。请在 设置 → Git 偏好配置 中填写 GitHub Token。\n获取方式：GitHub → Settings → Developer settings → Personal access tokens → Fine-grained tokens\n所需权限：repo, read:user, security_events"
+            : "Error: GitHub Token not configured. Please configure it in Settings → Git Preferences.\nGet it from: GitHub → Settings → Developer settings → Personal access tokens → Fine-grained tokens\nRequired scopes: repo, read:user, security_events",
         };
       }
 

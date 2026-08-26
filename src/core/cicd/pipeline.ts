@@ -10,7 +10,8 @@
  * 依赖：GitHub Personal Access Token（存储在 settings 中）
  */
 
-import { getSetting } from "../storage/settings";
+import { getSettingJSON } from "../storage/settings";
+import type { GitConfig } from "../settings/settings";
 import { getLang } from "../i18n/lang";
 
 const GITHUB_API = "https://api.github.com";
@@ -69,8 +70,14 @@ export interface PipelineTemplate {
 
 // ========== Token Helper ==========
 
+/** 从 codem-git-config 读取用户配置的 GitHub Token */
 function getGithubToken(): string {
-  return getSetting("codem-github-token") || "";
+  try {
+    const gitConfig = getSettingJSON<GitConfig | null>("codem-git-config", null);
+    return gitConfig?.githubToken || "";
+  } catch {
+    return "";
+  }
 }
 
 function githubHeaders(token: string, accept = "application/vnd.github.v3+json"): Record<string, string> {

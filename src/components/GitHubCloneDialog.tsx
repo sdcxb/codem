@@ -7,6 +7,30 @@ import { useState } from "react";
 import { createPortal } from "react-dom";
 import { useLang } from "../core/i18n/lang";
 import { useProjectStore } from "../core/store";
+import { getSettingJSON } from "../core/storage/settings";
+import type { GitConfig } from "../core/settings/settings";
+
+/** 从 codem-git-config 读取已保存的 GitHub Token */
+function getSavedGithubToken(): string {
+  try {
+    const gitConfig = getSettingJSON<GitConfig | null>("codem-git-config", null);
+    return gitConfig?.githubToken || "";
+  } catch {
+    return "";
+  }
+}
+
+/** 将 GitHub HTTPS URL 注入 Token 用于认证（形如 https://<token>@github.com/...） */
+function injectTokenIntoUrl(gitUrl: string, token: string): string {
+  if (!token) return gitUrl;
+  const trimmed = gitUrl.trim();
+  // 仅对 https://github.com/... 格式的 URL 注入 Token
+  const match = trimmed.match(/^(https:\/\/)(github\.com\/.+)$/);
+  if (match) {
+    return `${match[1]}${token}@${match[2]}`;
+  }
+  return trimmed;
+}
 
 interface GitHubCloneDialogProps {
   onClose: () => void;
@@ -56,9 +80,11 @@ export function GitHubCloneDialog({ onClose }: GitHubCloneDialogProps) {
         throw new Error(lang === "zh" ? "未找到 git，请先安装 Git" : "Git not found. Please install Git first.");
       }
 
-      // 执行 git clone
+      // 执行 git clone（如果配置了 Token，注入到 URL 中用于认证）
+      const token = getSavedGithubToken();
+      const cloneUrl = token ? injectTokenIntoUrl(url, token) : url.trim();
       const result = await invoke("execute_command", {
-        command: `git clone "${url.trim()}" "${projectDir}"`,
+        command: `git clone "${cloneUrl}" "${projectDir}"`,
       });
 
       // 检查 clone 是否成功（git clone 失败时 stderr 不为空但 exitCode 可能非0）
