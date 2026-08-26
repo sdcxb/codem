@@ -2,6 +2,58 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.5.5] - 2026-08-26
+
+### Compaction 并发写入治根修复 + Bash 缓存失效修复
+
+#### 1. compactMessages 数据库并发写入治根修复（对标 DSH `compactSurfaceRegion`）
+- **根因**：`compactMessages` 中 DB 操作被 `await`（LLM summarization）拆成两段，`await` 间隙 UI auto-save（`setTimeout` → `saveMessages` → `createMessage` → `db.run`）插入执行，导致 sql.js 单实例被并发操作污染，产生 `bad parameter or other API misuse` 错误
+- **DSH 参考**：`compactSurfaceRegion` 将所有异步工作（LLM summarization）前置完成，然后在 `commitCompactionBody` 中同步一次性提交所有 DB 变更（`compaction/summary` + `user/message(replace)` + `compaction/end`），中间无 `await`
+- **治根修复**：
+  - 将所有 DB 写入集中到 `await` 之后的同步段——先 `await import` 预加载模块，然后同步执行 `deleteMessagesByIds` → `createMessage` → `EventLog.append`，中间无 `await` 间隙
+  - 新增 `setCompactionInProgress` / `isCompactionInProgress` 互斥标志（defense-in-depth），`saveMessages` 在 compaction 期间跳过
+  - 移除 `compaction_end` 事件中的 `saveMessages` 调用——compaction 后 DB 是唯一真相源，不应把过时的 UI store 状态写回 DB
+- **文件**：`src/core/llm/agentic-loop.ts`、`src/store.ts`、`src/core/storage/database.ts`、`src/App.tsx`
+
+#### 2. Bash 工具执行后 readCache 失效修复
+- **根因**：`readCache` 在 `read` 工具执行后缓存内容，`write`/`edit` 工具写入时清除对应路径缓存，但 `bash` 工具执行脚本修改文件后不清除 `readCache`——导致 LLM 脚本写入文件后 `read` 仍命中旧缓存（45 行旧内容覆盖 227 行新内容）
+- **修复**：bash/execute_command/shell/run_command 工具执行成功后，清除整个 `readCache`（无法知道 bash 命令修改了哪些文件，保守清除是唯一安全做法）
+- **文件**：`src/core/llm/agentic-loop.ts`
+
+### v1.5.3-v1.5.4 累积修复
+
+#### 3. 引导消息立即注入（对标 DSH `inject()`）
+- `GuidanceQueue` 新增 `unshift` 操作实现高优先级注入
+- 通过 `AbortController` 中断当前 LLM 流，配合 `guidanceInterrupt` 标志位引导循环进入下一轮迭代
+- 引导消息在下一轮迭代边界注入，不持久化到消息数据库
+
+#### 4. Markdown 文件路径超链接
+- `react-markdown` 的 `code` 渲染器中通过正则白名单识别文件路径（`.md|.ts|.json` 等已知扩展名）并转换为可点击的 `<a>` 链接
+- 修复正则误匹配问题（改用已知文件扩展名白名单，避免匹配 `obj.prop`）
+
+#### 5. 任务完成标签稳定显示 + 滚动锚定
+- 修复 `isTurnEnd` 逻辑，增加滚动重试次数（10次/150ms）确保锚定到任务完成标签
+- 禁止自动弹窗干扰
+
+#### 6. 技能市场优化
+- 修复搜索时数据源清零及无结果提示问题（保留旧数据的增量更新）
+- 新增 `installSkillFromGitHubDir`，利用 GitHub Contents API 递归下载特定目录，规避 1.4GB 仓库整包下载
+- 动态获取仓库 `default_branch`，解决 `production` vs `main` 的 404 问题
+- SkillHub 市场源加载优化（串行请求改并行 + 12s 超时保护）
+- 技能市场搜索超时保护（20s per-source）
+
+#### 7. 其他修复
+- micro-compact CACHE HIT wrapper skip
+- block-code 单词渲染修复
+- file-link cwd 路径解析修复
+- 发送按钮图标居中
+- sidebar tooltip + context menu
+- step plan 动态命名 + click-lock tooltip
+- notebook-workspace CSS 语法错误修复
+- 知识笔记本面板被标题栏遮挡修复
+- dialog 权限修复文件选择器
+- 滚动加载历史消息 scroll 监听绑定错误容器修复
+
 ## [1.5.2] - 2026-08-24
 
 ### 大文件性能修复 + Agent Loop 无上限改造 + 模型系统动态化 + Skills 增量搜索

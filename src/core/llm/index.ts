@@ -959,6 +959,19 @@ return false;
 return loop.sendGuidance(message);
 }
 
+/**
+ * Send a guidance message with immediate priority — aborts current LLM stream
+ * and injects the message at the next iteration boundary.
+ */
+sendGuidanceImmediate(sessionId: string, message: string): boolean {
+const loop = this.loopPool.get(sessionId);
+if (!loop) {
+console.warn(`[Engine] No active loop for session ${sessionId} — cannot send guidance`);
+return false;
+}
+return loop.sendGuidanceImmediate(message);
+}
+
 /** Check if a session has pending guidance items */
 hasPendingGuidance(sessionId: string): boolean {
 const loop = this.loopPool.get(sessionId);

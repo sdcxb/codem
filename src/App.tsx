@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿import { useEffect, useState, useRef, useCallback } from "react";
+﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿import { useEffect, useState, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 
 // D1-4: 全局错误边界 — 捕获未处理的同步错误和 Promise rejection
@@ -1710,6 +1710,36 @@ if (!session) return;
     }
   }, [addGuidanceMessage]);
 
+  const handleSendGuidanceImmediate = useCallback((message: string) => {
+    const session = useProjectStore.getState().currentSession;
+    if (!session) return;
+    const engine = engineRef.current; if (!engine) { console.warn('[App] engine not available'); return; }
+    const success = engine.sendGuidanceImmediate(session.id, message);
+    if (success) {
+      addGuidanceMessage({
+        id: `guide-${Date.now()}`,
+        message,
+        timestamp: Date.now(),
+        consumed: false,
+      });
+      console.log(`[Guidance] Sent (immediate) to session ${session.id}: "${message.substring(0, 80)}..."`);
+    } else {
+      console.warn(`[Guidance] Failed to send (immediate) — no active loop for session ${session.id}`);
+    }
+  }, [addGuidanceMessage]);
+
+  // Listen for immediate guidance events from ChatPanel
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail?.message) {
+        handleSendGuidanceImmediate(detail.message);
+      }
+    };
+    window.addEventListener('codem-guidance-immediate', handler);
+    return () => window.removeEventListener('codem-guidance-immediate', handler);
+  }, [handleSendGuidanceImmediate]);
+
   /**
    * Run the agentic loop — shared by handleSend and handleRegenerate.
    * This function handles provider setup, streaming, tool calls, and
@@ -2175,10 +2205,13 @@ saveMessages(session.id);
           case "compaction_end": {
             const removed = "messagesRemoved" in event ? event.messagesRemoved : 0;
             setCompactionStatus({ active: false, messagesRemoved: removed });
-            // Reload messages from DB since old ones were deleted
+            // Reload messages from DB since old ones were soft-deleted by compaction.
+            // Do NOT call saveMessages here — the UI store's message list is stale
+            // (it still contains the pre-compaction messages), and writing it back
+            // would re-create the soft-deleted messages as non-hidden, undoing the
+            // compaction. The DB is the source of truth after compaction.
         if (session) {
           loadMessages(session.id);
-          saveMessages(session.id);
         }
             // P1-8: 恢复宠物状态 + 压缩完成气泡
             usePetStore.getState().setPetState("idle");

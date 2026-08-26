@@ -1218,6 +1218,12 @@ export async function installMarketSkill(
   try {
     onProgress?.(5, "正在准备下载...");
 
+    // 对于 dir 类型的 GitHub 技能，直接通过 Contents API 递归下载目录文件，
+    // 而不是下载整个仓库 zipball（某些仓库非常大，如 cloudflare-docs 1.4GB）
+    if (skill.installType === "dir" && skill.dirPath && skill.repoFullName) {
+      return await installSkillFromGitHubDir(skill, onProgress, overwrite);
+    }
+
     // 获取临时文件路径
     const skillsDir = await getSkillsDir();
     const sep = skillsDir.includes("/") && !skillsDir.includes("\\") ? "/" : "\\";
@@ -1233,10 +1239,20 @@ export async function installMarketSkill(
     }
 
     // Skills.sh HTML 抓取的 downloadUrl 是 GitHub 仓库主页（https://github.com/owner/repo）
-    // 需要转换为 zipball URL
+    // 需要转换为 zipball URL，并获取仓库真实的默认分支（不能假设是 main）
     if (downloadUrl.startsWith("https://github.com/") && !downloadUrl.includes("/zipball/") && !downloadUrl.includes("/archive/")) {
       const repoPath = downloadUrl.replace("https://github.com/", "");
-      const branch = skill.branch || "main";
+      // 获取仓库真实默认分支（避免 branch=main 导致 404）
+      let branch = skill.branch || "main";
+      try {
+        const repoResp = await httpGet(`https://api.github.com/repos/${repoPath}`, githubApiHeaders());
+        if (repoResp.status === 200) {
+          const repoInfo = JSON.parse(repoResp.body);
+          branch = repoInfo.default_branch || branch;
+        }
+      } catch (err) {
+        console.warn(`[SkillMarket] Failed to get default branch for ${repoPath}, using ${branch}:`, err);
+      }
       downloadUrl = `https://api.github.com/repos/${repoPath}/zipball/${branch}`;
     }
 
@@ -1309,6 +1325,222 @@ export async function installMarketSkill(
 }
 
 /**
+ * 通过 GitHub Contents API 递归下载仓库中的指定目录，直接安装技能。
+ *
+ * 用于 dir 类型的 GitHub 技能（如 Skills.sh 的技能），避免下载整个仓库 zipball。
+ * 工作流程：
+ * 1. 获取仓库默认分支
+ * 2. 递归遍历 dirPath 目录中的所有文件
+ * 3. 逐个通过 raw.githubusercontent.com 下载文件内容
+ * 4. 写入到本地技能目录
+ * 5. 解析 SKILL.md 并注册
+ */
+async function installSkillFromGitHubDir(
+  skill: MarketSkill,
+  onProgress?: InstallProgressCallback,
+  overwrite: boolean = false,
+): Promise<InstallResult> {
+  const { getSkillRegistry, parseSkillMarkdown } = await import("./skill");
+  const { writeFile } = await import("../file-api");
+
+  try {
+    const repoFullName = skill.repoFullName!;
+    const dirPath = skill.dirPath!;
+
+    // 获取仓库默认分支
+    onProgress?.(10, `正在获取仓库信息: ${repoFullName}...`);
+    let branch = skill.branch || "main";
+    try {
+      const repoResp = await httpGet(`https://api.github.com/repos/${repoFullName}`, githubApiHeaders());
+      if (repoResp.status === 200) {
+        const repoInfo = JSON.parse(repoResp.body);
+        branch = repoInfo.default_branch || branch;
+      }
+    } catch (err) {
+      console.warn(`[SkillMarket] Failed to get default branch for ${repoFullName}, using ${branch}:`, err);
+    }
+
+    // 递归遍历目录，收集所有文件
+    onProgress?.(20, `正在遍历目录: ${dirPath}...`);
+
+    interface FileEntry {
+      path: string;     // 相对于 dirPath 的路径
+      downloadUrl: string;  // raw.githubusercontent.com URL
+      size: number;
+    }
+
+    const files: FileEntry[] = [];
+    const allowedExtensions = new Set([
+      ".md", ".txt", ".json", ".yaml", ".yml",
+      ".ts", ".tsx", ".js", ".jsx", ".mjs",
+      ".py", ".sh", ".bat", ".ps1",
+      ".css", ".html", ".svg",
+      ".png", ".jpg", ".jpeg", ".gif", ".ico",
+      ".toml", ".ini", ".cfg",
+    ]);
+
+    async function traverseDir(subPath: string): Promise<void> {
+      const contentsUrl = `https://api.github.com/repos/${repoFullName}/contents/${subPath}?ref=${branch}`;
+      const resp = await httpGet(contentsUrl, githubApiHeaders());
+      if (resp.status !== 200) {
+        console.warn(`[SkillMarket] Contents API failed for ${subPath}: ${resp.status}`);
+        return;
+      }
+      const items = JSON.parse(resp.body);
+      if (!Array.isArray(items)) return;
+
+      for (const item of items) {
+        if (item.type === "file") {
+          // 检查扩展名
+          const ext = item.name.substring(item.name.lastIndexOf(".")).toLowerCase();
+          if (!allowedExtensions.has(ext) && !item.name.endsWith("SKILL.md")) continue;
+          // 检查大小（跳过大文件）
+          if (item.size && item.size > 1024 * 1024) continue;
+
+          // raw URL
+          const rawUrl = `https://raw.githubusercontent.com/${repoFullName}/${branch}/${item.path}`;
+          // 相对于 dirPath 的路径
+          let relativePath = item.path;
+          if (relativePath.startsWith(dirPath + "/")) {
+            relativePath = relativePath.substring(dirPath.length + 1);
+          }
+          files.push({ path: relativePath, downloadUrl: rawUrl, size: item.size || 0 });
+        } else if (item.type === "dir") {
+          await traverseDir(item.path);
+        }
+      }
+    }
+
+    await traverseDir(dirPath);
+
+    if (files.length === 0) {
+      return {
+        success: false,
+        error: `目录 "${dirPath}" 中未找到可安装的文件。请检查技能路径是否正确。`,
+      };
+    }
+
+    // 检查是否有 SKILL.md
+    const skillMdFile = files.find((f) => f.path.endsWith("SKILL.md"));
+    if (!skillMdFile) {
+      return {
+        success: false,
+        error: `目录 "${dirPath}" 中未找到 SKILL.md 文件。`,
+      };
+    }
+
+    // 先下载 SKILL.md 解析技能信息
+    onProgress?.(40, "正在解析技能元数据...");
+    const mdResp = await httpGet(skillMdFile.downloadUrl);
+    if (mdResp.status !== 200) {
+      return { success: false, error: "下载 SKILL.md 失败。" };
+    }
+    const skillDef = parseSkillMarkdown(mdResp.body, skillMdFile.path);
+    if (!skillDef) {
+      return { success: false, error: "SKILL.md 解析失败。" };
+    }
+
+    // 使用 preferredName 覆盖技能名
+    if (skill.name) {
+      skillDef.name = skill.name;
+    }
+
+    // 检查是否已存在
+    const registry = getSkillRegistry();
+    const existing = registry.get(skillDef.name);
+    if (existing && !overwrite) {
+      return {
+        success: false,
+        error: `技能 "${skillDef.name}" 已存在。是否覆盖安装？`,
+        skillName: skillDef.name,
+      };
+    }
+
+    // 获取安装目录
+    const skillsDir = await getSkillsDir();
+    const sep = skillsDir.includes("/") && !skillsDir.includes("\\") ? "/" : "\\";
+    const skillDir = `${skillsDir}${sep}${skillDef.name}`;
+
+    // 下载并写入所有文件（SKILL.md 已在前面下载过，跳过重复下载）
+    onProgress?.(50, `正在下载技能文件 (${files.length} 个)...`);
+    let filesWritten = 0;
+    const downloadedContents = new Map<string, string>(); // for audit
+
+    // SKILL.md 的内容已在前面下载，直接加入 audit map
+    downloadedContents.set(skillMdFile.path, mdResp.body);
+
+    for (const file of files) {
+      // 跳过 SKILL.md（已下载）
+      if (file.path === skillMdFile.path) {
+        const fullPath = `${skillDir}${sep}${file.path.replace(/\//g, sep)}`;
+        await writeFile(fullPath, mdResp.body);
+        filesWritten++;
+        continue;
+      }
+      try {
+        const fileResp = await httpGet(file.downloadUrl);
+        if (fileResp.status !== 200) {
+          console.warn(`[SkillMarket] Failed to download ${file.path}: ${fileResp.status}`);
+          continue;
+        }
+
+        downloadedContents.set(file.path, fileResp.body);
+
+        const fullPath = `${skillDir}${sep}${file.path.replace(/\//g, sep)}`;
+        await writeFile(fullPath, fileResp.body);
+        filesWritten++;
+
+        const progress = 50 + Math.round((filesWritten / files.length) * 40);
+        onProgress?.(progress, `写入文件: ${file.path}`);
+      } catch (err) {
+        console.warn(`[SkillMarket] Failed to write ${file.path}:`, err);
+      }
+    }
+
+    if (filesWritten === 0) {
+      return { success: false, error: "所有文件下载失败。" };
+    }
+
+    onProgress?.(95, "正在注册技能...");
+
+    // 注册技能
+    skillDef.source = "user";
+    skillDef.filePath = skillDir;
+    skillDef.enabled = true;
+    registry.register(skillDef);
+
+    // 审计记录（复用已下载的内容）
+    try {
+      const hash = computeContentHash(downloadedContents);
+      addInstallAuditEntry({
+        skillName: skillDef.name,
+        sourceId: skill.sourceId,
+        installedAt: Date.now(),
+        auditLevel: "safe",
+        filesWritten,
+        contentHash: hash,
+        version: skill.version,
+        author: skill.author,
+      });
+    } catch (e) { console.warn('[skill-market-client.ts]', e) }
+
+    onProgress?.(100, `技能 "${skillDef.name}" 安装成功！`);
+
+    return {
+      success: true,
+      skillName: skillDef.name,
+      skill: skillDef,
+      filesWritten,
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      error: `安装失败: ${err.message || String(err)}`,
+    };
+  }
+}
+
+/**
  * 从 ZIP 中只安装指定目录的技能。
  * 用于 GitHub 仓库目录型源（如 anthropics/skills 中的单个技能）。
  */
@@ -1353,10 +1585,9 @@ async function installSkillFromZipFiltered(
     });
 
     if (targetPaths.length === 0) {
-      return {
-        success: false,
-        error: `ZIP 中未找到目录 "${targetDir}"。`,
-      };
+      // dirPath 在 ZIP 中不存在（可能技能已改名或移除），fallback 到普通 ZIP 安装
+      console.warn(`[SkillMarket] dirPath "${targetDir}" not found in ZIP, falling back to full ZIP install`);
+      return await installSkillFromZip(zipData, onProgress, overwrite, preferredName);
     }
 
     // 确定实际的根前缀（如 "anthropics-skills-abc123/"）

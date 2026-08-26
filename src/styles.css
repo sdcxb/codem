@@ -11080,6 +11080,42 @@ html.pet-window-mode #root {
   color: var(--text-primary);
   font-size: 14px;
 }
+.file-preview-word-html {
+  padding: 24px;
+  max-width: 800px;
+  margin: 0 auto;
+  line-height: 1.8;
+  color: var(--text-primary);
+  font-size: 14px;
+}
+.file-preview-word-html h1,
+.file-preview-word-html h2,
+.file-preview-word-html h3 {
+  margin: 1em 0 0.5em;
+  color: var(--text-primary);
+}
+.file-preview-word-html p {
+  margin: 0.5em 0;
+}
+.file-preview-word-html ul,
+.file-preview-word-html ol {
+  padding-left: 1.5em;
+  margin: 0.5em 0;
+}
+.file-preview-word-html table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 1em 0;
+}
+.file-preview-word-html td,
+.file-preview-word-html th {
+  border: 1px solid var(--border-primary);
+  padding: 6px 10px;
+}
+.file-preview-word-html img {
+  max-width: 100%;
+  height: auto;
+}
 .file-preview-video {
   display: flex;
   align-items: center;

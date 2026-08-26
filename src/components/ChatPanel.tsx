@@ -21,7 +21,7 @@ import { useScrollState, useUnreadMessagesTracker } from "../hooks/useScrollStat
 // Lucide icons — replacing all emoji icons with professional vector icons
 import {
   PanelLeftClose, ChevronDown, Brain, Bot, Camera, BarChart3, LayoutGrid,
-  Search, X, GitFork, RotateCcw, Check, Send, Square, Hammer, ClipboardList,
+  Search, X, GitFork, RotateCcw, Check, Send, Square, Hammer, ClipboardList, Zap,
 } from "lucide-react";
 // P2 #38: framer-motion for smooth list animations
 import { motion, AnimatePresence } from "framer-motion";
@@ -194,13 +194,22 @@ export function ChatPanel({ onSend, onCancel, onSendGuidance, onToggleSidebar, o
       prevMessagesLenRef.current = messages.length;
       setTimeout(() => messagesEndRef.current?.scrollIntoView(), 100);
     } else if (loadingHistoryRef.current) {
-      // After loading history, nudge scroll down a bit to prevent re-trigger
+      // After loading history, maintain scroll position so user can continue
+      // scrolling up to load more. Save the scroll height before the new
+      // messages were prepended, then restore the offset.
       loadingHistoryRef.current = false;
       prevMessagesLenRef.current = messages.length;
       setTimeout(() => {
         const container = messagesContainerRef.current;
-        if (container && container.scrollTop < 60) {
-          container.scrollTop = 120;
+        const scrollContainer = container?.parentElement as HTMLElement | null;
+        if (scrollContainer) {
+          // Keep scroll position near the top where user was reading.
+          // Offset by ~300px so the "load more" indicator is just out of view
+          // and there's content above for the next scroll-up trigger.
+          const targetTop = 300;
+          if (scrollContainer.scrollTop < targetTop) {
+            scrollContainer.scrollTop = targetTop;
+          }
         }
       }, 50);
     } else if (messages.length > prevMessagesLenRef.current) {
@@ -228,7 +237,9 @@ if (wasStreaming && !isSessionStreaming) {
 setStepTooltipLocked(false);
       // Streaming just ended — scroll to the "task complete" badge so the user
       // sees the completion footer (产出物位置不固定，锚定到标签最稳定).
-      setTimeout(() => {
+      // Use retry mechanism because React re-render + framer-motion animation
+      // may delay the footer appearing in the DOM.
+      const scrollToFooter = (attempt: number) => {
         const container = messagesContainerRef.current;
         if (!container) return;
         // Find the last qa-turn-footer (task complete badge) in the DOM
@@ -236,24 +247,15 @@ setStepTooltipLocked(false);
         const lastFooter = footers.length > 0 ? footers[footers.length - 1] as HTMLElement : null;
         if (lastFooter) {
           lastFooter.scrollIntoView({ behavior: "smooth", block: "start" });
+        } else if (attempt < 10) {
+          // Retry: footer not yet rendered (animation delay), try again after 150ms
+          setTimeout(() => scrollToFooter(attempt + 1), 150);
         } else {
-          // Fallback: find last assistant message
-          const bubbles = container.querySelectorAll('[data-message-id]');
-          let lastAssistant: HTMLElement | null = null;
-          for (let i = bubbles.length - 1; i >= 0; i--) {
-            const el = bubbles[i] as HTMLElement;
-            if (el.classList.contains('assistant')) {
-              lastAssistant = el;
-              break;
-            }
-          }
-          if (lastAssistant) {
-            lastAssistant.scrollIntoView({ behavior: "smooth", block: "start" });
-          } else {
-            messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-          }
+          // Final fallback: scroll to bottom
+          messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
         }
-      }, 150);
+      };
+      setTimeout(() => scrollToFooter(0), 150);
     }
   }, [isSessionStreaming]);
 
@@ -288,7 +290,7 @@ setStepTooltipLocked(false);
     setShowDraftPicker(false);
   }, []);
 
-  // Scroll detection for loading more messages (10 at a time)
+  // Scroll detection for loading more messages
   useEffect(() => {
     const container = messagesContainerRef.current;
     if (!container) return;
@@ -298,17 +300,20 @@ setStepTooltipLocked(false);
 
     let scrollTimer: ReturnType<typeof setTimeout> | null = null;
     const handleScroll = () => {
-      if (scrollTimer) return;
+      // Replace previous timer (debounce) instead of ignoring the event
+      if (scrollTimer) clearTimeout(scrollTimer);
       scrollTimer = setTimeout(() => {
         scrollTimer = null;
-        if (scrollContainer.scrollTop < 50 && hasMoreMessages && !isLoadingMore) {
+        // Use larger threshold (200px) so user can keep scrolling up to trigger
+        // consecutive loads without needing to scroll back down first
+        if (scrollContainer.scrollTop < 200 && hasMoreMessages && !isLoadingMore) {
           loadingHistoryRef.current = true;
-          loadMoreMessages(currentSession?.id || "", 10);
+          loadMoreMessages(currentSession?.id || "", 20);
         }
-      }, 200);
+      }, 150);
     };
 
-    scrollContainer.addEventListener("scroll", handleScroll);
+    scrollContainer.addEventListener("scroll", handleScroll, { passive: true });
     return () => {
       scrollContainer.removeEventListener("scroll", handleScroll);
       if (scrollTimer) clearTimeout(scrollTimer);
@@ -683,7 +688,8 @@ setStepTooltipLocked(false);
               ? messages.filter(m => m.content.toLowerCase().includes(searchQuery.toLowerCase()))
               : messages;
             // Build render list: each entry is either a single message or a merged group
-            const renderList: { msg: Message; skip: boolean; isLastInGroup: boolean }[] = [];
+            // origIndex tracks the index in displayMessages (not renderList) for correct turn-boundary detection
+            const renderList: { msg: Message; skip: boolean; isLastInGroup: boolean; origIndex: number; groupLastIdx?: number }[] = [];
             for (let i = 0; i < displayMessages.length; i++) {
               const msg = displayMessages[i];
               if (isUnified && msg.role === "assistant") {
@@ -711,50 +717,56 @@ setStepTooltipLocked(false);
                       ? group.flatMap(m => m.generatedFiles || [])
                       : undefined,
                   };
-                  renderList.push({ msg: merged, skip: false, isLastInGroup: true });
+                  renderList.push({ msg: merged, skip: false, isLastInGroup: true, origIndex: i, groupLastIdx: lastIdx });
                   // Mark intermediate messages as skipped
                   for (let j = i + 1; j <= lastIdx; j++) {
-                    renderList.push({ msg: messages[j], skip: true, isLastInGroup: j === lastIdx });
+                    renderList.push({ msg: displayMessages[j], skip: true, isLastInGroup: j === lastIdx, origIndex: j });
                   }
                   i = lastIdx; // skip to end of group
                 } else {
                   // Already handled by group start
-                  renderList.push({ msg, skip: true, isLastInGroup: false });
+                  renderList.push({ msg, skip: true, isLastInGroup: false, origIndex: i });
                 }
               } else {
-                renderList.push({ msg, skip: false, isLastInGroup: false });
+                renderList.push({ msg, skip: false, isLastInGroup: false, origIndex: i });
               }
             }
 
-            return renderList.map(({ msg, skip }, index) => {
+            return renderList.map(({ msg, skip, origIndex, groupLastIdx }) => {
             if (skip) return null;
+
+            // For unified mode merged groups, use groupLastIdx (the last index in
+            // the group) for turn boundary detection. Otherwise use origIndex.
+            const effectiveIdx = groupLastIdx !== undefined ? groupLastIdx : origIndex;
 
             // Determine if this is the last assistant message in the current Q&A turn.
             let isLastInTurn = false;
             if (msg.role === "assistant") {
               isLastInTurn = true;
-              // In unified mode, check the original messages array
-              for (let i = index + 1; i < messages.length; i++) {
-                if (messages[i].role === "user") break;
-                if (messages[i].role === "assistant") {
+              for (let i = effectiveIdx + 1; i < displayMessages.length; i++) {
+                if (displayMessages[i].role === "user") break;
+                if (displayMessages[i].role === "assistant") {
                   isLastInTurn = false;
                   break;
                 }
               }
             }
             // Determine turn boundary: a new turn starts at each user message.
+            // The footer (with "task complete" badge) should appear after the last
+            // message in a turn — i.e., when the next message is a user message,
+            // or when this is the very last message in the list.
             let isTurnEnd = false;
-            if (index === messages.length - 1) {
+            if (effectiveIdx === displayMessages.length - 1) {
               isTurnEnd = true;
-            } else if (messages[index + 1].role === "user") {
+            } else if (displayMessages[effectiveIdx + 1]?.role === "user") {
               isTurnEnd = true;
             }
             // Check if this turn has any assistant response (walk backwards to find user start)
             let isTurnWithResponse = false;
             if (isTurnEnd) {
-              for (let j = index; j >= 0; j--) {
-                if (messages[j].role === "user") break;
-                if (messages[j].role === "assistant") { isTurnWithResponse = true; break; }
+              for (let j = effectiveIdx; j >= 0; j--) {
+                if (displayMessages[j].role === "user") break;
+                if (displayMessages[j].role === "assistant") { isTurnWithResponse = true; break; }
               }
             }
 
@@ -768,7 +780,7 @@ setStepTooltipLocked(false);
             >
             <MessageBubble
 message={msg}
-index={index}
+index={origIndex}
 showReasoning={showReasoning}
 onDeleteFiles={(files) => handleDeleteFiles(msg.id, files)}
 isLastInTurn={isLastInTurn}
@@ -780,7 +792,10 @@ sessionId={sessionId || currentSession?.id}
 canEdit={!isSessionStreaming}
 />
             </motion.div>
-{isTurnEnd && !isSessionStreaming && (
+{/* Task complete badge — rendered when turn has ended with assistant response.
+                The isTurnEnd check now correctly handles unified mode merged groups
+                by using groupLastIdx for boundary detection. */}
+{isTurnEnd && isTurnWithResponse && !isSessionStreaming && (
               <div className="qa-turn-footer">
                 <span className="task-complete-badge">
                   <Check size={13} />
@@ -789,7 +804,7 @@ canEdit={!isSessionStreaming}
                 {onFork && (
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <button className="qa-turn-btn" onClick={() => onFork(index)}>
+                      <button className="qa-turn-btn" onClick={() => onFork(origIndex)}>
                         <GitFork size={14} />
                       </button>
                     </TooltipTrigger>
@@ -799,7 +814,7 @@ canEdit={!isSessionStreaming}
                 {onRegenerate && isTurnWithResponse && (
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <button className="qa-turn-btn" onClick={() => onRegenerate(index)}>
+                      <button className="qa-turn-btn" onClick={() => onRegenerate(origIndex)}>
                         <RotateCcw size={14} />
                       </button>
                     </TooltipTrigger>
@@ -1065,11 +1080,11 @@ canEdit={!isSessionStreaming}
 
       {/* Per benchmark plan: always show normal InputArea, guidance input shows above it */}
       {isSessionStreaming && onSendGuidance && (
-        <div className="guidance-input-container" style={{ padding: '0 12px 4px' }}>
+        <div className="guidance-input-container" style={{ padding: '0 12px 4px', display: 'flex', gap: '4px', alignItems: 'center' }}>
           <input
             type="text"
             className="guidance-input"
-            placeholder={lang === "zh" ? "输入引导消息，将在下次迭代时注入..." : "Type guidance to inject at next iteration..."}
+            placeholder={lang === "zh" ? "输入引导消息，按 Enter 下次迭代注入..." : "Type guidance, Enter to inject at next iteration..."}
             value={guidanceInput}
             onChange={(e) => setGuidanceInput(e.target.value)}
             onKeyDown={(e) => {
@@ -1089,9 +1104,30 @@ canEdit={!isSessionStreaming}
               }
             }}
             disabled={!guidanceInput.trim()}
-            title={lang === "zh" ? "发送引导" : "Send guidance"}
+            title={lang === "zh" ? "下次迭代时注入" : "Inject at next iteration"}
           >
             <Send size={14} />
+          </button>
+          <button
+            className="guidance-immediate-btn"
+            onClick={() => {
+              if (guidanceInput.trim()) {
+                // Dispatch event for App.tsx to call sendGuidanceImmediate
+                window.dispatchEvent(new CustomEvent('codem-guidance-immediate', { detail: { message: guidanceInput.trim() } }));
+                setGuidanceInput('');
+              }
+            }}
+            disabled={!guidanceInput.trim()}
+            title={lang === "zh" ? "立即注入（中断当前回复）" : "Inject immediately (interrupt current response)"}
+            style={{
+              background: 'var(--accent)', color: '#fff', border: 'none',
+              borderRadius: 'var(--radius-sm)', padding: '6px 8px', cursor: 'pointer',
+              display: 'flex', alignItems: 'center', gap: '2px', fontSize: '12px',
+              whiteSpace: 'nowrap', flexShrink: 0,
+            }}
+          >
+            <Zap size={12} />
+            {lang === "zh" ? "立即" : "Now"}
           </button>
           <button
             className="guidance-cancel-btn"

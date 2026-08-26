@@ -1818,6 +1818,7 @@ let app = tauri::Builder::default()
 .plugin(tauri_plugin_notification::init())
 .plugin(tauri_plugin_updater::Builder::new().build())
 .plugin(tauri_plugin_process::init())
+.plugin(tauri_plugin_dialog::init())
         .manage(Arc::new(Mutex::new(HashMap::<String, PtySession>::new())) as PtyMap)
         .manage(AppState {
             providers: Mutex::new(vec![

@@ -64,6 +64,36 @@ export class GuidanceQueue {
   }
 
   /**
+   * Enqueue a high-priority guidance message — inserted at the front
+   * of the queue so it's consumed first at the next iteration boundary.
+   */
+  enqueuePriority(sessionId: string, message: string): GuidanceItem {
+    if (!message.trim()) {
+      throw new Error("Guidance message cannot be empty");
+    }
+
+    let queue = this.queues.get(sessionId);
+    if (!queue) {
+      queue = [];
+      this.queues.set(sessionId, queue);
+    }
+
+    const item: GuidanceItem = {
+      id: `guide-${Date.now()}-${this.idCounter++}`,
+      message: message.trim(),
+      timestamp: Date.now(),
+    };
+
+    queue.unshift(item);
+    console.log(
+      `[GuidanceQueue] Enqueued (priority) for session ${sessionId}: id=${item.id}, ` +
+        `msg="${message.substring(0, 80)}...", ` +
+        `queue_size=${queue.length}`,
+    );
+    return item;
+  }
+
+  /**
    * Consume (pop) the oldest guidance item for this session.
    * Called by the agentic loop at each iteration boundary.
    * Returns null if the queue is empty.

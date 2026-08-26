@@ -64,7 +64,7 @@ export function NotebookManager({ onClose, onOpenNotebookChat, onOpenWorkspace }
   const [sourceName, setSourceName] = useState('');
   const [sourceContent, setSourceContent] = useState('');
   const [sourceUrl, setSourceUrl] = useState('');
-  const [sourceFilePath, setSourceFilePath] = useState('');
+  const [sourceFilePaths, setSourceFilePaths] = useState<string[]>([]);
   const [guidedQuestions, setGuidedQuestions] = useState<string[]>([]);
   const [loadingQuestions, setLoadingQuestions] = useState(false);
   // B13: Edit notebook description
@@ -168,13 +168,52 @@ export function NotebookManager({ onClose, onOpenNotebookChat, onOpenWorkspace }
   const handleAddSource = async () => {
     if (!selectedNotebook || !sourceName.trim()) return;
 
+    // For file type with multiple files, add each as a separate source
+    if (sourceType === 'file' && sourceFilePaths.length > 0) {
+      setShowAddSource(false);
+      setIndexing(true);
+      for (let i = 0; i < sourceFilePaths.length; i++) {
+        const fp = sourceFilePaths[i];
+        const fname = fp.split(/[\\/]/).pop() || `file-${i}`;
+        const source = addSource({
+          notebookId: selectedNotebook.id,
+          name: sourceFilePaths.length === 1 ? sourceName.trim() : fname,
+          type: 'file',
+          filePath: fp,
+        });
+        await indexSource(source, (progress) => {
+          setIndexProgress(progress);
+        });
+      }
+      setIndexing(false);
+      setIndexProgress(null);
+      setSourceName(''); setSourceContent(''); setSourceUrl(''); setSourceFilePaths([]);
+      setSources(listSources(selectedNotebook.id));
+      const updated = getNotebook(selectedNotebook.id);
+      if (updated) setSelectedNotebook(updated);
+      refreshNotebooks();
+
+      if (sources.length === 0) {
+        await generateSummary(selectedNotebook.id);
+        const refreshed = getNotebook(selectedNotebook.id);
+        if (refreshed) setSelectedNotebook(refreshed);
+      }
+
+      setLoadingQuestions(true);
+      generateGuidedQuestions(selectedNotebook.id).then((qs) => {
+        setGuidedQuestions(qs);
+        setLoadingQuestions(false);
+      }).catch(() => setLoadingQuestions(false));
+      return;
+    }
+
     const source = addSource({
       notebookId: selectedNotebook.id,
       name: sourceName.trim(),
       type: sourceType,
       content: sourceType === 'text' ? sourceContent : undefined,
       url: sourceType === 'url' ? sourceUrl : undefined,
-      filePath: sourceType === 'file' ? sourceFilePath : undefined,
+      filePath: sourceType === 'file' ? (sourceFilePaths[0] || undefined) : undefined,
     });
 
     setSources(listSources(selectedNotebook.id));
@@ -182,7 +221,7 @@ export function NotebookManager({ onClose, onOpenNotebookChat, onOpenWorkspace }
     setSourceName('');
     setSourceContent('');
     setSourceUrl('');
-    setSourceFilePath('');
+    setSourceFilePaths([]);
 
     // Auto-index the new source
     setIndexing(true);
@@ -229,15 +268,17 @@ export function NotebookManager({ onClose, onOpenNotebookChat, onOpenWorkspace }
       const { invoke } = (window as any).__TAURI__.core;
       const { open } = await import('@tauri-apps/plugin-dialog');
       const selected = await open({
-        multiple: false,
+        multiple: true,
         filters: [{ name: 'Text & Code', extensions: ['txt', 'md', 'json', 'yaml', 'xml', 'csv', 'ts', 'js', 'py', 'java', 'go', 'rs', 'c', 'cpp', 'sh', 'sql', 'html', 'css', 'log', 'pdf', 'docx'] }],
       });
       if (selected) {
-        const filePath = typeof selected === 'string' ? selected : (selected as any).path;
-        setSourceFilePath(filePath);
-        // Auto-fill name from filename
-        const filename = filePath.split(/[\\/]/).pop() || 'file';
-        if (!sourceName) setSourceName(filename);
+        const paths: string[] = Array.isArray(selected)
+          ? selected
+          : [typeof selected === 'string' ? selected : (selected as any).path];
+        setSourceFilePaths(paths);
+        if (paths.length > 0 && !sourceName) {
+          setSourceName(paths[0].split(/[\\/]/).pop() || 'file');
+        }
       }
     } catch (e) {
       console.error('File select error:', e);
@@ -483,8 +524,21 @@ export function NotebookManager({ onClose, onOpenNotebookChat, onOpenWorkspace }
                       <FileText size={16} />
                       {lang === 'zh' ? '选择文件' : 'Choose File'}
                     </button>
-                    {sourceFilePath && (
-                      <span className="notebook-file-path">{sourceFilePath}</span>
+                    {sourceFilePaths.length > 0 && (
+                      <div className="notebook-file-select-info">
+                        {sourceFilePaths.length === 1
+                          ? <span className="notebook-file-path">{sourceFilePaths[0]}</span>
+                          : <>
+                            <span className="notebook-file-count">{sourceFilePaths.length} 个文件已选</span>
+                            <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                              {sourceFilePaths.map((p, i) => {
+                                const name = p.split(/[\\/]/).pop() || p;
+                                return <div key={i}>• {name}</div>;
+                              })}
+                            </div>
+                          </>
+                        }
+                      </div>
                     )}
                   </div>
                 )}

@@ -101,7 +101,7 @@ export function NotebookWorkspace({
   const [sourceName, setSourceName] = useState('');
   const [sourceContent, setSourceContent] = useState('');
   const [sourceUrl, setSourceUrl] = useState('');
-  const [sourceFilePath, setSourceFilePath] = useState('');
+  const [sourceFilePaths, setSourceFilePaths] = useState<string[]>([]);
 
   // Note editing
   const [editingNote, setEditingNote] = useState<Note | null>(null);
@@ -284,18 +284,54 @@ export function NotebookWorkspace({
   const handleAddSource = async () => {
     if (!sourceName.trim()) return;
 
+    // For file type with multiple files, add each as a separate source
+    if (sourceType === 'file' && sourceFilePaths.length > 0) {
+      setShowAddSource(false);
+      setIndexing(true);
+      for (let i = 0; i < sourceFilePaths.length; i++) {
+        const fp = sourceFilePaths[i];
+        const fname = fp.split(/[\\/]/).pop() || `file-${i}`;
+        const source = addSource({
+          notebookId,
+          name: sourceFilePaths.length === 1 ? sourceName.trim() : fname,
+          type: 'file',
+          filePath: fp,
+        });
+        await indexSource(source, (progress) => setIndexProgress(progress));
+      }
+      setIndexing(false);
+      setIndexProgress(null);
+      setSourceName(''); setSourceContent(''); setSourceUrl(''); setSourceFilePaths([]);
+      setSources(listSources(notebookId));
+      const updated = getNotebook(notebookId);
+      if (updated) setNotebook(updated);
+
+      if (sources.length === 0) {
+        await generateSummary(notebookId);
+        const refreshed = getNotebook(notebookId);
+        if (refreshed) setNotebook(refreshed);
+      }
+
+      setLoadingQuestions(true);
+      generateGuidedQuestions(notebookId).then((qs) => {
+        setGuidedQuestions(qs);
+        setLoadingQuestions(false);
+      }).catch(() => setLoadingQuestions(false));
+      return;
+    }
+
     const source = addSource({
       notebookId,
       name: sourceName.trim(),
       type: sourceType,
       content: sourceType === 'text' ? sourceContent : undefined,
       url: sourceType === 'url' ? sourceUrl : undefined,
-      filePath: sourceType === 'file' ? sourceFilePath : undefined,
+      filePath: sourceType === 'file' ? (sourceFilePaths[0] || undefined) : undefined,
     });
 
     setSources(listSources(notebookId));
     setShowAddSource(false);
-    setSourceName(''); setSourceContent(''); setSourceUrl(''); setSourceFilePath('');
+    setSourceName(''); setSourceContent(''); setSourceUrl(''); setSourceFilePaths([]);
 
     setIndexing(true);
     await indexSource(source, (progress) => setIndexProgress(progress));
@@ -365,14 +401,19 @@ export function NotebookWorkspace({
     try {
       const { open } = await import('@tauri-apps/plugin-dialog');
       const selected = await open({
-        multiple: false,
+        multiple: true,
         filters: [{ name: 'Text & Code', extensions: ['txt', 'md', 'json', 'yaml', 'xml', 'csv', 'ts', 'js', 'py', 'java', 'go', 'rs', 'c', 'cpp', 'sh', 'sql', 'html', 'css', 'log', 'pdf', 'docx'] }],
       });
       if (selected) {
-        const filePath = typeof selected === 'string' ? selected : (selected as any).path;
-        setSourceFilePath(filePath);
-        const filename = filePath.split(/[\\/]/).pop() || 'file';
-        if (!sourceName) setSourceName(filename);
+        // multiple: true → selected is string[] (or null)
+        const paths: string[] = Array.isArray(selected)
+          ? selected
+          : [typeof selected === 'string' ? selected : (selected as any).path];
+        setSourceFilePaths(paths);
+        // Auto-fill name from first file if empty
+        if (paths.length > 0 && !sourceName) {
+          setSourceName(paths[0].split(/[\\/]/).pop() || 'file');
+        }
       }
     } catch (e) {
       console.error('File select error:', e);
@@ -869,7 +910,7 @@ setViewingSource({ sourceId: chunk.sourceId, chunkIndex: chunk.chunkIndex });
           setSourceContent={setSourceContent}
           sourceUrl={sourceUrl}
           setSourceUrl={setSourceUrl}
-          sourceFilePath={sourceFilePath}
+          sourceFilePaths={sourceFilePaths}
           onFileSelect={handleFileSelect}
           onConfirm={handleAddSource}
           onCancel={() => setShowAddSource(false)}
@@ -1354,7 +1395,7 @@ function NoteCard({
 function AddSourceDialog({
   isZh, sourceType, setSourceType, sourceName, setSourceName,
   sourceContent, setSourceContent, sourceUrl, setSourceUrl,
-  sourceFilePath, onFileSelect, onConfirm, onCancel,
+  sourceFilePaths, onFileSelect, onConfirm, onCancel,
 }: any) {
   return (
     <div className="nb-dialog-overlay" onClick={onCancel}>
@@ -1391,7 +1432,22 @@ function AddSourceDialog({
             <button className="nb-file-btn" onClick={onFileSelect}>
               <FileText className="w-4 h-4" />{isZh ? '选择文件' : 'Choose File'}
             </button>
-            {sourceFilePath && <span className="nb-file-path">{sourceFilePath}</span>}
+            {sourceFilePaths.length > 0 && (
+          <div className="nb-file-path-list">
+            {sourceFilePaths.length === 1
+              ? <span className="nb-file-path">{sourceFilePaths[0]}</span>
+              : <>
+                <span className="nb-file-count">{sourceFilePaths.length} 个文件已选</span>
+                <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                  {sourceFilePaths.map((p, i) => {
+                    const name = p.split(/[\\/]/).pop() || p;
+                    return <div key={i}>• {name}</div>;
+                  })}
+                </div>
+              </>
+            }
+          </div>
+        )}
           </div>
         )}
         {sourceType === 'url' && (

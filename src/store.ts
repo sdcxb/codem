@@ -2,6 +2,7 @@ import { create } from "zustand";
 import * as MessageStorage from "./core/storage/message";
 import type { FeedbackType } from "./core/storage/message";
 import { putMessageFeedback } from "./core/llm/feedback";
+import { isCompactionInProgress } from "./core/storage/database";
 
 /** Auto-retrieved knowledge source (from notebook RAG, not from tool calls) */
 export interface RetrievedSource {
@@ -294,6 +295,14 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   saveMessages: (sessionId) => {
+    // Defense-in-depth: skip auto-save while compaction is mutating the DB.
+    // The agentic-loop sets this flag during its synchronous DB commit block
+    // to prevent UI auto-save from interleaving db.run calls that corrupt
+    // sql.js state ("bad parameter or other API misuse").
+    if (isCompactionInProgress()) {
+      console.log("[Store] saveMessages skipped — compaction in progress");
+      return;
+    }
     try {
       const msgs = get().messages;
       for (const msg of msgs) {

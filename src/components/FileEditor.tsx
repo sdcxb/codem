@@ -302,7 +302,8 @@ function FilePreviewExcel({ filePath }: { filePath: string }) {
 
 /** Word 预览 — 读取纯文本 */
 function FilePreviewWord({ filePath }: { filePath: string }) {
-  const [content, setContent] = useState("");
+  const [html, setHtml] = useState("");
+  const [text, setText] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -311,22 +312,36 @@ function FilePreviewWord({ filePath }: { filePath: string }) {
     setError("");
     (async () => {
       try {
-        // 尝试读取为文本（docx 实际是 zip，会读到二进制）
-        // 先用 base64 读取，然后尝试提取文本
+        // 用 base64 读取二进制内容
         const base64 = await readFile(filePath, "base64");
         const binary = atob(base64);
         const bytes = new Uint8Array(binary.length);
         for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
 
+        // 优先使用 mammoth.js 渲染为 HTML（保留格式：标题、列表、表格等）
         try {
-          // 尝试用 JSZip 解压 docx 并提取 word/document.xml
+          const mammoth = await import("mammoth/mammoth.browser.js");
+          const result = await mammoth.convertToHtml({ arrayBuffer: bytes.buffer });
+          if (result.value && result.value.trim()) {
+            setHtml(result.value);
+            // 提取纯文本用于搜索
+            const tmpDiv = document.createElement("div");
+            tmpDiv.innerHTML = result.value;
+            setText(tmpDiv.textContent || tmpDiv.innerText || "");
+            return;
+          }
+        } catch (mammothErr) {
+          console.warn("[FilePreviewWord] mammoth.js failed, falling back to JSZip:", mammothErr);
+        }
+
+        // 降级 1：用 JSZip 解压并提取纯文本
+        try {
           const JSZip = (await import("jszip")).default;
           const zip = await JSZip.loadAsync(bytes);
           const docXml = zip.file("word/document.xml");
           if (docXml) {
             const xml = await docXml.async("text");
-            // 从 XML 中提取纯文本
-            const text = xml
+            const extractedText = xml
               .replace(/<w:p[^>]*>/g, "\n")
               .replace(/<[^>]+>/g, "")
               .replace(/&amp;/g, "&")
@@ -335,16 +350,17 @@ function FilePreviewWord({ filePath }: { filePath: string }) {
               .replace(/&quot;/g, '"')
               .replace(/&#39;/g, "'")
               .trim();
-            setContent(text || "（文档内容为空）");
-            return;
+            if (extractedText) {
+              setText(extractedText);
+              return;
+            }
           }
-        } catch {
-          // 不是 zip 格式（可能是老式 .doc），降级为直接读文本
+        } catch (zipErr) {
+          console.warn("[FilePreviewWord] JSZip fallback failed:", zipErr);
         }
 
-        // 降级：直接读取文本
-        const text = await readFile(filePath);
-        setContent(text || "（无法提取文本内容）");
+        // 降级 2：提示无法预览
+        setError("无法解析此 DOCX 文件，可能是格式不兼容或文件已损坏。");
       } catch (err: any) {
         setError(err.message || "加载失败");
       } finally {
@@ -358,7 +374,11 @@ function FilePreviewWord({ filePath }: { filePath: string }) {
 
   return (
     <div className="file-preview-word">
-      <div className="file-preview-word-body">{content}</div>
+      {html ? (
+        <div className="file-preview-word-html" dangerouslySetInnerHTML={{ __html: html }} />
+      ) : (
+        <div className="file-preview-word-body">{text}</div>
+      )}
     </div>
   );
 }

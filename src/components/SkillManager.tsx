@@ -90,6 +90,9 @@ export function SkillManager({ onClose }: SkillManagerProps) {
 
   // ===== Market State =====
   const [marketSkills, setMarketSkills] = useState<MarketSkill[]>([]);
+  // Ref to track latest marketSkills value for use in callbacks
+  const marketSkillsRef = useRef<MarketSkill[]>([]);
+  useEffect(() => { marketSkillsRef.current = marketSkills; }, [marketSkills]);
   const [marketLoading, setMarketLoading] = useState(false);
   const [marketError, setMarketError] = useState<string | null>(null);
   const [marketSearchQuery, setMarketSearchQuery] = useState("");
@@ -275,12 +278,23 @@ export function SkillManager({ onClose }: SkillManagerProps) {
         });
       });
 
-      // 最终更新
-      setMarketSkills(result.skills);
+      // 最终更新：与渐进式更新相同逻辑，保留已有源数据
+      // 不直接替换为 result.skills，因为某些源可能返回空（失败或超时），
+      // 直接替换会丢失之前渐进式更新已获取的源数据
+      const finalSkills = (() => {
+        const prev = marketSkillsRef.current;
+        if (!Array.isArray(prev) || prev.length === 0) return result.skills;
+        // 对于每个源，用本次结果替换该源的旧数据（如果本次有该源的结果）
+        const sourceIdsInResult = new Set(result.skills.map((s) => s.sourceId));
+        // 保留不在结果中的源数据（可能是本次请求失败的源）
+        const preserved = prev.filter((s) => !sourceIdsInResult.has(s.sourceId));
+        return [...preserved, ...result.skills];
+      })();
+      setMarketSkills(finalSkills);
 
-      // 缓存到 settings
+      // 缓存到 settings — 保存最终的 marketSkills（包含保留的旧数据）
       try {
-        setSettingJSON(MARKET_CACHE_KEY, { skills: result.skills, sources, ts: Date.now() });
+        setSettingJSON(MARKET_CACHE_KEY, { skills: finalSkills, sources, ts: Date.now() });
       } catch {}
 
       if (result.errors.length > 0) {
@@ -366,6 +380,7 @@ return true;
     let cancelled = false;
     setOnlineSearching(true);
     setOnlineSearchTriggered(true);
+    setMarketError(null); // 清除之前搜索的错误提示
 
     // 防抖延迟
     const timer = setTimeout(async () => {
@@ -391,13 +406,12 @@ return true;
         });
         if (cancelled) return;
 
+        // 合并最终搜索结果到 marketSkills（去重）
         if (result.skills.length > 0) {
-          // 合并新结果到 marketSkills（去重）
           setMarketSkills((prev) => {
             const existingIds = new Set(prev.map((s) => s.id));
             const newSkills = result.skills.filter((s) => !existingIds.has(s.id));
             if (newSkills.length > 0) {
-              // 更新缓存
               const updated = [...prev, ...newSkills];
               try {
                 setSettingJSON(MARKET_CACHE_KEY, { skills: updated, sources, ts: Date.now() });
@@ -406,6 +420,9 @@ return true;
             }
             return prev;
           });
+        } else {
+          // 搜索无结果时给出明确提示
+          setMarketError(`联网搜索未找到匹配"${q}"的技能。请尝试其他关键词。`);
         }
       } catch (err) {
         console.warn("[SkillManager] Incremental online search failed:", err);

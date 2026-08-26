@@ -265,6 +265,10 @@ export class AgenticLoop {
   // Messages are consumed at iteration boundaries (before each LLM call),
   // never during tool execution or subagent waiting.
   private guidanceQueue: any = null;
+  // Flag: when true, an AbortError was caused by immediate guidance injection,
+  // not a user cancel. The loop should continue to the next iteration instead
+  // of stopping.
+  private guidanceInterrupt: boolean = false;
   private needsYouQueue: any = null;
   private fileChangeTracker: FileChangeTracker | null = null;
   private agentId: string = "main";
@@ -853,6 +857,10 @@ if (planState.total !== null && this.state.iteration > planState.total) {
         : "";
       yield { type: "step_progress", step: this.state.iteration, total: planState.total, title: stepTitle, steps: planState.plan };
 
+      // Clear stale guidanceInterrupt flag — if we're at a new iteration with a
+      // fresh AbortController, any previous guidance interrupt has been handled
+      this.guidanceInterrupt = false;
+
       if (this.abortController.signal.aborted) {
         return { type: "aborted" };
       }
@@ -1203,6 +1211,13 @@ yield { type: "step_progress", step: this.state.iteration, total: planState.tota
 
       // Check if we should continue
       if (this.state.toolCallsInIteration === 0 && !this.state.compactedThisIteration) {
+        // === Guidance pending check ===
+        // If there are pending guidance messages (e.g., from immediate injection),
+        // continue the loop to let them be consumed at the next iteration boundary.
+        if (this.guidanceQueue && this.guidanceQueue.hasPending(sessionId)) {
+          console.log(`[AgenticLoop] Pending guidance detected — continuing loop instead of stopping`);
+          continue;
+        }
         // === Task-completeness check ===
         // Before stopping, check if the user's original request asked for
         // specific actions (write/save/create) that haven't been performed yet.
@@ -1542,6 +1557,12 @@ yield { type: "step_progress", step: this.state.iteration, total: planState.tota
     } catch (error: any) {
       console.error(`[AgenticLoop] executeIteration error (iteration ${this.state.iteration}):`, error?.name, error?.message, error?.stack);
       if (error.name === "AbortError") {
+        // Check if this abort was caused by immediate guidance injection
+        if (this.guidanceInterrupt) {
+          console.log(`[AgenticLoop] AbortError from guidance interrupt — will continue to next iteration`);
+          this.guidanceInterrupt = false;
+          return;
+        }
         return;
       }
 
@@ -1913,6 +1934,22 @@ yield { type: "step_progress", step: this.state.iteration, total: planState.tota
           }
         }
 
+        // BASH/PROCESS INVALIDATION: bash commands can modify arbitrary files
+        // on disk. We cannot know which files were touched, so the safest action
+        // is to clear the entire readCache after a successful bash/execute_command
+        // execution. This prevents stale cache hits where the LLM runs a script
+        // that writes a file, then reads that file and gets the OLD cached content.
+        // Trade-off: the LLM may re-read a few files unnecessarily, but that is
+        // far better than silently working with stale data (which caused the
+        // _refs_all.txt CACHE HIT bug where 45-line old content was returned
+        // after a script had already updated the file to 227 lines).
+        if ((name === "bash" || name === "execute_command" || name === "shell" || name === "run_command") &&
+            result.output && this.readCache.size > 0) {
+          const clearedCount = this.readCache.size;
+          this.readCache.clear();
+          console.log(`[AgenticLoop] Cleared readCache (${clearedCount} entr${clearedCount === 1 ? 'y' : 'ies'}) after bash execution — files on disk may have changed`);
+        }
+
         // S4: Detect write rejection — set flag to stop the loop
         if (result.output && result.output.includes("User rejected the overwrite")) {
           this.state.writeRejected = true;
@@ -1979,6 +2016,9 @@ yield { type: "step_progress", step: this.state.iteration, total: planState.tota
     // messages that made the LLM re-answer previous questions.
     let messages: any[];
     messages = this.getMessageStorage().listMessages(sessionId);
+    // Filter out soft-deleted (hidden) messages — these are kept in DB for
+    // history viewing but must NOT be sent to the LLM.
+    messages = messages.filter((m: any) => !m.hidden);
 
     // --- E3: Incremental message building ---
     // Fingerprint MUST include tool call statuses + result presence, because
@@ -2315,7 +2355,9 @@ private checkHasDocumentAttachment(sessionId: string): boolean {
     sessionId: string,
     isBoundarySafe: (events: any[], seq: number) => { safe: boolean; reason?: string },
   ): Promise<number> {
-    const messages = this.getMessageStorage().listMessages(sessionId);
+    const allMessages = this.getMessageStorage().listMessages(sessionId);
+    // Only consider visible (non-hidden) messages for compaction
+    const messages = allMessages.filter((m: any) => !m.hidden);
     if (messages.length <= 2) return 0;
 
     // API-Round aware boundary detection:
@@ -2415,6 +2457,12 @@ private checkHasDocumentAttachment(sessionId: string): boolean {
 - 只输出检查点文本，不调用任何工具`;
 
     // Generate LLM-powered summary
+    // DSH design: all async work (LLM summarization) happens FIRST, then all
+    // DB mutations are committed synchronously in one block with no `await`
+    // gaps. This prevents the JS event loop from interleaving UI auto-save
+    // (saveMessages → createMessage → db.run) between our compaction DB
+    // operations, which corrupted sql.js state and caused
+    // "bad parameter or other API misuse" errors.
     let summary: string;
     try {
       summary = await this.generateCompactionSummaryCacheAware(
@@ -2425,33 +2473,51 @@ private checkHasDocumentAttachment(sessionId: string): boolean {
       summary = this.fallbackSummary(messagesToRemove);
     }
 
-    // Delete old messages from the database (including old marker)
+    // ========== ATOMIC DB COMMIT (no `await` from here to the end) ==========
+    // Pre-resolve all dynamic imports so we never yield during DB mutation.
+    // The compaction flag also blocks UI auto-save from touching the DB.
+    const { getEventLog } = await import("../storage/event-log");
+    const { setCompactionInProgress } = await import("../storage/database");
+    const eventLog = this.getEventLog();
+    const messageStorage = this.getMessageStorage();
     const removedIds = messagesToRemove.map((m: any) => m.id);
-    this.getMessageStorage().deleteMessagesByIds(removedIds);
-
-    // Insert new compaction marker
     const markerContent = `[上下文已自动压缩]\n\n${summary}\n\n---\n已移除 ${messagesToRemove.length} 条旧消息，保留最近 ${keepCount} 条（API-Round 边界对齐）。请基于以上摘要和后续消息继续工作。不要重复已摘要中记录为完成的工作。如需之前的文件内容或命令输出，请使用工具重新获取。`;
-
     const markerTs = messagesToKeep[0]?.timestamp ?? Date.now();
-    this.getMessageStorage().createMessage({
-      id: `compact-${Date.now()}`,
-      role: "user",
-      content: markerContent,
-      timestamp: markerTs - 1,
-      status: "done",
-    }, sessionId);
+    const markerId = `compact-${Date.now()}`;
+    const messagesBefore = messages.length;
+    const messagesAfter = keepCount + 1;
 
-    // ========== P0-1: Event Sourcing — append compaction event ==========
+    // Set the compaction flag — UI auto-save (saveMessages) will skip while
+    // this is active. This is a defense-in-depth measure; the primary fix is
+    // that all DB operations below are synchronous with no `await` gaps.
+    setCompactionInProgress(true);
     try {
-      const { getEventLog } = await import("../storage/event-log");
-      this.getEventLog().append(sessionId, "compaction", {
-        removedMessageIds: removedIds,
-        summary: markerContent,
-        messagesBefore: messages.length,
-        messagesAfter: keepCount + 1, // +1 for the compaction marker
-      });
-    } catch (eventErr) {
-      console.warn("[compactMessages] Event log compaction write failed (non-critical):", eventErr);
+      // Step 1: Soft-delete old messages (mark hidden=1)
+      messageStorage.deleteMessagesByIds(removedIds);
+
+      // Step 2: Insert compaction marker message
+      messageStorage.createMessage({
+        id: markerId,
+        role: "user",
+        content: markerContent,
+        timestamp: markerTs - 1,
+        status: "done",
+      }, sessionId);
+
+      // Step 3: Append compaction event to the event log
+      try {
+        eventLog.append(sessionId, "compaction", {
+          removedMessageIds: removedIds,
+          summary: markerContent,
+          messagesBefore,
+          messagesAfter,
+        });
+      } catch (eventErr) {
+        console.warn("[compactMessages] Event log compaction write failed (non-critical):", eventErr);
+      }
+    } finally {
+      // Release the compaction flag — UI auto-save can resume
+      setCompactionInProgress(false);
     }
 
     console.log(`[compactMessages] Removed ${messagesToRemove.length} old messages, kept ${keepCount}, inserted LLM compaction marker (summary length: ${summary.length})`);
@@ -2680,6 +2746,28 @@ ${truncatedConv}`;
       return false;
     }
     this.guidanceQueue.enqueue(this.currentSessionId, message);
+    return true;
+  }
+
+  /**
+   * Send a guidance message with immediate priority — it will be injected
+   * at the very next iteration boundary, ahead of any other pending guidance.
+   * Additionally, if the LLM is currently streaming a response, abort it
+   * so the new guidance takes effect immediately.
+   */
+  sendGuidanceImmediate(message: string): boolean {
+    if (!this.currentSessionId) {
+      console.warn("[AgenticLoop] Cannot send guidance — no active run");
+      return false;
+    }
+    // Insert at the front of the queue (high priority)
+    this.guidanceQueue.enqueuePriority(this.currentSessionId, message);
+    // Set flag so AbortError handler knows this is a guidance interrupt, not a cancel
+    this.guidanceInterrupt = true;
+    // Abort current LLM stream so the loop re-enters and consumes guidance
+    this.abortController?.abort();
+    // Create a fresh AbortController for the next iteration
+    this.abortController = new AbortController();
     return true;
   }
 

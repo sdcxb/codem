@@ -57,7 +57,9 @@ async function fetchDeepSeekBalance(apiKey: string, baseUrl: string): Promise<{ 
 
 /** 手动压缩上下文：删除旧消息并插入摘要标记 */
 function manualCompact(sessionId: string): { removed: number; kept: number } {
-  const messages = listMessages(sessionId);
+  const allMessages = listMessages(sessionId);
+  // Only consider visible messages for compaction
+  const messages = allMessages.filter((m: any) => !(m as any).hidden);
   if (messages.length <= 2) return { removed: 0, kept: messages.length };
 
   const keepCount = Math.min(20, messages.length);

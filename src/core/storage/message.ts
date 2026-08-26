@@ -108,7 +108,7 @@ export function listMessages(sessionId: string, limit?: number): Message[] {
   const db = getDatabase();
   const limitClause = limit ? `LIMIT ${limit}` : "";
   const result = db.exec(
-    `SELECT id, session_id, role, content, timestamp, model, prompt_tokens, completion_tokens, cost, status, reasoning, generated_files, retrieved_sources FROM messages WHERE session_id = ? ORDER BY timestamp ASC ${limitClause}`,
+    `SELECT id, session_id, role, content, timestamp, model, prompt_tokens, completion_tokens, cost, status, reasoning, generated_files, retrieved_sources, hidden FROM messages WHERE session_id = ? ORDER BY timestamp ASC ${limitClause}`,
     [sessionId]
   );
   if (result.length === 0) return [];
@@ -132,12 +132,21 @@ export function listMessages(sessionId: string, limit?: number): Message[] {
       };
       const toolCalls = loadToolCallsForMessage(db, messageRow.id);
       const attachments = loadAttachmentsForMessage(db, messageRow.id);
-      return rowToMessage(messageRow, toolCalls, attachments);
+      const msg = rowToMessage(messageRow, toolCalls, attachments);
+      // Attach hidden flag for UI to show "compacted" marker
+      (msg as any).hidden = row[13] === 1;
+      return msg;
     } catch (e) {
       console.warn("[listMessages] Failed to convert row:", e);
       return null;
     }
   }).filter((m): m is Message => m !== null);
+}
+
+/** List only non-hidden messages (for LLM context building) */
+export function listVisibleMessages(sessionId: string): Message[] {
+  const all = listMessages(sessionId);
+  return all.filter(m => !(m as any).hidden);
 }
 
 /**
@@ -487,9 +496,11 @@ export function deleteMessagesBefore(sessionId: string, timestamp: number): numb
 export function deleteMessagesByIds(ids: string[]): number {
   if (ids.length === 0) return 0;
   const db = getDatabase();
+  // Soft-delete: mark messages as hidden instead of physically deleting them.
+  // This preserves conversation history for the user to scroll back and view,
+  // while keeping them out of the LLM context window (buildMessages filters hidden).
   for (const id of ids) {
-    db.run("DELETE FROM tool_calls WHERE message_id = ?", [id]);
-    db.run("DELETE FROM messages WHERE id = ?", [id]);
+    db.run("UPDATE messages SET hidden = 1 WHERE id = ?", [id]);
   }
   persistDatabase();
   return ids.length;

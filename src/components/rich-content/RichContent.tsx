@@ -165,7 +165,27 @@ export const RichContent = memo(function RichContent({
     // 这些不需要代码框样式，渲染为普通文本即可（保留等宽字体但不带背景框）
     if (inline) {
       const text = String(children);
-      // 判断是否为“单个单词或短词组”：不含换行、不含分号/大括号/管道符等代码结构
+      // Check if this looks like a file path (has a known file extension)
+      // e.g., xxx.md, src/index.ts, config.json, ./path/file.py
+      // Use a whitelist of common extensions to avoid false positives like obj.prop
+      const knownExtensions = /\.(md|txt|json|yaml|yml|ts|tsx|js|jsx|mjs|py|sh|bat|ps1|css|html|svg|png|jpg|jpeg|gif|toml|ini|cfg|rs|go|java|c|cpp|h|hpp|sql|xml|csv|log|env|lock|gitignore|dockerfile)$/i;
+      const isFilePath = knownExtensions.test(text.trim()) &&
+        !text.includes(" ") && text.length < 200;
+      if (isFilePath) {
+        return (
+          <a
+            href={text}
+            onClick={(e) => handleFileLinkClick(e, text)}
+            onContextMenu={(e) => handleFileLinkContextMenu(e, text)}
+            className="rich-content-link file-path-link inline-file-link"
+            title={`点击打开: ${text}`}
+            style={{ cursor: "pointer" }}
+          >
+            <code className="inline-code" {...props}>{children}</code>
+          </a>
+        );
+      }
+      // 判断是否为"单个单词或短词组"：不含换行、不含分号/大括号/管道符等代码结构
       const isSimpleWord = isSimpleInlineTerm(text);
       if (isSimpleWord) {
         // 单个单词/词组：渲染为普通文本，不带代码框样式

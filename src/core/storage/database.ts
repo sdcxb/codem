@@ -1,8 +1,28 @@
 import initSqlJs, { type Database as SqlJsDatabase } from "sql.js/dist/sql-asm.js";
 
 let db: SqlJsDatabase | null = null;
-/** FTS5 可用性标志 — sql.js (asm) 可能不支持 FTS5，创建失败后避免重复报错 */
+/** FTS5 可用性标志 — sql.js 可能不支持 FTS5，创建失败后避免重复报错 */
 let ftsAvailable = false;
+
+/**
+ * Compaction mutual-exclusion flag.
+ * When true, UI auto-save (saveMessages) must NOT touch the database
+ * because compactMessages is in the middle of a multi-step DB operation
+ * (delete → LLM summary → insert marker). An intervening saveMessages
+ * call during the `await` gap corrupts sql.js's internal state and
+ * produces "bad parameter or other API misuse" errors.
+ */
+let compactionInProgress = false;
+
+/** Returns true if a compaction is currently in progress. */
+export function isCompactionInProgress(): boolean {
+  return compactionInProgress;
+}
+
+/** Set the compaction flag. Called by AgenticLoop.compactMessages. */
+export function setCompactionInProgress(value: boolean): void {
+  compactionInProgress = value;
+}
 // DB_STORAGE_KEY was used in old localStorage-based persistence; now using Tauri file system
 // const DB_STORAGE_KEY = "codem-sqlite-db";
 const DB_FILE_NAME = "codem-db.bin";
@@ -706,6 +726,7 @@ const migrations = [
 "ALTER TABLE sessions ADD COLUMN worktree_branch TEXT",
 "ALTER TABLE sessions ADD COLUMN parent_id TEXT", // R3-2.2: Fork support
 "ALTER TABLE sessions ADD COLUMN sort_order INTEGER DEFAULT 0", // P2 #29: session reordering
+"ALTER TABLE messages ADD COLUMN hidden INTEGER DEFAULT 0", // Soft-delete for compaction: hidden messages stay in DB for history viewing but are excluded from LLM context
 ];
   for (const sql of migrations) {
     try { db.run(sql); } catch (e) { /* column already exists */ }

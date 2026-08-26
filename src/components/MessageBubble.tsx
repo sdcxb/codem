@@ -359,6 +359,8 @@ const [galleryIndex, setGalleryIndex] = useState(0);
         </code>
       );
     },
+    // Also detect file paths in inline code for user messages
+    // (assistant messages use RichContent which has its own file path detection)
     a({ href, children, ...props }: any) {
       // P1-2: Handle citation links
       if (href && href.startsWith('#cite-')) {
