@@ -10,8 +10,8 @@
  * 1. 'read' tool is EXEMPT (maxResultSizeChars = Infinity) — prevents infinite
  *    loops where LLM reads a persisted file, result is large again, gets
  *    persisted again, etc.
- * 2. Tools returning task IDs (spawn_subagent, delegate_to_session,
- *    wait_for_subagent, wait_for_delegation) are EXEMPT — task IDs must
+ * 2. Tools returning task IDs (subagent, delegate_to_session,
+ *    send_message, wait_for_delegation) are EXEMPT — task IDs must
  *    remain visible to the LLM.
  * 3. Results are stored in `.codem-tool-results/<sessionId>/` under the
  *    workspace directory.
@@ -127,8 +127,11 @@ export async function maybePersistToolResult(
  */
 export const NEVER_PERSIST_TOOLS = new Set([
   "read",               // Prevents infinite persist→read→persist loops
-  "spawn_subagent",     // Returns task ID needed for wait_for_subagent
-  "wait_for_subagent",  // Returns sub-agent results
+  "subagent",           // Returns subagent ID for background tracking
+  "send_message",       // Returns message delivery confirmation
+  "interrupt_agent",    // Returns interrupt confirmation
+  "list_agents",        // Returns agent list (short)
+  "report",             // Returns report acceptance
   "delegate_to_session", // Returns delegation task ID
   "wait_for_delegation", // Returns delegation results
   "list_sessions",      // Returns session list (usually small)

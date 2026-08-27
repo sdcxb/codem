@@ -92,11 +92,18 @@ describe("架构守卫: Provider 共享 LLMEngine 实例", () => {
   });
 
   it("ARCH-019: 所有共享 provider 声明 inject: ['llmEngine']", () => {
-    const sharedProviderFiles = sharedProviders.map(p => `core/provider/${p}.ts`);
+    // subagent-provider 不依赖 llmEngine（仅注册 SubagentRuntime）
+    const nonLLMProviders = ['subagent-provider'];
+    const sharedProviderFiles = sharedProviders
+      .filter(p => !nonLLMProviders.includes(p))
+      .map(p => `core/provider/${p}.ts`);
     for (const file of sharedProviderFiles) {
       const code = readFile(file);
       expect(code).toContain("inject: ['llmEngine']");
     }
+    // subagent-provider 应该声明 inject: []（无依赖）
+    const subagentCode = readFile("core/provider/subagent-provider.ts");
+    expect(subagentCode).toContain("inject: []");
   });
 
   it("ARCH-020: llm-provider 的 complete 方法自动填充 model 字段", () => {
@@ -189,9 +196,10 @@ describe("架构守卫: Provider 接口契约一致性", () => {
     expect(code).toContain("classifyError");
   });
 
-  it("ARCH-060: subagent-provider 保留 setSpawner 注入逻辑", () => {
+  it("ARCH-060: subagent-provider 注册 SubagentRuntime 到 ctx", () => {
     const code = readFile("core/provider/subagent-provider.ts");
-    expect(code).toContain("setSpawner");
+    expect(code).toContain("getSubagentRuntime");
+    expect(code).toContain("ctx.provide('subagent'");
   });
 });
 

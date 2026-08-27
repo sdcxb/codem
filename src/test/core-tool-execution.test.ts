@@ -526,10 +526,9 @@ describe("工具调用 — P5 拦截逻辑", () => {
     const path = require("path");
     const src = fs.readFileSync(path.join(__dirname, "../core/llm/agentic-loop.ts"), "utf-8");
 
-    expect(src).toContain("P5");
-    expect(src).toContain("spawn_subagent");
-    expect(src).toContain("wait_for_subagent");
-    expect(src).toContain("Cannot wait_for_subagent in the same response as spawn_subagent");
+    expect(src).toContain("settlement");
+    expect(src).toContain("subagent");
+    expect(src).toContain("resolveSubagentSettlement");
   });
 
   it("TOOL-032: P5 同响应 delegate+wait 拦截逻辑存在", () => {
@@ -551,14 +550,17 @@ describe("工具调用 — P5 拦截逻辑", () => {
     expect(src).toContain("delegatedTasks");
   });
 
-  it("TOOL-034: 未 wait 的 subagent 提醒注入逻辑存在", () => {
+  it("TOOL-034: 旧 subagent 提醒注入已被 settlement gate 替代", () => {
     const fs = require("fs");
     const path = require("path");
     const src = fs.readFileSync(path.join(__dirname, "../core/llm/agentic-loop.ts"), "utf-8");
 
-    expect(src).toContain("un-waited sub-agent");
-    expect(src).toContain("SYSTEM REMINDER");
-    expect(src).toContain("wait_for_subagent");
+    // 旧模式已移除 — 不再注入 "un-waited sub-agent" SYSTEM REMINDER 消息
+    expect(src).not.toContain('un-waited sub-agent task');
+    // 新模式：settlement gate 通过 Promise 网关等待
+    expect(src).toContain("Awaiting");
+    expect(src).toContain("background subagent settlement");
+    expect(src).toContain("Promise.race");
   });
 
   it("TOOL-035: 未 wait 的 delegation 提醒注入逻辑存在", () => {
@@ -570,13 +572,13 @@ describe("工具调用 — P5 拦截逻辑", () => {
     expect(src).toContain("wait_for_delegation");
   });
 
-  it("TOOL-036: spawn_subagent 结果 TASK_ID 提取逻辑存在", () => {
+  it("TOOL-036: subagent settlement gate 逻辑存在", () => {
     const fs = require("fs");
     const path = require("path");
     const src = fs.readFileSync(path.join(__dirname, "../core/llm/agentic-loop.ts"), "utf-8");
 
-    expect(src).toContain("TASK_ID");
-    expect(src).toContain("spawnedSubagents.add");
+    expect(src).toContain("pendingBackgroundSubagents");
+    expect(src).toContain("settlementResolvers");
   });
 
   it("TOOL-037: delegate_to_session 结果 TASK_ID 提取逻辑存在", () => {
@@ -592,7 +594,7 @@ describe("工具调用 — P5 拦截逻辑", () => {
     const path = require("path");
     const src = fs.readFileSync(path.join(__dirname, "../core/llm/agentic-loop.ts"), "utf-8");
 
-    expect(src).toContain("Spawning sub-agent");
+    expect(src).toContain("Delegating to subagent");
     expect(src).toContain("Delegating to session");
     expect(src).toContain("Waiting for delegation");
   });

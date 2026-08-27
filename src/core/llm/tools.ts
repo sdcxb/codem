@@ -418,6 +418,17 @@ export class ToolRegistry {
   }
 
   /**
+   * DSH-style: 创建一个隔离的工具作用域 — 对标 Cordis ctx.isolate('tools').
+   *
+   * 子作用域继承父作用域的所有工具注册，但在子作用域中 register/remove
+   * 只影响子作用域自身，不影响父作用域。这使子智能体可以安全地注册
+   * 专属工具（如 report）而不泄漏到主智能体的工具集中。
+   */
+  createScope(): ToolRegistry {
+    return new ScopedToolRegistry(this);
+  }
+
+  /**
    * P0-2: Get definitions for tools that are NOT deferred (shouldDefer=false).
    * These tools have their full schema sent to the LLM.
    * Also includes tool_search itself.
@@ -495,6 +506,133 @@ export class ToolRegistry {
         input: args,
         output: `Error: ${error.message}`,
         status: "error",
+        error: error.message,
+      };
+    }
+  }
+}
+
+/**
+ * DSH-style: 隔离的工具作用域 — 对标 Cordis ctx.isolate('tools').
+ *
+ * 子作用域委托所有读取操作（get/getAll/getDefinitions/execute）给父作用域，
+ * 但 register/remove 只影响自身的 overlay Map，不修改父作用域。
+ * 子作用域中注册的工具优先于父作用域中的同名工具（shadowing）。
+ */
+class ScopedToolRegistry extends ToolRegistry {
+  private overlay: Map<string, ToolDef> = new Map();
+  private removed: Set<string> = new Set();
+
+  constructor(private parent: ToolRegistry) {
+    super();
+  }
+
+  register(tool: ToolDef): void {
+    this.overlay.set(tool.id, tool);
+    this.removed.delete(tool.id);
+  }
+
+  remove(id: string): boolean {
+    const hadInOverlay = this.overlay.delete(id);
+    const hadInParent = this.parent.get(id) !== undefined;
+    if (hadInParent) {
+      this.removed.add(id);
+    }
+    return hadInOverlay || hadInParent;
+  }
+
+  get(id: string): ToolDef | undefined {
+    if (this.overlay.has(id)) return this.overlay.get(id);
+    if (this.removed.has(id)) return undefined;
+    return this.parent.get(id);
+  }
+
+  getAll(): ToolDef[] {
+    const result: ToolDef[] = [];
+    const seen: Set<string> = new Set();
+    for (const [id, tool] of this.overlay) {
+      result.push(tool);
+      seen.add(id);
+    }
+    for (const tool of this.parent.getAll()) {
+      if (!seen.has(tool.id) && !this.removed.has(tool.id)) {
+        result.push(tool);
+        seen.add(tool.id);
+      }
+    }
+    return result;
+  }
+
+  getDefinitions(): ToolDefinition[] {
+    return this.getAll().map((t) => ({
+      name: t.id,
+      description: t.description,
+      parameters: t.parameters,
+    }));
+  }
+
+  getCoreDefinitions(): ToolDefinition[] {
+    return this.getAll()
+      .filter((t) => !t.shouldDefer)
+      .map((t) => ({
+        name: t.id,
+        description: t.description,
+        parameters: t.parameters,
+      }));
+  }
+
+  getDeferredDefinitions(): Array<{ name: string; searchHint: string }> {
+    return this.getAll()
+      .filter((t) => t.shouldDefer)
+      .map((t) => ({
+        name: t.id,
+        searchHint: t.searchHint || t.description.substring(0, 120),
+      }));
+  }
+
+  getDeferredDefinition(name: string): ToolDefinition | undefined {
+    const tool = this.get(name);
+    if (!tool || !tool.shouldDefer) return undefined;
+    return {
+      name: tool.id,
+      description: tool.description,
+      parameters: tool.parameters,
+    };
+  }
+
+  async execute(
+    toolCallId: string,
+    toolName: string,
+    args: Record<string, unknown>,
+    ctx: ToolContext,
+  ): Promise<ToolCallResult> {
+    const tool = this.get(toolName);
+    if (!tool) {
+      return {
+        id: toolCallId,
+        name: toolName,
+        input: args,
+        output: `Tool "${toolName}" not found`,
+        status: "error" as const,
+        error: `Tool "${toolName}" not found`,
+      };
+    }
+    try {
+      const result = await tool.execute(args, ctx);
+      return {
+        id: toolCallId,
+        name: toolName,
+        input: args,
+        output: result.output,
+        status: "completed" as const,
+      };
+    } catch (error: any) {
+      return {
+        id: toolCallId,
+        name: toolName,
+        input: args,
+        output: `Error: ${error.message}`,
+        status: "error" as const,
         error: error.message,
       };
     }
@@ -1298,118 +1436,4 @@ registry.register(createSessionEventReadTool());
     registry.register(tool);
   }
   return registry;
-}
-
-// ========== Sub-agent Tool ==========
-let subagentManager: import("../subagent/subagent").SubagentManager | null = null;
-
-export function setSubagentManager(manager: import("../subagent/subagent").SubagentManager) {
-  subagentManager = manager;
-}
-
-export function createSpawnSubagentTool(): ToolDef {
-  return {
-    id: "spawn_subagent",
-    description: "Spawn a sub-agent to work on a task in the background. Returns immediately with task ID. Use wait_for_subagent to get the result when the sub-agent completes.",
-    guidance: "Use spawn_subagent to delegate a task to a sub-agent (explore for search, general for analysis, build for implementation). The sub-agent runs independently — call wait_for_subagent to get the result.",
-    parameters: {
-      type: "object",
-      properties: {
-        agentId: { type: "string", description: "Agent type: 'explore' for search, 'general' for general tasks, 'build' for implementation" },
-        prompt: { type: "string", description: "The task prompt for the sub-agent" },
-        cwd: { type: "string", description: "Working directory (optional)" },
-      },
-      required: ["agentId", "prompt"],
-    },
-    async execute(args, ctx) {
-      if (!subagentManager) {
-        const msg = getLang() === "zh" ? "错误：子智能体管理器未初始化" : "Error: Sub-agent manager not initialized";
-        return { title: "spawn_subagent", output: msg };
-      }
-
-      const agentId = args.agentId as string;
-      const prompt = args.prompt as string;
-      const cwd = (args.cwd as string) || ctx.cwd;
-
-      try {
-        const task = await subagentManager.spawn(ctx.sessionId, agentId, prompt, cwd, ctx.abort);
-        const zh = getLang() === "zh";
-        const subagentLabel = zh ? "子智能体" : "Sub-agent";
-        const startedLabel = zh ? "已启动，任务" : "started for";
-        return {
-          title: `spawn_subagent: ${agentId}`,
-          output: `SUBAGENT_TASK_ID:${task.id}\n${subagentLabel} "${task.name}" ${startedLabel}: ${prompt.substring(0, 100)}`,
-          metadata: { agentId, name: task.name },
-        };
-      } catch (error: any) {
-        return { title: "spawn_subagent", output: `错误: ${error.message}` };
-      }
-    },
-  };
-}
-
-export function createWaitForSubagentTool(): ToolDef {
-  return {
-    id: "wait_for_subagent",
-    description: "Wait for a sub-agent to complete and get its result. Blocks until the sub-agent finishes. Use after spawn_subagent.",
-    guidance: "Use wait_for_subagent to block until a previously spawned sub-agent finishes. Pass the task ID from spawn_subagent.",
-    parameters: {
-      type: "object",
-      properties: {
-        task_id: { type: "string", description: "The sub-agent task ID from spawn_subagent" },
-      },
-      required: ["task_id"],
-    },
-    async execute(args, ctx) {
-      if (!subagentManager) {
-        const msg = getLang() === "zh" ? "错误：子智能体管理器未初始化" : "Error: Sub-agent manager not initialized";
-        return { title: "wait_for_subagent", output: msg };
-      }
-
-      const taskId = args.task_id as string;
-      const zh = getLang() === "zh";
-
-      try {
-        // Poll until completion — NO time-based timeout.
-        // Sub-agents are allowed to run as long as needed (minutes, hours).
-        // Cancellation is handled via abort signal (user cancel / parent abort).
-        while (true) {
-          // Check abort signal — allows cancellation when user clicks Stop
-          // or parent task is aborted
-          if (ctx.abort?.aborted) {
-            return { title: "wait_for_subagent", output: zh ? "等待已取消（主任务被中断）" : "Wait cancelled (parent task aborted)" };
-          }
-
-          const task = subagentManager.getTask(taskId);
-          if (!task) {
-            // Return a clear error with available task IDs so the LLM doesn't guess
-            const allTasks = subagentManager.getAllTasks();
-            const validIds = allTasks.map((t: any) => t.id).join(", ") || "(none)";
-            return {
-              title: "wait_for_subagent",
-              output: zh
-                ? `错误：未找到任务 "${taskId}"。可用的任务ID: ${validIds}。请不要再用错误的 task_id 调用 wait_for_subagent。如果你已经收到了子智能体的结果，请直接进行下一步操作（如写入文件）。`
-                : `Error: Task "${taskId}" not found. Available task IDs: ${validIds}. Do NOT call wait_for_subagent with an invalid task_id again. If you already have sub-agent results, proceed to the next step (e.g., write the output file) directly.`,
-            };
-          }
-          if (task.status === "completed" && task.result) {
-            const statusL = zh ? "状态" : "Status";
-            const summaryL = zh ? "摘要" : "Summary";
-            const outputL = zh ? "输出" : "Output";
-            const filesL = zh ? "文件" : "Files";
-            const noneL = zh ? "无" : "none";
-            return {
-              title: `wait_for_subagent: ${taskId}`,
-              output: `${statusL}: ${task.result.status}\n${summaryL}: ${task.result.summary}\n${outputL}:\n${task.result.output}\n${filesL}: ${task.result.filesTouched.join(", ") || noneL}`,
-            };
-          }
-          if (task.status === "failed") return { title: "wait_for_subagent", output: zh ? `错误: ${task.error || "任务失败"}` : `Error: ${task.error || "Task failed"}` };
-          if (task.status === "cancelled") return { title: "wait_for_subagent", output: zh ? "错误：任务已取消" : "Error: Task cancelled" };
-          await new Promise(resolve => setTimeout(resolve, 1000));
-        }
-      } catch (error: any) {
-        return { title: "wait_for_subagent", output: zh ? `错误: ${error.message}` : `Error: ${error.message}` };
-      }
-    },
-  };
 }

@@ -21,7 +21,16 @@ function getToolDescription(tool: string, input: Record<string, unknown>): strin
     case "grep":
       return `搜索内容: ${input.pattern || "?"}`;
     case "spawn_subagent":
-      return `启动子智能体: ${input.agentId || "?"}`;
+    case "subagent":
+      return `启动子智能体: ${input.agentId || input.description || "?"}`;
+    case "report":
+      return `子智能体汇报`;
+    case "send_message":
+      return `向子智能体 ${input.subagent_id || "?"} 发送消息`;
+    case "interrupt_agent":
+      return `中断智能体: ${input.agent_id || "?"}`;
+    case "list_agents":
+      return `列出子智能体`;
     default:
       return `调用工具: ${tool}`;
   }

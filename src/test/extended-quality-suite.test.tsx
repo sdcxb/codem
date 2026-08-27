@@ -83,11 +83,13 @@ describe("扩充测试手段 — 综合质量保障 — EXT-001 ~ EXT-080", () =
 
     it("EXT-002: MessageBubble AI 消息含 Markdown", () => {
             const msg: Message = {
-        id: "ext-002", role: "assistant", content: "这是**加粗**和`代码`",
+        id: "ext-002", role: "assistant", content: "这是**加粗**和`function() { return true; }`",
         timestamp: Date.now(), status: "done",
       };
       const { container } = renderWithProviders(<MessageBubble message={msg} />);
       expect(container.querySelector("strong")).toBeTruthy();
+      // RichContent renders inline code containing code constructs as <code>
+      // (simple words like `代码` are downgraded to <span className="inline-term">)
       expect(container.querySelector("code")).toBeTruthy();
     });
 

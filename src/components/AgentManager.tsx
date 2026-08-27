@@ -56,8 +56,10 @@ const BUILTIN_TOOL_NAMES = [
   "github_tool",
   "lsp_tool",
   "tool_search",
-  "spawn_subagent",
-  "wait_for_subagent",
+  "subagent",
+  "send_message",
+  "interrupt_agent",
+  "list_agents",
 ];
 
 function emptyAgent(): AgentDefinition {

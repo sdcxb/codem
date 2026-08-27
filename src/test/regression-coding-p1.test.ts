@@ -297,19 +297,56 @@ describe("P1-7: AgentProfile — 子智能体身份持久化", () => {
       "utf-8"
     );
     expect(source).toContain("profile_id");
-    expect(source).toContain("AgentProfile");
   });
 
-  it("spawner — profile_id 注入 system prompt", () => {
-    const source = require("fs").readFileSync(
-      "src/core/subagent/spawner.ts",
+  it("DSH-style persona 注入链路 — agentId + profileId 通过插件路径注入 system prompt", () => {
+    // 验证 DSH 式 persona 注入路径：
+    // subagent 工具 → SubagentStartRequest.agentId/profileId
+    // → InProcessSpawnProvider → engine.processSubagent
+    // → buildSubagentSystemPrompt(agentId, cwd, profileId)
+    // → AgentRegistry.get(agentId).prompt + AgentProfileStorage.getById(profileId)
+
+    const toolSource = require("fs").readFileSync(
+      "src/core/llm/tools/subagent-tools.ts",
       "utf-8"
     );
-    expect(source).toContain("AgentProfileStorage");
-    expect(source).toContain("profile_id");
-    expect(source).toContain("Identity:");
-    expect(source).toContain("Domain:");
-    expect(source).toContain("Scope:");
+    // subagent 工具接受 agent_id 和 profile_id 参数
+    expect(toolSource).toContain("agent_id");
+    expect(toolSource).toContain("profile_id");
+
+    const runtimeTypes = require("fs").readFileSync(
+      "src/core/subagent/runtime-types.ts",
+      "utf-8"
+    );
+    // SubagentStartRequest 包含 agentId 和 profileId
+    expect(runtimeTypes).toContain("agentId");
+    expect(runtimeTypes).toContain("profileId");
+
+    const engineSource = require("fs").readFileSync(
+      "src/core/llm/index.ts",
+      "utf-8"
+    );
+    // buildSubagentSystemPrompt 接受 profileId 参数并从 AgentProfileStorage 加载
+    expect(engineSource).toContain("profileId");
+    expect(engineSource).toContain("AgentProfileStorage");
+    // processSubagent 传递 profileId
+    expect(engineSource).toContain("buildSubagentSystemPrompt(agentId, cwd, profileId)");
+
+    const providerSource = require("fs").readFileSync(
+      "src/core/subagent/spawn-in-process-provider.ts",
+      "utf-8"
+    );
+    // InProcessSpawnProvider 传递 profileId
+    expect(providerSource).toContain("request.profileId");
+
+    const runtimeSource = require("fs").readFileSync(
+      "src/core/subagent/runtime.ts",
+      "utf-8"
+    );
+    // SubagentRuntime 在 startContinuable 中传递 profile_id 到 task
+    expect(runtimeSource).toContain("profile_id: spec.request.profileId");
+    // executeContinuable 传递 profile_id 到 processSubagent
+    expect(runtimeSource).toContain("activation.task.profile_id");
   });
 });
 

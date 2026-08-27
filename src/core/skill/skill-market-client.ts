@@ -261,11 +261,191 @@ async function getDefaultBranch(repoFullName: string): Promise<string> {
   return data.default_branch || "main";
 }
 
+// ========== GitHub Trees API (移植自 vercel-labs/skills blob.ts) ==========
+
+/**
+ * 已知技能目录前缀列表（相对仓库根目录）。
+ * 移植自 vercel-labs/skills blob.ts 的 PRIORITY_PREFIXES，
+ * 覆盖 30+ 种 Agent 约定的技能存放位置。
+ * 排序规则：先匹配的优先，根目录最优先，然后按列表顺序。
+ */
+const SKILL_PRIORITY_PREFIXES: string[] = [
+  "",                           // 根目录
+  "skills/",                    // 通用 skills/ 目录
+  "skills/.curated/",           // curated 子目录
+  "skills/.experimental/",     // experimental 子目录
+  "skills/.system/",            // system 子目录
+  ".agents/skills/",            // 通用 agent skills
+  ".claude/skills/",            // Claude
+  ".cline/skills/",             // Cline
+  ".codebuddy/skills/",         // CodeBuddy
+  ".codex/skills/",             // Codex
+  ".commandcode/skills/",       // CommandCode
+  ".continue/skills/",          // Continue
+  ".github/skills/",            // GitHub
+  ".goose/skills/",             // Goose
+  ".grok/skills/",              // Grok
+  ".iflow/skills/",             // iFlow
+  ".june/skills/",              // June
+  ".kilocode/skills/",          // KiloCode
+  ".kimchi/skills/",            // Kimchi
+  ".kiro/skills/",              // Kiro
+  ".minimax/skills/",           // MiniMax
+  ".mux/skills/",               // Mux
+  ".neovate/skills/",           // Neovate
+  ".opencode/skills/",          // OpenCode
+  ".openhands/skills/",         // OpenHands
+  ".pi/skills/",                // Pi
+  ".post/assistant/skills/",    // Post
+  ".qoder/skills/",             // Qoder
+  ".roo/skills/",               // Roo
+  ".tree/skills/",              // Tree
+  ".windserf/skills/",          // Windserf
+  ".zcode/skills/",             // ZCode
+  ".zencoder/skills/",           // ZenCoder
+  ".codem/skills/",             // Codem (our own convention)
+];
+
+/** Trees API 返回的树条目 */
+interface TreeEntry {
+  path: string;
+  type: "blob" | "tree" | "commit";
+  size?: number;
+  sha: string;
+  url?: string;
+}
+
+/** Trees API 返回的完整树 */
+interface RepoTree {
+  sha: string;
+  branch: string;
+  tree: TreeEntry[];
+}
+
+/**
+ * 通过 GitHub Trees API 一次性获取仓库的完整文件树。
+ * 移植自 vercel-labs/skills blob.ts 的 fetchRepoTree()。
+ *
+ * API 端点：GET /repos/{owner}/{repo}/git/trees/{branch}?recursive=1
+ * 返回仓库中所有文件和目录的扁平列表，一次调用即可获取全部。
+ *
+ * 认证策略：先匿名（60 次/小时），403 限流时切换到 token 认证。
+ */
+async function fetchRepoTree(
+  ownerRepo: string,
+  ref?: string,
+): Promise<RepoTree | null> {
+  const branches = ref ? [ref] : ["HEAD", "main", "master"];
+
+  for (const branch of branches) {
+    try {
+      const url = `https://api.github.com/repos/${ownerRepo}/git/trees/${encodeURIComponent(branch)}?recursive=1`;
+      const resp = await httpGet(url, githubApiHeaders());
+
+      if (resp.status === 200) {
+        const data = JSON.parse(resp.body);
+        if (data.tree && Array.isArray(data.tree)) {
+          return { sha: data.sha, branch, tree: data.tree };
+        }
+      }
+
+      // 403 + x-ratelimit-remaining: 0 → 限流，跳出尝试 token
+      if (resp.status === 403 && resp.headers?.["x-ratelimit-remaining"] === "0") {
+        console.warn(`[SkillMarket] GitHub Trees API rate limited for ${ownerRepo}`);
+        break; // 限流了，不再尝试其他分支
+      }
+    } catch {
+      // 继续尝试下一个分支
+    }
+  }
+
+  return null;
+}
+
+/**
+ * 在仓库树中查找所有 SKILL.md 文件的路径。
+ * 移植自 vercel-labs/skills blob.ts 的 findSkillMdPaths()。
+ *
+ * 如果指定了 subdir，只在该子目录下搜索；否则搜索整个仓库。
+ * 返回的路径列表按 SKILL_PRIORITY_PREFIXES 优先级排序。
+ */
+function findSkillMdPathsInTree(tree: RepoTree, subdir?: string): string[] {
+  // 找到所有以 SKILL.md 结尾的 blob 条目（大小写不敏感）
+  const allSkillMds = tree.tree
+    .filter((e) => e.type === "blob" && e.path.toLowerCase().endsWith("skill.md"))
+    .map((e) => e.path);
+
+  // 如果有 subdir，只保留该子目录下的
+  const prefix = subdir
+    ? (subdir.endsWith("/") ? subdir : subdir + "/")
+    : "";
+  const filtered = prefix
+    ? allSkillMds.filter((p) => p.startsWith(prefix) || p === prefix + "SKILL.md")
+    : allSkillMds;
+
+  // 按 SKILL_PRIORITY_PREFIXES 优先级排序
+  // 越靠前的前缀，优先级越高
+  const getPriority = (skillMdPath: string): number => {
+    // 去掉末尾的 SKILL.md 得到技能目录路径
+    let folderPath = skillMdPath.replace(/\//g, "/");
+    if (folderPath.toLowerCase().endsWith("/skill.md")) {
+      folderPath = folderPath.slice(0, -9); // 去掉 "/SKILL.md"
+    } else if (folderPath.toLowerCase().endsWith("skill.md")) {
+      folderPath = folderPath.slice(0, -8); // 去掉 "SKILL.md"
+    }
+    if (folderPath.endsWith("/")) {
+      folderPath = folderPath.slice(0, -1);
+    }
+
+    // 根目录技能
+    if (!folderPath) return 0;
+
+    // 找到匹配的优先级前缀
+    for (let i = 0; i < SKILL_PRIORITY_PREFIXES.length; i++) {
+      const p = SKILL_PRIORITY_PREFIXES[i];
+      if (p && (folderPath.startsWith(p) || folderPath === p.slice(0, -1))) {
+        return i;
+      }
+    }
+
+    // 未知前缀，排到最后
+    return SKILL_PRIORITY_PREFIXES.length;
+  };
+
+  return filtered.sort((a, b) => getPriority(a) - getPriority(b));
+}
+
+/**
+ * 从 SKILL.md 路径提取技能目录路径（去掉末尾的 SKILL.md）。
+ */
+function getSkillDirFromPath(skillMdPath: string): string {
+  let folderPath = skillMdPath.replace(/\//g, "/");
+  if (folderPath.toLowerCase().endsWith("/skill.md")) {
+    folderPath = folderPath.slice(0, -9);
+  } else if (folderPath.toLowerCase().endsWith("skill.md")) {
+    folderPath = folderPath.slice(0, -8);
+  }
+  if (folderPath.endsWith("/")) {
+    folderPath = folderPath.slice(0, -1);
+  }
+  return folderPath;
+}
+
+/**
+ * 从 SKILL.md 路径提取技能 slug 名称（目录的最后一段）。
+ */
+function getSkillSlugFromPath(skillMdPath: string): string {
+  const dir = getSkillDirFromPath(skillMdPath);
+  const parts = dir.split("/").filter(Boolean);
+  return parts[parts.length - 1] || "skill";
+}
+
 // ========== Source Adapters ==========
 
 /**
  * 从 GitHub 仓库目录型源获取技能列表。
- * 仓库根目录下的每个子目录被视为一个技能。
+ * 使用 GitHub Trees API 一次性获取仓库完整文件树，在内存中搜索所有 SKILL.md。
+ * 支持任意仓库结构（根目录 / skills/ / .agents/skills/ 等均可自动发现）。
  */
 async function fetchGitHubRepoSkills(source: MarketSource): Promise<MarketSkill[]> {
   const skills: MarketSkill[] = [];
@@ -281,44 +461,39 @@ async function fetchGitHubRepoSkills(source: MarketSource): Promise<MarketSkill[
     const defaultBranch = repoInfo.default_branch || "main";
     const repoFullName = repoInfo.full_name;
 
-    // 获取目录内容：如果有 subdir 则从子目录获取，否则从根目录获取
-    const contentsPath = source.subdir
-      ? `https://api.github.com/repos/${repoFullName}/contents/${source.subdir}?ref=${defaultBranch}`
-      : `https://api.github.com/repos/${repoFullName}/contents/?ref=${defaultBranch}`;
-    const contentsResp = await httpGet(contentsPath, githubApiHeaders());
-    if (contentsResp.status !== 200) {
-      console.warn(`[SkillMarket] Failed to fetch repo contents for ${source.id}: ${contentsResp.status}`);
+    // 使用 Trees API 一次性获取仓库完整文件树
+    const tree = await fetchRepoTree(repoFullName, defaultBranch);
+    if (!tree) {
+      console.warn(`[SkillMarket] Trees API failed for ${repoFullName}, falling back to Contents API`);
+      return await fetchGitHubRepoSkillsLegacy(source, repoInfo);
+    }
+
+    // 在树中搜索所有 SKILL.md 文件，按优先级排序
+    const skillMdPaths = findSkillMdPathsInTree(tree, source.subdir);
+    if (skillMdPaths.length === 0) {
+      console.warn(`[SkillMarket] No SKILL.md found in tree for ${repoFullName}`);
       return skills;
     }
-    const rootContents = JSON.parse(contentsResp.body);
-    if (!Array.isArray(rootContents)) return skills;
 
-    // 筛选目录
-    const dirs = rootContents.filter((item: any) => item.type === "dir");
+    console.log(`[SkillMarket] Trees API found ${skillMdPaths.length} SKILL.md files in ${repoFullName}`);
 
-    // 获取每个目录的 SKILL.md
-    // 如果有 subdir，SKILL.md 路径为 {subdir}/{dir.name}/SKILL.md
-    const skillMdBase = source.subdir
-      ? `https://raw.githubusercontent.com/${repoFullName}/${defaultBranch}/${source.subdir}`
-      : `https://raw.githubusercontent.com/${repoFullName}/${defaultBranch}`;
+    // 并行获取每个 SKILL.md 的内容
+    const results = await Promise.allSettled(
+      skillMdPaths.map(async (skillMdPath) => {
+        const rawUrl = `https://raw.githubusercontent.com/${repoFullName}/${tree.branch}/${skillMdPath}`;
+        const mdResp = await httpGet(rawUrl);
+        if (mdResp.status !== 200) return null;
 
-    for (const dir of dirs) {
-      try {
-        const skillMdUrl = `${skillMdBase}/${dir.name}/SKILL.md`;
-        const mdResp = await httpGet(skillMdUrl);
-        if (mdResp.status !== 200) continue;
+        const skillDef = parseSkillMarkdown(mdResp.body, skillMdPath);
+        if (!skillDef) return null;
 
-        // 传入路径用于 fallback 命名
-        const skillPath = source.subdir
-          ? `${source.subdir}/${dir.name}/SKILL.md`
-          : `${dir.name}/SKILL.md`;
-        const skillDef = parseSkillMarkdown(mdResp.body, skillPath);
-        if (!skillDef) continue;
+        const slug = getSkillSlugFromPath(skillMdPath);
+        const dirPath = getSkillDirFromPath(skillMdPath);
 
-        skills.push({
-          id: `${source.id}:${dir.name}`,
-          name: skillDef.name || dir.name,
-          displayName: skillDef.displayName || skillDef.name || dir.name,
+        return {
+          id: `${source.id}:${slug}`,
+          name: skillDef.name || slug,
+          displayName: skillDef.displayName || skillDef.name || slug,
           description: skillDef.description || "",
           author: skillDef.author || repoFullName.split("/")[0],
           version: skillDef.version,
@@ -326,15 +501,19 @@ async function fetchGitHubRepoSkills(source: MarketSource): Promise<MarketSkill[
           sourceId: source.id,
           sourceName: source.name,
           downloadUrl: `https://api.github.com/repos/${repoFullName}/zipball/${defaultBranch}`,
-          repoUrl: dir.html_url || `https://github.com/${repoFullName}/tree/${defaultBranch}/${source.subdir ? source.subdir + "/" : ""}${dir.name}`,
+          repoUrl: `https://github.com/${repoFullName}/tree/${defaultBranch}/${dirPath}`,
           lastUpdated: repoInfo.updated_at,
-          installType: "dir",
-          dirPath: source.subdir ? `${source.subdir}/${dir.name}` : dir.name,
+          installType: "dir" as const,
+          dirPath,
           repoFullName,
           branch: defaultBranch,
-        });
-      } catch (err) {
-        console.warn(`[SkillMarket] Failed to fetch skill metadata for ${dir.name}:`, err);
+        } satisfies MarketSkill;
+      }),
+    );
+
+    for (const result of results) {
+      if (result.status === "fulfilled" && result.value) {
+        skills.push(result.value);
       }
     }
   } catch (err) {
@@ -345,8 +524,66 @@ async function fetchGitHubRepoSkills(source: MarketSource): Promise<MarketSkill[
 }
 
 /**
+ * Legacy fallback：使用 Contents API 逐层遍历获取仓库技能列表。
+ * 仅在 Trees API 失败时使用。
+ */
+async function fetchGitHubRepoSkillsLegacy(source: MarketSource, repoInfo: any): Promise<MarketSkill[]> {
+  const skills: MarketSkill[] = [];
+  const defaultBranch = repoInfo.default_branch || "main";
+  const repoFullName = repoInfo.full_name;
+
+  const contentsPath = source.subdir
+    ? `https://api.github.com/repos/${repoFullName}/contents/${source.subdir}?ref=${defaultBranch}`
+    : `https://api.github.com/repos/${repoFullName}/contents/?ref=${defaultBranch}`;
+  const contentsResp = await httpGet(contentsPath, githubApiHeaders());
+  if (contentsResp.status !== 200) return skills;
+  const rootContents = JSON.parse(contentsResp.body);
+  if (!Array.isArray(rootContents)) return skills;
+
+  const dirs = rootContents.filter((item: any) => item.type === "dir");
+  const skillMdBase = source.subdir
+    ? `https://raw.githubusercontent.com/${repoFullName}/${defaultBranch}/${source.subdir}`
+    : `https://raw.githubusercontent.com/${repoFullName}/${defaultBranch}`;
+
+  for (const dir of dirs) {
+    try {
+      const skillMdUrl = `${skillMdBase}/${dir.name}/SKILL.md`;
+      const mdResp = await httpGet(skillMdUrl);
+      if (mdResp.status !== 200) continue;
+      const skillPath = source.subdir
+        ? `${source.subdir}/${dir.name}/SKILL.md`
+        : `${dir.name}/SKILL.md`;
+      const skillDef = parseSkillMarkdown(mdResp.body, skillPath);
+      if (!skillDef) continue;
+      skills.push({
+        id: `${source.id}:${dir.name}`,
+        name: skillDef.name || dir.name,
+        displayName: skillDef.displayName || skillDef.name || dir.name,
+        description: skillDef.description || "",
+        author: skillDef.author || repoFullName.split("/")[0],
+        version: skillDef.version,
+        tags: skillDef.tags,
+        sourceId: source.id,
+        sourceName: source.name,
+        downloadUrl: `https://api.github.com/repos/${repoFullName}/zipball/${defaultBranch}`,
+        repoUrl: dir.html_url || `https://github.com/${repoFullName}/tree/${defaultBranch}/${source.subdir ? source.subdir + "/" : ""}${dir.name}`,
+        lastUpdated: repoInfo.updated_at,
+        installType: "dir",
+        dirPath: source.subdir ? `${source.subdir}/${dir.name}` : dir.name,
+        repoFullName,
+        branch: defaultBranch,
+      });
+    } catch (err) {
+      console.warn(`[SkillMarket] Legacy: Failed for ${dir.name}:`, err);
+    }
+  }
+  return skills;
+}
+
+/**
  * 从 GitHub 搜索型源获取技能列表。
  * 搜索结果中的每个仓库被视为一个技能。
+ * 使用 Trees API 搜索每个仓库中的 SKILL.md（支持任意目录结构）。
  */
 async function fetchGitHubSearchSkills(source: MarketSource): Promise<MarketSkill[]> {
   const skills: MarketSkill[] = [];
@@ -355,7 +592,6 @@ async function fetchGitHubSearchSkills(source: MarketSource): Promise<MarketSkil
     const resp = await httpGet(source.url, githubApiHeaders());
     if (resp.status !== 200) {
       console.warn(`[SkillMarket] GitHub search failed for ${source.id}: ${resp.status}`);
-      // Handle rate limit
       if (resp.status === 403 && resp.headers["x-ratelimit-remaining"] === "0") {
         console.warn(`[SkillMarket] GitHub API rate limit exceeded for ${source.id}`);
       }
@@ -365,7 +601,7 @@ async function fetchGitHubSearchSkills(source: MarketSource): Promise<MarketSkil
     const data = JSON.parse(resp.body);
     if (!data.items || !Array.isArray(data.items)) return skills;
 
-    // 并行获取每个仓库的 SKILL.md（之前是串行，30 个仓库需要 60+ 个请求）
+    // 并行处理每个仓库：先用 Trees API 搜索 SKILL.md，找到则用 dir 类型
     const repoSkills = await Promise.allSettled(
       data.items.map(async (repo: any) => {
         let description = repo.description || "";
@@ -373,23 +609,62 @@ async function fetchGitHubSearchSkills(source: MarketSource): Promise<MarketSkil
         let author = repo.owner?.login || "";
         let tags: string[] | undefined;
         let version: string | undefined;
+        const branch = repo.default_branch || "main";
 
-        try {
-          const branch = repo.default_branch || "main";
-          const skillMdUrl = `https://raw.githubusercontent.com/${repo.full_name}/${branch}/SKILL.md`;
-          const mdResp = await httpGet(skillMdUrl);
-          if (mdResp.status === 200) {
-            const skillDef = parseSkillMarkdown(mdResp.body, "");
-            if (skillDef) {
-              displayName = skillDef.displayName || skillDef.name || displayName;
-              description = skillDef.description || description;
-              author = skillDef.author || author;
-              version = skillDef.version;
-              tags = skillDef.tags;
-            }
+        // 用 Trees API 搜索仓库中的 SKILL.md（支持嵌套目录结构）
+        let skillMdPath: string | null = null;
+        let installType: "zip" | "dir" = "zip";
+        let dirPath: string | undefined;
+
+        const tree = await fetchRepoTree(repo.full_name, branch);
+        if (tree) {
+          const skillMdPaths = findSkillMdPathsInTree(tree);
+          if (skillMdPaths.length > 0) {
+            skillMdPath = skillMdPaths[0]; // 取优先级最高的
+            dirPath = getSkillDirFromPath(skillMdPath);
+            installType = "dir";
           }
-        } catch {
-          // SKILL.md not found — use repo metadata only
+        }
+
+        // 如果 Trees API 找到了 SKILL.md，获取其内容
+        if (skillMdPath && tree) {
+          try {
+            const rawUrl = `https://raw.githubusercontent.com/${repo.full_name}/${tree.branch}/${skillMdPath}`;
+            const mdResp = await httpGet(rawUrl);
+            if (mdResp.status === 200) {
+              const skillDef = parseSkillMarkdown(mdResp.body, skillMdPath);
+              if (skillDef) {
+                displayName = skillDef.displayName || skillDef.name || displayName;
+                description = skillDef.description || description;
+                author = skillDef.author || author;
+                version = skillDef.version;
+                tags = skillDef.tags;
+              }
+            }
+          } catch {
+            // SKILL.md 读取失败 — 使用仓库元数据
+          }
+        } else {
+          // Trees API 未找到 SKILL.md，fallback 到根目录直接尝试
+          try {
+            const skillMdUrl = `https://raw.githubusercontent.com/${repo.full_name}/${branch}/SKILL.md`;
+            const mdResp = await httpGet(skillMdUrl);
+            if (mdResp.status === 200) {
+              const skillDef = parseSkillMarkdown(mdResp.body, "");
+              if (skillDef) {
+                displayName = skillDef.displayName || skillDef.name || displayName;
+                description = skillDef.description || description;
+                author = skillDef.author || author;
+                version = skillDef.version;
+                tags = skillDef.tags;
+                // 根目录有 SKILL.md → dir 类型，dirPath 为空（根目录）
+                installType = "dir";
+                dirPath = "";
+              }
+            }
+          } catch {
+            // SKILL.md not found — use repo metadata only
+          }
         }
 
         return {
@@ -402,14 +677,15 @@ async function fetchGitHubSearchSkills(source: MarketSource): Promise<MarketSkil
           tags: Array.isArray(tags) ? tags : (Array.isArray(repo.topics) ? repo.topics : []),
           sourceId: source.id,
           sourceName: source.name,
-          downloadUrl: `https://api.github.com/repos/${repo.full_name}/zipball/${repo.default_branch || "main"}`,
+          downloadUrl: `https://api.github.com/repos/${repo.full_name}/zipball/${branch}`,
           repoUrl: repo.html_url,
           stars: repo.stargazers_count,
           lastUpdated: repo.updated_at,
-          installType: "zip" as const,
+          installType,
+          dirPath,
           repoFullName: repo.full_name,
-          branch: repo.default_branch || "main",
-        };
+          branch,
+        } satisfies MarketSkill;
       }),
     );
 
@@ -1237,9 +1513,10 @@ export async function installMarketSkill(
   try {
     onProgress?.(5, "正在准备下载...");
 
-    // 对于 dir 类型的 GitHub 技能，直接通过 Contents API 递归下载目录文件，
+    // 对于 dir 类型的 GitHub 技能，通过 Trees API 搜索 SKILL.md 并下载目录文件，
     // 而不是下载整个仓库 zipball（某些仓库非常大，如 cloudflare-docs 1.4GB）
-    if (skill.installType === "dir" && skill.dirPath && skill.repoFullName) {
+    // dirPath 可以是空字符串（根目录 SKILL.md）或具体目录路径
+    if (skill.installType === "dir" && skill.repoFullName) {
       return await installSkillFromGitHubDir(skill, onProgress, overwrite);
     }
 
@@ -1344,15 +1621,15 @@ export async function installMarketSkill(
 }
 
 /**
- * 通过 GitHub Contents API 递归下载仓库中的指定目录，直接安装技能。
+ * 通过 GitHub Trees API 搜索 SKILL.md 并下载技能文件。
  *
- * 用于 dir 类型的 GitHub 技能（如 Skills.sh 的技能），避免下载整个仓库 zipball。
+ * 移植自 vercel-labs/skills blob.ts + download-source.ts 的核心逻辑。
  * 工作流程：
- * 1. 获取仓库默认分支
- * 2. 递归遍历 dirPath 目录中的所有文件
- * 3. 逐个通过 raw.githubusercontent.com 下载文件内容
- * 4. 写入到本地技能目录
- * 5. 解析 SKILL.md 并注册
+ * 1. 通过 Trees API 一次性获取仓库完整文件树
+ * 2. 在树中搜索 SKILL.md（支持 30+ 种 Agent 目录约定）
+ * 3. 从 dirPath 目录中筛选所有文件
+ * 4. 逐个通过 raw.githubusercontent.com 下载文件内容
+ * 5. 写入到本地技能目录并注册
  */
 async function installSkillFromGitHubDir(
   skill: MarketSkill,
@@ -1364,31 +1641,68 @@ async function installSkillFromGitHubDir(
 
   try {
     const repoFullName = skill.repoFullName!;
-    const dirPath = skill.dirPath!;
+    let dirPath = skill.dirPath || "";
 
     // 获取仓库默认分支
     onProgress?.(10, `正在获取仓库信息: ${repoFullName}...`);
     let branch = skill.branch || "main";
-    let branchResolved = false;
     try {
       const repoResp = await httpGet(`https://api.github.com/repos/${repoFullName}`, githubApiHeaders());
       if (repoResp.status === 200) {
         const repoInfo = JSON.parse(repoResp.body);
         branch = repoInfo.default_branch || branch;
-        branchResolved = true;
-      } else {
-        console.warn(`[SkillMarket] GitHub API returned ${repoResp.status} for ${repoFullName}, falling back to branch "${branch}"`);
       }
     } catch (err) {
-      console.warn(`[SkillMarket] Failed to get default branch for ${repoFullName}, using "${branch}":`, err);
+      console.warn(`[SkillMarket] Failed to get default branch for ${repoFullName}:`, err);
     }
 
-    // 递归遍历目录，收集所有文件
-    onProgress?.(20, `正在遍历目录: ${dirPath}...`);
+    // 使用 Trees API 一次性获取仓库完整文件树
+    onProgress?.(20, `正在获取仓库文件树...`);
+    const tree = await fetchRepoTree(repoFullName, branch);
+    if (!tree) {
+      const tokenHint = hasGithubToken()
+        ? ""
+        : `\n\n⚠️ 您尚未配置 GitHub Token。请前往 设置 → Git 偏好配置 → GitHub Token 填写 Token。`;
+      return {
+        success: false,
+        error: `无法获取仓库文件树（Trees API 失败）。${tokenHint}`,
+      };
+    }
 
+    // 如果 dirPath 为空或未在树中找到 SKILL.md，用优先级搜索
+    onProgress?.(30, `正在搜索 SKILL.md...`);
+
+    // 在树中搜索 SKILL.md
+    const skillMdPaths = findSkillMdPathsInTree(tree);
+    if (skillMdPaths.length === 0) {
+      return {
+        success: false,
+        error: `仓库 ${repoFullName} 中未找到 SKILL.md 文件。`,
+      };
+    }
+
+    // 如果有 dirPath，尝试精确匹配该目录下的 SKILL.md
+    // 否则取优先级最高的
+    let skillMdPath: string;
+    if (dirPath) {
+      const exactMatch = skillMdPaths.find((p) => {
+        const dir = getSkillDirFromPath(p);
+        return dir === dirPath || dir.endsWith("/" + dirPath);
+      });
+      skillMdPath = exactMatch || skillMdPaths[0];
+      // 更新 dirPath 为实际找到的路径
+      dirPath = getSkillDirFromPath(skillMdPath);
+    } else {
+      skillMdPath = skillMdPaths[0];
+      dirPath = getSkillDirFromPath(skillMdPath);
+    }
+
+    console.log(`[SkillMarket] Using SKILL.md at: ${skillMdPath}, dirPath: ${dirPath}`);
+
+    // 从树中筛选属于该技能目录的所有文件
     interface FileEntry {
-      path: string;     // 相对于 dirPath 的路径
-      downloadUrl: string;  // raw.githubusercontent.com URL
+      path: string;       // 相对于 dirPath 的路径
+      downloadUrl: string;
       size: number;
     }
 
@@ -1402,66 +1716,35 @@ async function installSkillFromGitHubDir(
       ".toml", ".ini", ".cfg",
     ]);
 
-    const traverseDir: (subPath: string, isInitialCall?: boolean) => Promise<void> = async (subPath, isInitialCall) => {
-      const contentsUrl = `https://api.github.com/repos/${repoFullName}/contents/${subPath}?ref=${branch}`;
-      const resp = await httpGet(contentsUrl, githubApiHeaders());
-      if (resp.status !== 200) {
-        console.warn(`[SkillMarket] Contents API failed for ${subPath} (branch=${branch}): ${resp.status}`);
-        // 如果是首次调用且返回 404，尝试重新获取默认分支后重试
-        if (isInitialCall && resp.status === 404 && !branchResolved) {
-          console.log(`[SkillMarket] 404 on branch "${branch}", trying to resolve correct default branch...`);
-          try {
-            const repoResp = await httpGet(`https://api.github.com/repos/${repoFullName}`, githubApiHeaders());
-            if (repoResp.status === 200) {
-              const repoInfo = JSON.parse(repoResp.body);
-              const correctBranch = repoInfo.default_branch;
-              if (correctBranch && correctBranch !== branch) {
-                console.log(`[SkillMarket] Correct branch is "${correctBranch}", retrying...`);
-                branch = correctBranch;
-                branchResolved = true;
-                return await traverseDir(subPath, false);
-              }
-            }
-          } catch (err) {
-            console.warn(`[SkillMarket] Retry failed to get default branch:`, err);
-          }
-        }
-        return;
-      }
-      const items = JSON.parse(resp.body);
-      if (!Array.isArray(items)) return;
+    // 技能目录前缀（dirPath 可能为空，表示根目录）
+    const dirPrefix = dirPath ? dirPath + "/" : "";
+    for (const entry of tree.tree) {
+      if (entry.type !== "blob") continue;
+      // 文件必须在该技能目录下
+      if (dirPrefix && !entry.path.startsWith(dirPrefix) && entry.path !== dirPath + "/SKILL.md") continue;
+      if (!dirPrefix && !entry.path.toLowerCase().endsWith("skill.md") && entry.path.includes("/")) continue;
 
-      for (const item of items) {
-        if (item.type === "file") {
-          // 检查扩展名
-          const ext = item.name.substring(item.name.lastIndexOf(".")).toLowerCase();
-          if (!allowedExtensions.has(ext) && !item.name.endsWith("SKILL.md")) continue;
-          // 检查大小（跳过大文件）
-          if (item.size && item.size > 1024 * 1024) continue;
-
-          // raw URL
-          const rawUrl = `https://raw.githubusercontent.com/${repoFullName}/${branch}/${item.path}`;
-          // 相对于 dirPath 的路径
-          let relativePath = item.path;
-          if (relativePath.startsWith(dirPath + "/")) {
-            relativePath = relativePath.substring(dirPath.length + 1);
-          }
-          files.push({ path: relativePath, downloadUrl: rawUrl, size: item.size || 0 });
-        } else if (item.type === "dir") {
-          await traverseDir(item.path);
-        }
+      // 获取相对路径
+      let relativePath = entry.path;
+      if (dirPrefix && relativePath.startsWith(dirPrefix)) {
+        relativePath = relativePath.substring(dirPrefix.length);
       }
+
+      // 检查扩展名
+      const ext = relativePath.substring(relativePath.lastIndexOf(".")).toLowerCase();
+      if (!allowedExtensions.has(ext) && !relativePath.endsWith("SKILL.md")) continue;
+
+      // 检查大小（跳过大文件）
+      if (entry.size && entry.size > 1024 * 1024) continue;
+
+      const rawUrl = `https://raw.githubusercontent.com/${repoFullName}/${tree.branch}/${entry.path}`;
+      files.push({ path: relativePath, downloadUrl: rawUrl, size: entry.size || 0 });
     }
 
-    await traverseDir(dirPath, true);
-
     if (files.length === 0) {
-      const tokenHint = hasGithubToken()
-        ? ""
-        : `\n\n⚠️ 您尚未配置 GitHub Token（当前为未认证模式，限流 60 次/小时）。请前往 设置 → Git 偏好配置 → GitHub Token 填写 Token（需要 repo 权限），可将限流提升至 5000 次/小时。`;
       return {
         success: false,
-        error: `目录 "${dirPath}"（分支: ${branch}）中未找到可安装的文件。可能原因：1) 仓库默认分支不是 "${branch}" 2) GitHub API 限流 3) 目录路径不正确。${tokenHint}`,
+        error: `目录 "${dirPath}" 中未找到可安装的文件。`,
       };
     }
 
@@ -1506,12 +1789,12 @@ async function installSkillFromGitHubDir(
     const sep = skillsDir.includes("/") && !skillsDir.includes("\\") ? "/" : "\\";
     const skillDir = `${skillsDir}${sep}${skillDef.name}`;
 
-    // 下载并写入所有文件（SKILL.md 已在前面下载过，跳过重复下载）
+    // 下载并写入所有文件
     onProgress?.(50, `正在下载技能文件 (${files.length} 个)...`);
     let filesWritten = 0;
-    const downloadedContents = new Map<string, string>(); // for audit
+    const downloadedContents = new Map<string, string>();
 
-    // SKILL.md 的内容已在前面下载，直接加入 audit map
+    // SKILL.md 的内容已在前面下载
     downloadedContents.set(skillMdFile.path, mdResp.body);
 
     for (const file of files) {
@@ -1554,7 +1837,7 @@ async function installSkillFromGitHubDir(
     skillDef.enabled = true;
     registry.register(skillDef);
 
-    // 审计记录（复用已下载的内容）
+    // 审计记录
     try {
       const hash = computeContentHash(downloadedContents);
       addInstallAuditEntry({

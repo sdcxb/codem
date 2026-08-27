@@ -196,10 +196,15 @@ export async function executeSessionTurn(params: ExecuteSessionTurnParams): Prom
           const tc = "toolCall" in event ? event.toolCall : null;
           if (tc && currentAssistantMsgId) {
             let resultStr: string;
+            let toolMetadata: Record<string, any> | undefined;
             if (typeof event.result === "string") {
               resultStr = event.result;
             } else if (event.result && typeof event.result === "object" && "output" in event.result) {
               resultStr = (event.result as any).output;
+              // 提取结构化元数据（如 subagentId 等）
+              if ((event.result as any).metadata) {
+                toolMetadata = (event.result as any).metadata;
+              }
             } else {
               resultStr = JSON.stringify(event.result || "");
             }
@@ -207,6 +212,7 @@ export async function executeSessionTurn(params: ExecuteSessionTurnParams): Prom
             MessageStorage.updateToolCall(currentAssistantMsgId, tc.id, {
               status: "done",
               result: resultStr,
+              ...(toolMetadata ? { metadata: toolMetadata } : {}),
             });
           }
           break;

@@ -6,7 +6,7 @@
  */
 
 import { memo, useState, useMemo } from "react";
-import { Wrench, CheckCircle2, XCircle, LoaderCircle, ChevronDown, ChevronRight, FileText, Search, Terminal, FileEdit, FolderSearch } from "lucide-react";
+import { Wrench, CheckCircle2, XCircle, LoaderCircle, ChevronDown, ChevronRight, FileText, Search, Terminal, FileEdit, FolderSearch, Bot } from "lucide-react";
 
 export interface ToolCallCardProps {
   toolName: string;
@@ -26,6 +26,8 @@ function getToolIcon(toolName: string) {
   if (lower.includes("read") || lower.includes("cat")) return FileText;
   if (lower.includes("grep") || lower.includes("search") || lower.includes("glob")) return Search;
   if (lower.includes("file") || lower.includes("path")) return FolderSearch;
+  if (lower === "subagent" || lower === "spawn_subagent" || lower === "list_agents") return Bot;
+  if (lower === "report" || lower === "send_message" || lower === "interrupt_agent") return Bot;
   return Wrench;
 }
 
@@ -44,6 +46,11 @@ function getToolDisplayName(toolName: string): string {
     web_search: "Web Search",
     load_skill: "Load Skill",
     spawn_subagent: "Sub-agent",
+    subagent: "Sub-agent",
+    report: "Agent Report",
+    send_message: "Send Message",
+    interrupt_agent: "Interrupt Agent",
+    list_agents: "List Agents",
     create_note: "Create Note",
     edit_note: "Edit Note",
     delete_note: "Delete Note",

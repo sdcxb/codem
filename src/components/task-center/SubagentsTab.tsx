@@ -90,7 +90,7 @@ export function SubagentsTab({ agents, onSelectAgent }: SubagentsTabProps) {
           fontSize: "14px",
         }}>
           {zh ? "暂无子智能体任务。在对话中使用 " : "No sub-agent tasks. Use "}
-          <code style={{ color: "var(--accent)" }}>spawn_subagent</code>
+          <code style={{ color: "var(--accent)" }}>subagent</code>
           {zh ? " 工具来创建子智能体。" : " tool to create sub-agents."}
         </div>
       ) : (

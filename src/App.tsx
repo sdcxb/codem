@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿import { useEffect, useState, useRef, useCallback } from "react";
+﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿import { useEffect, useState, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 
 // D1-4: 全局错误边界 — 捕获未处理的同步错误和 Promise rejection
@@ -2504,17 +2504,14 @@ abortControllersRef.current.clear();
   };
 
   // Global pause: freeze everything (main + sub-agents)
+  // DSH-style: engine.abort() now drains SubagentRuntime automatically
   const handleGlobalPause = () => {
     // Abort all active sessions
     for (const controller of abortControllersRef.current.values()) {
       controller.abort();
     }
     abortControllersRef.current.clear();
-    try {
-      const { getSubagentManager } = require("../core/subagent/subagent");
-      const manager = getSubagentManager();
-      manager.cancelAll();
-    } catch (e) { console.warn('[App] catch', e) }
+    // engine.abort() calls SubagentRuntime.drain() — no need for old SubagentManager.cancelAll()
     engineRef.current?.abort();
     setStreaming(false);
   };
@@ -3172,8 +3169,9 @@ onClose={() => setCitationViewer(null)}
           initialTab={taskCenterTab}
           subagentTasks={(() => {
             try {
-              const { getSubagentManager } = require("./core/subagent/subagent");
-              return getSubagentManager().getAllTasks();
+              const { getSubagentRuntime } = require("./core/subagent/index");
+              const runtime = getSubagentRuntime();
+              return runtime ? runtime.getAllTasks() : [];
             } catch { return []; }
           })()}
           onSelectSubagent={() => {

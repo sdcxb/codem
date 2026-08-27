@@ -75,22 +75,33 @@ export function buildSystemPrompt(config: SystemPromptConfig): string {
   // 6. Parallel tool calls (i18n)
   sections.push(t.parallelToolCalls);
 
-  // 6.5 Sub-agent collaboration
+  // 6.5 Sub-agent collaboration — 对标 DSH 的后台默认+自动通知模式
   sections.push(`# Sub-Agent Collaboration
 
-You can delegate complex tasks to sub-agents using two tools:
-- \`spawn_subagent\`: Launch a sub-agent to work on a task. Returns immediately with a task ID (non-blocking).
-- \`wait_for_subagent\`: Wait for a sub-agent to complete and get its result. Blocks until the sub-agent finishes.
+You can delegate complex tasks to sub-agents using the \`subagent\` tool. This tool runs in the background by default — it immediately returns a durable subagent id and keeps the child conversation available for later turns.
 
 ## How Sub-Agents Work
 
-Sub-agents run in two steps:
-1. **Spawn**: Call \`spawn_subagent\` — returns a task ID. You can spawn multiple in one response.
-2. **Wait**: In your NEXT response, call \`wait_for_subagent\` with the task IDs from the spawn results.
+1. **Start**: Call \`subagent\` with a description and prompt. It returns immediately with a subagent id.
+2. **Continue working**: While the subagent runs, continue your own useful work in the same response.
+3. **Receive notification**: When the background run settles, the runtime sends you a notice containing its outcome and any final assistant message — you do NOT need to poll or wait.
+4. **Follow up**: Use \`send_message\` to start a later turn in the same child conversation if needed.
 
-The system prevents calling wait in the same response as spawn — you'll get an error if you try. Just spawn first, then wait in the next response.
+## Key Principle: No wait_for needed
 
-Use the ACTUAL task_id from spawn results (format: \`SUBAGENT_TASK_ID:sub-xxxxx\`).
+You do NOT need to explicitly wait for subagents. The runtime automatically:
+- Monitors each background subagent's status
+- Sends you a settlement notice when it finishes (as a user message in your inbox)
+- Includes the subagent's result and final message in that notice
+
+This means you can start multiple independent delegations in one assistant message and continue useful work while they run.
+
+## Available Tools
+
+- \`subagent\`: Start a background subagent (default) or wait for result (run_in_background: false)
+- \`send_message\`: Send a follow-up message to a running background subagent by its id
+- \`interrupt_agent\`: Request cancellation of a background agent's current turn
+- \`list_agents\`: List your background subagents by id, label, and status
 
 ## Writing Sub-Agent Prompts
 Include in the prompt:
@@ -100,12 +111,13 @@ Include in the prompt:
 4. **Output format** — what to return
 5. **Language** — "用中文回答" for Chinese responses
 
-Sub-agents have the same tools as you. Don't pass file contents — just tell them which files to read.
+Sub-agents have the same tools as you. Don't pass file contents — just tell them which files to read. Sub-agents should use the \`report\` tool to deliver their results back to you.
 
 ## When to Use Sub-Agents
 - Reading multiple files or exploring a codebase in depth
 - Running multiple independent analyses in parallel
-- Tasks that would flood your context with intermediate data`);
+- Tasks that would flood your context with intermediate data
+- When you can continue useful work while the subagent runs`);
 
   // 6.6 Cross-session delegation
   sections.push(`# Cross-Session Delegation
@@ -367,44 +379,50 @@ Usage rules:
 - A single codegraph_explore call typically replaces 10-20 grep+read calls, dramatically reducing token usage`);
   }
 
-  // 11. Multi-agent collaboration
+  // 11. Multi-agent collaboration — 对标 DSH 后台默认+自动通知
   sections.push(`# Multi-Agent Collaboration
 
-You can spawn sub-agents to work on tasks in parallel. Follow this pattern:
+You can delegate tasks to sub-agents to work in parallel. Follow this pattern:
 
-## Spawning a Sub-Agent
-When you need to delegate work, use spawn_subagent:
-- \`agentId\`: "explore" for search, "general" for general tasks, "build" for implementation
-- \`prompt\`: Clear, specific instructions for the sub-agent
-- \`persistent\`: true for long-lived agents, false for one-shot tasks
+## Starting a Sub-Agent
+When you need to delegate work, use \`subagent\`:
+- \`description\`: Short 3-5 word description of the task
+- \`prompt\`: Clear, specific, self-contained instructions for the sub-agent
+- \`run_in_background\`: Defaults to true — the subagent runs in background and you get notified automatically when it finishes
+
+## Background Mode (Default)
+
+When you start a subagent with \`run_in_background: true\` (the default):
+1. The subagent starts immediately and you get a subagent id
+2. You can continue your own work in the same response
+3. When the subagent finishes, the runtime automatically sends you a settlement notice with its result
+4. You do NOT need to call any wait or poll function — just continue working
+
+## Follow-up Communication
+- Use \`send_message(subagent_id, message)\` to send a follow-up message to a background subagent
+- Use \`interrupt_agent(agent_id)\` to cancel a background agent's current turn
+- Use \`list_agents\` to recall which subagents you have started
 
 ## Communication via Cache Files
-Do NOT pass large content through tool results. Instead, use cache files:
+For large content exchange between you and sub-agents, use cache files:
 
 1. **Write your work to cache**: \`.codem-cache/task-{id}.md\`
 2. **Tell sub-agent to read cache**: "Read .codem-cache/task-{id}.md and process it"
 3. **Sub-agent writes result to cache**: \`.codem-cache/task-{id}-result.md\`
-4. **You review the result**: Read the cache file and decide to accept or reject
-5. **If accepted**: Write final output to the target location
-6. **If rejected**: Tell sub-agent what to fix, they update the cache
+4. **Sub-agent uses report tool**: To deliver its result summary back to you
+5. **You receive notification**: The runtime sends you the subagent's settlement notice
+6. **You review the result**: Read the cache file if needed
 7. **Clean up**: Delete cache files after task completes
-
-## Review Loop
-Always review sub-agent output before accepting:
-- Read the sub-agent's cache output
-- Compare with your expectations
-- If acceptable: adopt and write to final location
-- If not: give specific feedback and ask sub-agent to revise
-- Repeat until satisfactory
 
 ## Example Flow
 \`\`\`
 1. You: Write analysis to .codem-cache/analysis.md
-2. You: spawn_subagent(prompt="Read .codem-cache/analysis.md, remove AI-sounding language, write to .codem-cache/analysis-polished.md")
-3. You: wait_for_subagent(task_id="sub-xxx")
-4. You: Read .codem-cache/analysis-polished.md
-5. You: If good, write to final-report.md and delete cache files
-6. You: If not good, spawn_subagent with feedback to revise
+2. You: subagent(description="polish analysis", prompt="Read .codem-cache/analysis.md, remove AI-sounding language, write to .codem-cache/analysis-polished.md")
+3. You: Continue your own work while the subagent runs
+4. Runtime: Sends you a settlement notice when the subagent finishes
+5. You: Read .codem-cache/analysis-polished.md to verify
+6. You: If good, write to final-report.md and delete cache files
+7. You: If not good, send_message to the subagent with feedback to revise
 \`\`\`
 
 This pattern avoids unnecessary tool calls and keeps the conversation clean.`);

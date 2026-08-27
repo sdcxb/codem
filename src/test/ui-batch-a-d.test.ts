@@ -691,20 +691,16 @@ describe("批次 B: 工具调用 + 子智能体状态链路不受影响", () => 
     expect(tc.status).toBe("done");
   });
 
-  it("spawn_subagent 结果解析逻辑不变（SUBAGENT_TASK_ID: 前缀）", () => {
-    const result = "SUBAGENT_TASK_ID:sub-abc123\n子智能体 \"探索者\" 已启动";
-    const subagentTaskId = result.startsWith("SUBAGENT_TASK_ID:")
-      ? result.split("\n")[0].replace("SUBAGENT_TASK_ID:", "")
-      : null;
+  it("subagent 结果解析逻辑（新架构使用 metadata.subagentId）", () => {
+    const metadata = { subagentId: "sub-abc123" };
+    const subagentTaskId = (metadata as any)?.subagentId ?? null;
     expect(subagentTaskId).toBe("sub-abc123");
   });
 
-  it("非 spawn_subagent 工具不解析 task ID", () => {
+  it("非 subagent 工具不解析 task ID", () => {
     const tool: string = "read";
-    const result = "file content here";
-    const subagentTaskId = tool === "spawn_subagent" && result?.startsWith("SUBAGENT_TASK_ID:")
-      ? result.split("\n")[0].replace("SUBAGENT_TASK_ID:", "")
-      : null;
+    const metadata = {};
+    const subagentTaskId = tool === "subagent" ? (metadata as any)?.subagentId ?? null : null;
     expect(subagentTaskId).toBeNull();
   });
 
@@ -1431,9 +1427,9 @@ describe("批次 E: 分叉/重新生成 Q&A 轮次架构", () => {
         path.resolve(__dirname, "../components/ChatPanel.tsx"),
         "utf-8"
       );
-      // 向后扫描直到遇到 user 或 assistant
-      expect(src).toContain("for (let i = index + 1");
-      expect(src).toContain("messages[i].role === \"user\"");
+// 向后扫描直到遇到 user 或 assistant
+expect(src).toContain("for (let i = effectiveIdx + 1");
+      expect(src).toContain("displayMessages[i].role === \"user\"");
     });
 
     it("ChatPanel 在轮次底部渲染 onFork 按钮", () => {
@@ -1537,12 +1533,12 @@ expect(appSrc).toContain("await runAgenticLoop(userMessage, session)");
       expect(computeIsLastInTurn(msgs, 3)).toBe(true);  // a3 是末尾
     });
 
-    it("子智能体场景: spawn_subagent 后产生多段 assistant", () => {
+    it("子智能体场景: subagent 后产生多段 assistant", () => {
       const msgs: Message[] = [
         { id: "u1", role: "user", content: "用子智能体搜索", timestamp: 1, status: "done" },
         {
           id: "a1", role: "assistant", content: "正在启动子智能体...", timestamp: 2, status: "done",
-          toolCalls: [{ id: "tc1", tool: "spawn_subagent", args: { type: "explore", task: "搜索" }, status: "done", result: "SUBAGENT_TASK_ID:task-1" }],
+          toolCalls: [{ id: "tc1", tool: "subagent", args: { description: "搜索", prompt: "搜索" }, status: "done", result: "Started subagent task-1", metadata: { subagentId: "task-1" } }],
         },
         { id: "a2", role: "assistant", content: "等待子智能体结果...", timestamp: 3, status: "done" },
         { id: "a3", role: "assistant", content: "子智能体完成，结果如下：...", timestamp: 4, status: "done" },
@@ -1558,15 +1554,15 @@ expect(appSrc).toContain("await runAgenticLoop(userMessage, session)");
       }
       const forked = computeForkSlice(msgs, 0);
       expect(forked).toHaveLength(4);
-      expect(forked.some(m => m.toolCalls?.some(tc => tc.tool === "spawn_subagent"))).toBe(true);
+      expect(forked.some(m => m.toolCalls?.some(tc => tc.tool === "subagent"))).toBe(true);
     });
 
-    it("regenerate 子智能体轮次: 删除全部含 spawn_subagent 的消息", () => {
+    it("regenerate 子智能体轮次: 删除全部含 subagent 的消息", () => {
       const msgs: Message[] = [
         { id: "u1", role: "user", content: "Q", timestamp: 1, status: "done" },
         {
           id: "a1", role: "assistant", content: "A1", timestamp: 2, status: "done",
-          toolCalls: [{ id: "tc1", tool: "spawn_subagent", args: {}, status: "done", result: "SUBAGENT_TASK_ID:1" }],
+          toolCalls: [{ id: "tc1", tool: "subagent", args: {}, status: "done", result: "Started", metadata: { subagentId: "1" } }],
         },
         { id: "a2", role: "assistant", content: "A2", timestamp: 3, status: "done" },
       ];
@@ -1577,7 +1573,7 @@ expect(appSrc).toContain("await runAgenticLoop(userMessage, session)");
       }
       const idsToDelete = msgs.slice(userIndex + 1).map(m => m.id);
       expect(idsToDelete).toEqual(["a1", "a2"]);
-      // 确保包含 spawn_subagent 的消息被删除
+      // 确保包含 subagent 的消息被删除
       expect(idsToDelete).toContain("a1");
     });
   });
@@ -1791,11 +1787,12 @@ expect(appSrc).toContain("session: Session");
       expect(appSrc).toContain("focus");
     });
 
-    it("App.tsx 调用 win.show 和 win.setFocus", () => {
-      expect(appSrc).toContain("plugin:window|show");
-      expect(appSrc).toContain("plugin:window|set_focus");
-      expect(appSrc).toContain("plugin:window|unminimize");
-    });
+it("App.tsx 不再调用 win.show/setFocus（避免打断用户）", () => {
+// 设计变更：任务完成时不再抢焦点/取消最小化，仅发送原生通知
+expect(appSrc).not.toContain("plugin:window|show");
+expect(appSrc).not.toContain("plugin:window|set_focus");
+expect(appSrc).not.toContain("plugin:window|unminimize");
+});
 
     it("App.tsx 发送原生通知", () => {
       expect(appSrc).toContain("plugin:notification|notify");

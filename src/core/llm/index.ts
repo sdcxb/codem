@@ -24,7 +24,8 @@ import { buildSystemPrompt, type SystemPromptConfig } from "../prompt/prompt";
 import { MCPRegistry, getMCPRegistry, type MCPServerConfig, type MCPTool, autoDetectCodeGraph, hasCodeGraphTools, isCodeGraphEnabled } from "../mcp/mcp";
 import { SkillRegistry, getSkillRegistry, type SkillDefinition } from "../skill/skill";
 import { SnapshotService, getSnapshotService, type Snapshot, type FileChange } from "../snapshot/snapshot";
-import { SubagentManager, getSubagentManager, type SubagentTask, type SubagentResult } from "../subagent/subagent";
+import type { SubagentTask, SubagentResult } from "../subagent/subagent";
+import { setGlobalSubagentRuntime } from "../subagent/index";
 import { SessionRecoveryService, getSessionRecoveryService } from "../recovery/recovery";
 import { AgenticLoop, type LoopEvent } from "./agentic-loop";
 import { CostTracker, getCostTracker } from "./cost-tracker";
@@ -55,7 +56,7 @@ export { buildSystemPrompt } from "../prompt/prompt";
 export { MCPRegistry, getMCPRegistry, autoDetectCodeGraph, hasCodeGraphTools, isCodeGraphEnabled } from "../mcp/mcp";
 export { SkillRegistry, getSkillRegistry } from "../skill/skill";
 export { SnapshotService, getSnapshotService } from "../snapshot/snapshot";
-export { SubagentManager, getSubagentManager } from "../subagent/subagent";
+export { getSubagentRuntime, setGlobalSubagentRuntime } from "../subagent/index";
 export { SessionRecoveryService, getSessionRecoveryService } from "../recovery/recovery";
 export { StreamingToolExecutorImpl, getStreamingToolExecutor } from "./streaming-executor";
 export { AgenticLoop } from "./agentic-loop";
@@ -150,7 +151,10 @@ export class LLMEngine {
   readonly retry: RetryExecutor;
   readonly mcp: MCPRegistry;
   readonly skills: SkillRegistry;
-  readonly subagents: SubagentManager;
+  /** @deprecated 旧 SubagentManager 已删除，保留字段为 null 兼容旧引用 */
+  readonly subagents: any = null;
+  /** 对标 DSH SubagentRuntime — 新的可持续子智能体运行时 */
+  private _subagentRuntime: import('../subagent/runtime').SubagentRuntime | null = null;
   readonly recovery: SessionRecoveryService;
   readonly costTracker: CostTracker;
   readonly toolRenderer: ToolRenderRegistry;
@@ -189,7 +193,7 @@ private loopPool: Map<string, AgenticLoop> = new Map();
     this.retry = _getOrFallback('retry', getRetryExecutor) as any;
     this.mcp = _getOrFallback('mcp', getMCPRegistry) as any;
     this.skills = _getOrFallback('skill', getSkillRegistry) as any;
-    this.subagents = _getOrFallback('subagent', getSubagentManager) as any;
+    // 旧 SubagentManager 已删除 — subagents 字段保留为 null 兼容旧引用
     this.recovery = _getOrFallback('recovery', getSessionRecoveryService) as any;
     this.costTracker = _getOrFallback('costTracker', getCostTracker) as any;
     this.toolRenderer = _getOrFallback('toolRender', getToolRenderRegistry) as any;
@@ -213,18 +217,39 @@ private loopPool: Map<string, AgenticLoop> = new Map();
   }
 
   private setupSubagentSpawner() {
-    import("../subagent/spawner").then(({ LLMSubagentSpawner }) => {
-      import("./tools").then(({ setSubagentManager, createSpawnSubagentTool, createWaitForSubagentTool }) => {
-        const spawner = new LLMSubagentSpawner(this);
-        this.subagents.setSpawner(spawner);
-        setSubagentManager(this.subagents);
-        this.tools.register(createSpawnSubagentTool());
-        this.tools.register(createWaitForSubagentTool());
-      }).catch(() => {
-        // Non-critical — import may fail during test environment teardown
+    // 旧 LLMSubagentSpawner 已删除 — 仅初始化新 DSH 风格 SubagentRuntime
+    import("../subagent/runtime").then(({ SubagentRuntime }) => {
+      import("../subagent/spawn-in-process-provider").then(({ InProcessSpawnProvider }) => {
+        // 创建 Runtime 并注册 spawn provider
+        const runtime = new SubagentRuntime(this);
+        runtime.registerProvider(new InProcessSpawnProvider('spawn', this));
+        this._subagentRuntime = runtime;
+        // DSH-style: 全局注册 runtime，供 UI 和 workflow 访问
+        // 对标 ctx.provide('subagents', runtime)
+        setGlobalSubagentRuntime(runtime);
+
+        // 注册新的 DSH 风格工具
+        import("./tools/subagent-tools").then(({
+          createSubagentTool,
+          createSendMessageTool,
+          createInterruptAgentTool,
+          createListAgentsTool,
+          setSubagentRuntime,
+        }) => {
+          setSubagentRuntime(runtime);
+          this.tools.register(createSubagentTool());
+          this.tools.register(createSendMessageTool());
+          this.tools.register(createInterruptAgentTool());
+          this.tools.register(createListAgentsTool());
+          console.log('[LLMEngine] DSH-style subagent tools registered: subagent, send_message, interrupt_agent, list_agents');
+        }).catch((e) => {
+          console.warn('[LLMEngine] Failed to register subagent tools:', e);
+        });
+      }).catch((e) => {
+        console.warn('[LLMEngine] Failed to load InProcessSpawnProvider:', e);
       });
-    }).catch(() => {
-      // Non-critical — import may fail during test environment teardown
+    }).catch((e) => {
+      console.warn('[LLMEngine] Failed to load SubagentRuntime:', e);
     });
   }
 
@@ -307,7 +332,7 @@ private loopPool: Map<string, AgenticLoop> = new Map();
   }
 
   /** Get or create an agentic loop (per-session for parallel execution) */
-  getAgenticLoop(agentId?: string, sessionId?: string): AgenticLoop {
+  getAgenticLoop(agentId?: string, sessionId?: string, toolRegistryOverride?: ToolRegistry): AgenticLoop {
     // F5: Check if Cordis agentLoop provider is active — if so, delegate to it
     // 但要防止无限递归：agentLoopProvider.getLoop() 会回调本方法，
     // 用 _inGetAgenticLoop 标志打破循环。
@@ -327,7 +352,9 @@ private loopPool: Map<string, AgenticLoop> = new Map();
 
     // Per-session loop pooling: each session gets its own AgenticLoop instance
     // so parallel process() calls don't overwrite each other's loop.
-    if (sessionId) {
+    // DSH-style: 当传入 toolRegistryOverride（子智能体 scoped tools）时，
+    // 跳过 loopPool 复用 — 确保 scoped tools 正确注入。
+    if (sessionId && !toolRegistryOverride) {
       const existing = this.loopPool.get(sessionId);
       if (existing) return existing;
     }
@@ -349,7 +376,7 @@ private loopPool: Map<string, AgenticLoop> = new Map();
 
     const loop = new AgenticLoop(
       provider,
-      this.tools,
+      toolRegistryOverride ?? this.tools,
       {
         maxIterations: 0, // 0 = no cap (DSH-aligned); safety valves handle runaway
         temperature: agent?.temperature ?? resolved.temperature ?? this.config.temperature,
@@ -383,11 +410,14 @@ private loopPool: Map<string, AgenticLoop> = new Map();
     if (this.ctx) loop.setContext(this.ctx);
 
     // Pool the loop per-session for parallel execution
-    if (sessionId) {
+    // DSH-style: 当使用 scoped tools 时不存入 loopPool — 避免污染主智能体
+    if (sessionId && !toolRegistryOverride) {
       this.loopPool.set(sessionId, loop);
     }
-    // Also keep as fallback for non-session callers
-    this.agenticLoop = loop;
+    // Also keep as fallback for non-session callers (not for scoped subagent loops)
+    if (!toolRegistryOverride) {
+      this.agenticLoop = loop;
+    }
     return loop;
   }
 
@@ -613,10 +643,19 @@ private loopPool: Map<string, AgenticLoop> = new Map();
   }
 
   /** Build minimal system prompt for sub-agents (no personality/safety rules) */
-  buildSubagentSystemPrompt(agentId: string, cwd: string): string {
+  buildSubagentSystemPrompt(agentId: string, cwd: string, profileId?: string): string {
     const agent = this.agents.get(agentId);
     if (!agent) return "";
     const zh = getLang() === "zh";
+
+    // 可选：从 AgentProfileStorage 加载持久化身份信息
+    let profile: { identity: string; domain: string; scope: string; skills?: string[]; experience_summary?: string } | null = null;
+    if (profileId) {
+      try {
+        const { AgentProfileStorage } = require('../storage/agent-profile-storage');
+        profile = AgentProfileStorage.getById(profileId);
+      } catch { /* ignore */ }
+    }
 
     const sections: string[] = [];
 
@@ -648,6 +687,14 @@ CRITICAL RULES:
 
     // Agent-specific prompt (select language version)
     sections.push((!zh && agent.promptEn) ? agent.promptEn : agent.prompt);
+
+    // 可选：注入 AgentProfile 身份信息（identity/domain/scope）
+    if (profile) {
+      const profileSection = zh
+        ? `# Agent Profile\n\n- 身份: ${profile.identity}\n- 领域: ${profile.domain}\n- 范围: ${profile.scope}${profile.experience_summary ? `\n- 经验摘要: ${profile.experience_summary}` : ''}${profile.skills && profile.skills.length > 0 ? `\n- 技能: ${profile.skills.join(', ')}` : ''}`
+        : `# Agent Profile\n\n- Identity: ${profile.identity}\n- Domain: ${profile.domain}\n- Scope: ${profile.scope}${profile.experience_summary ? `\n- Experience: ${profile.experience_summary}` : ''}${profile.skills && profile.skills.length > 0 ? `\n- Skills: ${profile.skills.join(', ')}` : ''}`;
+      sections.push(profileSection);
+    }
 
     // 工作目录
     sections.push(zh
@@ -703,6 +750,20 @@ The runtime automatically sets UTF-8 encoding (chcp 65001, PYTHONUTF8=1, PYTHONI
     }
 
     // Filter out <system-reminder> tags from the final prompt
+    // 注入 report 工具 guidance — 对标 DSH installReportTool 的 prompt section
+    sections.push(zh
+      ? `# 汇报工具 (report)
+
+在完成前使用 report 工具汇报结果：调用一次给出自足的答案。
+启动你的 agent 共享你的工作空间但不会自动收到你的记录、工具输出或推理，所以像 "完成" 这样的结束语让它什么也用不了。
+更早也汇报任何会改变该 agent 下一步操作的部分发现；汇报不会结束你的轮次。`
+      : `# Report Tool
+
+Deliver your result with the report tool before you finish: call it once with a self-contained answer.
+The agent that started you shares your workspace but does not automatically receive your transcript, tool output, or reasoning, so a closing remark such as "done" leaves it nothing it can use.
+Report earlier as well whenever a partial finding changes what that agent should do next; reporting never ends your turn.`
+    );
+
     return sections.join("\n\n").replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, "");
   }
 
@@ -884,20 +945,37 @@ The runtime automatically sets UTF-8 encoding (chcp 65001, PYTHONUTF8=1, PYTHONI
     message: string,
     cwd: string,
     agentId: string,
+    profileId?: string,
   ): AsyncGenerator<LoopEvent, void, unknown> {
+    // DSH-style: 创建隔离的工具作用域 — 对标 ctx.isolate('tools')
+    // 子智能体的 report 工具注册在 scope 中，不泄漏到主智能体
+    const scopedTools = this.tools.createScope();
+    let reportToolRegistered = false;
+    try {
+      const { createReportTool, setSubagentRuntime } = await import('./tools/subagent-tools');
+      // 如果 runtime 已初始化，在 scope 中注册 report 工具
+      if (this._subagentRuntime) {
+        setSubagentRuntime(this._subagentRuntime);
+        scopedTools.register(createReportTool());
+        reportToolRegistered = true;
+      }
+    } catch (e) { console.warn('[processSubagent] report tool registration:', e) }
+
     // 直接使用 getAgenticLoop — 防止通过 ctx.get('agentLoop') 导致无限递归
+    // 传入 scopedTools 使子智能体 loop 使用隔离的工具作用域
     let loop: AgenticLoop
-    loop = this.getAgenticLoop(agentId, sessionId)
+    loop = this.getAgenticLoop(agentId, sessionId, scopedTools)
     // Sub-agents should have fewer iterations to prevent loops
     loop.updateConfig({ maxIterations: 15 });
-    const systemPrompt = this.buildSubagentSystemPrompt(agentId, cwd);
+    const systemPrompt = this.buildSubagentSystemPrompt(agentId, cwd, profileId);
 
     // Filter out <system-reminder> tags from the message
     const cleanMessage = message.replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, "").trim();
 
     // Save user message to database so buildMessages can read it
+    const userMsgId = `user-${Date.now()}`;
     MessageStorage.createMessage({
-      id: `user-${Date.now()}`,
+      id: userMsgId,
       role: "user",
       content: cleanMessage,
       timestamp: Date.now(),
@@ -907,7 +985,7 @@ The runtime automatically sets UTF-8 encoding (chcp 65001, PYTHONUTF8=1, PYTHONI
     // C5: EventLog dual-write — user message for subagent session
     try {
       getEventLog().append(sessionId, "user_message", {
-        messageId: `user-${Date.now()}`,
+        messageId: userMsgId,
         content: cleanMessage,
       });
     } catch (e) { console.warn('[index.ts]', e) }
@@ -916,7 +994,7 @@ The runtime automatically sets UTF-8 encoding (chcp 65001, PYTHONUTF8=1, PYTHONI
     let lastUsage: import("./types").TokenUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
     let toolCallCount = 0;
 
-    for await (const event of loop.run(sessionId, message, cwd, systemPrompt)) {
+    for await (const event of loop.run(sessionId, cleanMessage, cwd, systemPrompt)) {
       if (event.type === "usage") {
         lastUsage = event.usage;
       }
@@ -929,7 +1007,7 @@ The runtime automatically sets UTF-8 encoding (chcp 65001, PYTHONUTF8=1, PYTHONI
     // Record usage after loop completes
     if (lastUsage.totalTokens > 0) {
       this.costTracker.recordUsage({
-        sessionId: `sub-${sessionId}`,
+        sessionId: sessionId,
         model: this.config.defaultModel || "unknown",
         provider: this.config.defaultProvider || "unknown",
         usage: lastUsage,
@@ -938,12 +1016,31 @@ The runtime automatically sets UTF-8 encoding (chcp 65001, PYTHONUTF8=1, PYTHONI
         success: true,
       });
     }
+
+    // DSH-style: scoped ToolRegistry 随 loop 生命周期自然释放
+    // 不需要手动移除 report 工具 — scope 是独立的，不影响主智能体
   }
 
-/** Abort current processing */
-abort() {
-this.agenticLoop?.abort();
-}
+  /** Abort current processing — DSH-style: also drain all background subagents */
+  abort() {
+    this.agenticLoop?.abort();
+    // DSH-style: drain all continuable subagents on abort
+    // 对标 DSH SubagentContinuationManager.drain() — host teardown 时调用
+    if (this._subagentRuntime) {
+      this._subagentRuntime.drain().catch((e) => {
+        console.warn('[LLMEngine] SubagentRuntime drain failed:', e);
+      });
+    }
+  }
+
+  /**
+   * DSH-style: 获取 SubagentRuntime — UI 组件和 workflow 通过此方法
+   * 访问子智能体状态，替代旧 SubagentManager 的数据存储角色。
+   * 对标 DSH 的 ctx.subagents / ctx.get('subagents')
+   */
+  getSubagentRuntime(): import('../subagent/runtime').SubagentRuntime | null {
+    return this._subagentRuntime;
+  }
 
 /**
  * Send a guidance message to the currently running agentic loop for a session.
@@ -1472,18 +1569,6 @@ return loop.hasPendingGuidance();
   async restoreSnapshot(cwd: string, snapshotId: string): Promise<FileChange[]> {
     const service = this.getSnapshotService(cwd);
     return service.restore(snapshotId);
-  }
-
-  async spawnSubagent(parentId: string, agentId: string, prompt: string, cwd: string, parentAbortSignal?: AbortSignal, timeout?: number): Promise<SubagentTask> {
-    return this.subagents.spawn(parentId, agentId, prompt, cwd, parentAbortSignal, timeout);
-  }
-
-  async waitForSubagent(taskId: string): Promise<SubagentResult> {
-    return this.subagents.waitForCompletion(taskId);
-  }
-
-  getSubagentStats() {
-    return this.subagents.getStats();
   }
 
   getCostStats() {

@@ -62,12 +62,17 @@ function rowToToolCallFromAny(tr: any[]): ToolCall {
   } catch {
     args = {};
   }
+  let metadata: Record<string, any> | undefined;
+  try {
+    if (tr[6]) metadata = JSON.parse(tr[6] as string);
+  } catch { /* non-fatal */ }
   return {
     id: tr[0] as string,
     tool: tr[2] as string,
     args,
     result: (tr[4] as string | null) ?? undefined,
     status: (tr[5] as string) as ToolCall["status"],
+    ...(metadata ? { metadata } : {}),
   };
 }
 
@@ -108,7 +113,7 @@ export function listMessages(sessionId: string, limit?: number): Message[] {
   const db = getDatabase();
   const limitClause = limit ? `LIMIT ${limit}` : "";
   const result = db.exec(
-    `SELECT id, session_id, role, content, timestamp, model, prompt_tokens, completion_tokens, cost, status, reasoning, generated_files, retrieved_sources, hidden FROM messages WHERE session_id = ? ORDER BY timestamp ASC ${limitClause}`,
+    `SELECT id, session_id, role, content, timestamp, model, prompt_tokens, completion_tokens, cost, status, reasoning, generated_files, retrieved_sources, hidden FROM messages WHERE session_id = ? AND hidden = 0 ORDER BY timestamp ASC ${limitClause}`,
     [sessionId]
   );
   if (result.length === 0) return [];
@@ -290,8 +295,8 @@ export function createMessage(message: Message, sessionId: string): void {
   if (message.toolCalls) {
     for (const tc of message.toolCalls) {
       db.run(
-        "INSERT INTO tool_calls (id, message_id, tool, args, result, status) VALUES (?, ?, ?, ?, ?, ?)",
-        [tc.id, message.id, tc.tool, JSON.stringify(tc.args), tc.result ?? null, tc.status]
+        "INSERT INTO tool_calls (id, message_id, tool, args, result, status, metadata) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        [tc.id, message.id, tc.tool, JSON.stringify(tc.args), tc.result ?? null, tc.status, tc.metadata ? JSON.stringify(tc.metadata) : null]
       );
     }
   }
@@ -423,8 +428,8 @@ export function updateMessage(id: string, update: Partial<Message>): void {
     db.run("DELETE FROM tool_calls WHERE message_id = ?", [id]);
     for (const tc of update.toolCalls) {
       db.run(
-        "INSERT INTO tool_calls (id, message_id, tool, args, result, status) VALUES (?, ?, ?, ?, ?, ?)",
-        [tc.id, id, tc.tool, JSON.stringify(tc.args), tc.result ?? null, tc.status]
+        "INSERT INTO tool_calls (id, message_id, tool, args, result, status, metadata) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        [tc.id, id, tc.tool, JSON.stringify(tc.args), tc.result ?? null, tc.status, tc.metadata ? JSON.stringify(tc.metadata) : null]
       );
     }
   }
@@ -440,8 +445,8 @@ export function appendToMessage(id: string, content: string): void {
 export function addToolCall(messageId: string, toolCall: ToolCall): void {
   const db = getDatabase();
   db.run(
-    "INSERT OR REPLACE INTO tool_calls (id, message_id, tool, args, result, status) VALUES (?, ?, ?, ?, ?, ?)",
-    [toolCall.id, messageId, toolCall.tool, JSON.stringify(toolCall.args), toolCall.result ?? null, toolCall.status]
+    "INSERT OR REPLACE INTO tool_calls (id, message_id, tool, args, result, status, metadata) VALUES (?, ?, ?, ?, ?, ?, ?)",
+    [toolCall.id, messageId, toolCall.tool, JSON.stringify(toolCall.args), toolCall.result ?? null, toolCall.status, toolCall.metadata ? JSON.stringify(toolCall.metadata) : null]
   );
   persistDatabase();
 }
@@ -454,6 +459,7 @@ export function updateToolCall(messageId: string, toolId: string, update: Partia
   if (update.args !== undefined) { fields.push("args = ?"); values.push(JSON.stringify(update.args)); }
   if (update.result !== undefined) { fields.push("result = ?"); values.push(update.result ?? null); }
   if (update.status !== undefined) { fields.push("status = ?"); values.push(update.status); }
+  if (update.metadata !== undefined) { fields.push("metadata = ?"); values.push(update.metadata ? JSON.stringify(update.metadata) : null); }
 
   if (fields.length > 0) {
     values.push(toolId);

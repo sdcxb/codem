@@ -76,32 +76,45 @@ console.log(JSON.stringify(results, null, 2));
         return { title: "workflow", output: "Error: code parameter is required." };
       }
 
-      // Build SDK
+      // Build SDK — DSH-style: use SubagentRuntime instead of old SubagentManager
       const sdk: WorkflowSDK = {
         async spawn(agentId, prompt) {
-          const { getSubagentManager } = await import("../subagent/subagent");
-          const manager = getSubagentManager();
-          if (!manager) throw new Error("Sub-agent manager not available");
-          const task = await manager.spawn(ctx.sessionId, agentId, prompt, ctx.cwd, ctx.abort);
-          return task.id;
+          const { getSubagentRuntime } = await import("../subagent/index");
+          const runtime = getSubagentRuntime();
+          if (!runtime) throw new Error("SubagentRuntime not available");
+          // DSH-style: startContinuable returns { childId, messageId }
+          const result = await runtime.startContinuable({
+            provider: 'spawn',
+            label: agentId,
+            request: {
+              parentSessionId: ctx.sessionId,
+              agentId,
+              prompt,
+              cwd: ctx.cwd,
+            },
+            signal: ctx.abort ?? new AbortController().signal,
+          });
+          return result.childId;
         },
         async wait(taskId) {
-          const { getSubagentManager } = await import("../subagent/subagent");
-          const manager = getSubagentManager();
-          if (!manager) throw new Error("Sub-agent manager not available");
-          // Poll until completion
-          while (true) {
-            if (ctx.abort?.aborted) return { success: false, result: "Aborted" };
-            const task = manager.getTask(taskId);
-            if (!task) return { success: false, result: "Task not found" };
-            if (task.status === "completed") {
-              return { success: true, result: task.result?.output || "" };
-            }
-            if (task.status === "failed") {
-              return { success: false, result: task.error || "Task failed" };
-            }
-            await new Promise(r => setTimeout(r, 500));
+          const { getSubagentRuntime } = await import("../subagent/index");
+          const runtime = getSubagentRuntime();
+          if (!runtime) throw new Error("SubagentRuntime not available");
+          // DSH-style: await the executionDone promise instead of polling
+          // 对标 DSH SubagentRun.result — 不再轮询
+          const activity = runtime.getTask(taskId);
+          if (!activity) return { success: false, result: "Task not found" };
+          // Wait for the activity to settle via executionDone promise
+          await runtime.waitForTask(taskId);
+          const updated = runtime.getTask(taskId);
+          if (!updated) return { success: false, result: "Task disappeared" };
+          if (updated.status === 'completed') {
+            return { success: true, result: updated.result?.output || "" };
           }
+          if (updated.status === 'failed') {
+            return { success: false, result: updated.error || "Task failed" };
+          }
+          return { success: false, result: `Task ended with status: ${updated.status}` };
         },
         async bash(command) {
           const { executeCommand } = await import("../file-api");

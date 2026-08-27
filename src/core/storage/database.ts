@@ -165,6 +165,7 @@ CREATE TABLE IF NOT EXISTS tool_calls (
   args TEXT NOT NULL,
   result TEXT,
   status TEXT DEFAULT 'pending',
+  metadata TEXT,
   FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE CASCADE
 );
 
@@ -727,6 +728,7 @@ const migrations = [
 "ALTER TABLE sessions ADD COLUMN parent_id TEXT", // R3-2.2: Fork support
 "ALTER TABLE sessions ADD COLUMN sort_order INTEGER DEFAULT 0", // P2 #29: session reordering
 "ALTER TABLE messages ADD COLUMN hidden INTEGER DEFAULT 0", // Soft-delete for compaction: hidden messages stay in DB for history viewing but are excluded from LLM context
+"ALTER TABLE tool_calls ADD COLUMN metadata TEXT", // 工具执行元数据（如 subagentId 等）
 ];
   for (const sql of migrations) {
     try { db.run(sql); } catch (e) { /* column already exists */ }

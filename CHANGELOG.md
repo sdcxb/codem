@@ -2,6 +2,41 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.6.0] - 2026-08-27
+
+### SubagentRuntime 架构重构（对标 DSH） + 技能市场 Trees API 改造 + GitHub Token 修复
+
+#### 1. SubagentRuntime 全面重构（对标 DSH `SubagentRuntime` + `spawn` 模式）
+- **旧架构删除**：移除 `SubagentManager`（+642 行删除）和 `LLMSubagentSpawner`（-338 行），删除 `spawn_subagent` / `wait_for_subagent` 旧工具
+- **新架构**：新增 `SubagentRuntime`（对标 DSH）— 持续后台子智能体运行时
+  - `InProcessSpawnProvider` 替代旧 `LLMSubagentSpawner`，支持后台运行 + 自动通知 + 消息延续
+  - 4 个新 DSH 风格工具：`subagent`（启动后台子智能体）、`send_message`（向运行中子智能体发消息）、`interrupt_agent`（请求中断）、`list_agents`（列出后台子智能体）
+  - `ToolRegistry.createScope()` 隔离工具作用域（对标 Cordis `ctx.isolate('tools')`），子智能体可安全注册专属工具（如 `report`）而不泄漏到主智能体
+  - `setGlobalSubagentRuntime` / `getSubagentRuntime` 全局访问（对标 DSH `ctx.provide('subagents', runtime)`）
+- **系统提示词改造**：sub-agent collaboration 部分对标 DSH 重写 — 后台默认运行 + 自动通知模式，无需显式 `wait_for`
+- **文件**：`src/core/subagent/`（删 spawner.ts -338 行、重构 subagent.ts -309 行、新增 index.ts 全局 runtime）、`src/core/llm/index.ts`、`src/core/llm/tools.ts`、`src/core/prompt/prompt.ts`
+
+#### 2. 技能市场 GitHub Trees API 改造（移植 vercel-labs/skills 官方 CLI 逻辑）
+- **核心改造**：将 Contents API 逐层遍历（O(N×M) 次调用）替换为 Trees API 一次性获取全量文件树（1 次调用），在内存中搜索 SKILL.md
+- **30+ 前缀支持**：移植官方 `PRIORITY_PREFIXES`，覆盖 Claude / Cline / Goose / Codex / Continue 等 30+ 种 Agent 目录约定（之前仅 4 个硬编码前缀）
+- **三大函数改造**：
+  - `fetchGitHubRepoSkills`：Trees API 全量搜索 + 优先级排序 + Legacy fallback
+  - `fetchGitHubSearchSkills`：每个仓库用 Trees API 搜索任意位置的 SKILL.md（之前仅尝试根目录）
+  - `installSkillFromGitHubDir`：Trees API 获取全量树 → 内存筛选目录文件 → 精确下载（不再逐层遍历 + 前缀探测）
+- **修复问题**：`dreambigou/eli5`（SKILL.md 在 `skills/eli5/` 子目录）、`cloudflare/cloudflare-docs`（15296 个文件的大仓库）等之前安装失败的技能现在可正常安装
+- **文件**：`src/core/skill/skill-market-client.ts`（+551 行重构）
+
+#### 3. GitHub Token 配置链路修复
+- **根因**：github-tool / cicd / clone 命令均未从 `codem-git-config` 读取 Token，导致认证缺失
+- **修复**：统一 Token 读取链路，所有 GitHub 操作共享 `githubApiHeaders()`
+- **文件**：`src/App.tsx`、`src/core/skill/skill-market-client.ts`
+
+#### 4. 其他改动
+- i18n-templates 新增子智能体协作提示词模板（+138 行）
+- workflow-engine 增强子智能体运行时集成
+- 测试文件适配新架构：core-subagent-lifecycle / cordis-functional-loop / full-regression-smoke / regression-coding-p1 等全量适配
+- `tsc --noEmit` 零错误
+
 ## [1.5.5] - 2026-08-26
 
 ### Compaction 并发写入治根修复 + Bash 缓存失效修复

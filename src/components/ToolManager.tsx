@@ -34,7 +34,7 @@ const CATEGORY_LABELS: Record<string, { label: string; icon: React.ReactNode; co
 // 内置工具 ID 列表
 const BUILTIN_TOOL_IDS = new Set([
   "bash", "read", "write", "edit", "multiedit", "glob", "grep", "tts", "image_gen",
-  "spawn_subagent", "wait_for_subagent",
+  "subagent", "report", "send_message", "interrupt_agent", "list_agents",
 ]);
 
 // 委派工具 ID 列表

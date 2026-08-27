@@ -12,7 +12,7 @@ import { SnapshotPanel } from "./SnapshotPanel";
 import { ContextMonitor } from "./ContextMonitor";
 import { GitInfoPanel } from "./GitInfoPanel";
 import { SubagentTask } from "../core/subagent/subagent";
-import { getSubagentManager } from "../core/subagent/subagent";
+import { getSubagentRuntime } from "../core/subagent/index";
 import { useLang, S } from "../core/i18n/lang";
 import { MIMO_MODELS, getConfiguredApiModels } from "../core/model-config";
 import { ScrollbarMarkers } from "./ScrollbarMarkers";
@@ -320,20 +320,28 @@ setStepTooltipLocked(false);
     };
   }, [hasMoreMessages, isLoadingMore, loadMoreMessages, currentSession?.id]);
 
-  // Subscribe to SubagentManager updates
+  // Subscribe to SubagentRuntime updates — DSH-style 事件驱动
+  // 对标 DSH ctx.subagents — 替代旧 SubagentManager
   useEffect(() => {
-    const manager = getSubagentManager();
+    const runtime = getSubagentRuntime();
 
     const updateAgents = () => {
-      setAgents(manager.getAllTasks());
+      if (runtime) {
+        setAgents(runtime.getAllTasks());
+      } else {
+        setAgents([]);
+      }
     };
 
     // Initial load
     updateAgents();
 
-    // Poll for updates — 2s is sufficient for activity tracking (was 500ms, which caused high CPU)
-    const interval = setInterval(updateAgents, 2000);
-    return () => clearInterval(interval);
+    // DSH-style: 订阅事件而非轮询
+    const unsubscribe = runtime?.subscribe(updateAgents);
+
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
   }, []);
 
   const handleDeleteFiles = async (messageId: string, files: string[]) => {

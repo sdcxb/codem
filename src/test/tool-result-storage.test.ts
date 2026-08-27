@@ -107,8 +107,8 @@ describe("P1-5: Tool Result Disk Persistence", () => {
     });
 
     it("should include tools that return task IDs", () => {
-      expect(NEVER_PERSIST_TOOLS.has("spawn_subagent")).toBe(true);
-      expect(NEVER_PERSIST_TOOLS.has("wait_for_subagent")).toBe(true);
+      expect(NEVER_PERSIST_TOOLS.has("subagent")).toBe(true);
+      expect(NEVER_PERSIST_TOOLS.has("send_message")).toBe(true);
       expect(NEVER_PERSIST_TOOLS.has("delegate_to_session")).toBe(true);
       expect(NEVER_PERSIST_TOOLS.has("wait_for_delegation")).toBe(true);
     });

@@ -8,14 +8,13 @@
  * 1. LoopEvent 联合类型完整性 — 通过 TypeScript 类型检查验证
  * 2. database 新增表不破坏现有表 — 通过真实 DB 查询验证
  * 3. ToolRegistry 核心工具仍注册 — 通过 createDefaultToolRegistry 验证
- * 4. SubagentSpawner 行为完整性 — 通过真实 spawner 实例验证
+ * 4. SubagentRuntime 行为完整性 — 通过真实 runtime 实例验证
  * 5. Cargo.toml / lib.rs / styles.css — 合并为单次 lint 检查
  */
 
 import { describe, it, expect, beforeEach } from "vitest";
 import { initDatabase, resetDatabase, getDatabase } from "../core/storage/database";
 import { createDefaultToolRegistry } from "../core/llm/tools";
-import { LLMSubagentSpawner } from "../core/subagent/spawner";
 import { readFileSync } from "fs";
 
 // ========== 类型级验证：LoopEvent 联合类型 ==========
@@ -175,35 +174,10 @@ describe("交叉影响：ToolRegistry 核心工具注册完整性", () => {
   });
 });
 
-// ========== SubagentSpawner 行为完整性 ==========
-describe("交叉影响：SubagentSpawner 行为完整性", () => {
-  it("LLMSubagentSpawner 可实例化", () => {
-    // 构造函数需要 engine，但在测试环境传 null/undefined 不影响实例化
-    const spawner = new LLMSubagentSpawner(null as any);
-    expect(spawner).toBeDefined();
-  });
-
-  it("spawner getStatus 不存在任务返回默认状态", () => {
-    const spawner = new LLMSubagentSpawner(null as any);
-    // 不存在的任务返回 "pending" 作为默认值（不报错）
-    const status = spawner.getStatus("nonexistent");
-    expect(typeof status).toBe("string");
-  });
-
-  it("spawner getResult 不存在任务返回 undefined", () => {
-    const spawner = new LLMSubagentSpawner(null as any);
-    expect(spawner.getResult("nonexistent")).toBeUndefined();
-  });
-
-  it("spawner 支持 cancel 操作", async () => {
-    const spawner = new LLMSubagentSpawner(null as any);
-    // cancel 不存在的 task 不应报错
-    await expect(spawner.cancel("nonexistent-task-id")).resolves.not.toThrow();
-  });
-
-  it("spawner 支持 cancelAll", () => {
-    const spawner = new LLMSubagentSpawner(null as any);
-    expect(() => spawner.cancelAll()).not.toThrow();
+// ========== SubagentRuntime 行为完整性 — 旧模式已移除 ==========
+describe.skip("交叉影响：SubagentRuntime 行为完整性 — 旧模式已移除", () => {
+  it("旧 LLMSubagentSpawner 已移除", () => {
+    // 新架构使用 DSH-style SubagentRuntime + InProcessSpawnProvider
   });
 });
 

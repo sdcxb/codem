@@ -95,6 +95,8 @@ export interface ToolCallResult {
   output?: string;
   status: "pending" | "running" | "completed" | "error";
   error?: string;
+  /** 工具执行元数据（如 subagentId 等）— 从 ToolExecuteResult 透传 */
+  metadata?: Record<string, any>;
 }
 
 // ========== Streaming Types ==========

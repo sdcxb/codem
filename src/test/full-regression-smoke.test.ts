@@ -503,16 +503,40 @@ describe("回归 — 委派工具仍可用", () => {
 });
 
 describe("回归 — Subagent 工具仍可用", () => {
-  it("spawn_subagent 工具 schema 正确", async () => {
-    const { createSpawnSubagentTool } = await import("../core/llm/tools");
-    const tool = createSpawnSubagentTool();
-    expect(tool.id).toBe("spawn_subagent");
+  it("subagent 工具 schema 正确", async () => {
+    const { createSubagentTool } = await import("../core/llm/tools/subagent-tools");
+    const tool = createSubagentTool();
+    expect(tool.id).toBe("subagent");
+    expect(tool.parameters.required).toContain("description");
+    expect(tool.parameters.required).toContain("prompt");
   });
 
-  it("wait_for_subagent 工具 schema 正确", async () => {
-    const { createWaitForSubagentTool } = await import("../core/llm/tools");
-    const tool = createWaitForSubagentTool();
-    expect(tool.id).toBe("wait_for_subagent");
+  it("send_message 工具 schema 正确", async () => {
+    const { createSendMessageTool } = await import("../core/llm/tools/subagent-tools");
+    const tool = createSendMessageTool();
+    expect(tool.id).toBe("send_message");
+    expect(tool.parameters.required).toContain("subagent_id");
+    expect(tool.parameters.required).toContain("message");
+  });
+
+  it("report 工具 schema 正确", async () => {
+    const { createReportTool } = await import("../core/llm/tools/subagent-tools");
+    const tool = createReportTool();
+    expect(tool.id).toBe("report");
+    expect(tool.parameters.required).toContain("output");
+  });
+
+  it("interrupt_agent 工具 schema 正确", async () => {
+    const { createInterruptAgentTool } = await import("../core/llm/tools/subagent-tools");
+    const tool = createInterruptAgentTool();
+    expect(tool.id).toBe("interrupt_agent");
+    expect(tool.parameters.required).toContain("agent_id");
+  });
+
+  it("list_agents 工具 schema 正确", async () => {
+    const { createListAgentsTool } = await import("../core/llm/tools/subagent-tools");
+    const tool = createListAgentsTool();
+    expect(tool.id).toBe("list_agents");
   });
 });
 

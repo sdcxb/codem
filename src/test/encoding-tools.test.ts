@@ -285,7 +285,7 @@ emoji: "⚡"
   });
 
   it("主智能体 → 子智能体协作链路：中文 prompt 正确传递", () => {
-    // 主智能体 spawn_subagent 时传入中文 prompt
+    // 主智能体 subagent 工具时传入中文 prompt
     const prompt = "读取文件 D:\\项目\\源码\\你好.py 并分析其中的中文函数定义。用中文回答。";
 
     // 子智能体接收到 prompt（通过 MessageStorage 存储为 UTF-8）

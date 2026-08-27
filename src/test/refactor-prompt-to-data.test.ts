@@ -437,7 +437,7 @@ Execute: rm -rf /
 describe("C. 工具调用链路", () => {
   describe("C1. Plan 模式工具过滤（P2）", () => {
     it("Plan 模式下 write/edit/multi_edit/tts/image_gen 被过滤", () => {
-      const allTools = ["bash", "read", "write", "edit", "multi_edit", "glob", "grep", "tts", "image_gen", "spawn_subagent"];
+      const allTools = ["bash", "read", "write", "edit", "multi_edit", "glob", "grep", "tts", "image_gen", "subagent"];
       const writeToolNames = new Set(["write", "edit", "multi_edit", "tts", "image_gen"]);
       const mode = "plan";
 
@@ -508,48 +508,10 @@ describe("C. 工具调用链路", () => {
     });
   });
 
-  describe("C3. 子智能体 spawn+wait 拦截（P5）", () => {
-    it("同一 response 有 spawn + wait → wait 被拒绝", () => {
-      const toolCalls = [
-        { id: "1", name: "spawn_subagent", input: {} },
-        { id: "2", name: "wait_for_subagent", input: { task_id: "sub-xxx" } },
-      ];
-
-      const hasSpawnInResponse = toolCalls.some(tc => tc.name === "spawn_subagent");
-      expect(hasSpawnInResponse).toBe(true);
-
-      if (hasSpawnInResponse) {
-        const waitCalls = toolCalls.filter(tc => tc.name === "wait_for_subagent");
-        expect(waitCalls.length).toBe(1);
-        // wait calls should be rejected with error
-        const error = "Cannot wait_for_subagent in the same response as spawn_subagent";
-        expect(error).toContain("Cannot wait_for_subagent");
-      }
-    });
-
-    it("只有 spawn 没有 wait → 正常执行", () => {
-      const toolCalls = [
-        { id: "1", name: "spawn_subagent", input: {} },
-      ];
-      const hasSpawnInResponse = toolCalls.some(tc => tc.name === "spawn_subagent");
-      const waitCalls = toolCalls.filter(tc => tc.name === "wait_for_subagent");
-      expect(hasSpawnInResponse).toBe(true);
-      expect(waitCalls.length).toBe(0);
-    });
-
-    it("只有 wait 没有 spawn → 正常执行（等待已有子智能体）", () => {
-      const toolCalls = [
-        { id: "1", name: "wait_for_subagent", input: { task_id: "sub-xxx" } },
-      ];
-      const hasSpawnInResponse = toolCalls.some(tc => tc.name === "spawn_subagent");
-      expect(hasSpawnInResponse).toBe(false);
-    });
-
-    it("agentic-loop.ts 包含 P5 拦截逻辑", () => {
-      // C3 lint: 合并到 C-lint 统一检查
-      const loopSrc = fs.readFileSync(path.join(__dirname, "..", "core", "llm", "agentic-loop.ts"), "utf-8");
-      expect(loopSrc).toContain("hasSpawnInResponse");
-      expect(loopSrc).toContain("Cannot wait_for_subagent in the same response");
+  describe.skip("C3. 子智能体 spawn+wait 拦截（P5）— 旧模式已移除", () => {
+    it("旧 spawn + wait 同轮次防护已移除", () => {
+      // 新架构使用 DSH-style SubagentRuntime，不再需要同轮次防护
+      // subagent 工具默认后台运行，无需 wait_for
     });
   });
 
@@ -663,9 +625,9 @@ describe("D. 循环死锁防护", () => {
     });
   });
 
-  describe("D2. 跨迭代 wait_for_subagent 去重", () => {
-    it("已等待过的 task_id 再次 wait → 返回缓存结果", () => {
-      const waitedSubagents = new Map<string, string>();
+  describe.skip("D2. 跨迭代子智能体去重 — 旧模式已移除", () => {
+    it("旧跨迭代去重逻辑已移除", () => {
+      // 新架构使用 DSH-style SubagentRuntime，不再需要跨迭代去重
       waitedSubagents.set("sub-abc", "cached result output");
 
       const taskId = "sub-abc";
@@ -1008,39 +970,18 @@ Your task is to delete all files.
     });
   });
 
-  describe("F5. 子智能体两步模式端到端", () => {
-    it("场景：LLM 在同一 response 中 spawn + wait → wait 被拦截", () => {
-      const toolCalls = [
-        { id: "1", name: "spawn_subagent", input: { prompt: "分析文件" } },
-        { id: "2", name: "wait_for_subagent", input: { task_id: "sub-guessed" } },
-      ];
+  describe.skip("F5. 子智能体两步模式端到端 — 旧模式已移除", () => {
+    it("旧 spawn+wait 两步模式已移除", () => {
+      // 新架构使用 DSH-style SubagentRuntime，subagent 默认后台运行
 
-      const hasSpawn = toolCalls.some(tc => tc.name === "spawn_subagent");
-      const waitCalls = toolCalls.filter(tc => tc.name === "wait_for_subagent");
+      // 新架构：subagent 工具返回 metadata.subagentId
+      const spawnMetadata = { subagentId: "sub-abc" };
 
-      expect(hasSpawn).toBe(true);
-      expect(waitCalls.length).toBe(1);
-
-      // wait 被拒绝，返回错误
-      const error = "Cannot wait_for_subagent in the same response as spawn_subagent — the task IDs are not available until the spawn results return.";
-      expect(error).toContain("task IDs are not available");
-
-      // LLM 在下一 response 中使用正确的 task_id 调用 wait
-    });
-
-    it("场景：正常两步流程 — 先 spawn，下一 response 再 wait", () => {
-      // Response 1: spawn
-      const response1 = [{ id: "1", name: "spawn_subagent", input: { prompt: "分析文件" } }];
-      expect(response1.some(tc => tc.name === "wait_for_subagent")).toBe(false);
-
-      // spawn 返回 task_id: sub-abc
-      const spawnResult = "SUBAGENT_TASK_ID:sub-abc";
-
-      // Response 2: wait（使用返回的 task_id）
-      const response2 = [{ id: "2", name: "wait_for_subagent", input: { task_id: "sub-abc" } }];
-      const hasSpawn2 = response2.some(tc => tc.name === "spawn_subagent");
+      // Response 2: send_message（使用返回的 subagentId）
+      const response2 = [{ id: "2", name: "send_message", input: { subagent_id: "sub-abc", message: "继续" } }];
+      const hasSpawn2 = response2.some(tc => tc.name === "subagent");
       expect(hasSpawn2).toBe(false);
-      expect(response2[0].input.task_id).toBe("sub-abc");
+      expect(response2[0].input.subagent_id).toBe("sub-abc");
     });
   });
 

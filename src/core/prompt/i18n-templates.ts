@@ -109,7 +109,74 @@ The runtime automatically sets UTF-8 encoding (chcp 65001, PYTHONUTF8=1, PYTHONI
 
 - Use the \`write\`, \`edit\`, and \`multi_edit\` tools for all file changes. Do not create or edit files with shell commands like \`cat\`, \`echo\`, or \`printf\` — these bypass the tool layer's validation, encoding handling, and change tracking.
 - Formatting commands and bulk mechanical rewrites don't need the edit tools — use shell for those.
-- Do not use Python to read or write files when a simple shell command or the read/edit tools are enough.`,
+- Do not use Python to read or write files when a simple shell command or the read/edit tools are enough.
+
+## Generating .docx Files
+
+When the user asks you to generate a Word (.docx) document, you MUST use Python's \`python-docx\` library via the \`bash\` tool. NEVER use the \`write\` tool to write text/HTML content into a .docx file — that produces a fake docx without proper OOXML structure, and features like clickable table-of-contents hyperlinks will not work.
+
+### Required Pattern
+
+1. Install if needed: \`python -m pip install python-docx\`
+2. Write a Python script that uses \`docx.Document()\` to build the document
+3. For **table of contents** entries, use **internal hyperlinks** so they are clickable in Word. Add a bookmark to each heading, then create a hyperlink pointing to that bookmark:
+
+\`\`\`python
+from docx import Document
+from docx.oxml.ns import qn
+from docx.oxml import OxmlElement
+
+doc = Document()
+
+# Helper: add bookmark to a paragraph
+def add_bookmark(paragraph, bookmark_name):
+    start = OxmlElement('w:bookmarkStart')
+    start.set(qn('w:id'), str(id(bookmark_name)))
+    start.set(qn('w:name'), bookmark_name)
+    end = OxmlElement('w:bookmarkEnd')
+    end.set(qn('w:id'), str(id(bookmark_name)))
+    paragraph._p.insert(0, start)
+    paragraph._p.append(end)
+
+# Helper: add internal hyperlink to a paragraph
+def add_internal_hyperlink(paragraph, bookmark_name, text):
+    hyperlink = OxmlElement('w:hyperlink')
+    hyperlink.set(qn('w:anchor'), bookmark_name)
+    run = OxmlElement('w:r')
+    rPr = OxmlElement('w:rPr')
+    color = OxmlElement('w:color')
+    color.set(qn('w:val'), '0563C1')
+    underline = OxmlElement('w:u')
+    underline.set(qn('w:val'), 'single')
+    rPr.append(color)
+    rPr.append(underline)
+    run.append(rPr)
+    text_elem = OxmlElement('w:t')
+    text_elem.text = text
+    run.append(text_elem)
+    hyperlink.append(run)
+    paragraph._p.append(hyperlink)
+
+# Example: TOC entry linking to a heading
+heading_text = "Section 1: Overview"
+bookmark_id = "section1"
+
+# Write TOC entry (clickable)
+toc_para = doc.add_paragraph()
+add_internal_hyperlink(toc_para, bookmark_id, heading_text)
+
+# Write the actual heading with bookmark
+heading_para = doc.add_heading(heading_text, level=1)
+add_bookmark(heading_para, bookmark_id)
+
+doc.save('output.docx')
+\`\`\`
+
+### Key Rules
+- Every TOC entry MUST be an internal hyperlink (\`w:hyperlink\` with \`w:anchor\` pointing to a bookmark)
+- Every heading that TOC links to MUST have a corresponding \`w:bookmarkStart\`/\`w:bookmarkEnd\`
+- Use \`python-docx\` for ALL .docx generation — tables, headings, styles, hyperlinks
+- Run the script with \`bash\` and save the output file to the requested path`,
 
   dirtyWorktree: `# Dirty Worktree
 
@@ -291,7 +358,74 @@ const ZH_TEMPLATES: PromptTemplates = {
 
 - 使用 \`write\`、\`edit\` 和 \`multi_edit\` 工具进行所有文件改动。不要用 \`cat\`、\`echo\`、\`printf\` 等 shell 命令创建或编辑文件——它们绕过了工具层的验证、编码处理和变更追踪。
 - 格式化命令和批量机械重写不需要用编辑工具——用 shell 即可。
-- 简单的 shell 命令或读/编辑工具就够时，不要用 Python 读写文件。`,
+- 简单的 shell 命令或读/编辑工具就够时，不要用 Python 读写文件。
+
+## 生成 .docx 文件
+
+当用户要求生成 Word（.docx）文档时，你**必须**通过 \`bash\` 工具使用 Python 的 \`python-docx\` 库来生成。**绝不**能用 \`write\` 工具将文本/HTML 内容写入 .docx 文件——那样生成的是伪装成 docx 的纯文本，没有正确的 OOXML 结构，可点击的目录超链接等功能也无法实现。
+
+### 必须遵循的模式
+
+1. 如需安装：\`python -m pip install python-docx\`
+2. 编写 Python 脚本，使用 \`docx.Document()\` 构建文档
+3. **目录**条目必须使用**内部超链接**（internal hyperlink），使其在 Word 中可点击。在每个标题处添加书签（bookmark），然后创建指向该书签的超链接：
+
+\`\`\`python
+from docx import Document
+from docx.oxml.ns import qn
+from docx.oxml import OxmlElement
+
+doc = Document()
+
+# 辅助函数：为段落添加书签
+def add_bookmark(paragraph, bookmark_name):
+    start = OxmlElement('w:bookmarkStart')
+    start.set(qn('w:id'), str(id(bookmark_name)))
+    start.set(qn('w:name'), bookmark_name)
+    end = OxmlElement('w:bookmarkEnd')
+    end.set(qn('w:id'), str(id(bookmark_name)))
+    paragraph._p.insert(0, start)
+    paragraph._p.append(end)
+
+# 辅助函数：为段落添加内部超链接
+def add_internal_hyperlink(paragraph, bookmark_name, text):
+    hyperlink = OxmlElement('w:hyperlink')
+    hyperlink.set(qn('w:anchor'), bookmark_name)
+    run = OxmlElement('w:r')
+    rPr = OxmlElement('w:rPr')
+    color = OxmlElement('w:color')
+    color.set(qn('w:val'), '0563C1')
+    underline = OxmlElement('w:u')
+    underline.set(qn('w:val'), 'single')
+    rPr.append(color)
+    rPr.append(underline)
+    run.append(rPr)
+    text_elem = OxmlElement('w:t')
+    text_elem.text = text
+    run.append(text_elem)
+    hyperlink.append(run)
+    paragraph._p.append(hyperlink)
+
+# 示例：目录条目链接到标题
+heading_text = "第一章：概述"
+bookmark_id = "section1"
+
+# 写入目录条目（可点击）
+toc_para = doc.add_paragraph()
+add_internal_hyperlink(toc_para, bookmark_id, heading_text)
+
+# 写入实际标题并添加书签
+heading_para = doc.add_heading(heading_text, level=1)
+add_bookmark(heading_para, bookmark_id)
+
+doc.save('output.docx')
+\`\`\`
+
+### 关键规则
+- 每个目录条目**必须**是内部超链接（\`w:hyperlink\` 的 \`w:anchor\` 指向书签名称）
+- 每个被目录链接的标题**必须**有对应的 \`w:bookmarkStart\`/\`w:bookmarkEnd\`
+- 所有 .docx 生成——表格、标题、样式、超链接——都使用 \`python-docx\`
+- 通过 \`bash\` 运行脚本，将输出文件保存到用户指定的路径`,
 
   dirtyWorktree: `# 脏工作区
 

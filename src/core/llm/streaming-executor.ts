@@ -209,7 +209,7 @@ export class StreamingToolExecutorImpl {
 
             // bash manages its own timeout via timeout_ms parameter; spawn/wait_subagent never timeout
             // write/edit/multi_edit may trigger user confirmation dialogs (overwrite, permission) — no timeout
-            const noTimeoutTools = ["bash", "wait_for_subagent", "spawn_subagent", "write", "edit", "multi_edit"];
+            const noTimeoutTools = ["bash", "wait_for_subagent", "spawn_subagent", "subagent", "send_message", "interrupt_agent", "list_agents", "report", "write", "edit", "multi_edit"];
             const useTimeout = !noTimeoutTools.includes(tc.name);
 
             // P0-2: Route through ToolPipeline if initialized (5-layer waterfall)

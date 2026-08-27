@@ -12,7 +12,8 @@
 
 import { useState, useEffect, memo, useCallback } from "react";
 import { Bot, ChevronDown, ChevronRight, LoaderCircle, CheckCircle2, XCircle, Circle, Cpu, Wrench } from "lucide-react";
-import { getSubagentManager, type SubagentTask } from "../core/subagent/subagent";
+import { getSubagentRuntime } from "../core/subagent/index";
+import type { SubagentTask } from "../core/subagent/subagent";
 
 interface AgentInfo {
   id: string;
@@ -50,8 +51,10 @@ export const AgentRoster = memo(function AgentRoster({
   const [expandedAgent, setExpandedAgent] = useState<string | null>(null);
 
   const refreshAgents = useCallback(() => {
-    const manager = getSubagentManager();
-    const tasks = manager.getAllTasks();
+    // DSH-style: 从 SubagentRuntime 获取状态
+    // 对标 DSH ctx.subagents — 替代旧 SubagentManager
+    const runtime = getSubagentRuntime();
+    const tasks = runtime ? runtime.getAllTasks() : [];
     const agentList: AgentInfo[] = [];
 
     // 主智能体
@@ -84,8 +87,12 @@ export const AgentRoster = memo(function AgentRoster({
 
   useEffect(() => {
     refreshAgents();
-    const timer = setInterval(refreshAgents, 2000);
-    return () => clearInterval(timer);
+    // DSH-style: 订阅事件而非轮询
+    const runtime = getSubagentRuntime();
+    const unsubscribe = runtime?.subscribe(refreshAgents);
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
   }, [refreshAgents]);
 
   const toggleAgent = useCallback((id: string) => {

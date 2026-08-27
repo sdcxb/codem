@@ -36,6 +36,12 @@
 >
 > **v1.5.2 更新**：大文件性能修复 + Agent Loop 无上限改造 + 模型系统动态化 + Skills 增量搜索 + 全量测试 — ①**大文件流式分页读取**：Rust 新增 `read_file_lines` 命令，使用 `BufReader` 逐行扫描，内存占用 O(limit) 而非 O(file_size)，前端 `read` 工具和 `read_attachment` 改用分页 API，彻底解决数百 MB 文件分析时前后台卡死问题（对标 DSH TextRetainer 设计）②**Agentic Loop 无上限改造**：移除硬编码 `maxIterations` 上限（原 20 轮），改为 `while(true)` 无限循环（对标 DSH），新增三重安全阀：连续无进展检测（10 次）、Token 消耗上限（2M tokens）、子智能体有限迭代，根据触发原因输出不同停止提示 ③**记忆提取 API 400 修复**：`spawnForked` 深拷贝消息时丢失 `tool_calls` 和 `toolCallId` 字段导致 API 400 `missing field tool_call_id`，修复深拷贝逻辑保留完整字段 + 截断后清理孤儿 `tool` 消息 ④**模型系统动态化**：模型选择器和配置方案面板从写死列表改为从 `codem-dynamic-models` 存储动态获取（联动设置页面 API 刷新机制），更新内置"常规模式"和"经济模式"接入 DeepSeek-V4 系列，所有模式添加视觉理解 slot，删除旧的视觉代理模式 ⑤**Skills 市场增量搜索**：搜索优先查本地缓存（TTL 30 分钟），本地无结果时自动触发增量联网搜索（SkillHub 服务端搜索 API），搜索结果合并到缓存，`tags` 字段全面规范化防御 ⑥**终端切换崩溃修复**：`TerminalPanel` 中 `listen` 函数错误从 `__TAURI__.core` 获取改为 `__TAURI__.event` ⑦**权限弹窗位置修复**：`DecisionTray` 改为 `position: fixed` 定位，不再挤压主对话布局 ⑧**技能市场搜索崩溃修复**：`li.some is not a function` 错误，通过 `Array.isArray(s.tags)` 检查修复。11 文件修改（+558/-90 行），`tsc --noEmit` 零错误 + 113 套件 3947 测试全部通过（含新增 100 用例全量回归测试）。
 >
+> **v1.5.3-v1.5.4 更新**：引导消息立即注入 + Markdown 文件路径超链接 + 任务完成标签稳定显示 + 技能市场优化 — ①`GuidanceQueue` 新增 `unshift` 高优先级注入 + `AbortController` 中断当前流 ②`react-markdown` code 渲染器文件路径白名单识别 + 转换为 `<a>` 链接 ③`isTurnEnd` 逻辑修复 + 滚动重试 10 次/150ms 锚定到任务完成标签 ④`installSkillFromGitHubDir` GitHub Contents API 递归下载特定目录（规避 1.4GB 整包下载）+ 动态获取 `default_branch` ⑤技能市场搜索数据源清零修复（增量更新保留旧数据）⑥SkillHub 串行改并行 + 12s 超时保护 ⑦搜索超时保护 20s per-source ⑧micro-compact CACHE HIT skip ⑨block-code 单词渲染 ⑩file-link cwd 解析 ⑪发送按钮图标居中 ⑫sidebar tooltip+context menu ⑬step plan 动态命名 ⑭notebook CSS 修复 ⑮知识笔记本面板遮挡修复 ⑯dialog 权限修复文件选择器 ⑰scroll 监听绑定错误容器修复。
+>
+> **v1.5.5 更新**：Compaction 并发写入治根修复 + Bash 缓存失效修复 — ①`compactMessages` DB 操作原子化（对标 DSH `compactSurfaceRegion`：异步 LLM summarization 前置完成，然后同步一次性提交 `deleteMessagesByIds` → `createMessage` → `EventLog.append`，中间无 `await` 间隙，消除 `bad parameter or other API misuse` 并发错误）②新增 `setCompactionInProgress`/`isCompactionInProgress` 互斥标志（defense-in-depth，`saveMessages` 在 compaction 期间跳过）③移除 `compaction_end` 事件中的 `saveMessages` 调用（DB 是唯一真相源，不应把过时 UI store 写回）④bash 工具执行成功后清除整个 `readCache`（修复脚本写入文件后 read 仍命中旧缓存，45 行旧内容覆盖 227 行新内容）。4 文件修改，`tsc --noEmit` 零错误。
+>
+> **v1.6.0 更新**：SubagentRuntime 架构重构 + 技能市场 Trees API 改造 + GitHub Token 修复 — ①**SubagentRuntime 全面重构（对标 DSH）**：移除旧 `SubagentManager`（-642 行）和 `LLMSubagentSpawner`（-338 行），新增 DSH 风格 `SubagentRuntime` 持续后台子智能体运行时 + `InProcessSpawnProvider`，4 个新工具（`subagent`/`send_message`/`interrupt_agent`/`list_agents`），`ToolRegistry.createScope()` 隔离工具作用域，系统提示词对标 DSH 重写为后台默认运行 + 自动通知模式 ②**技能市场 Trees API 改造（移植 vercel-labs/skills 官方 CLI 逻辑）**：Contents API 逐层遍历（O(N×M) 次调用）→ Trees API 一次性获取全量文件树（1 次调用），在内存中搜索 SKILL.md，支持 30+ Agent 目录约定前缀（Claude/Cline/Goose/Codex 等），修复 `dreambigou/eli5` 和 `cloudflare/cloudflare-docs`（15296 文件大仓库）等安装失败问题 ③**GitHub Token 配置链路修复**：统一 Token 读取链路 ④i18n-templates 新增子智能体协作模板（+138 行）⑤42 文件修改（+1542/-1562 行），`tsc --noEmit` 零错误。
+>
 
 
 ![Codem 运行界面](screenshots/26720-1.png)
@@ -326,6 +332,35 @@ npm run tauri:build
 - 两种模式均使用内置 LLM 引擎直连 API，无需依赖外部进程
 
 ## 更新日志
+
+### 2026-08-27（v1.6.0）
+
+> 本次更新为重大架构重构 — SubagentRuntime 对标 DSH 全面重构 + 技能市场移植官方 CLI Trees API 逻辑 + GitHub Token 链路修复。
+
+**SubagentRuntime 全面重构（对标 DSH `SubagentRuntime` + `spawn` 模式）：**
+- 移除旧 `SubagentManager`（-642 行）和 `LLMSubagentSpawner`（-338 行），删除 `spawn_subagent` / `wait_for_subagent` 旧工具
+- 新增 DSH 风格 `SubagentRuntime` — 持续后台子智能体运行时 + `InProcessSpawnProvider`
+- 4 个新 DSH 风格工具：`subagent`（启动后台子智能体）、`send_message`（向运行中子智能体发消息）、`interrupt_agent`（请求中断）、`list_agents`（列出后台子智能体）
+- `ToolRegistry.createScope()` 隔离工具作用域（对标 Cordis `ctx.isolate('tools')`），子智能体可安全注册专属工具
+- `setGlobalSubagentRuntime` / `getSubagentRuntime` 全局访问（对标 DSH `ctx.provide('subagents', runtime)`）
+- 系统提示词对标 DSH 重写：后台默认运行 + 自动通知模式，无需显式 `wait_for`
+
+**技能市场 GitHub Trees API 改造（移植 vercel-labs/skills 官方 CLI 逻辑）：**
+- Contents API 逐层遍历（O(N×M) 次调用）→ Trees API 一次性获取全量文件树（1 次调用），在内存中搜索 SKILL.md
+- 移植官方 `PRIORITY_PREFIXES`，覆盖 Claude / Cline / Goose / Codex / Continue 等 30+ 种 Agent 目录约定（之前仅 4 个硬编码前缀）
+- `fetchGitHubRepoSkills`：Trees API 全量搜索 + 优先级排序 + Legacy fallback
+- `fetchGitHubSearchSkills`：每个仓库用 Trees API 搜索任意位置的 SKILL.md（之前仅尝试根目录）
+- `installSkillFromGitHubDir`：Trees API 获取全量树 → 内存筛选目录文件 → 精确下载（不再逐层遍历 + 前缀探测）
+- 修复 `dreambigou/eli5`（SKILL.md 在 `skills/eli5/` 子目录）、`cloudflare/cloudflare-docs`（15296 个文件的大仓库）等之前安装失败的技能
+
+**GitHub Token 配置链路修复：**
+- 统一 Token 读取链路，所有 GitHub 操作共享 `githubApiHeaders()`
+
+**其他：**
+- i18n-templates 新增子智能体协作提示词模板（+138 行）
+- workflow-engine 增强子智能体运行时集成
+- 测试文件全量适配新架构
+- `tsc --noEmit` 零错误，42 文件修改（+1542/-1562 行）
 
 ### 2026-08-19（v1.3.0）
 

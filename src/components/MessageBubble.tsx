@@ -10,6 +10,7 @@ import { Tooltip, TooltipTrigger, TooltipContent } from "./ui/tooltip";
 import { splitGraphemes } from "../core/llm/stream-reveal";
 import { InlineMessageEdit } from "./InlineMessageEdit";
 import { FeedbackButtons } from "./FeedbackButtons";
+import { getSubagentRuntime } from "../core/subagent/index";
 import { SlotBridge } from "../core/slots/SlotBridge";
 import { SourceReferences } from "./SourceReferences";
 import { ImageGallery } from "./ImageGallery";
@@ -120,17 +121,18 @@ const [status, setStatus] = useState<string>("init");
 const [summary, setSummary] = useState<string>("");
 
 useEffect(() => {
-// D2-1: 不回退到全局单例 — Provider 未就绪时使用 toolStatus 降级
-const manager = (() => { const ctx = tryGetCtx(); return ctx?.get('subagent') as any; })();
-if (!manager) {
-// Provider 未就绪 — 用 toolStatus 降级显示
+  // DSH-style: 从全局 SubagentRuntime 获取状态
+  // 对标 DSH ctx.subagents — 替代旧 SubagentManager
+  const runtime = getSubagentRuntime();
+if (!runtime) {
+// Runtime 未就绪 — 用 toolStatus 降级显示
 if (toolStatus === "done") setStatus("completed");
 else if (toolStatus === "error") setStatus("failed");
 else setStatus("running");
 return;
 }
 const check = () => {
-const task = manager.getTask(taskId);
+const task = runtime.getTask(taskId);
 if (task) {
 setStatus(task.status);
 if (task.result) setSummary(task.result.summary);
@@ -146,8 +148,11 @@ setStatus("running");
 }
 };
 check();
-const interval = setInterval(check, 2000);
-return () => clearInterval(interval);
+// DSH-style: 订阅事件而非轮询
+const unsubscribe = runtime.subscribe(check);
+return () => {
+  if (unsubscribe) unsubscribe();
+};
 }, [taskId, toolStatus]);
 
 const zh = getLang() === "zh";
@@ -726,18 +731,19 @@ const opLabel = tc.tool === 'create_note'
               name="conversation.node.tool"
               fallback={ToolCallGroup}
               items={message.toolCalls.map((tc): ToolCallCardProps => {
-                const isSubagent = tc.tool === "spawn_subagent";
-                const agentId = isSubagent ? tc.args?.agentId as string : null;
-                let agentName = isSubagent ? tc.args?.name as string : null;
+                // 支持新旧工具名
+                const isSubagent = tc.tool === "spawn_subagent" || tc.tool === "subagent";
+                const agentId = isSubagent ? (tc.args?.agentId || tc.args?.description) as string : null;
+                let agentName = isSubagent ? (tc.args?.name || tc.args?.description) as string : null;
                 if (!agentName && isSubagent && tc.result) {
-                  const nameMatch = tc.result.match(/(?:子智能体|Sub-agent)\s*"([^"]+)"/);
+                  const nameMatch = tc.result.match(/(?:子智能体|Sub-agent|后台子智能体)\s*([^\.\s,]+)/);
                   if (nameMatch) agentName = nameMatch[1];
                 }
-                const displayName = agentId
-                  ? `${agentName || (getLang() === "zh" ? "子智能体" : "Sub-agent")} (${agentId})`
+                const displayName = isSubagent
+                  ? `${agentName || (getLang() === "zh" ? "子智能体" : "Sub-agent")}`
                   : tc.tool;
                 const rawSummary = tc.args
-                  ? (tc.args.query || tc.args.file || tc.args.path || tc.args.title || tc.args.command || "")
+                  ? (tc.args.query || tc.args.file || tc.args.path || tc.args.title || tc.args.command || tc.args.prompt || tc.args.description || "")
                   : "";
                 return {
                   toolName: displayName,
@@ -751,13 +757,25 @@ const opLabel = tc.tool === 'create_note'
               title={`${message.toolCalls.length} ${S.bubble.toolCalls[lang]}`}
               defaultExpanded={toolsExpanded}
             />
-            {/* Subagent status polling for spawn_subagent tasks */}
-            {message.toolCalls.filter(tc =>
-              tc.tool === "spawn_subagent" &&
-              tc.result?.startsWith("SUBAGENT_TASK_ID:")
-            ).map((tc) => {
-              const taskId = tc.result!.split("\n")[0].replace("SUBAGENT_TASK_ID:", "");
-              const agentName = tc.args?.name as string;
+            {/* Subagent status polling — 支持 spawn_subagent (旧) 和 subagent (新) */}
+            {message.toolCalls.filter(tc => {
+              // 旧格式: tool=spawn_subagent, result 以 SUBAGENT_TASK_ID: 开头
+              if (tc.tool === "spawn_subagent" && tc.result?.startsWith("SUBAGENT_TASK_ID:")) return true;
+              // 新格式: tool=subagent, metadata.subagentId 存在
+              if (tc.tool === "subagent" && (tc.metadata as any)?.subagentId) return true;
+              // 新格式（前台模式）: tool=subagent, 有 result 但无 subagentId（一次性同步等待）
+              return false;
+            }).map((tc) => {
+              // 提取 taskId — 兼容新旧格式
+              let taskId: string;
+              let agentName: string | undefined;
+              if (tc.tool === "spawn_subagent") {
+                taskId = tc.result!.split("\n")[0].replace("SUBAGENT_TASK_ID:", "");
+                agentName = tc.args?.name as string;
+              } else {
+                taskId = (tc.metadata as any)?.subagentId as string;
+                agentName = tc.args?.description as string;
+              }
               return (
                 <SubagentStatus
                   key={`sub-${tc.id}`}

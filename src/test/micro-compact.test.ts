@@ -41,7 +41,8 @@ describe("P0-3: Micro-compact", () => {
 
   it("should compact old tool results for compactable tools", () => {
     // 10 tool calls = 20 messages (assistant + tool each), threshold is 12
-    const msgs = buildMessagesWithToolResults(10, "read", 2000);
+    // Use 5000 chars to exceed HEAD_CHARS + TAIL_CHARS + 200 = 4000 threshold
+    const msgs = buildMessagesWithToolResults(10, "read", 5000);
     const result = microCompact(msgs);
     expect(result.compactedCount).toBeGreaterThan(0);
     expect(result.charsSaved).toBeGreaterThan(0);
@@ -49,7 +50,7 @@ describe("P0-3: Micro-compact", () => {
     expect(result.messages).not.toBe(msgs);
     // Original messages should still have full content
     const originalToolMsg = msgs.find(m => m.role === "tool");
-    expect(originalToolMsg.content.length).toBe(2000);
+    expect(originalToolMsg.content.length).toBe(5000);
   });
 
   it("should NOT compact recent tool results (last 10 messages)", () => {
@@ -67,14 +68,14 @@ describe("P0-3: Micro-compact", () => {
     expect(result.compactedCount).toBe(0);
   });
 
-  it("should NOT compact results from spawn_subagent", () => {
-    const msgs = buildMessagesWithToolResults(10, "spawn_subagent", 2000);
+  it("should NOT compact results from subagent", () => {
+    const msgs = buildMessagesWithToolResults(10, "subagent", 2000);
     const result = microCompact(msgs);
     expect(result.compactedCount).toBe(0);
   });
 
-  it("should NOT compact results from wait_for_subagent", () => {
-    const msgs = buildMessagesWithToolResults(10, "wait_for_subagent", 2000);
+  it("should NOT compact results from send_message", () => {
+    const msgs = buildMessagesWithToolResults(10, "send_message", 2000);
     const result = microCompact(msgs);
     expect(result.compactedCount).toBe(0);
   });
@@ -89,16 +90,16 @@ describe("P0-3: Micro-compact", () => {
     const msgs = buildMessagesWithToolResults(10, "bash", 5000);
     const result = microCompact(msgs);
     const compactedMsg = result.messages.find(
-      m => m.role === "tool" && m.content.startsWith("[Tool result compacted"),
+      m => m.role === "tool" && m.content.startsWith("[Tool result pruned"),
     );
     expect(compactedMsg).toBeDefined();
     expect(compactedMsg!.content).toContain("bash");
     expect(compactedMsg!.content).toContain("chars");
-    expect(compactedMsg!.content).toContain("preview");
+    expect(compactedMsg!.content).toContain("pruned");
   });
 
   it("should detect already compacted messages", () => {
-    const msgs = buildMessagesWithToolResults(10, "read", 2000);
+    const msgs = buildMessagesWithToolResults(10, "read", 5000);
     const firstResult = microCompact(msgs);
     expect(isAlreadyMicroCompacted(firstResult.messages)).toBe(true);
     expect(isAlreadyMicroCompacted(msgs)).toBe(false);
@@ -119,7 +120,7 @@ describe("P0-3: Micro-compact", () => {
   });
 
   it("should compact lsp tool results", () => {
-    const msgs = buildMessagesWithToolResults(10, "lsp", 2000);
+    const msgs = buildMessagesWithToolResults(10, "lsp", 5000);
     const result = microCompact(msgs);
     expect(result.compactedCount).toBeGreaterThan(0);
   });

@@ -246,13 +246,23 @@ export class AgenticLoop {
   // Reset at the start of each run() call (new user message = new task).
   private readCache: Map<string, string> = new Map();   // path → last read content
   private writeCache: Map<string, string> = new Map();  // path → last written content
-  // Tracks subagent task IDs that have already been waited on in this run().
-  // Prevents the LLM from repeatedly calling wait_for_subagent for the same
-  // completed task across iterations (root cause of the "infinite wait" loop).
-  private waitedSubagents: Map<string, string> = new Map(); // taskId → cached result output
-  // Tracks subagent task IDs that have been spawned but NOT yet waited on.
-  // Prevents the LLM from spawning endless subagents without collecting results.
-  private spawnedSubagents: Set<string> = new Set(); // taskId (not yet waited on)
+  /**
+   * DSH-style: settlement 通过 Promise 网关注入。
+   * 不再用轮询检查 task 状态、不注入提醒消息。
+   * SubagentRuntime 在 dispose 时通过 settlementGate resolve Promise，
+   * agentic-loop 在 stop 条件处 await 这个 Promise，settlement 到达后
+   * 通知已写入 DB，下一轮 buildMessages 自然看到。
+   */
+  private pendingBackgroundSubagents: Map<string, Promise<void>> = new Map();
+  /** settlement 到达时的外部 resolver，供 runtime 调用 */
+  private settlementResolvers: Map<string, () => void> = new Map();
+  /** 已 settled 的子智能体 ID — 由 resolveSubagentSettlement 填充 */
+  private settledSubagentIds: Set<string> = new Set();
+  // 保留旧字段以兼容旧代码引用，但不再用于逻辑控制。
+  /** @deprecated 旧模式遗留 — 不再用于逻辑控制 */
+  private waitedSubagents: Map<string, string> = new Map();
+  /** @deprecated 旧模式遗留 — 不再用于逻辑控制 */
+  private spawnedSubagents: Set<string> = new Set();
   // Cross-session delegation tracking (same pattern as subagent tracking)
   private delegatedTasks: Set<string> = new Set(); // delegation task IDs (not yet waited on)
   private waitedDelegations: Map<string, string> = new Map(); // delegation taskId → cached result
@@ -626,7 +636,7 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
     this.readCache.clear();
     this.writeCache.clear();
     this.waitedSubagents.clear();
-    this.spawnedSubagents.clear();
+    this.spawnedSubagents.clear(); // no-op: 旧模式遗留
     this.toolsCalledInRun.clear();
     this.taskReminderSent = false;
     this.state.microCompactedThisRun = false;
@@ -1110,10 +1120,7 @@ planState.plan[this.state.iteration - 1].title = toolTitle;
 }
 yield { type: "step_progress", step: this.state.iteration, total: planState.total, title: toolTitle, steps: planState.plan };
 }
-        // Track spawn_subagent calls
-        if (event.type === "tool_start" && event.toolCall?.name === "spawn_subagent") {
-          // The task ID will be in the tool result, extract it later
-        }
+// DSH-style: 不再需要追踪 spawn_subagent 的工具启动事件
       }
       // P0: Finalize file change tracking after tools complete
       if (this.fileChangeTracker) {
@@ -1238,27 +1245,35 @@ yield { type: "step_progress", step: this.state.iteration, total: planState.tota
           // Continue the loop — don't stop
           continue;
         }
-        // Sub-agent guard: before stopping, check if there are spawned sub-agents
-        // that haven't been waited on yet. If so, inject a reminder instead of stopping.
-        if (this.spawnedSubagents.size > 0) {
-          const unwaitedIds = Array.from(this.spawnedSubagents);
-          const taskList = unwaitedIds.map(id => `  - task_id: "${id}"`).join("\n");
-          const reminder = `[SYSTEM REMINDER] You have ${unwaitedIds.length} sub-agent(s) that were spawned but NOT waited on. You MUST call wait_for_subagent for each task ID below to collect their results.\n\nUn-waited task IDs:\n${taskList}\n\nCall wait_for_subagent(task_id: "...") for EACH task ID above. Do NOT spawn new sub-agents. Do NOT finish without collecting results.`;
-          // Inject the reminder as a user message so the LLM sees it
-          this.getMessageStorage().createMessage({
-            id: `reminder-${Date.now()}`,
-            role: "user",
-            content: reminder,
-            timestamp: Date.now(),
-            status: "done",
-          }, sessionId);
-          // C5: EventLog dual-write
-          try { this.getEventLog().append(sessionId, "user_message", { messageId: `reminder-${Date.now()}`, content: reminder }); } catch (e) { console.warn('[agentic-loop.ts]', e) }
-          // Invalidate message cache so the reminder is included
-          this.msgCache = null;
-          console.warn(`[AgenticLoop] ${unwaitedIds.length} un-waited sub-agent(s) — injected wait_for_subagent reminder instead of stopping. IDs: ${unwaitedIds.join(", ")}`);
-          // Continue the loop — don't stop
-          continue;
+        // DSH-style: settlement 通过 Promise 网关等待，而非轮询检查/注入提醒。
+        // SubagentRuntime 在 dispose 时 resolve settlement Promise，
+        // agentic-loop 在此 await 它，settlement 通知已写入 DB，
+        // 下一轮 buildMessages 自然看到通知内容。
+        if (this.pendingBackgroundSubagents.size > 0) {
+          // 清理已 settled 的条目（由 resolveSubagentSettlement 标记）
+          const settledIds: string[] = [];
+          const pendingPromises: Promise<void>[] = [];
+          for (const [subId, promise] of this.pendingBackgroundSubagents) {
+            if (this.settledSubagentIds.has(subId)) {
+              settledIds.push(subId);
+            } else {
+              pendingPromises.push(promise);
+            }
+          }
+          for (const id of settledIds) {
+            this.pendingBackgroundSubagents.delete(id);
+            this.settlementResolvers.delete(id);
+            this.settledSubagentIds.delete(id);
+          }
+          // 如果仍有未 settled 的子智能体，await 它们的 settlement
+          if (pendingPromises.length > 0) {
+            console.log(`[AgenticLoop] Awaiting ${pendingPromises.length} background subagent settlement(s) — no polling, no injection.`);
+            // 等待至少一个 settlement 到达
+            await Promise.race(pendingPromises).catch(() => {});
+            // settlement 到达后，通知已写入 DB，下一轮 buildMessages 自然看到
+            // 不需要注入任何提醒消息
+            continue;
+          }
         }
         // Delegation guard: check if there are delegated tasks (cross-session)
         // that haven't been waited on yet.
@@ -1368,7 +1383,7 @@ yield { type: "step_progress", step: this.state.iteration, total: planState.tota
       run_terminal_command: "Running command",
       run_test: "Running tests",
       web_fetch: "Fetching web",
-      spawn_subagent: "Spawning sub-agent",
+      subagent: "Delegating to subagent", // 对标 DSH 工具名
       delegate_to_session: "Delegating to session",
       wait_for_delegation: "Waiting for delegation",
       query_session_result: "Querying session result",
@@ -1607,37 +1622,28 @@ yield { type: "step_progress", step: this.state.iteration, total: planState.tota
     // No need to write to database here
 
     // ===== Single-response deduplication =====
-    // Remove duplicate read calls and duplicate wait_for_subagent calls within one response
+    // DSH-style: 不再需要 spawn_subagent + wait_for_subagent 同轮次防护。
+    // 新的 subagent 工具默认后台运行，不需要 wait_for。
+    // 保留 delegate_to_session + wait_for_delegation 的同轮次防护。
     const seenReadPaths = new Set<string>();
     const seenWaitTaskIds = new Set<string>();
     const dedupedToolCalls: typeof currentToolCalls = [];
     const duplicateToolCalls: typeof currentToolCalls = [];
 
-    // P5: Sub-agent two-step enforcement — if the same response has both
-    // spawn_subagent AND wait_for_subagent, the wait calls are invalid because
-    // the task IDs from spawn haven't been returned yet (the LLM would be
-    // guessing task IDs). Reject wait calls with a clear error message.
-    // This replaces 60+ lines of "NEVER spawn+wait in same response" prompt rules.
-    // Also applies to delegate_to_session + wait_for_delegation (cross-session).
-    const hasSpawnInResponse = currentToolCalls.some(tc => tc.name === "spawn_subagent");
+    // P5: Cross-session delegation two-step enforcement (subagent 已移除)
     const hasDelegateInResponse = currentToolCalls.some(tc => tc.name === "delegate_to_session");
-    if (hasSpawnInResponse || hasDelegateInResponse) {
-      const waitCalls = currentToolCalls.filter(tc => tc.name === "wait_for_subagent");
+    if (hasDelegateInResponse) {
       const delegationWaitCalls = currentToolCalls.filter(tc => tc.name === "wait_for_delegation");
-      const allWaitCalls = [...waitCalls, ...delegationWaitCalls];
-      if (allWaitCalls.length > 0) {
-        console.warn(`[AgenticLoop] P5: Rejected ${allWaitCalls.length} wait call(s) in same response as spawn/delegate — task IDs not available yet`);
-        for (const wtc of allWaitCalls) {
-          const isDelegation = wtc.name === "wait_for_delegation";
+      if (delegationWaitCalls.length > 0) {
+        console.warn(`[AgenticLoop] P5: Rejected ${delegationWaitCalls.length} wait call(s) in same response as delegate — task IDs not available yet`);
+        for (const wtc of delegationWaitCalls) {
           yield {
             type: "tool_error",
             toolCall: wtc,
-            error: isDelegation
-              ? "Cannot wait_for_delegation in the same response as delegate_to_session — the task IDs are not available until the delegate results return. Send delegate_to_session calls first, then in your NEXT response use the returned task IDs to call wait_for_delegation."
-              : "Cannot wait_for_subagent in the same response as spawn_subagent — the task IDs are not available until the spawn results return. Send spawn_subagent calls first, then in your NEXT response use the returned task IDs to call wait_for_subagent.",
+            error: "Cannot wait_for_delegation in the same response as delegate_to_session — the task IDs are not available until the delegate results return. Send delegate_to_session calls first, then in your NEXT response use the returned task IDs to call wait_for_delegation.",
           };
         }
-        currentToolCalls = currentToolCalls.filter(tc => tc.name !== "wait_for_subagent" && tc.name !== "wait_for_delegation");
+        currentToolCalls = currentToolCalls.filter(tc => tc.name !== "wait_for_delegation");
       }
     }
 
@@ -1652,8 +1658,8 @@ yield { type: "step_progress", step: this.state.iteration, total: planState.tota
         }
         seenReadPaths.add(filePath);
       }
-      // Deduplicate wait_for_subagent and wait_for_delegation with the same task_id
-      if (tc.name === "wait_for_subagent" || tc.name === "wait_for_delegation") {
+      // Deduplicate wait_for_delegation with the same task_id (wait_for_subagent 已移除)
+      if (tc.name === "wait_for_delegation") {
         const taskId = tc.input?.task_id as string;
         // Within-response dedup: same task_id called multiple times in one response
         if (taskId && seenWaitTaskIds.has(taskId)) {
@@ -1661,8 +1667,7 @@ yield { type: "step_progress", step: this.state.iteration, total: planState.tota
           continue;
         }
         // Cross-iteration dedup: task_id already collected in a previous iteration.
-        const isSubagent = tc.name === "wait_for_subagent";
-        const cache = isSubagent ? this.waitedSubagents : this.waitedDelegations;
+        const cache = this.waitedDelegations;
         if (taskId && cache.has(taskId)) {
           console.warn(`[AgenticLoop] Single-response dedup: ${tc.name}(${taskId}) already collected in previous iteration — skipping`);
           duplicateToolCalls.push(tc);
@@ -1675,7 +1680,7 @@ yield { type: "step_progress", step: this.state.iteration, total: planState.tota
     if (duplicateToolCalls.length > 0) {
       console.warn(`[AgenticLoop] Removed ${duplicateToolCalls.length} duplicate tool calls in same response`);
       for (const dtc of duplicateToolCalls) {
-        const isCrossIterWait = (dtc.name === "wait_for_subagent" || dtc.name === "wait_for_delegation") &&
+        const isCrossIterWait = dtc.name === "wait_for_delegation" && // wait_for_subagent 已移除
           (this.waitedSubagents.has(dtc.input?.task_id as string) || this.waitedDelegations.has(dtc.input?.task_id as string));
         yield {
           type: "tool_error",
@@ -1846,17 +1851,16 @@ yield { type: "step_progress", step: this.state.iteration, total: planState.tota
           }
         }
 
-        // WAIT_FOR_SUBAGENT / WAIT_FOR_DELEGATION: if this task was already waited on in a previous iteration,
+        // WAIT_FOR_DELEGATION: if this task was already waited on in a previous iteration,
         // return the cached result and tell the LLM to stop calling wait for it.
-        // This prevents the "infinite wait" loop where the LLM repeatedly calls
-        // wait for already-completed tasks across iterations.
-        if (name === "wait_for_subagent" || name === "wait_for_delegation") {
+        // (wait_for_subagent 已移除)
+        if (name === "wait_for_delegation") {
           const taskId = typeof args.task_id === "string" ? args.task_id : "";
           console.log(`[AgenticLoop] ${name} called: task_id="${taskId}", args=${JSON.stringify(args).substring(0, 200)}`);
           if (!taskId) {
             console.warn(`[AgenticLoop] ${name} called WITHOUT task_id! Full args:`, JSON.stringify(args));
           }
-          const cache = name === "wait_for_subagent" ? this.waitedSubagents : this.waitedDelegations;
+          const cache = this.waitedDelegations;
           if (taskId && cache.has(taskId)) {
             const cachedResult = cache.get(taskId)!;
             console.warn(`[AgenticLoop] ${name}(${taskId}) CACHE HIT — already collected in a previous iteration`);
@@ -1902,26 +1906,25 @@ yield { type: "step_progress", step: this.state.iteration, total: planState.tota
           this.readCache.delete(filePath);
         }
 
-        // Track waited subagent/delegation results for cross-iteration deduplication
-        if ((name === "wait_for_subagent" || name === "wait_for_delegation") && result.output) {
+        // Track waited delegation results for cross-iteration deduplication (wait_for_subagent 已移除)
+        if (name === "wait_for_delegation" && result.output) {
           const taskId = typeof args.task_id === "string" ? args.task_id : "";
           if (taskId) {
-            if (name === "wait_for_subagent") {
-              this.waitedSubagents.set(taskId, result.output);
-              this.spawnedSubagents.delete(taskId); // Mark as waited on
-            } else {
-              this.waitedDelegations.set(taskId, result.output);
-              this.delegatedTasks.delete(taskId); // Mark as waited on
-            }
+            this.waitedDelegations.set(taskId, result.output);
+            this.delegatedTasks.delete(taskId);
           }
         }
-        // Track spawned subagent task IDs to prevent endless spawning
-        if (name === "spawn_subagent" && result.output) {
-          // Extract task ID from the output (format: SUBAGENT_TASK_ID:sub-xxx)
-          const match = result.output.match(/SUBAGENT_TASK_ID:(sub-[^\s\n]+)/);
-          if (match && match[1]) {
-            this.spawnedSubagents.add(match[1]);
-            console.log(`[AgenticLoop] Tracked spawned subagent: ${match[1]} (total un-waited: ${this.spawnedSubagents.size})`);
+        // DSH-style: subagent 工具不再返回 SUBAGENT_TASK_ID 格式。
+        // 后台 subagent 的 settlement 通知由 SubagentRuntime 自动注入 inbox。
+        // 追踪后台子智能体 — 用于保持 agentic-loop 存活直到 settlement 到达
+        if (name === "subagent" && result.metadata) {
+          const subagentId = (result.metadata as any)?.subagentId as string;
+          if (subagentId) {
+            // DSH-style: 注册 settlement Promise，runtime dispose 时 resolve
+            const gate = Promise.withResolvers<void>();
+            this.pendingBackgroundSubagents.set(subagentId, gate.promise);
+            this.settlementResolvers.set(subagentId, () => gate.resolve());
+            console.log(`[AgenticLoop] Registered settlement gate for background subagent: ${subagentId}`);
           }
         }
         // Track delegated task IDs to prevent endless delegation
@@ -1962,7 +1965,7 @@ yield { type: "step_progress", step: this.state.iteration, total: planState.tota
             typeof args.path === "string") {
           result.output += `\n\n[Guidance] 写入已成功完成。请勿重复写入同一文件。请直接向用户报告结果并结束任务，不要再调用任何工具。`;
         }
-        return { id: "", name, input: args, output: result.output, status: "completed" as const };
+        return { id: "", name, input: args, output: result.output, status: "completed" as const, metadata: result.metadata };
       },
     )) {
       switch (event.type) {
@@ -2728,6 +2731,20 @@ ${truncatedConv}`;
     this.currentSnapshotId = null;
   }
 
+  /**
+   * DSH-style: SubagentRuntime 在 dispose 时调用此方法，
+   * resolve settlement Promise，唤醒正在 await 的 agentic-loop。
+   * 替代旧的轮询检查 + 消息注入机制。
+   */
+  resolveSubagentSettlement(childId: string): void {
+    const resolve = this.settlementResolvers.get(childId);
+    if (resolve) {
+      resolve();
+      this.settledSubagentIds.add(childId);
+      console.log(`[AgenticLoop] Settlement gate resolved for ${childId}`);
+    }
+  }
+
   abort() {
     this.abortController?.abort();
     this.executor.abortAll();
@@ -2788,7 +2805,7 @@ ${truncatedConv}`;
    *
    * This is NOT time-based — it's a deterministic state check:
    * - Did the user ask to "save/write/create" a file? → check if write was called
-   * - Did the user ask to "use subagents"? → check if spawn_subagent was called
+   * - Did the user ask to "use subagents"? → check if subagent was called
    * - Did the user ask to "summarize/combine"? → check if write was called (output)
    *
    * Only triggers ONCE per run() to avoid infinite reminders.
@@ -2825,12 +2842,12 @@ ${truncatedConv}`;
     // Check: user asked to use subagents, but none were spawned
     const asksForSubagent =
       /子智能体|子代理|sub.?agent|subagent|分别用/.test(msg);
-    const hasSpawned = this.toolsCalledInRun.has("spawn_subagent");
+    const hasSpawned = this.toolsCalledInRun.has("subagent"); // DSH 工具名
 
     if (asksForSubagent && !hasSpawned) {
       missing.push(zh
-        ? `用户要求使用子智能体来完成任务，但你没有调用 spawn_subagent 工具。请立即使用 spawn_subagent 工具派发子智能体。`
-        : `The user asked to use sub-agents, but you didn't call spawn_subagent. Please use spawn_subagent now to delegate the work.`
+        ? `用户要求使用子智能体来完成任务，但你没有调用 subagent 工具。请立即使用 subagent 工具派发子智能体。`
+        : `The user asked to use sub-agents, but you didn't call subagent. Please use subagent now to delegate the work.`
       );
     }
 
