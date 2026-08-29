@@ -209,6 +209,7 @@ import { BootSplash } from "./components/BootSplash";
 import { WorkspaceBackdrop } from "./components/WorkspaceBackdrop";
 import { ToastContainer } from "./components/ToastNotification";
 import { ChatPanel } from "./components/ChatPanel";
+import { FileLinkContextMenu } from "./components/FileLinkContextMenu";
 import { Sidebar } from "./components/Sidebar";
 import { TerminalPanel } from "./components/TerminalPanel";
 import { FileExplorer } from "./components/FileExplorer";
@@ -2620,6 +2621,7 @@ abortControllersRef.current.clear();
       />
       <SlotBridge name="app.workspace-backdrop" fallback={WorkspaceBackdrop} />
       <SlotBridge name="app.toast-container" fallback={ToastContainer}  />
+      <FileLinkContextMenu />
       <SlotBridge name="app.titlebar" fallback={TitleBar}
         sidebarOpen={sidebarOpen}
         onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}

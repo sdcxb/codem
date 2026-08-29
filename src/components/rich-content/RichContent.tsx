@@ -310,6 +310,16 @@ export const RichContent = memo(function RichContent({
       <ReactMarkdown
         remarkPlugins={[remarkGfm, remarkMath]}
         rehypePlugins={[rehypeKatex]}
+        urlTransform={(url) => {
+          // Allow file:// protocol for local file path links
+          if (url.startsWith("file://")) return url;
+          // For everything else, use default behavior (allows https, http, mailto)
+          const colon = url.indexOf(":");
+          if (colon === -1) return url; // relative URL
+          const proto = url.slice(0, colon);
+          if (/^(https?|ircs?|mailto|xmpp)$/i.test(proto)) return url;
+          return "";
+        }}
         components={{
           code: codeRenderer,
           table: tableRenderer,
@@ -320,6 +330,8 @@ export const RichContent = memo(function RichContent({
           ),
           // 链接：文件路径通过 Tauri 打开文件管理器，外部 URL 在浏览器打开
           a: ({ href, children, ...props }) => {
+            // 诊断日志 — 检查 a 渲染器是否被调用
+            console.log('[RichContent a renderer] href=', JSON.stringify(href), 'children=', String(children));
             const isExternal = href && (/^https?:\/\//i.test(href) || /^mailto:/i.test(href));
             if (isExternal) {
               return (

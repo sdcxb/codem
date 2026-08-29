@@ -9,7 +9,8 @@
  *   If that fails (file doesn't exist), fall back to `open_file_external`.
  *
  * Right-click (context menu) support:
- * - Right-clicking a file link shows "Open Containing Folder" and "Open File".
+ * - Right-clicking a file link shows a custom context menu with:
+ *   "Open Containing Folder", "Open File", "Copy Path".
  */
 
 /** Global cwd — set by App.tsx when project changes. */
@@ -37,29 +38,60 @@ export function resolveWorkspacePath(cwd: string | undefined, path: string): str
   return `${base}/${rel}`;
 }
 
-/** Open a file link — call from onClick or onContextMenu. */
-export async function openFileLink(rawHref: string): Promise<void> {
-  if (!rawHref) return;
-
-  // Strip file:// protocol prefix and decode percent-encoded characters.
-  // auto-link-paths.ts generates URLs like file:///D:%5Cpath%5Cfile.txt
-  // to ensure CommonMark parses them as valid links.
+/**
+ * Resolve a raw href (which may be file:// URL or percent-encoded) into
+ * an absolute local file path. Exported for the context menu.
+ */
+export async function resolveFilePath(rawHref: string): Promise<string> {
   let href = rawHref;
   if (href.startsWith("file://")) {
     href = href.replace(/^file:\/\/\/?/, "");
     try {
       href = decodeURIComponent(href);
     } catch {
-      // keep as-is if decoding fails
+      // keep as-is
     }
   } else if (href.includes("%5C") || href.includes("%5c")) {
-    // Legacy: direct percent-encoded paths without file:// prefix
     try {
       href = decodeURIComponent(href);
     } catch {
       href = rawHref;
     }
   }
+
+  // External URLs are not file paths
+  if (/^https?:\/\//i.test(href) || /^mailto:/i.test(href)) return "";
+
+  let absPath = href;
+  if (!isAbsolutePath(href)) {
+    let cwd = globalCwd;
+    if (!cwd) {
+      const { invoke } = (window as any).__TAURI__?.core || {};
+      if (invoke) {
+        try {
+          cwd = (await invoke("get_default_cwd")) as string;
+        } catch (err) {
+          console.error("[resolveFilePath] Failed to get CWD:", err);
+        }
+      }
+    }
+    if (cwd) {
+      absPath = resolveWorkspacePath(cwd, href);
+      if (/^[A-Z]:\\/i.test(cwd)) {
+        absPath = cwd.replace(/[\\/]+$/, "") + "\\" + href.replace(/\//g, "\\");
+      }
+    }
+  }
+
+  return absPath;
+}
+
+/** Open a file link — call from onClick or context menu. */
+export async function openFileLink(rawHref: string): Promise<void> {
+  if (!rawHref) return;
+
+  const absPath = await resolveFilePath(rawHref);
+  if (!absPath) return;
 
   const { invoke } = (window as any).__TAURI__?.core || {};
   if (!invoke) {
@@ -68,33 +100,12 @@ export async function openFileLink(rawHref: string): Promise<void> {
   }
 
   // External URLs — open in system browser
-  if (/^https?:\/\//i.test(href) || /^mailto:/i.test(href)) {
-    window.open(href, "_blank");
+  if (/^https?:\/\//i.test(rawHref) || /^mailto:/i.test(rawHref)) {
+    window.open(rawHref, "_blank");
     return;
   }
 
-  // Resolve relative paths against workspace cwd
-  let absPath = href;
-  if (!isAbsolutePath(href)) {
-    // Use globalCwd first (set by App.tsx), then fall back to Tauri command
-    let cwd = globalCwd;
-    if (!cwd) {
-      try {
-        cwd = (await invoke("get_default_cwd")) as string;
-      } catch (err) {
-        console.error("[openFileLink] Failed to get CWD:", err);
-      }
-    }
-    if (cwd) {
-      absPath = resolveWorkspacePath(cwd, href);
-      // Normalize separators for Windows
-      if (/^[A-Z]:\\/i.test(cwd)) {
-        absPath = cwd.replace(/[\\/]+$/, "") + "\\" + href.replace(/\//g, "\\");
-      }
-    }
-  }
-
-  console.log(`[openFileLink] href=${href}, absPath=${absPath}`);
+  console.log(`[openFileLink] absPath=${absPath}`);
 
   // Try to reveal the file in file manager (highlights the file)
   try {
@@ -105,7 +116,6 @@ export async function openFileLink(rawHref: string): Promise<void> {
   }
 
   // If reveal fails, try opening the parent directory
-  // Strip the filename and try to open the directory
   try {
     const lastSep = Math.max(absPath.lastIndexOf("\\"), absPath.lastIndexOf("/"));
     if (lastSep > 0) {
@@ -125,6 +135,69 @@ export async function openFileLink(rawHref: string): Promise<void> {
   }
 }
 
+/**
+ * Open a file directly (not reveal in folder, but open the file itself).
+ */
+export async function openFileDirectly(rawHref: string): Promise<void> {
+  const absPath = await resolveFilePath(rawHref);
+  if (!absPath) return;
+
+  const { invoke } = (window as any).__TAURI__?.core || {};
+  if (!invoke) return;
+
+  try {
+    await invoke("open_file_external", { path: absPath });
+  } catch (err) {
+    console.error("[openFileDirectly] failed:", err);
+  }
+}
+
+/**
+ * Copy a file path to clipboard.
+ */
+export async function copyFilePath(rawHref: string): Promise<void> {
+  const absPath = await resolveFilePath(rawHref);
+  if (!absPath) return;
+  try {
+    await navigator.clipboard.writeText(absPath);
+  } catch (err) {
+    console.error("[copyFilePath] failed:", err);
+  }
+}
+
+// ===== Custom Context Menu =====
+
+interface MenuState {
+  visible: boolean;
+  x: number;
+  y: number;
+  href: string;
+}
+
+let menuState: MenuState = { visible: false, x: 0, y: 0, href: "" };
+const listeners = new Set<() => void>();
+
+function notifyListeners() {
+  for (const fn of listeners) fn();
+}
+
+/** Subscribe to context menu state changes. Returns an unsubscribe function. */
+export function subscribeFileLinkMenu(fn: () => void): () => void {
+  listeners.add(fn);
+  return () => listeners.delete(fn);
+}
+
+/** Get current context menu state. */
+export function getFileLinkMenuState(): MenuState {
+  return menuState;
+}
+
+/** Close the context menu. */
+export function closeFileLinkMenu(): void {
+  menuState = { ...menuState, visible: false };
+  notifyListeners();
+}
+
 /** onClick handler for file links in markdown. */
 export function handleFileLinkClick(e: React.MouseEvent<HTMLAnchorElement>, href: string) {
   // Left-click only; right-click is handled by onContextMenu
@@ -134,11 +207,12 @@ export function handleFileLinkClick(e: React.MouseEvent<HTMLAnchorElement>, href
   void openFileLink(href);
 }
 
-/** onContextMenu handler — shows native context menu with "Open Containing Folder". */
+/** onContextMenu handler — shows custom context menu with file operations. */
 export function handleFileLinkContextMenu(e: React.MouseEvent<HTMLAnchorElement>, href: string) {
   // Only handle file paths, not external URLs
   if (!href || /^https?:\/\//i.test(href) || /^mailto:/i.test(href)) return;
   e.preventDefault();
   e.stopPropagation();
-  void openFileLink(href);
+  menuState = { visible: true, x: e.clientX, y: e.clientY, href };
+  notifyListeners();
 }

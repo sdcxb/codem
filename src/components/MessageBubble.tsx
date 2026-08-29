@@ -591,6 +591,14 @@ setTimeout(() => setCopied(false), 2000);
               />
             ) : (
               <ReactMarkdown
+                urlTransform={(url) => {
+                  if (url.startsWith("file://")) return url;
+                  const colon = url.indexOf(":");
+                  if (colon === -1) return url;
+                  const proto = url.slice(0, colon);
+                  if (/^(https?|ircs?|mailto|xmpp)$/i.test(proto)) return url;
+                  return "";
+                }}
                 components={{
                   ...markdownComponents,
                   hr: () => <div className="unified-separator" />,

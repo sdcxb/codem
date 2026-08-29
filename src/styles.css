@@ -8489,6 +8489,86 @@ border-bottom: 1px solid var(--accent);
   padding: 10px 12px;
 }
 
+/* File Link Context Menu — 适配所有皮肤（default/hub/dream × light/dark） */
+.file-link-context-menu {
+  min-width: 200px;
+  background: var(--dropdown-bg);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-popover);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.file-link-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  transition: var(--transition-color);
+  text-align: left;
+  width: 100%;
+}
+
+.file-link-menu-item:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.file-link-menu-item:active {
+  background: var(--dropdown-hover);
+}
+
+.file-link-menu-item svg {
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+.file-link-menu-item:hover svg {
+  color: var(--accent);
+}
+
+/* Hub 皮肤：深色不透明面板 */
+[data-skin="hub"] .file-link-context-menu {
+  background: var(--dropdown-bg);
+  border-color: var(--border-primary);
+}
+
+/* Dream 皮肤：半透明毛玻璃面板 */
+[data-skin="dream"] .file-link-context-menu {
+  background: var(--dream-bg-panel, var(--dropdown-bg));
+  border-color: var(--dream-border-color, var(--border-primary));
+  backdrop-filter: blur(var(--dream-blur-px, 12px)) saturate(1.4);
+  -webkit-backdrop-filter: blur(var(--dream-blur-px, 12px)) saturate(1.4);
+}
+
+[data-skin="dream"] .file-link-menu-item {
+  color: var(--dream-text-main, var(--text-primary));
+}
+
+[data-skin="dream"] .file-link-menu-item:hover {
+  background: var(--bg-hover);
+}
+
+[data-skin="dream"] .file-link-menu-item svg {
+  color: var(--dream-text-muted, var(--text-secondary));
+}
+
+[data-skin="dream"] .file-link-menu-item:hover svg {
+  color: var(--dream-accent, var(--accent));
+}
+
 /* Slash Command Menu */
 .slash-command-menu {
   position: relative;
