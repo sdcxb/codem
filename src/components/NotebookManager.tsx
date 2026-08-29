@@ -269,7 +269,7 @@ export function NotebookManager({ onClose, onOpenNotebookChat, onOpenWorkspace }
       const { open } = await import('@tauri-apps/plugin-dialog');
       const selected = await open({
         multiple: true,
-        filters: [{ name: 'Text & Code', extensions: ['txt', 'md', 'json', 'yaml', 'xml', 'csv', 'ts', 'js', 'py', 'java', 'go', 'rs', 'c', 'cpp', 'sh', 'sql', 'html', 'css', 'log', 'pdf', 'docx'] }],
+        filters: [{ name: 'Text & Code', extensions: ['txt', 'md', 'json', 'yaml', 'xml', 'csv', 'ts', 'js', 'py', 'java', 'go', 'rs', 'c', 'cpp', 'sh', 'sql', 'html', 'css', 'log', 'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'] }],
       });
       if (selected) {
         const paths: string[] = Array.isArray(selected)

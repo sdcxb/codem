@@ -2,7 +2,7 @@
  * 笔记本式知识管理 — 文本提取器
  *
  * 从不同来源（文件、文本、URL）提取纯文本。
- * 不依赖任何外部库，PDF 支持为可选（后续 F7）。
+ * 支持：纯文本文件、PDF、Word(.docx)、Excel(.xlsx)、PPT(.pptx)。
  */
 
 import type { NotebookSource } from './types';
@@ -24,13 +24,15 @@ const TEXT_EXTENSIONS = new Set([
   '.dockerfile', '.gitignore', '.editorconfig',
 ]);
 
+/** Office 文件扩展名 — 由 mammoth/JSZip/xlsx 动态提取 */
+const OFFICE_EXTENSIONS = new Set(['.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx']);
+
 const BINARY_EXTENSIONS = new Set([
   '.png', '.jpg', '.jpeg', '.gif', '.bmp', '.ico', '.webp', '.svg',
   '.mp3', '.mp4', '.wav', '.avi', '.mov', '.mkv', '.flv',
   '.zip', '.tar', '.gz', '.rar', '.7z',
   '.exe', '.dll', '.so', '.dylib', '.bin',
-  '.pdf', // PDF handled separately (optional F7)
-  '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', // Office files
+  '.pdf', // PDF handled separately
 ]);
 
 // ========== 主提取函数 ==========
@@ -76,8 +78,13 @@ async function extractFromFile(source: NotebookSource): Promise<ExtractResult> {
     return await extractFromPdf(source);
   }
 
+  // Check if Office file (Word/Excel/PPT) — handled by dedicated extractors
+  if (OFFICE_EXTENSIONS.has(ext)) {
+    return await extractFromOffice(source, ext);
+  }
+
   // Check if binary
-  if (BINARY_EXTENSIONS.has(ext) && ext !== '.pdf') {
+  if (BINARY_EXTENSIONS.has(ext)) {
     return { text: '', error: `Binary file type '${ext}' is not supported. Please use text-based files.` };
   }
 
@@ -262,6 +269,166 @@ async function extractFromPdf(source: NotebookSource): Promise<ExtractResult> {
     return { text };
   } catch (e) {
     return { text: '', error: `Failed to extract PDF text: ${e instanceof Error ? e.message : String(e)}` };
+  }
+}
+
+// ========== Office 文件提取（Word/Excel/PPT） ==========
+
+async function extractFromOffice(source: NotebookSource, ext: string): Promise<ExtractResult> {
+  try {
+    const isTauri = !!(window as any).__TAURI__;
+    if (!isTauri) {
+      return { text: '', error: 'Office file reading requires Tauri environment' };
+    }
+
+    const { invoke } = (window as any).__TAURI__.core;
+    // Read file as binary (base64)
+    const base64: string = await invoke('read_file', {
+      path: source.filePath,
+      encoding: 'base64',
+    });
+
+    if (!base64 || base64.length < 10) {
+      return { text: '', error: 'File is empty or unreadable' };
+    }
+
+    // Convert base64 to Uint8Array
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+
+    // Dispatch by extension
+    if (ext === '.docx' || ext === '.doc') {
+      return await extractFromWord(bytes);
+    } else if (ext === '.xlsx' || ext === '.xls') {
+      return await extractFromExcel(bytes);
+    } else if (ext === '.pptx' || ext === '.ppt') {
+      return await extractFromPptx(bytes);
+    }
+
+    return { text: '', error: `Unsupported Office file type: ${ext}` };
+  } catch (e) {
+    return { text: '', error: `Failed to extract Office file: ${e instanceof Error ? e.message : String(e)}` };
+  }
+}
+
+/** 从 Word (.docx) 提取文本 — 优先 mammoth，降级 JSZip */
+async function extractFromWord(bytes: Uint8Array): Promise<ExtractResult> {
+  // 优先使用 mammoth.js 提取 HTML，再转为纯文本
+  try {
+    const mammoth = await import('mammoth/mammoth.browser.js');
+    const result = await mammoth.convertToHtml({ arrayBuffer: bytes.buffer.slice(0) as ArrayBuffer });
+    if (result.value && result.value.trim()) {
+      // HTML → 纯文本
+      const text = stripHtml(result.value);
+      if (text.trim()) {
+        return { text };
+      }
+    }
+  } catch (mammothErr) {
+    console.warn('[Extractor] mammoth.js failed, falling back to JSZip:', mammothErr);
+  }
+
+  // 降级 1：用 JSZip 解压并提取纯文本
+  try {
+    const JSZip = (await import('jszip')).default;
+    const zip = await JSZip.loadAsync(bytes);
+    const docXml = zip.file('word/document.xml');
+    if (docXml) {
+      const xml = await docXml.async('text');
+      const extractedText = xml
+        .replace(/<w:p[^>]*>/g, '\n')
+        .replace(/<[^>]+>/g, '')
+        .replace(/&amp;/g, '&')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'")
+        .trim();
+      if (extractedText) {
+        return { text: extractedText };
+      }
+    }
+  } catch (zipErr) {
+    console.warn('[Extractor] JSZip fallback failed:', zipErr);
+  }
+
+  return { text: '', error: '无法解析此 DOCX 文件，可能是格式不兼容或文件已损坏。' };
+}
+
+/** 从 Excel (.xlsx) 提取文本 — 使用 SheetJS (xlsx) */
+async function extractFromExcel(bytes: Uint8Array): Promise<ExtractResult> {
+  try {
+    const XLSX = await import('xlsx');
+    const workbook = XLSX.read(bytes, { type: 'array' });
+    const textParts: string[] = [];
+
+    for (const sheetName of workbook.SheetNames) {
+      const sheet = workbook.Sheets[sheetName];
+      // 转为 CSV 格式的文本
+      const csv = XLSX.utils.sheet_to_csv(sheet, { FS: '\t', RS: '\n' });
+      if (csv && csv.trim()) {
+        textParts.push(`=== ${sheetName} ===`);
+        textParts.push(csv);
+      }
+    }
+
+    const text = textParts.join('\n').trim();
+    if (text) {
+      return { text };
+    }
+    return { text: '', error: 'Excel 文件不包含可提取的文本数据。' };
+  } catch (e) {
+    return { text: '', error: `Excel 文件解析失败: ${e instanceof Error ? e.message : String(e)}` };
+  }
+}
+
+/** 从 PPT (.pptx) 提取文本 — 使用 JSZip 解压 XML */
+async function extractFromPptx(bytes: Uint8Array): Promise<ExtractResult> {
+  try {
+    const JSZip = (await import('jszip')).default;
+    const zip = await JSZip.loadAsync(bytes);
+
+    const textParts: string[] = [];
+    // PPTX 的幻灯片文件在 ppt/slides/slide1.xml, slide2.xml, ...
+    const slideFiles = Object.keys(zip.files)
+      .filter(name => /^ppt\/slides\/slide\d+\.xml$/i.test(name))
+      .sort((a, b) => {
+        const numA = parseInt(a.match(/slide(\d+)/)?.[1] || '0', 10);
+        const numB = parseInt(b.match(/slide(\d+)/)?.[1] || '0', 10);
+        return numA - numB;
+      });
+
+    for (const slideFile of slideFiles) {
+      const file = zip.file(slideFile);
+      if (file) {
+        const xml = await file.async('text');
+        // 提取 <a:t> 标签内的文本
+        const matches = xml.match(/<a:t[^>]*>([^<]*)<\/a:t>/g) || [];
+        const slideText = matches
+          .map(m => m.replace(/<[^>]+>/g, ''))
+          .join(' ')
+          .replace(/&amp;/g, '&')
+          .replace(/&lt;/g, '<')
+          .replace(/&gt;/g, '>')
+          .replace(/&quot;/g, '"')
+          .replace(/&#39;/g, "'")
+          .trim();
+        if (slideText) {
+          textParts.push(slideText);
+        }
+      }
+    }
+
+    const text = textParts.join('\n\n').trim();
+    if (text) {
+      return { text };
+    }
+    return { text: '', error: 'PPT 文件不包含可提取的文本数据。' };
+  } catch (e) {
+    return { text: '', error: `PPT 文件解析失败: ${e instanceof Error ? e.message : String(e)}` };
   }
 }
 
