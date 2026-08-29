@@ -233,6 +233,54 @@ function calculateContentSimilarity(oldContent: string, newContent: string): num
 /** Threshold below which we block the overwrite */
 const OVERWRITE_SIMILARITY_THRESHOLD = 0.1;
 
+// ========== Structured file_paths extraction from tool output ==========
+
+/**
+ * Extract file paths from tool output text (e.g. bash stdout).
+ *
+ * This provides structured metadata so the UI can render clickable file links
+ * without relying on the LLM to format paths in its response.
+ *
+ * Matching rules (conservative — avoid false positives):
+ * - Windows absolute: C:\path\file.ext
+ * - Unix absolute: /home/user/file.ext
+ * - Relative with separator: ./src/file.ext or src/./file.ext
+ * - Must end with a known file extension
+ * - De-duplicated, max 20 results
+ */
+const FILE_EXT_REGEX = /\.(md|txt|json|yaml|yml|ts|tsx|js|jsx|mjs|cjs|py|sh|bat|ps1|css|scss|less|html|htm|svg|png|jpg|jpeg|gif|bmp|webp|ico|toml|ini|cfg|conf|rs|go|java|c|cpp|cc|h|hpp|sql|xml|csv|log|env|lock|gitignore|dockerfile|makefile|cmake|gradle|kt|swift|rb|php|vue|svelte|astro|docx|xlsx|pptx|pdf|zip|tar|gz|rar|7z|wav|mp3|mp4|avi|mov|webm|ttf|otf|woff|woff2|eot)$/i;
+
+export function extractFilePathsFromText(text: string): string[] {
+  if (!text) return [];
+  const paths: string[] = [];
+  const seen = new Set<string>();
+
+  // Windows absolute: C:\path\file.ext or C:/path/file.ext
+  const winRegex = /[A-Za-z]:[\\/]\S+\.[a-zA-Z0-9]{1,10}/g;
+  // Unix absolute: /home/user/file.ext
+  const unixRegex = /\/[A-Za-z]\S*\.[a-zA-Z0-9]{1,10}/g;
+  // Relative with ./: ./src/file.ext
+  const relRegex = /\.\/\S+\.[a-zA-Z0-9]{1,10}/g;
+
+  for (const regex of [winRegex, unixRegex, relRegex]) {
+    let m: RegExpExecArray | null;
+    regex.lastIndex = 0;
+    while ((m = regex.exec(text)) !== null) {
+      let p = m[0];
+      // Strip trailing punctuation
+      p = p.replace(/[.,;:!?)\]}>"']+$/, "");
+      if (!FILE_EXT_REGEX.test(p)) continue;
+      if (seen.has(p)) continue;
+      seen.add(p);
+      paths.push(p);
+      if (paths.length >= 20) break;
+    }
+    if (paths.length >= 20) break;
+  }
+
+  return paths;
+}
+
 // ========== F3.4: Auto-lint after write/edit ==========
 
 /** File extensions that support linting */
@@ -744,9 +792,12 @@ export function createBashTool(): ToolDef {
         const formatted = exitCode !== undefined && exitCode !== 0
           ? `${output}\n[exit code: ${exitCode}]`
           : output;
+        // Extract file paths from output for structured metadata
+        const filePaths = extractFilePathsFromText(output);
         return {
           title: `bash: ${command.substring(0, 50)}`,
           output: formatted,
+          metadata: filePaths.length > 0 ? { file_paths: filePaths } : undefined,
         };
       } catch (error: any) {
         return { title: `bash: ${command.substring(0, 50)}`, output: `Error: ${error.message}` };
@@ -1058,7 +1109,7 @@ export function createWriteFileTool(): ToolDef {
         const output = lintResult
           ? `Successfully wrote ${content.length} bytes to ${path}\n${lintResult}`
           : `Successfully wrote ${content.length} bytes to ${path}`;
-        return { title: `write: ${path}`, output };
+        return { title: `write: ${path}`, output, metadata: { file_paths: [path] } };
       } catch (error: any) {
         return { title: `write: ${path}`, output: `Error: ${error.message}` };
       }
@@ -1115,7 +1166,7 @@ export function createEditFileTool(): ToolDef {
         const output = lintResult
           ? `Successfully edited ${path}\n${lintResult}`
           : `Successfully edited ${path}`;
-        return { title: `edit: ${path}`, output };
+        return { title: `edit: ${path}`, output, metadata: { file_paths: [path] } };
       } catch (error: any) {
         return { title: `edit: ${path}`, output: `Error: ${error.message}` };
       }
@@ -1199,7 +1250,7 @@ export function createMultiEditTool(): ToolDef {
         const msg = errors.length > 0
           ? `Applied ${appliedCount}/${edits.length} edits to ${path}. Errors: ${errors.join("; ")}`
           : `Applied ${appliedCount} edits to ${path}`;
-        return { title: `multi_edit: ${path}`, output: lintResult ? `${msg}\n${lintResult}` : msg };
+        return { title: `multi_edit: ${path}`, output: lintResult ? `${msg}\n${lintResult}` : msg, metadata: { file_paths: [path] } };
       } catch (error: any) {
         return { title: `multi_edit: ${path}`, output: `Error: ${error.message}` };
       }

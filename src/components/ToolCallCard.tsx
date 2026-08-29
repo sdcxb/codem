@@ -16,8 +16,9 @@ import {
   Wrench, CheckCircle2, XCircle, LoaderCircle,
   ChevronDown, ChevronRight,
   FileText, Search, Terminal as TerminalIcon, FileEdit, FolderSearch, Bot,
-  ExternalLink, Globe, Code2, Sparkles,
+  ExternalLink, Globe, Code2, Sparkles, Files,
 } from "lucide-react";
+import { handleFileLinkClick, handleFileLinkContextMenu } from "../utils/file-link";
 
 // ====== 类型定义 ======
 
@@ -598,6 +599,17 @@ export const ToolCallCard = memo(function ToolCallCard({
   const output = toolResult || null
   const errorSummary = isError && output ? firstLine(output) : null
 
+  // 结构化文件路径（来自工具返回的 metadata.file_paths）
+  const metadataFilePaths = useMemo(() => {
+    const fps = metadata?.file_paths as string[] | undefined;
+    if (!Array.isArray(fps) || fps.length === 0) return null;
+    // 如果和 args 中的 file_path 重复，去重
+    const set = new Set(fps);
+    if (filePath) set.delete(filePath);
+    const unique = Array.from(set);
+    return unique.length > 0 ? unique : null;
+  }, [metadata, filePath]);
+
   // 专用卡片推导
   const terminalModel = useMemo(() => {
     if (variant !== 'bash') return null
@@ -740,6 +752,46 @@ export const ToolCallCard = memo(function ToolCallCard({
                 )}
               </div>
             )
+          )}
+
+          {/* 结构化文件路径列表 — 来自工具返回的 metadata.file_paths */}
+          {metadataFilePaths && (
+            <div className="tool-io-card" style={{
+              borderRadius: 6, overflow: 'hidden',
+              border: '1px solid var(--border-primary)',
+              marginTop: 4,
+            }}>
+              <div className="tool-io-section" style={{ display: 'flex', gap: 8 }}>
+                <span className="tool-io-label" style={{
+                  padding: '4px 8px', background: 'var(--bg-tertiary)',
+                  fontSize: 10, fontWeight: 600, color: 'var(--text-muted)',
+                  minWidth: 28, textAlign: 'center', flexShrink: 0,
+                  display: 'flex', alignItems: 'center',
+                }}><Files size={10} /></span>
+                <div style={{
+                  padding: '4px 8px',
+                  fontSize: 11, fontFamily: 'monospace',
+                  display: 'flex', flexDirection: 'column', gap: 2,
+                }}>
+                  {metadataFilePaths.map((p, i) => (
+                    <a
+                      key={i}
+                      href={p}
+                      onClick={(e) => handleFileLinkClick(e, p)}
+                      onContextMenu={(e) => handleFileLinkContextMenu(e, p)}
+                      title={`点击打开: ${p}`}
+                      style={{
+                        color: 'var(--accent)', cursor: 'pointer',
+                        textDecoration: 'underline', textDecorationStyle: 'dashed',
+                        textUnderlineOffset: '2px',
+                        lineHeight: 1.4,
+                      }}>
+                      {p}
+                    </a>
+                  ))}
+                </div>
+              </div>
+            </div>
           )}
         </div>
       )}

@@ -28,6 +28,7 @@ import { MermaidCanvasView } from "./MermaidCanvasView";
 import { ImagePreviewView } from "./ImagePreviewView";
 import { fixCjkBoldMarkdown } from "../../core/llm/stream-reveal";
 import { handleFileLinkClick, handleFileLinkContextMenu } from "../../utils/file-link";
+import { autoLinkFilePaths } from "../../utils/auto-link-paths";
 import type { FileMentions } from "../../utils/file-mentions";
 
 /**
@@ -82,17 +83,8 @@ const ParagraphWithActions = memo(function ParagraphWithActions({ children }: { 
   );
 });
 
-// 延迟加载 KaTeX CSS（避免首屏加载开销）
-let katexCssLoaded = false;
-function ensureKatexCss() {
-  if (katexCssLoaded) return;
-  katexCssLoaded = true;
-  const link = document.createElement("link");
-  link.rel = "stylesheet";
-  link.href = "https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css";
-  link.crossOrigin = "anonymous";
-  document.head.appendChild(link);
-}
+// KaTeX CSS — bundled locally to avoid CSP violations from CDN
+import "katex/dist/katex.min.css";
 
 export interface RichContentProps {
   /** Markdown 内容 */
@@ -119,11 +111,6 @@ export const RichContent = memo(function RichContent({
 }: RichContentProps) {
   const [fullscreenNode, setFullscreenNode] = useState<ReactNode | null>(null);
 
-  // 确保 KaTeX CSS 已加载（当内容包含数学公式时）
-  if (/\$\$|\\\(|\\\[/.test(content)) {
-    ensureKatexCss();
-  }
-
   // P2 #33: 判断内联代码是否为"单个单词或短词组"
   // 如果是，降级为普通文本样式，不渲染代码框
   const isSimpleInlineTerm = useCallback((text: string): boolean => {
@@ -142,7 +129,8 @@ export const RichContent = memo(function RichContent({
   }, []);
 
   // P2 #30: 修复 CJK 粗体标记 — CommonMark 在 `**粗体**` 后紧跟 CJK 字符时不渲染粗体
-  const processedContent = useMemo(() => fixCjkBoldMarkdown(content), [content]);
+  // + Auto-link: 在渲染层把裸文件路径自动转为 Markdown 链接，不依赖模型行为
+  const processedContent = useMemo(() => autoLinkFilePaths(fixCjkBoldMarkdown(content)), [content]);
 
   // 代码块渲染器
   const codeRenderer = useCallback(({ inline, className: cls, children, ...props }: any) => {

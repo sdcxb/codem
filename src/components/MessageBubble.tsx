@@ -17,6 +17,7 @@ import { ImageGallery } from "./ImageGallery";
 import { VideoPlayer } from "./VideoPlayer";
 import { RichContent } from "./rich-content/RichContent";
 import { createFileMentions } from "../utils/file-mentions";
+import { autoLinkFilePaths } from "../utils/auto-link-paths";
 import { openFileLink } from "../utils/file-link";
 // P3-26: Voice output (TTS) — browser speech synthesis hook
 import { useSpeechSynthesis } from "../hooks/useSpeechSynthesis";
@@ -299,9 +300,10 @@ const [galleryIndex, setGalleryIndex] = useState(0);
   // P1-2: Process citations — convert [Source N: name] to clickable markdown links
   // This is a fallback for models that embed citations in text.
   // Primary citation rendering is via structured metadata (see SourcesPanel below).
+  // + Auto-link: bare file paths → Markdown links (rendering-layer safety net)
   const displayContent = isUser
     ? rawContent
-    : rawContent.replace(/\[Source\s+(\d+):\s*([^\]]+)\]/g, '[📖 $1](#cite-$1 "$2")');
+    : autoLinkFilePaths(rawContent.replace(/\[Source\s+(\d+):\s*([^\]]+)\]/g, '[📖 $1](#cite-$1 "$2")'));
 
   // Extract source citations from both:
   // 1. message.retrievedSources — auto-retrieved from notebook RAG (metadata-driven, not prompt-based)
@@ -745,6 +747,7 @@ const opLabel = tc.tool === 'create_note'
                   status: tc.status as "running" | "done" | "error",
                   duration: (tc.metadata as any)?.duration,
                   argsSummary: typeof rawSummary === "string" && rawSummary ? rawSummary : undefined,
+                  metadata: tc.metadata as Record<string, any> | undefined,
                 };
               })}
               title={`${message.toolCalls.length} ${S.bubble.toolCalls[lang]}`}
