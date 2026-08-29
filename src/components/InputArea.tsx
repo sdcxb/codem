@@ -682,9 +682,11 @@ const handleSelectProject = (projectId: string) => {
                 fallback={SlashCommandMenu}
                 filter={slashFilter}
                 onSelect={(item: SlashCommandItem) => {
-                  setSelectedSkills([...selectedSkills, item.id]);
-                  const slashIdx = input.lastIndexOf("/");
-                  if (slashIdx >= 0) setInput(input.substring(0, slashIdx).replace(/\s+$/, " "));
+                  // DSH-aligned: 将 /skill-name 作为字面文本插入输入框
+                  // 发送时 processSkillGestures 会检测 /name 手势并注入 <skill_content>
+                  const newVal = input.replace(/\/([^\s]*)$/, `/${item.id} `);
+                  setInput(newVal);
+                  setDraft(newVal);
                   setSlashFilter(null);
                   textareaRef.current?.focus();
                 }}
@@ -743,11 +745,6 @@ const handleSelectProject = (projectId: string) => {
               if (pendingAttachments.length > 0) {
                 pendingAttachments.forEach((att) => {
                   badges.push({ id: att.id, type: "file", label: att.name, icon: "file" });
-                });
-              }
-              if (selectedSkills.length > 0) {
-                selectedSkills.forEach((sid) => {
-                  badges.push({ id: `skill-${sid}`, type: "url", label: sid, icon: "tool" });
                 });
               }
               setContextBadges(badges);
@@ -1253,15 +1250,7 @@ const handleSelectProject = (projectId: string) => {
           <span>{connected ? (zh ? "已连接" : "Online") : (zh ? "离线" : "Offline")}</span>
         </span>
 
-        {/* Right side: skills + hint */}
-        {selectedSkills.length > 0 && (
-          <>
-            <div className="input-control-divider" />
-            <span className="input-control-item active">
-              <span style={{ display: "flex", alignItems: "center", gap: 4 }}><Target size={13} /> {selectedSkills.length} {zh ? "技能" : "skills"}</span>
-            </span>
-          </>
-        )}
+        {/* Right side: hint */}
         <div style={{ marginLeft: "auto", fontSize: 10, color: "var(--text-muted)", display: "flex", alignItems: "center", gap: 4 }}>
           <Sparkles size={10} />
           {zh ? "输入 / 选择技能 · 拖拽文件上传" : "Type / for skills · Drop files"}
