@@ -50,6 +50,24 @@ function looksLikeFilePath(text: string): boolean {
 }
 
 /**
+ * Check if a URL from an existing Markdown link looks like a local file path.
+ * More permissive than looksLikeFilePath — doesn't require file extension,
+ * just needs to look like a path (drive letter or leading slash).
+ */
+function isLocalPath(p: string): boolean {
+  if (!p) return false;
+  // Windows: C:\... or C:/...
+  if (/^[A-Za-z]:[\\/]/.test(p)) return true;
+  // Unix absolute: /home/...
+  if (p.startsWith("/")) return true;
+  // UNC: \\server\share
+  if (p.startsWith("\\\\")) return true;
+  // Relative: ./...
+  if (p.startsWith("./")) return true;
+  return false;
+}
+
+/**
  * Extract the file path from a matched string (strip trailing punctuation
  * that the regex might have captured).
  */
@@ -137,12 +155,19 @@ function processFilePaths(text: string): string {
       return match;
     }
 
-    // Percent-encode backslashes and spaces in the URL so CommonMark
-    // doesn't treat \ as an escape char. The link renderer decodes with
-    // decodeURIComponent before calling openFileLink.
-    // e.g. D:\project\file.txt → D:%5Cproject%5Cfile.txt
-    const encodedUrl = cleanP.replace(/\\/g, "%5C").replace(/ /g, "%20");
-    return `${beforeMatch}[${path}](${encodedUrl} "点击打开文件位置")`;
+    // Use file:/// protocol prefix so CommonMark treats this as a valid URL
+    // and react-markdown passes it to our <a> renderer. Without this, paths
+    // like "D:/path" may be misinterpreted as a "d:" URL scheme by the
+    // CommonMark parser, causing the href to be empty or malformed.
+    // The openFileLink function strips the file:/// prefix before calling Tauri.
+    // Also percent-encode backslashes and spaces for safety.
+    const encodedPath = cleanP.replace(/\\/g, "%5C").replace(/ /g, "%20");
+    // For Windows: file:///D:/path → file:///D:%5Cpath%5Cfile.txt
+    // For Unix: file:///home/user/file.txt
+    const fileUrl = cleanP.startsWith("/")
+      ? `file://${encodedPath}`
+      : `file:///${encodedPath}`;
+    return `${beforeMatch}[${path}](${fileUrl} "点击打开文件位置")`;
   });
 }
 
@@ -177,7 +202,28 @@ export function autoLinkFilePaths(text: string): string {
       if (lm.index > lastIdx) {
         parts.push(processFilePaths(segText.slice(lastIdx, lm.index)));
       }
-      parts.push(lm[0]);
+      // Fix existing Markdown links where URL is a local file path
+      // (not http(s), mailto, #anchor, or already file://)
+      const linkLabel = lm[1];
+      let linkUrl = lm[2];
+      // Strip optional title from URL: url "title" → url
+      const titleMatch = linkUrl.match(/^(\S+)\s+"/);
+      let linkTitle = "";
+      if (titleMatch) {
+        linkTitle = linkUrl.slice(titleMatch[1].length).trim();
+        linkUrl = titleMatch[1];
+      }
+      // Check if URL looks like a local file path
+      const isWeb = /^https?:\/\//i.test(linkUrl) || /^mailto:/i.test(linkUrl) || linkUrl.startsWith("#") || linkUrl.startsWith("file://");
+      if (!isWeb && isLocalPath(linkUrl)) {
+        const encodedPath = linkUrl.replace(/\\/g, "%5C").replace(/ /g, "%20");
+        const fileUrl = linkUrl.startsWith("/")
+          ? `file://${encodedPath}`
+          : `file:///${encodedPath}`;
+        parts.push(`[${linkLabel}](${fileUrl}${linkTitle ? " " + linkTitle : ""})`);
+      } else {
+        parts.push(lm[0]);
+      }
       lastIdx = lm.index + lm[0].length;
     }
     if (lastIdx < segText.length) {

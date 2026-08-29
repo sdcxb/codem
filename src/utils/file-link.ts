@@ -41,11 +41,19 @@ export function resolveWorkspacePath(cwd: string | undefined, path: string): str
 export async function openFileLink(rawHref: string): Promise<void> {
   if (!rawHref) return;
 
-  // Conditionally decode percent-encoded backslashes (%5C) from auto-link-paths.
-  // react-markdown may or may not decode these depending on version,
-  // so we check for the encoded form and decode only if needed.
+  // Strip file:// protocol prefix and decode percent-encoded characters.
+  // auto-link-paths.ts generates URLs like file:///D:%5Cpath%5Cfile.txt
+  // to ensure CommonMark parses them as valid links.
   let href = rawHref;
-  if (href.includes("%5C") || href.includes("%5c")) {
+  if (href.startsWith("file://")) {
+    href = href.replace(/^file:\/\/\/?/, "");
+    try {
+      href = decodeURIComponent(href);
+    } catch {
+      // keep as-is if decoding fails
+    }
+  } else if (href.includes("%5C") || href.includes("%5c")) {
+    // Legacy: direct percent-encoded paths without file:// prefix
     try {
       href = decodeURIComponent(href);
     } catch {
