@@ -26,9 +26,11 @@ interface ProviderKey {
 
 interface MultimodalPanelProps {
   onClose: () => void;
+  /** 内联模式：不使用浮动定位，直接嵌在父容器中 */
+  inline?: boolean;
 }
 
-export function MultimodalPanel({ onClose }: MultimodalPanelProps) {
+export function MultimodalPanel({ onClose, inline }: MultimodalPanelProps) {
   const [settings, setSettings] = useState<MultimodalSettings>({
     vision: null,
     stt: null,
@@ -362,8 +364,15 @@ export function MultimodalPanel({ onClose }: MultimodalPanelProps) {
 
   return (
     <div
-      className="floating-overlay-panel"
-      style={{
+      className={inline ? "multimodal-inline-panel" : "floating-overlay-panel"}
+      style={inline ? {
+        background: "var(--bg-primary)",
+        border: "1px solid var(--border-primary)",
+        borderRadius: 8,
+        display: "flex",
+        flexDirection: "column",
+        marginTop: 8,
+      } : {
         position: "fixed",
         top: "var(--chat-body-top, 48px)",
         right: 0,

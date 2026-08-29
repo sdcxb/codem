@@ -1337,24 +1337,28 @@ marginTop: 4,
                 : "Configure Embedding semantic search, TTS text-to-speech, and ImageGen image generation."}
             </div>
             <button
-              onClick={() => setShowMultimodal(true)}
+              onClick={() => setShowMultimodal(!showMultimodal)}
               style={{
                 padding: "8px 16px",
                 borderRadius: 6,
                 border: "1px solid var(--border-primary)",
-                background: "var(--bg-secondary)",
+                background: showMultimodal ? "var(--accent-muted)" : "var(--bg-secondary)",
                 color: "var(--text-primary)",
                 cursor: "pointer",
                 fontSize: 13,
                 width: "100%",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
               }}
             >
-              {lang === "zh" ? <><Palette size={12} style={{ display: 'inline', verticalAlign: 'middle' }} /> 多模态设置</> : <><Palette size={12} style={{ display: 'inline', verticalAlign: 'middle' }} /> Multimodal Settings</>}
+              <span>{lang === "zh" ? <><Palette size={12} style={{ display: 'inline', verticalAlign: 'middle' }} /> 多模态设置</> : <><Palette size={12} style={{ display: 'inline', verticalAlign: 'middle' }} /> Multimodal Settings</>}</span>
+              <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{showMultimodal ? '▼' : '▶'}</span>
             </button>
           </div>
 
           {showMultimodal && (
-            <MultimodalPanel onClose={() => setShowMultimodal(false)} />
+            <MultimodalPanel inline onClose={() => setShowMultimodal(false)} />
           )}
 
           </>
