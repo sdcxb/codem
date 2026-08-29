@@ -1,0 +1,56 @@
+[
+  {
+    "id": 0,
+    "name": "富豪",
+    "color": "#f1c40f",
+    "initCashRatio": 1.2,
+    "special": "extra_cash",
+    "specialDesc": "初始资金 +20%",
+    "trafficPreference": 2
+  },
+  {
+    "id": 1,
+    "name": "幸运星",
+    "color": "#e74c3c",
+    "initCashRatio": 1.0,
+    "special": "lucky_god",
+    "specialDesc": "更容易遇到小财神",
+    "trafficPreference": 0
+  },
+  {
+    "id": 2,
+    "name": "探险家",
+    "color": "#3498db",
+    "initCashRatio": 0.9,
+    "special": "extra_card",
+    "specialDesc": "命运/新闻格 50% 概率额外获得卡牌",
+    "trafficPreference": 1
+  },
+  {
+    "id": 3,
+    "name": "地产大亨",
+    "color": "#2ecc71",
+    "initCashRatio": 1.0,
+    "special": "land_discount",
+    "specialDesc": "买地 9 折优惠",
+    "trafficPreference": 0
+  },
+  {
+    "id": 4,
+    "name": "股神",
+    "color": "#9b59b6",
+    "initCashRatio": 0.9,
+    "special": "stock_bonus",
+    "specialDesc": "股票分红 +50%",
+    "trafficPreference": 1
+  },
+  {
+    "id": 5,
+    "name": "忍者",
+    "color": "#1abc9c",
+    "initCashRatio": 1.0,
+    "special": "toll_immune",
+    "specialDesc": "10% 概率免疫过路费",
+    "trafficPreference": 0
+  }
+]

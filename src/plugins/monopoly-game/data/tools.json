@@ -1,0 +1,186 @@
+[
+  {
+    "id": 0,
+    "name": "机车卡",
+    "description": "使用机车，掷2颗骰子",
+    "maxAmount": 9,
+    "price": 2000,
+    "effect": "traffic:1"
+  },
+  {
+    "id": 1,
+    "name": "汽车卡",
+    "description": "使用汽车，掷3颗骰子",
+    "maxAmount": 9,
+    "price": 4000,
+    "effect": "traffic:2"
+  },
+  {
+    "id": 2,
+    "name": "路障",
+    "description": "在指定位置放置路障，挡住路过的玩家",
+    "maxAmount": 9,
+    "price": 1000,
+    "effect": "roadblock"
+  },
+  {
+    "id": 3,
+    "name": "地雷",
+    "description": "在指定位置放置地雷，踩到的玩家住院3天",
+    "maxAmount": 9,
+    "price": 1500,
+    "effect": "landmine"
+  },
+  {
+    "id": 4,
+    "name": "定时炸弹",
+    "description": "3回合后爆炸，范围内玩家住院",
+    "maxAmount": 9,
+    "price": 3000,
+    "effect": "time_bomb"
+  },
+  {
+    "id": 5,
+    "name": "传送机",
+    "description": "传送到地图上任意位置",
+    "maxAmount": 9,
+    "price": 5000,
+    "effect": "teleport"
+  },
+  {
+    "id": 6,
+    "name": "时光机",
+    "description": "回到过去3步的位置",
+    "maxAmount": 9,
+    "price": 3000,
+    "effect": "time_machine"
+  },
+  {
+    "id": 7,
+    "name": "工程车",
+    "description": "在指定地块上免费建造一级房屋",
+    "maxAmount": 9,
+    "price": 2000,
+    "effect": "free_build"
+  },
+  {
+    "id": 8,
+    "name": "机车",
+    "description": "召唤一辆机车使用",
+    "maxAmount": 9,
+    "price": 2000,
+    "effect": "traffic:1"
+  },
+  {
+    "id": 9,
+    "name": "机器工人",
+    "description": "自动在所有自己的地块上升一级",
+    "maxAmount": 9,
+    "price": 8000,
+    "effect": "auto_upgrade_all"
+  },
+  {
+    "id": 10,
+    "name": "机器娃娃",
+    "description": "抢走对手最多钱的10%",
+    "maxAmount": 9,
+    "price": 6000,
+    "effect": "steal_percent:10"
+  },
+  {
+    "id": 11,
+    "name": "导弹",
+    "description": "炸毁指定地块上一级建筑",
+    "maxAmount": 9,
+    "price": 4000,
+    "effect": "missile"
+  },
+  {
+    "id": 12,
+    "name": "查封令",
+    "description": "查封指定地块3天",
+    "maxAmount": 9,
+    "price": 3000,
+    "effect": "seal:3"
+  },
+  {
+    "id": 13,
+    "name": "涨价令",
+    "description": "指定地块过路费翻倍3天",
+    "maxAmount": 9,
+    "price": 3000,
+    "effect": "markup:3"
+  },
+  {
+    "id": 14,
+    "name": "遥控骰子",
+    "description": "下次掷骰指定点数(1-6)",
+    "maxAmount": 9,
+    "price": 5000,
+    "effect": "dice_control"
+  },
+  {
+    "id": 15,
+    "name": "同盟令",
+    "description": "与指定玩家结盟7天",
+    "maxAmount": 9,
+    "price": 5000,
+    "effect": "alliance:7"
+  },
+  {
+    "id": 16,
+    "name": "停留令",
+    "description": "指定玩家停留2回合",
+    "maxAmount": 9,
+    "price": 3000,
+    "effect": "stop:2"
+  },
+  {
+    "id": 17,
+    "name": "催眠器",
+    "description": "指定玩家沉睡3回合",
+    "maxAmount": 9,
+    "price": 5000,
+    "effect": "sleep:3"
+  },
+  {
+    "id": 18,
+    "name": "转向器",
+    "description": "改变指定玩家移动方向",
+    "maxAmount": 9,
+    "price": 1500,
+    "effect": "reverse"
+  },
+  {
+    "id": 19,
+    "name": "乌龟令",
+    "description": "指定玩家3天内移动步数减半",
+    "maxAmount": 9,
+    "price": 2000,
+    "effect": "tortoise:3"
+  },
+  {
+    "id": 20,
+    "name": "免罪符",
+    "description": "免除一次入狱",
+    "maxAmount": 9,
+    "price": 4000,
+    "effect": "immunity_prison"
+  },
+  {
+    "id": 21,
+    "name": "保险证",
+    "description": "5天内免受事故损失",
+    "maxAmount": 9,
+    "price": 3000,
+    "effect": "assurance:5"
+  },
+  {
+    "id": 22,
+    "name": "研究图纸",
+    "description": "在研究所免费研究一个道具",
+    "maxAmount": 9,
+    "price": 5000,
+    "effect": "free_research"
+  }
+]

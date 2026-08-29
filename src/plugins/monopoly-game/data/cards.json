@@ -1,0 +1,242 @@
+[
+  {
+    "id": 0,
+    "name": "福神卡",
+    "description": "获得5000点券",
+    "price": 0,
+    "targetType": "self",
+    "effect": "grant_points:5000"
+  },
+  {
+    "id": 1,
+    "name": "财神卡",
+    "description": "获得10000现金",
+    "price": 0,
+    "targetType": "self",
+    "effect": "grant_cash:10000"
+  },
+  {
+    "id": 2,
+    "name": "送神卡",
+    "description": "将任意玩家送回起点",
+    "price": 5000,
+    "targetType": "other_player",
+    "effect": "send_to_start"
+  },
+  {
+    "id": 3,
+    "name": "交换卡",
+    "description": "与指定玩家交换位置",
+    "price": 8000,
+    "targetType": "other_player",
+    "effect": "swap_position"
+  },
+  {
+    "id": 4,
+    "name": "抢夺卡",
+    "description": "抢夺指定玩家一张卡牌或道具",
+    "price": 3000,
+    "targetType": "other_player",
+    "effect": "steal_item"
+  },
+  {
+    "id": 5,
+    "name": "怪物卡",
+    "description": "在指定地块放置怪物，查封3天",
+    "price": 4000,
+    "targetType": "property",
+    "effect": "seal_land:3"
+  },
+  {
+    "id": 6,
+    "name": "天使卡",
+    "description": "指定地块过路费翻倍3天",
+    "price": 6000,
+    "targetType": "property",
+    "effect": "price_up:3"
+  },
+  {
+    "id": 7,
+    "name": "恶魔卡",
+    "description": "指定地块降一级",
+    "price": 5000,
+    "targetType": "property",
+    "effect": "downgrade_land"
+  },
+  {
+    "id": 8,
+    "name": "转移卡",
+    "description": "将一块地产转移给指定玩家",
+    "price": 10000,
+    "targetType": "property",
+    "effect": "transfer_land"
+  },
+  {
+    "id": 9,
+    "name": "购地卡",
+    "description": "免费获得一块空地",
+    "price": 8000,
+    "targetType": "property",
+    "effect": "free_land"
+  },
+  {
+    "id": 10,
+    "name": "升级卡",
+    "description": "免费升级一块地产",
+    "price": 6000,
+    "targetType": "property",
+    "effect": "free_upgrade"
+  },
+  {
+    "id": 11,
+    "name": "拍卖卡",
+    "description": "强制拍卖一块地产",
+    "price": 3000,
+    "targetType": "property",
+    "effect": "force_auction"
+  },
+  {
+    "id": 12,
+    "name": "同盟卡",
+    "description": "与指定玩家结盟5天，互相不收过路费",
+    "price": 5000,
+    "targetType": "other_player",
+    "effect": "alliance:5"
+  },
+  {
+    "id": 13,
+    "name": "离婚卡",
+    "description": "解除同盟关系",
+    "price": 2000,
+    "targetType": "other_player",
+    "effect": "break_alliance"
+  },
+  {
+    "id": 14,
+    "name": "保险卡",
+    "description": "5天内免受事故损失",
+    "price": 4000,
+    "targetType": "self",
+    "effect": "assurance:5"
+  },
+  {
+    "id": 15,
+    "name": "免罪卡",
+    "description": "免除一次入狱",
+    "price": 6000,
+    "targetType": "self",
+    "effect": "immunity_prison"
+  },
+  {
+    "id": 16,
+    "name": "乌龟卡",
+    "description": "3天内移动步数减半",
+    "price": 2000,
+    "targetType": "other_player",
+    "effect": "tortoise:3"
+  },
+  {
+    "id": 17,
+    "name": "梦游卡",
+    "description": "3天内目标随机移动",
+    "price": 3000,
+    "targetType": "other_player",
+    "effect": "sleepwalk:3"
+  },
+  {
+    "id": 18,
+    "name": "停留卡",
+    "description": "目标停留一回合",
+    "price": 3000,
+    "targetType": "other_player",
+    "effect": "stop:1"
+  },
+  {
+    "id": 19,
+    "name": "催眠卡",
+    "description": "目标沉睡3回合",
+    "price": 5000,
+    "targetType": "other_player",
+    "effect": "sleep:3"
+  },
+  {
+    "id": 20,
+    "name": "转向卡",
+    "description": "改变目标移动方向",
+    "price": 2000,
+    "targetType": "other_player",
+    "effect": "reverse_direction"
+  },
+  {
+    "id": 21,
+    "name": "重新掷骰卡",
+    "description": "重新掷一次骰子",
+    "price": 3000,
+    "targetType": "self",
+    "effect": "reroll"
+  },
+  {
+    "id": 22,
+    "name": "遥控骰子卡",
+    "description": "下次掷骰指定点数",
+    "price": 8000,
+    "targetType": "self",
+    "effect": "dice_prophecy"
+  },
+  {
+    "id": 23,
+    "name": "点卷卡",
+    "description": "获得3000点券",
+    "price": 0,
+    "targetType": "self",
+    "effect": "grant_points:3000"
+  },
+  {
+    "id": 24,
+    "name": "小财神卡",
+    "description": "获得小财神保佑（3天好运）",
+    "price": 5000,
+    "targetType": "self",
+    "effect": "god:1"
+  },
+  {
+    "id": 25,
+    "name": "大财神卡",
+    "description": "获得大财神保佑（5天大好运）",
+    "price": 10000,
+    "targetType": "self",
+    "effect": "god:2"
+  },
+  {
+    "id": 26,
+    "name": "小穷神卡",
+    "description": "给对手小穷神（3天霉运）",
+    "price": 4000,
+    "targetType": "other_player",
+    "effect": "god:5"
+  },
+  {
+    "id": 27,
+    "name": "大穷神卡",
+    "description": "给对手大穷神（5天大霉运）",
+    "price": 8000,
+    "targetType": "other_player",
+    "effect": "god:6"
+  },
+  {
+    "id": 28,
+    "name": "归零卡",
+    "description": "将指定地块降为0级",
+    "price": 7000,
+    "targetType": "property",
+    "effect": "reset_land"
+  },
+  {
+    "id": 29,
+    "name": "查封卡",
+    "description": "查封指定地块5天",
+    "price": 5000,
+    "targetType": "property",
+    "effect": "seal_land:5"
+  }
+]

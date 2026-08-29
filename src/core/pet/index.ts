@@ -11,7 +11,7 @@
  *
  * UI 组件（在 src/components/ 下）：
  * - PetSprite.tsx:       精灵图渲染
- * - PetOverlay.tsx:      浮窗容器
+ * - PetWindowApp.tsx:    独立窗口宠物组件
  * - PetMarketDialog.tsx: 市场浏览对话框
  */
 

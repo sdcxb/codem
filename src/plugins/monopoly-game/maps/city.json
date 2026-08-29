@@ -1,0 +1,2111 @@
+{
+  "meta": {
+    "id": "prosperous-city",
+    "name": "繁华都市",
+    "author": "mimo-gui",
+    "version": "1.0.0",
+    "description": "繁华的大都市地图，90个节点，涵盖所有设施类型。外环56节点+南北纵贯线+4条分支路。",
+    "backgroundTheme": "city"
+  },
+  "nodes": [
+    {
+      "id": 0,
+      "x": 600,
+      "y": 600,
+      "adjacent": [
+        1,
+        55
+      ],
+      "tileType": "start",
+      "tileIndex": 0
+    },
+    {
+      "id": 1,
+      "x": 560,
+      "y": 600,
+      "adjacent": [
+        0,
+        2
+      ],
+      "tileType": "land",
+      "tileIndex": 0
+    },
+    {
+      "id": 2,
+      "x": 520,
+      "y": 600,
+      "adjacent": [
+        1,
+        3
+      ],
+      "tileType": "land",
+      "tileIndex": 1
+    },
+    {
+      "id": 3,
+      "x": 480,
+      "y": 600,
+      "adjacent": [
+        2,
+        4,
+        56
+      ],
+      "tileType": "land",
+      "tileIndex": 2
+    },
+    {
+      "id": 4,
+      "x": 440,
+      "y": 600,
+      "adjacent": [
+        3,
+        5
+      ],
+      "tileType": "facility",
+      "tileIndex": 0
+    },
+    {
+      "id": 5,
+      "x": 400,
+      "y": 600,
+      "adjacent": [
+        4,
+        6
+      ],
+      "tileType": "land",
+      "tileIndex": 3
+    },
+    {
+      "id": 6,
+      "x": 360,
+      "y": 600,
+      "adjacent": [
+        5,
+        7
+      ],
+      "tileType": "land",
+      "tileIndex": 4
+    },
+    {
+      "id": 7,
+      "x": 320,
+      "y": 600,
+      "adjacent": [
+        6,
+        8
+      ],
+      "tileType": "land",
+      "tileIndex": 5
+    },
+    {
+      "id": 8,
+      "x": 280,
+      "y": 600,
+      "adjacent": [
+        7,
+        9
+      ],
+      "tileType": "facility",
+      "tileIndex": 1
+    },
+    {
+      "id": 9,
+      "x": 240,
+      "y": 600,
+      "adjacent": [
+        8,
+        10
+      ],
+      "tileType": "land",
+      "tileIndex": 6
+    },
+    {
+      "id": 10,
+      "x": 200,
+      "y": 600,
+      "adjacent": [
+        9,
+        11
+      ],
+      "tileType": "land",
+      "tileIndex": 7
+    },
+    {
+      "id": 11,
+      "x": 160,
+      "y": 580,
+      "adjacent": [
+        10,
+        12
+      ],
+      "tileType": "land",
+      "tileIndex": 8
+    },
+    {
+      "id": 12,
+      "x": 130,
+      "y": 550,
+      "adjacent": [
+        11,
+        13
+      ],
+      "tileType": "land",
+      "tileIndex": 9
+    },
+    {
+      "id": 13,
+      "x": 100,
+      "y": 520,
+      "adjacent": [
+        12,
+        14
+      ],
+      "tileType": "facility",
+      "tileIndex": 2
+    },
+    {
+      "id": 14,
+      "x": 80,
+      "y": 480,
+      "adjacent": [
+        13,
+        15
+      ],
+      "tileType": "land",
+      "tileIndex": 10
+    },
+    {
+      "id": 15,
+      "x": 80,
+      "y": 440,
+      "adjacent": [
+        14,
+        16,
+        68
+      ],
+      "tileType": "commercial",
+      "tileIndex": 0
+    },
+    {
+      "id": 16,
+      "x": 80,
+      "y": 400,
+      "adjacent": [
+        15,
+        17
+      ],
+      "tileType": "land",
+      "tileIndex": 11
+    },
+    {
+      "id": 17,
+      "x": 80,
+      "y": 360,
+      "adjacent": [
+        16,
+        18
+      ],
+      "tileType": "land",
+      "tileIndex": 12
+    },
+    {
+      "id": 18,
+      "x": 80,
+      "y": 320,
+      "adjacent": [
+        17,
+        19
+      ],
+      "tileType": "land",
+      "tileIndex": 13
+    },
+    {
+      "id": 19,
+      "x": 80,
+      "y": 280,
+      "adjacent": [
+        18,
+        20
+      ],
+      "tileType": "facility",
+      "tileIndex": 3
+    },
+    {
+      "id": 20,
+      "x": 80,
+      "y": 240,
+      "adjacent": [
+        19,
+        21
+      ],
+      "tileType": "land",
+      "tileIndex": 14
+    },
+    {
+      "id": 21,
+      "x": 80,
+      "y": 200,
+      "adjacent": [
+        20,
+        22
+      ],
+      "tileType": "land",
+      "tileIndex": 15
+    },
+    {
+      "id": 22,
+      "x": 100,
+      "y": 160,
+      "adjacent": [
+        21,
+        23,
+        76
+      ],
+      "tileType": "land",
+      "tileIndex": 16
+    },
+    {
+      "id": 23,
+      "x": 130,
+      "y": 130,
+      "adjacent": [
+        22,
+        24
+      ],
+      "tileType": "land",
+      "tileIndex": 17
+    },
+    {
+      "id": 24,
+      "x": 160,
+      "y": 100,
+      "adjacent": [
+        23,
+        25
+      ],
+      "tileType": "facility",
+      "tileIndex": 4
+    },
+    {
+      "id": 25,
+      "x": 200,
+      "y": 80,
+      "adjacent": [
+        24,
+        26
+      ],
+      "tileType": "land",
+      "tileIndex": 18
+    },
+    {
+      "id": 26,
+      "x": 240,
+      "y": 80,
+      "adjacent": [
+        25,
+        27
+      ],
+      "tileType": "land",
+      "tileIndex": 19
+    },
+    {
+      "id": 27,
+      "x": 280,
+      "y": 80,
+      "adjacent": [
+        26,
+        28
+      ],
+      "tileType": "land",
+      "tileIndex": 20
+    },
+    {
+      "id": 28,
+      "x": 320,
+      "y": 80,
+      "adjacent": [
+        27,
+        29
+      ],
+      "tileType": "facility",
+      "tileIndex": 5
+    },
+    {
+      "id": 29,
+      "x": 360,
+      "y": 80,
+      "adjacent": [
+        28,
+        30
+      ],
+      "tileType": "land",
+      "tileIndex": 21
+    },
+    {
+      "id": 30,
+      "x": 400,
+      "y": 80,
+      "adjacent": [
+        29,
+        31
+      ],
+      "tileType": "land",
+      "tileIndex": 22
+    },
+    {
+      "id": 31,
+      "x": 440,
+      "y": 80,
+      "adjacent": [
+        30,
+        32,
+        67
+      ],
+      "tileType": "land",
+      "tileIndex": 23
+    },
+    {
+      "id": 32,
+      "x": 480,
+      "y": 80,
+      "adjacent": [
+        31,
+        33
+      ],
+      "tileType": "landmark",
+      "tileIndex": 0
+    },
+    {
+      "id": 33,
+      "x": 520,
+      "y": 80,
+      "adjacent": [
+        32,
+        34
+      ],
+      "tileType": "land",
+      "tileIndex": 24
+    },
+    {
+      "id": 34,
+      "x": 560,
+      "y": 80,
+      "adjacent": [
+        33,
+        35
+      ],
+      "tileType": "land",
+      "tileIndex": 25
+    },
+    {
+      "id": 35,
+      "x": 600,
+      "y": 80,
+      "adjacent": [
+        34,
+        36
+      ],
+      "tileType": "facility",
+      "tileIndex": 6
+    },
+    {
+      "id": 36,
+      "x": 640,
+      "y": 80,
+      "adjacent": [
+        35,
+        37
+      ],
+      "tileType": "land",
+      "tileIndex": 26
+    },
+    {
+      "id": 37,
+      "x": 680,
+      "y": 80,
+      "adjacent": [
+        36,
+        38
+      ],
+      "tileType": "land",
+      "tileIndex": 27
+    },
+    {
+      "id": 38,
+      "x": 720,
+      "y": 80,
+      "adjacent": [
+        37,
+        39
+      ],
+      "tileType": "land",
+      "tileIndex": 28
+    },
+    {
+      "id": 39,
+      "x": 760,
+      "y": 80,
+      "adjacent": [
+        38,
+        40
+      ],
+      "tileType": "facility",
+      "tileIndex": 7
+    },
+    {
+      "id": 40,
+      "x": 800,
+      "y": 100,
+      "adjacent": [
+        39,
+        41
+      ],
+      "tileType": "land",
+      "tileIndex": 29
+    },
+    {
+      "id": 41,
+      "x": 830,
+      "y": 130,
+      "adjacent": [
+        40,
+        42
+      ],
+      "tileType": "land",
+      "tileIndex": 30
+    },
+    {
+      "id": 42,
+      "x": 860,
+      "y": 160,
+      "adjacent": [
+        41,
+        43,
+        82
+      ],
+      "tileType": "land",
+      "tileIndex": 31
+    },
+    {
+      "id": 43,
+      "x": 880,
+      "y": 200,
+      "adjacent": [
+        42,
+        44
+      ],
+      "tileType": "land",
+      "tileIndex": 32
+    },
+    {
+      "id": 44,
+      "x": 880,
+      "y": 240,
+      "adjacent": [
+        43,
+        45
+      ],
+      "tileType": "commercial",
+      "tileIndex": 1
+    },
+    {
+      "id": 45,
+      "x": 880,
+      "y": 280,
+      "adjacent": [
+        44,
+        46
+      ],
+      "tileType": "land",
+      "tileIndex": 33
+    },
+    {
+      "id": 46,
+      "x": 880,
+      "y": 320,
+      "adjacent": [
+        45,
+        47
+      ],
+      "tileType": "land",
+      "tileIndex": 34
+    },
+    {
+      "id": 47,
+      "x": 880,
+      "y": 360,
+      "adjacent": [
+        46,
+        48
+      ],
+      "tileType": "land",
+      "tileIndex": 35
+    },
+    {
+      "id": 48,
+      "x": 880,
+      "y": 400,
+      "adjacent": [
+        47,
+        49,
+        75
+      ],
+      "tileType": "facility",
+      "tileIndex": 8
+    },
+    {
+      "id": 49,
+      "x": 880,
+      "y": 440,
+      "adjacent": [
+        48,
+        50
+      ],
+      "tileType": "land",
+      "tileIndex": 36
+    },
+    {
+      "id": 50,
+      "x": 880,
+      "y": 480,
+      "adjacent": [
+        49,
+        51
+      ],
+      "tileType": "land",
+      "tileIndex": 37
+    },
+    {
+      "id": 51,
+      "x": 860,
+      "y": 520,
+      "adjacent": [
+        50,
+        52
+      ],
+      "tileType": "land",
+      "tileIndex": 38
+    },
+    {
+      "id": 52,
+      "x": 830,
+      "y": 550,
+      "adjacent": [
+        51,
+        53
+      ],
+      "tileType": "land",
+      "tileIndex": 39
+    },
+    {
+      "id": 53,
+      "x": 800,
+      "y": 580,
+      "adjacent": [
+        52,
+        54
+      ],
+      "tileType": "facility",
+      "tileIndex": 9
+    },
+    {
+      "id": 54,
+      "x": 760,
+      "y": 600,
+      "adjacent": [
+        53,
+        55
+      ],
+      "tileType": "land",
+      "tileIndex": 40
+    },
+    {
+      "id": 55,
+      "x": 680,
+      "y": 600,
+      "adjacent": [
+        54,
+        0
+      ],
+      "tileType": "land",
+      "tileIndex": 41
+    },
+    {
+      "id": 56,
+      "x": 480,
+      "y": 560,
+      "adjacent": [
+        3,
+        57
+      ],
+      "tileType": "land",
+      "tileIndex": 42
+    },
+    {
+      "id": 57,
+      "x": 480,
+      "y": 520,
+      "adjacent": [
+        56,
+        58
+      ],
+      "tileType": "land",
+      "tileIndex": 43
+    },
+    {
+      "id": 58,
+      "x": 480,
+      "y": 480,
+      "adjacent": [
+        57,
+        59,
+        72,
+        88
+      ],
+      "tileType": "landmark",
+      "tileIndex": 1
+    },
+    {
+      "id": 59,
+      "x": 480,
+      "y": 440,
+      "adjacent": [
+        58,
+        60
+      ],
+      "tileType": "land",
+      "tileIndex": 44
+    },
+    {
+      "id": 60,
+      "x": 480,
+      "y": 400,
+      "adjacent": [
+        59,
+        61
+      ],
+      "tileType": "land",
+      "tileIndex": 45
+    },
+    {
+      "id": 61,
+      "x": 480,
+      "y": 360,
+      "adjacent": [
+        60,
+        62
+      ],
+      "tileType": "land",
+      "tileIndex": 46
+    },
+    {
+      "id": 62,
+      "x": 480,
+      "y": 320,
+      "adjacent": [
+        61,
+        63,
+        81,
+        87
+      ],
+      "tileType": "facility",
+      "tileIndex": 10
+    },
+    {
+      "id": 63,
+      "x": 480,
+      "y": 280,
+      "adjacent": [
+        62,
+        64
+      ],
+      "tileType": "land",
+      "tileIndex": 47
+    },
+    {
+      "id": 64,
+      "x": 480,
+      "y": 240,
+      "adjacent": [
+        63,
+        65
+      ],
+      "tileType": "land",
+      "tileIndex": 48
+    },
+    {
+      "id": 65,
+      "x": 480,
+      "y": 200,
+      "adjacent": [
+        64,
+        66
+      ],
+      "tileType": "land",
+      "tileIndex": 49
+    },
+    {
+      "id": 66,
+      "x": 480,
+      "y": 160,
+      "adjacent": [
+        65,
+        67
+      ],
+      "tileType": "land",
+      "tileIndex": 50
+    },
+    {
+      "id": 67,
+      "x": 480,
+      "y": 120,
+      "adjacent": [
+        66,
+        31
+      ],
+      "tileType": "land",
+      "tileIndex": 51
+    },
+    {
+      "id": 68,
+      "x": 200,
+      "y": 480,
+      "adjacent": [
+        15,
+        69
+      ],
+      "tileType": "land",
+      "tileIndex": 52
+    },
+    {
+      "id": 69,
+      "x": 240,
+      "y": 460,
+      "adjacent": [
+        68,
+        70
+      ],
+      "tileType": "land",
+      "tileIndex": 53
+    },
+    {
+      "id": 70,
+      "x": 280,
+      "y": 440,
+      "adjacent": [
+        69,
+        71
+      ],
+      "tileType": "commercial",
+      "tileIndex": 2
+    },
+    {
+      "id": 71,
+      "x": 320,
+      "y": 420,
+      "adjacent": [
+        70,
+        58,
+        89
+      ],
+      "tileType": "land",
+      "tileIndex": 54
+    },
+    {
+      "id": 72,
+      "x": 560,
+      "y": 480,
+      "adjacent": [
+        58,
+        73
+      ],
+      "tileType": "land",
+      "tileIndex": 55
+    },
+    {
+      "id": 73,
+      "x": 600,
+      "y": 460,
+      "adjacent": [
+        72,
+        74
+      ],
+      "tileType": "land",
+      "tileIndex": 56
+    },
+    {
+      "id": 74,
+      "x": 640,
+      "y": 440,
+      "adjacent": [
+        73,
+        75
+      ],
+      "tileType": "commercial",
+      "tileIndex": 3
+    },
+    {
+      "id": 75,
+      "x": 680,
+      "y": 420,
+      "adjacent": [
+        74,
+        48
+      ],
+      "tileType": "land",
+      "tileIndex": 57
+    },
+    {
+      "id": 76,
+      "x": 200,
+      "y": 200,
+      "adjacent": [
+        22,
+        77
+      ],
+      "tileType": "land",
+      "tileIndex": 58
+    },
+    {
+      "id": 77,
+      "x": 240,
+      "y": 220,
+      "adjacent": [
+        76,
+        78
+      ],
+      "tileType": "land",
+      "tileIndex": 59
+    },
+    {
+      "id": 78,
+      "x": 280,
+      "y": 240,
+      "adjacent": [
+        77,
+        79
+      ],
+      "tileType": "land",
+      "tileIndex": 60
+    },
+    {
+      "id": 79,
+      "x": 320,
+      "y": 260,
+      "adjacent": [
+        78,
+        80
+      ],
+      "tileType": "facility",
+      "tileIndex": 11
+    },
+    {
+      "id": 80,
+      "x": 360,
+      "y": 280,
+      "adjacent": [
+        79,
+        81
+      ],
+      "tileType": "land",
+      "tileIndex": 61
+    },
+    {
+      "id": 81,
+      "x": 400,
+      "y": 300,
+      "adjacent": [
+        80,
+        62
+      ],
+      "tileType": "land",
+      "tileIndex": 62
+    },
+    {
+      "id": 82,
+      "x": 720,
+      "y": 200,
+      "adjacent": [
+        42,
+        83
+      ],
+      "tileType": "land",
+      "tileIndex": 63
+    },
+    {
+      "id": 83,
+      "x": 680,
+      "y": 220,
+      "adjacent": [
+        82,
+        84
+      ],
+      "tileType": "land",
+      "tileIndex": 64
+    },
+    {
+      "id": 84,
+      "x": 640,
+      "y": 240,
+      "adjacent": [
+        83,
+        85
+      ],
+      "tileType": "land",
+      "tileIndex": 65
+    },
+    {
+      "id": 85,
+      "x": 600,
+      "y": 260,
+      "adjacent": [
+        84,
+        86
+      ],
+      "tileType": "facility",
+      "tileIndex": 12
+    },
+    {
+      "id": 86,
+      "x": 560,
+      "y": 280,
+      "adjacent": [
+        85,
+        87
+      ],
+      "tileType": "land",
+      "tileIndex": 66
+    },
+    {
+      "id": 87,
+      "x": 520,
+      "y": 300,
+      "adjacent": [
+        86,
+        62
+      ],
+      "tileType": "land",
+      "tileIndex": 67
+    },
+    {
+      "id": 88,
+      "x": 400,
+      "y": 480,
+      "adjacent": [
+        58,
+        89
+      ],
+      "tileType": "land",
+      "tileIndex": 68
+    },
+    {
+      "id": 89,
+      "x": 360,
+      "y": 460,
+      "adjacent": [
+        88,
+        71
+      ],
+      "tileType": "land",
+      "tileIndex": 69
+    }
+  ],
+  "lands": [
+    {
+      "id": 1,
+      "name": "阳光大道",
+      "landPrice": 2000,
+      "buildPrice": 1000,
+      "tolls": [
+        80,
+        200,
+        500,
+        1200
+      ],
+      "maxLevel": 3,
+      "isChainStore": false
+    },
+    {
+      "id": 2,
+      "name": "梧桐街",
+      "landPrice": 2200,
+      "buildPrice": 1100,
+      "tolls": [
+        90,
+        220,
+        550,
+        1300
+      ],
+      "maxLevel": 3,
+      "isChainStore": false
+    },
+    {
+      "id": 3,
+      "name": "银杏路",
+      "landPrice": 2400,
+      "buildPrice": 1200,
+      "tolls": [
+        100,
+        250,
+        600,
+        1400
+      ],
+      "maxLevel": 3,
+      "isChainStore": false
+    },
+    {
+      "id": 5,
+      "name": "紫荆花园",
+      "landPrice": 2600,
+      "buildPrice": 1300,
+      "tolls": [
+        110,
+        280,
+        700,
+        1600
+      ],
+      "maxLevel": 3,
+      "isChainStore": false
+    },
+    {
+      "id": 6,
+      "name": "樱花苑",
+      "landPrice": 2800,
+      "buildPrice": 1400,
+      "tolls": [
+        120,
+        300,
+        750,
+        1800
+      ],
+      "maxLevel": 3,
+      "isChainStore": false
+    },
+    {
+      "id": 7,
+      "name": "海棠庭院",
+      "landPrice": 3000,
+      "buildPrice": 1500,
+      "tolls": [
+        130,
+        320,
+        800,
+        1900
+      ],
+      "maxLevel": 3,
+      "isChainStore": false
+    },
+    {
+      "id": 9,
+      "name": "商业街A段",
+      "landPrice": 3200,
+      "buildPrice": 1600,
+      "tolls": [
+        140,
+        350,
+        880,
+        2100
+      ],
+      "maxLevel": 3,
+      "isChainStore": true
+    },
+    {
+      "id": 10,
+      "name": "商业街B段",
+      "landPrice": 3400,
+      "buildPrice": 1700,
+      "tolls": [
+        150,
+        380,
+        950,
+        2300
+      ],
+      "maxLevel": 3,
+      "isChainStore": true
+    },
+    {
+      "id": 11,
+      "name": "商业街C段",
+      "landPrice": 3600,
+      "buildPrice": 1800,
+      "tolls": [
+        160,
+        400,
+        1000,
+        2500
+      ],
+      "maxLevel": 3,
+      "isChainStore": true
+    },
+    {
+      "id": 12,
+      "name": "金融街一号",
+      "landPrice": 3800,
+      "buildPrice": 1900,
+      "tolls": [
+        170,
+        430,
+        1080,
+        2700
+      ],
+      "maxLevel": 3,
+      "isChainStore": false
+    },
+    {
+      "id": 14,
+      "name": "金融街二号",
+      "landPrice": 4000,
+      "buildPrice": 2000,
+      "tolls": [
+        180,
+        450,
+        1150,
+        2900
+      ],
+      "maxLevel": 3,
+      "isChainStore": false
+    },
+    {
+      "id": 16,
+      "name": "东方广场",
+      "landPrice": 4200,
+      "buildPrice": 2100,
+      "tolls": [
+        190,
+        480,
+        1200,
+        3100
+      ],
+      "maxLevel": 3,
+      "isChainStore": false
+    },
+    {
+      "id": 17,
+      "name": "世纪大厦",
+      "landPrice": 4400,
+      "buildPrice": 2200,
+      "tolls": [
+        200,
+        500,
+        1300,
+        3300
+      ],
+      "maxLevel": 3,
+      "isChainStore": false
+    },
+    {
+      "id": 18,
+      "name": "国际贸易中心",
+      "landPrice": 4600,
+      "buildPrice": 2300,
+      "tolls": [
+        210,
+        530,
+        1400,
+        3500
+      ],
+      "maxLevel": 3,
+      "isChainStore": false
+    },
+    {
+      "id": 20,
+      "name": "环宇大厦",
+      "landPrice": 4800,
+      "buildPrice": 2400,
+      "tolls": [
+        220,
+        550,
+        1500,
+        3700
+      ],
+      "maxLevel": 3,
+      "isChainStore": false
+    },
+    {
+      "id": 21,
+      "name": "科技园区A",
+      "landPrice": 5000,
+      "buildPrice": 2500,
+      "tolls": [
+        230,
+        580,
+        1600,
+        3900
+      ],
+      "maxLevel": 3,
+      "isChainStore": false
+    },
+    {
+      "id": 22,
+      "name": "科技园区B",
+      "landPrice": 5200,
+      "buildPrice": 2600,
+      "tolls": [
+        240,
+        600,
+        1700,
+        4100
+      ],
+      "maxLevel": 3,
+      "isChainStore": false
+    },
+    {
+      "id": 23,
+      "name": "科技园区C",
+      "landPrice": 5400,
+      "buildPrice": 2700,
+      "tolls": [
+        250,
+        630,
+        1800,
+        4300
+      ],
+      "maxLevel": 3,
+      "isChainStore": false
+    },
+    {
+      "id": 25,
+      "name": "文化街",
+      "landPrice": 5600,
+      "buildPrice": 2800,
+      "tolls": [
+        260,
+        650,
+        1900,
+        4500
+      ],
+      "maxLevel": 3,
+      "isChainStore": false
+    },
+    {
+      "id": 26,
+      "name": "艺术街区",
+      "landPrice": 5800,
+      "buildPrice": 2900,
+      "tolls": [
+        270,
+        680,
+        2000,
+        4700
+      ],
+      "maxLevel": 3,
+      "isChainStore": false
+    },
+    {
+      "id": 27,
+      "name": "音乐厅街",
+      "landPrice": 6000,
+      "buildPrice": 3000,
+      "tolls": [
+        280,
+        700,
+        2100,
+        4900
+      ],
+      "maxLevel": 3,
+      "isChainStore": false
+    },
+    {
+      "id": 29,
+      "name": "美食街A",
+      "landPrice": 6200,
+      "buildPrice": 3100,
+      "tolls": [
+        290,
+        730,
+        2200,
+        5100
+      ],
+      "maxLevel": 3,
+      "isChainStore": true
+    },
+    {
+      "id": 30,
+      "name": "美食街B",
+      "landPrice": 6400,
+      "buildPrice": 3200,
+      "tolls": [
+        300,
+        750,
+        2300,
+        5300
+      ],
+      "maxLevel": 3,
+      "isChainStore": true
+    },
+    {
+      "id": 31,
+      "name": "美食街C",
+      "landPrice": 6600,
+      "buildPrice": 3300,
+      "tolls": [
+        310,
+        780,
+        2400,
+        5500
+      ],
+      "maxLevel": 3,
+      "isChainStore": true
+    },
+    {
+      "id": 33,
+      "name": "中央公园北",
+      "landPrice": 6800,
+      "buildPrice": 3400,
+      "tolls": [
+        320,
+        800,
+        2500,
+        5700
+      ],
+      "maxLevel": 3,
+      "isChainStore": false
+    },
+    {
+      "id": 34,
+      "name": "中央公园东",
+      "landPrice": 7000,
+      "buildPrice": 3500,
+      "tolls": [
+        330,
+        830,
+        2600,
+        5900
+      ],
+      "maxLevel": 3,
+      "isChainStore": false
+    },
+    {
+      "id": 36,
+      "name": "购物中心A",
+      "landPrice": 7200,
+      "buildPrice": 3600,
+      "tolls": [
+        340,
+        850,
+        2700,
+        6100
+      ],
+      "maxLevel": 3,
+      "isChainStore": true
+    },
+    {
+      "id": 37,
+      "name": "购物中心B",
+      "landPrice": 7400,
+      "buildPrice": 3700,
+      "tolls": [
+        350,
+        880,
+        2800,
+        6300
+      ],
+      "maxLevel": 3,
+      "isChainStore": true
+    },
+    {
+      "id": 38,
+      "name": "购物中心C",
+      "landPrice": 7600,
+      "buildPrice": 3800,
+      "tolls": [
+        360,
+        900,
+        2900,
+        6500
+      ],
+      "maxLevel": 3,
+      "isChainStore": true
+    },
+    {
+      "id": 40,
+      "name": "滨海大道",
+      "landPrice": 7800,
+      "buildPrice": 3900,
+      "tolls": [
+        370,
+        930,
+        3000,
+        6700
+      ],
+      "maxLevel": 3,
+      "isChainStore": false
+    },
+    {
+      "id": 41,
+      "name": "海景公寓",
+      "landPrice": 8000,
+      "buildPrice": 4000,
+      "tolls": [
+        380,
+        950,
+        3100,
+        6900
+      ],
+      "maxLevel": 3,
+      "isChainStore": false
+    },
+    {
+      "id": 42,
+      "name": "观海别墅",
+      "landPrice": 8200,
+      "buildPrice": 4100,
+      "tolls": [
+        390,
+        980,
+        3200,
+        7100
+      ],
+      "maxLevel": 3,
+      "isChainStore": false
+    },
+    {
+      "id": 43,
+      "name": "港湾一号",
+      "landPrice": 8400,
+      "buildPrice": 4200,
+      "tolls": [
+        400,
+        1000,
+        3300,
+        7300
+      ],
+      "maxLevel": 3,
+      "isChainStore": false
+    },
+    {
+      "id": 45,
+      "name": "工业区A",
+      "landPrice": 8600,
+      "buildPrice": 4300,
+      "tolls": [
+        410,
+        1030,
+        3400,
+        7500
+      ],
+      "maxLevel": 3,
+      "isChainStore": false
+    },
+    {
+      "id": 46,
+      "name": "工业区B",
+      "landPrice": 8800,
+      "buildPrice": 4400,
+      "tolls": [
+        420,
+        1050,
+        3500,
+        7700
+      ],
+      "maxLevel": 3,
+      "isChainStore": false
+    },
+    {
+      "id": 47,
+      "name": "工业区C",
+      "landPrice": 9000,
+      "buildPrice": 4500,
+      "tolls": [
+        430,
+        1080,
+        3600,
+        7900
+      ],
+      "maxLevel": 3,
+      "isChainStore": false
+    },
+    {
+      "id": 49,
+      "name": "大学城北",
+      "landPrice": 9200,
+      "buildPrice": 4600,
+      "tolls": [
+        440,
+        1100,
+        3700,
+        8100
+      ],
+      "maxLevel": 3,
+      "isChainStore": false
+    },
+    {
+      "id": 50,
+      "name": "大学城南",
+      "landPrice": 9400,
+      "buildPrice": 4700,
+      "tolls": [
+        450,
+        1130,
+        3800,
+        8300
+      ],
+      "maxLevel": 3,
+      "isChainStore": false
+    },
+    {
+      "id": 51,
+      "name": "研究院路",
+      "landPrice": 9600,
+      "buildPrice": 4800,
+      "tolls": [
+        460,
+        1150,
+        3900,
+        8500
+      ],
+      "maxLevel": 3,
+      "isChainStore": false
+    },
+    {
+      "id": 52,
+      "name": "创新园",
+      "landPrice": 9800,
+      "buildPrice": 4900,
+      "tolls": [
+        470,
+        1180,
+        4000,
+        8700
+      ],
+      "maxLevel": 3,
+      "isChainStore": false
+    },
+    {
+      "id": 54,
+      "name": "体育中心",
+      "landPrice": 10000,
+      "buildPrice": 5000,
+      "tolls": [
+        480,
+        1200,
+        4100,
+        9000
+      ],
+      "maxLevel": 3,
+      "isChainStore": false
+    },
+    {
+      "id": 55,
+      "name": "奥运花园",
+      "landPrice": 10200,
+      "buildPrice": 5100,
+      "tolls": [
+        490,
+        1230,
+        4200,
+        9200
+      ],
+      "maxLevel": 3,
+      "isChainStore": false
+    },
+    {
+      "id": 56,
+      "name": "中央广场入口",
+      "landPrice": 3000,
+      "buildPrice": 1500,
+      "tolls": [
+        100,
+        250,
+        650,
+        1500
+      ],
+      "maxLevel": 3,
+      "isChainStore": false
+    },
+    {
+      "id": 57,
+      "name": "中央广场中庭",
+      "landPrice": 3500,
+      "buildPrice": 1750,
+      "tolls": [
+        120,
+        300,
+        750,
+        1700
+      ],
+      "maxLevel": 3,
+      "isChainStore": false
+    },
+    {
+      "id": 59,
+      "name": "广场东路",
+      "landPrice": 3800,
+      "buildPrice": 1900,
+      "tolls": [
+        140,
+        350,
+        850,
+        1900
+      ],
+      "maxLevel": 3,
+      "isChainStore": false
+    },
+    {
+      "id": 60,
+      "name": "广场西路",
+      "landPrice": 4000,
+      "buildPrice": 2000,
+      "tolls": [
+        150,
+        380,
+        950,
+        2100
+      ],
+      "maxLevel": 3,
+      "isChainStore": false
+    },
+    {
+      "id": 61,
+      "name": "广场南路",
+      "landPrice": 4200,
+      "buildPrice": 2100,
+      "tolls": [
+        160,
+        400,
+        1000,
+        2300
+      ],
+      "maxLevel": 3,
+      "isChainStore": false
+    },
+    {
+      "id": 63,
+      "name": "广场北路A",
+      "landPrice": 4400,
+      "buildPrice": 2200,
+      "tolls": [
+        170,
+        430,
+        1080,
+        2500
+      ],
+      "maxLevel": 3,
+      "isChainStore": false
+    },
+    {
+      "id": 64,
+      "name": "广场北路B",
+      "landPrice": 4600,
+      "buildPrice": 2300,
+      "tolls": [
+        180,
+        450,
+        1150,
+        2700
+      ],
+      "maxLevel": 3,
+      "isChainStore": false
+    },
+    {
+      "id": 65,
+      "name": "广场北路C",
+      "landPrice": 4800,
+      "buildPrice": 2400,
+      "tolls": [
+        190,
+        480,
+        1200,
+        2900
+      ],
+      "maxLevel": 3,
+      "isChainStore": false
+    },
+    {
+      "id": 66,
+      "name": "北门大街",
+      "landPrice": 5000,
+      "buildPrice": 2500,
+      "tolls": [
+        200,
+        500,
+        1300,
+        3100
+      ],
+      "maxLevel": 3,
+      "isChainStore": false
+    },
+    {
+      "id": 67,
+      "name": "北城新区",
+      "landPrice": 5200,
+      "buildPrice": 2600,
+      "tolls": [
+        210,
+        530,
+        1400,
+        3300
+      ],
+      "maxLevel": 3,
+      "isChainStore": false
+    },
+    {
+      "id": 68,
+      "name": "西区老街",
+      "landPrice": 2800,
+      "buildPrice": 1400,
+      "tolls": [
+        110,
+        280,
+        700,
+        1600
+      ],
+      "maxLevel": 3,
+      "isChainStore": false
+    },
+    {
+      "id": 69,
+      "name": "西区巷子",
+      "landPrice": 3000,
+      "buildPrice": 1500,
+      "tolls": [
+        120,
+        300,
+        750,
+        1800
+      ],
+      "maxLevel": 3,
+      "isChainStore": false
+    },
+    {
+      "id": 71,
+      "name": "西园路",
+      "landPrice": 3400,
+      "buildPrice": 1700,
+      "tolls": [
+        140,
+        350,
+        880,
+        2000
+      ],
+      "maxLevel": 3,
+      "isChainStore": false
+    },
+    {
+      "id": 72,
+      "name": "东区花苑",
+      "landPrice": 3600,
+      "buildPrice": 1800,
+      "tolls": [
+        150,
+        380,
+        950,
+        2200
+      ],
+      "maxLevel": 3,
+      "isChainStore": false
+    },
+    {
+      "id": 73,
+      "name": "东区商铺",
+      "landPrice": 3800,
+      "buildPrice": 1900,
+      "tolls": [
+        160,
+        400,
+        1000,
+        2400
+      ],
+      "maxLevel": 3,
+      "isChainStore": false
+    },
+    {
+      "id": 75,
+      "name": "东园路",
+      "landPrice": 4200,
+      "buildPrice": 2100,
+      "tolls": [
+        180,
+        450,
+        1150,
+        2600
+      ],
+      "maxLevel": 3,
+      "isChainStore": false
+    },
+    {
+      "id": 76,
+      "name": "西南居住区",
+      "landPrice": 2400,
+      "buildPrice": 1200,
+      "tolls": [
+        100,
+        250,
+        600,
+        1400
+      ],
+      "maxLevel": 3,
+      "isChainStore": false
+    },
+    {
+      "id": 77,
+      "name": "南林街",
+      "landPrice": 2600,
+      "buildPrice": 1300,
+      "tolls": [
+        110,
+        280,
+        700,
+        1600
+      ],
+      "maxLevel": 3,
+      "isChainStore": false
+    },
+    {
+      "id": 78,
+      "name": "竹林小径",
+      "landPrice": 2800,
+      "buildPrice": 1400,
+      "tolls": [
+        120,
+        300,
+        750,
+        1800
+      ],
+      "maxLevel": 3,
+      "isChainStore": false
+    },
+    {
+      "id": 80,
+      "name": "楠木巷",
+      "landPrice": 3000,
+      "buildPrice": 1500,
+      "tolls": [
+        130,
+        320,
+        800,
+        1900
+      ],
+      "maxLevel": 3,
+      "isChainStore": false
+    },
+    {
+      "id": 81,
+      "name": "松柏街",
+      "landPrice": 3200,
+      "buildPrice": 1600,
+      "tolls": [
+        140,
+        350,
+        880,
+        2100
+      ],
+      "maxLevel": 3,
+      "isChainStore": false
+    },
+    {
+      "id": 82,
+      "name": "东南新城区",
+      "landPrice": 3400,
+      "buildPrice": 1700,
+      "tolls": [
+        150,
+        380,
+        950,
+        2300
+      ],
+      "maxLevel": 3,
+      "isChainStore": false
+    },
+    {
+      "id": 83,
+      "name": "湖畔花园",
+      "landPrice": 3600,
+      "buildPrice": 1800,
+      "tolls": [
+        160,
+        400,
+        1000,
+        2500
+      ],
+      "maxLevel": 3,
+      "isChainStore": false
+    },
+    {
+      "id": 84,
+      "name": "湖景房",
+      "landPrice": 3800,
+      "buildPrice": 1900,
+      "tolls": [
+        170,
+        430,
+        1080,
+        2700
+      ],
+      "maxLevel": 3,
+      "isChainStore": false
+    },
+    {
+      "id": 86,
+      "name": "南湖路",
+      "landPrice": 4000,
+      "buildPrice": 2000,
+      "tolls": [
+        180,
+        450,
+        1150,
+        2900
+      ],
+      "maxLevel": 3,
+      "isChainStore": false
+    },
+    {
+      "id": 87,
+      "name": "北湖路",
+      "landPrice": 4200,
+      "buildPrice": 2100,
+      "tolls": [
+        190,
+        480,
+        1200,
+        3100
+      ],
+      "maxLevel": 3,
+      "isChainStore": false
+    },
+    {
+      "id": 88,
+      "name": "中央广场西",
+      "landPrice": 3200,
+      "buildPrice": 1600,
+      "tolls": [
+        130,
+        330,
+        830,
+        1900
+      ],
+      "maxLevel": 3,
+      "isChainStore": false
+    },
+    {
+      "id": 89,
+      "name": "广场西路A",
+      "landPrice": 3400,
+      "buildPrice": 1700,
+      "tolls": [
+        140,
+        350,
+        880,
+        2000
+      ],
+      "maxLevel": 3,
+      "isChainStore": false
+    }
+  ],
+  "facilities": [
+    {
+      "id": 4,
+      "name": "银行（南）",
+      "type": "bank"
+    },
+    {
+      "id": 8,
+      "name": "商店（南）",
+      "type": "shop"
+    },
+    {
+      "id": 13,
+      "name": "医院",
+      "type": "hospital"
+    },
+    {
+      "id": 19,
+      "name": "监狱",
+      "type": "prison"
+    },
+    {
+      "id": 24,
+      "name": "公园（西）",
+      "type": "park"
+    },
+    {
+      "id": 28,
+      "name": "魔术屋",
+      "type": "magic_house"
+    },
+    {
+      "id": 35,
+      "name": "酒店（东）",
+      "type": "hotel"
+    },
+    {
+      "id": 39,
+      "name": "加油站（东北）",
+      "type": "gas_station"
+    },
+    {
+      "id": 48,
+      "name": "新闻中心",
+      "type": "news"
+    },
+    {
+      "id": 53,
+      "name": "命运转盘",
+      "type": "fortune"
+    },
+    {
+      "id": 62,
+      "name": "拍卖行",
+      "type": "auction_house"
+    },
+    {
+      "id": 79,
+      "name": "加油站（西南）",
+      "type": "gas_station"
+    },
+    {
+      "id": 85,
+      "name": "机场",
+      "type": "airport"
+    }
+  ],
+  "commercials": [
+    {
+      "id": 15,
+      "name": "保险公司（南）",
+      "type": "insurance",
+      "tollFee": 500
+    },
+    {
+      "id": 44,
+      "name": "建筑公司（东）",
+      "type": "construction",
+      "tollFee": 800
+    },
+    {
+      "id": 70,
+      "name": "保险公司（西）",
+      "type": "insurance",
+      "tollFee": 500
+    },
+    {
+      "id": 74,
+      "name": "建筑公司（中）",
+      "type": "construction",
+      "tollFee": 800
+    }
+  ],
+  "landmarks": [
+    {
+      "id": 32,
+      "name": "中央地标",
+      "x": 480,
+      "y": 80
+    },
+    {
+      "id": 58,
+      "name": "城市中心广场",
+      "x": 480,
+      "y": 480
+    },
+    {
+      "id": 85,
+      "name": "城市花园",
+      "x": 600,
+      "y": 260
+    }
+  ],
+  "startNodeId": 0,
+  "prisonNodeId": 19,
+  "hospitalNodeId": 13
+}

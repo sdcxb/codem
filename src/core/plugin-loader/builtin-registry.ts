@@ -179,7 +179,7 @@ import { apply as uiMarketApply } from '../ui-plugins/ui-market/index.ts'
 import { apply as uiThemeApply } from '../ui-plugins/ui-theme/index.ts'
 import { apply as uiSkinDefaultApply } from '../ui-plugins/ui-skin-default/index.ts'
 import { apply as uiSkinPetApply } from '../ui-plugins/ui-skin-pet/index.ts'
-import { apply as uiPetApply } from '../ui-plugins/ui-pet/index.ts'
+// ui-pet is now a Provider (ui-pet-provider.ts), not a slot-based UI plugin
 
 // R8: 78 个 DSH 缺失插件补全
 import { agentLoopProvider } from '../provider/agent-loop-provider'
@@ -333,7 +333,6 @@ registerBuiltinPlugin('@codem/mimo-auth', { provides: ['mimoAuth'], inject: [], 
   registerBuiltinPlugin('@codem/ui-theme', { provides: [], inject: [], priority: 0 }, () => ({ apply: (ctx: any) => uiThemeApply(ctx) }))
   registerBuiltinPlugin('@codem/ui-skin-default', { provides: [], inject: [], priority: 0 }, () => ({ apply: (ctx: any) => uiSkinDefaultApply(ctx) }))
   registerBuiltinPlugin('@codem/ui-skin-pet', { provides: [], inject: [], priority: 0 }, () => ({ apply: (ctx: any) => uiSkinPetApply(ctx) }))
-  registerBuiltinPlugin('@codem/ui-pet', { provides: [], inject: ['slots'], slots: ['app.overlay'], priority: 0 }, () => ({ inject: ['slots'], apply: (ctx: any) => uiPetApply(ctx) }))
 
   // R5 Providers (从模块级单例升级为 Cordis 服务)
   registerBuiltinPlugin('@codem/cost-tracker', { provides: ['costTracker'], inject: ['llmEngine'], priority: 0, hot: true }, () => costTrackerProvider)

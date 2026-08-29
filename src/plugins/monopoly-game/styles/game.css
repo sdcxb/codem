@@ -1,0 +1,1085 @@
+/* Monopoly Game — 游戏样式（Kenney UI 风格整合） */
+
+.monopoly-game-wrapper {
+  width: 100%;
+  height: 100vh;
+  background: #1a1a2e;
+  color: #ecf0f1;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  overflow: hidden;
+  position: relative;
+}
+
+/* 开始画面 */
+.game-start-screen {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  gap: 16px;
+  background: radial-gradient(ellipse at center, #16213e 0%, #0a0a1a 100%);
+}
+
+.game-start-screen h1 {
+  font-size: 36px;
+  color: #f1c40f;
+  text-shadow: 0 2px 8px rgba(241, 196, 15, 0.3);
+}
+
+.game-start-screen p {
+  color: #bdc3c7;
+  font-size: 14px;
+}
+
+.game-start-btn {
+  padding: 14px 48px;
+  font-size: 18px;
+  background: linear-gradient(135deg, #e74c3c, #c0392b);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: transform 0.2s, box-shadow 0.2s;
+  box-shadow: 0 4px 15px rgba(231, 76, 60, 0.4);
+}
+
+.game-start-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(231, 76, 60, 0.5);
+}
+
+/* G3: 角色选择 */
+.character-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  max-width: 600px;
+}
+
+/* G14: 角色立绘 */
+.character-portrait {
+  width: 80px;
+  height: 80px;
+  margin: 0 auto 8px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+}
+
+.player-avatar-mini {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  display: inline-flex;
+  vertical-align: middle;
+}
+
+.character-card {
+  background: #2c3e50;
+  border: 2px solid #555;
+  border-radius: 10px;
+  padding: 16px 12px;
+  text-align: center;
+  cursor: pointer;
+  transition: transform 0.2s, border-color 0.2s, box-shadow 0.2s;
+}
+
+.character-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.character-card.selected {
+  transform: scale(1.05);
+  box-shadow: 0 6px 20px rgba(52, 152, 219, 0.3);
+}
+
+.character-avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  margin: 0 auto 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  font-weight: bold;
+  color: #fff;
+  text-shadow: 0 1px 3px rgba(0,0,0,0.5);
+}
+
+.character-name {
+  font-size: 16px;
+  font-weight: bold;
+  margin-bottom: 4px;
+}
+
+.character-special {
+  font-size: 11px;
+  color: #bdc3c7;
+  margin-bottom: 4px;
+  line-height: 1.3;
+}
+
+.character-cash {
+  font-size: 11px;
+  color: #f1c40f;
+}
+
+.character-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 20px;
+}
+
+/* 游戏布局 */
+.game-layout {
+  display: flex;
+  height: 100%;
+  gap: 0;
+}
+
+.game-sidebar-left {
+  width: 240px;
+  flex-shrink: 0;
+  background: #16213e;
+  overflow-y: auto;
+  padding: 8px;
+  border-right: 1px solid #2c3e50;
+}
+
+.game-center {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.phaser-container {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+}
+
+.phaser-container canvas {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.game-sidebar-right {
+  width: 260px;
+  flex-shrink: 0;
+  background: #16213e;
+  overflow-y: auto;
+  padding: 8px;
+  border-left: 1px solid #2c3e50;
+}
+
+/* 面板标题 */
+.panel-title {
+  font-size: 14px;
+  color: #f1c40f;
+  margin: 0 0 8px 0;
+  padding-bottom: 4px;
+  border-bottom: 1px solid #2c3e50;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.round-info {
+  font-size: 12px;
+  color: #95a5a6;
+}
+
+/* 玩家卡片 */
+.player-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.player-card {
+  background: rgba(44, 62, 80, 0.6);
+  border: 2px solid;
+  border-radius: 8px;
+  padding: 8px;
+  transition: all 0.2s;
+}
+
+.player-card.current {
+  background: rgba(44, 62, 80, 0.9);
+  box-shadow: 0 0 12px rgba(241, 196, 15, 0.3);
+  transform: scale(1.02);
+}
+
+.player-card.bankrupt {
+  opacity: 0.4;
+}
+
+.player-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.player-name {
+  font-weight: bold;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.player-type-icon {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  filter: brightness(1.3);
+  border-radius: 2px;
+}
+
+.turn-indicator {
+  color: #f1c40f;
+  font-size: 16px;
+  animation: pulse 1s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.player-stats {
+  font-size: 11px;
+}
+
+.stat-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 1px 0;
+  color: #bdc3c7;
+}
+
+.stat-row.total {
+  border-top: 1px solid #34495e;
+  margin-top: 2px;
+  padding-top: 2px;
+  color: #ecf0f1;
+  font-weight: bold;
+}
+
+.stat-label {
+  color: #7f8c8d;
+}
+
+.stat-value {
+  color: #ecf0f1;
+}
+
+.player-extras {
+  margin-top: 6px;
+  font-size: 10px;
+}
+
+.extra-row {
+  display: flex;
+  justify-content: space-between;
+  color: #95a5a6;
+  padding: 1px 0;
+}
+
+.status-effects {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  margin-top: 4px;
+}
+
+.badge {
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 9px;
+  color: white;
+}
+
+.badge.prison { background: #e74c3c; }
+.badge.hospital { background: #e91e63; }
+.badge.hotel { background: #9b59b6; }
+.badge.sleep { background: #3498db; }
+.badge.walk { background: #2ecc71; }
+.badge.stop { background: #f39c12; }
+.badge.turtle { background: #1abc9c; }
+.badge.ally { background: #27ae60; }
+.badge.assurance { background: #16a085; }
+
+/* 骰子面板 */
+.dice-panel {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+}
+
+.dice-display {
+  display: flex;
+  gap: 4px;
+}
+
+.dice-face {
+  width: 32px;
+  height: 32px;
+  background: white;
+  color: #2c3e50;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  font-weight: bold;
+  border: 2px solid #2c3e50;
+}
+
+.dice-face-img {
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  border: 2px solid #2c3e50;
+  filter: brightness(1.1);
+}
+
+.dice-placeholder {
+  font-size: 12px;
+  color: #95a5a6;
+  padding: 6px 12px;
+  background: rgba(44, 62, 80, 0.4);
+  border-radius: 6px;
+}
+
+.dice-sum {
+  color: #f1c40f;
+  font-weight: bold;
+}
+
+/* 操作栏 */
+.action-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  background: #16213e;
+  border-top: 1px solid #2c3e50;
+  gap: 8px;
+}
+
+.action-left, .action-right {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.action-btn {
+  padding: 6px 16px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+
+.action-btn.primary {
+  background: #e74c3c;
+  color: white;
+}
+
+.action-btn.primary:hover {
+  background: #c0392b;
+}
+
+.action-btn.buy {
+  background: #27ae60;
+  color: white;
+}
+
+.action-btn.upgrade {
+  background: #2980b9;
+  color: white;
+}
+
+.action-btn.skip {
+  background: #7f8c8d;
+  color: white;
+}
+
+.action-btn.secondary {
+  background: #34495e;
+  color: #ecf0f1;
+}
+
+.action-btn:hover {
+  filter: brightness(1.15);
+}
+
+.moving-indicator {
+  color: #f1c40f;
+  font-size: 14px;
+  animation: pulse 1s infinite;
+}
+
+/* 游戏日志 */
+.game-log {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.log-list {
+  flex: 1;
+  overflow-y: auto;
+  font-size: 11px;
+  color: #95a5a6;
+}
+
+.log-entry {
+  padding: 2px 4px;
+  border-bottom: 1px solid rgba(44, 62, 80, 0.5);
+  line-height: 1.4;
+}
+
+.log-entry.latest {
+  color: #f1c40f;
+  background: rgba(241, 196, 15, 0.05);
+}
+
+/* 股票面板 */
+.stock-panel-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.stock-panel {
+  background: #1a1a2e;
+  border: 1px solid #2c3e50;
+  border-radius: 12px;
+  padding: 16px;
+  width: 500px;
+  max-width: 90vw;
+}
+
+.stock-panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.stock-panel-header h3 {
+  color: #f1c40f;
+  margin: 0;
+}
+
+.stock-panel-header button {
+  background: none;
+  border: none;
+  color: #95a5a6;
+  font-size: 20px;
+  cursor: pointer;
+}
+
+.stock-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.stock-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px;
+  background: rgba(44, 62, 80, 0.4);
+  border-radius: 6px;
+}
+
+.stock-name {
+  flex: 1;
+  color: #ecf0f1;
+  font-size: 13px;
+}
+
+.stock-price {
+  color: #f1c40f;
+  font-weight: bold;
+  font-size: 13px;
+  min-width: 60px;
+}
+
+.stock-held {
+  color: #95a5a6;
+  font-size: 12px;
+  min-width: 50px;
+}
+
+.stock-btn {
+  padding: 4px 10px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.stock-btn.buy {
+  background: #27ae60;
+  color: white;
+}
+
+.stock-btn.sell {
+  background: #e74c3c;
+  color: white;
+}
+
+/* 响应式 */
+@media (max-width: 900px) {
+  .game-sidebar-left {
+    width: 180px;
+  }
+  .game-sidebar-right {
+    width: 200px;
+  }
+}
+
+@media (max-width: 600px) {
+  .game-sidebar-left, .game-sidebar-right {
+    display: none;
+  }
+}
+
+/* ===== 卡牌/道具/商店面板通用样式 ===== */
+
+.card-panel-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.card-panel, .shop-panel {
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+  border: 1px solid #34495e;
+  border-radius: 12px;
+  padding: 16px;
+  width: 500px;
+  max-width: 90vw;
+  max-height: 80vh;
+  overflow-y: auto;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+}
+
+.panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.panel-header h3 {
+  color: #f1c40f;
+  margin: 0;
+  font-size: 16px;
+}
+
+.panel-close {
+  background: none;
+  border: none;
+  color: #95a5a6;
+  font-size: 24px;
+  cursor: pointer;
+  padding: 0 4px;
+  line-height: 1;
+}
+
+.panel-close:hover {
+  color: #e74c3c;
+}
+
+.empty-state {
+  color: #7f8c8d;
+  text-align: center;
+  padding: 20px;
+}
+
+.card-list, .shop-item-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.card-item {
+  background: rgba(44, 62, 80, 0.5);
+  border: 2px solid transparent;
+  border-radius: 8px;
+  padding: 8px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.card-item.selected {
+  border-color: #f1c40f;
+  background: rgba(241, 196, 15, 0.1);
+}
+
+.card-item:hover {
+  background: rgba(44, 62, 80, 0.7);
+}
+
+.card-icon-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.card-name {
+  font-weight: bold;
+  color: #ecf0f1;
+  font-size: 13px;
+}
+
+.card-desc {
+  color: #95a5a6;
+  font-size: 11px;
+  margin-top: 2px;
+  margin-left: 26px;
+}
+
+.tool-amount {
+  color: #f1c40f;
+  font-weight: bold;
+}
+
+.target-select {
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.target-select label {
+  color: #bdc3c7;
+  font-size: 12px;
+}
+
+.target-select select {
+  flex: 1;
+  padding: 4px 8px;
+  background: #2c3e50;
+  color: #ecf0f1;
+  border: 1px solid #34495e;
+  border-radius: 4px;
+}
+
+.action-message {
+  color: #f1c40f;
+  font-size: 12px;
+  padding: 4px;
+  margin-top: 8px;
+  background: rgba(241, 196, 15, 0.05);
+  border-radius: 4px;
+}
+
+/* 商店面板 */
+.shop-tabs, .bank-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.shop-tab {
+  flex: 1;
+  padding: 6px;
+  background: #2c3e50;
+  color: #bdc3c7;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: background 0.15s;
+}
+
+.shop-tab.active {
+  background: #f1c40f;
+  color: #1a1a2e;
+  font-weight: bold;
+}
+
+.shop-cash {
+  color: #ecf0f1;
+  font-size: 12px;
+  margin-bottom: 8px;
+  padding: 6px;
+  background: rgba(44, 62, 80, 0.4);
+  border-radius: 4px;
+}
+
+.shop-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px;
+  background: rgba(44, 62, 80, 0.4);
+  border-radius: 6px;
+}
+
+.shop-item-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.shop-item-name {
+  color: #ecf0f1;
+  font-size: 13px;
+}
+
+.shop-item-desc {
+  color: #7f8c8d;
+  font-size: 10px;
+}
+
+.shop-item-price {
+  color: #f1c40f;
+  font-weight: bold;
+  font-size: 12px;
+  min-width: 60px;
+  text-align: right;
+}
+
+.shop-item-stock {
+  color: #95a5a6;
+  font-size: 11px;
+  min-width: 50px;
+}
+
+.shop-btn {
+  padding: 4px 12px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  background: #27ae60;
+  color: white;
+  transition: filter 0.15s;
+}
+
+.shop-btn.sell {
+  background: #e74c3c;
+}
+
+.shop-btn:disabled {
+  background: #7f8c8d;
+  cursor: not-allowed;
+}
+
+.sell-section-title {
+  color: #f1c40f;
+  font-size: 12px;
+  margin-top: 8px;
+  padding-bottom: 2px;
+  border-bottom: 1px solid #2c3e50;
+}
+
+/* 银行面板 */
+.bank-info {
+  margin-bottom: 12px;
+  background: rgba(44, 62, 80, 0.4);
+  border-radius: 6px;
+  padding: 8px;
+}
+
+.bank-input {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.quick-amounts {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.quick-btn {
+  padding: 3px 8px;
+  background: #34495e;
+  color: #ecf0f1;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 11px;
+  transition: filter 0.15s;
+}
+
+.quick-btn:hover {
+  filter: brightness(1.2);
+}
+
+/* 拍卖面板 */
+.auction-info {
+  margin-bottom: 12px;
+  background: rgba(44, 62, 80, 0.4);
+  border-radius: 6px;
+  padding: 8px;
+}
+
+.auction-participants {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.auction-player {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px;
+  background: rgba(44, 62, 80, 0.4);
+  border-radius: 6px;
+}
+
+.auction-player-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 80px;
+}
+
+.auction-player-cash {
+  color: #95a5a6;
+  font-size: 11px;
+}
+
+.auction-input {
+  width: 80px;
+  padding: 4px;
+  background: #2c3e50;
+  color: #ecf0f1;
+  border: 1px solid #34495e;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+/* 地图选择 */
+.map-select {
+  margin: 12px 0;
+}
+
+.map-select h3 {
+  color: #f1c40f;
+  font-size: 14px;
+  margin-bottom: 8px;
+}
+
+.map-options {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.map-option {
+  padding: 8px 16px;
+  background: #2c3e50;
+  color: #bdc3c7;
+  border: 2px solid transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 13px;
+  transition: all 0.15s;
+}
+
+.map-option.selected {
+  border-color: #f1c40f;
+  background: rgba(241, 196, 15, 0.15);
+  color: #f1c40f;
+}
+
+.map-option:hover {
+  background: #34495e;
+}
+
+/* G35: 设置条 */
+.settings-bar {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 4px 12px;
+  background: #0d1117;
+  border-top: 1px solid #1a1a2e;
+  font-size: 11px;
+}
+
+.setting-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: #95a5a6;
+}
+
+.setting-item input[type="range"] {
+  width: 80px;
+  cursor: pointer;
+}
+
+.setting-item select {
+  padding: 2px 4px;
+  background: #2c3e50;
+  color: #ecf0f1;
+  border: 1px solid #34495e;
+  border-radius: 4px;
+  font-size: 11px;
+}
+
+/* G33: 消息条 */
+.game-message-bar {
+  padding: 6px 12px;
+  font-size: 13px;
+  font-weight: bold;
+  background: rgba(44, 62, 80, 0.6);
+  text-align: center;
+  border-bottom: 1px solid #2c3e50;
+}
+
+/* ===== PNG 图标样式（替换 emoji） ===== */
+
+/* 面板标题图标 */
+.panel-header-icon {
+  width: 20px;
+  height: 20px;
+  vertical-align: middle;
+  margin-right: 4px;
+  filter: brightness(1.2);
+}
+
+/* 行内小图标 */
+.inline-icon {
+  width: 16px;
+  height: 16px;
+  vertical-align: middle;
+  margin-right: 2px;
+  filter: brightness(1.2);
+}
+
+/* 按钮内图标 */
+.btn-icon {
+  width: 14px;
+  height: 14px;
+  vertical-align: middle;
+  margin-right: 4px;
+  filter: brightness(1.5);
+}
+
+/* 卡牌/道具列表中的图标 */
+.item-icon {
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border-radius: 4px;
+  padding: 2px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid;
+  filter: brightness(1.3);
+}
+
+/* 商店列表中的图标 */
+.shop-item .item-icon {
+  width: 24px;
+  height: 24px;
+}
+
+/* 出售区分标题图标 */
+.sell-section-title .inline-icon {
+  width: 14px;
+  height: 14px;
+}
+
+/* ===== 存档读档面板 ===== */
+.save-slot-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.save-slot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  background: rgba(44, 62, 80, 0.4);
+  border: 2px solid #34495e;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.save-slot:hover {
+  background: rgba(44, 62, 80, 0.7);
+}
+
+.save-slot.empty {
+  border-style: dashed;
+  border-color: #3a3a3a;
+}
+
+.save-slot.occupied:hover {
+  border-color: #f1c40f;
+}
+
+.save-slot-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.save-slot-name {
+  color: #ecf0f1;
+  font-size: 13px;
+  font-weight: bold;
+}
+
+.save-slot.empty .save-slot-name {
+  color: #7f8c8d;
+  font-weight: normal;
+}
+
+.save-slot-detail {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: 11px;
+  color: #95a5a6;
+}
+
+.save-slot-actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}

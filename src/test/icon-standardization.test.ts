@@ -242,7 +242,7 @@ describe("图标标准化测试 — ICON-001 ~ ICON-060", () => {
       { file: "components/MemoryManager.tsx", emojis: ["🧠", "🔍", "🗑️", "✏️"] },
       { file: "components/NotebookManager.tsx", emojis: ["📓", "📚"] },
       { file: "components/PetMarketDialog.tsx", emojis: ["🐶", "🐱"] },
-      { file: "components/PetOverlay.tsx", emojis: [] }, // 允许宠物 emoji
+      { file: "components/PetWindowApp.tsx", emojis: [] }, // 允许宠物 emoji
       { file: "components/UsageStats.tsx", emojis: ["📊", "📈"] },
       { file: "components/PluginManager.tsx", emojis: ["🔌", "⚙️", "📦", "🧩", "🎨", "🔗", "🔧"] },
     ];
@@ -321,7 +321,7 @@ describe("图标标准化测试 — ICON-001 ~ ICON-060", () => {
         "components/MemoryManager.tsx",
         "components/NotebookManager.tsx",
         "components/PetMarketDialog.tsx",
-        "components/PetOverlay.tsx",
+        "components/PetWindowApp.tsx",
         "components/FlashcardViewer.tsx",
         "components/PdfViewer.tsx",
         "components/SourceViewer.tsx",

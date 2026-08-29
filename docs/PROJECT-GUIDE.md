@@ -1,9 +1,9 @@
 # Codem 项目完整说明
 
 > **用途**：新对话快速理解项目全貌、架构、文件关联、当前状态。
-> 创建时间：2026-07-23 | 最后更新：2026-08-27 | 当前版本：v1.6.0（SubagentRuntime 架构重构 + 技能市场 Trees API 改造）
+> 创建时间：2026-07-23 | 最后更新：2026-08-29 | 当前版本：v1.6.2（大富翁嵌入式游戏全量交付 + 三轮审计 Bug 修复）
 >
-> **版本历程概览**：v0.70 基础存储 → v0.80 轮次架构 → v0.87 Worktree/并行 → v0.88 桌面宠物 → v0.89 跨会话委派 → v0.90 P0-P4 全量功能 → v0.91 Coding 工作台 → v0.92 Codex 对标 → v0.93 Vision Proxy → v0.94 配置修复 → v0.95 CLI/API 视觉代理 → v0.96 UI 大改版 → v0.97 Agentic Loop 性能优化 → v0.98 多智能体协同 → v0.99 DSH 全量升级 → v1.0.0 插件系统架构 + UI/UX 标准化 → v1.1.0 DSH 对标整改 + 测试深化 → v1.1.1 UI 布局优化 + 插件条件渲染 + Bug 修复 → v1.2.0 Cordis 架构对齐 DSH + 安全加固 + 全量测试重构 → v1.3.0 Cordis 插件系统对标 DSH 全面整改 + Slot 消费闭环 + inject 依赖对齐 → v1.4.0 UI/UX 体验优化 11 项 Bug 修复 + 性能/CI-CD 面板切换化 + 梦幻皮肤一致性修复 → v1.4.1 插件管理初始化修复 + 技能市场性能优化 + 对话区域自适应 9 项 Bug 修复 → v1.4.2 10 项 Bug 修复 + Cordis 插件时序改进 + SlotBridge 降级机制增强 + 头像系统升级 → v1.5.0 Cordis "一切插件化" 工具发现机制 — ToolDef guidance + toolsProvider 自动注册 systemPrompt section + buildSystemPrompt 动态收集 + 31 个工具补充 guidance + skill-creator 技能安装增强 → v1.5.1 DSH 架构对标深度整改 + YAML 声明式插件加载 + LLM 回答重复根因修复 + llmEngine/mimoAuth 注册修复 + SlotBridge/SlotRenderer 对标 DSH 重写 → v1.5.2 大文件流式分页读取 + Agent Loop 无上限改造（对标 DSH） + 模型系统动态化 + Skills 市场增量搜索 → v1.5.3-v1.5.4 引导消息立即注入 + Markdown 文件路径超链接 + 任务完成标签稳定显示 + 技能市场优化（GitHub API 目录下载） → v1.5.5 Compaction 并发写入治根修复（对标 DSH compactSurfaceRegion） + Bash 缓存失效修复 → v1.6.0 SubagentRuntime 架构重构（对标 DSH） + 技能市场 Trees API 改造（移植 vercel-labs/skills 官方 CLI） + GitHub Token 链路修复
+> **版本历程概览**：v0.70 基础存储 → v0.80 轮次架构 → v0.87 Worktree/并行 → v0.88 桌面宠物 → v0.89 跨会话委派 → v0.90 P0-P4 全量功能 → v0.91 Coding 工作台 → v0.92 Codex 对标 → v0.93 Vision Proxy → v0.94 配置修复 → v0.95 CLI/API 视觉代理 → v0.96 UI 大改版 → v0.97 Agentic Loop 性能优化 → v0.98 多智能体协同 → v0.99 DSH 全量升级 → v1.0.0 插件系统架构 + UI/UX 标准化 → v1.1.0 DSH 对标整改 + 测试深化 → v1.1.1 UI 布局优化 + 插件条件渲染 + Bug 修复 → v1.2.0 Cordis 架构对齐 DSH + 安全加固 + 全量测试重构 → v1.3.0 Cordis 插件系统对标 DSH 全面整改 + Slot 消费闭环 + inject 依赖对齐 → v1.4.0 UI/UX 体验优化 11 项 Bug 修复 + 性能/CI-CD 面板切换化 + 梦幻皮肤一致性修复 → v1.4.1 插件管理初始化修复 + 技能市场性能优化 + 对话区域自适应 9 项 Bug 修复 → v1.4.2 10 项 Bug 修复 + Cordis 插件时序改进 + SlotBridge 降级机制增强 + 头像系统升级 → v1.5.0 Cordis "一切插件化" 工具发现机制 — ToolDef guidance + toolsProvider 自动注册 systemPrompt section + buildSystemPrompt 动态收集 + 31 个工具补充 guidance + skill-creator 技能安装增强 → v1.5.1 DSH 架构对标深度整改 + YAML 声明式插件加载 + LLM 回答重复根因修复 + llmEngine/mimoAuth 注册修复 + SlotBridge/SlotRenderer 对标 DSH 重写 → v1.5.2 大文件流式分页读取 + Agent Loop 无上限改造（对标 DSH） + 模型系统动态化 + Skills 市场增量搜索 → v1.5.3-v1.5.4 引导消息立即注入 + Markdown 文件路径超链接 + 任务完成标签稳定显示 + 技能市场优化（GitHub API 目录下载） → v1.5.5 Compaction 并发写入治根修复（对标 DSH compactSurfaceRegion） + Bash 缓存失效修复 → v1.6.0 SubagentRuntime 架构重构（对标 DSH） + 技能市场 Trees API 改造（移植 vercel-labs/skills 官方 CLI） + GitHub Token 链路修复 → v1.6.1 桌面宠物独立窗口改造（Cordis Provider 封装） + 文件输出标识增强（DSH 风格 FileMentions） + 设置版本号动态化 → v1.6.2 大富翁嵌入式游戏全量交付（Phase 1-10） + 三轮审计 Bug 修复
 
 ---
 
@@ -15,7 +15,7 @@
 - **GitHub**：https://github.com/sdcxb/codem
 - **分发**：NSIS `.exe` + WiX `.msi`，一键安装无需依赖
 - **平台**：Windows 优先
-- **版本**：v1.6.0（SubagentRuntime 架构重构 + 技能市场 Trees API 改造，2026-08-27）
+- **版本**：v1.6.2（大富翁嵌入式游戏全量交付 + 三轮审计 Bug 修复，2026-08-29）
 
 ---
 
@@ -1359,6 +1359,57 @@ npm run tauri build        # 构建 NSIS exe + MSI
 ---
 
 ## 八、版本历史
+
+### v1.6.2（2026-08-29）— 大富翁嵌入式游戏全量交付（Phase 1-10） + 三轮审计 Bug 修复
+
+> 在 Codem 中嵌入完整的大富翁4风格桌面游戏，作为用户等待 LLM 执行任务时的休闲娱乐。游戏作为完全独立的大插件运行，零侵入主项目代码。Phase 1-10 全量交付 + 三轮审计修复 7 个关键 Bug。
+
+**大富翁桌面游戏 — 完整版（Phase 1-10）：**
+
+Phase 1-6（基础设施 + 核心玩法）：
+- 棋盘渲染：Phaser 3 2D 俯视棋盘，36 节点环形布局 + 中心区域信息展示
+- 动态骰子：3D 骰子动画，交通方式决定骰子数（步行1/机车2/汽车3）
+- 地产系统：等级 0-3，地价/建造费/各等级过路费，连锁店标记
+- 角色系统：8 个可选角色，各自不同初始资金/移动/投资能力
+- 命运/新闻事件：40+ 种事件卡，包括移动/金钱/状态/股票效果
+- 股票系统：6 支股票，价格波动 + 买卖 + 分红
+- 卡片系统：10 种卡片，停留/免停留/送人/抢夺/升级/降级/查地图
+- 道具系统：6 种道具，遥控骰子/飞弹/路障/机车/汽车/航母
+- AI 策略：地产购买评估 + 升级评估 + 股票投资 + 卡牌使用 + 道具使用
+- 存档/读档：完整序列化/反序列化，支持中途保存和恢复
+
+Phase 7-9（视觉交互 + 核心机制对齐）：
+- 地块图标映射 + 角色精灵动画 + 消息条系统 + 物价指数 + 住院/监狱/酒店/沉睡状态 + 连锁奖励/税收
+
+Phase 10（G20-G36 开局设置 + 机制补全 + 体验补全）：
+- G20 游戏天数选择（15/30/50/100 天）
+- G21 玩家数量选择（热座模式 1-4 人 + AI 1-3 个）
+- G22 初始资金选择（10000/15000/20000/30000）
+- G23 胜利条件实现（2x/3x/5x/10x 倍率或仅比天数）
+- G24 机场/传送点（付费传送至任意位置）
+- G25 商业地块（保险购买 + 建筑公司购买/交费）
+- G26 地产主动出售（卖地面板列出所有地产，半价出售）
+- G27 股票分红（每回合自动发放 10% 分红）
+- G28 银行拒绝机制（5% 概率审查高负债玩家 3 天禁贷）
+- G29 多人热座（多人类玩家轮流操作）
+- G30 帮助/规则（完整规则面板含地块/操作/经济说明）
+- G31 财富面板（资产面板显示地产/股票/卡牌/道具）
+- G32 资产清单（含在财富面板中）
+- G33 日志增强（日志颜色 + 物价指数 + 胜利条件显示）
+- G34 投降功能（确认后没收地产退出）
+- G35 音量控制（滑块控制 0-100%）
+- G36 速度调节（1x/2x/4x 速度选择）
+
+**三轮审计 Bug 修复（7 项）：**
+1. 破产清算逻辑 — 修复 `BankruptcySystem.ts` 中现金重复计算 Bug，变卖所得先累加再统一扣除债务
+2. 玩家状态检查 — `GameEngine.ts` 的 `rollDice()` 添加住院/监狱/酒店/沉睡/停留状态检查
+3. 全部破产保护 — 防止 `endTurn()` 中 `do...while` 循环在所有玩家破产时死循环
+4. 命运事件前后移动 — 修复 `FortuneSystem.ts` 中 fortune_move 事件未实际移动玩家的问题
+5. 初始资金应用 — 修复 `setInitCash()` 不追溯应用已有玩家的问题
+6. AI 循环优化 — 游戏结束时停止 AI 轮询
+7. 掷骰跳过检查 — 添加 `phase` 非 `moving` 时跳过自动移动间隔
+
+**构建验证**：TypeScript 编译 0 错误，Vite 构建成功
 
 ### v1.1.1（2026-08-17）— UI 布局优化 + 插件条件渲染 + 宠物窗口 Bug 修复 + 工具调用防御性检查
 

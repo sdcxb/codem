@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿import { useEffect, useState, useRef, useCallback } from "react";
+﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿import { useEffect, useState, useRef, useCallback, lazy, Suspense } from "react";
 import { createPortal } from "react-dom";
 
 // D1-4: 全局错误边界 — 捕获未处理的同步错误和 Promise rejection
@@ -252,6 +252,8 @@ import { SearchDialog } from "./components/SearchDialog";
 import { usePetStore } from "./core/pet/pet-store";
 import { loadInstalledPets as loadInstalledPetsPets } from "./core/pet/pet-manager";
 import { getSessionMessageBus, getDelegationOrchestrator, executeSessionTurn, isSessionExecuting } from "./core/session";
+// 大富翁小游戏 — 懒加载
+const GameViewLazy = lazy(() => import("./plugins/monopoly-game/components/GameView").then(m => ({ default: m.GameView })));
 import type { InteractiveFormQuestion, PromptChange } from "./core/llm/tools";
 import { useAppStore } from "./store";
 import { useProjectStore } from "./core/store";
@@ -445,6 +447,7 @@ const [citationViewer, setCitationViewer] = useState<{ sourceId: string; noteboo
 const [showTaskCenter, setShowTaskCenter] = useState(false);
 const [taskCenterTab, setTaskCenterTab] = useState<TaskCenterTab>("overview");
 const [showAgentManager, setShowAgentManager] = useState(false);
+  const [showGame, setShowGame] = useState(false);
   const [bottomTab, setBottomTab] = useState<BottomTab>("chat");
 // 如果性能 tab 被禁用但当前选中它，回退到对话
 useEffect(() => {
@@ -601,6 +604,30 @@ useEffect(() => {
       return null;
     }
     return null;
+  };
+
+  // 宠物服务获取器 — 优先从 Cordis ctx 获取（一切皆插件原则），
+  // 回退到 usePetStore（用于 Cordis Context 初始化前的启动阶段）。
+  const getPet = () => {
+    const ctx = tryGetCtx();
+    if (ctx) {
+      const svc = ctx.get('pet') as any;
+      if (svc) return svc;
+    }
+    // 启动阶段回退
+    const store = usePetStore.getState();
+    return {
+      init: () => store.init(),
+      showBubble: (m: string, d?: number) => store.showBubble(m, d),
+      showRawBubble: (t: string, d?: number) => store.showRawBubble(t, d),
+      setPetState: (s: string) => store.setPetState(s as any),
+      onLLMStatus: (s: string) => store.onLLMStatus(s as any),
+      onStreamEvent: (e: any) => store.onStreamEvent(e),
+      setEnabled: (e: boolean) => store.setEnabled(e),
+      setActivePet: (s: string | null) => store.setActivePet(s),
+      getState: () => store,
+      get enabled() { return store.enabled },
+    };
   };
 
   // Track window visibility for task completion notifications
@@ -1049,7 +1076,7 @@ flushStreamBuffer(); // flush all on unmount
       // Initialize pet system
       try {
         await loadInstalledPetsPets();
-        await usePetStore.getState().init();
+        await getPet().init();
       } catch (e) {
         console.warn("[App] Pet system init failed:", e);
       }
@@ -1061,13 +1088,13 @@ flushStreamBuffer(); // flush all on unmount
           try {
             const engine = engineRef.current; if (!engine) { console.warn('[App] engine not available'); return; }
             if (!engine) {
-              usePetStore.getState().showBubble("引擎未初始化");
+              getPet().showBubble("引擎未初始化");
               return;
             }
             // Use context manager to calculate remaining tokens for current session
             const sessionId = useProjectStore.getState().currentSession?.id;
             if (!sessionId) {
-              usePetStore.getState().showBubble("没有活跃会话");
+              getPet().showBubble("没有活跃会话");
               return;
             }
             const messages = MessageStorage.listMessages(sessionId);
@@ -1075,12 +1102,12 @@ flushStreamBuffer(); // flush all on unmount
             const remaining = budget.remaining;
             const total = budget.total;
             const used = budget.used;
-            usePetStore.getState().showBubble(
+            getPet().showBubble(
               `剩余 Token: ${remaining.toLocaleString()} / ${total.toLocaleString()}（已用 ${used.toLocaleString()}）`,
               6000
             );
           } catch {
-            usePetStore.getState().showBubble("查询 Token 失败");
+            getPet().showBubble("查询 Token 失败");
           }
         });
       }
@@ -2064,7 +2091,7 @@ flushReasoningBuffer(session.id);
             // connecting → streaming → executing_tools → (next iteration or done)
             setLLMStatus(event.status);
             // Bridge to pet system
-            usePetStore.getState().onLLMStatus(event.status);
+            getPet().onLLMStatus(event.status);
             break;
           }
 
@@ -2079,7 +2106,7 @@ flushReasoningBuffer(session.id);
             // P0-2: 步骤进度气泡
             const stepTitle = event.title || `步骤 ${event.step}`;
             const stepTotal = event.total ? `/${event.total}` : "";
-            usePetStore.getState().showRawBubble(`${stepTitle}${stepTotal}`, 3000);
+            getPet().showRawBubble(`${stepTitle}${stepTotal}`, 3000);
             break;
           }
 
@@ -2108,7 +2135,7 @@ flushReasoningBuffer(session.id);
             flushStreamBuffer(session.id);
             flushReasoningBuffer(session.id);
             // Bridge to pet system
-            usePetStore.getState().onStreamEvent(event);
+            getPet().onStreamEvent(event);
             const tc = "toolCall" in event ? event.toolCall : null;
             if (tc) {
               if (!useAppStore.getState().messages.find((m) => m.id === assistantMsgId)) {
@@ -2139,7 +2166,7 @@ saveMessages(session.id);
 
           case "tool_complete": {
             // Bridge to pet system
-            usePetStore.getState().onStreamEvent(event);
+            getPet().onStreamEvent(event);
             const tc = "toolCall" in event ? event.toolCall : null;
             if (tc) {
               // Extract the output string from the result
@@ -2177,7 +2204,7 @@ saveMessages(session.id);
 
           case "tool_error": {
             // Bridge to pet system
-            usePetStore.getState().onStreamEvent(event);
+            getPet().onStreamEvent(event);
             const tc = "toolCall" in event ? event.toolCall : null;
             const err = "error" in event ? event.error : "Unknown error";
             
@@ -2197,8 +2224,8 @@ saveMessages(session.id);
           case "compaction_start": {
             setCompactionStatus({ active: true });
             // P1-8: 宠物切到 waiting 状态 + 压缩提示气泡
-            usePetStore.getState().setPetState("waiting");
-            usePetStore.getState().showRawBubble("正在压缩上下文…", 5000);
+            getPet().setPetState("waiting");
+            getPet().showRawBubble("正在压缩上下文…", 5000);
             break;
           }
 
@@ -2214,9 +2241,9 @@ saveMessages(session.id);
           loadMessages(session.id);
         }
             // P1-8: 恢复宠物状态 + 压缩完成气泡
-            usePetStore.getState().setPetState("idle");
+            getPet().setPetState("idle");
             if (removed > 0) {
-              usePetStore.getState().showRawBubble(`已压缩 ${removed} 条消息`, 3000);
+              getPet().showRawBubble(`已压缩 ${removed} 条消息`, 3000);
             }
             // Auto-clear compaction status after 3 seconds
             setTimeout(() => setCompactionStatus(null), 3000);
@@ -2227,7 +2254,7 @@ saveMessages(session.id);
             // Mark the guidance message as consumed in the store
             markGuidanceConsumed(event.guidanceId);
             // Show a brief toast/notification via pet system
-            usePetStore.getState().showRawBubble(`📨 引导消息已注入: ${event.message.substring(0, 40)}...`, 3000);
+            getPet().showRawBubble(`📨 引导消息已注入: ${event.message.substring(0, 40)}...`, 3000);
             break;
           }
 
@@ -2292,7 +2319,7 @@ saveMessages(session.id);
 
           case "end": {
             // Bridge to pet system
-            usePetStore.getState().onStreamEvent(event);
+            getPet().onStreamEvent(event);
             // Show bubble notification on task completion
             const isOverflow = "result" in event && event.result?.type === "overflow";
             if (!isOverflow) {
@@ -2301,12 +2328,12 @@ saveMessages(session.id);
               const hadToolCalls = fileCount > 0;
               if (hadToolCalls) {
                 // P0-3 + P1-9: 有文件变更时用 waving 状态 + 文件数摘要
-                usePetStore.getState().setPetState("waving");
+                getPet().setPetState("waving");
                 const bubbleMsg = fileCount === 1 ? "任务完成！修改了 1 个文件" : `任务完成！修改了 ${fileCount} 个文件`;
-                setTimeout(() => usePetStore.getState().showBubble(bubbleMsg), 300);
+                setTimeout(() => getPet().showBubble(bubbleMsg), 300);
               } else {
                 const bubbleMsg = "回复完成了！";
-                setTimeout(() => usePetStore.getState().showBubble(bubbleMsg), 300);
+                setTimeout(() => getPet().showBubble(bubbleMsg), 300);
               }
             }
             // Handle overflow result (context completely exhausted)
@@ -2367,6 +2394,13 @@ abortControllersRef.current.delete(session?.id || "");
       }
       // Task completion notification when app is in background or minimized
       if (!windowVisibleRef.current) {
+        // 通过宠物气泡通知（如果宠物已启用）
+        const petStore = getPet();
+        if (petStore.enabled) {
+          const sessionTitle = session.title || "对话";
+          const userQuestion = message.length > 30 ? message.substring(0, 30) + "..." : message;
+          petStore.showBubble(`✅ ${sessionTitle} 完成：${userQuestion}`, 6000);
+        }
         // Only send a native notification — do NOT steal focus / unminimize the window
         // (用户已切到其他应用办公，弹窗会打断操作；已有完成提示标签即可)
         try {
@@ -3510,12 +3544,49 @@ onClose={() => setCitationViewer(null)}
       )}
       </div>
 
-      {/* 全局覆盖层 slot — list 类型，PetOverlay 等 */}
+      {/* 全局覆盖层 slot — 宠物已迁移到独立窗口 + Cordis PetProvider */}
       <SlotListBridge name="app.overlay" />
       {/* 全局监控面板 slot — ContextMonitor 等 */}
       <SlotBridge name="app.monitor" fallback={null} />
       {/* 全局目标/TODO 面板 slot — TodoListDisplay 等 */}
       <SlotBridge name="app.goal" fallback={null} />
+
+      {/* 大富翁小游戏入口按钮 */}
+      {!showGame && (
+        <button
+          onClick={() => setShowGame(true)}
+          title="大富翁小游戏"
+          style={{
+            position: "fixed", bottom: 16, right: 16, zIndex: 9998,
+            width: 48, height: 48, borderRadius: "50%",
+            background: "linear-gradient(135deg, #f39c12, #e67e22)",
+            border: "none", color: "white", fontSize: 24, cursor: "pointer",
+            boxShadow: "0 4px 12px rgba(243, 156, 18, 0.4)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+          }}
+        >
+          🎲
+        </button>
+      )}
+
+      {/* 大富翁小游戏 overlay */}
+      {showGame && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 9999, background: "#1a1a2e" }}>
+          <button
+            onClick={() => setShowGame(false)}
+            style={{
+              position: "absolute", top: 8, right: 8, zIndex: 10001,
+              background: "#e74c3c", color: "white", border: "none",
+              borderRadius: 6, padding: "6px 16px", cursor: "pointer", fontSize: 14,
+            }}
+          >
+            ✕ 退出游戏
+          </button>
+          <Suspense fallback={<div style={{ color: "#fff", textAlign: "center", marginTop: 200 }}>加载游戏...</div>}>
+            <GameViewLazy />
+          </Suspense>
+        </div>
+      )}
       {/* app.subagent 不在此渲染 — DelegationPanel 是模态弹窗，需要 onClose prop，不能放在无 props 的 SlotBridge 中 */}
       {/* app.user-questions 和 app.workflow-run 不在此渲染。
           InteractiveFormDialog 需要 questions/onSubmit/onCancel props，

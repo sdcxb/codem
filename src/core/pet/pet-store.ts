@@ -41,6 +41,10 @@ function emitToPetWindow(data: {
   petState: PetState;
   scale: number;
   opacity: number;
+  /** 已安装宠物列表（slug + name），用于右键菜单切换样式 */
+  installedPets?: { slug: string; name: string }[];
+  /** 当前激活宠物的 slug */
+  activeSlug?: string | null;
 }) {
   const tauri = (window as any).__TAURI__;
   if (!tauri?.event?.emit) return;
@@ -283,6 +287,8 @@ function sendFullStateToPet() {
     petState: s.petState,
     scale: s.scale,
     opacity: s.opacity,
+    installedPets: s.installedPets.map(p => ({ slug: p.slug, name: p.definition.name })),
+    activeSlug: s.activePet.slug,
   });
 }
 
@@ -349,6 +355,13 @@ export const usePetStore = create<PetStoreState>((set, get) => ({
       tauri.event.listen("pet-disable-request", () => {
         get().setEnabled(false);
       });
+      // 监听切换宠物样式请求（来自独立窗口右键菜单）
+      tauri.event.listen("pet-switch-request", (e: any) => {
+        const slug = typeof e.payload === "string" ? e.payload : e.payload?.slug;
+        if (slug) {
+          get().setActivePet(slug);
+        }
+      });
     }
 
     // 启动 idle 超时检测
@@ -366,6 +379,8 @@ export const usePetStore = create<PetStoreState>((set, get) => ({
         petState: "idle",
         scale: get().scale,
         opacity: get().opacity,
+        installedPets: get().installedPets.map(p => ({ slug: p.slug, name: p.definition.name })),
+        activeSlug: null,
       });
       return;
     }

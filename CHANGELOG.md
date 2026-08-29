@@ -2,6 +2,98 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.6.2] - 2026-08-29
+
+### 大富翁嵌入式游戏全量交付（Phase 1-10） + 三轮审计 Bug 修复
+
+#### 1. 大富翁桌面游戏 — 完整版（Phase 1-10）
+
+在 Codem 中嵌入完整的大富翁4风格桌面游戏，作为用户等待 LLM 执行任务时的休闲娱乐。游戏作为完全独立的大插件运行，零侵入主项目代码。
+
+**Phase 1-6（基础设施 + 核心玩法）：**
+- **棋盘渲染**：Phaser 3 2D 俯视棋盘，36 节点环形布局 + 中心区域信息展示
+- **动态骰子**：3D 骰子动画，交通方式决定骰子数（步行1/机车2/汽车3）
+- **地产系统**：等级 0-3，地价/建造费/各等级过路费，连锁店标记
+- **角色系统**：8 个可选角色，各自不同初始资金/移动/投资能力
+- **命运/新闻事件**：40+ 种事件卡，包括移动/金钱/状态/股票效果
+- **股票系统**：6 支股票，价格波动 + 买卖 + 分红
+- **卡片系统**：10 种卡片，停留/免停留/送人/抢夺/升级/降级/查地图
+- **道具系统**：6 种道具，遥控骰子/飞弹/路障/机车/汽车/航母
+- **AI 策略**：地产购买评估 + 升级评估 + 股票投资 + 卡牌使用 + 道具使用
+- **存档/读档**：完整序列化/反序列化，支持中途保存和恢复
+
+**Phase 7-9（视觉交互 + 核心机制对齐）：**
+- **地块图标映射**：每个地块类型对应独特图标
+- **角色精灵动画**：移动 Tween 动画 + 跳跃效果
+- **消息条系统**：游戏事件实时消息提示
+- **物价指数**：全局经济波动机制
+- **住院/监狱/酒店/沉睡状态**：完整状态机
+- **连锁奖励/税收**：连锁地产过路费翻倍
+
+**Phase 10（G20-G36 开局设置 + 机制补全 + 体验补全）：**
+
+| 编号 | 功能 | 说明 |
+|------|------|------|
+| G20 | 游戏天数选择 | 开始界面可选 15/30/50/100 天 |
+| G21 | 玩家数量选择 | 热座模式 1-4 人 + AI 1-3 个 |
+| G22 | 初始资金选择 | 可选 10000/15000/20000/30000 |
+| G23 | 胜利条件实现 | 可选 2x/3x/5x/10x 倍率或仅比天数 |
+| G24 | 机场/传送点 | 付费传送至任意位置 |
+| G25 | 商业地块 | 保险购买 + 建筑公司购买/交费 |
+| G26 | 地产主动出售 | 卖地面板列出所有地产，半价出售 |
+| G27 | 股票分红 | 每回合自动发放 10% 分红 |
+| G28 | 银行拒绝机制 | 5% 概率审查高负债玩家 3 天禁贷 |
+| G29 | 多人热座 | 多人类玩家轮流操作 |
+| G30 | 帮助/规则 | 完整规则面板含地块/操作/经济说明 |
+| G31 | 财富面板 | 资产面板显示地产/股票/卡牌/道具 |
+| G32 | 资产清单 | 含在财富面板中 |
+| G33 | 日志增强 | 日志颜色 + 物价指数 + 胜利条件显示 |
+| G34 | 投降功能 | 确认后没收地产退出 |
+| G35 | 音量控制 | 滑块控制 0-100% |
+| G36 | 速度调节 | 1x/2x/4x 速度选择 |
+
+#### 2. 三轮审计 Bug 修复
+
+1. **破产清算逻辑** — 修复 `BankruptcySystem.ts` 中现金重复计算 Bug，变卖所得（地产/股票）先累加到 `raised`，然后统一加到玩家 `cash` 中，最后再扣除债务
+2. **玩家状态检查** — `GameEngine.ts` 的 `rollDice()` 添加住院/监狱/酒店/沉睡/停留状态检查，无法行动时直接跳过回合
+3. **全部破产保护** — 防止 `endTurn()` 中 `do...while` 循环在所有玩家破产时死循环
+4. **命运事件前后移动** — 修复 `FortuneSystem.ts` 中 fortune_move 事件（ID 20/21）未实际移动玩家的问题，改为直接移动并发出 `player_teleported` 事件
+5. **初始资金应用** — 修复 `setInitCash()` 不追溯应用已有玩家的问题，在 `initGame` 后遍历所有玩家根据角色属性重新计算现金
+6. **AI 循环优化** — 游戏结束时停止 AI 轮询，添加 `phase === "ended"` 检查
+7. **掷骰跳过检查** — 添加 `phase` 非 `moving` 时跳过自动移动间隔
+
+#### 3. 构建验证
+- TypeScript 编译 0 错误
+- Vite 构建成功
+
+## [1.6.1] - 2026-08-28
+
+### 桌面宠物独立窗口改造 + 文件输出标识增强 + 设置版本号动态化
+
+#### 1. 桌面宠物单一独立窗口改造（Cordis 插件化架构）
+- **移除主窗口内 PetOverlay**：`@codem/ui-pet` 插件改为空壳（`PetOverlayDisabled`），不再在主窗口内渲染宠物覆盖层
+- **独立窗口宠物**：宠物窗口作为独立的 Tauri 窗口运行（`PetWindowApp.tsx`），与主窗口共享 WebView2 进程组（实际内存增量仅 ~108MB，全部来自 1 个 renderer 进程）
+- **Cordis Provider 封装**：新增 `ui-pet-provider.ts`，通过 `ctx.provide('pet', service)` 注册宠物服务，统一 `App.tsx` 中 `getPet()` 获取入口（优先 Cordis ctx，回退 `usePetStore`）
+- **右键菜单合并**：Rust `show_pet_menu` 接收宠物列表参数，构建切换宠物样式子菜单（`SubmenuBuilder`），支持 `pet-switch:{slug}` 事件
+- **窗口状态同步**：`emitToPetWindow` 传递 `installedPets` 和 `activeSlug`，`setActivePet(null)` 正确发送完整状态
+
+#### 2. 文件输出标识增强（DSH 风格文件提及）
+- **FileMentions 解析器**：新增 `src/utils/file-mentions.ts`，从 `message.toolCalls` 提取 LLM 产出文件路径，构建 `FileMentions` resolver
+- **RichContent 集成**：`RichContent` 组件新增 `fileMentions` 属性，inline code 渲染器优先使用 `fileMentions.resolve()` 解析文件路径为可点击按钮，兜底正则扩展名匹配
+- **MessageBubble 集成**：从 `message.toolCalls` 构建 `FileMentions` resolver 并传递给 `RichContent`
+- **工具提示词强化**：`write`/`edit`/`multi_edit` 工具 `guidance` 字段要求 LLM 在提及文件时使用 Markdown 链接格式
+- **i18n-templates 强化**：系统提示词模板强化文件路径引用要求使用 Markdown 链接格式
+
+#### 3. 设置版本号动态化
+- `SettingsPanel.tsx` 关于页面版本号从 `package.json` 动态导入（`import { version } from "../../package.json"`），不再需要手动同步
+
+#### 4. 其他
+- `pet-store.ts` 新增 `pet-switch-request` 事件监听
+- `src/core/pet/index.ts` 注释更新
+- 测试文件 `icon-standardization.test.ts` 中 `PetOverlay.tsx` 引用替换为 `PetWindowApp.tsx`
+- `src/core/ui-plugins/index.ts` 移除 `@codem/ui-pet` 插件加载，添加 `uiPetProvider`
+- `ui-pet-provider.ts` 导入路径修复（`../pet/pet-store`）
+
 ## [1.6.0] - 2026-08-27
 
 ### SubagentRuntime 架构重构（对标 DSH） + 技能市场 Trees API 改造 + GitHub Token 修复

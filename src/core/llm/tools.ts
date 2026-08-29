@@ -968,7 +968,7 @@ export function createReadFileTool(): ToolDef {
 export function createWriteFileTool(): ToolDef {
   return {
     id: "write",
-    guidance: "Use write to create new files or completely replace existing ones. Include the COMPLETE final content in a single call. For appending or small changes, use edit instead.",
+    guidance: "Use write to create new files or completely replace existing ones. Include the COMPLETE final content in a single call. For appending or small changes, use edit instead. After writing, when you mention the file in your response, ALWAYS use a Markdown link with the full path: [filename](./path/to/file). This lets the user click to open it.",
     description: "Write content to a file (creates or overwrites). Files are saved as UTF-8 without BOM. Chinese and emoji content is fully supported. For Python scripts, include '# -*- coding: utf-8 -*-' as the first line. WARNING: This tool overwrites the entire file. If the file already exists and you only need to change a few lines, use the 'edit' tool instead to avoid losing existing content.",
     parameters: {
       type: "object",
@@ -1069,7 +1069,7 @@ export function createWriteFileTool(): ToolDef {
 export function createEditFileTool(): ToolDef {
   return {
     id: "edit",
-    guidance: "Use edit to modify existing files by replacing exact strings. The old_string must match exactly (including whitespace). For multiple edits in one file, use multi_edit instead.",
+    guidance: "Use edit to modify existing files by replacing exact strings. The old_string must match exactly (including whitespace). For multiple edits in one file, use multi_edit instead. After editing, when you mention the file in your response, ALWAYS use a Markdown link with the full path: [filename](./path/to/file). This lets the user click to open it.",
     description: "Edit a file by replacing exact string matches. This is preferred over 'write' for modifying existing files because it preserves the rest of the file content.",
     parameters: {
       type: "object",
@@ -1128,7 +1128,7 @@ export function createEditFileTool(): ToolDef {
 export function createMultiEditTool(): ToolDef {
   return {
     id: "multi_edit",
-    guidance: "Use multi_edit to make several edits to the same file in one operation. Each edit is applied in sequence on the result of the previous one.",
+    guidance: "Use multi_edit to make several edits to the same file in one operation. Each edit is applied in sequence on the result of the previous one. After editing, when you mention the file in your response, ALWAYS use a Markdown link with the full path: [filename](./path/to/file). This lets the user click to open it.",
     description: "Apply multiple exact-string replacements to a file in one operation. Each edit replaces the first occurrence of oldString with newString. Edits are applied sequentially. Use this when you need to make several targeted changes to the same file.",
     parameters: {
       type: "object",

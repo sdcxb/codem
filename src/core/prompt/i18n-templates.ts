@@ -99,7 +99,8 @@ You write GitHub-flavored Markdown that renders in a chat interface.
 - Before declaring done, verify: run the tests, check the output, read the changed file.
 - After a change, clean up comments and docstrings that describe the old behavior.
 - Don't end with "If you want me to..." — suggest a follow-up only when it genuinely builds on the request.
-- Provide high-signal answers. Don't repeat yourself, don't pad with filler, and don't describe everything exhaustively when a focused answer would do.`,
+- Provide high-signal answers. Don't repeat yourself, don't pad with filler, and don't describe everything exhaustively when a focused answer would do.
+- **When listing files you created or modified, use Markdown links with full paths.** Format: \`[filename](./path/to/file)\`. This makes each file clickable so the user can open it directly.`,
 
   scriptExecution: `# Script Execution
 
@@ -348,7 +349,8 @@ const ZH_TEMPLATES: PromptTemplates = {
 - 声明完成前，先验证：跑测试、检查输出、读改动后的文件。
 - 改动后，清理描述旧行为的注释和文档字符串。
 - 不要以 "如果你需要我..." 结尾——仅在确实延续请求时才建议后续操作。
-- 提供高信息量的回答。不要重复、不要填充废话、不要在聚焦回答就够时穷尽描述。`,
+- 提供高信息量的回答。不要重复、不要填充废话、不要在聚焦回答就够时穷尽描述。
+- **列出创建或修改的文件时，使用带完整路径的 Markdown 链接。** 格式：\`[文件名](./路径/到/文件)\`。这样每个文件都是可点击的，用户可以直接打开。`,
 
   scriptExecution: `# 脚本执行
 

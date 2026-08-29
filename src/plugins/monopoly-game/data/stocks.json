@@ -1,0 +1,66 @@
+[
+  {
+    "id": 0,
+    "name": "科技股份",
+    "code": "TECH",
+    "initPrice": 100,
+    "volatility": 0.3,
+    "maxShares": 10000
+  },
+  {
+    "id": 1,
+    "name": "地产集团",
+    "code": "LAND",
+    "initPrice": 200,
+    "volatility": 0.2,
+    "maxShares": 8000
+  },
+  {
+    "id": 2,
+    "name": "银行财团",
+    "code": "BANK",
+    "initPrice": 150,
+    "volatility": 0.15,
+    "maxShares": 12000
+  },
+  {
+    "id": 3,
+    "name": "能源公司",
+    "code": "ENER",
+    "initPrice": 80,
+    "volatility": 0.35,
+    "maxShares": 15000
+  },
+  {
+    "id": 4,
+    "name": "消费品牌",
+    "code": "CONS",
+    "initPrice": 120,
+    "volatility": 0.25,
+    "maxShares": 10000
+  },
+  {
+    "id": 5,
+    "name": "医药集团",
+    "code": "MEDC",
+    "initPrice": 250,
+    "volatility": 0.18,
+    "maxShares": 6000
+  },
+  {
+    "id": 6,
+    "name": "基建工程",
+    "code": "INFR",
+    "initPrice": 60,
+    "volatility": 0.4,
+    "maxShares": 20000
+  },
+  {
+    "id": 7,
+    "name": "娱乐传媒",
+    "code": "MEDIA",
+    "initPrice": 90,
+    "volatility": 0.3,
+    "maxShares": 12000
+  }
+]

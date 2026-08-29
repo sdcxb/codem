@@ -21,12 +21,21 @@ import type { PetDefinition, PetState } from "../core/pet/pet-types";
 
 // ========== 类型 ==========
 
+interface PetInfo {
+  slug: string;
+  name: string;
+}
+
 interface PetWindowState {
   definition: PetDefinition | null;
   spritesheetUrl: string | null;
   petState: PetState;
   scale: number;
   opacity: number;
+  /** 已安装宠物列表，用于右键菜单切换样式 */
+  installedPets: PetInfo[];
+  /** 当前激活宠物的 slug */
+  activeSlug: string | null;
 }
 
 interface BubbleData {
@@ -146,6 +155,8 @@ export function PetWindowApp() {
     petState: "idle",
     scale: 0.4,
     opacity: 1.0,
+    installedPets: [],
+    activeSlug: null,
   });
   const [bubble, setBubble] = useState<BubbleData>({ text: "", visible: false });
   const [isHovering, setIsHovering] = useState(false);
@@ -252,10 +263,12 @@ export function PetWindowApp() {
           x: e.clientX * dpr,
           y: e.clientY * dpr,
           petName: state.definition?.name ?? null,
+          pets: state.installedPets,
+          activeSlug: state.activeSlug,
         }).catch(() => {});
       }
     },
-    [state.definition]
+    [state.definition, state.installedPets, state.activeSlug]
   );
 
   const handleMouseEnter = useCallback(() => setIsHovering(true), []);

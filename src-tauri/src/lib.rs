@@ -5,7 +5,7 @@ use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri::WindowEvent as WinEvent;
 use tauri::tray::{TrayIconBuilder, TrayIconEvent, MouseButton, MouseButtonState};
-use tauri::menu::{ContextMenu, MenuBuilder, MenuItemBuilder, PredefinedMenuItem, CheckMenuItemBuilder};
+use tauri::menu::{ContextMenu, MenuBuilder, MenuItemBuilder, PredefinedMenuItem, CheckMenuItemBuilder, SubmenuBuilder};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::sync::{oneshot, Mutex as TokioMutex};
 
@@ -1487,7 +1487,14 @@ async fn create_pet_window(app: AppHandle) -> Result<(), String> {
 /// Shows a native popup context menu for the pet at the cursor position.
 /// Native menus are not clipped by window boundaries.
 #[tauri::command]
-async fn show_pet_menu(app: AppHandle, x: f64, y: f64, pet_name: Option<String>) -> Result<(), String> {
+async fn show_pet_menu(
+    app: AppHandle,
+    x: f64,
+    y: f64,
+    pet_name: Option<String>,
+    pets: Option<Vec<serde_json::Value>>,
+    active_slug: Option<String>,
+) -> Result<(), String> {
     // Header: pet name (disabled)
     let name_label = pet_name.unwrap_or_else(|| "宠物".to_string());
     let header_item = MenuItemBuilder::with_id("pet-header", format!("\u{1F43E} {}", name_label))
@@ -1518,8 +1525,35 @@ async fn show_pet_menu(app: AppHandle, x: f64, y: f64, pet_name: Option<String>)
         .build(&app)
         .map_err(|e| e.to_string())?;
 
-    // Separator
+    // Separator before pet switch
     let sep2 = PredefinedMenuItem::separator(&app)
+        .map_err(|e| e.to_string())?;
+
+    // ─── 切换宠物样式子菜单 ───
+    let switch_submenu = {
+        let mut submenu = SubmenuBuilder::new(&app, "切换宠物样式");
+        if let Some(ref pets_arr) = pets {
+            for pet in pets_arr {
+                let slug = match pet.get("slug").and_then(|s| s.as_str()) {
+                    Some(s) => s.to_string(),
+                    None => continue,
+                };
+                let name = match pet.get("name").and_then(|s| s.as_str()) {
+                    Some(s) => s.to_string(),
+                    None => continue,
+                };
+                let is_active = active_slug.as_ref().map(|s| s == &slug).unwrap_or(false);
+                let label = if is_active { format!("● {}", name) } else { format!("○ {}", name) };
+                submenu = submenu.item(&MenuItemBuilder::with_id(format!("pet-switch:{}", slug), label)
+                    .build(&app)
+                    .map_err(|e| e.to_string())?);
+            }
+        }
+        submenu.build().map_err(|e| e.to_string())?
+    };
+
+    // Separator
+    let sep3 = PredefinedMenuItem::separator(&app)
         .map_err(|e| e.to_string())?;
 
     // Close pet
@@ -1534,6 +1568,8 @@ async fn show_pet_menu(app: AppHandle, x: f64, y: f64, pet_name: Option<String>)
         .item(&reset_item)
         .item(&token_item)
         .item(&sep2)
+        .item(&switch_submenu)
+        .item(&sep3)
         .item(&close_item)
         .build()
         .map_err(|e| e.to_string())?;
@@ -1962,6 +1998,11 @@ path_exists,
                         "pet-check-tokens" => {
                             // Notify main window to fetch token info and forward to pet
                             let _ = app.emit("pet-check-tokens-request", ());
+                        }
+                        id if id.starts_with("pet-switch:") => {
+                            // Pet switch request — extract slug and notify main window
+                            let slug = &id["pet-switch:".len()..];
+                            let _ = app.emit("pet-switch-request", slug.to_string());
                         }
                         _ => {}
                     }

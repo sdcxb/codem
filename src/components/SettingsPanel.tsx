@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import type { IdentityConfig, UserConfig, AppIdentity } from "../core/types";
 import { saveAppIdentity } from "../core/config/loader";
+import { version as APP_VERSION } from "../../package.json";
 import { getMiMoAuth } from "../core/auth/mimo";
 import type { LoginResult } from "../core/auth/mimo";
 import { useAppStore } from "../store";
@@ -1513,7 +1514,7 @@ marginTop: 4,
     <div className="setting-group">
       <label style={{ fontSize: 14, fontWeight: 500 }}>{lang === "zh" ? "关于" : "About"}</label>
       <div style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.6 }}>
-        Codem (mimo-gui) v0.92.0
+        Codem (mimo-gui) v{APP_VERSION}
         <br />
         {lang === "zh" ? "AI 编程助手 — 本地优先，隐私安全" : "AI Coding Assistant — Local-first, Privacy-focused"}
       </div>

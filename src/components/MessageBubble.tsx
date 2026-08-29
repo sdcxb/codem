@@ -16,6 +16,8 @@ import { SourceReferences } from "./SourceReferences";
 import { ImageGallery } from "./ImageGallery";
 import { VideoPlayer } from "./VideoPlayer";
 import { RichContent } from "./rich-content/RichContent";
+import { createFileMentions } from "../utils/file-mentions";
+import { openFileLink } from "../utils/file-link";
 // P3-26: Voice output (TTS) — browser speech synthesis hook
 import { useSpeechSynthesis } from "../hooks/useSpeechSynthesis";
 import { getMultimodalSettings, textToSpeech, playTTSAudio } from "../core/llm/multimodal";
@@ -417,6 +419,14 @@ const [galleryIndex, setGalleryIndex] = useState(0);
     },
   }), [lang, onCitationClick]);
 
+  // 方案 B：从本轮工具调用记录构建 file-mention resolver，
+  // 让 LLM 在结束语中以 `filename` 反引号提及的文件变成可点击链接。
+  // 仅在非流式（已结束）时生效，避免中途文件列表不完整导致误解析。
+  const fileMentions = useMemo(() => {
+    if (isUser || isStreaming || !message.toolCalls?.length) return null;
+    return createFileMentions(message.toolCalls, (path) => void openFileLink(path));
+  }, [isUser, isStreaming, message.toolCalls]);
+
   // Track whether this message was ever streamed (i.e. it's the "latest" answer,
   // not a historical message loaded from DB). Historical messages default to
   // collapsed; streamed messages stay expanded even after streaming ends.
@@ -572,6 +582,7 @@ setTimeout(() => setCopied(false), 2000);
                 revealCount={revealCount}
                 revealRevision={revealRevision}
                 className=""
+                fileMentions={fileMentions}
               />
             ) : (
               <ReactMarkdown

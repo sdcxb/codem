@@ -21,7 +21,7 @@ import { apply as panelsApply } from './ui-panels/index.ts'
 import { apply as marketApply } from './ui-market/index.ts'
 import { apply as skinDefaultApply } from './ui-skin-default/index.ts'
 import { apply as skinPetApply } from './ui-skin-pet/index.ts'
-import { apply as uiPetApply } from './ui-pet/index.ts'
+import { uiPetProvider } from '../provider/ui-pet-provider'
 import { apply as cordisApply } from './ui-cordis/index.tsx'
 
 // 导入 UI Provider — 对标 DSH 的 ui-* 插件包
@@ -74,7 +74,6 @@ export function loadUIPlugins(ctx: Context) {
     { name: 'ui-market', apply: marketApply },
     { name: 'ui-skin-default', apply: skinDefaultApply },
     { name: 'ui-skin-pet', apply: skinPetApply },
-    { name: 'ui-pet', apply: uiPetApply },
   ]
 
   for (const { name, apply } of plugins) {
@@ -114,6 +113,7 @@ export function loadUIPlugins(ctx: Context) {
     { name: 'ui-layout', plugin: uiLayoutProvider },
     { name: 'ui-directory-picker', plugin: uiDirectoryPickerProvider },
     { name: 'ui-message-feedback', plugin: uiMessageFeedbackProvider },
+    { name: 'ui-pet', plugin: uiPetProvider },
   ]
 
   for (const { name, plugin } of uiProviders) {

@@ -28,12 +28,14 @@ import { MermaidCanvasView } from "./MermaidCanvasView";
 import { ImagePreviewView } from "./ImagePreviewView";
 import { fixCjkBoldMarkdown } from "../../core/llm/stream-reveal";
 import { handleFileLinkClick, handleFileLinkContextMenu } from "../../utils/file-link";
+import type { FileMentions } from "../../utils/file-mentions";
 
 /**
  * ParagraphWithActions — P2 #31: 段落级 hover 操作按钮
  *
  * 在鼠标悬停段落时显示复制和引用按钮。
  */
+
 const ParagraphWithActions = memo(function ParagraphWithActions({ children }: { children: ReactNode }) {
   const [copied, setCopied] = useState(false);
   const pRef = useRef<HTMLDivElement>(null);
@@ -103,6 +105,8 @@ export interface RichContentProps {
   revealRevision?: number;
   /** 自定义类名 */
   className?: string;
+  /** 文件提及解析器：基于本轮工具调用记录，将 inline code 中的文件名解析为可点击链接 */
+  fileMentions?: FileMentions | null;
 }
 
 export const RichContent = memo(function RichContent({
@@ -111,6 +115,7 @@ export const RichContent = memo(function RichContent({
   revealCount = 0,
   revealRevision = 0,
   className = "",
+  fileMentions = null,
 }: RichContentProps) {
   const [fullscreenNode, setFullscreenNode] = useState<ReactNode | null>(null);
 
@@ -165,9 +170,33 @@ export const RichContent = memo(function RichContent({
     // 这些不需要代码框样式，渲染为普通文本即可（保留等宽字体但不带背景框）
     if (inline) {
       const text = String(children);
-      // Check if this looks like a file path (has a known file extension)
+
+      // ─── 方案 B：DSH 风格的 file-mention 解析 ───
+      // 优先使用上层传入的 fileMentions resolver（基于本轮工具调用记录），
+      // 如果 inline code 的值能解析为实际创建/修改的文件，就变成可点击按钮。
+      // 这比正则猜测更安全：只链接确实被创建/修改过的文件。
+      if (fileMentions && !streaming) {
+        const mention = fileMentions.resolve(text.trim());
+        if (mention !== undefined) {
+          return (
+            <code className="inline-code file-mention-code" {...props}>
+              <button
+                type="button"
+                className="file-mention-btn"
+                title={mention.title}
+                aria-label={mention.label}
+                onClick={mention.open}
+                style={{ cursor: "pointer", background: "none", border: "none", padding: 0, font: "inherit", color: "inherit", textDecoration: "underline", textDecorationStyle: "dashed", textUnderlineOffset: "2px" }}
+              >
+                {children}
+              </button>
+            </code>
+          );
+        }
+      }
+
+      // ─── 兜底：正则扩展名匹配（当没有 fileMentions 或未命中时） ───
       // e.g., xxx.md, src/index.ts, config.json, ./path/file.py
-      // Use a whitelist of common extensions to avoid false positives like obj.prop
       const knownExtensions = /\.(md|txt|json|yaml|yml|ts|tsx|js|jsx|mjs|py|sh|bat|ps1|css|html|svg|png|jpg|jpeg|gif|toml|ini|cfg|rs|go|java|c|cpp|h|hpp|sql|xml|csv|log|env|lock|gitignore|dockerfile)$/i;
       const isFilePath = knownExtensions.test(text.trim()) &&
         !text.includes(" ") && text.length < 200;
@@ -218,7 +247,7 @@ export const RichContent = memo(function RichContent({
 
     // 普通代码块
     return <CodeBlockView code={code} language={language} streaming={streaming} />;
-  }, [streaming]);
+  }, [streaming, fileMentions]);
 
   // 表格渲染器
   const tableRenderer = useCallback(({ children }: any) => {

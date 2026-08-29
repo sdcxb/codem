@@ -1,0 +1,242 @@
+[
+  {
+    "id": 0,
+    "type": "fortune",
+    "title": "天降横财",
+    "description": "获得20000现金",
+    "effect": "grant_cash:20000",
+    "hasChoice": false
+  },
+  {
+    "id": 1,
+    "type": "fortune",
+    "title": "中奖",
+    "description": "获得15000现金",
+    "effect": "grant_cash:15000",
+    "hasChoice": false
+  },
+  {
+    "id": 2,
+    "type": "fortune",
+    "title": "遗产继承",
+    "description": "获得30000现金",
+    "effect": "grant_cash:30000",
+    "hasChoice": false
+  },
+  {
+    "id": 3,
+    "type": "fortune",
+    "title": "股票大涨",
+    "description": "持有股票价值翻倍",
+    "effect": "stock_double",
+    "hasChoice": false
+  },
+  {
+    "id": 4,
+    "type": "fortune",
+    "title": "土地升值",
+    "description": "所有地产价值上升20%",
+    "effect": "land_value_up:20",
+    "hasChoice": false
+  },
+  {
+    "id": 5,
+    "type": "fortune",
+    "title": "贵人相助",
+    "description": "免费升级一块地产",
+    "effect": "free_upgrade_one",
+    "hasChoice": false
+  },
+  {
+    "id": 6,
+    "type": "fortune",
+    "title": "善有善报",
+    "description": "获得5000点券",
+    "effect": "grant_points:5000",
+    "hasChoice": false
+  },
+  {
+    "id": 7,
+    "type": "fortune",
+    "title": "天降鸿运",
+    "description": "获得小财神保佑5天",
+    "effect": "god:1:5",
+    "hasChoice": false
+  },
+  {
+    "id": 8,
+    "type": "fortune",
+    "title": "意外之财",
+    "description": "获得10000现金",
+    "effect": "grant_cash:10000",
+    "hasChoice": false
+  },
+  {
+    "id": 9,
+    "type": "fortune",
+    "title": "免费旅行",
+    "description": "传送到任意位置",
+    "effect": "free_teleport",
+    "hasChoice": false
+  },
+  {
+    "id": 10,
+    "type": "fortune",
+    "title": "医疗补助",
+    "description": "获得8000现金",
+    "effect": "grant_cash:8000",
+    "hasChoice": false
+  },
+  {
+    "id": 11,
+    "type": "fortune",
+    "title": "发现宝藏",
+    "description": "获得25000现金",
+    "effect": "grant_cash:25000",
+    "hasChoice": false
+  },
+  {
+    "id": 12,
+    "type": "fortune",
+    "title": "好运连连",
+    "description": "再掷一次骰子",
+    "effect": "reroll",
+    "hasChoice": false
+  },
+  {
+    "id": 13,
+    "type": "fortune",
+    "title": "投资回报",
+    "description": "银行存款利息翻倍",
+    "effect": "bank_interest_double",
+    "hasChoice": false
+  },
+  {
+    "id": 14,
+    "type": "fortune",
+    "title": "慈善捐款",
+    "description": "选择：捐出10000或获得5000",
+    "effect": "choice:donate_10000_or_gain_5000",
+    "hasChoice": true
+  },
+  {
+    "id": 15,
+    "type": "news",
+    "title": "经济危机",
+    "description": "所有玩家现金减少10%",
+    "effect": "all_players_cash_reduce:10",
+    "hasChoice": false
+  },
+  {
+    "id": 16,
+    "type": "news",
+    "title": "股市暴跌",
+    "description": "所有股票价格下跌30%",
+    "effect": "stock_crash:30",
+    "hasChoice": false
+  },
+  {
+    "id": 17,
+    "type": "news",
+    "title": "股市飙升",
+    "description": "所有股票价格上涨50%",
+    "effect": "stock_boom:50",
+    "hasChoice": false
+  },
+  {
+    "id": 18,
+    "type": "news",
+    "title": "物价飞涨",
+    "description": "物价指数上升200点",
+    "effect": "price_index_up:200",
+    "hasChoice": false
+  },
+  {
+    "id": 19,
+    "type": "news",
+    "title": "物价下跌",
+    "description": "物价指数下降150点",
+    "effect": "price_index_down:150",
+    "hasChoice": false
+  },
+  {
+    "id": 20,
+    "type": "news",
+    "title": "地震",
+    "description": "随机一块地产降一级",
+    "effect": "random_land_downgrade",
+    "hasChoice": false
+  },
+  {
+    "id": 21,
+    "type": "news",
+    "title": "暴风雨",
+    "description": "所有玩家停留一回合",
+    "effect": "all_players_stop:1",
+    "hasChoice": false
+  },
+  {
+    "id": 22,
+    "type": "news",
+    "title": "交通事故",
+    "description": "所有驾车玩家改为步行",
+    "effect": "reset_traffic",
+    "hasChoice": false
+  },
+  {
+    "id": 23,
+    "type": "news",
+    "title": "银行加息",
+    "description": "银行存款利息增加50%",
+    "effect": "bank_interest_up:50",
+    "hasChoice": false
+  },
+  {
+    "id": 24,
+    "type": "news",
+    "title": "税收减免",
+    "description": "所有玩家获得3000现金",
+    "effect": "all_players_grant:3000",
+    "hasChoice": false
+  },
+  {
+    "id": 25,
+    "type": "news",
+    "title": "街头抢劫",
+    "description": "现金最多的玩家失去15%现金",
+    "effect": "richest_lose:15",
+    "hasChoice": false
+  },
+  {
+    "id": 26,
+    "type": "news",
+    "title": "彩票开奖",
+    "description": "随机一名玩家获得20000",
+    "effect": "random_grant:20000",
+    "hasChoice": false
+  },
+  {
+    "id": 27,
+    "type": "news",
+    "title": "道路施工",
+    "description": "随机一块地产查封3天",
+    "effect": "random_seal:3",
+    "hasChoice": false
+  },
+  {
+    "id": 28,
+    "type": "news",
+    "title": "节日庆典",
+    "description": "所有玩家获得5000点券",
+    "effect": "all_players_points:5000",
+    "hasChoice": false
+  },
+  {
+    "id": 29,
+    "type": "news",
+    "title": "房价大涨",
+    "description": "所有地产过路费翻倍3天",
+    "effect": "all_toll_double:3",
+    "hasChoice": false
+  }
+]

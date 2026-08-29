@@ -42,6 +42,10 @@
 >
 > **v1.6.0 更新**：SubagentRuntime 架构重构 + 技能市场 Trees API 改造 + GitHub Token 修复 — ①**SubagentRuntime 全面重构（对标 DSH）**：移除旧 `SubagentManager`（-642 行）和 `LLMSubagentSpawner`（-338 行），新增 DSH 风格 `SubagentRuntime` 持续后台子智能体运行时 + `InProcessSpawnProvider`，4 个新工具（`subagent`/`send_message`/`interrupt_agent`/`list_agents`），`ToolRegistry.createScope()` 隔离工具作用域，系统提示词对标 DSH 重写为后台默认运行 + 自动通知模式 ②**技能市场 Trees API 改造（移植 vercel-labs/skills 官方 CLI 逻辑）**：Contents API 逐层遍历（O(N×M) 次调用）→ Trees API 一次性获取全量文件树（1 次调用），在内存中搜索 SKILL.md，支持 30+ Agent 目录约定前缀（Claude/Cline/Goose/Codex 等），修复 `dreambigou/eli5` 和 `cloudflare/cloudflare-docs`（15296 文件大仓库）等安装失败问题 ③**GitHub Token 配置链路修复**：统一 Token 读取链路 ④i18n-templates 新增子智能体协作模板（+138 行）⑤42 文件修改（+1542/-1562 行），`tsc --noEmit` 零错误。
 >
+> **v1.6.1 更新**：桌面宠物独立窗口改造 + 文件输出标识增强 + 设置版本号动态化 — ①**桌面宠物单一独立窗口改造（Cordis 插件化架构）**：移除主窗口内 PetOverlay，`@codem/ui-pet` 插件改为空壳；宠物窗口作为独立 Tauri 窗口运行，与主窗口共享 WebView2 进程组（实际内存增量仅 ~108MB，全部来自 1 个 renderer 进程）；新增 `ui-pet-provider.ts` Cordis Provider 封装，`App.tsx` 统一 `getPet()` 获取入口；Rust `show_pet_menu` 合并右键菜单，支持切换宠物样式子菜单（`SubmenuBuilder`）；`emitToPetWindow` 传递完整状态 ②**文件输出标识增强（DSH 风格 FileMentions）**：新增 `FileMentions` 解析器，从 `message.toolCalls` 提取 LLM 产出文件路径；`RichContent` inline code 渲染器优先解析文件路径为可点击按钮；`write`/`edit`/`multi_edit` 工具 guidance + 系统提示词强化文件路径引用要求 ③**设置版本号动态化**：关于页面版本号从 `package.json` 动态导入，不再需要手动同步。
+>
+> **v1.6.2 更新**：大富翁嵌入式游戏全量交付（Phase 1-10） + 三轮审计 Bug 修复 — 在 Codem 中嵌入完整的大富翁4风格桌面游戏，作为用户等待 LLM 执行任务时的休闲娱乐。游戏作为完全独立的大插件运行，零侵入主项目代码。Phase 1-6 完成基础设施和核心玩法（棋盘渲染/动态骰子/地产系统/角色系统/命运新闻事件/股票系统/卡片系统/道具系统/AI 策略/存档读档）；Phase 7-9 完成视觉交互和核心机制对齐（地块图标映射/角色精灵动画/消息条系统/物价指数/住院监狱酒店沉睡状态/连锁奖励税收）；Phase 10（G20-G36）补全开局设置（游戏天数/玩家数量/初始资金/胜利条件）+ 机制补全（机场传送/商业地块/主动卖地/股票分红/银行拒绝）+ 体验补全（多人热座/帮助规则/财富面板/资产清单/日志增强/投降功能/音量控制/速度调节）。三轮审计修复 7 个关键 Bug（破产清算逻辑/玩家状态检查/死循环保护/命运事件移动/初始资金应用/AI 循环优化/掷骰跳过检查）。TypeScript 编译 0 错误，Vite 构建成功。
+>
 
 
 ![Codem 运行界面](screenshots/26720-1.png)
@@ -332,6 +336,26 @@ npm run tauri:build
 - 两种模式均使用内置 LLM 引擎直连 API，无需依赖外部进程
 
 ## 更新日志
+
+### 2026-08-28（v1.6.1）
+
+> 桌面宠物独立窗口改造 + 文件输出标识增强 + 设置版本号动态化。
+
+**桌面宠物单一独立窗口改造（Cordis 插件化架构）：**
+- 移除主窗口内 `PetOverlay`，`@codem/ui-pet` 插件改为空壳
+- 宠物窗口作为独立 Tauri 窗口运行，与主窗口共享 WebView2 进程组（实际内存增量仅 ~108MB）
+- 新增 `ui-pet-provider.ts` Cordis Provider 封装，`App.tsx` 统一 `getPet()` 获取入口
+- Rust `show_pet_menu` 合并右键菜单功能，支持切换宠物样式子菜单
+- `emitToPetWindow` 传递 `installedPets` 和 `activeSlug`，窗口状态正确同步
+
+**文件输出标识增强（DSH 风格文件提及）：**
+- 新增 `FileMentions` 解析器，从 `message.toolCalls` 提取 LLM 产出文件路径
+- `RichContent` inline code 渲染器优先解析文件路径为可点击按钮
+- `write`/`edit`/`multi_edit` 工具 guidance 要求 LLM 使用 Markdown 链接格式提及文件
+- 系统提示词强化文件路径引用要求
+
+**设置版本号动态化：**
+- 关于页面版本号从 `package.json` 动态导入，不再需要手动同步
 
 ### 2026-08-27（v1.6.0）
 

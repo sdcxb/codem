@@ -1,0 +1,1059 @@
+{
+  "meta": {
+    "id": "island",
+    "name": "海岛假期",
+    "author": "mimo-gui",
+    "version": "1.0.0",
+    "description": "碧海蓝天的度假胜地，32块地产+11设施",
+    "backgroundTheme": "ocean"
+  },
+  "startNodeId": 0,
+  "nodes": [
+    {
+      "id": 0,
+      "x": 50,
+      "y": 50,
+      "adjacent": [
+        1,
+        6
+      ],
+      "tileType": "land",
+      "tileIndex": 0
+    },
+    {
+      "id": 1,
+      "x": 140,
+      "y": 50,
+      "adjacent": [
+        0,
+        2
+      ],
+      "tileType": "land",
+      "tileIndex": 1
+    },
+    {
+      "id": 2,
+      "x": 230,
+      "y": 50,
+      "adjacent": [
+        1,
+        3
+      ],
+      "tileType": "land",
+      "tileIndex": 2
+    },
+    {
+      "id": 3,
+      "x": 320,
+      "y": 50,
+      "adjacent": [
+        2,
+        4
+      ],
+      "tileType": "land",
+      "tileIndex": 3
+    },
+    {
+      "id": 4,
+      "x": 410,
+      "y": 50,
+      "adjacent": [
+        3,
+        5
+      ],
+      "tileType": "land",
+      "tileIndex": 4
+    },
+    {
+      "id": 5,
+      "x": 500,
+      "y": 50,
+      "adjacent": [
+        4,
+        6
+      ],
+      "tileType": "land",
+      "tileIndex": 5
+    },
+    {
+      "id": 6,
+      "x": 590,
+      "y": 50,
+      "adjacent": [
+        0,
+        5,
+        7
+      ],
+      "tileType": "land",
+      "tileIndex": 6
+    },
+    {
+      "id": 7,
+      "x": 50,
+      "y": 140,
+      "adjacent": [
+        8,
+        13
+      ],
+      "tileType": "land",
+      "tileIndex": 7
+    },
+    {
+      "id": 8,
+      "x": 140,
+      "y": 140,
+      "adjacent": [
+        7,
+        9
+      ],
+      "tileType": "land",
+      "tileIndex": 8
+    },
+    {
+      "id": 9,
+      "x": 230,
+      "y": 140,
+      "adjacent": [
+        8,
+        10
+      ],
+      "tileType": "land",
+      "tileIndex": 9
+    },
+    {
+      "id": 10,
+      "x": 320,
+      "y": 140,
+      "adjacent": [
+        9,
+        11
+      ],
+      "tileType": "land",
+      "tileIndex": 10
+    },
+    {
+      "id": 11,
+      "x": 410,
+      "y": 140,
+      "adjacent": [
+        10,
+        12
+      ],
+      "tileType": "land",
+      "tileIndex": 11
+    },
+    {
+      "id": 12,
+      "x": 500,
+      "y": 140,
+      "adjacent": [
+        11,
+        13
+      ],
+      "tileType": "land",
+      "tileIndex": 12
+    },
+    {
+      "id": 13,
+      "x": 590,
+      "y": 140,
+      "adjacent": [
+        7,
+        12,
+        14
+      ],
+      "tileType": "land",
+      "tileIndex": 13
+    },
+    {
+      "id": 14,
+      "x": 50,
+      "y": 230,
+      "adjacent": [
+        15,
+        20
+      ],
+      "tileType": "land",
+      "tileIndex": 14
+    },
+    {
+      "id": 15,
+      "x": 140,
+      "y": 230,
+      "adjacent": [
+        14,
+        16
+      ],
+      "tileType": "land",
+      "tileIndex": 15
+    },
+    {
+      "id": 16,
+      "x": 230,
+      "y": 230,
+      "adjacent": [
+        15,
+        17
+      ],
+      "tileType": "land",
+      "tileIndex": 16
+    },
+    {
+      "id": 17,
+      "x": 320,
+      "y": 230,
+      "adjacent": [
+        16,
+        18
+      ],
+      "tileType": "land",
+      "tileIndex": 17
+    },
+    {
+      "id": 18,
+      "x": 410,
+      "y": 230,
+      "adjacent": [
+        17,
+        19
+      ],
+      "tileType": "land",
+      "tileIndex": 18
+    },
+    {
+      "id": 19,
+      "x": 500,
+      "y": 230,
+      "adjacent": [
+        18,
+        20
+      ],
+      "tileType": "land",
+      "tileIndex": 19
+    },
+    {
+      "id": 20,
+      "x": 590,
+      "y": 230,
+      "adjacent": [
+        14,
+        19,
+        21
+      ],
+      "tileType": "land",
+      "tileIndex": 20
+    },
+    {
+      "id": 21,
+      "x": 50,
+      "y": 320,
+      "adjacent": [
+        22,
+        27
+      ],
+      "tileType": "land",
+      "tileIndex": 21
+    },
+    {
+      "id": 22,
+      "x": 140,
+      "y": 320,
+      "adjacent": [
+        21,
+        23
+      ],
+      "tileType": "land",
+      "tileIndex": 22
+    },
+    {
+      "id": 23,
+      "x": 230,
+      "y": 320,
+      "adjacent": [
+        22,
+        24
+      ],
+      "tileType": "land",
+      "tileIndex": 23
+    },
+    {
+      "id": 24,
+      "x": 320,
+      "y": 320,
+      "adjacent": [
+        23,
+        25
+      ],
+      "tileType": "land",
+      "tileIndex": 24
+    },
+    {
+      "id": 25,
+      "x": 410,
+      "y": 320,
+      "adjacent": [
+        24,
+        26
+      ],
+      "tileType": "land",
+      "tileIndex": 25
+    },
+    {
+      "id": 26,
+      "x": 500,
+      "y": 320,
+      "adjacent": [
+        25,
+        27
+      ],
+      "tileType": "land",
+      "tileIndex": 26
+    },
+    {
+      "id": 27,
+      "x": 590,
+      "y": 320,
+      "adjacent": [
+        21,
+        26,
+        28
+      ],
+      "tileType": "land",
+      "tileIndex": 27
+    },
+    {
+      "id": 28,
+      "x": 50,
+      "y": 410,
+      "adjacent": [
+        29,
+        34
+      ],
+      "tileType": "land",
+      "tileIndex": 28
+    },
+    {
+      "id": 29,
+      "x": 140,
+      "y": 410,
+      "adjacent": [
+        28,
+        30
+      ],
+      "tileType": "land",
+      "tileIndex": 29
+    },
+    {
+      "id": 30,
+      "x": 230,
+      "y": 410,
+      "adjacent": [
+        29,
+        31
+      ],
+      "tileType": "land",
+      "tileIndex": 30
+    },
+    {
+      "id": 31,
+      "x": 320,
+      "y": 410,
+      "adjacent": [
+        30,
+        32
+      ],
+      "tileType": "land",
+      "tileIndex": 31
+    },
+    {
+      "id": 32,
+      "x": 410,
+      "y": 410,
+      "adjacent": [
+        31,
+        33
+      ],
+      "tileType": "facility",
+      "tileIndex": 0
+    },
+    {
+      "id": 33,
+      "x": 500,
+      "y": 410,
+      "adjacent": [
+        32,
+        34
+      ],
+      "tileType": "facility",
+      "tileIndex": 1
+    },
+    {
+      "id": 34,
+      "x": 590,
+      "y": 410,
+      "adjacent": [
+        28,
+        33,
+        35
+      ],
+      "tileType": "facility",
+      "tileIndex": 2
+    },
+    {
+      "id": 35,
+      "x": 50,
+      "y": 500,
+      "adjacent": [
+        36,
+        41
+      ],
+      "tileType": "facility",
+      "tileIndex": 3
+    },
+    {
+      "id": 36,
+      "x": 140,
+      "y": 500,
+      "adjacent": [
+        35,
+        37
+      ],
+      "tileType": "facility",
+      "tileIndex": 4
+    },
+    {
+      "id": 37,
+      "x": 230,
+      "y": 500,
+      "adjacent": [
+        36,
+        38
+      ],
+      "tileType": "facility",
+      "tileIndex": 5
+    },
+    {
+      "id": 38,
+      "x": 320,
+      "y": 500,
+      "adjacent": [
+        37,
+        39
+      ],
+      "tileType": "facility",
+      "tileIndex": 6
+    },
+    {
+      "id": 39,
+      "x": 410,
+      "y": 500,
+      "adjacent": [
+        38,
+        40
+      ],
+      "tileType": "facility",
+      "tileIndex": 7
+    },
+    {
+      "id": 40,
+      "x": 500,
+      "y": 500,
+      "adjacent": [
+        39,
+        41
+      ],
+      "tileType": "facility",
+      "tileIndex": 8
+    },
+    {
+      "id": 41,
+      "x": 590,
+      "y": 500,
+      "adjacent": [
+        35,
+        40,
+        42
+      ],
+      "tileType": "facility",
+      "tileIndex": 9
+    },
+    {
+      "id": 42,
+      "x": 50,
+      "y": 590,
+      "adjacent": [
+        43
+      ],
+      "tileType": "facility",
+      "tileIndex": 10
+    },
+    {
+      "id": 43,
+      "x": 140,
+      "y": 590,
+      "adjacent": [
+        42,
+        44
+      ],
+      "tileType": "commercial",
+      "tileIndex": 0
+    },
+    {
+      "id": 44,
+      "x": 230,
+      "y": 590,
+      "adjacent": [
+        43,
+        45
+      ],
+      "tileType": "commercial",
+      "tileIndex": 1
+    },
+    {
+      "id": 45,
+      "x": 320,
+      "y": 590,
+      "adjacent": [
+        0,
+        44
+      ],
+      "tileType": "landmark",
+      "tileIndex": 0
+    }
+  ],
+  "lands": [
+    {
+      "id": 0,
+      "name": "海岛地块0",
+      "landPrice": 2500,
+      "buildPrice": 1200,
+      "tolls": [
+        120,
+        350,
+        900,
+        2200
+      ],
+      "maxLevel": 3,
+      "isChainStore": true
+    },
+    {
+      "id": 1,
+      "name": "海岛地块1",
+      "landPrice": 2620,
+      "buildPrice": 1260,
+      "tolls": [
+        120,
+        350,
+        900,
+        2200
+      ],
+      "maxLevel": 3,
+      "isChainStore": false
+    },
+    {
+      "id": 2,
+      "name": "海岛地块2",
+      "landPrice": 2740,
+      "buildPrice": 1320,
+      "tolls": [
+        120,
+        350,
+        900,
+        2200
+      ],
+      "maxLevel": 3,
+      "isChainStore": false
+    },
+    {
+      "id": 3,
+      "name": "海岛地块3",
+      "landPrice": 2860,
+      "buildPrice": 1380,
+      "tolls": [
+        120,
+        350,
+        900,
+        2200
+      ],
+      "maxLevel": 3,
+      "isChainStore": false
+    },
+    {
+      "id": 4,
+      "name": "海岛地块4",
+      "landPrice": 2980,
+      "buildPrice": 1440,
+      "tolls": [
+        120,
+        350,
+        900,
+        2200
+      ],
+      "maxLevel": 3,
+      "isChainStore": true
+    },
+    {
+      "id": 5,
+      "name": "海岛地块5",
+      "landPrice": 3100,
+      "buildPrice": 1500,
+      "tolls": [
+        120,
+        350,
+        900,
+        2200
+      ],
+      "maxLevel": 3,
+      "isChainStore": false
+    },
+    {
+      "id": 6,
+      "name": "海岛地块6",
+      "landPrice": 3220,
+      "buildPrice": 1560,
+      "tolls": [
+        120,
+        350,
+        900,
+        2200
+      ],
+      "maxLevel": 3,
+      "isChainStore": false
+    },
+    {
+      "id": 7,
+      "name": "海岛地块7",
+      "landPrice": 3340,
+      "buildPrice": 1620,
+      "tolls": [
+        120,
+        350,
+        900,
+        2200
+      ],
+      "maxLevel": 3,
+      "isChainStore": false
+    },
+    {
+      "id": 8,
+      "name": "海岛地块8",
+      "landPrice": 3460,
+      "buildPrice": 1680,
+      "tolls": [
+        120,
+        350,
+        900,
+        2200
+      ],
+      "maxLevel": 3,
+      "isChainStore": true
+    },
+    {
+      "id": 9,
+      "name": "海岛地块9",
+      "landPrice": 3580,
+      "buildPrice": 1740,
+      "tolls": [
+        120,
+        350,
+        900,
+        2200
+      ],
+      "maxLevel": 3,
+      "isChainStore": false
+    },
+    {
+      "id": 10,
+      "name": "海岛地块10",
+      "landPrice": 3700,
+      "buildPrice": 1800,
+      "tolls": [
+        120,
+        350,
+        900,
+        2200
+      ],
+      "maxLevel": 3,
+      "isChainStore": false
+    },
+    {
+      "id": 11,
+      "name": "海岛地块11",
+      "landPrice": 3820,
+      "buildPrice": 1860,
+      "tolls": [
+        120,
+        350,
+        900,
+        2200
+      ],
+      "maxLevel": 3,
+      "isChainStore": false
+    },
+    {
+      "id": 12,
+      "name": "海岛地块12",
+      "landPrice": 3940,
+      "buildPrice": 1920,
+      "tolls": [
+        120,
+        350,
+        900,
+        2200
+      ],
+      "maxLevel": 3,
+      "isChainStore": true
+    },
+    {
+      "id": 13,
+      "name": "海岛地块13",
+      "landPrice": 4060,
+      "buildPrice": 1980,
+      "tolls": [
+        120,
+        350,
+        900,
+        2200
+      ],
+      "maxLevel": 3,
+      "isChainStore": false
+    },
+    {
+      "id": 14,
+      "name": "海岛地块14",
+      "landPrice": 4180,
+      "buildPrice": 2040,
+      "tolls": [
+        120,
+        350,
+        900,
+        2200
+      ],
+      "maxLevel": 3,
+      "isChainStore": false
+    },
+    {
+      "id": 15,
+      "name": "海岛地块15",
+      "landPrice": 4300,
+      "buildPrice": 2100,
+      "tolls": [
+        120,
+        350,
+        900,
+        2200
+      ],
+      "maxLevel": 3,
+      "isChainStore": false
+    },
+    {
+      "id": 16,
+      "name": "海岛地块16",
+      "landPrice": 4420,
+      "buildPrice": 2160,
+      "tolls": [
+        120,
+        350,
+        900,
+        2200
+      ],
+      "maxLevel": 3,
+      "isChainStore": true
+    },
+    {
+      "id": 17,
+      "name": "海岛地块17",
+      "landPrice": 4540,
+      "buildPrice": 2220,
+      "tolls": [
+        120,
+        350,
+        900,
+        2200
+      ],
+      "maxLevel": 3,
+      "isChainStore": false
+    },
+    {
+      "id": 18,
+      "name": "海岛地块18",
+      "landPrice": 4660,
+      "buildPrice": 2280,
+      "tolls": [
+        120,
+        350,
+        900,
+        2200
+      ],
+      "maxLevel": 3,
+      "isChainStore": false
+    },
+    {
+      "id": 19,
+      "name": "海岛地块19",
+      "landPrice": 4780,
+      "buildPrice": 2340,
+      "tolls": [
+        120,
+        350,
+        900,
+        2200
+      ],
+      "maxLevel": 3,
+      "isChainStore": false
+    },
+    {
+      "id": 20,
+      "name": "海岛地块20",
+      "landPrice": 4900,
+      "buildPrice": 2400,
+      "tolls": [
+        120,
+        350,
+        900,
+        2200
+      ],
+      "maxLevel": 3,
+      "isChainStore": true
+    },
+    {
+      "id": 21,
+      "name": "海岛地块21",
+      "landPrice": 5020,
+      "buildPrice": 2460,
+      "tolls": [
+        120,
+        350,
+        900,
+        2200
+      ],
+      "maxLevel": 3,
+      "isChainStore": false
+    },
+    {
+      "id": 22,
+      "name": "海岛地块22",
+      "landPrice": 5140,
+      "buildPrice": 2520,
+      "tolls": [
+        120,
+        350,
+        900,
+        2200
+      ],
+      "maxLevel": 3,
+      "isChainStore": false
+    },
+    {
+      "id": 23,
+      "name": "海岛地块23",
+      "landPrice": 5260,
+      "buildPrice": 2580,
+      "tolls": [
+        120,
+        350,
+        900,
+        2200
+      ],
+      "maxLevel": 3,
+      "isChainStore": false
+    },
+    {
+      "id": 24,
+      "name": "海岛地块24",
+      "landPrice": 5380,
+      "buildPrice": 2640,
+      "tolls": [
+        120,
+        350,
+        900,
+        2200
+      ],
+      "maxLevel": 3,
+      "isChainStore": true
+    },
+    {
+      "id": 25,
+      "name": "海岛地块25",
+      "landPrice": 5500,
+      "buildPrice": 2700,
+      "tolls": [
+        120,
+        350,
+        900,
+        2200
+      ],
+      "maxLevel": 3,
+      "isChainStore": false
+    },
+    {
+      "id": 26,
+      "name": "海岛地块26",
+      "landPrice": 5620,
+      "buildPrice": 2760,
+      "tolls": [
+        120,
+        350,
+        900,
+        2200
+      ],
+      "maxLevel": 3,
+      "isChainStore": false
+    },
+    {
+      "id": 27,
+      "name": "海岛地块27",
+      "landPrice": 5740,
+      "buildPrice": 2820,
+      "tolls": [
+        120,
+        350,
+        900,
+        2200
+      ],
+      "maxLevel": 3,
+      "isChainStore": false
+    },
+    {
+      "id": 28,
+      "name": "海岛地块28",
+      "landPrice": 5860,
+      "buildPrice": 2880,
+      "tolls": [
+        120,
+        350,
+        900,
+        2200
+      ],
+      "maxLevel": 3,
+      "isChainStore": true
+    },
+    {
+      "id": 29,
+      "name": "海岛地块29",
+      "landPrice": 5980,
+      "buildPrice": 2940,
+      "tolls": [
+        120,
+        350,
+        900,
+        2200
+      ],
+      "maxLevel": 3,
+      "isChainStore": false
+    },
+    {
+      "id": 30,
+      "name": "海岛地块30",
+      "landPrice": 6100,
+      "buildPrice": 3000,
+      "tolls": [
+        120,
+        350,
+        900,
+        2200
+      ],
+      "maxLevel": 3,
+      "isChainStore": false
+    },
+    {
+      "id": 31,
+      "name": "海岛地块31",
+      "landPrice": 6220,
+      "buildPrice": 3060,
+      "tolls": [
+        120,
+        350,
+        900,
+        2200
+      ],
+      "maxLevel": 3,
+      "isChainStore": false
+    }
+  ],
+  "facilities": [
+    {
+      "id": 32,
+      "name": "海岛银行",
+      "type": "bank"
+    },
+    {
+      "id": 33,
+      "name": "诊所",
+      "type": "hospital"
+    },
+    {
+      "id": 34,
+      "name": "拘留所",
+      "type": "prison"
+    },
+    {
+      "id": 35,
+      "name": "免税店",
+      "type": "shop"
+    },
+    {
+      "id": 36,
+      "name": "热带公园",
+      "type": "park"
+    },
+    {
+      "id": 37,
+      "name": "巫师小屋",
+      "type": "magic_house"
+    },
+    {
+      "id": 38,
+      "name": "度假酒店",
+      "type": "hotel"
+    },
+    {
+      "id": 39,
+      "name": "加油站",
+      "type": "gas_station"
+    },
+    {
+      "id": 40,
+      "name": "海岛日报",
+      "type": "news"
+    },
+    {
+      "id": 41,
+      "name": "命运石",
+      "type": "fortune"
+    },
+    {
+      "id": 42,
+      "name": "海岛拍卖行",
+      "type": "auction_house"
+    }
+  ],
+  "commercials": [
+    {
+      "id": 43,
+      "name": "海岛保险",
+      "type": "insurance",
+      "tollFee": 600
+    },
+    {
+      "id": 44,
+      "name": "海岛建设",
+      "type": "construction",
+      "tollFee": 900
+    }
+  ],
+  "landmarks": [
+    {
+      "id": 45,
+      "name": "灯塔",
+      "x": 400,
+      "y": 50
+    },
+    {
+      "id": 46,
+      "name": "椰子树广场",
+      "x": 200,
+      "y": 300
+    }
+  ]
+}
