@@ -317,6 +317,13 @@ export function NotebookWorkspace({
         setGuidedQuestions(qs);
         setLoadingQuestions(false);
       }).catch(() => setLoadingQuestions(false));
+
+      // 后台自动提取知识图谱（不阻塞 UI）
+      import('../core/knowledge').then(({ extractKnowledgeGraph }) => {
+        extractKnowledgeGraph(notebookId).catch((e) => {
+          console.warn('[NotebookWorkspace] Auto graph extraction failed:', e);
+        });
+      });
       return;
     }
 
@@ -353,6 +360,13 @@ export function NotebookWorkspace({
       setGuidedQuestions(qs);
       setLoadingQuestions(false);
     }).catch(() => setLoadingQuestions(false));
+
+    // 后台自动提取知识图谱（不阻塞 UI）
+    import('../core/knowledge').then(({ extractKnowledgeGraph }) => {
+      extractKnowledgeGraph(notebookId).catch((e) => {
+        console.warn('[NotebookWorkspace] Auto graph extraction failed:', e);
+      });
+    });
   };
 
   const handleDeleteSource = async (sourceId: string) => {

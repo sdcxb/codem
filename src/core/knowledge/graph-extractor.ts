@@ -144,12 +144,17 @@ function findNodeByLabel(notebookId: string, label: string): string | null {
  * 自研 Prompt 设计, 不照搬 Understand-Anything 的 Agent prompt
  */
 async function callLLMForExtraction(text: string, _hasSources: boolean): Promise<LLMExtractionResult> {
-  // 使用场景模板解析模型（subagent slot）
-  const { resolveModelForTask } = await import('../llm/model-resolver');
-  const resolved = await resolveModelForTask('subagent');
-  if (!resolved) throw new Error('No LLM provider available');
-  const provider = resolved.provider;
-  const model = resolved.model;
+  // 使用 LLMEngine 单例获取已配置的 provider（确保 API key 可用）
+  const { getLLMEngine } = await import('../llm/index');
+  const engine = getLLMEngine();
+
+  // 使用场景模板解析模型（subagent slot → fallback to chat → engine default）
+  const resolved = engine.resolveSlot('subagent');
+  const provider = engine.providers.get(resolved.providerId);
+  if (!provider || !provider.isConfigured()) {
+    throw new Error(`Provider "${resolved.providerId}" is not configured. Please configure an API key in Settings.`);
+  }
+  const model = resolved.modelId;
 
   const isZh = navigator.language?.startsWith('zh');
   const systemPrompt = isZh

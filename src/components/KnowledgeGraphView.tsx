@@ -95,6 +95,8 @@ export function KnowledgeGraphView({ notebookId, onNodeSelect }: KnowledgeGraphV
   const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [hoveredNode, setHoveredNode] = useState<string | null>(null);
+  const [extractError, setExtractError] = useState<string | null>(null);
+  const [hasSources, setHasSources] = useState(false);
 
   // C3: Graph editing state
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
@@ -114,25 +116,41 @@ export function KnowledgeGraphView({ notebookId, onNodeSelect }: KnowledgeGraphV
   // Load graph data
   const loadGraph = useCallback(async () => {
     setLoading(true);
+    setExtractError(null);
     try {
-      const { extractKnowledgeGraph } = await import('../core/knowledge');
+      // Check if sources exist
+      const { listSources, getChunks } = await import('../core/knowledge');
+      const sources = listSources(notebookId);
+      setHasSources(sources.filter(s => s.status === 'indexed').length > 0);
+
       // Check if graph already exists
       const existing = getGraphData(notebookId);
       if (existing.nodes.length > 0) {
         setGraphData(existing);
         initPhysics(existing);
       } else {
-        // Extract new graph
-        const data = await extractKnowledgeGraph(notebookId);
-        setGraphData(data);
-        initPhysics(data);
+        // Check if chunks exist (indexed sources)
+        const chunks = getChunks(notebookId);
+        if (chunks.length === 0) {
+          setGraphData({ nodes: [], edges: [] });
+        } else {
+          // Extract new graph
+          const { extractKnowledgeGraph } = await import('../core/knowledge');
+          const data = await extractKnowledgeGraph(notebookId);
+          setGraphData(data);
+          initPhysics(data);
+          if (data.nodes.length === 0) {
+            setExtractError(isZh ? 'LLM 提取失败，请检查 API 配置后重试' : 'LLM extraction failed. Check API config and retry.');
+          }
+        }
       }
     } catch (e) {
       console.error('Failed to load graph:', e);
+      setExtractError(e instanceof Error ? e.message : String(e));
     } finally {
       setLoading(false);
     }
-  }, [notebookId]);
+  }, [notebookId, isZh]);
 
   // Initialize physics simulation
   const initPhysics = (data: GraphData) => {
@@ -596,14 +614,33 @@ export function KnowledgeGraphView({ notebookId, onNodeSelect }: KnowledgeGraphV
     return (
       <div className="kg-empty" style={{ background: bgColor, color: textSecondaryColor }}>
         <Share2 size={48} style={{ opacity: 0.3 }} />
-        <p>{isZh ? '暂无图谱数据，请先添加并索引来源' : 'No graph data. Add and index sources first.'}</p>
-        <button
-          onClick={loadGraph}
-          style={{ background: accentColor, color: '#fff' }}
-          className="kg-retry-btn"
-        >
-          {isZh ? '重新提取' : 'Extract Again'}
-        </button>
+        {extractError ? (
+          <>
+            <p style={{ color: 'var(--error)' }}>{extractError}</p>
+            <button
+              onClick={loadGraph}
+              style={{ background: accentColor, color: '#fff' }}
+              className="kg-retry-btn"
+            >
+              {isZh ? '重新提取' : 'Extract Again'}
+            </button>
+          </>
+        ) : !hasSources ? (
+          <>
+            <p>{isZh ? '暂无图谱数据，请先添加并索引来源' : 'No graph data. Add and index sources first.'}</p>
+          </>
+        ) : (
+          <>
+            <p>{isZh ? '正在提取知识图谱...' : 'Extracting knowledge graph...'}</p>
+            <button
+              onClick={loadGraph}
+              style={{ background: accentColor, color: '#fff' }}
+              className="kg-retry-btn"
+            >
+              {isZh ? '重新提取' : 'Extract Again'}
+            </button>
+          </>
+        )}
       </div>
     );
   }

@@ -202,12 +202,13 @@ export async function generateSummary(notebookId: string): Promise<void> {
       .map((c) => c.content)
       .join('\n\n');
 
-    // Build summary prompt — 使用场景模板解析模型
-    const { resolveModelForTask } = await import('../llm/model-resolver');
-    const resolved = await resolveModelForTask('memory');
-    if (!resolved) throw new Error('No LLM provider available');
-    const provider = resolved.provider;
-    const model = resolved.model;
+    // Build summary prompt — 使用 LLMEngine 单例获取已配置的 provider
+    const { getLLMEngine } = await import('../llm/index');
+    const engine = getLLMEngine();
+    const resolved = engine.resolveSlot('memory');
+    const provider = engine.providers.get(resolved.providerId);
+    if (!provider || !provider.isConfigured()) throw new Error('No LLM provider available');
+    const model = resolved.modelId;
 
     const summaryPrompt = `Please generate a concise summary (2-3 paragraphs) of the following knowledge base content. The summary should capture the main topics, key information, and potential use cases. Write in ${navigator.language?.startsWith('zh') ? 'Chinese' : 'English'}.\n\n---\n\n${allText.slice(0, 8000)}`;
 
@@ -250,11 +251,12 @@ export async function generateGuidedQuestions(notebookId: string): Promise<strin
       .join('\n\n')
       .slice(0, 4000);
 
-const { resolveModelForTask } = await import('../llm/model-resolver');
-const resolved = await resolveModelForTask('subagent');
-if (!resolved) return [];
-const provider = resolved.provider;
-const model = resolved.model;
+const { getLLMEngine } = await import('../llm/index');
+const engine = getLLMEngine();
+const resolved = engine.resolveSlot('subagent');
+const provider = engine.providers.get(resolved.providerId);
+if (!provider || !provider.isConfigured()) return [];
+const model = resolved.modelId;
 
     const isZh = navigator.language?.startsWith('zh');
     const prompt = isZh
@@ -297,11 +299,12 @@ export async function generateSourceSummary(
   if (sourceChunks.length === 0) return;
 
 try {
-const { resolveModelForTask } = await import('../llm/model-resolver');
-const resolved = await resolveModelForTask('subagent');
-if (!resolved) return;
-const provider = resolved.provider;
-const model = resolved.model;
+const { getLLMEngine } = await import('../llm/index');
+const engine = getLLMEngine();
+const resolved = engine.resolveSlot('subagent');
+const provider = engine.providers.get(resolved.providerId);
+if (!provider || !provider.isConfigured()) return;
+const model = resolved.modelId;
 
     const isZh = navigator.language?.startsWith('zh');
     const sampleText = sourceChunks
@@ -452,11 +455,12 @@ export async function generateStudioContent(
     .join('\n\n')
     .slice(0, 12000);
 
-  const { resolveModelForTask } = await import('../llm/model-resolver');
-  const resolved = await resolveModelForTask('chat');
-  if (!resolved) throw new Error('No LLM provider available');
-  const provider = resolved.provider;
-  const model = resolved.model;
+  const { getLLMEngine } = await import('../llm/index');
+  const engine = getLLMEngine();
+  const resolved = engine.resolveSlot('chat');
+  const provider = engine.providers.get(resolved.providerId);
+  if (!provider || !provider.isConfigured()) throw new Error('No LLM provider available');
+  const model = resolved.modelId;
 
   const prompt = isZh ? promptConfig.zh : promptConfig.en;
   const fullPrompt = `${prompt}\n\n---\n\n${allText}`;
@@ -535,11 +539,12 @@ export async function generateFlashcards(
       .slice(0, 8000);
   }
 
-  const { resolveModelForTask } = await import('../llm/model-resolver');
-  const resolved = await resolveModelForTask('chat');
-  if (!resolved) throw new Error('No LLM provider available');
-  const provider = resolved.provider;
-  const model = resolved.model;
+  const { getLLMEngine } = await import('../llm/index');
+  const engine = getLLMEngine();
+  const resolved = engine.resolveSlot('chat');
+  const provider = engine.providers.get(resolved.providerId);
+  if (!provider || !provider.isConfigured()) throw new Error('No LLM provider available');
+  const model = resolved.modelId;
 
   const systemPrompt = isZh
     ? '你是一个闪卡生成助手。根据知识库内容生成适合间隔重复学习的问题-答案对。'
