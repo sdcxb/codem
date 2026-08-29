@@ -260,6 +260,7 @@ import { cordisHostRunnerProvider } from '../provider/cordis-host-runner-provide
 import { toolJobsProvider } from '../provider/tool-jobs-provider'
 import { storageDomainProvider } from '../provider/storage-domain-provider'
 import { storageJsonProvider } from '../provider/storage-json-provider'
+import { uiGameProvider } from '../provider/ui-game-provider'
 
 /** 注册所有内置插件到 PluginLoader */
 export function registerBuiltinPlugins() {
@@ -504,6 +505,7 @@ registerBuiltinPlugin('@codem/mimo-auth', { provides: ['mimoAuth'], inject: [], 
   registerBuiltinPlugin('@codem/ui-user-questions', { provides: ['uiUserQuestions'], inject: ['slots'], priority: 0, hot: true }, () => uiUserQuestionsProvider)
   registerBuiltinPlugin('@codem/ui-workflow-run', { provides: ['uiWorkflowRun'], inject: ['slots'], priority: 0, hot: true }, () => uiWorkflowRunProvider)
   registerBuiltinPlugin('@codem/ui-workspace', { provides: ['uiWorkspace'], inject: ['slots'], priority: 0, hot: true }, () => uiWorkspaceProvider)
+  registerBuiltinPlugin('@codem/ui-game', { provides: ['uiGame'], inject: ['slots'], priority: 0, hot: true }, () => uiGameProvider)
   registerBuiltinPlugin('@codem/lsp-stdio', { provides: ['lspStdio'], inject: ['lsp'], priority: 0, hot: true }, () => lspStdioProvider)
   registerBuiltinPlugin('@codem/atomic-write', { provides: ['atomicWrite'], inject: ['fs'], priority: 0, hot: true }, () => atomicWriteProvider)
   registerBuiltinPlugin('@codem/user-approval', { provides: ['userApproval'], inject: ['approval'], priority: 0, hot: true }, () => userApprovalProvider)

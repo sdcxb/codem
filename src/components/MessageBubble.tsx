@@ -28,6 +28,9 @@ import { MessageActions } from "./MessageActions";
 import { ErrorCard } from "./ErrorCard";
 import { ToolCallGroup } from "./ToolCallGroup";
 import type { ToolCallCardProps } from "./ToolCallCard";
+import { StatsLine } from "./StatsLine";
+import { TurnStatus } from "./TurnStatus";
+import { ReasoningRow } from "./ReasoningRow";
 
 /** User avatar component — reads avatar from settings, shows circle on user messages */
 function UserAvatar() {
@@ -648,30 +651,9 @@ setTimeout(() => setCopied(false), 2000);
           </div>
         )}
 
+        {/* ReasoningRow — 对标 DSH Think 折叠行：流式最新行跟踪 + 灰底缩进展开 */}
         {message.reasoning && showReasoning && (
-          <div className="reasoning-block">
-            <button
-              className="reasoning-toggle"
-              onClick={() => setExpanded(!expanded)}
-            >
-              <Brain className={`reasoning-icon ${isStreaming ? "streaming" : ""}`} />
-              <span>
-                {isStreaming
-                  ? (lang === "zh" ? "思考中..." : "Thinking...")
-                  : `${S.bubble.reasoning[lang]} · ${message.reasoning.length} ${lang === "zh" ? "字" : "chars"}`
-                }
-              </span>
-              {expanded
-                ? <ChevronUp size={14} />
-                : <ChevronDown size={14} />}
-            </button>
-            {expanded && (
-              <div className="reasoning-content">
-                {message.reasoning}
-                {isStreaming && <span className="reasoning-cursor" />}
-              </div>
-            )}
-          </div>
+          <ReasoningRow text={message.reasoning} running={isStreaming} />
         )}
 
         {message.toolCalls && message.toolCalls.length > 0 && (() => {
@@ -923,6 +905,16 @@ const opLabel = tc.tool === 'create_note'
         )}
 
         {/* P0: Feedback buttons removed from here — now inline in toolbar above */}
+
+        {/* StatsLine — 对标 DSH 助手消息统计行：turn 耗时/token/吞吐量 */}
+        {!isUser && !isSystem && !isStreaming && message.content && (
+          <StatsLine message={message} />
+        )}
+
+        {/* TurnStatus — 对标 DSH 持久化 turn 级状态行（error/max-tokens/retry） */}
+        {!isUser && !isSystem && message.metadata?.turnStatus && (
+          <TurnStatus {...(message.metadata.turnStatus as any)} />
+        )}
 
         {/* P2: Source references for RAG-based messages */}
         {!isUser && !isSystem && message.metadata?.sources && (message.metadata.sources as any[]).length > 0 && (

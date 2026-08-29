@@ -81,6 +81,8 @@ export interface LoopState {
    * Reset whenever the model produces text or a tool returns new output.
    */
   consecutiveNoProgress: number;
+  /** Turn start timestamp — set at the beginning of each run() for duration tracking */
+  turnStartTime?: number;
 }
 
 export interface LoopConfig {
@@ -377,10 +379,44 @@ export class AgenticLoop {
     return getSnapshotService(cwd || this.lastCwd || ".");
   }
   private getEventLog() {
-    // P0-7.1: ctx 可用时优先 ctx.get()，服务未就绪时回退到单例（容错）
-    if (this._ctx) { const s = this._ctx.get('eventLog'); if (s) return s; console.warn('[AgenticLoop] Service "eventLog" not available, falling back to singleton'); }
-    return getEventLog();
+  // P0-7.1: ctx 可用时优先 ctx.get()，服务未就绪时回退到单例（容错）
+  if (this._ctx) { const s = this._ctx.get('eventLog'); if (s) return s; console.warn('[AgenticLoop] Service "eventLog" not available, falling back to singleton'); }
+  return getEventLog();
+}
+
+/** P1: 轨迹记录服务 — 对标 DSH ui-trajectory，记录 Agent 执行每一步的完整轨迹 */
+private getTrajectoryService(): { record: (sessionId: string, type: string, data: any, duration?: number) => string } | null {
+  if (this._ctx) {
+    const s = this._ctx.get('uiTrajectory');
+    if (s) return s;
   }
+  // 回退到 tryGetCtx（Consumer 模式）
+  try {
+    const ctx = tryGetCtx();
+    if (ctx) {
+      const s = (ctx as any).get('uiTrajectory');
+      if (s) return s;
+    }
+  } catch { /* Context 未初始化 */ }
+  return null;
+}
+
+/** P1: 轨迹记录辅助方法 — 安全调用，失败不阻断主循环 */
+private recordTrajectory(sessionId: string, type: string, data: any, duration?: number): void {
+  try {
+    const svc = this.getTrajectoryService();
+    if (svc) svc.record(sessionId, type, data, duration);
+  } catch (e) { console.warn('[AgenticLoop] trajectory record failed:', e) }
+}
+
+/** P1: 获取 FileChangeTracker — 优先从 ctx.get('fileChangeTracker') 消费 Provider 服务 */
+private getFileChangeTrackerService(): FileChangeTracker | null {
+  if (this._ctx) {
+    const s = this._ctx.get('fileChangeTracker');
+    if (s) return s;
+  }
+  return null;
+}
 
   /** Match tool name against allowlist pattern (supports wildcards) */
   private matchToolPattern(name: string, pattern: string): boolean {
@@ -715,10 +751,13 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
     // P2-14: Record telemetry — turn start
     const telemetry = this.getTelemetry();
     const turnStartTime = Date.now();
+    this.state.turnStartTime = turnStartTime;
     telemetry.record(sessionId, "turn_start", {
       userMessageLength: userMessage.length,
       collaborationMode: this.config.collaborationMode || "default",
     });
+    // P1: Record trajectory — turn start (对标 DSH ui-trajectory)
+    this.recordTrajectory(sessionId, "user_input", { content: userMessage.substring(0, 500) });
 
     // User message is saved by App.tsx (main session) or already in DB (sub-agent)
     // Don't save here to avoid duplicates
@@ -1088,6 +1127,11 @@ if (planState.total !== null && this.state.iteration > planState.total) {
       const spawnTaskIds: string[] = [];
 
       // P0: Start file change tracking at iteration boundary (before tools)
+      // P1: 检查 fileChangeTracker Provider 服务可用性（对标 DSH 模式）
+      const trackerSvc = this.getFileChangeTrackerService();
+      if (!trackerSvc) {
+        console.warn('[AgenticLoop] Service "fileChangeTracker" not available from ctx, creating standalone instance');
+      }
       this.fileChangeTracker = new FileChangeTracker(
         cwd, sessionId, assistantMsgId, this.state.iteration,
       );
@@ -1356,6 +1400,13 @@ yield { type: "step_progress", step: this.state.iteration, total: planState.tota
       reason: stopReason,
       totalTokens: this.state.totalUsage?.totalTokens || 0,
     });
+    // P1: Record trajectory — turn end (对标 DSH ui-trajectory)
+    this.recordTrajectory(sessionId, "turn_end", {
+      duration_ms: Date.now() - turnStartTime,
+      iterations: this.state.iteration,
+      reason: stopReason,
+      totalTokens: this.state.totalUsage?.totalTokens || 0,
+    }, Date.now() - turnStartTime);
     yield { type: "end", result };
     return result;
   }
@@ -1709,6 +1760,18 @@ yield { type: "step_progress", step: this.state.iteration, total: planState.tota
       model: this.provider.id,
       iteration: this.state.iteration,
     });
+    // P1: Record trajectory — LLM call (对标 DSH ui-trajectory，含 provider/model/usage 细节)
+    this.recordTrajectory(sessionId, "llm_call", {
+      provider: this.provider.id,
+      model: this.config.model || this.provider.id,
+      iteration: this.state.iteration,
+      usage: { promptTokens: usage.promptTokens, completionTokens: usage.completionTokens, totalTokens: usage.totalTokens },
+      toolCallCount: currentToolCalls.length,
+    }, Date.now() - (this.state.turnStartTime ?? Date.now()));
+    // P1: Record trajectory — assistant output (text content)
+    if (currentText.trim()) {
+      this.recordTrajectory(sessionId, "assistant_output", { content: currentText.substring(0, 500), iteration: this.state.iteration });
+    }
     yield { type: "usage", usage };
 
     // If no tool calls, we're done
@@ -1969,20 +2032,38 @@ yield { type: "step_progress", step: this.state.iteration, total: planState.tota
       },
     )) {
       switch (event.type) {
-        case "tool_start":
-          // Skip — already yielded during streaming phase to preserve LLM output order
-          break;
+      case "tool_start":
+        // Skip — already yielded during streaming phase to preserve LLM output order
+        // P1: Record trajectory — tool call start
+        this.recordTrajectory(sessionId, "tool_call", {
+          name: event.toolCall.name,
+          args: JSON.stringify(event.toolCall.input).substring(0, 300),
+          iteration: this.state.iteration,
+        });
+        break;
 
         case "tool_complete":
           // Just yield - App.tsx handles persistence via useAppStore
           yield event;
           this.state.consecutiveErrors = 0;
+          // P1: Record trajectory — tool result
+          this.recordTrajectory(sessionId, "tool_result", {
+            name: event.toolCall.name,
+            result: (typeof event.result === 'string' ? event.result : JSON.stringify(event.result)).substring(0, 300),
+            iteration: this.state.iteration,
+          });
           break;
 
         case "tool_error":
           // Just yield - App.tsx handles persistence via useAppStore
           yield event;
           this.state.consecutiveErrors++;
+          // P1: Record trajectory — tool error
+          this.recordTrajectory(sessionId, "error", {
+            name: event.toolCall.name,
+            error: event.error?.substring(0, 300),
+            iteration: this.state.iteration,
+          });
           break;
       }
     }

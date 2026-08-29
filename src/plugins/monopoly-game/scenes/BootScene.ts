@@ -73,16 +73,24 @@ export class BootScene extends Phaser.Scene {
       this.load.image(`building_${i}`, `${ASSETS_BASE}buildings/building_${i}.png`);
     }
 
-    // 音效
-    this.load.audio("sfx_dice", `${ASSETS_BASE}audio/dice_throw.ogg`);
-    this.load.audio("sfx_card", `${ASSETS_BASE}audio/card_slide.ogg`);
-    this.load.audio("sfx_chips", `${ASSETS_BASE}audio/chips_collide.ogg`);
-    this.load.audio("sfx_click", `${ASSETS_BASE}audio/click.ogg`);
-    this.load.audio("sfx_error", `${ASSETS_BASE}audio/error.ogg`);
-    this.load.audio("sfx_confirm", `${ASSETS_BASE}audio/confirm.ogg`);
-    this.load.audio("sfx_switch", `${ASSETS_BASE}audio/switch.ogg`);
-    this.load.audio("sfx_success", `${ASSETS_BASE}audio/jingle_success.ogg`);
-    this.load.audio("sfx_fail", `${ASSETS_BASE}audio/jingle_fail.ogg`);
+    // 音效 — 使用 Web Audio 解码器，添加错误保护
+    const audioConfig = { responseType: "arraybuffer" as const };
+    this.load.audio("sfx_dice", `${ASSETS_BASE}audio/dice_throw.ogg`, audioConfig);
+    this.load.audio("sfx_card", `${ASSETS_BASE}audio/card_slide.ogg`, audioConfig);
+    this.load.audio("sfx_chips", `${ASSETS_BASE}audio/chips_collide.ogg`, audioConfig);
+    this.load.audio("sfx_click", `${ASSETS_BASE}audio/click.ogg`, audioConfig);
+    this.load.audio("sfx_error", `${ASSETS_BASE}audio/error.ogg`, audioConfig);
+    this.load.audio("sfx_confirm", `${ASSETS_BASE}audio/confirm.ogg`, audioConfig);
+    this.load.audio("sfx_switch", `${ASSETS_BASE}audio/switch.ogg`, audioConfig);
+    this.load.audio("sfx_success", `${ASSETS_BASE}audio/jingle_success.ogg`, audioConfig);
+    this.load.audio("sfx_fail", `${ASSETS_BASE}audio/jingle_fail.ogg`, audioConfig);
+
+    // 音频加载失败不影响游戏
+    this.load.on("loaderror", (file: any) => {
+      if (file && file.key && file.key.startsWith("sfx_")) {
+        console.warn(`[Monopoly] Audio load failed (non-fatal): ${file.key}`);
+      }
+    });
 
     // 加载完成后生成补充纹理
     this.load.on("complete", () => {
@@ -104,71 +112,74 @@ export class BootScene extends Phaser.Scene {
     this.generateToolTypeIcons();
   }
 
-  // ----- 地块纹理（渐变背景 + 边框） -----
+  // ----- 地块纹理（等距菱形 80×40，2:1 比例） -----
 
   private generateTileTextures(): void {
-    const size = 72;
-
-    this.makeTileTexture("tile_land", size, 0x2980b9, 0x1a5276, 0x5dade2);
-    this.makeTileTexture("tile_facility", size, 0xd4ac0d, 0xb7950b, 0xf1c40f);
-    this.makeTileTexture("tile_commercial", size, 0x7d3c98, 0x5b2c6f, 0xa569bd);
-    this.makeTileTexture("tile_landmark", size, 0xc0392b, 0x922b21, 0xe74c3c);
-    this.makeTileTexture("tile_start", size, 0x229954, 0x196f3d, 0x2ecc71);
-    this.makeTileTexture("tile_empty", size, 0x566573, 0x424949, 0x7f8c8d);
-    this.makeTileTexture("tile_sealed", size, 0x641e16, 0x4d0f08, 0x922b21);
-    this.makeTileTexture("tile_priceup", size, 0xca6f1e, 0xaf601a, 0xf39c12);
+    // 等距菱形: 宽80 高40 (2:1 经典等距比)
+    this.makeTileTexture("tile_land", 0x2980b9, 0x1a5276, 0x5dade2);
+    this.makeTileTexture("tile_facility", 0xd4ac0d, 0xb7950b, 0xf1c40f);
+    this.makeTileTexture("tile_commercial", 0x7d3c98, 0x5b2c6f, 0xa569bd);
+    this.makeTileTexture("tile_landmark", 0xc0392b, 0x922b21, 0xe74c3c);
+    this.makeTileTexture("tile_start", 0x229954, 0x196f3d, 0x2ecc71);
+    this.makeTileTexture("tile_empty", 0x566573, 0x424949, 0x7f8c8d);
+    this.makeTileTexture("tile_sealed", 0x641e16, 0x4d0f08, 0x922b21);
+    this.makeTileTexture("tile_priceup", 0xca6f1e, 0xaf601a, 0xf39c12);
   }
 
-  // M1: 地块纹理改为等距菱形
-  private makeTileTexture(key: string, size: number, colorMain: number, colorDark: number, colorLight: number): void {
+  // v3: 等距菱形纹理 — 80×40 像素，2:1 比例
+  private makeTileTexture(key: string, colorMain: number, colorDark: number, colorLight: number): void {
     if (this.textures.exists(key)) return;
     const g = this.add.graphics();
-    const cx = size / 2;
-    const cy = size / 2;
+    const W = 80, H = 40;
+    const cx = W / 2, cy = H / 2;
+
     // 菱形四点：上、右、下、左
     const diamond = [
-      { x: cx, y: 2 },          // 上
-      { x: size - 2, y: cy },   // 右
-      { x: cx, y: size - 2 },   // 下
-      { x: 2, y: cy },          // 左
+      { x: cx, y: 1 },         // 上
+      { x: W - 1, y: cy },    // 右
+      { x: cx, y: H - 1 },    // 下
+      { x: 1, y: cy },         // 左
     ];
 
-    // 阴影
-    g.fillStyle(0x000000, 0.3);
-    g.fillPoints(
-      diamond.map(p => ({ x: p.x + 2, y: p.y + 3 })),
-      true
-    );
+    // 1) 投影阴影 (向右下偏移)
+    g.fillStyle(0x000000, 0.35);
+    g.fillPoints(diamond.map(p => ({ x: p.x + 3, y: p.y + 4 })), true);
 
-    // 深色菱形底
+    // 2) 深色菱形底
     g.fillStyle(colorDark, 1);
     g.fillPoints(diamond, true);
 
-    // 主色菱形（略小）
+    // 3) 主色菱形（略小，留出深色边框）
     const inner = diamond.map(p => ({
-      x: cx + (p.x - cx) * 0.9,
-      y: cy + (p.y - cy) * 0.85,
+      x: cx + (p.x - cx) * 0.92,
+      y: cy + (p.y - cy) * 0.82,
     }));
-    g.fillStyle(colorMain, 0.9);
+    g.fillStyle(colorMain, 0.95);
     g.fillPoints(inner, true);
 
-    // 高光上半
-    const top = [
-      { x: cx, y: 4 },
-      { x: cx + size * 0.35, y: cy - 2 },
-      { x: cx, y: cy },
-      { x: cx - size * 0.35, y: cy - 2 },
+    // 4) 左半高光（模拟光源从左上方）
+    const highlight = [
+      { x: cx, y: 3 },
+      { x: cx - W * 0.35, y: cy - 1 },
+      { x: cx, y: cy + 1 },
+      { x: cx + W * 0.35, y: cy - 1 },
     ];
-    g.fillStyle(colorLight, 0.3);
-    g.fillPoints(top, true);
+    const highlightInner = highlight.map(p => ({
+      x: cx + (p.x - cx) * 0.7,
+      y: cy + (p.y - cy) * 0.6,
+    }));
+    g.fillStyle(colorLight, 0.35);
+    g.fillPoints(highlightInner, true);
 
-    // 边框
-    g.lineStyle(1.5, colorLight, 0.5);
-    g.strokePoints(inner, true);
-    g.lineStyle(2, 0xffffff, 0.2);
+    // 5) 白色边框（外）
+    g.lineStyle(2, 0xffffff, 0.25);
     g.strokePoints(diamond, true);
 
-    g.generateTexture(key, size, size);
+    // 6) 彩色边框（内）
+    g.lineStyle(1.5, colorLight, 0.6);
+    g.strokePoints(inner, true);
+
+    g.generateTexture(key, W, H);
     g.destroy();
   }
 

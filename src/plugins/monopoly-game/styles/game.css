@@ -2,7 +2,8 @@
 
 .monopoly-game-wrapper {
   width: 100%;
-  height: 100vh;
+  height: 100%;
+  min-height: 0;
   background: #1a1a2e;
   color: #ecf0f1;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -10,31 +11,37 @@
   position: relative;
 }
 
-/* 开始画面 */
+/* 开始画面 — 可滚动，适应任意容器高度 */
 .game-start-screen {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   height: 100%;
-  gap: 16px;
+  min-height: 0;
+  gap: 10px;
+  padding: 16px 12px 24px;
+  overflow-y: auto;
+  overflow-x: hidden;
   background: radial-gradient(ellipse at center, #16213e 0%, #0a0a1a 100%);
 }
 
 .game-start-screen h1 {
-  font-size: 36px;
+  font-size: 28px;
   color: #f1c40f;
   text-shadow: 0 2px 8px rgba(241, 196, 15, 0.3);
+  flex-shrink: 0;
 }
 
 .game-start-screen p {
   color: #bdc3c7;
-  font-size: 14px;
+  font-size: 13px;
+  flex-shrink: 0;
 }
 
 .game-start-btn {
-  padding: 14px 48px;
-  font-size: 18px;
+  padding: 10px 36px;
+  font-size: 16px;
   background: linear-gradient(135deg, #e74c3c, #c0392b);
   color: white;
   border: none;
@@ -42,6 +49,7 @@
   cursor: pointer;
   transition: transform 0.2s, box-shadow 0.2s;
   box-shadow: 0 4px 15px rgba(231, 76, 60, 0.4);
+  flex-shrink: 0;
 }
 
 .game-start-btn:hover {
@@ -134,21 +142,26 @@
   display: flex;
   gap: 12px;
   margin-top: 20px;
+  flex-shrink: 0;
 }
 
-/* 游戏布局 */
+/* 游戏布局 — 自适应容器大小 */
 .game-layout {
   display: flex;
   height: 100%;
+  min-height: 0;
   gap: 0;
+  overflow: hidden;
 }
 
 .game-sidebar-left {
-  width: 240px;
-  flex-shrink: 0;
+  width: 200px;
+  min-width: 140px;
+  flex-shrink: 1;
   background: #16213e;
   overflow-y: auto;
-  padding: 8px;
+  overflow-x: hidden;
+  padding: 6px;
   border-right: 1px solid #2c3e50;
 }
 
@@ -172,11 +185,13 @@
 }
 
 .game-sidebar-right {
-  width: 260px;
-  flex-shrink: 0;
+  width: 220px;
+  min-width: 140px;
+  flex-shrink: 1;
   background: #16213e;
   overflow-y: auto;
-  padding: 8px;
+  overflow-x: hidden;
+  padding: 6px;
   border-left: 1px solid #2c3e50;
 }
 
@@ -372,10 +387,12 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 8px 12px;
+  padding: 4px 8px;
   background: #16213e;
   border-top: 1px solid #2c3e50;
-  gap: 8px;
+  gap: 4px;
+  flex-shrink: 0;
+  flex-wrap: wrap;
 }
 
 .action-left, .action-right {
@@ -386,11 +403,11 @@
 }
 
 .action-btn {
-  padding: 6px 16px;
+  padding: 4px 10px;
   border: none;
-  border-radius: 6px;
+  border-radius: 5px;
   cursor: pointer;
-  font-size: 13px;
+  font-size: 12px;
   transition: all 0.15s;
   white-space: nowrap;
 }
@@ -459,9 +476,9 @@
   background: rgba(241, 196, 15, 0.05);
 }
 
-/* 股票面板 */
+/* 股票面板 — 限定在游戏容器内 */
 .stock-panel-overlay {
-  position: fixed;
+  position: absolute;
   top: 0;
   left: 0;
   right: 0;
@@ -477,9 +494,11 @@
   background: #1a1a2e;
   border: 1px solid #2c3e50;
   border-radius: 12px;
-  padding: 16px;
+  padding: 12px;
   width: 500px;
-  max-width: 90vw;
+  max-width: 90%;
+  max-height: 85%;
+  overflow-y: auto;
 }
 
 .stock-panel-header {
@@ -554,18 +573,12 @@
   color: white;
 }
 
-/* 响应式 */
-@media (max-width: 900px) {
+/* 响应式 — 窄窗口时隐藏侧边栏 */
+@media (max-width: 700px) {
   .game-sidebar-left {
-    width: 180px;
+    display: none;
   }
   .game-sidebar-right {
-    width: 200px;
-  }
-}
-
-@media (max-width: 600px) {
-  .game-sidebar-left, .game-sidebar-right {
     display: none;
   }
 }
@@ -573,7 +586,7 @@
 /* ===== 卡牌/道具/商店面板通用样式 ===== */
 
 .card-panel-overlay {
-  position: fixed;
+  position: absolute;
   top: 0; left: 0; right: 0; bottom: 0;
   background: rgba(0, 0, 0, 0.6);
   display: flex;
@@ -586,10 +599,10 @@
   background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
   border: 1px solid #34495e;
   border-radius: 12px;
-  padding: 16px;
+  padding: 12px;
   width: 500px;
-  max-width: 90vw;
-  max-height: 80vh;
+  max-width: 90%;
+  max-height: 85%;
   overflow-y: auto;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
 }
@@ -888,13 +901,16 @@
 
 /* 地图选择 */
 .map-select {
-  margin: 12px 0;
+  margin: 6px 0;
+  flex-shrink: 0;
+  width: 100%;
+  max-width: 520px;
 }
 
 .map-select h3 {
   color: #f1c40f;
-  font-size: 14px;
-  margin-bottom: 8px;
+  font-size: 13px;
+  margin-bottom: 4px;
 }
 
 .map-options {
@@ -905,13 +921,13 @@
 }
 
 .map-option {
-  padding: 8px 16px;
+  padding: 5px 12px;
   background: #2c3e50;
   color: #bdc3c7;
   border: 2px solid transparent;
-  border-radius: 8px;
+  border-radius: 6px;
   cursor: pointer;
-  font-size: 13px;
+  font-size: 12px;
   transition: all 0.15s;
 }
 
@@ -928,12 +944,13 @@
 /* G35: 设置条 */
 .settings-bar {
   display: flex;
-  gap: 12px;
+  gap: 8px;
   align-items: center;
-  padding: 4px 12px;
+  padding: 2px 8px;
   background: #0d1117;
   border-top: 1px solid #1a1a2e;
   font-size: 11px;
+  flex-shrink: 0;
 }
 
 .setting-item {

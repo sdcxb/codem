@@ -103,12 +103,17 @@ export class UIScene extends Phaser.Scene {
 
   // 暴露给 BoardScene 调用
   playSfx(key: string, volume: number = 1): void {
-    const s = this.sfx.get(key);
-    if (s) {
-      if (s instanceof Phaser.Sound.WebAudioSound || s instanceof Phaser.Sound.HTML5AudioSound) {
-        (s as any).setVolume(volume);
+    try {
+      const s = this.sfx.get(key);
+      if (s) {
+        if (s instanceof Phaser.Sound.WebAudioSound || s instanceof Phaser.Sound.HTML5AudioSound) {
+          (s as any).setVolume(volume);
+        }
+        s.play();
       }
-      s.play();
+    } catch (e) {
+      // 音频播放失败不崩溃
+      console.warn(`[Monopoly] SFX play failed (non-fatal): ${key}`, e);
     }
   }
 

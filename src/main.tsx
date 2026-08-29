@@ -13,10 +13,19 @@ import "./styles/notebook-workspace.css";
 import "./styles/codem-ui.css";
 
 // 全局错误捕获 — 用 alert 弹出，不依赖 DOM 渲染
+// 但过滤掉已知的浏览器良性警告（ResizeObserver loop 等）
+const IGNORED_ERRORS = [
+  'ResizeObserver loop completed with undelivered notifications',
+  'ResizeObserver loop limit exceeded',
+];
 window.addEventListener('error', (e) => {
+  const msg = e.message || '';
+  if (IGNORED_ERRORS.some(p => msg.includes(p))) return;
   alert('[ERROR] ' + (e.error?.stack || e.message));
 });
 window.addEventListener('unhandledrejection', (e) => {
+  const msg = e.reason?.message || String(e.reason) || '';
+  if (IGNORED_ERRORS.some(p => msg.includes(p))) return;
   alert('[REJECTION] ' + (e.reason?.stack || e.reason?.message || String(e.reason)));
 });
 

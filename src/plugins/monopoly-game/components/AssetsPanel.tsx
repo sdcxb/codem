@@ -45,7 +45,7 @@ export function AssetsPanel({ engine, playerId, onClose }: Props) {
 
   return (
     <div className="card-panel-overlay">
-      <div className="card-panel" style={{ width: 480, maxHeight: "80vh", overflowY: "auto" }}>
+      <div className="card-panel" style={{ width: 480, maxHeight: "85%", overflowY: "auto" }}>
         <div className="panel-header">
           <h3>资产清单 — {player.name}</h3>
           <button className="panel-close" onClick={onClose}>×</button>

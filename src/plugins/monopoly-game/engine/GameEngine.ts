@@ -58,7 +58,7 @@ export class GameEngine {
   private date = 1;
   private priceIndex = 1000;
   private initCash: number = 15000;
-  private winningMultiplier: number = 0; // G23: 0 = 不启用, >0 = wealth >= initCash × multiplier 即胜利
+  private winningMultiplier: number = -1; // G23: -1 = 破产模式(最后存活者胜), 0 = 不启用, >0 = wealth >= initCash × multiplier 即胜利
 
   private phase: GamePhase = "idle";
   private diceValues: number[] = [];
@@ -799,7 +799,17 @@ export class GameEngine {
     this.phase = "rolling";
     this.date++;
 
-    // G23: 检查胜利条件 — 有玩家财富达到 initCash × multiplier
+    // G23: 检查胜利条件
+    // -1 = 破产模式：只剩一名玩家未破产即胜
+    if (this.winningMultiplier === -1) {
+      const active = this.players.filter(p => p.status !== "bankrupted");
+      if (active.length <= 1) {
+        this.setMessage(`${active[0]?.name || "无人"} 是最后的赢家！所有对手已破产！`, "gold");
+        this.endGame();
+        return;
+      }
+    }
+    // >0 = wealth >= initCash × multiplier 即胜利
     if (this.winningMultiplier > 0) {
       for (const p of this.players) {
         if (p.status !== "bankrupted") {

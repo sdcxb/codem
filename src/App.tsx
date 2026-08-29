@@ -202,7 +202,7 @@ async function getCordisContext(): Promise<Context> {
   return _codemCtxPromise;
 }
 // ====== Cordis 插件系统初始化结束 ======
-import { RefreshCw, X, MessageSquare, Terminal, BookOpen, Save, FolderOpen, PencilLine, Trash2, CheckCircle, Menu, Hammer, ClipboardList, Search, Bot, Activity, GitBranch } from "lucide-react";
+import { RefreshCw, X, MessageSquare, Terminal, BookOpen, Save, FolderOpen, PencilLine, Trash2, CheckCircle, Menu, Hammer, ClipboardList, Search, Bot, Activity, GitBranch, Gamepad2 } from "lucide-react";
 import { TooltipProvider } from "./components/ui/tooltip";
 import { TitleBar } from "./components/TitleBar";
 import { BootSplash } from "./components/BootSplash";
@@ -303,7 +303,7 @@ async function getAppRoot(): Promise<string> {
 
 // 同步 fallback：在异步 getAppRoot 完成前使用
 const APP_ROOT_FALLBACK = "D:\\mimo";
-type BottomTab = "chat" | "terminal" | "perf" | "files" | "jobs" | "cicd";
+type BottomTab = "chat" | "terminal" | "perf" | "files" | "jobs" | "cicd" | "game";
 
 function getCliSessionKey(projectId: string, sessionId: string) {
   return `codem-cli-session-${projectId}-${sessionId}`;
@@ -376,7 +376,13 @@ const [showPerfDashboard, setShowPerfDashboard] = useState(false);
 const [pluginDisabledList, setPluginDisabledList] = useState<string[]>(() => {
   try {
     const raw = localStorage.getItem('codem:disabled-plugins');
-    return raw ? JSON.parse(raw) : [];
+    if (raw === null) {
+      // 首次运行：默认禁用游戏插件
+      const defaultDisabled = ['@codem/ui-game'];
+      localStorage.setItem('codem:disabled-plugins', JSON.stringify(defaultDisabled));
+      return defaultDisabled;
+    }
+    return JSON.parse(raw);
   } catch { return []; }
 });
 // 监听插件状态变化（PluginManagerService 写入 localStorage 后触发）
@@ -434,6 +440,8 @@ const jobsPanelEnabled = !isPluginDisabled('@codem/ui-jobs');
 const planPanelEnabled = !isPluginDisabled('@codem/ui-plan');
 // 工作区面板由 @codem/ui-workspace 提供
 const workspacePanelEnabled = !isPluginDisabled('@codem/ui-workspace');
+// 游戏面板由 @codem/ui-game 提供（默认关闭）
+const gameEnabled = !isPluginDisabled('@codem/ui-game');
 const [planApproval, setPlanApproval] = useState<{ plan: string; resolve: (result: { approved: boolean; feedback?: string }) => void } | null>(null);
   const [showSearchDialog, setShowSearchDialog] = useState(false);
 const [activeNotebookId, setActiveNotebookId] = useState<string | null>(null);
@@ -447,7 +455,6 @@ const [citationViewer, setCitationViewer] = useState<{ sourceId: string; noteboo
 const [showTaskCenter, setShowTaskCenter] = useState(false);
 const [taskCenterTab, setTaskCenterTab] = useState<TaskCenterTab>("overview");
 const [showAgentManager, setShowAgentManager] = useState(false);
-  const [showGame, setShowGame] = useState(false);
   const [bottomTab, setBottomTab] = useState<BottomTab>("chat");
 // 如果性能 tab 被禁用但当前选中它，回退到对话
 useEffect(() => {
@@ -1925,6 +1932,7 @@ const safeUpdateMessage = (id: string, update: any) => {
   if (isViewingSession()) useAppStore.getState().updateMessage(id, update);
 };
 
+      let lastEvent: any = undefined;
       for await (const event of engine.process(session.id, message, cwd, undefined, {
         onPermissionRequest: (request) => {
           return new Promise((resolve) => {
@@ -2318,6 +2326,7 @@ saveMessages(session.id);
           }
 
           case "end": {
+            lastEvent = event;
             // Bridge to pet system
             getPet().onStreamEvent(event);
             // Show bubble notification on task completion
@@ -2354,9 +2363,33 @@ saveMessages(session.id);
 
       if (assistantContent) {
         const generatedFiles = Array.from(generatedFilesRef.current);
+        // 对标 DSH turn 级 metadata：将 turn 状态写入消息 metadata，
+        // 供 StatsLine（统计行）和 TurnStatus（错误/重试/max-tokens 通知行）消费。
+        const turnEndTime = Date.now();
+        const turnMetadata: Record<string, any> = {};
+        // 从 end 事件中提取 turn 级信息
+        if ("result" in lastEvent && lastEvent.result) {
+          const result = lastEvent.result as any;
+          // stop reason → turnStatus
+          if (result.reason === "too_many_errors") {
+            turnMetadata.turnStatus = { kind: "error", message: "Consecutive errors exceeded limit", code: result.reason };
+          } else if (result.reason === "max_iterations") {
+            turnMetadata.turnStatus = { kind: "error", message: "Iteration limit reached", code: result.reason };
+          } else if (result.reason === "no_progress") {
+            turnMetadata.turnStatus = { kind: "error", message: "No progress detected — loop stopped", code: result.reason };
+          } else if (result.reason === "overflow") {
+            turnMetadata.turnStatus = { kind: "max-tokens" };
+          }
+          // usage 数据
+          if (result.usage) {
+            turnMetadata.usage = result.usage;
+            turnMetadata.turnEndTime = turnEndTime;
+          }
+        }
         safeUpdateMessage(assistantMsgId, {
           status: "done",
           generatedFiles: generatedFiles.length > 0 ? generatedFiles : undefined,
+          metadata: Object.keys(turnMetadata).length > 0 ? turnMetadata : undefined,
         });
         generatedFilesRef.current.clear();
       }
@@ -2664,6 +2697,11 @@ onRemoveProject={(id, name, path) => {
 <Activity size={14} /> {lang === "zh" ? "性能" : "Perf"}
 </button>
 )}
+{gameEnabled && (
+<button className={`tab ${bottomTab === "game" ? "active" : ""}`} onClick={() => setBottomTab("game")}>
+<Gamepad2 size={14} /> {lang === "zh" ? "游戏" : "Game"}
+</button>
+)}
                     {/* SlotListBridge 消费 bottom-panel.tabs — list 类型，允许插件注入底部面板 tab */}
                       <SlotListBridge name="bottom-panel.tabs" />
                     </div>
@@ -2737,6 +2775,13 @@ notebookId={activeNotebookId || undefined}
 {perfEnabled && bottomTab === "perf" && (
 <SlotBridge name="app.performance-dashboard" fallback={PerformanceDashboard} onClose={() => setBottomTab("chat")}  />
 )}
+{gameEnabled && bottomTab === "game" && (
+  <div style={{ width: "100%", height: "100%", overflow: "hidden", position: "relative" }}>
+    <Suspense fallback={<div style={{ color: "#fff", textAlign: "center", marginTop: 200 }}>加载游戏...</div>}>
+      <GameViewLazy />
+    </Suspense>
+  </div>
+)}
                     </div>
                   </div>
                 </div>
@@ -2778,6 +2823,11 @@ onRemoveProject={(id, name, path) => {
 {perfEnabled && (
 <button className={`tab ${bottomTab === "perf" ? "active" : ""}`} onClick={() => setBottomTab("perf")}>
 <Activity size={14} /> {lang === "zh" ? "性能" : "Perf"}
+</button>
+)}
+{gameEnabled && (
+<button className={`tab ${bottomTab === "game" ? "active" : ""}`} onClick={() => setBottomTab("game")}>
+<Gamepad2 size={14} /> {lang === "zh" ? "游戏" : "Game"}
 </button>
 )}
                   </div>
@@ -2851,6 +2901,13 @@ notebookId={activeNotebookId || undefined}
 {perfEnabled && bottomTab === "perf" && (
 <SlotBridge name="app.performance-dashboard" fallback={PerformanceDashboard} onClose={() => setBottomTab("chat")}  />
 )}
+{gameEnabled && bottomTab === "game" && (
+  <div style={{ width: "100%", height: "100%", overflow: "hidden", position: "relative" }}>
+    <Suspense fallback={<div style={{ color: "#fff", textAlign: "center", marginTop: 200 }}>加载游戏...</div>}>
+      <GameViewLazy />
+    </Suspense>
+  </div>
+)}
                   </div>
                 </div>
             </div>
@@ -2914,6 +2971,11 @@ onRemoveProject={(id, name, path) => {
 {perfEnabled && (
 <button className={`tab ${bottomTab === "perf" ? "active" : ""}`} onClick={() => setBottomTab("perf")}>
 <Activity size={14} /> {lang === "zh" ? "性能" : "Perf"}
+</button>
+)}
+{gameEnabled && (
+<button className={`tab ${bottomTab === "game" ? "active" : ""}`} onClick={() => setBottomTab("game")}>
+<Gamepad2 size={14} /> {lang === "zh" ? "游戏" : "Game"}
 </button>
 )}
           </div>
@@ -3007,6 +3069,13 @@ notebookId={activeNotebookId || undefined}
 )}
 {perfEnabled && bottomTab === "perf" && (
 <SlotBridge name="app.performance-dashboard" fallback={PerformanceDashboard} onClose={() => setBottomTab("chat")}  />
+)}
+{gameEnabled && bottomTab === "game" && (
+  <div style={{ width: "100%", height: "100%", overflow: "hidden", position: "relative" }}>
+    <Suspense fallback={<div style={{ color: "#fff", textAlign: "center", marginTop: 200 }}>加载游戏...</div>}>
+      <GameViewLazy />
+    </Suspense>
+  </div>
 )}
           </div>
         </div>
@@ -3551,42 +3620,6 @@ onClose={() => setCitationViewer(null)}
       {/* 全局目标/TODO 面板 slot — TodoListDisplay 等 */}
       <SlotBridge name="app.goal" fallback={null} />
 
-      {/* 大富翁小游戏入口按钮 */}
-      {!showGame && (
-        <button
-          onClick={() => setShowGame(true)}
-          title="大富翁小游戏"
-          style={{
-            position: "fixed", bottom: 16, right: 16, zIndex: 9998,
-            width: 48, height: 48, borderRadius: "50%",
-            background: "linear-gradient(135deg, #f39c12, #e67e22)",
-            border: "none", color: "white", fontSize: 24, cursor: "pointer",
-            boxShadow: "0 4px 12px rgba(243, 156, 18, 0.4)",
-            display: "flex", alignItems: "center", justifyContent: "center",
-          }}
-        >
-          🎲
-        </button>
-      )}
-
-      {/* 大富翁小游戏 overlay */}
-      {showGame && (
-        <div style={{ position: "fixed", inset: 0, zIndex: 9999, background: "#1a1a2e" }}>
-          <button
-            onClick={() => setShowGame(false)}
-            style={{
-              position: "absolute", top: 8, right: 8, zIndex: 10001,
-              background: "#e74c3c", color: "white", border: "none",
-              borderRadius: 6, padding: "6px 16px", cursor: "pointer", fontSize: 14,
-            }}
-          >
-            ✕ 退出游戏
-          </button>
-          <Suspense fallback={<div style={{ color: "#fff", textAlign: "center", marginTop: 200 }}>加载游戏...</div>}>
-            <GameViewLazy />
-          </Suspense>
-        </div>
-      )}
       {/* app.subagent 不在此渲染 — DelegationPanel 是模态弹窗，需要 onClose prop，不能放在无 props 的 SlotBridge 中 */}
       {/* app.user-questions 和 app.workflow-run 不在此渲染。
           InteractiveFormDialog 需要 questions/onSubmit/onCancel props，

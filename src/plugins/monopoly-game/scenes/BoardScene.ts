@@ -1,43 +1,64 @@
 /**
- * BoardScene — 棋盘场景
- * 使用 Kenney CC0 素材渲染地图节点、玩家棋子、建筑、设施图标
- * Phase 8 改进：角色精灵替换、所有者边框条、地块高亮、行走音效、连锁店招牌
- * Phase 8 批次2：道路视觉、地图背景城市感、可购买提示、骑乘状态、粒子系统、昼夜色调
- * Phase 8 批次3：地块信息弹窗、建筑等级分层、状态表情、行走动画、事件弹窗、买卖确认弹窗、地图缩略图
+ * BoardScene — 棋盘场景 v3.0
+ * 真正的 2.5D 等距视角渲染，对标大富翁4核心视觉体验
+ *
+ * 核心改造:
+ * 1. 等距投影: grid (gx, gy) → screen (sx, sy) = (gx - gy) * tileW/2, (gx + gy) * tileH/2
+ * 2. 深度排序: 所有地块/建筑/角色按 isoDepth = gx + gy 排序
+ * 3. 逐格行走: 监听 player_moved 事件，沿路径逐格 tween 角色位置
+ * 4. 建筑分层: 按等级显示不同建筑精灵，正确的 z-order
+ * 5. 所有者颜色条 + 连锁店招牌 + 购买提示
  */
 
 import Phaser from "phaser";
-import type { GameBoardMap, MapNode } from "../types";
+import type { GameBoardMap, MapNode, LandTile, FacilityTile, CommercialTile, Landmark } from "../types";
 import type { GameEngine } from "../engine/GameEngine";
+
+// ===== 等距投影常量 =====
+// 纹理 80×40，网格间距放大到 84×42 以留出地块间隙
+const TILE_W = 84;   // 网格步进宽度
+const TILE_H = 42;   // 网格步进高度
+const TILE_HW = TILE_W / 2;
+const TILE_HH = TILE_H / 2;
+
+/** 网格坐标 → 等距屏幕坐标 */
+function gridToIso(gx: number, gy: number): { x: number; y: number } {
+  return {
+    x: (gx - gy) * TILE_HW,
+    y: (gx + gy) * TILE_HH,
+  };
+}
 
 interface TileVisual {
   container: Phaser.GameObjects.Container;
   bg: Phaser.GameObjects.Image;
-  ownerBorder?: Phaser.GameObjects.Rectangle;
+  ownerBar?: Phaser.GameObjects.Rectangle;
   highlightTween?: Phaser.Tweens.Tween;
-  buyHint?: Phaser.GameObjects.Image;  // T4: 可购买提示金币
+  buyHint?: Phaser.GameObjects.Image;
   icon?: Phaser.GameObjects.Image;
   building?: Phaser.GameObjects.Image;
-  levelBadge?: Phaser.GameObjects.Text; // B4: 等级标识
+  levelBadge?: Phaser.GameObjects.Text;
   chainIcon?: Phaser.GameObjects.Image;
   nameLabel: Phaser.GameObjects.Text;
   priceLabel: Phaser.GameObjects.Text;
+  node: MapNode;
+  isoDepth: number;
 }
 
-// 设施类型 → Kenney 图标 texture key（修正映射，使图标与设施含义匹配）
+// 设施类型 → 图标 texture key
 const FACILITY_ICON_MAP: Record<string, string> = {
-  bank: "icon_star",           // 星标=金/财富 → 银行
-  hospital: "icon_cross",      // 十字=医院 ✓
-  prison: "icon_locked",       // 锁=监狱 ✓
-  shop: "icon_basket",         // 篮子=商店 ✓
-  park: "icon_trophy",         // 奖杯=休闲 → 公园
-  magic_house: "icon_question", // 问号=神秘 → 魔法屋
-  hotel: "icon_home",          // 房屋=住宿 → 酒店
-  gas_station: "icon_power",   // 电源=能源 → 加油站
-  news: "icon_warning",       // 警告=突发 → 新闻
-  fortune: "icon_question",   // 问号=未知 → 命运
-  auction_house: "icon_trophy", // 奖杯=竞价 → 拍卖
-  airport: "icon_power",      // 电源=能源 → 机场
+  bank: "icon_star",
+  hospital: "icon_cross",
+  prison: "icon_locked",
+  shop: "icon_basket",
+  park: "icon_trophy",
+  magic_house: "icon_question",
+  hotel: "icon_home",
+  gas_station: "icon_power",
+  news: "icon_warning",
+  fortune: "icon_question",
+  auction_house: "icon_trophy",
+  airport: "icon_power",
 };
 
 export class BoardScene extends Phaser.Scene {
@@ -47,18 +68,18 @@ export class BoardScene extends Phaser.Scene {
   private pawnSprites: Map<number, Phaser.GameObjects.Container> = new Map();
   private pawnShadowSprites: Map<number, Phaser.GameObjects.Image> = new Map();
   private pawnImages: Map<number, Phaser.GameObjects.Image> = new Map();
-  private pawnRideIcons: Map<number, Phaser.GameObjects.Image> = new Map(); // P5: 骑乘状态图标
-  private pawnStatusIcons: Map<number, Phaser.GameObjects.Image> = new Map(); // P4: 状态表情图标
+  private pawnRideIcons: Map<number, Phaser.GameObjects.Image> = new Map();
+  private pawnStatusIcons: Map<number, Phaser.GameObjects.Image> = new Map();
   private currentHighlightNodeId: number = -1;
-  private dayNightOverlay?: Phaser.GameObjects.Rectangle; // O3: 昼夜色调叠加层
-  private infoPopup?: Phaser.GameObjects.Container; // T1: 地块信息弹窗
-  private eventPopup?: Phaser.GameObjects.Container; // R2: 事件弹窗
-  private confirmPopup?: Phaser.GameObjects.Container; // R3: 买卖确认弹窗
-  private branchPopup?: Phaser.GameObjects.Container; // G2: 路口方向选择弹窗
-  private miniMap?: Phaser.GameObjects.Graphics; // O2: 地图缩略图
-  private miniMapContainer?: Phaser.GameObjects.Container; // O2: 缩略图容器
-  private miniMapIndicator?: Phaser.GameObjects.Arc; // O2: 缩略图视角指示器
-  private isMoving: boolean = false; // P2: 行走动画状态
+  private dayNightOverlay?: Phaser.GameObjects.Rectangle;
+  private infoPopup?: Phaser.GameObjects.Container;
+  private eventPopup?: Phaser.GameObjects.Container;
+  private confirmPopup?: Phaser.GameObjects.Container;
+  private branchPopup?: Phaser.GameObjects.Container;
+  private miniMap?: Phaser.GameObjects.Graphics;
+  private miniMapContainer?: Phaser.GameObjects.Container;
+  private miniMapIndicator?: Phaser.GameObjects.Arc;
+  private isMoving: boolean = false;
 
   constructor() {
     super({ key: "BoardScene" });
@@ -70,595 +91,276 @@ export class BoardScene extends Phaser.Scene {
   }
 
   create(): void {
-    this.cameras.main.setBackgroundColor("#1a1a2e");
+    this.cameras.main.setBackgroundColor("#0d1b2a");
 
-    this.drawBackground();
+    this.drawIslandBackground();
     this.drawPaths();
     this.drawTiles();
+    this.sortDepths();
     this.createPawns();
 
-    // O3: 昼夜色调叠加层
+    // 昼夜叠加层
     this.dayNightOverlay = this.add.rectangle(
       -1920, -1080, 1920 * 3, 1080 * 3, 0x000000, 0
-    ).setDepth(-5);
+    ).setDepth(1000);
 
-    this.cameras.main.setZoom(0.85);
-    this.cameras.main.centerOn(480, 340);
+    // 相机居中到地图中央
+    const allNodes = this.map.nodes;
+    let cx = 0, cy = 0;
+    for (const n of allNodes) {
+      const iso = gridToIso(n.x, n.y);
+      cx += iso.x;
+      cy += iso.y;
+    }
+    cx /= allNodes.length;
+    cy /= allNodes.length;
+
+    this.cameras.main.centerOn(cx, cy);
+    this.cameras.main.setZoom(1.0);
     this.setupCameraDrag();
 
-    // O3: 初始更新昼夜色调
     this.updateDayNight();
-
-    // T4: 初始显示可购买提示
     this.updateBuyHints();
-
-    // O2: 创建地图缩略图
     this.createMiniMap();
 
     this.engine.on((event) => {
       if (event.type === "player_moved") {
         this.updatePawnPosition(event.data.playerId, event.data.nodeId);
-        // A1: 行走音效
         this.playStepSound();
-        // P2: 行走动画 — 标记移动状态
         this.isMoving = true;
       } else if (event.type === "game_start") {
         for (const player of this.engine.getPlayers()) {
           this.updatePawnPosition(player.id, player.positionNodeId);
         }
-        // P4: 初始更新状态表情
         this.updateStatusIcons();
       } else if (event.type === "player_arrived") {
-        // T3: 地块高亮 — 玩家到达时闪烁
         this.highlightTile(event.data.nodeId);
-        // P2: 行走动画结束
         this.isMoving = false;
       } else if (event.type === "land_bought") {
-        // A2: 买地音效
         this.playEventSound("chips");
         this.refreshTileVisuals();
         this.updateBuyHints();
+        this.sortDepths();
       } else if (event.type === "land_upgraded") {
-        // A2: 升级音效
         this.playEventSound("confirm");
-        // O1: 升级金色粒子
         const upgradedLand = this.map.lands[event.data.landIndex];
         if (upgradedLand) this.emitParticles(upgradedLand.id, 0xf1c40f);
         this.refreshTileVisuals();
+        this.sortDepths();
       } else if (event.type === "land_liquidated") {
         this.refreshTileVisuals();
+        this.sortDepths();
       } else if (event.type === "player_bankrupted") {
-        // A2: 破产音效
         this.playEventSound("fail");
-        // O1: 破产黑色粒子
         const bankruptedPlayer = this.engine.getPlayers().find(p => p.id === event.data.playerId);
         if (bankruptedPlayer) {
           const node = this.map.nodes[bankruptedPlayer.positionNodeId];
           if (node) this.emitParticles(node.id, 0x1a1a2e);
         }
-        // P4: 更新状态表情
         this.updateStatusIcons();
       } else if (event.type === "pay_toll") {
-        // T2: 过路费飞字
         this.showFloatText(event.data.to, `+¥${event.data.amount}`, 0x27ae60);
         this.showFloatText(event.data.from, `-¥${event.data.amount}`, 0xe74c3c);
       } else if (event.type === "trigger_fortune" || event.type === "trigger_news") {
         this.playEventSound("card");
-        // R2: 事件弹窗
         this.showEventPopup(event);
       } else if (event.type === "enter_magic_house") {
         this.playEventSound("switch");
       } else if (event.type === "card_used") {
-        // G16: 卡牌翻牌动画
         this.playEventSound("card");
         this.showCardFlipAnimation(event.data);
       } else if (event.type === "prompt_buy_land") {
-        // R3: 买卖确认弹窗
         this.showConfirmPopup("buy_land", event.data);
       } else if (event.type === "prompt_upgrade_land") {
-        // R3: 升级确认弹窗
         this.showConfirmPopup("upgrade_land", event.data);
       } else if (event.type === "prompt_branch") {
-        // G2: 路口方向选择
         this.showBranchPopup(event.data);
       } else if (event.type === "turn_start") {
-        // O3: 每回合更新昼夜色调
         this.updateDayNight();
-        // T4: 每回合更新可购买提示
         this.updateBuyHints();
-        // P5: 更新骑乘状态显示
         this.updateRideIcons();
-        // P4: 更新状态表情
         this.updateStatusIcons();
-        // O2: 更新缩略图
         this.updateMiniMap();
       }
     });
   }
 
-  // ===== G13+G15: 主题背景 + 大量装饰物 =====
-  private drawBackground(): void {
-    const theme = this.map.meta.backgroundTheme || "city";
-    const bg = this.add.graphics();
-    const w = 1920, h = 1080;
-
-    // 1) 底色铺满
-    const themeColors: Record<string, number> = {
-      city: 0x16213e,
-      wood: 0x2a1810,
-      ocean: 0x0a2640,
-      space: 0x050518,
-    };
-    bg.fillStyle(themeColors[theme] ?? 0x16213e, 1);
-    bg.fillRect(-w, -h, w * 3, h * 3);
-
-    // 2) 按主题调用对应绘制方法
-    switch (theme) {
-      case "space":
-        this.drawSpaceTheme(bg);
-        break;
-      case "ocean":
-        this.drawOceanTheme(bg);
-        break;
-      case "wood":
-        this.drawWoodTheme(bg);
-        break;
-      default:
-        this.drawCityTheme(bg);
-        break;
+  // ===== 等距深度排序 =====
+  // 按 isoDepth = gx + gy 从小到大排列，depth 从 1 开始递增
+  private sortDepths(): void {
+    const sorted = [...this.tileVisuals.values()].sort((a, b) => a.isoDepth - b.isoDepth);
+    let depth = 1;
+    for (const tv of sorted) {
+      tv.container.setDepth(depth);
+      // 建筑在地块之上
+      if (tv.building) tv.building.setDepth(depth + 0.5);
+      if (tv.icon) tv.icon.setDepth(depth + 0.3);
+      if (tv.chainIcon) tv.chainIcon.setDepth(depth + 0.7);
+      if (tv.levelBadge) tv.levelBadge.setDepth(depth + 0.8);
+      if (tv.ownerBar) tv.ownerBar.setDepth(depth + 0.2);
+      if (tv.buyHint) tv.buyHint.setDepth(depth + 0.9);
+      depth += 2;
     }
 
-    // 3) 通用光晕
-    for (let i = 0; i < 5; i++) {
-      bg.fillStyle(0x2c3e50, 0.04);
-      bg.fillCircle(480, 340, 200 + i * 60);
-    }
-    bg.setDepth(-10);
-  }
-
-  // ===== 太空站主题 =====
-  private drawSpaceTheme(g: Phaser.GameObjects.Graphics): void {
-    // 星空 — 大量大小不一的星点
-    for (let i = 0; i < 300; i++) {
-      const sx = -200 + Math.random() * 2200;
-      const sy = -200 + Math.random() * 1400;
-      const sr = 0.5 + Math.random() * 2.5;
-      const alpha = 0.2 + Math.random() * 0.6;
-      g.fillStyle(0xffffff, alpha);
-      g.fillCircle(sx, sy, sr);
-    }
-    // 大星 — 带十字光芒
-    for (let i = 0; i < 12; i++) {
-      const sx = -100 + Math.random() * 1900;
-      const sy = -100 + Math.random() * 1200;
-      g.fillStyle(0xffffff, 0.6);
-      g.fillCircle(sx, sy, 3);
-      g.lineStyle(1, 0xffffff, 0.3);
-      g.beginPath();
-      g.moveTo(sx - 10, sy); g.lineTo(sx + 10, sy);
-      g.moveTo(sx, sy - 10); g.lineTo(sx, sy + 10);
-      g.strokePath();
-    }
-    // 星云团（紫色/蓝色雾气）
-    const nebulae = [
-      { x: 300, y: 200, r: 180, color: 0x6c3483 },
-      { x: 900, y: 600, r: 220, color: 0x1a5276 },
-      { x: 1400, y: 300, r: 160, color: 0x9b59b6 },
-      { x: 600, y: 800, r: 140, color: 0x2471a3 },
-    ];
-    for (const n of nebulae) {
-      g.fillStyle(n.color, 0.08);
-      g.fillCircle(n.x, n.y, n.r);
-      g.fillStyle(n.color, 0.05);
-      g.fillCircle(n.x, n.y, n.r * 1.4);
-      g.fillStyle(n.color, 0.03);
-      g.fillCircle(n.x, n.y, n.r * 1.8);
-    }
-    // 太空站主体 — 中央圆环结构
-    const stX = 480, stY = 340;
-    g.lineStyle(3, 0x5dade2, 0.4);
-    g.strokeCircle(stX, stY, 90);
-    g.lineStyle(2, 0x85c1e9, 0.3);
-    g.strokeCircle(stX, stY, 70);
-    // 太空舱 — 四个方向伸出的小圆柱
-    const pods = [
-      { x: stX, y: stY - 90, w: 24, h: 36 },
-      { x: stX + 90, y: stY, w: 36, h: 24 },
-      { x: stX, y: stY + 90, w: 24, h: 36 },
-      { x: stX - 90, y: stY, w: 36, h: 24 },
-    ];
-    for (const p of pods) {
-      g.fillStyle(0x2c3e50, 0.6);
-      g.fillRect(p.x - p.w / 2, p.y - p.h / 2, p.w, p.h);
-      g.lineStyle(1.5, 0x5dade2, 0.4);
-      g.strokeRect(p.x - p.w / 2, p.y - p.h / 2, p.w, p.h);
-      // 舷窗
-      g.fillStyle(0xf1c40f, 0.2);
-      g.fillCircle(p.x, p.y, 4);
-    }
-    // 太阳能板 — 左右两片大面积蓝色矩形
-    const panelW = 120, panelH = 50;
-    g.fillStyle(0x1a5276, 0.25);
-    g.fillRect(stX - 90 - panelW, stY - panelH / 2, panelW, panelH);
-    g.fillRect(stX + 90, stY - panelH / 2, panelW, panelH);
-    // 太阳能板网格线
-    g.lineStyle(0.5, 0x5dade2, 0.2);
-    for (let gx = 0; gx < panelW; gx += 15) {
-      g.beginPath();
-      g.moveTo(stX - 90 - panelW + gx, stY - panelH / 2);
-      g.lineTo(stX - 90 - panelW + gx, stY + panelH / 2);
-      g.moveTo(stX + 90 + gx, stY - panelH / 2);
-      g.lineTo(stX + 90 + gx, stY + panelH / 2);
-      g.strokePath();
-    }
-    // 卫星 — 几个小卫星点缀
-    for (let i = 0; i < 5; i++) {
-      const satX = 100 + Math.random() * 1600;
-      const satY = 50 + Math.random() * 900;
-      g.fillStyle(0xbdc3c7, 0.3);
-      g.fillRect(satX - 3, satY - 1, 6, 2);
-      g.fillStyle(0x5dade2, 0.2);
-      g.fillRect(satX - 10, satY - 4, 7, 8);
-      g.fillRect(satX + 3, satY - 4, 7, 8);
-    }
-    // 外星飞碟 — 几个UFO
-    const ufos = [
-      { x: 200, y: 150 },
-      { x: 800, y: 700 },
-      { x: 1300, y: 200 },
-    ];
-    for (const u of ufos) {
-      // 飞碟底盘（椭圆）
-      g.fillStyle(0x7f8c8d, 0.3);
-      g.fillEllipse(u.x, u.y, 30, 12);
-      // 圆顶（绿色玻璃罩）
-      g.fillStyle(0x2ecc71, 0.2);
-      g.fillCircle(u.x, u.y - 4, 8);
-      // 底部光束
-      g.fillStyle(0xf1c40f, 0.06);
-      g.beginPath();
-      g.moveTo(u.x - 10, u.y + 4);
-      g.lineTo(u.x + 10, u.y + 4);
-      g.lineTo(u.x + 16, u.y + 30);
-      g.lineTo(u.x - 16, u.y + 30);
-      g.closePath();
-      g.fillPath();
-    }
-    // 外星人标志 — 简笔外星人头像
-    const aliens = [
-      { x: 500, y: 550 },
-      { x: 1000, y: 400 },
-      { x: 300, y: 700 },
-    ];
-    for (const a of aliens) {
-      // 头（绿色椭圆）
-      g.fillStyle(0x27ae60, 0.2);
-      g.fillEllipse(a.x, a.y, 16, 20);
-      // 大眼睛
-      g.fillStyle(0x000000, 0.4);
-      g.fillCircle(a.x - 4, a.y - 2, 3);
-      g.fillCircle(a.x + 4, a.y - 2, 3);
-      // 眼白高光
-      g.fillStyle(0xffffff, 0.3);
-      g.fillCircle(a.x - 4, a.y - 3, 1);
-      g.fillCircle(a.x + 4, a.y - 3, 1);
-    }
-    // 行星 — 远处的大星球
-    const planets = [
-      { x: 1500, y: 600, r: 50, color: 0xb9770e },
-      { x: 100, y: 800, r: 35, color: 0x922b21 },
-    ];
-    for (const p of planets) {
-      g.fillStyle(p.color, 0.12);
-      g.fillCircle(p.x, p.y, p.r);
-      // 环
-      g.lineStyle(1.5, p.color, 0.08);
-      g.strokeEllipse(p.x, p.y, p.r * 2.2, p.r * 0.6);
-      // 表面纹理
-      g.fillStyle(p.color, 0.06);
-      g.fillCircle(p.x - p.r * 0.3, p.y - p.r * 0.2, p.r * 0.3);
-      g.fillCircle(p.x + p.r * 0.2, p.y + p.r * 0.3, p.r * 0.2);
+    // 角色深度根据其所在地块的 isoDepth
+    for (const player of this.engine.getPlayers()) {
+      const container = this.pawnSprites.get(player.id);
+      const shadow = this.pawnShadowSprites.get(player.id);
+      const node = this.map.nodes[player.positionNodeId];
+      if (node && container) {
+        const tv = this.tileVisuals.get(node.id);
+        const baseDepth = tv ? tv.isoDepth * 2 + 1 : 100;
+        container.setDepth(baseDepth + 100);
+        if (shadow) shadow.setDepth(baseDepth + 99);
+        const rideIcon = this.pawnRideIcons.get(player.id);
+        if (rideIcon) rideIcon.setDepth(baseDepth + 101);
+        const statusIcon = this.pawnStatusIcons.get(player.id);
+        if (statusIcon) statusIcon.setDepth(baseDepth + 102);
+      }
     }
   }
 
-  // ===== 海岛主题 =====
-  private drawOceanTheme(g: Phaser.GameObjects.Graphics): void {
-    // 深海渐变 — 多层蓝色叠加
+  // ===== 岛屿背景 — 环形地图中央的岛屿 =====
+  private drawIslandBackground(): void {
+    const g = this.add.graphics();
+
+    // 计算地图边界（等距坐标）
+    let minIsoX = Infinity, minIsoY = Infinity, maxIsoX = -Infinity, maxIsoY = -Infinity;
+    for (const node of this.map.nodes) {
+      const iso = gridToIso(node.x, node.y);
+      minIsoX = Math.min(minIsoX, iso.x);
+      minIsoY = Math.min(minIsoY, iso.y);
+      maxIsoX = Math.max(maxIsoX, iso.x);
+      maxIsoY = Math.max(maxIsoY, iso.y);
+    }
+    const islandCx = (minIsoX + maxIsoX) / 2;
+    const islandCy = (minIsoY + maxIsoY) / 2;
+    const islandRadius = Math.min(maxIsoX - minIsoX, maxIsoY - minIsoY) / 2 - 50;
+
+    // 1) 深海底色
+    g.fillStyle(0x0d1b2a, 1);
+    g.fillRect(-1920, -1080, 1920 * 3, 1080 * 3);
+
+    // 2) 海水渐变层
     const oceanLayers = [
-      { y: 0, color: 0x0a2640, alpha: 0.5 },
-      { y: 200, color: 0x0e3a5c, alpha: 0.3 },
-      { y: 500, color: 0x127a8a, alpha: 0.15 },
+      { color: 0x0a2640, alpha: 0.4 },
+      { color: 0x0e3a5c, alpha: 0.25 },
+      { color: 0x127a8a, alpha: 0.12 },
     ];
     for (const layer of oceanLayers) {
       g.fillStyle(layer.color, layer.alpha);
-      g.fillRect(-200, layer.y, 2200, 1400);
+      g.fillRect(-1920, -1080, 1920 * 3, 1080 * 3);
     }
-    // 海浪波纹 — 大量随机短弧线
-    for (let i = 0; i < 80; i++) {
-      const wx = -100 + Math.random() * 2000;
-      const wy = 50 + Math.random() * 1000;
-      g.lineStyle(1, 0x5dade2, 0.08 + Math.random() * 0.1);
-      g.beginPath();
-      g.moveTo(wx, wy);
-      g.lineTo(wx + 30, wy);
-      g.strokePath();
-    }
-    // 椰子树 — 在地图边缘散布
-    const palms = [
-      { x: 150, y: 120 }, { x: 850, y: 80 }, { x: 1200, y: 150 },
-      { x: 200, y: 700 }, { x: 900, y: 750 }, { x: 1400, y: 680 },
-      { x: 50, y: 400 }, { x: 1700, y: 450 },
-    ];
-    for (const p of palms) {
-      // 树干（棕色弯曲矩形）
-      g.fillStyle(0x6e2c00, 0.3);
-      g.fillRect(p.x - 3, p.y - 25, 6, 25);
-      // 椰子叶（绿色椭圆扇形）
-      const leafColors = [0x27ae60, 0x229954, 0x1e8449];
-      for (let li = 0; li < 5; li++) {
-        const angle = (li / 5) * Math.PI * 2;
-        const lx = p.x + Math.cos(angle) * 10;
-        const ly = p.y - 25 + Math.sin(angle) * 5;
-        g.fillStyle(leafColors[li % 3], 0.25);
-        g.fillEllipse(lx, ly, 16, 6);
-        // 叶子旋转
-        g.beginPath();
-        g.moveTo(lx, ly);
-        g.lineTo(lx + Math.cos(angle) * 18, ly + Math.sin(angle) * 8);
-        g.strokePath();
-      }
-      // 椰子（小棕色圆）
-      g.fillStyle(0x6e2c00, 0.3);
-      g.fillCircle(p.x - 3, p.y - 22, 2);
-      g.fillCircle(p.x + 3, p.y - 22, 2);
-    }
-    // 珊瑚礁 — 海面下浅色块
-    const reefs = [
-      { x: 400, y: 300 }, { x: 700, y: 500 }, { x: 1100, y: 350 },
-      { x: 300, y: 600 }, { x: 1300, y: 550 },
-    ];
-    for (const r of reefs) {
-      g.fillStyle(0xff6b6b, 0.08);
-      g.fillCircle(r.x, r.y, 25);
-      g.fillStyle(0xffa07a, 0.06);
-      g.fillCircle(r.x - 8, r.y + 5, 15);
-      g.fillStyle(0xdeb887, 0.06);
-      g.fillCircle(r.x + 10, r.y - 3, 12);
-    }
-    // 帆船 — 小三角帆
-    const boats = [
-      { x: 600, y: 200 }, { x: 1200, y: 600 }, { x: 300, y: 500 },
-    ];
-    for (const b of boats) {
-      // 船体
-      g.fillStyle(0x8b4513, 0.25);
-      g.fillEllipse(b.x, b.y + 6, 20, 6);
-      // 桅杆
-      g.lineStyle(1, 0x8b4513, 0.25);
-      g.beginPath();
-      g.moveTo(b.x, b.y + 6); g.lineTo(b.x, b.y - 10);
-      g.strokePath();
-      // 帆
-      g.fillStyle(0xecf0f1, 0.15);
-      g.beginPath();
-      g.moveTo(b.x, b.y - 10); g.lineTo(b.x + 12, b.y + 4); g.lineTo(b.x, b.y + 4);
-      g.closePath();
-      g.fillPath();
-    }
-    // 海鸟 — V形小线条
-    for (let i = 0; i < 15; i++) {
-      const bx = Math.random() * 1800;
-      const by = 30 + Math.random() * 200;
-      g.lineStyle(1, 0xffffff, 0.15);
-      g.beginPath();
-      g.moveTo(bx, by); g.lineTo(bx + 4, by - 3); g.lineTo(bx + 8, by);
-      g.strokePath();
-    }
-    // 沙滩 — 地图边缘浅色条
-    g.fillStyle(0xf4e4bc, 0.08);
-    g.fillRect(-200, -50, 2200, 60);
-    g.fillStyle(0xf4e4bc, 0.05);
-    g.fillRect(-200, 950, 2200, 60);
-  }
 
-  // ===== 古镇主题 =====
-  private drawWoodTheme(g: Phaser.GameObjects.Graphics): void {
-    // 大地底色 — 深棕渐变
-    g.fillStyle(0x3e2723, 0.3);
-    g.fillRect(-200, 0, 2200, 1100);
-    g.fillStyle(0x4e342e, 0.15);
-    g.fillRect(-200, 300, 2200, 800);
-    // 青石板路 — 不规则灰色石块
-    for (let i = 0; i < 40; i++) {
-      const sx = -100 + Math.random() * 1800;
-      const sy = 50 + Math.random() * 950;
-      g.fillStyle(0x757575, 0.06 + Math.random() * 0.05);
-      g.fillRoundedRect(sx, sy, 20 + Math.random() * 20, 15 + Math.random() * 15, 3);
-    }
-    // 大量树木 — 不同种类和大小
-    for (let i = 0; i < 35; i++) {
-      const tx = -50 + Math.random() * 1700;
-      const ty = 50 + Math.random() * 950;
-      const ts = 0.6 + Math.random() * 0.8;
-      // 树干
-      g.fillStyle(0x5d4037, 0.2);
-      g.fillRect(tx - 2 * ts, ty, 4 * ts, 12 * ts);
-      // 树冠 — 多层圆
-      const crownColors = [0x2e7d32, 0x388e3c, 0x43a047, 0x66bb6a];
-      for (let ci = 0; ci < 3; ci++) {
-        g.fillStyle(crownColors[ci % 4], 0.12 - ci * 0.03);
-        g.fillCircle(tx, ty - 8 * ts + ci * 4, (10 - ci * 2) * ts);
-      }
-    }
-    // 灯笼 — 红色圆灯笼挂在路边
-    const lanterns = [
-      { x: 250, y: 180 }, { x: 600, y: 350 }, { x: 950, y: 200 },
-      { x: 400, y: 550 }, { x: 1100, y: 500 }, { x: 800, y: 700 },
-    ];
-    for (const l of lanterns) {
-      // 挂线
-      g.lineStyle(0.5, 0x5d4037, 0.15);
-      g.beginPath();
-      g.moveTo(l.x, l.y - 15); g.lineTo(l.x, l.y);
-      g.strokePath();
-      // 灯笼体
-      g.fillStyle(0xc62828, 0.2);
-      g.fillEllipse(l.x, l.y + 5, 14, 18);
-      // 灯光
-      g.fillStyle(0xffeb3b, 0.12);
-      g.fillCircle(l.x, l.y + 5, 4);
-    }
-    // 亭子 — 中国风小凉亭
-    const pavilions = [
-      { x: 500, y: 300 }, { x: 1000, y: 600 },
-    ];
-    for (const p of pavilions) {
-      // 飞檐屋顶（三角形）
-      g.fillStyle(0x8b4513, 0.15);
-      g.beginPath();
-      g.moveTo(p.x - 25, p.y - 5); g.lineTo(p.x, p.y - 25); g.lineTo(p.x + 25, p.y - 5);
-      g.closePath();
-      g.fillPath();
-      // 屋檐翘角
-      g.lineStyle(1.5, 0x8b4513, 0.2);
-      g.beginPath();
-      g.moveTo(p.x - 28, p.y - 3); g.lineTo(p.x - 25, p.y - 5);
-      g.moveTo(p.x + 25, p.y - 5); g.lineTo(p.x + 28, p.y - 3);
-      g.strokePath();
-      // 柱子
-      g.fillStyle(0x6d4c41, 0.12);
-      g.fillRect(p.x - 18, p.y - 5, 4, 20);
-      g.fillRect(p.x + 14, p.y - 5, 4, 20);
-      // 地台
-      g.fillStyle(0x795548, 0.1);
-      g.fillRect(p.x - 22, p.y + 12, 44, 4);
-    }
-    // 池塘 — 荷花池
-    const ponds = [
-      { x: 300, y: 650, r: 50 },
-      { x: 1200, y: 350, r: 40 },
-    ];
-    for (const p of ponds) {
-      g.fillStyle(0x1565c0, 0.1);
-      g.fillEllipse(p.x, p.y, p.r * 2, p.r);
-      // 荷叶
-      g.fillStyle(0x388e3c, 0.15);
-      for (let li = 0; li < 4; li++) {
-        const la = (li / 4) * Math.PI * 2;
-        g.fillCircle(p.x + Math.cos(la) * p.r * 0.5, p.y + Math.sin(la) * p.r * 0.3, 8);
-      }
-      // 荷花粉点
-      g.fillStyle(0xe91e63, 0.1);
-      g.fillCircle(p.x, p.y, 3);
-    }
-    // 石桥 — 小拱桥
-    g.fillStyle(0x9e9e9e, 0.1);
-    g.beginPath();
-    g.moveTo(600, 700); g.lineTo(600, 680);
-    g.lineTo(680, 660); g.lineTo(760, 680); g.lineTo(760, 700);
-    g.closePath();
-    g.fillPath();
-  }
+    // 4) 岛屿沙滩
+    g.fillStyle(0xf4e4bc, 0.15);
+    g.fillCircle(islandCx, islandCy, islandRadius + 40);
+    g.fillStyle(0xf4e4bc, 0.1);
+    g.fillCircle(islandCx, islandCy, islandRadius + 60);
 
-  // ===== 繁华都市主题 =====
-  private drawCityTheme(g: Phaser.GameObjects.Graphics): void {
-    // 河流（蓝色曲线带）
-    g.fillStyle(0x1a4a6e, 0.15);
-    g.beginPath();
-    g.moveTo(-100, 300); g.lineTo(200, 250); g.lineTo(500, 350);
-    g.lineTo(800, 280); g.lineTo(1100, 320); g.lineTo(1300, 250);
-    g.lineTo(1700, 300); g.lineTo(1700, 340); g.lineTo(1300, 290);
-    g.lineTo(1100, 360); g.lineTo(800, 320); g.lineTo(500, 390);
-    g.lineTo(200, 290); g.lineTo(-100, 340);
-    g.closePath();
-    g.fillPath();
-    // 公园斑块
-    const parks = [
-      { x: 200, y: 150, r: 80 },
-      { x: 700, y: 500, r: 100 },
-      { x: 350, y: 600, r: 60 },
-    ];
-    for (const p of parks) {
-      g.fillStyle(0x1a5e2e, 0.2);
-      g.fillCircle(p.x, p.y, p.r);
-      g.fillStyle(0x229954, 0.12);
-      g.fillCircle(p.x, p.y, p.r * 0.7);
-      for (let i = 0; i < 6; i++) {
-        const angle = (i / 6) * Math.PI * 2;
-        g.fillStyle(0x27ae60, 0.25);
-        g.fillCircle(p.x + Math.cos(angle) * p.r * 0.5, p.y + Math.sin(angle) * p.r * 0.5, 6);
-      }
-    }
-    // 摩天楼 — 高大建筑剪影
-    const buildings = [
-      { x: 100, y: 500, w: 40, h: 120 }, { x: 160, y: 520, w: 30, h: 100 },
-      { x: 250, y: 480, w: 50, h: 140 }, { x: 850, y: 550, w: 45, h: 110 },
-      { x: 920, y: 530, w: 35, h: 130 }, { x: 1000, y: 560, w: 40, h: 100 },
-      { x: 1300, y: 500, w: 45, h: 130 }, { x: 1370, y: 520, w: 30, h: 110 },
-      { x: 1450, y: 490, w: 50, h: 150 },
-    ];
-    for (const b of buildings) {
-      g.fillStyle(0x2c3e50, 0.15);
-      g.fillRect(b.x, b.y - b.h, b.w, b.h);
-      // 窗户灯光
-      g.fillStyle(0xf1c40f, 0.05);
-      for (let wy = 0; wy < b.h - 8; wy += 10) {
-        for (let wx = 0; wx < b.w - 6; wx += 8) {
-          if (Math.random() > 0.4) {
-            g.fillRect(b.x + wx + 2, b.y - b.h + wy + 2, 2, 3);
-          }
+    // 5) 岛屿草地
+    g.fillStyle(0x2d5016, 0.35);
+    g.fillCircle(islandCx, islandCy, islandRadius);
+    g.fillStyle(0x3a6b1f, 0.3);
+    g.fillCircle(islandCx, islandCy, islandRadius - 20);
+    g.fillStyle(0x4a7c2a, 0.25);
+    g.fillCircle(islandCx, islandCy, islandRadius - 40);
+
+    // 6) 岛屿上的装饰物
+    // 湖泊
+    g.fillStyle(0x1a5276, 0.25);
+    g.fillEllipse(islandCx - islandRadius * 0.3, islandCy + islandRadius * 0.2, 80, 50);
+    g.fillStyle(0x2471a3, 0.15);
+    g.fillEllipse(islandCx - islandRadius * 0.3, islandCy + islandRadius * 0.2, 60, 35);
+
+    // 中心地标建筑
+    g.fillStyle(0x2c3e50, 0.2);
+    g.fillRect(islandCx - 15, islandCy - 25, 30, 50);
+    g.fillStyle(0xf1c40f, 0.08);
+    g.fillRect(islandCx - 12, islandCy - 20, 24, 45);
+    // 灯光窗户
+    for (let wy = 0; wy < 40; wy += 8) {
+      for (let wx = 0; wx < 20; wx += 6) {
+        if (Math.random() > 0.5) {
+          g.fillStyle(0xf1c40f, 0.06);
+          g.fillRect(islandCx - 12 + wx, islandCy - 20 + wy, 3, 4);
         }
       }
     }
-    // 街灯 — 路灯
-    const lamps = [
-      { x: 300, y: 300 }, { x: 600, y: 400 }, { x: 900, y: 300 },
-      { x: 1200, y: 450 }, { x: 1500, y: 350 },
-    ];
-    for (const l of lamps) {
-      g.lineStyle(1, 0x7f8c8d, 0.15);
+    // 顶塔
+    g.fillStyle(0x2c3e50, 0.15);
+    g.beginPath();
+    g.moveTo(islandCx - 18, islandCy - 25); g.lineTo(islandCx, islandCy - 40); g.lineTo(islandCx + 18, islandCy - 25);
+    g.closePath();
+    g.fillPath();
+
+    // 树木
+    for (let i = 0; i < 20; i++) {
+      const angle = (i / 20) * Math.PI * 2 + Math.random() * 0.3;
+      const dist = islandRadius * (0.3 + Math.random() * 0.4);
+      const tx = islandCx + Math.cos(angle) * dist;
+      const ty = islandCy + Math.sin(angle) * dist;
+      const ts = 0.8 + Math.random() * 0.6;
+      g.fillStyle(0x5d4037, 0.25);
+      g.fillRect(tx - 2 * ts, ty, 4 * ts, 12 * ts);
+      g.fillStyle(0x2e7d32, 0.3);
+      g.fillCircle(tx, ty - 6 * ts, 10 * ts);
+      g.fillStyle(0x388e3c, 0.25);
+      g.fillCircle(tx, ty - 6 * ts, 7 * ts);
+    }
+
+    // 7) 海浪波纹
+    for (let i = 0; i < 60; i++) {
+      const wx = -200 + Math.random() * 2200;
+      const wy = -100 + Math.random() * 1200;
+      g.lineStyle(1, 0x5dade2, 0.06 + Math.random() * 0.08);
       g.beginPath();
-      g.moveTo(l.x, l.y); g.lineTo(l.x, l.y - 20);
+      g.moveTo(wx, wy);
+      g.lineTo(wx + 25 + Math.random() * 15, wy);
       g.strokePath();
-      g.fillStyle(0xf1c40f, 0.12);
-      g.fillCircle(l.x, l.y - 22, 4);
-      // 灯光晕
-      g.fillStyle(0xf1c40f, 0.04);
-      g.fillCircle(l.x, l.y - 22, 10);
     }
-    // 行道树
-    for (let i = 0; i < 15; i++) {
-      const tx = 50 + i * 110 + Math.random() * 30;
-      const ty = 700 + Math.random() * 200;
-      g.fillStyle(0x5d4037, 0.12);
-      g.fillRect(tx - 2, ty, 4, 10);
-      g.fillStyle(0x27ae60, 0.12);
-      g.fillCircle(tx, ty, 8);
+
+    // 8) 沙滩边海鸟
+    for (let i = 0; i < 12; i++) {
+      const bx = 100 + Math.random() * 1600;
+      const by = 30 + Math.random() * 180;
+      g.lineStyle(1, 0xffffff, 0.12);
+      g.beginPath();
+      g.moveTo(bx, by); g.lineTo(bx + 3, by - 2); g.lineTo(bx + 6, by);
+      g.strokePath();
     }
+
+    g.setDepth(-10);
   }
 
-  // ===== M3: 道路视觉 — 路缘石 + 马路 + 黄色虚线中线 =====
+  // ===== 等距道路 — 在等距坐标间画道路 =====
   private drawPaths(): void {
     const g = this.add.graphics();
     const drawn = new Set<string>();
 
-    // 辅助函数：绘制一条道路（3 层）
     const drawRoad = (x1: number, y1: number, x2: number, y2: number) => {
-      // 第 1 层：路缘石（深灰，8px 宽）
-      g.lineStyle(8, 0x3a3a3a, 0.4);
+      // 路缘石
+      g.lineStyle(10, 0x3a3a3a, 0.5);
       g.beginPath();
       g.moveTo(x1, y1);
       g.lineTo(x2, y2);
       g.strokePath();
 
-      // 第 2 层：马路面（中灰，5px 宽）
-      g.lineStyle(5, 0x555555, 0.5);
+      // 马路面
+      g.lineStyle(7, 0x4a4a4a, 0.55);
       g.beginPath();
       g.moveTo(x1, y1);
       g.lineTo(x2, y2);
       g.strokePath();
 
-      // 第 3 层：黄色虚线中线（通过短线段模拟虚线）
+      // 浅色路面中心
+      g.lineStyle(5, 0x5a5a5a, 0.4);
+      g.beginPath();
+      g.moveTo(x1, y1);
+      g.lineTo(x2, y2);
+      g.strokePath();
+
+      // 黄色虚线中线
       const dx = x2 - x1;
       const dy = y2 - y1;
       const dist = Math.sqrt(dx * dx + dy * dy);
@@ -684,36 +386,34 @@ export class BoardScene extends Phaser.Scene {
         drawn.add(key);
         const adj = this.map.nodes[adjId];
         if (!adj) continue;
-        drawRoad(node.x, node.y, adj.x, adj.y);
+        // 等距坐标间画路
+        const p1 = gridToIso(node.x, node.y);
+        const p2 = gridToIso(adj.x, adj.y);
+        drawRoad(p1.x, p1.y, p2.x, p2.y);
       }
     }
+    g.setDepth(0);
   }
 
-  // ===== 地块渲染 =====
+  // ===== 等距菱形地块渲染 =====
   private drawTiles(): void {
     for (const node of this.map.nodes) {
+      const iso = gridToIso(node.x, node.y);
       const tileType = this.getNodeTileType(node);
       const texKey = `tile_${tileType}`;
-      const bg = this.add.image(node.x, node.y, texKey);
-
-      // M2: 地块沿路径朝向 — 根据第一个邻接方向旋转地块
-      if (node.adjacent.length > 0) {
-        const firstAdj = this.map.nodes[node.adjacent[0]];
-        if (firstAdj) {
-          const angle = Math.atan2(firstAdj.y - node.y, firstAdj.x - node.x);
-          bg.setRotation(angle - Math.PI / 2);
-        }
-      }
+      const bg = this.add.image(iso.x, iso.y, texKey).setDepth(1);
 
       // 地块名称
       const name = this.getNodeName(node);
-      const nameLabel = this.add.text(node.x, node.y - 16, name, {
-        fontSize: "10px",
+      const nameLabel = this.add.text(iso.x, iso.y - 4, name, {
+        fontSize: "11px",
         color: "#ffffff",
         fontFamily: "sans-serif",
         fontStyle: "bold",
-      }).setOrigin(0.5, 0.5);
-      nameLabel.setWordWrapWidth(66, true);
+        stroke: "#000000",
+        strokeThickness: 2,
+      }).setOrigin(0.5, 0.5).setDepth(2);
+      nameLabel.setWordWrapWidth(72, true);
 
       // 价格标签
       let priceText = "";
@@ -724,32 +424,34 @@ export class BoardScene extends Phaser.Scene {
       else if (facility) priceText = facility.name;
       else if (commercial) priceText = `¥${commercial.tollFee}`;
 
-      const priceLabel = this.add.text(node.x, node.y + 20, priceText, {
-        fontSize: "8px",
+      const priceLabel = this.add.text(iso.x, iso.y + 10, priceText, {
+        fontSize: "9px",
         color: "#f1c40f",
         fontFamily: "monospace",
-      }).setOrigin(0.5, 0.5);
+        stroke: "#000000",
+        strokeThickness: 1,
+      }).setOrigin(0.5, 0.5).setDepth(2);
 
-      // 设施图标 — 使用 Kenney gameicons
+      // 设施图标
       let icon: Phaser.GameObjects.Image | undefined;
       if (facility) {
         const iconKey = FACILITY_ICON_MAP[facility.type] || "icon_question";
         if (this.textures.exists(iconKey)) {
-          icon = this.add.image(node.x, node.y, iconKey).setScale(0.45).setTint(0xffffff);
+          icon = this.add.image(iso.x, iso.y, iconKey).setScale(0.45).setTint(0xffffff).setDepth(3);
         }
       }
 
-      // B4: 建筑精灵 — 根据等级分层选择不同建筑纹理
+      // 建筑精灵
       let building: Phaser.GameObjects.Image | undefined;
       let levelBadge: Phaser.GameObjects.Text | undefined;
       if (land && land.level && land.level > 0) {
         const buildIdx = this.getBuildingIndex(land.level, land.maxLevel);
         const buildKey = `building_${buildIdx}`;
         if (this.textures.exists(buildKey)) {
-          building = this.add.image(node.x, node.y - 4, buildKey).setDepth(5).setScale(0.6);
+          // 建筑略偏上，模拟从地块中"竖立"
+          building = this.add.image(iso.x, iso.y - 12, buildKey).setDepth(5).setScale(0.7);
         }
-        // B4: 等级数字标识 — 建筑右上角显示等级数字
-        levelBadge = this.add.text(node.x + 22, node.y - 22, `Lv.${land.level}`, {
+        levelBadge = this.add.text(iso.x + 24, iso.y - 18, `Lv.${land.level}`, {
           fontSize: "8px",
           color: "#f1c40f",
           fontFamily: "sans-serif",
@@ -759,13 +461,14 @@ export class BoardScene extends Phaser.Scene {
         }).setOrigin(0.5, 0.5).setDepth(7);
       }
 
-      // 连锁店标记 — B3: 改为程序化绘制连锁店小招牌（三角旗）
+      // 连锁店标记
       let chainIcon: Phaser.GameObjects.Image | undefined;
       if (land && land.isChainStore) {
-        chainIcon = this.add.image(node.x + 22, node.y - 22, "chain_flag").setDepth(6);
+        chainIcon = this.add.image(iso.x + 24, iso.y - 18, "chain_flag").setDepth(6).setScale(1.2);
       }
 
-      const container = this.add.container(node.x, node.y, [bg, nameLabel, priceLabel]);
+      const container = this.add.container(iso.x, iso.y, [bg, nameLabel, priceLabel]);
+      const isoDepth = node.x + node.y;
       this.tileVisuals.set(node.id, {
         container,
         bg,
@@ -775,22 +478,38 @@ export class BoardScene extends Phaser.Scene {
         chainIcon,
         nameLabel,
         priceLabel,
+        node,
+        isoDepth,
       });
 
-      // T4: 可购买提示 — 空地地块上方浮动金币图标
+      // 可购买提示
       if (land && (land.owner === undefined || land.owner < 0) && land.level === 0) {
-        const buyHint = this.add.image(node.x, node.y - 36, "icon_coin").setDepth(7).setScale(0.8);
+        const buyHint = this.add.image(iso.x, iso.y - 28, "icon_coin").setDepth(7).setScale(1.0);
         this.tweens.add({
           targets: buyHint,
-          y: node.y - 44,
+          y: iso.y - 38,
           duration: 600,
           yoyo: true,
           repeat: -1,
           ease: "Sine.inOut",
         });
-        // 存入 tileVisuals
         const tv = this.tileVisuals.get(node.id);
         if (tv) tv.buyHint = buyHint;
+      }
+
+      // 所有者颜色条
+      if (land && land.owner !== undefined && land.owner >= 0) {
+        const owner = this.engine.getPlayers()[land.owner];
+        if (owner) {
+          const borderColor = this.parseColor(owner.color);
+          const ownerBar = this.add.rectangle(
+            iso.x, iso.y + TILE_HH + 2,
+            TILE_W * 0.7, 4,
+            borderColor
+          ).setDepth(4).setAlpha(0.9);
+          const tv = this.tileVisuals.get(node.id);
+          if (tv) tv.ownerBar = ownerBar;
+        }
       }
 
       bg.setInteractive();
@@ -843,37 +562,37 @@ export class BoardScene extends Phaser.Scene {
     return "";
   }
 
-  // ===== P1: 棋子 — 使用 Kenney characters 替代 pawns =====
+  // ===== 棋子 — 角色精灵 + 阴影 + 逐格行走弹跳 =====
   private createPawns(): void {
     const pawnColors = ["#e74c3c", "#3498db", "#2ecc71", "#f39c12", "#9b59b6", "#1abc9c"];
 
     for (const player of this.engine.getPlayers()) {
       const node = this.map.nodes[player.positionNodeId];
-      const px = node?.x || 0;
-      const py = node?.y || 0;
+      if (!node) continue;
+      const iso = gridToIso(node.x, node.y);
+      const px = iso.x;
+      const py = iso.y;
       const pawnIdx = player.id % 6;
 
-      // P1: 尝试使用 character 纹理，回退到 pawn
       const charKey = `character_${pawnIdx}`;
       const pawnKey = `pawn_${pawnIdx}`;
       const useKey = this.textures.exists(charKey) ? charKey : pawnKey;
 
       // 阴影
-      const shadow = this.add.image(px, py + 10, pawnKey);
+      const shadow = this.add.image(px, py + 8, pawnKey);
       shadow.setTint(0x000000);
-      shadow.setAlpha(0.3);
+      shadow.setAlpha(0.35);
       shadow.setScale(1, 0.5);
       shadow.setDepth(9);
 
-      // P1: 使用角色精灵
+      // 角色精灵
       const pawn = this.add.image(px, py, useKey);
-      // character 纹理通常更大，缩放到棋盘比例
-      const scale = useKey.startsWith("character") ? 0.3 : 0.5;
+      const scale = useKey.startsWith("character") ? 0.5 : 0.7;
       pawn.setScale(scale);
       pawn.setDepth(10);
       this.pawnImages.set(player.id, pawn);
 
-      // P5: 骑乘状态显示 — 交通方式>步行时显示车辆图标
+      // 骑乘状态
       if (player.trafficMethod > 0) {
         const rideKey = player.trafficMethod === 1 ? "ride_motorcycle" : "ride_car";
         if (this.textures.exists(rideKey)) {
@@ -882,14 +601,14 @@ export class BoardScene extends Phaser.Scene {
         }
       }
 
-      // 玩家名字标签
-      const nameTag = this.add.text(px, py - 20, player.name, {
-        fontSize: "9px",
+      // 名字标签
+      const nameTag = this.add.text(px, py - 24, player.name, {
+        fontSize: "11px",
         color: pawnColors[pawnIdx],
         fontFamily: "sans-serif",
         fontStyle: "bold",
-        backgroundColor: "#00000088",
-        padding: { x: 3, y: 1 },
+        backgroundColor: "#000000cc",
+        padding: { x: 4, y: 2 },
       }).setOrigin(0.5, 0.5).setDepth(11);
 
       const container = this.add.container(px, py, [pawn, nameTag]);
@@ -899,6 +618,7 @@ export class BoardScene extends Phaser.Scene {
     }
   }
 
+  /** 逐格行走动画 — 角色沿路径平滑移动到下一个地块 */
   private updatePawnPosition(playerId: number, nodeId: number): void {
     const container = this.pawnSprites.get(playerId);
     const shadow = this.pawnShadowSprites.get(playerId);
@@ -906,100 +626,102 @@ export class BoardScene extends Phaser.Scene {
     const node = this.map.nodes[nodeId];
     if (!container || !node) return;
 
-    const playerIdx = this.engine.getPlayers().findIndex(p => p.id === playerId);
-    const offsetX = (playerIdx % 2) * 14 - 7;
-    const offsetY = Math.floor(playerIdx / 2) * 14 - 7;
-    const tx = node.x + offsetX;
-    const ty = node.y + offsetY;
+    const iso = gridToIso(node.x, node.y);
 
-    // P3: 方向朝向 — 根据移动方向翻转
+    // 多人同地块偏移
+    const playerIdx = this.engine.getPlayers().findIndex(p => p.id === playerId);
+    const offsetX = (playerIdx % 2) * 12 - 6;
+    const offsetY = Math.floor(playerIdx / 2) * 12 - 6;
+    const tx = iso.x + offsetX;
+    const ty = iso.y + offsetY;
+
+    // 方向翻转
     if (pawnImg) {
       const prevX = container.x;
-      if (tx < prevX) {
-        pawnImg.setFlipX(true);
-      } else if (tx > prevX) {
-        pawnImg.setFlipX(false);
-      }
+      if (tx < prevX) pawnImg.setFlipX(true);
+      else if (tx > prevX) pawnImg.setFlipX(false);
     }
 
+    // 阴影跟随
     if (shadow) {
       this.tweens.add({
         targets: shadow,
         x: tx,
-        y: ty + 10,
-        duration: 350,
+        y: ty + 8,
+        duration: 280,
         ease: "Power2",
       });
     }
 
-    // P5: 骑乘状态图标同步移动
+    // 骑乘图标跟随
     const rideIcon = this.pawnRideIcons.get(playerId);
     if (rideIcon) {
       this.tweens.add({
         targets: rideIcon,
         x: tx + 14,
         y: ty + 6,
-        duration: 350,
+        duration: 280,
         ease: "Power2",
       });
     }
 
+    // 角色逐格行走 — 弹跳 + 移动
     this.tweens.add({
       targets: container,
       x: tx,
       y: ty,
-      duration: 350,
-      ease: "Back.out(1.5)",
+      duration: 280,
+      ease: "Quad.out",
       onUpdate: (tween) => {
         const progress = tween.progress;
-        // P2: 行走动画 — 多次小弹跳模拟步伐
-        const bounce = Math.abs(Math.sin(progress * Math.PI * 3)) * 8;
+        // 弹跳: 3次正弦波，模拟走路起伏
+        const bounce = Math.abs(Math.sin(progress * Math.PI * 3)) * 7;
         container.y = ty - bounce;
       },
       onComplete: () => {
         container.y = ty;
+        // 重新排序深度
+        this.sortDepths();
       },
     });
   }
 
-  // ===== B1: 所有者边框条 + T3: 地块高亮 =====
+  // ===== 所有者边框 + 地块刷新 =====
   private refreshTileVisuals(): void {
     for (const [nodeId, visual] of this.tileVisuals) {
       const land = this.map.lands.find(l => l.id === nodeId);
       if (!land) continue;
+      const iso = gridToIso(visual.node.x, visual.node.y);
 
-      // B4: 建筑更新 — 根据等级分层
+      // 建筑更新
       if (land.level && land.level > 0) {
         const buildIdx = this.getBuildingIndex(land.level, land.maxLevel);
         const buildKey = `building_${buildIdx}`;
         if (visual.building) {
           if (visual.building.texture.key !== buildKey && this.textures.exists(buildKey)) {
-            // B2: 升级动画 — 从 scaleY=0 弹起
             visual.building.setTexture(buildKey);
-            visual.building.setScale(0.6, 0);
+            visual.building.setScale(0.7, 0);
             this.tweens.add({
               targets: visual.building,
-              scaleY: 0.6,
+              scaleY: 0.7,
               duration: 400,
               ease: "Back.out(1.5)",
             });
           }
         } else if (this.textures.exists(buildKey)) {
-          visual.building = this.add.image(visual.container.x, visual.container.y - 4, buildKey).setDepth(5).setScale(0.6);
-          // B2: 新建筑也加弹起动画
-          visual.building.setScale(0.6, 0);
+          visual.building = this.add.image(iso.x, iso.y - 12, buildKey).setDepth(5).setScale(0.7);
+          visual.building.setScale(0.7, 0);
           this.tweens.add({
             targets: visual.building,
-            scaleY: 0.6,
+            scaleY: 0.7,
             duration: 400,
             ease: "Back.out(1.5)",
           });
         }
-        // B4: 更新等级标识
         if (visual.levelBadge) {
           visual.levelBadge.setText(`Lv.${land.level}`);
         } else {
-          visual.levelBadge = this.add.text(visual.container.x + 22, visual.container.y - 22, `Lv.${land.level}`, {
+          visual.levelBadge = this.add.text(iso.x + 24, iso.y - 18, `Lv.${land.level}`, {
             fontSize: "8px",
             color: "#f1c40f",
             fontFamily: "sans-serif",
@@ -1015,36 +737,30 @@ export class BoardScene extends Phaser.Scene {
         visual.levelBadge = undefined;
       }
 
-      // B1: 所有者标识 — 边框条而非 setTint
+      // 所有者颜色条
       if (land.owner !== undefined && land.owner >= 0) {
         const owner = this.engine.getPlayers()[land.owner];
         if (owner) {
-          // 移除旧边框
-          if (visual.ownerBorder) {
-            visual.ownerBorder.destroy();
-          }
-          // 创建新的所有者颜色边框条（底部 4px 高色条）
+          if (visual.ownerBar) visual.ownerBar.destroy();
           const borderColor = this.parseColor(owner.color);
-          visual.ownerBorder = this.add.rectangle(
-            visual.container.x,
-            visual.container.y + 34,
-            70, 4,
+          visual.ownerBar = this.add.rectangle(
+            iso.x, iso.y + TILE_HH + 2,
+            TILE_W * 0.7, 4,
             borderColor
           ).setDepth(4).setAlpha(0.9);
-          // 不再 setTint 整个地块
           visual.bg.clearTint();
         }
       } else {
         visual.bg.clearTint();
-        if (visual.ownerBorder) {
-          visual.ownerBorder.destroy();
-          visual.ownerBorder = undefined;
+        if (visual.ownerBar) {
+          visual.ownerBar.destroy();
+          visual.ownerBar = undefined;
         }
       }
 
-      // B3: 连锁店标志 — 使用 chain_flag 纹理
+      // 连锁店标记
       if (land.isChainStore && !visual.chainIcon) {
-        visual.chainIcon = this.add.image(visual.container.x + 22, visual.container.y - 22, "chain_flag").setDepth(6);
+        visual.chainIcon = this.add.image(iso.x + 24, iso.y - 18, "chain_flag").setDepth(6).setScale(1.2);
       } else if (!land.isChainStore && visual.chainIcon) {
         visual.chainIcon.destroy();
         visual.chainIcon = undefined;
@@ -1052,9 +768,8 @@ export class BoardScene extends Phaser.Scene {
     }
   }
 
-  // ===== T3: 地块高亮 — 脉冲 alpha =====
+  // ===== 地块高亮 =====
   private highlightTile(nodeId: number): void {
-    // 清除上一个高亮
     if (this.currentHighlightNodeId >= 0) {
       const prev = this.tileVisuals.get(this.currentHighlightNodeId);
       if (prev && prev.highlightTween) {
@@ -1077,7 +792,7 @@ export class BoardScene extends Phaser.Scene {
     this.currentHighlightNodeId = nodeId;
   }
 
-  // ===== T2: 过路费飞字 =====
+  // ===== 过路费飞字 =====
   private showFloatText(playerId: number, text: string, color: number): void {
     const container = this.pawnSprites.get(playerId);
     if (!container) return;
@@ -1103,16 +818,14 @@ export class BoardScene extends Phaser.Scene {
     });
   }
 
-  // ===== A1: 行走音效 =====
+  // ===== 音效 =====
   private playStepSound(): void {
-    // 通过 UIScene 播放脚步声
     const uiScene = this.scene.get("UIScene") as any;
     if (uiScene && uiScene.playSfx) {
       uiScene.playSfx("sfx_click", 0.3);
     }
   }
 
-  // ===== A2: 事件音效 =====
   private playEventSound(type: "chips" | "confirm" | "fail" | "card" | "switch"): void {
     const uiScene = this.scene.get("UIScene") as any;
     if (!uiScene || !uiScene.playSfx) return;
@@ -1131,33 +844,32 @@ export class BoardScene extends Phaser.Scene {
     return parseInt(h, 16);
   }
 
-  // ===== T4: 更新可购买提示 =====
+  // ===== 可购买提示 =====
   private updateBuyHints(): void {
     for (const [nodeId, visual] of this.tileVisuals) {
       const land = this.map.lands.find(l => l.id === nodeId);
       if (!land) continue;
+      const iso = gridToIso(visual.node.x, visual.node.y);
       const canBuy = (land.owner === undefined || land.owner < 0) && land.level === 0;
 
       if (canBuy && !visual.buyHint) {
-        // 添加浮动金币
-        visual.buyHint = this.add.image(visual.container.x, visual.container.y - 36, "icon_coin").setDepth(7).setScale(0.8);
+        visual.buyHint = this.add.image(iso.x, iso.y - 28, "icon_coin").setDepth(7).setScale(1.0);
         this.tweens.add({
           targets: visual.buyHint,
-          y: visual.container.y - 44,
+          y: iso.y - 38,
           duration: 600,
           yoyo: true,
           repeat: -1,
           ease: "Sine.inOut",
         });
       } else if (!canBuy && visual.buyHint) {
-        // 移除金币
         visual.buyHint.destroy();
         visual.buyHint = undefined;
       }
     }
   }
 
-  // ===== P5: 更新骑乘状态显示 =====
+  // ===== 骑乘状态 =====
   private updateRideIcons(): void {
     for (const player of this.engine.getPlayers()) {
       const existing = this.pawnRideIcons.get(player.id);
@@ -1166,12 +878,10 @@ export class BoardScene extends Phaser.Scene {
 
       if (shouldShow) {
         if (existing) {
-          // 已存在，更新纹理
           if (existing.texture.key !== rideKey && this.textures.exists(rideKey)) {
             existing.setTexture(rideKey);
           }
         } else if (this.textures.exists(rideKey)) {
-          // 新增
           const container = this.pawnSprites.get(player.id);
           if (container) {
             const rideIcon = this.add.image(container.x + 14, container.y + 6, rideKey).setDepth(10).setScale(0.5);
@@ -1179,21 +889,20 @@ export class BoardScene extends Phaser.Scene {
           }
         }
       } else if (existing) {
-        // 步行状态，移除骑乘图标
         existing.destroy();
         this.pawnRideIcons.delete(player.id);
       }
     }
   }
 
-  // ===== O1: 粒子系统 =====
+  // ===== 粒子系统 =====
   private emitParticles(nodeId: number, color: number): void {
     const visual = this.tileVisuals.get(nodeId);
     if (!visual) return;
-    const x = visual.container.x;
-    const y = visual.container.y - 4;
+    const iso = gridToIso(visual.node.x, visual.node.y);
+    const x = iso.x;
+    const y = iso.y - 6;
 
-    // 程序化生成粒子纹理（小圆点）
     const particleKey = `particle_${color.toString(16)}`;
     if (!this.textures.exists(particleKey)) {
       const g = this.add.graphics();
@@ -1205,7 +914,6 @@ export class BoardScene extends Phaser.Scene {
       g.destroy();
     }
 
-    // 发射 8 颗粒子
     for (let i = 0; i < 8; i++) {
       const particle = this.add.image(x, y, particleKey).setDepth(20);
       const angle = (i / 8) * Math.PI * 2 + Math.random() * 0.3;
@@ -1224,35 +932,23 @@ export class BoardScene extends Phaser.Scene {
     }
   }
 
-  // ===== O3: 昼夜色调 =====
+  // ===== 昼夜色调 =====
   private updateDayNight(): void {
     if (!this.dayNightOverlay) return;
     const hud = this.engine.getHUDState();
     const progress = hud.totalRounds > 0 ? hud.round / hud.totalRounds : 0;
 
-    // 0-25%: 白天（透明）
-    // 25-50%: 黄昏（橙色调）
-    // 50-75%: 夜晚（深蓝色调）
-    // 75-100%: 黎明（紫色调）
     let color = 0x000000;
     let alpha = 0;
 
     if (progress < 0.25) {
-      // 白天
-      color = 0x000000;
-      alpha = 0;
+      color = 0x000000; alpha = 0;
     } else if (progress < 0.5) {
-      // 黄昏
-      color = 0xe67e22;
-      alpha = 0.08;
+      color = 0xe67e22; alpha = 0.08;
     } else if (progress < 0.75) {
-      // 夜晚
-      color = 0x0a0a3a;
-      alpha = 0.15;
+      color = 0x0a0a3a; alpha = 0.15;
     } else {
-      // 黎明
-      color = 0x6c3483;
-      alpha = 0.06;
+      color = 0x6c3483; alpha = 0.06;
     }
 
     this.dayNightOverlay.setFillStyle(color, alpha);
@@ -1298,7 +994,6 @@ export class BoardScene extends Phaser.Scene {
     const facility = this.map.facilities.find(f => f.id === node.id);
     const commercial = this.map.commercials.find(c => c.id === node.id);
     const landmark = this.map.landmarks.find(lm => lm.id === node.id);
-    // T1: 地块信息弹窗
     this.showTileInfoPopup(node, land, facility, commercial, landmark);
     if (land) {
       this.events.emit("tile_selected", { node, land });
@@ -1307,22 +1002,20 @@ export class BoardScene extends Phaser.Scene {
     }
   }
 
-  // ===== B4: 建筑等级分层映射 =====
+  // ===== 建筑等级分层映射 =====
   private getBuildingIndex(level: number, maxLevel: number): number {
-    // 将等级映射到 0-12 的建筑纹理索引
-    // 1级→0(小屋), 2级→1, 3级→2, ... maxLevel→12
     if (maxLevel <= 0) return 0;
     const ratio = (level - 1) / Math.max(1, maxLevel - 1);
     return Math.min(12, Math.floor(ratio * 12));
   }
 
-  // ===== T1: 地块信息弹窗 =====
+  // ===== 地块信息弹窗 =====
   private showTileInfoPopup(
     node: MapNode,
-    land?: any,
-    facility?: any,
-    commercial?: any,
-    landmark?: any,
+    land?: LandTile,
+    facility?: FacilityTile,
+    commercial?: CommercialTile,
+    landmark?: Landmark,
   ): void {
     this.closeInfoPopup();
 
@@ -1407,25 +1100,22 @@ export class BoardScene extends Phaser.Scene {
     }
   }
 
-  // ===== G16: 卡牌翻牌动画 =====
+  // ===== 卡牌翻牌动画 =====
   private showCardFlipAnimation(data: { playerId: number; cardId: number; cardName: string }): void {
     const camW = this.cameras.main.width;
     const camH = this.cameras.main.height;
     const cx = camW / 2;
     const cy = camH / 2;
 
-    // 卡牌背面（紫色矩形）
     const cardBack = this.add.rectangle(cx, cy, 80, 110, 0x9b59b6, 1)
       .setOrigin(0.5)
       .setScrollFactor(0)
       .setDepth(320);
-    // 卡牌背面花纹
     const cardStar = this.add.text(cx, cy, "★", {
       fontSize: "32px",
       color: "#f1c40f",
     }).setOrigin(0.5).setScrollFactor(0).setDepth(321);
 
-    // 卡牌正面（翻转后显示）
     const cardFront = this.add.rectangle(cx, cy, 80, 110, 0xf39c12, 0)
       .setOrigin(0.5)
       .setScrollFactor(0)
@@ -1437,7 +1127,6 @@ export class BoardScene extends Phaser.Scene {
       wordWrap: { width: 70 },
     }).setOrigin(0.5).setScrollFactor(0).setDepth(321).setAlpha(0);
 
-    // 翻牌动画：先缩小 scaleX → 0，然后切换为正面放大
     this.tweens.add({
       targets: [cardBack, cardStar],
       scaleX: 0,
@@ -1458,27 +1147,26 @@ export class BoardScene extends Phaser.Scene {
           alpha: 1,
           duration: 300,
         });
-        // 飞出消失
         this.time.delayedCall(1200, () => {
           this.tweens.add({
             targets: [cardFront, cardName],
-              y: cy - 100,
-              alpha: 0,
-              duration: 500,
-              ease: "Power2",
-              onComplete: () => {
-                cardFront.destroy();
-                cardName.destroy();
-                cardBack.destroy();
-                cardStar.destroy();
-              },
+            y: cy - 100,
+            alpha: 0,
+            duration: 500,
+            ease: "Power2",
+            onComplete: () => {
+              cardFront.destroy();
+              cardName.destroy();
+              cardBack.destroy();
+              cardStar.destroy();
+            },
           });
         });
       },
     });
   }
 
-  // ===== R2: 事件弹窗（命运/新闻） =====
+  // ===== 事件弹窗（命运/新闻） =====
   private showEventPopup(event: any): void {
     this.closeEventPopup();
 
@@ -1547,7 +1235,7 @@ export class BoardScene extends Phaser.Scene {
     }
   }
 
-  // ===== R3: 买卖确认弹窗 =====
+  // ===== 买卖确认弹窗 =====
   private showConfirmPopup(type: "buy_land" | "upgrade_land", data: any): void {
     this.closeConfirmPopup();
 
@@ -1643,7 +1331,7 @@ export class BoardScene extends Phaser.Scene {
     }
   }
 
-  // ===== P4: 状态表情 =====
+  // ===== 状态表情 =====
   private updateStatusIcons(): void {
     for (const player of this.engine.getPlayers()) {
       const existing = this.pawnStatusIcons.get(player.id);
@@ -1685,36 +1373,35 @@ export class BoardScene extends Phaser.Scene {
     }
   }
 
-  // ===== O2: 地图缩略图 =====
+  // ===== 地图缩略图 =====
   private createMiniMap(): void {
     const miniMapSize = 120;
     const padding = 10;
     const camW = this.cameras.main.width;
     const camH = this.cameras.main.height;
 
-    // 计算地图边界
-    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    let minIsoX = Infinity, minIsoY = Infinity, maxIsoX = -Infinity, maxIsoY = -Infinity;
     for (const node of this.map.nodes) {
-      minX = Math.min(minX, node.x);
-      minY = Math.min(minY, node.y);
-      maxX = Math.max(maxX, node.x);
-      maxY = Math.max(maxY, node.y);
+      const iso = gridToIso(node.x, node.y);
+      minIsoX = Math.min(minIsoX, iso.x);
+      minIsoY = Math.min(minIsoY, iso.y);
+      maxIsoX = Math.max(maxIsoX, iso.x);
+      maxIsoY = Math.max(maxIsoY, iso.y);
     }
-    const mapW = maxX - minX + 80;
-    const mapH = maxY - minY + 80;
+    const mapW = maxIsoX - minIsoX + 80;
+    const mapH = maxIsoY - minIsoY + 80;
     const scale = Math.min(miniMapSize / mapW, miniMapSize / mapH);
 
     const g = this.add.graphics();
-    // 背景
     g.fillStyle(0x000000, 0.5);
     g.fillRect(0, 0, miniMapSize + 4, miniMapSize + 4);
     g.fillStyle(0x1a1a2e, 0.8);
     g.fillRect(2, 2, miniMapSize, miniMapSize);
 
-    // 绘制节点
     for (const node of this.map.nodes) {
-      const mx = 2 + (node.x - minX + 40) * scale;
-      const my = 2 + (node.y - minY + 40) * scale;
+      const iso = gridToIso(node.x, node.y);
+      const mx = 2 + (iso.x - minIsoX + 40) * scale;
+      const my = 2 + (iso.y - minIsoY + 40) * scale;
 
       const tileType = this.getNodeTileType(node);
       let color = 0x7f8c8d;
@@ -1727,7 +1414,6 @@ export class BoardScene extends Phaser.Scene {
       g.fillCircle(mx, my, 2);
     }
 
-    // 绘制路径
     const drawn = new Set<string>();
     g.lineStyle(1, 0xecf0f1, 0.2);
     for (const node of this.map.nodes) {
@@ -1737,10 +1423,12 @@ export class BoardScene extends Phaser.Scene {
         drawn.add(key);
         const adj = this.map.nodes[adjId];
         if (!adj) continue;
-        const mx1 = 2 + (node.x - minX + 40) * scale;
-        const my1 = 2 + (node.y - minY + 40) * scale;
-        const mx2 = 2 + (adj.x - minX + 40) * scale;
-        const my2 = 2 + (adj.y - minY + 40) * scale;
+        const p1 = gridToIso(node.x, node.y);
+        const p2 = gridToIso(adj.x, adj.y);
+        const mx1 = 2 + (p1.x - minIsoX + 40) * scale;
+        const my1 = 2 + (p1.y - minIsoY + 40) * scale;
+        const mx2 = 2 + (p2.x - minIsoX + 40) * scale;
+        const my2 = 2 + (p2.y - minIsoY + 40) * scale;
         g.beginPath();
         g.moveTo(mx1, my1);
         g.lineTo(mx2, my2);
@@ -1748,21 +1436,20 @@ export class BoardScene extends Phaser.Scene {
       }
     }
 
-    // 棋子位置
     for (const player of this.engine.getPlayers()) {
       const node = this.map.nodes[player.positionNodeId];
       if (!node) continue;
-      const mx = 2 + (node.x - minX + 40) * scale;
-      const my = 2 + (node.y - minY + 40) * scale;
+      const iso = gridToIso(node.x, node.y);
+      const mx = 2 + (iso.x - minIsoX + 40) * scale;
+      const my = 2 + (iso.y - minIsoY + 40) * scale;
       const color = this.parseColor(player.color);
       g.fillStyle(color, 1);
       g.fillCircle(mx, my, 1.5);
     }
 
-    // 视角指示器
     const indicator = this.add.arc(
-      2 + (this.cameras.main.scrollX + camW / 2 / this.cameras.main.zoom - minX + 40) * scale,
-      2 + (this.cameras.main.scrollY + camH / 2 / this.cameras.main.zoom - minY + 40) * scale,
+      2 + (this.cameras.main.scrollX + camW / 2 / this.cameras.main.zoom - minIsoX + 40) * scale,
+      2 + (this.cameras.main.scrollY + camH / 2 / this.cameras.main.zoom - minIsoY + 40) * scale,
       3,
       0x00ffff, 0.8
     ).setScrollFactor(0).setDepth(1);
@@ -1770,21 +1457,19 @@ export class BoardScene extends Phaser.Scene {
     this.miniMap = g;
     this.miniMapIndicator = indicator;
 
-    // 放入容器
     this.miniMapContainer = this.add.container(
       camW - miniMapSize - padding - 4,
       camH - miniMapSize - padding - 4,
       [g, indicator]
     ).setScrollFactor(0).setDepth(250);
 
-    // 缩略图可点击拖动
     this.miniMapContainer.setSize(miniMapSize + 4, miniMapSize + 4);
     this.miniMapContainer.setInteractive();
     this.miniMapContainer.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
       const localX = pointer.x - this.miniMapContainer!.x;
       const localY = pointer.y - this.miniMapContainer!.y;
-      const targetX = (localX - 2) / scale + minX - 40;
-      const targetY = (localY - 2) / scale + minY - 40;
+      const targetX = (localX - 2) / scale + minIsoX - 40;
+      const targetY = (localY - 2) / scale + minIsoY - 40;
       this.cameras.main.centerOn(targetX, targetY);
     });
   }
@@ -1792,33 +1477,31 @@ export class BoardScene extends Phaser.Scene {
   private updateMiniMap(): void {
     if (!this.miniMap || !this.miniMapIndicator || !this.miniMapContainer) return;
 
-    // 重绘棋子位置和视角指示器
-    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    let minIsoX = Infinity, minIsoY = Infinity, maxIsoX = -Infinity, maxIsoY = -Infinity;
     for (const node of this.map.nodes) {
-      minX = Math.min(minX, node.x);
-      minY = Math.min(minY, node.y);
-      maxX = Math.max(maxX, node.x);
-      maxY = Math.max(maxY, node.y);
+      const iso = gridToIso(node.x, node.y);
+      minIsoX = Math.min(minIsoX, iso.x);
+      minIsoY = Math.min(minIsoY, iso.y);
+      maxIsoX = Math.max(maxIsoX, iso.x);
+      maxIsoY = Math.max(maxIsoY, iso.y);
     }
-    const mapW = maxX - minX + 80;
-    const mapH = maxY - minY + 80;
+    const mapW = maxIsoX - minIsoX + 80;
+    const mapH = maxIsoY - minIsoY + 80;
     const miniMapSize = 120;
     const scale = Math.min(miniMapSize / mapW, miniMapSize / mapH);
 
-    // 更新视角指示器位置
     const camW = this.cameras.main.width;
     const camH = this.cameras.main.height;
     this.miniMapIndicator.setPosition(
-      (this.cameras.main.scrollX + camW / 2 / this.cameras.main.zoom - minX + 40) * scale,
-      (this.cameras.main.scrollY + camH / 2 / this.cameras.main.zoom - minY + 40) * scale
+      (this.cameras.main.scrollX + camW / 2 / this.cameras.main.zoom - minIsoX + 40) * scale,
+      (this.cameras.main.scrollY + camH / 2 / this.cameras.main.zoom - minIsoY + 40) * scale
     );
   }
 
-  // ===== G2: 路口方向选择弹窗 =====
+  // ===== 路口方向选择弹窗 =====
   private showBranchPopup(data: { playerId: number; choices: { nodeId: number; name: string; x: number; y: number }[]; remainingSteps: number }): void {
     this.closeBranchPopup();
 
-    // 仅人类玩家显示弹窗，AI 自动选择
     const player = this.engine.getPlayers().find(p => p.id === data.playerId);
     if (player?.isAI) return;
 

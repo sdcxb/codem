@@ -149,14 +149,28 @@ export function TerminalPanel({ cwd }: TerminalPanelProps) {
     };
     term.element?.addEventListener("contextmenu", handleContextMenu);
 
-    // Resize handling
-    const resizeObserver = new ResizeObserver(() => {
+    // Resize handling — 防抖 + rAF 避免 ResizeObserver loop 报错
+    let resizeRafId: number | null = null;
+    let lastCols = 0, lastRows = 0;
+    const doResize = () => {
+      resizeRafId = null;
       try {
         fitAddon.fit();
         const cols = term.cols;
         const rows = term.rows;
-        tauriInvoke("resize_pty", { id: ptyId, cols, rows }).catch(() => {});
+        // 仅在尺寸实际变化时才通知 PTY，避免多余调用
+        if (cols !== lastCols || rows !== lastRows) {
+          lastCols = cols;
+          lastRows = rows;
+          tauriInvoke("resize_pty", { id: ptyId, cols, rows }).catch(() => {});
+        }
       } catch {}
+    };
+    const resizeObserver = new ResizeObserver(() => {
+      // 用 rAF 防抖：将 fit 操作推迟到下一帧，避免同步布局抖动
+      // 这解决了 "ResizeObserver loop completed with undelivered notifications" 报错
+      if (resizeRafId !== null) cancelAnimationFrame(resizeRafId);
+      resizeRafId = requestAnimationFrame(doResize);
     });
     if (term.element) {
       resizeObserver.observe(term.element);
@@ -177,6 +191,7 @@ export function TerminalPanel({ cwd }: TerminalPanelProps) {
 
     // Store cleanup functions on the session object
     (session as any)._cleanup = () => {
+      if (resizeRafId !== null) cancelAnimationFrame(resizeRafId);
       unlisten();
       disposable.dispose();
       resizeObserver.disconnect();

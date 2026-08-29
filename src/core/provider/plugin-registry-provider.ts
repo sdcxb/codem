@@ -269,6 +269,7 @@ const KNOWN_PLUGINS = [
     { name: '@codem/tool-jobs', version: '1.0.0', description: 'Jobs 工具，独立插件形式的后台任务管理工具', provides: ['toolJobs'], inject: ['tools', 'automation'], keywords: ['tool', 'jobs'], category: 'provider', tags: ['provider', 'tool'], hot: true, icon: '📋', author: 'Codem Team', riskLevel: 'safe', riskDescription: '关闭后 Jobs 工具不可用' },
     { name: '@codem/storage-domain', version: '1.0.0', description: '存储域定义，分域存储命名空间管理', provides: ['storageDomain'], inject: ['storage'], keywords: ['storage', 'domain', 'namespace'], category: 'provider', tags: ['provider', 'storage'], hot: true, icon: '🗂️', author: 'Codem Team', riskLevel: 'safe', riskDescription: '关闭后存储域不可用' },
     { name: '@codem/storage-json', version: '1.0.0', description: 'JSON 存储后端，基于 JSON 文件的键值存储', provides: ['storageJson'], inject: ['storage'], keywords: ['storage', 'json'], category: 'provider', tags: ['provider', 'storage'], hot: true, icon: '📄', author: 'Codem Team', riskLevel: 'safe', riskDescription: '关闭后 JSON 存储后端不可用' },
+    { name: '@codem/ui-game', version: '1.0.0', description: '大富翁小游戏，等待 LLM 时的休闲桌游（默认关闭）', provides: ['uiGame'], inject: ['slots'], keywords: ['ui', 'game', 'monopoly'], category: 'ui', tags: ['provider', 'ui'], hot: true, icon: '🎮', author: 'Codem Team', riskLevel: 'safe', riskDescription: '关闭后游戏 Tab 入口隐藏，不影响其他功能', uiImpact: { slots: ["app.game"], buttons: ["game"], degradedTo: '游戏 Tab 入口隐藏' } },
     ]
 
 /**

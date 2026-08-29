@@ -27,10 +27,12 @@ import cityMap from "../maps/city.json";
 import ancientMap from "../maps/ancient.json";
 import islandMap from "../maps/island.json";
 import spaceMap from "../maps/space.json";
+import taiwanMap from "../maps/taiwan.json";
 import gameConfigData from "../data/game-config.json";
 import stocksData from "../data/stocks.json";
 
 const MAP_OPTIONS = [
+  { id: "taiwan", name: "宝岛之旅（推荐）", map: taiwanMap },
   { id: "city", name: "繁华都市", map: cityMap },
   { id: "ancient", name: "古镇风情", map: ancientMap },
   { id: "island", name: "海岛假期", map: islandMap },
@@ -43,7 +45,7 @@ export function GameView() {
   const engineRef = useRef<GameEngine | null>(null);
   const [hud, setHud] = useState<HUDState | null>(null);
   const [started, setStarted] = useState(false);
-  const [selectedMapId, setSelectedMapId] = useState("city");
+  const [selectedMapId, setSelectedMapId] = useState("taiwan");
   const [showStockPanel, setShowStockPanel] = useState(false);
   const [showCardPanel, setShowCardPanel] = useState(false);
   const [showToolPanel, setShowToolPanel] = useState(false);
@@ -54,6 +56,8 @@ export function GameView() {
   const [showLoadPanel, setShowLoadPanel] = useState(false);
   const [screen, setScreen] = useState<'map_select' | 'char_select'>('map_select');
   const [humanCharId, setHumanCharId] = useState(0);
+  // 角色选择后待启动游戏的参数
+  const [pendingStart, setPendingStart] = useState<{ mapId: string; charId: number } | null>(null);
   const [aiDifficulty, setAiDifficulty] = useState<'easy' | 'normal' | 'hard'>('normal');
   // G20-G23: 开局设置
   const [gameDaysIdx, setGameDaysIdx] = useState(1); // 默认30天
@@ -61,7 +65,8 @@ export function GameView() {
   const [winConditionIdx, setWinConditionIdx] = useState(0); // 默认2倍
   const [numHumanPlayers, setNumHumanPlayers] = useState(1); // G29: 热座模式
   const [numAITotal, setNumAITotal] = useState(3);
-  const [useWinCondition, setUseWinCondition] = useState(false);
+  // winCondition: 'bankruptcy' = 对手全破产, 'rounds' = 仅比天数, 'multiplier' = 资金倍数
+  const [winCondition, setWinCondition] = useState<'bankruptcy' | 'rounds' | 'multiplier'>('bankruptcy');
   // G35-G36: 音量/速度
   const [volume, setVolume] = useState(0.5);
   const [gameSpeed, setGameSpeed] = useState(1);
@@ -94,8 +99,12 @@ export function GameView() {
     engineRef.current = engine;
 
     // G23: 设置胜利条件
-    if (useWinCondition) {
+    if (winCondition === 'bankruptcy') {
+      engine.setWinningMultiplier(-1); // -1 = 破产模式
+    } else if (winCondition === 'multiplier') {
       engine.setWinningMultiplier(gameConfigData.winningConditions[winConditionIdx]);
+    } else {
+      engine.setWinningMultiplier(0); // 0 = 仅比天数
     }
     // G20: 设置游戏天数
     engine.setTotalRounds(gameConfigData.gameDays[gameDaysIdx]);
@@ -134,24 +143,11 @@ export function GameView() {
         mode: Phaser.Scale.RESIZE,
         autoCenter: Phaser.Scale.CENTER_BOTH,
       },
-      scene: [
-        ( PhaserSceneBoot as any),
-        ( PhaserSceneBoard as any),
-        ( PhaserSceneUI as any),
-      ],
+      scene: [],
     });
 
-    // 传递数据给场景
-    phaserGame.scene.add("BootScene", PhaserSceneBoot, false);
-    phaserGame.scene.add("BoardScene", PhaserSceneBoard, false);
-    phaserGame.scene.add("UIScene", PhaserSceneUI, false);
-
-    // 先移除自动添加的，再手动启动
-    phaserGame.scene.remove("BootScene");
-    phaserGame.scene.remove("BoardScene");
-    phaserGame.scene.remove("UIScene");
-
-    // 启动 BootScene，传入引擎和地图
+    // 启动 BootScene（包装类），传入引擎和地图
+    // BootScene 内部会添加 BoardScene 和 UIScene
     const bootData = { map, engine };
     phaserGame.scene.add("BootScene", PhaserSceneBootClass, true, bootData);
 
@@ -159,7 +155,7 @@ export function GameView() {
     engine.start();
     setStarted(true);
     setHud(engine.getHUDState());
-  }, [numHumanPlayers, numAITotal, useWinCondition, winConditionIdx, gameDaysIdx, initialFundsIdx]);
+  }, [numHumanPlayers, numAITotal, winCondition, winConditionIdx, gameDaysIdx, initialFundsIdx]);
 
   useEffect(() => {
     return () => {
@@ -169,6 +165,16 @@ export function GameView() {
       }
     };
   }, []);
+
+  // 角色选择后，等 phaserRef 渲染到 DOM 再启动游戏
+  useEffect(() => {
+    if (pendingStart && phaserRef.current && !gameRef.current) {
+      const { mapId, charId } = pendingStart;
+      setPendingStart(null);
+      // 用 requestAnimationFrame 确保 DOM 已完成布局
+      requestAnimationFrame(() => initGame(mapId, charId));
+    }
+  }, [pendingStart]);
 
   // G2/G4: AI 回合自动执行
   const aiRef = useRef<AIPlayer | null>(null);
@@ -301,11 +307,19 @@ export function GameView() {
           onSelect={(charId) => {
             setHumanCharId(charId);
             setScreen('map_select');
-            // 延迟一帧让组件渲染 phaserRef
-            setTimeout(() => initGame(selectedMapId, charId), 50);
+            // 设置待启动标记，等 phaserRef 渲染后由 useEffect 触发 initGame
+            setPendingStart({ mapId: selectedMapId, charId });
           }}
           onBack={() => setScreen('map_select')}
         />
+      );
+    }
+    // pendingStart 时渲染隐藏的 phaserRef div，让 useEffect 能拿到 ref 初始化游戏
+    if (pendingStart) {
+      return (
+        <div className="monopoly-game-wrapper">
+          <div ref={phaserRef} className="phaser-container" style={{ width: '100%', height: '100%' }} />
+        </div>
       );
     }
     return (
@@ -396,16 +410,22 @@ export function GameView() {
             <h3>胜利条件</h3>
             <div className="map-options">
               <button
-                className={`map-option ${!useWinCondition ? "selected" : ""}`}
-                onClick={() => setUseWinCondition(false)}
+                className={`map-option ${winCondition === 'bankruptcy' ? "selected" : ""}`}
+                onClick={() => setWinCondition('bankruptcy')}
+              >
+                对手全破产
+              </button>
+              <button
+                className={`map-option ${winCondition === 'rounds' ? "selected" : ""}`}
+                onClick={() => setWinCondition('rounds')}
               >
                 仅比天数
               </button>
               {gameConfigData.winningConditions.map((mult: number, idx: number) => (
                 <button
                   key={idx}
-                  className={`map-option ${useWinCondition && winConditionIdx === idx ? "selected" : ""}`}
-                  onClick={() => { setUseWinCondition(true); setWinConditionIdx(idx); }}
+                  className={`map-option ${winCondition === 'multiplier' && winConditionIdx === idx ? "selected" : ""}`}
+                  onClick={() => { setWinCondition('multiplier'); setWinConditionIdx(idx); }}
                 >
                   {mult}倍资金
                 </button>
@@ -809,7 +829,7 @@ function AirportPanel({ engine, fee, onTeleport, onClose }: {
   const targetNodes = map.nodes.filter(n => n.tileType === "land" || n.tileType === "facility" || n.tileType === "commercial");
   return (
     <div className="card-panel-overlay">
-      <div className="card-panel" style={{ width: 480, maxHeight: "70vh", overflowY: "auto" }}>
+      <div className="card-panel" style={{ width: 480, maxHeight: "85%", overflowY: "auto" }}>
         <div className="panel-header">
           <h3>机场传送（费用 ¥{fee.toLocaleString()}）</h3>
           <button className="panel-close" onClick={onClose}>×</button>

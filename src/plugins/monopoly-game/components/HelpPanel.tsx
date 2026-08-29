@@ -10,7 +10,7 @@ interface Props {
 export function HelpPanel({ onClose }: Props) {
   return (
     <div className="card-panel-overlay">
-      <div className="card-panel" style={{ width: 560, maxHeight: "85vh", overflowY: "auto" }}>
+      <div className="card-panel" style={{ width: 560, maxHeight: "85%", overflowY: "auto" }}>
         <div className="panel-header">
           <h3>游戏规则</h3>
           <button className="panel-close" onClick={onClose}>×</button>

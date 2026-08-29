@@ -47,6 +47,7 @@ import { getSettingJSON, setSettingJSON } from "../core/storage/settings";
 import { SlotBridge, SlotListBridge } from "../core/slots/SlotBridge";
 import { JobsBadge, type JobView } from "./JobsBadge";
 import { DeliverableFiles } from "./DeliverableFiles";
+import { TrajectoryPanel } from "./TrajectoryPanel";
 
 interface ChatPanelProps {
   onSend: (message: string, attachments?: MessageAttachment[], selectedSkills?: string[]) => void;
@@ -857,14 +858,11 @@ canEdit={!isSessionStreaming}
               window.dispatchEvent(new CustomEvent('codem-view-diff', { detail: { record, file } }))
             }}
           />
-          {/* 执行轨迹面板 — 调试时启用，生产环境隐藏以避免空白区域
-          <SlotBridge
-            name="app.trajectory-panel"
-            fallback={null}
+          {/* P1: 执行轨迹面板 — 对标 DSH ui-trajectory，展示 Agent 每步执行轨迹 */}
+          <TrajectoryPanel
             messages={messages}
             defaultExpanded={false}
           />
-          */}
           <div ref={messagesEndRef} />
           {/* P0: Scrollbar markers for message navigation */}
           <ScrollbarMarkers messages={messages} containerRef={messagesContainerRef} />

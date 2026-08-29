@@ -313,7 +313,17 @@ export function createWebSearchTool(): ToolDef {
         return {
           title: `web_search: ${query}`,
           output: `[Search source: ${source}]\n\nFound ${results.length} results for "${query}":\n\n${formatted}`,
-          metadata: { query, resultCount: results.length, source },
+          metadata: {
+            query,
+            resultCount: results.length,
+            source,
+            // P1: 结构化搜索结果，对标 DSH WebSearchMeta — UI 可据此渲染搜索卡片
+            sources: results.map(r => ({
+              url: r.url || '',
+              title: r.title || '',
+              snippet: r.snippet || '',
+            })),
+          },
         };
       } catch (err: any) {
         return {

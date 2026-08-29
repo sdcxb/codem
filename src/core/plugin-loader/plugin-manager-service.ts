@@ -94,12 +94,21 @@ export class PluginManagerService {
     this.pluginLoaders.set(name, applyFn)
   }
 
+  /** 默认禁用的插件列表（首次运行时自动禁用） */
+  private DEFAULT_DISABLED = ['@codem/ui-game']
+
   /**
    * 初始化：从 localStorage 恢复状态，同步当前已加载的插件。
    */
   async initialize(): Promise<void> {
     // 从 localStorage 恢复禁用列表
-    const disabledList = this.loadDisabledList()
+    let disabledList = this.loadDisabledList()
+
+    // 首次运行：localStorage 无记录时，使用默认禁用列表
+    if (disabledList === null) {
+      disabledList = [...this.DEFAULT_DISABLED]
+      this.saveDisabledListExplicit(disabledList)
+    }
 
     // 所有已注册插件默认为 enabled
     for (const meta of this.graph.list()) {
@@ -335,11 +344,22 @@ export class PluginManagerService {
 
   private STORAGE_KEY = 'codem:disabled-plugins'
 
-  private loadDisabledList(): string[] {
+  private loadDisabledList(): string[] | null {
     try {
       const raw = localStorage.getItem(this.STORAGE_KEY)
-      return raw ? JSON.parse(raw) : []
-    } catch { return [] }
+      if (raw === null) return null  // 首次运行
+      return JSON.parse(raw)
+    } catch { return null }
+  }
+
+  /** 显式写入禁用列表到 localStorage（不依赖 states Map） */
+  private saveDisabledListExplicit(list: string[]): void {
+    try {
+      localStorage.setItem(this.STORAGE_KEY, JSON.stringify(list))
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('codem:plugin-state-changed'))
+      }
+    } catch {}
   }
 
   private saveDisabledList(): void {
