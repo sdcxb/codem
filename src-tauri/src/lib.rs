@@ -1764,7 +1764,9 @@ async fn http_get(
         }
     }
 
-    let body = resp.text().await.map_err(|e| e.to_string())?;
+    let body = resp.bytes().await
+        .map(|b| String::from_utf8_lossy(&b).to_string())
+        .map_err(|e| e.to_string())?;
 
     Ok(HttpResponse { status, body, headers: resp_headers })
 }
@@ -1800,7 +1802,9 @@ async fn http_post(
         }
     }
 
-    let body = resp.text().await.map_err(|e| e.to_string())?;
+    let body = resp.bytes().await
+        .map(|b| String::from_utf8_lossy(&b).to_string())
+        .map_err(|e| e.to_string())?;
 
     Ok(HttpResponse { status, body, headers: resp_headers })
 }

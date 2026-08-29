@@ -251,6 +251,7 @@ import { setPlanApprovalCallback, clearPlanApprovalCallback } from "./core/llm/t
 import { SearchDialog } from "./components/SearchDialog";
 import { usePetStore } from "./core/pet/pet-store";
 import { loadInstalledPets as loadInstalledPetsPets } from "./core/pet/pet-manager";
+import { loadInstalledSkills } from "./core/skill/installer";
 import { getSessionMessageBus, getDelegationOrchestrator, executeSessionTurn, isSessionExecuting } from "./core/session";
 // 大富翁小游戏 — 懒加载
 const GameViewLazy = lazy(() => import("./plugins/monopoly-game/components/GameView").then(m => ({ default: m.GameView })));
@@ -1086,6 +1087,14 @@ flushStreamBuffer(); // flush all on unmount
         await getPet().init();
       } catch (e) {
         console.warn("[App] Pet system init failed:", e);
+      }
+
+      // Initialize installed skills from disk
+      try {
+        const loaded = await loadInstalledSkills();
+        console.log(`[App] Loaded ${loaded} installed skills from disk`);
+      } catch (e) {
+        console.warn("[App] Skills loading from disk failed:", e);
       }
 
       // Listen for "查看剩余 Token" requests from pet context menu
