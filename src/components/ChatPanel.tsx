@@ -22,6 +22,7 @@ import { useScrollState, useUnreadMessagesTracker } from "../hooks/useScrollStat
 import {
   PanelLeftClose, ChevronDown, Brain, Bot, Camera, BarChart3, LayoutGrid,
   Search, X, GitFork, RotateCcw, Check, Send, Square, Hammer, ClipboardList, Zap,
+  Activity,
 } from "lucide-react";
 // P2 #38: framer-motion for smooth list animations
 import { motion, AnimatePresence } from "framer-motion";
@@ -135,6 +136,7 @@ export function ChatPanel({ onSend, onCancel, onSendGuidance, onToggleSidebar, o
   const [showAgentPanel, setShowAgentPanel] = useState(false);
   const [showSnapshotPanel, setShowSnapshotPanel] = useState(false);
   const [showContextMonitor, setShowContextMonitor] = useState(false);
+  const [showTrajectoryPanel, setShowTrajectoryPanel] = useState(false);
   const [showGitPanel, setShowGitPanel] = useState(false);
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [agents, setAgents] = useState<SubagentTask[]>([]);
@@ -506,7 +508,7 @@ setStepTooltipLocked(false);
         </button>
         <button
           className={`agent-toggle ${showAgentPanel ? "active" : ""}`}
-          onClick={() => { setShowAgentPanel(!showAgentPanel); setShowSnapshotPanel(false); setShowContextMonitor(false); setSelectedAgentId(null); }}
+          onClick={() => { setShowAgentPanel(!showAgentPanel); setShowSnapshotPanel(false); setShowContextMonitor(false); setShowTrajectoryPanel(false); setSelectedAgentId(null); }}
           title={S.chat.agentList[lang]}
         >
           <Bot size={16} />
@@ -514,17 +516,24 @@ setStepTooltipLocked(false);
         </button>
         <button
           className={`agent-toggle ${showSnapshotPanel ? "active" : ""}`}
-          onClick={() => { setShowSnapshotPanel(!showSnapshotPanel); setShowAgentPanel(false); setSelectedAgentId(null); }}
+          onClick={() => { setShowSnapshotPanel(!showSnapshotPanel); setShowAgentPanel(false); setShowContextMonitor(false); setShowTrajectoryPanel(false); setSelectedAgentId(null); }}
           title={S.chat.snapshot[lang]}
         >
           <Camera size={16} />
         </button>
         <button
           className={`agent-toggle ${showContextMonitor ? "active" : ""}`}
-          onClick={() => { setShowContextMonitor(!showContextMonitor); setShowAgentPanel(false); setShowSnapshotPanel(false); setSelectedAgentId(null); }}
+          onClick={() => { setShowContextMonitor(!showContextMonitor); setShowAgentPanel(false); setShowSnapshotPanel(false); setShowTrajectoryPanel(false); setSelectedAgentId(null); }}
           title={S.chat.contextMonitor[lang]}
         >
           <BarChart3 size={16} />
+        </button>
+        <button
+          className={`agent-toggle ${showTrajectoryPanel ? "active" : ""}`}
+          onClick={() => { setShowTrajectoryPanel(!showTrajectoryPanel); setShowAgentPanel(false); setShowSnapshotPanel(false); setShowContextMonitor(false); setSelectedAgentId(null); }}
+          title={lang === "zh" ? "执行轨迹" : "Trajectory"}
+        >
+          <Activity size={16} />
         </button>
         {/* Display mode toggle moved to Settings > Appearance — default unified mode */}
         <span className="header-spacer" style={{ flex: 1 }} />
@@ -858,11 +867,6 @@ canEdit={!isSessionStreaming}
               window.dispatchEvent(new CustomEvent('codem-view-diff', { detail: { record, file } }))
             }}
           />
-          {/* P1: 执行轨迹面板 — 对标 DSH ui-trajectory，展示 Agent 每步执行轨迹 */}
-          <TrajectoryPanel
-            messages={messages}
-            defaultExpanded={false}
-          />
           <div ref={messagesEndRef} />
           {/* P0: Scrollbar markers for message navigation */}
           <ScrollbarMarkers messages={messages} containerRef={messagesContainerRef} />
@@ -906,6 +910,23 @@ canEdit={!isSessionStreaming}
           />
         )}
       </div>
+
+      {/* TrajectoryPanel — floating overlay */}
+      {showTrajectoryPanel && (
+        <div className="floating-overlay-panel" style={{
+          position: 'fixed', top: 'var(--chat-body-top, 48px)', right: 0, bottom: 'var(--chat-body-bottom, 140px)', width: 380,
+          zIndex: 200,
+          borderRadius: 0,
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'hidden',
+        }}>
+          <TrajectoryPanel
+            messages={messages}
+            defaultExpanded={true}
+          />
+        </div>
+      )}
 
       {/* AgentPanel — floating overlay outside chat-body */}
       {showAgentPanel && (

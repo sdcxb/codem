@@ -561,14 +561,19 @@ export function createLoadSkillTool(toolRegistry: ToolRegistry): ToolDef {
       const result = sessionCache.load(ctx.sessionId, skill.name, skill.prompt, 0);
 
       if (result.cached) {
+        // 已缓存：返回确认消息（指令已在历史消息中可见）
         return {
           title: `load_skill: ${skill.name}`,
           output: result.message,
         };
       }
 
-      // 首次加载：注入 <skill_content> 结构化格式（差距 1: DSH-aligned）
+      // 首次加载：渲染 <skill_content> 结构化格式（DSH-aligned）
       const skillContent = renderSkillContent(skill);
+
+      // DSH 对齐：将完整技能指令直接作为工具返回结果返回给 LLM，
+      // 使 LLM 在当前轮次的工具结果中就能看到完整指令正文。
+      // 同时也存入 pendingPromptInjections 用于系统提示注入（双保险）。
       pendingPromptInjections.set(
         ctx.sessionId,
         (pendingPromptInjections.get(ctx.sessionId) || "") + "\n\n" + skillContent,
@@ -592,9 +597,12 @@ export function createLoadSkillTool(toolRegistry: ToolRegistry): ToolDef {
         ? `\n\nTools from this skill are now available: ${loadedTools.join(", ")}`
         : "";
 
+      // 关键修复：output 中直接包含 skillContent，
+      // 这样 LLM 在工具结果中就能看到完整的 <skill_content> 指令正文，
+      // 不需要等到下一轮系统提示注入才能看到。
       return {
         title: `load_skill: ${skill.name}`,
-        output: `${result.message}${toolInfo}`,
+        output: `${skillContent}${toolInfo}`,
         metadata: { skillName: skill.name, tools: loadedTools },
       };
     },

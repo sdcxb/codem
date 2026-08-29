@@ -1764,6 +1764,8 @@ padding: 8px 20px 12px;
 border-top: none;
 background: transparent;
 flex-shrink: 0;
+position: relative;
+z-index: 50;
 }
 
 /* P-UI: 输入框区域最大宽度限制（与对话区域 messages-container 同步） */
@@ -8410,10 +8412,7 @@ border-bottom: 1px solid var(--accent);
 
 /* Slash Command Menu */
 .slash-command-menu {
-  position: absolute;
-  bottom: 100%;
-  left: 0;
-  right: 0;
+  position: relative;
   margin-bottom: 4px;
   background: var(--dropdown-bg);
   border: 1px solid var(--border-primary);
@@ -8423,7 +8422,7 @@ border-bottom: 1px solid var(--accent);
   -webkit-backdrop-filter: blur(12px);
   max-height: 260px;
   overflow-y: auto;
-  z-index: 100;
+  z-index: 99999;
   padding: 4px;
 }
 

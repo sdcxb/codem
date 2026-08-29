@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import { createPortal } from "react-dom";
 import { useDraftPersistence } from "../hooks/useDraftPersistence";
 import { useSpeechRecognition } from "../hooks/useSpeechRecognition";
 import { MessageAttachment } from "../store";
@@ -92,6 +93,8 @@ export function InputArea({ onSend, onCancel, disabled, isStreaming, noSession, 
 const [showSkillPicker, setShowSkillPicker] = useState(false);
   const [selectedSkills, setSelectedSkills] = useState<string[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const textareaRowRef = useRef<HTMLDivElement>(null);
+  const [slashMenuPos, setSlashMenuPos] = useState<{ left: number; bottom: number; width: number } | null>(null);
   const [expanded, setExpanded] = useState(false);
 
   // P3-26: Voice input — Web Speech API STT
@@ -153,6 +156,20 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
   const [customOps, setCustomOps] = useState<CustomOperation[]>([]);
   const [runningOp, setRunningOp] = useState<string | null>(null);
   const [slashFilter, setSlashFilter] = useState<string | null>(null);
+
+  // 当 slashFilter 开启时，计算输入框在屏幕中的位置，用 Portal 渲染菜单
+  useEffect(() => {
+    if (slashFilter !== null && textareaRowRef.current) {
+      const rect = textareaRowRef.current.getBoundingClientRect();
+      setSlashMenuPos({
+        left: rect.left,
+        bottom: window.innerHeight - rect.top + 4, // 菜单在输入框上方，留 4px 间距
+        width: rect.width,
+      });
+    } else {
+      setSlashMenuPos(null);
+    }
+  }, [slashFilter]);
   // P4: Mention autocomplete state
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
   const [mentionItems, setMentionItems] = useState<MentionItem[]>([]);
@@ -650,10 +667,16 @@ const handleSelectProject = (projectId: string) => {
       {/* === P-UI: 两行结构 — textarea 上方独占，action row 下方 === */}
       <div className="input-wrapper">
         {/* Textarea row — textarea 占满全部宽度 */}
-        <div className="input-textarea-row">
-          {/* Slash command menu — SlotBridge 消费 app.ui-commands slot */}
-          {slashFilter !== null && (
-            <div style={{ position: "absolute", bottom: "100%", left: 0, right: 0, zIndex: 100 }}>
+        <div className="input-textarea-row" ref={textareaRowRef}>
+          {/* Slash command menu — 用 Portal 渲染到 document.body，避免被 overflow:hidden 裁剪 */}
+          {slashFilter !== null && slashMenuPos && createPortal(
+            <div style={{
+              position: "fixed",
+              left: slashMenuPos.left,
+              bottom: slashMenuPos.bottom,
+              width: slashMenuPos.width,
+              zIndex: 99999,
+            }}>
               <SlotBridge
                 name="app.ui-commands"
                 fallback={SlashCommandMenu}
@@ -667,7 +690,8 @@ const handleSelectProject = (projectId: string) => {
                 }}
                 onClose={() => setSlashFilter(null)}
               />
-            </div>
+            </div>,
+            document.body
           )}
 
           {/* SlotListBridge 消费 conversation.input slot — 允许插件注入输入区组件 */}
