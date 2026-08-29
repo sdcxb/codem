@@ -1892,24 +1892,103 @@ z-index: 50;
 }
 
 /* P-UI: textarea 更大更舒适 — 对标 DSH 16px/24px line-height */
-.message-input {
+/* DSH-aligned mirror backdrop: backdrop 层在 textarea 下方，
+   textarea 文字透明（caret 仍可见），backdrop 提供可见文本和 pill 高亮。
+   关键约束：backdrop 和 textarea 必须用完全相同的字体度量 — font-size,
+   font-family, line-height, padding, box-sizing — 否则 caret 位置会漂移。 */
+.input-backdrop-wrapper {
+  position: relative;
   flex: 1;
-  background: none;
-  border: none;
+  min-width: 0;
+  min-height: 56px;
+}
+
+.input-backdrop {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  overflow: hidden;
+  font-size: 15px;
+  font-family: inherit;
+  line-height: 24px;
+  padding: 4px 0;
+  margin: 0;
+  box-sizing: border-box;
   color: var(--text-primary);
+  letter-spacing: normal;
+  word-spacing: normal;
+  text-indent: 0;
+  tab-size: 8;
+}
+
+.backdrop-placeholder {
+  color: var(--text-muted);
+}
+
+/* DSH-aligned skill pill token: 高亮 /skill-name 但不改变文字前进量。
+   不能用 padding/margin/font-size 差异，否则 caret 位置会漂移。
+   只用 background + border-radius + box-decoration-break 实现圆角高亮。 */
+.skill-pill-token {
+  background: rgba(97, 135, 216, 0.18);
+  color: var(--accent, #6b46c1);
+  border-radius: 4px;
+  padding: 0;
+  margin: 0;
+  font-size: inherit;
+  font-weight: inherit;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+
+.message-input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  /* Reset all user agent styles that could cause caret drift */
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: transparent;
+  caret-color: var(--accent, #6b46c1);
   font-size: 15px;
   font-family: inherit;
   resize: none;
-  outline: none;
   min-height: 56px;
   max-height: 280px;
   line-height: 24px;
   padding: 4px 0;
-  width: 100%;
+  margin: 0;
+  box-sizing: border-box;
+  letter-spacing: normal;
+  word-spacing: normal;
+  text-indent: 0;
+  overflow: hidden;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  tab-size: 8;
 }
 
 .message-input::placeholder {
   color: var(--text-muted);
+  opacity: 1;
+}
+
+/* Reset textarea internal scrollbar to avoid width drift */
+.message-input::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+/* Reset textarea internal editing host spacing */
+.message-input::-webkit-inner-spin-button,
+.message-input::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
 }
 
 .message-input:disabled {
@@ -8932,6 +9011,10 @@ border-color: var(--text-muted);
 .message-input.expanded {
   min-height: 200px;
   max-height: 480px;
+}
+
+.input-backdrop-wrapper.expanded {
+  min-height: 200px;
 }
 
 /* #10: Disabled state hint */

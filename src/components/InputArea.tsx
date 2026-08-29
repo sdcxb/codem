@@ -83,6 +83,16 @@ sessionKey?: string;
   connected?: boolean;
 }
 
+// HTML escape for backdrop rendering
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 export function InputArea({ onSend, onCancel, disabled, isStreaming, noSession, sessionKey, collaborationMode, onModeChange, projectPath, quoteContext, onClearQuote, suggestionPrompt, onSuggestionConsumed, notebookId, onToggleSearch, onToggleWorkbench, onToggleQuickPhrase, onToggleDraftPicker, onToggleDisplayMode, onToggleGit, onToggleRightSidebar, hasDrafts, model, onModelChange, mode = "cli", connected = true }: InputAreaProps) {
   const lang = useLang();
   const [input, setInput] = useState("");
@@ -205,6 +215,62 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
   const dragDepthRef = useRef(0);
   const zh = lang === "zh";
+
+  // DSH-aligned: 构建已安装技能名称集合，用于 backdrop 层检测 /skill-name 模式
+  const skillLexicon = useMemo(() => {
+    const names = new Set<string>();
+    try {
+      const disabled = getSettingJSON<string[]>("codem-disabled-skills", []);
+      const skills = getSkillRegistry().getAll().filter(s => !disabled.includes(s.name));
+      for (const s of skills) {
+        names.add(s.name.toLowerCase());
+        if (s.displayName) names.add(s.displayName.toLowerCase());
+      }
+    } catch {}
+    return names;
+  }, [sessionKey]);
+
+  // DSH-aligned mirror backdrop: 在 backdrop 层中渲染文本，
+  // 将 /skill-name 模式高亮为 pill 标签
+  const renderBackdropContent = useCallback((text: string, lexicon: Set<string>) => {
+    if (!text) return <span />;
+    // 匹配 /word 模式（在行首或空格之后）
+    // 用 dangerouslySetInnerHTML 确保不在元素之间引入不可见间距
+    const regex = /(?:^|\s)(\/[a-zA-Z0-9_-]+)/g;
+    let html = "";
+    let lastIndex = 0;
+    let match;
+
+    while ((match = regex.exec(text)) !== null) {
+      const prefix = match[0].length - match[1].length; // 前导空格或空
+      const skillName = match[1].slice(1).toLowerCase(); // 去掉 / 转小写
+      const startPos = match.index + prefix;
+
+      // 添加前面的普通文本（HTML escape）
+      if (startPos > lastIndex) {
+        html += escapeHtml(text.slice(lastIndex, startPos));
+      }
+
+      // 检查是否匹配已安装技能
+      const isSkill = lexicon.has(skillName);
+      if (isSkill) {
+        // 渲染为高亮 pill 标签
+        html += `<span class="skill-pill-token">${escapeHtml(match[1])}</span>`;
+      } else {
+        // 非技能的 /xxx 文本，普通渲染
+        html += escapeHtml(match[1]);
+      }
+
+      lastIndex = startPos + match[1].length;
+    }
+
+    // 添加剩余文本
+    if (lastIndex < text.length) {
+      html += escapeHtml(text.slice(lastIndex));
+    }
+
+    return <span dangerouslySetInnerHTML={{ __html: html }} />;
+  }, []);
 
   // P1 #12: Draft persistence — saves input per session
   const draftKey = currentSession?.id || currentProject?.id || "__global__";
@@ -404,6 +470,11 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
         e.preventDefault();
         return;
       }
+    }
+    // DSH-aligned: 当 slash 命令菜单或 mention 菜单打开时，
+    // Enter/ArrowUp/ArrowDown/Escape 由各自的 keydown handler 处理，不触发发送
+    if (slashFilter !== null || mentionQuery !== null) {
+      return;
     }
     if (e.key === "Enter" && !e.shiftKey) {
       // P0: Also check nativeEvent.isComposing for extra safety
@@ -721,10 +792,17 @@ const handleSelectProject = (projectId: string) => {
           {/* P4: Context badges showing active attachments and skills */}
           <ContextBadgeList badges={contextBadges} />
 
-          <textarea
-            ref={textareaRef}
-            className={`message-input ${expanded ? "expanded" : ""} ${isListeningVoice ? "voice-listening" : ""}`}
-            value={draft || input}
+          {/* DSH-aligned mirror backdrop: 在 textarea 下叠一层 backdrop div，
+              将 /skill-name 模式渲染为高亮 pill 标签。
+              textarea 文字透明（caret 仍可见），backdrop 提供可见的文本和 pill 高亮。 */}
+          <div className={`input-backdrop-wrapper ${expanded ? "expanded" : ""}`}>
+            <div className="input-backdrop" aria-hidden="true">
+              {renderBackdropContent(draft || input, skillLexicon)}
+            </div>
+            <textarea
+              ref={textareaRef}
+              className={`message-input ${expanded ? "expanded" : ""} ${isListeningVoice ? "voice-listening" : ""}`}
+              value={draft || input}
             onChange={(e) => {
               const val = e.target.value;
               setDraft(val);
@@ -780,6 +858,7 @@ const handleSelectProject = (projectId: string) => {
               {voiceInterim}
             </span>
           )}
+          </div>
         </div>
 
         {/* Action row — 左侧工具按钮 + 右侧发送按钮 */}

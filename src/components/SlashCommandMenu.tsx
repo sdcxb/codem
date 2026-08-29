@@ -65,15 +65,19 @@ export function SlashCommandMenu({ filter, onSelect, onClose }: SlashCommandMenu
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "ArrowDown") {
         e.preventDefault();
+        e.stopPropagation();
         setSelectedIndex(i => Math.min(i + 1, commands.length - 1));
       } else if (e.key === "ArrowUp") {
         e.preventDefault();
+        e.stopPropagation();
         setSelectedIndex(i => Math.max(i - 1, 0));
       } else if (e.key === "Enter" && commands[selectedIndex]) {
         e.preventDefault();
+        e.stopPropagation();
         commands[selectedIndex].onSelect();
       } else if (e.key === "Escape") {
         e.preventDefault();
+        e.stopPropagation();
         onClose();
       }
     };
