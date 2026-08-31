@@ -102,7 +102,11 @@ export function InputArea({ onSend, onCancel, disabled, isStreaming, noSession, 
   const [showSecurityPicker, setShowSecurityPicker] = useState(false);
   const [securityMode, setSecurityMode] = useState<SecurityMode>(getEffectiveSecurityMode(projectPath));
   const [showPlusMenu, setShowPlusMenu] = useState(false);
+  const [plusMenuPos, setPlusMenuPos] = useState<{ left: number; bottom: number } | null>(null);
+  const plusBtnRef = useRef<HTMLButtonElement>(null);
 const [showSkillPicker, setShowSkillPicker] = useState(false);
+  const [skillPickerPos, setSkillPickerPos] = useState<{ left: number; bottom: number } | null>(null);
+  const skillPickerBtnRef = useRef<HTMLDivElement>(null);
   const [selectedSkills, setSelectedSkills] = useState<string[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const textareaRowRef = useRef<HTMLDivElement>(null);
@@ -182,6 +186,27 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
       setSlashMenuPos(null);
     }
   }, [slashFilter]);
+
+  // Compute +menu position when toggled
+  useEffect(() => {
+    if (showPlusMenu && plusBtnRef.current) {
+      const rect = plusBtnRef.current.getBoundingClientRect();
+      setPlusMenuPos({ left: rect.left, bottom: window.innerHeight - rect.top + 4 });
+    } else {
+      setPlusMenuPos(null);
+    }
+  }, [showPlusMenu]);
+
+  // Compute skill picker position when toggled
+  useEffect(() => {
+    if (showSkillPicker && skillPickerBtnRef.current) {
+      const rect = skillPickerBtnRef.current.getBoundingClientRect();
+      setSkillPickerPos({ left: rect.left, bottom: window.innerHeight - rect.top + 4 });
+    } else {
+      setSkillPickerPos(null);
+    }
+  }, [showSkillPicker]);
+
   // P4: Mention autocomplete state
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
   const [mentionItems, setMentionItems] = useState<MentionItem[]>([]);
@@ -870,6 +895,7 @@ const handleSelectProject = (projectId: string) => {
             {/* + button — 添加文件/技能/多模态 */}
             <div style={{ position: "relative" }}>
               <button
+                ref={plusBtnRef}
                 className="mode-toggle-btn"
                 onClick={() => setShowPlusMenu(!showPlusMenu)}
                 title={zh ? "添加" : "Add"}
@@ -877,12 +903,12 @@ const handleSelectProject = (projectId: string) => {
               >
                 ＋
               </button>
-              {showPlusMenu && (
+              {showPlusMenu && plusMenuPos && createPortal(
                 <>
-                  <div style={{ position: "fixed", inset: 0, zIndex: 99 }} onClick={() => setShowPlusMenu(false)} />
+                  <div style={{ position: "fixed", inset: 0, zIndex: 99998 }} onClick={() => setShowPlusMenu(false)} />
                   <div className="skill-picker-popup" style={{
-                    position: "absolute", bottom: "100%", left: 0, marginBottom: 4,
-                    minWidth: 200, zIndex: 100, padding: 4,
+                    position: "fixed", left: plusMenuPos.left, bottom: plusMenuPos.bottom,
+                    minWidth: 200, zIndex: 99999, padding: 4,
                   }}>
                     <button className="more-action-item" style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", cursor: "pointer", border: "none", background: "transparent", color: "var(--text-primary)", fontSize: 12, width: "100%", textAlign: "left" }}
                       onClick={() => { setShowPlusMenu(false); document.getElementById('file-upload-input')?.click(); }}>
@@ -944,7 +970,8 @@ const handleSelectProject = (projectId: string) => {
                       </>);
                     })()}
                   </div>
-                </>
+                </>,
+                document.body
               )}
             </div>
 
@@ -952,13 +979,13 @@ const handleSelectProject = (projectId: string) => {
             <SlotBridge name="app.attachment" fallback={FileUpload} onUpload={handleUpload} hideButton />
 
             {/* Skill picker popup */}
-            <div style={{ position: "relative" }}>
-              {showSkillPicker && (
+            <div ref={skillPickerBtnRef} style={{ position: "relative" }}>
+              {showSkillPicker && skillPickerPos && createPortal(
                 <>
-                  <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 99 }} onClick={() => setShowSkillPicker(false)} />
+                  <div style={{ position: "fixed", inset: 0, zIndex: 99998 }} onClick={() => setShowSkillPicker(false)} />
                   <div className="skill-picker-popup" style={{
-                    position: "absolute", bottom: "100%", left: 0, marginBottom: 4,
-                    minWidth: 220, maxWidth: 320, zIndex: 100, maxHeight: 300, overflowY: "auto",
+                    position: "fixed", left: skillPickerPos.left, bottom: skillPickerPos.bottom,
+                    minWidth: 220, maxWidth: 320, zIndex: 99999, maxHeight: 300, overflowY: "auto",
                   }}>
                     <div style={{ fontSize: 11, fontWeight: 600, marginBottom: 6, opacity: 0.7 }}>
                       {zh ? "选择技能（本次消息）" : "Select skills (this message)"}
@@ -987,11 +1014,29 @@ const handleSelectProject = (projectId: string) => {
                       ));
                     })()}
                   </div>
-                </>
+                </>,
+                document.body
               )}
             </div>
 
             {/* Collaboration mode — SlotBridge 消费 app.plan-mode-chip */}
+            <SlotBridge
+              name="app.plan-mode-chip"
+              fallback={PlanModeChip}
+              mode={collaborationMode}
+              onModeChange={(m: CollaborationMode) => onModeChange?.(m)}
+              locked={isStreaming}
+            />
+            {/* 内联回退：当 PlanModeChip 未显示时（非 plan 模式），保留可点击的切换按钮 */}
+            {collaborationMode !== 'plan' && (
+              <button
+                className="mode-toggle-btn default"
+                onClick={() => onModeChange?.('plan')}
+                title={zh ? "执行模式 — 点击切换到计划模式" : "Execute mode — click for plan mode"}
+              >
+                <Zap size={14} />
+              </button>
+            )}
 
             {/* P4: Knowledge source selector (notebook mode) — hidden when hideSourceSelector is true */}
             {notebookId && !hideSourceSelector && (

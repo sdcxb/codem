@@ -10,7 +10,8 @@
  * 保留与 SecurityModeSelector 相同的 API 以兼容现有调用。
  */
 
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useLayoutEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { Shield, Zap, Rocket, ChevronDown, Check } from 'lucide-react'
 import { useLang } from '../core/i18n/lang'
 import {
@@ -59,8 +60,41 @@ export function PermissionPresetSelector({
   const zh = lang === 'zh'
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
+  // Portal rendering position for dropdown
+  const [dropdownPos, setDropdownPos] = useState<{ left: number; bottom: number; width: number } | null>(null)
 
   const effectiveMode = providedMode ?? (projectPath ? getEffectiveSecurityMode(projectPath) : getGlobalSecurityMode())
+
+  // Compute dropdown position when opening
+  useLayoutEffect(() => {
+    if (!open || !rootRef.current) return
+    const rect = rootRef.current.getBoundingClientRect()
+    setDropdownPos({
+      left: rect.left,
+      bottom: window.innerHeight - rect.top + 4,
+      width: Math.max(rect.width, 180),
+    })
+  }, [open])
+
+  // Update position on scroll/resize
+  useEffect(() => {
+    if (!open) return
+    const update = () => {
+      if (!rootRef.current) return
+      const rect = rootRef.current.getBoundingClientRect()
+      setDropdownPos({
+        left: rect.left,
+        bottom: window.innerHeight - rect.top + 4,
+        width: Math.max(rect.width, 180),
+      })
+    }
+    window.addEventListener('scroll', update, true)
+    window.addEventListener('resize', update)
+    return () => {
+      window.removeEventListener('scroll', update, true)
+      window.removeEventListener('resize', update)
+    }
+  }, [open])
 
   // 外部点击关闭
   useEffect(() => {
@@ -115,15 +149,15 @@ export function PermissionPresetSelector({
           <ChevronDown size={10} style={{ opacity: 0.5 }} />
         </button>
 
-        {open && (
+        {open && dropdownPos && createPortal(
           <div
             className="bottom-bar-dropdown"
             style={{
-              position: 'absolute',
-              bottom: '100%',
-              left: 0,
-              marginBottom: 4,
+              position: "fixed",
+              left: dropdownPos.left,
+              bottom: dropdownPos.bottom,
               minWidth: 180,
+              zIndex: 99999,
             }}
           >
             <div className="bottom-bar-dropdown-header">
@@ -144,7 +178,8 @@ export function PermissionPresetSelector({
                 </button>
               )
             })}
-          </div>
+          </div>,
+          document.body
         )}
       </div>
     )
