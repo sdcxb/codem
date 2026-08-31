@@ -81,16 +81,16 @@ export function LayeredSettingsPanel() {
   };
 
   const labelStyle: React.CSSProperties = {
-    fontSize: 11, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 3, display: "block",
+    fontSize: 'var(--fs-sm)', fontWeight: 600, color: "var(--text-secondary)", marginBottom: 3, display: "block",
   };
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       <div>
-        <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)" }}>
+        <div style={{ fontSize: 'var(--fs-md)', fontWeight: 700, color: "var(--text-primary)" }}>
           🏗️ {zh ? "分层设置管理" : "Layered Settings Management"}
         </div>
-        <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 2 }}>
+        <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-secondary)", marginTop: 2 }}>
           {zh
             ? "查看设置来源优先级链。高优先级来源覆盖低优先级。当前项目: "
             : "View settings source priority chain. Higher priority overrides lower. Current project: "}
@@ -105,7 +105,7 @@ export function LayeredSettingsPanel() {
         padding: 12, borderRadius: 8, border: "1px solid var(--border-primary)",
         background: "var(--bg-secondary)",
       }}>
-        <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 8 }}>
+        <div style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, color: "var(--text-secondary)", marginBottom: 8 }}>
           {zh ? "优先级链（从高到低）" : "Priority Chain (high to low)"}
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
@@ -117,7 +117,7 @@ export function LayeredSettingsPanel() {
                 onClick={() => setSelectedSource(isActive ? null : s.source)}
                 style={{
                   display: "flex", alignItems: "center", gap: 8, padding: "6px 10px",
-                  borderRadius: 4, cursor: "pointer", fontSize: 12,
+                  borderRadius: 4, cursor: "pointer", fontSize: 'var(--fs-sm)',
                   border: `1px solid ${isActive ? "var(--accent)" : "var(--border-primary)"}`,
                   background: isActive ? "rgba(99, 102, 241, 0.1)" : "var(--bg-tertiary)",
                 }}
@@ -125,7 +125,7 @@ export function LayeredSettingsPanel() {
                 <span style={{
                   width: 20, height: 20, borderRadius: "50%", flexShrink: 0,
                   display: "flex", alignItems: "center", justifyContent: "center",
-                  fontSize: 10, fontWeight: 700,
+                  fontSize: 'var(--fs-xs)', fontWeight: 700,
                   background: s.enabled ? "var(--accent)" : "var(--bg-secondary)",
                   color: s.enabled ? "#fff" : "var(--text-muted)",
                 }}>
@@ -134,24 +134,24 @@ export function LayeredSettingsPanel() {
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontWeight: 600, color: "var(--text-primary)" }}>
                     {zh ? SOURCE_LABELS_ZH[s.source] : SOURCE_LABELS_EN[s.source]}
-                    {!s.enabled && <span style={{ marginLeft: 6, fontSize: 10, color: "var(--text-muted)" }}>({zh ? "已禁用" : "disabled"})</span>}
+                    {!s.enabled && <span style={{ marginLeft: 6, fontSize: 'var(--fs-xs)', color: "var(--text-muted)" }}>({zh ? "已禁用" : "disabled"})</span>}
                   </div>
-                  <div style={{ fontSize: 10, color: "var(--text-muted)" }}>
+                  <div style={{ fontSize: 'var(--fs-xs)', color: "var(--text-muted)" }}>
                     {zh ? SOURCE_PRIORITY_DESC_ZH[s.source] : SOURCE_PRIORITY_DESC_EN[s.source]}
                   </div>
                 </div>
                 {s.path && (
-                  <span style={{ fontSize: 10, color: "var(--text-muted)", fontFamily: "monospace", maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  <span style={{ fontSize: 'var(--fs-xs)', color: "var(--text-muted)", fontFamily: "monospace", maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                     {s.path}
                   </span>
                 )}
                 {s.lastLoaded && (
-                  <span style={{ fontSize: 10, color: "var(--text-muted)" }}>
+                  <span style={{ fontSize: 'var(--fs-xs)', color: "var(--text-muted)" }}>
                     {zh ? "已加载" : "loaded"}
                   </span>
                 )}
                 {s.data && Object.keys(s.data).length > 0 && (
-                  <span style={{ fontSize: 10, padding: "1px 6px", borderRadius: 3, background: "var(--bg-secondary)", color: "var(--text-secondary)" }}>
+                  <span style={{ fontSize: 'var(--fs-xs)', padding: "1px 6px", borderRadius: 3, background: "var(--bg-secondary)", color: "var(--text-secondary)" }}>
                     {Object.keys(s.data).length} {zh ? "项" : "keys"}
                   </span>
                 )}
@@ -167,26 +167,26 @@ export function LayeredSettingsPanel() {
           padding: 12, borderRadius: 8, border: "1px solid var(--border-primary)",
           background: "var(--bg-secondary)",
         }}>
-          <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-primary)", marginBottom: 8 }}>
+          <div style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, color: "var(--text-primary)", marginBottom: 8 }}>
             {zh ? SOURCE_LABELS_ZH[selectedConfig.source] : SOURCE_LABELS_EN[selectedConfig.source]} — {zh ? "详情" : "Details"}
           </div>
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
             <div>
               <label style={labelStyle}>{zh ? "来源" : "Source"}</label>
-              <div style={{ fontSize: 12, color: "var(--text-primary)", fontFamily: "monospace" }}>{selectedConfig.source}</div>
+              <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-primary)", fontFamily: "monospace" }}>{selectedConfig.source}</div>
             </div>
             <div>
               <label style={labelStyle}>{zh ? "优先级" : "Priority"}</label>
-              <div style={{ fontSize: 12, color: "var(--text-primary)" }}>{selectedConfig.priority}</div>
+              <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-primary)" }}>{selectedConfig.priority}</div>
             </div>
             <div>
               <label style={labelStyle}>{zh ? "路径" : "Path"}</label>
-              <div style={{ fontSize: 11, color: "var(--text-secondary)", fontFamily: "monospace" }}>{selectedConfig.path || "-"}</div>
+              <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-secondary)", fontFamily: "monospace" }}>{selectedConfig.path || "-"}</div>
             </div>
             <div>
               <label style={labelStyle}>{zh ? "已加载" : "Last Loaded"}</label>
-              <div style={{ fontSize: 12, color: "var(--text-primary)" }}>
+              <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-primary)" }}>
                 {selectedConfig.lastLoaded ? new Date(selectedConfig.lastLoaded).toLocaleString() : "-"}
               </div>
             </div>
@@ -196,7 +196,7 @@ export function LayeredSettingsPanel() {
             <div>
               <label style={labelStyle}>{zh ? "数据" : "Data"}</label>
               <pre style={{
-                fontSize: 10, padding: 8, background: "var(--bg-tertiary)", borderRadius: 4,
+                fontSize: 'var(--fs-xs)', padding: 8, background: "var(--bg-tertiary)", borderRadius: 4,
                 maxHeight: 200, overflow: "auto", whiteSpace: "pre-wrap", margin: 0,
                 color: "var(--text-secondary)", fontFamily: "monospace",
               }}>
@@ -206,7 +206,7 @@ export function LayeredSettingsPanel() {
           )}
 
           {(!selectedConfig.data || Object.keys(selectedConfig.data).length === 0) && (
-            <div style={{ fontSize: 11, color: "var(--text-muted)", fontStyle: "italic" }}>
+            <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", fontStyle: "italic" }}>
               {zh ? "无数据" : "No data"}
             </div>
           )}
@@ -219,10 +219,10 @@ export function LayeredSettingsPanel() {
           padding: 12, borderRadius: 8, border: "1px solid var(--border-primary)",
           background: "var(--bg-secondary)",
         }}>
-          <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 8 }}>
+          <div style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, color: "var(--text-secondary)", marginBottom: 8 }}>
             🛡️ {zh ? "策略限制" : "Policy Restrictions"}
           </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 11 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 'var(--fs-sm)' }}>
             <div>
               <span style={{ color: "var(--text-muted)" }}>{zh ? "绕过权限禁用" : "Bypass disabled"}: </span>
               <span style={{ fontWeight: 600, color: mgr.isBypassDisabled() ? "var(--error)" : "var(--success)" }}>
@@ -248,7 +248,7 @@ export function LayeredSettingsPanel() {
       {/* Export */}
       <div style={{ display: "flex", gap: 8 }}>
         <button onClick={handleExport} style={{
-          padding: "6px 14px", borderRadius: 4, fontSize: 12,
+          padding: "6px 14px", borderRadius: 4, fontSize: 'var(--fs-sm)',
           border: "1px solid var(--border-primary)", background: "var(--bg-tertiary)",
           color: "var(--text-primary)", cursor: "pointer",
         }}>
@@ -256,7 +256,7 @@ export function LayeredSettingsPanel() {
         </button>
         {showExport && (
           <button onClick={() => { navigator.clipboard?.writeText(exportData); }} style={{
-            padding: "6px 14px", borderRadius: 4, fontSize: 12,
+            padding: "6px 14px", borderRadius: 4, fontSize: 'var(--fs-sm)',
             border: "1px solid var(--border-primary)", background: "var(--bg-tertiary)",
             color: "var(--text-primary)", cursor: "pointer",
           }}>
@@ -267,7 +267,7 @@ export function LayeredSettingsPanel() {
 
       {showExport && (
         <pre style={{
-          fontSize: 10, padding: 8, background: "var(--bg-tertiary)", borderRadius: 4,
+          fontSize: 'var(--fs-xs)', padding: 8, background: "var(--bg-tertiary)", borderRadius: 4,
           maxHeight: 300, overflow: "auto", whiteSpace: "pre-wrap", margin: 0,
           color: "var(--text-secondary)", fontFamily: "monospace",
           border: "1px solid var(--border-primary)",

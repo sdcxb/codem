@@ -204,21 +204,21 @@ export function PPTAdapter({ notebookId, initialContent, title: initialTitle, au
       <div style={{ position: 'fixed', top: 36, left: 0, right: 0, bottom: 0, background: 'var(--bg-primary, #1e1e2e)', display: 'flex', flexDirection: 'column', zIndex: 10001, overflow: 'hidden' }}>
         {/* 顶部栏 */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 20px', background: 'var(--bg-secondary, #2a2a3c)', borderBottom: '1px solid var(--border-primary, #3a3a4c)', flexShrink: 0 }}>
-          <button onClick={onBack} style={{ background: 'var(--bg-tertiary, #3a3a4c)', color: 'var(--text-primary, #e0e0e0)', border: 'none', borderRadius: 6, padding: '6px 14px', cursor: 'pointer', fontSize: 13, transition: 'var(--transition-color)' }}>← 返回</button>
-          <span style={{ color: 'var(--text-muted, #888)', fontSize: 14 }}>PPT Studio</span>
+          <button onClick={onBack} style={{ background: 'var(--bg-tertiary, #3a3a4c)', color: 'var(--text-primary, #e0e0e0)', border: 'none', borderRadius: 6, padding: '6px 14px', cursor: 'pointer', fontSize: 'var(--fs-base)', transition: 'var(--transition-color)' }}>← 返回</button>
+          <span style={{ color: 'var(--text-muted, #888)', fontSize: 'var(--fs-md)' }}>PPT Studio</span>
           <span style={{ color: 'var(--text-muted, #555)', margin: '0 4px' }}>/</span>
-          <span style={{ color: 'var(--text-primary, #e0e0e0)', fontSize: 14 }}>{title}</span>
+          <span style={{ color: 'var(--text-primary, #e0e0e0)', fontSize: 'var(--fs-md)' }}>{title}</span>
         </div>
 
         {/* 可滚动内容 */}
         <div style={{ flex: 1, overflowY: 'auto', padding: '24px 32px' }}>
           <div style={{ maxWidth: 1000, margin: '0 auto' }}>
-            <h2 style={{ color: 'var(--text-primary, #e0e0e0)', fontSize: 22, marginBottom: 4 }}>选择演示风格</h2>
-            <p style={{ color: 'var(--text-muted, #888)', fontSize: 13, marginBottom: 20 }}>选择风格、画布尺寸和页数，从知识库内容生成 PPT</p>
+            <h2 style={{ color: 'var(--text-primary, #e0e0e0)', fontSize: 'var(--fs-2xl)', marginBottom: 4 }}>选择演示风格</h2>
+            <p style={{ color: 'var(--text-muted, #888)', fontSize: 'var(--fs-base)', marginBottom: 20 }}>选择风格、画布尺寸和页数，从知识库内容生成 PPT</p>
 
             {/* PPTX 导入入口 */}
             <div style={{ marginBottom: 20, padding: '12px 16px', borderRadius: 10, background: 'var(--bg-tertiary, #252535)', border: '1px solid var(--border-primary, #3a3a4c)', display: 'flex', alignItems: 'center', gap: 12 }}>
-              <span style={{ color: 'var(--text-secondary, #a0a0b0)', fontSize: 13, flex: 1 }}>
+              <span style={{ color: 'var(--text-secondary, #a0a0b0)', fontSize: 'var(--fs-base)', flex: 1 }}>
                 📥 已有 PPTX 文件？直接导入编辑
               </span>
               <input
@@ -236,7 +236,7 @@ export function PPTAdapter({ notebookId, initialContent, title: initialTitle, au
                 onClick={() => fileInputRef.current?.click()}
                 disabled={importing}
                 style={{
-                  padding: '6px 16px', borderRadius: 6, border: 'none', cursor: 'pointer', fontSize: 13,
+                  padding: '6px 16px', borderRadius: 6, border: 'none', cursor: 'pointer', fontSize: 'var(--fs-base)',
                   background: importing ? 'var(--bg-hover, #3a3a4c)' : 'var(--accent, #7c6cf0)', color: 'var(--text-on-accent, #fff)',
                   opacity: importing ? 0.6 : 1,
                 }}
@@ -245,7 +245,7 @@ export function PPTAdapter({ notebookId, initialContent, title: initialTitle, au
               </button>
             </div>
             {importError && (
-              <div style={{ marginBottom: 16, padding: '8px 12px', borderRadius: 6, background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)', color: 'var(--error, #ff8080)', fontSize: 12 }}>
+              <div style={{ marginBottom: 16, padding: '8px 12px', borderRadius: 6, background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)', color: 'var(--error, #ff8080)', fontSize: 'var(--fs-sm)' }}>
                 导入失败: {importError}
               </div>
             )}
@@ -254,7 +254,7 @@ export function PPTAdapter({ notebookId, initialContent, title: initialTitle, au
             <div style={{ display: 'flex', gap: 6, marginBottom: 16, flexWrap: 'wrap' }}>
               {categories.map(cat => (
                 <button key={cat} onClick={() => setStyleFilter(cat)} style={{
-                  padding: '5px 14px', borderRadius: 16, border: '1px solid', cursor: 'pointer', fontSize: 12,
+                  padding: '5px 14px', borderRadius: 16, border: '1px solid', cursor: 'pointer', fontSize: 'var(--fs-sm)',
                   background: styleFilter === cat ? 'var(--accent, #7c6cf0)' : 'transparent',
                   borderColor: styleFilter === cat ? 'var(--accent, #7c6cf0)' : 'var(--border-primary, #3a3a4c)',
                   color: styleFilter === cat ? 'var(--text-on-accent, #fff)' : 'var(--text-secondary, #a0a0b0)',
@@ -280,21 +280,21 @@ export function PPTAdapter({ notebookId, initialContent, title: initialTitle, au
                       background: `linear-gradient(135deg, ${style.colors.primary}, ${style.colors.accent})`,
                       opacity: 0.8,
                     }} />
-                    <div style={{ position: 'absolute', bottom: 8, left: 8, fontSize: 11, color: style.colors.text, background: 'rgba(0,0,0,0.3)', padding: '2px 8px', borderRadius: 4 }}>
+                    <div style={{ position: 'absolute', bottom: 8, left: 8, fontSize: 'var(--fs-sm)', color: style.colors.text, background: 'rgba(0,0,0,0.3)', padding: '2px 8px', borderRadius: 4 }}>
                       {style.name}
                     </div>
                   </div>
                   {/* 描述 */}
                   <div style={{ padding: '8px 12px' }}>
-                    <div style={{ fontSize: 12, color: 'var(--text-primary, #e0e0e0)', fontWeight: 600 }}>{style.name}</div>
-                    <div style={{ fontSize: 11, color: 'var(--text-muted, #888)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{style.description}</div>
+                    <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-primary, #e0e0e0)', fontWeight: 600 }}>{style.name}</div>
+                    <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted, #888)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{style.description}</div>
                   </div>
                 </div>
               ))}
             </div>
 
             {/* 画布尺寸 */}
-            <h3 style={{ color: 'var(--text-primary, #e0e0e0)', fontSize: 16, marginBottom: 10 }}>画布尺寸</h3>
+            <h3 style={{ color: 'var(--text-primary, #e0e0e0)', fontSize: 'var(--fs-lg)', marginBottom: 10 }}>画布尺寸</h3>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 10, marginBottom: 24 }}>
               {CANVAS_SIZES.map(cs => (
                 <div key={cs.id} onClick={() => setSelectedCanvasId(cs.id)} style={{
@@ -302,21 +302,21 @@ export function PPTAdapter({ notebookId, initialContent, title: initialTitle, au
                   border: selectedCanvasId === cs.id ? '2px solid var(--accent, #7c6cf0)' : '2px solid var(--border-primary, #3a3a4c)',
                   background: 'var(--bg-tertiary, #252535)',
                 }}>
-                  <div style={{ fontSize: 22, marginBottom: 4 }}>{cs.icon}</div>
-                  <div style={{ fontSize: 12, color: 'var(--text-primary, #e0e0e0)', fontWeight: 600 }}>{cs.name}</div>
-                  <div style={{ fontSize: 10, color: 'var(--text-muted, #888)', marginTop: 2 }}>{cs.description}</div>
+                  <div style={{ fontSize: 'var(--fs-2xl)', marginBottom: 4 }}>{cs.icon}</div>
+                  <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-primary, #e0e0e0)', fontWeight: 600 }}>{cs.name}</div>
+                  <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted, #888)', marginTop: 2 }}>{cs.description}</div>
                 </div>
               ))}
             </div>
 
             {/* 页数 */}
-            <h3 style={{ color: 'var(--text-primary, #e0e0e0)', fontSize: 16, marginBottom: 10 }}>幻灯片页数</h3>
+            <h3 style={{ color: 'var(--text-primary, #e0e0e0)', fontSize: 'var(--fs-lg)', marginBottom: 10 }}>幻灯片页数</h3>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
               <input type="range" min={3} max={20} value={slideCount}
                 onChange={e => setSlideCount(parseInt(e.target.value))}
                 style={{ flex: 1, maxWidth: 300 }}
               />
-              <span style={{ color: 'var(--text-primary, #e0e0e0)', fontSize: 16, fontWeight: 600, minWidth: 40 }}>{slideCount} 页</span>
+              <span style={{ color: 'var(--text-primary, #e0e0e0)', fontSize: 'var(--fs-lg)', fontWeight: 600, minWidth: 40 }}>{slideCount} 页</span>
             </div>
 
             {/* AI 配图 */}
@@ -332,11 +332,11 @@ export function PPTAdapter({ notebookId, initialContent, title: initialTitle, au
                 style={{ width: 18, height: 18, cursor: 'pointer' }}
               />
               <label htmlFor="enable-images" style={{
-                color: 'var(--text-primary, #e0e0e0)', fontSize: 14, cursor: checkImageGen() ? 'pointer' : 'not-allowed',
+                color: 'var(--text-primary, #e0e0e0)', fontSize: 'var(--fs-md)', cursor: checkImageGen() ? 'pointer' : 'not-allowed',
               }}>
                 🖼️ 启用 AI 配图
                 {!checkImageGen() && (
-                  <span style={{ color: 'var(--text-muted, #888)', fontSize: 12, marginLeft: 8 }}>
+                  <span style={{ color: 'var(--text-muted, #888)', fontSize: 'var(--fs-sm)', marginLeft: 8 }}>
                     (需在设置中配置生图模型)
                   </span>
                 )}
@@ -345,7 +345,7 @@ export function PPTAdapter({ notebookId, initialContent, title: initialTitle, au
 
             {/* 生成按钮 */}
             <button onClick={handleGenerate} style={{
-              padding: '12px 32px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 15, fontWeight: 600,
+              padding: '12px 32px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 'var(--fs-md)', fontWeight: 600,
               background: 'linear-gradient(135deg, var(--accent, #7c6cf0), var(--accent-hover, #9d8cf5))',
               color: '#fff', transition: 'all 0.15s',
               boxShadow: '0 4px 20px rgba(124,108,240,0.3)',
@@ -377,10 +377,10 @@ export function PPTAdapter({ notebookId, initialContent, title: initialTitle, au
           }}>
             {STAGES[currentStageIdx]?.icon || '⏳'}
           </div>
-          <div style={{ fontSize: 17, fontWeight: 600, marginBottom: 6, color: 'var(--text-primary, #e0e0e0)' }}>
+          <div style={{ fontSize: 'var(--fs-lg)', fontWeight: 600, marginBottom: 6, color: 'var(--text-primary, #e0e0e0)' }}>
             AI 正在生成 PPT
           </div>
-          <div style={{ fontSize: 13, marginBottom: 20, color: 'var(--text-muted, #888)', minHeight: 20 }}>
+          <div style={{ fontSize: 'var(--fs-base)', marginBottom: 20, color: 'var(--text-muted, #888)', minHeight: 20 }}>
             {progressDetail || STAGES[currentStageIdx]?.label || '请稍候...'}
           </div>
           <div style={{ display: 'flex', gap: 4, marginBottom: 16, justifyContent: 'center' }}>
@@ -395,7 +395,7 @@ export function PPTAdapter({ notebookId, initialContent, title: initialTitle, au
           <div style={{ display: 'flex', gap: 4, justifyContent: 'center', flexWrap: 'wrap' }}>
             {STAGES.map((s, i) => (
               <div key={s.key} style={{
-                fontSize: 10,
+                fontSize: 'var(--fs-xs)',
                 color: i === currentStageIdx ? 'var(--accent, #7c6cf0)' : i < currentStageIdx ? 'var(--text-muted, #666)' : 'var(--text-faded, #444)',
                 fontWeight: i === currentStageIdx ? 600 : 400, transition: 'all 0.3s ease',
               }}>
@@ -404,7 +404,7 @@ export function PPTAdapter({ notebookId, initialContent, title: initialTitle, au
             ))}
           </div>
           {isGenerating && (
-            <div style={{ marginTop: 16, fontSize: 11, color: 'var(--text-faded, #555)', fontFamily: 'monospace' }}>
+            <div style={{ marginTop: 16, fontSize: 'var(--fs-sm)', color: 'var(--text-faded, #555)', fontFamily: 'monospace' }}>
               <span style={{ animation: 'ppt-dots 1.4s steps(4) infinite', display: 'inline-block' }}>●●●</span>
             </div>
           )}
@@ -422,14 +422,14 @@ export function PPTAdapter({ notebookId, initialContent, title: initialTitle, au
         display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10001,
       }}>
         <div style={{ textAlign: 'center', maxWidth: 500, width: '90%' }}>
-          <div style={{ width: 48, height: 48, margin: '0 auto 16px', borderRadius: '50%', background: 'rgba(239,68,68,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22 }}>⚠️</div>
-          <div style={{ fontSize: 17, fontWeight: 600, marginBottom: 8, color: 'var(--danger, #ff8080)' }}>生成失败</div>
-          <div style={{ fontSize: 12, color: 'var(--text-muted, #888)', marginBottom: 20, lineHeight: 1.6, textAlign: 'left', background: 'var(--bg-secondary, #2a2a3c)', padding: '12px 16px', borderRadius: 8, border: '1px solid var(--border-primary, #333)', maxHeight: 200, overflowY: 'auto', fontFamily: 'monospace', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+          <div style={{ width: 48, height: 48, margin: '0 auto 16px', borderRadius: '50%', background: 'rgba(239,68,68,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 'var(--fs-2xl)' }}>⚠️</div>
+          <div style={{ fontSize: 'var(--fs-lg)', fontWeight: 600, marginBottom: 8, color: 'var(--danger, #ff8080)' }}>生成失败</div>
+          <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted, #888)', marginBottom: 20, lineHeight: 1.6, textAlign: 'left', background: 'var(--bg-secondary, #2a2a3c)', padding: '12px 16px', borderRadius: 8, border: '1px solid var(--border-primary, #333)', maxHeight: 200, overflowY: 'auto', fontFamily: 'monospace', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
             {error}
           </div>
           <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
-            <button onClick={() => { setError(null); setShowConfig(true); }} style={{ padding: '8px 16px', background: 'var(--accent, #7c6cf0)', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 13 }}>重新配置</button>
-            <button onClick={onBack} style={{ padding: '8px 16px', background: 'var(--bg-hover, #3a3a4c)', color: 'var(--text-secondary, #ccc)', border: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 13 }}>返回</button>
+            <button onClick={() => { setError(null); setShowConfig(true); }} style={{ padding: '8px 16px', background: 'var(--accent, #7c6cf0)', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 'var(--fs-base)' }}>重新配置</button>
+            <button onClick={onBack} style={{ padding: '8px 16px', background: 'var(--bg-hover, #3a3a4c)', color: 'var(--text-secondary, #ccc)', border: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 'var(--fs-base)' }}>返回</button>
           </div>
         </div>
       </div>

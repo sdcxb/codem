@@ -56,7 +56,7 @@ const TurnErrorRow = memo(function TurnErrorRow({
         borderRadius: 6,
         background: 'rgba(239, 68, 68, 0.08)',
         border: '1px solid rgba(239, 68, 68, 0.2)',
-        fontSize: 12,
+        fontSize: 'var(--fs-sm)',
       }}
     >
       <AlertCircle size={13} style={{ color: 'var(--error)', flexShrink: 0, marginTop: 1 }} />
@@ -72,7 +72,7 @@ const TurnErrorRow = memo(function TurnErrorRow({
       </div>
       {code && (
         <code style={{
-          fontSize: 10,
+          fontSize: 'var(--fs-xs)',
           padding: '1px 4px',
           borderRadius: 3,
           background: 'rgba(239, 68, 68, 0.15)',
@@ -102,7 +102,7 @@ const TurnMaxTokensRow = memo(function TurnMaxTokensRow() {
         borderRadius: 6,
         background: 'rgba(234, 179, 8, 0.08)',
         border: '1px solid rgba(234, 179, 8, 0.2)',
-        fontSize: 12,
+        fontSize: 'var(--fs-sm)',
       }}
     >
       <AlertTriangle size={13} style={{ color: 'var(--warning, #eab008)', flexShrink: 0, marginTop: 1 }} />
@@ -110,7 +110,7 @@ const TurnMaxTokensRow = memo(function TurnMaxTokensRow() {
         <span style={{ fontWeight: 600, color: 'var(--warning, #eab008)' }}>
           {zh ? '已达到输出上限' : 'Max Tokens Reached'}
         </span>
-        <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>
+        <span style={{ color: 'var(--text-muted)', fontSize: 'var(--fs-sm)' }}>
           {zh ? '回复被截断，可通过继续指令让模型补全。' : 'Response was truncated. Use continue to let the model finish.'}
         </span>
       </div>
@@ -167,7 +167,7 @@ const ModelRetryRow = memo(function ModelRetryRow({
         borderRadius: 6,
         background: 'rgba(99, 102, 241, 0.08)',
         border: '1px solid rgba(99, 102, 241, 0.2)',
-        fontSize: 12,
+        fontSize: 'var(--fs-sm)',
       }}
     >
       <summary
@@ -194,17 +194,17 @@ const ModelRetryRow = memo(function ModelRetryRow({
       {expanded && (
         <div style={{ marginTop: 4, padding: '4px 0 0 24px', display: 'flex', flexDirection: 'column', gap: 4 }}>
           <div>
-            <span style={{ fontWeight: 600, fontSize: 11, color: 'var(--text-muted)' }}>
+            <span style={{ fontWeight: 600, fontSize: 'var(--fs-sm)', color: 'var(--text-muted)' }}>
               {zh ? '延迟' : 'Delay'}:
             </span>
-            <span style={{ fontSize: 11 }}> {Math.round(delayMs)}ms</span>
+            <span style={{ fontSize: 'var(--fs-sm)' }}> {Math.round(delayMs)}ms</span>
           </div>
           {failure && (
             <div>
-              <span style={{ fontWeight: 600, fontSize: 11, color: 'var(--text-muted)' }}>
+              <span style={{ fontWeight: 600, fontSize: 'var(--fs-sm)', color: 'var(--text-muted)' }}>
                 {zh ? '失败原因' : 'Failure'}:
               </span>
-              <span style={{ fontSize: 11, color: 'var(--error)' }}> {failure}</span>
+              <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--error)' }}> {failure}</span>
             </div>
           )}
         </div>

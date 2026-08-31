@@ -75,7 +75,7 @@ export function AssetsPanel({ engine, playerId, onClose }: Props) {
           </div>
           <div style={{ borderTop: "1px solid #34495e", marginTop: 4, paddingTop: 4, display: "flex", justifyContent: "space-between" }}>
             <span style={{ color: "#f1c40f", fontWeight: "bold" }}>总资产</span>
-            <span style={{ color: "#f1c40f", fontWeight: "bold", fontSize: 16 }}>¥{totalWealth.toLocaleString()}</span>
+            <span style={{ color: "#f1c40f", fontWeight: "bold", fontSize: 'var(--fs-lg)' }}>¥{totalWealth.toLocaleString()}</span>
           </div>
         </div>
 
@@ -115,7 +115,7 @@ export function AssetsPanel({ engine, playerId, onClose }: Props) {
                   </div>
                   <span className="shop-item-price" style={{ color: profit >= 0 ? "#27ae60" : "#e74c3c" }}>
                     ¥{value.toLocaleString()}
-                    <br /><span style={{ fontSize: 10 }}>{profit >= 0 ? "+" : ""}{profit.toLocaleString()}</span>
+                    <br /><span style={{ fontSize: 'var(--fs-xs)' }}>{profit >= 0 ? "+" : ""}{profit.toLocaleString()}</span>
                   </span>
                 </div>
               );
@@ -125,13 +125,13 @@ export function AssetsPanel({ engine, playerId, onClose }: Props) {
 
         {/* 卡牌 */}
         <div className="sell-section-title">卡牌 ({player.cards.length})</div>
-        <div className="extra-row" style={{ color: "#95a5a6", fontSize: 11 }}>
+        <div className="extra-row" style={{ color: "#95a5a6", fontSize: 'var(--fs-sm)' }}>
           {player.cards.length > 0 ? `持有 ${player.cards.length} 张卡牌` : "无卡牌"}
         </div>
 
         {/* 道具 */}
         <div className="sell-section-title">道具 ({player.tools.reduce((s, t) => s + t.amount, 0)})</div>
-        <div className="extra-row" style={{ color: "#95a5a6", fontSize: 11 }}>
+        <div className="extra-row" style={{ color: "#95a5a6", fontSize: 'var(--fs-sm)' }}>
           {player.tools.length > 0 ? player.tools.map(t => `道具${t.id}×${t.amount}`).join(", ") : "无道具"}
         </div>
       </div>

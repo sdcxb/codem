@@ -67,10 +67,10 @@ export function RecoveryPanel() {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       <div>
-        <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)" }}>
+        <div style={{ fontSize: 'var(--fs-md)', fontWeight: 700, color: "var(--text-primary)" }}>
           🔄 {zh ? "多层会话恢复" : "Multi-layer Session Recovery"}
         </div>
-        <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 2 }}>
+        <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-secondary)", marginTop: 2 }}>
           {zh ? "自动保存会话状态，崩溃后可恢复。数据持久化到 SQLite。" : "Auto-saves session state for crash recovery. Data persisted to SQLite."}
         </div>
       </div>
@@ -89,8 +89,8 @@ export function RecoveryPanel() {
               border: "1px solid var(--border-primary)", background: "var(--bg-tertiary)",
               textAlign: "center",
             }}>
-              <div style={{ fontSize: 18, fontWeight: 700, color: s.color }}>{s.value}</div>
-              <div style={{ fontSize: 10, color: "var(--text-muted)" }}>{s.label}</div>
+              <div style={{ fontSize: 'var(--fs-xl)', fontWeight: 700, color: s.color }}>{s.value}</div>
+              <div style={{ fontSize: 'var(--fs-xs)', color: "var(--text-muted)" }}>{s.label}</div>
             </div>
           ))}
         </div>
@@ -98,12 +98,12 @@ export function RecoveryPanel() {
 
       {/* Session list */}
       <div>
-        <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 6 }}>
+        <div style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, color: "var(--text-secondary)", marginBottom: 6 }}>
           {zh ? "已保存的会话" : "Saved Sessions"} ({sessions.length})
         </div>
         {sessions.length === 0 ? (
           <div style={{
-            padding: 16, textAlign: "center", color: "var(--text-muted)", fontSize: 12,
+            padding: 16, textAlign: "center", color: "var(--text-muted)", fontSize: 'var(--fs-sm)',
             background: "var(--bg-tertiary)", borderRadius: 6, border: "1px dashed var(--border-primary)",
           }}>
             {zh ? "暂无已保存的会话" : "No saved sessions"}
@@ -119,28 +119,28 @@ export function RecoveryPanel() {
                   onClick={() => setSelectedSessionId(active ? null : s.id)}
                   style={{
                     display: "flex", alignItems: "center", gap: 8, padding: "6px 10px",
-                    borderRadius: 4, cursor: "pointer", fontSize: 11,
+                    borderRadius: 4, cursor: "pointer", fontSize: 'var(--fs-sm)',
                     border: `1px solid ${active ? "var(--accent)" : "var(--border-primary)"}`,
                     background: active ? "rgba(99, 102, 241, 0.1)" : "var(--bg-tertiary)",
                   }}
                 >
-                  <span style={{ fontSize: 14 }}>{msgCount > 0 ? "💬" : "📭"}</span>
+                  <span style={{ fontSize: 'var(--fs-md)' }}>{msgCount > 0 ? "💬" : "📭"}</span>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontWeight: 600, color: "var(--text-primary)", fontFamily: "monospace" }}>
                       {s.id.substring(0, 16)}...
                     </div>
-                    <div style={{ fontSize: 10, color: "var(--text-muted)" }}>
+                    <div style={{ fontSize: 'var(--fs-xs)', color: "var(--text-muted)" }}>
                       {zh ? "消息" : "msgs"}: {msgCount} · {zh ? "更新" : "updated"}: {new Date(s.updatedAt).toLocaleString()}
                     </div>
                   </div>
                   {s.projectId && (
-                    <span style={{ fontSize: 10, padding: "1px 6px", borderRadius: 3, background: "var(--bg-secondary)", color: "var(--text-secondary)" }}>
+                    <span style={{ fontSize: 'var(--fs-xs)', padding: "1px 6px", borderRadius: 3, background: "var(--bg-secondary)", color: "var(--text-secondary)" }}>
                       {s.projectId.substring(0, 8)}
                     </span>
                   )}
                   <button
                     onClick={(e) => { e.stopPropagation(); handleDeleteSession(s.id); }}
-                    style={{ fontSize: 10, padding: "2px 6px", borderRadius: 3, border: "1px solid #e74c3c", background: "none", color: "#e74c3c", cursor: "pointer" }}
+                    style={{ fontSize: 'var(--fs-xs)', padding: "2px 6px", borderRadius: 3, border: "1px solid #e74c3c", background: "none", color: "#e74c3c", cursor: "pointer" }}
                   >
                     ✕
                   </button>
@@ -155,9 +155,9 @@ export function RecoveryPanel() {
       {selectedSession && (
         <div style={{
           padding: 12, borderRadius: 8, border: "1px solid var(--border-primary)",
-          background: "var(--bg-secondary)", fontSize: 11,
+          background: "var(--bg-secondary)", fontSize: 'var(--fs-sm)',
         }}>
-          <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8, color: "var(--text-primary)" }}>
+          <div style={{ fontWeight: 700, fontSize: 'var(--fs-base)', marginBottom: 8, color: "var(--text-primary)" }}>
             {zh ? "会话详情" : "Session Details"}
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
@@ -179,7 +179,7 @@ export function RecoveryPanel() {
                 {selectedSession.messages.slice(-5).map((m: any, i: number) => (
                   <div key={i} style={{
                     padding: "4px 6px", borderRadius: 3, background: "var(--bg-tertiary)",
-                    fontSize: 10, color: "var(--text-secondary)",
+                    fontSize: 'var(--fs-xs)', color: "var(--text-secondary)",
                   }}>
                     <span style={{ fontWeight: 600, color: m.role === "user" ? "var(--info)" : "var(--accent)" }}>
                       {m.role}:
@@ -196,21 +196,21 @@ export function RecoveryPanel() {
       {/* Actions */}
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         <button onClick={handleForceSave} style={{
-          padding: "6px 14px", borderRadius: 4, fontSize: 12,
+          padding: "6px 14px", borderRadius: 4, fontSize: 'var(--fs-sm)',
           border: "1px solid var(--border-primary)", background: "var(--bg-tertiary)",
           color: "var(--text-primary)", cursor: "pointer",
         }}>
           💾 {zh ? "强制保存" : "Force Save"}
         </button>
         <button onClick={handleExport} style={{
-          padding: "6px 14px", borderRadius: 4, fontSize: 12,
+          padding: "6px 14px", borderRadius: 4, fontSize: 'var(--fs-sm)',
           border: "1px solid var(--border-primary)", background: "var(--bg-tertiary)",
           color: "var(--text-primary)", cursor: "pointer",
         }}>
           📤 {zh ? "导出数据" : "Export Data"}
         </button>
         <button onClick={handleClear} style={{
-          padding: "6px 14px", borderRadius: 4, fontSize: 12,
+          padding: "6px 14px", borderRadius: 4, fontSize: 'var(--fs-sm)',
           border: "1px solid #e74c3c", background: "none",
           color: "#e74c3c", cursor: "pointer",
         }}>
@@ -222,11 +222,11 @@ export function RecoveryPanel() {
       {showExport && exportData && (
         <div>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
-            <span style={{ fontSize: 11, fontWeight: 600, color: "var(--text-secondary)" }}>
+            <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, color: "var(--text-secondary)" }}>
               {zh ? "导出数据" : "Export Data"}
             </span>
             <button onClick={() => navigator.clipboard?.writeText(exportData)} style={{
-              padding: "2px 8px", borderRadius: 3, fontSize: 10,
+              padding: "2px 8px", borderRadius: 3, fontSize: 'var(--fs-xs)',
               border: "1px solid var(--border-primary)", background: "var(--bg-tertiary)",
               color: "var(--text-primary)", cursor: "pointer",
             }}>
@@ -234,7 +234,7 @@ export function RecoveryPanel() {
             </button>
           </div>
           <pre style={{
-            fontSize: 10, padding: 8, background: "var(--bg-tertiary)", borderRadius: 4,
+            fontSize: 'var(--fs-xs)', padding: 8, background: "var(--bg-tertiary)", borderRadius: 4,
             maxHeight: 200, overflow: "auto", whiteSpace: "pre-wrap", margin: 0,
             color: "var(--text-secondary)", fontFamily: "monospace",
             border: "1px solid var(--border-primary)",

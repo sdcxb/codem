@@ -124,10 +124,10 @@ export function ModelSelector({ model, models, onModelChange, locked = false }: 
                 setOpen(false)
               }}
             >
-              <span style={{ fontSize: 14, display: 'flex', alignItems: 'center' }}>
+              <span style={{ fontSize: 'var(--fs-md)', display: 'flex', alignItems: 'center' }}>
                 {model === m.id ? <Check size={14} /> : <Cpu size={14} />}
               </span>
-              <span style={{ fontSize: 12 }}>{m.name}</span>
+              <span style={{ fontSize: 'var(--fs-sm)' }}>{m.name}</span>
             </button>
           ))}
 
@@ -144,10 +144,10 @@ export function ModelSelector({ model, models, onModelChange, locked = false }: 
             }}
             onClick={cycleEffort}
           >
-            <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+            <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)' }}>
               {zh ? '推理强度' : 'Reasoning'}
             </span>
-            <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--accent)' }}>
+            <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--accent)' }}>
               {effortLabels[currentEffort]?.[lang] || effortLabels.high[lang]}
             </span>
           </div>

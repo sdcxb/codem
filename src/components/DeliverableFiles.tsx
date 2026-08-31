@@ -98,7 +98,7 @@ export const DeliverableFiles = memo(function DeliverableFiles({
           display: 'flex',
           alignItems: 'center',
           gap: 4,
-          fontSize: 11,
+          fontSize: 'var(--fs-sm)',
           color: 'var(--text-muted)',
         }}
       >
@@ -137,7 +137,7 @@ export const DeliverableFiles = memo(function DeliverableFiles({
                 border: '1px solid var(--border-primary)',
                 background: 'var(--bg-secondary)',
                 color: 'var(--text-secondary)',
-                fontSize: 11,
+                fontSize: 'var(--fs-sm)',
                 cursor: 'pointer',
                 transition: 'all 0.15s ease',
               }}
@@ -169,7 +169,7 @@ export const DeliverableFiles = memo(function DeliverableFiles({
               border: '1px solid var(--border-primary)',
               background: 'transparent',
               color: 'var(--text-muted)',
-              fontSize: 11,
+              fontSize: 'var(--fs-sm)',
               cursor: 'pointer',
             }}
           >
@@ -191,7 +191,7 @@ export const DeliverableFiles = memo(function DeliverableFiles({
               border: '1px solid var(--border-primary)',
               background: 'transparent',
               color: 'var(--text-muted)',
-              fontSize: 11,
+              fontSize: 'var(--fs-sm)',
               cursor: 'pointer',
             }}
           >
@@ -214,7 +214,7 @@ export const DeliverableFiles = memo(function DeliverableFiles({
               border: 'none',
               background: 'transparent',
               color: 'var(--text-muted)',
-              fontSize: 11,
+              fontSize: 'var(--fs-sm)',
               cursor: 'pointer',
             }}
           >

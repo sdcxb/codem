@@ -91,7 +91,7 @@ export function SquadsTab() {
             gap: 4,
             padding: "6px 14px",
             borderRadius: 6,
-            fontSize: 13,
+            fontSize: 'var(--fs-base)',
             border: "1px solid var(--accent)",
             background: "var(--accent)",
             color: "#fff",
@@ -197,7 +197,7 @@ export function SquadsTab() {
                 {/* Add member dropdown */}
                 <select
                   onChange={(e) => { if (e.target.value) { handleAddMember(squad.id, e.target.value); e.target.value = ""; } }}
-                  style={{ marginTop: "8px", padding: "4px 8px", borderRadius: 4, border: "1px solid var(--border-primary)", background: "var(--bg-tertiary)", color: "var(--text-primary)", fontSize: 12, width: "100%" }}
+                  style={{ marginTop: "8px", padding: "4px 8px", borderRadius: 4, border: "1px solid var(--border-primary)", background: "var(--bg-tertiary)", color: "var(--text-primary)", fontSize: 'var(--fs-sm)', width: "100%" }}
                   defaultValue=""
                 >
                   <option value="" disabled>{zh ? "+ 添加成员..." : "+ Add member..."}</option>
@@ -222,24 +222,24 @@ export function SquadsTab() {
           border: "1px solid var(--border-primary)",
           background: "var(--bg-secondary)",
         }}>
-          <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 12, color: "var(--text-primary)" }}>
+          <div style={{ fontSize: 'var(--fs-md)', fontWeight: 600, marginBottom: 12, color: "var(--text-primary)" }}>
             {zh ? "新建 Squad" : "Create Squad"}
           </div>
           <div style={{ marginBottom: 8 }}>
-            <label style={{ fontSize: 12, fontWeight: 600, color: "var(--text-primary)", marginBottom: 4, display: "block" }}>{zh ? "名称" : "Name"}</label>
+            <label style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, color: "var(--text-primary)", marginBottom: 4, display: "block" }}>{zh ? "名称" : "Name"}</label>
             <input
               value={editing.name || ""}
               onChange={(e) => setEditing({ ...editing, name: e.target.value })}
-              style={{ padding: "6px 10px", borderRadius: 4, border: "1px solid var(--border-primary)", background: "var(--bg-tertiary)", color: "var(--text-primary)", fontSize: 13, width: "100%" }}
+              style={{ padding: "6px 10px", borderRadius: 4, border: "1px solid var(--border-primary)", background: "var(--bg-tertiary)", color: "var(--text-primary)", fontSize: 'var(--fs-base)', width: "100%" }}
               placeholder={zh ? "如: 产品交付 Squad" : "e.g. Product Delivery"}
             />
           </div>
           <div style={{ marginBottom: 8 }}>
-            <label style={{ fontSize: 12, fontWeight: 600, color: "var(--text-primary)", marginBottom: 4, display: "block" }}>{zh ? "Leader Agent" : "Leader Agent"}</label>
+            <label style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, color: "var(--text-primary)", marginBottom: 4, display: "block" }}>{zh ? "Leader Agent" : "Leader Agent"}</label>
             <select
               value={editing.leaderAgentId || ""}
               onChange={(e) => setEditing({ ...editing, leaderAgentId: e.target.value })}
-              style={{ padding: "6px 10px", borderRadius: 4, border: "1px solid var(--border-primary)", background: "var(--bg-tertiary)", color: "var(--text-primary)", fontSize: 13, width: "100%" }}
+              style={{ padding: "6px 10px", borderRadius: 4, border: "1px solid var(--border-primary)", background: "var(--bg-tertiary)", color: "var(--text-primary)", fontSize: 'var(--fs-base)', width: "100%" }}
             >
               <option value="" disabled>{zh ? "选择 Leader..." : "Select leader..."}</option>
               {agents.map((a) => (
@@ -248,11 +248,11 @@ export function SquadsTab() {
             </select>
           </div>
           <div style={{ marginBottom: 8 }}>
-            <label style={{ fontSize: 12, fontWeight: 600, color: "var(--text-primary)", marginBottom: 4, display: "block" }}>{zh ? "Squad 指令" : "Instructions"}</label>
+            <label style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, color: "var(--text-primary)", marginBottom: 4, display: "block" }}>{zh ? "Squad 指令" : "Instructions"}</label>
             <textarea
               value={editing.instructions || ""}
               onChange={(e) => setEditing({ ...editing, instructions: e.target.value })}
-              style={{ padding: "6px 10px", borderRadius: 4, border: "1px solid var(--border-primary)", background: "var(--bg-tertiary)", color: "var(--text-primary)", fontSize: 13, width: "100%", minHeight: 60 }}
+              style={{ padding: "6px 10px", borderRadius: 4, border: "1px solid var(--border-primary)", background: "var(--bg-tertiary)", color: "var(--text-primary)", fontSize: 'var(--fs-base)', width: "100%", minHeight: 60 }}
               placeholder={zh ? "路由规则、协作规范等..." : "Routing rules, collaboration norms..."}
             />
           </div>
@@ -261,7 +261,7 @@ export function SquadsTab() {
               onClick={handleCreate}
               disabled={!editing.name || !editing.leaderAgentId}
               style={{
-                padding: "6px 16px", borderRadius: 4, fontSize: 12,
+                padding: "6px 16px", borderRadius: 4, fontSize: 'var(--fs-sm)',
                 border: "1px solid var(--accent)", background: "var(--accent)",
                 color: "#fff", cursor: "pointer", opacity: !editing.name || !editing.leaderAgentId ? 0.5 : 1,
               }}
@@ -271,7 +271,7 @@ export function SquadsTab() {
             <button
               onClick={() => setEditing(null)}
               style={{
-                padding: "6px 16px", borderRadius: 4, fontSize: 12,
+                padding: "6px 16px", borderRadius: 4, fontSize: 'var(--fs-sm)',
                 border: "1px solid var(--border-primary)", background: "none",
                 color: "var(--text-primary)", cursor: "pointer",
               }}

@@ -109,7 +109,7 @@ export function GoalBar({ goal, onEdit, onPause, onResume, onClear }: GoalBarPro
             border: '1px solid var(--border-primary)',
             borderRadius: 4,
             padding: '4px 8px',
-            fontSize: 12,
+            fontSize: 'var(--fs-sm)',
             color: 'var(--text-primary)',
           }}
         />
@@ -144,11 +144,11 @@ export function GoalBar({ goal, onEdit, onPause, onResume, onClear }: GoalBarPro
         padding: '4px 12px',
         background: 'var(--bg-secondary)',
         borderBottom: '1px solid var(--border-primary)',
-        fontSize: 12,
+        fontSize: 'var(--fs-sm)',
       }}
     >
       <Target size={14} style={{ color: 'var(--accent)' }} />
-      <span style={{ fontWeight: 600, color: 'var(--accent)', fontSize: 11 }}>{phaseLabel}</span>
+      <span style={{ fontWeight: 600, color: 'var(--accent)', fontSize: 'var(--fs-sm)' }}>{phaseLabel}</span>
       <span style={{
         flex: 1,
         overflow: 'hidden',

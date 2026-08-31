@@ -27,7 +27,7 @@ export function CloseConfirmDialog({ onChoose }: CloseConfirmDialogProps) {
               border: "none",
               padding: "10px 16px",
               borderRadius: 6,
-              fontSize: 13,
+              fontSize: 'var(--fs-base)',
               cursor: "pointer",
               display: "flex",
               flexDirection: "column",
@@ -37,7 +37,7 @@ export function CloseConfirmDialog({ onChoose }: CloseConfirmDialogProps) {
             onClick={() => onChoose("tray", remember)}
           >
             <span style={{ fontWeight: 600 }}>{S.closeConfirm.tray[lang]}</span>
-            <span style={{ fontSize: 11, opacity: 0.8 }}>{S.closeConfirm.trayDesc[lang]}</span>
+            <span style={{ fontSize: 'var(--fs-sm)', opacity: 0.8 }}>{S.closeConfirm.trayDesc[lang]}</span>
           </button>
 
           <button
@@ -48,7 +48,7 @@ export function CloseConfirmDialog({ onChoose }: CloseConfirmDialogProps) {
               border: "none",
               padding: "10px 16px",
               borderRadius: 6,
-              fontSize: 13,
+              fontSize: 'var(--fs-base)',
               cursor: "pointer",
               display: "flex",
               flexDirection: "column",
@@ -58,7 +58,7 @@ export function CloseConfirmDialog({ onChoose }: CloseConfirmDialogProps) {
             onClick={() => onChoose("close", remember)}
           >
             <span style={{ fontWeight: 600 }}>{S.closeConfirm.quit[lang]}</span>
-            <span style={{ fontSize: 11, opacity: 0.7 }}>{S.closeConfirm.quitDesc[lang]}</span>
+            <span style={{ fontSize: 'var(--fs-sm)', opacity: 0.7 }}>{S.closeConfirm.quitDesc[lang]}</span>
           </button>
         </div>
 
@@ -67,7 +67,7 @@ export function CloseConfirmDialog({ onChoose }: CloseConfirmDialogProps) {
             display: "flex",
             alignItems: "center",
             gap: "6px",
-            fontSize: 12,
+            fontSize: 'var(--fs-sm)',
             color: "var(--text-secondary)",
             cursor: "pointer",
             marginBottom: "4px",

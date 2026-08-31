@@ -74,7 +74,7 @@ export function FileChangesList({ sessionId, workspace }: FileChangesListProps) 
 
   if (records.length === 0) {
     return (
-      <div style={{ padding: "16px", color: "var(--text-muted)", fontSize: 12, textAlign: "center" }}>
+      <div style={{ padding: "16px", color: "var(--text-muted)", fontSize: 'var(--fs-sm)', textAlign: "center" }}>
         <GitBranch size={20} style={{ opacity: 0.3, marginBottom: 8 }} />
         <div>暂无文件变更记录</div>
         <div style={{ marginTop: 4, opacity: 0.6 }}>Agent 执行修改后会自动记录</div>

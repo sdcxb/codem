@@ -140,7 +140,7 @@ function PluginCard({
       {/* 依赖信息摘要 */}
       {(plugin.dependencies?.length > 0 || plugin.dependents?.length > 0) && (
         <div
-          style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--text-muted)' }}
+          style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, fontSize: 'var(--fs-sm)', color: 'var(--text-muted)' }}
           onClick={(e) => { e.stopPropagation(); setExpanded(!expanded) }}
         >
           {expanded ? <ActionIcons.expand size={12} /> : <ActionIcons.collapse size={12} />}
@@ -165,7 +165,7 @@ function PluginCard({
 
       {/* 展开的详细信息 */}
       {expanded && (
-        <div style={{ padding: 8, background: 'var(--bg-tertiary)', borderRadius: 6, fontSize: 11 }}>
+        <div style={{ padding: 8, background: 'var(--bg-tertiary)', borderRadius: 6, fontSize: 'var(--fs-sm)' }}>
           {/* 风险说明 */}
           {plugin.riskLevel && plugin.riskLevel !== 'safe' && (
             <div style={{
@@ -254,7 +254,7 @@ function PluginCard({
       {/* 底部：作者 + 开关 */}
       <div className="market-skill-card-footer">
         <div className="market-skill-meta">
-          {plugin.author && <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>@{plugin.author}</span>}
+          {plugin.author && <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)' }}>@{plugin.author}</span>}
           {plugin.hot && <Badge variant="warning">可热重载</Badge>}
         </div>
         <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
@@ -263,7 +263,7 @@ function PluginCard({
               className="market-skill-link-btn"
               title="热重载"
               onClick={(e) => { e.stopPropagation(); onRestart(plugin.name) }}
-              style={{ padding: '2px 6px', fontSize: 11 }}
+              style={{ padding: '2px 6px', fontSize: 'var(--fs-sm)' }}
             >
               <ActionIcons.refresh size={12} />
             </button>
@@ -279,7 +279,7 @@ function PluginCard({
 
       {/* 错误信息 */}
       {plugin.error && (
-        <div style={{ fontSize: 11, color: 'var(--error)' }}>
+        <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--error)' }}>
           {plugin.error}
         </div>
       )}
@@ -310,12 +310,12 @@ function CascadeConfirmDialog({
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
           <StatusIcons.danger size={20} style={{ color: 'var(--warning)' }} />
-          <span style={{ fontWeight: 700, fontSize: 16 }}>
+          <span style={{ fontWeight: 700, fontSize: 'var(--fs-lg)' }}>
             {hasCascade ? '关闭插件将影响其他插件' : '确认关闭插件'}
           </span>
         </div>
 
-        <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 12 }}>
+        <div style={{ fontSize: 'var(--fs-base)', color: 'var(--text-muted)', marginBottom: 12 }}>
           您即将关闭 <strong style={{ color: 'var(--text-primary)' }}>{request.targetPlugin}</strong>
         </div>
 
@@ -326,10 +326,10 @@ function CascadeConfirmDialog({
             background: request.riskLevel === 'danger' ? 'color-mix(in srgb, var(--error) 10%, transparent)' : 'color-mix(in srgb, var(--warning) 10%, transparent)',
             border: `1px solid ${request.riskLevel === 'danger' ? 'color-mix(in srgb, var(--error) 30%, transparent)' : 'color-mix(in srgb, var(--warning) 30%, transparent)'}`,
           }}>
-            <div style={{ fontWeight: 600, marginBottom: 4, fontSize: 13, color: RISK_LEVEL_CONFIG[request.riskLevel].color }}>
+            <div style={{ fontWeight: 600, marginBottom: 4, fontSize: 'var(--fs-base)', color: RISK_LEVEL_CONFIG[request.riskLevel].color }}>
               {RISK_LEVEL_CONFIG[request.riskLevel].icon} 风险等级：{RISK_LEVEL_CONFIG[request.riskLevel].label}
             </div>
-            <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+            <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-secondary)' }}>
               {request.riskDescription}
             </div>
           </div>
@@ -338,19 +338,19 @@ function CascadeConfirmDialog({
         {/* 级联关闭列表 */}
         {hasCascade && (
           <>
-            <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 8 }}>
+            <div style={{ fontSize: 'var(--fs-base)', color: 'var(--text-muted)', marginBottom: 8 }}>
               以下插件依赖它，将同时被关闭：
             </div>
             <div style={{ maxHeight: 200, overflowY: 'auto', marginBottom: 12 }}>
               {cascade.affected.filter(a => a.name !== request.targetPlugin).map(item => (
                 <div key={item.name} style={{
                   padding: '8px 12px', marginBottom: 4, borderRadius: 4,
-                  background: 'var(--bg-tertiary)', fontSize: 12,
+                  background: 'var(--bg-tertiary)', fontSize: 'var(--fs-sm)',
                   display: 'flex', alignItems: 'center', gap: 8,
                 }}>
                   <StatusIcons.danger size={12} style={{ color: 'var(--warning)' }} />
                   <span style={{ fontWeight: 600 }}>{item.name}</span>
-                  <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>— {item.reason}</span>
+                  <span style={{ color: 'var(--text-muted)', fontSize: 'var(--fs-sm)' }}>— {item.reason}</span>
                 </div>
               ))}
             </div>
@@ -364,7 +364,7 @@ function CascadeConfirmDialog({
             onClick={onConfirm}
             style={{
               background: request.riskLevel === 'danger' ? 'var(--error)' : 'var(--warning)',
-              color: '#fff', border: 'none',
+              color: 'var(--text-on-accent)', border: 'none',
             }}
           >
             {hasCascade ? '确认全部关闭' : '确认关闭'}
@@ -647,7 +647,7 @@ export function PluginManager({ onClose }: PluginManagerProps) {
       </div>
 
       {/* 核心插件说明 */}
-      <div style={{ padding: '8px 12px', fontSize: 11, color: 'var(--text-muted)', borderTop: '1px solid var(--border-primary)' }}>
+      <div style={{ padding: '8px 12px', fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', borderTop: '1px solid var(--border-primary)' }}>
         💡 {zh ? '标有「核心」的插件是系统运行的基础设施，关闭会导致系统崩溃，已锁定不可关闭。其他插件可自由开关，系统会在关闭前检查依赖关系。' : 'Plugins marked as "Core" are system infrastructure. Disabling them would crash the system, so they are locked. Other plugins can be freely toggled; the system checks dependencies before disabling.'}
       </div>
 
@@ -668,7 +668,7 @@ export function PluginManager({ onClose }: PluginManagerProps) {
             background: toast.type === 'success' ? 'var(--success)' :
                        toast.type === 'error' ? 'var(--error)' :
                        'var(--warning)',
-            color: '#fff', fontSize: 13, zIndex: 3000, boxShadow: 'var(--shadow-popover)',
+            color: 'var(--text-on-accent)', fontSize: 'var(--fs-base)', zIndex: 3000, boxShadow: 'var(--shadow-popover)',
             maxWidth: 400,
           }}>
             {toast.msg}

@@ -520,7 +520,7 @@ export function SlideCanvas({
         const img = el as ImageElement;
         if (!img.src) {
           return (
-            <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f0f0f0', color: '#999', fontSize: 14 }}>
+            <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f0f0f0', color: '#999', fontSize: 'var(--fs-md)' }}>
               点击属性面板上传图片
             </div>
           );

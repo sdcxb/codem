@@ -129,7 +129,7 @@ export function ToolManager({ onClose }: ToolManagerProps) {
           onChange={(e) => setSearchQuery(e.target.value)}
           placeholder="搜索工具..."
           style={{
-            width: "100%", padding: "6px 12px", fontSize: 13, borderRadius: 6,
+            width: "100%", padding: "6px 12px", fontSize: 'var(--fs-base)', borderRadius: 6,
             border: "1px solid var(--border-primary)",
             background: "var(--bg-tertiary)", color: "var(--text-primary)",
           }}
@@ -141,7 +141,7 @@ export function ToolManager({ onClose }: ToolManagerProps) {
         <button
           className={`usage-tab ${filterCategory === "all" ? "active" : ""}`}
           onClick={() => setFilterCategory("all")}
-          style={{ fontSize: 11 }}
+          style={{ fontSize: 'var(--fs-sm)' }}
         >
           全部 ({tools.length})
         </button>
@@ -150,7 +150,7 @@ export function ToolManager({ onClose }: ToolManagerProps) {
             key={key}
             className={`usage-tab ${filterCategory === key ? "active" : ""}`}
             onClick={() => setFilterCategory(key)}
-            style={{ fontSize: 11 }}
+            style={{ fontSize: 'var(--fs-sm)' }}
           >
             {info.icon} {info.label} ({categoryCounts[key] || 0})
           </button>
@@ -183,10 +183,10 @@ export function ToolManager({ onClose }: ToolManagerProps) {
               }}
             >
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <span style={{ fontSize: 14 }}>{catInfo.icon}</span>
+                <span style={{ fontSize: 'var(--fs-md)' }}>{catInfo.icon}</span>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                    <span style={{ fontWeight: 600, fontSize: 13, color: "var(--text-primary)" }}>
+                    <span style={{ fontWeight: 600, fontSize: 'var(--fs-base)', color: "var(--text-primary)" }}>
                       {tool.id}
                     </span>
                     <span style={{
@@ -197,7 +197,7 @@ export function ToolManager({ onClose }: ToolManagerProps) {
                     </span>
                   </div>
                   <div style={{
-                    fontSize: 11, color: "var(--text-muted)", marginTop: 2,
+                    fontSize: 'var(--fs-sm)', color: "var(--text-muted)", marginTop: 2,
                     overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
                   }}>
                     {tool.description.substring(0, 100)}
@@ -229,7 +229,7 @@ export function ToolManager({ onClose }: ToolManagerProps) {
                   onClick={() => setExpandedTool(isExpanded ? null : tool.id)}
                   style={{
                     background: "none", border: "none", color: "var(--text-muted)",
-                    cursor: "pointer", fontSize: 12, padding: "2px 4px",
+                    cursor: "pointer", fontSize: 'var(--fs-sm)', padding: "2px 4px",
                   }}
                 >
                   {isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
@@ -239,11 +239,11 @@ export function ToolManager({ onClose }: ToolManagerProps) {
               {/* Expanded details */}
               {isExpanded && (
                 <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid var(--border-primary)" }}>
-                  <div style={{ fontSize: 11, color: "var(--text-secondary)", marginBottom: 6 }}>
+                  <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-secondary)", marginBottom: 6 }}>
                     <strong>完整描述：</strong>
                   </div>
                   <div style={{
-                    fontSize: 11, color: "var(--text-muted)", marginBottom: 8,
+                    fontSize: 'var(--fs-sm)', color: "var(--text-muted)", marginBottom: 8,
                     padding: 6, borderRadius: 4, background: "var(--bg-secondary)",
                     whiteSpace: "pre-wrap", lineHeight: 1.5,
                   }}>
@@ -252,7 +252,7 @@ export function ToolManager({ onClose }: ToolManagerProps) {
 
                   {paramEntries.length > 0 && (
                     <>
-                      <div style={{ fontSize: 11, color: "var(--text-secondary)", marginBottom: 4 }}>
+                      <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-secondary)", marginBottom: 4 }}>
                         <strong>参数 ({paramEntries.length}):</strong>
                       </div>
                       <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
@@ -260,7 +260,7 @@ export function ToolManager({ onClose }: ToolManagerProps) {
                           const isRequired = params.required?.includes(name);
                           return (
                             <div key={name} style={{
-                              display: "flex", gap: 8, fontSize: 11,
+                              display: "flex", gap: 8, fontSize: 'var(--fs-sm)',
                               padding: "3px 6px", borderRadius: 4,
                               background: "var(--bg-secondary)",
                             }}>
@@ -290,7 +290,7 @@ export function ToolManager({ onClose }: ToolManagerProps) {
         })}
       </div>
 
-      <div style={{ padding: "8px 16px", fontSize: 11, color: "var(--text-muted)", borderTop: "1px solid var(--border-primary)" }}>
+      <div style={{ padding: "8px 16px", fontSize: 'var(--fs-sm)', color: "var(--text-muted)", borderTop: "1px solid var(--border-primary)" }}>
         <Lightbulb size={11} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 4 }} />禁用的工具不会出现在 LLM 的可用工具列表中。内置工具禁用后可能影响核心功能。
       </div>
     </div>

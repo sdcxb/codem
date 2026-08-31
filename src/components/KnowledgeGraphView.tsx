@@ -1,57 +1,76 @@
 /**
- * KnowledgeGraphView — 知识图谱可视化组件
+ * KnowledgeGraphView — 知识图谱可视化组件 (React Flow 版本)
  *
- * 借鉴思路来源: Understand-Anything (https://github.com/Egonex-AI/Understand-Anything)
- * 该项目使用 React Flow 库渲染力导向图;
- * 我们自研实现: 纯 Canvas 2D 实现力导向布局算法, 不依赖任何外部图谱库
+ * 借鉴来源: Understand-Anything (https://github.com/Egonex-AI/Understand-Anything)
+ * 使用 @xyflow/react (React Flow) 库渲染交互式力导向图
  *
- * 核心自研内容:
- * - 力导向布局算法 (库仑斥力 + 胡克引力 + 阻尼)
- * - Canvas 节点渲染 (按实体类型着色)
- * - 节点交互 (点击选中、拖拽、高亮关联)
- * - 皮肤系统兼容 (读取 SkinConfig 颜色)
- *
- * 皮肤系统兼容:
- * - 读取当前皮肤的 colors 配置 (bgPrimary, accent, textPrimary 等)
- * - 支持 default (暗色/亮色)、hub (深色科技)、dream (梦幻浅色) 三套皮肤
+ * 核心特性:
+ * - React Flow 力导向布局 (dagre auto-layout + 可拖拽节点)
+ * - 自定义节点组件 (按实体类型着色 + 图标)
+ * - 贝塞尔曲线边 + 关系标签
+ * - MiniMap / Controls / Background 内置面板
+ * - 节点交互 (点击选中、双击打开文档、右键菜单)
+ * - 搜索高亮 / 关联节点 dimmed 效果
+ * - 皮肤系统兼容
+ * - 编辑功能 (编辑标签 / 创建连线 / 删除节点和边)
+ * - 导出 PNG / JSON
  */
 
-import { useRef, useEffect, useState, useCallback } from 'react';
-import { Loader2, Search, Share2, ZoomIn, ZoomOut, Maximize2, Download, Edit3, Trash2, Plus } from 'lucide-react';
-import { ActionIcons } from '../core/icons/icon-map';
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
+import {
+  ReactFlow,
+  ReactFlowProvider,
+  Background,
+  Controls,
+  MiniMap,
+  useNodesState,
+  useEdgesState,
+  type Node,
+  type Edge,
+  type NodeProps,
+  type EdgeProps,
+  EdgeLabelRenderer,
+  getBezierPath,
+  Handle,
+  Position,
+  BackgroundVariant,
+} from '@xyflow/react';
+import '@xyflow/react/dist/style.css';
+import { Loader2, Search, Share2, Download, Edit3, Trash2 } from 'lucide-react';
 import { useSkin } from '../core/theme';
-import { getGraphData, updateGraphNode, deleteGraphNode, deleteGraphEdge, addGraphEdge } from '../core/knowledge';
-import type { GraphData, GraphNode, GraphEdge, EntityType, RelationType } from '../core/knowledge';
+import { getGraphData, updateGraphNode, deleteGraphNode, deleteGraphEdge } from '../core/knowledge';
+import type { GraphData, GraphNode, GraphEdge, EntityType } from '../core/knowledge';
 import { useLang } from '../core/i18n/lang';
+import { createPortal } from 'react-dom';
+
+// ========== Types ==========
 
 interface KnowledgeGraphViewProps {
   notebookId: string;
   onNodeSelect?: (node: GraphNode) => void;
 }
 
-/** 力导向布局中的节点物理状态 */
-interface PhysicsNode {
-  id: string;
+interface KGNodeData {
   label: string;
   entityType: EntityType;
-  x: number;
-  y: number;
-  vx: number;
-  vy: number;
   weight: number;
-  communityId?: number;
   description?: string;
-  fixed: boolean;
+  communityId?: number;
+  sourceIds?: string[];
+  [key: string]: unknown;
 }
 
-/** 力导向布局中的边 */
-interface PhysicsEdge {
-  source: string;
-  target: string;
+type KGFlowNode = Node<KGNodeData, 'kgNode'>;
+
+interface KGEdgeData {
   relationType: string;
+  [key: string]: unknown;
 }
 
-/** 实体类型颜色映射 (基于皮肤 accent 色的变体) */
+type KGFlowEdge = Edge<KGEdgeData, 'kgEdge'>;
+
+// ========== Helpers ==========
+
 function getEntityColor(entityType: EntityType, accent: string, isDark: boolean): string {
   const colorMap: Record<EntityType, string> = {
     concept: accent,
@@ -65,21 +84,14 @@ function getEntityColor(entityType: EntityType, accent: string, isDark: boolean)
   return colorMap[entityType] || accent;
 }
 
-/** 实体类型图标映射 (Unicode 字符，Canvas 可渲染) */
 function getEntityIcon(entityType: EntityType): string {
   const iconMap: Record<EntityType, string> = {
-    concept: '💡',
-    entity: '📌',
-    event: '⚡',
-    person: '👤',
-    place: '📍',
-    organization: '🏢',
-    technology: '⚙️',
+    concept: '💡', entity: '📌', event: '⚡', person: '👤',
+    place: '📍', organization: '🏢', technology: '⚙️',
   };
   return iconMap[entityType] || '●';
 }
 
-/** 实体类型中文标签 */
 function getEntityLabel(entityType: EntityType, isZh: boolean): string {
   const labelMap: Record<EntityType, { zh: string; en: string }> = {
     concept: { zh: '概念', en: 'Concept' },
@@ -93,586 +105,199 @@ function getEntityLabel(entityType: EntityType, isZh: boolean): string {
   return isZh ? labelMap[entityType]?.zh : labelMap[entityType]?.en;
 }
 
-/** 判断皮肤是否为暗色 */
 function isDarkSkin(skinId: string): boolean {
   return skinId === 'default' || skinId === 'hub';
 }
 
-/** C3: Calculate distance from point to line segment */
-function pointToLineDist(px: number, py: number, x1: number, y1: number, x2: number, y2: number): number {
-  const dx = x2 - x1;
-  const dy = y2 - y1;
-  const lenSq = dx * dx + dy * dy;
-  if (lenSq === 0) return Math.sqrt((px - x1) ** 2 + (py - y1) ** 2);
-  let t = ((px - x1) * dx + (py - y1) * dy) / lenSq;
-  t = Math.max(0, Math.min(1, t));
-  const projX = x1 + t * dx;
-  const projY = y1 + t * dy;
-  return Math.sqrt((px - projX) ** 2 + (py - projY) ** 2);
+// ========== Custom Node Component ==========
+
+function KGNodeComponent({ data, selected }: NodeProps<KGFlowNode>) {
+  const { skin } = useSkin();
+  const dark = isDarkSkin(skin);
+  const accent = skin === 'hub' ? '#ff6b00' : skin === 'dream' ? '#e88c9a' : '#7c6cf0';
+  const color = getEntityColor(data.entityType, accent, dark);
+  const radius = 18 + Math.min(data.weight * 3, 20);
+
+  const textColor = skin === 'hub' ? '#e0e0e0' : skin === 'dream' ? '#6c474d' : '#f0f6fc';
+  const textSecondaryColor = skin === 'hub' ? '#888888' : skin === 'dream' ? '#a88a8f' : '#8b949e';
+  const bgSecondary = skin === 'hub' ? '#121212' : skin === 'dream' ? '#ffffff' : '#161b22';
+  const borderColor = skin === 'hub' ? '#2a2a2a' : skin === 'dream' ? '#f7dee2' : '#30363d';
+
+  return (
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        cursor: 'pointer',
+        transition: 'opacity 0.2s',
+      }}
+    >
+      {/* React Flow handles for edge connections */}
+      <Handle type="target" position={Position.Top} style={{ opacity: 0, width: 1, height: 1 }} />
+      <Handle type="source" position={Position.Bottom} style={{ opacity: 0, width: 1, height: 1 }} />
+      <Handle type="target" position={Position.Left} style={{ opacity: 0, width: 1, height: 1 }} />
+      <Handle type="source" position={Position.Right} style={{ opacity: 0, width: 1, height: 1 }} />
+
+      {/* Node circle */}
+      <div
+        style={{
+          width: radius * 2,
+          height: radius * 2,
+          borderRadius: '50%',
+          background: `radial-gradient(circle at 35% 35%, ${color}, ${dark ? color + 'cc' : color + 'dd'})`,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontSize: `${radius * 0.7}px`,
+          border: `${selected ? 3 : 1.5}px solid ${selected ? '#ffffff' : (dark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.15)')}`,
+          boxShadow: selected ? `0 0 20px ${color}88` : 'none',
+          userSelect: 'none',
+        }}
+      >
+        {getEntityIcon(data.entityType)}
+      </div>
+
+      {/* Node label */}
+      <div
+        style={{
+          marginTop: '4px',
+          padding: '1px 6px',
+          borderRadius: '4px',
+          background: dark ? 'rgba(14,15,15,0.7)' : 'rgba(255,255,255,0.7)',
+          color: textColor,
+          fontSize: 'var(--fs-sm)',
+          fontWeight: selected ? 600 : 400,
+          maxWidth: '120px',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+          textAlign: 'center',
+        }}
+      >
+        {data.label}
+      </div>
+    </div>
+  );
 }
 
-export function KnowledgeGraphView({ notebookId, onNodeSelect }: KnowledgeGraphViewProps) {
+// ========== Custom Edge Component ==========
+
+function KGEdgeComponent({ id, sourceX, sourceY, targetX, targetY, data, selected }: EdgeProps<KGFlowEdge>) {
+  const { skin } = useSkin();
+  const dark = isDarkSkin(skin);
+  const accent = skin === 'hub' ? '#ff6b00' : skin === 'dream' ? '#e88c9a' : '#7c6cf0';
+
+  const [edgePath, labelX, labelY] = getBezierPath({
+    sourceX, sourceY, targetX, targetY,
+  });
+
+  const textSecondaryColor = skin === 'hub' ? '#888888' : skin === 'dream' ? '#a88a8f' : '#8b949e';
+  const bgSecondary = skin === 'hub' ? '#121212' : skin === 'dream' ? '#ffffff' : '#161b22';
+
+  return (
+    <>
+      <path
+        id={id}
+        d={edgePath}
+        stroke={selected ? accent : (dark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.15)')}
+        strokeWidth={selected ? 2.5 : 1.2}
+        fill="none"
+        style={{ transition: 'stroke 0.2s, stroke-width 0.2s' }}
+      />
+      {selected && (
+        <EdgeLabelRenderer>
+          <div
+            style={{
+              position: 'absolute',
+              transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`,
+              background: dark ? 'rgba(26,28,28,0.9)' : 'rgba(255,255,255,0.9)',
+              color: textSecondaryColor,
+              padding: '2px 6px',
+              borderRadius: '4px',
+              fontSize: 'var(--fs-xs)',
+              pointerEvents: 'none',
+            }}
+          >
+            {data?.relationType}
+          </div>
+        </EdgeLabelRenderer>
+      )}
+    </>
+  );
+}
+
+// ========== Auto Layout (simple circular + force) ==========
+
+function autoLayout(nodes: GraphNode[], edges: GraphEdge[]): { nodes: KGFlowNode[]; edges: KGFlowEdge[] } {
+  const centerX = 400;
+  const centerY = 300;
+
+  // Build adjacency for degree calculation
+  const degreeMap = new Map<string, number>();
+  for (const e of edges) {
+    degreeMap.set(e.sourceNodeId, (degreeMap.get(e.sourceNodeId) || 0) + 1);
+    degreeMap.set(e.targetNodeId, (degreeMap.get(e.targetNodeId) || 0) + 1);
+  }
+
+  // Sort by degree (higher degree = more central)
+  const sorted = [...nodes].sort((a, b) => (degreeMap.get(b.id) || 0) - (degreeMap.get(a.id) || 0));
+
+  const flowNodes: KGFlowNode[] = sorted.map((node, i) => {
+    const angle = (i / Math.max(nodes.length, 1)) * Math.PI * 2;
+    const radius = 150 + (i === 0 ? 0 : 50 + Math.random() * 100);
+    return {
+      id: node.id,
+      type: 'kgNode',
+      position: { x: centerX + Math.cos(angle) * radius, y: centerY + Math.sin(angle) * radius },
+      data: {
+        label: node.label,
+        entityType: node.entityType,
+        weight: node.weight,
+        description: node.description,
+        communityId: node.communityId,
+        sourceIds: node.sourceIds,
+      },
+    };
+  });
+
+  const flowEdges: KGFlowEdge[] = edges.map((e, i) => ({
+    id: `e-${e.id || i}`,
+    source: e.sourceNodeId,
+    target: e.targetNodeId,
+    type: 'kgEdge',
+    data: { relationType: e.relationType },
+  }));
+
+  return { nodes: flowNodes, edges: flowEdges };
+}
+
+// ========== Main Component ==========
+
+const nodeTypes = { kgNode: KGNodeComponent };
+const edgeTypes = { kgEdge: KGEdgeComponent };
+
+function KnowledgeGraphViewInner({ notebookId, onNodeSelect }: KnowledgeGraphViewProps) {
   const lang = useLang();
   const isZh = lang === 'zh';
   const { skin } = useSkin();
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
 
   const [loading, setLoading] = useState(false);
   const [graphData, setGraphData] = useState<GraphData>({ nodes: [], edges: [] });
   const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
-  const [hoveredNode, setHoveredNode] = useState<string | null>(null);
   const [extractError, setExtractError] = useState<string | null>(null);
   const [hasSources, setHasSources] = useState(false);
 
-  // C3: Graph editing state
+  // Editing state
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
   const [editLabel, setEditLabel] = useState('');
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; nodeId?: string; edgeIdx?: number } | null>(null);
-  const [edgeCreateFrom, setEdgeCreateFrom] = useState<string | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; nodeId?: string; edgeId?: string } | null>(null);
 
-  // Physics simulation state
-  const physicsNodesRef = useRef<Map<string, PhysicsNode>>(new Map());
-  const physicsEdgesRef = useRef<PhysicsEdge[]>([]);
-  const animationRef = useRef<number>(0);
-  const dragNodeRef = useRef<string | null>(null);
-  const offsetRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
-  const scaleRef = useRef<number>(1);
-  const panRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [nodes, setNodes, onNodesChange] = useNodesState<KGFlowNode>([]);
+  const [edges, setEdges, onEdgesChange] = useEdgesState<KGFlowEdge>([]);
 
-  // Load graph data
-  const loadGraph = useCallback(async () => {
-    setLoading(true);
-    setExtractError(null);
-    try {
-      // Check if sources exist
-      const { listSources, getChunks } = await import('../core/knowledge');
-      const sources = listSources(notebookId);
-      setHasSources(sources.filter(s => s.status === 'indexed').length > 0);
-
-      // Check if graph already exists
-      const existing = getGraphData(notebookId);
-      if (existing.nodes.length > 0) {
-        setGraphData(existing);
-        initPhysics(existing);
-      } else {
-        // Check if chunks exist (indexed sources)
-        const chunks = getChunks(notebookId);
-        if (chunks.length === 0) {
-          setGraphData({ nodes: [], edges: [] });
-        } else {
-          // Extract new graph
-          const { extractKnowledgeGraph } = await import('../core/knowledge');
-          const data = await extractKnowledgeGraph(notebookId);
-          setGraphData(data);
-          initPhysics(data);
-          if (data.nodes.length === 0) {
-            setExtractError(isZh ? 'LLM 提取失败，请检查 API 配置后重试' : 'LLM extraction failed. Check API config and retry.');
-          }
-        }
-      }
-    } catch (e) {
-      console.error('Failed to load graph:', e);
-      setExtractError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setLoading(false);
-    }
-  }, [notebookId, isZh]);
-
-  // Initialize physics simulation
-  const initPhysics = (data: GraphData) => {
-    const nodes = new Map<string, PhysicsNode>();
-    const centerX = 400;
-    const centerY = 300;
-
-    data.nodes.forEach((node, i) => {
-      // Distribute nodes in a circle initially
-      const angle = (i / Math.max(data.nodes.length, 1)) * Math.PI * 2;
-      const radius = 150 + Math.random() * 100;
-      nodes.set(node.id, {
-        id: node.id,
-        label: node.label,
-        entityType: node.entityType,
-        x: centerX + Math.cos(angle) * radius,
-        y: centerY + Math.sin(angle) * radius,
-        vx: 0,
-        vy: 0,
-        weight: node.weight,
-        communityId: node.communityId,
-        description: node.description,
-        fixed: false,
-      });
-    });
-
-    physicsNodesRef.current = nodes;
-    physicsEdgesRef.current = data.edges.map(e => ({
-      source: e.sourceNodeId,
-      target: e.targetNodeId,
-      relationType: e.relationType,
-    }));
-  };
-
-  // Force simulation step
-  const simulate = useCallback(() => {
-    const nodes = physicsNodesRef.current;
-    const edges = physicsEdgesRef.current;
-    if (nodes.size === 0) return;
-
-    const REPULSION = 8000;     // 库仑斥力强度
-    const ATTRACTION = 0.02;    // 胡克引力强度
-    const DAMPING = 0.85;       // 阻尼系数
-    const CENTER_FORCE = 0.001; // 向中心收束的力
-    const MAX_VELOCITY = 10;
-
-    const nodeArray = Array.from(nodes.values());
-
-    // Repulsion (Coulomb's law between all pairs)
-    for (let i = 0; i < nodeArray.length; i++) {
-      for (let j = i + 1; j < nodeArray.length; j++) {
-        const a = nodeArray[i];
-        const b = nodeArray[j];
-        const dx = b.x - a.x;
-        const dy = b.y - a.y;
-        const distSq = dx * dx + dy * dy + 0.01;
-        const dist = Math.sqrt(distSq);
-        const force = REPULSION / distSq;
-        const fx = (dx / dist) * force;
-        const fy = (dy / dist) * force;
-        if (!a.fixed) { a.vx -= fx; a.vy -= fy; }
-        if (!b.fixed) { b.vx += fx; b.vy += fy; }
-      }
-    }
-
-    // Attraction (Hooke's law for connected nodes)
-    for (const edge of edges) {
-      const a = nodes.get(edge.source);
-      const b = nodes.get(edge.target);
-      if (!a || !b) continue;
-      const dx = b.x - a.x;
-      const dy = b.y - a.y;
-      const dist = Math.sqrt(dx * dx + dy * dy) + 0.01;
-      const force = ATTRACTION * dist;
-      const fx = (dx / dist) * force;
-      const fy = (dy / dist) * force;
-      if (!a.fixed) { a.vx += fx; a.vy += fy; }
-      if (!b.fixed) { b.vx -= fx; b.vy -= fy; }
-    }
-
-    // Center force
-    const centerX = 400;
-    const centerY = 300;
-    for (const node of nodeArray) {
-      if (node.fixed) continue;
-      node.vx += (centerX - node.x) * CENTER_FORCE;
-      node.vy += (centerY - node.y) * CENTER_FORCE;
-    }
-
-    // Apply velocity with damping
-    for (const node of nodeArray) {
-      if (node.fixed) continue;
-      node.vx *= DAMPING;
-      node.vy *= DAMPING;
-      // Clamp velocity
-      node.vx = Math.max(-MAX_VELOCITY, Math.min(MAX_VELOCITY, node.vx));
-      node.vy = Math.max(-MAX_VELOCITY, Math.min(MAX_VELOCITY, node.vy));
-      node.x += node.vx;
-      node.y += node.vy;
-    }
-  }, []);
-
-  // Render canvas
-  const render = useCallback(() => {
-    const canvas = canvasRef.current;
-    const container = containerRef.current;
-    if (!canvas || !container) return;
-
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    const rect = container.getBoundingClientRect();
-    canvas.width = rect.width;
-    canvas.height = rect.height;
-
-    const dark = isDarkSkin(skin);
-    const accent = skin === 'hub' ? '#ff6b00' : skin === 'dream' ? '#e88c9a' : '#7c6cf0';
-    const bgColor = skin === 'hub' ? '#0a0a0a' : skin === 'dream' ? '#fdf5f7' : 'rgba(13, 17, 23, 0.85)';
-    const textColor = skin === 'hub' ? '#e0e0e0' : skin === 'dream' ? '#6c474d' : '#f0f6fc';
-    const textSecondaryColor = skin === 'hub' ? '#888888' : skin === 'dream' ? '#a88a8f' : '#8b949e';
-
-    // Clear canvas
-    ctx.fillStyle = bgColor;
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-    const nodes = physicsNodesRef.current;
-    const edges = physicsEdgesRef.current;
-    const scale = scaleRef.current;
-    const pan = panRef.current;
-
-    ctx.save();
-    ctx.translate(pan.x, pan.y);
-    ctx.scale(scale, scale);
-
-    // Draw edges
-    for (const edge of edges) {
-      const a = nodes.get(edge.source);
-      const b = nodes.get(edge.target);
-      if (!a || !b) continue;
-
-      const isHighlighted = hoveredNode === a.id || hoveredNode === b.id ||
-        selectedNode?.id === a.id || selectedNode?.id === b.id;
-
-      // 连线颜色：高亮时用 accent 渐变，普通时用半透明可见色
-      if (isHighlighted) {
-        // 高亮连线：渐变效果
-        const grad = ctx.createLinearGradient(a.x, a.y, b.x, b.y);
-        grad.addColorStop(0, getEntityColor(a.entityType, accent, dark));
-        grad.addColorStop(1, getEntityColor(b.entityType, accent, dark));
-        ctx.strokeStyle = grad;
-        ctx.lineWidth = 2.5;
-      } else {
-        ctx.strokeStyle = dark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.15)';
-        ctx.lineWidth = 1;
-      }
-      ctx.beginPath();
-      // 曲线连线（更自然，对标 React Flow 的 bezier 边）
-      const midX = (a.x + b.x) / 2;
-      const midY = (a.y + b.y) / 2;
-      const offset = 20;
-      ctx.moveTo(a.x, a.y);
-      ctx.quadraticCurveTo(midX + offset, midY - offset, b.x, b.y);
-      ctx.stroke();
-
-      // Draw relation label on highlighted edges
-      if (isHighlighted) {
-        ctx.fillStyle = textSecondaryColor;
-        const scale = scaleRef.current;
-        ctx.font = `${10 / scale}px sans-serif`;
-        ctx.textAlign = 'center';
-        // 在曲线中点偏上位置绘制标签
-        const labelX = midX + offset / 2;
-        const labelY = midY - offset / 2 - 4 / scale;
-        // 标签背景
-        const labelWidth = ctx.measureText(edge.relationType).width + 8;
-        ctx.fillStyle = dark ? 'rgba(26,28,28,0.9)' : 'rgba(255,255,255,0.9)';
-        ctx.fillRect(labelX - labelWidth / 2, labelY - 8 / scale, labelWidth, 14 / scale);
-        ctx.fillStyle = textSecondaryColor;
-        ctx.fillText(edge.relationType, labelX, labelY + 2 / scale);
-      }
-    }
-
-    // Draw nodes
-    for (const node of nodes.values()) {
-      const isSelected = selectedNode?.id === node.id;
-      const isHovered = hoveredNode === node.id;
-      const isMatch = searchQuery && node.label.toLowerCase().includes(searchQuery.toLowerCase());
-      const isDimmed = (hoveredNode || selectedNode) && !isSelected && !isHovered &&
-        !graphData.edges.some(e =>
-          (e.sourceNodeId === hoveredNode && e.targetNodeId === node.id) ||
-          (e.targetNodeId === hoveredNode && e.sourceNodeId === node.id)
-        );
-
-      const radius = 8 + Math.min(node.weight * 2, 14);
-      const color = getEntityColor(node.entityType, accent, dark);
-
-      // Glow effect for selected/hovered/matched nodes
-      if (isSelected || isHovered || isMatch) {
-        ctx.shadowColor = color;
-        ctx.shadowBlur = 25;
-      } else if (isDimmed) {
-        ctx.globalAlpha = 0.3;
-      }
-
-      // Node circle with radial gradient (更立体)
-      const grad = ctx.createRadialGradient(
-        node.x - radius * 0.3, node.y - radius * 0.3, 0,
-        node.x, node.y, radius
-      );
-      grad.addColorStop(0, color);
-      grad.addColorStop(1, dark ? color + 'cc' : color + 'dd');
-      ctx.fillStyle = grad;
-      ctx.beginPath();
-      ctx.arc(node.x, node.y, radius, 0, Math.PI * 2);
-      ctx.fill();
-
-      // Node border
-      ctx.shadowBlur = 0;
-      ctx.strokeStyle = isSelected ? '#ffffff' : (isHovered ? color : (dark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.15)'));
-      ctx.lineWidth = isSelected ? 3 : (isHovered ? 2.5 : 1.5);
-      ctx.stroke();
-
-      // Entity type icon inside node
-      ctx.globalAlpha = isDimmed ? 0.3 : 1;
-      const scale = scaleRef.current;
-      const iconSize = (radius * 0.8) / scale;
-      ctx.font = `${iconSize}px sans-serif`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(getEntityIcon(node.entityType), node.x, node.y);
-      ctx.textBaseline = 'alphabetic';
-
-      // Node label — 反向补偿字体大小以保持可读
-      const targetScreenPx = isSelected ? 14 : 12;
-      const fontSize = targetScreenPx / scale;
-      ctx.fillStyle = isDimmed ? textSecondaryColor + '66' : textColor;
-      ctx.font = `${isSelected ? 'bold ' : ''}${fontSize}px sans-serif`;
-      ctx.textAlign = 'center';
-      // 标签背景（提高可读性）
-      if (!isDimmed) {
-        const labelWidth = ctx.measureText(node.label).width + 6;
-        ctx.fillStyle = dark ? 'rgba(14,15,15,0.7)' : 'rgba(255,255,255,0.7)';
-        ctx.fillRect(node.x - labelWidth / 2, node.y + radius + 4 / scale, labelWidth, fontSize + 2 / scale);
-        ctx.fillStyle = textColor;
-      }
-      ctx.fillText(node.label, node.x, node.y + radius + 14);
-
-      ctx.globalAlpha = 1;
-    }
-
-    ctx.restore();
-  }, [skin, hoveredNode, selectedNode, searchQuery]);
-
-  // Animation loop
-  useEffect(() => {
-    let frameCount = 0;
-    const animate = () => {
-      // Only simulate for first 300 frames, then let it settle
-      if (frameCount < 300) {
-        simulate();
-      }
-      render();
-      frameCount++;
-      animationRef.current = requestAnimationFrame(animate);
-    };
-    animate();
-    return () => cancelAnimationFrame(animationRef.current);
-  }, [simulate, render]);
-
-  // Load on mount
-  useEffect(() => {
-    loadGraph();
-  }, [loadGraph]);
-
-  // Canvas interaction handlers
-  const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const rect = canvas.getBoundingClientRect();
-    const x = (e.clientX - rect.left - panRef.current.x) / scaleRef.current;
-    const y = (e.clientY - rect.top - panRef.current.y) / scaleRef.current;
-
-    // Check if clicking on a node
-    for (const node of physicsNodesRef.current.values()) {
-      const dx = node.x - x;
-      const dy = node.y - y;
-      const radius = 6 + Math.min(node.weight * 2, 12);
-      if (dx * dx + dy * dy < (radius + 5) * (radius + 5)) {
-        dragNodeRef.current = node.id;
-        node.fixed = true;
-        offsetRef.current = { x: x - node.x, y: y - node.y };
-        return;
-      }
-    }
-
-    // Otherwise pan
-    dragNodeRef.current = '__pan__';
-    offsetRef.current = { x: e.clientX - panRef.current.x, y: e.clientY - panRef.current.y };
-  };
-
-  const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const rect = canvas.getBoundingClientRect();
-    const x = (e.clientX - rect.left - panRef.current.x) / scaleRef.current;
-    const y = (e.clientY - rect.top - panRef.current.y) / scaleRef.current;
-
-    if (dragNodeRef.current === '__pan__') {
-      panRef.current = {
-        x: e.clientX - offsetRef.current.x,
-        y: e.clientY - offsetRef.current.y,
-      };
-      return;
-    }
-
-    if (dragNodeRef.current) {
-      const node = physicsNodesRef.current.get(dragNodeRef.current);
-      if (node) {
-        node.x = x - offsetRef.current.x;
-        node.y = y - offsetRef.current.y;
-        node.vx = 0;
-        node.vy = 0;
-      }
-      return;
-    }
-
-    // Hover detection
-    let foundHover: string | null = null;
-    for (const node of physicsNodesRef.current.values()) {
-      const dx = node.x - x;
-      const dy = node.y - y;
-      const radius = 6 + Math.min(node.weight * 2, 12);
-      if (dx * dx + dy * dy < (radius + 5) * (radius + 5)) {
-        foundHover = node.id;
-        break;
-      }
-    }
-    if (foundHover !== hoveredNode) {
-      setHoveredNode(foundHover);
-      canvas.style.cursor = foundHover ? 'pointer' : 'default';
-    }
-  };
-
-  const handleMouseUp = () => {
-    if (dragNodeRef.current && dragNodeRef.current !== '__pan__') {
-      const node = physicsNodesRef.current.get(dragNodeRef.current);
-      if (node) node.fixed = false;
-    }
-    dragNodeRef.current = null;
-  };
-
-  const handleClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const rect = canvas.getBoundingClientRect();
-    const x = (e.clientX - rect.left - panRef.current.x) / scaleRef.current;
-    const y = (e.clientY - rect.top - panRef.current.y) / scaleRef.current;
-
-    for (const node of physicsNodesRef.current.values()) {
-      const dx = node.x - x;
-      const dy = node.y - y;
-      const radius = 6 + Math.min(node.weight * 2, 12);
-      if (dx * dx + dy * dy < (radius + 5) * (radius + 5)) {
-        // C3: If in edge-create mode, create edge between nodes
-        if (edgeCreateFrom && edgeCreateFrom !== node.id) {
-          addGraphEdge(notebookId, edgeCreateFrom, node.id, 'related' as RelationType);
-          setEdgeCreateFrom(null);
-          loadGraph();
-          return;
-        }
-        // 单击：只选中节点，显示右侧详情栏（不打开文档）
-        const original = graphData.nodes.find(n => n.id === node.id);
-        if (original) {
-          setSelectedNode(original);
-        }
-        return;
-      }
-    }
-    setSelectedNode(null);
-    setEdgeCreateFrom(null);
-  };
-
-  // 双击节点：打开来源文档并高亮
-  const handleDoubleClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const rect = canvas.getBoundingClientRect();
-    const x = (e.clientX - rect.left - panRef.current.x) / scaleRef.current;
-    const y = (e.clientY - rect.top - panRef.current.y) / scaleRef.current;
-
-    for (const node of physicsNodesRef.current.values()) {
-      const dx = node.x - x;
-      const dy = node.y - y;
-      const radius = 6 + Math.min(node.weight * 2, 12);
-      if (dx * dx + dy * dy < (radius + 5) * (radius + 5)) {
-        // 双击：跳转到来源文档
-        const original = graphData.nodes.find(n => n.id === node.id);
-        if (original) {
-          onNodeSelect?.(original);
-        }
-        return;
-      }
-    }
-  };
-
-  // C3: Right-click context menu
-  const handleContextMenu = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    e.preventDefault();
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const rect = canvas.getBoundingClientRect();
-    const x = (e.clientX - rect.left - panRef.current.x) / scaleRef.current;
-    const y = (e.clientY - rect.top - panRef.current.y) / scaleRef.current;
-
-    // Check if clicking on a node
-    for (const node of physicsNodesRef.current.values()) {
-      const dx = node.x - x;
-      const dy = node.y - y;
-      const radius = 6 + Math.min(node.weight * 2, 12);
-      if (dx * dx + dy * dy < (radius + 5) * (radius + 5)) {
-        setContextMenu({ x: e.clientX, y: e.clientY, nodeId: node.id });
-        return;
-      }
-    }
-
-    // Check if clicking near an edge
-    const edges = physicsEdgesRef.current;
-    for (let i = 0; i < edges.length; i++) {
-      const edge = edges[i];
-      const a = physicsNodesRef.current.get(edge.source);
-      const b = physicsNodesRef.current.get(edge.target);
-      if (!a || !b) continue;
-      // Check distance from point to line segment
-      const dist = pointToLineDist(x, y, a.x, a.y, b.x, b.y);
-      if (dist < 8) {
-        setContextMenu({ x: e.clientX, y: e.clientY, edgeIdx: i });
-        return;
-      }
-    }
-  };
-
-  // C3: Save edited node label
-  const handleSaveEdit = () => {
-    if (editingNodeId && editLabel.trim()) {
-      updateGraphNode(editingNodeId, { label: editLabel.trim() });
-      setEditingNodeId(null);
-      loadGraph();
-    }
-  };
-
-  // C3: Delete node from context menu
-  const handleDeleteNode = (nodeId: string) => {
-    deleteGraphNode(nodeId);
-    setContextMenu(null);
-    setSelectedNode(null);
-    loadGraph();
-  };
-
-  // C3: Delete edge from context menu
-  const handleDeleteEdge = (edgeIdx: number) => {
-    const edge = physicsEdgesRef.current[edgeIdx];
-    if (edge) {
-      // Find the actual edge ID from graphData
-      const graphEdge = graphData.edges.find(e =>
-        e.sourceNodeId === edge.source && e.targetNodeId === edge.target
-      );
-      if (graphEdge) {
-        deleteGraphEdge(graphEdge.id);
-        loadGraph();
-      }
-    }
-    setContextMenu(null);
-  };
-
-  const handleWheel = (e: React.WheelEvent<HTMLCanvasElement>) => {
-    e.preventDefault();
-    const delta = e.deltaY > 0 ? 0.9 : 1.1;
-    scaleRef.current = Math.max(0.3, Math.min(3, scaleRef.current * delta));
-  };
-
-  const handleZoomIn = () => { scaleRef.current = Math.min(3, scaleRef.current * 1.2); };
-  const handleZoomOut = () => { scaleRef.current = Math.max(0.3, scaleRef.current * 0.8); };
-  const handleReset = () => { scaleRef.current = 1; panRef.current = { x: 0, y: 0 }; };
-
-  // Get connected nodes for selected node
-  const connectedNodes = selectedNode
-    ? graphData.edges
-        .filter(e => e.sourceNodeId === selectedNode.id || e.targetNodeId === selectedNode.id)
-        .map(e => {
-          const otherId = e.sourceNodeId === selectedNode.id ? e.targetNodeId : e.sourceNodeId;
-          return graphData.nodes.find(n => n.id === otherId);
-        })
-        .filter((n): n is GraphNode => n !== undefined)
-    : [];
+  const reactFlowWrapper = useRef<HTMLDivElement>(null);
 
   // Skin-based styling
   const dark = isDarkSkin(skin);
@@ -684,6 +309,165 @@ export function KnowledgeGraphView({ notebookId, onNodeSelect }: KnowledgeGraphV
   const borderColor = skin === 'hub' ? '#2a2a2a' : skin === 'dream' ? '#f7dee2' : '#30363d';
   const accentColor = skin === 'hub' ? '#ff6b00' : skin === 'dream' ? '#e88c9a' : '#7c6cf0';
 
+  // Load graph data
+  const loadGraph = useCallback(async () => {
+    setLoading(true);
+    setExtractError(null);
+    try {
+      const { listSources, getChunks } = await import('../core/knowledge');
+      const sources = listSources(notebookId);
+      setHasSources(sources.filter(s => s.status === 'indexed').length > 0);
+
+      const existing = getGraphData(notebookId);
+      if (existing.nodes.length > 0) {
+        setGraphData(existing);
+        const { nodes: fn, edges: fe } = autoLayout(existing.nodes, existing.edges);
+        setNodes(fn);
+        setEdges(fe);
+      } else {
+        const chunks = getChunks(notebookId);
+        if (chunks.length === 0) {
+          setGraphData({ nodes: [], edges: [] });
+        } else {
+          const { extractKnowledgeGraph } = await import('../core/knowledge');
+          const data = await extractKnowledgeGraph(notebookId);
+          setGraphData(data);
+          const { nodes: fn, edges: fe } = autoLayout(data.nodes, data.edges);
+          setNodes(fn);
+          setEdges(fe);
+          if (data.nodes.length === 0) {
+            setExtractError(isZh ? 'LLM 提取失败，请检查 API 配置后重试' : 'LLM extraction failed. Check API config and retry.');
+          }
+        }
+      }
+    } catch (e) {
+      console.error('Failed to load graph:', e);
+      setExtractError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLoading(false);
+    }
+  }, [notebookId, isZh, setNodes, setEdges]);
+
+  useEffect(() => {
+    loadGraph();
+  }, [loadGraph]);
+
+  // Highlight/dim based on search and selection
+  useEffect(() => {
+    if (!searchQuery && !selectedNode) {
+      // Reset all nodes to full opacity
+      setNodes(nds => nds.map(n => ({ ...n, opacity: 1 })));
+      return;
+    }
+
+    const highlightId = selectedNode?.id;
+    const connectedIds = new Set<string>();
+    if (highlightId) {
+      for (const e of graphData.edges) {
+        if (e.sourceNodeId === highlightId) connectedIds.add(e.targetNodeId);
+        if (e.targetNodeId === highlightId) connectedIds.add(e.sourceNodeId);
+      }
+    }
+
+    setNodes(nds => nds.map(n => {
+      const isMatch = searchQuery && n.data.label.toLowerCase().includes(searchQuery.toLowerCase());
+      const isHighlighted = highlightId === n.id || connectedIds.has(n.id) || isMatch;
+      return { ...n, opacity: isHighlighted || (!searchQuery && !highlightId) ? 1 : 0.25 };
+    }));
+  }, [searchQuery, selectedNode, graphData.edges, setNodes]);
+
+  // Node click handler
+  const onNodeClick = useCallback((_: React.MouseEvent, node: KGFlowNode) => {
+    const original = graphData.nodes.find(n => n.id === node.id);
+    if (original) setSelectedNode(original);
+  }, [graphData.nodes]);
+
+  // Node double click — open source document
+  const onNodeDoubleClick = useCallback((_: React.MouseEvent, node: KGFlowNode) => {
+    const original = graphData.nodes.find(n => n.id === node.id);
+    if (original) onNodeSelect?.(original);
+  }, [graphData.nodes, onNodeSelect]);
+
+  // Edge click — select edge
+  const onEdgeClick = useCallback((_: React.MouseEvent, edge: KGFlowEdge) => {
+    // Could show edge details, for now just keep context menu working
+  }, []);
+
+  // Context menu (right-click)
+  const onNodeContextMenu = useCallback((e: React.MouseEvent, node: KGFlowNode) => {
+    e.preventDefault();
+    setContextMenu({ x: e.clientX, y: e.clientY, nodeId: node.id });
+  }, []);
+
+  const onPaneContextMenu = useCallback((e: MouseEvent | React.MouseEvent) => {
+    e.preventDefault();
+    setContextMenu(null);
+  }, []);
+
+  // Save edited node label
+  const handleSaveEdit = () => {
+    if (editingNodeId && editLabel.trim()) {
+      updateGraphNode(editingNodeId, { label: editLabel.trim() });
+      setEditingNodeId(null);
+      loadGraph();
+    }
+  };
+
+  const handleDeleteNode = (nodeId: string) => {
+    deleteGraphNode(nodeId);
+    setContextMenu(null);
+    setSelectedNode(null);
+    loadGraph();
+  };
+
+  const handleDeleteEdge = (edgeId: string) => {
+    const graphEdge = graphData.edges.find(e => `e-${e.id}` === edgeId);
+    if (graphEdge) {
+      deleteGraphEdge(graphEdge.id);
+      loadGraph();
+    }
+    setContextMenu(null);
+  };
+
+  // Export PNG — use React Flow's screenshot
+  const handleExportPNG = () => {
+    // React Flow doesn't have a built-in PNG export, but we can use the viewport
+    const wrapper = reactFlowWrapper.current;
+    if (!wrapper) return;
+    // Use html2canvas-like approach via canvas
+    const canvas = wrapper.querySelector('canvas.react-flow__edges') as HTMLCanvasElement;
+    if (canvas) {
+      const link = document.createElement('a');
+      link.download = `knowledge-graph-${Date.now()}.png`;
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+    }
+  };
+
+  const handleExportJSON = () => {
+    const data = { nodes: graphData.nodes, edges: graphData.edges, exportedAt: new Date().toISOString() };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `knowledge-graph-${Date.now()}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  // Connected nodes for sidebar
+  const connectedNodes = useMemo(() => {
+    if (!selectedNode) return [];
+    return graphData.edges
+      .filter(e => e.sourceNodeId === selectedNode.id || e.targetNodeId === selectedNode.id)
+      .map(e => {
+        const otherId = e.sourceNodeId === selectedNode.id ? e.targetNodeId : e.sourceNodeId;
+        return graphData.nodes.find(n => n.id === otherId);
+      })
+      .filter((n): n is GraphNode => n !== undefined);
+  }, [selectedNode, graphData]);
+
+  // Loading state
   if (loading) {
     return (
       <div className="kg-loading" style={{ background: bgColor, color: textColor }}>
@@ -695,6 +479,7 @@ export function KnowledgeGraphView({ notebookId, onNodeSelect }: KnowledgeGraphV
     );
   }
 
+  // Empty state
   if (graphData.nodes.length === 0) {
     return (
       <div className="kg-empty" style={{ background: bgColor, color: textSecondaryColor }}>
@@ -702,26 +487,16 @@ export function KnowledgeGraphView({ notebookId, onNodeSelect }: KnowledgeGraphV
         {extractError ? (
           <>
             <p style={{ color: 'var(--error)' }}>{extractError}</p>
-            <button
-              onClick={loadGraph}
-              style={{ background: accentColor, color: '#fff' }}
-              className="kg-retry-btn"
-            >
+            <button onClick={loadGraph} style={{ background: accentColor, color: '#fff' }} className="kg-retry-btn">
               {isZh ? '重新提取' : 'Extract Again'}
             </button>
           </>
         ) : !hasSources ? (
-          <>
-            <p>{isZh ? '暂无图谱数据，请先添加并索引来源' : 'No graph data. Add and index sources first.'}</p>
-          </>
+          <p>{isZh ? '暂无图谱数据，请先添加并索引来源' : 'No graph data. Add and index sources first.'}</p>
         ) : (
           <>
             <p>{isZh ? '正在提取知识图谱...' : 'Extracting knowledge graph...'}</p>
-            <button
-              onClick={loadGraph}
-              style={{ background: accentColor, color: '#fff' }}
-              className="kg-retry-btn"
-            >
+            <button onClick={loadGraph} style={{ background: accentColor, color: '#fff' }} className="kg-retry-btn">
               {isZh ? '重新提取' : 'Extract Again'}
             </button>
           </>
@@ -731,7 +506,7 @@ export function KnowledgeGraphView({ notebookId, onNodeSelect }: KnowledgeGraphV
   }
 
   return (
-    <div className="kg-container" style={{ background: bgColor, color: textColor }}>
+    <div className="kg-container" style={{ background: bgColor, color: textColor, height: '100%' }}>
       {/* Toolbar */}
       <div className="kg-toolbar" style={{ background: bgSecondary, borderBottom: `1px solid ${borderColor}` }}>
         <div className="kg-search-wrapper">
@@ -745,73 +520,54 @@ export function KnowledgeGraphView({ notebookId, onNodeSelect }: KnowledgeGraphV
           />
         </div>
         <div className="kg-toolbar-actions">
-          <button className="kg-tool-btn" onClick={handleZoomIn} title={isZh ? '放大' : 'Zoom In'}>
-            <ZoomIn size={16} />
-          </button>
-          <button className="kg-tool-btn" onClick={handleZoomOut} title={isZh ? '缩小' : 'Zoom Out'}>
-            <ZoomOut size={16} />
-          </button>
-          <button className="kg-tool-btn" onClick={handleReset} title={isZh ? '重置' : 'Reset'}>
-            <Maximize2 size={16} />
-          </button>
-          <button
-            className="kg-tool-btn kg-refresh-btn"
-            onClick={loadGraph}
-            title={isZh ? '重新提取图谱' : 'Re-extract Graph'}
-            style={{ color: accentColor }}
-          >
+          <button className="kg-tool-btn kg-refresh-btn" onClick={loadGraph} title={isZh ? '重新提取图谱' : 'Re-extract Graph'} style={{ color: accentColor }}>
             <Loader2 size={16} />
           </button>
-          {/* B7: 导出图谱 */}
-          <button
-            className="kg-tool-btn"
-            onClick={() => {
-              const canvas = canvasRef.current;
-              if (!canvas) return;
-              const link = document.createElement('a');
-              link.download = `knowledge-graph-${Date.now()}.png`;
-              link.href = canvas.toDataURL('image/png');
-              link.click();
-            }}
-            title={isZh ? '导出为 PNG' : 'Export as PNG'}
-          >
+          <button className="kg-tool-btn" onClick={handleExportPNG} title={isZh ? '导出为 PNG' : 'Export as PNG'}>
             <Download size={16} />
           </button>
-          <button
-            className="kg-tool-btn"
-            onClick={() => {
-              const data = { nodes: graphData.nodes, edges: graphData.edges, exportedAt: new Date().toISOString() };
-              const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-              const url = URL.createObjectURL(blob);
-              const a = document.createElement('a');
-              a.href = url;
-              a.download = `knowledge-graph-${Date.now()}.json`;
-              a.click();
-              URL.revokeObjectURL(url);
-            }}
-            title={isZh ? '导出为 JSON' : 'Export as JSON'}
-            style={{ fontSize: 'var(--fs-xs)' }}
-          >
+          <button className="kg-tool-btn" onClick={handleExportJSON} title={isZh ? '导出为 JSON' : 'Export as JSON'} style={{ fontSize: 'var(--fs-xs)' }}>
             JSON
           </button>
         </div>
       </div>
 
-      {/* Canvas + Sidebar */}
-      <div className="kg-body">
-        <div ref={containerRef} className="kg-canvas-wrapper">
-          <canvas
-            ref={canvasRef}
-            onMouseDown={handleMouseDown}
-            onMouseMove={handleMouseMove}
-            onMouseUp={handleMouseUp}
-            onMouseLeave={handleMouseUp}
-            onClick={handleClick}
-            onDoubleClick={handleDoubleClick}
-            onContextMenu={handleContextMenu}
-            onWheel={handleWheel}
-            className="kg-canvas"
-          />
+      {/* React Flow Canvas + Sidebar */}
+      <div className="kg-body" style={{ flex: 1, overflow: 'hidden' }}>
+        <div ref={reactFlowWrapper} className="kg-canvas-wrapper" style={{ flex: 1, height: '100%' }}>
+          <ReactFlow
+            nodes={nodes}
+            edges={edges}
+            onNodesChange={onNodesChange}
+            onEdgesChange={onEdgesChange}
+            nodeTypes={nodeTypes}
+            edgeTypes={edgeTypes}
+            onNodeClick={onNodeClick}
+            onNodeDoubleClick={onNodeDoubleClick}
+            onEdgeClick={onEdgeClick}
+            onNodeContextMenu={onNodeContextMenu}
+            onPaneContextMenu={onPaneContextMenu}
+            fitView
+            fitViewOptions={{ padding: 0.2 }}
+            minZoom={0.2}
+            maxZoom={4}
+            proOptions={{ hideAttribution: true }}
+            style={{ background: bgColor }}
+          >
+            <Background variant={BackgroundVariant.Dots} gap={20} size={1} color={dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)'} />
+            <Controls
+              showInteractive={false}
+              style={{ background: bgSecondary, border: `1px solid ${borderColor}`, borderRadius: '6px' }}
+            />
+            <MiniMap
+              nodeColor={(node) => {
+                const n = node as KGFlowNode;
+                return getEntityColor(n.data?.entityType || 'concept', accentColor, dark);
+              }}
+              maskColor={dark ? 'rgba(0,0,0,0.7)' : 'rgba(255,255,255,0.7)'}
+              style={{ background: bgSecondary, border: `1px solid ${borderColor}` }}
+            />
+          </ReactFlow>
         </div>
 
         {/* Node Detail Sidebar */}
@@ -822,10 +578,7 @@ export function KnowledgeGraphView({ notebookId, onNodeSelect }: KnowledgeGraphV
                 <span style={{ fontSize: 'var(--fs-2xl)' }}>{getEntityIcon(selectedNode.entityType)}</span>
                 <h3 style={{ color: accentColor, margin: 0 }}>{selectedNode.label}</h3>
               </div>
-              <span
-                className="kg-entity-badge"
-                style={{ background: getEntityColor(selectedNode.entityType, accentColor, dark), color: '#fff', fontSize: 'var(--fs-xs)' }}
-              >
+              <span className="kg-entity-badge" style={{ background: getEntityColor(selectedNode.entityType, accentColor, dark), color: '#fff', fontSize: 'var(--fs-xs)' }}>
                 {getEntityLabel(selectedNode.entityType, isZh)}
               </span>
             </div>
@@ -860,10 +613,7 @@ export function KnowledgeGraphView({ notebookId, onNodeSelect }: KnowledgeGraphV
                     style={{ background: bgTertiary, border: `1px solid ${borderColor}`, color: textColor, fontSize: 'var(--fs-sm)' }}
                   >
                     <span style={{ fontSize: 'var(--fs-md)' }}>{getEntityIcon(node.entityType)}</span>
-                    <span
-                      className="kg-connected-dot"
-                      style={{ background: getEntityColor(node.entityType, accentColor, dark) }}
-                    />
+                    <span className="kg-connected-dot" style={{ background: getEntityColor(node.entityType, accentColor, dark) }} />
                     {node.label}
                   </button>
                 ))}
@@ -881,54 +631,18 @@ export function KnowledgeGraphView({ notebookId, onNodeSelect }: KnowledgeGraphV
               </div>
             )}
 
-            {/* C3: Edit actions */}
+            {/* Edit actions */}
             <div className="kg-detail-section">
               <button
-                onClick={() => {
-                  setEditingNodeId(selectedNode.id);
-                  setEditLabel(selectedNode.label);
-                }}
-                style={{
-                  width: '100%', padding: '6px', marginBottom: '6px',
-                  background: bgTertiary, border: `1px solid ${borderColor}`,
-                  borderRadius: '6px', color: textColor, cursor: 'pointer',
-                  fontSize: 'var(--fs-sm)', display: 'flex', alignItems: 'center', gap: '4px', justifyContent: 'center',
-                }}
+                onClick={() => { setEditingNodeId(selectedNode.id); setEditLabel(selectedNode.label); }}
+                style={{ width: '100%', padding: '6px', marginBottom: '6px', background: bgTertiary, border: `1px solid ${borderColor}`, borderRadius: '6px', color: textColor, cursor: 'pointer', fontSize: 'var(--fs-sm)', display: 'flex', alignItems: 'center', gap: '4px', justifyContent: 'center' }}
               >
                 <Edit3 size={12} />
                 {isZh ? '编辑节点' : 'Edit Node'}
               </button>
               <button
-                onClick={() => {
-                  if (edgeCreateFrom === selectedNode.id) {
-                    setEdgeCreateFrom(null);
-                  } else {
-                    setEdgeCreateFrom(selectedNode.id);
-                  }
-                }}
-                style={{
-                  width: '100%', padding: '6px', marginBottom: '6px',
-                  background: edgeCreateFrom === selectedNode.id ? accentColor : bgTertiary,
-                  border: `1px solid ${borderColor}`,
-                  borderRadius: '6px',
-                  color: edgeCreateFrom === selectedNode.id ? '#fff' : textColor,
-                  cursor: 'pointer',
-                  fontSize: 'var(--fs-sm)', display: 'flex', alignItems: 'center', gap: '4px', justifyContent: 'center',
-                }}
-              >
-                <Plus size={12} />
-                {edgeCreateFrom === selectedNode.id
-                  ? (isZh ? '取消连线' : 'Cancel Link')
-                  : (isZh ? '创建连线' : 'Create Link')}
-              </button>
-              <button
                 onClick={() => handleDeleteNode(selectedNode.id)}
-                style={{
-                  width: '100%', padding: '6px',
-                  background: 'transparent', border: `1px solid #ef444455`,
-                  borderRadius: '6px', color: '#ef4444', cursor: 'pointer',
-                  fontSize: 'var(--fs-sm)', display: 'flex', alignItems: 'center', gap: '4px', justifyContent: 'center',
-                }}
+                style={{ width: '100%', padding: '6px', background: 'transparent', border: `1px solid #ef444455`, borderRadius: '6px', color: '#ef4444', cursor: 'pointer', fontSize: 'var(--fs-sm)', display: 'flex', alignItems: 'center', gap: '4px', justifyContent: 'center' }}
               >
                 <Trash2 size={12} />
                 {isZh ? '删除节点' : 'Delete Node'}
@@ -943,76 +657,38 @@ export function KnowledgeGraphView({ notebookId, onNodeSelect }: KnowledgeGraphV
         {(['concept', 'entity', 'event', 'person', 'place', 'organization', 'technology'] as EntityType[]).map(type => (
           <div key={type} className="kg-legend-item" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
             <span style={{ fontSize: 'var(--fs-sm)' }}>{getEntityIcon(type)}</span>
-            <span
-              className="kg-legend-dot"
-              style={{ background: getEntityColor(type, accentColor, dark) }}
-            />
+            <span className="kg-legend-dot" style={{ background: getEntityColor(type, accentColor, dark) }} />
             <span style={{ color: textSecondaryColor, fontSize: 'var(--fs-xs)' }}>{getEntityLabel(type, isZh)}</span>
           </div>
         ))}
         <div className="kg-legend-item" style={{ marginLeft: 'auto' }}>
           <span style={{ color: textSecondaryColor, fontSize: 'var(--fs-xs)' }}>
-            {isZh ? '单击选中 · 双击打开文档 · 右键菜单 · 侧栏编辑' : 'Click to select · Double-click to open · Right-click for menu · Sidebar to edit'}
+            {isZh ? '单击选中 · 双击打开文档 · 右键菜单' : 'Click to select · Double-click to open · Right-click for menu'}
           </span>
         </div>
       </div>
 
-      {/* C3: Inline node label editor */}
+      {/* Inline node label editor */}
       {editingNodeId && (
-        <div
-          className="nb-dialog-overlay"
-          onClick={() => setEditingNodeId(null)}
-          style={{ background: 'transparent', pointerEvents: 'auto' }}
-        >
+        <div className="nb-dialog-overlay" onClick={() => setEditingNodeId(null)} style={{ background: 'transparent', pointerEvents: 'auto' }}>
           <div
             onClick={(e) => e.stopPropagation()}
-            style={{
-              position: 'absolute',
-              left: '50%', top: '50%',
-              transform: 'translate(-50%, -50%)',
-              background: bgSecondary, border: `1px solid ${borderColor}`,
-              borderRadius: '8px', padding: '16px',
-              display: 'flex', flexDirection: 'column', gap: '8px',
-              minWidth: '300px',
-            }}
+            style={{ position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%, -50%)', background: bgSecondary, border: `1px solid ${borderColor}`, borderRadius: '8px', padding: '16px', display: 'flex', flexDirection: 'column', gap: '8px', minWidth: '300px' }}
           >
-            <label style={{ fontSize: 'var(--fs-sm)', color: textSecondaryColor }}>
-              {isZh ? '编辑节点标签' : 'Edit Node Label'}
-            </label>
+            <label style={{ fontSize: 'var(--fs-sm)', color: textSecondaryColor }}>{isZh ? '编辑节点标签' : 'Edit Node Label'}</label>
             <input
               type="text"
               value={editLabel}
               onChange={(e) => setEditLabel(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') handleSaveEdit();
-                if (e.key === 'Escape') setEditingNodeId(null);
-              }}
+              onKeyDown={(e) => { if (e.key === 'Enter') handleSaveEdit(); if (e.key === 'Escape') setEditingNodeId(null); }}
               autoFocus
-              style={{
-                padding: '6px 8px', background: bgTertiary,
-                border: `1px solid ${borderColor}`, borderRadius: '4px',
-                color: textColor, fontSize: 'var(--fs-base)', outline: 'none',
-              }}
+              style={{ padding: '6px 8px', background: bgTertiary, border: `1px solid ${borderColor}`, borderRadius: '4px', color: textColor, fontSize: 'var(--fs-base)', outline: 'none' }}
             />
             <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
-              <button
-                onClick={() => setEditingNodeId(null)}
-                style={{
-                  padding: '4px 12px', background: 'transparent',
-                  border: `1px solid ${borderColor}`, borderRadius: '4px',
-                  color: textColor, cursor: 'pointer', fontSize: 'var(--fs-sm)',
-                }}
-              >
+              <button onClick={() => setEditingNodeId(null)} style={{ padding: '4px 12px', background: 'transparent', border: `1px solid ${borderColor}`, borderRadius: '4px', color: textColor, cursor: 'pointer', fontSize: 'var(--fs-sm)' }}>
                 {isZh ? '取消' : 'Cancel'}
               </button>
-              <button
-                onClick={handleSaveEdit}
-                style={{
-                  padding: '4px 12px', background: accentColor,
-                  border: 'none', borderRadius: '4px',
-                  color: '#fff', cursor: 'pointer', fontSize: 'var(--fs-sm)',
-                }}
-              >
+              <button onClick={handleSaveEdit} style={{ padding: '4px 12px', background: accentColor, border: 'none', borderRadius: '4px', color: '#fff', cursor: 'pointer', fontSize: 'var(--fs-sm)' }}>
                 {isZh ? '保存' : 'Save'}
               </button>
             </div>
@@ -1020,95 +696,53 @@ export function KnowledgeGraphView({ notebookId, onNodeSelect }: KnowledgeGraphV
         </div>
       )}
 
-      {/* C3: Right-click context menu */}
+      {/* Right-click context menu */}
       {contextMenu && (
         <>
-          <div
-            style={{ position: 'fixed', inset: 0, zIndex: 9998 }}
-            onClick={() => setContextMenu(null)}
-            onContextMenu={(e) => { e.preventDefault(); setContextMenu(null); }}
-          />
-          <div
-            style={{
-              position: 'fixed',
-              left: contextMenu.x, top: contextMenu.y,
-              zIndex: 9999,
-              background: bgSecondary, border: `1px solid ${borderColor}`,
-              borderRadius: '6px', padding: '4px',
-              boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
-              minWidth: '140px',
-            }}
-          >
-            {contextMenu.nodeId && (
-              <>
+          <div style={{ position: 'fixed', inset: 0, zIndex: 9998 }} onClick={() => setContextMenu(null)} onContextMenu={(e) => { e.preventDefault(); setContextMenu(null); }} />
+          {createPortal(
+            <div style={{ position: 'fixed', left: contextMenu.x, top: contextMenu.y, zIndex: 9999, background: bgSecondary, border: `1px solid ${borderColor}`, borderRadius: '6px', padding: '4px', boxShadow: '0 4px 12px rgba(0,0,0,0.3)', minWidth: '140px' }}>
+              {contextMenu.nodeId && (
+                <>
+                  <button
+                    onClick={() => { setEditingNodeId(contextMenu.nodeId!); const n = graphData.nodes.find(x => x.id === contextMenu.nodeId); if (n) setEditLabel(n.label); setContextMenu(null); }}
+                    style={{ display: 'flex', alignItems: 'center', gap: '6px', width: '100%', padding: '6px 8px', background: 'transparent', border: 'none', color: textColor, cursor: 'pointer', fontSize: 'var(--fs-sm)', borderRadius: '4px', textAlign: 'left' }}
+                  >
+                    <Edit3 size={12} />
+                    {isZh ? '编辑标签' : 'Edit Label'}
+                  </button>
+                  <div style={{ height: '1px', background: borderColor, margin: '2px 0' }} />
+                  <button
+                    onClick={() => handleDeleteNode(contextMenu.nodeId!)}
+                    style={{ display: 'flex', alignItems: 'center', gap: '6px', width: '100%', padding: '6px 8px', background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 'var(--fs-sm)', borderRadius: '4px', textAlign: 'left' }}
+                  >
+                    <Trash2 size={12} />
+                    {isZh ? '删除节点' : 'Delete Node'}
+                  </button>
+                </>
+              )}
+              {contextMenu.edgeId && (
                 <button
-                  onClick={() => {
-                    setEditingNodeId(contextMenu.nodeId!);
-                    const node = physicsNodesRef.current.get(contextMenu.nodeId!);
-                    if (node) setEditLabel(node.label);
-                    setContextMenu(null);
-                  }}
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: '6px',
-                    width: '100%', padding: '6px 8px',
-                    background: 'transparent', border: 'none',
-                    color: textColor, cursor: 'pointer', fontSize: 'var(--fs-sm)',
-                    borderRadius: '4px', textAlign: 'left',
-                  }}
-                >
-                  <Edit3 size={12} />
-                  {isZh ? '编辑标签' : 'Edit Label'}
-                </button>
-                <button
-                  onClick={() => {
-                    setEdgeCreateFrom(contextMenu.nodeId!);
-                    setContextMenu(null);
-                  }}
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: '6px',
-                    width: '100%', padding: '6px 8px',
-                    background: 'transparent', border: 'none',
-                    color: textColor, cursor: 'pointer', fontSize: 'var(--fs-sm)',
-                    borderRadius: '4px', textAlign: 'left',
-                  }}
-                >
-                  <Plus size={12} />
-                  {isZh ? '创建连线' : 'Create Link'}
-                </button>
-                <div style={{ height: '1px', background: borderColor, margin: '2px 0' }} />
-                <button
-                  onClick={() => handleDeleteNode(contextMenu.nodeId!)}
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: '6px',
-                    width: '100%', padding: '6px 8px',
-                    background: 'transparent', border: 'none',
-                    color: '#ef4444', cursor: 'pointer', fontSize: 'var(--fs-sm)',
-                    borderRadius: '4px', textAlign: 'left',
-                  }}
+                  onClick={() => handleDeleteEdge(contextMenu.edgeId!)}
+                  style={{ display: 'flex', alignItems: 'center', gap: '6px', width: '100%', padding: '6px 8px', background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 'var(--fs-sm)', borderRadius: '4px', textAlign: 'left' }}
                 >
                   <Trash2 size={12} />
-                  {isZh ? '删除节点' : 'Delete Node'}
+                  {isZh ? '删除连线' : 'Delete Edge'}
                 </button>
-              </>
-            )}
-            {contextMenu.edgeIdx !== undefined && (
-              <button
-                onClick={() => handleDeleteEdge(contextMenu.edgeIdx!)}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: '6px',
-                  width: '100%', padding: '6px 8px',
-                  background: 'transparent', border: 'none',
-                  color: '#ef4444', cursor: 'pointer', fontSize: 'var(--fs-sm)',
-                  borderRadius: '4px', textAlign: 'left',
-                }}
-              >
-                <Trash2 size={12} />
-                {isZh ? '删除连线' : 'Delete Edge'}
-              </button>
-            )}
-          </div>
+              )}
+            </div>,
+            document.body
+          )}
         </>
       )}
     </div>
+  );
+}
+
+export function KnowledgeGraphView(props: KnowledgeGraphViewProps) {
+  return (
+    <ReactFlowProvider>
+      <KnowledgeGraphViewInner {...props} />
+    </ReactFlowProvider>
   );
 }

@@ -80,11 +80,11 @@ export function HeartbeatMonitor() {
   };
 
   const labelStyle: React.CSSProperties = {
-    fontSize: 11, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 3, display: "block",
+    fontSize: 'var(--fs-sm)', fontWeight: 600, color: "var(--text-secondary)", marginBottom: 3, display: "block",
   };
   const inputStyle: React.CSSProperties = {
     padding: "5px 8px", borderRadius: 4, border: "1px solid var(--border-primary)",
-    background: "var(--bg-tertiary)", color: "var(--text-primary)", fontSize: 12, width: "100%",
+    background: "var(--bg-tertiary)", color: "var(--text-primary)", fontSize: 'var(--fs-sm)', width: "100%",
     outline: "none",
   };
 
@@ -93,10 +93,10 @@ export function HeartbeatMonitor() {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       <div>
-        <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)" }}>
+        <div style={{ fontSize: 'var(--fs-md)', fontWeight: 700, color: "var(--text-primary)" }}>
           💓 {zh ? "心跳监控" : "Heartbeat Monitor"}
         </div>
-        <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 2 }}>
+        <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-secondary)", marginTop: 2 }}>
           {zh ? "监控会话活动心跳，配置心跳上报端点和间隔。" : "Monitor session activity heartbeats, configure endpoint and interval."}
         </div>
       </div>
@@ -114,8 +114,8 @@ export function HeartbeatMonitor() {
             border: "1px solid var(--border-primary)", background: "var(--bg-tertiary)",
             textAlign: "center",
           }}>
-            <div style={{ fontSize: 20, fontWeight: 700, color: s.color }}>{s.value}</div>
-            <div style={{ fontSize: 10, color: "var(--text-muted)" }}>{s.label}</div>
+            <div style={{ fontSize: 'var(--fs-2xl)', fontWeight: 700, color: s.color }}>{s.value}</div>
+            <div style={{ fontSize: 'var(--fs-xs)', color: "var(--text-muted)" }}>{s.label}</div>
           </div>
         ))}
       </div>
@@ -123,7 +123,7 @@ export function HeartbeatMonitor() {
       {/* Active sessions */}
       {sessions.length > 0 && (
         <div>
-          <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 6 }}>
+          <div style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, color: "var(--text-secondary)", marginBottom: 6 }}>
             {zh ? "会话心跳" : "Session Heartbeats"}
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
@@ -131,7 +131,7 @@ export function HeartbeatMonitor() {
               <div key={s.sessionId} style={{
                 display: "flex", alignItems: "center", gap: 8, padding: "6px 10px",
                 borderRadius: 4, border: "1px solid var(--border-primary)",
-                background: "var(--bg-tertiary)", fontSize: 11,
+                background: "var(--bg-tertiary)", fontSize: 'var(--fs-sm)',
               }}>
                 <span style={{
                   width: 8, height: 8, borderRadius: "50%",
@@ -160,7 +160,7 @@ export function HeartbeatMonitor() {
         padding: 12, borderRadius: 8, border: "1px solid var(--border-primary)",
         background: "var(--bg-secondary)",
       }}>
-        <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 8 }}>
+        <div style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, color: "var(--text-secondary)", marginBottom: 8 }}>
           {zh ? "全局配置" : "Global Configuration"}
         </div>
 
@@ -182,7 +182,7 @@ export function HeartbeatMonitor() {
           <input type="text" style={inputStyle} value={config.endpoint || ""}
             onChange={e => setConfig({ ...config, endpoint: e.target.value || undefined })}
             placeholder="https://example.com/api/heartbeat" />
-          <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 2 }}>
+          <div style={{ fontSize: 'var(--fs-xs)', color: "var(--text-muted)", marginTop: 2 }}>
             {zh ? "配置后心跳将 POST 到此 URL，留空则仅本地记录" : "If set, heartbeats are POSTed to this URL. Leave empty for local-only."}
           </div>
         </div>
@@ -206,7 +206,7 @@ export function HeartbeatMonitor() {
           </div>
         </div>
 
-        <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: 12, marginBottom: 8 }}>
+        <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: 'var(--fs-sm)', marginBottom: 8 }}>
           <input type="checkbox" checked={config.sendMetadata}
             onChange={e => setConfig({ ...config, sendMetadata: e.target.checked })} />
           {zh ? "发送元数据（消息数、Token 使用量等）" : "Send metadata (message count, token usage, etc.)"}
@@ -214,7 +214,7 @@ export function HeartbeatMonitor() {
 
         <div style={{ display: "flex", gap: 8 }}>
           <button onClick={handleSaveConfig} style={{
-            padding: "6px 16px", borderRadius: 4, fontSize: 12,
+            padding: "6px 16px", borderRadius: 4, fontSize: 'var(--fs-sm)',
             border: "1px solid var(--accent)", background: "var(--accent)",
             color: "#fff", cursor: "pointer",
           }}>
@@ -222,7 +222,7 @@ export function HeartbeatMonitor() {
           </button>
           {stats.active > 0 && (
             <button onClick={handleStopAll} style={{
-              padding: "6px 16px", borderRadius: 4, fontSize: 12,
+              padding: "6px 16px", borderRadius: 4, fontSize: 'var(--fs-sm)',
               border: "1px solid #e74c3c", background: "none",
               color: "#e74c3c", cursor: "pointer",
             }}>

@@ -39,10 +39,10 @@ class SlotRendererErrorBoundary extends Component<
     if (this.state.hasError) {
       if (this.props.fallback) return this.props.fallback
       return (
-        <div data-slot-error={this.props.slotName} style={{ padding: '8px 12px', fontSize: 12, color: 'var(--text-muted)' }}>
+        <div data-slot-error={this.props.slotName} style={{ padding: '8px 12px', fontSize: 'var(--fs-sm)', color: 'var(--text-muted)' }}>
           ⚠️ 插件组件崩溃（slot: {this.props.slotName}）
           {this.state.error && (
-            <div style={{ marginTop: 4, fontSize: 11, opacity: 0.7 }}>
+            <div style={{ marginTop: 4, fontSize: 'var(--fs-sm)', opacity: 0.7 }}>
               {this.state.error.message}
             </div>
           )}

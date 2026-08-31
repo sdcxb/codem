@@ -1,7 +1,7 @@
 {
   "name": "codem",
   "private": true,
-  "version": "1.7.0",
+  "version": "1.8.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -34,6 +34,7 @@
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/addon-web-links": "^0.12.0",
     "@xterm/xterm": "^6.0.0",
+    "@xyflow/react": "^12.11.5",
     "clsx": "^2.1.1",
     "fflate": "^0.8.3",
     "framer-motion": "^13.0.0",

@@ -84,7 +84,7 @@ export function AutomationTab() {
   };
 
   const labelStyle: React.CSSProperties = {
-    fontSize: 12,
+    fontSize: 'var(--fs-sm)',
     fontWeight: 600,
     color: "var(--text-primary)",
     marginBottom: 4,
@@ -96,14 +96,14 @@ export function AutomationTab() {
     border: "1px solid var(--border-primary)",
     background: "var(--bg-tertiary)",
     color: "var(--text-primary)",
-    fontSize: 13,
+    fontSize: 'var(--fs-base)',
     width: "100%",
   };
 
   return (
     <div style={{ padding: "16px 20px" }}>
       {/* Description */}
-      <div style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 16 }}>
+      <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-secondary)", marginBottom: 16 }}>
         {zh
           ? "配置文件监听和定时器触发器，自动创建会话并发送预设消息。支持工作树模式并行隔离。"
           : "Configure file-watch and timer triggers to automatically create sessions and send preset messages. Supports worktree mode for parallel isolation."}
@@ -122,7 +122,7 @@ export function AutomationTab() {
             border: "1px solid var(--border-primary)",
             background: "var(--bg-tertiary)",
             marginBottom: 8,
-            fontSize: 12,
+            fontSize: 'var(--fs-sm)',
           }}
         >
           <input
@@ -133,7 +133,7 @@ export function AutomationTab() {
           />
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontWeight: 600, color: "var(--text-primary)" }}>{t.name}</div>
-            <div style={{ fontSize: 10, opacity: 0.6, overflow: "hidden", textOverflow: "ellipsis", color: "var(--text-secondary)", display: "flex", alignItems: "center", gap: 4 }}>
+            <div style={{ fontSize: 'var(--fs-xs)', opacity: 0.6, overflow: "hidden", textOverflow: "ellipsis", color: "var(--text-secondary)", display: "flex", alignItems: "center", gap: 4 }}>
               {t.type === "file_watch" && <><Folder size={12} style={{ display: "inline", verticalAlign: "middle" }} /> {t.message}</>}
               {t.type === "timer" && <><Clock size={12} style={{ display: "inline", verticalAlign: "middle" }} /> {t.message}</>}
               {t.type === "cron" && <><Calendar size={12} style={{ display: "inline", verticalAlign: "middle" }} /> {t.cronExpression || "—"} · {t.message}</>}
@@ -143,7 +143,7 @@ export function AutomationTab() {
           <button
             onClick={() => setEditing(t)}
             style={{
-              fontSize: 11,
+              fontSize: 'var(--fs-sm)',
               padding: "4px 10px",
               borderRadius: 4,
               border: "1px solid var(--border-primary)",
@@ -157,7 +157,7 @@ export function AutomationTab() {
           <button
             onClick={() => handleDelete(t.id)}
             style={{
-              fontSize: 11,
+              fontSize: 'var(--fs-sm)',
               padding: "4px 10px",
               borderRadius: 4,
               border: "1px solid var(--error)",
@@ -172,7 +172,7 @@ export function AutomationTab() {
       ))}
 
       {triggers.length === 0 && (
-        <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 8 }}>
+        <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", marginBottom: 8 }}>
           {zh ? "无触发器。点击下方按钮添加。" : "No triggers. Click below to add one."}
         </div>
       )}
@@ -183,7 +183,7 @@ export function AutomationTab() {
           style={{
             padding: "8px 16px",
             borderRadius: 6,
-            fontSize: 13,
+            fontSize: 'var(--fs-base)',
             border: "1px solid var(--accent)",
             background: "var(--accent)",
             color: "#fff",
@@ -206,7 +206,7 @@ export function AutomationTab() {
             style={{
               padding: "8px 16px",
               borderRadius: 6,
-              fontSize: 13,
+              fontSize: 'var(--fs-base)',
               border: "1px solid var(--error)",
               background: "none",
               color: "var(--error)",
@@ -225,7 +225,7 @@ export function AutomationTab() {
       {/* Trigger history */}
       {history.length > 0 && (
         <div>
-          <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 8 }}>
+          <div style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, color: "var(--text-secondary)", marginBottom: 8 }}>
             <History size={12} style={{ display: "inline", verticalAlign: "middle" }} /> {zh ? "触发历史" : "Trigger History"} ({history.length})
           </div>
           <div style={{ maxHeight: 200, overflowY: "auto", display: "flex", flexDirection: "column", gap: 4 }}>
@@ -233,7 +233,7 @@ export function AutomationTab() {
               <div
                 key={i}
                 style={{
-                  fontSize: 11,
+                  fontSize: 'var(--fs-sm)',
                   padding: "6px 8px",
                   borderRadius: 4,
                   background: "var(--bg-tertiary)",
@@ -333,7 +333,7 @@ export function AutomationTab() {
                 style={inputStyle}
                 placeholder="0 9 * * 1-5 (min hour dom mon dow)"
               />
-              <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 4 }}>
+              <div style={{ fontSize: 'var(--fs-xs)', color: "var(--text-muted)", marginTop: 4 }}>
                 {zh ? "例: */30 * * * * = 每30分钟, 0 9 * * 1-5 = 工作日9点" : "e.g. */30 * * * * = every 30min, 0 9 * * 1-5 = weekdays 9am"}
               </div>
             </div>
@@ -355,7 +355,7 @@ export function AutomationTab() {
                   <option value="cancelled">{zh ? "已取消" : "Cancelled"}</option>
                 </select>
               </div>
-              <div style={{ marginBottom: 8, fontSize: 10, color: "var(--text-muted)" }}>
+              <div style={{ marginBottom: 8, fontSize: 'var(--fs-xs)', color: "var(--text-muted)" }}>
                 {zh ? "消息中可用占位符: {issue_id} {status}" : "Placeholders in message: {issue_id} {status}"}
               </div>
             </>
@@ -367,7 +367,7 @@ export function AutomationTab() {
               style={{
                 padding: "6px 16px",
                 borderRadius: 4,
-                fontSize: 12,
+                fontSize: 'var(--fs-sm)',
                 border: "1px solid var(--accent)",
                 background: "var(--accent)",
                 color: "#fff",
@@ -382,7 +382,7 @@ export function AutomationTab() {
               style={{
                 padding: "6px 16px",
                 borderRadius: 4,
-                fontSize: 12,
+                fontSize: 'var(--fs-sm)',
                 border: "1px solid var(--border-primary)",
                 background: "none",
                 color: "var(--text-primary)",

@@ -3439,14 +3439,14 @@ onClose={() => setCitationViewer(null)}
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 8 }}>
                 <button
-                  style={{ padding: "10px 16px", borderRadius: 6, border: "1px solid var(--border-primary)", background: "var(--bg-tertiary)", color: "var(--text-primary)", cursor: "pointer", fontSize: 13, textAlign: "left" }}
+                  style={{ padding: "10px 16px", borderRadius: 6, border: "1px solid var(--border-primary)", background: "var(--bg-tertiary)", color: "var(--text-primary)", cursor: "pointer", fontSize: 'var(--fs-base)', textAlign: "left" }}
                   onClick={() => { useProjectStore.getState().deleteProject(id); setRemoveProjectDialog(null); }}
                 >
                   <span style={{ fontWeight: 600 }}>📁 {lang === "zh" ? "仅移除项目" : "Remove Only"}</span>
-                  <div style={{ fontSize: 11, opacity: 0.7, marginTop: 2 }}>{lang === "zh" ? "从列表移除，不删除文件" : "Remove from list, keep files"}</div>
+                  <div style={{ fontSize: 'var(--fs-sm)', opacity: 0.7, marginTop: 2 }}>{lang === "zh" ? "从列表移除，不删除文件" : "Remove from list, keep files"}</div>
                 </button>
                 <button
-                  style={{ padding: "10px 16px", borderRadius: 6, border: "1px solid #e74c3c", background: "none", color: "#e74c3c", cursor: "pointer", fontSize: 13, textAlign: "left" }}
+                  style={{ padding: "10px 16px", borderRadius: 6, border: "1px solid #e74c3c", background: "none", color: "#e74c3c", cursor: "pointer", fontSize: 'var(--fs-base)', textAlign: "left" }}
                   onClick={async () => {
                     try {
                       const { invoke } = (window as any).__TAURI__.core;
@@ -3459,7 +3459,7 @@ onClose={() => setCitationViewer(null)}
                   }}
                 >
                   <span style={{ fontWeight: 600 }}><Trash2 size={14} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 4 }} /> {lang === "zh" ? "移除并删除文件到回收站" : "Remove & Recycle"}</span>
-                  <div style={{ fontSize: 11, opacity: 0.7, marginTop: 2 }}>{lang === "zh" ? "从列表移除 + 文件送入回收站" : "Remove from list + send files to Recycle Bin"}</div>
+                  <div style={{ fontSize: 'var(--fs-sm)', opacity: 0.7, marginTop: 2 }}>{lang === "zh" ? "从列表移除 + 文件送入回收站" : "Remove from list + send files to Recycle Bin"}</div>
                 </button>
               </div>
               <button

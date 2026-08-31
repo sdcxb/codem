@@ -69,7 +69,7 @@ export function IssueDetailPanel({ issue, onClose, onRefresh }: IssueDetailPanel
         style={{
           display: "inline-flex", alignItems: "center", gap: 4,
           background: "none", border: "none", color: "var(--text-secondary)",
-          cursor: "pointer", fontSize: 13, marginBottom: 16, padding: 0,
+          cursor: "pointer", fontSize: 'var(--fs-base)', marginBottom: 16, padding: 0,
         }}
       >
         <ArrowLeft size={14} /> {zh ? "返回列表" : "Back to list"}
@@ -122,7 +122,7 @@ export function IssueDetailPanel({ issue, onClose, onRefresh }: IssueDetailPanel
                 onClick={() => handleStatusChange(s)}
                 style={{
                   display: "inline-flex", alignItems: "center", gap: 4,
-                  padding: "4px 10px", borderRadius: 4, fontSize: 11,
+                  padding: "4px 10px", borderRadius: 4, fontSize: 'var(--fs-sm)',
                   border: `1px solid ${isActive ? cfg.color : "var(--border-primary)"}`,
                   background: isActive ? `${cfg.color}22` : "none",
                   color: isActive ? cfg.color : "var(--text-secondary)",
@@ -139,7 +139,7 @@ export function IssueDetailPanel({ issue, onClose, onRefresh }: IssueDetailPanel
             onClick={() => setShowSquadPicker(!showSquadPicker)}
             style={{
               display: "inline-flex", alignItems: "center", gap: 4,
-              padding: "4px 10px", borderRadius: 4, fontSize: 11,
+              padding: "4px 10px", borderRadius: 4, fontSize: 'var(--fs-sm)',
               border: `1px solid ${currentIssue.squadId ? "var(--accent)" : "var(--border-primary)"}`,
               background: currentIssue.squadId ? "var(--accent)22" : "none",
               color: currentIssue.squadId ? "var(--accent)" : "var(--text-secondary)",
@@ -154,7 +154,7 @@ export function IssueDetailPanel({ issue, onClose, onRefresh }: IssueDetailPanel
         {showSquadPicker && (
           <div style={{ marginTop: 8, padding: 8, borderRadius: 6, background: "var(--bg-tertiary)", border: "1px solid var(--border-primary)" }}>
             {availableSquads.length === 0 ? (
-              <div style={{ fontSize: 12, color: "var(--text-muted)", padding: "4px" }}>
+              <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", padding: "4px" }}>
                 {zh ? "暂无 Squad。请先在 Squads Tab 创建。" : "No squads. Create one in the Squads tab first."}
               </div>
             ) : (
@@ -163,7 +163,7 @@ export function IssueDetailPanel({ issue, onClose, onRefresh }: IssueDetailPanel
                   key={sq.id}
                   onClick={() => handleAssignSquad(sq.id)}
                   style={{
-                    padding: "6px 10px", borderRadius: 4, fontSize: 12,
+                    padding: "6px 10px", borderRadius: 4, fontSize: 'var(--fs-sm)',
                     cursor: "pointer", color: "var(--text-primary)",
                     background: "var(--bg-secondary)", marginBottom: 4,
                     display: "flex", alignItems: "center", gap: 6,
@@ -173,7 +173,7 @@ export function IssueDetailPanel({ issue, onClose, onRefresh }: IssueDetailPanel
                 >
                   <Users size={12} style={{ color: "var(--accent)" }} />
                   <span style={{ fontWeight: 600 }}>{sq.name}</span>
-                  <span style={{ fontSize: 10, color: "var(--text-muted)" }}>{sq.members.length} {zh ? "成员" : "members"}</span>
+                  <span style={{ fontSize: 'var(--fs-xs)', color: "var(--text-muted)" }}>{sq.members.length} {zh ? "成员" : "members"}</span>
                 </div>
               ))
             )}
@@ -229,7 +229,7 @@ export function IssueDetailPanel({ issue, onClose, onRefresh }: IssueDetailPanel
           style={{
             flex: 1, padding: "8px 12px", borderRadius: 6,
             border: "1px solid var(--border-primary)", background: "var(--bg-tertiary)",
-            color: "var(--text-primary)", fontSize: 13,
+            color: "var(--text-primary)", fontSize: 'var(--fs-base)',
           }}
         />
         <button
@@ -237,7 +237,7 @@ export function IssueDetailPanel({ issue, onClose, onRefresh }: IssueDetailPanel
           disabled={!commentText.trim()}
           style={{
             display: "flex", alignItems: "center", gap: 4,
-            padding: "8px 14px", borderRadius: 6, fontSize: 13,
+            padding: "8px 14px", borderRadius: 6, fontSize: 'var(--fs-base)',
             border: "1px solid var(--accent)", background: "var(--accent)",
             color: "#fff", cursor: "pointer", opacity: commentText.trim() ? 1 : 0.5,
           }}

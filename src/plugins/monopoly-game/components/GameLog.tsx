@@ -37,13 +37,13 @@ export function GameLog({ log, logColors, round, totalRounds, winningMultiplier,
       </h3>
       {/* G8: 物价指数 */}
       {priceIndex !== undefined && (
-        <div style={{ fontSize: 11, color: "#bdc3c7", marginBottom: 4, padding: "2px 4px", background: "rgba(44, 62, 80, 0.4)", borderRadius: 4 }}>
+        <div style={{ fontSize: 'var(--fs-sm)', color: "#bdc3c7", marginBottom: 4, padding: "2px 4px", background: "rgba(44, 62, 80, 0.4)", borderRadius: 4 }}>
           物价指数: <span style={{ color: "#f1c40f", fontWeight: "bold" }}>{priceIndex}</span>
         </div>
       )}
       {/* G23: 胜利条件 */}
       {winningMultiplier !== undefined && winningMultiplier > 0 && (
-        <div style={{ fontSize: 11, color: "#bdc3c7", marginBottom: 4, padding: "2px 4px", background: "rgba(241, 196, 15, 0.1)", borderRadius: 4 }}>
+        <div style={{ fontSize: 'var(--fs-sm)', color: "#bdc3c7", marginBottom: 4, padding: "2px 4px", background: "rgba(241, 196, 15, 0.1)", borderRadius: 4 }}>
           胜利条件: <span style={{ color: "#f1c40f", fontWeight: "bold" }}>{winningMultiplier}x</span> 初始资金
         </div>
       )}

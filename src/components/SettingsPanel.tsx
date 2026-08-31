@@ -602,7 +602,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
                   placeholder={lang === "zh" ? "搜索设置..." : "Search settings..."}
                   value={settingsSearch}
                   onChange={(e) => setSettingsSearch(e.target.value)}
-                  style={{ flex: 1, background: "transparent", border: "none", color: "var(--text-primary)", fontSize: 12, outline: "none" }}
+                  style={{ flex: 1, background: "transparent", border: "none", color: "var(--text-primary)", fontSize: 'var(--fs-sm)', outline: "none" }}
                 />
                 {settingsSearch && <button onClick={() => setSettingsSearch("")} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)" }}><X size={12} /></button>}
               </div>
@@ -699,7 +699,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
           {settings.mode === "cli" && (
             <div className="setting-group">
               <label>MiMo 账号</label>
-              <div style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 8 }}>
+              <div style={{ fontSize: 'var(--fs-base)', color: "var(--text-secondary)", marginBottom: 8 }}>
                 登录小米账号，mimo-v2.5-pro 模型免费
               </div>
 
@@ -709,7 +709,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
                   background: "var(--bg-secondary)",
                   borderRadius: 6,
                   border: "1px solid var(--border-primary)",
-                  fontSize: 13,
+                  fontSize: 'var(--fs-base)',
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "space-between",
@@ -722,7 +722,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
                       background: "var(--bg-tertiary)",
                       border: "1px solid var(--border-primary)",
                       borderRadius: 4,
-                      fontSize: 12,
+                      fontSize: 'var(--fs-sm)',
                       cursor: "pointer",
                     }}
                   >
@@ -739,7 +739,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
                     color: "var(--text-on-accent)",
                     border: "none",
                     borderRadius: 6,
-                    fontSize: 13,
+                    fontSize: 'var(--fs-base)',
                     cursor: loginStatus === "loading" ? "wait" : "pointer",
                     width: "100%",
                   }}
@@ -749,12 +749,12 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
               )}
 
               {loginStatus === "error" && (
-                <div style={{ fontSize: 12, color: "var(--error)", marginTop: 6 }}>
+                <div style={{ fontSize: 'var(--fs-sm)', color: "var(--error)", marginTop: 6 }}>
                   {loginError}
                 </div>
               )}
 
-              <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 6 }}>
+              <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", marginTop: 6 }}>
                 点击后会打开浏览器，在浏览器中完成授权即可。
               </div>
 
@@ -766,7 +766,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
                   background: "var(--bg-tertiary)",
                   border: "1px solid var(--border-primary)",
                   borderRadius: 4,
-                  fontSize: 12,
+                  fontSize: 'var(--fs-sm)',
                   cursor: "pointer",
                   width: "100%",
                 }}
@@ -781,7 +781,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
                   background: "var(--bg-primary)",
                   border: "1px solid var(--border-primary)",
                   borderRadius: 4,
-                  fontSize: 11,
+                  fontSize: 'var(--fs-sm)',
                   whiteSpace: "pre-wrap",
                   maxHeight: 300,
                   overflow: "auto",
@@ -847,7 +847,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
                   background: "var(--bg-secondary)",
                   color: "var(--text-primary)",
                   cursor: "pointer",
-                  fontSize: 12,
+                  fontSize: 'var(--fs-sm)',
                   whiteSpace: "nowrap",
                 }}
               >
@@ -914,11 +914,11 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
                 }}
                 style={{ flex: 1 }}
               />
-              <span style={{ fontSize: 12, color: "var(--text-secondary)", minWidth: 36, textAlign: "right", fontFamily: "var(--font-family)", fontWeight: Number(fontWeight) }}>
+              <span style={{ fontSize: 'var(--fs-sm)', color: "var(--text-secondary)", minWidth: 36, textAlign: "right", fontFamily: "var(--font-family)", fontWeight: Number(fontWeight) }}>
                 {fontWeight}
               </span>
             </div>
-            <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>
+            <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", marginTop: 2 }}>
               {lang === "zh" ? "100=极细 · 400=常规 · 700=粗体 · 900=极粗" : "100=Thin · 400=Regular · 700=Bold · 900=Black"}
             </div>
           </div>
@@ -932,12 +932,12 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
                 useAppStore.getState().setDisplayMode(e.target.value as "unified" | "segmented");
                 setSettingJSON("codem-display-mode", e.target.value);
               }}
-              style={{ padding: "6px 8px", fontSize: 13, background: "var(--bg-tertiary)", color: "var(--text-primary)", border: "1px solid var(--border-color)", borderRadius: 4 }}
+              style={{ padding: "6px 8px", fontSize: 'var(--fs-base)', background: "var(--bg-tertiary)", color: "var(--text-primary)", border: "1px solid var(--border-color)", borderRadius: 4 }}
             >
               <option value="unified">{lang === "zh" ? "统一模式（多轮回复合并为一个气泡）" : "Unified (merge multi-turn replies)"}</option>
               <option value="segmented">{lang === "zh" ? "分段模式（每轮回复独立显示）" : "Segmented (each reply separate)"}</option>
             </select>
-            <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>
+            <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", marginTop: 2 }}>
               {lang === "zh" ? "统一模式：AI 的多轮回复合并为一个连续气泡，阅读更连贯" : "Unified: merges AI multi-turn replies into one continuous bubble"}
             </div>
           </div>
@@ -949,7 +949,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
           {/* Security Mode — three-tier approval policy */}
           <div className="setting-group">
             <label style={{ display: "flex", alignItems: "center", gap: 6 }}>{lang === "zh" ? <><Shield size={16} /> 安全策略</> : <><Shield size={16} /> Security Policy</>}</label>
-            <div style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 8 }}>
+            <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-secondary)", marginBottom: 8 }}>
               {lang === "zh"
                 ? "控制 AI 执行操作时的审批级别。项目级设置可覆盖全局策略。"
                 : "Control the approval level for AI operations. Per-project settings can override this."}
@@ -993,7 +993,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
                 document.documentElement.style.setProperty("--font-family", e.target.value);
                 window.dispatchEvent(new Event("codem-settings-changed"));
               }}
-              style={{ fontSize: 13, fontFamily: "inherit" }}
+              style={{ fontSize: 'var(--fs-base)', fontFamily: "inherit" }}
             >
               <option value="AlimamaFangYuanTi">Alimama 方圆体 (默认)</option>
               <option value="Inter, sans-serif">Inter</option>
@@ -1001,7 +1001,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
               <option value="'Courier New', monospace">Courier New</option>
               <option value="Georgia, serif">Georgia</option>
             </select>
-            <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>
+            <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", marginTop: 2 }}>
               {lang === "zh" ? "选择应用全局使用的字体（外观选项卡可调粗细）" : "Select the global font (adjust weight in Appearance tab)"}
             </div>
           </div>
@@ -1113,7 +1113,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
                     padding: "6px 12px", borderRadius: 6,
                     border: "1px solid var(--border-primary)",
                     background: "var(--bg-secondary)", color: "var(--text-primary)",
-                    cursor: "pointer", fontSize: 12,
+                    cursor: "pointer", fontSize: 'var(--fs-sm)',
                     display: "flex", alignItems: "center", gap: 4,
                   }}
                 >
@@ -1126,7 +1126,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
                       padding: "6px 12px", borderRadius: 6,
                       border: "1px solid var(--border-primary)",
                       background: "var(--bg-secondary)", color: "var(--text-primary)",
-                      cursor: "pointer", fontSize: 12,
+                      cursor: "pointer", fontSize: 'var(--fs-sm)',
                     }}
                   >
                     {lang === "zh" ? "清除" : "Clear"}
@@ -1171,7 +1171,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
                 </button>
               ))}
             </div>
-            <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 6 }}>
+            <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", marginTop: 6 }}>
               {lang === "zh" ? "预设头像来自 DiceBear (MIT)，也可上传自定义图片（≤2MB）" : "Presets from DiceBear (MIT), or upload your own (≤2MB)"}
             </div>
           </div>
@@ -1255,7 +1255,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
                     color: "var(--text-on-accent)",
                     border: "1px solid var(--border-primary)",
                     borderRadius: 4,
-                    fontSize: 12,
+                    fontSize: 'var(--fs-sm)',
                     cursor: refreshingModels[provider.id] ? "not-allowed" : "pointer",
                     opacity: refreshingModels[provider.id] ? 0.6 : 1,
                   }}
@@ -1263,12 +1263,12 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
                   {refreshingModels[provider.id] ? "获取中..." : "刷新模型列表"}
                 </button>
                 {refreshStatus[provider.id] && (
-                  <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                  <span style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)" }}>
                     {refreshStatus[provider.id]}
                   </span>
                 )}
                 {dynamicModels[provider.id] && dynamicModels[provider.id].length > 0 && !refreshStatus[provider.id] && (
-                  <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                  <span style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)" }}>
                     ✓ {dynamicModels[provider.id].length} 个动态模型
                   </span>
                 )}
@@ -1288,7 +1288,7 @@ background: "var(--accent)",
 color: "var(--text-on-accent)",
 border: "none",
 borderRadius: 4,
-fontSize: 12,
+fontSize: 'var(--fs-sm)',
 cursor: "pointer",
 marginTop: 4,
                 }}
@@ -1317,7 +1317,7 @@ marginTop: 4,
               />
               {lang === "zh" ? "🔒 沙箱模式（限制写入范围到工作目录）" : "🔒 Sandbox Mode (restrict writes to workspace)"}
             </label>
-            <div style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 4 }}>
+            <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-secondary)", marginTop: 4 }}>
               {lang === "zh"
                 ? "开启后，AI 助手只能在当前工作目录及其子目录中写入文件，防止意外修改项目外部文件。"
                 : "When enabled, the AI assistant can only write files within the current workspace directory and its subdirectories."}
@@ -1331,7 +1331,7 @@ marginTop: 4,
           {/* F4: Multimodal Settings Entry */}
           <div className="setting-group">
             <label><Palette size={14} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 4 }} />{lang === "zh" ? "多模态能力" : "Multimodal"}</label>
-            <div style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 8 }}>
+            <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-secondary)", marginBottom: 8 }}>
               {lang === "zh"
                 ? "配置 Embedding 语义搜索、TTS 语音合成、ImageGen 图像生成。"
                 : "Configure Embedding semantic search, TTS text-to-speech, and ImageGen image generation."}
@@ -1345,7 +1345,7 @@ marginTop: 4,
                 background: showMultimodal ? "var(--accent-muted)" : "var(--bg-secondary)",
                 color: "var(--text-primary)",
                 cursor: "pointer",
-                fontSize: 13,
+                fontSize: 'var(--fs-base)',
                 width: "100%",
                 display: "flex",
                 alignItems: "center",
@@ -1353,7 +1353,7 @@ marginTop: 4,
               }}
             >
               <span>{lang === "zh" ? <><Palette size={12} style={{ display: 'inline', verticalAlign: 'middle' }} /> 多模态设置</> : <><Palette size={12} style={{ display: 'inline', verticalAlign: 'middle' }} /> Multimodal Settings</>}</span>
-              <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{showMultimodal ? '▼' : '▶'}</span>
+              <span style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)" }}>{showMultimodal ? '▼' : '▶'}</span>
             </button>
           </div>
 
@@ -1372,10 +1372,10 @@ marginTop: 4,
 {activeTab === "automation" && (
 <>
 <div style={{ padding: "40px 20px", textAlign: "center" }}>
-  <div style={{ fontSize: 14, color: "var(--text-secondary)", marginBottom: 12 }}>
+  <div style={{ fontSize: 'var(--fs-md)', color: "var(--text-secondary)", marginBottom: 12 }}>
     {lang === "zh" ? "自动化任务已移至任务管理面板。" : "Automation tasks have moved to Task Center."}
   </div>
-  <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
+  <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)" }}>
     {lang === "zh" ? "请在侧边栏点击“任务管理” → “自动化” Tab。" : "Click \"Task Center\" in the sidebar → \"Automation\" tab."}
   </div>
 </div>
@@ -1451,7 +1451,7 @@ marginTop: 4,
       key={tab.id}
       onClick={() => setAdvancedSubTab(tab.id as any)}
       style={{
-        padding: "5px 12px", borderRadius: 4, fontSize: 12,
+        padding: "5px 12px", borderRadius: 4, fontSize: 'var(--fs-sm)',
         border: `1px solid ${advancedSubTab === tab.id ? "var(--accent)" : "var(--border-primary)"}`,
         background: advancedSubTab === tab.id ? "var(--accent)" : "var(--bg-tertiary)",
         color: advancedSubTab === tab.id ? "#fff" : "var(--text-primary)",
@@ -1469,8 +1469,8 @@ marginTop: 4,
 {advancedSubTab === "settings" && <LayeredSettingsPanel />}
 {advancedSubTab === "correction" && (
   <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
-    <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>{lang === "zh" ? "纠偏模型配置" : "Correction Model Config"}</h3>
-    <p style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.5 }}>
+    <h3 style={{ margin: 0, fontSize: 'var(--fs-md)', fontWeight: 600 }}>{lang === "zh" ? "纠偏模型配置" : "Correction Model Config"}</h3>
+    <p style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", lineHeight: 1.5 }}>
       {lang === "zh" ? "开启后，AI 每次回复后会自动调用纠偏模型进行事实核查，弹出对比弹窗供你确认。" : "When enabled, AI responses are automatically fact-checked by a correction model, showing a comparison dialog."}
     </p>
     <CorrectionModelConfig />
@@ -1483,11 +1483,11 @@ marginTop: 4,
 )}
 {activeTab === "help" && (
   <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 16, maxWidth: 500 }}>
-    <h3 style={{ margin: 0, fontSize: 16, fontWeight: 600 }}>{lang === "zh" ? "帮助" : "Help"}</h3>
+    <h3 style={{ margin: 0, fontSize: 'var(--fs-lg)', fontWeight: 600 }}>{lang === "zh" ? "帮助" : "Help"}</h3>
     
     <div className="setting-group">
-      <label style={{ fontSize: 14, fontWeight: 500 }}>{lang === "zh" ? "新手引导" : "Onboarding Tour"}</label>
-      <p style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.5, marginTop: 4 }}>
+      <label style={{ fontSize: 'var(--fs-md)', fontWeight: 500 }}>{lang === "zh" ? "新手引导" : "Onboarding Tour"}</label>
+      <p style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", lineHeight: 1.5, marginTop: 4 }}>
         {lang === "zh" ? "重新查看应用功能引导教程。" : "Replay the app feature tour."}
       </p>
       <button
@@ -1496,7 +1496,7 @@ marginTop: 4,
           setShowOnboardingReplay?.(true);
         }}
         style={{
-          padding: "8px 16px", fontSize: 13, cursor: "pointer",
+          padding: "8px 16px", fontSize: 'var(--fs-base)', cursor: "pointer",
           background: "var(--accent)", color: "#fff",
           border: "none", borderRadius: 6,
         }}
@@ -1506,8 +1506,8 @@ marginTop: 4,
     </div>
 
     <div className="setting-group">
-      <label style={{ fontSize: 14, fontWeight: 500 }}>{lang === "zh" ? "快捷键" : "Keyboard Shortcuts"}</label>
-      <div style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 2 }}>
+      <label style={{ fontSize: 'var(--fs-md)', fontWeight: 500 }}>{lang === "zh" ? "快捷键" : "Keyboard Shortcuts"}</label>
+      <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-secondary)", lineHeight: 2 }}>
         <div><kbd>Ctrl + K</kbd> — {lang === "zh" ? "搜索对话" : "Search chat"}</div>
         <div><kbd>Ctrl + B</kbd> — {lang === "zh" ? "切换侧边栏" : "Toggle sidebar"}</div>
         <div><kbd>Esc</kbd> — {lang === "zh" ? "关闭弹窗/取消" : "Close dialog/cancel"}</div>
@@ -1516,8 +1516,8 @@ marginTop: 4,
     </div>
 
     <div className="setting-group">
-      <label style={{ fontSize: 14, fontWeight: 500 }}>{lang === "zh" ? "关于" : "About"}</label>
-      <div style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.6 }}>
+      <label style={{ fontSize: 'var(--fs-md)', fontWeight: 500 }}>{lang === "zh" ? "关于" : "About"}</label>
+      <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", lineHeight: 1.6 }}>
         Codem (mimo-gui) v{APP_VERSION}
         <br />
         {lang === "zh" ? "AI 编程助手 — 本地优先，隐私安全" : "AI Coding Assistant — Local-first, Privacy-focused"}
@@ -1525,7 +1525,7 @@ marginTop: 4,
       <button
         id="check-update-btn"
         className="save-btn"
-        style={{ marginTop: 8, background: "var(--accent)", color: "#fff", border: "none", padding: "6px 16px", borderRadius: 6, cursor: "pointer", fontSize: 12 }}
+        style={{ marginTop: 8, background: "var(--accent)", color: "#fff", border: "none", padding: "6px 16px", borderRadius: 6, cursor: "pointer", fontSize: 'var(--fs-sm)' }}
         onClick={async () => {
           const btn = document.getElementById("check-update-btn") as HTMLButtonElement;
           if (!btn) return;
@@ -1953,7 +1953,7 @@ function PermissionRulesSection() {
       <div className="settings-section-title">
         {zh ? "🔐 权限规则" : "🔐 Permission Rules"}
       </div>
-      <div style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 12 }}>
+      <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-secondary)", marginBottom: 12 }}>
         {zh
           ? "自定义工具权限规则。规则按顺序匹配，最后匹配的规则生效。内置规则（受保护路径、危险命令）始终生效。"
           : "Custom tool permission rules. Rules are matched in order, last match wins. Built-in rules (protected paths, dangerous commands) always apply."}
@@ -1973,7 +1973,7 @@ function PermissionRulesSection() {
                 background: "var(--bg-secondary)",
                 borderRadius: 6,
                 border: "1px solid var(--border-primary)",
-                fontSize: 12,
+                fontSize: 'var(--fs-sm)',
               }}
             >
               <span style={{ fontFamily: "monospace", flex: "0 0 auto", color: "var(--text-primary)" }}>
@@ -1997,7 +1997,7 @@ function PermissionRulesSection() {
                   border: "none",
                   color: "var(--text-muted)",
                   cursor: "pointer",
-                  fontSize: 14,
+                  fontSize: 'var(--fs-md)',
                   padding: "0 4px",
                 }}
                 title={zh ? "删除" : "Delete"}
@@ -2010,7 +2010,7 @@ function PermissionRulesSection() {
       )}
 
       {customRules.length === 0 && (
-        <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 12, fontStyle: "italic" }}>
+        <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", marginBottom: 12, fontStyle: "italic" }}>
           {zh ? "暂无自定义规则" : "No custom rules"}
         </div>
       )}
@@ -2028,7 +2028,7 @@ function PermissionRulesSection() {
         }}
       >
         <div style={{ flex: 1 }}>
-          <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>
+          <label style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", display: "block", marginBottom: 4 }}>
             {zh ? "工具名 (支持 * 通配)" : "Tool (supports * wildcard)"}
           </label>
           <input
@@ -2036,11 +2036,11 @@ function PermissionRulesSection() {
             value={newRule.tool}
             onChange={(e) => setNewRule({ ...newRule, tool: e.target.value })}
             placeholder="bash / write / *"
-            style={{ width: "100%", fontSize: 12, fontFamily: "monospace" }}
+            style={{ width: "100%", fontSize: 'var(--fs-sm)', fontFamily: "monospace" }}
           />
         </div>
         <div style={{ flex: 1 }}>
-          <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>
+          <label style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", display: "block", marginBottom: 4 }}>
             {zh ? "资源匹配 (可选)" : "Resource (optional)"}
           </label>
           <input
@@ -2048,17 +2048,17 @@ function PermissionRulesSection() {
             value={newRule.resource || ""}
             onChange={(e) => setNewRule({ ...newRule, resource: e.target.value })}
             placeholder="rm -rf* / **/.env"
-            style={{ width: "100%", fontSize: 12, fontFamily: "monospace" }}
+            style={{ width: "100%", fontSize: 'var(--fs-sm)', fontFamily: "monospace" }}
           />
         </div>
         <div style={{ flex: "0 0 auto" }}>
-          <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>
+          <label style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", display: "block", marginBottom: 4 }}>
             {zh ? "动作" : "Action"}
           </label>
           <select
             value={newRule.action}
             onChange={(e) => setNewRule({ ...newRule, action: e.target.value as PermissionAction })}
-            style={{ fontSize: 12 }}
+            style={{ fontSize: 'var(--fs-sm)' }}
           >
             <option value="ask">{zh ? "询问" : "Ask"}</option>
             <option value="allow">{zh ? "允许" : "Allow"}</option>
@@ -2073,7 +2073,7 @@ background: "var(--accent)",
 color: "var(--text-on-accent)",
 border: "none",
 borderRadius: 4,
-fontSize: 12,
+fontSize: 'var(--fs-sm)',
 cursor: "pointer",
 whiteSpace: "nowrap",
 flex: "0 0 auto",
@@ -2085,7 +2085,7 @@ flex: "0 0 auto",
 
       {/* Quick templates */}
       <div style={{ marginTop: 8, display: "flex", flexWrap: "wrap", gap: 6 }}>
-        <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{zh ? "快速添加: " : "Quick add: "}</span>
+        <span style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)" }}>{zh ? "快速添加: " : "Quick add: "}</span>
         {[
           { label: zh ? "禁止 bash sudo" : "Deny sudo", tool: "bash", action: "deny" as PermissionAction, resource: "sudo*" },
           { label: zh ? "允许 read *" : "Allow read", tool: "read", action: "allow" as PermissionAction, resource: "" },
@@ -2108,7 +2108,7 @@ flex: "0 0 auto",
               background: "var(--bg-tertiary)",
               border: "1px solid var(--border-primary)",
               borderRadius: 3,
-              fontSize: 11,
+              fontSize: 'var(--fs-sm)',
               cursor: "pointer",
               color: "var(--text-secondary)",
             }}
@@ -2162,7 +2162,7 @@ export function SecurityModeSelector({
           <span style={{ fontSize: compact ? 12 : 16 }}>{m.icon}</span>
           <span>{zh ? m.label_zh : m.label_en}</span>
           {!compact && (
-            <span style={{ fontSize: 10, opacity: 0.8, textAlign: "center", marginTop: 2 }}>
+            <span style={{ fontSize: 'var(--fs-xs)', opacity: 0.8, textAlign: "center", marginTop: 2 }}>
               {zh ? m.desc_zh : m.desc_en}
             </span>
           )}
@@ -2228,22 +2228,22 @@ function WorktreeSettingsSection({ lang }: { lang: ReturnType<typeof useLang> })
   };
 
   const labelStyle: React.CSSProperties = {
-    fontSize: 12, fontWeight: 600, color: "var(--text-primary)", marginBottom: 4,
+    fontSize: 'var(--fs-sm)', fontWeight: 600, color: "var(--text-primary)", marginBottom: 4,
     display: "block",
   };
   const inputStyle: React.CSSProperties = {
     padding: "6px 10px", borderRadius: 4,
     border: "1px solid var(--border-primary)",
     background: "var(--bg-tertiary)", color: "var(--text-primary)",
-    fontSize: 13, width: 80,
+    fontSize: 'var(--fs-base)', width: 80,
   };
 
   return (
     <div className="setting-group">
-      <label style={{ fontSize: 14, fontWeight: 700, marginBottom: 8, display: "block" }}>
+      <label style={{ fontSize: 'var(--fs-md)', fontWeight: 700, marginBottom: 8, display: "block" }}>
         🌲 {zh ? "Git 工作树管理" : "Git Worktree Management"}
       </label>
-      <div style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 12 }}>
+      <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-secondary)", marginBottom: 12 }}>
         {zh
           ? "管理 Git Worktree 的创建、清理和数量限制。工作树模式为每个任务创建独立的文件系统目录，实现真正的并行隔离。"
           : "Manage Git Worktree creation, cleanup, and limits. Worktree mode creates isolated filesystem directories per task for true parallel isolation."}
@@ -2265,11 +2265,11 @@ function WorktreeSettingsSection({ lang }: { lang: ReturnType<typeof useLang> })
           }}
           style={inputStyle}
         />
-        <span style={{ fontSize: 11, color: "var(--text-muted)", marginLeft: 8 }}>
+        <span style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", marginLeft: 8 }}>
           {zh ? "超过此数量自动清理最旧的（默认 15）" : "Auto-clean oldest when exceeded (default 15)"}
         </span>
         {scanResults.length > 0 && (
-          <span style={{ fontSize: 11, marginLeft: 12, color: scanResults.length >= settings.maxWorktrees ? "#e74c3c" : "#22c55e" }}>
+          <span style={{ fontSize: 'var(--fs-sm)', marginLeft: 12, color: scanResults.length >= settings.maxWorktrees ? "#e74c3c" : "#22c55e" }}>
             {zh ? `当前: ${scanResults.length}/${settings.maxWorktrees}` : `Current: ${scanResults.length}/${settings.maxWorktrees}`}
           </span>
         )}
@@ -2277,7 +2277,7 @@ function WorktreeSettingsSection({ lang }: { lang: ReturnType<typeof useLang> })
 
       {/* Auto clean oldest */}
       <div style={{ marginBottom: 16 }}>
-        <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontSize: 13 }}>
+        <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontSize: 'var(--fs-base)' }}>
           <input
             type="checkbox"
             checked={settings.autoCleanOldest}
@@ -2289,14 +2289,14 @@ function WorktreeSettingsSection({ lang }: { lang: ReturnType<typeof useLang> })
           />
           <span>{zh ? "自动清理最旧工作树" : "Auto-clean oldest worktrees"}</span>
         </label>
-        <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4, marginLeft: 24 }}>
+        <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", marginTop: 4, marginLeft: 24 }}>
           {zh ? "新建工作树时，如果超过上限，自动删除最旧的非活跃工作树。" : "When creating a new worktree, auto-remove the oldest inactive one if limit exceeded."}
         </div>
       </div>
 
       {/* Warn on dirty */}
       <div style={{ marginBottom: 16 }}>
-        <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontSize: 13 }}>
+        <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontSize: 'var(--fs-base)' }}>
           <input
             type="checkbox"
             checked={settings.warnOnDirty}
@@ -2308,7 +2308,7 @@ function WorktreeSettingsSection({ lang }: { lang: ReturnType<typeof useLang> })
           />
           <span>{zh ? "归档前检查未提交修改" : "Warn on uncommitted changes before archive"}</span>
         </label>
-        <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4, marginLeft: 24 }}>
+        <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", marginTop: 4, marginLeft: 24 }}>
           {zh ? "删除工作树前检查是否有未提交的代码，有则提示确认。" : "Check for uncommitted changes before deleting a worktree; prompt for confirmation."}
         </div>
       </div>
@@ -2322,7 +2322,7 @@ function WorktreeSettingsSection({ lang }: { lang: ReturnType<typeof useLang> })
             onClick={handleScan}
             disabled={scanning || !currentProject?.path}
             style={{
-              padding: "4px 12px", borderRadius: 4, fontSize: 11,
+              padding: "4px 12px", borderRadius: 4, fontSize: 'var(--fs-sm)',
               border: "1px solid var(--border-primary)",
               background: "var(--bg-tertiary)", color: "var(--text-primary)",
               cursor: scanning ? "wait" : "pointer",
@@ -2332,12 +2332,12 @@ function WorktreeSettingsSection({ lang }: { lang: ReturnType<typeof useLang> })
           </button>
         </div>
         {!currentProject?.path && (
-          <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
+          <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)" }}>
             {zh ? "请先选择项目" : "Select a project first"}
           </div>
         )}
         {scanError && (
-          <div style={{ fontSize: 11, color: "#e74c3c", marginBottom: 8 }}>{scanError}</div>
+          <div style={{ fontSize: 'var(--fs-sm)', color: "#e74c3c", marginBottom: 8 }}>{scanError}</div>
         )}
         {scanResults.length > 0 && (
           <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
@@ -2346,23 +2346,23 @@ function WorktreeSettingsSection({ lang }: { lang: ReturnType<typeof useLang> })
                 display: "flex", alignItems: "center", gap: 8,
                 padding: "6px 8px", borderRadius: 4,
                 border: "1px solid var(--border-primary)",
-                background: "var(--bg-tertiary)", fontSize: 12,
+                background: "var(--bg-tertiary)", fontSize: 'var(--fs-sm)',
               }}>
-                <span style={{ fontSize: 14 }}>{wt.hasUncommitted ? <AlertTriangle size={14} style={{ color: '#e67e22' }} /> : <GitBranchIcon size={14} style={{ color: '#10b981' }} />}</span>
+                <span style={{ fontSize: 'var(--fs-md)' }}>{wt.hasUncommitted ? <AlertTriangle size={14} style={{ color: 'var(--warning)' }} /> : <GitBranchIcon size={14} style={{ color: 'var(--success)' }} />}</span>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontWeight: 600 }}>{wt.sessionId}</div>
-                  <div style={{ fontSize: 10, opacity: 0.6, overflow: "hidden", textOverflow: "ellipsis" }}>{wt.path}</div>
+                  <div style={{ fontSize: 'var(--fs-xs)', opacity: 0.6, overflow: "hidden", textOverflow: "ellipsis" }}>{wt.path}</div>
                 </div>
-                <span style={{ fontSize: 10, opacity: 0.7, display: 'flex', alignItems: 'center', gap: 2 }}><GitBranchIcon size={10} /> {wt.branch}</span>
+                <span style={{ fontSize: 'var(--fs-xs)', opacity: 0.7, display: 'flex', alignItems: 'center', gap: 2 }}><GitBranchIcon size={10} /> {wt.branch}</span>
                 {wt.hasUncommitted && (
-                  <span style={{ fontSize: 10, color: "#e67e22" }}>
+                  <span style={{ fontSize: 'var(--fs-xs)', color: "#e67e22" }}>
                     {zh ? "未提交" : "dirty"}
                   </span>
                 )}
                 <button
                   onClick={() => handleDelete(wt)}
                   style={{
-                    padding: "2px 8px", borderRadius: 4, fontSize: 11,
+                    padding: "2px 8px", borderRadius: 4, fontSize: 'var(--fs-sm)',
                     border: "1px solid #e74c3c", background: "transparent",
                     color: "#e74c3c", cursor: "pointer",
                   }}
@@ -2374,7 +2374,7 @@ function WorktreeSettingsSection({ lang }: { lang: ReturnType<typeof useLang> })
           </div>
         )}
         {scanResults.length === 0 && currentProject?.path && !scanning && !scanError && (
-          <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
+          <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)" }}>
             {zh ? "无工作树（扫描后显示）" : "No worktrees (scan to see)"}
           </div>
         )}
@@ -2407,12 +2407,12 @@ function NotebookSettingsSection() {
     border: '1px solid var(--border-primary)',
     background: 'var(--bg-secondary)',
     color: 'var(--text-primary)',
-    fontSize: 13,
+    fontSize: 'var(--fs-base)',
     outline: 'none',
   };
 
   const labelStyle: React.CSSProperties = {
-    fontSize: 12,
+    fontSize: 'var(--fs-sm)',
     color: 'var(--text-secondary)',
     marginBottom: 4,
     display: 'block',
@@ -2481,7 +2481,7 @@ function NotebookSettingsSection() {
           />
         </div>
       </div>
-      <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 8, marginBottom: 0 }}>
+      <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', marginTop: 8, marginBottom: 0 }}>
         {zh
           ? '调整知识笔记本的文本分块和检索参数。较小的分块提供更精确的检索但可能丢失上下文；较大的分块保留更多上下文但可能引入噪声。'
           : 'Adjust text chunking and retrieval parameters for knowledge notebooks. Smaller chunks provide more precise retrieval but may lose context; larger chunks retain more context but may introduce noise.'}
@@ -2538,47 +2538,47 @@ function AgentProfileSection({ lang }: { lang: Language }) {
   return (
     <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>{zh ? "👤 Agent Profile 管理" : "👤 Agent Profile Management"}</h3>
+        <h3 style={{ margin: 0, fontSize: 'var(--fs-md)', fontWeight: 600 }}>{zh ? "👤 Agent Profile 管理" : "👤 Agent Profile Management"}</h3>
         <button
           onClick={() => setEditing({ identity: "", domain: "", scope: "" })}
-          style={{ padding: "4px 12px", fontSize: 12, cursor: "pointer", background: "var(--accent)", color: "#fff", border: "none", borderRadius: 4 }}
+          style={{ padding: "4px 12px", fontSize: 'var(--fs-sm)', cursor: "pointer", background: "var(--accent)", color: "#fff", border: "none", borderRadius: 4 }}
         >+ {zh ? "新建" : "New"}</button>
       </div>
-      <p style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.5 }}>
+      <p style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", lineHeight: 1.5 }}>
         {zh ? "Profile 是子智能体的持久化身份/领域/范围记录，生成子智能体时自动注入到 system prompt。" : "Profiles are persistent identity/domain/scope records for subagents, auto-injected into system prompt on spawn."}
       </p>
 
       {editing && (
         <div style={{ padding: 12, borderRadius: 6, background: "var(--bg-tertiary)", border: "1px solid var(--border-primary)", display: "flex", flexDirection: "column", gap: 8 }}>
-          <input value={editing.identity || ""} onChange={(e) => setEditing({ ...editing, identity: e.target.value })} placeholder={zh ? "身份标识（如：前端专家）" : "Identity (e.g.: Frontend Expert)"} style={{ fontSize: 12, padding: "4px 8px" }} />
-          <input value={editing.domain || ""} onChange={(e) => setEditing({ ...editing, domain: e.target.value })} placeholder={zh ? "领域（如：React/TypeScript）" : "Domain (e.g.: React/TypeScript)"} style={{ fontSize: 12, padding: "4px 8px" }} />
-          <input value={editing.scope || ""} onChange={(e) => setEditing({ ...editing, scope: e.target.value })} placeholder={zh ? "范围（如：组件开发/性能优化）" : "Scope (e.g.: Components/Performance)"} style={{ fontSize: 12, padding: "4px 8px" }} />
-          <textarea value={editing.experience_summary || ""} onChange={(e) => setEditing({ ...editing, experience_summary: e.target.value })} placeholder={zh ? "经验摘要（可选）" : "Experience summary (optional)"} rows={2} style={{ fontSize: 12, padding: "4px 8px", resize: "vertical" }} />
+          <input value={editing.identity || ""} onChange={(e) => setEditing({ ...editing, identity: e.target.value })} placeholder={zh ? "身份标识（如：前端专家）" : "Identity (e.g.: Frontend Expert)"} style={{ fontSize: 'var(--fs-sm)', padding: "4px 8px" }} />
+          <input value={editing.domain || ""} onChange={(e) => setEditing({ ...editing, domain: e.target.value })} placeholder={zh ? "领域（如：React/TypeScript）" : "Domain (e.g.: React/TypeScript)"} style={{ fontSize: 'var(--fs-sm)', padding: "4px 8px" }} />
+          <input value={editing.scope || ""} onChange={(e) => setEditing({ ...editing, scope: e.target.value })} placeholder={zh ? "范围（如：组件开发/性能优化）" : "Scope (e.g.: Components/Performance)"} style={{ fontSize: 'var(--fs-sm)', padding: "4px 8px" }} />
+          <textarea value={editing.experience_summary || ""} onChange={(e) => setEditing({ ...editing, experience_summary: e.target.value })} placeholder={zh ? "经验摘要（可选）" : "Experience summary (optional)"} rows={2} style={{ fontSize: 'var(--fs-sm)', padding: "4px 8px", resize: "vertical" }} />
           <div style={{ display: "flex", gap: 8 }}>
-            <button onClick={handleSave} style={{ padding: "4px 12px", fontSize: 12, cursor: "pointer", background: "var(--accent)", color: "#fff", border: "none", borderRadius: 4 }}>{zh ? "保存" : "Save"}</button>
-            <button onClick={() => setEditing(null)} style={{ padding: "4px 12px", fontSize: 12, cursor: "pointer", background: "none", border: "1px solid var(--border-primary)", borderRadius: 4 }}>{zh ? "取消" : "Cancel"}</button>
+            <button onClick={handleSave} style={{ padding: "4px 12px", fontSize: 'var(--fs-sm)', cursor: "pointer", background: "var(--accent)", color: "#fff", border: "none", borderRadius: 4 }}>{zh ? "保存" : "Save"}</button>
+            <button onClick={() => setEditing(null)} style={{ padding: "4px 12px", fontSize: 'var(--fs-sm)', cursor: "pointer", background: "none", border: "1px solid var(--border-primary)", borderRadius: 4 }}>{zh ? "取消" : "Cancel"}</button>
           </div>
         </div>
       )}
 
       {profiles.length === 0 && !editing && (
-        <div style={{ fontSize: 12, color: "var(--text-muted)", textAlign: "center", padding: 16 }}>{zh ? "暂无 Agent Profile" : "No agent profiles yet"}</div>
+        <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", textAlign: "center", padding: 16 }}>{zh ? "暂无 Agent Profile" : "No agent profiles yet"}</div>
       )}
 
       {profiles.map((p) => (
         <div key={p.id} style={{ padding: 10, borderRadius: 6, background: "var(--bg-tertiary)", border: "1px solid var(--border-primary)", display: "flex", flexDirection: "column", gap: 4 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <span style={{ fontSize: 13, fontWeight: 500 }}>{p.identity}</span>
+            <span style={{ fontSize: 'var(--fs-base)', fontWeight: 500 }}>{p.identity}</span>
             <div style={{ display: "flex", gap: 4 }}>
-              <button onClick={() => setEditing(p)} style={{ fontSize: 11, padding: "2px 8px", cursor: "pointer", background: "transparent", border: "1px solid var(--border-primary)", borderRadius: 3 }}>{zh ? "编辑" : "Edit"}</button>
-              <button onClick={() => handleDelete(p.id)} style={{ fontSize: 11, padding: "2px 8px", cursor: "pointer", background: "transparent", border: "1px solid #e55", borderRadius: 3, color: "#e55" }}>{zh ? "删除" : "Delete"}</button>
+              <button onClick={() => setEditing(p)} style={{ fontSize: 'var(--fs-sm)', padding: "2px 8px", cursor: "pointer", background: "transparent", border: "1px solid var(--border-primary)", borderRadius: 3 }}>{zh ? "编辑" : "Edit"}</button>
+              <button onClick={() => handleDelete(p.id)} style={{ fontSize: 'var(--fs-sm)', padding: "2px 8px", cursor: "pointer", background: "transparent", border: "1px solid #e55", borderRadius: 3, color: "#e55" }}>{zh ? "删除" : "Delete"}</button>
             </div>
           </div>
-          <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{p.domain} · {p.scope}</div>
-          {p.experience_summary && <div style={{ fontSize: 11, color: "var(--text-secondary)", lineHeight: 1.4 }}>{p.experience_summary}</div>}
+          <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)" }}>{p.domain} · {p.scope}</div>
+          {p.experience_summary && <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-secondary)", lineHeight: 1.4 }}>{p.experience_summary}</div>}
           {p.skills && p.skills.length > 0 && (
             <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-              {p.skills.map((s) => <span key={s} style={{ fontSize: 10, padding: "1px 6px", background: "var(--bg-secondary)", borderRadius: 3, border: "1px solid var(--border-primary)" }}>{s}</span>)}
+              {p.skills.map((s) => <span key={s} style={{ fontSize: 'var(--fs-xs)', padding: "1px 6px", background: "var(--bg-secondary)", borderRadius: 3, border: "1px solid var(--border-primary)" }}>{s}</span>)}
             </div>
           )}
         </div>
@@ -2604,32 +2604,32 @@ function TranscriptCacheStats({ lang }: { lang: Language }) {
 
   return (
     <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
-      <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>{zh ? "💬 Transcript 缓存统计" : "💬 Transcript Cache Stats"}</h3>
-      <p style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.5 }}>
+      <h3 style={{ margin: 0, fontSize: 'var(--fs-md)', fontWeight: 600 }}>{zh ? "💬 Transcript 缓存统计" : "💬 Transcript Cache Stats"}</h3>
+      <p style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", lineHeight: 1.5 }}>
         {zh ? "缓存 LLM 请求/响应对以减少 token 消耗。10 分钟 TTL，最多 100 条。上下文压缩时自动清空。" : "Caches LLM request/response pairs to reduce token waste. 10min TTL, max 100 entries. Auto-cleared on context compaction."}
       </p>
 
       <div style={{ padding: 16, borderRadius: 6, background: "var(--bg-tertiary)", border: "1px solid var(--border-primary)" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-          <span style={{ fontSize: 13, fontWeight: 500 }}>{zh ? "缓存占用" : "Cache Usage"}</span>
-          <span style={{ fontSize: 12, color: "var(--text-muted)" }}>{stats.size} / {stats.maxSize}</span>
+          <span style={{ fontSize: 'var(--fs-base)', fontWeight: 500 }}>{zh ? "缓存占用" : "Cache Usage"}</span>
+          <span style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)" }}>{stats.size} / {stats.maxSize}</span>
         </div>
         <div style={{ height: 8, borderRadius: 4, background: "var(--bg-secondary)", overflow: "hidden" }}>
           <div style={{ height: "100%", width: `${pct}%`, background: pct > 80 ? "#e55" : "var(--accent)", borderRadius: 4, transition: "width 0.3s" }} />
         </div>
-        <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>{pct}% {zh ? "已使用" : "used"}</div>
+        <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", marginTop: 4 }}>{pct}% {zh ? "已使用" : "used"}</div>
       </div>
 
       <div style={{ display: "flex", gap: 8 }}>
         <button
           onClick={() => { TranscriptCache.clear(); setStats(TranscriptCache.stats()); }}
-          style={{ padding: "6px 12px", fontSize: 12, cursor: "pointer", background: "var(--bg-tertiary)", border: "1px solid var(--border-primary)", borderRadius: 4 }}
+          style={{ padding: "6px 12px", fontSize: 'var(--fs-sm)', cursor: "pointer", background: "var(--bg-tertiary)", border: "1px solid var(--border-primary)", borderRadius: 4 }}
         >{zh ? "🗑️ 清空缓存" : "🗑️ Clear Cache"}</button>
         <button
           onClick={() => setStats(TranscriptCache.stats())}
-          style={{ padding: "6px 12px", fontSize: 12, cursor: "pointer", background: "var(--bg-tertiary)", border: "1px solid var(--border-primary)", borderRadius: 4 }}
+          style={{ padding: "6px 12px", fontSize: 'var(--fs-sm)', cursor: "pointer", background: "var(--bg-tertiary)", border: "1px solid var(--border-primary)", borderRadius: 4 }}
         >{zh ? "🔄 刷新" : "🔄 Refresh"}</button>
-        <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, cursor: "pointer" }}>
+        <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 'var(--fs-sm)', cursor: "pointer" }}>
           <input type="checkbox" checked={autoRefresh} onChange={(e) => setAutoRefresh(e.target.checked)} />
           {zh ? "自动刷新" : "Auto refresh"}
         </label>
@@ -2721,21 +2721,21 @@ function CodeGraphSettingsSection({ lang }: { lang: ReturnType<typeof useLang> }
 
   return (
     <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 16 }}>
-      <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>
+      <h3 style={{ margin: 0, fontSize: 'var(--fs-md)', fontWeight: 600 }}>
         {zh ? "🔗 CodeGraph 代码知识图谱" : "🔗 CodeGraph Code Intelligence"}
       </h3>
-      <p style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.6, margin: 0 }}>
+      <p style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", lineHeight: 1.6, margin: 0 }}>
         {zh
           ? "CodeGraph 把代码库从\"文件集合\"转换成\"可查询的关系图\"，帮助 AI 更快理解大型项目。Agent 用一次 codegraph_explore 调用替代 10-20 次 grep+read，大幅减少 token 消耗。"
           : "CodeGraph transforms your codebase from a \"collection of files\" into a \"queryable relationship graph\", helping AI understand large projects faster. One codegraph_explore call replaces 10-20 grep+read calls, dramatically reducing token usage."}
       </p>
 
       <div style={{ padding: 16, borderRadius: 6, background: "var(--bg-tertiary)", border: "1px solid var(--border-primary)" }}>
-        <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontSize: 13 }}>
+        <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontSize: 'var(--fs-base)' }}>
           <input type="checkbox" checked={enabled} onChange={(e) => handleToggle(e.target.checked)} style={{ width: 16, height: 16 }} />
           <span style={{ fontWeight: 600 }}>{zh ? "启用 CodeGraph 集成" : "Enable CodeGraph Integration"}</span>
         </label>
-        <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4, marginLeft: 24 }}>
+        <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", marginTop: 4, marginLeft: 24 }}>
           {zh
             ? "开启后，打开包含 .codegraph/ 目录的项目时自动连接 CodeGraph MCP Server，agent 将获得 codegraph_explore 工具。"
             : "When enabled, opening a project with a .codegraph/ directory auto-connects the CodeGraph MCP Server. The agent gains the codegraph_explore tool."}
@@ -2743,16 +2743,16 @@ function CodeGraphSettingsSection({ lang }: { lang: ReturnType<typeof useLang> }
       </div>
 
       <div style={{ padding: 16, borderRadius: 6, background: "var(--bg-tertiary)", border: "1px solid var(--border-primary)" }}>
-        <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 8 }}>{zh ? "CLI 状态" : "CLI Status"}</div>
-        {status === "checking" && <div style={{ fontSize: 12, color: "var(--text-muted)" }}>{zh ? "检测中..." : "Checking..."}</div>}
-        {status === "installed" && <div style={{ fontSize: 12, color: "#22c55e" }}>✓ {zh ? "codegraph CLI 已安装" : "codegraph CLI is installed"}</div>}
+        <div style={{ fontSize: 'var(--fs-base)', fontWeight: 500, marginBottom: 8 }}>{zh ? "CLI 状态" : "CLI Status"}</div>
+        {status === "checking" && <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)" }}>{zh ? "检测中..." : "Checking..."}</div>}
+        {status === "installed" && <div style={{ fontSize: 'var(--fs-sm)', color: "#22c55e" }}>✓ {zh ? "codegraph CLI 已安装" : "codegraph CLI is installed"}</div>}
         {status === "not_installed" && (
           <div>
-            <div style={{ fontSize: 12, color: "#e74c3c", marginBottom: 8 }}>✗ {zh ? "codegraph CLI 未安装" : "codegraph CLI is not installed"}</div>
-            <div style={{ fontSize: 11, color: "var(--text-muted)", lineHeight: 1.5 }}>
+            <div style={{ fontSize: 'var(--fs-sm)', color: "#e74c3c", marginBottom: 8 }}>✗ {zh ? "codegraph CLI 未安装" : "codegraph CLI is not installed"}</div>
+            <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", lineHeight: 1.5 }}>
               {zh ? "安装命令（PowerShell）：" : "Install command (PowerShell):"}
               <br />
-              <code style={{ background: "var(--bg-secondary)", padding: "2px 6px", borderRadius: 3, fontSize: 11 }}>
+              <code style={{ background: "var(--bg-secondary)", padding: "2px 6px", borderRadius: 3, fontSize: 'var(--fs-sm)' }}>
                 irm https://raw.githubusercontent.com/colbymchenry/codegraph/main/install.ps1 | iex
               </code>
             </div>
@@ -2762,9 +2762,9 @@ function CodeGraphSettingsSection({ lang }: { lang: ReturnType<typeof useLang> }
 
       {projectPath && (
         <div style={{ padding: 16, borderRadius: 6, background: "var(--bg-tertiary)", border: "1px solid var(--border-primary)" }}>
-          <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 8 }}>{zh ? "当前项目" : "Current Project"}</div>
-          <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 8, wordBreak: "break-all" }}>{projectPath}</div>
-          <div style={{ fontSize: 12, marginBottom: 8 }}>
+          <div style={{ fontSize: 'var(--fs-base)', fontWeight: 500, marginBottom: 8 }}>{zh ? "当前项目" : "Current Project"}</div>
+          <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", marginBottom: 8, wordBreak: "break-all" }}>{projectPath}</div>
+          <div style={{ fontSize: 'var(--fs-sm)', marginBottom: 8 }}>
             {hasIndex ? (
               <span style={{ color: "#22c55e" }}>✓ {zh ? "已有 .codegraph/ 索引" : ".codegraph/ index exists"}</span>
             ) : (
@@ -2776,7 +2776,7 @@ function CodeGraphSettingsSection({ lang }: { lang: ReturnType<typeof useLang> }
               onClick={handleInit}
               disabled={initRunning}
               style={{
-                padding: "8px 16px", fontSize: 12, cursor: initRunning ? "wait" : "pointer",
+                padding: "8px 16px", fontSize: 'var(--fs-sm)', cursor: initRunning ? "wait" : "pointer",
                 background: "var(--accent)", border: "none", borderRadius: 4, color: "white",
                 fontWeight: 500, opacity: initRunning ? 0.6 : 1,
               }}
@@ -2785,7 +2785,7 @@ function CodeGraphSettingsSection({ lang }: { lang: ReturnType<typeof useLang> }
             </button>
           )}
           {initOutput && (
-            <pre style={{ marginTop: 8, padding: 8, background: "var(--bg-secondary)", borderRadius: 4, fontSize: 11, overflow: "auto", maxHeight: 200, whiteSpace: "pre-wrap" }}>
+            <pre style={{ marginTop: 8, padding: 8, background: "var(--bg-secondary)", borderRadius: 4, fontSize: 'var(--fs-sm)', overflow: "auto", maxHeight: 200, whiteSpace: "pre-wrap" }}>
               {initOutput}
             </pre>
           )}
@@ -2793,10 +2793,10 @@ function CodeGraphSettingsSection({ lang }: { lang: ReturnType<typeof useLang> }
       )}
 
       <div style={{ padding: 16, borderRadius: 6, background: "var(--bg-secondary)", border: "1px solid var(--border-primary)" }}>
-        <div style={{ fontSize: 12, fontWeight: 500, marginBottom: 8 }}>
+        <div style={{ fontSize: 'var(--fs-sm)', fontWeight: 500, marginBottom: 8 }}>
           {zh ? "📊 实测效果（7 个真实项目基准）" : "📊 Measured Results (7 real-world repos)"}
         </div>
-        <div style={{ fontSize: 11, color: "var(--text-muted)", lineHeight: 1.6 }}>
+        <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", lineHeight: 1.6 }}>
           {zh ? "• 工具调用次数减少 88%（28 次 → 2 次）" : "• Tool calls reduced 88% (28 → 2)"}<br />
           {zh ? "• 文件读取次数降为零（19 次 → 0 次）" : "• File reads reduced to zero (19 → 0)"}<br />
           {zh ? "• Token 消耗减少 62%" : "• Token usage reduced 62%"}<br />

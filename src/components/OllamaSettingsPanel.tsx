@@ -82,7 +82,7 @@ export function OllamaSettingsPanel() {
         display: "flex",
         alignItems: "flex-start",
         gap: 8,
-        fontSize: 12,
+        fontSize: 'var(--fs-sm)',
       }}>
         <Cpu size={16} style={{ flexShrink: 0, marginTop: 2 }} />
         <div>
@@ -96,7 +96,7 @@ export function OllamaSettingsPanel() {
 
       {/* Base URL */}
       <div className="settings-field" style={{ marginBottom: 12 }}>
-        <label style={{ fontSize: 13, fontWeight: 600, marginBottom: 4, display: "block" }}>
+        <label style={{ fontSize: 'var(--fs-base)', fontWeight: 600, marginBottom: 4, display: "block" }}>
           {S.ollama.baseUrl[lang]}
         </label>
         <input
@@ -106,7 +106,7 @@ export function OllamaSettingsPanel() {
           placeholder="http://localhost:11434"
           style={inputStyle}
         />
-        <div style={{ fontSize: 11, color: "#6b7280", marginTop: 4 }}>{S.ollama.baseUrlHint[lang]}</div>
+        <div style={{ fontSize: 'var(--fs-sm)', color: "#6b7280", marginTop: 4 }}>{S.ollama.baseUrlHint[lang]}</div>
       </div>
 
       {/* Auto detect */}
@@ -114,8 +114,8 @@ export function OllamaSettingsPanel() {
         <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
           <input type="checkbox" checked={autoDetect} onChange={e => setAutoDetect(e.target.checked)} />
           <div>
-            <div style={{ fontSize: 13, fontWeight: 600 }}>{S.ollama.autoDetect[lang]}</div>
-            <div style={{ fontSize: 11, color: "#6b7280" }}>{S.ollama.autoDetectHint[lang]}</div>
+            <div style={{ fontSize: 'var(--fs-base)', fontWeight: 600 }}>{S.ollama.autoDetect[lang]}</div>
+            <div style={{ fontSize: 'var(--fs-sm)', color: "#6b7280" }}>{S.ollama.autoDetectHint[lang]}</div>
           </div>
         </label>
       </div>
@@ -126,7 +126,7 @@ export function OllamaSettingsPanel() {
           <SettingsIcon size={14} />
           {S.ollama.save[lang]}
         </button>
-        {saved && <span style={{ color: "#22c55e", fontSize: 12, alignSelf: "center" }}>✓ {S.ollama.saved[lang]}</span>}
+        {saved && <span style={{ color: "#22c55e", fontSize: 'var(--fs-sm)', alignSelf: "center" }}>✓ {S.ollama.saved[lang]}</span>}
       </div>
 
       {/* Connection Status */}
@@ -138,13 +138,13 @@ export function OllamaSettingsPanel() {
         marginBottom: 16,
       }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-          <span style={{ fontSize: 13, fontWeight: 600 }}>{S.ollama.connectionStatus[lang]}</span>
+          <span style={{ fontSize: 'var(--fs-base)', fontWeight: 600 }}>{S.ollama.connectionStatus[lang]}</span>
           <button onClick={checkConnection} disabled={checking} style={btnStyle}>
             <RefreshCw size={12} className={checking ? "spin" : ""} />
             {S.ollama.checkConnection[lang]}
           </button>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 'var(--fs-base)' }}>
           {checking ? (
             <>
               <RefreshCw size={14} className="spin" />
@@ -154,7 +154,7 @@ export function OllamaSettingsPanel() {
             <>
               <CheckCircle size={14} color="#22c55e" />
               <span style={{ color: "#22c55e" }}>{S.ollama.connected[lang]}</span>
-              <span style={{ color: "#6b7280", fontSize: 12 }}>— {status.url}</span>
+              <span style={{ color: "#6b7280", fontSize: 'var(--fs-sm)' }}>— {status.url}</span>
               <span style={{ marginLeft: "auto", fontWeight: 600 }}>
                 {S.ollama.modelCount[lang]}: {status.modelCount}
               </span>
@@ -163,12 +163,12 @@ export function OllamaSettingsPanel() {
             <>
               <XCircle size={14} color="#ef4444" />
               <span style={{ color: "#ef4444" }}>{S.ollama.disconnected[lang]}</span>
-              <span style={{ color: "#6b7280", fontSize: 12 }}>— {status.error}</span>
+              <span style={{ color: "#6b7280", fontSize: 'var(--fs-sm)' }}>— {status.error}</span>
             </>
           ) : null}
         </div>
         {!status?.connected && status && (
-          <div style={{ marginTop: 8, fontSize: 12, color: "#f59e0b" }}>
+          <div style={{ marginTop: 8, fontSize: 'var(--fs-sm)', color: "#f59e0b" }}>
             ⚠ {S.ollama.connectError[lang]}
           </div>
         )}
@@ -178,7 +178,7 @@ export function OllamaSettingsPanel() {
       {status?.connected && (
         <div>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-            <span style={{ fontSize: 13, fontWeight: 600 }}>{S.ollama.models[lang]}</span>
+            <span style={{ fontSize: 'var(--fs-base)', fontWeight: 600 }}>{S.ollama.models[lang]}</span>
             <button onClick={fetchModels} disabled={loadingModels} style={btnStyle}>
               <RefreshCw size={12} className={loadingModels ? "spin" : ""} />
               {S.ollama.refreshModels[lang]}
@@ -186,7 +186,7 @@ export function OllamaSettingsPanel() {
           </div>
 
           {models.length === 0 ? (
-            <div style={{ textAlign: "center", padding: 16, color: "#6b7280", fontSize: 12 }}>
+            <div style={{ textAlign: "center", padding: 16, color: "#6b7280", fontSize: 'var(--fs-sm)' }}>
               {S.ollama.noModels[lang]}
             </div>
           ) : (
@@ -197,25 +197,25 @@ export function OllamaSettingsPanel() {
                   padding: "6px 10px", borderRadius: 6,
                   background: "var(--bg-secondary, #181825)",
                   border: "1px solid var(--border-color, #333)",
-                  fontSize: 12,
+                  fontSize: 'var(--fs-sm)',
                 }}>
                   <Cpu size={14} style={{ flexShrink: 0 }} />
                   <span style={{ fontWeight: 600, fontFamily: "'Cascadia Code', monospace" }}>{m.id}</span>
-                  <span style={{ color: "#6b7280", fontSize: 11 }}>
+                  <span style={{ color: "#6b7280", fontSize: 'var(--fs-sm)' }}>
                     ctx: {(m.contextWindow / 1000).toFixed(0)}K
                   </span>
                   {m.supportsTools && (
-                    <span style={{ fontSize: 10, padding: "1px 6px", borderRadius: 4, background: "rgba(34,197,94,0.15)", color: "#22c55e" }}>
+                    <span style={{ fontSize: 'var(--fs-xs)', padding: "1px 6px", borderRadius: 4, background: "rgba(34,197,94,0.15)", color: "#22c55e" }}>
                       tools
                     </span>
                   )}
-                  <span style={{ marginLeft: "auto", color: "#22c55e", fontSize: 11 }}>FREE</span>
+                  <span style={{ marginLeft: "auto", color: "#22c55e", fontSize: 'var(--fs-sm)' }}>FREE</span>
                 </div>
               ))}
             </div>
           )}
 
-          <div style={{ marginTop: 8, fontSize: 11, color: "#6b7280", fontStyle: "italic" }}>
+          <div style={{ marginTop: 8, fontSize: 'var(--fs-sm)', color: "#6b7280", fontStyle: "italic" }}>
             {S.ollama.installHint[lang]}
           </div>
         </div>
@@ -231,7 +231,7 @@ const inputStyle: React.CSSProperties = {
   border: "1px solid var(--border-color, #333)",
   borderRadius: 6,
   color: "inherit",
-  fontSize: 13,
+  fontSize: 'var(--fs-base)',
   fontFamily: "'Cascadia Code', monospace",
 };
 
@@ -241,7 +241,7 @@ const btnStyle: React.CSSProperties = {
   gap: 4,
   padding: "4px 10px",
   borderRadius: 6,
-  fontSize: 12,
+  fontSize: 'var(--fs-sm)',
   cursor: "pointer",
   border: "1px solid var(--border-color, #333)",
   background: "transparent",

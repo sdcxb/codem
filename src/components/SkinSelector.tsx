@@ -125,7 +125,7 @@ function DreamConfigPanel() {
             ) : (
               <img src={dreamConfig.backgroundImage} alt="背景预览" />
             )}
-            <span style={{ fontSize: 10, color: "var(--text-muted)", marginLeft: 4 }}>
+            <span style={{ fontSize: 'var(--fs-xs)', color: "var(--text-muted)", marginLeft: 4 }}>
               {dreamConfig.bgMediaType === 'video' ? <><Film size={10} style={{ display: 'inline', verticalAlign: 'middle' }} /> {lang === 'zh' ? '视频' : 'Video'}</>
                : dreamConfig.bgMediaType === 'gif' ? <><Film size={10} style={{ display: 'inline', verticalAlign: 'middle' }} /> GIF</>
                : <><ImageIcon size={10} style={{ display: 'inline', verticalAlign: 'middle' }} /> {lang === 'zh' ? '图片' : 'Image'}</>}

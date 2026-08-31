@@ -131,7 +131,7 @@ export function SearchDialog({ onClose, onSwitchProject, onNewSession, onOpenSki
                   >
                     <span className="search-item-icon"><MessageSquare size={16} /></span>
                     <span className="search-item-label">{s.title}</span>
-                    <span className="search-item-shortcut" style={{ fontSize: 10, opacity: 0.5 }}>{s.projectName}</span>
+                    <span className="search-item-shortcut" style={{ fontSize: 'var(--fs-xs)', opacity: 0.5 }}>{s.projectName}</span>
                   </div>
                 );
               })}

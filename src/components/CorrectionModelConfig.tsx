@@ -51,7 +51,7 @@ export function CorrectionModelConfig() {
           onChange={(e) => handleEnabledChange(e.target.checked)}
           style={{ width: 16, height: 16, cursor: "pointer" }}
         />
-        <span style={{ fontSize: 13, fontWeight: 500 }}>
+        <span style={{ fontSize: 'var(--fs-base)', fontWeight: 500 }}>
           {zh ? "启用纠偏模式" : "Enable Correction Mode"}
         </span>
       </label>
@@ -60,14 +60,14 @@ export function CorrectionModelConfig() {
         <>
           {/* Provider */}
           <div>
-            <label style={{ display: "block", fontSize: 12, marginBottom: 4, color: "var(--text-muted)" }}>
+            <label style={{ display: "block", fontSize: 'var(--fs-sm)', marginBottom: 4, color: "var(--text-muted)" }}>
               {zh ? "纠偏模型提供商" : "Correction Model Provider"}
             </label>
             <select
               value={provider}
               onChange={(e) => handleProviderChange(e.target.value)}
               style={{
-                width: "100%", padding: "6px 8px", fontSize: 13,
+                width: "100%", padding: "6px 8px", fontSize: 'var(--fs-base)',
                 background: "var(--bg-tertiary)", color: "var(--text-primary)",
                 border: "1px solid var(--border-color)", borderRadius: 4,
               }}
@@ -81,7 +81,7 @@ export function CorrectionModelConfig() {
 
           {/* Model name */}
           <div>
-            <label style={{ display: "block", fontSize: 12, marginBottom: 4, color: "var(--text-muted)" }}>
+            <label style={{ display: "block", fontSize: 'var(--fs-sm)', marginBottom: 4, color: "var(--text-muted)" }}>
               {zh ? "纠偏模型名称" : "Correction Model Name"}
             </label>
             <input
@@ -90,7 +90,7 @@ export function CorrectionModelConfig() {
               onChange={(e) => handleModelChange(e.target.value)}
               placeholder="gpt-4-turbo"
               style={{
-                width: "100%", padding: "6px 8px", fontSize: 13,
+                width: "100%", padding: "6px 8px", fontSize: 'var(--fs-base)',
                 background: "var(--bg-tertiary)", color: "var(--text-primary)",
                 border: "1px solid var(--border-color)", borderRadius: 4,
                 outline: "none",
@@ -98,7 +98,7 @@ export function CorrectionModelConfig() {
             />
           </div>
 
-          <p style={{ fontSize: 11, color: "var(--text-muted)", lineHeight: 1.5 }}>
+          <p style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", lineHeight: 1.5 }}>
             {zh
               ? "纠偏模型会在 AI 每次回复后自动检查事实错误、不准确表述和误导性陈述。注意：当前为占位实现，尚未接入真实 API。"
               : "The correction model automatically checks AI responses for factual errors, inaccuracies, and misleading statements. Note: Currently a placeholder, not yet connected to real API."}

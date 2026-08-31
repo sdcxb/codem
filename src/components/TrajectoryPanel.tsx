@@ -245,7 +245,7 @@ function MetricChip({ icon, label, value }: { icon: React.ReactNode; label: stri
       padding: '2px 6px',
       background: 'var(--bg-tertiary)',
       borderRadius: 4,
-      fontSize: 10,
+      fontSize: 'var(--fs-xs)',
       color: 'var(--text-muted)',
       whiteSpace: 'nowrap',
     }}>
@@ -309,7 +309,7 @@ export const TrajectoryPanel = memo(function TrajectoryPanel({
 
   if (steps.length === 0) {
     return (
-      <div style={{ padding: '24px 12px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 12 }}>
+      <div style={{ padding: '24px 12px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 'var(--fs-sm)' }}>
         {zh ? '暂无执行轨迹' : 'No trajectory data'}
       </div>
     )
@@ -329,10 +329,10 @@ export const TrajectoryPanel = memo(function TrajectoryPanel({
         }}
       >
         <Activity size={14} style={{ color: 'var(--accent)', flexShrink: 0 }} />
-        <span style={{ fontWeight: 600, fontSize: 12, color: 'var(--text-primary)' }}>
+        <span style={{ fontWeight: 600, fontSize: 'var(--fs-sm)', color: 'var(--text-primary)' }}>
           {zh ? '执行轨迹' : 'Trajectory'}
         </span>
-        <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>
+        <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)' }}>
           ({filteredSteps.length})
         </span>
 
@@ -349,7 +349,7 @@ export const TrajectoryPanel = memo(function TrajectoryPanel({
               border: '1px solid var(--border-primary)',
               background: 'var(--bg-tertiary)',
               color: 'var(--text-secondary)',
-              fontSize: 10,
+              fontSize: 'var(--fs-xs)',
               cursor: 'pointer',
               whiteSpace: 'nowrap',
             }}
@@ -382,7 +382,7 @@ export const TrajectoryPanel = memo(function TrajectoryPanel({
                       padding: '4px 8px',
                       borderRadius: 4,
                       cursor: 'pointer',
-                      fontSize: 11,
+                      fontSize: 'var(--fs-sm)',
                       background: filter === t ? 'var(--accent-alpha)' : 'transparent',
                       color: filter === t ? 'var(--accent)' : 'var(--text-secondary)',
                       display: 'flex',
@@ -448,12 +448,12 @@ export const TrajectoryPanel = memo(function TrajectoryPanel({
               {/* 第一行：图标 + 类型 + 补充信息 + 时间 */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 2 }}>
                 <TypeIcon type={step.type} />
-                <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', flexShrink: 0 }}>
+                <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--text-secondary)', flexShrink: 0 }}>
                   {typeLabel(step.type, zh)}
                 </span>
                 {/* 工具名 */}
                 {step.data?.name && (
-                  <span style={{ fontFamily: 'monospace', fontSize: 10, color: 'var(--accent)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <span style={{ fontFamily: 'monospace', fontSize: 'var(--fs-xs)', color: 'var(--accent)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {step.data.name}
                   </span>
                 )}
@@ -481,7 +481,7 @@ export const TrajectoryPanel = memo(function TrajectoryPanel({
               {step.data?.content && typeof step.data.content === 'string' && (
                 <div
                   style={{
-                    fontSize: 11,
+                    fontSize: 'var(--fs-sm)',
                     color: 'var(--text-muted)',
                     lineHeight: 1.4,
                     overflow: 'hidden',
@@ -505,7 +505,7 @@ export const TrajectoryPanel = memo(function TrajectoryPanel({
               {step.data?.error && !step.data?.content && (
                 <div
                   style={{
-                    fontSize: 11,
+                    fontSize: 'var(--fs-sm)',
                     color: 'var(--error)',
                     lineHeight: 1.4,
                     overflow: 'hidden',
@@ -529,7 +529,7 @@ export const TrajectoryPanel = memo(function TrajectoryPanel({
               {step.data?.result && !step.data?.content && (
                 <div
                   style={{
-                    fontSize: 11,
+                    fontSize: 'var(--fs-sm)',
                     color: 'var(--text-muted)',
                     lineHeight: 1.4,
                     overflow: 'hidden',
@@ -566,7 +566,7 @@ export const TrajectoryPanel = memo(function TrajectoryPanel({
                   padding: 8,
                   background: 'var(--bg-tertiary)',
                   borderRadius: 4,
-                  fontSize: 10,
+                  fontSize: 'var(--fs-xs)',
                   lineHeight: 1.5,
                   maxHeight: 250,
                   overflowY: 'auto',
@@ -596,7 +596,7 @@ export const TrajectoryPanel = memo(function TrajectoryPanel({
                   {step.data.args && (
                     <div style={{ marginBottom: 4 }}>
                       <div style={{ color: 'var(--text-secondary)', marginBottom: 2 }}><strong>Args:</strong></div>
-                      <pre style={{ margin: 0, fontFamily: 'monospace', fontSize: 10, whiteSpace: 'pre-wrap', wordBreak: 'break-all', color: 'var(--text-muted)' }}>
+                      <pre style={{ margin: 0, fontFamily: 'monospace', fontSize: 'var(--fs-xs)', whiteSpace: 'pre-wrap', wordBreak: 'break-all', color: 'var(--text-muted)' }}>
                         {typeof step.data.args === 'string' ? step.data.args : JSON.stringify(step.data.args, null, 2)}
                       </pre>
                     </div>
@@ -614,7 +614,7 @@ export const TrajectoryPanel = memo(function TrajectoryPanel({
                   {step.data.result && (
                     <div style={{ marginBottom: 4 }}>
                       <div style={{ color: 'var(--text-secondary)', marginBottom: 2 }}><strong>Result:</strong></div>
-                      <pre style={{ margin: 0, fontFamily: 'monospace', fontSize: 10, whiteSpace: 'pre-wrap', wordBreak: 'break-all', color: 'var(--text-muted)' }}>
+                      <pre style={{ margin: 0, fontFamily: 'monospace', fontSize: 'var(--fs-xs)', whiteSpace: 'pre-wrap', wordBreak: 'break-all', color: 'var(--text-muted)' }}>
                         {typeof step.data.result === 'string' ? step.data.result : JSON.stringify(step.data.result, null, 2)}
                       </pre>
                     </div>
@@ -623,7 +623,7 @@ export const TrajectoryPanel = memo(function TrajectoryPanel({
                   {step.data.error && (
                     <div style={{ marginBottom: 4 }}>
                       <div style={{ color: 'var(--error)', marginBottom: 2 }}><strong>Error:</strong></div>
-                      <pre style={{ margin: 0, fontFamily: 'monospace', fontSize: 10, whiteSpace: 'pre-wrap', wordBreak: 'break-all', color: 'var(--error)' }}>
+                      <pre style={{ margin: 0, fontFamily: 'monospace', fontSize: 'var(--fs-xs)', whiteSpace: 'pre-wrap', wordBreak: 'break-all', color: 'var(--error)' }}>
                         {step.data.error}
                       </pre>
                     </div>

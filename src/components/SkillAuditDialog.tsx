@@ -98,15 +98,15 @@ const overallIcon = audit.overall === "danger" ? <ShieldAlert size={24} />
         }}>
           <div style={{ color: overallColor }}>{overallIcon}</div>
           <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)" }}>
+            <div style={{ fontSize: 'var(--fs-md)', fontWeight: 600, color: "var(--text-primary)" }}>
               {zh ? "技能安全审计" : "Skill Security Audit"}
             </div>
-            <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
+            <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)" }}>
               {skillDisplayName || skillName}
             </div>
           </div>
           <span style={{
-            fontSize: 12,
+            fontSize: 'var(--fs-sm)',
             fontWeight: 600,
             color: overallColor,
             padding: "4px 12px",
@@ -122,7 +122,7 @@ const overallIcon = audit.overall === "danger" ? <ShieldAlert size={24} />
           {/* Permissions section */}
           {audit.declaredPermissions.length > 0 && (
             <div style={{ marginBottom: 16 }}>
-              <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 8, color: "var(--text-secondary)" }}>
+              <div style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, marginBottom: 8, color: "var(--text-secondary)" }}>
                 {zh ? "声明的权限" : "Declared Permissions"}
               </div>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
@@ -130,7 +130,7 @@ const overallIcon = audit.overall === "danger" ? <ShieldAlert size={24} />
                   const isUnknown = unknownPerms.includes(perm);
                   return (
                     <span key={perm} style={{
-                      fontSize: 11,
+                      fontSize: 'var(--fs-sm)',
                       padding: "2px 8px",
                       borderRadius: 10,
                       background: isUnknown ? "rgba(245, 158, 11, 0.15)" : "var(--bg-tertiary)",
@@ -143,7 +143,7 @@ const overallIcon = audit.overall === "danger" ? <ShieldAlert size={24} />
                 })}
               </div>
               {unknownPerms.length > 0 && (
-                <div style={{ fontSize: 11, color: "#f59e0b", marginTop: 4 }}>
+                <div style={{ fontSize: 'var(--fs-sm)', color: "#f59e0b", marginTop: 4 }}>
                   {zh ? `⚠ ${unknownPerms.length} 个未知权限` : `⚠ ${unknownPerms.length} unknown permission(s)`}
                 </div>
               )}
@@ -153,7 +153,7 @@ const overallIcon = audit.overall === "danger" ? <ShieldAlert size={24} />
           {/* Findings section */}
           {audit.findings.length > 0 ? (
             <div>
-              <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 8, color: "var(--text-secondary)" }}>
+              <div style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, marginBottom: 8, color: "var(--text-secondary)" }}>
                 {zh ? `发现 ${audit.findings.length} 个问题` : `${audit.findings.length} findings`}
               </div>
               {dangerFindings.length > 0 && (
@@ -180,7 +180,7 @@ const overallIcon = audit.overall === "danger" ? <ShieldAlert size={24} />
               background: "rgba(34, 197, 94, 0.08)",
               borderRadius: 8,
               color: "#22c55e",
-              fontSize: 12,
+              fontSize: 'var(--fs-sm)',
             }}>
               <ActionIcons.confirm size={16} />
               {zh ? "未检测到安全问题" : "No security issues detected"}
@@ -198,7 +198,7 @@ const overallIcon = audit.overall === "danger" ? <ShieldAlert size={24} />
               background: "rgba(239, 68, 68, 0.08)",
               borderRadius: 8,
               cursor: "pointer",
-              fontSize: 12,
+              fontSize: 'var(--fs-sm)',
             }}>
               <input
                 type="checkbox"
@@ -231,7 +231,7 @@ const overallIcon = audit.overall === "danger" ? <ShieldAlert size={24} />
               border: `1px solid var(--border-primary)`,
               background: "transparent",
               color: "var(--text-secondary)",
-              fontSize: 12,
+              fontSize: 'var(--fs-sm)',
               cursor: "pointer",
             }}
           >
@@ -250,7 +250,7 @@ const overallIcon = audit.overall === "danger" ? <ShieldAlert size={24} />
                 : audit.overall === "warning" ? "#f59e0b"
                 : "var(--accent)",
               color: "#fff",
-              fontSize: 12,
+              fontSize: 'var(--fs-sm)',
               cursor: audit.overall === "danger" && !accepted ? "not-allowed" : "pointer",
               opacity: audit.overall === "danger" && !accepted ? 0.5 : 1,
             }}
@@ -285,7 +285,7 @@ function FindingItem({ finding }: { finding: AuditFinding }) {
       background: `${color}10`,
       border: `1px solid ${color}30`,
       borderRadius: 6,
-      fontSize: 12,
+      fontSize: 'var(--fs-sm)',
     }}>
       <span style={{ color, marginTop: 1, flexShrink: 0 }}>{icon}</span>
       <div style={{ flex: 1 }}>
@@ -293,13 +293,13 @@ function FindingItem({ finding }: { finding: AuditFinding }) {
           {finding.message}
         </div>
         {finding.filePath && (
-          <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 2 }}>
+          <div style={{ fontSize: 'var(--fs-xs)', color: "var(--text-muted)", marginTop: 2 }}>
             {finding.filePath}
           </div>
         )}
         {finding.snippet && (
           <pre style={{
-            fontSize: 10,
+            fontSize: 'var(--fs-xs)',
             color: "var(--text-muted)",
             marginTop: 4,
             background: "var(--bg-tertiary)",

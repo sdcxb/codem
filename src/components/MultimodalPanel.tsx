@@ -133,10 +133,10 @@ export function MultimodalPanel({ onClose, inline }: MultimodalPanelProps) {
       >
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
           <div>
-            <span style={{ fontSize: 16, marginRight: 6 }}>{icon}</span>
-            <span style={{ fontWeight: 600, fontSize: 14 }}>{title}</span>
+            <span style={{ fontSize: 'var(--fs-lg)', marginRight: 6 }}>{icon}</span>
+            <span style={{ fontWeight: 600, fontSize: 'var(--fs-md)' }}>{title}</span>
           </div>
-          <label style={{ cursor: "pointer", fontSize: 12 }}>
+          <label style={{ cursor: "pointer", fontSize: 'var(--fs-sm)' }}>
             <input
               type="checkbox"
               checked={isEnabled}
@@ -145,7 +145,7 @@ export function MultimodalPanel({ onClose, inline }: MultimodalPanelProps) {
             {isEnabled ? "已启用" : "已禁用"}
           </label>
         </div>
-        <div style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: isEnabled ? 10 : 0 }}>
+        <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-secondary)", marginBottom: isEnabled ? 10 : 0 }}>
           {description}
         </div>
 
@@ -156,7 +156,7 @@ export function MultimodalPanel({ onClose, inline }: MultimodalPanelProps) {
             padding: "6px 10px",
             background: "rgba(34,197,94,0.08)",
             borderRadius: 6,
-            fontSize: 11,
+            fontSize: 'var(--fs-sm)',
             color: "var(--text-secondary)",
             lineHeight: 1.6,
             border: "1px solid rgba(34,197,94,0.2)",
@@ -170,7 +170,7 @@ export function MultimodalPanel({ onClose, inline }: MultimodalPanelProps) {
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             {/* Provider selector */}
             <div>
-              <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 3 }}>
+              <label style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", display: "block", marginBottom: 3 }}>
                 Provider
               </label>
               <select
@@ -198,7 +198,7 @@ export function MultimodalPanel({ onClose, inline }: MultimodalPanelProps) {
                     }
                   }
                 }}
-                style={{ width: "100%", fontSize: 12 }}
+                style={{ width: "100%", fontSize: 'var(--fs-sm)' }}
               >
                 {providerKeys.map(p => (
                   <option key={p.id} value={p.id}>{p.name}{p.apiKey ? " ✓" : ""}</option>
@@ -215,13 +215,13 @@ export function MultimodalPanel({ onClose, inline }: MultimodalPanelProps) {
               <>
                 {/* 本地模型选择器 */}
                 <div>
-                  <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 3 }}>
+                  <label style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", display: "block", marginBottom: 3 }}>
                     本地模型
                   </label>
                   <select
                     value={config.model}
                     onChange={(e) => updateModality(modality, "model", e.target.value)}
-                    style={{ width: "100%", fontSize: 12 }}
+                    style={{ width: "100%", fontSize: 'var(--fs-sm)' }}
                   >
                     {AVAILABLE_LOCAL_MODELS.map(m => (
                       <option key={m.id} value={m.id}>{m.name} ({m.size})</option>
@@ -238,7 +238,7 @@ export function MultimodalPanel({ onClose, inline }: MultimodalPanelProps) {
                       padding: 8,
                       background: "var(--bg-tertiary, var(--bg-primary))",
                       borderRadius: 6,
-                      fontSize: 11,
+                      fontSize: 'var(--fs-sm)',
                       color: "var(--text-secondary)",
                       lineHeight: 1.6,
                     }}>
@@ -248,19 +248,19 @@ export function MultimodalPanel({ onClose, inline }: MultimodalPanelProps) {
                           padding: "1px 6px",
                           background: "var(--bg-secondary)",
                           borderRadius: 3,
-                          fontSize: 10,
+                          fontSize: 'var(--fs-xs)',
                         }}>维度: {modelInfo.dim}</span>
                         <span style={{
                           padding: "1px 6px",
                           background: "var(--bg-secondary)",
                           borderRadius: 3,
-                          fontSize: 10,
+                          fontSize: 'var(--fs-xs)',
                         }}>{modelInfo.languages}</span>
                         <span style={{
                           padding: "1px 6px",
                           background: "var(--bg-secondary)",
                           borderRadius: 3,
-                          fontSize: 10,
+                          fontSize: 'var(--fs-xs)',
                         }}>{modelInfo.license}</span>
                       </div>
                     </div>
@@ -271,7 +271,7 @@ export function MultimodalPanel({ onClose, inline }: MultimodalPanelProps) {
                 <div style={{
                   padding: "6px 8px",
                   borderRadius: 6,
-                  fontSize: 11,
+                  fontSize: 'var(--fs-sm)',
                   background: localStatus.state === "ready" ? "rgba(34,197,94,0.1)"
                     : localStatus.state === "loading" ? "rgba(59,130,246,0.1)"
                     : localStatus.state === "error" ? "rgba(239,68,68,0.1)"
@@ -288,7 +288,7 @@ export function MultimodalPanel({ onClose, inline }: MultimodalPanelProps) {
 
                 {/* 说明文字 */}
                 <div style={{
-                  fontSize: 11,
+                  fontSize: 'var(--fs-sm)',
                   color: "var(--text-muted)",
                   lineHeight: 1.6,
                   padding: "4px 0",
@@ -304,14 +304,14 @@ export function MultimodalPanel({ onClose, inline }: MultimodalPanelProps) {
 
                 {/* Model selector */}
                 <div>
-                  <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 3 }}>
+                  <label style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", display: "block", marginBottom: 3 }}>
                     模型
                   </label>
                   {availableModels && availableModels.length > 0 ? (
                     <select
                       value={config.model}
                       onChange={(e) => updateModality(modality, "model", e.target.value)}
-                      style={{ width: "100%", fontSize: 12 }}
+                      style={{ width: "100%", fontSize: 'var(--fs-sm)' }}
                     >
                       {availableModels.map(m => (
                         <option key={m} value={m}>{m}</option>
@@ -323,14 +323,14 @@ export function MultimodalPanel({ onClose, inline }: MultimodalPanelProps) {
                       value={config.model}
                       onChange={(e) => updateModality(modality, "model", e.target.value)}
                       placeholder="输入模型名称"
-                      style={{ width: "100%", fontSize: 12 }}
+                      style={{ width: "100%", fontSize: 'var(--fs-sm)' }}
                     />
                   )}
                 </div>
 
                 {/* API Key */}
                 <div>
-                  <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 3 }}>
+                  <label style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", display: "block", marginBottom: 3 }}>
                     API Key
                   </label>
                   <input
@@ -338,20 +338,20 @@ export function MultimodalPanel({ onClose, inline }: MultimodalPanelProps) {
                     value={config.apiKey}
                     onChange={(e) => updateModality(modality, "apiKey", e.target.value)}
                     placeholder="API Key"
-                    style={{ width: "100%", fontSize: 12 }}
+                    style={{ width: "100%", fontSize: 'var(--fs-sm)' }}
                   />
                 </div>
 
                 {/* Base URL */}
                 <div>
-                  <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 3 }}>
+                  <label style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", display: "block", marginBottom: 3 }}>
                     Base URL
                   </label>
                   <input
                     type="text"
                     value={config.baseUrl}
                     onChange={(e) => updateModality(modality, "baseUrl", e.target.value)}
-                    style={{ width: "100%", fontSize: 12 }}
+                    style={{ width: "100%", fontSize: 'var(--fs-sm)' }}
                   />
                 </div>
               </>
@@ -394,7 +394,7 @@ export function MultimodalPanel({ onClose, inline }: MultimodalPanelProps) {
           justifyContent: "space-between",
         }}
       >
-        <h3 style={{ margin: 0, fontSize: 16 }}>🎨 多模态设置</h3>
+        <h3 style={{ margin: 0, fontSize: 'var(--fs-lg)' }}>🎨 多模态设置</h3>
         <button
           onClick={onClose}
           style={{
@@ -402,7 +402,7 @@ export function MultimodalPanel({ onClose, inline }: MultimodalPanelProps) {
             border: "none",
             color: "var(--text-muted)",
             cursor: "pointer",
-            fontSize: 18,
+            fontSize: 'var(--fs-xl)',
           }}
         >
           ✕
@@ -410,7 +410,7 @@ export function MultimodalPanel({ onClose, inline }: MultimodalPanelProps) {
       </div>
 
       <div style={{ flex: 1, overflow: "auto", padding: 16 }}>
-        <div style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 16 }}>
+        <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-secondary)", marginBottom: 16 }}>
           配置 Embedding（语义搜索）、TTS（语音合成）、ImageGen（图像生成）三种多模态能力。
           启用后 AI 助手可以在对话中使用这些能力。
         </div>
@@ -461,7 +461,7 @@ export function MultimodalPanel({ onClose, inline }: MultimodalPanelProps) {
         }}
       >
         {saved && (
-          <span style={{ fontSize: 12, color: "var(--success)" }}>✅ 已保存</span>
+          <span style={{ fontSize: 'var(--fs-sm)', color: "var(--success)" }}>✅ 已保存</span>
         )}
         <button
           onClick={handleSave}
@@ -472,7 +472,7 @@ export function MultimodalPanel({ onClose, inline }: MultimodalPanelProps) {
             color: "var(--text-on-accent)",
             border: "none",
             borderRadius: 6,
-            fontSize: 13,
+            fontSize: 'var(--fs-base)',
             cursor: "pointer",
           }}
         >

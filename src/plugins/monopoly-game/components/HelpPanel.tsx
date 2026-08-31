@@ -16,7 +16,7 @@ export function HelpPanel({ onClose }: Props) {
           <button className="panel-close" onClick={onClose}>×</button>
         </div>
 
-        <div style={{ color: "#ecf0f1", fontSize: 13, lineHeight: 1.8 }}>
+        <div style={{ color: "#ecf0f1", fontSize: 'var(--fs-base)', lineHeight: 1.8 }}>
           <h4 style={{ color: "#f1c40f", marginTop: 12 }}>基本玩法</h4>
           <p style={{ color: "#bdc3c7" }}>
             玩家轮流掷骰子前进，经过或到达地块时触发不同事件。目标是积累财富，在游戏结束时拥有最多资产。

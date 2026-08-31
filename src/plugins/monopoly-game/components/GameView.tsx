@@ -850,7 +850,7 @@ function AirportPanel({ engine, fee, onTeleport, onClose }: {
               <button
                 key={n.id}
                 className="action-btn secondary"
-                style={{ fontSize: 11, padding: "4px 8px" }}
+                style={{ fontSize: 'var(--fs-sm)', padding: "4px 8px" }}
                 onClick={() => onTeleport(n.id)}
               >
                 {name}

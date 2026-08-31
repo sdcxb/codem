@@ -9,9 +9,7 @@
  */
 
 import { getMultimodalSettings, type MultimodalProviderConfig } from "./multimodal";
-import { getModelProfileManager } from "./model-profile";
 import { getLLMEngine } from "./index";
-import { getSettingJSON } from "../storage/settings";
 import type { LLMMessage, ContentBlock } from "../storage/message";
 
 // ========== Vision System Prompt ==========
@@ -138,47 +136,29 @@ export class VisionProxy {
 
   /**
    * 解析视觉模型配置
-   * 优先级：ModelProfile vision slot > MultimodalSettings vision > null
+   * 统一使用 LLMEngine.getConfiguredProvider('vision') 获取已配置的 provider
    */
   private resolveVisionConfig(): MultimodalProviderConfig | null {
-    // 1. 尝试从 ModelProfile 的 vision slot 获取
-    const pm = getModelProfileManager();
-    const slotConfig = pm.resolveSlot("vision" as any);
-    if (slotConfig) {
-      // 从 codem-settings 中查找对应的 provider API key
-      const settings = getSettingJSON<any>("codem-settings", {});
-      const providers = settings.providers || [];
-      const matched = providers.find(
-        (p: any) => p.id === slotConfig.provider || p.name === slotConfig.provider,
-      );
-      if (matched && matched.apiKey) {
+    // 1. 尝试通过 LLMEngine.getConfiguredProvider('vision') 统一获取
+    try {
+      const engine = getLLMEngine();
+      const { provider, model } = engine.getConfiguredProvider('vision' as any);
+      // 从 provider 实例中提取 apiKey 和 baseUrl
+      const providerConfig = engine.getProviderConfig(provider.id);
+      if (providerConfig && providerConfig.apiKey) {
         return {
-          providerId: slotConfig.provider,
-          apiKey: matched.apiKey,
-          baseUrl: matched.baseUrl || "",
-          model: slotConfig.model,
+          providerId: provider.id,
+          apiKey: providerConfig.apiKey,
+          baseUrl: providerConfig.baseUrl || "",
+          model,
           enabled: true,
         };
       }
-
-      // CLI 模式下，mimo 的 API key 不在 codem-settings 中
-      // 从 LLMEngine 的 provider config 中获取（CLI 登录时通过 setProviderConfig 设置）
-      try {
-        const engine = getLLMEngine();
-        const engineConfig = engine.getProviderConfig(slotConfig.provider);
-        if (engineConfig && engineConfig.apiKey) {
-          return {
-            providerId: slotConfig.provider,
-            apiKey: engineConfig.apiKey,
-            baseUrl: engineConfig.baseUrl || "",
-            model: slotConfig.model,
-            enabled: true,
-          };
-        }
-      } catch (e) { console.warn('[vision-proxy.ts]', e) }
+    } catch (e) {
+      console.warn('[vision-proxy.ts] getConfiguredProvider failed:', e);
     }
 
-    // 2. 从 MultimodalSettings 获取
+    // 2. Fallback: 从 MultimodalSettings 获取
     const mmSettings = getMultimodalSettings();
     if (mmSettings.vision?.enabled) {
       return mmSettings.vision;
@@ -189,9 +169,28 @@ export class VisionProxy {
 
   /**
    * 解析语音转写 (STT) 模型配置
-   * 优先级：MultimodalSettings stt > null
+   * 统一使用 LLMEngine.getConfiguredProvider + MultimodalSettings fallback
    */
   private resolveSTTConfig(): MultimodalProviderConfig | null {
+    // 1. 尝试通过 LLMEngine 统一获取
+    try {
+      const engine = getLLMEngine();
+      const { provider, model } = engine.getConfiguredProvider('stt' as any);
+      const providerConfig = engine.getProviderConfig(provider.id);
+      if (providerConfig && providerConfig.apiKey) {
+        return {
+          providerId: provider.id,
+          apiKey: providerConfig.apiKey,
+          baseUrl: providerConfig.baseUrl || "",
+          model,
+          enabled: true,
+        };
+      }
+    } catch (e) {
+      // stt slot 可能不存在，静默忽略
+    }
+
+    // 2. Fallback: 从 MultimodalSettings 获取
     const mmSettings = getMultimodalSettings();
     if (mmSettings.stt?.enabled) {
       return mmSettings.stt;

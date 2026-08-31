@@ -69,11 +69,11 @@ export function RetryConfigPanel() {
   };
 
   const labelStyle: React.CSSProperties = {
-    fontSize: 11, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 3, display: "block",
+    fontSize: 'var(--fs-sm)', fontWeight: 600, color: "var(--text-secondary)", marginBottom: 3, display: "block",
   };
   const inputStyle: React.CSSProperties = {
     padding: "5px 8px", borderRadius: 4, border: "1px solid var(--border-primary)",
-    background: "var(--bg-tertiary)", color: "var(--text-primary)", fontSize: 12, width: "100%",
+    background: "var(--bg-tertiary)", color: "var(--text-primary)", fontSize: 'var(--fs-sm)', width: "100%",
     outline: "none",
   };
 
@@ -83,10 +83,10 @@ export function RetryConfigPanel() {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       <div>
-        <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)" }}>
+        <div style={{ fontSize: 'var(--fs-md)', fontWeight: 700, color: "var(--text-primary)" }}>
           🔄 {zh ? "重试执行器" : "Retry Executor"}
         </div>
-        <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 2 }}>
+        <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-secondary)", marginTop: 2 }}>
           {zh ? "配置 API 请求失败时的自动重试策略（指数退避）。" : "Configure automatic retry strategy for failed API requests (exponential backoff)."}
         </div>
       </div>
@@ -94,7 +94,7 @@ export function RetryConfigPanel() {
       {/* Current state */}
       <div style={{
         padding: 10, borderRadius: 6, border: "1px solid var(--border-primary)",
-        background: "var(--bg-tertiary)", display: "flex", gap: 16, fontSize: 11,
+        background: "var(--bg-tertiary)", display: "flex", gap: 16, fontSize: 'var(--fs-sm)',
       }}>
         <div>
           <span style={{ color: "var(--text-muted)" }}>{zh ? "当前尝试" : "Current attempt"}: </span>
@@ -159,7 +159,7 @@ export function RetryConfigPanel() {
           </div>
         </div>
 
-        <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: 12, marginBottom: 8 }}>
+        <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: 'var(--fs-sm)', marginBottom: 8 }}>
           <input type="checkbox" checked={config.respectRetryAfter}
             onChange={e => setConfig({ ...config, respectRetryAfter: e.target.checked })} />
           {zh ? "遵守 Retry-After 响应头" : "Respect Retry-After header"}
@@ -168,7 +168,7 @@ export function RetryConfigPanel() {
         {/* Delay preview */}
         <div style={{
           padding: "6px 10px", borderRadius: 4, background: "var(--bg-tertiary)",
-          fontSize: 11, color: "var(--text-secondary)", marginBottom: 8,
+          fontSize: 'var(--fs-sm)', color: "var(--text-secondary)", marginBottom: 8,
         }}>
           {zh ? "预览：第1次重试延迟" : "Preview: 1st retry delay"} = <span style={{ fontWeight: 600, color: "var(--text-primary)" }}>{(previewDelay / 1000).toFixed(2)}s</span>
           {config.backoffMultiplier > 1 && (
@@ -178,14 +178,14 @@ export function RetryConfigPanel() {
 
         <div style={{ display: "flex", gap: 8 }}>
           <button onClick={handleSave} style={{
-            padding: "6px 16px", borderRadius: 4, fontSize: 12,
+            padding: "6px 16px", borderRadius: 4, fontSize: 'var(--fs-sm)',
             border: "1px solid var(--accent)", background: "var(--accent)",
             color: "#fff", cursor: "pointer",
           }}>
             {saved ? "✅ " + (zh ? "已保存" : "Saved") : (zh ? "保存配置" : "Save Config")}
           </button>
           <button onClick={handleReset} style={{
-            padding: "6px 16px", borderRadius: 4, fontSize: 12,
+            padding: "6px 16px", borderRadius: 4, fontSize: 'var(--fs-sm)',
             border: "1px solid var(--border-primary)", background: "none",
             color: "var(--text-primary)", cursor: "pointer",
           }}>
@@ -199,17 +199,17 @@ export function RetryConfigPanel() {
         padding: 12, borderRadius: 8, border: "1px solid var(--border-primary)",
         background: "var(--bg-secondary)",
       }}>
-        <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 8 }}>
+        <div style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, color: "var(--text-secondary)", marginBottom: 8 }}>
           🔍 {zh ? "错误分类测试器" : "Error Classification Tester"}
         </div>
-        <div style={{ fontSize: 10, color: "var(--text-muted)", marginBottom: 6 }}>
+        <div style={{ fontSize: 'var(--fs-xs)', color: "var(--text-muted)", marginBottom: 6 }}>
           {zh ? "输入错误信息（JSON 或文本），测试是否可重试。" : "Enter error info (JSON or text) to test if it's retryable."}
         </div>
         <div style={{ display: "flex", gap: 6 }}>
           <input style={inputStyle} value={testError} onChange={e => setTestError(e.target.value)}
             placeholder='{"status": 429, "headers": {"retry-after": "60"}}' />
           <button onClick={handleTestClassify} disabled={!testError.trim()} style={{
-            padding: "5px 12px", borderRadius: 4, fontSize: 12,
+            padding: "5px 12px", borderRadius: 4, fontSize: 'var(--fs-sm)',
             border: "1px solid var(--border-primary)", background: "var(--bg-tertiary)",
             color: "var(--text-primary)", cursor: "pointer", whiteSpace: "nowrap",
             opacity: testError.trim() ? 1 : 0.5,
@@ -220,7 +220,7 @@ export function RetryConfigPanel() {
         {testResult && (
           <div style={{
             marginTop: 8, padding: "6px 10px", borderRadius: 4,
-            background: "var(--bg-tertiary)", fontSize: 11,
+            background: "var(--bg-tertiary)", fontSize: 'var(--fs-sm)',
           }}>
             <div>
               <span style={{ color: "var(--text-muted)" }}>{zh ? "类型" : "Type"}: </span>
@@ -244,13 +244,13 @@ export function RetryConfigPanel() {
         )}
 
         {/* Retryable error types reference */}
-        <div style={{ marginTop: 10, fontSize: 10, color: "var(--text-muted)" }}>
+        <div style={{ marginTop: 10, fontSize: 'var(--fs-xs)', color: "var(--text-muted)" }}>
           {zh ? "可重试错误类型：" : "Retryable error types:"}
           <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 4 }}>
             {Object.entries(zh ? ERROR_TYPE_LABELS_ZH : ERROR_TYPE_LABELS_EN).map(([type, label]) => (
               <span key={type} style={{
                 padding: "2px 6px", borderRadius: 3, background: "var(--bg-tertiary)",
-                border: "1px solid var(--border-primary)", fontSize: 10,
+                border: "1px solid var(--border-primary)", fontSize: 'var(--fs-xs)',
               }}>{label}</span>
             ))}
           </div>

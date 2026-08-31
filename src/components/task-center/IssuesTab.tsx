@@ -87,7 +87,7 @@ export function IssuesTab() {
           onClick={() => setCreating(!creating)}
           style={{
             display: "flex", alignItems: "center", gap: 4,
-            padding: "6px 14px", borderRadius: 6, fontSize: 13,
+            padding: "6px 14px", borderRadius: 6, fontSize: 'var(--fs-base)',
             border: "1px solid var(--accent)", background: "var(--accent)",
             color: "#fff", cursor: "pointer",
           }}
@@ -110,7 +110,7 @@ export function IssuesTab() {
             style={{
               width: "100%", padding: "8px 12px", borderRadius: 4,
               border: "1px solid var(--border-primary)", background: "var(--bg-tertiary)",
-              color: "var(--text-primary)", fontSize: 14, marginBottom: 8,
+              color: "var(--text-primary)", fontSize: 'var(--fs-md)', marginBottom: 8,
             }}
             autoFocus
           />
@@ -121,7 +121,7 @@ export function IssuesTab() {
             style={{
               width: "100%", padding: "8px 12px", borderRadius: 4,
               border: "1px solid var(--border-primary)", background: "var(--bg-tertiary)",
-              color: "var(--text-primary)", fontSize: 13, minHeight: 80,
+              color: "var(--text-primary)", fontSize: 'var(--fs-base)', minHeight: 80,
             }}
           />
           <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
@@ -129,7 +129,7 @@ export function IssuesTab() {
               onClick={handleCreate}
               disabled={!newTitle.trim()}
               style={{
-                padding: "6px 16px", borderRadius: 4, fontSize: 12,
+                padding: "6px 16px", borderRadius: 4, fontSize: 'var(--fs-sm)',
                 border: "1px solid var(--accent)", background: "var(--accent)",
                 color: "#fff", cursor: "pointer", opacity: newTitle.trim() ? 1 : 0.5,
               }}
@@ -139,7 +139,7 @@ export function IssuesTab() {
             <button
               onClick={() => { setCreating(false); setNewTitle(""); setNewDesc(""); }}
               style={{
-                padding: "6px 16px", borderRadius: 4, fontSize: 12,
+                padding: "6px 16px", borderRadius: 4, fontSize: 'var(--fs-sm)',
                 border: "1px solid var(--border-primary)", background: "none",
                 color: "var(--text-primary)", cursor: "pointer",
               }}
@@ -157,7 +157,7 @@ export function IssuesTab() {
             key={f.value}
             onClick={() => setFilter(f.value)}
             style={{
-              padding: "4px 12px", borderRadius: 4, fontSize: 12,
+              padding: "4px 12px", borderRadius: 4, fontSize: 'var(--fs-sm)',
               border: `1px solid ${filter === f.value ? "var(--accent)" : "var(--border-primary)"}`,
               background: filter === f.value ? "var(--accent)22" : "none",
               color: filter === f.value ? "var(--accent)" : "var(--text-secondary)",

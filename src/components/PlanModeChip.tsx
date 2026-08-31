@@ -63,7 +63,7 @@ export function PlanModeChip({ mode, onModeChange, locked = false }: PlanModeChi
           border: '1px solid var(--accent)',
           background: 'var(--accent-alpha, rgba(99, 102, 241, 0.12))',
           color: 'var(--accent)',
-          fontSize: 11,
+          fontSize: 'var(--fs-sm)',
           fontWeight: 600,
           cursor: locked || leaving ? 'not-allowed' : 'pointer',
           opacity: locked || leaving ? 0.5 : 1,

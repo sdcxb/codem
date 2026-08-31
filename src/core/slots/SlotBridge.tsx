@@ -49,10 +49,10 @@ class SlotErrorBoundary extends Component<
     if (this.state.hasError) {
       if (this.props.fallback) return this.props.fallback
       return (
-        <div data-slot-error={this.props.slotName} style={{ padding: '8px 12px', fontSize: 12, color: 'var(--text-muted)' }}>
+        <div data-slot-error={this.props.slotName} style={{ padding: '8px 12px', fontSize: 'var(--fs-sm)', color: 'var(--text-muted)' }}>
           ⚠️ 插件组件崩溃（slot: {this.props.slotName}）
           {this.state.error && (
-            <div style={{ marginTop: 4, fontSize: 11, opacity: 0.7 }}>
+            <div style={{ marginTop: 4, fontSize: 'var(--fs-sm)', opacity: 0.7 }}>
               {this.state.error.message}
             </div>
           )}
@@ -80,10 +80,10 @@ class FallbackErrorBoundary extends Component<{ children: ReactNode; slotName: s
   render() {
     if (this.state.hasError) {
       return (
-        <div data-slot-error={this.props.slotName} style={{ padding: '8px 12px', fontSize: 12, color: 'var(--text-muted)' }}>
+        <div data-slot-error={this.props.slotName} style={{ padding: '8px 12px', fontSize: 'var(--fs-sm)', color: 'var(--text-muted)' }}>
           ⚠️ 此面板不可用（组件依赖的服务被禁用）
           {this.state.error && (
-            <div style={{ marginTop: 4, fontSize: 11, opacity: 0.7 }}>
+            <div style={{ marginTop: 4, fontSize: 'var(--fs-sm)', opacity: 0.7 }}>
               {this.state.error.message}
             </div>
           )}
@@ -201,7 +201,7 @@ function DegradedBanner({ slotName }: { slotName: string }) {
       padding: '4px 12px',
       background: 'color-mix(in srgb, var(--warning) 8%, transparent)',
       borderBottom: '1px solid color-mix(in srgb, var(--warning) 20%, transparent)',
-      fontSize: 11,
+      fontSize: 'var(--fs-sm)',
       color: 'var(--text-secondary)',
       display: 'flex',
       alignItems: 'center',
@@ -210,7 +210,7 @@ function DegradedBanner({ slotName }: { slotName: string }) {
       <span>⚠️ 此面板使用默认组件（插件已关闭：{slotName}）</span>
       <button
         onClick={() => setDismissed(true)}
-        style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 11 }}
+        style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 'var(--fs-sm)' }}
       >
         ×
       </button>

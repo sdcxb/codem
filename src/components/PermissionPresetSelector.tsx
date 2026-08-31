@@ -143,7 +143,7 @@ export function PermissionPresetSelector({
             const Icon = MODE_ICONS[currentInfo?.icon || '🛡️'] || Shield
             return <Icon size={13} />
           })()}
-          <span style={{ fontSize: 12 }}>
+          <span style={{ fontSize: 'var(--fs-sm)' }}>
             {currentInfo ? (zh ? currentInfo.label_zh : currentInfo.label_en) : effectiveMode}
           </span>
           <ChevronDown size={10} style={{ opacity: 0.5 }} />
@@ -173,7 +173,7 @@ export function PermissionPresetSelector({
                   title={zh ? m.desc_zh : m.desc_en}
                 >
                   <Icon size={14} />
-                  <span style={{ fontSize: 12 }}>{zh ? m.label_zh : m.label_en}</span>
+                  <span style={{ fontSize: 'var(--fs-sm)' }}>{zh ? m.label_zh : m.label_en}</span>
                   {effectiveMode === m.mode && <Check size={12} style={{ marginLeft: 'auto' }} />}
                 </button>
               )
@@ -203,7 +203,7 @@ export function PermissionPresetSelector({
           background: 'var(--bg-secondary)',
           color: 'var(--text-primary)',
           cursor: locked ? 'not-allowed' : 'pointer',
-          fontSize: 13,
+          fontSize: 'var(--fs-base)',
           minWidth: 200,
         }}
       >
@@ -253,12 +253,12 @@ export function PermissionPresetSelector({
                   textAlign: 'left',
                 }}
               >
-                <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 600 }}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 'var(--fs-base)', fontWeight: 600 }}>
                   <Icon size={15} />
                   {zh ? m.label_zh : m.label_en}
                   {effectiveMode === m.mode && <Check size={12} style={{ marginLeft: 'auto' }} />}
                 </span>
-                <span style={{ fontSize: 10, opacity: 0.7 }}>
+                <span style={{ fontSize: 'var(--fs-xs)', opacity: 0.7 }}>
                   {zh ? m.desc_zh : m.desc_en}
                 </span>
               </button>

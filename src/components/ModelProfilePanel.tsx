@@ -211,8 +211,8 @@ export function ModelProfilePanel({ onClose }: ModelProfilePanelProps) {
                     textAlign: "left",
                   }}
                 >
-                  <div style={{ fontWeight: 600, fontSize: 14 }}>{p.name}</div>
-                  <div style={{ fontSize: 11, opacity: 0.8, marginTop: 2 }}>{p.description}</div>
+                  <div style={{ fontWeight: 600, fontSize: 'var(--fs-md)' }}>{p.name}</div>
+                  <div style={{ fontSize: 'var(--fs-sm)', opacity: 0.8, marginTop: 2 }}>{p.description}</div>
                 </button>
               ))}
             </div>
@@ -234,7 +234,7 @@ export function ModelProfilePanel({ onClose }: ModelProfilePanelProps) {
                 background: "var(--bg-secondary)",
                 color: "var(--text-primary)",
                 cursor: "pointer",
-                fontSize: 12,
+                fontSize: 'var(--fs-sm)',
               }}
             >
               {showCreateForm ? (zh ? "取消" : "Cancel") : `+ ${zh ? "新建方案" : "New Profile"}`}
@@ -260,10 +260,10 @@ export function ModelProfilePanel({ onClose }: ModelProfilePanelProps) {
             >
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
                 <div>
-                  <span style={{ fontWeight: 600, fontSize: 14 }}>
+                  <span style={{ fontWeight: 600, fontSize: 'var(--fs-md)' }}>
                     {profile.name}
                     {profile.isBuiltIn && (
-                      <span style={{ fontSize: 10, marginLeft: 6, padding: "2px 6px", borderRadius: 4, background: "var(--bg-tertiary)", color: "var(--text-secondary)" }}>
+                      <span style={{ fontSize: 'var(--fs-xs)', marginLeft: 6, padding: "2px 6px", borderRadius: 4, background: "var(--bg-tertiary)", color: "var(--text-secondary)" }}>
                         {zh ? "内置" : "Built-in"}
                       </span>
                     )}
@@ -281,7 +281,7 @@ export function ModelProfilePanel({ onClose }: ModelProfilePanelProps) {
                           background: "var(--bg-tertiary)",
                           color: "var(--text-primary)",
                           cursor: "pointer",
-                          fontSize: 11,
+                          fontSize: 'var(--fs-sm)',
                         }}
                       >
                         {editingProfileId === profile.id ? (zh ? "收起" : "Collapse") : (zh ? "编辑槽位" : "Edit Slots")}
@@ -295,7 +295,7 @@ export function ModelProfilePanel({ onClose }: ModelProfilePanelProps) {
                           background: "transparent",
                           color: "var(--error)",
                           cursor: "pointer",
-                          fontSize: 11,
+                          fontSize: 'var(--fs-sm)',
                         }}
                       >
                         {zh ? "删除" : "Delete"}
@@ -312,7 +312,7 @@ export function ModelProfilePanel({ onClose }: ModelProfilePanelProps) {
                         background: "transparent",
                         color: "var(--accent)",
                         cursor: "pointer",
-                        fontSize: 11,
+                        fontSize: 'var(--fs-sm)',
                       }}
                     >
                       {zh ? "复制并编辑" : "Duplicate & Edit"}
@@ -341,7 +341,7 @@ export function ModelProfilePanel({ onClose }: ModelProfilePanelProps) {
 
               {/* Slot summary (read-only) */}
               {(editingProfileId !== profile.id || profile.isBuiltIn) && (
-                <div style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 4 }}>
+                <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-secondary)", marginTop: 4 }}>
                   {EDITABLE_SLOTS.filter(s => profile.slots[s]).length > 0 ? (
                     <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                       {EDITABLE_SLOTS.filter(s => profile.slots[s]).map(slot => (
@@ -351,7 +351,7 @@ export function ModelProfilePanel({ onClose }: ModelProfilePanelProps) {
                             padding: "2px 8px",
                             borderRadius: 4,
                             background: "var(--bg-tertiary)",
-                            fontSize: 11,
+                            fontSize: 'var(--fs-sm)',
                           }}
                         >
                           {slotLabels[slot]}: {profile.slots[slot]!.provider}/{profile.slots[slot]!.model}
@@ -432,7 +432,7 @@ function CreateProfileForm({
           background: name.trim() ? "var(--accent)" : "var(--bg-tertiary)",
           color: "var(--text-on-accent)",
           cursor: name.trim() ? "pointer" : "not-allowed",
-          fontSize: 13,
+          fontSize: 'var(--fs-base)',
           width: "100%",
         }}
       >
@@ -457,7 +457,7 @@ function ProfileNameEditor({
   return (
     <div style={{ marginBottom: 12, display: "flex", flexDirection: "column", gap: 6 }}>
       <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-        <label style={{ fontSize: 11, color: "var(--text-secondary)", minWidth: 48 }}>
+        <label style={{ fontSize: 'var(--fs-sm)', color: "var(--text-secondary)", minWidth: 48 }}>
           {zh ? "名称" : "Name"}
         </label>
         <input
@@ -465,11 +465,11 @@ function ProfileNameEditor({
           value={name}
           onChange={(e) => setName(e.target.value)}
           onBlur={() => onRename(name, desc)}
-          style={{ flex: 1, padding: "4px 8px", borderRadius: 4, border: "1px solid var(--border-primary)", background: "var(--bg-tertiary)", color: "var(--text-primary)", fontSize: 13 }}
+          style={{ flex: 1, padding: "4px 8px", borderRadius: 4, border: "1px solid var(--border-primary)", background: "var(--bg-tertiary)", color: "var(--text-primary)", fontSize: 'var(--fs-base)' }}
         />
       </div>
       <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-        <label style={{ fontSize: 11, color: "var(--text-secondary)", minWidth: 48 }}>
+        <label style={{ fontSize: 'var(--fs-sm)', color: "var(--text-secondary)", minWidth: 48 }}>
           {zh ? "描述" : "Desc"}
         </label>
         <input
@@ -477,7 +477,7 @@ function ProfileNameEditor({
           value={desc}
           onChange={(e) => setDesc(e.target.value)}
           onBlur={() => onRename(name, desc)}
-          style={{ flex: 1, padding: "4px 8px", borderRadius: 4, border: "1px solid var(--border-primary)", background: "var(--bg-tertiary)", color: "var(--text-primary)", fontSize: 13 }}
+          style={{ flex: 1, padding: "4px 8px", borderRadius: 4, border: "1px solid var(--border-primary)", background: "var(--bg-tertiary)", color: "var(--text-primary)", fontSize: 'var(--fs-base)' }}
         />
       </div>
     </div>
@@ -497,7 +497,7 @@ function SlotConfigTable({
 }) {
   return (
     <div style={{ marginTop: 8 }}>
-      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 'var(--fs-sm)' }}>
         <thead>
           <tr style={{ borderBottom: "1px solid var(--border-primary)" }}>
             <th style={{ textAlign: "left", padding: "6px 8px", color: "var(--text-secondary)" }}>
@@ -531,7 +531,7 @@ function SlotConfigTable({
           })}
         </tbody>
       </table>
-      <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 8 }}>
+      <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", marginTop: 8 }}>
         {zh
           ? "💡 未配置的槽位会自动回退：memory→subagent→chat, compaction→subagent→chat"
           : "💡 Unconfigured slots fall back: memory→subagent→chat, compaction→subagent→chat"}
@@ -609,7 +609,7 @@ function SlotConfigRow({
           <select
             value={provider}
             onChange={(e) => handleProviderChange(e.target.value)}
-            style={{ width: "100%", fontSize: 12 }}
+            style={{ width: "100%", fontSize: 'var(--fs-sm)' }}
           >
             {availableProviders.map((p) => (
               <option key={p.id} value={p.id}>
@@ -626,7 +626,7 @@ function SlotConfigRow({
           <select
             value={model}
             onChange={(e) => handleModelChange(e.target.value)}
-            style={{ width: "100%", fontSize: 12 }}
+            style={{ width: "100%", fontSize: 'var(--fs-sm)' }}
           >
             {providerModels.map((m) => (
               <option key={m.id} value={m.id}>
@@ -643,7 +643,7 @@ function SlotConfigRow({
           <select
             value={reasoning}
             onChange={(e) => handleReasoningChange(e.target.value as "low" | "medium" | "high")}
-            style={{ width: "100%", fontSize: 12 }}
+            style={{ width: "100%", fontSize: 'var(--fs-sm)' }}
           >
             <option value="low">{zh ? "低" : "Low"}</option>
             <option value="medium">{zh ? "中" : "Medium"}</option>
@@ -655,7 +655,7 @@ function SlotConfigRow({
       </td>
       <td style={{ padding: "8px" }}>
         {!enabled && (
-          <span style={{ fontSize: 10, color: "var(--text-muted)" }}>
+          <span style={{ fontSize: 'var(--fs-xs)', color: "var(--text-muted)" }}>
             {zh ? "回退到上级" : "Fallback"}
           </span>
         )}

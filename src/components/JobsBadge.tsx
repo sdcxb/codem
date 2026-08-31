@@ -142,7 +142,7 @@ export function JobsBadge({ jobs = [], onSelectJob }: JobsBadgeProps) {
           border: '1px solid var(--border-primary)',
           background: liveCount > 0 ? 'var(--accent-alpha, rgba(99,102,241,0.08))' : 'transparent',
           color: liveCount > 0 ? 'var(--accent)' : 'var(--text-muted)',
-          fontSize: 11,
+          fontSize: 'var(--fs-sm)',
           fontWeight: 500,
           cursor: 'pointer',
         }}
@@ -198,16 +198,16 @@ export function JobsBadge({ jobs = [], onSelectJob }: JobsBadgeProps) {
                   onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
                 >
                   <StatusIcon status={job.status} />
-                  <span style={{ fontSize: 11, color: 'var(--text-muted)', minWidth: 40 }}>
+                  <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', minWidth: 40 }}>
                     {job.kind}
                   </span>
                   <span
                     title={job.label}
-                    style={{ fontSize: 12, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                    style={{ fontSize: 'var(--fs-sm)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
                   >
                     {job.label}
                   </span>
-                  <span style={{ fontSize: 10, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 2 }}>
+                  <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 2 }}>
                     <Clock size={9} />
                     {duration}
                   </span>

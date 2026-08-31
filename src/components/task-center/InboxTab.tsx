@@ -105,7 +105,7 @@ export function InboxTab() {
             onClick={handleMarkAllRead}
             style={{
               display: "flex", alignItems: "center", gap: 4,
-              padding: "4px 12px", borderRadius: 4, fontSize: 12,
+              padding: "4px 12px", borderRadius: 4, fontSize: 'var(--fs-sm)',
               border: "1px solid var(--border-primary)", background: "none",
               color: "var(--text-secondary)", cursor: "pointer",
             }}
@@ -122,7 +122,7 @@ export function InboxTab() {
             key={f.value}
             onClick={() => setFilter(f.value)}
             style={{
-              padding: "4px 12px", borderRadius: 4, fontSize: 12,
+              padding: "4px 12px", borderRadius: 4, fontSize: 'var(--fs-sm)',
               border: `1px solid ${filter === f.value ? "var(--accent)" : "var(--border-primary)"}`,
               background: filter === f.value ? "var(--accent)22" : "none",
               color: filter === f.value ? "var(--accent)" : "var(--text-secondary)",

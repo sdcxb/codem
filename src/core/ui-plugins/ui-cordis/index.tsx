@@ -53,7 +53,7 @@ export function CordisPanel() {
     return (
       <div className="cordis-panel">
         <h3>Cordis Runtime</h3>
-        <p style={{ color: 'var(--text-muted)', fontSize: 12 }}>
+        <p style={{ color: 'var(--text-muted)', fontSize: 'var(--fs-sm)' }}>
           {ctxReady ? '动态插件服务未就绪' : '正在初始化...'}
         </p>
       </div>

@@ -69,7 +69,7 @@ export function VoiceSettingsPanel() {
     <div className="settings-section voice-settings">
       <div className="settings-section-header" style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
         <Volume2 size={18} style={{ color: "var(--accent)" }} />
-        <h3 style={{ fontSize: 14, fontWeight: 600 }}>{S.voice.settingsTitle[lang]}</h3>
+        <h3 style={{ fontSize: 'var(--fs-md)', fontWeight: 600 }}>{S.voice.settingsTitle[lang]}</h3>
       </div>
 
       {!isSupported && (
@@ -78,7 +78,7 @@ export function VoiceSettingsPanel() {
           background: "var(--danger-bg, rgba(239, 68, 68, 0.1))",
           border: "1px solid var(--danger-border, rgba(239, 68, 68, 0.3))",
           borderRadius: 8,
-          fontSize: 12,
+          fontSize: 'var(--fs-sm)',
           color: "var(--danger, #ef4444)",
           marginBottom: 16,
         }}>
@@ -97,7 +97,7 @@ export function VoiceSettingsPanel() {
       {!cloudTtsConfigured && preferCloudTts && (
         <div style={{
           padding: 8,
-          fontSize: 11,
+          fontSize: 'var(--fs-sm)',
           color: "var(--warning, #f59e0b)",
           marginLeft: 8,
         }}>
@@ -106,7 +106,7 @@ export function VoiceSettingsPanel() {
       )}
 
       {preferCloudTts && cloudTtsConfigured && (
-        <div style={{ padding: 8, fontSize: 11, color: "var(--text-muted)", marginLeft: 8 }}>
+        <div style={{ padding: 8, fontSize: 'var(--fs-sm)', color: "var(--text-muted)", marginLeft: 8 }}>
           {zh ? "当前使用云端 TTS，以下浏览器 TTS 设置仅在回退时生效。" : "Currently using cloud TTS, browser TTS settings below only apply on fallback."}
         </div>
       )}
@@ -125,7 +125,7 @@ export function VoiceSettingsPanel() {
             border: "1px solid var(--border-primary)",
             borderRadius: 6,
             padding: "4px 8px",
-            fontSize: 12,
+            fontSize: 'var(--fs-sm)',
             color: "var(--text-primary)",
             minWidth: 220,
             cursor: "pointer",
@@ -154,7 +154,7 @@ export function VoiceSettingsPanel() {
             disabled={!isSupported}
             style={{ flex: 1 }}
           />
-          <span style={{ fontSize: 11, color: "var(--text-muted)", minWidth: 32, textAlign: "right" }}>
+          <span style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", minWidth: 32, textAlign: "right" }}>
             {settings.rate.toFixed(1)}x
           </span>
         </div>
@@ -176,7 +176,7 @@ export function VoiceSettingsPanel() {
             disabled={!isSupported}
             style={{ flex: 1 }}
           />
-          <span style={{ fontSize: 11, color: "var(--text-muted)", minWidth: 32, textAlign: "right" }}>
+          <span style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", minWidth: 32, textAlign: "right" }}>
             {settings.pitch.toFixed(1)}
           </span>
         </div>
@@ -198,7 +198,7 @@ export function VoiceSettingsPanel() {
             disabled={!isSupported}
             style={{ flex: 1 }}
           />
-          <span style={{ fontSize: 11, color: "var(--text-muted)", minWidth: 32, textAlign: "right" }}>
+          <span style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", minWidth: 32, textAlign: "right" }}>
             {Math.round(settings.volume * 100)}%
           </span>
         </div>
@@ -218,7 +218,7 @@ export function VoiceSettingsPanel() {
             color: "#fff",
             border: "none",
             borderRadius: 6,
-            fontSize: 12,
+            fontSize: 'var(--fs-sm)',
             cursor: isSupported ? "pointer" : "not-allowed",
             opacity: isSupported ? 1 : 0.5,
           }}
@@ -226,7 +226,7 @@ export function VoiceSettingsPanel() {
           {isSpeaking ? <Square size={14} fill="currentColor" /> : <Play size={14} />}
           {isSpeaking ? S.voice.stopReading[lang] : S.voice.testVoice[lang]}
         </button>
-        <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
+        <span style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)" }}>
           {voices.length > 0
             ? (zh ? `${voices.length} 个可用语音` : `${voices.length} voices available`)
             : (zh ? "正在加载语音..." : "Loading voices...")
@@ -239,7 +239,7 @@ export function VoiceSettingsPanel() {
         padding: 12,
         background: "var(--bg-tertiary)",
         borderRadius: 8,
-        fontSize: 11,
+        fontSize: 'var(--fs-sm)',
         color: "var(--text-muted)",
         marginTop: 16,
         lineHeight: 1.6,

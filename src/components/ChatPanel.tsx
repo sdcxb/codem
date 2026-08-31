@@ -380,7 +380,7 @@ setStepTooltipLocked(false);
           <button
             className="chat-title-dropdown-btn"
             onClick={() => setShowTitleDropdown(!showTitleDropdown)}
-            style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-primary)", fontSize: 14, fontWeight: 600, display: "flex", alignItems: "center", gap: 4, padding: "2px 8px", borderRadius: 4 }}
+            style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-primary)", fontSize: 'var(--fs-md)', fontWeight: 600, display: "flex", alignItems: "center", gap: 4, padding: "2px 8px", borderRadius: 4 }}
             title={currentSession?.title || "Codem"}
           >
             <span className="chat-title">{currentSession?.title || "Codem"}</span>
@@ -402,7 +402,7 @@ setStepTooltipLocked(false);
                       className={`bottom-bar-dropdown-item ${currentSession?.id === s.id ? "active" : ""}`}
                       onClick={() => { useProjectStore.getState().switchSession(s.id); setShowTitleDropdown(false); }}
                     >
-                      <span style={{ fontSize: 12 }}>{s.title || (lang === "zh" ? "新对话" : "New Chat")}</span>
+                      <span style={{ fontSize: 'var(--fs-sm)' }}>{s.title || (lang === "zh" ? "新对话" : "New Chat")}</span>
                     </button>
                   ));
                 })()}
@@ -447,8 +447,8 @@ setStepTooltipLocked(false);
               <div style={{ padding: "4px 12px", display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer", position: "relative" }}
                 onClick={(e) => { e.stopPropagation(); setShowEffortPicker(!showEffortPicker); }}
               >
-                <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{lang === "zh" ? "推理强度" : "Reasoning Effort"}</span>
-                <span style={{ fontSize: 12, fontWeight: 600, color: "var(--accent)" }}>
+                <span style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)" }}>{lang === "zh" ? "推理强度" : "Reasoning Effort"}</span>
+                <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, color: "var(--accent)" }}>
                   {(() => {
                     const effort = getSettingJSON<string>("codem-reasoning-effort", "high");
                     const labels: Record<string, { zh: string; en: string }> = {
@@ -575,14 +575,14 @@ setStepTooltipLocked(false);
                   borderRadius: 6,
                   padding: '8px 12px',
                   color: 'var(--text-primary)',
-                  fontSize: 13,
+                  fontSize: 'var(--fs-base)',
                   outline: 'none',
                 }}
               />
               <button onClick={() => setShowSearch(false)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', display: 'flex', alignItems: 'center' }}><X size={16} /></button>
             </div>
             {searchQuery && (
-              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 8 }}>
+              <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', marginBottom: 8 }}>
                 {messages.filter(m => m.content.toLowerCase().includes(searchQuery.toLowerCase())).length} / {messages.length} {lang === 'zh' ? '条匹配' : 'matches'}
               </div>
             )}
@@ -590,8 +590,8 @@ setStepTooltipLocked(false);
               <div key={m.id} style={{ padding: '8px', borderRadius: 6, cursor: 'pointer', marginBottom: 4, background: 'var(--bg-tertiary)' }}
                 onClick={() => { setShowSearch(false); setSearchQuery(''); }}
               >
-                <span style={{ fontSize: 10, opacity: 0.6 }}>{m.role}</span>
-                <div style={{ fontSize: 12, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <span style={{ fontSize: 'var(--fs-xs)', opacity: 0.6 }}>{m.role}</span>
+                <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {m.content.substring(0, 80)}
                 </div>
               </div>
@@ -684,7 +684,7 @@ setStepTooltipLocked(false);
                           style={{
                             padding: '4px 10px', borderRadius: 16, border: '1px solid var(--border-color)',
                             background: 'var(--bg-tertiary)', color: 'var(--text-secondary)',
-                            fontSize: 11, cursor: 'pointer', whiteSpace: 'nowrap',
+                            fontSize: 'var(--fs-sm)', cursor: 'pointer', whiteSpace: 'nowrap',
                           }}
                         >
                           {p.title || p.content.substring(0, 20)}
@@ -1147,7 +1147,7 @@ canEdit={!isSessionStreaming}
             disabled={!guidanceInput.trim()}
             title={lang === "zh" ? "立即注入（中断当前回复）" : "Inject immediately (interrupt current response)"}
             style={{
-              background: 'var(--accent)', color: '#fff', border: 'none',
+              background: 'var(--accent)', color: 'var(--text-on-accent)', border: 'none',
               borderRadius: 'var(--radius-sm)', padding: '6px 8px', cursor: 'pointer',
               display: 'flex', alignItems: 'center', gap: '2px', fontSize: 'var(--fs-sm)',
               whiteSpace: 'nowrap', flexShrink: 0,

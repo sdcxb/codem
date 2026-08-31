@@ -77,7 +77,7 @@ export const ReasoningRow = memo(function ReasoningRow({
           background: 'none',
           border: 'none',
           cursor: 'pointer',
-          fontSize: 12,
+          fontSize: 'var(--fs-sm)',
           color: 'var(--text-secondary)',
           textAlign: 'left',
         }}
@@ -102,7 +102,7 @@ export const ReasoningRow = memo(function ReasoningRow({
           }
         </span>
         {!running && text.length > 0 && (
-          <span style={{ fontSize: 10, color: 'var(--text-muted)', flexShrink: 0 }}>
+          <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', flexShrink: 0 }}>
             · {text.length} {zh ? '字' : 'chars'}
           </span>
         )}
@@ -119,7 +119,7 @@ export const ReasoningRow = memo(function ReasoningRow({
             overflow: 'hidden',
             textOverflow: 'ellipsis',
             whiteSpace: 'nowrap',
-            fontSize: 11,
+            fontSize: 'var(--fs-sm)',
             color: 'var(--text-muted)',
             opacity: 0.8,
           }}
@@ -138,7 +138,7 @@ export const ReasoningRow = memo(function ReasoningRow({
             background: 'var(--bg-tertiary)',
             borderRadius: 6,
             borderLeft: '2px solid var(--border-primary)',
-            fontSize: 12,
+            fontSize: 'var(--fs-sm)',
             color: 'var(--text-secondary)',
             whiteSpace: 'pre-wrap',
             wordBreak: 'break-word',

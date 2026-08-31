@@ -191,7 +191,7 @@ export function UsageStats({ onClose }: UsageStatsProps) {
 
         {activeTab === "limits" && limits && (
           <div className="usage-limits">
-            <div style={{ marginBottom: 12, fontSize: 12, color: "var(--text-secondary)" }}>
+            <div style={{ marginBottom: 12, fontSize: 'var(--fs-sm)', color: "var(--text-secondary)" }}>
               设置费用上限，超出限额时将在控制台输出告警日志。
             </div>
 
@@ -199,12 +199,12 @@ export function UsageStats({ onClose }: UsageStatsProps) {
             <div className="usage-stat-card" style={{ flexDirection: "column", alignItems: "stretch", gap: 6 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <span className="usage-stat-label" style={{ display: "flex", alignItems: "center", gap: 6 }}><ClipboardList size={16} /> 每会话限额</span>
-                <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                <span style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)" }}>
                   {stats.todayCost > 0 ? `今日已用 $${stats.todayCost.toFixed(4)}` : ""}
                 </span>
               </div>
               <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                <span style={{ fontSize: 13, color: "var(--text-muted)" }}>$</span>
+                <span style={{ fontSize: 'var(--fs-base)', color: "var(--text-muted)" }}>$</span>
                 <input
                   type="number"
                   step="0.5"
@@ -213,26 +213,26 @@ export function UsageStats({ onClose }: UsageStatsProps) {
                   onChange={(e) => setLimits({ ...limits, perSession: e.target.value ? parseFloat(e.target.value) : undefined })}
                   placeholder="不限"
                   style={{
-                    flex: 1, padding: "6px 10px", fontSize: 13, borderRadius: 6,
+                    flex: 1, padding: "6px 10px", fontSize: 'var(--fs-base)', borderRadius: 6,
                     border: "1px solid var(--border-primary)",
                     background: "var(--bg-tertiary)", color: "var(--text-primary)",
                   }}
                 />
-                <span style={{ fontSize: 11, color: "var(--text-muted)" }}>USD</span>
+                <span style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)" }}>USD</span>
               </div>
-              <div style={{ fontSize: 11, color: "var(--text-muted)" }}>单次对话最高费用，默认 $5</div>
+              <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)" }}>单次对话最高费用，默认 $5</div>
             </div>
 
             {/* Per-day limit */}
             <div className="usage-stat-card" style={{ flexDirection: "column", alignItems: "stretch", gap: 6 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <span className="usage-stat-label" style={{ display: "flex", alignItems: "center", gap: 6 }}><Calendar size={16} /> 每日限额</span>
-                <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                <span style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)" }}>
                   {stats.todayCost > 0 ? `今日已用 $${stats.todayCost.toFixed(4)}` : ""}
                 </span>
               </div>
               <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                <span style={{ fontSize: 13, color: "var(--text-muted)" }}>$</span>
+                <span style={{ fontSize: 'var(--fs-base)', color: "var(--text-muted)" }}>$</span>
                 <input
                   type="number"
                   step="1"
@@ -241,26 +241,26 @@ export function UsageStats({ onClose }: UsageStatsProps) {
                   onChange={(e) => setLimits({ ...limits, perDay: e.target.value ? parseFloat(e.target.value) : undefined })}
                   placeholder="不限"
                   style={{
-                    flex: 1, padding: "6px 10px", fontSize: 13, borderRadius: 6,
+                    flex: 1, padding: "6px 10px", fontSize: 'var(--fs-base)', borderRadius: 6,
                     border: "1px solid var(--border-primary)",
                     background: "var(--bg-tertiary)", color: "var(--text-primary)",
                   }}
                 />
-                <span style={{ fontSize: 11, color: "var(--text-muted)" }}>USD</span>
+                <span style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)" }}>USD</span>
               </div>
-              <div style={{ fontSize: 11, color: "var(--text-muted)" }}>每天累计最高费用，默认 $20</div>
+              <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)" }}>每天累计最高费用，默认 $20</div>
             </div>
 
             {/* Total limit */}
             <div className="usage-stat-card" style={{ flexDirection: "column", alignItems: "stretch", gap: 6 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <span className="usage-stat-label" style={{ display: "flex", alignItems: "center", gap: 6 }}><InfinityIcon size={16} /> 总限额</span>
-                <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                <span style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)" }}>
                   已用 $${stats.totalCost.toFixed(4)}
                 </span>
               </div>
               <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                <span style={{ fontSize: 13, color: "var(--text-muted)" }}>$</span>
+                <span style={{ fontSize: 'var(--fs-base)', color: "var(--text-muted)" }}>$</span>
                 <input
                   type="number"
                   step="1"
@@ -269,21 +269,21 @@ export function UsageStats({ onClose }: UsageStatsProps) {
                   onChange={(e) => setLimits({ ...limits, total: e.target.value ? parseFloat(e.target.value) : undefined })}
                   placeholder="不限"
                   style={{
-                    flex: 1, padding: "6px 10px", fontSize: 13, borderRadius: 6,
+                    flex: 1, padding: "6px 10px", fontSize: 'var(--fs-base)', borderRadius: 6,
                     border: "1px solid var(--border-primary)",
                     background: "var(--bg-tertiary)", color: "var(--text-primary)",
                   }}
                 />
-                <span style={{ fontSize: 11, color: "var(--text-muted)" }}>USD</span>
+                <span style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)" }}>USD</span>
               </div>
-              <div style={{ fontSize: 11, color: "var(--text-muted)" }}>所有时间的总费用上限，不设则无限制</div>
+              <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)" }}>所有时间的总费用上限，不设则无限制</div>
             </div>
 
             {/* Usage progress bars */}
             <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 8 }}>
               {limits.perSession && stats.todayCost > 0 && (
                 <div>
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, marginBottom: 3 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 'var(--fs-sm)', marginBottom: 3 }}>
                     <span>每日用量</span>
                     <span>${stats.todayCost.toFixed(2)} / ${limits.perDay?.toFixed(2) ?? "∞"}</span>
                   </div>
@@ -299,7 +299,7 @@ export function UsageStats({ onClose }: UsageStatsProps) {
               )}
               {limits.total && (
                 <div>
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, marginBottom: 3 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 'var(--fs-sm)', marginBottom: 3 }}>
                     <span>总用量</span>
                     <span>${stats.totalCost.toFixed(2)} / ${limits.total.toFixed(2)}</span>
                   </div>
@@ -324,7 +324,7 @@ export function UsageStats({ onClose }: UsageStatsProps) {
                 setTimeout(() => setSavingLimits(false), 2000);
               }}
               style={{
-                marginTop: 8, padding: "8px 16px", borderRadius: 6, fontSize: 13, fontWeight: 500,
+                marginTop: 8, padding: "8px 16px", borderRadius: 6, fontSize: 'var(--fs-base)', fontWeight: 500,
                 border: "1px solid var(--accent)", background: "var(--accent)", color: "#fff",
                 cursor: "pointer",
               }}

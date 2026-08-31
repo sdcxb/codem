@@ -31,13 +31,13 @@ export function GitConfigSection() {
   return (
     <div className="setting-group">
       <div className="settings-section-title">{zh ? "🌿 Git 偏好配置" : "🌿 Git Preferences"}</div>
-      <div style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 12 }}>
+      <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-secondary)", marginBottom: 12 }}>
         {zh ? "配置 Git 操作偏好。AI 执行 Git 命令时会遵循这些规则。" : "Configure Git preferences. The AI follows these rules for Git operations."}
       </div>
 
       {/* Branch prefix */}
       <div style={{ marginBottom: 12 }}>
-        <label style={{ fontSize: 12, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>
+        <label style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", display: "block", marginBottom: 4 }}>
           {zh ? "分支前缀" : "Branch Prefix"}
         </label>
         <input
@@ -45,22 +45,22 @@ export function GitConfigSection() {
           value={gitConfig.branchPrefix || ""}
           onChange={(e) => update({ branchPrefix: e.target.value })}
           placeholder={zh ? "如 feature/ 或 feat/" : "e.g. feature/ or feat/"}
-          style={{ width: "100%", fontSize: 12, fontFamily: "monospace" }}
+          style={{ width: "100%", fontSize: 'var(--fs-sm)', fontFamily: "monospace" }}
         />
-        <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>
+        <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", marginTop: 2 }}>
           {zh ? "创建新分支时自动添加此前缀" : "Prepended to new branch names"}
         </div>
       </div>
 
       {/* Merge method */}
       <div style={{ marginBottom: 12 }}>
-        <label style={{ fontSize: 12, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>
+        <label style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", display: "block", marginBottom: 4 }}>
           {zh ? "PR 合并方法" : "PR Merge Method"}
         </label>
         <select
           value={gitConfig.mergeMethod || ""}
           onChange={(e) => update({ mergeMethod: (e.target.value || undefined) as GitConfig["mergeMethod"] })}
-          style={{ width: "100%", fontSize: 12 }}
+          style={{ width: "100%", fontSize: 'var(--fs-sm)' }}
         >
           <option value="">{zh ? "默认（不指定）" : "Default"}</option>
           <option value="merge">Merge commit</option>
@@ -77,7 +77,7 @@ export function GitConfigSection() {
           checked={gitConfig.forcePush === true}
           onChange={(e) => update({ forcePush: e.target.checked })}
         />
-        <label htmlFor="git-force-push" style={{ fontSize: 12, cursor: "pointer" }}>
+        <label htmlFor="git-force-push" style={{ fontSize: 'var(--fs-sm)', cursor: "pointer" }}>
           {zh ? "允许强制推送 (force push)" : "Allow force push"}
         </label>
       </div>
@@ -90,7 +90,7 @@ export function GitConfigSection() {
           checked={gitConfig.draftPR === true}
           onChange={(e) => update({ draftPR: e.target.checked })}
         />
-        <label htmlFor="git-draft-pr" style={{ fontSize: 12, cursor: "pointer" }}>
+        <label htmlFor="git-draft-pr" style={{ fontSize: 'var(--fs-sm)', cursor: "pointer" }}>
           {zh ? "默认创建草稿 PR" : "Default to draft PR"}
         </label>
       </div>
@@ -99,10 +99,10 @@ export function GitConfigSection() {
       <div style={{ marginBottom: 12, padding: "10px 12px", borderRadius: 6, background: "var(--bg-tertiary)", border: "1px solid var(--border-primary)" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div>
-            <label style={{ fontSize: 13, fontWeight: 500, cursor: "pointer" }} htmlFor="git-auto-commit">
+            <label style={{ fontSize: 'var(--fs-base)', fontWeight: 500, cursor: "pointer" }} htmlFor="git-auto-commit">
               {zh ? "🔄 自动 Commit" : "🔄 Auto Commit"}
             </label>
-            <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>
+            <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", marginTop: 2 }}>
               {zh ? "Agent 每轮修改后自动 git add + commit（可通过 LLM 生成提交信息）" : "Auto git add + commit after each agent turn (LLM-generated message)"}
             </div>
           </div>
@@ -118,7 +118,7 @@ export function GitConfigSection() {
 
       {/* GitHub Token */}
       <div style={{ marginBottom: 12 }}>
-        <label style={{ fontSize: 12, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>
+        <label style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", display: "block", marginBottom: 4 }}>
           {zh ? "GitHub Token（用于 API 操作）" : "GitHub Token (for API operations)"}
         </label>
         <input
@@ -126,16 +126,16 @@ export function GitConfigSection() {
           value={gitConfig.githubToken || ""}
           onChange={(e) => update({ githubToken: e.target.value })}
           placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
-          style={{ width: "100%", fontSize: 12, fontFamily: "monospace" }}
+          style={{ width: "100%", fontSize: 'var(--fs-sm)', fontFamily: "monospace" }}
         />
-        <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>
+        <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", marginTop: 2 }}>
           {zh ? "用于创建远程仓库、技能市场 API 认证等操作。需要 repo 权限。配置后可将 GitHub API 限流从 60 次/小时提升至 5000 次/小时。" : "Used for creating repositories, skill market API auth, etc. Requires repo scope. Raises API rate limit from 60 to 5000 req/hour."}
         </div>
       </div>
 
       {/* Commit message instructions */}
       <div style={{ marginBottom: 12 }}>
-        <label style={{ fontSize: 12, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>
+        <label style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", display: "block", marginBottom: 4 }}>
           {zh ? "提交信息风格指令" : "Commit Message Instructions"}
         </label>
         <textarea
@@ -143,13 +143,13 @@ export function GitConfigSection() {
           onChange={(e) => update({ commitMessageInstructions: e.target.value })}
           placeholder={zh ? "如：conventional commits 格式" : "e.g. conventional commits"}
           rows={2}
-          style={{ width: "100%", fontSize: 12, resize: "vertical" }}
+          style={{ width: "100%", fontSize: 'var(--fs-sm)', resize: "vertical" }}
         />
       </div>
 
       {/* PR title instructions */}
       <div style={{ marginBottom: 12 }}>
-        <label style={{ fontSize: 12, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>
+        <label style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", display: "block", marginBottom: 4 }}>
           {zh ? "PR 标题风格指令" : "PR Title Instructions"}
         </label>
         <input
@@ -157,13 +157,13 @@ export function GitConfigSection() {
           value={gitConfig.prTitleInstructions || ""}
           onChange={(e) => update({ prTitleInstructions: e.target.value })}
           placeholder={zh ? "如：[模块] 简短描述" : "e.g. [Module] Brief"}
-          style={{ width: "100%", fontSize: 12 }}
+          style={{ width: "100%", fontSize: 'var(--fs-sm)' }}
         />
       </div>
 
       {/* PR description instructions */}
       <div style={{ marginBottom: 12 }}>
-        <label style={{ fontSize: 12, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>
+        <label style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", display: "block", marginBottom: 4 }}>
           {zh ? "PR 描述风格指令" : "PR Description Instructions"}
         </label>
         <textarea
@@ -171,7 +171,7 @@ export function GitConfigSection() {
           onChange={(e) => update({ prDescriptionInstructions: e.target.value })}
           placeholder={zh ? "如：包含改动原因、测试方案" : "e.g. Include rationale and tests"}
           rows={2}
-          style={{ width: "100%", fontSize: 12, resize: "vertical" }}
+          style={{ width: "100%", fontSize: 'var(--fs-sm)', resize: "vertical" }}
         />
       </div>
 
@@ -183,7 +183,7 @@ export function GitConfigSection() {
           color: "var(--text-on-accent)",
           border: "none",
           borderRadius: 4,
-          fontSize: 12,
+          fontSize: 'var(--fs-sm)',
           cursor: "pointer",
         }}
       >
@@ -275,7 +275,7 @@ export function EnvironmentConfigSection() {
   return (
     <div className="setting-group">
       <div className="settings-section-title">{zh ? "🏗️ 环境脚本配置" : "🏗️ Environment Scripts"}</div>
-      <div style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 12 }}>
+      <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-secondary)", marginBottom: 12 }}>
         {zh
           ? "配置项目环境脚本。打开/切换项目时自动执行设置和清理脚本，还可以定义一键操作。"
           : "Setup/cleanup scripts run automatically on project switch. Custom operations are one-click actions."}
@@ -283,7 +283,7 @@ export function EnvironmentConfigSection() {
 
       {/* Setup script */}
       <div style={{ marginBottom: 12 }}>
-        <label style={{ fontSize: 12, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>
+        <label style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", display: "block", marginBottom: 4 }}>
           {zh ? "设置脚本（打开项目时自动执行）" : "Setup Script (on project open)"}
         </label>
         <input
@@ -291,13 +291,13 @@ export function EnvironmentConfigSection() {
           value={envConfig.setupScript || ""}
           onChange={(e) => update({ setupScript: e.target.value })}
           placeholder={zh ? "如 npm install" : "e.g. npm install"}
-          style={{ width: "100%", fontSize: 12, fontFamily: "monospace" }}
+          style={{ width: "100%", fontSize: 'var(--fs-sm)', fontFamily: "monospace" }}
         />
       </div>
 
       {/* Cleanup script */}
       <div style={{ marginBottom: 12 }}>
-        <label style={{ fontSize: 12, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>
+        <label style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", display: "block", marginBottom: 4 }}>
           {zh ? "清理脚本（切换/关闭项目时执行）" : "Cleanup Script (on project close)"}
         </label>
         <input
@@ -305,14 +305,14 @@ export function EnvironmentConfigSection() {
           value={envConfig.cleanupScript || ""}
           onChange={(e) => update({ cleanupScript: e.target.value })}
           placeholder={zh ? "如 docker compose down" : "e.g. docker compose down"}
-          style={{ width: "100%", fontSize: 12, fontFamily: "monospace" }}
+          style={{ width: "100%", fontSize: 'var(--fs-sm)', fontFamily: "monospace" }}
         />
       </div>
 
       {/* Custom operations */}
       <div style={{ marginBottom: 12 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-          <label style={{ fontSize: 12, color: "var(--text-muted)" }}>
+          <label style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)" }}>
             {zh ? "自定义操作" : "Custom Operations"}
           </label>
           <button
@@ -322,7 +322,7 @@ export function EnvironmentConfigSection() {
               background: "var(--bg-tertiary)",
               border: "1px solid var(--border-primary)",
               borderRadius: 4,
-              fontSize: 11,
+              fontSize: 'var(--fs-sm)',
               cursor: "pointer",
             }}
           >
@@ -331,7 +331,7 @@ export function EnvironmentConfigSection() {
         </div>
 
         {(envConfig.customOperations || []).length === 0 && (
-          <div style={{ fontSize: 12, color: "var(--text-muted)", fontStyle: "italic" }}>
+          <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", fontStyle: "italic" }}>
             {zh ? "暂无自定义操作。点击\"添加\"创建一键构建/启动/测试等操作。" : "No custom operations yet."}
           </div>
         )}
@@ -355,7 +355,7 @@ export function EnvironmentConfigSection() {
               value={op.icon || ""}
               onChange={(e) => updateOp(op.id, { icon: e.target.value })}
               placeholder="🔧"
-              style={{ width: 36, fontSize: 12, textAlign: "center" }}
+              style={{ width: 36, fontSize: 'var(--fs-sm)', textAlign: "center" }}
             />
             <div style={{ flex: 1 }}>
               <input
@@ -363,14 +363,14 @@ export function EnvironmentConfigSection() {
                 value={op.name}
                 onChange={(e) => updateOp(op.id, { name: e.target.value })}
                 placeholder={zh ? "操作名称" : "Name"}
-                style={{ width: "100%", fontSize: 12, marginBottom: 4 }}
+                style={{ width: "100%", fontSize: 'var(--fs-sm)', marginBottom: 4 }}
               />
               <input
                 type="text"
                 value={op.command}
                 onChange={(e) => updateOp(op.id, { command: e.target.value })}
                 placeholder={zh ? "如 npm run build" : "e.g. npm run build"}
-                style={{ width: "100%", fontSize: 12, fontFamily: "monospace" }}
+                style={{ width: "100%", fontSize: 'var(--fs-sm)', fontFamily: "monospace" }}
               />
             </div>
             <button
@@ -382,7 +382,7 @@ export function EnvironmentConfigSection() {
                 color: "var(--text-on-accent)",
                 border: "none",
                 borderRadius: 4,
-                fontSize: 11,
+                fontSize: 'var(--fs-sm)',
                 cursor: running === op.id ? "wait" : "pointer",
                 whiteSpace: "nowrap",
               }}
@@ -396,7 +396,7 @@ export function EnvironmentConfigSection() {
                 border: "none",
                 color: "var(--text-muted)",
                 cursor: "pointer",
-                fontSize: 14,
+                fontSize: 'var(--fs-md)',
                 padding: "0 4px",
               }}
             >
@@ -414,7 +414,7 @@ export function EnvironmentConfigSection() {
             background: "var(--bg-primary)",
             border: "1px solid var(--border-primary)",
             borderRadius: 4,
-            fontSize: 11,
+            fontSize: 'var(--fs-sm)',
             whiteSpace: "pre-wrap",
             maxHeight: 200,
             overflow: "auto",
@@ -432,7 +432,7 @@ export function EnvironmentConfigSection() {
           color: "var(--text-on-accent)",
           border: "none",
           borderRadius: 4,
-          fontSize: 12,
+          fontSize: 'var(--fs-sm)',
           cursor: "pointer",
         }}
       >

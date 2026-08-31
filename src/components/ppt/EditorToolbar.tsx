@@ -134,7 +134,7 @@ export function EditorToolbar({
             <div style={{ display: 'flex', gap: 4, marginBottom: 10, flexWrap: 'wrap' }}>
               {categories.map(cat => (
                 <button key={cat} onClick={() => setStyleFilter(cat)} style={{
-                  padding: '3px 10px', borderRadius: 12, border: '1px solid', cursor: 'pointer', fontSize: 11,
+                  padding: '3px 10px', borderRadius: 12, border: '1px solid', cursor: 'pointer', fontSize: 'var(--fs-sm)',
                   background: styleFilter === cat ? 'var(--accent, #7c6cf0)' : 'transparent',
                   borderColor: styleFilter === cat ? 'var(--accent, #7c6cf0)' : 'var(--border-primary, #3a3a4c)',
                   color: styleFilter === cat ? 'var(--text-on-accent, #fff)' : 'var(--text-secondary, #a0a0b0)',
@@ -163,7 +163,7 @@ export function EditorToolbar({
                   <div style={{ height: 50, background: style.backgroundGradient || style.colors.background, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                     <div style={{ width: 24, height: 24, borderRadius: '50%', background: `linear-gradient(135deg, ${style.colors.primary}, ${style.colors.accent})`, opacity: 0.7 }} />
                   </div>
-                  <div style={{ padding: '4px 6px', fontSize: 10, color: 'var(--text-primary, #e0e0e0)', fontWeight: 600, background: 'var(--input-bg, #1e1e2e)' }}>{style.name}</div>
+                  <div style={{ padding: '4px 6px', fontSize: 'var(--fs-xs)', color: 'var(--text-primary, #e0e0e0)', fontWeight: 600, background: 'var(--input-bg, #1e1e2e)' }}>{style.name}</div>
                 </div>
               ))}
             </div>

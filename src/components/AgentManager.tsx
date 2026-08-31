@@ -150,11 +150,11 @@ export function AgentManager({ onClose }: { onClose: () => void }) {
   };
 
   const labelStyle: React.CSSProperties = {
-    fontSize: 11, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 3, display: "block",
+    fontSize: 'var(--fs-sm)', fontWeight: 600, color: "var(--text-secondary)", marginBottom: 3, display: "block",
   };
   const inputStyle: React.CSSProperties = {
     padding: "5px 8px", borderRadius: 4, border: "1px solid var(--border-primary)",
-    background: "var(--bg-tertiary)", color: "var(--text-primary)", fontSize: 12, width: "100%",
+    background: "var(--bg-tertiary)", color: "var(--text-primary)", fontSize: 'var(--fs-sm)', width: "100%",
     outline: "none",
   };
 
@@ -173,7 +173,7 @@ export function AgentManager({ onClose }: { onClose: () => void }) {
 
       {/* Toolbar */}
       <div className="skill-manager-toolbar">
-        <div style={{ fontSize: 11, color: "var(--text-secondary)" }}>
+        <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-secondary)" }}>
           {zh ? "查看、创建和编辑智能体定义。内置智能体不可编辑/删除。" : "View, create, and edit agent definitions. Built-in agents are read-only."}
         </div>
         <button
@@ -203,9 +203,9 @@ export function AgentManager({ onClose }: { onClose: () => void }) {
                 </span>
                 <div className="market-skill-card-title">
                   <span className="market-skill-name">{agent.name || agent.id}</span>
-                  {builtin && <span style={{ fontSize: 10, color: "var(--text-muted)" }}>{zh ? "内置" : "built-in"}</span>}
+                  {builtin && <span style={{ fontSize: 'var(--fs-xs)', color: "var(--text-muted)" }}>{zh ? "内置" : "built-in"}</span>}
                 </div>
-                <span style={{ fontSize: 10, padding: "2px 6px", borderRadius: 3, background: "var(--bg-secondary)", color: "var(--text-secondary)" }}>
+                <span style={{ fontSize: 'var(--fs-xs)', padding: "2px 6px", borderRadius: 3, background: "var(--bg-secondary)", color: "var(--text-secondary)" }}>
                   {MODE_LABELS[agent.mode]}
                 </span>
               </div>
@@ -240,10 +240,10 @@ export function AgentManager({ onClose }: { onClose: () => void }) {
       {!editing && selected && (
         <div style={{
           padding: 12, borderRadius: 8, border: "1px solid var(--border-primary)",
-          background: "var(--bg-secondary)", fontSize: 12,
+          background: "var(--bg-secondary)", fontSize: 'var(--fs-sm)',
         }}>
-          <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8, color: "var(--text-primary)" }}>
-            {selected.name} <span style={{ fontSize: 10, color: "var(--text-muted)" }}>({selected.id})</span>
+          <div style={{ fontWeight: 700, fontSize: 'var(--fs-base)', marginBottom: 8, color: "var(--text-primary)" }}>
+            {selected.name} <span style={{ fontSize: 'var(--fs-xs)', color: "var(--text-muted)" }}>({selected.id})</span>
           </div>
           <DetailRow label={zh ? "描述" : "Description"} value={selected.description} />
           <DetailRow label={zh ? "模式" : "Mode"} value={MODE_LABELS[selected.mode]} />
@@ -261,7 +261,7 @@ export function AgentManager({ onClose }: { onClose: () => void }) {
           {/* Permissions */}
           <div style={{ marginTop: 8, marginBottom: 4, fontWeight: 600, color: "var(--text-secondary)" }}>{zh ? "权限规则" : "Permissions"}</div>
           {selected.permissions.map((p, i) => (
-            <div key={i} style={{ fontFamily: "monospace", fontSize: 11, padding: "3px 6px", background: "var(--bg-tertiary)", borderRadius: 3, marginBottom: 2 }}>
+            <div key={i} style={{ fontFamily: "monospace", fontSize: 'var(--fs-sm)', padding: "3px 6px", background: "var(--bg-tertiary)", borderRadius: 3, marginBottom: 2 }}>
               {p.tool} {p.resource && `→ ${p.resource}`} <span style={{ color: p.action === "allow" ? "var(--success)" : p.action === "deny" ? "var(--error)" : "var(--text-secondary)" }}>[{p.action}]</span>
             </div>
           ))}
@@ -269,7 +269,7 @@ export function AgentManager({ onClose }: { onClose: () => void }) {
           {/* Prompt preview */}
           <div style={{ marginTop: 8, marginBottom: 4, fontWeight: 600, color: "var(--text-secondary)" }}>{zh ? "系统提示词" : "System Prompt"}</div>
           <pre style={{
-            fontSize: 10, padding: 8, background: "var(--bg-tertiary)", borderRadius: 4,
+            fontSize: 'var(--fs-xs)', padding: 8, background: "var(--bg-tertiary)", borderRadius: 4,
             maxHeight: 200, overflow: "auto", whiteSpace: "pre-wrap", margin: 0,
             color: "var(--text-secondary)",
           }}>
@@ -284,7 +284,7 @@ export function AgentManager({ onClose }: { onClose: () => void }) {
           padding: 12, borderRadius: 8, border: "1px solid var(--accent)",
           background: "var(--bg-secondary)", display: "flex", flexDirection: "column", gap: 10,
         }}>
-          <div style={{ fontWeight: 700, fontSize: 13, color: "var(--text-primary)" }}>
+          <div style={{ fontWeight: 700, fontSize: 'var(--fs-base)', color: "var(--text-primary)" }}>
             {isNew ? (zh ? "新建智能体" : "New Agent") : (zh ? "编辑智能体" : "Edit Agent")}
           </div>
 
@@ -366,16 +366,16 @@ export function AgentManager({ onClose }: { onClose: () => void }) {
           </div>
 
           <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-            <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: 12 }}>
+            <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: 'var(--fs-sm)' }}>
               <input type="checkbox" checked={editing.canSpawnSubagents ?? false} onChange={e => setEditing({ ...editing, canSpawnSubagents: e.target.checked })} />
               {zh ? "可生成子智能体" : "Can spawn sub-agents"}
             </label>
-            <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: 12 }}>
+            <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: 'var(--fs-sm)' }}>
               <input type="checkbox" checked={editing.mode === "primary"} onChange={e => setEditing({ ...editing, mode: e.target.checked ? "primary" : "subagent" })} />
               {zh ? "Squad Leader 适配" : "Squad Leader compatible"}
             </label>
             {(editing.canSpawnSubagents || editing.mode === "primary") && (
-              <span style={{ fontSize: 10, color: "var(--text-muted)" }}>
+              <span style={{ fontSize: 'var(--fs-xs)', color: "var(--text-muted)" }}>
                 {zh ? "此 agent 可作为 Squad Leader 使用（任务管理 → Squads）" : "This agent can be used as a Squad Leader (Task Center → Squads)"}
               </span>
             )}
@@ -400,7 +400,7 @@ export function AgentManager({ onClose }: { onClose: () => void }) {
                     style={{
                       display: "flex", alignItems: "center", gap: 4,
                       cursor: isRequired ? "not-allowed" : "pointer",
-                      fontSize: 12, opacity: isRequired ? 0.6 : 1,
+                      fontSize: 'var(--fs-sm)', opacity: isRequired ? 0.6 : 1,
                     }}
                   >
                     <input
@@ -426,13 +426,13 @@ export function AgentManager({ onClose }: { onClose: () => void }) {
                       fontFamily: "monospace",
                     }}>
                       {toolName}
-                      {isRequired && <span style={{ fontSize: 10, marginLeft: 2 }}>🔒</span>}
+                      {isRequired && <span style={{ fontSize: 'var(--fs-xs)', marginLeft: 2 }}>🔒</span>}
                     </span>
                   </label>
                 );
               })}
             </div>
-            <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>
+            <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", marginTop: 4 }}>
               {zh ? "🔒 标记的工具为必选工具，不可取消。留空=全部工具权限。外部技能加载的工具也会自动可用。" : "🔒 Required tools cannot be unchecked. Empty = all tools. Skill tools are auto-available."}
             </div>
           </div>
@@ -479,7 +479,7 @@ export function AgentManager({ onClose }: { onClose: () => void }) {
                 </div>
               ))}
               <button onClick={() => setEditing({ ...editing, permissions: [...(editing.permissions || []), { tool: "*", action: "ask" }] })} style={{
-                fontSize: 11, padding: "4px 10px", borderRadius: 4, border: "1px solid var(--border-primary)",
+                fontSize: 'var(--fs-sm)', padding: "4px 10px", borderRadius: 4, border: "1px solid var(--border-primary)",
                 background: "var(--bg-tertiary)", color: "var(--text-primary)", cursor: "pointer", alignSelf: "flex-start",
               }}>+ {zh ? "添加规则" : "Add Rule"}</button>
             </div>
@@ -488,12 +488,12 @@ export function AgentManager({ onClose }: { onClose: () => void }) {
           {/* Action buttons */}
           <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
             <button onClick={handleSave} disabled={!editing.name.trim()} style={{
-              padding: "6px 16px", borderRadius: 4, fontSize: 12,
+              padding: "6px 16px", borderRadius: 4, fontSize: 'var(--fs-sm)',
               border: "1px solid var(--accent)", background: "var(--accent)",
               color: "#fff", cursor: "pointer", opacity: editing.name.trim() ? 1 : 0.5,
             }}>{zh ? "保存" : "Save"}</button>
             <button onClick={handleCancel} style={{
-              padding: "6px 16px", borderRadius: 4, fontSize: 12,
+              padding: "6px 16px", borderRadius: 4, fontSize: 'var(--fs-sm)',
               border: "1px solid var(--border-primary)", background: "none",
               color: "var(--text-primary)", cursor: "pointer",
             }}>{zh ? "取消" : "Cancel"}</button>
@@ -510,8 +510,8 @@ export function AgentManager({ onClose }: { onClose: () => void }) {
 function DetailRow({ label, value }: { label: string; value: string }) {
   return (
     <div style={{ display: "flex", gap: 8, marginBottom: 4 }}>
-      <span style={{ fontSize: 11, color: "var(--text-muted)", minWidth: 90 }}>{label}:</span>
-      <span style={{ fontSize: 11, color: "var(--text-primary)", flex: 1 }}>{value}</span>
+      <span style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", minWidth: 90 }}>{label}:</span>
+      <span style={{ fontSize: 'var(--fs-sm)', color: "var(--text-primary)", flex: 1 }}>{value}</span>
     </div>
   );
 }

@@ -127,7 +127,7 @@ export function SaveLoadPanel({ engine, map, config, stocks, mode, onClose, onLo
 
         {message && <div className="action-message">{message}</div>}
 
-        <div style={{ marginTop: 8, fontSize: 11, color: "#7f8c8d", textAlign: "center" }}>
+        <div style={{ marginTop: 8, fontSize: 'var(--fs-sm)', color: "#7f8c8d", textAlign: "center" }}>
           存档数据保存在浏览器本地，清除浏览器缓存将丢失存档
         </div>
       </div>

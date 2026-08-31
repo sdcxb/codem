@@ -753,9 +753,9 @@ const handleSelectProject = (projectId: string) => {
             const currentModel = settings.model || "";
             const supportsVision = currentModel.startsWith("gpt-4o") || currentModel.startsWith("claude-3") || currentModel.startsWith("claude-4") || currentModel.startsWith("gemini-1.5") || currentModel.startsWith("gemini-2") || currentModel.startsWith("o3") || currentModel.startsWith("o4");
             if (!supportsVision && !visionConfig?.enabled) {
-              return <div style={{ fontSize: 11, color: "var(--text-muted)", padding: "4px 0" }}>{zh ? "当前模型不支持视觉，图片将以文字标注发送。配置视觉代理请在 设置→多模态→Vision 中开启。" : "Current model doesn't support vision. Images will be sent as text. Configure vision proxy in Settings→Multimodal→Vision."}</div>;
+              return <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", padding: "4px 0" }}>{zh ? "当前模型不支持视觉，图片将以文字标注发送。配置视觉代理请在 设置→多模态→Vision 中开启。" : "Current model doesn't support vision. Images will be sent as text. Configure vision proxy in Settings→Multimodal→Vision."}</div>;
             } else if (!supportsVision && visionConfig?.enabled) {
-              return <div style={{ fontSize: 11, color: "var(--text-muted)", padding: "4px 0" }}>{zh ? "将使用视觉代理 (" + visionConfig.model + ") 描述图片内容" : "Will use vision proxy (" + visionConfig.model + ") to describe image"}</div>;
+              return <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", padding: "4px 0" }}>{zh ? "将使用视觉代理 (" + visionConfig.model + ") 描述图片内容" : "Will use vision proxy (" + visionConfig.model + ") to describe image"}</div>;
             }
             return null;
           })()}
@@ -872,7 +872,7 @@ const handleSelectProject = (projectId: string) => {
               position: "absolute",
               right: 60,
               bottom: 8,
-              fontSize: 11,
+              fontSize: 'var(--fs-sm)',
               color: "var(--text-muted)",
               fontStyle: "italic",
               opacity: 0.7,
@@ -899,7 +899,7 @@ const handleSelectProject = (projectId: string) => {
                 className="mode-toggle-btn"
                 onClick={() => setShowPlusMenu(!showPlusMenu)}
                 title={zh ? "添加" : "Add"}
-                style={showPlusMenu ? { background: "var(--accent)", color: "#fff", fontSize: 10, width: 18, height: 18, padding: 0, minWidth: 18 } : { fontSize: 10, width: 18, height: 18, padding: 0, minWidth: 18 }}
+                style={showPlusMenu ? { background: "var(--accent)", color: "#fff", fontSize: 'var(--fs-xs)', width: 18, height: 18, padding: 0, minWidth: 18 } : { fontSize: 'var(--fs-xs)', width: 18, height: 18, padding: 0, minWidth: 18 }}
               >
                 ＋
               </button>
@@ -910,11 +910,11 @@ const handleSelectProject = (projectId: string) => {
                     position: "fixed", left: plusMenuPos.left, bottom: plusMenuPos.bottom,
                     minWidth: 200, zIndex: 99999, padding: 4,
                   }}>
-                    <button className="more-action-item" style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", cursor: "pointer", border: "none", background: "transparent", color: "var(--text-primary)", fontSize: 12, width: "100%", textAlign: "left" }}
+                    <button className="more-action-item" style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", cursor: "pointer", border: "none", background: "transparent", color: "var(--text-primary)", fontSize: 'var(--fs-sm)', width: "100%", textAlign: "left" }}
                       onClick={() => { setShowPlusMenu(false); document.getElementById('file-upload-input')?.click(); }}>
                       <Paperclip size={14} /> <span>{zh ? "上传文件" : "Upload file"}</span>
                     </button>
-                    <button className="more-action-item" style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", cursor: "pointer", border: "none", background: "transparent", color: "var(--text-primary)", fontSize: 12, width: "100%", textAlign: "left" }}
+                    <button className="more-action-item" style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", cursor: "pointer", border: "none", background: "transparent", color: "var(--text-primary)", fontSize: 'var(--fs-sm)', width: "100%", textAlign: "left" }}
                       onClick={() => { setShowPlusMenu(false); setShowSkillPicker(true); }}>
                       <Target size={14} /> <span>{zh ? "选择技能" : "Select skills"}</span>
                     </button>
@@ -929,7 +929,7 @@ const handleSelectProject = (projectId: string) => {
                           style={{
                             display: "flex", alignItems: "center", gap: 8, padding: "8px 12px",
                             cursor: imageGenConfig ? "pointer" : "not-allowed",
-                            border: "none", fontSize: 12, width: "100%", textAlign: "left",
+                            border: "none", fontSize: 'var(--fs-sm)', width: "100%", textAlign: "left",
                             background: "transparent",
                             color: imageGenConfig ? "var(--text-primary)" : "var(--text-muted)",
                           }}
@@ -950,7 +950,7 @@ const handleSelectProject = (projectId: string) => {
                           style={{
                             display: "flex", alignItems: "center", gap: 8, padding: "8px 12px",
                             cursor: ttsConfig ? "pointer" : "not-allowed",
-                            border: "none", fontSize: 12, width: "100%", textAlign: "left",
+                            border: "none", fontSize: 'var(--fs-sm)', width: "100%", textAlign: "left",
                             background: "transparent",
                             color: ttsConfig ? "var(--text-primary)" : "var(--text-muted)",
                           }}
@@ -987,7 +987,7 @@ const handleSelectProject = (projectId: string) => {
                     position: "fixed", left: skillPickerPos.left, bottom: skillPickerPos.bottom,
                     minWidth: 220, maxWidth: 320, zIndex: 99999, maxHeight: 300, overflowY: "auto",
                   }}>
-                    <div style={{ fontSize: 11, fontWeight: 600, marginBottom: 6, opacity: 0.7 }}>
+                    <div style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, marginBottom: 6, opacity: 0.7 }}>
                       {zh ? "选择技能（本次消息）" : "Select skills (this message)"}
                     </div>
                     {(() => {
@@ -995,10 +995,10 @@ const handleSelectProject = (projectId: string) => {
                       try { disabled = getSettingJSON<string[]>("codem-disabled-skills", []); } catch {}
                       const skills = getSkillRegistry().getAll().filter(s => !disabled.includes(s.name));
                       if (skills.length === 0) {
-                        return <div style={{ fontSize: 11, opacity: 0.5, padding: "8px 0" }}>{zh ? "无可用技能" : "No skills available"}</div>;
+                        return <div style={{ fontSize: 'var(--fs-sm)', opacity: 0.5, padding: "8px 0" }}>{zh ? "无可用技能" : "No skills available"}</div>;
                       }
                       return skills.map(s => (
-                        <label key={s.name} style={{ display: "flex", alignItems: "flex-start", gap: 6, padding: "6px 4px", cursor: "pointer", borderRadius: 4, fontSize: 11 }}
+                        <label key={s.name} style={{ display: "flex", alignItems: "flex-start", gap: 6, padding: "6px 4px", cursor: "pointer", borderRadius: 4, fontSize: 'var(--fs-sm)' }}
                           onMouseEnter={(e) => (e.currentTarget.style.background = "var(--bg-tertiary)")}
                           onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
                         >
@@ -1008,7 +1008,7 @@ const handleSelectProject = (projectId: string) => {
                           }} style={{ marginTop: 2 }} />
                           <div>
                             <div style={{ fontWeight: 600 }}>{s.displayName || s.name}</div>
-                            <div style={{ opacity: 0.6, fontSize: 10, lineHeight: 1.3 }}>{s.description}</div>
+                            <div style={{ opacity: 0.6, fontSize: 'var(--fs-xs)', lineHeight: 1.3 }}>{s.description}</div>
                           </div>
                         </label>
                       ));
@@ -1089,7 +1089,7 @@ const handleSelectProject = (projectId: string) => {
                 <ResolutionSelector resolution={resolution} onResolutionChange={setResolution} />
                 <button
                   onClick={() => { setShowMultimodal(false); setGenerateMode("text"); }}
-                  style={{ marginLeft: "auto", padding: "4px 8px", fontSize: 11, cursor: "pointer", background: "transparent", border: "1px solid var(--border-primary)", borderRadius: 4 }}
+                  style={{ marginLeft: "auto", padding: "4px 8px", fontSize: 'var(--fs-sm)', cursor: "pointer", background: "transparent", border: "1px solid var(--border-primary)", borderRadius: 4 }}
                 >
                   <X size={14} />
                 </button>
@@ -1160,12 +1160,12 @@ const handleSelectProject = (projectId: string) => {
                     minWidth: 200, zIndex: 100, maxHeight: 400, overflowY: "auto",
                   }}>
                     {onToggleQuickPhrase && (
-                      <button className="more-action-item" onClick={() => { onToggleQuickPhrase(); setShowMoreActions(false); }} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", cursor: "pointer", border: "none", background: "transparent", color: "var(--text-primary)", fontSize: 12, width: "100%", textAlign: "left" }}>
+                      <button className="more-action-item" onClick={() => { onToggleQuickPhrase(); setShowMoreActions(false); }} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", cursor: "pointer", border: "none", background: "transparent", color: "var(--text-primary)", fontSize: 'var(--fs-sm)', width: "100%", textAlign: "left" }}>
                         <ClipboardList size={14} /> <span>{zh ? "快捷短语" : "Quick Phrases"}</span>
                       </button>
                     )}
                     {onToggleDraftPicker && hasDrafts && (
-                      <button className="more-action-item" onClick={() => { onToggleDraftPicker(); setShowMoreActions(false); }} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", cursor: "pointer", border: "none", background: "transparent", color: "var(--text-primary)", fontSize: 12, width: "100%", textAlign: "left" }}>
+                      <button className="more-action-item" onClick={() => { onToggleDraftPicker(); setShowMoreActions(false); }} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", cursor: "pointer", border: "none", background: "transparent", color: "var(--text-primary)", fontSize: 'var(--fs-sm)', width: "100%", textAlign: "left" }}>
                         <StickyNote size={14} /> <span>{zh ? "提示词草稿" : "Prompt Drafts"}</span>
                       </button>
                     )}
@@ -1191,7 +1191,7 @@ const handleSelectProject = (projectId: string) => {
             onClick={() => { setShowProjectMenu(!showProjectMenu); setShowModeMenu(false); setShowBranchMenu(false); }}
             title={currentProject ? currentProject.path : (zh ? "选择项目" : "Select project")}
           >
-            <span style={{ fontSize: 13, display: "flex", alignItems: "center" }}>{currentProject ? <Folder size={13} /> : <Globe size={13} />}</span>
+            <span style={{ fontSize: 'var(--fs-base)', display: "flex", alignItems: "center" }}>{currentProject ? <Folder size={13} /> : <Globe size={13} />}</span>
             <span className="project-indicator-name">
               {currentProject ? currentProject.name : (zh ? "全局对话" : "Global")}
             </span>
@@ -1209,10 +1209,10 @@ const handleSelectProject = (projectId: string) => {
                   className={`bottom-bar-dropdown-item ${currentProject?.id === p.id ? "active" : ""}`}
                   onClick={() => handleSelectProject(p.id)}
                 >
-                  <span style={{ fontSize: 14, display: "flex", alignItems: "center" }}><Folder size={14} /></span>
+                  <span style={{ fontSize: 'var(--fs-md)', display: "flex", alignItems: "center" }}><Folder size={14} /></span>
                   <div>
-                    <div style={{ fontWeight: 600, fontSize: 12 }}>{p.name}</div>
-                    <div style={{ fontSize: 10, opacity: 0.5 }}>{p.path}</div>
+                    <div style={{ fontWeight: 600, fontSize: 'var(--fs-sm)' }}>{p.name}</div>
+                    <div style={{ fontSize: 'var(--fs-xs)', opacity: 0.5 }}>{p.path}</div>
                   </div>
                 </button>
               ))}
@@ -1231,7 +1231,7 @@ const handleSelectProject = (projectId: string) => {
             title={zh ? "执行模式" : "Execution mode"}
             style={{ opacity: modeLocked ? 0.5 : 1 }}
           >
-            <span style={{ fontSize: 13, display: "flex", alignItems: "center" }}>{executionMode === "git_worktree" ? <GitBranch size={13} /> : <Home size={13} />}</span>
+            <span style={{ fontSize: 'var(--fs-base)', display: "flex", alignItems: "center" }}>{executionMode === "git_worktree" ? <GitBranch size={13} /> : <Home size={13} />}</span>
             <span>{executionMode === "git_worktree" ? (zh ? "新工作树" : "Worktree") : (zh ? "本地处理" : "Local")}</span>
             <span style={{ fontSize: 9, opacity: 0.5 }}><ChevronDown size={10} /></span>
           </button>
@@ -1242,10 +1242,10 @@ const handleSelectProject = (projectId: string) => {
                 className={`bottom-bar-dropdown-item ${executionMode === "current_workspace" ? "active" : ""}`}
                 onClick={() => handleExecutionModeChange("current_workspace")}
               >
-                <span style={{ fontSize: 16, display: "flex", alignItems: "center" }}><Home size={16} /></span>
+                <span style={{ fontSize: 'var(--fs-lg)', display: "flex", alignItems: "center" }}><Home size={16} /></span>
                 <div>
-                  <div style={{ fontWeight: 600, fontSize: 12 }}>{zh ? "本地处理" : "Local workspace"}</div>
-                  <div style={{ fontSize: 10, opacity: 0.6 }}>{zh ? "共享项目目录" : "Shared project directory"}</div>
+                  <div style={{ fontWeight: 600, fontSize: 'var(--fs-sm)' }}>{zh ? "本地处理" : "Local workspace"}</div>
+                  <div style={{ fontSize: 'var(--fs-xs)', opacity: 0.6 }}>{zh ? "共享项目目录" : "Shared project directory"}</div>
                 </div>
               </button>
               <button
@@ -1255,10 +1255,10 @@ const handleSelectProject = (projectId: string) => {
                 style={{ opacity: isGitProject ? 1 : 0.4 }}
                 title={isGitProject ? "" : (zh ? "需要 Git 仓库项目才能使用工作树模式" : "Git repository required for worktree mode")}
               >
-                <span style={{ fontSize: 16, display: "flex", alignItems: "center" }}><GitBranch size={16} /></span>
+                <span style={{ fontSize: 'var(--fs-lg)', display: "flex", alignItems: "center" }}><GitBranch size={16} /></span>
                 <div>
-                  <div style={{ fontWeight: 600, fontSize: 12 }}>{zh ? "新工作树" : "New worktree"}</div>
-                  <div style={{ fontSize: 10, opacity: 0.6 }}>{zh ? "每次任务独立隔离" : "Isolated per-task"}</div>
+                  <div style={{ fontWeight: 600, fontSize: 'var(--fs-sm)' }}>{zh ? "新工作树" : "New worktree"}</div>
+                  <div style={{ fontSize: 'var(--fs-xs)', opacity: 0.6 }}>{zh ? "每次任务独立隔离" : "Isolated per-task"}</div>
                 </div>
               </button>
             </div>
@@ -1275,7 +1275,7 @@ const handleSelectProject = (projectId: string) => {
                 onClick={() => { setShowBranchMenu(!showBranchMenu); setShowProjectMenu(false); setShowModeMenu(false); }}
                 title={zh ? "选择分支" : "Select branch"}
               >
-                <span style={{ fontSize: 13, display: "flex", alignItems: "center" }}><GitBranch size={13} /></span>
+                <span style={{ fontSize: 'var(--fs-base)', display: "flex", alignItems: "center" }}><GitBranch size={13} /></span>
                 <span>{branchLoading ? "..." : (currentBranchName || (zh ? "分支" : "Branch"))}</span>
                 <span style={{ fontSize: 9, opacity: 0.5 }}><ChevronDown size={10} /></span>
               </button>
@@ -1285,7 +1285,7 @@ const handleSelectProject = (projectId: string) => {
                     <span>{zh ? "选择分支" : "Select Branch"}</span>
                     <button
                       onClick={(e) => { e.stopPropagation(); refreshBranch(); }}
-                      style={{ marginLeft: "auto", fontSize: 10, opacity: 0.6, cursor: "pointer", background: "none", border: "none", color: "inherit" }}
+                      style={{ marginLeft: "auto", fontSize: 'var(--fs-xs)', opacity: 0.6, cursor: "pointer", background: "none", border: "none", color: "inherit" }}
                     >
                       {branchLoading ? <Clock size={12} /> : <RefreshCw size={12} />}
                     </button>
@@ -1323,8 +1323,8 @@ const handleSelectProject = (projectId: string) => {
                 setShowBranchMenu(false);
               }}
                     >
-                      <span style={{ fontSize: 14, display: "flex", alignItems: "center" }}>{br === currentBranchName ? <Check size={14} /> : <GitBranch size={14} />}</span>
-                      <span style={{ fontSize: 12 }}>{br}</span>
+                      <span style={{ fontSize: 'var(--fs-md)', display: "flex", alignItems: "center" }}>{br === currentBranchName ? <Check size={14} /> : <GitBranch size={14} />}</span>
+                      <span style={{ fontSize: 'var(--fs-sm)' }}>{br}</span>
                     </button>
                   ))}
                 </div>
@@ -1360,7 +1360,7 @@ const handleSelectProject = (projectId: string) => {
         </span>
 
         {/* Right side: hint */}
-        <div style={{ marginLeft: "auto", fontSize: 10, color: "var(--text-muted)", display: "flex", alignItems: "center", gap: 4 }}>
+        <div style={{ marginLeft: "auto", fontSize: 'var(--fs-xs)', color: "var(--text-muted)", display: "flex", alignItems: "center", gap: 4 }}>
           <Sparkles size={10} />
           {zh ? "输入 / 选择技能 · 拖拽文件上传" : "Type / for skills · Drop files"}
         </div>

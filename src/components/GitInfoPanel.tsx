@@ -200,7 +200,7 @@ export function GitInfoPanel() {
 
   if (!projectPath) {
     return (
-      <div style={{ padding: 12, fontSize: 11, color: "var(--text-muted)" }}>
+      <div style={{ padding: 12, fontSize: 'var(--fs-sm)', color: "var(--text-muted)" }}>
         {zh ? "请先选择项目" : "Select a project"}
       </div>
     );
@@ -208,32 +208,32 @@ export function GitInfoPanel() {
 
   if (!status && loading) {
     return (
-      <div style={{ padding: 12, fontSize: 11, color: "var(--text-muted)" }}>
+      <div style={{ padding: 12, fontSize: 'var(--fs-sm)', color: "var(--text-muted)" }}>
         ⏳ {zh ? "加载中..." : "Loading..."}
       </div>
     );
   }
 
   return (
-    <div style={{ fontSize: 12, display: "flex", flexDirection: "column", gap: 8 }}>
+    <div style={{ fontSize: 'var(--fs-sm)', display: "flex", flexDirection: "column", gap: 8 }}>
       {/* Branch + dirty status */}
       {status && (
         <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
           <span style={{ fontWeight: 600, color: "var(--accent)" }}>🌿 {status.branch}</span>
           {status.isDirty && (
-            <span style={{ fontSize: 10, color: "#e67e22", background: "rgba(230,126,34,0.15)", padding: "1px 6px", borderRadius: 8 }}>
+            <span style={{ fontSize: 'var(--fs-xs)', color: "#e67e22", background: "rgba(230,126,34,0.15)", padding: "1px 6px", borderRadius: 8 }}>
               ⚠️ {zh ? "未提交" : "dirty"}
             </span>
           )}
           {!status.isDirty && (
-            <span style={{ fontSize: 10, color: "#22c55e" }}>✓ {zh ? "干净" : "clean"}</span>
+            <span style={{ fontSize: 'var(--fs-xs)', color: "#22c55e" }}>✓ {zh ? "干净" : "clean"}</span>
           )}
         </div>
       )}
 
       {/* Stats */}
       {status && status.isDirty && (
-        <div style={{ display: "flex", gap: 8, fontSize: 10, color: "var(--text-muted)" }}>
+        <div style={{ display: "flex", gap: 8, fontSize: 'var(--fs-xs)', color: "var(--text-muted)" }}>
           <span>📝 {status.stagedCount} {zh ? "已暂存" : "staged"}</span>
           <span>✏️ {status.unstagedCount} {zh ? "已修改" : "modified"}</span>
           <span>❓ {status.untrackedCount} {zh ? "未跟踪" : "untracked"}</span>
@@ -251,7 +251,7 @@ export function GitInfoPanel() {
           onChange={(e) => setCommitMsg(e.target.value)}
           placeholder={zh ? "提交信息..." : "Commit message..."}
           style={{
-            flex: 1, padding: "4px 8px", fontSize: 11,
+            flex: 1, padding: "4px 8px", fontSize: 'var(--fs-sm)',
             borderRadius: 4, border: "1px solid var(--border-primary)",
             background: "var(--bg-tertiary)", color: "var(--text-primary)",
           }}
@@ -261,7 +261,7 @@ export function GitInfoPanel() {
           onClick={handleCommit}
           disabled={!commitMsg.trim()}
           style={{
-            padding: "4px 10px", fontSize: 11, borderRadius: 4,
+            padding: "4px 10px", fontSize: 'var(--fs-sm)', borderRadius: 4,
             border: "1px solid var(--border-primary)",
             background: "var(--bg-secondary)", color: "var(--text-primary)",
             cursor: commitMsg.trim() ? "pointer" : "not-allowed",
@@ -274,7 +274,7 @@ export function GitInfoPanel() {
           onClick={handlePush}
           title={zh ? "推送" : "Push"}
           style={{
-            padding: "4px 10px", fontSize: 11, borderRadius: 4,
+            padding: "4px 10px", fontSize: 'var(--fs-sm)', borderRadius: 4,
             border: "1px solid var(--border-primary)",
             background: "var(--bg-secondary)", color: "var(--text-primary)",
             cursor: "pointer",
@@ -286,7 +286,7 @@ export function GitInfoPanel() {
           onClick={handlePull}
           title={zh ? "拉取" : "Pull"}
           style={{
-            padding: "4px 10px", fontSize: 11, borderRadius: 4,
+            padding: "4px 10px", fontSize: 'var(--fs-sm)', borderRadius: 4,
             border: "1px solid var(--border-primary)",
             background: "var(--bg-secondary)", color: "var(--text-primary)",
             cursor: "pointer",
@@ -297,13 +297,13 @@ export function GitInfoPanel() {
       </div>
 
       {currentSession?.worktreePath && (
-        <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        <div style={{ fontSize: 'var(--fs-xs)', color: "var(--text-muted)", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
           🌒 {currentSession.worktreePath}
         </div>
       )}
 
       {actionResult && (
-        <div style={{ fontSize: 10, color: actionResult.startsWith("✅") ? "#22c55e" : "#e74c3c" }}>
+        <div style={{ fontSize: 'var(--fs-xs)', color: actionResult.startsWith("✅") ? "#22c55e" : "#e74c3c" }}>
           {actionResult}
         </div>
       )}
@@ -313,14 +313,14 @@ export function GitInfoPanel() {
         <div>
           <div
             onClick={() => setIsExpanded(!isExpanded)}
-            style={{ fontSize: 10, color: "var(--text-muted)", cursor: "pointer", userSelect: "none" }}
+            style={{ fontSize: 'var(--fs-xs)', color: "var(--text-muted)", cursor: "pointer", userSelect: "none" }}
           >
             {isExpanded ? "▼" : "▶"} {zh ? "最近提交" : "Recent commits"} ({commits.length})
           </div>
           {isExpanded && (
             <div style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: 4 }}>
               {commits.map((c, i) => (
-                <div key={i} style={{ fontSize: 10, padding: "4px 6px", borderRadius: 4, background: "var(--bg-tertiary)" }}>
+                <div key={i} style={{ fontSize: 'var(--fs-xs)', padding: "4px 6px", borderRadius: 4, background: "var(--bg-tertiary)" }}>
                   <span style={{ fontFamily: "monospace", color: "var(--accent)", fontWeight: 600 }}>{c.hash}</span>
                   <span style={{ marginLeft: 6 }}>{c.message}</span>
                   <span style={{ marginLeft: 6, color: "var(--text-muted)" }}>{c.date}</span>
@@ -336,7 +336,7 @@ export function GitInfoPanel() {
         onClick={refresh}
         disabled={loading}
         style={{
-          fontSize: 10, padding: "2px 8px", borderRadius: 4,
+          fontSize: 'var(--fs-xs)', padding: "2px 8px", borderRadius: 4,
           border: "1px solid var(--border-primary)",
           background: "none", color: "var(--text-muted)",
           cursor: loading ? "wait" : "pointer",

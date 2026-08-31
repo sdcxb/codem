@@ -48,7 +48,7 @@ function StatusBadge({ status, conclusion }: { status: string; conclusion: strin
       style={{
         display: "inline-flex", alignItems: "center", gap: 4,
         padding: "2px 8px", borderRadius: 4,
-        fontSize: 11, fontWeight: 600, color: "#fff",
+        fontSize: 'var(--fs-sm)', fontWeight: 600, color: "#fff",
         background: color, textTransform: "capitalize",
       }}
     >
@@ -253,19 +253,19 @@ export function CicdPanel({ onClose }: CicdPanelProps) {
               flex: 1, minWidth: 240, padding: "6px 10px",
               background: "var(--bg-secondary, #181825)",
               border: "1px solid var(--border-color, #333)",
-              borderRadius: 6, color: "inherit", fontSize: 13,
+              borderRadius: 6, color: "inherit", fontSize: 'var(--fs-base)',
             }}
           />
           <button
             onClick={handleLoadRepo}
             style={{
               padding: "6px 14px", borderRadius: 6, cursor: "pointer",
-              border: "none", background: "var(--accent, #7c3aed)", color: "#fff", fontSize: 13,
+              border: "none", background: "var(--accent, #7c3aed)", color: "#fff", fontSize: 'var(--fs-base)',
             }}
           >
             {S.cicd.load[lang]}
           </button>
-          <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, cursor: "pointer" }}>
+          <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 'var(--fs-sm)', cursor: "pointer" }}>
             <input type="checkbox" checked={autoRefresh} onChange={e => setAutoRefresh(e.target.checked)} />
             {S.cicd.autoRefresh[lang]}
           </label>
@@ -273,14 +273,14 @@ export function CicdPanel({ onClose }: CicdPanelProps) {
 
         {/* Error */}
         {error && (
-          <div style={{ padding: "8px 16px", color: "#ef4444", fontSize: 12 }}>
+          <div style={{ padding: "8px 16px", color: "#ef4444", fontSize: 'var(--fs-sm)' }}>
             ⚠ {error}
           </div>
         )}
 
         {/* Action feedback */}
         {actionMsg && (
-          <div style={{ padding: "4px 16px", fontSize: 12, color: "#22c55e" }}>
+          <div style={{ padding: "4px 16px", fontSize: 'var(--fs-sm)', color: "#22c55e" }}>
             {actionMsg}
           </div>
         )}
@@ -292,31 +292,31 @@ export function CicdPanel({ onClose }: CicdPanelProps) {
               {/* Summary */}
               <div style={{ display: "flex", gap: 12, margin: "12px 0", flexWrap: "wrap" }}>
                 <div style={summaryCardStyle}>
-                  <span style={{ fontSize: 22, fontWeight: 700 }}>{summary.total}</span>
-                  <span style={{ fontSize: 11 }}>{S.cicd.total[lang]}</span>
+                  <span style={{ fontSize: 'var(--fs-2xl)', fontWeight: 700 }}>{summary.total}</span>
+                  <span style={{ fontSize: 'var(--fs-sm)' }}>{S.cicd.total[lang]}</span>
                 </div>
                 <div style={{ ...summaryCardStyle, borderColor: "#22c55e" }}>
-                  <span style={{ fontSize: 22, fontWeight: 700, color: "#22c55e" }}>{summary.success}</span>
-                  <span style={{ fontSize: 11 }}>{S.cicd.success[lang]}</span>
+                  <span style={{ fontSize: 'var(--fs-2xl)', fontWeight: 700, color: "#22c55e" }}>{summary.success}</span>
+                  <span style={{ fontSize: 'var(--fs-sm)' }}>{S.cicd.success[lang]}</span>
                 </div>
                 <div style={{ ...summaryCardStyle, borderColor: "#ef4444" }}>
-                  <span style={{ fontSize: 22, fontWeight: 700, color: "#ef4444" }}>{summary.failure}</span>
-                  <span style={{ fontSize: 11 }}>{S.cicd.failure[lang]}</span>
+                  <span style={{ fontSize: 'var(--fs-2xl)', fontWeight: 700, color: "#ef4444" }}>{summary.failure}</span>
+                  <span style={{ fontSize: 'var(--fs-sm)' }}>{S.cicd.failure[lang]}</span>
                 </div>
                 <div style={{ ...summaryCardStyle, borderColor: "#3b82f6" }}>
-                  <span style={{ fontSize: 22, fontWeight: 700, color: "#3b82f6" }}>{summary.running}</span>
-                  <span style={{ fontSize: 11 }}>{S.cicd.running[lang]}</span>
+                  <span style={{ fontSize: 'var(--fs-2xl)', fontWeight: 700, color: "#3b82f6" }}>{summary.running}</span>
+                  <span style={{ fontSize: 'var(--fs-sm)' }}>{S.cicd.running[lang]}</span>
                 </div>
                 <div style={{ ...summaryCardStyle, borderColor: "#6b7280" }}>
-                  <span style={{ fontSize: 22, fontWeight: 700, color: "#6b7280" }}>{summary.cancelled}</span>
-                  <span style={{ fontSize: 11 }}>{S.cicd.cancelled[lang]}</span>
+                  <span style={{ fontSize: 'var(--fs-2xl)', fontWeight: 700, color: "#6b7280" }}>{summary.cancelled}</span>
+                  <span style={{ fontSize: 'var(--fs-sm)' }}>{S.cicd.cancelled[lang]}</span>
                 </div>
               </div>
 
               {/* Runs List */}
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", margin: "8px 0" }}>
-                <span style={{ fontWeight: 600, fontSize: 14 }}>{S.cicd.recentRuns[lang]}</span>
-                <button onClick={loadRuns} disabled={loading} style={{ background: "none", border: "1px solid var(--border-color)", borderRadius: 4, padding: "2px 8px", cursor: "pointer", color: "inherit", fontSize: 12, opacity: loading ? 0.5 : 1 }}>
+                <span style={{ fontWeight: 600, fontSize: 'var(--fs-md)' }}>{S.cicd.recentRuns[lang]}</span>
+                <button onClick={loadRuns} disabled={loading} style={{ background: "none", border: "1px solid var(--border-color)", borderRadius: 4, padding: "2px 8px", cursor: "pointer", color: "inherit", fontSize: 'var(--fs-sm)', opacity: loading ? 0.5 : 1 }}>
                   <RefreshCw size={12} style={{ display: "inline", marginRight: 4 }} className={loading ? "spin" : ""} />
                   {S.cicd.refresh[lang]}
                 </button>
@@ -336,10 +336,10 @@ export function CicdPanel({ onClose }: CicdPanelProps) {
                           {expandedRun === run.id ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                         </span>
                         <StatusBadge status={run.status} conclusion={run.conclusion} />
-                        <span style={{ fontWeight: 600, fontSize: 13 }}>#{run.runNumber} {run.name}</span>
-                        <span style={{ fontSize: 11, color: "#6b7280" }}>{run.event}</span>
-                        <span style={{ fontSize: 11, color: "#6b7280" }}>{run.headBranch}</span>
-                        <span style={{ fontSize: 11, color: "#6b7280", marginLeft: "auto" }}>{formatTime(run.createdAt)}</span>
+                        <span style={{ fontWeight: 600, fontSize: 'var(--fs-base)' }}>#{run.runNumber} {run.name}</span>
+                        <span style={{ fontSize: 'var(--fs-sm)', color: "#6b7280" }}>{run.event}</span>
+                        <span style={{ fontSize: 'var(--fs-sm)', color: "#6b7280" }}>{run.headBranch}</span>
+                        <span style={{ fontSize: 'var(--fs-sm)', color: "#6b7280", marginLeft: "auto" }}>{formatTime(run.createdAt)}</span>
                         <a href={run.htmlUrl} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} style={{ color: "inherit", display: "flex" }}>
                           <ExternalLink size={14} />
                         </a>
@@ -362,13 +362,13 @@ export function CicdPanel({ onClose }: CicdPanelProps) {
                       {/* Jobs detail */}
                       {expandedRun === run.id && runJobs[run.id] && (
                         <div style={{ marginTop: 8, borderTop: "1px solid var(--border-color, #333)", paddingTop: 8 }}>
-                          <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 4 }}>{S.cicd.jobs[lang]}</div>
+                          <div style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, marginBottom: 4 }}>{S.cicd.jobs[lang]}</div>
                           {runJobs[run.id]!.length === 0 ? (
-                            <div style={{ fontSize: 12, color: "#6b7280" }}>—</div>
+                            <div style={{ fontSize: 'var(--fs-sm)', color: "#6b7280" }}>—</div>
                           ) : (
                             runJobs[run.id]!.map(job => (
                               <div key={job.id} style={{ marginBottom: 8 }}>
-                                <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12 }}>
+                                <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 'var(--fs-sm)' }}>
                                   <StatusBadge status={job.status} conclusion={job.conclusion} />
                                   <span style={{ fontWeight: 600 }}>{job.name}</span>
                                 </div>
@@ -376,7 +376,7 @@ export function CicdPanel({ onClose }: CicdPanelProps) {
                                 {job.steps && job.steps.length > 0 && (
                                   <div style={{ marginLeft: 16, marginTop: 4 }}>
                                     {job.steps.map(step => (
-                                      <div key={step.number} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, color: "#6b7280" }}>
+                                      <div key={step.number} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 'var(--fs-sm)', color: "#6b7280" }}>
                                         <span style={{ width: 16, textAlign: "center", color: step.conclusion === "success" ? "#22c55e" : step.conclusion === "failure" ? "#ef4444" : "#6b7280" }}>
                                           {step.conclusion === "success" ? "✓" : step.conclusion === "failure" ? "✗" : "○"}
                                         </span>
@@ -401,7 +401,7 @@ export function CicdPanel({ onClose }: CicdPanelProps) {
           <div style={{ marginTop: 16, borderTop: "1px solid var(--border-color, #333)", paddingTop: 12 }}>
             <button
               onClick={() => { setShowGenerator(!showGenerator); if (!showGenerator && !generatedWorkflow) handleGenerate(); }}
-              style={{ background: "none", border: "none", cursor: "pointer", color: "inherit", fontSize: 14, fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}
+              style={{ background: "none", border: "none", cursor: "pointer", color: "inherit", fontSize: 'var(--fs-md)', fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}
             >
               {showGenerator ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
               <Zap size={16} />
@@ -416,7 +416,7 @@ export function CicdPanel({ onClose }: CicdPanelProps) {
                       key={tpl.type}
                       onClick={() => { setProjectType(tpl.type); const wf = generateWorkflow(tpl.type); setGeneratedWorkflow(wf); }}
                       style={{
-                        padding: "4px 10px", borderRadius: 4, fontSize: 12, cursor: "pointer",
+                        padding: "4px 10px", borderRadius: 4, fontSize: 'var(--fs-sm)', cursor: "pointer",
                         border: projectType === tpl.type ? "1px solid var(--accent, #7c3aed)" : "1px solid var(--border-color, #333)",
                         background: projectType === tpl.type ? "var(--accent-soft, rgba(124,58,237,0.15))" : "transparent",
                         color: "inherit",
@@ -438,12 +438,12 @@ export function CicdPanel({ onClose }: CicdPanelProps) {
                         <FileDown size={12} />
                         {S.cicd.saveToFile[lang]}
                       </button>
-                      <span style={{ fontSize: 11, color: "#6b7280", alignSelf: "center" }}>{generatedWorkflow.path}</span>
+                      <span style={{ fontSize: 'var(--fs-sm)', color: "#6b7280", alignSelf: "center" }}>{generatedWorkflow.path}</span>
                     </div>
                     <pre style={{
                       background: "var(--bg-secondary, #181825)",
                       border: "1px solid var(--border-color, #333)",
-                      borderRadius: 6, padding: 12, fontSize: 12,
+                      borderRadius: 6, padding: 12, fontSize: 'var(--fs-sm)',
                       overflowX: "auto", maxHeight: 300,
                       fontFamily: "'Cascadia Code', 'Fira Code', monospace",
                       margin: 0,
@@ -479,6 +479,6 @@ const runCardStyle: React.CSSProperties = {
 
 const actionBtnStyle: React.CSSProperties = {
   display: "inline-flex", alignItems: "center", gap: 4,
-  padding: "3px 8px", borderRadius: 4, fontSize: 11, cursor: "pointer",
+  padding: "3px 8px", borderRadius: 4, fontSize: 'var(--fs-sm)', cursor: "pointer",
   border: "1px solid var(--border-color, #333)", background: "transparent", color: "inherit",
 };

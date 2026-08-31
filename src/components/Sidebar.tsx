@@ -437,7 +437,7 @@ const handleDrop = useCallback((e: React.DragEvent, targetSessionId: string, pro
             </span>
             <span>{lang === 'zh' ? '任务管理' : 'Task Center'}</span>
             {inboxUnread > 0 && (
-              <span style={{ marginLeft: "auto", fontSize: 10, fontWeight: 700, color: "#ef4444" }}>
+              <span style={{ marginLeft: "auto", fontSize: 'var(--fs-xs)', fontWeight: 700, color: "#ef4444" }}>
                 {inboxUnread}
               </span>
             )}
@@ -839,7 +839,7 @@ const handleDrop = useCallback((e: React.DragEvent, targetSessionId: string, pro
               display: 'flex',
               alignItems: 'center',
               gap: 4,
-              fontSize: 12,
+              fontSize: 'var(--fs-sm)',
               color: 'var(--text-secondary)',
               transition: 'background 0.15s, color 0.15s',
             }}
@@ -919,7 +919,7 @@ function SessionItem({
         return <span className="session-unread-badge" title={lang === 'zh' ? `${unread} 条未读` : `${unread} unread`}>{unread > 99 ? '99+' : unread}</span>;
       })()}
       {session.executionMode === "git_worktree" && (
-        <span style={{ fontSize: 11, flexShrink: 0, display: "flex", alignItems: "center" }} title={session.worktreePath || (lang === "zh" ? "工作树模式" : "Worktree mode")}><GitBranch size={12} /></span>
+        <span style={{ fontSize: 'var(--fs-sm)', flexShrink: 0, display: "flex", alignItems: "center" }} title={session.worktreePath || (lang === "zh" ? "工作树模式" : "Worktree mode")}><GitBranch size={12} /></span>
       )}
       {/* Delegation badge: show 🔗 if session has active delegations */}
       {(() => {
@@ -927,7 +927,7 @@ function SessionItem({
           const orch = getDelegationOrchestrator();
           const hasActive = orch.getDelegationsByTarget(session.id).some(d => d.status === 'pending' || d.status === 'running')
             || orch.getDelegationsBySource(session.id).some(d => d.status === 'pending' || d.status === 'running');
-          return hasActive ? <span style={{ fontSize: 11, flexShrink: 0, display: "flex", alignItems: "center" }} title={lang === "zh" ? "委派任务进行中" : "Delegation active"}><Link2 size={12} /></span> : null;
+          return hasActive ? <span style={{ fontSize: 'var(--fs-sm)', flexShrink: 0, display: "flex", alignItems: "center" }} title={lang === "zh" ? "委派任务进行中" : "Delegation active"}><Link2 size={12} /></span> : null;
         } catch { return null; }
       })()}
       <span className="sidebar-session-title" title={session.title}>{session.title}</span>

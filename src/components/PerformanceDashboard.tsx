@@ -125,7 +125,7 @@ export function PerformanceDashboard({ onClose }: PerformanceDashboardProps) {
         }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <Activity size={18} />
-            <span style={{ fontSize: 16, fontWeight: 700 }}>{S.perf.title[lang]}</span>
+            <span style={{ fontSize: 'var(--fs-lg)', fontWeight: 700 }}>{S.perf.title[lang]}</span>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <button onClick={() => { telemetry.flush(); refresh(); }} style={headerBtnStyle}>
@@ -158,7 +158,7 @@ export function PerformanceDashboard({ onClose }: PerformanceDashboardProps) {
                 <option value="60min">{S.perf.last60Min[lang]}</option>
               </select>
             )}
-            <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, cursor: "pointer" }}>
+            <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 'var(--fs-sm)', cursor: "pointer" }}>
               <input type="checkbox" checked={autoRefresh} onChange={e => setAutoRefresh(e.target.checked)} />
               {S.perf.autoRefresh[lang]}
             </label>
@@ -174,7 +174,7 @@ export function PerformanceDashboard({ onClose }: PerformanceDashboardProps) {
         </div>
 
         {exportMsg && (
-          <div style={{ padding: "4px 16px", fontSize: 12, color: "#22c55e" }}>{exportMsg}</div>
+          <div style={{ padding: "4px 16px", fontSize: 'var(--fs-sm)', color: "#22c55e" }}>{exportMsg}</div>
         )}
 
         {/* Content */}
@@ -195,7 +195,7 @@ export function PerformanceDashboard({ onClose }: PerformanceDashboardProps) {
 
               {/* Trend Chart */}
               <div style={{ marginBottom: 16 }}>
-                <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 8, display: "flex", alignItems: "center", gap: 4 }}>
+                <div style={{ fontSize: 'var(--fs-md)', fontWeight: 600, marginBottom: 8, display: "flex", alignItems: "center", gap: 4 }}>
                   <Zap size={14} />
                   {S.perf.eventTrend[lang]}
                 </div>
@@ -216,7 +216,7 @@ export function PerformanceDashboard({ onClose }: PerformanceDashboardProps) {
                     }} title={`${formatTime(bucket.timestamp)}: ${bucket.count}`} />
                   ))}
                 </div>
-                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "#6b7280", marginTop: 4 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 'var(--fs-xs)', color: "#6b7280", marginTop: 4 }}>
                   <span>{formatTime(timeSeries[0]?.timestamp || 0)}</span>
                   <span>{formatTime(timeSeries[timeSeries.length - 1]?.timestamp || 0)}</span>
                 </div>
@@ -224,14 +224,14 @@ export function PerformanceDashboard({ onClose }: PerformanceDashboardProps) {
 
               {/* Events by Type */}
               <div>
-                <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 8 }}>
+                <div style={{ fontSize: 'var(--fs-md)', fontWeight: 600, marginBottom: 8 }}>
                   {S.perf.eventsByType[lang]}
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                   {overview.eventsByType.map(evt => {
                     const pct = (evt.count / overview.totalEvents) * 100;
                     return (
-                      <div key={evt.name} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12 }}>
+                      <div key={evt.name} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 'var(--fs-sm)' }}>
                         <span style={{ minWidth: 200, fontFamily: "'Cascadia Code', monospace" }}>{evt.name}</span>
                         <div style={{ flex: 1, height: 16, background: "var(--bg-secondary, #181825)", borderRadius: 4, overflow: "hidden" }}>
                           <div style={{
@@ -328,7 +328,7 @@ export function PerformanceDashboard({ onClose }: PerformanceDashboardProps) {
               textAlign: "center",
             }} onClick={e => e.stopPropagation()}>
               <Trash2 size={32} style={{ color: "#ef4444", marginBottom: 8 }} />
-              <div style={{ marginBottom: 16, fontSize: 14 }}>{S.perf.clearConfirm[lang]}</div>
+              <div style={{ marginBottom: 16, fontSize: 'var(--fs-md)' }}>{S.perf.clearConfirm[lang]}</div>
               <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
                 <button onClick={() => setShowClearConfirm(false)} style={dialogBtnStyle}>
                   {S.perf.clearAll[lang].includes("清") ? "取消" : "Cancel"}
@@ -354,7 +354,7 @@ function TabButton({ active, onClick, icon, label }: { active: boolean; onClick:
       onClick={onClick}
       style={{
         display: "flex", alignItems: "center", gap: 4,
-        padding: "4px 10px", borderRadius: 6, fontSize: 12, cursor: "pointer",
+        padding: "4px 10px", borderRadius: 6, fontSize: 'var(--fs-sm)', cursor: "pointer",
         border: active ? "1px solid var(--accent, #7c3aed)" : "1px solid var(--border-color, #333)",
         background: active ? "var(--accent-soft, rgba(124,58,237,0.15))" : "transparent",
         color: "inherit", fontWeight: active ? 600 : 400,
@@ -375,10 +375,10 @@ function StatCard({ value, label, color, suffix }: { value: number; label: strin
       background: `${color}10`,
       minWidth: 120,
     }}>
-      <span style={{ fontSize: 24, fontWeight: 700, color }}>
-        {value}{suffix ? <span style={{ fontSize: 12, fontWeight: 400, marginLeft: 4 }}>{suffix}</span> : null}
+      <span style={{ fontSize: 'var(--fs-3xl)', fontWeight: 700, color }}>
+        {value}{suffix ? <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 400, marginLeft: 4 }}>{suffix}</span> : null}
       </span>
-      <span style={{ fontSize: 11, color: "#6b7280", marginTop: 2 }}>{label}</span>
+      <span style={{ fontSize: 'var(--fs-sm)', color: "#6b7280", marginTop: 2 }}>{label}</span>
     </div>
   );
 }
@@ -387,25 +387,25 @@ function StatCard({ value, label, color, suffix }: { value: number; label: strin
 
 const headerBtnStyle: React.CSSProperties = {
   display: "inline-flex", alignItems: "center", gap: 4,
-  padding: "3px 8px", borderRadius: 4, fontSize: 12, cursor: "pointer",
+  padding: "3px 8px", borderRadius: 4, fontSize: 'var(--fs-sm)', cursor: "pointer",
   border: "1px solid var(--border-color, #333)", background: "transparent", color: "inherit",
 };
 
 const selectStyle: React.CSSProperties = {
-  padding: "3px 8px", borderRadius: 4, fontSize: 12,
+  padding: "3px 8px", borderRadius: 4, fontSize: 'var(--fs-sm)',
   background: "var(--bg-secondary, #181825)",
   border: "1px solid var(--border-color, #333)",
   color: "inherit", cursor: "pointer",
 };
 
 const tableStyle: React.CSSProperties = {
-  width: "100%", borderCollapse: "collapse", fontSize: 12,
+  width: "100%", borderCollapse: "collapse", fontSize: 'var(--fs-sm)',
 };
 
 const thStyle: React.CSSProperties = {
   textAlign: "left", padding: "8px 6px",
   borderBottom: "1px solid var(--border-color, #333)",
-  fontWeight: 600, fontSize: 11, color: "#6b7280",
+  fontWeight: 600, fontSize: 'var(--fs-sm)', color: "#6b7280",
   textTransform: "uppercase",
 };
 
@@ -415,6 +415,6 @@ const tdStyle: React.CSSProperties = {
 };
 
 const dialogBtnStyle: React.CSSProperties = {
-  padding: "6px 16px", borderRadius: 6, fontSize: 13, cursor: "pointer",
+  padding: "6px 16px", borderRadius: 6, fontSize: 'var(--fs-base)', cursor: "pointer",
   border: "1px solid var(--border-color, #333)", background: "transparent", color: "inherit",
 };

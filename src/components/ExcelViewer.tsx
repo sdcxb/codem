@@ -90,7 +90,7 @@ export const ExcelViewer = memo(function ExcelViewer({ filePath, data, onClose }
               key={i}
               onClick={() => setActiveSheet(i)}
               style={{
-                padding: "4px 12px", fontSize: 12, cursor: "pointer",
+                padding: "4px 12px", fontSize: 'var(--fs-sm)', cursor: "pointer",
                 background: i === activeSheet ? "var(--accent)" : "transparent",
                 color: i === activeSheet ? "#fff" : "var(--text-muted)",
                 border: "none", borderRadius: 4,
@@ -103,7 +103,7 @@ export const ExcelViewer = memo(function ExcelViewer({ filePath, data, onClose }
       )}
       {currentSheet && currentSheet.rows.length > 0 ? (
         <div style={{ overflow: "auto", maxHeight: "60vh" }}>
-          <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 12 }}>
+          <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 'var(--fs-sm)' }}>
             <tbody>
               {currentSheet.rows.slice(0, 500).map((row, ri) => (
                 <tr key={ri} style={{ borderBottom: "1px solid var(--border-primary)" }}>
@@ -126,7 +126,7 @@ export const ExcelViewer = memo(function ExcelViewer({ filePath, data, onClose }
             </tbody>
           </table>
           {currentSheet.rows.length > 500 && (
-            <div style={{ textAlign: "center", padding: 8, color: "var(--text-muted)", fontSize: 11 }}>
+            <div style={{ textAlign: "center", padding: 8, color: "var(--text-muted)", fontSize: 'var(--fs-sm)' }}>
               Showing first 500 of {currentSheet.rows.length} rows
             </div>
           )}

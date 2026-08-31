@@ -61,8 +61,8 @@ export const AudioPlayer = memo(function AudioPlayer({ filePath, src, fileName, 
       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
         <Volume2 size={24} style={{ color: "var(--accent)" }} />
         <div style={{ flex: 1 }}>
-          <div style={{ fontWeight: 600, fontSize: 13 }}>{fileName || "Audio"}</div>
-          <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{formatTime(duration)}</div>
+          <div style={{ fontWeight: 600, fontSize: 'var(--fs-base)' }}>{fileName || "Audio"}</div>
+          <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)" }}>{formatTime(duration)}</div>
         </div>
         {onClose && (
           <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)" }}>
@@ -93,7 +93,7 @@ export const AudioPlayer = memo(function AudioPlayer({ filePath, src, fileName, 
         >
           {playing ? <Pause size={16} /> : <Play size={16} />}
         </button>
-        <span style={{ fontSize: 11, color: "var(--text-muted)", minWidth: 32 }}>{formatTime(currentTime)}</span>
+        <span style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", minWidth: 32 }}>{formatTime(currentTime)}</span>
         <input
           type="range"
           min={0}
@@ -107,7 +107,7 @@ export const AudioPlayer = memo(function AudioPlayer({ filePath, src, fileName, 
           }}
           style={{ flex: 1 }}
         />
-        <span style={{ fontSize: 11, color: "var(--text-muted)", minWidth: 32 }}>{formatTime(duration)}</span>
+        <span style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", minWidth: 32 }}>{formatTime(duration)}</span>
       </div>
 
       {/* Volume control */}

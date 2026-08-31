@@ -40,7 +40,7 @@ export function PlanApprovalCard({ plan, onApprove, onReject }: PlanApprovalCard
           borderBottom: "1px solid var(--border-color, #333)",
         }}>
           <ClipboardList size={18} />
-          <span style={{ fontSize: 16, fontWeight: 700 }}>
+          <span style={{ fontSize: 'var(--fs-lg)', fontWeight: 700 }}>
             {lang === "zh" ? "计划审批" : "Plan Approval"}
           </span>
         </div>
@@ -50,7 +50,7 @@ export function PlanApprovalCard({ plan, onApprove, onReject }: PlanApprovalCard
           flex: 1, overflowY: "auto", padding: "12px 16px",
         }}>
           <div style={{
-            fontSize: 12, color: "#6b7280", marginBottom: 8,
+            fontSize: 'var(--fs-sm)', color: "#6b7280", marginBottom: 8,
           }}>
             {lang === "zh" ? "模型提交了以下计划，请审批后开始执行：" : "The model has submitted the following plan. Review and approve to begin execution:"}
           </div>
@@ -58,7 +58,7 @@ export function PlanApprovalCard({ plan, onApprove, onReject }: PlanApprovalCard
             background: "var(--bg-secondary, #181825)",
             border: "1px solid var(--border-color, #333)",
             borderRadius: 8, padding: 12,
-            fontSize: 13, lineHeight: 1.6,
+            fontSize: 'var(--fs-base)', lineHeight: 1.6,
             whiteSpace: "pre-wrap",
             fontFamily: "'Cascadia Code', 'Fira Code', monospace",
             maxHeight: "50vh", overflowY: "auto",
@@ -78,7 +78,7 @@ export function PlanApprovalCard({ plan, onApprove, onReject }: PlanApprovalCard
                 width: "100%", minHeight: 60, padding: "8px 10px",
                 background: "var(--bg-secondary, #181825)",
                 border: "1px solid var(--border-color, #333)",
-                borderRadius: 6, color: "inherit", fontSize: 13,
+                borderRadius: 6, color: "inherit", fontSize: 'var(--fs-base)',
                 resize: "vertical",
               }}
               autoFocus
@@ -124,6 +124,6 @@ export function PlanApprovalCard({ plan, onApprove, onReject }: PlanApprovalCard
 
 const btnStyle: React.CSSProperties = {
   display: "inline-flex", alignItems: "center", gap: 4,
-  padding: "6px 14px", borderRadius: 6, fontSize: 13, cursor: "pointer",
+  padding: "6px 14px", borderRadius: 6, fontSize: 'var(--fs-base)', cursor: "pointer",
   border: "1px solid var(--border-color, #333)", background: "transparent", color: "inherit",
 };

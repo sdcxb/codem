@@ -82,21 +82,21 @@ export function PromptDebugger() {
   const tokenEstimate = Math.ceil(prompt.length / 4);
 
   const labelStyle: React.CSSProperties = {
-    fontSize: 11, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 3, display: "block",
+    fontSize: 'var(--fs-sm)', fontWeight: 600, color: "var(--text-secondary)", marginBottom: 3, display: "block",
   };
   const inputStyle: React.CSSProperties = {
     padding: "5px 8px", borderRadius: 4, border: "1px solid var(--border-primary)",
-    background: "var(--bg-tertiary)", color: "var(--text-primary)", fontSize: 12, width: "100%",
+    background: "var(--bg-tertiary)", color: "var(--text-primary)", fontSize: 'var(--fs-sm)', width: "100%",
     outline: "none",
   };
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       <div>
-        <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)" }}>
+        <div style={{ fontSize: 'var(--fs-md)', fontWeight: 700, color: "var(--text-primary)" }}>
           📝 {zh ? "系统提示词调试" : "System Prompt Debugger"}
         </div>
-        <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 2 }}>
+        <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-secondary)", marginTop: 2 }}>
           {zh ? "预览和调试生成的系统提示词。修改参数后实时更新。" : "Preview and debug the generated system prompt. Updates in real-time."}
         </div>
       </div>
@@ -149,7 +149,7 @@ export function PromptDebugger() {
       </div>
 
       {/* Stats */}
-      <div style={{ display: "flex", gap: 12, fontSize: 11 }}>
+      <div style={{ display: "flex", gap: 12, fontSize: 'var(--fs-sm)' }}>
         <span style={{ color: "var(--text-muted)" }}>
           {zh ? "总长度" : "Total length"}: <span style={{ fontWeight: 600, color: "var(--text-primary)" }}>{prompt.length.toLocaleString()}</span> {zh ? "字符" : "chars"}
         </span>
@@ -162,7 +162,7 @@ export function PromptDebugger() {
         <button onClick={() => {
           navigator.clipboard?.writeText(prompt);
         }} style={{
-          marginLeft: "auto", padding: "2px 10px", borderRadius: 4, fontSize: 11,
+          marginLeft: "auto", padding: "2px 10px", borderRadius: 4, fontSize: 'var(--fs-sm)',
           border: "1px solid var(--border-primary)", background: "var(--bg-tertiary)",
           color: "var(--text-primary)", cursor: "pointer",
         }}>
@@ -182,20 +182,20 @@ export function PromptDebugger() {
               <div
                 onClick={() => setShowSection({ ...showSection, [s.index]: !expanded })}
                 style={{
-                  padding: "6px 10px", cursor: "pointer", fontSize: 12, fontWeight: 600,
+                  padding: "6px 10px", cursor: "pointer", fontSize: 'var(--fs-sm)', fontWeight: 600,
                   color: "var(--text-primary)", display: "flex", alignItems: "center", gap: 6,
                   borderBottom: expanded ? "1px solid var(--border-primary)" : "none",
                 }}
               >
-                <span style={{ fontSize: 10 }}>{expanded ? "▼" : "▶"}</span>
+                <span style={{ fontSize: 'var(--fs-xs)' }}>{expanded ? "▼" : "▶"}</span>
                 <span>{s.title || `Section ${s.index + 1}`}</span>
-                <span style={{ marginLeft: "auto", fontSize: 10, color: "var(--text-muted)" }}>
+                <span style={{ marginLeft: "auto", fontSize: 'var(--fs-xs)', color: "var(--text-muted)" }}>
                   ~{Math.ceil(s.content.length / 4)} tokens
                 </span>
               </div>
               {expanded && (
                 <pre style={{
-                  margin: 0, padding: 8, fontSize: 10, whiteSpace: "pre-wrap",
+                  margin: 0, padding: 8, fontSize: 'var(--fs-xs)', whiteSpace: "pre-wrap",
                   wordBreak: "break-word", maxHeight: 300, overflow: "auto",
                   color: "var(--text-secondary)", fontFamily: "monospace",
                 }}>

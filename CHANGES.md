@@ -1,5 +1,46 @@
 # Codem 更新日志
 
+## v1.8.0 (2026-08-31)
+
+### 知识图谱 React Flow 重构 + DSH 框架穿透性整改 + UI 设计规范化
+
+本次更新是对标遗留整改工作的延续，聚焦于知识图谱可视化质量提升、LLM 配置统一化、以及 UI 设计变量规范化。
+
+#### 知识图谱 React Flow 重构
+- **引入 @xyflow/react (React Flow) 库**：替代自研 Canvas 力导向图实现，获得专业级的交互体验
+- **自定义节点组件**：按实体类型着色 + 图标 + 径向渐变 + 选中高亮 + 搜索 dimmed 效果
+- **自定义贝塞尔曲线边**：选中时显示关系标签，高亮/普通状态视觉区分
+- **内置 MiniMap / Controls / Background**：小地图导航、缩放/平移控制、点阵背景
+- **fitView 自动适配**：加载后自动聚焦到所有节点
+- **保留所有编辑功能**：节点标签编辑、节点删除、边删除、右键菜单、PNG/JSON 导出
+
+#### DSH 框架穿透性修复
+- **`vision-proxy.ts` 统一改造**：`resolveVisionConfig()` 和 `resolveSTTConfig()` 从手动拼凑 `codem-settings` + `getProviderConfig` 改为统一使用 `engine.getConfiguredProvider('vision'/'stt')`，消除了多模态代理中的配置断点
+- **移除未使用的导入**：`getModelProfileManager`、`getSettingJSON` 不再被 vision-proxy 直接引用
+
+#### UI 设计规范化（对标 apple-design / emilkowalski/skills）
+- **批量字体变量替换**：将 50+ 组件中的硬编码 `fontSize: 数字` 替换为 CSS 变量（`var(--fs-xs)` 到 `var(--fs-3xl)`），确保全局字体大小一致性
+- **颜色语义化**：修复 SettingsPanel、PluginManager、ChatPanel 中的硬编码颜色（`#e67e22`、`#10b981`、`#fff`），替换为 CSS 变量（`var(--warning)`、`var(--success)`、`var(--text-on-accent)`）
+- **保留 PPT 编辑器和 xterm 终端的数值 fontSize**：这些是 API 配置项，不是 CSS 样式
+
+#### 笔记本功能审计（对标 lumina-note）
+- 审计结论：功能完整，无断点。所有核心功能已对标 lumina-note 实现：
+  - ✅ Markdown 编辑器（实时预览/分栏）
+  - ✅ WikiLinks 双向链接
+  - ✅ 反向链接面板（Backlinks）
+  - ✅ 闪卡 SM-2 间隔重复
+  - ✅ 知识图谱（已用 React Flow 重构）
+  - ✅ 标签系统 + 笔记搜索
+  - ✅ 版本历史
+  - ✅ 导出 Markdown
+  - ✅ 学习路径
+  - ✅ LLM 调用统一走 `getConfiguredProvider`
+
+#### 依赖更新
+- 新增 `@xyflow/react` ^12.11.5
+
+---
+
 ## v1.7.0 (2026-08-31)
 
 ### PPT 生成质量大幅提升 — oh-my-ppt 风格技能集成

@@ -114,7 +114,7 @@ export const ConversationOverview = memo(function ConversationOverview({
             style={{
               display: "flex",
               justifyContent: "space-between",
-              fontSize: 11,
+              fontSize: 'var(--fs-sm)',
               marginBottom: 4,
               color: "var(--text-muted)",
             }}
@@ -145,7 +145,7 @@ export const ConversationOverview = memo(function ConversationOverview({
             display: "flex",
             alignItems: "center",
             gap: 4,
-            fontSize: 11,
+            fontSize: 'var(--fs-sm)',
             color: "var(--text-muted)",
           }}
         >

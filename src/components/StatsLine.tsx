@@ -201,7 +201,7 @@ export const StatsLine = memo(function StatsLine({ message }: StatsLineProps) {
         display: 'flex',
         alignItems: 'center',
         gap: 4,
-        fontSize: 10,
+        fontSize: 'var(--fs-xs)',
         color: 'var(--text-muted)',
         overflow: 'hidden',
         textOverflow: 'ellipsis',

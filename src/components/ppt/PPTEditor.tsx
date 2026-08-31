@@ -903,16 +903,16 @@ const handleThemeChange = useCallback((theme: PPTTheme) => {
       {showVersionPanel && (
         <div className="ppt-version-panel">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-            <span style={{ color: 'var(--text-primary)', fontSize: 14, fontWeight: 600 }}>📚 版本历史</span>
-            <button onClick={() => setShowVersionPanel(false)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 16 }}>✕</button>
+            <span style={{ color: 'var(--text-primary)', fontSize: 'var(--fs-md)', fontWeight: 600 }}>📚 版本历史</span>
+            <button onClick={() => setShowVersionPanel(false)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 'var(--fs-lg)' }}>✕</button>
           </div>
           {versions.length === 0 ? (
-            <div style={{ color: 'var(--text-muted)', fontSize: 12, textAlign: 'center', padding: 20 }}>暂无保存的版本</div>
+            <div style={{ color: 'var(--text-muted)', fontSize: 'var(--fs-sm)', textAlign: 'center', padding: 20 }}>暂无保存的版本</div>
           ) : (
             versions.slice().reverse().map(v => (
               <div key={v.id} className="ppt-version-item" onClick={() => handleRestoreVersion(v.id)}>
-                <div style={{ color: 'var(--text-primary)', fontSize: 13, fontWeight: 600 }}>{v.name}</div>
-                <div style={{ color: 'var(--text-muted)', fontSize: 11, marginTop: 2 }}>
+                <div style={{ color: 'var(--text-primary)', fontSize: 'var(--fs-base)', fontWeight: 600 }}>{v.name}</div>
+                <div style={{ color: 'var(--text-muted)', fontSize: 'var(--fs-sm)', marginTop: 2 }}>
                   {new Date(v.timestamp).toLocaleString()} · {v.deck.slides.length} 页
                 </div>
               </div>
@@ -925,17 +925,17 @@ const handleThemeChange = useCallback((theme: PPTTheme) => {
       {showNotesPanel && (
         <div className="ppt-version-panel">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-            <span style={{ color: 'var(--text-primary)', fontSize: 14, fontWeight: 600 }}>📝 演讲稿</span>
+            <span style={{ color: 'var(--text-primary)', fontSize: 'var(--fs-md)', fontWeight: 600 }}>📝 演讲稿</span>
             <div style={{ display: 'flex', gap: 6 }}>
               <button
                 onClick={() => handleGenerateNotes()}
                 disabled={generatingNotes}
                 className="ppt-chat-send"
-                style={{ fontSize: 11, padding: '4px 10px' }}
+                style={{ fontSize: 'var(--fs-sm)', padding: '4px 10px' }}
               >
                 {generatingNotes ? '生成中...' : '重新生成'}
               </button>
-              <button onClick={() => setShowNotesPanel(false)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 16 }}>✕</button>
+              <button onClick={() => setShowNotesPanel(false)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 'var(--fs-lg)' }}>✕</button>
             </div>
           </div>
           <div>
@@ -944,13 +944,13 @@ const handleThemeChange = useCallback((theme: PPTTheme) => {
               return (
                 <div key={i} className="ppt-version-item" style={{ cursor: 'default', opacity: hasNotes ? 1 : 0.5 }}>
                   <div
-                    style={{ color: 'var(--accent)', fontSize: 12, fontWeight: 600, marginBottom: 4, cursor: 'pointer' }}
+                    style={{ color: 'var(--accent)', fontSize: 'var(--fs-sm)', fontWeight: 600, marginBottom: 4, cursor: 'pointer' }}
                     onClick={() => { setCurrentSlideIndex(i); setShowNotesPanel(false); }}
                   >
                     第 {i + 1} 页 {hasNotes ? '' : '（无演讲稿）'}
                   </div>
                   {hasNotes && (
-                    <div style={{ color: 'var(--text-secondary)', fontSize: 12, lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>
+                    <div style={{ color: 'var(--text-secondary)', fontSize: 'var(--fs-sm)', lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>
                       {slide.notes}
                     </div>
                   )}
