@@ -1416,3 +1416,24 @@
 - [x] 删除旧的 `ppt-skill-loader.ts`（直接注入全部风格到 systemPrompt 的方案，会导致 token 爆炸）
 - [x] TypeScript 编译零错误 + Lint 零错误
 - [x] Release v1.7.0 发布
+
+### v1.9.0 (2026-08-31)
+- [x] 上下文压缩过早触发治根修复 — TokenTracker.estimateMessagesTokens 永不回落 + 动态 provider 模型窗口 128k + 工具定义双算三根因
+- [x] getAgenticLoop 构造时同步 contextWindow，避免构造期回退 128k
+- [x] 通用协议 API 配置（OpenAI 兼容）：设置页手动输入 Base URL + API key → 自动拉模型列表 → 持久化
+- [x] 刷新模型列表不再丢弃 contextWindow 字段（SettingsPanel 动态模型 state 补全窗口字段 + inferContextWindow 写入）
+- [x] 新增 getFirstConfiguredModel() 初始模型 fallback + resolveProviderForModel() 自定义 provider 模型路由
+- [x] read 单响应去重键含 offset/limit（readCache 已区分范围但去重层未区分）
+- [x] DecisionTray 审批内容空白修复 — App.tsx 读 req.args 改为 req.input
+- [x] 新增 context-window-regression.test.ts（8 例）+ custom-provider-config.test.ts
+- [x] Release v1.9.0 发布
+
+### v1.9.1 (2026-09-01)
+- [x] 对话任务步数计算对标改造（codex 宏观计划步）— total 固定为计划步数不再随 iteration 膨胀 + 侦查类工具（read/glob/grep/tool_search）不推进步骤 + 执行类工具首次出现才推进 + 追加步骤仅在新执行阶段出现时发生
+- [x] 步骤标题语义化（中文）— getToolTitle 全量中文化（读取文件/写入文件/修改文件/执行命令/运行测试/委派子智能体等）
+- [x] 文件树显示隐藏文件夹 — Rust list_directory 新增 show_hidden 参数（默认 false，LLM 工具调用不受影响）+ FileExplorer 传 true（右侧边栏/PanelSidebar/主面板文件 Tab 统一生效）
+- [x] 输入框高度收缩修复 — textarea absolute+inset:0，删除多行内容后高度卡旧值；测量前重置 wrapper/textarea 到 minH
+- [x] 安全模式切换按钮修复 — 编辑框底部「请求批准/替我审批/完全访问」portal 下拉菜单外部点击误判，新增 dropdownRef 排除判定
+- [x] 新增 step-progress-macro.test.ts（6 例）+ file-tree-hidden.test.ts（4 例）
+- [x] 全量 117 文件 / 3960 用例通过，tsc --noEmit 零错误，cargo check 通过
+- [x] Release v1.9.1 发布

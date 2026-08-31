@@ -1,6 +1,32 @@
-# Changelog
+﻿# Changelog
 
 All notable changes to Codem will be documented in this file.
+
+## [1.9.1] - 2026-09-01
+
+### 对话任务步数计算对标改造（Codex 风格宏观计划步）
+
+- **总量固定为计划步数，不再随执行膨胀** — 此前 `第X/X步` 的 total 会随 iteration 无限增长（读文件 → 搜索 → 改文件每一步都算新步骤），现在 total 固定为任务计划步数（分析/读取/修改/验证/总结），中间侦查类小步骤不再改变总量
+- **侦查类工具不推进步骤** — `read`/`glob`/`grep`/`tool_search`/`web_search`/`list_directory`/`lsp` 等只读侦查工具归类为 `RECON_TOOL_NAMES`，执行任务时这些小步骤不会让用户看到步数跳动；只有 `write`/`edit`/`bash`/`run_test` 等执行类工具**首次出现**才推进到下一宏步骤
+- **步骤标题语义化（中文）** — `getToolTitle` 全量中文化（读取文件/写入文件/修改文件/执行命令/运行测试/委派子智能体等），每个步骤名让用户一眼知道正在解决什么问题
+- **追加步骤仅在新执行阶段出现时发生** — 计划步骤全部完成后，若模型仍在执行新操作（发现严重问题/新增任务方向），追加一步并给出语义化标题，而非每 iteration +1
+
+### 文件树显示隐藏文件夹
+
+- **Rust `list_directory` 新增 `show_hidden` 参数** — 默认 false 保持原有隐藏过滤（LLM 工具调用不受影响），传 true 时显示 `.wecode-ref`、`.git`、`.deepseek-harness-ref` 等点开头目录
+- **FileExplorer 组件传递 `showHidden: true`** — 右侧边栏文件树、左侧 PanelSidebar 文件树、主面板文件 Tab 统一生效（全部复用 FileExplorer 组件）
+- `node_modules` 仍始终过滤（性能考虑）
+
+### 其他修复
+
+- **输入框高度收缩修复** — textarea 是 absolute+inset:0，删除多行内容后高度卡在旧值不恢复；测量前先重置 wrapper/textarea 到 minH，让 scrollHeight 反映真实内容高度
+- **安全模式切换按钮修复** — 编辑框底部「请求批准/替我审批/完全访问」点击不生效：compact 模式下拉菜单经 createPortal 渲染到 document.body，外部点击关闭逻辑误判 portal 内容为外部点击，先卸载菜单吞掉后续 click；新增 dropdownRef 排除判定
+
+### 新增回归测试
+
+- `step-progress-macro.test.ts` — 宏步骤推进 6 例（侦查/执行分类、RECON 集合、中文标题、总量固定语义）
+- `file-tree-hidden.test.ts` — 文件树显示隐藏文件夹 4 例（前端传参、Rust 签名、入口复用）
+- 全量 117 文件 / 3960 用例通过，`tsc --noEmit` 零错误，`cargo check` 通过
 
 ## [1.9.0] - 2026-08-31
 

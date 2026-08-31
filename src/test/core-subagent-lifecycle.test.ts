@@ -188,7 +188,8 @@ describe("子智能体 — AgenticLoop settlement 集成", () => {
     const path = require("path");
     const src = fs.readFileSync(path.join(__dirname, "../core/llm/agentic-loop.ts"), "utf-8");
 
-    expect(src).toContain("Delegating to subagent");
+    // v1.9.1: 标题已中文化（宏观步骤展示）
+    expect(src).toContain("委派子智能体");
   });
 });
 

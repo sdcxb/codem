@@ -594,9 +594,10 @@ describe("工具调用 — P5 拦截逻辑", () => {
     const path = require("path");
     const src = fs.readFileSync(path.join(__dirname, "../core/llm/agentic-loop.ts"), "utf-8");
 
-    expect(src).toContain("Delegating to subagent");
-    expect(src).toContain("Delegating to session");
-    expect(src).toContain("Waiting for delegation");
+    // v1.9.1: 标题已中文化（宏观步骤展示）
+    expect(src).toContain("委派子智能体");
+    expect(src).toContain("委派会话");
+    expect(src).toContain("等待委派结果");
   });
 
   it("TOOL-024: system-reminder 过滤逻辑存在于 App.tsx", () => {

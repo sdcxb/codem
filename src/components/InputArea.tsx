@@ -557,9 +557,13 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
     const ta = textareaRef.current;
     const wrapper = ta?.parentElement; // .input-backdrop-wrapper
     if (!ta || !wrapper) return;
-    ta.style.height = "auto";
     const maxH = expanded ? 480 : 280;
     const minH = expanded ? 200 : 56;
+    // textarea 是 absolute+inset:0，高度被拉伸跟随 wrapper。
+    // 测量前必须先重置两者到 minH，否则 scrollHeight >= clientHeight = 旧 wrapper 高度，
+    // 删除内容后高度永远卡在旧值无法收缩。
+    wrapper.style.height = `${minH}px`;
+    ta.style.height = `${minH}px`;
     const h = Math.max(minH, Math.min(ta.scrollHeight, maxH));
     ta.style.height = `${h}px`;
     wrapper.style.height = `${h}px`;

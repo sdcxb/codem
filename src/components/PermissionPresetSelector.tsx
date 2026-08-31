@@ -60,6 +60,11 @@ export function PermissionPresetSelector({
   const zh = lang === 'zh'
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
+  // Portal-rendered dropdown container (compact mode). Must be excluded from
+  // outside-click detection, otherwise clicking a dropdown item fires
+  // closeOutside first (portal is outside rootRef), unmounts the menu, and the
+  // subsequent click event never reaches handleSelect.
+  const dropdownRef = useRef<HTMLDivElement>(null)
   // Portal rendering position for dropdown
   const [dropdownPos, setDropdownPos] = useState<{ left: number; bottom: number; width: number } | null>(null)
 
@@ -100,7 +105,11 @@ export function PermissionPresetSelector({
   useEffect(() => {
     if (!open) return
     const closeOutside = (event: PointerEvent) => {
-      if (event.target instanceof Node && !rootRef.current?.contains(event.target)) {
+      if (
+        event.target instanceof Node &&
+        !rootRef.current?.contains(event.target) &&
+        !dropdownRef.current?.contains(event.target)
+      ) {
         setOpen(false)
       }
     }
@@ -151,6 +160,7 @@ export function PermissionPresetSelector({
 
         {open && dropdownPos && createPortal(
           <div
+            ref={dropdownRef}
             className="bottom-bar-dropdown"
             style={{
               position: "fixed",

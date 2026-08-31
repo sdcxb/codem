@@ -208,6 +208,19 @@ const KEEP_RECENT_MESSAGES_FOR_MICRO_COMPACT = 12;
  */
 const MICRO_COMPACT_PRESSURE_THRESHOLD = 0.5;
 
+/**
+ * 宏观步骤对齐：recon（只读侦查）工具名，不推进宏步骤计数器
+ * macro step counter. They are intermediate investigation steps, not
+ * top-level task phases.
+ */
+export const RECON_TOOL_NAMES = new Set<string>([
+  "read", "read_file", "read_attachment",
+  "glob", "grep", "grep_search", "file_search", "search_code", "codebase_search",
+  "tool_search", "web_search", "list_directory", "list_sessions",
+  "lsp", "session_search", "session_trace", "get_goal", "job_list",
+  "search_notebook", "query_session_result", "list_agents", "list_sessions",
+]);
+
 export interface StepPlan {
   title: string;
 }
@@ -261,6 +274,12 @@ export class AgenticLoop {
   // Tracks what files have been read/written in the CURRENT user request.
   // Reset at the start of each run() call (new user message = new task).
   private readCache: Map<string, { offset: number; limit: number; output: string }> = new Map();   // path → last read content (with its offset/limit range)
+  /** 宏观步骤计数器（1-based）。侦查类工具不推进它。 */
+  private macroStep = 1;
+  /** First execution tool seen in the current iteration (used to advance macroStep once per iteration). */
+  private lastExecToolInIteration: string | null = null;
+  /** Last execution tool name (for step title fallback). */
+  private lastExecToolName = "";
   private writeCache: Map<string, string> = new Map();  // path → last written content
   /**
    * DSH-style: settlement 通过 Promise 网关注入。
@@ -911,25 +930,25 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
         }
       }
 
-// Dynamically adjust if we exceed the plan
-if (planState.total !== null && this.state.iteration > planState.total) {
-  planState.total = this.state.iteration + 1;
-  // Append a step to the plan with a meaningful title
-  // Instead of generic "Step N", use a descriptive title
-  if (planState.plan) {
-    const isZh = /[\u4e00-\u9fa5]/.test(userMessage);
-    planState.plan.push({ title: this.state.iteration <= 1
-      ? (isZh ? "分析任务" : "Analyze task")
-      : `${isZh ? "继续执行" : "Continue"} (${this.state.iteration})` });
-  }
-}
+// 宏观步骤对齐：total 固定为计划宏步骤数。
+// We do NOT grow total per iteration — intermediate tool calls (read,
+// glob, grep, etc.) must not inflate the plan. Extra steps are appended
+// later only when a genuinely new execution phase starts (see
+// tool_start handling below).
 
       yield { type: "start", iteration: this.state.iteration };
-      // Emit step progress — deterministic, based on iteration count
-      const stepTitle = planState.plan && planState.plan[this.state.iteration - 1]
-        ? planState.plan[this.state.iteration - 1].title
-        : "";
-      yield { type: "step_progress", step: this.state.iteration, total: planState.total, title: stepTitle, steps: planState.plan };
+      // 宏观步骤：从 1 开始；只读侦查工具不推进
+      // NOT advance it. Execution tools (write/edit/bash/test) advance it
+      // on first occurrence in an iteration (see tool_start handling).
+      if (this.state.iteration === 1) {
+        this.macroStep = 1;
+        this.lastExecToolInIteration = null;
+      }
+      this.lastExecToolInIteration = null;
+      const stepTitle = planState.plan && planState.plan[this.macroStep - 1]
+        ? planState.plan[this.macroStep - 1].title
+        : (this.getToolTitle(this.lastExecToolName || ""));
+      yield { type: "step_progress", step: this.macroStep, total: planState.total, title: stepTitle, steps: planState.plan };
 
       // Clear stale guidanceInterrupt flag — if we're at a new iteration with a
       // fresh AbortController, any previous guidance interrupt has been handled
@@ -1172,22 +1191,35 @@ if (planState.total !== null && this.state.iteration > planState.total) {
         yield event;
         if (event.type === "tool_start") iterationToolCalls++;
         if (event.type === "text_delta" && event.text.trim()) iterationHadText = true;
-// Update step title when we see the first tool call in this iteration
-if (event.type === "tool_start" && iterationToolCalls === 1) {
-// Use planned title if available, fall back to tool name
-// For appended steps (iteration > original plan), prefer tool name over generic title
-const plannedTitle = planState.plan && planState.plan[this.state.iteration - 1]
-? planState.plan[this.state.iteration - 1].title
-: "";
-const isAppendedStep = planState.total !== null && this.state.iteration > (planState.plan?.length ?? 0);
-const toolTitle = isAppendedStep
-? this.getToolTitle(event.toolCall.name)
-    : (plannedTitle || this.getToolTitle(event.toolCall.name));
-// Update the plan with the better title
-if (planState.plan && this.state.iteration - 1 < planState.plan.length) {
-planState.plan[this.state.iteration - 1].title = toolTitle;
+// 宏观步骤推进：
+// - Recon tools (read/glob/grep/tool_search/web_search/list) do NOT advance the step.
+// - The FIRST execution tool (write/edit/bash/run_test/etc.) in an iteration advances to the next macro step.
+// - Extra steps are appended only when the planned steps are exhausted and a new execution phase starts.
+if (event.type === "tool_start") {
+const toolName = event.toolCall.name;
+const isRecon = RECON_TOOL_NAMES.has(toolName);
+if (!isRecon && this.lastExecToolInIteration === null) {
+this.lastExecToolInIteration = toolName;
+this.lastExecToolName = toolName;
+const planLen = planState.plan?.length ?? 0;
+if (this.macroStep < planLen) {
+this.macroStep++;
+} else if (planLen > 0 && this.macroStep >= planLen) {
+// All planned steps done but model still executing — append a meaningful step
+const isZh = /[\u4e00-\u9fa5]/.test(userMessage);
+const appendTitle = this.getToolTitle(toolName);
+if (planState.plan) {
+planState.plan.push({ title: appendTitle });
+planState.total = planState.plan.length;
 }
-yield { type: "step_progress", step: this.state.iteration, total: planState.total, title: toolTitle, steps: planState.plan };
+this.macroStep++;
+}
+}
+// Update the current step title with the tool description for visibility
+const macroTitle = planState.plan && planState.plan[this.macroStep - 1]
+? planState.plan[this.macroStep - 1].title
+: this.getToolTitle(toolName);
+yield { type: "step_progress", step: this.macroStep, total: planState.total, title: macroTitle, steps: planState.plan };
 }
 // DSH-style: 不再需要追踪 spawn_subagent 的工具启动事件
       }
@@ -1449,27 +1481,40 @@ yield { type: "step_progress", step: this.state.iteration, total: planState.tota
   /** Get a human-readable title for a tool call, used for step progress display */
   private getToolTitle(toolName: string): string {
     const titleMap: Record<string, string> = {
-      read_file: "Reading file",
-      write_file: "Writing file",
-      edit_file: "Editing file",
-      multi_edit_file: "Editing file",
-      list_directory: "Listing directory",
-      search_code: "Searching code",
-      grep_search: "Searching code",
-      run_terminal_command: "Running command",
-      run_test: "Running tests",
-      web_fetch: "Fetching web",
-      subagent: "Delegating to subagent", // 对标 DSH 工具名
-      delegate_to_session: "Delegating to session",
-      wait_for_delegation: "Waiting for delegation",
-      query_session_result: "Querying session result",
-      list_sessions: "Listing sessions",
-      create_file: "Creating file",
-      delete_file: "Deleting file",
-      file_search: "Searching files",
-      todo_write: "Updating tasks",
-      codebase_search: "Searching codebase",
-      lsp: "Code navigation",
+      read_file: "读取文件",
+      write_file: "写入文件",
+      edit_file: "修改文件",
+      multi_edit_file: "批量修改文件",
+      list_directory: "查看目录",
+      search_code: "搜索代码",
+      grep_search: "搜索代码",
+      run_terminal_command: "执行命令",
+      run_test: "运行测试",
+      web_fetch: "获取网页",
+      subagent: "委派子智能体", // 对标 DSH 工具名
+      delegate_to_session: "委派会话",
+      wait_for_delegation: "等待委派结果",
+      query_session_result: "查询会话结果",
+      list_sessions: "查看会话列表",
+      create_file: "创建文件",
+      delete_file: "删除文件",
+      file_search: "搜索文件",
+      todo_write: "更新任务",
+      codebase_search: "搜索代码库",
+      lsp: "代码导航",
+      read: "读取文件",
+      write: "写入文件",
+      edit: "修改文件",
+      multi_edit: "批量修改文件",
+      glob: "查找文件",
+      grep: "搜索内容",
+      bash: "执行命令",
+      tool_search: "加载工具",
+      web_search: "网络搜索",
+      install: "安装依赖",
+      run: "运行程序",
+      build: "构建项目",
+      test: "运行测试",
     };
     return titleMap[toolName] || toolName;
   }
@@ -3045,5 +3090,31 @@ ${truncatedConv}`;
 
   updateConfig(config: Partial<LoopConfig>) {
     this.config = { ...this.config, ...config };
+  }
+
+  /**
+   * 宏观步骤进度辅助方法 — 供测试使用。
+   * Returns true when the given tool is a recon (read-only) tool that
+   * must NOT advance the macro step counter.
+   */
+  static isReconTool(toolName: string): boolean {
+    return RECON_TOOL_NAMES.has(toolName);
+  }
+
+  /** Human-readable Chinese title for a tool (step progress display). */
+  static toolDisplayTitle(toolName: string): string {
+    const titleMap: Record<string, string> = {
+      read: "读取文件", write: "写入文件", edit: "修改文件", multi_edit: "批量修改文件",
+      glob: "查找文件", grep: "搜索内容", bash: "执行命令", tool_search: "加载工具",
+      web_search: "网络搜索", install: "安装依赖", run: "运行程序", build: "构建项目", test: "运行测试",
+      read_file: "读取文件", write_file: "写入文件", edit_file: "修改文件", multi_edit_file: "批量修改文件",
+      list_directory: "查看目录", search_code: "搜索代码", grep_search: "搜索代码",
+      run_terminal_command: "执行命令", run_test: "运行测试", web_fetch: "获取网页",
+      subagent: "委派子智能体", delegate_to_session: "委派会话", wait_for_delegation: "等待委派结果",
+      query_session_result: "查询会话结果", list_sessions: "查看会话列表",
+      create_file: "创建文件", delete_file: "删除文件", file_search: "搜索文件",
+      todo_write: "更新任务", codebase_search: "搜索代码库", lsp: "代码导航",
+    };
+    return titleMap[toolName] || toolName;
   }
 }

@@ -1,7 +1,7 @@
 # Codem 项目完整说明
 
 > **用途**：新对话快速理解项目全貌、架构、文件关联、当前状态。
-> 创建时间：2026-07-23 | 最后更新：2026-08-31 | 当前版本：v1.9.0（上下文压缩过早触发治根修复 + 通用协议 API 配置 + 工具执行正确性修复）
+> 创建时间：2026-07-23 | 最后更新：2026-08-31 | 当前版本：v1.9.1（对话任务步数计算对标改造 + 文件树显示隐藏文件夹 + 输入框/安全按钮修复）
 >
 > **版本历程概览**：v0.70 基础存储 → v0.80 轮次架构 → v0.87 Worktree/并行 → v0.88 桌面宠物 → v0.89 跨会话委派 → v0.90 P0-P4 全量功能 → v0.91 Coding 工作台 → v0.92 Codex 对标 → v0.93 Vision Proxy → v0.94 配置修复 → v0.95 CLI/API 视觉代理 → v0.96 UI 大改版 → v0.97 Agentic Loop 性能优化 → v0.98 多智能体协同 → v0.99 DSH 全量升级 → v1.0.0 插件系统架构 + UI/UX 标准化 → v1.1.0 DSH 对标整改 + 测试深化 → v1.1.1 UI 布局优化 + 插件条件渲染 + Bug 修复 → v1.2.0 Cordis 架构对齐 DSH + 安全加固 + 全量测试重构 → v1.3.0 Cordis 插件系统对标 DSH 全面整改 + Slot 消费闭环 + inject 依赖对齐 → v1.4.0 UI/UX 体验优化 11 项 Bug 修复 + 性能/CI-CD 面板切换化 + 梦幻皮肤一致性修复 → v1.4.1 插件管理初始化修复 + 技能市场性能优化 + 对话区域自适应 9 项 Bug 修复 → v1.4.2 10 项 Bug 修复 + Cordis 插件时序改进 + SlotBridge 降级机制增强 + 头像系统升级 → v1.5.0 Cordis "一切插件化" 工具发现机制 — ToolDef guidance + toolsProvider 自动注册 systemPrompt section + buildSystemPrompt 动态收集 + 31 个工具补充 guidance + skill-creator 技能安装增强 → v1.5.1 DSH 架构对标深度整改 + YAML 声明式插件加载 + LLM 回答重复根因修复 + llmEngine/mimoAuth 注册修复 + SlotBridge/SlotRenderer 对标 DSH 重写 → v1.5.2 大文件流式分页读取 + Agent Loop 无上限改造（对标 DSH） + 模型系统动态化 + Skills 市场增量搜索 → v1.5.3-v1.5.4 引导消息立即注入 + Markdown 文件路径超链接 + 任务完成标签稳定显示 + 技能市场优化（GitHub API 目录下载） → v1.5.5 Compaction 并发写入治根修复（对标 DSH compactSurfaceRegion） + Bash 缓存失效修复 → v1.6.0 SubagentRuntime 架构重构（对标 DSH） + 技能市场 Trees API 改造（移植 vercel-labs/skills 官方 CLI） + GitHub Token 链路修复 → v1.6.1 桌面宠物独立窗口改造（Cordis Provider 封装） + 文件输出标识增强（DSH 风格 FileMentions） + 设置版本号动态化 → v1.6.2 大富翁嵌入式游戏全量交付（Phase 1-10） + 三轮审计 Bug 修复 → v1.7.0 PPT 生成质量大大幅升 — oh-my-ppt 74 种风格 SKILL.md 集成 + Cordis SkillRegistry 渐进式加载 + 生成链路断点修复 → v1.8.0 知识图谱 React Flow 重构 + vision-proxy 统一 getConfiguredProvider + UI 字体变量批量规范化 → v1.9.0 上下文压缩过早触发治根修复（模型感知窗口 + 压力驱动 micro-compact）+ 通用协议 API 配置 + 工具执行正确性修复（read 去重范围键 / 审批内容修复）
 
@@ -15,7 +15,7 @@
 - **GitHub**：https://github.com/sdcxb/codem
 - **分发**：NSIS `.exe` + WiX `.msi`，一键安装无需依赖
 - **平台**：Windows 优先
-- **版本**：v1.9.0（上下文压缩过早触发治根修复 + 通用协议 API 配置 + 工具执行正确性修复，2026-08-31）
+- **版本**：v1.9.1（对话任务步数计算对标改造 + 文件树显示隐藏文件夹 + 输入框/安全按钮修复，2026-09-01）
 
 ---
 
@@ -873,6 +873,7 @@ Rust 后端 (lib.rs):
 | 文件 | 类型 | 说明 | 状态 |
 |------|------|------|------|
 | **PROJECT-GUIDE.md** | 📌本项目 | **本文档**，完整项目说明 | ✅ 最新 |
+| **RELEASE-GUIDE.md** | 发布指南 | **构建 + 签名 + GitHub Release 完整流程**（v1.9.0 成功经验固化；发布构建必读） | ✅ 最新 |
 | **PROJECT_STATUS.md** | 项目简介 | 项目概述+架构+功能清单+版本历史 | v0.88 |
 | **PROJECT-CONTEXT.md** | 旧版交接 | v0.79 时的交接文档，已被 PROJECT_STATUS 替代 | 📦 归档 |
 | **TODO.md** | 待办跟踪 | Phase 0-G 全部完成记录 + v0.88-v1.1.0 全部版本变更 | ✅ 最新 |
@@ -1001,6 +1002,8 @@ Rust 后端 (lib.rs):
 | v1.4.2 | 2026-08-20 | **10 项 Bug 修复 + 3 项架构增强** — ①默认模型显示彻底修复 ②右侧边栏 CI/CD 面板遮挡彻底修复 ③底部栏多余模型选择器删除 ④输入框聚焦紫色边框→透明 ⑤技能市场缓存机制 ⑥Git 分支按钮居中 + 刷新逻辑修复 ⑦右侧边栏白色背景修复 ⑧顶部栏空白区域消除 ⑨CicdPanel 白色背景修复 ⑩顶部栏右侧按钮居中副作用修复。架构增强：Cordis 插件系统时序改进三步方案 + SlotBridge 降级机制增强 + 头像系统升级 |
 | v1.5.0 | 2026-08-21 | **Cordis "一切插件化" 工具发现机制** — `ToolDef` 新增 `guidance` 字段 + `toolsProvider` 自动注册 systemPrompt section + `buildSystemPrompt` 动态收集 + 全部 31 个工具补充 guidance + `skill-creator` 技能安装增强。31 文件修改，全量测试通过 |
 | v1.5.1 | 2026-08-23 | **DSH 架构对标深度整改 + YAML 声明式插件加载 + 严重 Bug 修复** — ①YAML 声明式插件加载器（对标 DSH `cordis.patch.yml`，`config/codem.base.yml` + `codem.desktop.yml` 分层 bundle，80+ 插件声明式加载 + 拓扑排序 + `assertActivated` fail-loud 验证）②修复 LLM 回答重复问题（`saveMessages` 全量追加事件日志导致重复 → 移除事件投影路径强制只从 DB 读取 + 事件投影去重）③修复 llmEngine 未注册为 Cordis 服务 ④修复 mimoAuth 未注册 + PluginLoader.load() 未调用 ⑤SlotBridge/SlotRenderer 对标 DSH 重写（SlotErrorBoundary + fiber await 超时保护）⑥30+ Provider 文件统一改造（import + re-export + inject 声明对齐）⑦新增 `mimo-auth-provider.ts` + `buffer-polyfill.ts` + 3 个测试文件。118 文件修改（+2359/-1583 行） |
+| v1.9.0 | 2026-08-31 | **上下文压缩过早触发治根修复 + 通用协议 API 配置 + 工具执行正确性修复** — 三根因（estimateMessagesTokens 永不回落 / 动态 provider 窗口 128k / 工具定义双算）+ getAgenticLoop 构造时同步 contextWindow + 通用协议 API 配置（Base URL + API key → 拉模型列表 → 持久化）+ read 去重键含 offset/limit + DecisionTray 审批内容修复（req.args → req.input）。新增 context-window-regression（8 例）+ custom-provider-config 测试。全量 115 文件 / 3950 用例通过 |
+| v1.9.1 | 2026-09-01 | **对话任务步数计算对标改造 + 文件树显示隐藏文件夹 + 输入框/安全按钮修复** — 步数对标 codex 宏观计划步（总量固定、侦查类工具不推进、执行类首次出现才推进、标题中文语义化）+ 文件树显示隐藏文件夹（list_directory 加 show_hidden 参数 + FileExplorer 传 true）+ 输入框删除后高度不收缩修复 + 安全模式切换按钮 portal 误判修复。新增 step-progress-macro（6 例）+ file-tree-hidden（4 例）。全量 117 文件 / 3960 用例通过 |
 | v1.5.2 | 2026-08-24 | **大文件性能修复 + Agent Loop 无上限改造 + 模型系统动态化 + Skills 增量搜索** — ①Rust 新增 `read_file_lines` 分页读取（对标 DSH TextRetainer，O(limit) 内存）②Agent Loop 移除 `maxIterations` 硬上限，改为 `while(true)` + 三重安全阀（无进展检测 10 次 + Token 上限 2M + 子智能体有限迭代）③修复 `spawnForked` 深拷贝丢失 `tool_calls`/`toolCallId` 导致 API 400 ④模型选择器动态化（`codem-dynamic-models` 存储）⑤Skills 市场增量搜索（本地缓存 TTL 30min + 自动联网搜索）⑥终端切换崩溃修复⑦权限弹窗 fixed 定位⑧技能市场 tags 防御。11 文件修改（+558/-90 行），113 套件 3947 测试通过 |
 
 ### 6.2 v0.90.0 已发布功能（P0-P4 全量功能，commit 7435919，2026-07-31）
@@ -1358,11 +1361,27 @@ npm run verify             # 测试 + 覆盖率 + knip 死代码 + jscpd 重复�
 
 # 构建生产版
 npm run tauri build        # 构建 NSIS exe + MSI
+
+# 发布（构建 + 签名 + GitHub Release）
+# 完整流程见 docs/RELEASE-GUIDE.md —— 必须按该文档执行！
+# 直接跑 npm run tauri:build 会卡死：签名密钥是加密的（rsign encrypted secret key），CLI 会等交互密码输入
+# 关键步骤：构建前设置签名环境变量，密码固定为 dummy：
+#   $env:TAURI_SIGNING_PRIVATE_KEY = (Get-Content .tauri\codem-updater.key -Raw).Trim()
+#   $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = "dummy"
+# 或直接运行根目录 build-release.ps1 一键完成「构建 + 签名 + 生成 latest.json」
 ```
 
 ---
 
 ## 八、版本历史
+
+### v1.9.1（2026-09-01）— 对话任务步数计算对标改造 + 文件树显示隐藏文件夹 + 输入框/安全按钮修复
+
+> 步数计算对标 codex 宏观计划步：总量固定为计划步数，侦查类小工具（read/glob/grep/tool_search）不推进步骤，执行类工具首次出现才推进，步骤标题中文语义化（读取文件/修改文件/执行命令/运行测试/委派子智能体）。文件树显示隐藏文件夹（Rust list_directory 新增 show_hidden 参数 + FileExplorer 传 true，.wecode-ref/.git 等可见；LLM 工具调用不受影响）。修复输入框删除内容后高度不收缩（absolute+inset:0 测量前重置 minH）+ 安全模式切换按钮点击不生效（portal 外部点击误判，新增 dropdownRef 排除判定）。新增 step-progress-macro.test.ts（6 例）+ file-tree-hidden.test.ts（4 例）。全量 117 文件 / 3960 用例通过，tsc 零错误，cargo check 通过。
+
+### v1.9.0（2026-08-31）— 上下文压缩过早触发治根修复 + 通用协议 API 配置 + 工具执行正确性修复
+
+> 上下文压缩三根因修复（estimateMessagesTokens 永不回落 / 动态 provider 模型窗口一律 128k / 工具定义双算）+ getAgenticLoop 构造时同步 contextWindow + 通用协议 API 配置（Base URL + API key → 自动拉模型列表 → 持久化）+ 刷新模型列表不再丢弃 contextWindow + read 单响应去重键含 offset/limit + DecisionTray 审批内容空白修复（req.args → req.input）。新增 context-window-regression.test.ts（8 例）+ custom-provider-config.test.ts。全量 115 文件 / 3950 用例通过。
 
 ### v1.6.2（2026-08-29）— 大富翁嵌入式游戏全量交付（Phase 1-10） + 三轮审计 Bug 修复
 

@@ -572,7 +572,8 @@ async fn append_file(path: String, content: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-async fn list_directory(path: String) -> Result<Vec<serde_json::Value>, String> {
+async fn list_directory(path: String, show_hidden: Option<bool>) -> Result<Vec<serde_json::Value>, String> {
+    let show_hidden = show_hidden.unwrap_or(false);
     let entries = std::fs::read_dir(&path).map_err(|e| e.to_string())?;
     let mut result = Vec::new();
 
@@ -581,7 +582,7 @@ async fn list_directory(path: String) -> Result<Vec<serde_json::Value>, String> 
         let metadata = entry.metadata().map_err(|e| e.to_string())?;
         let name = entry.file_name().to_string_lossy().to_string();
 
-        if name.starts_with('.') || name == "node_modules" {
+        if (!show_hidden && name.starts_with('.')) || name == "node_modules" {
             continue;
         }
 

@@ -1,4 +1,4 @@
-﻿/**
+/**
  * FileExplorer — 文件浏览器（对标 wecode WorkspaceFileTree）
  *
  * 特性：
@@ -48,7 +48,9 @@ const gitStatusCache = new Map<string, Map<string, string>>();
 async function loadDirectoryFromTauri(path: string): Promise<FileEntry[]> {
   try {
     const { invoke } = (window as any).__TAURI__.core;
-    const entries = await invoke("list_directory", { path });
+    // showHidden: true — 文件树需要显示 .wecode-ref 等点开头目录（v1.9.1）
+    // LLM 工具调用的 listDirectory (file-api.ts) 不传此参数，仍保持隐藏过滤
+    const entries = await invoke("list_directory", { path, showHidden: true });
     return entries || [];
   } catch {
     return [];
