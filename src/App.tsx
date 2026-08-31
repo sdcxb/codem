@@ -1382,18 +1382,22 @@ flushStreamBuffer(); // flush all on unmount
     if (!listen) return;
 
     let unlisten: (() => void) | undefined;
-    listen("close-requested", () => {
+    listen("close-requested", async () => {
       const closeBehavior = getSetting("codem-close-behavior"); // "tray" | "close" | null
-      // Flush any pending DB writes before closing/minimizing
+      if (closeBehavior === "close") {
+        // Flush all pending DB writes BEFORE quitting; quit_app exits the Rust process
+        // immediately, so a fire-and-forget flush would be killed mid-write.
+        await flushDatabase();
+        const { invoke } = (window as any).__TAURI__?.core || {};
+        invoke?.("quit_app");
+        return;
+      }
+      // Flush any pending DB writes before minimizing
       flushDatabase();
       if (closeBehavior === "tray") {
         // Minimize to tray
         const { invoke } = (window as any).__TAURI__?.core || {};
         invoke?.("hide_to_tray");
-      } else if (closeBehavior === "close") {
-        // Quit the app
-        const { invoke } = (window as any).__TAURI__?.core || {};
-        invoke?.("quit_app");
       } else {
         // First time — show dialog
         setShowCloseConfirm(true);
@@ -1403,17 +1407,19 @@ flushStreamBuffer(); // flush all on unmount
     return () => { unlisten?.(); };
   }, []);
 
-  const handleCloseChoice = useCallback((action: "tray" | "close", remember: boolean) => {
+  const handleCloseChoice = useCallback(async (action: "tray" | "close", remember: boolean) => {
     setShowCloseConfirm(false);
     if (remember) {
       setSetting("codem-close-behavior", action);
     }
-    // Flush DB to ensure settings are persisted before app exits
-    flushDatabase();
     const { invoke } = (window as any).__TAURI__?.core || {};
     if (action === "tray") {
+      // Flush any pending DB writes before minimizing
+      flushDatabase();
       invoke?.("hide_to_tray");
     } else {
+      // Flush ALL pending DB writes before quitting; quit_app exits the Rust process immediately
+      await flushDatabase();
       invoke?.("quit_app");
     }
   }, []);

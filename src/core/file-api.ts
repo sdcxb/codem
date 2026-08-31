@@ -164,7 +164,10 @@ export async function grepSearch(pattern: string, path?: string, include?: strin
   // Use -AllMatches to support regex (Select-String default is regex, not simple match)
   // PowerShell Select-String supports regex natively and handles Unicode patterns
   const psCommand = `Get-ChildItem -Path '${safePath}' ${filterArg} -Recurse -File -ErrorAction SilentlyContinue | Select-String -Pattern '${safePattern}' | ForEach-Object { $_.Path + ':' + $_.LineNumber + ':' + $_.Line }`;
-  const cmd = `powershell -Command "${psCommand}"`;
+  // Rust execute_command 统一用 PowerShell 执行（lib.rs 总是 Command::new("powershell")）。
+  // 这里不再包 powershell -Command "..."，否则外层双引号让 PowerShell 把整段命令当作
+  // 字符串字面量解析，$_ 在无管道上下文展开为 $null，grep 静默返回空输出。
+  const cmd = psCommand;
   console.log("[grepSearch] cmd:", cmd);
   const result = await executeCommand(cmd);
   return result.stdout.split("\n").filter(line => line.trim() !== "");

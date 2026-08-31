@@ -515,20 +515,37 @@ async fn write_file(path: String, content: String, encoding: Option<String>, wor
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
     
-    match encoding.as_deref() {
+    // Decode content to bytes first (base64 binary or UTF-8 text)
+    let bytes: Vec<u8> = match encoding.as_deref() {
         Some("base64") => {
-            // Decode base64 content and write as binary
             use base64::Engine;
-            let bytes = base64::engine::general_purpose::STANDARD
+            base64::engine::general_purpose::STANDARD
                 .decode(&content)
-                .map_err(|e| format!("Base64 decode error: {}", e))?;
-            std::fs::write(&path, bytes).map_err(|e| e.to_string())
+                .map_err(|e| format!("Base64 decode error: {}", e))?
         }
-        _ => {
-            // Write as UTF-8 text
-            std::fs::write(&path, content).map_err(|e| e.to_string())
-        }
+        _ => content.into_bytes(),
+    };
+
+    // Atomic write: write to a temp file in the same directory, fsync, then rename over the target.
+    // A plain std::fs::write truncates + overwrites the target directly, so a crash or concurrent
+    // write mid-save leaves a truncated/corrupt file (e.g. sql.js DB persistence). The temp-file +
+    // rename dance keeps the target either fully old or fully new.
+    let target = std::path::Path::new(&path);
+    let file_name = target.file_name().unwrap_or_default().to_string_lossy();
+    let tmp_path = target.with_file_name(format!(".{}.codem-tmp", file_name));
+
+    {
+        use std::io::Write;
+        let mut file = std::fs::File::create(&tmp_path).map_err(|e| e.to_string())?;
+        file.write_all(&bytes).map_err(|e| e.to_string())?;
+        file.sync_all().map_err(|e| e.to_string())?;
     }
+
+    std::fs::rename(&tmp_path, target).map_err(|e| {
+        let _ = std::fs::remove_file(&tmp_path);
+        format!("Atomic rename failed: {}", e)
+    })?;
+    Ok(())
 }
 
 /// S5: Canonicalize a path for comparison (resolve . and .. without requiring the path to exist)
@@ -880,6 +897,18 @@ async fn execute_command(command: String, cwd: Option<String>) -> Result<serde_j
     };
     // Strip -Command prefix if present
     let ps_body = ps_body.strip_prefix("-Command ").unwrap_or(ps_body);
+    // Defensive: if the remaining body is wrapped in a pair of double quotes
+    // (e.g. `powershell -Command "Get-ChildItem ... | ForEach-Object { $_.Path ... }"`),
+    // strip the quotes. Otherwise PowerShell treats the body as a string literal and
+    // expands $_ to $null (no pipeline context), silently producing empty output.
+    let ps_body = {
+        let trimmed = ps_body.trim();
+        if trimmed.len() >= 2 && trimmed.starts_with('"') && trimmed.ends_with('"') {
+            &trimmed[1..trimmed.len() - 1]
+        } else {
+            trimmed
+        }
+    };
     // Prepend comprehensive UTF-8 encoding setup
     // chcp 65001: Set console code page to UTF-8 (affects native commands like ipconfig, dir, etc.)
     // [Console]::OutputEncoding: .NET stdout encoding for PowerShell

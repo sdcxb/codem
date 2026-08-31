@@ -300,7 +300,10 @@ async function autoLint(filePath: string): Promise<string | null> {
   if (!linter) return null;
 
   try {
-    const result = await executeCommand(`${linter.cmd} ${linter.args} "${filePath}"`);
+    // 用单引号包裹路径：PowerShell 单引号字符串内 $/反引号不做变量展开，
+    // 避免路径含 $（如 C:\my$dir\file.ts）被展开为空。单引号转义为双单引号。
+    const safeFile = filePath.replace(/'/g, "''");
+    const result = await executeCommand(`${linter.cmd} ${linter.args} '${safeFile}'`);
     if (result.exitCode === 0) return null; // No errors
     // Return first 3 lines of error output
     const errors = (result.stderr || result.stdout || "").split("\n").filter((l: string) => l.trim()).slice(0, 5);

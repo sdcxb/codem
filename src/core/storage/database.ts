@@ -76,14 +76,27 @@ async function saveDatabase(): Promise<void> {
 }
 
 let saveDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+/** True while a debounced save is scheduled or in flight; used by flushDatabase. */
+let saveScheduled = false;
+/** Serializes all database writes so concurrent saves never overlap on the same file. */
+let saveChain: Promise<void> = Promise.resolve();
+
+/** Queue a save behind any in-flight save; failures don't break the chain. */
+function enqueueSave(): Promise<void> {
+  const run = saveChain.then(() => saveDatabase());
+  saveChain = run.catch(() => {});
+  return run;
+}
 
 function saveDatabaseAsync(): void {
   // Debounce: if multiple writes happen in quick succession (e.g. createSession + updateProject),
   // only persist once after the last write
   if (saveDebounceTimer) clearTimeout(saveDebounceTimer);
+  saveScheduled = true;
   saveDebounceTimer = setTimeout(() => {
-    saveDatabase().catch(e => console.error("[Database] Async save failed:", e));
     saveDebounceTimer = null;
+    saveScheduled = false;
+    enqueueSave().catch(e => console.error("[Database] Async save failed:", e));
   }, 500);
 }
 
@@ -116,6 +129,34 @@ async function loadDatabaseFromStorage(): Promise<Uint8Array | null> {
   } catch (e) {
     console.error("[Database] Failed to load:", e);
     return null;
+  }
+}
+
+/** Back up a corrupt database file before it is discarded, so data can be recovered manually. */
+async function backupCorruptDatabase(data: Uint8Array): Promise<void> {
+  if (!isTauri()) return;
+  try {
+    const { invoke } = (window as any).__TAURI__.core;
+    const path = await getDbPath();
+    const backupPath = `${path}.corrupt-${Date.now()}`;
+    const base64 = uint8ToBase64(data);
+    await invoke("write_file", { path: backupPath, content: base64, encoding: "base64" });
+    console.warn(`[Database] Corrupt database backed up to ${backupPath}`);
+  } catch (e) {
+    console.warn("[Database] Failed to back up corrupt database:", e);
+  }
+}
+
+/** Remove the corrupt database file so the next launch doesn't re-read it. */
+async function discardCorruptDatabase(): Promise<void> {
+  if (!isTauri()) return;
+  try {
+    const { invoke } = (window as any).__TAURI__.core;
+    const path = await getDbPath();
+    await invoke("delete_file", { path });
+    console.warn(`[Database] Corrupt database file removed: ${path}`);
+  } catch (e) {
+    console.warn("[Database] Failed to remove corrupt database file:", e);
   }
 }
 
@@ -664,8 +705,31 @@ export async function initDatabase(): Promise<SqlJsDatabase> {
 
   const existingData = await loadDatabaseFromStorage();
   if (existingData) {
-    db = new SQL.Database(existingData);
-    console.log("[Database] Loaded existing database");
+    try {
+      db = new SQL.Database(existingData);
+      // Verify the loaded database is not corrupt. If it is, back up the bad file and rebuild
+      // fresh instead of running on a broken database (which surfaces as
+      // "database disk image is malformed" on the next query).
+      const check = db.exec("PRAGMA quick_check");
+      const result = check?.[0]?.values?.[0]?.[0]?.toString() ?? "ok";
+      if (result !== "ok") {
+        console.error(`[Database] Integrity check failed (${result}), backing up corrupt database and recreating`);
+        await backupCorruptDatabase(existingData);
+        await discardCorruptDatabase();
+        db.close();
+        db = new SQL.Database();
+        console.log("[Database] Created new database after corruption recovery");
+      } else {
+        console.log("[Database] Loaded existing database");
+      }
+    } catch (e) {
+      console.error("[Database] Failed to open database, backing up corrupt file and recreating:", e);
+      await backupCorruptDatabase(existingData);
+      await discardCorruptDatabase();
+      try { db?.close(); } catch { /* already closed */ }
+      db = new SQL.Database();
+      console.log("[Database] Created new database after corruption recovery");
+    }
   } else {
     db = new SQL.Database();
     console.log("[Database] Created new database");
@@ -741,7 +805,7 @@ const migrations = [
     console.warn("[Database] Failed to fix corrupted reasoning:", e);
   }
 
-  await saveDatabase();
+  await enqueueSave();
   return db;
 }
 
@@ -767,13 +831,20 @@ export function persistDatabase(): void {
 saveDatabaseAsync();
 }
 
-/** Flush any pending debounced save immediately */
-export function flushDatabase(): void {
+/** Flush any pending debounced save immediately. Resolves when the pending write chain has
+ *  settled, so callers (e.g. close-requested) can await it before quitting. */
+export function flushDatabase(): Promise<void> {
   if (saveDebounceTimer) {
     clearTimeout(saveDebounceTimer);
     saveDebounceTimer = null;
-    saveDatabase().catch(e => console.error("[Database] Flush save failed:", e));
   }
+  // If a debounced save was scheduled (timer cleared above) or a save is still in flight,
+  // enqueue an immediate save so the latest state is written before quitting.
+  if (saveScheduled) {
+    saveScheduled = false;
+    enqueueSave();
+  }
+  return saveChain;
 }
 
 export function isFts5Available(): boolean {

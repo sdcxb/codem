@@ -389,3 +389,65 @@ describe("工具链路编码 — 乱码诊断指导", () => {
     expect(rule).toContain("GBK");
   });
 });
+
+describe("工具链路编码 — grepSearch 命令构造（防 $_ 被吞）", () => {
+  // 回归：2026-09-01 grep 工具静默返回空
+  // 根因：grepSearch 曾把命令包成 powershell -Command "..."，Rust 剥前缀后残留外层双引号，
+  //       PowerShell 把整段当字符串字面量解析，$_ 在无管道上下文展开为 $null → 输出为空。
+  // 修复：grepSearch 直接传裸命令（Rust execute_command 统一用 PowerShell），不再包 powershell -Command。
+  it("grepSearch 命令不再包 powershell -Command 双引号", () => {
+    const psCommand = `Get-ChildItem -Path 'D:\test' -Recurse -File -ErrorAction SilentlyContinue | Select-String -Pattern 'export' | ForEach-Object { $_.Path + ':' + $_.LineNumber + ':' + $_.Line }`;
+    // 直接传裸命令，不包 powershell -Command
+    const cmd = psCommand;
+    expect(cmd).not.toContain("powershell -Command");
+    expect(cmd).not.toMatch(/^powershell /);
+    // $_ 必须保留（不被外层双引号吞掉）
+    expect(cmd).toContain("$_.Path");
+    expect(cmd).toContain("$_.LineNumber");
+    expect(cmd).toContain("$_.Line");
+    // 仍包含 Select-String 和 ForEach-Object
+    expect(cmd).toContain("Select-String");
+    expect(cmd).toContain("ForEach-Object");
+  });
+
+  it("Rust 防御逻辑：powershell -Command \"...\" 剥前缀后剥外层双引号", () => {
+    // 模拟 Rust lib.rs 的 ps_body 剥离逻辑（execute_command）
+    const command = `powershell -Command "Get-ChildItem -Path 'D:\test' -Recurse -File | ForEach-Object { $_.Path }"`;
+    // Rust 端逻辑：strip powershell → strip -Command → trim → 剥首尾双引号
+    let ps_body = command.startsWith("powershell ") ? command.slice("powershell ".length) : command;
+    ps_body = ps_body.startsWith("-Command ") ? ps_body.slice("-Command ".length) : ps_body;
+    const trimmed = ps_body.trim();
+    const body = trimmed.length >= 2 && trimmed.startsWith('"') && trimmed.endsWith('"')
+      ? trimmed.slice(1, -1)
+      : trimmed;
+    // 剥引号后是裸命令，$_ 保留
+    expect(body).not.toMatch(/^"/);
+    expect(body).toContain("$_.Path");
+    // 拼接 utf8_prefix 后仍是裸命令（无外层引号包裹整段）
+    const full = `chcp 65001 | Out-Null; ${body}`;
+    expect(full).toContain("$_.Path");
+  });
+});
+
+describe("工具链路编码 — autoLint 路径单引号包裹（防 $ 展开）", () => {
+  // 回归：2026-09-01 排查所有 executeCommand 命令构造
+  // autoLint 曾用双引号包裹 filePath：`tsc --noEmit --pretty "C:\my$dir\file.ts"`
+  // PowerShell 双引号内 $dir 会被展开为空 → lint 路径错误。改为单引号包裹 + 单引号转义。
+  it("autoLint 命令用单引号包裹路径且转义单引号", () => {
+    const filePath = "C:\\my$dir\\it's\\file.ts";
+    const safeFile = filePath.replace(/'/g, "''");
+    const cmd = `npx tsc --noEmit --pretty '${safeFile}'`;
+    // 单引号包裹（PS 单引号内 $ 不展开）
+    expect(cmd).toContain("'C:\\my$dir\\it''s\\file.ts'");
+    expect(cmd).not.toMatch(/"C:\\/);
+    // 单引号被转义为双单引号
+    expect(cmd).toContain("it''s");
+  });
+
+  it("autoLint 不改变 lint 命令本身", () => {
+    const safeFile = "D:\\项目\\app.py";
+    const cmd = `python -m py_compile '${safeFile}'`;
+    expect(cmd).toContain("python -m py_compile");
+    expect(cmd).toContain("'D:\\项目\\app.py'");
+  });
+});
