@@ -280,6 +280,10 @@ export class AgenticLoop {
   private lastExecToolInIteration: string | null = null;
   /** Last execution tool name (for step title fallback). */
   private lastExecToolName = "";
+  /** 计划耗尽后追加的步骤标题（去重）。宏观计划步语义：只有出现新的执行类别时才追加一次，且总数受限。 */
+  private appendedStepTitles: Set<string> = new Set();
+  /** 计划耗尽后最多追加的步骤数 — 防止「无用步数」无限膨胀。 */
+  private static readonly MAX_APPENDED_STEPS = 2;
   private writeCache: Map<string, string> = new Map();  // path → last written content
   /**
    * DSH-style: settlement 通过 Promise 网关注入。
@@ -607,28 +611,30 @@ private getFileChangeTrackerService(): FileChangeTracker | null {
     try {
       const lang = (await import("../i18n/lang")).getLang();
       const estPrompt = lang === "zh"
-        ? `你是一个任务规划器。根据用户的任务，拆解为具体的执行步骤。每一步对应一次 agentic 迭代（包括文字回答和工具调用）。
+        ? `你是一个任务规划器。根据用户的任务，拆解为宏观执行步骤。
 
 规则：
-- 纯文字回答（无工具调用）= 1 步
-- 回答 + 写文件 = 2 步
-- 读文件 + 编辑文件 + 验证 = 3 步
-- 复杂的多文件重构 = 5-10 步
-- 最多 20 步
+- 每个明确的子任务 = 1 步（例如「实现登录」「修复数据库并发」「添加导出功能」各算一步）
+- 最后一步通常是验证/测试/编译/总结（如果任务需要改动代码）
+- 不要列出中间侦查小步骤（读取文件、搜索代码、查看目录、运行 grep 等不算步骤）
+- 中间小步骤不会改变总步数；只有发现严重问题、需要新增任务方向时才追加步骤
+- 步骤标题简短、有实际意义，让用户一眼知道正在解决什么问题
+- 总步数 1-10 步，通常 3-6 步
 
 用 JSON 数组格式回复，每个元素包含 title 字段（简短的中文步骤描述）。不要有其他解释。
-例如：[{"title":"回答问题"},{"title":"写入文件"}]`
-        : `You are a task planner. Break down the user's task into concrete execution steps. Each step corresponds to one agentic iteration (including text answers and tool calls).
+例如：[{"title":"分析需求"},{"title":"实现登录功能"},{"title":"实现支付功能"},{"title":"运行测试验证"}]`
+        : `You are a task planner. Break down the user's task into macro execution steps.
 
 Rules:
-- Simple text answer with no tools = 1 step
-- Answer + write file = 2 steps
-- Read file + edit file + verify = 3 steps
-- Complex multi-file refactoring = 5-10 steps
-- Maximum 20 steps
+- Each concrete subtask = 1 step (e.g. "implement login", "fix DB concurrency", "add export feature" are each one step)
+- The final step is usually verify/test/build/summarize (if the task changes code)
+- Do NOT list intermediate investigation steps (reading files, searching code, listing dirs, running grep are not steps)
+- Intermediate small steps never change the total; only append a step when a serious problem forces a new work direction
+- Step titles must be short and meaningful, so the user immediately knows what is being solved
+- Total 1-10 steps, usually 3-6
 
 Reply as a JSON array, each element has a "title" field (short step description). No other explanation.
-Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
+Example: [{"title":"Analyze requirements"},{"title":"Implement login"},{"title":"Implement payment"},{"title":"Run tests to verify"}]`;
 
       const request: LLMRequest = {
         model: this.config.model || this.provider.id,
@@ -809,9 +815,21 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
     // Local assistant message ID for tracking
     let assistantMsgId = `msg-${Date.now() + 1}`;
 
-    // Pre-plan: use lightweight heuristic estimation (no extra LLM call)
-    // This avoids blocking the main loop and prevents WebSocket interference in CLI mode
-    const planState = this.estimateSteps(userMessage);
+    // Pre-plan: 先启发式估算；仅当任务较复杂（≥3 步）时才让 LLM 生成
+    // 宏观计划（模型拆解子任务 → 5-6 步语义化标题），失败回退启发式。
+    // 简单问答（1-2 步）不额外调用 LLM，避免无谓延迟。
+    let planState = this.estimateSteps(userMessage);
+    if ((planState.total ?? 0) >= 3) {
+      try {
+        const llmPlan = await this.planSteps(userMessage);
+        if (llmPlan && llmPlan.length > 0) {
+          planState = { plan: llmPlan, total: llmPlan.length };
+          console.log(`[AgenticLoop] LLM plan (${llmPlan.length} steps):`, llmPlan.map(s => s.title));
+        }
+      } catch (planErr) {
+        console.warn("[AgenticLoop] LLM plan failed, using heuristic:", planErr);
+      }
+    }
     console.log(`[AgenticLoop] Estimated ${planState.total ?? 0} steps:`, planState.plan?.map(s => s.title));
 
       // Main loop — DSH-aligned: no built-in turn budget, no token cap.
@@ -943,6 +961,7 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
       if (this.state.iteration === 1) {
         this.macroStep = 1;
         this.lastExecToolInIteration = null;
+        this.appendedStepTitles.clear();
       }
       this.lastExecToolInIteration = null;
       const stepTitle = planState.plan && planState.plan[this.macroStep - 1]
@@ -1203,16 +1222,20 @@ this.lastExecToolInIteration = toolName;
 this.lastExecToolName = toolName;
 const planLen = planState.plan?.length ?? 0;
 if (this.macroStep < planLen) {
+// 计划内：执行类工具首次出现 → 推进到下一宏步骤（每个 iteration 至多一次）
 this.macroStep++;
 } else if (planLen > 0 && this.macroStep >= planLen) {
-// All planned steps done but model still executing — append a meaningful step
-const isZh = /[\u4e00-\u9fa5]/.test(userMessage);
+// 计划耗尽：宏观计划步语义 — 中间小步骤不会新增步骤；只有出现新的执行类别
+// 时才追加一步（标题去重 + 总数受限），防止「无用步数」无限膨胀。
 const appendTitle = this.getToolTitle(toolName);
+if (AgenticLoop.shouldAppendStep(this.appendedStepTitles, toolName)) {
+this.appendedStepTitles.add(appendTitle);
 if (planState.plan) {
 planState.plan.push({ title: appendTitle });
 planState.total = planState.plan.length;
 }
 this.macroStep++;
+}
 }
 }
 // Update the current step title with the tool description for visibility
@@ -3116,5 +3139,15 @@ ${truncatedConv}`;
       todo_write: "更新任务", codebase_search: "搜索代码库", lsp: "代码导航",
     };
     return titleMap[toolName] || toolName;
+  }
+
+  /**
+   * 计划耗尽后是否追加步骤 — 宏观计划步语义。
+   * 只有出现新的执行类别（标题去重）且追加总数未达上限时才追加，
+   * 防止中间小步骤让「第X/X步」总量无限膨胀。
+   */
+  static shouldAppendStep(appendedTitles: ReadonlySet<string>, toolName: string): boolean {
+    const title = AgenticLoop.toolDisplayTitle(toolName);
+    return !appendedTitles.has(title) && appendedTitles.size < AgenticLoop.MAX_APPENDED_STEPS;
   }
 }

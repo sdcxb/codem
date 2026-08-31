@@ -54,4 +54,30 @@ describe("Codex 风格宏步骤推进 (v1.9.1)", () => {
       expect(AgenticLoop.isReconTool(t)).toBe(true);
     }
   });
+
+  it("STEP-007: 计划耗尽后同类执行工具不重复追加（标题去重）", () => {
+    // 模型连续调用 write/write_file 不应让「第X/X步」总量无限增长（标题同为「写入文件」）
+    const appended = new Set<string>();
+    expect(AgenticLoop.shouldAppendStep(appended, "write")).toBe(true);
+    appended.add(AgenticLoop.toolDisplayTitle("write"));
+    // 同类别（写入文件）不再追加
+    expect(AgenticLoop.shouldAppendStep(appended, "write_file")).toBe(false);
+    // 新类别（运行测试）可以追加
+    expect(AgenticLoop.shouldAppendStep(appended, "test")).toBe(true);
+  });
+
+  it("STEP-008: 计划耗尽后追加总数受限（最多 2 个新执行类别）", () => {
+    // 防止「无用步数」无限膨胀：即使模型反复执行不同工具，追加也封顶
+    const appended = new Set<string>();
+    const tools = ["write", "test", "bash", "install", "subagent", "run"];
+    let added = 0;
+    for (const t of tools) {
+      if (AgenticLoop.shouldAppendStep(appended, t)) {
+        appended.add(AgenticLoop.toolDisplayTitle(t));
+        added++;
+      }
+    }
+    expect(added).toBeLessThanOrEqual(2);
+    expect(appended.size).toBeLessThanOrEqual(2);
+  });
 });
