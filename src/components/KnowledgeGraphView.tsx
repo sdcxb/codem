@@ -65,6 +65,34 @@ function getEntityColor(entityType: EntityType, accent: string, isDark: boolean)
   return colorMap[entityType] || accent;
 }
 
+/** 实体类型图标映射 (Unicode 字符，Canvas 可渲染) */
+function getEntityIcon(entityType: EntityType): string {
+  const iconMap: Record<EntityType, string> = {
+    concept: '💡',
+    entity: '📌',
+    event: '⚡',
+    person: '👤',
+    place: '📍',
+    organization: '🏢',
+    technology: '⚙️',
+  };
+  return iconMap[entityType] || '●';
+}
+
+/** 实体类型中文标签 */
+function getEntityLabel(entityType: EntityType, isZh: boolean): string {
+  const labelMap: Record<EntityType, { zh: string; en: string }> = {
+    concept: { zh: '概念', en: 'Concept' },
+    entity: { zh: '实体', en: 'Entity' },
+    event: { zh: '事件', en: 'Event' },
+    person: { zh: '人物', en: 'Person' },
+    place: { zh: '地点', en: 'Place' },
+    organization: { zh: '组织', en: 'Organization' },
+    technology: { zh: '技术', en: 'Technology' },
+  };
+  return isZh ? labelMap[entityType]?.zh : labelMap[entityType]?.en;
+}
+
 /** 判断皮肤是否为暗色 */
 function isDarkSkin(skinId: string): boolean {
   return skinId === 'default' || skinId === 'hub';
@@ -294,24 +322,42 @@ export function KnowledgeGraphView({ notebookId, onNodeSelect }: KnowledgeGraphV
       const isHighlighted = hoveredNode === a.id || hoveredNode === b.id ||
         selectedNode?.id === a.id || selectedNode?.id === b.id;
 
-      // 连线颜色：高亮时用 accent，普通时用半透明可见色（提高对比度）
-      ctx.strokeStyle = isHighlighted
-        ? accent
-        : (dark ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.25)');
-      ctx.lineWidth = isHighlighted ? 2.5 : 1.2;
+      // 连线颜色：高亮时用 accent 渐变，普通时用半透明可见色
+      if (isHighlighted) {
+        // 高亮连线：渐变效果
+        const grad = ctx.createLinearGradient(a.x, a.y, b.x, b.y);
+        grad.addColorStop(0, getEntityColor(a.entityType, accent, dark));
+        grad.addColorStop(1, getEntityColor(b.entityType, accent, dark));
+        ctx.strokeStyle = grad;
+        ctx.lineWidth = 2.5;
+      } else {
+        ctx.strokeStyle = dark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.15)';
+        ctx.lineWidth = 1;
+      }
       ctx.beginPath();
+      // 曲线连线（更自然，对标 React Flow 的 bezier 边）
+      const midX = (a.x + b.x) / 2;
+      const midY = (a.y + b.y) / 2;
+      const offset = 20;
       ctx.moveTo(a.x, a.y);
-      ctx.lineTo(b.x, b.y);
+      ctx.quadraticCurveTo(midX + offset, midY - offset, b.x, b.y);
       ctx.stroke();
 
       // Draw relation label on highlighted edges
       if (isHighlighted) {
-        const midX = (a.x + b.x) / 2;
-        const midY = (a.y + b.y) / 2;
         ctx.fillStyle = textSecondaryColor;
-        ctx.font = '10px sans-serif';
+        const scale = scaleRef.current;
+        ctx.font = `${10 / scale}px sans-serif`;
         ctx.textAlign = 'center';
-        ctx.fillText(edge.relationType, midX, midY - 4);
+        // 在曲线中点偏上位置绘制标签
+        const labelX = midX + offset / 2;
+        const labelY = midY - offset / 2 - 4 / scale;
+        // 标签背景
+        const labelWidth = ctx.measureText(edge.relationType).width + 8;
+        ctx.fillStyle = dark ? 'rgba(26,28,28,0.9)' : 'rgba(255,255,255,0.9)';
+        ctx.fillRect(labelX - labelWidth / 2, labelY - 8 / scale, labelWidth, 14 / scale);
+        ctx.fillStyle = textSecondaryColor;
+        ctx.fillText(edge.relationType, labelX, labelY + 2 / scale);
       }
     }
 
@@ -320,38 +366,67 @@ export function KnowledgeGraphView({ notebookId, onNodeSelect }: KnowledgeGraphV
       const isSelected = selectedNode?.id === node.id;
       const isHovered = hoveredNode === node.id;
       const isMatch = searchQuery && node.label.toLowerCase().includes(searchQuery.toLowerCase());
+      const isDimmed = (hoveredNode || selectedNode) && !isSelected && !isHovered &&
+        !graphData.edges.some(e =>
+          (e.sourceNodeId === hoveredNode && e.targetNodeId === node.id) ||
+          (e.targetNodeId === hoveredNode && e.sourceNodeId === node.id)
+        );
 
-      const radius = 6 + Math.min(node.weight * 2, 12);
+      const radius = 8 + Math.min(node.weight * 2, 14);
       const color = getEntityColor(node.entityType, accent, dark);
 
       // Glow effect for selected/hovered/matched nodes
       if (isSelected || isHovered || isMatch) {
         ctx.shadowColor = color;
-        ctx.shadowBlur = 20;
+        ctx.shadowBlur = 25;
+      } else if (isDimmed) {
+        ctx.globalAlpha = 0.3;
       }
 
-      // Node circle
-      ctx.fillStyle = color;
+      // Node circle with radial gradient (更立体)
+      const grad = ctx.createRadialGradient(
+        node.x - radius * 0.3, node.y - radius * 0.3, 0,
+        node.x, node.y, radius
+      );
+      grad.addColorStop(0, color);
+      grad.addColorStop(1, dark ? color + 'cc' : color + 'dd');
+      ctx.fillStyle = grad;
       ctx.beginPath();
       ctx.arc(node.x, node.y, radius, 0, Math.PI * 2);
       ctx.fill();
 
       // Node border
       ctx.shadowBlur = 0;
-      ctx.strokeStyle = isSelected ? '#ffffff' : (dark ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.2)');
-      ctx.lineWidth = isSelected ? 3 : 1.5;
+      ctx.strokeStyle = isSelected ? '#ffffff' : (isHovered ? color : (dark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.15)'));
+      ctx.lineWidth = isSelected ? 3 : (isHovered ? 2.5 : 1.5);
       ctx.stroke();
 
-      // Node label — 在 ctx.scale 内部，字体会被缩放。
-      // 为了让文字在缩小时保持可读大小，反向补偿字体大小。
-      // 例如 scale=0.5 时，设 24px 会渲染为 12px，保持可读。
+      // Entity type icon inside node
+      ctx.globalAlpha = isDimmed ? 0.3 : 1;
       const scale = scaleRef.current;
+      const iconSize = (radius * 0.8) / scale;
+      ctx.font = `${iconSize}px sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(getEntityIcon(node.entityType), node.x, node.y);
+      ctx.textBaseline = 'alphabetic';
+
+      // Node label — 反向补偿字体大小以保持可读
       const targetScreenPx = isSelected ? 14 : 12;
       const fontSize = targetScreenPx / scale;
-      ctx.fillStyle = textColor;
+      ctx.fillStyle = isDimmed ? textSecondaryColor + '66' : textColor;
       ctx.font = `${isSelected ? 'bold ' : ''}${fontSize}px sans-serif`;
       ctx.textAlign = 'center';
+      // 标签背景（提高可读性）
+      if (!isDimmed) {
+        const labelWidth = ctx.measureText(node.label).width + 6;
+        ctx.fillStyle = dark ? 'rgba(14,15,15,0.7)' : 'rgba(255,255,255,0.7)';
+        ctx.fillRect(node.x - labelWidth / 2, node.y + radius + 4 / scale, labelWidth, fontSize + 2 / scale);
+        ctx.fillStyle = textColor;
+      }
       ctx.fillText(node.label, node.x, node.y + radius + 14);
+
+      ctx.globalAlpha = 1;
     }
 
     ctx.restore();
@@ -715,7 +790,7 @@ export function KnowledgeGraphView({ notebookId, onNodeSelect }: KnowledgeGraphV
               URL.revokeObjectURL(url);
             }}
             title={isZh ? '导出为 JSON' : 'Export as JSON'}
-            style={{ fontSize: '10px' }}
+            style={{ fontSize: 'var(--fs-xs)' }}
           >
             JSON
           </button>
@@ -743,29 +818,37 @@ export function KnowledgeGraphView({ notebookId, onNodeSelect }: KnowledgeGraphV
         {selectedNode && (
           <div className="kg-sidebar" style={{ background: bgSecondary, borderLeft: `1px solid ${borderColor}` }}>
             <div className="kg-sidebar-header" style={{ borderBottom: `1px solid ${borderColor}` }}>
-              <h3 style={{ color: accentColor }}>{selectedNode.label}</h3>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontSize: 'var(--fs-2xl)' }}>{getEntityIcon(selectedNode.entityType)}</span>
+                <h3 style={{ color: accentColor, margin: 0 }}>{selectedNode.label}</h3>
+              </div>
               <span
                 className="kg-entity-badge"
-                style={{ background: getEntityColor(selectedNode.entityType, accentColor, dark), color: '#fff' }}
+                style={{ background: getEntityColor(selectedNode.entityType, accentColor, dark), color: '#fff', fontSize: 'var(--fs-xs)' }}
               >
-                {selectedNode.entityType}
+                {getEntityLabel(selectedNode.entityType, isZh)}
               </span>
             </div>
 
             {selectedNode.description && (
               <div className="kg-detail-section">
-                <h4 style={{ color: textSecondaryColor }}>{isZh ? '描述' : 'Description'}</h4>
-                <p style={{ color: textColor }}>{selectedNode.description}</p>
+                <h4 style={{ color: textSecondaryColor, fontSize: 'var(--fs-sm)' }}>{isZh ? '描述' : 'Description'}</h4>
+                <p style={{ color: textColor, fontSize: 'var(--fs-base)' }}>{selectedNode.description}</p>
               </div>
             )}
 
             <div className="kg-detail-section">
-              <h4 style={{ color: textSecondaryColor }}>{isZh ? '权重' : 'Weight'}</h4>
-              <p style={{ color: textColor }}>{selectedNode.weight}</p>
+              <h4 style={{ color: textSecondaryColor, fontSize: 'var(--fs-sm)' }}>{isZh ? '权重' : 'Weight'}</h4>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div style={{ flex: 1, height: '4px', background: bgTertiary, borderRadius: '2px', overflow: 'hidden' }}>
+                  <div style={{ width: `${Math.min(selectedNode.weight * 10, 100)}%`, height: '100%', background: accentColor, borderRadius: '2px' }} />
+                </div>
+                <span style={{ color: textColor, fontSize: 'var(--fs-sm)' }}>{selectedNode.weight}</span>
+              </div>
             </div>
 
             <div className="kg-detail-section">
-              <h4 style={{ color: textSecondaryColor }}>
+              <h4 style={{ color: textSecondaryColor, fontSize: 'var(--fs-sm)' }}>
                 {isZh ? '关联实体' : 'Connected Entities'} ({connectedNodes.length})
               </h4>
               <div className="kg-connected-list">
@@ -774,8 +857,9 @@ export function KnowledgeGraphView({ notebookId, onNodeSelect }: KnowledgeGraphV
                     key={node.id}
                     className="kg-connected-item"
                     onClick={() => setSelectedNode(node)}
-                    style={{ background: bgTertiary, border: `1px solid ${borderColor}`, color: textColor }}
+                    style={{ background: bgTertiary, border: `1px solid ${borderColor}`, color: textColor, fontSize: 'var(--fs-sm)' }}
                   >
+                    <span style={{ fontSize: 'var(--fs-md)' }}>{getEntityIcon(node.entityType)}</span>
                     <span
                       className="kg-connected-dot"
                       style={{ background: getEntityColor(node.entityType, accentColor, dark) }}
@@ -788,10 +872,10 @@ export function KnowledgeGraphView({ notebookId, onNodeSelect }: KnowledgeGraphV
 
             {selectedNode.sourceIds.length > 0 && (
               <div className="kg-detail-section">
-                <h4 style={{ color: textSecondaryColor }}>
+                <h4 style={{ color: textSecondaryColor, fontSize: 'var(--fs-sm)' }}>
                   {isZh ? '来源' : 'Sources'} ({selectedNode.sourceIds.length})
                 </h4>
-                <p style={{ color: textSecondaryColor, fontSize: '12px' }}>
+                <p style={{ color: textSecondaryColor, fontSize: 'var(--fs-xs)' }}>
                   {isZh ? '该实体出现在多个来源中' : 'This entity appears in multiple sources'}
                 </p>
               </div>
@@ -808,7 +892,7 @@ export function KnowledgeGraphView({ notebookId, onNodeSelect }: KnowledgeGraphV
                   width: '100%', padding: '6px', marginBottom: '6px',
                   background: bgTertiary, border: `1px solid ${borderColor}`,
                   borderRadius: '6px', color: textColor, cursor: 'pointer',
-                  fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px', justifyContent: 'center',
+                  fontSize: 'var(--fs-sm)', display: 'flex', alignItems: 'center', gap: '4px', justifyContent: 'center',
                 }}
               >
                 <Edit3 size={12} />
@@ -829,7 +913,7 @@ export function KnowledgeGraphView({ notebookId, onNodeSelect }: KnowledgeGraphV
                   borderRadius: '6px',
                   color: edgeCreateFrom === selectedNode.id ? '#fff' : textColor,
                   cursor: 'pointer',
-                  fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px', justifyContent: 'center',
+                  fontSize: 'var(--fs-sm)', display: 'flex', alignItems: 'center', gap: '4px', justifyContent: 'center',
                 }}
               >
                 <Plus size={12} />
@@ -843,7 +927,7 @@ export function KnowledgeGraphView({ notebookId, onNodeSelect }: KnowledgeGraphV
                   width: '100%', padding: '6px',
                   background: 'transparent', border: `1px solid #ef444455`,
                   borderRadius: '6px', color: '#ef4444', cursor: 'pointer',
-                  fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px', justifyContent: 'center',
+                  fontSize: 'var(--fs-sm)', display: 'flex', alignItems: 'center', gap: '4px', justifyContent: 'center',
                 }}
               >
                 <Trash2 size={12} />
@@ -857,16 +941,17 @@ export function KnowledgeGraphView({ notebookId, onNodeSelect }: KnowledgeGraphV
       {/* Legend */}
       <div className="kg-legend" style={{ background: bgSecondary, borderTop: `1px solid ${borderColor}` }}>
         {(['concept', 'entity', 'event', 'person', 'place', 'organization', 'technology'] as EntityType[]).map(type => (
-          <div key={type} className="kg-legend-item">
+          <div key={type} className="kg-legend-item" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+            <span style={{ fontSize: 'var(--fs-sm)' }}>{getEntityIcon(type)}</span>
             <span
               className="kg-legend-dot"
               style={{ background: getEntityColor(type, accentColor, dark) }}
             />
-            <span style={{ color: textSecondaryColor }}>{type}</span>
+            <span style={{ color: textSecondaryColor, fontSize: 'var(--fs-xs)' }}>{getEntityLabel(type, isZh)}</span>
           </div>
         ))}
         <div className="kg-legend-item" style={{ marginLeft: 'auto' }}>
-          <span style={{ color: textSecondaryColor, fontSize: '10px' }}>
+          <span style={{ color: textSecondaryColor, fontSize: 'var(--fs-xs)' }}>
             {isZh ? '单击选中 · 双击打开文档 · 右键菜单 · 侧栏编辑' : 'Click to select · Double-click to open · Right-click for menu · Sidebar to edit'}
           </span>
         </div>
@@ -891,7 +976,7 @@ export function KnowledgeGraphView({ notebookId, onNodeSelect }: KnowledgeGraphV
               minWidth: '300px',
             }}
           >
-            <label style={{ fontSize: '12px', color: textSecondaryColor }}>
+            <label style={{ fontSize: 'var(--fs-sm)', color: textSecondaryColor }}>
               {isZh ? '编辑节点标签' : 'Edit Node Label'}
             </label>
             <input
@@ -906,7 +991,7 @@ export function KnowledgeGraphView({ notebookId, onNodeSelect }: KnowledgeGraphV
               style={{
                 padding: '6px 8px', background: bgTertiary,
                 border: `1px solid ${borderColor}`, borderRadius: '4px',
-                color: textColor, fontSize: '13px', outline: 'none',
+                color: textColor, fontSize: 'var(--fs-base)', outline: 'none',
               }}
             />
             <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
@@ -915,7 +1000,7 @@ export function KnowledgeGraphView({ notebookId, onNodeSelect }: KnowledgeGraphV
                 style={{
                   padding: '4px 12px', background: 'transparent',
                   border: `1px solid ${borderColor}`, borderRadius: '4px',
-                  color: textColor, cursor: 'pointer', fontSize: '12px',
+                  color: textColor, cursor: 'pointer', fontSize: 'var(--fs-sm)',
                 }}
               >
                 {isZh ? '取消' : 'Cancel'}
@@ -925,7 +1010,7 @@ export function KnowledgeGraphView({ notebookId, onNodeSelect }: KnowledgeGraphV
                 style={{
                   padding: '4px 12px', background: accentColor,
                   border: 'none', borderRadius: '4px',
-                  color: '#fff', cursor: 'pointer', fontSize: '12px',
+                  color: '#fff', cursor: 'pointer', fontSize: 'var(--fs-sm)',
                 }}
               >
                 {isZh ? '保存' : 'Save'}
@@ -967,7 +1052,7 @@ export function KnowledgeGraphView({ notebookId, onNodeSelect }: KnowledgeGraphV
                     display: 'flex', alignItems: 'center', gap: '6px',
                     width: '100%', padding: '6px 8px',
                     background: 'transparent', border: 'none',
-                    color: textColor, cursor: 'pointer', fontSize: '12px',
+                    color: textColor, cursor: 'pointer', fontSize: 'var(--fs-sm)',
                     borderRadius: '4px', textAlign: 'left',
                   }}
                 >
@@ -983,7 +1068,7 @@ export function KnowledgeGraphView({ notebookId, onNodeSelect }: KnowledgeGraphV
                     display: 'flex', alignItems: 'center', gap: '6px',
                     width: '100%', padding: '6px 8px',
                     background: 'transparent', border: 'none',
-                    color: textColor, cursor: 'pointer', fontSize: '12px',
+                    color: textColor, cursor: 'pointer', fontSize: 'var(--fs-sm)',
                     borderRadius: '4px', textAlign: 'left',
                   }}
                 >
@@ -997,7 +1082,7 @@ export function KnowledgeGraphView({ notebookId, onNodeSelect }: KnowledgeGraphV
                     display: 'flex', alignItems: 'center', gap: '6px',
                     width: '100%', padding: '6px 8px',
                     background: 'transparent', border: 'none',
-                    color: '#ef4444', cursor: 'pointer', fontSize: '12px',
+                    color: '#ef4444', cursor: 'pointer', fontSize: 'var(--fs-sm)',
                     borderRadius: '4px', textAlign: 'left',
                   }}
                 >
@@ -1013,7 +1098,7 @@ export function KnowledgeGraphView({ notebookId, onNodeSelect }: KnowledgeGraphV
                   display: 'flex', alignItems: 'center', gap: '6px',
                   width: '100%', padding: '6px 8px',
                   background: 'transparent', border: 'none',
-                  color: '#ef4444', cursor: 'pointer', fontSize: '12px',
+                  color: '#ef4444', cursor: 'pointer', fontSize: 'var(--fs-sm)',
                   borderRadius: '4px', textAlign: 'left',
                 }}
               >

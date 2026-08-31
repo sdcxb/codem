@@ -184,7 +184,7 @@ const iconColor = t.status === "completed" ? "var(--success)" :
             >
               <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "12px" }}>
                 <Icon size={16} style={{ color: "var(--accent)" }} />
-                <span style={{ fontSize: "14px", fontWeight: 600, color: "var(--text-primary)" }}>
+                <span style={{ fontSize: "var(--fs-md)", fontWeight: 600, color: "var(--text-primary)" }}>
                   {card.label}
                 </span>
                 <ChevronRight size={14} style={{ marginLeft: "auto", color: "var(--text-secondary, #666)" }} />
@@ -192,8 +192,8 @@ const iconColor = t.status === "completed" ? "var(--success)" :
               <div style={{ display: "flex", gap: "16px" }}>
                 {card.stats.map((s) => (
                   <div key={s.label}>
-                    <div style={{ fontSize: "24px", fontWeight: 700, color: s.color }}>{s.value}</div>
-                    <div style={{ fontSize: "11px", color: "var(--text-secondary, #888)" }}>{s.label}</div>
+                    <div style={{ fontSize: "var(--fs-3xl)", fontWeight: 700, color: s.color }}>{s.value}</div>
+                    <div style={{ fontSize: "var(--fs-xs)", color: "var(--text-secondary, #888)" }}>{s.label}</div>
                   </div>
                 ))}
               </div>
@@ -204,11 +204,11 @@ const iconColor = t.status === "completed" ? "var(--success)" :
 
       {/* Recent activity timeline */}
       <div>
-        <div style={{ fontSize: "14px", fontWeight: 600, color: "var(--text-primary)", marginBottom: "12px" }}>
+        <div style={{ fontSize: "var(--fs-md)", fontWeight: 600, color: "var(--text-primary)", marginBottom: "12px" }}>
           {zh ? "最近活动" : "Recent Activity"}
         </div>
         {activities.length === 0 ? (
-          <div style={{ padding: "20px", textAlign: "center", color: "var(--text-secondary, #666)", fontSize: "13px" }}>
+          <div style={{ padding: "20px", textAlign: "center", color: "var(--text-secondary, #666)", fontSize: "var(--fs-base)" }}>
             {zh ? "暂无活动记录" : "No activity yet"}
           </div>
         ) : (
@@ -223,14 +223,14 @@ const iconColor = t.status === "completed" ? "var(--success)" :
                   padding: "8px 12px",
                   borderRadius: "6px",
                   background: "var(--bg-tertiary)",
-                  fontSize: "12px",
+                  fontSize: "var(--fs-sm)",
                 }}
               >
                 <act.icon size={14} style={{ color: act.iconColor, flexShrink: 0 }} />
                 <span style={{ flex: 1, color: "var(--text-secondary, #aaa)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                   {act.text}
                 </span>
-                <span style={{ fontSize: "10px", color: "var(--text-muted, #555)", flexShrink: 0 }}>
+                <span style={{ fontSize: "var(--fs-xs)", color: "var(--text-muted, #555)", flexShrink: 0 }}>
                   {formatRelativeTime(act.timestamp, zh)}
                 </span>
               </div>

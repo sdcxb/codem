@@ -114,14 +114,14 @@ return createPortal(
         style={{ maxWidth: "500px", padding: "24px" }}
         onClick={(e) => e.stopPropagation()}
       >
-        <h2 style={{ marginBottom: "16px", fontSize: "18px", fontWeight: 600 }}>
+        <h2 style={{ marginBottom: "16px", fontSize: "var(--fs-xl)", fontWeight: 600 }}>
           <i className="fab fa-github" style={{ marginRight: "8px" }} />
           {lang === "zh" ? "从 GitHub 拉取项目" : "Clone from GitHub"}
         </h2>
 
         {status === "idle" && (
           <>
-            <p style={{ marginBottom: "12px", color: "var(--text-secondary)", fontSize: "13px" }}>
+            <p style={{ marginBottom: "12px", color: "var(--text-secondary)", fontSize: "var(--fs-base)" }}>
               {lang === "zh"
                 ? "输入 GitHub 仓库地址，将自动克隆到本地并创建项目。"
                 : "Enter a GitHub repository URL. It will be cloned locally and a project will be created."}
@@ -141,7 +141,7 @@ return createPortal(
                 border: "1px solid var(--border-primary, #333)",
                 background: "var(--input-bg, #1e1e2e)",
                 color: "var(--text-primary, #e0e0e0)",
-                fontSize: "14px",
+                fontSize: "var(--fs-md)",
                 outline: "none",
                 marginBottom: "16px",
               }}
@@ -156,7 +156,7 @@ return createPortal(
                   background: "var(--bg-hover, #2a2a3a)",
                   color: "var(--text-secondary, #888)",
                   cursor: "pointer",
-                  fontSize: "14px",
+                  fontSize: "var(--fs-md)",
                 }}
               >
                 {lang === "zh" ? "取消" : "Cancel"}
@@ -171,7 +171,7 @@ return createPortal(
                   background: url.trim() ? "var(--accent, #ff6b35)" : "var(--bg-hover, #2a2a3a)",
                   color: "#fff",
                   cursor: url.trim() ? "pointer" : "not-allowed",
-                  fontSize: "14px",
+                  fontSize: "var(--fs-md)",
                   fontWeight: 500,
                 }}
               >
@@ -185,7 +185,7 @@ return createPortal(
         {status === "cloning" && (
           <div style={{ textAlign: "center", padding: "40px 0" }}>
             <i className="fas fa-spinner fa-spin" style={{ fontSize: "32px", color: "var(--accent, #ff6b35)", marginBottom: "16px" }} />
-            <p style={{ color: "var(--text-secondary)", fontSize: "14px" }}>
+            <p style={{ color: "var(--text-secondary)", fontSize: "var(--fs-md)" }}>
               {lang === "zh" ? `正在克隆 ${projectName}...` : `Cloning ${projectName}...`}
             </p>
           </div>
@@ -194,7 +194,7 @@ return createPortal(
         {status === "done" && (
           <div style={{ textAlign: "center", padding: "40px 0" }}>
             <i className="fas fa-check-circle" style={{ fontSize: "32px", color: "#22c55e", marginBottom: "16px" }} />
-            <p style={{ color: "var(--text-primary)", fontSize: "14px", fontWeight: 500 }}>
+            <p style={{ color: "var(--text-primary)", fontSize: "var(--fs-md)", fontWeight: 500 }}>
               {lang === "zh" ? `项目 ${projectName} 创建成功！` : `Project ${projectName} created successfully!`}
             </p>
           </div>
@@ -202,7 +202,7 @@ return createPortal(
 
         {status === "error" && (
           <div style={{ padding: "20px 0" }}>
-            <div style={{ color: "#ef4444", fontSize: "14px", marginBottom: "12px" }}>
+            <div style={{ color: "#ef4444", fontSize: "var(--fs-md)", marginBottom: "12px" }}>
               <i className="fas fa-exclamation-circle" style={{ marginRight: "6px" }} />
               {lang === "zh" ? "克隆失败" : "Clone failed"}
             </div>
@@ -210,7 +210,7 @@ return createPortal(
               background: "var(--bg-hover, #2a2a3a)",
               padding: "12px",
               borderRadius: "8px",
-              fontSize: "12px",
+              fontSize: "var(--fs-sm)",
               color: "#ef4444",
               maxHeight: "150px",
               overflow: "auto",
@@ -229,7 +229,7 @@ return createPortal(
                 background: "var(--accent, #ff6b35)",
                 color: "#fff",
                 cursor: "pointer",
-                fontSize: "14px",
+                fontSize: "var(--fs-md)",
                 width: "100%",
               }}
             >

@@ -46,7 +46,7 @@ export class UIScene extends Phaser.Scene {
 
     // 消息栏 — 使用半透明背景，提升可读性
     this.messageText = this.add.text(10, 10, "", {
-      fontSize: "14px",
+      fontSize: "var(--fs-md)",
       color: "#ecf0f1",
       fontFamily: "sans-serif",
       backgroundColor: "#2c3e50cc",
@@ -55,7 +55,7 @@ export class UIScene extends Phaser.Scene {
 
     // 回合信息
     this.roundText = this.add.text(this.cameras.main.width - 140, 10, "", {
-      fontSize: "14px",
+      fontSize: "var(--fs-md)",
       color: "#f1c40f",
       fontFamily: "sans-serif",
       backgroundColor: "#2c3e50cc",
@@ -273,7 +273,7 @@ export class UIScene extends Phaser.Scene {
       this.cameras.main.height / 2,
       `游戏结束!\n${lines.join("\n")}`,
       {
-        fontSize: "24px",
+        fontSize: "var(--fs-3xl)",
         color: "#f1c40f",
         fontFamily: "sans-serif",
         backgroundColor: "#2c3e50",

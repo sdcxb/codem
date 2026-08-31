@@ -58,7 +58,7 @@ export function IssueCard({ issue, onClick, compact = false }: IssueCardProps) {
       {/* Header: status icon + title + priority */}
       <div style={{ display: "flex", alignItems: "flex-start", gap: "6px" }}>
         <StatusIcon size={14} style={{ color: config.color, marginTop: 2, flexShrink: 0 }} />
-        <span style={{ fontSize: "13px", fontWeight: 600, color: "var(--text-primary)", flex: 1, lineHeight: 1.4 }}>
+        <span style={{ fontSize: "var(--fs-base)", fontWeight: 600, color: "var(--text-primary)", flex: 1, lineHeight: 1.4 }}>
           {issue.title}
         </span>
         <span style={{
@@ -69,7 +69,7 @@ export function IssueCard({ issue, onClick, compact = false }: IssueCardProps) {
 
       {/* Footer: issue ID + assignee + labels */}
       {!compact && (
-        <div style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "11px", color: "var(--text-secondary)" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "var(--fs-xs)", color: "var(--text-secondary)" }}>
           <span style={{ fontFamily: "monospace", opacity: 0.7 }}>{issue.id.substring(0, 16)}</span>
           {issue.assigneeId && (
             <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }}>
@@ -80,7 +80,7 @@ export function IssueCard({ issue, onClick, compact = false }: IssueCardProps) {
           {issue.labels.length > 0 && issue.labels.slice(0, 3).map((label) => (
             <span key={label} style={{
               padding: "1px 6px", borderRadius: 3,
-              background: "var(--bg-secondary)", fontSize: "10px",
+              background: "var(--bg-secondary)", fontSize: "var(--fs-xs)",
             }}>{label}</span>
           ))}
         </div>

@@ -162,7 +162,7 @@ export function DocxViewer({ filePath, data, onClose, onSaveAsNote, highlightTex
           </div>
           <div style={{ padding: '40px', textAlign: 'center' }}>
             <AlertCircle size={32} style={{ color: 'var(--error)', margin: '0 auto 12px' }} />
-            <p style={{ color: 'var(--error)', fontSize: '14px' }}>{error}</p>
+            <p style={{ color: 'var(--error)', fontSize: 'var(--fs-md)' }}>{error}</p>
           </div>
         </div>
       </div>
@@ -186,7 +186,7 @@ export function DocxViewer({ filePath, data, onClose, onSaveAsNote, highlightTex
                 style={{
                   background: 'none', border: '1px solid var(--border-color, #2a2a30)',
                   borderRadius: '4px', padding: '4px 8px', cursor: 'pointer',
-                  color: 'var(--text-secondary, #a0a0a8)', fontSize: '11px',
+                  color: 'var(--text-secondary, #a0a0a8)', fontSize: 'var(--fs-xs)',
                   display: 'flex', alignItems: 'center', gap: '4px',
                 }}
               >
@@ -200,7 +200,7 @@ export function DocxViewer({ filePath, data, onClose, onSaveAsNote, highlightTex
               style={{
                 background: 'none', border: '1px solid var(--border-color, #2a2a30)',
                 borderRadius: '4px', padding: '4px 8px', cursor: 'pointer',
-                color: 'var(--text-secondary, #a0a0a8)', fontSize: '11px',
+                color: 'var(--text-secondary, #a0a0a8)', fontSize: 'var(--fs-xs)',
                 display: 'flex', alignItems: 'center', gap: '4px',
               }}
             >
@@ -234,7 +234,7 @@ export function DocxViewer({ filePath, data, onClose, onSaveAsNote, highlightTex
               borderRadius: '4px',
               padding: '4px 8px',
               color: 'var(--text-primary, #e0e0e4)',
-              fontSize: '12px',
+              fontSize: 'var(--fs-sm)',
               outline: 'none',
             }}
           />
@@ -249,7 +249,7 @@ export function DocxViewer({ filePath, data, onClose, onSaveAsNote, highlightTex
               padding: '24px 32px',
               color: 'var(--text-primary, #e0e0e4)',
               lineHeight: '1.8',
-              fontSize: '14px',
+              fontSize: 'var(--fs-md)',
             }}
           />
         </div>

@@ -61,7 +61,7 @@ export function CapabilityGuard({ feature, children, fallbackRender = true, onUn
               background: 'rgba(234, 179, 8, 0.1)',
               border: '1px solid rgba(234, 179, 8, 0.3)',
               borderRadius: '6px',
-              fontSize: '11px',
+              fontSize: 'var(--fs-xs)',
               color: 'var(--text-secondary, #a0a0a8)',
               lineHeight: '1.4',
             }}

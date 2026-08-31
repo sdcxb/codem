@@ -81,7 +81,7 @@ export function TaskCenter({ onClose, initialTab = "overview", subagentTasks = [
         >
           <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
             <ClipboardList size={20} style={{ color: "var(--accent, #7c3aed)" }} />
-            <span style={{ fontSize: "16px", fontWeight: 600, color: "var(--text-primary, #e0e0e0)" }}>
+            <span style={{ fontSize: "var(--fs-lg)", fontWeight: 600, color: "var(--text-primary, #e0e0e0)" }}>
               {zh ? "任务管理" : "Task Center"}
             </span>
           </div>
@@ -126,7 +126,7 @@ export function TaskCenter({ onClose, initialTab = "overview", subagentTasks = [
                   alignItems: "center",
                   gap: "6px",
                   padding: "10px 14px",
-                  fontSize: "13px",
+                  fontSize: "var(--fs-base)",
                   fontWeight: isActive ? 600 : 400,
                   color: isActive
                     ? "var(--accent, #7c3aed)"
@@ -170,7 +170,7 @@ export function TaskCenter({ onClose, initialTab = "overview", subagentTasks = [
           style={{
             padding: "6px 20px",
             borderTop: "1px solid var(--border-color, #333344)",
-            fontSize: "11px",
+            fontSize: "var(--fs-xs)",
             color: "var(--text-secondary, #666)",
             display: "flex",
             justifyContent: "space-between",

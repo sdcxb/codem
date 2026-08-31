@@ -371,10 +371,10 @@ export function NotebookManager({ onClose, onOpenNotebookChat, onOpenWorkspace }
             />
             {editingDesc && (
               <>
-                <button className="notebook-btn-confirm" onClick={handleSaveDesc} style={{ padding: '4px 12px', fontSize: '12px' }}>
+                <button className="notebook-btn-confirm" onClick={handleSaveDesc} style={{ padding: '4px 12px', fontSize: 'var(--fs-sm)' }}>
                   {lang === 'zh' ? '保存' : 'Save'}
                 </button>
-                <button className="notebook-btn-cancel" onClick={() => setEditingDesc(false)} style={{ padding: '4px 12px', fontSize: '12px' }}>
+                <button className="notebook-btn-cancel" onClick={() => setEditingDesc(false)} style={{ padding: '4px 12px', fontSize: 'var(--fs-sm)' }}>
                   {lang === 'zh' ? '取消' : 'Cancel'}
                 </button>
               </>
@@ -547,7 +547,7 @@ export function NotebookManager({ onClose, onOpenNotebookChat, onOpenWorkspace }
                           ? <span className="notebook-file-path">{sourceFilePaths[0]}</span>
                           : <>
                             <span className="notebook-file-count">{sourceFilePaths.length} 个文件已选</span>
-                            <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                            <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', marginTop: '4px' }}>
                               {sourceFilePaths.map((p, i) => {
                                 const name = p.split(/[\\/]/).pop() || p;
                                 return <div key={i}>• {name}</div>;

@@ -261,12 +261,12 @@ export function PetMarketDialog({ open, onClose }: PetMarketDialogProps) {
           }}
         >
           <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-            <span style={{ fontSize: "20px" }}>🐾</span>
-            <h2 style={{ margin: 0, fontSize: "18px", fontWeight: 600, color: "var(--text-primary, #e0e0e0)" }}>
+            <span style={{ fontSize: "var(--fs-2xl)" }}>🐾</span>
+            <h2 style={{ margin: 0, fontSize: "var(--fs-xl)", fontWeight: 600, color: "var(--text-primary, #e0e0e0)" }}>
               宠物市场
             </h2>
             {pets.length > 0 && (
-              <span style={{ fontSize: "12px", color: "var(--text-secondary, #888)" }}>
+              <span style={{ fontSize: "var(--fs-sm)", color: "var(--text-secondary, #888)" }}>
                 ({filteredPets.length}/{pets.length})
               </span>
             )}
@@ -305,7 +305,7 @@ export function PetMarketDialog({ open, onClose }: PetMarketDialogProps) {
               border: "1px solid var(--border-color, rgba(255, 255, 255, 0.1))",
               background: "var(--bg-tertiary, #181825)",
               color: "var(--text-primary, #e0e0e0)",
-              fontSize: "13px",
+              fontSize: "var(--fs-base)",
               outline: "none",
               boxSizing: "border-box",
             }}
@@ -341,7 +341,7 @@ export function PetMarketDialog({ open, onClose }: PetMarketDialogProps) {
                   background: "var(--bg-tertiary, #181825)",
                   color: "var(--text-primary, #e0e0e0)",
                   cursor: "pointer",
-                  fontSize: "13px",
+                  fontSize: "var(--fs-base)",
                 }}
               >
                 重试
@@ -411,7 +411,7 @@ export function PetMarketDialog({ open, onClose }: PetMarketDialogProps) {
                             borderRadius: "4px",
                             background: "rgba(34, 197, 94, 0.8)",
                             color: "#fff",
-                            fontSize: "10px",
+                            fontSize: "var(--fs-xs)",
                             fontWeight: 600,
                           }}
                         >
@@ -422,10 +422,10 @@ export function PetMarketDialog({ open, onClose }: PetMarketDialogProps) {
 
                     {/* 信息区 */}
                     <div style={{ padding: "10px 12px", flex: 1, display: "flex", flexDirection: "column" }}>
-                      <div style={{ fontWeight: 600, fontSize: "13px", color: "var(--text-primary, #e0e0e0)", marginBottom: "4px" }}>
+                      <div style={{ fontWeight: 600, fontSize: "var(--fs-base)", color: "var(--text-primary, #e0e0e0)", marginBottom: "4px" }}>
                         {pet.name}
                       </div>
-                      <div style={{ fontSize: "11px", color: "var(--text-secondary, #888)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>
+                      <div style={{ fontSize: "var(--fs-xs)", color: "var(--text-secondary, #888)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>
                         {pet.description || "暂无描述"}
                       </div>
 
@@ -440,7 +440,7 @@ export function PetMarketDialog({ open, onClose }: PetMarketDialogProps) {
                                 borderRadius: "3px",
                                 background: "rgba(255, 255, 255, 0.06)",
                                 color: "var(--text-secondary, #aaa)",
-                                fontSize: "10px",
+                                fontSize: "var(--fs-xs)",
                               }}
                             >
                               {tag}
@@ -471,7 +471,7 @@ export function PetMarketDialog({ open, onClose }: PetMarketDialogProps) {
                                 }}
                               />
                             </div>
-                            <div style={{ fontSize: "10px", color: "var(--text-secondary, #888)", marginTop: "4px" }}>
+                            <div style={{ fontSize: "var(--fs-xs)", color: "var(--text-secondary, #888)", marginTop: "4px" }}>
                               {installProgress!.message}
                             </div>
                           </div>
@@ -486,7 +486,7 @@ export function PetMarketDialog({ open, onClose }: PetMarketDialogProps) {
                               background: "rgba(239, 68, 68, 0.1)",
                               color: "#f87171",
                               cursor: "pointer",
-                              fontSize: "12px",
+                              fontSize: "var(--fs-sm)",
                               fontWeight: 500,
                             }}
                           >
@@ -503,7 +503,7 @@ export function PetMarketDialog({ open, onClose }: PetMarketDialogProps) {
                               background: "var(--accent-color, #6366f1)",
                               color: "#fff",
                               cursor: "pointer",
-                              fontSize: "12px",
+                              fontSize: "var(--fs-sm)",
                               fontWeight: 500,
                             }}
                           >
@@ -524,7 +524,7 @@ export function PetMarketDialog({ open, onClose }: PetMarketDialogProps) {
           style={{
             padding: "8px 20px",
             borderTop: "1px solid var(--border-color, rgba(255, 255, 255, 0.08))",
-            fontSize: "11px",
+            fontSize: "var(--fs-xs)",
             color: "var(--text-secondary, #666)",
             display: "flex",
             justifyContent: "space-between",

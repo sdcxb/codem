@@ -75,8 +75,8 @@ export function SubagentsTab({ agents, onSelectAgent }: SubagentsTabProps) {
             gap: "8px",
             border: "1px solid var(--border-primary)",
           }}>
-            <span style={{ fontSize: "18px", fontWeight: 700, color: s.color }}>{s.value}</span>
-            <span style={{ fontSize: "11px", color: "var(--text-secondary, #888)" }}>{s.label}</span>
+            <span style={{ fontSize: "var(--fs-xl)", fontWeight: 700, color: s.color }}>{s.value}</span>
+            <span style={{ fontSize: "var(--fs-xs)", color: "var(--text-secondary, #888)" }}>{s.label}</span>
           </div>
         ))}
       </div>
@@ -87,7 +87,7 @@ export function SubagentsTab({ agents, onSelectAgent }: SubagentsTabProps) {
           padding: "40px 20px",
           textAlign: "center",
           color: "var(--text-secondary, #888)",
-          fontSize: "14px",
+          fontSize: "var(--fs-md)",
         }}>
           {zh ? "暂无子智能体任务。在对话中使用 " : "No sub-agent tasks. Use "}
           <code style={{ color: "var(--accent)" }}>subagent</code>
@@ -119,7 +119,7 @@ export function SubagentsTab({ agents, onSelectAgent }: SubagentsTabProps) {
               >
                 <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
                   <AgentIcon size={14} style={{ color: "var(--text-secondary)" }} />
-                  <span style={{ fontSize: "13px", fontWeight: 600, color: "var(--text-primary)" }}>
+                  <span style={{ fontSize: "var(--fs-base)", fontWeight: 600, color: "var(--text-primary)" }}>
                     {agent.name || agent.agentId}
                   </span>
                   {agent.persistent && (
@@ -136,15 +136,15 @@ export function SubagentsTab({ agents, onSelectAgent }: SubagentsTabProps) {
                       <Pin size={9} /> {zh ? "持久" : "persistent"}
                     </span>
                   )}
-                  <span style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: "11px", color: statusCfg.color }}>
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: "var(--fs-xs)", color: statusCfg.color }}>
                     <StatusIcon size={12} /> {getStatusLabel(agent.status, zh)}
                   </span>
-                  <span style={{ marginLeft: "auto", fontSize: "10px", color: "var(--text-muted, #555)" }}>
+                  <span style={{ marginLeft: "auto", fontSize: "var(--fs-xs)", color: "var(--text-muted, #555)" }}>
                     {formatTime(agent.createdAt, zh)}
                   </span>
                 </div>
                 <div style={{
-                  fontSize: "12px",
+                  fontSize: "var(--fs-sm)",
                   color: "var(--text-secondary, #aaa)",
                   padding: "4px 8px",
                   background: "var(--bg-secondary)",
@@ -157,7 +157,7 @@ export function SubagentsTab({ agents, onSelectAgent }: SubagentsTabProps) {
                 </div>
                 {agent.result && (
                   <div style={{
-                    fontSize: "11px",
+                    fontSize: "var(--fs-xs)",
                     color: "var(--text-secondary, #888)",
                     display: "flex",
                     gap: "12px",

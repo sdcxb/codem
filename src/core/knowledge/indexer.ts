@@ -202,13 +202,10 @@ export async function generateSummary(notebookId: string): Promise<void> {
       .map((c) => c.content)
       .join('\n\n');
 
-    // Build summary prompt — 使用 LLMEngine 单例获取已配置的 provider
+    // 统一走 LLMEngine.getConfiguredProvider
     const { getLLMEngine } = await import('../llm/index');
     const engine = getLLMEngine();
-    const resolved = engine.resolveSlot('memory');
-    const provider = engine.providers.get(resolved.providerId);
-    if (!provider || !provider.isConfigured()) throw new Error('No LLM provider available');
-    const model = resolved.modelId;
+    const { provider, model } = engine.getConfiguredProvider('memory');
 
     const summaryPrompt = `Please generate a concise summary (2-3 paragraphs) of the following knowledge base content. The summary should capture the main topics, key information, and potential use cases. Write in ${navigator.language?.startsWith('zh') ? 'Chinese' : 'English'}.\n\n---\n\n${allText.slice(0, 8000)}`;
 
@@ -253,10 +250,7 @@ export async function generateGuidedQuestions(notebookId: string): Promise<strin
 
 const { getLLMEngine } = await import('../llm/index');
 const engine = getLLMEngine();
-const resolved = engine.resolveSlot('subagent');
-const provider = engine.providers.get(resolved.providerId);
-if (!provider || !provider.isConfigured()) return [];
-const model = resolved.modelId;
+const { provider, model } = engine.getConfiguredProvider('subagent');
 
     const isZh = navigator.language?.startsWith('zh');
     const prompt = isZh
@@ -457,10 +451,7 @@ export async function generateStudioContent(
 
   const { getLLMEngine } = await import('../llm/index');
   const engine = getLLMEngine();
-  const resolved = engine.resolveSlot('chat');
-  const provider = engine.providers.get(resolved.providerId);
-  if (!provider || !provider.isConfigured()) throw new Error('No LLM provider available');
-  const model = resolved.modelId;
+  const { provider, model } = engine.getConfiguredProvider('chat');
 
   const prompt = isZh ? promptConfig.zh : promptConfig.en;
   const fullPrompt = `${prompt}\n\n---\n\n${allText}`;
@@ -541,10 +532,7 @@ export async function generateFlashcards(
 
   const { getLLMEngine } = await import('../llm/index');
   const engine = getLLMEngine();
-  const resolved = engine.resolveSlot('chat');
-  const provider = engine.providers.get(resolved.providerId);
-  if (!provider || !provider.isConfigured()) throw new Error('No LLM provider available');
-  const model = resolved.modelId;
+  const { provider, model } = engine.getConfiguredProvider('chat');
 
   const systemPrompt = isZh
     ? '你是一个闪卡生成助手。根据知识库内容生成适合间隔重复学习的问题-答案对。'

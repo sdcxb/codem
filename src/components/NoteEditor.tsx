@@ -72,9 +72,9 @@ const MermaidBlock = ({ chart }: { chart: string }) => {
     return () => { cancelled = true; };
   }, [chart]);
 
-  if (loading) return <div style={{ padding: '12px', opacity: 0.5, fontSize: '12px' }}>Rendering diagram...</div>;
+  if (loading) return <div style={{ padding: '12px', opacity: 0.5, fontSize: 'var(--fs-sm)' }}>Rendering diagram...</div>;
   if (error) return (
-    <div style={{ padding: '8px', border: '1px solid var(--border-color)', borderRadius: '4px', fontSize: '11px', color: 'var(--text-muted)' }}>
+    <div style={{ padding: '8px', border: '1px solid var(--border-color)', borderRadius: '4px', fontSize: 'var(--fs-xs)', color: 'var(--text-muted)' }}>
       <pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{chart}</pre>
     </div>
   );
@@ -253,7 +253,7 @@ export function NoteEditor({
       if (match) {
         return (
           <div className="code-block" style={{ margin: '8px 0' }}>
-            <div className="code-header" style={{ fontSize: '10px', opacity: 0.6, padding: '2px 8px' }}>
+            <div className="code-header" style={{ fontSize: 'var(--fs-xs)', opacity: 0.6, padding: '2px 8px' }}>
               {match[1]}
             </div>
             <pre style={{
@@ -261,7 +261,7 @@ export function NoteEditor({
               background: 'var(--bg-tertiary, #1a1a20)',
               borderRadius: '4px',
               overflow: 'auto',
-              fontSize: '12px',
+              fontSize: 'var(--fs-sm)',
               fontFamily: 'var(--font-mono, monospace)',
             }}>
               <code className={className} {...props}>{children}</code>
@@ -355,7 +355,7 @@ export function NoteEditor({
                 background: 'var(--bg-tertiary, #25252b)',
                 border: '1px solid var(--border-color, #2a2a30)',
                 borderRadius: '10px',
-                fontSize: '10px',
+                fontSize: 'var(--fs-xs)',
                 color: 'var(--text-secondary, #a0a0a8)',
               }}
             >
@@ -368,7 +368,7 @@ export function NoteEditor({
                   color: 'var(--text-muted, #555)',
                   cursor: 'pointer',
                   padding: '0',
-                  fontSize: '11px',
+                  fontSize: 'var(--fs-xs)',
                   lineHeight: '1',
                 }}
               >
@@ -394,7 +394,7 @@ export function NoteEditor({
               background: 'transparent',
               border: 'none',
               color: 'var(--text-primary, #e0e0e4)',
-              fontSize: '11px',
+              fontSize: 'var(--fs-xs)',
               outline: 'none',
             }}
           />
@@ -606,14 +606,14 @@ export function NoteEditor({
                     >
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
                         <div style={{ flex: 1 }}>
-                          <p style={{ fontSize: '13px', fontWeight: 500, margin: '0 0 4px' }}>{ver.title}</p>
+                          <p style={{ fontSize: 'var(--fs-base)', fontWeight: 500, margin: '0 0 4px' }}>{ver.title}</p>
                           {ver.versionNote && (
-                            <span style={{ fontSize: '10px', color: 'var(--accent-primary, #6366f1)' }}>{ver.versionNote}</span>
+                            <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--accent-primary, #6366f1)' }}>{ver.versionNote}</span>
                           )}
-                          <p style={{ fontSize: '11px', opacity: 0.5, margin: '4px 0 0' }}>
+                          <p style={{ fontSize: 'var(--fs-xs)', opacity: 0.5, margin: '4px 0 0' }}>
                             {new Date(ver.createdAt).toLocaleString(isZh ? 'zh-CN' : 'en-US')}
                           </p>
-                          <p style={{ fontSize: '11px', opacity: 0.4, margin: '4px 0 0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          <p style={{ fontSize: 'var(--fs-xs)', opacity: 0.4, margin: '4px 0 0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                             {ver.content.slice(0, 100)}...
                           </p>
                         </div>

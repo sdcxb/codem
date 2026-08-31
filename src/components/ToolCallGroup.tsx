@@ -153,7 +153,7 @@ const CollapsedReadGroup = memo(function CollapsedReadGroup({ merged }: { merged
             border: "none",
             color: "var(--text-secondary, #a0a0a8)",
             cursor: "pointer",
-            fontSize: "11px",
+            fontSize: "var(--fs-xs)",
             padding: "2px 6px",
           }}
         >
@@ -174,7 +174,7 @@ const CollapsedReadGroup = memo(function CollapsedReadGroup({ merged }: { merged
           border: "none",
           color: "var(--text-secondary, #a0a0a8)",
           cursor: "pointer",
-          fontSize: "11px",
+          fontSize: "var(--fs-xs)",
           padding: "2px 6px",
           display: "flex",
           alignItems: "center",

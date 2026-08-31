@@ -104,8 +104,8 @@ export function DelegationTab() {
             gap: "8px",
             border: "1px solid var(--border-primary)",
           }}>
-            <span style={{ fontSize: "18px", fontWeight: 700, color: s.color }}>{s.value}</span>
-            <span style={{ fontSize: "11px", color: "var(--text-secondary, #888)" }}>{s.label}</span>
+            <span style={{ fontSize: "var(--fs-xl)", fontWeight: 700, color: s.color }}>{s.value}</span>
+            <span style={{ fontSize: "var(--fs-xs)", color: "var(--text-secondary, #888)" }}>{s.label}</span>
           </div>
         ))}
       </div>
@@ -116,7 +116,7 @@ export function DelegationTab() {
           padding: "40px 20px",
           textAlign: "center",
           color: "var(--text-secondary, #888)",
-          fontSize: "14px",
+          fontSize: "var(--fs-md)",
         }}>
           {zh ? "暂无委派任务。在对话中使用 " : "No delegation tasks. Use "}
           <code style={{ color: "var(--accent)" }}>delegate_to_session</code>
@@ -146,7 +146,7 @@ export function DelegationTab() {
                   <Link2 size={14} style={{ color: "var(--text-secondary)" }} />
                   <StatusIcon size={14} style={{ color: config.color }} />
                   <span style={{
-                    fontSize: "11px",
+                    fontSize: "var(--fs-xs)",
                     fontWeight: 600,
                     color: config.color,
                     background: `${config.color}22`,
@@ -155,15 +155,15 @@ export function DelegationTab() {
                   }}>
                     {zh ? config.label : config.labelEn}
                   </span>
-                  <span style={{ fontSize: "12px", color: "var(--text-primary)" }}>{sourceTitle}</span>
+                  <span style={{ fontSize: "var(--fs-sm)", color: "var(--text-primary)" }}>{sourceTitle}</span>
                   <ArrowRight size={12} style={{ color: "var(--text-secondary, #888)" }} />
-                  <span style={{ fontSize: "12px", color: "var(--text-primary)" }}>{targetTitle}</span>
-                  <span style={{ marginLeft: "auto", fontSize: "10px", color: "var(--text-muted, #555)" }}>
+                  <span style={{ fontSize: "var(--fs-sm)", color: "var(--text-primary)" }}>{targetTitle}</span>
+                  <span style={{ marginLeft: "auto", fontSize: "var(--fs-xs)", color: "var(--text-muted, #555)" }}>
                     {formatTime(task.createdAt)}
                   </span>
                 </div>
                 <div style={{
-                  fontSize: "12px",
+                  fontSize: "var(--fs-sm)",
                   color: "var(--text-secondary, #aaa)",
                   padding: "6px 8px",
                   background: "var(--bg-secondary)",
@@ -174,7 +174,7 @@ export function DelegationTab() {
                 </div>
                 {task.result && (
                   <div style={{
-                    fontSize: "11px",
+                    fontSize: "var(--fs-xs)",
                     color: "var(--text-secondary, #888)",
                     padding: "4px 8px",
                     background: "var(--bg-secondary)",
@@ -187,7 +187,7 @@ export function DelegationTab() {
                   </div>
                 )}
                 {task.error && (
-                  <div style={{ fontSize: "11px", color: "var(--error)", padding: "4px 8px" }}>
+                  <div style={{ fontSize: "var(--fs-xs)", color: "var(--error)", padding: "4px 8px" }}>
                     <span style={{ fontWeight: 600 }}>{zh ? "错误: " : "Error: "}</span>
                     {task.error}
                   </div>

@@ -987,7 +987,7 @@ notebookId={notebookId}
                     style={{
                       width: '100%',
                       padding: '4px 8px',
-                      fontSize: '12px',
+                      fontSize: 'var(--fs-sm)',
                       background: 'var(--bg-tertiary)',
                       border: '1px solid var(--border-primary)',
                       borderRadius: '6px',
@@ -1017,7 +1017,7 @@ notebookId={notebookId}
                       style={{
                         padding: '2px 8px',
                         borderRadius: '10px',
-                        fontSize: '10px',
+                        fontSize: 'var(--fs-xs)',
                         border: '1px solid var(--border-primary)',
                         background: !tagFilter ? 'var(--accent)' : 'transparent',
                         color: !tagFilter ? 'var(--text-on-accent)' : 'var(--text-secondary)',
@@ -1033,7 +1033,7 @@ notebookId={notebookId}
                         style={{
                           padding: '2px 8px',
                           borderRadius: '10px',
-                          fontSize: '10px',
+                          fontSize: 'var(--fs-xs)',
                           border: '1px solid var(--border-primary)',
                           background: tagFilter === tag ? 'var(--accent)' : 'transparent',
                           color: tagFilter === tag ? 'var(--text-on-accent)' : 'var(--text-secondary)',
@@ -1233,7 +1233,7 @@ notebookId={notebookId}
                   className={`nb-mode-btn ${studioPreviewMode === 'preview' ? 'active' : ''}`}
                   onClick={() => setStudioPreviewMode('preview')}
                   title={isZh ? '预览模式' : 'Preview'}
-                  style={{ padding: '4px 8px', fontSize: '12px' }}
+                  style={{ padding: '4px 8px', fontSize: 'var(--fs-sm)' }}
                 >
                   <Eye className="w-3.5 h-3.5" />
                 </button>
@@ -1241,7 +1241,7 @@ notebookId={notebookId}
                   className={`nb-mode-btn ${studioPreviewMode === 'edit' ? 'active' : ''}`}
                   onClick={() => setStudioPreviewMode('edit')}
                   title={isZh ? '编辑模式' : 'Edit'}
-                  style={{ padding: '4px 8px', fontSize: '12px' }}
+                  style={{ padding: '4px 8px', fontSize: 'var(--fs-sm)' }}
                 >
                   <Edit3 className="w-3.5 h-3.5" />
                 </button>
@@ -1249,7 +1249,7 @@ notebookId={notebookId}
                   className={`nb-mode-btn ${studioPreviewMode === 'split' ? 'active' : ''}`}
                   onClick={() => setStudioPreviewMode('split')}
                   title={isZh ? '分屏模式' : 'Split'}
-                  style={{ padding: '4px 8px', fontSize: '12px' }}
+                  style={{ padding: '4px 8px', fontSize: 'var(--fs-sm)' }}
                 >
                   <Columns className="w-3.5 h-3.5" />
                 </button>
@@ -1269,7 +1269,7 @@ notebookId={notebookId}
                     onChange={(e) => setStudioPreviewContent(e.target.value)}
                     style={{
                       width: '100%', height: '100%', minHeight: '400px',
-                      padding: '8px', fontSize: '13px', lineHeight: '1.6',
+                      padding: '8px', fontSize: 'var(--fs-base)', lineHeight: '1.6',
                       background: 'var(--bg-tertiary)',
                       border: '1px solid var(--border-primary)',
                       borderRadius: '6px', color: 'var(--text-primary)',
@@ -1294,10 +1294,10 @@ notebookId={notebookId}
                             if (match && match[1] === 'mermaid') {
                               return (
                                 <div style={{ padding: '8px', background: 'var(--bg-tertiary)', borderRadius: '6px', margin: '8px 0' }}>
-                                  <pre style={{ margin: 0, whiteSpace: 'pre-wrap', fontSize: '12px', color: 'var(--text-secondary)' }}>
+                                  <pre style={{ margin: 0, whiteSpace: 'pre-wrap', fontSize: 'var(--fs-sm)', color: 'var(--text-secondary)' }}>
                                     {codeStr}
                                   </pre>
-                                  <p style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                                  <p style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', marginTop: '4px' }}>
                                     {isZh ? '保存为笔记后可查看渲染的 Mermaid 图表' : 'Save as note to view rendered Mermaid diagram'}
                                   </p>
                                 </div>
@@ -1321,7 +1321,7 @@ notebookId={notebookId}
 
             {/* 底部操作栏 */}
             <div className="nb-dialog-footer" style={{ padding: '12px 20px', borderTop: '1px solid var(--border-primary)' }}>
-              <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginRight: 'auto' }}>
+              <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', marginRight: 'auto' }}>
                 {isZh ? '预览满意后点击保存，或切换到编辑模式修改内容' : 'Preview, then save. Switch to edit mode to modify.'}
               </span>
               <button className="nb-btn-cancel" onClick={() => setStudioPreview(null)}>
@@ -1557,7 +1557,7 @@ function NoteCard({
             style={{
               display: 'inline-flex', alignItems: 'center', gap: '2px',
               padding: '0 4px', background: 'transparent', border: 'none',
-              color: 'var(--text-muted)', cursor: 'pointer', fontSize: '10px',
+              color: 'var(--text-muted)', cursor: 'pointer', fontSize: 'var(--fs-xs)',
             }}
           >
             <Layers className="w-2.5 h-2.5" />
@@ -1617,7 +1617,7 @@ function AddSourceDialog({
               ? <span className="nb-file-path">{sourceFilePaths[0]}</span>
               : <>
                 <span className="nb-file-count">{sourceFilePaths.length} 个文件已选</span>
-                <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', marginTop: '4px' }}>
                   {sourceFilePaths.map((p, i) => {
                     const name = p.split(/[\\/]/).pop() || p;
                     return <div key={i}>• {name}</div>;

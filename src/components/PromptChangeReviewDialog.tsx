@@ -61,7 +61,7 @@ onClick={(e) => e.stopPropagation()}
           }}
         >
           <FileText size={20} style={{ color: "var(--accent-color, #6c5ce7)" }} />
-          <h2 style={{ margin: 0, fontSize: "16px", fontWeight: 600 }}>
+          <h2 style={{ margin: 0, fontSize: "var(--fs-lg)", fontWeight: 600 }}>
             提示词修改审核 ({changes.length} 项变更)
           </h2>
           <button
@@ -108,7 +108,7 @@ onClick={(e) => e.stopPropagation()}
                   onClick={() => toggleExpand(idx)}
                 >
                   {expanded ? <ActionIcons.expand size={16} /> : <ActionIcons.collapse size={16} />}
-                  <span style={{ fontSize: "14px", fontWeight: 500 }}>
+                  <span style={{ fontSize: "var(--fs-md)", fontWeight: 500 }}>
                     {change.name} ({change.type})
                   </span>
                   <div style={{ marginLeft: "auto", display: "flex", gap: "8px" }}>
@@ -124,7 +124,7 @@ onClick={(e) => e.stopPropagation()}
                         background: decision === "apply" ? "#2ecc71" : "transparent",
                         color: decision === "apply" ? "white" : "var(--text-secondary, #888)",
                         cursor: "pointer",
-                        fontSize: "12px",
+                        fontSize: "var(--fs-sm)",
                         fontWeight: 500,
                       }}
                     >
@@ -143,7 +143,7 @@ onClick={(e) => e.stopPropagation()}
                         background: decision === "skip" ? "#e74c3c" : "transparent",
                         color: decision === "skip" ? "white" : "var(--text-secondary, #888)",
                         cursor: "pointer",
-                        fontSize: "12px",
+                        fontSize: "var(--fs-sm)",
                         fontWeight: 500,
                       }}
                     >
@@ -160,7 +160,7 @@ onClick={(e) => e.stopPropagation()}
                     <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--border-color, #333)" }}>
                       <div
                         style={{
-                          fontSize: "11px",
+                          fontSize: "var(--fs-xs)",
                           fontWeight: 600,
                           textTransform: "uppercase",
                           color: "#e74c3c",
@@ -172,7 +172,7 @@ onClick={(e) => e.stopPropagation()}
                       <pre
                         style={{
                           margin: 0,
-                          fontSize: "13px",
+                          fontSize: "var(--fs-base)",
                           lineHeight: "1.5",
                           whiteSpace: "pre-wrap",
                           wordBreak: "break-word",
@@ -189,7 +189,7 @@ onClick={(e) => e.stopPropagation()}
                     <div style={{ padding: "12px 16px" }}>
                       <div
                         style={{
-                          fontSize: "11px",
+                          fontSize: "var(--fs-xs)",
                           fontWeight: 600,
                           textTransform: "uppercase",
                           color: "#2ecc71",
@@ -201,7 +201,7 @@ onClick={(e) => e.stopPropagation()}
                       <pre
                         style={{
                           margin: 0,
-                          fontSize: "13px",
+                          fontSize: "var(--fs-base)",
                           lineHeight: "1.5",
                           whiteSpace: "pre-wrap",
                           wordBreak: "break-word",
@@ -230,7 +230,7 @@ onClick={(e) => e.stopPropagation()}
             borderTop: "1px solid var(--border-color, #333)",
           }}
         >
-          <div style={{ fontSize: "13px", color: "var(--text-secondary, #888)" }}>
+          <div style={{ fontSize: "var(--fs-base)", color: "var(--text-secondary, #888)" }}>
             {applyCount > 0 && <span style={{ color: "#2ecc71" }}>{applyCount} 项应用</span>}
             {skipCount > 0 && <span style={{ marginLeft: "8px", color: "#e74c3c" }}>{skipCount} 项跳过</span>}
             {pendingCount > 0 && <span style={{ marginLeft: "8px" }}>{pendingCount} 项待定</span>}
@@ -245,7 +245,7 @@ onClick={(e) => e.stopPropagation()}
                 background: "transparent",
                 color: "var(--text-secondary, #888)",
                 cursor: "pointer",
-                fontSize: "14px",
+                fontSize: "var(--fs-md)",
               }}
             >
               全部取消
@@ -260,7 +260,7 @@ onClick={(e) => e.stopPropagation()}
                 background: applyCount > 0 ? "var(--accent-color, #6c5ce7)" : "var(--border-color, #333)",
                 color: applyCount > 0 ? "white" : "var(--text-secondary, #666)",
                 cursor: applyCount > 0 ? "pointer" : "not-allowed",
-                fontSize: "14px",
+                fontSize: "var(--fs-md)",
                 fontWeight: 500,
               }}
             >

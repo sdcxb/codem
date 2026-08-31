@@ -79,7 +79,7 @@ export function IssuesTab() {
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "16px" }}>
         <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
           <ClipboardList size={16} style={{ color: "var(--accent)" }} />
-          <span style={{ fontSize: "14px", fontWeight: 600, color: "var(--text-primary)" }}>
+          <span style={{ fontSize: "var(--fs-md)", fontWeight: 600, color: "var(--text-primary)" }}>
             Issues ({issues.length})
           </span>
         </div>
@@ -171,7 +171,7 @@ export function IssuesTab() {
 
       {/* Issue list */}
       {issues.length === 0 ? (
-        <div style={{ padding: "40px 20px", textAlign: "center", color: "var(--text-secondary)", fontSize: "14px" }}>
+        <div style={{ padding: "40px 20px", textAlign: "center", color: "var(--text-secondary)", fontSize: "var(--fs-md)" }}>
           {zh ? "暂无 Issue。" : "No issues found."}
         </div>
       ) : (

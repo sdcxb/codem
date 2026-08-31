@@ -102,7 +102,7 @@ return createPortal(
           }}
         >
           <HelpCircle size={20} style={{ color: "var(--accent-color, #6c5ce7)" }} />
-          <h2 style={{ margin: 0, fontSize: "16px", fontWeight: 600 }}>
+          <h2 style={{ margin: 0, fontSize: "var(--fs-lg)", fontWeight: 600 }}>
             {isSingleQuestion ? questions[0].question : "请回答以下问题"}
           </h2>
           <button
@@ -121,7 +121,7 @@ return createPortal(
                 <label
                   style={{
                     display: "block",
-                    fontSize: "14px",
+                    fontSize: "var(--fs-md)",
                     fontWeight: 500,
                     marginBottom: "10px",
                     color: "var(--text-primary, #e0e0e0)",
@@ -160,7 +160,7 @@ return createPortal(
                             textAlign: "left",
                             transition: "all 0.15s",
                             color: "var(--text-primary, #e0e0e0)",
-                            fontSize: "14px",
+                            fontSize: "var(--fs-md)",
                           }}
                         >
                           <div
@@ -187,7 +187,7 @@ return createPortal(
                                 display: "inline-flex",
                                 alignItems: "center",
                                 gap: "3px",
-                                fontSize: "11px",
+                                fontSize: "var(--fs-xs)",
                                 padding: "2px 8px",
                                 borderRadius: "10px",
                                 background: "rgba(46, 204, 113, 0.2)",
@@ -215,7 +215,7 @@ return createPortal(
                       borderRadius: "8px",
                       cursor: "pointer",
                       color: "var(--text-secondary, #888)",
-                      fontSize: "13px",
+                      fontSize: "var(--fs-base)",
                       width: "100%",
                       textAlign: "left",
                     }}
@@ -240,7 +240,7 @@ return createPortal(
                         border: "2px solid var(--border-color, #444)",
                         background: "var(--bg-tertiary, #16213e)",
                         color: "var(--text-primary, #e0e0e0)",
-                        fontSize: "14px",
+                        fontSize: "var(--fs-md)",
                         outline: "none",
                       }}
                       autoFocus
@@ -262,7 +262,7 @@ return createPortal(
                     border: "2px solid var(--border-color, #444)",
                     background: "var(--bg-tertiary, #16213e)",
                     color: "var(--text-primary, #e0e0e0)",
-                    fontSize: "14px",
+                    fontSize: "var(--fs-md)",
                     outline: "none",
                   }}
                   autoFocus={isSingleQuestion}
@@ -291,7 +291,7 @@ return createPortal(
               background: "transparent",
               color: "var(--text-secondary, #888)",
               cursor: "pointer",
-              fontSize: "14px",
+              fontSize: "var(--fs-md)",
             }}
           >
             取消
@@ -305,7 +305,7 @@ return createPortal(
               background: "var(--accent-color, #6c5ce7)",
               color: "white",
               cursor: "pointer",
-              fontSize: "14px",
+              fontSize: "var(--fs-md)",
               fontWeight: 500,
             }}
           >

@@ -134,8 +134,8 @@ export function DelegationPanel({ onClose }: DelegationPanelProps) {
         borderBottom: "1px solid var(--border-color, #333344)",
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-          <span style={{ fontSize: "18px" }}>🔗</span>
-          <span style={{ fontSize: "16px", fontWeight: 600, color: "var(--text-primary, #e0e0e0)" }}>
+          <span style={{ fontSize: "var(--fs-xl)" }}>🔗</span>
+          <span style={{ fontSize: "var(--fs-lg)", fontWeight: 600, color: "var(--text-primary, #e0e0e0)" }}>
             跨会话委派任务
           </span>
         </div>
@@ -146,7 +146,7 @@ export function DelegationPanel({ onClose }: DelegationPanelProps) {
             border: "none",
             color: "var(--text-secondary, #888)",
             cursor: "pointer",
-            fontSize: "18px",
+            fontSize: "var(--fs-xl)",
             padding: "4px 8px",
           }}
         >
@@ -179,7 +179,7 @@ export function DelegationPanel({ onClose }: DelegationPanelProps) {
             padding: "40px 20px",
             textAlign: "center",
             color: "var(--text-secondary, #888)",
-            fontSize: "14px",
+            fontSize: "var(--fs-md)",
           }}>
             暂无委派任务。
             <br />
@@ -203,9 +203,9 @@ export function DelegationPanel({ onClose }: DelegationPanelProps) {
               >
                 {/* Status + sessions */}
                 <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
-                  <span style={{ fontSize: "14px" }}>{config.icon}</span>
+                  <span style={{ fontSize: "var(--fs-md)" }}>{config.icon}</span>
                   <span style={{
-                    fontSize: "12px",
+                    fontSize: "var(--fs-sm)",
                     fontWeight: 600,
                     color: config.color,
                     background: `${config.color}22`,
@@ -214,20 +214,20 @@ export function DelegationPanel({ onClose }: DelegationPanelProps) {
                   }}>
                     {config.label}
                   </span>
-                  <span style={{ fontSize: "13px", color: "var(--text-primary, #e0e0e0)" }}>
+                  <span style={{ fontSize: "var(--fs-base)", color: "var(--text-primary, #e0e0e0)" }}>
                     {sourceTitle}
                   </span>
                   <span style={{ color: "var(--text-secondary, #888)" }}>→</span>
-                  <span style={{ fontSize: "13px", color: "var(--text-primary, #e0e0e0)" }}>
+                  <span style={{ fontSize: "var(--fs-base)", color: "var(--text-primary, #e0e0e0)" }}>
                     {targetTitle}
                   </span>
-                  <span style={{ marginLeft: "auto", fontSize: "11px", color: "var(--text-secondary, #666)" }}>
+                  <span style={{ marginLeft: "auto", fontSize: "var(--fs-xs)", color: "var(--text-secondary, #666)" }}>
                     {formatTime(task.createdAt)}
                   </span>
                 </div>
                 {/* Task description */}
                 <div style={{
-                  fontSize: "13px",
+                  fontSize: "var(--fs-base)",
                   color: "var(--text-secondary, #aaa)",
                   padding: "4px 8px",
                   background: "var(--bg-tertiary, #181828)",
@@ -239,7 +239,7 @@ export function DelegationPanel({ onClose }: DelegationPanelProps) {
                 {/* Result (if completed) */}
                 {task.result && (
                   <div style={{
-                    fontSize: "12px",
+                    fontSize: "var(--fs-sm)",
                     color: "var(--text-secondary, #888)",
                     padding: "4px 8px",
                     background: "var(--bg-tertiary, #181828)",
@@ -254,7 +254,7 @@ export function DelegationPanel({ onClose }: DelegationPanelProps) {
                 {/* Error (if failed) */}
                 {task.error && (
                   <div style={{
-                    fontSize: "12px",
+                    fontSize: "var(--fs-sm)",
                     color: "#ef4444",
                     padding: "4px 8px",
                   }}>
@@ -272,7 +272,7 @@ export function DelegationPanel({ onClose }: DelegationPanelProps) {
       <div style={{
         padding: "8px 20px",
         borderTop: "1px solid var(--border-color, #333344)",
-        fontSize: "11px",
+        fontSize: "var(--fs-xs)",
         color: "var(--text-secondary, #666)",
         textAlign: "center",
       }}>
@@ -293,8 +293,8 @@ function StatBadge({ label, value, color }: { label: string; value: number; colo
       borderRadius: "6px",
       background: `${color}11`,
     }}>
-      <span style={{ fontSize: "18px", fontWeight: 700, color }}>{value}</span>
-      <span style={{ fontSize: "11px", color: "var(--text-secondary, #888)" }}>{label}</span>
+      <span style={{ fontSize: "var(--fs-xl)", fontWeight: 700, color }}>{value}</span>
+      <span style={{ fontSize: "var(--fs-xs)", color: "var(--text-secondary, #888)" }}>{label}</span>
     </div>
   );
 }

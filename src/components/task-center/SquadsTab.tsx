@@ -79,7 +79,7 @@ export function SquadsTab() {
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "16px" }}>
         <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
           <Users size={16} style={{ color: "var(--accent)" }} />
-          <span style={{ fontSize: "14px", fontWeight: 600, color: "var(--text-primary)" }}>
+          <span style={{ fontSize: "var(--fs-md)", fontWeight: 600, color: "var(--text-primary)" }}>
             {zh ? "Squads" : "Squads"} ({squads.length})
           </span>
         </div>
@@ -104,7 +104,7 @@ export function SquadsTab() {
 
       {/* Squad list */}
       {squads.length === 0 && !editing && (
-        <div style={{ padding: "40px 20px", textAlign: "center", color: "var(--text-secondary)", fontSize: "14px" }}>
+        <div style={{ padding: "40px 20px", textAlign: "center", color: "var(--text-secondary)", fontSize: "var(--fs-md)" }}>
           {zh ? "暂无 Squad。点击上方按钮创建第一个 Squad。" : "No squads yet. Click above to create one."}
         </div>
       )}
@@ -125,9 +125,9 @@ export function SquadsTab() {
               onClick={() => setSelectedSquad(selectedSquad === squad.id ? null : squad.id)}
             >
               <Users size={14} style={{ color: "var(--text-secondary)" }} />
-              <span style={{ fontSize: "14px", fontWeight: 600, color: "var(--text-primary)" }}>{squad.name}</span>
+              <span style={{ fontSize: "var(--fs-md)", fontWeight: 600, color: "var(--text-primary)" }}>{squad.name}</span>
               <span style={{
-                fontSize: "10px",
+                fontSize: "var(--fs-xs)",
                 padding: "2px 8px",
                 borderRadius: 3,
                 background: "var(--accent)22",
@@ -151,7 +151,7 @@ export function SquadsTab() {
             </div>
 
             {/* Leader info */}
-            <div style={{ display: "flex", alignItems: "center", gap: "6px", marginTop: "8px", fontSize: "12px", color: "var(--text-secondary)" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "6px", marginTop: "8px", fontSize: "var(--fs-sm)", color: "var(--text-secondary)" }}>
               <Crown size={12} style={{ color: "var(--warning)" }} />
               <span>{zh ? "Leader:" : "Leader:"}</span>
               <span style={{ fontWeight: 600, color: "var(--text-primary)" }}>{squad.leader?.name || squad.leaderAgentId}</span>
@@ -162,21 +162,21 @@ export function SquadsTab() {
               <div style={{ marginTop: "12px", paddingTop: "12px", borderTop: "1px solid var(--border-primary)" }}>
                 {/* Instructions */}
                 {squad.instructions && (
-                  <div style={{ fontSize: "12px", color: "var(--text-secondary)", marginBottom: "12px", padding: "8px", background: "var(--bg-secondary)", borderRadius: 4 }}>
+                  <div style={{ fontSize: "var(--fs-sm)", color: "var(--text-secondary)", marginBottom: "12px", padding: "8px", background: "var(--bg-secondary)", borderRadius: 4 }}>
                     {squad.instructions}
                   </div>
                 )}
 
                 {/* Members */}
-                <div style={{ fontSize: "12px", fontWeight: 600, color: "var(--text-secondary)", marginBottom: "8px" }}>
+                <div style={{ fontSize: "var(--fs-sm)", fontWeight: 600, color: "var(--text-secondary)", marginBottom: "8px" }}>
                   {zh ? "成员列表" : "Members"}
                 </div>
                 {squad.members.map((m) => (
-                  <div key={m.id} style={{ display: "flex", alignItems: "center", gap: "8px", padding: "6px 8px", marginBottom: "4px", borderRadius: 4, background: "var(--bg-secondary)", fontSize: "12px" }}>
+                  <div key={m.id} style={{ display: "flex", alignItems: "center", gap: "8px", padding: "6px 8px", marginBottom: "4px", borderRadius: 4, background: "var(--bg-secondary)", fontSize: "var(--fs-sm)" }}>
                     {m.memberType === "agent" ? <Bot size={12} style={{ color: "var(--text-secondary)" }} /> : <User size={12} style={{ color: "var(--text-secondary)" }} />}
                     <span style={{ fontWeight: 600, color: "var(--text-primary)" }}>{m.memberName}</span>
                     {m.id !== squad.members[0]?.id && (
-                      <span style={{ fontSize: "10px", color: "var(--text-muted)" }}>{m.roleDescription}</span>
+                      <span style={{ fontSize: "var(--fs-xs)", color: "var(--text-muted)" }}>{m.roleDescription}</span>
                     )}
                     {m.id === squad.members[0]?.id && (
                       <span style={{ fontSize: "9px", padding: "1px 6px", borderRadius: 3, background: "var(--warning)22", color: "var(--warning)" }}>

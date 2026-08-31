@@ -1149,7 +1149,7 @@ canEdit={!isSessionStreaming}
             style={{
               background: 'var(--accent)', color: '#fff', border: 'none',
               borderRadius: 'var(--radius-sm)', padding: '6px 8px', cursor: 'pointer',
-              display: 'flex', alignItems: 'center', gap: '2px', fontSize: '12px',
+              display: 'flex', alignItems: 'center', gap: '2px', fontSize: 'var(--fs-sm)',
               whiteSpace: 'nowrap', flexShrink: 0,
             }}
           >

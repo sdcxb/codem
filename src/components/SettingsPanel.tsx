@@ -1648,10 +1648,10 @@ function PetSettingsSection({ lang, onOpenMarket }: { lang: Language; onOpenMark
       {/* 启用开关 */}
       <div className="settings-row" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <div>
-          <div style={{ fontWeight: 600, fontSize: "14px", color: "var(--text-primary)" }}>
+          <div style={{ fontWeight: 600, fontSize: "var(--fs-md)", color: "var(--text-primary)" }}>
             {zh ? "启用桌面宠物" : "Enable Desktop Pet"}
           </div>
-          <div style={{ fontSize: "12px", color: "var(--text-secondary)", marginTop: "2px" }}>
+          <div style={{ fontSize: "var(--fs-sm)", color: "var(--text-secondary)", marginTop: "2px" }}>
             {zh ? "在窗口右下角显示宠物，它会响应 Agent 的工作状态" : "Show a pet in the bottom-right corner that reacts to Agent activity"}
           </div>
         </div>
@@ -1695,10 +1695,10 @@ function PetSettingsSection({ lang, onOpenMarket }: { lang: Language; onOpenMark
         alignItems: "center",
       }}>
         <div>
-          <div style={{ fontWeight: 600, fontSize: "13px", color: "var(--text-primary)" }}>
+          <div style={{ fontWeight: 600, fontSize: "var(--fs-base)", color: "var(--text-primary)" }}>
             {zh ? "宠物市场" : "Pet Market"}
           </div>
-          <div style={{ fontSize: "11px", color: "var(--text-secondary)", marginTop: "2px" }}>
+          <div style={{ fontSize: "var(--fs-xs)", color: "var(--text-secondary)", marginTop: "2px" }}>
             {zh ? "从 Petdex 浏览和下载更多宠物" : "Browse and download more pets from Petdex"}
           </div>
         </div>
@@ -1711,7 +1711,7 @@ function PetSettingsSection({ lang, onOpenMarket }: { lang: Language; onOpenMark
             background: "var(--accent)",
             color: "#fff",
             cursor: "pointer",
-            fontSize: "13px",
+            fontSize: "var(--fs-base)",
             fontWeight: 500,
           }}
         >
@@ -1721,7 +1721,7 @@ function PetSettingsSection({ lang, onOpenMarket }: { lang: Language; onOpenMark
 
       {/* 已安装宠物列表 */}
       <div>
-        <div style={{ fontWeight: 600, fontSize: "14px", color: "var(--text-primary)", marginBottom: "8px" }}>
+        <div style={{ fontWeight: 600, fontSize: "var(--fs-md)", color: "var(--text-primary)", marginBottom: "8px" }}>
           {zh ? "已安装宠物" : "Installed Pets"} ({installedPets.length})
         </div>
         {installedPets.length === 0 ? (
@@ -1729,7 +1729,7 @@ function PetSettingsSection({ lang, onOpenMarket }: { lang: Language; onOpenMark
             padding: "24px",
             textAlign: "center",
             color: "var(--text-secondary)",
-            fontSize: "13px",
+            fontSize: "var(--fs-base)",
             background: "var(--bg-tertiary)",
             borderRadius: "8px",
             border: "1px dashed var(--border-primary)",
@@ -1752,13 +1752,13 @@ function PetSettingsSection({ lang, onOpenMarket }: { lang: Language; onOpenMark
                 }}
               >
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: 600, fontSize: "13px", color: "var(--text-primary)" }}>
+                  <div style={{ fontWeight: 600, fontSize: "var(--fs-base)", color: "var(--text-primary)" }}>
                     {pet.definition.name}
                     {activePet?.slug === pet.slug && (
-                      <span style={{ marginLeft: "8px", fontSize: "11px", color: "var(--accent)" }}>● {zh ? "当前" : "Active"}</span>
+                      <span style={{ marginLeft: "8px", fontSize: "var(--fs-xs)", color: "var(--accent)" }}>● {zh ? "当前" : "Active"}</span>
                     )}
                   </div>
-                  <div style={{ fontSize: "11px", color: "var(--text-secondary)" }}>
+                  <div style={{ fontSize: "var(--fs-xs)", color: "var(--text-secondary)" }}>
                     {pet.definition.description || pet.definition.author || pet.slug}
                   </div>
                 </div>
@@ -1773,7 +1773,7 @@ function PetSettingsSection({ lang, onOpenMarket }: { lang: Language; onOpenMark
                         background: "none",
                         color: "var(--text-primary)",
                         cursor: "pointer",
-                        fontSize: "12px",
+                        fontSize: "var(--fs-sm)",
                       }}
                     >
                       {zh ? "激活" : "Activate"}
@@ -1791,7 +1791,7 @@ function PetSettingsSection({ lang, onOpenMarket }: { lang: Language; onOpenMark
                       background: "rgba(239, 68, 68, 0.1)",
                       color: "#f87171",
                       cursor: "pointer",
-                      fontSize: "12px",
+                      fontSize: "var(--fs-sm)",
                     }}
                   >
                     {zh ? "卸载" : "Uninstall"}
@@ -1806,8 +1806,8 @@ function PetSettingsSection({ lang, onOpenMarket }: { lang: Language; onOpenMark
       {/* 缩放滑轨 — 始终可见 */}
       <div>
         <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "4px" }}>
-          <span style={{ fontSize: "13px", color: "var(--text-primary)" }}>{zh ? "宠物大小" : "Pet Size"}</span>
-          <span style={{ fontSize: "12px", color: "var(--text-secondary)" }}>{Math.round(scale * 100)}%</span>
+          <span style={{ fontSize: "var(--fs-base)", color: "var(--text-primary)" }}>{zh ? "宠物大小" : "Pet Size"}</span>
+          <span style={{ fontSize: "var(--fs-sm)", color: "var(--text-secondary)" }}>{Math.round(scale * 100)}%</span>
         </div>
         <input
           type="range"
@@ -1818,7 +1818,7 @@ function PetSettingsSection({ lang, onOpenMarket }: { lang: Language; onOpenMark
           onChange={(e) => setScale(parseFloat(e.target.value))}
           style={{ width: "100%" }}
         />
-        <div style={{ display: "flex", justifyContent: "space-between", marginTop: "2px", fontSize: "10px", color: "var(--text-muted, #666)" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", marginTop: "2px", fontSize: "var(--fs-xs)", color: "var(--text-muted, #666)" }}>
           <span>{zh ? "小" : "Small"}</span>
           <span>{zh ? "大" : "Large"}</span>
         </div>
@@ -1830,8 +1830,8 @@ function PetSettingsSection({ lang, onOpenMarket }: { lang: Language; onOpenMark
           {/* 透明度 */}
           <div>
             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "4px" }}>
-              <span style={{ fontSize: "13px", color: "var(--text-primary)" }}>{zh ? "透明度" : "Opacity"}</span>
-              <span style={{ fontSize: "12px", color: "var(--text-secondary)" }}>{Math.round(opacity * 100)}%</span>
+              <span style={{ fontSize: "var(--fs-base)", color: "var(--text-primary)" }}>{zh ? "透明度" : "Opacity"}</span>
+              <span style={{ fontSize: "var(--fs-sm)", color: "var(--text-secondary)" }}>{Math.round(opacity * 100)}%</span>
             </div>
             <input
               type="range"
@@ -1847,8 +1847,8 @@ function PetSettingsSection({ lang, onOpenMarket }: { lang: Language; onOpenMark
           {/* 位置 X */}
           <div>
             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "4px" }}>
-              <span style={{ fontSize: "13px", color: "var(--text-primary)" }}>{zh ? "水平位置" : "Position X"}</span>
-              <span style={{ fontSize: "12px", color: "var(--text-secondary)" }}>{positionX}px</span>
+              <span style={{ fontSize: "var(--fs-base)", color: "var(--text-primary)" }}>{zh ? "水平位置" : "Position X"}</span>
+              <span style={{ fontSize: "var(--fs-sm)", color: "var(--text-secondary)" }}>{positionX}px</span>
             </div>
             <input
               type="range"
@@ -1864,8 +1864,8 @@ function PetSettingsSection({ lang, onOpenMarket }: { lang: Language; onOpenMark
           {/* 位置 Y */}
           <div>
             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "4px" }}>
-              <span style={{ fontSize: "13px", color: "var(--text-primary)" }}>{zh ? "垂直位置" : "Position Y"}</span>
-              <span style={{ fontSize: "12px", color: "var(--text-secondary)" }}>{positionY}px</span>
+              <span style={{ fontSize: "var(--fs-base)", color: "var(--text-primary)" }}>{zh ? "垂直位置" : "Position Y"}</span>
+              <span style={{ fontSize: "var(--fs-sm)", color: "var(--text-secondary)" }}>{positionY}px</span>
             </div>
             <input
               type="range"
@@ -1884,7 +1884,7 @@ function PetSettingsSection({ lang, onOpenMarket }: { lang: Language; onOpenMark
             borderRadius: "6px",
             background: "rgba(99, 102, 241, 0.08)",
             border: "1px solid rgba(99, 102, 241, 0.2)",
-            fontSize: "11px",
+            fontSize: "var(--fs-xs)",
             color: "var(--text-secondary)",
           }}>
             <Lightbulb size={11} style={{ display: 'inline', verticalAlign: 'middle' }} /> {zh ? "提示：可以直接拖拽窗口中的宠物来移动位置。空闲时点击宠物有彩蛋。" : "Tip: Drag the pet in the window to reposition. Click the pet when idle for a surprise."}

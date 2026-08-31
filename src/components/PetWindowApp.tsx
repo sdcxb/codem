@@ -286,7 +286,7 @@ export function PetWindowApp() {
           justifyContent: "center",
           background: "transparent",
           color: "rgba(136,136,136,0.5)",
-          fontSize: "10px",
+          fontSize: "var(--fs-xs)",
         }}
       >
         ...
@@ -340,7 +340,7 @@ export function PetWindowApp() {
               backdropFilter: "blur(8px)",
               color: "#e8e8f0",
               fontFamily: "sans-serif",
-              fontSize: "11px",
+              fontSize: "var(--fs-xs)",
               lineHeight: `${BUBBLE_LINE_HEIGHT}px`,
               textAlign: "center",
               whiteSpace: "normal",

@@ -627,7 +627,7 @@ setTimeout(() => setCopied(false), 2000);
         {/* Sources panel — structured metadata-driven citations (对标 NotebookLM) */}
         {!isUser && citationSources.length > 0 && !isStreaming && (
           <div className="nb-msg-sources" style={{ marginTop: '8px', display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-            <span style={{ fontSize: '11px', opacity: 0.5, alignSelf: 'center' }}>
+            <span style={{ fontSize: 'var(--fs-xs)', opacity: 0.5, alignSelf: 'center' }}>
               {lang === 'zh' ? '来源:' : 'Sources:'}
             </span>
             {citationSources.map((src) => (
@@ -637,7 +637,7 @@ setTimeout(() => setCopied(false), 2000);
                 onClick={() => onSourceClick?.(src.sourceId, src.chunkIndex)}
                 title={src.snippet}
                 style={{
-                  fontSize: '11px',
+                  fontSize: 'var(--fs-xs)',
                   padding: '2px 8px',
                   background: 'var(--bg-tertiary, #25252b)',
                   border: '1px solid var(--border-color, #2a2a30)',
@@ -713,7 +713,7 @@ const opLabel = tc.tool === 'create_note'
                           : 'rgba(234, 179, 8, 0.3)'
                         }`,
                         borderRadius: '6px',
-                        fontSize: '12px',
+                        fontSize: 'var(--fs-sm)',
                         color: 'var(--text-secondary, #a0a0a8)',
                       }}
                     >
@@ -722,7 +722,7 @@ const opLabel = tc.tool === 'create_note'
                         {opLabel}{title ? `: "${title}"` : ''}
                       </span>
                       {isDone && tc.result && (
-                        <span style={{ opacity: 0.6, fontSize: '11px' }}><Check size={10} /></span>
+                        <span style={{ opacity: 0.6, fontSize: 'var(--fs-xs)' }}><Check size={10} /></span>
                       )}
                     </div>
                   );

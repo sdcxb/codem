@@ -61,43 +61,10 @@ User modification request: ${userInstruction}
 
 Return the complete modified JSON:`;
 
+  // 统一走 LLMEngine.getConfiguredProvider — 避免绕过框架从 DB 读取 settings
   const { getLLMEngine } = await import('../llm/index');
-  const { getSettingJSON } = await import('../storage/settings');
   const engine = getLLMEngine();
-
-  const savedSettings = getSettingJSON<any>("codem-settings", null);
-  if (savedSettings?.providers) {
-    for (const p of savedSettings.providers) {
-      if (p.apiKey) {
-        engine.setProviderConfig(p.id, { apiKey: p.apiKey, baseUrl: p.baseUrl });
-      }
-    }
-  }
-
-  const defaultProviderId = engine.getDefaultProvider();
-  const defaultModel = engine.getDefaultModel();
-  let provider = engine.providers.get(defaultProviderId);
-  let actualModel = defaultModel;
-
-  const hasApiKey = (provider as any)?.config?.apiKey;
-  if (!provider || !hasApiKey) {
-    const allProviders = engine.providers.getAll();
-    const configured = allProviders.filter(p => {
-      if (p.id === 'ollama') return false;
-      return (p as any).config?.apiKey;
-    });
-    if (configured.length === 0) {
-      throw new Error('No LLM provider available — please configure an API key in Settings');
-    }
-    provider = configured[0];
-    try {
-      const fallbackModels = await provider.listModels();
-      if (fallbackModels.length > 0) {
-        const jsonModel = fallbackModels.find(m => !m.id.includes('reasoning') && !m.id.includes('think')) || fallbackModels[0];
-        actualModel = jsonModel.id;
-      }
-    } catch {}
-  }
+  const { provider, model: actualModel } = engine.getConfiguredProvider('chat');
 
   let content = '';
   const stream = await provider.stream({

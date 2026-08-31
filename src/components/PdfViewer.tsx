@@ -232,8 +232,8 @@ export function PdfViewer({ filePath, pdfData, highlightText, onClose }: PdfView
             <button className="nb-dialog-close" onClick={onClose}><CloseIcon size={16} /></button>
           </div>
           <div style={{ padding: '40px', textAlign: 'center' }}>
-            <p style={{ color: 'var(--error)', fontSize: '14px' }}>{error}</p>
-            <p style={{ opacity: 0.5, fontSize: '12px', marginTop: '8px' }}>
+            <p style={{ color: 'var(--error)', fontSize: 'var(--fs-md)' }}>{error}</p>
+            <p style={{ opacity: 0.5, fontSize: 'var(--fs-sm)', marginTop: '8px' }}>
               {isZh ? '提示：确保文件路径正确且 Tauri 已配置 PDF 读取权限' : 'Tip: Ensure the file path is correct and Tauri has PDF read permissions'}
             </p>
           </div>
@@ -278,7 +278,7 @@ export function PdfViewer({ filePath, pdfData, highlightText, onClose }: PdfView
           >
             <ChevronLeft size={14} />
           </button>
-          <span style={{ fontSize: '11px', color: 'var(--text-muted, #555)', minWidth: '40px', textAlign: 'center' }}>
+          <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted, #555)', minWidth: '40px', textAlign: 'center' }}>
             {currentPage} / {numPages}
           </span>
           <button
@@ -299,7 +299,7 @@ export function PdfViewer({ filePath, pdfData, highlightText, onClose }: PdfView
           >
             <ZoomOut size={14} />
           </button>
-          <span style={{ fontSize: '11px', color: 'var(--text-muted, #555)', minWidth: '36px', textAlign: 'center' }}>
+          <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted, #555)', minWidth: '36px', textAlign: 'center' }}>
             {Math.round(scale * 100)}%
           </span>
           <button
@@ -322,7 +322,7 @@ export function PdfViewer({ filePath, pdfData, highlightText, onClose }: PdfView
                 borderRadius: '4px',
                 padding: '3px 6px',
                 color: 'var(--text-primary, #e0e0e4)',
-                fontSize: '11px',
+                fontSize: 'var(--fs-xs)',
                 outline: 'none',
                 width: '120px',
               }}

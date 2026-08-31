@@ -55,7 +55,7 @@ export const CodeBlockView = memo(function CodeBlockView({
                 margin: 0,
                 padding: "16px",
                 background: "transparent",
-                fontSize: "13px",
+                fontSize: "var(--fs-base)",
                 lineHeight: "1.6",
               }}
               showLineNumbers={lineCount > 5}
@@ -87,7 +87,7 @@ export const CodeBlockView = memo(function CodeBlockView({
           margin: 0,
           padding: "12px 14px",
           background: "transparent",
-          fontSize: "13px",
+          fontSize: "var(--fs-base)",
           lineHeight: "1.6",
           borderRadius: "0 0 8px 8px",
         }}

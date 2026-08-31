@@ -14,6 +14,19 @@
   --font-family: 'AlimamaFangYuanTi', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --font-weight: 400;
 
+  /* Font size scale (对标 frakio-work UI 规范) */
+  --fs-xs: 10px;      /* 辅助文本、标签、徽章 */
+  --fs-sm: 12px;      /* 次要文本、按钮、表格 */
+  --fs-base: 13px;    /* 正文基准（紧凑型桌面应用） */
+  --fs-md: 14px;      /* 主要文本、列表项标题 */
+  --fs-lg: 16px;      /* 区块标题、面板标题 */
+  --fs-xl: 18px;      /* 页面标题、弹窗标题 */
+  --fs-2xl: 20px;     /* 大标题 */
+  --fs-3xl: 24px;     /* Hero 标题 */
+  --fs-icon-sm: 12px; /* 小图标 */
+  --fs-icon: 16px;    /* 标准图标 */
+  --fs-icon-lg: 20px; /* 大图标 */
+
   /* Radius scale */
   --radius-sm: 0.25rem;
   --radius: 0.5rem;

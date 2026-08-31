@@ -22,7 +22,7 @@ export function CharacterSelect({ onSelect, onBack }: Props) {
     <div className="monopoly-game-wrapper">
       <div className="game-start-screen">
         <h1>选择角色</h1>
-        <p style={{ color: "#bdc3c7", fontSize: "14px", marginBottom: "12px" }}>
+        <p style={{ color: "#bdc3c7", fontSize: "var(--fs-md)", marginBottom: "12px" }}>
           每个角色拥有独特能力，影响游戏策略
         </p>
         <div className="character-grid">

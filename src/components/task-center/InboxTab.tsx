@@ -88,12 +88,12 @@ export function InboxTab() {
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "16px" }}>
         <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
           <InboxIcon size={16} style={{ color: "var(--accent)" }} />
-          <span style={{ fontSize: "14px", fontWeight: 600, color: "var(--text-primary)" }}>
+          <span style={{ fontSize: "var(--fs-md)", fontWeight: 600, color: "var(--text-primary)" }}>
             {zh ? "收件箱" : "Inbox"}
           </span>
           {unreadCount > 0 && (
             <span style={{
-              fontSize: "11px", fontWeight: 700, color: "#fff",
+              fontSize: "var(--fs-xs)", fontWeight: 700, color: "#fff",
               background: "var(--error)", padding: "1px 8px", borderRadius: 10,
             }}>
               {unreadCount}
@@ -136,7 +136,7 @@ export function InboxTab() {
 
       {/* Items */}
       {items.length === 0 ? (
-        <div style={{ padding: "40px 20px", textAlign: "center", color: "var(--text-secondary)", fontSize: "14px" }}>
+        <div style={{ padding: "40px 20px", textAlign: "center", color: "var(--text-secondary)", fontSize: "var(--fs-md)" }}>
           {zh ? "暂无通知" : "No notifications"}
         </div>
       ) : (
@@ -154,7 +154,7 @@ export function InboxTab() {
                   background: item.read ? "var(--bg-tertiary)" : "var(--bg-secondary)",
                   border: `1px solid ${item.read ? "var(--border-primary)" : `${catConfig.color}44`}`,
                   borderLeft: `3px solid ${catConfig.color}`,
-                  cursor: "pointer", fontSize: "12px",
+                  cursor: "pointer", fontSize: "var(--fs-sm)",
                 }}
               >
                 <CatIcon size={14} style={{ color: catConfig.color, marginTop: 2, flexShrink: 0 }} />
@@ -170,13 +170,13 @@ export function InboxTab() {
                     }}>
                       {item.title}
                     </span>
-                    <span style={{ marginLeft: "auto", fontSize: "10px", color: "var(--text-muted)", flexShrink: 0 }}>
+                    <span style={{ marginLeft: "auto", fontSize: "var(--fs-xs)", color: "var(--text-muted)", flexShrink: 0 }}>
                       {formatTime(item.createdAt, zh)}
                     </span>
                   </div>
                   {item.body && (
                     <div style={{
-                      fontSize: "11px", color: "var(--text-secondary)", marginTop: 2,
+                      fontSize: "var(--fs-xs)", color: "var(--text-secondary)", marginTop: 2,
                       overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
                     }}>
                       {item.body}

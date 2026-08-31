@@ -163,48 +163,12 @@ Return strict JSON format:
 Knowledge base content:
 ${allText}`;
 
-  // 使用主应用已初始化的 LLMEngine 单例
+  // 使用主应用已初始化的 LLMEngine 单例 — 统一走 getConfiguredProvider
+  // 避免绕过框架直接从 DB 读取 settings 的架构断点
   const { getLLMEngine } = await import('../llm/index');
-  const { getSettingJSON } = await import('../storage/settings');
   const engine = getLLMEngine();
-
-  // 从 DB 重新加载 provider API keys（修复 configureEngine 时序竞争 — 与 runAgenticLoop 一致）
-  const savedSettings = getSettingJSON<any>("codem-settings", null);
-  if (savedSettings?.providers) {
-    for (const p of savedSettings.providers) {
-      if (p.apiKey) {
-        engine.setProviderConfig(p.id, { apiKey: p.apiKey, baseUrl: p.baseUrl });
-      }
-    }
-  }
-
-  const defaultProviderId = engine.getDefaultProvider();
-  const defaultModel = engine.getDefaultModel();
-  let provider = engine.providers.get(defaultProviderId);
-  let actualModel = defaultModel;
-
-  // 检查 provider 是否真正可用（有 API Key）
-  const hasApiKey = (provider as any)?.config?.apiKey;
-  if (!provider || !hasApiKey) {
-    // 找到第一个有 API Key 的 provider（排除 Ollama — 本地服务可能未运行）
-    const allProviders = engine.providers.getAll();
-    const configured = allProviders.filter(p => {
-      if (p.id === 'ollama') return false;
-      return (p as any).config?.apiKey;
-    });
-    if (configured.length === 0) {
-      throw new Error('No LLM provider available — please configure an API key in Settings');
-    }
-    provider = configured[0];
-    try {
-      const fallbackModels = await provider.listModels();
-      if (fallbackModels.length > 0) {
-        const jsonModel = fallbackModels.find(m => !m.id.includes('reasoning') && !m.id.includes('think')) || fallbackModels[0];
-        actualModel = jsonModel.id;
-      }
-    } catch {}
-    console.log(`[ppt-generator] Default provider "${defaultProviderId}" has no API key, using fallback: ${provider.id}, model: ${actualModel}`);
-  }
+  const { provider, model: actualModel } = engine.getConfiguredProvider('chat');
+  console.log(`[ppt-generator] Using provider: ${provider.id}, model: ${actualModel}`);
 
   // 使用 streaming 模式 — 避免 max_tokens 截断，同时能实时反馈进度
   onProgress?.('generating', `AI 正在生成幻灯片大纲 (风格: ${style.name})...`);

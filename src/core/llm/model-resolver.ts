@@ -6,13 +6,12 @@
  * 2. 回退到 codem-settings 中的默认模型
  * 3. 确保使用正确的 provider（场景模板可配置不同 provider）
  *
- * 这样用户在设置中配置的 TTS、视觉、子任务等专用模型会被正确使用，
- * 而不是所有功能都用同一个默认模型。
+ * 架构修复: 原实现 createDefaultProviders() 创建了全新的 ProviderRegistry,
+ * 这些 provider 没有经过 App.tsx 的 setProviderConfig 配置，导致 API Key 丢失。
+ * 现在使用 LLMEngine 的统一 getConfiguredProvider 方法。
  */
 
 import { getModelProfileManager, type TaskSlot } from './model-profile';
-import { getSettingJSON } from '../storage/settings';
-import { createDefaultProviders } from './provider';
 import type { LLMProvider } from './types';
 
 export interface ResolvedModel {
@@ -30,49 +29,29 @@ export interface ResolvedModel {
  * @returns 解析后的模型信息，如果没有任何可用 provider 则返回 null
  */
 export async function resolveModelForTask(slot: TaskSlot = 'chat'): Promise<ResolvedModel | null> {
-  const pm = getModelProfileManager();
-  const slotConfig = pm.resolveSlot(slot);
+  try {
+    const { getLLMEngine } = await import('./index');
+    const engine = getLLMEngine();
+    const pm = getModelProfileManager();
+    const slotConfig = pm.resolveSlot(slot);
 
-  // 获取全局设置中的默认 provider 和 model
-  const settings = getSettingJSON<any>('codem-settings', {});
-  const defaultModel = settings.model || 'gpt-4o-mini';
+    try {
+      const { provider, model } = engine.getConfiguredProvider(slot);
 
-  // 获取所有已配置的 provider
-  const registry = createDefaultProviders();
-  const providers = registry.getConfigured();
+      // 判断来源：如果 slotConfig 的 provider/model 与返回的匹配则为 slot，否则 default
+      const source = (slotConfig && slotConfig.provider === provider.id && slotConfig.model === model)
+        ? 'slot' : 'default';
 
-  if (providers.length === 0) return null;
-
-  if (slotConfig) {
-    // 用户配置了场景模板 — 尝试使用对应的 provider
-    const matchedProvider = providers.find(
-      (p) => p.name === slotConfig.provider || p.id === slotConfig.provider
-    );
-
-    if (matchedProvider) {
       return {
-        provider: matchedProvider,
-        model: slotConfig.model,
-        source: 'slot',
-        providerName: slotConfig.provider,
+        provider,
+        model,
+        source: source as 'slot' | 'default',
+        providerName: provider.name || provider.id,
       };
+    } catch {
+      return null;
     }
-
-    // Provider 不匹配 — 回退到第一个可用 provider，但使用 slot 的模型
-    // 这允许用户只配置模型名而不切换 provider
-    return {
-      provider: providers[0],
-      model: slotConfig.model,
-      source: 'slot',
-      providerName: providers[0].name || providers[0].id,
-    };
+  } catch {
+    return null;
   }
-
-  // 没有配置场景模板 — 使用默认
-  return {
-    provider: providers[0],
-    model: defaultModel,
-    source: 'default',
-    providerName: providers[0].name || providers[0].id,
-  };
 }

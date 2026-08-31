@@ -92,11 +92,11 @@ export function BoardTab() {
                 paddingBottom: "8px", borderBottom: `2px solid ${col.color}`,
               }}>
                 <span style={{ width: 8, height: 8, borderRadius: "50%", background: col.color }} />
-                <span style={{ fontSize: "12px", fontWeight: 600, color: "var(--text-primary)" }}>
+                <span style={{ fontSize: "var(--fs-sm)", fontWeight: 600, color: "var(--text-primary)" }}>
                   {zh ? col.labelZh : col.labelEn}
                 </span>
                 <span style={{
-                  fontSize: "10px", color: "var(--text-secondary)",
+                  fontSize: "var(--fs-xs)", color: "var(--text-secondary)",
                   background: "var(--bg-tertiary)", padding: "1px 6px", borderRadius: 3,
                 }}>
                   {colIssues.length}
@@ -105,7 +105,7 @@ export function BoardTab() {
 
               {/* Cards */}
               {colIssues.length === 0 ? (
-                <div style={{ fontSize: "11px", color: "var(--text-muted)", padding: "12px 8px", textAlign: "center" }}>
+                <div style={{ fontSize: "var(--fs-xs)", color: "var(--text-muted)", padding: "12px 8px", textAlign: "center" }}>
                   {zh ? "拖拽 Issue 到此列" : "Drop issues here"}
                 </div>
               ) : (

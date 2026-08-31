@@ -406,7 +406,7 @@ export class BoardScene extends Phaser.Scene {
       // 地块名称
       const name = this.getNodeName(node);
       const nameLabel = this.add.text(iso.x, iso.y - 4, name, {
-        fontSize: "11px",
+        fontSize: "var(--fs-xs)",
         color: "#ffffff",
         fontFamily: "sans-serif",
         fontStyle: "bold",
@@ -603,7 +603,7 @@ export class BoardScene extends Phaser.Scene {
 
       // 名字标签
       const nameTag = this.add.text(px, py - 24, player.name, {
-        fontSize: "11px",
+        fontSize: "var(--fs-xs)",
         color: pawnColors[pawnIdx],
         fontFamily: "sans-serif",
         fontStyle: "bold",
@@ -800,7 +800,7 @@ export class BoardScene extends Phaser.Scene {
     const y = container.y - 20;
 
     const floatText = this.add.text(x, y, text, {
-      fontSize: "14px",
+      fontSize: "var(--fs-md)",
       color: `#${color.toString(16).padStart(6, "0")}`,
       fontFamily: "sans-serif",
       fontStyle: "bold",
@@ -1066,14 +1066,14 @@ export class BoardScene extends Phaser.Scene {
     }
 
     const infoText = this.add.text(px + 10, py + 10, lines.join("\n"), {
-      fontSize: "11px",
+      fontSize: "var(--fs-xs)",
       color: "#ecf0f1",
       fontFamily: "sans-serif",
       lineSpacing: 4,
     }).setScrollFactor(0).setDepth(302);
 
     const closeBtn = this.add.text(px + panelW - 20, py + 5, "×", {
-      fontSize: "16px",
+      fontSize: "var(--fs-lg)",
       color: "#e74c3c",
       fontFamily: "sans-serif",
       fontStyle: "bold",
@@ -1121,7 +1121,7 @@ export class BoardScene extends Phaser.Scene {
       .setScrollFactor(0)
       .setDepth(320);
     const cardName = this.add.text(cx, cy, data.cardName, {
-      fontSize: "14px",
+      fontSize: "var(--fs-md)",
       color: "#fff",
       align: "center",
       wordWrap: { width: 70 },
@@ -1190,14 +1190,14 @@ export class BoardScene extends Phaser.Scene {
     panel.setStrokeStyle(3, accentColor, 0.7);
 
     const titleText = this.add.text(px + panelW / 2, py + 15, title, {
-      fontSize: "16px",
+      fontSize: "var(--fs-lg)",
       color: `#${accentColor.toString(16).padStart(6, "0")}`,
       fontFamily: "sans-serif",
       fontStyle: "bold",
     }).setOrigin(0.5, 0.5).setScrollFactor(0).setDepth(312);
 
     const descText = this.add.text(px + 15, py + 40, event.data?.description || "发生了一件事...", {
-      fontSize: "12px",
+      fontSize: "var(--fs-sm)",
       color: "#ecf0f1",
       fontFamily: "sans-serif",
       wordWrap: { width: panelW - 30 },
@@ -1205,7 +1205,7 @@ export class BoardScene extends Phaser.Scene {
     }).setScrollFactor(0).setDepth(312);
 
     const okBtn = this.add.text(px + panelW / 2, py + panelH - 20, "[ 确认 ]", {
-      fontSize: "12px",
+      fontSize: "var(--fs-sm)",
       color: "#f1c40f",
       fontFamily: "sans-serif",
       fontStyle: "bold",
@@ -1268,21 +1268,21 @@ export class BoardScene extends Phaser.Scene {
     }
 
     const titleText = this.add.text(px + panelW / 2, py + 15, title, {
-      fontSize: "14px",
+      fontSize: "var(--fs-md)",
       color: "#f1c40f",
       fontFamily: "sans-serif",
       fontStyle: "bold",
     }).setOrigin(0.5, 0.5).setScrollFactor(0).setDepth(322);
 
     const descText = this.add.text(px + 15, py + 35, desc, {
-      fontSize: "11px",
+      fontSize: "var(--fs-xs)",
       color: "#ecf0f1",
       fontFamily: "sans-serif",
       lineSpacing: 3,
     }).setScrollFactor(0).setDepth(322);
 
     const confirmBtn = this.add.text(px + panelW * 0.3, py + panelH - 18, `[ ${actionLabel} ]`, {
-      fontSize: "12px",
+      fontSize: "var(--fs-sm)",
       color: "#27ae60",
       fontFamily: "sans-serif",
       fontStyle: "bold",
@@ -1299,7 +1299,7 @@ export class BoardScene extends Phaser.Scene {
     confirmBtn.on("pointerout", () => confirmBtn.setColor("#27ae60"));
 
     const cancelBtn = this.add.text(px + panelW * 0.7, py + panelH - 18, "[ 取消 ]", {
-      fontSize: "12px",
+      fontSize: "var(--fs-sm)",
       color: "#e74c3c",
       fontFamily: "sans-serif",
       fontStyle: "bold",
@@ -1522,14 +1522,14 @@ export class BoardScene extends Phaser.Scene {
     panel.setStrokeStyle(2, 0x3498db, 0.7);
 
     const titleText = this.add.text(px + panelW / 2, py + 15, "选择方向", {
-      fontSize: "14px",
+      fontSize: "var(--fs-md)",
       color: "#3498db",
       fontFamily: "sans-serif",
       fontStyle: "bold",
     }).setOrigin(0.5, 0.5).setScrollFactor(0).setDepth(332);
 
     const stepText = this.add.text(px + panelW / 2, py + 32, `剩余 ${data.remainingSteps} 步`, {
-      fontSize: "10px",
+      fontSize: "var(--fs-xs)",
       color: "#bdc3c7",
       fontFamily: "sans-serif",
     }).setOrigin(0.5, 0.5).setScrollFactor(0).setDepth(332);
@@ -1550,7 +1550,7 @@ export class BoardScene extends Phaser.Scene {
       });
 
       const btnText = this.add.text(px + panelW / 2, btnY + 16, choice.name, {
-        fontSize: "12px",
+        fontSize: "var(--fs-sm)",
         color: "#ecf0f1",
         fontFamily: "sans-serif",
         fontStyle: "bold",

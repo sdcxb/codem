@@ -1232,6 +1232,42 @@ return loop.hasPendingGuidance();
     return this.config.defaultModel || "gpt-4o";
   }
 
+  /**
+   * 统一获取已配置（有 API Key）的 provider + model。
+   *
+   * 解决多文件各自从 DB 重新加载 provider 配置的架构断点问题。
+   * 所有非 agentic-loop 的 LLM 调用（如 PPT 生成、知识图谱提取等）
+   * 都应使用此方法而非各自从 DB 读取 settings。
+   *
+   * @param slot - 任务槽位（如 "chat", "subagent", "memory"），默认 "chat"
+   * @returns { provider, model } 已配置的 provider 实例和模型 ID
+   * @throws 如果没有任何已配置的 provider
+   */
+  getConfiguredProvider(slot?: TaskSlot): { provider: import("./types").LLMProvider; model: string } {
+    // 1. 尝试通过 resolveSlot 获取（走 ModelProfile 配置）
+    const resolved = this.resolveSlot(slot || "chat");
+    let provider = this.providers.get(resolved.providerId);
+
+    if (provider && provider.isConfigured()) {
+      return { provider, model: resolved.modelId };
+    }
+
+    // 2. Fallback: 找到第一个已配置的 provider（排除 ollama — 本地服务可能未运行）
+    const allProviders = this.providers.getAll();
+    const configured = allProviders.filter(p => {
+      if (p.id === 'ollama') return false;
+      return p.isConfigured();
+    });
+
+    if (configured.length === 0) {
+      throw new Error('No LLM provider available — please configure an API key in Settings');
+    }
+
+    provider = configured[0];
+    // 返回 resolved modelId 作为 fallback（listModels 是 async，调用方需自行优化）
+    return { provider, model: resolved.modelId };
+  }
+
   setDefaultModel(model: string) {
     this.config.defaultModel = model;
   }

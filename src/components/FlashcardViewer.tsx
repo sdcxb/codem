@@ -116,7 +116,7 @@ export function FlashcardViewer({ notebookId, noteId, onClose }: FlashcardViewer
             <h3 className="nb-dialog-title">
               <Layers size={16} />
               {isZh ? '闪卡复习' : 'Flashcard Review'}
-              <span style={{ fontSize: '12px', opacity: 0.5, marginLeft: '8px' }}>
+              <span style={{ fontSize: 'var(--fs-sm)', opacity: 0.5, marginLeft: '8px' }}>
                 {currentIdx + 1} / {dueCards.length}
               </span>
             </h3>
@@ -138,20 +138,20 @@ export function FlashcardViewer({ notebookId, noteId, onClose }: FlashcardViewer
             >
               {!showAnswer ? (
                 <>
-                  <span style={{ fontSize: '10px', opacity: 0.4, textTransform: 'uppercase', marginBottom: '8px' }}>
+                  <span style={{ fontSize: 'var(--fs-xs)', opacity: 0.4, textTransform: 'uppercase', marginBottom: '8px' }}>
                     {isZh ? '问题' : 'Question'}
                   </span>
-                  <p style={{ fontSize: '14px', lineHeight: '1.6', margin: 0 }}>{card.front}</p>
-                  <span style={{ fontSize: '11px', opacity: 0.4, marginTop: '12px' }}>
+                  <p style={{ fontSize: 'var(--fs-md)', lineHeight: '1.6', margin: 0 }}>{card.front}</p>
+                  <span style={{ fontSize: 'var(--fs-xs)', opacity: 0.4, marginTop: '12px' }}>
                     {isZh ? '点击查看答案' : 'Click to reveal answer'}
                   </span>
                 </>
               ) : (
                 <>
-                  <span style={{ fontSize: '10px', opacity: 0.4, textTransform: 'uppercase', marginBottom: '8px' }}>
+                  <span style={{ fontSize: 'var(--fs-xs)', opacity: 0.4, textTransform: 'uppercase', marginBottom: '8px' }}>
                     {isZh ? '答案' : 'Answer'}
                   </span>
-                  <p style={{ fontSize: '13px', lineHeight: '1.6', margin: 0, opacity: 0.9 }}>{card.back}</p>
+                  <p style={{ fontSize: 'var(--fs-base)', lineHeight: '1.6', margin: 0, opacity: 0.9 }}>{card.back}</p>
                 </>
               )}
             </div>
@@ -170,7 +170,7 @@ export function FlashcardViewer({ notebookId, noteId, onClose }: FlashcardViewer
                       flex: 1, padding: '6px 8px',
                       background: `${color}22`, border: `1px solid ${color}55`,
                       borderRadius: '5px', color, cursor: 'pointer',
-                      fontSize: '12px', fontWeight: 500,
+                      fontSize: 'var(--fs-sm)', fontWeight: 500,
                     }}
                   >
                     {label}
@@ -195,12 +195,12 @@ export function FlashcardViewer({ notebookId, noteId, onClose }: FlashcardViewer
           </div>
           <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
             <div>
-              <label style={{ fontSize: '11px', opacity: 0.6, marginBottom: '4px', display: 'block' }}>{isZh ? '正面（问题）' : 'Front (Question)'}</label>
-              <textarea style={{ width: '100%', minHeight: '70px', padding: '6px 10px', background: 'var(--bg-tertiary)', border: '1px solid var(--border-primary)', borderRadius: '5px', color: 'var(--text-primary)', fontSize: '12px', resize: 'vertical' }} value={front} onChange={(e) => setFront(e.target.value)} placeholder={isZh ? '输入问题...' : 'Enter question...'} />
+              <label style={{ fontSize: 'var(--fs-xs)', opacity: 0.6, marginBottom: '4px', display: 'block' }}>{isZh ? '正面（问题）' : 'Front (Question)'}</label>
+              <textarea style={{ width: '100%', minHeight: '70px', padding: '6px 10px', background: 'var(--bg-tertiary)', border: '1px solid var(--border-primary)', borderRadius: '5px', color: 'var(--text-primary)', fontSize: 'var(--fs-sm)', resize: 'vertical' }} value={front} onChange={(e) => setFront(e.target.value)} placeholder={isZh ? '输入问题...' : 'Enter question...'} />
             </div>
             <div>
-              <label style={{ fontSize: '11px', opacity: 0.6, marginBottom: '4px', display: 'block' }}>{isZh ? '背面（答案）' : 'Back (Answer)'}</label>
-              <textarea style={{ width: '100%', minHeight: '70px', padding: '6px 10px', background: 'var(--bg-tertiary)', border: '1px solid var(--border-primary)', borderRadius: '5px', color: 'var(--text-primary)', fontSize: '12px', resize: 'vertical' }} value={back} onChange={(e) => setBack(e.target.value)} placeholder={isZh ? '输入答案...' : 'Enter answer...'} />
+              <label style={{ fontSize: 'var(--fs-xs)', opacity: 0.6, marginBottom: '4px', display: 'block' }}>{isZh ? '背面（答案）' : 'Back (Answer)'}</label>
+              <textarea style={{ width: '100%', minHeight: '70px', padding: '6px 10px', background: 'var(--bg-tertiary)', border: '1px solid var(--border-primary)', borderRadius: '5px', color: 'var(--text-primary)', fontSize: 'var(--fs-sm)', resize: 'vertical' }} value={back} onChange={(e) => setBack(e.target.value)} placeholder={isZh ? '输入答案...' : 'Enter answer...'} />
             </div>
             <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end', marginTop: '4px' }}>
               <button className="nb-btn-cancel" onClick={() => setMode('list')}>{isZh ? '取消' : 'Cancel'}</button>
@@ -225,15 +225,15 @@ export function FlashcardViewer({ notebookId, noteId, onClose }: FlashcardViewer
           <button className="nb-dialog-close" onClick={onClose}><CloseIcon size={16} /></button>
         </div>
         <div style={{ padding: '10px 16px', borderBottom: '1px solid var(--border-color)', display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-          <button className="nb-studio-btn" onClick={handleStartReview} disabled={cards.length === 0} style={{ fontSize: '11px', padding: '3px 10px' }}>
+          <button className="nb-studio-btn" onClick={handleStartReview} disabled={cards.length === 0} style={{ fontSize: 'var(--fs-xs)', padding: '3px 10px' }}>
             <RotateCw size={13} />
             {isZh ? `复习 (${dueCards.length})` : `Review (${dueCards.length} due)`}
           </button>
-          <button className="nb-studio-btn" onClick={() => setMode('create')} style={{ fontSize: '11px', padding: '3px 10px' }}>
+          <button className="nb-studio-btn" onClick={() => setMode('create')} style={{ fontSize: 'var(--fs-xs)', padding: '3px 10px' }}>
             <Plus size={13} />
             {isZh ? '新建' : 'New'}
           </button>
-          <button className="nb-studio-btn" onClick={handleAIGenerate} disabled={generating} style={{ fontSize: '11px', padding: '3px 10px' }}>
+          <button className="nb-studio-btn" onClick={handleAIGenerate} disabled={generating} style={{ fontSize: 'var(--fs-xs)', padding: '3px 10px' }}>
             {generating ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
             {isZh ? (noteId ? '从笔记生成' : 'AI 生成') : (noteId ? 'From Note' : 'AI Generate')}
           </button>
@@ -252,14 +252,14 @@ export function FlashcardViewer({ notebookId, noteId, onClose }: FlashcardViewer
                   <div key={card.id} style={{ padding: '8px 10px', background: 'var(--bg-tertiary)', border: '1px solid var(--border-primary)', borderRadius: '6px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '6px' }}>
                       <div style={{ flex: 1 }}>
-                        <p style={{ fontSize: '12px', fontWeight: 500, margin: '0 0 3px' }}>{card.front}</p>
-                        <p style={{ fontSize: '11px', opacity: 0.6, margin: 0 }}>{card.back}</p>
+                        <p style={{ fontSize: 'var(--fs-sm)', fontWeight: 500, margin: '0 0 3px' }}>{card.front}</p>
+                        <p style={{ fontSize: 'var(--fs-xs)', opacity: 0.6, margin: 0 }}>{card.back}</p>
                       </div>
                       <button onClick={() => { deleteFlashcard(card.id); refresh(); }} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '2px', flexShrink: 0 }}>
                         <Trash2 size={12} />
                       </button>
                     </div>
-                    <div style={{ display: 'flex', gap: '6px', marginTop: '4px', fontSize: '10px', opacity: 0.5 }}>
+                    <div style={{ display: 'flex', gap: '6px', marginTop: '4px', fontSize: 'var(--fs-xs)', opacity: 0.5 }}>
                       {isDue && <span style={{ color: '#eab308' }}>● {isZh ? '待复习' : 'Due'}</span>}
                       {card.repetitions > 0 && <span>{isZh ? `复习 ${card.repetitions} 次` : `${card.repetitions} reps`}</span>}
                       <span>{isZh ? `间隔 ${card.intervalDays} 天` : `${card.intervalDays}d interval`}</span>

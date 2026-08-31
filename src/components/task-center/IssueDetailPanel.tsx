@@ -78,13 +78,13 @@ export function IssueDetailPanel({ issue, onClose, onRefresh }: IssueDetailPanel
       {/* Title + status */}
       <div style={{ display: "flex", alignItems: "flex-start", gap: "8px", marginBottom: "12px" }}>
         <StatusIcon size={18} style={{ color: config.color, marginTop: 2, flexShrink: 0 }} />
-        <h2 style={{ fontSize: "18px", fontWeight: 700, color: "var(--text-primary)", margin: 0, flex: 1, lineHeight: 1.3 }}>
+        <h2 style={{ fontSize: "var(--fs-xl)", fontWeight: 700, color: "var(--text-primary)", margin: 0, flex: 1, lineHeight: 1.3 }}>
           {currentIssue.title}
         </h2>
       </div>
 
       {/* Meta info */}
-      <div style={{ display: "flex", gap: "16px", marginBottom: "16px", fontSize: "12px", color: "var(--text-secondary)", flexWrap: "wrap" }}>
+      <div style={{ display: "flex", gap: "16px", marginBottom: "16px", fontSize: "var(--fs-sm)", color: "var(--text-secondary)", flexWrap: "wrap" }}>
         <span style={{ fontFamily: "monospace" }}>{currentIssue.id}</span>
         <span>{zh ? "优先级" : "Priority"}: <strong style={{ color: "var(--text-primary)" }}>{currentIssue.priority}</strong></span>
         {currentIssue.assigneeId && (
@@ -100,7 +100,7 @@ export function IssueDetailPanel({ issue, onClose, onRefresh }: IssueDetailPanel
         <div style={{
           padding: "12px 14px", borderRadius: 8, marginBottom: "16px",
           background: "var(--bg-tertiary)", border: "1px solid var(--border-primary)",
-          fontSize: "13px", color: "var(--text-secondary)", lineHeight: 1.6,
+          fontSize: "var(--fs-base)", color: "var(--text-secondary)", lineHeight: 1.6,
         }}>
           {currentIssue.description}
         </div>
@@ -108,7 +108,7 @@ export function IssueDetailPanel({ issue, onClose, onRefresh }: IssueDetailPanel
 
       {/* Status selector */}
       <div style={{ marginBottom: "16px" }}>
-        <label style={{ fontSize: "12px", fontWeight: 600, color: "var(--text-secondary)", marginBottom: "6px", display: "block" }}>
+        <label style={{ fontSize: "var(--fs-sm)", fontWeight: 600, color: "var(--text-secondary)", marginBottom: "6px", display: "block" }}>
           {zh ? "状态" : "Status"}
         </label>
         <div style={{ display: "flex", gap: "4px", flexWrap: "wrap", alignItems: "center" }}>
@@ -183,11 +183,11 @@ export function IssueDetailPanel({ issue, onClose, onRefresh }: IssueDetailPanel
 
       {/* Comments */}
       <div style={{ flex: 1, overflow: "auto", marginBottom: "12px" }}>
-        <div style={{ fontSize: "12px", fontWeight: 600, color: "var(--text-secondary)", marginBottom: "8px" }}>
+        <div style={{ fontSize: "var(--fs-sm)", fontWeight: 600, color: "var(--text-secondary)", marginBottom: "8px" }}>
           {zh ? "活动" : "Activity"} ({currentIssue.comments.length})
         </div>
         {currentIssue.comments.length === 0 ? (
-          <div style={{ fontSize: "12px", color: "var(--text-muted)", padding: "8px" }}>
+          <div style={{ fontSize: "var(--fs-sm)", color: "var(--text-muted)", padding: "8px" }}>
             {zh ? "暂无评论" : "No comments yet"}
           </div>
         ) : (
@@ -199,13 +199,13 @@ export function IssueDetailPanel({ issue, onClose, onRefresh }: IssueDetailPanel
                   padding: "8px 12px", borderRadius: 6,
                   background: isSystem ? "var(--bg-secondary)" : "var(--bg-tertiary)",
                   borderLeft: isSystem ? "2px solid var(--text-muted)" : `2px solid ${c.authorType === "agent" ? "var(--accent)" : "var(--accent)"}`,
-                  fontSize: "12px",
+                  fontSize: "var(--fs-sm)",
                 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "4px" }}>
                     <span style={{ fontWeight: 600, color: isSystem ? "var(--text-muted)" : "var(--text-primary)" }}>
                       {c.authorName || c.authorType}
                     </span>
-                    <span style={{ fontSize: "10px", color: "var(--text-muted)" }}>
+                    <span style={{ fontSize: "var(--fs-xs)", color: "var(--text-muted)" }}>
                       {new Date(c.createdAt).toLocaleString()}
                     </span>
                   </div>
