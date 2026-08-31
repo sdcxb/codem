@@ -16,6 +16,23 @@ import { OllamaProvider } from "./ollama-provider";
 import { ReplayAdapter } from "./replay-adapter";
 
 // ========== OpenAI-Compatible Provider ==========
+/**
+ * Heuristic context-window inference for dynamic models.
+ * Server /models endpoints rarely report context_window; without a static
+ * match we infer from the model id so 1M-window models (DeepSeek/Gemini/
+ * MiMo) aren't treated as 128k (which caused compaction after ~3 turns).
+ */
+export function inferContextWindow(modelId: string): number {
+  const id = modelId.toLowerCase();
+  if (id.includes("claude")) return 200000;
+  if (id.includes("gemini") || id.includes("deepseek") || id.includes("mimo")) return 1000000;
+  if (id.includes("gpt-4o") || id.includes("gpt-4-turbo")) return 128000;
+  if (id.includes("gpt-4")) return 8192;
+  if (id.includes("gpt-3.5") || id.includes("gpt-35")) return 16385;
+  if (id.includes("qwen")) return 32768;
+  return 128000;
+}
+
 export class OpenAICompatibleProvider implements LLMProvider {
   id: string;
   name: string;
@@ -98,7 +115,7 @@ export class OpenAICompatibleProvider implements LLMProvider {
           return {
             id: sm.id,
             name: staticMatch?.name || sm.id,
-            contextWindow: staticMatch?.contextWindow || 128000,
+            contextWindow: staticMatch?.contextWindow || inferContextWindow(sm.id),
             maxOutputTokens: staticMatch?.maxOutputTokens || 16384,
             supportsTools: staticMatch?.supportsTools ?? true,
             supportsStreaming: staticMatch?.supportsStreaming ?? true,

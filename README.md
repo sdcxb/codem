@@ -45,6 +45,12 @@
 > **v1.6.1 更新**：桌面宠物独立窗口改造 + 文件输出标识增强 + 设置版本号动态化 — ①**桌面宠物单一独立窗口改造（Cordis 插件化架构）**：移除主窗口内 PetOverlay，`@codem/ui-pet` 插件改为空壳；宠物窗口作为独立 Tauri 窗口运行，与主窗口共享 WebView2 进程组（实际内存增量仅 ~108MB，全部来自 1 个 renderer 进程）；新增 `ui-pet-provider.ts` Cordis Provider 封装，`App.tsx` 统一 `getPet()` 获取入口；Rust `show_pet_menu` 合并右键菜单，支持切换宠物样式子菜单（`SubmenuBuilder`）；`emitToPetWindow` 传递完整状态 ②**文件输出标识增强（DSH 风格 FileMentions）**：新增 `FileMentions` 解析器，从 `message.toolCalls` 提取 LLM 产出文件路径；`RichContent` inline code 渲染器优先解析文件路径为可点击按钮；`write`/`edit`/`multi_edit` 工具 guidance + 系统提示词强化文件路径引用要求 ③**设置版本号动态化**：关于页面版本号从 `package.json` 动态导入，不再需要手动同步。
 >
 > **v1.6.2 更新**：大富翁嵌入式游戏全量交付（Phase 1-10） + 三轮审计 Bug 修复 — 在 Codem 中嵌入完整的大富翁4风格桌面游戏，作为用户等待 LLM 执行任务时的休闲娱乐。游戏作为完全独立的大插件运行，零侵入主项目代码。Phase 1-6 完成基础设施和核心玩法（棋盘渲染/动态骰子/地产系统/角色系统/命运新闻事件/股票系统/卡片系统/道具系统/AI 策略/存档读档）；Phase 7-9 完成视觉交互和核心机制对齐（地块图标映射/角色精灵动画/消息条系统/物价指数/住院监狱酒店沉睡状态/连锁奖励税收）；Phase 10（G20-G36）补全开局设置（游戏天数/玩家数量/初始资金/胜利条件）+ 机制补全（机场传送/商业地块/主动卖地/股票分红/银行拒绝）+ 体验补全（多人热座/帮助规则/财富面板/资产清单/日志增强/投降功能/音量控制/速度调节）。三轮审计修复 7 个关键 Bug（破产清算逻辑/玩家状态检查/死循环保护/命运事件移动/初始资金应用/AI 循环优化/掷骰跳过检查）。TypeScript 编译 0 错误，Vite 构建成功。
+
+> **v1.9.0 更新**：上下文压缩过早触发治根修复 + 通用协议 API 配置 + 工具执行正确性修复 — ①**压缩治根（模型感知窗口 + 压力驱动）**：修复 estimateMessagesTokens 永不回落（baseline 仅为下限不再忽略实际增长）；AgenticLoop 从 provider 解析模型真实 contextWindow 并同步到 tracker（1M 窗口模型此前按 128k 估算，压力放大 ~8 倍，3 轮即压缩）；micro-compact 由纯条数触发改为压力驱动（条数 > 12 且压力 >= 0.5）；新增 inferContextWindow 按模型 id 推断窗口（deepseek/gemini/mimo→1M），不再一律回退 128k ②**通用协议 API 配置**：设置页手动 Base URL + API key + 自动拉取模型列表，刷新不丢 contextWindow ③**工具执行正确性**：read 单响应去重键补 offset/limit（读全文+读片段不再误判重复跳过）；DecisionTray 审批内容空白修复（读 req.input）+ 长命令滚动显示 ④新增回归测试 context-window-regression（8 例）+ custom-provider-config。
+>
+> **v1.8.0 更新**：知识图谱 React Flow 重构（@xyflow/react 自定义节点/边/关系标签/MiniMap）+ vision-proxy 统一 getConfiguredProvider + UI 字体变量批量规范化（50+ 组件数字 fontSize→CSS 变量）。
+>
+> **v1.7.0 更新**：PPT 生成质量大幅提升 — oh-my-ppt 74 种风格 SKILL.md 集成 + Cordis SkillRegistry 渐进式加载 + 生成链路断点修复（生成前主动加载当前风格 SKILL.md 注入 systemPrompt）。
 >
 
 
@@ -337,6 +343,45 @@ npm run tauri:build
 
 ## 更新日志
 
+### 2026-08-31（v1.9.0）
+
+> 上下文压缩过早触发治根修复 + 通用协议 API 配置 + 工具执行正确性修复。
+
+**上下文压缩过早触发治根修复（模型感知窗口 + 压力驱动）：**
+- 修复 `estimateMessagesTokens` 永不回落（baseline 仅为下限不再忽略实际增长），压缩后 prompt 稳定回落到 ~40k
+- AgenticLoop 从 provider 解析模型真实 contextWindow 并同步到 tracker，1M 窗口模型不再按 128k 估算（压力放大 ~8 倍）
+- micro-compact 由纯条数触发改为压力驱动（条数 > 12 且压力 >= 0.5）
+- 新增 `inferContextWindow` 启发式窗口推断：Server /models 未返回窗口时按模型 id 推断（deepseek/gemini/mimo→1M 等），不再一律回退 128k
+- `getAgenticLoop` 构造时即同步 contextWindow，避免构造期回退 128k
+
+**通用协议 API 配置（OpenAI 兼容）：**
+- 设置页手动输入 Base URL + API key，自动拉取模型列表并持久化
+- 修复刷新模型列表丢弃 contextWindow 字段（运行时窗口解析不再回退 128k）
+- 新增 `getFirstConfiguredModel()` 初始模型 fallback + `resolveProviderForModel()` 自定义 provider 模型路由
+
+**工具执行正确性修复：**
+- 修复 read 单响应去重键缺 offset/limit：模型先读全文再读特定片段时被误判为重复调用跳过
+- 修复 DecisionTray 审批内容空白（读 `req.input` 而非 `req.args`），bash 显示命令、其他工具显示参数 JSON
+- 审批长命令滚动显示（max-height + overflow-y）
+
+**回归测试：** context-window-regression（8 例）+ custom-provider-config + s0-regression read 去重范围键。
+
+### 2026-08-31（v1.8.0）
+
+> 知识图谱 React Flow 重构 + vision-proxy 统一 getConfiguredProvider + UI 字体变量批量规范化。
+
+- **知识图谱 React Flow 重构**：引入 @xyflow/react，自定义节点（实体类型着色 + 图标 + 径向渐变）、贝塞尔边 + 关系标签、MiniMap/Controls/Background，保留节点编辑/删除/右键菜单/PNG/JSON 导出
+- **vision-proxy 统一 getConfiguredProvider**：resolveVisionConfig/resolveSTTConfig 统一使用 engine.getConfiguredProvider()
+- **UI 规范化**：50+ 组件 fontSize 数字→CSS 变量、硬编码颜色→CSS 语义化变量
+- 新增依赖 @xyflow/react ^12.11.5
+
+### 2026-08-31（v1.7.0）
+
+> PPT 生成质量大幅提升 — oh-my-ppt 风格技能集成 + Cordis SkillRegistry 渐进式加载 + 生成链路断点修复。
+
+- 集成 oh-my-ppt 74 种风格 SKILL.md + 9 种产品技能，构建时收集、运行时注册到 Cordis SkillRegistry
+- 修复 PPT 生成单次 LLM 调用无法使用 load_skill 的问题：生成前主动加载当前风格 SKILL.md 注入 systemPrompt（只加载当前 1 个风格，避免 token 爆炸）
+- 新增 `ppt-skill-registry.ts` + `skills/` 资源目录
 ### 2026-08-28（v1.6.1）
 
 > 桌面宠物独立窗口改造 + 文件输出标识增强 + 设置版本号动态化。

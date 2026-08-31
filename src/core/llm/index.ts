@@ -12,7 +12,7 @@ function minutePrecisionDate(): string {
   return `${y}-${mo}-${d}T${h}:${mi}:00.000Z`;
 }
 
-import { ProviderRegistry, createDefaultProviders } from "./provider";
+import { ProviderRegistry, createDefaultProviders, OpenAICompatibleProvider, inferContextWindow } from "./provider";
 import { ToolRegistry, createDefaultToolRegistry } from "./tools";
 import type { Context } from "../cordis/src/index.ts";
 import { AgentRegistry, getAgentRegistry, type AgentDefinition } from "../agent/agent";
@@ -374,6 +374,20 @@ private loopPool: Map<string, AgenticLoop> = new Map();
 
     console.log(`[LLMEngine.getAgenticLoop] agentId=${agentId}, sessionId=${sessionId}, slot=${slot}, resolved: provider=${resolved.providerId}, model=${resolved.modelId}, effective model=${model}, engine default: provider=${this.config.defaultProvider}, model=${this.config.defaultModel}, provider.id=${(provider as any).id}, provider.baseUrl=${(provider as any).config?.baseUrl}`);
 
+    // Sync context window from provider static/cached models so the
+    // constructor doesn't fall back to 128k until run() resolves it.
+    let contextWindow: number | undefined;
+    try {
+      const p = provider as any;
+      const staticModels = p.config?.models || [];
+      const dynModels = p.dynamicModels || null;
+      const allModels = dynModels && dynModels.length
+        ? [...dynModels, ...staticModels]
+        : staticModels;
+      const modelMatch = allModels.find((mm: any) => mm.id === model);
+      if (modelMatch?.contextWindow) contextWindow = modelMatch.contextWindow;
+    } catch { /* fall back to run() resolution */ }
+
     const loop = new AgenticLoop(
       provider,
       toolRegistryOverride ?? this.tools,
@@ -382,6 +396,7 @@ private loopPool: Map<string, AgenticLoop> = new Map();
         temperature: agent?.temperature ?? resolved.temperature ?? this.config.temperature,
         maxOutputTokens: agent?.maxTokens || resolved.maxTokens || this.config.maxTokens || 4096,
         model,
+        contextWindow,
         // Pass through agent-level overrides (Phase 0 fields)
         reasoningEffort: agent?.reasoningEffort || resolved.reasoningEffort,
         collaborationMode: agent?.collaborationMode,
@@ -1050,11 +1065,11 @@ Report earlier as well whenever a partial finding changes what that agent should
  * The message will be injected at the next iteration boundary, allowing
  * the user to steer the agent mid-turn without interrupting tool execution.
  */
-sendGuidance(sessionId: string, message: string): boolean {
+sendGuidance(sessionId: string, message: string): import("./guidance-queue").GuidanceItem | null {
 const loop = this.loopPool.get(sessionId);
 if (!loop) {
 console.warn(`[Engine] No active loop for session ${sessionId} — cannot send guidance`);
-return false;
+return null;
 }
 return loop.sendGuidance(message);
 }
@@ -1063,13 +1078,27 @@ return loop.sendGuidance(message);
  * Send a guidance message with immediate priority — aborts current LLM stream
  * and injects the message at the next iteration boundary.
  */
-sendGuidanceImmediate(sessionId: string, message: string): boolean {
+sendGuidanceImmediate(sessionId: string, message: string): import("./guidance-queue").GuidanceItem | null {
 const loop = this.loopPool.get(sessionId);
 if (!loop) {
 console.warn(`[Engine] No active loop for session ${sessionId} — cannot send guidance`);
-return false;
+return null;
 }
 return loop.sendGuidanceImmediate(message);
+}
+
+/**
+ * Interrupt the current LLM stream so the loop re-enters and consumes
+ * already-queued guidance — used when the user taps "inject now" on an
+ * already-pending guidance bubble.
+ */
+interruptForGuidance(sessionId: string): boolean {
+const loop = this.loopPool.get(sessionId);
+if (!loop) {
+console.warn(`[Engine] No active loop for session ${sessionId} — cannot interrupt for guidance`);
+return false;
+}
+return loop.interruptForGuidance();
 }
 
 /** Check if a session has pending guidance items */
@@ -1089,6 +1118,34 @@ return loop.hasPendingGuidance();
       if (config.baseUrl) newConfig.baseUrl = config.baseUrl;
       (existing as any).config = { ...current, ...newConfig };
     }
+  }
+
+  /**
+   * Register a custom OpenAI-compatible provider (通用协议配置).
+   * Used for user-defined providers like b.ai (https://api.baichuan-ai.com/v1)
+   * that expose an OpenAI-compatible /models endpoint.
+   * If the provider id already exists, updates its config instead of re-registering.
+   */
+  registerCustomProvider(providerId: string, config: { name: string; apiKey: string; baseUrl?: string }) {
+    const existing = this.providers.get(providerId);
+    if (existing) {
+      if ("config" in existing) {
+        const current = (existing as any).config;
+        const newConfig: any = { apiKey: config.apiKey };
+        if (config.baseUrl) newConfig.baseUrl = config.baseUrl;
+        (existing as any).config = { ...current, ...newConfig };
+      }
+      return;
+    }
+    const provider = new OpenAICompatibleProvider({
+      id: providerId,
+      name: config.name,
+      apiKey: config.apiKey,
+      baseUrl: config.baseUrl || "https://api.openai.com/v1",
+      models: [],
+    });
+    this.providers.register(provider);
+    console.log(`[LLMEngine] Registered custom provider: ${providerId} (${config.name})`);
   }
 
   /**
@@ -1138,11 +1195,29 @@ return loop.hasPendingGuidance();
   loadDynamicModels(): void {
     try {
       const stored = getSettingJSON<Record<string, import("./types").ModelConfig[]>>("codem-dynamic-models", {});
+      // 迁移：旧缓存（设置页早期版本只存 {id, name}）缺 contextWindow，
+      // 运行时窗口解析会回退 128k，导致 1M 窗口模型（DeepSeek/Gemini/MiMo）
+      // 过早压缩。这里补上推断窗口，避免用户必须手动重新刷新模型。
+      let migrated = false;
       for (const [providerId, models] of Object.entries(stored)) {
+        for (const m of models) {
+          if (!m.contextWindow) {
+            m.contextWindow = inferContextWindow(m.id);
+            migrated = true;
+          }
+        }
         const provider = this.providers.get(providerId);
         if (provider && "dynamicModels" in provider && Array.isArray(models)) {
           (provider as any).dynamicModels = models;
           console.log(`[LLMEngine.loadDynamicModels] Loaded ${models.length} models for ${providerId}`);
+        }
+      }
+      if (migrated) {
+        try {
+          setSettingJSON("codem-dynamic-models", stored);
+          console.log("[LLMEngine.loadDynamicModels] Backfilled contextWindow for legacy cached models");
+        } catch (e) {
+          console.warn("[LLMEngine.loadDynamicModels] Failed to persist backfill:", e);
         }
       }
     } catch (e) {

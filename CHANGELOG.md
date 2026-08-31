@@ -2,6 +2,70 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.9.0] - 2026-08-31
+
+### 上下文压缩过早触发治根修复（模型感知窗口 + 压力驱动）
+
+- **TokenTracker.estimateMessagesTokens 永不回落修复** — baseline 仅为下限，不再忽略消息实际增长，压缩后 prompt 从 ~103k 稳定回落到 39k/47k
+- **模型真实 contextWindow 同步** — AgenticLoop.run() 从 provider.listModels() 解析模型真实窗口并同步到 tracker，1M 窗口模型（DeepSeek/Gemini/MiMo）此前按 128k 估算导致压力放大 ~8 倍、3 轮即触发压缩
+- **micro-compact 压力驱动** — 由纯条数触发改为「条数 > 12 且压力 >= 0.5」，避免长会话过早压缩
+- **inferContextWindow 启发式窗口推断** — provider.ts 新增按模型 id 推断窗口（deepseek/gemini/mimo→1M、claude→200k、qwen→32k 等），Server /models 未返回 context_window 时不再一律回退 128k
+- **getAgenticLoop 构造时同步 contextWindow** — loop 创建时从 provider 静态/动态模型列表解析窗口，避免构造期回退 128k 直到 run() 才修正
+
+### 通用协议 API 配置（OpenAI 兼容）
+
+- 设置页支持手动输入 Base URL + API key，自动拉取模型列表并持久化
+- **刷新模型列表不再丢弃 contextWindow 字段** — SettingsPanel 动态模型 state 类型补全窗口字段，刷新时通过 inferContextWindow 写入，运行时窗口解析不再回退 128k
+- 新增 `getFirstConfiguredModel()` 初始模型 fallback：自定义 provider 优先返回其第一个动态模型
+- 新增 `resolveProviderForModel()`：支持自定义 provider 的模型 id 路由（不匹配内置前缀时扫描动态模型列表）
+
+### 工具执行正确性修复
+
+- **read 单响应去重键含 offset/limit** — 去重键由裸 path 改为 `path|offset|limit`，模型先读全文再读特定片段时不再被误判为重复调用跳过（此前 readCache 已区分范围但去重层未区分，语义不一致）
+- **DecisionTray 审批内容空白修复** — App.tsx 读 `req.args` 改为 `req.input`（PermissionRequest 字段实为 input），bash 显示命令本身、其他工具显示完整参数 JSON，复用 getToolDescription 生成可读描述
+- **长命令审批 UI** — 审批参数代码块 max-height + overflow-y 滚动，长命令不再把按钮挤出屏幕
+
+### 其他修复
+
+- Guidance 注入增强：sendGuidance 返回 GuidanceItem、新增 interruptForGuidance 立即中断当前流消费已排队 guidance
+- 多行输入历史导航边界处理：上箭头仅首行拦截、下箭头仅末行拦截（doskey 终端行为移植）
+- 新增回归测试：context-window-regression.test.ts（8 例）+ custom-provider-config.test.ts + s0-regression-full read 去重范围键用例
+
+## [1.8.0] - 2026-08-31
+
+### 知识图谱 React Flow 重构
+
+- 引入 @xyflow/react (React Flow) 库，替代自研 Canvas 力导向图实现
+- 自定义节点组件：按实体类型着色 + 图标 + 径向渐变 + 选中高亮
+- 自定义贝塞尔曲线边 + 关系标签
+- 内置 MiniMap / Controls / Background
+- 保留所有编辑功能：节点编辑/删除、边删除、右键菜单、PNG/JSON 导出
+
+### DSH 框架穿透性修复
+
+- vision-proxy.ts 的 resolveVisionConfig/resolveSTTConfig 统一使用 engine.getConfiguredProvider()
+
+### UI 设计规范化（对标 apple-design）
+
+- 50+ 组件批量 fontSize 数字→CSS 变量替换
+- 硬编码颜色→CSS 语义化变量
+
+### 笔记本功能审计（对标 lumina-note）
+
+- 功能完整无断点：Markdown编辑器/WikiLinks/闪卡/知识图谱/标签/版本历史/导出/学习路径
+
+### 依赖更新
+
+- 新增 @xyflow/react ^12.11.5
+
+## [1.7.0] - 2026-08-31
+
+### PPT 生成质量大幅提升 — oh-my-ppt 风格技能集成 + Cordis SkillRegistry 渐进式加载 + 生成链路断点修复
+
+- 集成 oh-my-ppt 项目 74 种风格 SKILL.md + 9 种产品技能（布局/图表/动画等），通过 Vite `import.meta.glob` 构建时收集，运行时注册到 Cordis SkillRegistry
+- 修复 PPT 生成两条通路（Studio 一键生成 + 对话中 generate_ppt 工具调用）均经过单次 LLM 调用、AI 无法使用 load_skill 的问题：调用 LLM 前主动从 SkillRegistry 加载当前选中风格的 SKILL.md 注入 systemPrompt，只加载当前 1 个风格 + 产品技能，避免 token 爆炸
+- 新增 `ppt-skill-registry.ts` + `skills/` 资源目录，删除旧 `ppt-skill-loader.ts`
+
 ## [1.6.2] - 2026-08-29
 
 ### 大富翁嵌入式游戏全量交付（Phase 1-10） + 三轮审计 Bug 修复

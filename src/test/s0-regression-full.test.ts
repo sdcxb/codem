@@ -498,5 +498,23 @@ describe("S0 Full Regression Suite", () => {
       // Range mismatch falls through to a real read instead of returning stale content
       expect(src).toContain("Read cache mismatch");
     });
+    it("single-response read dedup key includes offset/limit so different ranges are not treated as duplicates", () => {
+      // Regression: seenReadPaths used to be keyed only by file path. When the
+      // LLM called read(path) then read(path, { offset, limit }) in the same
+      // response, the second call was misclassified as a duplicate and skipped
+      // with "Duplicate tool call in one response" — the user never got the
+      // paginated slice they asked for. The dedup key must now include the range.
+      const fs = require("fs");
+      const path = require("path");
+      const src = fs.readFileSync(path.join(__dirname, "../core/llm/agentic-loop.ts"), "utf-8");
+
+      // Dedup key composes path + offset + limit
+      expect(src).toContain("const readKey = `${filePath}|${readOffset}|${readLimit}`;");
+      // Defaults mirror readCache's range defaults
+      expect(src).toContain('const readOffset = typeof tc.input?.offset === "number" ? tc.input.offset : 1;');
+      expect(src).toContain('const readLimit = typeof tc.input?.limit === "number" ? tc.input.limit : 2000;');
+      // The dedup check uses the composite key, not the bare path
+      expect(src).toContain("if (seenReadPaths.has(readKey)) {");
+    });
   });
 });

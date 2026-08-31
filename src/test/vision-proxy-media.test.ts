@@ -42,7 +42,23 @@ vi.mock("../core/llm", () => ({
     setProviderConfig: (id: string, config: { apiKey: string; baseUrl?: string }) => {
       mockEngineProviderConfigs[id] = config;
     },
-    getProviderConfig: (id: string) => mockEngineProviderConfigs[id] ?? null,
+    getProviderConfig: (id: string) => {
+      if (mockEngineProviderConfigs[id]) return mockEngineProviderConfigs[id];
+      // API 模式：从 codem-settings 读取（模拟真实引擎从 settings 注册 provider）
+      const settings = mockSettingsStore["codem-settings"];
+      if (settings?.providers) {
+        const p = settings.providers.find((x: any) => x.id === id);
+        if (p?.apiKey) return { apiKey: p.apiKey, baseUrl: p.baseUrl || "" };
+      }
+      return null;
+    },
+    // vision-proxy.ts 通过 getConfiguredProvider 解析 vision/stt slot（profile manager）
+    getConfiguredProvider: (slot: string) => {
+      // 直接使用文件顶部 import 的 getModelProfileManager（ESM mock 工厂内不可用 require）
+      const resolved = getModelProfileManager().resolveSlot(slot as any);
+      if (!resolved) throw new Error(`[mock] No configured provider for slot ${slot}`);
+      return { provider: { id: resolved.provider }, model: resolved.model };
+    },
   }),
 }));
 

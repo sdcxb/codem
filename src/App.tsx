@@ -221,7 +221,7 @@ import { BootstrapWizard } from "./components/BootstrapWizard";
 import type { CollaborationMode } from "./core/agent/agent";
 import { getEffectiveSecurityMode, type SecurityMode } from "./core/permission/security-mode";
 import { tryGetCtx } from "./core/consumer";
-import { PermissionDialog } from "./components/PermissionDialog";
+import { PermissionDialog, getToolDescription } from "./components/PermissionDialog";
 import { DecisionTray, type ApprovalRequest } from "./components/DecisionTray";
 import { RightSidebar } from "./components/RightSidebar";
 import { Drawer } from "./components/Drawer";
@@ -263,6 +263,7 @@ import { setGlobalCwd } from "./utils/file-link";
 import { loadAppIdentity } from "./core/config/loader";
 import { AppIdentity, type Session } from "./core/types";
 import { getLLMEngine } from "./core/llm";
+import { resolveProviderForModel, getFirstConfiguredModel } from "./core/model-config";
 import { getMiMoAuth } from "./core/auth/mimo";
 import type { PermissionRequest, PermissionResult } from "./core/permission/permission";
 import { initDatabase, resetDatabase, flushDatabase } from "./core/storage";
@@ -504,28 +505,15 @@ useEffect(() => {
         } else {
           model = settings.model || "";
           if (!model) {
-            const providers = settings.providers || [];
-            const defaultModels: Record<string, string> = {
-              openai: "gpt-4o", anthropic: "claude-sonnet-4-20250514",
-              deepseek: "deepseek-v4-flash", moonshot: "moonshot-v1-8k",
-              gemini: "gemini-2.5-flash",
-            };
-            for (const p of providers) {
-              if (p.apiKey && p.id !== "mimo" && defaultModels[p.id]) {
-                model = defaultModels[p.id];
-                break;
-              }
-            }
-            if (!model) model = "mimo-v2.5-pro";
+            model = getFirstConfiguredModel().model;
           }
         }
         let provider = "mimo";
         if (mode === "api") {
-          if (model.startsWith("deepseek")) provider = "deepseek";
-          else if (model.startsWith("claude")) provider = "anthropic";
-          else if (model.startsWith("moonshot")) provider = "moonshot";
-          else if (model.startsWith("gemini")) provider = "gemini";
-          else if (model.startsWith("gpt") || model.startsWith("o3")) provider = "openai";
+          if (model) {
+            const resolved = resolveProviderForModel(model);
+            if (resolved) provider = resolved;
+          }
         }
         console.log(`[dbReady] syncing model from settings: mode=${mode}, model=${model}, provider=${provider}`);
         setCliModel(model);
@@ -568,30 +556,16 @@ useEffect(() => {
     // API mode: use saved model if it belongs to a configured provider
     const savedModel: string = _initialSettings.model || "";
     if (savedModel) return savedModel;
-    // No saved model: find first provider with API key
-    const providers = _initialSettings.providers || [];
-    const defaultModels: Record<string, string> = {
-      openai: "gpt-4o",
-      anthropic: "claude-sonnet-4-20250514",
-      deepseek: "deepseek-v4-flash",
-      moonshot: "moonshot-v1-8k",
-      gemini: "gemini-2.5-flash",
-    };
-    for (const p of providers) {
-      if (p.apiKey && p.id !== "mimo" && defaultModels[p.id]) {
-        return defaultModels[p.id];
-      }
-    }
-    return "mimo-v2.5-pro"; // ultimate fallback
+    // No saved model: first configured provider (incl. custom) + its first model
+    return getFirstConfiguredModel().model;
   })();
   const _initialProvider: string = (() => {
     const model = _initialModel;
     if (_initialMode === "cli") return "mimo";
-    if (model.startsWith("deepseek")) return "deepseek";
-    if (model.startsWith("claude")) return "anthropic";
-    if (model.startsWith("moonshot")) return "moonshot";
-    if (model.startsWith("gemini")) return "gemini";
-    if (model.startsWith("gpt") || model.startsWith("o3")) return "openai";
+    if (model) {
+      const resolved = resolveProviderForModel(model);
+      if (resolved) return resolved;
+    }
     return "mimo";
   })();
 
@@ -854,11 +828,10 @@ abortControllersRef.current.clear();
     const mode = getMode();
     let provider = "openai";
     if (mode === "api") {
-      if (model.startsWith("deepseek")) provider = "deepseek";
-      else if (model.startsWith("claude")) provider = "anthropic";
-      else if (model.startsWith("moonshot")) provider = "moonshot";
-      else if (model.startsWith("gemini")) provider = "gemini";
-      else if (model.startsWith("gpt") || model.startsWith("o3")) provider = "openai";
+      if (model) {
+        const resolved = resolveProviderForModel(model);
+        if (resolved) provider = resolved;
+      }
       setCurrentProvider(provider);
       console.log(`[ModelChange] model=${model}, provider=${provider}`);
     }
@@ -1355,7 +1328,11 @@ flushStreamBuffer(); // flush all on unmount
         if (settings.providers) {
           for (const p of settings.providers) {
             if (p.apiKey) {
-              engine.setProviderConfig(p.id, { apiKey: p.apiKey, baseUrl: p.baseUrl });
+              if (p.custom) {
+                engine.registerCustomProvider(p.id, { name: p.name, apiKey: p.apiKey, baseUrl: p.baseUrl });
+              } else {
+                engine.setProviderConfig(p.id, { apiKey: p.apiKey, baseUrl: p.baseUrl });
+              }
               console.log(`[Engine] API mode: set ${p.id} apiKey`);
             }
           }
@@ -1363,31 +1340,17 @@ flushStreamBuffer(); // flush all on unmount
         // Determine provider from selected model
         const model = settings.model || "";
         let provider = "openai"; // default fallback
-        if (model.startsWith("deepseek")) provider = "deepseek";
-        else if (model.startsWith("claude")) provider = "anthropic";
-        else if (model.startsWith("moonshot")) provider = "moonshot";
-        else if (model.startsWith("gemini")) provider = "gemini";
-        else if (model.startsWith("gpt") || model.startsWith("o3")) provider = "openai";
+        if (model) {
+          const resolved = resolveProviderForModel(model);
+          if (resolved) provider = resolved;
+        }
         // If model doesn't match any provider, use first configured provider's first model
+        // (custom providers resolve their first dynamic model via getFirstConfiguredModel)
         let finalModel = model;
         if (!model || provider === "openai" && !model.startsWith("gpt") && !model.startsWith("o3")) {
-          // Find first configured provider and use its first model
-          if (settings.providers) {
-            for (const p of settings.providers) {
-              if (p.apiKey && p.id !== "mimo") {
-                provider = p.id;
-                const models: Record<string, string> = {
-                  openai: "gpt-4o",
-                  anthropic: "claude-sonnet-4-20250514",
-                  deepseek: "deepseek-v4-flash",
-                  moonshot: "moonshot-v1-8k",
-                  gemini: "gemini-2.5-flash",
-                };
-                finalModel = models[p.id] || model;
-                break;
-              }
-            }
-          }
+          const first = getFirstConfiguredModel();
+          provider = first.provider;
+          finalModel = first.model;
         }
         engine.updateConfig({ defaultProvider: provider, defaultModel: finalModel });
         console.log(`[configureEngine] API mode: setting model=${finalModel}, provider=${provider}`);
@@ -1538,12 +1501,12 @@ flushStreamBuffer(); // flush all on unmount
   const handleNotebookSendGuidance = (message: string, sessionId: string) => {
     const engine = engineRef.current;
     if (!engine) return;
-    const success = engine.sendGuidance(sessionId, message);
-    if (success) {
+    const item = engine.sendGuidance(sessionId, message);
+    if (item) {
       useAppStore.getState().addGuidanceMessage({
-        id: `guide-${Date.now()}`,
+        id: item.id,
         message,
-        timestamp: Date.now(),
+        timestamp: item.timestamp,
         consumed: false,
       });
     }
@@ -1799,13 +1762,13 @@ if (!session) return;
     const session = useProjectStore.getState().currentSession;
     if (!session) return;
     const engine = engineRef.current; if (!engine) { console.warn('[App] engine not available'); return; }
-    const success = engine.sendGuidance(session.id, message);
-    if (success) {
-      // Add to guidance messages in the store for UI display
+    const item = engine.sendGuidance(session.id, message);
+    if (item) {
+      // Add to guidance messages in the store for UI display (id matches the queue item)
       addGuidanceMessage({
-        id: `guide-${Date.now()}`,
+        id: item.id,
         message,
-        timestamp: Date.now(),
+        timestamp: item.timestamp,
         consumed: false,
       });
       console.log(`[Guidance] Sent to session ${session.id}: "${message.substring(0, 80)}..."`);
@@ -1814,30 +1777,42 @@ if (!session) return;
     }
   }, [addGuidanceMessage]);
 
-  const handleSendGuidanceImmediate = useCallback((message: string) => {
+  const handleSendGuidanceImmediate = useCallback((message: string, existingGuidanceId?: string) => {
     const session = useProjectStore.getState().currentSession;
     if (!session) return;
     const engine = engineRef.current; if (!engine) { console.warn('[App] engine not available'); return; }
-    const success = engine.sendGuidanceImmediate(session.id, message);
-    if (success) {
+    if (existingGuidanceId) {
+      // "Inject now" on an already-pending guidance bubble: the message is already
+      // in the queue — just interrupt the current reply so it takes effect now.
+      const ok = engine.interruptForGuidance(session.id);
+      if (ok) {
+        markGuidanceConsumed(existingGuidanceId);
+        console.log(`[Guidance] Injecting pending guidance now: "${message.substring(0, 80)}..."`);
+      } else {
+        console.warn(`[Guidance] Failed to interrupt for pending guidance — no active loop for session ${session.id}`);
+      }
+      return;
+    }
+    const item = engine.sendGuidanceImmediate(session.id, message);
+    if (item) {
       addGuidanceMessage({
-        id: `guide-${Date.now()}`,
+        id: item.id,
         message,
-        timestamp: Date.now(),
+        timestamp: item.timestamp,
         consumed: false,
       });
       console.log(`[Guidance] Sent (immediate) to session ${session.id}: "${message.substring(0, 80)}..."`);
     } else {
       console.warn(`[Guidance] Failed to send (immediate) — no active loop for session ${session.id}`);
     }
-  }, [addGuidanceMessage]);
+  }, [addGuidanceMessage, markGuidanceConsumed]);
 
   // Listen for immediate guidance events from ChatPanel
   useEffect(() => {
     const handler = (e: Event) => {
       const detail = (e as CustomEvent).detail;
       if (detail?.message) {
-        handleSendGuidanceImmediate(detail.message);
+        handleSendGuidanceImmediate(detail.message, detail.guidanceId);
       }
     };
     window.addEventListener('codem-guidance-immediate', handler);
@@ -1913,7 +1888,11 @@ streamingSessionIdRef.current = session.id;
       if (_savedSettings?.providers) {
         for (const p of _savedSettings.providers) {
           if (p.apiKey) {
-            engine.setProviderConfig(p.id, { apiKey: p.apiKey, baseUrl: p.baseUrl });
+            if (p.custom) {
+              engine.registerCustomProvider(p.id, { name: p.name, apiKey: p.apiKey, baseUrl: p.baseUrl });
+            } else {
+              engine.setProviderConfig(p.id, { apiKey: p.apiKey, baseUrl: p.baseUrl });
+            }
           }
         }
       }
@@ -3374,12 +3353,20 @@ onClose={() => setCitationViewer(null)}
       {/* P1 #24: DecisionTray — inline decision UI replaces popup for main permissions */}
       {pendingPermission && (() => {
         const req = pendingPermission.request as any;
+        // DSH-aligned: PermissionRequest 的字段是 input（不是 args）。
+        // description 复用 PermissionDialog 的 getToolDescription，从 input
+        // 提取命令/路径/pattern，让用户在批准前能看到具体内容。
+        const reqInput: Record<string, unknown> = req.input && typeof req.input === "object" ? req.input : {};
+        // DSH commandOf: bash 家族只展示命令本身（muted code line），
+        // 其他工具展示完整参数 JSON。
         const approvalReq: ApprovalRequest = {
           type: "approval",
           id: req.id,
           toolName: req.tool || req.title || "tool",
-          description: req.title || req.description || "",
-          args: typeof req.args === 'object' ? JSON.stringify(req.args, null, 2) : req.args,
+          description: getToolDescription(req.tool, reqInput),
+          args: typeof reqInput.command === "string"
+            ? reqInput.command
+            : (Object.keys(reqInput).length > 0 ? JSON.stringify(reqInput, null, 2) : undefined),
         };
         return (
           <SlotBridge name="app.decision-tray" fallback={DecisionTray}

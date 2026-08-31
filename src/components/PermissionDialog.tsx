@@ -6,7 +6,7 @@ interface PermissionDialogProps {
   onResolve: (allow: boolean, alwaysAllow?: boolean) => void;
 }
 
-function getToolDescription(tool: string, input: Record<string, unknown>): string {
+export function getToolDescription(tool: string, input: Record<string, unknown>): string {
   switch (tool) {
     case "bash":
       return `执行命令: ${input.command || "?"}`;

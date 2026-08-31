@@ -187,15 +187,15 @@ export class TokenTracker {
 
     let estimatedTokens: number;
     if (lastActual) {
-      // 基准 = 上次实际 prompt tokens + 新增消息估算
-      const newMessagesTokens = this.estimateMessagesTokens(
+      // 基准 = 上次实际 promptTokens（已含工具定义），
+      // estimateMessagesTokens 在此基础上叠加当前消息的有符号估算差值；
+      // 不再重复加 toolDefTokens（避免双算）。
+      estimatedTokens = this.estimateMessagesTokens(
         messages,
         lastActual.promptTokens,
       );
-      const toolDefTokens = estimateToolDefinitionTokens(tools);
-      estimatedTokens = newMessagesTokens + toolDefTokens;
     } else {
-      // 无实际 usage — 纯估算
+      // 无实际 usage — 纯估算（消息 + 工具定义）
       estimatedTokens = this.estimateMessagesTokens(messages, 0) +
         estimateToolDefinitionTokens(tools);
     }
@@ -221,9 +221,12 @@ export class TokenTracker {
     }
 
     if (baseline > 0) {
-      // 基准（上次实际 promptTokens）是真实测量值，作为下限防低估；
-      // 但允许当前消息的估算结果反映增长或剪枝后的回落。
-      return Math.max(baseline, rawEstimate);
+      // 基准（上次实际 promptTokens）是真实测量值，用于防止估算器系统性低估。
+      // 但不能作为硬性下限：压缩/剪枝后消息变短，rawEstimate
+      // 必须允许回落，否则压缩后压力不降会立即再次触发压缩
+      // （“3 次对话 2 次压缩”的直接原因）。
+      // 取当前估算为主，baseline 仅作为最多 1.5x 的校准上限（防低估）。
+      return Math.max(rawEstimate, Math.min(baseline, rawEstimate * 1.5));
     }
 
     return rawEstimate;
@@ -266,13 +269,12 @@ export class TokenTracker {
     let estimated: number;
 
     if (lastActual) {
-      // 基准 = 上次实际 prompt tokens + 新增消息估算
-      const newMessagesTokens = this.estimateMessagesTokens(messages, lastActual.promptTokens);
-      const toolDefTokens = estimateToolDefinitionTokens(tools);
-      // 加入上次 completion 作为下一轮 prompt 的一部分
-      estimated = newMessagesTokens + toolDefTokens + lastActual.completionTokens;
+      // 基准 = 上次实际 promptTokens（已含工具定义），
+      // estimateMessagesTokens 在此基础上叠加当前消息估算差值；
+      // 加入上次 completion 作为下一轮 prompt 的一部分。
+      estimated = this.estimateMessagesTokens(messages, lastActual.promptTokens) + lastActual.completionTokens;
     } else {
-      // 无实际 usage — 纯估算
+      // 无实际 usage — 纯估算（消息 + 工具定义）
       estimated = this.estimateMessagesTokens(messages, 0) + estimateToolDefinitionTokens(tools);
     }
 

@@ -303,6 +303,100 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
   const draftKey = currentSession?.id || currentProject?.id || "__global__";
   const { draft, setDraft, clearDraft } = useDraftPersistence(draftKey);
 
+  // === Input history (up-arrow recall, cmd doskey style) ===
+  // Global across sessions, persisted to localStorage (project convention).
+  const INPUT_HISTORY_KEY = "codem-input-history";
+  const INPUT_HISTORY_LIMIT = 100;
+  const historyRef = useRef<string[]>([]);
+  // -1 = not browsing history (editing a fresh draft)
+  const historyIndexRef = useRef(-1);
+  const pendingDraftRef = useRef("");
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(INPUT_HISTORY_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          historyRef.current = parsed.filter((s) => typeof s === "string");
+        }
+      }
+    } catch (e) {
+      console.warn("[InputArea] load history:", e);
+    }
+  }, []);
+
+  const pushHistory = (text: string) => {
+    const t = text.trim();
+    if (!t) return;
+    const h = historyRef.current;
+    // Skip consecutive duplicates (doskey behaviour)
+    if (h[h.length - 1] === t) return;
+    h.push(t);
+    if (h.length > INPUT_HISTORY_LIMIT) h.splice(0, h.length - INPUT_HISTORY_LIMIT);
+    try {
+      localStorage.setItem(INPUT_HISTORY_KEY, JSON.stringify(h));
+    } catch (e) {
+      console.warn("[InputArea] save history:", e);
+    }
+  };
+
+  const restoreCaretEnd = () => {
+    requestAnimationFrame(() => {
+      const ta = textareaRef.current;
+      if (ta) {
+        ta.focus();
+        const len = ta.value.length;
+        ta.setSelectionRange(len, len);
+      }
+    });
+  };
+
+  /** Browse input history. Returns true when the key was consumed. */
+  const browseHistory = (dir: 1 | -1) => {
+    const h = historyRef.current;
+    if (h.length === 0) return false;
+    const ta = textareaRef.current;
+    if (!ta) return false;
+    const value = ta.value;
+    const caret = ta.selectionStart ?? value.length;
+    // Multi-line guard: only recall when the caret is on the boundary line,
+    // otherwise let the native caret move handle the gesture.
+    if (dir === -1) {
+      const firstBreak = value.indexOf("\n");
+      if (firstBreak !== -1 && caret > firstBreak) return false;
+    } else {
+      const lastBreak = value.lastIndexOf("\n");
+      if (lastBreak !== -1 && caret <= lastBreak) return false;
+    }
+    if (historyIndexRef.current === -1) {
+      // Entering history browse: remember the in-progress draft so ArrowDown
+      // past the newest entry can restore it. ArrowDown on a fresh draft
+      // stays native (caret down) — matching the terminal.
+      if (dir !== -1) return false;
+      pendingDraftRef.current = value;
+      historyIndexRef.current = h.length - 1;
+    } else if (dir === -1) {
+      // Wrap around to the newest when passing the oldest (doskey cycles).
+      historyIndexRef.current = (historyIndexRef.current - 1 + h.length) % h.length;
+    } else {
+      if (historyIndexRef.current >= h.length - 1) {
+        // Past the newest entry: restore the draft we saved on entry.
+        historyIndexRef.current = -1;
+        setDraft(pendingDraftRef.current);
+        setInput(pendingDraftRef.current);
+        restoreCaretEnd();
+        return true;
+      }
+      historyIndexRef.current += 1;
+    }
+    const recalled = h[historyIndexRef.current];
+    setDraft(recalled);
+    setInput(recalled);
+    restoreCaretEnd();
+    return true;
+  };
+
   // Reset internal state when session changes (new chat / switch session)
   // DSH 对齐: DSH 的 InputBar 中附件状态来自 useInput (session 级别 store)，
   // session 切换时自动重置。mimo-gui 的 InputArea 使用组件内部 state，
@@ -455,12 +549,25 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
     return () => window.removeEventListener("codem-security-mode-changed", handler);
   }, [projectPath]);
 
+  // Auto-resize: 让 .input-backdrop-wrapper 跟随 textarea 高度一起增长。
+  // textarea 与 backdrop 都是 absolute 定位，不会撑开 wrapper；若不显式同步
+  // wrapper 高度，文本超过 wrapper 的 min-height 后会溢出输入框边框，并浮在
+  // action row 上方拦截点击（放大按钮失效）。
+  const resizeTextarea = useCallback(() => {
+    const ta = textareaRef.current;
+    const wrapper = ta?.parentElement; // .input-backdrop-wrapper
+    if (!ta || !wrapper) return;
+    ta.style.height = "auto";
+    const maxH = expanded ? 480 : 280;
+    const minH = expanded ? 200 : 56;
+    const h = Math.max(minH, Math.min(ta.scrollHeight, maxH));
+    ta.style.height = `${h}px`;
+    wrapper.style.height = `${h}px`;
+  }, [expanded]);
+
   useEffect(() => {
-    if (textareaRef.current) {
-      textareaRef.current.style.height = "auto";
-      textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 280)}px`;
-    }
-  }, [input]);
+    resizeTextarea();
+  }, [input, draft, resizeTextarea]);
 
   const handleSubmit = () => {
     if ((!input.trim() && pendingAttachments.length === 0) || disabled) return;
@@ -470,6 +577,8 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
       const modeHint = generateMode === "image" ? `[Generate image at ${resolution}] ` : `[Generate video at ${resolution}] `;
       message = modeHint + message;
     }
+    // Record the user's raw input (without generate-mode hint) for up-arrow recall
+    pushHistory(input.trim());
     onSend(message, pendingAttachments.length > 0 ? pendingAttachments : undefined, selectedSkills.length > 0 ? selectedSkills : undefined);
     // P1 #12: Clear draft on send
     clearDraft();
@@ -501,6 +610,13 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
     // DSH-aligned: 当 slash 命令菜单或 mention 菜单打开时，
     // Enter/ArrowUp/ArrowDown/Escape 由各自的 keydown handler 处理，不触发发送
     if (slashFilter !== null || mentionQuery !== null) {
+      return;
+    }
+    // Input history recall (cmd doskey style): ArrowUp shows the previous
+    // input, ArrowDown moves forward. Guarded by IME composition.
+    if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+      if (e.nativeEvent.isComposing) return;
+      if (browseHistory(e.key === "ArrowUp" ? -1 : 1)) e.preventDefault();
       return;
     }
     if (e.key === "Enter" && !e.shiftKey) {
@@ -861,6 +977,11 @@ const handleSelectProject = (projectId: string) => {
               setTimeout(() => { compositionJustEndedRef.current = false; }, 100);
             }}
             onPaste={handlePaste}
+            onScroll={(e) => {
+              // 超限内部滚动时同步 backdrop，保持 /skill pill 高亮与文字对齐
+              const bd = e.currentTarget.parentElement?.querySelector('.input-backdrop');
+              if (bd) bd.scrollTop = e.currentTarget.scrollTop;
+            }}
             placeholder={dynamicPlaceholder}
             disabled={disabled}
             rows={2}

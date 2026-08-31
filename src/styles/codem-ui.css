@@ -1267,6 +1267,10 @@
   font-size: 12px;
   font-family: 'SF Mono', Consolas, monospace;
   overflow-x: auto;
+  overflow-y: auto;
+  max-height: 240px;
+  white-space: pre-wrap;
+  word-break: break-word;
   color: var(--text-secondary);
 }
 .decision-tray-reject-input {

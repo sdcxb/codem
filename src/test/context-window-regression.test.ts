@@ -95,3 +95,77 @@ describe("CW-04: Micro-compact — 压力驱动而非纯条数", () => {
     expect(src).toContain("MICRO_COMPACT_PRESSURE_THRESHOLD = 0.5");
   });
 });
+
+describe("CW-05: 压缩后压力回落 — 不再压缩后立即再次压缩", () => {
+  it("消息被压缩/剪枝后估算压力下降（baseline 不是硬性下限）", () => {
+    const tracker = new TokenTracker(1_000_000);
+    // 模拟一次大的实际请求：完整历史已占用 ~800k
+    tracker.recordActualUsage(
+      { promptTokens: 800000, completionTokens: 5000, totalTokens: 805000 },
+      5000,
+      "fp-big",
+    );
+
+    // 压缩前：大量消息 → 压力高
+    const big = tracker.estimatePressure(
+      Array(200).fill({ role: "tool", content: "y".repeat(3000) }),
+      [],
+    );
+
+    // 压缩后：只剩摘要 + 最近消息 → 压力应显著下降
+    const small = tracker.estimatePressure(
+      Array(20).fill({ role: "user", content: "summarized..." }),
+      [],
+    );
+
+    expect(big).toBeGreaterThan(small);
+    // 压缩后不应再触发 0.8 全量压缩
+    expect(small).toBeLessThan(0.8);
+  });
+
+  it("源码不再用 Math.max(baseline, rawEstimate) 锁死压力", () => {
+    const src = fs.readFileSync(
+      path.join(__dirname, "../core/llm/token-tracker.ts"),
+      "utf-8",
+    );
+    expect(src).not.toContain("Math.max(baseline, rawEstimate)");
+  });
+});
+
+describe("CW-06: 工具定义不双算 + 动态模型窗口推断", () => {
+  it("estimatePressure 基线路径不重复累加 toolDefTokens", () => {
+    const tracker = new TokenTracker(1_000_000);
+    tracker.recordActualUsage(
+      { promptTokens: 300000, completionTokens: 2000, totalTokens: 302000 },
+      5000,
+      "fp-tools",
+    );
+    const messages = Array(10).fill({ role: "user", content: "x".repeat(100) });
+    const tools = Array(20).fill({ name: "some_tool_definition" });
+    // 有基线时不再把工具定义再加一遍（基线已含）
+    const withBaseline = tracker.estimatePressure(messages, tools);
+    const noTools = tracker.estimatePressure(messages, []);
+    // 工具定义对结果影响应很小（基线已覆盖），不会翻倍
+    expect(withBaseline).toBeLessThan(noTools * 1.5);
+  });
+
+  it("provider 动态模型用启发式推断窗口，不再一律 128000", () => {
+    const src = fs.readFileSync(
+      path.join(__dirname, "../core/llm/provider.ts"),
+      "utf-8",
+    );
+    expect(src).toContain("inferContextWindow(sm.id)");
+    expect(src).toContain("function inferContextWindow");
+    expect(src).toContain("deepseek") ;
+  });
+
+  it("getAgenticLoop 同步解析 contextWindow 并传给 AgenticLoop", () => {
+    const src = fs.readFileSync(
+      path.join(__dirname, "../core/llm/index.ts"),
+      "utf-8",
+    );
+    expect(src).toContain("let contextWindow: number | undefined");
+    expect(src).toContain("model,");
+    expect(src).toContain("contextWindow,");
+  });
+});

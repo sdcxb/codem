@@ -90,3 +90,70 @@ export function getConfiguredApiModels(): ModelOption[] {
 export function getModelsForMode(mode: "cli" | "api"): ModelOption[] {
   return mode === "cli" ? MIMO_MODELS : getConfiguredApiModels();
 }
+
+/**
+ * Resolve which provider serves a given model id.
+ * First tries known prefixes (deepseek/claude/gpt/...), then falls back to
+ * scanning configured providers' dynamic model lists — this supports custom
+ * OpenAI-compatible providers (通用协议配置) whose model ids don't match
+ * any built-in prefix. Returns "" if no provider matches.
+ */
+export function resolveProviderForModel(model: string): string {
+  if (model.startsWith("deepseek")) return "deepseek";
+  if (model.startsWith("claude")) return "anthropic";
+  if (model.startsWith("moonshot")) return "moonshot";
+  if (model.startsWith("gemini")) return "gemini";
+  if (model.startsWith("gpt") || model.startsWith("o3")) return "openai";
+
+  // Custom providers: match against their dynamically fetched model lists
+  try {
+    const settings = getSettingJSON<any>("codem-settings", {});
+    const providers = settings.providers || [];
+    type DynamicModelMap = { [providerId: string]: Array<{ id: string; name: string }> };
+    const dynamicModels = getSettingJSON<DynamicModelMap>("codem-dynamic-models", {});
+    for (const p of providers) {
+      if (!p.apiKey || p.id === "mimo") continue;
+      const dyn = dynamicModels[p.id];
+      if (dyn && dyn.some((m) => m.id === model)) return p.id;
+    }
+  } catch {
+    // ignore — fall through to ""
+  }
+  return "";
+}
+
+/**
+ * 查找第一个已配置 API Key 的 provider（含自定义 provider）并返回其默认模型。
+ * 自定义 provider 从 codem-dynamic-models 取第一个动态模型；
+ * 内置 provider 用静态映射表。找不到时返回 mimo 兜底。
+ */
+export function getFirstConfiguredModel(): { model: string; provider: string } {
+  try {
+    const settings = getSettingJSON<any>("codem-settings", {});
+    const providers = settings.providers || [];
+    type DynamicModelMap = { [providerId: string]: Array<{ id: string; name: string }> };
+    const dynamicModels = getSettingJSON<DynamicModelMap>("codem-dynamic-models", {});
+    const defaultModels: Record<string, string> = {
+      openai: "gpt-4o",
+      anthropic: "claude-sonnet-4-20250514",
+      deepseek: "deepseek-v4-flash",
+      moonshot: "moonshot-v1-8k",
+      gemini: "gemini-2.5-flash",
+    };
+    for (const p of providers) {
+      if (!p.apiKey || p.id === "mimo") continue;
+      // 自定义 provider：优先取动态模型列表第一个
+      const dyn = dynamicModels[p.id];
+      if (dyn && dyn.length > 0) {
+        return { model: dyn[0].id, provider: p.id };
+      }
+      // 内置 provider：静态映射
+      if (defaultModels[p.id]) {
+        return { model: defaultModels[p.id], provider: p.id };
+      }
+    }
+  } catch {
+    // ignore — fall through to mimo
+  }
+  return { model: "mimo-v2.5-pro", provider: "mimo" };
+}

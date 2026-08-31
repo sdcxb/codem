@@ -203,7 +203,9 @@ describe("技能调用 — load_skill 工具", () => {
     });
 
     expect(result).toBeDefined();
-    expect(result.output).toContain("loaded successfully");
+    // DSH-aligned: 首次加载返回结构化 <skill_content> 指令正文
+    expect(result.output).toContain("<skill_content");
+    expect(result.output).toContain("code-review");
   });
 
   it("SKIL-014: load_skill 未找到技能返回提示", async () => {

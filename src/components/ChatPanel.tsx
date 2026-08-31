@@ -1100,6 +1100,19 @@ canEdit={!isSessionStreaming}
             <div key={g.id} className={`guidance-bubble ${g.consumed ? 'consumed' : 'pending'}`}>
               <span className="guidance-bubble-icon">{g.consumed ? <Check size={12} /> : <Send size={12} />}</span>
               <span className="guidance-bubble-text">{g.message}</span>
+              {!g.consumed && (
+                <button
+                  className="guidance-bubble-inject-btn"
+                  onClick={() => {
+                    // "Inject now" — interrupt the current reply and consume this pending guidance
+                    window.dispatchEvent(new CustomEvent('codem-guidance-immediate', { detail: { message: g.message, guidanceId: g.id } }));
+                  }}
+                  title={lang === "zh" ? "马上注入（中断当前回复）" : "Inject now (interrupt current response)"}
+                >
+                  <Zap size={11} />
+                  {lang === "zh" ? "马上注入" : "Now"}
+                </button>
+              )}
             </div>
           ))}
         </div>
@@ -1134,27 +1147,6 @@ canEdit={!isSessionStreaming}
             title={lang === "zh" ? "下次迭代时注入" : "Inject at next iteration"}
           >
             <Send size={14} />
-          </button>
-          <button
-            className="guidance-immediate-btn"
-            onClick={() => {
-              if (guidanceInput.trim()) {
-                // Dispatch event for App.tsx to call sendGuidanceImmediate
-                window.dispatchEvent(new CustomEvent('codem-guidance-immediate', { detail: { message: guidanceInput.trim() } }));
-                setGuidanceInput('');
-              }
-            }}
-            disabled={!guidanceInput.trim()}
-            title={lang === "zh" ? "立即注入（中断当前回复）" : "Inject immediately (interrupt current response)"}
-            style={{
-              background: 'var(--accent)', color: 'var(--text-on-accent)', border: 'none',
-              borderRadius: 'var(--radius-sm)', padding: '6px 8px', cursor: 'pointer',
-              display: 'flex', alignItems: 'center', gap: '2px', fontSize: 'var(--fs-sm)',
-              whiteSpace: 'nowrap', flexShrink: 0,
-            }}
-          >
-            <Zap size={12} />
-            {lang === "zh" ? "立即" : "Now"}
           </button>
           <button
             className="guidance-cancel-btn"

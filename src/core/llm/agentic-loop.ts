@@ -6,7 +6,7 @@ import { initDefaultPipeline } from "./tool-pipeline";
 import { RetryExecutor, classifyError, logRetry } from "../retry/retry";
 import { getTokenTracker, estimateTokens, estimateToolDefinitionTokens } from "./token-tracker";
 import { extractJSON } from "./output-parser";
-import { getGuidanceQueue, GUIDANCE_MESSAGE_TEMPLATE } from "./guidance-queue";
+import { getGuidanceQueue, GUIDANCE_MESSAGE_TEMPLATE, type GuidanceItem } from "./guidance-queue";
 import { getNeedsYouQueue } from "./needs-you-queue";
 import { tryGetCtx } from "../consumer/index.ts";
 import { AgentMessageQueue } from "./agent-message-queue";
@@ -1728,11 +1728,17 @@ yield { type: "step_progress", step: this.state.iteration, total: planState.tota
       const isRead = tc.name === "read" || tc.name === "read_file";
       const filePath = tc.input?.path || tc.input?.file_path;
       if (isRead && filePath && typeof filePath === "string") {
-        if (seenReadPaths.has(filePath)) {
+        // 去重键必须包含 offset/limit：同 path 不同 range 是两次不同读取
+        // （与 readCache 的 offset/limit 区分一致），否则模型先读全文再读
+        // 特定片段时第二个 read 会被误判为重复而跳过。
+        const readOffset = typeof tc.input?.offset === "number" ? tc.input.offset : 1;
+        const readLimit = typeof tc.input?.limit === "number" ? tc.input.limit : 2000;
+        const readKey = `${filePath}|${readOffset}|${readLimit}`;
+        if (seenReadPaths.has(readKey)) {
           duplicateToolCalls.push(tc);
           continue;
         }
-        seenReadPaths.add(filePath);
+        seenReadPaths.add(readKey);
       }
       // Deduplicate wait_for_delegation with the same task_id (wait_for_subagent 已移除)
       if (tc.name === "wait_for_delegation") {
@@ -2894,13 +2900,12 @@ ${truncatedConv}`;
    *
    * If no run is active, the message is discarded (returns false).
    */
-  sendGuidance(message: string): boolean {
+  sendGuidance(message: string): GuidanceItem | null {
     if (!this.currentSessionId) {
       console.warn("[AgenticLoop] Cannot send guidance — no active run");
-      return false;
+      return null;
     }
-    this.guidanceQueue.enqueue(this.currentSessionId, message);
-    return true;
+    return this.guidanceQueue.enqueue(this.currentSessionId, message);
   }
 
   /**
@@ -2909,16 +2914,36 @@ ${truncatedConv}`;
    * Additionally, if the LLM is currently streaming a response, abort it
    * so the new guidance takes effect immediately.
    */
-  sendGuidanceImmediate(message: string): boolean {
+  sendGuidanceImmediate(message: string): GuidanceItem | null {
     if (!this.currentSessionId) {
       console.warn("[AgenticLoop] Cannot send guidance — no active run");
-      return false;
+      return null;
     }
     // Insert at the front of the queue (high priority)
-    this.guidanceQueue.enqueuePriority(this.currentSessionId, message);
+    const item = this.guidanceQueue.enqueuePriority(this.currentSessionId, message);
     // Set flag so AbortError handler knows this is a guidance interrupt, not a cancel
     this.guidanceInterrupt = true;
     // Abort current LLM stream so the loop re-enters and consumes guidance
+    this.abortController?.abort();
+    // Create a fresh AbortController for the next iteration
+    this.abortController = new AbortController();
+    return item;
+  }
+
+  /**
+   * Interrupt the current LLM stream so the loop re-enters and consumes
+   * already-queued guidance. Unlike sendGuidanceImmediate, this does NOT
+   * enqueue a new message — used when the user taps "inject now" on an
+   * already-pending guidance bubble.
+   */
+  interruptForGuidance(): boolean {
+    if (!this.currentSessionId) {
+      console.warn("[AgenticLoop] Cannot interrupt — no active run");
+      return false;
+    }
+    // Set flag so AbortError handler knows this is a guidance interrupt, not a cancel
+    this.guidanceInterrupt = true;
+    // Abort current LLM stream so the loop re-enters and consumes queued guidance
     this.abortController?.abort();
     // Create a fresh AbortController for the next iteration
     this.abortController = new AbortController();

@@ -5,6 +5,7 @@ import { version as APP_VERSION } from "../../package.json";
 import { getMiMoAuth } from "../core/auth/mimo";
 import type { LoginResult } from "../core/auth/mimo";
 import { useAppStore } from "../store";
+import { inferContextWindow } from "../core/llm/provider";
 import { getSettingJSON, setSettingJSON, getSetting, setSetting, removeSetting } from "../core/storage/settings";
 import { setLang, useLang, S, type Language } from "../core/i18n/lang";
 import { ModelProfilePanel } from "./ModelProfilePanel";
@@ -72,6 +73,8 @@ import {
   Folder,
   Clock,
   Mic,
+  Trash2,
+  Plus,
 } from "lucide-react";
 
 interface ProviderKey {
@@ -79,6 +82,8 @@ interface ProviderKey {
   name: string;
   apiKey: string;
   baseUrl: string;
+  /** Custom OpenAI-compatible provider added by the user (通用协议配置) */
+  custom?: boolean;
 }
 
 interface Settings {
@@ -210,9 +215,14 @@ export function SettingsPanel({ onClose, onSessionRecovery, onUsageStats, initia
   const [userConfig, setUserConfig] = useState<UserConfig>(defaultUser);
   const [saved, setSaved] = useState(false);
   const [showKeys, setShowKeys] = useState<Record<string, boolean>>({});
-  const [dynamicModels, setDynamicModels] = useState<Record<string, Array<{ id: string; name: string }>>>({});
+  const [dynamicModels, setDynamicModels] = useState<Record<string, Array<{ id: string; name: string; contextWindow?: number }>>>({});
   const [refreshingModels, setRefreshingModels] = useState<Record<string, boolean>>({});
   const [refreshStatus, setRefreshStatus] = useState<Record<string, string>>({});
+  // Custom OpenAI-compatible provider form (通用协议配置)
+  const [showAddCustom, setShowAddCustom] = useState(false);
+  const [customName, setCustomName] = useState("");
+  const [customBaseUrl, setCustomBaseUrl] = useState("");
+  const [customApiKey, setCustomApiKey] = useState("");
   const [mimoAccount, setMimoAccount] = useState<{ email: string; uid: string } | null>(null);
   const [loginStatus, setLoginStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [loginError, setLoginError] = useState<string | null>(null);
@@ -239,7 +249,7 @@ export function SettingsPanel({ onClose, onSessionRecovery, onUsageStats, initia
 
     // Load dynamically fetched models from DB cache
     try {
-      const stored = getSettingJSON<Record<string, Array<{ id: string; name: string }>>>("codem-dynamic-models", {});
+      const stored = getSettingJSON<Record<string, Array<{ id: string; name: string; contextWindow?: number }>>>("codem-dynamic-models", {});
       if (stored && Object.keys(stored).length > 0) {
         setDynamicModels(stored);
       }
@@ -512,6 +522,44 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
     });
   };
 
+  const addCustomProvider = () => {
+    const name = customName.trim();
+    const baseUrl = customBaseUrl.trim();
+    if (!name || !baseUrl) return;
+    const id = `custom-${Date.now()}`;
+    const newProvider: ProviderKey = {
+      id,
+      name,
+      apiKey: customApiKey.trim(),
+      baseUrl,
+      custom: true,
+    };
+    const newSettings = { ...settings, providers: [...settings.providers, newProvider] };
+    setSettings(newSettings);
+    setSettingJSON("codem-settings", newSettings);
+    window.dispatchEvent(new Event("codem-settings-changed"));
+    setShowAddCustom(false);
+    setCustomName("");
+    setCustomBaseUrl("");
+    setCustomApiKey("");
+  };
+
+  const removeCustomProvider = (id: string) => {
+    const newSettings = { ...settings, providers: settings.providers.filter((p) => p.id !== id) };
+    setSettings(newSettings);
+    setSettingJSON("codem-settings", newSettings);
+    window.dispatchEvent(new Event("codem-settings-changed"));
+    // Also clear cached dynamic models for this provider
+    try {
+      const existing = getSettingJSON<Record<string, any>>("codem-dynamic-models", {});
+      if (existing[id]) {
+        const next = { ...existing };
+        delete next[id];
+        setSettingJSON("codem-dynamic-models", next);
+      }
+    } catch (e) { console.warn('[SettingsPanel] remove dynamic models:', e) }
+  };
+
   /** Fetch models from the provider's /models endpoint and cache them */
   const refreshProviderModels = async (providerId: string) => {
     const provider = settings.providers.find((p) => p.id === providerId);
@@ -546,10 +594,16 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
         const serverModels = data.data || data.models || [];
         if (!Array.isArray(serverModels) || serverModels.length === 0) continue;
 
-        // Convert to {id, name} format
+        // Convert to {id, name, contextWindow} format.
+        // 保留 contextWindow（用 ID 启发式推断），否则运行时窗口解析会回退
+        // 128k，导致 1M 窗口模型（DeepSeek/Gemini/MiMo）过早压缩。
         const models = serverModels.map((sm: any) => ({
           id: sm.id,
           name: sm.id,
+          contextWindow: sm.context_window || sm.contextWindow || inferContextWindow(sm.id),
+          maxOutputTokens: sm.max_output_tokens || sm.maxOutputTokens || 16384,
+          supportsTools: sm.supports_tools ?? sm.supportsTools ?? true,
+          supportsStreaming: sm.supports_streaming ?? sm.supportsStreaming ?? true,
         }));
 
         // Update state
@@ -1213,8 +1267,27 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
           {settings.providers.map((provider) => (
             <div key={provider.id} className="provider-group">
               <div className="provider-header">
-                <span className="provider-name">{provider.name}</span>
+                {provider.custom ? (
+                  <input
+                    type="text"
+                    value={provider.name}
+                    onChange={(e) => updateProvider(provider.id, { name: e.target.value })}
+                    style={{ flex: 1, background: "transparent", border: "none", color: "var(--text-primary)", fontSize: 'var(--fs-base)', fontWeight: 600, outline: "none", borderBottom: "1px dashed var(--border-primary)", padding: "2px 0", marginRight: 8 }}
+                    title={lang === "zh" ? "自定义 Provider 名称（可修改）" : "Custom provider name (editable)"}
+                  />
+                ) : (
+                  <span className="provider-name">{provider.name}</span>
+                )}
                 {provider.apiKey && <span className="provider-status">✓</span>}
+                {provider.custom && (
+                  <button
+                    onClick={() => removeCustomProvider(provider.id)}
+                    title={lang === "zh" ? "删除此 Provider" : "Remove this provider"}
+                    style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", marginLeft: 6, display: "flex", alignItems: "center" }}
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                )}
               </div>
 
               <div className="setting-group">
@@ -1297,6 +1370,76 @@ marginTop: 4,
               </button>
             </div>
           ))}
+
+          {/* 通用协议配置：添加自定义 OpenAI-compatible Provider（如 b.ai / 百川智能等） */}
+          <div className="provider-group" style={{ borderTop: "1px dashed var(--border-primary)", paddingTop: 10, marginTop: 4 }}>
+            {!showAddCustom ? (
+              <button
+                onClick={() => setShowAddCustom(true)}
+                style={{
+                  width: "100%", padding: "8px 12px",
+                  background: "var(--bg-tertiary)", color: "var(--text-secondary)",
+                  border: "1px dashed var(--border-primary)", borderRadius: 6,
+                  fontSize: 'var(--fs-sm)', cursor: "pointer",
+                  display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+                }}
+              >
+                <Plus size={14} />
+                {lang === "zh" ? "添加自定义 Provider（通用 OpenAI 兼容协议）" : "Add Custom Provider (OpenAI-compatible)"}
+              </button>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-secondary)", marginBottom: 2 }}>
+                  {lang === "zh"
+                    ? "输入任意 OpenAI 兼容服务的 Base URL 和 API Key，点击保存后可从服务商拉取模型列表（如 b.ai: https://api.baichuan-ai.com/v1）。"
+                    : "Enter any OpenAI-compatible service Base URL and API Key. After saving, the model list can be fetched from the provider (e.g. b.ai: https://api.baichuan-ai.com/v1)."}
+                </div>
+                <input
+                  type="text"
+                  value={customName}
+                  onChange={(e) => setCustomName(e.target.value)}
+                  placeholder={lang === "zh" ? "Provider 名称（如 b.ai）" : "Provider name (e.g. b.ai)"}
+                  style={{ padding: "6px 10px", borderRadius: 4, border: "1px solid var(--border-primary)", background: "var(--bg-tertiary)", color: "var(--text-primary)", fontSize: 'var(--fs-sm)' }}
+                />
+                <input
+                  type="text"
+                  value={customBaseUrl}
+                  onChange={(e) => setCustomBaseUrl(e.target.value)}
+                  placeholder={lang === "zh" ? "Base URL（如 https://api.baichuan-ai.com/v1）" : "Base URL (e.g. https://api.baichuan-ai.com/v1)"}
+                  style={{ padding: "6px 10px", borderRadius: 4, border: "1px solid var(--border-primary)", background: "var(--bg-tertiary)", color: "var(--text-primary)", fontSize: 'var(--fs-sm)' }}
+                />
+                <input
+                  type="password"
+                  value={customApiKey}
+                  onChange={(e) => setCustomApiKey(e.target.value)}
+                  placeholder={lang === "zh" ? "API Key" : "API Key"}
+                  style={{ padding: "6px 10px", borderRadius: 4, border: "1px solid var(--border-primary)", background: "var(--bg-tertiary)", color: "var(--text-primary)", fontSize: 'var(--fs-sm)' }}
+                />
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button
+                    onClick={addCustomProvider}
+                    disabled={!customName.trim() || !customBaseUrl.trim()}
+                    style={{
+                      padding: "6px 16px", background: "var(--accent)", color: "var(--text-on-accent)",
+                      border: "none", borderRadius: 4, fontSize: 'var(--fs-sm)', cursor: "pointer",
+                      opacity: (!customName.trim() || !customBaseUrl.trim()) ? 0.5 : 1,
+                    }}
+                  >
+                    {lang === "zh" ? "保存 Provider" : "Save Provider"}
+                  </button>
+                  <button
+                    onClick={() => { setShowAddCustom(false); setCustomName(""); setCustomBaseUrl(""); setCustomApiKey(""); }}
+                    style={{
+                      padding: "6px 16px", background: "var(--bg-tertiary)", color: "var(--text-secondary)",
+                      border: "1px solid var(--border-primary)", borderRadius: 4, fontSize: 'var(--fs-sm)', cursor: "pointer",
+                    }}
+                  >
+                    {lang === "zh" ? "取消" : "Cancel"}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
 
           <div className="settings-divider" />
 

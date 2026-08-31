@@ -1922,7 +1922,8 @@ z-index: 50;
   pointer-events: none;
   white-space: pre-wrap;
   word-wrap: break-word;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
   font-size: 15px;
   font-family: inherit;
   line-height: 24px;
@@ -1980,7 +1981,8 @@ z-index: 50;
   letter-spacing: normal;
   word-spacing: normal;
   text-indent: 0;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
   white-space: pre-wrap;
   word-wrap: break-word;
   tab-size: 8;
@@ -1992,7 +1994,8 @@ z-index: 50;
 }
 
 /* Reset textarea internal scrollbar to avoid width drift */
-.message-input::-webkit-scrollbar {
+.message-input::-webkit-scrollbar,
+.input-backdrop::-webkit-scrollbar {
   width: 0;
   height: 0;
 }
@@ -9108,6 +9111,7 @@ border-color: var(--text-muted);
 
 .input-backdrop-wrapper.expanded {
   min-height: 200px;
+  max-height: 480px;
 }
 
 /* #10: Disabled state hint */
@@ -10630,6 +10634,28 @@ html.pet-window-mode #root {
 
 .guidance-cancel-btn:hover {
   background: rgba(231, 76, 60, 0.2);
+}
+
+/* "Inject now" action on a pending guidance bubble in the waiting bar */
+.guidance-bubble-inject-btn {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  background: rgba(124, 108, 240, 0.15);
+  border: 1px solid rgba(124, 108, 240, 0.4);
+  border-radius: 4px;
+  padding: 2px 7px;
+  color: var(--accent, #7c6cf0);
+  font-size: 11px;
+  line-height: 1.4;
+  cursor: pointer;
+  flex-shrink: 0;
+  white-space: nowrap;
+  transition: background 0.15s ease;
+}
+
+.guidance-bubble-inject-btn:hover {
+  background: rgba(124, 108, 240, 0.28);
 }
 
 /* ========== P0: Inline Message Edit ========== */
