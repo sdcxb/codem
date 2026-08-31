@@ -123,6 +123,15 @@ export type { ParsedWikiLink } from './note-manager';
 export { generatePPTContent, serializeSlideDeck, deserializeSlideDeck, migrateOldDeck } from './ppt-generator';
 export { PPT_THEMES } from './ppt-types';
 export type { V2SlideDeck, V2Slide, SlideElement, PPTTheme } from './ppt-types';
+export { PPT_STYLES, PPT_FONTS, CANVAS_SIZES, STYLE_CATEGORY_LABELS, getStyleById, getCanvasSizeById, getFontById, loadGoogleFonts, styleToTheme, getStyleBackground } from './ppt-styles';
+export type { PPTStyle, StyleCategory, CanvasSize, FontDef, BackgroundType, DecorationType } from './ppt-styles';
+export { chatModifySlide } from './ppt-chat';
+export type { ChatModifyResult } from './ppt-chat';
+export { generateImage, generateImagePrompt, autoGenerateImages, isImageGenAvailable, getImageGenInfo } from './ppt-image';
+export { generateSpeakerNotes, generateAllSpeakerNotes } from './ppt-notes';
+export { getTemplates, getTemplateById, createSlideFromTemplate } from './ppt-templates';
+export type { SlideTemplate } from './ppt-templates';
+export { importPPTX } from './pptx-importer';
 
 // 笔记本导出 (对标 NotebookLM 导出功能)
 export { exportNotebookAsMarkdown, exportNoteAsMarkdown, downloadMarkdown } from './exporter';

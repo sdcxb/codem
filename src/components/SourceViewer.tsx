@@ -49,7 +49,7 @@ export function SourceViewer({
     const allChunks = getChunks(notebookId).filter(c => c.sourceId === sourceId);
     setChunks(allChunks);
 
-    // Auto-switch to PDF view for PDF file sources
+    // 不再强制 text 模式 — 让 PDF/DOCX 用各自的渲染模式，高亮由组件内部处理
     if (src?.type === 'file' && src.filePath?.toLowerCase().endsWith('.pdf')) {
       setViewMode('pdf');
     } else if (src?.type === 'file' && src.filePath?.toLowerCase().endsWith('.docx')) {
@@ -70,28 +70,35 @@ export function SourceViewer({
     return chunks.map(c => c.content).join('\n\n');
   }, [source, chunks]);
 
-  // Highlighted text rendering
+  // Highlighted text rendering — 在文本中高亮所有匹配项
   const renderContent = (text: string, isHighlighted: boolean, highlightSnippet?: string) => {
-    if (!highlightSnippet || !isHighlighted) return text;
+    if (!highlightSnippet) return text;
 
-    // Highlight the matching snippet within the text
+    // 大小写不敏感匹配，高亮所有出现的位置
     const lowerText = text.toLowerCase();
     const lowerSnippet = highlightSnippet.toLowerCase();
-    const idx = lowerText.indexOf(lowerSnippet);
-
+    const parts: React.ReactNode[] = [];
+    let lastIndex = 0;
+    let idx = lowerText.indexOf(lowerSnippet, lastIndex);
+    
     if (idx === -1) return text;
-
-    const before = text.substring(0, idx);
-    const match = text.substring(idx, idx + highlightSnippet.length);
-    const after = text.substring(idx + highlightSnippet.length);
-
-    return (
-      <>
-        {before}
-        <span className="nb-source-highlight">{match}</span>
-        {after}
-      </>
-    );
+    
+    while (idx !== -1) {
+      if (idx > lastIndex) {
+        parts.push(text.substring(lastIndex, idx));
+      }
+      parts.push(
+        <span key={idx} className="nb-source-highlight">
+          {text.substring(idx, idx + highlightSnippet.length)}
+        </span>
+      );
+      lastIndex = idx + highlightSnippet.length;
+      idx = lowerText.indexOf(lowerSnippet, lastIndex);
+    }
+    if (lastIndex < text.length) {
+      parts.push(text.substring(lastIndex));
+    }
+    return <>{parts}</>;
   };
 
   return (
@@ -210,6 +217,7 @@ export function SourceViewer({
           <div className="nb-source-viewer-body">
             <DocxViewer
               filePath={source.filePath}
+              highlightText={highlightText || searchQuery}
               onClose={onClose}
             />
           </div>
@@ -228,7 +236,7 @@ export function SourceViewer({
               {filteredChunks.map((chunk, idx) => {
     const isHighlighted = highlightChunkIndex !== undefined
       ? chunk.chunkIndex === highlightChunkIndex
-      : Boolean(highlightText && chunk.content.includes(highlightText));
+      : Boolean(highlightText && chunk.content.toLowerCase().includes(highlightText.toLowerCase()));
 
                 return (
                   <div
@@ -280,7 +288,7 @@ export function SourceViewer({
             </div>
 ) : (
             <div className="nb-source-viewer-content">
-              {fullText || '(无内容)'}
+              {highlightText ? renderContent(fullText, true, highlightText) : (fullText || '(无内容)')}
             </div>
           )}
         </div>

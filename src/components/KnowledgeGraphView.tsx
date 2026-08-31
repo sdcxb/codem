@@ -294,8 +294,11 @@ export function KnowledgeGraphView({ notebookId, onNodeSelect }: KnowledgeGraphV
       const isHighlighted = hoveredNode === a.id || hoveredNode === b.id ||
         selectedNode?.id === a.id || selectedNode?.id === b.id;
 
-      ctx.strokeStyle = isHighlighted ? accent : (dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)');
-      ctx.lineWidth = isHighlighted ? 2 : 1;
+      // 连线颜色：高亮时用 accent，普通时用半透明可见色（提高对比度）
+      ctx.strokeStyle = isHighlighted
+        ? accent
+        : (dark ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.25)');
+      ctx.lineWidth = isHighlighted ? 2.5 : 1.2;
       ctx.beginPath();
       ctx.moveTo(a.x, a.y);
       ctx.lineTo(b.x, b.y);
@@ -339,9 +342,14 @@ export function KnowledgeGraphView({ notebookId, onNodeSelect }: KnowledgeGraphV
       ctx.lineWidth = isSelected ? 3 : 1.5;
       ctx.stroke();
 
-      // Node label
+      // Node label — 在 ctx.scale 内部，字体会被缩放。
+      // 为了让文字在缩小时保持可读大小，反向补偿字体大小。
+      // 例如 scale=0.5 时，设 24px 会渲染为 12px，保持可读。
+      const scale = scaleRef.current;
+      const targetScreenPx = isSelected ? 14 : 12;
+      const fontSize = targetScreenPx / scale;
       ctx.fillStyle = textColor;
-      ctx.font = `${isSelected ? 'bold ' : ''}12px sans-serif`;
+      ctx.font = `${isSelected ? 'bold ' : ''}${fontSize}px sans-serif`;
       ctx.textAlign = 'center';
       ctx.fillText(node.label, node.x, node.y + radius + 14);
     }
@@ -466,11 +474,10 @@ export function KnowledgeGraphView({ notebookId, onNodeSelect }: KnowledgeGraphV
           loadGraph();
           return;
         }
-        // Find original GraphNode
+        // 单击：只选中节点，显示右侧详情栏（不打开文档）
         const original = graphData.nodes.find(n => n.id === node.id);
         if (original) {
           setSelectedNode(original);
-          onNodeSelect?.(original);
         }
         return;
       }
@@ -479,7 +486,7 @@ export function KnowledgeGraphView({ notebookId, onNodeSelect }: KnowledgeGraphV
     setEdgeCreateFrom(null);
   };
 
-  // C3: Double-click to edit node label
+  // 双击节点：打开来源文档并高亮
   const handleDoubleClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -492,8 +499,11 @@ export function KnowledgeGraphView({ notebookId, onNodeSelect }: KnowledgeGraphV
       const dy = node.y - y;
       const radius = 6 + Math.min(node.weight * 2, 12);
       if (dx * dx + dy * dy < (radius + 5) * (radius + 5)) {
-        setEditingNodeId(node.id);
-        setEditLabel(node.label);
+        // 双击：跳转到来源文档
+        const original = graphData.nodes.find(n => n.id === node.id);
+        if (original) {
+          onNodeSelect?.(original);
+        }
         return;
       }
     }
@@ -857,7 +867,7 @@ export function KnowledgeGraphView({ notebookId, onNodeSelect }: KnowledgeGraphV
         ))}
         <div className="kg-legend-item" style={{ marginLeft: 'auto' }}>
           <span style={{ color: textSecondaryColor, fontSize: '10px' }}>
-            {isZh ? '双击编辑 · 右键删除 · 侧栏连线' : 'Double-click to edit · Right-click to delete · Sidebar to link'}
+            {isZh ? '单击选中 · 双击打开文档 · 右键菜单 · 侧栏编辑' : 'Click to select · Double-click to open · Right-click for menu · Sidebar to edit'}
           </span>
         </div>
       </div>

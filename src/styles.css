@@ -9506,8 +9506,8 @@ border-color: var(--text-muted);
 .notebook-manager-title {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 18px;
+  gap: 6px;
+  font-size: 15px;
   font-weight: 600;
   margin: 0;
 }
@@ -9603,20 +9603,20 @@ border-color: var(--text-muted);
   background: none;
   border: none;
   outline: none;
-  font-size: 13px;
+  font-size: 12px;
   color: var(--text-primary, #fff);
 }
 
 .notebook-create-btn {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 14px;
+  gap: 5px;
+  padding: 4px 10px;
   background: var(--accent);
   color: white;
   border: none;
-  border-radius: 8px;
-  font-size: 13px;
+  border-radius: 5px;
+  font-size: 12px;
   font-weight: 500;
   cursor: pointer;
   transition: opacity 0.15s;
@@ -9642,14 +9642,14 @@ border-color: var(--text-muted);
 .notebook-card {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 16px;
+  gap: 6px;
+  padding: 12px;
   background: var(--bg-tertiary);
   border: 1px solid var(--border-primary);
-  border-radius: 12px;
+  border-radius: 8px;
   cursor: pointer;
   transition: border-color 0.15s, background 0.15s;
-  min-height: 140px;
+  min-height: 120px;
 }
 .notebook-card:hover {
   border-color: var(--accent);
@@ -9663,7 +9663,7 @@ border-color: var(--text-muted);
 }
 .notebook-card-title {
   flex: 1;
-  font-size: 15px;
+  font-size: 13px;
   font-weight: 600;
   margin: 0;
   overflow: hidden;
@@ -9732,11 +9732,11 @@ border-color: var(--text-muted);
   margin: 0;
 }
 .notebook-empty-hint {
-  font-size: 13px;
+  font-size: 12px;
   color: var(--text-muted);
 }
 .notebook-empty-title {
-  font-size: 18px;
+  font-size: 15px;
   font-weight: 500;
 }
 
@@ -9765,9 +9765,9 @@ border-color: var(--text-muted);
   border: none;
   color: var(--text-muted, #888);
   cursor: pointer;
-  font-size: 13px;
-  padding: 4px 8px;
-  border-radius: 6px;
+  font-size: 12px;
+  padding: 3px 8px;
+  border-radius: 5px;
   transition: background 0.15s;
 }
 .notebook-back-btn:hover {
@@ -9776,7 +9776,7 @@ border-color: var(--text-muted);
 
 .notebook-title {
   flex: 1;
-  font-size: 18px;
+  font-size: 15px;
   font-weight: 600;
   margin: 0;
 }
@@ -9784,13 +9784,13 @@ border-color: var(--text-muted);
 .notebook-chat-btn {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 14px;
+  gap: 5px;
+  padding: 4px 10px;
   background: var(--accent);
   color: white;
   border: none;
-  border-radius: 8px;
-  font-size: 13px;
+  border-radius: 5px;
+  font-size: 12px;
   font-weight: 500;
   cursor: pointer;
   transition: opacity 0.15s;
@@ -9800,12 +9800,12 @@ border-color: var(--text-muted);
 }
 
 .notebook-description {
-  font-size: 13px;
+  font-size: 12px;
   color: var(--text-muted, #888);
   margin: 0;
-  padding: 8px 12px;
+  padding: 6px 10px;
   background: var(--bg-tertiary);
-  border-radius: 8px;
+  border-radius: 6px;
 }
 
 .notebook-summary-section {
@@ -9821,14 +9821,14 @@ border-color: var(--text-muted);
 .notebook-section-title {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 14px;
+  gap: 5px;
+  font-size: 13px;
   font-weight: 600;
   margin: 0;
 }
 
 .notebook-summary-text {
-  font-size: 13px;
+  font-size: 12px;
   color: var(--text-secondary, #ccc);
   margin: 0;
   line-height: 1.5;
@@ -9900,7 +9900,7 @@ border-color: var(--text-muted);
 }
 
 .notebook-source-name {
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 500;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -9969,11 +9969,11 @@ border-color: var(--text-muted);
 
 .notebook-question-item {
   text-align: left;
-  padding: 8px 12px;
+  padding: 6px 10px;
   background: var(--bg-hover);
   border: 1px solid var(--border-primary);
-  border-radius: 8px;
-  font-size: 13px;
+  border-radius: 6px;
+  font-size: 12px;
   color: var(--text-secondary, #ccc);
   cursor: pointer;
   transition: border-color 0.15s, background 0.15s;
@@ -10011,12 +10011,12 @@ border-color: var(--text-muted);
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  padding: 6px 12px;
+  gap: 5px;
+  padding: 4px 10px;
   background: none;
   border: none;
-  border-radius: 6px;
-  font-size: 13px;
+  border-radius: 5px;
+  font-size: 12px;
   color: var(--text-muted, #888);
   cursor: pointer;
   transition: background 0.15s, color 0.15s;
@@ -10028,11 +10028,11 @@ border-color: var(--text-muted);
 
 .notebook-input {
   width: 100%;
-  padding: 8px 12px;
+  padding: 6px 10px;
   background: var(--bg-tertiary);
   border: 1px solid var(--border-primary);
-  border-radius: 8px;
-  font-size: 13px;
+  border-radius: 6px;
+  font-size: 12px;
   color: var(--text-primary, #fff);
   outline: none;
 }
@@ -10042,11 +10042,11 @@ border-color: var(--text-muted);
 
 .notebook-textarea {
   width: 100%;
-  padding: 8px 12px;
+  padding: 6px 10px;
   background: var(--bg-tertiary);
   border: 1px solid var(--border-primary);
-  border-radius: 8px;
-  font-size: 13px;
+  border-radius: 6px;
+  font-size: 12px;
   color: var(--text-primary, #fff);
   outline: none;
   resize: vertical;
@@ -10066,12 +10066,12 @@ border-color: var(--text-muted);
 .notebook-file-btn {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 12px;
+  gap: 5px;
+  padding: 4px 10px;
   background: var(--bg-tertiary);
   border: 1px solid var(--border-primary);
-  border-radius: 6px;
-  font-size: 13px;
+  border-radius: 5px;
+  font-size: 12px;
   color: var(--text-primary, #fff);
   cursor: pointer;
   transition: background 0.15s;
@@ -10089,11 +10089,11 @@ border-color: var(--text-muted);
 }
 
 .notebook-btn-cancel {
-  padding: 6px 16px;
+  padding: 4px 12px;
   background: var(--bg-tertiary);
   border: 1px solid var(--border-primary);
-  border-radius: 8px;
-  font-size: 13px;
+  border-radius: 5px;
+  font-size: 12px;
   color: var(--text-primary, #fff);
   cursor: pointer;
   transition: background 0.15s;
@@ -10103,12 +10103,12 @@ border-color: var(--text-muted);
 }
 
 .notebook-btn-confirm {
-  padding: 6px 16px;
+  padding: 4px 12px;
   background: var(--accent);
   color: white;
   border: none;
-  border-radius: 8px;
-  font-size: 13px;
+  border-radius: 5px;
+  font-size: 12px;
   font-weight: 500;
   cursor: pointer;
   transition: opacity 0.15s;
@@ -10133,11 +10133,11 @@ border-color: var(--text-muted);
 .notebook-mode-banner {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 16px;
+  gap: 6px;
+  padding: 4px 12px;
   background: linear-gradient(90deg, var(--accent-muted), rgba(0,0,0,0));
   border-bottom: 1px solid var(--accent-muted);
-  font-size: 13px;
+  font-size: 12px;
   color: var(--text-secondary, #ccc);
   flex-shrink: 0;
 }

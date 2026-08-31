@@ -81,6 +81,8 @@ sessionKey?: string;
   mode?: "cli" | "api";
   /** P1: Connection status indicator */
   connected?: boolean;
+  /** Hide knowledge source selector button (notebook mode — source filtering handled externally) */
+  hideSourceSelector?: boolean;
 }
 
 // HTML escape for backdrop rendering
@@ -93,7 +95,7 @@ function escapeHtml(text: string): string {
     .replace(/'/g, "&#39;");
 }
 
-export function InputArea({ onSend, onCancel, disabled, isStreaming, noSession, sessionKey, collaborationMode, onModeChange, projectPath, quoteContext, onClearQuote, suggestionPrompt, onSuggestionConsumed, notebookId, onToggleSearch, onToggleWorkbench, onToggleQuickPhrase, onToggleDraftPicker, onToggleDisplayMode, onToggleGit, onToggleRightSidebar, hasDrafts, model, onModelChange, mode = "cli", connected = true }: InputAreaProps) {
+export function InputArea({ onSend, onCancel, disabled, isStreaming, noSession, sessionKey, collaborationMode, onModeChange, projectPath, quoteContext, onClearQuote, suggestionPrompt, onSuggestionConsumed, notebookId, onToggleSearch, onToggleWorkbench, onToggleQuickPhrase, onToggleDraftPicker, onToggleDisplayMode, onToggleGit, onToggleRightSidebar, hasDrafts, model, onModelChange, mode = "cli", connected = true, hideSourceSelector }: InputAreaProps) {
   const lang = useLang();
   const [input, setInput] = useState("");
   const [pendingAttachments, setPendingAttachments] = useState<MessageAttachment[]>([]);
@@ -990,26 +992,9 @@ const handleSelectProject = (projectId: string) => {
             </div>
 
             {/* Collaboration mode — SlotBridge 消费 app.plan-mode-chip */}
-            <SlotBridge
-              name="app.plan-mode-chip"
-              fallback={PlanModeChip}
-              mode={collaborationMode}
-              onModeChange={(m: CollaborationMode) => onModeChange?.(m)}
-              locked={isStreaming}
-            />
-            {/* 内联回退：当 PlanModeChip 未显示时（非 plan 模式），保留可点击的切换按钮 */}
-            {collaborationMode !== 'plan' && (
-              <button
-                className="mode-toggle-btn default"
-                onClick={() => onModeChange?.('plan')}
-                title={zh ? "执行模式 — 点击切换到计划模式" : "Execute mode — click for plan mode"}
-              >
-                <Zap size={14} />
-              </button>
-            )}
 
-            {/* P4: Knowledge source selector (notebook mode) */}
-            {notebookId && (
+            {/* P4: Knowledge source selector (notebook mode) — hidden when hideSourceSelector is true */}
+            {notebookId && !hideSourceSelector && (
               <button
                 className={`mode-toggle-btn ${showSourceSelector ? "active" : ""}`}
                 onClick={() => {
@@ -1027,7 +1012,7 @@ const handleSelectProject = (projectId: string) => {
                 <BookMarked size={14} />
               </button>
             )}
-            {showSourceSelector && notebookId && (
+            {showSourceSelector && notebookId && !hideSourceSelector && (
               <div style={{ position: "absolute", bottom: "100%", left: 0, right: 0, zIndex: 100 }}>
                 <SourceSelector
                   sources={notebookSources}

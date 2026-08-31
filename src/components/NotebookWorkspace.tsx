@@ -16,10 +16,18 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   ArrowLeft, Plus, Trash2, Search, FileText, Link as LinkIcon, Type,
-  Loader2, AlertCircle, CheckCircle, MessageSquare, BookOpen, ChevronLeft,
+  Loader2, BookOpen, ChevronLeft,
   ChevronRight, StickyNote, Pin, Edit3, Save, X, Sparkles, Share2, Presentation,
-  Download, Route, Map, XCircle, Layers, Eye, Columns,
+  Download, Route, Map, XCircle, Layers, Eye, Columns, ChevronDown, ChevronUp,
+  PanelLeftOpen, PanelLeftClose, PanelRightOpen, PanelRightClose,
 } from 'lucide-react';
+// 对话系统复用 — 笔记本专用精简聊天面板
+import { NbChatPanel } from './NbChatPanel';
+import { useAppStore } from '../store';
+import * as SessionStorage from '../core/storage/session';
+import * as ProjectStorage from '../core/storage/project';
+import type { Session } from '../core/types';
+import type { CollaborationMode } from '../core/agent/agent';
 // C4: Studio 预览渲染所需的 Markdown 组件
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -40,6 +48,7 @@ import {
   generateStudioContent,
   exportNotebookAsMarkdown, downloadMarkdown, generateStudyPath,
   getChunks,
+  setActiveSourceFilter,
 } from '../core/knowledge';
 import type { Notebook, NotebookSource, IndexProgress, Note, StudioContentType, NoteContentType } from '../core/knowledge';
 // WikiLinks 同步 + 学习路径 (借鉴 Lumina Note + Understand-Anything 思路)
@@ -54,24 +63,60 @@ interface NotebookWorkspaceProps {
   notebookId: string;
   notebookName: string;
   onBack: () => void;
-  onOpenChat: (notebookId: string, notebookName: string, selectedSourceIds?: string[]) => void;
-  /** Called when user wants to save an AI response as a note */
+    /** Called when user wants to save an AI response as a note */
   onSaveAIResponseAsNote?: (notebookId: string, title: string, content: string) => void;
+  /** 
+   * 笔记本内嵌对话回调 — 由 App.tsx 提供，复用主对话引擎
+   * 当用户在笔记本中间栏发送消息时，通过此回调触发 agentic loop
+   */
+  onNotebookSend?: (message: string, session: Session, notebookId: string) => void;
+  /** 取消正在运行的对话 */
+  onNotebookCancel?: (sessionId: string) => void;
+  /** 发送引导消息到正在运行的对话 */
+  onNotebookSendGuidance?: (message: string, sessionId: string) => void;
+  /** 当前模型 */
+  notebookModel?: string;
+  /** 模型切换回调 */
+  onNotebookModelChange?: (model: string) => void;
+  /** 引用点击回调 */
+  onCitationClick?: (sourceName: string) => void;
+  /** 来源点击回调 */
+  onSourceClick?: (sourceId: string, chunkIndex?: number) => void;
+  /** 连接状态 */
+  notebookConnected?: boolean;
 }
 
 export function NotebookWorkspace({
   notebookId,
   notebookName,
   onBack,
-  onOpenChat,
+    onNotebookSend,
+  onNotebookCancel,
+  onNotebookSendGuidance,
+  notebookModel,
+  onNotebookModelChange,
+  onCitationClick,
+  onSourceClick,
+  notebookConnected = true,
 }: NotebookWorkspaceProps) {
   const lang = useLang();
   const isZh = lang === 'zh';
   const { skin } = useSkin();
+  // 对话系统状态 — 复用主应用的 store
+  const { messages: chatMessages, loadMessages, saveMessages, clearMessages } = useAppStore();
 
   // View mode: 'sources' | 'chat' | 'notes' | 'graph'
   // Graph 视图借鉴 Understand-Anything 的图谱优先布局思路
-  const [viewMode, setViewMode] = useState<'sources' | 'chat' | 'notes' | 'graph'>('sources');
+  const [viewMode, setViewMode] = useState<'sources' | 'graph'>('sources');
+  const isGraphMode = viewMode === 'graph';
+
+  // ===== 笔记本内嵌对话管理 =====
+  // 将每个笔记本视为一个虚拟项目，复用主应用的 session/message 机制
+  // 虚拟项目 ID 格式: notebook:{notebookId}，避免与真实项目冲突
+  const notebookProjectId = `notebook:${notebookId}`;
+  const [notebookSessions, setNotebookSessions] = useState<Session[]>([]);
+  const [notebookCurrentSession, setNotebookCurrentSession] = useState<Session | null>(null);
+  const [collaborationMode] = useState<CollaborationMode>('default');
 
   // PPT editor state
   const [showPPTEditor, setShowPPTEditor] = useState(false);
@@ -91,6 +136,9 @@ export function NotebookWorkspace({
   // Panel collapse state
   const [leftCollapsed, setLeftCollapsed] = useState(false);
   const [rightCollapsed, setRightCollapsed] = useState(false);
+
+  // Summary collapse state — 控制笔记本级摘要的显示/隐藏
+  const [summaryCollapsed, setSummaryCollapsed] = useState(false);
 
   // Source selection (checkboxes)
   const [selectedSourceIds, setSelectedSourceIds] = useState<Set<string>>(new Set());
@@ -272,6 +320,71 @@ export function NotebookWorkspace({
     }).catch(() => setLoadingQuestions(false));
   }, [refreshAll, notebookId]);
 
+  // ===== 监听外部工具创建笔记的事件（如 generate_ppt 工具） =====
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail?.notebookId === notebookId) {
+        setNotes(listNotes(notebookId));
+      }
+    };
+    window.addEventListener('notebook:note-created', handler);
+    return () => window.removeEventListener('notebook:note-created', handler);
+  }, [notebookId]);
+
+  // ===== 笔记本内嵌对话：初始化虚拟项目 + 加载历史对话 =====
+  useEffect(() => {
+    // 为笔记本创建/获取虚拟项目，使复用的对话系统能正确管理 session
+    const virtualProjectId = `notebook:${notebookId}`;
+    let project = ProjectStorage.getProject(virtualProjectId);
+    if (!project) {
+      project = {
+        id: virtualProjectId,
+        name: `📓 ${notebookName}`,
+        path: '',  // 笔记本对话不需要工作目录
+        description: `Notebook: ${notebookName}`,
+        pinned: false,
+        createdAt: Date.now(),
+        lastAccessedAt: Date.now(),
+      };
+      try { ProjectStorage.createProject(project); } catch (e) { console.warn('[NotebookWorkspace] Virtual project creation failed:', e); }
+    } else {
+      ProjectStorage.updateProject(virtualProjectId, { lastAccessedAt: Date.now() });
+    }
+
+    // 加载该笔记本的所有对话 session
+    const sessions = SessionStorage.listSessions(virtualProjectId);
+    setNotebookSessions(sessions);
+
+    // 如果有历史 session，加载最近一个
+    if (sessions.length > 0) {
+      const latest = sessions[0]; // listSessions 按 last_message_at DESC 排序
+      setNotebookCurrentSession(latest);
+      loadMessages(latest.id);
+    } else {
+      // 没有历史对话，创建新 session
+      const newSession: Session = {
+        id: `nb-ses-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        projectId: virtualProjectId,
+        title: isZh ? '对话 1' : 'Chat 1',
+        createdAt: Date.now(),
+        lastMessageAt: Date.now(),
+        messageCount: 0,
+        pinned: false,
+      };
+      try { SessionStorage.createSession(newSession); } catch (e) { console.warn('[NotebookWorkspace] Session creation failed:', e); }
+      setNotebookSessions([newSession]);
+      setNotebookCurrentSession(newSession);
+      clearMessages();
+    }
+
+    // 清理：当笔记本关闭时，恢复主应用的 session 状态
+    return () => {
+      clearMessages();
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [notebookId]);
+
   // Select all indexed sources by default
   useEffect(() => {
     const indexed = sources.filter(s => s.status === 'indexed');
@@ -291,9 +404,14 @@ export function NotebookWorkspace({
       for (let i = 0; i < sourceFilePaths.length; i++) {
         const fp = sourceFilePaths[i];
         const fname = fp.split(/[\\/]/).pop() || `file-${i}`;
+        // 如果只有一个文件且名称看起来像是时间戳/纯数字，用文件名替换
+        let nameToUse = sourceFilePaths.length === 1 ? sourceName.trim() : fname;
+        if (/^\d{10,}$/.test(nameToUse)) {
+          nameToUse = fname;
+        }
         const source = addSource({
           notebookId,
-          name: sourceFilePaths.length === 1 ? sourceName.trim() : fname,
+          name: nameToUse,
           type: 'file',
           filePath: fp,
         });
@@ -329,7 +447,20 @@ export function NotebookWorkspace({
 
     const source = addSource({
       notebookId,
-      name: sourceName.trim(),
+      name: (() => {
+        // 如果名称是纯数字时间戳，用文件名/URL/默认值替换
+        let n = sourceName.trim();
+        if (/^\d{10,}$/.test(n)) {
+          if (sourceType === 'file' && sourceFilePaths[0]) {
+            n = sourceFilePaths[0].split(/[\\/]/).pop() || n;
+          } else if (sourceType === 'url' && sourceUrl) {
+            n = sourceUrl.split('/')[2] || sourceUrl;
+          } else {
+            n = 'Untitled';
+          }
+        }
+        return n;
+      })(),
       type: sourceType,
       content: sourceType === 'text' ? sourceContent : undefined,
       url: sourceType === 'url' ? sourceUrl : undefined,
@@ -488,16 +619,89 @@ setShowNoteEditor(true);
     setNotes(listNotes(notebookId));
   };
 
+  // ===== 笔记本内嵌对话 handlers =====
+
+  // 发送消息 — 复用 App.tsx 的 agentic loop
+  const handleNotebookSend = useCallback(async (message: string, _attachments?: any[], _selectedSkills?: string[]) => {
+    const session = notebookCurrentSession;
+    if (!session || !onNotebookSend) return;
+
+    // 对标 NotebookLM: 发送消息前设置来源过滤器
+    // 勾选的来源 ID 传给底层 RAG 检索引擎，限制检索范围
+    // 空集 = 全部已索引来源参与检索（NotebookLM 默认行为）
+    const indexedSourceIds = Array.from(selectedSourceIds);
+    setActiveSourceFilter(indexedSourceIds.length > 0 ? indexedSourceIds : null);
+
+    // 添加用户消息到 UI
+    useAppStore.getState().addMessage({
+      id: `user-${Date.now()}`,
+      role: 'user',
+      content: message,
+      timestamp: Date.now(),
+      status: 'done',
+    });
+    saveMessages(session.id);
+
+    // 更新 session 消息计数
+    const updatedCount = session.messageCount + 1;
+    SessionStorage.updateSession(session.id, { messageCount: updatedCount, lastMessageAt: Date.now() });
+    const updatedSession = { ...session, messageCount: updatedCount, lastMessageAt: Date.now() };
+    setNotebookCurrentSession(updatedSession);
+
+    // 调用 App.tsx 提供的 agentic loop
+    onNotebookSend(message, updatedSession, notebookId);
+  }, [notebookCurrentSession, onNotebookSend, saveMessages, notebookId, selectedSourceIds]);
+
+  // 取消对话
+  const handleNotebookCancel = useCallback(() => {
+    if (notebookCurrentSession && onNotebookCancel) {
+      onNotebookCancel(notebookCurrentSession.id);
+    }
+  }, [notebookCurrentSession, onNotebookCancel]);
+
+  // 发送引导消息
+  const handleNotebookSendGuidance = useCallback((message: string) => {
+    if (notebookCurrentSession && onNotebookSendGuidance) {
+      onNotebookSendGuidance(message, notebookCurrentSession.id);
+    }
+  }, [notebookCurrentSession, onNotebookSendGuidance]);
+
+  // 切换 session
+  const handleNotebookSwitchSession = useCallback((sessionId: string) => {
+    const session = notebookSessions.find(s => s.id === sessionId);
+    if (!session) return;
+    setNotebookCurrentSession(session);
+    loadMessages(session.id);
+  }, [notebookSessions, loadMessages]);
+
+  // 创建新 session
+  const handleNotebookNewSession = useCallback(() => {
+    const sessionNumber = notebookSessions.length + 1;
+    const newSession: Session = {
+      id: `nb-ses-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      projectId: notebookProjectId,
+      title: isZh ? `对话 ${sessionNumber}` : `Chat ${sessionNumber}`,
+      createdAt: Date.now(),
+      lastMessageAt: Date.now(),
+      messageCount: 0,
+      pinned: false,
+    };
+    try { SessionStorage.createSession(newSession); } catch (e) { console.warn('[NotebookWorkspace] New session creation failed:', e); }
+    setNotebookSessions(prev => [newSession, ...prev]);
+    setNotebookCurrentSession(newSession);
+    clearMessages();
+  }, [notebookSessions.length, notebookProjectId, isZh, clearMessages]);
+
   return (
     <div className="nb-workspace">
       {/* Header */}
       <div className="nb-workspace-header">
         <button className="nb-back-btn" onClick={onBack}>
-          <ArrowLeft className="w-4 h-4" />
+          <ArrowLeft className="w-3 h-3" />
           <span>{isZh ? '笔记本列表' : 'Notebooks'}</span>
         </button>
         <h2 className="nb-workspace-title">
-          <BookOpen className="w-4 h-4" />
+          <BookOpen className="w-3 h-3" />
           {notebookName}
         </h2>
         <div className="nb-workspace-actions">
@@ -508,7 +712,7 @@ setShowNoteEditor(true);
               onClick={() => setShowExport(!showExport)}
               disabled={sources.length === 0}
             >
-              <Download className="w-4 h-4" />
+              <Download className="w-3 h-3" />
               <span>{isZh ? '导出' : 'Export'}</span>
             </button>
             {showExport && (
@@ -527,7 +731,7 @@ setShowNoteEditor(true);
             disabled={sources.filter(s => s.status === 'indexed').length === 0}
             title={isZh ? '学习路径' : 'Study Path'}
           >
-            <Route className="w-4 h-4" />
+            <Route className="w-3 h-3" />
             <span>{isZh ? '学习路径' : 'Study Path'}</span>
           </button>
           {/* 闪卡 (借鉴 Lumina Note 思路) */}
@@ -536,7 +740,7 @@ setShowNoteEditor(true);
             onClick={() => setShowFlashcards(true)}
             title={isZh ? '闪卡' : 'Flashcards'}
           >
-            <Layers className="w-4 h-4" />
+            <Layers className="w-3 h-3" />
             <span>{isZh ? '闪卡' : 'Flashcards'}</span>
           </button>
           <div className="nb-studio-wrapper" ref={studioRef}>
@@ -546,9 +750,9 @@ setShowNoteEditor(true);
               disabled={studioGenerating || sources.filter(s => s.status === 'indexed').length === 0}
             >
               {studioGenerating ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
+                <Loader2 className="w-3 h-3 animate-spin" />
               ) : (
-                <Sparkles className="w-4 h-4" />
+                <Sparkles className="w-3 h-3" />
               )}
               <span>Studio</span>
             </button>
@@ -579,46 +783,7 @@ setShowNoteEditor(true);
               </div>
             )}
           </div>
-          <button
-            className="nb-chat-btn"
-            onClick={() => onOpenChat(notebookId, notebookName, Array.from(selectedSourceIds))}
-          >
-            <MessageSquare className="w-4 h-4" />
-            <span>{isZh ? '开始对话' : 'Chat'}</span>
-          </button>
         </div>
-      </div>
-
-      {/* View Mode Tabs — 知识图谱视图借鉴 Understand-Anything 思路 */}
-      <div className="nb-view-tabs">
-        <button
-          className={`nb-view-tab ${viewMode === 'sources' ? 'active' : ''}`}
-          onClick={() => setViewMode('sources')}
-        >
-          <FileText className="w-3.5 h-3.5" />
-          {isZh ? '来源' : 'Sources'}
-        </button>
-        <button
-          className={`nb-view-tab ${viewMode === 'chat' ? 'active' : ''}`}
-          onClick={() => setViewMode('chat')}
-        >
-          <MessageSquare className="w-3.5 h-3.5" />
-          {isZh ? '对话' : 'Chat'}
-        </button>
-        <button
-          className={`nb-view-tab ${viewMode === 'notes' ? 'active' : ''}`}
-          onClick={() => setViewMode('notes')}
-        >
-          <StickyNote className="w-3.5 h-3.5" />
-          {isZh ? '笔记' : 'Notes'}
-        </button>
-        <button
-          className={`nb-view-tab ${viewMode === 'graph' ? 'active' : ''}`}
-          onClick={() => setViewMode('graph')}
-        >
-          <Share2 className="w-3.5 h-3.5" />
-          {isZh ? '图谱' : 'Graph'}
-        </button>
       </div>
 
       {/* PPT Editor (全屏覆盖) — 自研可视化编辑器 */}
@@ -628,48 +793,68 @@ setShowNoteEditor(true);
           initialContent={pptNoteId ? notes.find(n => n.id === pptNoteId)?.content : undefined}
           title={pptTitle}
           autoGenerate={pptAutoGenerate}
+          sourceIds={Array.from(selectedSourceIds)}
           onSave={handleSavePPT}
           onBack={() => { setShowPPTEditor(false); setPptAutoGenerate(false); }}
         />
       )}
 
 {/* Graph View — 借鉴 Understand-Anything 思路, 自研 Canvas 力导向图 */}
-{viewMode === 'graph' && !showPPTEditor ? (
+{isGraphMode && !showPPTEditor ? (
 <KnowledgeGraphView
 notebookId={notebookId}
-onNodeSelect={(node) => {
-// 跳转到节点关联的来源原文
-if (node.sourceIds && node.sourceIds.length > 0) {
-setViewingSource({ sourceId: node.sourceIds[0] });
-} else if (node.chunkIds && node.chunkIds.length > 0) {
-// 如果有 chunk ID，尝试找到对应的 source
-const chunks = getChunks(notebookId);
-const chunk = chunks.find(c => c.id === node.chunkIds[0]);
-if (chunk) {
-setViewingSource({ sourceId: chunk.sourceId, chunkIndex: chunk.chunkIndex });
-}
-}
-}}
+              onNodeSelect={(node) => {
+                // 跳转到节点关联的来源原文，并高亮节点标签
+                if (node.sourceIds && node.sourceIds.length > 0) {
+                  setViewingSource({ sourceId: node.sourceIds[0], highlightText: node.label });
+                } else if (node.chunkIds && node.chunkIds.length > 0) {
+                  // 如果有 chunk ID，尝试找到对应的 source
+                  const chunks = getChunks(notebookId);
+                  const chunk = chunks.find(c => c.id === node.chunkIds[0]);
+                  if (chunk) {
+                    setViewingSource({ sourceId: chunk.sourceId, chunkIndex: chunk.chunkIndex, highlightText: node.label });
+                  }
+                }
+              }}
 />
-) : viewMode !== 'graph' && !showPPTEditor ? (
+) : !isGraphMode && !showPPTEditor ? (
         <div className="nb-workspace-body">
         {/* Left: Sources Panel */}
         <div className={`nb-sources-panel ${leftCollapsed ? 'collapsed' : ''}`}>
           {!leftCollapsed && (
             <>
               <div className="nb-panel-header">
-                <h3 className="nb-panel-title">
-                  <FileText className="w-4 h-4" />
-                  {isZh ? '来源' : 'Sources'}
-                  <span className="nb-count-badge">{sources.length}</span>
-                </h3>
+                <button
+                  className="nb-collapse-btn"
+                  onClick={() => setLeftCollapsed(!leftCollapsed)}
+                  title={leftCollapsed ? (isZh ? '展开' : 'Expand') : (isZh ? '折叠' : 'Collapse')}
+                >
+                  <PanelLeftClose size={16} />
+                </button>
+                <div className="nb-panel-tabs" style={{ display: 'flex', gap: '2px', alignItems: 'center' }}>
+                  <button
+                    className={`nb-view-tab ${viewMode === 'sources' ? 'active' : ''}`}
+                    onClick={() => setViewMode('sources')}
+                  >
+                    <FileText className="w-3.5 h-3.5" />
+                    {isZh ? '来源' : 'Sources'}
+                    <span className="nb-count-badge">{sources.length}</span>
+                  </button>
+                  <button
+                    className={`nb-view-tab ${isGraphMode ? 'active' : ''}`}
+                    onClick={() => setViewMode('graph')}
+                  >
+                    <Share2 className="w-3.5 h-3.5" />
+                    {isZh ? '图谱' : 'Graph'}
+                  </button>
+                </div>
                 <button
                   className="nb-add-btn"
                   onClick={() => setShowAddSource(true)}
                   disabled={indexing}
                   title={isZh ? '添加来源' : 'Add Source'}
                 >
-                  <Plus className="w-4 h-4" />
+                  <Plus className="w-3.5 h-3.5" />
                 </button>
               </div>
 
@@ -695,7 +880,7 @@ setViewingSource({ sourceId: chunk.sourceId, chunkIndex: chunk.chunkIndex });
 
               {indexing && indexProgress && (
                 <div className="nb-indexing-progress">
-                  <Loader2 className="w-3 h-3 animate-spin" />
+                  <Loader2 className="w-2.5 h-2.5 animate-spin" />
                   <span>
                     {isZh ? '索引中' : 'Indexing'}: {indexProgress.sourceName}
                     {indexProgress.totalChunks ? ` (${indexProgress.currentChunk}/${indexProgress.totalChunks})` : ''}
@@ -703,56 +888,58 @@ setViewingSource({ sourceId: chunk.sourceId, chunkIndex: chunk.chunkIndex });
                 </div>
               )}
 
-              {/* Summary */}
+              {/* Summary — 可折叠 */}
               {notebook?.summary && notebook.summaryStatus === 'completed' && (
                 <div className="nb-summary-section">
-                  <h4 className="nb-section-label">
+                  <button
+                    className="nb-summary-toggle"
+                    onClick={() => setSummaryCollapsed(!summaryCollapsed)}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: '4px',
+                      background: 'transparent', border: 'none', cursor: 'pointer',
+                      padding: 0, width: '100%',
+                    }}
+                  >
                     <BookOpen className="w-3 h-3" />
-                    {isZh ? '摘要' : 'Summary'}
-                  </h4>
-                  <p className="nb-summary-text">{notebook.summary}</p>
+                    <span className="nb-section-label" style={{ margin: 0 }}>
+                      {isZh ? '摘要' : 'Summary'}
+                    </span>
+                    {summaryCollapsed
+                      ? <ChevronRight className="w-3 h-3" style={{ marginLeft: 'auto' }} />
+                      : <ChevronDown className="w-3 h-3" style={{ marginLeft: 'auto' }} />}
+                  </button>
+                  {!summaryCollapsed && (
+                    <p className="nb-summary-text" style={{ marginTop: '6px' }}>{notebook.summary}</p>
+                  )}
                 </div>
               )}
             </>
           )}
-          <button
-            className="nb-collapse-btn"
-            onClick={() => setLeftCollapsed(!leftCollapsed)}
-            title={leftCollapsed ? (isZh ? '展开' : 'Expand') : (isZh ? '折叠' : 'Collapse')}
-          >
-            {leftCollapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
-          </button>
         </div>
 
-        {/* Center: Chat Area */}
+        {/* Center: Chat Area — 笔记本专用精简对话面板 */}
         <div className="nb-chat-panel">
-          {guidedQuestions.length > 0 && (
-            <div className="nb-guided-questions">
-              <h3 className="nb-section-title">
-                <Sparkles className="w-4 h-4" />
-                {isZh ? '建议问题' : 'Suggested Questions'}
-              </h3>
-              <div className="nb-question-list">
-                {guidedQuestions.map((q, i) => (
-                  <button
-                    key={i}
-                    className="nb-question-card"
-                    onClick={() => onOpenChat(notebookId, notebookName, Array.from(selectedSourceIds))}
-                  >
-                    {q}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-          {loadingQuestions && sources.length > 0 && (
-            <div className="nb-loading-questions">
-              <Loader2 className="w-4 h-4 animate-spin" />
-              <span>{isZh ? '正在生成建议问题...' : 'Generating questions...'}</span>
-            </div>
-          )}
-
-          {sources.length === 0 && !indexing && (
+          {notebookCurrentSession ? (
+            <NbChatPanel
+              onSend={handleNotebookSend}
+              onCancel={handleNotebookCancel}
+              onSendGuidance={handleNotebookSendGuidance}
+              sessionId={notebookCurrentSession.id}
+              connected={notebookConnected}
+              model={notebookModel || ''}
+              onModelChange={onNotebookModelChange || (() => {})}
+              mode="api"
+              collaborationMode={collaborationMode}
+              onModeChange={() => {}}
+              currentSessionId={notebookCurrentSession.id}
+              onCitationClick={onCitationClick}
+              onSourceClick={onSourceClick}
+              notebookId={notebookId}
+              guidedQuestions={guidedQuestions}
+              loadingQuestions={loadingQuestions}
+              hasSources={sources.length > 0}
+            />
+          ) : sources.length === 0 && !indexing ? (
             <div className="nb-chat-empty">
               <BookOpen className="w-12 h-12 opacity-30" />
               <p className="nb-empty-title">{isZh ? '开始使用笔记本' : 'Get Started'}</p>
@@ -760,28 +947,7 @@ setViewingSource({ sourceId: chunk.sourceId, chunkIndex: chunk.chunkIndex });
                 {isZh ? '在左侧添加来源，即可开始知识问答' : 'Add sources on the left to start asking questions'}
               </p>
             </div>
-          )}
-
-          {sources.length > 0 && (
-            <div className="nb-chat-cta">
-              <button
-                className="nb-start-chat-btn"
-                onClick={() => onOpenChat(notebookId, notebookName, Array.from(selectedSourceIds))}
-              >
-                <MessageSquare className="w-5 h-5" />
-                <span>{isZh ? '开始对话' : 'Start Chatting'}</span>
-              </button>
-              <p className="nb-chat-hint">
-                {selectedSourceIds.size > 0
-                  ? isZh
-                    ? `将对 ${selectedSourceIds.size} 个来源进行问答`
-                    : `Will search across ${selectedSourceIds.size} source(s)`
-                  : isZh
-                    ? '请在左侧勾选至少一个来源'
-                    : 'Select at least one source on the left'}
-              </p>
-            </div>
-          )}
+          ) : null}
         </div>
 
         {/* Right: Notes Panel */}
@@ -789,8 +955,15 @@ setViewingSource({ sourceId: chunk.sourceId, chunkIndex: chunk.chunkIndex });
           {!rightCollapsed && (
             <>
               <div className="nb-panel-header">
+                <button
+                  className="nb-collapse-btn"
+                  onClick={() => setRightCollapsed(!rightCollapsed)}
+                  title={rightCollapsed ? (isZh ? '展开' : 'Expand') : (isZh ? '折叠' : 'Collapse')}
+                >
+                  <PanelRightClose size={16} />
+                </button>
                 <h3 className="nb-panel-title">
-                  <StickyNote className="w-4 h-4" />
+                  <StickyNote className="w-3 h-3" />
                   {isZh ? '笔记' : 'Notes'}
                   <span className="nb-count-badge">{notes.length}</span>
                 </h3>
@@ -799,7 +972,7 @@ setViewingSource({ sourceId: chunk.sourceId, chunkIndex: chunk.chunkIndex });
                   onClick={handleCreateNote}
                   title={isZh ? '新建笔记' : 'New Note'}
                 >
-                  <Plus className="w-4 h-4" />
+                  <Plus className="w-3.5 h-3.5" />
                 </button>
               </div>
 
@@ -901,13 +1074,6 @@ setViewingSource({ sourceId: chunk.sourceId, chunkIndex: chunk.chunkIndex });
               </div>
             </>
           )}
-          <button
-            className="nb-collapse-btn"
-            onClick={() => setRightCollapsed(!rightCollapsed)}
-            title={rightCollapsed ? (isZh ? '展开' : 'Expand') : (isZh ? '折叠' : 'Collapse')}
-          >
-            {rightCollapsed ? <ChevronLeft className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-          </button>
         </div>
         </div>
       ) : null}
@@ -1188,12 +1354,12 @@ function SourceCard({
   const lang = useLang();
   const isZh = lang === 'zh';
   const [expanded, setExpanded] = useState(false);
+  const [summaryCollapsed, setSummaryCollapsed] = useState(true);
 
-  const icon = source.type === 'file' ? <FileText className="w-3.5 h-3.5" /> :
-    source.type === 'url' ? <LinkIcon className="w-3.5 h-3.5" /> :
-    <Type className="w-3.5 h-3.5" />;
+  const icon = source.type === 'file' ? <FileText className="w-3 h-3" /> :
+    source.type === 'url' ? <LinkIcon className="w-3 h-3" /> :
+    <Type className="w-3 h-3" />;
 
-  // Build preview text
   const previewText = source.content
     ? source.content.slice(0, 120).replace(/\n/g, ' ')
     : source.filePath
@@ -1206,111 +1372,110 @@ function SourceCard({
     source.type === 'url' ? 'URL' :
     isZh ? '文本' : 'Text';
 
+  const statusColor = source.status === 'indexed' ? 'var(--success, #22c55e)' :
+    source.status === 'processing' ? 'var(--warning, #eab308)' :
+    source.status === 'failed' ? 'var(--destructive, #ef4444)' :
+    'var(--text-muted)';
+
   return (
     <div className={`nb-source-card ${selected ? 'selected' : ''} ${source.status === 'indexed' ? '' : 'disabled'}`}>
-      <label className="nb-source-checkbox" onClick={(e) => e.stopPropagation()}>
-        <input
-          type="checkbox"
-          checked={selected}
-          onChange={onToggle}
-          disabled={source.status !== 'indexed'}
-        />
-        <span className="nb-checkmark"></span>
-      </label>
-      <div className="nb-source-info" onClick={() => setExpanded(!expanded)}>
-        <div className="nb-source-name-row">
-          {icon}
-          <span className="nb-source-name">{source.name}</span>
-        </div>
-        {previewText && (
-          <p className={`nb-source-preview ${expanded ? 'expanded' : ''}`}>
-            {previewText}{source.content && source.content.length > 120 && !expanded && '...'}
-          </p>
-        )}
-        {/* 来源摘要卡片 (对标 NotebookLM) */}
-        {source.summary && (
-          <div className="nb-source-summary">
-            <div className="nb-source-summary-label">
-              <Sparkles className="w-2.5 h-2.5" />
-              {isZh ? 'AI 摘要' : 'AI Summary'}
-            </div>
-            <p>{source.summary}</p>
-            {source.keyTopics && source.keyTopics.length > 0 && (
-              <div className="nb-source-topics">
-                {source.keyTopics.map((topic, i) => (
-                  <span key={i} className="nb-source-topic-tag">{topic}</span>
-                ))}
-              </div>
+      {/* 收起态：单行 — 图标 + checkbox + 名称 + 状态点 + hover操作 */}
+      <div className="nb-source-row" onClick={() => setExpanded(!expanded)}>
+        <label className="nb-source-checkbox" onClick={(e) => e.stopPropagation()}>
+          <input
+            type="checkbox"
+            checked={selected}
+            onChange={onToggle}
+            disabled={source.status !== 'indexed'}
+          />
+          <span className="nb-checkmark"></span>
+        </label>
+        <span className="nb-source-icon">{icon}</span>
+        <span className="nb-source-name">{source.name}</span>
+        <span className="nb-source-status-dot" style={{ background: statusColor }} title={source.status} />
+        <button className="nb-source-delete" onClick={(e) => { e.stopPropagation(); onDelete(); }}>
+          <Trash2 className="w-2.5 h-2.5" />
+        </button>
+      </div>
+
+      {/* 展开态：详情 */}
+      {expanded && (
+        <div className="nb-source-detail">
+          {/* Meta 行 */}
+          <div className="nb-source-meta">
+            <span className="nb-source-type-tag">{typeLabel}</span>
+            {source.chunkCount > 0 && <span className="nb-source-chunks">{source.chunkCount} {isZh ? '块' : 'chk'}</span>}
+            {source.size != null && source.size > 0 && (
+              <span className="nb-source-size">{(source.size / 1024).toFixed(1)}KB</span>
             )}
+            <span className="nb-source-status-text" style={{ color: statusColor }}>{source.status}</span>
           </div>
-        )}
-        <div className="nb-source-meta">
-          <span className="nb-source-type-tag">{typeLabel}</span>
-          {source.status === 'indexed' && <CheckCircle className="w-3 h-3 text-green-400" />}
-          {source.status === 'processing' && <Loader2 className="w-3 h-3 animate-spin text-yellow-400" />}
-          {source.status === 'failed' && <AlertCircle className="w-3 h-3 text-red-400" />}
-          {source.status === 'pending' && <div className="w-2 h-2 rounded-full bg-gray-400" />}
-          <span className="nb-source-status">{source.status}</span>
-          {source.chunkCount > 0 && <span className="nb-source-chunks">{source.chunkCount} {isZh ? '块' : 'chk'}</span>}
-          {source.size != null && source.size > 0 && (
-            <span className="nb-source-size">{(source.size / 1024).toFixed(1)}KB</span>
+
+          {/* 预览文本 */}
+          {previewText && (
+            <p className="nb-source-preview">{previewText}{source.content && source.content.length > 120 && '...'}</p>
+          )}
+
+          {/* AI 摘要 */}
+          {source.summary && (
+            <div className="nb-source-summary">
+              <button
+                className="nb-source-summary-toggle"
+                onClick={(e) => { e.stopPropagation(); setSummaryCollapsed(!summaryCollapsed); }}
+              >
+                <Sparkles className="w-2.5 h-2.5" />
+                <span className="nb-source-summary-label">{isZh ? 'AI 摘要' : 'AI Summary'}</span>
+                {summaryCollapsed
+                  ? <ChevronRight className="w-2.5 h-2.5" style={{ marginLeft: 'auto' }} />
+                  : <ChevronDown className="w-2.5 h-2.5" style={{ marginLeft: 'auto' }} />}
+              </button>
+              {!summaryCollapsed && (
+                <>
+                  <p className="nb-source-summary-text">{source.summary}</p>
+                  {source.keyTopics && source.keyTopics.length > 0 && (
+                    <div className="nb-source-topics">
+                      {source.keyTopics.map((topic, i) => (
+                        <span key={i} className="nb-source-topic-tag">{topic}</span>
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+
+          {/* 错误信息 */}
+          {source.errorMessage && (
+            <div className="nb-source-error">{source.errorMessage}</div>
+          )}
+
+          {/* 操作栏 */}
+          {((source.status === 'indexed' && onViewSource) || onReindex) && (
+            <div className="nb-source-actions">
+              {source.status === 'indexed' && onViewSource && (
+                <button
+                  className="nb-source-action-btn"
+                  onClick={(e) => { e.stopPropagation(); onViewSource(); }}
+                  title={isZh ? '查看原文' : 'View Source'}
+                >
+                  <FileText className="w-2.5 h-2.5" />
+                  {isZh ? '原文' : 'View'}
+                </button>
+              )}
+              {onReindex && (
+                <button
+                  className="nb-source-action-btn"
+                  onClick={(e) => { e.stopPropagation(); onReindex(); }}
+                  title={isZh ? '重新索引' : 'Re-index'}
+                >
+                  <Loader2 className="w-2.5 h-2.5" />
+                  {isZh ? '重索引' : 'Reindex'}
+                </button>
+              )}
+            </div>
           )}
         </div>
-        {source.errorMessage && (
-          <div className="nb-source-error">{source.errorMessage}</div>
-        )}
-        {/* 查看原文按钮 (对标 NotebookLM 引用跳转原文) */}
-        {source.status === 'indexed' && onViewSource && (
-          <button
-            onClick={(e) => { e.stopPropagation(); onViewSource(); }}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '4px',
-              marginTop: '6px',
-              padding: '3px 8px',
-              background: 'transparent',
-              border: '1px solid var(--border-primary)',
-              borderRadius: '4px',
-              color: 'var(--text-secondary)',
-              fontSize: '10px',
-              cursor: 'pointer',
-              transition: 'all 0.15s ease',
-            }}
-          >
-            <FileText className="w-3 h-3" />
-            {isZh ? '查看原文' : 'View Source'}
-          </button>
-        )}
-        {/* B10: 重新索引按钮 */}
-        {onReindex && (
-          <button
-            onClick={(e) => { e.stopPropagation(); onReindex(); }}
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '3px',
-              marginTop: '4px',
-              marginLeft: source.status === 'indexed' ? '6px' : '0',
-              padding: '3px 8px',
-              background: 'transparent',
-              border: '1px solid var(--border-primary)',
-              borderRadius: '4px',
-              color: 'var(--text-muted)',
-              fontSize: '10px',
-              cursor: 'pointer',
-              transition: 'all 0.15s ease',
-            }}
-            title={isZh ? '重新索引' : 'Re-index'}
-          >
-            <Loader2 className="w-2.5 h-2.5" />
-            {isZh ? '重新索引' : 'Reindex'}
-          </button>
-        )}
-      </div>
-      <button className="nb-source-delete" onClick={(e) => { e.stopPropagation(); onDelete(); }}>
-        <Trash2 className="w-3 h-3" />
-      </button>
+      )}
     </div>
   );
 }
@@ -1343,35 +1508,35 @@ function NoteCard({
     >
       <div className="nb-note-card-header">
         {isPPT ? (
-          <Presentation className="w-3 h-3 text-primary" />
+          <Presentation className="w-2.5 h-2.5 text-primary" />
         ) : (
-          <StickyNote className="w-3 h-3 text-primary" />
+          <StickyNote className="w-2.5 h-2.5 text-primary" />
         )}
         <span className="nb-note-title">{note.title}</span>
-        {isPinned && <Pin className="w-3 h-3" style={{ color: 'var(--accent)' }} />}
+        {isPinned && <Pin className="w-2.5 h-2.5" style={{ color: 'var(--accent)' }} />}
         <button
           className="nb-note-delete"
           onClick={(e) => { e.stopPropagation(); onTogglePin?.(); }}
           title={isPinned ? (isZh ? '取消置顶' : 'Unpin') : (isZh ? '置顶' : 'Pin')}
           style={{ opacity: isPinned ? 1 : 0.4 }}
         >
-          <Pin className="w-3 h-3" />
+          <Pin className="w-2.5 h-2.5" />
         </button>
         <button className="nb-note-delete" onClick={(e) => { e.stopPropagation(); onDelete(); }}>
-          <Trash2 className="w-3 h-3" />
+          <Trash2 className="w-2.5 h-2.5" />
         </button>
       </div>
       {preview && <p className="nb-note-preview">{preview}</p>}
       {note.tags && note.tags.length > 0 && (
-        <div style={{ display: 'flex', gap: '3px', flexWrap: 'wrap', marginTop: '3px' }}>
+        <div style={{ display: 'flex', gap: '2px', flexWrap: 'wrap', marginTop: '2px' }}>
           {note.tags.map(tag => (
             <span
               key={tag}
               style={{
-                padding: '1px 5px',
+                padding: '0 4px',
                 background: 'var(--bg-tertiary)',
-                borderRadius: '8px',
-                fontSize: '9px',
+                borderRadius: '6px',
+                fontSize: '8px',
                 color: 'var(--text-muted)',
               }}
             >

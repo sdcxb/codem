@@ -62,6 +62,7 @@ import { createReadAttachmentTool } from "./tools/read-attachment";
 import { createSearchNotebookTool } from "./tools/search-notebook";
 // P1-6: AI 跨笔记操作工具 (对标 NotebookLM 笔记操作)
 import { createNoteOperationTools } from "./tools/note-operations";
+import { createGeneratePPTTool } from "./tools/generate-ppt";
 // P1: 澄清提问、事实核查、Todo 列表工具
 import { createClarificationTool } from "./tools/ask-clarification";
 import { createFactCheckTool } from "./tools/fact-check";
@@ -1446,6 +1447,8 @@ export function createDefaultToolRegistry(ctx?: Context): ToolRegistry {
   for (const tool of createNoteOperationTools()) {
     registry.register(tool);
   }
+  // PPT 生成工具 — 在对话中让 AI 生成演示文稿
+  registry.register(createGeneratePPTTool());
   // P1: 澄清提问、事实核查、Todo 列表工具
   registry.register(createClarificationTool());
   registry.register(createFactCheckTool());

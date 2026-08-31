@@ -20,6 +20,8 @@ interface LLMEntity {
   label: string;
   type: string;
   description?: string;
+  /** LLM 标注的来源 Chunk 编号（1-based），用于精确关联来源文档 */
+  chunkIndex?: number;
 }
 
 /** LLM 提取的关系 (JSON 格式) */
@@ -96,9 +98,23 @@ export async function extractKnowledgeGraph(notebookId: string): Promise<GraphDa
     try {
       const extraction = await callLLMForExtraction(batchText, sources.length > 0);
 
-      // Process entities
+      // Process entities — 根据 LLM 返回的 chunkIndex 关联正确的来源
       for (const entity of extraction.entities) {
-        const chunk = batchChunks[0]; // Associate with first chunk of batch
+        let chunk: { sourceId?: string; id?: string } | undefined;
+        // 1. 如果 LLM 标注了 chunkIndex，使用对应的 chunk
+        if (entity.chunkIndex != null) {
+          const chunkOffset = Math.max(0, Math.min(batchChunks.length - 1, entity.chunkIndex - 1 - batchIdx * BATCH_SIZE));
+          chunk = batchChunks[chunkOffset];
+        }
+        // 2. 如果没有 chunkIndex，在 batch chunks 中搜索实体 label 出现的 chunk
+        if (!chunk) {
+          const lowerLabel = entity.label.toLowerCase();
+          chunk = batchChunks.find(c => c.content.toLowerCase().includes(lowerLabel));
+        }
+        // 3. 如果还是找不到，用第一个 chunk 作为 fallback
+        if (!chunk) {
+          chunk = batchChunks[0];
+        }
         const sourceId = chunk?.sourceId;
         findOrCreateNode(
           notebookId,
@@ -110,11 +126,11 @@ export async function extractKnowledgeGraph(notebookId: string): Promise<GraphDa
         );
       }
 
-      // Process relations
+      // Process relations — 模糊匹配节点
       for (const rel of extraction.relations) {
         const sourceNode = findNodeByLabel(notebookId, rel.source);
         const targetNode = findNodeByLabel(notebookId, rel.target);
-        if (sourceNode && targetNode) {
+        if (sourceNode && targetNode && sourceNode !== targetNode) {
           addGraphEdge(notebookId, sourceNode, targetNode, parseRelationType(rel.relation));
         }
       }
@@ -131,10 +147,28 @@ export async function extractKnowledgeGraph(notebookId: string): Promise<GraphDa
   return getGraphData(notebookId);
 }
 
-/** 查找节点 ID by label (内部辅助) */
+/** 查找节点 ID by label (内部辅助) — 支持模糊匹配 */
 function findNodeByLabel(notebookId: string, label: string): string | null {
   const data = getGraphData(notebookId);
-  const node = data.nodes.find(n => n.label.toLowerCase() === label.toLowerCase());
+  const lower = label.toLowerCase().trim();
+  // 1. 精确匹配
+  let node = data.nodes.find(n => n.label.toLowerCase() === lower);
+  if (node) return node.id;
+  // 2. 去除空格和标点后匹配
+  const cleanLabel = lower.replace(/[\s\p{P}]/gu, '');
+  node = data.nodes.find(n => n.label.toLowerCase().replace(/[\s\p{P}]/gu, '') === cleanLabel);
+  if (node) return node.id;
+  // 3. 包含匹配（source 是 target 的子串，或反之）
+  node = data.nodes.find(n => {
+    const nl = n.label.toLowerCase();
+    return nl.includes(lower) || lower.includes(nl);
+  });
+  if (node) return node.id;
+  // 4. 去除空格标点后的包含匹配
+  node = data.nodes.find(n => {
+    const nc = n.label.toLowerCase().replace(/[\s\p{P}]/gu, '');
+    return nc.includes(cleanLabel) || cleanLabel.includes(nc);
+  });
   return node?.id ?? null;
 }
 
@@ -169,9 +203,12 @@ async function callLLMForExtraction(text: string, _hasSources: boolean): Promise
 2. 提取实体之间的关系（最多 20 条）
 3. 每个实体必须有 label 和 type 字段
 4. type 可选值: concept, entity, event, person, place, organization, technology
+5. **重要**：每个实体必须标注 chunkIndex 字段，表示该实体来自哪个 Chunk 编号（文本中标注了 [Chunk 1], [Chunk 2] 等）
+6. relations 中的 source 和 target 必须与 entities 中的 label 完全一致
+7. 只提取文本中真实出现的实体，不要臆造或推测
 
 返回严格 JSON 格式:
-{"entities":[{"label":"实体名","type":"类型","description":"简短描述"}],"relations":[{"source":"实体A","target":"实体B","relation":"关系描述"}]}
+{"entities":[{"label":"实体名","type":"类型","description":"简短描述","chunkIndex":1}],"relations":[{"source":"实体A","target":"实体B","relation":"关系描述"}]}
 
 文本内容:
 ${text.slice(0, 6000)}`
@@ -182,9 +219,12 @@ Requirements:
 2. Extract relationships between entities (max 20)
 3. Each entity must have label and type fields
 4. type options: concept, entity, event, person, place, organization, technology
+5. **IMPORTANT**: Each entity must include a chunkIndex field indicating which Chunk number (marked as [Chunk 1], [Chunk 2], etc.) the entity appears in
+6. The source and target in relations must exactly match the label in entities
+7. Only extract entities that actually appear in the text. Do NOT fabricate or infer entities.
 
 Return strict JSON format:
-{"entities":[{"label":"Entity Name","type":"type","description":"brief description"}],"relations":[{"source":"Entity A","target":"Entity B","relation":"relationship description"}]}
+{"entities":[{"label":"Entity Name","type":"type","description":"brief description","chunkIndex":1}],"relations":[{"source":"Entity A","target":"Entity B","relation":"relationship description"}]}
 
 Text content:
 ${text.slice(0, 6000)}`;

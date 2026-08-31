@@ -1504,7 +1504,67 @@ flushStreamBuffer(); // flush all on unmount
 // Keep handleSendRef updated for automation callbacks (defined after handleSend below)
 
 // ========== Send Message ==========
-const handleSend = async (message: string, attachments?: any[], selectedSkills?: string[]) => {
+  // ===== 笔记本内嵌对话回调 — 复用 runAgenticLoop =====
+  // 将笔记本的 session 临时设为 currentSession，使 runAgenticLoop 中的
+  // isViewingSession() 和 activeNotebookId 能正确工作
+  const handleNotebookSend = async (message: string, session: Session, nbId: string) => {
+    // 保存原始 session 以便恢复
+    const store = useProjectStore.getState();
+    const originalSession = store.currentSession;
+
+    // 临时切换到笔记本 session
+    useProjectStore.setState({ currentSession: session });
+    setActiveNotebookId(nbId);
+
+    try {
+      // 调用主 agentic loop — 它内部会使用 activeNotebookId 启用知识检索
+      await runAgenticLoop(message, session);
+    } finally {
+      // 恢复原始 session 状态
+      useProjectStore.setState({ currentSession: originalSession });
+    }
+  };
+
+  const handleNotebookCancel = (sessionId: string) => {
+    const controller = abortControllersRef.current.get(sessionId);
+    if (controller) {
+      controller.abort();
+      abortControllersRef.current.delete(sessionId);
+    }
+    engineRef.current?.abort();
+    useAppStore.getState().setSessionActive(sessionId, false);
+  };
+
+  const handleNotebookSendGuidance = (message: string, sessionId: string) => {
+    const engine = engineRef.current;
+    if (!engine) return;
+    const success = engine.sendGuidance(sessionId, message);
+    if (success) {
+      useAppStore.getState().addGuidanceMessage({
+        id: `guide-${Date.now()}`,
+        message,
+        timestamp: Date.now(),
+        consumed: false,
+      });
+    }
+  };
+
+  // 笔记本内嵌对话的引用/来源点击 — 复用已有的 handler
+  const handleNotebookCitationClick = (sourceName: string) => {
+    if (!activeNotebookId) return;
+    const sources = listSources(activeNotebookId);
+    const source = sources.find(s => s.name === sourceName || s.name.includes(sourceName));
+    if (source) {
+      setCitationViewer({ sourceId: source.id, notebookId: activeNotebookId });
+    }
+  };
+
+  const handleNotebookSourceClick = (sourceId: string, chunkIndex?: number) => {
+    if (!activeNotebookId) return;
+    setCitationViewer({ sourceId, notebookId: activeNotebookId, chunkIndex });
+  };
+
+  const handleSend = async (message: string, attachments?: any[], selectedSkills?: string[]) => {
 // Always read latest currentSession from store (avoids stale closure)
 const session = useProjectStore.getState().currentSession;
 if (!session) return;
@@ -2211,6 +2271,12 @@ saveMessages(session.id);
               // Track generated files from write tool
               if (tc.name === "write" && tc.input?.path) {
                 generatedFilesRef.current.add(tc.input.path as string);
+              }
+              // Notify NotebookWorkspace when a PPT note is created via generate_ppt tool
+              if (tc.name === "generate_ppt" && toolMetadata?.notebookId) {
+                window.dispatchEvent(new CustomEvent("notebook:note-created", {
+                  detail: { notebookId: toolMetadata.notebookId, noteId: toolMetadata.noteId }
+                }));
               }
               // Immediately save so next agentic loop iteration can read it
 if (session) {
@@ -3240,13 +3306,14 @@ setShowNotebookManager(false);
             notebookId={notebookWorkspaceId}
             notebookName={notebookWorkspaceName}
             onBack={() => { setNotebookWorkspaceId(null); setShowNotebookManager(true); }}
-            onOpenChat={(id: string, name: string, selectedSourceIds?: string[]) => {
-              setActiveNotebookId(id);
-              setActiveNotebookName(name);
-              setNotebookWorkspaceId(null);
-              // Set source filter for retrieval scope control
-              setNotebookSourceFilter(selectedSourceIds && selectedSourceIds.length > 0 ? selectedSourceIds : null);
-            }}
+            onNotebookSend={handleNotebookSend}
+            onNotebookCancel={handleNotebookCancel}
+            onNotebookSendGuidance={handleNotebookSendGuidance}
+            notebookModel={cliModel}
+            onNotebookModelChange={handleModelChange}
+            onCitationClick={handleNotebookCitationClick}
+            onSourceClick={handleNotebookSourceClick}
+            notebookConnected={true}
           />
         </div>
       )}

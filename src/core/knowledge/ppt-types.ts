@@ -32,9 +32,23 @@ export interface BaseElement {
   zIndex: number;
   /** 透明度 (0-1) */
   opacity: number;
+  /** 元素动画配置 */
+  animation?: ElementAnimation;
 }
 
 export type ElementType = 'text' | 'shape' | 'image' | 'list';
+
+// ========== 元素动画 ==========
+
+export type AnimationType = 'none' | 'fade-in' | 'slide-in-left' | 'slide-in-right' | 'slide-in-top' | 'slide-in-bottom' | 'zoom-in' | 'bounce-in' | 'flip-in';
+export type AnimationTrigger = 'auto' | 'click';
+
+export interface ElementAnimation {
+  type: AnimationType;
+  duration: number;  // ms
+  delay: number;     // ms
+  trigger: AnimationTrigger;
+}
 
 // ========== 文本元素 ==========
 
@@ -137,6 +151,10 @@ export interface V2SlideDeck {
   /** 画布尺寸 (逻辑像素) */
   canvasWidth: number;
   canvasHeight: number;
+  /** 风格 ID (对应 PPT_STYLES) */
+  styleId?: string;
+  /** 画布尺寸 ID (对应 CANVAS_SIZES) */
+  canvasSizeId?: string;
 }
 
 // ========== 默认值工厂 ==========

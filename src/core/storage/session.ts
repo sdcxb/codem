@@ -142,7 +142,7 @@ export function togglePinned(id: string): boolean {
 export function searchSessions(query: string): Session[] {
   const db = getDatabase();
   const result = db.exec(
-    "SELECT * FROM sessions WHERE title LIKE ? ORDER BY last_message_at DESC LIMIT 50",
+    "SELECT * FROM sessions WHERE title LIKE ? AND project_id NOT LIKE 'notebook:%' ORDER BY last_message_at DESC LIMIT 50",
     [`%${query}%`]
   );
   if (result.length === 0) return [];

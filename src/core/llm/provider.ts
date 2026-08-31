@@ -162,7 +162,7 @@ export class OpenAICompatibleProvider implements LLMProvider {
         messages: messages.map((m) => this.toAPIMessage(m)),
         tools: request.tools?.length ? request.tools.map((t) => this.toAPITool(t)) : undefined,
         temperature: request.temperature ?? 0.7,
-        max_tokens: request.maxTokens ?? 4096,
+        ...(request.maxTokens ? { max_tokens: request.maxTokens } : {}), // 不传时 API 使用默认最大值
         stream: false,
         // E2: Reasoning effort (OpenAI o-series / DeepSeek R1 etc.)
         ...(request.reasoningEffort ? { reasoning_effort: request.reasoningEffort } : {}),

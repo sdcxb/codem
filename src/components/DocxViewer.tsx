@@ -23,9 +23,11 @@ interface DocxViewerProps {
   onClose: () => void;
   /** Called when user wants to save the rendered content as a note */
   onSaveAsNote?: (html: string, text: string) => void;
+  /** Text to highlight in the document (e.g., from graph node click) */
+  highlightText?: string;
 }
 
-export function DocxViewer({ filePath, data, onClose, onSaveAsNote }: DocxViewerProps) {
+export function DocxViewer({ filePath, data, onClose, onSaveAsNote, highlightText }: DocxViewerProps) {
   const lang = useLang();
   const isZh = lang === 'zh';
   const CloseIcon = ActionIcons.close;
@@ -88,17 +90,51 @@ export function DocxViewer({ filePath, data, onClose, onSaveAsNote }: DocxViewer
     return () => { cancelled = true; };
   }, [filePath, data, isZh]);
 
-  // Highlight search results in rendered HTML
+  // Highlight search results or highlightText in rendered HTML
   const displayHtml = useMemo(() => {
-    if (!searchQuery.trim() || !html) return html;
-    // Simple highlight: wrap matching text in a span
-    const lowerQuery = searchQuery.toLowerCase();
-    const lowerHtml = html.toLowerCase();
-    const idx = lowerHtml.indexOf(lowerQuery);
-    if (idx === -1) return html;
-    // Only highlight in text nodes (avoid breaking HTML tags)
-    return html;
-  }, [html, searchQuery]);
+    const query = searchQuery.trim() || highlightText?.trim();
+    if (!query || !html) return html;
+    // 在 HTML 文本节点中高亮匹配文字（避免破坏 HTML 标签）
+    const lowerQuery = query.toLowerCase();
+    // 使用 DOM 遍历方式高亮文本节点
+    const tmpDiv = document.createElement('div');
+    tmpDiv.innerHTML = html;
+    const walker = document.createTreeWalker(tmpDiv, NodeFilter.SHOW_TEXT, null);
+    const textNodes: Text[] = [];
+    let node: Node | null;
+    while ((node = walker.nextNode())) {
+      textNodes.push(node as Text);
+    }
+    let hasMatch = false;
+    for (const textNode of textNodes) {
+      const text = textNode.nodeValue || '';
+      const lowerText = text.toLowerCase();
+      const idx = lowerText.indexOf(lowerQuery);
+      if (idx !== -1) {
+        const before = document.createTextNode(text.substring(0, idx));
+        const match = document.createElement('span');
+        match.className = 'nb-source-highlight';
+        match.style.background = '#ffeb3b';
+        match.style.color = '#1a1a1a';
+        match.style.fontWeight = '700';
+        match.style.borderRadius = '3px';
+        match.style.padding = '0 3px';
+        match.style.boxShadow = '0 0 0 2px rgba(255, 235, 59, 0.4)';
+        match.textContent = text.substring(idx, idx + query.length);
+        const after = document.createTextNode(text.substring(idx + query.length));
+        const parent = textNode.parentNode;
+        if (parent) {
+          parent.insertBefore(before, textNode);
+          parent.insertBefore(match, textNode);
+          parent.insertBefore(after, textNode);
+          parent.removeChild(textNode);
+        }
+        hasMatch = true;
+      }
+    }
+    if (!hasMatch) return html;
+    return tmpDiv.innerHTML;
+  }, [html, searchQuery, highlightText]);
 
   if (loading) {
     return (

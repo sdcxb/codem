@@ -33,6 +33,7 @@
 > v1.6.0 已发布：**SubagentRuntime 架构重构 + 技能市场 Trees API 改造 + GitHub Token 修复** — ①**SubagentRuntime 全面重构（对标 DSH）**：移除旧 `SubagentManager`（-642 行）和 `LLMSubagentSpawner`（-338 行），新增 DSH 风格 `SubagentRuntime` 持续后台子智能体运行时 + `InProcessSpawnProvider`，4 个新工具（`subagent`/`send_message`/`interrupt_agent`/`list_agents`），`ToolRegistry.createScope()` 隔离工具作用域，系统提示词对标 DSH 重写为后台默认运行 + 自动通知模式 ②**技能市场 Trees API 改造（移植 vercel-labs/skills 官方 CLI 逻辑）**：Contents API 逐层遍历（O(N×M) 次调用）→ Trees API 一次性获取全量文件树（1 次调用），在内存中搜索 SKILL.md，支持 30+ Agent 目录约定前缀（Claude/Cline/Goose/Codex 等），修复 `dreambigou/eli5` 和 `cloudflare/cloudflare-docs`（15296 文件大仓库）等安装失败问题 ③**GitHub Token 配置链路修复**：统一 Token 读取链路 ④i18n-templates 新增子智能体协作模板（+138 行）⑤42 文件修改（+1542/-1562 行），`tsc --noEmit` 零错误。
 > v1.6.1 已发布：**桌面宠物独立窗口改造 + 文件输出标识增强 + 设置版本号动态化** — ①**桌面宠物单一独立窗口改造（Cordis 插件化架构）**：移除主窗口内 PetOverlay，`@codem/ui-pet` 插件改为空壳；宠物窗口作为独立 Tauri 窗口运行，与主窗口共享 WebView2 进程组（实际内存增量仅 ~108MB，全部来自 1 个 renderer 进程）；新增 `ui-pet-provider.ts` Cordis Provider 封装，`App.tsx` 统一 `getPet()` 获取入口；Rust `show_pet_menu` 合并右键菜单，支持切换宠物样式子菜单（`SubmenuBuilder`）；`emitToPetWindow` 传递完整状态 ②**文件输出标识增强（DSH 风格 FileMentions）**：新增 `FileMentions` 解析器，从 `message.toolCalls` 提取 LLM 产出文件路径；`RichContent` inline code 渲染器优先解析文件路径为可点击按钮；`write`/`edit`/`multi_edit` 工具 guidance + 系统提示词强化文件路径引用要求 ③**设置版本号动态化**：关于页面版本号从 `package.json` 动态导入，不再需要手动同步。
 > v1.6.2 已发布：**大富翁嵌入式游戏全量交付（Phase 1-10） + 三轮审计 Bug 修复** — 在 Codem 中嵌入完整的大富翁4风格桌面游戏，作为用户等待 LLM 执行任务时的休闲娱乐。游戏作为完全独立的大插件运行，零侵入主项目代码。Phase 1-6 完成基础设施和核心玩法（棋盘渲染/动态骰子/地产系统/角色系统/命运新闻事件/股票系统/卡片系统/道具系统/AI 策略/存档读档）；Phase 7-9 完成视觉交互和核心机制对齐（地块图标映射/角色精灵动画/消息条系统/物价指数/住院监狱酒店沉睡状态/连锁奖励税收）；Phase 10（G20-G36）补全开局设置（游戏天数/玩家数量/初始资金/胜利条件）+ 机制补全（机场传送/商业地块/主动卖地/股票分红/银行拒绝）+ 体验补全（多人热座/帮助规则/财富面板/资产清单/日志增强/投降功能/音量控制/速度调节）。三轮审计修复 7 个关键 Bug（破产清算逻辑/玩家状态检查/死循环保护/命运事件移动/初始资金应用/AI 循环优化/掷骰跳过检查）。TypeScript 编译 0 错误，Vite 构建成功。
+> v1.7.0 已发布：**PPT 生成质量大幅提升 — oh-my-ppt 风格技能集成 + Cordis SkillRegistry 渐进式加载 + 生成链路断点修复** — 集成 oh-my-ppt 项目 74 种风格 SKILL.md + 9 种产品技能（布局/图表/动画等），通过 Vite `import.meta.glob` 构建时收集，运行时注册到 Cordis SkillRegistry。审计发现 PPT 生成两条通路（Studio 一键生成 + 对话中 generate_ppt 工具调用）都经过 `generatePPTContent`，该函数是单次 LLM 调用（非 agentic loop），AI 无法使用 `load_skill` 工具。修复方案：在调用 LLM 前主动从 SkillRegistry 加载当前选中风格的 SKILL.md 内容注入 systemPrompt，只加载当前 1 个风格 + 产品技能，不注入全部 74 个风格，避免 token 爆炸。新增 `ppt-skill-registry.ts` + `skills/` 资源目录，删除旧的 `ppt-skill-loader.ts`。TypeScript 编译 0 错误 + Lint 0 错误。
 
 ## 待开发
 
@@ -1401,3 +1402,15 @@
 - [x] 修复 prompt.ts 未转义反引号导致编译错误
 - [x] 修复测试文件类型安全问题
 - [x] Release v0.77 发布，附带 exe + msi 安装包
+
+### v1.7.0 (2026-08-31)
+- [x] PPT 生成质量大幅提升 — 集成 oh-my-ppt 项目 74 种风格 SKILL.md + 9 种产品技能（布局/图表/动画等）
+- [x] 新增 `ppt-skill-registry.ts` — 通过 Vite `import.meta.glob` 构建时收集所有 SKILL.md，运行时注册到 Cordis SkillRegistry
+- [x] 新增 `src/core/knowledge/skills/` 目录 — 存放从 oh-my-ppt 项目同步的 SKILL.md 资源文件（styles/ + products/）
+- [x] 修复 PPT 生成链路断点 — `generatePPTContent` 是单次 LLM 调用（非 agentic loop），AI 无法使用 `load_skill` 工具
+  - 断点分析：Studio 一键生成和对话中生成两条通路都经过 `generatePPTContent`，内部裸调 `provider.stream()` 无工具循环
+  - 修复方案：在调用 LLM 前主动从 SkillRegistry 加载当前选中风格的 SKILL.md 内容，注入 systemPrompt
+  - 只加载当前 1 个风格 + 产品技能（layout/chart/anim），不注入全部 74 个风格，避免 token 爆炸
+- [x] 删除旧的 `ppt-skill-loader.ts`（直接注入全部风格到 systemPrompt 的方案，会导致 token 爆炸）
+- [x] TypeScript 编译零错误 + Lint 零错误
+- [x] Release v1.7.0 发布

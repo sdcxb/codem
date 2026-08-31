@@ -175,9 +175,14 @@ export function NotebookManager({ onClose, onOpenNotebookChat, onOpenWorkspace }
       for (let i = 0; i < sourceFilePaths.length; i++) {
         const fp = sourceFilePaths[i];
         const fname = fp.split(/[\\/]/).pop() || `file-${i}`;
+        // 如果只有一个文件且名称看起来像是时间戳/纯数字，用文件名替换
+        let nameToUse = sourceFilePaths.length === 1 ? sourceName.trim() : fname;
+        if (/^\d{10,}$/.test(nameToUse)) {
+          nameToUse = fname;
+        }
         const source = addSource({
           notebookId: selectedNotebook.id,
-          name: sourceFilePaths.length === 1 ? sourceName.trim() : fname,
+          name: nameToUse,
           type: 'file',
           filePath: fp,
         });
@@ -209,7 +214,19 @@ export function NotebookManager({ onClose, onOpenNotebookChat, onOpenWorkspace }
 
     const source = addSource({
       notebookId: selectedNotebook.id,
-      name: sourceName.trim(),
+      name: (() => {
+        let n = sourceName.trim();
+        if (/^\d{10,}$/.test(n)) {
+          if (sourceType === 'file' && sourceFilePaths[0]) {
+            n = sourceFilePaths[0].split(/[\\/]/).pop() || n;
+          } else if (sourceType === 'url' && sourceUrl) {
+            n = sourceUrl.split('/')[2] || sourceUrl;
+          } else {
+            n = 'Untitled';
+          }
+        }
+        return n;
+      })(),
       type: sourceType,
       content: sourceType === 'text' ? sourceContent : undefined,
       url: sourceType === 'url' ? sourceUrl : undefined,

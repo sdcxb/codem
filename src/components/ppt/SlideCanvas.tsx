@@ -22,6 +22,7 @@ import {
   elementToStyle,
 } from '../../core/knowledge/ppt-types';
 import './ppt-editor.css';
+import { renderMath, hasMath } from '../../core/knowledge/ppt-math';
 
 // ========== 缩放手柄 ==========
 
@@ -79,6 +80,10 @@ export interface SlideCanvasProps {
   onDuplicateSelected: () => void;
   /** 注册外部命令 (用于工具栏触发) */
   registerCommands?: (cmds: CanvasCommands) => void;
+  /** 演示模式 — 自动播放元素入场动画 */
+  presentationMode?: boolean;
+  /** 演示模式动画 key (变化时重新触发动画) */
+  animationKey?: number;
 }
 
 export interface CanvasCommands {
@@ -105,11 +110,28 @@ export function SlideCanvas({
   onDeleteSelected,
   onDuplicateSelected,
   registerCommands,
+  presentationMode = false,
+  animationKey = 0,
 }: SlideCanvasProps) {
   const canvasRef = useRef<HTMLDivElement>(null);
   const [dragState, setDragState] = useState<DragState | null>(null);
   const [marquee, setMarquee] = useState<MarqueeState | null>(null);
   const [liveElements, setLiveElements] = useState<Map<string, { x: number; y: number; width: number; height: number }>>(new Map());
+  // 实际渲染尺寸（用于 CSS transform scale 整体缩放）
+  const [renderWidth, setRenderWidth] = useState(canvasWidth);
+  const scale = renderWidth / canvasWidth;
+
+  // 监听画布外层容器实际尺寸，计算 transform scale
+  useEffect(() => {
+    const el = canvasRef.current;
+    if (!el) return;
+    const updateWidth = () => setRenderWidth(el.offsetWidth);
+    updateWidth();
+    const ro = new ResizeObserver(() => updateWidth());
+    ro.observe(el);
+    if (el.parentElement) ro.observe(el.parentElement);
+    return () => ro.disconnect();
+  }, []);
 
   // 更新 live positions 当 dragState 开始时
   useEffect(() => {
@@ -395,6 +417,23 @@ export function SlideCanvas({
     if (updates.length > 0) onElementsUpdate(updates);
   }, [selectedIds, slide.elements, onElementsUpdate]);
 
+  // 计算元素入场动画样式 (演示模式)
+  const getElementAnimStyle = (el: SlideElement): React.CSSProperties => {
+    if (!presentationMode || !el.animation || el.animation.type === 'none') return {};
+    const animName = `ppt-anim-${el.animation.type}`;
+    return {
+      animation: `${animName} ${el.animation.duration}ms ease-out ${el.animation.delay}ms both`,
+    };
+  };
+
+  // 计算元素位置/尺寸样式
+  const getElementStyle = (el: SlideElement): React.CSSProperties => {
+    const live = liveElements.get(el.id);
+    const renderEl: SlideElement = live ? { ...el, x: live.x, y: live.y, width: live.width, height: live.height } : el;
+    const style = elementToStyle(renderEl, canvasWidth, canvasHeight);
+    return style;
+  };
+
   // ====== 层级命令 ======
   const bringForward = useCallback(() => {
     const updates = slide.elements
@@ -443,88 +482,7 @@ export function SlideCanvas({
     }
   }, [slide.elements, onSelect, onEditingChange]);
 
-  // ====== 渲染元素 ======
-  const renderElement = (el: SlideElement) => {
-    const isSelected = selectedIds.has(el.id);
-    const isEditing = editingId === el.id;
-    const live = liveElements.get(el.id);
-
-    // 合并 live position (拖拽中)
-    const renderEl: SlideElement = live
-      ? { ...el, x: live.x, y: live.y, width: live.width, height: live.height }
-      : el;
-
-    const style = elementToStyle(renderEl, canvasWidth, canvasHeight);
-
-    // 编辑模式: 使用 contentEditable
-    if (isEditing && el.type === 'text') {
-      return (
-        <div
-          key={el.id}
-          style={{
-            ...style,
-            outline: '2px solid #7c6cf0',
-            cursor: 'text',
-            userSelect: 'text',
-          }}
-          contentEditable
-          suppressContentEditableWarning
-          dangerouslySetInnerHTML={{ __html: escapeHtml((el as TextElement).content).replace(/\n/g, '<br>') }}
-          onBlur={(e) => {
-            const text = e.currentTarget.innerText;
-            onElementEdit(el.id, text);
-            onEditingChange(null);
-          }}
-          onMouseDown={(e) => e.stopPropagation()}
-          autoFocus
-        />
-      );
-    }
-
-    if (isEditing && el.type === 'list') {
-      const listEl = el as ListElement;
-      return (
-        <div
-          key={el.id}
-          style={{
-            ...style,
-            outline: '2px solid #7c6cf0',
-            cursor: 'text',
-            userSelect: 'text',
-          }}
-          contentEditable
-          suppressContentEditableWarning
-          dangerouslySetInnerHTML={{
-            __html: listEl.items.map(item => `<div>${escapeHtml(item)}</div>`).join(''),
-          }}
-          onBlur={(e) => {
-            const lines = e.currentTarget.innerText.split('\n').filter((l: string) => l.trim());
-            onElementEdit(el.id, JSON.stringify(lines));
-            onEditingChange(null);
-          }}
-          onMouseDown={(e) => e.stopPropagation()}
-          autoFocus
-        />
-      );
-    }
-
-    return (
-      <div
-        key={el.id}
-        style={{
-          ...style,
-          cursor: 'move',
-          outline: isSelected ? '2px solid #7c6cf0' : 'none',
-          outlineOffset: isSelected ? '0px' : undefined,
-        }}
-        onMouseDown={(e) => handleElementMouseDown(e, el.id)}
-        onDoubleClick={(e) => handleDoubleClick(e, el.id)}
-      >
-        {/* 元素内容 */}
-        {renderElementContent(renderEl)}
-      </div>
-    );
-  };
+  // renderElement 已移除 — 编辑模式逻辑已内联到下方渲染路径中
 
   const renderElementContent = (el: SlideElement) => {
     switch (el.type) {
@@ -578,7 +536,7 @@ export function SlideCanvas({
           <ul style={{ listStyle: bullet, padding: '0 0 0 24px', margin: 0, width: '100%' }}>
             {list.items.map((item, i) => (
               <li key={i} style={{ color: list.color, marginBottom: 4 }}>
-                <span style={{ color: list.bulletColor }}>•</span> {item}
+                {item}
               </li>
             ))}
           </ul>
@@ -592,7 +550,12 @@ export function SlideCanvas({
 
   // 文本元素需要特殊处理内容
   const renderTextContent = (el: TextElement) => {
-    return el.content.replace(/\n/g, '<br>');
+    let html = el.content.replace(/\n/g, '<br>');
+    // 如果包含数学公式，渲染 KaTeX
+    if (hasMath(el.content)) {
+      html = renderMath(html);
+    }
+    return html;
   };
 
   // ====== 选区框选 ======
@@ -674,33 +637,97 @@ export function SlideCanvas({
       className="ppt-slide-canvas"
       style={{
         width: '100%',
-        aspectRatio: `${canvasWidth} / ${canvasHeight}`,
+        height: '100%',
         position: 'relative',
         background: slide.background,
         overflow: 'hidden',
-        borderRadius: 8,
-        boxShadow: '0 4px 24px rgba(0,0,0,0.15)',
+        borderRadius: presentationMode ? 0 : 8,
+        boxShadow: presentationMode ? 'none' : '0 4px 24px rgba(0,0,0,0.15)',
         outline: 'none',
       }}
       tabIndex={0}
       onMouseDown={handleCanvasMouseDown}
     >
+      {/* transform 层：按设计尺寸渲染，整体 scale 到实际尺寸 */}
+      <div style={{
+        width: canvasWidth,
+        height: canvasHeight,
+        position: 'relative',
+        transform: `scale(${scale})`,
+        transformOrigin: 'top left',
+        flexShrink: 0,
+      }}>
       {/* 渲染所有元素 */}
       {slide.elements
         .slice()
         .sort((a, b) => a.zIndex - b.zIndex)
         .map(el => {
-          // 文本元素特殊处理: 需要渲染内容
-          if (el.type === 'text' && editingId !== el.id) {
-            const isSelected = selectedIds.has(el.id);
-            const live = liveElements.get(el.id);
-            const renderEl: SlideElement = live ? { ...el, x: live.x, y: live.y, width: live.width, height: live.height } : el;
-            const style = elementToStyle(renderEl, canvasWidth, canvasHeight);
+          const isSelected = selectedIds.has(el.id);
+          const isEditing = editingId === el.id;
+          const style = getElementStyle(el);
+          const animStyle = getElementAnimStyle(el);
+
+          // 编辑模式: text → contentEditable
+          if (isEditing && el.type === 'text') {
             return (
               <div
-                key={el.id}
+                key={`${el.id}-${animationKey}`}
                 style={{
                   ...style,
+                  outline: '2px solid #7c6cf0',
+                  cursor: 'text',
+                  userSelect: 'text',
+                }}
+                contentEditable
+                suppressContentEditableWarning
+                dangerouslySetInnerHTML={{ __html: escapeHtml((el as TextElement).content).replace(/\n/g, '<br>') }}
+                onBlur={(e) => {
+                  const text = e.currentTarget.innerText;
+                  onElementEdit(el.id, text);
+                  onEditingChange(null);
+                }}
+                onMouseDown={(e) => e.stopPropagation()}
+                autoFocus
+              />
+            );
+          }
+
+          // 编辑模式: list → contentEditable
+          if (isEditing && el.type === 'list') {
+            const listEl = el as ListElement;
+            return (
+              <div
+                key={`${el.id}-${animationKey}`}
+                style={{
+                  ...style,
+                  outline: '2px solid #7c6cf0',
+                  cursor: 'text',
+                  userSelect: 'text',
+                }}
+                contentEditable
+                suppressContentEditableWarning
+                dangerouslySetInnerHTML={{
+                  __html: listEl.items.map(item => `<div>${escapeHtml(item)}</div>`).join(''),
+                }}
+                onBlur={(e) => {
+                  const lines = e.currentTarget.innerText.split('\n').filter((l: string) => l.trim());
+                  onElementEdit(el.id, JSON.stringify(lines));
+                  onEditingChange(null);
+                }}
+                onMouseDown={(e) => e.stopPropagation()}
+                autoFocus
+              />
+            );
+          }
+
+          // 文本元素非编辑模式: 用 dangerouslySetInnerHTML 渲染内容
+          if (el.type === 'text') {
+            return (
+              <div
+                key={`${el.id}-${animationKey}`}
+                style={{
+                  ...style,
+                  ...animStyle,
                   cursor: 'move',
                   outline: isSelected ? '2px solid #7c6cf0' : 'none',
                 }}
@@ -710,7 +737,24 @@ export function SlideCanvas({
               />
             );
           }
-          return renderElement(el);
+
+          // 其他元素类型 (shape, image, list 非编辑模式)
+          return (
+            <div
+              key={`${el.id}-${animationKey}`}
+              style={{
+                ...style,
+                ...animStyle,
+                cursor: 'move',
+                outline: isSelected ? '2px solid #7c6cf0' : 'none',
+                outlineOffset: isSelected ? '0px' : undefined,
+              }}
+              onMouseDown={(e) => handleElementMouseDown(e, el.id)}
+              onDoubleClick={(e) => handleDoubleClick(e, el.id)}
+            >
+              {renderElementContent(el)}
+            </div>
+          );
         })}
 
       {/* 框选 */}
@@ -718,6 +762,7 @@ export function SlideCanvas({
 
       {/* 选中手柄 */}
       {renderSelectionHandles()}
+      </div>
     </div>
   );
 }

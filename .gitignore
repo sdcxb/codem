@@ -67,3 +67,6 @@ notebook-section.txt
 
 # GitHub workflows from reference project
 .github/
+
+# Reference project (not part of codebase)
+.oh-my-ppt-ref/

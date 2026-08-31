@@ -232,7 +232,10 @@ export function addSource(input: AddSourceInput): NotebookSource {
 
 export function getSource(id: string): NotebookSource | null {
   const db = getDatabase();
-  const result = db.exec('SELECT * FROM notebook_sources WHERE id = ?', [id]);
+  const result = db.exec(
+    'SELECT id, notebook_id, name, type, content, file_path, url, mime_type, size, status, chunk_count, error_message, summary, key_topics, created_at FROM notebook_sources WHERE id = ?',
+    [id],
+  );
   if (result.length === 0 || result[0].values.length === 0) return null;
   return rowToSource(result[0].values[0]);
 }
@@ -240,7 +243,7 @@ export function getSource(id: string): NotebookSource | null {
 export function listSources(notebookId: string): NotebookSource[] {
   const db = getDatabase();
   const result = db.exec(
-    'SELECT * FROM notebook_sources WHERE notebook_id = ? ORDER BY created_at ASC',
+    'SELECT id, notebook_id, name, type, content, file_path, url, mime_type, size, status, chunk_count, error_message, summary, key_topics, created_at FROM notebook_sources WHERE notebook_id = ? ORDER BY created_at ASC',
     [notebookId],
   );
   if (result.length === 0) return [];

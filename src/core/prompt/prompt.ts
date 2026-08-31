@@ -35,6 +35,8 @@ maxContextSize?: number;
     /** Auto-retrieved relevant context for the current query */
     retrievedContext?: string;
     retrievedSources?: { name: string; score: number }[];
+    /** Full source list with IDs — enables LLM to select specific sources for tools like generate_ppt */
+    sourceList?: { id: string; name: string; type: string }[];
   };
   /** (G series) Git 偏好配置 */
   gitConfig?: GitConfig;
@@ -328,6 +330,16 @@ When a user uploads a file, the message contains an \`<attachment>\` block with 
 
     if (kc.notebookSummary) {
       parts.push("", isZh ? `## 笔记本摘要` : `## Notebook Summary`, kc.notebookSummary);
+    }
+
+    if (kc.sourceList && kc.sourceList.length > 0) {
+      const srcList = kc.sourceList.map((s, i) => `[${i + 1}] id="${s.id}" name="${s.name}" type="${s.type}"`).join("\n");
+      parts.push(
+        "",
+        isZh
+          ? `## 来源列表\n以下是笔记本中所有来源，可用于 generate_ppt 工具的 source_names 参数指定特定来源：\n${srcList}`
+          : `## Source List\nAll sources in this notebook. Use source names in generate_ppt tool's source_names parameter to select specific sources:\n${srcList}`,
+      );
     }
 
     if (kc.retrievedContext) {

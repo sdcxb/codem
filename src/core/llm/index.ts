@@ -875,7 +875,7 @@ Report earlier as well whenever a partial finding changes what that agent should
     let autoRetrievedSources: Array<{ sourceId: string; sourceName: string; chunkIndex: number; snippet: string; score: number }> = [];
     if (options?.notebookId) {
       try {
-        const { getNotebook } = await import("../knowledge/storage");
+        const { getNotebook, listSources } = await import("../knowledge/storage");
         const { retrieveWithContext } = await import("../knowledge/retriever");
         const notebook = getNotebook(options.notebookId);
         if (notebook) {
@@ -889,6 +889,8 @@ Report earlier as well whenever a partial finding changes what that agent should
             snippet: s.content.slice(0, 150).replace(/\n/g, ' ').trim(),
             score: s.score,
           }));
+          // Build full source list for the system prompt (enables LLM to select specific sources)
+          const allSources = listSources(options.notebookId).filter(s => s.status === 'indexed');
           knowledgeContext = {
             notebookName: notebook.name,
             notebookDescription: notebook.description,
@@ -897,6 +899,7 @@ Report earlier as well whenever a partial finding changes what that agent should
             chunkCount: notebook.chunkCount,
             retrievedContext: context || undefined,
             retrievedSources: sources.map((s) => ({ name: s.sourceName, score: s.score })),
+            sourceList: allSources.map(s => ({ id: s.id, name: s.name, type: s.type })),
           };
         }
       } catch (e) {

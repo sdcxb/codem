@@ -2,7 +2,8 @@
  * PropertyPanel — 元素属性面板
  */
 
-import { type SlideElement, type TextElement, type ShapeElement, type ImageElement, type ListElement, type ShapeKind } from '../../core/knowledge/ppt-types';
+import { type SlideElement, type TextElement, type ShapeElement, type ImageElement, type ListElement, type ShapeKind, type ElementAnimation, type AnimationType, type AnimationTrigger } from '../../core/knowledge/ppt-types';
+import { PPT_FONTS } from '../../core/knowledge/ppt-styles';
 
 export interface PropertyPanelProps {
   selectedElements: SlideElement[];
@@ -100,6 +101,10 @@ export function PropertyPanel({
       )}
 
       {isSingle && (
+        <AnimationProperties el={selectedElements[0]} onUpdate={onUpdateElement} />
+      )}
+
+      {isSingle && (
         <div className="ppt-property-section">
           <div className="ppt-property-section-title">层级</div>
           <div className="ppt-property-btn-group">
@@ -129,7 +134,7 @@ export function PropertyPanel({
 
       <div className="ppt-property-section">
         <button className="ppt-property-btn"
-          style={{ background: '#3a1a1a', borderColor: '#5a2a2a', color: '#ff8080' }}
+          style={{ background: 'rgba(239,68,68,0.15)', borderColor: 'rgba(239,68,68,0.3)', color: 'var(--error, #ff8080)' }}
           onClick={onDelete}>
           删除元素 {selectedElements.length > 1 ? `(${selectedElements.length})` : ''}
         </button>
@@ -154,6 +159,13 @@ function TextProperties({ el, onUpdate }: { el: TextElement; onUpdate: (id: stri
 
       <div className="ppt-property-section">
         <div className="ppt-property-section-title">字体</div>
+        <div className="ppt-property-row">
+          <span className="ppt-property-label">字体族</span>
+          <select className="ppt-property-select" value={el.fontFamily}
+            onChange={e => onUpdate(el.id, { fontFamily: e.target.value })}>
+            {PPT_FONTS.map(f => <option key={f.id} value={f.family}>{f.name}</option>)}
+          </select>
+        </div>
         <div className="ppt-property-row">
           <span className="ppt-property-label">字号</span>
           <input type="number" className="ppt-property-input" value={el.fontSize}
@@ -266,6 +278,13 @@ function ListProperties({ el, onUpdate }: { el: ListElement; onUpdate: (id: stri
 
       <div className="ppt-property-section">
         <div className="ppt-property-section-title">样式</div>
+        <div className="ppt-property-row">
+          <span className="ppt-property-label">字体族</span>
+          <select className="ppt-property-select" value={el.fontFamily}
+            onChange={e => onUpdate(el.id, { fontFamily: e.target.value })}>
+            {PPT_FONTS.map(f => <option key={f.id} value={f.family}>{f.name}</option>)}
+          </select>
+        </div>
         <div className="ppt-property-row">
           <span className="ppt-property-label">字号</span>
           <input type="number" className="ppt-property-input" value={el.fontSize}
@@ -421,5 +440,61 @@ function ImageProperties({ el, onUpdate }: { el: ImageElement; onUpdate: (id: st
         </div>
       </div>
     </>
+  );
+}
+
+const ANIMATION_OPTIONS: { value: AnimationType; label: string }[] = [
+  { value: 'none', label: '无动画' },
+  { value: 'fade-in', label: '淡入' },
+  { value: 'slide-in-left', label: '从左滑入' },
+  { value: 'slide-in-right', label: '从右滑入' },
+  { value: 'slide-in-top', label: '从上滑入' },
+  { value: 'slide-in-bottom', label: '从下滑入' },
+  { value: 'zoom-in', label: '缩放进入' },
+  { value: 'bounce-in', label: '弹跳进入' },
+  { value: 'flip-in', label: '翻转进入' },
+];
+
+function AnimationProperties({ el, onUpdate }: { el: SlideElement; onUpdate: (id: string, changes: Partial<SlideElement>) => void }) {
+  const anim = el.animation || { type: 'none' as AnimationType, duration: 600, delay: 0, trigger: 'auto' as AnimationTrigger };
+
+  const updateAnim = (changes: Partial<ElementAnimation>) => {
+    onUpdate(el.id, { animation: { ...anim, ...changes } });
+  };
+
+  return (
+    <div className="ppt-property-section">
+      <div className="ppt-property-section-title">入场动画</div>
+      <div className="ppt-property-row">
+        <span className="ppt-property-label">效果</span>
+        <select className="ppt-property-select" value={anim.type}
+          onChange={e => updateAnim({ type: e.target.value as AnimationType })}>
+          {ANIMATION_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+        </select>
+      </div>
+      {anim.type !== 'none' && (
+        <>
+          <div className="ppt-property-row">
+            <span className="ppt-property-label">时长(ms)</span>
+            <input type="number" className="ppt-property-input" value={anim.duration} min={100} max={5000} step={100}
+              onChange={e => updateAnim({ duration: parseInt(e.target.value) || 600 })} />
+          </div>
+          <div className="ppt-property-row">
+            <span className="ppt-property-label">延迟(ms)</span>
+            <input type="number" className="ppt-property-input" value={anim.delay} min={0} max={10000} step={100}
+              onChange={e => updateAnim({ delay: parseInt(e.target.value) || 0 })} />
+          </div>
+          <div className="ppt-property-row">
+            <span className="ppt-property-label">触发</span>
+            <div className="ppt-property-btn-group">
+              <button className={`ppt-property-btn ${anim.trigger === 'auto' ? 'active' : ''}`}
+                onClick={() => updateAnim({ trigger: 'auto' })}>自动</button>
+              <button className={`ppt-property-btn ${anim.trigger === 'click' ? 'active' : ''}`}
+                onClick={() => updateAnim({ trigger: 'click' })}>点击</button>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
   );
 }
