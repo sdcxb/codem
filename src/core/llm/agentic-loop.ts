@@ -92,6 +92,12 @@ export interface LoopConfig {
    * Sub-agents set a finite cap to prevent recursive runaway.
    */
   maxIterations: number;
+  /**
+   * Model context window (tokens). Synced into TokenTracker so
+   * context-pressure estimation uses the real window instead of the
+   * 128k default — otherwise 1M-window models compact after ~3 turns.
+   */
+  contextWindow?: number;
   /** Agent ID for this loop — used for tool filtering and message routing */
   agentId?: string;
   /** Tool allowlist from agent definition — if set, only these tools are available */
@@ -179,6 +185,7 @@ const MAX_CONSECUTIVE_NO_PROGRESS = 30;
 
 const DEFAULT_LOOP_CONFIG: LoopConfig = {
   maxIterations: 0,
+  contextWindow: 128000,
   maxConsecutiveErrors: 3,
   enableCompaction: true,
   compactionThreshold: 0.8,
@@ -193,6 +200,13 @@ const DEFAULT_LOOP_CONFIG: LoopConfig = {
 
 /** P0-3: Minimum message count before micro-compact kicks in */
 const KEEP_RECENT_MESSAGES_FOR_MICRO_COMPACT = 12;
+
+/**
+ * P0-3: Pressure threshold for micro-compact (proportion of context window).
+ * Below this, context is healthy — keep full tool results.
+ * DSH-aligned: cheap pruning first, full compaction only as a last resort.
+ */
+const MICRO_COMPACT_PRESSURE_THRESHOLD = 0.5;
 
 export interface StepPlan {
   title: string;
@@ -246,7 +260,7 @@ export class AgenticLoop {
   // State-based tool deduplication — no timers, no thresholds
   // Tracks what files have been read/written in the CURRENT user request.
   // Reset at the start of each run() call (new user message = new task).
-  private readCache: Map<string, string> = new Map();   // path → last read content
+  private readCache: Map<string, { offset: number; limit: number; output: string }> = new Map();   // path → last read content (with its offset/limit range)
   private writeCache: Map<string, string> = new Map();  // path → last written content
   /**
    * DSH-style: settlement 通过 Promise 网关注入。
@@ -465,6 +479,11 @@ private getFileChangeTrackerService(): FileChangeTracker | null {
     this.guidanceQueue = getGuidanceQueue();
     this.needsYouQueue = getNeedsYouQueue();
     this.executor = new StreamingToolExecutorImpl(config?.toolExecutor);
+    // Sync the model's real context window into TokenTracker so pressure
+    // estimation uses the correct denominator (DSH: model-aware window).
+    if (this.config.contextWindow) {
+      getTokenTracker().setContextWindow(this.config.contextWindow);
+    }
     this.retryExecutor = new RetryExecutor({
       maxAttempts: 5,
       baseDelay: 1000,
@@ -626,6 +645,12 @@ Example: [{"title":"Answer the question"},{"title":"Write to file"}]`;
     this.abortController = new AbortController();
     this.state = this.createInitialState();
     this.currentSessionId = sessionId;
+
+    // Model-aware context window: resolve the current model's real window
+    // from the provider and sync it into TokenTracker. Without this the
+    // tracker keeps its 128k default, so 1M-window models (MiMo/DeepSeek/
+    // Gemini) hit the 0.8 compaction threshold after only a few turns.
+    await this.resolveModelContextWindow();
 
     // R3-3.4: Crash repair — fix incomplete tool calls from previous session
     try {
@@ -1883,17 +1908,23 @@ yield { type: "step_progress", step: this.state.iteration, total: planState.tota
 
         // READ: if this file was already read in this request and hasn't been written since,
         // return cached content instead of re-reading
+        const readOffset = typeof args.offset === "number" ? args.offset : 1;
+        const readLimit = typeof args.limit === "number" ? args.limit : 2000;
         if ((name === "read" || name === "read_file") && filePath && this.readCache.has(filePath)) {
           const cached = this.readCache.get(filePath)!;
-          console.log(`[AgenticLoop] Cache hit for read ${filePath} — returning cached content`);
-          cacheHitCount++;
-          return {
-            id: "",
-            name,
-            input: args,
-            output: `[CACHE HIT] This file was already read earlier in this conversation. The content has not changed since then. Use the content below directly — do NOT call read again.\n\nFile: ${filePath}\n\n${cached}`,
-            status: "completed" as const,
-          };
+          if (cached.offset === readOffset && cached.limit === readLimit) {
+            console.log(`[AgenticLoop] Cache hit for read ${filePath} (offset=${readOffset}, limit=${readLimit}) — returning cached content`);
+            cacheHitCount++;
+            return {
+              id: "",
+              name,
+              input: args,
+              output: `[CACHE HIT] This file was already read earlier in this conversation. The content has not changed since then. Use the content below directly — do NOT call read again.\n\nFile: ${filePath}\n\n${cached.output}`,
+              status: "completed" as const,
+            };
+          }
+          // Range mismatch — fall through to a real read instead of returning stale content
+          console.log(`[AgenticLoop] Read cache mismatch for ${filePath} (cached offset=${cached.offset}/limit=${cached.limit}, requested offset=${readOffset}/limit=${readLimit}) — re-reading`);
         }
 
         // WRITE: if this file was already written with EXACTLY the same content in this request,
@@ -1952,9 +1983,10 @@ yield { type: "step_progress", step: this.state.iteration, total: planState.tota
         // in the pipeline's post-execute layer. Do NOT duplicate them here.
 
         // ===== Update state after tool execution =====
-        // Record read content for future cache hits
+        // Record read content for future cache hits (with the range it was read with,
+        // so a later read of a different range does not reuse it)
         if ((name === "read" || name === "read_file") && filePath && result.output) {
-          this.readCache.set(filePath, result.output);
+          this.readCache.set(filePath, { offset: readOffset, limit: readLimit, output: result.output });
         }
         // Record written content and invalidate read cache for that file
         if ((name === "write" || name === "edit" || name === "multi_edit") && filePath &&
@@ -2220,15 +2252,20 @@ yield { type: "step_progress", step: this.state.iteration, total: planState.tota
     // to reduce context pressure without expensive LLM summarization.
     // This runs BEFORE the pressure check in run(), so if micro-compact
     // reduces pressure enough, full compaction is avoided.
-    // Only applies when context is getting crowded.
+    // Pressure-driven: only prune when the context is actually crowded
+    // (message count AND estimated pressure above thresholds). With a
+    // model-aware contextWindow, low-pressure sessions keep full detail.
     let finalMessages = valid;
     if (valid.length > KEEP_RECENT_MESSAGES_FOR_MICRO_COMPACT) {
-      const { microCompact, isAlreadyMicroCompacted } = await import("./micro-compact");
-      if (!isAlreadyMicroCompacted(valid)) {
-        const microResult = microCompact(valid);
-        if (microResult.compactedCount > 0) {
-          finalMessages = microResult.messages;
-          this.state.microCompactedThisRun = true;
+      const prePressure = this.estimateContextPressure(valid);
+      if (prePressure >= MICRO_COMPACT_PRESSURE_THRESHOLD) {
+        const { microCompact, isAlreadyMicroCompacted } = await import("./micro-compact");
+        if (!isAlreadyMicroCompacted(valid)) {
+          const microResult = microCompact(valid);
+          if (microResult.compactedCount > 0) {
+            finalMessages = microResult.messages;
+            this.state.microCompactedThisRun = true;
+          }
         }
       }
     }
@@ -2358,6 +2395,25 @@ yield { type: "step_progress", step: this.state.iteration, total: planState.tota
     }
 
     return result;
+  }
+
+  /**
+   * Resolve the current model's real context window and sync it into
+   * TokenTracker. Uses the provider's model list (dynamic + static).
+   * Falls back to the configured default when the model is unknown.
+   */
+  private async resolveModelContextWindow(): Promise<void> {
+    try {
+      const model = this.config.model || (this.provider as any).id;
+      const models = await this.provider.listModels();
+      const match = models.find((m: any) => m.id === model);
+      if (match?.contextWindow) {
+        getTokenTracker().setContextWindow(match.contextWindow);
+        console.log(`[AgenticLoop] Model-aware context window: ${model} = ${match.contextWindow} tokens`);
+      }
+    } catch (e) {
+      console.warn(`[AgenticLoop] Failed to resolve context window (keeping default):`, e);
+    }
   }
 
   private estimateContextPressure(messages: any[]): number {

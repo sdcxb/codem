@@ -205,30 +205,28 @@ export class TokenTracker {
 
   /**
    * 估算消息列表的 token 数。
-   * 如果有基准（上次实际 promptTokens），用它校准估算。
+   * 如果有基准（上次实际 promptTokens），用基准作为下限，
+   * 再叠加当前消息的实际估算——避免忽略消息增长，也防止低估。
    */
   private estimateMessagesTokens(messages: any[], baseline: number): number {
-    if (baseline > 0) {
-      // 用基准 + 消息列表长度增量
-      // 粗略：每条新增消息约增加 baseline / messageCount 的 tokens
-      // 更准确的做法是跟踪哪些消息是新增的
-      let estimated = baseline;
-      // 如果消息数比上次多，增加估算
-      // 这里简化处理：用 baseline 作为基础
-      return estimated;
-    }
-
-    // 纯估算
-    let total = 0;
+    // 纯估算：完整扫描当前消息列表
+    let rawEstimate = 0;
     for (const m of messages) {
       const content = typeof m.content === "string"
         ? m.content
         : JSON.stringify(m.content || "");
-      total += estimateTokens(content);
+      rawEstimate += estimateTokens(content);
       // 每条消息的角色标记开销
-      total += 4;
+      rawEstimate += 4;
     }
-    return total;
+
+    if (baseline > 0) {
+      // 基准（上次实际 promptTokens）是真实测量值，作为下限防低估；
+      // 但允许当前消息的估算结果反映增长或剪枝后的回落。
+      return Math.max(baseline, rawEstimate);
+    }
+
+    return rawEstimate;
   }
 
   /** 获取累积 usage */

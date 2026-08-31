@@ -482,5 +482,21 @@ describe("S0 Full Regression Suite", () => {
       // Events should only have guard layer
       expect(events.filter(e => e.layer === "post-execute").length).toBe(0);
     });
+    it("read cache key includes offset/limit so paginated reads never reuse a different range", () => {
+      // Regression: the AgenticLoop readCache used to be keyed only by file path.
+      // When the LLM read a file with offset=1380, then requested offset=1300, the
+      // cache returned the 1380-range content — silently dropping lines 1300-1379.
+      // The cache must now track the range it was read with and only hit when it matches.
+      const fs = require("fs");
+      const path = require("path");
+      const src = fs.readFileSync(path.join(__dirname, "../core/llm/agentic-loop.ts"), "utf-8");
+
+      // Cache entry stores the read range alongside the output
+      expect(src).toContain("readCache.set(filePath, { offset: readOffset, limit: readLimit, output: result.output })");
+      // Cache hit requires the requested range to match the cached range
+      expect(src).toContain("cached.offset === readOffset && cached.limit === readLimit");
+      // Range mismatch falls through to a real read instead of returning stale content
+      expect(src).toContain("Read cache mismatch");
+    });
   });
 });
