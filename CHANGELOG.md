@@ -2,6 +2,43 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.9.3] - 2026-09-02
+
+### 安全模式（完全访问）修复 — dbReady 时序导致重启后失效
+
+- **修复：选择"完全访问"后重启仍弹审批** — `App.tsx` 的 `securityMode` state 初始化时 DB 尚未就绪（`getDatabase()` 抛错 → 回退默认 `ask`），而 `dbReady` 同步 effect 只同步了 model/mode/provider，漏掉 securityMode。现在 DB 就绪后重新同步，且依赖数组加入 `currentProject?.path`（切换项目按新项目重新解析，项目级 > 全局）
+- **委派/后台任务遵循用户安全模式** — `executor.ts` 不再硬编码 `securityMode: "auto"`，改为 `getEffectiveSecurityMode(cwd)`：用户选"完全访问"后跨会话委派任务同样放行；非 full 模式后台自动拒绝需权限操作
+- **修复 write 拒绝误判** — `agentic-loop.ts` 的 write 拒绝检测限定为 `name === "write"`：此前任何工具输出含 "User rejected the overwrite" 字面量（如读取本项目源码 tools.ts）都会被误判为用户拒绝写入，导致循环提前停止并输出"写入已被拒绝"（ask/auto/full 全部失效、无审批弹窗）
+- 新增回归测试：`repro-security-mode-full`（REPRO-001/002/003）+ `repro-security-mode-engine-link`（ENGINE-001~004）+ `repro-security-mode-project-link` + `repro-security-mode-ui-sync` + `repro-security-mode-db-reset` + `repro-security-mode-ctx`（CTX2-001/002 完整 Cordis ctx 委托路径）+ `repro-write-rejected-false-positive`
+
+### 工具调用配对修复 — API 400 "insufficient tool messages"
+
+- **修复 DeepSeek/OpenAI 严格配对要求** — `buildMessages` 在上下文选择截断部分工具结果时，此前只检查"是否有任何工具结果跟随"，部分截断的配对会溜过 → API 400。现在按 `tool_call_id` 精确配对：声明 N 个 tool_calls 但只有 M<N 个结果存活时，只保留被满足的 M 个（孤儿 tool 结果丢弃）
+- 新增回归测试：`repro-tool-pairing-400`
+
+### 输入框历史浏览修复 — wrap 折行误触发
+
+- **修复：多行输入时光标在第二行按 ↑ 直接填充历史** — `.message-input` 是 `pre-wrap` 软换行，旧 guard 只检查 `indexOf("\n")`，wrap 折行（无换行符但视觉两行）时 guard 失效。改为镜像测量（复制 textarea 字体/宽度/行高）判断视觉行：↑ 仅在视觉第一行触发历史，↓ 仅在视觉最后一行触发
+- 新增回归测试：`repro-input-history-wrap-guard`（5 用例）
+
+### 记忆检索正则元字符转义
+
+- **修复记忆内容含 `+`/`*`/`(` 等元字符时 `SyntaxError: Invalid regular expression`** — `memory.ts` 内容匹配对用户查询词做 `RegExp` 转义
+- 新增回归测试：`repro-memory-regex`
+
+### 引导栏按钮 UI 对标 wecode 优化
+
+- **引导栏从单气泡 + 单按钮改为卡片式三操作**（对标 `.wecode-ref` ChatInputCard）：每条引导显示"待接收/已接收"状态胶囊 + **立刻引导**（主色描边，中断当前回复立即注入）+ **编辑**（取消引导并回填输入框复用 suggestionPrompt 机制）+ **取消**（X 圆形幽灵按钮）
+- **样式改为圆角浮卡**：12px 圆角 + 边框 + 阴影 + 居中 max-width 820px + 2 行截断，清理旧 `.guidance-bubble*` 样式
+
+### 思考过程紫色样式恢复（对标 v0.96.0）
+
+- **思考/推理过程改回紫色样式** — `ReasoningRow` 折叠行文字 + Brain 图标改回紫色 `#9333ea`，展开体从灰底灰边框改为淡紫底 + 紫色左边框（与 v0.96.0 视觉一致）
+
+### 其他
+
+- 新增回归测试共 10 个 repro 文件（34 用例），全量测试通过，`tsc --noEmit` 零错误
+
 ## [1.9.2] - 2026-09-01
 
 ### LLM 请求级超时加固（对标 DSH request_timeout_seconds）

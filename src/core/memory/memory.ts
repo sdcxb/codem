@@ -150,7 +150,12 @@ this.load();
         }
 
         // Content match
-        const contentMatches = (contentLower.match(new RegExp(term, "g")) || []).length;
+        // FIX: escape regex metacharacters — term comes from user query tokens
+        // which may contain "+", "*", "(", etc. (e.g. extracted memory content).
+        // new RegExp(term) with an unescaped metacharacter throws
+        // SyntaxError: Invalid regular expression (Nothing to repeat).
+        const escapedTerm = term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        const contentMatches = (contentLower.match(new RegExp(escapedTerm, "g")) || []).length;
         score += contentMatches;
 
         // Tag match

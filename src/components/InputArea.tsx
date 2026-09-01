@@ -354,6 +354,46 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
     });
   };
 
+  /** 测量给定文本在 textarea 相同布局下的视觉行数（兼容 pre-wrap 软换行） */
+  const measureVisualLines = (text: string): number => {
+    const ta = textareaRef.current;
+    if (!ta) return 1;
+    const probe = document.createElement("div");
+    const cs = window.getComputedStyle(ta);
+    probe.style.cssText = [
+      "position:absolute",
+      "visibility:hidden",
+      "pointer-events:none",
+      "white-space:pre-wrap",
+      "word-wrap:break-word",
+      `font-family:${cs.fontFamily}`,
+      `font-size:${cs.fontSize}`,
+      `font-weight:${cs.fontWeight}`,
+      `line-height:${cs.lineHeight}`,
+      `width:${ta.clientWidth}px`,
+      `padding-left:${cs.paddingLeft}`,
+      `padding-right:${cs.paddingRight}`,
+      `letter-spacing:${cs.letterSpacing}`,
+      `word-spacing:${cs.wordSpacing}`,
+    ].join(";");
+    probe.textContent = text;
+    document.body.appendChild(probe);
+    const h = probe.offsetHeight;
+    document.body.removeChild(probe);
+    const lh = parseFloat(cs.lineHeight) || 24;
+    return Math.max(1, Math.round(h / lh));
+  };
+
+  /** 光标是否位于视觉第一行（wrap 折行也算多行） */
+  const isCaretOnFirstVisualLine = (ta: HTMLTextAreaElement, caret: number): boolean => {
+    return measureVisualLines(ta.value.slice(0, caret)) <= 1;
+  };
+
+  /** 光标是否位于视觉最后一行（wrap 折行也算多行） */
+  const isCaretOnLastVisualLine = (ta: HTMLTextAreaElement, caret: number): boolean => {
+    return measureVisualLines(ta.value.slice(caret)) <= 1;
+  };
+
   /** Browse input history. Returns true when the key was consumed. */
   const browseHistory = (dir: 1 | -1) => {
     const h = historyRef.current;
@@ -364,12 +404,13 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
     const caret = ta.selectionStart ?? value.length;
     // Multi-line guard: only recall when the caret is on the boundary line,
     // otherwise let the native caret move handle the gesture.
+    // 注意：textarea 是 pre-wrap 软换行，wrap 折行不产生 "\n"，
+    // 因此必须按视觉行判断（用镜像测量），否则光标在折行的第二行按 ↑
+    // 会直接填充历史而不是先移动光标。
     if (dir === -1) {
-      const firstBreak = value.indexOf("\n");
-      if (firstBreak !== -1 && caret > firstBreak) return false;
+      if (!isCaretOnFirstVisualLine(ta, caret)) return false;
     } else {
-      const lastBreak = value.lastIndexOf("\n");
-      if (lastBreak !== -1 && caret <= lastBreak) return false;
+      if (!isCaretOnLastVisualLine(ta, caret)) return false;
     }
     if (historyIndexRef.current === -1) {
       // Entering history browse: remember the in-progress draft so ArrowDown

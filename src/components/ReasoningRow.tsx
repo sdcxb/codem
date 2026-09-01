@@ -78,7 +78,7 @@ export const ReasoningRow = memo(function ReasoningRow({
           border: 'none',
           cursor: 'pointer',
           fontSize: 'var(--fs-sm)',
-          color: 'var(--text-secondary)',
+          color: '#9333ea',
           textAlign: 'left',
         }}
       >
@@ -91,7 +91,7 @@ export const ReasoningRow = memo(function ReasoningRow({
           className={running ? 'reasoning-icon-streaming' : ''}
           style={{
             flexShrink: 0,
-            color: running ? 'var(--accent)' : 'var(--text-muted)',
+            color: running ? 'var(--accent)' : '#9333ea',
             animation: running ? 'pulse 2s ease-in-out infinite' : 'none',
           }}
         />
@@ -135,9 +135,9 @@ export const ReasoningRow = memo(function ReasoningRow({
           style={{
             marginLeft: 18,
             padding: '8px 12px',
-            background: 'var(--bg-tertiary)',
+            background: 'rgba(147, 51, 234, 0.06)',
             borderRadius: 6,
-            borderLeft: '2px solid var(--border-primary)',
+            borderLeft: '2px solid rgba(147, 51, 234, 0.4)',
             fontSize: 'var(--fs-sm)',
             color: 'var(--text-secondary)',
             whiteSpace: 'pre-wrap',

@@ -24,6 +24,7 @@ import { useAppStore } from "../../store";
 import { useProjectStore } from "../store";
 import { getEventLog } from "../storage/event-log";
 import { getLang } from "../i18n/lang";
+import { getEffectiveSecurityMode } from "../permission/security-mode";
 
 // ========== 类型 ==========
 
@@ -133,13 +134,18 @@ export async function executeSessionTurn(params: ExecuteSessionTurnParams): Prom
       });
     } catch (e) { console.warn('[executor.ts]', e) }
 
+    // 委派/后台任务同样遵循用户选择的安全模式（项目级 > 全局 > 默认 ask），
+    // 不再硬编码 "auto" —— 否则用户在 UI 选择"完全访问"后委派任务仍被权限层拦截。
+    const effectiveSecurityMode = getEffectiveSecurityMode(cwd) || "ask";
     for await (const event of engine.process(sessionId, message, cwd, undefined, {
       onPermissionRequest: onPermissionRequest || ((_req) => {
-        // 默认策略：后台执行时自动拒绝需要权限的操作
-        return Promise.resolve({ approved: false, reason: "Background execution: auto-deny" } as any);
+        // 默认策略：后台执行时若用户模式为 full 则放行；否则自动拒绝需要权限的操作
+        if (effectiveSecurityMode === "full") {
+          return Promise.resolve({ requestId: _req?.id || "", action: "allow", alwaysAllow: false } as any);
+        }
+        return Promise.resolve({ requestId: _req?.id || "", action: "deny", reason: "Background execution: auto-deny" } as any);
       }),
-      // 后台执行使用默认 security mode（auto）
-      securityMode: "auto",
+      securityMode: effectiveSecurityMode,
     })) {
       if (abort.signal.aborted) break;
 

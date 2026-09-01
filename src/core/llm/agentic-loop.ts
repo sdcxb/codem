@@ -2122,7 +2122,18 @@ yield { type: "step_progress", step: this.macroStep, total: planState.total, tit
         }
 
         // S4: Detect write rejection — set flag to stop the loop
-        if (result.output && result.output.includes("User rejected the overwrite")) {
+        // 必须限定为 write 工具本身的拒绝输出："User rejected the overwrite"
+        // 是 write 工具在用户拒绝覆盖时返回的错误文本。任何其他工具（如
+        // read/grep/bash）的输出若恰好包含该字符串（例如读取本项目源码
+        // tools.ts，其代码中就有这行字面量），之前会被误判为用户拒绝了
+        // 写入，导致循环提前停止并输出"写入已被拒绝"（与安全模式无关，
+        // ask/auto/full 全部失效、无审批弹窗）。
+        if (
+          name === "write" &&
+          typeof args.path === "string" &&
+          result.output &&
+          result.output.includes("User rejected the overwrite")
+        ) {
           this.state.writeRejected = true;
           console.warn(`[AgenticLoop] Write to ${args.path} was rejected by user. Loop will stop after this iteration.`);
         }
@@ -2287,38 +2298,52 @@ yield { type: "step_progress", step: this.macroStep, total: planState.total, tit
     // 2. If an assistant has tool_calls but its tool results were dropped by selection
     //    → strip tool_calls from the assistant so the LLM doesn't see "pending" tool calls
     //    and retry them (root cause of tool call loops)
-    const valid: any[] = [];
-    let hasTools = false;
+    // 3. (FIX) If an assistant declares N tool_calls but only M<N results survived
+    //    context selection, keep ONLY the M fulfilled tool_calls and drop the rest —
+    //    otherwise the API rejects the payload with 400 "insufficient tool messages
+    //    following tool_calls message" (DeepSeek/OpenAI strict pairing requirement).
+    //    Previously we only checked whether ANY tool result followed the assistant,
+    //    so a partially-truncated pair slipped through.
+    const declaredToolCallIds = new Set<string>();
     for (const msg of selected) {
-      if (msg.role === "assistant") {
-        hasTools = !!(msg as any).tool_calls;
-        valid.push(msg);
-      } else if (msg.role === "tool") {
-        if (hasTools) valid.push(msg);
-      } else {
-        hasTools = false;
-        valid.push(msg);
+      if (msg.role === "assistant" && (msg as any).tool_calls) {
+        for (const tc of (msg as any).tool_calls) declaredToolCallIds.add(tc.id);
       }
     }
+    const presentToolResultIds = new Set<string>();
+    for (const msg of selected) {
+      if (msg.role === "tool" && (msg as any).toolCallId) presentToolResultIds.add((msg as any).toolCallId);
+    }
 
-    // Second pass: if an assistant has tool_calls but no following tool results,
-    // strip the tool_calls to prevent the LLM from seeing incomplete tool calls
-    for (let i = 0; i < valid.length; i++) {
-      const msg = valid[i];
-      if (msg.role === "assistant" && (msg as any).tool_calls) {
-        // Check if the next messages are tool results for this assistant
-        let hasResults = false;
-        for (let j = i + 1; j < valid.length; j++) {
-          if (valid[j].role === "tool") { hasResults = true; break; }
-          if (valid[j].role === "assistant" || valid[j].role === "user") break;
+    const valid: any[] = [];
+    for (const msg of selected) {
+      if (msg.role === "tool") {
+        // Drop orphan tool results — no assistant in the selected window declares this tool_call_id.
+        // Keeping them triggers API 400 "missing field tool_call_id" (a tool message must
+        // immediately follow the assistant message that declared its tool_call).
+        if ((msg as any).toolCallId && declaredToolCallIds.has((msg as any).toolCallId)) {
+          valid.push(msg);
         }
-        if (!hasResults) {
-          // Strip tool_calls — the LLM will only see the text content
-          const { tool_calls, ...rest } = msg;
-          valid[i] = rest;
-          console.warn(`[buildMessages] Stripped dangling tool_calls from assistant ${msg.id} (tool results were dropped by context selection)`);
-        }
+        continue;
       }
+      if (msg.role === "assistant" && (msg as any).tool_calls && (msg as any).tool_calls.length > 0) {
+        // Keep only tool_calls that actually have a surviving result; strip unfulfilled ones.
+        const matched = (msg as any).tool_calls.filter((tc: any) => presentToolResultIds.has(tc.id));
+        if (matched.length === 0) {
+          // No results at all → strip tool_calls entirely; the LLM only sees the text content.
+          const { tool_calls, ...rest } = msg;
+          valid.push(rest);
+          console.warn(`[buildMessages] Stripped dangling tool_calls from assistant ${msg.id} (tool results were dropped by context selection)`);
+        } else if (matched.length !== (msg as any).tool_calls.length) {
+          // Partial results → keep only the fulfilled tool_calls so the API pairing is exact.
+          valid.push({ ...msg, tool_calls: matched });
+          console.warn(`[buildMessages] Stripped ${(msg as any).tool_calls.length - matched.length} unfulfilled tool_calls from assistant ${msg.id} (results dropped by context selection)`);
+        } else {
+          valid.push(msg);
+        }
+        continue;
+      }
+      valid.push(msg);
     }
 
     // P0-3: Micro-compact — replace old tool result content with placeholders

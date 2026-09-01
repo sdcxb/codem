@@ -21,8 +21,8 @@ import { useScrollState, useUnreadMessagesTracker } from "../hooks/useScrollStat
 // Lucide icons — replacing all emoji icons with professional vector icons
 import {
   PanelLeftClose, ChevronDown, Brain, Bot, Camera, BarChart3, LayoutGrid,
-  Search, X, GitFork, RotateCcw, Check, Send, Hammer, ClipboardList, Zap,
-  Activity,
+  Search, X, GitFork, RotateCcw, Check, Hammer, ClipboardList, Zap,
+  Activity, Pencil,
 } from "lucide-react";
 // P2 #38: framer-motion for smooth list animations
 import { motion, AnimatePresence } from "framer-motion";
@@ -83,7 +83,7 @@ notebookId?: string;
 
 export function ChatPanel({ onSend, onCancel, onSendGuidance, onToggleSidebar, onFork, onRegenerate, onEditAndResend, onReEdit, sessionId, connected, model, onModelChange, mode = "cli", providerId = "mimo", collaborationMode = "default", onModeChange, projectPath, currentSessionId, onCitationClick, onSourceClick, notebookId }: ChatPanelProps) {
   const lang = useLang();
-  const { messages, isStreaming, activeSessions, removeGeneratedFiles, hasMoreMessages, isLoadingMore, loadMoreMessages, stepProgress, streamStartTime, llmStatus, displayMode, setDisplayMode, guidanceMessages } = useAppStore();
+  const { messages, isStreaming, activeSessions, removeGeneratedFiles, hasMoreMessages, isLoadingMore, loadMoreMessages, stepProgress, streamStartTime, llmStatus, displayMode, setDisplayMode, guidanceMessages, removeGuidanceMessage } = useAppStore();
   const { currentSession, currentProject } = useProjectStore();
   const [showModelPicker, setShowModelPicker] = useState(false);
   const [showEffortPicker, setShowEffortPicker] = useState(false);
@@ -1089,21 +1089,54 @@ canEdit={!isSessionStreaming}
       {isSessionStreaming && guidanceMessages.length > 0 && (
         <div className="guidance-messages-bar">
           {guidanceMessages.map((g) => (
-            <div key={g.id} className={`guidance-bubble ${g.consumed ? 'consumed' : 'pending'}`}>
-              <span className="guidance-bubble-icon"><Send size={12} /></span>
-              <span className="guidance-bubble-text">{g.message}</span>
+            <div key={g.id} className={`guidance-item ${g.consumed ? 'consumed' : 'pending'}`}>
+              <div className="guidance-item-body">
+                <div className="guidance-item-meta">
+                  <span className="guidance-status-badge">
+                    {g.consumed
+                      ? (lang === "zh" ? "已接收" : "Applied")
+                      : (lang === "zh" ? "待接收" : "Queued")}
+                  </span>
+                </div>
+                <p className="guidance-item-text">{g.message}</p>
+              </div>
               {!g.consumed && (
-                <button
-                  className="guidance-bubble-inject-btn"
-                  onClick={() => {
-                    // "Inject now" — interrupt the current reply and consume this pending guidance
-                    window.dispatchEvent(new CustomEvent('codem-guidance-immediate', { detail: { message: g.message, guidanceId: g.id } }));
-                  }}
-                  title={lang === "zh" ? "马上注入（中断当前回复）" : "Inject now (interrupt current response)"}
-                >
-                  <Zap size={11} />
-                  {lang === "zh" ? "马上注入" : "Now"}
-                </button>
+                <div className="guidance-item-actions">
+                  <button
+                    type="button"
+                    className="guidance-action-btn guidance-action-primary"
+                    onClick={() => {
+                      // "Guide now" — interrupt the current reply and inject this guidance immediately
+                      window.dispatchEvent(new CustomEvent('codem-guidance-immediate', { detail: { message: g.message, guidanceId: g.id } }));
+                    }}
+                    title={lang === "zh" ? "立刻引导（马上注入当前对话）" : "Guide now (inject immediately)"}
+                  >
+                    <Zap size={12} />
+                    {lang === "zh" ? "立刻引导" : "Guide"}
+                  </button>
+                  <button
+                    type="button"
+                    className="guidance-action-btn"
+                    onClick={() => {
+                      // Edit: cancel the queued guidance and put its content back into the input box
+                      setSuggestionPrompt(g.message);
+                      removeGuidanceMessage(g.id);
+                    }}
+                    title={lang === "zh" ? "编辑" : "Edit"}
+                  >
+                    <Pencil size={12} />
+                    {lang === "zh" ? "编辑" : "Edit"}
+                  </button>
+                  <button
+                    type="button"
+                    className="guidance-action-btn guidance-action-close"
+                    onClick={() => removeGuidanceMessage(g.id)}
+                    title={lang === "zh" ? "取消" : "Cancel"}
+                    aria-label={lang === "zh" ? "取消引导" : "Cancel guidance"}
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
               )}
             </div>
           ))}

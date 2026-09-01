@@ -529,8 +529,17 @@ useEffect(() => {
       } catch (e) {
         console.warn("[dbReady] Failed to sync model from settings:", e);
       }
+      // Security mode: DB 就绪前 useState 初始化读不到已保存的模式（getDatabase 抛错 → 默认 ask），
+      // 这里在 DB 就绪后重新同步，避免用户保存的 "full"/"auto" 在重启后失效。
+      try {
+        const syncedMode = getEffectiveSecurityMode(currentProject?.path);
+        setSecurityMode(syncedMode);
+        console.log(`[dbReady] syncing securityMode from settings: ${syncedMode}`);
+      } catch (e) {
+        console.warn("[dbReady] Failed to sync securityMode from settings:", e);
+      }
     }
-  }, [dbReady]);
+  }, [dbReady, currentProject?.path]);
   // Initialize from saved settings synchronously to avoid UI flash showing wrong model list.
   // getMode() reads from SQLite synchronously; if DB not ready yet, falls back to "api".
   const _initialSettings = (() => {
