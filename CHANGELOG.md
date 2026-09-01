@@ -2,6 +2,40 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.9.2] - 2026-09-01
+
+### LLM 请求级超时加固（对标 DSH request_timeout_seconds）
+
+- **complete()（非流式）总超时 120s** — planSteps / compaction 等非流式调用不再可能永久挂起
+- **stream()（流式）连接阶段超时 60s** — fetch 到 response headers 阶段有独立超时预算；首字节之后的流式阶段沿用现有 120s idle timeout（SSE 心跳重置）
+- **修复关键漏洞：fetch 本身无超时** — 此前服务端接受连接但不返回数据时 fetch 永久挂起，主循环卡死、App 的 finally 不执行、activeSessions 残留 → 会话永久无响应
+- **`withRequestTimeout` 合并外部 abort signal 与超时预算** — 任一触发即 abort（对标 DSH request deadline）；`cleanup()` 解除连接阶段超时定时器，避免误杀已开始的正常流
+- **`rethrowIfRequestTimeout` 将超时 AbortError 转为带诊断的请求超时错误**（对标 DSH TimeoutError）
+- 新增 `llm-timeout-hardening.test.ts`（200 行）
+
+### 安全模式按钮选中态颜色反馈
+
+- **当前生效模式一眼可见** — 编辑框底部安全模式按钮按 ask/auto/full 显示蓝/紫/绿（修复选中后无变色）：`PermissionPresetSelector` 按钮按当前模式附加 `security-ask`/`security-auto`/`security-full` class，`codem-ui.css` 添加对应颜色 + 暗色主题适配
+
+### 引导消息注入体验改造（对标 wecode markGuidanceApplied / Codex steering 消失）
+
+- **注入成功后消息从状态栏移除** — store 新增 `removeGuidanceMessage`：引导消息注入 loop 后立即从 guidance 状态栏移除（不再残留 consumed 标记），状态栏自动消失；`App.tsx` 两处调用点（立即中断注入 + guidance_received 事件）统一改为移除
+- **移除 ChatPanel 独立引导输入框** — 删除 GuidanceBlock 渲染 + guidance-input-container，改为 InputArea 复用主输入框：流式期间 `onSendGuidance` 将输入框消息作为引导消息注入（placeholder 提示"回车发送将作为引导消息注入当前任务"），发送按钮变为"停止 + 引导发送"双按钮
+- 新增测试 GUIDE-061/062（removeGuidanceMessage 行为）
+
+### LLM 失败可见性（对标 DSH 结构化失败上报，绝不静默结束 turn）
+
+- **移除任务完整性猜测机制** — 删除 `checkTaskCompleteness`/`taskReminderSent`/`toolsCalledInRun`：不再通过正则猜测用户意图注入"任务未完成提醒"伪造 user 消息 + 双写。回归背景：用户引用 "write / App.tsx" 报错文本被误判为"要求保存文件"，注入伪造消息导致莫名其妙的问题。循环防护只由 repeat-tool-reminder 承担（检测真实重复调用链）
+- **EMPTY_RESPONSE 空响应检测** — 模型以 stop 结束但无文本/无推理/无工具调用是退化完成，抛错走既有重试路径，重试耗尽后结构化失败上报，绝不猜测用户意图或伪造 user 消息
+- **失败必须对用户可见** — ① agentic-loop 失败路径 yield `text_delta`（用户看到 LLM 调用失败 + 自动重试提示，而非"发消息不回复"）② App.tsx `end` 事件对 `too_many_errors`/`error` 显示明确错误消息（不只 overflow）③ App.tsx `tool_error` 对空 toolCall（executeIteration 级错误）上报错误消息
+- 新增测试 LOOP-051/052/053（防回归：任务完整性语义 + 失败可见性）
+
+### 其他
+
+- `App.tsx` 移除 BOM 头（文件开头多余 BOM 清理）
+- 新增回归测试：`llm-timeout-hardening.test.ts`（200 行）+ `core-guidance-pause-resume` GUIDE-061/062 + `trigger-call-execute-loop` LOOP-051~053
+- 全量 119 文件 / 3985 用例通过，`tsc --noEmit` 零错误，`cargo check` 通过
+
 ## [1.9.1] - 2026-09-01
 
 ### 对话任务步数计算对标改造（Codex 风格宏观计划步）
@@ -32,79 +66,7 @@ All notable changes to Codem will be documented in this file.
 ### PowerShell 命令修复
 
 - **grepSearch 去掉外层 `powershell -Command "..."` 包裹** — 外层双引号让 PowerShell 把整段命令当字符串字面量解析，管道中 `$_` 无管道上下文展开为 $null，grep 静默返回空输出；改传裸命令（Rust 端统一执行）
-- **autoLint 路径改单引号包裹** — PowerShell 双引号内 `# Changelog
-
-All notable changes to Codem will be documented in this file.
-
-## [1.9.1] - 2026-09-01
-
-### 对话任务步数计算对标改造（Codex 风格宏观计划步）
-
-- **总量固定为计划步数，不再随执行膨胀** — 此前 `第X/X步` 的 total 会随 iteration 无限增长（读文件 → 搜索 → 改文件每一步都算新步骤），现在 total 固定为任务计划步数（分析/读取/修改/验证/总结），中间侦查类小步骤不再改变总量
-- **侦查类工具不推进步骤** — `read`/`glob`/`grep`/`tool_search`/`web_search`/`list_directory`/`lsp` 等只读侦查工具归类为 `RECON_TOOL_NAMES`，执行任务时这些小步骤不会让用户看到步数跳动；只有 `write`/`edit`/`bash`/`run_test` 等执行类工具**首次出现**才推进到下一宏步骤
-- **步骤标题语义化（中文）** — `getToolTitle` 全量中文化（读取文件/写入文件/修改文件/执行命令/运行测试/委派子智能体等），每个步骤名让用户一眼知道正在解决什么问题
-- **追加步骤仅在新执行阶段出现时发生** — 计划步骤全部完成后，若模型仍在执行新操作（发现严重问题/新增任务方向），追加一步并给出语义化标题，而非每 iteration +1
-
-### 文件树显示隐藏文件夹
-
-- **Rust `list_directory` 新增 `show_hidden` 参数** — 默认 false 保持原有隐藏过滤（LLM 工具调用不受影响），传 true 时显示 `.wecode-ref`、`.git`、`.deepseek-harness-ref` 等点开头目录
-- **FileExplorer 组件传递 `showHidden: true`** — 右侧边栏文件树、左侧 PanelSidebar 文件树、主面板文件 Tab 统一生效（全部复用 FileExplorer 组件）
-- `node_modules` 仍始终过滤（性能考虑）
-
-### 其他修复
-
-- **输入框高度收缩修复** — textarea 是 absolute+inset:0，删除多行内容后高度卡在旧值不恢复；测量前先重置 wrapper/textarea 到 minH，让 scrollHeight 反映真实内容高度
-- **安全模式切换按钮修复** — 编辑框底部「请求批准/替我审批/完全访问」点击不生效：compact 模式下拉菜单经 createPortal 渲染到 document.body，外部点击关闭逻辑误判 portal 内容为外部点击，先卸载菜单吞掉后续 click；新增 dropdownRef 排除判定
-
- 会做变量展开，含 `# Changelog
-
-All notable changes to Codem will be documented in this file.
-
-## [1.9.1] - 2026-09-01
-
-### 对话任务步数计算对标改造（Codex 风格宏观计划步）
-
-- **总量固定为计划步数，不再随执行膨胀** — 此前 `第X/X步` 的 total 会随 iteration 无限增长（读文件 → 搜索 → 改文件每一步都算新步骤），现在 total 固定为任务计划步数（分析/读取/修改/验证/总结），中间侦查类小步骤不再改变总量
-- **侦查类工具不推进步骤** — `read`/`glob`/`grep`/`tool_search`/`web_search`/`list_directory`/`lsp` 等只读侦查工具归类为 `RECON_TOOL_NAMES`，执行任务时这些小步骤不会让用户看到步数跳动；只有 `write`/`edit`/`bash`/`run_test` 等执行类工具**首次出现**才推进到下一宏步骤
-- **步骤标题语义化（中文）** — `getToolTitle` 全量中文化（读取文件/写入文件/修改文件/执行命令/运行测试/委派子智能体等），每个步骤名让用户一眼知道正在解决什么问题
-- **追加步骤仅在新执行阶段出现时发生** — 计划步骤全部完成后，若模型仍在执行新操作（发现严重问题/新增任务方向），追加一步并给出语义化标题，而非每 iteration +1
-
-### 文件树显示隐藏文件夹
-
-- **Rust `list_directory` 新增 `show_hidden` 参数** — 默认 false 保持原有隐藏过滤（LLM 工具调用不受影响），传 true 时显示 `.wecode-ref`、`.git`、`.deepseek-harness-ref` 等点开头目录
-- **FileExplorer 组件传递 `showHidden: true`** — 右侧边栏文件树、左侧 PanelSidebar 文件树、主面板文件 Tab 统一生效（全部复用 FileExplorer 组件）
-- `node_modules` 仍始终过滤（性能考虑）
-
-### 其他修复
-
-- **输入框高度收缩修复** — textarea 是 absolute+inset:0，删除多行内容后高度卡在旧值不恢复；测量前先重置 wrapper/textarea 到 minH，让 scrollHeight 反映真实内容高度
-- **安全模式切换按钮修复** — 编辑框底部「请求批准/替我审批/完全访问」点击不生效：compact 模式下拉菜单经 createPortal 渲染到 document.body，外部点击关闭逻辑误判 portal 内容为外部点击，先卸载菜单吞掉后续 click；新增 dropdownRef 排除判定
-
- 的路径（如 `C:\my$dir\file.ts`）被展开为空；单引号内 `# Changelog
-
-All notable changes to Codem will be documented in this file.
-
-## [1.9.1] - 2026-09-01
-
-### 对话任务步数计算对标改造（Codex 风格宏观计划步）
-
-- **总量固定为计划步数，不再随执行膨胀** — 此前 `第X/X步` 的 total 会随 iteration 无限增长（读文件 → 搜索 → 改文件每一步都算新步骤），现在 total 固定为任务计划步数（分析/读取/修改/验证/总结），中间侦查类小步骤不再改变总量
-- **侦查类工具不推进步骤** — `read`/`glob`/`grep`/`tool_search`/`web_search`/`list_directory`/`lsp` 等只读侦查工具归类为 `RECON_TOOL_NAMES`，执行任务时这些小步骤不会让用户看到步数跳动；只有 `write`/`edit`/`bash`/`run_test` 等执行类工具**首次出现**才推进到下一宏步骤
-- **步骤标题语义化（中文）** — `getToolTitle` 全量中文化（读取文件/写入文件/修改文件/执行命令/运行测试/委派子智能体等），每个步骤名让用户一眼知道正在解决什么问题
-- **追加步骤仅在新执行阶段出现时发生** — 计划步骤全部完成后，若模型仍在执行新操作（发现严重问题/新增任务方向），追加一步并给出语义化标题，而非每 iteration +1
-
-### 文件树显示隐藏文件夹
-
-- **Rust `list_directory` 新增 `show_hidden` 参数** — 默认 false 保持原有隐藏过滤（LLM 工具调用不受影响），传 true 时显示 `.wecode-ref`、`.git`、`.deepseek-harness-ref` 等点开头目录
-- **FileExplorer 组件传递 `showHidden: true`** — 右侧边栏文件树、左侧 PanelSidebar 文件树、主面板文件 Tab 统一生效（全部复用 FileExplorer 组件）
-- `node_modules` 仍始终过滤（性能考虑）
-
-### 其他修复
-
-- **输入框高度收缩修复** — textarea 是 absolute+inset:0，删除多行内容后高度卡在旧值不恢复；测量前先重置 wrapper/textarea 到 minH，让 scrollHeight 反映真实内容高度
-- **安全模式切换按钮修复** — 编辑框底部「请求批准/替我审批/完全访问」点击不生效：compact 模式下拉菜单经 createPortal 渲染到 document.body，外部点击关闭逻辑误判 portal 内容为外部点击，先卸载菜单吞掉后续 click；新增 dropdownRef 排除判定
-
-/反引号不做展开，内部单引号转义为双单引号
+- **autoLint 路径改单引号包裹** — PowerShell 双引号内 `$` 会做变量展开，含 `#` 的路径（如 `C:\my$dir\file.ts`）被展开为空；单引号内 `$`/反引号不做展开，内部单引号转义为双单引号
 - **Rust `execute_command` 防御性剥外层双引号** — 若剩余命令体被一对双引号包裹则剥离，杜绝上述字符串字面量陷阱
 
 ### 新增回归测试

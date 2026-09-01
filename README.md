@@ -343,6 +343,48 @@ npm run tauri:build
 
 ## 更新日志
 
+### 2026-09-01（v1.9.2）
+
+> LLM 请求级超时加固 + 安全模式按钮颜色反馈 + 引导消息注入体验改造 + LLM 失败可见性（对标 DSH 结构化失败上报）。
+
+**LLM 请求级超时加固（对标 DSH request_timeout_seconds）：**
+- complete()（非流式）总超时 120s；stream()（流式）连接阶段超时 60s，首字节后沿用 120s idle timeout
+- 修复 fetch 本身无超时的关键漏洞：服务端不返回数据时不再永久挂起、主循环卡死、activeSessions 残留
+- `withRequestTimeout` 合并外部 abort signal 与超时预算，`rethrowIfRequestTimeout` 转为带诊断的超时错误
+
+**安全模式按钮选中态颜色反馈：**
+- 编辑框底部安全模式按钮按当前生效模式显示蓝（ask）/紫（auto）/绿（full），选中后一眼可见
+
+**引导消息注入体验改造（对标 wecode markGuidanceApplied / Codex steering 消失）：**
+- 新增 `removeGuidanceMessage`：引导消息注入 loop 后立即从状态栏移除，状态栏自动消失
+- 移除 ChatPanel 独立引导输入框，流式期间复用主输入框发送引导消息（placeholder 提示）
+
+**LLM 失败可见性（对标 DSH，绝不静默结束 turn）：**
+- 移除任务完整性猜测机制（checkTaskCompleteness）：不再通过正则猜测用户意图注入伪造 user 消息
+- EMPTY_RESPONSE 空响应检测：模型 stop 但无任何输出时抛错走重试路径
+- 失败必须对用户可见：agentic-loop 失败路径输出 text_delta；App.tsx 对 too_many_errors/error/空 toolCall 显示明确错误消息
+
+**回归测试：** llm-timeout-hardening（200 行）+ GUIDE-061/062 + LOOP-051~053。全量 119 文件 / 3985 用例通过。
+
+### 2026-09-01（v1.9.1）
+
+> 对话任务步数计算对标改造 + 文件树显示隐藏文件夹 + 输入框/安全按钮修复 + 数据库持久化加固。
+
+**对话任务步数计算对标改造（Codex 风格宏观计划步）：**
+- 总量固定为计划步数，不再随执行膨胀；侦查类工具（read/glob/grep 等）不推进步骤，执行类工具首次出现才推进
+- 步骤标题语义化（中文）：读取文件/写入文件/修改文件/执行命令等
+
+**文件树显示隐藏文件夹：**
+- Rust `list_directory` 新增 `show_hidden` 参数，FileExplorer 传 true 显示 `.git` 等点开头目录（node_modules 仍过滤）
+
+**数据库持久化加固：**
+- 损坏数据库自动备份重建（PRAGMA quick_check）+ Rust write_file 原子写入 + DB 保存链串行化 + 退出前 flush 等待
+
+**其他修复：**
+- 输入框删除多行后高度不收缩修复 + 安全模式切换按钮 portal 误判修复 + PowerShell 命令修复（grep 外层引号 / autoLint 单引号路径）
+
+**回归测试：** step-progress-macro（6 例）+ file-tree-hidden（4 例）。全量 118 文件 / 3970 用例通过。
+
 ### 2026-08-31（v1.9.0）
 
 > 上下文压缩过早触发治根修复 + 通用协议 API 配置 + 工具执行正确性修复。
