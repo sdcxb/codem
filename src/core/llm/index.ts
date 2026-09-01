@@ -1041,6 +1041,11 @@ Report earlier as well whenever a partial finding changes what that agent should
 
   /** Abort current processing — DSH-style: also drain all background subagents */
   abort() {
+    // Abort ALL pooled per-session loops — 之前只 abort 默认实例，
+    // 并行会话的 loop 停不掉（LLM fetch 挂起时取消按钮无效）。
+    for (const loop of this.loopPool.values()) {
+      try { loop.abort(); } catch (e) { console.warn('[LLMEngine] loop abort failed:', e); }
+    }
     this.agenticLoop?.abort();
     // DSH-style: drain all continuable subagents on abort
     // 对标 DSH SubagentContinuationManager.drain() — host teardown 时调用
@@ -1048,6 +1053,14 @@ Report earlier as well whenever a partial finding changes what that agent should
       this._subagentRuntime.drain().catch((e) => {
         console.warn('[LLMEngine] SubagentRuntime drain failed:', e);
       });
+    }
+  }
+
+  /** Abort a single session's loop (per-session cancel) */
+  abortSession(sessionId: string): void {
+    const loop = this.loopPool.get(sessionId);
+    if (loop) {
+      try { loop.abort(); } catch (e) { console.warn(`[LLMEngine] abortSession(${sessionId}) failed:`, e); }
     }
   }
 

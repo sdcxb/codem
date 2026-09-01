@@ -306,6 +306,13 @@ async function getAppRoot(): Promise<string> {
 
 // 同步 fallback：在异步 getAppRoot 完成前使用
 const APP_ROOT_FALLBACK = "D:\\mimo";
+
+// 事件级 idle 看门狗（最后防线）：主防线是 provider 请求级超时（对标 DSH
+// request_timeout_seconds）。看门狗兜底"工具执行挂起"等其他路径——仅当
+// 整个会话连续 WATCHDOG_IDLE_MS 无任何事件输出才触发，宽松且可配置，
+// 不是任务总时长硬限制（长编译/长推理不会被误杀）。
+const WATCHDOG_IDLE_MS = 15 * 60 * 1000; // 15 分钟无事件
+const WATCHDOG_CHECK_MS = 30_000;        // 每 30s 检查一次
 type BottomTab = "chat" | "terminal" | "perf" | "files" | "jobs" | "cicd" | "game";
 
 function getCliSessionKey(projectId: string, sessionId: string) {
@@ -1500,7 +1507,7 @@ flushStreamBuffer(); // flush all on unmount
       controller.abort();
       abortControllersRef.current.delete(sessionId);
     }
-    engineRef.current?.abort();
+    engineRef.current?.abortSession(sessionId);
     useAppStore.getState().setSessionActive(sessionId, false);
   };
 
@@ -1967,6 +1974,8 @@ streamingSessionIdRef.current = session.id;
     // Record start time for execution timer
     useAppStore.getState().setStreamStartTime(Date.now());
 
+    // Watchdog timer lives outside try so the finally block can clear it.
+    let watchdogTimer: ReturnType<typeof setInterval> | undefined;
     try {
 console.log(`[runAgenticLoop] starting engine.process for session=${session.id}`);
 const sessionAbort = new AbortController();
@@ -1986,6 +1995,27 @@ const safeAddMessage = (msg: any) => {
 const safeUpdateMessage = (id: string, update: any) => {
   if (isViewingSession()) useAppStore.getState().updateMessage(id, update);
 };
+
+      // 事件级 idle 看门狗：仅当连续 WATCHDOG_IDLE_MS 无任何事件输出才触发。
+      // 触发后 abort 该会话底层 LLM 调用并强制清理状态，让会话恢复可用。
+      let lastEventAt = Date.now();
+      watchdogTimer = setInterval(() => {
+        if (Date.now() - lastEventAt > WATCHDOG_IDLE_MS) {
+          console.warn(`[runAgenticLoop] Watchdog: no events for ${WATCHDOG_IDLE_MS}ms — aborting session ${session.id}`);
+          sessionAbort.abort();
+          engineRef.current?.abortSession(session.id);
+          useAppStore.getState().setSessionActive(session.id, false);
+          setStreaming(false);
+          streamingSessionIdRef.current = null;
+          safeAddMessage({
+            id: 'watchdog-' + Date.now(),
+            role: 'system',
+            content: '⚠️ 任务超过 15 分钟无响应，已自动终止（可能是 LLM 服务端无响应）。请重试。',
+            timestamp: Date.now(),
+            status: 'error',
+          });
+        }
+      }, WATCHDOG_CHECK_MS);
 
       let lastEvent: any = undefined;
       for await (const event of engine.process(session.id, message, cwd, undefined, {
@@ -2063,6 +2093,7 @@ const safeUpdateMessage = (id: string, update: any) => {
         ...(selectedSkills && selectedSkills.length > 0 ? { userSelectedSkills: selectedSkills } : {}),
       })) {
         if (sessionAbort.signal.aborted) break;
+        lastEventAt = Date.now();
 
         switch (event.type) {
           case "knowledge_sources": {
@@ -2465,6 +2496,7 @@ saveMessages(session.id);
       });
       if (session) saveMessages(session.id);
     } finally {
+if (watchdogTimer) clearInterval(watchdogTimer);
 // Flush any remaining buffered text for this session
 flushStreamBuffer(session.id);
 flushReasoningBuffer(session.id);
@@ -2618,16 +2650,18 @@ if (controller) {
 controller.abort();
 abortControllersRef.current.delete(currentSession.id);
 }
+// 真正中断该会话底层 LLM 调用（之前只 abort 默认实例，per-session loop 停不掉）
+engineRef.current?.abortSession(currentSession.id);
 } else {
 // Fallback: abort all
 for (const controller of abortControllersRef.current.values()) {
 controller.abort();
 }
 abortControllersRef.current.clear();
+engineRef.current?.abort();
 }
     // Note: Sub-agents continue running when main task is paused
     // Only global pause should freeze everything
-    engineRef.current?.abort();
     setStreaming(false);
   };
 

@@ -821,7 +821,14 @@ Example: [{"title":"Analyze requirements"},{"title":"Implement login"},{"title":
     let planState = this.estimateSteps(userMessage);
     if ((planState.total ?? 0) >= 3) {
       try {
-        const llmPlan = await this.planSteps(userMessage);
+        // PLAN_TIMEOUT_MS: 规划调用是轻量非流式请求，30s 内应返回。
+        // provider 层已有 120s 总超时；这里更快回退到启发式估算，
+        // 避免主循环在规划阶段空等（对标 DSH request deadline 语义）。
+        const PLAN_TIMEOUT_MS = 30_000;
+        const llmPlan = await Promise.race([
+          this.planSteps(userMessage),
+          new Promise<null>((resolve) => setTimeout(() => resolve(null), PLAN_TIMEOUT_MS)),
+        ]);
         if (llmPlan && llmPlan.length > 0) {
           planState = { plan: llmPlan, total: llmPlan.length };
           console.log(`[AgenticLoop] LLM plan (${llmPlan.length} steps):`, llmPlan.map(s => s.title));

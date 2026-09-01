@@ -14,6 +14,54 @@ import type { Context } from "../cordis/src/index.ts";
 import { createIdleTimeout } from "./idle-tracker";
 import { OllamaProvider } from "./ollama-provider";
 import { ReplayAdapter } from "./replay-adapter";
+// ========== Request-level timeout budget (对标 DSH request_timeout_seconds) ==========
+// DSH 的 SDK 层为每个 RPC 请求设置 deadline（request_timeout_seconds），超时抛
+// TimeoutError 并附带运行时诊断。我们对齐这一设计：每次 LLM HTTP 请求都有
+// "请求级"超时预算（不是全局看门狗）：
+//   - complete()（非流式，planSteps/compaction 等）：总超时 120s
+//   - stream()（流式，主循环）：连接阶段（fetch 到 response headers）超时 60s；
+//     首字节之后的流式阶段沿用现有 120s idle timeout（SSE 心跳会重置）。
+// 之前的关键漏洞：fetch 本身无超时——服务端接受连接但不返回时 fetch 永久挂起，
+// 主循环卡死、App 的 finally 不执行、activeSessions 残留 → 会话永久无响应。
+const COMPLETE_REQUEST_TIMEOUT_MS = 120_000;
+const STREAM_CONNECT_TIMEOUT_MS = 60_000;
+
+/**
+ * 合并外部 abort signal 与超时预算，返回可清理的 signal。
+ * 任一触发即 abort（对标 DSH request deadline）。
+ * cleanup() 移除超时定时器与外部监听——流式拿到 response 后调用，
+ * 解除连接阶段超时，避免误杀已开始的正常流。
+ */
+export function withRequestTimeout(
+  signal: AbortSignal | undefined,
+  timeoutMs: number,
+  label: string,
+): { signal: AbortSignal; cleanup: () => void; isTimeout: () => boolean } {
+  const controller = new AbortController();
+  let timedOut = false;
+  const onAbort = () => controller.abort();
+  if (signal) {
+    if (signal.aborted) controller.abort();
+    else signal.addEventListener("abort", onAbort, { once: true });
+  }
+  const timer = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, timeoutMs);
+  const cleanup = () => {
+    clearTimeout(timer);
+    signal?.removeEventListener("abort", onAbort);
+  };
+  return { signal: controller.signal, cleanup, isTimeout: () => timedOut };
+}
+
+/** 将超时触发的 AbortError 转为带诊断的请求超时错误（对标 DSH TimeoutError）。 */
+function rethrowIfRequestTimeout(e: any, label: string, timeoutMs: number, isTimeout: () => boolean): void {
+  if (e?.name === "AbortError" && isTimeout()) {
+    throw new Error(`${label} timed out after ${timeoutMs}ms — server did not respond.`);
+  }
+}
+
 
 // ========== OpenAI-Compatible Provider ==========
 /**
@@ -171,21 +219,30 @@ export class OpenAICompatibleProvider implements LLMProvider {
     if (request.purpose === "compaction") {
       headers["x-deepseek-harness-compact"] = "1";
     }
-    const response = await fetch(`${baseUrl}${this.getEndpointPath()}`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify({
-        model: request.model,
-        messages: messages.map((m) => this.toAPIMessage(m)),
-        tools: request.tools?.length ? request.tools.map((t) => this.toAPITool(t)) : undefined,
-        temperature: request.temperature ?? 0.7,
-        ...(request.maxTokens ? { max_tokens: request.maxTokens } : {}), // 不传时 API 使用默认最大值
-        stream: false,
-        // E2: Reasoning effort (OpenAI o-series / DeepSeek R1 etc.)
-        ...(request.reasoningEffort ? { reasoning_effort: request.reasoningEffort } : {}),
-      }),
-      signal: request.abortSignal,
-    });
+    const { signal, cleanup, isTimeout } = withRequestTimeout(request.abortSignal, COMPLETE_REQUEST_TIMEOUT_MS, "LLM non-streaming request");
+    let response: Response;
+    try {
+      response = await fetch(`${baseUrl}${this.getEndpointPath()}`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          model: request.model,
+          messages: messages.map((m) => this.toAPIMessage(m)),
+          tools: request.tools?.length ? request.tools.map((t) => this.toAPITool(t)) : undefined,
+          temperature: request.temperature ?? 0.7,
+          ...(request.maxTokens ? { max_tokens: request.maxTokens } : {}), // 不传时 API 使用默认最大值
+          stream: false,
+          // E2: Reasoning effort (OpenAI o-series / DeepSeek R1 etc.)
+          ...(request.reasoningEffort ? { reasoning_effort: request.reasoningEffort } : {}),
+        }),
+        signal,
+      });
+    } catch (e: any) {
+      rethrowIfRequestTimeout(e, "LLM non-streaming request", COMPLETE_REQUEST_TIMEOUT_MS, isTimeout);
+      throw e;
+    } finally {
+      cleanup();
+    }
 
     if (!response.ok) {
       const error = await response.text();
@@ -259,12 +316,22 @@ export class OpenAICompatibleProvider implements LLMProvider {
     }
     const body = JSON.stringify(bodyObj);
     console.log(`[Provider] stream: id=${this.id} baseUrl=${this.config.baseUrl} url=${url} model:`, request.model, "msgs:", request.messages.length, "tools:", tools?.length || 0);
-    const response = await fetch(url, {
-      method: "POST",
-      headers,
-      body,
-      signal: request.abortSignal,
-    });
+    const { signal, cleanup, isTimeout } = withRequestTimeout(request.abortSignal, STREAM_CONNECT_TIMEOUT_MS, "LLM streaming request");
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        method: "POST",
+        headers,
+        body,
+        signal,
+      });
+    } catch (e: any) {
+      rethrowIfRequestTimeout(e, "LLM streaming request", STREAM_CONNECT_TIMEOUT_MS, isTimeout);
+      throw e;
+    } finally {
+      // 连接已建立：解除连接阶段超时，流式阶段沿用 idle timeout + 外部 abort signal
+      cleanup();
+    }
 
     if (!response.ok) {
       const error = await response.text();
