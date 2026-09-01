@@ -1477,6 +1477,15 @@ transition: border-color var(--duration-fast) var(--ease-out), box-shadow var(--
   background: var(--accent-soft, rgba(124,58,237,0.15));
   color: var(--accent, #c4b5fd);
 }
+/* 当前安全模式颜色反馈 — 选中（当前生效）模式一眼可见：
+   ask=请求批准(蓝) / auto=替我审批(紫) / full=完全访问(绿) */
+.security-mode-btn.security-ask { color: var(--security-ask); border-color: color-mix(in srgb, var(--security-ask) 40%, transparent); }
+.security-mode-btn.security-auto { color: var(--security-auto); border-color: color-mix(in srgb, var(--security-auto) 40%, transparent); }
+.security-mode-btn.security-full { color: var(--security-full); border-color: color-mix(in srgb, var(--security-full) 40%, transparent); }
+[data-theme="dark"] .security-mode-btn.security-ask { color: var(--security-ask); }
+[data-theme="dark"] .security-mode-btn.security-auto { color: var(--security-auto); }
+[data-theme="dark"] .security-mode-btn.security-full { color: var(--security-full); }
+
 .composer-tool-label {
   max-width: 100px;
   overflow: hidden;

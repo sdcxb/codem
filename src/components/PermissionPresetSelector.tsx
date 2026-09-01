@@ -136,7 +136,7 @@ export function PermissionPresetSelector({
       <div ref={rootRef} style={{ position: 'relative' }}>
         <button
           type="button"
-          className="input-control-item security-mode-btn"
+          className={`input-control-item security-mode-btn security-${effectiveMode}`}
           disabled={locked}
           onClick={() => setOpen(!open)}
           title={currentInfo ? (zh ? currentInfo.desc_zh : currentInfo.desc_en) : ''}
