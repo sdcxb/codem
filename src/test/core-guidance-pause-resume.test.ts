@@ -563,4 +563,28 @@ describe("引导消息与存储链路交互", () => {
     const queue = new GuidanceQueue();
     expect(queue.pendingCount("unknown-session")).toBe(0);
   });
+
+  // GUIDE-061: 注入成功后消息从状态栏移除（对标 wecode markGuidanceApplied / Codex steering 消失）
+  it("GUIDE-061: removeGuidanceMessage 注入后单条消息从 store 移除（状态栏自动消失）", () => {
+    useAppStore.getState().addGuidanceMessage({
+      id: "g-1", message: "msg", consumed: false, timestamp: 1,
+    });
+    useAppStore.getState().addGuidanceMessage({
+      id: "g-2", message: "msg2", consumed: false, timestamp: 2,
+    });
+    expect(useAppStore.getState().guidanceMessages.length).toBe(2);
+    useAppStore.getState().removeGuidanceMessage("g-1");
+    const msgs = useAppStore.getState().guidanceMessages;
+    expect(msgs.length).toBe(1);
+    expect(msgs[0].id).toBe("g-2");
+  });
+
+  // GUIDE-062
+  it("GUIDE-062: removeGuidanceMessage 移除不存在的 id 无副作用", () => {
+    useAppStore.getState().addGuidanceMessage({
+      id: "g-1", message: "msg", consumed: false, timestamp: 1,
+    });
+    useAppStore.getState().removeGuidanceMessage("nonexistent");
+    expect(useAppStore.getState().guidanceMessages.length).toBe(1);
+  });
 });

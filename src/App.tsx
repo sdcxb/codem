@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿import { useEffect, useState, useRef, useCallback, lazy, Suspense } from "react";
+import { useEffect, useState, useRef, useCallback, lazy, Suspense } from "react";
 import { createPortal } from "react-dom";
 
 // D1-4: 全局错误边界 — 捕获未处理的同步错误和 Promise rejection
@@ -342,7 +342,7 @@ function getMode(): "cli" | "api" {
 
 function App() {
   const lang = useLang();
-  const { messages, addMessage, appendToMessage, setStreaming, isStreaming, addToolCall, updateToolCall, loadMessages, saveMessages, setLLMStatus, addGuidanceMessage, markGuidanceConsumed, clearGuidanceMessages } = useAppStore();
+  const { messages, addMessage, appendToMessage, setStreaming, isStreaming, addToolCall, updateToolCall, loadMessages, saveMessages, setLLMStatus, addGuidanceMessage, markGuidanceConsumed, removeGuidanceMessage, clearGuidanceMessages } = useAppStore();
   const { currentProject, currentSession, createSession, dbReady, loadFromDB } = useProjectStore();
 
 // P0-FIX: Sync global cwd for file-link resolution — without this, clicking
@@ -1799,7 +1799,7 @@ if (!session) return;
       // in the queue — just interrupt the current reply so it takes effect now.
       const ok = engine.interruptForGuidance(session.id);
       if (ok) {
-        markGuidanceConsumed(existingGuidanceId);
+        removeGuidanceMessage(existingGuidanceId);
         console.log(`[Guidance] Injecting pending guidance now: "${message.substring(0, 80)}..."`);
       } else {
         console.warn(`[Guidance] Failed to interrupt for pending guidance — no active loop for session ${session.id}`);
@@ -1818,7 +1818,7 @@ if (!session) return;
     } else {
       console.warn(`[Guidance] Failed to send (immediate) — no active loop for session ${session.id}`);
     }
-  }, [addGuidanceMessage, markGuidanceConsumed]);
+  }, [addGuidanceMessage, removeGuidanceMessage]);
 
   // Listen for immediate guidance events from ChatPanel
   useEffect(() => {
@@ -2309,10 +2309,22 @@ saveMessages(session.id);
             const err = "error" in event ? event.error : "Unknown error";
             
             if (tc) {
-              if (isViewingSession()) updateToolCall(assistantMsgId, tc.id, {
-                status: "error",
-                result: err,
-              });
+              if (tc.id) {
+                if (isViewingSession()) updateToolCall(assistantMsgId, tc.id, {
+                  status: "error",
+                  result: err,
+                });
+              } else {
+                // executeIteration 级错误（无具体 tool call）— 空 id 的
+                // updateToolCall 无效，用户看不到任何反馈。直接上报错误消息。
+                if (isViewingSession()) safeAddMessage({
+                  id: 'tool-error-' + Date.now(),
+                  role: "system",
+                  content: `⚠️ 工具执行失败：${err}`,
+                  timestamp: Date.now(),
+                  status: "error",
+                });
+              }
               // Immediately save tool error
 if (session) {
 saveMessages(session.id);
@@ -2353,6 +2365,8 @@ saveMessages(session.id);
           case "guidance_received": {
             // Mark the guidance message as consumed in the store
             markGuidanceConsumed(event.guidanceId);
+        // Injected guidance no longer stays in the status bar — remove it so the bar auto-disappears.
+        removeGuidanceMessage(event.guidanceId);
             // Show a brief toast/notification via pet system
             getPet().showRawBubble(`📨 引导消息已注入: ${event.message.substring(0, 40)}...`, 3000);
             break;
@@ -2447,6 +2461,24 @@ saveMessages(session.id);
                 timestamp: Date.now(),
                 status: "error",
               });
+            // 对标 DSH: 非正常结束的 turn 必须对用户可见 — 绝不静默结束。
+            // too_many_errors / error 等失败 reason 之前被静默吞掉，
+            // 用户看到的是"发消息不回复"。这里将失败原因明确上报。
+            if ("result" in event && event.result?.type === "stop") {
+              const reason = (event.result as any).reason;
+              if (reason === "too_many_errors" || reason === "error") {
+                const errMsg = reason === "too_many_errors"
+                  ? "LLM 调用连续失败多次，任务已停止。可能是 LLM 服务端无响应或上下文过长。请检查服务状态后重试。"
+                  : "任务执行出错，已停止。请检查控制台日志或重试。";
+                safeAddMessage({
+                  id: 'loop-error-' + Date.now(),
+                  role: "system",
+                  content: `⚠️ ${errMsg}`,
+                  timestamp: Date.now(),
+                  status: "error",
+                });
+              }
+            }
             }
             break;
           }

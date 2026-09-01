@@ -21,7 +21,7 @@ import { useScrollState, useUnreadMessagesTracker } from "../hooks/useScrollStat
 // Lucide icons — replacing all emoji icons with professional vector icons
 import {
   PanelLeftClose, ChevronDown, Brain, Bot, Camera, BarChart3, LayoutGrid,
-  Search, X, GitFork, RotateCcw, Check, Send, Square, Hammer, ClipboardList, Zap,
+  Search, X, GitFork, RotateCcw, Check, Send, Hammer, ClipboardList, Zap,
   Activity,
 } from "lucide-react";
 // P2 #38: framer-motion for smooth list animations
@@ -29,7 +29,6 @@ import { motion, AnimatePresence } from "framer-motion";
 // P1: 高级功能组件
 import { CorrectionModeToggle } from "./CorrectionModeToggle";
 import { Workbench } from "./Workbench";
-import { GuidanceBlock } from "./GuidanceBlock";
 import { StreamingWaitIndicator } from "./StreamingWaitIndicator";
 import { TodoListDisplay } from "./TodoListDisplay";
 import { PanelSidebar } from "./PanelSidebar";
@@ -162,8 +161,6 @@ export function ChatPanel({ onSend, onCancel, onSendGuidance, onToggleSidebar, o
   // A9: Chat history search
   const [showSearch, setShowSearch] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  // Guidance input state
-  const [guidanceInput, setGuidanceInput] = useState('');
   // P1: Correction mode toggle
   // Correction/Clarification removed from main UI — correction config moved to Settings, clarification auto-triggers
   // P1: Workbench panel
@@ -871,15 +868,10 @@ canEdit={!isSessionStreaming}
           {/* P0: Scrollbar markers for message navigation */}
           <ScrollbarMarkers messages={messages} containerRef={messagesContainerRef} />
 
-          {/* P1: Streaming wait indicator + Guidance — inside message flow */}
+          {/* P1: Streaming wait indicator — inside message flow */}
           {isSessionStreaming && !stepProgress && (
             <StreamingWaitIndicator
               phase={llmStatus === "connecting" ? "thinking" : "coding"}
-            />
-          )}
-          {isSessionStreaming && guidanceMessages.length > 0 && (
-            <GuidanceBlock
-              messages={guidanceMessages}
             />
           )}
         </div>
@@ -1098,7 +1090,7 @@ canEdit={!isSessionStreaming}
         <div className="guidance-messages-bar">
           {guidanceMessages.map((g) => (
             <div key={g.id} className={`guidance-bubble ${g.consumed ? 'consumed' : 'pending'}`}>
-              <span className="guidance-bubble-icon">{g.consumed ? <Check size={12} /> : <Send size={12} />}</span>
+              <span className="guidance-bubble-icon"><Send size={12} /></span>
               <span className="guidance-bubble-text">{g.message}</span>
               {!g.consumed && (
                 <button
@@ -1118,46 +1110,7 @@ canEdit={!isSessionStreaming}
         </div>
       )}
 
-      {/* Per benchmark plan: always show normal InputArea, guidance input shows above it */}
-      {isSessionStreaming && onSendGuidance && (
-        <div className="guidance-input-container" style={{ padding: '0 12px 4px', display: 'flex', gap: '4px', alignItems: 'center' }}>
-          <input
-            type="text"
-            className="guidance-input"
-            placeholder={lang === "zh" ? "输入引导消息，按 Enter 下次迭代注入..." : "Type guidance, Enter to inject at next iteration..."}
-            value={guidanceInput}
-            onChange={(e) => setGuidanceInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey && guidanceInput.trim()) {
-                e.preventDefault();
-                onSendGuidance(guidanceInput.trim());
-                setGuidanceInput('');
-              }
-            }}
-          />
-          <button
-            className="guidance-send-btn"
-            onClick={() => {
-              if (guidanceInput.trim()) {
-                onSendGuidance(guidanceInput.trim());
-                setGuidanceInput('');
-              }
-            }}
-            disabled={!guidanceInput.trim()}
-            title={lang === "zh" ? "下次迭代时注入" : "Inject at next iteration"}
-          >
-            <Send size={14} />
-          </button>
-          <button
-            className="guidance-cancel-btn"
-            onClick={onCancel}
-            title={lang === "zh" ? "停止运行" : "Stop run"}
-          >
-            <Square size={14} />
-          </button>
-        </div>
-      )}
-      <InputArea sessionKey={currentSessionId} onSend={(msg, atts, skills) => { onSend(msg, atts, skills); setQuoteContext(null); }} onCancel={onCancel} disabled={(!currentSessionId || activeSessions.has(currentSessionId)) || !connected} isStreaming={!currentSessionId ? isStreaming : activeSessions.has(currentSessionId)} noSession={!currentSessionId} collaborationMode={collaborationMode} onModeChange={onModeChange || (() => {})} projectPath={projectPath} quoteContext={quoteContext} onClearQuote={() => { setQuoteContext(null); }} suggestionPrompt={suggestionPrompt} onSuggestionConsumed={() => setSuggestionPrompt(null)} notebookId={notebookId} onToggleRightSidebar={() => setShowRightSidebar(!showRightSidebar)} onToggleQuickPhrase={() => setShowQuickPhrase(!showQuickPhrase)} onToggleDraftPicker={() => setShowDraftPicker(!showDraftPicker)} hasDrafts={promptDrafts.length > 0} model={model} onModelChange={onModelChange} mode={mode} />
+      <InputArea sessionKey={currentSessionId} onSend={(msg, atts, skills) => { if (isSessionStreaming && onSendGuidance) { onSendGuidance(msg); } else { onSend(msg, atts, skills); } setQuoteContext(null); }} onSendGuidance={isSessionStreaming ? onSendGuidance : undefined} onCancel={onCancel} disabled={!currentSessionId || !connected} isStreaming={!currentSessionId ? isStreaming : activeSessions.has(currentSessionId)} noSession={!currentSessionId} collaborationMode={collaborationMode} onModeChange={onModeChange || (() => {})} projectPath={projectPath} quoteContext={quoteContext} onClearQuote={() => { setQuoteContext(null); }} suggestionPrompt={suggestionPrompt} onSuggestionConsumed={() => setSuggestionPrompt(null)} notebookId={notebookId} onToggleRightSidebar={() => setShowRightSidebar(!showRightSidebar)} onToggleQuickPhrase={() => setShowQuickPhrase(!showQuickPhrase)} onToggleDraftPicker={() => setShowDraftPicker(!showDraftPicker)} hasDrafts={promptDrafts.length > 0} model={model} onModelChange={onModelChange} mode={mode} />
     </div>
   );
 }

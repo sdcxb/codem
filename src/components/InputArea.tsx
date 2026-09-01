@@ -47,6 +47,8 @@ const securityIconMap: Record<string, JSX.Element> = {
 
 interface InputAreaProps {
 onSend: (message: string, attachments?: MessageAttachment[], selectedSkills?: string[]) => void;
+/** When provided and the agent is streaming, the send button injects guidance instead of a new message */
+onSendGuidance?: (message: string) => void;
 onCancel: () => void;
 disabled: boolean;
 isStreaming: boolean;
@@ -95,7 +97,7 @@ function escapeHtml(text: string): string {
     .replace(/'/g, "&#39;");
 }
 
-export function InputArea({ onSend, onCancel, disabled, isStreaming, noSession, sessionKey, collaborationMode, onModeChange, projectPath, quoteContext, onClearQuote, suggestionPrompt, onSuggestionConsumed, notebookId, onToggleSearch, onToggleWorkbench, onToggleQuickPhrase, onToggleDraftPicker, onToggleDisplayMode, onToggleGit, onToggleRightSidebar, hasDrafts, model, onModelChange, mode = "cli", connected = true, hideSourceSelector }: InputAreaProps) {
+export function InputArea({ onSend, onCancel, onSendGuidance, disabled, isStreaming, noSession, sessionKey, collaborationMode, onModeChange, projectPath, quoteContext, onClearQuote, suggestionPrompt, onSuggestionConsumed, notebookId, onToggleSearch, onToggleWorkbench, onToggleQuickPhrase, onToggleDraftPicker, onToggleDisplayMode, onToggleGit, onToggleRightSidebar, hasDrafts, model, onModelChange, mode = "cli", connected = true, hideSourceSelector }: InputAreaProps) {
   const lang = useLang();
   const [input, setInput] = useState("");
   const [pendingAttachments, setPendingAttachments] = useState<MessageAttachment[]>([]);
@@ -438,6 +440,8 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
   const dynamicPlaceholder = noSession
     ? (lang === "zh" ? "请新建或选择历史对话后发起任务" : "Create or select a session to start")
     : disabled ? S.sidebar.disabledHint[lang]
+    : isStreaming && onSendGuidance
+      ? (lang === "zh" ? "输入消息，回车发送将作为引导消息注入当前任务" : "Type a message - Enter will inject it as guidance into the running task")
     : tipList[tipIndex];
 
   // Load custom operations
@@ -596,6 +600,17 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
       setGenerateMode("text");
       setShowMultimodal(false);
     }
+  };
+
+  /** Send the current input as guidance into the running agent loop (mid-turn steering). */
+  const handleSendGuidance = () => {
+    if (!input.trim() || !onSendGuidance) return;
+    pushHistory(input.trim());
+    onSendGuidance(input.trim());
+    setInput("");
+    clearDraft();
+    setSlashFilter(null);
+    setComposerBadges([]);
   };
 
   // P0: Model list for inline model selector
@@ -1253,7 +1268,20 @@ const handleSelectProject = (projectId: string) => {
             {/* Send button group: send + up-arrow */}
             <div style={{ display: "flex", alignItems: "center", gap: 0, flexShrink: 0, position: "relative" }}>
               {isStreaming ? (
-                <button className="send-btn cancel-btn" onClick={onCancel} title={S.input.cancel[lang]} style={{ borderRadius: "6px 0 0 6px" }}><Square size={14} fill="currentColor" /></button>
+                onSendGuidance ? (
+                  <>
+                    <button className="send-btn cancel-btn" onClick={onCancel} title={S.input.cancel[lang]} style={{ borderRadius: "6px 0 0 6px" }}><Square size={14} fill="currentColor" /></button>
+                    <button
+                      className="send-btn guidance-send-btn"
+                      onClick={handleSendGuidance}
+                      disabled={!input.trim()}
+                      style={{ borderRadius: 0, borderLeft: "1px solid rgba(255,255,255,0.2)" }}
+                      title={zh ? "发送引导消息（注入当前任务）" : "Send guidance (inject into current task)"}
+                    ><ArrowRight size={16} /></button>
+                  </>
+                ) : (
+                  <button className="send-btn cancel-btn" onClick={onCancel} title={S.input.cancel[lang]} style={{ borderRadius: "6px 0 0 6px" }}><Square size={14} fill="currentColor" /></button>
+                )
               ) : (
                 <button
                   className={`send-btn ${disabled ? "disabled" : ""}`}

@@ -1,5 +1,5 @@
 /**
- * 功能触发-调用-执行闭环测试 — LOOP-001 ~ LOOP-050
+ * 功能触发-调用-执行闭环测试 — LOOP-001 ~ LOOP-053
  *
  * 覆盖范围：
  *   A. 工具注册 → 发现 → 执行闭环（LOOP-001 ~ LOOP-015）
@@ -7,6 +7,7 @@
  *   C. Agentic Loop 事件传播链（LOOP-026 ~ LOOP-035）
  *   D. 消息存储 → 读取 → 渲染数据流（LOOP-036 ~ LOOP-040）
  *   E. 插件加载 → 服务注册 → 依赖注入闭环（LOOP-041 ~ LOOP-050）
+ *   F. 防回归 — 对标 DSH 任务完整性语义（LOOP-051 ~ LOOP-052）
  *
  * 关键验证：
  *   - 功能不只是"存在"，而是"能被触发"
@@ -833,6 +834,62 @@ describe("功能触发-调用-执行闭环测试 — LOOP-001 ~ LOOP-050", () =>
       );
       expect(src).toContain("localStorage");
       expect(src).toContain("saveDisabledList");
+    });
+  });
+
+  // ===== F. 防回归 — 对标 DSH 任务完整性语义 =====
+  describe("防回归 — 对标 DSH 任务完整性语义", () => {
+    it("LOOP-051: AgenticLoop 无任务完整性猜测机制（不注入伪造 user 提醒）", () => {
+      // 对标 DSH: 循环防护只由 repeat-tool-reminder 承担（检测真实重复调用链），
+      // 绝不通过正则猜测用户意图注入"任务未完成提醒"。
+      // 回归背景: 对话 7 中用户引用 "write / App.tsx" 报错文本被误判为
+      // "要求保存文件"，注入 task-reminder 伪造 user 消息 + 双写，
+      // 导致莫名其妙的问题。此测试防止该机制被重新引入。
+      const src = require("fs").readFileSync(
+        __dirname + "/../core/llm/agentic-loop.ts",
+        "utf-8"
+      );
+      expect(src).not.toContain("checkTaskCompleteness");
+      expect(src).not.toContain("taskReminderSent");
+      expect(src).not.toContain("task-reminder");
+      expect(src).not.toContain("toolsCalledInRun");
+    });
+
+    it("LOOP-052: AgenticLoop 有 DSH 式空响应检测（EMPTY_RESPONSE 不静默结束）", () => {
+      // 对标 DSH translate.ts / error.ts 的 EMPTY_RESPONSE:
+      // 模型以 stop 结束但没有任何输出（无文本/无推理/无工具调用）是退化完成，
+      // 必须抛错走重试/结构化失败上报，而不是静默结束 turn 让用户什么都看不到。
+      // 回归背景: 对话 7 中 LLM 空响应被静默吞掉，用户看到"没执行直接停止"。
+      const src = require("fs").readFileSync(
+        __dirname + "/../core/llm/agentic-loop.ts",
+        "utf-8"
+      );
+      expect(src).toContain("EMPTY_RESPONSE");
+      expect(src).toContain("reasoningReceived");
+      // 空响应检测必须位于 end 事件处理中
+      expect(src).toMatch(/case "end":[\s\S]*?finishReason === "stop"/);
+    });
+
+    it("LOOP-053: LLM 调用失败必须对用户可见（不静默结束 turn）", () => {
+      // 对标 DSH 结构化失败上报: 模型调用失败（重试耗尽/EMPTY_RESPONSE/provider 错误）
+      // 必须以文本 + 错误消息上报，绝不静默结束 — 否则用户看到"发信息不回复"。
+      // 回归背景: 对话 8 中 iteration 2+ 的 LLM 调用连续失败（consecutiveErrors=3），
+      // loop 以 too_many_errors 静默停止；tool_error 带空 toolCall 在 UI 上不可见，
+      // end 事件只对 overflow 显示错误 — 用户追问也得不到任何反馈。
+      const loopSrc = require("fs").readFileSync(
+        __dirname + "/../core/llm/agentic-loop.ts",
+        "utf-8"
+      );
+      const appSrc = require("fs").readFileSync(
+        __dirname + "/../App.tsx",
+        "utf-8"
+      );
+      // 1. agentic-loop 失败路径必须输出 text_delta（用户能看到错误原因）
+      expect(loopSrc).toMatch(/consecutiveErrors\+\+[\s\S]*?yield \{\s*type: "text_delta"/);
+      // 2. App.tsx 的 end 处理必须对 too_many_errors 显示错误消息（不只 overflow）
+      expect(appSrc).toMatch(/reason === "too_many_errors"[\s\S]*?safeAddMessage/);
+      // 3. App.tsx 的 tool_error 对空 toolCall（executeIteration 级错误）也要上报
+      expect(appSrc).toMatch(/case "tool_error":[\s\S]*?tc\.id[\s\S]*?safeAddMessage/);
     });
   });
 });

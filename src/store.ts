@@ -143,6 +143,8 @@ interface AppState {
   addGuidanceMessage: (msg: GuidanceMessage) => void;
   /** Mark a guidance message as consumed by the loop */
   markGuidanceConsumed: (id: string) => void;
+  /** Remove a guidance message once it has been injected into the loop (it no longer stays in the status bar) */
+  removeGuidanceMessage: (id: string) => void;
   /** Clear all guidance messages (called when run ends) */
   clearGuidanceMessages: () => void;
   /** P0: Set feedback for a message (persists to DB). sessionId is needed for DB persistence. */
@@ -336,6 +338,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   addGuidanceMessage: (msg) => set((s) => ({ guidanceMessages: [...s.guidanceMessages, msg] })),
   markGuidanceConsumed: (id) => set((s) => ({
     guidanceMessages: s.guidanceMessages.map((g) => g.id === id ? { ...g, consumed: true } : g),
+  })),
+  removeGuidanceMessage: (id) => set((s) => ({
+    guidanceMessages: s.guidanceMessages.filter((g) => g.id !== id),
   })),
   clearGuidanceMessages: () => set({ guidanceMessages: [] }),
 

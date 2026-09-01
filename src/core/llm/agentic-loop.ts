@@ -305,11 +305,6 @@ export class AgenticLoop {
   // Cross-session delegation tracking (same pattern as subagent tracking)
   private delegatedTasks: Set<string> = new Set(); // delegation task IDs (not yet waited on)
   private waitedDelegations: Map<string, string> = new Map(); // delegation taskId → cached result
-  // Tracks which tool names have been called during this run().
-  // Used by the task-completeness check to detect premature stopping
-  // (e.g., user asked to "save as test3.txt" but no write tool was called).
-  private toolsCalledInRun: Set<string> = new Set();
-
   // Guidance queue — allows mid-turn message injection.
   // Messages are consumed at iteration boundaries (before each LLM call),
   // never during tool execution or subagent waiting.
@@ -723,8 +718,6 @@ Example: [{"title":"Analyze requirements"},{"title":"Implement login"},{"title":
     this.writeCache.clear();
     this.waitedSubagents.clear();
     this.spawnedSubagents.clear(); // no-op: 旧模式遗留
-    this.toolsCalledInRun.clear();
-    this.taskReminderSent = false;
     this.state.microCompactedThisRun = false;
     console.log(`[AgenticLoop.run] sessionId: ${sessionId}, userMessage: ${userMessage.substring(0, 80)}...`);
 
@@ -1356,26 +1349,6 @@ yield { type: "step_progress", step: this.macroStep, total: planState.total, tit
           console.log(`[AgenticLoop] Pending guidance detected — continuing loop instead of stopping`);
           continue;
         }
-        // === Task-completeness check ===
-        // Before stopping, check if the user's original request asked for
-        // specific actions (write/save/create) that haven't been performed yet.
-        // If so, inject a reminder and continue the loop instead of stopping.
-        const taskCheck = this.checkTaskCompleteness(userMessage);
-        if (taskCheck) {
-          console.log(`[AgenticLoop] Task incomplete — injecting reminder: ${taskCheck.substring(0, 100)}...`);
-          this.getMessageStorage().createMessage({
-            id: `task-reminder-${Date.now()}`,
-            role: "user",
-            content: taskCheck,
-            timestamp: Date.now(),
-            status: "done",
-          }, sessionId);
-          // C5: EventLog dual-write
-          try { this.getEventLog().append(sessionId, "user_message", { messageId: `task-reminder-${Date.now()}`, content: taskCheck }); } catch (e) { console.warn('[agentic-loop.ts]', e) }
-          this.msgCache = null;
-          // Continue the loop — don't stop
-          continue;
-        }
         // DSH-style: settlement 通过 Promise 网关等待，而非轮询检查/注入提醒。
         // SubagentRuntime 在 dispose 时 resolve settlement Promise，
         // agentic-loop 在此 await 它，settlement 通知已写入 DB，
@@ -1560,6 +1533,7 @@ yield { type: "step_progress", step: this.macroStep, total: planState.total, tit
     let currentText = "";
     let currentToolCalls: StreamingToolCall[] = [];
     let finishReason = "stop";
+    let reasoningReceived = false;
     let usage: TokenUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
 
     try {
@@ -1637,6 +1611,7 @@ yield { type: "step_progress", step: this.macroStep, total: planState.total, tit
                 break;
 
               case "reasoning_delta":
+                reasoningReceived = true;
                 yield { type: "reasoning_delta", text: event.text };
                 break;
 
@@ -1694,6 +1669,18 @@ yield { type: "step_progress", step: this.macroStep, total: planState.total, tit
 
               case "end":
                 finishReason = event.finishReason;
+                // DSH-style EMPTY_RESPONSE: 模型以 stop 结束但没有任何输出
+                // （无文本 / 无推理 / 无工具调用）是退化完成——静默结束 turn
+                // 会让用户什么都看不到。抛出错误走既有重试路径，重试耗尽后
+                // 结构化失败上报。绝不猜测用户意图或伪造 user 消息。
+                if (
+                  finishReason === "stop" &&
+                  currentText.length === 0 &&
+                  currentToolCalls.length === 0 &&
+                  !reasoningReceived
+                ) {
+                  throw new Error("EMPTY_RESPONSE: model returned a completed response with no content");
+                }
                 break;
 
               case "heartbeat":
@@ -1758,6 +1745,13 @@ yield { type: "step_progress", step: this.macroStep, total: planState.total, tit
       this.state.consecutiveErrors++;
       this.state.lastError = error.message;
       yield { type: "tool_error", toolCall: { id: "", name: "", input: {}, status: "error" }, error: error.message };
+      // DSH-style: 结构化失败上报 — 失败必须对用户可见，绝不静默结束 turn。
+      // 空 toolCall 的 tool_error 在 UI 上不可见（没有对应 tool call 可标记），
+      // 因此同时输出文本，让用户看到发生了什么而不是"发消息不回复"。
+      yield {
+        type: "text_delta",
+        text: `\n\n⚠️ **LLM 调用失败**（iteration ${this.state.iteration}）：${error.message}\n\n将自动重试，若连续失败会停止。如果长时间无响应，请检查 LLM 服务状态或点击 ■ 停止。`,
+      };
 
       // R3-4.2: Generate postmortem report on critical errors
       try {
@@ -2056,8 +2050,6 @@ yield { type: "step_progress", step: this.macroStep, total: planState.total, tit
 
         const result = await tool.execute(effectiveArgs, ctx);
 
-        // Track which tools have been called in this run() for task-completeness check
-        this.toolsCalledInRun.add(name);
         console.log(`[AgenticLoop] Tool executed: ${name}, path: ${effectiveArgs.path || effectiveArgs.command || "(none)"}, output length: ${result.output?.length || 0}`);
 
         // S0-2: PostToolUse hooks are now handled by HookPostExecuteMiddleware
@@ -3031,87 +3023,6 @@ ${truncatedConv}`;
   hasPendingGuidance(): boolean {
     if (!this.currentSessionId) return false;
     return this.guidanceQueue.hasPending(this.currentSessionId);
-  }
-
-  /**
-   * Task-completeness check: examines the user's original request to detect
-   * required actions that haven't been performed yet.
-   *
-   * Returns a reminder string if the task is incomplete, or null if it's safe
-   * to stop.
-   *
-   * This is NOT time-based — it's a deterministic state check:
-   * - Did the user ask to "save/write/create" a file? → check if write was called
-   * - Did the user ask to "use subagents"? → check if subagent was called
-   * - Did the user ask to "summarize/combine"? → check if write was called (output)
-   *
-   * Only triggers ONCE per run() to avoid infinite reminders.
-   */
-  private taskReminderSent = false;
-
-  private checkTaskCompleteness(userMessage: string): string | null {
-    if (this.taskReminderSent) return null;
-
-    const msg = userMessage.toLowerCase();
-    const zh = /[\u4e00-\u9fa5]/.test(userMessage);
-    const missing: string[] = [];
-
-    // Check: user asked to save/write/create/append a file, but no write tool was called
-    const asksToWrite =
-      /save|write|create|保存|写入|创建|生成|另存|追加|输出到|写到/.test(msg) &&
-      /\.(txt|md|json|js|ts|py|rs|csv|xml|html|css|yaml|yml|toml)/.test(msg);
-    const hasWritten = this.toolsCalledInRun.has("write") ||
-      this.toolsCalledInRun.has("edit") ||
-      this.toolsCalledInRun.has("multi_edit");
-
-    if (asksToWrite && !hasWritten) {
-      // Try to extract the target filename from the user message
-      const fileMatch = userMessage.match(/(\w+\.\w+)/g);
-      const fileName = fileMatch && fileMatch.length > 0
-        ? fileMatch[fileMatch.length - 1]  // Last filename mentioned is likely the output
-        : null;
-      missing.push(zh
-        ? `你还没有执行写入操作。用户要求保存文件${fileName ? ` "${fileName}"` : ""}，但你没有调用 write 工具。请立即使用 write 工具完成写入。`
-        : `You haven't performed a write operation. The user asked to save${fileName ? ` "${fileName}"` : ""}, but you didn't call the write tool. Please use the write tool now to complete the task.`
-      );
-    }
-
-    // Check: user asked to use subagents, but none were spawned
-    const asksForSubagent =
-      /子智能体|子代理|sub.?agent|subagent|分别用/.test(msg);
-    const hasSpawned = this.toolsCalledInRun.has("subagent"); // DSH 工具名
-
-    if (asksForSubagent && !hasSpawned) {
-      missing.push(zh
-        ? `用户要求使用子智能体来完成任务，但你没有调用 subagent 工具。请立即使用 subagent 工具派发子智能体。`
-        : `The user asked to use sub-agents, but you didn't call subagent. Please use subagent now to delegate the work.`
-      );
-    }
-
-    // Check: user asked to summarize/aggregate results, but no write was called
-    // This catches cases like "汇总...追加到..." where the aggregation implies writing
-    const asksToAggregate =
-      /汇总|总结|合并|aggregate|summarize|combine/.test(msg);
-    if (asksToAggregate && asksToWrite && !hasWritten) {
-      // Already covered by asksToWrite check above, but add extra emphasis
-      missing.push(zh
-        ? `用户要求汇总子智能体的结果并写入文件，但你还没有执行写入操作。请立即使用 write 工具将汇总结果写入目标文件。`
-        : `The user asked to aggregate sub-agent results and write to a file, but you haven't written yet. Please use the write tool now.`
-      );
-    }
-
-    if (missing.length === 0) {
-      return null;
-    }
-
-    // Mark as sent to prevent repeated reminders
-    this.taskReminderSent = true;
-
-    const header = zh
-      ? `[任务未完成提醒] 你的回复中没有工具调用，但用户的原始请求尚未完成。以下是你遗漏的操作：`
-      : `[TASK INCOMPLETE] Your response had no tool calls, but the user's original request is not yet complete. The following actions are missing:`;
-
-    return `${header}\n\n${missing.map((m, i) => `${i + 1}. ${m}`).join("\n")}\n\n${zh ? "请继续执行这些操作，不要只是回复文字就停止。" : "Please continue executing these actions. Do not stop with a text-only response."}`;
   }
 
   getState(): Readonly<LoopState> {
