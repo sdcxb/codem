@@ -8,7 +8,7 @@
  */
 
 import { useState, useEffect, useCallback } from "react";
-import { PanelLeftClose, PanelLeftOpen, PencilLine, Search, Settings, Sun, Moon, PanelRight, PanelRightOpen, Home, GitBranch, Terminal } from "lucide-react";
+import { PencilLine, Search, Settings, Sun, Moon, Home, GitBranch, Terminal } from "lucide-react";
 import { ActionIcons } from "../core/icons/icon-map";
 import { GitBranchSelector } from "./GitBranchSelector";
 import { getSetting, setSetting } from "../core/storage/settings";
@@ -53,13 +53,9 @@ interface TitleBarProps {
 }
 
 export function TitleBar({
-  sidebarOpen = true,
-  onToggleSidebar,
   onNewChat,
   onSearch,
   onSettings,
-  rightRailOpen = false,
-  onToggleRightRail,
   terminalOpen = false,
   onToggleTerminal,
   workspaceTabs = [],
@@ -217,16 +213,6 @@ export function TitleBar({
       )}
 
       <div className="titlebar-left" data-tauri-drag-region>
-        {onToggleSidebar && (
-          <button
-            className="titlebar-action-btn"
-            onClick={onToggleSidebar}
-            title={sidebarOpen ? "收起侧边栏" : "展开侧边栏"}
-            aria-label={sidebarOpen ? "收起侧边栏" : "展开侧边栏"}
-          >
-            {sidebarOpen ? <PanelLeftClose size={16} /> : <PanelLeftOpen size={16} />}
-          </button>
-        )}
         {/* Bug9: 新建对话按钮已移至侧边栏全局对话栏右侧，此处删除 */}
         <span className="titlebar-icon" data-tauri-drag-region>◆</span>
         <span className="titlebar-title" data-tauri-drag-region>Codem</span>
@@ -285,29 +271,6 @@ export function TitleBar({
 
       {/* 右侧栏切换 + P1: Top navigation actions — search, settings, theme */}
       <div className="titlebar-nav-actions">
-        {/* 终端按钮：点击后主对话区域下方出现终端区域（对标 dsh-desktop 顶部状态栏） */}
-        {onToggleTerminal && (
-          <button
-            className={`titlebar-action-btn ${terminalOpen ? "active" : ""}`}
-            onClick={onToggleTerminal}
-            title={terminalOpen
-              ? (zh ? "关闭终端" : "Close terminal")
-              : (zh ? "打开终端" : "Open terminal")}
-            aria-label={zh ? "切换终端" : "Toggle terminal"}
-          >
-            <Terminal size={15} />
-          </button>
-        )}
-        {onToggleRightRail && (
-          <button
-            className={`titlebar-action-btn ${rightRailOpen ? "active" : ""}`}
-            onClick={onToggleRightRail}
-            title={rightRailOpen ? "收起右侧栏" : "展开右侧栏"}
-            aria-label={rightRailOpen ? "收起右侧栏" : "展开右侧栏"}
-          >
-            {rightRailOpen ? <PanelRightOpen size={15} /> : <PanelRight size={15} />}
-          </button>
-        )}
         {onSearch && (
           <button
             className="titlebar-action-btn"
@@ -336,6 +299,19 @@ export function TitleBar({
         >
           {theme === "dark" ? <Sun size={15} /> : <Moon size={15} />}
         </button>
+        {/* 终端按钮：点击后主对话区域下方出现终端区域（对标 dsh-desktop 顶部状态栏） */}
+        {onToggleTerminal && (
+          <button
+            className={`titlebar-action-btn ${terminalOpen ? "active" : ""}`}
+            onClick={onToggleTerminal}
+            title={terminalOpen
+              ? (zh ? "关闭终端" : "Close terminal")
+              : (zh ? "打开终端" : "Open terminal")}
+            aria-label={zh ? "切换终端" : "Toggle terminal"}
+          >
+            <Terminal size={15} />
+          </button>
+        )}
       </div>
 
       {/* P3: Windows-style window controls (right side) — hidden on Mac */}

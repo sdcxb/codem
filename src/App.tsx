@@ -2875,6 +2875,7 @@ onRemoveProject={(id, name, path) => {
                           onCancel={handleCancel}
                           onSendGuidance={handleSendGuidance}
                           onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
+                          sidebarOpen={sidebarOpen}
                           onRegenerate={handleRegenerate}
                           onEditAndResend={handleEditAndResend}
                           sessionId={currentSession?.id}
@@ -2997,6 +2998,7 @@ onSend={handleSend}
                         onCancel={handleCancel}
                         onSendGuidance={handleSendGuidance}
                         onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
+                        sidebarOpen={sidebarOpen}
                         onRegenerate={handleRegenerate}
                         onEditAndResend={handleEditAndResend}
                         sessionId={currentSession?.id}
@@ -3151,6 +3153,7 @@ onSend={handleSend}
                 onCancel={handleCancel}
                 onSendGuidance={handleSendGuidance}
                 onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
+                sidebarOpen={sidebarOpen}
                 onRegenerate={handleRegenerate}
                 onEditAndResend={handleEditAndResend}
                 sessionId={currentSession?.id}

@@ -15,6 +15,12 @@ All notable changes to Codem will be documented in this file.
 - **假测试重写为行为测试** — regression-coding-p0.test.ts P0-1 从源码字符串匹配改为 16 个行为测试（PTY 调用链 + 键位语义 + run_in_background + job 集成），全量 135 文件 / 4051 用例通过
 
 
+### 顶部状态栏 UI 调整（对标 dsh-desktop 收敛侧栏入口）
+
+- **终端按钮移至主题切换右侧** — TitleBar 顶部状态栏的终端（Terminal）按钮从导航区最左移到暗色/亮色切换按钮右边，贴近 dsh-desktop 的状态栏入口布局
+- **隐藏左右侧栏切换按钮** — 隐藏 TitleBar 最左侧（LOGO 旁）的侧边栏收起/展开按钮 + 导航区搜索旁的右侧栏收起/展开按钮；侧边栏仍可通过主对话区 ChatPanel 顶栏按钮切换
+- **ChatPanel 顶栏侧边栏按钮图标联动修复** — 收起/展开图标此前硬编码 PanelLeftClose，收起侧边栏后图标不切换；现在新增 sidebarOpen prop 条件渲染（展开=PanelLeftClose / 收起=PanelLeftOpen），三处皮肤布局统一传入状态
+
 ### 安全模式（完全访问）修复 — dbReady 时序导致重启后失效
 
 - **修复：选择"完全访问"后重启仍弹审批** — `App.tsx` 的 `securityMode` state 初始化时 DB 尚未就绪（`getDatabase()` 抛错 → 回退默认 `ask`），而 `dbReady` 同步 effect 只同步了 model/mode/provider，漏掉 securityMode。现在 DB 就绪后重新同步，且依赖数组加入 `currentProject?.path`（切换项目按新项目重新解析，项目级 > 全局）

@@ -20,7 +20,7 @@ import { ScrollToBottomIndicator } from "./ScrollToBottomIndicator";
 import { useScrollState, useUnreadMessagesTracker } from "../hooks/useScrollState";
 // Lucide icons — replacing all emoji icons with professional vector icons
 import {
-  PanelLeftClose, ChevronDown, Brain, Bot, Camera, BarChart3, LayoutGrid,
+  PanelLeftClose, PanelLeftOpen, ChevronDown, Brain, Bot, Camera, BarChart3, LayoutGrid,
   Search, X, GitFork, RotateCcw, Check, Hammer, ClipboardList, Zap,
   Activity, Pencil,
 } from "lucide-react";
@@ -55,6 +55,8 @@ interface ChatPanelProps {
   /** Send a guidance message to the currently running agentic loop */
   onSendGuidance?: (message: string) => void;
   onToggleSidebar: () => void;
+  /** 侧边栏当前是否展开（决定收起/展开图标） */
+  sidebarOpen?: boolean;
   onFork?: (messageIndex: number) => void;
   onRegenerate?: (messageIndex: number) => void;
   /** P0: Edit a message and resend from that point */
@@ -81,7 +83,7 @@ onSourceClick?: (sourceId: string, chunkIndex?: number) => void;
 notebookId?: string;
 }
 
-export function ChatPanel({ onSend, onCancel, onSendGuidance, onToggleSidebar, onFork, onRegenerate, onEditAndResend, onReEdit, sessionId, connected, model, onModelChange, mode = "cli", providerId = "mimo", collaborationMode = "default", onModeChange, projectPath, currentSessionId, onCitationClick, onSourceClick, notebookId }: ChatPanelProps) {
+export function ChatPanel({ onSend, onCancel, onSendGuidance, onToggleSidebar, sidebarOpen = true, onFork, onRegenerate, onEditAndResend, onReEdit, sessionId, connected, model, onModelChange, mode = "cli", providerId = "mimo", collaborationMode = "default", onModeChange, projectPath, currentSessionId, onCitationClick, onSourceClick, notebookId }: ChatPanelProps) {
   const lang = useLang();
   const { messages, isStreaming, activeSessions, removeGeneratedFiles, hasMoreMessages, isLoadingMore, loadMoreMessages, stepProgress, streamStartTime, llmStatus, displayMode, setDisplayMode, guidanceMessages, removeGuidanceMessage } = useAppStore();
   const { currentSession, currentProject } = useProjectStore();
@@ -369,8 +371,13 @@ setStepTooltipLocked(false);
   return (
     <div className="chat-panel">
       <div className="chat-header">
-        <button className="sidebar-toggle" onClick={onToggleSidebar}>
-          <PanelLeftClose size={18} />
+        <button
+          className="sidebar-toggle"
+          onClick={onToggleSidebar}
+          title={sidebarOpen ? (lang === "zh" ? "收起侧边栏" : "Collapse sidebar") : (lang === "zh" ? "展开侧边栏" : "Expand sidebar")}
+          aria-label={sidebarOpen ? (lang === "zh" ? "收起侧边栏" : "Collapse sidebar") : (lang === "zh" ? "展开侧边栏" : "Expand sidebar")}
+        >
+          {sidebarOpen ? <PanelLeftClose size={18} /> : <PanelLeftOpen size={18} />}
         </button>
         {/* P2 #37: Task title dropdown */}
         <div style={{ position: "relative" }}>
