@@ -52,7 +52,7 @@ const MermaidBlock = ({ chart }: { chart: string }) => {
         mermaid.initialize({
           startOnLoad: false,
           theme: 'dark',
-          securityLevel: 'loose',
+          securityLevel: 'strict',
           fontFamily: 'inherit',
         });
         const id = `note-mermaid-${Date.now()}-${Math.random().toString(36).substring(7)}`;

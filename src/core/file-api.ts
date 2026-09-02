@@ -126,8 +126,11 @@ export async function exists(path: string): Promise<boolean> {
   }
 }
 
-export async function executeCommand(command: string, cwd?: string): Promise<{ stdout: string; stderr: string; exitCode?: number }> {
-  return tauriInvoke("execute_command", { command, cwd });
+export async function executeCommand(command: string, cwd?: string, timeoutMs?: number): Promise<{ stdout: string; stderr: string; exitCode?: number }> {
+  // FIX(对标 dsh): pass timeout_ms so Rust kills the process tree on timeout —
+  // previously the frontend Promise.race abandoned the promise while the
+  // PowerShell child kept running (zombie processes on repeated timeouts).
+  return tauriInvoke("execute_command", { command, cwd, timeout_ms: timeoutMs });
 }
 
 export async function globSearch(pattern: string, path?: string): Promise<string[]> {

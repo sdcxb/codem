@@ -51,7 +51,9 @@ async function runScript(command: string, cwd: string, timeoutMs: number = 60000
 
   try {
     const result = await Promise.race([
-      executeCommand(command, cwd),
+      // FIX: 传 timeoutMs 给 Rust — 超时真正杀进程树（之前前端 race 放弃
+      // Promise 但底层命令继续跑）。
+      executeCommand(command, cwd, timeoutMs),
       timeoutPromise,
     ]);
     const duration = Date.now() - startTime;

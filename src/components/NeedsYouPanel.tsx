@@ -96,7 +96,7 @@ export function NeedsYouPanel({ sessionId, onAnswer, onSkip }: NeedsYouPanelProp
               {currentItem.options.map((opt) => (
                 <button
                   key={opt.id}
-                  className={"needs-you-option " + selectedOption === opt.id ? "selected" : ""}
+                  className={"needs-you-option" + (selectedOption === opt.id ? " selected" : "")}
                   onClick={() => setSelectedOption(opt.id)}
                 >
                   <ArrowRight size={12} />

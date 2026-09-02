@@ -777,21 +777,45 @@ export function createBashTool(): ToolDef {
       const requestedTimeout = (args.timeout_ms as number) || 30000;
       const timeoutMs = Math.max(5000, Math.min(requestedTimeout, 600000));
 
+      // 超时/取消监听 — 声明在 try 外以便 finally 清理（防泄漏）
+      let timeoutController: AbortController | null = null;
+      let timer: ReturnType<typeof setTimeout> | null = null;
+      let timeoutAbortFn: (() => void) | null = null;
+      let externalAbortFn: (() => void) | null = null;
+
       try {
-        // Use AbortController for timeout so we can cancel the underlying command
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), timeoutMs);
+        // 超时 + 外部取消（用户中止会话）。竞速胜出后清理所有监听防泄漏。
+        timeoutController = new AbortController();
+        timer = setTimeout(() => timeoutController?.abort(), timeoutMs);
+
+        // 已取消则直接返回，不 spawn 命令（对标 dsh abort 语义）
+        if (ctx.abort?.aborted) {
+          return { title: `bash: ${command.substring(0, 50)}`, output: "Error: Command cancelled" };
+        }
 
         const data = await Promise.race([
-          executeCommand(command, workdir),
+          // FIX: 传 timeoutMs 给 Rust — 超时时 Rust 真正杀进程树（之前前端
+          // Promise.race 只是放弃 Promise，底层命令仍在后台跑）。
+          executeCommand(command, workdir, timeoutMs),
           new Promise<never>((_, reject) => {
-            controller.signal.addEventListener("abort", () => {
+            timeoutAbortFn = () => {
               reject(new Error(`Command timed out after ${timeoutMs}ms. If this is a long-running command (build, test, install), try again with a higher timeout_ms value.`));
-            });
+            };
+            externalAbortFn = () => {
+              reject(new Error("Command cancelled"));
+            };
+            timeoutController!.signal.addEventListener("abort", timeoutAbortFn);
+            // FIX(对标 dsh abort 语义): 用户取消/会话中止时立即返回，而不是让
+            // 命令继续跑到超时（之前最长等 600s）。Rust 侧 timeout_ms 兜底杀进程树。
+            if (ctx.abort?.aborted) {
+              externalAbortFn();
+            } else {
+              ctx.abort?.addEventListener("abort", externalAbortFn);
+            }
           }),
         ]);
 
-        clearTimeout(timer);
+        if (timer) clearTimeout(timer);
 
         const exitCode = (data as any).exitCode;
         const output = data.stdout || data.stderr || "(no output)";
@@ -809,6 +833,14 @@ export function createBashTool(): ToolDef {
       } catch (error: any) {
         return { title: `bash: ${command.substring(0, 50)}`, output: `Error: ${error.message}` };
       } finally {
+        // 清理超时/取消监听（含 catch 路径，防泄漏）
+        if (timeoutController && timeoutAbortFn) {
+          timeoutController.signal.removeEventListener("abort", timeoutAbortFn);
+        }
+        if (externalAbortFn && ctx.abort) {
+          ctx.abort.removeEventListener("abort", externalAbortFn);
+        }
+        if (timer) clearTimeout(timer);
         // 删除 python -c 编码规避的临时脚本 —— 它是工具内部产物，不是用户要保留的文件。
         // 若不删除，每次含中文的 python -c 都会在项目下留下 __pyc_temp_*.py 垃圾文件，
         // 且这些文件不经过 write 工具，generatedFiles 收集不到 → 清理按钮也不显示。

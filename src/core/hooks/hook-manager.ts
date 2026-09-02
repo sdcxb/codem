@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Hook Manager — Registration, matching, and execution of hooks
  *
  * Design (from CLAUDE-CODE-IMPACT-ANALYSIS.md):
@@ -284,7 +284,7 @@ export class HookManager {
 
     try {
       const result = await Promise.race([
-        executeCommand(command, ctx.cwd),
+        executeCommand(command, ctx.cwd, timeoutMs), // FIX: 超时真正杀进程树
         this.timeout(timeoutMs),
       ]);
 
@@ -324,7 +324,7 @@ export class HookManager {
 
     try {
       await Promise.race([
-        executeCommand(command, ctx.cwd),
+        executeCommand(command, ctx.cwd, timeoutMs), // FIX: 超时真正杀进程树
         this.timeout(timeoutMs),
       ]);
     } catch (error: any) {
@@ -400,3 +400,4 @@ export function getHookManager(): HookManager {
 export function resetHookManager(): void {
   instance = null;
 }
+

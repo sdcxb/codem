@@ -1,4 +1,4 @@
-/**
+﻿/**
  * github_tool 工具 — GitHub API 集成。
  *
  * 功能：PR 审查、代码搜索、Issue 追踪、仓库信息获取、Diff 分析。
@@ -29,10 +29,21 @@ function getGithubToken(): string {
 
 const GITHUB_API = "https://api.github.com";
 
+/** GitHub API fetch with timeout — 防慢/无响应 API 挂起工具执行（对标 dsh deadline） */
+async function githubFetch(url: string, init?: RequestInit): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 20_000);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /** Get PR details + diff */
 async function fetchPR(owner: string, repo: string, prNumber: number, token: string): Promise<any> {
   // Get PR metadata
-  const prResp = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/pulls/${prNumber}`, {
+  const prResp = await githubFetch(`${GITHUB_API}/repos/${owner}/${repo}/pulls/${prNumber}`, {
     headers: {
       Authorization: `Bearer ${token}`,
       Accept: "application/vnd.github.v3+json",
@@ -42,7 +53,7 @@ async function fetchPR(owner: string, repo: string, prNumber: number, token: str
   const prData = await prResp.json();
 
   // Get PR diff
-  const diffResp = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/pulls/${prNumber}`, {
+  const diffResp = await githubFetch(`${GITHUB_API}/repos/${owner}/${repo}/pulls/${prNumber}`, {
     headers: {
       Authorization: `Bearer ${token}`,
       Accept: "application/vnd.github.v3.diff",
@@ -51,7 +62,7 @@ async function fetchPR(owner: string, repo: string, prNumber: number, token: str
   const diffText = await diffResp.text();
 
   // Get PR files
-  const filesResp = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/pulls/${prNumber}/files`, {
+  const filesResp = await githubFetch(`${GITHUB_API}/repos/${owner}/${repo}/pulls/${prNumber}/files`, {
     headers: {
       Authorization: `Bearer ${token}`,
       Accept: "application/vnd.github.v3+json",
@@ -60,7 +71,7 @@ async function fetchPR(owner: string, repo: string, prNumber: number, token: str
   const filesData = await filesResp.json();
 
   // Get PR reviews
-  const reviewsResp = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/pulls/${prNumber}/reviews`, {
+  const reviewsResp = await githubFetch(`${GITHUB_API}/repos/${owner}/${repo}/pulls/${prNumber}/reviews`, {
     headers: {
       Authorization: `Bearer ${token}`,
       Accept: "application/vnd.github.v3+json",
@@ -73,7 +84,7 @@ async function fetchPR(owner: string, repo: string, prNumber: number, token: str
 
 /** Search code across repos */
 async function searchCode(query: string, token: string): Promise<any> {
-  const resp = await fetch(`${GITHUB_API}/search/code?q=${encodeURIComponent(query)}`, {
+  const resp = await githubFetch(`${GITHUB_API}/search/code?q=${encodeURIComponent(query)}`, {
     headers: {
       Authorization: `Bearer ${token}`,
       Accept: "application/vnd.github.v3+json",
@@ -85,7 +96,7 @@ async function searchCode(query: string, token: string): Promise<any> {
 
 /** Search issues/PRs */
 async function searchIssues(query: string, token: string): Promise<any> {
-  const resp = await fetch(`${GITHUB_API}/search/issues?q=${encodeURIComponent(query)}`, {
+  const resp = await githubFetch(`${GITHUB_API}/search/issues?q=${encodeURIComponent(query)}`, {
     headers: {
       Authorization: `Bearer ${token}`,
       Accept: "application/vnd.github.v3+json",
@@ -97,7 +108,7 @@ async function searchIssues(query: string, token: string): Promise<any> {
 
 /** Get repo info */
 async function fetchRepo(owner: string, repo: string, token: string): Promise<any> {
-  const resp = await fetch(`${GITHUB_API}/repos/${owner}/${repo}`, {
+  const resp = await githubFetch(`${GITHUB_API}/repos/${owner}/${repo}`, {
     headers: {
       Authorization: `Bearer ${token}`,
       Accept: "application/vnd.github.v3+json",
@@ -109,7 +120,7 @@ async function fetchRepo(owner: string, repo: string, token: string): Promise<an
 
 /** Get commit list */
 async function fetchCommits(owner: string, repo: string, token: string, perPage = 10): Promise<any> {
-  const resp = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/commits?per_page=${perPage}`, {
+  const resp = await githubFetch(`${GITHUB_API}/repos/${owner}/${repo}/commits?per_page=${perPage}`, {
     headers: {
       Authorization: `Bearer ${token}`,
       Accept: "application/vnd.github.v3+json",
@@ -122,7 +133,7 @@ async function fetchCommits(owner: string, repo: string, token: string, perPage 
 /** Get vulnerability alerts */
 async function fetchVulnerabilityAlerts(owner: string, repo: string, token: string): Promise<any> {
   const query = `query { repository(owner: "${owner}", name: "${repo}") { vulnerabilityAlerts(first: 50, states: [OPEN]) { nodes { securityVulnerability { severity package { name ecosystem } summary vulnerableVersionRange } vulnerableManifestPath advisory { summary severity publishedAt } } } } }`;
-  const resp = await fetch(`${GITHUB_API}/graphql`, {
+  const resp = await githubFetch(`${GITHUB_API}/graphql`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${token}`,
@@ -314,3 +325,4 @@ export function createGitHubTool(): ToolDef {
     },
   };
 }
+

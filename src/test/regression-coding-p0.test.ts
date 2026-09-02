@@ -84,7 +84,7 @@ describe("P0-2: FileChangeTracker — 文件变更追踪", () => {
         if (args.command.includes("rev-parse --is-inside-work-tree")) {
           return { stdout: "true", stderr: "", exitCode: 0 };
         }
-        if (args.command.includes("rev-parse HEAD^{tree}")) {
+        if (args.command.includes("HEAD^{tree}")) {
           callCount++;
           return { stdout: "abc123tree456\n", stderr: "", exitCode: 0 };
         }
@@ -103,7 +103,7 @@ describe("P0-2: FileChangeTracker — 文件变更追踪", () => {
     mockTauriInvoke({
       execute_command: (args: any) => {
         if (args.command.includes("rev-parse --is-inside-work-tree")) return { stdout: "true", stderr: "", exitCode: 0 };
-        if (args.command.includes("rev-parse HEAD^{tree}")) return { stdout: beforeTree, stderr: "", exitCode: 0 };
+        if (args.command.includes("HEAD^{tree}")) return { stdout: beforeTree, stderr: "", exitCode: 0 };
         return { stdout: "", stderr: "", exitCode: 0 };
       },
     });

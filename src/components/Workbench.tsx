@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Workbench — Code workbench + lightweight Overview
  *
  * Upgraded from simple tool/file display to include:
@@ -77,19 +77,19 @@ export const Workbench = memo(function Workbench({
       {/* View tabs */}
       <div className="workbench-view-tabs">
         <button
-          className={"workbench-view-tab " + activeView === "status" ? "active" : ""}
+          className={"workbench-view-tab" + (activeView === "status" ? " active" : "")}
           onClick={() => setActiveView("status")}
         >
           状态
         </button>
         <button
-          className={"workbench-view-tab " + activeView === "capacity" ? "active" : ""}
+          className={"workbench-view-tab" + (activeView === "capacity" ? " active" : "")}
           onClick={() => setActiveView("capacity")}
         >
           容量
         </button>
         <button
-          className={"workbench-view-tab " + activeView === "activity" ? "active" : ""}
+          className={"workbench-view-tab" + (activeView === "activity" ? " active" : "")}
           onClick={() => setActiveView("activity")}
         >
           活动
@@ -168,3 +168,4 @@ export const Workbench = memo(function Workbench({
     </div>
   );
 });
+

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * P3-29: CI/CD Integration — GitHub Actions pipeline 生成和监控
  *
  * 功能：
@@ -15,6 +15,17 @@ import type { GitConfig } from "../settings/settings";
 import { getLang } from "../i18n/lang";
 
 const GITHUB_API = "https://api.github.com";
+
+/** GitHub API fetch with timeout — 防慢 API 挂起（对标 dsh deadline） */
+async function githubFetch(url: string, init?: RequestInit): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 20_000);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 // ========== Types ==========
 
@@ -357,7 +368,7 @@ export async function listWorkflows(owner: string, repo: string): Promise<{
   if (!token) return { workflows: [], error: "GitHub token not configured" };
 
   try {
-    const resp = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/actions/workflows`, {
+    const resp = await githubFetch(`${GITHUB_API}/repos/${owner}/${repo}/actions/workflows`, {
       headers: githubHeaders(token),
     });
     if (!resp.ok) {
@@ -388,7 +399,7 @@ export async function listWorkflowRuns(
     if (options?.status) params.set("status", options.status);
     if (options?.actor) params.set("actor", options.actor);
 
-    const resp = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/actions/runs?${params}`, {
+    const resp = await githubFetch(`${GITHUB_API}/repos/${owner}/${repo}/actions/runs?${params}`, {
       headers: githubHeaders(token),
     });
     if (!resp.ok) {
@@ -426,7 +437,7 @@ export async function getWorkflowJobs(
   if (!token) return { jobs: [], error: "GitHub token not configured" };
 
   try {
-    const resp = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/actions/runs/${runId}/jobs`, {
+    const resp = await githubFetch(`${GITHUB_API}/repos/${owner}/${repo}/actions/runs/${runId}/jobs`, {
       headers: githubHeaders(token),
     });
     if (!resp.ok) {
@@ -465,7 +476,7 @@ export async function retryWorkflowRun(
   if (!token) return { success: false, error: "GitHub token not configured" };
 
   try {
-    const resp = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/actions/runs/${runId}/rerun`, {
+    const resp = await githubFetch(`${GITHUB_API}/repos/${owner}/${repo}/actions/runs/${runId}/rerun`, {
       method: "POST",
       headers: githubHeaders(token),
     });
@@ -496,7 +507,7 @@ export async function triggerWorkflowDispatch(
     const body: any = { ref };
     if (inputs) body.inputs = inputs;
 
-    const resp = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/actions/workflows/${workflowId}/dispatches`, {
+    const resp = await githubFetch(`${GITHUB_API}/repos/${owner}/${repo}/actions/workflows/${workflowId}/dispatches`, {
       method: "POST",
       headers: {
         ...githubHeaders(token),
@@ -526,7 +537,7 @@ export async function cancelWorkflowRun(
   if (!token) return { success: false, error: "GitHub token not configured" };
 
   try {
-    const resp = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/actions/runs/${runId}/cancel`, {
+    const resp = await githubFetch(`${GITHUB_API}/repos/${owner}/${repo}/actions/runs/${runId}/cancel`, {
       method: "POST",
       headers: githubHeaders(token),
     });
@@ -568,3 +579,4 @@ export function getCiStatusSummary(runs: WorkflowRun[]): {
     cancelled: runs.filter(r => r.conclusion === "cancelled").length,
   };
 }
+

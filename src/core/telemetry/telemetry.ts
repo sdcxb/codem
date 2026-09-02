@@ -7,7 +7,7 @@
  * - 支持 OpenTelemetry 格式导出（预留接口）
  */
 
-import { getDatabase, persistDatabase } from "../storage/database";
+import { getDatabase, persistDatabase, isCompactionInProgress } from "../storage/database";
 
 // ========== Types ==========
 
@@ -58,6 +58,19 @@ class TelemetryCollector {
 
     if (this.events.length === 0) return;
 
+    // Defense-in-depth: skip while compaction is mutating the DB.
+    // Interleaving db.run with compaction's synchronous commit block corrupts
+    // sql.js state ("bad parameter or other API misuse" / wasm traps).
+    // Same guard as store.saveMessages — telemetry flush runs on a 5s timer
+    // and can otherwise land inside a compaction window.
+    if (isCompactionInProgress()) {
+      // Keep events buffered; the next timer tick will retry.
+      if (!this.flushTimer) {
+        this.flushTimer = setTimeout(() => this.flush(), this.flushIntervalMs);
+      }
+      return;
+    }
+
     try {
       const db = getDatabase();
       for (const event of this.events) {
@@ -67,11 +80,15 @@ class TelemetryCollector {
         );
       }
       persistDatabase();
+      // 成功才清空 — 失败时保留 events 供下次重试（防静默丢失遥测）。
+      this.events = [];
     } catch (err) {
-      console.warn("[Telemetry] Flush failed:", err);
+      console.warn("[Telemetry] Flush failed, keeping events for retry:", err);
+      // 保留 events；安排一次重试（限制频率避免热循环）
+      if (!this.flushTimer) {
+        this.flushTimer = setTimeout(() => this.flush(), this.flushIntervalMs);
+      }
     }
-
-    this.events = [];
   }
 
   /**

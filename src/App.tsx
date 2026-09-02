@@ -203,6 +203,7 @@ async function getCordisContext(): Promise<Context> {
 }
 // ====== Cordis 插件系统初始化结束 ======
 import { RefreshCw, X, MessageSquare, Terminal, BookOpen, Save, FolderOpen, PencilLine, Trash2, CheckCircle, Menu, Hammer, ClipboardList, Search, Bot, Activity, GitBranch, Gamepad2 } from "lucide-react";
+import { readRendererCrashRecord, clearRendererCrashRecord } from "./components/AppErrorBoundary";
 import { TooltipProvider } from "./components/ui/tooltip";
 import { TitleBar } from "./components/TitleBar";
 import { BootSplash } from "./components/BootSplash";
@@ -271,6 +272,7 @@ import { getModelProfileManager } from "./core/llm/model-profile";
 import { migrateFromLocalStorage } from "./core/storage/migration";
 import { getSetting, setSetting, getSettingJSON, setSettingJSON } from "./core/storage/settings";
 import { setLang, useLang, S } from "./core/i18n/lang";
+import { useWindowState } from "./hooks/useWindowState";
 import * as MessageStorage from "./core/storage/message";
 import { formatAttachmentsInline } from "./core/llm/attachment-formatter";
 import { syncAttachmentsToWorkspace } from "./core/llm/attachment-sync";
@@ -342,6 +344,8 @@ function getMode(): "cli" | "api" {
 
 function App() {
   const lang = useLang();
+  // 窗口状态持久化（对标 dsh main-window-state）：恢复上次窗口尺寸/位置
+  useWindowState();
   const { messages, addMessage, appendToMessage, setStreaming, isStreaming, addToolCall, updateToolCall, loadMessages, saveMessages, setLLMStatus, addGuidanceMessage, markGuidanceConsumed, removeGuidanceMessage, clearGuidanceMessages } = useAppStore();
   const { currentProject, currentSession, createSession, dbReady, loadFromDB } = useProjectStore();
 
@@ -1424,7 +1428,50 @@ flushStreamBuffer(); // flush all on unmount
       }
     }).then((un: () => void) => { unlisten = un; });
 
-    return () => { unlisten?.(); };
+    // 崩溃检测（对标 dsh crash-evidence）：上次进程异常退出时 Rust 发出此事件。
+    // 提示用户检查是否有未保存内容 / 可用恢复面板。
+    let unlistenCrash: (() => void) | undefined;
+    listen("previous-run-unclean", () => {
+      console.warn("[App] Previous run did not exit cleanly — checking recovery");
+      // 不阻塞：仅提示用户可去"设置 → 会话恢复"查看
+      useAppStore.getState().addGuidanceMessage({
+        id: `crash-notice-${Date.now()}`,
+        message: "检测到上次 Codem 未正常退出（可能崩溃或被强制关闭）。若发现会话内容缺失，可前往 设置 → 会话恢复 查看已保存的快照。",
+        timestamp: Date.now(),
+        consumed: false,
+      });
+    }).then((un: () => void) => { unlistenCrash = un; });
+
+    // 渲染崩溃恢复证据（对标 dsh crash-evidence）：上次界面渲染崩溃时
+    // AppErrorBoundary 写入了 localStorage 标记；恢复后（reload）在此消费：
+    // 提示用户已自动恢复，避免"白屏→恢复"后用户不知情。
+    const rendererCrash = readRendererCrashRecord();
+    if (rendererCrash) {
+      clearRendererCrashRecord();
+      useAppStore.getState().addGuidanceMessage({
+        id: `renderer-crash-${rendererCrash.occurredAt}`,
+        message: "检测到上次界面渲染异常，已自动恢复（会话数据均保留在本地数据库）。若此提示反复出现，可在设置中检查会话快照或尝试重置界面设置。",
+        timestamp: rendererCrash.occurredAt,
+        consumed: false,
+      });
+    }
+
+    // 数据库保存失败可见性（对标 dsh：持久化失败必须提示而非静默丢失）：
+    // saveDatabase 写盘失败（磁盘满/文件占用）首次 dispatch 事件 → 提示用户。
+    // 修复后（任何一次成功）自动复位，无需用户操作。
+    let unlistenDbSaveFail: (() => void) | undefined;
+    const onDbSaveFail = () => {
+      useAppStore.getState().addGuidanceMessage({
+        id: `db-save-fail-${Date.now()}`,
+        message: "数据保存到数据库失败：最近的更改可能无法保存。请检查磁盘空间或数据库文件是否被占用；问题修复后应用会自动恢复保存。",
+        timestamp: Date.now(),
+        consumed: false,
+      });
+    };
+    window.addEventListener("codem:db-save-failed", onDbSaveFail);
+    unlistenDbSaveFail = () => window.removeEventListener("codem:db-save-failed", onDbSaveFail);
+
+    return () => { unlisten?.(); unlistenCrash?.(); unlistenDbSaveFail?.(); };
   }, []);
 
   const handleCloseChoice = useCallback(async (action: "tray" | "close", remember: boolean) => {

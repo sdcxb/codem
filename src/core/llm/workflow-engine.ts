@@ -118,7 +118,8 @@ console.log(JSON.stringify(results, null, 2));
         },
         async bash(command) {
           const { executeCommand } = await import("../file-api");
-          const result = await executeCommand(command, ctx.cwd);
+          // FIX: 有界超时（默认 60s），避免工作流内命令挂 600s
+          const result = await executeCommand(command, ctx.cwd, 60_000);
           return { stdout: result.stdout, stderr: result.stderr, exitCode: result.exitCode ?? 0 };
         },
         async read(path) {

@@ -14,6 +14,7 @@ import type { Context } from "../cordis/src/index.ts";
 import { createIdleTimeout } from "./idle-tracker";
 import { OllamaProvider } from "./ollama-provider";
 import { ReplayAdapter } from "./replay-adapter";
+import { redactSecrets } from "../utils/redact";
 // ========== Request-level timeout budget (对标 DSH request_timeout_seconds) ==========
 // DSH 的 SDK 层为每个 RPC 请求设置 deadline（request_timeout_seconds），超时抛
 // TimeoutError 并附带运行时诊断。我们对齐这一设计：每次 LLM HTTP 请求都有
@@ -246,7 +247,9 @@ export class OpenAICompatibleProvider implements LLMProvider {
 
     if (!response.ok) {
       const error = await response.text();
-      throw new Error(`API error ${response.status}: ${error}`);
+      // FIX(对标 dsh mask-secrets): 服务器错误体可能回显 Authorization/密钥，
+      // 直接拼进 Error 会泄漏到 UI / 日志 / LLM 上下文。统一脱敏。
+      throw new Error(`API error ${response.status}: ${redactSecrets(error.substring(0, 2000))}`);
     }
 
     const data = await response.json();
@@ -335,8 +338,10 @@ export class OpenAICompatibleProvider implements LLMProvider {
 
     if (!response.ok) {
       const error = await response.text();
-      console.error("[Provider] API error:", response.status, error.substring(0, 500));
-      throw new Error(`API error ${response.status}: ${error.substring(0, 200)}`);
+      // FIX(对标 dsh mask-secrets): 错误体可能回显密钥 — 日志与 Error 都脱敏。
+      const safe = redactSecrets(error.substring(0, 2000));
+      console.error("[Provider] API error:", response.status, safe.substring(0, 500));
+      throw new Error(`API error ${response.status}: ${safe.substring(0, 200)}`);
     }
 
     const reader = response.body?.getReader();

@@ -256,9 +256,8 @@ describe("S0-3: Capability Seam Integration", () => {
       const provider = new LocalShellProvider();
 
       const result = await provider.execute("ls -la", "/workspace", 5000);
-      // executeCommand signature is (command, cwd) — timeoutMs is accepted by ShellSeam
-      // but not forwarded to file-api (which doesn't support it)
-      expect(executeCommand).toHaveBeenCalledWith("ls -la", "/workspace");
+      // FIX: timeoutMs 现在转发给 file-api.executeCommand（Rust 超时杀进程树）
+      expect(executeCommand).toHaveBeenCalledWith("ls -la", "/workspace", 5000);
       expect(result).toEqual({
         stdout: "command output",
         stderr: "",

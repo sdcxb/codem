@@ -566,7 +566,11 @@ describe("知识管理 — note-operations 工具执行", () => {
 
 // ========== G. 知识管理 UI 组件 ==========
 
+// FIX: 重型组件（NotebookWorkspace 等）懒加载在全量并行下可能超过默认
+// 5s 超时导致偶发 flaky（KM-074）。给本 describe 内动态 import 测试
+// 单独设置 30s 超时。
 describe("知识管理 — UI 组件导入", () => {
+  // 动态 import 测试设置较长超时（vitest 全局默认 5s 在全量并行下偏紧）
   const uiComponents = [
     { id: 71, name: "NoteEditor", path: "../components/NoteEditor" },
     { id: 72, name: "KnowledgeGraphView", path: "../components/KnowledgeGraphView" },
@@ -582,7 +586,7 @@ describe("知识管理 — UI 组件导入", () => {
     it(`KM-${String(c.id).padStart(3, "0")}: ${c.name} 组件可导入`, async () => {
       const mod = await import(c.path);
       expect(mod[c.name]).toBeDefined();
-    });
+    }, 30_000); // FIX: 重型组件懒加载 30s 超时（防全量并行 flaky）
   }
 
   // KM-079: knowledge 统一导出

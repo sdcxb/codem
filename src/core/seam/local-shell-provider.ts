@@ -24,7 +24,7 @@ export class LocalShellProvider implements ShellSeam {
     _timeoutMs?: number,
   ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
     const { executeCommand } = await import("../file-api");
-    const result = await executeCommand(command, cwd);
+    const result = await executeCommand(command, cwd, _timeoutMs);
     return {
       stdout: result.stdout,
       stderr: result.stderr,

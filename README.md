@@ -46,6 +46,8 @@
 >
 > **v1.6.2 更新**：大富翁嵌入式游戏全量交付（Phase 1-10） + 三轮审计 Bug 修复 — 在 Codem 中嵌入完整的大富翁4风格桌面游戏，作为用户等待 LLM 执行任务时的休闲娱乐。游戏作为完全独立的大插件运行，零侵入主项目代码。Phase 1-6 完成基础设施和核心玩法（棋盘渲染/动态骰子/地产系统/角色系统/命运新闻事件/股票系统/卡片系统/道具系统/AI 策略/存档读档）；Phase 7-9 完成视觉交互和核心机制对齐（地块图标映射/角色精灵动画/消息条系统/物价指数/住院监狱酒店沉睡状态/连锁奖励税收）；Phase 10（G20-G36）补全开局设置（游戏天数/玩家数量/初始资金/胜利条件）+ 机制补全（机场传送/商业地块/主动卖地/股票分红/银行拒绝）+ 体验补全（多人热座/帮助规则/财富面板/资产清单/日志增强/投降功能/音量控制/速度调节）。三轮审计修复 7 个关键 Bug（破产清算逻辑/玩家状态检查/死循环保护/命运事件移动/初始资金应用/AI 循环优化/掷骰跳过检查）。TypeScript 编译 0 错误，Vite 构建成功。
 
+> **v1.9.4 更新**：dsh-desktop 全面对标稳健性审计修复（15 轮）— ①**崩溃检测与恢复**：active-run.json 崩溃标记（上次异常退出下次启动提示）+ panic 落盘 codem-crash.log + 渲染崩溃恢复边界 AppErrorBoundary（白屏 → 恢复卡片：重试/重新加载/重置界面设置，会话数据不受影响）②**运行时文件日志**（对标 dsh log-files.ts）：常规事件按日落盘 `%APPDATA%\com.codem.app\codem-runtime-*.log`，轮转 + 上限 + 14 天保留 + 写入前统一脱敏 ③**持久化失败可见性**：数据库写盘失败不再静默丢数据（界面提示 + 3s 自动重试 + 恢复自动续存）④**命令执行**：超时杀整个进程树 + PowerShell 安全转义（修复 git `HEAD^{tree}` 崩溃）⑤**网络/安全**：fetchWithTimeout 统一超时全覆盖 + API 错误统一脱敏 + WebSocket 定时器泄漏修复 ⑥**界面**：6 处 JSX 条件渲染修复 + 终端会话退出通知 + Mermaid 安全级别收紧 + 窗口状态持久化。全量 141 文件 / 4079 用例通过 + tsc 零错误 + cargo 零警告。
+>
 > **v1.9.0 更新**：上下文压缩过早触发治根修复 + 通用协议 API 配置 + 工具执行正确性修复 — ①**压缩治根（模型感知窗口 + 压力驱动）**：修复 estimateMessagesTokens 永不回落（baseline 仅为下限不再忽略实际增长）；AgenticLoop 从 provider 解析模型真实 contextWindow 并同步到 tracker（1M 窗口模型此前按 128k 估算，压力放大 ~8 倍，3 轮即压缩）；micro-compact 由纯条数触发改为压力驱动（条数 > 12 且压力 >= 0.5）；新增 inferContextWindow 按模型 id 推断窗口（deepseek/gemini/mimo→1M），不再一律回退 128k ②**通用协议 API 配置**：设置页手动 Base URL + API key + 自动拉取模型列表，刷新不丢 contextWindow ③**工具执行正确性**：read 单响应去重键补 offset/limit（读全文+读片段不再误判重复跳过）；DecisionTray 审批内容空白修复（读 req.input）+ 长命令滚动显示 ④新增回归测试 context-window-regression（8 例）+ custom-provider-config。
 >
 > **v1.8.0 更新**：知识图谱 React Flow 重构（@xyflow/react 自定义节点/边/关系标签/MiniMap）+ vision-proxy 统一 getConfiguredProvider + UI 字体变量批量规范化（50+ 组件数字 fontSize→CSS 变量）。
@@ -342,6 +344,36 @@ npm run tauri:build
 - 两种模式均使用内置 LLM 引擎直连 API，无需依赖外部进程
 
 ## 更新日志
+
+### 2026-09-02（v1.9.4）
+
+> dsh-desktop 全面对标稳健性审计修复（15 轮迭代）：崩溃检测与恢复 + 渲染崩溃兜底 + 运行时文件日志 + 持久化失败可见性 + 命令超时杀进程树 + 统一脱敏/超时。
+
+**崩溃检测与恢复（对标 dsh crash-evidence）：**
+- 新增 active-run.json 崩溃标记：上次进程异常退出（崩溃/强杀/断电）下次启动提示"未正常退出，可前往 设置 → 会话恢复 查看快照"；panic 信息追加写入 codem-crash.log
+
+**渲染崩溃不再白屏（对标 dsh renderer-health）：**
+- 新增顶层错误边界 AppErrorBoundary：界面渲染崩溃时显示恢复卡片——「重试渲染 / 重新加载应用 / 重置界面设置并重新加载」（仅清本地界面偏好，不动会话数据）；崩溃证据脱敏留存，下次启动提示已自动恢复
+
+**运行时文件日志（对标 dsh log-files.ts，新增）：**
+- 常规运行事件落盘 `%APPDATA%\com.codem.app\codem-runtime-YYYY-MM-DD.log`：按日 + 大小轮转 + 目录上限 + 保留 14 天 + 写入前统一脱敏（API key/token 不落盘）。启动/崩溃检测/命令执行/超时杀树/PTY/退出均有记录，遇到问题可查日志诊断
+
+**数据安全：**
+- 修复数据库保存失败静默吞错：磁盘满/文件占用时不再无声丢数据——界面提示"保存失败请检查磁盘空间"，3 秒后自动重试，恢复后自动续存
+
+**命令执行稳健性：**
+- 命令超时杀整个进程树（默认 600s），不再残留后台 PowerShell 僵尸进程
+- 修复 PowerShell 转义崩溃：git `HEAD^{tree}` 等含 `{}` 命令此前直接报错（ScriptBlock 解析失败），现统一安全转义
+
+**安全与网络：**
+- 统一超时工具覆盖全部外部请求（GitHub/Figma/搜索/同步/技能市场/CI 等，默认 20s），不再永久挂起
+- API 错误信息统一脱敏（sk-/Bearer/password 等密钥不再泄漏到界面/日志）；WebSocket 定时器泄漏修复
+
+**界面与交互修复：**
+- 全局错误不再弹原生对话框打断操作（改记录 + 崩溃恢复兜底）
+- 修复 6 处 JSX 条件渲染错误 + 终端会话退出通知（僵尸会话及时回收）+ Mermaid 安全级别收紧 + 窗口大小/位置重启保持
+
+**测试：** 新增 repro-ps-command / repro-exec-timeout / repro-bash-abort / repro-jsx-classname / repro-redact / REC-R1~6 / DBSAVE-F1~4。全量 141 文件 / 4079 用例通过 + tsc 零错误 + cargo check 零警告 + cargo test 13/13。
 
 ### 2026-09-02（v1.9.3）
 

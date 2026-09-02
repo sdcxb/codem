@@ -1,4 +1,4 @@
-/**
+﻿/**
  * web_search 工具 — LLM 搜索网页获取信息。
  *
  * 设计原则：**零配置，纯粹跟随用户的 mode 设置。**
@@ -12,6 +12,7 @@
 
 import type { ToolDef, ToolExecuteResult } from "../tools";
 import { getSettingJSON } from "../../storage/settings";
+import { fetchWithTimeout } from "../../utils/fetch-with-timeout";
 
 // ========== 类型定义 ==========
 
@@ -45,7 +46,7 @@ async function searchWithGemini(
   const geminiModel = model || "gemini-2.0-flash";
   const url = `${baseUrl.replace(/\/$/, "")}/${geminiModel}:generateContent?key=${apiKey}`;
 
-  const response = await fetch(url, {
+  const response = await fetchWithTimeout(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -107,7 +108,7 @@ async function searchWithLLM(
     headers["Authorization"] = `Bearer ${apiKey}`;
   }
 
-  const response = await fetch(url, {
+  const response = await fetchWithTimeout(url, {
     method: "POST",
     headers,
     body: JSON.stringify({
@@ -334,3 +335,4 @@ export function createWebSearchTool(): ToolDef {
     },
   };
 }
+

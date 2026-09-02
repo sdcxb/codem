@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, memo, useMemo } from "react";
+﻿import { useState, useEffect, useRef, useCallback, memo, useMemo } from "react";
 import { Message, useAppStore } from "../store";
 import ReactMarkdown from "react-markdown";
 // P1 #17: Shiki replaces Prism for code highlighting
@@ -74,7 +74,7 @@ const MermaidDiagram = memo(function MermaidDiagram({ chart }: { chart: string }
         mermaid.initialize({
           startOnLoad: false,
           theme: "dark",
-          securityLevel: "loose",
+          securityLevel: "strict",
           fontFamily: "inherit",
         });
         const id = `mermaid-${Date.now()}-${Math.random().toString(36).substring(7)}`;
@@ -957,3 +957,4 @@ function formatSize(bytes: number): string {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
+

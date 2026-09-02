@@ -61,7 +61,10 @@ async function apiMkdir(path: string): Promise<void> {
   if (isTauri) {
     try {
       const { invoke } = (window as any).__TAURI__.core;
-      await invoke("execute_command", { command: `mkdir "${path}"` });
+      // Use the dedicated Rust make_directory command — no shell interpretation
+      // (previous `mkdir "${path}"` via PowerShell could break on paths with
+      // PowerShell metacharacters).
+      await invoke("make_directory", { path });
     } catch (e) { console.warn('[snapshot.ts]', e) }
   }
 }

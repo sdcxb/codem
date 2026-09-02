@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 多模态扩展模块 (Phase 4)
  *
  * 统一管理 Embedding（语义搜索）、TTS（语音合成）、ImageGen（图像生成）三种多模态能力。
@@ -6,6 +6,8 @@
  */
 
 import { getSettingJSON, setSettingJSON } from "../storage/settings";
+import { redactSecrets } from "../utils/redact";
+import { fetchWithTimeout } from "../utils/fetch-with-timeout";
 
 // ========== Types ==========
 
@@ -146,7 +148,7 @@ async function generateGeminiEmbeddings(
     // Use batchEmbedContents for multiple texts, embedContent for single
     if (batch.length === 1) {
       const url = `https://generativelanguage.googleapis.com/v1beta/${modelPath}:embedContent?key=${apiKey}`;
-      const response = await fetch(url, {
+      const response = await fetchWithTimeout(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -157,7 +159,7 @@ async function generateGeminiEmbeddings(
 
       if (!response.ok) {
         const error = await response.text();
-        throw new Error(`Gemini Embedding API error ${response.status}: ${error}`);
+        throw new Error(`Gemini Embedding API error ${response.status}: ${redactSecrets(error.substring(0, 2000))}`);
       }
 
       const data = await response.json();
@@ -167,7 +169,7 @@ async function generateGeminiEmbeddings(
       });
     } else {
       const url = `https://generativelanguage.googleapis.com/v1beta/${modelPath}:batchEmbedContents?key=${apiKey}`;
-      const response = await fetch(url, {
+      const response = await fetchWithTimeout(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -181,7 +183,7 @@ async function generateGeminiEmbeddings(
 
       if (!response.ok) {
         const error = await response.text();
-        throw new Error(`Gemini Embedding API error ${response.status}: ${error}`);
+        throw new Error(`Gemini Embedding API error ${response.status}: ${redactSecrets(error.substring(0, 2000))}`);
       }
 
       const data = await response.json();
@@ -250,7 +252,7 @@ export async function generateEmbeddings(
   const baseUrl = config.baseUrl || "https://api.openai.com/v1";
   const model = params.model || config.model || "text-embedding-3-small";
 
-  const response = await fetch(`${baseUrl}/embeddings`, {
+  const response = await fetchWithTimeout(`${baseUrl}/embeddings`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -264,7 +266,7 @@ export async function generateEmbeddings(
 
   if (!response.ok) {
     const error = await response.text();
-    throw new Error(`Embedding API error ${response.status}: ${error}`);
+    throw new Error(`Embedding API error ${response.status}: ${redactSecrets(error.substring(0, 2000))}`);
   }
 
   const data = await response.json();
@@ -347,7 +349,7 @@ export async function textToSpeech(params: TTSParams): Promise<TTSResult> {
   const voice = params.voice || "alloy";
   const format = params.format || "mp3";
 
-  const response = await fetch(`${baseUrl}/audio/speech`, {
+  const response = await fetchWithTimeout(`${baseUrl}/audio/speech`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -364,7 +366,7 @@ export async function textToSpeech(params: TTSParams): Promise<TTSResult> {
 
   if (!response.ok) {
     const error = await response.text();
-    throw new Error(`TTS API error ${response.status}: ${error}`);
+    throw new Error(`TTS API error ${response.status}: ${redactSecrets(error.substring(0, 2000))}`);
   }
 
   // Response is binary audio data
@@ -419,7 +421,7 @@ export async function generateImages(params: ImageGenParams): Promise<ImageGenRe
   const baseUrl = config.baseUrl || "https://api.openai.com/v1";
   const model = config.model || "dall-e-3";
 
-  const response = await fetch(`${baseUrl}/images/generations`, {
+  const response = await fetchWithTimeout(`${baseUrl}/images/generations`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -438,7 +440,7 @@ export async function generateImages(params: ImageGenParams): Promise<ImageGenRe
 
   if (!response.ok) {
     const error = await response.text();
-    throw new Error(`Image generation API error ${response.status}: ${error}`);
+    throw new Error(`Image generation API error ${response.status}: ${redactSecrets(error.substring(0, 2000))}`);
   }
 
   const data = await response.json();
@@ -518,3 +520,5 @@ export const MULTIMODAL_MODELS: Record<string, {
     imageGen:  [],
   },
 };
+
+

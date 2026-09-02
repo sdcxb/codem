@@ -1,4 +1,4 @@
-/**
+﻿/**
  * MermaidCanvasView — Mermaid 图表视图
  *
  * 在 ContentFrame 内渲染 Mermaid 图表，支持全屏查看。
@@ -31,7 +31,7 @@ export const MermaidCanvasView = memo(function MermaidCanvasView({ chart, id }: 
         mermaid.initialize({
           startOnLoad: false,
           theme: "dark",
-          securityLevel: "loose",
+          securityLevel: "strict",
           fontFamily: "inherit",
         });
         const renderId = `mermaid-${id || Date.now()}-${Math.random().toString(36).substring(7)}`;
@@ -93,3 +93,4 @@ export const MermaidCanvasView = memo(function MermaidCanvasView({ chart, id }: 
     </ContentFrame>
   );
 });
+

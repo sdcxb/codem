@@ -2,7 +2,64 @@
 
 All notable changes to Codem will be documented in this file.
 
-## [1.9.3] - 2026-09-02
+## [1.9.4] - 2026-09-02
+
+### dsh-desktop 全面对标 — 稳健性审计修复（15 轮迭代，bug 级清零收敛）
+
+对标 [dsh-desktop](https://github.com/anywhere-labs/dsh-desktop)（crash-evidence / renderer-health / log-files / shutdown 等机制）审计 Codem 共有的功能，逐项修复并回归，共 42+ 项。
+
+#### 崩溃检测与恢复链路（对标 dsh crash-evidence）
+
+- **active-run.json 崩溃标记** — Rust 启动时写入（pid + 启动时间），正常退出（quit_app / 托盘退出 / ExitRequested）三重清理；上次进程异常终止（崩溃/强杀/断电）下次启动检测到标记 → `previous-run-unclean` 事件 → 界面提示"上次未正常退出，可前往设置 → 会话恢复查看快照"
+- **panic 信息落盘** — panic hook 追加写 `codem-crash.log`（打包版 stderr 不可见，panic 信息此前完全丢失）
+- **渲染崩溃恢复边界（对标 dsh renderer-health / startup-recovery）** — 新增 `AppErrorBoundary` 顶层错误边界：React 渲染崩溃不再白屏，显示恢复卡片（重试渲染 / 重新加载应用 / 重置界面设置并重新加载，后者仅清 `codem-*` 本地界面设置、不动 SQLite 会话数据）；崩溃证据（错误消息 + 组件栈，经 redactSecrets 脱敏）写入 localStorage，下次启动提示已自动恢复。测试 REC-R1~R6
+
+#### 运行时文件日志（对标 dsh log-files.ts，新增）
+
+- 新增 `src-tauri/src/runtime_log.rs` — 按日文件 `codem-runtime-YYYY-MM-DD.log`（位于 `%APPDATA%\com.codem.app\`）+ 段轮转（单文件 4MB，最多 3 段）+ 目录上限（24MB，删最旧）+ 启动清理超 14 天 + 单行截断 8KB（UTF-8 边界安全）+ **统一脱敏**（sk-/pk- 前缀需 token≥10 防误伤、ghp_/AKIA/Bearer/Authorization/password= 等贪婪型、重叠区间合并）
+- 落盘事件：启动（含 pid / 上次是否异常退出）/ 崩溃检测 / 命令执行开始/结束/超时杀树 / PTY 创建与清理 / 退出 / 托盘构建失败，全部 best-effort 不影响主流程
+- 13 个 Rust 单测（脱敏形态/误伤防护/轮转/保留判定/目录上限）
+
+#### 持久化失败可见性（DB 写盘失败不再静默）
+
+- `saveDatabase` 写盘失败（磁盘满/文件被占用）此前仅在 console 记录、调用方与退出前 `flushDatabase` 完全无感知 → 静默丢数据；现在首次失败 dispatch `codem:db-save-failed` 事件 → 界面 guidance 提示，连续失败限流不刷屏，3s 后自动重试一次（临时故障自愈），任何一次成功复位失败状态并 dispatch 恢复事件。测试 DBSAVE-F1~F4
+
+#### 命令执行与 PowerShell 安全
+
+- **execute_command 超时杀进程树** — spawn + 轮询 + timeout_ms（默认 600s，clamp 1s~1h）；超时 `taskkill /PID /T /F` 杀整树（Unix 杀负 PGID），修复此前 `cmd.output()` 同步阻塞、前端 Promise.race 超时后 PowerShell/子进程仍在后台运行堆积僵尸进程
+- **PowerShell 安全转义** — 新增 `ps-command.ts`（psQuote / maybePsQuote / buildGitCommand）：git `HEAD^{tree}` 等含 `{}` 的命令此前触发 PowerShell `ScriptBlock should only be specified as a value of the Command parameter` 崩溃；统一单引号包裹修复
+- 命令开始/结束（exit code + 耗时）/ 超时杀树记录进运行时日志（脱敏）
+
+#### 网络与 API 稳健性
+
+- **统一超时工具 `fetchWithTimeout`**（默认 20s，AbortController）覆盖：github-tool / figma-fetch / run-code（SDK fetch 15s + bash/exec timeout）/ web-search / job-manager / workflow-engine / pipeline / sync-engine（4 处）/ skill-market（install 120s、git 60s、gh 120s）
+- **错误体统一脱敏** — 新增 `redact.ts`（redactSecrets / redactSecretsDeep）：LLM provider / vision-proxy / ollama / multimodal / bash 工具等 API 错误信息中的 sk-、Bearer、password 等密钥不再泄漏到界面/日志
+- 远程 Provider WebSocket 连接 onopen/onerror 时 clearTimeout（修复定时器泄漏）
+- multimodal / vision-proxy / skill-market-client 等模块错误路径脱敏 + 超时
+
+#### 前端渲染与交互稳健性
+
+- 全局 error / unhandledrejection 从 `alert()` 弹窗改为记录（此前任何未捕获错误弹原生对话框阻塞打断，多次弹窗体验极差）；过滤 ResizeObserver 良性警告
+- **6 处 JSX 运算符优先级 Bug 修复**（FileChangesList / NeedsYouPanel / Workbench 等：`&&` 与三元混用导致条件渲染异常）
+- TerminalPanel：className 括号错误修复 + `closeSession` 函数式 setActiveId + 监听 `pty-exit`（会话进程退出通知，`_closing` 标记防竞争，修复僵尸会话挂到 TTL 才回收）
+- Mermaid `securityLevel` loose → strict（3 处：MessageBubble / NoteEditor / MermaidCanvasView，收敛 XSS 面）
+- 新增 `useWindowState` — 窗口大小/位置/maximize 状态持久化（防抖 500ms，恢复时校验宽 ≥400/高 ≥300），重启保持布局
+- tools.ts bash 工具外部取消（ctx.abort 监听 + finally 清理 timeoutAbortFn/externalAbortFn）；agentic-loop buildMessages 逐条 dump 日志改 `DEBUG_BUILD_MESSAGES=1` 门控
+- telemetry flush：`isCompactionInProgress` 保护 + 失败保留 events 下次重试
+- 配置文件 mkdir 改 Rust `make_directory` 命令（修复 fs 权限差异）；git-commit-service / file-change-tracker 走 buildGitCommand + timeout_ms
+
+#### 会话 / 数据
+
+- messagesToLLMMessages 保留 `msg.reasoning` + provider 双分支输出 `reasoning_content`（thinking mode 回传）
+- buildMessages 按 toolCallId 精确配对（声明/存活结果 M<N 时只保留被满足的 M 个）
+- 全局崩溃提示 guidance 事件监听（App.tsx）
+
+#### 测试
+
+- 新增 repro 测试：repro-ps-command（PowerShell 转义）/ repro-exec-timeout（超时杀树）/ repro-bash-abort（外部取消）/ repro-jsx-classname / repro-redact（脱敏）/ app-error-boundary（REC-R1~R6）/ db-save-failure-alert（DBSAVE-F1~F4）；适配 git-env-config / s0-seam-integration / regression-coding-p0 / regression-knowledge-full（KM-074 动态导入 flaky 30s 超时）
+- 全量 141 文件 / 4079 用例通过 + `tsc --noEmit` 零错误 + cargo check 零警告 + cargo test 13/13
+
+
 
 ### 终端功能全面对标 dsh-desktop（审计修复）
 

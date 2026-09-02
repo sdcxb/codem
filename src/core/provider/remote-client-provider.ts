@@ -31,9 +31,11 @@ class RemoteClientService {
       this.ws = new WebSocket(wsEndpoint)
 
       await new Promise((resolve, reject) => {
-        this.ws!.onopen = resolve
-        this.ws!.onerror = reject
-        setTimeout(() => reject(new Error('Connection timeout')), 5000)
+        // FIX: 连接成功后清理超时 timer（之前 setTimeout 不清理 — 5s 后对
+        // 已 resolve 的 Promise 再 reject，且 timer 直到触发才释放）。
+        const timer = setTimeout(() => reject(new Error('Connection timeout')), 5000)
+        this.ws!.onopen = () => { clearTimeout(timer); resolve() }
+        this.ws!.onerror = (e) => { clearTimeout(timer); reject(new Error('WebSocket error')) }
       })
 
       this.ws.onmessage = (event) => {

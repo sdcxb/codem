@@ -63,7 +63,8 @@ class JobManager {
 
   private async executeJob(job: BackgroundJob, timeoutMs?: number): Promise<void> {
     try {
-      const result = await executeCommand(job.command, job.cwd);
+      // FIX: 后台任务也传有界超时（job 创建时可指定），Rust 超时杀进程树。
+      const result = await executeCommand(job.command, job.cwd, timeoutMs);
       job.stdout = result.stdout;
       job.stderr = result.stderr;
       job.exitCode = result.exitCode ?? 0;

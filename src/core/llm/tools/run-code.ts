@@ -126,7 +126,10 @@ Timeout: 30 seconds.`,
       const sdk: ToolSDK = {
         async bash(command: string, opts?: { timeout_ms?: number }) {
           const { executeCommand } = await import("../../file-api");
-          const result = await executeCommand(command, ctx.cwd);
+          // FIX: 传有界超时（默认 30s），避免 sdk.bash 内命令挂 600s；
+          // 且 Rust 超时会杀进程树。
+          const cmdTimeout = Math.min(opts?.timeout_ms || 30_000, 120_000);
+          const result = await executeCommand(command, ctx.cwd, cmdTimeout);
           return {
             stdout: result.stdout,
             stderr: result.stderr,
@@ -151,8 +154,15 @@ Timeout: 30 seconds.`,
           return results.map(r => ({ file: r, line: 0, content: r }));
         },
         async fetch(url: string) {
-          const response = await fetch(url);
-          return await response.text();
+          // FIX: 有界超时（15s），避免 LLM 代码 fetch 慢 URL 挂起
+          const controller = new AbortController();
+          const timer = setTimeout(() => controller.abort(), 15_000);
+          try {
+            const response = await fetch(url, { signal: controller.signal });
+            return await response.text();
+          } finally {
+            clearTimeout(timer);
+          }
         },
       };
 
@@ -183,7 +193,9 @@ export async function execRunCode(code: string, options?: { timeout?: number; cw
   const sdk: ToolSDK = {
     bash: async (cmd: string) => {
       const { executeCommand } = await import("../../file-api");
-      const result = await executeCommand(cmd, options?.cwd);
+      // FIX: 有界超时（options.timeout 或默认 60s）
+      const timeout = Math.min(options?.timeout || 60_000, 300_000);
+      const result = await executeCommand(cmd, options?.cwd, timeout);
       return { stdout: result.stdout, stderr: result.stderr, exitCode: result.exitCode ?? 0 };
     },
     read: async (path: string) => { const { readFile } = await import("../../file-api"); return readFile(path); },

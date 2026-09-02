@@ -30,7 +30,10 @@ async function writeFile(path: string, content: string): Promise<void> {
 async function ensureDir(path: string): Promise<void> {
   const { invoke } = (window as any).__TAURI__.core;
   try {
-    await invoke("execute_command", { command: `mkdir "${path}"` });
+    // Use the dedicated Rust make_directory command — no shell interpretation
+    // (the previous `mkdir "${path}"` via PowerShell could break on paths with
+    // `$`, backticks, or other PowerShell metacharacters).
+    await invoke("make_directory", { path });
   } catch {}
 }
 

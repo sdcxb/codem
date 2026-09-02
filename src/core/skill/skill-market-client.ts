@@ -1336,6 +1336,7 @@ async function installCLISkill(
     const result = await executeCommand(
       `${source.cliCommand} install ${skill.name}`,
       undefined,
+      120_000, // FIX: 安装有界超时 2min（下载依赖可能耗时，但防挂死）
     );
 
     if (result.exitCode !== 0 && result.exitCode !== undefined) {
@@ -2588,17 +2589,18 @@ async function publishToGitHub(config: PublishConfig): Promise<PublishResult> {
 
   try {
     // 1. git init
-    let result = await executeCommand("git init", config.skillPath);
+    let result = await executeCommand("git init", config.skillPath, 60_000); // FIX: 有界超时
     outputParts.push("[git init]", result.stdout, result.stderr);
 
     // 2. git add
-    result = await executeCommand("git add -A", config.skillPath);
+    result = await executeCommand("git add -A", config.skillPath, 60_000); // FIX: 有界超时
     outputParts.push("[git add]", result.stdout, result.stderr);
 
     // 3. git commit
     result = await executeCommand(
       `git commit -m "Publish skill: ${config.displayName} v${config.version}"`,
       config.skillPath,
+      60_000, // FIX: 有界超时
     );
     outputParts.push("[git commit]", result.stdout, result.stderr);
 
@@ -2606,6 +2608,7 @@ async function publishToGitHub(config: PublishConfig): Promise<PublishResult> {
     result = await executeCommand(
       `gh repo create ${repoName} ${visibility} --source=. --push --description="Codem skill: ${config.displayName}"`,
       config.skillPath,
+      120_000, // FIX: 网络操作 2min 超时
     );
     outputParts.push("[gh repo create]", result.stdout, result.stderr);
 

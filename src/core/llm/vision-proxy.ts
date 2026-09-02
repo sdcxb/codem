@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Vision Proxy — 视觉代理模块
  *
  * 当主对话模型不支持图片理解（如 DeepSeek）时，
@@ -11,6 +11,8 @@
 import { getMultimodalSettings, type MultimodalProviderConfig } from "./multimodal";
 import { getLLMEngine } from "./index";
 import type { LLMMessage, ContentBlock } from "../storage/message";
+import { redactSecrets } from "../utils/redact";
+import { fetchWithTimeout } from "../utils/fetch-with-timeout";
 
 // ========== Vision System Prompt ==========
 
@@ -253,7 +255,7 @@ export class VisionProxy {
       headers["Authorization"] = `Bearer ${config.apiKey}`;
     }
 
-    const response = await fetch(`${baseUrl}/chat/completions`, {
+    const response = await fetchWithTimeout(`${baseUrl}/chat/completions`, {
       method: "POST",
       headers,
       body: JSON.stringify({
@@ -280,7 +282,7 @@ export class VisionProxy {
 
     if (!response.ok) {
       const error = await response.text();
-      throw new Error(`Vision API error ${response.status}: ${error}`);
+      throw new Error(`Vision API error ${response.status}: ${redactSecrets(error.substring(0, 2000))}`);
     }
 
     const data = await response.json();
@@ -314,7 +316,7 @@ export class VisionProxy {
     formData.append("model", config.model || "whisper-1");
     formData.append("response_format", "text");
 
-    const response = await fetch(`${baseUrl}/audio/transcriptions`, {
+    const response = await fetchWithTimeout(`${baseUrl}/audio/transcriptions`, {
       method: "POST",
       headers,
       body: formData,
@@ -322,7 +324,7 @@ export class VisionProxy {
 
     if (!response.ok) {
       const error = await response.text();
-      throw new Error(`STT API error ${response.status}: ${error}`);
+      throw new Error(`STT API error ${response.status}: ${redactSecrets(error.substring(0, 2000))}`);
     }
 
     const text = await response.text();
@@ -359,3 +361,7 @@ export function getVisionProxy(): VisionProxy {
   }
   return visionProxyInstance;
 }
+
+
+
+

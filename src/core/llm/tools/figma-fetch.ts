@@ -16,6 +16,17 @@ import { getLang } from "../../i18n/lang";
 
 const FIGMA_API = "https://api.figma.com/v1";
 
+/** Figma API fetch with timeout — 防慢 API 挂起（对标 dsh deadline） */
+async function figmaFetch(url: string, token: string): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 20_000);
+  try {
+    return await fetch(url, { headers: { "X-Figma-Token": token }, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 interface FigmaNode {
   id: string;
   name: string;
@@ -26,9 +37,7 @@ interface FigmaNode {
 /** Fetch Figma file structure */
 async function fetchFileStructure(fileKey: string, token: string, depth = 3): Promise<any> {
   const url = `${FIGMA_API}/files/${fileKey}?depth=${depth}`;
-  const resp = await fetch(url, {
-    headers: { "X-Figma-Token": token },
-  });
+  const resp = await figmaFetch(url, token);
   if (!resp.ok) throw new Error(`Figma API ${resp.status}: ${resp.statusText}`);
   return resp.json();
 }
@@ -36,9 +45,7 @@ async function fetchFileStructure(fileKey: string, token: string, depth = 3): Pr
 /** Fetch specific node data */
 async function fetchNode(fileKey: string, token: string, nodeIds: string[]): Promise<any> {
   const url = `${FIGMA_API}/files/${fileKey}/nodes?ids=${nodeIds.join(",")}`;
-  const resp = await fetch(url, {
-    headers: { "X-Figma-Token": token },
-  });
+  const resp = await figmaFetch(url, token);
   if (!resp.ok) throw new Error(`Figma API ${resp.status}: ${resp.statusText}`);
   return resp.json();
 }
@@ -46,9 +53,7 @@ async function fetchNode(fileKey: string, token: string, nodeIds: string[]): Pro
 /** Export Figma nodes as images */
 async function exportImages(fileKey: string, token: string, nodeIds: string[], format = "png", scale = 2): Promise<any> {
   const url = `${FIGMA_API}/images/${fileKey}?ids=${nodeIds.join(",")}&format=${format}&scale=${scale}`;
-  const resp = await fetch(url, {
-    headers: { "X-Figma-Token": token },
-  });
+  const resp = await figmaFetch(url, token);
   if (!resp.ok) throw new Error(`Figma API ${resp.status}: ${resp.statusText}`);
   return resp.json();
 }
@@ -56,9 +61,7 @@ async function exportImages(fileKey: string, token: string, nodeIds: string[], f
 /** Get file components */
 async function fetchComponents(fileKey: string, token: string): Promise<any> {
   const url = `${FIGMA_API}/files/${fileKey}/components`;
-  const resp = await fetch(url, {
-    headers: { "X-Figma-Token": token },
-  });
+  const resp = await figmaFetch(url, token);
   if (!resp.ok) throw new Error(`Figma API ${resp.status}: ${resp.statusText}`);
   return resp.json();
 }
@@ -66,9 +69,7 @@ async function fetchComponents(fileKey: string, token: string): Promise<any> {
 /** Get component styles */
 async function fetchStyles(fileKey: string, token: string): Promise<any> {
   const url = `${FIGMA_API}/files/${fileKey}/styles`;
-  const resp = await fetch(url, {
-    headers: { "X-Figma-Token": token },
-  });
+  const resp = await figmaFetch(url, token);
   if (!resp.ok) throw new Error(`Figma API ${resp.status}: ${resp.statusText}`);
   return resp.json();
 }
@@ -233,3 +234,5 @@ function countFrames(node: any): number {
   if (!node.children) return 0;
   return node.children.filter((c: any) => c.type === "FRAME" || c.type === "COMPONENT" || c.type === "INSTANCE").length;
 }
+
+

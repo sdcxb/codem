@@ -76,8 +76,74 @@ async function saveDatabase(): Promise<void> {
     const base64 = uint8ToBase64(data);
     await invoke("write_file", { path, content: base64, encoding: "base64" });
     console.debug(`[Database] Saved ${data.length} bytes to file`);
+    noteSaveSucceeded();
   } catch (e) {
-    console.error("[Database] Failed to save:", e);
+    // 不 rethrow（保持写链不中断），但必须让失败可见：
+    // 之前这里仅 console.error，磁盘满/权限问题导致保存持续失败时
+    // 调用方（含退出前 flushDatabase）完全无感知 —— 静默丢数据。
+    notifySaveFailure(e);
+  }
+}
+
+// ===== 保存失败可见性（对标 dsh：持久化失败必须可诊断、可恢复）=====
+// 磁盘满 / 文件被占用等场景下写盘失败：首次失败 dispatch 事件让 UI 提示
+// 用户（而不是静默丢弃），随后失败限流不刷屏，并安排一次 3s 重试
+// （临时性故障如瞬时占用可能自愈）；任何一次成功即复位，下次失败重新提示。
+
+/** 保存失败事件名（App.tsx 监听 → guidance 提示）。 */
+export const DB_SAVE_FAILED_EVENT = "codem:db-save-failed";
+/** 保存恢复事件名（从失败状态回到成功时触发）。 */
+export const DB_SAVE_RECOVERED_EVENT = "codem:db-save-recovered";
+
+/** 上次保存是否失败（用于限流与恢复判定）。 */
+let lastSaveFailed = false;
+/** 失败后的一次性重试定时器。 */
+let saveRetryTimer: ReturnType<typeof setTimeout> | null = null;
+
+/** 导出供测试断言当前失败状态。 */
+export function isLastSaveFailed(): boolean {
+  return lastSaveFailed;
+}
+
+/** 复位保存失败状态并清除挂起的重试定时器（退出/测试隔离场景）。 */
+export function resetSaveFailureState(): void {
+  lastSaveFailed = false;
+  if (saveRetryTimer) {
+    clearTimeout(saveRetryTimer);
+    saveRetryTimer = null;
+  }
+}
+
+function notifySaveFailure(e: unknown): void {
+  const firstFailure = !lastSaveFailed;
+  lastSaveFailed = true;
+  if (firstFailure) {
+    const detail = { message: e instanceof Error ? e.message : String(e) };
+    try {
+      window.dispatchEvent(new CustomEvent(DB_SAVE_FAILED_EVENT, { detail }));
+    } catch {
+      // dispatch 失败（极端环境）不影响主流程。
+    }
+  }
+  console.error("[Database] Failed to save:", e);
+  if (!saveRetryTimer) {
+    saveRetryTimer = setTimeout(() => {
+      saveRetryTimer = null;
+      if (lastSaveFailed) {
+        // 重试一次：saveDatabase 内部失败会再次通知（已限流，不刷屏）。
+        enqueueSave().catch(() => {});
+      }
+    }, 3000);
+  }
+}
+
+function noteSaveSucceeded(): void {
+  if (!lastSaveFailed) return;
+  lastSaveFailed = false;
+  try {
+    window.dispatchEvent(new CustomEvent(DB_SAVE_RECOVERED_EVENT));
+  } catch {
+    // 同上，忽略。
   }
 }
 

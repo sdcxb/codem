@@ -2377,14 +2377,18 @@ yield { type: "step_progress", step: this.macroStep, total: planState.total, tit
     }
 
     console.log(`[buildMessages] raw: ${messages.length}, llm: ${llmMessages.length}, selected: ${valid.length}, final: ${finalMessages.length}`);
-    // Diagnostic: dump the messages that will be sent to the LLM
-    for (const m of finalMessages) {
-      if (m.role === "tool") {
-        console.log(`  [buildMessages] tool result: toolCallId=${m.toolCallId}, content_len=${(m.content || "").length}, preview=${(m.content || "").substring(0, 120)}`);
-      } else if (m.role === "assistant" && m.tool_calls) {
-        console.log(`  [buildMessages] assistant ${m.id}: tool_calls=[${m.tool_calls.map((tc: any) => tc.function?.name).join(",")}], content_len=${(m.content || "").length}`);
-      } else if (m.role === "user") {
-        console.log(`  [buildMessages] user ${m.id}: content_len=${(m.content || "").length}, preview=${(m.content || "").substring(0, 80)}`);
+    // Diagnostic: 逐条 dump 仅在调试模式输出 — 长会话（数百条消息）每次迭代
+    // 全量打印产生数千行 console 噪音，拖慢 devtools 且掩盖真实错误。
+    // 设置 DEBUG_BUILD_MESSAGES=1 可恢复逐条诊断。
+    if (typeof process !== "undefined" && process.env?.DEBUG_BUILD_MESSAGES === "1") {
+      for (const m of finalMessages) {
+        if (m.role === "tool") {
+          console.log(`  [buildMessages] tool result: toolCallId=${m.toolCallId}, content_len=${(m.content || "").length}, preview=${(m.content || "").substring(0, 120)}`);
+        } else if (m.role === "assistant" && m.tool_calls) {
+          console.log(`  [buildMessages] assistant ${m.id}: tool_calls=[${m.tool_calls.map((tc: any) => tc.function?.name).join(",")}], content_len=${(m.content || "").length}`);
+        } else if (m.role === "user") {
+          console.log(`  [buildMessages] user ${m.id}: content_len=${(m.content || "").length}, preview=${(m.content || "").substring(0, 80)}`);
+        }
       }
     }
     return finalMessages;

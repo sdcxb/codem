@@ -97,6 +97,17 @@ export function TerminalPanel({ cwd }: TerminalPanelProps) {
       }
     });
 
+    // Listen for PTY exit (shell closed / pipe broken / crash) — 主动关闭由
+    // closeSession 处理（_cleanup + close_pty），这里只处理"意外结束"。
+    // FIX: 之前输出线程静默退出，前端不知会话已结束 —— 僵尸会话挂到 TTL。
+    const unlistenExit = await listen("pty-exit", (event: any) => {
+      const payload = event.payload as { id: string; data: string };
+      if (payload.id !== ptyId) return;
+      const s = sessionsRef.current.find((x) => x.id === ptyId);
+      if (!s || (s as any)._closing) return; // 主动关闭中 — 忽略
+      term.write(`\r\n\x1b[90m[进程已退出${payload.data ? ` (${payload.data})` : ""} — 可关闭此标签页]\x1b[0m\r\n`);
+    });
+
     // Handle user input → write to PTY
     const disposable = term.onData((data) => {
       tauriInvoke("write_pty", { id: ptyId, data }).catch(() => {});
@@ -174,6 +185,7 @@ export function TerminalPanel({ cwd }: TerminalPanelProps) {
     (session as any)._cleanup = () => {
       if (resizeRafId !== null) cancelAnimationFrame(resizeRafId);
       unlisten();
+      unlistenExit();
       disposable.dispose();
       resizeObserver.disconnect();
       term.element?.removeEventListener("contextmenu", handleContextMenu);
@@ -188,22 +200,27 @@ export function TerminalPanel({ cwd }: TerminalPanelProps) {
   const closeSession = useCallback((id: string) => {
     const session = sessionsRef.current.find((s) => s.id === id);
     if (session) {
+      // 标记主动关闭 — pty-exit 事件到达时忽略（避免与手动清理竞争）
+      (session as any)._closing = true;
       (session as any)._cleanup?.();
       tauriInvoke("close_pty", { id }).catch(() => {});
     }
     const remaining = sessionsRef.current.filter((s) => s.id !== id);
+    sessionsRef.current = remaining;
     setSessions(remaining);
-    if (activeId === id) {
+    // 函数式更新：不依赖闭包里的 activeId（TTL 定时器回调可能携带过期值）
+    setActiveId((prevActive) => {
+      if (prevActive !== id) return prevActive;
       const next = remaining[0];
       if (next) {
-        setActiveId(next.id);
         const div = next.term.element?.parentElement;
         if (div) div.style.display = "block";
-      } else {
-        setActiveId(null);
+        return next.id;
       }
-    }
-  }, [activeId]);
+      return null;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const switchSession = useCallback((id: string) => {
     sessionsRef.current.forEach((s) => {
@@ -243,7 +260,7 @@ export function TerminalPanel({ cwd }: TerminalPanelProps) {
         {sessions.map((s, i) => (
           <div
             key={s.id}
-            className={"terminal-tab " + s.id === activeId ? "active" : ""}
+            className={"terminal-tab" + (s.id === activeId ? " active" : "")}
             onClick={() => switchSession(s.id)}
           >
             <span className="terminal-tab-label">

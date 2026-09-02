@@ -1,4 +1,4 @@
-/**
+﻿/**
  * P3-31: Ollama Provider — 离线本地 LLM
  *
  * 功能：
@@ -22,6 +22,7 @@ import type {
   ToolDefinition,
 } from "./types";
 import { getSetting } from "../storage/settings";
+import { redactSecrets } from "../utils/redact";
 
 const DEFAULT_OLLAMA_URL = "http://localhost:11434";
 
@@ -173,7 +174,7 @@ export class OllamaProvider implements LLMProvider {
 
     if (!resp.ok) {
       const error = await resp.text();
-      throw new Error(`Ollama API error ${resp.status}: ${error}`);
+      throw new Error(`Ollama API error ${resp.status}: ${redactSecrets(error.substring(0, 2000))}`);
     }
 
     const data = await resp.json();
@@ -218,7 +219,7 @@ export class OllamaProvider implements LLMProvider {
 
     if (!resp.ok) {
       const error = await resp.text();
-      throw new Error(`Ollama API error ${resp.status}: ${error}`);
+      throw new Error(`Ollama API error ${resp.status}: ${redactSecrets(error.substring(0, 2000))}`);
     }
 
     const responseId = `ollama-${Date.now()}`;
@@ -378,3 +379,5 @@ export function getOllamaConfig(): {
     autoDetect: getSetting("ollama-auto-detect") !== "false",
   };
 }
+
+

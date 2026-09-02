@@ -1,9 +1,9 @@
 # Codem 项目完整说明
 
 > **用途**：新对话快速理解项目全貌、架构、文件关联、当前状态。
-> 创建时间：2026-07-23 | 最后更新：2026-09-02 | 当前版本：v1.9.3（安全模式完全访问修复 + 工具调用配对修复 + 输入框历史 wrap 修复 + 引导栏 UI 对标 wecode + 思考过程紫色样式恢复）
+> 创建时间：2026-07-23 | 最后更新：2026-09-02 | 当前版本：v1.9.4（dsh-desktop 全面对标稳健性审计修复：崩溃检测与恢复 + 渲染崩溃兜底 + 运行时文件日志 + 持久化失败可见性 + 命令超时杀进程树 + 统一脱敏/超时）
 >
-> **版本历程概览**：v0.70 基础存储 → v0.80 轮次架构 → v0.87 Worktree/并行 → v0.88 桌面宠物 → v0.89 跨会话委派 → v0.90 P0-P4 全量功能 → v0.91 Coding 工作台 → v0.92 Codex 对标 → v0.93 Vision Proxy → v0.94 配置修复 → v0.95 CLI/API 视觉代理 → v0.96 UI 大改版 → v0.97 Agentic Loop 性能优化 → v0.98 多智能体协同 → v0.99 DSH 全量升级 → v1.0.0 插件系统架构 + UI/UX 标准化 → v1.1.0 DSH 对标整改 + 测试深化 → v1.1.1 UI 布局优化 + 插件条件渲染 + Bug 修复 → v1.2.0 Cordis 架构对齐 DSH + 安全加固 + 全量测试重构 → v1.3.0 Cordis 插件系统对标 DSH 全面整改 + Slot 消费闭环 + inject 依赖对齐 → v1.4.0 UI/UX 体验优化 11 项 Bug 修复 + 性能/CI-CD 面板切换化 + 梦幻皮肤一致性修复 → v1.4.1 插件管理初始化修复 + 技能市场性能优化 + 对话区域自适应 9 项 Bug 修复 → v1.4.2 10 项 Bug 修复 + Cordis 插件时序改进 + SlotBridge 降级机制增强 + 头像系统升级 → v1.5.0 Cordis "一切插件化" 工具发现机制 — ToolDef guidance + toolsProvider 自动注册 systemPrompt section + buildSystemPrompt 动态收集 + 31 个工具补充 guidance + skill-creator 技能安装增强 → v1.5.1 DSH 架构对标深度整改 + YAML 声明式插件加载 + LLM 回答重复根因修复 + llmEngine/mimoAuth 注册修复 + SlotBridge/SlotRenderer 对标 DSH 重写 → v1.5.2 大文件流式分页读取 + Agent Loop 无上限改造（对标 DSH） + 模型系统动态化 + Skills 市场增量搜索 → v1.5.3-v1.5.4 引导消息立即注入 + Markdown 文件路径超链接 + 任务完成标签稳定显示 + 技能市场优化（GitHub API 目录下载） → v1.5.5 Compaction 并发写入治根修复（对标 DSH compactSurfaceRegion） + Bash 缓存失效修复 → v1.6.0 SubagentRuntime 架构重构（对标 DSH） + 技能市场 Trees API 改造（移植 vercel-labs/skills 官方 CLI） + GitHub Token 链路修复 → v1.6.1 桌面宠物独立窗口改造（Cordis Provider 封装） + 文件输出标识增强（DSH 风格 FileMentions） + 设置版本号动态化 → v1.6.2 大富翁嵌入式游戏全量交付（Phase 1-10） + 三轮审计 Bug 修复 → v1.7.0 PPT 生成质量大大幅升 — oh-my-ppt 74 种风格 SKILL.md 集成 + Cordis SkillRegistry 渐进式加载 + 生成链路断点修复 → v1.8.0 知识图谱 React Flow 重构 + vision-proxy 统一 getConfiguredProvider + UI 字体变量批量规范化 → v1.9.0 上下文压缩过早触发治根修复（模型感知窗口 + 压力驱动 micro-compact）+ 通用协议 API 配置 + 工具执行正确性修复（read 去重范围键 / 审批内容修复） → v1.9.1 对话任务步数计算对标改造 + 文件树显示隐藏文件夹 + 输入框/安全按钮修复 + 数据库持久化加固 + PowerShell 命令修复 → v1.9.2 LLM 请求级超时加固 + 安全模式按钮颜色反馈 + 引导消息注入体验改造 + LLM 失败可见性（对标 DSH 结构化失败上报） → v1.9.3 安全模式完全访问修复（dbReady 时序 + 委派遵循用户模式 + write 拒绝误判）+ 工具调用配对修复（API 400）+ 输入框历史 wrap 折行修复 + 引导栏 UI 对标 wecode + 思考过程紫色样式恢复
+> **版本历程概览**：v0.70 基础存储 → v0.80 轮次架构 → v0.87 Worktree/并行 → v0.88 桌面宠物 → v0.89 跨会话委派 → v0.90 P0-P4 全量功能 → v0.91 Coding 工作台 → v0.92 Codex 对标 → v0.93 Vision Proxy → v0.94 配置修复 → v0.95 CLI/API 视觉代理 → v0.96 UI 大改版 → v0.97 Agentic Loop 性能优化 → v0.98 多智能体协同 → v0.99 DSH 全量升级 → v1.0.0 插件系统架构 + UI/UX 标准化 → v1.1.0 DSH 对标整改 + 测试深化 → v1.1.1 UI 布局优化 + 插件条件渲染 + Bug 修复 → v1.2.0 Cordis 架构对齐 DSH + 安全加固 + 全量测试重构 → v1.3.0 Cordis 插件系统对标 DSH 全面整改 + Slot 消费闭环 + inject 依赖对齐 → v1.4.0 UI/UX 体验优化 11 项 Bug 修复 + 性能/CI-CD 面板切换化 + 梦幻皮肤一致性修复 → v1.4.1 插件管理初始化修复 + 技能市场性能优化 + 对话区域自适应 9 项 Bug 修复 → v1.4.2 10 项 Bug 修复 + Cordis 插件时序改进 + SlotBridge 降级机制增强 + 头像系统升级 → v1.5.0 Cordis "一切插件化" 工具发现机制 — ToolDef guidance + toolsProvider 自动注册 systemPrompt section + buildSystemPrompt 动态收集 + 31 个工具补充 guidance + skill-creator 技能安装增强 → v1.5.1 DSH 架构对标深度整改 + YAML 声明式插件加载 + LLM 回答重复根因修复 + llmEngine/mimoAuth 注册修复 + SlotBridge/SlotRenderer 对标 DSH 重写 → v1.5.2 大文件流式分页读取 + Agent Loop 无上限改造（对标 DSH） + 模型系统动态化 + Skills 市场增量搜索 → v1.5.3-v1.5.4 引导消息立即注入 + Markdown 文件路径超链接 + 任务完成标签稳定显示 + 技能市场优化（GitHub API 目录下载） → v1.5.5 Compaction 并发写入治根修复（对标 DSH compactSurfaceRegion） + Bash 缓存失效修复 → v1.6.0 SubagentRuntime 架构重构（对标 DSH） + 技能市场 Trees API 改造（移植 vercel-labs/skills 官方 CLI） + GitHub Token 链路修复 → v1.6.1 桌面宠物独立窗口改造（Cordis Provider 封装） + 文件输出标识增强（DSH 风格 FileMentions） + 设置版本号动态化 → v1.6.2 大富翁嵌入式游戏全量交付（Phase 1-10） + 三轮审计 Bug 修复 → v1.7.0 PPT 生成质量大大幅升 — oh-my-ppt 74 种风格 SKILL.md 集成 + Cordis SkillRegistry 渐进式加载 + 生成链路断点修复 → v1.8.0 知识图谱 React Flow 重构 + vision-proxy 统一 getConfiguredProvider + UI 字体变量批量规范化 → v1.9.0 上下文压缩过早触发治根修复（模型感知窗口 + 压力驱动 micro-compact）+ 通用协议 API 配置 + 工具执行正确性修复（read 去重范围键 / 审批内容修复） → v1.9.1 对话任务步数计算对标改造 + 文件树显示隐藏文件夹 + 输入框/安全按钮修复 + 数据库持久化加固 + PowerShell 命令修复 → v1.9.2 LLM 请求级超时加固 + 安全模式按钮颜色反馈 + 引导消息注入体验改造 + LLM 失败可见性（对标 DSH 结构化失败上报） → v1.9.3 安全模式完全访问修复（dbReady 时序 + 委派遵循用户模式 + write 拒绝误判）+ 工具调用配对修复（API 400）+ 输入框历史 wrap 折行修复 + 引导栏 UI 对标 wecode + 思考过程紫色样式恢复 → v1.9.4 dsh-desktop 全面对标稳健性审计修复（15 轮：崩溃标记/渲染崩溃兜底/运行时文件日志/持久化失败可见性/命令超时杀树/PowerShell 转义/统一脱敏与超时）
 
 ---
 
@@ -15,7 +15,7 @@
 - **GitHub**：https://github.com/sdcxb/codem
 - **分发**：NSIS `.exe` + WiX `.msi`，一键安装无需依赖
 - **平台**：Windows 优先
-- **版本**：v1.9.3（安全模式完全访问修复 + 工具调用配对修复 + 输入框历史 wrap 修复 + 引导栏 UI 对标 wecode + 思考过程紫色样式恢复，2026-09-02）
+- **版本**：v1.9.4（dsh-desktop 全面对标稳健性审计修复：崩溃检测与恢复 + 渲染崩溃兜底 + 运行时文件日志 + 持久化失败可见性 + 命令超时杀进程树 + 统一脱敏/超时，2026-09-02）
 
 ---
 
@@ -1005,6 +1005,7 @@ Rust 后端 (lib.rs):
 | v1.9.0 | 2026-08-31 | **上下文压缩过早触发治根修复 + 通用协议 API 配置 + 工具执行正确性修复** — 三根因（estimateMessagesTokens 永不回落 / 动态 provider 窗口 128k / 工具定义双算）+ getAgenticLoop 构造时同步 contextWindow + 通用协议 API 配置（Base URL + API key → 拉模型列表 → 持久化）+ read 去重键含 offset/limit + DecisionTray 审批内容修复（req.args → req.input）。新增 context-window-regression（8 例）+ custom-provider-config 测试。全量 115 文件 / 3950 用例通过 |
 | v1.9.1 | 2026-09-01 | **对话任务步数计算对标改造 + 文件树显示隐藏文件夹 + 输入框/安全按钮修复** — 步数对标 codex 宏观计划步（总量固定、侦查类工具不推进、执行类首次出现才推进、标题中文语义化）+ 文件树显示隐藏文件夹（list_directory 加 show_hidden 参数 + FileExplorer 传 true）+ 输入框删除后高度不收缩修复 + 安全模式切换按钮 portal 误判修复。新增 step-progress-macro（6 例）+ file-tree-hidden（4 例）。全量 117 文件 / 3960 用例通过 |
 | v1.9.2 | 2026-09-01 | **LLM 请求级超时加固 + 安全模式按钮颜色反馈 + 引导消息注入体验改造 + LLM 失败可见性** — complete 120s / stream 连接 60s 超时预算（修复 fetch 无超时永久挂起）+ 安全模式按钮按 ask/auto/full 显示蓝/紫/绿 + removeGuidanceMessage 注入后状态栏自动消失（复用主输入框发送引导消息）+ 移除任务完整性猜测机制 + EMPTY_RESPONSE 空响应检测 + 失败必须对用户可见（text_delta / too_many_errors / 空 toolCall 上报）。新增 llm-timeout-hardening（200 行）+ GUIDE-061/062 + LOOP-051~053。全量 119 文件 / 3985 用例通过 |
+| v1.9.4 | 2026-09-02 | **dsh-desktop 全面对标稳健性审计修复（15 轮迭代，42+ 项）** — ①崩溃检测与恢复（active-run.json 崩溃标记 + panic 落盘 codem-crash.log + previous-run-unclean 界面提示）②渲染崩溃恢复边界 AppErrorBoundary（白屏→恢复卡片，REC-R1~R6）③运行时文件日志 runtime_log.rs（按日 + 段轮转 4MB + 目录上限 24MB + 保留 14 天 + 统一脱敏，13 个 Rust 单测）④DB 保存失败可见性（事件提示 + 限流 + 3s 自动重试 + 恢复复位，DBSAVE-F1~F4）⑤命令超时杀进程树 + PowerShell 安全转义（HEAD^{tree} 崩溃修复）⑥fetchWithTimeout 统一超时全覆盖 + API 错误统一脱敏 + WebSocket 定时器泄漏修复 ⑦前端稳健性（全局错误 alert→记录 / 6 处 JSX 优先级 / 终端 pty-exit / mermaid strict / useWindowState / telemetry flush 保护 / mkdir Rust 化）。新增 repro-ps-command/exec-timeout/bash-abort/jsx-classname/redact + app-error-boundary + db-save-failure-alert。全量 141 文件 / 4079 用例通过 + tsc 零错误 + cargo 零警告 + cargo test 13/13 |
 | v1.9.3 | 2026-09-02 | **安全模式完全访问修复 + 工具调用配对修复 + 输入框历史 wrap 修复 + 引导栏 UI 对标 wecode + 思考过程紫色样式恢复** — dbReady 时序修复（DB 就绪后重新同步 securityMode + 切项目重新解析）+ 委派/后台任务遵循用户安全模式（executor.ts 不再硬编码 auto）+ write 拒绝误判修复（限定 write 工具）+ 工具调用按 tool_call_id 精确配对（修复 API 400 insufficient tool messages）+ 输入框历史视觉行判断（wrap 折行不再误触发）+ 记忆检索正则元字符转义 + 引导栏卡片式三操作（立刻引导/编辑/取消）+ 思考过程紫色样式恢复。新增 10 个 repro 回归测试（34 用例） |
 | v1.5.2 | 2026-08-24 | **大文件性能修复 + Agent Loop 无上限改造 + 模型系统动态化 + Skills 增量搜索** — ①Rust 新增 `read_file_lines` 分页读取（对标 DSH TextRetainer，O(limit) 内存）②Agent Loop 移除 `maxIterations` 硬上限，改为 `while(true)` + 三重安全阀（无进展检测 10 次 + Token 上限 2M + 子智能体有限迭代）③修复 `spawnForked` 深拷贝丢失 `tool_calls`/`toolCallId` 导致 API 400 ④模型选择器动态化（`codem-dynamic-models` 存储）⑤Skills 市场增量搜索（本地缓存 TTL 30min + 自动联网搜索）⑥终端切换崩溃修复⑦权限弹窗 fixed 定位⑧技能市场 tags 防御。11 文件修改（+558/-90 行），113 套件 3947 测试通过 |
 
@@ -1376,6 +1377,26 @@ npm run tauri build        # 构建 NSIS exe + MSI
 ---
 
 ## 八、版本历史
+
+### v1.9.4（2026-09-02）— dsh-desktop 全面对标稳健性审计修复（15 轮迭代）
+
+> 对标 dsh-desktop（crash-evidence / renderer-health / log-files / shutdown 等机制）审计共有功能的稳健性，逐项修复 + 回归 + 重打包验证，bug 级清零收敛。崩溃检测与恢复：Rust 启动写 active-run.json（pid + 启动时间），quit_app / 托盘退出 / ExitRequested 三重清理，上次异常终止下次启动 emit previous-run-unclean → 界面提示；panic hook 追加 codem-crash.log（打包版 stderr 不可见时信息落盘）。
+>
+> 渲染崩溃恢复边界：新增 AppErrorBoundary 顶层错误边界（main.tsx 包裹），React 渲染崩溃不再白屏——恢复卡片提供重试渲染 / 重新加载应用 / 重置界面设置并重新加载（仅清 codem-* 本地键，不动 SQLite 会话数据），崩溃证据（脱敏）写 localStorage 下次启动提示。测试 REC-R1~R6。
+>
+> 运行时文件日志（对标 dsh log-files.ts）：新增 src-tauri/src/runtime_log.rs —— codem-runtime-YYYY-MM-DD.log 按日文件 + 段轮转（单文件 4MB × 3 段）+ 目录上限 24MB + 启动清理超 14 天 + 单行截断 8KB + 统一脱敏 mask_secrets（sk-/pk- 需 token≥10 防误伤，ghp_/AKIA/Bearer/Authorization/password= 贪婪型，重叠区间合并）。启动/崩溃/命令执行/超时杀树/PTY/退出/托盘全部落盘，best-effort。13 个 Rust 单测。
+>
+> 持久化失败可见性：saveDatabase 写盘失败（磁盘满/占用）不再静默——首次失败 dispatch codem:db-save-failed → guidance 提示，连续失败限流，3s 自动重试一次，成功复位并 dispatch 恢复事件。测试 DBSAVE-F1~F4。
+>
+> 命令执行与 PowerShell：execute_command 超时杀进程树（默认 600s，clamp 1s~1h；taskkill /T /F），修复 cmd.output() 同步阻塞 + Promise.race 超时后僵尸进程堆积；ps-command.ts 安全转义修复 git HEAD^{tree} 等含 {} 命令的 ScriptBlock 崩溃。
+>
+> 网络与 API：fetchWithTimeout（默认 20s）覆盖 github/figma/run-code/web-search/job-manager/workflow-engine/pipeline/sync-engine/skill-market；redact.ts 统一错误体脱敏；WebSocket onopen/onerror clearTimeout 泄漏修复。
+>
+> 前端稳健性：全局 error/unhandledrejection alert→记录；6 处 JSX 运算符优先级修复；TerminalPanel className 括号 + closeSession 函数式更新 + pty-exit 监听（僵尸会话回收）；mermaid securityLevel strict；useWindowState 窗口状态持久化（防抖 500ms，宽 ≥400/高 ≥300 校验）；telemetry flush isCompactionInProgress 保护 + 失败保留重试；配置文件 mkdir Rust 化。
+>
+> 会话/数据：messagesToLLMMessages 保留 reasoning + provider 双分支输出 reasoning_content；buildMessages 按 toolCallId 精确配对；bash 工具外部取消（ctx.abort）。
+>
+> 测试：新增 repro-ps-command / repro-exec-timeout / repro-bash-abort / repro-jsx-classname / repro-redact / app-error-boundary（REC-R1~R6）/ db-save-failure-alert（DBSAVE-F1~F4）+ KM-074 动态导入 flaky 30s 超时修复。全量 141 文件 / 4079 用例通过 + tsc 零错误 + cargo check 零警告 + cargo test 13/13。
 
 ### v1.9.3（2026-09-02）— 安全模式完全访问修复 + 工具调用配对修复 + 输入框历史 wrap 修复 + 引导栏 UI 对标 wecode + 思考过程紫色样式恢复
 

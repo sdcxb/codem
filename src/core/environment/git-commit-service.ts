@@ -9,7 +9,7 @@
  *   5. emit("auto_committed") → GitInfoPanel refreshes
  */
 
-import { executeCommand } from "../file-api";
+import { buildGitCommand } from "../utils/ps-command";
 
 export interface AutoCommitResult {
   success: boolean;
@@ -52,9 +52,14 @@ export function isAutoCommitEnabled(): boolean {
 
 async function runGit(cwd: string, args: string[]): Promise<{ stdout: string; stderr: string; exitCode: number }> {
   const { invoke } = (window as any).__TAURI__.core;
+  // FIX: build a PowerShell-safe command (args like commit messages may contain
+  // single quotes / `$` / backticks / `;` — previously spliced raw into a
+  // double-quoted string, causing PowerShell interpretation / injection).
+  // 30s 有界超时；Rust 侧超时会杀进程树。
   const result = await invoke("execute_command", {
-    command: `git -C "${cwd}" ${args.join(" ")}`,
+    command: buildGitCommand(cwd, args),
     cwd,
+    timeout_ms: 30_000,
   });
   return {
     stdout: result.stdout || "",

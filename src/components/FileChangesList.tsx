@@ -90,7 +90,7 @@ export function FileChangesList({ sessionId, workspace }: FileChangesListProps) 
         const isReverted = record.status === "reverted";
 
         return (
-          <div key={record.id} className={"turn-change-group " + isReverted ? "reverted" : ""}>
+          <div key={record.id} className={"turn-change-group" + (isReverted ? " reverted" : "")}>
             <div
               className="turn-change-header"
               onClick={() => setExpandedTurn(isExpanded ? null : record.id)}
@@ -113,7 +113,14 @@ export function FileChangesList({ sessionId, workspace }: FileChangesListProps) 
                     <span className="change-file-path" title={file.path}>
                       {file.path.split(/[/\\]/).pop()}
                     </span>
-                    <span className={"change-file-status git-status-" + file.status.toLowerCase() === "m" ? "modified" : file.status.toLowerCase() === "a" ? "added" : file.status.toLowerCase() === "d" ? "deleted" : "untracked"}>
+                    <span
+                      className={"change-file-status git-status-" + (
+                        file.status.toLowerCase() === "m" ? "modified"
+                        : file.status.toLowerCase() === "a" ? "added"
+                        : file.status.toLowerCase() === "d" ? "deleted"
+                        : "untracked"
+                      )}
+                    >
                       {file.status}
                     </span>
                   </div>

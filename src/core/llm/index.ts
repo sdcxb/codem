@@ -33,6 +33,8 @@ import * as MessageStorage from "../storage/message";
 import { ToolRenderRegistry, getToolRenderRegistry } from "./tool-renderer";
 import { SettingsManager, getSettingsManager, type SettingsSource, type PermissionRule } from "../settings/settings";
 import { getModelProfileManager, type TaskSlot, type ModelSlotConfig } from "./model-profile";
+// F2.1: 统一脱敏工具 — 文件内使用需直接 import（re-export 不使文件内可见）
+import { redactSecrets } from "../utils/redact";
 
 // ========== Re-exports ==========
 export type { LLMProvider, LLMRequest, LLMResponse, StreamEvent, TokenUsage, ToolDefinition } from "./types";
@@ -92,36 +94,9 @@ export { shouldRunLayer, shouldUpdateSnapshots, isE2EMode, getSnapshotManager, c
 export type { TestLayer, SnapshotEntry, TestLayerResult } from "./test-layers";
 
 // ========== F2.1: Memory Desensitization ==========
-
-/** Patterns for sensitive data that should be redacted from memories */
-const SECRET_REDACT_PATTERNS: Array<{ pattern: RegExp; replacement: string }> = [
-  // API keys: sk-..., pk-..., key-...
-  { pattern: /(?:sk|pk|key|api[_-]?key)[-_]?[a-zA-Z0-9]{20,}/gi, replacement: "[REDACTED_API_KEY]" },
-  // Bearer tokens
-  { pattern: /Bearer\s+[a-zA-Z0-9._\-]{20,}/gi, replacement: "[REDACTED_TOKEN]" },
-  // Password assignments: password=xxx, password: xxx
-  { pattern: /(?:password|passwd|pwd)\s*[:=]\s*\S+/gi, replacement: "[REDACTED_PASSWORD]" },
-  // Secret/token assignments
-  { pattern: /(?:secret|token|access[_-]?key)\s*[:=]\s*\S+/gi, replacement: "[REDACTED_SECRET]" },
-  // Private keys
-  { pattern: /-----BEGIN\s+(?:RSA\s+)?PRIVATE\s+KEY-----[\s\S]*?-----END\s+(?:RSA\s+)?PRIVATE\s+KEY-----/gi, replacement: "[REDACTED_PRIVATE_KEY]" },
-  // AWS-style keys (AKIA...)
-  { pattern: /AKIA[0-9A-Z]{16}/g, replacement: "[REDACTED_AWS_KEY]" },
-  // GitHub tokens (ghp_..., gho_..., ghs_...)
-  { pattern: /gh[opusr]_[A-Za-z0-9]{36,}/g, replacement: "[REDACTED_GITHUB_TOKEN]" },
-];
-
-/**
- * F2.1: Redact sensitive data from text before saving to memory.
- * Replaces API keys, passwords, tokens, and private keys with placeholders.
- */
-function redactSecrets(text: string): string {
-  let result = text;
-  for (const { pattern, replacement } of SECRET_REDACT_PATTERNS) {
-    result = result.replace(pattern, replacement);
-  }
-  return result;
-}
+// 统一脱敏工具（对标 dsh mask-secrets）— 由 shared utils 提供，供 memory /
+// recovery / postmortem / 日志共用，避免各调用点各自实现导致漏掩。
+export { redactSecrets, redactSecretsDeep } from "../utils/redact";
 
 // ========== LLM Engine Config ==========
 import { loadAppIdentity, loadUserConfig } from "../config/loader";

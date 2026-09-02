@@ -14,8 +14,8 @@
  *   - Independent from v2_sessions.messages JSON — not affected by compaction
  */
 
-import { executeCommand } from "../file-api";
 import { FileChangeStorage, type ChangedFile } from "../storage/file-change-storage";
+import { buildGitCommand, psQuote } from "../utils/ps-command";
 
 const MAX_PATCH_BYTES = 500_000;
 const MAX_FILES_LIST_BYTES = 2_000_000;
@@ -65,8 +65,10 @@ async function runGit(cwd: string, args: string[]): Promise<string> {
   try {
     const { invoke } = (window as any).__TAURI__.core;
     const result = await invoke("execute_command", {
-      command: `git -C "${cwd}" ${args.join(" ")}`,
+      command: buildGitCommand(cwd, args),
       cwd,
+      // git 命令有界超时；Rust 侧超时会杀进程树（对标 dsh）
+      timeout_ms: GIT_TIMEOUT_MS,
     });
     // execute_command returns { stdout, stderr, exitCode }
     const stdout = result.stdout || "";
@@ -290,14 +292,14 @@ export class FileChangeTracker {
       await invoke("write_file", { path: tempPath, content: record.patch });
 
       const result = await invoke("execute_command", {
-        command: `git -C "${workspace}" apply --reverse "${tempPath}"`,
+        command: `git -C ${psQuote(workspace)} apply --reverse ${psQuote(tempPath)}`,
         cwd: workspace,
       });
 
       // Cleanup temp file
       try {
         await invoke("execute_command", {
-          command: `del "${tempPath}" 2>nul || rm -f "${tempPath}"`,
+          command: `powershell -Command "Remove-Item -LiteralPath ${psQuote(tempPath)} -Force -ErrorAction SilentlyContinue"`,
           cwd: workspace,
         });
       } catch {}

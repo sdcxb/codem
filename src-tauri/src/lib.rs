@@ -9,6 +9,11 @@ use tauri::menu::{ContextMenu, MenuBuilder, MenuItemBuilder, PredefinedMenuItem,
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::sync::{oneshot, Mutex as TokioMutex};
 
+// ========== Runtime Log ==========
+// 运行时事件文件日志（对标 dsh log-files.ts）：按日 + 轮转 + 上限 + 脱敏。
+// 打包版无控制台，常规事件落盘供用户/开发者诊断。
+mod runtime_log;
+
 // ========== PTY Manager ==========
 // Interactive terminal support using portable-pty.
 // Manages multiple PTY sessions with real-time I/O streaming via Tauri events.
@@ -82,9 +87,9 @@ fn spawn_pty(cwd: String, app: AppHandle, state: State<'_, PtyMap>) -> Result<St
     thread::spawn(move || {
         let mut buf = [0u8; 4096];
         let mut reader = reader;
-        loop {
+        let exit_reason = loop {
             match reader.read(&mut buf) {
-                Ok(0) => break,
+                Ok(0) => break "EOF",
                 Ok(n) => {
                     let data = String::from_utf8_lossy(&buf[..n]).to_string();
                     let _ = event_app.emit(
@@ -95,9 +100,19 @@ fn spawn_pty(cwd: String, app: AppHandle, state: State<'_, PtyMap>) -> Result<St
                         },
                     );
                 }
-                Err(_) => break,
+                Err(_) => break "read-error",
             }
-        }
+        };
+        // 会话结束（shell exit / 管道关闭 / 读错误）— 通知前端清理。
+        // FIX: 之前线程静默退出，前端不知会话已结束，僵尸会话挂到 TTL 才回收，
+        // 用户也看不到"进程已退出"。
+        let _ = event_app.emit(
+            "pty-exit",
+            PtyOutputEvent {
+                id: event_id.clone(),
+                data: exit_reason.to_string(),
+            },
+        );
     });
 
     let session = PtySession {
@@ -111,6 +126,7 @@ fn spawn_pty(cwd: String, app: AppHandle, state: State<'_, PtyMap>) -> Result<St
         .map_err(|e| format!("Lock error: {}", e))?
         .insert(id.clone(), session);
 
+    runtime_log::append_line("INFO", &format!("pty spawned id={} cwd={:?}", id, cwd));
     Ok(id)
 }
 
@@ -881,11 +897,53 @@ fn glob_match(pattern: &str, name: &str) -> bool {
     dp[pat_len][name_len]
 }
 
+/// Kill a process tree by pid.
+/// Windows: `taskkill /PID <pid> /T /F` (tree + force).
+/// Unix: kill the negative PGID (process group) — children spawned by the
+/// shell inherit the group; SIGKILL ensures descendants die even if they
+/// ignore SIGTERM. Mirrors dsh subprocess-local tree-level kill semantics.
+fn kill_process_tree(pid: Option<u32>) -> Result<(), String> {
+    let Some(pid) = pid else {
+        return Ok(());
+    };
+    #[cfg(target_os = "windows")]
+    {
+        let status = std::process::Command::new("taskkill")
+            .args(["/PID", &pid.to_string(), "/T", "/F"])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map_err(|e| format!("taskkill failed: {}", e))?;
+        // Exit code 128 = process not found (already dead) — treat as success.
+        if !status.success() && status.code() != Some(128) {
+            return Err(format!("taskkill exit code {:?}", status.code()));
+        }
+        Ok(())
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        // Negative pid = whole process group (children inherit the shell's group).
+        // Use the `kill` binary — no extra crate dependency.
+        let _ = std::process::Command::new("kill")
+            .args(["-KILL", &format!("-{}", pid)])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status();
+        Ok(())
+    }
+}
+
 #[tauri::command]
-async fn execute_command(command: String, cwd: Option<String>) -> Result<serde_json::Value, String> {
+async fn execute_command(command: String, cwd: Option<String>, timeout_ms: Option<u64>) -> Result<serde_json::Value, String> {
     let work_dir = cwd.unwrap_or_else(|| std::env::current_dir()
         .map(|p| p.to_string_lossy().to_string())
         .unwrap_or_default());
+
+    // 运行时日志：记录命令执行（脱敏 + 截断，对标 dsh log-files 的掩码落盘）。
+    let log_cmd = runtime_log::mask_secrets(&command);
+    let log_cmd = runtime_log::truncate_utf8(&log_cmd, 400);
+    runtime_log::append_line("INFO", &format!("exec start cwd={:?} cmd={}", work_dir, log_cmd));
+    let exec_started = std::time::Instant::now();
 
     // Always use PowerShell for consistent UTF-8 handling
     let mut cmd = std::process::Command::new("powershell");
@@ -929,10 +987,75 @@ async fn execute_command(command: String, cwd: Option<String>) -> Result<serde_j
         cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
     }
 
-    let output = cmd.output().map_err(|e| e.to_string())?;
+    // ===== 超时 + 进程树清理（对标 dsh subprocess-local 树级 kill）=====
+    // 之前用 cmd.output() 同步阻塞：前端 Promise.race 超时只是丢弃 Promise，
+    // 底层 PowerShell / 子进程仍在后台运行 —— 长时间命令反复超时堆积僵尸进程。
+    // 现在 spawn 后按 timeout_ms 等待；超时则杀掉整个进程树
+    // （Windows taskkill /T /F；Unix 杀负 PGID 进程组），再返回超时错误。
+    // 默认 600s（与前端 bash 工具上限一致）；显式传参时按调用方要求。
+    let effective_timeout = timeout_ms.unwrap_or(600_000).clamp(1_000, 3_600_000); // 1s ~ 1h
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
+    let mut child = cmd
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("Failed to spawn command: {}", e))?;
+
+    // Take child pid before moving child into a thread
+    let child_pid = child.id();
+
+    let (stdout, stderr, status) = {
+        let child = &mut child;
+        let stdout = child.stdout.take();
+        let stderr = child.stderr.take();
+
+        // Read output on a worker thread so we can race against the timeout.
+        let reader = std::thread::spawn(move || -> (Vec<u8>, Vec<u8>) {
+            let mut out: Vec<u8> = Vec::new();
+            let mut err: Vec<u8> = Vec::new();
+            if let Some(mut so) = stdout {
+                let _ = std::io::Read::read_to_end(&mut so, &mut out);
+            }
+            if let Some(mut se) = stderr {
+                let _ = std::io::Read::read_to_end(&mut se, &mut err);
+            }
+            (out, err)
+        });
+
+        // Wait with timeout
+        let start = std::time::Instant::now();
+        let status = loop {
+            if let Some(status) = child.try_wait().map_err(|e| e.to_string())? {
+                break status;
+            }
+            if start.elapsed().as_millis() >= effective_timeout as u128 {
+                // Timeout — kill the process tree
+                let _ = kill_process_tree(Some(child_pid));
+                // Give it a moment to die, then reap
+                let _ = child.wait();
+                runtime_log::append_line(
+                    "WARN",
+                    &format!(
+                        "exec timeout pid={} after {}ms cmd={}",
+                        child_pid,
+                        effective_timeout,
+                        runtime_log::truncate_utf8(&runtime_log::mask_secrets(&command), 200)
+                    ),
+                );
+                return Err(format!(
+                    "Command timed out after {}ms. If this is a long-running command (build, test, install), try again with a higher timeout_ms value.",
+                    effective_timeout
+                ));
+            }
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        };
+
+        let (out, err) = reader.join().unwrap_or((Vec::new(), Vec::new()));
+        (out, err, status)
+    };
+
+    let stdout = String::from_utf8_lossy(&stdout);
+    let stderr = String::from_utf8_lossy(&stderr);
 
     // Truncate very long output to prevent context overflow
     let stdout = if stdout.len() > 50000 {
@@ -956,10 +1079,20 @@ async fn execute_command(command: String, cwd: Option<String>) -> Result<serde_j
         stderr.to_string()
     };
 
+    runtime_log::append_line(
+        "INFO",
+        &format!(
+            "exec end exit={:?} elapsed_ms={} cmd={}",
+            status.code(),
+            exec_started.elapsed().as_millis(),
+            runtime_log::truncate_utf8(&runtime_log::mask_secrets(&command), 200)
+        ),
+    );
+
     Ok(serde_json::json!({
         "stdout": stdout,
         "stderr": stderr,
-        "exitCode": output.status.code(),
+        "exitCode": status.code(),
     }))
 }
 
@@ -1725,9 +1858,79 @@ async fn show_from_tray(app: AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
-async fn quit_app(app: AppHandle) -> Result<(), String> {
+async fn quit_app(app: AppHandle, pty_map: State<'_, PtyMap>) -> Result<(), String> {
+    runtime_log::append_line("INFO", "quit_app invoked — cleaning up");
+    // 清理所有 PTY 会话：kill 子进程，避免退出后 cmd.exe 等残留（对标 dsh
+    // 进程树纪律 — Windows 上进程退出不会自动杀孙进程）。
+    if let Ok(mut map) = pty_map.lock() {
+        for (id, mut session) in map.drain() {
+            runtime_log::append_line("INFO", &format!("pty cleanup killing id={}", id));
+            let _ = session._child.kill();
+            drop(session);
+        }
+    }
+    // 正常退出：先清崩溃标记（避免下次启动误报崩溃）。app.exit 可能不经过
+    // RunEvent::ExitRequested（Tauri v2 直接退出），所以在这里显式清理。
+    clear_active_run_marker(&app);
     app.exit(0);
     Ok(())
+}
+
+// ========== 崩溃检测标记（对标 dsh crash-evidence active-run.json）==========
+// 启动时写 active-run.json；正常退出（RunEvent::ExitRequested）时删除。
+// 若下次启动发现标记仍存在 → 上次进程异常退出（崩溃/强杀/断电），
+// 前端可据此提示用户（例如会话可能未保存，检查恢复）。
+// 仅用于诊断提示；标记写入/删除失败都不影响启动（降级为日志）。
+
+const ACTIVE_RUN_MARKER: &str = "active-run.json";
+
+fn crash_marker_path(app: &AppHandle) -> Result<std::path::PathBuf, String> {
+    let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    Ok(dir.join(ACTIVE_RUN_MARKER))
+}
+
+/// 检测上次是否异常退出（marker 存在）。
+/// 返回 true = 上次未干净退出。正常退出路径（RunEvent::ExitRequested）
+/// 会删除 marker；因此启动瞬间 marker 仍存在即说明上次进程异常终止
+/// （崩溃/强杀/断电）—— 会话可能未完整保存，前端可提示检查恢复。
+fn detect_unclean_exit(app: &AppHandle) -> bool {
+    let path = match crash_marker_path(app) {
+        Ok(p) => p,
+        Err(_) => return false,
+    };
+    std::fs::metadata(&path).is_ok()
+}
+
+/// 写入当前运行标记（含 pid + 启动时间）。
+fn write_active_run_marker(app: &AppHandle) {
+    let path = match crash_marker_path(app) {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("[crash-marker] cannot resolve path: {}", e);
+            return;
+        }
+    };
+    let marker = serde_json::json!({
+        "pid": std::process::id(),
+        "startedAt": std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64) // u128 → u64（serde_json 数值支持 u64）
+            .unwrap_or(0),
+    });
+    if let Some(dir) = path.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    match std::fs::write(&path, serde_json::to_string_pretty(&marker).unwrap_or_default()) {
+        Ok(_) => {}
+        Err(e) => eprintln!("[crash-marker] write failed: {}", e),
+    }
+}
+
+/// 正常退出时清理标记。
+fn clear_active_run_marker(app: &AppHandle) {
+    if let Ok(path) = crash_marker_path(app) {
+        let _ = std::fs::remove_file(&path);
+    }
 }
 
 fn build_tray_menu(app: &AppHandle, lang: &str) -> tauri::Result<tauri::menu::Menu<tauri::Wry>> {
@@ -1881,7 +2084,39 @@ async fn http_download(
 // ========== Main Entry ==========
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
+/// 崩溃原因落盘（对标 dsh crash-evidence）：panic 时写入 crash log，
+/// 供用户/开发者诊断。打包版 stderr 不可见，panic 信息否则完全丢失。
+fn install_panic_hook() {
+    std::panic::set_hook(Box::new(|info| {
+        let msg = format!(
+            "Codem crash at {}\n{}\n",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_millis())
+                .unwrap_or(0),
+            info
+        );
+        eprintln!("[panic] {}", msg.trim());
+        // 写日志到用户目录（app_data_dir 在 hook 阶段不可用，用 APPDATA/HOME）
+        #[cfg(target_os = "windows")]
+        let base = std::env::var("APPDATA").unwrap_or_else(|_| ".".to_string());
+        #[cfg(not(target_os = "windows"))]
+        let base = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+        let dir = std::path::Path::new(&base).join("com.codem.app");
+        let _ = std::fs::create_dir_all(&dir);
+        // 同时写入运行时日志（同目录，按日轮转 + 脱敏）。
+        runtime_log::append_line_to(&dir, "FATAL", &runtime_log::mask_secrets(msg.trim()));
+        let path = dir.join("codem-crash.log");
+        // 追加写入（用 OpenOptions append）
+        use std::io::Write;
+        if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&path) {
+            let _ = f.write_all(msg.as_bytes());
+        }
+    }));
+}
+
 pub fn run() {
+install_panic_hook();
 let app = tauri::Builder::default()
 .plugin(tauri_plugin_shell::init())
 .plugin(tauri_plugin_fs::init())
@@ -1968,6 +2203,26 @@ path_exists,
             list_directory_sandboxed,
         ])
         .setup(|app| {
+            // ===== 运行时日志：清理过期文件 + 启动记录（对标 dsh log-files）=====
+            runtime_log::purge_old_logs();
+            // ===== 崩溃检测标记（对标 dsh crash-evidence）=====
+            // 先检测上次是否异常退出，再写本次运行标记。
+            let unclean = detect_unclean_exit(app.handle());
+            runtime_log::append_line(
+                "INFO",
+                &format!(
+                    "app started pid={} unclean_exit={}",
+                    std::process::id(),
+                    unclean
+                ),
+            );
+            if unclean {
+                eprintln!("[crash-marker] previous run did not exit cleanly — session may not be saved");
+                runtime_log::append_line("WARN", "previous run did not exit cleanly — session may not be saved");
+                let _ = app.emit("previous-run-unclean", ());
+            }
+            write_active_run_marker(app.handle());
+
             // Apply window vibrancy (frosted glass effect)
             #[cfg(target_os = "windows")]
             {
@@ -1989,11 +2244,21 @@ path_exists,
                 }
             }
 
-            // Build system tray
+            // Build system tray — FIX: 失败降级而非 panic。
+            // 之前 .expect() 在托盘/图标初始化失败时直接崩溃整个应用
+            // （对标 dsh：启动资源失败应降级继续，不阻塞主流程）。
             let app_handle = app.handle().clone();
-            let menu = build_tray_menu(&app_handle, "zh").expect("Failed to build tray menu");
-            let _tray = TrayIconBuilder::with_id("main-tray")
-                .icon(app.default_window_icon().expect("no default window icon").clone())
+            let tray_result = (|| -> tauri::Result<()> {
+                let menu = build_tray_menu(&app_handle, "zh")?;
+                let icon = match app.default_window_icon() {
+                    Some(i) => i.clone(),
+                    None => {
+                        eprintln!("[tray] no default window icon — skipping system tray");
+                        return Ok(());
+                    }
+                };
+                let _tray = TrayIconBuilder::with_id("main-tray")
+                .icon(icon)
                 .tooltip("Codem")
                 .menu(&menu)
                 .on_menu_event(move |app, event| {
@@ -2005,6 +2270,9 @@ path_exists,
                         }
                         }
                         "quit" => {
+                            // 正常退出：清崩溃标记，避免下次启动误报
+                            runtime_log::append_line("INFO", "tray quit menu — exiting");
+                            clear_active_run_marker(app);
                             app.exit(0);
                         }
                         "close-pet" => {
@@ -2060,6 +2328,13 @@ path_exists,
                     }
                 })
                 .build(app)?;
+                Ok(())
+            })();
+            if let Err(e) = tray_result {
+                // 降级：托盘失败不阻塞启动（窗口/主流程照常），仅记录日志。
+                eprintln!("[tray] failed to build system tray (non-fatal): {}", e);
+                runtime_log::append_line("WARN", &format!("system tray build failed (non-fatal): {}", e));
+            }
 
             Ok(())
         })
@@ -2084,6 +2359,12 @@ path_exists,
                 if let Some(window) = app_handle.get_webview_window(&label) {
                     let _ = window.emit("close-requested", ());
                 }
+            }
+            tauri::RunEvent::ExitRequested { .. } => {
+                // 真正退出（用户 quit / tray quit / quit_app）—— 清理崩溃标记，
+                // 使下次启动能区分"干净退出"与"崩溃"。
+                runtime_log::append_line("INFO", "process exiting (ExitRequested)");
+                clear_active_run_marker(app_handle);
             }
             _ => {}
         }

@@ -418,6 +418,7 @@ export class SyncEngine {
       method: "POST",
       headers,
       body: JSON.stringify(events),
+      signal: AbortSignal.timeout(20_000), // FIX: 同步请求有界超时
     });
 
     if (!response.ok) {
@@ -434,7 +435,10 @@ export class SyncEngine {
       "Authorization": `Bearer ${config.supabaseKey || ""}`,
     };
 
-    const response = await fetch(url, { headers });
+    const response = await fetch(url, {
+      headers,
+      signal: AbortSignal.timeout(20_000), // FIX: 同步请求有界超时
+    });
     if (!response.ok) {
       throw new Error(`Supabase pull failed: ${response.status} ${response.statusText}`);
     }
@@ -461,6 +465,7 @@ export class SyncEngine {
       method: "POST",
       headers,
       body: JSON.stringify({ events }),
+      signal: AbortSignal.timeout(20_000), // FIX: 同步请求有界超时
     });
 
     if (!response.ok) {
@@ -478,7 +483,7 @@ export class SyncEngine {
       headers["Authorization"] = `Bearer ${config.apiToken}`;
     }
 
-    const response = await fetch(url, { headers });
+    const response = await fetch(url, { headers, signal: AbortSignal.timeout(20_000) }); // FIX 超时
     if (!response.ok) {
       throw new Error(`REST API pull failed: ${response.status} ${response.statusText}`);
     }
@@ -517,3 +522,4 @@ export function isSyncReady(): boolean {
   if (config.backend === "rest-api" && !config.apiUrl) return false;
   return true;
 }
+

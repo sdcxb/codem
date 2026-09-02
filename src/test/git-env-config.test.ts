@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 测试：Git 配置 + 环境脚本 功能枚举测试
  *
  * 验证引入 GitConfig（G series）和 EnvironmentConfig（ENV series）后：
@@ -475,7 +475,7 @@ describe("Git 配置 + 环境脚本 — 枚举测试", () => {
       expect(result).not.toBeNull();
       expect(result!.success).toBe(true);
       expect(result!.stdout).toBe("added 100 packages");
-      expect(executeCommand).toHaveBeenCalledWith("npm install", "/project");
+      expect(executeCommand).toHaveBeenCalledWith("npm install", "/project", 60000);
     });
 
     it("D4: setupScript 执行失败 — 返回 success=false", async () => {
@@ -518,8 +518,8 @@ describe("Git 配置 + 环境脚本 — 枚举测试", () => {
       const result = await runner.runCleanupScript("/project");
       expect(result).not.toBeNull();
       expect(result!.success).toBe(true);
-      // timeoutMs (30000) is handled by Promise.race in runScript, not passed to executeCommand
-      expect(executeCommand).toHaveBeenCalledWith("docker compose down", "/project");
+      // FIX: executeCommand 现在接收 timeoutMs（Rust 超时杀进程树）
+      expect(executeCommand).toHaveBeenCalledWith("docker compose down", "/project", 30000);
     });
 
     it("D7: customOperation 存在 — 按 ID 找到并执行", async () => {
@@ -540,7 +540,7 @@ describe("Git 配置 + 环境脚本 — 枚举测试", () => {
       expect(result).not.toBeNull();
       expect(result!.success).toBe(true);
       expect(result!.stdout).toBe("build success");
-      expect(executeCommand).toHaveBeenCalledWith("npm run build", "/project");
+      expect(executeCommand).toHaveBeenCalledWith("npm run build", "/project", 300000);
     });
 
     it("D8: customOperation 不存在 — 返回 null", async () => {
@@ -921,7 +921,7 @@ describe("Git 配置 + 环境脚本 — 枚举测试", () => {
       });
 
       await runSetupScript("C:\\My Project\\test dir");
-      expect(executeCommand).toHaveBeenCalledWith("echo hi", "C:\\My Project\\test dir");
+      expect(executeCommand).toHaveBeenCalledWith("echo hi", "C:\\My Project\\test dir", 60000);
     });
 
     it("F10: 路径中含中文 — 环境脚本 cwd 正确传递", async () => {
@@ -935,7 +935,7 @@ describe("Git 配置 + 环境脚本 — 枚举测试", () => {
       });
 
       await runSetupScript("/项目/测试目录");
-      expect(executeCommand).toHaveBeenCalledWith("echo 你好", "/项目/测试目录");
+      expect(executeCommand).toHaveBeenCalledWith("echo 你好", "/项目/测试目录", 60000);
     });
 
     it("F11: ProjectSettings 中 git 和 environment 字段共存 — 类型兼容", () => {
@@ -1005,9 +1005,9 @@ describe("Git 配置 + 环境脚本 — 枚举测试", () => {
       }
 
       // 验证调用顺序：setup(A) → cleanup(A) → setup(B)
-      expect(executeCommand).toHaveBeenNthCalledWith(1, "echo SETUP", "/project-a");
-      expect(executeCommand).toHaveBeenNthCalledWith(2, "echo CLEANUP", "/project-a");
-      expect(executeCommand).toHaveBeenNthCalledWith(3, "echo SETUP", "/project-b");
+      expect(executeCommand).toHaveBeenNthCalledWith(1, "echo SETUP", "/project-a", 60000);
+      expect(executeCommand).toHaveBeenNthCalledWith(2, "echo CLEANUP", "/project-a", 30000);
+      expect(executeCommand).toHaveBeenNthCalledWith(3, "echo SETUP", "/project-b", 60000);
     });
 
     it("G2: 首次打开项目 — 只执行 setup，不执行 cleanup", async () => {
@@ -1036,7 +1036,7 @@ describe("Git 配置 + 环境脚本 — 枚举测试", () => {
 
       // 只应该有 1 次调用（setup），cleanup 不应被调用
       expect(executeCommand).toHaveBeenCalledTimes(1);
-      expect(executeCommand).toHaveBeenCalledWith("echo SETUP", "/first-project");
+      expect(executeCommand).toHaveBeenCalledWith("echo SETUP", "/first-project", 60000);
     });
 
     it("G3: 切换到 null 项目（关闭项目）— 只执行 cleanup", async () => {
@@ -1066,7 +1066,7 @@ describe("Git 配置 + 环境脚本 — 枚举测试", () => {
       // 只应该有 1 次调用（cleanup），setup 不应被调用
       expect(executeCommand).toHaveBeenCalledTimes(1);
       // timeoutMs is handled internally by Promise.race, not passed to executeCommand
-      expect(executeCommand).toHaveBeenCalledWith("echo CLEANUP", "/current-project");
+      expect(executeCommand).toHaveBeenCalledWith("echo CLEANUP", "/current-project", 30000);
     });
 
     it("G4: 相同路径不触发脚本 — prevPath === newPath", async () => {
@@ -1145,3 +1145,6 @@ describe("Git 配置 + 环境脚本 — 枚举测试", () => {
     });
   });
 });
+
+
+
