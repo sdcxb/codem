@@ -400,6 +400,58 @@ overflow: hidden;
   background: var(--bg-primary);
 }
 
+/* 终端抽屉：顶部状态栏按钮触发，出现在主对话区域下方（对标 dsh-desktop） */
+.terminal-drawer {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  height: 38%;
+  min-height: 160px;
+  max-height: 55%;
+  border-top: 1px solid var(--border-primary);
+  background: var(--bg-secondary);
+  overflow: hidden;
+}
+.terminal-drawer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 10px;
+  border-bottom: 1px solid var(--border-primary);
+  background: var(--bg-tertiary);
+  flex-shrink: 0;
+}
+.terminal-drawer-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--fs-xs, 12px);
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+.terminal-drawer-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  border-radius: var(--radius, 6px);
+  transition: var(--transition-color);
+}
+.terminal-drawer-close:hover {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+.terminal-drawer-body {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+}
+
 /* ========== Sidebar ========== */
 .sidebar {
 position: relative;
@@ -1319,6 +1371,13 @@ user-select: none;
   font-size: 14px;
 }
 
+/* P2: 长对话列表跳过屏外消息的布局/绘制 —— WebView2(Chromium) 支持。
+   content-visibility: auto 让屏外消息不参与布局/绘制，滚动时按需渲染。
+   contain-intrinsic-size 提供屏外消息的占位尺寸避免滚动条跳动。 */
+.message-bubble {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 200px;
+}
 .message {
   display: flex;
   flex-direction: column;

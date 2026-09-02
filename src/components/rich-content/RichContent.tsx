@@ -301,6 +301,23 @@ export const RichContent = memo(function RichContent({
     return <img src={src} alt={alt} title={title} />;
   }, []);
 
+  // P0-2: 流式期间降级为纯文本渲染（零解析零高亮）。
+  // 长内容（提示词模板/大代码块）在流式时每次 100ms flush 若都跑完整
+  // react-markdown + Prism 高亮，主线程被同步解析阻塞 → UI 卡死。
+  // 纯文本 pre + streaming 光标动画保持"正在生成"的视觉反馈；
+  // 流结束后（streaming=false）才执行完整 Markdown 渲染。
+  if (streaming) {
+    return (
+      <div
+        className={`rich-content streaming streaming-plain ${className}`}
+        data-reveal-count={revealCount}
+        data-reveal-revision={revealRevision}
+      >
+        <p className="rich-content-p rich-content-streaming-plain">{processedContent}</p>
+      </div>
+    );
+  }
+
   return (
     <div
       className={`rich-content ${streaming ? "streaming" : ""} ${className}`}
@@ -330,8 +347,6 @@ export const RichContent = memo(function RichContent({
           ),
           // 链接：文件路径通过 Tauri 打开文件管理器，外部 URL 在浏览器打开
           a: ({ href, children, ...props }) => {
-            // 诊断日志 — 检查 a 渲染器是否被调用
-            console.log('[RichContent a renderer] href=', JSON.stringify(href), 'children=', String(children));
             const isExternal = href && (/^https?:\/\//i.test(href) || /^mailto:/i.test(href));
             if (isExternal) {
               return (

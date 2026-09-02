@@ -186,6 +186,9 @@ const getToolRenderer = () => {
 
 // Threshold for long message collapse (in pixels)
 const COLLAPSE_THRESHOLD = 400;
+// P2: 折叠字符阈值 —— content-visibility: auto 下屏外消息 scrollHeight 不可靠
+// （布局被跳过），用字符长度估算作为主判断。约 1500 字符 ≈ 400px 文本高度。
+const COLLAPSE_CHARS = 1500;
 
 interface MessageBubbleProps {
   message: Message;
@@ -448,7 +451,11 @@ const [galleryIndex, setGalleryIndex] = useState(0);
     // The latest answer that just finished streaming should stay expanded
     // so the user can read it immediately.
     if (wasStreamedRef.current) return;
-    if (contentRef.current && contentRef.current.scrollHeight > COLLAPSE_THRESHOLD) {
+    // P2: content-visibility: auto 下屏外消息不布局，scrollHeight 不可靠。
+    // 用字符长度估算为主（稳定、不依赖布局），scrollHeight 作为补充测量。
+    const estimatedTall = displayContent.length > COLLAPSE_CHARS;
+    const measured = contentRef.current && contentRef.current.scrollHeight > COLLAPSE_THRESHOLD;
+    if (estimatedTall || measured) {
       setContentCollapsed(true);
     }
   }, [isStreaming, displayContent]);
@@ -898,7 +905,7 @@ const opLabel = tc.tool === 'create_note'
                 <TooltipContent>{S.bubble.expand[lang]}</TooltipContent>
               </Tooltip>
             )}
-            {!contentCollapsed && contentRef.current && contentRef.current.scrollHeight > COLLAPSE_THRESHOLD && (
+            {!contentCollapsed && (contentRef.current && contentRef.current.scrollHeight > COLLAPSE_THRESHOLD || displayContent.length > COLLAPSE_CHARS) && (
               <Tooltip>
                 <TooltipTrigger asChild>
                   <button className="toolbar-btn" onClick={() => setContentCollapsed(true)}>

@@ -109,7 +109,7 @@ import { createGoalTools } from "./tools/goal-tools";
 import { createWorkflowTool } from "./workflow-engine";
 // P2-19/20: Job and Terminal tools for background task & terminal management
 import { createJobTools } from "./tools/job-tools";
-import { createTerminalOpenTool, createTerminalSendTool, createTerminalSignalTool, createTerminalCloseTool } from "./tools/terminal-tools";
+import { createTerminalOpenTool, createTerminalSendTool, createTerminalReadTool, createTerminalSignalTool, createTerminalCloseTool, createTerminalListTool } from "./tools/terminal-tools";
 // D3: Dynamic Plugin tools
 import { createDynamicPluginTools } from "./dynamic-plugin-tools";
 
@@ -1501,8 +1501,10 @@ registry.register(createSessionEventReadTool());
   }
   registry.register(createTerminalOpenTool());
   registry.register(createTerminalSendTool());
+  registry.register(createTerminalReadTool());
   registry.register(createTerminalSignalTool());
   registry.register(createTerminalCloseTool());
+  registry.register(createTerminalListTool());
   // D3: Dynamic Plugin tools — cordis_define/inspect/run/stop/undefine
   for (const tool of createDynamicPluginTools()) {
     registry.register(tool);

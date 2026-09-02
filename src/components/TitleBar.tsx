@@ -8,12 +8,16 @@
  */
 
 import { useState, useEffect, useCallback } from "react";
-import { PanelLeftClose, PanelLeftOpen, PencilLine, Search, Settings, Sun, Moon, PanelRight, PanelRightOpen } from "lucide-react";
+import { PanelLeftClose, PanelLeftOpen, PencilLine, Search, Settings, Sun, Moon, PanelRight, PanelRightOpen, Home, GitBranch, Terminal } from "lucide-react";
 import { ActionIcons } from "../core/icons/icon-map";
 import { GitBranchSelector } from "./GitBranchSelector";
 import { getSetting, setSetting } from "../core/storage/settings";
 import { ThemeManager } from "../core/theme";
 import { useProjectStore } from "../core/store";
+import { useAppStore } from "../store";
+import { getLang } from "../core/i18n/lang";
+import { getProjectExecutionMode, setProjectExecutionMode, hasUncommittedChanges, isGitRepo } from "../core/environment";
+import type { ExecutionMode } from "../core/environment";
 
 export interface WorkspaceTab {
   id: string;
@@ -36,6 +40,10 @@ interface TitleBarProps {
   rightRailOpen?: boolean;
   /** 切换右侧栏 */
   onToggleRightRail?: () => void;
+  /** 终端区域是否打开（顶部状态栏终端按钮，对标 dsh-desktop） */
+  terminalOpen?: boolean;
+  /** 切换终端区域 */
+  onToggleTerminal?: () => void;
   /** 工作区标签（可选） */
   workspaceTabs?: WorkspaceTab[];
   /** 切换工作区标签 */
@@ -52,12 +60,21 @@ export function TitleBar({
   onSettings,
   rightRailOpen = false,
   onToggleRightRail,
+  terminalOpen = false,
+  onToggleTerminal,
   workspaceTabs = [],
   onSwitchTab,
   onCloseTab,
 }: TitleBarProps = {}) {
   const [maximized, setMaximized] = useState(false);
   const [theme, setTheme] = useState<"dark" | "light">(() => (getSetting("codem-theme") as "dark" | "light") || "dark");
+  // 执行模式切换（本地处理 / 新工作树）—— 由 InputArea 底部 bar 移至顶部状态栏
+  const currentProject = useProjectStore((s) => s.currentProject);
+  const [executionMode, setExecutionMode] = useState<ExecutionMode>("current_workspace");
+  const [isGitProject, setIsGitProject] = useState(false);
+  const isStreaming = useAppStore((s) => s.isStreaming);
+  const lang = getLang();
+  const zh = lang === "zh";
   // P3: Detect platform for Mac-style window controls
   const isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 
@@ -131,6 +148,51 @@ export function TitleBar({
     document.documentElement.setAttribute("data-theme", next);
   }, [theme]);
 
+  // 项目变化时加载执行模式 + 是否 Git 仓库
+  const projectPath = currentProject?.path || "";
+  useEffect(() => {
+    if (!projectPath) {
+      setExecutionMode("current_workspace");
+      setIsGitProject(false);
+      return;
+    }
+    setExecutionMode(getProjectExecutionMode(projectPath));
+    isGitRepo(projectPath).then(setIsGitProject).catch(() => setIsGitProject(false));
+  }, [projectPath]);
+
+  // 监听执行模式外部变更（如设置面板/其他入口），保持按钮状态同步
+  useEffect(() => {
+    const handler = () => {
+      if (projectPath) setExecutionMode(getProjectExecutionMode(projectPath));
+    };
+    window.addEventListener("codem-execution-mode-changed", handler);
+    return () => window.removeEventListener("codem-execution-mode-changed", handler);
+  }, [projectPath]);
+
+  // 切换执行模式：非 Git 项目禁用；有未提交修改需确认
+  const handleToggleExecutionMode = useCallback(async () => {
+    if (!projectPath || isStreaming) return;
+    const next: ExecutionMode = executionMode === "git_worktree" ? "current_workspace" : "git_worktree";
+    if (next === "git_worktree" && !isGitProject) {
+      alert(zh ? "需要 Git 仓库项目才能使用工作树模式" : "Git repository required for worktree mode");
+      return;
+    }
+    try {
+      const dirty = await hasUncommittedChanges(projectPath);
+      if (dirty) {
+        if (!confirm(zh
+          ? "当前工作区有未提交的修改。切换模式可能导致修改丢失。确认切换？"
+          : "The current workspace has uncommitted changes. Switching modes may cause loss. Continue?")) {
+          return;
+        }
+      }
+    } catch { /* 检查失败则继续 */ }
+    setProjectExecutionMode(projectPath, next);
+    setExecutionMode(next);
+    // 通知 InputArea 等其他组件同步（如需要）
+    window.dispatchEvent(new CustomEvent("codem-execution-mode-changed"));
+  }, [projectPath, isStreaming, executionMode, isGitProject, zh]);
+
   // P1: Cmd+K shortcut for search
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -168,6 +230,24 @@ export function TitleBar({
         {/* Bug9: 新建对话按钮已移至侧边栏全局对话栏右侧，此处删除 */}
         <span className="titlebar-icon" data-tauri-drag-region>◆</span>
         <span className="titlebar-title" data-tauri-drag-region>Codem</span>
+        {/* 执行模式切换（本地处理 / 新工作树）—— 侧边栏按钮与项目 LOGO 右侧 */}
+        <button
+          className={`titlebar-action-btn execution-mode-toggle ${executionMode === "git_worktree" ? "active" : ""}`}
+          onClick={handleToggleExecutionMode}
+          disabled={!projectPath || isStreaming}
+          title={!projectPath
+            ? (zh ? "请先选择项目" : "Select a project first")
+            : isStreaming
+              ? (zh ? "流式生成中不可切换" : "Locked while streaming")
+              : executionMode === "git_worktree"
+                ? (zh ? "执行模式：新工作树（点击切换为本地处理）" : "Execution: worktree (click for local)")
+                : (zh ? "执行模式：本地处理（点击切换为新工作树）" : "Execution: local (click for worktree)")}
+          aria-label={zh ? "切换执行模式" : "Toggle execution mode"}
+          style={{ marginLeft: 4, opacity: (!projectPath || isStreaming) ? 0.5 : 1 }}
+        >
+          {executionMode === "git_worktree" ? <GitBranch size={15} /> : <Home size={15} />}
+          <span className="execution-mode-label">{executionMode === "git_worktree" ? (zh ? "新工作树" : "Worktree") : (zh ? "本地处理" : "Local")}</span>
+        </button>
       </div>
 
       {/* 工作区标签栏（可选） */}
@@ -205,6 +285,19 @@ export function TitleBar({
 
       {/* 右侧栏切换 + P1: Top navigation actions — search, settings, theme */}
       <div className="titlebar-nav-actions">
+        {/* 终端按钮：点击后主对话区域下方出现终端区域（对标 dsh-desktop 顶部状态栏） */}
+        {onToggleTerminal && (
+          <button
+            className={`titlebar-action-btn ${terminalOpen ? "active" : ""}`}
+            onClick={onToggleTerminal}
+            title={terminalOpen
+              ? (zh ? "关闭终端" : "Close terminal")
+              : (zh ? "打开终端" : "Open terminal")}
+            aria-label={zh ? "切换终端" : "Toggle terminal"}
+          >
+            <Terminal size={15} />
+          </button>
+        )}
         {onToggleRightRail && (
           <button
             className={`titlebar-action-btn ${rightRailOpen ? "active" : ""}`}

@@ -97,7 +97,6 @@ import { sessionCheckpointProvider } from '../provider/session-checkpoint-provid
 // P1-7.6: Shell/终端插件
 import { pwshLocalProvider } from '../provider/pwsh-local-provider'
 import { bashSandboxProvider } from '../provider/bash-sandbox-provider'
-import { terminalBashProvider } from '../provider/terminal-bash-provider'
 
 // P1-7.7: 沙箱/安全插件
 import { sandboxPolicyProvider } from '../provider/sandbox-policy-provider'
@@ -366,7 +365,6 @@ registerBuiltinPlugin('@codem/mimo-auth', { provides: ['mimoAuth'], inject: [], 
   // P1-7.6: Shell/终端插件
   registerBuiltinPlugin('@codem/pwsh-local', { provides: ['pwshLocal'], inject: ['shell'], priority: 0, hot: true }, () => pwshLocalProvider)
   registerBuiltinPlugin('@codem/bash-sandbox', { provides: ['bashSandbox'], inject: ['shell', 'sandbox'], priority: 0, hot: true }, () => bashSandboxProvider)
-  registerBuiltinPlugin('@codem/terminal-bash', { provides: ['terminalBash'], inject: ['shell'], priority: 0, hot: true }, () => terminalBashProvider)
 
   // P1-7.7: 沙箱/安全插件
   registerBuiltinPlugin('@codem/sandbox-policy', { provides: ['sandboxPolicy'], inject: ['sandbox'], priority: 0, hot: true }, () => sandboxPolicyProvider)

@@ -42,6 +42,9 @@ export default defineConfig({
   resolve: {
     alias: {
       "sql.js/dist/sql-asm.js": "sql.js/dist/sql-asm.js",
+      // FIX: database.ts 已切换到 memory-growth 版本（自动扩展堆，支持大数据量会话）。
+      // 保持 vitest 对 sql.js CJS 模块的自我映射，避免 ESM mock 处理破坏 wasm/asm 加载。
+      "sql.js/dist/sql-asm-memory-growth.js": "sql.js/dist/sql-asm-memory-growth.js",
     },
   },
 });

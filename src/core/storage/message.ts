@@ -673,6 +673,12 @@ export interface LLMMessage {
   content: string | ContentBlock[];
   toolCallId?: string;
   name?: string;
+  /**
+   * DeepSeek thinking mode: reasoning_content must be round-tripped back to the
+   * API on historical assistant messages (HTTP 400 otherwise). Stored in DB
+   * `messages.reasoning`; passed to provider.toAPIMessage as `reasoning_content`.
+   */
+  reasoning?: string;
   tool_calls?: Array<{
     id: string;
     type: string;
@@ -741,12 +747,18 @@ export function messagesToLLMMessages(messages: Message[]): LLMMessage[] {
           role: "assistant",
           content,
         };
-        // NOTE: Do NOT attach reasoning_content to historical assistant messages.
-        // reasoning_content is an OUTPUT-only field (DeepSeek thinking mode).
-        // Sending old reasoning back to the API causes the LLM to treat previous
-        // thinking patterns as implicit instructions for new requests.
-        // Reasoning is still stored in the DB for UI display (thinking process),
-        // but it is NOT sent back to the LLM API as input.
+        // DeepSeek thinking mode REQUIRES round-tripping reasoning_content:
+        // DeepSeek V4 (thinking mode) rejects requests where a previous
+        // assistant message's reasoning_content is omitted — HTTP 400
+        // "The `reasoning_content` in the thinking mode must be passed back
+        // to the API." (multi-turn tool-call conversations trigger this).
+        // DB `messages.reasoning` was previously stripped here (fear of the
+        // LLM treating old reasoning as instructions), but the API now
+        // enforces it. Reasoning is still displayed in UI; it is also passed
+        // back verbatim as `reasoning_content` for API compatibility.
+        if (msg.reasoning) {
+          assistantMsg.reasoning = msg.reasoning;
+        }
         if (completedTools.length > 0) {
           assistantMsg.tool_calls = completedTools.map((tc) => ({
             id: tc.id,

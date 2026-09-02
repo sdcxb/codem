@@ -18,6 +18,7 @@ export default defineConfig({
   resolve: {
     alias: {
       "sql.js/dist/sql-asm.js": "sql.js/dist/sql-asm.js",
+      "sql.js/dist/sql-asm-memory-growth.js": "sql.js/dist/sql-asm-memory-growth.js",
     },
   },
 });

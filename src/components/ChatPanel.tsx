@@ -785,9 +785,14 @@ setStepTooltipLocked(false);
               }
             }
 
+            // P2: 入场动画只对最新一条消息启用 —— 历史消息/长对话滚动加载时
+            // 全部跑 framer-motion 动画会在首屏同时创建大量动画帧导致卡顿。
+            // 最新一条（新进入的回复）保留动画，其余静态渲染。
+            const isLatestMsg = (groupLastIdx ?? origIndex) === displayMessages.length - 1;
+
             return (
             <React.Fragment key={msg.id}>
-            {/* P2 #38: framer-motion entrance animation for message bubbles */}
+            {isLatestMsg ? (
             <motion.div
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
@@ -807,6 +812,21 @@ sessionId={sessionId || currentSession?.id}
 canEdit={!isSessionStreaming}
 />
             </motion.div>
+            ) : (
+            <MessageBubble
+message={msg}
+index={origIndex}
+showReasoning={showReasoning}
+onDeleteFiles={(files) => handleDeleteFiles(msg.id, files)}
+isLastInTurn={isLastInTurn}
+onCitationClick={onCitationClick}
+onSourceClick={onSourceClick}
+onEditAndResend={onEditAndResend}
+onReEdit={handleReEditInternal}
+sessionId={sessionId || currentSession?.id}
+canEdit={!isSessionStreaming}
+/>
+            )}
 {/* Task complete badge — rendered when turn has ended with assistant response.
                 The isTurnEnd check now correctly handles unified mode merged groups
                 by using groupLastIdx for boundary detection. */}

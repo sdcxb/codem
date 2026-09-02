@@ -64,6 +64,12 @@ const TOOL_VARIANTS: Record<string, ToolRowVariant> = {
   load_skill: 'others',
   subagent: 'others',
   spawn_subagent: 'others',
+  terminal_open: 'bash',
+  terminal_send: 'bash',
+  terminal_read: 'bash',
+  terminal_signal: 'bash',
+  terminal_close: 'bash',
+  terminal_list: 'bash',
 }
 
 const VARIANT_TITLES: Record<ToolRowVariant, string> = {
@@ -197,16 +203,27 @@ interface TerminalCardModel {
   running: boolean
 }
 
-function tryTerminalModel(argsRaw: string, result: string | undefined, status: string): TerminalCardModel | null {
+function tryTerminalModel(
+  argsRaw: string,
+  result: string | undefined,
+  status: string,
+  metadata?: Record<string, any>,
+): TerminalCardModel | null {
   try {
     const parsed = argsRaw ? JSON.parse(argsRaw) : {}
-    const cmd = parsed.command || parsed.cmd || ''
+    const cmd = parsed.command || parsed.cmd || parsed.text || ''
     if (!cmd) return null
     const isRunning = status === 'running'
-    // 解析退出码
     let exitCode: number | undefined
     let signal: string | undefined
-    if (result && !isRunning) {
+    // 优先使用结构化 metadata（terminal_send 返回 viewport/waitReason/sessionStatus）
+    const sessionStatus = metadata?.sessionStatus
+    if (sessionStatus?.kind === 'exited') {
+      exitCode = sessionStatus.exitCode ?? undefined
+      signal = sessionStatus.signal ?? undefined
+    }
+    // 无 metadata 时回退到文本解析
+    if (exitCode === undefined && signal === undefined && result && !isRunning) {
       const exitMatch = result.match(/(?:exit|code)[:\s]+(\d+)/i)
       if (exitMatch) exitCode = parseInt(exitMatch[1])
       const sigMatch = result.match(/(?:signal|sig)[:\s]+(\w+)/i)
@@ -215,17 +232,40 @@ function tryTerminalModel(argsRaw: string, result: string | undefined, status: s
     return {
       command: cmd,
       cwd: parsed.cwd,
-      output: result || undefined,
+      output: metadata?.viewport || result || undefined,
       exitCode,
       signal,
-      running: isRunning,
+      running: isRunning || (metadata?.sessionStatus?.kind === 'running' && status !== 'error'),
     }
   } catch {
     return null
   }
 }
 
-function TerminalBlock({ model }: { model: TerminalCardModel }) {
+
+const TERMINAL_MAX_LINES = 16
+
+function TerminalBlock({ model }) {
+  const [expanded, setExpanded] = useState(false)
+  const [copied, setCopied] = useState(false)
+
+  const onCopy = () => {
+    if (!model.output) return
+    navigator.clipboard.writeText(model.output).catch(() => {})
+    setCopied(true)
+    setTimeout(() => setCopied(false), 1500)
+  }
+
+  // 输出行数折叠：超过 16 行显示首尾 + 展开按钮（对标 dsh TerminalBlock headTailCap）
+  const outputLines = model.output ? model.output.split('\n') : []
+  const capped = outputLines.length > TERMINAL_MAX_LINES && !expanded
+  const headCount = Math.ceil(TERMINAL_MAX_LINES / 2)
+  const tailCount = TERMINAL_MAX_LINES - headCount
+  const hidden = outputLines.length - TERMINAL_MAX_LINES
+  const visibleLines = capped
+    ? [...outputLines.slice(0, headCount), `… 其余 ${hidden} 行`, ...outputLines.slice(outputLines.length - tailCount)]
+    : outputLines
+
   return (
     <div className="tool-card terminal-block" style={{
       borderRadius: 6, overflow: 'hidden', border: '1px solid var(--border-primary)',
@@ -261,6 +301,20 @@ function TerminalBlock({ model }: { model: TerminalCardModel }) {
             done
           </span>
         )}
+        {model.output && !model.running && (
+          <button
+            type="button"
+            onClick={onCopy}
+            style={{
+              background: 'none', border: 'none', cursor: 'pointer',
+              color: 'var(--text-muted)', fontSize: 'var(--fs-xs)',
+              padding: '2px 4px', borderRadius: 4, flexShrink: 0,
+            }}
+            title={copied ? '已复制' : '复制输出'}
+          >
+            {copied ? '✓' : '复制'}
+          </button>
+        )}
       </div>
       {/* Output */}
       {model.output && (
@@ -270,9 +324,22 @@ function TerminalBlock({ model }: { model: TerminalCardModel }) {
           maxHeight: 200, overflowY: 'auto',
           whiteSpace: 'pre-wrap', color: 'var(--text-secondary)',
         }}>
-          {model.output.slice(0, 2000)}
-          {model.output.length > 2000 && '\n... (truncated)'}
+          {visibleLines.join('\n').slice(0, 2000)}
+          {model.output.length > 2000 && !capped && '\n... (truncated)'}
         </pre>
+      )}
+      {capped && (
+        <button
+          type="button"
+          onClick={() => setExpanded(true)}
+          style={{
+            background: 'none', border: 'none', cursor: 'pointer',
+            color: 'var(--accent)', fontSize: 'var(--fs-xs)',
+            padding: '2px 8px', width: '100%', textAlign: 'left',
+          }}
+        >
+          展开全部输出
+        </button>
       )}
     </div>
   )
@@ -613,8 +680,8 @@ export const ToolCallCard = memo(function ToolCallCard({
   // 专用卡片推导
   const terminalModel = useMemo(() => {
     if (variant !== 'bash') return null
-    return tryTerminalModel(toolArgs || '', toolResult, status)
-  }, [variant, toolArgs, toolResult, status])
+    return tryTerminalModel(toolArgs || '', toolResult, status, metadata)
+  }, [variant, toolArgs, toolResult, status, metadata])
 
   const diffHunks = useMemo(() => {
     if (variant !== 'write' && variant !== 'edit') return null

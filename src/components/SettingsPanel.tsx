@@ -37,6 +37,7 @@ import { CorrectionModelConfig } from "./CorrectionModelConfig";
 import { SettingsNav, ConfigEntry, ToggleEntry } from "./SettingsParts";
 // P2 #35: Import UsageStats for embedding in settings
 import { UsageStats } from "./UsageStats";
+import { PerformanceDashboard } from "./PerformanceDashboard";
 // P2 #38: framer-motion for animations
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -57,6 +58,7 @@ import {
   Key,
   Terminal,
   CheckCircle,
+  Activity,
   LogIn,
   Search as SearchIcon,
   X,
@@ -385,7 +387,7 @@ export function SettingsPanel({ onClose, onSessionRecovery, onUsageStats, initia
   const [testResult, setTestResult] = useState<string>("");
 const [showModelProfiles, setShowModelProfiles] = useState(false);
 const [showMultimodal, setShowMultimodal] = useState(false);
-const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security" | "git" | "environment" | "worktree" | "knowledge" | "automation" | "multimodal" | "voice" | "ollama" | "pet" | "tools" | "codegraph" | "advanced" | "help" | "usage">((initialTab as any) || "general");
+const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security" | "git" | "environment" | "worktree" | "knowledge" | "automation" | "multimodal" | "voice" | "ollama" | "pet" | "tools" | "codegraph" | "advanced" | "help" | "usage" | "performance">((initialTab as any) || "general");
   // P2 #36: Settings search
   const [settingsSearch, setSettingsSearch] = useState("");
   const [advancedSubTab, setAdvancedSubTab] = useState<"agents" | "heartbeat" | "retry" | "prompt" | "settings" | "recovery" | "correction" | "profiles" | "transcript">("agents");
@@ -712,6 +714,10 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
             {/* P2 #35: Usage stats tab */}
             <button className={`settings-sidebar-item ${activeTab === "usage" ? "active" : ""}`} onClick={() => setActiveTab("usage")}>
               <span className="sidebar-icon"><Zap size={16} /></span>{lang === "zh" ? "用量统计" : "Usage"}
+            </button>
+            {/* 性能面板：从主对话区域顶部 tab 移入设置 */}
+            <button className={`settings-sidebar-item ${activeTab === "performance" ? "active" : ""}`} onClick={() => setActiveTab("performance")}>
+              <span className="sidebar-icon"><Activity size={16} /></span>{lang === "zh" ? "性能" : "Performance"}
             </button>
           </div>
 
@@ -1724,6 +1730,11 @@ marginTop: 4,
 {activeTab === "usage" && (
   <div style={{ padding: 16 }}>
     <UsageStats onClose={() => setActiveTab("general")} />
+  </div>
+)}
+{activeTab === "performance" && (
+  <div style={{ padding: 16 }}>
+    <PerformanceDashboard onClose={() => setActiveTab("general")} />
   </div>
 )}
           </div>

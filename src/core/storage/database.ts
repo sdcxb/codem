@@ -1,4 +1,10 @@
-import initSqlJs, { type Database as SqlJsDatabase } from "sql.js/dist/sql-asm.js";
+// FIX: 使用 sql-asm-memory-growth.js 而非 sql-asm.js。
+// sql-asm.js 使用固定 21MB asm.js 内存堆，当会话数据（大量消息 +
+// 大工具结果）使 SQLite 内存分配超过堆容量时，底层 memory.fill 越界
+// 抛出 "trap: invalid memory.fill"（OOM），导致 DB 实例损坏、后续所有
+// 保存/读取/telemetry 全部失败（用户报告：改造长会话后 saveMessages
+// 持续崩溃）。memory-growth 版本提供 grow() 自动扩展堆，无此限制。
+import initSqlJs, { type Database as SqlJsDatabase } from "sql.js/dist/sql-asm-memory-growth.js";
 
 let db: SqlJsDatabase | null = null;
 /** FTS5 可用性标志 — sql.js 可能不支持 FTS5，创建失败后避免重复报错 */

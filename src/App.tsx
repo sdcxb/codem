@@ -972,7 +972,11 @@ const generatedFilesRef = useRef<Set<string>>(new Set());
       if (buffer.id && buffer.text) {
         const viewing = useProjectStore.getState().currentSession?.id;
         if (viewing === sessionId) {
-          useAppStore.getState().updateMessage(buffer.id, { reasoning: buffer.text } as any);
+          // P3: append 增量到现有 reasoning（消息已由 reasoning_delta 创建）
+          const msg = useAppStore.getState().messages.find((m) => m.id === buffer.id);
+          if (msg) {
+            useAppStore.getState().updateMessage(buffer.id, { reasoning: (msg.reasoning || "") + buffer.text } as any);
+          }
         }
         buffer.text = "";
       }
@@ -2148,7 +2152,9 @@ const safeUpdateMessage = (id: string, update: any) => {
               let rbuf = reasoningBufferRef.current.get(session.id);
               if (!rbuf) { rbuf = { id: "", text: "", timer: null }; reasoningBufferRef.current.set(session.id, rbuf); }
               rbuf.id = assistantMsgId;
-              rbuf.text = reasoningContent; // full reasoning content (replace, not append)
+              // P3: 增量累积 —— 原来存全量 reasoningContent，flush 时整段 replace，
+              // 长 reasoning 每次 100ms 都传递整段大字符串。改为只累积增量。
+              rbuf.text += event.text;
               if (!rbuf.timer) {
                 rbuf.timer = setTimeout(() => flushReasoningBuffer(session.id), 100);
               }
@@ -2776,6 +2782,8 @@ engineRef.current?.abort();
         onSettings={settingsEnabled ? () => setShowSettings(true) : undefined}
         rightRailOpen={rightRailOpen}
         onToggleRightRail={() => setRightRailOpen(!rightRailOpen)}
+        terminalOpen={bottomTab === "terminal"}
+        onToggleTerminal={() => setBottomTab(bottomTab === "terminal" ? "chat" : "terminal")}
       />
       <div className="app-content">
       {!dbReady ? (
@@ -2827,7 +2835,7 @@ onTaskCenter={() => { setTaskCenterTab("overview"); setShowTaskCenter(true); }}
                     onNotebooks={() => setShowNotebookManager(true)}
 onTaskCenter={() => { setTaskCenterTab("overview"); setShowTaskCenter(true); }}
                     onAgents={() => setShowAgentManager(true)}
-                    onPerf={perfEnabled ? () => setBottomTab("perf") : undefined}
+                    onPerf={perfEnabled ? () => { setSettingsInitialTab("performance"); setShowSettings(true); } : undefined}
 onRemoveProject={(id, name, path) => {
   setRemoveProjectDialog({ id, name, path });
 }}
@@ -2839,26 +2847,9 @@ onRemoveProject={(id, name, path) => {
               mainPanel={
                 <div className="main-area">
                   <div className="panel-right">
-                    <div className="panel-tabs">
-                      <button className={`tab ${bottomTab === "chat" ? "active" : ""}`} onClick={() => setBottomTab("chat")}>
-                        <MessageSquare size={14} /> {lang === "zh" ? "对话" : "Chat"}
-                      </button>
-<button className={`tab ${bottomTab === "terminal" ? "active" : ""}`} onClick={() => setBottomTab("terminal")}>
-<Terminal size={14} /> {lang === "zh" ? "终端" : "Terminal"}
-</button>
-{perfEnabled && (
-<button className={`tab ${bottomTab === "perf" ? "active" : ""}`} onClick={() => setBottomTab("perf")}>
-<Activity size={14} /> {lang === "zh" ? "性能" : "Perf"}
-</button>
-)}
-{gameEnabled && (
-<button className={`tab ${bottomTab === "game" ? "active" : ""}`} onClick={() => setBottomTab("game")}>
-<Gamepad2 size={14} /> {lang === "zh" ? "游戏" : "Game"}
-</button>
-)}
-                    {/* SlotListBridge 消费 bottom-panel.tabs — list 类型，允许插件注入底部面板 tab */}
-                      <SlotListBridge name="bottom-panel.tabs" />
-                    </div>
+                    <div className="panel-tabs" style={{ display: "none" }}>
+<SlotListBridge name="bottom-panel.tabs" />
+</div>
                     <div className="panel-content">
                       {compactionStatus && (
                         <div className={`compaction-banner ${compactionStatus.active ? "compaction-active" : "compaction-done"}`}>
@@ -2878,7 +2869,7 @@ onRemoveProject={(id, name, path) => {
 <button className="notebook-mode-close" onClick={() => { setActiveNotebookId(null); setActiveNotebookName(''); setNotebookSourceFilter(null); }}><X size={14} /></button>
 </div>
 )}
-{bottomTab === "chat" && (
+{(bottomTab === "chat" || bottomTab === "terminal") && (
                         <SlotBridge name="app.conversation" fallback={ChatPanel}
                           onSend={handleSend}
                           onCancel={handleCancel}
@@ -2924,11 +2915,24 @@ notebookId={activeNotebookId || undefined}
 />
                       )}
 {bottomTab === "terminal" && (
-<SlotBridge name="app.terminal" fallback={TerminalPanel} cwd={currentProject?.path || appRoot}  />
+<div className="terminal-drawer">
+  <div className="terminal-drawer-header">
+    <span className="terminal-drawer-title"><Terminal size={13} /> {lang === "zh" ? "终端" : "Terminal"}</span>
+    <button
+      className="terminal-drawer-close"
+      onClick={() => setBottomTab("chat")}
+      title={lang === "zh" ? "关闭终端" : "Close terminal"}
+      aria-label={lang === "zh" ? "关闭终端" : "Close terminal"}
+    >
+      <X size={14} />
+    </button>
+  </div>
+  <div className="terminal-drawer-body">
+    <SlotBridge name="app.terminal" fallback={TerminalPanel} cwd={currentProject?.path || appRoot} />
+  </div>
+</div>
 )}
-{perfEnabled && bottomTab === "perf" && (
-<SlotBridge name="app.performance-dashboard" fallback={PerformanceDashboard} onClose={() => setBottomTab("chat")}  />
-)}
+
 {gameEnabled && bottomTab === "game" && (
   <div style={{ width: "100%", height: "100%", overflow: "hidden", position: "relative" }}>
     <Suspense fallback={<div style={{ color: "#fff", textAlign: "center", marginTop: 200 }}>加载游戏...</div>}>
@@ -2956,7 +2960,7 @@ identity={appIdentity}
                   onNotebooks={() => setShowNotebookManager(true)}
 onTaskCenter={() => { setTaskCenterTab("overview"); setShowTaskCenter(true); }}
 onAgents={() => setShowAgentManager(true)}
-onPerf={perfEnabled ? () => setBottomTab("perf") : undefined}
+onPerf={perfEnabled ? () => { setSettingsInitialTab("performance"); setShowSettings(true); } : undefined}
 onRemoveProject={(id, name, path) => {
   setRemoveProjectDialog({ id, name, path });
 }}
@@ -2967,24 +2971,7 @@ onRemoveProject={(id, name, path) => {
 
               <div className="main-area">
                 <div className="panel-right">
-                  <div className="panel-tabs">
-                    <button className={`tab ${bottomTab === "chat" ? "active" : ""}`} onClick={() => setBottomTab("chat")}>
-                      <MessageSquare size={14} /> {lang === "zh" ? "对话" : "Chat"}
-                    </button>
-<button className={`tab ${bottomTab === "terminal" ? "active" : ""}`} onClick={() => setBottomTab("terminal")}>
-<Terminal size={14} /> {lang === "zh" ? "终端" : "Terminal"}
-</button>
-{perfEnabled && (
-<button className={`tab ${bottomTab === "perf" ? "active" : ""}`} onClick={() => setBottomTab("perf")}>
-<Activity size={14} /> {lang === "zh" ? "性能" : "Perf"}
-</button>
-)}
-{gameEnabled && (
-<button className={`tab ${bottomTab === "game" ? "active" : ""}`} onClick={() => setBottomTab("game")}>
-<Gamepad2 size={14} /> {lang === "zh" ? "游戏" : "Game"}
-</button>
-)}
-                  </div>
+                  <div className="panel-tabs" style={{ display: "none" }}></div>
                   <div className="panel-content">
                     {compactionStatus && (
                       <div className={`compaction-banner ${compactionStatus.active ? "compaction-active" : "compaction-done"}`}>
@@ -3004,7 +2991,7 @@ onRemoveProject={(id, name, path) => {
 <button className="notebook-mode-close" onClick={() => { setActiveNotebookId(null); setActiveNotebookName(''); setNotebookSourceFilter(null); }}><X size={14} /></button>
 </div>
 )}
-{bottomTab === "chat" && (
+{(bottomTab === "chat" || bottomTab === "terminal") && (
 <SlotBridge name="app.conversation" fallback={ChatPanel}
 onSend={handleSend}
                         onCancel={handleCancel}
@@ -3050,11 +3037,24 @@ notebookId={activeNotebookId || undefined}
 />
                     )}
 {bottomTab === "terminal" && (
-<SlotBridge name="app.terminal" fallback={TerminalPanel} cwd={currentProject?.path || appRoot}  />
+<div className="terminal-drawer">
+  <div className="terminal-drawer-header">
+    <span className="terminal-drawer-title"><Terminal size={13} /> {lang === "zh" ? "终端" : "Terminal"}</span>
+    <button
+      className="terminal-drawer-close"
+      onClick={() => setBottomTab("chat")}
+      title={lang === "zh" ? "关闭终端" : "Close terminal"}
+      aria-label={lang === "zh" ? "关闭终端" : "Close terminal"}
+    >
+      <X size={14} />
+    </button>
+  </div>
+  <div className="terminal-drawer-body">
+    <SlotBridge name="app.terminal" fallback={TerminalPanel} cwd={currentProject?.path || appRoot} />
+  </div>
+</div>
 )}
-{perfEnabled && bottomTab === "perf" && (
-<SlotBridge name="app.performance-dashboard" fallback={PerformanceDashboard} onClose={() => setBottomTab("chat")}  />
-)}
+
 {gameEnabled && bottomTab === "game" && (
   <div style={{ width: "100%", height: "100%", overflow: "hidden", position: "relative" }}>
     <Suspense fallback={<div style={{ color: "#fff", textAlign: "center", marginTop: 200 }}>加载游戏...</div>}>
@@ -3104,7 +3104,7 @@ identity={appIdentity}
           onNotebooks={() => setShowNotebookManager(true)}
 onTaskCenter={() => { setTaskCenterTab("overview"); setShowTaskCenter(true); }}
 onAgents={() => setShowAgentManager(true)}
-onPerf={perfEnabled ? () => setBottomTab("perf") : undefined}
+onPerf={perfEnabled ? () => { setSettingsInitialTab("performance"); setShowSettings(true); } : undefined}
 onRemoveProject={(id, name, path) => {
   setRemoveProjectDialog({ id, name, path });
 }}
@@ -3115,24 +3115,7 @@ onRemoveProject={(id, name, path) => {
 
       <div className="main-area">
         <div className="panel-right">
-          <div className="panel-tabs">
-            <button className={`tab ${bottomTab === "chat" ? "active" : ""}`} onClick={() => setBottomTab("chat")}>
-              <MessageSquare size={14} /> {lang === "zh" ? "对话" : "Chat"}
-            </button>
-<button className={`tab ${bottomTab === "terminal" ? "active" : ""}`} onClick={() => setBottomTab("terminal")}>
-<Terminal size={14} /> {lang === "zh" ? "终端" : "Terminal"}
-</button>
-{perfEnabled && (
-<button className={`tab ${bottomTab === "perf" ? "active" : ""}`} onClick={() => setBottomTab("perf")}>
-<Activity size={14} /> {lang === "zh" ? "性能" : "Perf"}
-</button>
-)}
-{gameEnabled && (
-<button className={`tab ${bottomTab === "game" ? "active" : ""}`} onClick={() => setBottomTab("game")}>
-<Gamepad2 size={14} /> {lang === "zh" ? "游戏" : "Game"}
-</button>
-)}
-          </div>
+          <div className="panel-tabs" style={{ display: "none" }}></div>
 
           <div className="panel-content">
             {compactionStatus && (
@@ -3162,7 +3145,7 @@ onRemoveProject={(id, name, path) => {
 </button>
               </div>
             )}
-            {bottomTab === "chat" && (
+            {(bottomTab === "chat" || bottomTab === "terminal") && (
 <SlotBridge name="app.conversation" fallback={ChatPanel}
 onSend={handleSend}
                 onCancel={handleCancel}
@@ -3219,11 +3202,24 @@ notebookId={activeNotebookId || undefined}
 />
             )}
 {bottomTab === "terminal" && (
-<SlotBridge name="app.terminal" fallback={TerminalPanel} cwd={currentProject?.path || appRoot}  />
+<div className="terminal-drawer">
+  <div className="terminal-drawer-header">
+    <span className="terminal-drawer-title"><Terminal size={13} /> {lang === "zh" ? "终端" : "Terminal"}</span>
+    <button
+      className="terminal-drawer-close"
+      onClick={() => setBottomTab("chat")}
+      title={lang === "zh" ? "关闭终端" : "Close terminal"}
+      aria-label={lang === "zh" ? "关闭终端" : "Close terminal"}
+    >
+      <X size={14} />
+    </button>
+  </div>
+  <div className="terminal-drawer-body">
+    <SlotBridge name="app.terminal" fallback={TerminalPanel} cwd={currentProject?.path || appRoot} />
+  </div>
+</div>
 )}
-{perfEnabled && bottomTab === "perf" && (
-<SlotBridge name="app.performance-dashboard" fallback={PerformanceDashboard} onClose={() => setBottomTab("chat")}  />
-)}
+
 {gameEnabled && bottomTab === "game" && (
   <div style={{ width: "100%", height: "100%", overflow: "hidden", position: "relative" }}>
     <Suspense fallback={<div style={{ color: "#fff", textAlign: "center", marginTop: 200 }}>加载游戏...</div>}>
@@ -3271,7 +3267,7 @@ identity={appIdentity}
               onNotebooks={() => { setShowNotebookManager(true); setMobileSidebarOpen(false); }}
 onTaskCenter={() => { setTaskCenterTab("overview"); setShowTaskCenter(true); setMobileSidebarOpen(false); }}
 onAgents={() => { setShowAgentManager(true); setMobileSidebarOpen(false); }}
-onPerf={perfEnabled ? () => { setBottomTab("perf"); setMobileSidebarOpen(false); } : undefined}
+onPerf={perfEnabled ? () => { setSettingsInitialTab("performance"); setShowSettings(true); setMobileSidebarOpen(false); } : undefined}
               onRemoveProject={(id, name, path) => { setRemoveProjectDialog({ id, name, path }); setMobileSidebarOpen(false); }}
               fileExplorerProjectId={fileExplorerProjectId}
               onToggleFileExplorer={handleToggleFileExplorer}

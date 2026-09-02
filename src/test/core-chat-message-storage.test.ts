@@ -593,16 +593,18 @@ describe("对话核心链路 — messagesToLLMMessages 转换", () => {
     expect(llmMsgs).toHaveLength(2);
   });
 
-  // ===== CHAT-037b: reasoning 不回传 LLM ==========
-  it("CHAT-037b: reasoning 字段不出现在 LLM 消息中", () => {
+  // ===== CHAT-037b: reasoning 保留在 LLMMessage.reasoning（API 层转 reasoning_content）=====
+  it("CHAT-037b: reasoning 保留在 LLMMessage.reasoning 字段", () => {
     const messages: Message[] = [
       {
         id: "a1", role: "assistant", content: "回复", timestamp: 0, status: "done",
-        reasoning: "思考过程不应该被发送回 LLM",
+        reasoning: "思考过程（DeepSeek thinking mode 需回传 API）",
       },
     ];
     const llmMsgs = MessageStorage.messagesToLLMMessages(messages);
     expect(llmMsgs[0].role).toBe("assistant");
+    // reasoning 保留（messagesToLLMMessages 层不生成 reasoning_content，那是 provider 层字段）
+    expect((llmMsgs[0] as any).reasoning).toBe("思考过程（DeepSeek thinking mode 需回传 API）");
     expect((llmMsgs[0] as any).reasoning_content).toBeUndefined();
   });
 

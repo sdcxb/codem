@@ -797,6 +797,31 @@
   background: rgba(255, 255, 255, 0.20);
 }
 
+/* P0-2: 流式纯文本降级样式 —— 流式期间零解析零高亮 */
+.rich-content.streaming-plain {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.rich-content-streaming-plain {
+  margin: 0;
+  font-size: var(--fs-base);
+  line-height: 1.7;
+  color: var(--text-primary);
+}
+/* P1: 流式代码块纯文本 pre（不渲染 SyntaxHighlighter） */
+.code-block-streaming-pre {
+  margin: 0;
+  padding: 12px 14px;
+  background: transparent;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--fs-base, 13px);
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text-primary);
+  border-radius: 0 0 8px 8px;
+}
+
 /* ========== 4. Stream Animation ========== */
 .rich-content.streaming .rich-content-p:last-child::after {
   content: '';
@@ -1643,6 +1668,25 @@ transition: border-color var(--duration-fast) var(--ease-out), box-shadow var(--
 .titlebar-action-btn:hover {
   background: var(--surface-hover);
   color: var(--text-primary);
+}
+
+/* 执行模式切换按钮（顶部状态栏 · 本地处理/新工作树） */
+.execution-mode-toggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: auto;
+  padding: 0 8px;
+  font-size: var(--fs-xs, 12px);
+  font-weight: 500;
+  white-space: nowrap;
+}
+.execution-mode-toggle.active {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+.execution-mode-toggle:disabled {
+  cursor: not-allowed;
 }
 
 /* ========== 10. Native Title Bar ========== */

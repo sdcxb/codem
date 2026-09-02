@@ -15,7 +15,7 @@ import type { CollaborationMode } from "../core/agent/agent";
 import { SECURITY_MODES, getEffectiveSecurityMode, setProjectSecurityMode, setGlobalSecurityMode, type SecurityMode } from "../core/permission/security-mode";
 import { getSkillRegistry } from "../core/skill/skill";
 import { getSettingJSON, setSettingJSON } from "../core/storage/settings";
-import { getCustomOperations, runCustomOperation, getProjectExecutionMode, setProjectExecutionMode, getCurrentBranch, listBranches, isGitRepo, type ExecutionMode } from "../core/environment";
+import { getCustomOperations, runCustomOperation } from "../core/environment";
 import type { CustomOperation } from "../core/settings/settings";
 import { SlashCommandMenu, type SlashCommandItem } from "./SlashCommandMenu";
 import { getMultimodalSettings, type MultimodalProviderConfig } from "../core/llm/multimodal";
@@ -32,9 +32,9 @@ import { listFilesForMention, getRelativePath } from "../core/file-mention";
 import {
   MessageSquare, X, Image as ImageIcon, FileText, Paperclip, Target,
   Volume2, ClipboardList, Zap, BookMarked, Minimize2, Maximize2,
-  Square, ArrowRight, ChevronUp, StickyNote, Folder, Globe,
-  Home, GitBranch, Clock, RefreshCw, Check, Wrench, Shield, Rocket,
-  Sparkles, Cpu, ChevronDown, Wifi, AlertCircle,
+  Square, ArrowRight, ChevronUp, StickyNote,
+  Clock, Check, Wrench, Shield, Rocket,
+  Cpu,
   Mic, Square as SquareIcon,
 } from "lucide-react";
 
@@ -227,17 +227,8 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
   const [selectedSourceIds, setSelectedSourceIds] = useState<Set<string>>(new Set());
   const { currentProject, currentSession, projects, openProject, createSession, switchSession, getProjectSessions } = useProjectStore();
 
-  // === Bottom bar state ===
-  const [executionMode, setExecutionMode] = useState<ExecutionMode>("current_workspace");
-  const [currentBranchName, setCurrentBranchName] = useState<string>("");
-  const [branches, setBranches] = useState<string[]>([]);
-  const [showProjectMenu, setShowProjectMenu] = useState(false);
-  const [showModeMenu, setShowModeMenu] = useState(false);
-  const [showBranchMenu, setShowBranchMenu] = useState(false);
+  // === Bottom bar state (执行模式已移至顶部 TitleBar) ===
   const [showMoreActions, setShowMoreActions] = useState(false);
-  const [showModelMenu, setShowModelMenu] = useState(false);
-  const [isGitProject, setIsGitProject] = useState(false);
-  const [branchLoading, setBranchLoading] = useState(false);
   // P0: IME composition state — prevents Enter from firing during Chinese/Japanese input
   const compositionJustEndedRef = useRef(false);
   // P1: Drag-over state for file drop zone — depth counter prevents flicker on nested elements
@@ -493,63 +484,6 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
     return () => window.removeEventListener("codem-settings-changed", handler);
   }, []);
 
-  // Load execution mode + git info when project changes
-  useEffect(() => {
-    if (!projectPath) {
-      setExecutionMode("current_workspace");
-      setIsGitProject(false);
-      setCurrentBranchName("");
-      setBranches([]);
-      return;
-    }
-    setExecutionMode(getProjectExecutionMode(projectPath));
-    isGitRepo(projectPath).then(async (isRepo) => {
-      setIsGitProject(isRepo);
-      if (isRepo) {
-        setBranchLoading(true);
-        try {
-          const [br, allBr] = await Promise.all([
-            getCurrentBranch(projectPath),
-            listBranches(projectPath),
-          ]);
-          setCurrentBranchName(br);
-          setBranches(allBr);
-        } catch {
-          setCurrentBranchName("");
-          setBranches([]);
-        } finally {
-          setBranchLoading(false);
-        }
-      } else {
-        setCurrentBranchName("");
-        setBranches([]);
-      }
-    });
-  }, [projectPath]);
-
-  // Listen for execution mode changes
-  useEffect(() => {
-    const handler = () => {
-      if (projectPath) setExecutionMode(getProjectExecutionMode(projectPath));
-    };
-    window.addEventListener("codem-execution-mode-changed", handler);
-    return () => window.removeEventListener("codem-execution-mode-changed", handler);
-  }, [projectPath]);
-
-  const refreshBranch = useCallback(async () => {
-    if (!projectPath) return;
-    setBranchLoading(true);
-    try {
-      const [br, allBr] = await Promise.all([
-        getCurrentBranch(projectPath),
-        listBranches(projectPath),
-      ]);
-      setCurrentBranchName(br);
-      setBranches(allBr);
-    } catch { /* ignore */ } finally {
-      setBranchLoading(false);
-    }
-  }, [projectPath]);
 
   const handleRunOp = async (op: CustomOperation) => {
     if (!op.command.trim() || runningOp) return;
@@ -773,65 +707,7 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
     setShowSecurityPicker(false);
   };
 
-  const handleExecutionModeChange = async (mode: ExecutionMode) => {
-    if (!projectPath) {
-      setShowModeMenu(false);
-      return;
-    }
-    // Check for uncommitted changes before switching modes
-    if (isGitProject) {
-      try {
-        const { hasUncommittedChanges } = await import("../core/environment");
-        const dirty = await hasUncommittedChanges(projectPath);
-        if (dirty) {
-          if (!confirm(zh
-? "当前工作区有未提交的修改。切换模式可能导致修改丢失。确认切换？"
-: "The current workspace has uncommitted changes. Switching modes may cause loss. Continue?")) {
-            setShowModeMenu(false);
-            return;
-          }
-        }
-      } catch {
-        // If check fails, proceed anyway
-      }
-    }
-    setProjectExecutionMode(projectPath, mode);
-    setExecutionMode(mode);
-    if (mode === "git_worktree") refreshBranch();
-    setShowModeMenu(false);
-  };
-
-const handleSelectProject = (projectId: string) => {
-  openProject(projectId);
-  // Try to open the most recently interacted session instead of always creating a new one
-  const sessions = getProjectSessions(projectId);
-  if (sessions.length > 0) {
-    // Sort by lastMessageAt descending, pick the most recent
-    const sorted = [...sessions].sort((a: any, b: any) => {
-      const aTime = a.lastMessageAt || a.createdAt || 0;
-      const bTime = b.lastMessageAt || b.createdAt || 0;
-      return bTime - aTime;
-    });
-    switchSession(sorted[0].id);
-  } else {
-    // No existing sessions — create a new one
-    createSession();
-  }
-  setShowProjectMenu(false);
-};
-
-  // Close all bottom-bar dropdowns
-  const closeBottomMenus = useCallback(() => {
-    setShowProjectMenu(false);
-    setShowModeMenu(false);
-    setShowBranchMenu(false);
-    setShowModelMenu(false);
-  }, []);
-
   const currentModeInfo = SECURITY_MODES.find(m => m.mode === securityMode)!;
-
-  // Whether execution mode can be changed (locked when streaming)
-  const modeLocked = isStreaming;
 
   return (
     <div className={`input-area input-card-container ${isDragOver ? "drag-over" : ""}`}
@@ -1353,194 +1229,23 @@ const handleSelectProject = (projectId: string) => {
         </div>
       </div>
 
-      {/* === Bottom control bar — unified single-line with model selector === */}
-      {/* Project dropdown backdrop */}
-      {(showProjectMenu || showModeMenu || showBranchMenu || showModelMenu) && (
-        <div onClick={closeBottomMenus} style={{ position: "fixed", inset: 0, zIndex: 99 }} />
+      {/* === Bottom control bar — 仅保留自定义操作（连接状态/输入提示已隐藏） === */}
+      {customOps.filter(op => op.command.trim()).length > 0 && (
+        <div className="input-control-bar">
+          {customOps.filter(op => op.command.trim()).slice(0, 2).map(op => (
+            <button
+              key={op.id}
+              className="input-control-item"
+              onClick={() => handleRunOp(op)}
+              disabled={runningOp !== null}
+              title={`${op.name}: ${op.command}`}
+              style={{ opacity: runningOp === op.id ? 0.5 : 1 }}
+            >
+              {runningOp === op.id ? <Clock size={12} /> : <Wrench size={12} />} {op.name}
+            </button>
+          ))}
+        </div>
       )}
-
-      <div className="input-control-bar">
-        {/* Project indicator */}
-        <div style={{ position: "relative" }}>
-          <button
-            className="input-control-item project-indicator"
-            onClick={() => { setShowProjectMenu(!showProjectMenu); setShowModeMenu(false); setShowBranchMenu(false); }}
-            title={currentProject ? currentProject.path : (zh ? "选择项目" : "Select project")}
-          >
-            <span style={{ fontSize: 'var(--fs-base)', display: "flex", alignItems: "center" }}>{currentProject ? <Folder size={13} /> : <Globe size={13} />}</span>
-            <span className="project-indicator-name">
-              {currentProject ? currentProject.name : (zh ? "全局对话" : "Global")}
-            </span>
-            <span style={{ fontSize: 9, opacity: 0.5 }}><ChevronDown size={10} /></span>
-          </button>
-          {showProjectMenu && (
-            <div className="bottom-bar-dropdown" style={{ position: "absolute", bottom: "100%", left: 0, marginBottom: 4, minWidth: 260, maxHeight: 240, overflowY: "auto" }}>
-              <div className="bottom-bar-dropdown-header">{zh ? "切换项目" : "Switch Project"}</div>
-              {projects.length === 0 && (
-                <div className="bottom-bar-dropdown-empty">{zh ? "无项目" : "No projects"}</div>
-              )}
-              {projects.map(p => (
-                <button
-                  key={p.id}
-                  className={`bottom-bar-dropdown-item ${currentProject?.id === p.id ? "active" : ""}`}
-                  onClick={() => handleSelectProject(p.id)}
-                >
-                  <span style={{ fontSize: 'var(--fs-md)', display: "flex", alignItems: "center" }}><Folder size={14} /></span>
-                  <div>
-                    <div style={{ fontWeight: 600, fontSize: 'var(--fs-sm)' }}>{p.name}</div>
-                    <div style={{ fontSize: 'var(--fs-xs)', opacity: 0.5 }}>{p.path}</div>
-                  </div>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-
-        <div className="input-control-divider" />
-
-        {/* Execution mode (本地处理 / 新工作树) */}
-        <div style={{ position: "relative" }}>
-          <button
-            className={`input-control-item ${executionMode === "git_worktree" ? "active" : ""}`}
-            onClick={() => { if (!modeLocked) { setShowModeMenu(!showModeMenu); setShowProjectMenu(false); setShowBranchMenu(false); } }}
-            disabled={modeLocked}
-            title={zh ? "执行模式" : "Execution mode"}
-            style={{ opacity: modeLocked ? 0.5 : 1 }}
-          >
-            <span style={{ fontSize: 'var(--fs-base)', display: "flex", alignItems: "center" }}>{executionMode === "git_worktree" ? <GitBranch size={13} /> : <Home size={13} />}</span>
-            <span>{executionMode === "git_worktree" ? (zh ? "新工作树" : "Worktree") : (zh ? "本地处理" : "Local")}</span>
-            <span style={{ fontSize: 9, opacity: 0.5 }}><ChevronDown size={10} /></span>
-          </button>
-          {showModeMenu && (
-            <div className="bottom-bar-dropdown" style={{ position: "absolute", bottom: "100%", left: 0, marginBottom: 4, minWidth: 200 }}>
-              <div className="bottom-bar-dropdown-header">{zh ? "执行模式" : "Execution Mode"}</div>
-              <button
-                className={`bottom-bar-dropdown-item ${executionMode === "current_workspace" ? "active" : ""}`}
-                onClick={() => handleExecutionModeChange("current_workspace")}
-              >
-                <span style={{ fontSize: 'var(--fs-lg)', display: "flex", alignItems: "center" }}><Home size={16} /></span>
-                <div>
-                  <div style={{ fontWeight: 600, fontSize: 'var(--fs-sm)' }}>{zh ? "本地处理" : "Local workspace"}</div>
-                  <div style={{ fontSize: 'var(--fs-xs)', opacity: 0.6 }}>{zh ? "共享项目目录" : "Shared project directory"}</div>
-                </div>
-              </button>
-              <button
-                className={`bottom-bar-dropdown-item ${executionMode === "git_worktree" ? "active" : ""}`}
-                onClick={() => handleExecutionModeChange("git_worktree")}
-                disabled={!isGitProject}
-                style={{ opacity: isGitProject ? 1 : 0.4 }}
-                title={isGitProject ? "" : (zh ? "需要 Git 仓库项目才能使用工作树模式" : "Git repository required for worktree mode")}
-              >
-                <span style={{ fontSize: 'var(--fs-lg)', display: "flex", alignItems: "center" }}><GitBranch size={16} /></span>
-                <div>
-                  <div style={{ fontWeight: 600, fontSize: 'var(--fs-sm)' }}>{zh ? "新工作树" : "New worktree"}</div>
-                  <div style={{ fontSize: 'var(--fs-xs)', opacity: 0.6 }}>{zh ? "每次任务独立隔离" : "Isolated per-task"}</div>
-                </div>
-              </button>
-            </div>
-          )}
-        </div>
-
-        {/* Branch selector (only for git projects) */}
-        {isGitProject && (
-          <>
-            <div className="input-control-divider" />
-            <div style={{ position: "relative" }}>
-              <button
-                className="input-control-item"
-                onClick={() => { setShowBranchMenu(!showBranchMenu); setShowProjectMenu(false); setShowModeMenu(false); }}
-                title={zh ? "选择分支" : "Select branch"}
-              >
-                <span style={{ fontSize: 'var(--fs-base)', display: "flex", alignItems: "center" }}><GitBranch size={13} /></span>
-                <span>{branchLoading ? "..." : (currentBranchName || (zh ? "分支" : "Branch"))}</span>
-                <span style={{ fontSize: 9, opacity: 0.5 }}><ChevronDown size={10} /></span>
-              </button>
-              {showBranchMenu && (
-                <div className="bottom-bar-dropdown" style={{ position: "absolute", bottom: "100%", left: 0, marginBottom: 4, minWidth: 200, maxHeight: 240, overflowY: "auto" }}>
-                  <div className="bottom-bar-dropdown-header" style={{ display: "flex", alignItems: "center" }}>
-                    <span>{zh ? "选择分支" : "Select Branch"}</span>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); refreshBranch(); }}
-                      style={{ marginLeft: "auto", fontSize: 'var(--fs-xs)', opacity: 0.6, cursor: "pointer", background: "none", border: "none", color: "inherit" }}
-                    >
-                      {branchLoading ? <Clock size={12} /> : <RefreshCw size={12} />}
-                    </button>
-                  </div>
-                  {branchLoading && <div className="bottom-bar-dropdown-empty">{zh ? "加载中..." : "Loading..."}</div>}
-                  {!branchLoading && branches.length === 0 && (
-                    <div className="bottom-bar-dropdown-empty">{zh ? "无分支" : "No branches"}</div>
-                  )}
-                  {!branchLoading && branches.map(br => (
-                    <button
-                      key={br}
-                      className={`bottom-bar-dropdown-item ${br === currentBranchName ? "active" : ""}`}
-                      onClick={async () => {
-                if (projectPath && br !== currentBranchName) {
-                  // Execute git checkout — PowerShell-safe single-quoted paths
-                  try {
-                    const { executeCommand } = await import("../core/file-api");
-                    const safePath = projectPath.replace(/'/g, "''");
-                    const safeBranch = br.replace(/'/g, "''");
-                    const result = await executeCommand(
-                      `git -C '${safePath}' checkout '${safeBranch}'`,
-                      projectPath
-                    );
-                    if (result.exitCode && result.exitCode !== 0) {
-                      console.error("[InputArea] git checkout failed:", result.stderr);
-                      alert(`${zh ? "切换分支失败: " : "Checkout failed: "}${result.stderr}`);
-                    } else {
-                      setCurrentBranchName(br);
-                    }
-                  } catch (e) {
-                    console.error("[InputArea] git checkout error:", e);
-                    alert(`${zh ? "切换分支失败: " : "Checkout failed: "}${e}`);
-                  }
-                }
-                setShowBranchMenu(false);
-              }}
-                    >
-                      <span style={{ fontSize: 'var(--fs-md)', display: "flex", alignItems: "center" }}>{br === currentBranchName ? <Check size={14} /> : <GitBranch size={14} />}</span>
-                      <span style={{ fontSize: 'var(--fs-sm)' }}>{br}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          </>
-        )}
-
-        {/* Custom operations */}
-        {customOps.filter(op => op.command.trim()).length > 0 && (
-          <>
-            <div className="input-control-divider" />
-            {customOps.filter(op => op.command.trim()).slice(0, 2).map(op => (
-              <button
-                key={op.id}
-                className="input-control-item"
-                onClick={() => handleRunOp(op)}
-                disabled={runningOp !== null}
-                title={`${op.name}: ${op.command}`}
-                style={{ opacity: runningOp === op.id ? 0.5 : 1 }}
-              >
-                {runningOp === op.id ? <Clock size={12} /> : <Wrench size={12} />} {op.name}
-              </button>
-            ))}
-          </>
-        )}
-
-        {/* P1: Connection status indicator */}
-        <div className="input-control-divider" />
-        <span className="input-control-item" style={{ cursor: "default", opacity: connected ? 0.7 : 1, color: connected ? "var(--text-muted)" : "var(--warning)" }}>
-          {connected ? <Wifi size={12} /> : <AlertCircle size={12} />}
-          <span>{connected ? (zh ? "已连接" : "Online") : (zh ? "离线" : "Offline")}</span>
-        </span>
-
-        {/* Right side: hint */}
-        <div style={{ marginLeft: "auto", fontSize: 'var(--fs-xs)', color: "var(--text-muted)", display: "flex", alignItems: "center", gap: 4 }}>
-          <Sparkles size={10} />
-          {zh ? "输入 / 选择技能 · 拖拽文件上传" : "Type / for skills · Drop files"}
-        </div>
-      </div>
     </div>
   );
 }

@@ -106,7 +106,6 @@ import { sessionCheckpointProvider } from './session-checkpoint-provider'
 // ===== P1-7.6: Shell/终端插件 =====
 import { pwshLocalProvider } from './pwsh-local-provider'
 import { bashSandboxProvider } from './bash-sandbox-provider'
-import { terminalBashProvider } from './terminal-bash-provider'
 
 // ===== P1-7.7: 沙箱/安全插件 =====
 import { sandboxPolicyProvider } from './sandbox-policy-provider'
@@ -193,7 +192,7 @@ export {
   agentRegistryProvider, recoveryProvider, retryProvider, squadManagerProvider, issueProvider,
   inboxProvider, storeProvider, llmMimoProvider, llmOpenAIProvider, llmRetryProvider, tokenMeterProvider,
   sessionPersistenceSqliteProvider, sessionProjectionProvider, sessionStatsProvider, sessionTitleLLMProvider,
-  sessionCheckpointProvider, pwshLocalProvider, bashSandboxProvider, terminalBashProvider,
+  sessionCheckpointProvider, pwshLocalProvider, bashSandboxProvider,
   sandboxPolicyProvider, subprocessProvider, subagentForkInProcessProvider, subagentSpawnInProcessProvider,
   toolSubagentControlProvider, compactionBasicProvider, compactionToolResultPrunerProvider,
   commandCompactProvider, goalRoundDriverProvider, commandGoalProvider, planModeProvider,
@@ -293,7 +292,6 @@ export function loadDefaultProviders(ctx: Context): string[] {
     // P1-7.6: Shell/终端插件
     { name: 'pwshLocal', plugin: pwshLocalProvider },
     { name: 'bashSandbox', plugin: bashSandboxProvider },
-    { name: 'terminalBash', plugin: terminalBashProvider },
     // P1-7.7: 沙箱/安全插件
     { name: 'sandboxPolicy', plugin: sandboxPolicyProvider },
     { name: 'subprocess', plugin: subprocessProvider },

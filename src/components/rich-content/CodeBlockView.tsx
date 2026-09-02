@@ -39,6 +39,24 @@ export const CodeBlockView = memo(function CodeBlockView({
   const lineCount = code.split("\n").length;
   const shouldCollapse = collapsible && lineCount > 20;
 
+  // P1: 流式期间代码块降级为纯文本 pre，跳过 SyntaxHighlighter 高亮。
+  // 代码块是流式渲染的最热点：Prism 高亮 + 行号 + wrapLongLines 对每次增量
+  // 都全量重建。流式时用 pre 显示原始文本，流结束后（streaming=false）
+  // 才执行一次完整高亮。
+  if (streaming && !fullscreen) {
+    return (
+      <ContentFrame
+        title={language || "text"}
+        badge={`${lineCount} 行`}
+        collapsible={false}
+        onCopy={handleCopy}
+        className={`code-block-view code-block-streaming ${streaming ? "streaming" : ""}`}
+      >
+        <pre className="code-block-streaming-pre">{code}</pre>
+      </ContentFrame>
+    );
+  }
+
   if (fullscreen) {
     return (
       <div className="content-fullscreen-backdrop" onClick={() => setFullscreen(false)}>

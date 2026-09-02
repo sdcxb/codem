@@ -4,6 +4,17 @@ All notable changes to Codem will be documented in this file.
 
 ## [1.9.3] - 2026-09-02
 
+### 终端功能全面对标 dsh-desktop（审计修复）
+
+- **UI 入口打通** — TitleBar 状态栏终端按钮此前未接线（terminalOpen/onToggleTerminal 未传 props，按钮不渲染；bottomTab 永不为 "terminal"，终端抽屉不可达）。现在按钮点击切换终端抽屉，三个皮肤布局全部可达
+- **LLM 终端工具 → 真实 PTY 链路打通** — 重写 terminal-tools.ts：terminal_open→spawn_pty、terminal_send→write_pty、terminal_close→close_pty，会话 ID 即真实 pty-uuid，与 UI 面板共享 Rust portable-pty 后端；删除原内存模拟 + codem-terminal-input 幽灵事件
+- **补齐 dsh 六工具语义** — 新增 terminal_read（scrollback 分页，10000 行上限）、terminal_list；terminal_send 支持 submit 参数 + 静默窗口就绪等待（inferred_idle/timeout/session_exit）+ run_in_background（返回 pty-job-*，job_output/job_kill/job_list 集成管理）；terminal_signal 支持 SIGINT/SIGTSTP/Ctrl+D
+- **清理死代码** — 删除 terminal-bash-provider.ts（spawn /bin/bash，Windows 不可用，无任何消费方）及 builtin-registry/provider/plugin-registry 3 处注册
+- **UI 卡片渲染补强** — ToolCallCard 的 6 个 terminal_* 工具映射到 bash 变体（此前专用卡片不渲染），tryTerminalModel 读 metadata 渲染 viewport/sessionStatus，TerminalBlock 补复制按钮 + 16 行折叠（对标 dsh headTailCap）
+- **键位逻辑提取为纯函数** — 新增 terminal-key-handler.ts（保持 P0 约定：Ctrl+C 仅复制、Ctrl+Shift+C 才发 \x03）
+- **假测试重写为行为测试** — regression-coding-p0.test.ts P0-1 从源码字符串匹配改为 16 个行为测试（PTY 调用链 + 键位语义 + run_in_background + job 集成），全量 135 文件 / 4051 用例通过
+
+
 ### 安全模式（完全访问）修复 — dbReady 时序导致重启后失效
 
 - **修复：选择"完全访问"后重启仍弹审批** — `App.tsx` 的 `securityMode` state 初始化时 DB 尚未就绪（`getDatabase()` 抛错 → 回退默认 `ask`），而 `dbReady` 同步 effect 只同步了 model/mode/provider，漏掉 securityMode。现在 DB 就绪后重新同步，且依赖数组加入 `currentProject?.path`（切换项目按新项目重新解析，项目级 > 全局）

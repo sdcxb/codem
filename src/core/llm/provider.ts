@@ -637,6 +637,12 @@ export class OpenAICompatibleProvider implements LLMProvider {
           },
         }));
       }
+      // DeepSeek thinking mode: reasoning_content must be passed back verbatim
+      // on every historical assistant message, or the API returns HTTP 400
+      // ("The `reasoning_content` in the thinking mode must be passed back to the API.").
+      if (msg.reasoning) {
+        result.reasoning_content = msg.reasoning;
+      }
       return result;
     }
 
@@ -652,6 +658,10 @@ export class OpenAICompatibleProvider implements LLMProvider {
     const result: any = { role, content };
     if (msg.name) result.name = msg.name;
     if (msg.tool_calls) result.tool_calls = msg.tool_calls;
+    // DeepSeek thinking mode: round-trip reasoning_content (see above).
+    if (msg.reasoning) {
+      result.reasoning_content = msg.reasoning;
+    }
     return result;
   }
 

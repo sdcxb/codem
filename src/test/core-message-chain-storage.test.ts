@@ -284,13 +284,18 @@ describe("消息链路 — messagesToLLMMessages 转换", () => {
   });
 
   // CHAIN-019
-  it("CHAIN-019: messagesToLLMMessages 不包含 reasoning_content", () => {
+  // DeepSeek thinking mode REQUIRES reasoning_content round-trip (HTTP 400 otherwise).
+  // messagesToLLMMessages now preserves reasoning into LLMMessage.reasoning;
+  // provider.toAPIMessage emits it as reasoning_content for the API.
+  it("CHAIN-019: messagesToLLMMessages 保留 reasoning 字段（供 API 回传）", () => {
     const msgs: Message[] = [
       makeMsg({ id: "m1", role: "assistant", content: "回复", reasoning: "思考", status: "done" }),
     ];
     const llmMsgs = MessageStorage.messagesToLLMMessages(msgs);
-    // reasoning should NOT be in the content sent to LLM
-    const content = JSON.stringify(llmMsgs);
+    // reasoning 保留在 LLMMessage.reasoning（DeepSeek 强制回传）
+    expect((llmMsgs[0] as any).reasoning).toBe("思考");
+    // reasoning 不进 content 文本（避免污染对话内容）
+    const content = typeof llmMsgs[0].content === "string" ? llmMsgs[0].content : "";
     expect(content).not.toContain("思考");
   });
 

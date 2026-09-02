@@ -36,6 +36,7 @@ test-output.json
 
 # Reference projects (NOT part of Codem)
 .deepseek-harness-ref/
+.dsh-desktop-ref/
 .wecode-ref/
 
 # Internal analysis & training docs (not for public repo)

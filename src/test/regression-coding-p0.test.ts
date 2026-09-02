@@ -13,6 +13,22 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import { FileChangeStorage } from "../core/storage/file-change-storage";
 import { FileChangeTracker, onFileChangesTracked, type FileChangeResult } from "../core/environment/file-change-tracker";
 import { resetDatabase, initDatabase, getDatabase } from "../core/storage/database";
+import { createTerminalOpenTool, createTerminalSendTool, createTerminalReadTool, createTerminalSignalTool, createTerminalCloseTool, createTerminalListTool, resetTerminalManagerForTest } from "../core/llm/tools/terminal-tools";
+import { createJobTools } from "../core/llm/tools/job-tools";
+import { handleTerminalKeyEvent } from "../core/llm/tools/terminal-key-handler";
+import type { ToolContext } from "../core/llm/tools";
+
+// 构造最小 ToolContext
+function ctxFor(cwd: string): ToolContext {
+  return {
+    sessionId: "test-session",
+    messageId: "test-msg",
+    cwd,
+    abort: new AbortController().signal,
+    messages: [],
+    metadata: () => {},
+  };
+}
 
 // Mock Tauri invoke
 function mockTauriInvoke(responses: Record<string, any>) {
@@ -292,61 +308,311 @@ describe("P0-2: FileChangeStorage — SQLite CRUD", () => {
   });
 });
 
-describe("P0-1: TerminalPanel PTY — 集成验证", () => {
-  beforeEach(async () => {
+describe("P0-1: TerminalPanel PTY — 集成验证（行为测试）", () => {
+  beforeEach(() => {
     delete (window as any).__TAURI__;
+    resetTerminalManagerForTest();
   });
 
-  it("spawn_pty 调用 — 返回 session ID", async () => {
-    const invoke = mockTauriInvoke({
-      spawn_pty: "pty-test-001",
+  it("terminal_open — 调用 spawn_pty 并返回真实会话 ID", async () => {
+    const invoke = vi.fn(async (command: string, args?: Record<string, unknown>) => {
+      if (command === "spawn_pty") return "pty-test-001";
+      return null;
     });
+    (window as any).__TAURI__ = {
+      core: { invoke },
+      event: { listen: vi.fn(() => Promise.resolve(() => {})) },
+    };
 
-    const result = await invoke("spawn_pty", { cwd: "/test" });
-    expect(result).toBe("pty-test-001");
+    const tool = createTerminalOpenTool();
+    const result = await tool.execute({ type: "shell", cwd: "/test" }, ctxFor("/test"));
+
     expect(invoke).toHaveBeenCalledWith("spawn_pty", { cwd: "/test" });
+    expect(result.output).toContain("pty-test-001");
+    expect(result.metadata?.sessionId).toBe("pty-test-001");
   });
 
-  it("write_pty 调用 — 数据正确传递", async () => {
-    const invoke = mockTauriInvoke({
-      write_pty: null,
+
+  it("terminal_send — 写入 PTY 并返回增量 viewport", async () => {
+    let ptyCb: ((e: any) => void) | null = null;
+    const invoke = vi.fn(async (command: string, args?: Record<string, unknown>) => {
+      if (command === "spawn_pty") return "pty-test-002";
+      if (command === "write_pty") {
+        // 模拟 PTY 回显输出，驱动静默窗口
+        if (ptyCb) ptyCb({ payload: { id: "pty-test-002", data: "hello\r\n" } });
+        return null;
+      }
+      return null;
     });
+    (window as any).__TAURI__ = {
+      core: { invoke },
+      event: { listen: vi.fn(async (event: string, cb: (e: any) => void) => {
+        if (event === "pty-output") ptyCb = cb;
+        return () => {};
+      }) },
+    };
 
-    await invoke("write_pty", { id: "pty-1", data: "ls\r" });
-    expect(invoke).toHaveBeenCalledWith("write_pty", { id: "pty-1", data: "ls\r" });
+    const openTool = createTerminalOpenTool();
+    await openTool.execute({ type: "shell", cwd: "/test" }, ctxFor("/test"));
+
+    const sendTool = createTerminalSendTool();
+    const result = await sendTool.execute({ sessionId: "pty-test-002", text: "echo hi", submit: true }, ctxFor("/test"));
+
+    expect(invoke).toHaveBeenCalledWith("write_pty", { id: "pty-test-002", data: "echo hi\r" });
+    expect(result.output).toContain("hello");
+    expect(result.metadata?.waitReason).toBe("inferred_idle");
   });
 
-  it("resize_pty 调用 — cols/rows 正确传递", async () => {
-    const invoke = mockTauriInvoke({
-      resize_pty: null,
+  it("terminal_send — submit=false 不追加回车", async () => {
+    const invoke = vi.fn(async (command: string, args?: Record<string, unknown>) => {
+      if (command === "spawn_pty") return "pty-test-003";
+      if (command === "write_pty") return null;
+      return null;
     });
+    (window as any).__TAURI__ = {
+      core: { invoke },
+      event: { listen: vi.fn(() => Promise.resolve(() => {})) },
+    };
 
-    await invoke("resize_pty", { id: "pty-1", cols: 80, rows: 24 });
-    expect(invoke).toHaveBeenCalledWith("resize_pty", { id: "pty-1", cols: 80, rows: 24 });
+    const openTool = createTerminalOpenTool();
+    await openTool.execute({ type: "shell", cwd: "/test" }, ctxFor("/test"));
+
+    const sendTool = createTerminalSendTool();
+    await sendTool.execute({ sessionId: "pty-test-003", text: "abc", submit: false }, ctxFor("/test"));
+
+    expect(invoke).toHaveBeenCalledWith("write_pty", { id: "pty-test-003", data: "abc" });
   });
 
-  it("close_pty 调用 — 清理 PTY 会话", async () => {
-    const invoke = mockTauriInvoke({
-      close_pty: null,
+  it("terminal_read — 从保留 scrollback 分页读取", async () => {
+    let ptyCb: ((e: any) => void) | null = null;
+    const invoke = vi.fn(async (command: string, args?: Record<string, unknown>) => {
+      if (command === "spawn_pty") return "pty-test-004";
+      if (command === "write_pty") {
+        if (ptyCb) {
+          ptyCb({ payload: { id: "pty-test-004", data: "line1\nline2\nline3\n" } });
+        }
+        return null;
+      }
+      return null;
     });
+    (window as any).__TAURI__ = {
+      core: { invoke },
+      event: { listen: vi.fn(async (event: string, cb: (e: any) => void) => {
+        if (event === "pty-output") ptyCb = cb;
+        return () => {};
+      }) },
+    };
 
-    await invoke("close_pty", { id: "pty-1" });
-    expect(invoke).toHaveBeenCalledWith("close_pty", { id: "pty-1" });
+    const openTool = createTerminalOpenTool();
+    await openTool.execute({ type: "shell", cwd: "/test" }, ctxFor("/test"));
+
+    const sendTool = createTerminalSendTool();
+    await sendTool.execute({ sessionId: "pty-test-004", text: "echo x", submit: true }, ctxFor("/test"));
+
+    const readTool = createTerminalReadTool();
+    const result = await readTool.execute({ sessionId: "pty-test-004" }, ctxFor("/test"));
+
+    expect(result.output).toContain("line1");
+    expect(result.output).toContain("line3");
+    expect(result.metadata?.totalLines).toBeGreaterThanOrEqual(3);
   });
 
-  it("Ctrl+C 不发送中断信号 — 只做复制", () => {
-    // This is verified by the TerminalPanel code logic:
-    // Ctrl+C with selection → copy, return false (prevent default)
-    // Ctrl+C without selection → return false (do nothing, don't send \x03)
-    // Only Ctrl+Shift+C sends \x03
-    // The test verifies the logic is in place by checking the source code pattern
-    const source = require("fs").readFileSync(
-      "src/components/TerminalPanel.tsx",
-      "utf-8"
+  it("terminal_signal — Ctrl+C 映射为 \x03 写入 PTY", async () => {
+    const invoke = vi.fn(async (command: string, args?: Record<string, unknown>) => {
+      if (command === "spawn_pty") return "pty-test-005";
+      if (command === "write_pty") return null;
+      return null;
+    });
+    (window as any).__TAURI__ = {
+      core: { invoke },
+      event: { listen: vi.fn(() => Promise.resolve(() => {})) },
+    };
+
+    const openTool = createTerminalOpenTool();
+    await openTool.execute({ type: "shell", cwd: "/test" }, ctxFor("/test"));
+
+    const signalTool = createTerminalSignalTool();
+    const result = await signalTool.execute({ sessionId: "pty-test-005", signal: "SIGINT" }, ctxFor("/test"));
+
+    expect(invoke).toHaveBeenCalledWith("write_pty", { id: "pty-test-005", data: "\x03" });
+    expect(result.output).toContain("SIGINT");
+  });
+
+  it("terminal_close — 调用 close_pty 清理会话", async () => {
+    const invoke = vi.fn(async (command: string, args?: Record<string, unknown>) => {
+      if (command === "spawn_pty") return "pty-test-006";
+      if (command === "close_pty") return null;
+      return null;
+    });
+    (window as any).__TAURI__ = {
+      core: { invoke },
+      event: { listen: vi.fn(() => Promise.resolve(() => {})) },
+    };
+
+    const openTool = createTerminalOpenTool();
+    await openTool.execute({ type: "shell", cwd: "/test" }, ctxFor("/test"));
+
+    const closeTool = createTerminalCloseTool();
+    const result = await closeTool.execute({ sessionId: "pty-test-006" }, ctxFor("/test"));
+
+    expect(invoke).toHaveBeenCalledWith("close_pty", { id: "pty-test-006" });
+    expect(result.output).toContain("closed");
+  });
+
+  it("terminal_list — 列出活跃会话，关闭后消失", async () => {
+    const invoke = vi.fn(async (command: string, args?: Record<string, unknown>) => {
+      if (command === "spawn_pty") return "pty-test-007";
+      if (command === "close_pty") return null;
+      return null;
+    });
+    (window as any).__TAURI__ = {
+      core: { invoke },
+      event: { listen: vi.fn(() => Promise.resolve(() => {})) },
+    };
+
+    const openTool = createTerminalOpenTool();
+    await openTool.execute({ type: "shell", cwd: "/test" }, ctxFor("/test"));
+
+    const listTool = createTerminalListTool();
+    const before = await listTool.execute({}, ctxFor("/test"));
+    expect(before.output).toContain("pty-test-007");
+
+    const closeTool = createTerminalCloseTool();
+    await closeTool.execute({ sessionId: "pty-test-007" }, ctxFor("/test"));
+
+    const after = await listTool.execute({}, ctxFor("/test"));
+    expect(after.output).toContain("no terminal sessions");
+  });
+
+  it("terminal_send — run_in_background 返回 jobId，job_output 可读取", async () => {
+    let ptyCb: ((e: any) => void) | null = null;
+    const invoke = vi.fn(async (command: string, args?: Record<string, unknown>) => {
+      if (command === "spawn_pty") return "pty-test-008";
+      if (command === "write_pty") {
+        if (ptyCb) ptyCb({ payload: { id: "pty-test-008", data: "bg output\r\n" } });
+        return null;
+      }
+      return null;
+    });
+    (window as any).__TAURI__ = {
+      core: { invoke },
+      event: { listen: vi.fn(async (event: string, cb: (e: any) => void) => {
+        if (event === "pty-output") ptyCb = cb;
+        return () => {};
+      }) },
+    };
+
+    const openTool = createTerminalOpenTool();
+    await openTool.execute({ type: "shell", cwd: "/test" }, ctxFor("/test"));
+
+    const sendTool = createTerminalSendTool();
+    const sendResult = await sendTool.execute(
+      { sessionId: "pty-test-008", text: "sleep 1", submit: true, run_in_background: true },
+      ctxFor("/test"),
     );
-    expect(source).toContain("Ctrl+Shift+C");
-    expect(source).toContain("return false; // No selection");
-    expect(source).not.toContain("// Don't send Ctrl+C signal");
+    expect(sendResult.output).toContain("background job");
+    const jobId = sendResult.metadata?.jobId as string;
+    expect(jobId).toMatch(/^pty-job-/);
+
+    // 等待后台静默窗口完成后读取输出
+    await new Promise((r) => setTimeout(r, 700));
+    const outputTool = createJobTools().find((t) => t.id === "job_output")!;
+    const out = await outputTool.execute({ jobId }, ctxFor("/test"));
+    expect(out.output).toContain("bg output");
+  });
+
+  it("terminal_send — run_in_background 后 job_kill 发送 SIGINT", async () => {
+    const invoke = vi.fn(async (command: string, args?: Record<string, unknown>) => {
+      if (command === "spawn_pty") return "pty-test-009";
+      if (command === "write_pty") return null;
+      return null;
+    });
+    (window as any).__TAURI__ = {
+      core: { invoke },
+      event: { listen: vi.fn(() => Promise.resolve(() => {})) },
+    };
+
+    const openTool = createTerminalOpenTool();
+    await openTool.execute({ type: "shell", cwd: "/test" }, ctxFor("/test"));
+
+    const sendTool = createTerminalSendTool();
+    const sendResult = await sendTool.execute(
+      { sessionId: "pty-test-009", text: "long command", submit: true, run_in_background: true },
+      ctxFor("/test"),
+    );
+    const jobId = sendResult.metadata?.jobId as string;
+
+    const killTool = createJobTools().find((t) => t.id === "job_kill")!;
+    const killed = await killTool.execute({ jobId }, ctxFor("/test"));
+    expect(killed.output).toContain("killed");
+    // SIGINT 写入 PTY
+    const sigCalls = invoke.mock.calls.filter((c) => c[0] === "write_pty" && c[1]?.data === "\x03");
+    expect(sigCalls.length).toBeGreaterThan(0);
+  });
+
+  it("键位处理 — Ctrl+C 有选区时复制且不发送中断", () => {
+    const writes: string[] = [];
+    const result = handleTerminalKeyEvent({ type: "keydown", ctrlKey: true, shiftKey: false, key: "c" } as any, {
+      getSelection: () => "selected-text",
+      clearSelection: () => {},
+      writeClipboard: (text) => { writes.push(`copy:${text}`); },
+      readClipboard: () => Promise.resolve(""),
+      writeToPty: (data) => { writes.push(`pty:${data}`); },
+    });
+    expect(result).toBe(false);
+    expect(writes).toEqual(["copy:selected-text"]);
+    expect(writes.some((w) => w.startsWith("pty:"))).toBe(false);
+  });
+
+  it("键位处理 — Ctrl+C 无选区时什么都不做（不发送 \x03）", () => {
+    const writes: string[] = [];
+    const result = handleTerminalKeyEvent({ type: "keydown", ctrlKey: true, shiftKey: false, key: "c" } as any, {
+      getSelection: () => "",
+      clearSelection: () => {},
+      writeClipboard: (text) => { writes.push(`copy:${text}`); },
+      readClipboard: () => Promise.resolve(""),
+      writeToPty: (data) => { writes.push(`pty:${data}`); },
+    });
+    expect(result).toBe(false);
+    expect(writes).toEqual([]);
+  });
+
+  it("键位处理 — Ctrl+Shift+C 才发送 \x03 中断信号", () => {
+    const writes: string[] = [];
+    const result = handleTerminalKeyEvent({ type: "keydown", ctrlKey: true, shiftKey: true, key: "C" } as any, {
+      getSelection: () => "sel",
+      clearSelection: () => {},
+      writeClipboard: () => {},
+      readClipboard: () => Promise.resolve(""),
+      writeToPty: (data) => { writes.push(`pty:${data}`); },
+    });
+    expect(result).toBe(false);
+    expect(writes).toEqual(["pty:\x03"]);
+  });
+
+  it("键位处理 — Ctrl+V 粘贴到 PTY", async () => {
+    const writes: string[] = [];
+    const result = handleTerminalKeyEvent({ type: "keydown", ctrlKey: true, shiftKey: false, key: "v" } as any, {
+      getSelection: () => "",
+      clearSelection: () => {},
+      writeClipboard: () => {},
+      readClipboard: () => Promise.resolve("pasted-text"),
+      writeToPty: (data) => { writes.push(`pty:${data}`); },
+    });
+    expect(result).toBe(false);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(writes).toEqual(["pty:pasted-text"]);
+  });
+
+  it("键位处理 — 其他按键放行", () => {
+    const result = handleTerminalKeyEvent({ type: "keydown", ctrlKey: false, shiftKey: false, key: "a" } as any, {
+      getSelection: () => "",
+      clearSelection: () => {},
+      writeClipboard: () => {},
+      readClipboard: () => Promise.resolve(""),
+      writeToPty: () => {},
+    });
+    expect(result).toBe(true);
   });
 });
 

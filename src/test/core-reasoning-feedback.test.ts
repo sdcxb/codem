@@ -4,7 +4,7 @@
  * 覆盖范围：
  *   2.1 reasoning_content 存储与加载
  *   2.2 回答反馈（streaming 状态、错误处理）
- *   2.3 reasoning 不回传 LLM
+ *   2.3 reasoning 回传 LLM（DeepSeek thinking mode 强制要求 reasoning_content round-trip）
  *
  * 关键链路：
  *   App.tsx → engine.process() → AgenticLoop → setMessageReasoning / appendMessageContent
@@ -182,28 +182,34 @@ describe("思考过程 — reasoning 存储与加载", () => {
   });
 });
 
-describe("思考过程 — reasoning 不回传 LLM", () => {
+describe("思考过程 — reasoning 回传 LLM（DeepSeek thinking mode 强制要求）", () => {
   beforeEach(async () => {
     try { await resetDatabase(); } catch { await initDatabase(); }
     localStorage.clear();
   });
 
   // REAS-010
-  it("REAS-010: messagesToLLMMessages 不包含 reasoning", () => {
+  // DeepSeek V4 thinking mode REQUIRES reasoning_content to be passed back on
+  // every historical assistant message (HTTP 400 otherwise). messagesToLLMMessages
+  // therefore preserves reasoning into LLMMessage.reasoning (provider.toAPIMessage
+  // then emits it as reasoning_content for the API).
+  it("REAS-010: messagesToLLMMessages 保留 reasoning（供 provider 回传）", () => {
     const messages: Message[] = [
       {
         id: "m1", role: "assistant", content: "回复", timestamp: 0, status: "done",
-        reasoning: "这个思考不应该被发送回 LLM",
+        reasoning: "这个思考需要回传给 DeepSeek API",
       },
     ];
     const llmMsgs = MessageStorage.messagesToLLMMessages(messages);
     expect(llmMsgs[0].role).toBe("assistant");
+    // reasoning 保留在 LLMMessage.reasoning，由 provider.toAPIMessage 转成 reasoning_content
+    expect((llmMsgs[0] as any).reasoning).toBe("这个思考需要回传给 DeepSeek API");
+    // messagesToLLMMessages 不直接生成 reasoning_content（那是 API 层字段）
     expect((llmMsgs[0] as any).reasoning_content).toBeUndefined();
-    expect((llmMsgs[0] as any).reasoning).toBeUndefined();
   });
 
   // REAS-011
-  it("REAS-011: 多条消息 reasoning 都不回传", () => {
+  it("REAS-011: 多条消息 reasoning 都保留", () => {
     const messages: Message[] = [
       {
         id: "m1", role: "assistant", content: "回复1", timestamp: 0, status: "done",
@@ -215,9 +221,8 @@ describe("思考过程 — reasoning 不回传 LLM", () => {
       },
     ];
     const llmMsgs = MessageStorage.messagesToLLMMessages(messages);
-    for (const msg of llmMsgs) {
-      expect((msg as any).reasoning_content).toBeUndefined();
-    }
+    const reasons = llmMsgs.filter((m) => m.role === "assistant").map((m) => (m as any).reasoning);
+    expect(reasons).toEqual(["思考1", "思考2"]);
   });
 });
 

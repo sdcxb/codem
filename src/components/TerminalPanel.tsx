@@ -4,6 +4,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { Plus, Square } from "lucide-react";
 import { ActionIcons } from "../core/icons/icon-map";
+import { handleTerminalKeyEvent } from "../core/llm/tools/terminal-key-handler";
 import "@xterm/xterm/css/xterm.css";
 
 async function tauriInvoke(command: string, args?: Record<string, unknown>): Promise<any> {
@@ -103,33 +104,13 @@ export function TerminalPanel({ cwd }: TerminalPanelProps) {
 
     // Ctrl+C = copy only (no interrupt); Ctrl+Shift+C = interrupt
     term.attachCustomKeyEventHandler((event) => {
-      if (event.type === "keydown") {
-        // Ctrl+V — paste
-        if (event.ctrlKey && !event.shiftKey && event.key === "v") {
-          navigator.clipboard.readText().then((text) => {
-            if (text) {
-              tauriInvoke("write_pty", { id: ptyId, data: text }).catch(() => {});
-            }
-          }).catch(() => {});
-          return false;
-        }
-        // Ctrl+C — copy if selection exists, otherwise DO NOTHING (no interrupt)
-        if (event.ctrlKey && !event.shiftKey && event.key === "c") {
-          const selection = term.getSelection();
-          if (selection) {
-            navigator.clipboard.writeText(selection).catch(() => {});
-            term.clearSelection();
-            return false; // Don't send Ctrl+C
-          }
-          return false; // No selection → don't send Ctrl+C either (prevents accidental interrupt)
-        }
-        // Ctrl+Shift+C — interrupt (send \x03 to PTY)
-        if (event.ctrlKey && event.shiftKey && (event.key === "C" || event.key === "c")) {
-          tauriInvoke("write_pty", { id: ptyId, data: "\x03" }).catch(() => {});
-          return false;
-        }
-      }
-      return true;
+      return handleTerminalKeyEvent(event, {
+        getSelection: () => term.getSelection(),
+        clearSelection: () => term.clearSelection(),
+        writeClipboard: (text) => navigator.clipboard.writeText(text).catch(() => {}),
+        readClipboard: () => navigator.clipboard.readText(),
+        writeToPty: (data) => { tauriInvoke("write_pty", { id: ptyId, data }).catch(() => {}); },
+      });
     });
 
     // Right-click: copy selection or paste

@@ -118,7 +118,6 @@ const KNOWN_PLUGINS = [
     // ===== P1-7.6: Shell/终端插件 =====
     { name: '@codem/pwsh-local', version: '1.0.0', description: 'PowerShell Local Provider — Windows PowerShell 本地执行', provides: ['pwshLocal'], inject: ['shell'], keywords: ['pwsh', 'powershell', 'windows'], category: 'provider', tags: ['provider', 'runtime'], hot: true, icon: '🖥️', author: 'Codem Team', riskLevel: 'safe', riskDescription: '关闭后 PowerShell 执行不可用' },
     { name: '@codem/bash-sandbox', version: '1.0.0', description: 'Bash Sandbox Provider — 沙箱内 Bash 执行，隔离环境命令运行', provides: ['bashSandbox'], inject: ['shell', 'sandbox'], keywords: ['bash', 'sandbox', 'shell'], category: 'provider', tags: ['provider', 'runtime', 'security'], hot: true, icon: '📦', author: 'Codem Team', riskLevel: 'caution', riskDescription: '关闭后沙箱 Bash 不可用' },
-    { name: '@codem/terminal-bash', version: '1.0.0', description: 'Terminal Bash Provider — 终端 Bash 执行，原生 Shell 交互', provides: ['terminalBash'], inject: ['shell'], keywords: ['terminal', 'bash', 'shell'], category: 'provider', tags: ['provider', 'runtime'], hot: true, icon: '💻', author: 'Codem Team', riskLevel: 'safe', riskDescription: '关闭后终端 Bash 不可用' },
 
     // ===== P1-7.7: 沙箱/安全插件 =====
     { name: '@codem/sandbox-policy', version: '1.0.0', description: 'Sandbox Policy Provider — 沙箱策略管理，文件系统和网络访问控制', provides: ['sandboxPolicy'], inject: ['sandbox'], keywords: ['sandbox', 'policy', 'security'], category: 'provider', tags: ['provider', 'security'], hot: true, icon: '🛡️', author: 'Codem Team', riskLevel: 'caution', riskDescription: '关闭后沙箱策略不可用' },

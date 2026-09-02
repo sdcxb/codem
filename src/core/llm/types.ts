@@ -72,6 +72,16 @@ export interface LLMMessage {
   content: string | ContentBlock[];
   toolCallId?: string;
   name?: string;
+  /**
+   * DeepSeek thinking mode: the reasoning_content of a historical assistant
+   * message. DeepSeek V4 (thinking mode) REQUIRES the API caller to pass back
+   * the reasoning_content of every previous assistant message on multi-turn
+   * conversations — omitting it returns HTTP 400:
+   *   "The `reasoning_content` in the thinking mode must be passed back to the API."
+   * Stored in DB `messages.reasoning` for UI display, and now also round-tripped
+   * to the API as `reasoning_content` on assistant messages.
+   */
+  reasoning?: string;
 }
 
 export type ContentBlock =
