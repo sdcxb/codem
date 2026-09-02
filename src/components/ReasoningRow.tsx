@@ -128,14 +128,14 @@ export const ReasoningRow = memo(function ReasoningRow({
         </span>
       </button>
 
-      {/* 展开体 — 灰底缩进 */}
+      {/* 展开体 — 灰底缩进，保留左侧紫色条 */}
       {expanded && (
         <div
           className="reasoning-body"
           style={{
             marginLeft: 18,
             padding: '8px 12px',
-            background: 'rgba(147, 51, 234, 0.06)',
+            background: 'var(--bg-tertiary)',
             borderRadius: 6,
             borderLeft: '2px solid rgba(147, 51, 234, 0.4)',
             fontSize: 'var(--fs-sm)',

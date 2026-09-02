@@ -1703,6 +1703,14 @@ yield { type: "step_progress", step: this.macroStep, total: planState.total, tit
           if (retryCount >= maxRetries || retryError.name === "AbortError") {
             throw retryError;
           }
+          // 对标 DSH resetForRetry：重试前清空已累积的文本/推理/工具调用状态。
+          // 若不清理，第一轮失败前 yield 给前端的部分文本会残留在
+          // streamBuffer（App.tsx 100ms 批量 flush），重试流的文本再 append
+          // 到同一条消息 → 同迭代内整段重复（与首词重复同源的「多通道累积」）。
+          currentText = "";
+          reasoningReceived = false;
+          currentToolCalls.length = 0;
+          yield { type: "retry", attempt: retryCount, delay: 1000 * retryCount, error: retryError.message, errorType: retryError.name || null };
           // Wait before retry
           await new Promise(resolve => setTimeout(resolve, 1000 * retryCount));
         }

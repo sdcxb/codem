@@ -2219,7 +2219,12 @@ flushReasoningBuffer(session.id);
               safeAddMessage({
                 id: assistantMsgId,
                 role: "assistant",
-                content: assistantContent,
+                // FIX: content 初始为空 —— 文本统一由 streamBuffer flush 追加。
+                // 此前用累积的 assistantContent 初始化 content，而 buf.text 也从
+                // 第一个 delta 开始累积，flush 时会把开头段落再 append 一遍，
+                // 导致句子首词重复（如「已已获取」「现在现在」「第三第三」）。
+                // reasoning / knowledge_sources 分支已用空 content，此处对齐。
+                content: "",
                 timestamp: Date.now(),
                 status: "streaming",
               });
@@ -2437,6 +2442,18 @@ saveMessages(session.id);
             // P1: AI created a todo list — store will be updated via tool metadata
             // The todo data is persisted by the show-todo tool to SQLite
             // No additional UI action needed here — ChatPanel reads todos from DB
+            break;
+          }
+
+          case "retry": {
+            // 对标 DSH resetForRetry：LLM 流重试前清空本 session 的 buffer。
+            // loop 重试是静默的（catch → sleep → 重新 stream），第一轮失败前
+            // yield 的部分 text/reasoning 已进 buffer（100ms 批量 flush），
+            // 若不清理，重试流 append 到同一条消息 → 同迭代内整段重复。
+            const rbuf = streamBufferRef.current.get(session.id);
+            if (rbuf) { rbuf.text = ""; rbuf.timer = null; }
+            const rrbuf = reasoningBufferRef.current.get(session.id);
+            if (rrbuf) { rrbuf.text = ""; rrbuf.timer = null; }
             break;
           }
 

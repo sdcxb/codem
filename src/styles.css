@@ -10671,28 +10671,6 @@ html.pet-window-mode #root {
   color: var(--text-muted, #888);
 }
 
-.guidance-send-btn {
-  background: var(--accent, #7c6cf0);
-  border: none;
-  border-radius: 8px;
-  padding: 8px 12px;
-  color: white;
-  font-size: 16px;
-  cursor: pointer;
-  transition: opacity 0.15s ease, transform 0.1s ease;
-  flex-shrink: 0;
-}
-
-.guidance-send-btn:hover:not(:disabled) {
-  opacity: 0.85;
-  transform: scale(1.05);
-}
-
-.guidance-send-btn:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
 .guidance-cancel-btn {
   background: rgba(231, 76, 60, 0.1);
   border: 1px solid rgba(231, 76, 60, 0.3);

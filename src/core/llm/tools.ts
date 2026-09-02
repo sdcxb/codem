@@ -1,5 +1,5 @@
 import type { ToolDefinition, ToolCallResult, LLMMessage } from "./types";
-import { readFile, writeFile, executeCommand, globSearch, grepSearch, isPathWithinWorkspace } from "../file-api";
+import { readFile, writeFile, deletePath, executeCommand, globSearch, grepSearch, isPathWithinWorkspace } from "../file-api";
 import { getLang } from "../i18n/lang";
 import { getSetting } from "../storage/settings";
 import type { Context } from "../cordis/src/index.ts";
@@ -713,6 +713,8 @@ export function createBashTool(): ToolDef {
     async execute(args, ctx) {
       let command = args.command as string;
       let workdir = (args.workdir as string) || ctx.cwd;
+      // python -c 中文 编码规避写入的临时文件路径；执行后必须删除，避免项目下堆积 __pyc_temp_*.py
+      let tempFile: string | null = null;
 
       // Auto-detect "cd <path> && <rest>" pattern and split into workdir + rest.
       // This lets the LLM use natural shell syntax without needing to know about
@@ -751,7 +753,7 @@ export function createBashTool(): ToolDef {
         const scriptBody = pythonCMatch[3];
         // Write to a temp file and execute that instead — avoids command-line
         // encoding conversion entirely. File is written as UTF-8 by Rust backend.
-        const tempFile = `${workdir.replace(/[\\/]+$/, "")}\\__pyc_temp_${Date.now()}.py`;
+        tempFile = `${workdir.replace(/[\\/]+$/, "")}\\__pyc_temp_${Date.now()}.py`;
         try {
           await writeFile(tempFile, `# -*- coding: utf-8 -*-\n${scriptBody}`, { workspace: ctx.workspace || ctx.cwd });
           command = `${prefix.replace(/-c\s+$/, "")} "${tempFile}"`;
@@ -759,6 +761,7 @@ export function createBashTool(): ToolDef {
         } catch (e) {
           console.warn(`[bash tool] Failed to write temp file for python -c rewrite:`, e);
           // Fall through — let the original command run; PYTHONUTF8=1 may still save it
+          tempFile = null;
         }
       }
 
@@ -805,6 +808,18 @@ export function createBashTool(): ToolDef {
         };
       } catch (error: any) {
         return { title: `bash: ${command.substring(0, 50)}`, output: `Error: ${error.message}` };
+      } finally {
+        // 删除 python -c 编码规避的临时脚本 —— 它是工具内部产物，不是用户要保留的文件。
+        // 若不删除，每次含中文的 python -c 都会在项目下留下 __pyc_temp_*.py 垃圾文件，
+        // 且这些文件不经过 write 工具，generatedFiles 收集不到 → 清理按钮也不显示。
+        if (tempFile) {
+          try {
+            await deletePath(tempFile);
+            console.log(`[bash tool] Cleaned up temp file: ${tempFile}`);
+          } catch (e) {
+            console.warn(`[bash tool] Failed to delete temp file ${tempFile}:`, e);
+          }
+        }
       }
     },
   };

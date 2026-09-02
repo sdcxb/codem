@@ -643,17 +643,6 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
     }
   };
 
-  /** Send the current input as guidance into the running agent loop (mid-turn steering). */
-  const handleSendGuidance = () => {
-    if (!input.trim() || !onSendGuidance) return;
-    pushHistory(input.trim());
-    onSendGuidance(input.trim());
-    setInput("");
-    clearDraft();
-    setSlashFilter(null);
-    setComposerBadges([]);
-  };
-
   // P0: Model list for inline model selector
   const modelList: ModelOption[] = getModelsForMode(mode);
   const currentModelName = modelList.find(m => m.id === model)?.name || model || "";
@@ -1306,30 +1295,23 @@ const handleSelectProject = (projectId: string) => {
               {expanded ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
             </button>
 
-            {/* Send button group: send + up-arrow */}
+            {/* Send button group: send + up-arrow (wecode-aligned single-button state machine)
+                对标 .wecode-ref getChatSendState：同一按钮位按状态切换，不做三段式。
+                - 非流式 → Send（正常发送）
+                - 流式 + 输入框有内容 → Send（保持与平时一致的发送按钮；ChatPanel 的 onSend
+                  内部已分流：流式时走 onSendGuidance，即引导消息进入引导栏）
+                - 流式 + 输入框空 → Stop（停止当前回复）
+            */}
             <div style={{ display: "flex", alignItems: "center", gap: 0, flexShrink: 0, position: "relative" }}>
-              {isStreaming ? (
-                onSendGuidance ? (
-                  <>
-                    <button className="send-btn cancel-btn" onClick={onCancel} title={S.input.cancel[lang]} style={{ borderRadius: "6px 0 0 6px" }}><Square size={14} fill="currentColor" /></button>
-                    <button
-                      className="send-btn guidance-send-btn"
-                      onClick={handleSendGuidance}
-                      disabled={!input.trim()}
-                      style={{ borderRadius: 0, borderLeft: "1px solid rgba(255,255,255,0.2)" }}
-                      title={zh ? "发送引导消息（注入当前任务）" : "Send guidance (inject into current task)"}
-                    ><ArrowRight size={16} /></button>
-                  </>
-                ) : (
-                  <button className="send-btn cancel-btn" onClick={onCancel} title={S.input.cancel[lang]} style={{ borderRadius: "6px 0 0 6px" }}><Square size={14} fill="currentColor" /></button>
-                )
+              {isStreaming && !input.trim() && pendingAttachments.length === 0 ? (
+                <button className="send-btn cancel-btn" onClick={onCancel} title={S.input.cancel[lang]} style={{ borderRadius: "6px 0 0 6px" }}><Square size={14} fill="currentColor" /></button>
               ) : (
                 <button
                   className={`send-btn ${disabled ? "disabled" : ""}`}
                   onClick={handleSubmit}
                   disabled={disabled || (!input.trim() && pendingAttachments.length === 0)}
                   style={{ borderRadius: "6px 0 0 6px" }}
-                  title={zh ? "发送 (Enter)" : "Send (Enter)"}
+                  title={isStreaming ? (zh ? "发送引导消息（注入当前任务）" : "Send guidance (inject into current task)") : (zh ? "发送 (Enter)" : "Send (Enter)")}
                 ><ArrowRight size={16} /></button>
               )}
 
