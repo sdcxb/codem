@@ -59,7 +59,7 @@ All notable changes to Codem will be documented in this file.
 - 新增 repro 测试：repro-ps-command（PowerShell 转义）/ repro-exec-timeout（超时杀树）/ repro-bash-abort（外部取消）/ repro-jsx-classname / repro-redact（脱敏）/ app-error-boundary（REC-R1~R6）/ db-save-failure-alert（DBSAVE-F1~F4）；适配 git-env-config / s0-seam-integration / regression-coding-p0 / regression-knowledge-full（KM-074 动态导入 flaky 30s 超时）
 - 全量 141 文件 / 4079 用例通过 + `tsc --noEmit` 零错误 + cargo check 零警告 + cargo test 13/13
 
-
+## [1.9.3] - 2026-09-02
 
 ### 终端功能全面对标 dsh-desktop（审计修复）
 
