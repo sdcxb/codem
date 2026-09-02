@@ -2,6 +2,37 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.9.5] - 2026-09-02
+
+### 对话步骤语义化 + update_plan 动态插入（对标 dsh 客户端 todo 语义列表）
+
+> 用户反馈：对话中【第X/X步】是"回答问题/执行命令"式无意义通用步骤，而 dsh 客户端是"分析卡死原因→诊断链路→修复→测试"式的语义步骤，且执行中发现新问题时可在当前位置插入步骤（编号顺延）。根因：LLM 语义计划只在启发式估步 ≥3 时调用（"修复卡死的问题"被判纯问答 → 显示"回答问题"），且无任何插入通道（计划耗尽后只按执行工具类别追加泛化标题）。
+
+- **任务语义计划（引擎层）**：执行型任务（新增中英文任务意图检测 `looksLikeExecutableTask`：修复/排查/分析/为什么/卡死…）**总是**让 LLM 生成面向具体任务的语义步骤（分析原因→定位诊断→修复→验证），30s 超时回退启发式（任务句兜底首步含任务摘要，不再"回答问题"）；`planSteps` 提示词强化（含"分析卡死原因/诊断链路/修复卡死/测试"好例与"回答问题/执行命令"坏例 + 空白标题清洗回退）
+- **update_plan 工具（动态插入）**：新增 LLM 工具支持 `insert_before / insert_after / append` 三种插入——执行到第 N 步发现必须先处理的新问题时把步骤插到当前进行中步骤之前，**编号顺延、total 自动更新**、UI"第X/X步"即时刷新；只允许插入"当前或更后"位置（不可改写已完成步骤）、空标题/重复/12 步上限校验；成功回执携带插入后完整计划（模型感知新编号）；属计划元操作不推进 X/X
+- **计划上下文注入**：每次 LLM 请求的 systemPrompt 附带"当前执行计划（第 X/Y 步）+ [完成/进行中/待办] 状态列表 + update_plan 使用指引"，模型每轮可见剩余步骤（对标 dsh todo 每轮可见）
+- **语义计划不再混入泛化步骤**：`fromLlm` 标志——LLM 语义计划耗尽后引擎**不再**自动追加"执行命令"式泛化标题步骤（启发式计划保留旧兜底）
+- 新增测试：`step-plan-semantic.test.ts`（STEP-P1~P8，11 用例：意图边界/插入语义/已完成区拒绝/工具契约/计划渲染）+ `step-plan-dynamic-insert-loop.test.ts`（STEP-L1~L9，6 用例：驱动真实 loop 复现"第 3 步前插入修复调用链路 → 3/5 刷新 → 继续推进进入顺延步骤"）
+
+### token 消耗审计与修复（对标 dsh-desktop / deepseek-harness）
+
+> 用户报告：相同模型下用 Codem 修 bug 比 dsh 第三方客户端消耗大数倍。逐项对照 harness 源码参数审计并修复 6 项结构性差异：
+
+- **read 单次结果上限 100k→50k 字符**（对齐 dsh `READ_MAX_BYTES≈50KB`；此前中文内容 ≈300KB 字节 = dsh 6 倍）
+- **上下文折叠（新增 `context-fold.ts`）**：`selectMessagesByPriority` 截断丢弃早期消息时插入零成本紧凑摘要（`[上下文精简] 较早 N 条消息（read×2…）请重新调用工具`，不调 LLM），打断"失忆→重复读取/执行"的 token 恶性循环；防每轮重复累积
+- **陈旧大工具结果 head+tail 裁剪**：对齐 dsh `compaction-tool-result-pruner`（8192/4096/1024）——保留最近 2 条工具结果完整，更早 >8KB 结果裁为 head+marker+tail（含错误尾部），历史 read/bash 大结果单条从 12-25k token 降到 ~1.3k
+- **7 个低频大 schema 工具延迟加载**：`generate_ppt / browser_automate / figma_fetch / github_tool / workflow / image_gen / tts` 设 `shouldDefer`（每轮全 schema 10.6k→~7.5k token，模型可经 tool_search 按需加载）
+- **systemPrompt 工具信息三重复裁剪**：`tools:catalog`（Available Tools 全列表）文本置空、工具 guidance 仅注入核心工具、collectToolGuidance fallback 去重列表（核心工具 description 已在请求 tools 数组；defer 工具已有 Deferred Tools hints）
+- **上下文选择预算对齐真实窗口**：select 预算从固定 100000 伪 token（=400k 字符，中文可超真实窗口致服务端截断/400）改为 `tracker.getContextWindow()×90%` + 共享 CJK 感知 `estimateTokens` 估算；`token-tracker` 新增 `getContextWindow()`
+- 新增测试：`context-fold.test.ts`（TOK-F1~F7：折叠统计/文案/裁剪 head+tail/保留最近 N 条）；更新 v1.5.2 H4（read 上限 50k）
+
+### 全面功能审计修复（断点/错误/不稳定）
+
+- **PTY 关闭/退出杀进程树**：`close_pty` 与 `quit_app` 从单 kill 改 `kill_process_tree`（`taskkill /T /F`）——cmd.exe 的孙进程（长命令 node/npm/test）此前残留为孤儿进程占用资源/端口
+- **TerminalPanel spawn 失败残留**：失败路径补 `term.dispose()` + 移除临时 DOM（此前空终端 div 永久残留且无法关闭）
+- **4 处裸 fetch 补超时**：`web-provider` 兜底抓取 20s、`knowledge/extractor` 浏览器抓取 15s、`remote-client-provider` 能力发现 10s、`search-deepseek` 搜索/抓取 15s/20s（此前网络黑洞永久挂起，相关工具卡到 15 分钟看门狗）
+- **托盘"退出"菜单先 flush 再退出**：不再直接 `app.exit`（绕过前端 DB flush 丢最近防抖窗口写入）——emit `quit-requested` → 前端 `await flushDatabase()` → `quit_app`，Rust 2.5s 兜底强退（先检查主窗口仍在，防二次 exit）
+
 ## [1.9.4] - 2026-09-02
 
 ### dsh-desktop 全面对标 — 稳健性审计修复（15 轮迭代，bug 级清零收敛）

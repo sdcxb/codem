@@ -1471,7 +1471,21 @@ flushStreamBuffer(); // flush all on unmount
     window.addEventListener("codem:db-save-failed", onDbSaveFail);
     unlistenDbSaveFail = () => window.removeEventListener("codem:db-save-failed", onDbSaveFail);
 
-    return () => { unlisten?.(); unlistenCrash?.(); unlistenDbSaveFail?.(); };
+    // 托盘"退出"菜单 → Rust emit quit-requested：先 flush 所有待写 DB 再真正退出
+    // （此前托盘退出直接 exit，跳过 flush，丢最近防抖窗口的写入）。
+    // Rust 侧有 2.5s 兜底强退，因此这里不需要超时保护（flush 不会 reject）。
+    let unlistenQuitReq: (() => void) | undefined;
+    listen("quit-requested", async () => {
+      try {
+        await flushDatabase();
+      } catch {
+        // flushDatabase 永不 reject；此处兜底防御。
+      }
+      const { invoke } = (window as any).__TAURI__?.core || {};
+      invoke?.("quit_app");
+    }).then((un: () => void) => { unlistenQuitReq = un; });
+
+    return () => { unlisten?.(); unlistenCrash?.(); unlistenDbSaveFail?.(); unlistenQuitReq?.(); };
   }, []);
 
   const handleCloseChoice = useCallback(async (action: "tray" | "close", remember: boolean) => {

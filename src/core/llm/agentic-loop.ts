@@ -1,5 +1,8 @@
 import type { LLMProvider, LLMRequest, ToolDefinition, TokenUsage } from "./types";
 import type { ToolRegistry, ToolContext, WriteConfirmResult } from "./tools";
+import type { PlanUpdateOp } from "./plan-utils";
+import { applyPlanUpdate as applyPlanUpdatePure, looksLikeExecutableTask, renderPlanSection } from "./plan-utils";
+import { foldStats, renderFoldSummary, isFoldMessage, pruneStaleToolResults } from "./context-fold";
 import type { ToolExecutorConfig } from "./streaming-executor";
 import { StreamingToolExecutorImpl, type StreamingToolCall } from "./streaming-executor";
 import { initDefaultPipeline } from "./tool-pipeline";
@@ -209,7 +212,7 @@ const KEEP_RECENT_MESSAGES_FOR_MICRO_COMPACT = 12;
 const MICRO_COMPACT_PRESSURE_THRESHOLD = 0.5;
 
 /**
- * 宏观步骤对齐：recon（只读侦查）工具名，不推进宏步骤计数器
+ * 宏观步骤对齐：recon（只读侦查）工具名 + 计划元操作，不推进宏步骤计数器
  * macro step counter. They are intermediate investigation steps, not
  * top-level task phases.
  */
@@ -219,10 +222,18 @@ export const RECON_TOOL_NAMES = new Set<string>([
   "tool_search", "web_search", "list_directory", "list_sessions",
   "lsp", "session_search", "session_trace", "get_goal", "job_list",
   "search_notebook", "query_session_result", "list_agents", "list_sessions",
+  // 计划元操作：修改计划本身不是"执行一个任务步骤"，不推进 X/X。
+  "update_plan",
 ]);
 
 export interface StepPlan {
   title: string;
+}
+
+/** 截取任务消息前 N 个字符作为启发式兜底步骤的标题摘要。 */
+function taskBrief(message: string, max: number): string {
+  const cleaned = message.replace(/\s+/g, " ").trim();
+  return cleaned.length > max ? `${cleaned.slice(0, max)}…` : cleaned;
 }
 
 export type LLMStatus = "connecting" | "streaming" | "executing_tools";
@@ -284,6 +295,16 @@ export class AgenticLoop {
   private appendedStepTitles: Set<string> = new Set();
   /** 计划耗尽后最多追加的步骤数 — 防止「无用步数」无限膨胀。 */
   private static readonly MAX_APPENDED_STEPS = 2;
+  /**
+   * 当前对话任务的语义计划（"第X/X步"数据源，对标 dsh 客户端 todo 语义步骤）。
+   * run() 每次调用重置。update_plan 工具通过 applyPlanUpdate 修改它。
+   * fromLlm=true 表示计划由 LLM 生成（语义步骤）：耗尽后引擎不再自动追加
+   * 泛化标题步骤（如"执行命令"），避免污染语义列表 —— 模型应通过 update_plan
+   * 插入语义步骤；fromLlm=false（启发式兜底）保留旧的自动追加行为。
+   */
+  private activePlan: { plan: StepPlan[] | null; total: number | null; fromLlm: boolean } = { plan: null, total: null, fromLlm: false };
+  /** update_plan 修改计划后置位；run() 事件循环据此推送一次刷新 step_progress。 */
+  private planDirty = false;
   private writeCache: Map<string, string> = new Map();  // path → last written content
   /**
    * DSH-style: settlement 通过 Promise 网关注入。
@@ -563,7 +584,16 @@ private getFileChangeTrackerService(): FileChangeTracker | null {
     let total: number;
     const steps: StepPlan[] = [];
 
-    if (toolCount === 0) {
+    if (toolCount === 0 && looksLikeExecutableTask(userMessage)) {
+      // 中文任务意图句（无英文工具词）：如"修复卡死的问题"——此前被误判为
+      // 纯文本问答 → 只显示"回答问题"。任务型消息给 3 步语义化兜底（主路径
+      // 仍是 LLM 计划），首步含任务摘要，避免"第1步 回答问题"的无效展示。
+      const brief = taskBrief(userMessage, 24);
+      total = 3;
+      steps.push({ title: zh ? `分析：${brief}` : `Analyze: ${brief}` });
+      steps.push({ title: zh ? "定位问题根因" : "Locate the root cause" });
+      steps.push({ title: zh ? "实施修复并验证" : "Fix and verify" });
+    } else if (toolCount === 0) {
       // Pure text answer
       total = 1;
       steps.push({ title: zh ? "回答问题" : "Answer question" });
@@ -606,30 +636,34 @@ private getFileChangeTrackerService(): FileChangeTracker | null {
     try {
       const lang = (await import("../i18n/lang")).getLang();
       const estPrompt = lang === "zh"
-        ? `你是一个任务规划器。根据用户的任务，拆解为宏观执行步骤。
+        ? `你是一个任务规划器。根据用户的具体任务，拆解为有意义的宏观执行步骤（这些步骤会实时展示给用户，作为"第X/X步"进度）。
 
 规则：
-- 每个明确的子任务 = 1 步（例如「实现登录」「修复数据库并发」「添加导出功能」各算一步）
-- 最后一步通常是验证/测试/编译/总结（如果任务需要改动代码）
+- 步骤必须从用户的真实任务出发，是解决这个问题的具体工作单元。诊断/修复类任务的自然结构是：分析<问题>的原因 → 定位/诊断 → 实施修复 → 验证问题不再出现（可参照此结构，但标题要结合任务内容）
+- 步骤标题要能回答"正在解决什么问题"，可包含问题对象（如"分析 App 卡死的原因""修复调用链路的死锁""验证卡死是否复现"）
+- 严禁使用与任务无关的万能模板标题：如"回答问题""执行命令""分析任务""执行修改""验证结果""运行命令"等 —— 这些没有告诉用户任何任务信息
 - 不要列出中间侦查小步骤（读取文件、搜索代码、查看目录、运行 grep 等不算步骤）
-- 中间小步骤不会改变总步数；只有发现严重问题、需要新增任务方向时才追加步骤
-- 步骤标题简短、有实际意义，让用户一眼知道正在解决什么问题
+- 执行中计划允许动态调整：发现必须先处理的新问题时，会插入新步骤并顺延编号（这不是你现在要做的事）
+- 每个明确的子任务 = 1 步；最后一步通常是验证/测试/总结（如果任务需要改动代码）
 - 总步数 1-10 步，通常 3-6 步
 
 用 JSON 数组格式回复，每个元素包含 title 字段（简短的中文步骤描述）。不要有其他解释。
-例如：[{"title":"分析需求"},{"title":"实现登录功能"},{"title":"实现支付功能"},{"title":"运行测试验证"}]`
-        : `You are a task planner. Break down the user's task into macro execution steps.
+好例：[{"title":"分析页面卡死的原因"},{"title":"诊断主线程阻塞链路"},{"title":"修复卡死问题"},{"title":"测试验证卡死不再出现"}]
+坏例：[{"title":"回答问题"},{"title":"执行命令"}]`
+        : `You are a task planner. Break down the user's concrete task into meaningful macro execution steps (these are shown live to the user as "Step X/Y" progress).
 
 Rules:
-- Each concrete subtask = 1 step (e.g. "implement login", "fix DB concurrency", "add export feature" are each one step)
-- The final step is usually verify/test/build/summarize (if the task changes code)
+- Steps must derive from the user's actual task — concrete units of work that solve it. Diagnosis/fix tasks naturally follow: analyze WHY <problem> happens → locate/diagnose the chain → implement the fix → verify the problem no longer reproduces (follow this shape, but tie titles to the task content)
+- Step titles must answer "what problem am I solving right now"; include the problem subject (e.g. "Analyze why the app freezes", "Fix the deadlock in the call chain", "Verify the freeze no longer reproduces")
+- NEVER use generic template titles unrelated to the task, such as "Answer question", "Execute command", "Analyze task", "Make changes", "Verify results" — they tell the user nothing about the task
 - Do NOT list intermediate investigation steps (reading files, searching code, listing dirs, running grep are not steps)
-- Intermediate small steps never change the total; only append a step when a serious problem forces a new work direction
-- Step titles must be short and meaningful, so the user immediately knows what is being solved
+- The plan is dynamically adjustable during execution (new steps may be inserted ahead of the current one when a prerequisite problem is discovered) — you do not need to handle that now
+- Each concrete subtask = 1 step (e.g. "implement login", "fix DB concurrency", "add export feature" are each one step); the final step is usually verify/test/build/summarize
 - Total 1-10 steps, usually 3-6
 
 Reply as a JSON array, each element has a "title" field (short step description). No other explanation.
-Example: [{"title":"Analyze requirements"},{"title":"Implement login"},{"title":"Implement payment"},{"title":"Run tests to verify"}]`;
+Good example: [{"title":"Analyze why the page freezes"},{"title":"Diagnose the main-thread blocking chain"},{"title":"Fix the freeze"},{"title":"Test that the freeze no longer reproduces"}]
+Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
 
       const request: LLMRequest = {
         model: this.config.model || this.provider.id,
@@ -646,9 +680,16 @@ Example: [{"title":"Analyze requirements"},{"title":"Implement login"},{"title":
       // 健壮的 JSON 解析 — 使用 extractJSON 处理 markdown 包裹、中文标点、尾部逗号等
       const steps = extractJSON<StepPlan[]>(response.content);
       if (Array.isArray(steps) && steps.length > 0) {
-        const limited = steps.slice(0, 20);
-        console.log(`[AgenticLoop] Planned ${limited.length} steps:`, limited.map(s => s.title));
-        return limited;
+        // 清洗：标题必须非空（模型可能输出空/纯空白 title → UI 会出现
+        // "第X步 · "空白胶囊）；清洗后为空视为规划失败 → 回退启发式。
+        const cleaned = steps
+          .map((s) => ({ title: String(s?.title ?? "").trim() }))
+          .filter((s) => s.title.length > 0)
+          .slice(0, 20);
+        if (cleaned.length > 0) {
+          console.log(`[AgenticLoop] Planned ${cleaned.length} steps:`, cleaned.map(s => s.title));
+          return cleaned;
+        }
       }
     } catch (err) {
       console.warn("[AgenticLoop] Step planning failed:", err);
@@ -808,11 +849,17 @@ Example: [{"title":"Analyze requirements"},{"title":"Implement login"},{"title":
     // Local assistant message ID for tracking
     let assistantMsgId = `msg-${Date.now() + 1}`;
 
-    // Pre-plan: 先启发式估算；仅当任务较复杂（≥3 步）时才让 LLM 生成
-    // 宏观计划（模型拆解子任务 → 5-6 步语义化标题），失败回退启发式。
-    // 简单问答（1-2 步）不额外调用 LLM，避免无谓延迟。
-    let planState = this.estimateSteps(userMessage);
-    if ((planState.total ?? 0) >= 3) {
+    // Pre-plan: 任务语义计划（对标 dsh 客户端 todo 语义步骤列表）。
+    // 1) 纯文本问答（闲聊/非执行型任务）→ 保持启发式 1 步，不额外调 LLM；
+    // 2) 执行型任务（修复/排查/实现/重构…，或启发式估步 ≥2）→ 总是让 LLM
+    //    生成面向具体任务的语义步骤（分析原因 → 定位/诊断 → 修复 → 验证），
+    //    30s 超时，失败回退启发式估算 —— 避免出现"1、回答问题；2、执行命令"
+    //    这种与用户任务无关的通用步骤。
+    const est = this.estimateSteps(userMessage);
+    this.activePlan = { plan: est.plan, total: est.total, fromLlm: false };
+    this.planDirty = false;
+    const executable = looksLikeExecutableTask(userMessage) || (est.total ?? 0) >= 2;
+    if (executable) {
       try {
         // PLAN_TIMEOUT_MS: 规划调用是轻量非流式请求，30s 内应返回。
         // provider 层已有 120s 总超时；这里更快回退到启发式估算，
@@ -823,14 +870,14 @@ Example: [{"title":"Analyze requirements"},{"title":"Implement login"},{"title":
           new Promise<null>((resolve) => setTimeout(() => resolve(null), PLAN_TIMEOUT_MS)),
         ]);
         if (llmPlan && llmPlan.length > 0) {
-          planState = { plan: llmPlan, total: llmPlan.length };
+          this.activePlan = { plan: llmPlan, total: llmPlan.length, fromLlm: true };
           console.log(`[AgenticLoop] LLM plan (${llmPlan.length} steps):`, llmPlan.map(s => s.title));
         }
       } catch (planErr) {
         console.warn("[AgenticLoop] LLM plan failed, using heuristic:", planErr);
       }
     }
-    console.log(`[AgenticLoop] Estimated ${planState.total ?? 0} steps:`, planState.plan?.map(s => s.title));
+    console.log(`[AgenticLoop] Plan ${this.activePlan.total ?? 0} steps:`, this.activePlan.plan?.map(s => s.title));
 
       // Main loop — DSH-aligned: no built-in turn budget, no token cap.
       // The loop runs until the model produces no tool calls (natural completion).
@@ -964,10 +1011,7 @@ Example: [{"title":"Analyze requirements"},{"title":"Implement login"},{"title":
         this.appendedStepTitles.clear();
       }
       this.lastExecToolInIteration = null;
-      const stepTitle = planState.plan && planState.plan[this.macroStep - 1]
-        ? planState.plan[this.macroStep - 1].title
-        : (this.getToolTitle(this.lastExecToolName || ""));
-      yield { type: "step_progress", step: this.macroStep, total: planState.total, title: stepTitle, steps: planState.plan };
+      yield { type: "step_progress", step: this.macroStep, total: this.activePlan.total, title: this.currentStepTitle(), steps: this.activePlan.plan };
 
       // Clear stale guidanceInterrupt flag — if we're at a new iteration with a
       // fresh AbortController, any previous guidance interrupt has been handled
@@ -1207,11 +1251,18 @@ Example: [{"title":"Analyze requirements"},{"title":"Implement login"},{"title":
         cwd,
         systemPrompt,
       )) {
+        // update_plan 工具修改计划后，先推送一次刷新事件，让 UI 的
+        // "第X/X步"与完整步骤列表立即同步（对标 dsh todo 动态插入）。
+        if (this.planDirty) {
+          this.planDirty = false;
+          yield { type: "step_progress", step: this.macroStep, total: this.activePlan.total, title: this.currentStepTitle(), steps: this.activePlan.plan };
+        }
         yield event;
         if (event.type === "tool_start") iterationToolCalls++;
         if (event.type === "text_delta" && event.text.trim()) iterationHadText = true;
 // 宏观步骤推进：
-// - Recon tools (read/glob/grep/tool_search/web_search/list) do NOT advance the step.
+// - Recon tools (read/glob/grep/tool_search/web_search/list) 与计划元操作
+//   (update_plan) 不推进步骤。
 // - The FIRST execution tool (write/edit/bash/run_test/etc.) in an iteration advances to the next macro step.
 // - Extra steps are appended only when the planned steps are exhausted and a new execution phase starts.
 if (event.type === "tool_start") {
@@ -1220,29 +1271,27 @@ const isRecon = RECON_TOOL_NAMES.has(toolName);
 if (!isRecon && this.lastExecToolInIteration === null) {
 this.lastExecToolInIteration = toolName;
 this.lastExecToolName = toolName;
-const planLen = planState.plan?.length ?? 0;
+const planLen = this.activePlan.plan?.length ?? 0;
 if (this.macroStep < planLen) {
 // 计划内：执行类工具首次出现 → 推进到下一宏步骤（每个 iteration 至多一次）
 this.macroStep++;
-} else if (planLen > 0 && this.macroStep >= planLen) {
-// 计划耗尽：宏观计划步语义 — 中间小步骤不会新增步骤；只有出现新的执行类别
-// 时才追加一步（标题去重 + 总数受限），防止「无用步数」无限膨胀。
+} else if (planLen > 0 && this.macroStep >= planLen && !this.activePlan.fromLlm) {
+// 计划耗尽（仅启发式兜底计划）：宏观计划步语义 — 中间小步骤不会新增步骤；
+// 只有出现新的执行类别时才追加一步（标题去重 + 总数受限），防止膨胀。
+// LLM 语义计划不在此自动追加 —— 模型应通过 update_plan 插入语义步骤，
+// 避免再次出现"执行命令"这类与任务无关的泛化标题。
 const appendTitle = this.getToolTitle(toolName);
 if (AgenticLoop.shouldAppendStep(this.appendedStepTitles, toolName)) {
 this.appendedStepTitles.add(appendTitle);
-if (planState.plan) {
-planState.plan.push({ title: appendTitle });
-planState.total = planState.plan.length;
+if (this.activePlan.plan) {
+this.activePlan.plan.push({ title: appendTitle });
+this.activePlan.total = this.activePlan.plan.length;
 }
 this.macroStep++;
 }
 }
 }
-// Update the current step title with the tool description for visibility
-const macroTitle = planState.plan && planState.plan[this.macroStep - 1]
-? planState.plan[this.macroStep - 1].title
-: this.getToolTitle(toolName);
-yield { type: "step_progress", step: this.macroStep, total: planState.total, title: macroTitle, steps: planState.plan };
+yield { type: "step_progress", step: this.macroStep, total: this.activePlan.total, title: this.currentStepTitle(), steps: this.activePlan.plan };
 }
 // DSH-style: 不再需要追踪 spawn_subagent 的工具启动事件
       }
@@ -1522,6 +1571,36 @@ yield { type: "step_progress", step: this.macroStep, total: planState.total, tit
     return titleMap[toolName] || toolName;
   }
 
+  /** 当前进行中步骤的标题（计划内取计划标题，计划外回退执行工具标题）。 */
+  private currentStepTitle(): string {
+    const plan = this.activePlan.plan;
+    if (plan && plan[this.macroStep - 1]) {
+      return plan[this.macroStep - 1].title;
+    }
+    return this.getToolTitle(this.lastExecToolName || "");
+  }
+
+  /**
+   * update_plan 工具回调：把模型提交的插入操作应用到当前计划。
+   * 成功返回 {ok:true, message}（message 含插入后完整计划，回给模型使其
+   * 感知编号顺延）；失败返回 {ok:false, error}。
+   */
+  private applyPlanUpdate(op: PlanUpdateOp): { ok: true; message: string } | { ok: false; error: string } {
+    const items = this.activePlan.plan ?? [];
+    if (items.length === 0) {
+      return { ok: false, error: "当前没有可更新的执行计划（仅对话任务进行中可用）。" };
+    }
+    const result = applyPlanUpdatePure(items, op, this.macroStep);
+    if (!result.ok) return { ok: false, error: result.error };
+    this.activePlan = { plan: result.items, total: result.items.length, fromLlm: this.activePlan.fromLlm };
+    this.planDirty = true;
+    console.log(
+      `[AgenticLoop] Plan updated via update_plan (now ${result.items.length} steps):`,
+      result.items.map((s) => s.title),
+    );
+    return { ok: true, message: result.message };
+  }
+
   private async *executeIteration(
     sessionId: string,
     assistantMsgId: string,
@@ -1553,10 +1632,18 @@ yield { type: "step_progress", step: this.macroStep, total: planState.total, tit
       }
       const processedMessages = visionResult.messages;
 
+      // 计划上下文注入：让模型每轮看到"当前执行计划 + 进行到第几步"
+      // （对标 dsh todo —— 模型需要知道剩余步骤才能在合适时机 update_plan）。
+      // 无计划（纯问答）时为空串，不影响既有 prompt 缓存。
+      const planContext = renderPlanSection(this.activePlan.plan, this.macroStep);
+      const effectiveSystemPrompt = planContext
+        ? `${systemPrompt}\n\n${planContext}`
+        : systemPrompt;
+
       const request: LLMRequest = {
         model: this.config.model || this.provider.id,
         messages: [
-          { id: "system", role: "system", content: systemPrompt },
+          { id: "system", role: "system", content: effectiveSystemPrompt },
           ...processedMessages,
         ],
         tools: toolDefs.length > 0 ? toolDefs : undefined,
@@ -1948,6 +2035,8 @@ yield { type: "step_progress", step: this.macroStep, total: planState.total, tit
         onInteractiveForm: this.config.onInteractiveForm,
                 // Phase F: Notebook knowledge mode
         notebookId: this.config.notebookId,
+        // 步骤计划：update_plan 工具回调 → 动态插入/追加语义步骤
+        updatePlan: (op) => this.applyPlanUpdate(op),
       };
 
     for await (const event of this.executor.execute(
@@ -2299,7 +2388,16 @@ yield { type: "step_progress", step: this.macroStep, total: planState.total, tit
     }
 
     // --- E6: Intelligent context selection ---
-    const selected = this.selectMessagesByPriority(llmMessages, 100000);
+    // 2026-09 token 审计：预算对齐模型真实窗口（tracker.contextWindow，可由
+    // provider.listModels 解析），不再用固定 100000 伪 token（=400k 字符，中文
+    // 可超真实窗口致服务端截断/400）。窗口 90% 兜底 —— 压缩（0.8 阈值）先于
+    // 它触发，select 仅在压缩后仍超限时做最后防线。
+    // 先裁剪陈旧超大工具结果（保留最近 2 条完整；对标 dsh tool-result-pruner
+    // head/tail 策略，防止单个 read/bash 结果 ≈12-25k token 占据大量预算）。
+    const prunedForSelect = pruneStaleToolResults(llmMessages);
+    const contextWindow = getTokenTracker().getContextWindow() || this.config.contextWindow || 128000;
+    const selectBudgetTokens = Math.max(16_000, Math.round(contextWindow * 0.9));
+    const selected = this.selectMessagesByPriority(prunedForSelect, selectBudgetTokens);
 
     // Filter orphan tool messages AND strip dangling tool_calls
     // 1. If a "tool" message has no preceding assistant with tool_calls → drop it
@@ -2352,6 +2450,20 @@ yield { type: "step_progress", step: this.macroStep, total: planState.total, tit
         continue;
       }
       valid.push(msg);
+    }
+
+    // --- 上下文折叠（防"失忆"重复劳动 → 省 token）---
+    // selectMessagesByPriority 超预算时会丢弃最早消息（无摘要）。对长任务，
+    // 被丢的是早期 read/grep/bash 结果与旧轮次 —— 模型失忆后会重新读取/
+    // 重复执行，消耗反而随轮次膨胀。这里在截断发生后，为被丢弃的操作插入
+    // 一条零成本紧凑摘要（不调 LLM），保留下文可读。已存在折叠行则跳过
+    // （避免每轮重复累积）。对标 dsh compaction 的语义化替换思想。
+    if (valid.length > 0 && llmMessages.length > valid.length) {
+      const dropped = llmMessages.filter((m: any) => !valid.includes(m));
+      if (dropped.length > 0 && !valid.some((m: any) => isFoldMessage(m))) {
+        const foldMsg = renderFoldSummary(foldStats(dropped), "zh");
+        valid.unshift({ role: "user", content: foldMsg, id: `ctx-fold-${Date.now()}` } as any);
+      }
     }
 
     // P0-3: Micro-compact — replace old tool result content with placeholders
@@ -2427,10 +2539,10 @@ yield { type: "step_progress", step: this.macroStep, total: planState.total, tit
   private selectMessagesByPriority(messages: any[], maxTokens: number): any[] {
     if (messages.length === 0) return [];
 
-    // Estimate tokens for each message
+    // Estimate tokens for each message with the shared estimator (CJK-aware).
     const tokens = messages.map((msg) => {
       const content = typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content || "");
-      return Math.ceil(content.length / 4);
+      return Math.max(1, Math.ceil(estimateTokens(content)));
     });
 
     const totalTokens = tokens.reduce((a, b) => a + b, 0);
@@ -2497,7 +2609,7 @@ yield { type: "step_progress", step: this.macroStep, total: planState.total, tit
         if (content.length > 5000) {
           const truncated = content.substring(0, 2000) + "\n...(truncated for context budget)";
           usedTokens -= tokens[i];
-          usedTokens += Math.ceil(2000 / 4);
+          usedTokens += Math.max(1, Math.ceil(estimateTokens("x".repeat(2000))));
           msg = { ...msg, content: truncated };
         }
       }

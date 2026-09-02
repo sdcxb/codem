@@ -71,7 +71,11 @@ export function TerminalPanel({ cwd }: TerminalPanelProps) {
     try {
       ptyId = await tauriInvoke("spawn_pty", { cwd });
     } catch (e: any) {
+      // FIX: spawn 失败时清理已创建的终端 DOM/实例，避免容器残留空终端 div
+      // （此前只写错误文本就 return，termDiv 永远留在容器里，也无法被关闭）。
       term.write(`\x1b[31mFailed to spawn terminal: ${e.message}\x1b[0m\r\n`);
+      try { term.dispose(); } catch { /* ignore */ }
+      termDiv.remove();
       return;
     }
 

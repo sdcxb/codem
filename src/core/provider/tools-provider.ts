@@ -41,7 +41,10 @@ export const toolsProvider: Plugin = Object.assign(
      * Called automatically when a tool with `guidance` is registered.
      */
     function registerToolGuidance(tool: ToolDef): void {
-      if (!tool.guidance) return
+      // 2026-09 token 审计：defer 工具的 guidance 不注入 systemPrompt ——
+      // 模型尚未加载该工具（每轮 schema 不含它），注入是纯冗余 token；
+      // 加载后其 description 已足够使用。核心工具（每轮可见）保留 guidance。
+      if (!tool.guidance || tool.shouldDefer) return
       const sp = ctx.get('systemPrompt')
       if (!sp) {
         // systemPrompt not yet available — try again on next effect cycle
@@ -76,21 +79,16 @@ export const toolsProvider: Plugin = Object.assign(
     }
 
     // Register the dynamic tool catalog section.
-    // This section collects all registered tools' id + description at assembly
-    // time, so the LLM always sees the current tool set without hardcoding.
+    // 2026-09 token 审计：目录与请求 tools schema / Deferred Tools hints 三重复
+    // （核心工具 description 已在每轮 tools 数组；defer 工具已在 systemPrompt 的
+    // "Deferred Tools" hints）。目录文本置空 —— 保留 section 占位以免破坏
+    // collectToolGuidance 的过滤逻辑，但不输出任何字符。
     const sp0 = ctx.get('systemPrompt')
     const registerCatalog = (sp: any) => {
       sp.addSection({
         name: 'tools:catalog',
         order: TOOL_CATALOG_ORDER,
-        text: () => {
-          const registry = getRegistry()
-          if (!registry) return ''
-          const all = registry.getAll()
-          if (all.length === 0) return ''
-          const lines = all.map((t: ToolDef) => `- **${t.id}**: ${t.description.split('\n')[0]}`)
-          return `## Available Tools\n\n${lines.join('\n')}`
-        },
+        text: () => '',
       })
     }
     if (sp0) {

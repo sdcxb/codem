@@ -163,8 +163,14 @@ fn resize_pty(id: String, cols: u16, rows: u16, state: State<'_, PtyMap>) -> Res
 fn close_pty(id: String, state: State<'_, PtyMap>) -> Result<(), String> {
     let mut map = state.lock().map_err(|e| format!("Lock error: {}", e))?;
     if let Some(mut session) = map.remove(&id) {
-        // Kill child process
+        // 杀整个进程树（对标 dsh 进程树纪律）：cmd.exe 的孙进程（正在跑的
+        // 长命令如 node/npm/test）此前不会被单 kill 带走，终端关闭后仍在
+        // 后台运行 —— 用户以为已停止，实际资源/端口被占用。
+        if let Some(pid) = session._child.process_id() {
+            let _ = kill_process_tree(Some(pid));
+        }
         let _ = session._child.kill();
+        runtime_log::append_line("INFO", &format!("pty closed id={}", id));
         // Master and writer are dropped when session goes out of scope
         drop(session);
     }
@@ -1865,6 +1871,10 @@ async fn quit_app(app: AppHandle, pty_map: State<'_, PtyMap>) -> Result<(), Stri
     if let Ok(mut map) = pty_map.lock() {
         for (id, mut session) in map.drain() {
             runtime_log::append_line("INFO", &format!("pty cleanup killing id={}", id));
+            // 杀整树：退出时若终端里正跑长命令（npm test 等），单 kill 会留下孤儿进程。
+            if let Some(pid) = session._child.process_id() {
+                let _ = kill_process_tree(Some(pid));
+            }
             let _ = session._child.kill();
             drop(session);
         }
@@ -2270,10 +2280,22 @@ path_exists,
                         }
                         }
                         "quit" => {
-                            // 正常退出：清崩溃标记，避免下次启动误报
-                            runtime_log::append_line("INFO", "tray quit menu — exiting");
+                            // 正常退出：清崩溃标记，避免下次启动误报。
+                            // FIX: 直接 app.exit 会跳过前端的 DB flush（saveDatabase
+                            // 500ms 防抖可能未落盘，退出即丢最近写入）。改为先通知
+                            // 前端 flush（前端 flush 后调 quit_app 真正退出），
+                            // 2.5s 兜底强制退出（防前端卡死导致无法退出）——
+                            // 兜底前检查主窗口是否仍在（quit_app 已退出则窗口已销毁）。
+                            runtime_log::append_line("INFO", "tray quit menu — requesting frontend flush");
                             clear_active_run_marker(app);
-                            app.exit(0);
+                            let _ = app.emit("quit-requested", ());
+                            let app2 = app.clone();
+                            std::thread::spawn(move || {
+                                std::thread::sleep(std::time::Duration::from_millis(2500));
+                                if app2.get_webview_window("main").is_some() {
+                                    let _ = app2.exit(0);
+                                }
+                            });
                         }
                         "close-pet" => {
                             // Pet context menu → notify frontend to disable pet

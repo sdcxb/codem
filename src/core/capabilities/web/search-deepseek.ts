@@ -19,6 +19,7 @@ export class DeepSeekWebSearch implements Web {
     try {
       const response = await fetch(`https://api.deepseek.com/v1/search?q=${encodeURIComponent(query)}`, {
         headers: { 'Content-Type': 'application/json' },
+        signal: AbortSignal.timeout(15_000),
       })
       const data = await response.json()
       return data.results || []
@@ -28,7 +29,7 @@ export class DeepSeekWebSearch implements Web {
   }
 
   async fetch(url: string): Promise<string> {
-    const response = await globalThis.fetch(url)
+    const response = await globalThis.fetch(url, { signal: AbortSignal.timeout(20_000) })
     return response.text()
   }
 }

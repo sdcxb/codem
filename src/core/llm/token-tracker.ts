@@ -254,6 +254,11 @@ export class TokenTracker {
     this.contextWindow = size;
   }
 
+  /** 当前生效的模型上下文窗口（token）。 */
+  getContextWindow(): number {
+    return this.contextWindow;
+  }
+
   /**
    * R3-1.6: 估算下一轮 LLM 调用的投影 token 数。
    *

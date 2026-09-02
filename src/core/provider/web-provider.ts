@@ -26,7 +26,7 @@ export const webProvider: Plugin = (ctx: any) => {
           return result.content
         }
       } catch (e) { console.warn('[web] webFetchHttp fetch failed', e) }
-      const response = await globalThis.fetch(url)
+      const response = await globalThis.fetch(url, { signal: AbortSignal.timeout(20_000) })
       return response.text()
     },
   })

@@ -82,7 +82,7 @@ class RemoteClientService {
 
   private async getRemoteCapabilities(): Promise<string[]> {
     try {
-      const response = await fetch(`${this.endpoint}/api/capabilities`)
+      const response = await fetch(`${this.endpoint}/api/capabilities`, { signal: AbortSignal.timeout(10_000) })
       const data = await response.json()
       return data.capabilities || ['chat', 'tools', 'sessions']
     } catch {

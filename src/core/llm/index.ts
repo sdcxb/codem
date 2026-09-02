@@ -584,18 +584,17 @@ private loopPool: Map<string, AgenticLoop> = new Map();
     }
 
     // Fallback: collect guidance directly from ToolRegistry
+    // 2026-09 token 审计：只收集核心（非 defer）工具的 guidance —— 工具列表与
+    // 每轮 tools schema 重复（name+description 已在请求 tools 数组），不再输出
+    // "Available Tools" 全列表。
     const allTools = this.tools.getAll();
     const guidanceParts = allTools
-      .filter(t => t.guidance)
+      .filter(t => t.guidance && !t.shouldDefer)
       .map(t => t.guidance!);
 
     if (guidanceParts.length === 0) return undefined;
 
-    const toolList = allTools
-      .map(t => `- **${t.id}**: ${t.description.split('\n')[0]}`)
-      .join('\n');
-
-    return `## Available Tools\n\n${toolList}\n\n## Tool Usage Guide\n\n${guidanceParts.join('\n\n')}`;
+    return `## Tool Usage Guide\n\n${guidanceParts.join('\n\n')}`;
   }
 
   /**
@@ -618,18 +617,17 @@ private loopPool: Map<string, AgenticLoop> = new Map();
     }
 
     // Fallback: collect guidance directly from ToolRegistry
+    // 2026-09 token 审计：只收集核心（非 defer）工具的 guidance —— 工具列表与
+    // 每轮 tools schema 重复（name+description 已在请求 tools 数组），不再输出
+    // "Available Tools" 全列表。
     const allTools = this.tools.getAll();
     const guidanceParts = allTools
-      .filter(t => t.guidance)
+      .filter(t => t.guidance && !t.shouldDefer)
       .map(t => t.guidance!);
 
     if (guidanceParts.length === 0) return undefined;
 
-    const toolList = allTools
-      .map(t => `- **${t.id}**: ${t.description.split('\n')[0]}`)
-      .join('\n');
-
-    return `## Available Tools\n\n${toolList}\n\n## Tool Usage Guide\n\n${guidanceParts.join('\n\n')}`;
+    return `## Tool Usage Guide\n\n${guidanceParts.join('\n\n')}`;
   }
 
   /** Build minimal system prompt for sub-agents (no personality/safety rules) */

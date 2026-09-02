@@ -128,7 +128,7 @@ export async function extractFromUrl(source: NotebookSource): Promise<ExtractRes
     const isTauri = !!(window as any).__TAURI__;
     if (!isTauri) {
       // Fallback: try fetch directly (may fail due to CORS in browser)
-      const resp = await fetch(source.url);
+      const resp = await fetch(source.url, { signal: AbortSignal.timeout(15_000) });
       const html = await resp.text();
       const text = stripHtml(html);
       return { text };

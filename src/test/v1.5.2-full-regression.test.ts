@@ -568,9 +568,9 @@ describe("H. 大文件分页读取", () => {
     expect(DEFAULT_LIMIT).toBe(2000);
   });
 
-  it("H4. 默认 max_chars = 100000", () => {
-    const DEFAULT_MAX_CHARS = 100_000;
-    expect(DEFAULT_MAX_CHARS).toBe(100000);
+  it("H4. 默认 max_chars = 50000（对齐 dsh read 上限 ~50KB，2026-09 调低省 token）", () => {
+    const DEFAULT_MAX_CHARS = 50_000;
+    expect(DEFAULT_MAX_CHARS).toBe(50000);
   });
 
   it("H5. READ_FILE_FULL_MAX_BYTES = 50MB", () => {

@@ -3,6 +3,7 @@ import { readFile, writeFile, deletePath, executeCommand, globSearch, grepSearch
 import { getLang } from "../i18n/lang";
 import { getSetting } from "../storage/settings";
 import type { Context } from "../cordis/src/index.ts";
+import type { PlanUpdateOp } from "./plan-utils";
 
 // R4: 可选的 ctx 消费层 — 当 ctx 可用时优先通过 ctx.get() 消费服务
 let _ctx: Context | null = null;
@@ -333,6 +334,9 @@ export interface ToolContext {
   workspace?: string;
   /** Security mode: "ask" = show Diff confirm, "auto" = skip Diff confirm, "full" = skip everything */
   securityMode?: "ask" | "auto" | "full";
+
+  /** (步骤计划) 执行中动态修改宏观计划（update_plan 工具回调）。成功返回详细结果文本（含新计划列表），失败返回 {ok:false,error}。 */
+  updatePlan?: (op: PlanUpdateOp) => { ok: true; message: string } | { ok: false; error: string };
 
   // ===== Phase D extensions =====
 
@@ -977,7 +981,10 @@ export function createReadFileTool(): ToolDef {
       const path = args.path as string;
       const offset = (args.offset as number) || 1;
       const limit = (args.limit as number) || 2000;
-      const MAX_CHARS = 100_000;
+      // 单次 read 结果上限（字符）：对齐 dsh-desktop read 上限（READ_MAX_BYTES≈50KB）。
+      // 此前 100k 字符单次返回（中文内容 ≈300KB 字节）会把大半上下文一次性撑满，
+      // 是"同样任务 token 比 dsh 大数倍"的主因之一。50k 字符 ≈ 代码/英文 12k tokens。
+      const MAX_CHARS = 50_000;
 
       try {
         let output: string = "";
@@ -1475,6 +1482,22 @@ export function createImageGenTool(): ToolDef {
 export function createDefaultToolRegistry(ctx?: Context): ToolRegistry {
   // R4: 如果传入了 ctx，设置全局工具上下文
   if (ctx) setToolContext(ctx)
+
+  /**
+   * 低频大 schema 工具延迟加载（省每轮固定 token）：
+   * 对齐 dsh 工具按需暴露 —— 45 个全 schema 每轮注入 ≈10.6k tokens。
+   * PPT/浏览器/Figma/GitHub API/工作流/图片/语音与日常"修 bug/写代码"无关，
+   * 不注入全 schema；模型可通过 tool_search（系统提示词含 name+hint）按需加载。
+   */
+  const DEFERRED_BIG_TOOLS = new Set([
+    "generate_ppt", "browser_automate", "figma_fetch", "github_tool",
+    "workflow", "image_gen", "tts",
+  ]);
+  const deferIfBig = (tool: ToolDef): ToolDef => {
+    if (DEFERRED_BIG_TOOLS.has(tool.id)) tool.shouldDefer = true;
+    return tool;
+  };
+
   const registry = new ToolRegistry();
   registry.register(createBashTool());
   registry.register(createReadFileTool());
@@ -1483,8 +1506,8 @@ export function createDefaultToolRegistry(ctx?: Context): ToolRegistry {
   registry.register(createMultiEditTool());
   registry.register(createGlobTool());
   registry.register(createGrepTool());
-  registry.register(createTTSTool());
-  registry.register(createImageGenTool());
+  registry.register(deferIfBig(createTTSTool()));
+  registry.register(deferIfBig(createImageGenTool()));
   // B3: load_skill tool for lazy skill loading
   registry.register(createLoadSkillTool(registry));
   // B4: web_search tool
@@ -1498,15 +1521,15 @@ export function createDefaultToolRegistry(ctx?: Context): ToolRegistry {
     registry.register(tool);
   }
   // PPT 生成工具 — 在对话中让 AI 生成演示文稿
-  registry.register(createGeneratePPTTool());
+  registry.register(deferIfBig(createGeneratePPTTool()));
   // P1: 澄清提问、事实核查、Todo 列表工具
   registry.register(createClarificationTool());
   registry.register(createFactCheckTool());
   registry.register(createShowTodoTool());
   // D-MCP: Playwright + Figma + GitHub integration tools
-  registry.register(createBrowserAutomateTool());
-  registry.register(createFigmaFetchTool());
-  registry.register(createGitHubTool());
+  registry.register(deferIfBig(createBrowserAutomateTool()));
+  registry.register(deferIfBig(createFigmaFetchTool()));
+  registry.register(deferIfBig(createGitHubTool()));
   // P0-1: LSP tool for code navigation (definition, references, hover, symbols)
   registry.register(createLSPTool());
   // P0-2: tool_search for deferred tool loading (must be registered AFTER deferred tools)
@@ -1526,7 +1549,7 @@ registry.register(createSessionEventReadTool());
     registry.register(tool);
   }
   // P2-11: Workflow tool — JS-based task orchestration
-  registry.register(createWorkflowTool());
+  registry.register(deferIfBig(createWorkflowTool()));
   // P2-19/20: Job and Terminal tools
   for (const tool of createJobTools()) {
     registry.register(tool);
@@ -1541,5 +1564,63 @@ registry.register(createSessionEventReadTool());
   for (const tool of createDynamicPluginTools()) {
     registry.register(tool);
   }
+  // 步骤计划：执行中动态插入/追加语义步骤（对标 dsh 客户端 todo 语义列表）
+  registry.register(createUpdatePlanTool());
   return registry;
+}
+
+/**
+ * update_plan — 动态调整对话中展示的"第X/X步"宏观计划。
+ *
+ * 对标 dsh-desktop 客户端：任务步骤是模型维护的语义工作单元（分析原因 →
+ * 诊断链路 → 修复 → 验证），执行中发现必须先处理的新问题时，模型把新步骤
+ * 插入到当前进行中的步骤之前（编号顺延），而不是只做事后追加。
+ */
+export function createUpdatePlanTool(): ToolDef {
+  return {
+    id: "update_plan",
+    guidance:
+      "执行过程中，如果发现必须先处理的新问题（例如当前修复依赖一个调用链路问题），调用 update_plan 把新步骤插入到当前进行中的步骤之前，再继续原计划。插入后总步数与后续编号会自动更新。",
+    description:
+      "动态更新对话顶部展示的执行计划（第X/X步列表）。仅当你发现计划外、必须先处理的新问题时使用：\n" +
+      "  - insert_before: 把新步骤插入到指定步骤之前（后续步骤自动顺延）。index 为 1-based 步骤号。\n" +
+      "    典型用法：当前正在执行第 3 步时发现新问题，调用 insert_before index=3，使新步骤成为新的第 3 步。\n" +
+      "  - insert_after: 把新步骤插入到指定步骤之后。index 为 1-based；index=0 表示插到第 1 步之前（仅当第 1 步尚未完成时可用）。\n" +
+      "  - append: 追加到计划末尾（全新的任务方向）。\n" +
+      "规则：不能插入到已完成（index 小于当前进行中步骤）的位置；步骤标题要简短有意义（如『修复调用链路』），不要用『执行命令』这类与任务无关的泛化标题。",
+    parameters: {
+      type: "object",
+      properties: {
+        action: {
+          type: "string",
+          enum: ["insert_before", "insert_after", "append"],
+          description: "插入方式：insert_before=插到指定步骤前；insert_after=插到指定步骤后；append=追加到末尾",
+        },
+        index: {
+          type: "integer",
+          description: "目标步骤号（1-based，insert_before/insert_after 使用；insert_after 用 0 表示最前）。省略时 insert_before 默认插到当前进行中的步骤之前。",
+        },
+        titles: {
+          type: "array",
+          items: { type: "string" },
+          description: "要插入的步骤标题（1 个或多个），简短有意义、指向具体任务内容",
+        },
+      },
+      required: ["action", "titles"],
+    },
+    async execute(args, ctx) {
+      const action = args.action as PlanUpdateOp["action"];
+      const titles = (Array.isArray(args.titles) ? args.titles : []).map((t) => String(t));
+      if (!ctx.updatePlan) {
+        return { title: "update_plan", output: "Error: 当前没有可更新的执行计划（仅对话任务进行中可用）。" };
+      }
+      const op: PlanUpdateOp = action === "append"
+        ? { action, titles }
+        : { action, ...(typeof args.index === "number" ? { index: args.index } : {}), titles };
+      const err = ctx.updatePlan(op);
+      if (!err) return { title: "update_plan", output: "Error: 计划更新失败（无返回）。" };
+      if (!err.ok) return { title: "update_plan", output: `Error: ${err.error}` };
+      return { title: "update_plan", output: err.message };
+    },
+  };
 }
