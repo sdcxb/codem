@@ -328,7 +328,21 @@ const model = resolved.modelId;
         keyTopics: Array.isArray(result.keyTopics) ? result.keyTopics : undefined,
       });
     } else {
-      console.warn('[Indexer] Failed to parse source summary JSON:', content.slice(0, 200));
+      // 模型未返回严格 JSON（常见：直接回文本/带解释/截断）——降级为文本摘要：
+      // 去掉 markdown 代码块与"以下是摘要"引导词后取前 200 字，保证笔记本卡片
+      // 有内容可读；不再仅 warn 后留空。
+      console.warn('[Indexer] Source summary not JSON, falling back to text preview:', content.slice(0, 120));
+      const plain = content
+        .replace(/```[\s\S]*?```/g, '')
+        .replace(/^(以下是|以下为|下面|Here is|Below|The (following )?summary)/i, '')
+        .replace(/^[#>*\-\s]+/, '')
+        .trim();
+      if (plain.length > 0) {
+        updateSource(sourceId, {
+          summary: plain.slice(0, 200),
+          keyTopics: undefined,
+        });
+      }
     }
   } catch (error) {
     console.warn(`[Indexer] Source summary generation failed for ${sourceId}:`, error);

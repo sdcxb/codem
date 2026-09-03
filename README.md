@@ -46,6 +46,8 @@
 >
 > **v1.6.2 更新**：大富翁嵌入式游戏全量交付（Phase 1-10） + 三轮审计 Bug 修复 — 在 Codem 中嵌入完整的大富翁4风格桌面游戏，作为用户等待 LLM 执行任务时的休闲娱乐。游戏作为完全独立的大插件运行，零侵入主项目代码。Phase 1-6 完成基础设施和核心玩法（棋盘渲染/动态骰子/地产系统/角色系统/命运新闻事件/股票系统/卡片系统/道具系统/AI 策略/存档读档）；Phase 7-9 完成视觉交互和核心机制对齐（地块图标映射/角色精灵动画/消息条系统/物价指数/住院监狱酒店沉睡状态/连锁奖励税收）；Phase 10（G20-G36）补全开局设置（游戏天数/玩家数量/初始资金/胜利条件）+ 机制补全（机场传送/商业地块/主动卖地/股票分红/银行拒绝）+ 体验补全（多人热座/帮助规则/财富面板/资产清单/日志增强/投降功能/音量控制/速度调节）。三轮审计修复 7 个关键 Bug（破产清算逻辑/玩家状态检查/死循环保护/命运事件移动/初始资金应用/AI 循环优化/掷骰跳过检查）。TypeScript 编译 0 错误，Vite 构建成功。
 
+> **v1.9.6 更新**：打包版运行问题修复 — ①**CSP 修复**：`script-src`/`worker-src` 增加 `blob:`（知识笔记本导入 docx 时 transformers.js/onnxruntime WASM 动态加载不再被拦，修复"no available backend found"索引失败）+ `connect-src` 增加 `ipc:`（Tauri IPC 不再回退 postMessage）②**YAML 清理**：移除已删除的 @codem/terminal-bash 引用（启动不再报插件加载失败）③**控制台降噪**：extractJSON 失败尝试静默（不再刷屏）④**知识摘要降级**：模型未返回 JSON 时自动取文本前 200 字作摘要（笔记本卡片不空白）⑤**subagent 激活竞态修复**：SubagentRuntime 同步初始化，9 个依赖 subagent 的插件不再 PENDING（消除 assertActivated FAILED）。
+>
 > **v1.9.5 更新**：对话步骤语义化（对标 dsh todo）+ token 消耗审计修复 + 功能审计修复 — ①**步骤语义化与动态插入**：执行型任务强制 LLM 语义计划（"分析卡死原因→诊断链路→修复→测试"，任务意图检测修复"修复卡死"被当纯问答显示"回答问题"）+ 新增 `update_plan` 工具（执行中发现新问题在当前位置插入步骤、编号顺延、X/X 即时刷新）+ 模型每轮可见计划状态 ②**token 审计（比 dsh 省数倍的根因修复）**：read 单次上限 100k→50k 字符、陈旧大工具结果 head+tail 裁剪（对齐 dsh pruner）、7 个低频工具延迟加载（schema 每轮 10.6k→7.5k token）、系统提示词工具信息三重复裁剪、上下文选择预算对齐真实模型窗口、截断丢历史时插入零成本折叠摘要（防失忆重复劳动）③**功能审计**：PTY 关闭/退出杀进程树（孙进程残留）、终端创建失败 DOM 残留清理、4 处裸 fetch 补超时、托盘退出先 flush 数据库 ④新增 20+ 用例（步骤 17 + 上下文折叠 7）。全量 145 文件 / 4102 用例通过 + tsc/cargo 零错误。
 >
 > **v1.9.4 更新**：dsh-desktop 全面对标稳健性审计修复（15 轮）— ①**崩溃检测与恢复**：active-run.json 崩溃标记（上次异常退出下次启动提示）+ panic 落盘 codem-crash.log + 渲染崩溃恢复边界 AppErrorBoundary（白屏 → 恢复卡片：重试/重新加载/重置界面设置，会话数据不受影响）②**运行时文件日志**（对标 dsh log-files.ts）：常规事件按日落盘 `%APPDATA%\com.codem.app\codem-runtime-*.log`，轮转 + 上限 + 14 天保留 + 写入前统一脱敏 ③**持久化失败可见性**：数据库写盘失败不再静默丢数据（界面提示 + 3s 自动重试 + 恢复自动续存）④**命令执行**：超时杀整个进程树 + PowerShell 安全转义（修复 git `HEAD^{tree}` 崩溃）⑤**网络/安全**：fetchWithTimeout 统一超时全覆盖 + API 错误统一脱敏 + WebSocket 定时器泄漏修复 ⑥**界面**：6 处 JSX 条件渲染修复 + 终端会话退出通知 + Mermaid 安全级别收紧 + 窗口状态持久化。全量 141 文件 / 4079 用例通过 + tsc 零错误 + cargo 零警告。
@@ -346,6 +348,20 @@ npm run tauri:build
 - 两种模式均使用内置 LLM 引擎直连 API，无需依赖外部进程
 
 ## 更新日志
+
+### 2026-09-02（v1.9.6）
+
+> 打包版运行问题修复：CSP（blob:/ipc:）+ YAML 清理 + 控制台降噪 + 知识摘要降级 + subagent 激活竞态。
+
+**打包版运行问题修复：**
+- CSP `script-src`/`worker-src` 增加 `blob:`：知识笔记本导入 docx 的本地嵌入（transformers.js WASM 动态加载）不再被拦截，修复"no available backend found"导致索引失败
+- CSP `connect-src` 增加 `ipc:`：Tauri 自定义 IPC 走原生通道，不再回退 postMessage
+- 移除 YAML 中已删除的 @codem/terminal-bash 引用：启动不再报"1 plugin(s) failed to load"
+- extractJSON 解析失败不再刷屏（失败尝试静默，最终单次告警）
+- 知识摘要：模型未返回 JSON 时自动降级为文本摘要（前 200 字），笔记本卡片不空白
+- SubagentRuntime 同步初始化：9 个依赖 subagent 的插件正常激活（消除 assertActivated FAILED）
+
+**验证：** 全量 145 文件 / 4102 用例通过 + tsc/cargo 零错误。
 
 ### 2026-09-02（v1.9.5）
 

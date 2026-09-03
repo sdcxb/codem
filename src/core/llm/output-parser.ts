@@ -40,50 +40,47 @@ export function extractJSON<T = any>(raw: string): T | null {
     .replace(/【/g, '[').replace(/】/g, ']')  // 中文方括号
     .replace(/｛/g, '{').replace(/｝/g, '}'); // 中文花括号
 
-  // Step 3: 尝试直接解析
-  try {
-    return JSON.parse(text) as T;
-  } catch (e) { console.warn('[output-parser.ts]', e) }
+  // 解析尝试（静默，避免每次失败刷屏 —— 模型常返回"文本+JSON"混合或截断，
+  // 多步修复尝试失败属常态，最终结果由调用方按 null 处理）。
+  const attempts: Array<() => string | null> = [
+    // Step 3: 直接解析
+    () => text,
+    // Step 4: 去除尾部逗号 (JSON5 风格)
+    () => text.replace(/,\s*([\]}])/g, '$1'),
+    // Step 5: 提取第一个 JSON 对象 { ... }
+    () => {
+      const m = text.match(/\{[\s\S]*\}/);
+      return m ? m[0].replace(/,\s*([\]}])/g, '$1') : null;
+    },
+    // Step 6: 提取第一个 JSON 数组 [ ... ]
+    () => {
+      const m = text.match(/\[[\s\S]*\]/);
+      return m ? m[0].replace(/,\s*([\]}])/g, '$1') : null;
+    },
+    // Step 7: 逐步缩小范围 — 模型可能在 JSON 后添加了说明文字
+    () => {
+      const firstBrace = text.search(/[{[]/);
+      const lastBrace = Math.max(text.lastIndexOf('}'), text.lastIndexOf(']'));
+      if (firstBrace >= 0 && lastBrace > firstBrace) {
+        return text.substring(firstBrace, lastBrace + 1)
+          .replace(/,\s*([\]}])/g, '$1');
+      }
+      return null;
+    },
+  ];
 
-  // Step 4: 去除尾部逗号 (JSON5 风格)
-  const noTrailingComma = text
-    .replace(/,\s*([\]}])/g, '$1');
-  try {
-    return JSON.parse(noTrailingComma) as T;
-  } catch (e) { console.warn('[output-parser.ts]', e) }
-
-  // Step 5: 提取第一个 JSON 对象 { ... }
-  const objMatch = text.match(/\{[\s\S]*\}/);
-  if (objMatch) {
+  for (const attempt of attempts) {
+    const candidate = attempt();
+    if (candidate === null) continue;
     try {
-      const cleaned = objMatch[0]
-        .replace(/,\s*([\]}])/g, '$1'); // 尾部逗号
-      return JSON.parse(cleaned) as T;
-    } catch (e) { console.warn('[output-parser.ts]', e) }
+      return JSON.parse(candidate) as T;
+    } catch {
+      // 继续下一个修复尝试
+    }
   }
 
-  // Step 6: 提取第一个 JSON 数组 [ ... ]
-  const arrMatch = text.match(/\[[\s\S]*\]/);
-  if (arrMatch) {
-    try {
-      const cleaned = arrMatch[0]
-        .replace(/,\s*([\]}])/g, '$1');
-      return JSON.parse(cleaned) as T;
-    } catch (e) { console.warn('[output-parser.ts]', e) }
-  }
-
-  // Step 7: 逐步缩小范围 — 模型可能在 JSON 后添加了说明文字
-  // 从后往前找到最后一个 } 或 ]，从前往后找到第一个 { 或 [
-  const firstBrace = text.search(/[{[]/);
-  const lastBrace = Math.max(text.lastIndexOf('}'), text.lastIndexOf(']'));
-  if (firstBrace >= 0 && lastBrace > firstBrace) {
-    const subset = text.substring(firstBrace, lastBrace + 1)
-      .replace(/,\s*([\]}])/g, '$1');
-    try {
-      return JSON.parse(subset) as T;
-    } catch (e) { console.warn('[output-parser.ts]', e) }
-  }
-
+  // 全部失败：单次 warn（附输入预览），供诊断且不刷屏。
+  console.warn('[output-parser.ts] extractJSON failed:', raw.slice(0, 120));
   return null;
 }
 

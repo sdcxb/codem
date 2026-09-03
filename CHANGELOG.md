@@ -2,6 +2,19 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.9.6] - 2026-09-02
+
+### 打包版运行问题修复（CSP / 插件加载 / 解析降噪 / subagent 激活）
+
+> 用户报告知识笔记本导入 docx 报错与启动控制台告警，逐项定位修复：
+
+- **CSP 允许 blob:（修复导入 docx 嵌入后端不可用）** — 打包版在 tauri.localhost 下，transformers.js/onnxruntime 用 `URL.createObjectURL` 动态 import WASM 被 CSP `script-src` 拦截（`no available backend found`，索引全部失败）；`script-src` / `worker-src` 增加 `blob:`
+- **CSP 允许 tauri IPC 协议** — `connect-src` 增加 `ipc: http://ipc.localhost`（Tauri v2 自定义 IPC 不再回退 postMessage，消除 `Refused to connect … violates CSP` 告警）
+- **移除 YAML 中已删除插件引用** — `config/codem.base.yml` 删除 `@codem/terminal-bash`（v1.9.3 已移除该 provider 但 YAML 残留 → 每次启动 `YamlLoader failed 1`）
+- **extractJSON 失败降噪** — 6 步容错修复尝试间静默，全部失败后仅单次 warn（附输入预览）；此前每次失败逐条打印 SyntaxError（导入多个来源时控制台刷屏）
+- **知识摘要解析失败降级为文本摘要** — `generateSourceSummary` 在模型未返回严格 JSON 时把输出清理后取前 200 字作摘要存入（此前仅 warn 留空，笔记本卡片无内容）
+- **SubagentRuntime 同步初始化（修复 subagent 服务激活竞态）** — runtime 创建由动态 import 异步改为静态 import 同步（import 链无值依赖循环），`subagentProvider` 不再拿到空 runtime → 9 个 `inject: ['subagent']` 的插件不再 PENDING（消除 `assertActivated FAILED`）
+
 ## [1.9.5] - 2026-09-02
 
 ### 对话步骤语义化 + update_plan 动态插入（对标 dsh 客户端 todo 语义列表）

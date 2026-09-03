@@ -89,11 +89,6 @@
   when: platform != 'win32'
   inject: [shell, sandbox]
 
-- id: terminal-bash
-  name: '@codem/terminal-bash'
-  when: platform != 'win32'
-  inject: [shell]
-
 # 平台条件：pwsh-sandbox 仅 Windows
 - id: pwsh-sandbox
   name: '@codem/pwsh-sandbox'

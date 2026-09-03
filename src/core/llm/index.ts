@@ -26,6 +26,8 @@ import { SkillRegistry, getSkillRegistry, type SkillDefinition } from "../skill/
 import { SnapshotService, getSnapshotService, type Snapshot, type FileChange } from "../snapshot/snapshot";
 import type { SubagentTask, SubagentResult } from "../subagent/subagent";
 import { setGlobalSubagentRuntime } from "../subagent/index";
+import { SubagentRuntime } from "../subagent/runtime";
+import { InProcessSpawnProvider } from "../subagent/spawn-in-process-provider";
 import { SessionRecoveryService, getSessionRecoveryService } from "../recovery/recovery";
 import { AgenticLoop, type LoopEvent } from "./agentic-loop";
 import { CostTracker, getCostTracker } from "./cost-tracker";
@@ -192,39 +194,41 @@ private loopPool: Map<string, AgenticLoop> = new Map();
   }
 
   private setupSubagentSpawner() {
-    // 旧 LLMSubagentSpawner 已删除 — 仅初始化新 DSH 风格 SubagentRuntime
-    import("../subagent/runtime").then(({ SubagentRuntime }) => {
-      import("../subagent/spawn-in-process-provider").then(({ InProcessSpawnProvider }) => {
-        // 创建 Runtime 并注册 spawn provider
-        const runtime = new SubagentRuntime(this);
-        runtime.registerProvider(new InProcessSpawnProvider('spawn', this));
-        this._subagentRuntime = runtime;
-        // DSH-style: 全局注册 runtime，供 UI 和 workflow 访问
-        // 对标 ctx.provide('subagents', runtime)
-        setGlobalSubagentRuntime(runtime);
+    // 旧 LLMSubagentSpawner 已删除 — 初始化 DSH 风格 SubagentRuntime。
+    // FIX(2026-09): 此前用动态 import 异步创建 runtime，subagentProvider
+    // （同步 apply 时 getSubagentRuntime()）在 import 完成前拿不到 → 不 provide
+    // 'subagent' 服务 → 9 个依赖 subagent 的插件 PENDING（assertActivated FAILED）。
+    // runtime.ts / spawn-in-process-provider.ts 无值依赖循环，可静态 import 同步创建。
+    try {
+      const runtime = new SubagentRuntime(this);
+      runtime.registerProvider(new InProcessSpawnProvider('spawn', this));
+      this._subagentRuntime = runtime;
+      // DSH-style: 全局注册 runtime，供 UI、workflow 与 subagentProvider 访问
+      setGlobalSubagentRuntime(runtime);
+      console.log('[LLMEngine] SubagentRuntime initialized synchronously');
+    } catch (e) {
+      console.warn('[LLMEngine] SubagentRuntime init failed:', e);
+    }
 
-        // 注册新的 DSH 风格工具
-        import("./tools/subagent-tools").then(({
-          createSubagentTool,
-          createSendMessageTool,
-          createInterruptAgentTool,
-          createListAgentsTool,
-          setSubagentRuntime,
-        }) => {
-          setSubagentRuntime(runtime);
-          this.tools.register(createSubagentTool());
-          this.tools.register(createSendMessageTool());
-          this.tools.register(createInterruptAgentTool());
-          this.tools.register(createListAgentsTool());
-          console.log('[LLMEngine] DSH-style subagent tools registered: subagent, send_message, interrupt_agent, list_agents');
-        }).catch((e) => {
-          console.warn('[LLMEngine] Failed to register subagent tools:', e);
-        });
-      }).catch((e) => {
-        console.warn('[LLMEngine] Failed to load InProcessSpawnProvider:', e);
-      });
+    // 注册 DSH 风格工具（异步：tools 层引用 runtime 已就绪，注册顺序不影响
+    // subagent 服务的提供；首次对话前通常已完成）。
+    import("./tools/subagent-tools").then(({
+      createSubagentTool,
+      createSendMessageTool,
+      createInterruptAgentTool,
+      createListAgentsTool,
+      setSubagentRuntime,
+    }) => {
+      const runtime = this._subagentRuntime;
+      if (!runtime) return;
+      setSubagentRuntime(runtime);
+      this.tools.register(createSubagentTool());
+      this.tools.register(createSendMessageTool());
+      this.tools.register(createInterruptAgentTool());
+      this.tools.register(createListAgentsTool());
+      console.log('[LLMEngine] DSH-style subagent tools registered: subagent, send_message, interrupt_agent, list_agents');
     }).catch((e) => {
-      console.warn('[LLMEngine] Failed to load SubagentRuntime:', e);
+      console.warn('[LLMEngine] Failed to register subagent tools:', e);
     });
   }
 
