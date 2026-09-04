@@ -13,6 +13,8 @@
 
 import { PluginDependencyGraph, type PluginMeta, type CascadeDisableResult, type CascadeEnableResult } from './dependency-graph'
 import type { Context } from '../cordis/src/index.ts'
+import { builtinPlugins } from './index'
+import { getActiveFiber, unregisterActiveFiber } from './yaml-loader'
 
 /** 插件状态 */
 export type PluginStatus = 'enabled' | 'disabled' | 'loading' | 'error'
@@ -101,6 +103,15 @@ export class PluginManagerService {
    * 初始化：从 localStorage 恢复状态，同步当前已加载的插件。
    */
   async initialize(): Promise<void> {
+    // 自动填充 loader：内置插件（builtinPlugins）的"启用" = ctx.plugin 真加载。
+    // （此前生产从不注册 loader → enable/disable 只改状态，从不真正加载/卸载
+    // ctx 插件——禁用 = 假禁用。builtin 全量在此登记 loader 后修复。）
+    for (const [name, entry] of builtinPlugins) {
+      if (!this.pluginLoaders.has(name)) {
+        this.pluginLoaders.set(name, () => entry.apply())
+      }
+    }
+
     // 从 localStorage 恢复禁用列表
     let disabledList = this.loadDisabledList()
 
@@ -185,6 +196,10 @@ export class PluginManagerService {
     if (currentState?.status === 'enabled') {
       return { success: false, enabledList: [], error: 'Plugin is already enabled' }
     }
+    if (currentState?.status === 'loading') {
+      // 连点/并发保护：启用进行中，拒绝重复启用（避免同一插件二次 ctx.plugin 加载）
+      return { success: false, enabledList: [], error: 'Plugin is being enabled, please wait' }
+    }
 
     // 计算级联启用列表
     const enabledSet = new Set(
@@ -204,13 +219,23 @@ export class PluginManagerService {
 
     // 按顺序启用（依赖在前）
     const enabledList: string[] = []
+    const failures: string[] = []
     for (const pluginName of cascade.toEnable) {
       const success = await this.doEnable(pluginName)
-      if (success) enabledList.push(pluginName)
+      if (success) {
+        enabledList.push(pluginName)
+      } else {
+        const st = this.states.get(pluginName)
+        failures.push(`${pluginName}: ${st?.error || 'unknown error'}`)
+      }
     }
 
     this.saveDisabledList()
     this.notifyListeners()
+    if (failures.length > 0) {
+      // 部分失败：不得报成功——UI 依据 success 决定"已启用"提示
+      return { success: false, enabledList, error: `Failed to enable: ${failures.join('; ')}` }
+    }
     return { success: true, enabledList }
   }
 
@@ -234,6 +259,10 @@ export class PluginManagerService {
     const currentState = this.states.get(name)
     if (currentState?.status === 'disabled') {
       return { success: false, disabledList: [], needsConfirmation: false, error: 'Plugin is already disabled' }
+    }
+    if (currentState?.status === 'loading') {
+      // 连点/并发保护：正在启用/加载中的插件不可并发禁用
+      return { success: false, disabledList: [], needsConfirmation: false, error: 'Plugin is still loading, please wait' }
     }
 
     // 计算级联关闭
@@ -299,7 +328,13 @@ export class PluginManagerService {
   }
 
   /**
-   * 实际禁用一个插件（从 Cordis Context 卸载）。
+   * 实际禁用一个插件（从 Cordis Context 卸载——对标 dsh 卸载语义）。
+   *
+   * 覆盖两类 fiber：
+   * - manager 动态启用时 ctx.plugin 创建的（this.fibers）；
+   * - YAML 装配（loadFromYaml/loadFromEntries）创建的（activeFibers 登记）。
+   * 此前只处理前者且生产从不注册 loader → 对 YAML 装配插件的"禁用"仅改状态、
+   * 插件/服务/工具仍在 ctx 运行（假禁用）——现真正 dispose。
    */
   private async doDisable(name: string): Promise<void> {
     const fiber = this.fibers.get(name)
@@ -311,8 +346,19 @@ export class PluginManagerService {
       }
     }
     this.fibers.delete(name)
+
+    const activeFiber = getActiveFiber(name)
+    if (activeFiber?.dispose) {
+      try {
+        await activeFiber.dispose()
+      } catch (err) {
+        console.warn(`[PluginManager] Error disposing (assembled) ${name}:`, err)
+      }
+    }
+    unregisterActiveFiber(name)
+
     this.states.set(name, { name, status: 'disabled', updatedAt: Date.now() })
-    console.log(`[PluginManager] Disabled: ${name}`)
+    console.log(`[PluginManager] Disabled (unloaded): ${name}`)
   }
 
   /**
@@ -363,8 +409,10 @@ export class PluginManagerService {
   }
 
   private saveDisabledList(): void {
+    // error 态一并持久化：enable 失败的插件重启后保持"未启用"（可重试），
+    // 避免重启后 initialize 误判为 enabled（无 fiber 的假启用状态）
     const disabled = [...this.states.entries()]
-      .filter(([, s]) => s.status === 'disabled')
+      .filter(([, s]) => s.status === 'disabled' || s.status === 'error')
       .map(([n]) => n)
     localStorage.setItem(this.STORAGE_KEY, JSON.stringify(disabled))
     // 通知 App 层刷新插件按钮状态
@@ -378,17 +426,41 @@ export class PluginManagerService {
  * 创建全局 PluginManagerService 实例。
  */
 let _pluginManager: PluginManagerService | null = null
+/** ctx-ready 单例是否已建立（null-ctx 临时实例不缓存） */
+let _pluginManagerCtxReady = false
 
 export function getPluginManager(): PluginManagerService {
-  if (!_pluginManager) {
+  if (!_pluginManager || !_pluginManagerCtxReady) {
     throw new Error('PluginManagerService not initialized. Call initPluginManager() first.')
   }
   return _pluginManager
 }
 
-/** 初始化全局 PluginManagerService */
+/** 仅供测试：重置单例缓存（隔离用例间的 initPluginManager 幂等状态） */
+export function resetPluginManagerSingletonForTest(): void {
+  _pluginManager = null
+  _pluginManagerCtxReady = false
+}
+
+/**
+ * 初始化全局 PluginManagerService。
+ *
+ * 幂等语义（修复弹窗每次打开都重建 manager 导致的 fiber 追踪丢失——
+ * 旧 manager 加载进 ctx 的插件在新 manager 下无法卸载 → "假禁用"）：
+ * - ctx 未就绪（null）：返回**临时**实例（仅渲染用），不写入全局单例；
+ * - ctx 就绪：首次创建并缓存 ctx-ready 单例；已存在则直接返回现有实例
+ *   （不重复 initialize，已加载插件的 fiber 追踪保持有效，disable 真正卸载）。
+ */
 export async function initPluginManager(ctx: Context, graph: PluginDependencyGraph): Promise<PluginManagerService> {
-  _pluginManager = new PluginManagerService(ctx, graph)
-  await _pluginManager.initialize()
-  return _pluginManager
+  if (!ctx) {
+    const temp = new PluginManagerService(null as any, graph)
+    await temp.initialize()
+    return temp
+  }
+  if (_pluginManager && _pluginManagerCtxReady) return _pluginManager
+  const mgr = new PluginManagerService(ctx, graph)
+  await mgr.initialize()
+  _pluginManager = mgr
+  _pluginManagerCtxReady = true
+  return mgr
 }

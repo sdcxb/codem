@@ -32,6 +32,7 @@ import {
 } from '../core/plugin-loader/plugin-manager-service'
 import { tryGetCtx } from '../core/consumer'
 import { runtimePluginList } from '../core/provider/plugin-registry-provider'
+import { PluginMarketTab } from './plugin-market/PluginMarketTab'
 
 interface PluginManagerProps {
   onClose: () => void
@@ -182,17 +183,21 @@ function PluginCard({
           {plugin.dependencies?.length > 0 && (
             <div style={{ marginBottom: 6 }}>
               <div style={{ fontWeight: 600, marginBottom: 2 }}>依赖的插件：</div>
-              {plugin.dependencies.map((dep: string) => (
-                <div key={dep} style={{ color: 'var(--accent)', marginLeft: 12 }}>→ {dep}</div>
-              ))}
+              <div style={{ maxHeight: 120, overflowY: 'auto' }}>
+                {plugin.dependencies.map((dep: string) => (
+                  <div key={dep} style={{ color: 'var(--accent)', marginLeft: 12 }}>→ {dep}</div>
+                ))}
+              </div>
             </div>
           )}
           {plugin.dependents?.length > 0 && (
             <div style={{ marginBottom: 6 }}>
               <div style={{ fontWeight: 600, marginBottom: 2 }}>被以下插件依赖：</div>
-              {plugin.dependents.map((dep: string) => (
-                <div key={dep} style={{ color: 'var(--warning)', marginLeft: 12 }}>← {dep}</div>
-              ))}
+              <div style={{ maxHeight: 120, overflowY: 'auto' }}>
+                {plugin.dependents.map((dep: string) => (
+                  <div key={dep} style={{ color: 'var(--warning)', marginLeft: 12 }}>← {dep}</div>
+                ))}
+              </div>
             </div>
           )}
           {plugin.provides?.length > 0 && (
@@ -273,6 +278,7 @@ function PluginCard({
             checked={isEnabled}
             onCheckedChange={() => onToggle(plugin.name)}
             disabled={isCore || plugin.status === 'loading'}
+            aria-label={`${plugin.name}: ${plugin.status === 'enabled' ? 'disable plugin' : 'enable plugin'}`}
           />
         </div>
       </div>
@@ -386,6 +392,7 @@ export function PluginManager({ onClose }: PluginManagerProps) {
   const [confirmRequest, setConfirmRequest] = useState<DisableConfirmationRequest | null>(null)
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' | 'warning' } | null>(null)
   const [selectedPlugin, setSelectedPlugin] = useState<string | null>(null)
+  const [tab, setTab] = useState<'installed' | 'market'>('installed')
 
   // 初始化 PluginManagerService — 带重试机制，等待 Cordis Context 就绪
   useEffect(() => {
@@ -396,24 +403,27 @@ export function PluginManager({ onClose }: PluginManagerProps) {
       if (cancelled) return
       const ctx = tryGetCtx()
       if (!ctx) {
-        // Cordis Context 尚未初始化 — 使用模块级 fallback 数据立即渲染
+        // Cordis Context 尚未初始化 — 首次用静态清单建临时实例立即渲染（只读列表），
+        // 后续重试不再重建（ctx-ready 单例由 initPluginManager 幂等缓存）
         try {
-          const graph = new PluginDependencyGraph()
-          for (const meta of runtimePluginList) {
-            graph.register(meta)
+          if (retryCount === 0) {
+            const graph = new PluginDependencyGraph()
+            for (const meta of runtimePluginList) {
+              graph.register(meta)
+            }
+            initPluginManager(null as any, graph).then(mgr => {
+              if (cancelled) return
+              setManager(mgr)
+            }).catch(err => {
+              if (cancelled) return
+              console.error('[PluginManager] fallback init error:', err)
+            })
           }
-          initPluginManager(null as any, graph).then(mgr => {
-            if (cancelled) return
-            setManager(mgr)
-          }).catch(err => {
-            if (cancelled) return
-            console.error('[PluginManager] fallback init error:', err)
-          })
         } catch (err: any) {
           if (cancelled) return
           console.error('[PluginManager] fallback error:', err)
         }
-        // 同时延迟重试，ctx 就绪后用真实数据刷新
+        // 同时延迟重试，ctx 就绪后用真实单例刷新
         if (retryCount < 100) {
           retryTimer = setTimeout(() => attemptInit(retryCount + 1), 100)
         }
@@ -486,6 +496,23 @@ export function PluginManager({ onClose }: PluginManagerProps) {
     const state = manager.getPluginState(name)
     if (!state) return
 
+    if (state.status === 'loading') {
+      setToast({ msg: `${name} 正在加载中，请稍候...`, type: 'warning' })
+      return
+    }
+
+    if (state.status === 'error') {
+      // 上次启用失败 → 允许重试恢复（error 态已持久化为未启用）
+      setToast({ msg: `正在重试启用 ${name}...`, type: 'warning' })
+      const result = await manager.enable(name)
+      if (result.success) {
+        setToast({ msg: `已启用 ${name}`, type: 'success' })
+      } else if (result.error) {
+        setToast({ msg: result.error, type: 'error' })
+      }
+      return
+    }
+
     if (state.status === 'enabled') {
       // 关闭：先检查依赖
       const cascade = manager.getDependencyGraph().getCascadeDisable(name)
@@ -540,6 +567,8 @@ export function PluginManager({ onClose }: PluginManagerProps) {
     setConfirmRequest(null)
     if (result.success) {
       setToast({ msg: `已关闭 ${result.disabledList.length} 个插件（含级联依赖）`, type: 'success' })
+    } else if (result.error) {
+      setToast({ msg: result.error, type: 'error' })
     }
   }, [confirmRequest, manager])
 
@@ -585,6 +614,33 @@ export function PluginManager({ onClose }: PluginManagerProps) {
         </button>
       </div>
 
+      {/* Tab：已安装 / 插件市场 */}
+      <div style={{ display: 'flex', gap: 2, padding: '0 14px', borderBottom: '1px solid var(--border-primary)', flexShrink: 0 }}>
+        {([['installed', zh ? '已安装' : 'Installed'], ['market', zh ? '插件市场' : 'Market']] as const).map(([key, label]) => (
+          <button
+            key={key}
+            onClick={() => setTab(key)}
+            style={{
+              padding: '8px 14px', fontSize: 'var(--fs-sm)', cursor: 'pointer', background: 'transparent',
+              border: 'none', borderBottom: tab === key ? '2px solid var(--accent)' : '2px solid transparent',
+              color: tab === key ? 'var(--accent)' : 'var(--text-secondary)', fontWeight: tab === key ? 600 : 400,
+            }}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {/* 插件市场 Tab：加载 dsh 插件市场（浏览/评估/安装等价） */}
+      {tab === 'market' ? (
+        <PluginMarketTab
+          manager={manager}
+          zh={zh}
+          onToggle={handleToggle}
+          notify={(msg, type) => setToast({ msg, type })}
+        />
+      ) : (
+        <>
       {/* Search */}
       <div className="skill-manager-toolbar">
         <div className="skill-search-box">
@@ -599,9 +655,15 @@ export function PluginManager({ onClose }: PluginManagerProps) {
         </div>
       </div>
 
-      {/* 分类过滤 */}
+      {/* 分类过滤（动态：只显示实际存在插件的分类 + 全部，避免恒 0 的空分类按钮） */}
       <div className="skill-manager-filters">
-        {getCategoryConfig(zh).map(cat => {
+        {getCategoryConfig(zh)
+          .filter(cat => {
+            if (cat.key === 'all') return true
+            if (!manager) return false
+            return manager.getPluginStates().some(p => (p.category || 'core') === cat.key)
+          })
+          .map(cat => {
           const count = cat.key === 'all'
             ? totalCount
             : manager?.getPluginStates().filter(p => (p.category || 'core') === cat.key).length || 0
@@ -650,6 +712,8 @@ export function PluginManager({ onClose }: PluginManagerProps) {
       <div style={{ padding: '8px 12px', fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', borderTop: '1px solid var(--border-primary)' }}>
         💡 {zh ? '标有「核心」的插件是系统运行的基础设施，关闭会导致系统崩溃，已锁定不可关闭。其他插件可自由开关，系统会在关闭前检查依赖关系。' : 'Plugins marked as "Core" are system infrastructure. Disabling them would crash the system, so they are locked. Other plugins can be freely toggled; the system checks dependencies before disabling.'}
       </div>
+        </>
+      )}
 
       {/* 级联关闭确认对话框 */}
       {confirmRequest && (

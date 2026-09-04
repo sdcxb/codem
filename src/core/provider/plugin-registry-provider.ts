@@ -1,4 +1,4 @@
-// @ts-nocheck
+﻿// @ts-nocheck
 /**
  * Plugin Registry Provider 插件 — 插件注册表和搜索服务，可独立加载/卸载/热替换。
  *
@@ -6,6 +6,7 @@
  * core/locked 核心保护标记、riskLevel 风险等级），供 PluginManager 使用。
  */
 import type { Plugin } from '../cordis/src/index.ts'
+import { builtinPlugins } from '../plugin-loader/index'
 
 /**
  * 模块级常量：所有已知插件的元数据列表。
@@ -50,10 +51,12 @@ const KNOWN_PLUGINS = [
     { name: '@codem/notebook', version: '1.0.0', description: 'Notebook Provider — 笔记本服务，知识管理', provides: ['notebook'], inject: [], keywords: ['notebook'], category: 'provider', tags: ['provider', 'storage'], icon: '📓', author: 'Codem Team', riskLevel: 'safe', riskDescription: '关闭后笔记本功能不可用' },
     { name: '@codem/squad', version: '1.0.0', description: 'Squad Provider — 多智能体编排，Agent 团队协作', provides: ['squad'], inject: [], keywords: ['squad'], category: 'provider', tags: ['provider', 'agent'], icon: '🎯', author: 'Codem Team', riskLevel: 'safe', riskDescription: '关闭后多智能体团队协作功能不可用' },
     { name: '@codem/dynamic-runner', version: '1.0.0', description: 'Dynamic Runner Provider — 动态运行器，运行时代码执行', provides: ['dynamicCordisRunner'], inject: [], keywords: ['runner'], category: 'provider', tags: ['provider', 'runtime'], icon: '⚡', author: 'Codem Team', riskLevel: 'safe', riskDescription: '关闭后动态运行器不可用', status: 'active' },
-    { name: '@codem/plugin-registry', version: '1.0.0', description: 'Plugin Registry Provider — 插件注册表服务，插件市场的数据源', provides: ['pluginRegistry'], inject: [], keywords: ['registry'], category: 'core', tags: ['infra', 'service'], icon: '📜', author: 'Codem Team', riskLevel: 'caution', riskDescription: '关闭后插件市场将无法显示插件列表和搜索', status: 'active' , uiImpact: { buttons: ["plugin-manager"], degradedTo: '插件管理按钮不显示' }},
+    { name: '@codem/plugin-registry', version: '1.0.0', description: 'Plugin Registry Provider — 插件注册表服务，插件市场的数据源', provides: ['pluginRegistry'], inject: [], keywords: ['registry'], category: 'core', core: true, tags: ['infra', 'service'], icon: '📜', author: 'Codem Team', riskLevel: 'caution', riskDescription: '关闭后插件市场将无法显示插件列表和搜索', status: 'active' , uiImpact: { buttons: ["plugin-manager"], degradedTo: '插件管理按钮不显示' }},
 
     // ===== dsh 兼容层 =====
-    { name: '@codem/dsh-compat', version: '1.0.0', description: 'DeepSeek Harness Compatibility Layer — dsh 插件兼容适配层，使 dsh 插件可在 Codem 中运行', provides: ['dshLLM', 'dshShell', 'dshFS', 'dshTools'], inject: ['llm', 'shell', 'fs', 'tools'], keywords: ['dsh', 'compat'], category: 'compat', tags: ['bridge'], icon: '🔗', author: 'Codem Team', riskLevel: 'safe', riskDescription: '关闭后 dsh (DeepSeek Harness) 插件将无法运行' },
+    // provides 必须与 builtin-registry 实际注册一致（小写驼峰 7 别名；此处曾漂移为
+    // dshLLM/dshFS 大写 4 个 → 依赖图与实际 Cordis 服务错位，V2-1 一致性测试防回归）
+    { name: '@codem/dsh-compat', version: '1.0.0', description: 'DeepSeek Harness Compatibility Layer — dsh 插件兼容适配层，使 dsh 插件可在 Codem 中运行', provides: ['dshLlm', 'dshShell', 'dshFs', 'dshTools', 'dshSessions', 'dshEvents', 'dshCredentials'], inject: [], keywords: ['dsh', 'compat'], category: 'compat', tags: ['bridge'], icon: '🔗', author: 'Codem Team', riskLevel: 'safe', riskDescription: '关闭后 dsh (DeepSeek Harness) 插件将无法运行' },
 
     // ===== R1 Providers (从 bridge-plugin.ts 迁移) =====
     { name: '@codem/guard', version: '1.0.0', description: 'Guard Provider — 工具调用去重和截止时间检查，防止 Agent 循环', provides: ['guard'], inject: [], keywords: ['guard', 'dedup'], category: 'provider', tags: ['provider', 'security'], icon: '🛡️', author: 'Codem Team', riskLevel: 'safe', riskDescription: '关闭后工具调用去重不可用，Agent 可能重复调用相同工具', status: 'active', optionalInject: ['repeatToolReminder'] },
@@ -251,7 +254,7 @@ const KNOWN_PLUGINS = [
     { name: '@codem/ui-settings-models', version: '1.0.0', description: '模型设置面板，LLM 模型配置界面', provides: ['uiSettingsModels'], inject: ['slots'], keywords: ['ui', 'settings', 'models'], category: 'ui', tags: ['provider', 'ui'], hot: true, icon: '🔮', author: 'Codem Team', riskLevel: 'safe', riskDescription: '关闭后模型设置面板不可用' , uiImpact: { slots: ["app.settings.models"], degradedTo: '模型设置回退到 fallback' }},
     { name: '@codem/ui-settings-plugin-inventory', version: '1.0.0', description: '插件清单设置面板，已安装插件管理', provides: ['uiSettingsPluginInventory'], inject: ['slots'], keywords: ['ui', 'settings', 'plugins'], category: 'ui', tags: ['provider', 'ui'], hot: true, icon: '📦', author: 'Codem Team', riskLevel: 'safe', riskDescription: '关闭后插件清单设置不可用' , uiImpact: { slots: ["app.plugin-market"], degradedTo: '插件清单不显示' }},
     { name: '@codem/ui-settings-plugins', version: '1.0.0', description: '插件设置面板，插件配置和开关管理', provides: ['uiSettingsPlugins'], inject: ['slots'], keywords: ['ui', 'settings', 'plugins'], category: 'ui', tags: ['provider', 'ui'], hot: true, icon: '🔌', author: 'Codem Team', riskLevel: 'safe', riskDescription: '关闭后插件设置面板不可用' , uiImpact: { slots: ["app.settings.plugins"], degradedTo: '插件设置回退到 fallback' }},
-    { name: '@codem/ui-slots', version: '1.0.0', description: 'Slot 管理面板，UI 槽位和插件注册查看', provides: ['uiSlots'], inject: ['slots'], keywords: ['ui', 'slots'], category: 'ui', tags: ['provider', 'ui'], hot: true, icon: '🧩', author: 'Codem Team', riskLevel: 'safe', riskDescription: '关闭后 Slot 管理面板不可用' , uiImpact: { slots: ["app.plugin-manager"], degradedTo: 'Slot 管理面板不显示' }},
+    { name: '@codem/ui-slots', version: '1.0.0', description: 'Slot 管理面板，UI 槽位和插件注册查看', provides: ['uiSlots'], inject: ['slots'], keywords: ['ui', 'slots'], category: 'ui', tags: ['provider', 'ui'], hot: true, icon: '🧩', author: 'Codem Team', riskLevel: 'safe', core: true, riskDescription: '关闭后 Slot 管理面板不可用；且插件管理入口依赖本插件，禁用将无法重开插件管理' , uiImpact: { slots: ["app.plugin-manager"], degradedTo: 'Slot 管理面板不显示' }},
     { name: '@codem/ui-subagent', version: '1.0.0', description: '子 Agent 面板，子 Agent 状态和管理界面', provides: ['uiSubagent'], inject: ['slots'], keywords: ['ui', 'subagent'], category: 'ui', tags: ['provider', 'ui'], hot: true, icon: '👥', author: 'Codem Team', riskLevel: 'safe', riskDescription: '关闭后子 Agent 面板不可用' , uiImpact: { slots: ["app.subagent"], degradedTo: '子 Agent 面板不显示' }},
     { name: '@codem/ui-user-questions', version: '1.0.0', description: '用户问题面板，Agent 向用户提问的交互界面', provides: ['uiUserQuestions'], inject: ['slots'], keywords: ['ui', 'questions'], category: 'ui', tags: ['provider', 'ui'], hot: true, icon: '❓', author: 'Codem Team', riskLevel: 'safe', riskDescription: '关闭后用户问题面板不可用' , uiImpact: { slots: ["app.user-questions"], degradedTo: '用户问题面板不显示' }},
     { name: '@codem/ui-workflow-run', version: '1.0.0', description: '工作流运行面板，工作流执行状态和进度展示', provides: ['uiWorkflowRun'], inject: ['slots'], keywords: ['ui', 'workflow'], category: 'ui', tags: ['provider', 'ui'], hot: true, icon: '🔄', author: 'Codem Team', riskLevel: 'safe', riskDescription: '关闭后工作流运行面板不可用' , uiImpact: { slots: ["app.workflow-run"], degradedTo: '工作流面板不显示' }},
@@ -282,6 +285,24 @@ export const pluginRegistryProvider: Plugin = (ctx: any) => {
 
   for (const p of KNOWN_PLUGINS) { pluginMeta.set(p.name, p) }
 
+  // 拓扑同步：以 builtin-registry（Cordis 激活同源）覆盖 provides/inject/priority/core。
+  // 静态清单 KNOWN_PLUGINS 曾发生 drift（dsh-compat 大写别名 dshLLM/dshFS 且仅 4 个、
+  // 一批插件缺 llmEngine inject、sandbox-local 多 shell、host-client 缺 hostClient），
+  // 导致依赖图级联/UI 徽章与实际激活不一致——此处保证插件管理的图与激活永远同源。
+  // 仅当 builtin 已注册（App: registerBuiltinPlugins() 之后）才同步；UI 展示字段
+  // （description/category/tags/icon/riskLevel…）仍以静态清单为准。
+  if (builtinPlugins.size > 0) {
+    for (const [name, { meta }] of builtinPlugins) {
+      const entry = pluginMeta.get(name)
+      if (!entry) continue
+      entry.provides = [...(meta.provides || [])]
+      entry.inject = [...(meta.inject || [])]
+      if (meta.priority !== undefined) entry.priority = meta.priority
+      if (meta.core !== undefined) entry.core = meta.core
+      if (meta.category !== undefined) entry.category = meta.category
+    }
+  }
+
   const dispose = ctx.provide('pluginRegistry', {
     _active: true,
     register(meta: any) { pluginMeta.set(meta.name, meta) },
@@ -305,3 +326,5 @@ export const pluginRegistryProvider: Plugin = (ctx: any) => {
   }
   return compositeDispose
 }
+
+

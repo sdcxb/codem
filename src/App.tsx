@@ -1616,8 +1616,18 @@ flushStreamBuffer(); // flush all on unmount
 
   const handleSend = async (message: string, attachments?: any[], selectedSkills?: string[]) => {
 // Always read latest currentSession from store (avoids stale closure)
-const session = useProjectStore.getState().currentSession;
-if (!session) return;
+// FIX(2026-09): 首页无会话时也可直接输入 —— 发送时自动创建"全局对话"
+// （projectId=""），对标 dsh 客户端"启动即全局对话可输入"。
+let session = useProjectStore.getState().currentSession;
+if (!session) {
+  try {
+    session = useProjectStore.getState().createSession();
+    console.log(`[App] No session — auto-created global session: ${session.id}`);
+  } catch (e) {
+    console.warn('[App] Auto-create session failed:', e);
+    return;
+  }
+}
 
     // F3.2: Handle /memory slash commands
     const trimmedMessage = message.trim();

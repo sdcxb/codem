@@ -470,7 +470,7 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
     return () => clearInterval(timer);
   }, [tipList.length]);
   const dynamicPlaceholder = noSession
-    ? (lang === "zh" ? "请新建或选择历史对话后发起任务" : "Create or select a session to start")
+    ? (lang === "zh" ? "输入消息，回车将自动新建全局对话" : "Type a message - Enter starts a new global chat")
     : disabled ? S.sidebar.disabledHint[lang]
     : isStreaming && onSendGuidance
       ? (lang === "zh" ? "输入消息，回车发送将作为引导消息注入当前任务" : "Type a message - Enter will inject it as guidance into the running task")

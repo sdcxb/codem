@@ -89,6 +89,10 @@
   when: platform != 'win32'
   inject: [shell, sandbox]
 
+# dsh 协议兼容别名（懒解析；供插件市场"可适配" dsh 插件经 dshLlm/dshShell/dshFs/dshTools 消费）
+- id: dsh-compat
+  name: '@codem/dsh-compat'
+
 # 平台条件：pwsh-sandbox 仅 Windows
 - id: pwsh-sandbox
   name: '@codem/pwsh-sandbox'

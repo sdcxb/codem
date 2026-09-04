@@ -45,6 +45,9 @@ export interface TrajectoryPanelProps {
   steps?: TrajectoryStep[]
   /** 从消息列表加载轨迹（回退数据源） */
   messages?: any[]
+  /** 会话 ID（显式传入 —— 消息本身通常不带 sessionId，推导会失败导致
+   *  实时轨迹服务取不到数据、只剩消息回退的 user/assistant） */
+  sessionId?: string | null
   /** 默认展开 */
   defaultExpanded?: boolean
 }
@@ -152,41 +155,43 @@ function deriveTurnMetrics(steps: TrajectoryStep[]): TurnMetrics {
   return metrics
 }
 
-/** 从消息列表提取轨迹步骤（回退数据源） */
+/** 从消息列表提取轨迹步骤（回退数据源 —— 适配 Codem 真实消息结构：
+ *  助手消息内嵌 toolCalls（{tool,args,result,status} 驼峰），结果不独立成
+ *  role=tool 消息；兼容事件投影风格的 tool_calls(function.name) 与 role=tool。） */
 function extractStepsFromMessages(messages: any[]): TrajectoryStep[] {
   const steps: TrajectoryStep[] = []
+  const push = (type: TrajectoryStepType, data: any, duration?: number) => {
+    steps.push({ id: `step-${steps.length}`, type, data, timestamp: Date.now(), duration })
+  }
   for (const msg of messages) {
+    if (!msg) continue
     if (msg.role === 'user') {
-      steps.push({
-        id: `step-${steps.length}`,
-        type: 'user_input',
-        data: { content: msg.content },
-        timestamp: msg.timestamp || Date.now(),
-      })
+      push('user_input', { content: typeof msg.content === 'string' ? msg.content : '' })
     } else if (msg.role === 'assistant') {
-      steps.push({
-        id: `step-${steps.length}`,
-        type: 'assistant_output',
-        data: { content: msg.content },
-        timestamp: msg.timestamp || Date.now(),
-      })
-      if (msg.tool_calls) {
-        for (const tc of msg.tool_calls) {
-          steps.push({
-            id: `step-${steps.length}`,
-            type: 'tool_call',
-            data: { name: tc.function?.name, args: tc.function?.arguments },
-            timestamp: msg.timestamp || Date.now(),
-          })
+      if (typeof msg.content === 'string' && msg.content.trim()) {
+        push('assistant_output', { content: msg.content })
+      }
+      // 驼峰 toolCalls（store/DB 主结构）
+      const camelCalls: any[] = Array.isArray(msg.toolCalls) ? msg.toolCalls : []
+      // 事件投影结构兼容
+      const snakeCalls: any[] = Array.isArray(msg.tool_calls) ? msg.tool_calls : []
+      const allCalls = camelCalls.length > 0 ? camelCalls : snakeCalls
+      for (const tc of allCalls) {
+        const name = tc.tool || tc.function?.name || tc.name || 'tool'
+        // args 可能是对象或 JSON 字符串，原样展示（详情展开时可见）
+        const args = tc.args ?? tc.function?.arguments
+        push('tool_call', { name, args })
+        // 结果内嵌（store ToolCall.result / 事件投影 tool result 状态）
+        if (typeof tc.result === 'string' && tc.result) {
+          push('tool_result', { content: tc.result, name })
+        } else if (tc.status === 'error' && tc.result) {
+          push('error', { error: String(tc.result), name })
+        } else if (typeof tc.output === 'string' && tc.output) {
+          push('tool_result', { content: tc.output, name })
         }
       }
     } else if (msg.role === 'tool') {
-      steps.push({
-        id: `step-${steps.length}`,
-        type: 'tool_result',
-        data: { content: msg.content },
-        timestamp: msg.timestamp || Date.now(),
-      })
+      push('tool_result', { content: typeof msg.content === 'string' ? msg.content : '' })
     }
   }
   return steps
@@ -263,6 +268,7 @@ function MetricChip({ icon, label, value }: { icon: React.ReactNode; label: stri
 export const TrajectoryPanel = memo(function TrajectoryPanel({
   steps: providedSteps,
   messages,
+  sessionId: sessionIdProp,
   defaultExpanded = true,
 }: TrajectoryPanelProps) {
   const lang = useLang()
@@ -272,13 +278,15 @@ export const TrajectoryPanel = memo(function TrajectoryPanel({
   const [filter, setFilter] = useState<TrajectoryStepType | 'all'>('all')
   const [showFilterDropdown, setShowFilterDropdown] = useState(false)
 
+  // 显式 sessionId 优先；无则从消息首条推导（store 消息通常不带，故主要靠 prop）
   const sessionId = useMemo(() => {
+    if (sessionIdProp) return sessionIdProp
     if (messages && messages.length > 0) {
       const first = messages[0]
       return first?.sessionId || first?.session_id || null
     }
     return null
-  }, [messages])
+  }, [sessionIdProp, messages])
 
   const serviceSteps = useTrajectorySteps(sessionId)
 
@@ -462,6 +470,16 @@ export const TrajectoryPanel = memo(function TrajectoryPanel({
                   <span style={{ display: 'flex', alignItems: 'center', gap: 1, fontSize: 9, color: 'var(--text-muted)', flexShrink: 0 }}>
                     <Cpu size={8} />{step.data.provider}
                   </span>
+                )}
+                {/* LLM usage — input↓/output↑（对标 dsh 每 request usage 展示） */}
+                {step.type === 'llm_call' && step.data?.usage && (
+                  <span style={{ fontSize: 9, color: 'var(--text-muted)', flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}>
+                    {formatTokens(step.data.usage.promptTokens ?? step.data.usage.inputTokens ?? 0)}↓/{formatTokens(step.data.usage.completionTokens ?? step.data.usage.outputTokens ?? 0)}↑
+                  </span>
+                )}
+                {/* toolCallCount */}
+                {step.type === 'llm_call' && step.data?.toolCallCount != null && step.data.toolCallCount > 0 && (
+                  <span style={{ fontSize: 9, color: 'var(--info)', flexShrink: 0 }}>⚙{step.data.toolCallCount}</span>
                 )}
                 {/* iteration */}
                 {step.data?.iteration != null && (

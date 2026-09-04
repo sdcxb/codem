@@ -1,6 +1,6 @@
 [package]
 name = "codem"
-version = "1.9.6"
+version = "1.9.7"
 description = "Codem - AI Coding Assistant"
 authors = ["Codem"]
 edition = "2021"
@@ -47,3 +47,4 @@ windows = { version = "0.61", features = ["Win32_UI_WindowsAndMessaging", "Win32
 [dependencies.tokio-util]
 version = "0.7"
 features = ["io"]
+

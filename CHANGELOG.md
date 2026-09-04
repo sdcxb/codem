@@ -2,6 +2,43 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [Unreleased]
+
+## [1.9.7] - 2026-09-04
+
+### dsh 插件市场与插件架构全面改造（对标 deepseek-harness）
+
+> 分析 harness 插件生态机制（npm 包 + cordis.patch.yml 分层装配 + Loader 激活 + plugin-inventory UI）后评估：Codem 装配/管理框架已同构，但**无法加载任意 npm 插件**（运行时鸿沟），dsh-compat 桥此前 deprecated 未接入。本轮落地：
+
+- **插件市场目录**（`plugin-market/dsh-market-catalog.ts`，50 条真实官方 @deepseek-ai/dsh-* 包，与 harness packages 全量核对存在性）：三类兼容性评估——bundled 37（Codem 内置等价，codemAnchor 指向真实插件且**一对一唯一**，DM-2/DM-4 校验）/ adaptable 9（dsh 协议、无第三方依赖，可经 dsh-compat 桥接）/ unsupported 4（依赖 Node/npm 运行时或 zod 等 npm 依赖，诚实标注）；附 npm registry 在线检索（15s 超时）
+- **插件管理弹窗新增「插件市场」Tab**（`components/plugin-market/PluginMarketTab.tsx` + PluginManager Tab 切换）：浏览/搜索/分类（能力/工具/界面/基础设施）、兼容徽标、bundled 条目一键"安装并启用"对应内置插件（**三态按钮**：未启用→安装 / 可安全卸载→禁用 / 核心恒启（llm/fs-local/session/shell-local/tools/credentials 等 6 锚）→只读"已启用（核心）"，杜绝把核心插件当卸载目标）、在线检索**跟随搜索框输入**、小窗自适应（maxHeight 滚动、manager 未就绪禁用安装）
+- **dsh-compat 接入运行**：`dsh-compat/index.ts` 由"注册时同步取服务（时序竞态→别名缺失）"重写为**懒解析代理别名**（dshLlm/dshShell/dshFs/dshTools/dshSessions/dshEvents/dshCredentials 恒注册、方法调用时现取真实服务并做接口转换）；`builtin-registry` 注册 @codem/dsh-compat + `codem.base.yml` 装配行——"可适配"类插件有了真实承载
+- **服务名对齐矩阵审计**（对 harness packages 全量插件 inject 服务名 78 项 vs Codem provides 203 项逐项比对）：核心 seam（fs/shell/tools/llm/session/credentials/sandboxPolicy/slots/commands/compaction/systemPrompt/userQuestions/subagent 等）**同名直通**；复数/命名差异（sessions/sessionProjections/sessionQuery/sessionTitle/goals/bash 等）由 dsh-compat 别名承接；约 30 项 harness 宿主装配名（remote.*/ui*/typert/webServer 等）属宿主层、超出纯协议插件范围——结论固化于 dsh-compat 头注释（后续审计基准）
+- 测试：`dsh-plugin-market.test.ts`（DM-1~5：三类覆盖 + bundled 必有 anchor + anchor 全部存在于 runtimePluginList + fetch 失败返回 [] + bundled 锚**一对一唯一** + **真实依赖图下全部 bundled 锚安装级联可达、无缺失依赖**——市场"安装并启用"路径的自动化验收证据）+ `dsh-compat-lazy.test.ts`（DC-1~4 懒解析/转换）+ `dsh-plugin-market-wiring.test.ts`（PM-1~3 YAML↔builtin 装配一致性，防 terminal-bash 式断链）+ `plugin-market-tab.test.tsx`（MT-1~5：渲染/安装/禁用/**核心条目只读**）
+- **插件皮肤兼容契约（Skin Token Contract）**：插件（UI/UX 类）与三套皮肤（default 亮/暗、dream、hub 恒暗）兼容机制化——`core/theme/skin-tokens.ts` 登记令牌表 + `auditPluginStyle` 源码级硬编码色审计；新测试 `skin-compat-plugin.test.ts`（SC-1~5：审计函数行为 / 市场 Tab+插件管理零硬编码色 / 令牌在 styles.css 均有定义 / 目录分类受支持 / **共享 Badge 语义变体规则体无裸露色**）；修复市场 Tab 安装按钮文字色 `#fff`→`var(--text-on-accent)`；**共享组件层修复**：styles.css 两组 `.badge-success/warning/danger/info` 从硬编码暗色系（rgba(34,197,94)/#4ade80 等）与未定义变量（--info-bg/--warning-bg）改为语义令牌 + color-mix 半透明（亮/暗/梦幻/Hub 自动适配）；市场分类改为**动态派生**（harness 无 UI 类核心插件，"界面"空分类不再渲染）；完整契约见 `docs/SKIN-PLUGIN-CONTRACT.md`
+- **全面审计第二轮（Bug/可应用性/稳定性/UI-UX 交互）修复**：
+  - **稳定性 P1**：`enable()` 级联启用**部分失败仍返回 success:true**（UI 假"已启用"）→ 任一失败即 `success:false` + 失败明细（`Failed to enable: <name>: <error>`）
+  - **稳定性 P2**：**error 状态未持久化**（重启后 initialize 误判 enabled、无 fiber 假启用）→ `saveDisabledList` 将 error 计入未启用列表，重启后保持 disabled 可重试
+  - **稳定性 P3**：**loading 态连点并发竞态**（同插件二次 ctx.plugin 加载）→ `enable/disable` 对 loading 状态拒绝（"being enabled/loaded, please wait"）
+  - **架构 V1（重要）**：插件管理弹窗**每次打开都重建 PluginManagerService 并覆盖全局单例** → 旧实例加载进 ctx 的插件 fiber 追踪丢失，新实例 disable 找不到 fiber → **假禁用（插件实际仍在 ctx 运行）** + 每次 initialize 重复 doDisable/notify 副作用。修复：`initPluginManager` **ctx-ready 单例幂等**（已建直接返回，不再重建/不重复 initialize）；ctx 未就绪仅返回临时渲染实例（不缓存）；组件 ctx-null fallback 首次建临时实例后不再重复创建（retryCount===0 门控）
+  - **UX P4**：插件管理 `handleToggle` 对 error/loading 静默无操作 → error 点击 = **重试启用**（toast 反馈）；loading 点击提示；级联确认 disable 失败补 error toast
+  - **UI U1**：市场 Tab 安装进行中无视觉反馈、可连点 → 按钮 loading 态只读"启用中…"（+handleInstallBundled 防御）
+  - **UI U6**：市场 Tab 布局链断（根容器无 flex:1 → 固定 maxHeight 网格在 80vh 弹窗内**裁掉底部在线检索结果区**）→ 根 div flex:1 + 网格 flex 滚动
+  - **契约核对 P5（通过，无改动）**：dsh-compat 7 别名逐一对照真实服务源码——llm.complete/`stream`（async function*）/listModels、shell.execute(command,cwd,timeoutMs)、fs readFile/writeFile/listDirectory/deleteFile/exists、session create/get/list/delete、ctx emit/on/waterfall/serial/bail/parallel 全部匹配（buildFs.stat 以 exists 近似标注局限）
+  - 新测试：`plugin-manager-robustness.test.ts`（R-1~R-5：级联全成功/部分失败必报错/error 持久化/error 重试恢复/幂等拒绝）+ `plugin-market-tab.test.tsx` MT-6（loading 只读态）
+  - **真实 Cordis 装配集成测试**（`dsh-compat-live-cordis.test.ts`，LC-1~6）：用真实 Cordis Context + 真实 provider 插件（llmProvider/shellProvider/sessionProvider 经 `await ctx.plugin` 激活）+ dshCompatPlugin 验证——7 个 dsh 别名经 active fiber 注册可被 `ctx.get` 解析；dshLlm 懒解析全链路（→真实 llmProvider→llmEngine）可用；dshSessions 驱动真实 sessionProvider；dshEvents 走真实事件系统；服务未就绪**同步抛可诊断错误**（`[dsh-compat] service "session" not ready`）；fiber.dispose 后别名从 ctx 移除（市场"禁用 @codem/dsh-compat"真实卸载语义）。目标②（dsh 插件可应用性）由静态服务名核对 + 动态真实装配双向实证
+  - **元数据漂移 V2（全量诊断 199 处差异收敛）**：runtimePluginList（静态清单）与 builtin-registry（激活同源）的 provides/inject 曾大幅 drift——dsh-compat 在清单里写成**大写 dshLLM/dshFS 且仅 4 个别名**（实际注册小写驼峰 7 个）→ 依赖 dshSessions 的插件被依赖图误判缺依赖、UI"提供的服务"徽章错误；另有 ~15 插件清单缺 llmEngine 等 inject（llm/tools/mcp/skill/subagent/settings/retry…）、sandbox-local 反向多 shell、host-client 缺 hostClient。修复：①清单 dsh-compat 条目改小写 7 别名 + builtin 注册补 category 'compat'；②**pluginRegistryProvider.apply 时以 builtinPlugins 覆盖 pluginMeta 的拓扑字段**（provides/inject/priority/core）——插件管理依赖图与 Cordis 激活**运行时同源**，静态清单 drift 免疫（UI 展示字段保留静态描述）；③PM-4 重写为真实装配驱动（registerBuiltinPlugins + ctx.plugin(pluginRegistryProvider)）后全量对比 100+ 插件拓扑一致 + dsh-compat 特判（防大写变体回归）
+  - **UI/UX 细节（U3/无障碍）**：①installed Tab 分类改**动态过滤**（只显示实际存在插件的分类 + 全部——原硬编码 'tool' 分类恒 0 空按钮，与市场侧 'ui' 空分类同类问题）②PluginCard 开关补 aria-label（读屏语义）③市场卡片 note 截断加 title 全文 tooltip（adaptable/unsupported 适配说明不被截断丢失）④installed 展开的依赖/被依赖列表加滚动上限（120px），高扇出插件（tools 等 20+ 依赖）不再撑爆卡片
+  - **卸载语义 P6（对标 dsh 的核心改造）**：审计发现生产代码**从不注册 loader**（仅测试）→ manager 的 enable/disable 只改状态、**从不真正加载/卸载 Cordis ctx 里的插件**——codem.base.yml 装配 203/202 全量插件，用户"禁用"tool-fs-search/mcp/schedule 等**实际无效**（工具/服务仍在 ctx 运行 = 假禁用），"启用"ui-game 也永不真加载。修复：①**装配 fiber 登记**：yaml-loader（loadFromYaml/loadFromEntries）每 `ctx.plugin` 即把 name→fiber 登记（`registerActiveFiber/getActiveFiber/unregisterActiveFiber`）②**自动 loader 填充**：PluginManagerService.initialize 从 builtinPlugins 为全量内置插件登记 loader（enable = `ctx.plugin` 真加载）③**doDisable 真卸载**：同时 dispose 动态 fiber（this.fibers）与 YAML 装配 fiber（activeFibers）并注销——禁用 = 插件/服务/工具真正从 ctx 移除；重启后 initialize 对持久化禁用列表执行真卸载。测试 R-9（真实 ctx 装配 @codem/session → disable 后 `ctx.get('session')` 消失 + activeFibers 清空 → enable 后服务重新注册）
+  - **入口死锁 P7**：插件管理按钮 `pluginMgrEnabled` 依赖 @codem/plugin-registry 与 @codem/ui-slots——两者原可禁用（registry 仅有 category: core 分组无 core:true 保护）→ 禁用后插件管理入口消失且无恢复路径。修复：两插件在 runtimePluginList 与 builtin-registry 均标记 `core: true`（disable 被 lock 拒绝，PluginCard 开关禁用）；PM-5 断言保护（防未来移除）
+
+### 功能修复与体验（v1.9.6 后工作区）
+
+- **执行轨迹完整修复与持久化**：数据源修复（sessionId 显式传入 + fallback 适配真实消息结构——assistant.toolCalls 驼峰 {tool,args,result,status} → tool_call/tool_result/error，兼容 tool_calls/role=tool）+ llm_call 行内 usage（⇣/⇡ tokens）+ **事件日志批量持久化**（TrajectoryService 2s 周期 flush 到 session_events type 'trajectory_step'，dispose/退出前 flush——重启后历史轨迹全量回放）+ 小窗自适应（执行轨迹/浮层宽 `min(380px, calc(100vw - 24px))`）
+- **首页无会话直接可用**：无会话时输入框不再禁用——输入回车自动创建全局对话（projectId=""），占位提示"输入消息，回车将自动新建全局对话"
+- **托盘退出数据安全**：quit-requested（托盘"退出"）→ 前端 flush 数据库后退出（兜底 Rust 2.5s）
+- 全量测试终态：152 文件 / 4141 用例通过 + tsc 零错误
+
 ## [1.9.6] - 2026-09-02
 
 ### 打包版运行问题修复（CSP / 插件加载 / 解析降噪 / subagent 激活）

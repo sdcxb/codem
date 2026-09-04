@@ -1,7 +1,7 @@
-# Codem 项目完整说明
+﻿# Codem 项目完整说明
 
 > **用途**：新对话快速理解项目全貌、架构、文件关联、当前状态。
-> 创建时间：2026-07-23 | 最后更新：2026-09-02 | 当前版本：v1.9.6（打包版运行问题修复：CSP blob:/ipc: + YAML 清理 + 解析降噪 + subagent 激活竞态）
+> 创建时间：2026-07-23 | 最后更新：2026-09-02 | 当前版本：v1.9.7（dsh 插件市场全面落地 + 插件架构审计修复 + 皮肤兼容契约，2026-09-04）
 >
 > **版本历程概览**：v0.70 基础存储 → v0.80 轮次架构 → v0.87 Worktree/并行 → v0.88 桌面宠物 → v0.89 跨会话委派 → v0.90 P0-P4 全量功能 → v0.91 Coding 工作台 → v0.92 Codex 对标 → v0.93 Vision Proxy → v0.94 配置修复 → v0.95 CLI/API 视觉代理 → v0.96 UI 大改版 → v0.97 Agentic Loop 性能优化 → v0.98 多智能体协同 → v0.99 DSH 全量升级 → v1.0.0 插件系统架构 + UI/UX 标准化 → v1.1.0 DSH 对标整改 + 测试深化 → v1.1.1 UI 布局优化 + 插件条件渲染 + Bug 修复 → v1.2.0 Cordis 架构对齐 DSH + 安全加固 + 全量测试重构 → v1.3.0 Cordis 插件系统对标 DSH 全面整改 + Slot 消费闭环 + inject 依赖对齐 → v1.4.0 UI/UX 体验优化 11 项 Bug 修复 + 性能/CI-CD 面板切换化 + 梦幻皮肤一致性修复 → v1.4.1 插件管理初始化修复 + 技能市场性能优化 + 对话区域自适应 9 项 Bug 修复 → v1.4.2 10 项 Bug 修复 + Cordis 插件时序改进 + SlotBridge 降级机制增强 + 头像系统升级 → v1.5.0 Cordis "一切插件化" 工具发现机制 — ToolDef guidance + toolsProvider 自动注册 systemPrompt section + buildSystemPrompt 动态收集 + 31 个工具补充 guidance + skill-creator 技能安装增强 → v1.5.1 DSH 架构对标深度整改 + YAML 声明式插件加载 + LLM 回答重复根因修复 + llmEngine/mimoAuth 注册修复 + SlotBridge/SlotRenderer 对标 DSH 重写 → v1.5.2 大文件流式分页读取 + Agent Loop 无上限改造（对标 DSH） + 模型系统动态化 + Skills 市场增量搜索 → v1.5.3-v1.5.4 引导消息立即注入 + Markdown 文件路径超链接 + 任务完成标签稳定显示 + 技能市场优化（GitHub API 目录下载） → v1.5.5 Compaction 并发写入治根修复（对标 DSH compactSurfaceRegion） + Bash 缓存失效修复 → v1.6.0 SubagentRuntime 架构重构（对标 DSH） + 技能市场 Trees API 改造（移植 vercel-labs/skills 官方 CLI） + GitHub Token 链路修复 → v1.6.1 桌面宠物独立窗口改造（Cordis Provider 封装） + 文件输出标识增强（DSH 风格 FileMentions） + 设置版本号动态化 → v1.6.2 大富翁嵌入式游戏全量交付（Phase 1-10） + 三轮审计 Bug 修复 → v1.7.0 PPT 生成质量大大幅升 — oh-my-ppt 74 种风格 SKILL.md 集成 + Cordis SkillRegistry 渐进式加载 + 生成链路断点修复 → v1.8.0 知识图谱 React Flow 重构 + vision-proxy 统一 getConfiguredProvider + UI 字体变量批量规范化 → v1.9.0 上下文压缩过早触发治根修复（模型感知窗口 + 压力驱动 micro-compact）+ 通用协议 API 配置 + 工具执行正确性修复（read 去重范围键 / 审批内容修复） → v1.9.1 对话任务步数计算对标改造 + 文件树显示隐藏文件夹 + 输入框/安全按钮修复 + 数据库持久化加固 + PowerShell 命令修复 → v1.9.2 LLM 请求级超时加固 + 安全模式按钮颜色反馈 + 引导消息注入体验改造 + LLM 失败可见性（对标 DSH 结构化失败上报） → v1.9.3 安全模式完全访问修复（dbReady 时序 + 委派遵循用户模式 + write 拒绝误判）+ 工具调用配对修复（API 400）+ 输入框历史 wrap 折行修复 + 引导栏 UI 对标 wecode + 思考过程紫色样式恢复 → v1.9.4 dsh-desktop 全面对标稳健性审计修复（15 轮：崩溃标记/渲染崩溃兜底/运行时文件日志/持久化失败可见性/命令超时杀树/PowerShell 转义/统一脱敏与超时） → v1.9.5 对话步骤语义化与 update_plan 动态插入（对标 dsh todo）+ token 消耗审计修复（read 上限/工具 defer/结果裁剪/窗口预算/折叠摘要）+ 全面功能审计修复（PTY 树杀/超时补全/托盘退出 flush） → v1.9.6 打包版运行问题修复（CSP blob:/ipc: 修复嵌入 WASM 与 IPC 回退/YAML 清理/解析降噪/知识摘要降级/subagent 激活竞态）
 
@@ -15,7 +15,7 @@
 - **GitHub**：https://github.com/sdcxb/codem
 - **分发**：NSIS `.exe` + WiX `.msi`，一键安装无需依赖
 - **平台**：Windows 优先
-- **版本**：v1.9.6（打包版运行问题修复：CSP blob:/ipc: + YAML 清理 + 解析降噪 + subagent 激活竞态，2026-09-02）
+- **版本**：v1.9.7（dsh 插件市场 + 皮肤兼容契约 + 执行轨迹持久化，2026-09-04）
 
 ---
 
@@ -773,6 +773,13 @@ theme/theme-manager.ts → 注入 CSS 变量 (--dream-bg-image, --dream-accent, 
   └── 影响文件: App.tsx (data-skin 属性), 所有弹窗组件 (Portal)
 ```
 
+**插件皮肤兼容契约（Skin Token Contract，docs/SKIN-PLUGIN-CONTRACT.md）：**
+插件（市场 Tab、插件管理、ui-* provider 及未来可适配的 dsh UI 插件）影响 UI/UX，
+必须与全部皮肤（default 亮/暗、dream、hub）兼容——样式**只消费令牌、禁止硬编码色值**
+（唯一例外 var fallback；半透明用 color-mix 派生）。`theme/skin-tokens.ts` 提供
+`auditPluginStyle` 源码审计 + 令牌登记表；`test/skin-compat-plugin.test.ts`（SC-1~4）
+把契约变成门禁（市场 UI 零硬编码色 / 令牌在 styles.css 均有定义 / 目录分类受支持）。
+
 ### 4.4 Worktree 关联
 
 ```
@@ -917,6 +924,7 @@ Rust 后端 (lib.rs):
 | **TOOLS-SKILLS-BENCHMARK.md** | 对标分析 | 工具/技能/MCP 对标分析（66K，Phase B-D 已完成） | 📦 归档 |
 | **UI-UX-Wegent-Benchmark.md** | 对标分析 | UI/UX 对标分析（10项优化方向） | 📦 归档 |
 | **SKIN-SYSTEM-DESIGN.md** | 设计文档 | 皮肤系统设计（默认/Hub/梦幻三套） | ✅ 已实现 |
+| **SKIN-PLUGIN-CONTRACT.md** | 契约文档 | 插件皮肤兼容契约（令牌唯一化 + 审计 SC-1~4，见 4.3） | ✅ 最新 |
 | **WORKTREE-INPUTBAR-PLAN.md** | 计划文档 | InputArea 控制栏重构 + Git Worktree 集成计划 | ✅ 已实现 |
 | **GIT-WORKTREE-GUIDE.md** | 用户指南 | Git Worktree 使用指南 | ✅ 最新 |
 | **DEFERRED-WORKTREE-ANALYSIS.md** | 分析文档 | Worktree 早期审计（断链分析），已被 AUDIT 替代 | 📦 归档 |
@@ -1005,6 +1013,7 @@ Rust 后端 (lib.rs):
 | v1.9.0 | 2026-08-31 | **上下文压缩过早触发治根修复 + 通用协议 API 配置 + 工具执行正确性修复** — 三根因（estimateMessagesTokens 永不回落 / 动态 provider 窗口 128k / 工具定义双算）+ getAgenticLoop 构造时同步 contextWindow + 通用协议 API 配置（Base URL + API key → 拉模型列表 → 持久化）+ read 去重键含 offset/limit + DecisionTray 审批内容修复（req.args → req.input）。新增 context-window-regression（8 例）+ custom-provider-config 测试。全量 115 文件 / 3950 用例通过 |
 | v1.9.1 | 2026-09-01 | **对话任务步数计算对标改造 + 文件树显示隐藏文件夹 + 输入框/安全按钮修复** — 步数对标 codex 宏观计划步（总量固定、侦查类工具不推进、执行类首次出现才推进、标题中文语义化）+ 文件树显示隐藏文件夹（list_directory 加 show_hidden 参数 + FileExplorer 传 true）+ 输入框删除后高度不收缩修复 + 安全模式切换按钮 portal 误判修复。新增 step-progress-macro（6 例）+ file-tree-hidden（4 例）。全量 117 文件 / 3960 用例通过 |
 | v1.9.2 | 2026-09-01 | **LLM 请求级超时加固 + 安全模式按钮颜色反馈 + 引导消息注入体验改造 + LLM 失败可见性** — complete 120s / stream 连接 60s 超时预算（修复 fetch 无超时永久挂起）+ 安全模式按钮按 ask/auto/full 显示蓝/紫/绿 + removeGuidanceMessage 注入后状态栏自动消失（复用主输入框发送引导消息）+ 移除任务完整性猜测机制 + EMPTY_RESPONSE 空响应检测 + 失败必须对用户可见（text_delta / too_many_errors / 空 toolCall 上报）。新增 llm-timeout-hardening（200 行）+ GUIDE-061/062 + LOOP-051~053。全量 119 文件 / 3985 用例通过 |
+| v1.9.7 | 2026-09-04 | **dsh 插件市场 + 插件皮肤兼容契约 + 插件架构审计修复（13 项）** — ①插件管理弹窗新增「插件市场」Tab：50 条真实官方 @deepseek-ai/dsh-* 目录（bundled 37 / adaptable 9 / unsupported 4，codemAnchor 一对一 + npm registry 在线检索跟随输入 + 动态分类 + 三态安装按钮）浏览/搜索/安装（bundled=启用内置等价，核心恒启只读）/禁用（真卸载 ctx 插件）+ 小窗自适应 ②dsh-compat 懒解析代理接入（7 别名恒注册、调用时现取真实服务；服务名矩阵 78 vs 203 核对）+ 真实 Cordis 装配集成验证（LC-1~6）③插件皮肤兼容契约（skin-tokens 审计 + SC-1~5 门禁，default 亮/暗+dream+hub 四态令牌化）④稳定性/架构审计修复：enable 部分失败必报错（P1）/error 持久化（P2）/loading 连点保护（P3）/error 可重试（P4）/manager 单例幂等（V1）/元数据同源（V2，图=激活）/禁用=真卸载（P6）/管理入口 core 防死锁（P7）/动态分类/无障碍 ⑤执行轨迹修复+事件日志持久化（重启回放）+ 首页无会话自动新建全局对话。全量 152 文件 / 4141 用例通过 + tsc 零错误 |
 | v1.9.6 | 2026-09-02 | **打包版运行问题修复** — ①CSP `script-src`/`worker-src` 加 `blob:`（知识笔记本导入 docx 的 transformers.js WASM 动态加载不再被拦，修复"no available backend found"索引失败）+ `connect-src` 加 `ipc: http://ipc.localhost`（Tauri 自定义 IPC 不再回退 postMessage）②`config/codem.base.yml` 移除已删 @codem/terminal-bash（启动 YamlLoader failed 0）③extractJSON 失败尝试静默（不再刷屏）④generateSourceSummary 解析失败降级文本摘要（前 200 字，卡片不空白）⑤SubagentRuntime 动态 import 异步 → 静态 import 同步（9 个依赖 subagent 插件不再 PENDING，消除 assertActivated FAILED）。全量 145 文件 / 4102 用例通过 + tsc/cargo 零错误 |
 | v1.9.5 | 2026-09-02 | **对话步骤语义化与动态插入（对标 dsh todo）+ token 消耗审计修复 + 全面功能审计修复** — ①步骤语义化：执行型任务强制 LLM 语义计划（任务意图检测修复"修复卡死"被判纯问答的根因 + planSteps 好/坏例 + 空白清洗）+ 新增 update_plan 工具（insert_before/after/append 动态插入、编号顺延、禁插已完成区、上限校验、成功回执新列表）+ 每轮计划上下文注入 + fromLlm 门控（语义计划不混入泛化步骤），测试 STEP-P1~P8 + STEP-L1~L9 ②token 审计（6 项，对齐 dsh 参数）：read 单次 100k→50k 字符、陈旧大工具结果 head+tail 裁剪（context-fold，8192/4096/1024）、7 低频工具 defer（schema 10.6k→7.5k tok/轮）、systemPrompt 工具目录/guidance 三重复裁剪、select 预算对齐真实窗口 + CJK 估算、截断丢历史零成本折叠摘要，测试 TOK-F1~F7 ③功能审计：PTY 关闭/退出杀进程树、TerminalPanel spawn 失败 DOM 残留清理、4 处裸 fetch 补超时、托盘退出先 flush 再退出。全量 145 文件 / 4102 用例通过 + tsc/cargo 零错误 |
 | v1.9.4 | 2026-09-02 | **dsh-desktop 全面对标稳健性审计修复（15 轮迭代，42+ 项）** — ①崩溃检测与恢复（active-run.json 崩溃标记 + panic 落盘 codem-crash.log + previous-run-unclean 界面提示）②渲染崩溃恢复边界 AppErrorBoundary（白屏→恢复卡片，REC-R1~R6）③运行时文件日志 runtime_log.rs（按日 + 段轮转 4MB + 目录上限 24MB + 保留 14 天 + 统一脱敏，13 个 Rust 单测）④DB 保存失败可见性（事件提示 + 限流 + 3s 自动重试 + 恢复复位，DBSAVE-F1~F4）⑤命令超时杀进程树 + PowerShell 安全转义（HEAD^{tree} 崩溃修复）⑥fetchWithTimeout 统一超时全覆盖 + API 错误统一脱敏 + WebSocket 定时器泄漏修复 ⑦前端稳健性（全局错误 alert→记录 / 6 处 JSX 优先级 / 终端 pty-exit / mermaid strict / useWindowState / telemetry flush 保护 / mkdir Rust 化）。新增 repro-ps-command/exec-timeout/bash-abort/jsx-classname/redact + app-error-boundary + db-save-failure-alert。全量 141 文件 / 4079 用例通过 + tsc 零错误 + cargo 零警告 + cargo test 13/13 |
@@ -1380,6 +1389,19 @@ npm run tauri build        # 构建 NSIS exe + MSI
 
 ## 八、版本历史
 
+### v1.9.7（2026-09-04）— dsh 插件市场 + 插件皮肤兼容契约 + 插件架构审计修复（另含执行轨迹持久化 / 首页自动建会话）
+
+> 对标 dsh-desktop / deepseek-harness 插件生态机制（插件 = npm 包 @deepseek-ai/dsh-* 含 Cordis apply/name/inject/Config；装配 = cordis.patch.yml 分层 overlay；Loader 解析 name 模块按服务可用性拓扑激活；无公开 GUI 市场页，plugin-inventory Remote 供内部 UI）分析后评估：Codem YAML 声明式装配（codem.base.yml + codem.desktop.yml 分层）+ Cordis 激活同构，但内置 registry factory 映射加载、**不能加载任意 npm 插件**（运行时鸿沟），@codem/dsh-compat 桥此前 deprecated 未接入。落地模型：bundled（Codem 内置等价，codemAnchor 指向 @codem/* 真实插件，安装 = enable anchor）/ adaptable（dsh 协议、无第三方依赖，经 dsh-compat）/ unsupported（依赖 Node/npm 运行时，诚实标注）。
+>
+> - **插件市场目录**（`plugin-market/dsh-market-catalog.ts`）：50 条真实官方 @deepseek-ai/dsh-* 包（与 harness packages 全量核对存在性；bundled 37 / adaptable 9 / unsupported 4，bundled 锚**一对一唯一**），附 npm registry `/-/v1/search` 在线检索（15s 超时兜底，失败返回 []）；unsupported 含 dsh-goal（依赖 zod 等 npm 依赖）等诚实标注
+> - **插件管理弹窗新增「插件市场」Tab**（`components/plugin-market/PluginMarketTab.tsx` + PluginManager Tab 切换）：浏览/搜索/分类（**动态派生**——按目录实际分类渲染，harness 无 UI 类核心插件时不出现空"界面"分类）+ 兼容徽标（"内置等价"= bundled 可一键安装对应内置插件）+ **三态安装按钮**（未启用→"安装并启用"；已启用且可安全卸载→"禁用"走统一级联；核心恒启锚（llm/fs-local/session/shell-local/tools/credentials）→只读"已启用（核心）"，杜绝把核心插件当卸载目标）+ 在线检索结果展示（**跟随搜索框输入**，空值用 dsh 宽搜默认）+ 小窗自适应（maxHeight 滚动、manager 未就绪禁用安装并提示"初始化中…"）
+> - **dsh-compat 懒解析代理接入**（`dsh-compat/index.ts`）：注册时同步取服务（时序竞态 → 别名缺失）重写为 Proxy 懒解析——dshLlm/dshShell/dshFs/dshTools/dshSessions/dshEvents/dshCredentials 恒注册、方法调用时现取真实服务并做接口转换（如 dshTools.execute({callId,name,arguments}) → execute(name,args)）；builtin-registry 注册 @codem/dsh-compat + codem.base.yml 装配行——adaptable 类插件有了真实承载
+> - **服务名对齐矩阵审计**（dsh-compat 头注释固化）：对 harness packages 全量插件 inject 服务名 78 项 vs Codem provides 203 项逐项比对——核心 seam（fs/shell/tools/llm/session/credentials/sandboxPolicy/slots/subprocess/commands/compaction/systemPrompt/userQuestions/web/subagent 等）**同名直通**；复数/命名差异（sessions/sessionProjections/sessionQuery/sessionTitle/goals/bash 等）经 dsh-compat 别名承接；约 30 项 harness 宿主装配名（remote.*/ui*/typert/webServer/cmdlineArgs 等）属宿主层，超出纯协议插件范围——"能力/工具类 dsh 插件适配成本集中在命名别名、无协议级鸿沟"的量化结论
+> - **插件皮肤兼容契约（Skin Token Contract）**：插件（影响 UI/UX 者）与三套皮肤（default 亮/暗、dream、hub 恒暗，共 4 视觉态）兼容机制化——`theme/skin-tokens.ts` 登记令牌表 + `auditPluginStyle` 源码级硬编码色审计；新测试 `skin-compat-plugin.test.ts`（SC-1~4：审计函数行为 / 市场 Tab + 插件管理弹窗源码零硬编码色 / 登记令牌在 styles.css 均有定义 / 目录分类受支持）；修复市场 Tab 安装按钮文字 `#fff`→`var(--text-on-accent)`；完整契约见 `docs/SKIN-PLUGIN-CONTRACT.md`
+> - 测试：`dsh-plugin-market.test.ts`（DM-1~5：三类覆盖 + bundled 必有 anchor + anchor 全部存在于 runtimePluginList + fetch 失败返回 [] + bundled 锚一对一唯一 + **真实依赖图（runtimePluginList 全量）下全部 37 个 bundled 锚安装级联可达、无缺失依赖**）+ `dsh-compat-lazy.test.ts`（DC-1~4：懒解析/服务未就绪抛错/接口转换）+ `dsh-plugin-market-wiring.test.ts`（PM-1~3：YAML ↔ builtin 装配一致性，防 terminal-bash 式断链）+ `plugin-market-tab.test.tsx`（MT-1~5：jsdom 渲染/安装/禁用/核心恒启条目只读）+ `skin-compat-plugin.test.ts`（SC-1~5）。全量测试通过 + tsc 零错误 + 重打包安装验证
+>
+> 同工作区另含（v1.9.6 后）：执行轨迹数据修复 + 事件日志持久化（重启可回放）+ 小窗自适应、首页无会话输入自动新建全局对话、知识笔记本导入 docx（CSP blob: 已随 v1.9.6 发布）。
+
 ### v1.9.6（2026-09-02）— 打包版运行问题修复
 
 > 用户报告知识笔记本导入 docx 报错与启动控制台告警，逐项定位修复：①CSP 允许 blob:（tauri.localhost 下 transformers.js/onnxruntime 用 URL.createObjectURL 动态 import WASM 被 script-src 拦截 → "no available backend found"、索引全部失败；script-src/worker-src 增加 blob:）②CSP connect-src 增加 ipc: http://ipc.localhost（Tauri v2 自定义 IPC 不再回退 postMessage）③config/codem.base.yml 移除已删除的 @codem/terminal-bash 条目（YamlLoader failed 0）④output-parser extractJSON 失败尝试静默、全部失败后单次 warn（消除导入多来源时的控制台刷屏）⑤generateSourceSummary 在模型未返回严格 JSON 时把输出清理后取前 200 字降级为文本摘要（此前仅 warn 留空、笔记本卡片无内容）⑥SubagentRuntime 由动态 import 异步创建改为静态 import 同步（import 链无值依赖循环），subagentProvider 不再拿到空 runtime → 9 个 inject ['subagent'] 插件正常激活（消除 assertActivated FAILED）。全量 145 文件 / 4102 用例通过 + tsc/cargo 零错误。
@@ -1730,4 +1752,5 @@ Phase 10（G20-G36 开局设置 + 机制补全 + 体验补全）：
 **Bug 11 — 性能面板应改为面板切换而非弹窗**：`PerformanceDashboard` 从 `createPortal` 弹窗模式改为内嵌面板模式。移除了 `showPerfDashboard` 弹窗渲染。
 
 **编译 Warnings 清零**：修复 4 个 Rust warnings — 多余分号、未使用变量 `window`→`_window`、未读取字段 `id`→`_id`、`Cargo.toml` 添加 `[lints.rust]` 配置 `linker_messages = allow`。
+
 

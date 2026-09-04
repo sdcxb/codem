@@ -37,6 +37,32 @@ export interface YamlLoadResult {
   failed: Array<{ name: string; error: string }>
 }
 
+// ===== 装配 fiber 登记（对标 dsh 卸载语义） =====
+/**
+ * name（@codem/*）→ 装配时 ctx.plugin 创建的 fiber。
+ *
+ * PluginManagerService 的"禁用"需要真正卸载 Cordis 里由 YAML 装配的插件
+ * （否则只是改状态——插件/服务/工具仍在 ctx 运行 = 假禁用）。装配入口
+ * （loadFromYaml / loadFromEntries）每 ctx.plugin 一个插件即在此登记，
+ * manager.disable 通过 getActiveFiber 找到 fiber 并 dispose。
+ */
+const activeFibers = new Map<string, any>()
+
+/** 登记装配 fiber（装配入口调用） */
+export function registerActiveFiber(name: string, fiber: any): void {
+  activeFibers.set(name, fiber)
+}
+
+/** 注销装配 fiber（manager 真卸载后调用） */
+export function unregisterActiveFiber(name: string): void {
+  activeFibers.delete(name)
+}
+
+/** 取某插件由 YAML 装配创建的 fiber（未装配/已卸载返回 undefined） */
+export function getActiveFiber(name: string): any {
+  return activeFibers.get(name)
+}
+
 /**
  * 简易 YAML 解析器。
  *
@@ -278,7 +304,8 @@ export function loadFromYaml(ctx: Context, ymlContent: string): YamlLoadResult {
         Object.assign(plugin.config, entry.config)
       }
 
-      ctx.plugin(plugin as any)
+      const fiber = ctx.plugin(plugin as any)
+      registerActiveFiber(entry.name, fiber)
       result.loaded.push(entry.id)
     } catch (err: any) {
       result.failed.push({
@@ -464,7 +491,8 @@ export function loadFromEntries(ctx: Context, entries: YamlPluginEntry[]): YamlL
         Object.assign(plugin.config, entry.config)
       }
 
-      ctx.plugin(plugin as any)
+      const fiber = ctx.plugin(plugin as any)
+      registerActiveFiber(entry.name, fiber)
       result.loaded.push(entry.id)
     } catch (err: any) {
       result.failed.push({

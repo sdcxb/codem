@@ -1,4 +1,4 @@
-// @ts-nocheck
+﻿// @ts-nocheck
 /**
  * 内置插件注册 — 将所有 Codem 内置插件注册到 PluginLoader。
  *
@@ -158,6 +158,7 @@ import { uiModelSelectionProvider } from '../provider/ui-model-selection-provide
 import { uiPermissionPresetsProvider } from '../provider/ui-permission-presets-provider'
 import { uiTrajectoryProvider } from '../provider/ui-trajectory-provider'
 import { uiDeliverablesProvider } from '../provider/ui-deliverables-provider'
+import { dshCompatPlugin } from '../dsh-compat/index'
 
 // R7-4: Host/Client 链路拆分
 import { bundleProvider } from '../provider/bundle-provider'
@@ -299,7 +300,7 @@ registerBuiltinPlugin('@codem/mimo-auth', { provides: ['mimoAuth'], inject: [], 
   registerBuiltinPlugin('@codem/notebook', { provides: ['notebook'], inject: [], priority: 0 }, () => notebookProvider)
   registerBuiltinPlugin('@codem/squad', { provides: ['squad'], inject: [], priority: 0 }, () => squadProvider)
   registerBuiltinPlugin('@codem/dynamic-runner', { provides: ['dynamicCordisRunner'], inject: [], priority: 0 }, () => dynamicRunnerProvider)
-  registerBuiltinPlugin('@codem/plugin-registry', { provides: ['pluginRegistry'], inject: [], priority: 0 }, () => pluginRegistryProvider)
+  registerBuiltinPlugin('@codem/plugin-registry', { provides: ['pluginRegistry'], inject: [], priority: 0, core: true }, () => pluginRegistryProvider)
 
   // R1 Providers (从 bridge-plugin.ts 迁移)
   registerBuiltinPlugin('@codem/guard', { provides: ['guard'], inject: [], priority: 0 }, () => guardProvider)
@@ -426,6 +427,8 @@ registerBuiltinPlugin('@codem/mimo-auth', { provides: ['mimoAuth'], inject: [], 
   registerBuiltinPlugin('@codem/ui-permission-presets', { provides: ['uiPermissionPresets'], inject: ['permission'], priority: 0, hot: true }, () => uiPermissionPresetsProvider)
   registerBuiltinPlugin('@codem/ui-trajectory', { provides: ['uiTrajectory'], inject: [], priority: 0, hot: true }, () => uiTrajectoryProvider)
   registerBuiltinPlugin('@codem/ui-deliverables', { provides: ['uiDeliverables'], inject: [], priority: 0, hot: true }, () => uiDeliverablesProvider)
+  // dsh 协议兼容别名层（懒解析，任何时刻可用；供插件市场"可适配"dsh 插件消费）
+  registerBuiltinPlugin('@codem/dsh-compat', { provides: ['dshLlm', 'dshShell', 'dshFs', 'dshTools', 'dshSessions', 'dshEvents', 'dshCredentials'], inject: [], priority: 0, category: 'compat' }, () => dshCompatPlugin)
 
   // R7-4: Host/Client 链路拆分
   registerBuiltinPlugin('@codem/bundle', { provides: ['bundle'], inject: [], priority: 0, hot: true }, () => bundleProvider)
@@ -498,7 +501,7 @@ registerBuiltinPlugin('@codem/mimo-auth', { provides: ['mimoAuth'], inject: [], 
   registerBuiltinPlugin('@codem/ui-settings-models', { provides: ['uiSettingsModels'], inject: ['slots'], priority: 0, hot: true }, () => uiSettingsModelsProvider)
   registerBuiltinPlugin('@codem/ui-settings-plugin-inventory', { provides: ['uiSettingsPluginInventory'], inject: ['slots'], priority: 0, hot: true }, () => uiSettingsPluginInventoryProvider)
   registerBuiltinPlugin('@codem/ui-settings-plugins', { provides: ['uiSettingsPlugins'], inject: ['slots'], priority: 0, hot: true }, () => uiSettingsPluginsProvider)
-  registerBuiltinPlugin('@codem/ui-slots', { provides: ['uiSlots'], inject: ['slots'], priority: 0, hot: true }, () => uiSlotsProvider)
+  registerBuiltinPlugin('@codem/ui-slots', { provides: ['uiSlots'], inject: ['slots'], priority: 0, hot: true, core: true }, () => uiSlotsProvider)
   registerBuiltinPlugin('@codem/ui-subagent', { provides: ['uiSubagent'], inject: ['slots'], priority: 0, hot: true }, () => uiSubagentProvider)
   registerBuiltinPlugin('@codem/ui-user-questions', { provides: ['uiUserQuestions'], inject: ['slots'], priority: 0, hot: true }, () => uiUserQuestionsProvider)
   registerBuiltinPlugin('@codem/ui-workflow-run', { provides: ['uiWorkflowRun'], inject: ['slots'], priority: 0, hot: true }, () => uiWorkflowRunProvider)
@@ -523,3 +526,4 @@ registerBuiltinPlugin('@codem/mimo-auth', { provides: ['mimoAuth'], inject: [], 
 function builtinPluginCount(): number {
   return getBuiltinPluginCount()
 }
+

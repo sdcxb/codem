@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
+﻿import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useAppStore, MessageAttachment, type Message } from "../store";
 import { useProjectStore } from "../core/store";
 import { MessageBubble } from "./MessageBubble";
@@ -933,7 +933,7 @@ canEdit={!isSessionStreaming}
       {/* TrajectoryPanel — floating overlay */}
       {showTrajectoryPanel && (
         <div className="floating-overlay-panel" style={{
-          position: 'fixed', top: 'var(--chat-body-top, 48px)', right: 0, bottom: 'var(--chat-body-bottom, 140px)', width: 380,
+          position: 'fixed', top: 'var(--chat-body-top, 48px)', right: 0, bottom: 'var(--chat-body-bottom, 140px)', width: 'min(380px, calc(100vw - 24px))',
           zIndex: 200,
           borderRadius: 0,
           display: 'flex',
@@ -942,6 +942,7 @@ canEdit={!isSessionStreaming}
         }}>
           <TrajectoryPanel
             messages={messages}
+            sessionId={currentSession?.id || sessionId || null}
             defaultExpanded={true}
           />
         </div>
@@ -950,7 +951,7 @@ canEdit={!isSessionStreaming}
       {/* AgentPanel — floating overlay outside chat-body */}
       {showAgentPanel && (
         <div className="floating-overlay-panel" style={{
-          position: 'fixed', top: 'var(--chat-body-top, 48px)', right: 0, bottom: 'var(--chat-body-bottom, 140px)', width: 380,
+          position: 'fixed', top: 'var(--chat-body-top, 48px)', right: 0, bottom: 'var(--chat-body-bottom, 140px)', width: 'min(380px, calc(100vw - 24px))',
           zIndex: 200, overflowY: 'auto',
           borderRadius: 0,
         }}>
@@ -969,7 +970,7 @@ canEdit={!isSessionStreaming}
       {/* SnapshotPanel — floating overlay */}
       {showSnapshotPanel && (
         <div className="floating-overlay-panel" style={{
-          position: 'fixed', top: 'var(--chat-body-top, 48px)', right: 0, bottom: 'var(--chat-body-bottom, 140px)', width: 380,
+          position: 'fixed', top: 'var(--chat-body-top, 48px)', right: 0, bottom: 'var(--chat-body-bottom, 140px)', width: 'min(380px, calc(100vw - 24px))',
           zIndex: 200, overflowY: 'auto',
           borderRadius: 0,
         }}>
@@ -983,7 +984,7 @@ canEdit={!isSessionStreaming}
       {/* ContextMonitor — floating overlay */}
       {showContextMonitor && (
         <div className="floating-overlay-panel" style={{
-          position: 'fixed', top: 'var(--chat-body-top, 48px)', right: 0, bottom: 'var(--chat-body-bottom, 140px)', width: 380,
+          position: 'fixed', top: 'var(--chat-body-top, 48px)', right: 0, bottom: 'var(--chat-body-bottom, 140px)', width: 'min(380px, calc(100vw - 24px))',
           zIndex: 200, overflowY: 'auto',
           borderRadius: 0,
         }}>
@@ -1170,7 +1171,7 @@ canEdit={!isSessionStreaming}
         </div>
       )}
 
-      <InputArea sessionKey={currentSessionId} onSend={(msg, atts, skills) => { if (isSessionStreaming && onSendGuidance) { onSendGuidance(msg); } else { onSend(msg, atts, skills); } setQuoteContext(null); }} onSendGuidance={isSessionStreaming ? onSendGuidance : undefined} onCancel={onCancel} disabled={!currentSessionId || !connected} isStreaming={!currentSessionId ? isStreaming : activeSessions.has(currentSessionId)} noSession={!currentSessionId} collaborationMode={collaborationMode} onModeChange={onModeChange || (() => {})} projectPath={projectPath} quoteContext={quoteContext} onClearQuote={() => { setQuoteContext(null); }} suggestionPrompt={suggestionPrompt} onSuggestionConsumed={() => setSuggestionPrompt(null)} notebookId={notebookId} onToggleRightSidebar={() => setShowRightSidebar(!showRightSidebar)} onToggleQuickPhrase={() => setShowQuickPhrase(!showQuickPhrase)} onToggleDraftPicker={() => setShowDraftPicker(!showDraftPicker)} hasDrafts={promptDrafts.length > 0} model={model} onModelChange={onModelChange} mode={mode} />
+      <InputArea sessionKey={currentSessionId} onSend={(msg, atts, skills) => { if (isSessionStreaming && onSendGuidance) { onSendGuidance(msg); } else { onSend(msg, atts, skills); } setQuoteContext(null); }} onSendGuidance={isSessionStreaming ? onSendGuidance : undefined} onCancel={onCancel} disabled={!connected} isStreaming={!currentSessionId ? isStreaming : activeSessions.has(currentSessionId)} noSession={!currentSessionId} collaborationMode={collaborationMode} onModeChange={onModeChange || (() => {})} projectPath={projectPath} quoteContext={quoteContext} onClearQuote={() => { setQuoteContext(null); }} suggestionPrompt={suggestionPrompt} onSuggestionConsumed={() => setSuggestionPrompt(null)} notebookId={notebookId} onToggleRightSidebar={() => setShowRightSidebar(!showRightSidebar)} onToggleQuickPhrase={() => setShowQuickPhrase(!showQuickPhrase)} onToggleDraftPicker={() => setShowDraftPicker(!showDraftPicker)} hasDrafts={promptDrafts.length > 0} model={model} onModelChange={onModelChange} mode={mode} />
     </div>
   );
 }

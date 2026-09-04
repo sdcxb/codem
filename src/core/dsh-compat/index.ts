@@ -1,274 +1,221 @@
 // @ts-nocheck
 /**
- * dsh-compat — DeepSeek Harness 接口兼容适配层。
+ * dsh-compat — DeepSeek Harness 接口兼容适配层（懒解析别名）。
  *
- * @deprecated R3-Audit: This compatibility layer is no longer referenced by any
- * production code. It is kept for reference but should not be used in new code.
- * The canonical implementations are in src/core/provider/ and src/core/capabilities/.
+ * 将 Codem 的服务接口适配为 dsh 标准接口签名，使按 dsh 协议编写、无第三方
+ * 依赖的插件（插件市场"可适配"类）可以经这些别名消费 Codem 服务：
  *
- * 将 Codem 的服务接口适配为 dsh 标准接口签名，
- * 使 dsh 插件可以直接在 Codem 运行时中加载和运行。
+ *   1. dshLlm    ← llm    （GenerateOptions/StreamChunk ↔ Codem request/stream）
+ *   2. dshShell  ← shell  （resolve/start/run/sandboxMode ↔ execute）
+ *   3. dshFs     ← fs     （readFile/writeFile/listDirectory/stat/rm）
+ *   4. dshTools  ← tools  （execute({callId,name,arguments}) ↔ execute(name,args)）
+ *   5. dshSessions← session（create/get/list/remove）
+ *   6. dshEvents ← ctx    （emit/on/waterfall/serial/bail/parallel）
+ *   7. dshCredentials ← settings（provider apiKey 读取）
  *
- * 适配的核心接口：
- * 1. LLM: dsh 使用 GenerateOptions + StreamChunk，我们使用 request + response
- * 2. Shell: dsh 使用 ctx.shell.resolve/start/run/sandboxMode，我们使用 execute(command, cwd)
- * 3. FileSystem: dsh 使用路径式 API，我们使用 Tauri invoke
- * 4. Tools: dsh 使用 ctx.tools.execute(CallId, name, arguments)，我们使用 execute(name, input)
- * 5. Session: dsh 使用 ctx.sessions (SessionStore)，我们使用 ctx.session
- * 6. Events: dsh 使用 waterfall/emit 模式，我们使用简单的 emit
+ * 2026-09 审计修复：原实现把 `ctx.get('llm')` 等放在 apply 阶段并据此决定是否
+ * 注册别名 —— 服务未就绪时别名缺失（时序竞态，实际一直未接入）。改为
+ * **懒解析代理**：别名恒注册，方法调用时才 `ctx.get(realService)`，任何时刻可用。
+ *
+ * 插件市场条目（dsh-market-catalog 的 adaptable）即通过本层接入。
+ *
+ * 2026-09 服务名对齐矩阵（对 harness packages 全量插件 inject 服务名 78 项
+ * 与 Codem provides 203 项逐项比对后的结论，作为后续审计基准）：
+ *   - **核心 seam 同名直通**（dsh 能力/工具插件的主要依赖，Codem 同名提供）：
+ *     fs / shell / tools / llm / session / credentials / sandboxPolicy / slots /
+ *     subprocess / commands / compaction / systemPrompt / userQuestions / web /
+ *     dynamicCordisRunner / subagent（=dsh subagents 单数）…；
+ *   - **复数/命名差异经别名承接**：sessions→session（+事件日志）、
+ *     sessionProjections→sessionProjection、sessionQuery→sessionQuerySqlite、
+ *     sessionTitle→sessionTitleLLM、goals→goalRoundDriver、bash→shell 等——
+ *     即本文件 7 个别名 + Cordis 注入点覆盖；
+ *   - **harness 宿主装配名不适用**（约 30 项：remote.* / uiConversation /
+ *     uiSession / uiWorkspace / typert / typertGateway / webServer / cmdlineArgs /
+ *     connection / clientModules / loader / modules / layout / inputTriggers /
+ *     commandUi / settingsSchema / settingsScope / shellEnv / agentTeams /
+ *     subagentModelSelection / workflowEngine / jobs / terminals / workspaces /
+ *     webhookRuntime / invariants 等）：属 harness 桌面/宿主编排层（服务端进程、
+ *     RPC 网关、窗口 UI 槽），消费它们的插件是宿主插件而非纯协议插件——
+ *     超出"可适配"范围，市场目录如实标 unsupported。
+ *   结论：能力/工具类 dsh 插件的核心依赖与 Codem 服务名同构，
+ *   适配成本集中在单复数/命名别名，无协议级鸿沟。
  */
 
-import type { Context, Plugin } from '../cordis/src/index.ts'
+import type { Plugin } from '../cordis/src/index.ts'
 import type { GenerateOptions, StreamChunk, Message } from './dsh-types'
 
-/**
- * dsh 兼容适配插件。
- *
- * 加载此插件后，Codem Context 上会注册 dsh 标准的接口别名，
- * 使 dsh 插件可以通过标准接口消费 Codem 服务。
- *
- * 使用方式：
- * ```typescript
- * import { dshCompatPlugin } from './dsh-compat'
- * ctx.plugin(dshCompatPlugin)
- * // 现在 dsh 插件可以使用 ctx.llm.stream(options) 等 dsh 标准接口
- * ```
- */
-export const dshCompatPlugin: Plugin = (ctx: any) => {
-  const disposers: Array<() => void> = []
-
-  // ===== 1. LLM 适配 =====
-  // dsh 的 LLM 接口使用 GenerateOptions 和 StreamChunk
-  // 我们将 dsh 的调用转换为 Codem 的 complete/stream 调用
-  // 使用 ctx.get() 读取服务（Cordis 标准模式：可选依赖用 ctx.get，不存在时返回 undefined）
-  // 不使用 inject 声明是因为 dsh-compat 是适配层，各服务都是可选的
-  const originalLlm = ctx.get('llm')
-  if (originalLlm) {
-    // 在 ctx 上注册 dsh 标准的 LLM 接口
-    disposers.push(ctx.provide('dshLlm', {
-      /**
-       * dsh 标准流式生成接口。
-       * 将 GenerateOptions 转换为 Codem 的 request 格式。
-       */
-      async *stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
-        // 转换 messages: dsh Message[] → Codem 格式
-        const codemRequest = {
-          provider: options.provider,
-          model: options.model,
-          messages: options.messages?.map((m: Message) => ({
-            role: m.role,
-            content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content),
-          })) || [],
-          system: options.system,
-          tools: options.tools,
-          temperature: options.temperature,
-          maxTokens: options.maxTokens,
-          stop: options.stop,
-        }
-
-        // 调用 Codem 的 stream
-        for await (const chunk of originalLlm.stream(codemRequest)) {
-          // 将 Codem 的 chunk 转换为 dsh StreamChunk
-          yield {
-            type: 'content',
-            delta: typeof chunk === 'string' ? chunk : chunk?.content || chunk?.delta || '',
-          }
-        }
-      },
-
-      /**
-       * dsh 标准非流式生成接口。
-       */
-      async generate(options: GenerateOptions): Promise<{ content: string; role: 'assistant' }> {
-        const codemRequest = {
-          provider: options.provider,
-          model: options.model,
-          messages: options.messages?.map((m: Message) => ({
-            role: m.role,
-            content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content),
-          })) || [],
-          system: options.system,
-        }
-        const result = await originalLlm.complete(codemRequest)
-        return {
-          content: typeof result === 'string' ? result : result?.content || '',
-          role: 'assistant',
-        }
-      },
-
-      listProviders: async () => {
-        const models = await originalLlm.listModels()
-        const providers = new Set(models.map((m: any) => m.provider || 'mimo'))
-        return [...providers].map((id: string) => ({ id, label: id }))
-      },
-
-      listModels: async (provider?: string) => {
-        const models = await originalLlm.listModels()
-        return models
-          .filter((m: any) => !provider || m.provider === provider)
-          .map((m: any) => ({ id: m.id || m.name, provider: m.provider || 'mimo' }))
-      },
-    }))
+/** 懒解析代理：把别名方法绑定到"调用时从 ctx 现取的真实服务"上。 */
+function alias(ctx: any, realName: string, build: (real: any) => any): any {
+  const resolve = (): any => {
+    const real = ctx.get(realName)
+    if (!real) throw new Error(`[dsh-compat] service "${realName}" not ready`)
+    return build(real)
   }
+  return new Proxy({}, {
+    get(_target, prop: string | symbol) {
+      if (typeof prop !== 'string') return undefined
+      if (prop === '__dshReal') return () => resolve()
+      const svc = resolve()
+      const value = svc[prop]
+      return typeof value === 'function' ? value.bind(svc) : value
+    },
+    set() { return false },
+    has() { return true },
+  })
+}
 
-  // ===== 2. Shell 适配 =====
-  // dsh 的 Shell 接口使用 resolve/start/run/sandboxMode
-  const originalShell = ctx.get('shell')
-  if (originalShell) {
-    disposers.push(ctx.provide('dshShell', {
-      sandboxMode: undefined as string | undefined,
-
-      resolve(request: any): any {
-        return {
-          command: request.command,
-          workdir: request.workdir || request.cwd || '.',
-          timeoutMs: request.timeoutMs || 30000,
-        }
-      },
-
-      async run(spec: any): Promise<any> {
-        const result = await originalShell.execute(spec.command, spec.workdir, spec.timeoutMs)
-        return {
-          stdout: result.stdout || '',
-          stderr: result.stderr || '',
-          exitCode: result.exitCode ?? 0,
-          ok: (result.exitCode ?? 0) === 0,
-        }
-      },
-
-      start(spec: any): any {
-        // 返回一个类似 dsh 的 process handle
-        const proc = {
-          id: crypto.randomUUID(),
-          spec,
-          done: false,
-          async wait(): Promise<any> {
-            const result = await originalShell.execute(spec.command, spec.workdir, spec.timeoutMs)
-            proc.done = true
-            return {
-              stdout: result.stdout || '',
-              stderr: result.stderr || '',
-              exitCode: result.exitCode ?? 0,
-              ok: (result.exitCode ?? 0) === 0,
-            }
-          },
-          kill() { /* best effort */ },
-        }
-        return proc
-      },
-    }))
+function buildLlm(realLlm: any) {
+  return {
+    async *stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
+      const codemRequest = {
+        provider: options.provider,
+        model: options.model,
+        messages: options.messages?.map((m: Message) => ({
+          role: m.role,
+          content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content),
+        })) || [],
+        system: options.system,
+        tools: options.tools,
+        temperature: options.temperature,
+        maxTokens: options.maxTokens,
+        stop: options.stop,
+      }
+      for await (const chunk of realLlm.stream(codemRequest)) {
+        yield { type: 'content', delta: typeof chunk === 'string' ? chunk : chunk?.content || chunk?.delta || '' }
+      }
+    },
+    async generate(options: GenerateOptions): Promise<{ content: string; role: 'assistant' }> {
+      const codemRequest = {
+        provider: options.provider,
+        model: options.model,
+        messages: options.messages?.map((m: Message) => ({
+          role: m.role,
+          content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content),
+        })) || [],
+        system: options.system,
+      }
+      const result = await realLlm.complete(codemRequest)
+      return { content: typeof result === 'string' ? result : result?.content || '', role: 'assistant' }
+    },
+    async listProviders() {
+      const models = await realLlm.listModels()
+      const providers = new Set(models.map((m: any) => m.provider || 'mimo'))
+      return [...providers].map((id: string) => ({ id, label: id }))
+    },
+    async listModels(provider?: string) {
+      const models = await realLlm.listModels()
+      return models.filter((m: any) => !provider || m.provider === provider).map((m: any) => ({ id: m.id || m.name, provider: m.provider || 'mimo' }))
+    },
   }
+}
 
-  // ===== 3. FileSystem 适配 =====
-  // dsh 的 FS 接口使用 path-based API，与我们的类似
-  const originalFs = ctx.get('fs')
-  if (originalFs) {
-    disposers.push(ctx.provide('dshFs', {
-      async readFile(path: string): Promise<string> {
-        return originalFs.readFile(path)
-      },
-      async writeFile(path: string, content: string): Promise<void> {
-        return originalFs.writeFile(path, content)
-      },
-      async listDirectory(path: string): Promise<any[]> {
-        return originalFs.listDirectory(path)
-      },
-      async stat(path: string): Promise<{ exists: boolean; isDirectory: boolean; size: number }> {
-        const exists = await originalFs.exists(path)
-        return { exists, isDirectory: false, size: 0 }
-      },
-      async rm(path: string): Promise<void> {
-        return originalFs.deleteFile(path)
-      },
-    }))
+function buildShell(realShell: any) {
+  const toResult = (r: any) => ({ stdout: r.stdout || '', stderr: r.stderr || '', exitCode: r.exitCode ?? 0, ok: (r.exitCode ?? 0) === 0 })
+  return {
+    sandboxMode: undefined as string | undefined,
+    resolve(request: any): any {
+      return { command: request.command, workdir: request.workdir || request.cwd || '.', timeoutMs: request.timeoutMs || 30000 }
+    },
+    async run(spec: any) {
+      return toResult(await realShell.execute(spec.command, spec.workdir, spec.timeoutMs))
+    },
+    start(spec: any) {
+      const proc = {
+        id: crypto.randomUUID(),
+        spec,
+        done: false,
+        async wait() {
+          proc.done = true
+          return toResult(await realShell.execute(spec.command, spec.workdir, spec.timeoutMs))
+        },
+        kill() { /* best effort */ },
+      }
+      return proc
+    },
   }
+}
 
-  // ===== 4. Tools 适配 =====
-  // dsh 的 Tools 接口使用 execute({ callId, name, arguments })
-  const originalTools = ctx.get('tools')
-  if (originalTools) {
-    disposers.push(ctx.provide('dshTools', {
-      async execute(call: { callId?: string; name: string; arguments?: any; signal?: AbortSignal }): Promise<any> {
-        return originalTools.execute(call.name, call.arguments || {})
-      },
-      list(): any[] {
-        return originalTools.list().map((t: any) => ({
-          name: t.name,
-          description: t.description,
-          inputSchema: t.inputSchema,
-        }))
-      },
-      get(name: string): any {
-        const t = originalTools.get(name)
-        return t ? { name: t.name, description: t.description, inputSchema: t.inputSchema } : undefined
-      },
-    }))
+function buildFs(realFs: any) {
+  return {
+    async readFile(path: string) { return realFs.readFile(path) },
+    async writeFile(path: string, content: string) { return realFs.writeFile(path, content) },
+    async listDirectory(path: string) { return realFs.listDirectory(path) },
+    async stat(path: string) {
+      const exists = await realFs.exists(path)
+      return { exists, isDirectory: false, size: 0 }
+    },
+    async rm(path: string) { return realFs.deleteFile(path) },
   }
+}
 
-  // ===== 5. Session 适配 =====
-  // dsh 使用 ctx.sessions (SessionStore)，我们使用 ctx.session
-  const originalSession = ctx.get('session')
-  if (originalSession) {
-    disposers.push(ctx.provide('dshSessions', {
-      create(config?: any) { return originalSession.create(config) },
-      get(id: string) { return originalSession.get(id) },
-      list() { return originalSession.list() },
-      remove(id: string) { originalSession.delete(id) },
-    }))
+function buildTools(realTools: any) {
+  return {
+    async execute(call: { callId?: string; name: string; arguments?: any; signal?: AbortSignal }) {
+      return realTools.execute(call.name, call.arguments || {})
+    },
+    list() {
+      return realTools.list().map((t: any) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema }))
+    },
+    get(name: string) {
+      const t = realTools.get(name)
+      return t ? { name: t.name, description: t.description, inputSchema: t.inputSchema } : undefined
+    },
   }
+}
 
-  // ===== 6. Events 适配 =====
-  // dsh 使用 waterfall/emit 模式
-  // Cordis 已经有完整的 events 系统（ctx.events.waterfall/emit/serial/bail），
-  // 直接代理到 Cordis 的实现，而非简化假实现。
-  disposers.push(ctx.provide('dshEvents', {
-    emit(event: string, ...args: any[]): void {
-      ctx.emit(event, ...args)
-    },
-    on(event: string, handler: (...args: any[]) => void): () => void {
-      return ctx.on(event, handler)
-    },
-    waterfall(event: string, ...args: any[]): Promise<any[]> {
-      // 直接代理到 Cordis 的 waterfall——
-      // 它会顺序调用所有监听器，每个监听器的返回值覆盖第一个参数。
-      return ctx.waterfall(event, ...args)
-    },
-    serial(event: string, ...args: any[]): Promise<void> {
-      return ctx.serial(event, ...args)
-    },
-    bail(event: string, ...args: any[]): Promise<any> {
-      return ctx.bail(event, ...args)
-    },
-    parallel(event: string, ...args: any[]): Promise<any[]> {
-      return ctx.parallel(event, ...args)
-    },
-  }))
+function buildSessions(realSession: any) {
+  return {
+    create(config?: any) { return realSession.create(config) },
+    get(id: string) { return realSession.get(id) },
+    list() { return realSession.list() },
+    remove(id: string) { realSession.delete(id) },
+  }
+}
 
-  // ===== 7. Settings 适配 =====
-  // dsh 使用 ctx.settings，我们也有 ctx.settings
-  // 接口兼容，无需额外适配
-
-  // ===== 8. Credential 适配 =====
-  // dsh 使用 ctx.credentials，我们没有对应的 credential service
-  disposers.push(ctx.provide('dshCredentials', {
-    async get(provider: string): Promise<string | undefined> {
+function buildCredentials(ctx: any) {
+  return {
+    async get(provider: string) {
       try {
         const settings = ctx.get('settings') as any
         const all = settings?.getAll?.() || {}
         const providers = all.providers || []
-        const p = providers.find((p: any) => p.id === provider)
+        const p = providers.find((x: any) => x.id === provider)
         return p?.apiKey
       } catch { return undefined }
     },
-    async set(provider: string, key: string): Promise<void> {
-      // 委托给 settings
+    async set(provider: string, key: string) {
       const settings = ctx.get('settings') as any
       settings?.set?.(`credential:${provider}`, key)
     },
+  }
+}
+
+/**
+ * dsh 兼容适配插件：懒注册 dsh 标准接口别名（dshLlm/dshShell/dshFs/…）。
+ * 任何时刻可用（方法调用时才解析真实服务），可安全接入主装配。
+ */
+export const dshCompatPlugin: Plugin = (ctx: any) => {
+  const disposers: Array<() => void> = []
+
+  disposers.push(ctx.provide('dshLlm', alias(ctx, 'llm', buildLlm)))
+  disposers.push(ctx.provide('dshShell', alias(ctx, 'shell', buildShell)))
+  disposers.push(ctx.provide('dshFs', alias(ctx, 'fs', buildFs)))
+  disposers.push(ctx.provide('dshTools', alias(ctx, 'tools', buildTools)))
+  disposers.push(ctx.provide('dshSessions', alias(ctx, 'session', buildSessions)))
+  disposers.push(ctx.provide('dshCredentials', buildCredentials(ctx)))
+
+  // dshEvents 直接代理到 Cordis 事件系统（非懒——ctx 本身即事件宿主）
+  disposers.push(ctx.provide('dshEvents', {
+    emit(event: string, ...args: any[]) { ctx.emit(event, ...args) },
+    on(event: string, handler: (...args: any[]) => void) { return ctx.on(event, handler) },
+    waterfall(event: string, ...args: any[]) { return ctx.waterfall(event, ...args) },
+    serial(event: string, ...args: any[]) { return ctx.serial(event, ...args) },
+    bail(event: string, ...args: any[]) { return ctx.bail(event, ...args) },
+    parallel(event: string, ...args: any[]) { return ctx.parallel(event, ...args) },
   }))
 
-  console.log('[dsh-compat] dsh compatibility layer loaded')
-  return () => disposers.forEach(d => d())
+  console.log('[dsh-compat] dsh compatibility layer loaded (lazy aliases)')
+  return () => disposers.forEach((d) => d())
 }
 
 /**
@@ -276,19 +223,12 @@ export const dshCompatPlugin: Plugin = (ctx: any) => {
  */
 declare module '../cordis/src/context.ts' {
   interface Context {
-    /** dsh 兼容 LLM 接口 */
     dshLlm?: any
-    /** dsh 兼容 Shell 接口 */
     dshShell?: any
-    /** dsh 兼容 FS 接口 */
     dshFs?: any
-    /** dsh 兼容 Tools 接口 */
     dshTools?: any
-    /** dsh 兼容 Sessions 接口 */
     dshSessions?: any
-    /** dsh 兼容 Events 接口 */
     dshEvents?: any
-    /** dsh 兼容 Credentials 接口 */
     dshCredentials?: any
   }
 }

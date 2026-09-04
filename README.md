@@ -46,6 +46,8 @@
 >
 > **v1.6.2 更新**：大富翁嵌入式游戏全量交付（Phase 1-10） + 三轮审计 Bug 修复 — 在 Codem 中嵌入完整的大富翁4风格桌面游戏，作为用户等待 LLM 执行任务时的休闲娱乐。游戏作为完全独立的大插件运行，零侵入主项目代码。Phase 1-6 完成基础设施和核心玩法（棋盘渲染/动态骰子/地产系统/角色系统/命运新闻事件/股票系统/卡片系统/道具系统/AI 策略/存档读档）；Phase 7-9 完成视觉交互和核心机制对齐（地块图标映射/角色精灵动画/消息条系统/物价指数/住院监狱酒店沉睡状态/连锁奖励税收）；Phase 10（G20-G36）补全开局设置（游戏天数/玩家数量/初始资金/胜利条件）+ 机制补全（机场传送/商业地块/主动卖地/股票分红/银行拒绝）+ 体验补全（多人热座/帮助规则/财富面板/资产清单/日志增强/投降功能/音量控制/速度调节）。三轮审计修复 7 个关键 Bug（破产清算逻辑/玩家状态检查/死循环保护/命运事件移动/初始资金应用/AI 循环优化/掷骰跳过检查）。TypeScript 编译 0 错误，Vite 构建成功。
 
+> **v1.9.7 更新**：dsh 插件市场全面落地（对标 deepseek-harness 插件生态）+ 插件架构审计修复 + 皮肤兼容契约（执行轨迹持久化 / 首页无会话自动建全局对话随版）— 分析 harness 插件机制（npm 包 + cordis.patch.yml 分层装配 + Loader 激活）后评估：Codem 装配框架同构但无法加载任意 npm 插件（运行时鸿沟），dsh-compat 桥重写接入。落地：①**插件市场目录**（50 条真实官方 @deepseek-ai/dsh-* 包，与 harness packages 逐一核对）按三类兼容性评估——bundled 37（Codem 内置等价，codemAnchor 指向真实插件且一对一，DM-4 校验）/ adaptable 9（dsh 协议、无第三方依赖，经 dsh-compat 桥接）/ unsupported 4（依赖 Node/npm 运行时，诚实标注）+ npm registry 在线检索（**跟随搜索框输入**）②**插件管理弹窗新增「插件市场」Tab**：浏览/搜索/**动态分类**（无空分类）+ 兼容徽标 + bundled 一键"安装并启用"对应内置插件（核心恒启条目只读显示"已启用（核心）"，可安全卸载条目提供"禁用"）+ 小窗自适应 ③**dsh-compat 接入运行**：懒解析代理别名（dshLlm/dshShell/dshFs/dshTools/dshSessions/dshEvents/dshCredentials 恒注册、调用时现取真实服务）；**服务名对齐矩阵审计**（harness 插件 inject 78 项 vs Codem provides 203 项）证实核心 seam 同名直通、差异经别名承接、宿主装配名诚实标注 ④**插件皮肤兼容契约（Skin Token Contract）**：插件 UI 只消费皮肤令牌、零硬编码色（skin-tokens.ts 审计 + SC-1~4 门禁），自动适配 default 亮/暗 + dream + hub 四视觉态（docs/SKIN-PLUGIN-CONTRACT.md）⑤测试 DM-1~5 / DC-1~4 / PM-1~5 / MT-1~6 / SC-1~5 / R-1~9 / LC-1~6（含真实依赖图下全部 bundled 锚安装级联可达性验证；审计修复：enable 失败必报错 / error 持久化 / loading 连点保护 / manager 单例幂等 / 元数据同源 / **禁用=真卸载 ctx 插件** / 管理入口 core 防死锁 / 动态分类 / 无障碍。全量 152 文件 / 4141 用例通过 + tsc 零错误）。
+>
 > **v1.9.6 更新**：打包版运行问题修复 — ①**CSP 修复**：`script-src`/`worker-src` 增加 `blob:`（知识笔记本导入 docx 时 transformers.js/onnxruntime WASM 动态加载不再被拦，修复"no available backend found"索引失败）+ `connect-src` 增加 `ipc:`（Tauri IPC 不再回退 postMessage）②**YAML 清理**：移除已删除的 @codem/terminal-bash 引用（启动不再报插件加载失败）③**控制台降噪**：extractJSON 失败尝试静默（不再刷屏）④**知识摘要降级**：模型未返回 JSON 时自动取文本前 200 字作摘要（笔记本卡片不空白）⑤**subagent 激活竞态修复**：SubagentRuntime 同步初始化，9 个依赖 subagent 的插件不再 PENDING（消除 assertActivated FAILED）。
 >
 > **v1.9.5 更新**：对话步骤语义化（对标 dsh todo）+ token 消耗审计修复 + 功能审计修复 — ①**步骤语义化与动态插入**：执行型任务强制 LLM 语义计划（"分析卡死原因→诊断链路→修复→测试"，任务意图检测修复"修复卡死"被当纯问答显示"回答问题"）+ 新增 `update_plan` 工具（执行中发现新问题在当前位置插入步骤、编号顺延、X/X 即时刷新）+ 模型每轮可见计划状态 ②**token 审计（比 dsh 省数倍的根因修复）**：read 单次上限 100k→50k 字符、陈旧大工具结果 head+tail 裁剪（对齐 dsh pruner）、7 个低频工具延迟加载（schema 每轮 10.6k→7.5k token）、系统提示词工具信息三重复裁剪、上下文选择预算对齐真实模型窗口、截断丢历史时插入零成本折叠摘要（防失忆重复劳动）③**功能审计**：PTY 关闭/退出杀进程树（孙进程残留）、终端创建失败 DOM 残留清理、4 处裸 fetch 补超时、托盘退出先 flush 数据库 ④新增 20+ 用例（步骤 17 + 上下文折叠 7）。全量 145 文件 / 4102 用例通过 + tsc/cargo 零错误。
@@ -1840,3 +1842,5 @@ npm run tauri:build
 - **分叉/重新生成轮次架构**（v0.80.0）：按 Q&A 轮次整体分叉/重跑
 - **滚动性能优化**（v0.80.0）：content-visibility + React.memo + useMemo
 - **会话置顶**（v0.80.0）：原子 togglePinned + SQLite 持久化 + 排序
+
+
