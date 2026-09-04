@@ -356,12 +356,15 @@ return true;
   const [onlineSearching, setOnlineSearching] = useState(false);
   const [onlineSearchTriggered, setOnlineSearchTriggered] = useState(false);
   const lastOnlineSearchRef = useRef("");
+  // 搜索代次：只有最新一次搜索能复位 loading（旧搜索后台完成不碰 UI）
+  const searchSeqRef = useRef(0);
 
   useEffect(() => {
     const q = marketSearchQuery.trim();
     if (!q || q.length < 2) {
       setOnlineSearchTriggered(false);
       lastOnlineSearchRef.current = "";
+      setOnlineSearching(false);
       return;
     }
 
@@ -369,6 +372,7 @@ return true;
     if (filteredMarketSkills.length > 0) {
       setOnlineSearchTriggered(false);
       lastOnlineSearchRef.current = q;
+      setOnlineSearching(false);
       return;
     }
 
@@ -376,19 +380,19 @@ return true;
     if (lastOnlineSearchRef.current === q && onlineSearchTriggered) return;
     lastOnlineSearchRef.current = q;
 
-    // 本地无结果，触发增量联网搜索
-    let cancelled = false;
+    // 本地无结果，触发增量联网搜索（代次自增，旧搜索失效）
+    const mySeq = ++searchSeqRef.current;
     setOnlineSearching(true);
     setOnlineSearchTriggered(true);
     setMarketError(null); // 清除之前搜索的错误提示
 
     // 防抖延迟
     const timer = setTimeout(async () => {
-      if (cancelled) return;
       try {
         const sources = getMarketSources();
         const result = await searchMarketSkillsOnline(q, sources, (sourceId, sourceSkills) => {
-          // 渐进式更新：每搜完一个源就立即合并结果到列表
+          // 渐进式更新：每搜完一个源就立即合并结果到列表（仅最新代次生效）
+          if (searchSeqRef.current !== mySeq) return;
           if (sourceSkills.length > 0) {
             setMarketSkills((prev) => {
               const existingIds = new Set(prev.map((s) => s.id));
@@ -404,7 +408,8 @@ return true;
             });
           }
         });
-        if (cancelled) return;
+        // 仅最新代次更新 UI（结果合并/错误提示/loading 复位）
+        if (searchSeqRef.current !== mySeq) return;
 
         // 合并最终搜索结果到 marketSkills（去重）
         if (result.skills.length > 0) {
@@ -426,16 +431,35 @@ return true;
         }
       } catch (err) {
         console.warn("[SkillManager] Incremental online search failed:", err);
+        if (searchSeqRef.current === mySeq) {
+          setMarketError(`联网搜索失败：${String((err as any)?.message || err)}`);
+        }
       } finally {
-        if (!cancelled) setOnlineSearching(false);
+        // 只有最新代次才能复位 loading（旧搜索被新代次取代时不干扰新搜索状态）
+        if (searchSeqRef.current === mySeq) setOnlineSearching(false);
       }
     }, 600);
 
     return () => {
-      cancelled = true;
       clearTimeout(timer);
+      // 清理时若有正在进行的本代搜索，直接复位 loading——
+      // 修复"正在联网搜索"残留卡死：旧逻辑只在 finally 且 !cancelled 时复位，
+      // 一旦 effect 因输入变化/结果合并被 cleanup 取消，搜索回调不再复位，
+      // 而新 effect 若走"本地有结果/空查询"提前返回分支也不会复位 → loading 永真。
+      setOnlineSearching(false);
     };
   }, [marketSearchQuery, filteredMarketSkills.length, onlineSearchTriggered]);
+
+  // 兜底 watchdog：即便上面逻辑出现任何漏复位，30s 后强制结束"正在联网搜索"
+  // 并给出提示（防止用户面对无限 loading 无从操作）
+  useEffect(() => {
+    if (!onlineSearching) return;
+    const t = setTimeout(() => {
+      setOnlineSearching(false);
+      setMarketError(`联网搜索超时（超过 30 秒），请检查网络后重试或换个关键词。`);
+    }, 30_000);
+    return () => clearTimeout(t);
+  }, [onlineSearching]);
 
   const handleMarketInstall = async (skill: MarketSkill) => {
     if (skill.installed) return;

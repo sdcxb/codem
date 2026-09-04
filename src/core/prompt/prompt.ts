@@ -17,8 +17,6 @@ export interface SystemPromptConfig {
   memoryInstructions?: string;
   skillInstructions?: string;
   mcpInstructions?: string;
-  /** CodeGraph tools are available — inject usage guidance */
-  codeGraphEnabled?: boolean;
 workingDirectory?: string;
 gitBranch?: string;
 date?: string;
@@ -365,31 +363,9 @@ When a user uploads a file, the message contains an \`<attachment>\` block with 
     sections.push(`# MCP Tools\n\n${config.mcpInstructions}`);
   }
 
-  // 10.5 CodeGraph usage guidance
-  if (config.codeGraphEnabled) {
-    const cgZh = getLang() === "zh";
-    sections.push(cgZh
-      ? `# CodeGraph 代码图谱
-
-你的环境中已启用 CodeGraph 代码知识图谱。当需要理解代码结构、调用链、依赖关系或变更影响范围时，**优先使用 codegraph_explore 工具**，而非多次 grep+read。
-
-使用规则：
-- 查询"谁调用了 X"、"X 的调用链"、"改了文件 Y 会影响什么" → 用 codegraph_explore
-- 查看具体文件内容 → 用 read
-- 按文件名搜索 → 用 glob
-- 按内容搜索 → 用 grep
-- 一个 codegraph_explore 调用通常可以替代 10-20 次 grep+read，大幅减少 token 消耗`
-      : `# CodeGraph Code Intelligence
-
-CodeGraph code knowledge graph is available in this environment. When you need to understand code structure, call paths, dependencies, or blast radius of changes, **use codegraph_explore FIRST** instead of multiple grep+read calls.
-
-Usage rules:
-- Query "who calls X", "call chain of X", "what does changing file Y affect" → use codegraph_explore
-- View specific file contents → use read
-- Search by filename pattern → use glob
-- Search by content → use grep
-- A single codegraph_explore call typically replaces 10-20 grep+read calls, dramatically reducing token usage`);
-  }
+  // 注：CodeGraph（codegraph_explore）不再在此手写指导——它是 defer 工具，
+  // 连接成功注册进工具表后，由 "Deferred Tools" 段自动呈现（agentic-loop 组装），
+  // 保证提示与可调用集合严格一致（曾出现"指导有、工具不可调"的不一致）。
 
   // 11. Multi-agent collaboration — 对标 DSH 后台默认+自动通知
   sections.push(`# Multi-Agent Collaboration

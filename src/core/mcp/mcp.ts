@@ -479,11 +479,16 @@ export async function autoDetectCodeGraph(
   if (existing?.status === "connected") return true;
 
   // Connect to codegraph MCP server (stdio transport)
+  // 命令优先用应用内一键安装记下的启动器绝对路径（codem-codegraph-launcher，
+  // 如 %LOCALAPPDATA%\codegraph\current\bin\codegraph.cmd——Rust spawn 对 .cmd
+  // 用 cmd.exe /c 包装）；未安装过则回退 PATH 里的 'codegraph'。
   try {
+    const { getSetting } = await import("../storage/settings");
+    const launcher = getSetting("codem-codegraph-launcher") || "codegraph";
     await registry.connect({
       name: CODEGRAPH_SERVER_NAME,
       transport: "stdio",
-      command: "codegraph",
+      command: launcher,
       args: ["mcp"],
       autoReconnect: true,
     });

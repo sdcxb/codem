@@ -251,7 +251,10 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
   }, [sessionKey]);
 
   // DSH-aligned mirror backdrop: 在 backdrop 层中渲染文本，
-  // 将 /skill-name 模式高亮为 pill 标签
+  // 将 /skill-name 模式高亮为 pill 标签。
+  // 仅在文本含 /xxx 模式时才启用镜像层（textarea 透明由 backdrop 画文字）——
+  // 无 / 模式时 textarea 直接显示文字，caret 与文字同源渲染，
+  // 根治"backdrop 与 textarea 排版差 → 光标视觉错位"类问题（如长 URL 粘贴）。
   const renderBackdropContent = useCallback((text: string, lexicon: Set<string>) => {
     if (!text) return <span />;
     // 匹配 /word 模式（在行首或空格之后）
@@ -295,6 +298,12 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
   // P1 #12: Draft persistence — saves input per session
   const draftKey = currentSession?.id || currentProject?.id || "__global__";
   const { draft, setDraft, clearDraft } = useDraftPersistence(draftKey);
+
+  // 文本是否含 /xxx 模式（决定是否启用 backdrop 镜像层）——须在 draft 声明后
+  const hasSkillPattern = useMemo(() => {
+    const t = draft || input;
+    return t ? /(?:^|\s)\/[a-zA-Z0-9_-]+/.test(t) : false;
+  }, [draft, input]);
 
   // === Input history (up-arrow recall, cmd doskey style) ===
   // Global across sessions, persisted to localStorage (project convention).
@@ -860,16 +869,18 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
           {/* P4: Context badges showing active attachments and skills */}
           <ContextBadgeList badges={contextBadges} />
 
-          {/* DSH-aligned mirror backdrop: 在 textarea 下叠一层 backdrop div，
-              将 /skill-name 模式渲染为高亮 pill 标签。
-              textarea 文字透明（caret 仍可见），backdrop 提供可见的文本和 pill 高亮。 */}
+          {/* DSH-aligned mirror backdrop: 仅在文本含 /xxx 模式时启用——
+              此时 textarea 文字透明（caret 仍可见），backdrop 渲染文字与 pill 高亮；
+              无 / 模式时 textarea 直接显示文字（与 caret 同源，避免视觉错位）。 */}
           <div className={`input-backdrop-wrapper ${expanded ? "expanded" : ""}`}>
-            <div className="input-backdrop" aria-hidden="true">
-              {renderBackdropContent(draft || input, skillLexicon)}
-            </div>
+            {hasSkillPattern && (
+              <div className="input-backdrop" aria-hidden="true">
+                {renderBackdropContent(draft || input, skillLexicon)}
+              </div>
+            )}
             <textarea
               ref={textareaRef}
-              className={`message-input ${expanded ? "expanded" : ""} ${isListeningVoice ? "voice-listening" : ""}`}
+              className={`message-input ${hasSkillPattern ? "mirror-mode" : ""} ${expanded ? "expanded" : ""} ${isListeningVoice ? "voice-listening" : ""}`}
               value={draft || input}
             onChange={(e) => {
               const val = e.target.value;

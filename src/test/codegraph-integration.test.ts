@@ -1,22 +1,19 @@
-/**
+﻿/**
  * CodeGraph 集成功能测试
  *
  * 验证内容：
  *   1. MCP 层：isCodeGraphEnabled / setCodeGraphEnabled / hasCodeGraphIndex /
  *      autoDetectCodeGraph / disconnectCodeGraph / hasCodeGraphTools
- *   2. Prompt 层：codeGraphEnabled 字段 → buildSystemPrompt 注入 CodeGraph 指导
- *   3. LLMEngine 集成：buildSystemPromptAsync 调用 autoDetectCodeGraph
- *   4. 边界场景：禁用、无项目路径、已连接、连接失败
- *
- * 测试策略：
- *   - Mock Tauri invoke (path_exists, execute_command, mcp_stdio_*)
- *   - Mock MCPRegistry 的 connect/disconnect/getAllTools/getClient
- *   - 调用真实 buildSystemPrompt 验证提示词注入
- *   - 调用真实 getSetting/setSetting 验证设置读写
+ *   2. Prompt 层：buildSystemPrompt 不再手写 CodeGraph 指导（defer 工具由
+ *      "Deferred Tools" 段呈现，见 3）
+ *   3. 工具层：syncCodeGraphTools 把已连接的 codegraph MCP 工具注册为
+ *      defer ToolDef（schema 经 tool_search 拉取，断连移除——提示与可调用一致）
+ *   4. LLMEngine 集成：buildSystemPromptAsync 调用 autoDetectCodeGraph
+ *   5. 边界场景：禁用、无项目路径、已连接、连接失败
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { resetDatabase, initDatabase } from "../core/storage/database";
-import { getSetting } from "../core/storage/settings";
+import { getSetting, setSetting } from "../core/storage/settings";
 import { getLang, setLang } from "../core/i18n/lang";
 import {
   isCodeGraphEnabled,
@@ -29,6 +26,8 @@ import {
   CODEGRAPH_SERVER_NAME,
 } from "../core/mcp/mcp";
 import { buildSystemPrompt } from "../core/prompt/prompt";
+import { ToolRegistry } from "../core/llm/tools";
+import { syncCodeGraphTools, createCodeGraphTool, mcpResultToText } from "../core/llm/tools/codegraph-tool";
 import * as LLMEngineExports from "../core/llm/index";
 
 // ═══════════════════════════════════════════════════════════
@@ -346,77 +345,42 @@ describe("CodeGraph 集成 — Prompt 层", () => {
     setLang(origLang);
   });
 
-  describe("codeGraphEnabled = true", () => {
-    it("中文模式下注入 CodeGraph 代码图谱指导", () => {
-      setLang("zh");
-      const prompt = buildSystemPrompt({ agent: buildMinimalAgent(), codeGraphEnabled: true });
-      expect(prompt).toContain("# CodeGraph 代码图谱");
-      expect(prompt).toContain("codegraph_explore");
-      expect(prompt).toContain("大幅减少 token 消耗");
-    });
+  // 新契约：CodeGraph 指导不再由 buildSystemPrompt 手写注入（曾存在
+  // "指导有、工具不可调"的不一致）。codegraph_explore 是 defer 工具——
+  // 连接成功注册进工具表后，由 agentic-loop 的 "Deferred Tools" 段呈现
+  // （见 codegraph-tool.test.ts 的同步/提示断言）。
 
-    it("英文模式下注入 CodeGraph Code Intelligence 指导", () => {
-      setLang("en");
-      const prompt = buildSystemPrompt({ agent: buildMinimalAgent(), codeGraphEnabled: true });
-      expect(prompt).toContain("# CodeGraph Code Intelligence");
-      expect(prompt).toContain("codegraph_explore");
-      expect(prompt).toContain("dramatically reducing token usage");
-    });
-
-    it("指导中包含使用规则（grep/glob/read/codegraph_explore）", () => {
-      setLang("en");
-      const prompt = buildSystemPrompt({ agent: buildMinimalAgent(), codeGraphEnabled: true });
-      expect(prompt).toContain("codegraph_explore");
-      expect(prompt).toContain("read");
-      expect(prompt).toContain("glob");
-      expect(prompt).toContain("grep");
-    });
-
-    it("指导中包含优先使用 codegraph_explore 的明确指示", () => {
-      setLang("en");
-      const prompt = buildSystemPrompt({ agent: buildMinimalAgent(), codeGraphEnabled: true });
-      expect(prompt).toContain("use codegraph_explore FIRST");
-    });
+  it("buildSystemPrompt 不再包含手写 CodeGraph 指导段", () => {
+    setLang("zh");
+    const zhPrompt = buildSystemPrompt({ agent: buildMinimalAgent() });
+    expect(zhPrompt).not.toContain("# CodeGraph 代码图谱");
+    expect(zhPrompt).not.toContain("codegraph_explore");
+    setLang("en");
+    const enPrompt = buildSystemPrompt({ agent: buildMinimalAgent() });
+    expect(enPrompt).not.toContain("# CodeGraph Code Intelligence");
+    expect(enPrompt).not.toContain("codegraph_explore");
   });
 
-  describe("codeGraphEnabled = false / undefined", () => {
-    it("codeGraphEnabled = false 时不注入 CodeGraph 指导", () => {
-      setLang("en");
-      const prompt = buildSystemPrompt({ agent: buildMinimalAgent(), codeGraphEnabled: false });
-      expect(prompt).not.toContain("CodeGraph Code Intelligence");
-      expect(prompt).not.toContain("CodeGraph 代码图谱");
-    });
-
-    it("codeGraphEnabled = undefined 时不注入 CodeGraph 指导", () => {
-      setLang("en");
-      const prompt = buildSystemPrompt({ agent: buildMinimalAgent() });
-      expect(prompt).not.toContain("CodeGraph Code Intelligence");
-      expect(prompt).not.toContain("CodeGraph 代码图谱");
-    });
+  it("不再支持 codeGraphEnabled 配置项（字段已移除）", () => {
+    // 传多余字段（运行时忽略）不会注入任何 CodeGraph 段——防止旧调用方
+    // 造成"指导有、工具无"的幻觉诱导。
+    setLang("en");
+    const prompt = buildSystemPrompt({
+      agent: buildMinimalAgent(),
+      codeGraphEnabled: true,
+    } as any);
+    expect(prompt).not.toContain("CodeGraph");
   });
 
-  describe("CodeGraph 指导与 MCP Tools 共存", () => {
-    it("mcpInstructions 和 codeGraphEnabled 同时存在时两者都注入", () => {
-      setLang("en");
-      const prompt = buildSystemPrompt({
-        agent: buildMinimalAgent(),
-        mcpInstructions: "- **other/tool**: Some tool",
-        codeGraphEnabled: true,
-      });
-      expect(prompt).toContain("# MCP Tools");
-      expect(prompt).toContain("other/tool");
-      expect(prompt).toContain("# CodeGraph Code Intelligence");
+  it("mcpInstructions 仍正常渲染为 # MCP Tools", () => {
+    setLang("en");
+    const prompt = buildSystemPrompt({
+      agent: buildMinimalAgent(),
+      mcpInstructions: "- **other/tool**: Some tool",
     });
-
-    it("仅有 mcpInstructions 无 codeGraphEnabled 时只注入 MCP Tools", () => {
-      setLang("en");
-      const prompt = buildSystemPrompt({
-        agent: buildMinimalAgent(),
-        mcpInstructions: "- **other/tool**: Some tool",
-      });
-      expect(prompt).toContain("# MCP Tools");
-      expect(prompt).not.toContain("CodeGraph");
-    });
+    expect(prompt).toContain("# MCP Tools");
+    expect(prompt).toContain("other/tool");
+    expect(prompt).not.toContain("codegraph_explore");
   });
 });
 
@@ -447,53 +411,62 @@ describe("CodeGraph 集成 — LLMEngine 导出", () => {
   });
 });
 
-describe("CodeGraph 集成 — hasCodeGraphTools 与 buildSystemPrompt 联动", () => {
-  beforeEach(async () => {
-    clearTauri();
-    await resetDatabase();
-    await initDatabase();
+describe("CodeGraph 集成 — 工具注册与 Deferred 呈现（新契约：可调用 defer ToolDef）", () => {
+  // codegraph 工具现为 defer ToolDef：连接 → syncCodeGraphTools 注册进工具表
+  // （默认不进 schema，只出现在 Deferred hints，model 经 tool_search 拉取 schema）；
+  // 断开/禁用 → 移除。提示与可调用集合严格一致。
+  function makeToolRegistry() {
+    return new ToolRegistry();
+  }
+  const cgTool = { server: "codegraph", name: "codegraph_explore", description: "Explore code graph", inputSchema: { type: "object", properties: { query: { type: "string" } } } };
+
+  it("有 CodeGraph 工具 → sync 注册为 defer ToolDef，schema 可经 tool_search 拉取", () => {
+    const registry = makeToolRegistry();
+    syncCodeGraphTools(registry, [cgTool as any]);
+    // defer：完整 schema 不进核心定义，只出现在 Deferred hints
+    expect(registry.getCoreDefinitions().some((d) => d.name === "codegraph_explore")).toBe(false);
+    const hints = registry.getDeferredDefinitions();
+    const hint = hints.find((h) => h.name === "codegraph_explore");
+    expect(hint).toBeTruthy();
+    expect(hint!.searchHint).toContain("tool_search");
+    // 可调用证明：tool_search 的 getDeferredDefinition 能返回完整 schema
+    const full = registry.getDeferredDefinition("codegraph_explore");
+    expect(full).toBeTruthy();
+    expect(full!.name).toBe("codegraph_explore");
+    expect(full!.parameters).toBeTruthy();
+    // hints 与可调用集合一致 → agentic-loop 的 "Deferred Tools" 段呈现
+    expect(registry.get("codegraph_explore")?.shouldDefer).toBe(true);
   });
 
-  afterEach(() => {
-    clearTauri();
-    const origLang = getLang();
-    setLang(origLang);
+  it("无 CodeGraph 工具（未连接/禁用）→ sync 后无残留、hints 不含 codegraph", () => {
+    const registry = makeToolRegistry();
+    syncCodeGraphTools(registry, [cgTool as any]); // 先注册
+    expect(registry.get("codegraph_explore")).toBeTruthy();
+    // 断开：工具列表为空 → sync 移除残留（防幽灵提示）
+    syncCodeGraphTools(registry, []);
+    expect(registry.get("codegraph_explore")).toBeUndefined();
+    expect(registry.getDeferredDefinitions().some((h) => h.name.startsWith("codegraph_"))).toBe(false);
   });
 
-  it("有 CodeGraph 工具 → hasCodeGraphTools=true → prompt 包含 CodeGraph 指导", () => {
-    setLang("en");
-    const mockRegistry = {
-      getAllTools: () => [
-        { server: "codegraph", name: "codegraph_explore", description: "Explore" },
-      ],
-      getClient: () => ({ getStatus: () => undefined }),
-    };
-
-    const codeGraphActive = hasCodeGraphTools(mockRegistry as any);
-    expect(codeGraphActive).toBe(true);
-
-    const prompt = buildSystemPrompt({
-      agent: buildMinimalAgent(),
-      codeGraphEnabled: codeGraphActive,
-    });
-    expect(prompt).toContain("CodeGraph Code Intelligence");
+  it("sync 幂等：重复同步不重复注册；非 codegraph MCP 工具不受影响", () => {
+    const registry = makeToolRegistry();
+    const other = { server: "other-server", name: "other_tool", description: "x" };
+    registry.register(createCodeGraphTool(cgTool as any));
+    const before = registry.getAll().length;
+    syncCodeGraphTools(registry, [cgTool as any, other as any]);
+    expect(registry.getAll().length).toBe(before); // 不重复
+    syncCodeGraphTools(registry, [other as any]); // codegraph 断开、other 仍在
+    expect(registry.get("other_tool")).toBeUndefined(); // 非 codegraph 不归 sync 管
+    expect(registry.get("codegraph_explore")).toBeUndefined(); // codegraph 已移除
   });
 
-  it("无 CodeGraph 工具 → hasCodeGraphTools=false → prompt 不含 CodeGraph 指导", () => {
-    setLang("en");
-    const mockRegistry = {
-      getAllTools: () => [],
-      getClient: () => ({ getStatus: () => undefined }),
-    };
-
-    const codeGraphActive = hasCodeGraphTools(mockRegistry as any);
-    expect(codeGraphActive).toBe(false);
-
-    const prompt = buildSystemPrompt({
-      agent: buildMinimalAgent(),
-      codeGraphEnabled: codeGraphActive,
-    });
-    expect(prompt).not.toContain("CodeGraph Code Intelligence");
+  it("createCodeGraphTool.execute 转发 MCP callTool 并展平文本结果", async () => {
+    const tool = createCodeGraphTool(cgTool as any);
+    expect(tool.id).toBe("codegraph_explore");
+    expect(tool.execute).toBeTypeOf("function");
+    // mcpResultToText 纯函数：content 文本数组 → join
+    expect(mcpResultToText({ content: [{ type: "text", text: "a" }, { type: "text", text: "b" }] })).toBe("a\nb");
+    expect(mcpResultToText({} as any)).toBe("");
   });
 });
 
@@ -512,7 +485,7 @@ describe("CodeGraph 集成 — 端到端流程", () => {
     clearTauri();
   });
 
-  it("完整流程：启用 → 检测 → 连接 → 验证工具可用 → 注入提示词", async () => {
+  it("完整流程：启用 → 检测 → 连接 → 工具注册为可调用 defer 工具", async () => {
     // 1. 确保 CodeGraph 已启用
     setCodeGraphEnabled(true);
     expect(isCodeGraphEnabled()).toBe(true);
@@ -522,12 +495,12 @@ describe("CodeGraph 集成 — 端到端流程", () => {
       path_exists: (args: any) => args.path.endsWith("/.codegraph"),
     });
 
-    // 3. 创建 mock registry，模拟 connect 后有 codegraph 工具
+    // 3. mock registry，connect 后提供 codegraph 工具
     let connectedTools: any[] = [];
     const registry = {
       connect: vi.fn(async (config: any) => {
         connectedTools = [
-          { server: "codegraph", name: "codegraph_explore", description: "Explore code graph" },
+          { server: "codegraph", name: "codegraph_explore", description: "Explore code graph", inputSchema: { type: "object", properties: {} } },
         ];
         return { name: config.name, connected: true, tools: connectedTools, error: undefined };
       }),
@@ -546,59 +519,36 @@ describe("CodeGraph 集成 — 端到端流程", () => {
     expect(detected).toBe(true);
     expect(registry.connect).toHaveBeenCalledTimes(1);
 
-    // 5. hasCodeGraphTools 应返回 true
-    expect(hasCodeGraphTools(registry as any)).toBe(true);
-
-    // 6. buildSystemPrompt 应包含 CodeGraph 指导
-    setLang("en");
-    const prompt = buildSystemPrompt({
-      agent: buildMinimalAgent(),
-      codeGraphEnabled: true,
-    });
-    expect(prompt).toContain("CodeGraph Code Intelligence");
-    expect(prompt).toContain("codegraph_explore");
+    // 5. 同步进工具表 → defer ToolDef 可经 tool_search 拉取（可调用证明）
+    const toolRegistry = new ToolRegistry();
+    syncCodeGraphTools(toolRegistry, registry.getAllTools());
+    const hint = toolRegistry.getDeferredDefinitions().find((h) => h.name === "codegraph_explore");
+    expect(hint).toBeTruthy();
+    expect(toolRegistry.getDeferredDefinition("codegraph_explore")).toBeTruthy();
   });
 
-  it("完整流程：禁用 → autoDetect 不执行 → 无 CodeGraph 工具 → 无提示词", async () => {
-    // 1. 禁用 CodeGraph
+  it("完整流程：禁用 → autoDetect 不执行 → 无工具注册", async () => {
     setCodeGraphEnabled(false);
-    expect(isCodeGraphEnabled()).toBe(false);
-
-    // 2. 即使 .codegraph/ 存在，也不应连接
-    mockTauriInvoke({
-      path_exists: () => true,
-    });
-
+    mockTauriInvoke({ path_exists: () => true });
     const registry = {
       connect: vi.fn(async () => ({ connected: true, tools: [] })),
       disconnect: vi.fn(async () => {}),
       getAllTools: () => [],
       getClient: () => ({ getStatus: () => undefined }),
     };
-
     const detected = await autoDetectCodeGraph(registry as any, "/my/project");
     expect(detected).toBe(false);
     expect(registry.connect).not.toHaveBeenCalled();
-
-    // 3. 无 CodeGraph 工具
-    expect(hasCodeGraphTools(registry as any)).toBe(false);
-
-    // 4. prompt 不包含 CodeGraph 指导
-    setLang("en");
-    const prompt = buildSystemPrompt({
-      agent: buildMinimalAgent(),
-      codeGraphEnabled: false,
-    });
-    expect(prompt).not.toContain("CodeGraph Code Intelligence");
+    // 无工具 → sync 后工具表无 codegraph（提示不会出现）
+    const toolRegistry = new ToolRegistry();
+    syncCodeGraphTools(toolRegistry, registry.getAllTools());
+    expect(toolRegistry.getDeferredDefinitions().some((h) => h.name.startsWith("codegraph_"))).toBe(false);
   });
 
-  it("完整流程：断开连接 → 工具消失 → 提示词消失", async () => {
-    mockTauriInvoke({
-      path_exists: () => true,
-    });
-
+  it("完整流程：断开连接 → sync 后工具从表移除（提示消失）", async () => {
+    mockTauriInvoke({ path_exists: () => true });
     let connectedTools: any[] = [
-      { server: "codegraph", name: "codegraph_explore", description: "Explore" },
+      { server: "codegraph", name: "codegraph_explore", description: "Explore", inputSchema: {} },
     ];
     const registry = {
       connect: vi.fn(async (config: any) => {
@@ -610,13 +560,17 @@ describe("CodeGraph 集成 — 端到端流程", () => {
         getStatus: () => connectedTools.length > 0 ? { status: "connected" } : undefined,
       }),
     };
+    const toolRegistry = new ToolRegistry();
+    syncCodeGraphTools(toolRegistry, registry.getAllTools());
+    expect(toolRegistry.get("codegraph_explore")).toBeTruthy();
 
     // 断开
     await disconnectCodeGraph(registry as any);
     expect(registry.disconnect).toHaveBeenCalledWith("codegraph");
 
-    // 工具消失
-    expect(hasCodeGraphTools(registry as any)).toBe(false);
+    // 再同步 → 移除
+    syncCodeGraphTools(toolRegistry, registry.getAllTools());
+    expect(toolRegistry.get("codegraph_explore")).toBeUndefined();
   });
 });
 
@@ -741,5 +695,54 @@ describe("CodeGraph 集成 — 边界场景", () => {
     // 验证检测了正确的路径
     expect(pathExistsCalls).toContain("/work/projectA/.codegraph");
     expect(pathExistsCalls).toContain("/work/projectB/.codegraph");
+  });
+});
+
+
+// ═══════════════════════════════════════════════════════════
+// 应用内一键安装产物（launcher 路径）测试
+// ═══════════════════════════════════════════════════════════
+
+describe("CodeGraph 集成 — launcher 路径（一键安装产物）", () => {
+  beforeEach(async () => {
+    clearTauri();
+    await resetDatabase();
+    await initDatabase();
+    setCodeGraphEnabled(true);
+  });
+
+  afterEach(() => {
+    clearTauri();
+    try { setSetting("codem-codegraph-launcher", ""); } catch {}
+  });
+
+  it("设置 launcher 路径后 autoDetect connect 使用该绝对路径（.cmd 由 Rust cmd.exe /c 包装）", async () => {
+    mockTauriInvoke({ path_exists: (a: any) => a.path.endsWith("/.codegraph") });
+    const launcher = "C:\\Users\\abee\\AppData\\Local\\codegraph\\current\\bin\\codegraph.cmd";
+    setSetting("codem-codegraph-launcher", launcher);
+    let captured: any = null;
+    const registry = {
+      connect: vi.fn(async (config: any) => { captured = config; return { name: config.name, connected: true, tools: [] }; }),
+      disconnect: vi.fn(async () => {}),
+      getAllTools: () => [],
+      getClient: () => ({ getStatus: () => undefined }),
+    };
+    const ok = await autoDetectCodeGraph(registry as any, "/my/project");
+    expect(ok).toBe(true);
+    expect(captured?.command).toBe(launcher);
+    expect(captured?.args).toEqual(["mcp"]);
+  });
+
+  it("未设置 launcher → connect 回退 'codegraph'（PATH）", async () => {
+    mockTauriInvoke({ path_exists: (a: any) => a.path.endsWith("/.codegraph") });
+    let captured: any = null;
+    const registry = {
+      connect: vi.fn(async (c: any) => { captured = c; return { connected: true, tools: [] }; }),
+      disconnect: vi.fn(async () => {}),
+      getAllTools: () => [],
+      getClient: () => ({ getStatus: () => undefined }),
+    };
+    await autoDetectCodeGraph(registry as any, "/my/project");
+    expect(captured?.command).toBe("codegraph");
   });
 });

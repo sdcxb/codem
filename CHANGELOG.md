@@ -4,6 +4,42 @@ All notable changes to Codem will be documented in this file.
 
 ## [Unreleased]
 
+### 技能市场联网搜索卡死修复（"正在联网搜索…"无限 loading）
+
+- **用户报告**：搜索无本地结果的关键词（如 diagram-design）后，一直显示"正在联网搜索"数分钟，无结果也无失败提示
+- **根因（UI effect 竞态，`SkillManager.tsx`）**：搜索 effect 的 cleanup 只清防抖 timer + 设 `cancelled`，而搜索完成回调只在 `!cancelled` 时复位 loading；一旦 effect 因输入变化/结果渐进合并被 cleanup 取消，旧搜索被取消后**不再复位**，而新 effect 若走"空查询/本地已有结果"提前返回分支也**不复位** → `onlineSearching` 残留 true 永久显示
+- **修复**：①**搜索代次机制**（searchSeqRef）——只有最新一次搜索能合并结果/报错/复位 loading，旧搜索后台完成不碰 UI；②effect cleanup 与提前返回分支直接复位 loading；③**30s watchdog 兜底**——即便再漏网，超时强制结束并提示"联网搜索超时，请检查网络或换关键词"（用户永远拿到明确反馈）；④搜索异常（catch）向用户显示失败原因（原仅 console.warn）
+- **源层核验**：联网搜索（searchMarketSkillsOnline）与检查更新（listMarketSkills）两路径的每个源都有 12s `Promise.race` 超时兜底（有界，非源层挂起）；核验无其它同类残留 loading 模式（loadMarketSkills finally 无条件复位）
+- 全量 152 文件 / 4140 用例通过 + tsc 零错误
+
+### 输入框光标视觉错位修复（长 URL 粘贴时 caret 偏 1 格）
+
+- **用户报告**：粘贴/输入长 URL（如 https://github.com/cathrynlavery/diagram-design）后，光标视觉位置比实际插入点靠前 1 个字符（实际在末尾、显示在倒数两字符之间）；已确认**纯视觉错位**（文本与实际插入点正确）
+- **根因**：输入框采用"透明 textarea + backdrop 镜像层"架构（textarea 文字透明只显示 caret，可见文字由 backdrop 层渲染）——两套排版一旦有细微字体/断行差异，caret（textarea 原生）与可见文字（backdrop）就会视觉错位
+- **修复（根治）**：改为**条件镜像**——仅在文本含 `/xxx` 技能模式（需要 pill 高亮）时才启用透明+backdrop；普通文本（含 URL）时 textarea **直接显示文字**，caret 与文字同源渲染，物理上不可能错位；同时 backdrop/textarea 强制同一显式字体栈（var(--font-family)）+ 关闭字体连字（font-variant-ligatures: none），消除排版差来源
+- 全量测试通过 + tsc 零错误
+
+### CodeGraph 工具真正接入 LLM（defer 按需加载，修复"指导有、工具不可调"）
+
+- **问题**：codegraph_explore 此前只在 systemPrompt 手写指导（"优先使用 codegraph_explore"）+ MCP 工具文本清单里出现，但 LLM 的 function-calling schema（ToolDef 表）里**没有该工具**——模型照指导调用会报工具不存在，指导落空且浪费 token
+- **整改**（`llm/tools/codegraph-tool.ts` 新增）：
+  - 已连接的 codegraph MCP 工具包装为**可调用 defer ToolDef**（`shouldDefer: true`）：完整 schema 默认不进请求，model 需要时经 `tool_search` 拉取（该轮才计 schema 成本）——schema token 按需出现
+  - `searchHint` 写明触发场景（调用链/谁调用/改动影响范围；普通读写仍走 read/grep/glob）——场景由模型按任务判断，不做强制门控
+  - `syncCodeGraphTools`（engine 每次构建系统提示、autoDetect 后调用）：连接→注册；断开/禁用→移除残留——**提示与可调用集合严格一致**
+  - 删除 prompt.ts 手写 CodeGraph 指导段与 `codeGraphEnabled` 配置字段；CodeGraph 提示改由 agentic-loop 的 "Deferred Tools" 段自动呈现（工具注册才出现）
+  - execute 转发 `getMCPRegistry().callTool` 并展平 MCP content 文本
+  - 测试：codegraph-integration.test.ts 重构为新契约（无手写段 / 注册即 defer schema 可经 tool_search 拉取 / 断连移除 / e2e 注册-可调闭环）
+
+### CodeGraph 应用内一键安装（方案 B：用户零命令行）
+
+- **背景**：CodeGraph 是外部 CLI（vendored Node 自包含 zip ~52MB），原需用户自行下载安装（不符合"一个安装包"目标）
+- **Rust `codegraph_install` 命令**（`lib.rs`，新增 zip 依赖）：GitHub API 解析最新 tag → 下载 codegraph-win32-x64.zip → 解压到 `%LOCALAPPDATA%\codegraph\current`（路径穿越防护）→ 返回启动器绝对路径（`bin/codegraph.cmd`）
+- **设置页「⬇️ 一键安装 CodeGraph」按钮**：点击即在应用内完成下载/解压并把启动器路径存入设置（`codem-codegraph-launcher`）——不再要求用户敲命令/改 PATH
+- **MCP spawn 支持 .cmd**（`mcp_stdio_connect`）：Windows 下 command 以 .cmd/.bat 结尾时用 `cmd.exe /c` 包装（codegraph 官方发布入口是 bin/codegraph.cmd，CreateProcess 无法直接执行——修复后连接才真正可 spawn）
+- **连接与检测联动**：`autoDetectCodeGraph` 连接命令优先用已存 launcher 绝对路径（fallback PATH 'codegraph'）；设置页 CLI 检测优先检查 launcher 存在
+- **检测逻辑修复**：exitCode/stdout 三重兜底 +「🔄 重新检测」按钮（此前只看 stderr 两种英文文案，其余一律误判"已安装"）
+- 测试：launcher 路径连接/回退（codegraph-integration 48 用例）+ 全量 152 文件 / 4140 用例通过 + tsc/cargo 零错误
+
 ## [1.9.7] - 2026-09-04
 
 ### dsh 插件市场与插件架构全面改造（对标 deepseek-harness）

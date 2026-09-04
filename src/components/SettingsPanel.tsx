@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import type { IdentityConfig, UserConfig, AppIdentity } from "../core/types";
 import { saveAppIdentity } from "../core/config/loader";
 import { version as APP_VERSION } from "../../package.json";
@@ -2807,40 +2807,89 @@ function CodeGraphSettingsSection({ lang }: { lang: ReturnType<typeof useLang> }
   const [hasIndex, setHasIndex] = useState(false);
   const [initRunning, setInitRunning] = useState(false);
   const [initOutput, setInitOutput] = useState("");
+  const [installing, setInstalling] = useState(false);
+  const [installMsg, setInstallMsg] = useState("");
 
-  useEffect(() => {
-    (async () => {
-      try {
+  // CLI 检测：①应用内一键安装记下的启动器路径存在 → 已安装；
+  // ②否则 execute_command 探测（exitCode/stdout/stderr 三重兜底——此前只看
+  // stderr 两种英文文案，任何 stderr 为空/文案不同的失败都会误判"已安装"）
+  const checkCli = useCallback(async () => {
+    setStatus("checking");
+    try {
+      const { getSetting } = require("../core/storage/settings");
+      const launcher = getSetting("codem-codegraph-launcher");
+      if (launcher) {
         const { invoke } = (window as any).__TAURI__.core;
-        const result = await invoke("execute_command", {
-          command: "codegraph --version",
-          cwd: null,
-        });
-        const stderr = result.stderr || "";
-        if (stderr.includes("not recognized") || stderr.includes("not found")) {
-          setStatus("not_installed");
-        } else {
-          setStatus("installed");
-        }
-      } catch {
-        setStatus("not_installed");
+        const exists = await invoke("path_exists", { path: launcher }).catch(() => false);
+        if (exists) { setStatus("installed"); return; }
       }
-    })();
+      const { invoke } = (window as any).__TAURI__.core;
+      const result = await invoke("execute_command", {
+        command: "codegraph --version",
+        cwd: null,
+      });
+      const stderr = String(result.stderr || "");
+      const stdout = String(result.stdout || "");
+      const exitCode = typeof result.exitCode === "number" ? result.exitCode : -1;
+      const looksNotFound =
+        stderr.includes("not recognized") || stderr.includes("not found") ||
+        stderr.includes("不是内部或外部命令") || stderr.includes("找不到") ||
+        stdout.includes("not recognized");
+      if (looksNotFound || (exitCode !== 0 && stdout.trim() === "")) {
+        setStatus("not_installed");
+      } else {
+        setStatus("installed");
+      }
+    } catch {
+      setStatus("not_installed");
+    }
   }, []);
 
-  useEffect(() => {
+  // 索引检测（当前项目 .codegraph/ 是否存在）
+  const checkIndex = useCallback(async () => {
     try {
       const { getSetting } = require("../core/storage/settings");
       const p = getSetting("codem-current-project-path") || "";
       setProjectPath(p);
       if (p) {
         const { invoke } = (window as any).__TAURI__.core;
-        invoke("path_exists", { path: `${p}/.codegraph` }).then((exists: boolean) => {
-          setHasIndex(exists);
-        }).catch(() => setHasIndex(false));
+        const exists = await invoke("path_exists", { path: `${p}/.codegraph` }).catch(() => false);
+        setHasIndex(!!exists);
+      } else {
+        setHasIndex(false);
       }
-    } catch {}
+    } catch { setHasIndex(false); }
   }, []);
+
+  const handleRecheck = useCallback(() => {
+    void checkCli();
+    void checkIndex();
+  }, [checkCli, checkIndex]);
+
+  // 一键安装 CodeGraph（方案 B：应用内下载 → 解压 %LOCALAPPDATA%\codegraph\current
+  // → 记录启动器路径；用户零命令行）
+  const handleInstall = useCallback(async () => {
+    setInstalling(true);
+    setInstallMsg(zh ? "正在下载并安装 CodeGraph（约 52MB，首次约需 1-2 分钟）..." : "Downloading & installing CodeGraph (~52MB, may take a minute)...");
+    try {
+      const { invoke } = (window as any).__TAURI__.core;
+      const res = await invoke("codegraph_install");
+      const { setSetting } = require("../core/storage/settings");
+      setSetting("codem-codegraph-launcher", res.launcher);
+      setInstallMsg(zh ? `✓ 安装完成：${res.launcher}` : `Installed: ${res.launcher}`);
+      setStatus("installed");
+    } catch (e: any) {
+      setInstallMsg(zh ? `✗ 安装失败：${e?.message || e}` : `Install failed: ${e?.message || e}`);
+      setStatus("not_installed");
+    } finally {
+      setInstalling(false);
+    }
+  }, [zh]);
+
+  useEffect(() => {
+    void checkCli();
+    void checkIndex();
+  }, [checkCli, checkIndex]);
 
   const handleToggle = (checked: boolean) => {
     setEnabled(checked);
@@ -2897,14 +2946,44 @@ function CodeGraphSettingsSection({ lang }: { lang: ReturnType<typeof useLang> }
       </div>
 
       <div style={{ padding: 16, borderRadius: 6, background: "var(--bg-tertiary)", border: "1px solid var(--border-primary)" }}>
-        <div style={{ fontSize: 'var(--fs-base)', fontWeight: 500, marginBottom: 8 }}>{zh ? "CLI 状态" : "CLI Status"}</div>
-        {status === "checking" && <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)" }}>{zh ? "检测中..." : "Checking..."}</div>}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+          <div style={{ fontSize: 'var(--fs-base)', fontWeight: 500 }}>{zh ? "CLI 状态" : "CLI Status"}</div>
+          <button
+            onClick={handleRecheck}
+            disabled={status === "checking"}
+            style={{
+              padding: "3px 10px", fontSize: 'var(--fs-xs)', cursor: status === "checking" ? "wait" : "pointer",
+              background: "var(--bg-secondary)", border: "1px solid var(--border-primary)", borderRadius: 4,
+              color: "var(--text-secondary)", flexShrink: 0,
+            }}
+            title={zh ? "重新检测 CLI 与索引" : "Re-check CLI and index"}
+          >
+            {status === "checking" ? (zh ? "检测中..." : "Checking...") : (zh ? "🔄 重新检测" : "🔄 Re-check")}
+          </button>
+        </div>
+        {status === "checking" && <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)" }}>{zh ? "正在执行 codegraph --version..." : "Running codegraph --version..."}</div>}
         {status === "installed" && <div style={{ fontSize: 'var(--fs-sm)', color: "#22c55e" }}>✓ {zh ? "codegraph CLI 已安装" : "codegraph CLI is installed"}</div>}
         {status === "not_installed" && (
           <div>
             <div style={{ fontSize: 'var(--fs-sm)', color: "#e74c3c", marginBottom: 8 }}>✗ {zh ? "codegraph CLI 未安装" : "codegraph CLI is not installed"}</div>
+            <button
+              onClick={handleInstall}
+              disabled={installing}
+              style={{
+                padding: "8px 16px", fontSize: 'var(--fs-sm)', cursor: installing ? "wait" : "pointer",
+                background: "var(--accent)", border: "none", borderRadius: 4, color: "var(--text-on-accent)",
+                fontWeight: 500, opacity: installing ? 0.65 : 1, marginBottom: 8,
+              }}
+            >
+              {installing ? (zh ? "⏳ 安装中..." : "⏳ Installing...") : (zh ? "⬇️ 一键安装 CodeGraph（约 52MB）" : "⬇️ Install CodeGraph (~52MB)")}
+            </button>
+            {installMsg && (
+              <pre style={{ margin: "0 0 8px", padding: 8, background: "var(--bg-secondary)", borderRadius: 4, fontSize: 'var(--fs-xs)', overflow: "auto", maxHeight: 120, whiteSpace: "pre-wrap", color: "var(--text-secondary)" }}>
+                {installMsg}
+              </pre>
+            )}
             <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", lineHeight: 1.5 }}>
-              {zh ? "安装命令（PowerShell）：" : "Install command (PowerShell):"}
+              {zh ? "或手动安装（PowerShell）：" : "Or install manually (PowerShell):"}
               <br />
               <code style={{ background: "var(--bg-secondary)", padding: "2px 6px", borderRadius: 3, fontSize: 'var(--fs-sm)' }}>
                 irm https://raw.githubusercontent.com/colbymchenry/codegraph/main/install.ps1 | iex

@@ -14,6 +14,7 @@ function minutePrecisionDate(): string {
 
 import { ProviderRegistry, createDefaultProviders, OpenAICompatibleProvider, inferContextWindow } from "./provider";
 import { ToolRegistry, createDefaultToolRegistry } from "./tools";
+import { syncCodeGraphTools } from "./tools/codegraph-tool";
 import type { Context } from "../cordis/src/index.ts";
 import { AgentRegistry, getAgentRegistry, type AgentDefinition } from "../agent/agent";
 import { PermissionManager, getPermissionManager } from "../permission/permission";
@@ -21,7 +22,7 @@ import { ContextManager, getContextManager, type CompactionConfig } from "../con
 import { MemoryService, getMemoryService, type MemoryScope } from "../memory/memory";
 import { RetryExecutor, getRetryExecutor } from "../retry/retry";
 import { buildSystemPrompt, type SystemPromptConfig } from "../prompt/prompt";
-import { MCPRegistry, getMCPRegistry, type MCPServerConfig, type MCPTool, autoDetectCodeGraph, hasCodeGraphTools, isCodeGraphEnabled } from "../mcp/mcp";
+import { MCPRegistry, getMCPRegistry, type MCPServerConfig, type MCPTool, autoDetectCodeGraph, isCodeGraphEnabled } from "../mcp/mcp";
 import { SkillRegistry, getSkillRegistry, type SkillDefinition } from "../skill/skill";
 import { SnapshotService, getSnapshotService, type Snapshot, type FileChange } from "../snapshot/snapshot";
 import type { SubagentTask, SubagentResult } from "../subagent/subagent";
@@ -435,7 +436,6 @@ private loopPool: Map<string, AgenticLoop> = new Map();
     const mcpPrompt = mcpTools.length > 0
       ? mcpTools.map((t) => `- **${t.server}/${t.name}**: ${t.description}`).join("\n")
       : "";
-    const codeGraphActive = hasCodeGraphTools(this.mcp);
 
     const identity = loadAppIdentity();
     const user = loadUserConfig();
@@ -456,7 +456,6 @@ private loopPool: Map<string, AgenticLoop> = new Map();
       memoryInstructions: memoryPrompt || undefined,
       skillInstructions: fullSkillPrompt,
       mcpInstructions: mcpPrompt,
-      codeGraphEnabled: codeGraphActive,
       // Synchronous tool guidance — fallback when async collection isn't available
       toolGuidance: this.collectToolGuidanceSync(),
     };
@@ -490,7 +489,6 @@ private loopPool: Map<string, AgenticLoop> = new Map();
     const mcpPrompt = mcpTools.length > 0
       ? mcpTools.map((t) => `- **${t.server}/${t.name}**: ${t.description}`).join("\n")
       : "";
-    const codeGraphActive = hasCodeGraphTools(this.mcp);
 
     const identity = loadAppIdentity();
     const user = loadUserConfig();
@@ -522,6 +520,12 @@ private loopPool: Map<string, AgenticLoop> = new Map();
         } catch (e) {
           console.log("[CodeGraph] auto-detect skipped:", e);
         }
+        // 连接/断开结果同步为可调用 defer 工具（提示与工具表一致）
+        try {
+          this.syncCodeGraphTools();
+        } catch (e) {
+          console.log("[CodeGraph] sync tools skipped:", e);
+        }
       } catch (e) { console.warn('[index.ts]', e) }
     }
 
@@ -536,7 +540,6 @@ private loopPool: Map<string, AgenticLoop> = new Map();
       projectInstructions,
       skillInstructions: fullSkillPrompt,
       mcpInstructions: mcpPrompt,
-      codeGraphEnabled: codeGraphActive || hasCodeGraphTools(this.mcp),
       knowledgeContext,
       gitConfig,
       environmentConfig,
@@ -1632,6 +1635,17 @@ return loop.hasPendingGuidance();
 
   getMCPTools(): Array<MCPTool & { server: string }> {
     return this.mcp.getAllTools();
+  }
+
+  /**
+   * 同步 codegraph MCP 工具进共享工具表（defer 按需加载）。
+   * 调用时机：每次构建系统提示（autoDetectCodeGraph 之后）——
+   * 连接成功则注册 codegraph_explore 等为可调用 defer ToolDef；
+   * 断连/禁用则移除残留（提示与可调用集合严格一致）。
+   */
+  syncCodeGraphTools(): void {
+    const mcpTools = (this.mcp as any)?.getAllTools ? (this.mcp as any).getAllTools() : [];
+    syncCodeGraphTools(this.tools, mcpTools);
   }
 
   async callMCPTool(serverName: string, toolName: string, args: Record<string, unknown>) {

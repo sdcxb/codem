@@ -1302,6 +1302,128 @@ struct FileInfo {
 }
 
 
+/// codegraph_install — 应用内一键安装 CodeGraph CLI（方案 B：不要求用户敲命令/PATH）。
+///
+/// 1) GitHub API 解析最新 release tag；
+/// 2) 下载 codegraph-win32-x64.zip（~52MB，自包含 vendored Node）；
+/// 3) 解压到 %LOCALAPPDATA%\codegraph\current（路径安全：拒绝目录穿越）；
+/// 4) 返回安装目录与启动器（<dir>/bin/codegraph.cmd）绝对路径——前端存入设置，
+///    MCP 连接直接以该路径 spawn（.cmd 由 mcp_stdio_connect 用 cmd.exe /c 包装）。
+#[derive(Serialize)]
+struct CodegraphInstallResult {
+    dir: String,
+    launcher: String,
+}
+
+#[tauri::command]
+async fn codegraph_install() -> Result<CodegraphInstallResult, String> {
+    use std::io::Cursor;
+    use std::path::{Component, Path, PathBuf};
+
+    let client = reqwest::Client::builder()
+        .user_agent("codem-desktop")
+        .build()
+        .map_err(|e| format!("http client: {e}"))?;
+
+    // 1. 解析最新版本
+    let release: serde_json::Value = client
+        .get("https://api.github.com/repos/colbymchenry/codegraph/releases/latest")
+        .send()
+        .await
+        .map_err(|e| format!("resolve latest release: {e}"))?
+        .json()
+        .await
+        .map_err(|e| format!("parse release: {e}"))?;
+    let tag = release
+        .get("tag_name")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| "release has no tag_name".to_string())?
+        .to_string();
+
+    // 2. 下载 zip（整包进内存一次 ~52MB，可接受）
+    let url = format!(
+        "https://github.com/colbymchenry/codegraph/releases/download/{tag}/codegraph-win32-x64.zip"
+    );
+    let bytes = client
+        .get(&url)
+        .send()
+        .await
+        .map_err(|e| format!("download {tag}: {e}"))?
+        .bytes()
+        .await
+        .map_err(|e| format!("read body: {e}"))?;
+
+    // 3. 安装目录 %LOCALAPPDATA%\codegraph\current（覆盖式升级）
+    let local = std::env::var("LOCALAPPDATA").unwrap_or_else(|_| ".".to_string());
+    let root = PathBuf::from(local).join("codegraph").join("current");
+    if root.exists() {
+        std::fs::remove_dir_all(&root).map_err(|e| format!("clear old install: {e}"))?;
+    }
+    std::fs::create_dir_all(&root).map_err(|e| format!("mkdir install dir: {e}"))?;
+
+    // 4. 解压（zip crate；拒绝目录穿越）
+    let mut archive = zip::ZipArchive::new(Cursor::new(bytes))
+        .map_err(|e| format!("open archive: {e}"))?;
+    for i in 0..archive.len() {
+        let mut entry = archive
+            .by_index(i)
+            .map_err(|e| format!("read entry {i}: {e}"))?;
+        let raw = entry.name().to_string();
+        // 路径安全：拒绝 ParentDir / RootDir / Prefix 组件
+        let rel = Path::new(&raw);
+        let safe = rel.components().all(|c| matches!(c, Component::Normal(_)));
+        if !safe {
+            return Err(format!("unsafe path in archive: {raw}"));
+        }
+        let out = root.join(rel);
+        if entry.is_dir() {
+            let _ = std::fs::create_dir_all(&out);
+            continue;
+        }
+        if let Some(parent) = out.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        let mut file = std::fs::File::create(&out)
+            .map_err(|e| format!("create {raw}: {e}"))?;
+        std::io::copy(&mut entry, &mut file)
+            .map_err(|e| format!("write {raw}: {e}"))?;
+        drop(file);
+    }
+
+    // 5. 定位启动器（官方布局 <root>/bin/codegraph.cmd；递归兜底）
+    let launcher = find_codegraph_launcher(&root)
+        .ok_or_else(|| "installed bundle has no codegraph.cmd launcher".to_string())?;
+
+    Ok(CodegraphInstallResult {
+        dir: root.display().to_string(),
+        launcher,
+    })
+}
+
+/// 递归查找 codegraph 启动器（bin/codegraph.cmd 优先）。
+fn find_codegraph_launcher(root: &std::path::Path) -> Option<String> {
+    use std::path::Path;
+    let preferred = root.join("bin").join("codegraph.cmd");
+    if preferred.exists() {
+        return Some(preferred.display().to_string());
+    }
+    fn walk(dir: &Path) -> Option<String> {
+        let entries = std::fs::read_dir(dir).ok()?;
+        for e in entries.flatten() {
+            let p = e.path();
+            if p.is_dir() {
+                if let Some(f) = walk(&p) {
+                    return Some(f);
+                }
+            } else if p.file_name().and_then(|n| n.to_str()) == Some("codegraph.cmd") {
+                return Some(p.display().to_string());
+            }
+        }
+        None
+    }
+    walk(root)
+}
+
 /// Spawn an MCP stdio child process and start reading its stdout.
 #[tauri::command]
 async fn mcp_stdio_connect(
@@ -1311,9 +1433,30 @@ async fn mcp_stdio_connect(
     args: Option<Vec<String>>,
     env: Option<HashMap<String, String>>,
 ) -> Result<(), String> {
-    let mut cmd = tokio::process::Command::new(&command);
-    if let Some(args) = &args {
-        cmd.args(args);
+    let mut cmd = if cfg!(target_os = "windows")
+        && (command.to_ascii_lowercase().ends_with(".cmd")
+            || command.to_ascii_lowercase().ends_with(".bat"))
+    {
+        // Windows CreateProcess 不能直接执行 .cmd/.bat —— 用 cmd.exe /c 包装。
+        // （codegraph 官方发布是 bin/codegraph.cmd，MCP 连接指向其绝对路径。）
+        let full = if let Some(a) = &args {
+            format!("{} {}", command, a.join(" "))
+        } else {
+            command.clone()
+        };
+        let mut c = tokio::process::Command::new("cmd.exe");
+        c.arg("/c").arg(&full);
+        c
+    } else {
+        tokio::process::Command::new(&command)
+    };
+    if !(cfg!(target_os = "windows")
+        && (command.to_ascii_lowercase().ends_with(".cmd")
+            || command.to_ascii_lowercase().ends_with(".bat")))
+    {
+        if let Some(args) = &args {
+            cmd.args(args);
+        }
     }
     if let Some(env) = &env {
         for (k, v) in env {
@@ -2170,6 +2313,7 @@ let app = tauri::Builder::default()
             list_directory,
             delete_directory,
             execute_command,
+codegraph_install,
             open_folder_dialog,
             open_file_external,
             reveal_item_in_dir,

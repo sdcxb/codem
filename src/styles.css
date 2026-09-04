@@ -1,4 +1,4 @@
-/* ========== Custom Fonts ========== */
+﻿/* ========== Custom Fonts ========== */
 @font-face {
   font-family: 'AlimamaFangYuanTi';
   src: url('/fonts/AlimamaFangYuanTiVF-Thin.ttf') format('truetype-variations');
@@ -1858,7 +1858,7 @@ z-index: 50;
 }
 
 .input-card-container:focus-within {
-  border-color: transparent;
+  border-color: var(--text-primary);
   box-shadow: none;
 }
 
@@ -1975,7 +1975,14 @@ z-index: 50;
   min-height: 56px;
 }
 
+.message-input.mirror-mode {
+  color: transparent;
+  caret-color: var(--accent, #6b46c1);
+}
+
 .input-backdrop {
+  font-family: var(--font-family), sans-serif;
+  font-variant-ligatures: none;
   position: absolute;
   inset: 0;
   pointer-events: none;
@@ -2016,6 +2023,8 @@ z-index: 50;
 }
 
 .message-input {
+  font-family: var(--font-family), sans-serif;
+  font-variant-ligatures: none;
   position: absolute;
   inset: 0;
   width: 100%;
@@ -2026,7 +2035,7 @@ z-index: 50;
   background: transparent;
   border: none;
   outline: none;
-  color: transparent;
+  color: var(--text-primary);
   caret-color: var(--accent, #6b46c1);
   font-size: 15px;
   font-family: inherit;
@@ -7663,7 +7672,7 @@ border-bottom: 1px solid var(--accent);
   width: 12px;
   height: 12px;
   border: 2px solid currentColor;
-  border-top-color: transparent;
+  border-top-color: var(--text-primary);
   border-radius: 50%;
   animation: compaction-spin 0.8s linear infinite;
 }
@@ -13316,3 +13325,5 @@ color: var(--accent, #7c6cf0);
   font-size: 13px;
   text-align: center;
 }
+
+
