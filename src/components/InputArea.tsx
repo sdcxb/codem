@@ -655,6 +655,9 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
     });
   }, [currentProject]);
 
+  // 本会话内用户手动删除过的 GitHub URL（避免 reconcile 自动加回）
+  const removedGithubUrlsRef = useRef<Set<string>>(new Set());
+
   const addGithubBadge = useCallback((url: string) => {
     setComposerBadges((prev) => {
       if (prev.some((b) => b.id === `github-${url}`)) return prev;
@@ -665,20 +668,72 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
   }, []);
 
   const removeBadge = useCallback((id: string) => {
-    setComposerBadges((prev) => prev.filter((b) => b.id !== id));
+    setComposerBadges((prev) => {
+      const target = prev.find((b) => b.id === id);
+      if (target?.type === "github" && typeof target.meta === "string") {
+        removedGithubUrlsRef.current.add(target.meta);
+      }
+      return prev.filter((b) => b.id !== id);
+    });
   }, []);
 
-  // === GitHub URL detection in text ===
-  const detectGithubUrls = useCallback((text: string) => {
+  // === GitHub URL detection in text（防抖 + 同步式 reconcile） ===
+  // 修复：手打 URL 时 onChange 逐字符触发检测，每个"未输完的前缀"都被当作
+  // 完整 URL 加 badge（…/c、…/ca … 每个前缀 id 不同 → 标签堆积）。
+  // 现在：①输入停顿 500ms 后才检测；②reconcile 同步——旧前缀被更长 URL
+  // 取代时移除、删除的 URL 加回；用户手动删除的尊重（removedGithubUrlsRef）。
+  const githubBadgeDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const reconcileGithubBadges = useCallback((text: string) => {
     const urlRegex = /https?:\/\/github\.com\/[^\s<>"']+/gi;
-    const matches = text.match(urlRegex);
-    if (matches) {
-      matches.forEach((url) => {
-        const cleaned = url.replace(/[),.;\]]+$/, "");
-        addGithubBadge(cleaned);
-      });
+    const matches = text.match(urlRegex) || [];
+    // 去尾标点 + 去重
+    const targets: string[] = [];
+    for (const raw of matches) {
+      const cleaned = raw.replace(/[),.;\]]+$/, "");
+      if (!targets.includes(cleaned)) targets.push(cleaned);
     }
-  }, [addGithubBadge]);
+    setComposerBadges((prev) => {
+      // 1) 保留非 github badge；github badge 仅当其 URL 仍精确出现在当前文本中
+      const kept = prev.filter((b) => {
+        if (b.type !== "github") return true;
+        return typeof b.meta === "string" && targets.includes(b.meta);
+      });
+      // 2) 添加当前文本中缺失的 github badge（跳过用户手动删除过的）
+      const out = [...kept];
+      for (const t of targets) {
+        if (
+          !out.some((b) => b.type === "github" && b.meta === t) &&
+          !removedGithubUrlsRef.current.has(t)
+        ) {
+          const m = t.match(/github\.com\/([^/\s?#]+)/);
+          out.push({
+            id: `github-${t}`,
+            type: "github" as const,
+            label: m ? m[1] : t,
+            meta: t,
+            removable: true,
+          });
+        }
+      }
+      return out;
+    });
+  }, []);
+
+  const scheduleGithubBadgeReconcile = useCallback((text: string) => {
+    if (githubBadgeDebounceRef.current) clearTimeout(githubBadgeDebounceRef.current);
+    githubBadgeDebounceRef.current = setTimeout(() => {
+      githubBadgeDebounceRef.current = null;
+      reconcileGithubBadges(text);
+    }, 500);
+  }, [reconcileGithubBadges]);
+
+  // 组件卸载清理防抖
+  useEffect(() => {
+    return () => {
+      if (githubBadgeDebounceRef.current) clearTimeout(githubBadgeDebounceRef.current);
+    };
+  }, []);
 
   // === Load files for @mention from real filesystem ===
   const loadMentionFiles = useCallback(async (cwd: string) => {
@@ -897,7 +952,7 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
               } else {
                 setMentionQuery(null);
               }
-              detectGithubUrls(val);
+              scheduleGithubBadgeReconcile(val);
               const badges: Array<{ id: string; type: "notebook" | "file" | "url"; label: string; icon?: string }> = [];
               if (pendingAttachments.length > 0) {
                 pendingAttachments.forEach((att) => {

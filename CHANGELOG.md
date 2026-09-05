@@ -12,6 +12,13 @@ All notable changes to Codem will be documented in this file.
 - **源层核验**：联网搜索（searchMarketSkillsOnline）与检查更新（listMarketSkills）两路径的每个源都有 12s `Promise.race` 超时兜底（有界，非源层挂起）；核验无其它同类残留 loading 模式（loadMarketSkills finally 无条件复位）
 - 全量 152 文件 / 4140 用例通过 + tsc 零错误
 
+### GitHub URL 标签重复生成修复（输入每字符加一个标签）
+
+- **用户报告**：在对话编辑框手打 GitHub 开源项目 URL 时，每输入一个字符就生成一个仓库标签，不停堆积
+- **根因**（`InputArea.tsx`）：onChange 逐字符调用 `detectGithubUrls`，把"未输完的 URL 前缀"（https://github.com/c → /ca → /cat …）都当作完整 URL 添加 badge——每个前缀是不同的 badge id，原有按 url 去重失效 → 标签堆积
+- **修复**：改为**防抖 + 同步式 reconcile**——①输入停顿 500ms 后才检测当前文本（粘贴/快速手打都只出 1 个标签）；②每次检测同步差集：旧"过渡前缀"标签被更长 URL 取代时自动移除（始终 ≤ 实际 URL 数）；③用户手动删除过的 GitHub URL 本会话内不再自动加回（removedGithubUrlsRef）；④组件卸载清理防抖定时器
+- 全量 152 文件 / 4140 用例通过 + tsc 零错误
+
 ### 输入框光标视觉错位修复（长 URL 粘贴时 caret 偏 1 格）
 
 - **用户报告**：粘贴/输入长 URL（如 https://github.com/cathrynlavery/diagram-design）后，光标视觉位置比实际插入点靠前 1 个字符（实际在末尾、显示在倒数两字符之间）；已确认**纯视觉错位**（文本与实际插入点正确）
