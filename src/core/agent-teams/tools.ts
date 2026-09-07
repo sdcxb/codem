@@ -365,18 +365,28 @@ export function createAgentTeamsDeleteTool(): ToolDef {
   };
 }
 
-/** 注册全部 10 个 agent_teams 工具（由 LLMEngine.setupDelegationTools 调用） */
+/**
+ * 注册全部 10 个 agent_teams 工具（由 LLMEngine.setupDelegationTools 调用）。
+ * 全部标记 shouldDefer（低频功能，团队激活时才需全 schema）：系统提示中仅含
+ * 名称 + 精炼 searchHint，模型判断需要时经 tool_search 拉取完整 schema ——
+ * 非团队会话不浪费每轮 token（与 v1.9.5 大工具 defer 优化一致）。
+ */
 export function registerAgentTeamsTools(register: (t: ToolDef) => void): void {
-  register(createAgentTeamsCreateTool());
-  register(createAgentTeamsAddMemberTool());
-  register(createAgentTeamsRemoveMemberTool());
-  register(createAgentTeamsCreateTaskTool());
-  register(createAgentTeamsReassignTool());
-  register(createAgentTeamsClaimTool());
-  register(createAgentTeamsUpdateTool());
-  register(createAgentTeamsSendMessageTool());
-  register(createAgentTeamsStatusTool());
-  register(createAgentTeamsDeleteTool());
+  const markDeferred = (t: ToolDef): ToolDef => {
+    t.shouldDefer = true;
+    t.searchHint = "多智能体团队协作：队长建队、成员领取依赖任务、状态汇报（用户要求团队/多名 agent 并行时使用）";
+    return t;
+  };
+  register(markDeferred(createAgentTeamsCreateTool()));
+  register(markDeferred(createAgentTeamsAddMemberTool()));
+  register(markDeferred(createAgentTeamsRemoveMemberTool()));
+  register(markDeferred(createAgentTeamsCreateTaskTool()));
+  register(markDeferred(createAgentTeamsReassignTool()));
+  register(markDeferred(createAgentTeamsClaimTool()));
+  register(markDeferred(createAgentTeamsUpdateTool()));
+  register(markDeferred(createAgentTeamsSendMessageTool()));
+  register(markDeferred(createAgentTeamsStatusTool()));
+  register(markDeferred(createAgentTeamsDeleteTool()));
 }
 
 export { CAPTAIN_ONLY_TOOLS };
