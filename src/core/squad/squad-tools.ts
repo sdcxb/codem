@@ -124,6 +124,19 @@ export function createSquadDispatchTool(): ToolDef {
           output: zh ? "错误: 无法导出团队模板" : "Error: failed to export team template",
         };
       }
+      // 模板需至少一个可 spawn 的 agent 角色（human 角色无法成为运行时成员）
+      const spawnable = template.roles.filter((r) => r.memberType === "agent");
+      if (spawnable.length === 0) {
+        return {
+          title: "squad_dispatch",
+          output:
+            (zh ? "错误: 模板没有可执行的 agent 角色" : "Error: template has no spawnable agent roles") +
+            ` (${squad.name})。\n` +
+            (zh
+              ? "请先在任务管理「团队」Tab 的模板里添加 agent 成员（角色），或用 agent_teams_create 直接建队。"
+              : "Add agent member roles to the template (Task Center → Teams) first, or use agent_teams_create directly."),
+        };
+      }
 
       // Bridge: instantiate an agent-teams runtime team (captain = current session)
       const { AgentTeamsService } = await import("../provider/agent-teams-service");
@@ -143,10 +156,9 @@ export function createSquadDispatchTool(): ToolDef {
         };
       }
 
-      // Spawn member roles from the template (human roles cannot be spawned — skipped)
+      // Spawn member roles from the template (human roles skipped — pre-validated ≥1 agent role)
       const spawnFailures: string[] = [];
-      for (const role of template.roles) {
-        if (role.memberType !== "agent") continue;
+      for (const role of spawnable) {
         try {
           await svc.addMember(team.id, {
             name: role.name,

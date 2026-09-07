@@ -87,6 +87,19 @@ describe("团队深合并 Phase1 — Squad→模板 + dispatch 桥接", () => {
     expect(String(missing.output)).toContain("不存在");
   });
 
+  it("TC-006: 模板无 agent 角色（全移除成员）→ 前置拒绝，不建空队", async () => {
+    const squadId = await makeTemplate("模板Empty");
+    const mgr = getSquadManager();
+    // createSquad 自动带 leader agent 成员——移除全部成员得到无角色模板
+    const squad = mgr.getSquad(squadId)!;
+    for (const m of squad.members) mgr.removeMember(m.id, squadId);
+    const tool = createSquadDispatchTool();
+    const out = await tool.execute({ squad_id: squadId, task: "任务" }, fakeCtx("sess-bridge-empty"));
+    expect(String(out.output)).toContain("没有可执行的 agent 角色");
+    // 未创建任何运行时团队
+    expect(AgentTeamsService.getInstance().listAll().length).toBe(0);
+  });
+
   it("TC-005: squad_status 输出模板 + 派生运行时团队（可传 team_id）", async () => {
     const squadId = await makeTemplate("模板D");
     const dispatch = createSquadDispatchTool();
