@@ -62,10 +62,27 @@
 - typing/notifystart 等体验接口：生产加固清单（+2~3 人日）
 - 未在本机实扫验证（需真实微信）；Rust 纯逻辑 13 单测 + TS 7 单测已覆盖
 
-## 第①项 手机连接 dsh-phone — ⏳ 待评估
+## 第①项 手机连接 dsh-phone — commit（本轮）
 
-报告结论：dsh-phone 真身在 sidecar/phone-bridge.ts（配对 cookie 门卫 + Web UI 反向代理 ~600 行可复用），
-其 openclaw 通道依赖 DSH 内核 webServer 宿主；**Codem 桌面 bundle 显式禁用 host-webserver/host-apiproxy/
-host-frontend-static/remote-client/api-gateway，Rust 无 HTTP server crate** —— 需先决策：
-（a）补"手机可访问 http UI + API"地基（Rust 内置静态服务 + WebSocket/长轮询 + 配对/QR/LAN IP 机制，
-    大工程）或（b）退回 5.1 白名单 RPC 精简面。未答复前不动工。
+用户确认全量方案（补 HTTP 地基）后实施，架构沿用 ② 的"Rust 传输层 + TS 引擎半层"双层：
+
+```
+手机浏览器 ──HTTP(LAN)──▶ [Rust phone 服务] ──phone-request──▶ [WebView TS phone-link]
+  /pair?token=配对        配对门卫+静态页+代理路由            status/sessions/messages/chat
+  /api/* (cookie 鉴权)    （0.0.0.0 随机端口，零新依赖）      （executeSessionTurn 真实引擎回合）
+```
+
+- Rust `src-tauri/src/phone/`：http.rs（手写 HTTP/1.1 解析/响应）+ lan.rs（UDP-connect 取 LAN IP）+ mod.rs（状态/配对/设备持久化/代理）
+  - 配对对标 EAC phone-bridge：token URL 5min 轮换 → 等待页轮询 → 桌面批准 → Set-Cookie（HttpOnly/SameSite=Strict/1y）→ secret 仅存 sha256 落盘 devices.json（重启保配对）
+  - 手机端 app.html/pair.html 内嵌 include_str；/api/* 鉴权后事件代理到 TS（reqId 关联，15s 超时）
+- TS `src/core/phone-link/phone-link.ts`：路由 /api/status（桌面当前项目/会话）· /api/sessions（全部项目会话真实倒序）· /api/sessions/<id>/messages · /api/chat（续聊，busy 409）· /api/chat/new
+- UI 设置卡「连接手机」：QR/复制/批准·拒绝/设备解除/autoStart；合规提示
+- **诚实标注**：明文 HTTP + LAN cookie = MVP 安全水位（DSH 同款 http origin）；手机端与桌面同一会话数据，不编造；防火墙/同 Wi-Fi 需放行随机端口
+- 测试：Rust phone 12 单测（解析/解码/cookie/配对生命周期/timing-safe/hash 鉴权）；TS phone-link 6（路由/清理/映射/拍平排序/设置/缓存）
+
+## 四项全部落地后的收尾说明
+
+- 全部注册三件套（KNOWN_PLUGINS/builtin-registry/codem.base.yml），默认开启可禁用，risk danger
+- 全量 TS 165+ 文件 / 42xx 用例 + tsc 零错误；Rust `cargo test --lib` 全绿
+- 实机验证依赖真实环境：②需真机微信扫码；①需第二台设备同 Wi-Fi 访问——本机已覆盖协议/纯逻辑单测与编译级验证，端到端冒烟建议发版前人工执行
+- 发版按用户指示执行（RELEASE-GUIDE：版本号三处 + Cargo.lock 单独 commit + gh release）

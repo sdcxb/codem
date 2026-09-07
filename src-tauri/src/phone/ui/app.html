@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Codem 手机端</title>
+<style>
+  :root{color-scheme:dark}
+  *{box-sizing:border-box}
+  body{font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:#0f1115;color:#e6e8ec;margin:0}
+  header{position:sticky;top:0;background:#14171d;border-bottom:1px solid #232833;padding:12px 14px;display:flex;align-items:center;gap:8px;z-index:5}
+  header h1{font-size:15px;margin:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .btn{background:#2a2f3a;border:1px solid #39404d;color:#e6e8ec;border-radius:10px;padding:8px 12px;font-size:13px;cursor:pointer}
+  .btn.primary{background:#4f8cff;border-color:#4f8cff;color:#fff;font-weight:600}
+  .btn:disabled{opacity:.5;cursor:default}
+  .screen{padding:12px}
+  .session{border:1px solid #232833;border-radius:12px;padding:12px;margin-bottom:8px;cursor:pointer;background:#161a21}
+  .session:active{background:#1d222c}
+  .session .t{font-size:14px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .session .s{font-size:11px;color:#8b94a3;margin-top:3px;display:flex;justify-content:space-between}
+  .msg{margin:8px 0;display:flex}
+  .msg .b{max-width:82%;border-radius:12px;padding:8px 10px;font-size:13px;line-height:1.55;white-space:pre-wrap;word-break:break-word}
+  .msg.user{justify-content:flex-end}
+  .msg.user .b{background:#2d4a8c}
+  .msg.assistant .b{background:#20242d}
+  .msg .meta{font-size:10px;color:#6b7482;margin:2px 2px 0;text-align:right}
+  .thread{display:flex;flex-direction:column;min-height:calc(100vh - 120px)}
+  .list{flex:1;overflow-y:auto;padding:12px}
+  .composer{display:flex;gap:8px;padding:10px;border-top:1px solid #232833;background:#14171d;position:sticky;bottom:0}
+  .composer input{flex:1;background:#1d222c;border:1px solid #2a2f3a;color:#e6e8ec;border-radius:10px;padding:10px;font-size:14px}
+  .empty{color:#8b94a3;font-size:13px;text-align:center;padding:60px 20px;line-height:1.7}
+  .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:70px;background:#000c;color:#ffd76a;padding:8px 14px;border-radius:10px;font-size:12px;display:none;z-index:9}
+  .pair-panel{text-align:center;padding:60px 24px;line-height:1.8;color:#9aa3b2;font-size:14px}
+  .pair-panel h2{color:#e6e8ec;font-size:17px}
+</style>
+</head>
+<body>
+<header id="header"><h1 id="title">Codem</h1><button id="back" class="btn" style="display:none">←</button><button id="refresh" class="btn">刷新</button></header>
+<div id="screen" class="screen"></div>
+<div id="toast" class="toast"></div>
+<script>
+(function () {
+  var header = document.getElementById("header"), title = document.getElementById("title"),
+      back = document.getElementById("back"), refresh = document.getElementById("refresh"),
+      screen = document.getElementById("screen"), toast = document.getElementById("toast");
+  var state = { view: "sessions", sessionId: null, messages: [], timer: null };
+
+  function showToast(t){ toast.textContent = t; toast.style.display = "block"; clearTimeout(state._t); state._t = setTimeout(function(){ toast.style.display = "none"; }, 2600); }
+  async function api(path, opts){
+    var r = await fetch(path, Object.assign({ cache: "no-store" }, opts || {}));
+    if (r.status === 401) throw { auth: true };
+    var j = await r.json().catch(function(){ return {}; });
+    if (r.status >= 400) throw j;
+    return j;
+  }
+  function esc(s){ var d = document.createElement("div"); d.textContent = s == null ? "" : String(s); return d.innerHTML; }
+
+  function renderSessions(list){
+    var h = "";
+    (list || []).forEach(function(s){
+      var when = s.updatedAt ? new Date(s.updatedAt).toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "";
+      h += '<div class="session" data-id="' + esc(s.id) + '">'
+         + '<div class="t">' + esc(s.title || "(无标题)") + '</div>'
+         + '<div class="s"><span>' + esc(s.projectName || "") + '</span><span>' + when + ' · ' + (s.messageCount||0) + ' 条</span></div></div>';
+    });
+    if (!h) h = '<div class="empty">暂无会话。<br>在桌面端打开一个会话后，这里就会出现。</div>';
+    screen.innerHTML = h;
+    [].forEach.call(screen.querySelectorAll(".session"), function(el){
+      el.addEventListener("click", function(){ openSession(el.getAttribute("data-id")); });
+    });
+  }
+
+  function renderThread(msgs){
+    var h = "";
+    (msgs || []).forEach(function(m){
+      var role = (m.role === "user" ? "user" : "assistant");
+      var body = m.content || "";
+      if (m.role === "system") body = "[系统] " + body;
+      var when = m.timestamp ? new Date(m.timestamp).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }) : "";
+      h += '<div class="msg ' + role + '"><div><div class="b">' + esc(body) + '</div><div class="meta">' + when + '</div></div></div>';
+    });
+    if (!h) h = '<div class="empty">还没有消息。从手机发一条试试？</div>';
+    screen.innerHTML = h;
+    screen.scrollTop = screen.scrollHeight;
+  }
+
+  function openSession(id){
+    state.view = "thread"; state.sessionId = id; state.messages = [];
+    title.textContent = "会话"; back.style.display = "";
+    renderThread([]);
+    loadMessages();
+    clearInterval(state.timer);
+    state.timer = setInterval(loadMessages, 2600);
+  }
+  async function loadMessages(){
+    if (state.view !== "thread" || !state.sessionId) return;
+    try {
+      var j = await api("/api/sessions/" + encodeURIComponent(state.sessionId) + "/messages?limit=80");
+      var msgs = j.messages || [];
+      var changed = msgs.length !== state.messages.length;
+      if (!changed) for (var i = 0; i < msgs.length; i++) if (!state.messages[i] || state.messages[i].id !== msgs[i].id) { changed = true; break; }
+      if (changed) { state.messages = msgs; renderThread(msgs); }
+    } catch (e) { if (e && e.auth) goUnpaired(); }
+  }
+
+  function goUnpaired(){
+    clearInterval(state.timer);
+    state.view = "unpaired";
+    title.textContent = "未配对"; back.style.display = "none";
+    screen.innerHTML = '<div class="pair-panel"><h2>尚未连接桌面端</h2>'
+      + '请先在电脑 Codem 的「设置 → 连接手机」里点击「开始配对」，'
+      + '然后用手机微信/浏览器扫一扫二维码，或在此粘贴配对链接：'
+      + '<div style="margin:14px 0"><input id="pairUrl" style="width:100%;background:#1d222c;border:1px solid #2a2f3a;color:#e6e8ec;border-radius:10px;padding:10px;font-size:13px" placeholder="http://192.168.x.x:port/pair?token=…"></div>'
+      + '<button id="pairGo" class="btn primary">去配对</button>'
+      + '<p style="font-size:12px">需手机与电脑在同一 Wi-Fi。</p></div>';
+    document.getElementById("pairGo").addEventListener("click", function(){
+      var u = document.getElementById("pairUrl").value.trim();
+      if (u) location.href = u; else showToast("请粘贴配对链接");
+    });
+  }
+
+  async function loadSessions(){
+    try {
+      var j = await api("/api/sessions");
+      if (state.view === "thread") return; // 正在会话页
+      title.textContent = "Codem · 会话"; back.style.display = "none";
+      renderSessions(j.sessions || []);
+    } catch (e) {
+      if (e && e.auth) goUnpaired();
+    }
+  }
+
+  // 发消息：注入 composer（会话页）
+  function ensureComposer(){
+    if (document.getElementById("composer")) return;
+    var c = document.createElement("div");
+    c.className = "composer"; c.id = "composer";
+    c.innerHTML = '<input id="composerInput" placeholder="发消息给桌面助手…">'
+      + '<button id="sendBtn" class="btn primary">发送</button>';
+    document.body.appendChild(c);
+    var input = c.querySelector("input"), btn = c.querySelector("button");
+    function send(){
+      var text = input.value.trim();
+      if (!text) return;
+      input.value = ""; btn.disabled = true;
+      api("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sessionId: state.sessionId, text: text }) })
+        .then(function(){ showToast("已发送，助手处理中…"); setTimeout(loadMessages, 1200); })
+        .catch(function(e){ showToast("发送失败"); })
+        .then(function(){ btn.disabled = false; });
+    }
+    btn.addEventListener("click", send);
+    input.addEventListener("keydown", function(e){ if (e.key === "Enter") send(); });
+  }
+
+  back.addEventListener("click", function(){
+    state.view = "sessions"; state.sessionId = null;
+    clearInterval(state.timer);
+    var c = document.getElementById("composer"); if (c) c.remove();
+    loadSessions();
+  });
+  refresh.addEventListener("click", function(){
+    if (state.view === "thread") loadMessages(); else loadSessions();
+  });
+
+  function boot(){
+    api("/api/status").then(function(j){
+      if (j && j.desktop && state.view === "sessions" && document.getElementById("composer")) { }
+    }).catch(function(){});
+    loadSessions();
+    state.sessionTimer = setInterval(function(){ if (state.view === "sessions") loadSessions(); }, 5000);
+  }
+  boot();
+  // 进入会话页后再挂 composer（openSession 末尾）
+  var _open = openSession;
+  openSession = function(id){ _open(id); ensureComposer(); };
+})();
+</script>
+</body>
+</html>

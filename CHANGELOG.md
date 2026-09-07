@@ -2,11 +2,22 @@
 
 All notable changes to Codem will be documented in this file.
 
-## [Unreleased] — EAC 对标 第②③④项（DSH-Desktop-EAC）
+## [Unreleased] — EAC 对标 第①②③④项（DSH-Desktop-EAC）
 
-> 第④项宠物状态卡 + 第③项 computer-use + 第②项微信 ClawBot 桥（顺序按工作量递增）。
-> 第①项手机连接（dsh-phone）待做：需先补"手机可访问的 HTTP UI + API"地基（桌面 bundle 禁用
-> host-webserver/host-apiproxy/host-frontend-static，Rust 无 HTTP server crate）。
+> 第④项宠物状态卡 + 第③项 computer-use + 第②项微信 ClawBot 桥 + 第①项手机连接
+> （顺序按工作量递增）。四项全部落地。
+
+### 第①项 @codem/phone-link 手机连接（LAN 扫码配对 + 手机浏览器访问桌面会话，对标 dsh-phone）
+
+- **Rust LAN HTTP 地基**（`src-tauri/src/phone/`，零新依赖，手写极简 HTTP/1.1 on tokio）：
+  - `http.rs` 解析/响应 + `lan.rs` UDP-connect 取默认路由 IP；0.0.0.0 随机端口监听
+  - **配对门卫对标 EAC phone-bridge**：token URL（随机 32B、5min TTL、轮换）→ 手机开 `/pair?token` 等待页轮询 `/api/pair-state` → 桌面批准 → `Set-Cookie codem_phone=<secret>; HttpOnly; SameSite=Strict; 1y`；secret 仅存 sha256（app-data/phone/devices.json，重启保配对，≤8 设备）
+  - 手机页（内嵌 pair.html/app.html）+ /api/* 全部 cookie 鉴权后**代理到 WebView TS**（phone-request 事件 + phone_respond 应答，reqId 关联 15s 超时 504）
+  - 6 个 commands（phone_start/stop/status/decide/unpair/respond）+ 事件 phone-state/paired/request；启动自动续连（TS autoStart）
+  - 12 Rust 单测（解析/URL 解码/cookie/配对 token 生命周期/常数时间比较/sha256 落盘鉴权）
+- **TS 引擎半层**（`src/core/phone-link/`）：路由 phone-request → `GET /api/status`（桌面当前项目/会话）· `GET /api/sessions`（全部项目会话真实拍平倒序）· `GET /api/sessions/<id>/messages`（MessageStorage）· `POST /api/chat`（executeSessionTurn 续聊桌面会话，busy 409）· `POST /api/chat/new`（开新会话）——**不编造：手机与桌面看到同一会话/同一历史**
+- **桌面设置卡「连接手机」**：启停 + 配对二维码/链接复制 + 批准/拒绝 + 设备列表/解除 + autoStart + 合规提示（同 Wi-Fi/防火墙/明文 HTTP/二维码勿外传）
+- 注册 runtimePluginList/builtin-registry/codem.base.yml（默认开启可禁用，risk danger）；6 TS 单测
 
 ### 第④项 宠物大肥鱼式状态卡（commit 929a0f3，对标 dsh-dafeiyu）
 
@@ -36,7 +47,7 @@ All notable changes to Codem will be documented in this file.
 
 ### 测试与质量
 
-- 全量 165 文件 / 4221 用例通过（+7）+ tsc 零错误；Rust `cargo test --lib ilink` 13 通过
+- 全量 166 文件 / 4227 用例通过（+6）+ tsc 零错误；Rust `cargo test --lib` 38 通过（ilink 13 + phone 12 + 既有 13）
 
 ## [1.9.9] - 2026-09-07 — EAC 对标（DSH-Desktop-EAC 差距分析与仿照实施）
 

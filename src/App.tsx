@@ -1250,6 +1250,25 @@ flushStreamBuffer(); // flush all on unmount
     };
   }, [dbReady]);
 
+  // ========== 手机连接（phone-link，对标 dsh-phone）==========
+  // dbReady 后启动引擎半层：监听 phone-request（Rust LAN 服务代理上来的
+  // /api/* 请求）→ 真实数据/引擎回合 → phone_respond；autoStart 拉起 LAN 服务。
+  useEffect(() => {
+    if (!dbReady) return;
+    let cleanup: (() => void) | null = null;
+    let cancelled = false;
+    import("./core/phone-link/phone-link")
+      .then((m) => {
+        if (cancelled) return;
+        cleanup = m.startPhoneLink();
+      })
+      .catch((e) => console.warn("[phone-link] start failed:", e));
+    return () => {
+      cancelled = true;
+      cleanup?.();
+    };
+  }, [dbReady]);
+
   // ========== Squad Dispatch 路由 ==========
   // 监听 squad_dispatch 工具发出的事件，创建 Leader 会话并后台执行。
   useEffect(() => {

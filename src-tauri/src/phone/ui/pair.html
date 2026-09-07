@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>连接 Codem</title>
+<style>
+  body{font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:#0f1115;color:#e6e8ec;margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center}
+  .card{background:#1a1e26;border:1px solid #2a2f3a;border-radius:16px;padding:28px 24px;max-width:320px;width:calc(100% - 48px);text-align:center}
+  h1{font-size:18px;margin:0 0 6px}
+  p{color:#9aa3b2;font-size:13px;line-height:1.6;margin:6px 0}
+  .spinner{width:34px;height:34px;border:3px solid #2a2f3a;border-top-color:#4f8cff;border-radius:50%;margin:18px auto;animation:spin 1s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .ok{color:#3ddc84;font-weight:600}
+  .err{color:#ff5c5c}
+</style>
+</head>
+<body>
+  <div class="card">
+    <h1>Codem 手机连接</h1>
+    <div id="status" class="spinner"></div>
+    <p id="msg">等待桌面端确认…</p>
+    <p id="extra" style="display:none"></p>
+  </div>
+<script>
+(function () {
+  var token = new URLSearchParams(location.search).get("token") || "";
+  var msg = document.getElementById("msg");
+  var extra = document.getElementById("extra");
+  function show(html, cls) {
+    var s = document.getElementById("status");
+    s.className = cls || "";
+    s.style.display = (cls === "ok" || cls === "err") ? "none" : "block";
+    msg.innerHTML = html;
+  }
+  async function poll() {
+    try {
+      var r = await fetch("/api/pair-state?token=" + encodeURIComponent(token), { cache: "no-store" });
+      if (r.status === 410) { show("配对链接已过期，请在桌面端重新生成二维码。", "err"); return; }
+      if (r.status === 403) { show("配对链接无效。", "err"); return; }
+      var j = await r.json();
+      if (j.state === "approved") { show("配对成功，正在进入…", "ok"); location.href = "/"; return; }
+      if (j.state === "rejected") { show("桌面端拒绝了本次配对，请重新扫码。", "err"); return; }
+      if (j.state === "expired") { show("配对链接已过期，请在桌面端重新生成二维码。", "err"); return; }
+      // waiting
+      show("等待桌面端确认…<br><span style='font-size:12px'>请在 Codem「连接手机」面板点击「批准」</span>");
+    } catch (e) { show("网络异常，重试中…", "err"); }
+  }
+  poll();
+  setInterval(poll, 1200);
+})();
+</script>
+</body>
+</html>

@@ -18,6 +18,10 @@ mod runtime_log;
 // 传输层（登录/长轮询/收发/配额），引擎集成在 TS 侧。
 mod ilink;
 
+// ========== 手机连接（phone-link，对标 dsh-phone）==========
+// LAN HTTP 地基：配对门卫 + 静态页 + 请求代理到 WebView TS 引擎。
+mod phone;
+
 // ========== PTY Manager ==========
 // Interactive terminal support using portable-pty.
 // Manages multiple PTY sessions with real-time I/O streaming via Tauri events.
@@ -2288,6 +2292,8 @@ pub fn run() {
 install_panic_hook();
 // ===== 微信 ClawBot 桥（iLink 传输层）管理态 =====
 let ilink_state = ilink::IlinkState::new();
+// ===== 手机连接（phone-link）管理态 =====
+let phone_state = phone::PhoneState::new();
 let app = tauri::Builder::default()
 .plugin(tauri_plugin_shell::init())
 .plugin(tauri_plugin_fs::init())
@@ -2296,6 +2302,7 @@ let app = tauri::Builder::default()
 .plugin(tauri_plugin_process::init())
 .plugin(tauri_plugin_dialog::init())
         .manage(ilink_state.clone())
+        .manage(phone_state.clone())
         .manage(Arc::new(Mutex::new(HashMap::<String, PtySession>::new())) as PtyMap)
         .manage(AppState {
             providers: Mutex::new(vec![
@@ -2381,6 +2388,13 @@ path_exists,
             ilink::ilink_login_submit_verify,
             ilink::ilink_logout,
             ilink::ilink_send_text,
+            // 手机连接（phone-link）
+            phone::phone_start,
+            phone::phone_stop,
+            phone::phone_status,
+            phone::phone_decide,
+            phone::phone_unpair,
+            phone::phone_respond,
         ])
         .setup({
             // 捕获 ilink_state（Arc owned）以满足 setup 闭包的 'static 约束。
