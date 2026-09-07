@@ -4,9 +4,9 @@
  *
  * 服务面 ctx.computerUse：读/写模式设置 + 会话批准查询。
  * LLM 工具（computer_*）由 LLMEngine.setupDelegationTools 独立注册；
- * 本 provider 承载"插件可启停"语义与设置面（禁用 @codem/computer-use 后
- * ctx.computerUse 不可用；工具注册处仍注册但门禁按模式拒绝——为彻底关闭
- * 需插件管理器禁用 + 设置模式 disabled 双保险，见 UI 提示）。
+ * 插件"禁用 = 关闭"由 App 联动实现：禁用时调用 setComputerPluginEnabled(false)，
+ * modeGate 全拒（含 auto 模式）——与 KNOWN riskDescription 一致（审计 D2/B3 修复）。
+ * 设置面「电脑操作」tab 在禁用后仍可进入但工具不可用，文案已同步。
  */
 import type { Plugin } from '../cordis/src/index.ts'
 import {

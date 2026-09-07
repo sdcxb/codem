@@ -420,6 +420,13 @@ async fn read_file_base64(path: String) -> Result<String, String> {
     .map_err(|e| e.to_string())?
 }
 
+/// 系统临时目录（webview 无 process.env，供临时脚本/截图落盘用）。
+#[tauri::command]
+fn get_system_temp_dir() -> Result<String, String> {
+    let dir = std::env::temp_dir().to_string_lossy().to_string();
+    Ok(dir.trim_end_matches('\\').to_string())
+}
+
 #[tauri::command]
 async fn read_file_lines(
     path: String,
@@ -2335,6 +2342,7 @@ let app = tauri::Builder::default()
             read_file,
             read_file_lines,
             read_file_base64,
+            get_system_temp_dir,
             write_file,
             append_file,
             list_directory,

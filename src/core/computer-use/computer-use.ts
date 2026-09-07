@@ -18,15 +18,23 @@ import { getSettingJSON, setSettingJSON } from "../storage/settings";
 import { executeCommand } from "../file-api";
 import { CAPTURE_PS1, INPUT_PS1 } from "./scripts-content";
 import type { ToolDef, ToolContext, ToolExecuteResult } from "../llm/tools";
-import type { LLMMessage } from "../storage/message";
 import { getLang } from "../i18n/lang";
 
 export type ComputerMode = "disabled" | "readonly" | "manual" | "auto";
 
 const MODES: ComputerMode[] = ["disabled", "readonly", "manual", "auto"];
 
-/** 无副作用工具（任何模式下可用） */
-const READONLY_TOOLS = new Set(["computer_screenshot", "computer_get_cursor_position", "computer_wait"]);
+/** 无副作用工具（任何模式下可用；computer_see 只读也放行，便于截图后立即"看"） */
+const READONLY_TOOLS = new Set(["computer_screenshot", "computer_get_cursor_position", "computer_wait", "computer_see"]);
+
+/** 插件级启停标志（默认开；App 依据插件管理器禁用状态写入——禁用 = 工具全拒） */
+let pluginEnabled = true;
+export function setComputerPluginEnabled(v: boolean): void {
+  pluginEnabled = v;
+}
+export function isComputerPluginEnabled(): boolean {
+  return pluginEnabled;
+}
 
 const SETTINGS_KEY = "codem-computer-user";
 const NS = "codem-computer-user";
@@ -83,8 +91,30 @@ export function isSessionApproved(sessionId: string): boolean {
 // ========== PowerShell 执行 ==========
 
 function b64(s: string): string {
-  // UTF-8 base64（PS [Convert]::FromBase64String 解码后按 UTF8 读）
-  return Buffer.from(s, "utf8").toString("base64");
+  // WebView 无 Node Buffer：UTF-8 → base64（PS 侧 [Convert]::FromBase64String 按 UTF8 读）
+  const bytes = new TextEncoder().encode(s);
+  let bin = "";
+  for (const b of bytes) bin += String.fromCharCode(b);
+  return btoa(bin);
+}
+
+/**
+ * 系统临时目录（Tauri 下经 Rust get_system_temp_dir 拿真实 %TEMP%；
+ * webview 无 process.env，旧逻辑硬编码 C:\Windows\Temp 对非管理员会写失败）。
+ */
+export async function getTempDir(): Promise<string> {
+  try {
+    const tauri = (window as any).__TAURI__;
+    if (tauri?.core?.invoke) {
+      const dir = await tauri.core.invoke("get_system_temp_dir");
+      if (typeof dir === "string" && dir) return dir.replace(/\\$/, "");
+    }
+  } catch { /* fallthrough */ }
+  const legacy =
+    (typeof process !== "undefined" && process.env?.TEMP) ||
+    (typeof process !== "undefined" && process.env?.TMP) ||
+    "";
+  return (legacy || "C:\\Windows\\Temp").replace(/\\$/, "");
 }
 
 export interface PsOut {
@@ -96,17 +126,22 @@ export interface PsOut {
 /**
  * 执行内嵌 PowerShell 脚本（capture/input），经 -Json <base64> 传参。
  * 脚本以临时文件落盘（避免命令行超长/编码问题），执行后删除。
+ *
+ * ⚠️ 调用约定（2025 审计修复）：Codem Rust execute_command 恒以
+ * `powershell -Command <body>` 执行并剥离 "powershell " 前缀——因此这里
+ * 不能传 `powershell -File ...`（前缀被剥后 -NoProfile 会被当成命令名，
+ * 实测必失败）。正确姿势：body 内置 ExecutionPolicy bypass 后用调用运算符
+ * `& '<path>' -Json '<b64>'` 执行脚本文件（grepSearch 同款约定）。
  */
 export async function runPs(script: string, payload: Record<string, unknown>, timeoutMs = 30000): Promise<PsOut> {
-  // Tauri 环境：经 file-api writeFile 落临时脚本（浏览器无 Node fs）。
-  // 脚本放系统临时目录（Windows %TEMP% 绝对路径），执行后删除。
   const { writeFile, deletePath } = await import("../file-api");
-  const tmp = `${getTempDir()}\\cu_${Date.now()}_${Math.random().toString(36).slice(2, 7)}.ps1`;
+  const tmpDir = await getTempDir();
+  const tmp = `${tmpDir}\\cu_${Date.now()}_${Math.random().toString(36).slice(2, 7)}.ps1`;
   try {
     await writeFile(tmp, script);
     const jsonArg = b64(JSON.stringify(payload));
     const { stdout } = await executeCommand(
-      `powershell -NoProfile -ExecutionPolicy Bypass -File "${tmp}" -Json "${jsonArg}"`,
+      `Set-ExecutionPolicy -Scope Process Bypass -Force; & '${tmp}' -Json '${jsonArg}'`,
       undefined,
       timeoutMs,
     );
@@ -126,32 +161,24 @@ export async function runPs(script: string, payload: Record<string, unknown>, ti
   }
 }
 
-/** 系统临时目录（浏览器环境经 Tauri env 或默认） */
-function getTempDir(): string {
-  try {
-    const tauri = (window as any).__TAURI__;
-    const env = tauri?.os?.platform ? process?.env?.TEMP : undefined;
-    return env || (typeof process !== "undefined" && process.env?.TEMP) || "C:\\Windows\\Temp";
-  } catch {
-    return "C:\\Windows\\Temp";
-  }
-}
-
 // ========== 模式门禁 ==========
 
 /** 门禁：允许返回 void；拒绝抛错（manual 未批准带 awaitingApproval 标记） */
 export function modeGate(toolName: string, ctx: ToolContext): void {
+  if (!pluginEnabled) {
+    throw new Error("电脑操作插件已被禁用（插件管理器）。如需使用请重新启用 @codem/computer-use");
+  }
   const cfg = getComputerSettings();
   if (cfg.mode === "disabled") {
     throw new Error("电脑操作已禁用：请到「设置 → 电脑操作」切换模式（当前工具调用被拒）");
   }
   if (cfg.mode === "readonly" && !READONLY_TOOLS.has(toolName)) {
-    throw new Error(`电脑操作只读模式：${toolName} 不允许执行，仅截图/读光标/等待可用`);
+    throw new Error(`电脑操作只读模式：${toolName} 不允许执行，仅截图/读光标/等待/看图可用`);
   }
   if (cfg.mode === "manual" && !READONLY_TOOLS.has(toolName)) {
     if (!isSessionApproved(ctx.sessionId)) {
       const e = new Error(
-        "需要批准：当前为手动批准模式。请先对助手说「批准电脑操作」或在对话框输入 /computer 批准后重试（批准后本会话可用）。",
+        "需要批准：当前为手动批准模式。请在对话框输入 /computer 批准本会话后重试（批准后本会话内所有键鼠操作可用，重启后需重新批准）。",
       ) as Error & { awaitingApproval?: boolean };
       e.awaitingApproval = true;
       throw e;
@@ -202,7 +229,8 @@ export function createComputerScreenshotTool(): ToolDef {
     async execute(args, ctx) {
       modeGate("computer_screenshot", ctx);
       const cfg = getComputerSettings();
-      const outPath = (args.path as string) || `${cfg.screenshot_dir || process.env.TEMP || "."}\\codem-shot-${Date.now()}.png`;
+      const baseDir = cfg.screenshot_dir || (await getTempDir());
+      const outPath = (args.path as string) || `${baseDir}\\codem-shot-${Date.now()}.png`;
       const v = await runPs(CAPTURE_PS1, {
         outPath,
         region: args.region ?? null,
@@ -262,7 +290,8 @@ export function createComputerInputTools(): ToolDef[] {
       descEn: "Click at [x,y] (click/right_click/double_click)",
       props: { coordinate: coordProp(), action: { type: "string", enum: ["click", "right_click", "double_click"], description: "default click" } },
       required: ["coordinate"],
-      build: (a) => ({ action: "click", coordinate: a.coordinate, button: a.action || "click" }),
+      // INPUT_PS1 click 分支读 $cfg.action2（click/right_click/double_click）
+      build: (a) => ({ action: "click", coordinate: a.coordinate, action2: a.action || "click" }),
     }),
     psInputTool({
       id: "computer_type",
@@ -294,7 +323,8 @@ export function createComputerInputTools(): ToolDef[] {
       descEn: "Drag from start to end (optional hold_keys)",
       props: { start_coordinate: coordProp(), end_coordinate: coordProp(), hold_keys: { type: "array", items: { type: "string" } } },
       required: ["start_coordinate", "end_coordinate"],
-      build: (a) => ({ action: "drag", start: a.start_coordinate, end: a.end_coordinate, holdKeys: a.hold_keys }),
+      // INPUT_PS1 drag 分支读 $cfg.from/$cfg.to
+      build: (a) => ({ action: "drag", from: a.start_coordinate, to: a.end_coordinate, holdKeys: a.hold_keys }),
     }),
     psInputTool({
       id: "computer_move_mouse",
@@ -302,7 +332,8 @@ export function createComputerInputTools(): ToolDef[] {
       descEn: "Move cursor without clicking",
       props: { coordinate: coordProp() },
       required: ["coordinate"],
-      build: (a) => ({ action: "move_mouse", coordinate: a.coordinate }),
+      // INPUT_PS1 分支名是 "move"
+      build: (a) => ({ action: "move", coordinate: a.coordinate }),
     }),
     psInputTool({
       id: "computer_wait",
@@ -319,7 +350,8 @@ export function createComputerInputTools(): ToolDef[] {
       descEn: "Read current cursor position [x,y]",
       props: {},
       required: [],
-      build: () => ({ action: "get_cursor_position" }),
+      // INPUT_PS1 分支名是 "getpos"
+      build: () => ({ action: "getpos" }),
       readonly: true,
     }),
   ];
@@ -357,7 +389,6 @@ export function createComputerSeeTool(): ToolDef {
           // 测试/非 Tauri：跳过（无图可读）
           return out("computer_see", "Error: read_file_base64 需要 Tauri 环境");
         }
-        // 经 vision-proxy：主模型支持 vision 则直接看；否则自动调视觉模型描述（OCR/布局）
         const { getVisionProxy } = await import("../llm/vision-proxy");
         const vp = getVisionProxy();
         const { getLLMEngine } = await import("../llm");
@@ -366,31 +397,34 @@ export function createComputerSeeTool(): ToolDef {
         const chatProvider = engine.getDefaultProvider();
         const ext = imgPath.split(".").pop()?.toLowerCase();
         const mediaType = ext === "jpg" || ext === "jpeg" ? "image/jpeg" : ext === "webp" ? "image/webp" : "image/png";
-        // 追加 query 提示（若提供），引导视觉模型给出坐标定位
         const q = (args.query as string) || "";
-        const prompt: LLMMessage = {
-          id: "computer-see",
-          role: "user",
-          content: [
-            { type: "image", mediaType, data: b64img },
-            ...(q ? [{ type: "text" as const, text: q + (zh() ? "（若涉及界面元素请给出大致像素坐标）" : " (if UI elements, give approximate pixel coords)") }] : []),
-          ],
-        };
-        const result = await vp.processMessages([prompt], chatModel, chatProvider);
-        // processMessages 返回 messages（image→text 替换）；取最后 user 文本作为描述
-        const msgs = result.messages;
-        let desc = "";
-        for (let i = msgs.length - 1; i >= 0; i--) {
-          const c = msgs[i].content;
-          if (typeof c === "string" && c) { desc = c; break; }
-          if (Array.isArray(c)) {
-            const txt = c.filter((b: any) => b.type === "text").map((b: any) => b.text).join("");
-            if (txt) { desc = txt; break; }
+        // computer_see 必须拿到"文字描述"：无论主模型是否支持 vision，都强制走
+        // 独立视觉模型（vision slot → 多模态设置）；未配置时回退用主 chat provider
+        // 直接带图请求（主模型支持 vision 即成功，否则 API 会报错并给出引导）。
+        let fallback: any = null;
+        try {
+          const pc: any = engine.getProviderConfig?.(chatProvider as any);
+          if (pc?.apiKey) {
+            fallback = { providerId: chatProvider, apiKey: pc.apiKey, baseUrl: pc.baseUrl || "", model: chatModel, enabled: true };
           }
+        } catch { /* ignore */ }
+        const userPrompt =
+          (q
+            ? q
+            : zh()
+              ? "请描述这张屏幕截图：界面布局、可见文字(OCR)、主要元素及其在截图中的位置。若你判断元素坐标可按截图像素给出大致范围。"
+              : "Describe this screenshot: layout, visible text (OCR), key elements and their locations. Give approximate pixel coordinates if applicable.") +
+          (zh() ? "（若涉及界面元素请给出大致像素坐标）" : " (give approximate pixel coords for UI elements)");
+        const desc = await vp.describeImagePublic(b64img, mediaType, userPrompt, fallback);
+        if (desc == null) {
+          return out(
+            "computer_see",
+            zh()
+              ? "未配置视觉模型：请到「设置 → 多模态」配置视觉 Provider（或换用支持 vision 的主模型，如 gpt-4o）。"
+              : "No vision model configured: set one in Settings → Multimodal, or use a vision-capable main model.",
+          );
         }
-        return out("computer_see", desc
-          ? (zh() ? `画面分析结果${q ? `（关注: ${q}）` : ""}:\n${desc}` : `Analysis${q ? ` (focus: ${q})` : ""}:\n${desc}`)
-          : (zh() ? "未获得视觉描述（视觉模型不可用或图片无效）" : "No vision description obtained"));
+        return out("computer_see", zh() ? `画面分析结果${q ? `（关注: ${q}）` : ""}:\n${desc}` : `Analysis${q ? ` (focus: ${q})` : ""}:\n${desc}`);
       } catch (e) {
         return out("computer_see", `Error: ${e instanceof Error ? e.message : String(e)}`);
       }
@@ -429,7 +463,8 @@ export function createComputerSetModeTool(): ToolDef {
 export function registerComputerUseTools(register: (t: ToolDef) => void): void {
   const mark = (t: ToolDef): ToolDef => {
     t.shouldDefer = true;
-    t.searchHint = "电脑操作：截屏/鼠标键盘自动化（读屏后操作桌面应用）——用户要求操作电脑/桌面/浏览器时使用";
+    t.searchHint =
+      "电脑操作 computer-use：截屏/鼠标键盘自动化（读屏后操作桌面应用）——用户要求操作电脑/桌面/浏览器/点击/输入时使用 (computer screenshot, click, type, keypress, scroll, drag, mouse, screen automation)";
     return t;
   };
   register(mark(createComputerScreenshotTool()));

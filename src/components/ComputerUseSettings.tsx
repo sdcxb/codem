@@ -14,7 +14,7 @@ import { getSettingJSON, setSettingJSON } from "../core/storage/settings";
 const MODE_OPTIONS: Array<{ id: ComputerMode; zh: string; en: string; descZh: string }> = [
   { id: "disabled", zh: "禁用", en: "Disabled", descZh: "拒绝所有 computer_* 调用" },
   { id: "readonly", zh: "只读", en: "Read-only", descZh: "仅截图/读光标/等待，不可键鼠操作" },
-  { id: "manual", zh: "手动批准", en: "Manual", descZh: "键鼠操作需会话批准（对助手说「批准电脑操作」或输入 /computer）" },
+  { id: "manual", zh: "手动批准", en: "Manual", descZh: "键鼠操作需会话批准（在对话框输入 /computer 批准本会话）" },
   { id: "auto", zh: "自动", en: "Auto", descZh: "LLM 可自由调用键鼠工具（高危）" },
 ];
 
@@ -114,8 +114,8 @@ export function ComputerUseSettings() {
 
       <div style={{ fontSize: 'var(--fs-xs)', color: "var(--text-muted)", lineHeight: 1.7, borderTop: "1px solid var(--border-primary)", paddingTop: 8 }}>
         {zh
-          ? "会话批准：对助手说「批准电脑操作」或输入 /computer（再输一次撤销，重启失效）。插件管理器禁用 @codem/computer-use 可整体关闭。仅 Windows 可用。"
-          : "Session approval: tell the assistant \"approve computer use\" or type /computer (toggle off again to revoke; resets on restart). Disable @codem/computer-use in Plugin Manager to turn off entirely. Windows only."}
+          ? "会话批准：在对话框输入 /computer 批准当前会话（再输一次撤销，重启失效）。插件管理器禁用 @codem/computer-use 后所有 computer_* 工具将被拒绝（含 auto 模式）。仅 Windows 可用。"
+          : "Session approval: type /computer to approve the current session (toggle again to revoke; resets on restart). Disabling @codem/computer-use in Plugin Manager rejects all computer_* tools (even in auto mode). Windows only."}
       </div>
     </div>
   );

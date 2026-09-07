@@ -261,6 +261,12 @@ switch ($action) {
     Write-Output (ConvertTo-Json -Compress @{ ok = $true; chars = $count; sendEnter = [bool]$cfg.sendEnter; cursor = (Get-CursorJson) })
     exit 0
   }
+  "wait" {
+    $ms = [int]$cfg.ms; if ($ms -lt 0) { $ms = 0 }
+    Start-Sleep -Milliseconds $ms
+    Write-Output (ConvertTo-Json -Compress @{ ok = $true; waited = $ms })
+    exit 0
+  }
   "keypress" {
     $keys = @($cfg.keys)
     if ($keys.Count -eq 0) { Fail("keypress requires at least one key") }

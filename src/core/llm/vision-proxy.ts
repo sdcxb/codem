@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Vision Proxy — 视觉代理模块
  *
  * 当主对话模型不支持图片理解（如 DeepSeek）时，
@@ -246,6 +246,7 @@ export class VisionProxy {
     config: MultimodalProviderConfig,
     base64Data: string,
     mediaType: string,
+    userPrompt?: string,
   ): Promise<string> {
     const baseUrl = config.baseUrl || "https://api.openai.com/v1";
     const headers: Record<string, string> = {
@@ -265,7 +266,7 @@ export class VisionProxy {
           {
             role: "user",
             content: [
-              { type: "text", text: "请详细描述这张图片的内容。" },
+              { type: "text", text: userPrompt || "请详细描述这张图片的内容。" },
               {
                 type: "image_url",
                 image_url: {
@@ -287,6 +288,37 @@ export class VisionProxy {
 
     const data = await response.json();
     return data.choices?.[0]?.message?.content || "(无法识别图片内容)";
+  }
+
+  // ========== 公开入口（供 computer_see 等工具强制"用视觉模型看图"） ==========
+
+  /**
+   * 解析当前可用的视觉模型配置（engine 'vision' slot → 多模态设置）。
+   * 返回 null 表示未配置独立视觉代理。
+   */
+  getVisionConfig(): MultimodalProviderConfig | null {
+    return this.resolveVisionConfig();
+  }
+
+  /**
+   * 用独立视觉模型描述一张图片（不经主模型直传判定）。
+   * 无视觉配置 → 尝试用给定 fallback 配置；两者皆无 → null（调用方引导配置）。
+   * 返回描述文本或 null。
+   */
+  async describeImagePublic(
+    base64Data: string,
+    mediaType: string,
+    userPrompt?: string,
+    fallbackConfig?: MultimodalProviderConfig,
+  ): Promise<string | null> {
+    let config = this.resolveVisionConfig();
+    if (!config && fallbackConfig) config = fallbackConfig;
+    if (!config) return null;
+    try {
+      return await this.describeImage(config, base64Data, mediaType, userPrompt);
+    } catch (err) {
+      return `[视觉描述失败: ${err instanceof Error ? err.message : String(err)}]`;
+    }
   }
 
   /**
