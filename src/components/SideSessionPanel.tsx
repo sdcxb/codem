@@ -9,7 +9,7 @@ import { X, Send, MessageSquareText, LoaderCircle, Sparkles } from "lucide-react
 import { useAppStore } from "../store";
 import { useProjectStore } from "../core/store";
 import { useLang } from "../core/i18n/lang";
-import { collectSessionContext, buildSideMessages, formatSideError, genTurnId, type SideSessionTurn } from "../core/side-session/side-session";
+import { collectSessionContext, buildSideMessages, extractStreamDelta, formatSideError, genTurnId, type SideSessionTurn } from "../core/side-session/side-session";
 import { getLLMEngine } from "../core/llm";
 
 interface SideSessionPanelProps {
@@ -87,13 +87,11 @@ export function SideSessionPanel({ onClose, open = true }: SideSessionPanelProps
       if (!provider) throw new Error(zh ? "模型服务不可用" : "LLM provider unavailable");
       const llmMessages = buildSideMessages(ctx, q);
       let acc = "";
-      // 流式回答（增量写入 turn.answer）
+      // 流式回答（增量写入 turn.answer）— StreamEvent 判别联合：text_delta 携带增量文本
       const gen = provider.stream({ model, messages: llmMessages, abortSignal: abort.signal, stream: true });
       for await (const ev of gen) {
-        // StreamEvent 结构：查找增量文本字段（delta / content / text）
-        const chunk =
-          (ev as any).delta?.content ?? (ev as any).delta ?? (ev as any).content ?? (ev as any).text ?? "";
-        if (typeof chunk === "string" && chunk) {
+        const chunk = extractStreamDelta(ev);
+        if (chunk) {
           acc += chunk;
           const tId = turnId;
           setTurns((prev) => prev.map((t) => (t.id === tId ? { ...t, answer: acc } : t)));

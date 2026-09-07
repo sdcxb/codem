@@ -9,7 +9,7 @@
  *   - SIDES-005: 空会话也可提问（只有 system + 问题）
  */
 import { describe, it, expect } from "vitest";
-import { collectSessionContext, buildSideMessages, SIDE_CTX_MAX_CHARS, SIDE_CTX_MAX_MESSAGES } from "../core/side-session/side-session";
+import { collectSessionContext, buildSideMessages, extractStreamDelta, SIDE_CTX_MAX_CHARS, SIDE_CTX_MAX_MESSAGES } from "../core/side-session/side-session";
 import type { Message } from "../store";
 
 function makeMsg(role: "user" | "assistant" | "system", content: string, id: string): Message {
@@ -69,5 +69,20 @@ describe("side-session — 纯逻辑层", () => {
     expect(llm[0].role).toBe("system");
     expect(llm[1].role).toBe("user");
     expect(llm[1].content).toBe("直接问");
+  });
+
+  it("SIDES-006: extractStreamDelta 提取 text_delta 增量，忽略其它事件", () => {
+    expect(extractStreamDelta({ type: "text_delta", text: "你好" })).toBe("你好");
+    expect(extractStreamDelta({ type: "start", id: "x", model: "m" })).toBe("");
+    expect(extractStreamDelta({ type: "heartbeat" })).toBe("");
+    expect(extractStreamDelta({ type: "reasoning_delta", text: "思考" })).toBe(""); // 推理不注入回答
+    expect(extractStreamDelta({ type: "tool_use_delta", id: "t", input: "{}" })).toBe("");
+    expect(extractStreamDelta("garbage")).toBe("");
+    expect(extractStreamDelta(null)).toBe("");
+  });
+
+  it("SIDES-007: extractStreamDelta 兼容裸 content 事件", () => {
+    expect(extractStreamDelta({ content: "x" })).toBe("x");
+    expect(extractStreamDelta({ content: 123 })).toBe("");
   });
 });

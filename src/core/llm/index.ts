@@ -557,8 +557,12 @@ private loopPool: Map<string, AgenticLoop> = new Map();
       // Dynamic tool guidance — collected from systemPrompt service.
       // Each registered tool with a `guidance` field auto-registers a prompt section.
       toolGuidance: await this.collectToolGuidance(),
-      // B2 persona (对标 EAC soul-md): 激活人设卡段落（空 = 不注入；文件模式支持热重载）
-      personaSection: await buildPersonaPromptSection(),
+      // B2 persona (对标 EAC soul-md): 激活人设卡段落（空 = 不注入；文件模式支持热重载）。
+      // 仅当 @codem/persona 插件在 ctx 中激活（provider 已注册）时注入——插件管理器
+      // 禁用 @codem/persona 后 ctx.get('persona') 不可用，即整体关闭（与 UI 文案一致）。
+      personaSection: this.isPersonaAvailable()
+        ? await buildPersonaPromptSection()
+        : "",
     };
 
     const prompt = buildSystemPrompt(config);
@@ -577,6 +581,20 @@ private loopPool: Map<string, AgenticLoop> = new Map();
    * If the systemPrompt service is not available (e.g. in legacy mode), falls
    * back to collecting guidance directly from the ToolRegistry.
    */
+  /**
+   * B2 persona 门控：仅当 @codem/persona 插件在 Cordis ctx 激活（provider 已
+   * 注册提供 persona 服务）时注入人设段。ctx 不可用（测试/legacy）时视为可用
+   * —— 引擎单测直接调 buildPersonaPromptSection，不经此门控。
+   */
+  private isPersonaAvailable(): boolean {
+    if (!this.ctx) return true; // 无 ctx（纯引擎环境）：不拦截（调用方各自可控）
+    try {
+      return !!this.ctx.get('persona');
+    } catch {
+      return false;
+    }
+  }
+
   async collectToolGuidance(): Promise<string | undefined> {
     // Try Cordis systemPrompt service first
     if (this.ctx) {

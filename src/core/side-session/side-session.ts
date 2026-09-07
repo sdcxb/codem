@@ -90,6 +90,20 @@ export function buildSideMessages(ctx: SideSessionContext, question: string): LL
 }
 
 /**
+ * 从 provider.stream 事件流提取增量文本（纯函数，测试锁定契约）。
+ * StreamEvent 判别联合：仅 {type:"text_delta", text} 携带回答增量；
+ * 其它事件（start/heartbeat/reasoning_delta/tool_use_* 等）返回空串。
+ */
+export function extractStreamDelta(ev: unknown): string {
+  if (ev && typeof ev === "object") {
+    const e = ev as { type?: unknown; text?: unknown; content?: unknown };
+    if (e.type === "text_delta" && typeof e.text === "string") return e.text;
+    if (e.type === undefined && typeof e.content === "string") return e.content; // 兼容裸 content 事件
+  }
+  return "";
+}
+
+/**
  * 组装回答文本（流式或一次性由调用方决定）。
  * 本函数保持纯数据：回答内容由 provider.stream / complete 产生。
  */
