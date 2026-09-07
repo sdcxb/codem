@@ -10,6 +10,7 @@ import { AgentPanel } from "./AgentPanel";
 import { AgentDetail } from "./AgentDetail";
 import { SnapshotPanel } from "./SnapshotPanel";
 import { ContextMonitor } from "./ContextMonitor";
+import { SideSessionPanel } from "./SideSessionPanel";
 import { GitInfoPanel } from "./GitInfoPanel";
 import { SubagentTask } from "../core/subagent/subagent";
 import { getSubagentRuntime } from "../core/subagent/index";
@@ -23,7 +24,7 @@ import { useScrollState, useUnreadMessagesTracker } from "../hooks/useScrollStat
 import {
   PanelLeftClose, PanelLeftOpen, ChevronDown, Brain, Bot, Camera, BarChart3, LayoutGrid,
   Search, X, GitFork, RotateCcw, Check, Hammer, ClipboardList, Zap,
-  Activity, Pencil,
+  Activity, Pencil, MessageSquareText,
 } from "lucide-react";
 // P2 #38: framer-motion for smooth list animations
 import { motion, AnimatePresence } from "framer-motion";
@@ -155,6 +156,7 @@ export function ChatPanel({ onSend, onCancel, onSendGuidance, onToggleSidebar, s
       : "thinking"
     : "idle";
   const [showAgentPanel, setShowAgentPanel] = useState(false);
+  const [showSideSession, setShowSideSession] = useState(false);
   const [showSnapshotPanel, setShowSnapshotPanel] = useState(false);
   const [showContextMonitor, setShowContextMonitor] = useState(false);
   const [showTrajectoryPanel, setShowTrajectoryPanel] = useState(false);
@@ -551,6 +553,14 @@ setStepTooltipLocked(false);
           title={S.chat.contextMonitor[lang]}
         >
           <BarChart3 size={16} />
+        </button>
+        {/* B1 side-session 临时会话入口 */}
+        <button
+          className={`agent-toggle ${showSideSession ? "active" : ""}`}
+          onClick={() => { setShowSideSession(!showSideSession); setShowAgentPanel(false); setShowSnapshotPanel(false); setShowContextMonitor(false); setShowTrajectoryPanel(false); }}
+          title={lang === "zh" ? "临时会话（不污染主会话）" : "Side session (no main-chat pollution)"}
+        >
+          <MessageSquareText size={16} />
         </button>
         <button
           className={`agent-toggle ${showTrajectoryPanel ? "active" : ""}`}
@@ -1021,6 +1031,11 @@ canEdit={!isSessionStreaming}
         }}>
           <ContextMonitor sessionId={currentSession?.id || ""} visible={showContextMonitor} />
         </div>
+      )}
+
+      {/* B1 side-session 临时会话悬浮窗 */}
+      {showSideSession && (
+        <SideSessionPanel onClose={() => setShowSideSession(false)} open />
       )}
 
       {/* RightSidebar — per benchmark plan layer 4: Git + Workbench tabs */}
