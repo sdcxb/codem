@@ -1297,78 +1297,10 @@ flushStreamBuffer(); // flush all on unmount
     return () => { cancelled = true; };
   }, [computerUseEnabled]);
 
-  // ========== Squad Dispatch 路由 ==========
-  // 监听 squad_dispatch 工具发出的事件，创建 Leader 会话并后台执行。
-  useEffect(() => {
-    const handleSquadDispatch = async (event: Event) => {
-      const detail = (event as CustomEvent).detail;
-      if (!detail || !detail.squadId || !detail.task) return;
-
-      const { squadId, task, originalTask, sourceSessionId, projectId } = detail;
-      console.log(`[Squad] Dispatch received: squad=${squadId}, task=${originalTask.substring(0, 60)}...`);
-
-      // Get squad info
-      const { getSquadManager } = await import("./core/squad/squad");
-      const mgr = getSquadManager();
-      const squad = mgr.getSquad(squadId);
-      if (!squad) {
-        console.error(`[Squad] Squad not found: ${squadId}`);
-        return;
-      }
-
-      // Create a new session for the leader
-      const leaderSessionTitle = `[Squad] ${squad.name}: ${originalTask.substring(0, 40)}`;
-      const state = useProjectStore.getState();
-      const targetProjectId = projectId || state.currentProject?.id || "";
-
-      // Switch to the target project if needed
-      if (targetProjectId && state.currentProject?.id !== targetProjectId) {
-        state.openProject(targetProjectId);
-      }
-
-      // Create a new session
-      const newSession = state.createSession();
-      const newSessionId = newSession.id;
-      console.log(`[Squad] Leader session created: ${newSessionId} for squad ${squad.name}`);
-
-      // Wait a tick for the session to be available
-      setTimeout(async () => {
-        const session = useProjectStore.getState().sessions.find((s) => s.id === newSessionId);
-        if (!session) {
-          console.error(`[Squad] Leader session not found after creation: ${newSessionId}`);
-          return;
-        }
-
-        // Determine cwd: use worktree path if session has one, otherwise project path
-        const project = useProjectStore.getState().currentProject;
-        let cwd = session.worktreePath || project?.path || "";
-
-        // Execute the task in the leader session
-        executeSessionTurn({
-          sessionId: newSessionId,
-          message: task,
-          cwd,
-          engine: engineRef.current as any,
-          onPermissionRequest: (request) => {
-            return new Promise((resolve) => {
-              setPendingPermissions((prev) => {
-                const next = new Map(prev);
-                next.set(newSessionId, { request, resolve });
-                return next;
-              });
-            });
-          },
-        }).catch((err) => {
-          console.error(`[Squad] Leader executeSessionTurn failed for ${newSessionId}:`, err);
-        });
-      }, 200);
-    };
-
-    window.addEventListener("codem-squad-dispatch", handleSquadDispatch as EventListener);
-    return () => {
-      window.removeEventListener("codem-squad-dispatch", handleSquadDispatch as EventListener);
-    };
-  }, []);
+  // ========== 团队深合并（B）：squad_dispatch 已桥接 agent-teams ==========
+  // 旧的自定义事件派发路由已删除——squad_dispatch 现在直接创建
+  // agent-teams 运行时团队（见 core/squad/squad-tools.ts），不再需要 App 建
+  // Leader 会话自行编排。运行时团队经 AgentTeamsService 自管理。
 
   // Configure engine based on mode and settings
   const configureEngine = useCallback(async () => {

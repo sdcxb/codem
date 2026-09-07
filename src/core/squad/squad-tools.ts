@@ -1,17 +1,19 @@
 /**
- * Squad Tools — LLM 工具注册
+ * Squad Tools — LLM 工具注册（团队模板入口）
  *
- * 三个工具：
- * 1. squad_list — 列出当前项目的所有 Squad（含成员）
- * 2. squad_dispatch — 向 Squad Leader 派发任务
- * 3. squad_status — 查询 Squad 某个任务的执行状态
+ * 【B 深合并（2026-09-07）】Squad 记录 = 「团队模板」；运行时执行统一由
+ * agent-teams 承担。三个工具语义升级（id/参数兼容，行为指向新能力）：
+ * 1. squad_list   — 列出当前项目的团队模板（含角色）
+ * 2. squad_dispatch — 按模板创建 agent-teams 运行时团队并派发任务
+ *                     （确定性调度：成员按角色领取；替代旧的"开 Leader
+ *                       会话自行编排"的事件派发路径）
+ * 3. squad_status — 模板信息 + 从该模板实例化的运行时团队状态（可传 team_id）
  *
  * 注册方式：在 LLMEngine.setupDelegationTools() 中调用
  */
 
 import type { ToolDef } from "../llm/tools";
 import { getSquadManager } from "./squad";
-import { getDelegationOrchestrator } from "../session";
 import { useProjectStore } from "../store";
 import { getLang } from "../i18n/lang";
 
@@ -20,10 +22,10 @@ import { getLang } from "../i18n/lang";
 export function createSquadListTool(): ToolDef {
   return {
     id: "squad_list",
-  guidance: "Use squad_list to see all available agent squads and their members.",
+  guidance: "Use squad_list to see all available team templates (squads) and their roles.",
     description:
-      "List all squads in the current project. Returns each squad's name, leader, members, and instructions. " +
-      "Use this before squad_dispatch to find available squad IDs.",
+      "List all team templates (squads) in the current project. Returns each template's name, captain role, member roles, and instructions. " +
+      "Templates are blueprints: squad_dispatch instantiates a template into a running agent-teams team.",
     parameters: {
       type: "object",
       properties: {},
@@ -38,12 +40,12 @@ export function createSquadListTool(): ToolDef {
       if (squads.length === 0) {
         return {
           title: "squad_list",
-          output: zh ? "当前项目暂无 Squad。" : "No squads found in the current project.",
+          output: zh ? "当前项目暂无团队模板（Squad）。" : "No team templates (squads) found in the current project.",
         };
       }
 
       const lines: string[] = [];
-      lines.push(zh ? `找到 ${squads.length} 个 Squad:` : `Found ${squads.length} squad(s):`);
+      lines.push(zh ? `找到 ${squads.length} 个团队模板:` : `Found ${squads.length} team template(s):`);
       lines.push("");
 
       for (const sq of squads) {
@@ -62,7 +64,7 @@ export function createSquadListTool(): ToolDef {
       }
 
       return {
-        title: `squad_list: ${squads.length} squad(s)`,
+        title: `squad_list: ${squads.length} template(s)`,
         output: lines.join("\n"),
       };
     },
@@ -74,21 +76,23 @@ export function createSquadListTool(): ToolDef {
 export function createSquadDispatchTool(): ToolDef {
   return {
     id: "squad_dispatch",
-  guidance: "Use squad_dispatch to send a task to a squad of agents for parallel processing.",
+  guidance: "Use squad_dispatch to turn a team template (squad) into a running agent-teams team for a task.",
     description:
-      "Dispatch a task to a squad's leader agent. The leader will receive the task along with the squad roster " +
-      "(member names, roles, and mention links) and decide which member should handle the work. " +
-      "Use squad_list first to find the squad ID. Returns a delegation task ID.",
+      "Instantiate a team template (squad) into a running agent-teams team and dispatch a task to it. " +
+      "The current session becomes the captain; template member roles are spawned as continuable subagents; " +
+      "the task enters the shared pool and the scheduler wakes idle members to claim it (deterministic, role-based). " +
+      "Use squad_list first to find the template ID. Returns the running team ID; monitor with agent_teams_status " +
+      "or squad_status, direct members with agent_teams_send_message.",
     parameters: {
       type: "object",
       properties: {
         squad_id: {
           type: "string",
-          description: "The squad ID to dispatch to (use squad_list to find available squads)",
+          description: "The team template (squad) ID to instantiate (use squad_list to find available templates)",
         },
         task: {
           type: "string",
-          description: "The task description to dispatch to the squad leader",
+          description: "The task description to hand to the running team",
         },
       },
       required: ["squad_id", "task"],
@@ -96,65 +100,96 @@ export function createSquadDispatchTool(): ToolDef {
     async execute(args, ctx) {
       const zh = getLang() === "zh";
       const squadId = args.squad_id as string;
-      const task = args.task as string;
+      const task = (args.task as string) || "";
       const mgr = getSquadManager();
 
-      // Validate squad exists
+      // Validate template exists
       const squad = mgr.getSquad(squadId);
       if (!squad) {
         return {
           title: "squad_dispatch",
-          output: (zh ? "错误: Squad 不存在: " : "Error: Squad not found: ") + squadId,
+          output: (zh ? "错误: 团队模板不存在: " : "Error: Team template not found: ") + squadId,
         };
       }
-
       if (squad.archived) {
         return {
           title: "squad_dispatch",
-          output: (zh ? "错误: Squad 已归档: " : "Error: Squad is archived: ") + squad.name,
+          output: (zh ? "错误: 团队模板已归档: " : "Error: Template is archived: ") + squad.name,
         };
       }
-
-      // Generate the squad roster for the leader
-      const roster = mgr.generateSquadRoster(squadId);
-      if (!roster) {
+      const template = mgr.toTeamTemplate(squadId);
+      if (!template) {
         return {
           title: "squad_dispatch",
-          output: (zh ? "错误: 无法生成 Squad Roster" : "Error: Failed to generate squad roster"),
+          output: zh ? "错误: 无法导出团队模板" : "Error: failed to export team template",
         };
       }
 
-      // Compose the full task message for the leader
-      const fullTask = [
-        task,
-        "",
-        roster,
-      ].join("\n");
+      // Bridge: instantiate an agent-teams runtime team (captain = current session)
+      const { AgentTeamsService } = await import("../provider/agent-teams-service");
+      const svc = AgentTeamsService.getInstance();
+      let team;
+      try {
+        team = svc.create({ name: squad.name, captainSessionId: ctx.sessionId });
+      } catch (e: any) {
+        return {
+          title: "squad_dispatch",
+          output:
+            (zh ? "错误: 无法创建运行时团队" : "Error: cannot create running team") +
+            `: ${e?.message || e}\n` +
+            (zh
+              ? "当前会话可能已作为队长带领一个活动团队（一人一队）——用 agent_teams_status 查看并用 agent_teams_delete 结束旧队后重试。"
+              : "This session may already lead an active team (one team per captain). Check with agent_teams_status and delete it with agent_teams_delete, then retry."),
+        };
+      }
 
-      // Trigger a custom event that App.tsx listens for
-      window.dispatchEvent(new CustomEvent("codem-squad-dispatch", {
-        detail: {
-          squadId,
-          task: fullTask,
-          originalTask: task,
-          sourceSessionId: ctx.sessionId,
-          projectId: useProjectStore.getState().currentProject?.id || "",
-        },
-      }));
+      // Spawn member roles from the template (human roles cannot be spawned — skipped)
+      const spawnFailures: string[] = [];
+      for (const role of template.roles) {
+        if (role.memberType !== "agent") continue;
+        try {
+          await svc.addMember(team.id, {
+            name: role.name,
+            role: role.description || undefined,
+            parentSessionId: ctx.sessionId,
+          });
+        } catch (e: any) {
+          try { svc.removeMember(team.id, role.name); } catch { /* noop */ }
+          spawnFailures.push(`${role.name} (${e?.message || e})`);
+        }
+      }
+
+      // Create the task (shared pool; scheduler kicks idle members)
+      const instructionsNote = template.instructions
+        ? `\n\n# 团队指令（模板）\n${template.instructions}`
+        : "";
+      const fullDesc = task + instructionsNote;
+      let created: any;
+      try {
+        created = svc.createTask(team.id, {
+          subject: task.length > 80 ? `${task.slice(0, 80)}…` : task,
+          description: fullDesc,
+        }).task;
+      } catch (e: any) {
+        svc.deleteTeam(team.id);
+        return {
+          title: "squad_dispatch",
+          output: (zh ? "错误: 派发任务失败，已回收团队: " : "Error: task creation failed, team rolled back: ") + (e?.message || e),
+        };
+      }
 
       return {
         title: `squad_dispatch: ${squad.name}`,
         output:
-          (zh ? "已向 Squad 派发任务" : "Task dispatched to squad") +
-          `\nSquad: ${squad.name} (${squadId})` +
-          `\nLeader: ${squad.leader?.name || squad.leaderAgentId}` +
+          (zh ? "已按模板创建运行时团队并派发任务" : "Team instantiated from template and task dispatched") +
+          `\nTeam: ${squad.name} (${team.id})` +
+          `\n` + (zh ? "队长: 当前会话（你）" : "Captain: current session (you)") +
+          `\n` + (zh ? "任务: " : "Task: ") + task.substring(0, 200) +
           `\n` +
-          (zh ? "任务描述: " : "Task: ") + task.substring(0, 200) +
-          `\n\n` +
           (zh
-            ? "Leader 会话已创建并开始处理。Leader 将根据成员角色决定由谁执行。"
-            : "Leader session has been created and is processing. The leader will route to the appropriate member based on roles."),
-        metadata: { squadId, task: task.substring(0, 100) },
+            ? "成员已按角色就绪，调度器将唤醒空闲成员领取任务。用 agent_teams_status 查看进度、agent_teams_send_message 指导成员、agent_teams_update_task 更新状态。"
+            : "Members are ready by role; the scheduler wakes idle members to claim the task. Use agent_teams_status to track, agent_teams_send_message to guide, agent_teams_update_task to update."),
+        metadata: { teamId: team.id, taskId: created?.id || "", squadTemplateId: squadId, task: task.substring(0, 100) },
       };
     },
   };
@@ -165,16 +200,21 @@ export function createSquadDispatchTool(): ToolDef {
 export function createSquadStatusTool(): ToolDef {
   return {
     id: "squad_status",
-  guidance: "Use squad_status to check the progress of a dispatched squad task.",
+  guidance: "Use squad_status to check a team template (squad) and its instantiated running teams.",
     description:
-      "Check the status of a squad — lists all members and whether they are currently executing tasks. " +
-      "Use this to monitor squad progress after dispatching work.",
+      "Show a team template (squad) and the status of running agent-teams teams instantiated from it. " +
+      "Pass team_id (from squad_dispatch / agent_teams_status) to inspect one specific running team. " +
+      "Use this to monitor template-derived teamwork after squad_dispatch.",
     parameters: {
       type: "object",
       properties: {
         squad_id: {
           type: "string",
-          description: "The squad ID to check status for",
+          description: "The team template (squad) ID to inspect",
+        },
+        team_id: {
+          type: "string",
+          description: "Optional: a specific running team ID to inspect (from squad_dispatch/agent_teams_status)",
         },
       },
       required: ["squad_id"],
@@ -182,44 +222,60 @@ export function createSquadStatusTool(): ToolDef {
     async execute(args, _ctx) {
       const zh = getLang() === "zh";
       const squadId = args.squad_id as string;
+      const teamId = (args.team_id as string) || "";
       const mgr = getSquadManager();
       const squad = mgr.getSquad(squadId);
 
       if (!squad) {
         return {
           title: "squad_status",
-          output: (zh ? "错误: Squad 不存在: " : "Error: Squad not found: ") + squadId,
+          output: (zh ? "错误: 团队模板不存在: " : "Error: Team template not found: ") + squadId,
         };
       }
 
-      // Check delegation tasks related to this squad
-      const orch = getDelegationOrchestrator();
-      const allTasks = squad.members.flatMap((m) => {
-        // Check if any member has pending delegation tasks
-        const sourceTasks = orch.getDelegationsBySource(m.memberId);
-        const targetTasks = orch.getDelegationsByTarget(m.memberId);
-        return [...sourceTasks, ...targetTasks];
-      });
-
-      const activeTasks = allTasks.filter((t) => t.status === "running" || t.status === "pending");
-      const completedTasks = allTasks.filter((t) => t.status === "completed");
-
       const lines: string[] = [];
-      lines.push(`Squad: ${squad.name} (${squadId})`);
+      lines.push(`Template (Squad): ${squad.name} (${squadId})`);
       lines.push(`Status: ${squad.archived ? "Archived" : "Active"}`);
-      lines.push(`Leader: ${squad.leader?.name || squad.leaderAgentId}`);
+      lines.push(`Captain role: ${squad.leader?.name || squad.leaderAgentId}`);
       lines.push("");
-      lines.push(zh ? `成员状态 (${squad.members.length}):` : `Members (${squad.members.length}):`);
+      lines.push(zh ? `角色 (${squad.members.length}):` : `Roles (${squad.members.length}):`);
       for (const m of squad.members) {
-        const memberTasks = allTasks.filter((t) => t.sourceSessionId === m.memberId || t.targetSessionId === m.memberId);
-        const active = memberTasks.filter((t) => t.status === "running").length;
-        const leaderTag = m.memberId === squad.leaderAgentId ? " [LEADER]" : "";
-        const status = active > 0 ? (zh ? ` (${active} 个任务执行中)` : ` (${active} active)`) : "";
-        lines.push(`  - ${m.memberName}${leaderTag}: ${m.roleDescription || "—"}${status}`);
+        const leaderTag = m.memberId === squad.leaderAgentId ? " [CAPTAIN]" : "";
+        lines.push(`  - ${m.memberName}${leaderTag}: ${m.roleDescription || "—"}`);
       }
+      if (squad.instructions) {
+        lines.push("");
+        lines.push((zh ? "模板指令: " : "Instructions: ") + squad.instructions);
+      }
+
+      // Running teams derived from this template (agent-teams runtime)
+      const { AgentTeamsService } = await import("../provider/agent-teams-service");
+      const svc = AgentTeamsService.getInstance();
+      const derived = svc.listAll().filter((t) => !t.archived && t.name === squad.name);
+      const focus = teamId ? derived.filter((t) => t.id === teamId) : derived;
+
       lines.push("");
-      lines.push(zh ? `活跃任务: ${activeTasks.length}` : `Active tasks: ${activeTasks.length}`);
-      lines.push(zh ? `已完成任务: ${completedTasks.length}` : `Completed tasks: ${completedTasks.length}`);
+      if (focus.length === 0) {
+        lines.push(zh ? "暂无从此模板实例化的运行时团队（用 squad_dispatch 创建）。" : "No running teams instantiated from this template yet (use squad_dispatch).");
+      } else {
+        lines.push(zh ? `运行时团队 (${focus.length}):` : `Running teams (${focus.length}):`);
+        for (const t of focus) {
+          try {
+            const snap = svc.status(t.id);
+            const memberLine = snap.members?.map((m: any) => `${m.name}(${m.status})`).join(", ") || "";
+            const taskCount = (snap.tasks || []).reduce((acc: any, tk: any) => {
+              acc[tk.status] = (acc[tk.status] || 0) + 1;
+              return acc;
+            }, {} as Record<string, number>);
+            const taskSummary = Object.entries(taskCount).map(([k, v]) => `${k}:${v}`).join(" ") || "no tasks";
+            lines.push(`  # ${t.name} (${t.id})`);
+            lines.push(`    ${zh ? "成员" : "Members"}: ${memberLine || "—"}`);
+            lines.push(`    ${zh ? "任务" : "Tasks"}: ${taskSummary}`);
+          } catch {
+            lines.push(`  # ${t.name} (${t.id}) — ${zh ? "状态不可读" : "status unavailable"}`);
+          }
+        }
+      }
 
       return {
         title: `squad_status: ${squad.name}`,

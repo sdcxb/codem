@@ -229,24 +229,26 @@ describe("事件链 — Issue 状态触发器", () => {
   });
 });
 
-// ========== 3c. 事件链：Squad dispatch ==========
+// ========== 3c. 事件链：Squad dispatch（B 深合并：已桥接 agent-teams） ==========
 
-describe("事件链 — Squad dispatch", () => {
-  it("squad-tools.ts 通过 CustomEvent 派发", () => {
+describe("事件链 — Squad dispatch（深合并为 agent-teams）", () => {
+  it("squad-tools.ts 不再通过 CustomEvent 派发（改桥接 agent-teams 运行时）", () => {
     const source = readFile("core/squad/squad-tools.ts");
-    expect(source).toContain("window.dispatchEvent");
-    expect(source).toContain("codem-squad-dispatch");
+    expect(source).not.toContain("window.dispatchEvent");
+    expect(source).not.toContain("codem-squad-dispatch");
+    expect(source).toContain("AgentTeamsService");
+    expect(source).toContain("svc.create");
   });
 
-  it("App.tsx 监听 codem-squad-dispatch 事件", () => {
+  it("App.tsx 不再监听 codem-squad-dispatch 事件（路由已随桥接删除）", () => {
     const source = readFile("App.tsx");
-    expect(source).toContain("addEventListener(\"codem-squad-dispatch\"");
-    expect(source).toContain("handleSquadDispatch");
+    expect(source).not.toContain("codem-squad-dispatch");
+    expect(source).not.toContain("handleSquadDispatch");
   });
 
-  it("App.tsx 在 squad dispatch 中调用 executeSessionTurn", () => {
-    const source = readFile("App.tsx");
-    expect(source).toMatch(/handleSquadDispatch.*executeSessionTurn/s);
+  it("squad-tools.ts 保留 toTeamTemplate 模板导出供建队", () => {
+    const source = readFile("core/squad/squad-tools.ts");
+    expect(source).toContain("toTeamTemplate");
   });
 
   it("__pendingSquadDispatch 死代码已清除", () => {

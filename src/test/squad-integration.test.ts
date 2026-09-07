@@ -147,15 +147,15 @@ describe("Squad 工具已在 LLMEngine 中注册", () => {
   });
 });
 
-describe("App.tsx 包含 Squad 路由", () => {
-  it("App.tsx 监听 codem-squad-dispatch 事件", async () => {
+describe("App.tsx 不含旧 Squad 事件路由（B 深合并：squad_dispatch 桥接 agent-teams）", () => {
+  it("App.tsx 不再监听 codem-squad-dispatch / handleSquadDispatch", async () => {
     const fs = await import("fs");
     const path = await import("path");
     const appSource = fs.readFileSync(
       path.join(__dirname, "../App.tsx"),
       "utf-8",
     );
-    expect(appSource).toContain("codem-squad-dispatch");
-    expect(appSource).toContain("handleSquadDispatch");
+    expect(appSource).not.toContain("codem-squad-dispatch");
+    expect(appSource).not.toContain("handleSquadDispatch");
   });
 });
