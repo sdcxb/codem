@@ -68,6 +68,9 @@ pub struct Pairing {
     pub expires_at_ms: i64,
     pub decided: Option<bool>,
     pub device_created: bool,
+    /// 批准后生成的会话 secret（明文仅驻留配对 TTL 内，用于 pair-state
+    /// 重复轮询重放 Set-Cookie——弱网下首条响应丢失时手机不致永久 401）。
+    pub approved_secret: Option<String>,
     pub remote_ip: String,
     pub waiting_at_ms: Option<i64>,
 }
@@ -160,6 +163,7 @@ fn rotate_pairing(now: i64) -> Pairing {
         expires_at_ms: now + PAIR_TTL_MS,
         decided: None,
         device_created: false,
+        approved_secret: None,
         remote_ip: String::new(),
         waiting_at_ms: None,
     }
@@ -306,6 +310,19 @@ async fn start_server(app: AppHandle, st: Arc<PhoneState>) -> Result<serde_json:
 
     {
         let mut g = st.inner.lock().await;
+        if g.running {
+            // 并发竞态：两次 start 交错，另一个已生效 → 丢弃本次监听并返回现有状态。
+            drop(listener);
+            let url = format!("http://{}:{}/", g.lan_ip, g.port);
+            let pair_url = g
+                .pairing
+                .as_ref()
+                .map(|p| format!("{}pair?token={}", url, p.token))
+                .unwrap_or_default();
+            return Ok(serde_json::json!({
+                "url": url, "port": g.port, "lan_ip": g.lan_ip, "pair_url": pair_url,
+            }));
+        }
         g.port = port;
         g.pairing = Some(rotate_pairing(now_ms()));
         g.running = true;
@@ -444,7 +461,10 @@ async fn route(
                 let s = pair_token_status(&g.pairing, &token, now);
                 let mut cookie = None;
                 let mut new_device_id = None;
+                let mut to_push: Option<Device> = None;
                 if s == PairTokenStatus::Approved {
+                    // 注意：经 MutexGuard 的 Deref 借用无法字段拆分——先只动 pairing，
+                    // devices 写入放到借用结束之后。
                     if let Some(p) = &mut g.pairing {
                         if !p.device_created {
                             p.device_created = true;
@@ -459,16 +479,24 @@ async fn route(
                                 paired_at_ms: now,
                                 last_seen_ms: now,
                             };
-                            g.devices.retain(|d| d.id != dev.id);
-                            if g.devices.len() >= MAX_DEVICES {
-                                g.devices.remove(0);
-                            }
                             new_device_id = Some(dev.id.clone());
-                            cookie = Some(secret.clone());
-                            g.devices.push(dev);
-                            let _ = secret;
+                            // 明文 secret 仅驻留配对 TTL 内，供重复轮询重放 Set-Cookie
+                            //（弱网下首条 approved 响应丢失时手机不致永久 401）。
+                            p.approved_secret = Some(secret.clone());
+                            cookie = Some(secret);
+                            to_push = Some(dev);
+                        } else {
+                            // 已建设备：重放同一 secret（幂等）
+                            cookie = p.approved_secret.clone();
                         }
                     }
+                }
+                if let Some(dev) = to_push {
+                    g.devices.retain(|d| d.id != dev.id);
+                    if g.devices.len() >= MAX_DEVICES {
+                        g.devices.remove(0);
+                    }
+                    g.devices.push(dev);
                 }
                 (s, cookie, new_device_id)
             };

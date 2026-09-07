@@ -106,9 +106,11 @@ export function cleanContent(text: string): string {
     .trim();
 }
 
-/** 全部项目会话拍平并倒序（真实数据，不编造）。 */
+/** 全部项目会话拍平并倒序（真实数据，不编造）。
+ *  内部项目（微信 ClawBot 工作区 wx-workspace）不进入手机列表——微信会话由
+ *  微信通道自己管理（审计 P11）。 */
 export function flattenSessions(): PhoneSessionView[] {
-  const projects = ProjectStorage.listProjects();
+  const projects = ProjectStorage.listProjects().filter((p) => p.id !== "wx-workspace");
   const nameOf = new Map(projects.map((p) => [p.id, p.name]));
   const out: PhoneSessionView[] = [];
   for (const p of projects) {
@@ -205,11 +207,18 @@ async function runAgentTurn(sessionId: string, text: string): Promise<{ ok: bool
     lastMessageAt: Date.now(),
     messageCount: (row.messageCount || 0) + 1,
   });
+  // P8：整轮兜底超时（race 保证不把调用方/队列挂死在不产事件的回合）
   const timeout = setTimeout(() => {
     cancelSessionExecution(sessionId);
   }, TURN_TIMEOUT_MS);
+  const timeoutRace = new Promise<never>((_, reject) =>
+    setTimeout(() => reject(new Error("处理超时（长时间无响应，已中止）")), TURN_TIMEOUT_MS + 1500),
+  );
   try {
-    const res = await executeSessionTurn({ sessionId, message: text, cwd, engine });
+    const res = await Promise.race([
+      executeSessionTurn({ sessionId, message: text, cwd, engine }),
+      timeoutRace,
+    ]);
     if (!res.success) {
       // 引擎报错也要让手机端能看到——executor 已写 error 消息进库。
       return { ok: true, error: res.error || undefined };
@@ -265,12 +274,16 @@ async function handleProxyRequest(req: PhoneProxyRequest): Promise<void> {
         await invokePhoneRespond(req.reqId, 400, { error: "sessionId 与 text 必填" });
         return;
       }
-      const res = await runAgentTurn(sessionId, text);
-      if (!res.ok) {
-        await invokePhoneRespond(req.reqId, 409, { error: res.error || "处理失败" });
+      if (isSessionExecuting(sessionId)) {
+        await invokePhoneRespond(req.reqId, 409, { error: "该会话正在处理中，请稍候" });
         return;
       }
+      // F1：先回 202（已接受）再后台跑回合——完整 agent 回合可能数分钟，
+      // 远超 Rust 代理 15s 超时；结果经手机端轮询 messages 可见，失败写库。
       await invokePhoneRespond(req.reqId, 202, { accepted: true, sessionId });
+      void runAgentTurn(sessionId, text).then((res) => {
+        if (!res.ok) console.warn("[phone-link] chat turn failed:", res.error);
+      });
       return;
     }
     case "chat_new": {
@@ -294,12 +307,11 @@ async function handleProxyRequest(req: PhoneProxyRequest): Promise<void> {
         lastMessageAt: now,
         messageCount: 0,
       });
-      const res = await runAgentTurn(sessionId, text);
-      if (!res.ok) {
-        await invokePhoneRespond(req.reqId, 409, { error: res.error || "处理失败" });
-        return;
-      }
+      // 同 chat：先 202 再后台执行
       await invokePhoneRespond(req.reqId, 202, { accepted: true, sessionId });
+      void runAgentTurn(sessionId, text).then((res) => {
+        if (!res.ok) console.warn("[phone-link] chat_new turn failed:", res.error);
+      });
       return;
     }
     default:

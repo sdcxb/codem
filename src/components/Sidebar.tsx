@@ -558,7 +558,10 @@ const handleDrop = useCallback((e: React.DragEvent, targetSessionId: string, pro
           {projects.length === 0 ? (
             <div className="sidebar-empty">{S.sidebar.noProjects[lang]}</div>
           ) : (
-            projects.map((project) => {
+            projects
+              // 内部项目（微信 ClawBot 工作区 wx-workspace）不混入项目列表（审计 P11）
+              .filter((p) => p.id !== "wx-workspace")
+              .map((project) => {
               const isExpanded = expandedProjects.has(project.id);
               const projectSessions = allSessions[project.id] || [];
               const { today, earlier } = groupSessionsByTime(projectSessions);

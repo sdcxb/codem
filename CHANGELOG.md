@@ -5,7 +5,66 @@ All notable changes to Codem will be documented in this file.
 ## [Unreleased] — EAC 对标 第①②③④项（DSH-Desktop-EAC）
 
 > 第④项宠物状态卡 + 第③项 computer-use + 第②项微信 ClawBot 桥 + 第①项手机连接
-> （顺序按工作量递增）。四项全部落地。
+> （顺序按工作量递增）。四项全部落地后做了全量审计（注册/桥/工具链/引擎侧四路只读子代理
+> + 手工核验），发现并修复断链与孤儿（见下「审计修复」小节——无论是否本次对标引入，遇 bug 即修）。
+
+### 审计修复（4 项功能完整性 / 孤儿功能 / 上下游数据流）
+
+> 审计方式：4 路只读子代理（注册一致性 / Rust↔TS 桥 / computer-use 工具链 / 引擎侧接线）+ 手工交叉核验，
+> 产出缺陷清单（P0×1 + 高×2 + 中×9 + 低若干）。
+
+### P0/P1/高
+
+- **A1 computer-use 全工具断链修复（P0）**：runPs 以 `powershell -NoProfile -ExecutionPolicy Bypass -File ...` 调用，
+  与 Rust `execute_command`（恒以 `-Command` 执行并剥 powershell 前缀）约定断裂，`-NoProfile` 被当命令名、实测全挂。
+  改为内置 ExecutionPolicy bypass + 调用运算符 `& '<ps1>' -Json '<b64>'`（与 grepSearch 同款约定）。新增契约回归测试。
+- **A2 动作名/载荷失配修复（高）**：wait（PS 补分支）、get_cursor_position→getpos、move_mouse→move、
+  click 右键/双击 button→action2、drag start/end→from/to——此前恒 unknown action / 静默降级左键 / 恒 (0,0) 拖动。
+- **P1 宠物状态卡"隐藏"断链修复（高）**：`updateCard(null)` 时 pet-state-update 省略 card 键 → 宠物窗永远保留旧卡。
+  emitPetStateLight/sendFullStateToPet 现恒发 `card`（null=显式清除），窗口能收到清除信号，2.5s 归位真正生效。
+
+### 中
+
+- **D2/B3/P5 插件"禁用=关闭"真实生效（安全语义）**：App 依据插件禁用清单联动——禁用 @codem/wechat-bridge 停消息监听、
+  @codem/phone-link 停 Rust LAN 服务（外部可达面关闭）、@codem/computer-use 置门禁标志（modeGate 全拒含 auto）；
+  重启后禁用即生效；UI 文案与 KNOWN riskDescription 同步为真实表述。
+- **P6 executor end 级失败落库**：too_many_errors/max_iterations/no_progress/overflow 且无文本产出时写 system error
+  并返回 success:false（微信/手机端不再静默无回复）。
+- **F1 手机 /api/chat 语义修复**：先回 202（已接受）再后台执行回合——不再等完整 agent 回合（>15s 必 504）后才回执，
+  避免"失败提示 + 实际已执行"与重复发送。
+- **F2 配对 cookie 可重放**：approved 响应重复轮询时重发同一 session secret（弱网丢首条响应不再永久 401）。
+- **F3/P9 /status 配额取错 peer**：describeStatus 按当前 peer 过滤（原取 HashMap 首元素）。
+- **B2 computer_see 对 vision 主模型失效**：vision-proxy 新增公开 describeImagePublic/getVisionConfig；computer_see
+  强制走独立视觉模型（vision slot → 多模态设置），未配置时回退主 chat provider 带图直连，再无可回退则给出配置引导。
+- **D1 @codem/ui-pet 元数据对齐 + 可禁用**：KNOWN 元数据改真实（provides pet、去 slots 覆盖层残留）；builtin 注册
+  使 PM-4 防回归覆盖；loadUIPlugins 对禁用 @codem/ui-pet 不装配（下次启动生效）。
+- **D3 mimo-auth 反向孤儿**：KNOWN 补条目（builtin+yml 有而清单无 → 插件管理器不可见/不可关）。
+- **D4 hot 漂移**：KNOWN 中 agent-teams/computer-use/wechat-bridge/phone-link 移除与 builtin 不一致的 hot:true。
+
+### 低
+
+- F4 启动期二次 ilink_status drain 竞态（删第二次调用）；F5 ilink fetch_qr/换代窗口期旧循环写状态（epoch 校验）；
+  F6 phone_start 并发双监听（bind 后二次互斥检查）；P2 finally 归位集合扩大（英文/工具阶段残留也清）；
+  P4 宠物停用清卡；P8 executor 回合 race 兜底超时（队列不被卡死不产事件的回合挂死）；P10 wechat cwd 空守卫；
+  P11 wx-workspace 内部项目过滤（SpaceSwitcher/Sidebar/手机会话列表）；C2 searchHint 双语含英文关键词；
+  C3 临时目录经新 Rust 命令 get_system_temp_dir（webview 无 process.env，旧硬编码 C:\Windows\Temp 非管理员写失败）；
+  b64 改 TextEncoder+btoa（webview 无 Buffer）；孤儿清理（sendTestMessage 接入 provider 服务面、provider 死 import 移除）。
+
+### 未改（记录在案，安全/范围决策）
+
+- P7 微信/手机回合无桌面批准通道：保持 executor 缺省保守策略（非 full 自动拒绝写/执行）——远程触发不越权，
+  被拒信息经 tool result 可见；桌面批准通道接入列为后续体验项。
+- B1 awaitingApproval 无 UI 弹窗联动：文案已修正（仅 /computer 生效），UX 联动后续做。
+- P12 runAgenticLoop 与 executor 跨路径互斥、C4 read_file_base64 无大小上限、P3 归位定时器不可取消：
+  低频/边界，记录不修。
+- db-save-failure-alert 偶发 flaky（磁盘满模拟时序，单跑即绿）：历史问题，非本次对标引入。
+
+### 审计修复测试
+
+- 新增 computer-use-contract.test（A1/A2 契约 + 插件门禁 + temp 兜底 4 例）；全量 vitest 167 文件 / 4231 用例通过
+  + tsc 零错误；Rust `cargo test --lib` 38 通过。
+
+
 
 ### 第①项 @codem/phone-link 手机连接（LAN 扫码配对 + 手机浏览器访问桌面会话，对标 dsh-phone）
 

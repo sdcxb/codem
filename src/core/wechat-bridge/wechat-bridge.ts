@@ -316,8 +316,9 @@ export function startWechatBridge(): () => void {
       fire(EVT_STATE, stateCache);
     })
     .catch(() => {});
-  // 状态可能在 window 挂载前就绪（startup restore），先查一次进程内最新值。
-  invoke("ilink_status").catch(() => {});
+  // 注：不做第二次 ilink_status——每次调用都会 drain Rust inbound_log，
+  // 在监听未就绪窗口重复 drain 可能丢消息（审计 F4）。挂载前消息已由
+  // 上面的首次调用经 pending 兜底，监听就绪后的事件双轨由 message_id 去重。
   return () => {
     bridgeStarted = false;
     unlisteners.forEach((u) => {
@@ -370,6 +371,10 @@ async function processInbound(m: InboundMessage): Promise<void> {
 
   if (kind === "unknown") {
     saveAccess(pendPeer(access, m.peer, text, Date.now()));
+    // owner 身份未就位（应用刚启动、status 尚未返回）时不向对方发引导——
+    // 避免把 Bot 主人首条消息误判成陌生人触发引导回复；仅静默进入待批准，
+    // 桌面端批准后即可正常使用（审计竞态收敛）。
+    if (!owner) return;
     // 入站已重置该 peer 配额窗口 → 回一条引导（占 1 条预算）。
     const guide =
       "⚠️ 该微信账号尚未获得此 Bot 的授权。\n" +
@@ -403,7 +408,7 @@ async function runCommand(peer: string, name: string, arg: string, kind: "owner"
       await sendReply(peer, describeHelp());
       break;
     case "status":
-      await sendReply(peer, describeStatus(stateCache));
+      await sendReply(peer, describeStatus(stateCache, peer));
       break;
     case "clear":
     case "new": {
@@ -477,7 +482,7 @@ function describeHelp(): string {
   );
 }
 
-function describeStatus(st: WechatStatus): string {
+function describeStatus(st: WechatStatus, selfPeer: string): string {
   const stateName: Record<string, string> = {
     disconnected: "未连接",
     waiting_qr: "等待扫码",
@@ -493,8 +498,8 @@ function describeStatus(st: WechatStatus): string {
     lines.push(`剩余有效期：约 ${remainH} 小时`);
   }
   if (st.last_error) lines.push(`最近错误：${st.last_error}`);
-  const peerQuota = st.quota || [];
-  const mine = peerQuota.find((q) => true);
+  // F3/P9 修复：只报当前 peer 自己的配额（Rust 返回全量 per-peer 数组）
+  const mine = (st.quota || []).find((q) => q.peer === selfPeer);
   if (mine) lines.push(`本会话已发送：${mine.sent}/10 条（24h）`);
   lines.push(`累计收发：入 ${st.inbound_count} / 出 ${st.outbound_count}`);
   return lines.join("\n");
@@ -584,6 +589,11 @@ async function runAgentTurn(peer: string, text: string): Promise<string> {
     const sessionId = entry.sessionId;
     const cwd = entry.cwd || "";
 
+    // P10：cwd 空守卫（get_default_cwd 失败时不得把空 cwd 交给引擎）
+    if (!cwd) {
+      return "工作区目录暂不可用（无法确定工作目录），请稍后再试。";
+    }
+
     if (isSessionExecuting(sessionId)) {
       return "上一条消息仍在处理中，请稍候片刻再发送。";
     }
@@ -603,31 +613,43 @@ async function runAgentTurn(peer: string, text: string): Promise<string> {
       });
     }
 
+    // P8：整轮兜底超时（race 保证队列不被卡死不产事件的回合长期挂死；
+    // cancelSessionExecution 先尽力中止，超时后本回合即返回）。
+    let settled = false;
     const timeout = setTimeout(() => {
       try { cancelSessionExecution(sessionId); } catch { /* noop */ }
+      settled = true;
     }, TURN_TIMEOUT_MS);
+    const timeoutRace = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error("处理超时（长时间无响应，已中止本回合）")), TURN_TIMEOUT_MS + 1500),
+    );
 
     let result;
     try {
-      result = await executeSessionTurn({
-        sessionId,
-        message: text,
-        cwd,
-        engine,
-        abortSignal: undefined,
-        // onPermissionRequest 缺省策略已安全：full→放行；否则自动拒绝。
-      });
+      result = await Promise.race([
+        executeSessionTurn({
+          sessionId,
+          message: text,
+          cwd,
+          engine,
+          abortSignal: undefined,
+          // onPermissionRequest 缺省策略已安全：full→放行；否则自动拒绝。
+        }),
+        timeoutRace,
+      ]);
     } finally {
       clearTimeout(timeout);
     }
+    void settled;
 
     if (result.success) {
-      return truncateReply(result.output);
+      const out = truncateReply(result.output);
+      return out || "[处理完成（无文本输出）]";
     }
     return `[执行失败] ${result.error || "未知错误"}`;
   } catch (err: any) {
     console.warn("[wechat-bridge] runAgentTurn error:", err);
-    return "[内部错误] 处理该消息时出现异常，请稍后再试。";
+    return `[内部错误] ${String(err?.message || err)}`;
   }
 }
 

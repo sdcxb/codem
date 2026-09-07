@@ -118,6 +118,15 @@ export function loadUIPlugins(ctx: Context) {
 
   for (const { name, plugin } of uiProviders) {
     try {
+      // 插件禁用门控（审计 D1/D2）：@codem/ui-pet 被插件管理器禁用时不装配
+      // pet provider —— getPet 拿不到服务 → 宠物不初始化（下次启动生效，
+      // 与 KNOWN riskDescription 一致；当前运行实例不受影响）。
+      if (name === 'ui-pet') {
+        try {
+          const raw = localStorage.getItem('codem:disabled-plugins');
+          if (raw && (JSON.parse(raw) as string[]).includes('@codem/ui-pet')) continue;
+        } catch { /* ignore */ }
+      }
       ctx.plugin(plugin as any)
       console.log(`[UI Plugins] Loaded provider: ${name}`)
     } catch (err) {

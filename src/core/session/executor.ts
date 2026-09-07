@@ -108,6 +108,9 @@ export async function executeSessionTurn(params: ExecuteSessionTurnParams): Prom
   let reasoningContent = "";
   let toolCallCount = 0;
   let currentAssistantMsgId = "";
+  // P6：记录 end 事件的 stop reason（too_many_errors/max_iterations/no_progress/overflow…），
+  // 用于"无任何文本产出即异常终止"时落库并返回失败（否则微信/手机端静默无回复）。
+  let endReason: string | undefined;
 
   // 标记委派任务为 running
   if (delegationTaskId) {
@@ -254,6 +257,7 @@ export async function executeSessionTurn(params: ExecuteSessionTurnParams): Prom
 
         case "end":
           // 通知 UI 执行结束
+          endReason = (event as any)?.result?.reason || (event as any)?.reason || undefined;
           bus.send(sessionId, {
             type: "status",
             sourceSessionId: delegationTaskId ? orchestrator.getTask(delegationTaskId)?.sourceSessionId || "" : "",
@@ -290,6 +294,30 @@ export async function executeSessionTurn(params: ExecuteSessionTurnParams): Prom
 
     // 过滤 system-reminder 标签
     const cleanOutput = assistantContent.replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, "").trim();
+
+    // P6：end 事件带失败 reason 且无任何文本产出 → 落库 system error 并返回失败
+    //（对照 App runAgenticLoop 的 loop-error-* 行为；否则微信/手机端静默无回复）。
+    const FAIL_REASONS = new Set(["too_many_errors", "max_iterations", "no_progress", "overflow", "error", "stopped"]);
+    if (!cleanOutput && endReason && FAIL_REASONS.has(endReason)) {
+      const errMsg = `[Agentic 循环异常终止: ${endReason}] 请检查会话详情或重试。`;
+      MessageStorage.createMessage({
+        id: `err-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        role: "system",
+        content: errMsg,
+        timestamp: Date.now(),
+        status: "error",
+      }, sessionId);
+      // 通知编排器任务失败（若为委派触发）
+      if (delegationTaskId) {
+        orchestrator.failTask(delegationTaskId, errMsg);
+      }
+      return {
+        output: "",
+        toolCallCount,
+        success: false,
+        error: `循环异常终止: ${endReason}`,
+      };
+    }
 
     // 通知编排器任务完成
     if (delegationTaskId) {

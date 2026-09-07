@@ -53,14 +53,18 @@ export const SpaceSwitcher = memo(function SpaceSwitcher({
   if (!visible) return null;
 
   const currentName = currentProject?.name || "全局对话";
+  // 内部项目（微信 ClawBot 工作区 wx-workspace）不混入空间切换器（审计 P11）
+  const INTERNAL_PROJECT_IDS = new Set(["wx-workspace"]);
   const spaces: SpaceItem[] = [
     { id: "__global__", name: "全局对话", path: "", isGlobal: true },
-    ...projects.map((p) => ({
-      id: p.id,
-      name: p.name,
-      path: p.path,
-      isGlobal: false,
-    })),
+    ...projects
+      .filter((p) => !INTERNAL_PROJECT_IDS.has(p.id))
+      .map((p) => ({
+        id: p.id,
+        name: p.name,
+        path: p.path,
+        isGlobal: false,
+      })),
   ];
 
   const handleSelect = (space: SpaceItem) => {

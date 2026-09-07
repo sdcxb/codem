@@ -1232,10 +1232,12 @@ flushStreamBuffer(); // flush all on unmount
   }, [dbReady]);
 
   // ========== 微信 ClawBot 桥（iLink）==========
-  // dbReady 后启动引擎桥（幂等）：监听 ilink-* 事件 → peer→会话 → agent 回合 → 回复。
-  // 传输层（登录/长轮询）在 Rust 常驻，不依赖本 effect。
+  // dbReady + 插件启用后启动引擎桥（幂等）：监听 ilink-* 事件 → peer→会话 → agent 回合 → 回复。
+  // 传输层（登录/长轮询）在 Rust 常驻；插件被禁用时本 effect 不启动监听，
+  // 微信消息即不再驱动 agent（与 KNOWN riskDescription 一致——审计 D2/P5 修复）。
+  const wechatBridgeEnabled = !isPluginDisabled("@codem/wechat-bridge");
   useEffect(() => {
-    if (!dbReady) return;
+    if (!dbReady || !wechatBridgeEnabled) return;
     let cleanup: (() => void) | null = null;
     let cancelled = false;
     import("./core/wechat-bridge/wechat-bridge")
@@ -1248,13 +1250,21 @@ flushStreamBuffer(); // flush all on unmount
       cancelled = true;
       cleanup?.();
     };
-  }, [dbReady]);
+  }, [dbReady, wechatBridgeEnabled]);
 
   // ========== 手机连接（phone-link，对标 dsh-phone）==========
-  // dbReady 后启动引擎半层：监听 phone-request（Rust LAN 服务代理上来的
+  // dbReady + 插件启用后启动引擎半层：监听 phone-request（Rust LAN 服务代理上来的
   // /api/* 请求）→ 真实数据/引擎回合 → phone_respond；autoStart 拉起 LAN 服务。
+  // 插件被禁用：不启动监听并停掉 Rust LAN 服务（已配对手机随即不可访问——D2/P5 修复）。
+  const phoneLinkEnabled = !isPluginDisabled("@codem/phone-link");
   useEffect(() => {
-    if (!dbReady) return;
+    if (!dbReady || !phoneLinkEnabled) {
+      // 禁用态兜底：若 Rust LAN 服务仍在运行则停掉（关闭外部可达面）
+      try {
+        (window as any).__TAURI__?.core?.invoke?.("phone_stop");
+      } catch { /* noop */ }
+      return;
+    }
     let cleanup: (() => void) | null = null;
     let cancelled = false;
     import("./core/phone-link/phone-link")
@@ -1266,8 +1276,26 @@ flushStreamBuffer(); // flush all on unmount
     return () => {
       cancelled = true;
       cleanup?.();
+      // 本 effect 因插件禁用/卸载而清理时，同样停掉 Rust LAN 服务
+      try {
+        (window as any).__TAURI__?.core?.invoke?.("phone_stop");
+      } catch { /* noop */ }
     };
-  }, [dbReady]);
+  }, [dbReady, phoneLinkEnabled]);
+
+  // ========== computer-use 插件启停联动 ==========
+  // 工具注册在引擎构造时无条件进行；禁用插件时把门禁标志置 false（modeGate 全拒）
+  // ——与 riskDescription「关闭后 computer_* 工具不可用」一致（审计 D2/B3 修复）。
+  const computerUseEnabled = !isPluginDisabled("@codem/computer-use");
+  useEffect(() => {
+    let cancelled = false;
+    import("./core/computer-use/computer-use")
+      .then((m) => {
+        if (!cancelled) m.setComputerPluginEnabled(computerUseEnabled);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [computerUseEnabled]);
 
   // ========== Squad Dispatch 路由 ==========
   // 监听 squad_dispatch 工具发出的事件，创建 Leader 会话并后台执行。
@@ -2761,11 +2789,13 @@ flushStreamBuffer(session.id);
 flushReasoningBuffer(session.id);
       // Clear step progress after a short delay so user sees the final state
       setTimeout(() => useAppStore.getState().setStepProgress(null), 2000);
-      // 大肥鱼式状态卡：回合结束（非完成态如取消/错误）后延迟归位
+      // 大肥鱼式状态卡：回合结束（非完成态如取消/错误）后延迟归位。
+      // P2：归位应清"任何仍停留的过程态"（含英文 thinking/working、工具阶段
+      // searching/editing/executing/verifying 等），保留结束态（完成/错误）给上层呈现。
       setTimeout(() => {
         const st = usePetStore.getState();
-        // 若仍停留在持久态（thinking/working）说明没走到 end 分支 → 归位空闲
-        if (st.card && (st.card.phase === "思考中" || st.card.phase === "执行中" || st.card.phase === "思考")) {
+        const KEEP_END = new Set(["任务完成", "done", "遇到问题", "error"]);
+        if (st.card && !KEEP_END.has(st.card.phase || "")) {
           hidePetCard();
         }
       }, 2500);

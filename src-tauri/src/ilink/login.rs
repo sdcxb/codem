@@ -22,9 +22,11 @@ use tokio::time::{sleep, timeout as tokio_timeout};
 use super::IlinkState;
 
 /// 拉取新二维码（首次或过期/封禁后刷新）。返回 Ok(()) 表示拿到了 qrcode。
+/// epoch 校验：网络期间换代（logout/start_login）后不得再写状态/emit。
 async fn fetch_qr(
     app: &AppHandle,
     st: &Arc<IlinkState>,
+    epoch: u64,
     qrcode: &mut Option<String>,
     base: &mut String,
     tokens: &[String],
@@ -52,6 +54,11 @@ async fn fetch_qr(
         ),
     )
     .await;
+
+    // 网络请求结束：若 epoch 已换代，直接放弃（不写状态/不 emit）。
+    if super::current_epoch(st).await != epoch {
+        return Err(());
+    }
 
     match result {
         Ok(Ok(v)) => {
@@ -120,10 +127,13 @@ pub async fn login_loop(app: AppHandle, st: Arc<IlinkState>, epoch: u64) {
             }
             fetch_count += 1;
             let tokens = store::load_tokens(&dir);
-            if fetch_qr(&app, &st, &mut qrcode, &mut base, &tokens)
+            if fetch_qr(&app, &st, epoch, &mut qrcode, &mut base, &tokens)
                 .await
                 .is_err()
             {
+                if super::current_epoch(&st).await != epoch {
+                    return; // 换代后不再重试
+                }
                 sleep(std::time::Duration::from_millis(1500)).await;
                 continue; // 网络失败重试（仍计 fetch_count，防无限重试）
             }

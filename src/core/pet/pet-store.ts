@@ -45,8 +45,8 @@ function emitToPetWindow(data: {
   installedPets?: { slug: string; name: string }[];
   /** 当前激活宠物的 slug */
   activeSlug?: string | null;
-  /** 大肥鱼式状态卡（可选，随状态同步） */
-  card?: PetCard;
+  /** 大肥鱼式状态卡（可选，随状态同步；null = 显式清除——P1 修复） */
+  card?: PetCard | null;
 }) {
   const tauri = (window as any).__TAURI__;
   if (!tauri?.event?.emit) return;
@@ -59,10 +59,11 @@ function emitToPetWindow(data: {
 }
 
 /** 仅发送轻量状态（不含 definition/spritesheetUrl） */
-function emitPetStateLight(petState: PetState, scale: number, opacity: number, card?: PetCard) {
+function emitPetStateLight(petState: PetState, scale: number, opacity: number, card?: PetCard | null) {
   const tauri = (window as any).__TAURI__;
   if (!tauri?.event?.emit) return;
-  tauri.event.emit("pet-state-update", { petState, scale, opacity, ...(card ? { card } : {}) }).catch(() => {});
+  // card 恒发字段（含 null）——宠物窗合并 payload 需能收到"清除"信号（P1 修复）。
+  tauri.event.emit("pet-state-update", { petState, scale, opacity, card: card ?? null }).catch(() => {});
 }
 
 /** 请求宠物窗口关闭 */
@@ -295,7 +296,7 @@ function sendFullStateToPet() {
     opacity: s.opacity,
     installedPets: s.installedPets.map(p => ({ slug: p.slug, name: p.definition.name })),
     activeSlug: s.activePet.slug,
-    card: s.card || undefined,
+    card: s.card ?? null,
   });
 }
 
@@ -587,6 +588,8 @@ export const usePetStore = create<PetStoreState>((set, get) => ({
       }
     } else {
       clearIdleTimer();
+      // P4：停用时清状态卡，避免重新启用后回放残留（sendFullStateToPet 此时 card 为 null）
+      set({ card: null });
       // 关闭宠物窗口 — 只通过 Rust 端命令关闭，避免双路径竞态
       // (close_pet_window 调用 window.close()，Rust 端对 pet 窗口不再 prevent_close)
       if (invoke) {

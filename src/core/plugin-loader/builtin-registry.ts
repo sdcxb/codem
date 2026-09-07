@@ -46,6 +46,7 @@ import { agentTeamsProvider } from '../provider/agent-teams-provider'
 import { computerUseProvider } from '../provider/computer-use-provider'
 import { wechatBridgeProvider } from '../provider/wechat-bridge-provider'
 import { phoneLinkProvider } from '../provider/phone-link-provider'
+import { uiPetProvider } from '../provider/ui-pet-provider'
 import { dynamicRunnerProvider } from '../provider/dynamic-runner-provider'
 import { pluginRegistryProvider } from '../provider/plugin-registry-provider'
 
@@ -307,6 +308,7 @@ registerBuiltinPlugin('@codem/mimo-auth', { provides: ['mimoAuth'], inject: [], 
   registerBuiltinPlugin('@codem/computer-use', { provides: ['computerUse'], inject: [], priority: 0 }, () => computerUseProvider)
   registerBuiltinPlugin('@codem/wechat-bridge', { provides: ['wechatBridge'], inject: [], priority: 0 }, () => wechatBridgeProvider)
   registerBuiltinPlugin('@codem/phone-link', { provides: ['phoneLink'], inject: [], priority: 0 }, () => phoneLinkProvider)
+  registerBuiltinPlugin('@codem/ui-pet', { provides: ['pet'], inject: [], priority: 0 }, () => uiPetProvider)
   registerBuiltinPlugin('@codem/dynamic-runner', { provides: ['dynamicCordisRunner'], inject: [], priority: 0 }, () => dynamicRunnerProvider)
   registerBuiltinPlugin('@codem/plugin-registry', { provides: ['pluginRegistry'], inject: [], priority: 0, core: true }, () => pluginRegistryProvider)
 
