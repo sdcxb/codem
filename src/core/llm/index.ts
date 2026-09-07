@@ -22,6 +22,7 @@ import { ContextManager, getContextManager, type CompactionConfig } from "../con
 import { MemoryService, getMemoryService, type MemoryScope } from "../memory/memory";
 import { RetryExecutor, getRetryExecutor } from "../retry/retry";
 import { buildSystemPrompt, type SystemPromptConfig } from "../prompt/prompt";
+import { buildPersonaPromptSection } from "../persona/persona";
 import { MCPRegistry, getMCPRegistry, type MCPServerConfig, type MCPTool, autoDetectCodeGraph, isCodeGraphEnabled } from "../mcp/mcp";
 import { SkillRegistry, getSkillRegistry, type SkillDefinition } from "../skill/skill";
 import { SnapshotService, getSnapshotService, type Snapshot, type FileChange } from "../snapshot/snapshot";
@@ -548,6 +549,8 @@ private loopPool: Map<string, AgenticLoop> = new Map();
       // Dynamic tool guidance — collected from systemPrompt service.
       // Each registered tool with a `guidance` field auto-registers a prompt section.
       toolGuidance: await this.collectToolGuidance(),
+      // B2 persona (对标 EAC soul-md): 激活人设卡段落（空 = 不注入；文件模式支持热重载）
+      personaSection: await buildPersonaPromptSection(),
     };
 
     const prompt = buildSystemPrompt(config);

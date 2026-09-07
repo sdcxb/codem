@@ -48,6 +48,11 @@ maxContextSize?: number;
    * This replaces the old hardcoded "Available Tools" list.
    */
   toolGuidance?: string;
+  /**
+   * (B2 persona, 对标 EAC soul-md) 激活的人设卡段落（完整 # Persona 段，
+   * 由调用方经 buildPersonaPromptSection() 生成后传入；空 = 不注入）。
+   */
+  personaSection?: string;
 }
 
 export function buildSystemPrompt(config: SystemPromptConfig): string {
@@ -59,6 +64,11 @@ export function buildSystemPrompt(config: SystemPromptConfig): string {
   const personalNote = name !== "Codem" ? (getLang() === "zh" ? ` 你的名字是 ${name}。` : ` Your name is ${name}.`) : "";
   const t = getPromptTemplates();
   sections.push(`${t.identity(name, emoji, personalNote)}\n\n# Language\n\n${t.language}\n\n${t.personality}`);
+
+  // 1.5 (B2 persona, 对标 EAC soul-md) 激活人设卡紧随身份/语言/人格段之后
+  if (config.personaSection) {
+    sections.push(config.personaSection.trimEnd());
+  }
 
   // 2. Agent-specific prompt (base behavior)
   sections.push(config.agent.prompt);

@@ -33,6 +33,7 @@ import { PromptDebugger } from "./PromptDebugger";
 import { LayeredSettingsPanel } from "./LayeredSettingsPanel";
 import { RecoveryPanel } from "./RecoveryPanel";
 import { CorrectionModelConfig } from "./CorrectionModelConfig";
+import { PersonaManager } from "./PersonaManager";
 import { applyUiFontScale, FONT_BASE_PX } from "../core/ui-font";
 // P2 #34: Import reusable settings components
 import { SettingsNav, ConfigEntry, ToggleEntry } from "./SettingsParts";
@@ -53,6 +54,7 @@ import {
   Layers,
   Wrench,
   Network,
+  BrainCircuit,
   PawPrint,
   Zap,
   HelpCircle,
@@ -390,7 +392,7 @@ export function SettingsPanel({ onClose, onSessionRecovery, onUsageStats, initia
   const [testResult, setTestResult] = useState<string>("");
 const [showModelProfiles, setShowModelProfiles] = useState(false);
 const [showMultimodal, setShowMultimodal] = useState(false);
-const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security" | "git" | "environment" | "worktree" | "knowledge" | "automation" | "multimodal" | "voice" | "ollama" | "pet" | "tools" | "codegraph" | "advanced" | "help" | "usage" | "performance">((initialTab as any) || "general");
+const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security" | "git" | "environment" | "worktree" | "knowledge" | "automation" | "multimodal" | "voice" | "ollama" | "pet" | "tools" | "persona" | "codegraph" | "advanced" | "help" | "usage" | "performance">((initialTab as any) || "general");
   // P2 #36: Settings search — D2 修复：占位搜索框现在真正过滤/跳转设置分组
   const [settingsSearch, setSettingsSearch] = useState("");
   const [advancedSubTab, setAdvancedSubTab] = useState<"agents" | "heartbeat" | "retry" | "prompt" | "settings" | "recovery" | "correction" | "profiles" | "transcript">("agents");
@@ -411,6 +413,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
     ["ollama", ["Ollama", "本地模型"]],
     ["pet", ["宠物", "pet", "桌宠"]],
     ["tools", ["工具", "tools", "终端"]],
+    ["persona", ["人设", "persona", "人格", "角色", "soul"]],
     ["codegraph", ["代码图谱", "codegraph", "graph"]],
     ["advanced", ["高级", "advanced", "实验", "分层"]],
     ["help", ["帮助", "help", "关于", "教程"]],
@@ -747,6 +750,9 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
 </button>
             <button className={`settings-sidebar-item ${activeTab === "tools" ? "active" : ""}`} onClick={() => setActiveTab("tools")}>
               <span className="sidebar-icon"><Wrench size={16} /></span>{lang === "zh" ? "工具" : "Tools"}
+            </button>
+            <button className={`settings-sidebar-item ${activeTab === "persona" ? "active" : ""}`} onClick={() => setActiveTab("persona")}>
+              <span className="sidebar-icon"><BrainCircuit size={16} /></span>{lang === "zh" ? "人设" : "Persona"}
             </button>
             <button className={`settings-sidebar-item ${activeTab === "codegraph" ? "active" : ""}`} onClick={() => setActiveTab("codegraph")}>
               <span className="sidebar-icon"><Network size={16} /></span>{lang === "zh" ? "代码图谱" : "CodeGraph"}
@@ -1638,6 +1644,12 @@ marginTop: 4,
 )}
 {activeTab === "codegraph" && (
 <CodeGraphSettingsSection lang={lang} />
+)}
+{activeTab === "persona" && (
+<>
+{/* B2 Persona cards management (对标 EAC soul-md) */}
+<PersonaManager onClose={() => {}} />
+</>
 )}
 {activeTab === "advanced" && (
 <>
