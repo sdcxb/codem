@@ -11,7 +11,6 @@ import { AgentDetail } from "./AgentDetail";
 import { SnapshotPanel } from "./SnapshotPanel";
 import { ContextMonitor } from "./ContextMonitor";
 import { SideSessionPanel } from "./SideSessionPanel";
-import { AgentTeamsPanel } from "./AgentTeamsPanel";
 import { GitInfoPanel } from "./GitInfoPanel";
 import { SubagentTask } from "../core/subagent/subagent";
 import { getSubagentRuntime } from "../core/subagent/index";
@@ -158,7 +157,6 @@ export function ChatPanel({ onSend, onCancel, onSendGuidance, onToggleSidebar, s
     : "idle";
   const [showAgentPanel, setShowAgentPanel] = useState(false);
   const [showSideSession, setShowSideSession] = useState(false);
-  const [showAgentTeams, setShowAgentTeams] = useState(false);
   const [showSnapshotPanel, setShowSnapshotPanel] = useState(false);
   const [showContextMonitor, setShowContextMonitor] = useState(false);
   const [showTrajectoryPanel, setShowTrajectoryPanel] = useState(false);
@@ -564,11 +562,16 @@ setStepTooltipLocked(false);
         >
           <MessageSquareText size={16} />
         </button>
-        {/* B3 agent-teams 团队活动面板入口 */}
+        {/* B3 团队活动快捷入口（B 深合并：打开任务管理「团队」Tab，主视图在 TaskCenter） */}
         <button
-          className={`agent-toggle ${showAgentTeams ? "active" : ""}`}
-          onClick={() => { setShowAgentTeams(!showAgentTeams); setShowAgentPanel(false); setShowSideSession(false); setShowSnapshotPanel(false); setShowContextMonitor(false); setShowTrajectoryPanel(false); }}
-          title={lang === "zh" ? "团队活动（agent-teams）" : "Team activity (agent-teams)"}
+          className="agent-toggle"
+          onClick={() => {
+            setShowAgentPanel(false); setShowSideSession(false); setShowSnapshotPanel(false); setShowContextMonitor(false); setShowTrajectoryPanel(false);
+            try {
+              window.dispatchEvent(new CustomEvent("codem:open-task-center", { detail: { tab: "teams" } }));
+            } catch { /* noop */ }
+          }}
+          title={lang === "zh" ? "团队活动（打开任务管理 → 团队）" : "Team activity (Task Center → Teams)"}
         >
           <Users2 size={16} />
         </button>
@@ -1048,15 +1051,7 @@ canEdit={!isSessionStreaming}
         <SideSessionPanel onClose={() => setShowSideSession(false)} open />
       )}
 
-      {/* B3 agent-teams 团队活动面板 */}
-      {showAgentTeams && (
-        <div className="floating-overlay-panel" style={{
-          position: 'fixed', top: 'var(--chat-body-top, 48px)', right: 0, bottom: 'var(--chat-body-bottom, 140px)', width: 'min(400px, calc(100vw - 24px))',
-          zIndex: 210, overflowY: 'auto', borderRadius: 0,
-        }}>
-          <AgentTeamsPanel onClose={() => setShowAgentTeams(false)} />
-        </div>
-      )}
+      {/* 团队活动主视图已收敛到 TaskCenter「团队」Tab（见 App 端 codem:open-task-center） */}
 
       {/* RightSidebar — per benchmark plan layer 4: Git + Workbench tabs */}
       <PanelSidebar open={showRightSidebar} onClose={() => setShowRightSidebar(false)} />

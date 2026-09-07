@@ -266,7 +266,7 @@ describe("UI 入口 — TaskCenter 8 Tab 全部可用", () => {
     { id: "overview", label: "OverviewTab" },
     { id: "issues", label: "IssuesTab" },
     { id: "board", label: "BoardTab" },
-    { id: "squads", label: "SquadsTab" },
+    { id: "teams", label: "TeamTab" },
     { id: "delegation", label: "DelegationTab" },
     { id: "subagents", label: "SubagentsTab" },
     { id: "automation", label: "AutomationTab" },

@@ -469,6 +469,17 @@ const [citationViewer, setCitationViewer] = useState<{ sourceId: string; noteboo
   const [showUsageStats, setShowUsageStats] = useState(false);
 const [showTaskCenter, setShowTaskCenter] = useState(false);
 const [taskCenterTab, setTaskCenterTab] = useState<TaskCenterTab>("overview");
+// 团队活动快捷入口：对话顶部「团队」按钮 → 打开任务管理「团队」Tab（B 深合并收敛）
+useEffect(() => {
+  const openTaskCenter = (e: Event) => {
+    const detail = (e as CustomEvent).detail || {};
+    const tab = detail.tab === "overview" ? "overview" : "teams";
+    setTaskCenterTab(tab as TaskCenterTab);
+    setShowTaskCenter(true);
+  };
+  window.addEventListener("codem:open-task-center", openTaskCenter as EventListener);
+  return () => window.removeEventListener("codem:open-task-center", openTaskCenter as EventListener);
+}, []);
 const [showAgentManager, setShowAgentManager] = useState(false);
   const [bottomTab, setBottomTab] = useState<BottomTab>("chat");
 // 如果性能 tab 被禁用但当前选中它，回退到对话

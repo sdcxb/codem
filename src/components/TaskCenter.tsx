@@ -17,12 +17,12 @@ import { OverviewTab } from "./task-center/OverviewTab";
 import { DelegationTab } from "./task-center/DelegationTab";
 import { SubagentsTab } from "./task-center/SubagentsTab";
 import { AutomationTab } from "./task-center/AutomationTab";
-import { SquadsTab } from "./task-center/SquadsTab";
+import { TeamTab } from "./task-center/TeamTab";
 import { IssuesTab } from "./task-center/IssuesTab";
 import { BoardTab } from "./task-center/BoardTab";
 import { InboxTab } from "./task-center/InboxTab";
 
-export type TaskCenterTab = "overview" | "issues" | "board" | "squads" | "delegation" | "subagents" | "automation" | "inbox";
+export type TaskCenterTab = "overview" | "issues" | "board" | "teams" | "delegation" | "subagents" | "automation" | "inbox";
 
 interface TaskCenterProps {
   onClose: () => void;
@@ -32,10 +32,15 @@ interface TaskCenterProps {
   onSelectSubagent?: (taskId: string) => void;
 }
 
+/** 旧 tab id 兼容归一（squads → teams；外部旧调用仍可用） */
+function normalizeTab(t: string): TaskCenterTab {
+  return (t === "squads" ? "teams" : t) as TaskCenterTab;
+}
+
 export function TaskCenter({ onClose, initialTab = "overview", subagentTasks = [], onSelectSubagent }: TaskCenterProps) {
   const lang = useLang();
   const zh = lang === "zh";
-  const [activeTab, setActiveTab] = useState<TaskCenterTab>(initialTab);
+  const [activeTab, setActiveTab] = useState<TaskCenterTab>(() => normalizeTab(initialTab));
 
   const tabs: { id: TaskCenterTab; label: string; icon: typeof LayoutDashboard; available: boolean }[] = [
     { id: "overview", label: zh ? "概览" : "Overview", icon: LayoutDashboard, available: true },
@@ -44,7 +49,7 @@ export function TaskCenter({ onClose, initialTab = "overview", subagentTasks = [
     { id: "automation", label: zh ? "自动化" : "Automation", icon: Clock, available: true },
     { id: "issues", label: zh ? "Issues" : "Issues", icon: ClipboardList, available: true },
     { id: "board", label: zh ? "看板" : "Board", icon: Columns, available: true },
-    { id: "squads", label: zh ? "Squads" : "Squads", icon: Users, available: true },
+    { id: "teams", label: zh ? "团队" : "Teams", icon: Users, available: true },
     { id: "inbox", label: zh ? "收件箱" : "Inbox", icon: InboxIcon, available: true },
   ];
 
@@ -159,7 +164,7 @@ export function TaskCenter({ onClose, initialTab = "overview", subagentTasks = [
             <SubagentsTab agents={subagentTasks} onSelectAgent={onSelectSubagent || (() => {})} />
           )}
           {activeTab === "automation" && <AutomationTab />}
-          {activeTab === "squads" && <SquadsTab />}
+          {activeTab === "teams" && <TeamTab />}
           {activeTab === "issues" && <IssuesTab />}
           {activeTab === "board" && <BoardTab />}
           {activeTab === "inbox" && <InboxTab />}
