@@ -58,11 +58,14 @@ function emitToPetWindow(data: {
   });
 }
 
-/** 仅发送轻量状态（不含 definition/spritesheetUrl） */
-function emitPetStateLight(petState: PetState, scale: number, opacity: number, card?: PetCard | null) {
+/** 仅发送轻量状态（不含 definition/spritesheetUrl）。
+ *  card 参数缺省 = 跟随 store 当前 card（不误清展示中的卡）；
+ *  显式传 null 表示"清除窗口卡"（P1：updateCard(null) 必须把清除信号送达窗口）。
+ */
+function emitPetStateLight(petState: PetState, scale: number, opacity: number, cardOverride?: PetCard | null) {
   const tauri = (window as any).__TAURI__;
   if (!tauri?.event?.emit) return;
-  // card 恒发字段（含 null）——宠物窗合并 payload 需能收到"清除"信号（P1 修复）。
+  const card = cardOverride !== undefined ? cardOverride : usePetStore.getState().card;
   tauri.event.emit("pet-state-update", { petState, scale, opacity, card: card ?? null }).catch(() => {});
 }
 
@@ -615,8 +618,9 @@ export const usePetStore = create<PetStoreState>((set, get) => ({
 
   updateCard: (card) => {
     set({ card });
-    // 状态卡随轻量状态通道同步（宠物窗监听 pet-state-update）
+    // 状态卡随轻量状态通道同步（宠物窗监听 pet-state-update）。
+    // 显式传 card（含 null=清除）：不依赖缺省跟随，确保 updateCard(null) 送达清除信号。
     const s = get();
-    emitPetStateLight(s.petState, s.scale, s.opacity, card || undefined);
+    emitPetStateLight(s.petState, s.scale, s.opacity, card);
   },
 }));

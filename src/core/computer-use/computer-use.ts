@@ -133,7 +133,7 @@ export interface PsOut {
  * 实测必失败）。正确姿势：body 内置 ExecutionPolicy bypass 后用调用运算符
  * `& '<path>' -Json '<b64>'` 执行脚本文件（grepSearch 同款约定）。
  */
-export async function runPs(script: string, payload: Record<string, unknown>, timeoutMs = 30000): Promise<PsOut> {
+export async function runPs(script: string, payload: Record<string, unknown>, timeoutMs = 60000): Promise<PsOut> {
   const { writeFile, deletePath } = await import("../file-api");
   const tmpDir = await getTempDir();
   const tmp = `${tmpDir}\\cu_${Date.now()}_${Math.random().toString(36).slice(2, 7)}.ps1`;

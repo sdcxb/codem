@@ -295,10 +295,13 @@ export async function executeSessionTurn(params: ExecuteSessionTurnParams): Prom
     // 过滤 system-reminder 标签
     const cleanOutput = assistantContent.replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, "").trim();
 
-    // P6：end 事件带失败 reason 且无任何文本产出 → 落库 system error 并返回失败
+    // P6：end 事件带异常 reason 且无任何文本产出 → 落库 system error 并返回失败
     //（对照 App runAgenticLoop 的 loop-error-* 行为；否则微信/手机端静默无回复）。
-    const FAIL_REASONS = new Set(["too_many_errors", "max_iterations", "no_progress", "overflow", "error", "stopped"]);
-    if (!cleanOutput && endReason && FAIL_REASONS.has(endReason)) {
+    // 判据：只要 endReason 存在且非正常 "completed" 即视为异常——覆盖全部 reason
+    //（too_many_errors/max_iterations/no_progress/overflow/safety_valve/
+    //  critical_service_unavailable/write_rejected_by_user/cost limit 长串等），
+    // 避免枚举集合漏掉新增 reason。
+    if (!cleanOutput && endReason && endReason !== "completed") {
       const errMsg = `[Agentic 循环异常终止: ${endReason}] 请检查会话详情或重试。`;
       MessageStorage.createMessage({
         id: `err-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
