@@ -537,7 +537,7 @@ private getFileChangeTrackerService(): FileChangeTracker | null {
     return {
       iteration: 0,
       maxIterations: this.config.maxIterations,
-      totalUsage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+      totalUsage: { promptTokens: 0, completionTokens: 0, totalTokens: 0, cacheHitTokens: 0, uncachedInputTokens: 0 },
       toolCallsInIteration: 0,
       consecutiveErrors: 0,
       contextPressure: 0,
@@ -1943,6 +1943,19 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
       this.state.totalUsage.promptTokens += usage.promptTokens;
       this.state.totalUsage.completionTokens += usage.completionTokens;
       this.state.totalUsage.totalTokens = this.state.totalUsage.promptTokens + this.state.totalUsage.completionTokens;
+      if (usage.cacheHitTokens !== undefined) {
+        this.state.totalUsage.cacheHitTokens = (this.state.totalUsage.cacheHitTokens ?? 0) + usage.cacheHitTokens;
+      }
+      this.state.totalUsage.uncachedInputTokens = Math.max(
+        0,
+        this.state.totalUsage.promptTokens - (this.state.totalUsage.cacheHitTokens ?? 0),
+      );
+      // 每轮成本：按 provider 实际上报 cache 口径计价（uncached×输入价 + cache×缓存价）
+      if (this.config.costTracker) {
+        const modelId = this.config.model || this.provider.id;
+        const callCost = (this.config.costTracker as any).calculateCost?.(modelId, usage) ?? 0;
+        this.state.totalUsage.cost = (this.state.totalUsage.cost ?? 0) + callCost;
+      }
       // R3-1.6: Record actual usage in TokenTracker for pressure estimation
       const tracker = getTokenTracker();
       const toolDefTokens = estimateToolDefinitionTokens(toolDefs);
@@ -1960,7 +1973,13 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
       provider: this.provider.id,
       model: this.config.model || this.provider.id,
       iteration: this.state.iteration,
-      usage: { promptTokens: usage.promptTokens, completionTokens: usage.completionTokens, totalTokens: usage.totalTokens },
+      usage: {
+        promptTokens: usage.promptTokens,
+        completionTokens: usage.completionTokens,
+        totalTokens: usage.totalTokens,
+        cacheHitTokens: usage.cacheHitTokens,
+        uncachedInputTokens: usage.uncachedInputTokens,
+      },
       toolCallCount: currentToolCalls.length,
     }, Date.now() - (this.state.turnStartTime ?? Date.now()));
     // P1: Record trajectory — assistant output (text content)

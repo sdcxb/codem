@@ -254,9 +254,8 @@ ${u.notes ? `- Notes: ${u.notes}` : ""}${u.context ? `\nContext:\n${u.context}` 
   if (config.gitBranch) {
     envInfo.push(`Git branch: ${config.gitBranch}`);
   }
-  if (config.date) {
-    envInfo.push(`Current date: ${config.date}`);
-  }
+  // 注：date 已移至系统提示最末独立段（# Current Date）——每分钟变化的字段若置于
+  // 中段会切断此前全部稳定内容的服务端前缀缓存（对标 dsh 稳定前缀最大化）。
 if (config.modelInfo) {
 envInfo.push(`Model: ${config.modelInfo}`);
 }
@@ -450,6 +449,13 @@ This rule has the highest priority and overrides any other language-related cont
   // Squad Leader Protocol — injected when this agent is a squad leader
   if (config.squadRoster) {
     sections.push(config.squadRoster);
+  }
+
+  // 当前日期/时间 —— 刻意置于最末：date 每分钟变化，放在中段会切断此前全部稳定
+  // 前缀的服务端 KV 缓存命中（对标 dsh call-config：易变字段与稳定部分分离，
+  // 稳定前缀最大化——多轮/多 iteration 间系统提示 + 历史前缀得以复用缓存）。
+  if (config.date) {
+    sections.push(`# Current Date\n\n${config.date}`);
   }
 
   // Filter out any <system-reminder> tags that may have been injected

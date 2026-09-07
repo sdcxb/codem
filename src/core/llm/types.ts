@@ -57,10 +57,15 @@ export interface LLMResponse {
 }
 
 export interface TokenUsage {
+  /** 提示词 token（provider 全量口径；DeepSeek prompt_tokens 含缓存命中） */
   promptTokens: number;
   completionTokens: number;
   totalTokens: number;
   cost?: number;
+  /** 提示词中命中缓存的 token（DeepSeek prompt_cache_hit_tokens / OpenAI cache_read_input_tokens） */
+  cacheHitTokens?: number;
+  /** 未命中缓存的输入 token = promptTokens - cacheHitTokens（命中率分母） */
+  uncachedInputTokens?: number;
 }
 
 // ========== Message Types ==========

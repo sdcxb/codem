@@ -1,5 +1,6 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { getCostTracker, type UsageRecord } from "../core/llm/cost-tracker";
+import { formatCacheHitPercent } from "../core/llm/cache-percent";
 import { TokenActivityGrid, UsageChart } from "./UsageVisuals";
 import { Activity, BarChart3, Wrench, ClipboardList, Calendar, CheckCircle, Infinity as InfinityIcon } from "lucide-react";
 import { PanelIcons, ActionIcons } from "../core/icons/icon-map";
@@ -48,6 +49,19 @@ export function UsageStats({ onClose }: UsageStatsProps) {
     const twentyEightDaysAgo = Date.now() - 28 * 24 * 60 * 60 * 1000;
     setVizRecords(tracker.getRecordsInRange(twentyEightDaysAgo, Date.now()));
   };
+
+  // 缓存命中聚合（近 7 天 50 条内 provider 上报了 cache 的调用；未上报不显示）
+  const cacheAgg = useMemo(() => {
+    const reportable = records.filter(
+      (r) => typeof r.cacheReadTokens === "number" && r.inputTokens > 0,
+    );
+    if (reportable.length === 0) return null;
+    const hit = reportable.reduce((s, r) => s + (r.cacheReadTokens ?? 0), 0);
+    const input = reportable.reduce((s, r) => s + r.inputTokens, 0);
+    const pct = formatCacheHitPercent(hit, input, 1);
+    if (pct === null) return null;
+    return { pct, hit, input, calls: reportable.length };
+  }, [records]);
 
   if (!stats) return null;
 
@@ -103,6 +117,12 @@ export function UsageStats({ onClose }: UsageStatsProps) {
               <span className="usage-stat-label">总会话数</span>
               <span className="usage-stat-value">{stats.totalSessions}</span>
             </div>
+            {cacheAgg && (
+              <div className="usage-stat-card" title={`缓存读 ${cacheAgg.hit.toLocaleString()} / 输入 ${cacheAgg.input.toLocaleString()}（近 7 天 ${cacheAgg.calls} 次上报调用）`}>
+                <span className="usage-stat-label">缓存命中率</span>
+                <span className="usage-stat-value" style={{ color: "var(--success)" }}>{cacheAgg.pct}%</span>
+              </div>
+            )}
             <div className="usage-stat-card">
               <span className="usage-stat-label">输入 Tokens</span>
               <span className="usage-stat-value">{stats.totalInputTokens.toLocaleString()}</span>

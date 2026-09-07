@@ -12,6 +12,7 @@
 import { memo, useMemo, useLayoutEffect, useRef, useState, Fragment } from 'react'
 import type { Message } from '../store'
 import { useLang, getLang } from '../core/i18n/lang'
+import { formatCacheHitPercent } from '../core/llm/cache-percent'
 
 /** 紧凑 token 计数格式：517 / 12.2K / 517K / 1.2M */
 function formatTokens(n: number): string {
@@ -36,6 +37,14 @@ function formatTokensPerSecond(tps: number): string {
   return clamped >= 10 ? String(Math.round(clamped)) : String(Math.round(clamped * 10) / 10)
 }
 
+/** 成本格式：小额用足够小数位（≈$0.0003），大额两位 */
+function formatCost(cost: number): string {
+  if (cost >= 0.01) return cost.toFixed(2)
+  if (cost >= 0.001) return cost.toFixed(3)
+  if (cost >= 0.0001) return cost.toFixed(4)
+  return cost.toFixed(5)
+}
+
 interface WindowStats {
   turns: number
   steps: number
@@ -49,6 +58,9 @@ interface WindowStats {
   outputTokens: number
   cacheReadTokens: number
   cacheWriteTokens: number
+  cost: number
+  /** provider 是否明确上报缓存字段（未上报不显示命中率，防误导 0%） */
+  cacheReported: boolean
 }
 
 /** 从消息的 toolCalls 和 metadata 中推导统计指标 */
@@ -66,6 +78,8 @@ function deriveStats(message: Message): WindowStats {
     outputTokens: 0,
     cacheReadTokens: 0,
     cacheWriteTokens: 0,
+    cost: 0,
+    cacheReported: false,
   }
 
   // LLM 耗时：从 metadata.llmDuration 或 reasoning 时长推导
@@ -86,13 +100,23 @@ function deriveStats(message: Message): WindowStats {
     stats.decodeTokens = meta.outputTokens as number
   }
 
-  // token 统计
+  // token 统计（cache 字段真实化：usage.cacheHitTokens = DeepSeek
+  // prompt_cache_hit_tokens；inputTokens 取 uncached 口径避免与 cache 重复计）
   if (meta.usage) {
     const u = meta.usage
-    stats.inputTokens = u.promptTokens || u.inputTokens || 0
-    stats.outputTokens = u.completionTokens || u.outputTokens || 0
-    stats.cacheReadTokens = u.cacheReadTokens || 0
+    const promptTotal = u.promptTokens || u.inputTokens || 0
+    const cacheRead = u.cacheHitTokens ?? u.cacheReadTokens ?? 0
+    stats.cacheReadTokens = cacheRead
     stats.cacheWriteTokens = u.cacheWriteTokens || 0
+    stats.inputTokens = u.uncachedInputTokens ?? Math.max(0, promptTotal - cacheRead)
+    stats.outputTokens = u.completionTokens || u.outputTokens || 0
+    if (typeof u.cost === "number") stats.cost = u.cost
+    // provider 是否明确上报缓存字段——未上报（如非 DeepSeek 系）时命中率未知，
+    // 不得显示误导性的"缓存命中 0%"
+    stats.cacheReported =
+      u.cacheHitTokens !== undefined ||
+      u.cacheReadTokens !== undefined ||
+      u.uncachedInputTokens !== undefined
   }
 
   // tool 耗时
@@ -108,10 +132,10 @@ function deriveStats(message: Message): WindowStats {
   return stats
 }
 
-/** cache hit 率 */
-function cacheHitPercent(stats: WindowStats): number | null {
+/** cache hit 率（dsh 高精度格式：不把部分命中四舍五入成 100，如 99.97%） */
+function cacheHitPercent(stats: WindowStats): string | null {
   const denom = stats.inputTokens + stats.cacheReadTokens + stats.cacheWriteTokens
-  return denom === 0 ? null : Math.round(stats.cacheReadTokens / denom * 100)
+  return formatCacheHitPercent(stats.cacheReadTokens, denom, 1)
 }
 
 /** billed input tokens */
@@ -160,10 +184,10 @@ export const StatsLine = memo(function StatsLine({ message }: StatsLineProps) {
   }
   if (speeds.length > 0) groups.push(speeds.join(' · '))
 
-  // 第 3 组：token 计数 + cache hit
+  // 第 3 组：token 计数 + cache hit（仅当 provider 上报缓存字段时显示命中率）
   const billed = billedInputTokens(stats)
   if (billed > 0 || stats.outputTokens > 0) {
-    const hit = cacheHitPercent(stats)
+    const hit = stats.cacheReported ? cacheHitPercent(stats) : null
     if (hit !== null) {
       groups.push(zh ? `缓存命中 ${hit}%` : `Cache ${hit}%`)
     }
@@ -172,6 +196,9 @@ export const StatsLine = memo(function StatsLine({ message }: StatsLineProps) {
         ? `${formatTokens(billed)} 入 / ${formatTokens(stats.outputTokens)} 出`
         : `${formatTokens(billed)} in / ${formatTokens(stats.outputTokens)} out`
     )
+    if (stats.cost > 0) {
+      groups.push(`≈$${formatCost(stats.cost)}`)
+    }
   }
 
   if (groups.length === 0) return null
@@ -219,3 +246,4 @@ export const StatsLine = memo(function StatsLine({ message }: StatsLineProps) {
     </div>
   )
 })
+

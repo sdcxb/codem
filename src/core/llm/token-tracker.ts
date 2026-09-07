@@ -138,11 +138,13 @@ export class TokenTracker {
     toolDefTokens: number,
     headerFingerprint: string,
   ): TurnTokenUsage {
-    // 缓存命中检测：如果 header 指纹与上次相同，部分 prompt 可能被缓存
-    let cacheHitTokens = 0;
-    if (this.lastHeaderFingerprint === headerFingerprint) {
-      // 粗略估算：系统提示 + 工具定义部分被缓存
+    // 缓存命中检测：优先用 provider 上报的真实 cacheHitTokens（DeepSeek
+    // prompt_cache_hit_tokens）；未上报时回退指纹估算（系统提示+工具定义近似 30%）
+    let cacheHitTokens = usage.cacheHitTokens;
+    if (cacheHitTokens === undefined && this.lastHeaderFingerprint === headerFingerprint) {
       cacheHitTokens = Math.floor(usage.promptTokens * 0.3);
+    } else if (cacheHitTokens === undefined) {
+      cacheHitTokens = 0;
     }
     this.lastHeaderFingerprint = headerFingerprint;
 

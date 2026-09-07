@@ -2,9 +2,46 @@
 
 All notable changes to Codem will be documented in this file.
 
-## [Unreleased]
+## [1.9.8] - 2026-09-07
 
-### 技能市场联网搜索卡死修复（"正在联网搜索…"无限 loading）
+### 对话用量统计 + 缓存命中率真实化（对标 anywhere-labs/dsh-desktop）
+
+- **对标调查**：本地参考仓库即 anywhere-labs/dsh-desktop；dsh 的每轮用量/缓存统计 = adapter 精确上报 cacheRead/cacheWrite（TokenUsage inputTokens 为 uncached 口径）+ 每轮折叠 UI + 诚实精度命中率（99.97% 不圆成 100）
+- **Codem 现状**：StatsLine/每轮 usage 已有（历史对标），但 **provider 归一化丢弃了 DeepSeek prompt_cache_hit_tokens**，命中率用 `promptTokens × 0.3` 假估算 → 显示失真
+- **修复（真实数据链路）**：
+  - `TokenUsage` 扩展 `cacheHitTokens` / `uncachedInputTokens`
+  - `provider.ts` 归一化透传 `prompt_cache_hit_tokens`（兼容 OpenAI `cache_read_input_tokens`），uncached = prompt − hit
+  - agentic-loop 每轮累计真实 cacheHitTokens（随 turnMetadata 到该轮助手消息）
+  - token-tracker 真实 cache 优先，未上报回退估算
+  - StatsLine：inputTokens 改 uncached 口径（不重复计）+ 高精度命中率显示
+  - 新增 `cache-percent.ts`（移植 dsh 诚实精度算法）+ `cache-prefix-stability.test.ts`
+
+### 缓存命中率差距分析 + 稳定前缀优化（dsh 达 99.97%）
+
+- **差距一（数据层，已修）**：从未采集真实命中数据（假 0.3 估算）→ 无从谈命中率
+- **差距二（前缀工程，本轮修复一项关键破坏点）**：DeepSeek 前缀缓存按"请求前缀到首个差异点"命中——**date（每分钟变化）原位于系统提示中段的 # Environment**，其后所有稳定内容（工具指引/MCP/语言规则等）每轮被切断缓存。修复：date 独立段**尾置**到系统提示最末（# Current Date）——不同分钟的两份 prompt 公共前缀覆盖 >95% 内容（测试断言防回退）
+- **其余稳定面核验**：工具 guidance/deferred hints 均拼接在 prompt 尾部；core tools 列表稳定（defer 工具 tool_search 加载不改 core 集）；消息历史追加式稳定；压缩摘要/新会话首轮 miss 为 DeepSeek 机制固有（dsh 同样，其 99.97% 是长会话稳态统计值）
+- **审计续核（无新缺陷）**：request-header 模块为纯诊断用途（getCacheStats 无 UI 消费，无假命中率显示）；消息 metadata（turnMetadata.usage）已持久化到 messages 表（重启后 StatsLine 每轮用量仍显示）；同配置连续请求 prompt 100% 一致（新增断言：前缀稳定 = API 命中前提）
+- **usage 归一化口径精确化**（`usage-normalize.ts`）：uncached 优先用 DeepSeek 显式 `prompt_cache_miss_tokens`（此前用 prompt−hit 减法，对不含 cache 的 OpenAI 口径会误扣）；OpenAI cache_read 无 miss 时取 max(0, prompt−cache) 折中；异常口径 clamp 防负数（4 用例）
+- **StatsLine 显示正确性**：provider 未上报缓存字段（非 DeepSeek 系/Ollama 等）时不显示误导性的"缓存命中 0%"（cacheReported 门控——与 dsh 一致：cacheRead 未上报即不展示命中率）
+- **端到端集成测试**（`cache-loop-accumulation.test.ts`）：脚本化 provider 回放带 cache 的 usage 事件 → 真实 AgenticLoop → result.usage 正确累计 cacheHitTokens/uncached/成本（含缓存价差计价）——StatsLine/每轮用量 UI 的采集→汇总数据源闭环验证（不依赖真实 API）
+- **用量统计面板缓存命中卡**：CostTracker.recordUsage 落盘真实 cacheReadTokens；设置→用量统计概览新增「缓存命中率」卡（近 7 天 provider 上报调用聚合，诚实精度格式；未上报不显示）——用户跑任务后打开用量统计即可验证整体命中率（无需逐轮盯 StatsLine）
+
+### 缓存命中率真实请求实证（受控探测，结论已修正）
+
+- **方法**：经授权用运行实例配置的 DeepSeek key 发受控请求——短前缀（~100 tokens）与长前缀（3259 tokens）两轮，以及多轮序列模拟与超长前缀稳态探测（A/B/C/D 四组）
+- **实证结果（结论修正）**：短请求恒 miss（~100 tokens 前缀低于缓存阈值）曾误判"通道无缓存"；**长前缀探测修正**——首次写入 miss 全量 → **完全相同重复请求 hit=3200/3259（98.2%）** → 前缀+追加 hit=3200（前缀全命中）——**deepseek-v4-flash 支持前缀缓存，但缓存需足够大的前缀才建立/命中，短请求低于阈值恒 miss**
+- **命中率规律（实测拟合 1 − δ/N）**：多轮序列模拟（5.6K 前缀逐轮追加）第 2 轮即 97.6%、末轮 99.67%；37.7K 前缀稳态轮 99.6~99.8%；**96K token 前缀完全相同重复请求稳定命中 99.947%**（δ≈51 固定尾巴随前缀增长占比趋零）——dsh 的 99.97% 为数十万 token 前缀稳态，同 key 同形态表现一致
+- **结论（回答"为何同 key 与 dsh 表现不同"）**：Codem 与 dsh **同 key 效果一致**——dsh 的 99.97% 是数万 token 长会话前缀的自然稳态；真实对话前缀随轮次增长（几千→几万 token）后 DeepSeek 自动建立前缀缓存并返回 hit，**Codem 同 key 长会话同样可达 dsh 量级命中率**（实现零改动即如实显示；date 尾置等前缀稳定优化保证前缀尽量不被切断）。此前"通道无缓存 / 需换模型"判断系短请求探测误导，已更正
+- 全量 157 文件 / 4159 用例通过 + tsc 零错误
+
+## [1.9.7] - 2026-09-04
+
+### v1.9.7 补丁（同版本覆盖发布：commit 7d1f329 / 88b49f2）
+
+> v1.9.7 发布后以同版本补丁追加覆盖 release 资产，以下 5 项随补丁发布：
+
+#### 技能市场联网搜索卡死修复（"正在联网搜索…"无限 loading）
 
 - **用户报告**：搜索无本地结果的关键词（如 diagram-design）后，一直显示"正在联网搜索"数分钟，无结果也无失败提示
 - **根因（UI effect 竞态，`SkillManager.tsx`）**：搜索 effect 的 cleanup 只清防抖 timer + 设 `cancelled`，而搜索完成回调只在 `!cancelled` 时复位 loading；一旦 effect 因输入变化/结果渐进合并被 cleanup 取消，旧搜索被取消后**不再复位**，而新 effect 若走"空查询/本地已有结果"提前返回分支也**不复位** → `onlineSearching` 残留 true 永久显示
@@ -12,21 +49,21 @@ All notable changes to Codem will be documented in this file.
 - **源层核验**：联网搜索（searchMarketSkillsOnline）与检查更新（listMarketSkills）两路径的每个源都有 12s `Promise.race` 超时兜底（有界，非源层挂起）；核验无其它同类残留 loading 模式（loadMarketSkills finally 无条件复位）
 - 全量 152 文件 / 4140 用例通过 + tsc 零错误
 
-### GitHub URL 标签重复生成修复（输入每字符加一个标签）
+#### GitHub URL 标签重复生成修复（输入每字符加一个标签）
 
 - **用户报告**：在对话编辑框手打 GitHub 开源项目 URL 时，每输入一个字符就生成一个仓库标签，不停堆积
 - **根因**（`InputArea.tsx`）：onChange 逐字符调用 `detectGithubUrls`，把"未输完的 URL 前缀"（https://github.com/c → /ca → /cat …）都当作完整 URL 添加 badge——每个前缀是不同的 badge id，原有按 url 去重失效 → 标签堆积
 - **修复**：改为**防抖 + 同步式 reconcile**——①输入停顿 500ms 后才检测当前文本（粘贴/快速手打都只出 1 个标签）；②每次检测同步差集：旧"过渡前缀"标签被更长 URL 取代时自动移除（始终 ≤ 实际 URL 数）；③用户手动删除过的 GitHub URL 本会话内不再自动加回（removedGithubUrlsRef）；④组件卸载清理防抖定时器
 - 全量 152 文件 / 4140 用例通过 + tsc 零错误
 
-### 输入框光标视觉错位修复（长 URL 粘贴时 caret 偏 1 格）
+#### 输入框光标视觉错位修复（长 URL 粘贴时 caret 偏 1 格）
 
 - **用户报告**：粘贴/输入长 URL（如 https://github.com/cathrynlavery/diagram-design）后，光标视觉位置比实际插入点靠前 1 个字符（实际在末尾、显示在倒数两字符之间）；已确认**纯视觉错位**（文本与实际插入点正确）
 - **根因**：输入框采用"透明 textarea + backdrop 镜像层"架构（textarea 文字透明只显示 caret，可见文字由 backdrop 层渲染）——两套排版一旦有细微字体/断行差异，caret（textarea 原生）与可见文字（backdrop）就会视觉错位
 - **修复（根治）**：改为**条件镜像**——仅在文本含 `/xxx` 技能模式（需要 pill 高亮）时才启用透明+backdrop；普通文本（含 URL）时 textarea **直接显示文字**，caret 与文字同源渲染，物理上不可能错位；同时 backdrop/textarea 强制同一显式字体栈（var(--font-family)）+ 关闭字体连字（font-variant-ligatures: none），消除排版差来源
 - 全量测试通过 + tsc 零错误
 
-### CodeGraph 工具真正接入 LLM（defer 按需加载，修复"指导有、工具不可调"）
+#### CodeGraph 工具真正接入 LLM（defer 按需加载，修复"指导有、工具不可调"）
 
 - **问题**：codegraph_explore 此前只在 systemPrompt 手写指导（"优先使用 codegraph_explore"）+ MCP 工具文本清单里出现，但 LLM 的 function-calling schema（ToolDef 表）里**没有该工具**——模型照指导调用会报工具不存在，指导落空且浪费 token
 - **整改**（`llm/tools/codegraph-tool.ts` 新增）：
@@ -37,7 +74,7 @@ All notable changes to Codem will be documented in this file.
   - execute 转发 `getMCPRegistry().callTool` 并展平 MCP content 文本
   - 测试：codegraph-integration.test.ts 重构为新契约（无手写段 / 注册即 defer schema 可经 tool_search 拉取 / 断连移除 / e2e 注册-可调闭环）
 
-### CodeGraph 应用内一键安装（方案 B：用户零命令行）
+#### CodeGraph 应用内一键安装（方案 B：用户零命令行）
 
 - **背景**：CodeGraph 是外部 CLI（vendored Node 自包含 zip ~52MB），原需用户自行下载安装（不符合"一个安装包"目标）
 - **Rust `codegraph_install` 命令**（`lib.rs`，新增 zip 依赖）：GitHub API 解析最新 tag → 下载 codegraph-win32-x64.zip → 解压到 `%LOCALAPPDATA%\codegraph\current`（路径穿越防护）→ 返回启动器绝对路径（`bin/codegraph.cmd`）
@@ -46,8 +83,6 @@ All notable changes to Codem will be documented in this file.
 - **连接与检测联动**：`autoDetectCodeGraph` 连接命令优先用已存 launcher 绝对路径（fallback PATH 'codegraph'）；设置页 CLI 检测优先检查 launcher 存在
 - **检测逻辑修复**：exitCode/stdout 三重兜底 +「🔄 重新检测」按钮（此前只看 stderr 两种英文文案，其余一律误判"已安装"）
 - 测试：launcher 路径连接/回退（codegraph-integration 48 用例）+ 全量 152 文件 / 4140 用例通过 + tsc/cargo 零错误
-
-## [1.9.7] - 2026-09-04
 
 ### dsh 插件市场与插件架构全面改造（对标 deepseek-harness）
 

@@ -89,10 +89,10 @@ const MODEL_COSTS: Record<string, ModelCost> = {
   "mimo-v2-pro": { modelId: "mimo-v2-pro", provider: "mimo", inputCostPer1k: 0.002, outputCostPer1k: 0.004 },
   "mimo-v2-flash": { modelId: "mimo-v2-flash", provider: "mimo", inputCostPer1k: 0.0005, outputCostPer1k: 0.001 },
   // DeepSeek
-  "deepseek-v4-flash": { modelId: "deepseek-v4-flash", provider: "deepseek", inputCostPer1k: 0.00027, outputCostPer1k: 0.0011 },
-  "deepseek-v4-pro": { modelId: "deepseek-v4-pro", provider: "deepseek", inputCostPer1k: 0.0022, outputCostPer1k: 0.0088 },
-  "deepseek-chat": { modelId: "deepseek-chat", provider: "deepseek", inputCostPer1k: 0.00027, outputCostPer1k: 0.0011 },
-  "deepseek-reasoner": { modelId: "deepseek-reasoner", provider: "deepseek", inputCostPer1k: 0.00055, outputCostPer1k: 0.0022 },
+  "deepseek-v4-flash": { modelId: "deepseek-v4-flash", provider: "deepseek", inputCostPer1k: 0.00027, outputCostPer1k: 0.0011, cacheCostPer1k: 0.00007 },
+  "deepseek-v4-pro": { modelId: "deepseek-v4-pro", provider: "deepseek", inputCostPer1k: 0.0022, outputCostPer1k: 0.0088, cacheCostPer1k: 0.0002 },
+  "deepseek-chat": { modelId: "deepseek-chat", provider: "deepseek", inputCostPer1k: 0.00027, outputCostPer1k: 0.0011, cacheCostPer1k: 0.00007 },
+  "deepseek-reasoner": { modelId: "deepseek-reasoner", provider: "deepseek", inputCostPer1k: 0.00055, outputCostPer1k: 0.0022, cacheCostPer1k: 0.00014 },
   // Moonshot (Kimi)
   "moonshot-v1-8k": { modelId: "moonshot-v1-8k", provider: "moonshot", inputCostPer1k: 0.0017, outputCostPer1k: 0.0017 },
   "moonshot-v1-32k": { modelId: "moonshot-v1-32k", provider: "moonshot", inputCostPer1k: 0.0034, outputCostPer1k: 0.0034 },
@@ -172,6 +172,9 @@ export class CostTracker {
       provider: params.provider,
       inputTokens: params.usage.promptTokens,
       outputTokens: params.usage.completionTokens,
+      ...(params.usage.cacheHitTokens !== undefined
+        ? { cacheReadTokens: params.usage.cacheHitTokens }
+        : {}),
       cost,
       duration: params.duration,
       toolCalls: params.toolCalls || 0,
@@ -226,7 +229,14 @@ export class CostTracker {
 
     if (!costInfo) return 0;
 
-    const inputCost = (usage.promptTokens / 1000) * costInfo.inputCostPer1k;
+    // 缓存计价：未命中输入按 inputCostPer1k，命中输入按 cacheCostPer1k
+    // （DeepSeek 缓存命中输入显著更便宜——成本精确性对标 dsh billed input 口径）
+    const uncachedInput = Math.max(0, usage.promptTokens - (usage.cacheHitTokens ?? 0));
+    const cacheRead = usage.cacheHitTokens ?? 0;
+    const cacheRate = costInfo.cacheCostPer1k ?? costInfo.inputCostPer1k;
+    const inputCost =
+      (uncachedInput / 1000) * costInfo.inputCostPer1k +
+      (cacheRead / 1000) * cacheRate;
     const outputCost = (usage.completionTokens / 1000) * costInfo.outputCostPer1k;
 
     return inputCost + outputCost;
@@ -463,3 +473,4 @@ export function getCostTracker(): CostTracker {
   }
   return instance;
 }
+

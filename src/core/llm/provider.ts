@@ -10,6 +10,7 @@ import type {
   ServerModelInfo,
 } from "./types";
 import { getLang } from "../i18n/lang";
+import { parseProviderUsage } from "./usage-normalize";
 import type { Context } from "../cordis/src/index.ts";
 import { createIdleTimeout } from "./idle-tracker";
 import { OllamaProvider } from "./ollama-provider";
@@ -491,12 +492,18 @@ export class OpenAICompatibleProvider implements LLMProvider {
             }
 
             const usage = parsed.usage || {};
+            // 缓存字段透传（对标 dsh TokenUsage：cacheRead/uncached 分离）。
+            // 归一化口径见 usage-normalize.ts（DeepSeek 显式 miss 最准；
+            // OpenAI cache_read 无 miss 时取 prompt - cacheRead 折中）。
+            const nu = parseProviderUsage(usage);
             yield {
               type: "usage",
               usage: {
-                promptTokens: usage.prompt_tokens || 0,
-                completionTokens: usage.completion_tokens || 0,
-                totalTokens: (usage.prompt_tokens || 0) + (usage.completion_tokens || 0),
+                promptTokens: nu.promptTokens,
+                completionTokens: nu.completionTokens,
+                totalTokens: nu.totalTokens,
+                cacheHitTokens: nu.cacheHitTokens,
+                uncachedInputTokens: nu.uncachedInputTokens,
               },
             };
 
