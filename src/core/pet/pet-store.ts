@@ -26,7 +26,7 @@
  */
 
 import { create } from "zustand";
-import type { PetState, InstalledPet, PetSettings, PetDefinition } from "./pet-types";
+import type { PetState, InstalledPet, PetSettings, PetDefinition, PetCard } from "./pet-types";
 import { DEFAULT_PET_SETTINGS } from "./pet-types";
 import { getPetSettings, savePetSettings, listInstalledPets, loadSpritesheetAsDataUrl, getInstalledPet } from "./pet-manager";
 import { getSettingJSON } from "../storage/settings";
@@ -45,6 +45,8 @@ function emitToPetWindow(data: {
   installedPets?: { slug: string; name: string }[];
   /** 当前激活宠物的 slug */
   activeSlug?: string | null;
+  /** 大肥鱼式状态卡（可选，随状态同步） */
+  card?: PetCard;
 }) {
   const tauri = (window as any).__TAURI__;
   if (!tauri?.event?.emit) return;
@@ -57,10 +59,10 @@ function emitToPetWindow(data: {
 }
 
 /** 仅发送轻量状态（不含 definition/spritesheetUrl） */
-function emitPetStateLight(petState: PetState, scale: number, opacity: number) {
+function emitPetStateLight(petState: PetState, scale: number, opacity: number, card?: PetCard) {
   const tauri = (window as any).__TAURI__;
   if (!tauri?.event?.emit) return;
-  tauri.event.emit("pet-state-update", { petState, scale, opacity }).catch(() => {});
+  tauri.event.emit("pet-state-update", { petState, scale, opacity, ...(card ? { card } : {}) }).catch(() => {});
 }
 
 /** 请求宠物窗口关闭 */
@@ -234,6 +236,8 @@ interface PetStoreState {
   scale: number;
   /** 透明度 */
   opacity: number;
+  /** 大肥鱼式状态卡（App 层汇聚器写入，经 pet-state-update 同步到宠物窗） */
+  card: PetCard | null;
 
   // Actions
   init: () => Promise<void>;
@@ -246,6 +250,8 @@ interface PetStoreState {
   setScale: (scale: number) => void;
   setOpacity: (opacity: number) => void;
   setEnabled: (enabled: boolean) => void;
+  /** 更新大肥鱼式状态卡并同步到宠物窗 */
+  updateCard: (card: PetCard | null) => void;
   /** 显示悬浮气泡通知（自动拼接用户称呼） */
   showBubble: (message: string, duration?: number) => void;
   /** 显示原始气泡通知（不拼接称呼） */
@@ -289,6 +295,7 @@ function sendFullStateToPet() {
     opacity: s.opacity,
     installedPets: s.installedPets.map(p => ({ slug: p.slug, name: p.definition.name })),
     activeSlug: s.activePet.slug,
+    card: s.card || undefined,
   });
 }
 
@@ -306,6 +313,7 @@ export const usePetStore = create<PetStoreState>((set, get) => ({
   positionY: DEFAULT_PET_SETTINGS.positionY,
   scale: DEFAULT_PET_SETTINGS.scale,
   opacity: DEFAULT_PET_SETTINGS.opacity,
+  card: null,
 
   init: async () => {
     const settings = getPetSettings();
@@ -600,5 +608,12 @@ export const usePetStore = create<PetStoreState>((set, get) => ({
   showRawBubble: (text, duration = 4000) => {
     if (!get().enabled) return;
     enqueueBubble(text, duration, "normal");
+  },
+
+  updateCard: (card) => {
+    set({ card });
+    // 状态卡随轻量状态通道同步（宠物窗监听 pet-state-update）
+    const s = get();
+    emitPetStateLight(s.petState, s.scale, s.opacity, card || undefined);
   },
 }));

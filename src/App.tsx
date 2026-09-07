@@ -634,6 +634,38 @@ useEffect(() => {
     };
   };
 
+  // ===== 大肥鱼式状态卡汇聚器（对标 dsh-dafeiyu CompanionReducer 的薄版）=====
+  // 数据源：llm_status / step_progress / tool_start / tool_complete / tool_error /
+  // compaction_start / needs_you / end —— 全部来自 agentic-loop 事件，真实不编造。
+  // 直接写 usePetStore（updateCard 只存 store + emit，不依赖 ctx 服务）。
+  const phaseByPetState: Record<string, string> = {
+    thinking: lang === "zh" ? "思考中" : "thinking",
+    working: lang === "zh" ? "执行中" : "working",
+    review: lang === "zh" ? "整理结果" : "reviewing",
+    waiting: lang === "zh" ? "等待确认" : "waiting",
+    happy: lang === "zh" ? "任务完成" : "done",
+    sad: lang === "zh" ? "遇到问题" : "error",
+    idle: "",
+    sleeping: lang === "zh" ? "空闲中" : "idle",
+  };
+  const toolPhase = (name: string): string => {
+    const n = (name || "").toLowerCase();
+    if (/read|grep|glob|list|search|fetch|web/.test(n)) return lang === "zh" ? "查找" : "searching";
+    if (/write|edit|multi_edit|str_replace/.test(n)) return lang === "zh" ? "修改" : "editing";
+    if (/bash|run_test|exec/.test(n)) return lang === "zh" ? "执行" : "executing";
+    if (/test/.test(n)) return lang === "zh" ? "验证" : "verifying";
+    return lang === "zh" ? "执行" : "working";
+  };
+  const updatePetCard = (partial: Partial<import("./core/pet/pet-types").PetCard>) => {
+    const store = usePetStore.getState();
+    const prev = store.card || { visible: true } as any;
+    const project = useProjectStore.getState().currentProject?.name
+      || currentSession?.title
+      || "";
+    store.updateCard({ ...prev, ...partial, project: partial.project ?? project, visible: true });
+  };
+  const hidePetCard = () => { usePetStore.getState().updateCard(null); };
+
   // Track window visibility for task completion notifications
   useEffect(() => {
     const onVisibilityChange = () => { windowVisibleRef.current = !document.hidden; };
@@ -2273,6 +2305,12 @@ flushReasoningBuffer(session.id);
             setLLMStatus(event.status);
             // Bridge to pet system
             getPet().onLLMStatus(event.status);
+            // 大肥鱼式状态卡：LLM 状态 → 阶段
+            if (event.status === "connecting" || event.status === "streaming") {
+              updatePetCard({ phase: lang === "zh" ? "思考中" : "thinking" });
+            } else if (event.status === "executing_tools") {
+              updatePetCard({ phase: lang === "zh" ? "执行中" : "working" });
+            }
             break;
           }
 
@@ -2288,6 +2326,12 @@ flushReasoningBuffer(session.id);
             const stepTitle = event.title || `步骤 ${event.step}`;
             const stepTotal = event.total ? `/${event.total}` : "";
             getPet().showRawBubble(`${stepTitle}${stepTotal}`, 3000);
+            // 大肥鱼式状态卡：真实步骤进度
+            updatePetCard({
+              phase: phaseByPetState["thinking"] || undefined,
+              step: { current: event.step, total: event.total ?? null, title: event.title || undefined },
+              message: stepTitle,
+            });
             break;
           }
 
@@ -2323,6 +2367,13 @@ flushReasoningBuffer(session.id);
             // Bridge to pet system
             getPet().onStreamEvent(event);
             const tc = "toolCall" in event ? event.toolCall : null;
+            // 大肥鱼式状态卡：工具阶段（查找/修改/执行…）
+            if (tc?.name) {
+              updatePetCard({
+                phase: toolPhase(tc.name),
+                message: lang === "zh" ? `正在${toolPhase(tc.name)}` : toolPhase(tc.name),
+              });
+            }
             if (tc) {
               if (!useAppStore.getState().messages.find((m) => m.id === assistantMsgId)) {
                 safeAddMessage({
@@ -2353,6 +2404,8 @@ saveMessages(session.id);
           case "tool_complete": {
             // Bridge to pet system
             getPet().onStreamEvent(event);
+            // 大肥鱼式状态卡：工具完成 → 整理结果
+            updatePetCard({ phase: lang === "zh" ? "整理结果" : "reviewing" });
             const tc = "toolCall" in event ? event.toolCall : null;
             if (tc) {
               // Extract the output string from the result
@@ -2397,6 +2450,11 @@ saveMessages(session.id);
           case "tool_error": {
             // Bridge to pet system
             getPet().onStreamEvent(event);
+            // 大肥鱼式状态卡：工具出错
+            updatePetCard({
+              phase: lang === "zh" ? "遇到问题" : "error",
+              message: lang === "zh" ? "工具执行出错" : "tool error",
+            });
             const tc = "toolCall" in event ? event.toolCall : null;
             const err = "error" in event ? event.error : "Unknown error";
             
@@ -2581,6 +2639,15 @@ saveMessages(session.id);
                   timestamp: Date.now(),
                   status: "error",
                 });
+                // 大肥鱼式状态卡：任务失败
+                updatePetCard({ phase: lang === "zh" ? "遇到问题" : "error", message: errMsg });
+              } else {
+                // 大肥鱼式状态卡：任务完成（保留 2s 后隐藏由下方清理）
+                updatePetCard({ phase: lang === "zh" ? "任务完成" : "done" });
+                setTimeout(() => {
+                  const st = usePetStore.getState();
+                  if (st.card?.phase && (st.card.phase === "任务完成" || st.card.phase === "done")) hidePetCard();
+                }, 2500);
               }
             }
             }
@@ -2638,6 +2705,14 @@ flushStreamBuffer(session.id);
 flushReasoningBuffer(session.id);
       // Clear step progress after a short delay so user sees the final state
       setTimeout(() => useAppStore.getState().setStepProgress(null), 2000);
+      // 大肥鱼式状态卡：回合结束（非完成态如取消/错误）后延迟归位
+      setTimeout(() => {
+        const st = usePetStore.getState();
+        // 若仍停留在持久态（thinking/working）说明没走到 end 分支 → 归位空闲
+        if (st.card && (st.card.phase === "思考中" || st.card.phase === "执行中" || st.card.phase === "思考")) {
+          hidePetCard();
+        }
+      }, 2500);
       // Clear guidance messages when the run ends
       clearGuidanceMessages();
       // Clear stream start time

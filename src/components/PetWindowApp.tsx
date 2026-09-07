@@ -17,7 +17,7 @@
 
 import { useRef, useEffect, useState, useCallback, useMemo } from "react";
 import { PetSprite } from "./PetSprite";
-import type { PetDefinition, PetState } from "../core/pet/pet-types";
+import type { PetDefinition, PetState, PetCard } from "../core/pet/pet-types";
 
 // ========== 类型 ==========
 
@@ -36,6 +36,8 @@ interface PetWindowState {
   installedPets: PetInfo[];
   /** 当前激活宠物的 slug */
   activeSlug: string | null;
+  /** 大肥鱼式状态卡（可选，随 pet-state-update 同步） */
+  card?: PetCard | null;
 }
 
 interface BubbleData {
@@ -76,6 +78,11 @@ const BUBBLE_FONT = "11px sans-serif";
 const BUBBLE_PADDING_H = 10; // 每侧
 const BUBBLE_PADDING_V = 5;  // 每侧
 const BUBBLE_LINE_HEIGHT = 15; // ≈ 11px × 1.35
+
+/** 大肥鱼式状态卡固定高度（常驻区，含内边距） */
+const CARD_HEIGHT = 44;
+/** 状态卡与精灵图间距 */
+const CARD_GAP = 6;
 
 /** 宠物状态 → 悬停时显示的中文描述 */
 const PET_STATE_TEXT: Record<PetState, string> = {
@@ -215,12 +222,20 @@ export function PetWindowApp() {
       : "";
   const displayBubbleVisible = bubble.visible || isHovering;
 
+  // ===== 大肥鱼式状态卡可见性 =====
+  // 卡有内容（card.visible）且：持久态（思考/工作/等待）常驻，或非持久态由 App 层
+  // 计时隐藏（card.visible 由 updateCard(null) 清除）；瞬时态若卡仍 visible 也显示。
+  const cardShow = !!state.card?.visible && !!state.card;
+
   // ===== geometry effect：调用 Rust 端锚点 resize =====
   useEffect(() => {
     if (!state.definition || !ready) return;
 
     const spriteW = FRAME_WIDTH * state.scale;
     const spriteH = FRAME_HEIGHT * state.scale;
+
+    // 状态卡常驻：在精灵下方加固定高度区
+    const cardH = cardShow ? CARD_HEIGHT + CARD_GAP : 0;
 
     let windowW: number;
     let windowH: number;
@@ -234,6 +249,9 @@ export function PetWindowApp() {
       windowW = spriteW;
       windowH = spriteH + MIN_BUBBLE_HEIGHT;
     }
+    // 状态卡在精灵图下方（气泡在精灵图上方），故只在高度上追加
+    windowH += cardH;
+    windowW = Math.max(windowW, 120); // 状态卡最小可读宽度
 
     // ★ 调用 Rust 端命令：同步读取当前位置 → 计算锚点 → 设置新位置和尺寸
     const invoke = (window as any).__TAURI__?.core?.invoke;
@@ -243,7 +261,7 @@ export function PetWindowApp() {
         height: windowH,
       }).catch(() => {});
     }
-  }, [state.definition, state.scale, ready, eventBubbleActive, bubbleSize]);
+  }, [state.definition, state.scale, ready, eventBubbleActive, bubbleSize, cardShow]);
 
   // ===== 交互处理 =====
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
@@ -389,9 +407,53 @@ export function PetWindowApp() {
         />
       </div>
 
+      {/* 大肥鱼式状态卡（精灵图下方常驻区） */}
+      {cardShow && state.card && (
+        <div
+          style={{
+            flexShrink: 0,
+            marginTop: CARD_GAP,
+            width: `min(calc(100% - 8px), 220px)`,
+            boxSizing: "border-box",
+            padding: "6px 10px",
+            borderRadius: "10px",
+            background: "rgba(24, 26, 38, 0.92)",
+            border: "1px solid rgba(255,255,255,0.14)",
+            boxShadow: "0 4px 14px rgba(0,0,0,0.35)",
+            backdropFilter: "blur(8px)",
+            color: "#e8e8f0",
+            fontFamily: "sans-serif",
+            zIndex: 10,
+            animation: "petCardIn 0.22s ease",
+          }}
+        >
+          {state.card.project && (
+            <div style={{ fontSize: "9px", opacity: 0.55, lineHeight: "13px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {state.card.project}
+            </div>
+          )}
+          <div style={{ fontSize: "11px", fontWeight: 600, lineHeight: "16px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {state.card.message || state.card.phase || (state.petState === "sleeping" ? "空闲中" : "")}
+          </div>
+          <div style={{ fontSize: "9px", opacity: 0.7, lineHeight: "13px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {[
+              state.card.phase ? (state.card.message ? "" : state.card.phase) : "",
+              state.card.step?.title,
+              state.card.step && (state.card.step.total != null && state.card.step.total > 0
+                ? `${state.card.step.current}/${state.card.step.total}`
+                : `第 ${state.card.step.current} 步`),
+            ].filter(Boolean).join(" · ") || (state.card.phase || "")}
+          </div>
+        </div>
+      )}
+
       <style>{`
         @keyframes petBubbleIn {
           0% { opacity: 0; transform: translateY(4px); }
+          100% { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes petCardIn {
+          0% { opacity: 0; transform: translateY(3px); }
           100% { opacity: 1; transform: translateY(0); }
         }
       `}</style>

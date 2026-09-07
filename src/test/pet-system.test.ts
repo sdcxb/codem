@@ -649,3 +649,57 @@ describe("宠物系统", () => {
     });
   });
 });
+
+describe("PetCard 状态卡（大肥鱼式）", () => {
+  beforeEach(() => {
+    usePetStore.setState({
+      enabled: false,
+      activePet: null,
+      spritesheetUrl: null,
+      petState: "idle",
+      installedPets: [],
+      loading: false,
+      lastActivityAt: Date.now(),
+      positionX: DEFAULT_PET_SETTINGS.positionX,
+      positionY: DEFAULT_PET_SETTINGS.positionY,
+      scale: DEFAULT_PET_SETTINGS.scale,
+      opacity: DEFAULT_PET_SETTINGS.opacity,
+      card: null,
+    });
+  });
+
+  it("updateCard 写入 card 快照", () => {
+    usePetStore.getState().updateCard({
+      project: "测试项目",
+      phase: "执行中",
+      step: { current: 2, total: 5, title: "写代码" },
+      visible: true,
+    });
+    const card = usePetStore.getState().card;
+    expect(card).not.toBeNull();
+    expect(card?.project).toBe("测试项目");
+    expect(card?.phase).toBe("执行中");
+    expect(card?.step?.current).toBe(2);
+    expect(card?.step?.total).toBe(5);
+  });
+
+  it("updateCard(null) 清除卡（回合结束归位）", () => {
+    usePetStore.getState().updateCard({ project: "P", phase: "思考中", visible: true });
+    expect(usePetStore.getState().card?.phase).toBe("思考中");
+    usePetStore.getState().updateCard(null);
+    expect(usePetStore.getState().card).toBeNull();
+  });
+
+  it("真实进度：total 为 null 时不显示完成段（不编造）", () => {
+    usePetStore.getState().updateCard({
+      project: "P",
+      phase: "查找",
+      step: { current: 1, total: null, title: "定位文件" },
+      visible: true,
+    });
+    const card = usePetStore.getState().card;
+    expect(card?.step?.total).toBeNull();
+    // 仅展示阶段+标题，无"x/y"假进度
+    expect(card?.step?.total == null).toBe(true);
+  });
+});

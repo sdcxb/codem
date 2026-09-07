@@ -186,3 +186,23 @@ export const DEFAULT_PET_SETTINGS: PetSettings = {
   draggable: true,
   idleTimeout: 60000,
 };
+
+// ========== 状态卡（对标 dsh-dafeiyu 大肥鱼） ==========
+
+/**
+ * PetCard — 宠物状态卡（大肥鱼式：项目名 + 阶段 + 真实步骤进度）。
+ * 显示在宠物窗状态卡区；字段缺省即不显示对应段（不编造进度）。
+ */
+export interface PetCard {
+  /** 项目名（fallback 路径 basename / 会话标题） */
+  project?: string;
+  /** 阶段文案（思考/分析/查找/实现/验证/执行/整理/等待/完成/出错…） */
+  phase?: string;
+  /** 真实步骤进度（来自 agentic-loop step_progress；total null = 不确定步数） */
+  step?: { current: number; total: number | null; title?: string };
+  /** 状态自然语言消息（可选） */
+  message?: string;
+  /** 是否显示（false 时隐藏整卡） */
+  visible: boolean;
+}
+
