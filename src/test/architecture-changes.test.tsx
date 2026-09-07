@@ -329,7 +329,8 @@ describe('架构变更: InputArea 两行布局', () => {
   it('textarea 字号 >= 15px', async () => {
     const src = await vi.importActual('fs')
     const css = src.readFileSync('src/styles.css', 'utf8')
-    const inputBlock = css.match(/\.message-input\s*\{[^}]+\}/s)?.[0]
+    // 锚定行首，避免误匹配 `.input-card-container.blur-folded .message-input {` 等后代规则
+    const inputBlock = css.match(/(?:^|\n)\.message-input\s*\{[^}]+\}/s)?.[0]
     expect(inputBlock).toBeDefined()
     expect(inputBlock).toContain('font-size: 15px')
     expect(inputBlock).toContain('min-height: 56px')

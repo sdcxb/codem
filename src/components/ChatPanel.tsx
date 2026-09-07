@@ -11,6 +11,7 @@ import { AgentDetail } from "./AgentDetail";
 import { SnapshotPanel } from "./SnapshotPanel";
 import { ContextMonitor } from "./ContextMonitor";
 import { SideSessionPanel } from "./SideSessionPanel";
+import { AgentTeamsPanel } from "./AgentTeamsPanel";
 import { GitInfoPanel } from "./GitInfoPanel";
 import { SubagentTask } from "../core/subagent/subagent";
 import { getSubagentRuntime } from "../core/subagent/index";
@@ -24,7 +25,7 @@ import { useScrollState, useUnreadMessagesTracker } from "../hooks/useScrollStat
 import {
   PanelLeftClose, PanelLeftOpen, ChevronDown, Brain, Bot, Camera, BarChart3, LayoutGrid,
   Search, X, GitFork, RotateCcw, Check, Hammer, ClipboardList, Zap,
-  Activity, Pencil, MessageSquareText,
+  Activity, Pencil, MessageSquareText, Users2,
 } from "lucide-react";
 // P2 #38: framer-motion for smooth list animations
 import { motion, AnimatePresence } from "framer-motion";
@@ -157,6 +158,7 @@ export function ChatPanel({ onSend, onCancel, onSendGuidance, onToggleSidebar, s
     : "idle";
   const [showAgentPanel, setShowAgentPanel] = useState(false);
   const [showSideSession, setShowSideSession] = useState(false);
+  const [showAgentTeams, setShowAgentTeams] = useState(false);
   const [showSnapshotPanel, setShowSnapshotPanel] = useState(false);
   const [showContextMonitor, setShowContextMonitor] = useState(false);
   const [showTrajectoryPanel, setShowTrajectoryPanel] = useState(false);
@@ -561,6 +563,14 @@ setStepTooltipLocked(false);
           title={lang === "zh" ? "临时会话（不污染主会话）" : "Side session (no main-chat pollution)"}
         >
           <MessageSquareText size={16} />
+        </button>
+        {/* B3 agent-teams 团队活动面板入口 */}
+        <button
+          className={`agent-toggle ${showAgentTeams ? "active" : ""}`}
+          onClick={() => { setShowAgentTeams(!showAgentTeams); setShowAgentPanel(false); setShowSideSession(false); setShowSnapshotPanel(false); setShowContextMonitor(false); setShowTrajectoryPanel(false); }}
+          title={lang === "zh" ? "团队活动（agent-teams）" : "Team activity (agent-teams)"}
+        >
+          <Users2 size={16} />
         </button>
         <button
           className={`agent-toggle ${showTrajectoryPanel ? "active" : ""}`}
@@ -1036,6 +1046,16 @@ canEdit={!isSessionStreaming}
       {/* B1 side-session 临时会话悬浮窗 */}
       {showSideSession && (
         <SideSessionPanel onClose={() => setShowSideSession(false)} open />
+      )}
+
+      {/* B3 agent-teams 团队活动面板 */}
+      {showAgentTeams && (
+        <div className="floating-overlay-panel" style={{
+          position: 'fixed', top: 'var(--chat-body-top, 48px)', right: 0, bottom: 'var(--chat-body-bottom, 140px)', width: 'min(400px, calc(100vw - 24px))',
+          zIndex: 210, overflowY: 'auto', borderRadius: 0,
+        }}>
+          <AgentTeamsPanel onClose={() => setShowAgentTeams(false)} />
+        </div>
       )}
 
       {/* RightSidebar — per benchmark plan layer 4: Git + Workbench tabs */}

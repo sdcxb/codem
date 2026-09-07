@@ -424,6 +424,9 @@
 - id: squad-manager
   name: '@codem/squad-manager'
 
+- id: agent-teams
+  name: '@codem/agent-teams'
+
 - id: dynamic-runner
   name: '@codem/dynamic-runner'
 

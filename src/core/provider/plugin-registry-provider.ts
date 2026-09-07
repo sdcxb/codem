@@ -1,4 +1,4 @@
-﻿// @ts-nocheck
+// @ts-nocheck
 /**
  * Plugin Registry Provider 插件 — 插件注册表和搜索服务，可独立加载/卸载/热替换。
  *
@@ -99,6 +99,7 @@ const KNOWN_PLUGINS = [
     { name: '@codem/recovery', version: '1.0.0', description: 'Recovery Provider — 恢复服务，快照保存和恢复点管理', provides: ['recovery'], inject: [], keywords: ['recovery', 'snapshot', 'checkpoint'], category: 'core', tags: ['provider', 'storage'], hot: true, icon: '🔄', author: 'Codem Team', riskLevel: 'caution', riskDescription: '关闭后恢复点不可用，系统故障后无法恢复' },
     { name: '@codem/retry', version: '1.0.0', description: 'Retry Provider — 重试服务，失败操作的自动重试和退避', provides: ['retry'], inject: [], keywords: ['retry', 'backoff'], category: 'core', tags: ['provider', 'runtime'], hot: true, icon: '🔁', author: 'Codem Team', riskLevel: 'caution', riskDescription: '关闭后自动重试不可用，失败操作直接报错' },
     { name: '@codem/squad-manager', version: '1.0.0', description: 'Squad Manager Provider — 多 Agent 团队管理，Agent 编排和协作', provides: ['squadManager'], inject: [], keywords: ['squad', 'manager', 'orchestration'], category: 'provider', tags: ['provider', 'agent'], hot: true, icon: '👥', author: 'Codem Team', riskLevel: 'safe', riskDescription: '关闭后多 Agent 团队管理不可用' },
+    { name: '@codem/agent-teams', version: '1.0.0', description: 'AgentTeams Provider — 依赖任务 DAG 多智能体团队编排（队长+成员+共享调度+成员邮箱，对标 dsh-agent-teams）', provides: ['agentTeams'], inject: [], keywords: ['team', 'agent', 'dag', 'orchestration', 'multi-agent'], category: 'provider', tags: ['provider', 'agent', 'team'], hot: true, icon: '🧑‍🤝‍🧑', author: 'Codem Team', riskLevel: 'caution', riskDescription: '关闭后 agent_teams_* 团队工具不可用' },
     { name: '@codem/issue', version: '1.0.0', description: 'Issue Provider — 问题追踪服务，Bug 报告和任务管理', provides: ['issue'], inject: [], keywords: ['issue', 'bug', 'track'], category: 'provider', tags: ['provider'], hot: true, icon: '🐛', author: 'Codem Team', riskLevel: 'safe', riskDescription: '关闭后问题追踪不可用' },
     { name: '@codem/inbox', version: '1.0.0', description: 'Inbox Provider — 收件箱服务，消息队列和通知管理', provides: ['inbox'], inject: [], keywords: ['inbox', 'message', 'queue'], category: 'provider', tags: ['provider'], hot: true, icon: '📥', author: 'Codem Team', riskLevel: 'safe', riskDescription: '关闭后收件箱不可用' },
 

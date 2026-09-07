@@ -280,6 +280,14 @@ private loopPool: Map<string, AgenticLoop> = new Map();
     }).catch(() => {
       // Non-critical — import may fail during test environment teardown
     });
+
+    // Register agent-teams tools (B3, 对标 EAC dsh-agent-teams)
+    import("../agent-teams/tools").then(({ registerAgentTeamsTools }) => {
+      registerAgentTeamsTools((t) => this.tools.register(t));
+      console.log("[LLMEngine] agent-teams tools registered");
+    }).catch((e) => {
+      console.warn("[LLMEngine] agent-teams tools register failed:", e);
+    });
   }
 
   /**

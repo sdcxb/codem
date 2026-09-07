@@ -1,4 +1,4 @@
-﻿// @ts-nocheck
+// @ts-nocheck
 /**
  * 内置插件注册 — 将所有 Codem 内置插件注册到 PluginLoader。
  *
@@ -42,6 +42,7 @@ import { commandsProvider } from '../provider/commands-provider'
 import { userQuestionsProvider } from '../provider/user-questions-provider'
 import { notebookProvider } from '../provider/notebook-provider'
 import { squadProvider } from '../provider/squad-provider'
+import { agentTeamsProvider } from '../provider/agent-teams-provider'
 import { dynamicRunnerProvider } from '../provider/dynamic-runner-provider'
 import { pluginRegistryProvider } from '../provider/plugin-registry-provider'
 
@@ -299,6 +300,7 @@ registerBuiltinPlugin('@codem/mimo-auth', { provides: ['mimoAuth'], inject: [], 
   registerBuiltinPlugin('@codem/user-questions', { provides: ['userQuestions'], inject: [], priority: 0 }, () => userQuestionsProvider)
   registerBuiltinPlugin('@codem/notebook', { provides: ['notebook'], inject: [], priority: 0 }, () => notebookProvider)
   registerBuiltinPlugin('@codem/squad', { provides: ['squad'], inject: [], priority: 0 }, () => squadProvider)
+  registerBuiltinPlugin('@codem/agent-teams', { provides: ['agentTeams'], inject: [], priority: 0 }, () => agentTeamsProvider)
   registerBuiltinPlugin('@codem/dynamic-runner', { provides: ['dynamicCordisRunner'], inject: [], priority: 0 }, () => dynamicRunnerProvider)
   registerBuiltinPlugin('@codem/plugin-registry', { provides: ['pluginRegistry'], inject: [], priority: 0, core: true }, () => pluginRegistryProvider)
 
