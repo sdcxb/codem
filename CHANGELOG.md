@@ -2,15 +2,22 @@
 
 All notable changes to Codem will be documented in this file.
 
-## [Unreleased] — 团队体系深合并（B 方案，对标整理）
+## [1.11.0] - 2026-09-08 — 团队体系深合并（B）+ 智能体双维度面板 + 审计修复
 
-> 把两套"团队"（静态 Squad 模板体系 + agent-teams 运行时 DAG 团队）合并为单一「团队 = 角色模板 + 运行时编排」。
-> 背景与矩阵：docs/AGENT-SYSTEMS-MATRIX.md；分阶段计划 docs/TEAM-CONSOLIDATION-PLAN.md。
+> 本版自 v1.10.0 后的全部改动：持续审计第 1 轮修复（dde3620）→ 子智能体/团队体系盘点（07dd260）
+> → B 方案深合并 Phase1-3（614de0d/dab14c5/6585c9d/abfec90）→ 深合并后审计修复（a5b4e1e）
+> → 「智能体与团队」双维度面板与行内预览（86646ac/60b89aa/120ae66）。
+
+- **持续审计修复（第 1 轮，dde3620）**：executor end 失败判据补全（非 completed 即落库失败，覆盖 safety_valve 等）；宠物卡轻量推送误清修复（emitPetStateLight 缺省跟随 store 当前 card）；runPs 默认超时 30s→60s
+- **子智能体/团队体系盘点（07dd260）**：docs/AGENT-SYSTEMS-MATRIX.md——厘清 5 套体系（Agent 定义/子智能体运行时/委派/Squad/agent-teams）入口与能力矩阵；确认 EAC 上游 dsh-agent-teams 实为会话旁浮动面板
+- **B 方案深合并（docs/TEAM-CONSOLIDATION-PLAN.md）**：把两套"团队"（静态 Squad 模板 + agent-teams 运行时 DAG）合并为单一「团队 = 角色模板 + 运行时编排」。
 
 - **Phase1（dab14c5）**：Squad 升级为「团队模板」——新增 TeamTemplate/toTeamTemplate；`squad_list`=模板列表、`squad_dispatch` 桥接 agent-teams（按模板建运行时团队：当前会话=队长、按角色 spawn 可续聊成员、任务入共享池调度；删除旧 CustomEvent 派发）、`squad_status`=模板+派生运行时团队摘要（team_id 可选）；App `codem-squad-dispatch` 事件路由删除；测试适配 + team-consolidation 5 例
 - **Phase2（6585c9d）**：TaskCenter tab `squads`→`teams`（TeamTab：说明 + 运行时团队活动（嵌入 AgentTeamsPanel，订阅自动刷新）+ 团队模板管理（复用 SquadsTab））；对话旁「团队活动」按钮收敛为快捷入口（→ 任务管理「团队」Tab，App 监听 codem:open-task-center）；旧 id 归一兼容
 - **Phase3**：清理死码 `generateSquadRoster`/`SquadDispatchResult`（旧 Leader-roster 路径已无消费者）；相关测试对齐 toTeamTemplate
-- 全量 vitest 168 文件 / 4236 用例通过 + tsc 零错误
+- **深合并后审计修复（a5b4e1e）**：`squad_dispatch` 模板无 agent 角色时前置拒绝（不建空转团队）
+- **「智能体与团队」双维度面板（86646ac/60b89aa/120ae66）**：顶部「子智能体」页面升级——当前会话有活动团队时首部渲染团队卡片（成员=角色+状态点，订阅实时刷新），点成员行内展开该成员个体动态预览（最近工具/思考活动+结果摘要，不跳页；「完整详情 →」按需进入 AgentDetail）；团队成员从平铺列表去重；修复 engine `snapshot()` 丢失成员 id 导致下钻失效/去重失灵的 bug；团队变化/切会话自动清理展开态；离线成员不可展开提示
+- 全量 vitest 168 文件 / 4239 用例通过 + tsc 零错误
 
 ## [1.10.0] - 2026-09-07 — EAC 对标 第①②③④项（DSH-Desktop-EAC）+ 全量审计修复
 
