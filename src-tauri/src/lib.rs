@@ -401,6 +401,18 @@ struct ReadFileLinesResult {
 /// `offset` lines and collecting only `limit` more. Memory is O(limit), not
 /// O(file_size).
 #[tauri::command]
+async fn read_file_base64(path: String) -> Result<String, String> {
+    let path_for_blocking = path.clone();
+    tokio::task::spawn_blocking(move || -> Result<String, String> {
+        use base64::Engine;
+        let bytes = std::fs::read(&path_for_blocking).map_err(|e| format!("read {}: {e}", path_for_blocking))?;
+        Ok(base64::engine::general_purpose::STANDARD.encode(&bytes))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
 async fn read_file_lines(
     path: String,
     offset: Option<usize>,
@@ -2308,6 +2320,7 @@ let app = tauri::Builder::default()
             set_default_agent,
             read_file,
             read_file_lines,
+            read_file_base64,
             write_file,
             append_file,
             list_directory,

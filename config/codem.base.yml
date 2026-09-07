@@ -427,6 +427,9 @@
 - id: agent-teams
   name: '@codem/agent-teams'
 
+- id: computer-use
+  name: '@codem/computer-use'
+
 - id: dynamic-runner
   name: '@codem/dynamic-runner'
 

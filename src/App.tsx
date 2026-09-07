@@ -1664,6 +1664,24 @@ if (!session) {
 
     // F3.2: Handle /memory slash commands
     const trimmedMessage = message.trim();
+
+    // /computer — computer-use 会话级批准开关（对标 EAC /computer toggle）
+    if (trimmedMessage === "/computer" || trimmedMessage.startsWith("/computer ")) {
+      const { approveSession } = await import("./core/computer-use/computer-use");
+      const nowApproved = approveSession(session.id);
+      addMessage({
+        id: `computer-${Date.now()}`,
+        role: "system",
+        content: nowApproved
+          ? "✅ 电脑操作已批准：本会话允许执行 computer_* 键鼠工具（重启后需重新批准）。再次输入 /computer 撤销。"
+          : "电脑操作批准已撤销：本会话不再允许执行键鼠工具（只读工具仍可用）。再次输入 /computer 重新批准。",
+        timestamp: Date.now(),
+        status: "done",
+      });
+      if (session) saveMessages(session.id);
+      return;
+    }
+
     if (trimmedMessage.startsWith("/memory")) {
       const parts = trimmedMessage.split(/\s+/);
       const subcommand = parts[1]?.toLowerCase();

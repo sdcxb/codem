@@ -288,6 +288,14 @@ private loopPool: Map<string, AgenticLoop> = new Map();
     }).catch((e) => {
       console.warn("[LLMEngine] agent-teams tools register failed:", e);
     });
+
+    // Register computer-use tools (对标 EAC computer-user，读屏+键鼠)
+    import("../computer-use/computer-use").then(({ registerComputerUseTools }) => {
+      registerComputerUseTools((t) => this.tools.register(t));
+      console.log("[LLMEngine] computer-use tools registered");
+    }).catch((e) => {
+      console.warn("[LLMEngine] computer-use tools register failed:", e);
+    });
   }
 
   /**
