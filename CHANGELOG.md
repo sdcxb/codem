@@ -2,7 +2,7 @@
 
 All notable changes to Codem will be documented in this file.
 
-## [Unreleased] — EAC 对标 第①②③④项（DSH-Desktop-EAC）
+## [1.10.0] - 2026-09-07 — EAC 对标 第①②③④项（DSH-Desktop-EAC）+ 全量审计修复
 
 > 第④项宠物状态卡 + 第③项 computer-use + 第②项微信 ClawBot 桥 + 第①项手机连接
 > （顺序按工作量递增）。四项全部落地后做了全量审计（注册/桥/工具链/引擎侧四路只读子代理
