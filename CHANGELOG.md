@@ -2,6 +2,29 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [Unreleased] — EAC 对标（DSH-Desktop-EAC 差距分析与仿照实施）
+
+> 对标仓库 github.com/zouyuxuan122/DSH-Desktop-EAC（dsh 桌面发行版，47 内置插件）：
+> 分析 → 差距矩阵 docs/EAC-GAP-ANALYSIS.md + 机制笔记 docs/EAC-BENCHMARK-NOTES.md（皮肤不对标，用户决定）。
+
+### 重叠部分 UI 交互改进（对标 message-rewind / navbar / meow-smooth 等）
+
+- **A1 编辑并回退（fork 保留原会话，对标 dsh-message-rewind / Trae）**：user 消息 hover 新增「编辑并回退」（Undo2）——编辑后复制此前缀到新会话重放，原会话保留不动（原地「编辑并重发」保留为 Pencil）。数据层测试 message-rewind-fork（4 例：前缀复制/原会话不动/编辑消息入新会话/全新 id）
+- **A2 节点导航升级（对标 dsh-navbar）**：ScrollbarMarkers v2 —— 修复几何绑定 bug（旧版监听不滚动的 .messages-container，现绑定父级 .chat-body 真滚动容器）+ portal 到 body 规避 transform + hover 预览卡（244px/4 行）+ 滚轮循环切换 user 消息 + **📌 消息精选 pin**（assistant 消息可精选为金色盘，按会话 localStorage 持久化，nav-pins 模块 4 测试）
+- **A3 输入框失焦折叠（对标 meow-smooth）**：多行草稿失焦自动收成单行胶囊（150ms 过渡），点击/聚焦即时展开恢复
+- **D1 字号设置真正生效**：旧字号滑杆只写 JSON 无消费方——新增 --ui-font-scale 缩放全部 --fs-* 刻度 + 启动恢复 + 滑杆即改即生效（core/ui-font.ts）
+- **D2 设置搜索可用**：占位搜索框 → 键入自动跳转匹配设置分组 + 匹配提示/无匹配反馈
+
+### 新增可启停插件（Codem 原本没有，剥离为内置插件注册）
+
+- **B1 临时会话 side-session（对标 dsh-side-session / Codex side session）**：页内可拖拽悬浮窗，基于当前会话最近消息 + 项目目录独立流式问答，**不写回主会话**（store/DB 零污染）；ChatPanel header 入口按钮。core/side-session 上下文窗口纯逻辑 5 测试
+- **B2 persona 人设卡（对标 dsh-soul-md）**：持久化多张人设卡 + 设置「人设」tab 管理 UI（新建/编辑/文件路径模式/设为激活/删除）+ `# Persona` 段注入主 prompt（紧随身份段）+ 外部文件热重载。**修复历史缺陷**：旧 persona-provider 仅内存 Map 且从未接入主 prompt（SOUL 孤儿代码）。7 测试
+- **B3 @codem/agent-teams 团队编排插件（对标 dsh-agent-teams，完整差距项）**：队长/可续聊成员/依赖任务 DAG 状态机（pending→claimed→in_progress→terminal，依赖全完成才可领取）+ **attempt 令牌防覆盖**（转派撤销旧代、迟到结果 stale 拒绝）+ 成员直达邮箱（60s 租赁投递）+ 共享调度（任务图变更 kick 空闲成员自动领取、投递失败精确回滚）+ 10 个 `agent_teams_*` 工具（队长专属工具按会话授权）+ ChatPanel 团队活动面板（成员/任务/依赖/未读）+ 注册 runtimePluginList/builtin-registry/codem.base.yml（可启停）。引擎 16 + 服务 6 测试
+
+### 测试与质量
+
+- 全量 163 文件 / 4202 用例通过 + tsc 零错误；修复 architecture-changes 测试正则误匹配（后代选择器 .message-input 需行首锚定）
+
 ## [1.9.8] - 2026-09-07
 
 ### 对话用量统计 + 缓存命中率真实化（对标 anywhere-labs/dsh-desktop）
