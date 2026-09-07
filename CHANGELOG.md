@@ -2,7 +2,7 @@
 
 All notable changes to Codem will be documented in this file.
 
-## [Unreleased] — EAC 对标（DSH-Desktop-EAC 差距分析与仿照实施）
+## [1.9.9] - 2026-09-07 — EAC 对标（DSH-Desktop-EAC 差距分析与仿照实施）
 
 > 对标仓库 github.com/zouyuxuan122/DSH-Desktop-EAC（dsh 桌面发行版，47 内置插件）：
 > 分析 → 差距矩阵 docs/EAC-GAP-ANALYSIS.md + 机制笔记 docs/EAC-BENCHMARK-NOTES.md（皮肤不对标，用户决定）。
