@@ -1,4 +1,4 @@
-﻿/* ========== Custom Fonts ========== */
+/* ========== Custom Fonts ========== */
 @font-face {
   font-family: 'AlimamaFangYuanTi';
   src: url('/fonts/AlimamaFangYuanTiVF-Thin.ttf') format('truetype-variations');
@@ -15,14 +15,16 @@
   --font-weight: 400;
 
   /* Font size scale (对标 frakio-work UI 规范) */
-  --fs-xs: 10px;      /* 辅助文本、标签、徽章 */
-  --fs-sm: 12px;      /* 次要文本、按钮、表格 */
-  --fs-base: 13px;    /* 正文基准（紧凑型桌面应用） */
-  --fs-md: 14px;      /* 主要文本、列表项标题 */
-  --fs-lg: 16px;      /* 区块标题、面板标题 */
-  --fs-xl: 18px;      /* 页面标题、弹窗标题 */
-  --fs-2xl: 20px;     /* 大标题 */
-  --fs-3xl: 24px;     /* Hero 标题 */
+  /* D1: --ui-font-scale 由设置页字号滑杆写入（1.0 = 13px 基准）；全部字号刻度随其缩放 */
+  --ui-font-scale: 1;
+  --fs-xs: calc(10px * var(--ui-font-scale));      /* 辅助文本、标签、徽章 */
+  --fs-sm: calc(12px * var(--ui-font-scale));      /* 次要文本、按钮、表格 */
+  --fs-base: calc(13px * var(--ui-font-scale));    /* 正文基准（紧凑型桌面应用） */
+  --fs-md: calc(14px * var(--ui-font-scale));      /* 主要文本、列表项标题 */
+  --fs-lg: calc(16px * var(--ui-font-scale));      /* 区块标题、面板标题 */
+  --fs-xl: calc(18px * var(--ui-font-scale));      /* 页面标题、弹窗标题 */
+  --fs-2xl: calc(20px * var(--ui-font-scale));     /* 大标题 */
+  --fs-3xl: calc(24px * var(--ui-font-scale));     /* Hero 标题 */
   --fs-icon-sm: 12px; /* 小图标 */
   --fs-icon: 16px;    /* 标准图标 */
   --fs-icon-lg: 20px; /* 大图标 */
@@ -1860,6 +1862,23 @@ z-index: 50;
 .input-card-container:focus-within {
   border-color: var(--text-primary);
   box-shadow: none;
+}
+
+/* P-UI: A3 失焦折叠（对标 meow-smooth）— 多行草稿失焦后收成单行胶囊 */
+.input-card-container.blur-folded {
+  transition: all var(--duration-normal, 0.18s) ease;
+  cursor: text;
+}
+.input-card-container.blur-folded .input-backdrop-wrapper {
+  transition: height var(--duration-normal, 0.18s) ease;
+  overflow: hidden;
+}
+.input-card-container.blur-folded .message-input {
+  overflow-y: hidden;
+  transition: height var(--duration-normal, 0.18s) ease;
+}
+.input-card-container.blur-folded .input-textarea-row {
+  overflow: hidden;
 }
 
 /* P1: Drag-over state */
@@ -10861,37 +10880,48 @@ html.pet-window-mode #root {
   border-color: rgba(239, 68, 68, 0.3);
 }
 
-/* ========== P0: Scrollbar Markers ========== */
-.scrollbar-markers {
+/* ========== P0: Scrollbar Markers v2（对标 dsh-navbar 节点导航） ========== */
+.scrollbar-markers-rail {
+  position: fixed;
+  width: 10px;
+  z-index: 900;
+  pointer-events: auto;
+  cursor: pointer;
+  user-select: none;
+}
+.scrollbar-markers-rail::before {
+  content: "";
   position: absolute;
-  right: 4px;
   top: 0;
   bottom: 0;
-  width: 4px;
-  pointer-events: none;
-  z-index: 5;
+  left: 4px;
+  width: 2px;
+  background: var(--border-color, rgba(128, 128, 128, 0.25));
+  border-radius: 1px;
 }
 .scrollbar-marker {
   position: absolute;
-  right: 0;
+  left: 2px;
   width: 6px;
   height: 6px;
   border-radius: 50%;
   background: var(--text-muted, #555);
-  opacity: 0.4;
+  opacity: 0.45;
   cursor: pointer;
   pointer-events: auto;
   transition: var(--transition-color);
-  transform: translateX(-1px);
+  transform: translateX(0);
+  box-sizing: border-box;
 }
 .scrollbar-marker:hover {
-  opacity: 0.9;
+  opacity: 1;
   width: 8px;
   height: 8px;
+  left: 1px;
   background: var(--accent, #6366f1);
 }
 .scrollbar-marker.in-viewport {
-  opacity: 0.6;
+  opacity: 0.65;
   background: var(--text-secondary, #888);
 }
 .scrollbar-marker.active {
@@ -10899,6 +10929,56 @@ html.pet-window-mode #root {
   background: var(--accent, #6366f1);
   width: 8px;
   height: 8px;
+  left: 1px;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent, #6366f1) 30%, transparent);
+}
+.scrollbar-marker.pinned {
+  width: 8px;
+  height: 8px;
+  left: 1px;
+  background: linear-gradient(135deg, #f5c542, #e0a91f);
+  border: 1px solid rgba(120, 84, 0, 0.35);
+  opacity: 1;
+  box-shadow: 0 0 4px rgba(224, 169, 31, 0.5);
+}
+.toolbar-btn.pin-active {
+  color: #e0a91f;
+  background: color-mix(in srgb, #e0a91f 14%, transparent);
+}
+.scrollbar-marker-preview {
+  position: absolute;
+  right: 16px;
+  top: 0;
+  transform: translateY(0);
+  width: min(244px, 50vw);
+  max-height: 120px;
+  overflow: hidden;
+  background: var(--dropdown-bg, #1f2430);
+  border: 1px solid var(--border-color, #333);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+  padding: 8px 10px;
+  pointer-events: none;
+  z-index: 901;
+}
+.scrollbar-marker-preview-role {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent, #6366f1);
+  margin-bottom: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.scrollbar-marker-preview-text {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-secondary, #aaa);
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 /* ========== P0: Scroll to Bottom Indicator ========== */

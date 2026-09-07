@@ -114,6 +114,10 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
   const textareaRowRef = useRef<HTMLDivElement>(null);
   const [slashMenuPos, setSlashMenuPos] = useState<{ left: number; bottom: number; width: number } | null>(null);
   const [expanded, setExpanded] = useState(false);
+  // A3 (对标 meow-smooth 失焦折叠): 失焦时把多行输入折叠成单行胶囊，
+  // 点击/聚焦即时展开并恢复草稿与滚动位置。
+  const [blurFolded, setBlurFolded] = useState(false);
+  const inputCardRef = useRef<HTMLDivElement>(null);
 
   // P3-26: Voice input — Web Speech API STT
   const {
@@ -552,14 +556,42 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
     // 删除内容后高度永远卡在旧值无法收缩。
     wrapper.style.height = `${minH}px`;
     ta.style.height = `${minH}px`;
+    // A3: 失焦折叠 —— 固定为单行胶囊（仅当内容超过一行时才生效；空/单行本来就保持 minH）
+    if (blurFolded) {
+      const one = `${minH}px`;
+      ta.style.height = one;
+      wrapper.style.height = one;
+      return;
+    }
     const h = Math.max(minH, Math.min(ta.scrollHeight, maxH));
     ta.style.height = `${h}px`;
     wrapper.style.height = `${h}px`;
-  }, [expanded]);
+  }, [expanded, blurFolded]);
 
   useEffect(() => {
     resizeTextarea();
   }, [input, draft, resizeTextarea]);
+
+  // A3: 失焦折叠 —— 仅当输入框持有焦点且内容超过一行时，在失焦后收成单行
+  const handleFocusWithin = useCallback(() => {
+    // 容器内任何元素获得焦点 → 展开
+    setBlurFolded((prev) => {
+      if (prev) resizeTextarea();
+      return false;
+    });
+  }, [resizeTextarea]);
+
+  const handleBlurWithin = useCallback((e: React.FocusEvent) => {
+    // 焦点转移到容器内（点击按钮/菜单等）不折叠
+    const card = inputCardRef.current;
+    if (card && e.relatedTarget && card.contains(e.relatedTarget as Node)) return;
+    const ta = textareaRef.current;
+    if (!ta) return;
+    // 多行内容才折叠：超过单行高度（~56px）或含换行
+    const multiline = ta.scrollHeight > 70 || /\n/.test(ta.value || "");
+    if (!multiline) { setBlurFolded(false); return; }
+    setBlurFolded(true);
+  }, []);
 
   const handleSubmit = () => {
     if ((!input.trim() && pendingAttachments.length === 0) || disabled) return;
@@ -584,6 +616,7 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
       setGenerateMode("text");
       setShowMultimodal(false);
     }
+    setBlurFolded(false);
   };
 
   // P0: Model list for inline model selector
@@ -774,7 +807,18 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
   const currentModeInfo = SECURITY_MODES.find(m => m.mode === securityMode)!;
 
   return (
-    <div className={`input-area input-card-container ${isDragOver ? "drag-over" : ""}`}
+    <div
+      ref={inputCardRef}
+      className={`input-area input-card-container ${isDragOver ? "drag-over" : ""} ${blurFolded ? "blur-folded" : ""}`}
+      onFocusCapture={handleFocusWithin}
+      onBlurCapture={handleBlurWithin}
+      onMouseDownCapture={(e) => {
+        // A3: 点击折叠态输入卡任意处 → 聚焦 textarea 展开
+        if (blurFolded && textareaRef.current && !(e.target as HTMLElement).closest?.("button, a, input, select, textarea, [role='button']")) {
+          e.preventDefault();
+          textareaRef.current.focus();
+        }
+      }}
       onDragEnter={(e) => {
         e.preventDefault();
         e.dataTransfer.dropEffect = "copy";

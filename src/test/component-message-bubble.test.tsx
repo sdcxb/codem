@@ -167,4 +167,39 @@ describe("MessageBubble — 渲染测试", () => {
       // 注意: 具体行为取决于 InlineMessageEdit 组件实现
     }
   });
+
+  it("用户消息回退：提供「编辑并回退」按钮并触发 onEditAndRewind（原会话保留语义）", () => {
+    const onEditAndRewind = vi.fn();
+    const msg = makeMessage({
+      role: "user",
+      content: "需要回退的原始消息",
+    });
+    renderWithProviders(
+      <MessageBubble
+        message={msg}
+        canEdit={true}
+        onEditAndResend={vi.fn()}
+        onEditAndRewind={onEditAndRewind}
+      />
+    );
+
+    // hover 工具条出现（MessageBubble 中工具条渲染条件是 !isStreaming && content && !isEditing）
+    // 查找"编辑并回退"按钮（Undo2 图标，aria-label 为 editAndRewind 文案）
+    const rewindBtn = screen.queryByRole("button", { name: /回退|rewind/i });
+    expect(rewindBtn).not.toBeNull();
+    fireEvent.click(rewindBtn!);
+
+    // 进入编辑态后出现 textarea
+    const ta = screen.queryByPlaceholderText(/编辑消息内容/i) as HTMLTextAreaElement | null;
+    expect(ta).not.toBeNull();
+    if (ta) {
+      fireEvent.change(ta, { target: { value: "回退后的新内容" } });
+      // 点击保存（✓ 按钮）
+      const saveBtn = screen.queryByText(/^✓/);
+      expect(saveBtn).not.toBeNull();
+      fireEvent.click(saveBtn!);
+      // 回退模式保存应调用 onEditAndRewind 而非 onEditAndResend
+      expect(onEditAndRewind).toHaveBeenCalledWith(msg.id, "回退后的新内容");
+    }
+  });
 });

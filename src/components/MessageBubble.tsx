@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useRef, useCallback, memo, useMemo } from "react";
+import { useState, useEffect, useRef, useCallback, memo, useMemo } from "react";
 import { Message, useAppStore } from "../store";
 import ReactMarkdown from "react-markdown";
 // P1 #17: Shiki replaces Prism for code highlighting
@@ -22,7 +22,7 @@ import { openFileLink } from "../utils/file-link";
 // P3-26: Voice output (TTS) — browser speech synthesis hook
 import { useSpeechSynthesis } from "../hooks/useSpeechSynthesis";
 import { getMultimodalSettings, textToSpeech, playTTSAudio } from "../core/llm/multimodal";
-import { Bot, CheckCircle, XCircle, Clock, FileText, Image as ImageIcon, Pencil, PencilLine, Clipboard, Check, BookOpen, BookX, Brain, ChevronDown, ChevronUp, User, Volume2, Square as StopIcon } from "lucide-react";
+import { Bot, CheckCircle, XCircle, Clock, FileText, Image as ImageIcon, Pencil, PencilLine, Clipboard, Check, BookOpen, BookX, Brain, ChevronDown, ChevronUp, User, Volume2, Square as StopIcon, Undo2, Pin, PinOff } from "lucide-react";
 import { getSettingJSON } from "../core/storage/settings";
 import type { UserConfig } from "../core/types";
 import { MessageActions } from "./MessageActions";
@@ -203,6 +203,13 @@ interface MessageBubbleProps {
   onSourceClick?: (sourceId: string, chunkIndex?: number) => void;
   /** P0: Called when user edits a message and wants to resend */
   onEditAndResend?: (messageId: string, newContent: string) => void;
+  /** P0 (message-rewind 对标): Edit a past user message and rewind — the edited
+   *  message is resent in a NEW forked session (original session untouched),
+   *  instead of destructive in-place resend. */
+  onEditAndRewind?: (messageId: string, newContent: string) => void;
+  /** P0 (dsh-navbar 精选 pin 对标): assistant 消息精选到右侧导航条 */
+  pinned?: boolean;
+  onTogglePin?: (messageId: string) => void;
   /** P0: Called when user wants to restore a message to the input box */
   onReEdit?: (content: string) => void;
   /** P0: Session ID for DB persistence (feedback) */
@@ -211,7 +218,7 @@ interface MessageBubbleProps {
   canEdit?: boolean;
 }
 
-export const MessageBubble = memo(function MessageBubble({ message, index, showReasoning = true, onDeleteFiles, isLastInTurn, onCitationClick, onSourceClick, onEditAndResend, onReEdit, sessionId, canEdit = true }: MessageBubbleProps) {
+export const MessageBubble = memo(function MessageBubble({ message, index, showReasoning = true, onDeleteFiles, isLastInTurn, onCitationClick, onSourceClick, onEditAndResend, onEditAndRewind, onReEdit, sessionId, canEdit = true, pinned, onTogglePin }: MessageBubbleProps) {
 const lang = useLang();
   const displayMode = useAppStore((s) => s.displayMode);
   const isStreaming = message.status === "streaming";
@@ -224,6 +231,7 @@ const lang = useLang();
   const [contentCollapsed, setContentCollapsed] = useState(false);
 const [copied, setCopied] = useState(false);
 const [isEditing, setIsEditing] = useState(false);
+const [isEditingRewind, setIsEditingRewind] = useState(false);
 const [galleryImages, setGalleryImages] = useState<string[] | null>(null);
 const [galleryIndex, setGalleryIndex] = useState(0);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -581,9 +589,15 @@ setTimeout(() => setCopied(false), 2000);
               initialContent={rawContent}
               onSave={(newContent) => {
                 setIsEditing(false);
-                onEditAndResend?.(message.id, newContent);
+                const rewind = isEditingRewind;
+                setIsEditingRewind(false);
+                if (rewind) {
+                  onEditAndRewind?.(message.id, newContent);
+                } else {
+                  onEditAndResend?.(message.id, newContent);
+                }
               }}
-              onCancel={() => setIsEditing(false)}
+              onCancel={() => { setIsEditing(false); setIsEditingRewind(false); }}
             />
           ) : (
           <div className="message-content" ref={contentRef}>
@@ -844,11 +858,21 @@ const opLabel = tc.tool === 'create_note'
             {isUser && canEdit && onEditAndResend && (
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <button className="toolbar-btn" onClick={() => setIsEditing(true)}>
+                  <button className="toolbar-btn" aria-label={S.bubble.editAndResend[lang]} onClick={() => { setIsEditing(true); setIsEditingRewind(false); }}>
                     <Pencil size={14} />
                   </button>
                 </TooltipTrigger>
                 <TooltipContent>{S.bubble.editAndResend[lang]}</TooltipContent>
+              </Tooltip>
+            )}
+            {isUser && canEdit && onEditAndRewind && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button className="toolbar-btn" aria-label={S.bubble.editAndRewind[lang]} onClick={() => { setIsEditing(true); setIsEditingRewind(true); }}>
+                    <Undo2 size={14} />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent>{S.bubble.editAndRewind[lang]}</TooltipContent>
               </Tooltip>
             )}
             {isUser && canEdit && onReEdit && (
@@ -869,6 +893,21 @@ const opLabel = tc.tool === 'create_note'
               </TooltipTrigger>
               <TooltipContent>{copied ? S.bubble.copied[lang] : S.bubble.copyMessage[lang]}</TooltipContent>
             </Tooltip>
+            {/* P0 (dsh-navbar 精选 pin 对标): assistant 消息精选到右侧导航条 */}
+            {!isUser && !isSystem && onTogglePin && sessionId && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    className={`toolbar-btn ${pinned ? "pin-active" : ""}`}
+                    aria-label={pinned ? S.bubble.unpinFromNav[lang] : S.bubble.pinToNav[lang]}
+                    onClick={() => onTogglePin(message.id)}
+                  >
+                    {pinned ? <PinOff size={14} /> : <Pin size={14} />}
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent>{pinned ? S.bubble.unpinFromNav[lang] : S.bubble.pinToNav[lang]}</TooltipContent>
+              </Tooltip>
+            )}
             {/* P3-26: Read aloud (TTS) — only for assistant messages */}
             {!isUser && !isSystem && ttsSupported && (
               <Tooltip>

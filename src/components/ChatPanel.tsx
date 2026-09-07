@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useAppStore, MessageAttachment, type Message } from "../store";
 import { useProjectStore } from "../core/store";
 import { MessageBubble } from "./MessageBubble";
@@ -16,6 +16,7 @@ import { getSubagentRuntime } from "../core/subagent/index";
 import { useLang, S } from "../core/i18n/lang";
 import { MIMO_MODELS, getConfiguredApiModels } from "../core/model-config";
 import { ScrollbarMarkers } from "./ScrollbarMarkers";
+import { listPinnedIds, togglePin, subscribePins } from "../core/nav-pins";
 import { ScrollToBottomIndicator } from "./ScrollToBottomIndicator";
 import { useScrollState, useUnreadMessagesTracker } from "../hooks/useScrollState";
 // Lucide icons — replacing all emoji icons with professional vector icons
@@ -61,6 +62,9 @@ interface ChatPanelProps {
   onRegenerate?: (messageIndex: number) => void;
   /** P0: Edit a message and resend from that point */
   onEditAndResend?: (messageId: string, newContent: string) => void;
+  /** P0 (message-rewind 对标): Edit a user message and resend it in a new
+   *  forked session (original session kept untouched). */
+  onEditAndRewind?: (messageId: string, newContent: string) => void;
   /** P0: Restore message content to input box — handled internally by ChatPanel */
   onReEdit?: (content: string) => void;
   /** P0: Session ID for DB persistence */
@@ -83,7 +87,7 @@ onSourceClick?: (sourceId: string, chunkIndex?: number) => void;
 notebookId?: string;
 }
 
-export function ChatPanel({ onSend, onCancel, onSendGuidance, onToggleSidebar, sidebarOpen = true, onFork, onRegenerate, onEditAndResend, onReEdit, sessionId, connected, model, onModelChange, mode = "cli", providerId = "mimo", collaborationMode = "default", onModeChange, projectPath, currentSessionId, onCitationClick, onSourceClick, notebookId }: ChatPanelProps) {
+export function ChatPanel({ onSend, onCancel, onSendGuidance, onToggleSidebar, sidebarOpen = true, onFork, onRegenerate, onEditAndResend, onEditAndRewind, onReEdit, sessionId, connected, model, onModelChange, mode = "cli", providerId = "mimo", collaborationMode = "default", onModeChange, projectPath, currentSessionId, onCitationClick, onSourceClick, notebookId }: ChatPanelProps) {
   const lang = useLang();
   const { messages, isStreaming, activeSessions, removeGeneratedFiles, hasMoreMessages, isLoadingMore, loadMoreMessages, stepProgress, streamStartTime, llmStatus, displayMode, setDisplayMode, guidanceMessages, removeGuidanceMessage } = useAppStore();
   const { currentSession, currentProject } = useProjectStore();
@@ -91,8 +95,24 @@ export function ChatPanel({ onSend, onCancel, onSendGuidance, onToggleSidebar, s
   const [showEffortPicker, setShowEffortPicker] = useState(false);
   const [showReasoning, setShowReasoning] = useState(true);
   const [stepTooltipLocked, setStepTooltipLocked] = useState(false);
+  const [pinnedIds, setPinnedIds] = useState<Set<string>>(new Set());
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
+
+  // P0 (dsh-navbar 精选 pin): 会话变化时加载该会话精选列表
+  const activeSessionId = sessionId || currentSession?.id || "";
+  useEffect(() => {
+    if (!activeSessionId) { setPinnedIds(new Set()); return; }
+    setPinnedIds(new Set(listPinnedIds(activeSessionId)));
+    const unsub = subscribePins(activeSessionId, (ids) => setPinnedIds(new Set(ids)));
+    return unsub;
+  }, [activeSessionId]);
+
+  const handleTogglePin = useCallback((messageId: string) => {
+    if (!activeSessionId) return;
+    togglePin(activeSessionId, messageId);
+    setPinnedIds(new Set(listPinnedIds(activeSessionId)));
+  }, [activeSessionId]);
 
   // P0: Scroll state tracking
   useScrollState(messagesContainerRef, [messages.length]);
@@ -814,6 +834,9 @@ isLastInTurn={isLastInTurn}
 onCitationClick={onCitationClick}
 onSourceClick={onSourceClick}
 onEditAndResend={onEditAndResend}
+onEditAndRewind={onEditAndRewind}
+pinned={pinnedIds.has(msg.id)}
+onTogglePin={handleTogglePin}
 onReEdit={handleReEditInternal}
 sessionId={sessionId || currentSession?.id}
 canEdit={!isSessionStreaming}
@@ -829,6 +852,9 @@ isLastInTurn={isLastInTurn}
 onCitationClick={onCitationClick}
 onSourceClick={onSourceClick}
 onEditAndResend={onEditAndResend}
+onEditAndRewind={onEditAndRewind}
+pinned={pinnedIds.has(msg.id)}
+onTogglePin={handleTogglePin}
 onReEdit={handleReEditInternal}
 sessionId={sessionId || currentSession?.id}
 canEdit={!isSessionStreaming}
@@ -893,7 +919,12 @@ canEdit={!isSessionStreaming}
           />
           <div ref={messagesEndRef} />
           {/* P0: Scrollbar markers for message navigation */}
-          <ScrollbarMarkers messages={messages} containerRef={messagesContainerRef} />
+          <ScrollbarMarkers
+            messages={messages}
+            containerRef={messagesContainerRef}
+            pinnedIds={pinnedIds}
+            onPinClick={(mid) => { /* jump handled inside markers */ }}
+          />
 
           {/* P1: Streaming wait indicator — inside message flow */}
           {isSessionStreaming && !stepProgress && (

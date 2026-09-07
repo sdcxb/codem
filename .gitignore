@@ -76,3 +76,11 @@ notebook-section.txt
 .codem-cache/
 .codem-snapshots/
 .codem-tool-results/
+
+# EAC reference repo (analysis only)
+.eac-ref/
+
+
+# EAC analysis artifacts (temporary)
+.eac-analysis/
+

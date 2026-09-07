@@ -259,6 +259,7 @@ import { getSessionMessageBus, getDelegationOrchestrator, executeSessionTurn, is
 const GameViewLazy = lazy(() => import("./plugins/monopoly-game/components/GameView").then(m => ({ default: m.GameView })));
 import type { InteractiveFormQuestion, PromptChange } from "./core/llm/tools";
 import { useAppStore } from "./store";
+import type { Message } from "./store";
 import { useProjectStore } from "./core/store";
 import { setGlobalCwd } from "./utils/file-link";
 import { loadAppIdentity } from "./core/config/loader";
@@ -2773,6 +2774,68 @@ abortControllersRef.current.delete(session?.id || "");
   };
 
   /**
+   * P0 (对标 dsh-message-rewind / Trae "编辑并回退"):
+   * Edit a past user message and resend it in a NEW forked session.
+   * - The new session contains everything BEFORE the edited message (the
+   *   previous turns), then the edited message is sent as a fresh user turn.
+   * - The original session is kept untouched (no deletion).
+   * The user message must not be the first message of the session.
+   */
+  const handleEditAndRewind = async (messageId: string, newContent: string) => {
+    const session = useProjectStore.getState().currentSession;
+    if (!session) return;
+    const activeSessions = useAppStore.getState().activeSessions;
+    if (activeSessions.has(session.id)) return;
+
+    const allMessages = useAppStore.getState().messages;
+    const targetIdx = allMessages.findIndex((m) => m.id === messageId);
+    if (targetIdx < 0 || allMessages[targetIdx].role !== "user") return;
+    // First message of the session cannot be rewound (no completed turn precedes it).
+    if (targetIdx === 0) {
+      addMessage({
+        id: `sys-${Date.now()}`,
+        role: "system",
+        content: lang === "zh"
+          ? "这是会话的第一条消息，没有可回退的上下文。可改用「编辑并重发」。"
+          : "This is the first message of the session — nothing to rewind to. Use Edit & Resend instead.",
+        timestamp: Date.now(),
+        status: "done",
+      });
+      return;
+    }
+
+    const prefix = allMessages.slice(0, targetIdx); // everything before the edited message
+    const newSession = createSession(`Rewind: ${session.title}`);
+
+    // 1. Copy prefix messages into the new session (fresh IDs).
+    const ts = Date.now();
+    const clone = (m: Message) => ({
+      ...m,
+      id: `${m.id}-rw-${ts}-${Math.random().toString(36).substr(2, 5)}`,
+      toolCalls: m.toolCalls?.map((tc) => ({ ...tc, id: `${tc.id}-rw-${ts}-${Math.random().toString(36).substr(2, 5)}` })),
+    });
+    for (const m of prefix) {
+      try { MessageStorage.createMessage(clone(m), newSession.id); } catch (e) { console.warn("[Rewind] copy prefix failed:", e); }
+    }
+    // 2. Write the edited message as the new user turn.
+    try {
+      MessageStorage.createMessage({
+        id: `user-rw-${ts}-${Math.random().toString(36).substr(2, 5)}`,
+        role: "user",
+        content: newContent,
+        timestamp: Date.now(),
+        status: "done",
+      }, newSession.id);
+    } catch (e) { console.warn("[Rewind] write edited message failed:", e); }
+
+    // 3. Load the new session from DB (also switches currentSession rendering).
+    loadMessages(newSession.id);
+
+    // 4. Re-run the agentic loop on the forked session with the edited content.
+    await runAgenticLoop(newContent, newSession);
+  };
+
+  /**
    * P0: Re-edit is now handled internally by ChatPanel — no parent state needed.
    * The onReEdit prop is optional and not passed, so ChatPanel manages its own quoteContext.
    */
@@ -2949,6 +3012,7 @@ onRemoveProject={(id, name, path) => {
                           sidebarOpen={sidebarOpen}
                           onRegenerate={handleRegenerate}
                           onEditAndResend={handleEditAndResend}
+onEditAndRewind={handleEditAndRewind}
                           sessionId={currentSession?.id}
                           onFork={(messageIndex) => {
                             if (currentSession && currentProject) {
@@ -3072,6 +3136,7 @@ onSend={handleSend}
                         sidebarOpen={sidebarOpen}
                         onRegenerate={handleRegenerate}
                         onEditAndResend={handleEditAndResend}
+onEditAndRewind={handleEditAndRewind}
                         sessionId={currentSession?.id}
                         onFork={(messageIndex) => {
                           if (currentSession && currentProject) {
@@ -3227,6 +3292,7 @@ onSend={handleSend}
                 sidebarOpen={sidebarOpen}
                 onRegenerate={handleRegenerate}
                 onEditAndResend={handleEditAndResend}
+onEditAndRewind={handleEditAndRewind}
                 sessionId={currentSession?.id}
                 onFork={(messageIndex) => {
                   if (currentSession && currentProject) {

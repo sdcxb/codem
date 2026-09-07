@@ -226,10 +226,13 @@ search: { zh: "搜索", en: "Search" },
     regenerate: { zh: "重新生成", en: "Regenerate" },
     edit: { zh: "编辑", en: "Edit" },
     editAndResend: { zh: "编辑并重发", en: "Edit & Resend" },
+    editAndRewind: { zh: "编辑并回退（保留本会话，新会话重放）", en: "Edit & rewind (fork to new session)" },
     save: { zh: "保存", en: "Save" },
     like: { zh: "赞", en: "Like" },
     dislike: { zh: "踩", en: "Dislike" },
     reEdit: { zh: "恢复到输入框", en: "Restore to input" },
+    pinToNav: { zh: "精选到导航条", en: "Pin to nav rail" },
+    unpinFromNav: { zh: "取消精选", en: "Unpin" },
   },
 
   // MessageBubble subagent status

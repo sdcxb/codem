@@ -9,6 +9,7 @@ import { ConfirmDialog } from "./ConfirmDialog";
 import { SearchDialog } from "./SearchDialog";
 import { SpaceSwitcher } from "./SpaceSwitcher";
 import { getSetting, setSetting } from "../core/storage/settings";
+import { applyStoredUiFont } from "../core/ui-font";
 import * as SessionStorage from "../core/storage/session";
 import { useLang, S } from "../core/i18n/lang";
 import { Tooltip, TooltipTrigger, TooltipContent } from "./ui/tooltip";
@@ -139,6 +140,8 @@ const handleDrop = useCallback((e: React.DragEvent, targetSessionId: string, pro
     if (savedWeight) {
       document.documentElement.style.setProperty("--font-weight", String(savedWeight));
     }
+    // D1: 启动恢复字号缩放（字号滑杆真正生效）
+    applyStoredUiFont(getSetting);
   }, []);
 
   useEffect(() => {

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import type { IdentityConfig, UserConfig, AppIdentity } from "../core/types";
 import { saveAppIdentity } from "../core/config/loader";
 import { version as APP_VERSION } from "../../package.json";
@@ -33,6 +33,7 @@ import { PromptDebugger } from "./PromptDebugger";
 import { LayeredSettingsPanel } from "./LayeredSettingsPanel";
 import { RecoveryPanel } from "./RecoveryPanel";
 import { CorrectionModelConfig } from "./CorrectionModelConfig";
+import { applyUiFontScale, FONT_BASE_PX } from "../core/ui-font";
 // P2 #34: Import reusable settings components
 import { SettingsNav, ConfigEntry, ToggleEntry } from "./SettingsParts";
 // P2 #35: Import UsageStats for embedding in settings
@@ -247,6 +248,8 @@ export function SettingsPanel({ onClose, onSessionRecovery, onUsageStats, initia
         }
       }
       setSettings({ ...defaultSettings, ...parsed });
+      // D1: 打开设置时确保字号即时应用（含其它途径已存值）
+      applyUiFontScale((parsed as Settings).fontSize ?? FONT_BASE_PX);
     }
 
     // Load dynamically fetched models from DB cache
@@ -388,10 +391,47 @@ export function SettingsPanel({ onClose, onSessionRecovery, onUsageStats, initia
 const [showModelProfiles, setShowModelProfiles] = useState(false);
 const [showMultimodal, setShowMultimodal] = useState(false);
 const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security" | "git" | "environment" | "worktree" | "knowledge" | "automation" | "multimodal" | "voice" | "ollama" | "pet" | "tools" | "codegraph" | "advanced" | "help" | "usage" | "performance">((initialTab as any) || "general");
-  // P2 #36: Settings search
+  // P2 #36: Settings search — D2 修复：占位搜索框现在真正过滤/跳转设置分组
   const [settingsSearch, setSettingsSearch] = useState("");
   const [advancedSubTab, setAdvancedSubTab] = useState<"agents" | "heartbeat" | "retry" | "prompt" | "settings" | "recovery" | "correction" | "profiles" | "transcript">("agents");
   const [showPetMarket, setShowPetMarket] = useState(false);
+
+  // D2: 设置分组搜索元数据（id → [中文名, 英文名, 别名...]）
+  const SETTINGS_TAB_INDEX: Array<[string, string[]]> = [
+    ["general", ["通用", "general", "模式", "语言", "账号"]],
+    ["appearance", ["外观", "appearance", "主题", "皮肤", "字体", "字号", "font", "皮肤", "背景"]],
+    ["security", ["安全", "security", "权限", "模式"]],
+    ["git", ["Git", "仓库", "提交"]],
+    ["environment", ["环境", "environment", "worktree", "工作树"]],
+    ["worktree", ["工作树", "worktree"]],
+    ["knowledge", ["知识", "knowledge", "笔记本", "记忆"]],
+    ["automation", ["自动化", "automation"]],
+    ["multimodal", ["多模态", "multimodal", "图片", "视觉"]],
+    ["voice", ["语音", "voice", "tts", "朗读"]],
+    ["ollama", ["Ollama", "本地模型"]],
+    ["pet", ["宠物", "pet", "桌宠"]],
+    ["tools", ["工具", "tools", "终端"]],
+    ["codegraph", ["代码图谱", "codegraph", "graph"]],
+    ["advanced", ["高级", "advanced", "实验", "分层"]],
+    ["help", ["帮助", "help", "关于", "教程"]],
+    ["usage", ["用量统计", "usage", "费用", "token", "限额"]],
+    ["performance", ["性能", "performance", "指标"]],
+  ];
+  // 由搜索词过滤出的匹配 tab（空 = 全部显示）
+  const searchFilteredTabs = useMemo(() => {
+    const q = settingsSearch.trim().toLowerCase();
+    if (!q) return SETTINGS_TAB_INDEX.map(([id]) => id);
+    return SETTINGS_TAB_INDEX
+      .filter(([, words]) => words.some((w) => w.toLowerCase().includes(q)))
+      .map(([id]) => id);
+  }, [settingsSearch]);
+  // 搜索时自动跳到第一个匹配分组（若当前分组不再匹配）
+  useEffect(() => {
+    const q = settingsSearch.trim().toLowerCase();
+    if (!q) return;
+    const first = searchFilteredTabs[0];
+    if (first && first !== activeTab) setActiveTab(first as any);
+  }, [settingsSearch, searchFilteredTabs]);
   const runLoginTest = async () => {
     const lines: string[] = [];
     const log = (msg: string) => { lines.push(msg); console.log(msg); };
@@ -662,6 +702,15 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
                 />
                 {settingsSearch && <button onClick={() => setSettingsSearch("")} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)" }}><X size={12} /></button>}
               </div>
+              {settingsSearch.trim() && (
+                <div style={{ padding: "4px 2px 0", fontSize: 'var(--fs-xs)', color: "var(--text-muted)" }}>
+                  {searchFilteredTabs.length > 0
+                    ? (lang === "zh"
+                      ? `已跳转至「${SETTINGS_TAB_INDEX.find(([id]) => id === searchFilteredTabs[0])?.[1]?.[0] || searchFilteredTabs[0]}」设置`
+                      : `Jumped to "${searchFilteredTabs[0]}" settings`)
+                    : (lang === "zh" ? "未找到匹配的设置分组" : "No matching settings group")}
+                </div>
+              )}
             </div>
             <button className={`settings-sidebar-item ${activeTab === "general" ? "active" : ""}`} onClick={() => setActiveTab("general")}>
               <span className="sidebar-icon"><SettingsIcon size={16} /></span>{lang === "zh" ? "通用" : "General"}
@@ -951,7 +1000,16 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
               min="10"
               max="20"
               value={settings.fontSize}
-              onChange={(e) => setSettings({ ...settings, fontSize: parseInt(e.target.value) })}
+              onChange={(e) => {
+                const px = parseInt(e.target.value);
+                const next = { ...settings, fontSize: px };
+                setSettings(next);
+                // D1: 立即生效 —— 写 CSS 变量（基准 13px → scale）+ 落盘 + 广播
+                applyUiFontScale(px);
+                setSettingJSON("codem-settings", next);
+                setSetting("codem-font-size", String(px));
+                window.dispatchEvent(new Event("codem-settings-changed"));
+              }}
             />
             <span>{settings.fontSize}px</span>
           </div>
