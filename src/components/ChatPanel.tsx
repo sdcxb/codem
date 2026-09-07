@@ -24,7 +24,7 @@ import { useScrollState, useUnreadMessagesTracker } from "../hooks/useScrollStat
 import {
   PanelLeftClose, PanelLeftOpen, ChevronDown, Brain, Bot, Camera, BarChart3, LayoutGrid,
   Search, X, GitFork, RotateCcw, Check, Hammer, ClipboardList, Zap,
-  Activity, Pencil, MessageSquareText, Users2,
+  Activity, Pencil, MessageSquareText,
 } from "lucide-react";
 // P2 #38: framer-motion for smooth list animations
 import { motion, AnimatePresence } from "framer-motion";
@@ -535,7 +535,7 @@ setStepTooltipLocked(false);
         <button
           className={`agent-toggle ${showAgentPanel ? "active" : ""}`}
           onClick={() => { setShowAgentPanel(!showAgentPanel); setShowSnapshotPanel(false); setShowContextMonitor(false); setShowTrajectoryPanel(false); setSelectedAgentId(null); }}
-          title={S.chat.agentList[lang]}
+          title={lang === "zh" ? "智能体与团队（个体任务 + 团队活动，点击成员可看个体动态）" : "Agents & Teams (individual tasks + team activity)"}
         >
           <Bot size={16} />
           {runningCount > 0 && <span className="agent-badge">{runningCount}</span>}
@@ -562,19 +562,8 @@ setStepTooltipLocked(false);
         >
           <MessageSquareText size={16} />
         </button>
-        {/* B3 团队活动快捷入口（B 深合并：打开任务管理「团队」Tab，主视图在 TaskCenter） */}
-        <button
-          className="agent-toggle"
-          onClick={() => {
-            setShowAgentPanel(false); setShowSideSession(false); setShowSnapshotPanel(false); setShowContextMonitor(false); setShowTrajectoryPanel(false);
-            try {
-              window.dispatchEvent(new CustomEvent("codem:open-task-center", { detail: { tab: "teams" } }));
-            } catch { /* noop */ }
-          }}
-          title={lang === "zh" ? "团队活动（打开任务管理 → 团队）" : "Team activity (Task Center → Teams)"}
-        >
-          <Users2 size={16} />
-        </button>
+        {/* 团队完整视图（DAG/任务/邮箱）在任务管理「团队」Tab：由 AgentPanel 团队卡片
+            「团队视图 →」与侧栏任务管理入口打开（顶部已收敛为单一「智能体与团队」按钮） */}
         <button
           className={`agent-toggle ${showTrajectoryPanel ? "active" : ""}`}
           onClick={() => { setShowTrajectoryPanel(!showTrajectoryPanel); setShowAgentPanel(false); setShowSnapshotPanel(false); setShowContextMonitor(false); setSelectedAgentId(null); }}
