@@ -72,14 +72,20 @@ export function AgentPanel({ agents, onClose, onSelectAgent }: AgentPanelProps) 
   const CloseIcon = ActionIcons.close;
   const currentSession = useProjectStore((s) => s.currentSession);
   const [teamSnap, setTeamSnap] = useState<any | null>(null);
+  /** 展开预览的成员名（队内唯一，稳定键；成员 spawn 前后 id 会从 pending 变 childId） */
+  const [expandedMember, setExpandedMember] = useState<string | null>(null);
 
   const refreshTeam = useCallback(() => {
-    if (!currentSession) { setTeamSnap(null); return; }
+    if (!currentSession) { setTeamSnap(null); setExpandedMember(null); return; }
     try {
       const svc = AgentTeamsService.getInstance();
       const team = svc.activeTeamOf(currentSession.id);
       setTeamSnap(team ? svc.status(team.id) : null);
-    } catch { setTeamSnap(null); }
+      // 团队删除/切换/成员移除时清展开态（防跨队同名成员误展开）
+      setExpandedMember((prev) =>
+        prev && (!team || !team.members.some((m: any) => m.name === prev)) ? null : prev,
+      );
+    } catch { setTeamSnap(null); setExpandedMember(null); }
   }, [currentSession]);
 
   useEffect(() => {
@@ -149,29 +155,81 @@ export function AgentPanel({ agents, onClose, onSelectAgent }: AgentPanelProps) 
           {(teamSnap.members || []).map((m: any) => {
             const dot = MEMBER_DOT[m.status] || "#888";
             const label = MEMBER_LABEL[m.status] || m.status;
-            const hasTask = !!m.id && agents.some((a) => a.id === m.id); // 个体任务在运行时中存在才可下钻
+            const task = m.id ? agents.find((a) => a.id === m.id) : undefined;
+            const hasTask = !!task; // 个体任务在运行时中存在才可展开预览
+            const expanded = expandedMember === m.name;
             return (
-              <div
-                key={m.id || m.name}
-                className="agent-item"
-                style={{
-                  cursor: hasTask ? "pointer" : "default",
-                  opacity: hasTask ? 1 : 0.55,
-                  padding: "7px 10px", borderBottom: "1px solid var(--border-primary, rgba(0,0,0,.06))",
-                }}
-                onClick={() => { if (hasTask) onSelectAgent(m.id); }}
-                title={hasTask
-                  ? (zh ? "查看该成员的个体执行详情" : "Open this member's individual task")
-                  : (zh ? "成员未就绪（无个体任务可查看）" : "Member not ready (no individual task)")}
-              >
-                <div className="agent-item-header">
-                  <span style={{ width: 8, height: 8, borderRadius: "50%", background: dot, flexShrink: 0, display: "inline-block" }} />
-                  <span className="agent-item-name" style={{ fontWeight: 600 }}>{m.name}</span>
-                  {m.role && <span style={{ color: "var(--text-muted)", fontSize: "var(--fs-xs)" }}>{m.role}</span>}
-                  <span className="agent-item-status" style={{ fontSize: "var(--fs-xs)", color: dot }}>
-                    {label}{zh ? "（成员）" : " (member)"}
-                  </span>
+              <div key={m.id || m.name}>
+                <div
+                  className="agent-item"
+                  style={{
+                    cursor: hasTask ? "pointer" : "default",
+                    opacity: hasTask ? 1 : 0.55,
+                    padding: "7px 10px", borderBottom: expanded ? "none" : "1px solid var(--border-primary, rgba(0,0,0,.06))",
+                  }}
+                  onClick={() => { if (hasTask) setExpandedMember(expanded ? null : m.name); }}
+                  title={hasTask
+                    ? (zh ? "点击展开该成员的个体动态预览" : "Toggle this member's individual activity preview")
+                    : (zh ? "成员未就绪（无个体任务可查看）" : "Member not ready (no individual task)")}
+                >
+                  <div className="agent-item-header">
+                    <span style={{ width: 8, height: 8, borderRadius: "50%", background: dot, flexShrink: 0, display: "inline-block" }} />
+                    <span className="agent-item-name" style={{ fontWeight: 600 }}>{m.name}</span>
+                    {m.role && <span style={{ color: "var(--text-muted)", fontSize: "var(--fs-xs)" }}>{m.role}</span>}
+                    <span className="agent-item-status" style={{ fontSize: "var(--fs-xs)", color: dot, marginLeft: "auto" }}>
+                      {label}{zh ? "（成员）" : " (member)"}
+                    </span>
+                    {hasTask && (
+                      <span style={{ fontSize: "var(--fs-xs)", color: "var(--text-muted)", marginLeft: 6 }}>
+                        {expanded ? "▴" : "▾"}
+                      </span>
+                    )}
+                  </div>
                 </div>
+                {expanded && task && (
+                  <div style={{ padding: "2px 10px 8px 24px", borderBottom: "1px solid var(--border-primary, rgba(0,0,0,.06))", display: "grid", gap: 6 }}>
+                    {/* 个体动态：最近活动 */}
+                    {(task.activities || []).length === 0 ? (
+                      <div style={{ fontSize: "var(--fs-xs)", color: "var(--text-muted)" }}>
+                        {task.status === "running"
+                          ? (zh ? "工作中…（尚无活动汇报）" : "Working… (no activity yet)")
+                          : (zh ? "暂无活动记录" : "No activity recorded")}
+                      </div>
+                    ) : (
+                      <div style={{ display: "grid", gap: 3 }}>
+                        {(task.activities || []).slice(-3).reverse().map((act: any) => (
+                          <div key={act.id} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: "var(--fs-xs)", color: "var(--text-secondary)" }}>
+                            <span>{act.type === "tool" ? "🔧" : "💭"}</span>
+                            <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{act.label}</span>
+                            <span style={{ color: act.status === "done" ? "#10b981" : "#f59e0b" }}>
+                              {act.status === "done" ? (zh ? "✓ 完成" : "✓ done") : (zh ? "进行中" : "running")}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {/* 结果/错误摘要 */}
+                    {task.error && (
+                      <div style={{ fontSize: "var(--fs-xs)", color: "#ef4444", wordBreak: "break-word" }}>
+                        {zh ? "失败: " : "Error: "}{task.error.slice(0, 200)}
+                      </div>
+                    )}
+                    {task.result && !task.error && (
+                      <div style={{ fontSize: "var(--fs-xs)", color: "var(--text-muted)" }}>
+                        {task.result.status === "success"
+                          ? (zh ? `完成 ✓ · 触及 ${task.result.filesTouched.length} 个文件` : `Done ✓ · touched ${task.result.filesTouched.length} files`)
+                          : (zh ? `结果: ${task.result.status}` : `Result: ${task.result.status}`)}
+                      </div>
+                    )}
+                    <button
+                      className="inline-edit-btn"
+                      style={{ justifySelf: "start", fontSize: "var(--fs-xs)" }}
+                      onClick={(e) => { e.stopPropagation(); onSelectAgent(task.id); }}
+                    >
+                      {zh ? "完整详情 →" : "Full details →"}
+                    </button>
+                  </div>
+                )}
               </div>
             );
           })}
