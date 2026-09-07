@@ -47,11 +47,10 @@ describe("Squad 类型完整性", () => {
     expect(mgr1).toBe(mgr2);
   });
 
-  it("SquadManager — generateSquadRoster 对不存在的 squad 返回 null", async () => {
+  it("SquadManager — toTeamTemplate 对不存在的 squad 返回 null", async () => {
     const { getSquadManager } = await import("../core/squad/squad");
     const mgr = getSquadManager();
-    const roster = mgr.generateSquadRoster("nonexistent-squad-id");
-    expect(roster).toBeNull();
+    expect(mgr.toTeamTemplate("nonexistent-squad-id")).toBeNull();
   });
 
   it("SquadManager — listSquads 返回数组", async () => {

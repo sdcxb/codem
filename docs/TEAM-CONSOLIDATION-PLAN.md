@@ -61,3 +61,12 @@
 - agent-teams create 一人一队：squad_dispatch 在队长已有活动团队时抛错——工具输出引导（可复用现有队或先删）；不回退旧行为（效果最优）。
 - 成员 spawn 依赖 SubagentRuntime 就绪（captain 会话可用即可，service 内已处理）；桥接失败（如 runtime 未就绪）→ 输出明确错误并回滚已建团队（svc.delete）。
 - 每 Phase 独立提交 + 全量测试门槛，任何一步失败可回退该提交。
+
+---
+
+## 执行状态（2026-09-07 更新）
+
+- ✅ **Phase 1 已完成并提交**（dab14c5）：Squad 语义升级为「团队模板」（TeamTemplate/toTeamTemplate）；squad_list/drop=模板视图、squad_dispatch 桥接 agent-teams（captain=当前会话、按角色 spawn、createTask 派发、删 CustomEvent）、squad_status 模板+派生运行时团队；App 事件路由删除；测试适配 + team-consolidation 5 例。
+- ✅ **Phase 2 已完成并提交**（6585c9d）：TaskCenter tab squads→teams（TeamTab：说明 + 运行时活动(AgentTeamsPanel 嵌入) + 模板管理(SquadsTab 复用)）；对话旁「团队活动」按钮收敛为快捷入口（codem:open-task-center → 任务管理「团队」Tab）；旧 id 归一兼容。
+- ✅ **Phase 3 已执行**（squad 死码清理：generateSquadRoster/SquadDispatchResult 移除；测试改 toTeamTemplate 断言）。
+- ⏭ 后续：实施后全量审计（修 bug 不论新旧）→ 全量 vitest/tsc/cargo 全绿 → 收尾。

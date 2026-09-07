@@ -50,13 +50,6 @@ export interface SquadWithMembers extends Squad {
   leader?: AgentDefinition;
 }
 
-export interface SquadDispatchResult {
-  squadId: string;
-  leaderSessionId: string;
-  status: "dispatched" | "failed";
-  error?: string;
-}
-
 export type SquadListener = (squadId: string) => void;
 
 // ========== 团队模板（B 深合并：Squad → agent-teams 模板） ==========
@@ -183,53 +176,6 @@ class SquadManagerClass {
   updateMemberRole(memberId: string, roleDescription: string, squadId: string): void {
     SquadStorage.updateMemberRole(memberId, roleDescription);
     this.notify(squadId);
-  }
-
-  // ========== Leader Roster Generation ==========
-
-  /**
-   * 生成 Leader 的 Squad Roster 系统提示词片段。
-   * 包含：操作协议 + 成员名单 + 自定义指令。
-   */
-  generateSquadRoster(squadId: string): string | null {
-    const squad = this.getSquad(squadId);
-    if (!squad) return null;
-
-    const lines: string[] = [];
-
-    // Squad Operating Protocol
-    lines.push("# Squad Operating Protocol");
-    lines.push("You are the leader of this squad. Follow these rules:");
-    lines.push("1. Read the issue/task description carefully.");
-    lines.push("2. Decide which member should handle this work based on their role.");
-    lines.push("3. Delegate by mentioning the member: `[@MemberName](mention://agent/<memberId>)`.");
-    lines.push("4. Do NOT do the implementation yourself — delegate to the right member.");
-    lines.push("5. After a member reports back, evaluate the result and decide the next step.");
-    lines.push("6. Only mark the task as complete when the overall goal is met.");
-    lines.push("7. Be terse — don't restate the issue body, the member can read it.");
-    lines.push("");
-
-    // Squad Roster
-    lines.push("# Squad Roster");
-    lines.push("| Member | Type | Role | Mention |");
-    lines.push("|--------|------|------|---------|");
-    for (const m of squad.members) {
-      const mention = m.memberType === "agent"
-        ? `[@${m.memberName}](mention://agent/${m.memberId})`
-        : `[@${m.memberName}](mention://human/${m.memberId})`;
-      const role = m.roleDescription || "—";
-      lines.push(`| ${m.memberName} | ${m.memberType} | ${role} | ${mention} |`);
-    }
-    lines.push("");
-
-    // Squad Instructions
-    if (squad.instructions) {
-      lines.push("# Squad Instructions");
-      lines.push(squad.instructions);
-      lines.push("");
-    }
-
-    return lines.join("\n");
   }
 
   // ========== 团队模板导出（B 深合并） ==========

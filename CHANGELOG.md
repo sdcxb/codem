@@ -2,6 +2,16 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [Unreleased] — 团队体系深合并（B 方案，对标整理）
+
+> 把两套"团队"（静态 Squad 模板体系 + agent-teams 运行时 DAG 团队）合并为单一「团队 = 角色模板 + 运行时编排」。
+> 背景与矩阵：docs/AGENT-SYSTEMS-MATRIX.md；分阶段计划 docs/TEAM-CONSOLIDATION-PLAN.md。
+
+- **Phase1（dab14c5）**：Squad 升级为「团队模板」——新增 TeamTemplate/toTeamTemplate；`squad_list`=模板列表、`squad_dispatch` 桥接 agent-teams（按模板建运行时团队：当前会话=队长、按角色 spawn 可续聊成员、任务入共享池调度；删除旧 CustomEvent 派发）、`squad_status`=模板+派生运行时团队摘要（team_id 可选）；App `codem-squad-dispatch` 事件路由删除；测试适配 + team-consolidation 5 例
+- **Phase2（6585c9d）**：TaskCenter tab `squads`→`teams`（TeamTab：说明 + 运行时团队活动（嵌入 AgentTeamsPanel，订阅自动刷新）+ 团队模板管理（复用 SquadsTab））；对话旁「团队活动」按钮收敛为快捷入口（→ 任务管理「团队」Tab，App 监听 codem:open-task-center）；旧 id 归一兼容
+- **Phase3**：清理死码 `generateSquadRoster`/`SquadDispatchResult`（旧 Leader-roster 路径已无消费者）；相关测试对齐 toTeamTemplate
+- 全量 vitest 168 文件 / 4236 用例通过 + tsc 零错误
+
 ## [1.10.0] - 2026-09-07 — EAC 对标 第①②③④项（DSH-Desktop-EAC）+ 全量审计修复
 
 > 第④项宠物状态卡 + 第③项 computer-use + 第②项微信 ClawBot 桥 + 第①项手机连接
