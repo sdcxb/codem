@@ -1231,6 +1231,25 @@ flushStreamBuffer(); // flush all on unmount
     };
   }, [dbReady]);
 
+  // ========== 微信 ClawBot 桥（iLink）==========
+  // dbReady 后启动引擎桥（幂等）：监听 ilink-* 事件 → peer→会话 → agent 回合 → 回复。
+  // 传输层（登录/长轮询）在 Rust 常驻，不依赖本 effect。
+  useEffect(() => {
+    if (!dbReady) return;
+    let cleanup: (() => void) | null = null;
+    let cancelled = false;
+    import("./core/wechat-bridge/wechat-bridge")
+      .then((m) => {
+        if (cancelled) return;
+        cleanup = m.startWechatBridge();
+      })
+      .catch((e) => console.warn("[wechat-bridge] start failed:", e));
+    return () => {
+      cancelled = true;
+      cleanup?.();
+    };
+  }, [dbReady]);
+
   // ========== Squad Dispatch 路由 ==========
   // 监听 squad_dispatch 工具发出的事件，创建 Leader 会话并后台执行。
   useEffect(() => {

@@ -430,6 +430,9 @@
 - id: computer-use
   name: '@codem/computer-use'
 
+- id: wechat-bridge
+  name: '@codem/wechat-bridge'
+
 - id: dynamic-runner
   name: '@codem/dynamic-runner'
 

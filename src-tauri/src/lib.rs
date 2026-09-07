@@ -14,6 +14,10 @@ use tokio::sync::{oneshot, Mutex as TokioMutex};
 // 打包版无控制台，常规事件落盘供用户/开发者诊断。
 mod runtime_log;
 
+// ========== 微信 ClawBot 桥（iLink）==========
+// 传输层（登录/长轮询/收发/配额），引擎集成在 TS 侧。
+mod ilink;
+
 // ========== PTY Manager ==========
 // Interactive terminal support using portable-pty.
 // Manages multiple PTY sessions with real-time I/O streaming via Tauri events.
@@ -2282,6 +2286,8 @@ fn install_panic_hook() {
 
 pub fn run() {
 install_panic_hook();
+// ===== 微信 ClawBot 桥（iLink 传输层）管理态 =====
+let ilink_state = ilink::IlinkState::new();
 let app = tauri::Builder::default()
 .plugin(tauri_plugin_shell::init())
 .plugin(tauri_plugin_fs::init())
@@ -2289,6 +2295,7 @@ let app = tauri::Builder::default()
 .plugin(tauri_plugin_updater::Builder::new().build())
 .plugin(tauri_plugin_process::init())
 .plugin(tauri_plugin_dialog::init())
+        .manage(ilink_state.clone())
         .manage(Arc::new(Mutex::new(HashMap::<String, PtySession>::new())) as PtyMap)
         .manage(AppState {
             providers: Mutex::new(vec![
@@ -2368,8 +2375,17 @@ path_exists,
             check_path_in_workspace,
             get_process_token_info,
             list_directory_sandboxed,
+            // 微信 ClawBot 桥（iLink 传输层）
+            ilink::ilink_status,
+            ilink::ilink_start_login,
+            ilink::ilink_login_submit_verify,
+            ilink::ilink_logout,
+            ilink::ilink_send_text,
         ])
-        .setup(|app| {
+        .setup({
+            // 捕获 ilink_state（Arc owned）以满足 setup 闭包的 'static 约束。
+            let ilink_state = ilink_state.clone();
+            move |app| {
             // ===== 运行时日志：清理过期文件 + 启动记录（对标 dsh log-files）=====
             runtime_log::purge_old_logs();
             // ===== 崩溃检测标记（对标 dsh crash-evidence）=====
@@ -2515,7 +2531,17 @@ path_exists,
                 runtime_log::append_line("WARN", &format!("system tray build failed (non-fatal): {}", e));
             }
 
+            // ===== 微信 ClawBot 桥：启动恢复（有未过期会话 → 自动续连）=====
+            {
+                let ilink_app = app.handle().clone();
+                let ilink_st = ilink_state.clone();
+                tauri::async_runtime::spawn(async move {
+                    ilink::restore_on_startup(ilink_app, ilink_st).await;
+                });
+            }
+
             Ok(())
+            }
         })
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

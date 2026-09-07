@@ -35,6 +35,7 @@ import { RecoveryPanel } from "./RecoveryPanel";
 import { CorrectionModelConfig } from "./CorrectionModelConfig";
 import { PersonaManager } from "./PersonaManager";
 import { ComputerUseSettings } from "./ComputerUseSettings";
+import { WechatSettings } from "./WechatSettings";
 import { applyUiFontScale, FONT_BASE_PX } from "../core/ui-font";
 // P2 #34: Import reusable settings components
 import { SettingsNav, ConfigEntry, ToggleEntry } from "./SettingsParts";
@@ -57,6 +58,7 @@ import {
   Network,
   BrainCircuit,
   MousePointer2,
+  MessageCircle,
   PawPrint,
   Zap,
   HelpCircle,
@@ -394,7 +396,7 @@ export function SettingsPanel({ onClose, onSessionRecovery, onUsageStats, initia
   const [testResult, setTestResult] = useState<string>("");
 const [showModelProfiles, setShowModelProfiles] = useState(false);
 const [showMultimodal, setShowMultimodal] = useState(false);
-const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security" | "git" | "environment" | "worktree" | "knowledge" | "automation" | "multimodal" | "voice" | "ollama" | "pet" | "tools" | "persona" | "computer" | "codegraph" | "advanced" | "help" | "usage" | "performance">((initialTab as any) || "general");
+const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security" | "git" | "environment" | "worktree" | "knowledge" | "automation" | "multimodal" | "voice" | "ollama" | "pet" | "tools" | "persona" | "computer" | "wechat" | "codegraph" | "advanced" | "help" | "usage" | "performance">((initialTab as any) || "general");
   // P2 #36: Settings search — D2 修复：占位搜索框现在真正过滤/跳转设置分组
   const [settingsSearch, setSettingsSearch] = useState("");
   const [advancedSubTab, setAdvancedSubTab] = useState<"agents" | "heartbeat" | "retry" | "prompt" | "settings" | "recovery" | "correction" | "profiles" | "transcript">("agents");
@@ -417,6 +419,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
     ["tools", ["工具", "tools", "终端"]],
     ["persona", ["人设", "persona", "人格", "角色", "soul"]],
     ["computer", ["电脑操作", "computer", "读屏", "鼠标", "自动化"]],
+    ["wechat", ["微信", "wechat", "clawbot", "桥", "绑定", "手机"]],
     ["codegraph", ["代码图谱", "codegraph", "graph"]],
     ["advanced", ["高级", "advanced", "实验", "分层"]],
     ["help", ["帮助", "help", "关于", "教程"]],
@@ -759,6 +762,9 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
             </button>
             <button className={`settings-sidebar-item ${activeTab === "computer" ? "active" : ""}`} onClick={() => setActiveTab("computer")}>
               <span className="sidebar-icon"><MousePointer2 size={16} /></span>{lang === "zh" ? "电脑操作" : "Computer Use"}
+            </button>
+            <button className={`settings-sidebar-item ${activeTab === "wechat" ? "active" : ""}`} onClick={() => setActiveTab("wechat")}>
+              <span className="sidebar-icon"><MessageCircle size={16} /></span>{lang === "zh" ? "微信 ClawBot" : "WeChat ClawBot"}
             </button>
             <button className={`settings-sidebar-item ${activeTab === "codegraph" ? "active" : ""}`} onClick={() => setActiveTab("codegraph")}>
               <span className="sidebar-icon"><Network size={16} /></span>{lang === "zh" ? "代码图谱" : "CodeGraph"}
@@ -1661,6 +1667,12 @@ marginTop: 4,
 <>
 {/* computer-use 电脑操作设置（对标 EAC computer-user） */}
 <ComputerUseSettings />
+</>
+)}
+{activeTab === "wechat" && (
+<>
+{/* 微信 ClawBot 桥设置（对标 EAC/OpenClaw 微信通道） */}
+<WechatSettings />
 </>
 )}
 {activeTab === "advanced" && (

@@ -2,6 +2,42 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [Unreleased] — EAC 对标 第②③④项（DSH-Desktop-EAC）
+
+> 第④项宠物状态卡 + 第③项 computer-use + 第②项微信 ClawBot 桥（顺序按工作量递增）。
+> 第①项手机连接（dsh-phone）待做：需先补"手机可访问的 HTTP UI + API"地基（桌面 bundle 禁用
+> host-webserver/host-apiproxy/host-frontend-static，Rust 无 HTTP server crate）。
+
+### 第④项 宠物大肥鱼式状态卡（commit 929a0f3，对标 dsh-dafeiyu）
+
+- **真实 Agent 事件驱动工作状态卡**：项目名/阶段/步骤进度/消息，在桌宠气泡上方状态卡展示（透明无边框置顶窗 + 锚点 resize 并入）
+- 事件流接入 llm_status/step_progress/tool_start/tool_complete/tool_error/end——**进度只显示 agent 真实上报的宏步（total 可 null 时只显当前步，不编造完成百分比）**
+- PetCard 类型 + pet-store updateCard + PetWindowApp 卡 UI；77→3 新增测试（含"total null 不编造"）
+
+### 第③项 @codem/computer-use 电脑操作插件（commit c7ad786，对标 dsh computer-user / Codex computer use）
+
+- 10 个 computer_* 工具（screenshot/click/type/keypress/scroll/drag/move_mouse/wait/get_cursor_position/set_mode），PowerShell 零依赖后端（capture.ps1/input.ps1 已内联，EAC MIT 声明）
+- 模式 disabled/readonly/manual/auto，**默认 manual 手动批准**（/computer 会话批准 + 批准集）；`computer_see` 视觉理解走 Codem vision-proxy（无本地 OCR，提示词引导坐标）
+- Rust `read_file_base64` + 设置卡「电脑操作」+ 插件默认开启可禁用
+
+### 第②项 @codem/wechat-bridge 微信 ClawBot 桥（iLink 直连，对标 EAC/OpenClaw 微信通道）
+
+- **Rust iLink 传输层**（`src-tauri/src/ilink/`，零新依赖）：官方 @tencent-weixin/openclaw-weixin 2.4.6 协议
+  - 登录 8 态状态机（get_bot_qrcode POST + local_token_list 多端互认 → get_qrcode_status 长轮询 + 配对码 verify_code + scaned_but_redirect 切 baseurl）【官方 + 社区】
+  - getupdates 长轮询单循环（epoch 代际作废 + poke 即时唤醒、游标每轮落盘续拉、401/403/-14 → Expired 弹重扫、2s→30s 退避）
+  - sendmessage 文本（≤2000 切块、context_token 原样回传、run_id/client_id）+ best-effort notifystop
+  - 会话文件 app-data/ilink/session.json（0600、损坏即未登录、23h 判活）+ 历史 token ≤10；**每 peer 配额软记账（10条/24h 社区实测，非官方承诺，明示不编造）**
+  - 6 个 tauri commands + 5 类事件（ilink-status/qr/need-verify/inbound/expired 命名 ilink-*）；启动自动续连（未过期会话）
+- **TS 引擎桥**（`src/core/wechat-bridge/`）：peer→Codem 持久会话映射（sessions 行先行避 FK，历史仅依赖 messages 表，跨轮记忆连续）→ `executeSessionTurn` 驱动 agent 回合 → 取回最终文本回复；每 peer 串行队列 + message_id 去重 + 挂载前缓冲兜底
+- **准入安全**：Bot 主人（ilink_user_id）自动放行；陌生 peer 首条 → 「待批准」卡片（批准/拉黑）+ 引导回复；命令短路 /help /status /new /model /clear /attach /reconnect /allow /ignore（主人权限门禁）；主开关停用即完全不响应
+- **UI 设置卡「微信 ClawBot」**：状态徽章、SVG 二维码（qrcode-generator 依赖，链接复制兜底）、配对码输入、24h 过期软提醒、默认模型/工作区、待批准/白名单/黑名单管理、合规提示（媒体/群聊二期不支持）
+- 注册 runtimePluginList/builtin-registry/codem.base.yml（默认开启可禁用，risk danger）
+- 测试：Rust ilink 13 单测（client-version/uin/headers/文本提取/切块 UTF-8/会话存取/token 历史/配额窗口/过期）；TS 7（净化/命令/准入/截断/持久化/初始态）
+
+### 测试与质量
+
+- 全量 165 文件 / 4221 用例通过（+7）+ tsc 零错误；Rust `cargo test --lib ilink` 13 通过
+
 ## [1.9.9] - 2026-09-07 — EAC 对标（DSH-Desktop-EAC 差距分析与仿照实施）
 
 > 对标仓库 github.com/zouyuxuan122/DSH-Desktop-EAC（dsh 桌面发行版，47 内置插件）：
