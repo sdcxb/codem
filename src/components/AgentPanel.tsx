@@ -149,13 +149,20 @@ export function AgentPanel({ agents, onClose, onSelectAgent }: AgentPanelProps) 
           {(teamSnap.members || []).map((m: any) => {
             const dot = MEMBER_DOT[m.status] || "#888";
             const label = MEMBER_LABEL[m.status] || m.status;
+            const hasTask = !!m.id && agents.some((a) => a.id === m.id); // 个体任务在运行时中存在才可下钻
             return (
               <div
                 key={m.id || m.name}
                 className="agent-item"
-                style={{ cursor: "pointer", padding: "7px 10px", borderBottom: "1px solid var(--border-primary, rgba(0,0,0,.06))" }}
-                onClick={() => { if (m.id) onSelectAgent(m.id); }}
-                title={zh ? "查看该成员的个体执行详情" : "Open this member's individual task"}
+                style={{
+                  cursor: hasTask ? "pointer" : "default",
+                  opacity: hasTask ? 1 : 0.55,
+                  padding: "7px 10px", borderBottom: "1px solid var(--border-primary, rgba(0,0,0,.06))",
+                }}
+                onClick={() => { if (hasTask) onSelectAgent(m.id); }}
+                title={hasTask
+                  ? (zh ? "查看该成员的个体执行详情" : "Open this member's individual task")
+                  : (zh ? "成员未就绪（无个体任务可查看）" : "Member not ready (no individual task)")}
               >
                 <div className="agent-item-header">
                   <span style={{ width: 8, height: 8, borderRadius: "50%", background: dot, flexShrink: 0, display: "inline-block" }} />

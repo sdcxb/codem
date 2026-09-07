@@ -12,6 +12,7 @@ import { describe, it, expect, beforeAll, beforeEach } from "vitest";
 import { getSquadManager } from "../core/squad/squad";
 import { createSquadDispatchTool, createSquadStatusTool } from "../core/squad/squad-tools";
 import { AgentTeamsService } from "../core/provider/agent-teams-service";
+import { createTeam, addMember as engineAddMember, snapshot } from "../core/agent-teams/engine";
 import { initDatabase } from "../core/storage/database";
 
 function fakeCtx(sessionId: string) {
@@ -98,6 +99,15 @@ describe("团队深合并 Phase1 — Squad→模板 + dispatch 桥接", () => {
     expect(String(out.output)).toContain("没有可执行的 agent 角色");
     // 未创建任何运行时团队
     expect(AgentTeamsService.getInstance().listAll().length).toBe(0);
+  });
+
+  it("TC-007: engine snapshot 保留成员 id（AgentPanel 下钻/去重依赖）", () => {
+    const team = createTeam({ name: "快照队", captainSessionId: "sess-snap" });
+    const { member } = engineAddMember(team, { id: "child-1", name: "实现员", role: "编码" });
+    const snap = snapshot(team);
+    expect(snap.members.length).toBe(1);
+    expect(snap.members[0].id).toBe(member.id);
+    expect(snap.members[0].name).toBe("实现员");
   });
 
   it("TC-005: squad_status 输出模板 + 派生运行时团队（可传 team_id）", async () => {

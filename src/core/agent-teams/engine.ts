@@ -304,7 +304,7 @@ export interface TeamSnapshot {
   id: string;
   name: string;
   captainSessionId: string;
-  members: Array<{ name: string; role?: string; status: MemberStatus; provider?: string; model?: string }>;
+  members: Array<{ id: string; name: string; role?: string; status: MemberStatus; provider?: string; model?: string }>;
   tasks: Array<{ id: string; subject: string; status: TeamTaskStatus; assignee?: string; dependencies: string[]; attempt: number; hasAttemptId: boolean; output?: string }>;
   unreadFor: Record<string, number>; // 收件人 → 未读条数
 }
@@ -319,7 +319,7 @@ export function snapshot(team: AgentTeam): TeamSnapshot {
     name: team.name,
     captainSessionId: team.captainSessionId,
     members: team.members.map((m) => ({
-      name: m.name, role: m.role, status: m.status, provider: m.provider, model: m.model,
+      id: m.id, name: m.name, role: m.role, status: m.status, provider: m.provider, model: m.model,
     })),
     tasks: team.tasks.map((t) => ({
       id: t.id, subject: t.subject, status: t.status, assignee: t.assignee,
