@@ -8,7 +8,7 @@ import { AppIdentity } from "../core/types";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { SearchDialog } from "./SearchDialog";
 import { SpaceSwitcher } from "./SpaceSwitcher";
-import { getSetting, setSetting } from "../core/storage/settings";
+import { getSetting, setSetting, getSettingJSON } from "../core/storage/settings";
 import { applyStoredUiFont } from "../core/ui-font";
 import * as SessionStorage from "../core/storage/session";
 import { useLang, S } from "../core/i18n/lang";
@@ -57,6 +57,24 @@ export function Sidebar({ identity, onSettings, onProjects, onConfig, onMcp, onP
     openProject, getProjectSessions, updateProject,
     renameSession,
   } = useProjectStore();
+  // 左下角用户头像 — 读 codem-user.avatar（与聊天消息用户头像同源）；
+  // 监听保存/存储事件即时刷新（设置里选完头像并保存后立刻生效）
+  const [userAvatar, setUserAvatar] = useState<string>("");
+  useEffect(() => {
+    const refresh = () => {
+      try {
+        const cfg = getSettingJSON<{ avatar?: string }>("codem-user", {});
+        setUserAvatar((cfg && cfg.avatar) || "");
+      } catch { setUserAvatar(""); }
+    };
+    refresh();
+    window.addEventListener("codem-settings-changed", refresh);
+    window.addEventListener("storage", refresh);
+    return () => {
+      window.removeEventListener("codem-settings-changed", refresh);
+      window.removeEventListener("storage", refresh);
+    };
+  }, []);
   // Theme is now managed solely by TitleBar to avoid state conflicts.
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set());
   const [allSessions, setAllSessions] = useState<Record<string, Array<typeof currentSession & { lastMessageAt: number; messageCount: number }>>>({});
@@ -825,9 +843,13 @@ const handleDrop = useCallback((e: React.DragEvent, targetSessionId: string, pro
       {/* P1 #8: Bottom user info area + 插件管理按钮 */}
       <div className="sidebar-user-area">
         <div className="sidebar-user-avatar">
-          {identity?.name
-            ? identity.name.charAt(0).toUpperCase()
-            : <User size={18} />}
+          {userAvatar ? (
+            <img src={userAvatar} alt="me" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+          ) : identity?.name ? (
+            identity.name.charAt(0).toUpperCase()
+          ) : (
+            <User size={18} />
+          )}
         </div>
         <div className="sidebar-user-info">
           <div className="sidebar-user-name">{identity?.name || (lang === 'zh' ? '未登录' : 'Guest')}</div>

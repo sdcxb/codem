@@ -248,6 +248,15 @@ justify-content: flex-start;
   font-size: 14px;
   color: var(--accent);
   line-height: 1;
+  display: flex;
+  align-items: center;
+}
+/* Codem logo（原 ◆ 菱形占位替换为品牌 logo） */
+.titlebar-logo-img {
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  display: block;
 }
 
 .titlebar-title {
@@ -11127,6 +11136,7 @@ html.pet-window-mode #root {
   font-size: 12px;
   font-weight: 600;
   flex-shrink: 0;
+  overflow: hidden;
 }
 .sidebar-user-info {
   flex: 1;

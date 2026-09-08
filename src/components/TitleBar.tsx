@@ -11,6 +11,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { PencilLine, Search, Settings, Sun, Moon, Home, GitBranch, Terminal } from "lucide-react";
 import { ActionIcons } from "../core/icons/icon-map";
+import codemLogoUrl from "../assets/codem-logo.svg";
 import { getSetting, setSetting } from "../core/storage/settings";
 import { ThemeManager } from "../core/theme";
 import { useProjectStore } from "../core/store";
@@ -214,7 +215,9 @@ export function TitleBar({
 
       <div className="titlebar-left" data-tauri-drag-region>
         {/* Bug9: 新建对话按钮已移至侧边栏全局对话栏右侧，此处删除 */}
-        <span className="titlebar-icon" data-tauri-drag-region>◆</span>
+        <span className="titlebar-icon" data-tauri-drag-region>
+          <img src={codemLogoUrl} alt="Codem" className="titlebar-logo-img" />
+        </span>
         <span className="titlebar-title" data-tauri-drag-region>Codem</span>
         {/* 执行模式切换（本地处理 / 新工作树）—— 侧边栏按钮与项目 LOGO 右侧 */}
         <button
