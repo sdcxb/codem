@@ -4,13 +4,13 @@
  * - data-tauri-drag-region 支持拖拽窗口
  * - 最小化 / 最大化 / 关闭按钮
  * - 透明背景，让 Mica 毛玻璃透出
- * - 集成 GitBranchSelector、侧边栏切换、新对话按钮
+ * - 侧边栏切换、新对话按钮
+ *   （Git 分支选择器已合并至右侧栏 Git 面板 GitInfoPanel，不再驻留标题栏）
  */
 
 import { useState, useEffect, useCallback } from "react";
 import { PencilLine, Search, Settings, Sun, Moon, Home, GitBranch, Terminal } from "lucide-react";
 import { ActionIcons } from "../core/icons/icon-map";
-import { GitBranchSelector } from "./GitBranchSelector";
 import { getSetting, setSetting } from "../core/storage/settings";
 import { ThemeManager } from "../core/theme";
 import { useProjectStore } from "../core/store";
@@ -265,9 +265,8 @@ export function TitleBar({
         </div>
       )}
 
-      <div className="titlebar-center" data-tauri-drag-region>
-        <GitBranchSelector compact={false} refreshInterval={5000} />
-      </div>
+      {/* 居中弹性占位（保持左右布局）；Git 分支选择器已合并至右侧栏 Git 面板 */}
+      <div className="titlebar-center" data-tauri-drag-region />
 
       {/* 右侧栏切换 + P1: Top navigation actions — search, settings, theme */}
       <div className="titlebar-nav-actions">

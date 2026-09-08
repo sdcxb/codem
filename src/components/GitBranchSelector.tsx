@@ -1,7 +1,7 @@
 /**
  * GitBranchSelector — Git 分支选择器
  *
- * 在标题栏或侧边栏中嵌入的紧凑型 Git 分支管理组件。
+ * 嵌入标题栏或右侧栏 Git 面板的 Git 分支管理组件。
  * 支持：
  * - 显示当前分支 + 脏状态指示
  * - 下拉切换本地分支
@@ -10,6 +10,7 @@
  *
  * 使用 Tauri execute_command 执行 Git 操作。
  * CSS 变量驱动，自动适配三套皮肤。
+ * 切换/新建分支成功后可通过 onBranchChange 通知宿主刷新（如 GitInfoPanel）。
  */
 
 import { useState, useEffect, useCallback, memo, useRef } from "react";
@@ -30,12 +31,15 @@ interface GitBranchSelectorProps {
   compact?: boolean;
   /** 刷新间隔（毫秒，0 表示不自动刷新） */
   refreshInterval?: number;
+  /** 切换/新建分支成功后的回调（传入新分支名），宿主可借此联动刷新 */
+  onBranchChange?: (branchName: string) => void;
 }
 
 export const GitBranchSelector = memo(function GitBranchSelector({
   cwd,
   compact = false,
   refreshInterval = 0,
+  onBranchChange,
 }: GitBranchSelectorProps) {
   const { currentProject, currentSession } = useProjectStore();
   const workDir = cwd || currentSession?.worktreePath || currentProject?.path || "";
@@ -149,12 +153,13 @@ export const GitBranchSelector = memo(function GitBranchSelector({
         prev.map((b) => ({ ...b, current: b.name === branchName }))
       );
       setShowDropdown(false);
+      onBranchChange?.(branchName);
     } catch (err: any) {
       setError(err.stderr || err.message || String(err));
     } finally {
       setLoading(false);
     }
-  }, [workDir, currentBranch]);
+  }, [workDir, currentBranch, onBranchChange]);
 
   const handleCreateBranch = useCallback(async () => {
     if (!workDir || !newBranchName.trim()) return;
@@ -172,12 +177,13 @@ export const GitBranchSelector = memo(function GitBranchSelector({
       setNewBranchName("");
       setShowCreateInput(false);
       setShowDropdown(false);
+      onBranchChange?.(branchName);
     } catch (err: any) {
       setError(err.stderr || err.message || String(err));
     } finally {
       setLoading(false);
     }
-  }, [workDir, newBranchName]);
+  }, [workDir, newBranchName, onBranchChange]);
 
   if (!workDir) {
     // Bug2: 不返回 null（会导致按钮消失），显示占位状态

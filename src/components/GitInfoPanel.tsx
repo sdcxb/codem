@@ -2,7 +2,8 @@
  * Git Info Panel — Environment monitoring
  *
  * Shows:
- * - Current branch + dirty status
+ * - Branch selector (current branch + switch + create, merged from TitleBar)
+ * - Dirty status
  * - Diff shortstat (insertions/deletions)
  * - Recent commits (last 5)
  * - Commit + push quick actions
@@ -15,6 +16,7 @@ import { executeCommand } from "../core/file-api";
 import { useProjectStore } from "../core/store";
 import { useLang } from "../core/i18n/lang";
 import { onAutoCommitted } from "../core/environment/git-commit-service";
+import { GitBranchSelector } from "./GitBranchSelector";
 
 interface GitStatus {
   branch: string;
@@ -124,6 +126,11 @@ export function GitInfoPanel() {
     }
   }, [projectPath]);
 
+  // GitBranchSelector 切换/新建分支成功后联动刷新本面板（分支/统计/提交历史）
+  const handleBranchChange = useCallback(() => {
+    refresh();
+  }, [refresh]);
+
   useEffect(() => {
     refresh();
     const interval = setInterval(refresh, 10000); // Auto-refresh every 10s
@@ -216,20 +223,17 @@ export function GitInfoPanel() {
 
   return (
     <div style={{ fontSize: 'var(--fs-sm)', display: "flex", flexDirection: "column", gap: 8 }}>
-      {/* Branch + dirty status */}
-      {status && (
-        <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-          <span style={{ fontWeight: 600, color: "var(--accent)" }}>🌿 {status.branch}</span>
-          {status.isDirty && (
-            <span style={{ fontSize: 'var(--fs-xs)', color: "#e67e22", background: "rgba(230,126,34,0.15)", padding: "1px 6px", borderRadius: 8 }}>
-              ⚠️ {zh ? "未提交" : "dirty"}
-            </span>
-          )}
-          {!status.isDirty && (
-            <span style={{ fontSize: 'var(--fs-xs)', color: "#22c55e" }}>✓ {zh ? "干净" : "clean"}</span>
-          )}
-        </div>
-      )}
+      {/* 分支选择器（显示/切换/新建）—— 由标题栏 GitBranchSelector 合并而来，承担当前分支展示 */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+        <GitBranchSelector refreshInterval={5000} onBranchChange={handleBranchChange} />
+        {status && (status.isDirty ? (
+          <span style={{ fontSize: 'var(--fs-xs)', color: "#e67e22", background: "rgba(230,126,34,0.15)", padding: "1px 6px", borderRadius: 8 }}>
+            ⚠️ {zh ? "未提交" : "dirty"}
+          </span>
+        ) : (
+          <span style={{ fontSize: 'var(--fs-xs)', color: "#22c55e" }}>✓ {zh ? "干净" : "clean"}</span>
+        ))}
+      </div>
 
       {/* Stats */}
       {status && status.isDirty && (

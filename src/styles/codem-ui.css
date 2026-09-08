@@ -1648,9 +1648,6 @@ transition: border-color var(--duration-fast) var(--ease-out), box-shadow var(--
   -webkit-app-region: drag;
   gap: 8px;
 }
-.titlebar-center .git-branch-selector {
-  -webkit-app-region: no-drag;
-}
 .titlebar-action-btn {
   display: flex;
   align-items: center;
