@@ -86,18 +86,32 @@ export const ScrollbarMarkers = memo(function ScrollbarMarkers({
       return;
     }
 
+    const scrollerRect = scroller.getBoundingClientRect();
+
+    // 消息在“全部内容”中的比例位置（0-100），让整条轨道成为全内容地图：
+    // 每个历史消息/回合一个点、按内容比例铺满轨道（对标 dsh-navbar 密集节点导航）。
+    // 旧实现用 (elTop - scrollTop)/viewportHeight 的“视口相对”坐标，离屏消息
+    // 全部被 clamp 到轨道两端堆叠，一屏只剩当前视口内 1-2 个点，导航形同虚设。
+    const toContentPercent = (el: HTMLElement): number => {
+      const contentTop = el.getBoundingClientRect().top - scrollerRect.top + scrollTop;
+      return Math.max(0, Math.min(100, (contentTop / totalHeight) * 100));
+    };
+    const isInViewport = (el: HTMLElement): boolean => {
+      const r = el.getBoundingClientRect();
+      return r.bottom > scrollerRect.top && r.top < scrollerRect.bottom;
+    };
+
     const userIds = messages.filter((m) => m.role === "user").map((m) => m.id);
     const newMarkers: MarkerPosition[] = [];
     for (const msgId of userIds) {
       const el = container.querySelector<HTMLElement>(`[data-message-id="${msgId}"]`);
       if (!el) continue;
-      const elTop = el.offsetTop;
-      // Visual position within the visible viewport (clamped to rail bounds)
-      const visual = ((elTop - scrollTop) / viewportHeight) * 100;
-      const topPercent = Math.max(0, Math.min(100, visual));
-      const elHeight = el.offsetHeight;
-      const inViewport = elTop + elHeight > scrollTop && elTop < scrollTop + viewportHeight;
-      newMarkers.push({ messageId: msgId, topPercent, inViewport, pinned: false });
+      newMarkers.push({
+        messageId: msgId,
+        topPercent: toContentPercent(el),
+        inViewport: isInViewport(el),
+        pinned: false,
+      });
     }
 
     // Add pinned (精选) assistant markers on top (gold discs).
@@ -105,11 +119,10 @@ export const ScrollbarMarkers = memo(function ScrollbarMarkers({
       for (const pid of pinnedIds) {
         const el = container.querySelector<HTMLElement>(`[data-message-id="${pid}"]`);
         if (!el) continue;
-        const visual = ((el.offsetTop - scrollTop) / viewportHeight) * 100;
         newMarkers.push({
           messageId: pid,
-          topPercent: Math.max(0, Math.min(100, visual)),
-          inViewport: el.offsetTop + el.offsetHeight > scrollTop && el.offsetTop < scrollTop + viewportHeight,
+          topPercent: toContentPercent(el),
+          inViewport: isInViewport(el),
           pinned: true,
         });
       }

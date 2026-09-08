@@ -12,6 +12,8 @@
  *   H. i18n 新增翻译键 (REG-FULL-186 ~ REG-FULL-200)
  */
 import { describe, it, expect, beforeEach, vi } from "vitest";
+import { readFileSync } from "fs";
+import { join } from "path";
 
 vi.mock("../core/file-api", () => ({
   executeCommand: vi.fn(),
@@ -45,6 +47,16 @@ describe("P0 滚动/UX — 组件导入与 Store 状态", () => {
   it("REG-FULL-001: ScrollbarMarkers 组件可导入", async () => {
     const mod = await import("../components/ScrollbarMarkers");
     expect(mod.ScrollbarMarkers).toBeDefined();
+  });
+
+  it("REG-FULL-001b: ScrollbarMarkers 轨道按“全内容比例”铺点（防回退到视口相对坐标导致一屏只剩 1-2 点）", () => {
+    const src = readFileSync(join(__dirname, "../components/ScrollbarMarkers.tsx"), "utf-8");
+    // 内容地图定位：contentTop = 视口坐标差 + scrollTop，再除以 totalHeight
+    expect(src).toContain("toContentPercent");
+    expect(src).toContain("contentTop = el.getBoundingClientRect().top - scrollerRect.top + scrollTop");
+    expect(src).toContain("(contentTop / totalHeight) * 100");
+    // 旧实现（视口相对坐标，离屏点被 clamp 到轨道两端堆叠）不得回退
+    expect(src).not.toContain("((elTop - scrollTop) / viewportHeight) * 100");
   });
 
   it("REG-FULL-002: ScrollToBottomIndicator 组件可导入", async () => {
