@@ -265,8 +265,9 @@ export function TitleBar({
         </div>
       )}
 
-      {/* 右侧栏切换 + P1: Top navigation actions — search, settings, theme */}
-      <div className="titlebar-nav-actions">
+      {/* 右侧栏切换 + P1: Top navigation actions — search, settings, theme。
+          容器空白为可拖拽区（按钮自身 no-drag 仍可点击），保证标题栏中段可拖 */}
+      <div className="titlebar-nav-actions" data-tauri-drag-region>
         {onSearch && (
           <button
             className="titlebar-action-btn"

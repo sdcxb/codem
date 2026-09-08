@@ -268,7 +268,7 @@ justify-content: flex-start;
 display: flex;
 align-items: center;
 gap: 4px;
--webkit-app-region: no-drag;
+-webkit-app-region: drag;
 margin-right: 8px;
 flex: 1;
 justify-content: flex-end;
