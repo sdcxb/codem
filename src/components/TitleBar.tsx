@@ -11,7 +11,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { PencilLine, Search, Settings, Sun, Moon, Home, GitBranch, Terminal } from "lucide-react";
 import { ActionIcons } from "../core/icons/icon-map";
-import codemLogoUrl from "../assets/codem-logo.svg";
+import codemLogoUrl from "../assets/codem-logo.png";
 import { getSetting, setSetting } from "../core/storage/settings";
 import { ThemeManager } from "../core/theme";
 import { useProjectStore } from "../core/store";
