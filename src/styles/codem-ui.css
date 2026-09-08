@@ -3172,7 +3172,15 @@ select:focus-visible,
   display: none !important;
 }
 
-/* ========== 18. Panel Sidebar Tabs ========== */
+/* ========== 18. Panel Sidebar ========== */
+/* 右侧栏面板：磨砂玻璃背景（88% 不透明底 + 强模糊），避免高透明让背后
+   内容/消息导航轨节点透出；z-index 由组件内联提至 920 以盖过 rail(900/901) */
+.floating-overlay-panel.panel-sidebar-shell {
+  background: var(--glass-bg-strong) !important;
+  backdrop-filter: blur(var(--glass-blur-strong)) saturate(1.2) !important;
+  -webkit-backdrop-filter: blur(var(--glass-blur-strong)) saturate(1.2) !important;
+}
+
 .panel-sidebar-tabs {
 display: flex;
 align-items: center;

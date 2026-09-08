@@ -71,7 +71,7 @@ export function PanelSidebar({ open, onClose }: RightSidebarProps) {
   // Bug1: 用 Portal 渲染到 body，避免祖先 backdrop-filter/overflow:hidden 导致 fixed 定位失效
   const panelContent = (
     <div
-      className="floating-overlay-panel"
+      className="floating-overlay-panel panel-sidebar-shell"
       style={{
         position: "fixed",
         top: "var(--chat-body-top, 48px)",
@@ -79,7 +79,8 @@ export function PanelSidebar({ open, onClose }: RightSidebarProps) {
         bottom: "var(--chat-body-bottom, 140px)",
         width: 420,
         maxWidth: "calc(100vw - 16px)",
-        zIndex: 500,
+        // 高于消息导航轨 ScrollbarMarkers（z 900/901），磨砂背景不透出紫色节点
+        zIndex: 920,
         display: "flex",
         flexDirection: "column",
         boxShadow: "-4px 0 16px rgba(0,0,0,0.15)",
