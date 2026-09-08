@@ -10880,7 +10880,8 @@ html.pet-window-mode #root {
   border-color: rgba(239, 68, 68, 0.3);
 }
 
-/* ========== P0: Scrollbar Markers v2（对标 dsh-navbar 节点导航） ========== */
+/* ========== P0: Scrollbar Markers v3（对标 dsh-navbar 节点导航）
+   纯节点轨道：无灰线（rail 仅承载紫色消息点，全内容比例 + 最小间距避让） ========== */
 .scrollbar-markers-rail {
   position: fixed;
   width: 10px;
@@ -10889,27 +10890,17 @@ html.pet-window-mode #root {
   cursor: pointer;
   user-select: none;
 }
-.scrollbar-markers-rail::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 4px;
-  width: 2px;
-  background: var(--border-color, rgba(128, 128, 128, 0.25));
-  border-radius: 1px;
-}
 .scrollbar-marker {
   position: absolute;
   left: 2px;
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: var(--text-muted, #555);
-  opacity: 0.45;
+  background: var(--accent, #6366f1);
+  opacity: 0.35;
   cursor: pointer;
   pointer-events: auto;
-  transition: var(--transition-color);
+  transition: var(--transition-color), opacity 0.15s;
   transform: translateX(0);
   box-sizing: border-box;
 }
@@ -10918,11 +10909,9 @@ html.pet-window-mode #root {
   width: 8px;
   height: 8px;
   left: 1px;
-  background: var(--accent, #6366f1);
 }
 .scrollbar-marker.in-viewport {
-  opacity: 0.65;
-  background: var(--text-secondary, #888);
+  opacity: 0.75;
 }
 .scrollbar-marker.active {
   opacity: 1;
@@ -10948,8 +10937,6 @@ html.pet-window-mode #root {
 .scrollbar-marker-preview {
   position: absolute;
   right: 16px;
-  top: 0;
-  transform: translateY(0);
   width: min(244px, 50vw);
   max-height: 120px;
   overflow: hidden;

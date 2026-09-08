@@ -26,6 +26,8 @@ interface MarkerPosition {
 
 /** Marker rail visual width (matches .scrollbar-marker active size) */
 const RAIL_GAP = 10;
+/** 相邻消息点的最小中心间距（px）—— 历史密集时避免点完全重叠，保证可读可点 */
+const MIN_GAP_PX = 10;
 
 /**
  * Scrollbar markers — right-edge node rail for message navigation.
@@ -129,6 +131,30 @@ export const ScrollbarMarkers = memo(function ScrollbarMarkers({
     }
 
     newMarkers.sort((a, b) => a.topPercent - b.topPercent);
+
+    // 最小间距避让：历史消息密集（或轨道较矮）时相邻点可能完全重叠。
+    // 正反两遍扫描把冲突点推开，保证相邻点至少相距 MIN_GAP_PX；
+    // 轨道两端放不下时由下方越界保护收拢，仅端点允许少量压缩。
+    const minGapPct = (MIN_GAP_PX / Math.max(1, viewportHeight)) * 100;
+    if (newMarkers.length > 1 && minGapPct > 0) {
+      for (let i = 1; i < newMarkers.length; i++) {
+        const minTop = newMarkers[i - 1].topPercent + minGapPct;
+        if (newMarkers[i].topPercent < minTop) {
+          newMarkers[i] = { ...newMarkers[i], topPercent: minTop };
+        }
+      }
+      for (let i = newMarkers.length - 2; i >= 0; i--) {
+        const maxTop = newMarkers[i + 1].topPercent - minGapPct;
+        if (newMarkers[i].topPercent > maxTop) {
+          newMarkers[i] = { ...newMarkers[i], topPercent: maxTop };
+        }
+      }
+      // 越界保护（端点少量重叠优于溢出 rail）
+      for (const m of newMarkers) {
+        m.topPercent = Math.max(0, Math.min(100, m.topPercent));
+      }
+    }
+
     setMarkers(newMarkers);
     const firstInViewport = newMarkers.find((m) => m.inViewport && !m.pinned);
     setActiveId(firstInViewport?.messageId || null);
@@ -178,7 +204,8 @@ export const ScrollbarMarkers = memo(function ScrollbarMarkers({
     setActiveId(next.messageId);
   }, [markers, activeId, jumpTo]);
 
-  const hovered = hoverId ? messages.find((m) => m.id === hoverId) : null;
+  const hoveredMarker = hoverId ? markers.find((m) => m.messageId === hoverId) : null;
+  const hovered = hoveredMarker ? messages.find((m) => m.id === hoveredMarker.messageId) : null;
   if (markers.length === 0 || !railRect) return null;
 
   const rail = (
@@ -203,8 +230,16 @@ export const ScrollbarMarkers = memo(function ScrollbarMarkers({
           title=""
         />
       ))}
-      {hovered && (
-        <div className="scrollbar-marker-preview">
+      {hoveredMarker && hovered && (
+        <div
+          className="scrollbar-marker-preview"
+          style={{
+            top: `calc(${hoveredMarker.topPercent}% )`,
+            transform: hoveredMarker.topPercent > 65
+              ? "translateY(calc(-100% - 14px))"
+              : "translateY(14px)",
+          }}
+        >
           <div className="scrollbar-marker-preview-role">
             {hovered.role === "user" ? "User" : "📌"}
           </div>
