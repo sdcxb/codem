@@ -8,10 +8,6 @@ export default defineConfig({
     globals: true,
     setupFiles: ["./src/test/setup.ts", "./src/test/setup-dom.ts"],
     include: ["src/test/**/*.test.ts", "src/test/**/*.test.tsx"],
-    // 关闭 vitest 的 console 收集通道：重度引擎日志文件的输出与 worker teardown
-    // 竞态会产生 "Closing rpc while onUserConsoleLog was pending" unhandled 噪音
-    // （非代码缺陷，但使 vitest exit≠0）。测试自身的 console spy 断言不受影响。
-    disableConsoleIntercept: true,
     // P0-4: Coverage configuration with per-file thresholds
     coverage: {
       provider: "v8",
