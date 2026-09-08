@@ -1,18 +1,16 @@
 import { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
-import { Bot, GitBranch, FolderOpen, ListChecks, Wrench, Activity } from "lucide-react";
+import { GitBranch, FolderOpen, ListChecks, Wrench, Activity } from "lucide-react";
 import { ActionIcons } from "../core/icons/icon-map";
 import { useLang } from "../core/i18n/lang";
 import { GitInfoPanel } from "./GitInfoPanel";
 import { Workbench } from "./Workbench";
 import { FileChangesList } from "./FileChangesList";
 import { FileExplorer } from "./FileExplorer";
-import { AgentRoster } from "./AgentRoster";
 import { CicdPanel } from "./CicdPanel";
 import { useProjectStore } from "../core/store";
-import { useAppStore } from "../store";
 
-type SidebarTab = "git" | "workbench" | "files" | "changes" | "agents" | "cicd";
+type SidebarTab = "git" | "workbench" | "files" | "changes" | "cicd";
 
 /** 读取被禁用的插件列表 */
 function useDisabledPlugins(): string[] {
@@ -49,18 +47,17 @@ export function PanelSidebar({ open, onClose }: RightSidebarProps) {
   const zh = lang === "zh";
   const [activeTab, setActiveTab] = useState<SidebarTab>("git");
   const { currentProject, currentSession } = useProjectStore();
-  const { isStreaming, currentModel } = useAppStore();
   const currentSessionId = currentSession?.id || "";
   const disabledPlugins = useDisabledPlugins();
   const cicdEnabled = !disabledPlugins.includes('@codem/ui-misc');
 
   // 构建 tab 列表 — CI/CD tab 根据插件状态条件渲染
+  // 注：智能体活动已收敛至对话顶部「智能体与团队」按钮（AgentPanel，个体 + 团队双维度），此处不再单列
   const tabs: Array<{ id: SidebarTab; icon: typeof GitBranch; label: string }> = [
     { id: "git", icon: GitBranch, label: "Git" },
     { id: "files", icon: FolderOpen, label: zh ? "文件" : "Files" },
     { id: "changes", icon: ListChecks, label: zh ? "变更" : "Changes" },
     { id: "workbench", icon: Wrench, label: zh ? "工作台" : "Workbench" },
-    { id: "agents", icon: Bot, label: zh ? "智能体" : "Agents" },
   ];
   if (cicdEnabled) {
     tabs.push({ id: "cicd", icon: GitBranch, label: "CI/CD" });
@@ -131,13 +128,6 @@ export function PanelSidebar({ open, onClose }: RightSidebarProps) {
         )}
         {effectiveTab === "changes" && currentProject && (
           <FileChangesList sessionId={currentSessionId || ""} workspace={currentProject.path} />
-        )}
-        {effectiveTab === "agents" && (
-          <AgentRoster
-            sessionId={currentSessionId}
-            mainModel={currentModel}
-            isRunning={isStreaming}
-          />
         )}
         {effectiveTab === "cicd" && cicdEnabled && (
           <CicdPanel />

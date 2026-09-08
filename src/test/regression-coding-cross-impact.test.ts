@@ -220,6 +220,15 @@ describe("交叉影响：组件引用完整性 lint", () => {
     expect(src).toContain("file-entry-icon");
     expect(src).toContain("file-name");
   });
+
+  it("PanelSidebar 不再含智能体 tab（已收敛至对话顶部「智能体与团队」按钮 AgentPanel）", () => {
+    const src = readFileSync(COMPONENT_FILES.PanelSidebar, "utf-8");
+    // 不残留 agents tab / AgentRoster / Bot 图标 / useAppStore（AgentRoster 依赖的流式状态）
+    expect(src).not.toContain('"agents"');
+    expect(src).not.toContain("AgentRoster");
+    expect(src).not.toContain("<Bot");
+    expect(src).not.toContain("useAppStore");
+  });
 });
 
 // ========== Rust / CSS lint — 合并为单次检查 ==========
