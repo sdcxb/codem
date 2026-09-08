@@ -265,9 +265,6 @@ export function TitleBar({
         </div>
       )}
 
-      {/* 居中弹性占位（保持左右布局）；Git 分支选择器已合并至右侧栏 Git 面板 */}
-      <div className="titlebar-center" data-tauri-drag-region />
-
       {/* 右侧栏切换 + P1: Top navigation actions — search, settings, theme */}
       <div className="titlebar-nav-actions">
         {onSearch && (

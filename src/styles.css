@@ -244,19 +244,6 @@ flex: 1;
 justify-content: flex-start;
 }
 
-/* Bug6: 标题栏居中区域 — Git 分支选择器 */
-/* Bug2: 用 absolute 居中，不受左右内容宽度影响 */
-.titlebar-center {
-position: absolute;
-left: 50%;
-transform: translateX(-50%);
-display: flex;
-align-items: center;
-justify-content: center;
--webkit-app-region: no-drag;
-z-index: 2;
-}
-
 .titlebar-icon {
   font-size: 14px;
   color: var(--accent);

@@ -1640,14 +1640,6 @@ transition: border-color var(--duration-fast) var(--ease-out), box-shadow var(--
 }
 
 /* ========== 9b. Enhanced TitleBar (Legacy bar with Git + actions) ========== */
-.titlebar-center {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex: 1;
-  -webkit-app-region: drag;
-  gap: 8px;
-}
 .titlebar-action-btn {
   display: flex;
   align-items: center;
