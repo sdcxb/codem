@@ -27,8 +27,17 @@ export default defineConfig({
     strictPort: true,
     watch: {
       // *.tmpdir / *.tmp：编辑器（含 AI 助手）的原子写入临时目录，
-      // 正在被写入时 chokidar 会 EBUSY 崩溃，直接忽略
-      ignored: ["**/src-tauri/target/**", "**/*.tmpdir", "**/*.tmpdir/**", "**/*.tmp"],
+      // 正在被写入时 chokidar 会 EBUSY 崩溃，直接忽略；
+      // 另外忽略构建产物 / 预览截图目录，避免开发时无意义整页刷新
+      ignored: [
+        "**/src-tauri/target/**",
+        "**/*.tmpdir",
+        "**/*.tmpdir/**",
+        "**/*.tmp",
+        "**/.preview-shot/**",
+        "**/tools/preview/dist/**",
+        "**/dist/**",
+      ],
     },
   },
   envPrefix: ["VITE_", "TAURI_"],
