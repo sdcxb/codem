@@ -297,3 +297,18 @@ function useSlotEntriesSafe(slots: any, key: string): readonly StoredEntry[] {
   if (!slots) return EMPTY_ENTRIES
   return slots.entriesOfSlot(key) as readonly StoredEntry[]
 }
+
+/**
+ * Hook: 某个 slot 当前是否有插件贡献。
+ *
+ * 宿主用它来决定「扩展页签 / 扩展区块」是否显示 ——
+ * 插件被禁用时不装配 provider → 这里返回 false → 宿主 UI 完全回到原样
+ * （例如任务管理的「图书馆」页签只在 ui-library-ops 启用时出现）。
+ */
+export function useSlotHasEntries(name: string): boolean {
+  const ctxReady = useCtxReady()
+  const ctx = tryGetCtx()
+  const slots = ctx?.get('slots') ?? null
+  const entries = useSlotEntriesSafe(slots, name)
+  return ctxReady && !!slots && entries.length > 0
+}

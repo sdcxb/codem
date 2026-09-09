@@ -6,13 +6,28 @@
  *
  * Phase 1: 骨架 + 现有功能归入（概览/委派/子智能体/自动化）
  * Phase 2+: 后续增加 Issues/Board/Squads/Inbox
+ *
+ * 扩展页签：`task-center.library`（由 @codem/ui-library-ops 贡献「图书馆」页签，
+ * 把团队角色/子智能体在图书馆各岗位工作的动画场景 + 用量/工具/成本/错误/时间线
+ * 融进本面板）。插件被禁用时该 slot 无贡献者 → 页签不出现，宿主 UI 回到原样。
  */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { LayoutDashboard, Link2, Bot, Clock, ClipboardList, Columns, Users, Inbox as InboxIcon } from "lucide-react";
+import {
+  LayoutDashboard,
+  Link2,
+  Bot,
+  Clock,
+  ClipboardList,
+  Columns,
+  Users,
+  Inbox as InboxIcon,
+  BookOpen,
+} from "lucide-react";
 import { ActionIcons } from "../core/icons/icon-map";
 import { useLang } from "../core/i18n/lang";
+import { SlotBridge, useSlotHasEntries } from "../core/slots/SlotBridge";
 import { OverviewTab } from "./task-center/OverviewTab";
 import { DelegationTab } from "./task-center/DelegationTab";
 import { SubagentsTab } from "./task-center/SubagentsTab";
@@ -22,7 +37,19 @@ import { IssuesTab } from "./task-center/IssuesTab";
 import { BoardTab } from "./task-center/BoardTab";
 import { InboxTab } from "./task-center/InboxTab";
 
-export type TaskCenterTab = "overview" | "issues" | "board" | "teams" | "delegation" | "subagents" | "automation" | "inbox";
+export type TaskCenterTab =
+  | "overview"
+  | "issues"
+  | "board"
+  | "teams"
+  | "delegation"
+  | "subagents"
+  | "automation"
+  | "inbox"
+  | "library";
+
+/** 扩展页签的 slot 名（与 @codem/ui-library-ops 约定） */
+export const TASK_CENTER_LIBRARY_SLOT = "task-center.library";
 
 interface TaskCenterProps {
   onClose: () => void;
@@ -41,6 +68,8 @@ export function TaskCenter({ onClose, initialTab = "overview", subagentTasks = [
   const lang = useLang();
   const zh = lang === "zh";
   const [activeTab, setActiveTab] = useState<TaskCenterTab>(() => normalizeTab(initialTab));
+  /** 图书馆扩展页签是否可用（插件启用时才为 true） */
+  const hasLibrary = useSlotHasEntries(TASK_CENTER_LIBRARY_SLOT);
 
   const tabs: { id: TaskCenterTab; label: string; icon: typeof LayoutDashboard; available: boolean }[] = [
     { id: "overview", label: zh ? "概览" : "Overview", icon: LayoutDashboard, available: true },
@@ -51,16 +80,28 @@ export function TaskCenter({ onClose, initialTab = "overview", subagentTasks = [
     { id: "board", label: zh ? "看板" : "Board", icon: Columns, available: true },
     { id: "teams", label: zh ? "团队" : "Teams", icon: Users, available: true },
     { id: "inbox", label: zh ? "收件箱" : "Inbox", icon: InboxIcon, available: true },
+    ...(hasLibrary
+      ? [{ id: "library" as TaskCenterTab, label: zh ? "图书馆" : "Library", icon: BookOpen, available: true }]
+      : []),
   ];
+
+  // 插件在面板打开期间被禁用 → 页签消失，回落到概览
+  useEffect(() => {
+    if (!tabs.some((t) => t.id === activeTab)) setActiveTab("overview");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasLibrary]);
+
+  const wide = activeTab === "library";
 
   const panel = (
     <div className="modal-overlay" onClick={onClose}>
       <div
         className="task-center-panel"
+        data-wide={wide ? "1" : "0"}
         onClick={(e) => e.stopPropagation()}
         style={{
-          width: "min(960px, 92vw)",
-          maxWidth: "95vw",
+          width: wide ? "min(1180px, 96vw)" : "min(960px, 92vw)",
+          maxWidth: "96vw",
           height: "min(720px, 88vh)",
           maxHeight: "90vh",
           background: "var(--bg-secondary, #1e1e2e)",
@@ -157,7 +198,7 @@ export function TaskCenter({ onClose, initialTab = "overview", subagentTasks = [
         </div>
 
         {/* Tab content */}
-        <div style={{ flex: 1, overflow: "auto" }}>
+        <div style={{ flex: 1, overflow: activeTab === "library" ? "hidden" : "auto" }}>
           {activeTab === "overview" && <OverviewTab onNavigate={setActiveTab} />}
           {activeTab === "delegation" && <DelegationTab />}
           {activeTab === "subagents" && (
@@ -168,6 +209,7 @@ export function TaskCenter({ onClose, initialTab = "overview", subagentTasks = [
           {activeTab === "issues" && <IssuesTab />}
           {activeTab === "board" && <BoardTab />}
           {activeTab === "inbox" && <InboxTab />}
+          {activeTab === "library" && <SlotBridge name={TASK_CENTER_LIBRARY_SLOT} fallback={null} />}
         </div>
 
         {/* Footer status bar */}

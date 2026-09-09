@@ -70,44 +70,25 @@
 }
 .lo-launcher__badge.is-error { background: var(--error); color: var(--text-primary); }
 
-/* ===== 全屏外壳 ===== */
-.lo-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: var(--z-modal, 1300);
-  display: flex;
-  padding: 22px;
-  background: color-mix(in srgb, var(--bg-primary) 72%, transparent);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
-  animation: lo-fade-in 0.18s ease;
-}
-
-.lo-shell {
-  flex: 1;
+/* ===== 任务管理「图书馆」页签视图（不再有独立面板） ===== */
+.lo-task {
   display: flex;
   flex-direction: column;
-  min-width: 0;
+  height: 100%;
   min-height: 0;
-  border-radius: var(--radius-lg, 14px);
-  border: 1px solid var(--border-primary);
-  background: color-mix(in srgb, var(--bg-primary) 96%, transparent);
-  box-shadow: var(--shadow-popover, var(--shadow-lg));
-  overflow: hidden;
   color: var(--text-primary);
 }
 
-.lo-shell__header {
+.lo-task__bar {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 10px 14px;
+  padding: 8px 14px;
   border-bottom: 1px solid var(--border-primary);
-  background: color-mix(in srgb, var(--bg-secondary) 70%, transparent);
+  background: color-mix(in srgb, var(--bg-tertiary) 55%, transparent);
   flex-shrink: 0;
 }
-.lo-shell__title { font-size: var(--fs-md); font-weight: 700; letter-spacing: 0.01em; }
-.lo-shell__live {
+.lo-task__live {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -118,20 +99,19 @@
   background: color-mix(in srgb, var(--lo-live-token) 12%, transparent);
   border: 1px solid color-mix(in srgb, var(--lo-live-token) 34%, transparent);
 }
-.lo-shell__live-dot {
+.lo-task__live-dot {
   width: 6px; height: 6px; border-radius: 50%;
   background: var(--lo-live-token);
   box-shadow: 0 0 8px var(--lo-live-token);
   animation: lo-pulse 1.8s ease-in-out infinite;
 }
-.lo-shell__meta { font-size: var(--fs-xs); color: var(--text-secondary); }
-.lo-shell__clock {
+.lo-task__meta { font-size: var(--fs-xs); color: var(--text-secondary); }
+.lo-task__clock {
   margin-left: auto;
   font-size: var(--fs-xs);
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
 }
-.lo-shell__actions { display: flex; gap: 4px; }
 
 .lo-icon-btn {
   border: none;
@@ -147,7 +127,7 @@
 .lo-icon-btn:hover { background: var(--bg-hover); color: var(--text-primary); }
 .lo-icon-btn.is-busy { animation: lo-spin 0.7s linear infinite; }
 
-.lo-shell__error {
+.lo-task__error {
   display: flex; align-items: center; gap: 8px;
   padding: 6px 14px;
   font-size: var(--fs-xs);
@@ -156,21 +136,21 @@
   border-bottom: 1px solid color-mix(in srgb, var(--error) 26%, transparent);
 }
 
-.lo-shell__body {
+.lo-task__body {
   flex: 1;
   display: flex;
   min-height: 0;
   overflow: hidden;
 }
 
-/* ===== 左侧导航 ===== */
-.lo-shell__nav {
+/* ===== 左侧子导航 ===== */
+.lo-task__rail {
   display: flex;
   flex-direction: column;
   gap: 2px;
   padding: 8px 6px;
   border-right: 1px solid var(--border-primary);
-  background: color-mix(in srgb, var(--bg-secondary) 55%, transparent);
+  background: color-mix(in srgb, var(--bg-tertiary) 40%, transparent);
   flex-shrink: 0;
   overflow-y: auto;
 }
@@ -198,34 +178,38 @@
 .lo-nav__icon { font-size: var(--fs-base); }
 
 /* ===== 内容区 ===== */
-.lo-shell__content {
+.lo-task__content {
   flex: 1;
   min-width: 0;
-  overflow-y: auto;
-  padding: 12px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
-.lo-shell__content::-webkit-scrollbar { width: 6px; }
-.lo-shell__content::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 3px; }
+.lo-task__content > * { flex: 1; min-height: 0; overflow-y: auto; padding: 12px; }
+.lo-task__content::-webkit-scrollbar,
+.lo-task__content > *::-webkit-scrollbar { width: 6px; }
+.lo-task__content::-webkit-scrollbar-thumb,
+.lo-task__content > *::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 3px; }
 
-.lo-shell__feed {
-  width: 300px;
+.lo-task__feed {
+  width: 280px;
   flex-shrink: 0;
   border-left: 1px solid var(--border-primary);
-  background: color-mix(in srgb, var(--bg-secondary) 45%, transparent);
+  background: color-mix(in srgb, var(--bg-tertiary) 35%, transparent);
   display: flex;
   flex-direction: column;
   min-height: 0;
 }
-.lo-shell__feed-title {
+.lo-task__feed-title {
   padding: 8px 12px;
   font-size: var(--fs-xs);
   font-weight: 600;
   color: var(--text-secondary);
   border-bottom: 1px solid var(--border-primary);
 }
-.lo-shell__feed-body { flex: 1; overflow-y: auto; padding: 6px; min-height: 0; }
-.lo-shell__feed-body::-webkit-scrollbar { width: 5px; }
-.lo-shell__feed-body::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 3px; }
+.lo-task__feed-body { flex: 1; overflow-y: auto; padding: 6px; min-height: 0; }
+.lo-task__feed-body::-webkit-scrollbar { width: 5px; }
+.lo-task__feed-body::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 3px; }
 
 /* ===== 卡片 ===== */
 .lo-card {

@@ -35,7 +35,13 @@ export interface OverviewPanelProps {
   };
   zh: boolean;
   onOpenLibrary: () => void;
-  onOpenTab: (tab: "teams" | "sessions" | "tools" | "cost" | "errors") => void;
+  onOpenTab: (tab: "sessions" | "tools" | "cost" | "errors") => void;
+}
+
+/** 跳转到任务管理的其它页签（团队/委派/子智能体等已并入任务管理） */
+function openTaskCenterTab(tab: string): void {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new CustomEvent("codem:open-task-center", { detail: { tab } }));
 }
 
 export function OverviewPanel({ snapshot, series, zh, onOpenLibrary, onOpenTab }: OverviewPanelProps) {
@@ -162,7 +168,7 @@ export function OverviewPanel({ snapshot, series, zh, onOpenLibrary, onOpenTab }
               icon="👥"
               scroll
               actions={
-                <button className="lo-link-btn" onClick={() => onOpenTab("teams")}>
+                <button className="lo-link-btn" onClick={() => openTaskCenterTab("teams")}>
                   {zh ? "全部 →" : "All →"}
                 </button>
               }

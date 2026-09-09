@@ -1,9 +1,12 @@
 # 图书馆运营监控插件（@codem/ui-library-ops）设计与实施记录
 
-> 版本：v1.12.0（2026-09-10） | 插件路径：`src/plugins/library-ops/`
+> 版本：v1.12.0 起（2026-09-10） | 插件路径：`src/plugins/library-ops/`
 > 需求来源：以 ClawLibrary 的图书馆场景 + lobster-pet 的监控看板为参照，
 > 把 Codem 的**团队角色与子智能体**可视化为在图书馆各岗位工作的动画角色，
 > 并把图书馆作为监控界面内的场景；作为一个**完全独立、启停不影响现有功能**的大插件交付。
+>
+> ⚠️ v1.14.0 起：插件**不再有独立面板**，作为 `task-center.library` slot 的贡献者
+> 渲染在宿主「任务管理」面板里（见第九节：与任务管理的融合）。
 
 ---
 
@@ -15,9 +18,9 @@
 | 在图书馆不同的地方工作 | `data/library-map.ts`：**10 个功能区**（前台/阅览大厅/编目室/代码工坊/写作工坊/档案室/机房/会议厅/借还台/静思角），按角色标签关键词自动分配岗位与工位槽位 | `library-ops-map.test.ts` LO-MAP-1~8、`library-ops-scene.test.ts` LO-SCENE-5 |
 | 类似 ClawLibrary 的 OpenClaw 角色工作 | 等距 2.5D 图书馆（SVG 地板/区域/装饰 + DOM 角色层）、网格 BFS 寻路、到岗停留、头顶名牌与工作气泡、11 种工作动画 | `core/pathfinder.ts`、`core/scene-engine.ts`、`components/library/*` |
 | 它只有一只小龙虾工作，咱们是一个团队在图书馆里工作 | 角色来源覆盖：队长会话 / 普通会话 / worktree 分支会话 / 运行时团队成员 / 子智能体 / 团队模板角色 / 兜底值班馆员，全部同时在场 | `core/telemetry-adapter.ts` 的 5 类来源 + 兜底 |
-| 完全引用 lobster-pet 的监控界面 | `components/LibraryOpsPanel.tsx` 复刻「标题栏 + 卡片网格 + 场景嵌入 + 实时事件流」；`monitor/` 下 9 个面板：StatusCard 式状态卡、TaskGrid 式会话网格、ActivityViz 式热力图+环形图+小时柱状图、GatewayAgentsCard 式团队卡、TokenBar 式用量卡 | `library-ops-ui.test.tsx` LO-UI-3~9 |
-| 把我们的图书馆作为 lobster-pet 监控界面内的场景 | 图书馆是监控面板的「图书馆」页签，与其它监控卡共享同一份 `LibrarySnapshot`；总览页还有场景缩略（岗位分布） | `LibraryPanel.tsx`、`OverviewPanel.tsx` 的 `MiniScenePreview` |
-| 完全独立的大插件，启停不影响现有功能 | 只读宿主数据；挂 `app.overlay`（宿主已有消费点）→ **App.tsx 零改动**；禁用即不装配；面板关闭即停止采样 | `library-ops-integration.test.ts` LO-INT-1~7、LO-ADP-11 |
+| 完全引用 lobster-pet 的监控界面 | `components/LibraryOpsTaskView.tsx` 复刻其 `DetailPanel` 的「状态条 + 左侧导航 + 卡片网格 + 实时事件流」；`monitor/` 下 8 个面板：StatusCard 式状态卡、TaskGrid 式会话网格、ActivityViz 式热力图+环形图+小时柱状图、TokenBar 式用量卡 | `library-ops-ui.test.tsx` LO-UI-3~9 |
+| 把我们的图书馆作为 lobster-pet 监控界面内的场景 | 图书馆是「任务管理 → 图书馆」页签里的**场景子视图**（默认），与用量/会话/工具/成本/错误/时间线共享同一份 `LibrarySnapshot` | `LibraryPanel.tsx`、`LibraryOpsTaskView.tsx` |
+| 完全独立的大插件，启停不影响现有功能 | 只读宿主数据；注册到 `task-center.library`（宿主新增的扩展页签 slot）→ 插件禁用时页签不出现；页签卸载即停止采样 | `library-ops-integration.test.ts` LO-INT-1~7、`library-ops-task-center.test.tsx` LO-TASK-1~7 |
 
 ---
 
@@ -41,12 +44,12 @@
 
 | 观察到的做法 | 本插件的取舍 |
 | --- | --- |
-| Electron + React 19；`DetailPanel` = 标题栏（标题/刷新/关闭）+ Row1（`StatusCard` + `TaskGrid` + `ActivityViz`）+ Row2（`GatewayAgentsCard` + `CronList` + `MemoCard` + `MiniOffice`） | **采用**：`LibraryOpsPanel` = 标题栏（标题/实时状态/时钟/刷新/关闭）+ 左侧导航 + 内容区 + 右侧实时事件流；9 个面板对应其卡片族 |
+| Electron + React 19；`DetailPanel` = 标题栏（标题/刷新/关闭）+ Row1（`StatusCard` + `TaskGrid` + `ActivityViz`）+ Row2（`GatewayAgentsCard` + `CronList` + `MemoCard` + `MiniOffice`） | **采用**：`LibraryOpsTaskView` = 状态条（实时状态/指标/时钟/刷新）+ 左侧子导航 + 内容区 + 右侧实时事件流；8 个子视图对应其卡片族（v1.14.0 起作为任务管理的一个页签，不再独立成面板） |
 | `ActivityViz`：14 天热力图 + 会话类型环形图 + 24 小时活跃柱状图 | **采用**：`monitor/charts.tsx` 的 `Heatmap` / `DonutChart` / `HourBars`，数据来自真实会话与消息时间戳 |
 | `StatusCard`：状态点 + 描述 + 活跃任务 + 模型 + 累计 token/成本 | **采用**：总览页的 `StatCard` 网格 + 健康度环 + 数据源卡 |
 | `TaskGrid`：最近会话卡片网格（图标/名称/状态点/通道/年龄/token） | **采用**：`SessionsPanel` |
 | `GatewayAgentsCard` + `CronList`：智能体列表 + 定时任务 | **采用**：`TeamsPanel`（成员+任务看板）与时间线页 |
-| `MiniOffice`：**把场景作为监控界面内的一个卡片**（iframe + postMessage 传状态） | **采用其核心思想**：图书馆是监控面板的一个页签，由同一份快照驱动；但不用 iframe，直接同进程渲染（避免二次加载与状态同步开销） |
+| `MiniOffice`：**把场景作为监控界面内的一个卡片**（iframe + postMessage 传状态） | **采用其核心思想并进一步合并**：图书馆是宿主「任务管理」面板里的一个页签（v1.14.0），由同一份快照驱动；不用 iframe，直接同进程渲染（避免二次加载与状态同步开销） |
 | 卡片视觉：暗色磨砂玻璃 `.card` + `.section-title` + `.card-scroll` | **采用结构，不采用色值**：改为 Codem 皮肤令牌（`--bg-secondary` / `--border-primary` / `--radius-md` / `--shadow-md`），四套皮肤自动适配 |
 | 宠物状态机：`idle/working/thinking/error/sleeping/happy`，30s 无活动转 sleeping | **采用**：本插件 11 种角色动画态；会话「6 小时无活动 → 休眠」同源思路 |
 
@@ -135,22 +138,27 @@ roleLabel 关键词匹配（最长关键词优先）
 
 ## 四、集成点与回滚
 
-### 4.1 宿主侧改动（4 个文件，全部为追加）
+### 4.1 宿主侧改动（追加为主）
 
 | 文件 | 改动 | 回滚方式 |
 | --- | --- | --- |
-| `src/core/provider/ui-library-ops-provider.ts` | 新增（注册入口到 `app.overlay`） | 删文件 |
+| `src/core/provider/ui-library-ops-provider.ts` | 新增（注册图书馆视图到 `task-center.library`；快捷键 + 事件别名） | 删文件 |
+| `src/core/slots/declare-slots.ts` | +1 行（声明 `task-center.library` 扩展页签 slot） | 删 1 行 |
+| `src/components/TaskCenter.tsx` | +条件页签「图书馆」+ `<SlotBridge name="task-center.library" />`（无贡献者时不显示） | 删该页签与 SlotBridge |
+| `src/core/slots/SlotBridge.tsx` | +`useSlotHasEntries()`（宿主判断扩展页签是否显示） | 删该 hook |
 | `src/core/ui-plugins/index.ts` | +2 行（导入 + 加入 `uiProviders`）+ 门控泛化（`GATED_PROVIDERS`，保留 ui-pet 原行为） | 删 2 行 |
 | `src/core/plugin-loader/builtin-registry.ts` | +2 行（导入 + `registerBuiltinPlugin`） | 删 2 行 |
 | `src/core/provider/plugin-registry-provider.ts` | +1 行（插件元数据） | 删 1 行 |
 
-**`App.tsx` 未改动** —— 入口挂载在宿主已有的 `<SlotListBridge name="app.overlay" />` 上。
+**`App.tsx` 仍未改动** —— 图书馆视图是 TaskCenter 里由 slot 渲染出来的，
+快捷键/事件走宿主已有的 `codem:open-task-center`。
 
 ### 4.2 启停语义
 
 - 插件管理里禁用 `@codem/ui-library-ops` → `ui-plugins/index.ts` 的门控跳过装配 →
-  `app.overlay` 里没有入口组件 → 悬浮胶囊与面板都不存在。
-- 面板关闭 → 采样定时器随 effect 清理，无后台轮询。
+  `task-center.library` 没有贡献者 → 任务管理里的「图书馆」页签**不出现**
+  （其余 8 个页签完全不受影响）；若禁用发生在面板打开期间，页签消失并回落到「概览」。
+- 页签卸载（切到别的页签 / 关闭任务管理）→ 采样定时器随 effect 清理，无后台轮询。
 - 插件全程只读：`library-ops-integration.test.ts` LO-INT-7 用禁止词表
   （`setSetting` / `saveMessages` / `createMessage` / `updateSquad` / `deleteTeam` / …）
   把「不写宿主」变成门禁。
@@ -267,11 +275,74 @@ lobster-pet 的 `DetailPanel` 是「单屏卡片网格」：
 ```
 
 **场景从「一个页签」变成「监控界面里的一张卡」**（对标其 `MiniOffice`），
-与其它监控卡共享同一份快照；同时保留全屏「图书馆」页签供放大观察。
+与其它监控卡共享同一份快照。v1.14.0 起整个图书馆视图并入宿主「任务管理」面板（见第九节）。
 
 ---
 
-## 八、已知边界与后续可做
+## 九、与任务管理的融合（v1.14.0）
+
+### 9.1 重叠分析（逐页签对照）
+
+宿主「任务管理」面板（`src/components/TaskCenter.tsx`，8 个页签）与图书馆插件
+（`LibraryOpsPanel`，9 个页签）逐项对照：
+
+| 图书馆页签 | 任务管理对应页签 | 数据来源 | 结论 |
+| --- | --- | --- | --- |
+| 总览（KPI / 健康度 / 14 天热力图 / 小时柱状 / 会话类型环形） | 概览（委派/自动化/Issue/Inbox 统计 + 最近活动） | 两边都聚合会话/任务/事件 | **同义入口**：导航重复。图书馆的「用量」视角（token/成本/健康/活动分布）任务管理没有 → 保留为子视图「用量」 |
+| 团队（成员 + 任务看板 + 完成率） | 团队（Squad 模板 + agent-teams 运行时活动） | `AgentTeamsService` / `SquadManager` | **完全重复** → 删除，按钮跳转到任务管理「团队」 |
+| 会话（会话列表 + 活跃态 + 消息数） | 委派 / 子智能体（按任务维度，不是会话维度） | `useProjectStore.sessions` | 视角互补（会话维度 vs 任务维度） → 保留为子视图「会话」 |
+| 工具（调用频次排行 + 流水） | 无 | 消息流 toolCalls | **独有** → 保留 |
+| 成本（token 构成 + 成本趋势） | 无 | `CostTracker` | **独有** → 保留 |
+| 错误（阻塞/出错角色 + 失败任务 + 来源健康） | 无（收件箱有错误通知） | `LibrarySnapshot` | **独有** → 保留 |
+| 时间线（事件流 + 类别过滤） | 收件箱（通知聚合，已读/未读） | `snapshot.events` / `InboxManager` | 互补（原始事件流 vs 通知中心） → 保留 |
+| 设置（采样/场景/皮肤） | 无 | 插件 localStorage | **独有** → 保留 |
+| 图书馆（动画场景 + 花名册 + 岗位分布） | 无 | 场景引擎 | **独有（插件核心价值）** → 作为默认子视图 |
+| —（无） | Issues / 看板 / 自动化 | `IssueManager` / `AutomationManager` | 任务管理独有，图书馆不重复 |
+
+**结论**：两个面板的重叠集中在「入口层」——两个独立的悬浮入口 / 面板让用户在
+两处看到同一批团队、会话、任务数据；图书馆真正独有的是**动画场景**与
+**用量/工具/成本/错误/时间线**这几张任务管理没有的卡。因此不是「二选一」，
+而是**把图书馆降级为任务管理的一个页签**：删掉重复页签，保留独有视图。
+
+### 9.2 融合后的结构
+
+```
+任务管理（TaskCenter，宿主）
+├── 概览 / 委派 / 子智能体 / 自动化 / Issues / 看板 / 团队 / 收件箱   ← 原有 8 个
+└── 图书馆（仅插件启用时出现；slot: task-center.library）
+    ├── 状态条：实时状态 · 在馆/待命/工具数 · 时钟 · 刷新
+    ├── 子导航：场景(默认) / 用量 / 会话 / 工具 / 成本 / 错误 / 时间线 / 设置
+    ├── 内容区：像素或等距图书馆场景 + 花名册 + 角色详情 + 岗位分布 …
+    └── 右侧：实时事件流（可在设置里关掉）
+```
+
+- 图书馆页签会把面板加宽到 1180px（`data-wide="1"`），场景才有足够空间；
+- 打开方式：任务管理里点「图书馆」页签，或 `Ctrl/Cmd+Shift+L` /
+  `codem:open-library-ops` 事件（派发宿主已有的 `codem:open-task-center`，`detail.tab = "library"`）。
+
+### 9.3 实现要点
+
+| 关注点 | 做法 |
+| --- | --- |
+| 宿主扩展点 | `declare-slots.ts` 声明 `task-center.library`（single）；`TaskCenter` 用 `useSlotHasEntries()` 决定页签是否出现，用 `<SlotBridge name="task-center.library" />` 渲染内容 |
+| 插件侧 | provider 注册 `LibraryOpsTaskView` 到该 slot（React.lazy，独立 chunk）；`provide('uiLibraryOps')` 的 `open()` 改为派发宿主事件 |
+| 采样生命周期 | 视图挂载 → `refresh()` + `setInterval(settings.refreshMs)`；卸载 → `clearInterval`。页签切走即停，无后台轮询 |
+| 删除的东西 | `components/LibraryOpsPanel.tsx`（全屏外壳）、`components/LibraryOpsLauncher.tsx`（悬浮圆钮 + 徽标）、store 里的 `open/openPanel/closePanel/togglePanel`、`MonitorTab` 的 `overview/teams`、CSS 的 `.lo-overlay/.lo-shell*` |
+| 设置项语义 | `defaultTab` → 图书馆页签打开时的默认子视图（默认 `library`）；`autoOpen` → 启动时自动打开「任务管理 → 图书馆」（默认关） |
+| 皮肤/许可 | 不变：新增 CSS 只用皮肤令牌；美术许可卡仍在「设置」子视图里 |
+
+### 9.4 验证
+
+- `library-ops-task-center.test.tsx` LO-TASK-1~7：无贡献者时只有 8 个页签 / 有贡献者时
+  出现「图书馆」并渲染 slot 内容 / `initialTab=library` 直达 / 真实 provider 装配后
+  `.lo-task` 渲染 / 贡献者被移除时页签消失并回落概览 / 快捷键与事件别名 / 宿主声明了 slot；
+- `library-ops-ui.test.tsx` LO-UI-3~12：改为挂载 `LibraryOpsTaskView`，断言无独立面板外壳、
+  8 个子视图、场景/用量/成本/错误/时间线/设置渲染、挂载采样 + 卸载停止；
+- 全量 `npx vitest run` 192 文件 / 4510 用例通过。
+
+---
+
+## 十、已知边界与后续可做
 
 | 项 | 现状 | 后续 |
 | --- | --- | --- |
@@ -281,3 +352,4 @@ lobster-pet 的 `DetailPanel` 是「单屏卡片网格」：
 | 场景图片 | 可上传替换画面（IndexedDB）；房间框与走道可在对位模式里拖动，按图分别保存 | 可做多套「分馆」布局与导出/分享对位数据 |
 | 角色移动 | 网格 BFS + 线性插值 | 可加转弯缓动、避让、结伴同行 |
 | 历史回放 | 只有最近 120 个采样点 | 可接 EventLog 做时间轴回放 |
+| 与任务管理的边界 | 图书馆只保留任务管理没有的视图（场景/用量/会话/工具/成本/错误/时间线/设置） | 若任务管理后续新增用量或成本页签，继续把对应子视图移过去 |

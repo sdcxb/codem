@@ -2,12 +2,13 @@
  * Library Ops 插件状态 —— zustand store（插件私有，不进入宿主 store）。
  *
  * 职责：
- * 1. 面板开关 / 当前页签 / 选中角色与区域（UI 状态）
- * 2. 采样调度：面板打开时按 `settings.refreshMs` 拉取快照
+ * 1. 当前子视图 / 选中角色与区域（UI 状态）
+ * 2. 采样调度：图书馆页签可见时按 `settings.refreshMs` 拉取快照（卸载即停）
  * 3. 时间序列环形缓冲：为监控面板的迷你折线图提供历史（token / 成本 / 工具 / 角色）
  * 4. 设置持久化：localStorage `codem-library-ops`（与宿主其它键同前缀，互不干扰）
  *
- * 关闭面板即停止采样 —— 插件关闭时宿主零额外开销。
+ * 本插件**没有独立面板**：视图渲染在宿主「任务管理」面板的 `task-center.library`
+ * slot 里（components/LibraryOpsTaskView.tsx），页签卸载即停止采样 → 宿主零额外开销。
  */
 
 import { create } from "zustand";
@@ -20,6 +21,7 @@ import type {
 } from "./types";
 import {
   DEFAULT_SETTINGS,
+  MONITOR_TABS,
   SCENE_IMAGE_IDS,
   SCENE_IMAGE_ID_FALLBACK,
   STORAGE_KEY,
@@ -101,6 +103,7 @@ export function loadSettings(): LibraryOpsSettings {
     if (!SCENE_IMAGE_IDS.includes(merged.sceneImageId)) merged.sceneImageId = SCENE_IMAGE_ID_FALLBACK;
     merged.sceneImageAdjust = clampSceneAdjust(merged.sceneImageAdjust);
     merged.showAlignGuides = merged.showAlignGuides === true;
+    if (!MONITOR_TABS.includes(merged.defaultTab)) merged.defaultTab = DEFAULT_SETTINGS.defaultTab;
     return merged;
   } catch {
     return { ...DEFAULT_SETTINGS };
@@ -154,16 +157,14 @@ function activeLayoutOf(all: Record<string, LayoutOverride>, sceneImageId: strin
 }
 
 interface LibraryOpsState {
-  /** 面板是否打开 */
-  open: boolean;
-  /** 当前页签 */
+  /** 当前子视图（图书馆页签内） */
   tab: MonitorTab;
   /** 设置 */
   settings: LibraryOpsSettings;
   /** 最新快照 */
   snapshot: LibrarySnapshot | null;
   /**
-   * 场景运行态（面板切走再切回时恢复，角色不必重新入场）。
+   * 场景运行态（子视图切走再切回时恢复，角色不必重新入场）。
    * 两套引擎各占一个槽位，避免把像素场景态喂给等距引擎（坐标系统不同）。
    * 用 unknown 承载以免 store 依赖具体场景引擎。
    */
@@ -196,9 +197,6 @@ interface LibraryOpsState {
   /** 是否处于「对位模式」（可在场景上拖动房间框与路网节点） */
   editingLayout: boolean;
 
-  openPanel: (tab?: MonitorTab) => void;
-  closePanel: () => void;
-  togglePanel: () => void;
   setTab: (tab: MonitorTab) => void;
   updateSettings: (patch: Partial<LibraryOpsSettings>) => void;
   selectActor: (id: string | null) => void;
@@ -208,7 +206,7 @@ interface LibraryOpsState {
   /** 推进场景（由场景组件的 rAF 调用） */
   setIsoScene: (scene: unknown) => void;
   setPixelScene: (scene: unknown) => void;
-  /** 从 IndexedDB 恢复用户上传的场景图片（面板/启动时调用一次） */
+  /** 从 IndexedDB 恢复用户上传的场景图片（视图挂载时调用一次） */
   loadCustomSceneImage: () => Promise<void>;
   /** 上传并立即启用一张场景图片；返回是否成功 */
   setCustomSceneImage: (file: File) => Promise<boolean>;
@@ -234,7 +232,6 @@ const INITIAL_LAYOUTS = loadLayoutOverrides();
 setLayoutOverride(activeLayoutOf(INITIAL_LAYOUTS, INITIAL_SETTINGS.sceneImageId));
 
 export const useLibraryOps = create<LibraryOpsState>((set, get) => ({
-  open: false,
   tab: DEFAULT_SETTINGS.defaultTab,
   settings: INITIAL_SETTINGS,
   snapshot: null,
@@ -252,19 +249,6 @@ export const useLibraryOps = create<LibraryOpsState>((set, get) => ({
   sceneImageNotice: null,
   layoutOverrides: INITIAL_LAYOUTS,
   editingLayout: false,
-
-  openPanel: (tab) => {
-    const s = get();
-    set({ open: true, tab: tab ?? s.tab });
-    void s.refresh();
-  },
-
-  closePanel: () => set({ open: false, selectedActorId: null, selectedZoneId: null }),
-
-  togglePanel: () => {
-    if (get().open) get().closePanel();
-    else get().openPanel();
-  },
 
   setTab: (tab) => set({ tab }),
 
@@ -467,7 +451,6 @@ export const useLibraryOps = create<LibraryOpsState>((set, get) => ({
       // 布局注册表是模块级状态，必须一并复位（否则测试之间互相污染）
       setLayoutOverride(null);
       return {
-        open: false,
         tab: DEFAULT_SETTINGS.defaultTab,
         settings: { ...DEFAULT_SETTINGS, sceneImageAdjust: { ...DEFAULT_SETTINGS.sceneImageAdjust } },
         snapshot: null,

@@ -35,13 +35,13 @@ describe("LO-INT 插件注册链路", () => {
     expect(src).toMatch(/registerBuiltinPlugin\(\s*'@codem\/ui-library-ops',\s*\{[^}]*provides:\s*\['uiLibraryOps'\][^}]*inject:\s*\['slots'\]/);
   });
 
-  it("LO-INT-2: 插件元数据存在，riskLevel=safe 且声明 app.overlay 影响面", () => {
+  it("LO-INT-2: 插件元数据存在，riskLevel=safe 且声明 task-center.library 影响面", () => {
     const src = read("src/core/provider/plugin-registry-provider.ts");
     expect(src).toContain("@codem/ui-library-ops");
     const line = src.split("\n").find((l) => l.includes("@codem/ui-library-ops"))!;
     expect(line).toContain("riskLevel: 'safe'");
-    expect(line).toContain("app.overlay");
-    expect(line).toContain("library-ops-launcher");
+    expect(line).toContain("task-center.library");
+    expect(line).toContain("task-center-library-tab");
   });
 
   it("LO-INT-3: UI 插件装载器导入该 provider 并在禁用时跳过装配（门控）", () => {
@@ -57,7 +57,7 @@ describe("LO-INT 插件注册链路", () => {
     expect(gating).toMatch(/["']ui-pet["']\s*:\s*["']@codem\/ui-pet["']/);
   });
 
-  it("LO-INT-4: provider 把入口组件注册到 app.overlay 并返回复合 dispose", async () => {
+  it("LO-INT-4: provider 把图书馆视图注册到 task-center.library 并返回复合 dispose", async () => {
     const { uiLibraryOpsProvider } = await import("../core/provider/ui-library-ops-provider");
     const registered: Array<{ spec: any; comp: any }> = [];
     let disposed = 0;
@@ -83,8 +83,8 @@ describe("LO-INT 插件注册链路", () => {
     };
     const dispose = (uiLibraryOpsProvider as any)(ctx);
     expect(registered.length).toBe(1);
-    expect(registered[0].spec.name).toBe("app.overlay");
-    expect(registered[0].spec.id).toBe("library-ops-launcher");
+    expect(registered[0].spec.name).toBe("task-center.library");
+    expect(registered[0].spec.id).toBe("library-ops-task-view");
     expect(typeof registered[0].comp).toBe("function");
     expect(provided).toBe("uiLibraryOps");
     expect(typeof dispose).toBe("function");
@@ -110,8 +110,7 @@ describe("LO-INT 插件注册链路", () => {
       "core/scene-engine.ts",
       "core/telemetry-adapter.ts",
       "core/format.ts",
-      "components/LibraryOpsLauncher.tsx",
-      "components/LibraryOpsPanel.tsx",
+      "components/LibraryOpsTaskView.tsx",
       "components/library/LibraryScene.tsx",
       "components/library/CharacterActor.tsx",
       "styles/library-ops.css",
@@ -229,19 +228,21 @@ describe("LO-STORE 设置持久化", () => {
     expect(s.speed).toBe(1);
     expect(s.maxActors).toBe(24);
     expect(s.showNameplates).toBe(true);
-    expect(s.defaultTab).toBe("overview");
+    expect(s.defaultTab).toBe("library");
   });
 
   it("LO-STORE-2: 非法持久化值被收敛到安全区间（不抛错）", async () => {
     localStorage.setItem(
       "codem-library-ops",
-      JSON.stringify({ refreshMs: 1, speed: 999, maxActors: -5, defaultTab: "overview" }),
+      JSON.stringify({ refreshMs: 1, speed: 999, maxActors: -5, defaultTab: "不存在的页签" }),
     );
     const { loadSettings } = await import("../plugins/library-ops/store");
     const s = loadSettings();
     expect(s.refreshMs).toBe(500);
     expect(s.speed).toBe(4);
     expect(s.maxActors).toBe(4);
+    // 非法子视图回退默认（场景）
+    expect(s.defaultTab).toBe("library");
   });
 
   it("LO-STORE-3: 损坏的 JSON 回退默认值", async () => {
@@ -257,7 +258,9 @@ describe("LO-STORE 设置持久化", () => {
     expect(loadSettings().showBubbles).toBe(false);
     useLibraryOps.getState()._reset();
     expect(useLibraryOps.getState().settings.refreshMs).toBe(1500);
-    expect(useLibraryOps.getState().open).toBe(false);
+    // 不再有独立面板的开关状态；子视图回到默认（场景）
+    expect(useLibraryOps.getState().tab).toBe("library");
+    expect((useLibraryOps.getState() as any).open).toBeUndefined();
   });
 
   it("LO-STORE-5: sortedActors 按严重度排序（错误 > 阻塞 > 活跃 > 完成 > 空闲）", async () => {

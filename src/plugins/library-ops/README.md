@@ -1,4 +1,4 @@
-# @codem/ui-library-ops — 图书馆运营监控（Library Ops Monitor）
+﻿# @codem/ui-library-ops — 图书馆运营监控（Library Ops Monitor）
 
 > 完全独立、可启停的 Codem 大插件。
 > 把**团队角色与子智能体**变成各自不同的动画角色，在**像素美术图书馆**里各自的岗位上工作；
@@ -45,7 +45,7 @@
 src/plugins/library-ops/
 ├── index.ts                      # 公共导出（组件 / store / 引擎 / 数据 / 几何）
 ├── types.ts                      # 领域类型 + 活动元数据 + 默认设置（含 sceneStyle）
-├── store.ts                      # zustand store（面板开关 / 采样调度 / 时间序列 / 两套场景态）
+├── store.ts                      # zustand store（子视图 / 采样调度 / 时间序列 / 两套场景态）
 ├── data/
 │   ├── library-map.ts            # 岗位地图：10 岗位 / 装饰 / 投影 / 岗位路由 / 工位槽位
 │   ├── characters.ts             # 角色外观生成器（等距场景用，确定性 + 岗位倾向 + 令牌化调色板）
@@ -58,15 +58,14 @@ src/plugins/library-ops/
 │   ├── telemetry-adapter.ts      # 真实 Codem 数据 → LibrarySnapshot（只读 + 可注入）
 │   └── format.ts                 # 数值/时间格式化（全插件统一口径）
 ├── components/
-│   ├── LibraryOpsLauncher.tsx    # 入口圆钮（挂 app.overlay，可拖拽 + 状态徽标）
-│   ├── LibraryOpsPanel.tsx       # 监控界面外壳（Portal 全屏，9 页签）
+│   ├── LibraryOpsTaskView.tsx    # 任务管理「图书馆」页签视图（状态条 + 子导航 + 内容 + 事件流）
 │   ├── library/
 │   │   ├── iso.ts                # 等距几何（角点/中心两套约定 + 立方体 + 网格线 + 窗）
 │   │   ├── PixelLibraryScene.tsx # 像素图书馆场景（默认，ClawLibrary 美术）
 │   │   ├── LibraryScene.tsx      # 等距矢量场景（备用，本项目自绘）
 │   │   ├── SceneFurniture.tsx    # 8 类等距矢量家具
 │   │   └── CharacterActor.tsx    # 等距角色 SVG（11 种动画）
-│   └── monitor/                  # common / charts / labels / EventList / 9 个监控面板
+│   └── monitor/                  # common / charts / labels / EventList / SceneImageCard / 8 个监控面板
 └── styles/library-ops.css        # 样式（只消费皮肤令牌）
 
 public/library-ops/               # 第三方像素美术资源（仅限非商业，见 docs/ASSET-LICENSES.md）
@@ -85,24 +84,25 @@ public/library-ops/               # 第三方像素美术资源（仅限非商�
 
 | 文件 | 改动 |
 | --- | --- |
-| `src/core/provider/ui-library-ops-provider.ts` | **新增** provider：注册入口组件到 `app.overlay`，`provide('uiLibraryOps')` |
+| `src/core/provider/ui-library-ops-provider.ts` | **新增** provider：注册图书馆视图到 `task-center.library`，`provide('uiLibraryOps')`；`Ctrl/Cmd+Shift+L` 与 `codem:open-library-ops` → 打开「任务管理 → 图书馆」 |
 | `src/core/ui-plugins/gating.ts` | **新增**：禁用门控（短名 → 插件 id）独立成模块，装载器与测试共用 |
 | `src/core/ui-plugins/index.ts` | 导入 + 加入 `uiProviders`；消费 `isUiProviderGated()` |
 | `src/core/plugin-loader/builtin-registry.ts` | 注册 `@codem/ui-library-ops`（provides `uiLibraryOps` / inject `slots`） |
 | `src/core/provider/plugin-registry-provider.ts` | 插件市场元数据（riskLevel safe + uiImpact） |
 | `src/core/provider/agent-teams-service.ts` | **宿主修复**：任务进终态 / 转派后释放成员为 `idle`（原先成员会永久卡在 `working`） |
 
-**`App.tsx` 零改动**：入口挂载在宿主已有的 `<SlotListBridge name="app.overlay" />` 上。
+**`App.tsx` 零改动**：图书馆视图是任务管理面板里由 `task-center.library` slot
+渲染出来的；打开入口走宿主已有的 `codem:open-task-center`。
 
 ---
 
 ## 4. 启停语义（本插件最重要的约束）
 
-- **启用**：入口圆钮出现在输入区上方右下角（可拖拽移动、双击复位，或 `Ctrl/Cmd+Shift+L`）；
-  圆钮徽标显示当前工作中的角色数，有异常角色时显示 `!`。
+- **启用**：任务管理面板出现「图书馆」页签（默认子视图是场景）；也可
+  `Ctrl/Cmd+Shift+L` 或派发 `codem:open-library-ops` 直接打开该页签。
 - **禁用**（插件管理 → 关闭 `@codem/ui-library-ops`）：provider 不装配 →
-  入口与面板都不存在，宿主 UI 与数据**零变化**。
-- **面板关闭时**：停止采样，无任何后台轮询与定时器。
+  该 slot 无贡献者 → 「图书馆」页签不出现，其余 8 个页签与宿主数据**零变化**。
+- **页签切走 / 关闭任务管理时**：停止采样，无任何后台轮询与定时器。
 - **只读**：适配层只调用宿主服务的读接口；`library-ops-integration.test.ts` 的
   LO-INT-7 用禁止词表把「插件不得写宿主」变成门禁。
 
@@ -134,7 +134,7 @@ public/library-ops/               # 第三方像素美术资源（仅限非商�
 | `src/test/library-ops-scene-render.test.tsx` | **等距渲染几何**：区域多边形 / 角色落在自己岗位包围盒 / 8 类家具三面齐全 / 网格与窗 / 无 NaN / rAF 动画同步 / 选中高亮（7 例） |
 | `src/test/library-ops-pixel.test.ts` | **像素场景数据**：岗位→房间映射 / walkGraph 连通 / 路由 / 精灵表自洽 / 11 状态映射 / 场景推进 / 工位不重叠 / 变体分配 / **资源文件真实存在** / 许可声明齐备（12 例） |
 | `src/test/library-ops-pixel-render.test.tsx` | **像素场景渲染**：图层 / 12 房间 / 精灵 URL 与帧偏移 / 角色落在自己房间 / 房间点击 / 资源缺失降级 / 选中高亮（6 例） |
-| `src/test/library-ops-ui.test.tsx` | 角色 11 态渲染 / 差异化 / 面板 9 页签 / 两种场景风格 / 角色选中 / 团队/成本/错误/时间线 / 设置持久化 / Esc 关闭 / 徽标 / 岗位详情 / HUD（12 例） |
+| `src/test/library-ops-ui.test.tsx` | 角色 11 态渲染 / 差异化 / 图书馆视图 8 个子视图 / 两种场景风格 / 角色选中 / 团队/成本/错误/时间线 / 设置持久化 / Esc 关闭 / 徽标 / 岗位详情 / HUD（12 例） |
 
 ```bash
 npx vitest run src/test/library-ops-*.test.ts src/test/library-ops-*.test.tsx
@@ -151,8 +151,8 @@ npx vitest run src/test/library-ops-*.test.ts src/test/library-ops-*.test.tsx
 | **DOM + SVG，不用 Phaser** | 大富翁插件用了 Phaser，但 Phaser 无法在 happy-dom 下单测；本插件把「动画行为」做成可测的纯状态机（`scene-engine.ts`），场景用 SVG 地板 + DOM 角色层，逐帧只改 `transform`（不触发 React 重渲染） |
 | **角色外观程序化生成，不用精灵图** | 无外部美术资源与授权问题；12×4×5×6×6×4 组合足以让一个团队里人人不同；且完全跟随皮肤令牌 |
 | **网格 BFS 寻路** | ClawLibrary 用 walkGraph + 多边形碰撞，需要手工维护美术坐标；本插件是开放平面瓦片地图，网格 BFS 更简单且可测（LO-PATH-3 断言入口到 10 个岗位全部可达） |
-| **挂 `app.overlay` 而非改 App.tsx** | 宿主已有该 list 型 slot 的消费点，插件自挂载 → App.tsx 零改动，禁用即彻底消失 |
-| **采样只在面板打开时进行** | 关闭面板/禁用插件后宿主零开销；`refreshMs` 可调（1s ~ 10s）；入口徽标只在挂载时采样一次 |
+| **注册到 `task-center.library` 而非改 App.tsx** | 宿主新增扩展页签 slot，插件自挂载 → App.tsx 零改动，禁用即页签消失 |
+| **采样只在图书馆页签可见时进行** | 切走页签/禁用插件后宿主零开销；`refreshMs` 可调（1s ~ 10s）；入口徽标只在挂载时采样一次 |
 | **健康度加权公式** | 完成率 40% + 无错率 35% + 活跃度 25%；缺数据时按中性值处理，不虚高 |
 | **相机可缩放/平移/定位** | 画布 1408×768 直接塞进面板会把角色压到 20 多像素，故提供滚轮缩放 + 拖拽平移 + 双击复位 + 选中角色平滑居中 |
 

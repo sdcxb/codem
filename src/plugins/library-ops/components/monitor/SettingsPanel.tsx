@@ -13,9 +13,8 @@ import { Card, Field, Pill, SectionTitle, Switch } from "./common";
 import { SceneImageCard } from "./SceneImageCard";
 
 const TABS: Array<{ id: MonitorTab; zh: string; en: string; icon: string }> = [
-  { id: "overview", zh: "总览", en: "Overview", icon: "📊" },
-  { id: "library", zh: "图书馆", en: "Library", icon: "📚" },
-  { id: "teams", zh: "团队", en: "Teams", icon: "👥" },
+  { id: "library", zh: "场景", en: "Scene", icon: "📚" },
+  { id: "usage", zh: "用量", en: "Usage", icon: "📊" },
   { id: "sessions", zh: "会话", en: "Sessions", icon: "💬" },
   { id: "tools", zh: "工具", en: "Tools", icon: "🔧" },
   { id: "cost", zh: "成本", en: "Cost", icon: "💰" },

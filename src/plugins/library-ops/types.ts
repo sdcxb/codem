@@ -386,17 +386,26 @@ export interface SeriesPoint {
   value: number;
 }
 
-/** 监控面板键 */
-export type MonitorTab =
-  | "overview"
-  | "library"
-  | "teams"
-  | "sessions"
-  | "tools"
-  | "cost"
-  | "errors"
-  | "timeline"
-  | "settings";
+/**
+ * 图书馆页签内的子视图（任务管理 →「图书馆」页签里切换）。
+ *
+ * 说明：本插件**不再有独立面板**，而是作为 `task-center.library` slot 的贡献者，
+ * 渲染在宿主「任务管理」面板内。原先与任务管理重复的「总览 / 团队」两个页签已移除
+ * （总览 → 任务管理「概览」，团队 → 任务管理「团队」）；`usage` 是互补的用量/健康视图。
+ */
+export type MonitorTab = "library" | "usage" | "tools" | "cost" | "errors" | "sessions" | "timeline" | "settings";
+
+/** 全部合法子视图（持久化校验 / 设置页签选择用） */
+export const MONITOR_TABS: MonitorTab[] = [
+  "library",
+  "usage",
+  "tools",
+  "cost",
+  "errors",
+  "sessions",
+  "timeline",
+  "settings",
+];
 
 /** 场景风格：pixel = 第三方像素美术场景（默认，仅限非商业）；iso = 本项目自绘等距矢量场景 */
 export type SceneStyle = "pixel" | "iso";
@@ -463,11 +472,11 @@ export interface LibraryOpsSettings {
   showZoneLabels: boolean;
   /** 场景最大角色数（超出折叠为「其他」） */
   maxActors: number;
-  /** 是否显示监控面板右侧事件流 */
+  /** 是否显示图书馆页签右侧的实时事件流 */
   showEventFeed: boolean;
-  /** 面板打开时的默认页签 */
+  /** 「图书馆」页签打开时的默认子视图 */
   defaultTab: MonitorTab;
-  /** 是否在启动时自动打开 */
+  /** 是否在启动时自动打开「任务管理 → 图书馆」页签 */
   autoOpen: boolean;
 }
 
@@ -483,7 +492,7 @@ export const DEFAULT_SETTINGS: LibraryOpsSettings = {
   showZoneLabels: true,
   maxActors: 24,
   showEventFeed: true,
-  defaultTab: "overview",
+  defaultTab: "library",
   autoOpen: false,
 };
 

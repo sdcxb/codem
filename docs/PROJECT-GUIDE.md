@@ -645,12 +645,11 @@ mimo-gui/
 │   │       │   ├── telemetry-adapter.ts # 真实宿主数据 → LibrarySnapshot（只读 + 可注入）
 │   │       │   └── format.ts       # 数值/时间格式化
 │   │       ├── components/
-│   │       │   ├── LibraryOpsLauncher.tsx # 入口圆钮（挂 app.overlay）
-│   │       │   ├── LibraryOpsPanel.tsx    # 监控界面外壳（Portal 全屏，9 页签）
+│   │       │   ├── LibraryOpsTaskView.tsx # ★ 任务管理「图书馆」页签视图（无独立面板）
 │   │       │   ├── library/PixelLibraryScene.tsx # ★ 像素图书馆场景（内置预设/自定义图 + 拖拽换图）
 │   │       │   ├── library/LibraryScene.tsx      # 等距矢量场景（备用，自绘）
 │   │       │   ├── library/{iso,SceneFurniture,CharacterActor}.tsx # 等距几何/家具/角色
-│   │       │   └── monitor/          # common / charts / labels / EventList / SceneImageCard / 9 个监控面板
+│   │       │   └── monitor/          # common / charts / labels / EventList / SceneImageCard / 8 个监控面板
 │   │       └── styles/library-ops.css # 样式（只消费皮肤令牌）
 │   │
 │   ├── hooks/                    # React Hooks（v0.96 新增目录）

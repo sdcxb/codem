@@ -131,8 +131,8 @@ export function loadUIPlugins(ctx: Context) {
   for (const { name, plugin } of uiProviders) {
     try {
       // 门控：禁用时不装配（下次启动生效，与 KNOWN riskDescription 一致；
-      // 当前运行实例不受影响）。关闭 ui-library-ops 后入口/面板均不存在，
-      // 宿主 UI 与数据零变化。
+      // 当前运行实例不受影响）。关闭 ui-library-ops 后任务管理里的「图书馆」
+      // 页签不再出现，宿主 UI 与数据零变化。
       if (isUiProviderGated(name, disabledPlugins)) continue
       ctx.plugin(plugin as any)
       console.log(`[UI Plugins] Loaded provider: ${name}`)

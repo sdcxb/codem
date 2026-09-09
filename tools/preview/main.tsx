@@ -7,6 +7,7 @@
 import { createRoot } from "react-dom/client";
 import { LibraryScene } from "../../src/plugins/library-ops/components/library/LibraryScene";
 import { PixelLibraryScene } from "../../src/plugins/library-ops/components/library/PixelLibraryScene";
+import { LibraryOpsTaskView } from "../../src/plugins/library-ops/components/LibraryOpsTaskView";
 import { LibraryPanel } from "../../src/plugins/library-ops/components/monitor/LibraryPanel";
 import { OverviewPanel } from "../../src/plugins/library-ops/components/monitor/OverviewPanel";
 import { SceneImageCard } from "../../src/plugins/library-ops/components/monitor/SceneImageCard";
@@ -143,7 +144,6 @@ const series = {
 useLibraryOps.setState({
   snapshot,
   series,
-  open: true,
   selectedActorId: null,
   selectedZoneId: "code-forge",
 });
@@ -181,6 +181,10 @@ const INITIAL_PIXEL_SCENE = settledPixelScene();
 function Preview() {
   return (
     <div className="preview-wrap">
+      <h3 style={{ margin: 0, fontSize: 14 }}>任务管理「图书馆」页签视图（融合后的形态 · 无独立面板）</h3>
+      <div style={{ width: 1180, height: 620, position: "relative", border: "1px solid var(--border-primary)", borderRadius: 12, overflow: "hidden" }}>
+        <LibraryOpsTaskView />
+      </div>
       <h3 style={{ margin: 0, fontSize: 14 }}>像素图书馆（内置场景图预设 · 可在设置里换图 / 上传自己的图）</h3>
       <div className="preview-scene">
         <PixelLibraryScene

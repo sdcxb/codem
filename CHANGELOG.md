@@ -2,6 +2,48 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [Unreleased] — 图书馆功能融合进「任务管理」（不再单独显示面板）
+
+> 图书馆插件与「任务管理」面板在入口层大量重叠：两处都能看到同一批团队、会话、任务，
+> 只是图书馆多了一层动画场景。本版把图书馆**降级为任务管理里的一个页签**：
+> 删掉重复页签与独立面板，保留任务管理没有的视图（场景/用量/会话/工具/成本/错误/时间线/设置）。
+
+### 分析结论（详见 `docs/LIBRARY-OPS-PLUGIN.md` 第九节）
+
+| 图书馆原页签 | 任务管理对应 | 处置 |
+| --- | --- | --- |
+| 总览 | 概览 | 同义入口 → 保留为「用量」（token/成本/健康/活动分布是任务管理没有的） |
+| 团队 | 团队 | 完全重复 → **删除**，「全部 →」按钮跳任务管理「团队」 |
+| 会话 / 工具 / 成本 / 错误 / 时间线 / 设置 / 图书馆 | 无 | 独有 → 全部保留为子视图 |
+
+### 新增：任务管理「图书馆」页签（宿主扩展点）
+
+- 宿主声明 `task-center.library` slot（`declare-slots.ts`）+ 新增
+  `useSlotHasEntries()`（`SlotBridge.tsx`），`TaskCenter.tsx` 用它在**有插件贡献时**
+  才显示「图书馆」页签（`<SlotBridge>` 渲染内容），并给该页签加宽到 1180px
+- 插件 provider 改为注册 `LibraryOpsTaskView` 到该 slot（React.lazy 独立 chunk）；
+  禁用插件 → 页签不出现、其余 8 个页签不受影响；页签被移除时自动回落到「概览」
+- `Ctrl/Cmd+Shift+L` 与 `codem:open-library-ops` 改为派发宿主已有的
+  `codem:open-task-center`（`detail.tab = "library"`），不新增宿主耦合
+
+### 变更
+
+- **删除** `components/LibraryOpsPanel.tsx`（全屏外壳）与 `components/LibraryOpsLauncher.tsx`
+  （悬浮圆钮 + 状态徽标），以及 store 的 `open/openPanel/closePanel/togglePanel`
+- 图书馆子视图改为 8 个：场景（默认）/ 用量 / 会话 / 工具 / 成本 / 错误 / 时间线 / 设置
+- 采样生命周期跟随页签：挂载即采样，切走/关闭即停止（无后台轮询）
+- 设置项语义：`defaultTab` = 页签内默认子视图（默认「场景」）；`autoOpen` = 启动时
+  自动打开「任务管理 → 图书馆」
+- 插件元数据 `slots: ['app.overlay'] → ['task-center.library']`，影响面描述同步
+
+### 验证
+
+- 新增 `library-ops-task-center.test.tsx`（7 例：无/有贡献者、直达页签、真实 provider 渲染、
+  贡献者移除回落、快捷键与事件别名、slot 声明）；
+- `library-ops-ui.test.tsx` 12 例改为挂载新视图（断言无独立面板外壳、8 个子视图、
+  采样挂载/卸载）；`library-ops-integration.test.ts` 同步
+- 全量 192 文件 / 4510 用例通过；`tsc --noEmit` 零错误；`vite build` 成功
+
 ## [Unreleased] — 图书馆场景图可上传替换 + 房间框可视化对位
 
 > 场景「画面」与「布局」解耦：角色站位、岗位标签、点击热区都来自固定数据，
