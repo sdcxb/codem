@@ -13,6 +13,7 @@
  */
 
 import type { LibraryZone, SceneImageId, SceneStyle } from "../types";
+import { applyNodeOverride, applyRoomOverride } from "./layout-override";
 
 export type { SceneImageId, SceneStyle };
 
@@ -228,9 +229,27 @@ export const PIXEL_ROOMS: PixelRoom[] = [
   },
 ];
 
-/** 按 id 取房间 */
+/** 按 id 取房间（**已应用对位覆盖**） */
 export function getPixelRoom(id: string): PixelRoom | undefined {
-  return PIXEL_ROOMS.find((r) => r.id === id);
+  return pixelRooms().find((r) => r.id === id);
+}
+
+/**
+ * 全部房间（**已应用对位覆盖**）。
+ * 用户在对位模式里拖动过的房间，bounds / labelAnchor / work 都以覆盖层为准。
+ */
+export function pixelRooms(): PixelRoom[] {
+  return applyRoomOverride(PIXEL_ROOMS);
+}
+
+/** 全部路网节点（**已应用对位覆盖**） */
+export function walkNodes(): WalkNode[] {
+  return applyNodeOverride(WALK_NODES);
+}
+
+/** 路网边（只引用节点 id，节点移动后自动跟随） */
+export function walkEdges(): Array<[string, string]> {
+  return WALK_EDGES;
 }
 
 /**

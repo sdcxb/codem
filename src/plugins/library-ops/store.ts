@@ -35,6 +35,14 @@ import {
   validateSceneImageFile,
 } from "./core/scene-image";
 import { CUSTOM_SCENE_KEY, deleteSceneImage, getSceneImage, putSceneImage } from "./core/scene-image-db";
+import {
+  EMPTY_LAYOUT,
+  isLayoutEmpty,
+  normalizeLayoutOverride,
+  setLayoutOverride,
+  type LayoutOverride,
+  type RoomOverride,
+} from "./data/layout-override";
 
 /** 时间序列最大长度（约 3 分钟 @1.5s） */
 export const SERIES_CAP = 120;
@@ -111,6 +119,40 @@ function persistSettings(settings: LibraryOpsSettings): void {
   }
 }
 
+/** 场景对位覆盖层持久化键（与设置分开，避免设置对象膨胀） */
+export const LAYOUT_STORAGE_KEY = "codem-library-ops-layout";
+
+/** 读取全部场景的对位覆盖（损坏时回退空表，不抛错） */
+export function loadLayoutOverrides(): Record<string, LayoutOverride> {
+  try {
+    const raw = localStorage.getItem(LAYOUT_STORAGE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    const out: Record<string, LayoutOverride> = {};
+    for (const [sceneId, value] of Object.entries(parsed ?? {})) {
+      const normalized = normalizeLayoutOverride(value);
+      if (!isLayoutEmpty(normalized)) out[sceneId] = normalized;
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+function persistLayoutOverrides(all: Record<string, LayoutOverride>): void {
+  try {
+    localStorage.setItem(LAYOUT_STORAGE_KEY, JSON.stringify(all));
+  } catch (e) {
+    console.warn("[library-ops] layout persist failed:", e);
+  }
+}
+
+/** 取某个场景图片生效的覆盖层（空表返回 null） */
+function activeLayoutOf(all: Record<string, LayoutOverride>, sceneImageId: string): LayoutOverride | null {
+  const o = all[sceneImageId];
+  return o && !isLayoutEmpty(o) ? o : null;
+}
+
 interface LibraryOpsState {
   /** 面板是否打开 */
   open: boolean;
@@ -149,6 +191,11 @@ interface LibraryOpsState {
   /** 场景图片操作成功提示 */
   sceneImageNotice: string | null;
 
+  /** 场景对位覆盖层（按场景图片 id 分开存） */
+  layoutOverrides: Record<string, LayoutOverride>;
+  /** 是否处于「对位模式」（可在场景上拖动房间框与路网节点） */
+  editingLayout: boolean;
+
   openPanel: (tab?: MonitorTab) => void;
   closePanel: () => void;
   togglePanel: () => void;
@@ -167,14 +214,29 @@ interface LibraryOpsState {
   setCustomSceneImage: (file: File) => Promise<boolean>;
   /** 删除自定义场景图片并回到内置预设 */
   clearCustomSceneImage: () => Promise<void>;
+  /** 进入/退出对位模式 */
+  setEditingLayout: (on: boolean) => void;
+  /** 覆盖某个房间的几何（拖动/缩放后提交） */
+  setRoomOverride: (roomId: string, patch: RoomOverride) => void;
+  /** 覆盖某个路网节点坐标 */
+  setNodeOverride: (nodeId: string, pos: { x: number; y: number }) => void;
+  /** 清除当前场景图片的对位覆盖 */
+  resetLayout: () => void;
+  /** 清除全部场景图片的对位覆盖 */
+  resetAllLayouts: () => void;
   /** 重置（测试用） */
   _reset: () => void;
 }
 
+const INITIAL_SETTINGS = loadSettings();
+const INITIAL_LAYOUTS = loadLayoutOverrides();
+// 模块加载即把当前场景的对位覆盖喂给布局注册表（引擎读取它）
+setLayoutOverride(activeLayoutOf(INITIAL_LAYOUTS, INITIAL_SETTINGS.sceneImageId));
+
 export const useLibraryOps = create<LibraryOpsState>((set, get) => ({
   open: false,
   tab: DEFAULT_SETTINGS.defaultTab,
-  settings: loadSettings(),
+  settings: INITIAL_SETTINGS,
   snapshot: null,
   isoScene: null,
   pixelScene: null,
@@ -188,6 +250,8 @@ export const useLibraryOps = create<LibraryOpsState>((set, get) => ({
   sceneImageBusy: false,
   sceneImageError: null,
   sceneImageNotice: null,
+  layoutOverrides: INITIAL_LAYOUTS,
+  editingLayout: false,
 
   openPanel: (tab) => {
     const s = get();
@@ -208,6 +272,10 @@ export const useLibraryOps = create<LibraryOpsState>((set, get) => ({
     const next = { ...get().settings, ...patch };
     persistSettings(next);
     set({ settings: next });
+    // 换场景图片 → 切到那张图自己的对位覆盖
+    if (patch.sceneImageId !== undefined) {
+      setLayoutOverride(activeLayoutOf(get().layoutOverrides, next.sceneImageId));
+    }
   },
 
   selectActor: (id) => set({ selectedActorId: id }),
@@ -347,24 +415,77 @@ export const useLibraryOps = create<LibraryOpsState>((set, get) => ({
     }
   },
 
+  setEditingLayout: (on) => set({ editingLayout: on }),
+
+  setRoomOverride: (roomId, patch) => {
+    const sceneId = get().settings.sceneImageId;
+    const all = get().layoutOverrides;
+    const current = all[sceneId] ?? EMPTY_LAYOUT;
+    const next: LayoutOverride = {
+      rooms: { ...current.rooms, [roomId]: { ...current.rooms[roomId], ...patch } },
+      nodes: current.nodes,
+      updatedAt: Date.now(),
+    };
+    const merged = { ...all, [sceneId]: next };
+    persistLayoutOverrides(merged);
+    setLayoutOverride(next);
+    set({ layoutOverrides: merged });
+  },
+
+  setNodeOverride: (nodeId, pos) => {
+    const sceneId = get().settings.sceneImageId;
+    const all = get().layoutOverrides;
+    const current = all[sceneId] ?? EMPTY_LAYOUT;
+    const next: LayoutOverride = {
+      rooms: current.rooms,
+      nodes: { ...current.nodes, [nodeId]: { x: Math.round(pos.x), y: Math.round(pos.y) } },
+      updatedAt: Date.now(),
+    };
+    const merged = { ...all, [sceneId]: next };
+    persistLayoutOverrides(merged);
+    setLayoutOverride(next);
+    set({ layoutOverrides: merged });
+  },
+
+  resetLayout: () => {
+    const sceneId = get().settings.sceneImageId;
+    const all = { ...get().layoutOverrides };
+    delete all[sceneId];
+    persistLayoutOverrides(all);
+    setLayoutOverride(null);
+    set({ layoutOverrides: all });
+  },
+
+  resetAllLayouts: () => {
+    persistLayoutOverrides({});
+    setLayoutOverride(null);
+    set({ layoutOverrides: {} });
+  },
+
   _reset: () =>
-    set({
-      open: false,
-      tab: DEFAULT_SETTINGS.defaultTab,
-      settings: { ...DEFAULT_SETTINGS, sceneImageAdjust: { ...DEFAULT_SETTINGS.sceneImageAdjust } },
-      snapshot: null,
-      isoScene: null,
-      pixelScene: null,
-      series: emptySeries(),
-      selectedActorId: null,
-      selectedZoneId: null,
-      sampling: false,
-      error: null,
-      samples: 0,
-      customScene: null,
-      sceneImageBusy: false,
-      sceneImageError: null,
-      sceneImageNotice: null,
+    set(() => {
+      // 布局注册表是模块级状态，必须一并复位（否则测试之间互相污染）
+      setLayoutOverride(null);
+      return {
+        open: false,
+        tab: DEFAULT_SETTINGS.defaultTab,
+        settings: { ...DEFAULT_SETTINGS, sceneImageAdjust: { ...DEFAULT_SETTINGS.sceneImageAdjust } },
+        snapshot: null,
+        isoScene: null,
+        pixelScene: null,
+        series: emptySeries(),
+        selectedActorId: null,
+        selectedZoneId: null,
+        sampling: false,
+        error: null,
+        samples: 0,
+        customScene: null,
+        sceneImageBusy: false,
+        sceneImageError: null,
+        sceneImageNotice: null,
+        layoutOverrides: {},
+        editingLayout: false,
+      };
     }),
 }));
 

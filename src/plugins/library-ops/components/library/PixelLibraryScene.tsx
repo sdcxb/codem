@@ -28,15 +28,18 @@ import {
   ASSET_BASE,
   CLAW_SCENE,
   FALLBACK_SCENE_PRESET_ID,
-  PIXEL_ROOMS,
   SCENE_CREDITS,
-  WALK_EDGES,
-  WALK_NODES,
   ZONE_TO_ROOM,
   getScenePreset,
+  pixelRooms,
   resolveSprite,
   roomOfZone,
+  walkEdges,
+  walkNodes,
+  type PixelRoom,
+  type WalkNode,
 } from "../../data/pixel-art";
+import { resizeRoom, translateRoom, type RoomOverride } from "../../data/layout-override";
 import {
   advancePixelScene,
   createPixelSceneState,
@@ -60,11 +63,38 @@ const CANVAS_H = CLAW_SCENE.displayHeight;
 /** 精灵显示尺寸 */
 const SPRITE_W = ACTOR_DISPLAY.width;
 const SPRITE_H = ACTOR_DISPLAY.height;
+/** 显示画布 → 逻辑坐标的比例（x 通常为 1，y 略小于 1） */
+const DISPLAY_TO_LOGIC_X = CLAW_SCENE.logicWidth / CANVAS_W;
+const DISPLAY_TO_LOGIC_Y = CLAW_SCENE.logicHeight / CANVAS_H;
 
 interface View {
   scale: number;
   tx: number;
   ty: number;
+}
+
+/** 对位拖拽中的本地预览（不写 store，松手才提交） */
+interface LayoutPreview {
+  rooms: Record<string, RoomOverride>;
+  nodes: Record<string, { x: number; y: number }>;
+}
+
+const EMPTY_PREVIEW: LayoutPreview = { rooms: {}, nodes: {} };
+
+/** 正在进行的对位拖拽 */
+interface LayoutDrag {
+  kind: "room" | "node";
+  id: string;
+  mode: "move" | "resize";
+  base: PixelRoom | WalkNode;
+  startX: number;
+  startY: number;
+}
+
+/** 客户端像素位移 → 逻辑坐标位移（考虑画布缩放与显示/逻辑比例） */
+function clientDeltaToLogic(dx: number, dy: number, viewScale: number): { x: number; y: number } {
+  const s = viewScale || 1;
+  return { x: (dx / s) * DISPLAY_TO_LOGIC_X, y: (dy / s) * DISPLAY_TO_LOGIC_Y };
 }
 
 export interface PixelLibrarySceneProps {
@@ -109,6 +139,12 @@ export function PixelLibraryScene({
   const sceneImageBusy = useLibraryOps((s) => s.sceneImageBusy);
   const setCustomSceneImage = useLibraryOps((s) => s.setCustomSceneImage);
   const loadCustomSceneImage = useLibraryOps((s) => s.loadCustomSceneImage);
+  const editingLayout = useLibraryOps((s) => s.editingLayout);
+  const layoutOverrides = useLibraryOps((s) => s.layoutOverrides);
+  const setEditingLayout = useLibraryOps((s) => s.setEditingLayout);
+  const setRoomOverride = useLibraryOps((s) => s.setRoomOverride);
+  const setNodeOverride = useLibraryOps((s) => s.setNodeOverride);
+  const resetLayout = useLibraryOps((s) => s.resetLayout);
 
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const sceneRef = useRef<PixelSceneState>(initialScene ?? createPixelSceneState());
@@ -124,7 +160,12 @@ export function PixelLibraryScene({
   const [signature, setSignature] = useState("");
   const [stats, setStats] = useState(() => pixelSceneStats(createPixelSceneState()));
   const [assetError, setAssetError] = useState(false);
-  const [dragging, setDragging] = useState(false);
+  const [fileDragging, setFileDragging] = useState(false);
+  const [layoutDrag, setLayoutDrag] = useState<LayoutDrag | null>(null);
+  const [preview, setPreview] = useState<LayoutPreview>(EMPTY_PREVIEW);
+
+  const previewRef = useRef(preview);
+  previewRef.current = preview;
 
   speedRef.current = speed;
   viewRef.current = view;
@@ -133,6 +174,10 @@ export function PixelLibraryScene({
   useEffect(() => {
     void loadCustomSceneImage();
   }, [loadCustomSceneImage]);
+
+  /** 房间 / 路网（已应用对位覆盖） */
+  const rooms = useMemo(() => pixelRooms(), [layoutOverrides, sceneImageId]);
+  const guideNodes = useMemo(() => walkNodes(), [layoutOverrides, sceneImageId]);
 
   /** 当前生效的图片图层（内置预设可能多层，自定义只有一层） */
   const layers = useMemo<Array<{ src: string; pixelated: boolean }>>(() => {
@@ -150,25 +195,93 @@ export function PixelLibraryScene({
     [sceneImageAdjust],
   );
 
+  // ===== 对位模式：拖动房间框 / 路网节点 =====
+  // 拖拽过程只改本地预览（避免每帧写 localStorage），松手时提交到 store。
+  useEffect(() => {
+    if (!layoutDrag) return;
+    const onMove = (e: PointerEvent) => {
+      const scale = viewRef.current.scale || 1;
+      const d = clientDeltaToLogic(e.clientX - layoutDrag.startX, e.clientY - layoutDrag.startY, scale);
+      if (layoutDrag.kind === "node") {
+        const base = layoutDrag.base as WalkNode;
+        setPreview({ rooms: {}, nodes: { [layoutDrag.id]: { x: Math.round(base.x + d.x), y: Math.round(base.y + d.y) } } });
+      } else {
+        const base = layoutDrag.base as PixelRoom;
+        const patch =
+          layoutDrag.mode === "resize"
+            ? resizeRoom(base, base.bounds[2] + d.x, base.bounds[3] + d.y)
+            : translateRoom(base, d.x, d.y);
+        setPreview({ rooms: { [layoutDrag.id]: patch }, nodes: {} });
+      }
+    };
+    const onUp = () => {
+      const p = previewRef.current;
+      const node = p.nodes[layoutDrag.id];
+      const room = p.rooms[layoutDrag.id];
+      if (layoutDrag.kind === "node" && node) setNodeOverride(layoutDrag.id, node);
+      if (layoutDrag.kind === "room" && room) setRoomOverride(layoutDrag.id, room);
+      setPreview(EMPTY_PREVIEW);
+      setLayoutDrag(null);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onUp);
+    return () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
+    };
+  }, [layoutDrag, setNodeOverride, setRoomOverride]);
+
+  // Esc 退出对位模式
+  useEffect(() => {
+    if (!editingLayout) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setEditingLayout(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [editingLayout, setEditingLayout]);
+
+  const startRoomDrag = useCallback(
+    (e: React.PointerEvent<HTMLElement>, room: PixelRoom, mode: "move" | "resize") => {
+      if (!editingLayout) return;
+      e.preventDefault();
+      e.stopPropagation();
+      setLayoutDrag({ kind: "room", id: room.id, mode, base: room, startX: e.clientX, startY: e.clientY });
+    },
+    [editingLayout],
+  );
+
+  const startNodeDrag = useCallback(
+    (e: React.PointerEvent<HTMLElement>, node: WalkNode) => {
+      if (!editingLayout) return;
+      e.preventDefault();
+      e.stopPropagation();
+      setLayoutDrag({ kind: "node", id: node.id, mode: "move", base: node, startX: e.clientX, startY: e.clientY });
+    },
+    [editingLayout],
+  );
+
   // 把图片直接拖到场景上即可替换（比进设置里点按钮更快）
   const onDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
     const types = e.dataTransfer?.types;
     if (!types || (!types.includes("Files") && !types.includes("application/x-moz-file"))) return;
     e.preventDefault();
     e.dataTransfer.dropEffect = "copy";
-    setDragging(true);
+    setFileDragging(true);
   }, []);
 
   const onDragLeave = useCallback((e: React.DragEvent<HTMLDivElement>) => {
     // 只有真正离开场景容器才收起提示（避免掠过子元素时闪烁）
     if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
-    setDragging(false);
+    setFileDragging(false);
   }, []);
 
   const onDrop = useCallback(
     async (e: React.DragEvent<HTMLDivElement>) => {
       e.preventDefault();
-      setDragging(false);
+      setFileDragging(false);
       const file = e.dataTransfer?.files?.[0];
       if (file) await setCustomSceneImage(file);
     },
@@ -402,7 +515,7 @@ export function PixelLibraryScene({
 
   return (
     <div
-      className={`lo-scene${dragging ? " is-dropping" : ""}`}
+      className={`lo-scene${fileDragging ? " is-dropping" : ""}${editingLayout ? " is-editing-layout" : ""}`}
       ref={wrapRef}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
@@ -434,35 +547,48 @@ export function PixelLibraryScene({
           />
         ))}
 
-        {/* 对位参考线：房间框 + 行走图（换图后用它核对房间位置） */}
-        {showAlignGuides && (
+        {/* 对位参考线：路网（房间框在下面渲染，可拖动） */}
+        {(showAlignGuides || editingLayout) && (
           <svg className="lo-scene__guides" viewBox={`0 0 ${CANVAS_W} ${CANVAS_H}`} aria-hidden="true">
-            {WALK_EDGES.map(([a, b]) => {
-              const na = WALK_NODES.find((n) => n.id === a);
-              const nb = WALK_NODES.find((n) => n.id === b);
+            {walkEdges().map(([a, b]) => {
+              const na = guideNodes.find((n) => n.id === a);
+              const nb = guideNodes.find((n) => n.id === b);
               if (!na || !nb) return null;
-              const pa = logicToDisplay(na);
-              const pb = logicToDisplay(nb);
+              const pa = logicToDisplay(preview.nodes[a] ?? na);
+              const pb = logicToDisplay(preview.nodes[b] ?? nb);
               return <line key={`${a}-${b}`} x1={pa.x} y1={pa.y} x2={pb.x} y2={pb.y} />;
             })}
-            {WALK_NODES.map((n) => {
-              const p = logicToDisplay(n);
-              return <circle key={n.id} cx={p.x} cy={p.y} r={4} />;
-            })}
+            {!editingLayout &&
+              guideNodes.map((n) => {
+                const p = logicToDisplay(n);
+                return <circle key={n.id} cx={p.x} cy={p.y} r={4} />;
+              })}
           </svg>
         )}
 
-        {/* 岗位高亮 + 标签 */}
-        {PIXEL_ROOMS.map((room) => {
-          const active = selectedZoneId ? roomOfZone(selectedZoneId) === room.id : false;
-          const [bx, by, bw, bh] = room.bounds;
+        {/* 岗位高亮 + 标签（对位模式下可拖动 / 缩放） */}
+        {rooms.map((room) => {
+          const pv = preview.rooms[room.id];
+          const eff: PixelRoom = pv
+            ? {
+                ...room,
+                bounds: pv.bounds ?? room.bounds,
+                labelAnchor: pv.labelAnchor ?? room.labelAnchor,
+                work: pv.work ?? room.work,
+              }
+            : room;
+          const active = selectedZoneId ? roomOfZone(room.id) === room.id : false;
+          const [bx, by, bw, bh] = eff.bounds;
           const p = logicToDisplay({ x: bx, y: by });
           const size = logicToDisplay({ x: bw, y: bh });
-          const anchor = logicToDisplay(room.labelAnchor);
+          const anchor = logicToDisplay(eff.labelAnchor);
+          const draggingThis = layoutDrag?.kind === "room" && layoutDrag.id === room.id;
           return (
             <div
               key={room.id}
-              className={`lo-pixel-room${active ? " is-selected" : ""}`}
+              className={`lo-pixel-room${active ? " is-selected" : ""}${editingLayout ? " is-editing" : ""}${
+                draggingThis ? " is-dragging" : ""
+              }`}
               style={{
                 left: p.x,
                 top: p.y,
@@ -470,12 +596,15 @@ export function PixelLibraryScene({
                 height: size.y,
                 ["--lo-zone-token" as string]: `var(${room.token})`,
               }}
-              role="button"
-              tabIndex={0}
+              role={editingLayout ? "presentation" : "button"}
+              tabIndex={editingLayout ? -1 : 0}
               aria-label={`${room.label} —— ${room.labelEn}`}
-              title={`${room.label}（上游分区 ${room.id}）`}
-              onClick={() => onSelectZone?.(zoneOfRoom(room.id))}
+              title={editingLayout ? `${room.label}：拖动移动，右下角小方块改大小` : `${room.label}（上游分区 ${room.id}）`}
+              data-room-id={room.id}
+              onClick={editingLayout ? undefined : () => onSelectZone?.(zoneOfRoom(room.id))}
+              onPointerDown={editingLayout ? (e) => startRoomDrag(e, eff, "move") : undefined}
               onKeyDown={(e) => {
+                if (editingLayout) return;
                 if (e.key === "Enter" || e.key === " ") {
                   e.preventDefault();
                   onSelectZone?.(zoneOfRoom(room.id));
@@ -487,9 +616,34 @@ export function PixelLibraryScene({
                   {room.label}
                 </span>
               )}
+              {editingLayout && (
+                <span
+                  className="lo-pixel-room__handle"
+                  title="拖动改变房间大小"
+                  onPointerDown={(e) => startRoomDrag(e, eff, "resize")}
+                />
+              )}
             </div>
           );
         })}
+
+        {/* 对位模式：路网节点可拖动 */}
+        {editingLayout &&
+          guideNodes.map((n) => {
+            const pos = preview.nodes[n.id] ?? n;
+            const p = logicToDisplay(pos);
+            const draggingThis = layoutDrag?.kind === "node" && layoutDrag.id === n.id;
+            return (
+              <div
+                key={n.id}
+                className={`lo-edit-node${draggingThis ? " is-dragging" : ""}`}
+                style={{ left: p.x, top: p.y }}
+                data-node-id={n.id}
+                title={`${n.id}（${n.roomId}）—— 拖动改走道位置`}
+                onPointerDown={(e) => startNodeDrag(e, n)}
+              />
+            );
+          })}
 
         {/* 角色层 */}
         <div className="lo-pixel-actors">
@@ -565,14 +719,39 @@ export function PixelLibraryScene({
         <button className="lo-hud-btn" onClick={fitView} title="适应窗口（双击场景同效）" aria-label="适应窗口">
           ⤢
         </button>
+        <button
+          className={`lo-hud-btn${editingLayout ? " is-active" : ""}`}
+          onClick={() => setEditingLayout(!editingLayout)}
+          title={editingLayout ? "退出对位模式（Esc）" : "对位模式：拖动房间框 / 走道节点，让它们对齐当前场景图"}
+          aria-label="对位模式"
+          aria-pressed={editingLayout}
+        >
+          ✥
+        </button>
+        {editingLayout && (
+          <button
+            className="lo-hud-btn"
+            onClick={resetLayout}
+            title="清除当前场景图的全部对位调整（回到内置布局）"
+            aria-label="重置对位"
+          >
+            ↺
+          </button>
+        )}
         <span className="lo-scene__hint" title={`${SCENE_CREDITS[0].project} · ${SCENE_CREDITS[0].license}`}>
-          滚轮缩放 · 拖拽平移 · 双击复位
+          {editingLayout ? "拖动房间框对齐画面 · Esc 退出" : "滚轮缩放 · 拖拽平移 · 双击复位"}
         </span>
       </div>
 
+      {editingLayout && (
+        <div className="lo-scene__edit-hint">
+          ✥ 对位模式：拖动<b>房间框</b>移动、右下角小方块改大小，拖动<b>圆点</b>改走道；角色会按新位置走动。
+        </div>
+      )}
+
       {nodes.length === 0 && <div className="lo-scene__empty">暂无智能体入场 —— 发起一次对话或让助手建队</div>}
 
-      {dragging && (
+      {fileDragging && (
         <div className="lo-scene__drop">
           <div className="lo-scene__drop-card">
             <span className="lo-scene__drop-icon">🖼️</span>

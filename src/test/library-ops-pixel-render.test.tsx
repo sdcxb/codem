@@ -8,7 +8,8 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { render, act, fireEvent, cleanup } from "@testing-library/react";
 import { PixelLibraryScene } from "../plugins/library-ops/components/library/PixelLibraryScene";
 import { advancePixelScene, createPixelSceneState, stepPixelMovement } from "../plugins/library-ops/core/pixel-scene";
-import { CLAW_SCENE, PIXEL_ROOMS, SCENE_PRESETS, SPRITE_SHEETS, getScenePreset } from "../plugins/library-ops/data/pixel-art";
+import { CLAW_SCENE, PIXEL_ROOMS, SCENE_PRESETS, SPRITE_SHEETS, getPixelRoom, getScenePreset } from "../plugins/library-ops/data/pixel-art";
+import { currentWalkNodes } from "../plugins/library-ops/core/pixel-path";
 import { resolveZoneId } from "../plugins/library-ops/data/library-map";
 import { generateLook } from "../plugins/library-ops/data/characters";
 import { useLibraryOps } from "../plugins/library-ops/store";
@@ -165,7 +166,7 @@ describe("LO-PIXEL-RENDER 像素场景渲染", () => {
     });
     // 点击第一个房间（gateway）→ 选中 front-desk
     expect(useLibraryOps.getState().selectedZoneId).toBe("front-desk");
-    expect(utils.container.querySelectorAll(".lo-scene__hud .lo-hud-btn").length).toBe(3);
+    expect(utils.container.querySelectorAll(".lo-scene__hud .lo-hud-btn").length).toBe(4);
     utils.unmount();
   });
 
@@ -306,5 +307,114 @@ describe("LO-PIXEL-RENDER 像素场景渲染", () => {
     }
     // custom 不在预设表里（它来自用户上传）
     expect(SCENE_PRESETS.some((p) => (p.id as string) === "custom")).toBe(false);
+  });
+
+  it("LO-PIXEL-RENDER-13: 对位模式渲染拖拽手柄与路网节点，HUD 按钮可切换", async () => {
+    const scene = settled();
+    const utils = render(<PixelLibraryScene snapshot={snapshot(NOW + 100_000)} initialScene={scene} />);
+    const root = utils.container.querySelector(".lo-scene") as HTMLElement;
+    expect(utils.container.querySelectorAll(".lo-pixel-room__handle").length).toBe(0);
+    expect(utils.container.querySelectorAll(".lo-edit-node").length).toBe(0);
+
+    const alignBtn = utils.container.querySelector<HTMLButtonElement>('[aria-label="对位模式"]')!;
+    expect(alignBtn).toBeTruthy();
+    await act(async () => {
+      fireEvent.click(alignBtn);
+    });
+    expect(useLibraryOps.getState().editingLayout).toBe(true);
+    expect(root.className).toContain("is-editing-layout");
+    expect(utils.container.querySelectorAll(".lo-pixel-room__handle").length).toBe(12);
+    expect(utils.container.querySelectorAll(".lo-edit-node").length).toBe(20);
+    expect(utils.container.querySelector(".lo-scene__edit-hint")).toBeTruthy();
+    expect(utils.container.querySelector(".lo-scene__guides")).toBeTruthy();
+
+    await act(async () => {
+      fireEvent.click(alignBtn);
+    });
+    expect(useLibraryOps.getState().editingLayout).toBe(false);
+    expect(utils.container.querySelectorAll(".lo-edit-node").length).toBe(0);
+    utils.unmount();
+  });
+
+  it("LO-PIXEL-RENDER-14: 拖动房间框 → 提交对位覆盖（房间/标签/工位一起移动）", async () => {
+    useLibraryOps.getState().setEditingLayout(true);
+    const scene = settled();
+    const utils = render(<PixelLibraryScene snapshot={snapshot(NOW + 100_000)} initialScene={scene} />);
+    const room = utils.container.querySelector<HTMLElement>('[data-room-id="gateway"]')!;
+    expect(room).toBeTruthy();
+    const before = getPixelRoom("gateway")!;
+
+    await act(async () => {
+      fireEvent.pointerDown(room, { clientX: 0, clientY: 0 });
+    });
+    // 视图缩放 0.5（happy-dom 无尺寸 → 未自适应）→ 100px 客户端位移 = 200 逻辑像素
+    await act(async () => {
+      fireEvent.pointerMove(window, { clientX: 100, clientY: 50 });
+    });
+    expect(room.className).toContain("is-dragging");
+    await act(async () => {
+      fireEvent.pointerUp(window, { clientX: 100, clientY: 50 });
+    });
+
+    const override = useLibraryOps.getState().layoutOverrides["ai-library-01"].rooms.gateway;
+    // 100px 客户端 → 200 逻辑像素；50px → 100 × (1080/1072) ≈ 100.75
+    expect(override.bounds![0]).toBe(before.bounds[0] + 200);
+    expect(override.bounds![1]).toBe(before.bounds[1] + 101);
+    expect(override.work!.x).toBe(before.work.x + 200);
+    expect(getPixelRoom("gateway")!.bounds[0]).toBe(before.bounds[0] + 200);
+    // DOM 上的房间框也跟着走了（显示坐标 = 逻辑坐标 × 1072/1080）
+    const moved = utils.container.querySelector<HTMLElement>('[data-room-id="gateway"]')!;
+    expect(Number.parseFloat(moved.style.left)).toBeCloseTo(before.bounds[0] + 200, 0);
+    expect(Number.parseFloat(moved.style.top)).toBeCloseTo((before.bounds[1] + 101) * (1072 / 1080), 0);
+    utils.unmount();
+  });
+
+  it("LO-PIXEL-RENDER-15: 拖动路网节点 → 提交节点覆盖并重建路网", async () => {
+    useLibraryOps.getState().setEditingLayout(true);
+    const scene = settled();
+    const utils = render(<PixelLibraryScene snapshot={snapshot(NOW + 100_000)} initialScene={scene} />);
+    const node = utils.container.querySelector<HTMLElement>('[data-node-id="GW1"]')!;
+    expect(node).toBeTruthy();
+
+    await act(async () => {
+      fireEvent.pointerDown(node, { clientX: 10, clientY: 10 });
+    });
+    await act(async () => {
+      fireEvent.pointerMove(window, { clientX: 10, clientY: 60 });
+    });
+    await act(async () => {
+      fireEvent.pointerUp(window, { clientX: 10, clientY: 60 });
+    });
+
+    const moved = useLibraryOps.getState().layoutOverrides["ai-library-01"].nodes.GW1;
+    expect(moved.x).toBe(860);
+    expect(moved.y).toBe(711); // 50px 客户端 → 100 × (1080/1072) ≈ 100.75 → 四舍五入
+    expect(currentWalkNodes().find((n) => n.id === "GW1")).toMatchObject(moved);
+    utils.unmount();
+  });
+
+  it("LO-PIXEL-RENDER-16: Esc 退出对位模式，重置按钮清除对位覆盖", async () => {
+    useLibraryOps.getState().setEditingLayout(true);
+    useLibraryOps.getState().setNodeOverride("GW1", { x: 500, y: 500 });
+    const scene = settled();
+    const utils = render(<PixelLibraryScene snapshot={snapshot(NOW + 100_000)} initialScene={scene} />);
+    expect(utils.container.querySelector(".lo-edit-node")).toBeTruthy();
+
+    await act(async () => {
+      fireEvent.keyDown(window, { key: "Escape" });
+    });
+    expect(useLibraryOps.getState().editingLayout).toBe(false);
+    expect(utils.container.querySelector(".lo-edit-node")).toBeNull();
+
+    // 重置对位（HUD 上的 ↺ 只在编辑模式出现）
+    await act(async () => {
+      fireEvent.click(utils.container.querySelector<HTMLButtonElement>('[aria-label="对位模式"]')!);
+    });
+    await act(async () => {
+      fireEvent.click(utils.container.querySelector<HTMLButtonElement>('[aria-label="重置对位"]')!);
+    });
+    expect(useLibraryOps.getState().layoutOverrides["ai-library-01"]).toBeUndefined();
+    expect(currentWalkNodes().find((n) => n.id === "GW1")).toMatchObject({ x: 860, y: 610 });
+    utils.unmount();
   });
 });

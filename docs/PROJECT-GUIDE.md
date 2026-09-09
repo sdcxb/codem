@@ -633,7 +633,8 @@ mimo-gui/
 │   │       ├── data/
 │   │       │   ├── library-map.ts  # 岗位地图：10 岗位 + 装饰 + 投影 + 岗位路由 + 工位槽位
 │   │       │   ├── characters.ts   # 角色外观生成器（等距场景用，34560 种，令牌化调色板）
-│   │       │   └── pixel-art.ts    # 像素资源清单：12 房间 / walkGraph / 精灵表 / 岗位→房间 / SCENE_PRESETS
+│   │       │   ├── pixel-art.ts    # 像素资源清单：12 房间 / walkGraph / 精灵表 / 岗位→房间 / SCENE_PRESETS
+│   │       │   └── layout-override.ts # ★ 场景对位覆盖层（拖动房间框/路网节点，按场景图分别存）
 │   │       ├── core/
 │   │       │   ├── pathfinder.ts   # 等距：可通行网格 + BFS
 │   │       │   ├── scene-engine.ts # 等距场景状态机（纯函数）

@@ -26,7 +26,9 @@ export default defineConfig({
     port: 1420,
     strictPort: true,
     watch: {
-      ignored: ["**/src-tauri/target/**"],
+      // *.tmpdir / *.tmp：编辑器（含 AI 助手）的原子写入临时目录，
+      // 正在被写入时 chokidar 会 EBUSY 崩溃，直接忽略
+      ignored: ["**/src-tauri/target/**", "**/*.tmpdir", "**/*.tmpdir/**", "**/*.tmp"],
     },
   },
   envPrefix: ["VITE_", "TAURI_"],

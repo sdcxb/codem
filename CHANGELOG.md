@@ -2,11 +2,12 @@
 
 All notable changes to Codem will be documented in this file.
 
-## [Unreleased] — 图书馆场景图可上传替换（换图不用改代码）
+## [Unreleased] — 图书馆场景图可上传替换 + 房间框可视化对位
 
 > 场景「画面」与「布局」解耦：角色站位、岗位标签、点击热区都来自固定数据，
 > 图片只是一个铺满 1920×1072 画布的图层 —— 于是换图不再需要改代码，
-> 你自己用绘图模型生成的场景图可以直接在插件里上传、立即生效、下次打开还在。
+> 你自己用绘图模型生成的场景图可以直接在插件里上传、立即生效、下次打开还在；
+> 画面里的房间和内置布局对不上时，直接在场景上把房间框拖过去即可。
 
 ### 新增：场景图片（设置 →「场景图片」）
 
@@ -18,9 +19,18 @@ All notable changes to Codem will be documented in this file.
 - **持久化**：图片以 Blob 存进浏览器 IndexedDB（`codem-library-ops` / `scene-images`），
   避免 localStorage 5MB 配额；读出后 `URL.createObjectURL` 渲染；环境不支持时降级为
   「本次会话有效」并明确提示（不静默失败）
-- **画面微调**：缩放 0.5–2×、位移 ±600px + 「对位参考线」（12 房间框 + 20 行走节点）；
-  设置卡里还有把房间框叠在缩略图上的**对位预览**，拖滑杆即可看出是否对齐
 - **删除**：一键「删除我的上传」回到内置场景，同时清理 IndexedDB 与 objectURL
+
+### 新增：对位编辑器（拖动房间框 / 走道节点）
+
+- 场景右下角 **✥** 进入对位模式（Esc 退出，设置卡也有「打开对位编辑器」入口）：
+  - 拖**房间框** = 移动房间，工作锚点与标签一起走（角色随后走到新位置）；
+  - 拖房间框右下角**小方块** = 改尺寸（锚点自动夹回矩形内）；
+  - 拖**圆点** = 移动路网节点，BFS 邻接表按覆盖版本号自动重建（走位路线跟着变）；
+  - 拖动过程只改本地预览，松手才提交（不每帧写 localStorage）；
+- 覆盖层按**场景图片 id** 分别保存（localStorage `codem-library-ops-layout`），换图互不污染；
+  模块级注册表让引擎零签名改动地读到新布局；
+- 设置卡内保留「画面微调」（缩放/位移）+ 房间框叠缩略图的对位预览 + 「重置对位」按钮
 
 ### 新增：内置 AI 场景图预设
 
@@ -34,13 +44,14 @@ All notable changes to Codem will be documented in this file.
 ### 变更
 
 - 像素场景图层由「写死的两张图」改为数据驱动的 `SCENE_PRESETS`（支持多层预设）
+- 房间表与路网改为访问器（`pixelRooms()` / `walkNodes()`），支持运行时覆盖
 - 像素画图层用 `image-rendering: pixelated`，平滑场景图用默认插值（按预设声明）
-- 设置页「场景」卡文案更新：换图不会改变角色站位与岗位坐标
+- `vite.config.ts`：忽略 `*.tmpdir` / `*.tmp`，修复编辑器原子写入时 Vite 文件监听 EBUSY 崩溃
 
 ### 验证
 
-- 新增 33 个用例（`LO-SCENE-IMG-*` 10 / `LO-SCENE-DB-*` 6 / `LO-SCENE-UI-*` 7 / `LO-PIXEL-RENDER-8~12` 5
-  及既有用例适配）；`npx tsc --noEmit` 零错误；`npx vitest run` 全绿
+- 新增 5 个测试文件 / 40 用例（`LO-SCENE-IMG-*` 10 / `LO-SCENE-DB-*` 6 / `LO-SCENE-UI-*` 8 /
+  `LO-PIXEL-RENDER-8~16` 9 / `LO-LAYOUT-*` 10）；`npx tsc --noEmit` 零错误；`npx vitest run` 全绿
 
 ## [1.13.0] - 2026-09-10 — 图书馆插件集成手绘像素美术（场景直接用参考项目的场景）+ 监控面板对标 lobster-pet
 

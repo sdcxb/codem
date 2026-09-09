@@ -216,4 +216,30 @@ describe("LO-SCENE-UI 场景图片设置卡", () => {
     expect(utils.container.querySelector(".lo-scene-current__name")!.textContent).toContain("上次的图.png");
     utils.unmount();
   });
+
+  it("LO-SCENE-UI-8: 「打开对位编辑器」跳到图书馆页签并进入对位模式", async () => {
+    const utils = render(<SceneImageCard zh />);
+    const btn = [...utils.container.querySelectorAll<HTMLButtonElement>(".lo-btn")].find((b) =>
+      b.textContent?.includes("打开对位编辑器"),
+    )!;
+    expect(btn).toBeTruthy();
+    await act(async () => {
+      fireEvent.click(btn);
+    });
+    expect(useLibraryOps.getState().editingLayout).toBe(true);
+    expect(useLibraryOps.getState().tab).toBe("library");
+
+    // 有对位调整后，卡片上出现「重置对位」按钮并显示计数
+    useLibraryOps.getState().setNodeOverride("GW1", { x: 500, y: 500 });
+    await act(async () => {});
+    const reset = [...utils.container.querySelectorAll<HTMLButtonElement>(".lo-btn")].find((b) =>
+      b.textContent?.includes("重置对位"),
+    )!;
+    expect(reset.textContent).toContain("1 节点");
+    await act(async () => {
+      fireEvent.click(reset);
+    });
+    expect(useLibraryOps.getState().layoutOverrides["ai-library-01"]).toBeUndefined();
+    utils.unmount();
+  });
 });

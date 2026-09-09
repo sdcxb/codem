@@ -39,6 +39,10 @@ export function SceneImageCard({ zh }: { zh: boolean }) {
   const setCustomSceneImage = useLibraryOps((s) => s.setCustomSceneImage);
   const clearCustomSceneImage = useLibraryOps((s) => s.clearCustomSceneImage);
   const loadCustomSceneImage = useLibraryOps((s) => s.loadCustomSceneImage);
+  const setTab = useLibraryOps((s) => s.setTab);
+  const setEditingLayout = useLibraryOps((s) => s.setEditingLayout);
+  const resetLayout = useLibraryOps((s) => s.resetLayout);
+  const layoutOverrides = useLibraryOps((s) => s.layoutOverrides);
 
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [dragOver, setDragOver] = useState(false);
@@ -59,6 +63,9 @@ export function SceneImageCard({ zh }: { zh: boolean }) {
       : (zh ? preset?.label : preset?.labelEn) ?? (zh ? "内置场景" : "Built-in");
   const currentMeta = active === "custom" && customScene ? describeSceneImage(customScene) : (preset?.credit ?? "");
   const aspectWarning = customScene ? sceneImageAspectWarning(customScene.width, customScene.height) : null;
+  const override = layoutOverrides[active];
+  const overriddenRooms = override ? Object.keys(override.rooms).length : 0;
+  const overriddenNodes = override ? Object.keys(override.nodes).length : 0;
 
   const pick = () => inputRef.current?.click();
 
@@ -255,9 +262,28 @@ export function SceneImageCard({ zh }: { zh: boolean }) {
             />
           </div>
           <div className="lo-settings__actions">
+            <button
+              className="lo-btn"
+              onClick={() => {
+                setTab("library");
+                setEditingLayout(true);
+              }}
+              title={zh ? "跳到「图书馆」页签，直接在场景上拖动房间框 / 走道节点" : "Open the library tab and drag rooms/nodes on the scene"}
+            >
+              {zh ? "打开对位编辑器" : "Open alignment editor"}
+            </button>
             <button className="lo-btn" onClick={() => update({ sceneImageAdjust: { scale: 1, x: 0, y: 0 } })}>
               {zh ? "重置微调" : "Reset adjustment"}
             </button>
+            {(overriddenRooms > 0 || overriddenNodes > 0) && (
+              <button
+                className="lo-btn"
+                onClick={resetLayout}
+                title={zh ? "清除当前场景图的房间/走道对位调整" : "Clear room/node alignment for this image"}
+              >
+                {zh ? `重置对位（${overriddenRooms} 房间 / ${overriddenNodes} 节点）` : `Reset alignment (${overriddenRooms}/${overriddenNodes})`}
+              </button>
+            )}
             {customScene && (
               <button
                 className="lo-btn lo-btn--danger"
@@ -276,6 +302,11 @@ export function SceneImageCard({ zh }: { zh: boolean }) {
         {zh
           ? `图片会铺满 ${formatDimensions(CANVAS_W, CANVAS_H)} 的场景画布，角色、岗位标签与点击热区保持内置布局不变；上传的图片保存在本机（IndexedDB），不会写入宿主数据。`
           : `The image fills the ${formatDimensions(CANVAS_W, CANVAS_H)} canvas; actor positions and zone hitboxes stay unchanged. Uploads are stored locally (IndexedDB).`}
+      </p>
+      <p className="lo-note">
+        {zh
+          ? "画面和布局对不上？点上面的「打开对位编辑器」，在场景里把房间框拖到图里的房间上、把圆点拖到走道上，角色就会按新位置走动（按场景图分别保存）。"
+          : "Misaligned? Open the alignment editor and drag the room boxes / waypoint dots onto the image; positions are saved per scene image."}
       </p>
       <p className="lo-note">
         {zh ? "生成新场景图的提示词：" : "Prompt for new scene art: "}

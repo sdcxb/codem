@@ -8,25 +8,45 @@
  *
  * 这样既复用了上游手工标注的可行走主干（贴合美术里的走廊），
  * 又是纯函数、可在 node/happy-dom 下单测（不依赖 canvas 采样掩码）。
+ *
+ * 路网可以被用户在对位模式里拖动（见 `data/layout-override.ts`），
+ * 因此节点索引与邻接表按覆盖层版本号缓存，拖动后自动失效重建。
  */
 
 import type { ScreenPoint } from "../types";
-import { WALK_EDGES, WALK_NODES, type WalkNode } from "../data/pixel-art";
+import { walkEdges, walkNodes, type WalkNode } from "../data/pixel-art";
+import { layoutVersion } from "../data/layout-override";
 
-/** 路网节点索引（模块级缓存） */
-const NODE_BY_ID = new Map<string, WalkNode>(WALK_NODES.map((n) => [n.id, n]));
+/** 路网缓存（按覆盖层版本号失效） */
+interface GraphCache {
+  version: number;
+  nodes: WalkNode[];
+  byId: Map<string, WalkNode>;
+  adjacency: Map<string, string[]>;
+}
 
-/** 邻接表（无向图） */
-const ADJACENCY: Map<string, string[]> = (() => {
-  const adj = new Map<string, string[]>();
-  for (const n of WALK_NODES) adj.set(n.id, []);
-  for (const [a, b] of WALK_EDGES) {
-    if (!adj.has(a) || !adj.has(b)) continue;
-    adj.get(a)!.push(b);
-    adj.get(b)!.push(a);
+let cache: GraphCache | null = null;
+
+function graph(): GraphCache {
+  const version = layoutVersion();
+  if (cache && cache.version === version) return cache;
+  const nodes = walkNodes();
+  const byId = new Map<string, WalkNode>(nodes.map((n) => [n.id, n]));
+  const adjacency = new Map<string, string[]>();
+  for (const n of nodes) adjacency.set(n.id, []);
+  for (const [a, b] of walkEdges()) {
+    if (!adjacency.has(a) || !adjacency.has(b)) continue;
+    adjacency.get(a)!.push(b);
+    adjacency.get(b)!.push(a);
   }
-  return adj;
-})();
+  cache = { version, nodes, byId, adjacency };
+  return cache;
+}
+
+/** 当前生效的路网节点（已应用对位覆盖） */
+export function currentWalkNodes(): WalkNode[] {
+  return graph().nodes;
+}
 
 function dist2(a: { x: number; y: number }, b: { x: number; y: number }): number {
   const dx = a.x - b.x;
@@ -36,12 +56,13 @@ function dist2(a: { x: number; y: number }, b: { x: number; y: number }): number
 
 /** 最近的路网节点 */
 export function nearestNode(point: { x: number; y: number }): WalkNode {
-  let best = WALK_NODES[0];
+  const { nodes } = graph();
+  let best = nodes[0];
   let bestD = dist2(best, point);
-  for (let i = 1; i < WALK_NODES.length; i++) {
-    const d = dist2(WALK_NODES[i], point);
+  for (let i = 1; i < nodes.length; i++) {
+    const d = dist2(nodes[i], point);
     if (d < bestD) {
-      best = WALK_NODES[i];
+      best = nodes[i];
       bestD = d;
     }
   }
@@ -52,8 +73,9 @@ export function nearestNode(point: { x: number; y: number }): WalkNode {
  * 图最短路（BFS）。返回节点序列（含起点与终点节点）；不可达时返回 [start]。
  */
 export function routeOnGraph(fromId: string, toId: string): WalkNode[] {
-  const start = NODE_BY_ID.get(fromId);
-  const goal = NODE_BY_ID.get(toId);
+  const { byId, adjacency } = graph();
+  const start = byId.get(fromId);
+  const goal = byId.get(toId);
   if (!start || !goal) return start ? [start] : [];
   if (start.id === goal.id) return [start];
 
@@ -64,7 +86,7 @@ export function routeOnGraph(fromId: string, toId: string): WalkNode[] {
   while (queue.length > 0) {
     const current = queue.shift()!;
     if (current === goal.id) break;
-    for (const next of ADJACENCY.get(current) ?? []) {
+    for (const next of adjacency.get(current) ?? []) {
       if (visited.has(next)) continue;
       visited.add(next);
       parent.set(next, current);
@@ -80,7 +102,7 @@ export function routeOnGraph(fromId: string, toId: string): WalkNode[] {
     cursor = parent.get(cursor);
   }
   ids.reverse();
-  return ids.map((id) => NODE_BY_ID.get(id)!).filter(Boolean);
+  return ids.map((id) => byId.get(id)!).filter(Boolean);
 }
 
 /**
@@ -122,16 +144,17 @@ export function roomSlot(
 
 /** 路网健康检查（测试用）：所有节点连通 */
 export function isGraphConnected(): boolean {
-  if (WALK_NODES.length === 0) return false;
-  const seen = new Set<string>([WALK_NODES[0].id]);
-  const queue = [WALK_NODES[0].id];
+  const { nodes, adjacency } = graph();
+  if (nodes.length === 0) return false;
+  const seen = new Set<string>([nodes[0].id]);
+  const queue = [nodes[0].id];
   while (queue.length) {
     const cur = queue.shift()!;
-    for (const n of ADJACENCY.get(cur) ?? []) {
+    for (const n of adjacency.get(cur) ?? []) {
       if (seen.has(n)) continue;
       seen.add(n);
       queue.push(n);
     }
   }
-  return seen.size === WALK_NODES.length;
+  return seen.size === nodes.length;
 }

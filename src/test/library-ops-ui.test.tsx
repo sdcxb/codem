@@ -359,7 +359,9 @@ describe("LO-UI 监控面板", () => {
     });
     const hud = document.querySelector(".lo-scene__hud")!;
     expect(hud).toBeTruthy();
-    expect(hud.querySelectorAll(".lo-hud-btn").length).toBe(3);
+    // 放大 / 缩小 / 适应窗口 / 对位模式
+    expect(hud.querySelectorAll(".lo-hud-btn").length).toBe(4);
+    expect(hud.querySelector('[aria-label="对位模式"]')).toBeTruthy();
     const canvas = document.querySelector(".lo-scene__canvas") as HTMLElement;
     expect(canvas.style.transform).toMatch(/translate\(.*\)\s*scale\(/);
   });

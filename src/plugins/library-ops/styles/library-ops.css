@@ -1,4 +1,4 @@
-﻿/* =============================================================================
+/* =============================================================================
  * @codem/ui-library-ops — 图书馆运营监控插件样式
  *
  * 皮肤兼容契约（docs/SKIN-PLUGIN-CONTRACT.md）：
@@ -814,6 +814,66 @@
   border-style: solid;
 }
 .lo-pixel-room:focus-visible { outline: 2px solid var(--lo-zone-token); outline-offset: 2px; }
+/* 对位模式：房间框可拖动 / 缩放 */
+.lo-scene.is-editing-layout .lo-pixel-room {
+  cursor: move;
+  border-style: solid;
+  border-color: color-mix(in srgb, var(--lo-zone-token) 70%, transparent);
+  background: color-mix(in srgb, var(--lo-zone-token) 10%, transparent);
+}
+.lo-scene.is-editing-layout .lo-pixel-room:hover { background: color-mix(in srgb, var(--lo-zone-token) 18%, transparent); }
+.lo-pixel-room.is-dragging {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent), 0 6px 18px color-mix(in srgb, var(--bg-primary) 55%, transparent);
+}
+.lo-pixel-room__handle {
+  position: absolute;
+  right: -6px;
+  bottom: -6px;
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  background: var(--accent);
+  border: 2px solid color-mix(in srgb, var(--bg-primary) 90%, transparent);
+  cursor: nwse-resize;
+  touch-action: none;
+}
+.lo-edit-node {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  margin-left: -7px;
+  margin-top: -7px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--accent) 85%, var(--bg-primary));
+  border: 2px solid color-mix(in srgb, var(--bg-primary) 85%, transparent);
+  cursor: grab;
+  touch-action: none;
+  z-index: 6;
+}
+.lo-edit-node:hover,
+.lo-edit-node.is-dragging {
+  background: var(--accent-hover, var(--accent));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 30%, transparent);
+  cursor: grabbing;
+}
+.lo-hud-btn.is-active { background: color-mix(in srgb, var(--accent) 22%, transparent); color: var(--accent); }
+.lo-scene__edit-hint {
+  position: absolute;
+  left: 10px;
+  bottom: 10px;
+  max-width: 60%;
+  padding: 5px 10px;
+  border-radius: var(--radius-sm, 6px);
+  background: color-mix(in srgb, var(--bg-primary) 86%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  font-size: var(--fs-xs);
+  line-height: 1.6;
+  color: var(--text-secondary);
+  z-index: 6;
+  pointer-events: none;
+}
+.lo-scene__edit-hint b { color: var(--accent); }
 .lo-pixel-room__label {
   position: absolute;
   transform: translate(-50%, -50%);
