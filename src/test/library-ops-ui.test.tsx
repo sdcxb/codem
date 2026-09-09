@@ -200,21 +200,39 @@ describe("LO-UI 监控面板", () => {
     expect(document.querySelectorAll(".lo-stat").length).toBeGreaterThanOrEqual(6);
   });
 
-  it("LO-UI-4: 切换到图书馆页签 → 渲染场景、区域、角色与花名册", async () => {
+  it("LO-UI-4: 图书馆页签渲染像素场景（默认）与花名册；切换风格后渲染等距场景", async () => {
     await mountLauncher();
     const nav = [...document.querySelectorAll(".lo-nav__btn")].find((b) => b.textContent?.includes("图书馆"))!;
     await act(async () => {
       fireEvent.click(nav);
     });
-    expect(document.querySelector(".lo-scene")).toBeTruthy();
-    // 10 个区域多边形
-    expect(document.querySelectorAll(".lo-zone").length).toBe(10);
-    // 角色渲染（DOM 层）
-    expect(document.querySelectorAll(".lo-actor-wrap").length).toBe(5);
+
+    // 默认：像素场景（ClawLibrary 美术）
+    const pixel = document.querySelector('.lo-scene[data-scene="pixel"]')!;
+    expect(pixel).toBeTruthy();
+    expect(pixel.querySelectorAll(".lo-pixel-room").length).toBe(12);
+    expect(pixel.querySelectorAll(".lo-pixel-layer").length).toBe(2);
+    expect(pixel.querySelectorAll(".lo-sprite").length).toBe(5);
+    // 精灵表接线到 /library-ops/claw-library/actors/**
+    const firstSprite = pixel.querySelector(".lo-sprite") as HTMLElement;
+    expect(firstSprite.style.backgroundImage).toContain("/library-ops/claw-library/actors/");
     // 花名册列出全部角色
     expect(document.querySelectorAll(".lo-roster__item").length).toBe(5);
     // 岗位分布列出 10 个岗位
     expect(document.querySelectorAll(".lo-zones__item").length).toBe(10);
+
+    // 切换为等距矢量风格 → 渲染等距场景
+    const { useLibraryOps } = await import("../plugins/library-ops/store");
+    await act(async () => {
+      useLibraryOps.getState().updateSettings({ sceneStyle: "iso" });
+    });
+    const iso = document.querySelector('.lo-scene[data-scene="iso"]')!;
+    expect(iso).toBeTruthy();
+    expect(iso.querySelectorAll(".lo-zone").length).toBe(10);
+    expect(iso.querySelectorAll(".lo-actor-wrap").length).toBe(5);
+    await act(async () => {
+      useLibraryOps.getState().updateSettings({ sceneStyle: "pixel" });
+    });
   });
 
   it("LO-UI-5: 点击花名册角色 → 详情卡展示该角色信息", async () => {
@@ -229,7 +247,7 @@ describe("LO-UI 监控面板", () => {
     await act(async () => {
       fireEvent.click(firstRoster);
     });
-    expect(screen.getByText(/正在处理 a1/)).toBeTruthy();
+    expect(screen.getAllByText(/正在处理 a1/).length).toBeGreaterThan(0);
   });
 
   it("LO-UI-6: 团队页渲染成员与任务；成本页渲染 token/成本卡", async () => {
@@ -316,11 +334,11 @@ describe("LO-UI 监控面板", () => {
     await act(async () => {
       fireEvent.click(nav);
     });
-    // 场景里的区域可点击（10 个）
-    const zone = document.querySelector(".lo-zone") as SVGGElement;
-    expect(zone).toBeTruthy();
+    // 像素场景里的房间可点击（12 个）
+    const room = document.querySelector(".lo-pixel-room") as HTMLElement;
+    expect(room).toBeTruthy();
     await act(async () => {
-      fireEvent.click(zone);
+      fireEvent.click(room);
     });
     // 岗位分布列表项也可点击
     const zoneRow = document.querySelector(".lo-zones__item") as HTMLElement;

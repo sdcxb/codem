@@ -1,8 +1,13 @@
 # @codem/ui-library-ops — 图书馆运营监控（Library Ops Monitor）
 
 > 完全独立、可启停的 Codem 大插件。
-> 把**团队角色与子智能体**变成各自不同的动画角色，在 ClawLibrary 风格的图书馆里
-> 各自的岗位上工作；监控界面完全对标 lobster-pet，并把图书馆作为监控界面内的**场景**。
+> 把**团队角色与子智能体**变成各自不同的动画角色，在**像素美术图书馆**里各自的岗位上工作；
+> 监控界面完全对标 lobster-pet，并把图书馆作为监控界面内的**场景**嵌入。
+
+> ⚠️ **美术资源许可**：默认「像素图书馆」场景使用第三方像素美术资源，
+> **仅限非商业用途**（ClawLibrary CC BY-NC-SA 4.0 / Star-Office-UI 非商业）。
+> 商业分发请把场景风格切到「等距矢量」（本项目自绘）或替换资源。
+> 完整声明见 [`docs/ASSET-LICENSES.md`](../../../docs/ASSET-LICENSES.md)。
 
 ---
 
@@ -10,12 +15,13 @@
 
 | 能力 | 说明 |
 | --- | --- |
-| **多角色图书馆** | 10 个功能区（前台 / 阅览大厅 / 编目室 / 代码工坊 / 写作工坊 / 档案室 / 机房 / 会议厅 / 借还台 / 静思角），每个角色按职责自动分配到对应岗位的工位上 |
-| **角色自动生成** | 每个角色由 id 确定性生成外观：12 套调色板 × 4 种身形 × 5 种发型 × 6 种头饰 × 6 种道具 × 4 种表情（34,560 种组合）；岗位还会影响头饰与道具（队长戴礼帽、运维戴工帽、研究戴学者帽、编码戴耳机、写作戴贝雷帽） |
-| **11 种工作动画** | 待命 / 行走 / 思考 / 阅读 / 撰写 / 执行 / 检索 / 等待授权 / 完成 / 出错 / 休眠 —— 由**真实工具调用与任务状态**驱动 |
-| **运营监控看板** | 总览（KPI + 健康度 + 14 天热力图 + 会话类型环形图 + 小时活跃柱状图）、图书馆、团队、会话、工具、成本、错误、时间线、设置 9 个页签 + 右侧实时事件流 |
+| **两种场景风格** | **像素图书馆**（默认，集成 ClawLibrary 手绘像素美术：2752×1536 场景底图 + 家具层 + 12 个房间 + walkGraph 寻路）与**等距矢量**（本项目自绘，无第三方许可约束） |
+| **多角色图书馆** | 像素场景里 12 个房间映射到 10 个职能岗位；角色沿上游手工标注的可行走主干行走，到岗后播放对应动作 |
+| **角色精灵动画** | 集成 ClawLibrary 的 **Capy-Claw / Cat-Claw** 两套角色 × 12 套动作（work/read/idea/repair/error/sleep/coffee/rest/walk/stand_front/stand_back/lie_flat…），帧 128×128 @6fps；按角色 id 稳定分配变体 |
+| **11 种工作动画** | 待命 / 行走 / 思考 / 阅读 / 撰写 / 执行 / 检索 / 等待授权 / 完成 / 出错 / 休眠 —— 由**真实工具调用与任务状态**驱动，映射到上游精灵动作 |
+| **运营监控看板** | 布局对标 lobster-pet：**行 1** 状态卡(236px) + 最近会话卡网格 + 活动概览(热力图/环形图/小时柱状图)；**行 2** 左栈（团队卡 + 任务与工具卡 + 数据源与健康度卡）与**图书馆场景大卡**；另有图书馆、团队、会话、工具、成本、错误、时间线、设置 8 个页签 + 右侧实时事件流 |
+| **相机可交互** | 滚轮缩放（以指针为锚点，0.3×–3.2×）/ 拖拽平移 / 双击复位 / HUD 缩放与在馆统计 / 选中角色镜头平滑居中 |
 | **真实数据** | 会话 / 团队（AgentTeamsService）/ 子智能体（SubagentRuntime）/ 团队模板（SquadManager）/ 工具调用（消息流）/ token 与成本（CostTracker）/ 遥测事件，全部只读 |
-| **场景嵌入监控** | 图书馆就是监控界面里的一个页签，与其它监控卡共享同一份快照（同一真相源，口径一致） |
 
 ### 角色来源 → 岗位映射
 
@@ -28,7 +34,8 @@
 | 团队模板角色（无运行时成员时） | 🧑‍💼 成员 | `roleDescription` |
 | 无任何数据时的兜底 | 🧩 系统 | 值班馆员（保证图书馆不空场） |
 
-岗位关键词命中表见 `data/library-map.ts` 的 `keywords` 字段。
+岗位关键词命中表见 `data/library-map.ts` 的 `keywords` 字段；
+岗位 → 像素房间映射见 `data/pixel-art.ts` 的 `ZONE_TO_ROOM`。
 
 ---
 
@@ -36,15 +43,18 @@
 
 ```
 src/plugins/library-ops/
-├── index.ts                      # 公共导出（组件 / store / 引擎 / 数据）
-├── types.ts                      # 领域类型 + 活动元数据 + 默认设置
-├── store.ts                      # zustand store（面板开关 / 采样调度 / 时间序列）
+├── index.ts                      # 公共导出（组件 / store / 引擎 / 数据 / 几何）
+├── types.ts                      # 领域类型 + 活动元数据 + 默认设置（含 sceneStyle）
+├── store.ts                      # zustand store（面板开关 / 采样调度 / 时间序列 / 两套场景态）
 ├── data/
-│   ├── library-map.ts            # 等距地图：10 岗位 / 装饰 / 投影 / 岗位路由 / 槽位
-│   └── characters.ts             # 角色外观生成器（确定性 + 岗位倾向 + 令牌化调色板）
+│   ├── library-map.ts            # 岗位地图：10 岗位 / 装饰 / 投影 / 岗位路由 / 工位槽位
+│   ├── characters.ts             # 角色外观生成器（等距场景用，确定性 + 岗位倾向 + 令牌化调色板）
+│   └── pixel-art.ts              # 像素资源清单：房间 / walkGraph / 精灵表元数据 / 岗位→房间映射
 ├── core/
-│   ├── pathfinder.ts             # 可通行网格 + BFS 寻路 + 等距投影
-│   ├── scene-engine.ts           # 场景状态机（入场 / 行走 / 到岗 / 离场 / 气泡）
+│   ├── pathfinder.ts             # 等距：可通行网格 + BFS 寻路
+│   ├── scene-engine.ts           # 等距场景状态机（纯函数）
+│   ├── pixel-path.ts             # 像素：walkGraph 图最短路 + 房间工位排布
+│   ├── pixel-scene.ts            # 像素场景状态机（纯函数）
 │   ├── telemetry-adapter.ts      # 真实 Codem 数据 → LibrarySnapshot（只读 + 可注入）
 │   └── format.ts                 # 数值/时间格式化（全插件统一口径）
 ├── components/
@@ -52,11 +62,17 @@ src/plugins/library-ops/
 │   ├── LibraryOpsPanel.tsx       # 监控界面外壳（Portal 全屏，9 页签）
 │   ├── library/
 │   │   ├── iso.ts                # 等距几何（角点/中心两套约定 + 立方体 + 网格线 + 窗）
-│   │   ├── LibraryScene.tsx      # 图书馆场景（缩放/平移/定位/家具/角色层）
+│   │   ├── PixelLibraryScene.tsx # 像素图书馆场景（默认，ClawLibrary 美术）
+│   │   ├── LibraryScene.tsx      # 等距矢量场景（备用，本项目自绘）
 │   │   ├── SceneFurniture.tsx    # 8 类等距矢量家具
-│   │   └── CharacterActor.tsx    # 角色 SVG（部件 + 11 种动画）
-│   └── monitor/                  # common / charts / labels / 9 个监控面板
+│   │   └── CharacterActor.tsx    # 等距角色 SVG（11 种动画）
+│   └── monitor/                  # common / charts / labels / EventList / 9 个监控面板
 └── styles/library-ops.css        # 样式（只消费皮肤令牌）
+
+public/library-ops/               # 第三方像素美术资源（仅限非商业，见 docs/ASSET-LICENSES.md）
+├── claw-library/                 # 图书馆场景 + Capy/Cat 角色精灵（CC BY-NC-SA 4.0）
+├── star-office/                  # 办公室场景资源（非商业）
+└── lobster-pet/                  # 设计参考声明（无美术资源）
 ```
 
 配套开发工具（不参与打包）：`tools/preview/` 提供固定快照的视觉预览页 +
@@ -104,7 +120,7 @@ src/plugins/library-ops/
 
 ---
 
-## 6. 测试（9 文件 / 100 用例）
+## 6. 测试（11 文件 / 130 用例）
 
 | 文件 | 覆盖 |
 | --- | --- |
@@ -115,8 +131,10 @@ src/plugins/library-ops/
 | `src/test/library-ops-integration.test.ts` | 注册链路 / provider 装配与释放 / 目录结构 / 只读门禁 / 皮肤契约 / 设置持久化 / 禁用门控（17 例） |
 | `src/test/library-ops-real-integration.test.ts` | **真实服务联动**：真 AgentTeamsService 建队派活 / 成员释放 / 团队模板 / 成本 / 依赖形状 / 子智能体 / 归档不残留（8 例） |
 | `src/test/library-ops-geometry.test.ts` | 等距几何不变量：角点/中心关系 / 区域多边形 / 地板 / 网格线 / 立方体 / 槽位在区域内且可通行（9 例） |
-| `src/test/library-ops-scene-render.test.tsx` | **渲染几何**：区域多边形 / 角色落在自己岗位包围盒 / 8 类家具三面齐全 / 网格与窗 / 无 NaN / rAF 动画同步 / 选中高亮（7 例） |
-| `src/test/library-ops-ui.test.tsx` | 角色 11 态渲染 / 差异化 / 面板 9 页签 / 场景渲染 / 角色选中 / 团队/成本/错误/时间线 / 设置持久化 / Esc 关闭 / 徽标 / 岗位详情 / HUD（12 例） |
+| `src/test/library-ops-scene-render.test.tsx` | **等距渲染几何**：区域多边形 / 角色落在自己岗位包围盒 / 8 类家具三面齐全 / 网格与窗 / 无 NaN / rAF 动画同步 / 选中高亮（7 例） |
+| `src/test/library-ops-pixel.test.ts` | **像素场景数据**：岗位→房间映射 / walkGraph 连通 / 路由 / 精灵表自洽 / 11 状态映射 / 场景推进 / 工位不重叠 / 变体分配 / **资源文件真实存在** / 许可声明齐备（12 例） |
+| `src/test/library-ops-pixel-render.test.tsx` | **像素场景渲染**：图层 / 12 房间 / 精灵 URL 与帧偏移 / 角色落在自己房间 / 房间点击 / 资源缺失降级 / 选中高亮（6 例） |
+| `src/test/library-ops-ui.test.tsx` | 角色 11 态渲染 / 差异化 / 面板 9 页签 / 两种场景风格 / 角色选中 / 团队/成本/错误/时间线 / 设置持久化 / Esc 关闭 / 徽标 / 岗位详情 / HUD（12 例） |
 
 ```bash
 npx vitest run src/test/library-ops-*.test.ts src/test/library-ops-*.test.tsx

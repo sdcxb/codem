@@ -9,7 +9,7 @@
  */
 
 import { useMemo } from "react";
-import type { LibrarySnapshot } from "../../types";
+import type { LibrarySnapshot, SceneState } from "../../types";
 import { ACTIVITY_META, KIND_META } from "../../types";
 import { LIBRARY_MAP } from "../../data/library-map";
 import { paletteOf } from "../../data/characters";
@@ -17,6 +17,8 @@ import { formatAge } from "../../core/format";
 import { useLibraryOps, sortedActors } from "../../store";
 import { Card, Empty, Field, Pill } from "./common";
 import { LibraryScene } from "../library/LibraryScene";
+import { PixelLibraryScene } from "../library/PixelLibraryScene";
+import type { PixelSceneState } from "../../core/pixel-scene";
 
 export interface LibraryPanelProps {
   snapshot: LibrarySnapshot | null;
@@ -36,7 +38,9 @@ export function LibraryPanel({ snapshot, zh }: LibraryPanelProps) {
   const zoneOccupants = selectedZone ? actors.filter((a) => a.preferredZoneId === selectedZone.id) : [];
 
   // 切走再切回时恢复上次的馆内状态（读取一次，不订阅：避免每次采样都重渲染场景）
-  const initialScene = useMemo(() => useLibraryOps.getState().scene, []);
+  const initialPixelScene = useMemo(() => useLibraryOps.getState().pixelScene, []);
+  const initialIsoScene = useMemo(() => useLibraryOps.getState().isoScene, []);
+  const sceneStyle = settings.sceneStyle;
 
   const zoneCounts = new Map<string, number>();
   for (const a of actors) zoneCounts.set(a.preferredZoneId, (zoneCounts.get(a.preferredZoneId) ?? 0) + 1);
@@ -44,16 +48,29 @@ export function LibraryPanel({ snapshot, zh }: LibraryPanelProps) {
   return (
     <div className="lo-library">
       <div className="lo-library__scene">
-        <LibraryScene
-          snapshot={snapshot}
-          initialScene={initialScene}
-          showZoneLabels={settings.showZoneLabels}
-          showNameplates={settings.showNameplates}
-          showBubbles={settings.showBubbles}
-          speed={settings.speed}
-          maxActors={settings.maxActors}
-          onSelectActor={selectActor}
-        />
+        {sceneStyle === "pixel" ? (
+          <PixelLibraryScene
+            snapshot={snapshot}
+            initialScene={(initialPixelScene as PixelSceneState | null) ?? undefined}
+            showZoneLabels={settings.showZoneLabels}
+            showNameplates={settings.showNameplates}
+            showBubbles={settings.showBubbles}
+            speed={settings.speed}
+            maxActors={settings.maxActors}
+            onSelectActor={selectActor}
+          />
+        ) : (
+          <LibraryScene
+            snapshot={snapshot}
+            initialScene={(initialIsoScene as SceneState | null) ?? undefined}
+            showZoneLabels={settings.showZoneLabels}
+            showNameplates={settings.showNameplates}
+            showBubbles={settings.showBubbles}
+            speed={settings.speed}
+            maxActors={settings.maxActors}
+            onSelectActor={selectActor}
+          />
+        )}
       </div>
 
       <aside className="lo-library__side">

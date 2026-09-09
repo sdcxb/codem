@@ -42,6 +42,8 @@
 >
 > **v1.6.0 更新**：SubagentRuntime 架构重构 + 技能市场 Trees API 改造 + GitHub Token 修复 — ①**SubagentRuntime 全面重构（对标 DSH）**：移除旧 `SubagentManager`（-642 行）和 `LLMSubagentSpawner`（-338 行），新增 DSH 风格 `SubagentRuntime` 持续后台子智能体运行时 + `InProcessSpawnProvider`，4 个新工具（`subagent`/`send_message`/`interrupt_agent`/`list_agents`），`ToolRegistry.createScope()` 隔离工具作用域，系统提示词对标 DSH 重写为后台默认运行 + 自动通知模式 ②**技能市场 Trees API 改造（移植 vercel-labs/skills 官方 CLI 逻辑）**：Contents API 逐层遍历（O(N×M) 次调用）→ Trees API 一次性获取全量文件树（1 次调用），在内存中搜索 SKILL.md，支持 30+ Agent 目录约定前缀（Claude/Cline/Goose/Codex 等），修复 `dreambigou/eli5` 和 `cloudflare/cloudflare-docs`（15296 文件大仓库）等安装失败问题 ③**GitHub Token 配置链路修复**：统一 Token 读取链路 ④i18n-templates 新增子智能体协作模板（+138 行）⑤42 文件修改（+1542/-1562 行），`tsc --noEmit` 零错误。
 >
+> **v1.13.0 更新（图书馆插件集成手绘像素美术 + 监控面板对标 lobster-pet，2026-09-10）**：把**美观提到第一位**——上一版图书馆场景是程序化矢量绘制，质感不如参考项目；本版**直接集成参考项目的手绘像素美术资源，场景直接用参考项目的场景**。①**像素图书馆场景（默认）**：使用 [ClawLibrary](https://github.com/shengyu-meng/ClawLibrary) 的 `scene-floor` + `scene-objects`（2752×1536 手绘像素画）+ `walkGraph`（20 节点）+ 12 个资源分区坐标；角色用其 **Capy-Claw / Cat-Claw** 精灵表（128×128 帧 @6fps，各 12 套动作），按角色 id 稳定分配变体；11 种工作状态映射到上游动作（行走→walk、思考→idea、阅读→read、执行→work、等待授权→rest、完成→coffee、出错→error、休眠→sleep…）；相机可缩放/平移/定位；资源缺失可降级到等距矢量场景。②**资源管道与许可合规**：新增 `scripts/sync-library-ops-assets.mjs`（PNG→WebP **30.1MB→5.1MB** + 每源 `SOURCE.md` + 复制上游 LICENSE）；新增 [docs/ASSET-LICENSES.md](docs/ASSET-LICENSES.md) + `THIRD_PARTY_NOTICES.md` 条目 + 插件设置页「美术资源许可」卡；**刻意排除** LimeZu 派生素材（其许可禁止再分发）；**像素美术仅限非商业**，商用请切「等距矢量」或替换资源。③**监控面板对标 lobster-pet 重排**：总览页改为其 `DetailPanel` 单屏卡片网格（状态卡 + 最近会话卡网格 + 活动概览 / 左栈团队·任务·数据源 + **图书馆场景大卡** / 6 张紧凑 KPI 卡），**场景从「一个页签」变成「监控界面里的一张卡」**。④**修复**：两套场景引擎共享 store 槽位导致像素场景态喂给等距引擎崩溃（改为双槽位）；上游 4 个房间 workZone 锚点越界（按边距夹回房间内）。全量 vitest 186 文件 / 4432 用例通过 + tsc 零错误 + headless DOM 审计通过。
+>
 > **v1.12.0 更新（图书馆运营监控插件 + 全面审计修复，2026-09-10）**：新增**完全独立、可启停的大插件** `@codem/ui-library-ops`——把 Codem 的**团队角色与子智能体**变成各自不同的动画角色，在 ClawLibrary 风格的等距图书馆里各自的岗位上工作；监控界面完全对标 lobster-pet，并把图书馆作为监控界面内的「场景」页签。①**团队角色 → 动画角色**：角色 id 确定性生成外观（12 调色板 × 4 身形 × 5 发型 × 6 头饰 × 6 道具 × 4 表情 = 34560 种），岗位反向影响头饰/道具（队长礼帽 / 运维工帽 / 研究学者帽 / 编码耳机 / 写作贝雷帽）；**11 种工作动画**由真实工具调用与任务状态驱动（read→阅读、write→撰写、bash→执行、web_search→检索、ask_user→等待授权…）。②**图书馆**：等距 2.5D 场景（地板/网格/背墙/窗/区域/8 类矢量家具 + DOM 角色层），**10 个职能岗位**（前台调度 / 阅览大厅 / 编目室 / 代码工坊 / 写作工坊 / 档案室 / 机房后台 / 会议厅 / 借还台 / 静思角），按角色标签关键词自动分配岗位与工位（同岗不叠格、不越界），网格 BFS 寻路 + 到岗停驻 + 名牌 + 工作气泡 + 等距深度排序 + 滚轮缩放/拖拽平移/选中角色镜头居中。③**监控界面**：标题栏 + 9 页签（总览/图书馆/团队/会话/工具/成本/错误/时间线/设置）+ 实时事件流；总览含 6 KPI 卡 + 健康度环 + 14 天热力图 + 会话类型环形图 + 24 小时活跃柱状图 + 数据源健康。④**真实只读接入**：会话 / 运行时团队 / 子智能体 / 团队模板 / 智能体定义 / 工具调用 / token 与成本 / 遥测，逐源可见性，零写入宿主。⑤**集成零侵入**：挂宿主已有的 `app.overlay` slot → **App.tsx 零改动**；插件管理可禁用（provider 不装配 → 入口与面板都不存在）；面板关闭即停止采样；入口为可拖拽圆钮 + `Ctrl+Shift+L`。⑥**四轮全面审计修复 28 项问题**（详见 docs/LIBRARY-OPS-AUDIT.md），含 **1 项宿主 Bug**：agent-teams 成员完成任务后状态永不回落 `working`（新增 `releaseAssigneeIfIdle()` 释放）；以及活跃会话 Map 判定失效、气泡/动画态不随场景更新、`done` 动画永久定格、角色站到岗位外、等距几何双重偏移导致区域高亮整体放大错位、道具转向换手、耳机横梁被 fill 覆盖等。全量 vitest 184 文件 / 4414 用例通过 + tsc 零错误 + vite build 成功；headless 浏览器 DOM 审计：12/12 角色落在自己岗位的等距包围盒内、0 处 NaN。
 >
 > **v1.6.1 更新**：桌面宠物独立窗口改造 + 文件输出标识增强 + 设置版本号动态化 — ①**桌面宠物单一独立窗口改造（Cordis 插件化架构）**：移除主窗口内 PetOverlay，`@codem/ui-pet` 插件改为空壳；宠物窗口作为独立 Tauri 窗口运行，与主窗口共享 WebView2 进程组（实际内存增量仅 ~108MB，全部来自 1 个 renderer 进程）；新增 `ui-pet-provider.ts` Cordis Provider 封装，`App.tsx` 统一 `getPet()` 获取入口；Rust `show_pet_menu` 合并右键菜单，支持切换宠物样式子菜单（`SubmenuBuilder`）；`emitToPetWindow` 传递完整状态 ②**文件输出标识增强（DSH 风格 FileMentions）**：新增 `FileMentions` 解析器，从 `message.toolCalls` 提取 LLM 产出文件路径；`RichContent` inline code 渲染器优先解析文件路径为可点击按钮；`write`/`edit`/`multi_edit` 工具 guidance + 系统提示词强化文件路径引用要求 ③**设置版本号动态化**：关于页面版本号从 `package.json` 动态导入，不再需要手动同步。
@@ -364,6 +366,31 @@ npm run tauri:build
 - 两种模式均使用内置 LLM 引擎直连 API，无需依赖外部进程
 
 ## 更新日志
+
+### 2026-09-10（v1.13.0）
+
+> 图书馆插件集成手绘像素美术（场景直接用参考项目的场景）+ 监控面板对标 lobster-pet。
+> 资源许可与义务见 `docs/ASSET-LICENSES.md`。
+
+**新增：像素图书馆场景（默认）**
+- 直接使用 ClawLibrary 的 `scene-floor` / `scene-objects`（2752×1536 手绘像素画）+ `walkGraph` + 12 个资源分区
+- 角色使用其 Capy-Claw / Cat-Claw 精灵表（128×128 帧 @6fps，各 12 套动作），按角色 id 稳定分配变体
+- 11 种工作状态 → 上游动作（walk / idea / read / work / rest / coffee / error / sleep…）
+- 相机缩放/平移/定位；资源缺失自动降级到「等距矢量」场景
+
+**新增：资源管道与许可合规**
+- `scripts/sync-library-ops-assets.mjs`：PNG → WebP（30.1MB → 5.1MB）+ 每源 `SOURCE.md` + 复制上游 LICENSE
+- `docs/ASSET-LICENSES.md` + `THIRD_PARTY_NOTICES.md` 条目 + 插件设置页「美术资源许可」卡
+- 刻意排除 LimeZu 派生素材（再分发受限）；像素美术**仅限非商业**，商用请切「等距矢量」
+
+**改造：监控面板对标 lobster-pet**
+- 总览页改为 `DetailPanel` 单屏卡片网格；**图书馆场景作为监控界面内的一张卡**嵌入
+
+**修复**
+- 两套场景引擎共享 store 槽位导致崩溃（改为 `isoScene` / `pixelScene` 双槽位）
+- 上游 4 个房间 workZone 锚点越界（按边距夹回房间内）
+
+**验证**：`tsc` 零错误；vitest **186 文件 / 4432 用例通过**；`vite build` 成功；headless DOM 审计通过。
 
 ### 2026-09-10（v1.12.0）
 

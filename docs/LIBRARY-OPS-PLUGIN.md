@@ -185,7 +185,66 @@ npx tsc --noEmit
 
 ---
 
-## 七、已知边界与后续可做
+## 七、像素美术场景集成（v1.13.0）
+
+> 目标：把「美观」提到第一位——**直接使用参考项目的手绘像素美术资源**，
+> 而不是程序化绘制的矢量替代品；同时满足许可合规与项目内声明。
+
+### 7.1 资源来源与许可
+
+| 来源 | 收录内容 | 美术许可 | 可商用 |
+| --- | --- | --- | --- |
+| [ClawLibrary](https://github.com/shengyu-meng/ClawLibrary) | **图书馆场景底图 + 家具层 + Capy/Cat 两套角色 × 12 动作精灵表**（2752×1536 场景、128×128 帧 @6fps） | CC BY-NC-SA 4.0 | ❌ |
+| [Star-Office-UI](https://github.com/ringhyacinth/Star-Office-UI) | 办公室场景、猫咪/星星角色、机房、海报、绿植、咖啡机等 | 仅限非商业 | ❌ |
+| [lobster-pet](https://github.com/jiaweisibot/lobster-pet) | **仅设计参考**（监控看板信息架构），未收录美术资源 | MIT | ✅ |
+
+**刻意排除**：Star-Office-UI 里的 `guest_role_*` / `guest_anim_*` 来自 LimeZu，
+其许可禁止再分发（"You may not redistribute it or resell it"），
+`scripts/sync-library-ops-assets.mjs` 显式跳过。
+
+**合规履行**：每个来源目录含 `SOURCE.md`（出处 / 逐文件改动 / 义务）+ 上游 LICENSE 原文；
+`THIRD_PARTY_NOTICES.md` + `docs/ASSET-LICENSES.md` 全量声明；
+插件设置页「美术资源许可」卡在运行时可见；非商业限制有**替代方案**——
+`sceneStyle: "iso"` 的等距矢量场景由本项目自绘，无第三方约束。
+
+### 7.2 资源管道
+
+`scripts/sync-library-ops-assets.mjs`：PNG → WebP（**30.1MB → 5.1MB**，视觉无损）+ 写 SOURCE.md + 复制 LICENSE。
+产物提交到仓库（`public/library-ops/`），Vite 原样拷贝到 `dist/library-ops/`。
+
+### 7.3 场景实现
+
+- **坐标系统**：沿用上游逻辑坐标 1920×1080（`map.logic.json` 的 `baseResolution`），
+  贴图按 `displaySize` 1920×1072 显示；
+- **房间**：上游 12 个资源分区（含 bounds / labelAnchor / workZone）映射到本插件 10 个职能岗位
+  （`ZONE_TO_ROOM`）；**上游 mcp / images / log / schedule 四个房间的 workZone 锚点落在房间矩形外**，
+  集成时按 28px 边距夹回房间内（`workAnchor()`）；
+- **寻路**：直接使用上游手工标注的 `walkGraph`（20 节点 / 19 边）做 BFS 图最短路，
+  末端直连工作锚点（`core/pixel-path.ts`）；
+- **角色**：DOM + 精灵表背景定位逐帧动画（`background-position`），
+  帧尺寸/列行数/fps 全部取自上游 `manifest.json`；按角色 id 稳定分配 Capy / Cat 变体；
+- **工作状态 → 动作**：11 种状态映射到上游动作
+  （walk / work / read / idea / repair / error / sleep / coffee / rest / stand_front / stand_back / lie_flat…）；
+- **相机**：滚轮缩放（0.3×–3.2×，指针锚点）/ 拖拽平移 / 双击复位 / 选中角色平滑居中；
+- **降级**：资源缺失时显示提示并引导切到「等距矢量」场景。
+
+### 7.4 监控面板布局对标 lobster-pet
+
+lobster-pet 的 `DetailPanel` 是「单屏卡片网格」：
+
+```
+行 1：状态卡(236px) │ 最近会话卡网格(1fr) │ 活动概览(1.45fr)
+行 2：左栈 ── 团队卡 │ 任务与工具卡
+             └ 数据源与健康度卡          │ 图书馆场景大卡(1fr)
+行 3：6 张紧凑 KPI 卡（含迷你折线）
+```
+
+**场景从「一个页签」变成「监控界面里的一张卡」**（对标其 `MiniOffice`），
+与其它监控卡共享同一份快照；同时保留全屏「图书馆」页签供放大观察。
+
+---
+
+## 八、已知边界与后续可做
 
 | 项 | 现状 | 后续 |
 | --- | --- | --- |

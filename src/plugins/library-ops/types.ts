@@ -398,10 +398,15 @@ export type MonitorTab =
   | "timeline"
   | "settings";
 
+/** 场景风格：pixel = 第三方像素美术场景（默认，仅限非商业）；iso = 本项目自绘等距矢量场景 */
+export type SceneStyle = "pixel" | "iso";
+
 /** 插件设置（持久化到 localStorage） */
 export interface LibraryOpsSettings {
   /** 采样间隔（ms） */
   refreshMs: number;
+  /** 场景风格 */
+  sceneStyle: SceneStyle;
   /** 场景动画速度倍率 */
   speed: number;
   /** 是否显示角色头顶名牌 */
@@ -422,6 +427,7 @@ export interface LibraryOpsSettings {
 
 export const DEFAULT_SETTINGS: LibraryOpsSettings = {
   refreshMs: 1500,
+  sceneStyle: "pixel",
   speed: 1,
   showNameplates: true,
   showBubbles: true,

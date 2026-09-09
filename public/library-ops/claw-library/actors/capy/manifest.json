@@ -1,0 +1,178 @@
+{
+  "variant": "capy-claw-emoji",
+  "label": "Capy-Claw",
+  "frameCanvas": {
+    "width": 128,
+    "height": 128
+  },
+  "actions": [
+    {
+      "id": "work",
+      "sourceGif": "public/assets/generated/actors/capy-claw-emoji-v2/source/emoji_01_work.gif",
+      "spritesheet": "public/assets/generated/actors/capy-claw-emoji-v2/sheets/work-spritesheet.png",
+      "poster": "public/assets/generated/actors/capy-claw-emoji-v2/sheets/work-poster.png",
+      "fps": 6,
+      "sheet": {
+        "frameWidth": 128,
+        "frameHeight": 128,
+        "frameCount": 31,
+        "columns": 6,
+        "rows": 6
+      }
+    },
+    {
+      "id": "read",
+      "sourceGif": "public/assets/generated/actors/capy-claw-emoji-v2/source/emoji_02_read.gif",
+      "spritesheet": "public/assets/generated/actors/capy-claw-emoji-v2/sheets/read-spritesheet.png",
+      "poster": "public/assets/generated/actors/capy-claw-emoji-v2/sheets/read-poster.png",
+      "fps": 6,
+      "sheet": {
+        "frameWidth": 128,
+        "frameHeight": 128,
+        "frameCount": 35,
+        "columns": 6,
+        "rows": 6
+      }
+    },
+    {
+      "id": "idea",
+      "sourceGif": "public/assets/generated/actors/capy-claw-emoji-v2/source/emoji_03_idea.gif",
+      "spritesheet": "public/assets/generated/actors/capy-claw-emoji-v2/sheets/idea-spritesheet.png",
+      "poster": "public/assets/generated/actors/capy-claw-emoji-v2/sheets/idea-poster.png",
+      "fps": 6,
+      "sheet": {
+        "frameWidth": 128,
+        "frameHeight": 128,
+        "frameCount": 35,
+        "columns": 6,
+        "rows": 6
+      }
+    },
+    {
+      "id": "repair",
+      "sourceGif": "public/assets/generated/actors/capy-claw-emoji-v2/source/emoji_03_repair.gif",
+      "spritesheet": "public/assets/generated/actors/capy-claw-emoji-v2/sheets/repair-spritesheet.png",
+      "poster": "public/assets/generated/actors/capy-claw-emoji-v2/sheets/repair-poster.png",
+      "fps": 6,
+      "sheet": {
+        "frameWidth": 128,
+        "frameHeight": 128,
+        "frameCount": 23,
+        "columns": 5,
+        "rows": 5
+      }
+    },
+    {
+      "id": "error",
+      "sourceGif": "public/assets/generated/actors/capy-claw-emoji-v2/source/emoji_04_error.gif",
+      "spritesheet": "public/assets/generated/actors/capy-claw-emoji-v2/sheets/error-spritesheet.png",
+      "poster": "public/assets/generated/actors/capy-claw-emoji-v2/sheets/error-poster.png",
+      "fps": 6,
+      "sheet": {
+        "frameWidth": 128,
+        "frameHeight": 128,
+        "frameCount": 35,
+        "columns": 6,
+        "rows": 6
+      }
+    },
+    {
+      "id": "sleep",
+      "sourceGif": "public/assets/generated/actors/capy-claw-emoji-v2/source/emoji_05_sleep.gif",
+      "spritesheet": "public/assets/generated/actors/capy-claw-emoji-v2/sheets/sleep-spritesheet.png",
+      "poster": "public/assets/generated/actors/capy-claw-emoji-v2/sheets/sleep-poster.png",
+      "fps": 6,
+      "sheet": {
+        "frameWidth": 128,
+        "frameHeight": 128,
+        "frameCount": 33,
+        "columns": 6,
+        "rows": 6
+      }
+    },
+    {
+      "id": "coffee",
+      "sourceGif": "public/assets/generated/actors/capy-claw-emoji-v2/source/emoji_06_coffee.gif",
+      "spritesheet": "public/assets/generated/actors/capy-claw-emoji-v2/sheets/coffee-spritesheet.png",
+      "poster": "public/assets/generated/actors/capy-claw-emoji-v2/sheets/coffee-poster.png",
+      "fps": 6,
+      "sheet": {
+        "frameWidth": 128,
+        "frameHeight": 128,
+        "frameCount": 36,
+        "columns": 6,
+        "rows": 6
+      }
+    },
+    {
+      "id": "rest",
+      "sourceGif": "public/assets/generated/actors/capy-claw-emoji-v2/source/emoji_08_rest.gif",
+      "spritesheet": "public/assets/generated/actors/capy-claw-emoji-v2/sheets/rest-spritesheet.png",
+      "poster": "public/assets/generated/actors/capy-claw-emoji-v2/sheets/rest-poster.png",
+      "fps": 6,
+      "sheet": {
+        "frameWidth": 128,
+        "frameHeight": 128,
+        "frameCount": 37,
+        "columns": 7,
+        "rows": 6
+      }
+    },
+    {
+      "id": "walk",
+      "sourceGif": "public/assets/generated/actors/capy-claw-emoji-v2/source/emoji_11_walk.gif",
+      "spritesheet": "public/assets/generated/actors/capy-claw-emoji-v2/sheets/walk-spritesheet.png",
+      "poster": "public/assets/generated/actors/capy-claw-emoji-v2/sheets/walk-poster.png",
+      "fps": 6,
+      "sheet": {
+        "frameWidth": 128,
+        "frameHeight": 128,
+        "frameCount": 43,
+        "columns": 7,
+        "rows": 7
+      }
+    },
+    {
+      "id": "stand_front",
+      "sourceGif": "public/assets/generated/actors/capy-claw-emoji-v2/source/emoji_12_stand_front.gif",
+      "spritesheet": "public/assets/generated/actors/capy-claw-emoji-v2/sheets/stand_front-spritesheet.png",
+      "poster": "public/assets/generated/actors/capy-claw-emoji-v2/sheets/stand_front-poster.png",
+      "fps": 6,
+      "sheet": {
+        "frameWidth": 128,
+        "frameHeight": 128,
+        "frameCount": 37,
+        "columns": 7,
+        "rows": 6
+      }
+    },
+    {
+      "id": "stand_back",
+      "sourceGif": "public/assets/generated/actors/capy-claw-emoji-v2/source/emoji_13_stand_back.gif",
+      "spritesheet": "public/assets/generated/actors/capy-claw-emoji-v2/sheets/stand_back-spritesheet.png",
+      "poster": "public/assets/generated/actors/capy-claw-emoji-v2/sheets/stand_back-poster.png",
+      "fps": 6,
+      "sheet": {
+        "frameWidth": 128,
+        "frameHeight": 128,
+        "frameCount": 37,
+        "columns": 7,
+        "rows": 6
+      }
+    },
+    {
+      "id": "lie_flat",
+      "sourceGif": "public/assets/generated/actors/capy-claw-emoji-v2/source/emoji_14_lie_flat.gif",
+      "spritesheet": "public/assets/generated/actors/capy-claw-emoji-v2/sheets/lie_flat-spritesheet.png",
+      "poster": "public/assets/generated/actors/capy-claw-emoji-v2/sheets/lie_flat-poster.png",
+      "fps": 6,
+      "sheet": {
+        "frameWidth": 128,
+        "frameHeight": 128,
+        "frameCount": 28,
+        "columns": 6,
+        "rows": 5
+      }
+    }
+  ]
+}

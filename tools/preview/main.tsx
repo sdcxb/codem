@@ -6,6 +6,7 @@
 
 import { createRoot } from "react-dom/client";
 import { LibraryScene } from "../../src/plugins/library-ops/components/library/LibraryScene";
+import { PixelLibraryScene } from "../../src/plugins/library-ops/components/library/PixelLibraryScene";
 import { LibraryPanel } from "../../src/plugins/library-ops/components/monitor/LibraryPanel";
 import { OverviewPanel } from "../../src/plugins/library-ops/components/monitor/OverviewPanel";
 import { TeamsPanel } from "../../src/plugins/library-ops/components/monitor/TeamsPanel";
@@ -14,6 +15,7 @@ import type { LibraryActor, LibrarySnapshot } from "../../src/plugins/library-op
 import { generateLook } from "../../src/plugins/library-ops/data/characters";
 import { resolveZoneId } from "../../src/plugins/library-ops/data/library-map";
 import { advanceScene, createSceneState, stepActorMovement } from "../../src/plugins/library-ops/core/scene-engine";
+import { advancePixelScene, createPixelSceneState, stepPixelMovement } from "../../src/plugins/library-ops/core/pixel-scene";
 import "../../src/plugins/library-ops/styles/library-ops.css";
 
 const NOW = Date.now();
@@ -162,9 +164,35 @@ function settledScene() {
 }
 const INITIAL_SCENE = settledScene();
 
+/** 像素场景的确定性「已到岗」状态（同一套推进循环） */
+function settledPixelScene() {
+  let state = createPixelSceneState(NOW);
+  let t = NOW;
+  for (let i = 0; i < 900; i++) {
+    t += 100;
+    state = advancePixelScene(state, { ...snapshot, at: t }, 100);
+    for (const a of Object.values(state.actors)) stepPixelMovement(a, 100);
+  }
+  return state;
+}
+const INITIAL_PIXEL_SCENE = settledPixelScene();
+
 function Preview() {
   return (
     <div className="preview-wrap">
+      <h3 style={{ margin: 0, fontSize: 14 }}>像素图书馆（默认场景 · ClawLibrary 美术）</h3>
+      <div className="preview-scene">
+        <PixelLibraryScene
+          snapshot={snapshot}
+          initialScene={INITIAL_PIXEL_SCENE}
+          showZoneLabels
+          showNameplates
+          showBubbles
+          speed={1}
+          maxActors={24}
+        />
+      </div>
+      <h3 style={{ margin: 0, fontSize: 14 }}>等距矢量场景（备用 · 本项目自绘）</h3>
       <div className="preview-scene">
         <LibraryScene
           snapshot={snapshot}

@@ -2,6 +2,67 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.13.0] - 2026-09-10 — 图书馆插件集成手绘像素美术（场景直接用参考项目的场景）+ 监控面板对标 lobster-pet
+
+> 上一版图书馆插件的场景是程序化矢量绘制，质感不如参考项目。本版把**美观提到第一位**：
+> 直接集成 [ClawLibrary](https://github.com/shengyu-meng/ClawLibrary) /
+> [Star-Office-UI](https://github.com/ringhyacinth/Star-Office-UI) 的**手绘像素美术资源**，
+> **场景直接用参考项目的场景**；监控面板布局对标 lobster-pet 重排，
+> 把图书馆作为**监控界面内的一张卡**嵌入。全部第三方资源已在项目内声明许可与义务。
+
+### 新增：像素美术场景（默认场景）
+
+- **直接使用 ClawLibrary 的图书馆场景**：`scene-floor` + `scene-objects`（2752×1536 手绘像素画）
+  + `walkGraph`（20 节点 / 19 边）+ 12 个资源分区坐标 + 可行走掩码
+- **角色用其 Capy-Claw / Cat-Claw 精灵表**：128×128 帧 @6fps，各 12 套动作
+  （work / read / idea / repair / error / sleep / coffee / rest / walk / stand_front / stand_back /
+  lie_flat / lie_side / front / game），按角色 id 稳定分配变体
+- **11 种工作状态 → 上游动作**：待命→stand_front、行走→walk、思考→idea、阅读→read、
+  撰写/执行→work、检索→read、等待授权→rest、完成→coffee、出错→error、休眠→sleep
+- **寻路**：上游手工标注的 walkGraph 图最短路（BFS）+ 末端直连工作锚点；
+  房间内多角色按黄金角环形排布，不叠人
+- **相机**：滚轮缩放（0.3×–3.2×，指针锚点）/ 拖拽平移 / 双击复位 / 选中角色平滑居中 / HUD 统计
+- **降级**：资源缺失时提示并可切到「等距矢量」场景（本项目自绘，无第三方约束）
+- 原程序化等距矢量场景保留为**可选风格**（设置 →「场景风格」）
+
+### 新增：资源管道与许可合规
+
+- **`scripts/sync-library-ops-assets.mjs`**：从上游仓库 PNG → WebP 重压缩
+  （**30.1MB → 5.1MB**，视觉无损）+ 为每个来源写出 `SOURCE.md`（出处 / 逐文件改动 / 义务）
+  + 复制上游 LICENSE 原文 + 生成 `public/library-ops/README.md` 总索引
+- **许可声明**：新增 [`docs/ASSET-LICENSES.md`](docs/ASSET-LICENSES.md)（逐项义务与商用替代方案）
+  + `THIRD_PARTY_NOTICES.md` 新增三个项目条目 + 插件设置页新增「美术资源许可」卡（运行时可见）
+- **刻意排除**：Star-Office-UI 内的 `guest_role_*` / `guest_anim_*` 来自 LimeZu，
+  其许可禁止再分发（"You may not redistribute it or resell it"），脚本显式跳过
+- **商用替代**：像素美术资源**仅限非商业**；商用请切到「等距矢量」场景或替换资源
+
+### 改造：监控面板对标 lobster-pet
+
+- **总览页重排为 lobster-pet 的 `DetailPanel` 单屏卡片网格**：
+  行 1 = 状态卡(236px) + 最近会话卡网格 + 活动概览（14 天热力图 / 会话类型环形图 / 小时柱状图）；
+  行 2 = 左栈（团队卡 + 任务与工具卡 + 数据源与健康度卡）与**图书馆场景大卡**；
+  行 3 = 6 张紧凑 KPI 卡（含迷你折线）
+- **场景从「一个页签」变成「监控界面里的一张卡」**（对标 lobster-pet `MiniOffice`），
+  与其它监控卡共享同一份快照；全屏「图书馆」页签保留供放大观察
+- 新增状态卡、会话卡片网格、团队迷你卡、活动概览两列布局等样式（全部皮肤令牌化）
+
+### 修复
+
+- **两套场景引擎共享一个 store 槽位**：像素场景态被喂给等距引擎导致
+  `Cannot read properties of undefined (reading 'col')` 崩溃；改为 `isoScene` / `pixelScene` 两个槽位
+- **上游 workZone 锚点越界**：mcp / images / log / schedule 四个房间的工作锚点落在房间矩形之外
+  （上游数据不一致），按 28px 边距夹回房间内
+- 场景根节点加 `data-scene` 标记，DOM 审计按场景分别校验
+
+### 验证
+
+- `npx tsc --noEmit` 零错误；`npx vitest run` **186 文件 / 4432 用例通过**；`npx vite build` 成功
+  （插件 chunk 126KB JS + 39KB CSS，美术资源 5.17MB 随包）
+- 新增 2 个测试文件 / 18 用例：像素场景数据（12 例，含**资源文件真实存在**与许可声明齐备）
+  + 像素场景渲染（6 例，含精灵 URL/帧偏移、角色落在自己房间、资源缺失降级）
+- headless 浏览器 DOM 审计：像素场景 2 图层 / 12 房间 / 精灵表接线正确，
+  等距场景 12/12 角色落在自己岗位包围盒内，0 处 NaN
+
 ## [1.12.0] - 2026-09-10 — 图书馆运营监控插件（团队/子智能体可视化）+ 全面审计修复
 
 > 本版新增一个**完全独立、可启停的大插件** `@codem/ui-library-ops`：把 Codem 的团队角色与

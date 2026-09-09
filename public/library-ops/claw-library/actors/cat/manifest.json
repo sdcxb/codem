@@ -1,0 +1,178 @@
+{
+  "variant": "cat-claw-emoji",
+  "label": "Cat-Claw",
+  "frameCanvas": {
+    "width": 128,
+    "height": 128
+  },
+  "actions": [
+    {
+      "id": "work",
+      "sourceGif": "public/assets/generated/actors/cat-claw-emoji-v1/source/emoji_01_work.gif",
+      "spritesheet": "public/assets/generated/actors/cat-claw-emoji-v1/sheets/work-spritesheet.png",
+      "poster": "public/assets/generated/actors/cat-claw-emoji-v1/sheets/work-poster.png",
+      "fps": 6,
+      "sheet": {
+        "frameWidth": 128,
+        "frameHeight": 128,
+        "frameCount": 24,
+        "columns": 5,
+        "rows": 5
+      }
+    },
+    {
+      "id": "front",
+      "sourceGif": "public/assets/generated/actors/cat-claw-emoji-v1/source/emoji_02_front.gif",
+      "spritesheet": "public/assets/generated/actors/cat-claw-emoji-v1/sheets/front-spritesheet.png",
+      "poster": "public/assets/generated/actors/cat-claw-emoji-v1/sheets/front-poster.png",
+      "fps": 6,
+      "sheet": {
+        "frameWidth": 128,
+        "frameHeight": 128,
+        "frameCount": 30,
+        "columns": 6,
+        "rows": 5
+      }
+    },
+    {
+      "id": "repair",
+      "sourceGif": "public/assets/generated/actors/cat-claw-emoji-v1/source/emoji_03_repair.gif",
+      "spritesheet": "public/assets/generated/actors/cat-claw-emoji-v1/sheets/repair-spritesheet.png",
+      "poster": "public/assets/generated/actors/cat-claw-emoji-v1/sheets/repair-poster.png",
+      "fps": 6,
+      "sheet": {
+        "frameWidth": 128,
+        "frameHeight": 128,
+        "frameCount": 21,
+        "columns": 5,
+        "rows": 5
+      }
+    },
+    {
+      "id": "idea",
+      "sourceGif": "public/assets/generated/actors/cat-claw-emoji-v1/source/emoji_04_idea.gif",
+      "spritesheet": "public/assets/generated/actors/cat-claw-emoji-v1/sheets/idea-spritesheet.png",
+      "poster": "public/assets/generated/actors/cat-claw-emoji-v1/sheets/idea-poster.png",
+      "fps": 6,
+      "sheet": {
+        "frameWidth": 128,
+        "frameHeight": 128,
+        "frameCount": 28,
+        "columns": 6,
+        "rows": 5
+      }
+    },
+    {
+      "id": "error",
+      "sourceGif": "public/assets/generated/actors/cat-claw-emoji-v1/source/emoji_05_error.gif",
+      "spritesheet": "public/assets/generated/actors/cat-claw-emoji-v1/sheets/error-spritesheet.png",
+      "poster": "public/assets/generated/actors/cat-claw-emoji-v1/sheets/error-poster.png",
+      "fps": 6,
+      "sheet": {
+        "frameWidth": 128,
+        "frameHeight": 128,
+        "frameCount": 20,
+        "columns": 5,
+        "rows": 4
+      }
+    },
+    {
+      "id": "sleep",
+      "sourceGif": "public/assets/generated/actors/cat-claw-emoji-v1/source/emoji_06_sleep.gif",
+      "spritesheet": "public/assets/generated/actors/cat-claw-emoji-v1/sheets/sleep-spritesheet.png",
+      "poster": "public/assets/generated/actors/cat-claw-emoji-v1/sheets/sleep-poster.png",
+      "fps": 6,
+      "sheet": {
+        "frameWidth": 128,
+        "frameHeight": 128,
+        "frameCount": 23,
+        "columns": 5,
+        "rows": 5
+      }
+    },
+    {
+      "id": "coffee",
+      "sourceGif": "public/assets/generated/actors/cat-claw-emoji-v1/source/emoji_07_coffee.gif",
+      "spritesheet": "public/assets/generated/actors/cat-claw-emoji-v1/sheets/coffee-spritesheet.png",
+      "poster": "public/assets/generated/actors/cat-claw-emoji-v1/sheets/coffee-poster.png",
+      "fps": 6,
+      "sheet": {
+        "frameWidth": 128,
+        "frameHeight": 128,
+        "frameCount": 21,
+        "columns": 5,
+        "rows": 5
+      }
+    },
+    {
+      "id": "game",
+      "sourceGif": "public/assets/generated/actors/cat-claw-emoji-v1/source/emoji_08_game.gif",
+      "spritesheet": "public/assets/generated/actors/cat-claw-emoji-v1/sheets/game-spritesheet.png",
+      "poster": "public/assets/generated/actors/cat-claw-emoji-v1/sheets/game-poster.png",
+      "fps": 6,
+      "sheet": {
+        "frameWidth": 128,
+        "frameHeight": 128,
+        "frameCount": 26,
+        "columns": 6,
+        "rows": 5
+      }
+    },
+    {
+      "id": "walk",
+      "sourceGif": "public/assets/generated/actors/cat-claw-emoji-v1/source/emoji_09_walk.gif",
+      "spritesheet": "public/assets/generated/actors/cat-claw-emoji-v1/sheets/walk-spritesheet.png",
+      "poster": "public/assets/generated/actors/cat-claw-emoji-v1/sheets/walk-poster.png",
+      "fps": 6,
+      "sheet": {
+        "frameWidth": 128,
+        "frameHeight": 128,
+        "frameCount": 13,
+        "columns": 4,
+        "rows": 4
+      }
+    },
+    {
+      "id": "stand_front",
+      "sourceGif": "public/assets/generated/actors/cat-claw-emoji-v1/source/emoji_10_stand_front.gif",
+      "spritesheet": "public/assets/generated/actors/cat-claw-emoji-v1/sheets/stand_front-spritesheet.png",
+      "poster": "public/assets/generated/actors/cat-claw-emoji-v1/sheets/stand_front-poster.png",
+      "fps": 6,
+      "sheet": {
+        "frameWidth": 128,
+        "frameHeight": 128,
+        "frameCount": 36,
+        "columns": 6,
+        "rows": 6
+      }
+    },
+    {
+      "id": "stand_back",
+      "sourceGif": "public/assets/generated/actors/cat-claw-emoji-v1/source/emoji_11_stand_back.gif",
+      "spritesheet": "public/assets/generated/actors/cat-claw-emoji-v1/sheets/stand_back-spritesheet.png",
+      "poster": "public/assets/generated/actors/cat-claw-emoji-v1/sheets/stand_back-poster.png",
+      "fps": 6,
+      "sheet": {
+        "frameWidth": 128,
+        "frameHeight": 128,
+        "frameCount": 31,
+        "columns": 6,
+        "rows": 6
+      }
+    },
+    {
+      "id": "lie_side",
+      "sourceGif": "public/assets/generated/actors/cat-claw-emoji-v1/source/emoji_12_lie_side.gif",
+      "spritesheet": "public/assets/generated/actors/cat-claw-emoji-v1/sheets/lie_side-spritesheet.png",
+      "poster": "public/assets/generated/actors/cat-claw-emoji-v1/sheets/lie_side-poster.png",
+      "fps": 6,
+      "sheet": {
+        "frameWidth": 128,
+        "frameHeight": 128,
+        "frameCount": 20,
+        "columns": 5,
+        "rows": 4
+      }
+    }
+  ]
+}

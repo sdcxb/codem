@@ -7,8 +7,9 @@
 
 import type { LibraryOpsSettings, MonitorTab } from "../../types";
 import { DEFAULT_SETTINGS } from "../../types";
+import { SCENE_CREDITS } from "../../data/pixel-art";
 import { useLibraryOps } from "../../store";
-import { Card, Field, SectionTitle, Switch } from "./common";
+import { Card, Field, Pill, SectionTitle, Switch } from "./common";
 
 const TABS: Array<{ id: MonitorTab; zh: string; en: string; icon: string }> = [
   { id: "overview", zh: "总览", en: "Overview", icon: "📊" },
@@ -54,6 +55,34 @@ export function SettingsPanel({ zh }: { zh: boolean }) {
       </Card>
 
       <Card title={zh ? "场景" : "Scene"} icon="📚">
+        <SectionTitle hint={zh ? "像素美术资源仅限非商业使用" : "pixel art is non-commercial only"}>
+          {zh ? "场景风格" : "Scene style"}
+        </SectionTitle>
+        <div className="lo-chip-row">
+          {(
+            [
+              { id: "pixel", icon: "🖼️", zh: "像素图书馆", en: "Pixel library" },
+              { id: "iso", icon: "📐", zh: "等距矢量", en: "Isometric vector" },
+            ] as const
+          ).map((s) => (
+            <button
+              key={s.id}
+              className={`lo-chip${settings.sceneStyle === s.id ? " is-active" : ""}`}
+              onClick={() => update({ sceneStyle: s.id })}
+            >
+              {s.icon} {zh ? s.zh : s.en}
+            </button>
+          ))}
+        </div>
+        <p className="lo-note">
+          {settings.sceneStyle === "pixel"
+            ? zh
+              ? "像素图书馆使用 ClawLibrary / Star-Office-UI 的美术资源（CC BY-NC-SA 4.0 / 仅非商业）。商用请切换到「等距矢量」。"
+              : "Pixel library uses third-party art (non-commercial only). Switch to isometric vector for commercial use."
+            : zh
+              ? "等距矢量场景由本项目自绘，无第三方美术许可约束。"
+              : "Isometric vector scene is drawn by this project; no third-party art license constraints."}
+        </p>
         <div className="lo-fields">
           <Field label={zh ? "动画速度" : "Animation speed"}>
             <input
@@ -86,6 +115,37 @@ export function SettingsPanel({ zh }: { zh: boolean }) {
           <Switch checked={settings.showZoneLabels} onChange={(v) => update({ showZoneLabels: v })} label={zh ? "显示岗位标签" : "Zone labels"} />
           <Switch checked={settings.showEventFeed} onChange={(v) => update({ showEventFeed: v })} label={zh ? "显示右侧事件流" : "Event feed"} />
         </div>
+      </Card>
+
+      <Card title={zh ? "美术资源许可" : "Art asset licenses"} icon="⚖️">
+        <div className="lo-credits">
+          {SCENE_CREDITS.map((c) => (
+            <div key={c.project} className="lo-credits__item">
+              <div className="lo-credits__head">
+                <strong>{c.project}</strong>
+                {!c.commercial && <Pill token="--warning">{zh ? "仅限非商业" : "non-commercial"}</Pill>}
+              </div>
+              <div className="lo-credits__meta">
+                {zh ? "作者" : "By"} {c.author} ·{" "}
+                <a className="lo-link-btn" href={c.repo} target="_blank" rel="noreferrer">
+                  {zh ? "仓库" : "repo"}
+                </a>{" "}
+                ·{" "}
+                <a className="lo-link-btn" href={c.licenseUrl} target="_blank" rel="noreferrer">
+                  {c.license}
+                </a>
+              </div>
+              <div className="lo-credits__changes">
+                {zh ? "改动" : "Changes"}: {c.changes}
+              </div>
+            </div>
+          ))}
+        </div>
+        <p className="lo-note">
+          {zh
+            ? "像素美术资源来自第三方项目，仅限学习 / 演示 / 交流等非商业用途；商业分发必须替换为自有资源（或改用「等距矢量」场景）。完整声明见仓库 THIRD_PARTY_NOTICES.md 与 docs/ASSET-LICENSES.md。"
+            : "Third-party pixel art is non-commercial only. Full notices: THIRD_PARTY_NOTICES.md / docs/ASSET-LICENSES.md."}
+        </p>
       </Card>
 
       <Card title={zh ? "面板" : "Panel"} icon="🪟">

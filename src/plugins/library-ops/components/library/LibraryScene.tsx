@@ -82,7 +82,7 @@ export function LibraryScene({
 }: LibrarySceneProps) {
   const selectedActorId = useLibraryOps((s) => s.selectedActorId);
   const selectedZoneId = useLibraryOps((s) => s.selectedZoneId);
-  const setScene = useLibraryOps((s) => s.setScene);
+  const setScene = useLibraryOps((s) => s.setIsoScene);
 
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const sceneRef = useRef<SceneState>(initialScene ?? createSceneState());
@@ -330,6 +330,7 @@ export function LibraryScene({
     <div
       className="lo-scene"
       ref={wrapRef}
+      data-scene="iso"
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}

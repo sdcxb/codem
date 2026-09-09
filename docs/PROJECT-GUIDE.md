@@ -1,7 +1,7 @@
 # Codem 项目完整说明
 
 > **用途**：新对话快速理解项目全貌、架构、文件关联、当前状态。
-> 创建时间：2026-07-23 | 最后更新：2026-09-10 | 当前版本：v1.12.0（图书馆运营监控插件 @codem/ui-library-ops — 团队角色/子智能体化身动画角色在 ClawLibrary 式图书馆的 10 个岗位工作 + lobster-pet 式运营监控看板把图书馆作为场景；完全独立可启停，App.tsx 零改动；四轮全面审计修复 28 项问题含 1 项宿主 Bug；详见 docs/LIBRARY-OPS-PLUGIN.md 与 docs/LIBRARY-OPS-AUDIT.md）
+> 创建时间：2026-07-23 | 最后更新：2026-09-10 | 当前版本：v1.13.0（图书馆插件集成手绘像素美术 — 场景直接用 ClawLibrary 的图书馆像素画 + Capy/Cat 角色精灵；监控面板对标 lobster-pet 重排，图书馆作为监控界面内的一张卡；资源许可与义务见 docs/ASSET-LICENSES.md）
 >
 > **版本历程概览**：v0.70 基础存储 → v0.80 轮次架构 → v0.87 Worktree/并行 → v0.88 桌面宠物 → v0.89 跨会话委派 → v0.90 P0-P4 全量功能 → v0.91 Coding 工作台 → v0.92 Codex 对标 → v0.93 Vision Proxy → v0.94 配置修复 → v0.95 CLI/API 视觉代理 → v0.96 UI 大改版 → v0.97 Agentic Loop 性能优化 → v0.98 多智能体协同 → v0.99 DSH 全量升级 → v1.0.0 插件系统架构 + UI/UX 标准化 → v1.1.0 DSH 对标整改 + 测试深化 → v1.1.1 UI 布局优化 + 插件条件渲染 + Bug 修复 → v1.2.0 Cordis 架构对齐 DSH + 安全加固 + 全量测试重构 → v1.3.0 Cordis 插件系统对标 DSH 全面整改 + Slot 消费闭环 + inject 依赖对齐 → v1.4.0 UI/UX 体验优化 11 项 Bug 修复 + 性能/CI-CD 面板切换化 + 梦幻皮肤一致性修复 → v1.4.1 插件管理初始化修复 + 技能市场性能优化 + 对话区域自适应 9 项 Bug 修复 → v1.4.2 10 项 Bug 修复 + Cordis 插件时序改进 + SlotBridge 降级机制增强 + 头像系统升级 → v1.5.0 Cordis "一切插件化" 工具发现机制 — ToolDef guidance + toolsProvider 自动注册 systemPrompt section + buildSystemPrompt 动态收集 + 31 个工具补充 guidance + skill-creator 技能安装增强 → v1.5.1 DSH 架构对标深度整改 + YAML 声明式插件加载 + LLM 回答重复根因修复 + llmEngine/mimoAuth 注册修复 + SlotBridge/SlotRenderer 对标 DSH 重写 → v1.5.2 大文件流式分页读取 + Agent Loop 无上限改造（对标 DSH） + 模型系统动态化 + Skills 市场增量搜索 → v1.5.3-v1.5.4 引导消息立即注入 + Markdown 文件路径超链接 + 任务完成标签稳定显示 + 技能市场优化（GitHub API 目录下载） → v1.5.5 Compaction 并发写入治根修复（对标 DSH compactSurfaceRegion） + Bash 缓存失效修复 → v1.6.0 SubagentRuntime 架构重构（对标 DSH） + 技能市场 Trees API 改造（移植 vercel-labs/skills 官方 CLI） + GitHub Token 链路修复 → v1.6.1 桌面宠物独立窗口改造（Cordis Provider 封装） + 文件输出标识增强（DSH 风格 FileMentions） + 设置版本号动态化 → v1.6.2 大富翁嵌入式游戏全量交付（Phase 1-10） + 三轮审计 Bug 修复 → v1.7.0 PPT 生成质量大大幅升 — oh-my-ppt 74 种风格 SKILL.md 集成 + Cordis SkillRegistry 渐进式加载 + 生成链路断点修复 → v1.8.0 知识图谱 React Flow 重构 + vision-proxy 统一 getConfiguredProvider + UI 字体变量批量规范化 → v1.9.0 上下文压缩过早触发治根修复（模型感知窗口 + 压力驱动 micro-compact）+ 通用协议 API 配置 + 工具执行正确性修复（read 去重范围键 / 审批内容修复） → v1.9.1 对话任务步数计算对标改造 + 文件树显示隐藏文件夹 + 输入框/安全按钮修复 + 数据库持久化加固 + PowerShell 命令修复 → v1.9.2 LLM 请求级超时加固 + 安全模式按钮颜色反馈 + 引导消息注入体验改造 + LLM 失败可见性（对标 DSH 结构化失败上报） → v1.9.3 安全模式完全访问修复（dbReady 时序 + 委派遵循用户模式 + write 拒绝误判）+ 工具调用配对修复（API 400）+ 输入框历史 wrap 折行修复 + 引导栏 UI 对标 wecode + 思考过程紫色样式恢复 → v1.9.4 dsh-desktop 全面对标稳健性审计修复（15 轮：崩溃标记/渲染崩溃兜底/运行时文件日志/持久化失败可见性/命令超时杀树/PowerShell 转义/统一脱敏与超时） → v1.9.5 对话步骤语义化与 update_plan 动态插入（对标 dsh todo）+ token 消耗审计修复（read 上限/工具 defer/结果裁剪/窗口预算/折叠摘要）+ 全面功能审计修复（PTY 树杀/超时补全/托盘退出 flush） → v1.9.6 打包版运行问题修复（CSP blob:/ipc: 修复嵌入 WASM 与 IPC 回退/YAML 清理/解析降噪/知识摘要降级/subagent 激活竞态） → v1.9.7 dsh 插件市场 + dsh-compat 懒解析 + 皮肤兼容契约 + 插件架构审计（同版本补丁：CodeGraph 接入/一键安装 + 技能市场/输入框/GitHub 修复） → v1.9.8 对话用量/缓存命中率统计真实化（对标 dsh-desktop，诚实精度显示）+ date 尾置稳定前缀优化 + 真实请求实证（96K 前缀稳态命中 99.947% 达 dsh 量级） → v1.9.9 EAC 对标（DSH-Desktop-EAC）：编辑并回退 fork / 节点导航升级与精选 pin / 输入框失焦折叠 / persona 人设卡 / side-session 临时会话 / @codem/agent-teams 团队编排 → v1.10.0 EAC 对标四项全落地（④宠物大肥鱼式状态卡 / ③computer-use 电脑操作 / ②wechat-bridge 微信 ClawBot 桥 / ①phone-link 手机连接）+ 四路审计修复（P0 computer-use PS 断链 / 宠物卡隐藏 / 插件禁用=关闭 / executor 失败落库等） → v1.11.0 团队体系深合并（Squad→团队模板 + agent-teams 运行时统一 / TaskCenter 单一「团队」Tab / 智能体·团队双维度面板 + 行内预览 / 持续审计修复） → v1.11.1 zvec-grep（zg）语义检索可选增强（市场卡片一键安装/离线单包 + MCP stdio 接入 + 双轨路由）+ archify 图表技能内置（架构图/功能结构图产出）+ UI/体验修复打包（标题栏拖拽/Logo/磨砂/导航轨/头像） → v1.11.2 zg 在线安装 Node 源根治（Node 并入 zg 单包、仅 GitHub 取包）+ 审计四坑修复（真 PPTX 导出 / 纠偏模型接线 / Whisper 语音入口 / 会话内搜索激活）+ 功能文档体系（介绍 20 域 152 + 功能树 2779）
 
@@ -626,24 +626,28 @@ mimo-gui/
 │   │
 │   ├── plugins/                  # 完全独立的大插件（启停不影响现有功能）
 │   │   ├── monopoly-game/        # 大富翁小游戏（v1.6.2，Phaser 3，@codem/ui-game）
-│   │   └── library-ops/          # ★ 图书馆运营监控（v1.12.0，@codem/ui-library-ops）
+│   │   └── library-ops/          # ★ 图书馆运营监控（v1.13.0，@codem/ui-library-ops）
 │   │       ├── index.ts          # 公共导出
-│   │       ├── types.ts          # 领域类型 + ACTIVITY_META（11 种工作态）+ 设置
-│   │       ├── store.ts          # zustand store（面板/采样调度/时间序列/设置持久化）
+│   │       ├── types.ts          # 领域类型 + ACTIVITY_META（11 种工作态）+ 设置（含 sceneStyle）
+│   │       ├── store.ts          # zustand store（面板/采样/时间序列/isoScene+pixelScene 双槽位）
 │   │       ├── data/
-│   │       │   ├── library-map.ts  # 等距地图：10 岗位 + 装饰 + 投影 + 岗位路由 + 工位槽位
-│   │       │   └── characters.ts   # 角色外观生成器（12×4×5×6×6×4 = 34560 种，令牌化调色板）
+│   │       │   ├── library-map.ts  # 岗位地图：10 岗位 + 装饰 + 投影 + 岗位路由 + 工位槽位
+│   │       │   ├── characters.ts   # 角色外观生成器（等距场景用，34560 种，令牌化调色板）
+│   │       │   └── pixel-art.ts    # 像素资源清单：12 房间 / walkGraph / 精灵表元数据 / 岗位→房间
 │   │       ├── core/
-│   │       │   ├── pathfinder.ts   # 可通行网格 + 网格 BFS 寻路 + 等距投影
-│   │       │   ├── scene-engine.ts # 场景状态机（入场/行走/到岗/离场/气泡，纯函数可测）
+│   │       │   ├── pathfinder.ts   # 等距：可通行网格 + BFS
+│   │       │   ├── scene-engine.ts # 等距场景状态机（纯函数）
+│   │       │   ├── pixel-path.ts   # 像素：walkGraph 图最短路 + 房间工位排布
+│   │       │   ├── pixel-scene.ts  # 像素场景状态机（纯函数）
 │   │       │   ├── telemetry-adapter.ts # 真实宿主数据 → LibrarySnapshot（只读 + 可注入）
 │   │       │   └── format.ts       # 数值/时间格式化
 │   │       ├── components/
-│   │       │   ├── LibraryOpsLauncher.tsx # 入口胶囊（挂 app.overlay）
+│   │       │   ├── LibraryOpsLauncher.tsx # 入口圆钮（挂 app.overlay）
 │   │       │   ├── LibraryOpsPanel.tsx    # 监控界面外壳（Portal 全屏，9 页签）
-│   │       │   ├── library/LibraryScene.tsx   # 等距图书馆场景
-│   │       │   ├── library/CharacterActor.tsx # 角色 SVG + 11 种动画
-│   │       │   └── monitor/          # common / charts / 9 个监控面板
+│   │       │   ├── library/PixelLibraryScene.tsx # ★ 像素图书馆场景（默认，ClawLibrary 美术）
+│   │       │   ├── library/LibraryScene.tsx      # 等距矢量场景（备用，自绘）
+│   │       │   ├── library/{iso,SceneFurniture,CharacterActor}.tsx # 等距几何/家具/角色
+│   │       │   └── monitor/          # common / charts / labels / EventList / 9 个监控面板
 │   │       └── styles/library-ops.css # 样式（只消费皮肤令牌）
 │   │
 │   ├── hooks/                    # React Hooks（v0.96 新增目录）
@@ -949,6 +953,7 @@ Rust 后端 (lib.rs):
 | **SKIN-PLUGIN-CONTRACT.md** | 契约文档 | 插件皮肤兼容契约（令牌唯一化 + 审计 SC-1~4，见 4.3） | ✅ 最新 |
 | **LIBRARY-OPS-PLUGIN.md** | 插件设计 | 图书馆运营监控插件（需求对照 + 参考项目分析 + 架构 + 集成点 + 测试矩阵） | ✅ 最新 |
 | **LIBRARY-OPS-AUDIT.md** | 审计报告 | 图书馆运营监控插件全面审计（四轮方法 + 28 项问题与修复 + 验证证据 + 对标结论） | ✅ 最新 |
+| **ASSET-LICENSES.md** | 许可声明 | 第三方美术资源许可（来源 / 义务 / 商用替代方案 / 刻意排除项） | ✅ 最新 |
 | **WORKTREE-INPUTBAR-PLAN.md** | 计划文档 | InputArea 控制栏重构 + Git Worktree 集成计划 | ✅ 已实现 |
 | **GIT-WORKTREE-GUIDE.md** | 用户指南 | Git Worktree 使用指南 | ✅ 最新 |
 | **DEFERRED-WORKTREE-ANALYSIS.md** | 分析文档 | Worktree 早期审计（断链分析），已被 AUDIT 替代 | 📦 归档 |
@@ -1002,7 +1007,8 @@ Rust 后端 (lib.rs):
 
 | 版本 | 日期 | 主要内容 |
 |------|------|---------|
-| v1.12.0 | 2026-09-10 | **图书馆运营监控插件（@codem/ui-library-ops，完全独立可启停）+ 四轮全面审计修复 28 项** — 团队角色/子智能体 → 各自不同的动画角色（12×4×5×6×6×4=34560 种外观，id 确定性生成，岗位影响头饰/道具）在 ClawLibrary 风格等距图书馆的 10 个职能岗位工作（按角色标签关键词自动分配 + 网格 BFS 寻路 + 工位槽位 + 11 种工作动画，由真实工具调用/任务状态驱动）；监控界面完全对标 lobster-pet（标题栏 + 卡片网格 + 场景嵌入 + 实时事件流，9 页签：总览/图书馆/团队/会话/工具/成本/错误/时间线/设置），图书馆作为监控界面内的场景页签与监控卡共享同一份快照；相机可缩放/平移/定位；数据只读（会话/团队/子智能体/模板/工具/成本/遥测），App.tsx 零改动（挂 `app.overlay`），禁用即不装配、面板关闭即停止采样；皮肤契约零硬编码色值。**审计修复 28 项**（P0 8 / P1 11 / P2 9），含宿主 Bug：agent-teams 成员完成任务后状态永不回落 `working`（新增 `releaseAssigneeIfIdle()`）；等距几何双重偏移致区域高亮整体放大错位；活跃会话 Map 判定失效；气泡/动画态不随场景更新；`done` 动画永久定格；角色站到岗位外；道具转向换手等。新增 9 个测试文件 / 100 用例（含真实服务联动 8 例 + 渲染几何 7 例）+ `tools/preview/` DOM 审计脚本。全量 184 文件 / 4414 用例通过 |
+| v1.13.0 | 2026-09-10 | **图书馆插件集成手绘像素美术 + 监控面板对标 lobster-pet** — ①**像素图书馆场景（默认）**：直接使用 ClawLibrary 的 `scene-floor`/`scene-objects`（2752×1536 手绘像素画）+ `walkGraph`（20 节点）+ 12 资源分区坐标；角色用其 Capy-Claw / Cat-Claw 精灵表（128×128 帧 @6fps，各 12 动作），按 id 稳定分配变体；11 种工作状态 → 上游动作（walk/idea/read/work/rest/coffee/error/sleep…）；相机缩放平移定位；资源缺失降级到等距矢量。②**资源管道与许可**：`scripts/sync-library-ops-assets.mjs`（PNG→WebP 30.1MB→5.1MB + 每源 SOURCE.md + 复制 LICENSE）+ `docs/ASSET-LICENSES.md` + THIRD_PARTY_NOTICES 条目 + 设置页「美术资源许可」卡；刻意排除 LimeZu 派生素材；**仅限非商业**，商用切等距矢量或替换资源。③**面板对标**：总览页改为 lobster-pet `DetailPanel` 单屏卡片网格，**图书馆作为监控界面内的一张卡**嵌入。④修复：两套场景引擎共享 store 槽位崩溃（双槽位）/ 上游 4 个房间 workZone 锚点越界（夹回房间）。新增 2 测试文件 / 18 用例。全量 186 文件 / 4432 用例通过 |
+| v1.12.0 | 2026-09-10 | **图书馆运营监控插件（@codem/ui-library-ops，完全独立可启停）+ 四轮全面审计修复 28 项** — 团队角色/子智能体 → 各自不同的动画角色（12×4×5×6×6×4=34560 种外观，id 确定性生成，岗位影响头饰/道具）在图书馆的 10 个职能岗位工作（按角色标签关键词自动分配 + 寻路 + 工位槽位 + 11 种工作动画，由真实工具调用/任务状态驱动）；监控界面对标 lobster-pet（9 页签：总览/图书馆/团队/会话/工具/成本/错误/时间线/设置），数据只读（会话/团队/子智能体/模板/工具/成本/遥测），App.tsx 零改动（挂 `app.overlay`），禁用即不装配、面板关闭即停止采样；皮肤契约零硬编码色值。**审计修复 28 项**（P0 8 / P1 11 / P2 9），含宿主 Bug：agent-teams 成员完成任务后状态永不回落 `working`（新增 `releaseAssigneeIfIdle()`）；等距几何双重偏移致区域高亮整体放大错位；活跃会话 Map 判定失效；气泡/动画态不随场景更新；`done` 动画永久定格；角色站到岗位外；道具转向换手等。新增 9 个测试文件 / 100 用例（含真实服务联动 8 例 + 渲染几何 7 例）+ `tools/preview/` DOM 审计脚本。全量 184 文件 / 4414 用例通过 |
 | v0.70 | 2026-07-06 | SQLite统一存储 + 中文编码 + 子智能体重构 |
 | v0.77 | 2026-07-07 | 多语言 + 安全策略 + 智能体调用修复 |
 | v0.79 | 2026-07-11 | 三级安全 + LLM连接稳定性 + 任务完整性 |

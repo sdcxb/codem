@@ -15,11 +15,9 @@ import type {
   LibrarySnapshot,
   LibraryOpsSettings,
   MonitorTab,
-  SceneState,
   SeriesPoint,
 } from "./types";
 import { DEFAULT_SETTINGS, STORAGE_KEY } from "./types";
-import { createSceneState } from "./core/scene-engine";
 import { collectSnapshot } from "./core/telemetry-adapter";
 
 /** 时间序列最大长度（约 3 分钟 @1.5s） */
@@ -75,6 +73,7 @@ export function loadSettings(): LibraryOpsSettings {
     merged.refreshMs = clamp(Number(merged.refreshMs) || DEFAULT_SETTINGS.refreshMs, 500, 30_000);
     merged.speed = clamp(Number(merged.speed) || 1, 0.25, 4);
     merged.maxActors = Math.round(clamp(Number(merged.maxActors) || DEFAULT_SETTINGS.maxActors, 4, 64));
+    if (merged.sceneStyle !== "pixel" && merged.sceneStyle !== "iso") merged.sceneStyle = DEFAULT_SETTINGS.sceneStyle;
     return merged;
   } catch {
     return { ...DEFAULT_SETTINGS };
@@ -102,8 +101,13 @@ interface LibraryOpsState {
   settings: LibraryOpsSettings;
   /** 最新快照 */
   snapshot: LibrarySnapshot | null;
-  /** 场景运行态 */
-  scene: SceneState;
+  /**
+   * 场景运行态（面板切走再切回时恢复，角色不必重新入场）。
+   * 两套引擎各占一个槽位，避免把像素场景态喂给等距引擎（坐标系统不同）。
+   * 用 unknown 承载以免 store 依赖具体场景引擎。
+   */
+  isoScene: unknown;
+  pixelScene: unknown;
   /** 时间序列 */
   series: SeriesBundle;
   /** 选中角色（点击角色/列表项） */
@@ -127,7 +131,8 @@ interface LibraryOpsState {
   /** 立即采样一次 */
   refresh: () => Promise<void>;
   /** 推进场景（由场景组件的 rAF 调用） */
-  setScene: (scene: SceneState) => void;
+  setIsoScene: (scene: unknown) => void;
+  setPixelScene: (scene: unknown) => void;
   /** 重置（测试用） */
   _reset: () => void;
 }
@@ -137,7 +142,8 @@ export const useLibraryOps = create<LibraryOpsState>((set, get) => ({
   tab: DEFAULT_SETTINGS.defaultTab,
   settings: loadSettings(),
   snapshot: null,
-  scene: createSceneState(),
+  isoScene: null,
+  pixelScene: null,
   series: emptySeries(),
   selectedActorId: null,
   selectedZoneId: null,
@@ -197,7 +203,8 @@ export const useLibraryOps = create<LibraryOpsState>((set, get) => ({
     }
   },
 
-  setScene: (scene) => set({ scene }),
+  setIsoScene: (scene) => set({ isoScene: scene }),
+  setPixelScene: (scene) => set({ pixelScene: scene }),
 
   _reset: () =>
     set({
@@ -205,7 +212,8 @@ export const useLibraryOps = create<LibraryOpsState>((set, get) => ({
       tab: DEFAULT_SETTINGS.defaultTab,
       settings: { ...DEFAULT_SETTINGS },
       snapshot: null,
-      scene: createSceneState(),
+      isoScene: null,
+  pixelScene: null,
       series: emptySeries(),
       selectedActorId: null,
       selectedZoneId: null,

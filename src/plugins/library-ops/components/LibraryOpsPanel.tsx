@@ -23,7 +23,7 @@ import { CostPanel } from "./monitor/CostPanel";
 import { ErrorsPanel } from "./monitor/ErrorsPanel";
 import { TimelinePanel } from "./monitor/TimelinePanel";
 import { SettingsPanel } from "./monitor/SettingsPanel";
-import { EventList } from "./monitor/OverviewPanel";
+import { EventList } from "./monitor/EventList";
 import { Pill } from "./monitor/common";
 import "../styles/library-ops.css";
 
