@@ -2261,6 +2261,78 @@ async fn http_download(
     Ok(dest_path)
 }
 
+/// Downloads a potentially large file (runtime/模型包等) with an optional
+/// explicit timeout. timeout_secs = 0 / None disables the request timeout,
+/// which is required for multi-hundred-MB artifact downloads.
+#[tauri::command]
+async fn http_download_ext(
+    url: String,
+    dest_path: String,
+    timeout_secs: Option<u64>,
+    headers: Option<std::collections::HashMap<String, String>>,
+) -> Result<String, String> {
+    let mut builder = reqwest::Client::builder().user_agent("Codem/1.0 (zvec-grep runtime)");
+    if let Some(secs) = timeout_secs.filter(|s| *s > 0) {
+        builder = builder.timeout(std::time::Duration::from_secs(secs));
+    }
+    let client = builder.build().map_err(|e| e.to_string())?;
+
+    let mut req = client.get(&url);
+    if let Some(h) = headers {
+        for (k, v) in h {
+            req = req.header(k, v);
+        }
+    }
+
+    let resp = req.send().await.map_err(|e| e.to_string())?;
+    if !resp.status().is_success() {
+        return Err(format!("HTTP {}: {}", resp.status(), url));
+    }
+
+    let dest = std::path::Path::new(&dest_path);
+    if let Some(parent) = dest.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+
+    let bytes = resp.bytes().await.map_err(|e| e.to_string())?;
+    std::fs::write(&dest, &bytes).map_err(|e| e.to_string())?;
+    Ok(dest_path)
+}
+
+/// Extracts a ZIP archive into a destination directory (zip-slip safe).
+/// Used to unpack the bundled node / zvec-grep runtime and model artifacts.
+/// Returns the number of files written.
+#[tauri::command]
+async fn extract_zip(zip_path: String, dest_dir: String) -> Result<u32, String> {
+    let file = std::fs::File::open(&zip_path).map_err(|e| format!("open zip: {}", e))?;
+    let mut archive = zip::ZipArchive::new(file).map_err(|e| format!("parse zip: {}", e))?;
+    let dest = std::path::Path::new(&dest_dir);
+    let mut written = 0u32;
+
+    for i in 0..archive.len() {
+        let mut entry = archive.by_index(i).map_err(|e| format!("entry {}: {}", i, e))?;
+        // enclosed_name 拒绝绝对路径与 ..（zip-slip 防护）
+        let rel = match entry.enclosed_name() {
+            Some(p) => p.to_path_buf(),
+            None => continue,
+        };
+        let out_path = dest.join(rel);
+
+        if entry.is_dir() {
+            std::fs::create_dir_all(&out_path).map_err(|e| e.to_string())?;
+            continue;
+        }
+        if let Some(parent) = out_path.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        }
+        let mut out = std::fs::File::create(&out_path).map_err(|e| e.to_string())?;
+        std::io::copy(&mut entry, &mut out).map_err(|e| e.to_string())?;
+        written += 1;
+    }
+
+    Ok(written)
+}
+
 // ========== Main Entry ==========
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -2374,6 +2446,8 @@ path_exists,
             http_get,
             http_post,
             http_download,
+            http_download_ext,
+            extract_zip,
             create_pet_window,
             close_pet_window,
             resize_pet_window,
