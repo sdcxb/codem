@@ -2271,7 +2271,13 @@ async fn http_download_ext(
     timeout_secs: Option<u64>,
     headers: Option<std::collections::HashMap<String, String>>,
 ) -> Result<String, String> {
-    let mut builder = reqwest::Client::builder().user_agent("Codem/1.0 (zvec-grep runtime)");
+    // 下载类请求显式禁用系统/环境代理（no_proxy）：VPN 客户端常设 HTTP(S)_PROXY，
+    // reqwest 默认经该代理转发，会导致对 nodejs.org / npmmirror 等下载源被代理
+    // 上游异常返回 404（实测直连 200、走代理 404）。镜像本为国内直连，官方源直连
+    // 由 VPN 隧道承载——大文件下载一律直连更稳。
+    let mut builder = reqwest::Client::builder()
+        .user_agent("Codem/1.0 (zvec-grep runtime)")
+        .no_proxy();
     if let Some(secs) = timeout_secs.filter(|s| *s > 0) {
         builder = builder.timeout(std::time::Duration::from_secs(secs));
     }
