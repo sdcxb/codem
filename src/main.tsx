@@ -1,3 +1,6 @@
+// process shim — 必须最先导入：dev server 不像生产构建那样替换 process.*，
+// 未保护的模块（如 core/zvec-grep/types.ts）会在浏览器里 ReferenceError 白屏
+import "./stubs/process-polyfill";
 // Buffer polyfill — must be first import so globalThis.Buffer is set before any code uses it
 import { Buffer } from "./stubs/buffer-polyfill";
 (globalThis as any).Buffer = Buffer;

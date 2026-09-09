@@ -26,13 +26,20 @@ export const ZVEC_MIN_NODE_MAJOR = 22;
  *   models/…       potion-code-16m-v2 模型缓存（MIT，可再分发）
  * 开发/测试可用环境变量覆盖：ZVEC_GREP_PACK_URL。
  */
+/**
+ * 环境变量（浏览器里没有 `process`，用 typeof 保护；见 src/stubs/process-polyfill.ts）。
+ * 生产构建会把 `process.env.X` 替换成 `({}).X`，dev 下靠 shim 得到空对象，语义一致。
+ */
+const ENV: Record<string, string | undefined> =
+  typeof process !== "undefined" && process.env ? (process.env as Record<string, string | undefined>) : {};
+
 export const ZVEC_RELEASE_BASE =
-  process.env.ZVEC_GREP_RELEASE_BASE ||
+  ENV.ZVEC_GREP_RELEASE_BASE ||
   "https://github.com/sdcxb/codem/releases/download/v1.11.2";
 
 /** 运行时+模型合并包（一次下载/一次导入） */
 export const ZVEC_PACK_URL =
-  process.env.ZVEC_GREP_PACK_URL || `${ZVEC_RELEASE_BASE}/codem-zvec-win-x64.zip`;
+  ENV.ZVEC_GREP_PACK_URL || `${ZVEC_RELEASE_BASE}/codem-zvec-win-x64.zip`;
 
 /** nodejs 官方 dist（index.json + win-x64 zip） */
 export const NODE_OFFICIAL_DIST = "https://nodejs.org/dist";

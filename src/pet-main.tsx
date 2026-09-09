@@ -8,6 +8,8 @@
  * WebView2 进程内存从 ~150MB 降至 ~30-50MB。
  */
 
+// process shim — 必须最先导入（dev server 不像生产构建那样替换 process.*）
+import "./stubs/process-polyfill";
 // Buffer polyfill — must be first import so globalThis.Buffer is set before any code uses it
 import { Buffer } from "./stubs/buffer-polyfill";
 (globalThis as any).Buffer = Buffer;
