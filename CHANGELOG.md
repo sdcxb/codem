@@ -2,6 +2,51 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.11.2] - 2026-09-09 — zg 在线安装 Node 源根治 + 审计四坑修复（真 PPTX / 纠偏接线 / Whisper 入口 / 会话内搜索）+ 功能文档体系
+
+> 本版 = v1.11.1 覆盖版之后全部改动（13a6fb6 / 1644cca）：在线一键安装彻底不再访问
+> nodejs.org/npmmirror；四处审计发现的功能"占位/死代码"全部修复为真实可用。
+
+### 修复：zvec-grep 在线安装 Node 源（根治）
+
+- **便携 Node 并入 zg 单包**：`codem-zvec-win-x64.zip` 现内含隔离的便携 Node v24.19.0
+  （162MB，不注册 PATH、与系统已装 Node 零冲突）；打包脚本升级（build-zvec-runtime.ps1
+  六步：Node+裁剪 zg+模型 → 冒烟 → 单包）
+- **安装链改为只从 GitHub Release 取包**：安装流程先备包 → node 解析 = 系统 Node≥22 →
+  包内便携 Node → 网络兜底（旧包）；全程不再请求 nodejs.org / npmmirror（这些源在部分
+  用户网络被拦截返回 404 是此前一键安装失败的根因，且与本机实测 URL 200 不符 → 判定为
+  网络层差异，改从 GitHub 分发根治）；彻底离线可走「离线 zip」导入（同包含 Node）
+- 错误信息带每源失败明细与可执行指引（自行装 Node / 导入离线包）
+
+### 修复：审计四坑（宣传与可用性诚实化）
+
+- **PPT「导出 PPTX」占位 → 真 OOXML**：新增 `buildPptxFromImages`（jszip 构造合法
+  PPTX：ContentTypes/rels/presentation/master/layout/theme/逐页 slide+media，16:9 EMU，
+  图片 contain 居中、PNG/JPEG、IHDR 尺寸回退）；PPTEditor 导出逐页截图生成**可被
+  PowerPoint/WPS 打开的真实 .pptx**；OPC 结构完整性单测（模拟打开前包校验）5 例
+- **纠偏模型配置面板占位 → 真实接线**：面板读写 `codem-correction-model`
+  （provider/model/apiKey/baseUrl），保存即时生效；`fact_check` 工具每次调用实时决策：
+  有专属配置用它（key/baseUrl 逐级补齐），无配置回退主模型并**诚实标注**
+  「未配置专属纠偏模型，本次使用主模型核查」；移除从未注入的
+  `ctx.correctionProvider/correctionModel` 假默认契约；14 单测
+- **Whisper 语音输入无入口 → 双引擎闭环**：设置→语音新增「语音输入引擎」
+  （浏览器识别 / 云端 Whisper·OpenAI）；输入区麦克风按引擎分流——Whisper 走
+  MediaRecorder 录音 → `/audio/transcriptions`（whisper-1）转写回填；含引擎切换释放
+  麦克风、未配置引导、无 SpeechRecognition 降级提示；公开 `transcribeAudioFile` 并让
+  vision-proxy 委托同一实现；20 单测 + vision-proxy 102 回归
+- **会话内搜索死代码 → 激活可用**：会话头部新增「搜索当前会话」入口；结果点击平滑
+  滚动定位（处理 unified 合并气泡回溯）；修掉旧内联过滤在弹窗关闭后残留残缺视图的
+  隐藏 bug；tsc + ChatPanel 相关 14 用例
+
+### 附带
+
+- 清理 InputArea 重复 `isDragOver`/`zh` 声明（并发修复中发现的既有 bug）
+- **功能文档体系**：`项目功能说明介绍.md`（20 大域 152 亮点，宣传向，梦幻皮肤独立域
+  13 项细粒度）+ `项目功能树-全量.md`（18 路并行只读审计，**2779 项叶子功能点**，
+  每条含证据路径与宣传句，占位/未接线不收录）+ 分层检索索引（附录 A）
+
+- 全量 vitest 174 文件 / 4302 用例通过 + tsc 零错误 + cargo check 通过
+
 ## [1.11.1] - 2026-09-09 — zvec-grep（zg）语义检索集成 + archify 图表技能 + UI/体验修复打包
 
 > 本版 = v1.11.0 同版本覆盖包（标题栏/Git 分支/导航轨等体验修复）+ v1.11.0 之后新增
