@@ -2,6 +2,55 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.11.1] - 2026-09-09 — zvec-grep（zg）语义检索集成 + archify 图表技能 + UI/体验修复打包
+
+> 本版 = v1.11.0 同版本覆盖包（标题栏/Git 分支/导航轨等体验修复）+ v1.11.0 之后新增
+> （zg 语义检索集成 c200ec9→264ead0 + archify 技能与 Codem 架构图 f4b6470）。
+> 主安装包自 v1.11.0 首次包含这些代码：**必须升级本版**，插件市场的
+> 「本地语义检索」卡片 / Rust 新命令 / 内置 archify 技能才会出现在应用内。
+
+### UI / 体验修复（v1.11.0 覆盖包内容，随本版首次打包）
+
+- **标题栏可拖拽修复**：删除历史遗留的 `.titlebar-center`（absolute+no-drag 规则）与
+  nav-actions 容器 no-drag 空白区——标题栏自 logo 到右侧按钮整条可拖，按钮仍可点击
+- **标题栏 Logo**：`◆` 菱形占位替换为当前品牌（自 `icos/codem.ico` 提取 256px PNG）
+- **左下角用户头像**：读取 `codem-user.avatar`，设置保存后即时刷新（聊天头像同源）
+- **右侧栏磨砂玻璃**：面板改 88% 玻璃底 + 强模糊，z-index 提至 920 盖过消息导航轨
+- **消息导航轨（执行轨迹/历史滑轨）**：点位置改「全内容比例」铺轨（修一屏仅 1-2 点的
+  视口坐标 bug）；隐藏灰线、点统一紫色系；相邻点最小间距 10px 避让；悬停预览跟随节点
+- **Git 分支控件收敛**：标题栏 GitBranchSelector 并入右侧栏 Git 面板（GitInfoPanel 内嵌，
+  切换/新建分支后 onBranchChange 联动刷新）
+- **右侧栏「智能体」tab 删除**：与顶部「智能体与团队」按钮（AgentPanel 双维度）功能重复，
+  移除 AgentRoster 组件及样式
+
+### 新功能：zvec-grep（zg）语义检索（可选增强，不改架构）
+
+- **能力**：本地「语义向量 + BM25 + 精确 rg」统一检索；与内置 grep 双轨并行、模型按
+  工具描述智能路由（精确锚点→grep；措辞未知/语义/跨文件→zvec_grep_search）
+- **形态**：运行时按用户主动安装于 `<appData>/.codem/zvec-grep/`，不进安装包；经 MCP
+  stdio（`zg server --stdio` 自动起/复用 daemon）接入现有 MCPRegistry
+- **Rust 新命令**：`http_download_ext`（长超时大文件下载）+ `extract_zip`（zip-slip 安全解压）
+- **编排服务** `src/core/zvec-grep/`：node 检测/便携下载决策、在线一键安装（复用系统
+  node ≥22，否则下载 portable）、离线单包导入、卸载、索引重建与模型切换
+- **工具接入**：`syncZvecTools` 把 `zvec_grep_search` 注册进共享工具表（仿 codegraph）；
+  grep 描述双向路由提示；只读/并发/权限集合加白
+- **插件市场卡片**：插件管理→插件市场→「本地语义检索（可选增强）」——一键安装 /
+  导入离线包(.zip) / 为当前项目建索引 / Embedding 模型切换（potion-code-16m-v2 默认
+  ~33MB，MIT；可选 multilingual-e5-small 等）
+- **发布产物**：`scripts/build-zvec-runtime.ps1` → `codem-zvec-win-x64.zip`（单合并包
+  ~125MB = 裁剪运行时 + code-16m 模型；剔除 llama-cpp/onnx-web，保留 *.wasm 供
+  tree-sitter 解析），随 Release 提供；全离线端到端验证通过（解压→索引→中文语义查询）
+
+### 新功能：archify 图表技能（内置）
+
+- **内置技能** `src/core/skills/archify/`（v2.17，tt-a1i，MIT）：架构/工作流/时序/
+  数据流/生命周期图——JSON-IR 规格 → `validate`（showcase 9 项构图/可读性）→ `deliver`
+  渲染自包含交互 HTML（暗/亮主题、缩放、视图章节、导出）
+- **Codem 架构图 / 功能结构图**已用本技能产出（`artifacts/archify/html/`，9/9 校验、
+  0 错误，组件带源码证据 `evidence.verified`）
+
+- 全量 vitest 171 文件 / 4260 用例通过 + tsc 零错误 + cargo check 通过
+
 ## [1.11.0] - 2026-09-08 — 团队体系深合并（B）+ 智能体双维度面板 + 审计修复
 
 > 本版自 v1.10.0 后的全部改动：持续审计第 1 轮修复（dde3620）→ 子智能体/团队体系盘点（07dd260）

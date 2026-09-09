@@ -1,9 +1,9 @@
 # Codem 项目完整说明
 
 > **用途**：新对话快速理解项目全貌、架构、文件关联、当前状态。
-> 创建时间：2026-07-23 | 最后更新：2026-09-08 | 当前版本：v1.11.0（团队体系深合并：Squad→团队模板 + squad_dispatch 桥接 agent-teams 运行时，TaskCenter 单一「团队」Tab，对话旁入口收敛；「智能体与团队」双维度面板（成员行内个体动态预览）；持续审计修复；盘点矩阵 docs/AGENT-SYSTEMS-MATRIX.md，分阶段计划 docs/TEAM-CONSOLIDATION-PLAN.md）
+> 创建时间：2026-07-23 | 最后更新：2026-09-09 | 当前版本：v1.11.1（zvec-grep（zg）语义检索可选增强——市场卡片一键安装/离线单包导入 + MCP stdio 接入 + 与 grep 双轨路由；archify 图表技能内置并产出 Codem 架构图/功能结构图；v1.11.0 覆盖包 UI/体验修复首次打包：标题栏可拖拽/品牌 Logo/右侧栏磨砂/导航轨/头像）
 >
-> **版本历程概览**：v0.70 基础存储 → v0.80 轮次架构 → v0.87 Worktree/并行 → v0.88 桌面宠物 → v0.89 跨会话委派 → v0.90 P0-P4 全量功能 → v0.91 Coding 工作台 → v0.92 Codex 对标 → v0.93 Vision Proxy → v0.94 配置修复 → v0.95 CLI/API 视觉代理 → v0.96 UI 大改版 → v0.97 Agentic Loop 性能优化 → v0.98 多智能体协同 → v0.99 DSH 全量升级 → v1.0.0 插件系统架构 + UI/UX 标准化 → v1.1.0 DSH 对标整改 + 测试深化 → v1.1.1 UI 布局优化 + 插件条件渲染 + Bug 修复 → v1.2.0 Cordis 架构对齐 DSH + 安全加固 + 全量测试重构 → v1.3.0 Cordis 插件系统对标 DSH 全面整改 + Slot 消费闭环 + inject 依赖对齐 → v1.4.0 UI/UX 体验优化 11 项 Bug 修复 + 性能/CI-CD 面板切换化 + 梦幻皮肤一致性修复 → v1.4.1 插件管理初始化修复 + 技能市场性能优化 + 对话区域自适应 9 项 Bug 修复 → v1.4.2 10 项 Bug 修复 + Cordis 插件时序改进 + SlotBridge 降级机制增强 + 头像系统升级 → v1.5.0 Cordis "一切插件化" 工具发现机制 — ToolDef guidance + toolsProvider 自动注册 systemPrompt section + buildSystemPrompt 动态收集 + 31 个工具补充 guidance + skill-creator 技能安装增强 → v1.5.1 DSH 架构对标深度整改 + YAML 声明式插件加载 + LLM 回答重复根因修复 + llmEngine/mimoAuth 注册修复 + SlotBridge/SlotRenderer 对标 DSH 重写 → v1.5.2 大文件流式分页读取 + Agent Loop 无上限改造（对标 DSH） + 模型系统动态化 + Skills 市场增量搜索 → v1.5.3-v1.5.4 引导消息立即注入 + Markdown 文件路径超链接 + 任务完成标签稳定显示 + 技能市场优化（GitHub API 目录下载） → v1.5.5 Compaction 并发写入治根修复（对标 DSH compactSurfaceRegion） + Bash 缓存失效修复 → v1.6.0 SubagentRuntime 架构重构（对标 DSH） + 技能市场 Trees API 改造（移植 vercel-labs/skills 官方 CLI） + GitHub Token 链路修复 → v1.6.1 桌面宠物独立窗口改造（Cordis Provider 封装） + 文件输出标识增强（DSH 风格 FileMentions） + 设置版本号动态化 → v1.6.2 大富翁嵌入式游戏全量交付（Phase 1-10） + 三轮审计 Bug 修复 → v1.7.0 PPT 生成质量大大幅升 — oh-my-ppt 74 种风格 SKILL.md 集成 + Cordis SkillRegistry 渐进式加载 + 生成链路断点修复 → v1.8.0 知识图谱 React Flow 重构 + vision-proxy 统一 getConfiguredProvider + UI 字体变量批量规范化 → v1.9.0 上下文压缩过早触发治根修复（模型感知窗口 + 压力驱动 micro-compact）+ 通用协议 API 配置 + 工具执行正确性修复（read 去重范围键 / 审批内容修复） → v1.9.1 对话任务步数计算对标改造 + 文件树显示隐藏文件夹 + 输入框/安全按钮修复 + 数据库持久化加固 + PowerShell 命令修复 → v1.9.2 LLM 请求级超时加固 + 安全模式按钮颜色反馈 + 引导消息注入体验改造 + LLM 失败可见性（对标 DSH 结构化失败上报） → v1.9.3 安全模式完全访问修复（dbReady 时序 + 委派遵循用户模式 + write 拒绝误判）+ 工具调用配对修复（API 400）+ 输入框历史 wrap 折行修复 + 引导栏 UI 对标 wecode + 思考过程紫色样式恢复 → v1.9.4 dsh-desktop 全面对标稳健性审计修复（15 轮：崩溃标记/渲染崩溃兜底/运行时文件日志/持久化失败可见性/命令超时杀树/PowerShell 转义/统一脱敏与超时） → v1.9.5 对话步骤语义化与 update_plan 动态插入（对标 dsh todo）+ token 消耗审计修复（read 上限/工具 defer/结果裁剪/窗口预算/折叠摘要）+ 全面功能审计修复（PTY 树杀/超时补全/托盘退出 flush） → v1.9.6 打包版运行问题修复（CSP blob:/ipc: 修复嵌入 WASM 与 IPC 回退/YAML 清理/解析降噪/知识摘要降级/subagent 激活竞态） → v1.9.7 dsh 插件市场 + dsh-compat 懒解析 + 皮肤兼容契约 + 插件架构审计（同版本补丁：CodeGraph 接入/一键安装 + 技能市场/输入框/GitHub 修复） → v1.9.8 对话用量/缓存命中率统计真实化（对标 dsh-desktop，诚实精度显示）+ date 尾置稳定前缀优化 + 真实请求实证（96K 前缀稳态命中 99.947% 达 dsh 量级） → v1.9.9 EAC 对标（DSH-Desktop-EAC）：编辑并回退 fork / 节点导航升级与精选 pin / 输入框失焦折叠 / persona 人设卡 / side-session 临时会话 / @codem/agent-teams 团队编排 → v1.10.0 EAC 对标四项全落地（④宠物大肥鱼式状态卡 / ③computer-use 电脑操作 / ②wechat-bridge 微信 ClawBot 桥 / ①phone-link 手机连接）+ 四路审计修复（P0 computer-use PS 断链 / 宠物卡隐藏 / 插件禁用=关闭 / executor 失败落库等） → v1.11.0 团队体系深合并（Squad→团队模板 + agent-teams 运行时统一 / TaskCenter 单一「团队」Tab / 智能体·团队双维度面板 + 行内预览 / 持续审计修复）
+> **版本历程概览**：v0.70 基础存储 → v0.80 轮次架构 → v0.87 Worktree/并行 → v0.88 桌面宠物 → v0.89 跨会话委派 → v0.90 P0-P4 全量功能 → v0.91 Coding 工作台 → v0.92 Codex 对标 → v0.93 Vision Proxy → v0.94 配置修复 → v0.95 CLI/API 视觉代理 → v0.96 UI 大改版 → v0.97 Agentic Loop 性能优化 → v0.98 多智能体协同 → v0.99 DSH 全量升级 → v1.0.0 插件系统架构 + UI/UX 标准化 → v1.1.0 DSH 对标整改 + 测试深化 → v1.1.1 UI 布局优化 + 插件条件渲染 + Bug 修复 → v1.2.0 Cordis 架构对齐 DSH + 安全加固 + 全量测试重构 → v1.3.0 Cordis 插件系统对标 DSH 全面整改 + Slot 消费闭环 + inject 依赖对齐 → v1.4.0 UI/UX 体验优化 11 项 Bug 修复 + 性能/CI-CD 面板切换化 + 梦幻皮肤一致性修复 → v1.4.1 插件管理初始化修复 + 技能市场性能优化 + 对话区域自适应 9 项 Bug 修复 → v1.4.2 10 项 Bug 修复 + Cordis 插件时序改进 + SlotBridge 降级机制增强 + 头像系统升级 → v1.5.0 Cordis "一切插件化" 工具发现机制 — ToolDef guidance + toolsProvider 自动注册 systemPrompt section + buildSystemPrompt 动态收集 + 31 个工具补充 guidance + skill-creator 技能安装增强 → v1.5.1 DSH 架构对标深度整改 + YAML 声明式插件加载 + LLM 回答重复根因修复 + llmEngine/mimoAuth 注册修复 + SlotBridge/SlotRenderer 对标 DSH 重写 → v1.5.2 大文件流式分页读取 + Agent Loop 无上限改造（对标 DSH） + 模型系统动态化 + Skills 市场增量搜索 → v1.5.3-v1.5.4 引导消息立即注入 + Markdown 文件路径超链接 + 任务完成标签稳定显示 + 技能市场优化（GitHub API 目录下载） → v1.5.5 Compaction 并发写入治根修复（对标 DSH compactSurfaceRegion） + Bash 缓存失效修复 → v1.6.0 SubagentRuntime 架构重构（对标 DSH） + 技能市场 Trees API 改造（移植 vercel-labs/skills 官方 CLI） + GitHub Token 链路修复 → v1.6.1 桌面宠物独立窗口改造（Cordis Provider 封装） + 文件输出标识增强（DSH 风格 FileMentions） + 设置版本号动态化 → v1.6.2 大富翁嵌入式游戏全量交付（Phase 1-10） + 三轮审计 Bug 修复 → v1.7.0 PPT 生成质量大大幅升 — oh-my-ppt 74 种风格 SKILL.md 集成 + Cordis SkillRegistry 渐进式加载 + 生成链路断点修复 → v1.8.0 知识图谱 React Flow 重构 + vision-proxy 统一 getConfiguredProvider + UI 字体变量批量规范化 → v1.9.0 上下文压缩过早触发治根修复（模型感知窗口 + 压力驱动 micro-compact）+ 通用协议 API 配置 + 工具执行正确性修复（read 去重范围键 / 审批内容修复） → v1.9.1 对话任务步数计算对标改造 + 文件树显示隐藏文件夹 + 输入框/安全按钮修复 + 数据库持久化加固 + PowerShell 命令修复 → v1.9.2 LLM 请求级超时加固 + 安全模式按钮颜色反馈 + 引导消息注入体验改造 + LLM 失败可见性（对标 DSH 结构化失败上报） → v1.9.3 安全模式完全访问修复（dbReady 时序 + 委派遵循用户模式 + write 拒绝误判）+ 工具调用配对修复（API 400）+ 输入框历史 wrap 折行修复 + 引导栏 UI 对标 wecode + 思考过程紫色样式恢复 → v1.9.4 dsh-desktop 全面对标稳健性审计修复（15 轮：崩溃标记/渲染崩溃兜底/运行时文件日志/持久化失败可见性/命令超时杀树/PowerShell 转义/统一脱敏与超时） → v1.9.5 对话步骤语义化与 update_plan 动态插入（对标 dsh todo）+ token 消耗审计修复（read 上限/工具 defer/结果裁剪/窗口预算/折叠摘要）+ 全面功能审计修复（PTY 树杀/超时补全/托盘退出 flush） → v1.9.6 打包版运行问题修复（CSP blob:/ipc: 修复嵌入 WASM 与 IPC 回退/YAML 清理/解析降噪/知识摘要降级/subagent 激活竞态） → v1.9.7 dsh 插件市场 + dsh-compat 懒解析 + 皮肤兼容契约 + 插件架构审计（同版本补丁：CodeGraph 接入/一键安装 + 技能市场/输入框/GitHub 修复） → v1.9.8 对话用量/缓存命中率统计真实化（对标 dsh-desktop，诚实精度显示）+ date 尾置稳定前缀优化 + 真实请求实证（96K 前缀稳态命中 99.947% 达 dsh 量级） → v1.9.9 EAC 对标（DSH-Desktop-EAC）：编辑并回退 fork / 节点导航升级与精选 pin / 输入框失焦折叠 / persona 人设卡 / side-session 临时会话 / @codem/agent-teams 团队编排 → v1.10.0 EAC 对标四项全落地（④宠物大肥鱼式状态卡 / ③computer-use 电脑操作 / ②wechat-bridge 微信 ClawBot 桥 / ①phone-link 手机连接）+ 四路审计修复（P0 computer-use PS 断链 / 宠物卡隐藏 / 插件禁用=关闭 / executor 失败落库等） → v1.11.0 团队体系深合并（Squad→团队模板 + agent-teams 运行时统一 / TaskCenter 单一「团队」Tab / 智能体·团队双维度面板 + 行内预览 / 持续审计修复） → v1.11.1 zvec-grep（zg）语义检索可选增强（市场卡片一键安装/离线单包 + MCP stdio 接入 + 双轨路由）+ archify 图表技能内置（架构图/功能结构图产出）+ UI/体验修复打包（标题栏拖拽/Logo/磨砂/导航轨/头像）
 
 ---
 
@@ -1392,6 +1392,30 @@ npm run tauri build        # 构建 NSIS exe + MSI
 ---
 
 ## 八、版本历史
+
+### v1.11.1（2026-09-09）— zvec-grep（zg）语义检索集成 + archify 图表技能 + UI/体验修复打包
+
+> 主安装包自 v1.11.0 首次包含本版代码（c200ec9→f4b6470）——升级本版后插件市场
+> 「本地语义检索」卡片 / Rust 新命令 / 内置 archify 技能才会出现在应用内。
+
+- **zvec-grep（zg）语义检索（可选增强，不改架构）**：本地「语义向量+BM25+rg」统一检索；
+  运行时按用户主动安装于 `<appData>/.codem/zvec-grep/`（不进安装包），经 MCP stdio
+  （`zg server --stdio` 自动起/复用 daemon）接入现有 MCPRegistry；Rust 新增
+  `http_download_ext`/`extract_zip`；编排服务 `src/core/zvec-grep/`（node 检测与便携
+  下载、在线一键安装、离线单包导入、卸载、索引重建与模型切换）；`syncZvecTools` 注册
+  `zvec_grep_search`（仿 codegraph）与内置 grep 双轨并行（精确锚点→grep；措辞未知/语义/
+  跨文件→zg；混合→先 zg 后 grep 验证），只读/并发/权限集合加白；插件市场新增
+  「本地语义检索」卡片；发布单合并包 `codem-zvec-win-x64.zip`（~125MB 运行时+code-16m
+  模型，脚本 `scripts/build-zvec-runtime.ps1`，保留 *.wasm 供 tree-sitter）
+- **archify 图表技能（内置）**：`src/core/skills/archify/`（v2.17，tt-a1i，MIT）——
+  架构/工作流/时序/数据流/生命周期图 JSON-IR→自包含交互 HTML（showcase 9/9 校验）；
+  用其产出 Codem 架构图/功能结构图（`artifacts/archify/html/`，组件带源码证据）
+- **UI/体验修复打包（v1.11.0 覆盖包内容随本版首发）**：标题栏可拖拽修复（移除
+  titlebar-center/nav-actions no-drag 残留）与品牌 Logo（icos/codem.ico → PNG）；
+  左下角用户头像读取 codem-user.avatar 即时刷新；右侧栏磨砂玻璃（z 920 盖过导航轨）；
+  消息导航轨全内容比例铺轨 + 纯紫点 + 最小间距避让；Git 分支控件并入右侧栏 Git 面板；
+  右侧栏「智能体」tab 收敛（与顶部「智能体与团队」重复）
+- 测试：全量 171 文件 / 4260 用例通过 + tsc 零错误 + cargo check 通过
 
 ### v1.11.0（2026-09-08）— 团队体系深合并 + 智能体双维度面板 + 审计修复
 
