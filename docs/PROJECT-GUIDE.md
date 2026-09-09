@@ -696,7 +696,15 @@ mimo-gui/
 │
 ├── docs/                         # 文档目录（详见第五节）
 ├── scripts/                      # 脚本
-│   └── verify-package-invariants.ts # 包不变量检查（v1.1.0 新增）
+│   ├── verify-package-invariants.ts # 包不变量检查（v1.1.0 新增）
+│   ├── sync-library-ops-assets.mjs  # 图书馆插件美术资源同步（上游 → public/，PNG→WebP）
+│   ├── build-library-ops-scene.mjs  # 自有场景图接入（尺寸归一 + 自动/校验可行走掩码）
+│   ├── build-library-ops-sprites.mjs# 自有角色精灵表接入（去背景/切格/基线对齐/WebP/清单）
+│   ├── export-library-ops-layout-guide.mjs # 导出布局参考图（喂绘图模型做 img2img）
+│   └── lib/library-ops-asset-utils.mjs # 上述脚本的纯函数（有单测）
+├── tools/                        # 开发工具（不参与打包）
+│   ├── preview/                  # 插件视觉预览页 + DOM 结构审计脚本
+│   └── library-ops/              # 布局参考图（layout-guide.png / layout-guide-solid.png）
 ├── .wecode-ref/                  # ⚠ 对标参考项目（微博 wecode 客户端），非本项目代码，仅供对标分析参考
 ├── public/                       # 静态资源
 │   ├── models/                   # ONNX 模型（Xenova/all-MiniLM-L6-v2）
@@ -954,6 +962,7 @@ Rust 后端 (lib.rs):
 | **LIBRARY-OPS-PLUGIN.md** | 插件设计 | 图书馆运营监控插件（需求对照 + 参考项目分析 + 架构 + 集成点 + 测试矩阵） | ✅ 最新 |
 | **LIBRARY-OPS-AUDIT.md** | 审计报告 | 图书馆运营监控插件全面审计（四轮方法 + 28 项问题与修复 + 验证证据 + 对标结论） | ✅ 最新 |
 | **ASSET-LICENSES.md** | 许可声明 | 第三方美术资源许可（来源 / 义务 / 商用替代方案 / 刻意排除项） | ✅ 最新 |
+| **ASSET-PROMPT-PACK.md** | 制作指南 | 美术素材生成提示词包（实测规格 + 场景/角色/掩码提示词 + 接入脚本 + 验收清单） | ✅ 最新 |
 | **WORKTREE-INPUTBAR-PLAN.md** | 计划文档 | InputArea 控制栏重构 + Git Worktree 集成计划 | ✅ 已实现 |
 | **GIT-WORKTREE-GUIDE.md** | 用户指南 | Git Worktree 使用指南 | ✅ 最新 |
 | **DEFERRED-WORKTREE-ANALYSIS.md** | 分析文档 | Worktree 早期审计（断链分析），已被 AUDIT 替代 | 📦 归档 |

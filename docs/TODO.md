@@ -60,6 +60,17 @@
 
 ## 待开发
 
+> **美术素材自有化（进行中，见 docs/ASSET-PROMPT-PACK.md）**：当前像素美术来自第三方（**仅限非商业**）。
+> 已备好全套工具链与提示词包，用于生成**自有版权**素材替换：
+> `docs/ASSET-PROMPT-PACK.md`（实测规格 + 场景/家具/掩码/角色/精灵表提示词 + 负面词 + 验收清单）
+> + `tools/library-ops/layout-guide.png`（布局参考图，可作 img2img/ControlNet 底图）
+> + `scripts/build-library-ops-scene.mjs`（场景接入：尺寸归一 + 自动生成/校验可行走掩码，含连通性检查）
+> + `scripts/build-library-ops-sprites.mjs`（角色精灵表接入：色键去背景 → 切格 → **alpha 包围盒裁剪 + 统一脚底基线** → WebP + 清单）
+> + `scripts/lib/library-ops-asset-utils.mjs`（纯函数，12 个门禁用例覆盖）。
+> 接入后**无需改代码**即可生效（只需把动作登记到 `data/pixel-art.ts` 的 `SPRITE_SHEETS`）。
+> 待办：①生成图书馆场景底图并替换 ②生成 6–10 个岗位角色立绘与 6 个基础动作精灵表 ③替换后清理
+> `public/library-ops/` 的第三方资源与 `SOURCE.md`/`THIRD_PARTY_NOTICES.md`/`ASSET-LICENSES.md` 的第三方条目。
+
 ### v1.3.0 已发布（2026-08-19）— Cordis 插件系统对标 DSH 全面整改 + Slot 消费闭环 + inject 依赖对齐
 
 #### SlotBridge 消费闭环（阶段 2）

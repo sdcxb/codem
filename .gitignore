@@ -88,6 +88,7 @@ notebook-section.txt
 !docs/LIBRARY-OPS-PLUGIN.md
 !docs/LIBRARY-OPS-AUDIT.md
 !docs/ASSET-LICENSES.md
+!docs/ASSET-PROMPT-PACK.md
 
 # 视觉预览 / DOM 审计产物（tools/preview 的源码保留，产物忽略）
 .preview-shot/
