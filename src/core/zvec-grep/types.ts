@@ -25,7 +25,7 @@ export const ZVEC_MIN_NODE_MAJOR = 22;
  */
 export const ZVEC_RELEASE_BASE =
   process.env.ZVEC_GREP_RELEASE_BASE ||
-  "https://github.com/sdcxb/codem/releases/download/v1.12.0";
+  "https://github.com/sdcxb/codem/releases/download/v1.11.0";
 
 /** 裁剪后的 zg 运行时包（含 dist + 精简 node_modules） */
 export const ZVEC_RUNTIME_ZIP_URL =
