@@ -1786,7 +1786,7 @@ Phase 10（G20-G36 开局设置 + 机制补全 + 体验补全）：
 - **形态**：运行时按用户主动安装于 `<appData>/.codem/zvec-grep/`（不进安装包），经 MCP stdio（`zg server --stdio` 自动起/复用 daemon）接入现有 MCPRegistry；`zvec_grep_search` 由 `syncZvecTools` 注册进共享工具表（仿 codegraph），与内置 `grep` 双轨并行、模型按工具描述智能路由（精确锚点→grep；措辞未知/语义/跨文件→zg；混合→先 zg 后 grep 验证）。
 - **入口**：插件管理 → 插件市场 →「本地语义检索（可选增强）」卡片：一键在线安装 / 导入离线 .zip / 为当前项目建索引 / Embedding 模型切换 / 卸载。
 - **Rust 新增 command**：`http_download_ext`（长超时下载）、`extract_zip`（zip-slip 安全解压）。
-- **发布产物**：`scripts\build-zvec-runtime.ps1` → `codem-zvec-runtime-win-x64.zip`（~86MB，剔除 llama-cpp/onnx-web/跨平台二进制）+ `codem-zvec-models-potion-code16.zip`（~29MB，MIT 模型）；随 Release 上传供市场卡片下载。
+- **发布产物**：`scripts\build-zvec-runtime.ps1` → `codem-zvec-win-x64.zip`（单合并包 ~125MB = 裁剪运行时 `runtime/zg/` + 模型 `models/`，MIT 可再分发；裁剪剔除 llama-cpp/onnx-web，保留 *.wasm 供 tree-sitter 解析）；随 Release 上传供市场卡片一次下载/导入。
 - 详细集成说明见本地 `docs/ZVEC-GREP.md`（按 .gitignore 约定不入公开仓库）。
 
 

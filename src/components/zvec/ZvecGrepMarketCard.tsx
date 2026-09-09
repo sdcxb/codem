@@ -179,7 +179,7 @@ export function ZvecGrepMarketCard() {
             {zh ? "导入离线包 (.zip)…" : "Import offline .zip…"}
           </button>
           <span style={{ fontSize: "var(--fs-2xs,10px)", color: "var(--text-muted)", flex: 1 }}>
-            {zh ? "在线安装约 200MB（node+zg+模型），自动检测系统 node" : "~200MB online (node+zg+model); reuses system node when present"}
+            {zh ? "单包含运行时+模型（约 125MB）；复用系统 node 则无需下载 node" : "One package: runtime + model (~125MB); reuses system node when present"}
           </span>
         </div>
       )}

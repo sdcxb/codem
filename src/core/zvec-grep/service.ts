@@ -20,8 +20,7 @@ import {
 import { exists, executeCommand, listDirectory, deletePath, readFile, writeFile } from "../file-api";
 import {
   ZVEC_MCP_SERVER,
-  ZVEC_RUNTIME_ZIP_URL,
-  ZVEC_MODEL_PACK_URL,
+  ZVEC_PACK_URL,
   NODE_INDEX_URL,
   ZVEC_MIN_NODE_MAJOR,
   ZVEC_MODELS,
@@ -262,27 +261,15 @@ export async function installOnline(onPhase: PhaseCb = () => {}): Promise<ZvecRu
 
   const zgCli = zgCliPathOf(paths.zgDir);
   if (!(await exists(zgCli).catch(() => false))) {
-    onPhase("downloading-runtime", "下载 zvec-grep 运行时（约 150MB）...");
-    const zipPath = `${paths.baseDir}/.tmp-zg.zip`;
-    await downloadFileExt(ZVEC_RUNTIME_ZIP_URL, zipPath, 1800);
-    onPhase("extracting-runtime", "解压运行时...");
-    await extractZip(zipPath, paths.zgDir);
+    // 合并包一次下载：内含 runtime/zg + models（解压到运行时根目录）
+    onPhase("downloading-runtime", "下载 zvec-grep 运行时+模型包（约 115MB）...");
+    const zipPath = `${paths.baseDir}/.tmp-zvec.zip`;
+    await downloadFileExt(ZVEC_PACK_URL, zipPath, 1800);
+    onPhase("extracting-runtime", "解压运行时与模型...");
+    await extractZip(zipPath, paths.baseDir);
   }
   if (!(await exists(zgCli).catch(() => false))) {
     throw new Error("运行时包不完整（缺少 dist/cli/index.js）。请检查下载源。");
-  }
-
-  // 模型 best-effort（失败不阻塞：zg 首次建索引时会自行下载）
-  try {
-    const present = await exists(`${paths.modelsDir}/model2vec/minishlab--potion-code-16M-v2`);
-    if (!present) {
-      onPhase("downloading-model", "下载默认模型 potion-code-16m-v2（33MB）...");
-      const zipPath = `${paths.baseDir}/.tmp-models.zip`;
-      await downloadFileExt(ZVEC_MODEL_PACK_URL, zipPath, 1200);
-      await extractZip(zipPath, paths.modelsDir);
-    }
-  } catch (e) {
-    console.warn("[zvec-grep] 模型预置失败（建索引时 zg 会自动下载）:", e);
   }
 
   await writeMeta(paths, {
@@ -300,8 +287,8 @@ export async function installOnline(onPhase: PhaseCb = () => {}): Promise<ZvecRu
 }
 
 /**
- * 离线 zip 导入：包内含 runtime/node、runtime/zg、models/ 与 install-meta.json
- * （发布脚本 codem-zvec-runtime-*.zip 结构）。zip 整体解压到运行时根目录。
+ * 离线 zip 导入：合并包（codem-zvec-win-x64.zip）一次解压到运行时根目录，
+ * 结构 = runtime/zg/… + models/…（node 可复用系统或随包/另行下载 portable）。
  */
 export async function installFromZip(zipFilePath: string, onPhase: PhaseCb = () => {}): Promise<ZvecRuntimeStatus> {
   const base = await getAppDataBaseDir();

@@ -21,20 +21,18 @@ export const ZVEC_MIN_NODE_MAJOR = 22;
 
 /**
  * 发布物 URL（在线编排下载源；未来随 release 产出对应 asset）。
- * 开发/测试可用环境变量覆盖：ZVEC_GREP_RUNTIME_URL / ZVEC_GREP_MODEL_PACK_URL。
+ * 单包结构（codem-zvec-win-x64.zip）：解压到运行时根目录后即得
+ *   runtime/zg/…   dist + 裁剪 node_modules
+ *   models/…       potion-code-16m-v2 模型缓存（MIT，可再分发）
+ * 开发/测试可用环境变量覆盖：ZVEC_GREP_PACK_URL。
  */
 export const ZVEC_RELEASE_BASE =
   process.env.ZVEC_GREP_RELEASE_BASE ||
   "https://github.com/sdcxb/codem/releases/download/v1.11.0";
 
-/** 裁剪后的 zg 运行时包（含 dist + 精简 node_modules） */
-export const ZVEC_RUNTIME_ZIP_URL =
-  process.env.ZVEC_GREP_RUNTIME_URL || `${ZVEC_RELEASE_BASE}/codem-zvec-runtime-win-x64.zip`;
-
-/** 模型缓存预置包（HF 目录结构，来自发布脚本打包） */
-export const ZVEC_MODEL_PACK_URL =
-  process.env.ZVEC_GREP_MODEL_PACK_URL ||
-  `${ZVEC_RELEASE_BASE}/codem-zvec-models-potion-code16.zip`;
+/** 运行时+模型合并包（一次下载/一次导入） */
+export const ZVEC_PACK_URL =
+  process.env.ZVEC_GREP_PACK_URL || `${ZVEC_RELEASE_BASE}/codem-zvec-win-x64.zip`;
 
 /** nodejs.org 版本索引（解析最新 LTS 的下载地址） */
 export const NODE_INDEX_URL = "https://nodejs.org/dist/index.json";
