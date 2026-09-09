@@ -195,6 +195,9 @@ describe("LO-PIXEL 像素场景数据", () => {
     }
     // 未知动作也能回退
     expect(resolveSprite("cat", "lie_flat").sheet).toBeTruthy();
+    // 自制素材常见情况：只画了站立帧 → 任意动作都回退到站立帧（渲染层再用 CSS 补动效）
+    expect(resolveSprite("cat", "read").action).not.toBe("read");
+    expect(resolveSprite("cat", "read").sheet).toBeTruthy();
   });
 
   it("LO-PIXEL-6: 场景推进 —— 入场行走 → 到岗 → 离场淡出", () => {

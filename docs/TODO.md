@@ -60,16 +60,18 @@
 
 ## 待开发
 
-> **美术素材自有化（进行中，见 docs/ASSET-PROMPT-PACK.md）**：当前像素美术来自第三方（**仅限非商业**）。
-> 已备好全套工具链与提示词包，用于生成**自有版权**素材替换：
-> `docs/ASSET-PROMPT-PACK.md`（实测规格 + 场景/家具/掩码/角色/精灵表提示词 + 负面词 + 验收清单）
-> + `tools/library-ops/layout-guide.png`（布局参考图，可作 img2img/ControlNet 底图）
-> + `scripts/build-library-ops-scene.mjs`（场景接入：尺寸归一 + 自动生成/校验可行走掩码，含连通性检查）
-> + `scripts/build-library-ops-sprites.mjs`（角色精灵表接入：色键去背景 → 切格 → **alpha 包围盒裁剪 + 统一脚底基线** → WebP + 清单）
-> + `scripts/lib/library-ops-asset-utils.mjs`（纯函数，12 个门禁用例覆盖）。
-> 接入后**无需改代码**即可生效（只需把动作登记到 `data/pixel-art.ts` 的 `SPRITE_SHEETS`）。
-> 待办：①生成图书馆场景底图并替换 ②生成 6–10 个岗位角色立绘与 6 个基础动作精灵表 ③替换后清理
-> `public/library-ops/` 的第三方资源与 `SOURCE.md`/`THIRD_PARTY_NOTICES.md`/`ASSET-LICENSES.md` 的第三方条目。
+> **美术素材自有化（进行中）**：当前像素美术来自第三方（**仅限非商业**），已备好「照着做就行」的整套材料：
+> - **画图用**：[`docs/art-prompts/`](art-prompts/00-怎么用.md) —— 17 个单提示词文件（1 场景 + 10 岗位角色 + 5 动作），
+>   全选复制粘贴即可；生成图丢进 `C:\mimo-gui\.art-inbox\`，剩下的切图/去背景/对齐/接入由我处理
+> - **技术参考**：[`docs/ASSET-PROMPT-PACK.md`](ASSET-PROMPT-PACK.md)（实测规格 + 负面词 + 迭代技巧 + 验收清单）
+> - **布局参考图**：`tools/library-ops/layout-guide.png`（可作 img2img / ControlNet 底图，保证布局对齐）
+> - **接入脚本**：`build-library-ops-scene.mjs`（尺寸归一 + 自动/校验掩码）、
+>   `build-library-ops-sprites.mjs`（色键去背景 → 切格 → alpha 包围盒裁剪 + 统一脚底基线 → WebP + 清单）
+> - **兜底动效**：只画了站立帧的角色，渲染层会用 CSS 程序化补出走路/工作/读书/睡觉/出错动效
+>   （`data-fallback` + 关键帧），因此**不画动作表也能用**
+>
+> 待办：①画图书馆场景底图并替换 ②画 10 个岗位角色立绘 ③（可选）补 5 个动作表
+> ④替换后清理 `public/library-ops/` 第三方资源与 `SOURCE.md`/`THIRD_PARTY_NOTICES.md`/`ASSET-LICENSES.md` 的第三方条目
 
 ### v1.3.0 已发布（2026-08-19）— Cordis 插件系统对标 DSH 全面整改 + Slot 消费闭环 + inject 依赖对齐
 

@@ -22,6 +22,7 @@ import {
   PIXEL_ROOMS,
   SCENE_CREDITS,
   ZONE_TO_ROOM,
+  resolveSprite,
   roomOfZone,
 } from "../../data/pixel-art";
 import {
@@ -260,11 +261,18 @@ export function PixelLibraryScene({
 
         const sprite = el.querySelector<HTMLElement>(".lo-sprite");
         if (sprite) {
-          const sheet = sheetOf(a);
+          const resolved = resolveSprite(a.variant, a.action);
           const frame = frameAt(a, time);
-          const off = frameOffset(sheet, frame);
-          const scale = SPRITE_W / sheet.frameWidth;
+          const off = frameOffset(resolved.sheet, frame);
+          const scale = SPRITE_W / resolved.sheet.frameWidth;
           sprite.style.backgroundPosition = `${-off.x * scale}px ${-off.y * scale}px`;
+          // 该动作没有专属精灵表（回退到了站立帧）时，用 CSS 程序化补一个动效，
+          // 让「只画了一张站立图」的自制素材也能活起来
+          const fallback = resolved.action !== a.action ? a.action : "";
+          if ((sprite.dataset.fallback ?? "") !== fallback) {
+            if (fallback) sprite.dataset.fallback = fallback;
+            else delete sprite.dataset.fallback;
+          }
         }
       }
       if (time - lastStatsAt > 400) {
@@ -415,16 +423,18 @@ export function PixelLibraryScene({
                     <span className="lo-actor-bubble__text">{truncate(a.bubble, 28)}</span>
                   </div>
                 ) : null}
-                <div
-                  className="lo-sprite"
-                  style={{
-                    width: SPRITE_W,
-                    height: SPRITE_H,
-                    backgroundImage: url ? `url(${url})` : undefined,
-                    backgroundSize: `${bgW}px ${bgH}px`,
-                    backgroundRepeat: "no-repeat",
-                  }}
-                />
+                <div className="lo-sprite-wrap">
+                  <div
+                    className="lo-sprite"
+                    style={{
+                      width: SPRITE_W,
+                      height: SPRITE_H,
+                      backgroundImage: url ? `url(${url})` : undefined,
+                      backgroundSize: `${bgW}px ${bgH}px`,
+                      backgroundRepeat: "no-repeat",
+                    }}
+                  />
+                </div>
                 {showNameplates && (
                   <div className="lo-actor-name">
                     <span className="lo-actor-name__dot" data-severity={ACTIVITY_META[actor.activity].severity} />

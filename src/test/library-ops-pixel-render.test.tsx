@@ -190,8 +190,27 @@ describe("LO-PIXEL-RENDER 像素场景渲染", () => {
     await act(async () => {
       await new Promise((r) => setTimeout(r, 60));
     });
-    // rAF 同步了动作与帧
+    // rAF 同步了动作
     expect(wrap.getAttribute("data-action")).toBe(scene.actors["p2"].action);
+    utils.unmount();
+  });
+
+  it("LO-PIXEL-RENDER-7: 缺少动作精灵表时用 CSS 程序化动效兜底（data-fallback）", async () => {
+    const scene = settled();
+    const utils = render(<PixelLibraryScene snapshot={snapshot(NOW + 100_000)} initialScene={scene} />);
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 60));
+    });
+    const sprites = [...utils.container.querySelectorAll<HTMLElement>(".lo-sprite")];
+    expect(sprites.length).toBe(ACTORS.length);
+    const withFallback = sprites.filter((s) => s.dataset.fallback);
+    // 夹具里「检索索引」角色落在 catalog-room（cat 变体），cat 没有 read 精灵表 → 回退
+    expect(withFallback.length, "应存在回退帧（cat 无 read）").toBeGreaterThan(0);
+    expect(withFallback.map((s) => s.dataset.fallback)).toContain("read");
+    // 有专属精灵表的动作不应带 fallback
+    expect(sprites.some((s) => !s.dataset.fallback)).toBe(true);
+    // 朝向镜像在外层，动效在内层（互不覆盖）
+    expect(utils.container.querySelector(".lo-sprite-wrap")).toBeTruthy();
     utils.unmount();
   });
 });

@@ -763,12 +763,19 @@
   pointer-events: none;
 }
 .lo-pixel-actors { position: absolute; inset: 0; }
-.lo-sprite {
+/* 朝向（镜像）放在外层，动效放在内层，二者互不干扰 */
+.lo-sprite-wrap {
   position: absolute;
   left: 0;
   bottom: 0;
   transform: translateX(-50%) scaleX(var(--lo-facing, 1));
   transform-origin: 50% 100%;
+  pointer-events: none;
+}
+.lo-sprite {
+  position: absolute;
+  left: 0;
+  bottom: 0;
   image-rendering: pixelated;
   filter: drop-shadow(0 4px 3px color-mix(in srgb, var(--bg-primary) 55%, transparent));
   transition: filter 0.2s ease;
@@ -778,6 +785,42 @@
 }
 .lo-pixel-actor .lo-actor-bubble { bottom: 116px; }
 .lo-pixel-actor .lo-actor-name { top: 10px; }
+
+/* 自制素材常见情况：只画了站立帧 → 用 CSS 程序化补出「走路/工作/读书/睡觉/出错」动效 */
+.lo-sprite[data-fallback="walk"] { animation: lo-px-walk 0.52s ease-in-out infinite; }
+.lo-sprite[data-fallback="work"] { animation: lo-px-work 0.7s ease-in-out infinite; }
+.lo-sprite[data-fallback="read"] { animation: lo-px-read 2.4s ease-in-out infinite; }
+.lo-sprite[data-fallback="sleep"] { animation: lo-px-sleep 3.6s ease-in-out infinite; }
+.lo-sprite[data-fallback="error"] { animation: lo-px-shake 0.34s ease-in-out infinite; }
+.lo-sprite[data-fallback="idea"] { animation: lo-px-idea 1.6s ease-in-out infinite; }
+.lo-sprite[data-fallback="coffee"] { animation: lo-px-idea 1.2s ease-in-out infinite; }
+
+@keyframes lo-px-walk {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  25% { transform: translateY(-3px) rotate(-2deg); }
+  75% { transform: translateY(-3px) rotate(2deg); }
+}
+@keyframes lo-px-work {
+  0%, 100% { transform: scaleY(1); }
+  50% { transform: scaleY(0.97) translateY(1px); }
+}
+@keyframes lo-px-read {
+  0%, 100% { transform: rotate(0deg); }
+  50% { transform: rotate(2deg) translateY(1px); }
+}
+@keyframes lo-px-sleep {
+  0%, 100% { transform: scaleY(1); }
+  50% { transform: scaleY(0.975); }
+}
+@keyframes lo-px-shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-2px); }
+  75% { transform: translateX(2px); }
+}
+@keyframes lo-px-idea {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
 /* ===== 角色 ===== */
 .lo-actor-wrap {
   position: absolute;

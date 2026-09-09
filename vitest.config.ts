@@ -8,6 +8,11 @@ export default defineConfig({
     globals: true,
     setupFiles: ["./src/test/setup.ts", "./src/test/setup-dom.ts"],
     include: ["src/test/**/*.test.ts", "src/test/**/*.test.tsx"],
+    // 并发上限：默认按逻辑核数（本机 32）铺满 worker，每个 worker 都要初始化
+    // sql.js / transformers 等重依赖，实测会偶发 "Worker exited unexpectedly"
+    // （0 failed 但 exit≠0）。压到 8 后连续复跑稳定。
+    maxWorkers: 8,
+    minWorkers: 2,
     // P0-4: Coverage configuration with per-file thresholds
     coverage: {
       provider: "v8",

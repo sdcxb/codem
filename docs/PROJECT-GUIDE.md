@@ -963,6 +963,7 @@ Rust 后端 (lib.rs):
 | **LIBRARY-OPS-AUDIT.md** | 审计报告 | 图书馆运营监控插件全面审计（四轮方法 + 28 项问题与修复 + 验证证据 + 对标结论） | ✅ 最新 |
 | **ASSET-LICENSES.md** | 许可声明 | 第三方美术资源许可（来源 / 义务 / 商用替代方案 / 刻意排除项） | ✅ 最新 |
 | **ASSET-PROMPT-PACK.md** | 制作指南 | 美术素材生成提示词包（实测规格 + 场景/角色/掩码提示词 + 接入脚本 + 验收清单） | ✅ 最新 |
+| **art-prompts/** | 提示词（易用版） | 一个提示词一个 md，直接复制粘贴；生成图丢进 `.art-inbox/` 即可 | ✅ 最新 |
 | **WORKTREE-INPUTBAR-PLAN.md** | 计划文档 | InputArea 控制栏重构 + Git Worktree 集成计划 | ✅ 已实现 |
 | **GIT-WORKTREE-GUIDE.md** | 用户指南 | Git Worktree 使用指南 | ✅ 最新 |
 | **DEFERRED-WORKTREE-ANALYSIS.md** | 分析文档 | Worktree 早期审计（断链分析），已被 AUDIT 替代 | 📦 归档 |
