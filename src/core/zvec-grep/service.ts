@@ -303,20 +303,12 @@ export async function installOnline(onPhase: PhaseCb = () => {}): Promise<ZvecRu
   onPhase("checking-node", "检查 Node 环境...");
   await ensureRuntimeDirs(paths);
 
-  const sysNode = await detectSystemNode();
-  const useSystem =
-    sysNode.ok && sysNode.version !== null && sysNode.version[0] >= ZVEC_MIN_NODE_MAJOR;
-  let nodeExe: string;
-  if (useSystem) {
-    nodeExe = "node";
-  } else {
-    nodeExe = await downloadNodeIfNeeded(paths, onPhase);
-  }
-
   const zgCli = zgCliPathOf(paths.zgDir);
   if (!(await exists(zgCli).catch(() => false))) {
-    // 合并包一次下载：内含 runtime/zg + models（解压到运行时根目录）
-    onPhase("downloading-runtime", "下载 zvec-grep 运行时+模型包（约 115MB）...");
+    // 合并包一次下载：内含 runtime/node + runtime/zg + models（解压到运行时根目录）。
+    // 优先从 GitHub Release 取包（走用户可达网络），避免 nodejs.org/npmmirror 等
+    // 在部分网络环境被拦截/404 的问题。
+    onPhase("downloading-runtime", "下载 zvec-grep 运行时包（内含 Node + 模型，约 160MB）...");
     const zipPath = `${paths.baseDir}/.tmp-zvec.zip`;
     await downloadFileExt(ZVEC_PACK_URL, zipPath, 1800);
     onPhase("extracting-runtime", "解压运行时与模型...");
@@ -324,6 +316,20 @@ export async function installOnline(onPhase: PhaseCb = () => {}): Promise<ZvecRu
   }
   if (!(await exists(zgCli).catch(() => false))) {
     throw new Error("运行时包不完整（缺少 dist/cli/index.js）。请检查下载源。");
+  }
+
+  // node 解析（node 源问题已在根上解除：便携 node 随 zg 单包发布，安装只从
+  // GitHub Release 取包；有系统 node 优先复用；仅旧包+无系统 node 才走网络兜底）：
+  // ①系统 node ≥22 → 直接用；②zg 包内便携 node → 用包内；③网络下载兜底。
+  const sysNode = await detectSystemNode();
+  const useSystem =
+    sysNode.ok && sysNode.version !== null && sysNode.version[0] >= ZVEC_MIN_NODE_MAJOR;
+  let nodeExe: string;
+  if (useSystem) {
+    nodeExe = "node";
+  } else {
+    nodeExe =
+      (await findPortableNode(paths.nodeDir)) || (await downloadNodeIfNeeded(paths, onPhase));
   }
 
   await writeMeta(paths, {
@@ -358,6 +364,7 @@ export async function installFromZip(zipFilePath: string, onPhase: PhaseCb = () 
   const sysNode = await detectSystemNode();
   const useSystem =
     sysNode.ok && sysNode.version !== null && sysNode.version[0] >= ZVEC_MIN_NODE_MAJOR;
+  // node 解析：系统 node → zg 包内便携 node → 网络兜底
   const nodeExe = useSystem ? "node" : portable || (await downloadNodeIfNeeded(paths, onPhase));
 
   const meta = await readMeta(paths);
