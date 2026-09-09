@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Codem 桌面 AI 客户端 — 运行时架构",
+    "locale": "zh-CN",
+    "output": "codem-architecture.html",
+    "quality_profile": "showcase",
+    "repository": { "url": "https://github.com/sdcxb/codem", "provider": "github", "revision": "264ead029280343360ab3dc3af54e94b302a4254" },
+    "views": [
+      {
+        "id": "primary-path",
+        "label": "主链路：提问 → 执行 → 回复",
+        "focus": ["webview-ui", "app-store", "engine", "llm-api", "tool-registry", "workspace"],
+        "note": "用户提问经 UI/Store 进入 LLM 引擎，引擎调用工具读写工作区，流式返回。"
+      },
+      {
+        "id": "extensions",
+        "label": "扩展与外部能力",
+        "focus": ["plugin-skill", "mcp-client", "zvec-runtime", "llm-api"],
+        "note": "插件/技能与 MCP 服务器承载可扩展能力；zvec-grep 为用户可选安装的语义检索运行时。"
+      }
+    ]
+  },
+  "components": [
+    { "id": "webview-ui", "type": "frontend", "label": "Codem 桌面 UI", "sublabel": "React+TS · 对话/侧栏", "pos": [60, 360], "size": [170, 64], "sources": [{ "path": "src/App.tsx", "label": "应用入口" }, { "path": "src/components/ChatPanel.tsx", "label": "对话主面板" }] },
+    { "id": "app-store", "type": "frontend", "label": "全局状态 Store", "sublabel": "会话/消息/项目状态", "pos": [330, 360], "size": [150, 64], "sources": [{ "path": "src/store.ts", "label": "前端 store" }] },
+    { "id": "engine", "type": "backend", "label": "LLM 引擎", "sublabel": "agentic-loop · 流式执行", "pos": [580, 360], "size": [160, 64], "sources": [{ "path": "src/core/llm/index.ts", "label": "引擎入口" }, { "path": "src/core/llm/agentic-loop.ts", "label": "主循环" }] },
+    { "id": "llm-api", "type": "external", "label": "LLM 服务", "sublabel": "Mimo/DeepSeek/OpenAI", "pos": [1090, 360], "size": [160, 64] },
+    { "id": "plugin-skill", "type": "backend", "label": "插件 · 技能体系", "sublabel": "dsh 兼容 · 市场 · zip", "pos": [330, 110], "size": [170, 64], "sources": [{ "path": "src/core/plugin-loader/builtin-registry.ts", "label": "内置插件注册" }, { "path": "src/core/skill/installer.ts", "label": "技能安装" }] },
+    { "id": "mcp-client", "type": "backend", "label": "MCP 客户端", "sublabel": "stdio/http · 工具桥接", "pos": [590, 110], "size": [150, 64], "sources": [{ "path": "src/core/mcp/mcp.ts", "label": "MCP 注册表" }] },
+    { "id": "zvec-runtime", "type": "external", "label": "zvec-grep 语义检索", "sublabel": "可选 · MCP stdio", "pos": [820, 110], "size": [160, 64], "sources": [{ "path": "src/core/zvec-grep/service.ts", "label": "运行时编排" }] },
+    { "id": "tool-registry", "type": "backend", "label": "内置工具集", "sublabel": "read/write/grep/bash", "pos": [560, 620], "size": [180, 64], "sources": [{ "path": "src/core/llm/tools.ts", "label": "工具注册" }] },
+    { "id": "tauri-rust", "type": "backend", "label": "Tauri Rust 后端", "sublabel": "文件/终端(PTY)/下载", "pos": [120, 620], "size": [180, 64], "sources": [{ "path": "src-tauri/src/lib.rs", "label": "Rust commands" }] },
+    { "id": "sqlite", "type": "database", "label": "SQLite 存储", "sublabel": "会话 · 设置 · 事件", "pos": [870, 620], "size": [140, 64], "sources": [{ "path": "src/core/storage/database.ts", "label": "存储层" }] },
+    { "id": "workspace", "type": "external", "label": "工作区文件", "sublabel": "项目 · .codem", "pos": [560, 740], "size": [180, 64] }
+  ],
+  "boundaries": [
+    { "kind": "region", "label": "Codem 桌面应用（本机）", "wraps": ["webview-ui", "app-store", "engine", "plugin-skill", "mcp-client", "zvec-runtime", "tool-registry", "tauri-rust", "sqlite", "workspace"] },
+    { "kind": "region", "label": "WebView 前端层", "wraps": ["webview-ui", "app-store"] },
+    { "kind": "region", "label": "外部服务 · 网络", "wraps": ["llm-api"] },
+    { "kind": "security-group", "label": "Rust 命令边界 · 沙箱", "wraps": ["tauri-rust", "sqlite", "workspace"] }
+  ],
+  "connections": [
+    { "id": "ui-store", "from": "webview-ui", "to": "app-store", "label": "渲染/事件" },
+    { "id": "store-engine", "from": "app-store", "to": "engine", "label": "对话提交", "variant": "emphasis" },
+    { "id": "engine-llm", "from": "engine", "to": "llm-api", "label": "LLM 请求 · 流式" },
+    { "id": "engine-tools", "from": "engine", "to": "tool-registry", "label": "工具调用", "fromSide": "bottom", "toSide": "top", "labelAt": [726, 470] },
+    { "id": "tools-workspace", "from": "tool-registry", "to": "workspace", "label": "读写/搜索", "fromSide": "bottom", "toSide": "top", "labelAt": [650, 700] },
+    { "id": "engine-sqlite", "from": "engine", "to": "sqlite", "label": "会话持久化", "variant": "dashed", "fromSide": "bottom", "toSide": "top", "via": [[660, 560], [940, 560]] },
+    { "id": "ui-rust", "from": "webview-ui", "to": "tauri-rust", "label": "系统能力", "variant": "dashed", "fromSide": "bottom", "toSide": "top", "via": [[145, 570], [210, 570]] },
+    { "id": "engine-mcp", "from": "engine", "to": "mcp-client", "label": "外部能力", "fromSide": "top", "toSide": "bottom", "labelAt": [700, 300] },
+    { "id": "mcp-zvec", "from": "mcp-client", "to": "zvec-runtime", "label": "zvec_grep_search", "variant": "dashed", "labelAt": [790, 196] }
+  ],
+  "cards": [
+    { "dot": "violet", "title": "界面与体验", "items": ["对话/侧栏/右侧栏面板（git·文件·变更·工作台·CI/CD）", "三套皮肤（默认/梦幻/Hub）+ Mica 毛玻璃", "消息导航轨、执行轨迹、临时会话"] },
+    { "dot": "emerald", "title": "引擎与协作", "items": ["多智能体与团队（agent-teams/squad/子智能体）", "权限与沙箱、计划模式、执行轨迹审计", "任务中心（看板/团队模板/自动化）"] },
+    { "dot": "amber", "title": "扩展与集成", "items": ["dsh 兼容插件市场 + 技能 .zip 导入（引擎按需加载其工具）", "ClawBot 微信桥、手机连接、宠物窗口", "代码图谱/LSP/知识图谱/记事本/PPT 课件"] }
+  ]
+}

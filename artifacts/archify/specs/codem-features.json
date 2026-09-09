@@ -1,0 +1,62 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Codem 功能结构",
+    "locale": "zh-CN",
+    "output": "codem-features.html",
+    "quality_profile": "showcase",
+    "repository": { "url": "https://github.com/sdcxb/codem", "provider": "github", "revision": "264ead029280343360ab3dc3af54e94b302a4254" },
+    "views": [
+      {
+        "id": "main-loop",
+        "label": "主回路：对话 → 执行 → 落库",
+        "focus": ["chat-ux", "sessions", "tools", "storage"],
+        "note": "对话发起会话，会话驱动工具执行，结果持久化到存储。"
+      },
+      {
+        "id": "collab-ext",
+        "label": "协作与扩展",
+        "focus": ["agents", "mcp", "plugins", "zvec", "rail"],
+        "note": "智能体协作经 MCP 取外部能力；插件市场/技能与语义检索增强工具面。"
+      }
+    ]
+  },
+  "components": [
+    { "id": "chat-ux", "type": "frontend", "label": "对话与流式创作", "sublabel": "多模态 · 推理 · 引用/附件", "pos": [60, 90], "size": [180, 64], "sources": [{ "path": "src/components/ChatPanel.tsx", "label": "对话面板" }] },
+    { "id": "nav-trail", "type": "frontend", "label": "导航与回放", "sublabel": "执行轨迹 · 消息滑轨", "pos": [340, 90], "size": [180, 64], "sources": [{ "path": "src/components/TrajectoryPanel.tsx", "label": "执行轨迹" }] },
+    { "id": "sessions", "type": "backend", "label": "会话与历史", "sublabel": "多会话 · 搜索 · 导入导出", "pos": [60, 300], "size": [180, 64], "sources": [{ "path": "src/core/storage/session.ts", "label": "会话存储" }] },
+    { "id": "agents", "type": "backend", "label": "多智能体与团队", "sublabel": "agent-teams · squad · 子智能体", "pos": [340, 300], "size": [180, 64], "sources": [{ "path": "src/core/agent/agent.ts", "label": "智能体定义" }] },
+    { "id": "rail", "type": "frontend", "label": "右侧栏工作台", "sublabel": "git · 文件 · 变更 · CI/CD", "pos": [650, 300], "size": [180, 64], "sources": [{ "path": "src/components/PanelSidebar.tsx", "label": "侧栏面板" }] },
+    { "id": "tools", "type": "backend", "label": "工具与执行", "sublabel": "读写/搜索/bash/LSP/子代理", "pos": [60, 520], "size": [180, 64], "sources": [{ "path": "src/core/llm/tools.ts", "label": "工具注册" }] },
+    { "id": "mcp", "type": "backend", "label": "MCP 服务器", "sublabel": "外部工具桥接 · codegraph/zg", "pos": [340, 520], "size": [180, 64], "sources": [{ "path": "src/core/mcp/mcp.ts", "label": "MCP 客户端" }] },
+    { "id": "plugins", "type": "backend", "label": "插件 · 技能 · 市场", "sublabel": "dsh 兼容 · 技能 zip", "pos": [650, 520], "size": [180, 64], "sources": [{ "path": "src/core/plugin-market/dsh-market-catalog.ts", "label": "插件市场" }, { "path": "src/core/skill/installer.ts", "label": "技能安装" }] },
+    { "id": "zvec", "type": "external", "label": "语义检索(zg)", "sublabel": "可选 · 本地索引", "pos": [930, 520], "size": [180, 64], "sources": [{ "path": "src/core/zvec-grep/service.ts", "label": "运行时编排" }] },
+    { "id": "storage", "type": "database", "label": "存储与事件", "sublabel": "SQLite · 事件日志 · 记忆", "pos": [60, 740], "size": [180, 64], "sources": [{ "path": "src/core/storage/database.ts", "label": "数据库" }] },
+    { "id": "infra", "type": "backend", "label": "基础设施", "sublabel": "设置 · 主题 · 权限沙箱", "pos": [340, 740], "size": [180, 64], "sources": [{ "path": "src/core/permission/permission.ts", "label": "权限" }] },
+    { "id": "ext", "type": "external", "label": "外部集成", "sublabel": "微信桥 · 手机 · 宠物", "pos": [650, 740], "size": [180, 64] }
+  ],
+  "boundaries": [
+    { "kind": "region", "label": "对话与创作（用户面）", "wraps": ["chat-ux", "nav-trail"] },
+    { "kind": "region", "label": "协作与工作台", "wraps": ["sessions", "agents", "rail"] },
+    { "kind": "region", "label": "能力与执行层", "wraps": ["tools", "mcp", "plugins", "zvec"] },
+    { "kind": "region", "label": "基础设施与数据", "wraps": ["storage", "infra", "ext"] }
+  ],
+  "connections": [
+    { "id": "chat-sessions", "from": "chat-ux", "to": "sessions", "label": "记录会话", "fromSide": "bottom", "toSide": "top", "labelAt": [150, 230] },
+    { "id": "sessions-tools", "from": "sessions", "to": "tools", "label": "驱动执行", "fromSide": "bottom", "toSide": "top", "labelAt": [150, 442] },
+    { "id": "tools-storage", "from": "tools", "to": "storage", "label": "落库/轨迹", "fromSide": "bottom", "toSide": "top", "labelAt": [150, 660] },
+    { "id": "nav-agents", "from": "nav-trail", "to": "agents", "label": "动态监视", "fromSide": "bottom", "toSide": "top", "labelAt": [430, 230] },
+    { "id": "agents-mcp", "from": "agents", "to": "mcp", "label": "外部能力", "fromSide": "bottom", "toSide": "top", "labelAt": [430, 442] },
+    { "id": "mcp-infra", "from": "mcp", "to": "infra", "label": "受管运行", "fromSide": "bottom", "toSide": "top", "labelAt": [430, 660] },
+    { "id": "rail-plugins", "from": "rail", "to": "plugins", "label": "面板/扩展", "fromSide": "bottom", "toSide": "top", "labelAt": [740, 442] },
+    { "id": "mcp-tools", "from": "mcp", "to": "tools", "label": "并入工具面" },
+    { "id": "plugins-zvec", "from": "plugins", "to": "zvec", "label": "市场分发" },
+    { "id": "infra-ext", "from": "infra", "to": "ext", "label": "系统集成" }
+  ],
+  "cards": [
+    { "dot": "violet", "title": "对话与创作", "items": ["流式推理/引用溯源/图片课件多模态", "执行轨迹回放与消息导航", "临时会话（不污染主会话）"] },
+    { "dot": "emerald", "title": "协作与任务", "items": ["多智能体与团队（模板→运行时实例）", "任务中心看板与团队模板", "会话导入导出与全文搜索"] },
+    { "dot": "amber", "title": "能力与增强", "items": ["archify/mermaid 等内置技能 + 技能市场", "代码图谱(LSP)/知识图谱/记事本", "自动化/定时提醒与 CI/CD 面板"] }
+  ]
+}
