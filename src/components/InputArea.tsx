@@ -4,6 +4,7 @@ import { useDraftPersistence } from "../hooks/useDraftPersistence";
 import { useSpeechRecognition } from "../hooks/useSpeechRecognition";
 import { MessageAttachment } from "../store";
 import { FileUpload } from "./FileUpload";
+import { showToast } from "./ToastNotification";
 import { SlotBridge } from "../core/slots/SlotBridge";
 import { SlotListBridge } from "../core/slots/SlotBridge";
 import { PlanModeChip } from "./PlanModeChip";
@@ -18,7 +19,7 @@ import { getSettingJSON, setSettingJSON } from "../core/storage/settings";
 import { getCustomOperations, runCustomOperation } from "../core/environment";
 import type { CustomOperation } from "../core/settings/settings";
 import { SlashCommandMenu, type SlashCommandItem } from "./SlashCommandMenu";
-import { getMultimodalSettings, type MultimodalProviderConfig } from "../core/llm/multimodal";
+import { getMultimodalSettings, transcribeAudioFile, getVoiceInputEngine, isSTTConfigured, type SpeechEngine, type MultimodalProviderConfig } from "../core/llm/multimodal";
 import { useProjectStore } from "../core/store";
 import { ContextBadgeList } from "./ContextBadgeList";
 import { MentionAutocomplete, type MentionItem } from "./MentionAutocomplete";
@@ -97,8 +98,31 @@ function escapeHtml(text: string): string {
     .replace(/'/g, "&#39;");
 }
 
+/**
+ * 选择一个浏览器 MediaRecorder 支持的音频 MIME 类型
+ * （优先 opus/webm — Chrome/Edge/WebView2 均支持），找不到则返回 null 用默认值。
+ */
+function pickAudioRecorderMimeType(): string | null {
+  if (typeof MediaRecorder === "undefined") return null;
+  const candidates = [
+    "audio/webm;codecs=opus",
+    "audio/webm",
+    "audio/mp4",
+    "audio/ogg;codecs=opus",
+  ];
+  for (const c of candidates) {
+    try {
+      if (MediaRecorder.isTypeSupported(c)) return c;
+    } catch {
+      // ignore unsupported MIME probes
+    }
+  }
+  return null;
+}
+
 export function InputArea({ onSend, onCancel, onSendGuidance, disabled, isStreaming, noSession, sessionKey, collaborationMode, onModeChange, projectPath, quoteContext, onClearQuote, suggestionPrompt, onSuggestionConsumed, notebookId, onToggleSearch, onToggleWorkbench, onToggleQuickPhrase, onToggleDraftPicker, onToggleDisplayMode, onToggleGit, onToggleRightSidebar, hasDrafts, model, onModelChange, mode = "cli", connected = true, hideSourceSelector }: InputAreaProps) {
   const lang = useLang();
+  const zh = lang === "zh";
   const [input, setInput] = useState("");
   const [pendingAttachments, setPendingAttachments] = useState<MessageAttachment[]>([]);
   const [showSecurityPicker, setShowSecurityPicker] = useState(false);
@@ -119,7 +143,182 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
   const [blurFolded, setBlurFolded] = useState(false);
   const inputCardRef = useRef<HTMLDivElement>(null);
 
-  // P3-26: Voice input — Web Speech API STT
+  // P3-26: Voice input — 双引擎闭环
+  //   - browser: Web Speech API（浏览器/WebView2 原生，零配置，Tauri WebView2 下可能不可用）
+  //   - whisper: MediaRecorder 录音 → OpenAI Whisper 云端转写（多模态 STT 配置）
+  // 引擎在 设置 → 语音 → 语音输入引擎 中选择，持久化 codem-voice-settings.speechEngine。
+  const [voiceEngine, setVoiceEngine] = useState<SpeechEngine>(() => getVoiceInputEngine());
+  const [whisperActive, setWhisperActive] = useState(false); // MediaRecorder 录音中
+  const [whisperBusy, setWhisperBusy] = useState(false);     // 云端转写请求进行中
+  const [voiceError, setVoiceError] = useState<string | null>(null); // 内联提示（自动消失，另有 toast）
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+
+  // 把一段转写文本追加到输入框末尾（并同步草稿持久化）
+  const appendTranscript = useCallback((text: string) => {
+    if (!text) return;
+    setInput(prev => {
+      const newVal = prev + text;
+      setDraft(newVal);
+      return newVal;
+    });
+  }, []);
+
+  // 释放麦克风流与 recorder 引用
+  const stopMediaTracks = useCallback(() => {
+    if (mediaStreamRef.current) {
+      mediaStreamRef.current.getTracks().forEach((t) => t.stop());
+      mediaStreamRef.current = null;
+    }
+    mediaRecorderRef.current = null;
+  }, []);
+
+  // 云端 Whisper：Blob 上传转写 → 追加文本 / 报错（区分“未配置”引导）
+  const transcribeWhisperBlob = useCallback(async (blob: Blob) => {
+    setWhisperBusy(true);
+    setVoiceError(null);
+    try {
+      const text = await transcribeAudioFile(blob);
+      appendTranscript(text);
+    } catch (err) {
+      const raw = err instanceof Error ? err.message : String(err);
+      if (!isSTTConfigured()) {
+        const msg = zh
+          ? "云端 Whisper 未配置：请在 设置 → 多模态 → STT 语音输入 中启用并配置 OpenAI（whisper-1）后重试。"
+          : "Cloud Whisper not configured. Enable an OpenAI provider (whisper-1) in Settings → Multimodal → STT Voice Input and retry.";
+        setVoiceError(msg);
+        showToast("warning", msg, 7000);
+      } else {
+        const msg = zh ? `语音转写失败：${raw}` : `Transcription failed: ${raw}`;
+        setVoiceError(msg);
+        showToast("error", msg, 7000);
+      }
+    } finally {
+      setWhisperBusy(false);
+    }
+  }, [zh, appendTranscript]);
+
+  // 取消录音：停止并丢弃（引擎切换/异常时用，不触发转写）
+  const cancelWhisperCapture = useCallback(() => {
+    audioChunksRef.current = [];
+    const rec = mediaRecorderRef.current;
+    if (rec && rec.state !== "inactive") {
+      try {
+        rec.onstop = null;
+        rec.stop();
+      } catch {}
+    }
+    stopMediaTracks();
+    setWhisperActive(false);
+    setWhisperBusy(false);
+  }, [stopMediaTracks]);
+
+  // 停止录音并转写（MediaRecorder.stop → onstop 中收尾）
+  const stopWhisperCapture = useCallback(() => {
+    const rec = mediaRecorderRef.current;
+    if (!rec || rec.state === "inactive") {
+      stopMediaTracks();
+      setWhisperActive(false);
+      return;
+    }
+    try {
+      rec.stop();
+    } catch (e) {
+      console.warn("[InputArea] stop recorder:", e);
+      stopMediaTracks();
+      setWhisperActive(false);
+    }
+  }, [stopMediaTracks]);
+
+  // 云端 Whisper：点击麦克风开始录音（getUserMedia + MediaRecorder）
+  const startWhisperCapture = useCallback(async () => {
+    if (whisperBusy || whisperActive) return;
+    if (!isSTTConfigured()) {
+      const msg = zh
+        ? "云端 Whisper 未配置：请在 设置 → 多模态 → STT 语音输入 中启用并配置 OpenAI（whisper-1）。"
+        : "Cloud Whisper not configured. Enable and configure OpenAI (whisper-1) in Settings → Multimodal → STT Voice Input.";
+      setVoiceError(msg);
+      showToast("warning", msg, 7000);
+      return;
+    }
+    if (typeof navigator === "undefined" || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      const msg = zh
+        ? "当前环境不支持麦克风录音（getUserMedia 不可用）。"
+        : "Microphone recording is unavailable here (getUserMedia missing).";
+      setVoiceError(msg);
+      showToast("error", msg);
+      return;
+    }
+    if (typeof MediaRecorder === "undefined") {
+      const msg = zh
+        ? "当前环境不支持 MediaRecorder 录音。"
+        : "MediaRecorder is not supported in this environment.";
+      setVoiceError(msg);
+      showToast("error", msg);
+      return;
+    }
+    setVoiceError(null);
+    let stream: MediaStream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (e) {
+      const detail = e instanceof Error ? e.message : String(e);
+      const msg = zh ? `无法访问麦克风：${detail}` : `Microphone unavailable: ${detail}`;
+      setVoiceError(msg);
+      showToast("error", msg);
+      return;
+    }
+    let rec: MediaRecorder;
+    try {
+      const mimeType = pickAudioRecorderMimeType();
+      rec = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+    } catch (e) {
+      stream.getTracks().forEach((t) => t.stop());
+      const msg = zh ? "无法启动录音（MediaRecorder 初始化失败）。" : "Failed to start recording (MediaRecorder init failed).";
+      setVoiceError(msg);
+      showToast("error", msg);
+      return;
+    }
+    audioChunksRef.current = [];
+    rec.ondataavailable = (e: BlobEvent) => {
+      if (e.data && e.data.size > 0) audioChunksRef.current.push(e.data);
+    };
+    rec.onstop = () => {
+      const chunks = audioChunksRef.current;
+      const blobType = rec.mimeType || "audio/webm";
+      audioChunksRef.current = [];
+      stopMediaTracks();
+      setWhisperActive(false);
+      if (chunks.length === 0) {
+        const msg = zh ? "未捕获到录音内容，请重试。" : "No audio captured — please try again.";
+        setVoiceError(msg);
+        showToast("warning", msg);
+        return;
+      }
+      const blob = new Blob(chunks, { type: blobType });
+      void transcribeWhisperBlob(blob);
+    };
+    rec.onerror = () => {
+      stopMediaTracks();
+      setWhisperActive(false);
+      const msg = zh ? "录音出错，请重试。" : "Recording error — please try again.";
+      setVoiceError(msg);
+      showToast("error", msg);
+    };
+    mediaRecorderRef.current = rec;
+    mediaStreamRef.current = stream;
+    try {
+      rec.start();
+      setWhisperActive(true);
+    } catch (e) {
+      stopMediaTracks();
+      const msg = zh ? "无法开始录音，请重试。" : "Failed to start recording — please retry.";
+      setVoiceError(msg);
+      showToast("error", msg);
+    }
+  }, [zh, whisperBusy, whisperActive, stopMediaTracks, transcribeWhisperBlob]);
+
   const {
     isListening: isListeningVoice,
     interimTranscript: voiceInterim,
@@ -130,40 +329,98 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
   } = useSpeechRecognition({
     continuous: true,
     interimResults: true,
-    onFinalResult: (text) => {
-      // Append recognized text to current input
-      setInput(prev => {
-        const newVal = prev + text;
-        setDraft(newVal);
-        return newVal;
-      });
+    onFinalResult: (text) => appendTranscript(text),
+    onInterimResult: () => {
+      // interim 文本通过 voiceInterim 悬浮提示展示，避免光标跳动
     },
-    onInterimResult: (text) => {
-      // Show interim text in a subtle indicator (state is tracked via interimTranscript)
-      // We don't modify the input directly during interim to avoid cursor jumping
+    onError: (msg) => {
+      const display = msg === "Microphone permission denied"
+        ? S.voice.micPermissionDenied[lang]
+        : msg;
+      setVoiceError(display);
+      showToast("error", display);
     },
   });
 
-  // Handle voice start/stop toggle
+  // 引擎在设置面板中被修改 → 同步到本地 state
+  useEffect(() => {
+    const handler = () => setVoiceEngine(getVoiceInputEngine());
+    window.addEventListener("codem-voice-settings-changed", handler);
+    return () => window.removeEventListener("codem-voice-settings-changed", handler);
+  }, []);
+
+  // 引擎切换时终止进行中的捕获会话（丢弃录音，不转写）
+  const prevVoiceEngineRef = useRef<SpeechEngine>(voiceEngine);
+  useEffect(() => {
+    if (prevVoiceEngineRef.current !== voiceEngine) {
+      prevVoiceEngineRef.current = voiceEngine;
+      if (isListeningVoice) stopVoice();
+      cancelWhisperCapture();
+    }
+  }, [voiceEngine, isListeningVoice, stopVoice, cancelWhisperCapture]);
+
+  // 内联错误提示 8 秒后自动消失（另有 toast 通知）
+  useEffect(() => {
+    if (!voiceError) return;
+    const t = setTimeout(() => setVoiceError(null), 8000);
+    return () => clearTimeout(t);
+  }, [voiceError]);
+
+  // 卸载时释放麦克风与录音器（丢弃未完成录音）
+  useEffect(() => {
+    return () => {
+      const rec = mediaRecorderRef.current;
+      if (rec) {
+        try {
+          rec.onstop = null;
+          if (rec.state !== "inactive") rec.stop();
+        } catch {}
+      }
+      if (mediaStreamRef.current) {
+        mediaStreamRef.current.getTracks().forEach((t) => t.stop());
+        mediaStreamRef.current = null;
+      }
+      mediaRecorderRef.current = null;
+    };
+  }, []);
+
+  // 处理语音按钮点击（按引擎分流）
   const handleVoiceToggle = useCallback(() => {
-    if (!voiceSupported) return;
+    if (disabled) return;
+    if (voiceEngine === "whisper") {
+      // 云端 Whisper：录音中 → 停止并转写；空闲 → 开始录音
+      if (whisperBusy) return; // 转写中，忽略再次点击
+      if (whisperActive) {
+        stopWhisperCapture();
+      } else {
+        void startWhisperCapture();
+      }
+      return;
+    }
+    // === browser 引擎（Web Speech API） ===
+    if (!voiceSupported) {
+      const msg = zh
+        ? "当前环境不支持浏览器语音识别：请在 设置 → 语音 中把「语音输入引擎」切换为「云端 Whisper（OpenAI）」。"
+        : "Browser speech recognition is unavailable here — switch the voice input engine to Cloud Whisper (OpenAI) in Settings → Voice.";
+      setVoiceError(msg);
+      showToast("warning", msg, 7000);
+      return;
+    }
     if (isListeningVoice) {
       stopVoice();
       // Flush any interim text
-      if (voiceInterim) {
-        setInput(prev => {
-          const newVal = prev + voiceInterim;
-          setDraft(newVal);
-          return newVal;
-        });
-      }
+      if (voiceInterim) appendTranscript(voiceInterim);
     } else {
       resetVoice();
       startVoice();
     }
-  }, [voiceSupported, isListeningVoice, stopVoice, startVoice, resetVoice, voiceInterim]);
+  }, [
+    disabled, voiceEngine, whisperBusy, whisperActive, stopWhisperCapture, startWhisperCapture,
+    voiceSupported, isListeningVoice, stopVoice, startVoice, resetVoice, voiceInterim,
+    appendTranscript, zh,
+  ]);
 
-  // Auto-focus textarea after voice stops
+  // Auto-focus textarea after browser voice stops
   useEffect(() => {
     if (!isListeningVoice) {
       // Refocus textarea and place cursor at end
@@ -238,7 +495,6 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
   // P1: Drag-over state for file drop zone — depth counter prevents flicker on nested elements
   const [isDragOver, setIsDragOver] = useState(false);
   const dragDepthRef = useRef(0);
-  const zh = lang === "zh";
 
   // DSH-aligned: 构建已安装技能名称集合，用于 backdrop 层检测 /skill-name 模式
   const skillLexicon = useMemo(() => {
@@ -806,6 +1062,20 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
 
   const currentModeInfo = SECURITY_MODES.find(m => m.mode === securityMode)!;
 
+  // 麦克风按钮激活态 & 提示文案（按引擎：browser / whisper）
+  const micActive = voiceEngine === "whisper" ? (whisperActive || whisperBusy) : isListeningVoice;
+  const voiceTitle = voiceEngine === "whisper"
+    ? whisperBusy
+      ? (zh ? "正在云端转写…" : "Transcribing in the cloud…")
+      : whisperActive
+        ? (zh ? "停止录音并转写" : "Stop recording & transcribe")
+        : (zh ? "开始语音输入（云端 Whisper 录音）" : "Start voice input (Cloud Whisper recording)")
+    : voiceSupported
+      ? (isListeningVoice ? S.voice.stopListening[lang] : S.voice.startListening[lang])
+      : (zh
+        ? "浏览器语音识别在此环境不可用 — 请到 设置 → 语音 把引擎切换为「云端 Whisper」。点击查看提示。"
+        : "Browser speech recognition unavailable here — switch to Cloud Whisper in Settings → Voice. Click for details.");
+
   return (
     <div
       ref={inputCardRef}
@@ -979,7 +1249,7 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
             )}
             <textarea
               ref={textareaRef}
-              className={`message-input ${hasSkillPattern ? "mirror-mode" : ""} ${expanded ? "expanded" : ""} ${isListeningVoice ? "voice-listening" : ""}`}
+              className={`message-input ${hasSkillPattern ? "mirror-mode" : ""} ${expanded ? "expanded" : ""} ${micActive ? "voice-listening" : ""}`}
               value={draft || input}
             onChange={(e) => {
               const val = e.target.value;
@@ -1022,23 +1292,36 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
             rows={2}
           />
 
-          {/* P3-26: Voice interim text indicator */}
-          {isListeningVoice && voiceInterim && (
-            <span style={{
-              position: "absolute",
-              right: 60,
-              bottom: 8,
-              fontSize: 'var(--fs-sm)',
-              color: "var(--text-muted)",
-              fontStyle: "italic",
-              opacity: 0.7,
-              pointerEvents: "none",
-              maxWidth: 200,
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-            }}>
-              {voiceInterim}
+          {/* P3-26: Voice 状态指示 — browser interim / whisper 录音·转写中 / 错误提示 */}
+          {((isListeningVoice && voiceInterim) || whisperActive || whisperBusy || voiceError) && (
+            <span
+              style={{
+                position: "absolute",
+                right: 60,
+                bottom: 8,
+                fontSize: 'var(--fs-sm)',
+                color: voiceError ? "var(--danger, #ef4444)" : "var(--text-muted)",
+                fontStyle: voiceError ? "normal" : "italic",
+                background: "var(--bg-tertiary, rgba(0,0,0,0.35))",
+                padding: "2px 8px",
+                borderRadius: 10,
+                opacity: 0.85,
+                pointerEvents: "none",
+                maxWidth: 380,
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+                zIndex: 5,
+              }}
+              title={voiceError || undefined}
+            >
+              {voiceError
+                ? (voiceError.length > 60 ? voiceError.slice(0, 60) + "…" : voiceError)
+                : whisperActive
+                  ? (zh ? "● 录音中… 点击停止并转写" : "● Recording… click to stop & transcribe")
+                  : whisperBusy
+                    ? (zh ? "云端转写中…" : "Transcribing in the cloud…")
+                    : voiceInterim}
             </span>
           )}
           </div>
@@ -1255,21 +1538,18 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
 
           {/* 右侧发送组 */}
           <div className="input-tools-right">
-            {/* Voice input */}
+            {/* Voice input — 双引擎：browser (Web Speech API) / whisper (云端 OpenAI) */}
             <button
-              className={`mode-toggle-btn ${isListeningVoice ? "voice-rec-active" : ""}`}
+              className={`mode-toggle-btn ${micActive ? "voice-rec-active" : ""}`}
               onClick={handleVoiceToggle}
-              disabled={disabled || !voiceSupported}
-              title={voiceSupported
-                ? (isListeningVoice ? S.voice.stopListening[lang] : S.voice.startListening[lang])
-                : S.voice.speechUnsupported[lang]
-              }
+              disabled={disabled || (voiceEngine === "whisper" && whisperBusy)}
+              title={voiceTitle}
               style={{
-                color: isListeningVoice ? "var(--danger, #ef4444)" : undefined,
-                opacity: voiceSupported ? 1 : 0.3,
+                color: micActive ? "var(--danger, #ef4444)" : undefined,
+                opacity: disabled ? 0.4 : (voiceEngine === "browser" && !voiceSupported ? 0.55 : 1),
               }}
             >
-              {isListeningVoice ? <SquareIcon size={14} fill="currentColor" /> : <Mic size={14} />}
+              {micActive ? <SquareIcon size={14} fill="currentColor" /> : <Mic size={14} />}
             </button>
 
             {/* Expand/collapse */}

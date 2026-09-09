@@ -512,11 +512,34 @@ const handleThemeChange = useCallback((theme: PPTTheme) => {
   }, [generateExportHTML, onExportHTML]);
 
   const handleExportPPTX = useCallback(async () => {
-    const title = deck.title || 'presentation';
-    const htmlContent = generateExportHTML();
-    const blob = new Blob([htmlContent], { type: 'text/html' });
-    if (onExportPPTX) onExportPPTX(blob);
-  }, [deck, generateExportHTML, onExportPPTX]);
+    // 真实 PPTX 导出：逐页截图，用 jszip 打包成 OOXML（图片型 PPTX），
+    // 而不是把 HTML 改名成 .pptx（PowerPoint 打不开）。
+    const { default: html2canvas } = await import('html2canvas');
+    const { buildPptxFromImages } = await import('../../core/knowledge/ppt-export-pptx');
+
+    const images: { dataUrl: string; width: number; height: number }[] = [];
+    try {
+      for (let i = 0; i < deck.slides.length; i++) {
+        setCurrentSlideIndex(i);
+        // 等待当前页切换完成渲染（与 PNG 导出同一节奏）
+        await new Promise(r => setTimeout(r, 300));
+        const canvasEl = document.querySelector('.ppt-slide-canvas') as HTMLElement | null;
+        if (!canvasEl) continue;
+        const canvas = await html2canvas(canvasEl, { scale: 2, backgroundColor: deck.slides[i].background });
+        images.push({
+          dataUrl: canvas.toDataURL('image/png'),
+          width: canvas.width,
+          height: canvas.height,
+        });
+      }
+      if (images.length === 0) return;
+      const blob = await buildPptxFromImages(images);
+      if (onExportPPTX) onExportPPTX(blob);
+    } finally {
+      // 无论成功失败都把画布切回第一页（与 PNG 导出行为一致）
+      setCurrentSlideIndex(0);
+    }
+  }, [deck, onExportPPTX]);
 
   // ====== PDF 导出 ======
   const handleExportPDF = useCallback(() => {

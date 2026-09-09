@@ -1726,7 +1726,7 @@ marginTop: 4,
   <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
     <h3 style={{ margin: 0, fontSize: 'var(--fs-md)', fontWeight: 600 }}>{lang === "zh" ? "纠偏模型配置" : "Correction Model Config"}</h3>
     <p style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", lineHeight: 1.5 }}>
-      {lang === "zh" ? "开启后，AI 每次回复后会自动调用纠偏模型进行事实核查，弹出对比弹窗供你确认。" : "When enabled, AI responses are automatically fact-checked by a correction model, showing a comparison dialog."}
+      {lang === "zh" ? "配置 fact_check 事实核查使用的专属纠偏模型。保存后立即生效；未配置时自动回退使用当前主模型并如实标注。" : "Configure the dedicated model used by fact_check. Takes effect once saved; when unset, falls back to the main model with an honest note."}
     </p>
     <CorrectionModelConfig />
   </div>

@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 多模态扩展模块 (Phase 4)
  *
  * 统一管理 Embedding（语义搜索）、TTS（语音合成）、ImageGen（图像生成）三种多模态能力。
@@ -451,6 +451,124 @@ export async function generateImages(params: ImageGenParams): Promise<ImageGenRe
       revisedPrompt: item.revised_prompt,
     })),
   };
+}
+
+// ========== Voice Input Engine (STT) ==========
+
+/**
+ * 语音输入引擎：
+ * - "browser": 浏览器 Web Speech API（零配置、免费，Tauri WebView2 可能不可用）
+ * - "whisper": 云端 OpenAI Whisper（录音后经 /audio/transcriptions 转写，需 API Key）
+ */
+export type SpeechEngine = "browser" | "whisper";
+
+/**
+ * codem-voice-settings 中与语音输入相关的字段。
+ * 该存储键与 useSpeechSynthesis（TTS 语音/语速等）共用同一 JSON，
+ * 这里只读取/写入 speechEngine 字段，保留其它键（含 index signature）。
+ */
+export interface VoiceInputSettings {
+  speechEngine?: SpeechEngine;
+  [key: string]: unknown;
+}
+
+const VOICE_INPUT_SETTINGS_KEY = "codem-voice-settings";
+
+/**
+ * 语音输入引擎决策纯函数：
+ * 仅当 settings.speechEngine === "whisper" 时返回 "whisper"，
+ * 缺省 / null / 未知值一律回退 "browser"（向后兼容旧设置）。
+ */
+export function readVoiceEngine(settings: VoiceInputSettings | null | undefined): SpeechEngine {
+  return settings && settings.speechEngine === "whisper" ? "whisper" : "browser";
+}
+
+/** 读取持久化的语音输入引擎（codem-voice-settings.speechEngine，缺省 browser） */
+export function getVoiceInputEngine(): SpeechEngine {
+  return readVoiceEngine(getSettingJSON<VoiceInputSettings | null>(VOICE_INPUT_SETTINGS_KEY, null));
+}
+
+/** 保存语音输入引擎（合并写入，保留同键下 TTS 语音设置字段） */
+export function saveVoiceInputEngine(engine: SpeechEngine): void {
+  const current = getSettingJSON<VoiceInputSettings>(VOICE_INPUT_SETTINGS_KEY, {});
+  setSettingJSON(VOICE_INPUT_SETTINGS_KEY, { ...current, speechEngine: engine });
+}
+
+// ========== Cloud Whisper STT — 公开转写服务 ==========
+
+/** 未配置 OpenAI STT 时可读错误（引导 设置 → 多模态 → STT 语音输入） */
+export const STT_NOT_CONFIGURED_ERROR =
+  "Cloud STT (Whisper) not configured. Enable STT and fill an OpenAI provider (whisper-1) in Settings → Multimodal → STT Voice Input.";
+
+/** 多模态设置中是否已有可用的 STT (whisper) 配置（enabled 且带 apiKey） */
+export function isSTTConfigured(): boolean {
+  const config = getMultimodalSettings().stt;
+  return !!(config && config.enabled && config.apiKey);
+}
+
+/** 按 Blob MIME 推导上传文件名扩展（Whisper 按内容识别格式，扩展仅供 multipart 文件名使用） */
+function audioExtensionForBlob(blob: Blob): string {
+  const t = blob.type.toLowerCase();
+  if (t.includes("mp3") || t.includes("mpeg") || t.includes("mpga")) return "mp3";
+  if (t.includes("wav")) return "wav";
+  if (t.includes("m4a") || t.includes("mp4")) return "m4a";
+  if (t.includes("ogg")) return "ogg";
+  if (t.includes("flac")) return "flac";
+  if (t.includes("aac")) return "aac";
+  return "webm";
+}
+
+/**
+ * 核心转写实现：对给定 provider 配置调用 OpenAI-compatible
+ * POST {baseUrl}/audio/transcriptions（multipart/form-data，model + response_format=text）。
+ * 供 multimodal 公开入口与 vision-proxy 音频代理共用同一代码路径。
+ */
+export async function transcribeAudioBlob(
+  config: MultimodalProviderConfig,
+  audioBlob: Blob,
+): Promise<string> {
+  const baseUrl = (config.baseUrl || "https://api.openai.com/v1").replace(/\/+$/, "");
+  const model = config.model || "whisper-1";
+  const headers: Record<string, string> = {};
+  if (config.apiKey) headers["Authorization"] = `Bearer ${config.apiKey}`;
+
+  const formData = new FormData();
+  formData.append("file", audioBlob, `audio.${audioExtensionForBlob(audioBlob)}`);
+  formData.append("model", model);
+  formData.append("response_format", "text");
+
+  const response = await fetchWithTimeout(`${baseUrl}/audio/transcriptions`, {
+    method: "POST",
+    headers,
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(`STT API error ${response.status}: ${redactSecrets(error.substring(0, 2000))}`);
+  }
+
+  const text = (await response.text()).trim();
+  if (!text) {
+    throw new Error("STT returned an empty transcription.");
+  }
+  return text;
+}
+
+/**
+ * 公开转写服务（语音输入 UI 入口）：
+ * 读取 设置 → 多模态 → STT 的 provider 配置（OpenAI whisper-1），
+ * 将录音 Blob 上传转写。
+ *
+ * @param audioBlob MediaRecorder 录制得到的音频 Blob（webm/ogg/mp4/wav/mp3 等）
+ * @returns 转写文本
+ * @throws 无可用 OpenAI STT 配置时抛出 STT_NOT_CONFIGURED_ERROR（可读、可引导配置）
+ */
+export async function transcribeAudioFile(audioBlob: Blob): Promise<string> {
+  if (!isSTTConfigured()) {
+    throw new Error(STT_NOT_CONFIGURED_ERROR);
+  }
+  return transcribeAudioBlob(getMultimodalSettings().stt!, audioBlob);
 }
 
 // ========== Available Models per Provider ==========

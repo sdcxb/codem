@@ -11,9 +11,15 @@ import { useState, useEffect, useCallback } from "react";
 import { useLang, S } from "../core/i18n/lang";
 import { ConfigEntry, ToggleEntry } from "./SettingsParts";
 import { useSpeechSynthesis, getVoiceSettings, saveVoiceSettings } from "../hooks/useSpeechSynthesis";
-import { getMultimodalSettings } from "../core/llm/multimodal";
+import {
+  getMultimodalSettings,
+  getVoiceInputEngine,
+  saveVoiceInputEngine,
+  isSTTConfigured,
+  type SpeechEngine,
+} from "../core/llm/multimodal";
 import { getSettingJSON, setSettingJSON } from "../core/storage/settings";
-import { Volume2, Play, Square } from "lucide-react";
+import { Volume2, Play, Square, Mic } from "lucide-react";
 
 export function VoiceSettingsPanel() {
   const lang = useLang();
@@ -26,15 +32,27 @@ export function VoiceSettingsPanel() {
   const [preferCloudTts, setPreferCloudTts] = useState(false);
   const [cloudTtsConfigured, setCloudTtsConfigured] = useState(false);
 
+  // 语音输入引擎（麦克风 STT）：browser | whisper
+  const [speechEngine, setSpeechEngine] = useState<SpeechEngine>(() => getVoiceInputEngine());
+  const [sttConfigured, setSttConfigured] = useState(false);
+
   useEffect(() => {
     setPreferCloudTts(getSettingJSON<boolean>("codem-prefer-cloud-tts", false));
     const mmSettings = getMultimodalSettings();
     setCloudTtsConfigured(!!(mmSettings.tts && mmSettings.tts.enabled && mmSettings.tts.apiKey));
+    setSpeechEngine(getVoiceInputEngine());
+    setSttConfigured(isSTTConfigured());
   }, []);
 
   const handlePreferCloudTts = (val: boolean) => {
     setSettingJSON("codem-prefer-cloud-tts", val);
     setPreferCloudTts(val);
+    window.dispatchEvent(new Event("codem-voice-settings-changed"));
+  };
+
+  const handleSpeechEngineChange = (engine: SpeechEngine) => {
+    saveVoiceInputEngine(engine);
+    setSpeechEngine(engine);
     window.dispatchEvent(new Event("codem-voice-settings-changed"));
   };
 
@@ -70,6 +88,54 @@ export function VoiceSettingsPanel() {
       <div className="settings-section-header" style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
         <Volume2 size={18} style={{ color: "var(--accent)" }} />
         <h3 style={{ fontSize: 'var(--fs-md)', fontWeight: 600 }}>{S.voice.settingsTitle[lang]}</h3>
+      </div>
+
+      {/* 语音输入引擎（麦克风 → STT）选择 */}
+      <ConfigEntry
+        label={zh ? "语音输入引擎（麦克风）" : "Voice input engine (microphone)"}
+        description={zh
+          ? "点击输入框麦克风按钮时使用的语音转文字引擎。WebView2/浏览器中 Web Speech API 可能不可用，可切换为云端 Whisper。"
+          : "Speech-to-text engine used when tapping the mic button. Web Speech API may be unavailable in WebView2 — switch to Cloud Whisper."}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          <Mic size={14} style={{ color: "var(--text-muted)" }} />
+          <select
+            value={speechEngine}
+            onChange={(e) => handleSpeechEngineChange(e.target.value as SpeechEngine)}
+            style={{
+              background: "var(--bg-tertiary)",
+              border: "1px solid var(--border-primary)",
+              borderRadius: 6,
+              padding: "4px 8px",
+              fontSize: 'var(--fs-sm)',
+              color: "var(--text-primary)",
+              minWidth: 260,
+              cursor: "pointer",
+            }}
+          >
+            <option value="browser">{zh ? "浏览器识别（Web Speech API，免费）" : "Browser recognition (Web Speech API, free)"}</option>
+            <option value="whisper">{zh ? "云端 Whisper（OpenAI whisper-1，需 API Key）" : "Cloud Whisper (OpenAI whisper-1, API key required)"}</option>
+          </select>
+        </div>
+      </ConfigEntry>
+
+      {speechEngine === "whisper" && !sttConfigured && (
+        <div style={{
+          padding: 8,
+          fontSize: 'var(--fs-sm)',
+          color: "var(--warning, #f59e0b)",
+          marginLeft: 8,
+          lineHeight: 1.5,
+        }}>
+          {zh
+            ? "⚠ 云端 Whisper 尚未配置：请到 设置 → 多模态 → STT 语音输入 启用并填入 OpenAI API Key（模型 whisper-1），否则点击麦克风会提示未配置。"
+            : "⚠ Cloud Whisper not configured: enable it with an OpenAI API key (model whisper-1) in Settings → Multimodal → STT Voice Input, otherwise the mic button will warn."}
+        </div>
+      )}
+
+      <div style={{ height: 1, background: "var(--border-color)", margin: "12px 0" }} />
+      <div style={{ fontWeight: 600, marginBottom: 8, fontSize: 'var(--fs-sm)' }}>
+        {zh ? "朗读（文字转语音）" : "Read aloud (text-to-speech)"}
       </div>
 
       {!isSupported && (

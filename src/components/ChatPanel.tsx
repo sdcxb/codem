@@ -390,6 +390,39 @@ setStepTooltipLocked(false);
     setSelectedAgentId(null);
   };
 
+  // A9 (revived): 「搜索当前会话」— modal-only search. Matching runs over the raw
+  // message list; the chat body itself is never filtered, so every result keeps its
+  // DOM node and can be jumped to by data-message-id.
+  const searchMatches = showSearch && searchQuery.trim()
+    ? messages.filter((m) => (m.content || "").toLowerCase().includes(searchQuery.trim().toLowerCase()))
+    : [];
+
+  /** Scroll a message into view. Same geometry as ScrollbarMarkers.jumpTo:
+   *  .messages-container does not scroll — the real scroller is its parent (.chat-body),
+   *  so scroll to (elTop − scrollerTop + scrollTop − 12px). */
+  const jumpToMessage = useCallback((messageId: string) => {
+    const container = messagesContainerRef.current;
+    if (!container) return;
+    const scroller = container.parentElement as HTMLElement | null;
+    if (!scroller) return;
+    let el = container.querySelector<HTMLElement>(`[data-message-id="${messageId}"]`);
+    if (!el) {
+      // Unified mode merges consecutive assistant messages into ONE bubble whose
+      // data-message-id is the FIRST assistant message of the group. If the match
+      // is a later member of such a group, walk back to the group root so the
+      // jump still lands on the bubble that actually contains the matched text.
+      const idx = messages.findIndex((m) => m.id === messageId);
+      if (idx >= 0) {
+        let rootIdx = idx;
+        while (rootIdx > 0 && messages[rootIdx - 1].role === "assistant") rootIdx -= 1;
+        el = container.querySelector<HTMLElement>(`[data-message-id="${messages[rootIdx].id}"]`);
+      }
+    }
+    if (!el) return;
+    const target = scroller.scrollTop + el.getBoundingClientRect().top - scroller.getBoundingClientRect().top - 12;
+    scroller.scrollTo({ top: Math.max(0, target), behavior: "smooth" });
+  }, [messages]);
+
   return (
     <div className="chat-panel">
       <div className="chat-header">
@@ -571,6 +604,24 @@ setStepTooltipLocked(false);
         >
           <Activity size={16} />
         </button>
+        {/* A9: 搜索当前会话 — 会话内消息搜索（弹窗 + 结果跳转，对标全局 Ctrl+K 的会话内版本） */}
+        <button
+          className={`agent-toggle ${showSearch ? "active" : ""}`}
+          onClick={() => {
+            const next = !showSearch;
+            setShowSearch(next);
+            if (next) setSearchQuery('');
+            // 与其它头部浮层互斥（与 agent/snapshot/context/trajectory 按钮一致）
+            setShowAgentPanel(false);
+            setShowSnapshotPanel(false);
+            setShowContextMonitor(false);
+            setShowTrajectoryPanel(false);
+            setSelectedAgentId(null);
+          }}
+          title={lang === "zh" ? "搜索当前会话" : "Search current session"}
+        >
+          <Search size={16} />
+        </button>
         {/* Display mode toggle moved to Settings > Appearance — default unified mode */}
         <span className="header-spacer" style={{ flex: 1 }} />
         {/* Side panel toggle — header right */}
@@ -586,10 +637,13 @@ setStepTooltipLocked(false);
         </span>
       </div>
 
-      {/* Search — modal dialog instead of inline bar (per benchmark analysis) */}
+      {/* A9: 搜索当前会话 — modal dialog (opened by the header search button).
+          Clicking a result (or pressing Enter) dismisses the dialog and smooth-scrolls
+          the chat body to the matching message. The message list behind is never
+          filtered, so jumping always finds the target by data-message-id. */}
       {showSearch && (
         <>
-          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 300 }} onClick={() => setShowSearch(false)} />
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 300 }} onClick={() => { setShowSearch(false); setSearchQuery(''); }} />
           <div style={{
             position: 'fixed', top: '20%', left: '50%', transform: 'translateX(-50%)',
             width: '480px', maxWidth: '90vw', zIndex: 301,
@@ -601,9 +655,19 @@ setStepTooltipLocked(false);
               <input
                 type="text"
                 autoFocus
-                placeholder={lang === 'zh' ? '搜索对话内容...' : 'Search messages...'}
+                placeholder={lang === 'zh' ? '搜索当前会话...' : 'Search this session...'}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  // Enter jumps straight to the first match (same as clicking its row)
+                  if (e.key === 'Enter' && searchMatches.length > 0) {
+                    e.preventDefault();
+                    const first = searchMatches[0];
+                    setShowSearch(false);
+                    setSearchQuery('');
+                    jumpToMessage(first.id);
+                  }
+                }}
                 style={{
                   flex: 1,
                   background: 'var(--bg-primary)',
@@ -615,20 +679,33 @@ setStepTooltipLocked(false);
                   outline: 'none',
                 }}
               />
-              <button onClick={() => setShowSearch(false)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', display: 'flex', alignItems: 'center' }}><X size={16} /></button>
+              <button onClick={() => { setShowSearch(false); setSearchQuery(''); }} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', display: 'flex', alignItems: 'center' }}><X size={16} /></button>
             </div>
-            {searchQuery && (
+            {searchQuery.trim() && (
               <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', marginBottom: 8 }}>
-                {messages.filter(m => m.content.toLowerCase().includes(searchQuery.toLowerCase())).length} / {messages.length} {lang === 'zh' ? '条匹配' : 'matches'}
+                {searchMatches.length} / {messages.length} {lang === 'zh' ? '条匹配' : 'matches'}
               </div>
             )}
-            {searchQuery && messages.filter(m => m.content.toLowerCase().includes(searchQuery.toLowerCase())).slice(0, 10).map(m => (
-              <div key={m.id} style={{ padding: '8px', borderRadius: 6, cursor: 'pointer', marginBottom: 4, background: 'var(--bg-tertiary)' }}
-                onClick={() => { setShowSearch(false); setSearchQuery(''); }}
+            {searchQuery.trim() && searchMatches.length === 0 && (
+              <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', padding: '8px 4px' }}>
+                {lang === 'zh' ? '无匹配消息' : 'No matching messages'}
+              </div>
+            )}
+            {searchQuery.trim() && searchMatches.slice(0, 10).map(m => (
+              <div
+                key={m.id}
+                style={{ padding: '8px', borderRadius: 6, cursor: 'pointer', marginBottom: 4, background: 'var(--bg-tertiary)' }}
+                onClick={() => {
+                  // Dismiss the dialog and jump to the matching message in the chat body
+                  setShowSearch(false);
+                  setSearchQuery('');
+                  jumpToMessage(m.id);
+                }}
+                title={lang === 'zh' ? '跳转到该消息' : 'Jump to message'}
               >
                 <span style={{ fontSize: 'var(--fs-xs)', opacity: 0.6 }}>{m.role}</span>
                 <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {m.content.substring(0, 80)}
+                  {(m.content || '').substring(0, 80) || (lang === 'zh' ? '(无文本内容)' : '(no text)')}
                 </div>
               </div>
             ))}
@@ -737,10 +814,11 @@ setStepTooltipLocked(false);
               but the UI merges them so the user sees one unified response. */}
           {(() => {
             const isUnified = displayMode === "unified";
-            // A9: Filter messages by search query
-            const displayMessages = showSearch && searchQuery.trim()
-              ? messages.filter(m => m.content.toLowerCase().includes(searchQuery.toLowerCase()))
-              : messages;
+            // A9: 会话内搜索为弹窗式（showSearch 只控制弹窗），结果点击后跳转定位到
+            // 对应消息。背景过滤消息列表是旧「内联搜索」的遗留逻辑：它只在弹窗打开时
+            // 生效、且关闭弹窗不清理 searchQuery，会留下无法解释的残缺视图，还会破坏
+            // 合并气泡/回合边界与跳转定位——已移除，消息列表始终完整渲染。
+            const displayMessages = messages;
             // Build render list: each entry is either a single message or a merged group
             // origIndex tracks the index in displayMessages (not renderList) for correct turn-boundary detection
             const renderList: { msg: Message; skip: boolean; isLastInGroup: boolean; origIndex: number; groupLastIdx?: number }[] = [];

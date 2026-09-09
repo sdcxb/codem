@@ -8,7 +8,7 @@
  * 如果主模型本身支持 vision（如 GPT-4o），则直接传图，不经过代理。
  */
 
-import { getMultimodalSettings, type MultimodalProviderConfig } from "./multimodal";
+import { getMultimodalSettings, transcribeAudioBlob, type MultimodalProviderConfig } from "./multimodal";
 import { getLLMEngine } from "./index";
 import type { LLMMessage, ContentBlock } from "../storage/message";
 import { redactSecrets } from "../utils/redact";
@@ -323,44 +323,21 @@ export class VisionProxy {
 
   /**
    * 调用语音转写 API 获取音频文字
+   *
+   * 委托给 multimodal.transcribeAudioBlob（multipart /audio/transcriptions），
+   * 与语音输入 UI 使用的公开转写服务共享同一实现。
    */
   private async transcribeAudio(
     config: MultimodalProviderConfig,
     base64Data: string,
     mediaType: string,
   ): Promise<string> {
-    const baseUrl = config.baseUrl || "https://api.openai.com/v1";
-    const headers: Record<string, string> = {};
-    if (config.apiKey) {
-      headers["Authorization"] = `Bearer ${config.apiKey}`;
-    }
-
-    // OpenAI Whisper API: audio/transcriptions endpoint
     // Convert base64 to blob for multipart/form-data
     const byteChars = atob(base64Data);
     const bytes = new Uint8Array(byteChars.length);
     for (let i = 0; i < byteChars.length; i++) bytes[i] = byteChars.charCodeAt(i);
     const blob = new Blob([bytes], { type: mediaType });
-    const ext = mediaType.includes("mp3") ? "mp3" : mediaType.includes("wav") ? "wav" : "m4a";
-
-    const formData = new FormData();
-    formData.append("file", blob, `audio.${ext}`);
-    formData.append("model", config.model || "whisper-1");
-    formData.append("response_format", "text");
-
-    const response = await fetchWithTimeout(`${baseUrl}/audio/transcriptions`, {
-      method: "POST",
-      headers,
-      body: formData,
-    });
-
-    if (!response.ok) {
-      const error = await response.text();
-      throw new Error(`STT API error ${response.status}: ${redactSecrets(error.substring(0, 2000))}`);
-    }
-
-    const text = await response.text();
-    return text || "(无法转写音频内容)";
+    return transcribeAudioBlob(config, blob);
   }
 
   /**
