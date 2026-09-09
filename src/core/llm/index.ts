@@ -15,6 +15,7 @@ function minutePrecisionDate(): string {
 import { ProviderRegistry, createDefaultProviders, OpenAICompatibleProvider, inferContextWindow } from "./provider";
 import { ToolRegistry, createDefaultToolRegistry } from "./tools";
 import { syncCodeGraphTools } from "./tools/codegraph-tool";
+import { syncZvecTools } from "./tools/zvec-tool";
 import type { Context } from "../cordis/src/index.ts";
 import { AgentRegistry, getAgentRegistry, type AgentDefinition } from "../agent/agent";
 import { PermissionManager, getPermissionManager } from "../permission/permission";
@@ -542,6 +543,12 @@ private loopPool: Map<string, AgenticLoop> = new Map();
           this.syncCodeGraphTools();
         } catch (e) {
           console.log("[CodeGraph] sync tools skipped:", e);
+        }
+        // zvec-grep（zg）：已连接则注册 zvec_grep_search 等为可调用工具
+        try {
+          this.syncZvecTools();
+        } catch (e) {
+          console.log("[zvec-grep] sync tools skipped:", e);
         }
       } catch (e) { console.warn('[index.ts]', e) }
     }
@@ -1683,6 +1690,12 @@ return loop.hasPendingGuidance();
   syncCodeGraphTools(): void {
     const mcpTools = (this.mcp as any)?.getAllTools ? (this.mcp as any).getAllTools() : [];
     syncCodeGraphTools(this.tools, mcpTools);
+  }
+
+  /** 同步 zvec-grep（zg）MCP 工具进共享工具表（连接则注册，断连则清理） */
+  syncZvecTools(): void {
+    const mcpTools = (this.mcp as any)?.getAllTools ? (this.mcp as any).getAllTools() : [];
+    syncZvecTools(this.tools, mcpTools);
   }
 
   async callMCPTool(serverName: string, toolName: string, args: Record<string, unknown>) {

@@ -113,7 +113,7 @@ export interface ToolExecutorConfig {
 const DEFAULT_CONFIG: ToolExecutorConfig = {
   maxConcurrent: 5,
   // E5: Extended concurrency-safe tools — all read-only tools can run in parallel
-  concurrencySafeTools: ["read", "glob", "grep", "codebase_search", "file_search", "list_directory", "web_fetch", "lsp"],
+  concurrencySafeTools: ["read", "glob", "grep", "codebase_search", "file_search", "list_directory", "web_fetch", "lsp", "zvec_grep_search"],
   toolTimeout: 60000, // 60 seconds for regular tools
   abortSiblingsOnError: false,
 };

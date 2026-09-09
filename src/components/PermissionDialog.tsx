@@ -20,6 +20,10 @@ export function getToolDescription(tool: string, input: Record<string, unknown>)
       return `搜索文件: ${input.pattern || "?"}`;
     case "grep":
       return `搜索内容: ${input.pattern || "?"}`;
+    case "zvec_grep_search":
+      return `语义搜索(本地索引): ${(input.query || input.fts || "?").toString()}`;
+    case "zvec_grep_rg":
+      return `精确搜索(rg): ${(input.command || input.pattern || "?").toString()}`;
     case "spawn_subagent":
     case "subagent":
       return `启动子智能体: ${input.agentId || input.description || "?"}`;
@@ -52,6 +56,7 @@ function getRiskLevel(tool: string, input: Record<string, unknown>): "low" | "me
   }
   if (tool === "write" || tool === "edit") return "medium";
   if (tool === "read" || tool === "glob" || tool === "grep") return "low";
+  if (tool.startsWith("zvec_grep_")) return "low"; // zg 检索为只读
   return "medium";
 }
 

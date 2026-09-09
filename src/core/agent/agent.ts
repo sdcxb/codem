@@ -272,12 +272,13 @@ When the user doesn't specify implementation details, choose the simplest approa
       promptEn: `You are a planning assistant. You analyze code and create plans, but do NOT make actual changes.
 Focus on understanding the codebase, identifying problems, and proposing solutions.
 Do NOT perform any write/edit operations.`,
-      toolAllowlist: ["read", "glob", "grep", "bash", "lsp_tool", "tool_search", "web_search"],
+      toolAllowlist: ["read", "glob", "grep", "bash", "lsp_tool", "tool_search", "web_search", "zvec_grep_search"],
       collaborationMode: "plan",
       permissions: [
         { tool: "read", action: "allow" },
         { tool: "glob", action: "allow" },
         { tool: "grep", action: "allow" },
+        { tool: "zvec_grep_search", action: "allow" },
         { tool: "bash", action: "allow", resource: "git*" },
         { tool: "lsp_tool", action: "allow" },
         { tool: "tool_search", action: "allow" },
@@ -301,11 +302,12 @@ Do NOT perform any write/edit operations.`,
       promptEn: `You are a codebase exploration assistant. You quickly search and analyze code.
 Use glob and grep to find relevant files and code patterns.
 Report findings concisely, including file paths and line numbers.`,
-      toolAllowlist: ["read", "glob", "grep", "bash", "lsp_tool", "tool_search", "web_search"],
+      toolAllowlist: ["read", "glob", "grep", "bash", "lsp_tool", "tool_search", "web_search", "zvec_grep_search"],
       permissions: [
         { tool: "read", action: "allow" },
         { tool: "glob", action: "allow" },
         { tool: "grep", action: "allow" },
+        { tool: "zvec_grep_search", action: "allow" },
         { tool: "bash", action: "allow" },
         { tool: "lsp_tool", action: "allow" },
         { tool: "tool_search", action: "allow" },
@@ -426,11 +428,12 @@ Then apply type-specific verification strategy (frontend/backend/CLI/bug-fix).
 Run at least one adversarial probe (concurrency, boundary, idempotency, orphan op).
 
 End with exactly: VERDICT: PASS or VERDICT: FAIL or VERDICT: PARTIAL`,
-      toolAllowlist: ["read", "glob", "grep", "bash", "lsp_tool", "tool_search", "web_search"],
+      toolAllowlist: ["read", "glob", "grep", "bash", "lsp_tool", "tool_search", "web_search", "zvec_grep_search"],
       permissions: [
         { tool: "read", action: "allow" },
         { tool: "glob", action: "allow" },
         { tool: "grep", action: "allow" },
+        { tool: "zvec_grep_search", action: "allow" },
         { tool: "bash", action: "allow" },
         { tool: "lsp_tool", action: "allow" },
         { tool: "tool_search", action: "allow" },

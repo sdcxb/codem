@@ -1354,8 +1354,14 @@ export function createGlobTool(): ToolDef {
 export function createGrepTool(): ToolDef {
   return {
     id: "grep",
-    guidance: "Use grep to search file contents with a regular expression. Returns matching lines with line numbers.",
-    description: "Search file contents using regex. Supports Chinese patterns natively. Uses PowerShell Select-String under the hood. Example: grep(pattern=\"中文\", path=\"D:\\\\项目\") or grep(pattern=\"function.*中文\", include=\"*.py\")",
+    guidance:
+      "Use grep to search file contents with a regular expression. Returns matching lines with line numbers. " +
+      "This is the EXACT-route search: ideal when you already know precise identifiers, quotes, filenames, keys, dates or regexes. " +
+      "If the exact wording or location is UNKNOWN and you need semantic/fuzzy/cross-file/conceptual discovery, prefer zvec_grep_search (when available) — grep is lexical-only. " +
+      "Mixed tasks: run zvec_grep_search first to locate relevant files, then grep to verify or list exhaustive occurrences.",
+    description:
+      "Search file contents using regex (exact/lexical route). Supports Chinese patterns natively. Uses PowerShell Select-String under the hood. Example: grep(pattern=\"中文\", path=\"D:\\\\项目\") or grep(pattern=\"function.*中文\", include=\"*.py\"). " +
+      "Routing: exact anchors (identifiers/quotes/filenames/regex) → this tool; fuzzy intent or unknown location / cross-file synthesis → zvec_grep_search; mixed → zvec_grep_search then grep to verify.",
     parameters: {
       type: "object",
       properties: {

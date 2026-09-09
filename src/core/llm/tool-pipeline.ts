@@ -732,7 +732,7 @@ export async function initDefaultPipeline(config: {
   // R3-1.5: Register concurrency classifiers for read-only tools.
   // These tools are safe to run concurrently — they don't mutate state.
   // Write tools (write, edit, multi_edit, delete_file, bash) are exclusive by default (no registration).
-  const readOnlyTools = ["read", "read_file", "grep", "glob", "list_dir", "web_search", "web_fetch"];
+  const readOnlyTools = ["read", "read_file", "grep", "glob", "list_dir", "web_search", "web_fetch", "zvec_grep_search", "zvec_grep_rg"];
   for (const toolName of readOnlyTools) {
     pipeline.registerConcurrency(toolName, () => true);
   }
