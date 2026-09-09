@@ -1,0 +1,190 @@
+/**
+ * LibraryPanel —— 图书馆场景页（本插件的核心视图）。
+ *
+ * 左侧：完整等距图书馆场景（角色在岗位上工作）
+ * 右侧：馆内花名册 + 选中角色详情 + 岗位分布
+ *
+ * 这就是「把我们的图书馆作为 lobster-pet 监控界面内的场景」的落地：
+ * 场景是监控界面的一个页签/卡片，与其它监控卡共享同一份快照。
+ */
+
+import { useMemo } from "react";
+import type { LibrarySnapshot } from "../../types";
+import { ACTIVITY_META, KIND_META } from "../../types";
+import { LIBRARY_MAP } from "../../data/library-map";
+import { paletteOf } from "../../data/characters";
+import { formatAge } from "../../core/format";
+import { useLibraryOps, sortedActors } from "../../store";
+import { Card, Empty, Field, Pill } from "./common";
+import { LibraryScene } from "../library/LibraryScene";
+
+export interface LibraryPanelProps {
+  snapshot: LibrarySnapshot | null;
+  zh: boolean;
+}
+
+export function LibraryPanel({ snapshot, zh }: LibraryPanelProps) {
+  const settings = useLibraryOps((s) => s.settings);
+  const selectedActorId = useLibraryOps((s) => s.selectedActorId);
+  const selectActor = useLibraryOps((s) => s.selectActor);
+  const selectedZoneId = useLibraryOps((s) => s.selectedZoneId);
+  const selectZone = useLibraryOps((s) => s.selectZone);
+
+  const actors = sortedActors(snapshot);
+  const selected = actors.find((a) => a.id === selectedActorId) ?? null;
+  const selectedZone = selectedZoneId ? LIBRARY_MAP.zones.find((z) => z.id === selectedZoneId) ?? null : null;
+  const zoneOccupants = selectedZone ? actors.filter((a) => a.preferredZoneId === selectedZone.id) : [];
+
+  // 切走再切回时恢复上次的馆内状态（读取一次，不订阅：避免每次采样都重渲染场景）
+  const initialScene = useMemo(() => useLibraryOps.getState().scene, []);
+
+  const zoneCounts = new Map<string, number>();
+  for (const a of actors) zoneCounts.set(a.preferredZoneId, (zoneCounts.get(a.preferredZoneId) ?? 0) + 1);
+
+  return (
+    <div className="lo-library">
+      <div className="lo-library__scene">
+        <LibraryScene
+          snapshot={snapshot}
+          initialScene={initialScene}
+          showZoneLabels={settings.showZoneLabels}
+          showNameplates={settings.showNameplates}
+          showBubbles={settings.showBubbles}
+          speed={settings.speed}
+          maxActors={settings.maxActors}
+          onSelectActor={selectActor}
+        />
+      </div>
+
+      <aside className="lo-library__side">
+        <Card
+          title={zh ? `馆内花名册 (${actors.length})` : `Roster (${actors.length})`}
+          icon="🧑‍💼"
+          scroll
+          className="lo-card--roster"
+        >
+          {actors.length === 0 ? (
+            <Empty text={zh ? "暂无角色" : "No actors"} />
+          ) : (
+            <ul className="lo-roster">
+              {actors.map((a) => {
+                const meta = ACTIVITY_META[a.activity];
+                const palette = paletteOf(a.look);
+                return (
+                  <li
+                    key={a.id}
+                    className={`lo-roster__item${a.id === selectedActorId ? " is-selected" : ""}`}
+                    onClick={() => selectActor(a.id === selectedActorId ? null : a.id)}
+                  >
+                    <span className="lo-roster__swatch" style={{ background: palette.uniform }} />
+                    <span className="lo-roster__main">
+                      <span className="lo-roster__name" title={a.name}>
+                        {KIND_META[a.kind].icon} {a.name}
+                      </span>
+                      <span className="lo-roster__role" title={a.roleLabel}>
+                        {a.roleLabel}
+                      </span>
+                    </span>
+                    <span className="lo-roster__status" style={{ color: `var(${meta.token})` }}>
+                      {meta.icon} {zh ? meta.zh : meta.en}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </Card>
+
+        <Card title={zh ? "角色详情" : "Actor detail"} icon="🔍" className="lo-card--detail">
+          {selectedZone ? (
+            <div className="lo-fields">
+              <Field label={zh ? "岗位" : "Zone"}>
+                {selectedZone.icon} {zh ? selectedZone.name : selectedZone.nameEn}
+              </Field>
+              <Field label={zh ? "职责" : "Duty"}>{selectedZone.duty}</Field>
+              <Field label={zh ? "在岗" : "On duty"}>
+                <span style={{ color: zoneOccupants.length > selectedZone.capacity ? "var(--warning)" : undefined }}>
+                  {zoneOccupants.length}/{selectedZone.capacity}
+                  {zoneOccupants.length > selectedZone.capacity && (zh ? "（超容量）" : " (over capacity)")}
+                </span>
+              </Field>
+              <Field label={zh ? "默认动作" : "Default action"}>
+                {ACTIVITY_META[selectedZone.activity].icon}{" "}
+                {zh ? ACTIVITY_META[selectedZone.activity].zh : ACTIVITY_META[selectedZone.activity].en}
+              </Field>
+              <div className="lo-zone-occupants">
+                {zoneOccupants.length === 0 ? (
+                  <span className="lo-empty">{zh ? "该岗位暂无角色" : "Nobody here"}</span>
+                ) : (
+                  zoneOccupants.map((a) => (
+                    <button key={a.id} className="lo-zone-occupants__item" onClick={() => selectActor(a.id)}>
+                      <span className="lo-roster__swatch" style={{ background: paletteOf(a.look).uniform }} />
+                      <span className="lo-roster__name">{a.name}</span>
+                      <span style={{ color: `var(${ACTIVITY_META[a.activity].token})` }}>
+                        {ACTIVITY_META[a.activity].icon}
+                      </span>
+                    </button>
+                  ))
+                )}
+              </div>
+              <button className="lo-link-btn" onClick={() => selectZone(null)}>
+                {zh ? "取消选中岗位" : "Clear zone"}
+              </button>
+            </div>
+          ) : !selected ? (
+            <Empty text={zh ? "点击场景中的角色或岗位查看详情" : "Click an actor or a zone in the scene"} />
+          ) : (
+            <div className="lo-fields">
+              <Field label={zh ? "名称" : "Name"}>{selected.name}</Field>
+              <Field label={zh ? "类型" : "Kind"}>
+                <Pill token="--accent">
+                  {KIND_META[selected.kind].icon} {zh ? KIND_META[selected.kind].zh : KIND_META[selected.kind].en}
+                </Pill>
+              </Field>
+              <Field label={zh ? "岗位" : "Zone"}>{selected.roleLabel}</Field>
+              <Field label={zh ? "状态" : "Status"}>
+                <span style={{ color: `var(${ACTIVITY_META[selected.activity].token})` }}>
+                  {ACTIVITY_META[selected.activity].icon} {zh ? ACTIVITY_META[selected.activity].zh : ACTIVITY_META[selected.activity].en}
+                </span>
+              </Field>
+              {selected.focus && <Field label={zh ? "正在做" : "Focus"}>{selected.focus}</Field>}
+              {selected.teamName && <Field label={zh ? "团队" : "Team"}>{selected.teamName}</Field>}
+              {selected.model && <Field label={zh ? "模型" : "Model"}>{selected.model}</Field>}
+              <Field label={zh ? "任务" : "Tasks"}>
+                {selected.metrics.done}/{selected.metrics.tasks}
+              </Field>
+              <Field label={zh ? "工具调用" : "Tools"}>{selected.metrics.tools}</Field>
+              <Field label={zh ? "最近活动" : "Last event"}>{formatAge(selected.lastEventAt)}</Field>
+              <Field label={zh ? "外观" : "Look"}>
+                {paletteOf(selected.look).zh} · #{selected.look.body}-{selected.look.hair}-{selected.look.hat}-{selected.look.prop}
+              </Field>
+            </div>
+          )}
+        </Card>
+
+        <Card title={zh ? "岗位分布" : "Zone distribution"} icon="🗺️" scroll>
+          <ul className="lo-zones">
+            {LIBRARY_MAP.zones.map((zone) => {
+              const count = zoneCounts.get(zone.id) ?? 0;
+              const over = count > zone.capacity;
+              return (
+                <li
+                  key={zone.id}
+                  className={`lo-zones__item${zone.id === selectedZoneId ? " is-selected" : ""}${over ? " is-over" : ""}`}
+                  title={zone.duty}
+                  onClick={() => selectZone(zone.id === selectedZoneId ? null : zone.id)}
+                >
+                  <span className="lo-zones__icon">{zone.icon}</span>
+                  <span className="lo-zones__name">{zh ? zone.name : zone.nameEn}</span>
+                  <span className="lo-zones__count" style={{ color: over ? "var(--warning)" : `var(${zone.token})` }}>
+                    {count}/{zone.capacity}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        </Card>
+      </aside>
+    </div>
+  );
+}

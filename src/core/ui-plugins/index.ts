@@ -8,6 +8,7 @@
 
 import type { Context, Plugin } from '../cordis/src/index.ts'
 import { declareAppSlots } from '../slots/declare-slots.ts'
+import { isUiProviderGated, readDisabledPlugins } from './gating.ts'
 import './slots.ts'  // 声明所有 UI 槽位类型
 
 // 导入所有 UI 插件包
@@ -46,6 +47,13 @@ import { uiSlotsProvider } from '../provider/ui-slots-provider'
 import { uiLayoutProvider } from '../provider/ui-layout-provider'
 import { uiDirectoryPickerProvider } from '../provider/ui-directory-picker-provider'
 import { uiMessageFeedbackProvider } from '../provider/ui-message-feedback-provider'
+import { uiLibraryOpsProvider } from '../provider/ui-library-ops-provider'
+
+/**
+ * 插件禁用门控表（短名 → 插件 id）。
+ * 仅登记需要「禁用 = 不装配 provider」的 UI 插件。
+ */
+export { GATED_PROVIDERS, isUiProviderGated, readDisabledPlugins } from './gating.ts'
 
 /**
  * UI 插件聚合器 — 加载所有 UI 插件包。
@@ -114,19 +122,18 @@ export function loadUIPlugins(ctx: Context) {
     { name: 'ui-directory-picker', plugin: uiDirectoryPickerProvider },
     { name: 'ui-message-feedback', plugin: uiMessageFeedbackProvider },
     { name: 'ui-pet', plugin: uiPetProvider },
+    { name: 'ui-library-ops', plugin: uiLibraryOpsProvider },
   ]
+
+  // 插件禁用门控（审计 D1/D2）：被插件管理器禁用的 UI 插件不装配 provider。
+  const disabledPlugins = readDisabledPlugins()
 
   for (const { name, plugin } of uiProviders) {
     try {
-      // 插件禁用门控（审计 D1/D2）：@codem/ui-pet 被插件管理器禁用时不装配
-      // pet provider —— getPet 拿不到服务 → 宠物不初始化（下次启动生效，
-      // 与 KNOWN riskDescription 一致；当前运行实例不受影响）。
-      if (name === 'ui-pet') {
-        try {
-          const raw = localStorage.getItem('codem:disabled-plugins');
-          if (raw && (JSON.parse(raw) as string[]).includes('@codem/ui-pet')) continue;
-        } catch { /* ignore */ }
-      }
+      // 门控：禁用时不装配（下次启动生效，与 KNOWN riskDescription 一致；
+      // 当前运行实例不受影响）。关闭 ui-library-ops 后入口/面板均不存在，
+      // 宿主 UI 与数据零变化。
+      if (isUiProviderGated(name, disabledPlugins)) continue
       ctx.plugin(plugin as any)
       console.log(`[UI Plugins] Loaded provider: ${name}`)
     } catch (err) {

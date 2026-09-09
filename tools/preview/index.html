@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="zh-CN" data-skin="default" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Library Ops 视觉预览</title>
+    <style>
+      :root {
+        --bg-primary: #16181f;
+        --bg-secondary: #1e212b;
+        --bg-tertiary: #262a36;
+        --bg-hover: #2e3341;
+        --text-primary: #e8eaf0;
+        --text-secondary: #a8aec0;
+        --text-muted: #6f7688;
+        --border-primary: #333846;
+        --border-secondary: #454b5c;
+        --accent: #8b7cf6;
+        --accent-hover: #a394ff;
+        --accent-muted: #6f5fd8;
+        --text-on-accent: #ffffff;
+        --success: #4ade80;
+        --warning: #fbbf24;
+        --error: #f87171;
+        --info: #38bdf8;
+        --security-ask: #60a5fa;
+        --security-auto: #c084fc;
+        --security-full: #34d399;
+        --sidebar-bg: #1a1d26;
+        --input-bg: #262a36;
+        --code-bg: #12141a;
+        --scrollbar-track: #1e212b;
+        --scrollbar-thumb: #3a4050;
+        --user-bg: #2a3040;
+        --assistant-bg: #1e212b;
+        --system-bg: #232733;
+        --dropdown-bg: #232733;
+        --dropdown-hover: #2e3341;
+        --tooltip-bg: #2b3040;
+        --tooltip-text: #e8eaf0;
+        --tooltip-border: #3a4050;
+        --fs-xs: 11px;
+        --fs-sm: 12px;
+        --fs-base: 13px;
+        --fs-md: 15px;
+        --fs-lg: 18px;
+        --fs-xl: 22px;
+        --fs-2xl: 28px;
+        --fs-3xl: 36px;
+        --radius-sm: 6px;
+        --radius: 8px;
+        --radius-md: 12px;
+        --radius-lg: 16px;
+        --radius-full: 999px;
+        --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+        --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.35);
+        --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.45);
+        --shadow-popover: 0 16px 48px rgba(0, 0, 0, 0.5);
+        --z-dropdown: 1000;
+        --z-tooltip: 1100;
+        --z-popover: 1200;
+        --z-modal: 1300;
+        --z-toast: 1400;
+      }
+      body {
+        margin: 0;
+        background: var(--bg-primary);
+        color: var(--text-primary);
+        font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+      }
+      .preview-wrap { padding: 16px; display: flex; flex-direction: column; gap: 16px; }
+      .preview-scene { position: relative; width: 1180px; height: 640px; }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="./main.tsx"></script>
+  </body>
+</html>

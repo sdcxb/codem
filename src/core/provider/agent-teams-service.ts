@@ -22,7 +22,7 @@ import {
   genId,
 } from "../agent-teams/engine";
 import type { AgentTeam, TeamSnapshot } from "../agent-teams/types";
-import { CAPTAIN } from "../agent-teams/types";
+import { CAPTAIN, TASK_TERMINAL } from "../agent-teams/types";
 import { getSubagentRuntime } from "../subagent/index";
 
 const STORE_KEY = "codem-agent-teams:v1";
@@ -203,6 +203,9 @@ export class AgentTeamsServiceClass {
     const team = this.teams.get(teamId);
     if (!team) throw new Error(`team "${teamId}" not found`);
     const { task } = updateTask(team, taskId, input);
+    // 任务进入终态 → 释放该成员（否则成员会永久停在 working，调度器再也不派活，
+    // 依赖成员状态的监控视图也会一直显示「工作中」）
+    this.releaseAssigneeIfIdle(team, task.assignee);
     this.persist();
     this.notify();
     this.kick(teamId);
@@ -214,6 +217,8 @@ export class AgentTeamsServiceClass {
     const team = this.teams.get(teamId);
     if (!team) throw new Error(`team "${teamId}" not found`);
     const r = beginReassign(team, taskId, newAssignee);
+    // 旧负责人不再持有该任务 → 若无其它在办任务则释放为 idle
+    this.releaseAssigneeIfIdle(team, r.previousAssignee);
     // 若接管者就是队长本人，立即结束静默（无成员需要中断）
     if (newAssignee === CAPTAIN) {
       finishReassign(team, taskId, CAPTAIN);
@@ -222,6 +227,21 @@ export class AgentTeamsServiceClass {
     this.notify();
     this.kick(teamId);
     return r;
+  }
+
+  /**
+   * 释放成员：当该成员名下已无非终态任务且当前状态为 working 时置回 idle。
+   * 队长（"captain"）与非成员标识不处理。
+   */
+  private releaseAssigneeIfIdle(team: AgentTeam, assignee: string | undefined): void {
+    if (!assignee || assignee === CAPTAIN) return;
+    const member = team.members.find((m) => m.name === assignee);
+    if (!member || member.status !== "working") return;
+    const stillBusy = team.tasks.some(
+      (t) => t.assignee === assignee && !TASK_TERMINAL.has(t.status),
+    );
+    if (stillBusy) return;
+    member.status = "idle";
   }
 
   // ========== 邮箱 / 消息 ==========
