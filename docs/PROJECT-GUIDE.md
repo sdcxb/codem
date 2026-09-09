@@ -706,7 +706,7 @@ mimo-gui/
 │   ├── export-library-ops-layout-guide.mjs # 导出布局参考图（喂绘图模型做 img2img）
 │   └── lib/library-ops-asset-utils.mjs # 上述脚本的纯函数（有单测）
 ├── tools/                        # 开发工具（不参与打包）
-│   ├── preview/                  # 插件视觉预览页 + DOM 结构审计脚本
+│   ├── preview/                  # 插件视觉预览页 + DOM 结构审计（audit-dom.mjs）+ 版面自适应审计（audit-layout.mjs，7 种窗口宽度）
 │   └── library-ops/              # 布局参考图（layout-guide.png / layout-guide-solid.png）
 ├── .wecode-ref/                  # ⚠ 对标参考项目（微博 wecode 客户端），非本项目代码，仅供对标分析参考
 ├── public/                       # 静态资源

@@ -2,6 +2,49 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [Unreleased] — 图书馆界面自适应改造 + 统一图标库 + 样式对齐宿主
+
+> 融合进任务管理后，图书馆页签在非 1180px 宽度下元素会挤在一起（固定 236px 列、
+> 460px 最小高度、280px 事件流、视口断点判容器宽度），而且样式自成一套、图标全是
+> emoji。本版重做版面与图标体系。
+
+### 自适应版面（容器查询，不再按视口断点猜）
+
+- `.lo-task` 设为容器（`container-type: inline-size`），按**面板实际宽度**分档：
+  ≥1080px 三栏（导航 + 内容 + 事件流）/ 980–1080px 收事件流 / 980px 以下全部单列 /
+  ≤820px 子导航收成图标条；另按**容器高度**（≤620px）压缩场景最小高度
+- 去掉所有固定死值：`grid-template-columns: 236px …` → `minmax(180px, 236px)`、
+  `.lo-grid__row--mid { min-height: 460px }` → `0`、事件流 `width: 280px` →
+  `clamp(200px, 24cqw, 280px)`、`.lo-library` 侧栏 `300px` → `minmax(200px, 300px)`
+- 场景 + 花名册在窄容器下改为上下两段（下段最多 45% 且卡片内部滚动），
+  彻底消除「角色详情被裁掉 25px」这类挤压
+- 新增 `tools/preview/audit-layout.mjs`：headless 在 **7 种窗口尺寸**
+  （1600→760 宽）下渲染「图书馆」页签，读页面自检的 `#layout-audit`
+  （元素 scrollWidth/clientWidth 差 + 最小字号），全部 0 溢出通过
+
+### 图标体系统一（emoji → lucide-react）
+
+- 新增 `components/icons.tsx`：`LoIcon` + `LO_ICONS` 映射表（49 个语义名 → lucide 组件），
+  数据层只存语义名（`types.ts` 新增 `LoIconName` 联合类型），渲染层统一 `<LoIcon>`
+- 替换全部 emoji：11 种工作状态 / 5 种角色来源 / 10 个岗位 / 各面板卡片图标 /
+  场景 HUD（＋ － ⤢ ✥ ↺）/ 子导航 / 上传提示 / 趋势箭头（▲▼ → TrendingUp/Down）
+- 门禁 `library-ops-icons.test.tsx` LO-ICON-1~5：数据层图标名必须登记在映射表、
+  插件源码不得再出现 emoji、`LoIcon` 渲染 svg、公共组件渲染 svg、样式层无死样式
+
+### 样式对齐宿主
+
+- `.lo-card` 改为宿主 `.card` 同一语言：`--radius-md` 10px + `var(--bg-secondary)` +
+  `border-primary` + hover 边框；`.lo-pill` 改 `--radius-sm`（对齐 `.badge`）；
+  `.lo-section-title` 去掉 uppercase；`.lo-stat` 圆角 12px → 10px、底色改 `--bg-secondary`
+- 删除独立面板遗留的死样式（`.lo-launcher*` / `.lo-overlay` / `.lo-shell*`）
+
+### 验证
+
+- 新增 `library-ops-icons.test.tsx`（5 例）；全量 193 文件 / 4515 用例通过；
+  `tsc --noEmit` 零错误；`vite build` 成功
+- DOM 审计 `issues: []`（4 个像素场景 / 48 房间 / 48 角色 / 等距 12/12 在岗）
+- 版面审计 7 种窗口尺寸全部 0 溢出
+
 ## [Unreleased] — 图书馆功能融合进「任务管理」（不再单独显示面板）
 
 > 图书馆插件与「任务管理」面板在入口层大量重叠：两处都能看到同一批团队、会话、任务，

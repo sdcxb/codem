@@ -12,6 +12,71 @@
  * 遥测 / 成本），从不写入任何宿主状态；关闭插件后宿主行为完全不变。
  */
 
+// ========== 图标（统一走 lucide-react，见 components/icons.tsx） ==========
+
+/**
+ * 语义化图标名 —— 数据层只存名字，渲染层 `components/icons.tsx` 映射到 lucide 组件。
+ * （历史上这里存的是 emoji，v1.14.1 起统一为项目图标库。）
+ */
+export type LoIconName =
+  // 角色工作状态
+  | "coffee"
+  | "footprints"
+  | "brain"
+  | "book-open"
+  | "pen-line"
+  | "cog"
+  | "search"
+  | "pause"
+  | "check-circle"
+  | "triangle-alert"
+  | "moon"
+  // 角色来源
+  | "crown"
+  | "user"
+  | "bot"
+  | "message-square"
+  | "puzzle"
+  // 图书馆岗位
+  | "concierge-bell"
+  | "library"
+  | "code"
+  | "archive"
+  | "server"
+  | "messages-square"
+  | "package-check"
+  // 面板 / 卡片
+  | "bar-chart-3"
+  | "wrench"
+  | "circle-dollar-sign"
+  | "clock"
+  | "settings"
+  | "timer"
+  | "scale"
+  | "layout-panel-left"
+  | "image"
+  | "calculator"
+  | "trending-up"
+  | "trending-down"
+  | "circle-x"
+  | "plug"
+  | "stethoscope"
+  | "users"
+  | "scan-search"
+  | "map"
+  | "radio"
+  | "refresh-cw"
+  | "scroll-text"
+  | "ruler"
+  | "gauge"
+  | "sparkles"
+  // HUD 操作
+  | "plus"
+  | "minus"
+  | "maximize-2"
+  | "move"
+  | "rotate-ccw";
+
 // ========== 角色（演员） ==========
 
 /** 演员来源类别 —— 决定头顶徽章与默认岗位亲和度 */
@@ -45,7 +110,8 @@ export interface ActivityMeta {
   severity: ActivitySeverity;
   /** 语义令牌名（禁止硬编码色值，见 skin-tokens 契约） */
   token: string;
-  icon: string;
+  /** 语义化图标名（lucide，见 components/icons.tsx） */
+  icon: LoIconName;
 }
 
 /** 角色外观 —— 由角色 id/名称确定性生成（同一角色每次打开都长一样） */
@@ -134,7 +200,8 @@ export interface LibraryZone {
   nameEn: string;
   /** 岗位职责一句话说明 */
   duty: string;
-  icon: string;
+  /** 语义化图标名（lucide，见 components/icons.tsx） */
+  icon: LoIconName;
   /** 占地矩形（瓦片空间） */
   rect: { col: number; row: number; w: number; h: number };
   /** 工位中心瓦片 */
@@ -502,26 +569,26 @@ export const STORAGE_KEY = "codem-library-ops";
 // ========== 活动元数据表 ==========
 
 export const ACTIVITY_META: Record<ActorActivity, ActivityMeta> = {
-  idle: { zh: "待命", en: "Idle", severity: "off", token: "--text-muted", icon: "☕" },
-  walking: { zh: "前往工位", en: "Walking", severity: "active", token: "--info", icon: "🚶" },
-  thinking: { zh: "思考中", en: "Thinking", severity: "active", token: "--accent", icon: "💭" },
-  reading: { zh: "查阅资料", en: "Reading", severity: "active", token: "--info", icon: "📖" },
-  writing: { zh: "撰写中", en: "Writing", severity: "active", token: "--warning", icon: "✍️" },
-  working: { zh: "执行中", en: "Working", severity: "active", token: "--accent", icon: "⚙️" },
-  searching: { zh: "检索中", en: "Searching", severity: "active", token: "--success", icon: "🔍" },
-  blocked: { zh: "等待授权", en: "Blocked", severity: "wait", token: "--security-ask", icon: "⏸" },
-  done: { zh: "已完成", en: "Done", severity: "ok", token: "--success", icon: "✅" },
-  error: { zh: "出错", en: "Error", severity: "bad", token: "--error", icon: "⚠️" },
-  sleeping: { zh: "休眠", en: "Sleeping", severity: "off", token: "--text-muted", icon: "💤" },
+  idle: { zh: "待命", en: "Idle", severity: "off", token: "--text-muted", icon: "coffee" },
+  walking: { zh: "前往工位", en: "Walking", severity: "active", token: "--info", icon: "footprints" },
+  thinking: { zh: "思考中", en: "Thinking", severity: "active", token: "--accent", icon: "brain" },
+  reading: { zh: "查阅资料", en: "Reading", severity: "active", token: "--info", icon: "book-open" },
+  writing: { zh: "撰写中", en: "Writing", severity: "active", token: "--warning", icon: "pen-line" },
+  working: { zh: "执行中", en: "Working", severity: "active", token: "--accent", icon: "cog" },
+  searching: { zh: "检索中", en: "Searching", severity: "active", token: "--success", icon: "search" },
+  blocked: { zh: "等待授权", en: "Blocked", severity: "wait", token: "--security-ask", icon: "pause" },
+  done: { zh: "已完成", en: "Done", severity: "ok", token: "--success", icon: "check-circle" },
+  error: { zh: "出错", en: "Error", severity: "bad", token: "--error", icon: "triangle-alert" },
+  sleeping: { zh: "休眠", en: "Sleeping", severity: "off", token: "--text-muted", icon: "moon" },
 };
 
 /** 角色来源徽章 */
-export const KIND_META: Record<ActorKind, { zh: string; en: string; icon: string }> = {
-  captain: { zh: "队长", en: "Captain", icon: "🎩" },
-  member: { zh: "成员", en: "Member", icon: "🧑‍💼" },
-  subagent: { zh: "子智能体", en: "Subagent", icon: "🤖" },
-  session: { zh: "会话", en: "Session", icon: "💬" },
-  system: { zh: "系统", en: "System", icon: "🧩" },
+export const KIND_META: Record<ActorKind, { zh: string; en: string; icon: LoIconName }> = {
+  captain: { zh: "队长", en: "Captain", icon: "crown" },
+  member: { zh: "成员", en: "Member", icon: "user" },
+  subagent: { zh: "子智能体", en: "Subagent", icon: "bot" },
+  session: { zh: "会话", en: "Session", icon: "message-square" },
+  system: { zh: "系统", en: "System", icon: "puzzle" },
 };
 
 /** 任务状态元数据 */

@@ -1,13 +1,14 @@
 /**
  * 监控面板公共组件 —— 卡片 / KPI 卡 / 空态 / 标签 / 段落标题。
  *
- * 视觉语言对标 lobster-pet 的 `.card` + `.section-title` + `.card-scroll`
- * （暗色磨砂玻璃卡片网格），但颜色与圆角全部改为 Codem 皮肤令牌，
- * 从而在 default 亮/暗、dream、hub 四态下都成立。
+ * 视觉语言与宿主一致：`.card` 的底色/描边/圆角（`--bg-secondary` /
+ * `--border-primary` / 10px）、`.badge` 的标签形态、`--fs-*` 字号、
+ * 图标统一走 `components/icons.tsx`（lucide-react），四套皮肤自动适配。
  */
 
 import type { ReactNode } from "react";
-import type { SeriesPoint } from "../../types";
+import type { LoIconName, SeriesPoint } from "../../types";
+import { LoIcon } from "../icons";
 import { Sparkline } from "./charts";
 
 export function Card({
@@ -20,7 +21,7 @@ export function Card({
   style,
 }: {
   title?: ReactNode;
-  icon?: ReactNode;
+  icon?: LoIconName;
   actions?: ReactNode;
   children: ReactNode;
   className?: string;
@@ -31,7 +32,7 @@ export function Card({
     <section className={`lo-card ${className}`} style={style}>
       {(title || actions) && (
         <header className="lo-card__head">
-          {icon && <span className="lo-card__icon">{icon}</span>}
+          {icon && <LoIcon name={icon} size={14} className="lo-card__icon" />}
           {title && <span className="lo-card__title">{title}</span>}
           {actions && <span className="lo-card__actions">{actions}</span>}
         </header>
@@ -66,7 +67,7 @@ export function StatCard({
         {unit && <span className="lo-stat__unit">{unit}</span>}
         {trend !== undefined && trend !== 0 && (
           <span className={`lo-stat__trend${trend > 0 ? " is-up" : " is-down"}`}>
-            {trend > 0 ? "▲" : "▼"}
+            <LoIcon name={trend > 0 ? "trending-up" : "trending-down"} size={12} />
             {Math.abs(Math.round(trend))}
           </span>
         )}

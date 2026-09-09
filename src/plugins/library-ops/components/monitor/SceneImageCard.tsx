@@ -25,6 +25,7 @@ import {
 import { isSceneImageDbAvailable } from "../../core/scene-image-db";
 import { useLibraryOps } from "../../store";
 import { Card, Field, Pill, SectionTitle, Switch } from "./common";
+import { LoIcon } from "../icons";
 
 const CANVAS_W = CLAW_SCENE.displayWidth;
 const CANVAS_H = CLAW_SCENE.displayHeight;
@@ -84,7 +85,7 @@ export function SceneImageCard({ zh }: { zh: boolean }) {
   const showAdjust = active !== "claw";
 
   return (
-    <Card title={zh ? "场景图片" : "Scene image"} icon="🖼️">
+    <Card title={zh ? "场景图片" : "Scene image"} icon="image">
       {/* 当前生效 */}
       <div className="lo-scene-current">
         <div className="lo-scene-current__thumb">
@@ -158,7 +159,7 @@ export function SceneImageCard({ zh }: { zh: boolean }) {
           void onFiles(e.dataTransfer?.files ?? null);
         }}
       >
-        <span className="lo-scene-upload__icon">{busy ? "⏳" : "⬆️"}</span>
+        <span className="lo-scene-upload__icon"><LoIcon name={busy ? "timer" : "image"} size={18} /></span>
         <span className="lo-scene-upload__main">
           {busy ? (zh ? "正在读取图片…" : "Reading image…") : zh ? "点击选择图片，或把图片拖到这里" : "Click to choose an image, or drop one here"}
         </span>
@@ -176,7 +177,7 @@ export function SceneImageCard({ zh }: { zh: boolean }) {
 
       {(error || notice) && (
         <div className={`lo-scene-msg${error ? " is-error" : " is-ok"}`}>
-          {error ? `⚠️ ${error}` : `✅ ${notice}`}
+          {error ? <><LoIcon name="triangle-alert" size={12} /> {error}</> : <><LoIcon name="check-circle" size={12} /> {notice}</>}
         </div>
       )}
       {!persistAvailable && (
@@ -186,7 +187,11 @@ export function SceneImageCard({ zh }: { zh: boolean }) {
             : "IndexedDB unavailable — uploads last only for this session."}
         </p>
       )}
-      {aspectWarning && <p className="lo-note">ℹ️ {aspectWarning}</p>}
+      {aspectWarning && (
+          <p className="lo-note">
+            <LoIcon name="triangle-alert" size={11} /> {aspectWarning}
+          </p>
+        )}
 
       {/* 微调 + 对位预览 */}
       {showAdjust && (

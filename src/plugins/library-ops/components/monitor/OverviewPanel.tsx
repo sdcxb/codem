@@ -1,4 +1,4 @@
-/**
+﻿/**
  * OverviewPanel —— 运营总览（**布局对标 lobster-pet 的 DetailPanel**）。
  *
  * lobster-pet 的监控界面是「单屏卡片网格」：
@@ -22,6 +22,7 @@ import { PixelLibraryScene } from "../library/PixelLibraryScene";
 import { LibraryScene } from "../library/LibraryScene";
 import type { PixelSceneState } from "../../core/pixel-scene";
 import type { SceneState } from "../../types";
+import { LoIcon } from "../icons";
 
 export interface OverviewPanelProps {
   snapshot: LibrarySnapshot | null;
@@ -88,7 +89,7 @@ export function OverviewPanel({ snapshot, series, zh, onOpenLibrary, onOpenTab }
               {sessions.slice(0, 4).map((a) => (
                 <div key={a.id} className="lo-status__item" onClick={() => selectActor(a.id)}>
                   <span className="lo-status__item-name" title={a.name}>
-                    {KIND_META[a.kind].icon} {a.name}
+                    <LoIcon name={KIND_META[a.kind].icon} size={12} /> {a.name}
                   </span>
                   <span className="lo-status__item-type">{zh ? ACTIVITY_META[a.activity].zh : ACTIVITY_META[a.activity].en}</span>
                 </div>
@@ -99,14 +100,14 @@ export function OverviewPanel({ snapshot, series, zh, onOpenLibrary, onOpenTab }
           <div className="lo-status__usage">
             <span className="lo-status__tokens">{formatTokens(m.tokensIn + m.tokensOut)}</span>
             <span className="lo-status__unit">tokens</span>
-            <span className="lo-status__cost">💰 {formatCost(m.costTotal)}</span>
+            <span className="lo-status__cost"><LoIcon name="circle-dollar-sign" size={12} /> {formatCost(m.costTotal)}</span>
           </div>
         </Card>
 
         {/* 最近会话（对标 TaskGrid） */}
         <Card
           title={zh ? "最近会话" : "Recent sessions"}
-          icon="💬"
+          icon="message-square"
           actions={<span className="lo-card__count">{m.sessions}</span>}
           className="lo-card--sessions"
         >
@@ -117,7 +118,7 @@ export function OverviewPanel({ snapshot, series, zh, onOpenLibrary, onOpenTab }
               {sessions.map((a) => (
                 <button key={a.id} className="lo-session-card" onClick={() => selectActor(a.id)} title={a.roleLabel}>
                   <span className="lo-session-card__top">
-                    <span className="lo-session-card__icon">{KIND_META[a.kind].icon}</span>
+                    <span className="lo-session-card__icon"><LoIcon name={KIND_META[a.kind].icon} size={13} /></span>
                     <span className="lo-session-card__name">{a.name}</span>
                     {a.activity !== "idle" && a.activity !== "sleeping" && <span className="lo-session-card__live">●</span>}
                   </span>
@@ -132,7 +133,7 @@ export function OverviewPanel({ snapshot, series, zh, onOpenLibrary, onOpenTab }
         </Card>
 
         {/* 活动概览（对标 ActivityViz） */}
-        <Card title={zh ? "活动概览" : "Activity"} icon="📊" className="lo-card--activity">
+        <Card title={zh ? "活动概览" : "Activity"} icon="bar-chart-3" className="lo-card--activity">
           <div className="lo-av">
             <div className="lo-av__col">
               <SectionTitle hint={`${zh ? "今天" : "today"} ${dayValues[todayIdx] ?? 0}`}>
@@ -165,7 +166,7 @@ export function OverviewPanel({ snapshot, series, zh, onOpenLibrary, onOpenTab }
             {/* 团队卡（对标 GatewayAgentsCard） */}
             <Card
               title={zh ? "团队" : "Teams"}
-              icon="👥"
+              icon="users"
               scroll
               actions={
                 <button className="lo-link-btn" onClick={() => openTaskCenterTab("teams")}>
@@ -205,7 +206,7 @@ export function OverviewPanel({ snapshot, series, zh, onOpenLibrary, onOpenTab }
             {/* 工具/任务卡（对标 CronList） */}
             <Card
               title={zh ? "任务与工具" : "Tasks & tools"}
-              icon="🔧"
+              icon="wrench"
               scroll
               actions={
                 <button className="lo-link-btn" onClick={() => onOpenTab("tools")}>
@@ -244,7 +245,7 @@ export function OverviewPanel({ snapshot, series, zh, onOpenLibrary, onOpenTab }
           </div>
 
           {/* 数据源 / 健康度（对标 MemoCard） */}
-          <Card title={zh ? "数据源与健康度" : "Sources & health"} icon="🩺" className="lo-card--memo">
+          <Card title={zh ? "数据源与健康度" : "Sources & health"} icon="stethoscope" className="lo-card--memo">
             <div className="lo-health lo-health--row">
               <ProgressRing ratio={m.health} size={62} token={m.health > 0.75 ? "--success" : m.health > 0.45 ? "--warning" : "--error"} label={zh ? "健康" : "health"} />
               <div className="lo-fields">
@@ -258,7 +259,7 @@ export function OverviewPanel({ snapshot, series, zh, onOpenLibrary, onOpenTab }
             </div>
             {snapshot.sources.failed.length > 0 && (
               <div className="lo-warn">
-                <Pill token="--warning">⚠ {zh ? "采集失败" : "Failed"}</Pill>
+                <Pill token="--warning"><LoIcon name="triangle-alert" size={11} /> {zh ? "采集失败" : "Failed"}</Pill>
                 <span>{snapshot.sources.failed.join(", ")}</span>
               </div>
             )}
@@ -268,7 +269,7 @@ export function OverviewPanel({ snapshot, series, zh, onOpenLibrary, onOpenTab }
         {/* 场景大卡（对标 MiniOffice，但换成我们的图书馆） */}
         <Card
           title={zh ? "图书馆实况" : "Library live"}
-          icon="📚"
+          icon="library"
           className="lo-card--scene"
           actions={
             <span className="lo-card__actions-row">

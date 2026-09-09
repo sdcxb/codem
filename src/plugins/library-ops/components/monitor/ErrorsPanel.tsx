@@ -1,4 +1,4 @@
-/**
+﻿/**
  * ErrorsPanel —— 异常 / 阻塞页。
  *
  * 汇总三类「需要人看」的信号：
@@ -13,6 +13,7 @@ import { ACTIVITY_META } from "../../types";
 import { formatAge } from "../../core/format";
 import { useLibraryOps } from "../../store";
 import { Card, Empty, Pill, SectionTitle, StatCard } from "./common";
+import { LoIcon } from "../icons";
 
 export interface ErrorsPanelProps {
   snapshot: LibrarySnapshot | null;
@@ -43,16 +44,16 @@ export function ErrorsPanel({ snapshot, zh }: ErrorsPanelProps) {
       </div>
 
       <div className="lo-errors__row">
-        <Card title={zh ? "阻塞 / 出错角色" : "Blocked & errored"} icon="⏸" scroll>
+        <Card title={zh ? "阻塞 / 出错角色" : "Blocked & errored"} icon="pause" scroll>
           {blocked.length + errored.length === 0 ? (
-            <Empty text={zh ? "没有阻塞或出错的角色 🎉" : "All clear 🎉"} />
+            <Empty text={zh ? "没有阻塞或出错的角色" : "All clear"} />
           ) : (
             <ul className="lo-alerts">
               {[...errored, ...blocked].map((a) => {
                 const meta = ACTIVITY_META[a.activity];
                 return (
                   <li key={a.id} className="lo-alerts__item" data-severity={meta.severity}>
-                    <span className="lo-alerts__icon">{meta.icon}</span>
+                    <LoIcon name={meta.icon} size={13} className="lo-alerts__icon" />
                     <span className="lo-alerts__name" title={a.name}>
                       {a.name}
                     </span>
@@ -71,14 +72,14 @@ export function ErrorsPanel({ snapshot, zh }: ErrorsPanelProps) {
           )}
         </Card>
 
-        <Card title={zh ? "失败任务" : "Failed tasks"} icon="📛" scroll>
+        <Card title={zh ? "失败任务" : "Failed tasks"} icon="circle-x" scroll>
           {failedTasks.length === 0 ? (
             <Empty text={zh ? "没有失败任务" : "No failed tasks"} />
           ) : (
             <ul className="lo-alerts">
               {failedTasks.map((t) => (
                 <li key={`${t.team}-${t.id}`} className="lo-alerts__item" data-severity="bad">
-                  <span className="lo-alerts__icon">📛</span>
+                  <LoIcon name="circle-x" size={13} className="lo-alerts__icon" />
                   <span className="lo-alerts__name">{t.id}</span>
                   <span className="lo-alerts__role" title={t.subject}>
                     {t.subject}
@@ -92,7 +93,7 @@ export function ErrorsPanel({ snapshot, zh }: ErrorsPanelProps) {
         </Card>
       </div>
 
-      <Card title={zh ? "错误事件" : "Error events"} icon="⚠️" scroll>
+      <Card title={zh ? "错误事件" : "Error events"} icon="triangle-alert" scroll>
         {errorEvents.length === 0 ? (
           <Empty text={zh ? "暂无错误事件" : "No error events"} />
         ) : (
@@ -110,7 +111,7 @@ export function ErrorsPanel({ snapshot, zh }: ErrorsPanelProps) {
         )}
       </Card>
 
-      <Card title={zh ? "数据源健康" : "Source health"} icon="🔌">
+      <Card title={zh ? "数据源健康" : "Source health"} icon="plug">
         <SectionTitle hint={zh ? "失败来源会在这里显式列出（不静默）" : "Failures are listed explicitly"}>
           {zh ? "采集来源" : "Sources"}
         </SectionTitle>
@@ -120,7 +121,7 @@ export function ErrorsPanel({ snapshot, zh }: ErrorsPanelProps) {
           <ul className="lo-alerts">
             {snapshot.sources.failed.map((s) => (
               <li key={s} className="lo-alerts__item" data-severity="wait">
-                <span className="lo-alerts__icon">🔌</span>
+                <LoIcon name="plug" size={13} className="lo-alerts__icon" />
                 <span className="lo-alerts__name">{s}</span>
                 <Pill token="--warning">{zh ? "采集失败" : "failed"}</Pill>
               </li>

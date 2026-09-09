@@ -179,10 +179,34 @@ function settledPixelScene() {
 const INITIAL_PIXEL_SCENE = settledPixelScene();
 
 function Preview() {
+  // ?audit=1 → 只渲染任务管理里的图书馆视图，并按「宿主面板尺寸」铺满视口，
+  // 供 audit-layout.mjs 在不同窗口宽度下检查有没有横向溢出/挤压。
+  const auditMode = typeof location !== "undefined" && location.search.includes("audit");
+  if (auditMode) {
+    return (
+      <div
+        className="preview-wrap"
+        style={{ padding: 0, gap: 0, width: "min(1180px, 96vw)", height: "min(720px, 88vh)", margin: "0 auto" }}
+      >
+        <div style={{ position: "relative", height: "100%", border: "1px solid var(--border-primary)", borderRadius: 12, overflow: "hidden" }}>
+          <LibraryOpsTaskView />
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="preview-wrap">
       <h3 style={{ margin: 0, fontSize: 14 }}>任务管理「图书馆」页签视图（融合后的形态 · 无独立面板）</h3>
-      <div style={{ width: 1180, height: 620, position: "relative", border: "1px solid var(--border-primary)", borderRadius: 12, overflow: "hidden" }}>
+      <div
+        style={{
+          width: "min(1180px, 96vw)",
+          height: "min(720px, 88vh)",
+          position: "relative",
+          border: "1px solid var(--border-primary)",
+          borderRadius: 12,
+          overflow: "hidden",
+        }}
+      >
         <LibraryOpsTaskView />
       </div>
       <h3 style={{ margin: 0, fontSize: 14 }}>像素图书馆（内置场景图预设 · 可在设置里换图 / 上传自己的图）</h3>
@@ -225,3 +249,56 @@ function Preview() {
 }
 
 createRoot(document.getElementById("root")!).render(<Preview />);
+
+/**
+ * 版面自检（?audit=1）：把「有没有横向溢出」写进 DOM，供 headless 抓取。
+ *
+ * 判定：容器内任何元素的 scrollWidth 明显大于 clientWidth（>2px）且自身不是
+ * 可滚动容器（overflow-x: auto/scroll），就算溢出 —— 这类元素在小窗口下就是
+ * 用户看到的「挤在一起 / 被裁切」。
+ */
+if (typeof location !== "undefined" && location.search.includes("audit")) {
+  window.setTimeout(() => {
+    const root = document.querySelector(".lo-task");
+    const report: { viewport: string; rootWidth: number; overflow: unknown[]; minFontPx: number } = {
+      viewport: `${window.innerWidth}x${window.innerHeight}`,
+      rootWidth: root ? Math.round((root as HTMLElement).getBoundingClientRect().width) : 0,
+      overflow: [],
+      minFontPx: 0,
+    };
+    if (root) {
+      for (const el of Array.from(root.querySelectorAll<HTMLElement>("*"))) {
+        const style = getComputedStyle(el);
+        if (style.display === "none" || style.visibility === "hidden") continue;
+        // 场景画布可平移缩放（溢出是设计），绝对定位的角色/精灵同理
+        if (el.closest(".lo-scene") || style.position === "absolute" || style.position === "fixed") continue;
+        // 只关心「文字/卡片被裁切」——纯装饰容器不算
+        const hasText = Array.from(el.childNodes).some((n) => n.nodeType === 3 && (n.textContent ?? "").trim());
+        if (!hasText && !el.classList.contains("lo-card")) continue;
+        const scrollableX = style.overflowX === "auto" || style.overflowX === "scroll";
+        const dx = el.scrollWidth - el.clientWidth;
+        const dy = el.scrollHeight - el.clientHeight;
+        if (!scrollableX && dx > 2) {
+          report.overflow.push({
+            sel: `${el.tagName.toLowerCase()}.${(el.className || "").toString().split(" ").filter(Boolean).slice(0, 2).join(".")}`,
+            dx,
+            w: el.clientWidth,
+          });
+        }
+        if (!scrollableX && dy > 2 && style.overflowY === "hidden") {
+          report.overflow.push({
+            sel: `${el.tagName.toLowerCase()}.${(el.className || "").toString().split(" ").filter(Boolean).slice(0, 2).join(".")}`,
+            dy,
+            h: el.clientHeight,
+          });
+        }
+        const fs = parseFloat(style.fontSize);
+        if (fs && fs < (report.minFontPx || 999)) report.minFontPx = Math.round(fs * 10) / 10;
+      }
+    }
+    const pre = document.createElement("pre");
+    pre.id = "layout-audit";
+    pre.textContent = JSON.stringify(report, null, 2);
+    document.body.appendChild(pre);
+  }, 1200);
+}

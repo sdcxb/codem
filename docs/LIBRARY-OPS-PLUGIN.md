@@ -340,6 +340,24 @@ lobster-pet 的 `DetailPanel` 是「单屏卡片网格」：
   8 个子视图、场景/用量/成本/错误/时间线/设置渲染、挂载采样 + 卸载停止；
 - 全量 `npx vitest run` 192 文件 / 4510 用例通过。
 
+### 9.4 界面自适应与图标/样式统一（v1.14.1）
+
+融合后的第一版在窄窗口下会挤在一起，本版重做：
+
+| 问题 | 原因 | 处理 |
+| --- | --- | --- |
+| 元素挤压 / 裁切 | 版面写死：`236px` 列、`min-height: 460px`、事件流 `280px`、侧栏 `300px`；断点用**视口**宽度判断，而宿主面板宽度是 `min(1180px, 96vw)` | `.lo-task` 设为**容器**（`container-type: inline-size`），全部改 `minmax()` / `clamp()`，断点改 `@container lo (max-width: …)`；另加 `@container lo (max-height: 620px)` 压场景高度 |
+| 场景 + 花名册在窄容器挤成两列 | 固定两列网格 | ≤980px 改上下两段（下段 ≤45%，卡片内部滚动） |
+| 样式自成一套 | 卡片圆角 12–16px、半透明底色、uppercase 小标题 | 对齐宿主 `.card`/`.badge`：10px 圆角 + `--bg-secondary` + `--border-primary` + hover 边框、`.lo-pill` 用 4px 圆角、去掉 uppercase |
+| 图标是 emoji | 数据层 `icon` 字段存 emoji | 新增 `components/icons.tsx`（`LoIcon` + `LO_ICONS`），数据层改存语义名（`LoIconName`），全部渲染走 lucide-react |
+
+**自动门禁**：
+- `tools/preview/audit-layout.mjs` —— headless 在 7 种窗口宽度（1600/1440/1280/1100/980/860/760）
+  下渲染图书馆页签，读页面自检写入的 `#layout-audit`（元素 `scrollWidth - clientWidth > 2`
+  即判溢出、并记录最小字号），要求全部 0 溢出；
+- `src/test/library-ops-icons.test.tsx` LO-ICON-1~5 —— 图标名登记、源码无 emoji、
+  `LoIcon` 渲染 svg、公共组件渲染 svg、样式层无死样式 + 含容器查询规则。
+
 ---
 
 ## 十、已知边界与后续可做

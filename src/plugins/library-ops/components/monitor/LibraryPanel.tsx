@@ -1,4 +1,4 @@
-/**
+﻿/**
  * LibraryPanel —— 图书馆场景页（本插件的核心视图）。
  *
  * 左侧：完整等距图书馆场景（角色在岗位上工作）
@@ -19,6 +19,7 @@ import { Card, Empty, Field, Pill } from "./common";
 import { LibraryScene } from "../library/LibraryScene";
 import { PixelLibraryScene } from "../library/PixelLibraryScene";
 import type { PixelSceneState } from "../../core/pixel-scene";
+import { LoIcon } from "../icons";
 
 export interface LibraryPanelProps {
   snapshot: LibrarySnapshot | null;
@@ -76,7 +77,7 @@ export function LibraryPanel({ snapshot, zh }: LibraryPanelProps) {
       <aside className="lo-library__side">
         <Card
           title={zh ? `馆内花名册 (${actors.length})` : `Roster (${actors.length})`}
-          icon="🧑‍💼"
+          icon="users"
           scroll
           className="lo-card--roster"
         >
@@ -96,14 +97,14 @@ export function LibraryPanel({ snapshot, zh }: LibraryPanelProps) {
                     <span className="lo-roster__swatch" style={{ background: palette.uniform }} />
                     <span className="lo-roster__main">
                       <span className="lo-roster__name" title={a.name}>
-                        {KIND_META[a.kind].icon} {a.name}
+                        <LoIcon name={KIND_META[a.kind].icon} size={12} /> {a.name}
                       </span>
                       <span className="lo-roster__role" title={a.roleLabel}>
                         {a.roleLabel}
                       </span>
                     </span>
                     <span className="lo-roster__status" style={{ color: `var(${meta.token})` }}>
-                      {meta.icon} {zh ? meta.zh : meta.en}
+                      <LoIcon name={meta.icon} size={12} /> {zh ? meta.zh : meta.en}
                     </span>
                   </li>
                 );
@@ -112,11 +113,11 @@ export function LibraryPanel({ snapshot, zh }: LibraryPanelProps) {
           )}
         </Card>
 
-        <Card title={zh ? "角色详情" : "Actor detail"} icon="🔍" className="lo-card--detail">
+        <Card title={zh ? "角色详情" : "Actor detail"} icon="scan-search" className="lo-card--detail">
           {selectedZone ? (
             <div className="lo-fields">
               <Field label={zh ? "岗位" : "Zone"}>
-                {selectedZone.icon} {zh ? selectedZone.name : selectedZone.nameEn}
+                <LoIcon name={selectedZone.icon} size={12} /> {zh ? selectedZone.name : selectedZone.nameEn}
               </Field>
               <Field label={zh ? "职责" : "Duty"}>{selectedZone.duty}</Field>
               <Field label={zh ? "在岗" : "On duty"}>
@@ -126,7 +127,7 @@ export function LibraryPanel({ snapshot, zh }: LibraryPanelProps) {
                 </span>
               </Field>
               <Field label={zh ? "默认动作" : "Default action"}>
-                {ACTIVITY_META[selectedZone.activity].icon}{" "}
+                <LoIcon name={ACTIVITY_META[selectedZone.activity].icon} size={12} />{" "}
                 {zh ? ACTIVITY_META[selectedZone.activity].zh : ACTIVITY_META[selectedZone.activity].en}
               </Field>
               <div className="lo-zone-occupants">
@@ -138,7 +139,7 @@ export function LibraryPanel({ snapshot, zh }: LibraryPanelProps) {
                       <span className="lo-roster__swatch" style={{ background: paletteOf(a.look).uniform }} />
                       <span className="lo-roster__name">{a.name}</span>
                       <span style={{ color: `var(${ACTIVITY_META[a.activity].token})` }}>
-                        {ACTIVITY_META[a.activity].icon}
+                        <LoIcon name={ACTIVITY_META[a.activity].icon} size={12} />
                       </span>
                     </button>
                   ))
@@ -155,13 +156,13 @@ export function LibraryPanel({ snapshot, zh }: LibraryPanelProps) {
               <Field label={zh ? "名称" : "Name"}>{selected.name}</Field>
               <Field label={zh ? "类型" : "Kind"}>
                 <Pill token="--accent">
-                  {KIND_META[selected.kind].icon} {zh ? KIND_META[selected.kind].zh : KIND_META[selected.kind].en}
+                  <LoIcon name={KIND_META[selected.kind].icon} size={12} /> {zh ? KIND_META[selected.kind].zh : KIND_META[selected.kind].en}
                 </Pill>
               </Field>
               <Field label={zh ? "岗位" : "Zone"}>{selected.roleLabel}</Field>
               <Field label={zh ? "状态" : "Status"}>
                 <span style={{ color: `var(${ACTIVITY_META[selected.activity].token})` }}>
-                  {ACTIVITY_META[selected.activity].icon} {zh ? ACTIVITY_META[selected.activity].zh : ACTIVITY_META[selected.activity].en}
+                  <LoIcon name={ACTIVITY_META[selected.activity].icon} size={12} /> {zh ? ACTIVITY_META[selected.activity].zh : ACTIVITY_META[selected.activity].en}
                 </span>
               </Field>
               {selected.focus && <Field label={zh ? "正在做" : "Focus"}>{selected.focus}</Field>}
@@ -179,7 +180,7 @@ export function LibraryPanel({ snapshot, zh }: LibraryPanelProps) {
           )}
         </Card>
 
-        <Card title={zh ? "岗位分布" : "Zone distribution"} icon="🗺️" scroll>
+        <Card title={zh ? "岗位分布" : "Zone distribution"} icon="map" scroll>
           <ul className="lo-zones">
             {LIBRARY_MAP.zones.map((zone) => {
               const count = zoneCounts.get(zone.id) ?? 0;
@@ -191,7 +192,7 @@ export function LibraryPanel({ snapshot, zh }: LibraryPanelProps) {
                   title={zone.duty}
                   onClick={() => selectZone(zone.id === selectedZoneId ? null : zone.id)}
                 >
-                  <span className="lo-zones__icon">{zone.icon}</span>
+                  <span className="lo-zones__icon"><LoIcon name={zone.icon} size={13} /></span>
                   <span className="lo-zones__name">{zh ? zone.name : zone.nameEn}</span>
                   <span className="lo-zones__count" style={{ color: over ? "var(--warning)" : `var(${zone.token})` }}>
                     {count}/{zone.capacity}

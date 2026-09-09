@@ -5,22 +5,23 @@
  * 重新启用后继续沿用。
  */
 
-import type { LibraryOpsSettings, MonitorTab } from "../../types";
+import type { LibraryOpsSettings, LoIconName, MonitorTab } from "../../types";
 import { DEFAULT_SETTINGS } from "../../types";
 import { SCENE_CREDITS } from "../../data/pixel-art";
 import { useLibraryOps } from "../../store";
 import { Card, Field, Pill, SectionTitle, Switch } from "./common";
 import { SceneImageCard } from "./SceneImageCard";
+import { LoIcon } from "../icons";
 
-const TABS: Array<{ id: MonitorTab; zh: string; en: string; icon: string }> = [
-  { id: "library", zh: "场景", en: "Scene", icon: "📚" },
-  { id: "usage", zh: "用量", en: "Usage", icon: "📊" },
-  { id: "sessions", zh: "会话", en: "Sessions", icon: "💬" },
-  { id: "tools", zh: "工具", en: "Tools", icon: "🔧" },
-  { id: "cost", zh: "成本", en: "Cost", icon: "💰" },
-  { id: "errors", zh: "错误", en: "Errors", icon: "⚠️" },
-  { id: "timeline", zh: "时间线", en: "Timeline", icon: "🕒" },
-  { id: "settings", zh: "设置", en: "Settings", icon: "⚙️" },
+const TABS: Array<{ id: MonitorTab; zh: string; en: string; icon: LoIconName }> = [
+  { id: "library", zh: "场景", en: "Scene", icon: "library" },
+  { id: "usage", zh: "用量", en: "Usage", icon: "bar-chart-3" },
+  { id: "sessions", zh: "会话", en: "Sessions", icon: "message-square" },
+  { id: "tools", zh: "工具", en: "Tools", icon: "wrench" },
+  { id: "cost", zh: "成本", en: "Cost", icon: "circle-dollar-sign" },
+  { id: "errors", zh: "错误", en: "Errors", icon: "triangle-alert" },
+  { id: "timeline", zh: "时间线", en: "Timeline", icon: "clock" },
+  { id: "settings", zh: "设置", en: "Settings", icon: "settings" },
 ];
 
 export function SettingsPanel({ zh }: { zh: boolean }) {
@@ -30,7 +31,7 @@ export function SettingsPanel({ zh }: { zh: boolean }) {
 
   return (
     <div className="lo-settings">
-      <Card title={zh ? "采样" : "Sampling"} icon="⏱️">
+      <Card title={zh ? "采样" : "Sampling"} icon="timer">
         <div className="lo-fields">
           <Field label={zh ? "采样间隔" : "Refresh interval"}>
             <select
@@ -54,15 +55,15 @@ export function SettingsPanel({ zh }: { zh: boolean }) {
         </p>
       </Card>
 
-      <Card title={zh ? "场景" : "Scene"} icon="📚">
+      <Card title={zh ? "场景" : "Scene"} icon="library">
         <SectionTitle hint={zh ? "像素美术资源仅限非商业使用" : "pixel art is non-commercial only"}>
           {zh ? "场景风格" : "Scene style"}
         </SectionTitle>
         <div className="lo-chip-row">
           {(
             [
-              { id: "pixel", icon: "🖼️", zh: "像素图书馆", en: "Pixel library" },
-              { id: "iso", icon: "📐", zh: "等距矢量", en: "Isometric vector" },
+              { id: "pixel", icon: "image", zh: "像素图书馆", en: "Pixel library" },
+              { id: "iso", icon: "ruler", zh: "等距矢量", en: "Isometric vector" },
             ] as const
           ).map((s) => (
             <button
@@ -70,7 +71,7 @@ export function SettingsPanel({ zh }: { zh: boolean }) {
               className={`lo-chip${settings.sceneStyle === s.id ? " is-active" : ""}`}
               onClick={() => update({ sceneStyle: s.id })}
             >
-              {s.icon} {zh ? s.zh : s.en}
+              <LoIcon name={s.icon} size={13} /> {zh ? s.zh : s.en}
             </button>
           ))}
         </div>
@@ -119,7 +120,7 @@ export function SettingsPanel({ zh }: { zh: boolean }) {
 
       <SceneImageCard zh={zh} />
 
-      <Card title={zh ? "美术资源许可" : "Art asset licenses"} icon="⚖️">
+      <Card title={zh ? "美术资源许可" : "Art asset licenses"} icon="scale">
         <div className="lo-credits">
           {SCENE_CREDITS.map((c) => (
             <div key={c.project} className="lo-credits__item">
@@ -150,7 +151,7 @@ export function SettingsPanel({ zh }: { zh: boolean }) {
         </p>
       </Card>
 
-      <Card title={zh ? "面板" : "Panel"} icon="🪟">
+      <Card title={zh ? "面板" : "Panel"} icon="layout-panel-left">
         <SectionTitle>{zh ? "默认页签" : "Default tab"}</SectionTitle>
         <div className="lo-chip-row">
           {TABS.map((t) => (
@@ -159,7 +160,7 @@ export function SettingsPanel({ zh }: { zh: boolean }) {
               className={`lo-chip${settings.defaultTab === t.id ? " is-active" : ""}`}
               onClick={() => update({ defaultTab: t.id })}
             >
-              {t.icon} {zh ? t.zh : t.en}
+              <LoIcon name={t.icon} size={13} /> {zh ? t.zh : t.en}
             </button>
           ))}
         </div>
@@ -167,7 +168,7 @@ export function SettingsPanel({ zh }: { zh: boolean }) {
           <Switch
             checked={settings.autoOpen}
             onChange={(v) => update({ autoOpen: v })}
-            label={zh ? "启动时自动打开监控" : "Auto-open on startup"}
+            label={zh ? "启动时自动打开「任务管理 → 图书馆」" : "Auto-open Task Center → Library on startup"}
           />
         </div>
         <div className="lo-settings__actions">
@@ -177,7 +178,7 @@ export function SettingsPanel({ zh }: { zh: boolean }) {
         </div>
       </Card>
 
-      <Card title={zh ? "关于" : "About"} icon="ℹ️">
+      <Card title={zh ? "关于" : "About"} icon="sparkles">
         <p className="lo-note">
           {zh
             ? "图书馆运营监控（@codem/ui-library-ops）是完全独立的可启停插件：角色来自团队角色与子智能体，岗位按职责自动分配；监控口径与宿主用量统计一致。关闭插件后，宿主功能与数据完全不受影响。"

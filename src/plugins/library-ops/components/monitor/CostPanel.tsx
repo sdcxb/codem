@@ -1,4 +1,4 @@
-/**
+﻿/**
  * CostPanel —— 用量 / 成本页（对标 lobster-pet `TokenBar` + 累计消耗卡）。
  *
  * 数据来自宿主 CostTracker 的真实 provider 上报（token 与成本同源），
@@ -45,10 +45,10 @@ export function CostPanel({ snapshot, series, zh }: CostPanelProps) {
       </div>
 
       <div className="lo-cost__row">
-        <Card title={zh ? "用量构成" : "Token split"} icon="🧮">
+        <Card title={zh ? "用量构成" : "Token split"} icon="calculator">
           <DonutChart slices={donut} size={104} />
         </Card>
-        <Card title={zh ? "成本趋势" : "Cost trend"} icon="📈">
+        <Card title={zh ? "成本趋势" : "Cost trend"} icon="trending-up">
           <div className="lo-cost__chart">
             <Sparkline points={series.cost} token="--security-full" width={420} height={72} />
           </div>

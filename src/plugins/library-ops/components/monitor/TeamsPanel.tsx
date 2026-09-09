@@ -1,4 +1,4 @@
-/**
+﻿/**
  * TeamsPanel —— 团队页（对标 lobster-pet `GatewayAgentsCard` + `TaskGrid`）。
  *
  * 展示运行时团队（队长 + 成员 + 任务看板），数据来自 AgentTeamsService
@@ -10,6 +10,7 @@ import { TASK_STATUS_META } from "../../types";
 import { formatAge, formatPercent } from "../../core/format";
 import { Card, Empty, Field, Pill, SectionTitle } from "./common";
 import { ProgressRing } from "./charts";
+import { LoIcon } from "../icons";
 
 export interface TeamsPanelProps {
   snapshot: LibrarySnapshot | null;
@@ -21,7 +22,7 @@ export function TeamsPanel({ snapshot, zh }: TeamsPanelProps) {
   const teams = snapshot.teams.filter((t) => !t.archived);
   if (teams.length === 0) {
     return (
-      <Card title={zh ? "团队" : "Teams"} icon="👥">
+      <Card title={zh ? "团队" : "Teams"} icon="users">
         <Empty
           text={
             zh
@@ -54,7 +55,7 @@ function TeamCard({ team, zh }: { team: TeamSummary; zh: boolean }) {
   return (
     <Card
       title={team.name}
-      icon="👥"
+      icon="users"
       className="lo-card--team"
       actions={
         <span className="lo-team__meta">
@@ -108,7 +109,7 @@ function TeamCard({ team, zh }: { team: TeamSummary; zh: boolean }) {
                     {t.subject}
                   </span>
                   <span className="lo-tasks__assignee">{t.assignee ?? (zh ? "共享池" : "pool")}</span>
-                  {t.dependencies.length > 0 && <span className="lo-tasks__deps">⛓{t.dependencies.join(",")}</span>}
+                  {t.dependencies.length > 0 && <span className="lo-tasks__deps"><LoIcon name="package-check" size={11} />{t.dependencies.join(",")}</span>}
                   <Pill token={meta.token}>{zh ? meta.zh : meta.en}</Pill>
                 </li>
               );

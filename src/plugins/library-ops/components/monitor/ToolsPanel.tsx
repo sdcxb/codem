@@ -43,7 +43,7 @@ export function ToolsPanel({ snapshot, zh }: ToolsPanelProps) {
 
   return (
     <div className="lo-tools">
-      <Card title={zh ? "工具调用分布" : "Tool distribution"} icon="🔧" className="lo-card--tools">
+      <Card title={zh ? "工具调用分布" : "Tool distribution"} icon="wrench" className="lo-card--tools">
         <div className="lo-fields">
           <Field label={zh ? "最近调用" : "Recent calls"}>{agg.total}</Field>
           <Field label={zh ? "失败" : "Failed"}>
@@ -63,14 +63,14 @@ export function ToolsPanel({ snapshot, zh }: ToolsPanelProps) {
                 value={c.count}
                 max={max}
                 token={c.errors > 0 ? "--error" : `--${activityTokenFor(c.tool)}`}
-                suffix={c.errors > 0 ? ` (${c.errors}✗)` : ""}
+                suffix={c.errors > 0 ? ` (${c.errors} 失败)` : ""}
               />
             ))}
           </div>
         )}
       </Card>
 
-      <Card title={zh ? "调用流水" : "Call stream"} icon="📜" scroll className="lo-card--stream">
+      <Card title={zh ? "调用流水" : "Call stream"} icon="scroll-text" scroll className="lo-card--stream">
         {toolEvents.length === 0 ? (
           <Empty text={zh ? "暂无流水" : "No stream"} />
         ) : (

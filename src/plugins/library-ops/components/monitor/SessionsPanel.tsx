@@ -1,4 +1,4 @@
-/**
+﻿/**
  * SessionsPanel —— 会话页（对标 lobster-pet `TaskGrid`：最近会话卡片网格）。
  */
 
@@ -7,6 +7,7 @@ import { ACTIVITY_META, KIND_META } from "../../types";
 import { formatAge, shortId } from "../../core/format";
 import { useLibraryOps } from "../../store";
 import { Card, Empty, Pill } from "./common";
+import { LoIcon } from "../icons";
 
 export interface SessionsPanelProps {
   snapshot: LibrarySnapshot | null;
@@ -18,7 +19,7 @@ export function SessionsPanel({ snapshot, zh }: SessionsPanelProps) {
   const sessions = snapshot.actors.filter((a) => a.kind === "captain" || a.kind === "session");
   const selectActor = useLibraryOps((s) => s.selectActor);
 
-  if (sessions.length === 0) return <Card title={zh ? "会话" : "Sessions"} icon="💬"><Empty text={zh ? "暂无会话" : "No sessions"} /></Card>;
+  if (sessions.length === 0) return <Card title={zh ? "会话" : "Sessions"} icon="message-square"><Empty text={zh ? "暂无会话" : "No sessions"} /></Card>;
 
   return (
     <div className="lo-sessions">
@@ -30,7 +31,7 @@ export function SessionsPanel({ snapshot, zh }: SessionsPanelProps) {
             title={a.name}
             icon={KIND_META[a.kind].icon}
             className="lo-card--session"
-            actions={<Pill token={meta.token}>{meta.icon} {zh ? meta.zh : meta.en}</Pill>}
+            actions={<Pill token={meta.token}><LoIcon name={meta.icon} size={11} /> {zh ? meta.zh : meta.en}</Pill>}
           >
             <div className="lo-session">
               <div className="lo-session__row">

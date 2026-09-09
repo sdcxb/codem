@@ -1,4 +1,4 @@
-/**
+﻿/**
  * TimelinePanel —— 时间线页（对标 lobster-pet 的实时事件流 / `CronList`）。
  *
  * 全量事件按时间倒序展示，按严重度着色，支持按类别过滤；
@@ -30,7 +30,7 @@ export function TimelinePanel({ snapshot, zh }: TimelinePanelProps) {
   return (
     <Card
       title={zh ? `事件时间线 (${events.length})` : `Timeline (${events.length})`}
-      icon="🕒"
+      icon="clock"
       scroll
       className="lo-card--timeline"
       actions={
