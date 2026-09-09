@@ -11,6 +11,7 @@
 import { useCallback, useMemo, useState } from 'react'
 import { PanelIcons, ActionIcons, StatusIcons, CommonIcons } from '../../core/icons/icon-map'
 import { Badge } from '../ui/badge'
+import { ZvecGrepMarketCard } from '../zvec/ZvecGrepMarketCard'
 import type { PluginManagerService } from '../../core/plugin-loader/plugin-manager-service'
 import {
   DSH_MARKET_CATALOG,
@@ -163,6 +164,14 @@ export function PluginMarketTab({ manager, zh, onToggle, notify }: Props) {
         💡 {zh
           ? 'dsh 插件是 npm 包（依赖 Node 模块运行时）。Codem 桌面内无法直接加载任意 npm 包：<内置等价> 表示该能力已内置（安装=启用对应插件）；<可适配> 表示按 dsh 协议、无第三方依赖的插件可经 dsh-compat 桥接；其余标注暂不兼容。'
           : 'dsh plugins are npm packages (Node runtime). Codem cannot load arbitrary npm packages: "Bundled" means Codem already ships an equivalent (install = enable it); "Adaptable" means a dependency-free dsh-protocol plugin can run via the dsh-compat bridge; others are marked unsupported.'}
+      </div>
+
+      {/* 外部本地运行时（非 dsh 生态）：zvec-grep 语义检索 — 一键安装/离线导入/索引管理 */}
+      <div style={{ padding: '6px 12px 2px', flexShrink: 0 }}>
+        <div style={{ fontSize: 'var(--fs-2xs,10px)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 }}>
+          {zh ? '本地语义检索（可选增强）' : 'Local semantic search (optional)'}
+        </div>
+        <ZvecGrepMarketCard />
       </div>
 
       {/* 目录网格（flex 填满剩余高度滚动，适配小弹窗/窗口） */}
