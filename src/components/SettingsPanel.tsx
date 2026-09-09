@@ -7,6 +7,7 @@ import type { LoginResult } from "../core/auth/mimo";
 import { useAppStore } from "../store";
 import { inferContextWindow } from "../core/llm/provider";
 import { getSettingJSON, setSettingJSON, getSetting, setSetting, removeSetting } from "../core/storage/settings";
+import { mergeCustomModels, addCustomModel, removeCustomModel, customNamesFor } from "../core/llm/custom-models";
 import { setLang, useLang, S, type Language } from "../core/i18n/lang";
 import { ModelProfilePanel } from "./ModelProfilePanel";
 import { getPermissionManager, type PermissionRule, type PermissionAction } from "../core/permission/permission";
@@ -234,6 +235,8 @@ export function SettingsPanel({ onClose, onSessionRecovery, onUsageStats, initia
   const [customName, setCustomName] = useState("");
   const [customBaseUrl, setCustomBaseUrl] = useState("");
   const [customApiKey, setCustomApiKey] = useState("");
+  // 手动添加模型名（服务器列表外的内测/测试模型）—— 每个 provider 一个输入草稿
+  const [customModelDrafts, setCustomModelDrafts] = useState<Record<string, string>>({});
   const [mimoAccount, setMimoAccount] = useState<{ email: string; uid: string } | null>(null);
   const [loginStatus, setLoginStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [loginError, setLoginError] = useState<string | null>(null);
@@ -264,7 +267,8 @@ export function SettingsPanel({ onClose, onSessionRecovery, onUsageStats, initia
     try {
       const stored = getSettingJSON<Record<string, Array<{ id: string; name: string; contextWindow?: number }>>>("codem-dynamic-models", {});
       if (stored && Object.keys(stored).length > 0) {
-        setDynamicModels(stored);
+        // 合并手动添加的自定义模型（服务器列表外），与 engine.loadDynamicModels 保持一致
+        setDynamicModels(mergeCustomModels(stored));
       }
     } catch (e) { console.warn('[SettingsPanel] load dynamic models:', e) }
 
@@ -596,6 +600,36 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
     setCustomName("");
     setCustomBaseUrl("");
     setCustomApiKey("");
+  };
+
+  /** 手动添加服务器列表外的模型（内测/测试模型，如 deepseek-v4.1-flash-expires-on-0910）。
+   *  自定义模型存 codem-custom-models；不写入服务器缓存 codem-dynamic-models，
+   *  由展示/引擎加载时 mergeCustomModels 合并，删除即移除。 */
+  const handleAddCustomModel = (providerId: string) => {
+    const draft = (customModelDrafts[providerId] || "").trim();
+    if (!draft) return;
+    const added = addCustomModel(providerId, draft);
+    setCustomModelDrafts((prev) => ({ ...prev, [providerId]: "" }));
+    if (!added) {
+      setRefreshStatus((prev) => ({ ...prev, [providerId]: "该模型已存在" }));
+      return;
+    }
+    // 同步合并进当前动态模型视图（✓ 计数即时更新）
+    setDynamicModels((prev) => mergeCustomModels(prev || {}));
+    setRefreshStatus((prev) => ({ ...prev, [providerId]: "" }));
+    // 通知引擎重载：模型选择器/方案立即可用
+    window.dispatchEvent(new Event("codem-settings-changed"));
+  };
+
+  const handleRemoveCustomModel = (providerId: string, name: string) => {
+    removeCustomModel(providerId, name);
+    // 重建视图 = 服务器缓存 + 剩余自定义（不基于 prev filter，
+    // 避免服务器列表本身含同名模型时被误滤）
+    try {
+      const cached = getSettingJSON<Record<string, Array<{ id: string; name: string; contextWindow?: number }>>>("codem-dynamic-models", {});
+      setDynamicModels(mergeCustomModels(cached));
+    } catch (e) { console.warn('[SettingsPanel] rebuild models after remove:', e) }
+    window.dispatchEvent(new Event("codem-settings-changed"));
   };
 
   const removeCustomProvider = (id: string) => {
@@ -1432,6 +1466,60 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
                   <span style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)" }}>
                     ✓ {dynamicModels[provider.id].length} 个动态模型
                   </span>
+                )}
+              </div>
+
+              {/* 手动添加服务器列表外的模型：内测/测试模型（调用方式与同 provider 其它模型一致，仅模型名不同） */}
+              <div className="setting-group" style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+                <input
+                  type="text"
+                  value={customModelDrafts[provider.id] || ""}
+                  onChange={(e) => setCustomModelDrafts((prev) => ({ ...prev, [provider.id]: e.target.value }))}
+                  placeholder={lang === "zh"
+                    ? "手动添加模型名（服务器列表外的内测模型，如 deepseek-xxx-expires-on-0910）"
+                    : "Add model name not in server list (e.g. deepseek-xxx-expires-on-0910)"}
+                  onKeyDown={(e) => { if (e.key === "Enter") handleAddCustomModel(provider.id); }}
+                  style={{ flex: 1, minWidth: 180, padding: "6px 10px", borderRadius: 4, border: "1px solid var(--border-primary)", background: "var(--bg-tertiary)", color: "var(--text-primary)", fontSize: 'var(--fs-sm)' }}
+                />
+                <button
+                  onClick={() => handleAddCustomModel(provider.id)}
+                  disabled={!(customModelDrafts[provider.id] || "").trim()}
+                  style={{
+                    padding: "6px 12px",
+                    background: "var(--accent)",
+                    color: "var(--text-on-accent)",
+                    border: "none",
+                    borderRadius: 4,
+                    fontSize: 'var(--fs-sm)',
+                    cursor: (customModelDrafts[provider.id] || "").trim() ? "pointer" : "not-allowed",
+                    opacity: (customModelDrafts[provider.id] || "").trim() ? 1 : 0.5,
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {lang === "zh" ? "添加模型" : "Add Model"}
+                </button>
+                {customNamesFor(provider.id).length > 0 && (
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 4, alignItems: "center", width: "100%" }}>
+                    <span style={{ fontSize: 'var(--fs-xs)', color: "var(--text-muted)" }}>
+                      {lang === "zh" ? "自定义：" : "Custom: "}
+                    </span>
+                    {customNamesFor(provider.id).map((nm) => (
+                      <span
+                        key={nm}
+                        title={nm}
+                        style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "2px 8px", borderRadius: 10, background: "var(--bg-tertiary)", border: "1px solid var(--border-primary)", color: "var(--text-secondary)", fontSize: 'var(--fs-xs)', maxWidth: 240 }}
+                      >
+                        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{nm}</span>
+                        <button
+                          onClick={() => handleRemoveCustomModel(provider.id, nm)}
+                          title={lang === "zh" ? "移除" : "Remove"}
+                          style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", display: "flex", padding: 0 }}
+                        >
+                          <X size={11} />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
                 )}
               </div>
 

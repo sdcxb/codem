@@ -8,6 +8,7 @@ import {
   type ModelSlotConfig,
 } from "../core/llm/model-profile";
 import { getSettingJSON } from "../core/storage/settings";
+import { mergeCustomModels } from "../core/llm/custom-models";
 import { MIMO_MODELS } from "../core/model-config";
 
 // ========== Constants ==========
@@ -60,7 +61,8 @@ function getAvailableProviders(): ProviderWithModels[] {
   try {
     const settings = getSettingJSON<any>("codem-settings", {});
     const providers = settings.providers || [];
-    const dynamicModels = getSettingJSON<Record<string, Array<{ id: string; name: string }>>>("codem-dynamic-models", {});
+    // 合并手动添加的自定义模型（服务器列表外的内测/测试模型）
+    const dynamicModels = mergeCustomModels(getSettingJSON<Record<string, Array<{ id: string; name: string }>>>("codem-dynamic-models", {}));
 
     const result: ProviderWithModels[] = [];
 

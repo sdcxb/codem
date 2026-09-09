@@ -40,6 +40,7 @@ import { SettingsManager, getSettingsManager, type SettingsSource, type Permissi
 import { getModelProfileManager, type TaskSlot, type ModelSlotConfig } from "./model-profile";
 // F2.1: 统一脱敏工具 — 文件内使用需直接 import（re-export 不使文件内可见）
 import { redactSecrets } from "../utils/redact";
+import { mergeCustomModels } from "./custom-models";
 
 // ========== Re-exports ==========
 export type { LLMProvider, LLMRequest, LLMResponse, StreamEvent, TokenUsage, ToolDefinition } from "./types";
@@ -1231,7 +1232,10 @@ return loop.hasPendingGuidance();
    */
   loadDynamicModels(): void {
     try {
-      const stored = getSettingJSON<Record<string, import("./types").ModelConfig[]>>("codem-dynamic-models", {});
+      const storedRaw = getSettingJSON<Record<string, import("./types").ModelConfig[]>>("codem-dynamic-models", {});
+      // 合并用户在设置里手动添加的自定义模型（服务器列表外的内测/测试模型，
+      // 如 deepseek-v4.1-flash-expires-on-0910），与服务器模型同路径注入。
+      const stored = mergeCustomModels(storedRaw);
       // 迁移：旧缓存（设置页早期版本只存 {id, name}）缺 contextWindow，
       // 运行时窗口解析会回退 128k，导致 1M 窗口模型（DeepSeek/Gemini/MiMo）
       // 过早压缩。这里补上推断窗口，避免用户必须手动重新刷新模型。
@@ -1251,7 +1255,9 @@ return loop.hasPendingGuidance();
       }
       if (migrated) {
         try {
-          setSettingJSON("codem-dynamic-models", stored);
+          // 只回填原始服务器缓存；合并进来的自定义模型不落盘到 codem-dynamic-models
+          //（元素与合并列表共享引用，此处写回即含回填的 contextWindow）。
+          setSettingJSON("codem-dynamic-models", storedRaw);
           console.log("[LLMEngine.loadDynamicModels] Backfilled contextWindow for legacy cached models");
         } catch (e) {
           console.warn("[LLMEngine.loadDynamicModels] Failed to persist backfill:", e);
