@@ -14,14 +14,15 @@ import {
   zgCliPathOf,
   resolveNodeExe,
   parseNodeVersion,
-  pickNodeWinZipUrl,
+  pickNodeLtsVersion,
   type ZvecPaths,
 } from "./runtime";
 import { exists, executeCommand, listDirectory, deletePath, readFile, writeFile } from "../file-api";
 import {
   ZVEC_MCP_SERVER,
   ZVEC_PACK_URL,
-  NODE_INDEX_URL,
+  NODE_OFFICIAL_DIST,
+  NODE_MIRROR_DIST,
   ZVEC_MIN_NODE_MAJOR,
   ZVEC_MODELS,
   ZVEC_EVENT_CHANGED,
@@ -209,25 +210,56 @@ async function ensureRuntimeDirs(paths: ZvecPaths): Promise<void> {
   await writeFile(`${paths.stateDir}/.keep`, "").catch(() => {});
 }
 
+/** 归一化错误为可读文本（Tauri invoke 错误是 string，Error 才带 .message） */
+export function errMsg(e: unknown): string {
+  if (e instanceof Error) return e.message || String(e);
+  if (typeof e === "string" && e.trim()) return e;
+  try {
+    const s = JSON.stringify(e);
+    if (s && s !== "{}") return s;
+  } catch { /* fall through */ }
+  return "未知错误";
+}
+
+/**
+ * 拉取 node 官方/镜像 index.json 并解析最新 LTS 的 win-x64 zip 地址。
+ * index.json 较大（全版本列表），用长超时下载落盘再读取（http_get 15s 会超时）。
+ */
+async function fetchNodeZipUrl(base: string, paths: ZvecPaths): Promise<string> {
+  const idxPath = `${paths.baseDir}/.tmp-node-index.json`;
+  await downloadFileExt(`${base}/index.json`, idxPath, 300);
+  const text = await readFile(idxPath);
+  const index = JSON.parse(text);
+  const v = pickNodeLtsVersion(index);
+  if (!v) throw new Error("index.json 中未找到 LTS 版本");
+  return `${base}/v${v}/node-${v}-win-x64.zip`;
+}
+
 async function downloadNodeIfNeeded(paths: ZvecPaths, onPhase: PhaseCb): Promise<string> {
   const existing = await findPortableNode(paths.nodeDir);
   if (existing) return existing;
-  onPhase("downloading-node", "下载 Node 运行时（约 35MB）...");
+  onPhase("downloading-node", "解析 Node 下载地址（官方/镜像）...");
   const zipPath = `${paths.baseDir}/.tmp-node.zip`;
+  let lastErr: unknown = null;
   try {
-    const { invoke } = (window as any).__TAURI__?.core || {};
-    if (!invoke) throw new Error("Tauri runtime not available");
-    const res: { status: number; body: string } = await invoke("http_get", {
-      url: NODE_INDEX_URL,
-      headers: null,
-    });
-    const index = JSON.parse(res.body);
-    const url = pickNodeWinZipUrl(index);
-    if (!url) throw new Error("无法解析 Node.js LTS 下载地址");
-    onPhase("downloading-node", "下载 Node 运行时...");
-    await downloadFileExt(url, zipPath, 1200);
+    // 官方源优先；失败自动切 npmmirror 镜像（国内网络直连官方常不可达）
+    for (const base of [NODE_OFFICIAL_DIST, NODE_MIRROR_DIST]) {
+      try {
+        const url = await fetchNodeZipUrl(base, paths);
+        onPhase("downloading-node", "下载 Node 运行时（约 35MB）...");
+        await downloadFileExt(url, zipPath, 1200);
+        lastErr = null;
+        break;
+      } catch (e) {
+        lastErr = e;
+        console.warn(`[zvec-grep] node 下载源失败: ${base}`, e);
+      }
+    }
+    if (lastErr !== null) throw lastErr;
   } catch (e) {
-    throw new Error(`下载 Node 失败：${(e as Error).message}`);
+    throw new Error(
+      `下载 Node 失败：${errMsg(e)}。可先自行安装 Node.js ≥22（https://nodejs.org）后重试，或改用「导入离线包」。`,
+    );
   }
   onPhase("extracting-node", "解压 Node 运行时...");
   await extractZip(zipPath, paths.nodeDir);

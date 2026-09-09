@@ -8,9 +8,11 @@ import {
   zgCliPathOf,
   parseNodeVersion,
   pickNodeWinZipUrl,
+  pickNodeLtsVersion,
   resolveNodeExe,
 } from "../core/zvec-grep/runtime";
-import { ZVEC_MODELS, ZVEC_MCP_SERVER, ZVEC_MIN_NODE_MAJOR } from "../core/zvec-grep/types";
+import { errMsg } from "../core/zvec-grep/service";
+import { ZVEC_MODELS, ZVEC_MCP_SERVER, ZVEC_MIN_NODE_MAJOR, NODE_OFFICIAL_DIST, NODE_MIRROR_DIST } from "../core/zvec-grep/types";
 
 describe("zvec-grep runtime 路径规划", () => {
   it("buildZvecPaths 拼接运行时目录（win 风格）", () => {
@@ -62,6 +64,30 @@ describe("zvec-grep node 解析与决策", () => {
 
   it("pickNodeWinZipUrl 无 LTS 返回 null", () => {
     expect(pickNodeWinZipUrl([{ version: "v25.0.0", lts: false }])).toBeNull();
+  });
+
+  it("pickNodeLtsVersion 返回纯版本号（供官方/镜像 dist 复用）", () => {
+    const index = [
+      { version: "v25.0.0", lts: false },
+      { version: "v24.12.0", lts: "Krypton" },
+      { version: "v22.16.0", lts: "Jod" },
+    ];
+    expect(pickNodeLtsVersion(index)).toBe("24.12.0");
+    expect(pickNodeLtsVersion([{ version: "v25.0.0", lts: false }])).toBeNull();
+  });
+
+  it("node dist 常量：官方 + npmmirror 镜像", () => {
+    expect(NODE_OFFICIAL_DIST).toBe("https://nodejs.org/dist");
+    expect(NODE_MIRROR_DIST).toBe("https://npmmirror.com/mirrors/node");
+  });
+
+  it("errMsg 归一化各种错误形态（修复 undefined 报错）", () => {
+    expect(errMsg(new Error("boom"))).toBe("boom");
+    expect(errMsg("HTTP 504: timeout")).toBe("HTTP 504: timeout");
+    expect(errMsg(new Error(""))).not.toContain("undefined");
+    expect(errMsg(undefined)).not.toContain("undefined");
+    expect(errMsg(null)).not.toContain("undefined");
+    expect(errMsg({ code: 7 })).toContain("7");
   });
 
   it("resolveNodeExe：系统 node ≥ 22 → 用系统 node", async () => {

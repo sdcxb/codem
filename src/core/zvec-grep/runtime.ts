@@ -49,8 +49,8 @@ export function parseNodeVersion(out: string): [number, number, number] | null {
   return [parseInt(m[1], 10), parseInt(m[2], 10), parseInt(m[3], 10)];
 }
 
-/** 从 nodejs.org dist index.json 选择最新 LTS 的 win-x64 zip 下载地址 */
-export function pickNodeWinZipUrl(indexJson: unknown[]): string | null {
+/** 从 nodejs.org dist index.json 选择最新 LTS 版本号（如 "24.12.0"） */
+export function pickNodeLtsVersion(indexJson: unknown[]): string | null {
   // index.json: [{ version, lts: false | "代号", ... }] 降序，首个 string lts 即最新 LTS
   for (const row of indexJson) {
     const r = row as { version?: string; lts?: string | boolean };
@@ -58,10 +58,17 @@ export function pickNodeWinZipUrl(indexJson: unknown[]): string | null {
     if (typeof r.lts !== "string") continue; // 仅 LTS（lts 为代号字符串）
     const v = r.version.replace(/^v/, "");
     if (/^\d+\.\d+\.\d+$/.test(v)) {
-      return `https://nodejs.org/dist/${r.version}/node-${v}-win-x64.zip`;
+      return v;
     }
   }
   return null;
+}
+
+/** 从 nodejs.org dist index.json 选择最新 LTS 的 win-x64 zip 下载地址（官方源） */
+export function pickNodeWinZipUrl(indexJson: unknown[]): string | null {
+  const v = pickNodeLtsVersion(indexJson);
+  if (!v) return null;
+  return `https://nodejs.org/dist/v${v}/node-${v}-win-x64.zip`;
 }
 
 /**

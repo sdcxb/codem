@@ -34,8 +34,14 @@ export const ZVEC_RELEASE_BASE =
 export const ZVEC_PACK_URL =
   process.env.ZVEC_GREP_PACK_URL || `${ZVEC_RELEASE_BASE}/codem-zvec-win-x64.zip`;
 
-/** nodejs.org 版本索引（解析最新 LTS 的下载地址） */
-export const NODE_INDEX_URL = "https://nodejs.org/dist/index.json";
+/** nodejs 官方 dist（index.json + win-x64 zip） */
+export const NODE_OFFICIAL_DIST = "https://nodejs.org/dist";
+
+/** nodejs 镜像 dist（npmmirror，国内网络兜底） */
+export const NODE_MIRROR_DIST = "https://npmmirror.com/mirrors/node";
+
+/** nodejs.org 版本索引（兼容旧引用） */
+export const NODE_INDEX_URL = `${NODE_OFFICIAL_DIST}/index.json`;
 
 /** 可切换的 embedding 模型目录（v1 显示用；下载走 zg 自身/模型包） */
 export interface ZvecModelInfo {
