@@ -23,6 +23,7 @@ import {
   ZVEC_PACK_URL,
   NODE_OFFICIAL_DIST,
   NODE_MIRROR_DIST,
+  NODE_FALLBACK_VERSION,
   ZVEC_MIN_NODE_MAJOR,
   ZVEC_MODELS,
   ZVEC_EVENT_CHANGED,
@@ -235,27 +236,48 @@ async function fetchNodeZipUrl(base: string, paths: ZvecPaths): Promise<string> 
   return `${base}/v${v}/node-${v}-win-x64.zip`;
 }
 
+/**
+ * 下载 portable node：
+ * 1) 每个源先试 index.json 动态解析的最新 LTS；
+ * 2) 404/失败则回退该源的固定兜底版本（NODE_FALLBACK_VERSION，官方/镜像长期保留）；
+ * 3) 官方源全失败切 npmmirror 镜像重复上述两步。
+ * 这样同时覆盖「国内直连官方不可达」与「最新版本发布窗口 zip 未就绪」两种场景。
+ */
 async function downloadNodeIfNeeded(paths: ZvecPaths, onPhase: PhaseCb): Promise<string> {
   const existing = await findPortableNode(paths.nodeDir);
   if (existing) return existing;
   onPhase("downloading-node", "解析 Node 下载地址（官方/镜像）...");
   const zipPath = `${paths.baseDir}/.tmp-node.zip`;
-  let lastErr: unknown = null;
+  const failures: string[] = [];
+  let downloaded = false;
   try {
-    // 官方源优先；失败自动切 npmmirror 镜像（国内网络直连官方常不可达）
     for (const base of [NODE_OFFICIAL_DIST, NODE_MIRROR_DIST]) {
+      const urls: Array<{ u: string; what: string }> = [];
       try {
-        const url = await fetchNodeZipUrl(base, paths);
-        onPhase("downloading-node", "下载 Node 运行时（约 35MB）...");
-        await downloadFileExt(url, zipPath, 1200);
-        lastErr = null;
-        break;
+        urls.push({ u: await fetchNodeZipUrl(base, paths), what: "最新 LTS" });
       } catch (e) {
-        lastErr = e;
-        console.warn(`[zvec-grep] node 下载源失败: ${base}`, e);
+        failures.push(`${base} index: ${errMsg(e)}`);
       }
+      // 固定兜底版本（跳过 index，直连其 dist 目录）
+      urls.push({
+        u: `${base}/v${NODE_FALLBACK_VERSION}/node-${NODE_FALLBACK_VERSION}-win-x64.zip`,
+        what: `兜底 v${NODE_FALLBACK_VERSION}`,
+      });
+      for (const { u, what } of urls) {
+        if (downloaded) break;
+        try {
+          onPhase("downloading-node", `下载 Node 运行时（${what}）...`);
+          await downloadFileExt(u, zipPath, 1200);
+          downloaded = true;
+        } catch (e) {
+          failures.push(`${base} ${what}: ${errMsg(e)}`);
+        }
+      }
+      if (downloaded) break;
     }
-    if (lastErr !== null) throw lastErr;
+    if (!downloaded) {
+      throw new Error(`官方与镜像均下载失败：\n${failures.join("\n")}`);
+    }
   } catch (e) {
     throw new Error(
       `下载 Node 失败：${errMsg(e)}。可先自行安装 Node.js ≥22（https://nodejs.org）后重试，或改用「导入离线包」。`,

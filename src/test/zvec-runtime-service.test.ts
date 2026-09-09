@@ -12,7 +12,7 @@ import {
   resolveNodeExe,
 } from "../core/zvec-grep/runtime";
 import { errMsg } from "../core/zvec-grep/service";
-import { ZVEC_MODELS, ZVEC_MCP_SERVER, ZVEC_MIN_NODE_MAJOR, NODE_OFFICIAL_DIST, NODE_MIRROR_DIST } from "../core/zvec-grep/types";
+import { ZVEC_MODELS, ZVEC_MCP_SERVER, ZVEC_MIN_NODE_MAJOR, NODE_OFFICIAL_DIST, NODE_MIRROR_DIST, NODE_FALLBACK_VERSION } from "../core/zvec-grep/types";
 
 describe("zvec-grep runtime 路径规划", () => {
   it("buildZvecPaths 拼接运行时目录（win 风格）", () => {
@@ -76,9 +76,12 @@ describe("zvec-grep node 解析与决策", () => {
     expect(pickNodeLtsVersion([{ version: "v25.0.0", lts: false }])).toBeNull();
   });
 
-  it("node dist 常量：官方 + npmmirror 镜像", () => {
+  it("node dist 常量：官方 + npmmirror 镜像 + 固定兜底版本", () => {
     expect(NODE_OFFICIAL_DIST).toBe("https://nodejs.org/dist");
     expect(NODE_MIRROR_DIST).toBe("https://npmmirror.com/mirrors/node");
+    // 兜底版本需 ≥ 最低要求，且是发布已久、官方/镜像长期保留的稳定版本
+    expect(NODE_FALLBACK_VERSION.split(".")[0]).toBe("24");
+    expect(Number(NODE_FALLBACK_VERSION.split(".")[0])).toBeGreaterThanOrEqual(ZVEC_MIN_NODE_MAJOR);
   });
 
   it("errMsg 归一化各种错误形态（修复 undefined 报错）", () => {

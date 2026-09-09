@@ -40,6 +40,13 @@ export const NODE_OFFICIAL_DIST = "https://nodejs.org/dist";
 /** nodejs 镜像 dist（npmmirror，国内网络兜底） */
 export const NODE_MIRROR_DIST = "https://npmmirror.com/mirrors/node";
 
+/**
+ * 固定兜底 Node 版本（官方与 npmmirror 均长期保留）。
+ * index.json 动态解析的"最新 LTS"可能处于发布窗口（版本已列入但 win-x64 zip
+ * 未同步就绪/镜像滞后），此时回退到该已发布多时的稳定版本。
+ */
+export const NODE_FALLBACK_VERSION = "24.19.0";
+
 /** nodejs.org 版本索引（兼容旧引用） */
 export const NODE_INDEX_URL = `${NODE_OFFICIAL_DIST}/index.json`;
 
