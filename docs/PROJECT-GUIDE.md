@@ -1410,7 +1410,12 @@ npm run tauri build        # 构建 NSIS exe + MSI
   关闭后残留残缺视图 bug）；附带清理 InputArea 重复声明
 - **功能文档体系**：项目功能说明介绍（20 域 152 亮点宣传向 + 皮肤独立域 13 项细粒度 +
   分层附录）与项目功能树-全量（18 路只读审计 2779 项叶子，含证据路径+宣传句）
-- 测试：全量 174 文件 / 4302 用例通过 + tsc 零错误 + cargo check 通过
+- **覆盖包：手动添加自定义模型名（50010f3）**——服务商 /models 列表外的内测/灰度模型
+  （如 deepseek-v4.1-flash-expires-on-0910，调用同协议仅模型名不同）可在设置→模型与
+  API Key→对应 Provider 卡片直接添加（chips 可删）；存储独立 codem-custom-models，
+  引擎加载/设置页/聊天模型下拉/方案面板读取统一 mergeCustomModels 合并，不污染服务器
+  缓存；12 单测
+- 测试：全量 175 文件 / 4314 用例通过 + tsc 零错误 + cargo check 通过
 
 ### v1.11.1（2026-09-09）— zvec-grep（zg）语义检索集成 + archify 图表技能 + UI/体验修复打包
 

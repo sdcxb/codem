@@ -4,8 +4,9 @@ All notable changes to Codem will be documented in this file.
 
 ## [1.11.2] - 2026-09-09 — zg 在线安装 Node 源根治 + 审计四坑修复（真 PPTX / 纠偏接线 / Whisper 入口 / 会话内搜索）+ 功能文档体系
 
-> 本版 = v1.11.1 覆盖版之后全部改动（13a6fb6 / 1644cca）：在线一键安装彻底不再访问
-> nodejs.org/npmmirror；四处审计发现的功能"占位/死代码"全部修复为真实可用。
+> 本版 = v1.11.1 覆盖版之后全部改动（13a6fb6 / 1644cca / 50010f3）：在线一键安装彻底不再访问
+> nodejs.org/npmmirror；四处审计发现的功能"占位/死代码"全部修复为真实可用；
+> 末尾覆盖包新增「手动添加模型名」（服务器列表外的内测/测试模型）。
 
 ### 修复：zvec-grep 在线安装 Node 源（根治）
 
@@ -45,7 +46,18 @@ All notable changes to Codem will be documented in this file.
   13 项细粒度）+ `项目功能树-全量.md`（18 路并行只读审计，**2779 项叶子功能点**，
   每条含证据路径与宣传句，占位/未接线不收录）+ 分层检索索引（附录 A）
 
-- 全量 vitest 174 文件 / 4302 用例通过 + tsc 零错误 + cargo check 通过
+### 新增：手动添加自定义模型名（服务器列表外的内测/测试模型，覆盖包）
+
+- 服务商 /models 返回不了内测/灰度模型（如 `deepseek-v4.1-flash-expires-on-0910`，
+  调用方式与同 provider 其它模型完全一致、仅模型名不同）——现在可在
+  **设置 → 模型与 API Key → 对应 Provider 卡片**直接输入模型名「添加模型」，
+  以 chips 展示、可逐个移除
+- 存储独立（`codem-custom-models`，不入服务器缓存）：引擎加载 / 设置页 /
+  聊天头部模型下拉 / 模型方案面板四处读取统一合并（mergeCustomModels），
+  自定义模型与服务器模型同路径进入模型选择器并可用，删除即移除
+- 12 单测（custom-models.test.ts）
+
+- 全量 vitest 175 文件 / 4314 用例通过 + tsc 零错误 + cargo check 通过
 
 ## [1.11.1] - 2026-09-09 — zvec-grep（zg）语义检索集成 + archify 图表技能 + UI/体验修复打包
 
