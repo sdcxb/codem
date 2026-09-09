@@ -401,12 +401,58 @@ export type MonitorTab =
 /** 场景风格：pixel = 第三方像素美术场景（默认，仅限非商业）；iso = 本项目自绘等距矢量场景 */
 export type SceneStyle = "pixel" | "iso";
 
+/**
+ * 场景图片来源：
+ * - `claw` / `ai-library-01` 等内置预设（见 data/pixel-art.ts 的 SCENE_PRESETS）
+ * - `custom` = 用户自己上传的图片（存 IndexedDB，见 core/scene-image-db.ts）
+ */
+export type SceneImageId = "claw" | "ai-library-01" | "custom";
+
+/** 内置预设 id（`custom` 之外的全部） */
+export const BUILTIN_SCENE_IMAGE_IDS: SceneImageId[] = ["claw", "ai-library-01"];
+
+/** 全部合法取值（含用户上传） */
+export const SCENE_IMAGE_IDS: SceneImageId[] = [...BUILTIN_SCENE_IMAGE_IDS, "custom"];
+
+export const SCENE_IMAGE_ID_FALLBACK: SceneImageId = "ai-library-01";
+
+/** 用户上传的场景图片（运行时状态，二进制存在 IndexedDB） */
+export interface CustomSceneImage {
+  /** objectURL（每次加载/上传后重建） */
+  url: string;
+  /** 原始文件名 */
+  name: string;
+  width: number;
+  height: number;
+  size: number;
+  /** 上传时间 */
+  addedAt: number;
+}
+
+/** 画面微调（只影响图片图层，不影响角色与岗位坐标） */
+export interface SceneImageAdjust {
+  /** 缩放 0.5..2 */
+  scale: number;
+  /** 水平位移（显示画布像素，-600..600） */
+  x: number;
+  /** 垂直位移（显示画布像素，-600..600） */
+  y: number;
+}
+
+export const DEFAULT_SCENE_ADJUST: SceneImageAdjust = { scale: 1, x: 0, y: 0 };
+
 /** 插件设置（持久化到 localStorage） */
 export interface LibraryOpsSettings {
   /** 采样间隔（ms） */
   refreshMs: number;
   /** 场景风格 */
   sceneStyle: SceneStyle;
+  /** 场景图片（内置预设或用户上传） */
+  sceneImageId: SceneImageId;
+  /** 图片图层微调 */
+  sceneImageAdjust: SceneImageAdjust;
+  /** 是否显示对位参考线（房间框 + 行走图） */
+  showAlignGuides: boolean;
   /** 场景动画速度倍率 */
   speed: number;
   /** 是否显示角色头顶名牌 */
@@ -428,6 +474,9 @@ export interface LibraryOpsSettings {
 export const DEFAULT_SETTINGS: LibraryOpsSettings = {
   refreshMs: 1500,
   sceneStyle: "pixel",
+  sceneImageId: "ai-library-01",
+  sceneImageAdjust: { ...DEFAULT_SCENE_ADJUST },
+  showAlignGuides: false,
   speed: 1,
   showNameplates: true,
   showBubbles: true,

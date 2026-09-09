@@ -10,6 +10,7 @@ import { DEFAULT_SETTINGS } from "../../types";
 import { SCENE_CREDITS } from "../../data/pixel-art";
 import { useLibraryOps } from "../../store";
 import { Card, Field, Pill, SectionTitle, Switch } from "./common";
+import { SceneImageCard } from "./SceneImageCard";
 
 const TABS: Array<{ id: MonitorTab; zh: string; en: string; icon: string }> = [
   { id: "overview", zh: "总览", en: "Overview", icon: "📊" },
@@ -77,8 +78,8 @@ export function SettingsPanel({ zh }: { zh: boolean }) {
         <p className="lo-note">
           {settings.sceneStyle === "pixel"
             ? zh
-              ? "像素图书馆使用 ClawLibrary / Star-Office-UI 的美术资源（CC BY-NC-SA 4.0 / 仅非商业）。商用请切换到「等距矢量」。"
-              : "Pixel library uses third-party art (non-commercial only). Switch to isometric vector for commercial use."
+              ? "像素图书馆的「画面」可以在下面换成内置场景图或你自己上传的图；角色与岗位布局不变。"
+              : "In pixel mode you can swap the scene image below (built-in or your own upload)."
             : zh
               ? "等距矢量场景由本项目自绘，无第三方美术许可约束。"
               : "Isometric vector scene is drawn by this project; no third-party art license constraints."}
@@ -116,6 +117,8 @@ export function SettingsPanel({ zh }: { zh: boolean }) {
           <Switch checked={settings.showEventFeed} onChange={(v) => update({ showEventFeed: v })} label={zh ? "显示右侧事件流" : "Event feed"} />
         </div>
       </Card>
+
+      <SceneImageCard zh={zh} />
 
       <Card title={zh ? "美术资源许可" : "Art asset licenses"} icon="⚖️">
         <div className="lo-credits">

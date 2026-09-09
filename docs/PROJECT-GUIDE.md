@@ -628,26 +628,28 @@ mimo-gui/
 │   │   ├── monopoly-game/        # 大富翁小游戏（v1.6.2，Phaser 3，@codem/ui-game）
 │   │   └── library-ops/          # ★ 图书馆运营监控（v1.13.0，@codem/ui-library-ops）
 │   │       ├── index.ts          # 公共导出
-│   │       ├── types.ts          # 领域类型 + ACTIVITY_META（11 种工作态）+ 设置（含 sceneStyle）
-│   │       ├── store.ts          # zustand store（面板/采样/时间序列/isoScene+pixelScene 双槽位）
+│   │       ├── types.ts          # 领域类型 + ACTIVITY_META（11 种工作态）+ 设置（sceneStyle / sceneImageId / sceneImageAdjust）
+│   │       ├── store.ts          # zustand store（面板/采样/时间序列/isoScene+pixelScene 双槽位/自定义场景图）
 │   │       ├── data/
 │   │       │   ├── library-map.ts  # 岗位地图：10 岗位 + 装饰 + 投影 + 岗位路由 + 工位槽位
 │   │       │   ├── characters.ts   # 角色外观生成器（等距场景用，34560 种，令牌化调色板）
-│   │       │   └── pixel-art.ts    # 像素资源清单：12 房间 / walkGraph / 精灵表元数据 / 岗位→房间
+│   │       │   └── pixel-art.ts    # 像素资源清单：12 房间 / walkGraph / 精灵表 / 岗位→房间 / SCENE_PRESETS
 │   │       ├── core/
 │   │       │   ├── pathfinder.ts   # 等距：可通行网格 + BFS
 │   │       │   ├── scene-engine.ts # 等距场景状态机（纯函数）
 │   │       │   ├── pixel-path.ts   # 像素：walkGraph 图最短路 + 房间工位排布
 │   │       │   ├── pixel-scene.ts  # 像素场景状态机（纯函数）
+│   │       │   ├── scene-image.ts  # ★ 场景图片校验/微调/解码（纯函数 + 可注入 IO）
+│   │       │   ├── scene-image-db.ts # ★ 场景图片 IndexedDB 持久化（Blob 原样存）
 │   │       │   ├── telemetry-adapter.ts # 真实宿主数据 → LibrarySnapshot（只读 + 可注入）
 │   │       │   └── format.ts       # 数值/时间格式化
 │   │       ├── components/
 │   │       │   ├── LibraryOpsLauncher.tsx # 入口圆钮（挂 app.overlay）
 │   │       │   ├── LibraryOpsPanel.tsx    # 监控界面外壳（Portal 全屏，9 页签）
-│   │       │   ├── library/PixelLibraryScene.tsx # ★ 像素图书馆场景（默认，ClawLibrary 美术）
+│   │       │   ├── library/PixelLibraryScene.tsx # ★ 像素图书馆场景（内置预设/自定义图 + 拖拽换图）
 │   │       │   ├── library/LibraryScene.tsx      # 等距矢量场景（备用，自绘）
 │   │       │   ├── library/{iso,SceneFurniture,CharacterActor}.tsx # 等距几何/家具/角色
-│   │       │   └── monitor/          # common / charts / labels / EventList / 9 个监控面板
+│   │       │   └── monitor/          # common / charts / labels / EventList / SceneImageCard / 9 个监控面板
 │   │       └── styles/library-ops.css # 样式（只消费皮肤令牌）
 │   │
 │   ├── hooks/                    # React Hooks（v0.96 新增目录）
@@ -698,6 +700,7 @@ mimo-gui/
 ├── scripts/                      # 脚本
 │   ├── verify-package-invariants.ts # 包不变量检查（v1.1.0 新增）
 │   ├── sync-library-ops-assets.mjs  # 图书馆插件美术资源同步（上游 → public/，PNG→WebP）
+│   ├── build-library-ops-scene-preset.mjs # 场景图预设接入（任意图 → 2752×1536 WebP + 缩略图）
 │   ├── build-library-ops-scene.mjs  # 自有场景图接入（尺寸归一 + 自动/校验可行走掩码）
 │   ├── build-library-ops-sprites.mjs# 自有角色精灵表接入（去背景/切格/基线对齐/WebP/清单）
 │   ├── export-library-ops-layout-guide.mjs # 导出布局参考图（喂绘图模型做 img2img）

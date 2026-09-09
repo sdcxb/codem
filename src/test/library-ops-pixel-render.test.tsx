@@ -8,10 +8,11 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { render, act, fireEvent, cleanup } from "@testing-library/react";
 import { PixelLibraryScene } from "../plugins/library-ops/components/library/PixelLibraryScene";
 import { advancePixelScene, createPixelSceneState, stepPixelMovement } from "../plugins/library-ops/core/pixel-scene";
-import { CLAW_SCENE, PIXEL_ROOMS, SPRITE_SHEETS } from "../plugins/library-ops/data/pixel-art";
+import { CLAW_SCENE, PIXEL_ROOMS, SCENE_PRESETS, SPRITE_SHEETS, getScenePreset } from "../plugins/library-ops/data/pixel-art";
 import { resolveZoneId } from "../plugins/library-ops/data/library-map";
 import { generateLook } from "../plugins/library-ops/data/characters";
 import { useLibraryOps } from "../plugins/library-ops/store";
+import { DEFAULT_SETTINGS } from "../plugins/library-ops/types";
 import type { ActorActivity, LibraryActor, LibrarySnapshot } from "../plugins/library-ops/types";
 
 const NOW = 1_800_000_000_000;
@@ -86,12 +87,13 @@ describe("LO-PIXEL-RENDER 像素场景渲染", () => {
     useLibraryOps.getState()._reset();
   });
 
-  it("LO-PIXEL-RENDER-1: 渲染 2 个图层 + 12 个房间 + 角色精灵", () => {
+  it("LO-PIXEL-RENDER-1: 渲染默认场景图层 + 12 个房间 + 角色精灵", () => {
     const { container, unmount } = renderScene();
+    const preset = getScenePreset(DEFAULT_SETTINGS.sceneImageId)!;
     const layers = container.querySelectorAll("img.lo-pixel-layer");
-    expect(layers.length).toBe(2);
-    expect((layers[0] as HTMLImageElement).getAttribute("src")).toBe(CLAW_SCENE.floor);
-    expect((layers[1] as HTMLImageElement).getAttribute("src")).toBe(CLAW_SCENE.objects);
+    expect(layers.length).toBe(preset.layers.length);
+    expect([...layers].map((l) => l.getAttribute("src"))).toEqual(preset.layers);
+    expect(container.querySelector(".lo-scene")!.getAttribute("data-scene-image")).toBe(preset.id);
 
     const rooms = container.querySelectorAll(".lo-pixel-room");
     expect(rooms.length).toBe(PIXEL_ROOMS.length);
@@ -212,5 +214,97 @@ describe("LO-PIXEL-RENDER 像素场景渲染", () => {
     // 朝向镜像在外层，动效在内层（互不覆盖）
     expect(utils.container.querySelector(".lo-sprite-wrap")).toBeTruthy();
     utils.unmount();
+  });
+
+  it("LO-PIXEL-RENDER-8: 切到内置像素画 → 地板 + 家具两层，且用最近邻缩放", () => {
+    useLibraryOps.getState().updateSettings({ sceneImageId: "claw" });
+    const scene = settled();
+    const utils = render(<PixelLibraryScene snapshot={snapshot(NOW + 100_000)} initialScene={scene} />);
+    const layers = [...utils.container.querySelectorAll<HTMLImageElement>("img.lo-pixel-layer")];
+    expect(layers.length).toBe(2);
+    expect(layers[0].getAttribute("src")).toBe(CLAW_SCENE.floor);
+    expect(layers[1].getAttribute("src")).toBe(CLAW_SCENE.objects);
+    expect(layers[0].className).toContain("lo-pixel-layer--pixelated");
+    utils.unmount();
+  });
+
+  it("LO-PIXEL-RENDER-9: 用户上传的图片 → 单图层渲染 + 应用微调变换", () => {
+    useLibraryOps.setState({
+      customScene: { url: "blob:my-scene", name: "我的图.png", width: 2752, height: 1536, size: 1234, addedAt: 1 },
+    });
+    useLibraryOps.getState().updateSettings({ sceneImageId: "custom", sceneImageAdjust: { scale: 1.2, x: 40, y: -20 } });
+    const scene = settled();
+    const utils = render(<PixelLibraryScene snapshot={snapshot(NOW + 100_000)} initialScene={scene} />);
+    const layers = [...utils.container.querySelectorAll<HTMLImageElement>("img.lo-pixel-layer")];
+    expect(layers.length).toBe(1);
+    expect(layers[0].getAttribute("src")).toBe("blob:my-scene");
+    expect(layers[0].className).not.toContain("lo-pixel-layer--pixelated");
+    expect(layers[0].className).toContain("lo-pixel-layer--adjusted");
+    expect(layers[0].style.transform).toBe("translate(40px, -20px) scale(1.2)");
+    expect(utils.container.querySelector(".lo-scene")!.getAttribute("data-scene-image")).toBe("custom");
+    // 房间与角色仍在（换图不影响布局）
+    expect(utils.container.querySelectorAll(".lo-pixel-room").length).toBe(12);
+    expect(utils.container.querySelectorAll(".lo-sprite").length).toBe(ACTORS.length);
+    utils.unmount();
+  });
+
+  it("LO-PIXEL-RENDER-10: 把图片拖到场景上 → 交给 store 处理并显示落点提示", async () => {
+    const original = useLibraryOps.getState().setCustomSceneImage;
+    let dropped: File | null = null;
+    useLibraryOps.setState({
+      setCustomSceneImage: async (file: File) => {
+        dropped = file;
+        return true;
+      },
+    });
+    try {
+      const scene = settled();
+      const utils = render(<PixelLibraryScene snapshot={snapshot(NOW + 100_000)} initialScene={scene} />);
+      const root = utils.container.querySelector(".lo-scene") as HTMLElement;
+
+      expect(utils.container.querySelector(".lo-scene__drop")).toBeNull();
+      await act(async () => {
+        fireEvent.dragOver(root, { dataTransfer: { types: ["Files"], files: [] } });
+      });
+      expect(root.className).toContain("is-dropping");
+      expect(utils.container.querySelector(".lo-scene__drop")).toBeTruthy();
+      expect(utils.container.textContent).toContain("替换场景");
+
+      const file = new File([new Uint8Array([1, 2, 3])], "新场景.png", { type: "image/png" });
+      await act(async () => {
+        fireEvent.drop(root, { dataTransfer: { types: ["Files"], files: [file] } });
+      });
+      expect(dropped).toBe(file);
+      expect(root.className).not.toContain("is-dropping");
+      utils.unmount();
+    } finally {
+      useLibraryOps.setState({ setCustomSceneImage: original });
+    }
+  });
+
+  it("LO-PIXEL-RENDER-11: 对位参考线（房间框 + 行走图）按开关渲染", () => {
+    const scene = settled();
+    const off = render(<PixelLibraryScene snapshot={snapshot(NOW + 100_000)} initialScene={scene} />);
+    expect(off.container.querySelector(".lo-scene__guides")).toBeNull();
+    off.unmount();
+
+    useLibraryOps.getState().updateSettings({ showAlignGuides: true });
+    const on = render(<PixelLibraryScene snapshot={snapshot(NOW + 100_000)} initialScene={scene} />);
+    const guides = on.container.querySelector(".lo-scene__guides")!;
+    expect(guides).toBeTruthy();
+    expect(guides.querySelectorAll("line").length).toBe(19);
+    expect(guides.querySelectorAll("circle").length).toBe(20);
+    on.unmount();
+  });
+
+  it("LO-PIXEL-RENDER-12: 预设清单与选择项一一对应（画廊可渲染）", () => {
+    expect(SCENE_PRESETS.length).toBeGreaterThanOrEqual(2);
+    for (const preset of SCENE_PRESETS) {
+      expect(preset.thumb.length).toBeGreaterThan(0);
+      expect(preset.layers.length).toBeGreaterThan(0);
+      expect(typeof preset.commercial).toBe("boolean");
+    }
+    // custom 不在预设表里（它来自用户上传）
+    expect(SCENE_PRESETS.some((p) => (p.id as string) === "custom")).toBe(false);
   });
 });

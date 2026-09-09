@@ -2,6 +2,46 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [Unreleased] — 图书馆场景图可上传替换（换图不用改代码）
+
+> 场景「画面」与「布局」解耦：角色站位、岗位标签、点击热区都来自固定数据，
+> 图片只是一个铺满 1920×1072 画布的图层 —— 于是换图不再需要改代码，
+> 你自己用绘图模型生成的场景图可以直接在插件里上传、立即生效、下次打开还在。
+
+### 新增：场景图片（设置 →「场景图片」）
+
+- **内置画廊**：`claw`（ClawLibrary 像素画，地板 + 家具两层）/ `ai-library-01`
+  （本项目内置的 AI 生成整图，2752×1536，可商用）一键切换
+- **上传自己的图**：点「选择图片」或**直接把图片拖到场景上**松手即可；
+  支持 PNG / JPG / WebP / AVIF / GIF / BMP，≤32MB、≥640×360，
+  比例偏离 16:9 超过 8% 会提醒「会被拉伸」
+- **持久化**：图片以 Blob 存进浏览器 IndexedDB（`codem-library-ops` / `scene-images`），
+  避免 localStorage 5MB 配额；读出后 `URL.createObjectURL` 渲染；环境不支持时降级为
+  「本次会话有效」并明确提示（不静默失败）
+- **画面微调**：缩放 0.5–2×、位移 ±600px + 「对位参考线」（12 房间框 + 20 行走节点）；
+  设置卡里还有把房间框叠在缩略图上的**对位预览**，拖滑杆即可看出是否对齐
+- **删除**：一键「删除我的上传」回到内置场景，同时清理 IndexedDB 与 objectURL
+
+### 新增：内置 AI 场景图预设
+
+- `scripts/build-library-ops-scene-preset.mjs`：把任意一张场景图规范化成
+  2752×1536 的 WebP 预设 + 480×268 缩略图，并输出可直接粘贴进
+  `data/pixel-art.ts` 的 `SCENE_PRESETS` 条目
+- `public/library-ops/scenes/`：本项目**自有素材**（AI 生成，可商用），
+  含 `SOURCE.md` 出处与许可说明；`docs/ASSET-LICENSES.md` / `public/library-ops/README.md` 同步更新
+- 默认场景图改为 `ai-library-01`（角色精灵仍来自 ClawLibrary，商用需替换，见许可文档）
+
+### 变更
+
+- 像素场景图层由「写死的两张图」改为数据驱动的 `SCENE_PRESETS`（支持多层预设）
+- 像素画图层用 `image-rendering: pixelated`，平滑场景图用默认插值（按预设声明）
+- 设置页「场景」卡文案更新：换图不会改变角色站位与岗位坐标
+
+### 验证
+
+- 新增 33 个用例（`LO-SCENE-IMG-*` 10 / `LO-SCENE-DB-*` 6 / `LO-SCENE-UI-*` 7 / `LO-PIXEL-RENDER-8~12` 5
+  及既有用例适配）；`npx tsc --noEmit` 零错误；`npx vitest run` 全绿
+
 ## [1.13.0] - 2026-09-10 — 图书馆插件集成手绘像素美术（场景直接用参考项目的场景）+ 监控面板对标 lobster-pet
 
 > 上一版图书馆插件的场景是程序化矢量绘制，质感不如参考项目。本版把**美观提到第一位**：

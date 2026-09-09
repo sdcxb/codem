@@ -1,4 +1,4 @@
-/* =============================================================================
+﻿/* =============================================================================
  * @codem/ui-library-ops — 图书馆运营监控插件样式
  *
  * 皮肤兼容契约（docs/SKIN-PLUGIN-CONTRACT.md）：
@@ -731,9 +731,73 @@
   width: 100%;
   height: 100%;
   object-fit: fill;
-  image-rendering: pixelated;
+  image-rendering: auto;
   pointer-events: none;
   user-select: none;
+  transform-origin: 50% 50%;
+}
+.lo-pixel-layer--pixelated { image-rendering: pixelated; }
+.lo-pixel-layer--adjusted { will-change: transform; }
+/* 对位参考线（换场景图后核对房间/走道位置） */
+.lo-scene__guides { position: absolute; left: 0; top: 0; pointer-events: none; }
+.lo-scene__guides line {
+  stroke: color-mix(in srgb, var(--accent) 70%, transparent);
+  stroke-width: 2;
+  stroke-dasharray: 8 6;
+}
+.lo-scene__guides circle {
+  fill: color-mix(in srgb, var(--accent) 85%, var(--bg-primary));
+  stroke: color-mix(in srgb, var(--bg-primary) 80%, transparent);
+  stroke-width: 2;
+}
+/* 拖拽换图 */
+.lo-scene.is-dropping::after {
+  content: "";
+  position: absolute;
+  inset: 6px;
+  border: 2px dashed var(--accent);
+  border-radius: var(--radius-md, 12px);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  pointer-events: none;
+  z-index: 8;
+}
+.lo-scene__drop {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  z-index: 9;
+}
+.lo-scene__drop-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 18px 26px;
+  border-radius: var(--radius-lg, 16px);
+  background: color-mix(in srgb, var(--bg-primary) 88%, transparent);
+  border: 1px solid var(--border-primary);
+  box-shadow: var(--shadow-lg, 0 12px 32px rgba(0, 0, 0, 0.24));
+  font-size: var(--fs-sm);
+  color: var(--text-primary);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+.lo-scene__drop-icon { font-size: 28px; line-height: 1; }
+.lo-scene__drop-hint { font-size: var(--fs-xs); color: var(--text-muted); }
+.lo-scene__busy {
+  position: absolute;
+  left: 10px;
+  top: 10px;
+  padding: 4px 10px;
+  border-radius: var(--radius-full, 999px);
+  background: color-mix(in srgb, var(--bg-primary) 86%, transparent);
+  border: 1px solid var(--border-primary);
+  font-size: var(--fs-xs);
+  color: var(--text-secondary);
+  z-index: 9;
 }
 .lo-pixel-room {
   position: absolute;
@@ -1157,6 +1221,176 @@
 .lo-chip:hover { background: var(--bg-hover); }
 .lo-chip.is-active { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); border-color: var(--accent); }
 .lo-settings__actions { margin-top: 12px; display: flex; gap: 8px; }
+
+/* ===== 场景图片卡 ===== */
+.lo-scene-current {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px;
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--bg-tertiary) 55%, transparent);
+}
+.lo-scene-current__thumb {
+  flex: 0 0 auto;
+  width: 96px;
+  height: 54px;
+  border-radius: var(--radius-sm, 6px);
+  overflow: hidden;
+  background: color-mix(in srgb, var(--bg-primary) 70%, transparent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  font-size: var(--fs-lg);
+}
+.lo-scene-current__thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.lo-scene-current__info { min-width: 0; }
+.lo-scene-current__name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lo-scene-current__meta {
+  margin-top: 2px;
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lo-scene-picker { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; }
+.lo-scene-option {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px;
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.18s ease, background 0.18s ease;
+}
+.lo-scene-option:hover { background: var(--bg-hover); }
+.lo-scene-option.is-active {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--text-primary);
+}
+.lo-scene-option__thumb {
+  width: 100%;
+  height: 54px;
+  object-fit: cover;
+  border-radius: var(--radius-sm, 6px);
+  display: block;
+  background: color-mix(in srgb, var(--bg-primary) 70%, transparent);
+}
+.lo-scene-option__thumb--empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px dashed var(--border-secondary);
+  color: var(--text-muted);
+  font-size: var(--fs-lg);
+}
+.lo-scene-option__label { font-size: var(--fs-xs); line-height: 1.4; }
+.lo-scene-option__tag {
+  position: absolute;
+  right: 6px;
+  top: 6px;
+  padding: 0 5px;
+  border-radius: var(--radius-full, 999px);
+  background: color-mix(in srgb, var(--warning) 22%, var(--bg-primary));
+  color: var(--warning);
+  font-size: 10px;
+  line-height: 16px;
+}
+
+.lo-scene-upload {
+  position: relative;
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 12px;
+  border: 1px dashed var(--border-secondary);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--bg-tertiary) 40%, transparent);
+  cursor: pointer;
+  transition: border-color 0.18s ease, background 0.18s ease;
+}
+.lo-scene-upload:hover,
+.lo-scene-upload.is-over {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+.lo-scene-upload.is-busy { opacity: 0.7; cursor: progress; }
+.lo-scene-upload:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.lo-scene-upload__icon { font-size: var(--fs-lg); line-height: 1; }
+.lo-scene-upload__main { font-size: var(--fs-sm); color: var(--text-primary); }
+.lo-scene-upload__hint { font-size: var(--fs-xs); color: var(--text-muted); }
+.lo-scene-upload__input { display: none; }
+
+.lo-scene-msg {
+  margin-top: 8px;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm, 6px);
+  font-size: var(--fs-xs);
+  line-height: 1.6;
+  border: 1px solid transparent;
+}
+.lo-scene-msg.is-ok {
+  color: var(--success);
+  border-color: color-mix(in srgb, var(--success) 40%, transparent);
+  background: color-mix(in srgb, var(--success) 10%, transparent);
+}
+.lo-scene-msg.is-error {
+  color: var(--error);
+  border-color: color-mix(in srgb, var(--error) 40%, transparent);
+  background: color-mix(in srgb, var(--error) 10%, transparent);
+}
+
+.lo-align { display: flex; gap: 12px; align-items: flex-start; flex-wrap: wrap; }
+.lo-align__preview {
+  position: relative;
+  flex: 0 0 auto;
+  width: 220px;
+  aspect-ratio: 1920 / 1072;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  border: 1px solid var(--border-primary);
+  background: color-mix(in srgb, var(--bg-primary) 70%, transparent);
+}
+.lo-align__image {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: fill;
+  transform-origin: 50% 50%;
+}
+.lo-align__room {
+  position: absolute;
+  border: 1px solid color-mix(in srgb, var(--lo-zone-token) 70%, transparent);
+  background: color-mix(in srgb, var(--lo-zone-token) 10%, transparent);
+  border-radius: 3px;
+}
+.lo-align__controls { flex: 1 1 200px; min-width: 180px; display: flex; flex-direction: column; gap: 6px; }
+.lo-btn--danger { color: var(--error); border-color: color-mix(in srgb, var(--error) 40%, transparent); }
+.lo-btn--danger:hover:not(:disabled) { background: color-mix(in srgb, var(--error) 12%, transparent); }
+.lo-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 /* 资源许可卡 */
 .lo-credits { display: flex; flex-direction: column; gap: 10px; }

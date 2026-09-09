@@ -12,9 +12,9 @@
  * - 角色帧 = 128×128，显示尺寸 118×118，脚底锚点
  */
 
-import type { LibraryZone, SceneStyle } from "../types";
+import type { LibraryZone, SceneImageId, SceneStyle } from "../types";
 
-export type { SceneStyle };
+export type { SceneImageId, SceneStyle };
 
 /** 资源根路径（public/ 下的目录，Vite 原样拷贝到 dist） */
 export const ASSET_BASE = "/library-ops";
@@ -424,6 +424,63 @@ export const ACTIVITY_TO_SPRITE: Record<string, SpriteAction> = {
   error: "error",
   sleeping: "sleep",
 };
+
+// ========== 场景图片预设 ==========
+
+/**
+ * 一张场景预设 = 若干图层（按顺序叠加）。
+ * - `claw`：上游地板 + 家具两层（像素画，最近邻缩放）
+ * - `ai-library-01`：本项目内置的一整张 AI 生成场景图（按 docs/art-prompts/01-图书馆场景.md 生成）
+ *
+ * 所有预设都必须是 2752×1536（或至少 16:9），这样角色坐标与岗位标签无需改动即可对齐。
+ * 用户自己上传的图片走 `sceneImageId: "custom"`，不进这张表。
+ */
+export interface ScenePreset {
+  id: SceneImageId;
+  label: string;
+  labelEn: string;
+  /** 图层 URL（顺序叠加） */
+  layers: string[];
+  /** 设置面板缩略图 */
+  thumb: string;
+  /** 像素画渲染（image-rendering: pixelated） */
+  pixelated: boolean;
+  /** 出处与许可一句话（设置面板展示） */
+  credit: string;
+  /** 是否可商用 */
+  commercial: boolean;
+}
+
+export const SCENE_PRESETS: ScenePreset[] = [
+  {
+    id: "claw",
+    label: "龙虾图书馆（内置像素画）",
+    labelEn: "ClawLibrary (built-in)",
+    layers: [CLAW_SCENE.floor, CLAW_SCENE.objects],
+    thumb: CLAW_SCENE.floor,
+    pixelated: true,
+    credit: "ClawLibrary / shengyu-meng · CC BY-NC-SA 4.0（仅限非商业）",
+    commercial: false,
+  },
+  {
+    id: "ai-library-01",
+    label: "AI 图书馆 01（内置场景图）",
+    labelEn: "AI Library 01 (built-in)",
+    layers: [`${ASSET_BASE}/scenes/ai-library-01.webp`],
+    thumb: `${ASSET_BASE}/scenes/ai-library-01-thumb.webp`,
+    pixelated: false,
+    credit: "本项目内置 · AI 生成 / 自有素材（可商用）",
+    commercial: true,
+  },
+];
+
+/** 按 id 取预设（未知 id 返回 undefined） */
+export function getScenePreset(id: string): ScenePreset | undefined {
+  return SCENE_PRESETS.find((p) => p.id === id);
+}
+
+/** 默认预设（设置里选了 custom 但还没有图片时用它兜底） */
+export const FALLBACK_SCENE_PRESET_ID: SceneImageId = "ai-library-01";
 
 // ========== 场景风格 ==========
 

@@ -10,6 +10,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, cleanup, act } from "@testing-library/react";
 import type { LibraryActor, LibrarySnapshot } from "../plugins/library-ops/types";
 import { generateLook } from "../plugins/library-ops/data/characters";
+import { getScenePreset } from "../plugins/library-ops/data/pixel-art";
+import { useLibraryOps } from "../plugins/library-ops/store";
 
 const NOW = 1_700_000_000_000;
 
@@ -207,11 +209,12 @@ describe("LO-UI 监控面板", () => {
       fireEvent.click(nav);
     });
 
-    // 默认：像素场景（ClawLibrary 美术）
+    // 默认：像素场景（默认内置场景图，单图层）
     const pixel = document.querySelector('.lo-scene[data-scene="pixel"]')!;
     expect(pixel).toBeTruthy();
     expect(pixel.querySelectorAll(".lo-pixel-room").length).toBe(12);
-    expect(pixel.querySelectorAll(".lo-pixel-layer").length).toBe(2);
+    const preset = getScenePreset(useLibraryOps.getState().settings.sceneImageId)!;
+    expect(pixel.querySelectorAll(".lo-pixel-layer").length).toBe(preset.layers.length);
     expect(pixel.querySelectorAll(".lo-sprite").length).toBe(5);
     // 精灵表接线到 /library-ops/claw-library/actors/**
     const firstSprite = pixel.querySelector(".lo-sprite") as HTMLElement;
@@ -222,7 +225,6 @@ describe("LO-UI 监控面板", () => {
     expect(document.querySelectorAll(".lo-zones__item").length).toBe(10);
 
     // 切换为等距矢量风格 → 渲染等距场景
-    const { useLibraryOps } = await import("../plugins/library-ops/store");
     await act(async () => {
       useLibraryOps.getState().updateSettings({ sceneStyle: "iso" });
     });

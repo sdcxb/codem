@@ -7,12 +7,14 @@
 
 ## ⚠️ 一句话结论
 
-**本插件集成的像素美术资源仅限非商业用途。** 若你需要商业分发 Codem（销售、SaaS、附带商业服务等），
+**本插件集成的第三方像素美术资源仅限非商业用途。** 若你需要商业分发 Codem（销售、SaaS、附带商业服务等），
 必须做二者之一：
 
-1. 在插件设置里把「场景风格」切换为 **等距矢量**（`sceneStyle: "iso"`）——该场景由本项目自绘，
+1. 在插件设置里把「场景图片」切换为 **AI 图书馆 01**（`public/library-ops/scenes/`，自有素材），
+   或上传你自己的场景图 —— 但**角色精灵（Capy-Claw / Cat-Claw）仍来自 ClawLibrary**，商用仍需替换；或
+2. 在插件设置里把「场景风格」切换为 **等距矢量**（`sceneStyle: "iso"`）——该场景与角色均由本项目自绘，
    无第三方美术许可约束；或
-2. 把 `public/library-ops/` 下的第三方资源替换为你自己的原创资源。
+3. 把 `public/library-ops/` 下的第三方资源替换为你自己的原创资源。
 
 代码部分不受此限制：Codem 的插件代码本身是原创实现，只**消费**这些资源。
 
@@ -25,6 +27,10 @@
 | `public/library-ops/claw-library/` | [龙虾图书馆 / ClawLibrary](https://github.com/shengyu-meng/ClawLibrary) | shengyu-meng | [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/) | ❌ |
 | `public/library-ops/star-office/` | [Star Office UI](https://github.com/ringhyacinth/Star-Office-UI) | Ring Hyacinth & Simon Lee | 仅限非商业（项目 LICENSE 第 2 节） | ❌ |
 | `public/library-ops/lobster-pet/` | [lobster-pet](https://github.com/jiaweisibot/lobster-pet) | jiaweisibot | MIT（**仅设计参考，未收录美术资源**） | ✅（设计） |
+| `public/library-ops/scenes/` | 本项目自有场景图预设（AI 生成） | 本项目使用者 | 自有素材 | ✅ |
+
+> 用户在插件里**自己上传**的场景图片不进入仓库：它们保存在浏览器 IndexedDB
+> （`src/plugins/library-ops/core/scene-image-db.ts`），属于使用者自己的素材，不构成再分发。
 
 每个子目录都包含：
 
@@ -96,6 +102,13 @@ Star-Office-UI 内含 `guest_role_*.png` / `guest_anim_*.webp`（来自 LimeZu �
 | --- | --- | --- |
 | 等距矢量场景（10 岗位 / 8 类家具 / 角色 SVG） | `src/plugins/library-ops/components/library/{iso,LibraryScene,SceneFurniture,CharacterActor}.tsx` | 全部由本项目代码程序化绘制，颜色只消费皮肤令牌，**无第三方许可约束** |
 | 角色外观生成器 | `src/plugins/library-ops/data/characters.ts` | 12×4×5×6×6×4 = 34,560 种组合，程序化生成 |
+| 内置场景图预设 `ai-library-01` | `public/library-ops/scenes/ai-library-01.webp` | 按 `docs/art-prompts/01-图书馆场景.md` 提示词 AI 生成，自有素材，**可商用**；缩放/重压缩见 `scripts/build-library-ops-scene-preset.mjs` |
+
+### 用户上传的场景图
+
+- 入口：插件设置 →「场景图片」→ 上传（或把图片拖到场景上）
+- 存储：浏览器 IndexedDB（`codem-library-ops` / `scene-images`），**不写入仓库、不写入宿主数据**
+- 权利：属于上传者本人；插件只负责渲染，不做任何再分发
 
 ---
 

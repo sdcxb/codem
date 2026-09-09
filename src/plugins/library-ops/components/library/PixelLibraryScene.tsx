@@ -1,12 +1,20 @@
 /**
  * PixelLibraryScene —— 像素美术图书馆场景（默认场景）。
  *
- * 场景美术直接使用上游 ClawLibrary 的 `scene-floor` + `scene-objects`
- * （一张完整的图书馆像素画），角色使用其 `capy-claw` / `cat-claw` 精灵表，
+ * 场景图片有三种来源（设置里的「场景图片」）：
+ * 1. 内置像素画（ClawLibrary `scene-floor` + `scene-objects` 两层）
+ * 2. 内置场景图（AI 生成的一整张 2752×1536 图书馆地图）
+ * 3. 用户上传（拖到场景里 / 设置里选文件，存 IndexedDB）
+ *
+ * 三者共用同一套坐标：图片铺满 1920×1072 显示画布，角色、岗位标签、点击热区
+ * 都不随图片变化 —— 所以换图不会让角色站错位置。若图片里的房间位置和内置布局
+ * 有偏差，用设置里的「画面微调」把图挪一挪，并打开「对位参考线」对照。
+ *
+ * 角色始终使用 ClawLibrary 的 `capy-claw` / `cat-claw` 精灵表，
  * 行走路线使用其 `walkGraph`（20 节点）。
  *
- * ⚠️ 美术资源**仅限非商业用途**（CC BY-NC-SA 4.0 / Star-Office-UI 非商业）。
- * 出处与义务见 `docs/ASSET-LICENSES.md`；商用请改用设置里的「等距矢量」场景。
+ * ⚠️ 内置像素画**仅限非商业用途**（CC BY-NC-SA 4.0）；内置 AI 场景图与用户上传图
+ * 属于自有素材。出处与义务见 `docs/ASSET-LICENSES.md`；商用请改用设置里的「等距矢量」场景。
  *
  * 渲染策略与等距场景一致：固定尺寸画布 + view 变换（平移/缩放），
  * 角色位置/帧/气泡在 rAF 里直接写 DOM（不触发 React 重渲染）。
@@ -19,9 +27,13 @@ import {
   ACTOR_DISPLAY,
   ASSET_BASE,
   CLAW_SCENE,
+  FALLBACK_SCENE_PRESET_ID,
   PIXEL_ROOMS,
   SCENE_CREDITS,
+  WALK_EDGES,
+  WALK_NODES,
   ZONE_TO_ROOM,
+  getScenePreset,
   resolveSprite,
   roomOfZone,
 } from "../../data/pixel-art";
@@ -37,6 +49,7 @@ import {
   stepPixelMovement,
   type PixelSceneState,
 } from "../../core/pixel-scene";
+import { isIdentityAdjust, sceneAdjustTransform } from "../../core/scene-image";
 import { useLibraryOps } from "../../store";
 
 const MIN_SCALE = 0.3;
@@ -89,6 +102,13 @@ export function PixelLibraryScene({
   const selectedActorId = useLibraryOps((s) => s.selectedActorId);
   const selectedZoneId = useLibraryOps((s) => s.selectedZoneId);
   const setScene = useLibraryOps((s) => s.setPixelScene);
+  const sceneImageId = useLibraryOps((s) => s.settings.sceneImageId);
+  const sceneImageAdjust = useLibraryOps((s) => s.settings.sceneImageAdjust);
+  const showAlignGuides = useLibraryOps((s) => s.settings.showAlignGuides);
+  const customScene = useLibraryOps((s) => s.customScene);
+  const sceneImageBusy = useLibraryOps((s) => s.sceneImageBusy);
+  const setCustomSceneImage = useLibraryOps((s) => s.setCustomSceneImage);
+  const loadCustomSceneImage = useLibraryOps((s) => s.loadCustomSceneImage);
 
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const sceneRef = useRef<PixelSceneState>(initialScene ?? createPixelSceneState());
@@ -104,9 +124,56 @@ export function PixelLibraryScene({
   const [signature, setSignature] = useState("");
   const [stats, setStats] = useState(() => pixelSceneStats(createPixelSceneState()));
   const [assetError, setAssetError] = useState(false);
+  const [dragging, setDragging] = useState(false);
 
   speedRef.current = speed;
   viewRef.current = view;
+
+  // 首次挂载时把用户上传过的场景图片读回来（IndexedDB → objectURL）
+  useEffect(() => {
+    void loadCustomSceneImage();
+  }, [loadCustomSceneImage]);
+
+  /** 当前生效的图片图层（内置预设可能多层，自定义只有一层） */
+  const layers = useMemo<Array<{ src: string; pixelated: boolean }>>(() => {
+    if (sceneImageId === "custom" && customScene) return [{ src: customScene.url, pixelated: false }];
+    const preset = getScenePreset(sceneImageId) ?? getScenePreset(FALLBACK_SCENE_PRESET_ID);
+    if (preset) return preset.layers.map((src) => ({ src, pixelated: preset.pixelated }));
+    return [
+      { src: CLAW_SCENE.floor, pixelated: true },
+      { src: CLAW_SCENE.objects, pixelated: true },
+    ];
+  }, [sceneImageId, customScene]);
+
+  const layerStyle = useMemo(
+    () => (isIdentityAdjust(sceneImageAdjust) ? undefined : { transform: sceneAdjustTransform(sceneImageAdjust) }),
+    [sceneImageAdjust],
+  );
+
+  // 把图片直接拖到场景上即可替换（比进设置里点按钮更快）
+  const onDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    const types = e.dataTransfer?.types;
+    if (!types || (!types.includes("Files") && !types.includes("application/x-moz-file"))) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "copy";
+    setDragging(true);
+  }, []);
+
+  const onDragLeave = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    // 只有真正离开场景容器才收起提示（避免掠过子元素时闪烁）
+    if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
+    setDragging(false);
+  }, []);
+
+  const onDrop = useCallback(
+    async (e: React.DragEvent<HTMLDivElement>) => {
+      e.preventDefault();
+      setDragging(false);
+      const file = e.dataTransfer?.files?.[0];
+      if (file) await setCustomSceneImage(file);
+    },
+    [setCustomSceneImage],
+  );
 
   const nodes = useMemo<ActorNode[]>(() => {
     if (!snapshot) return [];
@@ -335,21 +402,55 @@ export function PixelLibraryScene({
 
   return (
     <div
-      className="lo-scene"
+      className={`lo-scene${dragging ? " is-dropping" : ""}`}
       ref={wrapRef}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onDoubleClick={fitView}
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
       data-scene="pixel"
+      data-scene-image={sceneImageId}
     >
       <div
         className="lo-scene__canvas"
         style={{ width: CANVAS_W, height: CANVAS_H, transform: `translate(${view.tx}px, ${view.ty}px) scale(${view.scale})` }}
       >
-        {/* 地板 + 家具（上游 scene-floor / scene-objects） */}
-        <img className="lo-pixel-layer" src={CLAW_SCENE.floor} alt="" draggable={false} onError={markAssetError} />
-        <img className="lo-pixel-layer" src={CLAW_SCENE.objects} alt="" draggable={false} onError={markAssetError} />
+        {/* 场景图片（内置像素画 / 内置场景图 / 用户上传） */}
+        {layers.map((layer, i) => (
+          <img
+            key={`${layer.src}#${i}`}
+            className={`lo-pixel-layer${layer.pixelated ? " lo-pixel-layer--pixelated" : ""}${
+              layerStyle ? " lo-pixel-layer--adjusted" : ""
+            }`}
+            src={layer.src}
+            alt=""
+            draggable={false}
+            style={layerStyle}
+            data-layer={i}
+            onError={markAssetError}
+          />
+        ))}
+
+        {/* 对位参考线：房间框 + 行走图（换图后用它核对房间位置） */}
+        {showAlignGuides && (
+          <svg className="lo-scene__guides" viewBox={`0 0 ${CANVAS_W} ${CANVAS_H}`} aria-hidden="true">
+            {WALK_EDGES.map(([a, b]) => {
+              const na = WALK_NODES.find((n) => n.id === a);
+              const nb = WALK_NODES.find((n) => n.id === b);
+              if (!na || !nb) return null;
+              const pa = logicToDisplay(na);
+              const pb = logicToDisplay(nb);
+              return <line key={`${a}-${b}`} x1={pa.x} y1={pa.y} x2={pb.x} y2={pb.y} />;
+            })}
+            {WALK_NODES.map((n) => {
+              const p = logicToDisplay(n);
+              return <circle key={n.id} cx={p.x} cy={p.y} r={4} />;
+            })}
+          </svg>
+        )}
 
         {/* 岗位高亮 + 标签 */}
         {PIXEL_ROOMS.map((room) => {
@@ -470,6 +571,18 @@ export function PixelLibraryScene({
       </div>
 
       {nodes.length === 0 && <div className="lo-scene__empty">暂无智能体入场 —— 发起一次对话或让助手建队</div>}
+
+      {dragging && (
+        <div className="lo-scene__drop">
+          <div className="lo-scene__drop-card">
+            <span className="lo-scene__drop-icon">🖼️</span>
+            <span>松手即可用这张图替换场景</span>
+            <span className="lo-scene__drop-hint">PNG / JPG / WebP · 建议 16:9</span>
+          </div>
+        </div>
+      )}
+
+      {sceneImageBusy && <div className="lo-scene__busy">正在读取场景图片…</div>}
     </div>
   );
 }

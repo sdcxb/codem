@@ -228,7 +228,29 @@ npx tsc --noEmit
 - **相机**：滚轮缩放（0.3×–3.2×，指针锚点）/ 拖拽平移 / 双击复位 / 选中角色平滑居中；
 - **降级**：资源缺失时显示提示并引导切到「等距矢量」场景。
 
-### 7.4 监控面板布局对标 lobster-pet
+### 7.4 场景图片可替换（上传 / 内置预设）
+
+「画面」与「布局」解耦：角色坐标、岗位标签、点击热区都来自固定数据，
+图片只是一个铺满 1920×1072 显示画布的图层，所以**换图不需要改任何坐标**。
+
+| 来源 | 实现 | 存储 |
+| --- | --- | --- |
+| 内置像素画 `claw` | 上游 `scene-floor` + `scene-objects` 两层 | 仓库 `public/library-ops/claw-library/` |
+| 内置场景图 `ai-library-01` | 单层整图（2752×1536） | 仓库 `public/library-ops/scenes/` |
+| 用户上传 `custom` | 单层整图 | 浏览器 IndexedDB（`codem-library-ops` / `scene-images`，Blob 原样存） |
+
+- **入口**：设置 →「场景图片」卡片（画廊 / 上传 / 删除 / 微调），或直接把图片**拖到场景上**；
+- **校验**：格式（PNG/JPG/WebP/AVIF/GIF/BMP）、体积（≤32MB）、尺寸（≥640×360）、
+  比例偏离 16:9 超过 8% 时提醒「会被拉伸」（`core/scene-image.ts`，全部纯函数、可单测）；
+- **持久化**：`core/scene-image-db.ts` 用 IndexedDB 存 Blob（避免 localStorage 5MB 配额），
+  读出后 `URL.createObjectURL` 渲染；无 IndexedDB 时降级为「本次会话有效」并明确提示；
+- **对位**：AI 生成的图未必与内置房间框重合，因此提供「画面微调」（缩放 0.5–2×、
+  位移 ±600px）与「对位参考线」（12 房间框 + 20 行走节点）；设置卡里还有一张
+  把房间框叠在缩略图上的**对位预览**，改一个滑杆就能立刻看出是否对齐；
+- **渲染**：像素画图层用 `image-rendering: pixelated`（最近邻，不糊），
+  照片式/平滑场景图用默认插值；图片层单独承载微调 transform，角色层不受影响。
+
+### 7.5 监控面板布局对标 lobster-pet
 
 lobster-pet 的 `DetailPanel` 是「单屏卡片网格」：
 
@@ -251,5 +273,6 @@ lobster-pet 的 `DetailPanel` 是「单屏卡片网格」：
 | 缓存命中 token | 适配层预留 `tokensCached` 字段，当前 CostTracker 聚合口径未提供 | 接入 provider 上报的 cache 字段 |
 | 权限/审批等待态 | 只能从工具名（`ask_user_question` 等）推断 | 接入 `PermissionRequest` 待决队列，角色真正站到「等待授权」岗位 |
 | 场景地图 | 单层平面（10 岗位） | 可扩展多层/多馆，按项目分馆 |
+| 场景图片 | 可上传替换画面（IndexedDB）；房间框仍来自内置布局 | 可做「拖拽房间框」的可视化对位编辑器，把自定义图的房间位置也存下来 |
 | 角色移动 | 网格 BFS + 线性插值 | 可加转弯缓动、避让、结伴同行 |
 | 历史回放 | 只有最近 120 个采样点 | 可接 EventLog 做时间轴回放 |

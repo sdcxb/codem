@@ -40,10 +40,18 @@ stats.isoScenes = scenes.filter((s) => s.includes('data-scene="iso"')).length;
 
 // ============ 像素场景 ============
 for (const scene of scenes.filter((s) => s.includes('data-scene="pixel"'))) {
-  const layers = [...scene.matchAll(/class="lo-pixel-layer"[^>]*src="([^"]+)"/g)].map((m) => m[1]);
+  const layers = [...scene.matchAll(/class="lo-pixel-layer[^"]*"[^>]*src="([^"]+)"/g)].map((m) => m[1]);
   stats.pixelLayers = (stats.pixelLayers ?? 0) + layers.length;
   stats.pixelLayerSrc = [...new Set([...(stats.pixelLayerSrc ?? []), ...layers])];
-  if (layers.length !== 2) issues.push(`像素场景图层应为 2（地板 + 家具），实际 ${layers.length}`);
+  if (layers.length < 1 || layers.length > 2) {
+    issues.push(`像素场景图层应为 1（整张场景图）或 2（地板 + 家具），实际 ${layers.length}`);
+  }
+  for (const src of layers) {
+    if (!src.startsWith("/library-ops/")) issues.push(`像素场景图层路径异常: ${src}`);
+  }
+  const sceneImage = /data-scene-image="([^"]+)"/.exec(scene);
+  stats.pixelSceneImage = sceneImage ? sceneImage[1] : null;
+  if (!sceneImage) issues.push("像素场景缺少 data-scene-image 标记（无法判断用的是哪张图）");
 
   const rooms = [...scene.matchAll(/class="lo-pixel-room(?: is-selected)?"/g)].length;
   stats.pixelRooms = (stats.pixelRooms ?? 0) + rooms;

@@ -9,6 +9,7 @@ import { LibraryScene } from "../../src/plugins/library-ops/components/library/L
 import { PixelLibraryScene } from "../../src/plugins/library-ops/components/library/PixelLibraryScene";
 import { LibraryPanel } from "../../src/plugins/library-ops/components/monitor/LibraryPanel";
 import { OverviewPanel } from "../../src/plugins/library-ops/components/monitor/OverviewPanel";
+import { SceneImageCard } from "../../src/plugins/library-ops/components/monitor/SceneImageCard";
 import { TeamsPanel } from "../../src/plugins/library-ops/components/monitor/TeamsPanel";
 import { useLibraryOps } from "../../src/plugins/library-ops/store";
 import type { LibraryActor, LibrarySnapshot } from "../../src/plugins/library-ops/types";
@@ -180,7 +181,7 @@ const INITIAL_PIXEL_SCENE = settledPixelScene();
 function Preview() {
   return (
     <div className="preview-wrap">
-      <h3 style={{ margin: 0, fontSize: 14 }}>像素图书馆（默认场景 · ClawLibrary 美术）</h3>
+      <h3 style={{ margin: 0, fontSize: 14 }}>像素图书馆（内置场景图预设 · 可在设置里换图 / 上传自己的图）</h3>
       <div className="preview-scene">
         <PixelLibraryScene
           snapshot={snapshot}
@@ -191,6 +192,10 @@ function Preview() {
           speed={1}
           maxActors={24}
         />
+      </div>
+      <h3 style={{ margin: 0, fontSize: 14 }}>场景图片设置卡（画廊 / 上传 / 微调 / 对位预览）</h3>
+      <div style={{ width: 620 }}>
+        <SceneImageCard zh />
       </div>
       <h3 style={{ margin: 0, fontSize: 14 }}>等距矢量场景（备用 · 本项目自绘）</h3>
       <div className="preview-scene">

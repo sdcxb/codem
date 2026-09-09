@@ -12,13 +12,29 @@
 
 import { create } from "zustand";
 import type {
+  CustomSceneImage,
   LibrarySnapshot,
   LibraryOpsSettings,
   MonitorTab,
   SeriesPoint,
 } from "./types";
-import { DEFAULT_SETTINGS, STORAGE_KEY } from "./types";
+import {
+  DEFAULT_SETTINGS,
+  SCENE_IMAGE_IDS,
+  SCENE_IMAGE_ID_FALLBACK,
+  STORAGE_KEY,
+} from "./types";
 import { collectSnapshot } from "./core/telemetry-adapter";
+import {
+  clampSceneAdjust,
+  createSceneImageUrl,
+  describeSceneImage,
+  readImageDimensions,
+  sceneImageAspectWarning,
+  validateSceneImageDimensions,
+  validateSceneImageFile,
+} from "./core/scene-image";
+import { CUSTOM_SCENE_KEY, deleteSceneImage, getSceneImage, putSceneImage } from "./core/scene-image-db";
 
 /** 时间序列最大长度（约 3 分钟 @1.5s） */
 export const SERIES_CAP = 120;
@@ -74,6 +90,9 @@ export function loadSettings(): LibraryOpsSettings {
     merged.speed = clamp(Number(merged.speed) || 1, 0.25, 4);
     merged.maxActors = Math.round(clamp(Number(merged.maxActors) || DEFAULT_SETTINGS.maxActors, 4, 64));
     if (merged.sceneStyle !== "pixel" && merged.sceneStyle !== "iso") merged.sceneStyle = DEFAULT_SETTINGS.sceneStyle;
+    if (!SCENE_IMAGE_IDS.includes(merged.sceneImageId)) merged.sceneImageId = SCENE_IMAGE_ID_FALLBACK;
+    merged.sceneImageAdjust = clampSceneAdjust(merged.sceneImageAdjust);
+    merged.showAlignGuides = merged.showAlignGuides === true;
     return merged;
   } catch {
     return { ...DEFAULT_SETTINGS };
@@ -121,6 +140,15 @@ interface LibraryOpsState {
   /** 已采样次数 */
   samples: number;
 
+  /** 用户上传的场景图片（IndexedDB 里存二进制，这里只留渲染用的 objectURL + 元信息） */
+  customScene: CustomSceneImage | null;
+  /** 上传/读取中 */
+  sceneImageBusy: boolean;
+  /** 场景图片操作失败原因（可见性：不静默） */
+  sceneImageError: string | null;
+  /** 场景图片操作成功提示 */
+  sceneImageNotice: string | null;
+
   openPanel: (tab?: MonitorTab) => void;
   closePanel: () => void;
   togglePanel: () => void;
@@ -133,6 +161,12 @@ interface LibraryOpsState {
   /** 推进场景（由场景组件的 rAF 调用） */
   setIsoScene: (scene: unknown) => void;
   setPixelScene: (scene: unknown) => void;
+  /** 从 IndexedDB 恢复用户上传的场景图片（面板/启动时调用一次） */
+  loadCustomSceneImage: () => Promise<void>;
+  /** 上传并立即启用一张场景图片；返回是否成功 */
+  setCustomSceneImage: (file: File) => Promise<boolean>;
+  /** 删除自定义场景图片并回到内置预设 */
+  clearCustomSceneImage: () => Promise<void>;
   /** 重置（测试用） */
   _reset: () => void;
 }
@@ -150,6 +184,10 @@ export const useLibraryOps = create<LibraryOpsState>((set, get) => ({
   sampling: false,
   error: null,
   samples: 0,
+  customScene: null,
+  sceneImageBusy: false,
+  sceneImageError: null,
+  sceneImageNotice: null,
 
   openPanel: (tab) => {
     const s = get();
@@ -206,22 +244,139 @@ export const useLibraryOps = create<LibraryOpsState>((set, get) => ({
   setIsoScene: (scene) => set({ isoScene: scene }),
   setPixelScene: (scene) => set({ pixelScene: scene }),
 
+  loadCustomSceneImage: async () => {
+    if (get().customScene || get().sceneImageBusy) return;
+    set({ sceneImageBusy: true });
+    try {
+      const record = await getSceneImage(CUSTOM_SCENE_KEY);
+      if (!record) {
+        set({ sceneImageBusy: false });
+        return;
+      }
+      const { url } = await createSceneImageUrl(record.blob);
+      set({
+        sceneImageBusy: false,
+        customScene: {
+          url,
+          name: record.name,
+          width: record.width,
+          height: record.height,
+          size: record.size,
+          addedAt: record.addedAt,
+        },
+      });
+    } catch (e) {
+      // 启动时读失败不是用户操作，不弹错误（设置面板另有「不支持持久化」提示），只留日志
+      console.warn("[library-ops] 读取自定义场景图片失败:", e);
+      set({ sceneImageBusy: false });
+    }
+  },
+
+  setCustomSceneImage: async (file) => {
+    const invalid = validateSceneImageFile(file);
+    if (invalid) {
+      set({ sceneImageError: invalid, sceneImageNotice: null });
+      return false;
+    }
+    set({ sceneImageBusy: true, sceneImageError: null, sceneImageNotice: null });
+    try {
+      const { width, height } = await readImageDimensions(file);
+      const sizeError = validateSceneImageDimensions(width, height);
+      if (sizeError) throw new Error(sizeError);
+
+      const name = file.name || "场景图片";
+      let persisted = true;
+      let persistError = "";
+      try {
+        await putSceneImage({
+          id: CUSTOM_SCENE_KEY,
+          blob: file,
+          name,
+          type: file.type || "image/png",
+          width,
+          height,
+          size: file.size,
+          addedAt: Date.now(),
+        });
+      } catch (e) {
+        // 存不下也让用户先用起来（本次会话有效），但必须明确告知重启会丢
+        persisted = false;
+        persistError = e instanceof Error ? e.message : String(e);
+        console.warn("[library-ops] 场景图片持久化失败:", e);
+      }
+
+      const { url } = await createSceneImageUrl(file);
+      const prev = get().customScene;
+      if (prev) revokeUrl(prev.url);
+      const image: CustomSceneImage = { url, name, width, height, size: file.size, addedAt: Date.now() };
+      set({
+        customScene: image,
+        sceneImageBusy: false,
+        sceneImageNotice: persisted ? `已启用：${describeSceneImage(image)}` : `已启用（本次会话有效）：${describeSceneImage(image)}`,
+      });
+      const warn = sceneImageAspectWarning(width, height);
+      if (warn) set({ sceneImageError: warn });
+      if (!persisted) {
+        set({ sceneImageError: `图片未能保存到本地（${persistError}），重启后会恢复内置场景。` });
+      }
+      get().updateSettings({ sceneImageId: "custom" });
+      return true;
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.warn("[library-ops] 上传场景图片失败:", e);
+      set({ sceneImageBusy: false, sceneImageError: msg, sceneImageNotice: null });
+      return false;
+    }
+  },
+
+  clearCustomSceneImage: async () => {
+    const prev = get().customScene;
+    set({ sceneImageBusy: true, sceneImageError: null, sceneImageNotice: null });
+    try {
+      await deleteSceneImage(CUSTOM_SCENE_KEY);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.warn("[library-ops] 删除自定义场景图片失败:", e);
+      set({ sceneImageBusy: false, sceneImageError: msg });
+      return;
+    }
+    if (prev) revokeUrl(prev.url);
+    set({ customScene: null, sceneImageBusy: false, sceneImageNotice: "已恢复内置场景" });
+    if (get().settings.sceneImageId === "custom") {
+      get().updateSettings({ sceneImageId: SCENE_IMAGE_ID_FALLBACK, sceneImageAdjust: { scale: 1, x: 0, y: 0 } });
+    }
+  },
+
   _reset: () =>
     set({
       open: false,
       tab: DEFAULT_SETTINGS.defaultTab,
-      settings: { ...DEFAULT_SETTINGS },
+      settings: { ...DEFAULT_SETTINGS, sceneImageAdjust: { ...DEFAULT_SETTINGS.sceneImageAdjust } },
       snapshot: null,
       isoScene: null,
-  pixelScene: null,
+      pixelScene: null,
       series: emptySeries(),
       selectedActorId: null,
       selectedZoneId: null,
       sampling: false,
       error: null,
       samples: 0,
+      customScene: null,
+      sceneImageBusy: false,
+      sceneImageError: null,
+      sceneImageNotice: null,
     }),
 }));
+
+/** 释放我们自己创建的 objectURL（dataURL / 外部 URL 不做处理） */
+function revokeUrl(url: string): void {
+  if (!url.startsWith("blob:")) return;
+  try {
+    globalThis.URL?.revokeObjectURL?.(url);
+  } catch {
+    /* 忽略：某些 WebView 在页面卸载后调用会抛错 */
+  }
+}
 
 /** 从快照里取演员（按严重度与活跃度排序，供列表/场景共用） */
 export function sortedActors(snapshot: LibrarySnapshot | null) {
