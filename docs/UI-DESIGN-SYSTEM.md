@@ -173,7 +173,7 @@ node tools/ui-audit/codemod-icon-scale.mjs [--write]  # 图标工具类 → .ico
 
 | **第 13 波** | 2026-09-10 | **0** ✅ | **50** | **`styles.css` 的色值与圆角全部令牌化，该文件的例外彻底删除**：① 圆角 22 处（3px×11 → `--radius-sm`；5px×9 → `--radius-xs`；11px 开关轨道/9px 未读徽标 → `--radius-full`，本来就是"半高 = 胶囊"）；② 色值 249 处 → 语义令牌：状态色按色系归位（红→`--error`、绿→`--success`、琥珀→`--warning`、蓝→`--info`、紫蓝→`--accent`），带 alpha 的一律 `color-mix(in srgb, var(--token) N%, transparent)`；投影里的黑 → `--shadow-color`/`--shadow-color-soft`；遮罩黑 → `--overlay-backdrop(-strong)`；`color: white` → `--text-on-accent`、`background: white` → `--surface-content`；③ **新增一批"语义身份"令牌**：`--terminal-bg/-fg`、`--backdrop-black`、`--surface-content`、`--mac-btn-*`、`--window-close-*`、`--skin-preview-*` —— 这些是"外来内容/平台惯例/皮肤数据"，不该硬塞进主题令牌里，但也不该散在规则中；④ **审计器补两处盲区**：命名色（`color: white` 此前完全看不见）现在纳入；`var(--token, #fallback)` 的兜底值按**字面量位置**排除而不是"整行有 var(-- 就放过"—— 后者让 12 行混写（`box-shadow: … var(--border-primary), 0 1px 2px rgba(0,0,0,.04)`）长期漏检，修好后立刻又暴露出 library-ops.css 里 4 处被同一原因藏起来的离格圆角 |
 
-| **第 14 波** | 2026-09-10 | **0** ✅ | **24** | **内联样式收口（开工）**：① **先修工具**：`inline-style-dense` 此前按行统计 `xxx: value` 形态，把普通 TS 对象字面量、函数入参也数进去了 —— 改成只统计 `style={{}}` 真实区间内的属性，文件数 50 → 25（这不是"改好了"，是"量对了"）；② 定义**闭集共享具名类**（`.mono` / `.panel-section-title` / `.panel-empty` / `.panel-btn(--danger/--sm)` / `.stat-cards` / `.stat-card*`），后续文件直接复用而不是各写一套；③ 第一个文件 `RecoveryPanel.tsx`：149 个内联属性 → 0（只留统计卡的颜色这一处真动态值），并顺手统一了它自己的重复按钮/空态/统计卡 |
+| **第 14 波** | 2026-09-10 | **0** ✅ | **23** | **内联样式收口（开工）**：① **先修工具**：`inline-style-dense` 此前按行统计 `xxx: value` 形态，把普通 TS 对象字面量、函数入参也数进去了 —— 改成只统计 `style={{}}` 真实区间内的属性，文件数 50 → 25（这不是"改好了"，是"量对了"）；② 定义**闭集共享具名类**（`.mono` / `.panel-section-title` / `.panel-empty` / `.panel-btn(--danger/--sm)` / `.stat-cards` / `.stat-card*`），后续文件复用而不是各写一套；③ 两个文件完成收口：`RecoveryPanel`（149 个内联属性 → 0，只留统计卡颜色这一处真动态值）、`FlashcardViewer`（139 → 0，评分按钮的四色改成内联 `color` + `currentColor` 派生底边，一个动态属性顶掉原来四个） |
 
 ### 全项目现场事实（来自 UI 交互界面清单，作为工作队列）
 
@@ -209,9 +209,9 @@ node tools/ui-audit/codemod-icon-scale.mjs [--write]  # 图标工具类 → .ico
 | `modal-shell-bespoke` | error | 15 | **0** ✅ |
 | `spacing-offgrid` | warn | 13 | **0** ✅ |
 | `css-class-undefined` | warn | — | **0** ✅（第 10 波清零；审计器已扩面到模板字面量） |
-| `inline-style-dense` | warn | 58 | 24（唯一剩下的 warn；第 14 波先修正了度量口径 50 → 25，再收口 1 个文件） |
+| `inline-style-dense` | warn | 58 | 23（唯一剩下的 warn；第 14 波先修正了度量口径 50 → 25，再收口 2 个文件） |
 | **error 合计** | | **533** | **0** ✅ |
-| **warn 合计** | | 64 | **24** |
+| **warn 合计** | | 64 | **23** |
 
 > 注：`color-hardcoded-tsx` 中途曾报 53 → 9 —— 不是"改多了"，而是审计器修掉了假阳性（见第 11 波说明）。
 > `fs-hardcoded` 第 12 波一度报 590 —— 也不是"变差了"，而是审计器**首次开始扫 CSS 侧**（此前 591 处写死的字号
@@ -219,7 +219,7 @@ node tools/ui-audit/codemod-icon-scale.mjs [--write]  # 图标工具类 → .ico
 > 第 13 波把 CSS 侧判定从「整行」改到「逐字面量」后，又冒出 12 行混写色值与 4 处离格圆角 —— 同样是
 > **工具看不见**而不是"新问题"，修完才真正归零。
 > `inline-style-dense` 第 14 波 50 → 24 是**度量口径修正**（只数样式对象内部），不是重构成果；
-> 重构成果是那之后的 1 个文件（RecoveryPanel 149 → 0）。
+> 重构成果是那之后的 2 个文件（RecoveryPanel 149 → 0、FlashcardViewer 139 → 0）。
 
 ### 已完成的波次
 

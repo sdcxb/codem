@@ -1,8 +1,8 @@
 {
-  "at": "2026-09-10T08:12:19.983Z",
+  "at": "2026-09-10T08:14:55.955Z",
   "errorCount": 0,
-  "warnCount": 24,
+  "warnCount": 23,
   "byRule": {
-    "inline-style-dense": 24
+    "inline-style-dense": 23
   }
 }

@@ -386,6 +386,81 @@ overflow: hidden;
   background: var(--bg-primary);
 }
 
+/* ==========================================================================
+ * 闪卡面板（FlashcardViewer）：把内联样式收口成具名类（第 14 波）
+ * 复用 .nb-dialog* 外壳；评分按钮的四种颜色仍是动态值，改成内联 `color` +
+ * currentColor 派生底/边 —— 一个动态属性顶掉原来四个内联属性。
+ * ========================================================================== */
+.flashcard-counter { font-size: var(--fs-xs); opacity: 0.5; margin-left: var(--space-4); }
+.flashcard-dialog--review { width: 600px; max-width: 90vw; }
+.flashcard-dialog--create { width: 500px; max-width: 90vw; }
+.flashcard-dialog--list { width: 700px; max-width: 90vw; max-height: 80vh; }
+.flashcard-review-body { padding: var(--space-8); min-height: 260px; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+.flashcard-card {
+  width: 100%;
+  min-height: 180px;
+  padding: var(--space-8);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  transition: var(--transition-color);
+}
+.flashcard-card:hover { border-color: var(--accent); }
+.flashcard-hint { font-size: var(--fs-xs); opacity: 0.4; text-transform: uppercase; margin-bottom: var(--space-4); }
+.flashcard-hint--bottom { font-size: var(--fs-xs); opacity: 0.4; margin-top: var(--space-6); }
+.flashcard-front { font-size: var(--fs-md); line-height: 1.6; margin: 0; }
+.flashcard-back { font-size: var(--fs-base); line-height: 1.6; margin: 0; opacity: 0.9; }
+.flashcard-ratings { display: flex; gap: var(--space-3); margin-top: var(--space-8); width: 100%; }
+.flashcard-rating-btn {
+  flex: 1;
+  padding: var(--space-3) var(--space-4);
+  background: color-mix(in srgb, currentColor 13%, transparent);
+  border: 1px solid color-mix(in srgb, currentColor 33%, transparent);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: var(--fs-sm);
+  font-weight: 500;
+}
+.flashcard-form { padding: var(--space-8); display: flex; flex-direction: column; gap: var(--space-5); }
+.flashcard-label { font-size: var(--fs-xs); opacity: 0.6; margin-bottom: var(--space-2); display: block; }
+.flashcard-textarea {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 70px;
+  padding: var(--space-3) var(--space-5);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: var(--fs-sm);
+  resize: vertical;
+}
+.flashcard-textarea:focus { outline: none; border-color: var(--accent); }
+.flashcard-form-actions { display: flex; gap: var(--space-3); justify-content: flex-end; margin-top: var(--space-2); }
+.flashcard-toolbar { padding: var(--space-5) var(--space-8); border-bottom: 1px solid var(--border-secondary); display: flex; gap: var(--space-3); flex-wrap: wrap; }
+.flashcard-tool-btn { font-size: var(--fs-xs); padding: 3px var(--space-5); }
+.flashcard-body { overflow: auto; max-height: 50vh; padding: var(--space-5) var(--space-8); }
+.flashcard-empty { text-align: center; padding: var(--space-12); color: var(--text-muted); }
+.flashcard-empty-icon { margin: 0 auto var(--space-3); opacity: 0.5; }
+.flashcard-list { display: flex; flex-direction: column; gap: var(--space-3); }
+.flashcard-item { padding: var(--space-4) var(--space-5); background: var(--bg-tertiary); border: 1px solid var(--border-primary); border-radius: var(--radius-xs); }
+.flashcard-item-head { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--space-3); }
+.flashcard-item-main { flex: 1; min-width: 0; }
+.flashcard-item-front { font-size: var(--fs-sm); font-weight: 500; margin: 0 0 3px; }
+.flashcard-item-back { font-size: var(--fs-xs); opacity: 0.6; margin: 0; }
+.flashcard-item-delete { background: none; border: none; color: var(--text-muted); cursor: pointer; padding: 2px; flex-shrink: 0; }
+.flashcard-item-delete:hover { color: var(--error); }
+.flashcard-item-meta { display: flex; gap: var(--space-3); margin-top: var(--space-2); font-size: var(--fs-xs); opacity: 0.5; }
+.flashcard-due { color: var(--warning); }
+
 .panel-left {
   width: 260px;
   border-right: 1px solid var(--border-primary);
