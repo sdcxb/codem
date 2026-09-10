@@ -136,7 +136,7 @@ export function SubagentsTab({ agents, onSelectAgent }: SubagentsTabProps) {
                       <Pin size={9} /> {zh ? "持久" : "persistent"}
                     </span>
                   )}
-                  <span style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: "var(--fs-xs)", color: statusCfg.color }}>
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: "var(--fs-xs)", color: statusCfg.color }}>
                     <StatusIcon size={12} /> {getStatusLabel(agent.status, zh)}
                   </span>
                   <span style={{ marginLeft: "auto", fontSize: "var(--fs-xs)", color: "var(--text-muted, #555)" }}>
@@ -162,10 +162,10 @@ export function SubagentsTab({ agents, onSelectAgent }: SubagentsTabProps) {
                     display: "flex",
                     gap: "12px",
                   }}>
-                    <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }}>
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
                       <FileText size={11} /> {agent.result.filesTouched.length} {zh ? "个文件" : "files"}
                     </span>
-                    <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }}>
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
                       <Lightbulb size={11} /> {agent.result.findings.length} {zh ? "个发现" : "findings"}
                     </span>
                   </div>

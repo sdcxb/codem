@@ -79,7 +79,7 @@ export function IssueCard({ issue, onClick, compact = false }: IssueCardProps) {
         <div style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "var(--fs-xs)", color: "var(--text-secondary)" }}>
           <span style={{ fontFamily: "monospace", opacity: 0.7 }}>{issue.id.substring(0, 16)}</span>
           {issue.assigneeId && (
-            <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }}>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
               <span style={{ color: "var(--accent)" }}>@</span>
               {issue.assigneeType}/{issue.assigneeId.substring(0, 12)}
             </span>

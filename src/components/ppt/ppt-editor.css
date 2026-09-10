@@ -89,7 +89,7 @@
   display: flex;
   align-items: center;
   gap: 4px;
-  padding: 5px 10px;
+  padding: 4px 10px;
   background: transparent;
   border: 1px solid transparent;
   border-radius: var(--radius-sm, 6px);
@@ -478,12 +478,12 @@
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 4px;
 }
 
 .ppt-chat-msg {
   font-size: var(--fs-sm);
-  padding: 3px 8px;
+  padding: 4px 8px;
   border-radius: var(--radius-sm, 4px);
   max-width: 80%;
 }

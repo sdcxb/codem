@@ -357,7 +357,7 @@ export function ContextMonitor({ sessionId, visible }: ContextMonitorProps) {
           {showConfig && ctxConfig && (
             <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 8, padding: 8, borderRadius: 6, background: "var(--bg-tertiary)", border: "1px solid var(--border-primary)" }}>
               {/* 上下文窗口大小 */}
-              <label style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+              <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                 <span style={{ fontSize: 'var(--fs-sm)', color: "var(--text-secondary)" }}>上下文窗口 (tokens)</span>
                 <input type="number" min="8000" step="1000" value={ctxConfig.maxContextWindow}
                   onChange={(e) => setCtxConfig({ ...ctxConfig, maxContextWindow: parseInt(e.target.value) || 128000 })}
@@ -366,7 +366,7 @@ export function ContextMonitor({ sessionId, visible }: ContextMonitorProps) {
               </label>
 
               {/* 压缩阈值 */}
-              <label style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+              <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                 <span style={{ fontSize: 'var(--fs-sm)', color: "var(--text-secondary)" }}>压缩阈值: {Math.round(ctxConfig.compactionThreshold * 100)}%</span>
                 <input type="range" min="0.5" max="0.95" step="0.05" value={ctxConfig.compactionThreshold}
                   onChange={(e) => setCtxConfig({ ...ctxConfig, compactionThreshold: parseFloat(e.target.value) })}
@@ -375,7 +375,7 @@ export function ContextMonitor({ sessionId, visible }: ContextMonitorProps) {
               </label>
 
               {/* 压缩后保留消息数 */}
-              <label style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+              <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                 <span style={{ fontSize: 'var(--fs-sm)', color: "var(--text-secondary)" }}>压缩后保留消息数</span>
                 <input type="number" min="5" max="100" value={ctxConfig.maxMessagesAfterCompaction}
                   onChange={(e) => setCtxConfig({ ...ctxConfig, maxMessagesAfterCompaction: parseInt(e.target.value) || 20 })}
@@ -384,7 +384,7 @@ export function ContextMonitor({ sessionId, visible }: ContextMonitorProps) {
               </label>
 
               {/* 输出预留 */}
-              <label style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+              <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                 <span style={{ fontSize: 'var(--fs-sm)', color: "var(--text-secondary)" }}>输出预留 (tokens)</span>
                 <input type="number" min="1024" step="512" value={ctxConfig.outputReserve}
                   onChange={(e) => setCtxConfig({ ...ctxConfig, outputReserve: parseInt(e.target.value) || 4096 })}
@@ -393,7 +393,7 @@ export function ContextMonitor({ sessionId, visible }: ContextMonitorProps) {
               </label>
 
               {/* 系统提示词预留 */}
-              <label style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+              <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                 <span style={{ fontSize: 'var(--fs-sm)', color: "var(--text-secondary)" }}>系统提示词预留 (tokens)</span>
                 <input type="number" min="500" step="500" value={ctxConfig.systemPromptTokens}
                   onChange={(e) => setCtxConfig({ ...ctxConfig, systemPromptTokens: parseInt(e.target.value) || 2000 })}

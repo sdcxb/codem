@@ -199,7 +199,7 @@ export function UsageStats({ onClose }: UsageStatsProps) {
                   <span>{formatTime(record.timestamp)}</span>
                   <span>{record.inputTokens}→{record.outputTokens} tokens</span>
                   <span>{formatDuration(record.duration)}</span>
-                  {record.toolCalls > 0 && <span style={{ display: "flex", alignItems: "center", gap: 3 }}><Wrench size={11} /> {record.toolCalls}</span>}
+                  {record.toolCalls > 0 && <span style={{ display: "flex", alignItems: "center", gap: 4 }}><Wrench size={11} /> {record.toolCalls}</span>}
                 </div>
                 {record.error && (
                   <div className="usage-record-error">{record.error}</div>
@@ -303,7 +303,7 @@ export function UsageStats({ onClose }: UsageStatsProps) {
             <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 8 }}>
               {limits.perSession && stats.todayCost > 0 && (
                 <div>
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 'var(--fs-sm)', marginBottom: 3 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 'var(--fs-sm)', marginBottom: 4 }}>
                     <span>每日用量</span>
                     <span>${stats.todayCost.toFixed(2)} / ${limits.perDay?.toFixed(2) ?? "∞"}</span>
                   </div>
@@ -319,7 +319,7 @@ export function UsageStats({ onClose }: UsageStatsProps) {
               )}
               {limits.total && (
                 <div>
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 'var(--fs-sm)', marginBottom: 3 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 'var(--fs-sm)', marginBottom: 4 }}>
                     <span>总用量</span>
                     <span>${stats.totalCost.toFixed(2)} / ${limits.total.toFixed(2)}</span>
                   </div>

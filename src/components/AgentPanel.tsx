@@ -196,7 +196,7 @@ export function AgentPanel({ agents, onClose, onSelectAgent }: AgentPanelProps) 
                           : (zh ? "暂无活动记录" : "No activity recorded")}
                       </div>
                     ) : (
-                      <div style={{ display: "grid", gap: 3 }}>
+                      <div style={{ display: "grid", gap: 4 }}>
                         {(task.activities || []).slice(-3).reverse().map((act: any) => (
                           <div key={act.id} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: "var(--fs-xs)", color: "var(--text-secondary)" }}>
                             <span>{act.type === "tool" ? "🔧" : "💭"}</span>

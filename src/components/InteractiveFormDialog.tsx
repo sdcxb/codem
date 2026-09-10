@@ -186,7 +186,7 @@ return createPortal(
                               style={{
                                 display: "inline-flex",
                                 alignItems: "center",
-                                gap: "3px",
+                                gap: "4px",
                                 fontSize: "var(--fs-xs)",
                                 padding: "2px 8px",
                                 borderRadius: "10px",

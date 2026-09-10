@@ -1058,7 +1058,7 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 3px 10px 3px 4px;
+  padding: 4px 10px 3px 4px;
   border-radius: 12px;
   border: 1px solid var(--border-primary);
   background: var(--bg-secondary);
@@ -3119,8 +3119,8 @@ select:focus-visible,
 .right-sidebar-tab {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
-  padding: 3px 8px;
+  gap: 4px;
+  padding: 4px 8px;
   font-size: var(--fs-sm);
   border: 1px solid transparent;
   border-radius: 4px;
@@ -3390,7 +3390,7 @@ background: var(--bg-tertiary, var(--surface));
   padding: 2px;
 }
 .inline-diff-mode-btn {
-  padding: 3px 10px;
+  padding: 4px 10px;
   border: none;
   background: transparent;
   color: var(--text-muted);
@@ -3590,8 +3590,8 @@ background: var(--bg-secondary, var(--surface));
 .inline-diff-btn {
   display: flex;
   align-items: center;
-  gap: 5px;
-  padding: 5px 14px;
+  gap: 4px;
+  padding: 4px 14px;
   border: none;
   border-radius: var(--radius);
   cursor: pointer;

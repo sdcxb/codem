@@ -350,7 +350,7 @@ export function NoteEditor({
               style={{
                 display: 'inline-flex',
                 alignItems: 'center',
-                gap: '3px',
+                gap: '4px',
                 padding: '2px 6px',
                 background: 'var(--bg-tertiary, #25252b)',
                 border: '1px solid var(--border-color, #2a2a30)',

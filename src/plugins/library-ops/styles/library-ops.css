@@ -297,7 +297,7 @@
 .lo-kpi-grid--compact { margin-bottom: 0; }
 
 /* 状态卡 */
-.lo-status { display: flex; align-items: center; gap: 7px; }
+.lo-status { display: flex; align-items: center; gap: 8px; }
 .lo-status__dot {
   width: 9px;
   height: 9px;
@@ -309,7 +309,7 @@
 .lo-status__desc { margin-top: 4px; font-size: var(--fs-xs); color: var(--text-muted); }
 .lo-status__section { margin-top: 10px; }
 .lo-status__label { font-size: var(--fs-xs); color: var(--text-secondary); margin-bottom: 4px; }
-.lo-status__list { display: flex; flex-direction: column; gap: 3px; }
+.lo-status__list { display: flex; flex-direction: column; gap: 4px; }
 .lo-status__item {
   display: flex;
   align-items: center;
@@ -340,7 +340,7 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
-  padding: 7px 8px;
+  padding: 8px 8px;
   border: 1px solid var(--border-primary);
   border-radius: var(--radius-sm);
   background: color-mix(in srgb, var(--bg-tertiary) 65%, transparent);
@@ -350,7 +350,7 @@
   min-width: 0;
 }
 .lo-session-card:hover { border-color: var(--accent); background: var(--bg-hover); }
-.lo-session-card__top { display: flex; align-items: center; gap: 5px; min-width: 0; }
+.lo-session-card__top { display: flex; align-items: center; gap: 4px; min-width: 0; }
 .lo-session-card__icon { flex-shrink: 0; }
 .lo-session-card__name { flex: 1; min-width: 0; font-size: var(--fs-xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lo-session-card__live { color: var(--success); font-size: 9px; }
@@ -394,7 +394,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 3px 8px;
+  padding: 4px 8px;
   border-radius: var(--radius-sm);
   background: color-mix(in srgb, var(--bg-tertiary) 60%, transparent);
 }
@@ -437,7 +437,7 @@
 }
 .lo-link-btn:hover { color: var(--accent-hover); text-decoration: underline; }
 .lo-btn {
-  padding: 5px 12px;
+  padding: 4px 12px;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border-primary);
   background: var(--bg-tertiary);
@@ -449,7 +449,7 @@
 .lo-btn--primary {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
   background: color-mix(in srgb, var(--accent) 16%, transparent);
   border-color: color-mix(in srgb, var(--accent) 45%, transparent);
   color: var(--accent);
@@ -488,7 +488,7 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
-  padding: 9px 11px;
+  padding: 8px 11px;
   border-radius: var(--radius-md, 10px);
   border: 1px solid var(--border-primary);
   background: var(--bg-secondary);
@@ -524,7 +524,7 @@
 .lo-donut__legend-label { color: var(--text-secondary); }
 .lo-donut__legend-value { margin-left: auto; color: var(--text-primary); font-variant-numeric: tabular-nums; }
 
-.lo-heatmap { display: grid; gap: 3px; }
+.lo-heatmap { display: grid; gap: 4px; }
 .lo-heatmap__cell {
   aspect-ratio: 1;
   border-radius: var(--radius-sm);
@@ -563,11 +563,11 @@
 .lo-health { display: flex; align-items: center; gap: 14px; width: 100%; }
 .lo-health__fields { flex: 1; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 
-.lo-mini-scene { display: flex; flex-direction: column; gap: 5px; }
+.lo-mini-scene { display: flex; flex-direction: column; gap: 4px; }
 .lo-mini-scene__row { display: flex; align-items: center; gap: 8px; font-size: var(--fs-xs); }
 .lo-mini-scene__icon { width: 16px; text-align: center; }
 .lo-mini-scene__name { width: 84px; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.lo-mini-scene__bar { flex: 1; display: flex; gap: 3px; }
+.lo-mini-scene__bar { flex: 1; display: flex; gap: 4px; }
 .lo-mini-scene__dot { width: 8px; height: 8px; border-radius: 50%; opacity: 0.85; }
 .lo-mini-scene__count { color: var(--text-primary); font-variant-numeric: tabular-nums; }
 
@@ -576,8 +576,8 @@
 .lo-events__item, .lo-stream__item, .lo-timeline__item, .lo-alerts__item {
   display: flex;
   align-items: center;
-  gap: 7px;
-  padding: 3px 5px;
+  gap: 8px;
+  padding: 4px 5px;
   border-radius: var(--radius-sm);
   font-size: var(--fs-xs);
 }
@@ -913,7 +913,7 @@
   left: 10px;
   bottom: 10px;
   max-width: 60%;
-  padding: 5px 10px;
+  padding: 4px 10px;
   border-radius: var(--radius-sm, 6px);
   background: color-mix(in srgb, var(--bg-primary) 86%, transparent);
   border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
@@ -1045,7 +1045,7 @@
   left: 0;
   bottom: 78px;
   transform: translateX(-50%);
-  padding: 3px 8px;
+  padding: 4px 8px;
   max-width: 170px;
   border-radius: var(--radius-sm);
   background: color-mix(in srgb, var(--bg-primary) 94%, transparent);
@@ -1198,7 +1198,7 @@
 .lo-roster__item {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 8px;
   padding: 4px 6px;
   border-radius: var(--radius-sm);
   cursor: pointer;
@@ -1215,8 +1215,8 @@
 .lo-zones__item {
   display: flex;
   align-items: center;
-  gap: 7px;
-  padding: 3px 6px;
+  gap: 8px;
+  padding: 4px 6px;
   border-radius: var(--radius-sm);
   font-size: var(--fs-xs);
   cursor: pointer;
@@ -1232,7 +1232,7 @@
 .lo-zone-occupants__item {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
   padding: 2px 7px;
   border: 1px solid var(--border-primary);
   border-radius: var(--radius-full, 999px);
@@ -1289,7 +1289,7 @@
   background: transparent;
   color: var(--text-secondary);
   font-size: var(--fs-xs);
-  padding: 3px 9px;
+  padding: 4px 9px;
   border-radius: var(--radius-full, 999px);
   cursor: pointer;
 }
@@ -1524,7 +1524,7 @@
 @container lo (max-width: 820px) {
   /* 子导航收成图标条 */
   .lo-nav__label { display: none; }
-  .lo-nav__btn { justify-content: center; padding: 7px 8px; }
+  .lo-nav__btn { justify-content: center; padding: 8px 8px; }
   .lo-task__content > * { padding: 8px; }
   .lo-card { padding: 8px 10px; }
 }

@@ -166,7 +166,7 @@ export function PersonaManager({ onClose }: PersonaManagerProps) {
                 <div style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, color: "var(--text-primary)", display: "flex", alignItems: "center", gap: 6 }}>
                   {c.name}
                   {c.path && (
-                    <span style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 'var(--fs-xs)', color: "var(--text-muted)" }}>
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 'var(--fs-xs)', color: "var(--text-muted)" }}>
                       <FileText size={11} /> {c.path.split(/[\\/]/).pop()}
                     </span>
                   )}

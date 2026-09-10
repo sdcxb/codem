@@ -170,7 +170,7 @@ export function MultimodalPanel({ onClose, inline }: MultimodalPanelProps) {
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             {/* Provider selector */}
             <div>
-              <label style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", display: "block", marginBottom: 3 }}>
+              <label style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", display: "block", marginBottom: 4 }}>
                 Provider
               </label>
               <select
@@ -215,7 +215,7 @@ export function MultimodalPanel({ onClose, inline }: MultimodalPanelProps) {
               <>
                 {/* 本地模型选择器 */}
                 <div>
-                  <label style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", display: "block", marginBottom: 3 }}>
+                  <label style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", display: "block", marginBottom: 4 }}>
                     本地模型
                   </label>
                   <select
@@ -304,7 +304,7 @@ export function MultimodalPanel({ onClose, inline }: MultimodalPanelProps) {
 
                 {/* Model selector */}
                 <div>
-                  <label style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", display: "block", marginBottom: 3 }}>
+                  <label style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", display: "block", marginBottom: 4 }}>
                     模型
                   </label>
                   {availableModels && availableModels.length > 0 ? (
@@ -330,7 +330,7 @@ export function MultimodalPanel({ onClose, inline }: MultimodalPanelProps) {
 
                 {/* API Key */}
                 <div>
-                  <label style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", display: "block", marginBottom: 3 }}>
+                  <label style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", display: "block", marginBottom: 4 }}>
                     API Key
                   </label>
                   <input
@@ -344,7 +344,7 @@ export function MultimodalPanel({ onClose, inline }: MultimodalPanelProps) {
 
                 {/* Base URL */}
                 <div>
-                  <label style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", display: "block", marginBottom: 3 }}>
+                  <label style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", display: "block", marginBottom: 4 }}>
                     Base URL
                   </label>
                   <input

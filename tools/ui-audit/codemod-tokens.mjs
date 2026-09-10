@@ -199,6 +199,50 @@ const RADIUS_MAP = new Map([
   ["9", "var(--radius-md)"],
 ]);
 
+/**
+ * 间距离格值 → 最近的对齐值（2px 网格）。
+ * 只处理**离格**的数字（3/5/7/9/11/13），对齐值最多 ±1px，肉眼不可见；
+ * 已对齐的值一律不动，保证 diff 最小可复核。
+ */
+const SPACING_FIX_MAP = new Map([
+  ["3", "4"],
+  ["5", "4"],
+  ["7", "8"],
+  ["9", "8"],
+  ["11", "12"],
+  ["13", "12"],
+]);
+
+const SPACING_PROPS =
+  "padding|paddingTop|paddingBottom|paddingLeft|paddingRight|margin|marginTop|marginBottom|marginLeft|marginRight|gap|rowGap|columnGap";
+
+/** TSX 内联样式里的离格间距：`gap: 3` → `gap: 4` */
+function transformSpacing(line, rel, lineNo) {
+  return line.replace(
+    new RegExp(`(?:^|[\\s,{])((?:${SPACING_PROPS}))(\\s*:\\s*)(['"]?)([0-9]+)(px)?\\3(?=\\s*[,}])`, "g"),
+    (m, prop, sep, q, num, unit) => {
+      const fixed = SPACING_FIX_MAP.get(num);
+      if (!fixed) return m;
+      record(rel, lineNo, `${prop}: ${num}${unit ?? ""}`, `${prop}: ${fixed}${unit ?? ""}`);
+      const prefix = m.slice(0, m.indexOf(prop));
+      return `${prefix}${prop}${sep}${q}${fixed}${unit ?? ""}${q}`;
+    },
+  );
+}
+
+/** CSS 里的离格间距：`gap: 3px` → `gap: 4px` */
+function transformSpacingCss(line, rel, lineNo) {
+  return line.replace(
+    new RegExp(`\\b(${SPACING_PROPS})(\\s*:\\s*)([0-9]+)(px)?`, "g"),
+    (m, prop, sep, num, unit) => {
+      const fixed = SPACING_FIX_MAP.get(num);
+      if (!fixed) return m;
+      record(rel, lineNo, `${prop}: ${num}${unit ?? ""}`, `${prop}: ${fixed}${unit ?? ""}`);
+      return `${prop}${sep}${fixed}${unit ?? ""}`;
+    },
+  );
+}
+
 const files = [];
 (function walk(dir) {
   for (const entry of readdirSync(dir)) {
@@ -291,6 +335,7 @@ for (const full of files) {
       let line = raw;
       // 先处理「状态色 + alpha」的淡色写法，再处理属性级字面量
       line = transformTints(line, rel, no);
+      line = transformSpacingCss(line, rel, no);
       // CSS 里颜色可能出现在任意属性（border: 1px solid #333 / background: #fff）
       line = line.replace(/(#[0-9a-fA-F]{3,8}|rgba?\([^)]*\))(?![\w-])/g, (m) => {
         const token = COLOR_MAP.get(m.toLowerCase());
@@ -321,6 +366,7 @@ for (const full of files) {
     let line = raw;
     if (inStyleHere) {
       line = transformTints(line, rel, no);
+      line = transformSpacing(line, rel, no);
       line = transformColors(line, rel, no);
       line = transformFontSize(line, rel, no);
       line = transformRadius(line, rel, no);

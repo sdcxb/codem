@@ -246,7 +246,7 @@ function MetricChip({ icon, label, value }: { icon: React.ReactNode; label: stri
     <div style={{
       display: 'flex',
       alignItems: 'center',
-      gap: 3,
+      gap: 4,
       padding: '2px 6px',
       background: 'var(--bg-tertiary)',
       borderRadius: 4,
@@ -351,7 +351,7 @@ export const TrajectoryPanel = memo(function TrajectoryPanel({
             style={{
               display: 'flex',
               alignItems: 'center',
-              gap: 3,
+              gap: 4,
               padding: '2px 6px',
               borderRadius: 4,
               border: '1px solid var(--border-primary)',
@@ -569,7 +569,7 @@ export const TrajectoryPanel = memo(function TrajectoryPanel({
 
               {/* token usage 行 — 独立小行 */}
               {step.data?.usage && !isExpanded && (
-                <div style={{ fontSize: "var(--fs-xs)", color: 'var(--text-muted)', marginTop: 1, display: 'flex', alignItems: 'center', gap: 3 }}>
+                <div style={{ fontSize: "var(--fs-xs)", color: 'var(--text-muted)', marginTop: 1, display: 'flex', alignItems: 'center', gap: 4 }}>
                   <Zap size={8} />
                   {formatTokens(step.data.usage.promptTokens || step.data.usage.inputTokens || 0)}↓
                   {' '}

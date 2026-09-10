@@ -117,7 +117,7 @@ export function AgentTeamsPanel({ onClose }: AgentTeamsPanelProps) {
                 const depText = t.dependencies.length ? ` ⛓${t.dependencies.join(",")}` : "";
                 return (
                   <div key={t.id} style={{ display: "flex", alignItems: "flex-start", gap: 6, padding: "4px 6px", background: "var(--bg-secondary, #232834)", borderRadius: 6 }}>
-                    <span style={{ width: 8, height: 8, borderRadius: "50%", background: meta.color, flexShrink: 0, marginTop: 5 }} />
+                    <span style={{ width: 8, height: 8, borderRadius: "50%", background: meta.color, flexShrink: 0, marginTop: 4 }} />
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ display: "flex", gap: 6 }}>
                         <span style={{ fontWeight: 600 }}>{t.id}</span>
