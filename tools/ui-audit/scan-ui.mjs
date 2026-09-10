@@ -247,6 +247,11 @@ for (const full of files) {
   // 静态 className 字面量（跳过含 ${} 的动态拼接）
   for (const m of src.matchAll(/className=(?:"([^"{}]+)"|\{'([^'{}]+)'\})/g)) {
     const raw = m[1] ?? m[2] ?? "";
+    // 该元素自己带了内联样式 → 已经"有样式"，类名只是钩子，不算"等于没样式"
+    const tail = src.slice(m.index, m.index + 220);
+    const hasInlineStyle = /^\s*>?[\s\S]{0,160}?style=\{\{/.test(tail.replace(/^className=[^>]*/, "")) ||
+      /style=\{\{/.test(tail);
+    if (hasInlineStyle) continue;
     for (const cls of raw.split(/\s+/).filter(Boolean)) {
       if (RUNTIME_CLASS_RE.test(cls) || THIRD_PARTY_CLASS_RE.test(cls) || definedClasses.has(cls)) continue;
       const line = src.slice(0, m.index).split("\n").length;
