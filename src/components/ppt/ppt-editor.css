@@ -208,7 +208,7 @@
   position: absolute;
   top: 4px;
   left: 4px;
-  background: rgba(0, 0, 0, 0.6);
+  background: var(--overlay-backdrop-strong);
   color: var(--text-on-accent);
   font-size: var(--fs-sm);
   padding: 1px 6px;
@@ -220,7 +220,7 @@
   position: absolute;
   top: 4px;
   right: 4px;
-  background: rgba(220, 50, 50, 0.8);
+  background: var(--error);
   color: var(--text-on-accent);
   border: none;
   border-radius: var(--radius-sm);
@@ -411,7 +411,7 @@
   position: fixed;
   inset: 0;
   z-index: 99999;
-  background: #000;
+  background: var(--bg-primary);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -432,7 +432,7 @@
   transform: translateX(-50%);
   display: flex;
   gap: 8px;
-  background: rgba(0, 0, 0, 0.7);
+  background: var(--overlay-backdrop-strong);
   padding: 8px 16px;
   border-radius: 24px;
   opacity: 0;
@@ -444,7 +444,7 @@
 }
 
 .ppt-present-btn {
-  background: rgba(255, 255, 255, 0.15);
+  background: var(--bg-hover);
   border: none;
   color: var(--text-on-accent);
   width: 36px;

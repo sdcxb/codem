@@ -401,7 +401,7 @@
   position: fixed;
   inset: 0;
   z-index: var(--z-modal);
-  background: rgba(0, 0, 0, 0.85);
+  background: var(--overlay-backdrop-strong);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
   display: flex;
@@ -757,7 +757,7 @@
   position: fixed;
   inset: 0;
   z-index: var(--z-modal);
-  background: rgba(0, 0, 0, 0.85);
+  background: var(--overlay-backdrop-strong);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
   display: flex;
@@ -1981,7 +1981,7 @@ body.resizing-columns * {
   ),
   radial-gradient(
     ellipse at bottom right,
-    rgba(88, 166, 255, 0.06),
+    color-mix(in srgb, var(--info) 6%, transparent),
     transparent 50%
   );
 }
@@ -3047,7 +3047,7 @@ select:focus-visible,
   color: var(--success);
 }
 .hub-task-icon-orange {
-  background: rgba(251, 146, 60, 0.15);
+  background: color-mix(in srgb, var(--warning) 15%, transparent);
   color: var(--warning);
 }
 .hub-task-icon-purple {
