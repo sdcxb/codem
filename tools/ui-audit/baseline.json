@@ -1,8 +1,6 @@
 {
-  "at": "2026-09-10T14:22:48.651Z",
+  "at": "2026-09-10T22:56:25.682Z",
   "errorCount": 0,
   "warnCount": 0,
-  "byRule": {
-    "css-class-unused": 17
-  }
+  "byRule": {}
 }

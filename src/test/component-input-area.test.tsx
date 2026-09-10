@@ -104,3 +104,77 @@ describe("InputArea — 渲染测试", () => {
     }
   });
 });
+
+/**
+ * 第 46 波：「搜索当前会话」「临时会话」从会话头部移到编辑器底部工具行
+ * （与执行模式 / 安全策略同一行，`.input-tools-left` 的最右边）。
+ *
+ * 为什么要测"位置"而不只是"存在"：这两个按钮的价值在于**放对了地方** —— 头部那一排是
+ * 会话级状态与视图切换，编辑器底部才是输入辅助动作。只断言"能点"的话，把它们挪回头部
+ * 测试依然全绿，等于没有保护。
+ */
+describe("InputArea — 第 46 波：输入区辅助按钮", () => {
+  it("在编辑器工具行渲染「搜索」与「临时会话」，且样式与安全策略同一类（.input-control-item）", () => {
+    const { container } = renderInputArea({
+      onToggleSearch: () => {},
+      searchOpen: false,
+      onToggleSideSession: () => {},
+      sideSessionOpen: false,
+    });
+    const row = container.querySelector(".input-tools-left");
+    expect(row, "编辑器底部工具行 .input-tools-left 应存在").toBeTruthy();
+
+    const search = row!.querySelector<HTMLButtonElement>(".input-aux-btn[title*='搜索当前会话']");
+    const side = row!.querySelector<HTMLButtonElement>(".input-aux-btn[title*='临时会话']");
+    expect(search, "「搜索当前会话」应在底部工具行内").toBeTruthy();
+    expect(side, "「临时会话」应在底部工具行内").toBeTruthy();
+    // 同一个类 => 同一行风格；aria-pressed => 状态与样式同源（第 32 波约定）
+    for (const btn of [search!, side!]) {
+      expect(btn.classList.contains("input-control-item")).toBe(true);
+      expect(btn.getAttribute("aria-pressed")).toBe("false");
+    }
+  });
+
+  it("按压态由 aria-pressed 表达，点击回调被触发", async () => {
+    const user = userEvent.setup();
+    const onToggleSearch = vi.fn();
+    const onToggleSideSession = vi.fn();
+    const { container, rerender } = render(
+      <InputArea
+        onSend={vi.fn()}
+        onCancel={vi.fn()}
+        disabled={false}
+        isStreaming={false}
+        collaborationMode={"default" as CollaborationMode}
+        onModeChange={vi.fn()}
+        connected
+        onToggleSearch={onToggleSearch}
+        searchOpen
+        onToggleSideSession={onToggleSideSession}
+        sideSessionOpen={false}
+      />,
+    );
+    const search = container.querySelector<HTMLButtonElement>(".input-aux-btn[title*='搜索当前会话']")!;
+    expect(search.getAttribute("aria-pressed")).toBe("true");
+    await user.click(search);
+    expect(onToggleSearch).toHaveBeenCalledTimes(1);
+
+    const side = container.querySelector<HTMLButtonElement>(".input-aux-btn[title*='临时会话']")!;
+    await user.click(side);
+    expect(onToggleSideSession).toHaveBeenCalledTimes(1);
+
+    // 没传回调时不渲染（避免出现点了没反应的"死按钮"）
+    rerender(
+      <InputArea
+        onSend={vi.fn()}
+        onCancel={vi.fn()}
+        disabled={false}
+        isStreaming={false}
+        collaborationMode={"default" as CollaborationMode}
+        onModeChange={vi.fn()}
+        connected
+      />,
+    );
+    expect(container.querySelectorAll(".input-aux-btn")).toHaveLength(0);
+  });
+});

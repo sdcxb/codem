@@ -31,9 +31,9 @@ import { listSources } from "../core/knowledge";
 import { MIMO_MODELS, getConfiguredApiModels, getModelsForMode, type ModelOption } from "../core/model-config";
 import { listFilesForMention, getRelativePath } from "../core/file-mention";
 import {
-  MessageSquare, X, Image as ImageIcon, FileText, Paperclip, Target,
+  MessageSquare, MessageSquareText, X, Image as ImageIcon, FileText, Paperclip, Target,
   Volume2, ClipboardList, Zap, BookMarked, Minimize2, Maximize2,
-  Square, ArrowRight, ChevronUp, StickyNote,
+  Square, ArrowRight, ChevronUp, StickyNote, Search,
   Clock, Check, Wrench, Shield, Rocket,
   Cpu,
   Mic, Square as SquareIcon,
@@ -70,7 +70,13 @@ sessionKey?: string;
   /** P3: Active notebook ID for source selector */
   notebookId?: string;
   /** More-actions menu callbacks (per benchmark plan) */
+  /** 第 46 波：「搜索当前会话」—— 从会话头部移到编辑器底部工具行（与执行模式/安全策略同一行） */
   onToggleSearch?: () => void;
+  /** 搜索面板是否打开（用于按钮的按压态；样式由 aria-pressed 驱动） */
+  searchOpen?: boolean;
+  /** 第 46 波：「临时会话」—— 同样从头部移到编辑器底部工具行 */
+  onToggleSideSession?: () => void;
+  sideSessionOpen?: boolean;
   onToggleQuickPhrase?: () => void;
   onToggleDraftPicker?: () => void;
   onToggleDisplayMode?: () => void;
@@ -120,7 +126,7 @@ function pickAudioRecorderMimeType(): string | null {
   return null;
 }
 
-export function InputArea({ onSend, onCancel, onSendGuidance, disabled, isStreaming, noSession, sessionKey, collaborationMode, onModeChange, projectPath, quoteContext, onClearQuote, suggestionPrompt, onSuggestionConsumed, notebookId, onToggleSearch, onToggleWorkbench, onToggleQuickPhrase, onToggleDraftPicker, onToggleDisplayMode, onToggleGit, onToggleRightSidebar, hasDrafts, model, onModelChange, mode = "cli", connected = true, hideSourceSelector }: InputAreaProps) {
+export function InputArea({ onSend, onCancel, onSendGuidance, disabled, isStreaming, noSession, sessionKey, collaborationMode, onModeChange, projectPath, quoteContext, onClearQuote, suggestionPrompt, onSuggestionConsumed, notebookId, onToggleSearch, searchOpen = false, onToggleSideSession, sideSessionOpen = false, onToggleWorkbench, onToggleQuickPhrase, onToggleDraftPicker, onToggleDisplayMode, onToggleGit, onToggleRightSidebar, hasDrafts, model, onModelChange, mode = "cli", connected = true, hideSourceSelector }: InputAreaProps) {
   const lang = useLang();
   const zh = lang === "zh";
   const [input, setInput] = useState("");
@@ -1491,6 +1497,37 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
               compact
               locked={isStreaming}
             />
+
+            {/* 第 46 波：把「搜索当前会话」「临时会话」从**会话头部**移到这一行的最右边。
+                理由：头部那一排是"会话级状态与视图切换"（标题、模型、智能体、快照、上下文），
+                而这两个是**编辑器辅助动作**（在输入区找东西 / 开一个不污染主会话的侧会话），
+                和同一行的执行模式、安全策略是同一类 —— 放一起更符合"这一行"的语义。
+                样式直接复用本行的 `.input-control-item`（与安全策略同一个类），
+                按压态由 `aria-pressed` 驱动（与第 32 波「状态属性驱动样式」的约定一致）。 */}
+            {onToggleSearch && (
+              <button
+                type="button"
+                className="input-control-item input-aux-btn"
+                aria-pressed={searchOpen}
+                onClick={onToggleSearch}
+                title={zh ? "搜索当前会话（会话内消息搜索）" : "Search current session"}
+              >
+                <Search size={14} />
+                <span>{zh ? "搜索" : "Search"}</span>
+              </button>
+            )}
+            {onToggleSideSession && (
+              <button
+                type="button"
+                className="input-control-item input-aux-btn"
+                aria-pressed={sideSessionOpen}
+                onClick={onToggleSideSession}
+                title={zh ? "临时会话（不污染主会话）" : "Side session (no main-chat pollution)"}
+              >
+                <MessageSquareText size={14} />
+                <span>{zh ? "临时会话" : "Side Session"}</span>
+              </button>
+            )}
 
             {/* P3: Multimodal generate mode panel */}
             {showMultimodal && generateMode !== "text" && (

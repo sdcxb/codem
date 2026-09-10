@@ -577,14 +577,6 @@ setStepTooltipLocked(false);
         >
           <BarChart3 size={16} />
         </button>
-        {/* B1 side-session 临时会话入口 */}
-        <button
-          className={`agent-toggle ${showSideSession ? "active" : ""}`}
-          onClick={() => { setShowSideSession(!showSideSession); setShowAgentPanel(false); setShowSnapshotPanel(false); setShowContextMonitor(false); setShowTrajectoryPanel(false); }}
-          title={lang === "zh" ? "临时会话（不污染主会话）" : "Side session (no main-chat pollution)"}
-        >
-          <MessageSquareText size={16} />
-        </button>
         {/* 团队完整视图（DAG/任务/邮箱）在任务管理「团队」Tab：由 AgentPanel 团队卡片
             「团队视图 →」与侧栏任务管理入口打开（顶部已收敛为单一「智能体与团队」按钮） */}
         <button
@@ -594,24 +586,7 @@ setStepTooltipLocked(false);
         >
           <Activity size={16} />
         </button>
-        {/* A9: 搜索当前会话 — 会话内消息搜索（弹窗 + 结果跳转，对标全局 Ctrl+K 的会话内版本） */}
-        <button
-          className={`agent-toggle ${showSearch ? "active" : ""}`}
-          onClick={() => {
-            const next = !showSearch;
-            setShowSearch(next);
-            if (next) setSearchQuery('');
-            // 与其它头部浮层互斥（与 agent/snapshot/context/trajectory 按钮一致）
-            setShowAgentPanel(false);
-            setShowSnapshotPanel(false);
-            setShowContextMonitor(false);
-            setShowTrajectoryPanel(false);
-            setSelectedAgentId(null);
-          }}
-          title={lang === "zh" ? "搜索当前会话" : "Search current session"}
-        >
-          <Search size={16} />
-        </button>
+        {/* 第 46 波：「搜索当前会话」已移到编辑器底部工具行（与执行模式/安全策略同一行） */}
         {/* Display mode toggle moved to Settings > Appearance — default unified mode */}
         <span className="header-spacer" />
         {/* Side panel toggle — header right */}
@@ -1246,7 +1221,29 @@ canEdit={!isSessionStreaming}
         </div>
       )}
 
-      <InputArea sessionKey={currentSessionId} onSend={(msg, atts, skills) => { if (isSessionStreaming && onSendGuidance) { onSendGuidance(msg); } else { onSend(msg, atts, skills); } setQuoteContext(null); }} onSendGuidance={isSessionStreaming ? onSendGuidance : undefined} onCancel={onCancel} disabled={!connected} isStreaming={!currentSessionId ? isStreaming : activeSessions.has(currentSessionId)} noSession={!currentSessionId} collaborationMode={collaborationMode} onModeChange={onModeChange || (() => {})} projectPath={projectPath} quoteContext={quoteContext} onClearQuote={() => { setQuoteContext(null); }} suggestionPrompt={suggestionPrompt} onSuggestionConsumed={() => setSuggestionPrompt(null)} notebookId={notebookId} onToggleRightSidebar={() => setShowRightSidebar(!showRightSidebar)} onToggleQuickPhrase={() => setShowQuickPhrase(!showQuickPhrase)} onToggleDraftPicker={() => setShowDraftPicker(!showDraftPicker)} hasDrafts={promptDrafts.length > 0} model={model} onModelChange={onModelChange} mode={mode} />
+      <InputArea sessionKey={currentSessionId} onSend={(msg, atts, skills) => { if (isSessionStreaming && onSendGuidance) { onSendGuidance(msg); } else { onSend(msg, atts, skills); } setQuoteContext(null); }} onSendGuidance={isSessionStreaming ? onSendGuidance : undefined} onCancel={onCancel} disabled={!connected} isStreaming={!currentSessionId ? isStreaming : activeSessions.has(currentSessionId)} noSession={!currentSessionId} collaborationMode={collaborationMode} onModeChange={onModeChange || (() => {})} projectPath={projectPath} quoteContext={quoteContext} onClearQuote={() => { setQuoteContext(null); }} suggestionPrompt={suggestionPrompt} onSuggestionConsumed={() => setSuggestionPrompt(null)} notebookId={notebookId} onToggleRightSidebar={() => setShowRightSidebar(!showRightSidebar)} onToggleQuickPhrase={() => setShowQuickPhrase(!showQuickPhrase)} onToggleDraftPicker={() => setShowDraftPicker(!showDraftPicker)} hasDrafts={promptDrafts.length > 0} model={model} onModelChange={onModelChange} mode={mode}
+        /* 第 46 波：这两个动作从会话头部移到编辑器底部工具行（见 InputArea 的注释） */
+        searchOpen={showSearch}
+        onToggleSearch={() => {
+          const next = !showSearch;
+          setShowSearch(next);
+          if (next) setSearchQuery('');
+          // 与头部浮层互斥（智能体/快照/上下文/轨迹面板）
+          setShowAgentPanel(false);
+          setShowSnapshotPanel(false);
+          setShowContextMonitor(false);
+          setShowTrajectoryPanel(false);
+          setSelectedAgentId(null);
+        }}
+        sideSessionOpen={showSideSession}
+        onToggleSideSession={() => {
+          setShowSideSession(!showSideSession);
+          setShowAgentPanel(false);
+          setShowSnapshotPanel(false);
+          setShowContextMonitor(false);
+          setShowTrajectoryPanel(false);
+        }}
+      />
     </div>
   );
 }

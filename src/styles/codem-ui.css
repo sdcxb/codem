@@ -2564,157 +2564,36 @@ select:focus-visible,
 /* ========== 16. RightSidebar shared styles (skin-agnostic) ========== */
 /* These styles were previously only under [data-skin="hub"], causing
    unstyled elements in default and Dream skins. */
-.hub-right-sidebar {
-  display: flex;
-  flex-direction: column;
-  background: var(--bg-secondary, transparent);
-  border-left: 1px solid var(--border-primary, transparent);
-  overflow: hidden;
-  position: relative;
-  height: 100%;
-}
-.hub-agent-card {
-  background: var(--bg-tertiary, transparent);
-  border: 1px solid var(--border-primary, transparent);
-  border-radius: var(--radius-md);
-  padding: var(--space-8);
-  margin: var(--space-4) var(--space-6);
-  margin-bottom: var(--space-8);
-  text-align: center;
-}
-.hub-agent-image {
-  width: 80px;
-  height: 80px;
-  margin: 0 auto var(--space-6);
-  border-radius: 50%;
-  background: var(--bg-hover, transparent);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  position: relative;
-}
-.hub-agent-info p {
-  margin: var(--space-2) 0;
-  font-size: var(--fs-sm);
-}
-.hub-status-dot {
-  display: inline-block;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--success, #3fb950);
-  margin-right: var(--space-2);
-}
-.hub-tasks-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: var(--space-6);
-  padding: 0 var(--space-6);
-}
-.hub-tasks-header h3 {
-  font-size: var(--fs-base);
-  font-weight: 600;
-  color: var(--text-primary);
-  margin: 0;
-}
-.hub-task-list {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-  padding: 0 var(--space-6);
-}
-.hub-task-item {
-  background: var(--bg-tertiary, transparent);
-  border: 1px solid var(--border-primary, transparent);
-  border-radius: var(--radius);
-  padding: var(--space-5);
-  display: flex;
-  align-items: flex-start;
-  gap: var(--space-5);
-  transition: border-color var(--duration-normal), background var(--duration-normal);
-}
+
+
+
+
+
+
+
+
+
 .hub-task-item:is(:hover, :focus-visible) {
   border-color: var(--glass-border-strong, var(--border-primary));
 }
-.hub-task-icon {
-  width: 32px;
-  height: 32px;
-  border-radius: var(--radius-sm);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  font-size: var(--fs-md);
-}
-.hub-task-icon-blue {
-  background: color-mix(in srgb, var(--info) 15%, transparent);
-  color: var(--info);
-}
-.hub-task-icon-green {
-  background: color-mix(in srgb, var(--success) 15%, transparent);
-  color: var(--success);
-}
-.hub-task-icon-orange {
-  background: color-mix(in srgb, var(--warning) 15%, transparent);
-  color: var(--warning);
-}
-.hub-task-icon-purple {
-  background: color-mix(in srgb, var(--accent) 15%, transparent);
-  color: var(--accent);
-}
-.hub-task-content {
-  min-width: 0;
-  flex: 1;
-}
-.hub-task-content h4 {
-  font-size: var(--fs-sm) !important;
-  font-weight: 500;
-  color: var(--text-primary);
-  margin: 0 0 var(--space-2) 0;
-  line-height: 1.3;
-}
-.hub-task-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-}
-.hub-task-tags span {
-  font-size: var(--fs-xs);
-  padding: 1px var(--space-3);
-  border-radius: var(--radius-xs);
-  background: var(--bg-hover, rgba(255,255,255,0.05));
-  color: var(--text-muted);
-}
-.hub-recent-item {
-  transition: border-color var(--duration-normal), background var(--duration-normal);
-}
+
+
+
+
+
+
+
+
+
+
 .hub-recent-item:is(:hover, :focus-visible) {
   border-color: var(--glass-border-strong, var(--border-primary)) !important;
   background: var(--surface-hover, var(--bg-hover)) !important;
 }
-.hub-hide-btn {
-  position: absolute;
-  top: 50%;
-  right: 8px;
-  transform: translateY(-50%);
-  background: none;
-  border: none;
-  color: var(--text-muted);
-  cursor: pointer;
-  opacity: 0;
-  transition: opacity var(--duration-normal), color var(--duration-normal);
-  padding: var(--space-2);
-}
-.hub-recent-item:is(:hover, :focus-visible) .hub-hide-btn {
-  opacity: 1;
-}
-.hub-onboarding {
-  padding: 0 var(--space-6);
-}
-.hub-onboarding-item {
-  cursor: pointer;
-}
+
+
+
+
 .hub-onboarding-item:is(:hover, :focus-visible) {
   border-color: var(--accent) !important;
   background: var(--accent-muted) !important;
@@ -2759,17 +2638,7 @@ select:focus-visible,
 .right-sidebar-resize-handle.active {
   background: var(--accent);
 }
-.hub-sidebar-toggle {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  background: none;
-  border: none;
-  color: var(--text-muted);
-  cursor: pointer;
-  padding: var(--space-2);
-  z-index: 10;
-}
+
 .hub-sidebar-toggle:is(:hover, :focus-visible) {
   color: var(--text-primary);
 }

@@ -116,6 +116,7 @@ const RULES = {
   "inline-style-dense": { level: "warn", desc: "单文件内联样式过密（考虑抽成 CSS 类）" },
   "legacy-popup-shell": { level: "warn", desc: "历史遗留的自建浮层类名" },
   "css-class-undefined": { level: "warn", desc: "tsx 里用了但没有任何 CSS 定义的类名（等于没样式）" },
+  "css-class-unused": { level: "warn", desc: "CSS 里定义了但 TSX/TS 从未使用的类名（死代码；属性驱动与可动态拼接的除外）" },
   "css-var-undefined": { level: "error", desc: "var(--x) 引用了从未定义的令牌（无兜底时整条声明失效）" },
   "color-hardcoded-ts": { level: "error", desc: "style={{}} 之外的 TS 里写死颜色（状态色表/主题常量/JS 改样式）" },
   "svg-attr-var": { level: "error", desc: "把 var() 写在原生 SVG 表现属性里（属性不吃 var()，整条属性失效）" },
@@ -906,6 +907,27 @@ function scanMotionCoverage(cssFiles) {
 }
 
 /**
+ * 读取"类名使用证据"语料：src 下**全部** .ts/.tsx，包括测试目录。
+ *
+ * 为什么不复用 listFiles：那个函数带着 SCAN_DIRS/EXCLUDE_DIRS（会跳过 `test`、`.test.ts`），
+ * 于是"测试里断言过的类名"不在语料里 → 被误报成死类名（`.no-transition` 就是这样被报出来的）。
+ * 扫描范围与"使用证据"是两件事，必须分开。
+ */
+function readClassCorpus() {
+  const out = [];
+  const walkAll = (dir) => {
+    for (const entry of readdirSync(dir)) {
+      if (["node_modules", "dist", "target", ".git", "__snapshots__"].includes(entry)) continue;
+      const full = join(dir, entry);
+      if (statSync(full).isDirectory()) walkAll(full);
+      else if ([".tsx", ".ts"].includes(extname(entry))) out.push(readFileSync(full, "utf8"));
+    }
+  };
+  walkAll(join(ROOT, "src"));
+  return out.join("\n");
+}
+
+/**
  * 死类名（第 44 波新增规则 `css-class-unused`）—— `css-class-undefined` 的镜像。
  *
  * 那边查"TSX 用了但 CSS 没定义"（等于没样式），这边查"CSS 定义了但没人用"（等于死代码）。
@@ -922,20 +944,23 @@ function scanMotionCoverage(cssFiles) {
  * - **减动效 / 减透明媒体块整块跳过**：那是无障碍安全网 —— 第 44 波第一刀就误删过
  *   library-ops 的减动效规则，当场被 `motion-uncovered` 抓住（教训：清理脚本也要认得出"安全网"）。
  */
-function scanUnusedClasses(cssFiles, codeFiles) {
-  const corpus = codeFiles.join("\n");
+function scanUnusedClasses(cssFiles) {
+  // 语料见 readClassCorpus()：包含测试目录，且不受例外表影响 ——
+  // "哪些文件会被当违规扫描"与"哪些文件里的类名算被使用"是两件事。
+  const corpus = readClassCorpus();
   const dynamicCache = new Map();
   const maybeDynamic = (cls) => {
     if (dynamicCache.has(cls)) return dynamicCache.get(cls);
     const parts = cls.split("-");
     let dyn = false;
     for (let k = parts.length - 1; k >= 1 && !dyn; k--) {
-      // 前缀必须**以 `-` 结尾**才算"类名前缀"：只看前缀本身会让 `code` / `hub` / `tool` / `table`
-      // 这类短词撞上语料里的普通文本（`code + 1`、`tool" + ...`），把成片真死类名误判成"活的"。
+      // 前缀必须**以 `-` 结尾**且**前面不能是标识符字符**才算"类名前缀"：
+      // 只看前缀会让 `code`/`tool`/`table` 这类短词撞上普通文本；不看到边界又会把
+      // `resp-${Date.now()}` 里的 `sp-${` 当成类名前缀（第 46 波实测的假阳性）。
       const prefix = parts.slice(0, k).join("-") + "-";
       const esc = prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      if (new RegExp(`${esc}\\$\\{`).test(corpus)) dyn = true;              // nb-${x}
-      else if (new RegExp(`${esc}["'\`]?\\s*\\+`).test(corpus)) dyn = true; // "lo-" + name
+      if (new RegExp(`(^|[^\\w-])${esc}\\$\\{`).test(corpus)) dyn = true;
+      else if (new RegExp(`(^|[^\\w-])${esc}["'\`]?\\s*\\+`).test(corpus)) dyn = true;
     }
     dynamicCache.set(cls, dyn);
     return dyn;
@@ -1012,7 +1037,7 @@ for (const full of files) {
 // 跨文件规则：循环动画的减动效覆盖（需要全项目的关停清单才能判定）
 scanMotionCoverage(cssSources);
 // 跨文件规则：死类名（需要全项目渲染代码语料）
-scanUnusedClasses(cssSources, codeSources);
+scanUnusedClasses(cssSources);
 
 const onlyRule = value("--rule");
 const onlyFile = value("--file");
