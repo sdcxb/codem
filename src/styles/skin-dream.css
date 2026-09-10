@@ -39,11 +39,11 @@
 [data-skin="dream"] .titlebar-btn {
   color: var(--dream-text-muted, #a88a8f);
 }
-[data-skin="dream"] .titlebar-btn:hover {
+[data-skin="dream"] .titlebar-btn:is(:hover, :focus-visible) {
   background: rgba(232, 140, 154, 0.12);
   color: var(--dream-text-main, #6c474d);
 }
-[data-skin="dream"] .titlebar-btn-close:hover {
+[data-skin="dream"] .titlebar-btn-close:is(:hover, :focus-visible) {
   background: #e81123;
   color: #ffffff;
 }
@@ -142,8 +142,8 @@
   color: var(--dream-text-main, #6c474d);
 }
 
-[data-skin="dream"] .sidebar-session-item:hover,
-[data-skin="dream"] .sidebar-nav-item:hover {
+[data-skin="dream"] .sidebar-session-item:is(:hover, :focus-visible),
+[data-skin="dream"] .sidebar-nav-item:is(:hover, :focus-visible) {
   background: rgba(232, 140, 154, 0.1);
 }
 
@@ -173,7 +173,7 @@
   color: var(--dream-text-muted, #a88a8f);
 }
 
-[data-skin="dream"] .sidebar-tool-item:hover {
+[data-skin="dream"] .sidebar-tool-item:is(:hover, :focus-visible) {
   background: color-mix(in srgb, var(--dream-accent, #e88c9a) 15%, transparent);
   color: var(--dream-text-main, #6c474d);
 }
@@ -258,10 +258,10 @@
   padding: var(--space-4) var(--space-8);
   cursor: pointer;
   font-size: 13px;
-  transition: color 0.2s, border-color 0.2s;
+  transition: color var(--duration-normal), border-color var(--duration-normal);
 }
 
-[data-skin="dream"] .panel-tabs .tab:hover {
+[data-skin="dream"] .panel-tabs .tab:is(:hover, :focus-visible) {
   color: var(--dream-text-main, #6c474d);
 }
 
@@ -374,8 +374,8 @@ backdrop-filter: none !important;
   transition: var(--transition-color);
 }
 
-[data-skin="dream"] .btn-send:hover,
-[data-skin="dream"] .send-button:hover {
+[data-skin="dream"] .btn-send:is(:hover, :focus-visible),
+[data-skin="dream"] .send-button:is(:hover, :focus-visible) {
   background: var(--dream-accent, #e88c9a) !important;
   filter: brightness(0.9);
   transform: scale(1.05);
@@ -468,7 +468,7 @@ backdrop-filter: none !important;
   color: var(--dream-text-main, #1a1a2e);
 }
 
-[data-skin="dream"] .bottom-bar-dropdown-item:hover {
+[data-skin="dream"] .bottom-bar-dropdown-item:is(:hover, :focus-visible) {
   background: rgba(232, 140, 154, 0.12);
 }
 
@@ -492,7 +492,7 @@ backdrop-filter: none !important;
   border-radius: 4px;
 }
 
-[data-skin="dream"] ::-webkit-scrollbar-thumb:hover {
+[data-skin="dream"] ::-webkit-scrollbar-thumb:is(:hover, :focus-visible) {
   background: var(--dream-accent, #e88c9a);
 }
 
@@ -640,9 +640,9 @@ backdrop-filter: none !important;
   color: var(--dream-text-main, #1a1a2e) !important;
 }
 
-[data-skin="dream"] .model-option:hover,
-[data-skin="dream"] .slash-command-item:hover,
-[data-skin="dream"] .more-action-item:hover {
+[data-skin="dream"] .model-option:is(:hover, :focus-visible),
+[data-skin="dream"] .slash-command-item:is(:hover, :focus-visible),
+[data-skin="dream"] .more-action-item:is(:hover, :focus-visible) {
   background: rgba(232, 140, 154, 0.12) !important;
 }
 
@@ -700,11 +700,11 @@ backdrop-filter: none !important;
   background: rgba(30, 30, 46, 0.98) !important;
   color: var(--dream-text-main, #e0d8e0) !important;
 }
-[data-skin="dream"] .scroll-to-bottom-btn:hover {
+[data-skin="dream"] .scroll-to-bottom-btn:is(:hover, :focus-visible) {
   background: rgba(255, 255, 255, 1) !important;
   border-color: var(--dream-accent, #e88c9a) !important;
 }
-[data-skin="dream"][data-theme="dark"] .scroll-to-bottom-btn:hover {
+[data-skin="dream"][data-theme="dark"] .scroll-to-bottom-btn:is(:hover, :focus-visible) {
   background: rgba(40, 40, 60, 1) !important;
 }
 
@@ -847,7 +847,7 @@ backdrop-filter: none !important;
   border-radius: 16px;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08), 0 0 0 1px rgba(232, 140, 154, 0.06);
 }
-[data-skin="dream"] .inline-diff-review:hover {
+[data-skin="dream"] .inline-diff-review:is(:hover, :focus-visible) {
   border-color: rgba(232, 140, 154, 0.40);
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.10), 0 0 0 1px rgba(232, 140, 154, 0.12);
 }
@@ -863,7 +863,7 @@ backdrop-filter: none !important;
   background: rgba(232, 140, 154, 0.06);
   border-bottom: 1px solid var(--dream-border-color, rgba(232, 140, 154, 0.15));
 }
-[data-skin="dream"] .inline-diff-header:hover {
+[data-skin="dream"] .inline-diff-header:is(:hover, :focus-visible) {
   background: rgba(232, 140, 154, 0.10);
 }
 
@@ -957,7 +957,7 @@ backdrop-filter: none !important;
   color: white;
   border-radius: 10px;
 }
-[data-skin="dream"] .inline-diff-btn.accept:hover {
+[data-skin="dream"] .inline-diff-btn.accept:is(:hover, :focus-visible) {
   background: #22c55e;
 }
 
@@ -978,7 +978,7 @@ backdrop-filter: none !important;
   border: 1px solid var(--dream-accent, #e88c9a);
   border-radius: 10px;
 }
-[data-skin="dream"] .inline-diff-btn.accept-all:hover {
+[data-skin="dream"] .inline-diff-btn.accept-all:is(:hover, :focus-visible) {
   background: rgba(232, 140, 154, 0.12);
 }
 
@@ -999,29 +999,29 @@ backdrop-filter: none !important;
 
 /* ========== 梦幻皮肤段落 hover 修复 + 消息 hover 高亮 ========== */
 /* 移除段落级 hover 背景色 — 根因修复 */
-[data-skin="dream"] .message-content p:hover,
-[data-skin="dream"] .markdown-body p:hover {
+[data-skin="dream"] .message-content p:is(:hover, :focus-visible),
+[data-skin="dream"] .markdown-body p:is(:hover, :focus-visible) {
   background: transparent !important;
 }
 
 /* 梦幻皮肤：AI 消息 hover 时显示柔和磨砂高亮 */
 [data-skin="dream"] .assistant .message-content {
-  transition: background 0.2s ease, border-radius 0.2s ease;
+  transition: background var(--duration-normal) ease, border-radius var(--duration-normal) ease;
   border-radius: 12px;
 }
-[data-skin="dream"] .assistant:hover .message-content {
+[data-skin="dream"] .assistant:is(:hover, :focus-visible) .message-content {
   background: rgba(255, 255, 255, 0.15) !important;
 }
-[data-skin="dream"][data-theme="dark"] .assistant:hover .message-content {
+[data-skin="dream"][data-theme="dark"] .assistant:is(:hover, :focus-visible) .message-content {
   background: rgba(30, 30, 46, 0.15) !important;
 }
 
 /* 梦幻皮肤：用户消息 hover 时增强磨砂效果 */
-[data-skin="dream"] .user:hover .message-content {
+[data-skin="dream"] .user:is(:hover, :focus-visible) .message-content {
   background: rgba(0, 0, 0, 0.06) !important;
   border-color: var(--dream-accent, rgba(232, 140, 154, 0.30)) !important;
 }
-[data-skin="dream"][data-theme="dark"] .user:hover .message-content {
+[data-skin="dream"][data-theme="dark"] .user:is(:hover, :focus-visible) .message-content {
   background: rgba(255, 255, 255, 0.06) !important;
 }
 

@@ -145,9 +145,7 @@ const CollapsedReadGroup = memo(function CollapsedReadGroup({ merged }: { merged
         {items.map((item, subIdx) => (
           <ToolCallCard key={subIdx} {...item} />
         ))}
-        <button
-          className="tool-collapse-toggle"
-          onClick={() => setShowAll(false)}
+        <button className="tool-collapse-toggle" aria-expanded={false} onClick={() => setShowAll(false)}
           style={{
             background: "none",
             border: "none",

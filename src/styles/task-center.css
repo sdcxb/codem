@@ -35,7 +35,7 @@
   cursor: pointer;
   transition: var(--transition-color);
 }
-.squads-new-btn:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+.squads-new-btn:is(:hover, :focus-visible) { background: var(--accent-hover); border-color: var(--accent-hover); }
 
 .tc-empty {
   padding: var(--space-11) var(--space-9);
@@ -75,7 +75,7 @@
   display: flex;
   align-items: center;
 }
-.squads-icon-btn:hover { color: var(--text-primary); }
+.squads-icon-btn:is(:hover, :focus-visible) { color: var(--text-primary); }
 .squads-chevron {
   color: var(--text-secondary);
   transition: transform var(--duration-dropdown) var(--ease-out);
@@ -189,13 +189,13 @@
   cursor: pointer;
   transition: var(--transition-color);
 }
-.tc-btn:hover { background: var(--bg-hover); }
+.tc-btn:is(:hover, :focus-visible) { background: var(--bg-hover); }
 .tc-btn--primary {
   border-color: var(--accent);
   background: var(--accent);
   color: var(--text-on-accent);
 }
-.tc-btn--primary:hover { background: var(--accent-hover); }
+.tc-btn--primary:is(:hover, :focus-visible) { background: var(--accent-hover); }
 .tc-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .tc-btn--lg { padding: var(--space-4) var(--space-8); }
 .tc-btn--sm { padding: var(--space-2) var(--space-5); }
@@ -296,7 +296,7 @@
   cursor: pointer;
   transition: var(--transition-color);
 }
-.issue-detail-back:hover { color: var(--text-primary); }
+.issue-detail-back:is(:hover, :focus-visible) { color: var(--text-primary); }
 
 .issue-detail-title-row { display: flex; align-items: flex-start; gap: var(--space-4); margin-bottom: var(--space-6); }
 .issue-detail-status-icon { margin-top: var(--space-1); flex-shrink: 0; }
@@ -354,7 +354,7 @@
   cursor: pointer;
   transition: var(--transition-color);
 }
-.issue-detail-chip:hover { background: var(--bg-hover); }
+.issue-detail-chip:is(:hover, :focus-visible) { background: var(--bg-hover); }
 /* 选中态：边框与淡底都从当前色派生（当前色由内联 style 给出） */
 .issue-detail-chip.is-active {
   border-color: currentColor;
@@ -384,7 +384,7 @@
   cursor: pointer;
   transition: var(--transition-color);
 }
-.issue-detail-picker-item:hover { background: color-mix(in srgb, var(--accent) 13%, transparent); }
+.issue-detail-picker-item:is(:hover, :focus-visible) { background: color-mix(in srgb, var(--accent) 13%, transparent); }
 .issue-detail-picker-item > svg { color: var(--accent); }
 .issue-detail-picker-name { font-weight: 600; }
 .issue-detail-picker-meta { font-size: var(--fs-xs); color: var(--text-muted); }

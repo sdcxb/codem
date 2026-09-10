@@ -436,9 +436,7 @@ setStepTooltipLocked(false);
         </button>
         {/* P2 #37: Task title dropdown */}
         <div className="chat-relative-anchor">
-          <button
-            className="chat-title-dropdown-btn"
-            onClick={() => setShowTitleDropdown(!showTitleDropdown)}
+          <button className="chat-title-dropdown-btn" aria-haspopup="menu" aria-expanded={showTitleDropdown} onClick={() => setShowTitleDropdown(!showTitleDropdown)}
             title={currentSession?.title || "Codem"}
           >
             <span className="chat-title">{currentSession?.title || "Codem"}</span>
@@ -486,7 +484,7 @@ setStepTooltipLocked(false);
             setShowAgentPanel(true)
           }}
         />
-        <div className="model-selector" onClick={() => setShowModelPicker(!showModelPicker)}>
+        <div className="model-selector" role="button" tabIndex={0} aria-haspopup="listbox" aria-expanded={showModelPicker} onClick={() => setShowModelPicker(!showModelPicker)}>
           <span className="model-badge">{models.find(m => m.id === model)?.name || model}</span>
           <span className="model-arrow"><ChevronDown size={10} /></span>
           {showModelPicker && (
@@ -502,8 +500,7 @@ setStepTooltipLocked(false);
               ))}
               {/* Reasoning effort divider + selector */}
               <div className="menu-divider" />
-              <div className="chat-effort-row"
-                onClick={(e) => { e.stopPropagation(); setShowEffortPicker(!showEffortPicker); }}
+              <div className="chat-effort-row" role="button" tabIndex={0} aria-expanded={showEffortPicker} onClick={(e) => { e.stopPropagation(); setShowEffortPicker(!showEffortPicker); }}
               >
                 <span className="hint-sm">{lang === "zh" ? "推理强度" : "Reasoning Effort"}</span>
                 <span className="chat-effort-value">

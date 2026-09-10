@@ -54,10 +54,10 @@
   color: var(--text-secondary);
   font-size: var(--fs-xs);
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: var(--transition-color), var(--transition-transform), var(--transition-shadow), var(--transition-fade);
 }
 
-.nb-back-btn:hover {
+.nb-back-btn:is(:hover, :focus-visible) {
   background: var(--bg-tertiary);
   color: var(--text-primary);
 }
@@ -95,7 +95,7 @@
   font-size: var(--fs-xs);
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: var(--transition-color), var(--transition-transform), var(--transition-shadow), var(--transition-fade);
 }
 
 .nb-studio-btn:hover:not(:disabled) {
@@ -149,10 +149,10 @@
   font-size: var(--fs-sm);
   text-align: left;
   cursor: pointer;
-  transition: background 0.1s ease;
+  transition: background var(--duration-press) ease;
 }
 
-.nb-studio-option:hover {
+.nb-studio-option:is(:hover, :focus-visible) {
   background: var(--bg-tertiary);
 }
 
@@ -178,7 +178,7 @@
   display: flex;
   flex-direction: column;
   position: relative;
-  transition: width 0.2s ease;
+  transition: width var(--duration-normal) ease;
   overflow: hidden;
 }
 
@@ -297,11 +297,11 @@
   border: 1px solid var(--border-primary);
   border-radius: 8px;
   color: var(--text-secondary);
-  transition: all 0.15s ease;
+  transition: var(--transition-color), var(--transition-transform), var(--transition-shadow), var(--transition-fade);
   line-height: 1.4;
 }
 
-.nb-chat-question-card:hover {
+.nb-chat-question-card:is(:hover, :focus-visible) {
   border-color: var(--text-muted);
   color: var(--text-primary);
   background: var(--bg-hover);
@@ -316,7 +316,7 @@
   cursor: pointer;
 }
 
-.nb-chat-load-more:hover {
+.nb-chat-load-more:is(:hover, :focus-visible) {
   color: var(--text-primary);
 }
 
@@ -348,11 +348,11 @@
   color: var(--text-muted);
   cursor: pointer;
   border-radius: var(--radius, 6px);
-  transition: var(--transition-color, all 0.15s ease);
+  transition: var(--transition-color, all var(--duration-fast) ease);
   flex-shrink: 0;
 }
 
-.nb-collapse-btn:hover {
+.nb-collapse-btn:is(:hover, :focus-visible) {
   background: var(--bg-hover, rgba(255,255,255,0.06));
   color: var(--text-primary);
 }
@@ -397,7 +397,7 @@
   border-radius: 4px;
   color: var(--text-secondary);
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: var(--transition-color), var(--transition-transform), var(--transition-shadow), var(--transition-fade);
 }
 
 .nb-add-btn:hover:not(:disabled) {
@@ -428,15 +428,15 @@
   border-radius: 6px;
   background: transparent;
   border: 1px solid transparent;
-  transition: all 0.15s ease;
+  transition: var(--transition-color), var(--transition-transform), var(--transition-shadow), var(--transition-fade);
   cursor: pointer;
 }
 
-.nb-source-card:hover {
+.nb-source-card:is(:hover, :focus-visible) {
   background: transparent;
 }
 
-.nb-source-card:hover .nb-source-name {
+.nb-source-card:is(:hover, :focus-visible) .nb-source-name {
   color: var(--accent);
 }
 
@@ -512,7 +512,7 @@
   height: 14px;
   border: 1.5px solid var(--text-muted);
   border-radius: var(--radius-sm);
-  transition: all 0.15s ease;
+  transition: var(--transition-color), var(--transition-transform), var(--transition-shadow), var(--transition-fade);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -659,15 +659,15 @@
   padding: var(--space-1);
   border-radius: var(--radius-sm);
   opacity: 0;
-  transition: all 0.15s ease;
+  transition: var(--transition-color), var(--transition-transform), var(--transition-shadow), var(--transition-fade);
   flex-shrink: 0;
 }
 
-.nb-source-card:hover .nb-source-delete {
+.nb-source-card:is(:hover, :focus-visible) .nb-source-delete {
   opacity: 1;
 }
 
-.nb-source-delete:hover {
+.nb-source-delete:is(:hover, :focus-visible) {
   color: var(--error);
   background: color-mix(in srgb, var(--error) 10%, transparent);
 }
@@ -691,10 +691,10 @@
   color: var(--text-muted);
   font-size: var(--fs-xs);
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: var(--transition-color), var(--transition-transform), var(--transition-shadow), var(--transition-fade);
 }
 
-.nb-source-action-btn:hover {
+.nb-source-action-btn:is(:hover, :focus-visible) {
   background: var(--bg-hover, rgba(255,255,255,0.06));
   color: var(--text-primary);
   border-color: var(--text-muted);
@@ -720,7 +720,7 @@
   overflow-y: auto;
 }
 
-.nb-summary-toggle:hover {
+.nb-summary-toggle:is(:hover, :focus-visible) {
   opacity: 0.7;
 }
 
@@ -773,10 +773,10 @@
   color: var(--text-primary);
   font-size: var(--fs-sm);
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: var(--transition-color), var(--transition-transform), var(--transition-shadow), var(--transition-fade);
 }
 
-.nb-question-card:hover {
+.nb-question-card:is(:hover, :focus-visible) {
   border-color: var(--accent);
   background: var(--accent-muted);
   transform: translateX(2px);
@@ -837,10 +837,10 @@
   font-size: var(--fs-base);
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: var(--transition-color), var(--transition-transform), var(--transition-shadow), var(--transition-fade);
 }
 
-.nb-start-chat-btn:hover {
+.nb-start-chat-btn:is(:hover, :focus-visible) {
   background: var(--accent-hover);
   transform: translateY(-1px);
   box-shadow: 0 4px 12px var(--accent-muted);
@@ -867,10 +867,10 @@
   border: 1px solid transparent;
   border-radius: var(--radius-sm);
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: var(--transition-color), var(--transition-transform), var(--transition-shadow), var(--transition-fade);
 }
 
-.nb-note-card:hover {
+.nb-note-card:is(:hover, :focus-visible) {
   background: var(--bg-tertiary);
   border-color: var(--border-primary);
 }
@@ -905,14 +905,14 @@
   padding: var(--space-1);
   border-radius: var(--radius-sm);
   opacity: 0;
-  transition: all 0.15s ease;
+  transition: var(--transition-color), var(--transition-transform), var(--transition-shadow), var(--transition-fade);
 }
 
-.nb-note-card:hover .nb-note-delete {
+.nb-note-card:is(:hover, :focus-visible) .nb-note-delete {
   opacity: 1;
 }
 
-.nb-note-delete:hover {
+.nb-note-delete:is(:hover, :focus-visible) {
   color: var(--error);
 }
 
@@ -1021,10 +1021,10 @@ top: 36px;
   cursor: pointer;
   padding: var(--space-2);
   border-radius: 4px;
-  transition: all 0.15s ease;
+  transition: var(--transition-color), var(--transition-transform), var(--transition-shadow), var(--transition-fade);
 }
 
-.nb-dialog-close:hover {
+.nb-dialog-close:is(:hover, :focus-visible) {
   color: var(--text-primary);
   background: var(--bg-tertiary);
 }
@@ -1046,7 +1046,7 @@ top: 36px;
   color: var(--text-secondary);
   font-size: var(--fs-sm);
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: var(--transition-color), var(--transition-transform), var(--transition-shadow), var(--transition-fade);
 }
 
 .nb-type-tab.active {
@@ -1065,7 +1065,7 @@ top: 36px;
   font-size: var(--fs-sm);
   margin-bottom: var(--space-5);
   outline: none;
-  transition: border-color 0.15s ease;
+  transition: border-color var(--duration-fast) ease;
 }
 
 .nb-dialog-input:focus {
@@ -1089,7 +1089,7 @@ top: 36px;
   resize: vertical;
   margin-bottom: var(--space-5);
   outline: none;
-  transition: border-color 0.15s ease;
+  transition: border-color var(--duration-fast) ease;
 }
 
 .nb-dialog-textarea:focus {
@@ -1120,10 +1120,10 @@ top: 36px;
   color: var(--text-primary);
   font-size: var(--fs-sm);
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: var(--transition-color), var(--transition-transform), var(--transition-shadow), var(--transition-fade);
 }
 
-.nb-file-btn:hover {
+.nb-file-btn:is(:hover, :focus-visible) {
   border-color: var(--accent);
 }
 
@@ -1164,10 +1164,10 @@ top: 36px;
   color: var(--text-secondary);
   font-size: var(--fs-sm);
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: var(--transition-color), var(--transition-transform), var(--transition-shadow), var(--transition-fade);
 }
 
-.nb-btn-cancel:hover {
+.nb-btn-cancel:is(:hover, :focus-visible) {
   background: var(--bg-tertiary);
   color: var(--text-primary);
 }
@@ -1184,7 +1184,7 @@ top: 36px;
   font-size: var(--fs-sm);
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: var(--transition-color), var(--transition-transform), var(--transition-shadow), var(--transition-fade);
 }
 
 .nb-btn-confirm:hover:not(:disabled) {
@@ -1250,10 +1250,10 @@ top: 36px;
   color: var(--text-secondary);
   font-size: var(--fs-xs);
   cursor: pointer;
-  transition: all 0.15s;
+  transition: var(--transition-color), var(--transition-transform), var(--transition-shadow), var(--transition-fade);
 }
 
-.nb-view-tab:hover {
+.nb-view-tab:is(:hover, :focus-visible) {
   color: var(--text-primary);
   background: var(--bg-hover);
 }
@@ -1342,10 +1342,10 @@ top: 36px;
   border-radius: 6px;
   color: var(--text-secondary);
   cursor: pointer;
-  transition: all 0.15s;
+  transition: var(--transition-color), var(--transition-transform), var(--transition-shadow), var(--transition-fade);
 }
 
-.kg-tool-btn:hover {
+.kg-tool-btn:is(:hover, :focus-visible) {
   color: var(--text-primary);
   background: var(--bg-hover);
 }
@@ -1428,13 +1428,13 @@ top: 36px;
   border-radius: 6px;
   font-size: var(--fs-sm);
   cursor: pointer;
-  transition: all 0.15s;
+  transition: var(--transition-color), var(--transition-transform), var(--transition-shadow), var(--transition-fade);
   background: var(--bg-tertiary);
   border: 1px solid var(--border-primary);
   color: var(--text-primary);
 }
 
-.kg-connected-item:hover {
+.kg-connected-item:is(:hover, :focus-visible) {
   filter: brightness(1.1);
 }
 
@@ -1504,7 +1504,7 @@ top: 36px;
   border-radius: var(--radius-xs);
 }
 
-.kg-node { display: flex; flex-direction: column; align-items: center; cursor: pointer; transition: opacity 0.2s; }
+.kg-node { display: flex; flex-direction: column; align-items: center; cursor: pointer; transition: opacity var(--duration-normal); }
 .kg-node-handle { opacity: 0; width: 1px; height: 1px; }
 .kg-node-circle {
   display: flex;
@@ -1515,7 +1515,7 @@ top: 36px;
   background: radial-gradient(circle at 35% 35%, currentColor, color-mix(in srgb, currentColor 80%, transparent));
   font-size: var(--kg-node-font, var(--fs-md));
   user-select: none;
-  transition: box-shadow 0.15s ease, border-width 0.15s ease;
+  transition: box-shadow var(--duration-fast) ease, border-width var(--duration-fast) ease;
 }
 .kg-node-circle.is-selected {
   border-width: 3px;
@@ -1537,7 +1537,7 @@ top: 36px;
 }
 .kg-node-label.is-selected { font-weight: 600; }
 
-.kg-edge-path { transition: stroke 0.2s, stroke-width 0.2s; }
+.kg-edge-path { transition: stroke var(--duration-normal), stroke-width var(--duration-normal); }
 .kg-edge-label {
   position: absolute;
   padding: var(--space-1) var(--space-3);
@@ -1642,7 +1642,7 @@ top: 36px;
   text-align: left;
   cursor: pointer;
 }
-.kg-menu-item:hover { background: var(--bg-hover); }
+.kg-menu-item:is(:hover, :focus-visible) { background: var(--bg-hover); }
 .kg-menu-item--danger { color: var(--error); }
 .kg-menu-sep { height: 1px; margin: var(--space-1) 0; background: var(--border-primary); }
 
@@ -1687,7 +1687,7 @@ top: 36px;
   cursor: pointer;
   transition: var(--transition-color);
 }
-.ppt-studio-back-btn:hover { background: var(--bg-hover); }
+.ppt-studio-back-btn:is(:hover, :focus-visible) { background: var(--bg-hover); }
 .ppt-studio-crumb { color: var(--text-muted); font-size: var(--fs-md); }
 .ppt-studio-crumb-sep { margin: 0 var(--space-2); color: var(--text-muted); }
 .ppt-studio-title { color: var(--text-primary); font-size: var(--fs-md); }
@@ -1742,9 +1742,9 @@ top: 36px;
   font-family: inherit;
   font-size: var(--fs-sm);
   cursor: pointer;
-  transition: all 0.15s;
+  transition: var(--transition-color), var(--transition-transform), var(--transition-shadow), var(--transition-fade);
 }
-.ppt-studio-filter:hover { border-color: var(--accent); color: var(--text-primary); }
+.ppt-studio-filter:is(:hover, :focus-visible) { border-color: var(--accent); color: var(--text-primary); }
 .ppt-studio-filter.is-active {
   border-color: var(--accent);
   background: var(--accent);
@@ -1763,9 +1763,9 @@ top: 36px;
   border-radius: var(--radius-md);
   background: var(--bg-tertiary);
   cursor: pointer;
-  transition: all 0.15s;
+  transition: var(--transition-color), var(--transition-transform), var(--transition-shadow), var(--transition-fade);
 }
-.ppt-studio-style-card:hover { border-color: color-mix(in srgb, var(--accent) 50%, transparent); }
+.ppt-studio-style-card:is(:hover, :focus-visible) { border-color: color-mix(in srgb, var(--accent) 50%, transparent); }
 .ppt-studio-style-card.is-active { border-color: var(--accent); }
 .ppt-studio-style-preview {
   position: relative;
@@ -1808,9 +1808,9 @@ top: 36px;
   background: var(--bg-tertiary);
   text-align: center;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: var(--transition-color), var(--transition-transform), var(--transition-shadow), var(--transition-fade);
 }
-.ppt-studio-canvas-card:hover { border-color: color-mix(in srgb, var(--accent) 50%, transparent); }
+.ppt-studio-canvas-card:is(:hover, :focus-visible) { border-color: color-mix(in srgb, var(--accent) 50%, transparent); }
 .ppt-studio-canvas-card.is-active { border-color: var(--accent); }
 .ppt-studio-canvas-icon { margin-bottom: var(--space-2); font-size: var(--fs-2xl); }
 .ppt-studio-canvas-name { color: var(--text-primary); font-size: var(--fs-sm); font-weight: 600; }
@@ -1850,10 +1850,10 @@ top: 36px;
   font-size: var(--fs-md);
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: var(--transition-color), var(--transition-transform), var(--transition-shadow), var(--transition-fade);
   box-shadow: 0 4px 20px color-mix(in srgb, var(--accent) 30%, transparent);
 }
-.ppt-studio-generate-btn:hover { filter: brightness(1.06); }
+.ppt-studio-generate-btn:is(:hover, :focus-visible) { filter: brightness(1.06); }
 
 .ppt-studio-stage { width: 90%; text-align: center; }
 .ppt-studio-stage--narrow { max-width: 420px; }
@@ -1888,7 +1888,7 @@ top: 36px;
   height: 3px;
   border-radius: var(--radius-full);
   background: var(--border-primary);
-  transition: background 0.3s ease;
+  transition: background var(--duration-slow) ease;
 }
 .ppt-studio-progress-seg.is-done { background: var(--accent); }
 .ppt-studio-stages { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--space-2); }
@@ -1896,7 +1896,7 @@ top: 36px;
   color: color-mix(in srgb, var(--text-muted) 60%, transparent);
   font-size: var(--fs-xs);
   font-weight: 400;
-  transition: all 0.3s ease;
+  transition: var(--transition-color), var(--transition-transform), var(--transition-shadow), var(--transition-fade);
 }
 .ppt-studio-stage-label.is-done { color: var(--text-muted); }
 .ppt-studio-stage-label.is-current { color: var(--accent); font-weight: 600; }
@@ -1983,7 +1983,7 @@ top: 36px;
   border-radius: 4px;
 }
 
-.ppt-back-btn:hover {
+.ppt-back-btn:is(:hover, :focus-visible) {
   background: var(--bg-hover);
 }
 
@@ -2021,7 +2021,7 @@ top: 36px;
   cursor: pointer;
 }
 
-.ppt-action-btn:hover {
+.ppt-action-btn:is(:hover, :focus-visible) {
   color: var(--text-primary);
   background: var(--bg-hover);
 }
@@ -2062,10 +2062,10 @@ top: 36px;
   padding: var(--space-3);
   border-radius: 6px;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: var(--transition-color), var(--transition-transform), var(--transition-shadow), var(--transition-fade);
 }
 
-.ppt-thumb:hover {
+.ppt-thumb:is(:hover, :focus-visible) {
   filter: brightness(1.1);
 }
 
@@ -2208,11 +2208,11 @@ top: 36px;
   padding: var(--space-4);
   border-radius: 8px;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: var(--transition-color), var(--transition-transform), var(--transition-shadow), var(--transition-fade);
   font-size: var(--fs-sm);
 }
 
-.ppt-theme-card:hover {
+.ppt-theme-card:is(:hover, :focus-visible) {
   transform: translateY(-2px);
 }
 
@@ -2334,10 +2334,10 @@ top: 36px;
   border-radius: 4px;
   color: var(--text-secondary);
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: var(--transition-color), var(--transition-transform), var(--transition-shadow), var(--transition-fade);
 }
 
-.nb-mode-btn:hover {
+.nb-mode-btn:is(:hover, :focus-visible) {
   color: var(--text-primary);
   background: var(--bg-tertiary);
 }
@@ -2358,10 +2358,10 @@ top: 36px;
   color: var(--text-muted);
   cursor: pointer;
   border-radius: 4px;
-  transition: all 0.15s ease;
+  transition: var(--transition-color), var(--transition-transform), var(--transition-shadow), var(--transition-fade);
 }
 
-.nb-editor-close:hover {
+.nb-editor-close:is(:hover, :focus-visible) {
   color: var(--text-primary);
   background: var(--bg-tertiary);
 }
@@ -2388,16 +2388,16 @@ top: 36px;
   border-radius: var(--radius-sm);
   color: var(--text-secondary);
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: var(--transition-color), var(--transition-transform), var(--transition-shadow), var(--transition-fade);
 }
 
-.nb-tool-btn:hover {
+.nb-tool-btn:is(:hover, :focus-visible) {
   background: var(--bg-tertiary);
   border-color: var(--border-primary);
   color: var(--text-primary);
 }
 
-.nb-tool-wikilink:hover {
+.nb-tool-wikilink:is(:hover, :focus-visible) {
   color: var(--accent);
   border-color: var(--accent);
 }
@@ -2621,11 +2621,11 @@ top: 36px;
   font-size: var(--fs-sm);
   text-align: left;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: var(--transition-color), var(--transition-transform), var(--transition-shadow), var(--transition-fade);
   width: 100%;
 }
 
-.nb-backlink-item:hover {
+.nb-backlink-item:is(:hover, :focus-visible) {
   border-color: var(--accent);
   color: var(--text-primary);
   background: var(--accent-muted);
@@ -2803,7 +2803,7 @@ top: 36px;
 
 .ppt-present-iframe {
   width: 100vw;
-  height: 100vh;
+  height: 100dvh;
   border: none;
 }
 
@@ -2819,11 +2819,11 @@ top: 36px;
   background: var(--overlay-backdrop-strong);
   border-radius: 24px;
   opacity: 0;
-  transition: opacity 0.3s;
+  transition: opacity var(--duration-slow);
   z-index: var(--z-present-ui);
 }
 
-.ppt-present-mode:hover .ppt-present-nav {
+.ppt-present-mode:is(:hover, :focus-visible) .ppt-present-nav {
   opacity: 1;
 }
 
@@ -2840,11 +2840,11 @@ top: 36px;
   font-size: var(--fs-base);
   line-height: 1.5;
   opacity: 0;
-  transition: opacity 0.3s;
+  transition: opacity var(--duration-slow);
   z-index: var(--z-present-ui);
 }
 
-.ppt-present-mode:hover .ppt-present-notes {
+.ppt-present-mode:is(:hover, :focus-visible) .ppt-present-notes {
   opacity: 1;
 }
 
@@ -2888,10 +2888,10 @@ top: 36px;
   background: var(--bg-secondary);
   border: 1px solid var(--border-primary);
   border-radius: 8px;
-  transition: all 0.15s;
+  transition: var(--transition-color), var(--transition-transform), var(--transition-shadow), var(--transition-fade);
 }
 
-.nb-study-path-item:hover {
+.nb-study-path-item:is(:hover, :focus-visible) {
   border-color: var(--accent);
   background: color-mix(in srgb, var(--accent) 4%, transparent);
 }
@@ -2964,13 +2964,13 @@ top: 36px;
   transition: var(--transition-color);
 }
 
-.nb-move-option:hover {
+.nb-move-option:is(:hover, :focus-visible) {
   background: var(--bg-hover);
   color: var(--text-primary);
 }
 
 /* ========== 笔记本工作台内联样式收口（第 21/22 波） ==========
- * 这些类此前只有 :hover 或干脆没有任何定义，布局全靠组件里的内联样式撑着
+ * 这些类此前只有 :is(:hover, :focus-visible) 或干脆没有任何定义，布局全靠组件里的内联样式撑着
  * （`.nb-panel-tabs` 甚至是"写了但 CSS 里没有"的假钩子——因为同行有内联样式，
  * `css-class-undefined` 规则看不到它）。这里补上真实定义。 */
 .nb-panel-tabs {
@@ -3032,7 +3032,7 @@ top: 36px;
 .nb-study-empty-icon { margin: 0 auto var(--space-4); opacity: 0.5; }
 .nb-study-path-item-reason { opacity: 0.7; }
 /* 学习路径条目原本用 JS 的 onMouseEnter/Leave 改 style.background，直接把下面这条
- * CSS :hover（accent 淡底 + accent 描边）盖掉了 —— 内联样式优先级高于样式表。
+ * CSS :is(:hover, :focus-visible)（accent 淡底 + accent 描边）盖掉了 —— 内联样式优先级高于样式表。
  * 去掉 JS 改样式后，悬停效果才第一次按设计生效。 */
 .nb-dialog--study { width: 600px; }
 
@@ -3112,5 +3112,5 @@ top: 36px;
   font-size: var(--fs-xs);
   cursor: pointer;
 }
-.nb-note-flash-btn:hover { color: var(--text-primary); }
+.nb-note-flash-btn:is(:hover, :focus-visible) { color: var(--text-primary); }
 .nb-file-names { margin-top: var(--space-2); font-size: var(--fs-xs); color: var(--text-muted); }

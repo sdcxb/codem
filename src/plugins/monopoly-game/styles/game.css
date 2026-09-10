@@ -47,12 +47,12 @@
   border: none;
   border-radius: 8px;
   cursor: pointer;
-  transition: transform 0.2s, box-shadow 0.2s;
+  transition: transform var(--duration-normal), box-shadow var(--duration-normal);
   box-shadow: 0 4px 15px rgba(231, 76, 60, 0.4);
   flex-shrink: 0;
 }
 
-.game-start-btn:hover {
+.game-start-btn:is(:hover, :focus-visible) {
   transform: translateY(-2px);
   box-shadow: 0 6px 20px rgba(231, 76, 60, 0.5);
 }
@@ -93,10 +93,10 @@
   padding: 16px 12px;
   text-align: center;
   cursor: pointer;
-  transition: transform 0.2s, border-color 0.2s, box-shadow 0.2s;
+  transition: transform var(--duration-normal), border-color var(--duration-normal), box-shadow var(--duration-normal);
 }
 
-.character-card:hover {
+.character-card:is(:hover, :focus-visible) {
   transform: translateY(-3px);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
 }
@@ -224,7 +224,7 @@
   border: 2px solid;
   border-radius: 8px;
   padding: 8px;
-  transition: all 0.2s;
+  transition: var(--transition-color), var(--transition-transform), var(--transition-shadow), var(--transition-fade);
 }
 
 .player-card.current {
@@ -408,7 +408,7 @@
   border-radius: 5px;
   cursor: pointer;
   font-size: 12px;
-  transition: all 0.15s;
+  transition: var(--transition-color), var(--transition-transform), var(--transition-shadow), var(--transition-fade);
   white-space: nowrap;
 }
 
@@ -417,7 +417,7 @@
   color: white;
 }
 
-.action-btn.primary:hover {
+.action-btn.primary:is(:hover, :focus-visible) {
   background: #c0392b;
 }
 
@@ -441,7 +441,7 @@
   color: #ecf0f1;
 }
 
-.action-btn:hover {
+.action-btn:is(:hover, :focus-visible) {
   filter: brightness(1.15);
 }
 
@@ -630,7 +630,7 @@
   line-height: 1;
 }
 
-.panel-close:hover {
+.panel-close:is(:hover, :focus-visible) {
   color: #e74c3c;
 }
 
@@ -652,7 +652,7 @@
   border-radius: 8px;
   padding: 8px;
   cursor: pointer;
-  transition: border-color 0.15s, background 0.15s;
+  transition: border-color var(--duration-fast), background var(--duration-fast);
 }
 
 .card-item.selected {
@@ -660,7 +660,7 @@
   background: rgba(241, 196, 15, 0.1);
 }
 
-.card-item:hover {
+.card-item:is(:hover, :focus-visible) {
   background: rgba(44, 62, 80, 0.7);
 }
 
@@ -734,7 +734,7 @@
   border-radius: 4px;
   cursor: pointer;
   font-size: 12px;
-  transition: background 0.15s;
+  transition: background var(--duration-fast);
 }
 
 .shop-tab.active {
@@ -799,7 +799,7 @@
   font-size: 12px;
   background: #27ae60;
   color: white;
-  transition: filter 0.15s;
+  transition: filter var(--duration-fast);
 }
 
 .shop-btn.sell {
@@ -848,10 +848,10 @@
   border-radius: 4px;
   cursor: pointer;
   font-size: 11px;
-  transition: filter 0.15s;
+  transition: filter var(--duration-fast);
 }
 
-.quick-btn:hover {
+.quick-btn:is(:hover, :focus-visible) {
   filter: brightness(1.2);
 }
 
@@ -928,7 +928,7 @@
   border-radius: 6px;
   cursor: pointer;
   font-size: 12px;
-  transition: all 0.15s;
+  transition: var(--transition-color), var(--transition-transform), var(--transition-shadow), var(--transition-fade);
 }
 
 .map-option.selected {
@@ -937,7 +937,7 @@
   color: #f1c40f;
 }
 
-.map-option:hover {
+.map-option:is(:hover, :focus-visible) {
   background: #34495e;
 }
 
@@ -1053,10 +1053,10 @@
   border: 2px solid #34495e;
   border-radius: 8px;
   cursor: pointer;
-  transition: border-color 0.15s, background 0.15s;
+  transition: border-color var(--duration-fast), background var(--duration-fast);
 }
 
-.save-slot:hover {
+.save-slot:is(:hover, :focus-visible) {
   background: rgba(44, 62, 80, 0.7);
 }
 
@@ -1065,7 +1065,7 @@
   border-color: #3a3a3a;
 }
 
-.save-slot.occupied:hover {
+.save-slot.occupied:is(:hover, :focus-visible) {
   border-color: #f1c40f;
 }
 

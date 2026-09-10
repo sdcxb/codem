@@ -1318,10 +1318,7 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
           <div className="input-tools-left">
             {/* + button — 添加文件/技能/多模态 */}
             <div className="input-relative-anchor">
-              <button
-                ref={plusBtnRef}
-                className={`mode-toggle-btn mode-toggle-btn--compact ${showPlusMenu ? "is-active" : ""}`}
-                onClick={() => setShowPlusMenu(!showPlusMenu)}
+              <button ref={plusBtnRef} className={`mode-toggle-btn mode-toggle-btn--compact ${showPlusMenu ? "is-active" : ""}`} aria-haspopup="menu" aria-expanded={showPlusMenu} onClick={() => setShowPlusMenu(!showPlusMenu)}
                 title={zh ? "添加" : "Add"}
               >
                 ＋

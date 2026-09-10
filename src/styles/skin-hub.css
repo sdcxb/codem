@@ -78,7 +78,7 @@
 [data-skin="hub"] .titlebar-btn {
   color: var(--hub-text-muted);
 }
-[data-skin="hub"] .titlebar-btn:hover {
+[data-skin="hub"] .titlebar-btn:is(:hover, :focus-visible) {
   background: rgba(255, 255, 255, 0.08);
   color: var(--hub-text-main);
 }
@@ -129,8 +129,8 @@
   color: var(--hub-text-main);
 }
 
-[data-skin="hub"] .sidebar-session-item:hover,
-[data-skin="hub"] .sidebar-nav-item:hover {
+[data-skin="hub"] .sidebar-session-item:is(:hover, :focus-visible),
+[data-skin="hub"] .sidebar-nav-item:is(:hover, :focus-visible) {
   background: var(--hub-bg-hover);
 }
 
@@ -185,10 +185,10 @@
   padding: var(--space-4) var(--space-8);
   cursor: pointer;
   font-size: 13px;
-  transition: color 0.2s, border-color 0.2s;
+  transition: color var(--duration-normal), border-color var(--duration-normal);
 }
 
-[data-skin="hub"] .panel-tabs .tab:hover {
+[data-skin="hub"] .panel-tabs .tab:is(:hover, :focus-visible) {
   color: var(--hub-text-main);
 }
 
@@ -277,8 +277,8 @@
   cursor: pointer;
 }
 
-[data-skin="hub"] .btn-send:hover,
-[data-skin="hub"] .send-button:hover {
+[data-skin="hub"] .btn-send:is(:hover, :focus-visible),
+[data-skin="hub"] .send-button:is(:hover, :focus-visible) {
   background: var(--hub-color-primary-hover);
 }
 
@@ -326,7 +326,7 @@
   border-radius: 3px;
 }
 
-[data-skin="hub"] ::-webkit-scrollbar-thumb:hover {
+[data-skin="hub"] ::-webkit-scrollbar-thumb:is(:hover, :focus-visible) {
   background: #444;
 }
 
@@ -378,10 +378,10 @@
   padding: var(--space-8) 0;
   border-bottom: 2px solid transparent;
   cursor: pointer;
-  transition: color 0.2s, border-color 0.2s;
+  transition: color var(--duration-normal), border-color var(--duration-normal);
 }
 
-[data-skin="hub"] .hub-navbar-links a:hover {
+[data-skin="hub"] .hub-navbar-links a:is(:hover, :focus-visible) {
   color: var(--hub-text-main);
 }
 
@@ -400,10 +400,10 @@
 
 [data-skin="hub"] .hub-navbar-actions i {
   cursor: pointer;
-  transition: color 0.2s;
+  transition: color var(--duration-normal);
 }
 
-[data-skin="hub"] .hub-navbar-actions i:hover {
+[data-skin="hub"] .hub-navbar-actions i:is(:hover, :focus-visible) {
   color: var(--hub-text-main);
 }
 
@@ -494,10 +494,10 @@
   display: flex;
   gap: var(--space-6);
   cursor: pointer;
-  transition: border-color 0.2s;
+  transition: border-color var(--duration-normal);
 }
 
-[data-skin="hub"] .hub-task-item:hover {
+[data-skin="hub"] .hub-task-item:is(:hover, :focus-visible) {
   border-color: #444;
 }
 
@@ -561,7 +561,7 @@
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
 }
 
-[data-skin="hub"] .hub-sidebar-toggle:hover {
+[data-skin="hub"] .hub-sidebar-toggle:is(:hover, :focus-visible) {
   background: var(--hub-color-primary, #ff6b35);
   color: #fff;
   border-color: var(--hub-color-primary, #ff6b35);
@@ -625,10 +625,10 @@
 
 /* ========== 新手引导 ========== */
 [data-skin="hub"] .hub-onboarding-item {
-  transition: border-color 0.2s, background 0.2s;
+  transition: border-color var(--duration-normal), background var(--duration-normal);
 }
 
-[data-skin="hub"] .hub-onboarding-item:hover {
+[data-skin="hub"] .hub-onboarding-item:is(:hover, :focus-visible) {
   border-color: var(--hub-color-primary) !important;
   background: var(--hub-color-primary-muted) !important;
 }
@@ -639,10 +639,10 @@
 
 /* ========== 最近对�?========== */
 [data-skin="hub"] .hub-recent-item {
-  transition: border-color 0.2s, background 0.2s;
+  transition: border-color var(--duration-normal), background var(--duration-normal);
 }
 
-[data-skin="hub"] .hub-recent-item:hover {
+[data-skin="hub"] .hub-recent-item:is(:hover, :focus-visible) {
   border-color: #444 !important;
   background: var(--hub-bg-hover) !important;
 }
@@ -667,20 +667,20 @@
   justify-content: center;
   cursor: pointer;
   opacity: 0;
-  transition: opacity 0.2s, color 0.2s;
+  transition: opacity var(--duration-normal), color var(--duration-normal);
 }
 
-[data-skin="hub"] .hub-recent-item:hover .hub-hide-btn {
+[data-skin="hub"] .hub-recent-item:is(:hover, :focus-visible) .hub-hide-btn {
   opacity: 1;
 }
 
-[data-skin="hub"] .hub-hide-btn:hover {
+[data-skin="hub"] .hub-hide-btn:is(:hover, :focus-visible) {
   color: var(--hub-color-primary);
   background: var(--hub-color-primary-muted);
 }
 
 /* 恢复隐藏对话按钮 */
-[data-skin="hub"] .hub-restore-btn:hover {
+[data-skin="hub"] .hub-restore-btn:is(:hover, :focus-visible) {
   color: var(--hub-color-primary) !important;
 }
 
@@ -800,7 +800,7 @@
   border-radius: 8px;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 107, 0, 0.04);
 }
-[data-skin="hub"] .inline-diff-review:hover {
+[data-skin="hub"] .inline-diff-review:is(:hover, :focus-visible) {
   border-color: rgba(255, 107, 0, 0.3);
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 107, 0, 0.08);
 }
@@ -810,7 +810,7 @@
   background: rgba(10, 10, 10, 0.6);
   border-bottom: 1px solid var(--hub-border-color, #2a2a2a);
 }
-[data-skin="hub"] .inline-diff-header:hover {
+[data-skin="hub"] .inline-diff-header:is(:hover, :focus-visible) {
   background: rgba(42, 42, 42, 0.8);
 }
 
@@ -886,7 +886,7 @@
   background: var(--hub-text-success, #4ade80);
   color: #0a0a0a;
 }
-[data-skin="hub"] .inline-diff-btn.accept:hover {
+[data-skin="hub"] .inline-diff-btn.accept:is(:hover, :focus-visible) {
   background: #22c55e;
 }
 
@@ -902,7 +902,7 @@
   color: var(--hub-color-primary, #ff6b00);
   border: 1px solid var(--hub-color-primary, #ff6b00);
 }
-[data-skin="hub"] .inline-diff-btn.accept-all:hover {
+[data-skin="hub"] .inline-diff-btn.accept-all:is(:hover, :focus-visible) {
   background: rgba(255, 107, 0, 0.12);
 }
 
@@ -913,7 +913,7 @@
 
 /* ========== Hub 皮肤同步移除段落 hover 背景色 ========== */
 /* 与默认皮肤/梦幻皮肤保持一致，消除段落级 hover 不规则高亮 */
-[data-skin="hub"] .message-content p:hover,
-[data-skin="hub"] .markdown-body p:hover {
+[data-skin="hub"] .message-content p:is(:hover, :focus-visible),
+[data-skin="hub"] .markdown-body p:is(:hover, :focus-visible) {
   background: transparent !important;
 }
