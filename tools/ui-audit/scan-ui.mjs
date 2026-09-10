@@ -54,6 +54,7 @@ function shouldSkip(rel) {
  * 合法例外：这些文件里的原始颜色是**数据/内容**而不是 UI 样式 ——
  * 皮肤令牌定义、PPT 生成内容配色、游戏美术（大富翁棋盘/角色自带一套美术语言）。
  * 例外必须写明理由，避免例外表退化成"绕过审计"的后门。
+ * rules 可选：只对指定规则豁免（不给就是整份文件豁免）。
  */
 const ALLOWLIST = [
   { re: /^src\/core\/theme\//, why: "主题/令牌定义源（原始色值是唯一真相源）" },
@@ -61,9 +62,23 @@ const ALLOWLIST = [
   { re: /^src\/plugins\/monopoly-game\//, why: "大富翁游戏插件（自带美术语言：棋盘/卡牌/角色是一套独立视觉，改令牌会破坏美术）" },
   { re: /^src\/styles\/skin-[^/]+\.css$/, why: "皮肤定义源（每个皮肤的调色板与覆盖层：原始色值就是该皮肤的真相源）" },
   { re: /^src\/plugins\/library-ops\/data\/characters\.ts$/, why: "图书馆角色调色板（注释性常量，实际渲染已用 var() 令牌）" },
+  {
+    re: /^src\/components\/AppErrorBoundary\.tsx$/,
+    why: "崩溃兜底页必须能在样式表整体失效时仍然可读，所以刻意全部走内联样式（不依赖任何 CSS 外壳）",
+    rules: ["modal-shell-bespoke"],
+  },
+  {
+    re: /^src\/components\/ppt\/(PPTAdapter|PresentationMode)\.tsx$/,
+    why: "PPT 工作区全屏视图与演示舞台（投影输出）：是整屏「工作台/舞台」而不是应用内浮层，套 modal-overlay 的遮罩与 Esc 行为会与演示交互冲突",
+    rules: ["modal-shell-bespoke"],
+  },
 ];
-function allowedReason(rel) {
-  const hit = ALLOWLIST.find((a) => a.re.test(rel));
+function allowedReason(rel, rule) {
+  // 不带 rule 调用（shouldSkip）时只认「整份文件豁免」的条目；
+  // 带 rule 调用时，按条目声明的 rules 精确匹配。
+  const hit = ALLOWLIST.find(
+    (a) => a.re.test(rel) && (rule ? !a.rules || a.rules.includes(rule) : !a.rules),
+  );
   return hit?.why ?? null;
 }
 
@@ -88,12 +103,64 @@ const RULES = {
 // ========== 扫描器 ==========
 const findings = [];
 function add(rule, file, line, text, detail) {
+  // 例外按「文件 + 规则」判定：豁免一份文件不再等于豁免它的所有规则
+  if (allowedReason(file, rule)) return;
   findings.push({ rule, file, line, text: text.trim().slice(0, 140), detail });
 }
 
 /** 去掉行内注释，避免把注释里的示例算成违规 */
 function stripComments(line) {
   return line.replace(/\/\/.*$/, "").replace(/\/\*.*?\*\//g, "");
+}
+
+/**
+ * 精确算出每个 `style={{ … }}` 对象字面量的内部区间 [start, end)。
+ *
+ * 为什么不能按行数花括号：`style={{ color: '#fff' }}` 写在一行时，
+ * 「本行 { 数 - } 数」是 0，但样式对象已经闭合 —— 用行级平衡推算深度会**越算越漏**，
+ * 于是从第一个内联样式之后的整份文件都被当成"样式上下文"，
+ * 把 `const DOT = { done: "#22c55e" }`、cytoscape 图表入参这类**不是 CSS 样式**的色值
+ * 也算成违规（假阳性），反过来掩盖真实问题。这里按字符扫，跳过字符串与注释。
+ */
+function computeStyleRanges(src) {
+  const ranges = [];
+  const re = /style=\{\{/g;
+  let m;
+  while ((m = re.exec(src))) {
+    const start = m.index + m[0].length; // 「{」之后
+    let depth = 1;
+    let i = start;
+    while (i < src.length && depth > 0) {
+      const c = src[i];
+      if (c === '"' || c === "'" || c === "`") {
+        // 跳过字符串字面量
+        const quote = c;
+        i++;
+        while (i < src.length && src[i] !== quote) {
+          if (src[i] === "\\") i++;
+          i++;
+        }
+        i++;
+        continue;
+      }
+      if (c === "/" && src[i + 1] === "/") {
+        while (i < src.length && src[i] !== "\n") i++;
+        continue;
+      }
+      if (c === "/" && src[i + 1] === "*") {
+        i += 2;
+        while (i < src.length && !(src[i] === "*" && src[i + 1] === "/")) i++;
+        i += 2;
+        continue;
+      }
+      if (c === "{") depth++;
+      else if (c === "}") depth--;
+      i++;
+    }
+    ranges.push([start, i]);
+    re.lastIndex = i;
+  }
+  return ranges;
 }
 
 function scanTsx(rel, src) {
@@ -103,7 +170,7 @@ function scanTsx(rel, src) {
   let hasUnifiedShell = false;
 
   // 统一外壳类名（出现任意一个即认为该文件用了共享外壳）
-  if (/modal-overlay|modal-panel|modal-editor|drawer-|popover-|task-center-panel/.test(src)) hasUnifiedShell = true;
+  if (/modal-overlay|modal-panel|modal-editor|drawer-|popover-|popover-shell|floating-overlay-panel|task-center-panel/.test(src)) hasUnifiedShell = true;
 
   /**
    * 只在 `style={{ … }}` 里判定颜色/字号/圆角：
@@ -111,21 +178,25 @@ function scanTsx(rel, src) {
    * - 非样式上下文里的色值字符串（如传给 canvas 的主题常量）同理。
    * 这样门禁只盯「本该用令牌的地方」，避免假阳性把例外表撑爆。
    */
-  let styleDepth = 0;
+  const styleRanges = computeStyleRanges(src);
+  /** 行区间与样式对象区间是否相交（只看行首/行尾两点会漏掉"样式在行中间"的行） */
+  const lineInStyle = (lineStart, lineEnd) =>
+    styleRanges.some(([s, e]) => s < lineEnd && e > lineStart);
+  // 每行起始偏移，供逐行判断
+  const lineStarts = [];
+  {
+    let acc = 0;
+    for (const l of lines) {
+      lineStarts.push(acc);
+      acc += l.length + 1;
+    }
+  }
 
   lines.forEach((raw, i) => {
     const line = stripComments(raw);
     const no = i + 1;
-    const opens = (line.match(/style=\{\{/g) ?? []).length;
-    const inStyleHere = styleDepth > 0 || opens > 0;
-    const wasInStyle = inStyleHere;
-
-    // 更新样式对象深度：进入 +1，之后的 { 与 } 逐个平衡
-    if (opens > 0) styleDepth += opens;
-    if (styleDepth > 0) {
-      const braces = (line.match(/[{}]/g) ?? []).length - opens * 2;
-      styleDepth = Math.max(0, styleDepth + braces);
-    }
+    // 该行任意位置落在样式对象内 → 视作样式上下文
+    const wasInStyle = lineInStyle(lineStarts[i], lineStarts[i] + raw.length);
 
     if (!wasInStyle) {
       if (/position:\s*(?:'|")fixed/.test(line)) modalish++;

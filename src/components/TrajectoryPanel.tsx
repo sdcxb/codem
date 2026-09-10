@@ -368,7 +368,7 @@ export const TrajectoryPanel = memo(function TrajectoryPanel({
           </button>
           {showFilterDropdown && (
             <>
-              <div style={{ position: 'fixed', inset: 0, zIndex: 99 }} onClick={(e) => { e.stopPropagation(); setShowFilterDropdown(false) }} />
+              <div className="popover-shield" style={{ zIndex: 99 }} onClick={(e) => { e.stopPropagation(); setShowFilterDropdown(false) }} />
               <div style={{
                 position: 'absolute',
                 top: '100%',

@@ -201,7 +201,7 @@ export function AgentPanel({ agents, onClose, onSelectAgent }: AgentPanelProps) 
                           <div key={act.id} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: "var(--fs-xs)", color: "var(--text-secondary)" }}>
                             <span>{act.type === "tool" ? "🔧" : "💭"}</span>
                             <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{act.label}</span>
-                            <span style={{ color: act.status === "done" ? "#10b981" : "#f59e0b" }}>
+                            <span style={{ color: act.status === "done" ? "var(--success)" : "var(--warning)" }}>
                               {act.status === "done" ? (zh ? "✓ 完成" : "✓ done") : (zh ? "进行中" : "running")}
                             </span>
                           </div>

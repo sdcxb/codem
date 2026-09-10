@@ -459,7 +459,7 @@
 }
 
 .ppt-present-btn:hover {
-  background: rgba(255, 255, 255, 0.3);
+  background: color-mix(in srgb, var(--text-on-accent) 30%, transparent);
 }
 
 /* --- 对话式修改栏 --- */

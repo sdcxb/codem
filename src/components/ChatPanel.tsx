@@ -447,8 +447,8 @@ setStepTooltipLocked(false);
           </button>
           {showTitleDropdown && (
             <>
-              <div style={{ position: "fixed", inset: 0, zIndex: 99 }} onClick={() => setShowTitleDropdown(false)} />
-              <div className="bottom-bar-dropdown" style={{ position: "absolute", top: "100%", left: 0, marginTop: 4, minWidth: 240, maxHeight: 300, overflowY: "auto", zIndex: 100 }}>
+              <div className="popover-shield" style={{ zIndex: 99 }} onClick={() => setShowTitleDropdown(false)} />
+              <div className="bottom-bar-dropdown popover-shell" style={{ position: "absolute", top: "100%", left: 0, marginTop: 4, minWidth: 240, maxHeight: 300, overflowY: "auto", zIndex: 100 }}>
                 <div className="bottom-bar-dropdown-header">{lang === "zh" ? "切换会话" : "Switch Session"}</div>
                 {(() => {
                   const sessions = currentProject
@@ -521,7 +521,7 @@ setStepTooltipLocked(false);
                 </span>
                 {showEffortPicker && (
                   <>
-                    <div style={{ position: "fixed", inset: 0, zIndex: 99 }} onClick={(e) => { e.stopPropagation(); setShowEffortPicker(false); }} />
+                    <div className="popover-shield" style={{ zIndex: 99 }} onClick={(e) => { e.stopPropagation(); setShowEffortPicker(false); }} />
                     <div style={{
                       position: "absolute", top: "100%", right: 0, marginTop: 4,
                       minWidth: 120, zIndex: 100, padding: 4,
@@ -643,13 +643,8 @@ setStepTooltipLocked(false);
           filtered, so jumping always finds the target by data-message-id. */}
       {showSearch && (
         <>
-          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 300 }} onClick={() => { setShowSearch(false); setSearchQuery(''); }} />
-          <div style={{
-            position: 'fixed', top: '20%', left: '50%', transform: 'translateX(-50%)',
-            width: '480px', maxWidth: '90vw', zIndex: 301,
-            background: 'var(--bg-secondary)', border: '1px solid var(--border-color)',
-            borderRadius: 12, padding: 16, boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
-          }}>
+          <div className="modal-overlay" style={{ zIndex: 300 }} onClick={() => { setShowSearch(false); setSearchQuery(''); }}>
+            <div className="modal-panel" style={{ width: '480px', maxWidth: '90vw', padding: 16 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
               <Search size={14} style={{ color: 'var(--text-muted)' }} />
               <input
@@ -709,6 +704,7 @@ setStepTooltipLocked(false);
                 </div>
               </div>
             ))}
+            </div>
           </div>
         </>
       )}

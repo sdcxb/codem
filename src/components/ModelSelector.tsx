@@ -94,7 +94,7 @@ export function ModelSelector({ model, models, onModelChange, locked = false }: 
 
       {open && (
         <div
-          className="bottom-bar-dropdown"
+          className="bottom-bar-dropdown popover-shell"
           style={{
             position: 'absolute',
             bottom: '100%',

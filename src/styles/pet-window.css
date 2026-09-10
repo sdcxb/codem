@@ -4,6 +4,18 @@
  * 仅包含透明背景和基础重置，不加载主应用的 8400 行 styles.css。
  */
 
+/* 宠物窗口是独立的 WebView 入口（src/pet-main.tsx），拿不到主应用的语义令牌，
+ * 所以它自带一份最小令牌表 —— 这样窗口内的颜色也有唯一来源，不再散落在各处写死。 */
+:root {
+  --pet-glass-bg: rgba(30, 30, 46, 0.92);
+  --pet-glass-bg-strong: rgba(24, 26, 38, 0.92);
+  --pet-glass-border: rgba(255, 255, 255, 0.12);
+  --pet-glass-border-strong: rgba(255, 255, 255, 0.14);
+  --pet-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  --pet-shadow-strong: 0 4px 14px rgba(0, 0, 0, 0.35);
+  --pet-text-muted: rgba(136, 136, 136, 0.5);
+}
+
 html,
 body,
 #root {

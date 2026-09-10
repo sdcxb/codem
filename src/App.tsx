@@ -3901,7 +3901,7 @@ onClose={() => setCitationViewer(null)}
 
       {/* P1: Clarification Form — AI asks structured questions */}
       {pendingClarification && (
-        <div className="dialog-overlay" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}
+        <div className="dialog-overlay" style={{ display: "flex", alignItems: "center", justifyContent: "center" }}
           onClick={() => { pendingClarification.resolve([]); clearPendingClarification(); }}>
           <div onClick={(e) => e.stopPropagation()} style={{ maxWidth: "500px", width: "90vw" }}>
             <SlotBridge name="app.clarification-form" fallback={ClarificationForm}
@@ -3922,7 +3922,7 @@ onClose={() => setCitationViewer(null)}
 
       {/* P1: Correction Result Panel — fact-check comparison */}
       {pendingCorrection && (
-        <div className="dialog-overlay" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}
+        <div className="dialog-overlay" style={{ display: "flex", alignItems: "center", justifyContent: "center" }}
           onClick={() => clearPendingCorrection()}>
           <div onClick={(e) => e.stopPropagation()} style={{ maxWidth: "800px", width: "90vw", maxHeight: "80vh", overflowY: "auto" }}>
             <SlotBridge name="app.correction-result-panel" fallback={CorrectionResultPanel}

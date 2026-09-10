@@ -59,7 +59,7 @@ export function FileLinkContextMenu() {
   return (
     <div
       ref={menuRef}
-      className="file-link-context-menu"
+      className="file-link-context-menu popover-shell"
       style={{
         position: "fixed",
         left: state.x,

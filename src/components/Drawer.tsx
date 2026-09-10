@@ -83,7 +83,7 @@ export const Drawer = memo(function Drawer({
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={closeOnOverlayClick ? onClose : undefined}
-              style={{ position: "fixed", inset: 0, zIndex: 9998, background: "rgba(0,0,0,0.4)" }}
+              style={{ position: "fixed", inset: 0, zIndex: 9998, background: "var(--overlay-backdrop)" }}
             />
           )}
           <motion.div

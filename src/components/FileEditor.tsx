@@ -142,6 +142,19 @@ function getCurrentShikiTheme(): "github-dark-dimmed" | "github-light" {
   return dataTheme === "light" ? "github-light" : "github-dark-dimmed";
 }
 
+/**
+ * Shiki 主题的前景色。
+ *
+ * 高亮层由 Shiki 渲染，输入框自身的文字是透明的（color: transparent），
+ * caret 必须与**高亮层的文字同色**才不会"看不见/刺眼" —— 所以这是第三方高亮主题的
+ * 数据（跟 github-light / github-dark-dimmed 走），不是宿主 UI 色，不能换成语义令牌。
+ * 放在主题定义旁边，和主题配置一起维护。
+ */
+const SHIKI_THEME_FG: Record<string, string> = {
+  "github-light": "#1f2328",
+  "github-dark-dimmed": "#adbac7",
+};
+
 // ==================== 预览组件 ====================
 
 /** 图片预览 — 支持缩放/旋转 */
@@ -690,7 +703,7 @@ const CodeEditor = ({ content, filePath, onChange, onSave, onClose, modified, sa
           wrap="off"
           style={{
             color: "transparent",
-            caretColor: shikiTheme === "github-light" ? "#1f2328" : "#adbac7",
+            caretColor: SHIKI_THEME_FG[shikiTheme] ?? "currentColor",
             background: "transparent",
             WebkitTextFillColor: "transparent",
           }}

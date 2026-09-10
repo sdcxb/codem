@@ -161,7 +161,7 @@ export function PermissionPresetSelector({
         {open && dropdownPos && createPortal(
           <div
             ref={dropdownRef}
-            className="bottom-bar-dropdown"
+            className="bottom-bar-dropdown popover-shell"
             style={{
               position: "fixed",
               left: dropdownPos.left,

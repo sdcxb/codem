@@ -785,7 +785,7 @@
   height: 36px;
   border-radius: var(--radius-full);
   border: none;
-  background: rgba(255, 255, 255, 0.12);
+  background: color-mix(in srgb, var(--text-on-accent) 12%, transparent);
   color: white;
   cursor: pointer;
   display: flex;
@@ -794,7 +794,7 @@
   transition: var(--transition-color);
 }
 .fullscreen-viewer-close:hover {
-  background: rgba(255, 255, 255, 0.20);
+  background: color-mix(in srgb, var(--text-on-accent) 20%, transparent);
 }
 
 /* P0-2: 流式纯文本降级样式 —— 流式期间零解析零高亮 */
@@ -2029,14 +2029,14 @@ body.resizing-columns * {
   height: 45vw;
   bottom: -10%;
   right: -5%;
-  background: radial-gradient(circle, rgba(88, 166, 255, 0.35), transparent 70%);
+  background: radial-gradient(circle, color-mix(in srgb, var(--info) 35%, transparent), transparent 70%);
 }
 .workspace-backdrop .blob-3 {
   width: 35vw;
   height: 35vw;
   top: 30%;
   right: 20%;
-  background: radial-gradient(circle, rgba(168, 85, 247, 0.25), transparent 70%);
+  background: radial-gradient(circle, color-mix(in srgb, var(--accent) 25%, transparent), transparent 70%);
   opacity: 0.2;
 }
 .workspace-backdrop.animated .blob-1 {
@@ -2066,7 +2066,7 @@ body.resizing-columns * {
   mix-blend-mode: overlay;
 }
 .workspace-backdrop-vignette {
-  background: radial-gradient(ellipse at center, transparent 40%, rgba(0, 0, 0, 0.3) 100%);
+  background: radial-gradient(ellipse at center, transparent 40%, var(--overlay-backdrop) 100%);
 }
 /* Light theme adjustments */
 [data-theme="light"] .workspace-backdrop {
@@ -2690,7 +2690,7 @@ body.resizing-columns * {
   background: white;
   border-radius: 50%;
   transition: transform var(--duration-fast) var(--ease-out);
-  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+  box-shadow: var(--shadow-sm);
 }
 .toggle-entry.on::after {
   transform: translateX(18px);
@@ -3051,7 +3051,7 @@ select:focus-visible,
   color: var(--warning);
 }
 .hub-task-icon-purple {
-  background: rgba(168, 85, 247, 0.15);
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
   color: var(--accent);
 }
 .hub-task-content {

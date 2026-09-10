@@ -377,7 +377,7 @@ export function CicdPanel({ onClose }: CicdPanelProps) {
                                   <div style={{ marginLeft: 16, marginTop: 4 }}>
                                     {job.steps.map(step => (
                                       <div key={step.number} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 'var(--fs-sm)', color: "var(--text-muted)" }}>
-                                        <span style={{ width: 16, textAlign: "center", color: step.conclusion === "success" ? "#22c55e" : step.conclusion === "failure" ? "#ef4444" : "#6b7280" }}>
+                                        <span style={{ width: 16, textAlign: "center", color: step.conclusion === "success" ? "var(--success)" : step.conclusion === "failure" ? "var(--error)" : "var(--text-muted)" }}>
                                           {step.conclusion === "success" ? "✓" : step.conclusion === "failure" ? "✗" : "○"}
                                         </span>
                                         <span>{step.name}</span>

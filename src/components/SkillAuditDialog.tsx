@@ -69,24 +69,12 @@ const overallIcon = audit.overall === "danger" ? <ShieldAlert size={24} />
     : (zh ? "✓ 安全" : "✓ Safe");
 
   return (
-    <div className="skill-audit-dialog-overlay" style={{
-      position: "fixed",
-      inset: 0,
-      background: "rgba(0, 0, 0, 0.6)",
-      zIndex: 10000,
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-    }} onClick={onCancel}>
-      <div className="skill-audit-dialog" style={{
-        background: "var(--bg-primary, #1a1a1f)",
-        border: `1px solid var(--border-primary, #2a2a30)`,
-        borderRadius: 12,
+    <div className="modal-overlay" style={{ zIndex: 10000 }} onClick={onCancel}>
+      <div className="modal-panel" style={{
         maxWidth: 560,
         width: "90%",
         maxHeight: "80vh",
         overflowY: "auto",
-        boxShadow: "0 8px 32px rgba(0,0,0,0.4)",
       }} onClick={e => e.stopPropagation()}>
         {/* Header */}
         <div style={{
@@ -246,8 +234,8 @@ const overallIcon = audit.overall === "danger" ? <ShieldAlert size={24} />
               border: "none",
               background: audit.overall === "danger" && !accepted
                 ? "var(--bg-tertiary)"
-                : audit.overall === "danger" ? "#ef4444"
-                : audit.overall === "warning" ? "#f59e0b"
+                : audit.overall === "danger" ? "var(--error)"
+                : audit.overall === "warning" ? "var(--warning)"
                 : "var(--accent)",
               color: "var(--text-on-accent)",
               fontSize: 'var(--fs-sm)',

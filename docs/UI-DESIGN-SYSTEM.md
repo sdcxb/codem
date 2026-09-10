@@ -80,14 +80,23 @@ frakio-work 的两条关键惯例（我们同步遵守）：
 
 ## 3. 组件语言（统一外壳）
 
+**外壳类清单（浮层只允许这四种，审计规则 `modal-shell-bespoke` 认的就是它们）**：
+
+| 外壳 | 用途 | 做法 |
+| --- | --- | --- |
+| `modal-overlay` + `modal-panel` | 弹窗 / 对话框 | 遮罩负责定位与背景（`--overlay-backdrop` 家族），面板负责「面」：`--bg-secondary` + `--border-primary` + `--radius-lg` + `--shadow-popover`；内边距交给各自内容区（这类对话框都有通栏头栏/底栏） |
+| `floating-overlay-panel` | 聊天区浮动侧面板 | 位置与尺寸仍由调用处的内联样式决定（`--chat-body-top/bottom`），外壳只统一底/边 |
+| `popover-shell` + `popover-shield` | 菜单 / 下拉 / 右键菜单 | 外壳统一 `--dropdown-bg` + 环状边（`0 0 0 1px`）+ `--shadow-popover` + 120ms 入场；`popover-shield` 是那层吃掉外部点击的透明盾 |
+| `drawer-*` | 抽屉 | 圆角 `--radius-lg`，入场 200ms |
+
 | 组件 | 统一做法 |
 | --- | --- |
-| 弹窗 / 对话框 | `className="modal-overlay"`（遮罩）+ 内层面板；标题 `--fs-xl`，正文 `--fs-base`，圆角 `--radius-lg`，内边距 20–22px |
-| 抽屉 / 侧面板 | 同上外壳，圆角 `--radius-lg`，入场 200ms |
+| 弹窗 / 对话框 | 见上表；标题 `--fs-xl`，正文 `--fs-base`，内边距 20–22px |
 | 卡片 | 圆角 `--radius-md`，底 `--bg-secondary`，边 `--border-primary`，hover 只换边色 |
 | 按钮 | 主按钮 `--accent` 底 + `--text-on-accent` 字；次按钮透明底 + `--border-primary` 边；禁用 `opacity: .58` + `cursor: not-allowed` |
 | 输入 / 下拉 | 高 32–36px，圆角 `--radius`，底 `--input-bg`，边 `--border-primary`，聚焦换 `--accent` 边 |
 | 徽标 / 胶囊 | 圆角 `--radius-full`，`--fs-xs`，语义色按 §2.3 的「文字+淡底+淡边」 |
+| 图标 | 只用 `.icon-2xs … .icon-3xl` 一档 8 级（§2.4），装饰性加 `.icon-dim`；旋转用 `.spin` |
 | 空态 | 居中、`--fs-base`、`--text-muted`，配 1px 虚线或 `0 0 0 1px` 环，最小高度 130px |
 | 列表行 | 32–36px 行高，hover `--bg-hover`，分隔线 `--border-secondary` 且不顶到边 |
 
@@ -115,8 +124,10 @@ node tools/ui-audit/codemod-icon-scale.mjs [--write]  # 图标工具类 → .ico
 | `legacy-popup-shell` | warn | 历史遗留的自建浮层类名（`popup-*`/`overlay-*`/`modal-box-*`/`dialog-box-*`/`sheet-*`） |
 | `css-class-undefined` | warn | **tsx 里用了但没有任何 CSS 定义的类名**（等于没样式；已排除运行时状态类与第三方库类名；模板字面量里的静态类名同样计入） |
 
-**合法例外**（写在 `scan-ui.mjs` 的 `ALLOWLIST`，每条都带理由）：皮肤令牌定义源、
-PPT 生成内容配色、大富翁游戏插件（自带美术语言）、图书馆角色调色板注释常量。
+**合法例外**（写在 `scan-ui.mjs` 的 `ALLOWLIST`，每条都带理由；`rules` 字段可只豁免某一条规则）：
+皮肤令牌定义源、PPT 生成内容配色、大富翁游戏插件（自带美术语言）、图书馆角色调色板注释常量；
+以及两条**按规则豁免**的：`AppErrorBoundary`（崩溃兜底页必须在样式表失效时仍可读，刻意全内联样式）、
+`ppt/PPTAdapter|PresentationMode`（整屏工作台/演示舞台，不是应用内浮层）。
 例外不是后门 —— 新增例外必须在文档里说明理由。
 
 ## 5. 进度（迭代记录）
@@ -127,10 +138,12 @@ PPT 生成内容配色、大富翁游戏插件（自带美术语言）、图书�
 | 第 1 波 | 2026-09-10 | 144 | 63 | 令牌化 codemod：478 处替换（色 409 / 圆角 32 / 字号 37）＋新增 `--fs-display`/`--fs-hero`/`--overlay-backdrop(-strong)` 令牌；`fs-hardcoded` 与 `radius-offscale` 已清零 |
 | 第 2 波 | 2026-09-10 | **102** | 63 | 淡色底/边按规范改写：`rgba(状态色, α)` → `color-mix(in srgb, var(--token) N%, transparent)`，84 处；新增 `css-class-undefined` 规则（tsx 用了但 CSS 里没定义的类名）—— 首次运行即暴露 **409 处"等于没样式"**，成为下一波最高性价比的工作队列 |
 | 第 3 波 | 2026-09-10 | 85 | 303 | ~~清单化的"未定义类名"~~：当波只清了 Pipeline 下一步对话框与纠偏结果对比面板两处；其余 253 处留到第 10 波一次清完 |
-| 第 4 波 | 待做 | — | — | 15 个自建浮层外壳统一到 `modal-overlay`/`modal-editor`（含 z-index 令牌化：现在有 23 个 tsx 数值 + 13 个 CSS 层级） |
-| 第 5 波 | 待做 | — | — | 组件语言收口：按钮/输入/卡片/空态/列表行改用具名类，压缩 50 个「内联样式过密」文件；补 `--radius-xs: 6px`（259 处用到 6px 却无令牌）与 `--space-*` 刻度 |
-| 第 6 波 | 待做 | — | — | 门禁回归测试（计数 ≤ 基线并持续下降，直至 0）+ 文档 + 发布 |
+| 第 4 波 | 2026-09-10 | **0** | 50 | 15 处自建浮层外壳收口到统一外壳（详见第 11 波） |
+| 第 5 波 | 待做 | — | — | 组件语言收口：按钮/输入/卡片/空态/列表行改具名类，压缩 50 个「内联样式过密」文件 |
+| 第 6 波 | 待做 | — | — | 门禁归零（只剩 warn）+ 文档 + 发布 |
 | **第 10 波** | 2026-09-10 | 85 | **50** | **`css-class-undefined` 253 → 0**：① 新增 `--icon-2xs..--icon-3xl` 图标刻度与 `.icon-*` 工具类（tsx 里 ~100 处 `w-3 h-3` / `animate-spin` / `opacity-40` 全是无效类名，图标实际渲染成 lucide 默认 24px —— 比 13px 标签大一倍）；② 补 ConfigEditor(24 类) / ClarificationForm(11) / CorrectionResultPanel(11) / NotebookManager 分组视图 / plugin-market 等全部缺失样式，一律只用令牌；③ **审计器扩面**：模板字面量 `` className={`a ${x}`} `` 里的静态类名此前被整段跳过（工具漏检），现在纳入并过滤 `status-` 这类残片；④ 死类名清理：`titlebar-btn-minimize` / `video-btn play` / `font-semibold` 之类"写了但既不匹配 CSS、也无 JS 查询"的修饰类直接删掉 |
+
+| **第 11 波** | 2026-09-10 | **0** ✅ | **50** | **error 级全线归零**：① 色值：CSS 17 处 + TSX 53 处 → 0（`--overlay-backdrop` / `--shadow-*` / 新增 `--shadow-color` 与 `--presentation-backdrop` / `color-mix` / 语义状态色；宠物窗口是独立 WebView 拿不到主令牌，自带 `--pet-*` 最小令牌表）；② 浮层：15 处自建外壳 → `modal-overlay`+`modal-panel`（对话框）/ `popover-shell`+`popover-shield`（菜单）/ `floating-overlay-panel`（浮动面板），并把 4 个菜单类（skill-picker-popup / bottom-bar-dropdown / file-link-context-menu / sidebar-project-more-menu）各写一套的外观收口到 `.popover-shell`；③ **审计器精度修复**：原来用「行内花括号平衡」推算 `style={{}}` 深度，单行样式对象会算错并越算越漏，把整份文件都当成样式上下文 —— `MEMBER_DOT = { done: "#22c55e" }`、cytoscape 图表入参这类非样式色值被算成违规（虚高的 53 条里相当一部分是假阳性），而真正的「样式在行中间」反而漏检；改为按字符扫描 + 行区间求交后收敛到 9 条真问题并全部修掉；④ 例外表支持 `rules` 字段（崩溃兜底页 / PPT 演示舞台只豁免 `modal-shell-bespoke`） |
 
 ### 全项目现场事实（来自 UI 交互界面清单，作为工作队列）
 
@@ -161,14 +174,16 @@ PPT 生成内容配色、大富翁游戏插件（自带美术语言）、图书�
 | --- | --- | --- | --- |
 | `fs-hardcoded` | error | 78 | **0** ✅（门禁锁定） |
 | `radius-offscale` | error | 38 | **0** ✅（门禁锁定） |
+| `color-hardcoded-tsx` | error | 325 | **0** ✅ |
+| `color-hardcoded-css` | error | 209 | **0** ✅ |
+| `modal-shell-bespoke` | error | 15 | **0** ✅ |
 | `spacing-offgrid` | warn | 13 | **0** ✅ |
-| `css-class-undefined` | warn | — | **0** ✅（第 10 波清零；且审计器已扩面到模板字面量） |
-| `color-hardcoded-css` | error | 209 | 17 |
-| `color-hardcoded-tsx` | error | 325 | 53 |
-| `modal-shell-bespoke` | error | 15 | 15 |
-| `inline-style-dense` | warn | 58 | 50 |
-| **error 合计** | | **533** | **85** |
+| `css-class-undefined` | warn | — | **0** ✅（第 10 波清零；审计器已扩面到模板字面量） |
+| `inline-style-dense` | warn | 58 | 50（仅剩这一类） |
+| **error 合计** | | **533** | **0** ✅ |
 | **warn 合计** | | 64 | **50** |
+
+> 注：`color-hardcoded-tsx` 中途曾报 53 → 9 —— 不是"改多了"，而是审计器修掉了假阳性（见第 11 波说明）。
 
 ### 已完成的波次
 
@@ -181,21 +196,23 @@ PPT 生成内容配色、大富翁游戏插件（自带美术语言）、图书�
 7. **补样式**：Pipeline 下一步对话框、纠偏结果对比面板（此前类名无 CSS = 没样式）。
 8. **间距归一**：`spacing-offgrid` 13 → 0（只对齐离格值，±1px）。
 9. **CSS 色令牌化**：31 → 17（遮罩/底色/状态淡色）。
-10. **第 10 波（本轮）**：图标刻度 + 253 处「有类名没样式」清零（详见 §5 表）。
+10. **第 10 波**：图标刻度 + 253 处「有类名没样式」清零（详见 §5 表）。
+11. **第 11 波（本轮）**：色值 70 处（CSS 17 + TSX 53）→ 0；15 处自建浮层 → 统一外壳；审计器精度修复（详见 §5 表）。
 
 ### 下一轮的工作队列（按性价比排序）
 
-1. **15 个自建浮层** → `modal-overlay` / `modal-editor`（含 z-index 令牌化：`modal-overlay`=200 与 `--z-modal`=1300 需先统一）；
-2. **剩余 17 处 CSS 色 + 53 处 TSX 色**：逐点判断是「皮肤/数据色（保留）」还是「UI 色（改令牌）」；
-3. **`styles.css` 本体**：该文件目前整份被排除在扫描之外，而它恰恰是最大的现场 —— 实测 **591 处硬编码字号**（12px×170 / 11px×121 / 13px×118 …）、233 行硬编码颜色、22 处离格圆角。这些字号不吃 `--ui-font-scale`，正是「设置里调字号没用」的原因。下一波应把它纳入扫描（`:root`/`[data-theme]` 块已能自动豁免），先做字号令牌化；
-4. **组件语言收口**：按钮/输入/卡片/空态/列表行改具名类，压低 50 个 `inline-style-dense`；
-5. **重复定义收敛**：`styles.css` 内已有同名类被定义两次且取值不同（如 `.badge` 的圆角 10px vs 4px、`.workspace-tab` 的 11px vs 12px 字号），需要加一条「重复/冲突定义」审计规则；
-6. **收尾**：门禁归零 → `CHANGELOG` / `README` / `PROJECT-GUIDE` / 本文件同步 → 升版本号 → 构建安装包 → 发布 Release。
+1. **`styles.css` 本体**（最大的一块）：该文件目前整份被排除在扫描之外，而它恰恰是最大的现场 ——
+   实测 **591 处硬编码字号**（12px×170 / 11px×121 / 13px×118 / 14px×71 / 10px×44 …）、
+   233 行硬编码颜色、22 处离格圆角。这些字号**不吃 `--ui-font-scale`**，正是「设置里调字号没反应」的根因。
+   做法：把它纳入扫描（`:root` / `[data-theme]` / `[data-skin]` 块已能自动豁免），先按 §2.1 的刻度做字号令牌化
+   （11px 这一档要么并入 10/12，要么补 `--fs-2xs` 并写进契约，需一次决策）；
+2. **50 个「内联样式过密」文件**：按钮/输入/卡片/空态/列表行改具名类（`inline-style-dense` 的唯一来源）；
+3. **z-index 令牌化**：`modal-overlay`=200 与 `--z-modal`=1300 互相矛盾，`popover-shield` 的层级仍留在调用处（23 个 tsx 数值 + 13 个 CSS 层级）；
+4. **重复定义收敛**：`styles.css` 内已有同名类被定义两次且取值不同（如 `.badge` 的圆角 10px vs 4px、`.workspace-tab` 的 11px vs 12px 字号），需要新增一条「重复/冲突定义」审计规则；
+5. **收尾**：门禁归零 → `CHANGELOG` / `README` / `PROJECT-GUIDE` / 本文件同步 → 升版本号 → 构建安装包 → 发布 Release。
 
 ### 已知例外（都写在 `scan-ui.mjs` 的 ALLOWLIST 里并附理由）
 
-皮肤令牌源（`src/styles.css`、`src/styles/skin-*.css`、`src/core/theme/`）、PPT 生成内容配色（`src/core/knowledge/ppt-*`）、大富翁游戏插件（自带美术语言）、图书馆角色调色板注释常量。
-
-### 已知例外（都写在 `scan-ui.mjs` 的 ALLOWLIST 里并附理由）
-
-皮肤令牌源（`src/styles.css`、`src/styles/skin-*.css`、`src/core/theme/`）、PPT 生成内容配色（`src/core/knowledge/ppt-*`）、大富翁游戏插件（自带美术语言）、图书馆角色调色板注释常量。
+皮肤令牌源（`src/styles.css`、`src/styles/skin-*.css`、`src/core/theme/`）、PPT 生成内容配色（`src/core/knowledge/ppt-*`）、
+大富翁游戏插件（自带美术语言）、图书馆角色调色板注释常量；
+按规则豁免（带 `rules` 字段）：`AppErrorBoundary`（崩溃兜底页刻意全内联样式）、`ppt/PPTAdapter|PresentationMode`（整屏工作台/演示舞台）。

@@ -1,11 +1,8 @@
 {
-  "at": "2026-09-10T07:42:08.100Z",
-  "errorCount": 85,
+  "at": "2026-09-10T07:50:30.933Z",
+  "errorCount": 0,
   "warnCount": 50,
   "byRule": {
-    "color-hardcoded-tsx": 53,
-    "inline-style-dense": 50,
-    "modal-shell-bespoke": 15,
-    "color-hardcoded-css": 17
+    "inline-style-dense": 50
   }
 }

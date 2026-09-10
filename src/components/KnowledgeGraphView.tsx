@@ -150,7 +150,7 @@ function KGNodeComponent({ data, selected }: NodeProps<KGFlowNode>) {
           alignItems: 'center',
           justifyContent: 'center',
           fontSize: `${radius * 0.7}px`,
-          border: `${selected ? 3 : 1.5}px solid ${selected ? '#ffffff' : (dark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.15)')}`,
+          border: `${selected ? 3 : 1.5}px solid ${selected ? 'var(--text-primary)' : 'var(--border-primary)'}`,
           boxShadow: selected ? `0 0 20px ${color}88` : 'none',
           userSelect: 'none',
         }}
@@ -699,9 +699,9 @@ function KnowledgeGraphViewInner({ notebookId, onNodeSelect }: KnowledgeGraphVie
       {/* Right-click context menu */}
       {contextMenu && (
         <>
-          <div style={{ position: 'fixed', inset: 0, zIndex: 9998 }} onClick={() => setContextMenu(null)} onContextMenu={(e) => { e.preventDefault(); setContextMenu(null); }} />
+          <div className="popover-shield" style={{ zIndex: 9998 }} onClick={() => setContextMenu(null)} onContextMenu={(e) => { e.preventDefault(); setContextMenu(null); }} />
           {createPortal(
-            <div style={{ position: 'fixed', left: contextMenu.x, top: contextMenu.y, zIndex: 9999, background: bgSecondary, border: `1px solid ${borderColor}`, borderRadius: '6px', padding: '4px', boxShadow: '0 4px 12px rgba(0,0,0,0.3)', minWidth: '140px' }}>
+            <div className="popover-shell" style={{ position: 'fixed', left: contextMenu.x, top: contextMenu.y, zIndex: 9999, padding: '4px', minWidth: '140px' }}>
               {contextMenu.nodeId && (
                 <>
                   <button

@@ -164,7 +164,7 @@ export function PresentationMode({ deck, startIndex = 0, onExit }: PresentationM
           else goPrev();
         }
       }}
-      style={{ position: 'fixed', inset: 0, zIndex: 99999, background: '#000' }}
+      style={{ position: 'fixed', inset: 0, zIndex: 99999, background: 'var(--presentation-backdrop)' }}
     >
       {/* 幻灯片画布 */}
       <div ref={containerRef} style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', overflow: 'hidden' }}>
@@ -201,9 +201,9 @@ export function PresentationMode({ deck, startIndex = 0, onExit }: PresentationM
       {showNotes && currentSlide.notes && (
         <div style={{
           position: 'fixed', bottom: 60, left: '50%', transform: 'translateX(-50%)',
-          maxWidth: 600, padding: '12px 20px', background: 'rgba(0,0,0,0.85)',
+          maxWidth: 600, padding: '12px 20px', background: 'var(--overlay-backdrop-strong)',
           borderRadius: 10, color: 'var(--text-primary)', fontSize: 'var(--fs-md)', lineHeight: 1.6,
-          border: '1px solid rgba(255,255,255,0.1)',
+          border: '1px solid color-mix(in srgb, var(--text-on-accent) 10%, transparent)',
           backdropFilter: 'blur(8px)',
         }}>
           <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', marginBottom: 4 }}>演讲备注</div>
@@ -215,7 +215,7 @@ export function PresentationMode({ deck, startIndex = 0, onExit }: PresentationM
       <div style={{
         position: 'fixed', bottom: 16, left: '50%', transform: 'translateX(-50%)',
         display: 'flex', gap: 4, alignItems: 'center',
-        background: 'rgba(0,0,0,0.5)', padding: '4px 12px', borderRadius: 12,
+        background: 'var(--overlay-backdrop)', padding: '4px 12px', borderRadius: 12,
       }}>
         <span style={{ color: 'var(--text-on-accent)', fontSize: 'var(--fs-sm)' }}>
           {currentIndex + 1} / {totalSlides}
@@ -226,7 +226,7 @@ export function PresentationMode({ deck, startIndex = 0, onExit }: PresentationM
       <div className="ppt-present-controls" style={{
         position: 'fixed', bottom: 40, left: '50%', transform: 'translateX(-50%)',
         display: 'flex', gap: 8, alignItems: 'center',
-        background: 'rgba(0,0,0,0.7)', padding: '8px 16px', borderRadius: 24,
+        background: 'var(--overlay-backdrop-strong)', padding: '8px 16px', borderRadius: 24,
         opacity: 0, transition: 'opacity 0.3s',
         backdropFilter: 'blur(12px)',
       }}
@@ -234,7 +234,7 @@ export function PresentationMode({ deck, startIndex = 0, onExit }: PresentationM
       onMouseLeave={e => (e.currentTarget.style.opacity = '0')}
       >
         <button className="ppt-present-btn" onClick={goPrev} disabled={currentIndex === 0} style={{
-          background: 'rgba(255,255,255,0.15)', border: 'none', color: 'var(--text-on-accent)',
+          background: 'color-mix(in srgb, var(--text-on-accent) 15%, transparent)', border: 'none', color: 'var(--text-on-accent)',
           width: 36, height: 36, borderRadius: '50%', cursor: 'pointer', fontSize: 'var(--fs-lg)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           opacity: currentIndex === 0 ? 0.3 : 1, transition: 'background 0.15s',
@@ -242,30 +242,30 @@ export function PresentationMode({ deck, startIndex = 0, onExit }: PresentationM
 
         {/* 过渡效果选择 */}
         <select value={transition} onChange={e => setTransition(e.target.value as TransitionType)} style={{
-          background: 'rgba(255,255,255,0.1)', border: 'none', color: 'var(--text-on-accent)',
+          background: 'color-mix(in srgb, var(--text-on-accent) 10%, transparent)', border: 'none', color: 'var(--text-on-accent)',
           padding: '4px 8px', borderRadius: 4, fontSize: 'var(--fs-sm)', cursor: 'pointer',
         }}>
           {Object.entries(TRANSITIONS).map(([key, val]) => (
-            <option key={key} value={key} style={{ background: '#333' }}>{val.label}</option>
+            <option key={key} value={key} style={{ background: 'var(--bg-tertiary)' }}>{val.label}</option>
           ))}
         </select>
 
         {/* 备注 toggle */}
         <button onClick={() => setShowNotes(!showNotes)} style={{
-          background: showNotes ? 'var(--accent, color-mix(in srgb, var(--accent) 50%, transparent))' : 'rgba(255,255,255,0.15)',
+          background: showNotes ? 'var(--accent, color-mix(in srgb, var(--accent) 50%, transparent))' : 'color-mix(in srgb, var(--text-on-accent) 15%, transparent)',
           border: 'none', color: 'var(--text-on-accent)', padding: '6px 10px', borderRadius: 4, cursor: 'pointer', fontSize: 'var(--fs-sm)',
           transition: 'background 0.15s',
         }}>备注</button>
 
         {/* 退出 */}
         <button onClick={onExit} style={{
-          background: 'rgba(255,255,255,0.15)', border: 'none', color: 'var(--text-on-accent)',
+          background: 'color-mix(in srgb, var(--text-on-accent) 15%, transparent)', border: 'none', color: 'var(--text-on-accent)',
           padding: '6px 12px', borderRadius: 4, cursor: 'pointer', fontSize: 'var(--fs-sm)',
           transition: 'background 0.15s',
         }}>✕ 退出</button>
 
         <button className="ppt-present-btn" onClick={goNext} disabled={currentIndex === totalSlides - 1} style={{
-          background: 'rgba(255,255,255,0.15)', border: 'none', color: 'var(--text-on-accent)',
+          background: 'color-mix(in srgb, var(--text-on-accent) 15%, transparent)', border: 'none', color: 'var(--text-on-accent)',
           width: 36, height: 36, borderRadius: '50%', cursor: 'pointer', fontSize: 'var(--fs-lg)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           opacity: currentIndex === totalSlides - 1 ? 0.3 : 1, transition: 'background 0.15s',
@@ -275,7 +275,7 @@ export function PresentationMode({ deck, startIndex = 0, onExit }: PresentationM
       {/* 进度条 */}
       <div style={{
         position: 'fixed', bottom: 0, left: 0, width: '100%', height: 3,
-        background: 'rgba(255,255,255,0.1)',
+        background: 'color-mix(in srgb, var(--text-on-accent) 10%, transparent)',
       }}>
         <div style={{
           width: `${((currentIndex + 1) / totalSlides) * 100}%`, height: '100%',

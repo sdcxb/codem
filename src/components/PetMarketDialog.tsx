@@ -219,35 +219,18 @@ export function PetMarketDialog({ open, onClose }: PetMarketDialogProps) {
 
   return (
     <div
-      style={{
-        position: "fixed",
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        background: "rgba(0, 0, 0, 0.5)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        zIndex: 100000,
-        backdropFilter: "blur(4px)",
-      }}
+      className="modal-overlay"
+      style={{ zIndex: 100000, backdropFilter: "blur(4px)" }}
       onClick={onClose}
     >
       <div
         onClick={(e) => e.stopPropagation()}
+        className="modal-panel"
         style={{
           width: "80%",
           maxWidth: "720px",
           height: "70%",
           maxHeight: "600px",
-          background: "var(--bg-secondary, #1e1e2e)",
-          borderRadius: "12px",
-          display: "flex",
-          flexDirection: "column",
-          overflow: "hidden",
-          boxShadow: "0 20px 60px rgba(0, 0, 0, 0.4)",
-          border: "1px solid var(--border-color, rgba(255, 255, 255, 0.1))",
         }}
       >
         {/* 标题栏 */}
@@ -438,7 +421,7 @@ export function PetMarketDialog({ open, onClose }: PetMarketDialogProps) {
                               style={{
                                 padding: "1px 6px",
                                 borderRadius: "var(--radius-sm)",
-                                background: "rgba(255, 255, 255, 0.06)",
+                                background: "var(--bg-tertiary)",
                                 color: "var(--text-secondary, #aaa)",
                                 fontSize: "var(--fs-xs)",
                               }}
@@ -458,7 +441,7 @@ export function PetMarketDialog({ open, onClose }: PetMarketDialogProps) {
                                 width: "100%",
                                 height: "4px",
                                 borderRadius: "2px",
-                                background: "rgba(255, 255, 255, 0.1)",
+                                background: "var(--bg-hover)",
                                 overflow: "hidden",
                               }}
                             >

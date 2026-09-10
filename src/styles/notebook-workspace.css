@@ -116,7 +116,7 @@
   background: var(--bg-secondary);
   border: 1px solid var(--border-primary);
   border-radius: 8px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  box-shadow: var(--shadow-popover);
   z-index: 100;
   overflow: hidden;
   animation: nb-dropdown-slide 0.15s ease-out;
@@ -986,7 +986,7 @@ top: 36px;
   max-width: 90vw;
   max-height: 80vh;
   overflow-y: auto;
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
+  box-shadow: var(--shadow-popover);
 }
 
 .nb-dialog-editor {
@@ -1216,7 +1216,7 @@ top: 36px;
     top: 48px;
     bottom: 0;
     z-index: 50;
-    box-shadow: 4px 0 12px rgba(0, 0, 0, 0.3);
+    box-shadow: 4px 0 12px var(--shadow-color);
   }
 
   .nb-sources-panel:not(.collapsed) {
@@ -1634,7 +1634,7 @@ top: 36px;
   border: 1px solid var(--border-primary);
   border-radius: 8px;
   background: white;
-  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.2);
+  box-shadow: var(--shadow-md);
 }
 
 .ppt-nav {
@@ -1792,7 +1792,7 @@ top: 36px;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
+  box-shadow: var(--shadow-popover);
 }
 
 .nb-editor-header {
@@ -2210,7 +2210,7 @@ top: 36px;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
+  box-shadow: var(--shadow-popover);
 }
 
 .nb-source-viewer-header {
@@ -2246,7 +2246,7 @@ top: 36px;
 }
 
 .nb-source-highlight {
-  background: rgba(255, 235, 59, 0.2);
+  background: color-mix(in srgb, var(--warning) 20%, transparent);
   border-radius: var(--radius-sm);
   padding: 1px 2px;
 }
@@ -2293,7 +2293,7 @@ top: 36px;
   background: var(--bg-secondary);
   border: 1px solid var(--border-primary);
   border-radius: 8px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  box-shadow: var(--shadow-popover);
   z-index: 100;
   overflow: hidden;
   animation: nb-dropdown-slide 0.15s ease-out;
@@ -2348,7 +2348,7 @@ top: 36px;
   transform: translateX(-50%);
   max-width: 600px;
   padding: 12px 20px;
-  background: rgba(0, 0, 0, 0.8);
+  background: var(--overlay-backdrop-strong);
   border-radius: 8px;
   color: var(--text-primary);
   font-size: var(--fs-base);

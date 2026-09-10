@@ -1344,8 +1344,8 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
               </button>
               {showPlusMenu && plusMenuPos && createPortal(
                 <>
-                  <div style={{ position: "fixed", inset: 0, zIndex: 99998 }} onClick={() => setShowPlusMenu(false)} />
-                  <div className="skill-picker-popup" style={{
+                  <div className="popover-shield" style={{ zIndex: 99998 }} onClick={() => setShowPlusMenu(false)} />
+                  <div className="skill-picker-popup popover-shell" style={{
                     position: "fixed", left: plusMenuPos.left, bottom: plusMenuPos.bottom,
                     minWidth: 200, zIndex: 99999, padding: 4,
                   }}>
@@ -1421,8 +1421,8 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
             <div ref={skillPickerBtnRef} style={{ position: "relative" }}>
               {showSkillPicker && skillPickerPos && createPortal(
                 <>
-                  <div style={{ position: "fixed", inset: 0, zIndex: 99998 }} onClick={() => setShowSkillPicker(false)} />
-                  <div className="skill-picker-popup" style={{
+                  <div className="popover-shield" style={{ zIndex: 99998 }} onClick={() => setShowSkillPicker(false)} />
+                  <div className="skill-picker-popup popover-shell" style={{
                     position: "fixed", left: skillPickerPos.left, bottom: skillPickerPos.bottom,
                     minWidth: 220, maxWidth: 320, zIndex: 99999, maxHeight: 300, overflowY: "auto",
                   }}>
@@ -1596,8 +1596,8 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
               </button>
               {showMoreActions && (
                 <>
-                  <div style={{ position: "fixed", inset: 0, zIndex: 99 }} onClick={() => setShowMoreActions(false)} />
-                  <div className="skill-picker-popup" style={{
+                  <div className="popover-shield" style={{ zIndex: 99 }} onClick={() => setShowMoreActions(false)} />
+                  <div className="skill-picker-popup popover-shell" style={{
                     position: "absolute", bottom: "100%", right: 0, marginBottom: 4,
                     minWidth: 200, zIndex: 100, maxHeight: 400, overflowY: "auto",
                   }}>

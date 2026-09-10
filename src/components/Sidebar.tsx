@@ -650,7 +650,7 @@ const handleDrop = useCallback((e: React.DragEvent, targetSessionId: string, pro
                         ><MoreHorizontal size={14} /></button>
                       {(hoverMenuProjectId === project.id || clickedMenuProjectId === project.id) && menuPos && createPortal(
                         <div
-                          className="sidebar-project-more-menu"
+                          className="sidebar-project-more-menu popover-shell"
                           style={{
                             position: 'fixed',
                             display: 'block',

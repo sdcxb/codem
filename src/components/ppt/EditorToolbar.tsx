@@ -97,7 +97,7 @@ export function EditorToolbar({
       {/* 操作 */}
       <div className="ppt-toolbar-group">
         <button className="ppt-toolbar-btn" onClick={onDuplicate} disabled={selectedCount === 0} title="复制 (Ctrl+D)">📋 复制</button>
-        <button className="ppt-toolbar-btn" onClick={onDelete} disabled={selectedCount === 0} title="删除" style={{ color: selectedCount > 0 ? '#ff8080' : undefined }}>🗑️ 删除</button>
+        <button className="ppt-toolbar-btn" onClick={onDelete} disabled={selectedCount === 0} title="删除" style={{ color: selectedCount > 0 ? 'var(--error)' : undefined }}>🗑️ 删除</button>
       </div>
 
       {/* 层级 */}

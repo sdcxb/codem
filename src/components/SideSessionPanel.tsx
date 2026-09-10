@@ -116,7 +116,7 @@ export function SideSessionPanel({ onClose, open = true }: SideSessionPanelProps
 
   return (
     <div
-      className="side-session-panel"
+      className="side-session-panel floating-overlay-panel"
       style={{
         position: "fixed",
         left: pos ? pos.x : undefined,
