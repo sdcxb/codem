@@ -200,4 +200,45 @@ describe("TC-DEDUP 单一元数据来源", () => {
     expect(src).toContain("getDelegationOrchestrator().getLimits()");
     expect(src).not.toContain("委派深度限制: 2");
   });
+
+  it("DEDUP-7: 内容区滚动规则与面板宽度解耦 —— 概览可滚动，看板/子智能体由插件外壳管滚动", () => {
+    const src = read("components/TaskCenter.tsx");
+    // 宽度（wide）与「是否铺满一屏」（fillsViewport）必须是两个判断
+    expect(src).toMatch(/const wide = activeTab === "board" \|\| activeTab === "subagents" \|\| activeTab === "overview"/);
+    expect(src).toMatch(/const fillsViewport = activeTab === "board" \|\| activeTab === "subagents"/);
+    expect(src).toContain('overflow: fillsViewport ? "hidden" : "auto"');
+    // 不能再把 overflow 绑在 wide 上（那会让概览被裁掉、没有滚动条）
+    expect(src).not.toContain('overflow: wide ? "hidden" : "auto"');
+  });
+});
+
+describe("TC-DEDUP 概览页可滚动", () => {
+  it("DEDUP-8: 概览页签的内容区 overflow=auto（用量面板再长也能滚到底）", async () => {
+    const { TaskCenter } = await import("../components/TaskCenter");
+    const { Context } = await import("../core/cordis/src/index.ts");
+    const { SlotsService } = await import("../core/slots/index.ts");
+    const { setActiveContext } = await import("../core/consumer/index.ts");
+
+    const ctx = new Context();
+    const slots = new SlotsService(ctx);
+    setActiveContext(ctx);
+
+    const { rerender } = render(<TaskCenter onClose={() => {}} initialTab="overview" />);
+    // TaskCenter 用 createPortal 渲染到 body，所以要查 document
+    const contentOf = (tab: string) => document.querySelector<HTMLElement>(`[data-task-center-content="${tab}"]`);
+    // 概览：普通文档流 → 必须可滚动
+    expect(contentOf("overview")?.style.overflow).toBe("auto");
+
+    // 看板 / 子智能体：由插件外壳自己管滚动 → 内容区必须 hidden
+    rerender(<TaskCenter onClose={() => {}} initialTab="board" />);
+    expect(contentOf("board")?.style.overflow).toBe("hidden");
+    rerender(<TaskCenter onClose={() => {}} initialTab="subagents" />);
+    expect(contentOf("subagents")?.style.overflow).toBe("hidden");
+
+    // 其它普通页签同样是 auto
+    rerender(<TaskCenter onClose={() => {}} initialTab="inbox" />);
+    expect(contentOf("inbox")?.style.overflow).toBe("auto");
+
+    void slots;
+  });
 });

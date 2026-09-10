@@ -2,6 +2,29 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.15.1] - 2026-09-10 — 修复：任务管理「概览」没有滚动条，下面的内容看不到
+
+> v1.15.0 把「用量」迁进概览后，概览内容变高了，但**内容区被裁掉且没有滚动条**，
+> 下面的用量面板完全看不到。
+
+### 修复
+
+- **根因**：v1.15.0 把「概览」加进 `wide`（面板加宽）时，内容区的 `overflow` 也跟着
+  用了 `wide ? "hidden" : "auto"` —— 于是一起变成了 `hidden`。而「概览」是**普通文档流页面**，
+  必须由内容区滚动；只有看板 / 子智能体（`.lo-task` 外壳自己管滚动）才需要 `hidden`。
+- **修法**：把「面板宽度」与「是否铺满一屏」拆成两个判断 ——
+  `wide = board | subagents | overview`（宽度）、`fillsViewport = board | subagents`（滚动归属），
+  内容区用后者决定 `overflow`；并加 `data-task-center-content="<tab>"` 便于断言与排查。
+
+### 回归测试
+
+- `task-center-dedup.test.tsx` 新增 DEDUP-7（源码契约：两个判断必须分离、不得再用 `overflow: wide ? …`）
+  与 DEDUP-8（真实渲染：概览 / 收件箱等普通页签 `overflow: auto`，看板 / 子智能体 `hidden`）。
+
+### 验证
+
+- `npx tsc --noEmit` 零错误；全量 `npx vitest run` **198 文件 / 4549 用例通过（+15 跳过）**
+
 ## [1.15.0] - 2026-09-10 — 任务管理再收敛：用量迁进概览 + 场景归「子智能体」+ 角色只绑定团队/子智能体 + 结构树去重
 
 > 用户反馈三件事：①看板/子智能体页面样式与自适应坏了；②「用量」应当是**迁移**到概览并删掉原视图，

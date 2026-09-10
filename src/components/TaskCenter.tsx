@@ -106,6 +106,15 @@ export function TaskCenter({ onClose, initialTab = "overview", subagentTasks = [
 
   // 看板（Issues 7 列）、子智能体（场景画布）、概览（含插件贡献的用量面板）都需要更宽的面板
   const wide = activeTab === "board" || activeTab === "subagents" || activeTab === "overview";
+  /**
+   * 内容区是否**自己铺满一屏**（自己管滚动）。
+   *
+   * ⚠️ 不要和 `wide` 混用：概览也要宽面板，但它是普通文档流页面，
+   * 必须由内容区滚动（`overflow: auto`）—— 曾经把两者绑在一起，
+   * 结果概览被 `overflow: hidden` 裁掉，下面的用量面板完全看不到（无滚动条）。
+   * 看板 / 子智能体由插件外壳自己管滚动（`.lo-task__content`），所以这里必须是 hidden。
+   */
+  const fillsViewport = activeTab === "board" || activeTab === "subagents";
 
   // 底栏显示真实委派限制（原先写死「深度 2 · 并发 5」，与运行时配置可能不一致）
   const limits = (() => {
@@ -221,7 +230,7 @@ export function TaskCenter({ onClose, initialTab = "overview", subagentTasks = [
         </div>
 
         {/* Tab content */}
-        <div style={{ flex: 1, overflow: wide ? "hidden" : "auto" }}>
+        <div data-task-center-content={activeTab} style={{ flex: 1, overflow: fillsViewport ? "hidden" : "auto" }}>
           {activeTab === "overview" && <OverviewTab onNavigate={setActiveTab} />}
           {activeTab === "delegation" && <DelegationTab />}
           {activeTab === "subagents" && (
