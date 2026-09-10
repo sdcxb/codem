@@ -70,7 +70,7 @@
   background: transparent;
 }
 [data-skin="hub"] .titlebar-icon {
-  color: var(--hub-accent);
+  color: var(--hub-color-primary);
 }
 [data-skin="hub"] .titlebar-title {
   color: var(--hub-text-muted);

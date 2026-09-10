@@ -643,7 +643,7 @@
 /* 错误信息 */
 .nb-source-error {
   font-size: var(--fs-xs);
-  color: var(--destructive, #ef4444);
+  color: var(--error);
   margin-top: 2px;
   padding: 1px 4px;
   background: color-mix(in srgb, var(--error) 8%, transparent);
@@ -668,7 +668,7 @@
 }
 
 .nb-source-delete:hover {
-  color: var(--destructive, #ef4444);
+  color: var(--error);
   background: color-mix(in srgb, var(--error) 10%, transparent);
 }
 
@@ -913,7 +913,7 @@
 }
 
 .nb-note-delete:hover {
-  color: var(--destructive, #ef4444);
+  color: var(--error);
 }
 
 .nb-note-preview {

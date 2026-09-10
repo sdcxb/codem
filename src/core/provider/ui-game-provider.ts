@@ -24,7 +24,7 @@ function GameViewWrapper() {
     { style: { width: "100%", height: "100%", overflow: "hidden", position: "relative" } },
     createElement(
       Suspense,
-      { fallback: createElement('div', { style: { color: "#fff", textAlign: "center", marginTop: 200 } }, "加载游戏...") },
+      { fallback: createElement('div', { style: { color: "var(--text-primary)", textAlign: "center", marginTop: 200 } }, "加载游戏...") },
       createElement(GameViewLazy)
     )
   )

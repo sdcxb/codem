@@ -1321,7 +1321,7 @@ function SourceCard({
 
   const statusColor = source.status === 'indexed' ? 'var(--success, #22c55e)' :
     source.status === 'processing' ? 'var(--warning, #eab308)' :
-    source.status === 'failed' ? 'var(--destructive, #ef4444)' :
+    source.status === 'failed' ? 'var(--error)' :
     'var(--text-muted)';
 
   return (

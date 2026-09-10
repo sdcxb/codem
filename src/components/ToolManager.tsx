@@ -25,10 +25,10 @@ interface ToolInfo {
 }
 
 const CATEGORY_LABELS: Record<string, { label: string; icon: React.ReactNode; color: string }> = {
-  builtin: { label: "内置工具", icon: <Wrench size={14} />, color: "#3b82f6" },
-  mcp: { label: "MCP 工具", icon: <Plug size={14} />, color: "#8b5cf6" },
-  skill: { label: "技能工具", icon: <Target size={14} />, color: "#10b981" },
-  delegation: { label: "委派工具", icon: <Link2 size={14} />, color: "#f59e0b" },
+  builtin: { label: "内置工具", icon: <Wrench size={14} />, color: "var(--info)" },
+  mcp: { label: "MCP 工具", icon: <Plug size={14} />, color: "var(--accent)" },
+  skill: { label: "技能工具", icon: <Target size={14} />, color: "var(--success)" },
+  delegation: { label: "委派工具", icon: <Link2 size={14} />, color: "var(--warning)" },
 };
 
 // 内置工具 ID 列表

@@ -18,19 +18,19 @@ interface AgentTeamsPanelProps {
 }
 
 const STATUS_META: Record<string, { color: string; zh: string }> = {
-  pending: { color: "#8b8b8b", zh: "待领取" },
-  claimed: { color: "#3b82f6", zh: "已领取" },
-  in_progress: { color: "#f59e0b", zh: "执行中" },
-  completed: { color: "#10b981", zh: "已完成" },
-  failed: { color: "#ef4444", zh: "失败" },
-  cancelled: { color: "#6b7280", zh: "已取消" },
+  pending: { color: "var(--text-muted)", zh: "待领取" },
+  claimed: { color: "var(--info)", zh: "已领取" },
+  in_progress: { color: "var(--warning)", zh: "执行中" },
+  completed: { color: "var(--success)", zh: "已完成" },
+  failed: { color: "var(--error)", zh: "失败" },
+  cancelled: { color: "var(--text-muted)", zh: "已取消" },
 };
 
 const MEMBER_STATUS: Record<string, { color: string; zh: string }> = {
-  idle: { color: "#10b981", zh: "空闲" },
-  working: { color: "#f59e0b", zh: "工作中" },
-  absent: { color: "#8b8b8b", zh: "离线" },
-  removed: { color: "#6b7280", zh: "已移除" },
+  idle: { color: "var(--success)", zh: "空闲" },
+  working: { color: "var(--warning)", zh: "工作中" },
+  absent: { color: "var(--text-muted)", zh: "离线" },
+  removed: { color: "var(--text-muted)", zh: "已移除" },
 };
 
 export function AgentTeamsPanel({ onClose }: AgentTeamsPanelProps) {
@@ -56,7 +56,7 @@ export function AgentTeamsPanel({ onClose }: AgentTeamsPanelProps) {
 
   if (!snap) {
     return (
-      <div className="agent-teams-panel" style={{ padding: 16, display: "grid", gap: 10, justifyItems: "center", color: "var(--text-muted)", fontSize: 'var(--fs-sm)', textAlign: "center" }}>
+      <div className="agent-teams-empty">
         <Users size={28} style={{ opacity: 0.4 }} />
         <div>
           {zh
@@ -69,7 +69,7 @@ export function AgentTeamsPanel({ onClose }: AgentTeamsPanelProps) {
   }
 
   return (
-    <div className="agent-teams-panel" style={{ display: "flex", flexDirection: "column", height: "100%", fontSize: 'var(--fs-sm)' }}>
+    <div className="agent-teams-panel">
       {/* Header */}
       <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", borderBottom: "1px solid var(--border-primary, rgba(0,0,0,.08))" }}>
         <GitBranch size={15} style={{ color: "var(--accent)" }} />

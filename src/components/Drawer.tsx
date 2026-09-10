@@ -111,7 +111,7 @@ export const Drawer = memo(function Drawer({
                 </button>
               </div>
             )}
-            <div className="drawer-body" style={{ flex: 1, overflow: "auto", padding: 16 }}>
+            <div className="drawer-body">
               {children}
             </div>
           </motion.div>

@@ -256,7 +256,7 @@ export function PermissionPresetSelector({
                   gap: 2,
                   padding: '8px 12px',
                   width: '100%',
-                  background: effectiveMode === m.mode ? 'var(--accent-alpha, color-mix(in srgb, var(--accent) 8%, transparent))' : 'transparent',
+                  background: effectiveMode === m.mode ? 'color-mix(in srgb, var(--accent) 8%, transparent)' : 'transparent',
                   border: 'none',
                   borderBottom: '1px solid var(--border-primary)',
                   cursor: 'pointer',

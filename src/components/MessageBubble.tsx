@@ -647,7 +647,7 @@ setTimeout(() => setCopied(false), 2000);
 
         {/* Sources panel — structured metadata-driven citations (对标 NotebookLM) */}
         {!isUser && citationSources.length > 0 && !isStreaming && (
-          <div className="nb-msg-sources" style={{ marginTop: '8px', display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+          <div className="nb-msg-sources">
             <span style={{ fontSize: 'var(--fs-xs)', opacity: 0.5, alignSelf: 'center' }}>
               {lang === 'zh' ? '来源:' : 'Sources:'}
             </span>
@@ -697,12 +697,7 @@ const noteOps = message.toolCalls!.filter(tc =>
           <div className="tool-calls">
             {/* B9: Note operation notifications — always visible */}
             {hasNoteOps && (
-              <div className="note-op-notifications" style={{
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '4px',
-                marginBottom: '6px',
-              }}>
+              <div className="note-op-notifications">
                 {noteOps.map((tc) => {
                   const isDone = tc.status === 'done';
                   const isError = tc.status === 'error';

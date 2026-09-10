@@ -84,7 +84,7 @@ export const ExcelViewer = memo(function ExcelViewer({ filePath, data, onClose }
   return (
     <div className="excel-viewer">
       {sheets.length > 1 && (
-        <div className="excel-viewer-tabs" style={{ display: "flex", gap: 4, marginBottom: 8, borderBottom: "1px solid var(--border-primary)", paddingBottom: 4 }}>
+        <div className="excel-viewer-tabs">
           {sheets.map((s, i) => (
             <button
               key={i}

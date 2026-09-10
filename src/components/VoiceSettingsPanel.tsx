@@ -85,7 +85,7 @@ export function VoiceSettingsPanel() {
 
   return (
     <div className="settings-section voice-settings">
-      <div className="settings-section-header" style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
+      <div className="settings-section-header">
         <Volume2 size={18} style={{ color: "var(--accent)" }} />
         <h3 style={{ fontSize: 'var(--fs-md)', fontWeight: 600 }}>{S.voice.settingsTitle[lang]}</h3>
       </div>

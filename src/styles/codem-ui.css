@@ -2005,7 +2005,7 @@ body.resizing-columns * {
   z-index: -1;
   pointer-events: none;
   overflow: hidden;
-  background: var(--bg-base, #0d0d12);
+  background: var(--bg-primary);
 }
 .workspace-backdrop-layer {
   position: absolute;
@@ -2070,7 +2070,7 @@ body.resizing-columns * {
 }
 /* Light theme adjustments */
 [data-theme="light"] .workspace-backdrop {
-  background: var(--bg-base, #f5f5f7);
+  background: var(--bg-primary);
 }
 [data-theme="light"] .workspace-backdrop-blob {
   opacity: 0.2;
@@ -3269,7 +3269,7 @@ border-radius: 2px;
 border: 1px solid var(--border-primary);
 border-radius: var(--radius-md);
 overflow: hidden;
-background: var(--bg-secondary, var(--surface));
+background: var(--bg-secondary);
 box-shadow: var(--elevation-1);
   transition: border-color 0.2s;
 }
@@ -3380,7 +3380,7 @@ box-shadow: var(--elevation-1);
 justify-content: flex-end;
 padding: 6px 10px;
 border-bottom: 1px solid var(--border-primary);
-background: var(--bg-tertiary, var(--surface));
+background: var(--bg-tertiary);
 }
 .inline-diff-mode-toggle {
   display: flex;
@@ -3407,7 +3407,7 @@ background: var(--bg-tertiary, var(--surface));
 .inline-diff-content {
   max-height: 400px;
   overflow: auto;
-  background: var(--rich-code-bg, var(--surface));
+  background: var(--rich-code-bg, var(--bg-secondary));
 }
 /* Unified diff */
 .inline-diff-table {
@@ -3537,7 +3537,7 @@ background: var(--bg-tertiary, var(--surface));
 .inline-diff-custom-textarea {
   width: 100%;
   padding: 8px 10px;
-  background: var(--input-bg, var(--surface));
+  background: var(--input-bg);
   border: 1px solid var(--border-primary);
   border-radius: var(--radius-sm);
   color: var(--text-primary);
@@ -3585,7 +3585,7 @@ background: var(--bg-tertiary, var(--surface));
 gap: 8px;
 padding: 8px 12px;
 border-top: 1px solid var(--border-primary);
-background: var(--bg-secondary, var(--surface));
+background: var(--bg-secondary);
 }
 .inline-diff-btn {
   display: flex;

@@ -12,6 +12,9 @@
 :root {
   /* Font family */
   --font-family: 'AlimamaFangYuanTi', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  /* 等宽字体栈：此前只有引用、从未定义（`font-family: var(--font-mono)` 无兜底时整条失效），
+     连共享类 .mono 都没真正等宽过。这里补成真令牌，与代码编辑器的字体栈保持一致。 */
+  --font-mono: 'SF Mono', 'Fira Code', 'Cascadia Code', ui-monospace, monospace;
   --font-weight: 400;
 
   /* Font size scale (对标 frakio-work UI 规范) */
@@ -254,7 +257,7 @@ button:not(:disabled):active,
 .dropdown-menu,
 .popover,
 .popup-menu {
-  transform-origin: var(--transform-origin, center top);
+  transform-origin: center top;
 }
 
 /* D-4: Modals are exempt — they appear centered, keep transform-origin: center */
@@ -3003,7 +3006,7 @@ min-height: 0;
   gap: 2px;
   padding: 4px 8px 0;
   background: var(--bg-secondary);
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--border-primary);
   flex-shrink: 0;
 }
 
@@ -3159,7 +3162,7 @@ min-height: 0;
   font-size: var(--fs-2xs);
   color: var(--text-muted);
   padding: 4px 0;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--border-primary);
   margin-bottom: 4px;
 }
 
@@ -3271,7 +3274,7 @@ min-height: 0;
   gap: 8px;
   padding: 12px 16px;
   background: var(--bg-tertiary);
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--border-primary);
 }
 
 .needs-you-icon {
@@ -3288,7 +3291,7 @@ min-height: 0;
 .needs-you-skip {
   font-size: var(--fs-2xs);
   background: none;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-primary);
   color: var(--text-muted);
   padding: 3px 8px;
   border-radius: 4px;
@@ -3336,7 +3339,7 @@ min-height: 0;
   gap: 6px;
   padding: 8px 12px;
   background: var(--bg-tertiary);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-primary);
   border-radius: 6px;
   cursor: pointer;
   font-size: var(--fs-base);
@@ -3358,7 +3361,7 @@ min-height: 0;
   width: 100%;
   padding: 6px 8px;
   background: var(--bg-tertiary);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-primary);
   border-radius: 4px;
   color: var(--text-primary);
   font-size: var(--fs-base);
@@ -3425,7 +3428,7 @@ min-height: 0;
   gap: 6px;
   padding: 4px 0;
   font-size: var(--fs-sm);
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--border-primary);
 }
 
 .activity-turn {
@@ -4653,7 +4656,7 @@ position: relative;
   bottom: calc(100% + 6px);
   left: 50%;
   transform: translateX(-50%);
-  background: var(--bg-elevated, var(--bg-secondary));
+  background: var(--bg-secondary);
   border: 1px solid var(--border-primary);
   border-radius: 10px;
   box-shadow: 0 8px 24px var(--shadow-color);
@@ -4684,7 +4687,7 @@ pointer-events: auto;
   left: 50%;
   transform: translateX(-50%);
   border: 6px solid transparent;
-  border-top-color: var(--bg-elevated, var(--bg-secondary));
+  border-top-color: var(--bg-secondary);
   pointer-events: none;
 }
 
@@ -6142,7 +6145,7 @@ color: var(--text-on-accent);
   grid-column: 1 / -1;
   text-align: center;
   padding: 48px 16px;
-  color: var(--text-tertiary);
+  color: var(--text-muted);
   font-size: var(--fs-md);
 }
 
@@ -6194,7 +6197,7 @@ color: var(--text-on-accent);
 
 .mcp-catalog-author {
   font-size: var(--fs-2xs);
-  color: var(--text-tertiary);
+  color: var(--text-muted);
 }
 
 .mcp-catalog-installed-badge {
@@ -6310,7 +6313,7 @@ color: var(--text-on-accent);
 
 .mcp-config-hint {
   font-size: var(--fs-sm);
-  color: var(--text-tertiary);
+  color: var(--text-muted);
   margin: 0;
 }
 
@@ -6331,7 +6334,7 @@ color: var(--text-on-accent);
 .mcp-detail-label {
   font-size: var(--fs-sm);
   font-weight: 500;
-  color: var(--text-tertiary);
+  color: var(--text-muted);
   min-width: 60px;
   flex-shrink: 0;
 }
@@ -6658,7 +6661,7 @@ color: var(--text-on-accent);
 
 .publish-input:focus,
 .publish-textarea:focus {
-  border-color: var(--accent-primary, #3b82f6);
+  border-color: var(--accent);
 }
 
 .publish-textarea {
@@ -6687,11 +6690,11 @@ color: var(--text-on-accent);
 }
 
 .publish-market-item:hover:not(:disabled) {
-  border-color: var(--accent-primary, #3b82f6);
+  border-color: var(--accent);
 }
 
 .publish-market-item.active {
-  border-color: var(--accent-primary, #3b82f6);
+  border-color: var(--accent);
   background: color-mix(in srgb, var(--info) 8%, transparent);
 }
 
@@ -6723,7 +6726,7 @@ color: var(--text-on-accent);
 }
 
 .publish-no-markets {
-  color: var(--text-tertiary, #666);
+  color: var(--text-muted);
   font-size: var(--fs-base);
   text-align: center;
   padding: 16px;
@@ -7071,7 +7074,7 @@ color: var(--text-on-accent);
   align-items: center;
   gap: 2px;
   font-size: var(--fs-2xs);
-  color: var(--text-tertiary);
+  color: var(--text-muted);
   flex-shrink: 0;
 }
 
@@ -7103,7 +7106,7 @@ color: var(--text-on-accent);
 
 .market-skill-author {
   font-size: var(--fs-2xs);
-  color: var(--text-tertiary);
+  color: var(--text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -7124,7 +7127,7 @@ color: var(--text-on-accent);
   background: none;
   border: 1px solid var(--border-primary);
   border-radius: 6px;
-  color: var(--text-tertiary);
+  color: var(--text-muted);
   cursor: pointer;
   transition: var(--transition-color);
 }
@@ -9040,7 +9043,7 @@ border-bottom: 1px solid var(--accent);
   font-size: var(--fs-sm);
   cursor: pointer;
 }
-.tj-filter-item.is-active { background: var(--accent-alpha); color: var(--accent); }
+.tj-filter-item.is-active { background: color-mix(in srgb, var(--accent) 8%, transparent); color: var(--accent); }
 
 .tj-stats {
   display: flex;
@@ -11332,7 +11335,7 @@ border-color: var(--text-muted);
   transition: border-color 0.15s;
 }
 .card:hover {
-  border-color: var(--border-hover, #555);
+  border-color: var(--border-secondary);
 }
 .card-header {
   padding: 12px 16px;
@@ -11372,7 +11375,7 @@ border-color: var(--text-muted);
 }
 .progress-fill {
   height: 100%;
-  background: linear-gradient(90deg, var(--accent, #6366f1), var(--accent-light, #818cf8));
+  background: linear-gradient(90deg, var(--accent, #6366f1), var(--accent-hover));
   border-radius: var(--radius-xs);
   transition: width 0.3s ease-out;
   display: flex;
@@ -11651,7 +11654,7 @@ border-color: var(--text-muted);
   opacity: 1;
 }
 .notebook-card-delete:hover {
-  color: var(--destructive, #ef4444);
+  color: var(--error);
 }
 
 .notebook-card-desc {
@@ -11886,7 +11889,7 @@ border-color: var(--text-muted);
 }
 
 .notebook-source-error {
-  color: var(--destructive, #ef4444);
+  color: var(--error);
   cursor: help;
 }
 
@@ -11904,7 +11907,7 @@ border-color: var(--text-muted);
   opacity: 1;
 }
 .notebook-source-delete:hover {
-  color: var(--destructive, #ef4444);
+  color: var(--error);
 }
 
 .notebook-indexing-progress {
@@ -12152,7 +12155,7 @@ margin: 0 2px;
 font-size: var(--fs-2xs);
 font-weight: 600;
 line-height: 1.4;
-color: var(--accent-primary, #6366f1);
+color: var(--accent);
 background: color-mix(in srgb, var(--accent) 12%, transparent);
 border-radius: 4px;
 cursor: pointer;
@@ -12167,7 +12170,7 @@ color: var(--accent-hover, #5558e3);
 }
 
 .nb-citation-link.active {
-background: var(--accent-primary, #6366f1);
+background: var(--accent);
 color: var(--text-on-accent);
 }
 
@@ -17130,6 +17133,201 @@ color: var(--accent, #7c6cf0);
 .sp-break { word-break: break-all; }
 .sp-hint-sm-block { margin-bottom: var(--space-4); font-size: var(--fs-sm); }
 .sp-text-soft { font-size: var(--fs-sm); font-weight: 500; }
+
+/* ==========================================================================
+ * 空壳类名补真实定义：第 26 波
+ * 这些类名此前只在 tsx 里出现、CSS 里**一条定义都没有**（外观全靠同行内联样式撑着），
+ * 而 `css-class-undefined` 有一条"元素自己有内联样式就不算没样式"的豁免，所以一直看不见。
+ * 本轮去掉豁免并把这一批逐个补成真实定义（同行内联样式同时搬进类里）。
+ * ========================================================================== */
+/* 回合状态行（TurnStatus）：同一行三态，靠 .turn-error / .turn-max-tokens / .turn-retry 着色 */
+.turn-status-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-5);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-xs);
+  font-size: var(--fs-sm);
+}
+.turn-status-row.turn-error {
+  border-color: color-mix(in srgb, var(--error) 20%, transparent);
+  background: color-mix(in srgb, var(--error) 8%, transparent);
+}
+.turn-status-row.turn-max-tokens {
+  border-color: color-mix(in srgb, var(--warning) 20%, transparent);
+  background: color-mix(in srgb, var(--warning) 8%, transparent);
+}
+.turn-status-row.turn-retry {
+  border-color: color-mix(in srgb, var(--accent) 20%, transparent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+.tool-collapse-toggle {
+  padding: 2px var(--space-3);
+  border: none;
+  background: none;
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: var(--fs-xs);
+  cursor: pointer;
+}
+.tool-collapse-toggle--row { display: flex; align-items: center; gap: var(--space-2); }
+
+.reasoning-summary {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  opacity: 0.8;
+}
+.reasoning-body {
+  margin-left: 18px;
+  padding: var(--space-4) var(--space-6);
+  max-height: 400px;
+  overflow-y: auto;
+  border-left: 2px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  border-radius: var(--radius-xs);
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  font-size: var(--fs-sm);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.deliverable-files { display: flex; flex-direction: column; gap: var(--space-2); margin-top: var(--space-2); padding: var(--space-2) 0; }
+.deliverable-files-label { display: flex; align-items: center; gap: var(--space-2); font-size: var(--fs-sm); color: var(--text-muted); }
+.deliverable-files-row { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+
+.stats-line {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+  overflow: hidden;
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  opacity: 0.8;
+}
+
+.persona-manager { display: flex; flex-direction: column; }
+.audio-player { display: flex; flex-direction: column; gap: var(--space-6); padding: var(--space-8); }
+.drawer-body { flex: 1; overflow: auto; padding: var(--space-8); }
+.excel-viewer { display: flex; flex-direction: column; height: 100%; overflow: hidden; }
+.excel-viewer-tabs {
+  display: flex;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--border-primary);
+}
+.task-center-panel {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  max-width: 96vw;
+  max-height: 90vh;
+  height: min(720px, 88vh);
+  width: min(960px, 92vw);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-lg);
+  background: var(--bg-secondary);
+  box-shadow: 0 8px 32px var(--shadow-color);
+  font-family: inherit;
+}
+.task-center-panel[data-wide="1"] { width: min(1180px, 96vw); }
+.side-session-panel {
+  position: fixed;
+  width: 380px;
+  height: 480px;
+  max-width: calc(100vw - 32px);
+  max-height: calc(100vh - 180px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  z-index: 950;
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-lg);
+  background: var(--dropdown-bg);
+  box-shadow: 0 16px 48px var(--shadow-color);
+}
+.nb-msg-sources { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-4); }
+.nb-msg-sources-label { align-self: center; font-size: var(--fs-xs); opacity: 0.5; }
+.nb-msg-source-chip {
+  padding: 2px var(--space-4);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  font-size: var(--fs-xs);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.nb-msg-source-chip:hover { background: var(--bg-hover); }
+.note-op-notifications { display: flex; flex-direction: column; gap: var(--space-2); margin-bottom: var(--space-3); }
+.agent-teams-panel { display: flex; flex-direction: column; height: 100%; font-size: var(--fs-sm); }
+.agent-teams-empty {
+  display: grid;
+  gap: var(--space-5);
+  justify-items: center;
+  padding: var(--space-8);
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  text-align: center;
+}
+.sidebar-user-plugin-btn {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-left: auto;
+  padding: var(--space-3) var(--space-5);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-xs);
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.sidebar-user-plugin-btn:hover { color: var(--text-primary); }
+.settings-section { display: flex; flex-direction: column; }
+.settings-section-header { display: flex; align-items: center; gap: var(--space-4); margin-bottom: var(--space-8); }
+.settings-field { margin-bottom: var(--space-6); }
+.file-mention-btn {
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-decoration: underline;
+  text-decoration-style: dashed;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.inline-file-link { cursor: pointer; }
+.lo-card--tools { min-height: 0; }
+
+/* SVG 描边/填充的令牌化（第 26 波）
+ * 起因：`stroke="var(--accent)"` 写在 JSX 属性位置上是**无效的** —— SVG 表现属性不吃 CSS var()，
+ * React 会把 `var(--accent)` 原样输出成属性名，浏览器判定非法后整条属性失效
+ * （stroke 默认 none → 图形根本不画出来）。所以 SVG 的颜色必须走 CSS 类。 */
+.step-ring-track { stroke: var(--bg-tertiary); }
+.step-ring-progress { stroke: var(--accent); transition: stroke-dashoffset 0.4s ease; }
+.step-ring-indeterminate { stroke: var(--accent); }
+.step-ring-ok { stroke: var(--success); }
+.step-ring-active { stroke: var(--accent); }
+.step-ring-dot { fill: var(--accent); }
+.agent-check-ring { fill: color-mix(in srgb, var(--success) 15%, transparent); stroke: var(--success); }
+.agent-check-mark { stroke: var(--success); }
+/* lucide 图标默认 stroke=currentColor：颜色交给 CSS color，不要传 color 属性 */
+.if-choice-check { color: var(--text-on-accent); }
+.if-recommend-star { fill: var(--success); }
 .sp-weight-value {
   min-width: 36px;
   color: var(--text-secondary);

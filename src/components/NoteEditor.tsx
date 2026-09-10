@@ -235,7 +235,7 @@ export function NoteEditor({
           }
         }}
         style={{
-          color: href?.startsWith('#note:') ? 'var(--accent-primary, #6366f1)' : 'var(--accent-hover, #5558e3)',
+          color: href?.startsWith('#note:') ? 'var(--accent)' : 'var(--accent-hover, #5558e3)',
           cursor: 'pointer',
           textDecoration: 'underline',
           textDecorationStyle: href?.startsWith('#note:') ? 'dashed' : 'solid',
@@ -279,7 +279,7 @@ export function NoteEditor({
         {/* Header */}
         <div className="nb-editor-header">
           <div className="nb-editor-title-row">
-            <Edit3 className="icon-md" style={{ color: 'var(--accent-primary, #6366f1)' }} />
+            <Edit3 className="icon-md" style={{ color: 'var(--accent)' }} />
             <input
               className="nb-editor-title-input"
               placeholder={isZh ? '笔记标题' : 'Note title'}
@@ -490,7 +490,7 @@ export function NoteEditor({
           {/* Backlinks sidebar — 借鉴 Lumina Note 的反向链接面板 */}
           <div className="nb-backlinks-sidebar">
             <div className="nb-backlinks-header">
-              <Link2 className="icon-sm" style={{ color: 'var(--accent-primary, #6366f1)' }} />
+              <Link2 className="icon-sm" style={{ color: 'var(--accent)' }} />
               <span className="nb-backlinks-title">
                 {isZh ? '链接关系' : 'Links'}
               </span>
@@ -608,7 +608,7 @@ export function NoteEditor({
                         <div style={{ flex: 1 }}>
                           <p style={{ fontSize: 'var(--fs-base)', fontWeight: 500, margin: '0 0 4px' }}>{ver.title}</p>
                           {ver.versionNote && (
-                            <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--accent-primary, #6366f1)' }}>{ver.versionNote}</span>
+                            <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--accent)' }}>{ver.versionNote}</span>
                           )}
                           <p style={{ fontSize: 'var(--fs-xs)', opacity: 0.5, margin: '4px 0 0' }}>
                             {new Date(ver.createdAt).toLocaleString(isZh ? 'zh-CN' : 'en-US')}
@@ -624,7 +624,7 @@ export function NoteEditor({
                             style={{
                               background: 'none', border: '1px solid var(--border-primary)',
                               borderRadius: '4px', padding: '4px 6px', cursor: 'pointer',
-                              color: 'var(--accent-primary, #6366f1)',
+                              color: 'var(--accent)',
                             }}
                           >
                             <RotateCcw className="icon-xs" />

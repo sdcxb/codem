@@ -140,7 +140,7 @@ export function JobsBadge({ jobs = [], onSelectJob }: JobsBadgeProps) {
           padding: '2px 8px',
           borderRadius: 10,
           border: '1px solid var(--border-primary)',
-          background: liveCount > 0 ? 'var(--accent-alpha, color-mix(in srgb, var(--accent) 8%, transparent))' : 'transparent',
+          background: liveCount > 0 ? 'color-mix(in srgb, var(--accent) 8%, transparent)' : 'transparent',
           color: liveCount > 0 ? 'var(--accent)' : 'var(--text-muted)',
           fontSize: 'var(--fs-sm)',
           fontWeight: 500,

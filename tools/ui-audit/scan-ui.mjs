@@ -56,7 +56,15 @@ function shouldSkip(rel) {
  */
 const ALLOWLIST = [
   { re: /^src\/core\/theme\//, why: "主题/令牌定义源（原始色值是唯一真相源）" },
-  { re: /^src\/core\/knowledge\/ppt-/, why: "PPT 生成内容的配色（导出文件的内容样式，不跟随宿主皮肤）" },
+  {
+    re: /^src\/core\/knowledge\/ppt/,
+    why: "PPT 生成/导入内容的配色（导出文件的内容样式，不跟随宿主皮肤；pptx-importer 产出的也是内容调色板）",
+  },
+  {
+    re: /^src\/components\/TerminalPanel\.tsx$/,
+    why: "xterm.js 的主题对象要的是真实色值（它画在 canvas 上，读不到 CSS 变量）；令牌里的 --terminal-bg/-fg 就是为这块暗色表面准备的对照值",
+    rules: ["color-hardcoded-ts"],
+  },
   { re: /^src\/plugins\/monopoly-game\//, why: "大富翁游戏插件（自带美术语言：棋盘/卡牌/角色是一套独立视觉，改令牌会破坏美术）" },
   { re: /^src\/styles\/skin-[^/]+\.css$/, why: "皮肤定义源（每个皮肤的调色板与覆盖层：原始色值就是该皮肤的真相源）" },
   { re: /^src\/plugins\/library-ops\/data\/characters\.ts$/, why: "图书馆角色调色板（注释性常量，实际渲染已用 var() 令牌）" },
@@ -98,6 +106,9 @@ const RULES = {
   "inline-style-dense": { level: "warn", desc: "单文件内联样式过密（考虑抽成 CSS 类）" },
   "legacy-popup-shell": { level: "warn", desc: "历史遗留的自建浮层类名" },
   "css-class-undefined": { level: "warn", desc: "tsx 里用了但没有任何 CSS 定义的类名（等于没样式）" },
+  "css-var-undefined": { level: "error", desc: "var(--x) 引用了从未定义的令牌（无兜底时整条声明失效）" },
+  "color-hardcoded-ts": { level: "error", desc: "style={{}} 之外的 TS 里写死颜色（状态色表/主题常量/JS 改样式）" },
+  "svg-attr-var": { level: "error", desc: "把 var() 写在原生 SVG 表现属性里（属性不吃 var()，整条属性失效）" },
 };
 
 // ========== 扫描器 ==========
@@ -405,6 +416,77 @@ function scanCss(rel, src) {
   });
 }
 
+/**
+ * 跨文件规则：`var(--x)` 引用了全项目从未定义的令牌。
+ *
+ * 为什么单列一条规则：这类写法的**失败方式是静默的** —— 无兜底时整条声明被丢弃
+ * （`font-family: var(--font-mono)` 让等宽字体从来没生效过、`border: 1px solid var(--border)`
+ * 让边框整条消失），有兜底时则永远吃那个写死的深色（浅色/皮肤切换不跟随）。
+ * 第 18 波在 WechatSettings 里发现过单个实例、第 23 波清掉了 `--border-color` 一族，
+ * 但两次都是"人工发现的批次"；系统性反查（引用 vs 定义）一次就报出 96 处、10 个令牌。
+ * 现在把它做成规则，避免再靠"碰巧发现"。
+ */
+function normalizeDefName(name) {
+  return name;
+}
+function scanVarRefs(rel, src) {
+  // 注释里的 `var(--token)` 是文档占位符，不是引用
+  const code = src
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+  const lines = code.split("\n");
+  lines.forEach((line, i) => {
+    for (const m of line.matchAll(/var\(\s*--([a-zA-Z0-9-]+)\s*([,)])/g)) {
+      const name = normalizeDefName(m[1]);
+      if (definedVars.has(name)) continue;
+      if (DYNAMIC_OR_VENDOR_VAR.test(name)) continue;
+      // 紧跟 `$`/`{` 的是动态拼接的名字（`var(--${x})`），无法静态判定
+      const after = line.slice(m.index + m[0].length - 1, m.index + m[0].length + 2);
+      if (/^\s*[${]/.test(after)) continue;
+      add("css-var-undefined", rel, i + 1, line, `未定义令牌: --${name}${m[2] === "," ? "（有兜底，但不会跟随主题）" : "（无兜底，整条声明失效）"}`);
+    }
+  });
+}
+
+/**
+ * 跨文件规则之二：**`style={{}}` 之外**写死的颜色。
+ *
+ * 审计器的色值规则只看内联样式对象区间，于是同一份"状态色表"只要写成 TS 常量
+ * （`const STATUS_COLORS = { failed: "#ef4444" }`）或用 JS 直接改样式
+ * （`el.style.background = "#ffeb3b"`）就完全看不见 —— 第 19 波把 CicdPanel 的状态色表
+ * 改成语义令牌时，是靠人眼发现的，不是规则报的。
+ * 这里补上：只认「像 CSS 颜色属性」的键（color / background / border 各向 / fill / stroke / boxShadow / outline…）
+ * 且值以引号开头，尽量不误伤普通业务对象。
+ */
+function scanColorOutsideStyle(rel, src, styleRanges) {
+  const lines = src.split("\n");
+  let off = 0;
+  lines.forEach((raw, i) => {
+    const lineStart = off;
+    off += raw.length + 1;
+    const line = stripComments(raw);
+    if (/url\(/.test(line)) return;
+    // 原生 SVG 元素的表现属性不吃 CSS var()：`stroke="var(--accent)"` 会被判非法、
+    // 整条属性失效（stroke 默认 none → 图形根本不画）。颜色要走 CSS 类。
+    // 只认小写原生标签；大写开头的组件（<StatCard color="var(--info)">）走 props，不在其列。
+    if (/<(circle|path|rect|line|polyline|polygon|ellipse|g|svg|text|stop)\b/i.test(line)) {
+      const attrVar = /\b(stroke|fill|stop-color|stopColor|flood-color|floodColor)\s*=\s*["'](?:var\(|color-mix\()/.exec(line);
+      if (attrVar) add("svg-attr-var", rel, i + 1, line, `${attrVar[1]} 属性里用了 var()/color-mix()（属性不生效）`);
+    }
+    // 落在 style={{}} 区间内的交给 color-hardcoded-tsx，避免重复计数
+    const inStyle = styleRanges.some(([s, e]) => s < lineStart + raw.length && e > lineStart);
+    if (inStyle) return;
+    const ranges = varRanges(line);
+    const outsideVar = (o) => !ranges.some(([s, e]) => o >= s && o < e);
+    const m = /(['"`])(#[0-9a-fA-F]{3,8}|white|black|red|green|blue|gray|grey|orange|purple|pink|yellow|cyan|magenta|silver|maroon|navy|teal|olive|lime|aqua|fuchsia)\1/i.exec(line);
+    if (!m || !outsideVar(m.index)) return;
+    // 颜色值前面必须紧跟一个「像 CSS 属性」的键，才认定是样式（避免误伤普通业务对象）
+    const key = /(?:^|[\s,{[(])(color|background|backgroundColor|border|borderColor|borderTop|borderBottom|borderLeft|borderRight|fill|stroke|boxShadow|outline|caretColor|accentColor)\s*[:=]\s*$/i.exec(line.slice(0, m.index));
+    if (!key) return;
+    add("color-hardcoded-ts", rel, i + 1, line, `${key[1]}: ${m[2]}`);
+  });
+}
+
 // ========== 主流程 ==========
 const args = process.argv.slice(2);
 const flag = (name) => args.includes(name);
@@ -433,8 +515,25 @@ for (const full of files) {
   const css = readFileSync(full, "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
   for (const m of css.matchAll(/\.(-?[_a-zA-Z][\w-]*)/g)) definedClasses.add(m[1]);
 }
-/** 运行时状态类 / 工具类：由 JS 动态加，或本就是约定俗成的状态修饰，不算缺失 */
-const RUNTIME_CLASS_RE = /^(is-|has-|js-|no-|with-)|^(active|open|selected|hover|focus|visible|hidden|disabled|dragging|loading|dark|light|compact|wide|narrow)$/;
+// ---- 再建「全项目定义过的令牌」索引（跨文件，供 css-var-undefined 规则用） ----
+// 定义来源三类：① CSS 里的 `--x: …` 声明；② JS `setProperty('--x', …)`；
+// ③ 内联样式里就地定义的变量（`["--kg-node-font" as string]: …`）。
+const definedVars = new Set();
+for (const full of files) {
+  const rel = relative(ROOT, full).replace(/\\/g, "/");
+  if (/\.test\./.test(rel)) continue;
+  const src = readFileSync(full, "utf8");
+  if (rel.endsWith(".css")) {
+    for (const m of src.matchAll(/(^|[\s;{])--([a-zA-Z0-9-]+)\s*:/g)) definedVars.add(m[2]);
+  } else {
+    for (const m of src.matchAll(/setProperty\(\s*['"]--([a-zA-Z0-9-]+)/g)) definedVars.add(m[1]);
+    for (const m of src.matchAll(/['"]--([a-zA-Z0-9-]+)['"](\s+as\s+string)?\s*\]?\s*:/g)) definedVars.add(m[1]);
+  }
+}
+/** 第三方库自带令牌 / 窗口自有前缀：不归本项目维护（各自带 CSS 或由 JS 注入） */
+const DYNAMIC_OR_VENDOR_VAR = /^(xy-|cm-|cm6-|monaco|hljs|katex|prose|token|tippy|rt-|recharts|swiper|leaflet|ace-|fa-|tt-|radix)/;
+
+/** 运行时状态类 / 工具类：由 JS 动态加，或本就是约定俗成的状态修饰，不算缺失 */const RUNTIME_CLASS_RE = /^(is-|has-|js-|no-|with-)|^(active|open|selected|hover|focus|visible|hidden|disabled|dragging|loading|dark|light|compact|wide|narrow)$/;
 /** 第三方库自带的类名（样式由库自己的 CSS/内联注入，不归本项目管） */
 const THIRD_PARTY_CLASS_RE = /^(xterm|react-flow|monaco|katex|mermaid|shiki|hljs|cm-|cm_|prose|token|language-|ace_|pdf|docx|sheet|ph-|leaflet|recharts|swiper|tippy|radix|rt-|fl-|fa-|fas|far|fab)/;
 
@@ -479,18 +578,20 @@ for (const full of files) {
   const rel = relative(ROOT, full).replace(/\\/g, "/");
   if (shouldSkip(rel)) continue;
   const src = readFileSync(full, "utf8");
+  scanVarRefs(rel, src);
   if (rel.endsWith(".css")) {
     scanCss(rel, src);
     continue;
   }
+  scanColorOutsideStyle(rel, src, computeStyleRanges(src));
   scanTsx(rel, src);
 
   for (const { raw, index } of staticClassTokens(src)) {
-    // 该元素自己带了内联样式 → 已经"有样式"，类名只是钩子，不算"等于没样式"
-    const tail = src.slice(index, index + 220);
-    const hasInlineStyle = /^\s*>?[\s\S]{0,160}?style=\{\{/.test(tail.replace(/^className=[^>]*/, "")) ||
-      /style=\{\{/.test(tail);
-    if (hasInlineStyle) continue;
+    // 这里**刻意不再豁免「元素自己有内联样式」的情况**。
+    // 旧写法是"同行有 style={{}} 就跳过"（本意：有内联样式就不算没样式），代价是
+    // 一整批"类名根本没定义、外观全靠内联撑着"的空壳长期不可见 —— 第 21、24、26 波
+    // 每次收口内联样式，就会冒出一批（`.trajectory-panel` / `.tool-card` / `.settings-search-box` …）。
+    // 现在内联样式已经收口完毕，这条豁免的负面作用大于它挡掉的假阳性，直接去掉。
     for (const cls of raw.split(/\s+/).filter(Boolean)) {
       // 模板片段：`status-${s}` 会留下残片 "status-"，无法判定真实类名，跳过
       if (/^[-_]|[-_]$/.test(cls)) continue;

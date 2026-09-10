@@ -113,16 +113,6 @@ export const ReasoningRow = memo(function ReasoningRow({
           ref={summaryRef}
           className="reasoning-summary"
           data-follow-end={running || undefined}
-          style={{
-            flex: 1,
-            minWidth: 0,
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-            fontSize: 'var(--fs-sm)',
-            color: 'var(--text-muted)',
-            opacity: 0.8,
-          }}
         >
           {summary || (zh ? '(空)' : '(empty)')}
         </span>

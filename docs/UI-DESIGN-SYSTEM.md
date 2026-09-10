@@ -158,7 +158,10 @@ node tools/ui-audit/codemod-icon-scale.mjs [--write]  # 图标工具类 → .ico
 | `spacing-offgrid` | warn | 间距不在 2px 网格 |
 | `inline-style-dense` | warn | 单文件内联样式过密（只数**样式对象内部**的属性；第 14 波修正前会把普通 TS 对象字面量也数进去） |
 | `legacy-popup-shell` | warn | 历史遗留的自建浮层类名（`popup-*`/`overlay-*`/`modal-box-*`/`dialog-box-*`/`sheet-*`） |
-| `css-class-undefined` | warn | **tsx 里用了但没有任何 CSS 定义的类名**（等于没样式；已排除运行时状态类与第三方库类名；模板字面量里的静态类名同样计入） |
+| `css-class-undefined` | warn | **tsx 里用了但没有任何 CSS 定义的类名**（等于没样式；已排除运行时状态类与第三方库类名；模板字面量里的静态类名同样计入）。**第 26 波起不再豁免「同行有内联样式」的元素** —— 那条豁免让一整批"类名没定义、外观全靠内联撑着"的空壳长期不可见 |
+| `css-var-undefined` | error | **`var(--x)` 引用了全项目从未定义的令牌**（第 26 波新增）。无兜底时整条声明失效（`font-family: var(--font-mono)` 让等宽字体从未生效、`border: 1px solid var(--border)` 让边框整条消失），有兜底时则永远吃写死的深色、不跟随主题/皮肤 |
+| `color-hardcoded-ts` | error | **`style={{}}` 之外的 TS 里写死颜色**（第 26 波新增）：状态色表（`{ failed: "#ef4444" }`）、主题常量、`el.style.background = "#..."`。此前只有内联样式对象区间内的色值被检查 |
+| `svg-attr-var` | error | **把 `var()` 写在原生 SVG 表现属性里**（第 26 波新增）：`stroke="var(--accent)"` 这类属性**不吃** CSS 变量，浏览器判非法后整条属性失效（stroke 默认 `none` → 图形不画）。颜色要走 CSS 类 |
 
 **合法例外**（写在 `scan-ui.mjs` 的 `ALLOWLIST`，每条都带理由；`rules` 字段可只豁免某一条规则）：
 皮肤令牌定义源（`src/core/theme/`、`src/styles/skin-*.css`）、PPT 生成内容配色、大富翁游戏插件（自带美术语言）、
@@ -211,8 +214,9 @@ node tools/ui-audit/codemod-icon-scale.mjs [--write]  # 图标工具类 → .ico
 
 | **第 25 波** | 2026-09-10 | **0** ✅ | **0** ✅ | **门禁归零（error 0 / warn 0）**：最后一块 `SettingsPanel`（999 → 0）收口完成 —— 全项目最大的一块内联样式（255 个样式对象、3200 行）终于拆完，只留 3 个**真动态值**内联（字体粗细 `fontWeight`、权限动作色 `actionColors[action]`、进度条宽度 `${pct}%`），其余全部换成 `.sp-*` 具名类（行/列、卡片、按钮族 12 个修饰、输入框、提示文案、头像、开关、状态色图标、标签页、规则行、滑块行、进度条、模式选择器）。本轮把第 19 波的 codemod 升级成「**空白与引号都不敏感**的批量替换」（`.preview-shot/apply-edits2.mjs`）：签名从 `style-signature-census.mjs` 导出，一次提交 30–50 处，收尾再把 `style={{ className=… }}` 这类残留统一拆平。两个坑都记在 §7：批量替换必须**全局替换**（`String.replace` 只换第一处，会留下"同签名只改了一半"的残迹），元素已有 `className` 时要**合并**而不是新增（否则 TS17001）。<br>**门禁终局**：5 条 error（`fs-hardcoded` / `color-hardcoded-tsx` / `color-hardcoded-css` / `radius-offscale` / `modal-shell-bespoke`）与 4 条 warn（`spacing-offgrid` / `inline-style-dense` / `legacy-popup-shell` / `css-class-undefined`）**全部 0** |
 
-### 全项目现场事实（来自 UI 交互界面清单，作为工作队列）
+| **第 26 波** | 2026-09-10 | **0** ✅ | **0** ✅ | **"归零"之后再核查一遍：三处此前没查干净的地方，全部补掉并做成规则**。起因是自问"这些发现真的解决了吗"，于是写了三个独立核查脚本（不看审计结论、直接自己对账）：<br>① **未定义令牌**：把全项目 `var(--x)` 引用与所有定义（CSS 声明 / `setProperty` / 内联就地定义）对账，**96 处引用 10 个从未定义的令牌**仍然存在（第 23 波清掉的只是"当时人工发现的那几个"）—— 其中三类是真 bug：`--font-mono`（24 处，绝大多数**没兜底** → `font-family` 整条失效、连 §3 的共享类 `.mono` 从来没真正等宽过）、`--border`（7 处无兜底 → 边框整条不画）、`--bg-active`（1 处，JS hover 静默失效）；其余 `--destructive` / `--accent-primary` / `--accent-alpha` / `--bg-elevated` / `--border-hover` / `--bg-base` / `--accent-light` / `--success-bg` / `--surface` / `--hub-accent` / `--transform-origin` / `--text-tertiary` 都在吃写死的深色。全部改成真令牌 / 语义令牌，`--font-mono` 补成正式令牌。<br>② **空壳类名**：`css-class-undefined` 规则有一条"元素自己有内联样式就不算没样式"的豁免 —— 去掉豁免再查，**29 个类名 / 35 处**在 CSS 里一条定义都没有（`turn-status-row`、`agent-teams-panel`、`settings-section(-header/-field)`、`excel-viewer*`、`reasoning-summary/-body`、`deliverable-files*`、`stats-line`、`task-center-panel`、`side-session-panel`、`audio-player`、`drawer-body`、`nb-msg-sources*`、`note-op-notifications`、`sidebar-user-plugin-btn`、`persona-manager`、`tool-collapse-toggle`、`file-mention-btn`、`inline-file-link`、`lo-card--tools`），逐个补上真实定义（同行内联样式同时搬进类里），并**永久去掉那条豁免**。<br>③ **`style={{}}` 之外的色值**：新增规则后一次报出 **29 处**真硬编码 —— AgentTeamsPanel 的 10 个状态色、ToolManager 的 4 个分类色、ChatPanel 提示环里的 6 个 SVG 色值、lucide 图标的 `color="white"`/`#2ecc71`/`#22c55e`/`#ef4444`、游戏加载占位、崩溃兜底页（保留字面量兜底）等，全部改成语义令牌或 CSS 类；xterm 主题与 PPT 内容配色按规则写入例外表并附理由。<br>④ **顺手挖出第七类盲区（`svg-attr-var`）**：`stroke="var(--accent)"` 写在**原生 SVG 表现属性**里是无效的 —— 属性不吃 CSS 变量，React 原样输出后浏览器判非法、整条属性失效（stroke 默认 `none`，**图形根本不画**）；全项目 5 处（步骤进度环、子智能体完成勾）已改用 CSS 类，并新增规则拦住。<br>**首尾同框**：门禁规则 9 条 → **12 条**，依然 **error 0 / warn 0**；三处"已归零"经独立对账后各自又清出 96 / 29 / 29 处真问题 —— 结论写进 §7：**"计数为 0" 只代表"当前这把尺子量不到"，换一把尺子还要再量一次** |
 
+### 全项目现场事实（来自 UI 交互界面清单，作为工作队列）
 - 挂载层：64 个 `SlotBridge` 渲染点 + 54 处 `slots.register` + 44 处 `createPortal`（另 51 个 SlotBridge 在 `App.tsx`）。
 - 浮层：205 个 overlay 类名实例散在 60 个 tsx 里，约 35 种外壳；`var(--z-*)` 只被用了 9 次，
   而有 23 个 tsx 数值 z-index + 13 个 CSS 层级（`modal-overlay` 是 200，`--z-modal` 是 1300，互相矛盾）。
@@ -232,19 +236,22 @@ node tools/ui-audit/codemod-icon-scale.mjs [--write]  # 图标工具类 → .ico
 
 ---
 
-## 7. 交接快照（2026-09-10 · 第 25 波后：门禁归零）
+## 7. 交接快照（2026-09-10 · 第 26 波后：12 条规则全绿）
 
 ### 当前数字（`node tools/ui-audit/scan-ui.mjs`）
 
 | 规则 | 级别 | 起点 | 现在 |
 | --- | --- | --- | --- |
 | `fs-hardcoded` | error | 78 | **0** ✅（门禁锁定；第 12 波起**同时覆盖 CSS**） |
+| `css-var-undefined` | error | 96（第 26 波首次对账） | **0** ✅（第 26 波新增规则；含 `--font-mono` 24 处无兜底这类"声明整条失效"） |
+| `color-hardcoded-ts` | error | 29（第 26 波首次对账） | **0** ✅（第 26 波新增规则：`style={{}}` 之外的状态色表/主题常量/JS 改样式） |
+| `svg-attr-var` | error | 5（第 26 波首次对账） | **0** ✅（第 26 波新增规则：`stroke="var(--x)"` 在属性位置无效，图形会不画） |
 | `radius-offscale` | error | 38 | **0** ✅（门禁锁定；第 13 波起覆盖 `styles.css` 本体，不需豁免） |
 | `color-hardcoded-tsx` | error | 325 | **0** ✅（第 17 波起与 CSS 侧同款精度：按字面量位置排除 `var()` 兜底值） |
 | `color-hardcoded-css` | error | 209 | **0** ✅（第 13 波起**连 `src/styles.css` 本体一起覆盖**，无豁免） |
 | `modal-shell-bespoke` | error | 15 | **0** ✅ |
 | `spacing-offgrid` | warn | 13 | **0** ✅ |
-| `css-class-undefined` | warn | — | **0** ✅（第 10 波清零；审计器已扩面到模板字面量） |
+| `css-class-undefined` | warn | — | **0** ✅（第 10 波清零、审计器扩面到模板字面量；**第 26 波起去掉「同行有内联样式」的豁免**，去掉后又清出 29 个空壳类名） |
 | `inline-style-dense` | warn | 58 | **0** ✅（第 14 波先修正了度量口径 50 → 25，再累计收口 25 个文件；最后一块 `SettingsPanel` 999 → 0） |
 | **error 合计** | | **533** | **0** ✅ |
 | **warn 合计** | | 64 | **0** ✅ |
@@ -271,6 +278,11 @@ node tools/ui-audit/codemod-icon-scale.mjs [--write]  # 图标工具类 → .ico
 > 至此色值规则的判定链才完整：行区间 → 逐字面量 → 复合值 → 命名色 → rgb() → 短路修复。
 > 第 25 波把计数打到 0 之前，用 `--inline-counts` 逐个文件确认过「每个文件都真的降到 0 附近」，
 > 而不是"刚好压到 119"。
+> **第 26 波是这句话的续集**：门禁 9 条规则全绿之后，用三个**独立对账脚本**
+> （`.preview-shot/check-missing-vars.mjs`、`check-empty-classes.mjs`、`check-outside-style.mjs`，
+> 都不看审计结论、直接自己对账）重新核了一遍，又清出 96 处未定义令牌引用、29 个空壳类名、
+> 29 处 `style={{}}` 之外的硬编码色，外加一类新盲区（`var()` 写在 SVG 表现属性里 → 属性失效、图形不画）。
+> 规则数 9 → 12。**教训写死在这里：计数为 0 只说明"当前这把尺子量不到"，换一把尺子还得再量。**
 
 ### 已完成的波次
 
@@ -306,7 +318,11 @@ node tools/ui-audit/codemod-icon-scale.mjs [--write]  # 图标工具类 → .ico
 24. **第 24 波**：`ToolCallCard`（257 → 0）、`ppt/PPTAdapter`（281 → 0）收口；
     审计器补掉「无害匹配把整行兜底短路」这处盲区（报出 2 处藏在 `background: transparent` 旁边的硬编码红）；
     `SettingsPanel`（999 → 673）开工，新建 `.sp-*` 设置面板零件类（详见 §5 表）。
-25. **第 25 波（本轮）**：`SettingsPanel`（999 → 0）收口完成 —— **门禁归零：error 0 / warn 0**（详见 §5 表）。
+25. **第 25 波**：`SettingsPanel`（999 → 0）收口完成 —— **门禁归零：error 0 / warn 0**（详见 §5 表）。
+26. **第 26 波（本轮）**：门禁 9 条 → **12 条规则全绿**。用三个独立对账脚本重核"已归零"的三项：
+    补掉 96 处未定义令牌引用（含 `--font-mono` 24 处无兜底、`--border` 7 处、`--bg-active` 静默失效）、
+    29 个空壳类名（并永久去掉 `css-class-undefined` 的内联样式豁免）、29 处 `style={{}}` 之外的硬编码色，
+    外加新发现的一类盲区 `svg-attr-var`（`stroke="var(--x)"` 在属性位置无效 → 图形不画，5 处）（详见 §5 表）。
 
 ### 门禁已归零，剩下的（都不属于"违规清零"这件事，按性价比排序）
 

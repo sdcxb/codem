@@ -48,16 +48,6 @@ const TurnErrorRow = memo(function TurnErrorRow({
     <div
       className="turn-status-row turn-error"
       role="status"
-      style={{
-        display: 'flex',
-        alignItems: 'flex-start',
-        gap: 6,
-        padding: '6px 10px',
-        borderRadius: 6,
-        background: 'color-mix(in srgb, var(--error) 8%, transparent)',
-        border: '1px solid color-mix(in srgb, var(--error) 20%, transparent)',
-        fontSize: 'var(--fs-sm)',
-      }}
     >
       <AlertCircle size={13} style={{ color: 'var(--error)', flexShrink: 0, marginTop: 1 }} />
       <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>

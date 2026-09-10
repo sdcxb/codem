@@ -90,7 +90,7 @@ const primaryButton: React.CSSProperties = {
   ...buttonBase,
   background: "var(--accent, #7c6cf0)",
   borderColor: "transparent",
-  color: "#fff",
+  color: "var(--text-on-accent, #fff)",
 };
 const dangerButton: React.CSSProperties = {
   ...buttonBase,

@@ -84,23 +84,9 @@ export const DeliverableFiles = memo(function DeliverableFiles({
   return (
     <div
       className="deliverable-files"
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 4,
-        padding: '4px 0',
-        marginTop: 4,
-      }}
     >
       <div
         className="deliverable-files-label"
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 4,
-          fontSize: 'var(--fs-sm)',
-          color: 'var(--text-muted)',
-        }}
       >
         <FileText size={12} />
         <span>{zh ? `交付文件 (${changedFiles.length})` : `Produced files (${changedFiles.length})`}</span>

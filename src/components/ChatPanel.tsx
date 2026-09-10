@@ -1109,10 +1109,10 @@ canEdit={!isSessionStreaming}
           >
             {/* Mini circular indicator */}
             <svg className="step-progress-ring" width="16" height="16" viewBox="0 0 16 16">
-              <circle cx="8" cy="8" r="6" fill="none" stroke="var(--bg-tertiary)" strokeWidth="2" />
+              <circle cx="8" cy="8" r="6" fill="none" className="step-ring-track" strokeWidth="2" />
               {stepProgress.total > 0 ? (
                 <circle
-                  cx="8" cy="8" r="6" fill="none" stroke="var(--accent)" strokeWidth="2"
+                  cx="8" cy="8" r="6" fill="none" strokeWidth="2"
                   strokeDasharray={`${2 * Math.PI * 6}`}
                   strokeDashoffset={`${2 * Math.PI * 6 * (1 - stepProgress.current / stepProgress.total)}`}
                   strokeLinecap="round"
@@ -1121,7 +1121,7 @@ canEdit={!isSessionStreaming}
                 />
               ) : (
                 <circle
-                  cx="8" cy="8" r="6" fill="none" stroke="var(--accent)" strokeWidth="2"
+                  cx="8" cy="8" r="6" fill="none" strokeWidth="2"
                   strokeDasharray={`${2 * Math.PI * 6 * 0.3}`}
                   strokeLinecap="round"
                   transform="rotate(-90 8 8)"
@@ -1163,19 +1163,19 @@ canEdit={!isSessionStreaming}
                       <svg className="step-tooltip-ring" width="20" height="20" viewBox="0 0 20 20">
                         {isCompleted && (
                           <g>
-                            <circle cx="10" cy="10" r="8" fill="none" stroke="#22c55e" strokeWidth="2.5" />
-                            <path d="M6 10 L9 13 L14 7" fill="none" stroke="#22c55e" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+                            <circle cx="10" cy="10" r="8" fill="none" className="step-ring-ok" strokeWidth="2.5" />
+                            <path d="M6 10 L9 13 L14 7" fill="none" className="step-ring-ok" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
                           </g>
                         )}
                         {isCurrent && (
                           <g>
-                            <circle cx="10" cy="10" r="8" fill="none" stroke="#555" strokeWidth="2.5" />
-                            <path d="M10 2 A 8 8 0 0 1 10 18" fill="none" stroke="#7c6cf0" strokeWidth="2.5" strokeLinecap="round" />
-                            <circle cx="10" cy="10" r="3" fill="#7c6cf0" />
+                            <circle cx="10" cy="10" r="8" fill="none" className="step-ring-track" strokeWidth="2.5" />
+                            <path d="M10 2 A 8 8 0 0 1 10 18" fill="none" className="step-ring-active" strokeWidth="2.5" strokeLinecap="round" />
+                            <circle cx="10" cy="10" r="3" className="step-ring-dot" />
                           </g>
                         )}
                         {isPending && (
-                          <circle cx="10" cy="10" r="8" fill="none" stroke="#555" strokeWidth="2.5" />
+                          <circle cx="10" cy="10" r="8" fill="none" className="step-ring-track" strokeWidth="2.5" />
                         )}
                       </svg>
                       <span className={`step-tooltip-title ${isCurrent ? "active" : ""} ${isPending ? "pending" : ""}`}>

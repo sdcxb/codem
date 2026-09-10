@@ -857,21 +857,7 @@ const handleDrop = useCallback((e: React.DragEvent, targetSessionId: string, pro
         </div>
         {onPlugins && (
           <button className="sidebar-user-plugin-btn" onClick={onPlugins} title={S.sidebar.pluginManager[lang]}
-            style={{
-              marginLeft: 'auto',
-              background: 'var(--bg-hover)',
-              border: '1px solid var(--border-primary)',
-              borderRadius: 6,
-              cursor: 'pointer',
-              padding: '6px 10px',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 4,
-              fontSize: 'var(--fs-sm)',
-              color: 'var(--text-secondary)',
-              transition: 'background 0.15s, color 0.15s',
-            }}
-            onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--bg-active)'; e.currentTarget.style.color = 'var(--text-primary)'; }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--bg-hover)'; e.currentTarget.style.color = 'var(--text-primary)'; }}
             onMouseLeave={(e) => { e.currentTarget.style.background = 'var(--bg-hover)'; e.currentTarget.style.color = 'var(--text-secondary)'; }}
           >
             <Puzzle size={14} />

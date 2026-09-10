@@ -57,7 +57,7 @@ export const AudioPlayer = memo(function AudioPlayer({ filePath, src, fileName, 
   };
 
   return (
-    <div className="audio-player" style={{ padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
+    <div className="audio-player">
       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
         <Volume2 size={24} style={{ color: "var(--accent)" }} />
         <div style={{ flex: 1 }}>

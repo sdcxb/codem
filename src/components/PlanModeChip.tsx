@@ -61,7 +61,7 @@ export function PlanModeChip({ mode, onModeChange, locked = false }: PlanModeChi
           padding: '2px 8px',
           borderRadius: 12,
           border: '1px solid var(--accent)',
-          background: 'var(--accent-alpha, color-mix(in srgb, var(--accent) 12%, transparent))',
+          background: 'color-mix(in srgb, var(--accent) 12%, transparent)',
           color: 'var(--accent)',
           fontSize: 'var(--fs-sm)',
           fontWeight: 600,

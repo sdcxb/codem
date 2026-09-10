@@ -223,8 +223,8 @@ function ActivityRow({ activity, zh }: { activity: SubagentActivity; zh: boolean
           <span className="subagent-activity-spinner" />
         ) : (
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-            <circle cx="7" cy="7" r="6" fill="var(--success-bg, rgba(34,197,94,0.15))" stroke="var(--success, #22c55e)" strokeWidth="1.5" />
-            <path d="M4 7l2 2 4-4" stroke="var(--success, #22c55e)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+            <circle cx="7" cy="7" r="6" className="agent-check-ring" strokeWidth="1.5" />
+            <path d="M4 7l2 2 4-4" className="agent-check-mark" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none" />
           </svg>
         )}
       </span>

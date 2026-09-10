@@ -656,7 +656,7 @@ backdrop-filter: none !important;
 [data-skin="dream"] .popover,
 [data-skin="dream"] .popup-menu,
 [data-skin="dream"] .context-menu {
-  transform-origin: var(--transform-origin, center top);
+  transform-origin: center top;
 }
 
 /* ========== D-5: Dream reduced-transparency — frostier/solid surfaces ========== */

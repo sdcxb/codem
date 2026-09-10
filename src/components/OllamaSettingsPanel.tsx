@@ -95,7 +95,7 @@ export function OllamaSettingsPanel() {
       </div>
 
       {/* Base URL */}
-      <div className="settings-field" style={{ marginBottom: 12 }}>
+      <div className="settings-field">
         <label style={{ fontSize: 'var(--fs-base)', fontWeight: 600, marginBottom: 4, display: "block" }}>
           {S.ollama.baseUrl[lang]}
         </label>
@@ -110,7 +110,7 @@ export function OllamaSettingsPanel() {
       </div>
 
       {/* Auto detect */}
-      <div className="settings-field" style={{ marginBottom: 16 }}>
+      <div className="settings-field">
         <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
           <input type="checkbox" checked={autoDetect} onChange={e => setAutoDetect(e.target.checked)} />
           <div>
@@ -152,7 +152,7 @@ export function OllamaSettingsPanel() {
             </>
           ) : status?.connected ? (
             <>
-              <CheckCircle size={14} color="#22c55e" />
+              <CheckCircle size={14} className="sp-icon-success" />
               <span style={{ color: "var(--success)" }}>{S.ollama.connected[lang]}</span>
               <span className="hint-sm">— {status.url}</span>
               <span style={{ marginLeft: "auto", fontWeight: 600 }}>
@@ -161,7 +161,7 @@ export function OllamaSettingsPanel() {
             </>
           ) : status ? (
             <>
-              <XCircle size={14} color="#ef4444" />
+              <XCircle size={14} className="sp-icon-error" />
               <span style={{ color: "var(--error)" }}>{S.ollama.disconnected[lang]}</span>
               <span className="hint-sm">— {status.error}</span>
             </>

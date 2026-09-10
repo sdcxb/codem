@@ -238,7 +238,7 @@
   overflow: hidden;
   transition: border-color 0.15s;
 }
-.lo-card:hover { border-color: var(--border-hover, var(--border-secondary, var(--border-primary))); }
+.lo-card:hover { border-color: var(--border-secondary); }
 .lo-card__head {
   display: flex;
   align-items: center;

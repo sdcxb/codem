@@ -224,18 +224,6 @@ export const StatsLine = memo(function StatsLine({ message }: StatsLineProps) {
       ref={rootRef}
       className="stats-line"
       title={truncated ? line : undefined}
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 4,
-        fontSize: 'var(--fs-xs)',
-        color: 'var(--text-muted)',
-        overflow: 'hidden',
-        textOverflow: 'ellipsis',
-        whiteSpace: 'nowrap',
-        marginTop: 4,
-        opacity: 0.8,
-      }}
     >
       {groups.map((group, i) => (
         <Fragment key={group}>
