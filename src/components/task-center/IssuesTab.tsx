@@ -11,19 +11,11 @@ import { getIssueManager, type Issue } from "../../core/issue/issue";
 import type { IssueStatus } from "../../core/issue/issue-storage";
 import { useLang } from "../../core/i18n/lang";
 import { getCurrentProjectId, useCurrentProjectId } from "./use-current-project";
+import { ISSUE_STATUS_FILTERS } from "./issue-status-meta";
 import { IssueCard } from "./IssueCard";
 import { IssueDetailPanel } from "./IssueDetailPanel";
 
-const STATUS_FILTERS: { value: IssueStatus | "all"; labelZh: string; labelEn: string }[] = [
-  { value: "all", labelZh: "全部", labelEn: "All" },
-  { value: "backlog", labelZh: "Backlog", labelEn: "Backlog" },
-  { value: "todo", labelZh: "待办", labelEn: "Todo" },
-  { value: "in_progress", labelZh: "进行中", labelEn: "In Progress" },
-  { value: "in_review", labelZh: "待审查", labelEn: "In Review" },
-  { value: "done", labelZh: "已完成", labelEn: "Done" },
-  { value: "blocked", labelZh: "阻塞", labelEn: "Blocked" },
-  { value: "cancelled", labelZh: "已取消", labelEn: "Cancelled" },
-];
+const STATUS_FILTERS = ISSUE_STATUS_FILTERS;
 
 interface IssuesTabProps {
   /** 外部请求聚焦某个 Issue（收件箱点击穿透 → 直接打开详情） */

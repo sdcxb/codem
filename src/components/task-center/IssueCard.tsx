@@ -2,20 +2,15 @@
  * IssueCard — Issue 卡片组件（列表 + 看板共用）
  */
 
-import { Circle, CircleDot, CircleSlash, CheckCircle2, AlertTriangle, Ban } from "lucide-react";
 import type { Issue } from "../../core/issue/issue";
-import type { IssueStatus } from "../../core/issue/issue-storage";
 import { useLang } from "../../core/i18n/lang";
+import { ISSUE_STATUS_BY_KEY, issueStatusMeta } from "./issue-status-meta";
 
-const STATUS_CONFIG: Record<IssueStatus, { Icon: typeof Circle; color: string; labelZh: string; labelEn: string }> = {
-  backlog: { Icon: Circle, color: "var(--text-muted)", labelZh: "Backlog", labelEn: "Backlog" },
-  todo: { Icon: Circle, color: "var(--accent)", labelZh: "Todo", labelEn: "Todo" },
-  in_progress: { Icon: CircleDot, color: "var(--accent)", labelZh: "进行中", labelEn: "In Progress" },
-  in_review: { Icon: AlertTriangle, color: "var(--warning)", labelZh: "待审查", labelEn: "In Review" },
-  done: { Icon: CheckCircle2, color: "var(--success)", labelZh: "已完成", labelEn: "Done" },
-  blocked: { Icon: CircleSlash, color: "var(--error)", labelZh: "阻塞", labelEn: "Blocked" },
-  cancelled: { Icon: Ban, color: "var(--text-muted)", labelZh: "已取消", labelEn: "Cancelled" },
-};
+/**
+ * 状态元数据（图标 / 颜色 / 双语标签）统一来自 `issue-status-meta.ts`。
+ * 这里保留 `STATUS_CONFIG` 名称只为兼容既有引用（详情面板）。
+ */
+export const STATUS_CONFIG = ISSUE_STATUS_BY_KEY;
 
 const PRIORITY_COLORS: Record<string, string> = {
   urgent: "var(--error)",
@@ -34,7 +29,7 @@ export function IssueCard({ issue, onClick, compact = false }: IssueCardProps) {
   const lang = useLang();
   const zh = lang === "zh";
   // 未知状态（旧数据 / 手工改过的行）回退到 todo，避免 `undefined.Icon` 崩掉整个应用
-  const config = STATUS_CONFIG[issue.status] ?? STATUS_CONFIG.todo;
+  const config = issueStatusMeta(issue.status);
   const StatusIcon = config.Icon;
   const priorityColor = PRIORITY_COLORS[issue.priority] || PRIORITY_COLORS.normal;
 
@@ -100,5 +95,3 @@ export function IssueCard({ issue, onClick, compact = false }: IssueCardProps) {
     </div>
   );
 }
-
-export { STATUS_CONFIG };

@@ -1,7 +1,10 @@
 /**
  * OverviewTab — 任务管理概览页
  *
- * 聚合委派、子智能体、自动化的实时统计 + 最近活动时间线。
+ * 只做「导航 + 关键计数」：委派 / 自动化 / Issue / 收件箱四张统计卡，
+ * 以及一个进入「看板 → 用量 / 时间线」的入口。
+ * 活动明细不在这里重复渲染（那是插件「用量 / 时间线」的职责）；
+ * 插件未启用时才回退到宿主自带的最近活动预览。
  */
 
 import { useState, useEffect, useCallback } from "react";
@@ -11,8 +14,8 @@ import { getAutomationConfig } from "../../core/automation/automation-manager";
 import { getIssueManager } from "../../core/issue/issue";
 import { getInboxManager } from "../../core/inbox/inbox";
 import { useLang } from "../../core/i18n/lang";
-import { useSlotHasEntries } from "../../core/slots/SlotBridge";
-import { TASK_CENTER_BOARD_SLOT, type TaskCenterTab } from "../TaskCenter";
+import { SlotBridge } from "../../core/slots/SlotBridge";
+import { TASK_CENTER_OVERVIEW_SLOT, type TaskCenterTab } from "../TaskCenter";
 import { getCurrentProjectId } from "./use-current-project";
 
 interface OverviewTabProps {
@@ -29,8 +32,16 @@ interface ActivityEntry {
 export function OverviewTab({ onNavigate }: OverviewTabProps) {
   const lang = useLang();
   const zh = lang === "zh";
-  // 「看板」页签是否被插件接管（接管后才有「时间线」全量视图）
-  const boardHasPlugin = useSlotHasEntries(TASK_CENTER_BOARD_SLOT);
+
+  /** 跳到「看板」页签的某个子视图（插件监听 codem:open-task-center 的 detail.view） */
+  const openBoardView = (view: "usage" | "timeline") => {
+    onNavigate("board");
+    try {
+      window.dispatchEvent(new CustomEvent("codem:open-task-center", { detail: { tab: "board", view } }));
+    } catch {
+      /* 忽略：事件派发失败不影响切页签 */
+    }
+  };
 
   const [delegationStats, setDelegationStats] = useState({ total: 0, running: 0, completed: 0, failed: 0, pending: 0 });
   const [automationCount, setAutomationCount] = useState({ active: 0, total: 0, todayTriggered: 0 });
@@ -213,71 +224,55 @@ const iconColor = t.status === "completed" ? "var(--success)" :
         })}
       </div>
 
-      {/* Recent activity timeline（概览只做「最近 5 条」预览，全量在看板 → 时间线） */}
-      <div>
-        <div style={{
-          display: "flex", alignItems: "center", justifyContent: "space-between",
-          gap: 12, marginBottom: "12px",
-        }}>
-          <span style={{ fontSize: "var(--fs-md)", fontWeight: 600, color: "var(--text-primary)" }}>
-            {zh ? "最近活动" : "Recent Activity"}
-          </span>
-          {boardHasPlugin && (
-            <button
-              onClick={() => {
-                onNavigate("board");
-                // 插件接管看板时，额外请求它切到「时间线」子视图
-                // （插件监听宿主已有的 codem:open-task-center 事件，宿主不直接依赖插件）
-                try {
-                  window.dispatchEvent(
-                    new CustomEvent("codem:open-task-center", { detail: { tab: "board", view: "timeline" } }),
-                  );
-                } catch {
-                  /* 忽略：事件派发失败不影响切页签 */
-                }
-              }}
+      {/* 「用量」（KPI / 健康度 / 活动分布 / token 与成本）由插件贡献到本页签
+          （slot: task-center.overview）；插件禁用时回退宿主自带的最近活动预览。 */}
+      <SlotBridge
+        name={TASK_CENTER_OVERVIEW_SLOT}
+        fallback={RecentActivity}
+        activities={activities}
+        zh={zh}
+      />
+    </div>
+  );
+}
+
+/** 宿主自带的「最近活动」预览（仅在插件未接管概览时显示） */
+function RecentActivity({ activities, zh }: { activities: ActivityEntry[]; zh: boolean }) {
+  return (
+    <div>
+      <div style={{ fontSize: "var(--fs-md)", fontWeight: 600, color: "var(--text-primary)", marginBottom: "12px" }}>
+        {zh ? "最近活动" : "Recent Activity"}
+      </div>
+      {activities.length === 0 ? (
+        <div style={{ padding: "20px", textAlign: "center", color: "var(--text-secondary, #666)", fontSize: "var(--fs-base)" }}>
+          {zh ? "暂无活动记录" : "No activity yet"}
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+          {activities.slice(0, 5).map((act, i) => (
+            <div
+              key={i}
               style={{
-                display: "flex", alignItems: "center", gap: 4,
-                background: "none", border: "none", padding: 0,
-                color: "var(--accent)", fontSize: "var(--fs-sm)", cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                gap: "10px",
+                padding: "8px 12px",
+                borderRadius: "6px",
+                background: "var(--bg-tertiary)",
+                fontSize: "var(--fs-sm)",
               }}
             >
-              {zh ? "查看完整时间线" : "Full timeline"}
-              <ChevronRight size={12} />
-            </button>
-          )}
+              <act.icon size={14} style={{ color: act.iconColor, flexShrink: 0 }} />
+              <span style={{ flex: 1, color: "var(--text-secondary, #aaa)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {act.text}
+              </span>
+              <span style={{ fontSize: "var(--fs-xs)", color: "var(--text-muted, #555)", flexShrink: 0 }}>
+                {formatRelativeTime(act.timestamp, zh)}
+              </span>
+            </div>
+          ))}
         </div>
-        {activities.length === 0 ? (
-          <div style={{ padding: "20px", textAlign: "center", color: "var(--text-secondary, #666)", fontSize: "var(--fs-base)" }}>
-            {zh ? "暂无活动记录" : "No activity yet"}
-          </div>
-        ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-            {activities.slice(0, 5).map((act, i) => (
-              <div
-                key={i}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "10px",
-                  padding: "8px 12px",
-                  borderRadius: "6px",
-                  background: "var(--bg-tertiary)",
-                  fontSize: "var(--fs-sm)",
-                }}
-              >
-                <act.icon size={14} style={{ color: act.iconColor, flexShrink: 0 }} />
-                <span style={{ flex: 1, color: "var(--text-secondary, #aaa)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {act.text}
-                </span>
-                <span style={{ fontSize: "var(--fs-xs)", color: "var(--text-muted, #555)", flexShrink: 0 }}>
-                  {formatRelativeTime(act.timestamp, zh)}
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
+      )}
     </div>
   );
 }

@@ -40,7 +40,8 @@ export function SceneImageCard({ zh }: { zh: boolean }) {
   const setCustomSceneImage = useLibraryOps((s) => s.setCustomSceneImage);
   const clearCustomSceneImage = useLibraryOps((s) => s.clearCustomSceneImage);
   const loadCustomSceneImage = useLibraryOps((s) => s.loadCustomSceneImage);
-  const setTab = useLibraryOps((s) => s.setTab);
+  // 场景组视图归「子智能体」页签：requestView 会本地切视图 + 必要时派发宿主切页签
+  const requestView = useLibraryOps((s) => s.requestView);
   const setEditingLayout = useLibraryOps((s) => s.setEditingLayout);
   const resetLayout = useLibraryOps((s) => s.resetLayout);
   const layoutOverrides = useLibraryOps((s) => s.layoutOverrides);
@@ -290,8 +291,7 @@ export function SceneImageCard({ zh }: { zh: boolean }) {
             <button
               className="lo-btn"
               onClick={() => {
-                setTab("scene");
-                setEditingLayout(true);
+                requestView("scene");                setEditingLayout(true);
               }}
               title={zh ? "跳到「场景」视图，直接在场景上拖动房间框 / 走道节点" : "Open the scene view and drag rooms/nodes on the scene"}
             >

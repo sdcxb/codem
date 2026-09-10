@@ -13,18 +13,22 @@
 
 import { create } from "zustand";
 import type {
+  BoardView,
   CustomSceneImage,
   LibrarySnapshot,
   LibraryOpsSettings,
   MonitorTab,
+  SceneView,
   SeriesPoint,
 } from "./types";
 import {
+  BOARD_VIEWS,
   DEFAULT_SETTINGS,
   MONITOR_TABS,
   SCENE_IMAGE_IDS,
   SCENE_IMAGE_ID_FALLBACK,
   STORAGE_KEY,
+  hostTabOfView as HOST_TAB_OF_VIEW,
 } from "./types";
 import { collectSnapshot } from "./core/telemetry-adapter";
 import {
@@ -111,6 +115,9 @@ export function loadSettings(): LibraryOpsSettings {
     merged.sceneImageAdjust = clampSceneAdjust(merged.sceneImageAdjust);
     merged.showAlignGuides = merged.showAlignGuides === true;
     if (!MONITOR_TABS.includes(merged.defaultTab)) merged.defaultTab = DEFAULT_SETTINGS.defaultTab;
+    // v1.15.0：场景组视图（scene/settings）已移到「子智能体」页签，
+    // 旧的持久化默认值如果是它们，回退到「看板」
+    if (!(BOARD_VIEWS as string[]).includes(merged.defaultTab)) merged.defaultTab = DEFAULT_SETTINGS.defaultTab;
     return merged;
   } catch {
     return { ...DEFAULT_SETTINGS };
@@ -165,7 +172,10 @@ function activeLayoutOf(all: Record<string, LayoutOverride>, sceneImageId: strin
 
 interface LibraryOpsState {
   /** 当前子视图（图书馆页签内） */
-  tab: MonitorTab;
+  /** 看板页签（`task-center.board`）当前子视图 */
+  tab: BoardView;
+  /** 子智能体页签（`task-center.subagents`）当前子视图：场景 / 设置 */
+  sceneTab: SceneView;
   /** 设置 */
   settings: LibraryOpsSettings;
   /** 最新快照 */
@@ -208,7 +218,14 @@ interface LibraryOpsState {
   /** 是否处于「对位模式」（可在场景上拖动房间框与路网节点） */
   editingLayout: boolean;
 
-  setTab: (tab: MonitorTab) => void;
+  setTab: (tab: BoardView) => void;
+  /** 切换「子智能体」页签里的子视图（场景 / 设置） */
+  setSceneTab: (tab: SceneView) => void;
+  /**
+   * 请求切换到任意子视图：落在自己托管的页签里就本地切，
+   * 否则派发宿主事件跳到对应页签（`codem:open-task-center`）。
+   */
+  requestView: (view: MonitorTab) => void;
   updateSettings: (patch: Partial<LibraryOpsSettings>) => void;
   selectActor: (id: string | null) => void;
   selectZone: (id: string | null) => void;
@@ -248,7 +265,10 @@ const INITIAL_LAYOUTS = loadLayoutOverrides();
 setLayoutOverride(activeLayoutOf(INITIAL_LAYOUTS, INITIAL_SETTINGS.sceneImageId));
 
 export const useLibraryOps = create<LibraryOpsState>((set, get) => ({
-  tab: DEFAULT_SETTINGS.defaultTab,
+  tab: (BOARD_VIEWS as string[]).includes(DEFAULT_SETTINGS.defaultTab)
+    ? (DEFAULT_SETTINGS.defaultTab as BoardView)
+    : "board",
+  sceneTab: "scene",
   settings: INITIAL_SETTINGS,
   snapshot: null,
   isoScene: null,
@@ -269,6 +289,24 @@ export const useLibraryOps = create<LibraryOpsState>((set, get) => ({
   editingLayout: false,
 
   setTab: (tab) => set({ tab }),
+  setSceneTab: (tab) => set({ sceneTab: tab }),
+
+  requestView: (view) => {
+    // 视图归属决定「本地切还是请宿主切页签」：场景组 → 子智能体页签；用量 → 概览页签；
+    // 其余 → 看板页签。派发宿主已有的 codem:open-task-center（detail.view）让宿主跟着切。
+    const host = HOST_TAB_OF_VIEW(view);
+    if (host === "subagents") set({ sceneTab: view as SceneView });
+    else if (host === "board" && (BOARD_VIEWS as string[]).includes(view)) set({ tab: view as BoardView });
+    try {
+      window.dispatchEvent(
+        new CustomEvent("codem:open-task-center", {
+          detail: { tab: host, view },
+        }),
+      );
+    } catch {
+      /* 忽略：非浏览器环境 */
+    }
+  },
 
   updateSettings: (patch) => {
     const next = { ...get().settings, ...patch };
@@ -500,7 +538,10 @@ export const useLibraryOps = create<LibraryOpsState>((set, get) => ({
       // 布局注册表是模块级状态，必须一并复位（否则测试之间互相污染）
       setLayoutOverride(null);
       return {
-        tab: DEFAULT_SETTINGS.defaultTab,
+        tab: (BOARD_VIEWS as string[]).includes(DEFAULT_SETTINGS.defaultTab)
+          ? (DEFAULT_SETTINGS.defaultTab as BoardView)
+          : "board",
+        sceneTab: "scene",
         settings: { ...DEFAULT_SETTINGS, sceneImageAdjust: { ...DEFAULT_SETTINGS.sceneImageAdjust } },
         snapshot: null,
         isoScene: null,

@@ -2,13 +2,16 @@
  * 版面探针（开发工具）：抓取 ?audit=1 页面写入的 #layout-audit，打印指定子视图的
  * 关键容器矩形与溢出量，用于定位「被遮挡 / 被裁切」类问题。
  *
- * 用法：node tools/preview/probe-layout.mjs [tab] [url]
+ * 用法：node tools/preview/probe-layout.mjs [tab] [url] [host]
+ *   tab   子视图名（board/usage/…/scene/settings）
+ *   host  board（默认）| scene
  */
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 
 const tab = process.argv[2] ?? "board";
 const url = process.argv[3] ?? "http://localhost:4599";
+const host = process.argv[4] ?? "board";
 const edge = [
   "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe",
   "C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe",
@@ -27,7 +30,7 @@ const dom = execFileSync(
     "--virtual-time-budget=15000",
     "--window-size=1440,900",
     "--dump-dom",
-    `${url}/?audit=1`,
+    `${url}/?audit=1&host=${host}`,
   ],
   { encoding: "utf8", maxBuffer: 128 * 1024 * 1024 },
 );
@@ -47,4 +50,4 @@ if (!view) {
   console.error(`✗ 报告里没有 ${tab} 视图（有：${report.views.map((v) => v.tab).join(", ")}）`);
   process.exit(1);
 }
-console.log(JSON.stringify({ viewport: report.viewport, tab, ...view }, null, 2));
+console.log(JSON.stringify({ viewport: report.viewport, host, tab, ...view }, null, 2));

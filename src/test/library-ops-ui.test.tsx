@@ -129,7 +129,7 @@ vi.mock("../plugins/library-ops/core/telemetry-adapter", async (importOriginal) 
   return { ...actual, collectSnapshot: vi.fn(async () => snapshot()) };
 });
 
-/** 挂载「任务管理 → 图书馆」页签视图（不再有独立面板） */
+/** 挂载「任务管理 → 看板」页签视图（看板 / 工具 / 错误 / 时间线） */
 async function mountTaskView() {
   const { LibraryOpsBoardView } = await import("../plugins/library-ops/components/LibraryOpsBoardView");
   const { useLibraryOps } = await import("../plugins/library-ops/store");
@@ -143,7 +143,20 @@ async function mountTaskView() {
   return { utils, useLibraryOps };
 }
 
-/** 点击左侧子视图（场景/用量/会话/工具/成本/错误/时间线/设置） */
+/** 挂载「任务管理 → 子智能体」页签视图（场景 / 设置） */
+async function mountSceneView() {
+  const { LibraryOpsSceneView } = await import("../plugins/library-ops/components/LibraryOpsSceneView");
+  const { useLibraryOps } = await import("../plugins/library-ops/store");
+  useLibraryOps.getState()._reset();
+  const utils = render(<LibraryOpsSceneView />);
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+  return { utils, useLibraryOps };
+}
+
+/** 点击左侧子视图（看板组：看板/工具/错误/时间线；场景组：场景/设置） */
 async function clickSubNav(label: string) {
   const btn = [...document.querySelectorAll(".lo-nav__btn")].find((b) => b.textContent?.includes(label));
   expect(btn, `子视图「${label}」应存在`).toBeTruthy();
@@ -226,11 +239,11 @@ describe("LO-UI 监控面板", () => {
     expect(document.querySelector(".lo-task__feed")).toBeFalsy();
 
     // 其它监控视图仍然按设置显示事件流
-    await clickSubNav("用量");
+    await clickSubNav("工具");
     expect(document.querySelector(".lo-task__feed")).toBeTruthy();
   });
 
-  it("LO-UI-3: 看板视图渲染状态条 + 7 个视图导航 + 默认看板视图", async () => {
+  it("LO-UI-3: 看板视图渲染状态条 + 5 个视图导航 + 默认看板视图", async () => {
     await mountTaskView();
     expect(document.querySelector(".lo-task")).toBeTruthy();
     // 没有独立面板外壳（融合进任务管理）
@@ -240,15 +253,20 @@ describe("LO-UI 监控面板", () => {
     // 状态条：实时状态 + 时钟
     expect(document.querySelector(".lo-task__live")).toBeTruthy();
     expect(document.querySelector(".lo-task__clock")).toBeTruthy();
-    // 7 个视图（看板/场景/用量/工具/错误/时间线/设置）
-    expect(document.querySelectorAll(".lo-nav__btn").length).toBe(7);
+    // 4 个视图（看板/工具/错误/时间线）；场景与设置在「子智能体」，用量在「概览」
+    expect(document.querySelectorAll(".lo-nav__btn").length).toBe(4);
+    expect([...document.querySelectorAll(".lo-nav__label")].map((n) => n.textContent)).toEqual([
+      "看板",
+      "工具",
+      "错误",
+      "时间线",
+    ]);
     // 默认视图是看板（宿主 Issues 看板）
     expect(document.body.textContent).toContain("Backlog");
   });
 
   it("LO-UI-4: 场景视图渲染像素场景与花名册；切换风格后渲染等距场景", async () => {
-    await mountTaskView();
-    await clickSubNav("场景");
+    await mountSceneView();
 
     // 默认：像素场景（默认内置场景图，单图层）
     const pixel = document.querySelector('.lo-scene[data-scene="pixel"]')!;
@@ -279,8 +297,7 @@ describe("LO-UI 监控面板", () => {
   });
 
   it("LO-UI-5: 点击花名册角色 → 详情卡展示该角色信息", async () => {
-    await mountTaskView();
-    await clickSubNav("场景");
+    await mountSceneView();
     const firstRoster = [...document.querySelectorAll(".lo-roster__item")].find((el) =>
       el.textContent?.includes("角色-a1"),
     )!;
@@ -290,11 +307,21 @@ describe("LO-UI 监控面板", () => {
     expect(screen.getAllByText(/正在处理 a1/).length).toBeGreaterThan(0);
   });
 
-  it("LO-UI-6: 用量视图渲染 KPI + token/成本卡（成本已并入用量）", async () => {
-    await mountTaskView();
-    await clickSubNav("用量");
+  it("LO-UI-6: 用量嵌入（宿主「概览」页签）渲染 KPI + token/成本卡", async () => {
+    const { LibraryOpsUsageEmbed } = await import("../plugins/library-ops/components/LibraryOpsUsageEmbed");
+    const { useLibraryOps } = await import("../plugins/library-ops/store");
+    useLibraryOps.getState()._reset();
+    render(<LibraryOpsUsageEmbed />);
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    // 独立嵌入块（不渲染 .lo-task 外壳，自带容器查询上下文 .lo-embed）
+    expect(document.querySelector('[data-lo-view="task-center-overview-usage"]')).toBeTruthy();
+    expect(document.querySelector(".lo-embed")).toBeTruthy();
+    expect(document.querySelector(".lo-task")).toBeFalsy();
     expect(document.querySelectorAll(".lo-stat").length).toBeGreaterThanOrEqual(6);
-    // 原「成本」视图已合并进「用量」：token 构成 + 成本趋势都在这里
+    // 「成本」已并入用量：token 构成 + 成本趋势都在这里
     expect(screen.getAllByText(/150\.0k/).length).toBeGreaterThan(0); // 120k + 30k
     expect(screen.getAllByText(/\$3\.50/).length).toBeGreaterThan(0);
   });
@@ -316,7 +343,7 @@ describe("LO-UI 监控面板", () => {
   });
 
   it("LO-UI-8: 设置子视图可切换开关并持久化到 localStorage", async () => {
-    await mountTaskView();
+    await mountSceneView();
     await clickSubNav("设置");
     const checkbox = document.querySelector('.lo-switch input[type="checkbox"]') as HTMLInputElement;
     expect(checkbox).toBeTruthy();
@@ -336,7 +363,7 @@ describe("LO-UI 监控面板", () => {
     try {
       openLibraryView();
       expect(seen.length).toBe(1);
-      expect(seen[0]).toEqual({ tab: "board" });
+      expect(seen[0]).toEqual({ tab: "subagents", view: "scene" });
     } finally {
       window.removeEventListener("codem:open-task-center", listener);
     }
@@ -361,8 +388,7 @@ describe("LO-UI 监控面板", () => {
   });
 
   it("LO-UI-11: 场景视图点击岗位 → 详情卡显示岗位职责与在岗角色", async () => {
-    await mountTaskView();
-    await clickSubNav("场景");
+    await mountSceneView();
     // 像素场景里的房间可点击（12 个）
     const room = document.querySelector(".lo-pixel-room") as HTMLElement;
     expect(room).toBeTruthy();
@@ -379,8 +405,7 @@ describe("LO-UI 监控面板", () => {
   });
 
   it("LO-UI-12: 场景 HUD 提供缩放按钮，且画布使用平移+缩放变换", async () => {
-    await mountTaskView();
-    await clickSubNav("场景");
+    await mountSceneView();
     const hud = document.querySelector(".lo-scene__hud")!;
     expect(hud).toBeTruthy();
     // 放大 / 缩小 / 适应窗口 / 对位模式

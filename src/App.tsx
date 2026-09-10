@@ -496,6 +496,22 @@ useEffect(() => {
   window.addEventListener("codem:open-task-center", openTaskCenter as EventListener);
   return () => window.removeEventListener("codem:open-task-center", openTaskCenter as EventListener);
 }, []);
+// 「打开某个会话」请求（例如场景里的子智能体 → 打开父会话）。
+// 插件用宿主事件表达意图，宿主不依赖插件。
+useEffect(() => {
+  const openSession = (e: Event) => {
+    const sessionId = (e as CustomEvent).detail?.sessionId;
+    if (typeof sessionId !== "string" || !sessionId) return;
+    try {
+      useProjectStore.getState().switchSession(sessionId);
+      setShowTaskCenter(false);
+    } catch {
+      /* 忽略：切不过去就保持原样 */
+    }
+  };
+  window.addEventListener("codem:open-session", openSession as EventListener);
+  return () => window.removeEventListener("codem:open-session", openSession as EventListener);
+}, []);
 const [showAgentManager, setShowAgentManager] = useState(false);
   const [bottomTab, setBottomTab] = useState<BottomTab>("chat");
 // 如果性能 tab 被禁用但当前选中它，回退到对话

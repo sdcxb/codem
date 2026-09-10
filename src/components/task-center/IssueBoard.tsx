@@ -12,17 +12,15 @@ import type { IssueStatus } from "../../core/issue/issue-storage";
 import { useLang } from "../../core/i18n/lang";
 import { IssueCard } from "./IssueCard";
 import { getCurrentProjectId, useCurrentProjectId } from "./use-current-project";
+import { ISSUE_STATUS_META } from "./issue-status-meta";
 
-/** 所有 IssueStatus 都必须有一列，否则该状态的 issue 会在看板上"消失" */
-const COLUMNS: { status: IssueStatus; labelZh: string; labelEn: string; color: string }[] = [
-  { status: "backlog", labelZh: "Backlog", labelEn: "Backlog", color: "var(--text-muted)" },
-  { status: "todo", labelZh: "待办", labelEn: "Todo", color: "var(--accent)" },
-  { status: "in_progress", labelZh: "进行中", labelEn: "In Progress", color: "var(--accent)" },
-  { status: "in_review", labelZh: "待审查", labelEn: "In Review", color: "var(--warning)" },
-  { status: "blocked", labelZh: "阻塞", labelEn: "Blocked", color: "var(--error)" },
-  { status: "done", labelZh: "已完成", labelEn: "Done", color: "var(--success)" },
-  { status: "cancelled", labelZh: "已取消", labelEn: "Cancelled", color: "var(--text-muted)" },
-];
+/** 所有 IssueStatus 都必须有一列（列顺序/颜色/标签来自唯一的 issue-status-meta 表） */
+const COLUMNS = ISSUE_STATUS_META.map((m) => ({
+  status: m.status,
+  labelZh: m.labelZh,
+  labelEn: m.labelEn,
+  color: m.color,
+}));
 
 export function IssueBoard() {
   const lang = useLang();

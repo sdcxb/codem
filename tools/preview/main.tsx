@@ -17,6 +17,8 @@ import { OverviewPanel } from "../../src/plugins/library-ops/components/monitor/
 import { SceneImageCard } from "../../src/plugins/library-ops/components/monitor/SceneImageCard";
 import { IssueBoard } from "../../src/components/task-center/IssueBoard";
 import { LibraryOpsBoardView } from "../../src/plugins/library-ops/components/LibraryOpsBoardView";
+import { LibraryOpsSceneView } from "../../src/plugins/library-ops/components/LibraryOpsSceneView";
+import { LibraryOpsUsageEmbed } from "../../src/plugins/library-ops/components/LibraryOpsUsageEmbed";
 import { useLibraryOps } from "../../src/plugins/library-ops/store";
 import type { LibraryActor, LibrarySnapshot } from "../../src/plugins/library-ops/types";
 import { generateLook } from "../../src/plugins/library-ops/data/characters";
@@ -187,8 +189,9 @@ function settledPixelScene() {
 const INITIAL_PIXEL_SCENE = settledPixelScene();
 
 function Preview() {
-  // ?audit=1 → 渲染**真实的** LibraryOpsBoardView（含左侧子导航 + 右侧实时事件流 + 各子视图），
+  // ?audit=1 → 渲染**真实的**接管视图（含左侧子导航 + 右侧实时事件流 + 各子视图），
   // 按宿主面板尺寸铺满视口；audit-layout.mjs 通过 store 切子视图后逐个检查裁切/重叠。
+  // `?host=scene` 切换成「子智能体」页签的场景视图（场景 / 设置）。
   // 宿主 IssueBoard 由 issue-stub.ts 提供数据、core/store 由 store-stub.ts 替换，
   // 因此「看板内容与实时事件流互相遮挡」这类问题也能被审计到。
   const auditMode = typeof location !== "undefined" && location.search.includes("audit");
@@ -199,7 +202,16 @@ function Preview() {
         style={{ padding: 0, gap: 0, width: "min(1180px, 96vw)", height: "min(720px, 88vh)", margin: "0 auto" }}
       >
         <div style={{ position: "relative", height: "100%", border: "1px solid var(--border-primary)", borderRadius: 12, overflow: "hidden" }}>
-          <LibraryOpsBoardView />
+          {HOST_PARAM === "scene" ? (
+            <LibraryOpsSceneView />
+          ) : HOST_PARAM === "overview" ? (
+            // 概览里的用量嵌入：宿主概览页是自己滚动的普通页面，这里用同样的形态包一层
+            <div style={{ height: "100%", overflow: "auto", padding: 16 }}>
+              <LibraryOpsUsageEmbed />
+            </div>
+          ) : (
+            <LibraryOpsBoardView />
+          )}
         </div>
       </div>
     );
@@ -286,16 +298,21 @@ function AuditedView() {
 
 /**
  * 视觉预览：`?audit=1&view=board` 会停在指定子视图（供人工截图/目视检查），
- * 不带 view 时保持 audit-layout.mjs 的自动轮转。
+ * `?host=scene` 渲染「子智能体」页签的场景视图；不带 view 时保持 audit-layout.mjs 的自动轮转。
  */
-const VIEW_PARAM = (() => {
+const QUERY = (() => {
   try {
-    return new URLSearchParams(location.search).get("view");
+    return new URLSearchParams(location.search);
   } catch {
-    return null;
+    return new URLSearchParams();
   }
 })();
-if (VIEW_PARAM) useLibraryOps.getState().setTab(VIEW_PARAM as never);
+const VIEW_PARAM = QUERY.get("view");
+const HOST_PARAM = QUERY.get("host");
+if (VIEW_PARAM) {
+  if (HOST_PARAM === "scene") useLibraryOps.getState().setSceneTab(VIEW_PARAM as never);
+  else useLibraryOps.getState().setTab(VIEW_PARAM as never);
+}
 
 createRoot(document.getElementById("root")!).render(<Preview />);
 
@@ -313,7 +330,8 @@ createRoot(document.getElementById("root")!).render(<Preview />);
  */
 if (typeof location !== "undefined" && location.search.includes("audit")) {
   const measureView = (tab: string) => {
-    const root = document.querySelector(".lo-task");
+    // 宿主页签外壳是 .lo-task；概览里的用量嵌入没有外壳（宿主概览页自己排版）→ 用 .lo-embed
+    const root = document.querySelector(".lo-task") ?? document.querySelector(".lo-embed");
     const view: {
       tab: string;
       rootWidth: number;
@@ -330,6 +348,28 @@ if (typeof location !== "undefined" && location.search.includes("audit")) {
     if (!root) return view;
     const sel = (el: Element) =>
       `${el.tagName.toLowerCase()}.${(el.className || "").toString().split(" ").filter(Boolean).slice(0, 2).join(".")}`;
+    /**
+     * 样式自检：确认插件样式表真的被加载了。
+     * v1.15.0 曾漏掉 `styles/library-ops.css` 的 import → 整片页面无样式，
+     * 而版面审计（只看几何）完全看不出来，所以这里显式断言几条关键规则生效。
+     */
+    (view as Record<string, unknown>).stylesApplied = (() => {
+      const check = (selector: string, prop: string, expected: string) => {
+        const el = document.querySelector<HTMLElement>(selector);
+        if (!el) return { selector, ok: false, reason: "missing" };
+        const got = getComputedStyle(el)[prop as never] as unknown as string;
+        return { selector, prop, expected, got, ok: got === expected };
+      };
+      const checks = [
+        check(".lo-task", "display", "flex"),
+        check(".lo-task__body", "display", "flex"),
+        check(".lo-task__rail", "flexDirection", "column"),
+        // 概览里的用量嵌入：自带容器查询上下文 + 用量栅格
+        check(".lo-embed", "containerType", "inline-size"),
+        check(".lo-usage", "display", "flex"),
+      ].filter((c) => c.reason !== "missing");
+      return { ok: checks.length > 0 && checks.every((c) => c.ok), checks };
+    })();
     // 版面探针：把关键容器/子视图的矩形与溢出量记下来（定位「被遮挡」类问题）
     (view as Record<string, unknown>).probe = [
       ".lo-task__body",
@@ -408,7 +448,13 @@ if (typeof location !== "undefined" && location.search.includes("audit")) {
     return view;
   };
 
-  const SUB_VIEWS = ["board", "scene", "usage", "tools", "errors", "timeline", "settings"] as const;
+  // 按宿主位置分组轮转：
+  //   board    看板 / 工具 / 错误 / 时间线
+  //   scene    场景 / 设置
+  //   overview 用量（贡献给宿主「概览」页签的嵌入块）
+  const SUB_VIEWS: readonly ("board" | "scene" | "usage" | "tools" | "errors" | "timeline" | "settings")[] =
+    HOST_PARAM === "scene" ? ["scene", "settings"] : HOST_PARAM === "overview" ? ["usage"] : ["board", "tools", "errors", "timeline"];
+  const isSceneHost = HOST_PARAM === "scene";
 
   window.setTimeout(async () => {
     // ?view=xxx → 停在指定视图，不做自动轮转（供人工截图/目视检查）
@@ -419,7 +465,8 @@ if (typeof location !== "undefined" && location.search.includes("audit")) {
       views: [],
     };
     for (const tab of SUB_VIEWS) {
-      useLibraryOps.getState().setTab(tab);
+      if (isSceneHost) useLibraryOps.getState().setSceneTab(tab as never);
+      else useLibraryOps.getState().setTab(tab as never);
       // 等 React 提交 + 图表/场景布局稳定
       await new Promise((r) => setTimeout(r, 420));
       const v = measureView(tab);

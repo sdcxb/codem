@@ -1,4 +1,4 @@
-﻿/**
+/**
  * ErrorsPanel —— 异常 / 阻塞页。
  *
  * 汇总三类「需要人看」的信号：
@@ -13,6 +13,7 @@ import { ACTIVITY_META } from "../../types";
 import { formatAge } from "../../core/format";
 import { useLibraryOps } from "../../store";
 import { Card, Empty, Pill, SectionTitle, StatCard } from "./common";
+import { clockOf } from "./labels";
 import { LoIcon } from "../icons";
 
 export interface ErrorsPanelProps {
@@ -22,6 +23,7 @@ export interface ErrorsPanelProps {
 
 export function ErrorsPanel({ snapshot, zh }: ErrorsPanelProps) {
   const selectActor = useLibraryOps((s) => s.selectActor);
+  const requestView = useLibraryOps((s) => s.requestView);
   if (!snapshot) return <Empty text={zh ? "等待采样…" : "Waiting…"} />;
 
   const errorEvents = snapshot.events.filter((e) => e.severity === "bad");
@@ -62,7 +64,15 @@ export function ErrorsPanel({ snapshot, zh }: ErrorsPanelProps) {
                     </span>
                     <Pill token={meta.token}>{zh ? meta.zh : meta.en}</Pill>
                     <span className="lo-alerts__age">{formatAge(a.lastEventAt)}</span>
-                    <button className="lo-link-btn" onClick={() => selectActor(a.id)}>
+                    <button
+                      className="lo-link-btn"
+                      // 场景画布只在「子智能体」页签里，这里点「定位」必须先把场景调出来
+                      // （否则 selectActor 生效但用户看不到任何变化 —— 死按钮）
+                      onClick={() => {
+                        selectActor(a.id);
+                        requestView("scene");
+                      }}
+                    >
                       {zh ? "定位" : "Locate"}
                     </button>
                   </li>
@@ -100,7 +110,7 @@ export function ErrorsPanel({ snapshot, zh }: ErrorsPanelProps) {
           <ul className="lo-stream">
             {errorEvents.slice(0, 60).map((e) => (
               <li key={e.id} className="lo-stream__item" data-severity="bad">
-                <span className="lo-stream__time">{clock(e.at)}</span>
+                <span className="lo-stream__time">{clockOf(e.at)}</span>
                 <span className="lo-stream__text" title={e.text}>
                   {e.text}
                 </span>
@@ -131,10 +141,4 @@ export function ErrorsPanel({ snapshot, zh }: ErrorsPanelProps) {
       </Card>
     </div>
   );
-}
-
-function clock(at: number): string {
-  const d = new Date(at);
-  const p = (n: number) => String(n).padStart(2, "0");
-  return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
 }

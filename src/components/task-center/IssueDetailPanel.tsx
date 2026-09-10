@@ -10,7 +10,7 @@ import { getIssueManager, type IssueWithComments } from "../../core/issue/issue"
 import { getSquadManager } from "../../core/squad/squad";
 import type { IssueStatus } from "../../core/issue/issue-storage";
 import { useLang } from "../../core/i18n/lang";
-import { STATUS_CONFIG } from "./IssueCard";
+import { issueStatusMeta, ISSUE_STATUSES } from "./issue-status-meta";
 
 interface IssueDetailPanelProps {
   issue: IssueWithComments;
@@ -18,7 +18,7 @@ interface IssueDetailPanelProps {
   onRefresh: () => void;
 }
 
-const STATUS_OPTIONS: IssueStatus[] = ["backlog", "todo", "in_progress", "in_review", "done", "blocked", "cancelled"];
+const STATUS_OPTIONS: IssueStatus[] = ISSUE_STATUSES;
 
 export function IssueDetailPanel({ issue, onClose, onRefresh }: IssueDetailPanelProps) {
   const lang = useLang();
@@ -72,7 +72,7 @@ export function IssueDetailPanel({ issue, onClose, onRefresh }: IssueDetailPanel
     refresh();
   };
 
-  const config = STATUS_CONFIG[currentIssue.status] ?? STATUS_CONFIG.todo;
+  const config = issueStatusMeta(currentIssue.status);
   const StatusIcon = config.Icon;
 
   return (
@@ -127,7 +127,7 @@ export function IssueDetailPanel({ issue, onClose, onRefresh }: IssueDetailPanel
         </label>
         <div style={{ display: "flex", gap: "4px", flexWrap: "wrap", alignItems: "center" }}>
           {STATUS_OPTIONS.map((s) => {
-            const cfg = STATUS_CONFIG[s];
+            const cfg = issueStatusMeta(s);
             const Icon = cfg.Icon;
             const isActive = currentIssue.status === s;
             return (

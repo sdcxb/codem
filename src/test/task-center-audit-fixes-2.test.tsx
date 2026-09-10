@@ -161,9 +161,9 @@ describe("TC-AUDIT2-P2-3 详情面板状态变更守卫", () => {
     const { container } = render(
       <IssueDetailPanel issue={withComments} onClose={() => {}} onRefresh={() => {}} />,
     );
-    // 找到「todo」状态按钮（当前状态）并点击
-    const statusBtn = Array.from(container.querySelectorAll("button")).find(
-      (b) => b.textContent?.trim() === "Todo",
+    // 找到「todo」状态按钮（当前状态）并点击 —— 标签来自统一的 issue-status-meta 表
+    const statusBtn = Array.from(container.querySelectorAll("button")).find((b) =>
+      ["Todo", "待办"].includes(b.textContent?.trim() ?? ""),
     );
     expect(statusBtn).toBeTruthy();
     await act(async () => {

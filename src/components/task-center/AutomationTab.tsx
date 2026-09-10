@@ -18,6 +18,7 @@ import {
   type TriggerType,
 } from "../../core/automation/automation-manager";
 import { useLang } from "../../core/i18n/lang";
+import { ISSUE_STATUS_META } from "./issue-status-meta";
 
 export function AutomationTab() {
   const lang = useLang();
@@ -367,11 +368,12 @@ export function AutomationTab() {
                   style={inputStyle}
                 >
                   <option value="">{zh ? "所有状态" : "Any status"}</option>
-                  <option value="in_progress">{zh ? "进行中" : "In Progress"}</option>
-                  <option value="in_review">{zh ? "待审查" : "In Review"}</option>
-                  <option value="done">{zh ? "已完成" : "Done"}</option>
-                  <option value="blocked">{zh ? "阻塞" : "Blocked"}</option>
-                  <option value="cancelled">{zh ? "已取消" : "Cancelled"}</option>
+                  {/* 状态清单来自唯一的 issue-status-meta 表（原先只列了 5 个，漏了 backlog/todo） */}
+                  {ISSUE_STATUS_META.map((m) => (
+                    <option key={m.status} value={m.status}>
+                      {zh ? m.labelZh : m.labelEn}
+                    </option>
+                  ))}
                 </select>
               </div>
               <div style={{ marginBottom: 8, fontSize: 'var(--fs-xs)', color: "var(--text-muted)" }}>

@@ -9,6 +9,22 @@
  *   - 全文件零硬编码色值（由 src/test/library-ops-skin.test.ts 门禁）
  * ========================================================================== */
 
+/* ===== 宿主「概览」页签里的「用量」嵌入 =====
+ * 这里不在 `.lo-task` 外壳内，必须自己起容器查询上下文（container-name: lo），
+ * 否则插件里 `@container lo (...)` 的自适应规则全部失效。 */
+.lo-embed {
+  container-type: inline-size;
+  container-name: lo;
+  display: block;
+  min-width: 0;
+}
+.lo-embed__title {
+  font-size: var(--fs-md);
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 10px;
+}
+
 /* ===== 任务管理「图书馆」页签视图（不再有独立面板） ===== */
 .lo-task {
   display: flex;

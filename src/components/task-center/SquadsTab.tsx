@@ -9,8 +9,8 @@ import { useState, useEffect, useCallback } from "react";
 import { Users, Plus, Trash2, Archive, Crown, User, ChevronRight, Bot } from "lucide-react";
 import { getSquadManager, type SquadWithMembers } from "../../core/squad";
 import { getAgentRegistry, type AgentDefinition } from "../../core/agent/agent";
-import { useProjectStore } from "../../core/store";
 import { useLang } from "../../core/i18n/lang";
+import { useCurrentProjectId } from "./use-current-project";
 
 export function SquadsTab() {
   const lang = useLang();
@@ -19,13 +19,14 @@ export function SquadsTab() {
   const [agents, setAgents] = useState<AgentDefinition[]>([]);
   const [editing, setEditing] = useState<Partial<{ name: string; leaderAgentId: string; instructions: string }> | null>(null);
   const [selectedSquad, setSelectedSquad] = useState<string | null>(null);
+  // 当前项目进依赖：切换项目必须重查（对齐 Issues/看板/收件箱的 P2-12 项目边界约定）
+  const projectId = useCurrentProjectId();
 
   const loadSquads = useCallback(() => {
     const mgr = getSquadManager();
-    const projectId = useProjectStore.getState().currentProject?.id;
-    setSquads(mgr.listSquads(projectId));
+    setSquads(mgr.listSquads(projectId ?? undefined));
     setAgents(getAgentRegistry().getAll());
-  }, []);
+  }, [projectId]);
 
   useEffect(() => {
     loadSquads();
@@ -37,12 +38,11 @@ export function SquadsTab() {
   const handleCreate = () => {
     if (!editing || !editing.name || !editing.leaderAgentId) return;
     const mgr = getSquadManager();
-    const projectId = useProjectStore.getState().currentProject?.id;
     mgr.createSquad({
       name: editing.name,
       leaderAgentId: editing.leaderAgentId,
       instructions: editing.instructions,
-      projectId,
+      projectId: projectId ?? undefined,
     });
     setEditing(null);
     loadSquads();

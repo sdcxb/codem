@@ -158,7 +158,7 @@ function baseDeps(overrides: Partial<AdapterDeps> = {}): AdapterDeps {
 }
 
 describe("LO-ADP 遥测适配层", () => {
-  it("LO-ADP-1: 会话 → 角色（队长/分支/主控），岗位按角色标签解析", () => {
+  it("LO-ADP-1: 会话 → 角色只保留队长；非队长闲置会话不再入馆（v1.15.0 绑定规则）", () => {
     const snap = collectSnapshotSync(baseDeps());
     const s1 = snap.actors.find((a) => a.id === "session:s1")!;
     expect(s1.kind).toBe("captain"); // s1 是 team-1 的队长会话
@@ -166,13 +166,55 @@ describe("LO-ADP 遥测适配层", () => {
     expect(s1.teamName).toBe("前端重构");
     expect(s1.activity).toBe("working"); // 最近一次工具调用是 bash
 
-    const s2 = snap.actors.find((a) => a.id === "session:s2")!;
-    expect(s2.kind).toBe("session");
-    expect(s2.roleLabel).toContain("分支会话");
-    expect(s2.activity).toBe("idle");
+    // s2 / s3 既不是队长、也没团队、也没子智能体 → 不再各自变成一个角色
+    expect(snap.actors.find((a) => a.id === "session:s2")).toBeUndefined();
+    expect(snap.actors.find((a) => a.id === "session:s3")).toBeUndefined();
+    // 会话计数仍然是全量的（指标来源不受角色绑定影响）
+    expect(snap.metrics.sessions).toBeGreaterThanOrEqual(3);
+  });
 
-    const s3 = snap.actors.find((a) => a.id === "session:s3")!;
-    expect(s3.activity).toBe("sleeping"); // 5 天没动
+  it("LO-ADP-1b: 当前会话即队长；无团队时标签为「队长 · 主控」", () => {
+    const snap = collectSnapshotSync(baseDeps());
+    const current = snap.actors.find((a) => a.id === "session:s1")!;
+    expect(current.kind).toBe("captain");
+
+    // 去掉团队 → 当前会话仍是队长，只是标签回落
+    const noTeam = collectSnapshotSync(baseDeps({ teams: () => [] }));
+    const captains = noTeam.actors.filter((a) => a.kind === "captain");
+    expect(captains.length).toBe(1);
+    expect(captains[0].id).toBe("session:s1");
+  });
+
+  it("LO-ADP-1c: 在途委派的目标会话会作为「委派 · 协作会话」入馆", () => {
+    const withDelegation = collectSnapshotSync(
+      baseDeps({
+        delegations: () => [
+          {
+            id: "d1",
+            sourceSessionId: "s1",
+            targetSessionId: "s2",
+            task: "调研方案",
+            status: "running",
+            projectId: "p1",
+          },
+        ],
+      }),
+    );
+    const s2 = withDelegation.actors.find((a) => a.id === "session:s2")!;
+    expect(s2).toBeTruthy();
+    expect(s2.roleLabel).toBe("委派 · 协作会话");
+    expect(s2.activity).toBe("working");
+    expect(s2.focus).toBe("调研方案");
+
+    // 终态委派不算「在途」→ 目标会话不再入馆
+    const finished = collectSnapshotSync(
+      baseDeps({
+        delegations: () => [
+          { id: "d1", sourceSessionId: "s1", targetSessionId: "s2", task: "调研方案", status: "completed" },
+        ],
+      }),
+    );
+    expect(finished.actors.find((a) => a.id === "session:s2")).toBeUndefined();
   });
 
   it("LO-ADP-2: 团队成员 → 角色（已移除成员不出现），任务指标正确", () => {
@@ -206,12 +248,13 @@ describe("LO-ADP 遥测适配层", () => {
     expect(done.activity).toBe("done");
   });
 
-  it("LO-ADP-4: 团队模板角色补位；完全无数据时出现「值班馆员」", () => {
+  it("LO-ADP-4: 团队模板角色不再补位（避免「没建队却满馆人」）；完全无数据时出现「值班馆员」", () => {
     const snap = collectSnapshotSync(baseDeps());
-    const tpl = snap.actors.find((a) => a.id === "template:squad-1:小笔")!;
-    expect(tpl).toBeTruthy();
-    expect(tpl.activity).toBe("idle");
-    expect(tpl.preferredZoneId).toBe("writing-studio");
+    // v1.15.0：角色只绑定「队长 + 运行时团队成员 + 子智能体 + 在途委派会话」
+    expect(snap.actors.find((a) => a.id === "template:squad-1:小笔")).toBeUndefined();
+    expect(snap.actors.some((a) => a.roleLabel.includes("角色模板"))).toBe(false);
+    // 但模板数量仍然统计在 sources 里（数据源健康卡要用）
+    expect(snap.sources.teamTemplates).toBeGreaterThanOrEqual(0);
 
     const empty = collectSnapshotSync({
       now: () => NOW,
@@ -369,8 +412,8 @@ describe("LO-ADP 遥测适配层", () => {
     const s1 = snap.actors.find((a) => a.id === "session:s1")!;
     // 活跃会话按最近工具映射（bash → working），而不是退化为 idle
     expect(s1.activity).toBe("working");
-    // 未标记的会话不受影响
-    const s2 = snap.actors.find((a) => a.id === "session:s2")!;
-    expect(s2.activity).toBe("idle");
+    // 未标记活跃的会话（s2）已不再入馆 → 谁在工作看角色列表一目了然
+    expect(snap.actors.find((a) => a.id === "session:s2")).toBeUndefined();
+    expect(snap.metrics.actors).toBe(snap.actors.length);
   });
 });

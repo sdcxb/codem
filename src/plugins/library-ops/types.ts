@@ -455,15 +455,25 @@ export interface SeriesPoint {
 }
 
 /**
- * 看板页签内的子视图（任务管理 →「看板」页签里切换）。
+ * 插件在宿主页签里提供的子视图。
  *
- * 说明：本插件**没有独立面板/页签**，而是接管宿主「看板」页签（`task-center.board`），
- * 在其上追加 场景 / 用量 / 工具 / 错误 / 时间线 / 设置 视图。
- * 原先与任务管理重复的「总览 / 团队 / 会话 / 成本」已合并或移除：
- * 总览 → 本插件的「用量」（并合并了原「成本」页），团队 → 任务管理「团队」，
- * 会话 → 任务管理「委派 / 子智能体」+ 场景花名册。
+ * v1.15.x 起按「宿主页签」分组（不再全塞在「看板」里）：
+ * - 看板组（`BOARD_VIEWS`，宿主 `task-center.board`）：看板 / 工具 / 错误 / 时间线
+ * - 场景组（`SCENE_VIEWS`，宿主 `task-center.subagents`）：场景 / 设置
+ * - `usage`（用量）：已**迁进宿主「概览」页签**（slot `task-center.overview`），
+ *   不再是插件自己的页签视图 —— 保留在联合类型里只为兼容旧的持久化值与深链。
+ *
+ * 分组理由：场景是「团队 / 子智能体」的可视化表达，放在「子智能体」页签下语义正确；
+ * 「设置」调的全是场景显示（场景图 / 名牌 / 气泡 / 动画速度 / 采样），跟着场景走；
+ * 「用量」本就是概览的一部分（KPI / 健康度 / 活动分布 / 成本）。
  */
 export type MonitorTab = "board" | "scene" | "usage" | "tools" | "errors" | "timeline" | "settings";
+
+/** 看板页签里的视图（宿主 `task-center.board`：插件在此接管） */
+export type BoardView = Extract<MonitorTab, "board" | "tools" | "errors" | "timeline">;
+
+/** 子智能体页签里的视图（宿主 `task-center.subagents`：插件在此接管） */
+export type SceneView = Extract<MonitorTab, "scene" | "settings">;
 
 /** 全部合法子视图（持久化校验 / 设置页签选择用） */
 export const MONITOR_TABS: MonitorTab[] = [
@@ -475,6 +485,17 @@ export const MONITOR_TABS: MonitorTab[] = [
   "timeline",
   "settings",
 ];
+
+export const BOARD_VIEWS: BoardView[] = ["board", "tools", "errors", "timeline"];
+export const SCENE_VIEWS: SceneView[] = ["scene", "settings"];
+
+/** 视图 → 宿主页签（跨页签跳转用） */
+export function hostTabOfView(view: MonitorTab): "board" | "subagents" | "overview" {
+  if ((SCENE_VIEWS as string[]).includes(view)) return "subagents";
+  // 用量已迁进概览页签
+  if (view === "usage") return "overview";
+  return "board";
+}
 
 /** 场景风格：pixel = 第三方像素美术场景（默认，仅限非商业）；iso = 本项目自绘等距矢量场景 */
 export type SceneStyle = "pixel" | "iso";
@@ -543,9 +564,9 @@ export interface LibraryOpsSettings {
   maxActors: number;
   /** 是否显示图书馆页签右侧的实时事件流 */
   showEventFeed: boolean;
-  /** 「图书馆」页签打开时的默认子视图 */
+  /** 打开「看板」页签时的默认子视图（场景组有自己的默认：场景） */
   defaultTab: MonitorTab;
-  /** 是否在启动时自动打开「任务管理 → 图书馆」页签 */
+  /** 是否在启动时自动打开「任务管理 → 看板」页签 */
   autoOpen: boolean;
 }
 

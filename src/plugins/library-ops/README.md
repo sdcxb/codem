@@ -1,4 +1,4 @@
-﻿# @codem/ui-library-ops — 图书馆运营监控（Library Ops Monitor）
+# @codem/ui-library-ops — 图书馆运营监控（Library Ops Monitor）
 
 > 完全独立、可启停的 Codem 大插件。
 > 把**团队角色与子智能体**变成各自不同的动画角色，在**像素美术图书馆**里各自的岗位上工作；
@@ -19,7 +19,7 @@
 | **多角色图书馆** | 像素场景里 12 个房间映射到 10 个职能岗位；角色沿上游手工标注的可行走主干行走，到岗后播放对应动作 |
 | **角色精灵动画** | 集成 ClawLibrary 的 **Capy-Claw / Cat-Claw** 两套角色 × 12 套动作（work/read/idea/repair/error/sleep/coffee/rest/walk/stand_front/stand_back/lie_flat…），帧 128×128 @6fps；按角色 id 稳定分配变体 |
 | **11 种工作动画** | 待命 / 行走 / 思考 / 阅读 / 撰写 / 执行 / 检索 / 等待授权 / 完成 / 出错 / 休眠 —— 由**真实工具调用与任务状态**驱动，映射到上游精灵动作 |
-| **运营监控看板** | 布局对标 lobster-pet：**行 1** 状态卡(236px) + 最近会话卡网格 + 活动概览(热力图/环形图/小时柱状图)；**行 2** 左栈（团队卡 + 任务与工具卡 + 数据源与健康度卡）与**图书馆场景大卡**；另有图书馆、团队、会话、工具、成本、错误、时间线、设置 8 个页签 + 右侧实时事件流 |
+| **运营监控看板** | 布局对标 lobster-pet：**行 1** 状态卡(236px) + 最近会话卡网格 + 活动概览(热力图/环形图/小时柱状图)；**行 2** 左栈（团队卡 + 任务与工具卡 + 数据源与健康度卡）与**图书馆场景大卡** |
 | **相机可交互** | 滚轮缩放（以指针为锚点，0.3×–3.2×）/ 拖拽平移 / 双击复位 / HUD 缩放与在馆统计 / 选中角色镜头平滑居中 |
 | **真实数据** | 会话 / 团队（AgentTeamsService）/ 子智能体（SubagentRuntime）/ 团队模板（SquadManager）/ 工具调用（消息流）/ token 与成本（CostTracker）/ 遥测事件，全部只读 |
 
@@ -58,7 +58,9 @@ src/plugins/library-ops/
 │   ├── telemetry-adapter.ts      # 真实 Codem 数据 → LibrarySnapshot（只读 + 可注入）
 │   └── format.ts                 # 数值/时间格式化（全插件统一口径）
 ├── components/
-│   ├── LibraryOpsTaskView.tsx    # 任务管理「图书馆」页签视图（状态条 + 子导航 + 内容 + 事件流）
+│   ├── LibraryOpsViewShell.tsx   # 两个页签共用的外壳（状态条 + 子导航 + 内容区 + 可选事件流）
+│   ├── LibraryOpsBoardView.tsx   # 「看板」页签接管视图（看板/用量/工具/错误/时间线）
+│   ├── LibraryOpsSceneView.tsx   # 「子智能体」页签接管视图（场景/设置）
 │   ├── library/
 │   │   ├── iso.ts                # 等距几何（角点/中心两套约定 + 立方体 + 网格线 + 窗）
 │   │   ├── PixelLibraryScene.tsx # 像素图书馆场景（默认，ClawLibrary 美术）
@@ -98,10 +100,11 @@ public/library-ops/               # 第三方像素美术资源（仅限非商�
 
 ## 4. 启停语义（本插件最重要的约束）
 
-- **启用**：任务管理面板出现「图书馆」页签（默认子视图是场景）；也可
-  `Ctrl/Cmd+Shift+L` 或派发 `codem:open-library-ops` 直接打开该页签。
+- **启用**：插件接管任务管理的**两个**页签 ——「看板」（看板/用量/工具/错误/时间线）与
+  「子智能体」（场景/设置）；`Ctrl/Cmd+Shift+L` 或派发 `codem:open-library-ops` 直接打开
+  「子智能体 → 场景」。
 - **禁用**（插件管理 → 关闭 `@codem/ui-library-ops`）：provider 不装配 →
-  该 slot 无贡献者 → 「图书馆」页签不出现，其余 8 个页签与宿主数据**零变化**。
+  两个 slot 均无贡献者 → 看板回退宿主 Issues 看板、子智能体回退宿主列表，宿主数据**零变化**。
 - **页签切走 / 关闭任务管理时**：停止采样，无任何后台轮询与定时器。
 - **只读**：适配层只调用宿主服务的读接口；`library-ops-integration.test.ts` 的
   LO-INT-7 用禁止词表把「插件不得写宿主」变成门禁。

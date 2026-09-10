@@ -199,7 +199,7 @@ describe("LO-REAL 与真实团队 / 子智能体联动", () => {
     expect(svc.status(team.id).members[0].status).toBe("working");
   });
 
-  it("LO-REAL-3: 真实团队模板（SquadManager）→ 模板角色入馆待命并落在对应岗位", async () => {
+  it("LO-REAL-3: 团队模板（SquadManager）本身不入馆 —— 只有真实团队/子智能体才变成角色", async () => {
     const { getSquadManager } = await import("../core/squad/squad");
     const mgr = getSquadManager();
     const squad = mgr.createSquad({ name: "文档小队", leaderAgentId: "general", instructions: "写文档" });
@@ -211,11 +211,37 @@ describe("LO-REAL 与真实团队 / 子智能体联动", () => {
     });
 
     const snap = await collectReal();
-    const tpl = snap.actors.find((a) => a.kind === "member" && a.name === "小笔")!;
-    expect(tpl).toBeTruthy();
-    expect(tpl.activity).toBe("idle");
-    expect(tpl.preferredZoneId).toBe("writing-studio");
+    // v1.15.0：角色只绑定「队长 + 运行时团队成员 + 子智能体 + 在途委派会话」；
+    // 模板角色不再占位（否则「没建队却满馆人」）
+    expect(snap.actors.find((a) => a.name === "小笔")).toBeUndefined();
     expect(snap.sources.teamTemplates).toBeGreaterThanOrEqual(1);
+  });
+
+  it("LO-REAL-3b: 没有团队 / 子智能体 / 在途委派时，馆内只有队长一个角色且待命", async () => {
+    // 宿主 fixture 默认是「正在执行工具」；这里先静下来，验证的是「无事可做时只有队长待命」
+    const { useAppStore } = await import("../store");
+    useAppStore.setState({ activeSessions: new Map(), llmStatus: "idle", messages: [] } as any);
+    const snap = await collectReal();
+    expect(snap.actors.length).toBe(1);
+    const captain = snap.actors[0];
+    expect(captain.kind).toBe("captain");
+    expect(captain.roleLabel).toBe("队长 · 主控");
+    expect(["idle", "sleeping"]).toContain(captain.activity);
+  });
+
+  it("LO-REAL-3c: 多个闲置会话不会再各自变成角色（场景只反映真实干活的人）", async () => {
+    const { useProjectStore } = await import("../core/store");
+    const state = useProjectStore.getState();
+    useProjectStore.setState({
+      sessions: [
+        ...state.sessions,
+        { id: "sess-idle-1", projectId: "proj-1", title: "闲置会话 1", createdAt: 0, lastMessageAt: 0, messageCount: 0 },
+        { id: "sess-idle-2", projectId: "proj-1", title: "闲置会话 2", createdAt: 0, lastMessageAt: 0, messageCount: 0 },
+      ] as any,
+    });
+    const snap = await collectReal();
+    expect(snap.actors.length).toBe(1);
+    expect(snap.actors[0].kind).toBe("captain");
   });
 
   it("LO-REAL-4: 真实 AgentRegistry / CostTracker 接线（成本进入指标）", async () => {
@@ -248,6 +274,7 @@ describe("LO-REAL 与真实团队 / 子智能体联动", () => {
     expect(typeof deps.costStats).toBe("function");
     expect(typeof deps.squads).toBe("function");
     expect(typeof deps.agentDefs).toBe("function");
+    expect(typeof deps.delegations).toBe("function");
     expect(typeof deps.telemetryEvents).toBe("function");
 
     // 逐个调用，形状正确且不抛
@@ -260,6 +287,7 @@ describe("LO-REAL 与真实团队 / 子智能体联动", () => {
     expect(typeof cost.totalInputTokens).toBe("number");
     expect(Array.isArray(deps.squads!())).toBe(true);
     expect(Array.isArray(deps.agentDefs!())).toBe(true);
+    expect(Array.isArray(deps.delegations!())).toBe(true);
     expect(Array.isArray(deps.telemetryEvents!([SESSION_ID]))).toBe(true);
   });
 
@@ -286,8 +314,9 @@ describe("LO-REAL 与真实团队 / 子智能体联动", () => {
     const snap = await collectReal();
     expect(snap.actors.some((a) => a.name === "小临")).toBe(false);
     expect(snap.metrics.teams).toBe(0);
-    // 队长角色仍在（只是不再是 captain）
+    // 队长角色仍在（v1.15.0：会话一律以「队长」身份在馆，不再降级为「会话」）
     const captain = snap.actors.find((a) => a.id === `session:${SESSION_ID}`)!;
-    expect(captain.kind).toBe("session");
+    expect(captain.kind).toBe("captain");
+    expect(captain.roleLabel).toBe("队长 · 主控");
   });
 });

@@ -2,16 +2,22 @@
  * 版面自检脚本（开发工具）。
  *
  * 用 headless 浏览器在**多个窗口宽度**下渲染 `tools/preview?audit=1`：页面会逐个
- * 切到「图书馆」页签的每个子视图（场景/用量/会话/工具/成本/错误/时间线/设置），
- * 逐元素检查「被裁切」「元素互相重叠」，结果写进 `#layout-audit`。
+ * 切到当前宿主页签的每个子视图，逐元素检查「被裁切」「元素互相重叠」「与事件流重叠」，
+ * 结果写进 `#layout-audit`。
  *
- * 用法：node tools/preview/audit-layout.mjs [url] [--verbose]
+ * 用法：
+ *   node tools/preview/audit-layout.mjs [url] [--verbose] [--host=board|scene]
+ *
+ * 宿主页签（v1.15.0 起插件占两个）：
+ *   board  看板 / 用量 / 工具 / 错误 / 时间线
+ *   scene  场景 / 设置
  */
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 
 const args = process.argv.slice(2);
 const verbose = args.includes("--verbose");
+const host = (args.find((a) => a.startsWith("--host=")) ?? "--host=board").split("=")[1];
 const URL_BASE = args.find((a) => a.startsWith("http")) ?? "http://localhost:4599";
 const EDGE_CANDIDATES = [
   "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe",
@@ -47,7 +53,7 @@ for (const vp of VIEWPORTS) {
       "--virtual-time-budget=15000",
       `--window-size=${vp.w},${vp.h}`,
       "--dump-dom",
-      `${URL_BASE}/?audit=1`,
+      `${URL_BASE}/?audit=1&host=${host}`,
     ],
     { encoding: "utf8", maxBuffer: 128 * 1024 * 1024 },
   );
@@ -69,14 +75,22 @@ for (const vp of VIEWPORTS) {
     clipped: v.clipped.length,
     overlapping: v.overlapping.length,
     minFontPx: v.minFontPx,
-    ...(verbose && (v.clipped.length || v.overlapping.length)
-      ? { detail: { clipped: v.clipped.slice(0, 6), overlapping: v.overlapping.slice(0, 6) } }
+    stylesApplied: v.stylesApplied?.ok !== false,
+    ...(verbose && (v.clipped.length || v.overlapping.length || v.stylesApplied?.ok === false)
+      ? {
+          detail: {
+            clipped: v.clipped.slice(0, 6),
+            overlapping: v.overlapping.slice(0, 6),
+            ...(v.stylesApplied?.ok === false ? { styles: v.stylesApplied.checks } : {}),
+          },
+        }
       : {}),
   }));
-  const bad = views.filter((v) => v.clipped > 0 || v.overlapping > 0);
+  // 样式表没加载 / 规则未生效也算失败（v1.15.0 的 CSS 丢失事故就属于这类）
+  const bad = views.filter((v) => v.clipped > 0 || v.overlapping > 0 || v.stylesApplied === false);
   if (bad.length > 0) failed++;
   results.push({ viewport: vp.label, panelWidth: report.views?.[0]?.rootWidth ?? 0, views, badViews: bad.map((b) => b.tab) });
 }
 
-console.log(JSON.stringify({ results, failed }, null, 2));
+console.log(JSON.stringify({ host, results, failed }, null, 2));
 process.exit(failed > 0 ? 1 : 0);

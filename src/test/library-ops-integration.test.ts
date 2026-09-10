@@ -58,7 +58,7 @@ describe("LO-INT 插件注册链路", () => {
     expect(gating).toMatch(/["']ui-pet["']\s*:\s*["']@codem\/ui-pet["']/);
   });
 
-  it("LO-INT-4: provider 把图书馆视图注册到 task-center.board 并返回复合 dispose", async () => {
+  it("LO-INT-4: provider 把视图注册到三个宿主位置（看板 / 子智能体 / 概览用量）并返回复合 dispose", async () => {
     const { uiLibraryOpsProvider } = await import("../core/provider/ui-library-ops-provider");
     const registered: Array<{ spec: any; comp: any }> = [];
     let disposed = 0;
@@ -83,15 +83,21 @@ describe("LO-INT 插件注册链路", () => {
       },
     };
     const dispose = (uiLibraryOpsProvider as any)(ctx);
-    expect(registered.length).toBe(1);
-    expect(registered[0].spec.name).toBe("task-center.board");
-    expect(registered[0].spec.id).toBe("library-ops-board-view");
-    expect(typeof registered[0].comp).toBe("function");
+    expect(registered.length).toBe(3);
+    const board = registered.find((r) => r.spec.name === "task-center.board")!;
+    const scene = registered.find((r) => r.spec.name === "task-center.subagents")!;
+    const usage = registered.find((r) => r.spec.name === "task-center.overview")!;
+    expect(board.spec.id).toBe("library-ops-board-view");
+    expect(scene.spec.id).toBe("library-ops-scene-view");
+    expect(usage.spec.id).toBe("library-ops-usage");
+    expect(typeof board.comp).toBe("function");
+    expect(typeof scene.comp).toBe("function");
+    expect(typeof usage.comp).toBe("function");
     expect(provided).toBe("uiLibraryOps");
     expect(typeof dispose).toBe("function");
     dispose();
-    // provide + slot 各回收一次
-    expect(disposed).toBe(2);
+    // provide 一次 + 三个 slot 各回收一次
+    expect(disposed).toBe(4);
   });
 
   it("LO-INT-5: provider 声明 inject: ['slots']（框架保证 slots 就绪）", async () => {

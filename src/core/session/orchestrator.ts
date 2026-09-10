@@ -321,6 +321,11 @@ export class DelegationOrchestrator {
     return Array.from(this.tasks.values()).sort((a, b) => b.createdAt - a.createdAt);
   }
 
+  /** 当前的委派限制（深度 / 并发 / 并发上限来源），供宿主 UI 展示真实配置而不是写死文案 */
+  getLimits(): { maxDepth: number; maxConcurrent: number } {
+    return { maxDepth: this.config.maxDepth, maxConcurrent: this.config.maxConcurrent };
+  }
+
   /** 获取统计信息 */
   getStats(): {
     total: number;

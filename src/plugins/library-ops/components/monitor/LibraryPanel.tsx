@@ -181,6 +181,24 @@ export function LibraryPanel({ snapshot, zh }: LibraryPanelProps) {
               </Field>
               <Field label={zh ? "工具调用" : "Tools"}>{selected.metrics.tools}</Field>
               <Field label={zh ? "最近活动" : "Last event"}>{formatAge(selected.lastEventAt)}</Field>
+              {selected.kind === "subagent" && selected.parentId && (
+                <button
+                  className="lo-link-btn"
+                  // 场景接管了「子智能体」页签后，宿主列表的下钻入口不可达 →
+                  // 这里补一个「打开父会话」，由宿主监听 codem:open-session 处理
+                  onClick={() => {
+                    try {
+                      window.dispatchEvent(
+                        new CustomEvent("codem:open-session", { detail: { sessionId: selected.parentId } }),
+                      );
+                    } catch {
+                      /* 忽略：非浏览器环境 */
+                    }
+                  }}
+                >
+                  {zh ? "打开父会话 →" : "Open parent session →"}
+                </button>
+              )}
               <Field label={zh ? "外观" : "Look"}>
                 {paletteOf(selected.look).zh} · #{selected.look.body}-{selected.look.hair}-{selected.look.hat}-{selected.look.prop}
               </Field>

@@ -11,13 +11,13 @@
  */
 
 import { useMemo } from "react";
-import type { LibrarySnapshot } from "../../types";
+import type { LibrarySnapshot, MonitorTab } from "../../types";
 import { ACTIVITY_META, KIND_META } from "../../types";
 import { formatCost, formatAge, formatPercent, formatTokens } from "../../core/format";
 import { useLibraryOps, sortedActors } from "../../store";
 import { Card, Empty, Field, Pill, SectionTitle, StatCard } from "./common";
 import { DonutChart, Heatmap, HourBars, ProgressRing } from "./charts";
-import { eventKindLabel, hhmmOf } from "./labels";
+import { EventList } from "./EventList";
 import { PixelLibraryScene } from "../library/PixelLibraryScene";
 import { LibraryScene } from "../library/LibraryScene";
 import type { PixelSceneState } from "../../core/pixel-scene";
@@ -36,7 +36,7 @@ export interface OverviewPanelProps {
   };
   zh: boolean;
   onOpenLibrary: () => void;
-  onOpenTab: (tab: "board" | "scene" | "usage" | "tools" | "errors" | "timeline" | "settings") => void;
+  onOpenTab: (tab: MonitorTab) => void;
 }
 
 /** 跳转到任务管理的其它页签（团队/委派/子智能体等已并入任务管理） */
@@ -48,6 +48,7 @@ function openTaskCenterTab(tab: string): void {
 export function OverviewPanel({ snapshot, series, zh, onOpenLibrary, onOpenTab }: OverviewPanelProps) {
   const settings = useLibraryOps((s) => s.settings);
   const selectActor = useLibraryOps((s) => s.selectActor);
+  const requestView = useLibraryOps((s) => s.requestView);
   const initialPixelScene = useMemo(() => useLibraryOps.getState().pixelScene, []);
   const initialIsoScene = useMemo(() => useLibraryOps.getState().isoScene, []);
 
@@ -87,7 +88,15 @@ export function OverviewPanel({ snapshot, series, zh, onOpenLibrary, onOpenTab }
             </div>
             <div className="lo-status__list">
               {sessions.slice(0, 4).map((a) => (
-                <div key={a.id} className="lo-status__item" onClick={() => selectActor(a.id)}>
+                // 场景画布在「子智能体」页签：点击角色要先把场景调出来，否则选中了也看不见
+                <div
+                  key={a.id}
+                  className="lo-status__item"
+                  onClick={() => {
+                    selectActor(a.id);
+                    requestView("scene");
+                  }}
+                >
                   <span className="lo-status__item-name" title={a.name}>
                     <LoIcon name={KIND_META[a.kind].icon} size={12} /> {a.name}
                   </span>
@@ -97,11 +106,7 @@ export function OverviewPanel({ snapshot, series, zh, onOpenLibrary, onOpenTab }
               {sessions.length === 0 && <span className="lo-empty">{zh ? "暂无会话" : "No sessions"}</span>}
             </div>
           </div>
-          <div className="lo-status__usage">
-            <span className="lo-status__tokens">{formatTokens(m.tokensIn + m.tokensOut)}</span>
-            <span className="lo-status__unit">tokens</span>
-            <span className="lo-status__cost"><LoIcon name="circle-dollar-sign" size={12} /> {formatCost(m.costTotal)}</span>
-          </div>
+          {/* token/成本只保留一处呈现（KPI 卡与 CostPanel 已有），这里不再重复第三遍 */}
         </Card>
 
         {/* 最近会话（对标 TaskGrid） */}
@@ -116,7 +121,15 @@ export function OverviewPanel({ snapshot, series, zh, onOpenLibrary, onOpenTab }
           ) : (
             <div className="lo-session-cards">
               {sessions.map((a) => (
-                <button key={a.id} className="lo-session-card" onClick={() => selectActor(a.id)} title={a.roleLabel}>
+                <button
+                  key={a.id}
+                  className="lo-session-card"
+                  onClick={() => {
+                    selectActor(a.id);
+                    requestView("scene");
+                  }}
+                  title={a.roleLabel}
+                >
                   <span className="lo-session-card__top">
                     <span className="lo-session-card__icon"><LoIcon name={KIND_META[a.kind].icon} size={13} /></span>
                     <span className="lo-session-card__name">{a.name}</span>
@@ -215,32 +228,27 @@ export function OverviewPanel({ snapshot, series, zh, onOpenLibrary, onOpenTab }
               }
             >
               <div className="lo-fields">
-                <Field label={zh ? "任务总数" : "Tasks"}>{m.tasksTotal}</Field>
+                <Field label={zh ? "团队任务总数" : "Team tasks"}>{m.tasksTotal}</Field>
                 <Field label={zh ? "完成" : "Done"}>{m.tasksDone}</Field>
                 <Field label={zh ? "执行中" : "Running"}>{m.tasksRunning}</Field>
                 <Field label={zh ? "待领取" : "Pending"}>{m.tasksPending}</Field>
                 <Field label={zh ? "失败" : "Failed"}>
                   <span style={{ color: m.tasksFailed > 0 ? "var(--error)" : undefined }}>{m.tasksFailed}</span>
                 </Field>
-                <Field label={zh ? "工具调用" : "Tool calls"}>{m.toolCalls}</Field>
+                <Field label={zh ? "工具调用（按事件流）" : "Tool calls (events)"}>{m.toolCalls}</Field>
                 <Field label={zh ? "工具失败" : "Tool errors"}>
                   <span style={{ color: m.toolErrors > 0 ? "var(--error)" : undefined }}>{m.toolErrors}</span>
                 </Field>
                 <Field label={zh ? "产出文件" : "Files"}>{m.filesTouched}</Field>
               </div>
+              {/* 最近事件复用 EventList（原先这里手写了一份同构列表，属于重复实现）；
+                  全量事件与筛选在「看板 → 时间线」 */}
               <SectionTitle hint={`${snapshot.events.length}`}>{zh ? "最近事件" : "Recent events"}</SectionTitle>
-              <ul className="lo-events">
-                {snapshot.events.slice(0, 8).map((e) => (
-                  <li key={e.id} className="lo-events__item" data-severity={e.severity}>
-                    <span className="lo-events__dot" />
-                    <span className="lo-events__kind">{eventKindLabel(e.kind, zh)}</span>
-                    <span className="lo-events__text" title={e.text}>
-                      {e.text}
-                    </span>
-                    <span className="lo-events__time">{hhmmOf(e.at)}</span>
-                  </li>
-                ))}
-              </ul>
+              {snapshot.events.length === 0 ? (
+                <Empty text={zh ? "暂无事件" : "No events"} />
+              ) : (
+                <EventList snapshot={snapshot} zh={zh} limit={8} />
+              )}
             </Card>
           </div>
 

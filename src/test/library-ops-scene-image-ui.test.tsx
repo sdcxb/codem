@@ -227,7 +227,8 @@ describe("LO-SCENE-UI 场景图片设置卡", () => {
       fireEvent.click(btn);
     });
     expect(useLibraryOps.getState().editingLayout).toBe(true);
-    expect(useLibraryOps.getState().tab).toBe("scene");
+    // v1.15.0：场景归「子智能体」页签 → 切的是 sceneTab，并派发宿主切页签事件
+    expect(useLibraryOps.getState().sceneTab).toBe("scene");
 
     // 有对位调整后，卡片上出现「重置对位」按钮并显示计数
     useLibraryOps.getState().setNodeOverride("GW1", { x: 500, y: 500 });

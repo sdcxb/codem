@@ -15,8 +15,13 @@ import { render, act, fireEvent, cleanup } from "@testing-library/react";
 import { Context } from "../core/cordis/src/index.ts";
 import { SlotsService } from "../core/slots/index.ts";
 import { setActiveContext } from "../core/consumer/index.ts";
-import { TaskCenter, TASK_CENTER_BOARD_SLOT, type TaskCenterTab } from "../components/TaskCenter";
-import { LIBRARY_TASK_SLOT, openLibraryView, uiLibraryOpsProvider } from "../core/provider/ui-library-ops-provider";
+import { TaskCenter, TASK_CENTER_BOARD_SLOT, TASK_CENTER_OVERVIEW_SLOT, TASK_CENTER_SUBAGENTS_SLOT, type TaskCenterTab } from "../components/TaskCenter";
+import {
+  LIBRARY_SUBAGENTS_SLOT,
+  LIBRARY_TASK_SLOT,
+  openLibraryView,
+  uiLibraryOpsProvider,
+} from "../core/provider/ui-library-ops-provider";
 import { useLibraryOps } from "../plugins/library-ops/store";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -53,6 +58,8 @@ function bootCtx(): { ctx: Context; slots: SlotsService } {
   const ctx = new Context();
   const slots = new SlotsService(ctx);
   slots.declareSlot(TASK_CENTER_BOARD_SLOT, { kind: "single", scope: "root" }, "test");
+  slots.declareSlot(TASK_CENTER_SUBAGENTS_SLOT, { kind: "single", scope: "root" }, "test");
+  slots.declareSlot(TASK_CENTER_OVERVIEW_SLOT, { kind: "single", scope: "root" }, "test");
   setActiveContext(ctx);
   return { ctx, slots };
 }
@@ -69,6 +76,13 @@ function tabLabels(): string[] {
 function boardButton(): HTMLButtonElement {
   return [...document.querySelectorAll<HTMLButtonElement>(".task-center-panel button")].find(
     (b) => b.textContent?.trim() === "看板",
+  )!;
+}
+
+/** 页签栏里的「子智能体」按钮 */
+function subagentsButton(): HTMLButtonElement {
+  return [...document.querySelectorAll<HTMLButtonElement>(".task-center-panel button")].find(
+    (b) => b.textContent?.trim() === "子智能体",
   )!;
 }
 
@@ -146,20 +160,32 @@ describe("LO-TASK 图书馆并入看板", () => {
     expect(document.querySelector('[data-testid="stub-board"]')).toBeTruthy();
   });
 
-  it("LO-TASK-4: 真实 provider 装配后，看板里渲染出接管视图（7 个视图）", async () => {
+  it("LO-TASK-4: 真实 provider 装配后：看板接管 4 视图、子智能体接管 2 视图、概览贡献用量", async () => {
     const { ctx } = bootCtx();
     const dispose = (uiLibraryOpsProvider as any)(ctx);
     if (typeof dispose === "function") disposers.push(dispose);
     // provider 用 React.lazy 加载视图：先预热模块，避免 happy-dom 下首帧停在 Suspense
     await import("../plugins/library-ops/components/LibraryOpsBoardView");
+    await import("../plugins/library-ops/components/LibraryOpsSceneView");
+    await import("../plugins/library-ops/components/LibraryOpsUsageEmbed");
     await openTaskCenter("board");
     await flushLazy();
     expect(document.querySelector(".lo-task")).toBeTruthy();
     expect(document.querySelector(".lo-task__rail")).toBeTruthy();
-    // 视图：看板 / 场景 / 用量 / 工具 / 错误 / 时间线 / 设置
-    expect(document.querySelectorAll(".lo-task__rail .lo-nav__btn").length).toBe(7);
+    // 看板页签视图：看板 / 工具 / 错误 / 时间线（场景+设置在子智能体；用量已迁进概览）
+    const boardRails = [...document.querySelectorAll(".lo-nav__label")].map((n) => n.textContent);
+    expect(boardRails).toEqual(["看板", "工具", "错误", "时间线"]);
     // 默认视图是看板（宿主 Issues 看板）
     expect(document.body.textContent).toContain("Backlog");
+
+    // 切到「子智能体」页签 → 场景 / 设置
+    await act(async () => {
+      fireEvent.click(subagentsButton());
+    });
+    await flushLazy();
+    const sceneRails = [...document.querySelectorAll(".lo-nav__label")].map((n) => n.textContent);
+    expect(sceneRails).toEqual(["场景", "设置"]);
+    expect(document.querySelector('[data-lo-view="task-center-subagents"]')).toBeTruthy();
   });
 
   it("LO-TASK-5: 贡献者在打开期间被移除 → 回退到宿主 Issues 看板", async () => {
@@ -177,7 +203,7 @@ describe("LO-TASK 图书馆并入看板", () => {
     expect(document.body.textContent).toContain("Backlog");
   });
 
-  it("LO-TASK-6: Ctrl+Shift+L 打开「任务管理 → 看板」", async () => {
+  it("LO-TASK-6: Ctrl+Shift+L 打开「任务管理 → 子智能体 → 场景」", async () => {
     const { ctx } = bootCtx();
     const dispose = (uiLibraryOpsProvider as any)(ctx);
     if (typeof dispose === "function") disposers.push(dispose);
@@ -188,7 +214,7 @@ describe("LO-TASK 图书馆并入看板", () => {
       await act(async () => {
         fireEvent.keyDown(window, { key: "l", ctrlKey: true, shiftKey: true });
       });
-      expect(seen).toEqual([{ tab: "board" }]);
+      expect(seen).toEqual([{ tab: "subagents", view: "scene" }]);
       await act(async () => {
         window.dispatchEvent(new CustomEvent("codem:open-library-ops"));
       });
@@ -200,17 +226,22 @@ describe("LO-TASK 图书馆并入看板", () => {
     }
   });
 
-  it("LO-TASK-7: 宿主声明了 task-center.board slot，BoardTab 用它做回退", () => {
+  it("LO-TASK-7: 宿主声明了两个 slot（看板 / 子智能体），BoardTab 用看板 slot 做回退", () => {
     const declare = readFileSync(join(__dirname, "..", "core", "slots", "declare-slots.ts"), "utf8");
     expect(declare).toContain("task-center.board");
     expect(declare).toMatch(/declareSlot\('task-center\.board',\s*\{\s*kind:\s*'single'/);
+    expect(declare).toContain("task-center.subagents");
     const board = readFileSync(join(__dirname, "..", "components", "task-center", "BoardTab.tsx"), "utf8");
     expect(board).toContain("SlotBridge");
     expect(board).toContain("task-center.board");
     expect(board).toContain("IssueBoard");
     expect(LIBRARY_TASK_SLOT).toBe(TASK_CENTER_BOARD_SLOT);
-    // 旧 tab id 兼容：library → board
+    expect(LIBRARY_SUBAGENTS_SLOT).toBe(TASK_CENTER_SUBAGENTS_SLOT);
+    // 「子智能体」页签：插件接管，禁用时回退宿主列表
     const tc = readFileSync(join(__dirname, "..", "components", "TaskCenter.tsx"), "utf8");
+    expect(tc).toContain("TASK_CENTER_SUBAGENTS_SLOT");
+    expect(tc).toContain("fallback={SubagentsTab}");
+    // 旧 tab id 兼容：library → board
     expect(tc).toContain('if (t === "library") return "board"');
   });
 });

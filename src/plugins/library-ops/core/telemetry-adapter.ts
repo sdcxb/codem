@@ -22,7 +22,6 @@
  */
 
 import type {
-  ActorKind,
   ActorMetrics,
   LibraryActivity,
   LibraryActor,
@@ -151,6 +150,16 @@ export interface SquadLike {
   members: Array<{ memberName: string; roleDescription: string | null }>;
 }
 
+/** 跨会话委派任务（只读，用于把「被委派的会话」也画成角色） */
+export interface DelegationLike {
+  id: string;
+  sourceSessionId: string;
+  targetSessionId: string;
+  task: string;
+  status: string;
+  projectId?: string;
+}
+
 export interface AgentDefLike {
   id: string;
   name: string;
@@ -170,6 +179,8 @@ export interface AdapterDeps {
   appState?: () => AppStateLike | null;
   teams?: () => AgentTeamLike[];
   subagentTasks?: () => SubagentTaskLike[];
+  /** 跨会话委派（可选；缺省时场景里不出现「被委派的会话」角色） */
+  delegations?: () => DelegationLike[];
   costStats?: () => CostStatsLike | null;
   squads?: () => SquadLike[];
   agentDefs?: () => AgentDefLike[];
@@ -212,6 +223,14 @@ export async function loadDefaultDeps(): Promise<AdapterDeps> {
     };
   } catch (e) {
     console.warn("[library-ops] subagent runtime unavailable:", e);
+  }
+
+  try {
+    const { getDelegationOrchestrator } = await import("../../../core/session");
+    deps.delegations = () =>
+      (getDelegationOrchestrator().getAllDelegations() as unknown as DelegationLike[]) ?? [];
+  } catch (e) {
+    console.warn("[library-ops] delegation orchestrator unavailable:", e);
   }
 
   try {
@@ -375,6 +394,7 @@ export function collectSnapshotSync(deps: AdapterDeps, at?: number): LibrarySnap
   const cost = safe(() => deps.costStats?.() ?? null, "costTracker", failed);
   const squads = safe(() => deps.squads?.() ?? [], "squadManager", failed) ?? [];
   const agentDefs = safe(() => deps.agentDefs?.() ?? [], "agentRegistry", failed) ?? [];
+  const delegations = safe(() => deps.delegations?.() ?? [], "delegationOrchestrator", failed) ?? [];
 
   const sessions = projectState?.sessions ?? [];
   const currentSessionId = projectState?.currentSession?.id ?? null;
@@ -438,28 +458,35 @@ export function collectSnapshotSync(deps: AdapterDeps, at?: number): LibrarySnap
   });
 
   // ---- 角色（演员） ----
+  //
+  // 角色绑定规则（v1.15.0）：馆内角色 = **队长 + 团队成员 + 子智能体 + 正在被委派的会话**。
+  // 只读地反映「谁真的在为这个项目干活」：
+  // - 没有团队、没有子智能体、也没有在途委派时，场景里只剩**队长**一个人（待命态）；
+  // - 普通闲置会话不再各自变成一个角色（以前会把馆内塞满）；
+  // - 团队模板（`squads`）只在模板里存在的角色不再占位，避免「没建队却满馆人」。
   const actors: LibraryActor[] = [];
-  const seen = new Set<string>();
   const teamByCaptain = new Map(teams.filter((t) => !t.archived).map((t) => [t.captainSessionId, t]));
+  const sessionById = new Map(sessions.map((s) => [s.id, s]));
 
-  // 1) 队长 / 会话角色
-  for (const s of sessions) {
-    const team = teamByCaptain.get(s.id);
-    const isCurrent = s.id === currentSessionId;
-    const active = isActive(activeSessions, s.id);
-    const kind: ActorKind = team ? "captain" : "session";
-    const roleLabel = team
-      ? `队长 · ${team.name}`
-      : s.executionMode === "git_worktree"
-        ? `分支会话 · ${s.worktreeBranch ?? "worktree"}`
-        : "会话 · 主控";
+  // 1) 队长：当前会话 + 所有运行时团队的队长会话
+  const captainIds = new Set<string>();
+  if (currentSessionId) captainIds.add(currentSessionId);
+  for (const t of teams) {
+    if (!t.archived) captainIds.add(t.captainSessionId);
+  }
+  for (const id of captainIds) {
+    const s = sessionById.get(id);
+    const team = teamByCaptain.get(id);
+    const isCurrent = id === currentSessionId;
+    const active = isActive(activeSessions, id);
+    const roleLabel = team ? `队长 · ${team.name}` : "队长 · 主控";
     const info = activityFromMessages(isCurrent ? appState?.messages : undefined);
     let activity: LibraryActor["activity"] = "sleeping";
     if (active) {
       activity = info.activity ?? (appState?.llmStatus === "executing_tools" ? "working" : "thinking");
     } else if (isCurrent) {
       activity = info.activity ?? "idle";
-    } else if (now - (s.lastMessageAt ?? 0) < IDLE_WINDOW_MS) {
+    } else if (now - (s?.lastMessageAt ?? 0) < IDLE_WINDOW_MS) {
       activity = "idle";
     }
     const metrics = emptyMetrics();
@@ -471,22 +498,21 @@ export function collectSnapshotSync(deps: AdapterDeps, at?: number): LibrarySnap
       metrics.failed = team.tasks.filter((t) => t.status === "failed" || t.status === "cancelled").length;
     }
     actors.push({
-      id: `session:${s.id}`,
-      name: s.title || "未命名会话",
+      id: `session:${id}`,
+      name: s?.title || (team ? team.name : "队长会话"),
       roleLabel,
-      kind,
+      kind: "captain",
       teamId: team?.id,
       teamName: team?.name,
-      model: s.model,
-      look: generateLook(`session:${s.id}`, roleLabel),
+      model: s?.model,
+      look: generateLook(`session:${id}`, roleLabel),
       activity,
       statusLabel: ACTIVITY_META[activity].zh,
       focus: info.focus,
-      lastEventAt: Math.max(s.lastMessageAt ?? 0, info.lastAt),
+      lastEventAt: Math.max(s?.lastMessageAt ?? 0, info.lastAt),
       metrics,
       preferredZoneId: resolveZoneId(roleLabel),
     });
-    seen.add(s.id);
   }
 
   // 2) 团队成员
@@ -522,7 +548,7 @@ export function collectSnapshotSync(deps: AdapterDeps, at?: number): LibrarySnap
     }
   }
 
-  // 3) 子智能体
+  // 3) 子智能体（有团队 / 无团队都显示：它们本身就是独立的工作单元）
   for (const task of subagents) {
     const roleLabel = task.agentId ? `子智能体 · ${task.agentId}` : "子智能体 · 通用";
     const activity = subagentActivity(task);
@@ -546,30 +572,36 @@ export function collectSnapshotSync(deps: AdapterDeps, at?: number): LibrarySnap
     });
   }
 
-  // 4) 团队模板中的角色（无运行时成员时，仍让模板角色出现在馆内待命）
-  const runtimeNames = new Set(actors.filter((a) => a.kind === "member").map((a) => a.name));
-  for (const squad of squads) {
-    for (const m of squad.members) {
-      if (runtimeNames.has(m.memberName)) continue;
-      const roleLabel = m.roleDescription ? `角色模板 · ${m.roleDescription}` : `角色模板 · ${squad.name}`;
-      actors.push({
-        id: `template:${squad.id}:${m.memberName}`,
-        name: m.memberName,
-        roleLabel,
-        kind: "member",
-        teamName: squad.name,
-        look: generateLook(`template:${squad.id}:${m.memberName}`, roleLabel),
-        activity: "idle",
-        statusLabel: "待命",
-        focus: m.roleDescription ?? undefined,
-        lastEventAt: now,
-        metrics: emptyMetrics(),
-        preferredZoneId: resolveZoneId(roleLabel),
-      });
-    }
+  // 4) 在途委派的目标会话（跨会话委派也是一种「派活」，让被派活的会话进馆）
+  const delegatedSessionIds = new Set<string>();
+  for (const d of delegations) {
+    if (d.status !== "pending" && d.status !== "running") continue;
+    if (d.targetSessionId) delegatedSessionIds.add(d.targetSessionId);
+  }
+  for (const sid of delegatedSessionIds) {
+    if (captainIds.has(sid)) continue;
+    const s = sessionById.get(sid);
+    const d = delegations.find((x) => x.targetSessionId === sid && (x.status === "pending" || x.status === "running"));
+    const roleLabel = "委派 · 协作会话";
+    const activity: LibraryActor["activity"] = d?.status === "running" ? "working" : "thinking";
+    actors.push({
+      id: `session:${sid}`,
+      name: s?.title || d?.task?.slice(0, 24) || "协作会话",
+      roleLabel,
+      kind: "session",
+      parentId: d?.sourceSessionId,
+      model: s?.model,
+      look: generateLook(`session:${sid}`, roleLabel),
+      activity,
+      statusLabel: ACTIVITY_META[activity].zh,
+      focus: d?.task,
+      lastEventAt: s?.lastMessageAt ?? now,
+      metrics: emptyMetrics(),
+      preferredZoneId: resolveZoneId(roleLabel),
+    });
   }
 
-  // 5) 智能体定义（无任何运行时角色时作为「值班馆员」补位，保证图书馆不空场）
+  // 5) 兜底：连队长都没有（没有会话数据）时，至少让值班馆员在馆内待命
   if (actors.length === 0) {
     for (const def of agentDefs.slice(0, 4)) {
       const roleLabel = def.description ? `智能体 · ${def.description}` : `智能体 · ${def.name}`;

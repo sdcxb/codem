@@ -14,6 +14,8 @@ import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { LayoutDashboard, Link2, Bot, Clock, ClipboardList, Columns, Users, Inbox as InboxIcon } from "lucide-react";
 import { ActionIcons } from "../core/icons/icon-map";
+import { SlotBridge } from "../core/slots/SlotBridge";
+import { getDelegationOrchestrator } from "../core/session";
 import { useLang } from "../core/i18n/lang";
 import { OverviewTab } from "./task-center/OverviewTab";
 import { DelegationTab } from "./task-center/DelegationTab";
@@ -34,8 +36,18 @@ export type TaskCenterTab =
   | "automation"
   | "inbox";
 
-/** 「看板」页签的扩展 slot（@codem/ui-library-ops 在此接管，追加场景/用量等视图） */
+/** 「看板」页签的扩展 slot（@codem/ui-library-ops 在此接管：看板/工具/错误/时间线） */
 export const TASK_CENTER_BOARD_SLOT = "task-center.board";
+
+/** 「概览」页签的扩展 slot（插件在此贡献「用量」：KPI/健康度/活动分布/token 与成本） */
+export const TASK_CENTER_OVERVIEW_SLOT = "task-center.overview";
+
+/**
+ * 「子智能体」页签的扩展 slot（@codem/ui-library-ops 在此接管：场景 / 设置）。
+ * 场景里站着的就是队长 / 团队成员 / 子智能体，是「子智能体在做什么」的可视化表达；
+ * 插件禁用时该页签回退到宿主自带列表（SubagentsTab）。
+ */
+export const TASK_CENTER_SUBAGENTS_SLOT = "task-center.subagents";
 
 interface TaskCenterProps {
   onClose: () => void;
@@ -92,7 +104,17 @@ export function TaskCenter({ onClose, initialTab = "overview", subagentTasks = [
     { id: "inbox", label: zh ? "收件箱" : "Inbox", icon: InboxIcon, available: true },
   ];
 
-  const wide = activeTab === "board";
+  // 看板（Issues 7 列）、子智能体（场景画布）、概览（含插件贡献的用量面板）都需要更宽的面板
+  const wide = activeTab === "board" || activeTab === "subagents" || activeTab === "overview";
+
+  // 底栏显示真实委派限制（原先写死「深度 2 · 并发 5」，与运行时配置可能不一致）
+  const limits = (() => {
+    try {
+      return getDelegationOrchestrator().getLimits();
+    } catch {
+      return { maxDepth: 0, maxConcurrent: 0 };
+    }
+  })();
 
   const panel = (
     <div className="modal-overlay" onClick={onClose}>
@@ -199,11 +221,18 @@ export function TaskCenter({ onClose, initialTab = "overview", subagentTasks = [
         </div>
 
         {/* Tab content */}
-        <div style={{ flex: 1, overflow: activeTab === "board" ? "hidden" : "auto" }}>
+        <div style={{ flex: 1, overflow: wide ? "hidden" : "auto" }}>
           {activeTab === "overview" && <OverviewTab onNavigate={setActiveTab} />}
           {activeTab === "delegation" && <DelegationTab />}
           {activeTab === "subagents" && (
-            <SubagentsTab agents={subagentTasks} onSelectAgent={onSelectSubagent || (() => {})} />
+            <SlotBridge
+              name={TASK_CENTER_SUBAGENTS_SLOT}
+              // 插件启用时「子智能体」页签由 LibraryOpsSceneView 接管（场景 + 设置）；
+              // 插件禁用时回退到宿主自带的子智能体列表
+              fallback={SubagentsTab}
+              agents={subagentTasks}
+              onSelectAgent={onSelectSubagent || (() => {})}
+            />
           )}
           {activeTab === "automation" && <AutomationTab />}
           {activeTab === "teams" && <TeamTab />}
@@ -227,7 +256,12 @@ export function TaskCenter({ onClose, initialTab = "overview", subagentTasks = [
           <span>
             {zh ? "任务管理面板" : "Task Center"} · {tabs.find((t) => t.id === activeTab)?.label}
           </span>
-          <span>{zh ? "委派深度限制: 2 · 最大并发: 5" : "Max depth: 2 · Max concurrent: 5"}</span>
+          {/* 委派限制读真实配置（原先写死「深度 2 · 并发 5」，与运行时配置可能不一致） */}
+          <span>
+            {zh
+              ? `委派深度限制: ${limits.maxDepth} · 最大并发: ${limits.maxConcurrent}`
+              : `Max depth: ${limits.maxDepth} · Max concurrent: ${limits.maxConcurrent}`}
+          </span>
         </div>
       </div>
     </div>

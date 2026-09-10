@@ -49,8 +49,13 @@ export function declareAppSlots(ctx: Context): void {
   slots.declareSlot('app.session-recovery', { kind: 'single', scope: 'root' }, 'framework')
   slots.declareSlot('app.usage-stats', { kind: 'single', scope: 'root' }, 'framework')
   slots.declareSlot('app.task-center', { kind: 'single', scope: 'root' }, 'framework')
-  // 任务管理「看板」页签扩展点（由 @codem/ui-library-ops 接管：看板 + 场景/用量/工具/错误/时间线/设置）
+  // 任务管理「概览」页签扩展点（由 @codem/ui-library-ops 贡献「用量」：
+  // KPI / 健康度 / 活动分布 / token 与成本；插件禁用时概览回退宿主自带的最近活动预览）
+  slots.declareSlot('task-center.overview', { kind: 'single', scope: 'root' }, 'framework')
+  // 任务管理「看板」页签扩展点（由 @codem/ui-library-ops 接管：看板 + 用量/工具/错误/时间线）
   slots.declareSlot('task-center.board', { kind: 'single', scope: 'root' }, 'framework')
+  // 任务管理「子智能体」页签扩展点（由 @codem/ui-library-ops 接管：场景 + 设置）
+  slots.declareSlot('task-center.subagents', { kind: 'single', scope: 'root' }, 'framework')
   slots.declareSlot('app.agent-manager', { kind: 'single', scope: 'root' }, 'framework')
   slots.declareSlot('app.notebook-manager', { kind: 'single', scope: 'root' }, 'framework')
   slots.declareSlot('app.notebook-workspace', { kind: 'single', scope: 'root' }, 'framework')

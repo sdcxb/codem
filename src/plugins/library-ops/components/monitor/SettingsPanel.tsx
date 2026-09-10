@@ -13,14 +13,12 @@ import { Card, Field, Pill, SectionTitle, Switch } from "./common";
 import { SceneImageCard } from "./SceneImageCard";
 import { LoIcon } from "../icons";
 
+/** 「看板」页签打开时的默认子视图（场景组有自己的默认：场景；用量已在宿主「概览」页签） */
 const TABS: Array<{ id: MonitorTab; zh: string; en: string; icon: LoIconName }> = [
   { id: "board", zh: "看板", en: "Board", icon: "columns" },
-  { id: "scene", zh: "场景", en: "Scene", icon: "users" },
-  { id: "usage", zh: "用量", en: "Usage", icon: "bar-chart-3" },
   { id: "tools", zh: "工具", en: "Tools", icon: "wrench" },
   { id: "errors", zh: "错误", en: "Errors", icon: "triangle-alert" },
   { id: "timeline", zh: "时间线", en: "Timeline", icon: "clock" },
-  { id: "settings", zh: "设置", en: "Settings", icon: "settings" },
 ];
 
 export function SettingsPanel({ zh }: { zh: boolean }) {
@@ -151,7 +149,7 @@ export function SettingsPanel({ zh }: { zh: boolean }) {
       </Card>
 
       <Card title={zh ? "面板" : "Panel"} icon="layout-panel-left">
-        <SectionTitle>{zh ? "默认页签" : "Default tab"}</SectionTitle>
+        <SectionTitle>{zh ? "看板页签的默认视图" : "Default board view"}</SectionTitle>
         <div className="lo-chip-row">
           {TABS.map((t) => (
             <button
