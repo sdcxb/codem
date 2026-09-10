@@ -245,7 +245,7 @@ export function PPTAdapter({ notebookId, initialContent, title: initialTitle, au
               </button>
             </div>
             {importError && (
-              <div style={{ marginBottom: 16, padding: '8px 12px', borderRadius: 6, background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)', color: 'var(--error, #ff8080)', fontSize: 'var(--fs-sm)' }}>
+              <div style={{ marginBottom: 16, padding: '8px 12px', borderRadius: 6, background: 'color-mix(in srgb, var(--error) 15%, transparent)', border: '1px solid color-mix(in srgb, var(--error) 30%, transparent)', color: 'var(--error, #ff8080)', fontSize: 'var(--fs-sm)' }}>
                 导入失败: {importError}
               </div>
             )}
@@ -348,7 +348,7 @@ export function PPTAdapter({ notebookId, initialContent, title: initialTitle, au
               padding: '12px 32px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 'var(--fs-md)', fontWeight: 600,
               background: 'linear-gradient(135deg, var(--accent, #7c6cf0), var(--accent-hover, #9d8cf5))',
               color: 'var(--text-on-accent)', transition: 'all 0.15s',
-              boxShadow: '0 4px 20px rgba(124,108,240,0.3)',
+              boxShadow: '0 4px 20px color-mix(in srgb, var(--accent) 30%, transparent)',
             }}>
               ✨ 生成 PPT
             </button>
@@ -422,7 +422,7 @@ export function PPTAdapter({ notebookId, initialContent, title: initialTitle, au
         display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10001,
       }}>
         <div style={{ textAlign: 'center', maxWidth: 500, width: '90%' }}>
-          <div style={{ width: 48, height: 48, margin: '0 auto 16px', borderRadius: '50%', background: 'rgba(239,68,68,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 'var(--fs-2xl)' }}>⚠️</div>
+          <div style={{ width: 48, height: 48, margin: '0 auto 16px', borderRadius: '50%', background: 'color-mix(in srgb, var(--error) 15%, transparent)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 'var(--fs-2xl)' }}>⚠️</div>
           <div style={{ fontSize: 'var(--fs-lg)', fontWeight: 600, marginBottom: 8, color: 'var(--danger, #ff8080)' }}>生成失败</div>
           <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted, #888)', marginBottom: 20, lineHeight: 1.6, textAlign: 'left', background: 'var(--bg-secondary, #2a2a3c)', padding: '12px 16px', borderRadius: 8, border: '1px solid var(--border-primary, #333)', maxHeight: 200, overflowY: 'auto', fontFamily: 'monospace', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
             {error}

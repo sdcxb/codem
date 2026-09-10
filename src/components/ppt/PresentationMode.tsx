@@ -252,7 +252,7 @@ export function PresentationMode({ deck, startIndex = 0, onExit }: PresentationM
 
         {/* 备注 toggle */}
         <button onClick={() => setShowNotes(!showNotes)} style={{
-          background: showNotes ? 'var(--accent, rgba(124,108,240,0.5))' : 'rgba(255,255,255,0.15)',
+          background: showNotes ? 'var(--accent, color-mix(in srgb, var(--accent) 50%, transparent))' : 'rgba(255,255,255,0.15)',
           border: 'none', color: 'var(--text-on-accent)', padding: '6px 10px', borderRadius: 4, cursor: 'pointer', fontSize: 'var(--fs-sm)',
           transition: 'background 0.15s',
         }}>备注</button>

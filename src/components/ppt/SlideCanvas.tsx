@@ -574,7 +574,7 @@ export function SlideCanvas({
           width: `${w}%`,
           height: `${h}%`,
           border: '1px solid #7c6cf0',
-          background: 'rgba(124, 108, 240, 0.1)',
+          background: 'color-mix(in srgb, var(--accent) 10%, transparent)',
           pointerEvents: 'none',
           zIndex: 9999,
         }}

@@ -154,12 +154,12 @@ export function MultimodalPanel({ onClose, inline }: MultimodalPanelProps) {
           <div style={{
             marginTop: 8,
             padding: "6px 10px",
-            background: "rgba(34,197,94,0.08)",
+            background: "color-mix(in srgb, var(--success) 8%, transparent)",
             borderRadius: 6,
             fontSize: 'var(--fs-sm)',
             color: "var(--text-secondary)",
             lineHeight: 1.6,
-            border: "1px solid rgba(34,197,94,0.2)",
+            border: "1px solid color-mix(in srgb, var(--success) 20%, transparent)",
           }}>
             ✅ 当前默认使用内置本地模型（{getDefaultLocalEmbeddingConfig().model}，~22MB），
             随安装包打包，无需配置 API Key，安装后即可离线使用。如需更高精度，可启用后选择其他本地模型或远程 API。
@@ -272,9 +272,9 @@ export function MultimodalPanel({ onClose, inline }: MultimodalPanelProps) {
                   padding: "6px 8px",
                   borderRadius: 6,
                   fontSize: 'var(--fs-sm)',
-                  background: localStatus.state === "ready" ? "rgba(34,197,94,0.1)"
-                    : localStatus.state === "loading" ? "rgba(59,130,246,0.1)"
-                    : localStatus.state === "error" ? "rgba(239,68,68,0.1)"
+                  background: localStatus.state === "ready" ? "color-mix(in srgb, var(--success) 10%, transparent)"
+                    : localStatus.state === "loading" ? "color-mix(in srgb, var(--info) 10%, transparent)"
+                    : localStatus.state === "error" ? "color-mix(in srgb, var(--error) 10%, transparent)"
                     : "var(--bg-tertiary, var(--bg-primary))",
                   color: localStatus.state === "ready" ? "var(--success)"
                     : localStatus.state === "error" ? "var(--danger)"

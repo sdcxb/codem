@@ -107,6 +107,7 @@ node tools/ui-audit/codemod-tokens.mjs [--write]   # 令牌化改写（默认只
 | `modal-shell-bespoke` | error | 自建浮层外壳，未用统一 `modal-overlay` |
 | `spacing-offgrid` | warn | 间距不在 2px 网格 |
 | `inline-style-dense` | warn | 单文件内联样式过密（应抽 CSS 类） |
+| `css-class-undefined` | warn | **tsx 里用了但没有任何 CSS 定义的类名**（等于没样式；已排除运行时状态类与第三方库类名） |
 
 **合法例外**（写在 `scan-ui.mjs` 的 `ALLOWLIST`，每条都带理由）：皮肤令牌定义源、
 PPT 生成内容配色、大富翁游戏插件（自带美术语言）、图书馆角色调色板注释常量。
@@ -117,11 +118,23 @@ PPT 生成内容配色、大富翁游戏插件（自带美术语言）、图书�
 | 轮次 | 日期 | error | warn | 做了什么 |
 | --- | --- | --- | --- | --- |
 | 基线 | 2026-09-10 | 533 | 64 | 建立审计工具与例外表；确定现场：字号/色值/圆角/间距/弹窗外壳五类漂移 |
-| 第 1 波 | 2026-09-10 | **144** | 63 | 令牌化 codemod：478 处替换（色 409 / 圆角 32 / 字号 37）＋新增 `--fs-display`/`--fs-hero`/`--overlay-backdrop(-strong)` 令牌；`fs-hardcoded` 与 `radius-offscale` 已清零 |
-| 第 2 波 | 待做 | — | — | 剩余色值（TSX 71 / CSS 58）：多为渐变、`color-mix` 手写底色、图表入参，需逐个判断是否该用令牌 |
-| 第 3 波 | 待做 | — | — | 15 个自建浮层外壳统一到 `modal-overlay`/`modal-editor` |
-| 第 4 波 | 待做 | — | — | 组件语言收口：按钮/输入/卡片/空态/列表行改用具名类，压缩 `inline-style-dense` |
-| 第 5 波 | 待做 | — | — | 门禁回归测试（计数 ≤ 基线并持续下降）+ 文档 + 发布 |
+| 第 1 波 | 2026-09-10 | 144 | 63 | 令牌化 codemod：478 处替换（色 409 / 圆角 32 / 字号 37）＋新增 `--fs-display`/`--fs-hero`/`--overlay-backdrop(-strong)` 令牌；`fs-hardcoded` 与 `radius-offscale` 已清零 |
+| 第 2 波 | 2026-09-10 | **102** | 63 | 淡色底/边按规范改写：`rgba(状态色, α)` → `color-mix(in srgb, var(--token) N%, transparent)`，84 处；新增 `css-class-undefined` 规则（tsx 用了但 CSS 里没定义的类名）—— 首次运行即暴露 **409 处"等于没样式"**，成为下一波最高性价比的工作队列 |
+| 第 3 波 | 待做 | — | — | 清单化的"未定义类名"：NotebookWorkspace(105) / NoteEditor(50) / ConfigEditor(33) / CorrectionResultPanel(23) / PipelineNextStepDialog(19) / ToolCallCard(19)…，补 CSS 或改用既有基元 |
+| 第 4 波 | 待做 | — | — | 15 个自建浮层外壳统一到 `modal-overlay`/`modal-editor`（含 z-index 令牌化：现在有 23 个 tsx 数值 + 13 个 CSS 层级） |
+| 第 5 波 | 待做 | — | — | 组件语言收口：按钮/输入/卡片/空态/列表行改用具名类，压缩 50 个「内联样式过密」文件；补 `--radius-xs: 6px`（259 处用到 6px 却无令牌）与 `--space-*` 刻度 |
+| 第 6 波 | 待做 | — | — | 门禁回归测试（计数 ≤ 基线并持续下降，直至 0）+ 文档 + 发布 |
+
+### 全项目现场事实（来自 UI 交互界面清单，作为工作队列）
+
+- 挂载层：64 个 `SlotBridge` 渲染点 + 54 处 `slots.register` + 44 处 `createPortal`（另 51 个 SlotBridge 在 `App.tsx`）。
+- 浮层：205 个 overlay 类名实例散在 60 个 tsx 里，约 35 种外壳；`var(--z-*)` 只被用了 9 次，
+  而有 23 个 tsx 数值 z-index + 13 个 CSS 层级（`modal-overlay` 是 200，`--z-modal` 是 1300，互相矛盾）。
+- 令牌缺口：`--space-*` **完全不存在**（CSS 2482 + tsx 1389 个数值间距）；6px 圆角被用 259 次却没有令牌
+  （`--radius-sm` 是 4px，`--radius` 是 8px）；`11px`/`9px` 也没有对应字号令牌。
+- 参考实现：`src/plugins/library-ops/styles/library-ops.css`（399 处 `var(--…)`，仅 1 处字面色）
+  与本文件的令牌契约一致，**后续迁移以它为形状标准**。
+- 例外（已在 `scan-ui.mjs` 写理由）：皮肤令牌源、PPT 生成内容配色、大富翁游戏插件、图书馆角色调色板。
 
 ## 6. 工作方式（每一波都跑同一套）
 

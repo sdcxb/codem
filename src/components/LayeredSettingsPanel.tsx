@@ -119,7 +119,7 @@ export function LayeredSettingsPanel() {
                   display: "flex", alignItems: "center", gap: 8, padding: "6px 10px",
                   borderRadius: 4, cursor: "pointer", fontSize: 'var(--fs-sm)',
                   border: `1px solid ${isActive ? "var(--accent)" : "var(--border-primary)"}`,
-                  background: isActive ? "rgba(99, 102, 241, 0.1)" : "var(--bg-tertiary)",
+                  background: isActive ? "color-mix(in srgb, var(--accent) 10%, transparent)" : "var(--bg-tertiary)",
                 }}
               >
                 <span style={{

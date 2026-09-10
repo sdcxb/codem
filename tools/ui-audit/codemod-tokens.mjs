@@ -65,6 +65,12 @@ const TEXT_MAP = new Map([
   ["#7c6cf0", "var(--accent)"],
   ["#6366f1", "var(--accent)"],
   ["#9333ea", "var(--accent)"],
+  ["#a855f7", "var(--accent)"],
+  ["#c084fc", "var(--accent)"],
+  ["#4ade80", "var(--success)"],
+  ["#ff8080", "var(--error)"],
+  ["#ff6b00", "var(--warning)"],
+  ["#fb923c", "var(--warning)"],
 ]);
 
 /** 背景属性：白/黑/灰是"面"，映射到层级令牌而不是文字色 */
@@ -95,6 +101,10 @@ const SURFACE_MAP = new Map([
   ["rgba(255, 255, 255, 0.15)", "var(--bg-hover)"],
   ["rgba(255,255,255,0.1)", "var(--bg-hover)"],
   ["rgba(255, 255, 255, 0.1)", "var(--bg-hover)"],
+  ["rgba(30, 30, 46, 0.92)", "var(--bg-secondary)"],
+  ["rgba(24, 26, 38, 0.92)", "var(--bg-secondary)"],
+  ["#ff6b00", "var(--warning)"],
+  ["#ef4444", "var(--error)"],
 ]);
 
 /** 边框属性 */
@@ -115,6 +125,45 @@ const BORDER_MAP = new Map([
 
 /** 兼容旧引用（CSS 里无属性上下文时的兜底表 = 文字表） */
 const COLOR_MAP = TEXT_MAP;
+
+/**
+ * 颜色族 → 令牌 + 通道值：用于把 `rgba(R,G,B,a)` 的**淡色底/淡色边**改写成
+ * `color-mix(in srgb, var(--token) N%, transparent)`（状态色不做实心填充的规范做法）。
+ */
+const TINT_FAMILIES = [
+  { rgb: [239, 68, 68], token: "--error" },
+  { rgb: [231, 76, 60], token: "--error" },
+  { rgb: [248, 81, 73], token: "--error" },
+  { rgb: [34, 197, 94], token: "--success" },
+  { rgb: [46, 204, 113], token: "--success" },
+  { rgb: [16, 185, 129], token: "--success" },
+  { rgb: [234, 179, 8], token: "--warning" },
+  { rgb: [245, 158, 11], token: "--warning" },
+  { rgb: [209, 153, 34], token: "--warning" },
+  { rgb: [124, 108, 240], token: "--accent" },
+  { rgb: [99, 102, 241], token: "--accent" },
+  { rgb: [147, 51, 234], token: "--accent" },
+  { rgb: [59, 130, 246], token: "--info" },
+  { rgb: [96, 165, 250], token: "--info" },
+];
+
+function tintFor(r, g, b, a) {
+  const fam = TINT_FAMILIES.find((f) => f.rgb[0] === r && f.rgb[1] === g && f.rgb[2] === b);
+  if (!fam) return null;
+  const pct = Math.round(a * 100);
+  if (pct <= 0 || pct >= 100) return null;
+  return `color-mix(in srgb, var(${fam.token}) ${pct}%, transparent)`;
+}
+
+/** 在任意属性里把 rgba(状态色, alpha) 换成 color-mix 令牌表达 */
+function transformTints(line, rel, lineNo) {
+  return line.replace(/rgba\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*([0-9.]+)\s*\)/g, (m, r, g, b, a) => {
+    const tint = tintFor(Number(r), Number(g), Number(b), Number(a));
+    if (!tint) return m;
+    record(rel, lineNo, m, tint);
+    return tint;
+  });
+}
 
 function mapForProp(prop) {
   if (/^background/i.test(prop)) return SURFACE_MAP;
@@ -240,6 +289,8 @@ for (const full of files) {
         return;
       }
       let line = raw;
+      // 先处理「状态色 + alpha」的淡色写法，再处理属性级字面量
+      line = transformTints(line, rel, no);
       // CSS 里颜色可能出现在任意属性（border: 1px solid #333 / background: #fff）
       line = line.replace(/(#[0-9a-fA-F]{3,8}|rgba?\([^)]*\))(?![\w-])/g, (m) => {
         const token = COLOR_MAP.get(m.toLowerCase());
@@ -269,6 +320,7 @@ for (const full of files) {
     if (opens > 0) styleDepth += opens;
     let line = raw;
     if (inStyleHere) {
+      line = transformTints(line, rel, no);
       line = transformColors(line, rel, no);
       line = transformFontSize(line, rel, no);
       line = transformRadius(line, rel, no);

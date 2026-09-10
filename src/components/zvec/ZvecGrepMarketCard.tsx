@@ -117,7 +117,7 @@ export function ZvecGrepMarketCard() {
   const installed = !!status?.runtimeInstalled;
 
   return (
-    <div className="market-skill-card" style={{ display: "flex", flexDirection: "column", gap: 8, borderColor: "var(--accent-muted, rgba(124,108,240,0.4))" }}>
+    <div className="market-skill-card" style={{ display: "flex", flexDirection: "column", gap: 8, borderColor: "var(--accent-muted, color-mix(in srgb, var(--accent) 40%, transparent))" }}>
       <div className="market-skill-card-header">
         <span className="market-skill-icon" style={{ background: "linear-gradient(135deg,#6366f1,#8b5cf6)", color: "var(--text-on-accent)" }}>
           <Sparkles size={16} />
@@ -133,7 +133,7 @@ export function ZvecGrepMarketCard() {
             {status && (
               <span style={{
                 fontSize: "var(--fs-2xs,10px)", padding: "1px 6px", borderRadius: 8,
-                background: installed ? "rgba(34,197,94,0.15)" : "var(--bg-tertiary)",
+                background: installed ? "color-mix(in srgb, var(--success) 15%, transparent)" : "var(--bg-tertiary)",
                 color: installed ? "#22c55e" : "var(--text-muted)",
               }}>
                 {installed ? (zh ? "已安装" : "Installed") : (zh ? "未安装" : "Not installed")}

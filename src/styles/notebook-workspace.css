@@ -646,7 +646,7 @@
   color: var(--destructive, #ef4444);
   margin-top: 2px;
   padding: 1px 4px;
-  background: rgba(239, 68, 68, 0.08);
+  background: color-mix(in srgb, var(--error) 8%, transparent);
   border-radius: 2px;
 }
 
@@ -669,7 +669,7 @@
 
 .nb-source-delete:hover {
   color: var(--destructive, #ef4444);
-  background: rgba(239, 68, 68, 0.1);
+  background: color-mix(in srgb, var(--error) 10%, transparent);
 }
 
 /* 来源卡片操作栏 — 查看原文 + 重新索引 同一行 */
@@ -1251,7 +1251,7 @@ top: 36px;
 }
 
 .nb-studio-ppt {
-  color: #ff6b00;
+  color: var(--warning);
 }
 
 /* ========== Knowledge Graph View ========== */
@@ -2387,7 +2387,7 @@ top: 36px;
 
 .nb-study-path-item:hover {
   border-color: var(--accent);
-  background: rgba(124, 108, 240, 0.04);
+  background: color-mix(in srgb, var(--accent) 4%, transparent);
 }
 
 .nb-study-path-num {

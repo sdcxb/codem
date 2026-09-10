@@ -2095,7 +2095,7 @@ function PetSettingsSection({ lang, onOpenMarket }: { lang: Language; onOpenMark
                   justifyContent: "space-between",
                   padding: "10px 14px",
                   borderRadius: "8px",
-                  background: activePet?.slug === pet.slug ? "rgba(99, 102, 241, 0.15)" : "var(--bg-tertiary)",
+                  background: activePet?.slug === pet.slug ? "color-mix(in srgb, var(--accent) 15%, transparent)" : "var(--bg-tertiary)",
                   border: activePet?.slug === pet.slug ? "1px solid var(--accent)" : "1px solid var(--border-primary)",
                 }}
               >
@@ -2135,8 +2135,8 @@ function PetSettingsSection({ lang, onOpenMarket }: { lang: Language; onOpenMark
                     style={{
                       padding: "4px 10px",
                       borderRadius: "4px",
-                      border: "1px solid rgba(239, 68, 68, 0.3)",
-                      background: "rgba(239, 68, 68, 0.1)",
+                      border: "1px solid color-mix(in srgb, var(--error) 30%, transparent)",
+                      background: "color-mix(in srgb, var(--error) 10%, transparent)",
                       color: "var(--error)",
                       cursor: "pointer",
                       fontSize: "var(--fs-sm)",
@@ -2230,8 +2230,8 @@ function PetSettingsSection({ lang, onOpenMarket }: { lang: Language; onOpenMark
           <div style={{
             padding: "8px 12px",
             borderRadius: "6px",
-            background: "rgba(99, 102, 241, 0.08)",
-            border: "1px solid rgba(99, 102, 241, 0.2)",
+            background: "color-mix(in srgb, var(--accent) 8%, transparent)",
+            border: "1px solid color-mix(in srgb, var(--accent) 20%, transparent)",
             fontSize: "var(--fs-xs)",
             color: "var(--text-secondary)",
           }}>

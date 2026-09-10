@@ -724,14 +724,14 @@ const opLabel = tc.tool === 'create_note'
                         gap: '6px',
                         padding: '4px 10px',
                         background: isError
-                          ? 'rgba(239, 68, 68, 0.1)'
+                          ? 'color-mix(in srgb, var(--error) 10%, transparent)'
                           : isDone
-                          ? 'rgba(99, 102, 241, 0.1)'
-                          : 'rgba(234, 179, 8, 0.1)',
+                          ? 'color-mix(in srgb, var(--accent) 10%, transparent)'
+                          : 'color-mix(in srgb, var(--warning) 10%, transparent)',
                         border: `1px solid ${
-                          isError ? 'rgba(239, 68, 68, 0.3)'
-                          : isDone ? 'rgba(99, 102, 241, 0.3)'
-                          : 'rgba(234, 179, 8, 0.3)'
+                          isError ? 'color-mix(in srgb, var(--error) 30%, transparent)'
+                          : isDone ? 'color-mix(in srgb, var(--accent) 30%, transparent)'
+                          : 'color-mix(in srgb, var(--warning) 30%, transparent)'
                         }`,
                         borderRadius: '6px',
                         fontSize: 'var(--fs-sm)',

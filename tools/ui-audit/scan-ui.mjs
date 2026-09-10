@@ -81,6 +81,7 @@ const RULES = {
   "spacing-offgrid": { level: "warn", desc: "间距不在 2px 网格上" },
   "inline-style-dense": { level: "warn", desc: "单文件内联样式过密（考虑抽成 CSS 类）" },
   "legacy-popup-shell": { level: "warn", desc: "历史遗留的自建浮层类名" },
+  "css-class-undefined": { level: "warn", desc: "tsx 里用了但没有任何 CSS 定义的类名（等于没样式）" },
 };
 
 // ========== 扫描器 ==========
@@ -217,12 +218,41 @@ const value = (name) => {
 };
 
 const files = SCAN_DIRS.flatMap((d) => (existsSync(join(ROOT, d)) ? listFiles(join(ROOT, d)) : []));
+
+// ---- 先建「CSS 里定义过的类名」索引（跨文件，供 css-class-undefined 规则用） ----
+const definedClasses = new Set();
+for (const full of files) {
+  const rel = relative(ROOT, full).replace(/\\/g, "/");
+  // 注意：令牌源 styles.css 虽然不参与"违规扫描"，但它是类名的主要定义处，
+  // 建索引时必须包含（否则所有类名都会被误判成"未定义"）。
+  if (!rel.endsWith(".css") || /\.test\./.test(rel)) continue;
+  const css = readFileSync(full, "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+  for (const m of css.matchAll(/\.(-?[_a-zA-Z][\w-]*)/g)) definedClasses.add(m[1]);
+}
+/** 运行时状态类 / 工具类：由 JS 动态加，或本就是约定俗成的状态修饰，不算缺失 */
+const RUNTIME_CLASS_RE = /^(is-|has-|js-|no-|with-)|^(active|open|selected|hover|focus|visible|hidden|disabled|dragging|loading|dark|light|compact|wide|narrow)$/;
+/** 第三方库自带的类名（样式由库自己的 CSS/内联注入，不归本项目管） */
+const THIRD_PARTY_CLASS_RE = /^(xterm|react-flow|monaco|katex|mermaid|shiki|hljs|cm-|cm_|prose|token|language-|ace_|pdf|docx|sheet|ph-|leaflet|recharts|swiper|tippy|radix|rt-|fl-|fa-|fas|far|fab)/;
+
 for (const full of files) {
   const rel = relative(ROOT, full).replace(/\\/g, "/");
   if (shouldSkip(rel)) continue;
   const src = readFileSync(full, "utf8");
-  if (rel.endsWith(".css")) scanCss(rel, src);
-  else scanTsx(rel, src);
+  if (rel.endsWith(".css")) {
+    scanCss(rel, src);
+    continue;
+  }
+  scanTsx(rel, src);
+
+  // 静态 className 字面量（跳过含 ${} 的动态拼接）
+  for (const m of src.matchAll(/className=(?:"([^"{}]+)"|\{'([^'{}]+)'\})/g)) {
+    const raw = m[1] ?? m[2] ?? "";
+    for (const cls of raw.split(/\s+/).filter(Boolean)) {
+      if (RUNTIME_CLASS_RE.test(cls) || THIRD_PARTY_CLASS_RE.test(cls) || definedClasses.has(cls)) continue;
+      const line = src.slice(0, m.index).split("\n").length;
+      add("css-class-undefined", rel, line, cls, `未定义类名: ${cls}`);
+    }
+  }
 }
 
 const onlyRule = value("--rule");

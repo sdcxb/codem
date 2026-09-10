@@ -86,9 +86,9 @@ onClick={(e) => e.stopPropagation()}
                   borderRadius: "10px",
                   border: `2px solid ${
                     decision === "apply"
-                      ? "rgba(46, 204, 113, 0.4)"
+                      ? "color-mix(in srgb, var(--success) 40%, transparent)"
                       : decision === "skip"
-                        ? "rgba(231, 76, 60, 0.3)"
+                        ? "color-mix(in srgb, var(--error) 30%, transparent)"
                         : "var(--border-color, #444)"
                   }`,
                   overflow: "hidden",

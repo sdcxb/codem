@@ -141,8 +141,8 @@ export function VoiceSettingsPanel() {
       {!isSupported && (
         <div style={{
           padding: 12,
-          background: "var(--danger-bg, rgba(239, 68, 68, 0.1))",
-          border: "1px solid var(--danger-border, rgba(239, 68, 68, 0.3))",
+          background: "var(--danger-bg, color-mix(in srgb, var(--error) 10%, transparent))",
+          border: "1px solid var(--danger-border, color-mix(in srgb, var(--error) 30%, transparent))",
           borderRadius: 8,
           fontSize: 'var(--fs-sm)',
           color: "var(--danger, #ef4444)",

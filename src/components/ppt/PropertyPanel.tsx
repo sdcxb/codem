@@ -134,7 +134,7 @@ export function PropertyPanel({
 
       <div className="ppt-property-section">
         <button className="ppt-property-btn"
-          style={{ background: 'rgba(239,68,68,0.15)', borderColor: 'rgba(239,68,68,0.3)', color: 'var(--error, #ff8080)' }}
+          style={{ background: 'color-mix(in srgb, var(--error) 15%, transparent)', borderColor: 'color-mix(in srgb, var(--error) 30%, transparent)', color: 'var(--error, #ff8080)' }}
           onClick={onDelete}>
           删除元素 {selectedElements.length > 1 ? `(${selectedElements.length})` : ''}
         </button>

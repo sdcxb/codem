@@ -205,7 +205,7 @@ export function OllamaSettingsPanel() {
                     ctx: {(m.contextWindow / 1000).toFixed(0)}K
                   </span>
                   {m.supportsTools && (
-                    <span style={{ fontSize: 'var(--fs-xs)', padding: "1px 6px", borderRadius: 4, background: "rgba(34,197,94,0.15)", color: "var(--success)" }}>
+                    <span style={{ fontSize: 'var(--fs-xs)', padding: "1px 6px", borderRadius: 4, background: "color-mix(in srgb, var(--success) 15%, transparent)", color: "var(--success)" }}>
                       tools
                     </span>
                   )}

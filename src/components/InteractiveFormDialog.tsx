@@ -190,7 +190,7 @@ return createPortal(
                                 fontSize: "var(--fs-xs)",
                                 padding: "2px 8px",
                                 borderRadius: "10px",
-                                background: "rgba(46, 204, 113, 0.2)",
+                                background: "color-mix(in srgb, var(--success) 20%, transparent)",
                                 color: "var(--success)",
                                 marginLeft: "auto",
                               }}

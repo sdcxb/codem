@@ -137,7 +137,7 @@ export const ReasoningRow = memo(function ReasoningRow({
             padding: '8px 12px',
             background: 'var(--bg-tertiary)',
             borderRadius: 6,
-            borderLeft: '2px solid rgba(147, 51, 234, 0.4)',
+            borderLeft: '2px solid color-mix(in srgb, var(--accent) 40%, transparent)',
             fontSize: 'var(--fs-sm)',
             color: 'var(--text-secondary)',
             whiteSpace: 'pre-wrap',

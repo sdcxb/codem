@@ -54,8 +54,8 @@ const TurnErrorRow = memo(function TurnErrorRow({
         gap: 6,
         padding: '6px 10px',
         borderRadius: 6,
-        background: 'rgba(239, 68, 68, 0.08)',
-        border: '1px solid rgba(239, 68, 68, 0.2)',
+        background: 'color-mix(in srgb, var(--error) 8%, transparent)',
+        border: '1px solid color-mix(in srgb, var(--error) 20%, transparent)',
         fontSize: 'var(--fs-sm)',
       }}
     >
@@ -75,7 +75,7 @@ const TurnErrorRow = memo(function TurnErrorRow({
           fontSize: 'var(--fs-xs)',
           padding: '1px 4px',
           borderRadius: "var(--radius-sm)",
-          background: 'rgba(239, 68, 68, 0.15)',
+          background: 'color-mix(in srgb, var(--error) 15%, transparent)',
           color: 'var(--error)',
           flexShrink: 0,
         }}>
@@ -100,8 +100,8 @@ const TurnMaxTokensRow = memo(function TurnMaxTokensRow() {
         gap: 6,
         padding: '6px 10px',
         borderRadius: 6,
-        background: 'rgba(234, 179, 8, 0.08)',
-        border: '1px solid rgba(234, 179, 8, 0.2)',
+        background: 'color-mix(in srgb, var(--warning) 8%, transparent)',
+        border: '1px solid color-mix(in srgb, var(--warning) 20%, transparent)',
         fontSize: 'var(--fs-sm)',
       }}
     >
@@ -165,8 +165,8 @@ const ModelRetryRow = memo(function ModelRetryRow({
       style={{
         padding: '6px 10px',
         borderRadius: 6,
-        background: 'rgba(99, 102, 241, 0.08)',
-        border: '1px solid rgba(99, 102, 241, 0.2)',
+        background: 'color-mix(in srgb, var(--accent) 8%, transparent)',
+        border: '1px solid color-mix(in srgb, var(--accent) 20%, transparent)',
         fontSize: 'var(--fs-sm)',
       }}
     >

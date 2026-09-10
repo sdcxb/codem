@@ -133,8 +133,8 @@ const overallIcon = audit.overall === "danger" ? <ShieldAlert size={24} />
                       fontSize: 'var(--fs-sm)',
                       padding: "2px 8px",
                       borderRadius: 10,
-                      background: isUnknown ? "rgba(245, 158, 11, 0.15)" : "var(--bg-tertiary)",
-                      border: `1px solid ${isUnknown ? "rgba(245, 158, 11, 0.3)" : "var(--border-primary)"}`,
+                      background: isUnknown ? "color-mix(in srgb, var(--warning) 15%, transparent)" : "var(--bg-tertiary)",
+                      border: `1px solid ${isUnknown ? "color-mix(in srgb, var(--warning) 30%, transparent)" : "var(--border-primary)"}`,
                       color: isUnknown ? "#f59e0b" : "var(--text-secondary)",
                     }}>
                       {getPermissionDescription(perm, lang)}
@@ -177,7 +177,7 @@ const overallIcon = audit.overall === "danger" ? <ShieldAlert size={24} />
               alignItems: "center",
               gap: 8,
               padding: "12px 16px",
-              background: "rgba(34, 197, 94, 0.08)",
+              background: "color-mix(in srgb, var(--success) 8%, transparent)",
               borderRadius: 8,
               color: "var(--success)",
               fontSize: 'var(--fs-sm)',
@@ -195,7 +195,7 @@ const overallIcon = audit.overall === "danger" ? <ShieldAlert size={24} />
               gap: 8,
               padding: "12px",
               marginTop: 16,
-              background: "rgba(239, 68, 68, 0.08)",
+              background: "color-mix(in srgb, var(--error) 8%, transparent)",
               borderRadius: 8,
               cursor: "pointer",
               fontSize: 'var(--fs-sm)',

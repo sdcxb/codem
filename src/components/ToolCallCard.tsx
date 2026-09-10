@@ -394,9 +394,9 @@ function DiffBlockCard({ hunks }: { hunks: DiffHunk[] }) {
                   ? 'var(--error)'
                   : 'var(--text-secondary)',
                 background: line.startsWith('+') && !line.startsWith('+++')
-                  ? 'rgba(34, 197, 94, 0.08)'
+                  ? 'color-mix(in srgb, var(--success) 8%, transparent)'
                   : line.startsWith('-') && !line.startsWith('---')
-                  ? 'rgba(239, 68, 68, 0.08)'
+                  ? 'color-mix(in srgb, var(--error) 8%, transparent)'
                   : 'transparent',
               }}>
                 {line || ' '}

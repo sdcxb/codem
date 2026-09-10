@@ -72,10 +72,10 @@ export const TokenActivityGrid = memo(function TokenActivityGrid({
         <span>少</span>
         <div className="token-activity-legend-bar">
           <div className="token-activity-legend-cell" style={{ background: "var(--surface-1)" }} />
-          <div className="token-activity-legend-cell" style={{ background: "rgba(124, 108, 240, 0.20)" }} />
-          <div className="token-activity-legend-cell" style={{ background: "rgba(124, 108, 240, 0.40)" }} />
-          <div className="token-activity-legend-cell" style={{ background: "rgba(124, 108, 240, 0.60)" }} />
-          <div className="token-activity-legend-cell" style={{ background: "rgba(124, 108, 240, 0.85)" }} />
+          <div className="token-activity-legend-cell" style={{ background: "color-mix(in srgb, var(--accent) 20%, transparent)" }} />
+          <div className="token-activity-legend-cell" style={{ background: "color-mix(in srgb, var(--accent) 40%, transparent)" }} />
+          <div className="token-activity-legend-cell" style={{ background: "color-mix(in srgb, var(--accent) 60%, transparent)" }} />
+          <div className="token-activity-legend-cell" style={{ background: "color-mix(in srgb, var(--accent) 85%, transparent)" }} />
         </div>
         <span>多</span>
       </div>
