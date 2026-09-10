@@ -15,6 +15,7 @@ import "./styles/skin-hub.css";
 import "./styles/skin-dream.css";
 import "./styles/notebook-workspace.css";
 import "./styles/codem-ui.css";
+import "./styles/task-center.css";
 
 // 全局错误捕获 — 静默记录到 console（App.tsx 另有 console 级监听）。
 // 之前用 alert() 弹原生对话框：任何未捕获错误都会阻塞打断用户操作，

@@ -3,10 +3,13 @@
  *
  * 这是自动化触发器的**唯一编辑入口**：原 SettingsPanel 里的
  * AutomationSettingsSection 已删除，设置面板只保留跳转提示，避免两套 UI 各写一份配置。
+ *
+ * 样式：第 15 波把内联样式收口成具名类（`tc-*` 通用 + `automation-*` 本组件），
+ * 见 src/styles/task-center.css。
  */
 
 import { useState, useEffect } from "react";
-import { Bot, Folder, Clock, Play, Plus, History, Calendar, AlertTriangle } from "lucide-react";
+import { Folder, Clock, Play, Plus, History, Calendar, AlertTriangle } from "lucide-react";
 import {
   getAutomationConfig,
   setAutomationConfig,
@@ -99,27 +102,10 @@ export function AutomationTab() {
     refreshAutomationEngines();
   };
 
-  const labelStyle: React.CSSProperties = {
-    fontSize: 'var(--fs-sm)',
-    fontWeight: 600,
-    color: "var(--text-primary)",
-    marginBottom: 4,
-    display: "block",
-  };
-  const inputStyle: React.CSSProperties = {
-    padding: "6px 10px",
-    borderRadius: 4,
-    border: "1px solid var(--border-primary)",
-    background: "var(--bg-tertiary)",
-    color: "var(--text-primary)",
-    fontSize: 'var(--fs-base)',
-    width: "100%",
-  };
-
   return (
-    <div style={{ padding: "16px 20px" }}>
+    <div className="tc-tab">
       {/* Description */}
-      <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-secondary)", marginBottom: 16 }}>
+      <div className="automation-desc">
         {zh
           ? "配置文件监听和定时器触发器，自动创建会话并发送预设消息。支持工作树模式并行隔离。"
           : "Configure file-watch and timer triggers to automatically create sessions and send preset messages. Supports worktree mode for parallel isolation."}
@@ -127,88 +113,39 @@ export function AutomationTab() {
 
       {/* Trigger list */}
       {triggers.map((t) => (
-        <div
-          key={t.id}
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-            padding: "10px 12px",
-            borderRadius: 8,
-            border: "1px solid var(--border-primary)",
-            background: "var(--bg-tertiary)",
-            marginBottom: 8,
-            fontSize: 'var(--fs-sm)',
-          }}
-        >
+        <div key={t.id} className="automation-trigger">
           <input
             type="checkbox"
             checked={t.enabled}
             onChange={() => handleToggle(t.id)}
-            style={{ width: 16, height: 16 }}
+            className="automation-checkbox"
           />
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontWeight: 600, color: "var(--text-primary)" }}>{t.name}</div>
-            <div style={{ fontSize: 'var(--fs-xs)', opacity: 0.6, overflow: "hidden", textOverflow: "ellipsis", color: "var(--text-secondary)", display: "flex", alignItems: "center", gap: 4 }}>
-              {t.type === "file_watch" && <><Folder size={12} style={{ display: "inline", verticalAlign: "middle" }} /> {t.message}</>}
-              {t.type === "timer" && <><Clock size={12} style={{ display: "inline", verticalAlign: "middle" }} /> {t.message}</>}
-              {t.type === "cron" && <><Calendar size={12} style={{ display: "inline", verticalAlign: "middle" }} /> {t.cronExpression || "—"} · {t.message}</>}
-              {t.type === "issue_status" && <><AlertTriangle size={12} style={{ display: "inline", verticalAlign: "middle" }} /> {zh ? "状态" : "status"}={t.issueStatusFilter || "*"} · {t.message}</>}
+          <div className="automation-trigger-main">
+            <div className="automation-trigger-name">{t.name}</div>
+            <div className="automation-trigger-meta">
+              {t.type === "file_watch" && <><Folder size={12} /> {t.message}</>}
+              {t.type === "timer" && <><Clock size={12} /> {t.message}</>}
+              {t.type === "cron" && <><Calendar size={12} /> {t.cronExpression || "—"} · {t.message}</>}
+              {t.type === "issue_status" && <><AlertTriangle size={12} /> {zh ? "状态" : "status"}={t.issueStatusFilter || "*"} · {t.message}</>}
             </div>
           </div>
-          <button
-            onClick={() => setEditing(t)}
-            style={{
-              fontSize: 'var(--fs-sm)',
-              padding: "4px 10px",
-              borderRadius: 4,
-              border: "1px solid var(--border-primary)",
-              background: "none",
-              color: "var(--text-primary)",
-              cursor: "pointer",
-            }}
-          >
+          <button onClick={() => setEditing(t)} className="tc-btn tc-btn--sm">
             {zh ? "编辑" : "Edit"}
           </button>
-          <button
-            onClick={() => handleDelete(t.id)}
-            style={{
-              fontSize: 'var(--fs-sm)',
-              padding: "4px 10px",
-              borderRadius: 4,
-              border: "1px solid var(--error)",
-              background: "none",
-              color: "var(--error)",
-              cursor: "pointer",
-            }}
-          >
+          <button onClick={() => handleDelete(t.id)} className="tc-btn tc-btn--sm tc-btn--stop">
             {zh ? "删除" : "Del"}
           </button>
         </div>
       ))}
 
       {triggers.length === 0 && (
-        <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", marginBottom: 8 }}>
+        <div className="automation-empty">
           {zh ? "无触发器。点击下方按钮添加。" : "No triggers. Click below to add one."}
         </div>
       )}
 
-      <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
-        <button
-          onClick={handleAdd}
-          style={{
-            padding: "8px 16px",
-            borderRadius: 6,
-            fontSize: 'var(--fs-base)',
-            border: "1px solid var(--accent)",
-            background: "var(--accent)",
-            color: "var(--text-on-accent)",
-            cursor: "pointer",
-            display: "flex",
-            alignItems: "center",
-            gap: 4,
-          }}
-        >
+      <div className="automation-actions">
+        <button onClick={handleAdd} className="tc-btn tc-btn--primary tc-btn--lg">
           <Plus size={14} /> {zh ? "添加触发器" : "Add Trigger"}
         </button>
 
@@ -220,18 +157,7 @@ export function AutomationTab() {
                 ? zh ? "重新启动所有自动化引擎" : "Restart all automation engines"
                 : zh ? "暂停所有自动化引擎（可随时恢复）" : "Pause all automation engines (resumable)"
             }
-            style={{
-              padding: "8px 16px",
-              borderRadius: 6,
-              fontSize: 'var(--fs-base)',
-              border: enginesStopped ? "1px solid var(--success)" : "1px solid var(--error)",
-              background: "none",
-              color: enginesStopped ? "var(--success)" : "var(--error)",
-              cursor: "pointer",
-              display: "flex",
-              alignItems: "center",
-              gap: 4,
-            }}
+            className={`tc-btn tc-btn--lg ${enginesStopped ? "tc-btn--resume" : "tc-btn--stop"}`}
           >
             {enginesStopped ? (
               <>
@@ -245,35 +171,17 @@ export function AutomationTab() {
       {/* Trigger history */}
       {history.length > 0 && (
         <div>
-          <div style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, color: "var(--text-secondary)", marginBottom: 8 }}>
-            <History size={12} style={{ display: "inline", verticalAlign: "middle" }} /> {zh ? "触发历史" : "Trigger History"} ({history.length})
+          <div className="automation-history-title">
+            <History size={12} /> {zh ? "触发历史" : "Trigger History"} ({history.length})
           </div>
-          <div style={{ maxHeight: 200, overflowY: "auto", display: "flex", flexDirection: "column", gap: 4 }}>
+          <div className="automation-history-list">
             {history.slice(0, 20).map((h, i) => (
-              <div
-                key={i}
-                style={{
-                  fontSize: 'var(--fs-sm)',
-                  padding: "6px 8px",
-                  borderRadius: 4,
-                  background: "var(--bg-tertiary)",
-                }}
-              >
-                <span style={{ color: "var(--accent)", fontWeight: 600 }}>
+              <div key={i} className="automation-history-item">
+                <span className="automation-history-time">
                   {new Date(h.timestamp).toLocaleString()}
                 </span>
-                <span style={{ marginLeft: 6 }}>{h.triggerName}</span>
-                <span
-                  style={{
-                    marginLeft: 6,
-                    opacity: 0.6,
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
-                    display: "inline-block",
-                    maxWidth: 200,
-                  }}
-                >
+                <span className="automation-history-name">{h.triggerName}</span>
+                <span className="automation-history-msg">
                   {h.message}
                 </span>
               </div>
@@ -284,29 +192,21 @@ export function AutomationTab() {
 
       {/* Editor */}
       {editing && (
-        <div
-          style={{
-            marginTop: 16,
-            padding: 16,
-            borderRadius: 8,
-            border: "1px solid var(--border-primary)",
-            background: "var(--bg-secondary)",
-          }}
-        >
-          <div style={{ marginBottom: 8 }}>
-            <label style={labelStyle}>{zh ? "名称" : "Name"}</label>
+        <div className="tc-editor">
+          <div className="tc-field-row">
+            <label className="tc-label">{zh ? "名称" : "Name"}</label>
             <input
               value={editing.name || ""}
               onChange={(e) => setEditing({ ...editing, name: e.target.value })}
-              style={inputStyle}
+              className="tc-field"
             />
           </div>
-          <div style={{ marginBottom: 8 }}>
-            <label style={labelStyle}>{zh ? "类型" : "Type"}</label>
+          <div className="tc-field-row">
+            <label className="tc-label">{zh ? "类型" : "Type"}</label>
             <select
               value={editing.type}
               onChange={(e) => setEditing({ ...editing, type: e.target.value as TriggerType })}
-              style={inputStyle}
+              className="tc-field"
             >
               <option value="timer">{zh ? "定时器" : "Timer"}</option>
               <option value="file_watch">{zh ? "文件监听" : "File Watch"}</option>
@@ -314,58 +214,58 @@ export function AutomationTab() {
               <option value="issue_status">{zh ? "Issue 状态变化" : "Issue Status Change"}</option>
             </select>
           </div>
-          <div style={{ marginBottom: 8 }}>
-            <label style={labelStyle}>{zh ? "触发消息" : "Trigger Message"}</label>
+          <div className="tc-field-row">
+            <label className="tc-label">{zh ? "触发消息" : "Trigger Message"}</label>
             <textarea
               value={editing.message || ""}
               onChange={(e) => setEditing({ ...editing, message: e.target.value })}
-              style={{ ...inputStyle, minHeight: 60 }}
+              className="tc-field tc-field--area"
             />
           </div>
           {editing.type === "file_watch" && (
-            <div style={{ marginBottom: 8 }}>
-              <label style={labelStyle}>{zh ? "监听文件路径" : "Watch Path"}</label>
+            <div className="tc-field-row">
+              <label className="tc-label">{zh ? "监听文件路径" : "Watch Path"}</label>
               <input
                 value={editing.watchPath || ""}
                 onChange={(e) => setEditing({ ...editing, watchPath: e.target.value })}
-                style={inputStyle}
+                className="tc-field"
                 placeholder={zh ? "C:\\path\\to\\file" : "/path/to/file"}
               />
             </div>
           )}
           {editing.type === "timer" && (
-            <div style={{ marginBottom: 8 }}>
-              <label style={labelStyle}>{zh ? "间隔（毫秒）" : "Interval (ms)"}</label>
+            <div className="tc-field-row">
+              <label className="tc-label">{zh ? "间隔（毫秒）" : "Interval (ms)"}</label>
               <input
                 type="number"
                 value={editing.intervalMs || 3600000}
                 onChange={(e) => setEditing({ ...editing, intervalMs: parseInt(e.target.value) || 3600000 })}
-                style={{ ...inputStyle, width: 120 }}
+                className="tc-field automation-field-narrow"
               />
             </div>
           )}
           {editing.type === "cron" && (
-            <div style={{ marginBottom: 8 }}>
-              <label style={labelStyle}>{zh ? "Cron 表达式" : "Cron Expression"}</label>
+            <div className="tc-field-row">
+              <label className="tc-label">{zh ? "Cron 表达式" : "Cron Expression"}</label>
               <input
                 value={editing.cronExpression || ""}
                 onChange={(e) => setEditing({ ...editing, cronExpression: e.target.value })}
-                style={inputStyle}
+                className="tc-field"
                 placeholder="0 9 * * 1-5 (min hour dom mon dow)"
               />
-              <div style={{ fontSize: 'var(--fs-xs)', color: "var(--text-muted)", marginTop: 4 }}>
+              <div className="automation-hint">
                 {zh ? "例: */30 * * * * = 每30分钟, 0 9 * * 1-5 = 工作日9点" : "e.g. */30 * * * * = every 30min, 0 9 * * 1-5 = weekdays 9am"}
               </div>
             </div>
           )}
           {editing.type === "issue_status" && (
             <>
-              <div style={{ marginBottom: 8 }}>
-                <label style={labelStyle}>{zh ? "监听状态" : "Watch Status"}</label>
+              <div className="tc-field-row">
+                <label className="tc-label">{zh ? "监听状态" : "Watch Status"}</label>
                 <select
                   value={editing.issueStatusFilter || ""}
                   onChange={(e) => setEditing({ ...editing, issueStatusFilter: e.target.value })}
-                  style={inputStyle}
+                  className="tc-field"
                 >
                   <option value="">{zh ? "所有状态" : "Any status"}</option>
                   {/* 状态清单来自唯一的 issue-status-meta 表（原先只列了 5 个，漏了 backlog/todo） */}
@@ -376,39 +276,22 @@ export function AutomationTab() {
                   ))}
                 </select>
               </div>
-              <div style={{ marginBottom: 8, fontSize: 'var(--fs-xs)', color: "var(--text-muted)" }}>
+              <div className="automation-hint--block">
                 {zh ? "消息中可用占位符: {issue_id} {status}" : "Placeholders in message: {issue_id} {status}"}
               </div>
             </>
           )}
-          <div style={{ display: "flex", gap: 8 }}>
+          <div className="tc-editor-actions">
             <button
               onClick={handleSave}
               disabled={!editing.name || !editing.message}
-              style={{
-                padding: "6px 16px",
-                borderRadius: 4,
-                fontSize: 'var(--fs-sm)',
-                border: "1px solid var(--accent)",
-                background: "var(--accent)",
-                color: "var(--text-on-accent)",
-                cursor: "pointer",
-                opacity: !editing.name || !editing.message ? 0.5 : 1,
-              }}
+              className="tc-btn tc-btn--primary"
             >
               {zh ? "保存" : "Save"}
             </button>
             <button
               onClick={() => setEditing(null)}
-              style={{
-                padding: "6px 16px",
-                borderRadius: 4,
-                fontSize: 'var(--fs-sm)',
-                border: "1px solid var(--border-primary)",
-                background: "none",
-                color: "var(--text-primary)",
-                cursor: "pointer",
-              }}
+              className="tc-btn"
             >
               {zh ? "取消" : "Cancel"}
             </button>

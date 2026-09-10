@@ -3,6 +3,8 @@
  *
  * 展示所有 Squad，支持创建/编辑/归档。
  * 使用 lucide-react 图标，不用 emoji。
+ *
+ * 样式：第 15 波把内联样式收口成 `.squads-*` 具名类（见 src/styles/task-center.css）。
  */
 
 import { useState, useEffect, useCallback } from "react";
@@ -74,29 +76,18 @@ export function SquadsTab() {
   const detailSquad = squads.find((s) => s.id === selectedSquad);
 
   return (
-    <div style={{ padding: "16px 20px" }}>
+    <div className="tc-tab">
       {/* Header */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "16px" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-          <Users size={16} style={{ color: "var(--accent)" }} />
-          <span style={{ fontSize: "var(--fs-md)", fontWeight: 600, color: "var(--text-primary)" }}>
+      <div className="squads-header">
+        <div className="squads-header-title">
+          <Users size={16} />
+          <span className="squads-title">
             {zh ? "Squads" : "Squads"} ({squads.length})
           </span>
         </div>
         <button
           onClick={() => setEditing({ name: "", leaderAgentId: "", instructions: "" })}
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 4,
-            padding: "6px 14px",
-            borderRadius: 6,
-            fontSize: 'var(--fs-base)',
-            border: "1px solid var(--accent)",
-            background: "var(--accent)",
-            color: "var(--text-on-accent)",
-            cursor: "pointer",
-          }}
+          className="squads-new-btn"
         >
           <Plus size={14} /> {zh ? "新建 Squad" : "New Squad"}
         </button>
@@ -104,89 +95,75 @@ export function SquadsTab() {
 
       {/* Squad list */}
       {squads.length === 0 && !editing && (
-        <div style={{ padding: "40px 20px", textAlign: "center", color: "var(--text-secondary)", fontSize: "var(--fs-md)" }}>
+        <div className="tc-empty">
           {zh ? "暂无 Squad。点击上方按钮创建第一个 Squad。" : "No squads yet. Click above to create one."}
         </div>
       )}
 
-      <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+      <div className="squads-list">
         {squads.map((squad) => (
-          <div
-            key={squad.id}
-            style={{
-              padding: "14px 16px",
-              borderRadius: 8,
-              background: "var(--bg-tertiary)",
-              border: "1px solid var(--border-primary)",
-            }}
-          >
+          <div key={squad.id} className="squads-card">
             <div
-              style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer" }}
+              className="squads-card-head"
               onClick={() => setSelectedSquad(selectedSquad === squad.id ? null : squad.id)}
             >
-              <Users size={14} style={{ color: "var(--text-secondary)" }} />
-              <span style={{ fontSize: "var(--fs-md)", fontWeight: 600, color: "var(--text-primary)" }}>{squad.name}</span>
-              <span style={{
-                fontSize: "var(--fs-xs)",
-                padding: "2px 8px",
-                borderRadius: "var(--radius-sm)",
-                background: "var(--accent)22",
-                color: "var(--accent)",
-              }}>
+              <Users size={14} />
+              <span className="squads-name">{squad.name}</span>
+              <span className="squads-count-badge">
                 {squad.members.length} {zh ? "成员" : "members"}
               </span>
-              <span style={{ marginLeft: "auto", display: "flex", gap: "4px" }}>
+              <span className="squads-card-actions">
                 <button
                   onClick={(e) => { e.stopPropagation(); handleArchive(squad.id); }}
-                  style={{ background: "none", border: "none", color: "var(--text-secondary)", cursor: "pointer", padding: "2px" }}
+                  className="squads-icon-btn"
                   title={zh ? "归档" : "Archive"}
                 >
                   <Archive size={14} />
                 </button>
                 <ChevronRight
                   size={14}
-                  style={{ color: "var(--text-secondary)", transform: selectedSquad === squad.id ? "rotate(90deg)" : "none", transition: "transform 0.2s" }}
+                  className={`squads-chevron${selectedSquad === squad.id ? " is-open" : ""}`}
                 />
               </span>
             </div>
 
             {/* Leader info */}
-            <div style={{ display: "flex", alignItems: "center", gap: "6px", marginTop: "8px", fontSize: "var(--fs-sm)", color: "var(--text-secondary)" }}>
-              <Crown size={12} style={{ color: "var(--warning)" }} />
+            <div className="squads-leader">
+              <Crown size={12} />
               <span>{zh ? "Leader:" : "Leader:"}</span>
-              <span style={{ fontWeight: 600, color: "var(--text-primary)" }}>{squad.leader?.name || squad.leaderAgentId}</span>
+              <span className="squads-leader-name">{squad.leader?.name || squad.leaderAgentId}</span>
             </div>
 
             {/* Expanded detail */}
             {selectedSquad === squad.id && (
-              <div style={{ marginTop: "12px", paddingTop: "12px", borderTop: "1px solid var(--border-primary)" }}>
+              <div className="squads-detail">
                 {/* Instructions */}
                 {squad.instructions && (
-                  <div style={{ fontSize: "var(--fs-sm)", color: "var(--text-secondary)", marginBottom: "12px", padding: "8px", background: "var(--bg-secondary)", borderRadius: 4 }}>
+                  <div className="squads-instructions">
                     {squad.instructions}
                   </div>
                 )}
 
                 {/* Members */}
-                <div style={{ fontSize: "var(--fs-sm)", fontWeight: 600, color: "var(--text-secondary)", marginBottom: "8px" }}>
+                <div className="squads-members-title">
                   {zh ? "成员列表" : "Members"}
                 </div>
                 {squad.members.map((m) => (
-                  <div key={m.id} style={{ display: "flex", alignItems: "center", gap: "8px", padding: "6px 8px", marginBottom: "4px", borderRadius: 4, background: "var(--bg-secondary)", fontSize: "var(--fs-sm)" }}>
-                    {m.memberType === "agent" ? <Bot size={12} style={{ color: "var(--text-secondary)" }} /> : <User size={12} style={{ color: "var(--text-secondary)" }} />}
-                    <span style={{ fontWeight: 600, color: "var(--text-primary)" }}>{m.memberName}</span>
+                  <div key={m.id} className="squads-member">
+                    {m.memberType === "agent" ? <Bot size={12} /> : <User size={12} />}
+                    <span className="squads-member-name">{m.memberName}</span>
                     {m.id !== squad.members[0]?.id && (
-                      <span style={{ fontSize: "var(--fs-xs)", color: "var(--text-muted)" }}>{m.roleDescription}</span>
+                      <span className="squads-member-role">{m.roleDescription}</span>
                     )}
                     {m.id === squad.members[0]?.id && (
-                      <span style={{ fontSize: "var(--fs-xs)", padding: "1px 6px", borderRadius: "var(--radius-sm)", background: "var(--warning)22", color: "var(--warning)" }}>
+                      <span className="squads-member-leader-badge">
                         {zh ? "Leader" : "Leader"}
                       </span>
                     )}
                     {m.id !== squad.members[0]?.id && (
                       <button
                         onClick={() => handleRemoveMember(m.id, squad.id)}
-                        style={{ marginLeft: "auto", background: "none", border: "none", color: "var(--error)", cursor: "pointer", padding: "2px" }}
+                        className="squads-member-remove"
                       >
                         <Trash2 size={12} />
                       </button>
@@ -197,7 +174,7 @@ export function SquadsTab() {
                 {/* Add member dropdown */}
                 <select
                   onChange={(e) => { if (e.target.value) { handleAddMember(squad.id, e.target.value); e.target.value = ""; } }}
-                  style={{ marginTop: "8px", padding: "4px 8px", borderRadius: 4, border: "1px solid var(--border-primary)", background: "var(--bg-tertiary)", color: "var(--text-primary)", fontSize: 'var(--fs-sm)', width: "100%" }}
+                  className="tc-field tc-field--add"
                   defaultValue=""
                 >
                   <option value="" disabled>{zh ? "+ 添加成员..." : "+ Add member..."}</option>
@@ -215,31 +192,25 @@ export function SquadsTab() {
 
       {/* Create editor */}
       {editing && (
-        <div style={{
-          marginTop: 16,
-          padding: 16,
-          borderRadius: 8,
-          border: "1px solid var(--border-primary)",
-          background: "var(--bg-secondary)",
-        }}>
-          <div style={{ fontSize: 'var(--fs-md)', fontWeight: 600, marginBottom: 12, color: "var(--text-primary)" }}>
+        <div className="tc-editor">
+          <div className="tc-editor-title">
             {zh ? "新建 Squad" : "Create Squad"}
           </div>
-          <div style={{ marginBottom: 8 }}>
-            <label style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, color: "var(--text-primary)", marginBottom: 4, display: "block" }}>{zh ? "名称" : "Name"}</label>
+          <div className="tc-field-row">
+            <label className="tc-label">{zh ? "名称" : "Name"}</label>
             <input
               value={editing.name || ""}
               onChange={(e) => setEditing({ ...editing, name: e.target.value })}
-              style={{ padding: "6px 10px", borderRadius: 4, border: "1px solid var(--border-primary)", background: "var(--bg-tertiary)", color: "var(--text-primary)", fontSize: 'var(--fs-base)', width: "100%" }}
+              className="tc-field"
               placeholder={zh ? "如: 产品交付 Squad" : "e.g. Product Delivery"}
             />
           </div>
-          <div style={{ marginBottom: 8 }}>
-            <label style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, color: "var(--text-primary)", marginBottom: 4, display: "block" }}>{zh ? "Leader Agent" : "Leader Agent"}</label>
+          <div className="tc-field-row">
+            <label className="tc-label">{zh ? "Leader Agent" : "Leader Agent"}</label>
             <select
               value={editing.leaderAgentId || ""}
               onChange={(e) => setEditing({ ...editing, leaderAgentId: e.target.value })}
-              style={{ padding: "6px 10px", borderRadius: 4, border: "1px solid var(--border-primary)", background: "var(--bg-tertiary)", color: "var(--text-primary)", fontSize: 'var(--fs-base)', width: "100%" }}
+              className="tc-field"
             >
               <option value="" disabled>{zh ? "选择 Leader..." : "Select leader..."}</option>
               {agents.map((a) => (
@@ -247,34 +218,26 @@ export function SquadsTab() {
               ))}
             </select>
           </div>
-          <div style={{ marginBottom: 8 }}>
-            <label style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, color: "var(--text-primary)", marginBottom: 4, display: "block" }}>{zh ? "Squad 指令" : "Instructions"}</label>
+          <div className="tc-field-row">
+            <label className="tc-label">{zh ? "Squad 指令" : "Instructions"}</label>
             <textarea
               value={editing.instructions || ""}
               onChange={(e) => setEditing({ ...editing, instructions: e.target.value })}
-              style={{ padding: "6px 10px", borderRadius: 4, border: "1px solid var(--border-primary)", background: "var(--bg-tertiary)", color: "var(--text-primary)", fontSize: 'var(--fs-base)', width: "100%", minHeight: 60 }}
+              className="tc-field tc-field--area"
               placeholder={zh ? "路由规则、协作规范等..." : "Routing rules, collaboration norms..."}
             />
           </div>
-          <div style={{ display: "flex", gap: 8 }}>
+          <div className="tc-editor-actions">
             <button
               onClick={handleCreate}
               disabled={!editing.name || !editing.leaderAgentId}
-              style={{
-                padding: "6px 16px", borderRadius: 4, fontSize: 'var(--fs-sm)',
-                border: "1px solid var(--accent)", background: "var(--accent)",
-                color: "var(--text-on-accent)", cursor: "pointer", opacity: !editing.name || !editing.leaderAgentId ? 0.5 : 1,
-              }}
+              className="tc-btn tc-btn--primary"
             >
               {zh ? "创建" : "Create"}
             </button>
             <button
               onClick={() => setEditing(null)}
-              style={{
-                padding: "6px 16px", borderRadius: 4, fontSize: 'var(--fs-sm)',
-                border: "1px solid var(--border-primary)", background: "none",
-                color: "var(--text-primary)", cursor: "pointer",
-              }}
+              className="tc-btn"
             >
               {zh ? "取消" : "Cancel"}
             </button>

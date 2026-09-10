@@ -1,0 +1,444 @@
+/**
+ * task-center.css — 任务管理面板（SquadsTab / IssueDetailPanel / AutomationTab …）的样式。
+ *
+ * 这些组件此前把全部样式写在 `style={{}}` 里（审计规则 inline-style-dense），
+ * 第 15 波起逐个收口成具名类；令牌一律走 src/styles.css 的设计系统，本文件不出现字面色值。
+ */
+
+/* ==========================================================================
+ * SquadsTab — Squad 配置与管理
+ * ========================================================================== */
+.tc-tab { padding: var(--space-8) var(--space-9); }
+
+.squads-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-8);
+}
+.squads-header-title { display: flex; align-items: center; gap: var(--space-4); }
+.squads-header-title svg { color: var(--accent); }
+.squads-title { font-size: var(--fs-md); font-weight: 600; color: var(--text-primary); }
+
+/* 主按钮（§3）：accent 底 + --text-on-accent 字 */
+.squads-new-btn {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-7);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-xs);
+  background: var(--accent);
+  color: var(--text-on-accent);
+  font-family: inherit;
+  font-size: var(--fs-base);
+  cursor: pointer;
+  transition: var(--transition-color);
+}
+.squads-new-btn:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+
+.tc-empty {
+  padding: var(--space-11) var(--space-9);
+  text-align: center;
+  color: var(--text-secondary);
+  font-size: var(--fs-md);
+}
+
+.squads-list { display: flex; flex-direction: column; gap: var(--space-4); }
+.squads-card {
+  padding: var(--space-7) var(--space-8);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius);
+  background: var(--bg-tertiary);
+}
+.squads-card-head { display: flex; align-items: center; gap: var(--space-4); cursor: pointer; }
+.squads-card-head > svg:first-child { color: var(--text-secondary); }
+.squads-name { font-size: var(--fs-md); font-weight: 600; color: var(--text-primary); }
+
+/* 徽标：文字色 + 同色淡底（§2.3 不做实心填充）。
+ * 顺带修掉一处真实 bug：原写法 `background: "var(--accent)22"` 是无效 CSS
+ * （不能在 var() 后面直接拼十六进制 alpha），徽标其实一直没有底色。 */
+.squads-count-badge {
+  padding: 2px var(--space-4);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--accent) 13%, transparent);
+  color: var(--accent);
+  font-size: var(--fs-xs);
+}
+.squads-card-actions { margin-left: auto; display: flex; gap: var(--space-2); }
+.squads-icon-btn {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 2px;
+  display: flex;
+  align-items: center;
+}
+.squads-icon-btn:hover { color: var(--text-primary); }
+.squads-chevron {
+  color: var(--text-secondary);
+  transition: transform var(--duration-dropdown) var(--ease-out);
+}
+.squads-chevron.is-open { transform: rotate(90deg); }
+
+.squads-leader {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-top: var(--space-4);
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+}
+.squads-leader svg { color: var(--warning); }
+.squads-leader-name { font-weight: 600; color: var(--text-primary); }
+
+.squads-detail { margin-top: var(--space-6); padding-top: var(--space-6); border-top: 1px solid var(--border-primary); }
+.squads-instructions {
+  margin-bottom: var(--space-6);
+  padding: var(--space-4);
+  background: var(--bg-secondary);
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+}
+.squads-members-title {
+  margin-bottom: var(--space-4);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.squads-member {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  margin-bottom: var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--bg-secondary);
+  font-size: var(--fs-sm);
+}
+.squads-member > svg { color: var(--text-secondary); }
+.squads-member-name { font-weight: 600; color: var(--text-primary); }
+.squads-member-role { font-size: var(--fs-xs); color: var(--text-muted); }
+.squads-member-leader-badge {
+  padding: 1px var(--space-3);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--warning) 13%, transparent);
+  color: var(--warning);
+  font-size: var(--fs-xs);
+}
+.squads-member-remove {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: var(--error);
+  cursor: pointer;
+  padding: 2px;
+  display: flex;
+  align-items: center;
+}
+
+/* 表单控件（§3：高 32–36px、--radius、--input-bg、聚焦换 accent 边） */
+.tc-field {
+  width: 100%;
+  box-sizing: border-box;
+  padding: var(--space-3) var(--space-5);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-sm);
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: var(--fs-sm);
+}
+.tc-field:focus { outline: none; border-color: var(--accent); }
+.tc-field--add { margin-top: var(--space-4); }
+.tc-field--area { min-height: 60px; resize: vertical; }
+
+.tc-editor {
+  margin-top: var(--space-8);
+  padding: var(--space-8);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius);
+  background: var(--bg-secondary);
+}
+.tc-editor-title {
+  margin-bottom: var(--space-6);
+  font-size: var(--fs-md);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.tc-field-row { margin-bottom: var(--space-4); }
+.tc-label {
+  display: block;
+  margin-bottom: var(--space-2);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.tc-editor-actions { display: flex; gap: var(--space-4); }
+
+.tc-btn {
+  padding: var(--space-3) var(--space-8);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  transition: var(--transition-color);
+}
+.tc-btn:hover { background: var(--bg-hover); }
+.tc-btn--primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--text-on-accent);
+}
+.tc-btn--primary:hover { background: var(--accent-hover); }
+.tc-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.tc-btn--lg { padding: var(--space-4) var(--space-8); }
+.tc-btn--sm { padding: var(--space-2) var(--space-5); }
+.tc-btn--resume { border-color: var(--success); color: var(--success); }
+.tc-btn--stop { border-color: var(--error); color: var(--error); }
+
+/* ==========================================================================
+ * AutomationTab — 自动化触发器（唯一编辑入口）；复用 tc-* 通用类
+ * ========================================================================== */
+.automation-desc { margin-bottom: var(--space-8); font-size: var(--fs-sm); color: var(--text-secondary); }
+
+.automation-trigger {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-5) var(--space-6);
+  margin-bottom: var(--space-4);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius);
+  background: var(--bg-tertiary);
+  font-size: var(--fs-sm);
+}
+.automation-checkbox { width: 16px; height: 16px; accent-color: var(--accent); }
+.automation-trigger-main { flex: 1; min-width: 0; }
+.automation-trigger-name { font-weight: 600; color: var(--text-primary); }
+.automation-trigger-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--fs-xs);
+  color: var(--text-secondary);
+  opacity: 0.6;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.automation-trigger-meta svg { flex-shrink: 0; }
+.automation-empty { margin-bottom: var(--space-4); font-size: var(--fs-sm); color: var(--text-muted); }
+.automation-actions { display: flex; gap: var(--space-4); margin-bottom: var(--space-8); }
+
+.automation-history-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.automation-history-list {
+  max-height: 200px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.automation-history-item { padding: var(--space-3) var(--space-4); border-radius: var(--radius-sm); background: var(--bg-tertiary); font-size: var(--fs-sm); }
+.automation-history-time { color: var(--accent); font-weight: 600; }
+.automation-history-name { margin-left: var(--space-3); }
+.automation-history-msg {
+  margin-left: var(--space-3);
+  display: inline-block;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+  opacity: 0.6;
+}
+.automation-hint { margin-top: var(--space-2); font-size: var(--fs-xs); color: var(--text-muted); }
+.automation-hint--block { margin-bottom: var(--space-4); font-size: var(--fs-xs); color: var(--text-muted); }
+.automation-field-narrow { width: 120px; }
+
+/* ==========================================================================
+ * IssueDetailPanel — Issue 详情（信息 + 状态操作 + 评论）
+ * 状态按钮/评论左侧色条的颜色来自 issue-status-meta（数据），所以走「内联只给 color，
+ * 底与边由 currentColor 派生」的写法 —— 顺带修掉原代码里 `var(--accent)22` 这种
+ * 无效 CSS（不能在 var() 后拼十六进制 alpha），那几个徽标此前其实没有底色。
+ * ========================================================================== */
+.issue-detail {
+  padding: var(--space-8) var(--space-9);
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+.issue-detail-back {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  align-self: flex-start;
+  padding: 0;
+  margin-bottom: var(--space-8);
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: var(--fs-base);
+  cursor: pointer;
+  transition: var(--transition-color);
+}
+.issue-detail-back:hover { color: var(--text-primary); }
+
+.issue-detail-title-row { display: flex; align-items: flex-start; gap: var(--space-4); margin-bottom: var(--space-6); }
+.issue-detail-status-icon { margin-top: 2px; flex-shrink: 0; }
+.issue-detail-title {
+  flex: 1;
+  margin: 0;
+  font-size: var(--fs-xl);
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--text-primary);
+}
+
+.issue-detail-meta {
+  display: flex;
+  gap: var(--space-8);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-8);
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+}
+.issue-detail-meta-mono { font-family: var(--font-mono); }
+.issue-detail-meta-strong { color: var(--text-primary); }
+.issue-detail-meta-accent { color: var(--accent); }
+
+.issue-detail-desc {
+  padding: var(--space-6) var(--space-7);
+  margin-bottom: var(--space-8);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius);
+  background: var(--bg-tertiary);
+  font-size: var(--fs-base);
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+
+.issue-detail-label {
+  display: block;
+  margin-bottom: var(--space-3);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.issue-detail-status-row { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
+.issue-detail-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-5);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  transition: var(--transition-color);
+}
+.issue-detail-chip:hover { background: var(--bg-hover); }
+/* 选中态：边框与淡底都从当前色派生（当前色由内联 style 给出） */
+.issue-detail-chip.is-active {
+  border-color: currentColor;
+  background: color-mix(in srgb, currentColor 13%, transparent);
+}
+.issue-detail-chip--squad { margin-left: auto; }
+.issue-detail-chip--squad.is-assigned { border-color: var(--accent); color: var(--accent); }
+
+.issue-detail-picker {
+  margin-top: var(--space-4);
+  padding: var(--space-4);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-xs);
+  background: var(--bg-tertiary);
+}
+.issue-detail-picker-empty { padding: var(--space-2); font-size: var(--fs-sm); color: var(--text-muted); }
+.issue-detail-picker-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-5);
+  margin-bottom: var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  transition: var(--transition-color);
+}
+.issue-detail-picker-item:hover { background: color-mix(in srgb, var(--accent) 13%, transparent); }
+.issue-detail-picker-item > svg { color: var(--accent); }
+.issue-detail-picker-name { font-weight: 600; }
+.issue-detail-picker-meta { font-size: var(--fs-xs); color: var(--text-muted); }
+
+.issue-detail-comments { flex: 1; overflow: auto; margin-bottom: var(--space-6); }
+.issue-detail-section-title {
+  margin-bottom: var(--space-4);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.issue-detail-empty { padding: var(--space-4); font-size: var(--fs-sm); color: var(--text-muted); }
+.issue-detail-comment-list { display: flex; flex-direction: column; gap: var(--space-3); }
+.issue-detail-comment {
+  padding: var(--space-4) var(--space-6);
+  border-left: 2px solid var(--accent);
+  border-radius: var(--radius-xs);
+  background: var(--bg-tertiary);
+  font-size: var(--fs-sm);
+}
+.issue-detail-comment.is-system { background: var(--bg-secondary); border-left-color: var(--text-muted); }
+.issue-detail-comment-head { display: flex; align-items: center; gap: var(--space-3); margin-bottom: var(--space-2); }
+.issue-detail-comment-author { font-weight: 600; color: var(--text-primary); }
+.issue-detail-comment.is-system .issue-detail-comment-author { color: var(--text-muted); }
+.issue-detail-comment-time { font-size: var(--fs-xs); color: var(--text-muted); }
+.issue-detail-comment-body { color: var(--text-secondary); }
+.issue-detail-comment.is-system .issue-detail-comment-body { color: var(--text-muted); }
+
+.issue-detail-input-row { display: flex; gap: var(--space-4); flex-shrink: 0; }
+.issue-detail-input {
+  flex: 1;
+  min-width: 0;
+  padding: var(--space-4) var(--space-6);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-xs);
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: var(--fs-base);
+}
+.issue-detail-input:focus { outline: none; border-color: var(--accent); }
+.issue-detail-send {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-4) var(--space-7);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-xs);
+  background: var(--accent);
+  color: var(--text-on-accent);
+  font-family: inherit;
+  font-size: var(--fs-base);
+  cursor: pointer;
+  transition: var(--transition-color);
+}
+.issue-detail-send:hover:not(:disabled) { background: var(--accent-hover); }
+.issue-detail-send:disabled { opacity: 0.5; cursor: not-allowed; }

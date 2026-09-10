@@ -119,9 +119,15 @@ frakio-work 的两条关键惯例（我们同步遵守）：
 | `.panel-empty` | 面板内空态块（虚边 + `--bg-tertiary` + 居中） |
 | `.panel-btn` / `--danger` / `--sm` | 面板内次级按钮；危险态换 `--error` 边与字；`--sm` 用于浮层里的迷你按钮 |
 | `.stat-cards` / `.stat-card` / `.stat-card-value` / `.stat-card-label` | 统计卡片行与卡片 |
+| `.tc-tab` | 任务管理面板的内容区（`padding` 与页面 gutter 一致） |
+| `.tc-empty` | 面板内空态文案 |
+| `.tc-label` / `.tc-field` / `.tc-field--area` | 面板内表单的标签与输入框（含下拉/多行） |
+| `.tc-field-row` / `.tc-editor` / `.tc-editor-title` / `.tc-editor-actions` | 面板内联编辑器的行、外壳、标题、按钮行 |
+| `.tc-btn` / `--primary` / `--lg` / `--sm` / `--resume` / `--stop` | 任务管理面板的按钮族（含"开始/暂停"这类语义修饰） |
 
 > 这一层刻意**保持极小**：它只收口"到处重复写了 5 遍以上、且与业务无关"的形态。
-> 组件自己的结构（`.recovery-item-*` 之类）仍留在组件命名空间里。
+> 组件自己的结构（`.recovery-item-*` 之类）仍留在组件命名空间里；
+> 任务管理面板另有一层 `tc-*`（上表末三行），放在 `src/styles/task-center.css`。
 
 ## 4. 审计门禁（可重复运行）
 
@@ -175,6 +181,8 @@ node tools/ui-audit/codemod-icon-scale.mjs [--write]  # 图标工具类 → .ico
 
 | **第 14 波** | 2026-09-10 | **0** ✅ | **23** | **内联样式收口（开工）**：① **先修工具**：`inline-style-dense` 此前按行统计 `xxx: value` 形态，把普通 TS 对象字面量、函数入参也数进去了 —— 改成只统计 `style={{}}` 真实区间内的属性，文件数 50 → 25（这不是"改好了"，是"量对了"）；② 定义**闭集共享具名类**（`.mono` / `.panel-section-title` / `.panel-empty` / `.panel-btn(--danger/--sm)` / `.stat-cards` / `.stat-card*`），后续文件复用而不是各写一套；③ 两个文件完成收口：`RecoveryPanel`（149 个内联属性 → 0，只留统计卡颜色这一处真动态值）、`FlashcardViewer`（139 → 0，评分按钮的四色改成内联 `color` + `currentColor` 派生底边，一个动态属性顶掉原来四个） |
 
+| **第 15 波** | 2026-09-10 | **0** ✅ | **20** | **内联样式收口（任务管理面板）**：新建 `src/styles/task-center.css`（首个按"面板"拆分的样式文件，之前所有样式都堆在 1.4 万行的 styles.css 里），把任务管理三个组件全部收口 —— `SquadsTab`（176 → 0）、`IssueDetailPanel`（133 → 0）、`AutomationTab`（134 → 0），并抽出 `tc-*` 通用族（表单/编辑器/按钮族）。**顺带修掉三处真实 bug**：`background: "var(--accent)22"`（在 `var()` 后面拼十六进制 alpha 是无效 CSS，Squad 成员徽标与「已分配 Squad」按钮其实一直没有底色）、`IssueDetailPanel` 里 `authorType === "agent" ? accent : accent` 的死三元、以及用 JS 的 `onMouseEnter` 直接改 `style.background` 做 hover（改成 CSS `:hover`） |
+
 ### 全项目现场事实（来自 UI 交互界面清单，作为工作队列）
 
 - 挂载层：64 个 `SlotBridge` 渲染点 + 54 处 `slots.register` + 44 处 `createPortal`（另 51 个 SlotBridge 在 `App.tsx`）。
@@ -209,9 +217,9 @@ node tools/ui-audit/codemod-icon-scale.mjs [--write]  # 图标工具类 → .ico
 | `modal-shell-bespoke` | error | 15 | **0** ✅ |
 | `spacing-offgrid` | warn | 13 | **0** ✅ |
 | `css-class-undefined` | warn | — | **0** ✅（第 10 波清零；审计器已扩面到模板字面量） |
-| `inline-style-dense` | warn | 58 | 23（唯一剩下的 warn；第 14 波先修正了度量口径 50 → 25，再收口 2 个文件） |
+| `inline-style-dense` | warn | 58 | 20（唯一剩下的 warn；第 14 波先修正了度量口径 50 → 25，再累计收口 5 个文件） |
 | **error 合计** | | **533** | **0** ✅ |
-| **warn 合计** | | 64 | **23** |
+| **warn 合计** | | 64 | **20** |
 
 > 注：`color-hardcoded-tsx` 中途曾报 53 → 9 —— 不是"改多了"，而是审计器修掉了假阳性（见第 11 波说明）。
 > `fs-hardcoded` 第 12 波一度报 590 —— 也不是"变差了"，而是审计器**首次开始扫 CSS 侧**（此前 591 处写死的字号
@@ -236,15 +244,17 @@ node tools/ui-audit/codemod-icon-scale.mjs [--write]  # 图标工具类 → .ico
 11. **第 11 波**：色值 70 处（CSS 17 + TSX 53）→ 0；15 处自建浮层 → 统一外壳；审计器精度修复（详见 §5 表）。
 12. **第 12 波**：宿主样式表纳入审计 + 592 处字号令牌化（详见 §5 表）。
 13. **第 13 波**：`styles.css` 的 249 处色值 + 22 处离格圆角 → 令牌，该文件的例外彻底删除；审计器补掉命名色与"整行放过"两处盲区（详见 §5 表）。
-14. **第 14 波（本轮）**：内联样式收口开工 —— 修正 `inline-style-dense` 的度量口径（50 → 25 个文件）、定义闭集共享具名类、`RecoveryPanel` 149 → 0（详见 §5 表）。
+14. **第 14 波**：内联样式收口开工 —— 修正 `inline-style-dense` 的度量口径（50 → 25 个文件）、定义闭集共享具名类、`RecoveryPanel` 149 → 0、`FlashcardViewer` 139 → 0（详见 §5 表）。
+15. **第 15 波（本轮）**：新建 `src/styles/task-center.css`，任务管理面板三个组件（SquadsTab 176、IssueDetailPanel 133、AutomationTab 134）内联样式全部收口并抽出 `tc-*` 通用族；顺带修掉 `var(--accent)22` 这类无效 CSS（详见 §5 表）。
 
 ### 下一轮的工作队列（按性价比排序）
 
-1. **继续「内联样式过密」的 24 个文件**（`inline-style-dense` 是唯一剩下的 warn）：
-   按"属性数 ÷ 代码行数"排序做，密度最高的先上（实测：`ppt/PPTAdapter` 62/100 行、`task-center/SquadsTab` 61、
-   `FlashcardViewer`/`LayeredSettingsPanel`/`IssueDetailPanel` 50、`CicdPanel` 37）；
-   每个文件的做法固定为「读组件 → 写组件级具名类（能复用 §3 共享类的就复用）→ 只留真动态值内联 →
-   审计计数必须为 0」，每轮 2–3 个，并同步把新出现的通用形态补进 §3 共享表；
+1. **继续「内联样式过密」的 20 个文件**（`inline-style-dense` 是唯一剩下的 warn）：
+   按"属性数 ÷ 代码行数"排序做，密度最高的先上（实测：`ppt/PPTAdapter` 62/100 行、
+   `LayeredSettingsPanel` 50、`GitEnvSettings` 39、`CicdPanel` 38、`PerformanceDashboard`/`UsageStats` 36、
+   `TrajectoryPanel` 34 / 225 属性、`WechatSettings` 34、`AgentManager` 33、`SettingsPanel` 33/100 行但 1054 属性）；
+   每个文件的做法固定为「读组件 → 写组件级具名类（能复用 §3 共享类或 `tc-*` 的就复用）→
+   只留真动态值内联 → 审计计数必须为 0」，每轮 2–3 个；同类面板可继续按 `src/styles/<面板>.css` 拆分；
 2. **z-index 令牌化**：`modal-overlay`=200 与 `--z-modal`=1300 互相矛盾，`popover-shield` 的层级仍留在调用处（23 个 tsx 数值 + 13 个 CSS 层级）；
 3. **重复定义收敛**：`styles.css` 内已有同名类被定义两次且取值不同（如 `.badge` 的圆角 10px vs 4px、
    `.workspace-tab` 的 11px vs 12px 字号 —— 后者已被第 12 波统一到 `--fs-sm`），需要新增一条「重复/冲突定义」审计规则；

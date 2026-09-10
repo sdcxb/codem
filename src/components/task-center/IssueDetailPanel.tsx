@@ -2,6 +2,10 @@
  * IssueDetailPanel — Issue 详情面板
  *
  * 展示 Issue 完整信息 + 评论 + 状态变更操作
+ *
+ * 样式：第 15 波把内联样式收口成 `.issue-detail-*` 具名类（见 src/styles/task-center.css）；
+ * 状态/分配按钮的颜色来自 issue-status-meta（数据），因此内联只给 `color`，
+ * 底与边由 `currentColor` 派生。
  */
 
 import { useState, useCallback, useEffect, useMemo } from "react";
@@ -76,33 +80,26 @@ export function IssueDetailPanel({ issue, onClose, onRefresh }: IssueDetailPanel
   const StatusIcon = config.Icon;
 
   return (
-    <div style={{ padding: "16px 20px", display: "flex", flexDirection: "column", height: "100%" }}>
+    <div className="issue-detail">
       {/* Back button */}
-      <button
-        onClick={onClose}
-        style={{
-          display: "inline-flex", alignItems: "center", gap: 4,
-          background: "none", border: "none", color: "var(--text-secondary)",
-          cursor: "pointer", fontSize: 'var(--fs-base)', marginBottom: 16, padding: 0,
-        }}
-      >
+      <button onClick={onClose} className="issue-detail-back">
         <ArrowLeft size={14} /> {zh ? "返回列表" : "Back to list"}
       </button>
 
       {/* Title + status */}
-      <div style={{ display: "flex", alignItems: "flex-start", gap: "8px", marginBottom: "12px" }}>
-        <StatusIcon size={18} style={{ color: config.color, marginTop: 2, flexShrink: 0 }} />
-        <h2 style={{ fontSize: "var(--fs-xl)", fontWeight: 700, color: "var(--text-primary)", margin: 0, flex: 1, lineHeight: 1.3 }}>
+      <div className="issue-detail-title-row">
+        <StatusIcon size={18} className="issue-detail-status-icon" style={{ color: config.color }} />
+        <h2 className="issue-detail-title">
           {currentIssue.title}
         </h2>
       </div>
 
       {/* Meta info */}
-      <div style={{ display: "flex", gap: "16px", marginBottom: "16px", fontSize: "var(--fs-sm)", color: "var(--text-secondary)", flexWrap: "wrap" }}>
-        <span style={{ fontFamily: "monospace" }}>{currentIssue.id}</span>
-        <span>{zh ? "优先级" : "Priority"}: <strong style={{ color: "var(--text-primary)" }}>{currentIssue.priority}</strong></span>
+      <div className="issue-detail-meta">
+        <span className="issue-detail-meta-mono">{currentIssue.id}</span>
+        <span>{zh ? "优先级" : "Priority"}: <strong className="issue-detail-meta-strong">{currentIssue.priority}</strong></span>
         {currentIssue.assigneeId && (
-          <span>{zh ? "分配给" : "Assigned to"}: <strong style={{ color: "var(--accent)" }}>{currentIssue.assigneeType}/{currentIssue.assigneeId.substring(0, 16)}</strong></span>
+          <span>{zh ? "分配给" : "Assigned to"}: <strong className="issue-detail-meta-accent">{currentIssue.assigneeType}/{currentIssue.assigneeId.substring(0, 16)}</strong></span>
         )}
         {currentIssue.labels.length > 0 && (
           <span>{zh ? "标签" : "Labels"}: {currentIssue.labels.join(", ")}</span>
@@ -111,21 +108,17 @@ export function IssueDetailPanel({ issue, onClose, onRefresh }: IssueDetailPanel
 
       {/* Description */}
       {currentIssue.description && (
-        <div style={{
-          padding: "12px 14px", borderRadius: 8, marginBottom: "16px",
-          background: "var(--bg-tertiary)", border: "1px solid var(--border-primary)",
-          fontSize: "var(--fs-base)", color: "var(--text-secondary)", lineHeight: 1.6,
-        }}>
+        <div className="issue-detail-desc">
           {currentIssue.description}
         </div>
       )}
 
       {/* Status selector */}
-      <div style={{ marginBottom: "16px" }}>
-        <label style={{ fontSize: "var(--fs-sm)", fontWeight: 600, color: "var(--text-secondary)", marginBottom: "6px", display: "block" }}>
+      <div style={{ marginBottom: "var(--space-8)" }}>
+        <label className="issue-detail-label">
           {zh ? "状态" : "Status"}
         </label>
-        <div style={{ display: "flex", gap: "4px", flexWrap: "wrap", alignItems: "center" }}>
+        <div className="issue-detail-status-row">
           {STATUS_OPTIONS.map((s) => {
             const cfg = issueStatusMeta(s);
             const Icon = cfg.Icon;
@@ -134,14 +127,8 @@ export function IssueDetailPanel({ issue, onClose, onRefresh }: IssueDetailPanel
               <button
                 key={s}
                 onClick={() => handleStatusChange(s)}
-                style={{
-                  display: "inline-flex", alignItems: "center", gap: 4,
-                  padding: "4px 10px", borderRadius: 4, fontSize: 'var(--fs-sm)',
-                  border: `1px solid ${isActive ? cfg.color : "var(--border-primary)"}`,
-                  background: isActive ? `${cfg.color}22` : "none",
-                  color: isActive ? cfg.color : "var(--text-secondary)",
-                  cursor: "pointer",
-                }}
+                className={`issue-detail-chip${isActive ? " is-active" : ""}`}
+                style={isActive ? { color: cfg.color } : undefined}
               >
                 <Icon size={12} />
                 {zh ? cfg.labelZh : cfg.labelEn}
@@ -151,14 +138,7 @@ export function IssueDetailPanel({ issue, onClose, onRefresh }: IssueDetailPanel
           {/* Assign to Squad button */}
           <button
             onClick={() => setShowSquadPicker(!showSquadPicker)}
-            style={{
-              display: "inline-flex", alignItems: "center", gap: 4,
-              padding: "4px 10px", borderRadius: 4, fontSize: 'var(--fs-sm)',
-              border: `1px solid ${currentIssue.squadId ? "var(--accent)" : "var(--border-primary)"}`,
-              background: currentIssue.squadId ? "var(--accent)22" : "none",
-              color: currentIssue.squadId ? "var(--accent)" : "var(--text-secondary)",
-              cursor: "pointer", marginLeft: "auto",
-            }}
+            className={`issue-detail-chip issue-detail-chip--squad${currentIssue.squadId ? " is-assigned" : ""}`}
           >
             <Users size={12} />
             {currentIssue.squadId ? (zh ? "已分配 Squad" : "Squad assigned") : (zh ? "分配给 Squad" : "Assign to Squad")}
@@ -166,9 +146,9 @@ export function IssueDetailPanel({ issue, onClose, onRefresh }: IssueDetailPanel
         </div>
         {/* Squad picker dropdown */}
         {showSquadPicker && (
-          <div style={{ marginTop: 8, padding: 8, borderRadius: 6, background: "var(--bg-tertiary)", border: "1px solid var(--border-primary)" }}>
+          <div className="issue-detail-picker">
             {availableSquads.length === 0 ? (
-              <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", padding: "4px" }}>
+              <div className="issue-detail-picker-empty">
                 {zh ? "暂无 Squad。请先在 Squads Tab 创建。" : "No squads. Create one in the Squads tab first."}
               </div>
             ) : (
@@ -176,18 +156,11 @@ export function IssueDetailPanel({ issue, onClose, onRefresh }: IssueDetailPanel
                 <div
                   key={sq.id}
                   onClick={() => handleAssignSquad(sq.id)}
-                  style={{
-                    padding: "6px 10px", borderRadius: 4, fontSize: 'var(--fs-sm)',
-                    cursor: "pointer", color: "var(--text-primary)",
-                    background: "var(--bg-secondary)", marginBottom: 4,
-                    display: "flex", alignItems: "center", gap: 6,
-                  }}
-                  onMouseEnter={(e) => (e.currentTarget.style.background = "var(--accent)22")}
-                  onMouseLeave={(e) => (e.currentTarget.style.background = "var(--bg-secondary)")}
+                  className="issue-detail-picker-item"
                 >
-                  <Users size={12} style={{ color: "var(--accent)" }} />
-                  <span style={{ fontWeight: 600 }}>{sq.name}</span>
-                  <span style={{ fontSize: 'var(--fs-xs)', color: "var(--text-muted)" }}>{sq.members.length} {zh ? "成员" : "members"}</span>
+                  <Users size={12} />
+                  <span className="issue-detail-picker-name">{sq.name}</span>
+                  <span className="issue-detail-picker-meta">{sq.members.length} {zh ? "成员" : "members"}</span>
                 </div>
               ))
             )}
@@ -196,34 +169,29 @@ export function IssueDetailPanel({ issue, onClose, onRefresh }: IssueDetailPanel
       </div>
 
       {/* Comments */}
-      <div style={{ flex: 1, overflow: "auto", marginBottom: "12px" }}>
-        <div style={{ fontSize: "var(--fs-sm)", fontWeight: 600, color: "var(--text-secondary)", marginBottom: "8px" }}>
+      <div className="issue-detail-comments">
+        <div className="issue-detail-section-title">
           {zh ? "活动" : "Activity"} ({currentIssue.comments.length})
         </div>
         {currentIssue.comments.length === 0 ? (
-          <div style={{ fontSize: "var(--fs-sm)", color: "var(--text-muted)", padding: "8px" }}>
+          <div className="issue-detail-empty">
             {zh ? "暂无评论" : "No comments yet"}
           </div>
         ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+          <div className="issue-detail-comment-list">
             {currentIssue.comments.map((c) => {
               const isSystem = c.isSystem;
               return (
-                <div key={c.id} style={{
-                  padding: "8px 12px", borderRadius: 6,
-                  background: isSystem ? "var(--bg-secondary)" : "var(--bg-tertiary)",
-                  borderLeft: isSystem ? "2px solid var(--text-muted)" : `2px solid ${c.authorType === "agent" ? "var(--accent)" : "var(--accent)"}`,
-                  fontSize: "var(--fs-sm)",
-                }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "4px" }}>
-                    <span style={{ fontWeight: 600, color: isSystem ? "var(--text-muted)" : "var(--text-primary)" }}>
+                <div key={c.id} className={`issue-detail-comment${isSystem ? " is-system" : ""}`}>
+                  <div className="issue-detail-comment-head">
+                    <span className="issue-detail-comment-author">
                       {c.authorName || c.authorType}
                     </span>
-                    <span style={{ fontSize: "var(--fs-xs)", color: "var(--text-muted)" }}>
+                    <span className="issue-detail-comment-time">
                       {new Date(c.createdAt).toLocaleString()}
                     </span>
                   </div>
-                  <div style={{ color: isSystem ? "var(--text-muted)" : "var(--text-secondary)" }}>
+                  <div className="issue-detail-comment-body">
                     {c.content}
                   </div>
                 </div>
@@ -234,27 +202,18 @@ export function IssueDetailPanel({ issue, onClose, onRefresh }: IssueDetailPanel
       </div>
 
       {/* Comment input */}
-      <div style={{ display: "flex", gap: "8px", flexShrink: 0 }}>
+      <div className="issue-detail-input-row">
         <input
           value={commentText}
           onChange={(e) => setCommentText(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleAddComment(); } }}
           placeholder={zh ? "添加评论..." : "Add a comment..."}
-          style={{
-            flex: 1, padding: "8px 12px", borderRadius: 6,
-            border: "1px solid var(--border-primary)", background: "var(--bg-tertiary)",
-            color: "var(--text-primary)", fontSize: 'var(--fs-base)',
-          }}
+          className="issue-detail-input"
         />
         <button
           onClick={handleAddComment}
           disabled={!commentText.trim()}
-          style={{
-            display: "flex", alignItems: "center", gap: 4,
-            padding: "8px 14px", borderRadius: 6, fontSize: 'var(--fs-base)',
-            border: "1px solid var(--accent)", background: "var(--accent)",
-            color: "var(--text-on-accent)", cursor: "pointer", opacity: commentText.trim() ? 1 : 0.5,
-          }}
+          className="issue-detail-send"
         >
           <Send size={14} /> {zh ? "发送" : "Send"}
         </button>
