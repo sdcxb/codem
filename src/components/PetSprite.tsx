@@ -20,6 +20,7 @@
 import { useRef, useEffect, useState, useCallback, memo } from "react";
 import type { PetDefinition, PetState } from "../core/pet/pet-types";
 import { getAnimationForState } from "../core/pet/pet-animation-utils";
+import { useReducedMotion } from "../hooks/useReducedMotion";
 
 interface PetSpriteProps {
   /** 宠物定义 */
@@ -49,6 +50,9 @@ export const PetSprite = memo(function PetSprite({
   const rafRef = useRef<number>(0);
   const lastFrameTimeRef = useRef<number>(0);
   const frameRef = useRef<number>(0);
+  // 第 40 波：系统「减少动效」时不再逐帧切换，只画第一帧（静止的宠物仍然可见，
+  // 只是不再动）—— CSS 的 @media 管不到 rAF 驱动的逐帧动画，必须在 JS 里短路。
+  const reducedMotion = useReducedMotion();
 
   // 获取当前状态的动画配置
   const anim = getAnimationForState(definition, petState);
@@ -81,7 +85,8 @@ export const PetSprite = memo(function PetSprite({
     setCurrentFrame(0);
     lastFrameTimeRef.current = performance.now();
 
-    if (anim) {
+    // 减少动效：只画第一帧，不启动逐帧循环
+    if (anim && !reducedMotion) {
       rafRef.current = requestAnimationFrame(animate);
     }
 
@@ -90,7 +95,7 @@ export const PetSprite = memo(function PetSprite({
         cancelAnimationFrame(rafRef.current);
       }
     };
-  }, [petState, anim, animate]);
+  }, [petState, anim, animate, reducedMotion]);
 
   if (!anim) {
     return null;

@@ -3138,3 +3138,25 @@ top: 36px;
 }
 .nb-note-flash-btn:is(:hover, :focus-visible) { color: var(--text-primary); }
 .nb-file-names { margin-top: var(--space-2); font-size: var(--fs-xs); color: var(--text-muted); }
+
+/* ==========================================================================
+ * 第 40 波：本文件自带的动画自己兜底（理由同 codem-ui.css：不假设 styles.css 一定在）
+ * ========================================================================== */
+@media (prefers-reduced-motion: reduce) {
+  /* 循环类：PPT 生成指示（球体脉冲 + 点阵步进） */
+  .ppt-studio-orb,
+  .ppt-studio-dots-anim {
+    animation: none !important;
+  }
+  /* 入场类：面板/对话框/下拉/菜单只保留透明度变化 */
+  .nb-workspace-overlay,
+  .nb-studio-dropdown,
+  .nb-dialog-overlay,
+  .nb-editor-overlay,
+  .nb-export-menu,
+  .nb-move-menu {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
+}

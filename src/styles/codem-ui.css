@@ -2060,27 +2060,10 @@ body.resizing-columns * {
   background: radial-gradient(circle, color-mix(in srgb, var(--accent) 25%, transparent), transparent 70%);
   opacity: 0.2;
 }
-.workspace-backdrop.animated .blob-1 {
-  animation: backdrop-drift-1 25s ease-in-out infinite alternate;
-}
-.workspace-backdrop.animated .blob-2 {
-  animation: backdrop-drift-2 30s ease-in-out infinite alternate;
-}
-.workspace-backdrop.animated .blob-3 {
-  animation: backdrop-drift-3 20s ease-in-out infinite alternate;
-}
-@keyframes backdrop-drift-1 {
-  0% { transform: translate(0, 0) scale(1); }
-  100% { transform: translate(10vw, 5vh) scale(1.15); }
-}
-@keyframes backdrop-drift-2 {
-  0% { transform: translate(0, 0) scale(1); }
-  100% { transform: translate(-8vw, -4vh) scale(1.1); }
-}
-@keyframes backdrop-drift-3 {
-  0% { transform: translate(0, 0) scale(1); }
-  100% { transform: translate(-5vw, 8vh) scale(0.9); }
-}
+/* 第 40 波：删掉三个背景光斑的无限漂移动画（25s/30s/20s 交替）。
+   理由不是"性能"，而是**它没有信息量**：光斑只是在慢慢飘，用户既不能操作也不能从中学到任何状态，
+   却让界面永远在动 —— 产品级界面的默认状态是安静的，动效应当留给"状态变化"。
+   `.workspace-backdrop.animated` 这个类名保留（外部逻辑仍会加它），只是不再有漂移效果。 */
 .workspace-backdrop-noise {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
   opacity: 0.4;
@@ -4028,3 +4011,37 @@ background: var(--bg-secondary);
 .read-block,
 .search-block { max-height: 300px; overflow-y: auto; }
 .terminal-block { max-height: none; overflow: visible; }
+/* ==========================================================================
+ * 第 40 波：本文件自带的动画自己兜底
+ * 主窗口的 styles.css 里已有一份全局减动效兜底 + 逐组件关停清单，但**每个文件管住自己的动画**
+ * 才是可维护的：这份 CSS 也会被作为「组件级样式」单独加载/复用，不能假设 styles.css 一定在。
+ * 分成两类对待：
+ *   · 循环动画（spin / pulse / blink）→ 完全停下（"加速到 0.01ms"对它没有意义）；
+ *   · 入场动画（fade / slide / pop）→ 只保留透明度变化，去掉位移与缩放。
+ * ========================================================================== */
+@media (prefers-reduced-motion: reduce) {
+  /* 循环类：加载旋转、连接丢失脉冲、启动 logo 呼吸、流式光标 */
+  .spinning,
+  .tool-pill-icon-spin,
+  .tool-group-spin,
+  .connection-lost-dot,
+  .boot-splash-logo-icon.pulsing {
+    animation: none !important;
+  }
+  .rich-content.streaming .rich-content-p:last-child::after {
+    animation: none !important;
+    opacity: 1 !important;
+  }
+  /* 入场类：保留淡入，去掉位移/缩放 */
+  .content-fullscreen-backdrop,
+  .fullscreen-viewer-overlay,
+  .connection-lost-banner,
+  .decision-tray,
+  .boot-splash-content,
+  .boot-splash-logo-icon.ready,
+  .inline-diff-container {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
+}

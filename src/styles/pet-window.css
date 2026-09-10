@@ -28,3 +28,24 @@ body,
   width: 100%;
   height: 100%;
 }
+
+/* 第 40 波：宠物窗口是**独立入口**（src/pet-main.tsx 只加载这一份样式表），
+   所以主窗口 styles.css 里的全局焦点环与减动效兜底它一样都拿不到 ——
+   此前宠物窗口内的 rAF 精灵动画在「减少动效」下照常运行，键盘焦点也完全不可见。 */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    animation-delay: 0s !important;
+    transition-duration: 0.01ms !important;
+    transition-delay: 0s !important;
+  }
+}
+
+/* 最简焦点环：窗口里只有几个按钮，用与主窗口一致的令牌值（令牌在本入口下可能未定义，故带兜底） */
+:is(a, button, [role="button"], [tabindex]):focus-visible {
+  outline: 2px solid var(--focus-ring-color, color-mix(in srgb, var(--accent, #6b5ce7) 75%, transparent));
+  outline-offset: 2px;
+}

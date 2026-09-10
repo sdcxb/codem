@@ -18,6 +18,7 @@ import type { LibraryActor, LibrarySnapshot, SceneState } from "../../types";
 import { ACTIVITY_META } from "../../types";
 import { LIBRARY_MAP } from "../../data/library-map";
 import { advanceScene, bubbleVisible, createSceneState, sceneStats, stepActorMovement } from "../../core/scene-engine";
+import { prefersReducedMotion } from "../../../../hooks/useReducedMotion";
 import { CharacterActor } from "./CharacterActor";
 import { SceneFurniture } from "./SceneFurniture";
 import { LoIcon } from "../icons";
@@ -98,9 +99,16 @@ export function LibraryScene({
   const viewAnim = useRef<number | null>(null);
   viewRef.current = view;
 
-  /** 平滑过渡到目标视图（选中角色时居中用） */
+  /** 平滑过渡到目标视图（选中角色时居中用）
+   *  第 40 波：系统「减少动效」时直接跳到目标视图 —— 缓动是 rAF 驱动的，
+   *  CSS 的 @media 管不到它。 */
   const animateTo = useCallback((target: View, duration = 340) => {
     if (viewAnim.current !== null) cancelAnimationFrame(viewAnim.current);
+    if (prefersReducedMotion()) {
+      setView(target);
+      viewAnim.current = null;
+      return;
+    }
     const from = viewRef.current;
     const t0 = performance.now();
     const step = (t: number) => {
@@ -249,6 +257,9 @@ export function LibraryScene({
 
   // rAF：平滑行走 + 位置/朝向/动画态/气泡同步（只写 DOM）
   useEffect(() => {
+    // 第 40 波：系统「减少动效」时不做逐帧推进 —— 角色停在当前位置，
+    // 位置仍在快照更新时同步一次（下面的 effect 负责），只是没有连续行走动画。
+    if (prefersReducedMotion()) return;
     let raf = 0;
     let lastStatsAt = 0;
     const loop = (time: number) => {

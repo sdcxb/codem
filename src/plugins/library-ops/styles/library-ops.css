@@ -1543,13 +1543,27 @@
   .lo-library { grid-template-rows: minmax(150px, 1fr) auto; }
 }
 
-/* 尊重系统「减少动效」偏好 */
+/* 尊重系统「减少动效」偏好（第 40 波补全） */
 @media (prefers-reduced-motion: reduce) {
   .lo-actor .lo-actor__body,
   .lo-actor .lo-actor__head,
   .lo-actor .lo-actor__legs,
   .lo-actor .lo-arm,
   .lo-task__live-dot { animation: none !important; }
+  /* 第 40 波补齐：像素角色的 fallback 动作、忙等旋转、角色各部件动画 */
+  .lo-sprite[data-fallback],
+  .lo-arm--l,
+  .lo-arm--r,
+  .lo-icon-btn.is-busy,
+  .lo-actor[data-anim] .lo-actor__body,
+  .lo-actor[data-anim] .lo-actor__head,
+  .lo-actor[data-anim] .lo-actor__legs,
+  .lo-actor[data-anim] .lo-arm,
+  .lo-breathe,
+  .lo-spin,
+  .lo-pulse {
+    animation: none !important;
+  }
 }
 
 /* ===== UI 统一（第 10 波）：补齐「有类名、没样式」的类名 ===== */

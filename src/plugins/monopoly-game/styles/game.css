@@ -264,10 +264,10 @@
 .turn-indicator {
   color: #f1c40f;
   font-size: 16px;
-  animation: pulse 1s infinite;
+  animation: mnp-pulse 1s infinite;
 }
 
-@keyframes pulse {
+@keyframes mnp-pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.4; }
 }
@@ -450,7 +450,7 @@
 .moving-indicator {
   color: #f1c40f;
   font-size: 14px;
-  animation: pulse 1s infinite;
+  animation: mnp-pulse 1s infinite;
 }
 
 /* 游戏日志 */
@@ -1107,4 +1107,14 @@
   display: flex;
   gap: 4px;
   flex-shrink: 0;
+}
+
+/* 第 40 波：插件自带减动效兜底（宿主那份覆盖不到「插件独立渲染」的场景）。
+   顺带把 `pulse` 改名为 `mnp-pulse`：此前它与 styles.css 的同名 @keyframes 冲突，
+   而插件 CSS 加载在最后 —— 于是宿主的 pulse 被插件版本静默顶掉（隐式耦合，哪天改宿主 kf 会莫名失效）。 */
+@media (prefers-reduced-motion: reduce) {
+  .turn-indicator,
+  .moving-indicator {
+    animation: none !important;
+  }
 }

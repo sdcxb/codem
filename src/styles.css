@@ -11018,12 +11018,8 @@ border-color: var(--text-muted);
   transform: scale(0.95);
 }
 
-/* Streaming animation (#7) */
-@keyframes streaming-dots {
-  0%, 100% { transform: translateX(0); }
-  25% { transform: translateX(-4px); }
-  75% { transform: translateX(4px); }
-}
+/* Streaming animation (#7)：第 40 波删掉了 @keyframes streaming-dots —— 全项目没有任何
+   `animation` 引用它（.streaming-dot 用的是 streaming-dot-bounce）。 */
 @keyframes streaming-dot-bounce {
   0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
   40% { transform: scale(1); opacity: 1; }
@@ -14764,24 +14760,11 @@ color: var(--accent, #7c6cf0);
   color: var(--accent, #7c6cf0);
 }
 
-/* ========== D-5: Accessibility — Global Reduced Motion + Transparency + Hover Gating ========== */
-@media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-    scroll-behavior: auto !important;
-  }
-  /* Keep opacity/color transitions for comprehension — gentler, not zero */
-  .fade-in-element,
-  .context-menu,
-  .dropdown-menu,
-  .popover {
-    transition: opacity var(--duration-normal) ease !important;
-    transform: none !important;
-  }
-}
-
+/* ========== D-5: Accessibility — Transparency + Hover Gating ==========
+   注：第 40 波把这里原本的全局 `prefers-reduced-motion` 兜底块删了 —— 它和第 30 波在文件末尾
+   写的那块**逐字重复**（`*` 上的 duration/iteration/scroll-behavior 完全一样），
+   重复块除了让人以为"覆盖了两遍"以外没有任何作用。保留文件末尾那份（它同时含按下反馈重置，
+   且在第 40 波补上了 animation-delay / transition-delay 归零）。 */
 @media (prefers-reduced-transparency: reduce) {
   .floating-overlay-panel,
   .skill-picker-popup,
@@ -17490,8 +17473,19 @@ input[type="range"]:active {
   *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
+    animation-delay: 0s !important;
     transition-duration: 0.01ms !important;
+    transition-delay: 0s !important;
     scroll-behavior: auto !important;
+  }
+  /* 只保留透明度变化（去掉位移/缩放）：这类反馈是"理解界面状态"需要的，
+     参考实现也保留了同一档 —— 减动效 ≠ 去掉所有过渡。 */
+  .fade-in-element,
+  .context-menu,
+  .dropdown-menu,
+  .popover {
+    transition: opacity var(--duration-normal) ease !important;
+    transform: none !important;
   }
   button:not(:disabled):active,
   [role="button"]:not([aria-disabled="true"]):active {
@@ -17542,18 +17536,61 @@ li {
   overscroll-behavior: contain;
 }
 
-/* 7. 逐组件减动效（第 29 波）：全局兜底之外，把"持续动画"单独关掉 ——
-      旋转/脉冲/呼吸这类循环动画在「减少动效」下应当完全停下，而不是加速到 0.01ms。 */
+/* 7. 逐组件减动效（第 29 波；第 40 波改成**显式清单**）：
+     全局兜底只是把动画"加速到 0.01ms"，对循环动画不够 —— 它们应当完全停下。
+     此前这里用类名模式匹配（`[class*="-spin"]`、`[class*="-pulse"]`），于是**天然漏网**：
+     `.spinning`、`.thinking-text`、`.activity-dot.active`、`.session-running-dot`、
+     `.boot-splash-logo-icon.pulsing`、`.ppt-studio-orb`、`.lo-icon-btn.is-busy`
+     这些类名里都不含 `-spin` / `-pulse`。第 40 波用脚本把全项目 **60 条 infinite 动画**
+     逐条列出来核对，改成显式清单 —— 可读、可数，也不会随改名静默失效。 */
 @media (prefers-reduced-motion: reduce) {
+  /* 旋转类：加载/进行中 */
   .spin,
+  .spinning,
   [class*="-spin"],
   [class*="spinner"],
   .tool-pill-icon-spin,
+  .tool-group-spin,
   .step-ring-indeterminate,
+  .compaction-spinner,
+  .streaming-timer-spinner,
+  .subagent-elapsed-spinner,
+  .subagent-activity-spinner,
+  .streaming-wait-indicator .wait-spinner,
+  .lo-icon-btn.is-busy,
+  /* 脉冲/呼吸类：状态指示 */
+  .session-running-dot,
+  .reasoning-toggle .reasoning-icon.streaming,
+  .reasoning-cursor,
+  .thinking-dot,
+  .thinking-text,
+  .streaming-dot,
+  .streaming-dots,
+  .load-more-loading,
+  .subagent-status.running,
+  .scroll-to-bottom-btn.has-unread,
+  .activity-dot.active,
+  .mode-toggle-btn.voice-rec-active,
   .connection-lost-dot,
-  .voice-rec-active,
-  [class*="-pulse"] {
+  .connection-banner-dot,
+  .boot-splash-logo-icon.pulsing,
+  .ppt-studio-orb,
+  .ppt-studio-dots-anim,
+  .pet-sprite-card-inner,
+  [class*="-pulse"],
+  /* 装饰性漂移：背景光斑（第 40 波直接去掉动画，见 styles/codem-ui.css） */
+  .workspace-backdrop.animated .blob-1,
+  .workspace-backdrop.animated .blob-2,
+  .workspace-backdrop.animated .blob-3,
+  /* 插件内的循环动画（像素角色由 library-ops 自己的块兜住，这里覆盖另外两个插件） */
+  .turn-indicator,
+  .moving-indicator {
     animation: none !important;
+  }
+  /* 流式光标：保留"闪烁"这个信息（它在说"还在输出"），但用二态切换代替平滑动画 */
+  .rich-content.streaming .rich-content-p:last-child::after {
+    animation: none !important;
+    opacity: 1 !important;
   }
 }
 

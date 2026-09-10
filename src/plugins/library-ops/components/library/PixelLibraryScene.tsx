@@ -21,6 +21,7 @@
  */
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { prefersReducedMotion } from "../../../../hooks/useReducedMotion";
 import type { LibraryActor, LibrarySnapshot } from "../../types";
 import { ACTIVITY_META } from "../../types";
 import {
@@ -321,6 +322,12 @@ export function PixelLibraryScene({
 
   const animateTo = useCallback((target: View, duration = 340) => {
     if (viewAnim.current !== null) cancelAnimationFrame(viewAnim.current);
+    // 第 40 波：减少动效时直接跳到位（缓动由 rAF 驱动，CSS 的 @media 管不到）
+    if (prefersReducedMotion()) {
+      setView(target);
+      viewAnim.current = null;
+      return;
+    }
     const from = viewRef.current;
     const t0 = performance.now();
     const step = (t: number) => {
@@ -419,6 +426,8 @@ export function PixelLibraryScene({
 
   // rAF：位置 / 帧 / 朝向 / 气泡
   useEffect(() => {
+    // 第 40 波：减少动效时不做逐帧推进（角色静止，快照更新仍会同步一次位置）
+    if (prefersReducedMotion()) return;
     let raf = 0;
     let lastStatsAt = 0;
     const loop = (time: number) => {

@@ -127,10 +127,13 @@ const RULES = {
   "font-stack-raw": { level: "error", desc: "CSS 里写死了字体栈（应用 var(--font-ui) / var(--font-mono)；inherit 例外）" },
   "focus-outline-none": { level: "error", desc: "焦点规则里 outline:none 却没有替代环（键盘用户看不到焦点）" },
   "inline-outline-none": { level: "error", desc: "TSX 内联 outline:none —— 内联优先级会吃掉所有全局焦点环" },
+  "motion-uncovered": { level: "error", desc: "循环动画没有在 prefers-reduced-motion 下显式关停（全局兜底对它无效）" },
 };
 
 // ========== 扫描器 ==========
 const findings = [];
+/** CSS 源码收集（供跨文件规则使用：减动效覆盖需要"全项目关停清单"才能判定） */
+const cssSources = [];
 /** 每个文件的「内联样式属性数」（供 --inline-counts 看收口进度：门禁只看 >120 的，
  *  但排队时要知道每个文件离阈值多远、以及收口后还剩多少） */
 const inlineCounts = [];
@@ -837,6 +840,69 @@ function staticClassTokens(src) {
   return hits;
 }
 
+/**
+ * 减动效覆盖（第 40 波新增规则 `motion-uncovered`）。
+ *
+ * 为什么单列一条：`prefers-reduced-motion` 的全局兜底只能把动画"加速到 0.01ms"，
+ * 对**循环动画**没有意义（它仍会跳到最后一个关键帧）。正确做法是逐条 `animation: none`。
+ * 实测起点：60 条 infinite 动画里只有 35 条被显式关停，而当时的关停清单用**类名模式匹配**
+ *（`[class*="-spin"]`、`[class*="-pulse"]`）—— `.spinning` / `.thinking-text` /
+ * `.ppt-studio-orb` / `.lo-icon-btn.is-busy` / `.session-running-dot` 这些名字里不含
+ * `-spin`/`-pulse` 的全部漏网。这条规则把"每条循环动画都要有显式关停"变成可检查的约束。
+ *
+ * 匹配方式：把「循环动画选择器」与「减动效块里 animation:none 的选择器」都比成类名集合，
+ * 只要有一个关停选择器的类名集合是前者子集，就认为被覆盖
+ *（`.lo-sprite[data-fallback]` 覆盖 `.lo-sprite[data-fallback="walk"]`）。
+ */
+function scanMotionCoverage(cssFiles) {
+  const loops = []; // { rel, line, sel, classes }
+  const covered = []; // { sel, classes }
+  const classSet = (sel) => new Set([...sel.matchAll(/\.([a-zA-Z][\w-]*)/g)].map((m) => m[1]));
+
+  for (const { rel, src } of cssFiles) {
+    const clean = src.replace(/\/\*[\s\S]*?\*\//g, (c) => c.replace(/[^\n]/g, " "));
+    // 逐块解析，同时记录"当前是否在 prefers-reduced-motion 块里"
+    const mediaRe = /@media\s*\(([^)]*prefers-reduced-motion[^)]*)\)\s*\{/g;
+    const reducedRanges = [];
+    let mm;
+    while ((mm = mediaRe.exec(clean))) {
+      // 找配对的右括号
+      let depth = 1, i = mm.index + mm[0].length;
+      while (i < clean.length && depth > 0) {
+        if (clean[i] === "{") depth++;
+        else if (clean[i] === "}") depth--;
+        i++;
+      }
+      reducedRanges.push([mm.index, i]);
+    }
+    const inReduced = (idx) => reducedRanges.some(([s, e]) => idx >= s && idx < e);
+
+    for (const m of clean.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+      const selGroup = m[1]
+        .split(",")
+        .map((s) => s.trim().replace(/\s+/g, " "))
+        .filter(Boolean);
+      if (/animation\s*:[^;]*infinite/.test(m[2])) {
+        if (inReduced(m.index)) continue; // 关停块自己写的 animation: none
+        const line = src.slice(0, m.index).split("\n").length;
+        for (const sel of selGroup) loops.push({ rel, line, sel, classes: classSet(sel) });
+      }
+      if (/animation\s*:\s*none/.test(m[2]) && inReduced(m.index)) {
+        for (const sel of selGroup) covered.push({ sel, classes: classSet(sel) });
+      }
+    }
+  }
+
+  for (const loop of loops) {
+    const isCovered = covered.some(
+      (c) => c.sel === loop.sel || (c.classes.size > 0 && [...c.classes].every((x) => loop.classes.has(x))),
+    );
+    if (!isCovered) {
+      add("motion-uncovered", loop.rel, loop.line, loop.sel, `循环动画未在 prefers-reduced-motion 下显式关停: ${loop.sel}`);
+    }
+  }
+}
+
 for (const full of files) {
   const rel = relative(ROOT, full).replace(/\\/g, "/");
   if (shouldSkip(rel)) continue;
@@ -847,6 +913,7 @@ for (const full of files) {
     scanCssDuplicates(rel, src);
     scanCssSpacing(rel, src);
     scanFocusSuppression(rel, src);
+    cssSources.push({ rel, src });
     scanZIndex(rel, src, true, []);
     continue;
   }
@@ -870,6 +937,9 @@ for (const full of files) {
     }
   }
 }
+
+// 跨文件规则：循环动画的减动效覆盖（需要全项目的关停清单才能判定）
+scanMotionCoverage(cssSources);
 
 const onlyRule = value("--rule");
 const onlyFile = value("--file");
