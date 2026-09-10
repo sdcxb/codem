@@ -664,6 +664,11 @@ export const ToolCallCard = memo(function ToolCallCard({
         className={`tool-call-pill ${isError ? 'error' : ''} ${expandable ? 'expandable' : ''}`}
         onClick={expandable ? () => setExpanded(e => !e) : undefined}
         role={expandable ? 'button' : undefined}
+        aria-expanded={expandable ? open : undefined}
+        tabIndex={expandable ? 0 : undefined}
+        onKeyDown={expandable ? (e) => {
+          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setExpanded(v => !v); }
+        } : undefined}
       >
         {/* 前导图标 + 状态 */}
         <div className="tool-pill-icon-frame">

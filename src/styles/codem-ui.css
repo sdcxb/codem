@@ -1070,6 +1070,21 @@
   font-size: var(--fs-sm);
   transition: var(--transition-color), var(--transition-transform), var(--transition-shadow), var(--transition-fade);
   vertical-align: top;
+  position: relative; /* 第 38 波：运行态竖条用 ::before 绝对定位，需要定位上下文 */
+}
+
+/* 第 38 波：运行态此前只有"图标在转"一个信号，整行扫过去和完成态几乎一样。
+   现在运行中的 pill 左侧有一条 accent 竖条 —— 一眼看出哪个工具还在跑。
+   父子关系已用 .preview-shot/verify-has.mjs 对过 TSX（ToolCallCard 的 icon-frame 里）。 */
+.tool-call-pill:has(.tool-pill-icon-spin)::before {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 0;
+  width: 2px;
+  border-start-start-radius: var(--radius-md);
+  border-end-start-radius: var(--radius-md);
+  background: var(--accent);
 }
 
 .tool-call-pill.error {
@@ -3810,6 +3825,7 @@ background: var(--bg-secondary);
  * `css-class-undefined` 看不到这些空壳）。这里把外观补成真实定义，内联样式只留动态值。
  * ========================================================================== */
 .tool-card {
+  position: relative; /* 第 38 波：运行/失败态竖条 ::before 需要定位上下文 */
   overflow: hidden;
   border: 1px solid var(--border-primary);
   border-radius: var(--radius);

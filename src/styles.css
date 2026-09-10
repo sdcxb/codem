@@ -17712,11 +17712,12 @@ textarea {
 }
 
 /* 11. 表单与设置行用 grid 对齐（第 32 波）：
-      参考实现用 grid 做对齐原语（583 处），我们此前全是 flex —— 标签宽度不一、输入框左边缘参差。
-      这里把「标签列 / 内容列 / 操作列」收成三档网格模板，标签自然对齐成一条竖线。 */
+      参考实现用 grid 做对齐原语（574 处），我们此前全是 flex —— 标签宽度不一、输入框左边缘参差。
+      这里把「标签列 / 内容列」收成一档网格模板，标签自然对齐成一条竖线。
+      注：`.sp-field-row`（第 32 波曾写进这组选择器）是**死类名** —— 全项目没有任何 TSX
+      使用它（`.preview-shot/dead-classes.mjs` 普查出全项目 260 个这样的类），故移除。 */
 .setting-group,
 .mp-form-row,
-.sp-field-row,
 .agent-input-row,
 .git-env-row {
   display: grid;
@@ -17732,8 +17733,6 @@ textarea {
 .setting-group > :is(p, .sp-note, .sp-hint, .sp-col, .sp-row, .sp-card, .sp-output, .sp-empty, table, pre, .sp-templates, .sp-plot) {
   grid-column: 1 / -1;
 }
-.sp-field-row--3 { grid-template-columns: minmax(88px, max-content) minmax(0, 1fr) auto; }
-.sp-field-row--stack { grid-template-columns: minmax(0, 1fr); }
 
 /* 12. 用 :has() 做父级状态（第 32 波）：参考实现大量使用（41 处）。
       两个真实用途：① 卡片里有元素获得焦点时，整张卡片给出描边（焦点在子元素但反馈在父级，
@@ -17744,9 +17743,117 @@ textarea {
   border-color: var(--accent);
   box-shadow: 0 0 0 var(--focus-ring-width) var(--focus-ring-color);
 }
-.sp-field-row:has(input:user-invalid),
-.setting-group:has(input:user-invalid) > label {
+.setting-group:has(input:user-invalid) > label,
+.mcp-form-row:has(input:user-invalid) > label,
+.tc-field:has(select:user-invalid) {
   color: var(--error);
+}
+
+/* ==========================================================================
+ * 第 38 波：`:has()` 父级状态铺开（7 → 27 处，参考实现 41 处）
+ *
+ * 为什么值得做：这些规则解决的是**同一类问题** —— 状态在子元素上，但用户看到的是"整行/整张卡"。
+ * 用 JS 去加类名是旧做法（要改状态机、要记得清理），`:has()` 让"子元素处于某状态"直接驱动父级样式。
+ *
+ * 一条铁律：**每条 `:has()` 都必须先在 TSX 里核对父子关系**（`.preview-shot/verify-has.mjs`
+ * 就是干这个的）—— 写错的 `:has()` 不会报错、也不会生效，只是悄悄变成死代码。
+ * 下面每条都列出了它对应的 TSX 出处。
+ * ========================================================================== */
+
+/* 1) 选中态外显：单选/复选一旦勾选，**整行**给出底色与描边（不是只亮一个小方块）
+      .sp-check / .sp-row / .git-env-field / .agent-check-label / .wx-list-row → SettingsPanel、
+      GitEnvSettings、AgentManager、WechatSettings */
+.sp-check:has(input:checked),
+.sp-row:has(input:checked),
+.wx-list-row:has(input:checked),
+.git-env-field:has(input:checked),
+.agent-check-label:has(input:checked) {
+  background: var(--bg-hover);
+  border-radius: var(--radius-sm);
+}
+.git-env-field:has(input:checked),
+.agent-check-label:has(input:checked) {
+  padding-inline: var(--space-3);
+}
+/* 选中项的标签文字提亮：未选中时是次级色，选中后是主色（配合上面的底色，层次才成立） */
+.sp-check:has(input:checked),
+.sp-row:has(input:checked),
+.git-env-field:has(input:checked),
+.agent-check-label:has(input:checked) {
+  color: var(--text-primary);
+}
+
+/* 2) 选项卡（单选）：选中的那张卡描边 —— PipelineNextStepDialog 的 .mode-option、
+      ProjectManager 的 .pm-radio */
+.mode-option:has(input:checked),
+.pm-radio:has(input:checked) {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+/* 3) 设置卡片里任何一个开关被打开 → 卡片给出描边（SettingsPanel 的 .sp-card 内含 .sp-check，
+      已用 verify-has 核对） */
+.sp-card:has(.sp-check input:checked) {
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
+/* 4) 完成态：待办勾选后整行淡化 + 删除线（TodoListDisplay） */
+.todo-item:has(.completed) {
+  opacity: 0.6;
+  text-decoration: line-through;
+}
+
+/* 5) 禁用态外显：行里只要有控件被禁用，整行（含标签）一起淡化 ——
+      此前只有控件本身变淡，"这行为什么点不动"要靠猜。McpManager / 设置组 */
+.mcp-form-row:has(:disabled),
+.setting-group:has(:disabled) {
+  opacity: 0.55;
+}
+
+/* 6) 已安装的市场卡片不再"邀请点击"：安装按钮禁用后取消悬停抬升
+      （SkillManager 的 .market-skill-card 内含 .market-skill-install-btn） */
+.market-skill-card:has(.market-skill-install-btn:disabled) {
+  transform: none;
+  cursor: default;
+}
+
+/* 7) 工具卡片的运行/失败状态外显在**卡片左侧竖条**上（ToolCallCard）：
+      扫一眼就能看出"这一批里哪张失败了"，不用逐张读文字 */
+.tool-card:has(.tool-card-status--running)::before,
+.tool-card:has(.tool-card-status--error)::before {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 0;
+  width: 2px;
+  border-start-start-radius: var(--radius-md);
+  border-end-start-radius: var(--radius-md);
+}
+.tool-card:has(.tool-card-status--running)::before {
+  background: var(--accent);
+}
+.tool-card:has(.tool-card-status--error)::before {
+  background: var(--error);
+}
+/* 失败卡片的标题也跟着染色（ToolCallCard 的 .tool-pill 内含 .tool-pill-icon-error） */
+.tool-call-pill:has(.tool-pill-icon-error) {
+  border-color: color-mix(in srgb, var(--error) 35%, transparent);
+}
+
+/* 8) 焦点父级：焦点落在行内的控件上时，整行给出环（键盘用户不必找"我在哪一格"）——
+      .setting-group / .mcp-form-row / .sp-row / .plugin-mgr-dialog-item 都含可聚焦控件 */
+.setting-group:has(:focus-visible),
+.mcp-form-row:has(:focus-visible),
+.sp-row:has(:focus-visible),
+.plugin-mgr-dialog-item:has(:focus-visible) {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+  border-radius: var(--radius-sm);
+}
+
+/* 9) 活跃项：子智能体活动项里有 spinner 时整行提亮（AgentDetail） */
+.subagent-activity-item:has(.spinner) {
+  color: var(--text-primary);
 }
 
 /* 13. 状态属性驱动样式（第 32 波）：与 .active 类并存 —— 读屏语义与样式同源，
@@ -17759,7 +17866,7 @@ textarea {
 .nb-view-tab[aria-selected="true"],
 .sp-tab[aria-selected="true"],
 .tc-tab[aria-selected="true"],
-.tool-pill[aria-expanded="true"] {
+.tool-call-pill[aria-expanded="true"] {
   color: var(--text-primary);
 }
 .settings-sidebar-item[aria-current="page"] {
@@ -17790,7 +17897,7 @@ textarea {
   .sp-card,
   .nb-note-card,
   .stat-card,
-  .tool-pill {
+  .tool-call-pill {
     animation: none !important;
     transition: none !important;
     transform: none !important;
