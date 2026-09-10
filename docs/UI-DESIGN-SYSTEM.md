@@ -75,6 +75,9 @@ frakio-work 的两条关键惯例（我们同步遵守）：
 ### 2.4 间距与尺寸
 
 - 间距走 **2px 网格**（1px 仅用于细线）；常用 4/6/8/10/12/14/16/20/24。
+- **控件高度走尺度令牌**（第 31 波）：`--control-xs` 24 / `--control-dense` 28 / `--control-md` 32 /
+  `--control-std` 36 / `--control-form` 40。密集工具条用 28、图标按钮 32、表单控件 36、大表单 40。
+  此前控件高度全靠 padding + 字号"推"（28.4 / 34.8 / 26 …），同一行里能差 1–6px —— 这是"行不齐"的根因。
 - **第 28 波起：CSS 间距属性一律用 `--space-*`**（`--space-1..15`：2/4/6/8/10/12/14/16/20/24/28/32/40/48/64），
   实测 2906 处数值间距里 2414 处做了令牌化或 2px 网格归并（3→4、5→6、7→8、13→14、18→20、22→24、36→40），
   只剩 1px/0.5px 细线、负值（光学微调）与 `%`/`calc()`/`var()` 动态值保留字面量。
@@ -124,8 +127,42 @@ frakio-work 的两条关键惯例（我们同步遵守）：
 **组件内部的局部层叠（0/1/2/10 这类 < 100）仍写普通数字**：幻灯片元素层序、棋盘格子、
 图标叠层这些都是"局部坐标"，全局化反而更难读。审计规则 `zindex-raw` 就是按这条线切的。
 
-## 3. 组件语言（统一外壳）
+### 2.7 交互状态与细节（第 29–31 波，对照参考实现逐项补齐）
 
+**参考实现的本地副本**：`C:\talkandstory\talkandstory\_research\frakio-work`（v1.3.0，含 `.git`）。
+对照方式固定为**同一套度量脚本双向跑**：`node .preview-shot/compare-refs.mjs <我们的 src> <对方的 apps/web/src>`
+—— 不靠印象，每次改完都能量出位移。第 29–31 波实测：
+
+| 指标 | 改前 | 改后 | 参考 |
+| --- | --- | --- | --- |
+| `:focus-visible` | 19 | **531** | 63 |
+| `:is()/:where()` | 3 | **511** | 233 |
+| transition 用字面量时长 | 194 | **8** | 58 |
+| `transition: all` | 49 | **1** | 0 |
+| `dvh` / `overscroll-behavior` / `color-scheme` / `::selection` | 0 | 8 / 1 / 2 / 4 | 22 / 5 / 4 / 0 |
+| 分层阴影令牌 / 动效令牌 | 6 / 17 | **9 / 19** | 2 / 0 |
+
+从参考实现学到并已落地的四条**具体**做法：
+
+1. **一条规则服务三种状态**：`.x:is(:hover, :focus-visible, [aria-expanded='true'])`。
+   鼠标、键盘、展开态共用一份样式，键盘焦点覆盖"顺手就有了"（我们 508 处 `:hover` 一次提升完，
+   特异度与 `:hover` 相同，层叠不变）。
+2. **控件写死高度**：它所有控件都是 34/36/38/40px；我们此前全靠 padding 撑，同行控件差 1–6px。
+   现在有 `--control-xs/dense/md/std/form`（24/28/32/36/40）并落到 13 个共享控件类上。
+3. **分层阴影**：大范围低透明度 + 近距轻投影两层（`--shadow-raise-1/2/3`），比单层投影"有厚度"。
+4. **原生控件跟随主题**：`color-scheme` / `accent-color` / `::placeholder` / `::selection` /
+   细档滚动条（含 hover 加深）—— 这些不做，暗色主题里总有一块"亮着的角"。
+
+**我们反而更强、别倒退**：字号/圆角/间距/层级/动效**全部令牌化**（参考实现这几类 0 令牌、全字面量），
+`tabular-nums` 58 vs 8、`color-mix()` 362 vs 108、`::selection`、`contain`。
+
+**还没追平、按性价比排队**（都是结构性的，不是"改几个值"）：
+`:is()` 已追平，但 **grid 布局 49 vs 583**（参考实现用 grid 做对齐原语，我们仍以 flex 为主）、
+`:has()` 1 vs 41（父级状态选择器，可用于外壳/主题变体）、`aria/[data-state]` 15 vs 34（状态驱动样式）、
+`prefers-reduced-motion` 7 vs 27（逐组件减动效）。`rgb(x x x / a)` 的 762 处我们**刻意不追** ——
+`color-mix()` 是本项目的 alpha 表达法，两种写法等价，混用只会更乱。
+
+## 3. 组件语言（统一外壳）
 **外壳类清单（浮层只允许这四种，审计规则 `modal-shell-bespoke` 认的就是它们）**：
 
 | 外壳 | 用途 | 做法 |
@@ -256,6 +293,10 @@ node tools/ui-audit/codemod-icon-scale.mjs [--write]  # 图标工具类 → .ico
 
 | **第 28 波** | 2026-09-10 | **0** ✅ | **0** ✅ | **间距令牌化（规则 14 → 15 条）**：先普查再动手 —— CSS 里 **2906 处数值间距**（padding 1200 / gap 886 / margin 各向 778），其中 **2390 处正好落在 `--space-*` 刻度上**、116 处离格、1076 处是 `var()/%/calc/auto` 动态值。做法：① 刻度值 2354 处纯重命名成 `var(--space-*)`（零视觉变化）；② 离格小值按 2px 网格**向上归并** 60 处（3→4、5→6、7→8、13→14、18→20、22→24、36→40，与第 8 波 `spacing-offgrid` 同一政策：±1px 对齐网格）；③ 补 `--space-13/14/15`（40/48/64）作为**大留白档**（空态、引导页、页面级 padding）；④ 明确**不**动的东西：`1px`/`0.5px` 细线（核心 41 处）、负值 5 处（光学微调）、动态值、以及 `monopoly-game` 插件（整份文件豁免、自带美术语言，仍是它自己的像素间距）。<br>新增规则 `spacing-raw`（error）锁住：间距属性必须走令牌，`0`/`auto`/细线/负值/动态值放行；**几何尺寸（width/height/top…）不在规则内** —— 它们是布局坐标而不是节奏。<br>**测试抓到一处真契约**：`LO-SKIN-2` 断言插件 CSS「只使用已登记的皮肤令牌前缀」，而插件此前用自己的像素间距、白名单里没有 `--space-`。判断：间距令牌与 `--fs-*`/`--radius` 同性质（宿主提供、与皮肤无关），于是**扩契约**而不是回退 —— 测试白名单加 `--space-`，插件 README 的皮肤兼容章节同步（顺带写清"全局密度改档时插件一起跟随"）。 |
 
+| **第 29–30 波** | 2026-09-10 | **0** ✅ | **0** ✅ | **对照参考实现补齐交互反馈与细节层**（参考实现整份 checkout 在 `C:\talkandstory\talkandstory\_research\frakio-work`，用 `.preview-shot/compare-refs.mjs` 双向度量，不靠印象）：① `:hover` → `:is(:hover, :focus-visible)` **508 处**（同一习语：一条规则服务鼠标/键盘/展开态，特异度不变），`:focus-visible` 19 → **531**；② 全局焦点环令牌 + 兜底规则（此前 `outline: none` 74 处而 `:focus-visible` 只有 19 处）、全局按下反馈（`--press-shift` 1px，开关/滑块除外）；③ 6 处菜单触发器补 `aria-expanded`/`aria-haspopup`，并让 `[aria-expanded="true"]` 驱动背景与箭头旋转；④ 动效令牌化：字面量时长 194 → **8**，`transition: all` 49 → **1**（换成颜色/变换/阴影/透明度四段显式过渡，新增 `--transition-shadow`/`--transition-fade`，不再动画化 layout 属性）；⑤ 文字渲染 `-webkit-font-smoothing`/`text-rendering: optimizeLegibility`/`font-synthesis: none`；⑥ **分层阴影** `--shadow-raise-1/2/3` + 顶部 1px 高光 `--highlight-top`，就地升级浮层/模态/toast/统计卡；卡片悬停上浮 1px；⑦ 图标光学对齐、`dvh`（8 处）、`overscroll-behavior: contain`、`color-scheme`、`accent-color`、`::selection`、细档滚动条、标题 `text-wrap: balance`；⑧ 系统「减少动效」全局兜底 + 逐组件关停循环动画 |
+
+| **第 31 波** | 2026-09-10 | **0** ✅ | **0** ✅ | **控件高度尺度（对齐是"精致"的底座）**：从参考实现扒出的关键差异 —— 它所有控件都**写死高度**（34/36/38/40），我们全靠 padding + 字号推（实测 28.4 / 34.8 / 26 …），同一行两个控件能差 1–6px，视觉上就是"没对齐"。按文档 §2.4 早就写好、却没人执行的档位补成令牌（`--control-xs/dense/md/std/form` = 24/28/32/36/40）并落到 13 个共享控件类；另补 `::placeholder` 统一到 `--text-muted`（此前吃浏览器默认灰）、`input/select/textarea { min-width: 0 }`（flex 行里不再撑破容器）。只补 `height`、不动 padding/display，尺寸变化 ≤2px |
+
 ### 全项目现场事实（来自 UI 交互界面清单，作为工作队列）
 - 挂载层：64 个 `SlotBridge` 渲染点 + 54 处 `slots.register` + 44 处 `createPortal`（另 51 个 SlotBridge 在 `App.tsx`）。
 - 浮层：205 个 overlay 类名实例散在 60 个 tsx 里，约 35 种外壳；`var(--z-*)` 只被用了 9 次，
@@ -276,7 +317,7 @@ node tools/ui-audit/codemod-icon-scale.mjs [--write]  # 图标工具类 → .ico
 
 ---
 
-## 7. 交接快照（2026-09-10 · 第 28 波后：15 条规则全绿）
+## 7. 交接快照（2026-09-10 · 第 31 波后）
 
 ### 当前数字（`node tools/ui-audit/scan-ui.mjs`）
 
@@ -374,6 +415,10 @@ node tools/ui-audit/codemod-icon-scale.mjs [--write]  # 图标工具类 → .ico
     新增门禁规则 `spacing-raw`；顺带把 library-ops 插件的「可消费令牌前缀」契约扩到 `--space-`
     （间距令牌与 `--fs-*`/`--radius` 同性质：宿主提供、与皮肤无关）（详见 §5 表）。
 
+29. **第 29–30 波**：对照参考实现补齐交互反馈与细节层 —— `:focus-visible` 19 → 531、
+    动效字面量 194 → 8、`transition: all` 49 → 1；焦点环/按下反馈/分层阴影/文字渲染/减动效/滚动条等（详见 §2.7 与 §5 表）。
+30. **第 31 波（本轮）**：控件高度尺度（`--control-*` 24/28/32/36/40）落到 13 个共享控件类，
+    另补 `::placeholder` 与 `input/select/textarea { min-width: 0 }`（详见 §5 表）。
 ### 门禁已归零，剩下的（都不属于"违规清零"这件事，按性价比排序）
 
 1. ~~**z-index 令牌化**~~ ✅ **第 27 波完成**：层级梯子见 §2.6（14 个 `--z-*` 令牌），97 处写死值归位，
