@@ -150,7 +150,7 @@ export function DiffViewer({ filePath, before, after, onAccept, onReject, onCust
             </button>
           )}
           {onClose && (
-            <button className="diff-close-btn" onClick={onClose}><CloseIcon size={18} /></button>
+            <button className="diff-close-btn" onClick={onClose}><CloseIcon size={16} /></button>
           )}
         </div>
       </div>

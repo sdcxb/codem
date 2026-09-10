@@ -131,7 +131,7 @@ export function OverviewPanel({ snapshot, series, zh, onOpenLibrary, onOpenTab }
                   title={a.roleLabel}
                 >
                   <span className="lo-session-card__top">
-                    <span className="lo-session-card__icon"><LoIcon name={KIND_META[a.kind].icon} size={13} /></span>
+                    <span className="lo-session-card__icon"><LoIcon name={KIND_META[a.kind].icon} size={14} /></span>
                     <span className="lo-session-card__name">{a.name}</span>
                     {a.activity !== "idle" && a.activity !== "sleeping" && <span className="lo-session-card__live">●</span>}
                   </span>
@@ -267,7 +267,7 @@ export function OverviewPanel({ snapshot, series, zh, onOpenLibrary, onOpenTab }
             </div>
             {snapshot.sources.failed.length > 0 && (
               <div className="lo-warn">
-                <Pill token="--warning"><LoIcon name="triangle-alert" size={11} /> {zh ? "采集失败" : "Failed"}</Pill>
+                <Pill token="--warning"><LoIcon name="triangle-alert" size={12} /> {zh ? "采集失败" : "Failed"}</Pill>
                 <span>{snapshot.sources.failed.join(", ")}</span>
               </div>
             )}

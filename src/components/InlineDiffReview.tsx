@@ -138,7 +138,7 @@ export const InlineDiffReview = memo(function InlineDiffReview({
         >
           {collapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
         </button>
-        <FileText size={15} className="inline-diff-file-icon" />
+        <FileText size={14} className="inline-diff-file-icon" />
         <div className="inline-diff-title-area">
           <div className="inline-diff-filename-row">
             <strong className="inline-diff-filename">{fileName}</strong>

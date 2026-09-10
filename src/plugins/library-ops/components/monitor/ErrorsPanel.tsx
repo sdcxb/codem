@@ -55,7 +55,7 @@ export function ErrorsPanel({ snapshot, zh }: ErrorsPanelProps) {
                 const meta = ACTIVITY_META[a.activity];
                 return (
                   <li key={a.id} className="lo-alerts__item" data-severity={meta.severity}>
-                    <LoIcon name={meta.icon} size={13} className="lo-alerts__icon" />
+                    <LoIcon name={meta.icon} size={14} className="lo-alerts__icon" />
                     <span className="lo-alerts__name" title={a.name}>
                       {a.name}
                     </span>
@@ -89,7 +89,7 @@ export function ErrorsPanel({ snapshot, zh }: ErrorsPanelProps) {
             <ul className="lo-alerts">
               {failedTasks.map((t) => (
                 <li key={`${t.team}-${t.id}`} className="lo-alerts__item" data-severity="bad">
-                  <LoIcon name="circle-x" size={13} className="lo-alerts__icon" />
+                  <LoIcon name="circle-x" size={14} className="lo-alerts__icon" />
                   <span className="lo-alerts__name">{t.id}</span>
                   <span className="lo-alerts__role" title={t.subject}>
                     {t.subject}
@@ -131,7 +131,7 @@ export function ErrorsPanel({ snapshot, zh }: ErrorsPanelProps) {
           <ul className="lo-alerts">
             {snapshot.sources.failed.map((s) => (
               <li key={s} className="lo-alerts__item" data-severity="wait">
-                <LoIcon name="plug" size={13} className="lo-alerts__icon" />
+                <LoIcon name="plug" size={14} className="lo-alerts__icon" />
                 <span className="lo-alerts__name">{s}</span>
                 <Pill token="--warning">{zh ? "采集失败" : "failed"}</Pill>
               </li>

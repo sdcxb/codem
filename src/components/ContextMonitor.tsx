@@ -348,20 +348,20 @@ export function ContextMonitor({ sessionId, visible }: ContextMonitorProps) {
             onClick={() => setShowConfig(!showConfig)}
             style={{
               background: "none", border: "1px solid var(--border-primary)", color: "var(--text-secondary)",
-              fontSize: 'var(--fs-sm)', padding: "4px 10px", borderRadius: 4, cursor: "pointer", width: "100%",
+              fontSize: 'var(--fs-sm)', padding: "4px 10px", borderRadius: "var(--radius-xs)", cursor: "pointer", width: "100%",
               textAlign: "left",
             }}
           >
             {showConfig ? "▼" : "▶"} 压缩参数配置
           </button>
           {showConfig && ctxConfig && (
-            <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 8, padding: 8, borderRadius: 6, background: "var(--bg-tertiary)", border: "1px solid var(--border-primary)" }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 8, padding: 8, borderRadius: "var(--radius-sm)", background: "var(--bg-tertiary)", border: "1px solid var(--border-primary)" }}>
               {/* 上下文窗口大小 */}
               <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                 <span style={{ fontSize: 'var(--fs-sm)', color: "var(--text-secondary)" }}>上下文窗口 (tokens)</span>
                 <input type="number" min="8000" step="1000" value={ctxConfig.maxContextWindow}
                   onChange={(e) => setCtxConfig({ ...ctxConfig, maxContextWindow: parseInt(e.target.value) || 128000 })}
-                  style={{ padding: "4px 8px", fontSize: 'var(--fs-sm)', borderRadius: 4, border: "1px solid var(--border-primary)", background: "var(--bg-secondary)", color: "var(--text-primary)" }} />
+                  style={{ padding: "4px 8px", fontSize: 'var(--fs-sm)', borderRadius: "var(--radius-xs)", border: "1px solid var(--border-primary)", background: "var(--bg-secondary)", color: "var(--text-primary)" }} />
                 <span style={{ fontSize: 'var(--fs-xs)', color: "var(--text-muted)" }}>模型的最大上下文长度，如 128000</span>
               </label>
 
@@ -379,7 +379,7 @@ export function ContextMonitor({ sessionId, visible }: ContextMonitorProps) {
                 <span style={{ fontSize: 'var(--fs-sm)', color: "var(--text-secondary)" }}>压缩后保留消息数</span>
                 <input type="number" min="5" max="100" value={ctxConfig.maxMessagesAfterCompaction}
                   onChange={(e) => setCtxConfig({ ...ctxConfig, maxMessagesAfterCompaction: parseInt(e.target.value) || 20 })}
-                  style={{ padding: "4px 8px", fontSize: 'var(--fs-sm)', borderRadius: 4, border: "1px solid var(--border-primary)", background: "var(--bg-secondary)", color: "var(--text-primary)" }} />
+                  style={{ padding: "4px 8px", fontSize: 'var(--fs-sm)', borderRadius: "var(--radius-xs)", border: "1px solid var(--border-primary)", background: "var(--bg-secondary)", color: "var(--text-primary)" }} />
                 <span style={{ fontSize: 'var(--fs-xs)', color: "var(--text-muted)" }}>压缩后保留最近多少条消息，默认 20</span>
               </label>
 
@@ -388,7 +388,7 @@ export function ContextMonitor({ sessionId, visible }: ContextMonitorProps) {
                 <span style={{ fontSize: 'var(--fs-sm)', color: "var(--text-secondary)" }}>输出预留 (tokens)</span>
                 <input type="number" min="1024" step="512" value={ctxConfig.outputReserve}
                   onChange={(e) => setCtxConfig({ ...ctxConfig, outputReserve: parseInt(e.target.value) || 4096 })}
-                  style={{ padding: "4px 8px", fontSize: 'var(--fs-sm)', borderRadius: 4, border: "1px solid var(--border-primary)", background: "var(--bg-secondary)", color: "var(--text-primary)" }} />
+                  style={{ padding: "4px 8px", fontSize: 'var(--fs-sm)', borderRadius: "var(--radius-xs)", border: "1px solid var(--border-primary)", background: "var(--bg-secondary)", color: "var(--text-primary)" }} />
                 <span style={{ fontSize: 'var(--fs-xs)', color: "var(--text-muted)" }}>为模型输出预留的 token 数，默认 4096</span>
               </label>
 
@@ -397,7 +397,7 @@ export function ContextMonitor({ sessionId, visible }: ContextMonitorProps) {
                 <span style={{ fontSize: 'var(--fs-sm)', color: "var(--text-secondary)" }}>系统提示词预留 (tokens)</span>
                 <input type="number" min="500" step="500" value={ctxConfig.systemPromptTokens}
                   onChange={(e) => setCtxConfig({ ...ctxConfig, systemPromptTokens: parseInt(e.target.value) || 2000 })}
-                  style={{ padding: "4px 8px", fontSize: 'var(--fs-sm)', borderRadius: 4, border: "1px solid var(--border-primary)", background: "var(--bg-secondary)", color: "var(--text-primary)" }} />
+                  style={{ padding: "4px 8px", fontSize: 'var(--fs-sm)', borderRadius: "var(--radius-xs)", border: "1px solid var(--border-primary)", background: "var(--bg-secondary)", color: "var(--text-primary)" }} />
                 <span style={{ fontSize: 'var(--fs-xs)', color: "var(--text-muted)" }}>系统提示词的预估 token 数，默认 2000</span>
               </label>
 
@@ -418,7 +418,7 @@ export function ContextMonitor({ sessionId, visible }: ContextMonitorProps) {
                   setTimeout(() => setSavedConfig(false), 2000);
                 }}
                 style={{
-                  padding: "6px 14px", borderRadius: 4, fontSize: 'var(--fs-sm)', fontWeight: 500,
+                  padding: "6px 14px", borderRadius: "var(--radius-xs)", fontSize: 'var(--fs-sm)', fontWeight: 500,
                   border: "1px solid var(--accent)", background: "var(--accent)", color: "var(--text-on-accent)",
                   cursor: "pointer", alignSelf: "flex-start",
                 }}

@@ -57,7 +57,7 @@ export function ComputerUseSettings() {
               key={opt.id}
               style={{
                 display: "flex", alignItems: "center", gap: 8, padding: "8px 10px",
-                borderRadius: 8, cursor: "pointer",
+                borderRadius: "var(--radius)", cursor: "pointer",
                 background: mode === opt.id ? "color-mix(in srgb, var(--accent) 12%, transparent)" : "var(--bg-secondary)",
                 border: mode === opt.id ? "1px solid var(--accent)" : "1px solid var(--border-primary)",
               }}
@@ -98,7 +98,7 @@ export function ComputerUseSettings() {
           value={screenshotDir}
           onChange={(e) => { setScreenshotDir(e.target.value); persist({ screenshot_dir: e.target.value }); }}
           placeholder={zh ? "如 D:/codem-shots" : "e.g. D:/codem-shots"}
-          style={{ width: "100%", padding: "6px 8px", background: "var(--bg-tertiary)", color: "var(--text-primary)", border: "1px solid var(--border-primary)", borderRadius: 6, fontSize: 'var(--fs-sm)', boxSizing: "border-box" }}
+          style={{ width: "100%", padding: "6px 8px", background: "var(--bg-tertiary)", color: "var(--text-primary)", border: "1px solid var(--border-primary)", borderRadius: "var(--radius-sm)", fontSize: 'var(--fs-sm)', boxSizing: "border-box" }}
         />
       </div>
       <div className="setting-group">

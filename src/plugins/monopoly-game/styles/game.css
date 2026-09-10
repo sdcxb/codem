@@ -45,7 +45,7 @@
   background: linear-gradient(135deg, #e74c3c, #c0392b);
   color: white;
   border: none;
-  border-radius: 8px;
+  border-radius: var(--radius, 8px);
   cursor: pointer;
   transition: transform var(--duration-normal), box-shadow var(--duration-normal);
   box-shadow: 0 4px 15px rgba(231, 76, 60, 0.4);
@@ -70,7 +70,7 @@
   width: 80px;
   height: 80px;
   margin: 0 auto 8px;
-  border-radius: 12px;
+  border-radius: var(--radius-md, 10px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -89,7 +89,7 @@
 .character-card {
   background: #2c3e50;
   border: 2px solid #555;
-  border-radius: 10px;
+  border-radius: var(--radius-md, 10px);
   padding: 16px 12px;
   text-align: center;
   cursor: pointer;
@@ -222,7 +222,7 @@
 .player-card {
   background: rgba(44, 62, 80, 0.6);
   border: 2px solid;
-  border-radius: 8px;
+  border-radius: var(--radius, 8px);
   padding: 8px;
   transition: var(--transition-color), var(--transition-transform), var(--transition-shadow), var(--transition-fade);
 }
@@ -319,7 +319,7 @@
 
 .badge {
   padding: 1px 6px;
-  border-radius: 4px;
+  border-radius: var(--radius-xs, 4px);
   font-size: 9px;
   color: white;
 }
@@ -352,7 +352,7 @@
   height: 32px;
   background: white;
   color: #2c3e50;
-  border-radius: 6px;
+  border-radius: var(--radius-sm, 6px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -364,7 +364,7 @@
 .dice-face-img {
   width: 32px;
   height: 32px;
-  border-radius: 6px;
+  border-radius: var(--radius-sm, 6px);
   border: 2px solid #2c3e50;
   filter: brightness(1.1);
 }
@@ -374,7 +374,7 @@
   color: #95a5a6;
   padding: 6px 12px;
   background: rgba(44, 62, 80, 0.4);
-  border-radius: 6px;
+  border-radius: var(--radius-sm, 6px);
 }
 
 .dice-sum {
@@ -493,7 +493,7 @@
 .stock-panel {
   background: #1a1a2e;
   border: 1px solid #2c3e50;
-  border-radius: 12px;
+  border-radius: var(--radius-md, 10px);
   padding: 12px;
   width: 500px;
   max-width: 90%;
@@ -533,7 +533,7 @@
   gap: 8px;
   padding: 6px;
   background: rgba(44, 62, 80, 0.4);
-  border-radius: 6px;
+  border-radius: var(--radius-sm, 6px);
 }
 
 .stock-name {
@@ -558,7 +558,7 @@
 .stock-btn {
   padding: 4px 10px;
   border: none;
-  border-radius: 4px;
+  border-radius: var(--radius-xs, 4px);
   cursor: pointer;
   font-size: 12px;
 }
@@ -598,7 +598,7 @@
 .card-panel, .shop-panel {
   background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
   border: 1px solid #34495e;
-  border-radius: 12px;
+  border-radius: var(--radius-md, 10px);
   padding: 12px;
   width: 500px;
   max-width: 90%;
@@ -649,7 +649,7 @@
 .card-item {
   background: rgba(44, 62, 80, 0.5);
   border: 2px solid transparent;
-  border-radius: 8px;
+  border-radius: var(--radius, 8px);
   padding: 8px;
   cursor: pointer;
   transition: border-color var(--duration-fast), background var(--duration-fast);
@@ -706,7 +706,7 @@
   background: #2c3e50;
   color: #ecf0f1;
   border: 1px solid #34495e;
-  border-radius: 4px;
+  border-radius: var(--radius-xs, 4px);
 }
 
 .action-message {
@@ -715,7 +715,7 @@
   padding: 4px;
   margin-top: 8px;
   background: rgba(241, 196, 15, 0.05);
-  border-radius: 4px;
+  border-radius: var(--radius-xs, 4px);
 }
 
 /* 商店面板 */
@@ -731,7 +731,7 @@
   background: #2c3e50;
   color: #bdc3c7;
   border: none;
-  border-radius: 4px;
+  border-radius: var(--radius-xs, 4px);
   cursor: pointer;
   font-size: 12px;
   transition: background var(--duration-fast);
@@ -749,7 +749,7 @@
   margin-bottom: 8px;
   padding: 6px;
   background: rgba(44, 62, 80, 0.4);
-  border-radius: 4px;
+  border-radius: var(--radius-xs, 4px);
 }
 
 .shop-item {
@@ -758,7 +758,7 @@
   gap: 8px;
   padding: 6px;
   background: rgba(44, 62, 80, 0.4);
-  border-radius: 6px;
+  border-radius: var(--radius-sm, 6px);
 }
 
 .shop-item-info {
@@ -794,7 +794,7 @@
 .shop-btn {
   padding: 4px 12px;
   border: none;
-  border-radius: 4px;
+  border-radius: var(--radius-xs, 4px);
   cursor: pointer;
   font-size: 12px;
   background: #27ae60;
@@ -823,7 +823,7 @@
 .bank-info {
   margin-bottom: 12px;
   background: rgba(44, 62, 80, 0.4);
-  border-radius: 6px;
+  border-radius: var(--radius-sm, 6px);
   padding: 8px;
 }
 
@@ -845,7 +845,7 @@
   background: #34495e;
   color: #ecf0f1;
   border: none;
-  border-radius: 4px;
+  border-radius: var(--radius-xs, 4px);
   cursor: pointer;
   font-size: 11px;
   transition: filter var(--duration-fast);
@@ -859,7 +859,7 @@
 .auction-info {
   margin-bottom: 12px;
   background: rgba(44, 62, 80, 0.4);
-  border-radius: 6px;
+  border-radius: var(--radius-sm, 6px);
   padding: 8px;
 }
 
@@ -875,7 +875,7 @@
   gap: 4px;
   padding: 6px;
   background: rgba(44, 62, 80, 0.4);
-  border-radius: 6px;
+  border-radius: var(--radius-sm, 6px);
 }
 
 .auction-player-info {
@@ -895,7 +895,7 @@
   background: #2c3e50;
   color: #ecf0f1;
   border: 1px solid #34495e;
-  border-radius: 4px;
+  border-radius: var(--radius-xs, 4px);
   font-size: 12px;
 }
 
@@ -925,7 +925,7 @@
   background: #2c3e50;
   color: #bdc3c7;
   border: 2px solid transparent;
-  border-radius: 6px;
+  border-radius: var(--radius-sm, 6px);
   cursor: pointer;
   font-size: 12px;
   transition: var(--transition-color), var(--transition-transform), var(--transition-shadow), var(--transition-fade);
@@ -970,7 +970,7 @@
   background: #2c3e50;
   color: #ecf0f1;
   border: 1px solid #34495e;
-  border-radius: 4px;
+  border-radius: var(--radius-xs, 4px);
   font-size: 11px;
 }
 
@@ -1018,7 +1018,7 @@
   width: 28px;
   height: 28px;
   flex-shrink: 0;
-  border-radius: 4px;
+  border-radius: var(--radius-xs, 4px);
   padding: 2px;
   background: rgba(0, 0, 0, 0.3);
   border: 1px solid;
@@ -1051,7 +1051,7 @@
   padding: 10px 12px;
   background: rgba(44, 62, 80, 0.4);
   border: 2px solid #34495e;
-  border-radius: 8px;
+  border-radius: var(--radius, 8px);
   cursor: pointer;
   transition: border-color var(--duration-fast), background var(--duration-fast);
 }

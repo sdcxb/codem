@@ -340,7 +340,7 @@ export const TrajectoryPanel = memo(function TrajectoryPanel({
           >
             <Filter size={10} />
             {filter === 'all' ? (zh ? '全部' : 'All') : typeLabel(filter as TrajectoryStepType, zh)}
-            <ChevronDown size={9} />
+            <ChevronDown size={10} />
           </button>
           {showFilterDropdown && (
             <>
@@ -410,7 +410,7 @@ export const TrajectoryPanel = memo(function TrajectoryPanel({
                 {/* LLM provider — 紧凑 */}
                 {step.data?.provider && (
                   <span className="tj-meta">
-                    <Cpu size={8} />{step.data.provider}
+                    <Cpu size={10} />{step.data.provider}
                   </span>
                 )}
                 {/* LLM usage — input↓/output↑（对标 dsh 每 request usage 展示） */}
@@ -431,7 +431,7 @@ export const TrajectoryPanel = memo(function TrajectoryPanel({
                 )}
                 {/* 时间 — 右对齐 */}
                 <span className="tj-time">
-                  <Clock size={8} />
+                  <Clock size={10} />
                   {formatTime(step.timestamp)}
                   {step.duration && <span>·{formatDuration(step.duration)}</span>}
                 </span>
@@ -476,7 +476,7 @@ export const TrajectoryPanel = memo(function TrajectoryPanel({
               {/* token usage 行 — 独立小行 */}
               {step.data?.usage && !isExpanded && (
                 <div className="tj-usage">
-                  <Zap size={8} />
+                  <Zap size={10} />
                   {formatTokens(step.data.usage.promptTokens || step.data.usage.inputTokens || 0)}↓
                   {' '}
                   {formatTokens(step.data.usage.completionTokens || step.data.usage.outputTokens || 0)}↑

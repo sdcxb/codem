@@ -112,7 +112,7 @@ export function AgentPanel({ agents, onClose, onSelectAgent }: AgentPanelProps) 
           <span className="agent-panel-icon"><AgentIcon size={20} /></span>
           <span>{zh ? "智能体与团队工作列表" : "Agents & Teams"}</span>
         </div>
-        <button className="agent-panel-close" onClick={onClose}><CloseIcon size={18} /></button>
+        <button className="agent-panel-close" onClick={onClose}><CloseIcon size={16} /></button>
       </div>
 
       <div className="agent-panel-stats">
@@ -132,7 +132,7 @@ export function AgentPanel({ agents, onClose, onSelectAgent }: AgentPanelProps) 
 
       {/* 团队维度：当前会话的活动 agent-teams 团队 */}
       {teamSnap && (
-        <div style={{ margin: "0 10px 6px", border: "1px solid var(--border-primary, rgba(0,0,0,.1))", borderRadius: 10, overflow: "hidden", background: "var(--bg-secondary, #232834)" }}>
+        <div style={{ margin: "0 10px 6px", border: "1px solid var(--border-primary, rgba(0,0,0,.1))", borderRadius: "var(--radius-md)", overflow: "hidden", background: "var(--bg-secondary, #232834)" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 10px", borderBottom: "1px solid var(--border-primary, rgba(0,0,0,.08))" }}>
             <span style={{ fontWeight: 700, fontSize: "var(--fs-sm)" }}>👥 {teamSnap.name}</span>
             <span style={{ marginLeft: "auto", fontSize: "var(--fs-xs)", color: "var(--text-muted)" }}>

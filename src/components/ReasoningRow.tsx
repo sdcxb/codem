@@ -87,7 +87,7 @@ export const ReasoningRow = memo(function ReasoningRow({
           : <ChevronRight size={12} style={{ flexShrink: 0, opacity: 0.5 }} />
         }
         <Brain
-          size={13}
+          size={14}
           className={running ? 'reasoning-icon-streaming' : ''}
           style={{
             flexShrink: 0,
@@ -126,7 +126,7 @@ export const ReasoningRow = memo(function ReasoningRow({
             marginLeft: 18,
             padding: '8px 12px',
             background: 'var(--bg-tertiary)',
-            borderRadius: 6,
+            borderRadius: "var(--radius-sm)",
             borderLeft: '2px solid color-mix(in srgb, var(--accent) 40%, transparent)',
             fontSize: 'var(--fs-sm)',
             color: 'var(--text-secondary)',

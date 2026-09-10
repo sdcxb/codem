@@ -87,7 +87,7 @@ export function DelegationTab() {
         ].map((s) => (
           <div key={s.label} style={{
             background: "var(--bg-tertiary)",
-            borderRadius: "6px",
+            borderRadius: "var(--radius-sm)",
             padding: "8px 14px",
             display: "flex",
             alignItems: "center",
@@ -130,7 +130,7 @@ export function DelegationTab() {
                 key={task.id}
                 style={{
                   padding: "12px 14px",
-                  borderRadius: "8px",
+                  borderRadius: "var(--radius)",
                   background: "var(--bg-tertiary)",
                   border: "1px solid var(--border-primary)",
                   display: "flex",
@@ -147,7 +147,7 @@ export function DelegationTab() {
                     color: config.color,
                     background: `${config.color}22`,
                     padding: "2px 8px",
-                    borderRadius: "4px",
+                    borderRadius: "var(--radius-xs)",
                   }}>
                     {zh ? config.label : config.labelEn}
                   </span>
@@ -163,7 +163,7 @@ export function DelegationTab() {
                   color: "var(--text-secondary, #aaa)",
                   padding: "6px 8px",
                   background: "var(--bg-secondary)",
-                  borderRadius: "4px",
+                  borderRadius: "var(--radius-xs)",
                   borderLeft: `3px solid ${config.color}`,
                 }}>
                   {truncate(task.task, 200)}
@@ -174,7 +174,7 @@ export function DelegationTab() {
                     color: "var(--text-secondary, #888)",
                     padding: "4px 8px",
                     background: "var(--bg-secondary)",
-                    borderRadius: "4px",
+                    borderRadius: "var(--radius-xs)",
                     maxHeight: "60px",
                     overflow: "hidden",
                   }}>

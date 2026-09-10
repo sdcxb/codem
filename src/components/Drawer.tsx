@@ -106,7 +106,7 @@ export const Drawer = memo(function Drawer({
             {title && (
               <div className="drawer-header" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", borderBottom: "1px solid var(--border-primary, #333)" }}>
                 <span style={{ fontSize: 'var(--fs-md)', fontWeight: 600, color: "var(--text-primary, #e0e0e0)" }}>{title}</span>
-                <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted, #888)", padding: 4, borderRadius: 4 }}>
+                <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted, #888)", padding: 4, borderRadius: "var(--radius-xs)" }}>
                   <ActionIcons.close size={16} />
                 </button>
               </div>

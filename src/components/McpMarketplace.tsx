@@ -130,7 +130,7 @@ export function McpMarketplace({ onClose }: McpMarketplaceProps) {
           <span>MCP 服务器目录</span>
         </div>
         <button className="mcp-marketplace-close" onClick={onClose}>
-          <CloseIcon size={18} />
+          <CloseIcon size={16} />
         </button>
       </div>
 

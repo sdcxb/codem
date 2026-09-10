@@ -112,6 +112,8 @@ const RULES = {
   "zindex-raw": { level: "error", desc: "全局层级的 z-index 写了裸数字（>=100 应用 --z-* 令牌；<100 属组件内局部层叠，允许）" },
   "css-class-duplicate": { level: "error", desc: "同一个类在顶层被定义多次且属性取值冲突（后一份会静默覆盖前一份）" },
   "spacing-raw": { level: "error", desc: "CSS 间距属性写了裸数字（应使用 var(--space-*)；0/1px 细线/负值/百分比/calc 例外）" },
+  "radius-raw": { level: "error", desc: "圆角写了裸长度（应使用 var(--radius-*)；0/2px 细条、50% 圆形、inherit 例外）" },
+  "icon-size-offscale": { level: "error", desc: "图标尺寸不在 --icon-* 八级刻度上（10/12/14/16/20/24/32/48）" },
 };
 
 // ========== 扫描器 ==========
@@ -206,6 +208,29 @@ function computeStyleRanges(src) {
   return ranges;
 }
 
+/** 图标刻度（对应 styles.css 的 --icon-2xs..--icon-3xl 八级） */
+const ICON_SCALE = new Set([10, 12, 14, 16, 20, 24, 32, 48]);
+/** size 不是图标刻度的组件：它们用 size 表达内容尺寸（画布/图表/头像/抽屉宽度） */
+const NON_ICON_TAGS = new Set([
+  "Drawer", "Background", "DonutChart", "ProgressRing", "CharacterAvatar", "Pill", "Avatar",
+  "Slider", "Canvas", "Modal", "Chart", "Sprite", "Scene", "Grid", "Board", "Editor", "Window",
+]);
+
+/** 往左（跨行）找出最近的 JSX 开标签名，用于判断 `size={n}` 属于哪个组件 */
+function jsxTagAt(lines, i, offset) {
+  let tag = "?";
+  for (let k = i; k >= Math.max(0, i - 6); k--) {
+    const from = k === i ? offset : lines[k].length;
+    const head = lines[k].slice(0, from);
+    const m = /<([A-Za-z][\w.]*)[^<>]*$/g;
+    let last = null;
+    let hit;
+    while ((hit = m.exec(head))) last = hit[1];
+    if (last) { tag = last; break; }
+  }
+  return tag;
+}
+
 function scanTsx(rel, src) {
   const lines = src.split("\n");
   let styleProps = 0;
@@ -238,6 +263,19 @@ function scanTsx(rel, src) {
   lines.forEach((raw, i) => {
     const line = stripComments(raw);
     const no = i + 1;
+
+    // 0) 图标尺寸刻度（第 34 波）：`size={n}` 必须落在 --icon-* 八级刻度上。
+    //    背景：实测 10/12/14/16/20/24 之外还散着 13×46、18×45、11×26、15×23、9×8、28×2 共 149 处，
+    //    同一行里 13px 与 14px 图标并排 = 视觉节奏被打破，这正是"局部细节不精致"的典型来源。
+    //    排除非图标组件：它们的 size 是内容尺寸（画布、图表、头像、抽屉宽度），不是图标刻度。
+    for (const m of line.matchAll(/size=\{(\d+)\}/g)) {
+      const n = Number(m[1]);
+      if (n < 8 || n > 48 || ICON_SCALE.has(n)) continue;
+      const tag = jsxTagAt(lines, i, m.index);
+      if (NON_ICON_TAGS.has(tag)) continue;
+      add("icon-size-offscale", rel, no, raw, `<${tag} size={${n}}>`);
+    }
+
     // 该行任意位置落在样式对象内 → 视作样式上下文
     const wasInStyle = lineInStyle(lineStarts[i], lineStarts[i] + raw.length);
 
@@ -339,6 +377,11 @@ function scanTsx(rel, src) {
       else if (unit === "rem") ok = SPACING_OK(parseFloat(v) * 16);
       else ok = RADIUS_OK.has(v);
       if (!ok) add("radius-offscale", rel, no, raw, `borderRadius: ${v}${unit}`);
+      // 在刻度上的字面量同样要拦：它们通过离格检查，却绕过了令牌（改令牌不会跟着动）
+      const rawV = `${v}${unit}`;
+      if (v !== "0" && !["2", "2px", "50%", "inherit", "unset", "initial"].includes(rawV)) {
+        add("radius-raw", rel, no, raw, `borderRadius: ${rawV}`);
+      }
     }
 
     // 4) 间距离格（padding/margin/gap 的纯数字）
@@ -403,6 +446,17 @@ function scanCss(rel, src) {
     if (br && br[2] !== "%") {
       const v = br[2] === "rem" ? parseFloat(br[1]) * 16 : parseFloat(br[1]);
       if (!RADIUS_OK.has(String(v))) add("radius-offscale", rel, no, raw, `border-radius: ${br[0]}`);
+    }
+    // 圆角令牌化（第 34 波）：**在刻度上**的字面量同样要拦 —— 它们能通过 radius-offscale，
+    // 却让「改一个令牌、全局圆角一起动」失效（此前 styles.css 里躺着 4px×124 / 6px×113 / 8px×76）。
+    // 例外：0（无圆角）、2px（细条/进度条端头）、50%（圆形）、inherit/initial/unset、var()/calc()。
+    const brDecl = /border-radius:\s*([^;{}\n]+)/i.exec(line);
+    if (brDecl && !/\bvar\(|calc\(/.test(brDecl[1])) {
+      const bad = brDecl[1]
+        .split(/[\s/]+/)
+        .map((v) => v.trim())
+        .filter((v) => v && v !== "0" && v !== "2px" && v !== "50%" && v !== "inherit" && v !== "initial" && v !== "unset");
+      if (bad.length) add("radius-raw", rel, no, raw, `border-radius: ${bad.join(" ")}`);
     }
 
     // 命名色（white/black/…）：此前完全不被看见，`color: white` 可以一路写下去。

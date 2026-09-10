@@ -47,7 +47,7 @@ function QrSvg({ text }: { text: string }) {
     <div
       dangerouslySetInnerHTML={{ __html: svg }}
       style={{
-        width: 190, height: 190, background: "var(--text-on-accent)", borderRadius: 10,
+        width: 190, height: 190, background: "var(--text-on-accent)", borderRadius: "var(--radius-md)",
         padding: 6, boxSizing: "border-box", display: "flex", alignItems: "center", justifyContent: "center",
       }}
     />
@@ -55,13 +55,13 @@ function QrSvg({ text }: { text: string }) {
 }
 
 const btnStyle: React.CSSProperties = {
-  padding: "6px 12px", borderRadius: 6, cursor: "pointer",
+  padding: "6px 12px", borderRadius: "var(--radius-sm)", cursor: "pointer",
   background: "var(--bg-secondary)", color: "var(--text-primary)",
   border: "1px solid var(--border-primary)", fontSize: 'var(--fs-sm)',
 };
 const inputStyle: React.CSSProperties = {
   padding: "6px 8px", background: "var(--bg-tertiary)", color: "var(--text-primary)",
-  border: "1px solid var(--border-primary)", borderRadius: 6, fontSize: 'var(--fs-sm)', boxSizing: "border-box",
+  border: "1px solid var(--border-primary)", borderRadius: "var(--radius-sm)", fontSize: 'var(--fs-sm)', boxSizing: "border-box",
 };
 
 export function PhoneLinkSettings() {

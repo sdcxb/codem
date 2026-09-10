@@ -109,7 +109,7 @@ export function FileChangesList({ sessionId, workspace }: FileChangesListProps) 
                 )}
                 {files.map((file, i) => (
                   <div key={i} className="change-file-row" onClick={() => handleViewDiff(record, file)}>
-                    <FileText size={11} className="change-file-icon" />
+                    <FileText size={12} className="change-file-icon" />
                     <span className="change-file-path" title={file.path}>
                       {file.path.split(/[/\\]/).pop()}
                     </span>
@@ -131,7 +131,7 @@ export function FileChangesList({ sessionId, workspace }: FileChangesListProps) 
                   disabled={isReverted}
                   title="回滚此轮变更"
                 >
-                  <RotateCcw size={11} /> 回滚
+                  <RotateCcw size={12} /> 回滚
                 </button>
               </div>
             )}

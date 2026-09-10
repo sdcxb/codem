@@ -25,7 +25,7 @@ import {
 import { ChevronDown, ChevronRight, Sparkles } from "lucide-react";
 
 const btnBase: React.CSSProperties = {
-  padding: "5px 12px", borderRadius: 6, cursor: "pointer",
+  padding: "5px 12px", borderRadius: "var(--radius-sm)", cursor: "pointer",
   fontSize: "var(--fs-xs)", border: "1px solid var(--border-primary)",
   display: "inline-flex", alignItems: "center", gap: 6, flexShrink: 0,
 };
@@ -132,7 +132,7 @@ export function ZvecGrepMarketCard() {
             </span>
             {status && (
               <span style={{
-                fontSize: "var(--fs-2xs,10px)", padding: "1px 6px", borderRadius: 8,
+                fontSize: "var(--fs-2xs,10px)", padding: "1px 6px", borderRadius: "var(--radius)",
                 background: installed ? "color-mix(in srgb, var(--success) 15%, transparent)" : "var(--bg-tertiary)",
                 color: installed ? "var(--success)" : "var(--text-muted)",
               }}>
@@ -148,7 +148,7 @@ export function ZvecGrepMarketCard() {
             onClick={() => setExpanded(!expanded)}
             title={zh ? "展开管理（索引/模型/卸载）" : "Manage (index/model/uninstall)"}
           >
-            {expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+            {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
           </button>
         </span>
       </div>
@@ -202,7 +202,7 @@ export function ZvecGrepMarketCard() {
               value={model}
               onChange={(e) => setModel(e.target.value)}
               style={{
-                padding: "4px 8px", borderRadius: 6, fontSize: "var(--fs-xs)",
+                padding: "4px 8px", borderRadius: "var(--radius-sm)", fontSize: "var(--fs-xs)",
                 border: "1px solid var(--border-primary)", background: "var(--bg-tertiary)", color: "var(--text-primary)",
               }}
             >

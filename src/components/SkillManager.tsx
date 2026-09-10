@@ -511,7 +511,7 @@ return true;
           <span>技能管理</span>
         </div>
         <button className="skill-manager-close" onClick={onClose}>
-          <CloseIcon size={18} />
+          <CloseIcon size={16} />
         </button>
       </div>
 

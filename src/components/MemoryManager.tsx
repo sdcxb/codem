@@ -218,7 +218,7 @@ export function MemoryManager({ onClose }: MemoryManagerProps) {
     <div className="memory-manager">
       <div className="memory-manager-header">
         <div className="memory-manager-title">
-          <span className="memory-manager-icon"><MemoryIcon size={18} /></span>
+          <span className="memory-manager-icon"><MemoryIcon size={16} /></span>
           <span>记忆系统</span>
         </div>
         <div className="memory-manager-actions">
@@ -258,7 +258,7 @@ export function MemoryManager({ onClose }: MemoryManagerProps) {
               </button>
             </>
           )}
-          <button className="memory-manager-close" onClick={onClose}><CloseIcon size={18} /></button>
+          <button className="memory-manager-close" onClick={onClose}><CloseIcon size={16} /></button>
         </div>
       </div>
 

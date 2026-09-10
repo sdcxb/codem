@@ -593,7 +593,7 @@ export function NotebookManager({ onClose, onOpenNotebookChat, onOpenWorkspace }
             <BookOpen size={20} style={{ color: 'var(--accent)' }} />
             {lang === 'zh' ? '知识笔记本' : 'Knowledge Notebooks'}
           </h2>
-          <button className="notebook-close-btn" onClick={onClose}><CloseIcon size={18} /></button>
+          <button className="notebook-close-btn" onClick={onClose}><CloseIcon size={16} /></button>
         </div>
         <div className="notebook-manager-toolbar">
           <div className="notebook-search-box">

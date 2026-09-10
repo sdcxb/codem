@@ -234,7 +234,7 @@ export function TitleBar({
           aria-label={zh ? "切换执行模式" : "Toggle execution mode"}
           style={{ marginLeft: 4, opacity: (!projectPath || isStreaming) ? 0.5 : 1 }}
         >
-          {executionMode === "git_worktree" ? <GitBranch size={15} /> : <Home size={15} />}
+          {executionMode === "git_worktree" ? <GitBranch size={14} /> : <Home size={14} />}
           <span className="execution-mode-label">{executionMode === "git_worktree" ? (zh ? "新工作树" : "Worktree") : (zh ? "本地处理" : "Local")}</span>
         </button>
       </div>
@@ -278,7 +278,7 @@ export function TitleBar({
             title="搜索 (Ctrl+K)"
             aria-label="搜索"
           >
-            <Search size={15} />
+            <Search size={14} />
           </button>
         )}
         {onSettings && (
@@ -288,7 +288,7 @@ export function TitleBar({
             title="设置"
             aria-label="设置"
           >
-            <Settings size={15} />
+            <Settings size={14} />
           </button>
         )}
         <button
@@ -297,7 +297,7 @@ export function TitleBar({
           title={theme === "dark" ? "切换到亮色" : "切换到暗色"}
           aria-label="切换主题"
         >
-          {theme === "dark" ? <Sun size={15} /> : <Moon size={15} />}
+          {theme === "dark" ? <Sun size={14} /> : <Moon size={14} />}
         </button>
         {/* 终端按钮：点击后主对话区域下方出现终端区域（对标 dsh-desktop 顶部状态栏） */}
         {onToggleTerminal && (
@@ -309,7 +309,7 @@ export function TitleBar({
               : (zh ? "打开终端" : "Open terminal")}
             aria-label={zh ? "切换终端" : "Toggle terminal"}
           >
-            <Terminal size={15} />
+            <Terminal size={14} />
           </button>
         )}
       </div>

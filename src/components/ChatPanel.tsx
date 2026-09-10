@@ -432,7 +432,7 @@ setStepTooltipLocked(false);
           title={sidebarOpen ? (lang === "zh" ? "收起侧边栏" : "Collapse sidebar") : (lang === "zh" ? "展开侧边栏" : "Expand sidebar")}
           aria-label={sidebarOpen ? (lang === "zh" ? "收起侧边栏" : "Collapse sidebar") : (lang === "zh" ? "展开侧边栏" : "Expand sidebar")}
         >
-          {sidebarOpen ? <PanelLeftClose size={18} /> : <PanelLeftOpen size={18} />}
+          {sidebarOpen ? <PanelLeftClose size={16} /> : <PanelLeftOpen size={16} />}
         </button>
         {/* P2 #37: Task title dropdown */}
         <div className="chat-relative-anchor">
@@ -929,7 +929,7 @@ canEdit={!isSessionStreaming}
 {isTurnEnd && isTurnWithResponse && !isSessionStreaming && (
               <div className="qa-turn-footer">
                 <span className="task-complete-badge">
-                  <Check size={13} />
+                  <Check size={14} />
                   {lang === "zh" ? "任务完成" : "Done"}
                 </span>
                 {onFork && (

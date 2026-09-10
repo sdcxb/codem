@@ -68,7 +68,7 @@ onClick={(e) => e.stopPropagation()}
             onClick={onCancel}
             style={{ marginLeft: "auto", background: "none", border: "none", cursor: "pointer", color: "var(--text-secondary, #888)" }}
           >
-            <ActionIcons.close size={18} />
+            <ActionIcons.close size={16} />
           </button>
         </div>
 
@@ -83,7 +83,7 @@ onClick={(e) => e.stopPropagation()}
                 key={idx}
                 style={{
                   marginBottom: idx < changes.length - 1 ? "16px" : "0",
-                  borderRadius: "10px",
+                  borderRadius: "var(--radius-md)",
                   border: `2px solid ${
                     decision === "apply"
                       ? "color-mix(in srgb, var(--success) 40%, transparent)"
@@ -119,7 +119,7 @@ onClick={(e) => e.stopPropagation()}
                       }}
                       style={{
                         padding: "4px 12px",
-                        borderRadius: "6px",
+                        borderRadius: "var(--radius-sm)",
                         border: decision === "apply" ? "none" : "1px solid var(--border-primary)",
                         background: decision === "apply" ? "var(--success)" : "transparent",
                         color: decision === "apply" ? "var(--text-on-accent)" : "var(--text-secondary, #888)",
@@ -138,7 +138,7 @@ onClick={(e) => e.stopPropagation()}
                       }}
                       style={{
                         padding: "4px 12px",
-                        borderRadius: "6px",
+                        borderRadius: "var(--radius-sm)",
                         border: decision === "skip" ? "none" : "1px solid var(--border-primary)",
                         background: decision === "skip" ? "var(--error)" : "transparent",
                         color: decision === "skip" ? "var(--text-on-accent)" : "var(--text-secondary, #888)",
@@ -240,7 +240,7 @@ onClick={(e) => e.stopPropagation()}
               onClick={onCancel}
               style={{
                 padding: "8px 16px",
-                borderRadius: "8px",
+                borderRadius: "var(--radius)",
                 border: "1px solid var(--border-primary)",
                 background: "transparent",
                 color: "var(--text-secondary, #888)",
@@ -255,7 +255,7 @@ onClick={(e) => e.stopPropagation()}
               disabled={applyCount === 0}
               style={{
                 padding: "8px 20px",
-                borderRadius: "8px",
+                borderRadius: "var(--radius)",
                 border: "none",
                 background: applyCount > 0 ? "var(--accent)" : "var(--border-primary)",
                 color: applyCount > 0 ? "var(--text-on-accent)" : "var(--text-secondary, #666)",

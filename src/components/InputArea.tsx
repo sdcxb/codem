@@ -41,9 +41,9 @@ import {
 
 // Map security mode emoji icons to Lucide components
 const securityIconMap: Record<string, JSX.Element> = {
-  "🛡️": <Shield size={15} />,
-  "⚡": <Zap size={15} />,
-  "🚀": <Rocket size={15} />,
+  "🛡️": <Shield size={14} />,
+  "⚡": <Zap size={14} />,
+  "🚀": <Rocket size={14} />,
 };
 
 interface InputAreaProps {

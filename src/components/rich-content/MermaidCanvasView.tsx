@@ -71,7 +71,7 @@ export const MermaidCanvasView = memo(function MermaidCanvasView({ chart, id }: 
         <div className="content-fullscreen mermaid-fullscreen" onClick={(e) => e.stopPropagation()}>
           <div className="content-fullscreen-header">
             <span className="content-fullscreen-title">Mermaid 图表</span>
-            <button className="content-fullscreen-close" onClick={() => setFullscreen(false)}><CloseIcon size={18} /></button>
+            <button className="content-fullscreen-close" onClick={() => setFullscreen(false)}><CloseIcon size={16} /></button>
           </div>
           <div className="content-fullscreen-body mermaid-fullscreen-body">
             {content}

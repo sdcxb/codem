@@ -102,7 +102,7 @@ export function IssuesTab({ focusIssueId, onFocusConsumed }: IssuesTabProps = {}
           title={projectId ? undefined : (zh ? "请先选择或创建一个项目" : "Select or create a project first")}
           style={{
             display: "flex", alignItems: "center", gap: 4,
-            padding: "6px 14px", borderRadius: 6, fontSize: 'var(--fs-base)',
+            padding: "6px 14px", borderRadius: "var(--radius-sm)", fontSize: 'var(--fs-base)',
             border: "1px solid var(--accent)", background: "var(--accent)",
             color: "var(--text-on-accent)", cursor: projectId ? "pointer" : "not-allowed",
             opacity: projectId ? 1 : 0.5,
@@ -116,7 +116,7 @@ export function IssuesTab({ focusIssueId, onFocusConsumed }: IssuesTabProps = {}
       {/* Create form */}
       {creating && (
         <div style={{
-          marginBottom: 16, padding: 16, borderRadius: 8,
+          marginBottom: 16, padding: 16, borderRadius: "var(--radius)",
           border: "1px solid var(--border-primary)", background: "var(--bg-secondary)",
         }}>
           <input
@@ -124,7 +124,7 @@ export function IssuesTab({ focusIssueId, onFocusConsumed }: IssuesTabProps = {}
             onChange={(e) => setNewTitle(e.target.value)}
             placeholder={zh ? "Issue 标题..." : "Issue title..."}
             style={{
-              width: "100%", padding: "8px 12px", borderRadius: 4,
+              width: "100%", padding: "8px 12px", borderRadius: "var(--radius-xs)",
               border: "1px solid var(--border-primary)", background: "var(--bg-tertiary)",
               color: "var(--text-primary)", fontSize: 'var(--fs-md)', marginBottom: 8,
             }}
@@ -135,7 +135,7 @@ export function IssuesTab({ focusIssueId, onFocusConsumed }: IssuesTabProps = {}
             onChange={(e) => setNewDesc(e.target.value)}
             placeholder={zh ? "详细描述（可选）..." : "Description (optional)..."}
             style={{
-              width: "100%", padding: "8px 12px", borderRadius: 4,
+              width: "100%", padding: "8px 12px", borderRadius: "var(--radius-xs)",
               border: "1px solid var(--border-primary)", background: "var(--bg-tertiary)",
               color: "var(--text-primary)", fontSize: 'var(--fs-base)', minHeight: 80,
             }}
@@ -145,7 +145,7 @@ export function IssuesTab({ focusIssueId, onFocusConsumed }: IssuesTabProps = {}
               onClick={handleCreate}
               disabled={!newTitle.trim()}
               style={{
-                padding: "6px 16px", borderRadius: 4, fontSize: 'var(--fs-sm)',
+                padding: "6px 16px", borderRadius: "var(--radius-xs)", fontSize: 'var(--fs-sm)',
                 border: "1px solid var(--accent)", background: "var(--accent)",
                 color: "var(--text-on-accent)", cursor: "pointer", opacity: newTitle.trim() ? 1 : 0.5,
               }}
@@ -155,7 +155,7 @@ export function IssuesTab({ focusIssueId, onFocusConsumed }: IssuesTabProps = {}
             <button
               onClick={() => { setCreating(false); setNewTitle(""); setNewDesc(""); }}
               style={{
-                padding: "6px 16px", borderRadius: 4, fontSize: 'var(--fs-sm)',
+                padding: "6px 16px", borderRadius: "var(--radius-xs)", fontSize: 'var(--fs-sm)',
                 border: "1px solid var(--border-primary)", background: "none",
                 color: "var(--text-primary)", cursor: "pointer",
               }}
@@ -173,7 +173,7 @@ export function IssuesTab({ focusIssueId, onFocusConsumed }: IssuesTabProps = {}
             key={f.value}
             onClick={() => setFilter(f.value)}
             style={{
-              padding: "4px 12px", borderRadius: 4, fontSize: 'var(--fs-sm)',
+              padding: "4px 12px", borderRadius: "var(--radius-xs)", fontSize: 'var(--fs-sm)',
               border: `1px solid ${filter === f.value ? "var(--accent)" : "var(--border-primary)"}`,
               background: filter === f.value ? "var(--accent)22" : "none",
               color: filter === f.value ? "var(--accent)" : "var(--text-secondary)",

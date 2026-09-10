@@ -112,7 +112,7 @@ export function IssueBoard() {
                 display: "flex",
                 flexDirection: "column",
                 gap: "8px",
-                borderRadius: "8px",
+                borderRadius: "var(--radius)",
                 padding: "8px",
                 background: isDragOver ? "color-mix(in srgb, var(--accent) 10%, var(--bg-secondary))" : "var(--bg-secondary)",
                 border: isDragOver ? "1px dashed var(--accent)" : "1px solid var(--border-primary)",

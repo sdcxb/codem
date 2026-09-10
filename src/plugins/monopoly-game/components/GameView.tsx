@@ -885,7 +885,7 @@ function GameOverPanel({ rankings, onClose }: {
               justifyContent: "space-between",
               padding: "8px 12px",
               background: i === 0 ? "rgba(241, 196, 15, 0.15)" : "rgba(44, 62, 80, 0.4)",
-              borderRadius: 6,
+              borderRadius: "var(--radius-sm)",
             }}>
               <span style={{ color: i === 0 ? "#f1c40f" : "#ecf0f1" }}>
                 {i + 1}. {r.name}

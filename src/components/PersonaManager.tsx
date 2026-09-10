@@ -82,12 +82,12 @@ export function PersonaManager({ onClose }: PersonaManagerProps) {
           {zh ? "人设卡" : "Persona Cards"}
         </strong>
         <button className="mode-toggle-btn" onClick={startNew} title={zh ? "新建人设卡" : "New persona"}>
-          <Plus size={15} />
+          <Plus size={14} />
         </button>
       </div>
 
       {editing ? (
-        <div style={{ display: "grid", gap: 8, border: "1px solid var(--border-primary)", borderRadius: 10, padding: 12 }}>
+        <div style={{ display: "grid", gap: 8, border: "1px solid var(--border-primary)", borderRadius: "var(--radius-md)", padding: 12 }}>
           <div>
             <label style={{ fontSize: 'var(--fs-xs)', color: "var(--text-muted)", display: "block", marginBottom: 2 }}>
               {zh ? "名称" : "Name"}
@@ -96,7 +96,7 @@ export function PersonaManager({ onClose }: PersonaManagerProps) {
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder={zh ? "如：严谨工程师 / 创意作家" : "e.g. Senior Engineer"}
-              style={{ width: "100%", padding: "6px 8px", background: "var(--bg-tertiary)", color: "var(--text-primary)", border: "1px solid var(--border-primary)", borderRadius: 6, fontSize: 'var(--fs-sm)', boxSizing: "border-box" }}
+              style={{ width: "100%", padding: "6px 8px", background: "var(--bg-tertiary)", color: "var(--text-primary)", border: "1px solid var(--border-primary)", borderRadius: "var(--radius-sm)", fontSize: 'var(--fs-sm)', boxSizing: "border-box" }}
             />
           </div>
           <div>
@@ -108,7 +108,7 @@ export function PersonaManager({ onClose }: PersonaManagerProps) {
               onChange={(e) => setContent(e.target.value)}
               rows={6}
               placeholder={zh ? "你是……请始终……" : "You are... Always..."}
-              style={{ width: "100%", padding: "6px 8px", background: "var(--bg-tertiary)", color: "var(--text-primary)", border: "1px solid var(--border-primary)", borderRadius: 6, fontSize: 'var(--fs-sm)', boxSizing: "border-box", resize: "vertical" }}
+              style={{ width: "100%", padding: "6px 8px", background: "var(--bg-tertiary)", color: "var(--text-primary)", border: "1px solid var(--border-primary)", borderRadius: "var(--radius-sm)", fontSize: 'var(--fs-sm)', boxSizing: "border-box", resize: "vertical" }}
             />
           </div>
           <div>
@@ -119,7 +119,7 @@ export function PersonaManager({ onClose }: PersonaManagerProps) {
               value={path}
               onChange={(e) => setPath(e.target.value)}
               placeholder={zh ? "如 D:/Workspace/soul.md（留空则用上方内容）" : "e.g. D:/Workspace/soul.md (leave empty to use content above)"}
-              style={{ width: "100%", padding: "6px 8px", background: "var(--bg-tertiary)", color: "var(--text-primary)", border: "1px solid var(--border-primary)", borderRadius: 6, fontSize: 'var(--fs-sm)', boxSizing: "border-box" }}
+              style={{ width: "100%", padding: "6px 8px", background: "var(--bg-tertiary)", color: "var(--text-primary)", border: "1px solid var(--border-primary)", borderRadius: "var(--radius-sm)", fontSize: 'var(--fs-sm)', boxSizing: "border-box" }}
             />
           </div>
           <div>
@@ -129,7 +129,7 @@ export function PersonaManager({ onClose }: PersonaManagerProps) {
             <input
               value={fallback}
               onChange={(e) => setFallback(e.target.value)}
-              style={{ width: "100%", padding: "6px 8px", background: "var(--bg-tertiary)", color: "var(--text-primary)", border: "1px solid var(--border-primary)", borderRadius: 6, fontSize: 'var(--fs-sm)', boxSizing: "border-box" }}
+              style={{ width: "100%", padding: "6px 8px", background: "var(--bg-tertiary)", color: "var(--text-primary)", border: "1px solid var(--border-primary)", borderRadius: "var(--radius-sm)", fontSize: 'var(--fs-sm)', boxSizing: "border-box" }}
             />
           </div>
           <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
@@ -154,7 +154,7 @@ export function PersonaManager({ onClose }: PersonaManagerProps) {
               key={c.id}
               style={{
                 display: "flex", alignItems: "center", gap: 8,
-                padding: "8px 10px", borderRadius: 8,
+                padding: "8px 10px", borderRadius: "var(--radius)",
                 background: activeId === c.id ? "color-mix(in srgb, var(--accent) 10%, transparent)" : "var(--bg-secondary)",
                 border: activeId === c.id ? "1px solid var(--accent)" : "1px solid var(--border-primary)",
               }}
@@ -167,7 +167,7 @@ export function PersonaManager({ onClose }: PersonaManagerProps) {
                   {c.name}
                   {c.path && (
                     <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 'var(--fs-xs)', color: "var(--text-muted)" }}>
-                      <FileText size={11} /> {c.path.split(/[\\/]/).pop()}
+                      <FileText size={12} /> {c.path.split(/[\\/]/).pop()}
                     </span>
                   )}
                 </div>
@@ -176,7 +176,7 @@ export function PersonaManager({ onClose }: PersonaManagerProps) {
                 </div>
               </div>
               <button className="toolbar-btn" aria-label={zh ? "编辑" : "Edit"} onClick={() => startEdit(c)} title={zh ? "编辑" : "Edit"}>
-                <Pencil size={13} />
+                <Pencil size={14} />
               </button>
               <button
                 className="toolbar-btn"
@@ -184,10 +184,10 @@ export function PersonaManager({ onClose }: PersonaManagerProps) {
                 onClick={() => handleActivate(c.id)}
                 title={activeId === c.id ? (zh ? "取消激活" : "Deactivate") : (zh ? "设为激活" : "Activate")}
               >
-                {activeId === c.id ? <X size={13} /> : <Check size={13} />}
+                {activeId === c.id ? <X size={14} /> : <Check size={14} />}
               </button>
               <button className="toolbar-btn" aria-label={zh ? "删除" : "Delete"} onClick={() => handleDelete(c.id)} title={zh ? "删除" : "Delete"}>
-                <Trash2 size={13} />
+                <Trash2 size={14} />
               </button>
             </div>
           ))}

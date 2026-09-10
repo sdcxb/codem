@@ -38,19 +38,19 @@ function getBadgeIcon(badge: ComposerBadge) {
   }
   switch (badge.type) {
     case "github":
-      return <GitBranch size={13} />;
+      return <GitBranch size={14} />;
     case "quote":
-      return <MessageSquare size={13} />;
+      return <MessageSquare size={14} />;
     case "url":
-      return <Link2 size={13} />;
+      return <Link2 size={14} />;
     case "file": {
       const ext = badge.label.split(".").pop()?.toLowerCase() || "";
-      if (["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp"].includes(ext)) return <FileImage size={13} />;
-      if (["ts", "tsx", "js", "jsx", "py", "rs", "go", "java", "css", "html", "json", "md"].includes(ext)) return <FileCode size={13} />;
-      return <FileText size={13} />;
+      if (["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp"].includes(ext)) return <FileImage size={14} />;
+      if (["ts", "tsx", "js", "jsx", "py", "rs", "go", "java", "css", "html", "json", "md"].includes(ext)) return <FileCode size={14} />;
+      return <FileText size={14} />;
     }
     default:
-      return <FileIcon size={13} />;
+      return <FileIcon size={14} />;
   }
 }
 
@@ -84,7 +84,7 @@ export const ComposerBadges = memo(function ComposerBadges({
               }}
               aria-label="Remove"
             >
-              <X size={11} />
+              <X size={12} />
             </button>
           )}
         </span>

@@ -88,7 +88,7 @@ export function IssueDetailPanel({ issue, onClose, onRefresh }: IssueDetailPanel
 
       {/* Title + status */}
       <div className="issue-detail-title-row">
-        <StatusIcon size={18} className="issue-detail-status-icon" style={{ color: config.color }} />
+        <StatusIcon size={16} className="issue-detail-status-icon" style={{ color: config.color }} />
         <h2 className="issue-detail-title">
           {currentIssue.title}
         </h2>

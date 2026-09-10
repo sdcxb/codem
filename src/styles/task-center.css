@@ -27,7 +27,7 @@
   gap: var(--space-2);
   padding: var(--space-3) var(--space-7);
   border: 1px solid var(--accent);
-  border-radius: var(--radius-xs);
+  border-radius: var(--radius);
   background: var(--accent);
   color: var(--text-on-accent);
   font-family: inherit;
@@ -368,7 +368,7 @@
   margin-top: var(--space-4);
   padding: var(--space-4);
   border: 1px solid var(--border-primary);
-  border-radius: var(--radius-xs);
+  border-radius: var(--radius);
   background: var(--bg-tertiary);
 }
 .issue-detail-picker-empty { padding: var(--space-2); font-size: var(--fs-sm); color: var(--text-muted); }
@@ -402,7 +402,7 @@
 .issue-detail-comment {
   padding: var(--space-4) var(--space-6);
   border-left: 2px solid var(--accent);
-  border-radius: var(--radius-xs);
+  border-radius: var(--radius);
   background: var(--bg-tertiary);
   font-size: var(--fs-sm);
 }
@@ -420,7 +420,7 @@
   min-width: 0;
   padding: var(--space-4) var(--space-6);
   border: 1px solid var(--border-primary);
-  border-radius: var(--radius-xs);
+  border-radius: var(--radius);
   background: var(--bg-tertiary);
   color: var(--text-primary);
   font-family: inherit;
@@ -433,7 +433,7 @@
   gap: var(--space-2);
   padding: var(--space-4) var(--space-7);
   border: 1px solid var(--accent);
-  border-radius: var(--radius-xs);
+  border-radius: var(--radius);
   background: var(--accent);
   color: var(--text-on-accent);
   font-family: inherit;

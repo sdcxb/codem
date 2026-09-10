@@ -57,7 +57,7 @@ export function AgentTeamsPanel({ onClose }: AgentTeamsPanelProps) {
   if (!snap) {
     return (
       <div className="agent-teams-empty">
-        <Users size={28} style={{ opacity: 0.4 }} />
+        <Users size={32} style={{ opacity: 0.4 }} />
         <div>
           {zh
             ? "本会话还没有活动团队。对助手说：\n“建一个团队，分别做 X / Y / Z，最后汇总”\n助手会用 agent_teams_* 工具建队并派活。"
@@ -72,7 +72,7 @@ export function AgentTeamsPanel({ onClose }: AgentTeamsPanelProps) {
     <div className="agent-teams-panel">
       {/* Header */}
       <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", borderBottom: "1px solid var(--border-primary, rgba(0,0,0,.08))" }}>
-        <GitBranch size={15} style={{ color: "var(--accent)" }} />
+        <GitBranch size={14} style={{ color: "var(--accent)" }} />
         <strong style={{ flex: 1 }}>{snap.name}</strong>
         <span style={{ fontSize: 'var(--fs-xs)', color: "var(--text-muted)" }}>{snap.id.slice(0, 10)}</span>
         <button className="toolbar-btn" aria-label={zh ? "关闭" : "Close"} onClick={onClose}><X size={14} /></button>
@@ -82,7 +82,7 @@ export function AgentTeamsPanel({ onClose }: AgentTeamsPanelProps) {
         {/* Members */}
         <section>
           <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6, color: "var(--text-secondary)", fontWeight: 600 }}>
-            <Users size={13} /> {zh ? "成员" : "Members"} ({snap.members.length})
+            <Users size={14} /> {zh ? "成员" : "Members"} ({snap.members.length})
           </div>
           {snap.members.length === 0 ? (
             <div style={{ fontSize: 'var(--fs-xs)', color: "var(--text-muted)" }}>{zh ? "暂无成员 — 请助手添加成员" : "No members yet"}</div>
@@ -91,7 +91,7 @@ export function AgentTeamsPanel({ onClose }: AgentTeamsPanelProps) {
               {snap.members.map((m) => {
                 const meta = MEMBER_STATUS[m.status] || { color: "var(--text-muted)", zh: m.status };
                 return (
-                  <div key={m.name} style={{ display: "flex", alignItems: "center", gap: 6, padding: "4px 6px", background: "var(--bg-secondary, #232834)", borderRadius: 6 }}>
+                  <div key={m.name} style={{ display: "flex", alignItems: "center", gap: 6, padding: "4px 6px", background: "var(--bg-secondary, #232834)", borderRadius: "var(--radius-sm)" }}>
                     <span style={{ width: 8, height: 8, borderRadius: "50%", background: meta.color, flexShrink: 0 }} />
                     <span style={{ fontWeight: 600 }}>{m.name}</span>
                     {m.role && <span style={{ color: "var(--text-muted)", fontSize: 'var(--fs-xs)' }}>{m.role}</span>}
@@ -106,7 +106,7 @@ export function AgentTeamsPanel({ onClose }: AgentTeamsPanelProps) {
         {/* Tasks */}
         <section>
           <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6, color: "var(--text-secondary)", fontWeight: 600 }}>
-            <ListChecks size={13} /> {zh ? "任务" : "Tasks"} ({snap.tasks.length})
+            <ListChecks size={14} /> {zh ? "任务" : "Tasks"} ({snap.tasks.length})
           </div>
           {snap.tasks.length === 0 ? (
             <div style={{ fontSize: 'var(--fs-xs)', color: "var(--text-muted)" }}>{zh ? "暂无任务" : "No tasks yet"}</div>
@@ -116,7 +116,7 @@ export function AgentTeamsPanel({ onClose }: AgentTeamsPanelProps) {
                 const meta = STATUS_META[t.status] || { color: "var(--text-muted)", zh: t.status };
                 const depText = t.dependencies.length ? ` ⛓${t.dependencies.join(",")}` : "";
                 return (
-                  <div key={t.id} style={{ display: "flex", alignItems: "flex-start", gap: 6, padding: "4px 6px", background: "var(--bg-secondary, #232834)", borderRadius: 6 }}>
+                  <div key={t.id} style={{ display: "flex", alignItems: "flex-start", gap: 6, padding: "4px 6px", background: "var(--bg-secondary, #232834)", borderRadius: "var(--radius-sm)" }}>
                     <span style={{ width: 8, height: 8, borderRadius: "50%", background: meta.color, flexShrink: 0, marginTop: 4 }} />
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ display: "flex", gap: 6 }}>

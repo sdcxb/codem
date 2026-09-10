@@ -157,7 +157,7 @@ function PluginCard({
           )}
           {!plugin.canSafelyDisable && !isCore && (
             <span className="plugin-mgr-dep-warn">
-              <StatusIcons.danger size={11} className="icon-inline" />
+              <StatusIcons.danger size={12} className="icon-inline" />
               关闭将影响其他插件
             </span>
           )}
@@ -592,7 +592,7 @@ export function PluginManager({ onClose }: PluginManagerProps) {
           <Badge variant="success">{enabledCount} 启用</Badge>
         </div>
         <button className="skill-manager-close" onClick={onClose}>
-          <ActionIcons.close size={18} />
+          <ActionIcons.close size={16} />
         </button>
       </div>
 

@@ -150,7 +150,7 @@ export function PermissionPresetSelector({
         >
           {(() => {
             const Icon = MODE_ICONS[currentInfo?.icon || '🛡️'] || Shield
-            return <Icon size={13} />
+            return <Icon size={14} />
           })()}
           <span style={{ fontSize: 'var(--fs-sm)' }}>
             {currentInfo ? (zh ? currentInfo.label_zh : currentInfo.label_en) : effectiveMode}
@@ -208,7 +208,7 @@ export function PermissionPresetSelector({
           justifyContent: 'space-between',
           gap: 8,
           padding: '8px 12px',
-          borderRadius: 6,
+          borderRadius: "var(--radius-sm)",
           border: `1px solid var(--border-primary)`,
           background: 'var(--bg-secondary)',
           color: 'var(--text-primary)',
@@ -220,7 +220,7 @@ export function PermissionPresetSelector({
         <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           {(() => {
             const Icon = MODE_ICONS[currentInfo?.icon || '🛡️'] || Shield
-            return <Icon size={15} />
+            return <Icon size={14} />
           })()}
           {currentInfo ? (zh ? currentInfo.label_zh : currentInfo.label_en) : effectiveMode}
         </span>
@@ -237,7 +237,7 @@ export function PermissionPresetSelector({
             minWidth: 240,
             background: 'var(--bg-secondary)',
             border: '1px solid var(--border-primary)',
-            borderRadius: 8,
+            borderRadius: "var(--radius)",
             boxShadow: '0 4px 16px var(--shadow-color)',
             zIndex: "var(--z-chrome)",
             overflow: 'hidden',
@@ -264,7 +264,7 @@ export function PermissionPresetSelector({
                 }}
               >
                 <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 'var(--fs-base)', fontWeight: 600 }}>
-                  <Icon size={15} />
+                  <Icon size={14} />
                   {zh ? m.label_zh : m.label_en}
                   {effectiveMode === m.mode && <Check size={12} style={{ marginLeft: 'auto' }} />}
                 </span>

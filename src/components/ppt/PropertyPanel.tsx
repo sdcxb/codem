@@ -412,7 +412,7 @@ function ImageProperties({ el, onUpdate }: { el: ImageElement; onUpdate: (id: st
         </div>
         {el.src && (
           <div className="ppt-property-row">
-            <img src={el.src} alt="预览" style={{ width: 80, height: 60, objectFit: 'cover', borderRadius: 4 }} />
+            <img src={el.src} alt="预览" style={{ width: 80, height: 60, objectFit: 'cover', borderRadius: "var(--radius-xs)" }} />
           </div>
         )}
       </div>

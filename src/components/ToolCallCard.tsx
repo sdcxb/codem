@@ -270,7 +270,7 @@ function TerminalBlock({ model }) {
     <div className="tool-card terminal-block">
       {/* Prompt 行 */}
       <div className="tool-card-head">
-        <TerminalIcon size={11} className="tool-card-head-icon" />
+        <TerminalIcon size={12} className="tool-card-head-icon" />
         <span className="hint-sm">
           {model.cwd ? model.cwd.split(/[\\/]/).pop() + '$' : '$'}
         </span>
@@ -351,7 +351,7 @@ function DiffBlockCard({ hunks }: { hunks: DiffHunk[] }) {
       {hunks.map((hunk, idx) => (
         <div key={idx} className="tool-card-row">
           <div className="tool-card-head">
-            <FileEdit size={11} /> {hunk.path}
+            <FileEdit size={12} /> {hunk.path}
           </div>
           <pre className="tool-card-pre tool-card-pre--tight tool-card-pre--plain">
             {hunk.newText.split('\n').map((line, i) => (
@@ -393,7 +393,7 @@ function ReadBlockCard({ path, content }: { path: string; content: string }) {
   return (
     <div className="tool-card tool-card--scroll read-block">
       <div className="tool-card-head">
-        <FileText size={11} /> {path}
+        <FileText size={12} /> {path}
       </div>
       <pre className="tool-card-pre tool-card-pre--tight tool-card-pre--plain">
         {lines.map((line, i) => (
@@ -453,7 +453,7 @@ function SearchBlockCard({ model }: { model: { kind: 'matches' | 'paths'; files?
           {model.kind === 'matches' && model.files?.map((file, fi) => (
             <div key={fi} className="tool-card-row">
           <div className="tool-card-head tool-card-head--accent">
-            <FolderSearch size={11} /> {file.path}
+            <FolderSearch size={12} /> {file.path}
             <span className="tool-card-count">
               · {file.matches.length} match{file.matches.length > 1 ? 'es' : ''}
             </span>

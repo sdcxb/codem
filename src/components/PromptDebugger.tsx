@@ -85,7 +85,7 @@ export function PromptDebugger() {
     fontSize: 'var(--fs-sm)', fontWeight: 600, color: "var(--text-secondary)", marginBottom: 3, display: "block",
   };
   const inputStyle: React.CSSProperties = {
-    padding: "5px 8px", borderRadius: 4, border: "1px solid var(--border-primary)",
+    padding: "5px 8px", borderRadius: "var(--radius-xs)", border: "1px solid var(--border-primary)",
     background: "var(--bg-tertiary)", color: "var(--text-primary)", fontSize: 'var(--fs-sm)', width: "100%",
     outline: "none",
   };
@@ -103,7 +103,7 @@ export function PromptDebugger() {
 
       {/* Config controls */}
       <div style={{
-        padding: 12, borderRadius: 8, border: "1px solid var(--border-primary)",
+        padding: 12, borderRadius: "var(--radius)", border: "1px solid var(--border-primary)",
         background: "var(--bg-secondary)", display: "flex", flexDirection: "column", gap: 8,
       }}>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
@@ -162,7 +162,7 @@ export function PromptDebugger() {
         <button onClick={() => {
           navigator.clipboard?.writeText(prompt);
         }} style={{
-          marginLeft: "auto", padding: "2px 10px", borderRadius: 4, fontSize: 'var(--fs-sm)',
+          marginLeft: "auto", padding: "2px 10px", borderRadius: "var(--radius-xs)", fontSize: 'var(--fs-sm)',
           border: "1px solid var(--border-primary)", background: "var(--bg-tertiary)",
           color: "var(--text-primary)", cursor: "pointer",
         }}>
@@ -176,7 +176,7 @@ export function PromptDebugger() {
           const expanded = showSection[s.index] !== false; // Default expanded
           return (
             <div key={s.index} style={{
-              border: "1px solid var(--border-primary)", borderRadius: 6,
+              border: "1px solid var(--border-primary)", borderRadius: "var(--radius-sm)",
               background: "var(--bg-tertiary)", overflow: "hidden",
             }}>
               <div

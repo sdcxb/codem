@@ -98,7 +98,7 @@ const overallIcon = audit.overall === "danger" ? <ShieldAlert size={24} />
             fontWeight: 600,
             color: overallColor,
             padding: "4px 12px",
-            borderRadius: 12,
+            borderRadius: "var(--radius-md)",
             background: `${overallColor}20`,
           }}>
             {overallText}
@@ -120,7 +120,7 @@ const overallIcon = audit.overall === "danger" ? <ShieldAlert size={24} />
                     <span key={perm} style={{
                       fontSize: 'var(--fs-sm)',
                       padding: "2px 8px",
-                      borderRadius: 10,
+                      borderRadius: "var(--radius-md)",
                       background: isUnknown ? "color-mix(in srgb, var(--warning) 15%, transparent)" : "var(--bg-tertiary)",
                       border: `1px solid ${isUnknown ? "color-mix(in srgb, var(--warning) 30%, transparent)" : "var(--border-primary)"}`,
                       color: isUnknown ? "var(--warning)" : "var(--text-secondary)",
@@ -166,7 +166,7 @@ const overallIcon = audit.overall === "danger" ? <ShieldAlert size={24} />
               gap: 8,
               padding: "12px 16px",
               background: "color-mix(in srgb, var(--success) 8%, transparent)",
-              borderRadius: 8,
+              borderRadius: "var(--radius)",
               color: "var(--success)",
               fontSize: 'var(--fs-sm)',
             }}>
@@ -184,7 +184,7 @@ const overallIcon = audit.overall === "danger" ? <ShieldAlert size={24} />
               padding: "12px",
               marginTop: 16,
               background: "color-mix(in srgb, var(--error) 8%, transparent)",
-              borderRadius: 8,
+              borderRadius: "var(--radius)",
               cursor: "pointer",
               fontSize: 'var(--fs-sm)',
             }}>
@@ -215,7 +215,7 @@ const overallIcon = audit.overall === "danger" ? <ShieldAlert size={24} />
             onClick={onCancel}
             style={{
               padding: "6px 16px",
-              borderRadius: 6,
+              borderRadius: "var(--radius-sm)",
               border: `1px solid var(--border-primary)`,
               background: "transparent",
               color: "var(--text-secondary)",
@@ -230,7 +230,7 @@ const overallIcon = audit.overall === "danger" ? <ShieldAlert size={24} />
             disabled={audit.overall === "danger" && !accepted}
             style={{
               padding: "6px 16px",
-              borderRadius: 6,
+              borderRadius: "var(--radius-sm)",
               border: "none",
               background: audit.overall === "danger" && !accepted
                 ? "var(--bg-tertiary)"
@@ -272,7 +272,7 @@ function FindingItem({ finding }: { finding: AuditFinding }) {
       marginBottom: 6,
       background: `${color}10`,
       border: `1px solid ${color}30`,
-      borderRadius: 6,
+      borderRadius: "var(--radius-sm)",
       fontSize: 'var(--fs-sm)',
     }}>
       <span style={{ color, marginTop: 1, flexShrink: 0 }}>{icon}</span>
@@ -292,7 +292,7 @@ function FindingItem({ finding }: { finding: AuditFinding }) {
             marginTop: 4,
             background: "var(--bg-tertiary)",
             padding: "4px 8px",
-            borderRadius: 4,
+            borderRadius: "var(--radius-xs)",
             overflowX: "auto",
             maxWidth: "100%",
           }}>

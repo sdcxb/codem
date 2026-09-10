@@ -93,7 +93,7 @@ export const ExcelViewer = memo(function ExcelViewer({ filePath, data, onClose }
                 padding: "4px 12px", fontSize: 'var(--fs-sm)', cursor: "pointer",
                 background: i === activeSheet ? "var(--accent)" : "transparent",
                 color: i === activeSheet ? "var(--text-on-accent)" : "var(--text-muted)",
-                border: "none", borderRadius: 4,
+                border: "none", borderRadius: "var(--radius-xs)",
               }}
             >
               {s.name}

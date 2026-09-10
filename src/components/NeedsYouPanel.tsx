@@ -61,7 +61,7 @@ export function NeedsYouPanel({ sessionId, onAnswer, onSkip }: NeedsYouPanelProp
       <div className="needs-you-dialog" onClick={(e) => e.stopPropagation()}>
         {/* Header */}
         <div className="needs-you-header">
-          <AlertCircle size={18} className="needs-you-icon" />
+          <AlertCircle size={16} className="needs-you-icon" />
           <span className="needs-you-title">需要你的判断</span>
           <button className="needs-you-skip" onClick={handleSkip}>跳过并继续</button>
         </div>

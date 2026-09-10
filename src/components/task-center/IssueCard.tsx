@@ -38,7 +38,7 @@ export function IssueCard({ issue, onClick, compact = false }: IssueCardProps) {
       onClick={onClick}
       style={{
         padding: compact ? "8px 10px" : "12px 14px",
-        borderRadius: 8,
+        borderRadius: "var(--radius)",
         background: "var(--bg-tertiary)",
         border: "1px solid var(--border-primary)",
         cursor: onClick ? "pointer" : "default",

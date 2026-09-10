@@ -720,13 +720,13 @@ export function PixelLibraryScene({
           </span>
         </span>
         <button className="lo-hud-btn" onClick={() => zoomBy(1.25)} title="放大" aria-label="放大">
-          <LoIcon name="plus" size={13} />
+          <LoIcon name="plus" size={14} />
         </button>
         <button className="lo-hud-btn" onClick={() => zoomBy(0.8)} title="缩小" aria-label="缩小">
-          <LoIcon name="minus" size={13} />
+          <LoIcon name="minus" size={14} />
         </button>
         <button className="lo-hud-btn" onClick={fitView} title="适应窗口（双击场景同效）" aria-label="适应窗口">
-          <LoIcon name="maximize-2" size={13} />
+          <LoIcon name="maximize-2" size={14} />
         </button>
         <button
           className={`lo-hud-btn${editingLayout ? " is-active" : ""}`}
@@ -735,7 +735,7 @@ export function PixelLibraryScene({
           aria-label="对位模式"
           aria-pressed={editingLayout}
         >
-          <LoIcon name="move" size={13} />
+          <LoIcon name="move" size={14} />
         </button>
         {editingLayout && (
           <button
@@ -744,7 +744,7 @@ export function PixelLibraryScene({
             title="清除当前场景图的全部对位调整（回到内置布局）"
             aria-label="重置对位"
           >
-            <LoIcon name="rotate-ccw" size={13} />
+            <LoIcon name="rotate-ccw" size={14} />
           </button>
         )}
         <span className="lo-scene__hint" title={`${SCENE_CREDITS[0].project} · ${SCENE_CREDITS[0].license}`}>
@@ -763,7 +763,7 @@ export function PixelLibraryScene({
       {fileDragging && (
         <div className="lo-scene__drop">
           <div className="lo-scene__drop-card">
-            <LoIcon name="image" size={26} className="lo-scene__drop-icon" />
+            <LoIcon name="image" size={24} className="lo-scene__drop-icon" />
             <span>松手即可用这张图替换场景</span>
             <span className="lo-scene__drop-hint">PNG / JPG / WebP · 建议 16:9</span>
           </div>

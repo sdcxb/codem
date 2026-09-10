@@ -77,7 +77,7 @@ interface AppErrorBoundaryState {
 /** 恢复卡片内使用的行内按钮样式（独立于全局 CSS，保证白屏时仍可读）。 */
 const buttonBase: React.CSSProperties = {
   padding: "8px 18px",
-  borderRadius: "8px",
+  borderRadius: "var(--radius)",
   border: "1px solid var(--border-primary, rgba(128,128,128,0.35))",
   background: "var(--bg-hover, rgba(128,128,128,0.18))",
   color: "var(--text-primary, #e6e6e6)",
@@ -196,7 +196,7 @@ export class AppErrorBoundary extends Component<AppErrorBoundaryProps, AppErrorB
             width: "100%",
             background: "var(--bg-secondary, #1a1c1c)",
             border: "1px solid var(--border-primary, rgba(128,128,128,0.25))",
-            borderRadius: 12,
+            borderRadius: "var(--radius-md)",
             padding: "28px 26px",
             boxShadow: "0 12px 40px var(--shadow-color, rgba(0,0,0,0.35))",
             boxSizing: "border-box",
@@ -252,7 +252,7 @@ export class AppErrorBoundary extends Component<AppErrorBoundaryProps, AppErrorB
                 margin: "8px 0 0",
                 padding: 10,
                 background: "var(--bg-tertiary, rgba(128,128,128,0.12))",
-                borderRadius: 6,
+                borderRadius: "var(--radius-sm)",
                 whiteSpace: "pre-wrap",
                 wordBreak: "break-word",
                 maxHeight: 180,

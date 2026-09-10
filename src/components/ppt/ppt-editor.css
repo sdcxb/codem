@@ -59,7 +59,7 @@
   background: var(--bg-tertiary, #3a3a4c);
   color: var(--text-primary, #e0e0e0);
   border: none;
-  border-radius: var(--radius-sm, 6px);
+  border-radius: var(--radius-sm);
   padding: var(--space-3) var(--space-7);
   cursor: pointer;
   font-size: var(--fs-base);
@@ -112,7 +112,7 @@
   padding: var(--space-2) var(--space-5);
   background: transparent;
   border: 1px solid transparent;
-  border-radius: var(--radius-sm, 6px);
+  border-radius: var(--radius-sm);
   color: var(--text-secondary, #b0b0c0);
   font-size: var(--fs-base);
   cursor: pointer;
@@ -210,7 +210,7 @@
   position: relative;
   margin-bottom: var(--space-4);
   border: 2px solid transparent;
-  border-radius: var(--radius-sm, 6px);
+  border-radius: var(--radius-sm);
   overflow: hidden;
   cursor: pointer;
   transition: border-color var(--duration-fast) var(--ease-out);
@@ -263,7 +263,7 @@
   padding: var(--space-5);
   background: var(--bg-tertiary, #2a2a3c);
   border: 1px dashed var(--text-muted, #555);
-  border-radius: var(--radius-sm, 6px);
+  border-radius: var(--radius-sm);
   color: var(--text-muted, #888);
   font-size: var(--fs-base);
   cursor: pointer;
@@ -331,7 +331,7 @@
   flex: 1;
   background: var(--input-bg, #1e1e2e);
   border: 1px solid var(--border-primary, #3a3a4c);
-  border-radius: var(--radius-sm, 4px);
+  border-radius: var(--radius-sm);
   padding: var(--space-2) var(--space-4);
   color: var(--text-primary, #e0e0e0);
   font-size: var(--fs-sm);
@@ -351,7 +351,7 @@
   width: 32px;
   height: 24px;
   border: 1px solid var(--border-primary, #3a3a4c);
-  border-radius: var(--radius-sm, 4px);
+  border-radius: var(--radius-sm);
   cursor: pointer;
   background: transparent;
   padding: 0;
@@ -361,7 +361,7 @@
   flex: 1;
   background: var(--input-bg, #1e1e2e);
   border: 1px solid var(--border-primary, #3a3a4c);
-  border-radius: var(--radius-sm, 4px);
+  border-radius: var(--radius-sm);
   padding: var(--space-2) var(--space-4);
   color: var(--text-primary, #e0e0e0);
   font-size: var(--fs-sm);
@@ -381,7 +381,7 @@
   color: var(--text-secondary, #a0a0b0);
   font-size: var(--fs-sm);
   cursor: pointer;
-  border-radius: var(--radius-sm, 4px);
+  border-radius: var(--radius-sm);
   transition: var(--transition-color);
   text-align: center;
 }
@@ -454,7 +454,7 @@
   gap: var(--space-4);
   background: var(--overlay-backdrop-strong);
   padding: var(--space-4) var(--space-8);
-  border-radius: 24px;
+  border-radius: var(--radius-xl);
   opacity: 0;
   transition: opacity var(--duration-slow);
 }
@@ -504,7 +504,7 @@
 .ppt-chat-msg {
   font-size: var(--fs-sm);
   padding: var(--space-2) var(--space-4);
-  border-radius: var(--radius-sm, 4px);
+  border-radius: var(--radius-sm);
   max-width: 80%;
 }
 
@@ -526,7 +526,7 @@
   box-sizing: border-box;
   background: var(--input-bg, #1e1e2e);
   border: 1px solid var(--border-primary, #3a3a4c);
-  border-radius: var(--radius-sm, 6px);
+  border-radius: var(--radius-sm);
   padding: var(--space-3) var(--space-6);
   color: var(--text-primary, #e0e0e0);
   font-size: var(--fs-sm);
@@ -542,7 +542,7 @@
   background: var(--accent, #7c6cf0);
   color: var(--text-on-accent, #fff);
   border: none;
-  border-radius: var(--radius-sm, 6px);
+  border-radius: var(--radius-sm);
   padding: var(--space-3) var(--space-7);
   cursor: pointer;
   font-size: var(--fs-sm);
@@ -576,7 +576,7 @@
 .ppt-version-item {
   padding: var(--space-5) var(--space-6);
   margin-bottom: var(--space-4);
-  border-radius: var(--radius, 8px);
+  border-radius: var(--radius);
   background: var(--bg-tertiary, #252535);
   cursor: pointer;
   transition: var(--transition-color);
@@ -637,7 +637,7 @@
   width: 100%;
   padding: var(--space-3) var(--space-4);
   border: none;
-  border-radius: var(--radius-xs);
+  border-radius: var(--radius);
   background: transparent;
   color: var(--text-secondary);
   font-family: inherit;

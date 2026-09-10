@@ -426,7 +426,7 @@ const [galleryIndex, setGalleryIndex] = useState(0);
           src={src}
           alt={alt || ""}
           {...props}
-          style={{ maxWidth: "100%", borderRadius: 8, marginTop: 8, marginBottom: 8 }}
+          style={{ maxWidth: "100%", borderRadius: "var(--radius)", marginTop: 8, marginBottom: 8 }}
           onError={(e) => {
             console.error("[Image render error]", alt, src?.substring(0, 50));
           }}
@@ -662,7 +662,7 @@ setTimeout(() => setCopied(false), 2000);
                   padding: '2px 8px',
                   background: 'var(--bg-tertiary, #25252b)',
                   border: '1px solid var(--border-primary)',
-                  borderRadius: '10px',
+                  borderRadius: "var(--radius-md)",
                   color: 'var(--text-secondary, #a0a0a8)',
                   cursor: 'pointer',
                   transition: 'all 0.15s ease',
@@ -728,7 +728,7 @@ const opLabel = tc.tool === 'create_note'
                           : isDone ? 'color-mix(in srgb, var(--accent) 30%, transparent)'
                           : 'color-mix(in srgb, var(--warning) 30%, transparent)'
                         }`,
-                        borderRadius: '6px',
+                        borderRadius: "var(--radius-sm)",
                         fontSize: 'var(--fs-sm)',
                         color: 'var(--text-secondary, #a0a0a8)',
                       }}

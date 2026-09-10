@@ -202,7 +202,7 @@ export function PresentationMode({ deck, startIndex = 0, onExit }: PresentationM
         <div style={{
           position: 'fixed', bottom: 60, left: '50%', transform: 'translateX(-50%)',
           maxWidth: 600, padding: '12px 20px', background: 'var(--overlay-backdrop-strong)',
-          borderRadius: 10, color: 'var(--text-primary)', fontSize: 'var(--fs-md)', lineHeight: 1.6,
+          borderRadius: "var(--radius-md)", color: 'var(--text-primary)', fontSize: 'var(--fs-md)', lineHeight: 1.6,
           border: '1px solid color-mix(in srgb, var(--text-on-accent) 10%, transparent)',
           backdropFilter: 'blur(8px)',
         }}>
@@ -215,7 +215,7 @@ export function PresentationMode({ deck, startIndex = 0, onExit }: PresentationM
       <div style={{
         position: 'fixed', bottom: 16, left: '50%', transform: 'translateX(-50%)',
         display: 'flex', gap: 4, alignItems: 'center',
-        background: 'var(--overlay-backdrop)', padding: '4px 12px', borderRadius: 12,
+        background: 'var(--overlay-backdrop)', padding: '4px 12px', borderRadius: "var(--radius-md)",
       }}>
         <span style={{ color: 'var(--text-on-accent)', fontSize: 'var(--fs-sm)' }}>
           {currentIndex + 1} / {totalSlides}
@@ -243,7 +243,7 @@ export function PresentationMode({ deck, startIndex = 0, onExit }: PresentationM
         {/* 过渡效果选择 */}
         <select value={transition} onChange={e => setTransition(e.target.value as TransitionType)} style={{
           background: 'color-mix(in srgb, var(--text-on-accent) 10%, transparent)', border: 'none', color: 'var(--text-on-accent)',
-          padding: '4px 8px', borderRadius: 4, fontSize: 'var(--fs-sm)', cursor: 'pointer',
+          padding: '4px 8px', borderRadius: "var(--radius-xs)", fontSize: 'var(--fs-sm)', cursor: 'pointer',
         }}>
           {Object.entries(TRANSITIONS).map(([key, val]) => (
             <option key={key} value={key} style={{ background: 'var(--bg-tertiary)' }}>{val.label}</option>
@@ -253,14 +253,14 @@ export function PresentationMode({ deck, startIndex = 0, onExit }: PresentationM
         {/* 备注 toggle */}
         <button onClick={() => setShowNotes(!showNotes)} style={{
           background: showNotes ? 'var(--accent, color-mix(in srgb, var(--accent) 50%, transparent))' : 'color-mix(in srgb, var(--text-on-accent) 15%, transparent)',
-          border: 'none', color: 'var(--text-on-accent)', padding: '6px 10px', borderRadius: 4, cursor: 'pointer', fontSize: 'var(--fs-sm)',
+          border: 'none', color: 'var(--text-on-accent)', padding: '6px 10px', borderRadius: "var(--radius-xs)", cursor: 'pointer', fontSize: 'var(--fs-sm)',
           transition: 'background 0.15s',
         }}>备注</button>
 
         {/* 退出 */}
         <button onClick={onExit} style={{
           background: 'color-mix(in srgb, var(--text-on-accent) 15%, transparent)', border: 'none', color: 'var(--text-on-accent)',
-          padding: '6px 12px', borderRadius: 4, cursor: 'pointer', fontSize: 'var(--fs-sm)',
+          padding: '6px 12px', borderRadius: "var(--radius-xs)", cursor: 'pointer', fontSize: 'var(--fs-sm)',
           transition: 'background 0.15s',
         }}>✕ 退出</button>
 

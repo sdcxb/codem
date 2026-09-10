@@ -195,7 +195,7 @@ const iconColor = t.status === "completed" ? "var(--success)" :
               style={{
                 flex: "1 1 200px",
                 background: "var(--bg-tertiary)",
-                borderRadius: "8px",
+                borderRadius: "var(--radius)",
                 border: "1px solid var(--border-primary)",
                 padding: "16px",
                 cursor: "pointer",
@@ -257,7 +257,7 @@ function RecentActivity({ activities, zh }: { activities: ActivityEntry[]; zh: b
                 alignItems: "center",
                 gap: "10px",
                 padding: "8px 12px",
-                borderRadius: "6px",
+                borderRadius: "var(--radius-sm)",
                 background: "var(--bg-tertiary)",
                 fontSize: "var(--fs-sm)",
               }}

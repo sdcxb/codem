@@ -68,7 +68,7 @@ export function SubagentsTab({ agents, onSelectAgent }: SubagentsTabProps) {
         ].map((s) => (
           <div key={s.label} style={{
             background: "var(--bg-tertiary)",
-            borderRadius: "6px",
+            borderRadius: "var(--radius-sm)",
             padding: "8px 14px",
             display: "flex",
             alignItems: "center",
@@ -105,7 +105,7 @@ export function SubagentsTab({ agents, onSelectAgent }: SubagentsTabProps) {
                 onClick={() => onSelectAgent(agent.id)}
                 style={{
                   padding: "12px 14px",
-                  borderRadius: "8px",
+                  borderRadius: "var(--radius)",
                   background: "var(--bg-tertiary)",
                   border: "1px solid var(--border-primary)",
                   cursor: "pointer",
@@ -133,7 +133,7 @@ export function SubagentsTab({ agents, onSelectAgent }: SubagentsTabProps) {
                       background: "var(--accent)22",
                       color: "var(--accent)",
                     }}>
-                      <Pin size={9} /> {zh ? "持久" : "persistent"}
+                      <Pin size={10} /> {zh ? "持久" : "persistent"}
                     </span>
                   )}
                   <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: "var(--fs-xs)", color: statusCfg.color }}>
@@ -148,7 +148,7 @@ export function SubagentsTab({ agents, onSelectAgent }: SubagentsTabProps) {
                   color: "var(--text-secondary, #aaa)",
                   padding: "4px 8px",
                   background: "var(--bg-secondary)",
-                  borderRadius: "4px",
+                  borderRadius: "var(--radius-xs)",
                   overflow: "hidden",
                   textOverflow: "ellipsis",
                   whiteSpace: "nowrap",
@@ -163,10 +163,10 @@ export function SubagentsTab({ agents, onSelectAgent }: SubagentsTabProps) {
                     gap: "12px",
                   }}>
                     <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-                      <FileText size={11} /> {agent.result.filesTouched.length} {zh ? "个文件" : "files"}
+                      <FileText size={12} /> {agent.result.filesTouched.length} {zh ? "个文件" : "files"}
                     </span>
                     <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-                      <Lightbulb size={11} /> {agent.result.findings.length} {zh ? "个发现" : "findings"}
+                      <Lightbulb size={12} /> {agent.result.findings.length} {zh ? "个发现" : "findings"}
                     </span>
                   </div>
                 )}

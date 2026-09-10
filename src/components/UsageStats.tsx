@@ -71,10 +71,10 @@ export function UsageStats({ onClose }: UsageStatsProps) {
     <div className="usage-stats">
       <div className="usage-stats-header">
         <div className="usage-stats-title">
-          <span className="usage-stats-icon"><UsageIcon size={18} /></span>
+          <span className="usage-stats-icon"><UsageIcon size={16} /></span>
           <span>用量统计</span>
         </div>
-        <button className="usage-stats-close" onClick={onClose}><CloseIcon size={18} /></button>
+        <button className="usage-stats-close" onClick={onClose}><CloseIcon size={16} /></button>
       </div>
 
       <div className="usage-tabs">
@@ -199,7 +199,7 @@ export function UsageStats({ onClose }: UsageStatsProps) {
                   <span>{formatTime(record.timestamp)}</span>
                   <span>{record.inputTokens}→{record.outputTokens} tokens</span>
                   <span>{formatDuration(record.duration)}</span>
-                  {record.toolCalls > 0 && <span className="usage-record-tools"><Wrench size={11} /> {record.toolCalls}</span>}
+                  {record.toolCalls > 0 && <span className="usage-record-tools"><Wrench size={12} /> {record.toolCalls}</span>}
                 </div>
                 {record.error && (
                   <div className="usage-record-error">{record.error}</div>

@@ -119,7 +119,7 @@ export const DeliverableFiles = memo(function DeliverableFiles({
                 alignItems: 'center',
                 gap: 4,
                 padding: '2px 8px',
-                borderRadius: 10,
+                borderRadius: "var(--radius-md)",
                 border: '1px solid var(--border-primary)',
                 background: 'var(--bg-secondary)',
                 color: 'var(--text-secondary)',
@@ -136,7 +136,7 @@ export const DeliverableFiles = memo(function DeliverableFiles({
                 e.currentTarget.style.color = 'var(--text-secondary)'
               }}
             >
-              <Icon size={11} />
+              <Icon size={12} />
               <span>{getLabel(file)}</span>
             </button>
           )
@@ -151,7 +151,7 @@ export const DeliverableFiles = memo(function DeliverableFiles({
               alignItems: 'center',
               gap: 2,
               padding: '2px 8px',
-              borderRadius: 10,
+              borderRadius: "var(--radius-md)",
               border: '1px solid var(--border-primary)',
               background: 'transparent',
               color: 'var(--text-muted)',
@@ -159,7 +159,7 @@ export const DeliverableFiles = memo(function DeliverableFiles({
               cursor: 'pointer',
             }}
           >
-            <ChevronDown size={11} />
+            <ChevronDown size={12} />
             <span>{zh ? `+${hiddenCount} 更多` : `+${hiddenCount} more`}</span>
           </button>
         )}
@@ -173,7 +173,7 @@ export const DeliverableFiles = memo(function DeliverableFiles({
               alignItems: 'center',
               gap: 2,
               padding: '2px 8px',
-              borderRadius: 10,
+              borderRadius: "var(--radius-md)",
               border: '1px solid var(--border-primary)',
               background: 'transparent',
               color: 'var(--text-muted)',
@@ -181,7 +181,7 @@ export const DeliverableFiles = memo(function DeliverableFiles({
               cursor: 'pointer',
             }}
           >
-            <ChevronRight size={11} />
+            <ChevronRight size={12} />
             <span>{zh ? '收起' : 'Less'}</span>
           </button>
         )}
@@ -196,7 +196,7 @@ export const DeliverableFiles = memo(function DeliverableFiles({
               alignItems: 'center',
               gap: 2,
               padding: '2px 8px',
-              borderRadius: 10,
+              borderRadius: "var(--radius-md)",
               border: 'none',
               background: 'transparent',
               color: 'var(--text-muted)',
@@ -204,7 +204,7 @@ export const DeliverableFiles = memo(function DeliverableFiles({
               cursor: 'pointer',
             }}
           >
-            <FolderOpen size={11} />
+            <FolderOpen size={12} />
           </button>
         )}
       </div>

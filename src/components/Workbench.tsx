@@ -71,7 +71,7 @@ export const Workbench = memo(function Workbench({
     <div className="workbench">
       <div className="workbench-header">
         <span>{S.workbench.title[lang]}</span>
-        <button className="workbench-toggle" onClick={onToggle}><CloseIcon size={18} /></button>
+        <button className="workbench-toggle" onClick={onToggle}><CloseIcon size={16} /></button>
       </div>
 
       {/* View tabs */}

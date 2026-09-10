@@ -72,7 +72,7 @@ export function RetryConfigPanel() {
     fontSize: 'var(--fs-sm)', fontWeight: 600, color: "var(--text-secondary)", marginBottom: 3, display: "block",
   };
   const inputStyle: React.CSSProperties = {
-    padding: "5px 8px", borderRadius: 4, border: "1px solid var(--border-primary)",
+    padding: "5px 8px", borderRadius: "var(--radius-xs)", border: "1px solid var(--border-primary)",
     background: "var(--bg-tertiary)", color: "var(--text-primary)", fontSize: 'var(--fs-sm)', width: "100%",
     outline: "none",
   };
@@ -93,7 +93,7 @@ export function RetryConfigPanel() {
 
       {/* Current state */}
       <div style={{
-        padding: 10, borderRadius: 6, border: "1px solid var(--border-primary)",
+        padding: 10, borderRadius: "var(--radius-sm)", border: "1px solid var(--border-primary)",
         background: "var(--bg-tertiary)", display: "flex", gap: 16, fontSize: 'var(--fs-sm)',
       }}>
         <div>
@@ -122,7 +122,7 @@ export function RetryConfigPanel() {
 
       {/* Config form */}
       <div style={{
-        padding: 12, borderRadius: 8, border: "1px solid var(--border-primary)",
+        padding: 12, borderRadius: "var(--radius)", border: "1px solid var(--border-primary)",
         background: "var(--bg-secondary)",
       }}>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
@@ -167,7 +167,7 @@ export function RetryConfigPanel() {
 
         {/* Delay preview */}
         <div style={{
-          padding: "6px 10px", borderRadius: 4, background: "var(--bg-tertiary)",
+          padding: "6px 10px", borderRadius: "var(--radius-xs)", background: "var(--bg-tertiary)",
           fontSize: 'var(--fs-sm)', color: "var(--text-secondary)", marginBottom: 8,
         }}>
           {zh ? "预览：第1次重试延迟" : "Preview: 1st retry delay"} = <span style={{ fontWeight: 600, color: "var(--text-primary)" }}>{(previewDelay / 1000).toFixed(2)}s</span>
@@ -178,14 +178,14 @@ export function RetryConfigPanel() {
 
         <div style={{ display: "flex", gap: 8 }}>
           <button onClick={handleSave} style={{
-            padding: "6px 16px", borderRadius: 4, fontSize: 'var(--fs-sm)',
+            padding: "6px 16px", borderRadius: "var(--radius-xs)", fontSize: 'var(--fs-sm)',
             border: "1px solid var(--accent)", background: "var(--accent)",
             color: "var(--text-on-accent)", cursor: "pointer",
           }}>
             {saved ? "✅ " + (zh ? "已保存" : "Saved") : (zh ? "保存配置" : "Save Config")}
           </button>
           <button onClick={handleReset} style={{
-            padding: "6px 16px", borderRadius: 4, fontSize: 'var(--fs-sm)',
+            padding: "6px 16px", borderRadius: "var(--radius-xs)", fontSize: 'var(--fs-sm)',
             border: "1px solid var(--border-primary)", background: "none",
             color: "var(--text-primary)", cursor: "pointer",
           }}>
@@ -196,7 +196,7 @@ export function RetryConfigPanel() {
 
       {/* Error classification tester */}
       <div style={{
-        padding: 12, borderRadius: 8, border: "1px solid var(--border-primary)",
+        padding: 12, borderRadius: "var(--radius)", border: "1px solid var(--border-primary)",
         background: "var(--bg-secondary)",
       }}>
         <div style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, color: "var(--text-secondary)", marginBottom: 8 }}>
@@ -209,7 +209,7 @@ export function RetryConfigPanel() {
           <input style={inputStyle} value={testError} onChange={e => setTestError(e.target.value)}
             placeholder='{"status": 429, "headers": {"retry-after": "60"}}' />
           <button onClick={handleTestClassify} disabled={!testError.trim()} style={{
-            padding: "5px 12px", borderRadius: 4, fontSize: 'var(--fs-sm)',
+            padding: "5px 12px", borderRadius: "var(--radius-xs)", fontSize: 'var(--fs-sm)',
             border: "1px solid var(--border-primary)", background: "var(--bg-tertiary)",
             color: "var(--text-primary)", cursor: "pointer", whiteSpace: "nowrap",
             opacity: testError.trim() ? 1 : 0.5,
@@ -219,7 +219,7 @@ export function RetryConfigPanel() {
         </div>
         {testResult && (
           <div style={{
-            marginTop: 8, padding: "6px 10px", borderRadius: 4,
+            marginTop: 8, padding: "6px 10px", borderRadius: "var(--radius-xs)",
             background: "var(--bg-tertiary)", fontSize: 'var(--fs-sm)',
           }}>
             <div>

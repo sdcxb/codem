@@ -138,7 +138,7 @@ export function JobsBadge({ jobs = [], onSelectJob }: JobsBadgeProps) {
           alignItems: 'center',
           gap: 4,
           padding: '2px 8px',
-          borderRadius: 10,
+          borderRadius: "var(--radius-md)",
           border: '1px solid var(--border-primary)',
           background: liveCount > 0 ? 'color-mix(in srgb, var(--accent) 8%, transparent)' : 'transparent',
           color: liveCount > 0 ? 'var(--accent)' : 'var(--text-muted)',
@@ -148,7 +148,7 @@ export function JobsBadge({ jobs = [], onSelectJob }: JobsBadgeProps) {
         }}
       >
         {liveCount > 0 && (
-          <LoaderCircle size={11} className="spin" />
+          <LoaderCircle size={12} className="spin" />
         )}
         <span>{countLabel}</span>
         <ChevronDown size={10} style={{ opacity: 0.5, transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }} />
@@ -166,7 +166,7 @@ export function JobsBadge({ jobs = [], onSelectJob }: JobsBadgeProps) {
             overflowY: 'auto',
             background: 'var(--bg-secondary)',
             border: '1px solid var(--border-primary)',
-            borderRadius: 8,
+            borderRadius: "var(--radius)",
             boxShadow: '0 4px 16px var(--shadow-color)',
             zIndex: "var(--z-chrome)",
           }}
@@ -208,7 +208,7 @@ export function JobsBadge({ jobs = [], onSelectJob }: JobsBadgeProps) {
                     {job.label}
                   </span>
                   <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 2 }}>
-                    <Clock size={9} />
+                    <Clock size={10} />
                     {duration}
                   </span>
                 </li>

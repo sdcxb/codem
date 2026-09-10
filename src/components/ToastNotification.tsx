@@ -44,10 +44,10 @@ export function dismissToast(id: string) {
 }
 
 const iconMap = {
-  success: <StatusIcons.success size={18} />,
-  error: <StatusIcons.error size={18} />,
-  warning: <StatusIcons.danger size={18} />,
-  info: <CommonIcons.info size={18} />,
+  success: <StatusIcons.success size={16} />,
+  error: <StatusIcons.error size={16} />,
+  warning: <StatusIcons.danger size={16} />,
+  info: <CommonIcons.info size={16} />,
 };
 
 const colorMap = {

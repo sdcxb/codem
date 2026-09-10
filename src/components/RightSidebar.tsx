@@ -123,7 +123,7 @@ const effectiveWidth = sidebarWidth;
               className={`right-sidebar-tab ${active ? "active" : ""}`}
               onClick={() => setActiveTab(tab.id)}
             >
-              <Icon size={13} />
+              <Icon size={14} />
               <span>{tab.label}</span>
             </button>
           );

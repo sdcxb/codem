@@ -137,7 +137,7 @@ export function TaskCenter({ onClose, initialTab = "overview", subagentTasks = [
           height: "min(720px, 88vh)",
           maxHeight: "90vh",
           background: "var(--bg-secondary, #1e1e2e)",
-          borderRadius: "12px",
+          borderRadius: "var(--radius-md)",
           border: "1px solid var(--border-primary)",
           boxShadow: "0 8px 32px var(--shadow-color)",
           display: "flex",
@@ -171,12 +171,12 @@ export function TaskCenter({ onClose, initialTab = "overview", subagentTasks = [
               color: "var(--text-secondary, #888)",
               cursor: "pointer",
               padding: "4px 8px",
-              borderRadius: "4px",
+              borderRadius: "var(--radius-xs)",
             }}
             onMouseEnter={(e) => (e.currentTarget.style.background = "var(--bg-tertiary, #2a2a3a)")}
             onMouseLeave={(e) => (e.currentTarget.style.background = "none")}
           >
-            <ActionIcons.close size={18} />
+            <ActionIcons.close size={16} />
           </button>
         </div>
 

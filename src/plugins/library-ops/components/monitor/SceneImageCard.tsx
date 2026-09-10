@@ -163,7 +163,7 @@ export function SceneImageCard({ zh }: { zh: boolean }) {
           void onFiles(e.dataTransfer?.files ?? null);
         }}
       >
-        <span className="lo-scene-upload__icon"><LoIcon name={busy ? "timer" : "image"} size={18} /></span>
+        <span className="lo-scene-upload__icon"><LoIcon name={busy ? "timer" : "image"} size={16} /></span>
         <span className="lo-scene-upload__main">
           {busy ? (zh ? "正在读取图片…" : "Reading image…") : zh ? "点击选择图片，或把图片拖到这里" : "Click to choose an image, or drop one here"}
         </span>
@@ -193,7 +193,7 @@ export function SceneImageCard({ zh }: { zh: boolean }) {
       )}
       {aspectWarning && (
           <p className="lo-note">
-            <LoIcon name="triangle-alert" size={11} /> {aspectWarning}
+            <LoIcon name="triangle-alert" size={12} /> {aspectWarning}
           </p>
         )}
 

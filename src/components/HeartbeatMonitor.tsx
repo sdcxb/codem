@@ -83,7 +83,7 @@ export function HeartbeatMonitor() {
     fontSize: 'var(--fs-sm)', fontWeight: 600, color: "var(--text-secondary)", marginBottom: 3, display: "block",
   };
   const inputStyle: React.CSSProperties = {
-    padding: "5px 8px", borderRadius: 4, border: "1px solid var(--border-primary)",
+    padding: "5px 8px", borderRadius: "var(--radius-xs)", border: "1px solid var(--border-primary)",
     background: "var(--bg-tertiary)", color: "var(--text-primary)", fontSize: 'var(--fs-sm)', width: "100%",
     outline: "none",
   };
@@ -110,7 +110,7 @@ export function HeartbeatMonitor() {
           { label: zh ? "停止" : "Stopped", value: stats.stopped, color: STATUS_COLORS.stopped },
         ].map(s => (
           <div key={s.label} style={{
-            flex: 1, minWidth: 80, padding: "8px 12px", borderRadius: 6,
+            flex: 1, minWidth: 80, padding: "8px 12px", borderRadius: "var(--radius-sm)",
             border: "1px solid var(--border-primary)", background: "var(--bg-tertiary)",
             textAlign: "center",
           }}>
@@ -130,7 +130,7 @@ export function HeartbeatMonitor() {
             {sessions.map(s => (
               <div key={s.sessionId} style={{
                 display: "flex", alignItems: "center", gap: 8, padding: "6px 10px",
-                borderRadius: 4, border: "1px solid var(--border-primary)",
+                borderRadius: "var(--radius-xs)", border: "1px solid var(--border-primary)",
                 background: "var(--bg-tertiary)", fontSize: 'var(--fs-sm)',
               }}>
                 <span style={{
@@ -157,7 +157,7 @@ export function HeartbeatMonitor() {
 
       {/* Config */}
       <div style={{
-        padding: 12, borderRadius: 8, border: "1px solid var(--border-primary)",
+        padding: 12, borderRadius: "var(--radius)", border: "1px solid var(--border-primary)",
         background: "var(--bg-secondary)",
       }}>
         <div style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, color: "var(--text-secondary)", marginBottom: 8 }}>
@@ -214,7 +214,7 @@ export function HeartbeatMonitor() {
 
         <div style={{ display: "flex", gap: 8 }}>
           <button onClick={handleSaveConfig} style={{
-            padding: "6px 16px", borderRadius: 4, fontSize: 'var(--fs-sm)',
+            padding: "6px 16px", borderRadius: "var(--radius-xs)", fontSize: 'var(--fs-sm)',
             border: "1px solid var(--accent)", background: "var(--accent)",
             color: "var(--text-on-accent)", cursor: "pointer",
           }}>
@@ -222,7 +222,7 @@ export function HeartbeatMonitor() {
           </button>
           {stats.active > 0 && (
             <button onClick={handleStopAll} style={{
-              padding: "6px 16px", borderRadius: 4, fontSize: 'var(--fs-sm)',
+              padding: "6px 16px", borderRadius: "var(--radius-xs)", fontSize: 'var(--fs-sm)',
               border: "1px solid var(--error)", background: "none",
               color: "var(--error)", cursor: "pointer",
             }}>

@@ -37,7 +37,7 @@ const inputStyle: CSSProperties = {
   background: "var(--bg-tertiary)",
   color: "var(--text-primary)",
   border: "1px solid var(--border-primary)",
-  borderRadius: 4,
+  borderRadius: "var(--radius-xs)",
   outline: "none",
 };
 
@@ -115,7 +115,7 @@ export function CorrectionModelConfig() {
           padding: 10,
           background: "var(--bg-tertiary)",
           border: "1px solid var(--border-primary)",
-          borderRadius: 6,
+          borderRadius: "var(--radius-sm)",
         }}
       >
         {zh
@@ -213,7 +213,7 @@ export function CorrectionModelConfig() {
             background: "var(--accent)",
             color: "var(--text-on-accent)",
             border: "none",
-            borderRadius: 6,
+            borderRadius: "var(--radius-sm)",
           }}
         >
           {zh ? "保存配置" : "Save Config"}
@@ -227,7 +227,7 @@ export function CorrectionModelConfig() {
             background: "var(--bg-tertiary)",
             color: "var(--text-primary)",
             border: "1px solid var(--border-primary)",
-            borderRadius: 6,
+            borderRadius: "var(--radius-sm)",
           }}
         >
           {zh ? "清除配置（回退主模型）" : "Clear (use main model)"}

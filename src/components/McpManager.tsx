@@ -164,7 +164,7 @@ export function McpManager({ onClose }: McpManagerProps) {
           <span>MCP 服务器管理</span>
         </div>
         <button className="mcp-manager-close" onClick={onClose}>
-          <CloseIcon size={18} />
+          <CloseIcon size={16} />
         </button>
       </div>
 

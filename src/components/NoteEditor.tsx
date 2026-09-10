@@ -74,7 +74,7 @@ const MermaidBlock = ({ chart }: { chart: string }) => {
 
   if (loading) return <div style={{ padding: '12px', opacity: 0.5, fontSize: 'var(--fs-sm)' }}>Rendering diagram...</div>;
   if (error) return (
-    <div style={{ padding: '8px', border: '1px solid var(--border-primary)', borderRadius: '4px', fontSize: 'var(--fs-xs)', color: 'var(--text-muted)' }}>
+    <div style={{ padding: '8px', border: '1px solid var(--border-primary)', borderRadius: "var(--radius-xs)", fontSize: 'var(--fs-xs)', color: 'var(--text-muted)' }}>
       <pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{chart}</pre>
     </div>
   );
@@ -259,7 +259,7 @@ export function NoteEditor({
             <pre style={{
               padding: '8px 12px',
               background: 'var(--bg-tertiary, #1a1a20)',
-              borderRadius: '4px',
+              borderRadius: "var(--radius-xs)",
               overflow: 'auto',
               fontSize: 'var(--fs-sm)',
               fontFamily: 'var(--font-mono, monospace)',
@@ -354,7 +354,7 @@ export function NoteEditor({
                 padding: '2px 6px',
                 background: 'var(--bg-tertiary, #25252b)',
                 border: '1px solid var(--border-primary)',
-                borderRadius: '10px',
+                borderRadius: "var(--radius-md)",
                 fontSize: 'var(--fs-xs)',
                 color: 'var(--text-secondary, #a0a0a8)',
               }}
@@ -601,7 +601,7 @@ export function NoteEditor({
                         padding: '12px',
                         background: 'var(--bg-tertiary, #25252b)',
                         border: '1px solid var(--border-primary)',
-                        borderRadius: '8px',
+                        borderRadius: "var(--radius)",
                       }}
                     >
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
@@ -623,7 +623,7 @@ export function NoteEditor({
                             title={isZh ? '恢复此版本' : 'Restore this version'}
                             style={{
                               background: 'none', border: '1px solid var(--border-primary)',
-                              borderRadius: '4px', padding: '4px 6px', cursor: 'pointer',
+                              borderRadius: "var(--radius-xs)", padding: '4px 6px', cursor: 'pointer',
                               color: 'var(--accent)',
                             }}
                           >
@@ -634,7 +634,7 @@ export function NoteEditor({
                             title={isZh ? '删除此版本' : 'Delete this version'}
                             style={{
                               background: 'none', border: '1px solid var(--border-primary)',
-                              borderRadius: '4px', padding: '4px 6px', cursor: 'pointer',
+                              borderRadius: "var(--radius-xs)", padding: '4px 6px', cursor: 'pointer',
                               color: 'var(--text-muted, #555)',
                             }}
                           >

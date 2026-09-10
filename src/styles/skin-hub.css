@@ -221,7 +221,7 @@
 [data-skin="hub"] .user .message-content {
   background: rgba(255, 107, 0, 0.08);
   border: 1px solid rgba(255, 107, 0, 0.2);
-  border-radius: 16px;
+  border-radius: var(--radius-lg);
 }
 
 [data-skin="hub"] .assistant .message-content {
@@ -241,13 +241,13 @@
 [data-skin="hub"] .input-card-container {
   background: var(--hub-bg-input);
   border: 1px solid var(--hub-border-color);
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   color: var(--hub-text-main);
 }
 [data-skin="hub"] .input-wrapper {
   background: transparent;
   border: none;
-  border-radius: 12px 12px 0 0;
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
 }
 
 [data-skin="hub"] .chat-input-wrapper input,
@@ -273,7 +273,7 @@
   background: var(--hub-color-primary);
   color: #fff;
   border: none;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
 }
 
@@ -287,7 +287,7 @@
 [data-skin="hub"] .code-block {
   background: #050505;
   border: 1px solid #333;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   color: #a5d6ff;
 }
 
@@ -296,7 +296,7 @@
 [data-skin="hub"] .tool-result {
   background: var(--hub-bg-card);
   border: 1px solid var(--hub-border-color);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   color: var(--hub-text-main);
 }
 
@@ -323,7 +323,7 @@
 
 [data-skin="hub"] ::-webkit-scrollbar-thumb {
   background: #333;
-  border-radius: 3px;
+  border-radius: var(--radius-xs);
 }
 
 [data-skin="hub"] ::-webkit-scrollbar-thumb:is(:hover, :focus-visible) {
@@ -358,7 +358,7 @@
   background: var(--hub-color-primary);
   color: #000;
   padding: var(--space-1) var(--space-3);
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
   margin-left: var(--space-2);
   font-size: 14px;
   font-weight: 700;
@@ -422,7 +422,7 @@
 [data-skin="hub"] .hub-agent-card {
   background: #050505;
   border: 1px solid var(--hub-border-color);
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   padding: var(--space-9);
   text-align: center;
   margin-bottom: var(--space-10);
@@ -432,7 +432,7 @@
   width: 120px;
   height: 120px;
   background: #1a1a1a;
-  border-radius: 20px;
+  border-radius: var(--radius-xl);
   margin: 0 auto var(--space-8);
   display: flex;
   align-items: center;
@@ -489,7 +489,7 @@
 [data-skin="hub"] .hub-task-item {
   background: var(--hub-bg-card);
   border: 1px solid var(--hub-border-color);
-  border-radius: 8px;
+  border-radius: var(--radius);
   padding: var(--space-6);
   display: flex;
   gap: var(--space-6);
@@ -505,7 +505,7 @@
   width: 36px;
   height: 36px;
   background: var(--hub-bg-hover);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -530,7 +530,7 @@
 [data-skin="hub"] .hub-task-tags span {
   background: #222;
   padding: var(--space-1) var(--space-3);
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
 }
 
 /* Hub 响应式：小屏隐藏右侧�?*/
@@ -658,7 +658,7 @@
   right: 8px;
   width: 20px;
   height: 20px;
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
   background: transparent;
   border: none;
   color: var(--hub-text-muted);
@@ -797,7 +797,7 @@
 [data-skin="hub"] .inline-diff-review {
   background: var(--hub-bg-card, #1c1c1e);
   border: 1px solid var(--hub-border-color, #2a2a2a);
-  border-radius: 8px;
+  border-radius: var(--radius);
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 107, 0, 0.04);
 }
 [data-skin="hub"] .inline-diff-review:is(:hover, :focus-visible) {

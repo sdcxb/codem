@@ -107,7 +107,7 @@ export function GoalBar({ goal, onEdit, onPause, onResume, onClear }: GoalBarPro
             flex: 1,
             background: 'var(--bg-tertiary)',
             border: '1px solid var(--border-primary)',
-            borderRadius: 4,
+            borderRadius: "var(--radius-xs)",
             padding: '4px 8px',
             fontSize: 'var(--fs-sm)',
             color: 'var(--text-primary)',

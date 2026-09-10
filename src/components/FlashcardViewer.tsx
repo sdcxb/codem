@@ -217,22 +217,22 @@ export function FlashcardViewer({ notebookId, noteId, onClose }: FlashcardViewer
         </div>
         <div className="flashcard-toolbar">
           <button className="nb-studio-btn flashcard-tool-btn" onClick={handleStartReview} disabled={cards.length === 0}>
-            <RotateCw size={13} />
+            <RotateCw size={14} />
             {isZh ? `复习 (${dueCards.length})` : `Review (${dueCards.length} due)`}
           </button>
           <button className="nb-studio-btn flashcard-tool-btn" onClick={() => setMode('create')}>
-            <Plus size={13} />
+            <Plus size={14} />
             {isZh ? '新建' : 'New'}
           </button>
           <button className="nb-studio-btn flashcard-tool-btn" onClick={handleAIGenerate} disabled={generating}>
-            {generating ? <Loader2 size={13} className="spin" /> : <Sparkles size={13} />}
+            {generating ? <Loader2 size={14} className="spin" /> : <Sparkles size={14} />}
             {isZh ? (noteId ? '从笔记生成' : 'AI 生成') : (noteId ? 'From Note' : 'AI Generate')}
           </button>
         </div>
         <div className="flashcard-body">
           {cards.length === 0 ? (
             <div className="flashcard-empty">
-              <Layers size={28} className="flashcard-empty-icon" />
+              <Layers size={32} className="flashcard-empty-icon" />
               <p>{isZh ? '暂无闪卡，点击「新建」或「AI 生成」创建' : 'No flashcards yet. Click "New" or "AI Generate"'}</p>
             </div>
           ) : (

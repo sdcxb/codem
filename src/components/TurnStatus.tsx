@@ -49,7 +49,7 @@ const TurnErrorRow = memo(function TurnErrorRow({
       className="turn-status-row turn-error"
       role="status"
     >
-      <AlertCircle size={13} style={{ color: 'var(--error)', flexShrink: 0, marginTop: 1 }} />
+      <AlertCircle size={14} style={{ color: 'var(--error)', flexShrink: 0, marginTop: 1 }} />
       <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
         <span style={{ fontWeight: 600, color: 'var(--error)' }}>
           {zh ? '执行出错' : 'Turn Error'}
@@ -89,13 +89,13 @@ const TurnMaxTokensRow = memo(function TurnMaxTokensRow() {
         alignItems: 'flex-start',
         gap: 6,
         padding: '6px 10px',
-        borderRadius: 6,
+        borderRadius: "var(--radius-sm)",
         background: 'color-mix(in srgb, var(--warning) 8%, transparent)',
         border: '1px solid color-mix(in srgb, var(--warning) 20%, transparent)',
         fontSize: 'var(--fs-sm)',
       }}
     >
-      <AlertTriangle size={13} style={{ color: 'var(--warning, #eab008)', flexShrink: 0, marginTop: 1 }} />
+      <AlertTriangle size={14} style={{ color: 'var(--warning, #eab008)', flexShrink: 0, marginTop: 1 }} />
       <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
         <span style={{ fontWeight: 600, color: 'var(--warning, #eab008)' }}>
           {zh ? '已达到输出上限' : 'Max Tokens Reached'}
@@ -154,7 +154,7 @@ const ModelRetryRow = memo(function ModelRetryRow({
       data-active={active || undefined}
       style={{
         padding: '6px 10px',
-        borderRadius: 6,
+        borderRadius: "var(--radius-sm)",
         background: 'color-mix(in srgb, var(--accent) 8%, transparent)',
         border: '1px solid color-mix(in srgb, var(--accent) 20%, transparent)',
         fontSize: 'var(--fs-sm)',

@@ -59,7 +59,7 @@ export function PlanModeChip({ mode, onModeChange, locked = false }: PlanModeChi
           alignItems: 'center',
           gap: 4,
           padding: '2px 8px',
-          borderRadius: 12,
+          borderRadius: "var(--radius-md)",
           border: '1px solid var(--accent)',
           background: 'color-mix(in srgb, var(--accent) 12%, transparent)',
           color: 'var(--accent)',
@@ -76,7 +76,7 @@ export function PlanModeChip({ mode, onModeChange, locked = false }: PlanModeChi
           style={{ display: 'inline-flex', cursor: 'pointer' }}
           aria-hidden
         >
-          <X size={11} />
+          <X size={12} />
         </span>
       </button>
     </span>

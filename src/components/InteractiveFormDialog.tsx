@@ -109,7 +109,7 @@ return createPortal(
             onClick={onCancel}
             style={{ marginLeft: "auto", background: "none", border: "none", cursor: "pointer", color: "var(--text-secondary, #888)" }}
           >
-            <ActionIcons.close size={18} />
+            <ActionIcons.close size={16} />
           </button>
         </div>
 
@@ -149,7 +149,7 @@ return createPortal(
                             alignItems: "center",
                             gap: "10px",
                             padding: "10px 14px",
-                            borderRadius: "8px",
+                            borderRadius: "var(--radius)",
                             border: isSelected
                               ? "2px solid var(--accent)"
                               : "2px solid var(--border-primary)",
@@ -189,7 +189,7 @@ return createPortal(
                                 gap: "4px",
                                 fontSize: "var(--fs-xs)",
                                 padding: "2px 8px",
-                                borderRadius: "10px",
+                                borderRadius: "var(--radius-md)",
                                 background: "color-mix(in srgb, var(--success) 20%, transparent)",
                                 color: "var(--success)",
                                 marginLeft: "auto",
@@ -212,7 +212,7 @@ return createPortal(
                       padding: "8px 14px",
                       background: "none",
                       border: `1px dashed var(--border-primary)`,
-                      borderRadius: "8px",
+                      borderRadius: "var(--radius)",
                       cursor: "pointer",
                       color: "var(--text-secondary, #888)",
                       fontSize: "var(--fs-base)",
@@ -236,7 +236,7 @@ return createPortal(
                         width: "100%",
                         marginTop: "8px",
                         padding: "10px 14px",
-                        borderRadius: "8px",
+                        borderRadius: "var(--radius)",
                         border: "2px solid var(--border-primary)",
                         background: "var(--bg-tertiary, #16213e)",
                         color: "var(--text-primary, #e0e0e0)",
@@ -258,7 +258,7 @@ return createPortal(
                   style={{
                     width: "100%",
                     padding: "10px 14px",
-                    borderRadius: "8px",
+                    borderRadius: "var(--radius)",
                     border: "2px solid var(--border-primary)",
                     background: "var(--bg-tertiary, #16213e)",
                     color: "var(--text-primary, #e0e0e0)",
@@ -286,7 +286,7 @@ return createPortal(
             onClick={onCancel}
             style={{
               padding: "8px 16px",
-              borderRadius: "8px",
+              borderRadius: "var(--radius)",
               border: "1px solid var(--border-primary)",
               background: "transparent",
               color: "var(--text-secondary, #888)",
@@ -300,7 +300,7 @@ return createPortal(
             onClick={handleSubmit}
             style={{
               padding: "8px 20px",
-              borderRadius: "8px",
+              borderRadius: "var(--radius)",
               border: "none",
               background: "var(--accent)",
               color: "var(--text-on-accent)",

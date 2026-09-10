@@ -112,7 +112,7 @@ export function PerformanceDashboard({ onClose }: PerformanceDashboardProps) {
         {/* Header */}
         <div className="perf-header">
           <div className="perf-header-title">
-            <Activity size={18} />
+            <Activity size={16} />
             <span className="perf-title">{S.perf.title[lang]}</span>
           </div>
           <div className="perf-header-actions">

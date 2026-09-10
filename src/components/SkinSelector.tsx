@@ -121,7 +121,7 @@ function DreamConfigPanel() {
         {dreamConfig.backgroundImage ? (
           <div className="dream-bg-preview">
             {dreamConfig.bgMediaType === 'video' ? (
-              <video src={dreamConfig.backgroundImage} autoPlay loop muted style={{ width: '100%', maxHeight: 120, objectFit: 'cover', borderRadius: 4 }} />
+              <video src={dreamConfig.backgroundImage} autoPlay loop muted style={{ width: '100%', maxHeight: 120, objectFit: 'cover', borderRadius: "var(--radius-xs)" }} />
             ) : (
               <img src={dreamConfig.backgroundImage} alt="背景预览" />
             )}
@@ -154,7 +154,7 @@ function DreamConfigPanel() {
           <select
             value={dreamConfig.videoAudioMode}
             onChange={(e) => updateConfig({ videoAudioMode: e.target.value as any })}
-            style={{ width: "100%", padding: "4px 8px", borderRadius: 4, border: "1px solid var(--border-primary)", background: "var(--bg-tertiary)", color: "var(--text-primary)" }}
+            style={{ width: "100%", padding: "4px 8px", borderRadius: "var(--radius-xs)", border: "1px solid var(--border-primary)", background: "var(--bg-tertiary)", color: "var(--text-primary)" }}
           >
             <option value="loop-sound">{lang === "zh" ? "永久循环+声音" : "Loop with sound"}</option>
             <option value="once-sound">{lang === "zh" ? "仅首次播放声音后静音" : "Play once with sound, then mute"}</option>

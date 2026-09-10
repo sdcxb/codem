@@ -86,7 +86,7 @@ export function VoiceSettingsPanel() {
   return (
     <div className="settings-section voice-settings">
       <div className="settings-section-header">
-        <Volume2 size={18} style={{ color: "var(--accent)" }} />
+        <Volume2 size={16} style={{ color: "var(--accent)" }} />
         <h3 style={{ fontSize: 'var(--fs-md)', fontWeight: 600 }}>{S.voice.settingsTitle[lang]}</h3>
       </div>
 
@@ -105,7 +105,7 @@ export function VoiceSettingsPanel() {
             style={{
               background: "var(--bg-tertiary)",
               border: "1px solid var(--border-primary)",
-              borderRadius: 6,
+              borderRadius: "var(--radius-sm)",
               padding: "4px 8px",
               fontSize: 'var(--fs-sm)',
               color: "var(--text-primary)",
@@ -143,7 +143,7 @@ export function VoiceSettingsPanel() {
           padding: 12,
           background: "color-mix(in srgb, var(--error) 10%, transparent)",
           border: "1px solid color-mix(in srgb, var(--error) 30%, transparent)",
-          borderRadius: 8,
+          borderRadius: "var(--radius)",
           fontSize: 'var(--fs-sm)',
           color: "var(--error)",
           marginBottom: 16,
@@ -189,7 +189,7 @@ export function VoiceSettingsPanel() {
           style={{
             background: "var(--bg-tertiary)",
             border: "1px solid var(--border-primary)",
-            borderRadius: 6,
+            borderRadius: "var(--radius-sm)",
             padding: "4px 8px",
             fontSize: 'var(--fs-sm)',
             color: "var(--text-primary)",
@@ -283,7 +283,7 @@ export function VoiceSettingsPanel() {
             background: isSpeaking ? "var(--error)" : "var(--accent)",
             color: "var(--text-on-accent)",
             border: "none",
-            borderRadius: 6,
+            borderRadius: "var(--radius-sm)",
             fontSize: 'var(--fs-sm)',
             cursor: isSupported ? "pointer" : "not-allowed",
             opacity: isSupported ? 1 : 0.5,
@@ -304,7 +304,7 @@ export function VoiceSettingsPanel() {
       <div style={{
         padding: 12,
         background: "var(--bg-tertiary)",
-        borderRadius: 8,
+        borderRadius: "var(--radius)",
         fontSize: 'var(--fs-sm)',
         color: "var(--text-muted)",
         marginTop: 16,

@@ -131,7 +131,7 @@ export function InboxTab() {
           {unreadCount > 0 && (
             <span style={{
               fontSize: "var(--fs-xs)", fontWeight: 700, color: "var(--text-on-accent)",
-              background: "var(--error)", padding: "1px 8px", borderRadius: 10,
+              background: "var(--error)", padding: "1px 8px", borderRadius: "var(--radius-md)",
             }}>
               {unreadCount}
             </span>
@@ -142,7 +142,7 @@ export function InboxTab() {
             onClick={handleMarkAllRead}
             style={{
               display: "flex", alignItems: "center", gap: 4,
-              padding: "4px 12px", borderRadius: 4, fontSize: 'var(--fs-sm)',
+              padding: "4px 12px", borderRadius: "var(--radius-xs)", fontSize: 'var(--fs-sm)',
               border: "1px solid var(--border-primary)", background: "none",
               color: "var(--text-secondary)", cursor: "pointer",
             }}
@@ -159,7 +159,7 @@ export function InboxTab() {
             key={f.value}
             onClick={() => setFilter(f.value)}
             style={{
-              padding: "4px 12px", borderRadius: 4, fontSize: 'var(--fs-sm)',
+              padding: "4px 12px", borderRadius: "var(--radius-xs)", fontSize: 'var(--fs-sm)',
               border: `1px solid ${filter === f.value ? "var(--accent)" : "var(--border-primary)"}`,
               background: filter === f.value ? "var(--accent)22" : "none",
               color: filter === f.value ? "var(--accent)" : "var(--text-secondary)",
@@ -189,7 +189,7 @@ export function InboxTab() {
                 onClick={() => handleClick(item)}
                 style={{
                   display: "flex", alignItems: "flex-start", gap: "10px",
-                  padding: "10px 12px", borderRadius: 6,
+                  padding: "10px 12px", borderRadius: "var(--radius-sm)",
                   background: item.read ? "var(--bg-tertiary)" : "var(--bg-secondary)",
                   // 不用 border 简写：与 borderLeft 混用会在重渲染时互相覆盖（React 警告）
                   borderTop: `1px solid ${item.read ? "var(--border-primary)" : `${catConfig.color}44`}`,

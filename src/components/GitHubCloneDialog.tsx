@@ -137,7 +137,7 @@ return createPortal(
               style={{
                 width: "100%",
                 padding: "10px 14px",
-                borderRadius: "8px",
+                borderRadius: "var(--radius)",
                 border: "1px solid var(--border-primary, #333)",
                 background: "var(--input-bg, #1e1e2e)",
                 color: "var(--text-primary, #e0e0e0)",
@@ -151,7 +151,7 @@ return createPortal(
                 onClick={onClose}
                 style={{
                   padding: "8px 20px",
-                  borderRadius: "8px",
+                  borderRadius: "var(--radius)",
                   border: "none",
                   background: "var(--bg-hover, #2a2a3a)",
                   color: "var(--text-secondary, #888)",
@@ -166,7 +166,7 @@ return createPortal(
                 disabled={!url.trim()}
                 style={{
                   padding: "8px 20px",
-                  borderRadius: "8px",
+                  borderRadius: "var(--radius)",
                   border: "none",
                   background: url.trim() ? "var(--accent, #ff6b35)" : "var(--bg-hover, #2a2a3a)",
                   color: "var(--text-on-accent)",
@@ -209,7 +209,7 @@ return createPortal(
             <pre style={{
               background: "var(--bg-hover, #2a2a3a)",
               padding: "12px",
-              borderRadius: "8px",
+              borderRadius: "var(--radius)",
               fontSize: "var(--fs-sm)",
               color: "var(--error)",
               maxHeight: "150px",
@@ -224,7 +224,7 @@ return createPortal(
               style={{
                 marginTop: "12px",
                 padding: "8px 20px",
-                borderRadius: "8px",
+                borderRadius: "var(--radius)",
                 border: "none",
                 background: "var(--accent, #ff6b35)",
                 color: "var(--text-on-accent)",

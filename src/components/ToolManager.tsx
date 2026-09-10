@@ -129,7 +129,7 @@ export function ToolManager({ onClose }: ToolManagerProps) {
           onChange={(e) => setSearchQuery(e.target.value)}
           placeholder="搜索工具..."
           style={{
-            width: "100%", padding: "6px 12px", fontSize: 'var(--fs-base)', borderRadius: 6,
+            width: "100%", padding: "6px 12px", fontSize: 'var(--fs-base)', borderRadius: "var(--radius-sm)",
             border: "1px solid var(--border-primary)",
             background: "var(--bg-tertiary)", color: "var(--text-primary)",
           }}
@@ -175,7 +175,7 @@ export function ToolManager({ onClose }: ToolManagerProps) {
               key={tool.id}
               style={{
                 padding: "10px 12px",
-                borderRadius: 6,
+                borderRadius: "var(--radius-sm)",
                 background: "var(--bg-tertiary)",
                 marginBottom: 6,
                 border: "1px solid var(--border-primary)",
@@ -190,7 +190,7 @@ export function ToolManager({ onClose }: ToolManagerProps) {
                       {tool.id}
                     </span>
                     <span style={{
-                      fontSize: "var(--fs-xs)", padding: "1px 6px", borderRadius: 8,
+                      fontSize: "var(--fs-xs)", padding: "1px 6px", borderRadius: "var(--radius)",
                       background: catInfo.color + "20", color: catInfo.color,
                     }}>
                       {catInfo.label}
@@ -209,7 +209,7 @@ export function ToolManager({ onClose }: ToolManagerProps) {
                   onClick={() => toggleTool(tool.id, !enabled)}
                   title={enabled ? "点击禁用" : "点击启用"}
                   style={{
-                    width: "36px", height: "20px", borderRadius: "10px",
+                    width: "36px", height: "20px", borderRadius: "var(--radius-md)",
                     border: enabled ? "none" : "1px solid var(--border-primary)",
                     background: enabled ? "var(--accent)" : "var(--bg-hover)",
                     cursor: "pointer", position: "relative", flexShrink: 0,
@@ -244,7 +244,7 @@ export function ToolManager({ onClose }: ToolManagerProps) {
                   </div>
                   <div style={{
                     fontSize: 'var(--fs-sm)', color: "var(--text-muted)", marginBottom: 8,
-                    padding: 6, borderRadius: 4, background: "var(--bg-secondary)",
+                    padding: 6, borderRadius: "var(--radius-xs)", background: "var(--bg-secondary)",
                     whiteSpace: "pre-wrap", lineHeight: 1.5,
                   }}>
                     {tool.description}
@@ -261,7 +261,7 @@ export function ToolManager({ onClose }: ToolManagerProps) {
                           return (
                             <div key={name} style={{
                               display: "flex", gap: 8, fontSize: 'var(--fs-sm)',
-                              padding: "3px 6px", borderRadius: 4,
+                              padding: "3px 6px", borderRadius: "var(--radius-xs)",
                               background: "var(--bg-secondary)",
                             }}>
                               <span style={{
@@ -291,7 +291,7 @@ export function ToolManager({ onClose }: ToolManagerProps) {
       </div>
 
       <div style={{ padding: "8px 16px", fontSize: 'var(--fs-sm)', color: "var(--text-muted)", borderTop: "1px solid var(--border-primary)" }}>
-        <Lightbulb size={11} className="icon-inline-gap" />禁用的工具不会出现在 LLM 的可用工具列表中。内置工具禁用后可能影响核心功能。
+        <Lightbulb size={12} className="icon-inline-gap" />禁用的工具不会出现在 LLM 的可用工具列表中。内置工具禁用后可能影响核心功能。
       </div>
     </div>
   );

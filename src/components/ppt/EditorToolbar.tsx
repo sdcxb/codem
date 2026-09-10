@@ -126,7 +126,7 @@ export function EditorToolbar({
           <div style={{
             position: 'absolute', top: '100%', left: 0, marginTop: 4,
             width: 420, maxHeight: 400, overflowY: 'auto',
-            background: 'var(--bg-secondary, #252535)', border: '1px solid var(--border-primary, #3a3a4c)', borderRadius: 8,
+            background: 'var(--bg-secondary, #252535)', border: '1px solid var(--border-primary, #3a3a4c)', borderRadius: "var(--radius)",
             zIndex: "var(--z-top)", padding: 12,
             boxShadow: 'var(--shadow-popover, 0 8px 32px rgba(0,0,0,0.3))',
           }}>
@@ -134,7 +134,7 @@ export function EditorToolbar({
             <div style={{ display: 'flex', gap: 4, marginBottom: 10, flexWrap: 'wrap' }}>
               {categories.map(cat => (
                 <button key={cat} onClick={() => setStyleFilter(cat)} style={{
-                  padding: '3px 10px', borderRadius: 12, border: '1px solid', cursor: 'pointer', fontSize: 'var(--fs-sm)',
+                  padding: '3px 10px', borderRadius: "var(--radius-md)", border: '1px solid', cursor: 'pointer', fontSize: 'var(--fs-sm)',
                   background: styleFilter === cat ? 'var(--accent, #7c6cf0)' : 'transparent',
                   borderColor: styleFilter === cat ? 'var(--accent, #7c6cf0)' : 'var(--border-primary, #3a3a4c)',
                   color: styleFilter === cat ? 'var(--text-on-accent, #fff)' : 'var(--text-secondary, #a0a0b0)',
@@ -157,7 +157,7 @@ export function EditorToolbar({
                   });
                   setShowStyleMenu(false);
                 }} style={{
-                  cursor: 'pointer', borderRadius: 6, overflow: 'hidden', transition: 'all 0.15s',
+                  cursor: 'pointer', borderRadius: "var(--radius-sm)", overflow: 'hidden', transition: 'all 0.15s',
                   border: currentTheme.id === style.id ? '2px solid var(--accent, #7c6cf0)' : '2px solid transparent',
                 }}>
                   <div style={{ height: 50, background: style.backgroundGradient || style.colors.background, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -179,7 +179,7 @@ export function EditorToolbar({
         {showExportMenu && (
           <div style={{
             position: 'absolute', top: '100%', right: 0, marginTop: 4,
-            width: 180, background: 'var(--bg-secondary, #252535)', border: '1px solid var(--border-primary, #3a3a4c)', borderRadius: 8,
+            width: 180, background: 'var(--bg-secondary, #252535)', border: '1px solid var(--border-primary, #3a3a4c)', borderRadius: "var(--radius)",
             zIndex: "var(--z-top)", padding: 4,
             boxShadow: 'var(--shadow-popover, 0 8px 32px rgba(0,0,0,0.3))',
           }}>

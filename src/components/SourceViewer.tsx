@@ -192,7 +192,7 @@ export function SourceViewer({
               flex: 1,
               background: 'var(--bg-primary)',
               border: '1px solid var(--border-primary)',
-              borderRadius: '4px',
+              borderRadius: "var(--radius-xs)",
               padding: '4px 8px',
               color: 'var(--text-primary)',
               fontSize: 'var(--fs-sm)',
@@ -249,7 +249,7 @@ export function SourceViewer({
                       border: isHighlighted
                         ? '1px solid var(--match-highlight)'
                         : '1px solid var(--border-primary)',
-                      borderRadius: '8px',
+                      borderRadius: "var(--radius)",
                     }}
                   >
                     <div style={{

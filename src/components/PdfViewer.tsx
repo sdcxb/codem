@@ -272,7 +272,7 @@ export function PdfViewer({ filePath, pdfData, highlightText, onClose }: PdfView
             disabled={currentPage <= 1}
             style={{
               background: 'none', border: '1px solid var(--border-primary)',
-              borderRadius: '4px', padding: '3px 6px', cursor: currentPage <= 1 ? 'default' : 'pointer',
+              borderRadius: "var(--radius-xs)", padding: '3px 6px', cursor: currentPage <= 1 ? 'default' : 'pointer',
               opacity: currentPage <= 1 ? 0.3 : 1, color: 'var(--text-secondary, #a0a0a8)',
             }}
           >
@@ -286,7 +286,7 @@ export function PdfViewer({ filePath, pdfData, highlightText, onClose }: PdfView
             disabled={currentPage >= numPages}
             style={{
               background: 'none', border: '1px solid var(--border-primary)',
-              borderRadius: '4px', padding: '3px 6px', cursor: currentPage >= numPages ? 'default' : 'pointer',
+              borderRadius: "var(--radius-xs)", padding: '3px 6px', cursor: currentPage >= numPages ? 'default' : 'pointer',
               opacity: currentPage >= numPages ? 0.3 : 1, color: 'var(--text-secondary, #a0a0a8)',
             }}
           >
@@ -295,7 +295,7 @@ export function PdfViewer({ filePath, pdfData, highlightText, onClose }: PdfView
           <div style={{ width: '1px', height: '16px', background: 'var(--border-primary)' }} />
           <button
             onClick={() => setScale(Math.max(0.5, scale - 0.2))}
-            style={{ background: 'none', border: '1px solid var(--border-primary)', borderRadius: '4px', padding: '3px 6px', cursor: 'pointer', color: 'var(--text-secondary, #a0a0a8)' }}
+            style={{ background: 'none', border: '1px solid var(--border-primary)', borderRadius: "var(--radius-xs)", padding: '3px 6px', cursor: 'pointer', color: 'var(--text-secondary, #a0a0a8)' }}
           >
             <ZoomOut size={14} />
           </button>
@@ -304,7 +304,7 @@ export function PdfViewer({ filePath, pdfData, highlightText, onClose }: PdfView
           </span>
           <button
             onClick={() => setScale(Math.min(3, scale + 0.2))}
-            style={{ background: 'none', border: '1px solid var(--border-primary)', borderRadius: '4px', padding: '3px 6px', cursor: 'pointer', color: 'var(--text-secondary, #a0a0a8)' }}
+            style={{ background: 'none', border: '1px solid var(--border-primary)', borderRadius: "var(--radius-xs)", padding: '3px 6px', cursor: 'pointer', color: 'var(--text-secondary, #a0a0a8)' }}
           >
             <ZoomIn size={14} />
           </button>
@@ -319,7 +319,7 @@ export function PdfViewer({ filePath, pdfData, highlightText, onClose }: PdfView
               style={{
                 background: 'var(--bg-primary, #0f0f10)',
                 border: '1px solid var(--border-primary)',
-                borderRadius: '4px',
+                borderRadius: "var(--radius-xs)",
                 padding: '3px 6px',
                 color: 'var(--text-primary, #e0e0e4)',
                 fontSize: 'var(--fs-xs)',

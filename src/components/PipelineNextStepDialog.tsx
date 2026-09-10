@@ -54,7 +54,7 @@ export const PipelineNextStepDialog = memo(function PipelineNextStepDialog({
       <div className="pipeline-dialog">
         <div className="pipeline-header">
           <h3>{S.pipeline.title[lang]}</h3>
-          <button className="pipeline-close" onClick={onDismiss}><CloseIcon size={18} /></button>
+          <button className="pipeline-close" onClick={onDismiss}><CloseIcon size={16} /></button>
         </div>
 
         <div className="pipeline-content">

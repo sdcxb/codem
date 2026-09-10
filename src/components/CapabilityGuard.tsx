@@ -60,7 +60,7 @@ export function CapabilityGuard({ feature, children, fallbackRender = true, onUn
               padding: '6px 10px',
               background: 'color-mix(in srgb, var(--warning) 10%, transparent)',
               border: '1px solid color-mix(in srgb, var(--warning) 30%, transparent)',
-              borderRadius: '6px',
+              borderRadius: "var(--radius-sm)",
               fontSize: 'var(--fs-xs)',
               color: 'var(--text-secondary, #a0a0a8)',
               lineHeight: '1.4',

@@ -133,7 +133,7 @@ export function PluginMarketTab({ manager, zh, onToggle, notify }: Props) {
         </div>
         <button
           className="save-btn"
-          style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', background: 'var(--bg-tertiary)', color: 'var(--text-primary)', border: '1px solid var(--border-primary)', borderRadius: 6, cursor: 'pointer', fontSize: 'var(--fs-sm)', flexShrink: 0 }}
+          style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', background: 'var(--bg-tertiary)', color: 'var(--text-primary)', border: '1px solid var(--border-primary)', borderRadius: "var(--radius-sm)", cursor: 'pointer', fontSize: 'var(--fs-sm)', flexShrink: 0 }}
           onClick={handleOnlineSearch}
           disabled={searching}
         >
@@ -220,7 +220,7 @@ export function PluginMarketTab({ manager, zh, onToggle, notify }: Props) {
                     <button
                       className="save-btn"
                       disabled
-                      style={{ flexShrink: 0, background: 'var(--bg-tertiary)', color: 'var(--text-muted)', border: '1px solid var(--border-primary)', padding: '4px 12px', borderRadius: 6, fontSize: 'var(--fs-xs)', cursor: 'not-allowed' }}
+                      style={{ flexShrink: 0, background: 'var(--bg-tertiary)', color: 'var(--text-muted)', border: '1px solid var(--border-primary)', padding: '4px 12px', borderRadius: "var(--radius-sm)", fontSize: 'var(--fs-xs)', cursor: 'not-allowed' }}
                     >
                       {zh ? '启用中…' : 'Enabling…'}
                     </button>
@@ -228,7 +228,7 @@ export function PluginMarketTab({ manager, zh, onToggle, notify }: Props) {
                     <button
                       className="save-btn"
                       disabled
-                      style={{ flexShrink: 0, background: 'var(--bg-tertiary)', color: 'var(--text-muted)', border: '1px solid var(--border-primary)', padding: '4px 12px', borderRadius: 6, fontSize: 'var(--fs-xs)', cursor: 'not-allowed' }}
+                      style={{ flexShrink: 0, background: 'var(--bg-tertiary)', color: 'var(--text-muted)', border: '1px solid var(--border-primary)', padding: '4px 12px', borderRadius: "var(--radius-sm)", fontSize: 'var(--fs-xs)', cursor: 'not-allowed' }}
                       title={zh ? '核心内置插件，不可卸载' : 'Core built-in plugin, cannot be disabled'}
                     >
                       {zh ? '已启用（核心）' : 'Enabled (core)'}
@@ -236,7 +236,7 @@ export function PluginMarketTab({ manager, zh, onToggle, notify }: Props) {
                   ) : (
                     <button
                       className="save-btn"
-                      style={{ flexShrink: 0, background: isEnabled ? 'var(--bg-tertiary)' : 'var(--accent)', color: isEnabled ? 'var(--text-primary)' : 'var(--text-on-accent)', border: '1px solid var(--border-primary)', padding: '4px 12px', borderRadius: 6, cursor: 'pointer', fontSize: 'var(--fs-xs)' }}
+                      style={{ flexShrink: 0, background: isEnabled ? 'var(--bg-tertiary)' : 'var(--accent)', color: isEnabled ? 'var(--text-primary)' : 'var(--text-on-accent)', border: '1px solid var(--border-primary)', padding: '4px 12px', borderRadius: "var(--radius-sm)", cursor: 'pointer', fontSize: 'var(--fs-xs)' }}
                       onClick={() => handleInstallBundled(entry)}
                     >
                       {isEnabled ? (zh ? '禁用' : 'Disable') : (zh ? '安装并启用' : 'Install')}
@@ -266,7 +266,7 @@ export function PluginMarketTab({ manager, zh, onToggle, notify }: Props) {
           </div>
           {online.map(p => (
             <div key={p.name} style={{ padding: '4px 12px', display: 'flex', gap: 6, alignItems: 'center', fontSize: 'var(--fs-xs)', borderTop: '1px solid var(--border-primary)' }}>
-              <CommonIcons.info size={11} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+              <CommonIcons.info size={12} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
               <span style={{ fontFamily: 'monospace', color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '40%' }}>{p.name}</span>
               <span style={{ color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{p.description || '—'}</span>
             </div>

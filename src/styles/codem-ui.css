@@ -223,7 +223,7 @@
   height: 22px;
   padding: 0;
   border: 1px solid var(--border-primary);
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
   background: var(--bg-secondary);
   color: var(--text-muted);
   cursor: pointer;
@@ -819,7 +819,7 @@
   white-space: pre-wrap;
   word-break: break-word;
   color: var(--text-primary);
-  border-radius: 0 0 8px 8px;
+  border-radius: 0 0 var(--radius) var(--radius);
 }
 
 /* ========== 4. Stream Animation ========== */
@@ -1059,7 +1059,7 @@
   align-items: center;
   gap: var(--space-3);
   padding: var(--space-2) var(--space-5) var(--space-2) var(--space-2);
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   border: 1px solid var(--border-primary);
   background: var(--bg-secondary);
   font-size: var(--fs-sm);
@@ -1132,7 +1132,7 @@
 .tool-pill-detail {
   margin-top: var(--space-2);
   margin-left: var(--space-10);
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   border: 1px solid var(--border-primary);
   background: var(--bg-secondary);
   overflow: hidden;
@@ -1176,7 +1176,7 @@
   font-size: var(--fs-sm);
   color: var(--text-secondary);
   transition: var(--transition-color);
-  border-radius: 8px;
+  border-radius: var(--radius);
 }
 
 .tool-group-header-inline:is(:hover, :focus-visible) {
@@ -2613,7 +2613,7 @@ body.resizing-columns * {
   background: transparent;
   color: var(--text-secondary);
   cursor: pointer;
-  border-radius: var(--radius-sm, 6px);
+  border-radius: var(--radius-sm);
   font-size: var(--fs-base);
   text-align: left;
   transition: var(--transition-color);
@@ -2934,7 +2934,7 @@ body.resizing-columns * {
 *:focus-visible {
   outline: 2px solid var(--accent, #7c6cf0);
   outline-offset: 2px;
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
 }
 button:focus-visible,
 a:focus-visible,
@@ -2967,7 +2967,7 @@ select:focus-visible,
 .hub-agent-card {
   background: var(--bg-tertiary, transparent);
   border: 1px solid var(--border-primary, transparent);
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   padding: var(--space-8);
   margin: var(--space-4) var(--space-6);
   margin-bottom: var(--space-8);
@@ -3018,7 +3018,7 @@ select:focus-visible,
 .hub-task-item {
   background: var(--bg-tertiary, transparent);
   border: 1px solid var(--border-primary, transparent);
-  border-radius: 8px;
+  border-radius: var(--radius);
   padding: var(--space-5);
   display: flex;
   align-items: flex-start;
@@ -3031,7 +3031,7 @@ select:focus-visible,
 .hub-task-icon {
   width: 32px;
   height: 32px;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -3073,7 +3073,7 @@ select:focus-visible,
 .hub-task-tags span {
   font-size: var(--fs-xs);
   padding: 1px var(--space-3);
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
   background: var(--bg-hover, rgba(255,255,255,0.05));
   color: var(--text-muted);
 }
@@ -3123,7 +3123,7 @@ select:focus-visible,
   padding: var(--space-2) var(--space-4);
   font-size: var(--fs-sm);
   border: 1px solid transparent;
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
@@ -3213,7 +3213,7 @@ border-radius: 2px;
   background: transparent;
   border: none;
   border-bottom: 2px solid transparent;
-  border-radius: 4px 4px 0 0;
+  border-radius: var(--radius-xs) var(--radius-xs) 0 0;
   cursor: pointer;
   transition: color var(--duration-fast), background var(--duration-fast), border-color var(--duration-fast);
   flex-shrink: 0;
@@ -3247,7 +3247,7 @@ border-radius: 2px;
   border: none;
   color: var(--text-muted);
   cursor: pointer;
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
   transition: color var(--duration-fast), background var(--duration-fast);
 }
 .panel-sidebar-close:is(:hover, :focus-visible) {
@@ -3789,7 +3789,7 @@ background: var(--bg-secondary);
 .tool-card {
   overflow: hidden;
   border: 1px solid var(--border-primary);
-  border-radius: var(--radius-xs);
+  border-radius: var(--radius);
   font-size: var(--fs-sm);
 }
 .tool-card--scroll { max-height: 300px; overflow-y: auto; }
@@ -3900,7 +3900,7 @@ background: var(--bg-secondary);
   flex-direction: column;
   gap: var(--space-1);
   padding: var(--space-3) var(--space-4);
-  border-radius: var(--radius-xs);
+  border-radius: var(--radius);
   background: var(--bg-tertiary);
 }
 .websearch-item-row { display: flex; align-items: center; gap: var(--space-2); }
@@ -3931,7 +3931,7 @@ background: var(--bg-secondary);
 .tool-io-card {
   overflow: hidden;
   border: 1px solid var(--border-primary);
-  border-radius: var(--radius-xs);
+  border-radius: var(--radius);
 }
 .tool-io-card--stacked { margin-top: var(--space-2); }
 .tool-io-section { display: flex; gap: var(--space-4); }

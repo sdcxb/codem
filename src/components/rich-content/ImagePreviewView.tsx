@@ -29,7 +29,7 @@ export const ImagePreviewView = memo(function ImagePreviewView({
         <div className="content-fullscreen image-fullscreen" onClick={(e) => e.stopPropagation()}>
           <div className="content-fullscreen-header">
             <span className="content-fullscreen-title">{title || alt || "图片"}</span>
-            <button className="content-fullscreen-close" onClick={() => setFullscreen(false)}><CloseIcon size={18} /></button>
+            <button className="content-fullscreen-close" onClick={() => setFullscreen(false)}><CloseIcon size={16} /></button>
           </div>
           <div className="content-fullscreen-body image-fullscreen-body">
             <img src={src} alt={alt} className="image-fullscreen-img" />

@@ -179,7 +179,7 @@ export function DocxViewer({ filePath, data, onClose, onSaveAsNote, highlightTex
                 title={isZh ? '保存为笔记' : 'Save as Note'}
                 style={{
                   background: 'none', border: '1px solid var(--border-primary)',
-                  borderRadius: '4px', padding: '4px 8px', cursor: 'pointer',
+                  borderRadius: "var(--radius-xs)", padding: '4px 8px', cursor: 'pointer',
                   color: 'var(--text-secondary, #a0a0a8)', fontSize: 'var(--fs-xs)',
                   display: 'flex', alignItems: 'center', gap: '4px',
                 }}
@@ -193,7 +193,7 @@ export function DocxViewer({ filePath, data, onClose, onSaveAsNote, highlightTex
               title={isZh ? '复制文本' : 'Copy Text'}
               style={{
                 background: 'none', border: '1px solid var(--border-primary)',
-                borderRadius: '4px', padding: '4px 8px', cursor: 'pointer',
+                borderRadius: "var(--radius-xs)", padding: '4px 8px', cursor: 'pointer',
                 color: 'var(--text-secondary, #a0a0a8)', fontSize: 'var(--fs-xs)',
                 display: 'flex', alignItems: 'center', gap: '4px',
               }}
@@ -225,7 +225,7 @@ export function DocxViewer({ filePath, data, onClose, onSaveAsNote, highlightTex
               flex: 1,
               background: 'var(--bg-primary, #0f0f10)',
               border: '1px solid var(--border-primary)',
-              borderRadius: '4px',
+              borderRadius: "var(--radius-xs)",
               padding: '4px 8px',
               color: 'var(--text-primary, #e0e0e4)',
               fontSize: 'var(--fs-sm)',

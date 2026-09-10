@@ -165,7 +165,7 @@ export function AgentManager({ onClose }: { onClose: () => void }) {
           <span>{zh ? "智能体定义管理" : "Agent Management"}</span>
         </div>
         <button className="skill-manager-close" onClick={onClose}>
-          <CloseIcon size={18} />
+          <CloseIcon size={16} />
         </button>
       </div>
 

@@ -68,14 +68,14 @@ export function OllamaSettingsPanel() {
   return (
     <div className="settings-section">
       <h3 style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
-        <Server size={18} />
+        <Server size={16} />
         {S.ollama.settingsTitle[lang]}
       </h3>
 
       {/* Info banner */}
       <div style={{
         padding: "8px 12px",
-        borderRadius: 8,
+        borderRadius: "var(--radius)",
         background: "var(--accent-soft, rgba(124,58,237,0.1))",
         border: "1px solid var(--accent, #7c3aed)40",
         marginBottom: 16,
@@ -132,7 +132,7 @@ export function OllamaSettingsPanel() {
       {/* Connection Status */}
       <div style={{
         padding: "10px 12px",
-        borderRadius: 8,
+        borderRadius: "var(--radius)",
         background: "var(--bg-secondary, #181825)",
         border: "1px solid var(--border-primary)",
         marginBottom: 16,
@@ -194,7 +194,7 @@ export function OllamaSettingsPanel() {
               {models.map(m => (
                 <div key={m.id} style={{
                   display: "flex", alignItems: "center", gap: 8,
-                  padding: "6px 10px", borderRadius: 6,
+                  padding: "6px 10px", borderRadius: "var(--radius-sm)",
                   background: "var(--bg-secondary, #181825)",
                   border: "1px solid var(--border-primary)",
                   fontSize: 'var(--fs-sm)',
@@ -205,7 +205,7 @@ export function OllamaSettingsPanel() {
                     ctx: {(m.contextWindow / 1000).toFixed(0)}K
                   </span>
                   {m.supportsTools && (
-                    <span style={{ fontSize: 'var(--fs-xs)', padding: "1px 6px", borderRadius: 4, background: "color-mix(in srgb, var(--success) 15%, transparent)", color: "var(--success)" }}>
+                    <span style={{ fontSize: 'var(--fs-xs)', padding: "1px 6px", borderRadius: "var(--radius-xs)", background: "color-mix(in srgb, var(--success) 15%, transparent)", color: "var(--success)" }}>
                       tools
                     </span>
                   )}
@@ -229,7 +229,7 @@ const inputStyle: React.CSSProperties = {
   padding: "6px 10px",
   background: "var(--bg-secondary, #181825)",
   border: "1px solid var(--border-primary)",
-  borderRadius: 6,
+  borderRadius: "var(--radius-sm)",
   color: "inherit",
   fontSize: 'var(--fs-base)',
   fontFamily: "'Cascadia Code', monospace",
@@ -240,7 +240,7 @@ const btnStyle: React.CSSProperties = {
   alignItems: "center",
   gap: 4,
   padding: "4px 10px",
-  borderRadius: 6,
+  borderRadius: "var(--radius-sm)",
   fontSize: 'var(--fs-sm)',
   cursor: "pointer",
   border: "1px solid var(--border-primary)",

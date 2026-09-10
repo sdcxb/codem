@@ -489,13 +489,13 @@ export function LibraryScene({
           </span>
         </span>
         <button className="lo-hud-btn" onClick={() => zoomBy(1.25)} title="放大" aria-label="放大">
-          <LoIcon name="plus" size={13} />
+          <LoIcon name="plus" size={14} />
         </button>
         <button className="lo-hud-btn" onClick={() => zoomBy(0.8)} title="缩小" aria-label="缩小">
-          <LoIcon name="minus" size={13} />
+          <LoIcon name="minus" size={14} />
         </button>
         <button className="lo-hud-btn" onClick={fitView} title="适应窗口（双击场景同效）" aria-label="适应窗口">
-          <LoIcon name="maximize-2" size={13} />
+          <LoIcon name="maximize-2" size={14} />
         </button>
         <span className="lo-scene__hint">滚轮缩放 · 拖拽平移 · 双击复位</span>
       </div>

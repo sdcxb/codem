@@ -84,7 +84,7 @@ export function LibraryPanel({ snapshot, zh }: LibraryPanelProps) {
           {/* 去重说明：场景与「子智能体」「团队」页签是同一份数据的两种表达，
               这里只做可视化，不再重复提供明细列表。 */}
           <p className="lo-note" style={{ margin: "0 0 8px" }}>
-            <LoIcon name="users" size={11} />{" "}
+            <LoIcon name="users" size={12} />{" "}
             {zh
               ? "场景 = 子智能体 / 团队的可视化视图（同一份数据）；明细列表见「子智能体」「团队」页签。"
               : "Scene = a visual view of the same Sub-agents / Teams data; see those tabs for detail lists."}
@@ -218,7 +218,7 @@ export function LibraryPanel({ snapshot, zh }: LibraryPanelProps) {
                   title={zone.duty}
                   onClick={() => selectZone(zone.id === selectedZoneId ? null : zone.id)}
                 >
-                  <span className="lo-zones__icon"><LoIcon name={zone.icon} size={13} /></span>
+                  <span className="lo-zones__icon"><LoIcon name={zone.icon} size={14} /></span>
                   <span className="lo-zones__name">{zh ? zone.name : zone.nameEn}</span>
                   <span className="lo-zones__count" style={{ color: over ? "var(--warning)" : `var(${zone.token})` }}>
                     {count}/{zone.capacity}

@@ -146,7 +146,7 @@ export function LibraryOpsViewShell({
       {error && (
         <div className="lo-task__error">
           <Pill token="--error">
-            <LoIcon name="triangle-alert" size={11} /> {zh ? "采样失败" : "Sample failed"}
+            <LoIcon name="triangle-alert" size={12} /> {zh ? "采样失败" : "Sample failed"}
           </Pill>
           <span>{error}</span>
         </div>

@@ -730,7 +730,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
       <div className="settings-panel" role="dialog" aria-modal="true" aria-label="设置" onClick={(e) => e.stopPropagation()}>
         <div className="settings-header">
           <h3>{S.settings.title[lang]}</h3>
-          <button className="settings-close" onClick={onClose}><X size={18} /></button>
+          <button className="settings-close" onClick={onClose}><X size={16} /></button>
         </div>
 
         <div className="settings-body">
@@ -1354,7 +1354,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
                     title={lang === "zh" ? "删除此 Provider" : "Remove this provider"}
                     className="sp-btn sp-btn--icon"
                   >
-                    <Trash2 size={13} />
+                    <Trash2 size={14} />
                   </button>
                 )}
               </div>
@@ -1443,7 +1443,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
                           title={lang === "zh" ? "移除" : "Remove"}
                           className="sp-btn sp-btn--icon sp-btn--flush"
                         >
-                          <X size={11} />
+                          <X size={12} />
                         </button>
                       </span>
                     ))}
@@ -2039,7 +2039,7 @@ function PetSettingsSection({ lang, onOpenMarket }: { lang: Language; onOpenMark
 
           {/* 提示 */}
           <div className="sp-callout">
-            <Lightbulb size={11} className="icon-inline" /> {zh ? "提示：可以直接拖拽窗口中的宠物来移动位置。空闲时点击宠物有彩蛋。" : "Tip: Drag the pet in the window to reposition. Click the pet when idle for a surprise."}
+            <Lightbulb size={12} className="icon-inline" /> {zh ? "提示：可以直接拖拽窗口中的宠物来移动位置。空闲时点击宠物有彩蛋。" : "Tip: Drag the pet in the window to reposition. Click the pet when idle for a surprise."}
           </div>
         </>
       )}
@@ -2476,7 +2476,7 @@ function NotebookSettingsSection() {
   const inputStyle: React.CSSProperties = {
     width: '100%',
     padding: '6px 10px',
-    borderRadius: 6,
+    borderRadius: "var(--radius-sm)",
     border: '1px solid var(--border-primary)',
     background: 'var(--bg-secondary)',
     color: 'var(--text-primary)',

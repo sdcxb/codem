@@ -52,7 +52,7 @@ export function AssetsPanel({ engine, playerId, onClose }: Props) {
         </div>
 
         {/* 总资产概览 */}
-        <div style={{ background: "rgba(241, 196, 15, 0.1)", borderRadius: 8, padding: 12, marginBottom: 12 }}>
+        <div style={{ background: "rgba(241, 196, 15, 0.1)", borderRadius: "var(--radius)", padding: 12, marginBottom: 12 }}>
           <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
             <span style={{ color: "#bdc3c7" }}>现金</span>
             <span style={{ color: "#ecf0f1" }}>¥{player.cash.toLocaleString()}</span>

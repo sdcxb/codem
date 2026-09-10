@@ -66,7 +66,7 @@ export function BankPanel({ engine, onClose }: Props) {
             value={amount}
             onChange={e => setAmount(e.target.value)}
             placeholder="金额"
-            style={{ flex: 1, padding: "6px 8px", borderRadius: 4, border: "1px solid #2c3e50", background: "#1a1a2e", color: "#ecf0f1" }}
+            style={{ flex: 1, padding: "6px 8px", borderRadius: "var(--radius-xs)", border: "1px solid #2c3e50", background: "#1a1a2e", color: "#ecf0f1" }}
           />
           <button onClick={handleAction} className="action-btn primary" style={{ marginLeft: 8 }}>确认</button>
         </div>

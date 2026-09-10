@@ -63,7 +63,7 @@ export const CodeBlockView = memo(function CodeBlockView({
         <div className="content-fullscreen" onClick={(e) => e.stopPropagation()}>
           <div className="content-fullscreen-header">
             <span className="content-fullscreen-title">{language || "code"}</span>
-            <button className="content-fullscreen-close" onClick={() => setFullscreen(false)}><CloseIcon size={18} /></button>
+            <button className="content-fullscreen-close" onClick={() => setFullscreen(false)}><CloseIcon size={16} /></button>
           </div>
           <div className="content-fullscreen-body">
             <SyntaxHighlighter

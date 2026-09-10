@@ -3189,7 +3189,7 @@ notebookId={activeNotebookId || undefined}
 {bottomTab === "terminal" && (
 <div className="terminal-drawer">
   <div className="terminal-drawer-header">
-    <span className="terminal-drawer-title"><Terminal size={13} /> {lang === "zh" ? "终端" : "Terminal"}</span>
+    <span className="terminal-drawer-title"><Terminal size={14} /> {lang === "zh" ? "终端" : "Terminal"}</span>
     <button
       className="terminal-drawer-close"
       onClick={() => setBottomTab("chat")}
@@ -3313,7 +3313,7 @@ notebookId={activeNotebookId || undefined}
 {bottomTab === "terminal" && (
 <div className="terminal-drawer">
   <div className="terminal-drawer-header">
-    <span className="terminal-drawer-title"><Terminal size={13} /> {lang === "zh" ? "终端" : "Terminal"}</span>
+    <span className="terminal-drawer-title"><Terminal size={14} /> {lang === "zh" ? "终端" : "Terminal"}</span>
     <button
       className="terminal-drawer-close"
       onClick={() => setBottomTab("chat")}
@@ -3480,7 +3480,7 @@ notebookId={activeNotebookId || undefined}
 {bottomTab === "terminal" && (
 <div className="terminal-drawer">
   <div className="terminal-drawer-header">
-    <span className="terminal-drawer-title"><Terminal size={13} /> {lang === "zh" ? "终端" : "Terminal"}</span>
+    <span className="terminal-drawer-title"><Terminal size={14} /> {lang === "zh" ? "终端" : "Terminal"}</span>
     <button
       className="terminal-drawer-close"
       onClick={() => setBottomTab("chat")}
@@ -3797,14 +3797,14 @@ onClose={() => setCitationViewer(null)}
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 8 }}>
                 <button
-                  style={{ padding: "10px 16px", borderRadius: 6, border: "1px solid var(--border-primary)", background: "var(--bg-tertiary)", color: "var(--text-primary)", cursor: "pointer", fontSize: 'var(--fs-base)', textAlign: "left" }}
+                  style={{ padding: "10px 16px", borderRadius: "var(--radius-sm)", border: "1px solid var(--border-primary)", background: "var(--bg-tertiary)", color: "var(--text-primary)", cursor: "pointer", fontSize: 'var(--fs-base)', textAlign: "left" }}
                   onClick={() => { useProjectStore.getState().deleteProject(id); setRemoveProjectDialog(null); }}
                 >
                   <span style={{ fontWeight: 600 }}>📁 {lang === "zh" ? "仅移除项目" : "Remove Only"}</span>
                   <div style={{ fontSize: 'var(--fs-sm)', opacity: 0.7, marginTop: 2 }}>{lang === "zh" ? "从列表移除，不删除文件" : "Remove from list, keep files"}</div>
                 </button>
                 <button
-                  style={{ padding: "10px 16px", borderRadius: 6, border: "1px solid var(--error)", background: "none", color: "var(--error)", cursor: "pointer", fontSize: 'var(--fs-base)', textAlign: "left" }}
+                  style={{ padding: "10px 16px", borderRadius: "var(--radius-sm)", border: "1px solid var(--error)", background: "none", color: "var(--error)", cursor: "pointer", fontSize: 'var(--fs-base)', textAlign: "left" }}
                   onClick={async () => {
                     try {
                       const { invoke } = (window as any).__TAURI__.core;
@@ -3822,7 +3822,7 @@ onClose={() => setCitationViewer(null)}
               </div>
               <button
                 className="confirm-btn cancel"
-                style={{ width: "100%", padding: "8px 16px", borderRadius: 6 }}
+                style={{ width: "100%", padding: "8px 16px", borderRadius: "var(--radius-sm)" }}
                 onClick={() => setRemoveProjectDialog(null)}
               >
                 {lang === "zh" ? "取消" : "Cancel"}

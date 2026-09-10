@@ -87,7 +87,7 @@ export function ModelSelector({ model, models, onModelChange, locked = false }: 
           opacity: locked ? 0.5 : 1,
         }}
       >
-        <Cpu size={13} />
+        <Cpu size={14} />
         <span>{currentModelName}</span>
         <ChevronDown size={10} style={{ opacity: 0.5 }} />
       </button>

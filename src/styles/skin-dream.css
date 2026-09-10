@@ -201,7 +201,7 @@
 
 /* Bug5: 梦幻皮肤 — 边栏圆角+毛玻璃，不再单独设 margin（由 app-content 的 padding 统一控制） */
 [data-skin="dream"] .sidebar {
-  border-radius: var(--radius, 12px) !important;
+  border-radius: var(--radius) !important;
   border: 1px solid var(--dream-border-color, rgba(232, 140, 154, 0.15)) !important;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
   margin: 0 !important;
@@ -210,7 +210,7 @@
 [data-skin="dream"] .main-area {
   margin: 0 !important;
   overflow: hidden;
-  border-radius: var(--radius, 12px);
+  border-radius: var(--radius);
 }
 
 [data-skin="dream"] .right-sidebar {
@@ -218,7 +218,7 @@
   backdrop-filter: blur(var(--dream-blur-px, 12px)) !important;
   -webkit-backdrop-filter: blur(var(--dream-blur-px, 12px)) !important;
   border: 1px solid var(--dream-border-color, rgba(0, 0, 0, 0.12)) !important;
-  border-radius: var(--radius, 12px) !important;
+  border-radius: var(--radius) !important;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
   margin: 0 !important;
 }
@@ -231,7 +231,7 @@
   backdrop-filter: blur(var(--dream-blur-px, 12px)) !important;
   -webkit-backdrop-filter: blur(var(--dream-blur-px, 12px)) !important;
   border: 1px solid var(--dream-border-color, rgba(0, 0, 0, 0.12)) !important;
-  border-radius: var(--radius, 12px) !important;
+  border-radius: var(--radius) !important;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
   margin: 0 !important;
   overflow: hidden;
@@ -300,7 +300,7 @@ background: rgba(0, 0, 0, 0.04) !important;
 backdrop-filter: blur(var(--dream-blur-px, 12px));
 -webkit-backdrop-filter: blur(var(--dream-blur-px, 12px));
 border: 1px solid rgba(0, 0, 0, 0.08) !important;
-border-radius: 16px !important;
+border-radius: var(--radius-lg) !important;
 box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
 }
 
@@ -388,7 +388,7 @@ backdrop-filter: none !important;
   backdrop-filter: blur(var(--dream-blur-px, 12px));
   -webkit-backdrop-filter: blur(var(--dream-blur-px, 12px));
   border: 1px solid var(--dream-border-color, rgba(0, 0, 0, 0.1));
-  border-radius: 8px;
+  border-radius: var(--radius);
   color: var(--dream-text-main, #1a1a2e);
 }
 
@@ -399,7 +399,7 @@ backdrop-filter: none !important;
   backdrop-filter: blur(var(--dream-blur-px, 12px));
   -webkit-backdrop-filter: blur(var(--dream-blur-px, 12px));
   border: 1px solid var(--dream-border-color, rgba(0, 0, 0, 0.1));
-  border-radius: 8px;
+  border-radius: var(--radius);
   color: var(--dream-text-main, #1a1a2e);
 }
 
@@ -489,7 +489,7 @@ backdrop-filter: none !important;
 
 [data-skin="dream"] ::-webkit-scrollbar-thumb {
   background: rgba(232, 140, 154, 0.3);
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
 }
 
 [data-skin="dream"] ::-webkit-scrollbar-thumb:is(:hover, :focus-visible) {
@@ -559,7 +559,7 @@ backdrop-filter: none !important;
   backdrop-filter: blur(var(--dream-blur-px, 12px));
   -webkit-backdrop-filter: blur(var(--dream-blur-px, 12px));
   border: 1px solid var(--dream-border-color, rgba(0, 0, 0, 0.12));
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
   padding: var(--space-5) var(--space-6);
   color: var(--dream-text-main, #1a1a2e) !important;
@@ -579,7 +579,7 @@ backdrop-filter: none !important;
   backdrop-filter: blur(var(--dream-blur-px, 12px));
   -webkit-backdrop-filter: blur(var(--dream-blur-px, 12px));
   border: 1px solid var(--dream-border-color, rgba(0, 0, 0, 0.12));
-  border-radius: 8px;
+  border-radius: var(--radius);
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
   color: var(--dream-text-main, #1a1a2e) !important;
 }
@@ -844,7 +844,7 @@ backdrop-filter: none !important;
   backdrop-filter: blur(var(--dream-blur-px, 12px)) saturate(1.4);
   -webkit-backdrop-filter: blur(var(--dream-blur-px, 12px)) saturate(1.4);
   border: 1px solid var(--dream-border-color, rgba(232, 140, 154, 0.20));
-  border-radius: 16px;
+  border-radius: var(--radius-lg);
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08), 0 0 0 1px rgba(232, 140, 154, 0.06);
 }
 [data-skin="dream"] .inline-diff-review:is(:hover, :focus-visible) {
@@ -938,7 +938,7 @@ backdrop-filter: none !important;
   background: var(--dream-bg-card, rgba(255, 255, 255, 0.80));
   border: 1px solid var(--dream-border-color, rgba(232, 140, 154, 0.20));
   color: var(--dream-text-main, #6c474d);
-  border-radius: 10px;
+  border-radius: var(--radius-md);
 }
 [data-skin="dream"] .inline-diff-custom-textarea:focus {
   border-color: var(--dream-accent, #e88c9a);
@@ -955,7 +955,7 @@ backdrop-filter: none !important;
 [data-skin="dream"] .inline-diff-btn.accept {
   background: rgba(46, 204, 113, 0.85);
   color: white;
-  border-radius: 10px;
+  border-radius: var(--radius-md);
 }
 [data-skin="dream"] .inline-diff-btn.accept:is(:hover, :focus-visible) {
   background: #22c55e;
@@ -966,7 +966,7 @@ backdrop-filter: none !important;
   background: rgba(255, 255, 255, 0.40);
   color: var(--dream-text-main, #6c474d);
   border: 1px solid var(--dream-border-color, rgba(232, 140, 154, 0.20));
-  border-radius: 10px;
+  border-radius: var(--radius-md);
 }
 [data-skin="dream"][data-theme="dark"] .inline-diff-btn.reject {
   background: rgba(30, 30, 46, 0.40);
@@ -976,7 +976,7 @@ backdrop-filter: none !important;
 [data-skin="dream"] .inline-diff-btn.accept-all {
   color: var(--dream-accent, #e88c9a);
   border: 1px solid var(--dream-accent, #e88c9a);
-  border-radius: 10px;
+  border-radius: var(--radius-md);
 }
 [data-skin="dream"] .inline-diff-btn.accept-all:is(:hover, :focus-visible) {
   background: rgba(232, 140, 154, 0.12);
@@ -986,7 +986,7 @@ backdrop-filter: none !important;
 [data-skin="dream"] .inline-diff-btn.custom {
   color: var(--dream-text-muted, #a88a8f);
   border: 1px solid var(--dream-border-color, rgba(232, 140, 154, 0.15));
-  border-radius: 10px;
+  border-radius: var(--radius-md);
 }
 
 /* 浮动容器：Dream 柔和阴影 */
@@ -1007,7 +1007,7 @@ backdrop-filter: none !important;
 /* 梦幻皮肤：AI 消息 hover 时显示柔和磨砂高亮 */
 [data-skin="dream"] .assistant .message-content {
   transition: background var(--duration-normal) ease, border-radius var(--duration-normal) ease;
-  border-radius: 12px;
+  border-radius: var(--radius-md);
 }
 [data-skin="dream"] .assistant:is(:hover, :focus-visible) .message-content {
   background: rgba(255, 255, 255, 0.15) !important;
