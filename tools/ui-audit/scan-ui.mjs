@@ -62,8 +62,8 @@ const ALLOWLIST = [
   { re: /^src\/plugins\/library-ops\/data\/characters\.ts$/, why: "图书馆角色调色板（注释性常量，实际渲染已用 var() 令牌）" },
   {
     re: /^src\/styles\.css$/,
-    why: "宿主样式表：本波（第 12 波）只完成了字号令牌化；色值与圆角尚未迁移（实测 239 处色值字面量 / 22 处离格圆角），是下一波的队列，故先按规则豁免这两条",
-    rules: ["color-hardcoded-css", "radius-offscale"],
+    why: "宿主样式表：字号（第 12 波）与离格圆角（第 13 波）已令牌化；色值尚未迁移（实测 231 行字面量），是下一波的队列，故先按规则豁免这一条",
+    rules: ["color-hardcoded-css"],
   },
   {
     re: /^src\/components\/AppErrorBoundary\.tsx$/,

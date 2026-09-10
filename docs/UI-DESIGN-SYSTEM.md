@@ -138,8 +138,8 @@ node tools/ui-audit/codemod-icon-scale.mjs [--write]  # 图标工具类 → .ico
 皮肤令牌定义源、PPT 生成内容配色、大富翁游戏插件（自带美术语言）、图书馆角色调色板注释常量；
 以及三条**按规则豁免**的：`AppErrorBoundary`（崩溃兜底页必须在样式表失效时仍可读，刻意全内联样式）、
 `ppt/PPTAdapter|PresentationMode`（整屏工作台/演示舞台，不是应用内浮层）、
-`src/styles.css` 的 `color-hardcoded-css` + `radius-offscale`（该文件的字号已令牌化，
-色值 239 处与离格圆角 22 处是下一波的队列，先按规则豁免以免门禁失真 —— 数字记在 §7）。
+`src/styles.css` 的 `color-hardcoded-css`（该文件的字号与离格圆角均已令牌化，
+色值 231 行是下一波的队列，先按规则豁免以免门禁失真 —— 数字与映射方向记在 §7）。
 例外不是后门 —— 新增例外必须在文档里说明理由。
 
 ## 5. 进度（迭代记录）
@@ -157,6 +157,8 @@ node tools/ui-audit/codemod-icon-scale.mjs [--write]  # 图标工具类 → .ico
 | **第 11 波** | 2026-09-10 | **0** ✅ | **50** | **error 级全线归零**：① 色值：CSS 17 处 + TSX 53 处 → 0（`--overlay-backdrop` / `--shadow-*` / 新增 `--shadow-color` 与 `--presentation-backdrop` / `color-mix` / 语义状态色；宠物窗口是独立 WebView 拿不到主令牌，自带 `--pet-*` 最小令牌表）；② 浮层：15 处自建外壳 → `modal-overlay`+`modal-panel`（对话框）/ `popover-shell`+`popover-shield`（菜单）/ `floating-overlay-panel`（浮动面板），并把 4 个菜单类（skill-picker-popup / bottom-bar-dropdown / file-link-context-menu / sidebar-project-more-menu）各写一套的外观收口到 `.popover-shell`；③ **审计器精度修复**：原来用「行内花括号平衡」推算 `style={{}}` 深度，单行样式对象会算错并越算越漏，把整份文件都当成样式上下文 —— `MEMBER_DOT = { done: "#22c55e" }`、cytoscape 图表入参这类非样式色值被算成违规（虚高的 53 条里相当一部分是假阳性），而真正的「样式在行中间」反而漏检；改为按字符扫描 + 行区间求交后收敛到 9 条真问题并全部修掉；④ 例外表支持 `rules` 字段（崩溃兜底页 / PPT 演示舞台只豁免 `modal-shell-bespoke`） |
 
 | **第 12 波** | 2026-09-10 | **0** ✅ | **50** | **字号令牌化（宿主样式表纳入审计）**：① 审计器新增 **CSS 侧 `fs-hardcoded` 规则**（此前只查 tsx 内联样式，而 `styles.css` 整份被排除在扫描外 —— 最大的现场反而没人看）；② 592 处 `font-size` 写死像素/rem → `var(--fs-*)`，实测**只有 11 处发生 ±1px 变化**（9 处 15px 标题 → `--fs-lg`、1 处 17px 弹窗标题 → `--fs-xl`、2 处输入框镜像层统一到 `--fs-md`），其余 578 处取值不变；③ 补 `--fs-2xs`(11px) 令牌：11px 是项目第二多的小字号（121 处），补档而不是并进 10/12，既保住排版密度，又让它**跟着字号滑杆缩放** —— 这正是「设置里调字号没反应」的根因（滑杆只影响 `var(--fs-*)`）；④ 明确 `em`/`%` 是允许的相对层级（markdown 标题、行内代码）；⑤ 顺带把输入框/镜像层/消息正文统一到 `--fs-md`（此前 15px/15px/14px 三档，发送前后字号会跳变） |
+
+| **第 13 波** | 2026-09-10 | **0** ✅ | **50** | **`styles.css` 的离格圆角清零**：22 处不在刻度上的圆角 → 令牌，`radius-offscale` 对该文件**不再需要豁免**。3px×11（小徽标/关闭按钮）→ `--radius-sm`(4)；5px×9（小按钮/标签）→ `--radius-xs`(6)；11px 开关轨道与 9px 未读徽标 → `--radius-full`（这两个值本来就是"半高 = 胶囊"，换成胶囊令牌后取值完全一致，只是语义变对了）。**色值（231 行字面量）留到下一波** |
 
 ### 全项目现场事实（来自 UI 交互界面清单，作为工作队列）
 
@@ -186,7 +188,7 @@ node tools/ui-audit/codemod-icon-scale.mjs [--write]  # 图标工具类 → .ico
 | 规则 | 级别 | 起点 | 现在 |
 | --- | --- | --- | --- |
 | `fs-hardcoded` | error | 78 | **0** ✅（门禁锁定；第 12 波起**同时覆盖 CSS**） |
-| `radius-offscale` | error | 38 | **0** ✅（门禁锁定） |
+| `radius-offscale` | error | 38 | **0** ✅（门禁锁定；第 13 波起覆盖 `styles.css` 本体，不需豁免） |
 | `color-hardcoded-tsx` | error | 325 | **0** ✅ |
 | `color-hardcoded-css` | error | 209 | **0** ✅（`src/styles.css` 本体仍有 239 处待迁移，见下） |
 | `modal-shell-bespoke` | error | 15 | **0** ✅ |
@@ -217,12 +219,17 @@ node tools/ui-audit/codemod-icon-scale.mjs [--write]  # 图标工具类 → .ico
 
 ### 下一轮的工作队列（按性价比排序）
 
-1. **`src/styles.css` 的色值与圆角**（已按规则豁免，数字不是 0 而是"还没量"）：
-   实测 **239 处色值字面量**（141 个不同取值；`rgba(0,0,0,0.3)×12`、`#ef4444×9`、`rgba(99,102,241,0.15)×6` …）
-   与 **22 处离格圆角**（3px×11 / 5px×9 / 11px×1 / 9px×1）。迁移方向已明确：
-   状态色 → `var(--error/--success/--warning/--info)` 与 `color-mix`；遮罩 → `--overlay-backdrop`；
-   投影 → `--shadow-*` / `--shadow-color`；`rgba(99,102,241,*)` 这类"自带蓝紫" → `--accent` 家族。
-   做完这一波才能把 `styles.css` 的例外从 ALLOWLIST 里删掉；
+1. **`src/styles.css` 的色值**（唯一还挂着按规则豁免的地方，数字不是 0 而是"还没量"）：
+   实测 **231 行色值字面量**，按属性分布：`background` 97 / `color` 38 / `box-shadow` 36 / 简写与其余 60。
+   频率最高的几组已定位好映射方向 ——
+   `box-shadow: rgba(0,0,0,0.3)×12 / 0.4×8 / 0.08×3`（→ `--shadow-*` / `--shadow-color`）、
+   `background: rgba(0,0,0,0.5)×7 / 0.6×6`（→ `--overlay-backdrop(-strong)`）、
+   红系 `#f87171×5 / #ef4444×8 / #ff5050×3 / rgba(239,68,68,*)×11`（→ `var(--error)` + `color-mix`）、
+   绿系 `#22c55e / #4ade80 / rgba(34,197,94,*)`（→ `var(--success)`）、
+   蓝紫系 `rgba(99,102,241,*)×6 / #6366f1`（→ `var(--accent)` 家族）、
+   琥珀系 `#ffa500 / #f59e0b / #e0a91f`（→ `var(--warning)`）、
+   以及少数"自带调色板"（`#0d1117/#161b22/#21262d` 的 GitHub 暗色、关闭按钮的 Windows 红 `#e81123`）需要逐个判断是
+   收敛到令牌还是写进例外表。做完这一波才能把 `styles.css` 从 ALLOWLIST 里彻底移除；
 2. **50 个「内联样式过密」文件**：按钮/输入/卡片/空态/列表行改具名类（`inline-style-dense` 的唯一来源）；
 3. **z-index 令牌化**：`modal-overlay`=200 与 `--z-modal`=1300 互相矛盾，`popover-shield` 的层级仍留在调用处（23 个 tsx 数值 + 13 个 CSS 层级）；
 4. **重复定义收敛**：`styles.css` 内已有同名类被定义两次且取值不同（如 `.badge` 的圆角 10px vs 4px、
