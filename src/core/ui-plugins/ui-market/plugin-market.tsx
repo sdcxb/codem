@@ -71,7 +71,7 @@ export function PluginMarketPanel() {
     <div className="plugin-market">
       <h3>Plugin Market</h3>
 
-      <div className="search-bar">
+      <div className="plugin-market__search">
         <input
           type="text"
           placeholder="Search plugins..."
@@ -85,22 +85,22 @@ export function PluginMarketPanel() {
         </select>
       </div>
 
-      <div className="plugin-list">
+      <div className="plugin-market__list">
         {filteredPlugins.map(p => (
-          <div key={p.name} className="plugin-card">
-            <h4>{p.name} <span className="version">v{p.version}</span></h4>
+          <div key={p.name} className="plugin-market__card">
+            <h4>{p.name} <span className="plugin-market__version">v{p.version}</span></h4>
             <p>{p.description}</p>
             {p.provides.length > 0 && (
-              <div className="provides">
+              <div className="plugin-market__provides">
                 <strong>Provides:</strong> {p.provides.join(', ')}
               </div>
             )}
             {p.inject.length > 0 && (
-              <div className="inject">
+              <div className="plugin-market__inject">
                 <strong>Injects:</strong> {p.inject.join(', ')}
               </div>
             )}
-            <div className="actions">
+            <div className="plugin-market__actions">
               {ctx?.get('pluginInstaller')?.isInstalled(p.name) ? (
                 <button onClick={() => handleUninstall(p.name)}>Uninstall</button>
               ) : (

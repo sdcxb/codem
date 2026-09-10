@@ -3748,3 +3748,39 @@ background: var(--bg-secondary, var(--surface));
   --security-auto: #8b5cf6;
   --security-full: #4ade80;
 }
+
+/* ==========================================================================
+ * UI 统一（第 10 波）：补齐「有类名、没样式」的类名（见 docs/UI-DESIGN-SYSTEM.md §5）
+ * ========================================================================== */
+
+/* 启动页阶段文案（.boot-splash-status 已有外壳，这里只补标签本身） */
+.boot-splash-phase {
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+
+/* 流式中的代码块：用 accent 淡边标记"还在生成"，不改底色（§2.3 不做实心强调） */
+.code-block-streaming {
+  border-color: color-mix(in srgb, var(--accent) 30%, transparent);
+}
+.code-block-streaming.streaming {
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+/* 图片全屏：在 .content-fullscreen 外壳上按图片比例放宽，不留白边 */
+.image-fullscreen {
+  width: auto;
+  max-width: 92vw;
+}
+
+/* 行内 Diff：unified 容器与新旧行号列（对标 .diff-old-num / .diff-new-num） */
+.inline-diff-unified {
+  display: block;
+  overflow-x: auto;
+}
+.inline-diff-old-num {
+  border-right: 1px solid var(--border-secondary);
+}
+.inline-diff-new-num {
+  border-right: 2px solid var(--border-primary);
+}

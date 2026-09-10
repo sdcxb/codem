@@ -279,7 +279,7 @@ export function NoteEditor({
         {/* Header */}
         <div className="nb-editor-header">
           <div className="nb-editor-title-row">
-            <Edit3 className="w-4 h-4" style={{ color: 'var(--accent-primary, #6366f1)' }} />
+            <Edit3 className="icon-md" style={{ color: 'var(--accent-primary, #6366f1)' }} />
             <input
               className="nb-editor-title-input"
               placeholder={isZh ? '笔记标题' : 'Note title'}
@@ -294,7 +294,7 @@ export function NoteEditor({
               onClick={handleExportNote}
               title={isZh ? '导出为 Markdown' : 'Export as Markdown'}
             >
-              <Download className="w-3.5 h-3.5" />
+              <Download className="icon-sm" />
             </button>
             {/* A17: 版本历史 */}
             <button
@@ -302,7 +302,7 @@ export function NoteEditor({
               onClick={handleShowVersions}
               title={isZh ? '版本历史' : 'Version History'}
             >
-              <History className="w-3.5 h-3.5" />
+              <History className="icon-sm" />
             </button>
             {/* View mode toggle */}
             <div className="nb-editor-mode-toggle">
@@ -311,25 +311,25 @@ export function NoteEditor({
                 onClick={() => setViewMode('edit')}
                 title={isZh ? '编辑模式' : 'Edit mode'}
               >
-                <Edit3 className="w-3.5 h-3.5" />
+                <Edit3 className="icon-sm" />
               </button>
               <button
                 className={`nb-mode-btn ${viewMode === 'split' ? 'active' : ''}`}
                 onClick={() => setViewMode('split')}
                 title={isZh ? '分屏模式' : 'Split mode'}
               >
-                <Columns className="w-3.5 h-3.5" />
+                <Columns className="icon-sm" />
               </button>
               <button
                 className={`nb-mode-btn ${viewMode === 'preview' ? 'active' : ''}`}
                 onClick={() => setViewMode('preview')}
                 title={isZh ? '预览模式' : 'Preview mode'}
               >
-                <Eye className="w-3.5 h-3.5" />
+                <Eye className="icon-sm" />
               </button>
             </div>
             <button className="nb-editor-close" onClick={onCancel}>
-              <X className="w-4 h-4" />
+              <X className="icon-md" />
             </button>
           </div>
         </div>
@@ -343,7 +343,7 @@ export function NoteEditor({
           gap: '6px',
           flexWrap: 'wrap',
         }}>
-          <Tag className="w-3 h-3" style={{ opacity: 0.5 }} />
+          <Tag className="icon-xs" style={{ opacity: 0.5 }} />
           {tags.map(tag => (
             <span
               key={tag}
@@ -404,26 +404,26 @@ export function NoteEditor({
         {viewMode !== 'preview' && (
           <div className="nb-editor-toolbar">
             <button className="nb-tool-btn" onClick={() => insertSyntax('**', '**', isZh ? '粗体' : 'bold')} title="Bold">
-              <Bold className="w-3.5 h-3.5" />
+              <Bold className="icon-sm" />
             </button>
             <button className="nb-tool-btn" onClick={() => insertSyntax('*', '*', isZh ? '斜体' : 'italic')} title="Italic">
-              <Italic className="w-3.5 h-3.5" />
+              <Italic className="icon-sm" />
             </button>
             <button className="nb-tool-btn" onClick={() => insertSyntax('## ', '', isZh ? '标题' : 'heading')} title="Heading">
-              <Heading className="w-3.5 h-3.5" />
+              <Heading className="icon-sm" />
             </button>
             <button className="nb-tool-btn" onClick={() => insertSyntax('- ', '', isZh ? '列表项' : 'list item')} title="List">
-              <List className="w-3.5 h-3.5" />
+              <List className="icon-sm" />
             </button>
             <button className="nb-tool-btn" onClick={() => insertSyntax('[', '](url)', isZh ? '链接文本' : 'link text')} title="Link">
-              <LinkIcon className="w-3.5 h-3.5" />
+              <LinkIcon className="icon-sm" />
             </button>
             <button
               className="nb-tool-btn nb-tool-wikilink"
               onClick={() => insertSyntax('[[', ']]', isZh ? '笔记标题' : 'note title')}
               title={isZh ? 'WikiLink — 链接到其他笔记' : 'WikiLink — link to another note'}
             >
-              <Link2 className="w-3.5 h-3.5" />
+              <Link2 className="icon-sm" />
             </button>
             <div className="nb-tool-divider" />
             <span className="nb-tool-hint">
@@ -490,7 +490,7 @@ export function NoteEditor({
           {/* Backlinks sidebar — 借鉴 Lumina Note 的反向链接面板 */}
           <div className="nb-backlinks-sidebar">
             <div className="nb-backlinks-header">
-              <Link2 className="w-3.5 h-3.5" style={{ color: 'var(--accent-primary, #6366f1)' }} />
+              <Link2 className="icon-sm" style={{ color: 'var(--accent-primary, #6366f1)' }} />
               <span className="nb-backlinks-title">
                 {isZh ? '链接关系' : 'Links'}
               </span>
@@ -514,7 +514,7 @@ export function NoteEditor({
                       className="nb-backlink-item"
                       onClick={() => onNavigateToNote?.(link.targetNoteId)}
                     >
-                      <ArrowRight className="w-3 h-3" style={{ opacity: 0.5 }} />
+                      <ArrowRight className="icon-xs" style={{ opacity: 0.5 }} />
                       <span className="nb-backlink-text">{getNoteTitle(link.targetNoteId)}</span>
                     </button>
                   ))}
@@ -540,7 +540,7 @@ export function NoteEditor({
                       className="nb-backlink-item"
                       onClick={() => onNavigateToNote?.(link.sourceNoteId)}
                     >
-                      <ArrowLeft className="w-3 h-3" style={{ opacity: 0.5 }} />
+                      <ArrowLeft className="icon-xs" style={{ opacity: 0.5 }} />
                       <span className="nb-backlink-text">{getNoteTitle(link.sourceNoteId)}</span>
                     </button>
                   ))}
@@ -553,10 +553,10 @@ export function NoteEditor({
         {/* Footer */}
         <div className="nb-editor-footer">
           <div className="nb-editor-stats">
-            <FileText className="w-3 h-3" style={{ opacity: 0.5 }} />
+            <FileText className="icon-xs" style={{ opacity: 0.5 }} />
             <span>{content.length} {isZh ? '字符' : 'chars'}</span>
             <span style={{ opacity: 0.3 }}>·</span>
-            <Link2 className="w-3 h-3" style={{ opacity: 0.5 }} />
+            <Link2 className="icon-xs" style={{ opacity: 0.5 }} />
             <span>{outgoingLinks.length + backlinks.length} {isZh ? '链接' : 'links'}</span>
           </div>
           <div className="nb-editor-footer-actions">
@@ -564,7 +564,7 @@ export function NoteEditor({
               {isZh ? '取消' : 'Cancel'}
             </button>
             <button className="nb-btn-confirm" onClick={handleSave}>
-              <Save className="w-3.5 h-3.5" />
+              <Save className="icon-sm" />
               {isZh ? '保存' : 'Save'}
               <span className="nb-shortcut-hint">⌘S</span>
             </button>
@@ -578,18 +578,18 @@ export function NoteEditor({
           <div className="nb-dialog" style={{ width: '600px', maxHeight: '70vh' }} onClick={(e) => e.stopPropagation()}>
             <div className="nb-dialog-header">
               <h3 className="nb-dialog-title">
-                <History className="w-4 h-4" />
+                <History className="icon-md" />
                 {isZh ? '版本历史' : 'Version History'}
                 <span className="nb-count-badge">{versions.length}</span>
               </h3>
               <button className="nb-dialog-close" onClick={() => setShowVersions(false)}>
-                <X className="w-4 h-4" />
+                <X className="icon-md" />
               </button>
             </div>
             <div style={{ overflow: 'auto', maxHeight: '50vh', padding: '12px 20px' }}>
               {versions.length === 0 ? (
                 <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted, #555)' }}>
-                  <History className="w-8 h-8" style={{ margin: '0 auto 8px', opacity: 0.5 }} />
+                  <History className="icon-2xl" style={{ margin: '0 auto 8px', opacity: 0.5 }} />
                   <p>{isZh ? '暂无历史版本，保存笔记时会自动创建快照' : 'No versions yet. Snapshots are created automatically when saving.'}</p>
                 </div>
               ) : (
@@ -627,7 +627,7 @@ export function NoteEditor({
                               color: 'var(--accent-primary, #6366f1)',
                             }}
                           >
-                            <RotateCcw className="w-3 h-3" />
+                            <RotateCcw className="icon-xs" />
                           </button>
                           <button
                             onClick={() => handleDeleteVersion(ver.id)}
@@ -638,7 +638,7 @@ export function NoteEditor({
                               color: 'var(--text-muted, #555)',
                             }}
                           >
-                            <Trash2 className="w-3 h-3" />
+                            <Trash2 className="icon-xs" />
                           </button>
                         </div>
                       </div>

@@ -511,7 +511,7 @@ setTimeout(() => setCopied(false), 2000);
         {!isUser && !isSystem && (
           <div className="ai-msg-header">
             <Bot size={16} />
-            <span className="font-semibold">Codem</span>
+            <span className="ai-msg-name">Codem</span>
             {message.timestamp > 0 && (
               <span className="ai-msg-time">
                 {new Date(message.timestamp).toLocaleTimeString(lang === "zh" ? "zh-CN" : "en-US", { hour: "2-digit", minute: "2-digit" })}

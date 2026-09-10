@@ -610,3 +610,25 @@
 .ppt-anim-playing {
   animation-fill-mode: both;
 }
+
+/* UI 统一（第 10 波）：导出菜单项此前没有样式（菜单外壳是内联样式，菜单项走浏览器默认按钮外观） */
+.ppt-export-menu-item {
+  display: block;
+  width: 100%;
+  padding: var(--space-3) var(--space-4);
+  border: none;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: var(--fs-sm);
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: var(--transition-color);
+}
+
+.ppt-export-menu-item:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}

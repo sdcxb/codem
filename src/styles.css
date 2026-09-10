@@ -1447,12 +1447,17 @@ margin-top: 2px;
   opacity: 0.8;
 }
 .ai-msg-header svg {
-  width: 16px;
-  height: 16px;
+  width: var(--icon-md);
+  height: var(--icon-md);
   flex-shrink: 0;
 }
+/* 助手名（此前 tsx 里写 `font-semibold`：本项目没有 Tailwind，该类名等于没样式） */
+.ai-msg-name {
+  font-weight: 600;
+  color: var(--text-primary);
+}
 .ai-msg-time {
-  font-size: 11px;
+  font-size: var(--fs-xs);
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
 }
@@ -9749,6 +9754,63 @@ border-color: var(--text-muted);
   flex: 1;
 }
 
+/* 分组视图（NotebookManager）：此前 notebook-list-container / notebook-group-* /
+ * notebook-file-select-* 全都没有 CSS 定义 —— 分组标题、折叠箭头、空态都是浏览器默认样式，
+ * 和卡片网格完全是两种观感。这里按 §3 列表行/卡片规范补齐。 */
+.notebook-list-container {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  padding: var(--space-8);
+  overflow-y: auto;
+  flex: 1;
+}
+.notebook-group-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+.notebook-group-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-xs);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: var(--transition-color);
+}
+.notebook-group-header:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.notebook-group-name {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--fs-md);
+  font-weight: 600;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.notebook-group-empty {
+  margin: 0;
+  padding: var(--space-4) var(--space-3);
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+.notebook-file-select-info {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin-top: var(--space-3);
+}
+.notebook-file-count {
+  font-size: var(--fs-xs);
+  color: var(--text-secondary);
+}
+
 .notebook-card {
   display: flex;
   flex-direction: column;
@@ -13612,4 +13674,912 @@ color: var(--accent, #7c6cf0);
   --space-12: 32px;
   /* 小圆角（菜单项/胶囊按钮/密集控件；补齐 6px 这一档） */
   --radius-xs: 6px;
+
+  /* 图标刻度（§2.4「14px 图标 ↔ 13px 标签」的完整档位）
+   * 现状事实：tsx 里有 ~100 处写 Tailwind 风格的 `w-3 h-3` / `animate-spin` /
+   * `opacity-40`，但本项目是纯 CSS、没有 Tailwind —— 这些类名**等于没样式**，
+   * 图标全部退回 lucide 默认 24px（比 13px 的标签大近一倍），是"字体大大小小
+   * 不统一"的隐形来源。这里补成刻度 + 语义工具类，作为图标尺寸的唯一来源。 */
+  --icon-2xs: 10px;  /* 密集元信息里的小图标、行内标记 */
+  --icon-xs: 12px;   /* 按钮/标签内图标（主力：与 --fs-sm 同档） */
+  --icon-sm: 14px;   /* 与正文标签配对的标准图标（§2.4） */
+  --icon-md: 16px;   /* 列表项标题、输入框内图标 */
+  --icon-lg: 20px;   /* 面板标题、工具栏主图标 */
+  --icon-xl: 24px;   /* 卡片/区块主图标 */
+  --icon-2xl: 32px;  /* 小空态插画 */
+  --icon-3xl: 48px;  /* 空态/欢迎页插画 */
+  --icon-dim-opacity: 0.4; /* 装饰性/占位图标的淡化程度 */
+}
+
+/* ==========================================================================
+ * UI 统一：图标尺寸工具类（唯一来源）
+ * 只出 8 个语义档位，禁止再写 w-3/h-3 这类无效类名。
+ * ========================================================================== */
+.icon-2xs,
+.icon-xs,
+.icon-sm,
+.icon-md,
+.icon-lg,
+.icon-xl,
+.icon-2xl,
+.icon-3xl {
+  flex-shrink: 0;
+  display: inline-block;
+  vertical-align: middle;
+}
+.icon-2xs { width: var(--icon-2xs); height: var(--icon-2xs); }
+.icon-xs { width: var(--icon-xs); height: var(--icon-xs); }
+.icon-sm { width: var(--icon-sm); height: var(--icon-sm); }
+.icon-md { width: var(--icon-md); height: var(--icon-md); }
+.icon-lg { width: var(--icon-lg); height: var(--icon-lg); }
+.icon-xl { width: var(--icon-xl); height: var(--icon-xl); }
+.icon-2xl { width: var(--icon-2xl); height: var(--icon-2xl); }
+.icon-3xl { width: var(--icon-3xl); height: var(--icon-3xl); }
+/* 装饰性/占位图标（空态、未激活状态） */
+.icon-dim { opacity: var(--icon-dim-opacity); }
+/* 仅用于屏幕阅读器的文本（a11y 标准工具类） */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ==========================================================================
+ * UI 统一（第 10 波）：补齐「有类名、没样式」的界面
+ *
+ * 事实：这些类名在 tsx 里被使用，但整个 src 下没有任何 CSS 定义它们 ——
+ * 元素等于完全没有样式（审计规则 css-class-undefined）。
+ * 本节的写法遵守 docs/UI-DESIGN-SYSTEM.md §2/§3：
+ *   · 只用令牌（--fs-* / --radius-* / --space-* / 语义色），零字面量；
+ *   · 次级按钮与标签共用同一组外形（同高、同圆角、同 hover），
+ *     避免"每个页面各写一套按钮"再次发生。
+ * ========================================================================== */
+
+/* ---------- 次级按钮 / 标签：共同外形（组件语言收口的起点） ---------- */
+.config-level-btn,
+.config-tab,
+.config-init-btn,
+.correction-tab,
+.correction-btn,
+.clarification-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-6);
+  background: transparent;
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-xs);
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: var(--fs-sm);
+  line-height: 1.4;
+  cursor: pointer;
+  transition: var(--transition-color);
+}
+.config-level-btn:hover,
+.config-tab:hover,
+.config-init-btn:hover,
+.correction-tab:hover,
+.correction-btn:hover,
+.clarification-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+/* 选中态统一：accent 淡底 + accent 边 + accent 字（§2.3 状态色不做实心填充） */
+.config-level-btn.active,
+.config-tab.active,
+.correction-tab.active {
+  background: var(--accent-muted);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* 主按钮：唯一实心填充的例外（§3 主按钮 = accent 底 + --text-on-accent 字） */
+.config-save-btn,
+.correction-btn.apply,
+.clarification-btn.submit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-6);
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-xs);
+  color: var(--text-on-accent);
+  font-family: inherit;
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  line-height: 1.4;
+  cursor: pointer;
+  transition: var(--transition-color);
+}
+.config-save-btn:hover,
+.correction-btn.apply:hover,
+.clarification-btn.submit:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+/* 表单控件：统一高 32px、--radius、--input-bg、聚焦换 accent 边（§3） */
+.config-form-group input,
+.config-form-group textarea,
+.config-textarea,
+.clarification-textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: var(--space-3) var(--space-5);
+  background: var(--input-bg);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: var(--fs-base);
+  line-height: 1.5;
+  transition: var(--transition-color);
+}
+.config-form-group input {
+  height: 32px;
+}
+.config-form-group textarea,
+.config-textarea,
+.clarification-textarea {
+  resize: vertical;
+}
+.config-form-group input:focus,
+.config-form-group textarea:focus,
+.config-textarea:focus,
+.clarification-textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.config-form-group input::placeholder,
+.config-form-group textarea::placeholder,
+.clarification-textarea::placeholder {
+  color: var(--text-muted);
+}
+
+/* ---------- ConfigEditor（分层配置管理） ---------- */
+.config-editor {
+  display: flex;
+  flex-direction: column;
+}
+.config-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  padding: var(--space-9) var(--space-10) var(--space-10);
+  overflow-y: auto;
+  min-height: 0;
+}
+.config-levels {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+.config-level-label {
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+}
+.config-level-btn.missing {
+  border-style: dashed;
+  color: var(--text-muted);
+}
+.config-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  padding-bottom: var(--space-4);
+  border-bottom: 1px solid var(--border-secondary);
+}
+.config-content {
+  min-height: 200px;
+}
+/* 空态（§3：居中、--fs-base、--text-muted、最小高度 130px） */
+.config-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 130px;
+  font-size: var(--fs-base);
+  color: var(--text-muted);
+}
+.config-structure {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+/* 卡片（§3：--radius-md + --bg-tertiary + --border-primary） */
+.structure-level {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-6);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+}
+.structure-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  min-width: 0;
+}
+.structure-icon {
+  font-size: var(--fs-lg);
+  line-height: 1;
+}
+.structure-name {
+  font-size: var(--fs-md);
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+.structure-path {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.structure-files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+/* 徽标：文字色 + 8~10% 同色底 + 18~22% 同色边（§2.3 状态色不实心填充） */
+.structure-file {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-4);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-full);
+  font-size: var(--fs-xs);
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+.structure-file.exists {
+  color: var(--success);
+  background: color-mix(in srgb, var(--success) 10%, transparent);
+  border-color: color-mix(in srgb, var(--success) 20%, transparent);
+}
+.structure-file.missing {
+  color: var(--text-muted);
+  border-style: dashed;
+}
+.config-init-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding-top: var(--space-6);
+  border-top: 1px dashed var(--border-secondary);
+}
+.config-init-section h4 {
+  margin: 0;
+  font-size: var(--fs-md);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.config-init-btn {
+  justify-content: flex-start;
+  padding: var(--space-4) var(--space-5);
+  background: var(--bg-tertiary);
+}
+.config-init-btn:hover {
+  border-color: var(--accent);
+}
+.config-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+.config-form-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.config-form-group label {
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+}
+.config-textarea {
+  min-height: 320px;
+  font-family: var(--font-mono);
+  line-height: 1.6;
+}
+.config-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-6);
+  padding: var(--space-5) var(--space-10);
+  border-top: 1px solid var(--border-secondary);
+}
+.config-saved {
+  font-size: var(--fs-sm);
+  color: var(--success);
+}
+
+/* ---------- ClarificationForm（AI 提问表单） ---------- */
+.clarification-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-6) var(--space-7);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+}
+.clarification-question {
+  font-size: var(--fs-md);
+  font-weight: 500;
+  color: var(--text-primary);
+}
+.clarification-required {
+  font-size: var(--fs-xs);
+  color: var(--warning);
+}
+.clarification-inputs {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+.radio-group,
+.checkbox-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+/* 列表行（§3：行高密集、hover 只换底色） */
+.radio-option,
+.checkbox-option {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-xs);
+  font-size: var(--fs-base);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: var(--transition-color);
+}
+.radio-option:hover,
+.checkbox-option:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.radio-option input,
+.checkbox-option input {
+  accent-color: var(--accent);
+  margin: 0;
+  cursor: pointer;
+}
+.clarification-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-4);
+}
+
+/* ---------- CorrectionResultPanel（纠偏结果对比） ---------- */
+.correction-result-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  padding: var(--space-6) var(--space-7);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+}
+.correction-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-6);
+  flex-wrap: wrap;
+}
+.correction-title {
+  font-size: var(--fs-md);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.correction-tabs {
+  display: flex;
+  gap: var(--space-2);
+}
+.correction-content {
+  min-height: 120px;
+}
+.correction-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-4);
+}
+.change-item {
+  font-size: var(--fs-base);
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+
+/* ---------- RegenerateModelPopover（重新生成：模型选择浮层） ---------- */
+/* 浮层（§2.3：用「环」而不是边框 + 投影；§3 入场 120ms） */
+.regenerate-popover {
+  position: absolute;
+  bottom: calc(100% + var(--space-2));
+  left: 0;
+  z-index: var(--z-popover);
+  min-width: 200px;
+  padding: var(--space-3);
+  background: var(--dropdown-bg);
+  border-radius: var(--radius-md);
+  box-shadow: 0 0 0 1px var(--border-primary), var(--shadow-popover);
+  animation: popover-slide-in var(--duration-fast) var(--ease-out);
+}
+.regenerate-header {
+  padding: var(--space-2) var(--space-3) var(--space-3);
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+.regenerate-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  max-height: 260px;
+  overflow-y: auto;
+}
+.regenerate-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  width: 100%;
+  padding: var(--space-3) var(--space-4);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-xs);
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: var(--fs-sm);
+  text-align: left;
+  cursor: pointer;
+  transition: var(--transition-color);
+}
+.regenerate-option:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.regenerate-option.selected {
+  background: var(--accent-muted);
+  color: var(--accent);
+}
+.regenerate-model-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.regenerate-check {
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+/* ---------- TitleBar 工作区标签栏 ---------- */
+.execution-mode-label {
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+}
+.titlebar-tabs {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  max-width: 40vw;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-app-region: no-drag;
+}
+.titlebar-tabs::-webkit-scrollbar {
+  display: none;
+}
+.titlebar-tab {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+  transition: var(--transition-color);
+}
+.titlebar-tab:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.titlebar-tab.active {
+  background: var(--accent-muted);
+  color: var(--accent);
+}
+.titlebar-tab > button {
+  background: none;
+  border: none;
+  padding: 0;
+  color: inherit;
+  font-family: inherit;
+  font-size: inherit;
+  cursor: pointer;
+}
+.titlebar-tab-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--icon-md);
+  height: var(--icon-md);
+  padding: 0;
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: inherit;
+  cursor: pointer;
+  opacity: 0.6;
+  transition: var(--transition-color);
+}
+.titlebar-tab-close:hover {
+  background: var(--bg-tertiary);
+  opacity: 1;
+}
+
+/* ---------- 其余组件：同一波的补齐（逐条都对应一个「用了但没定义」的类名） ---------- */
+
+/* 等待指示器：中文标签与细节说明（外壳 .streaming-wait-indicator 已有定义） */
+.wait-label {
+  font-size: var(--fs-sm);
+  color: var(--text-primary);
+}
+.wait-message {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  text-align: center;
+}
+
+/* 推理折叠行：子元素样式在 tsx 内联里，这里只补容器与交互态 */
+.reasoning-row {
+  display: flex;
+  flex-direction: column;
+  margin: var(--space-2) 0;
+}
+.reasoning-row .reasoning-toggle {
+  border-radius: var(--radius-xs);
+  transition: var(--transition-color);
+}
+.reasoning-row[data-state="running"] .reasoning-toggle,
+.reasoning-row .reasoning-toggle:hover {
+  color: var(--accent-hover);
+}
+
+/* 文件树子层（此前没有定义，层级完全靠 .file-entry 自身内边距） */
+.file-children {
+  display: flex;
+  flex-direction: column;
+}
+
+/* 二进制文件预览的占位图标（48px 归到 --icon-3xl 一档） */
+.file-preview-office-icon-svg {
+  width: var(--icon-3xl);
+  height: var(--icon-3xl);
+  color: var(--text-muted);
+  opacity: var(--icon-dim-opacity);
+}
+
+/* 纠偏模式开关的文字标签（外壳 .correction-mode-toggle 已有定义） */
+.toggle-label {
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+}
+
+/* GitHub 克隆对话框输入框（与 §3 表单控件同规格） */
+.github-clone-input {
+  width: 100%;
+  box-sizing: border-box;
+  height: 36px;
+  padding: 0 var(--space-5);
+  background: var(--input-bg);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: var(--fs-base);
+  transition: var(--transition-color);
+}
+.github-clone-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.github-clone-input::placeholder {
+  color: var(--text-muted);
+}
+
+/* 内联消息编辑容器（内部 textarea/按钮已有定义） */
+.inline-edit-container {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+/* 附件/文件提及：行内代码里嵌一个按钮，去掉代码块的底与内边距 */
+.file-mention-code {
+  padding: 0;
+  background: none;
+  border: none;
+}
+/* 表格降级渲染（宿主表格组件不可用时） */
+.content-table-fallback {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-sm);
+}
+.content-table-fallback th,
+.content-table-fallback td {
+  padding: var(--space-3) var(--space-5);
+  border: 1px solid var(--border-primary);
+  text-align: left;
+}
+
+/* 分辨率选择器 */
+.resolution-label {
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+}
+.resolution-select {
+  height: 32px;
+  padding: 0 var(--space-4);
+  background: var(--input-bg);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  transition: var(--transition-color);
+}
+.resolution-select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+/* 提示词草稿列表（.draft-item 已有定义） */
+.draft-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  max-height: 50vh;
+  overflow-y: auto;
+  padding: var(--space-2);
+}
+
+/* 源代码/资料引用与选择器里的名称列 */
+.source-chip .source-name,
+.source-item .source-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* 资料选择器：复选框列表（此前 4 个类名都没定义，列表完全没有样式） */
+.source-count {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.source-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-xs);
+  font-size: var(--fs-base);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: var(--transition-color);
+}
+.source-item:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.source-item input {
+  accent-color: var(--accent);
+  margin: 0;
+  cursor: pointer;
+}
+.source-type {
+  flex-shrink: 0;
+  font-size: var(--fs-md);
+  line-height: 1;
+}
+
+/* 快照面板：文件行 + 查看 Diff 按钮 */
+.snapshot-file-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+.snapshot-file-path {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.snapshot-diff-btn {
+  flex-shrink: 0;
+  padding: var(--space-1) var(--space-4);
+  background: transparent;
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-xs);
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: var(--fs-xs);
+  cursor: pointer;
+  transition: var(--transition-color);
+}
+.snapshot-diff-btn:hover {
+  background: var(--bg-hover);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* Diff 视图：split 与 unified 是对称的两种钩子（.diff-split 已有分栏边框） */
+.diff-unified th,
+.diff-unified td {
+  border-right: none;
+}
+.diff-split-header-new {
+  border-left: 1px solid var(--border-primary);
+}
+
+/* ---------- 内核 UI 插件（slots 注册的面板，此前只有裸 HTML 标签） ----------
+ * 类名一律带插件前缀：插件面板和宿主共用一张全局样式表，通用名（.actions/.inject）
+ * 迟早会撞车。 */
+.plugin-market,
+.plugin-manager,
+.cordis-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  padding: var(--space-8);
+  overflow-y: auto;
+  min-height: 0;
+  font-size: var(--fs-base);
+  color: var(--text-primary);
+}
+.plugin-market h3,
+.plugin-manager h3,
+.cordis-panel h3 {
+  margin: 0;
+  font-size: var(--fs-lg);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.plugin-market h4,
+.cordis-panel h4 {
+  margin: 0;
+  font-size: var(--fs-md);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.cordis-panel section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+.cordis-panel ul,
+.plugin-manager ul {
+  margin: 0;
+  padding-left: var(--space-9);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  color: var(--text-secondary);
+}
+.plugin-market__search {
+  display: flex;
+  gap: var(--space-4);
+}
+.plugin-market__search input {
+  flex: 1;
+  min-width: 0;
+  height: 32px;
+  padding: 0 var(--space-5);
+  background: var(--input-bg);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: var(--fs-base);
+}
+.plugin-market__search select {
+  height: 32px;
+  padding: 0 var(--space-4);
+  background: var(--input-bg);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+.plugin-market__search input:focus,
+.plugin-market__search select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.plugin-market__list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: var(--space-6);
+}
+/* 卡片（§3：--radius-md + --bg-secondary + --border-primary，hover 只换边色） */
+.plugin-market__card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-6);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  transition: var(--transition-color);
+}
+.plugin-market__card:hover {
+  border-color: var(--accent);
+}
+.plugin-market__card p {
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+}
+.plugin-market__version {
+  font-size: var(--fs-xs);
+  font-weight: 400;
+  color: var(--text-muted);
+}
+.plugin-market__provides,
+.plugin-market__inject {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+.plugin-market__actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: auto;
+  padding-top: var(--space-3);
+}
+.plugin-market__actions button,
+.plugin-manager button,
+.cordis-panel button {
+  padding: var(--space-2) var(--space-6);
+  background: transparent;
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-xs);
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  transition: var(--transition-color);
+}
+.plugin-market__actions button:hover,
+.plugin-manager button:hover,
+.cordis-panel button:hover {
+  background: var(--bg-hover);
+  border-color: var(--accent);
+  color: var(--text-primary);
 }

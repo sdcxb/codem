@@ -471,7 +471,7 @@ function KnowledgeGraphViewInner({ notebookId, onNodeSelect }: KnowledgeGraphVie
   if (loading) {
     return (
       <div className="kg-loading" style={{ background: bgColor, color: textColor }}>
-        <Loader2 size={24} className="animate-spin" style={{ color: accentColor }} />
+        <Loader2 size={24} className="spin" style={{ color: accentColor }} />
         <span style={{ color: textSecondaryColor }}>
           {isZh ? '正在提取知识图谱...' : 'Extracting knowledge graph...'}
         </span>

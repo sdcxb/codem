@@ -881,6 +881,12 @@
   gap: 4px;
 }
 
+/* 卡片头部的前导图标跟随正文色（此前 tsx 里写 `text-primary`，而本项目没有 Tailwind，
+ * 该 class 无任何定义 —— 图标颜色实际由父级决定；统一收口到这里） */
+.nb-note-card-header > svg {
+  color: var(--text-primary);
+}
+
 .nb-note-title {
   flex: 1;
   font-size: var(--fs-sm);
@@ -1127,6 +1133,20 @@ top: 36px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* 已选文件清单（此前 .nb-file-path-list / .nb-file-count 没有定义，
+ * 多选时“N 个文件已选”只是一段裸文本） */
+.nb-file-path-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.nb-file-count {
+  font-size: var(--fs-xs);
+  color: var(--text-secondary);
 }
 
 .nb-dialog-footer {
@@ -2426,4 +2446,39 @@ top: 36px;
   height: 16px;
   background: var(--border-primary);
   margin-left: 13px;
+}
+
+/* ========== “移动到分组”下拉（此前 nb-move-menu / nb-move-option 没有定义） ========== */
+.nb-move-menu {
+  position: absolute;
+  top: calc(100% + var(--space-1));
+  right: 0;
+  z-index: var(--z-dropdown);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 140px;
+  padding: var(--space-2);
+  background: var(--dropdown-bg);
+  border-radius: var(--radius-md);
+  box-shadow: 0 0 0 1px var(--border-primary), var(--shadow-popover);
+  animation: popover-slide-in var(--duration-fast) var(--ease-out);
+}
+
+.nb-move-option {
+  padding: var(--space-3) var(--space-4);
+  border: none;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: var(--fs-sm);
+  text-align: left;
+  cursor: pointer;
+  transition: var(--transition-color);
+}
+
+.nb-move-option:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
 }

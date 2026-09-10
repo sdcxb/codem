@@ -64,6 +64,10 @@ frakio-work 的两条关键惯例（我们同步遵守）：
 - 间距走 **2px 网格**（1px 仅用于细线）；常用 4/6/8/10/12/14/16/20/24。
 - 控件高度：密集 28–32px、标准 36px、表单 40–42px；图标按钮 30–38px。
 - 图标与文字：**14px 图标 ↔ 13px 标签**，`gap: 8px`；描边 1.8。
+- 图标尺寸**只用 `.icon-*` 一档 8 级**（`--icon-2xs` 10 / `--icon-xs` 12 / `--icon-sm` 14 /
+  `--icon-md` 16 / `--icon-lg` 20 / `--icon-xl` 24 / `--icon-2xl` 32 / `--icon-3xl` 48），
+  装饰性图标加 `.icon-dim`。**禁止**写 `w-3 h-3` / `animate-spin` / `opacity-40` 这类
+  Tailwind 风格类名 —— 本项目是纯 CSS，没有 Tailwind，写了也等于没样式。
 - 内容宽度：工作区 1180px、表单/设置 880px；页面 gutter `clamp(24px, 3.2vw, 48px)`。
 - 区块标题上间距 26px、下 10px；页面头行 `margin-bottom: 20px`。
 
@@ -94,7 +98,8 @@ node tools/ui-audit/scan-ui.mjs              # 汇总：每规则计数 + 问题
 node tools/ui-audit/scan-ui.mjs --verbose    # 附示例
 node tools/ui-audit/scan-ui.mjs --census     # 字面量分布（决定下一波映射表）
 node tools/ui-audit/scan-ui.mjs --rule=color-hardcoded-tsx
-node tools/ui-audit/codemod-tokens.mjs [--write]   # 令牌化改写（默认只预览）
+node tools/ui-audit/codemod-tokens.mjs [--write]      # 令牌化改写（默认只预览）
+node tools/ui-audit/codemod-icon-scale.mjs [--write]  # 图标工具类 → .icon-* 刻度（默认只预览）
 ```
 
 规则分层：
@@ -107,7 +112,8 @@ node tools/ui-audit/codemod-tokens.mjs [--write]   # 令牌化改写（默认只
 | `modal-shell-bespoke` | error | 自建浮层外壳，未用统一 `modal-overlay` |
 | `spacing-offgrid` | warn | 间距不在 2px 网格 |
 | `inline-style-dense` | warn | 单文件内联样式过密（应抽 CSS 类） |
-| `css-class-undefined` | warn | **tsx 里用了但没有任何 CSS 定义的类名**（等于没样式；已排除运行时状态类与第三方库类名） |
+| `legacy-popup-shell` | warn | 历史遗留的自建浮层类名（`popup-*`/`overlay-*`/`modal-box-*`/`dialog-box-*`/`sheet-*`） |
+| `css-class-undefined` | warn | **tsx 里用了但没有任何 CSS 定义的类名**（等于没样式；已排除运行时状态类与第三方库类名；模板字面量里的静态类名同样计入） |
 
 **合法例外**（写在 `scan-ui.mjs` 的 `ALLOWLIST`，每条都带理由）：皮肤令牌定义源、
 PPT 生成内容配色、大富翁游戏插件（自带美术语言）、图书馆角色调色板注释常量。
@@ -120,10 +126,11 @@ PPT 生成内容配色、大富翁游戏插件（自带美术语言）、图书�
 | 基线 | 2026-09-10 | 533 | 64 | 建立审计工具与例外表；确定现场：字号/色值/圆角/间距/弹窗外壳五类漂移 |
 | 第 1 波 | 2026-09-10 | 144 | 63 | 令牌化 codemod：478 处替换（色 409 / 圆角 32 / 字号 37）＋新增 `--fs-display`/`--fs-hero`/`--overlay-backdrop(-strong)` 令牌；`fs-hardcoded` 与 `radius-offscale` 已清零 |
 | 第 2 波 | 2026-09-10 | **102** | 63 | 淡色底/边按规范改写：`rgba(状态色, α)` → `color-mix(in srgb, var(--token) N%, transparent)`，84 处；新增 `css-class-undefined` 规则（tsx 用了但 CSS 里没定义的类名）—— 首次运行即暴露 **409 处"等于没样式"**，成为下一波最高性价比的工作队列 |
-| 第 3 波 | 待做 | — | — | 清单化的"未定义类名"：NotebookWorkspace(105) / NoteEditor(50) / ConfigEditor(33) / CorrectionResultPanel(23) / PipelineNextStepDialog(19) / ToolCallCard(19)…，补 CSS 或改用既有基元 |
+| 第 3 波 | 2026-09-10 | 85 | 303 | ~~清单化的"未定义类名"~~：当波只清了 Pipeline 下一步对话框与纠偏结果对比面板两处；其余 253 处留到第 10 波一次清完 |
 | 第 4 波 | 待做 | — | — | 15 个自建浮层外壳统一到 `modal-overlay`/`modal-editor`（含 z-index 令牌化：现在有 23 个 tsx 数值 + 13 个 CSS 层级） |
 | 第 5 波 | 待做 | — | — | 组件语言收口：按钮/输入/卡片/空态/列表行改用具名类，压缩 50 个「内联样式过密」文件；补 `--radius-xs: 6px`（259 处用到 6px 却无令牌）与 `--space-*` 刻度 |
 | 第 6 波 | 待做 | — | — | 门禁回归测试（计数 ≤ 基线并持续下降，直至 0）+ 文档 + 发布 |
+| **第 10 波** | 2026-09-10 | 85 | **50** | **`css-class-undefined` 253 → 0**：① 新增 `--icon-2xs..--icon-3xl` 图标刻度与 `.icon-*` 工具类（tsx 里 ~100 处 `w-3 h-3` / `animate-spin` / `opacity-40` 全是无效类名，图标实际渲染成 lucide 默认 24px —— 比 13px 标签大一倍）；② 补 ConfigEditor(24 类) / ClarificationForm(11) / CorrectionResultPanel(11) / NotebookManager 分组视图 / plugin-market 等全部缺失样式，一律只用令牌；③ **审计器扩面**：模板字面量 `` className={`a ${x}`} `` 里的静态类名此前被整段跳过（工具漏检），现在纳入并过滤 `status-` 这类残片；④ 死类名清理：`titlebar-btn-minimize` / `video-btn play` / `font-semibold` 之类"写了但既不匹配 CSS、也无 JS 查询"的修饰类直接删掉 |
 
 ### 全项目现场事实（来自 UI 交互界面清单，作为工作队列）
 
@@ -146,7 +153,7 @@ PPT 生成内容配色、大富翁游戏插件（自带美术语言）、图书�
 
 ---
 
-## 7. 交接快照（2026-09-10 · goal round 10）
+## 7. 交接快照（2026-09-10 · goal round 11）
 
 ### 当前数字（`node tools/ui-audit/scan-ui.mjs`）
 
@@ -155,17 +162,18 @@ PPT 生成内容配色、大富翁游戏插件（自带美术语言）、图书�
 | `fs-hardcoded` | error | 78 | **0** ✅（门禁锁定） |
 | `radius-offscale` | error | 38 | **0** ✅（门禁锁定） |
 | `spacing-offgrid` | warn | 13 | **0** ✅ |
+| `css-class-undefined` | warn | — | **0** ✅（第 10 波清零；且审计器已扩面到模板字面量） |
 | `color-hardcoded-css` | error | 209 | 17 |
 | `color-hardcoded-tsx` | error | 325 | 53 |
 | `modal-shell-bespoke` | error | 15 | 15 |
-| `css-class-undefined` | warn | — | 253 |
 | `inline-style-dense` | warn | 58 | 50 |
 | **error 合计** | | **533** | **85** |
+| **warn 合计** | | 64 | **50** |
 
 ### 已完成的波次
 
 1. **规范落地**：按 frakio-work 实测规范写成本文件（令牌契约 + 组件语言 + 门禁 + 例外表）。
-2. **机具**：`scan-ui.mjs`（6 条规则 + `--census/--json/--rule/--write-baseline`）、`codemod-tokens.mjs`（令牌化改写，默认 dry-run，只动 `style={{}}` 与 CSS，跳过含 `var(--` 的行与注释）。
+2. **机具**：`scan-ui.mjs`（9 条规则 + `--census/--json/--rule/--write-baseline`）、`codemod-tokens.mjs`（令牌化改写，默认 dry-run，只动 `style={{}}` 与 CSS，跳过含 `var(--` 的行与注释）、`codemod-icon-scale.mjs`（图标工具类 → `--icon-*` 刻度）。
 3. **第 1 波**：478 处令牌化（色 409 / 圆角 32 / 字号 37）→ `fs-hardcoded`、`radius-offscale` 清零。
 4. **第 2 波**：84 处淡色底边 → `color-mix(in srgb, var(--token) N%, transparent)`。
 5. **补令牌**：`--fs-display`(28) / `--fs-hero`(32) / `--overlay-backdrop(-strong)` / `--space-1..12` / `--radius-xs`(6px)。
@@ -173,14 +181,20 @@ PPT 生成内容配色、大富翁游戏插件（自带美术语言）、图书�
 7. **补样式**：Pipeline 下一步对话框、纠偏结果对比面板（此前类名无 CSS = 没样式）。
 8. **间距归一**：`spacing-offgrid` 13 → 0（只对齐离格值，±1px）。
 9. **CSS 色令牌化**：31 → 17（遮罩/底色/状态淡色）。
+10. **第 10 波（本轮）**：图标刻度 + 253 处「有类名没样式」清零（详见 §5 表）。
 
 ### 下一轮的工作队列（按性价比排序）
 
-1. **253 处「有类名没样式」**（先 NotebookWorkspace 78 / ConfigEditor 32 / NoteEditor）—— 补 CSS，只用令牌，视觉收益最大；
-2. **15 个自建浮层** → `modal-overlay` / `modal-editor`（含 z-index 令牌化：`modal-overlay`=200 与 `--z-modal`=1300 需先统一）；
-3. **剩余 17 处 CSS 色 + 53 处 TSX 色**：逐点判断是「皮肤/数据色（保留）」还是「UI 色（改令牌）」；
+1. **15 个自建浮层** → `modal-overlay` / `modal-editor`（含 z-index 令牌化：`modal-overlay`=200 与 `--z-modal`=1300 需先统一）；
+2. **剩余 17 处 CSS 色 + 53 处 TSX 色**：逐点判断是「皮肤/数据色（保留）」还是「UI 色（改令牌）」；
+3. **`styles.css` 本体**：该文件目前整份被排除在扫描之外，而它恰恰是最大的现场 —— 实测 **591 处硬编码字号**（12px×170 / 11px×121 / 13px×118 …）、233 行硬编码颜色、22 处离格圆角。这些字号不吃 `--ui-font-scale`，正是「设置里调字号没用」的原因。下一波应把它纳入扫描（`:root`/`[data-theme]` 块已能自动豁免），先做字号令牌化；
 4. **组件语言收口**：按钮/输入/卡片/空态/列表行改具名类，压低 50 个 `inline-style-dense`；
-5. **收尾**：门禁归零 → `CHANGELOG` / `README` / `PROJECT-GUIDE` / 本文件同步 → 升版本号 → 构建安装包 → 发布 Release。
+5. **重复定义收敛**：`styles.css` 内已有同名类被定义两次且取值不同（如 `.badge` 的圆角 10px vs 4px、`.workspace-tab` 的 11px vs 12px 字号），需要加一条「重复/冲突定义」审计规则；
+6. **收尾**：门禁归零 → `CHANGELOG` / `README` / `PROJECT-GUIDE` / 本文件同步 → 升版本号 → 构建安装包 → 发布 Release。
+
+### 已知例外（都写在 `scan-ui.mjs` 的 ALLOWLIST 里并附理由）
+
+皮肤令牌源（`src/styles.css`、`src/styles/skin-*.css`、`src/core/theme/`）、PPT 生成内容配色（`src/core/knowledge/ppt-*`）、大富翁游戏插件（自带美术语言）、图书馆角色调色板注释常量。
 
 ### 已知例外（都写在 `scan-ui.mjs` 的 ALLOWLIST 里并附理由）
 

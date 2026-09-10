@@ -59,7 +59,7 @@ export const VideoPlayer = memo(function VideoPlayer({
         onEnded={() => setPlaying(false)}
       />
       <div className="video-controls">
-        <button className="video-btn play" onClick={togglePlay}>
+        <button className="video-btn" onClick={togglePlay} title={playing ? S.video.pause[lang] : S.video.play[lang]}>
           {playing ? <Pause size={16} /> : <Play size={16} />}
         </button>
         <input
@@ -71,7 +71,7 @@ export const VideoPlayer = memo(function VideoPlayer({
           onChange={handleSeek}
         />
         <button
-          className="video-btn download"
+          className="video-btn"
           onClick={() => {
             const a = document.createElement("a");
             a.href = src;

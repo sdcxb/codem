@@ -1542,3 +1542,29 @@
   .lo-actor .lo-arm,
   .lo-task__live-dot { animation: none !important; }
 }
+
+/* ===== UI 统一（第 10 波）：补齐「有类名、没样式」的类名 ===== */
+
+/* ISO 家具的基础面：只给描边与渲染提示，颜色仍由 .lo-fx-face--south/east/top 决定 */
+.lo-fx-face { stroke: color-mix(in srgb, var(--lo-fx, var(--accent)) 22%, var(--bg-primary)); stroke-width: 0.5; shape-rendering: geometricPrecision; }
+.lo-fx-detail { pointer-events: none; }
+.lo-furniture { pointer-events: none; }
+
+/* 开关右侧文字（.lo-switch__track / __thumb 已有定义） */
+.lo-switch__label { color: var(--text-secondary); }
+
+/* 成本视图根容器（.lo-cost__row / __chart 已有定义） */
+.lo-cost { display: flex; flex-direction: column; gap: 10px; }
+
+/* 会话卡片的"多久以前"（对标 .lo-alerts__age） */
+.lo-session-card__age { color: var(--text-muted); font-variant-numeric: tabular-nums; }
+
+/* 自定义场景图选项：虚线上传位（.lo-scene-option 已有定义） */
+.lo-scene-option--custom { border-style: dashed; }
+
+/* 两块自然高度的面板：容器滚动、卡片自身限高（对标 .lo-card--status/--sessions） */
+.lo-card--timeline, .lo-card--stream { max-height: 320px; }
+.lo-card--timeline .lo-card__body, .lo-card--stream .lo-card__body { flex: 1; min-height: 0; overflow: hidden; }
+
+/* 时间线的竖轨（.lo-timeline__item 已有左内边距与圆点） */
+.lo-timeline__rail { position: absolute; left: 3px; top: 0; bottom: 0; width: 1px; background: var(--border-primary); }

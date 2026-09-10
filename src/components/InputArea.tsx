@@ -1469,7 +1469,7 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
             {/* 内联回退：当 PlanModeChip 未显示时（非 plan 模式），保留可点击的切换按钮 */}
             {collaborationMode !== 'plan' && (
               <button
-                className="mode-toggle-btn default"
+                className="mode-toggle-btn"
                 onClick={() => onModeChange?.('plan')}
                 title={zh ? "执行模式 — 点击切换到计划模式" : "Execute mode — click for plan mode"}
               >

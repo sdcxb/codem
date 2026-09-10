@@ -318,7 +318,7 @@ export function TitleBar({
       {!isMac && (
         <div className="titlebar-buttons">
           <button
-            className="titlebar-btn titlebar-btn-minimize"
+            className="titlebar-btn"
             onClick={handleMinimize}
             title="最小化"
           >
@@ -327,7 +327,7 @@ export function TitleBar({
             </svg>
           </button>
           <button
-            className="titlebar-btn titlebar-btn-maximize"
+            className="titlebar-btn"
             onClick={handleToggleMaximize}
             title={maximized ? "还原" : "最大化"}
           >

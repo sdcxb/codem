@@ -631,7 +631,7 @@ const handleDrop = useCallback((e: React.DragEvent, targetSessionId: string, pro
                       }}
                     >
                       <button
-                        className="sidebar-project-btn more"
+                        className="sidebar-project-btn"
                         onClick={(e) => {
                           e.stopPropagation();
                           if (clickedMenuProjectId === project.id) {

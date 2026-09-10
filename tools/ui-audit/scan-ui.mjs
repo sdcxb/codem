@@ -235,6 +235,43 @@ const RUNTIME_CLASS_RE = /^(is-|has-|js-|no-|with-)|^(active|open|selected|hover
 /** 第三方库自带的类名（样式由库自己的 CSS/内联注入，不归本项目管） */
 const THIRD_PARTY_CLASS_RE = /^(xterm|react-flow|monaco|katex|mermaid|shiki|hljs|cm-|cm_|prose|token|language-|ace_|pdf|docx|sheet|ph-|leaflet|recharts|swiper|tippy|radix|rt-|fl-|fa-|fas|far|fab)/;
 
+/** 去掉模板字面量里的 ${…} 表达式（含嵌套花括号），只留静态片段 */
+function stripTemplateExprs(s) {
+  let out = "";
+  let i = 0;
+  while (i < s.length) {
+    if (s[i] === "$" && s[i + 1] === "{") {
+      let depth = 0;
+      i += 1;
+      do {
+        if (s[i] === "{") depth++;
+        else if (s[i] === "}") depth--;
+        i++;
+      } while (i < s.length && depth > 0);
+      out += " ";
+    } else {
+      out += s[i++];
+    }
+  }
+  return out;
+}
+
+/**
+ * 收集一个元素上的「静态类名 token」。
+ * 覆盖三种写法：`className="a b"`、`className={'a b'}`、`` className={`a ${c ? 'active' : ''}`} ``。
+ * 第三种此前被整段跳过 —— 于是 ConfigEditor / NotebookManager 这类大量使用条件类名的组件，
+ * 一半以上的「有类名没样式」根本不会被审计出来（工具漏检，不是没问题）。
+ */
+function staticClassTokens(src) {
+  const hits = [];
+  for (const m of src.matchAll(/className=(?:"([^"{}]+)"|\{(["'`])([\s\S]*?)\2\})/g)) {
+    const raw = m[1] ?? m[3] ?? "";
+    if (!raw) continue;
+    hits.push({ raw: m[3] != null ? stripTemplateExprs(raw) : raw, index: m.index });
+  }
+  return hits;
+}
+
 for (const full of files) {
   const rel = relative(ROOT, full).replace(/\\/g, "/");
   if (shouldSkip(rel)) continue;
@@ -245,17 +282,17 @@ for (const full of files) {
   }
   scanTsx(rel, src);
 
-  // 静态 className 字面量（跳过含 ${} 的动态拼接）
-  for (const m of src.matchAll(/className=(?:"([^"{}]+)"|\{'([^'{}]+)'\})/g)) {
-    const raw = m[1] ?? m[2] ?? "";
+  for (const { raw, index } of staticClassTokens(src)) {
     // 该元素自己带了内联样式 → 已经"有样式"，类名只是钩子，不算"等于没样式"
-    const tail = src.slice(m.index, m.index + 220);
+    const tail = src.slice(index, index + 220);
     const hasInlineStyle = /^\s*>?[\s\S]{0,160}?style=\{\{/.test(tail.replace(/^className=[^>]*/, "")) ||
       /style=\{\{/.test(tail);
     if (hasInlineStyle) continue;
     for (const cls of raw.split(/\s+/).filter(Boolean)) {
+      // 模板片段：`status-${s}` 会留下残片 "status-"，无法判定真实类名，跳过
+      if (/^[-_]|[-_]$/.test(cls)) continue;
       if (RUNTIME_CLASS_RE.test(cls) || THIRD_PARTY_CLASS_RE.test(cls) || definedClasses.has(cls)) continue;
-      const line = src.slice(0, m.index).split("\n").length;
+      const line = src.slice(0, index).split("\n").length;
       add("css-class-undefined", rel, line, cls, `未定义类名: ${cls}`);
     }
   }

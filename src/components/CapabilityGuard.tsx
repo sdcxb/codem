@@ -66,7 +66,7 @@ export function CapabilityGuard({ feature, children, fallbackRender = true, onUn
               lineHeight: '1.4',
             }}
           >
-            <AlertTriangle size={12} className="flex-shrink-0 mt-0.5" style={{ color: 'var(--warning)' }} />
+            <AlertTriangle size={12} style={{ color: 'var(--warning)', marginTop: 2, flexShrink: 0 }} />
             <span style={{ flex: 1 }}>{isZh ? w.zh : w.en}</span>
             <button
               onClick={() => setDismissed(true)}

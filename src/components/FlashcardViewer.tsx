@@ -234,7 +234,7 @@ export function FlashcardViewer({ notebookId, noteId, onClose }: FlashcardViewer
             {isZh ? '新建' : 'New'}
           </button>
           <button className="nb-studio-btn" onClick={handleAIGenerate} disabled={generating} style={{ fontSize: 'var(--fs-xs)', padding: '3px 10px' }}>
-            {generating ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
+            {generating ? <Loader2 size={13} className="spin" /> : <Sparkles size={13} />}
             {isZh ? (noteId ? '从笔记生成' : 'AI 生成') : (noteId ? 'From Note' : 'AI Generate')}
           </button>
         </div>

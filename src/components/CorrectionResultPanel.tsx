@@ -93,7 +93,7 @@ export const CorrectionResultPanel = memo(function CorrectionResultPanel({
         <button className="correction-btn apply" onClick={onApply}>
           ✓ {S.correction.apply[lang]}
         </button>
-        <button className="correction-btn dismiss" onClick={onDismiss}>
+        <button className="correction-btn" onClick={onDismiss}>
           ✕ {S.correction.dismiss[lang]}
         </button>
       </div>

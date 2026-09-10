@@ -394,7 +394,7 @@ export function NotebookManager({ onClose, onOpenNotebookChat, onOpenWorkspace }
         )}
         {selectedNotebook.summaryStatus === 'generating' && (
           <div className="notebook-summary-section">
-            <Loader2 size={16} className="animate-spin" />
+            <Loader2 size={16} className="spin" />
             <span>{lang === 'zh' ? '正在生成摘要...' : 'Generating summary...'}</span>
           </div>
         )}
@@ -437,7 +437,7 @@ export function NotebookManager({ onClose, onOpenNotebookChat, onOpenWorkspace }
           {/* Indexing progress */}
           {indexing && indexProgress && (
             <div className="notebook-indexing-progress">
-              <Loader2 size={16} className="animate-spin" />
+              <Loader2 size={16} className="spin" />
               <span>
                 {lang === 'zh' ? '正在索引' : 'Indexing'}: {indexProgress.sourceName}
                 {indexProgress.totalChunks ? ` (${indexProgress.currentChunk}/${indexProgress.totalChunks})` : ''}
@@ -471,7 +471,7 @@ export function NotebookManager({ onClose, onOpenNotebookChat, onOpenWorkspace }
         )}
         {loadingQuestions && sources.length > 0 && (
           <div className="notebook-guided-questions">
-            <Loader2 size={16} className="animate-spin" />
+            <Loader2 size={16} className="spin" />
             <span>{lang === 'zh' ? '正在生成建议问题...' : 'Generating questions...'}</span>
           </div>
         )}
@@ -610,7 +610,7 @@ export function NotebookManager({ onClose, onOpenNotebookChat, onOpenWorkspace }
             {lang === 'zh' ? '分组' : 'Group'}
           </button>
           <button className="notebook-create-btn" onClick={handleImport} disabled={importing} title={lang === 'zh' ? '导入 Markdown' : 'Import Markdown'}>
-            {importing ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
+            {importing ? <Loader2 size={16} className="spin" /> : <Upload size={16} />}
             {lang === 'zh' ? '导入' : 'Import'}
           </button>
           <button className="notebook-create-btn" onClick={() => setShowCreate(true)}>
@@ -878,7 +878,7 @@ function NotebookCard({
         )}
         {nb.summaryStatus === 'generating' && (
           <Badge variant="warning">
-            <Loader2 size={12} className="animate-spin" />
+            <Loader2 size={12} className="spin" />
             {isZh ? '处理中' : 'Processing'}
           </Badge>
         )}
@@ -905,7 +905,7 @@ function SourceItem({ source, onDelete }: { source: NotebookSource; onDelete: ()
           <Badge variant={source.status === 'indexed' ? 'success' : source.status === 'failed' ? 'danger' : 'muted'}>
             {source.status === 'indexed' ? <CheckCircle size={12} /> :
              source.status === 'failed' ? <AlertCircle size={12} /> :
-             <Loader2 size={12} className="animate-spin" />}
+             <Loader2 size={12} className="spin" />}
             {source.status}
           </Badge>
           {source.chunkCount > 0 && (

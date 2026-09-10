@@ -108,7 +108,7 @@ export function NbChatPanel({
                 {/* 建议问题融入对话区域 */}
                 {loadingQuestions && (
                   <div className="nb-chat-loading-questions">
-                    <Loader2 className="w-3 h-3 animate-spin" />
+                    <Loader2 className="icon-xs spin" />
                     <span>{isZh ? '正在生成建议问题...' : 'Generating questions...'}</span>
                   </div>
                 )}

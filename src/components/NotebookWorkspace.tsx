@@ -697,11 +697,11 @@ setShowNoteEditor(true);
       {/* Header */}
       <div className="nb-workspace-header">
         <button className="nb-back-btn" onClick={onBack}>
-          <ArrowLeft className="w-3 h-3" />
+          <ArrowLeft className="icon-xs" />
           <span>{isZh ? '笔记本列表' : 'Notebooks'}</span>
         </button>
         <h2 className="nb-workspace-title">
-          <BookOpen className="w-3 h-3" />
+          <BookOpen className="icon-xs" />
           {notebookName}
         </h2>
         <div className="nb-workspace-actions">
@@ -712,7 +712,7 @@ setShowNoteEditor(true);
               onClick={() => setShowExport(!showExport)}
               disabled={sources.length === 0}
             >
-              <Download className="w-3 h-3" />
+              <Download className="icon-xs" />
               <span>{isZh ? '导出' : 'Export'}</span>
             </button>
             {showExport && (
@@ -731,7 +731,7 @@ setShowNoteEditor(true);
             disabled={sources.filter(s => s.status === 'indexed').length === 0}
             title={isZh ? '学习路径' : 'Study Path'}
           >
-            <Route className="w-3 h-3" />
+            <Route className="icon-xs" />
             <span>{isZh ? '学习路径' : 'Study Path'}</span>
           </button>
           {/* 闪卡 (借鉴 Lumina Note 思路) */}
@@ -740,7 +740,7 @@ setShowNoteEditor(true);
             onClick={() => setShowFlashcards(true)}
             title={isZh ? '闪卡' : 'Flashcards'}
           >
-            <Layers className="w-3 h-3" />
+            <Layers className="icon-xs" />
             <span>{isZh ? '闪卡' : 'Flashcards'}</span>
           </button>
           <div className="nb-studio-wrapper" ref={studioRef}>
@@ -750,9 +750,9 @@ setShowNoteEditor(true);
               disabled={studioGenerating || sources.filter(s => s.status === 'indexed').length === 0}
             >
               {studioGenerating ? (
-                <Loader2 className="w-3 h-3 animate-spin" />
+                <Loader2 className="icon-xs spin" />
               ) : (
-                <Sparkles className="w-3 h-3" />
+                <Sparkles className="icon-xs" />
               )}
               <span>Studio</span>
             </button>
@@ -836,7 +836,7 @@ notebookId={notebookId}
                     className={`nb-view-tab ${viewMode === 'sources' ? 'active' : ''}`}
                     onClick={() => setViewMode('sources')}
                   >
-                    <FileText className="w-3.5 h-3.5" />
+                    <FileText className="icon-sm" />
                     {isZh ? '来源' : 'Sources'}
                     <span className="nb-count-badge">{sources.length}</span>
                   </button>
@@ -844,7 +844,7 @@ notebookId={notebookId}
                     className={`nb-view-tab ${isGraphMode ? 'active' : ''}`}
                     onClick={() => setViewMode('graph')}
                   >
-                    <Share2 className="w-3.5 h-3.5" />
+                    <Share2 className="icon-sm" />
                     {isZh ? '图谱' : 'Graph'}
                   </button>
                 </div>
@@ -854,14 +854,14 @@ notebookId={notebookId}
                   disabled={indexing}
                   title={isZh ? '添加来源' : 'Add Source'}
                 >
-                  <Plus className="w-3.5 h-3.5" />
+                  <Plus className="icon-sm" />
                 </button>
               </div>
 
               <div className="nb-source-list">
                 {sources.length === 0 && !indexing && (
                   <div className="nb-empty-mini">
-                    <FileText className="w-6 h-6 opacity-40" />
+                    <FileText className="icon-xl icon-dim" />
                     <p>{isZh ? '添加文件/文本/URL' : 'Add files, text, or URLs'}</p>
                   </div>
                 )}
@@ -880,7 +880,7 @@ notebookId={notebookId}
 
               {indexing && indexProgress && (
                 <div className="nb-indexing-progress">
-                  <Loader2 className="w-2.5 h-2.5 animate-spin" />
+                  <Loader2 className="icon-2xs spin" />
                   <span>
                     {isZh ? '索引中' : 'Indexing'}: {indexProgress.sourceName}
                     {indexProgress.totalChunks ? ` (${indexProgress.currentChunk}/${indexProgress.totalChunks})` : ''}
@@ -900,13 +900,13 @@ notebookId={notebookId}
                       padding: 0, width: '100%',
                     }}
                   >
-                    <BookOpen className="w-3 h-3" />
+                    <BookOpen className="icon-xs" />
                     <span className="nb-section-label" style={{ margin: 0 }}>
                       {isZh ? '摘要' : 'Summary'}
                     </span>
                     {summaryCollapsed
-                      ? <ChevronRight className="w-3 h-3" style={{ marginLeft: 'auto' }} />
-                      : <ChevronDown className="w-3 h-3" style={{ marginLeft: 'auto' }} />}
+                      ? <ChevronRight className="icon-xs" style={{ marginLeft: 'auto' }} />
+                      : <ChevronDown className="icon-xs" style={{ marginLeft: 'auto' }} />}
                   </button>
                   {!summaryCollapsed && (
                     <p className="nb-summary-text" style={{ marginTop: '6px' }}>{notebook.summary}</p>
@@ -941,7 +941,7 @@ notebookId={notebookId}
             />
           ) : sources.length === 0 && !indexing ? (
             <div className="nb-chat-empty">
-              <BookOpen className="w-12 h-12 opacity-30" />
+              <BookOpen className="icon-3xl icon-dim" />
               <p className="nb-empty-title">{isZh ? '开始使用笔记本' : 'Get Started'}</p>
               <p className="nb-empty-desc">
                 {isZh ? '在左侧添加来源，即可开始知识问答' : 'Add sources on the left to start asking questions'}
@@ -963,7 +963,7 @@ notebookId={notebookId}
                   <PanelRightClose size={16} />
                 </button>
                 <h3 className="nb-panel-title">
-                  <StickyNote className="w-3 h-3" />
+                  <StickyNote className="icon-xs" />
                   {isZh ? '笔记' : 'Notes'}
                   <span className="nb-count-badge">{notes.length}</span>
                 </h3>
@@ -972,7 +972,7 @@ notebookId={notebookId}
                   onClick={handleCreateNote}
                   title={isZh ? '新建笔记' : 'New Note'}
                 >
-                  <Plus className="w-3.5 h-3.5" />
+                  <Plus className="icon-sm" />
                 </button>
               </div>
 
@@ -1001,7 +1001,7 @@ notebookId={notebookId}
               <div className="nb-note-list">
                 {notes.length === 0 && (
                   <div className="nb-empty-mini">
-                    <StickyNote className="w-6 h-6 opacity-40" />
+                    <StickyNote className="icon-xl icon-dim" />
                     <p>{isZh ? '点击 + 创建笔记' : 'Click + to create a note'}</p>
                   </div>
                 )}
@@ -1125,17 +1125,17 @@ notebookId={notebookId}
           <div className="nb-dialog" style={{ width: '600px' }} onClick={(e) => e.stopPropagation()}>
             <div className="nb-dialog-header">
               <h3 className="nb-dialog-title">
-                <Route className="w-4 h-4" />
+                <Route className="icon-md" />
                 {isZh ? '引导式学习路径' : 'Guided Study Path'}
               </h3>
               <button className="nb-dialog-close" onClick={() => setShowStudyPath(false)}>
-                <X className="w-4 h-4" />
+                <X className="icon-md" />
               </button>
             </div>
             <div className="nb-study-path">
               {studyPath.length === 0 ? (
                 <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>
-                  <Map className="w-8 h-8" style={{ margin: '0 auto 8px', opacity: 0.5 }} />
+                  <Map className="icon-2xl" style={{ margin: '0 auto 8px', opacity: 0.5 }} />
                   <p>{isZh ? '请先生成知识图谱后再使用学习路径' : 'Please generate a knowledge graph first'}</p>
                 </div>
               ) : (
@@ -1215,7 +1215,7 @@ notebookId={notebookId}
           >
             <div className="nb-dialog-header">
               <h3 className="nb-dialog-title">
-                <Sparkles className="w-4 h-4" />
+                <Sparkles className="icon-md" />
                 <input
                   type="text"
                   value={studioPreviewTitle}
@@ -1235,7 +1235,7 @@ notebookId={notebookId}
                   title={isZh ? '预览模式' : 'Preview'}
                   style={{ padding: '4px 8px', fontSize: 'var(--fs-sm)' }}
                 >
-                  <Eye className="w-3.5 h-3.5" />
+                  <Eye className="icon-sm" />
                 </button>
                 <button
                   className={`nb-mode-btn ${studioPreviewMode === 'edit' ? 'active' : ''}`}
@@ -1243,7 +1243,7 @@ notebookId={notebookId}
                   title={isZh ? '编辑模式' : 'Edit'}
                   style={{ padding: '4px 8px', fontSize: 'var(--fs-sm)' }}
                 >
-                  <Edit3 className="w-3.5 h-3.5" />
+                  <Edit3 className="icon-sm" />
                 </button>
                 <button
                   className={`nb-mode-btn ${studioPreviewMode === 'split' ? 'active' : ''}`}
@@ -1251,10 +1251,10 @@ notebookId={notebookId}
                   title={isZh ? '分屏模式' : 'Split'}
                   style={{ padding: '4px 8px', fontSize: 'var(--fs-sm)' }}
                 >
-                  <Columns className="w-3.5 h-3.5" />
+                  <Columns className="icon-sm" />
                 </button>
                 <button className="nb-dialog-close" onClick={() => setStudioPreview(null)}>
-                  <X className="w-4 h-4" />
+                  <X className="icon-md" />
                 </button>
               </div>
             </div>
@@ -1328,7 +1328,7 @@ notebookId={notebookId}
                 {isZh ? '丢弃' : 'Discard'}
               </button>
               <button className="nb-btn-confirm" onClick={handleStudioPreviewSave}>
-                <Save className="w-3.5 h-3.5" />
+                <Save className="icon-sm" />
                 {isZh ? '保存为笔记' : 'Save as Note'}
               </button>
             </div>
@@ -1356,9 +1356,9 @@ function SourceCard({
   const [expanded, setExpanded] = useState(false);
   const [summaryCollapsed, setSummaryCollapsed] = useState(true);
 
-  const icon = source.type === 'file' ? <FileText className="w-3 h-3" /> :
-    source.type === 'url' ? <LinkIcon className="w-3 h-3" /> :
-    <Type className="w-3 h-3" />;
+  const icon = source.type === 'file' ? <FileText className="icon-xs" /> :
+    source.type === 'url' ? <LinkIcon className="icon-xs" /> :
+    <Type className="icon-xs" />;
 
   const previewText = source.content
     ? source.content.slice(0, 120).replace(/\n/g, ' ')
@@ -1394,7 +1394,7 @@ function SourceCard({
         <span className="nb-source-name">{source.name}</span>
         <span className="nb-source-status-dot" style={{ background: statusColor }} title={source.status} />
         <button className="nb-source-delete" onClick={(e) => { e.stopPropagation(); onDelete(); }}>
-          <Trash2 className="w-2.5 h-2.5" />
+          <Trash2 className="icon-2xs" />
         </button>
       </div>
 
@@ -1423,11 +1423,11 @@ function SourceCard({
                 className="nb-source-summary-toggle"
                 onClick={(e) => { e.stopPropagation(); setSummaryCollapsed(!summaryCollapsed); }}
               >
-                <Sparkles className="w-2.5 h-2.5" />
+                <Sparkles className="icon-2xs" />
                 <span className="nb-source-summary-label">{isZh ? 'AI 摘要' : 'AI Summary'}</span>
                 {summaryCollapsed
-                  ? <ChevronRight className="w-2.5 h-2.5" style={{ marginLeft: 'auto' }} />
-                  : <ChevronDown className="w-2.5 h-2.5" style={{ marginLeft: 'auto' }} />}
+                  ? <ChevronRight className="icon-2xs" style={{ marginLeft: 'auto' }} />
+                  : <ChevronDown className="icon-2xs" style={{ marginLeft: 'auto' }} />}
               </button>
               {!summaryCollapsed && (
                 <>
@@ -1458,7 +1458,7 @@ function SourceCard({
                   onClick={(e) => { e.stopPropagation(); onViewSource(); }}
                   title={isZh ? '查看原文' : 'View Source'}
                 >
-                  <FileText className="w-2.5 h-2.5" />
+                  <FileText className="icon-2xs" />
                   {isZh ? '原文' : 'View'}
                 </button>
               )}
@@ -1468,7 +1468,7 @@ function SourceCard({
                   onClick={(e) => { e.stopPropagation(); onReindex(); }}
                   title={isZh ? '重新索引' : 'Re-index'}
                 >
-                  <Loader2 className="w-2.5 h-2.5" />
+                  <Loader2 className="icon-2xs" />
                   {isZh ? '重索引' : 'Reindex'}
                 </button>
               )}
@@ -1508,22 +1508,22 @@ function NoteCard({
     >
       <div className="nb-note-card-header">
         {isPPT ? (
-          <Presentation className="w-2.5 h-2.5 text-primary" />
+          <Presentation className="icon-2xs" />
         ) : (
-          <StickyNote className="w-2.5 h-2.5 text-primary" />
+          <StickyNote className="icon-2xs" />
         )}
         <span className="nb-note-title">{note.title}</span>
-        {isPinned && <Pin className="w-2.5 h-2.5" style={{ color: 'var(--accent)' }} />}
+        {isPinned && <Pin className="icon-2xs" style={{ color: 'var(--accent)' }} />}
         <button
           className="nb-note-delete"
           onClick={(e) => { e.stopPropagation(); onTogglePin?.(); }}
           title={isPinned ? (isZh ? '取消置顶' : 'Unpin') : (isZh ? '置顶' : 'Pin')}
           style={{ opacity: isPinned ? 1 : 0.4 }}
         >
-          <Pin className="w-2.5 h-2.5" />
+          <Pin className="icon-2xs" />
         </button>
         <button className="nb-note-delete" onClick={(e) => { e.stopPropagation(); onDelete(); }}>
-          <Trash2 className="w-2.5 h-2.5" />
+          <Trash2 className="icon-2xs" />
         </button>
       </div>
       {preview && <p className="nb-note-preview">{preview}</p>}
@@ -1560,7 +1560,7 @@ function NoteCard({
               color: 'var(--text-muted)', cursor: 'pointer', fontSize: 'var(--fs-xs)',
             }}
           >
-            <Layers className="w-2.5 h-2.5" />
+            <Layers className="icon-2xs" />
             {isZh ? '闪卡' : 'Cards'}
           </button>
         )}
@@ -1582,13 +1582,13 @@ function AddSourceDialog({
         <h3 className="nb-dialog-title">{isZh ? '添加来源' : 'Add Source'}</h3>
         <div className="nb-source-type-tabs">
           <button className={`nb-type-tab ${sourceType === 'text' ? 'active' : ''}`} onClick={() => setSourceType('text')}>
-            <Type className="w-4 h-4" />{isZh ? '文本' : 'Text'}
+            <Type className="icon-md" />{isZh ? '文本' : 'Text'}
           </button>
           <button className={`nb-type-tab ${sourceType === 'file' ? 'active' : ''}`} onClick={() => setSourceType('file')}>
-            <FileText className="w-4 h-4" />{isZh ? '文件' : 'File'}
+            <FileText className="icon-md" />{isZh ? '文件' : 'File'}
           </button>
           <button className={`nb-type-tab ${sourceType === 'url' ? 'active' : ''}`} onClick={() => setSourceType('url')}>
-            <LinkIcon className="w-4 h-4" />URL
+            <LinkIcon className="icon-md" />URL
           </button>
         </div>
         <input
@@ -1609,7 +1609,7 @@ function AddSourceDialog({
         {sourceType === 'file' && (
           <div className="nb-file-select">
             <button className="nb-file-btn" onClick={onFileSelect}>
-              <FileText className="w-4 h-4" />{isZh ? '选择文件' : 'Choose File'}
+              <FileText className="icon-md" />{isZh ? '选择文件' : 'Choose File'}
             </button>
             {sourceFilePaths.length > 0 && (
           <div className="nb-file-path-list">

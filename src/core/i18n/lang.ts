@@ -351,6 +351,8 @@ search: { zh: "搜索", en: "Search" },
     download: { zh: "下载", en: "Download" },
   },
   video: {
+    play: { zh: "播放", en: "Play" },
+    pause: { zh: "暂停", en: "Pause" },
     download: { zh: "下载", en: "Download" },
   },
   generateMode: {

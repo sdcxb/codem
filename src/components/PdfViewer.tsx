@@ -212,7 +212,7 @@ export function PdfViewer({ filePath, pdfData, highlightText, onClose }: PdfView
       <div className="nb-source-viewer-overlay" onClick={onClose}>
         <div className="nb-source-viewer" onClick={(e) => e.stopPropagation()} style={{ alignItems: 'center', justifyContent: 'center' }}>
           <div style={{ textAlign: 'center', padding: '40px' }}>
-            <FileText size={32} className="animate-pulse" style={{ margin: '0 auto 12px', opacity: 0.5 }} />
+            <FileText size={32} className="spin" style={{ margin: '0 auto 12px', opacity: 0.5 }} />
             <p style={{ opacity: 0.6 }}>{isZh ? '正在加载 PDF...' : 'Loading PDF...'}</p>
           </div>
         </div>
