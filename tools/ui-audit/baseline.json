@@ -1,12 +1,12 @@
 {
-  "at": "2026-09-10T07:16:10.195Z",
+  "at": "2026-09-10T07:18:46.507Z",
   "errorCount": 102,
-  "warnCount": 472,
+  "warnCount": 441,
   "byRule": {
     "color-hardcoded-tsx": 53,
     "inline-style-dense": 50,
     "spacing-offgrid": 13,
-    "css-class-undefined": 409,
+    "css-class-undefined": 378,
     "modal-shell-bespoke": 15,
     "color-hardcoded-css": 34
   }
