@@ -11,6 +11,7 @@
 
 import type { SkinId, DreamSkinConfig, ExtractedPalette } from './types';
 import { DEFAULT_DREAM_CONFIG } from './presets';
+import { DEFAULT_THEME, THEME_SETTING_KEY, applyThemeAttribute, isThemeMode } from './theme-default';
 import { ThemeExtractor } from './theme-extractor';
 import { getSetting, setSetting } from '../storage/settings';
 
@@ -191,17 +192,16 @@ class ThemeManagerClass {
       // 默认皮肤：清除所有皮肤相关 DOM 痕迹
       root.removeAttribute('data-skin');
       this.cleanDreamCSS();
-      // 恢复用户保存的主题（codem-theme），cleanDreamCSS 中已处理但确保覆盖
+      // 恢复用户保存的主题（codem-theme）；没保存过就走默认档位（第 36 波：浅色暖中性）。
+      // cleanDreamCSS 会清掉 data-theme，所以这里必须重新写一次。
       try {
-        const userTheme = getSetting('codem-theme') as 'dark' | 'light' | null;
-        if (userTheme) {
-          root.setAttribute('data-theme', userTheme);
-        }
+        const userTheme = getSetting(THEME_SETTING_KEY);
+        applyThemeAttribute(isThemeMode(userTheme) ? userTheme : DEFAULT_THEME, root);
       } catch (e) { console.warn('[theme-manager.ts]', e) }
     } else if (this.currentSkin === 'hub') {
       // Hub 皮肤是暗色皮肤，强制 data-theme=dark 确保所有 dark 模式 CSS 变量生效
       root.setAttribute('data-skin', 'hub');
-      root.setAttribute('data-theme', 'dark');
+      applyThemeAttribute('dark', root);
       this.cleanDreamCSS();
     } else {
       // Dream 皮肤：由 applyDreamCSS 根据 palette.isDark 自适应设置 data-theme
@@ -472,12 +472,10 @@ class ThemeManagerClass {
     }
     this.removeVideoBg();
 
-    // 恢复用户选择的主题
+    // 恢复用户选择的主题（没保存过就走默认档位）
     try {
-      const userTheme = getSetting('codem-theme') as 'dark' | 'light' | null;
-      if (userTheme) {
-        root.setAttribute('data-theme', userTheme);
-      }
+      const userTheme = getSetting(THEME_SETTING_KEY);
+      applyThemeAttribute(isThemeMode(userTheme) ? userTheme : DEFAULT_THEME, root);
     } catch (e) { console.warn('[theme-manager.ts]', e) }
   }
 

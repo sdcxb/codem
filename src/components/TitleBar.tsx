@@ -14,6 +14,7 @@ import { ActionIcons } from "../core/icons/icon-map";
 import codemLogoUrl from "../assets/codem-logo.png";
 import { getSetting, setSetting } from "../core/storage/settings";
 import { ThemeManager } from "../core/theme";
+import { DEFAULT_THEME, applyThemeAttribute, isThemeMode } from "../core/theme/theme-default";
 import { useProjectStore } from "../core/store";
 import { useAppStore } from "../store";
 import { getLang } from "../core/i18n/lang";
@@ -64,7 +65,10 @@ export function TitleBar({
   onCloseTab,
 }: TitleBarProps = {}) {
   const [maximized, setMaximized] = useState(false);
-  const [theme, setTheme] = useState<"dark" | "light">(() => (getSetting("codem-theme") as "dark" | "light") || "dark");
+  const [theme, setTheme] = useState<"dark" | "light">(() => {
+    const saved = getSetting("codem-theme");
+    return isThemeMode(saved) ? saved : DEFAULT_THEME;
+  });
   // 执行模式切换（本地处理 / 新工作树）—— 由 InputArea 底部 bar 移至顶部状态栏
   const currentProject = useProjectStore((s) => s.currentProject);
   const [executionMode, setExecutionMode] = useState<ExecutionMode>("current_workspace");
@@ -80,13 +84,13 @@ export function TitleBar({
   useEffect(() => {
     if (!dbReady) return;
     try {
-      const saved = getSetting("codem-theme") as "dark" | "light" | null;
-      if (saved && saved !== theme) {
+      const saved = getSetting("codem-theme");
+      if (isThemeMode(saved) && saved !== theme) {
         setTheme(saved);
         // 只有默认皮肤才由 TitleBar 管理 data-theme
         const skin = ThemeManager.getSkin();
         if (skin !== 'dream' && skin !== 'hub') {
-          document.documentElement.setAttribute("data-theme", saved);
+          applyThemeAttribute(saved);
         }
       }
     } catch {}
@@ -132,7 +136,7 @@ export function TitleBar({
     // Hub 皮肤是暗色皮肤，由 ThemeManager 强制 data-theme=dark，不覆盖
     const skin = ThemeManager.getSkin();
     if (skin === 'dream' || skin === 'hub') return;
-    document.documentElement.setAttribute("data-theme", theme);
+    applyThemeAttribute(theme);
   }, [theme]);
 
   const toggleTheme = useCallback(() => {
@@ -142,7 +146,7 @@ export function TitleBar({
     // 梦幻皮肤和 Hub 皮肤由 ThemeManager 管理 data-theme，不覆盖
     const skin = ThemeManager.getSkin();
     if (skin === 'dream' || skin === 'hub') return;
-    document.documentElement.setAttribute("data-theme", next);
+    applyThemeAttribute(next);
   }, [theme]);
 
   // 项目变化时加载执行模式 + 是否 Git 仓库

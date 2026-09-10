@@ -119,6 +119,22 @@ frakio-work 的两条关键惯例（我们同步遵守）：
    不需要为每个状态再抄一遍 `color-mix` —— 这是"加状态色不用加代码"的关键。
 2. **浮层优先用「环」而不是边框**：`box-shadow: 0 0 0 1px var(--border-primary), <投影>`。
 
+**默认档位与两档对称（第 36 波）**
+
+| 项 | 值 |
+| --- | --- |
+| 默认档位 | **浅色暖中性**（`DEFAULT_THEME = 'light'`，唯一真相源在 `src/core/theme/theme-default.ts`） |
+| CSS 契约 | `:root, [data-theme="light"]` = 浅色；`[data-theme="dark"]` = 显式覆盖 |
+| 首屏不闪 | 换档时往 localStorage 写镜像（`codem-theme-cache`），`index.html` 的内联脚本在首屏渲染前读它并设 `data-theme`；SQLite 的 `codem-theme` 仍是真相源，镜像只是"首屏预测" |
+| 浅色色板 | 暖中性：画布 `#fcfcfb`、卡片 `#f5f5f3`、内嵌 `#ededea`、悬停 `#e3e3df`；文字 `#1f1f1e` / `#5d5c58` / `#8a8880`；线一律"文字色 + alpha"（12% / 7%） |
+| 深色色板 | 保持中性偏冷（大面积暖灰在深色下会显脏） |
+
+改成浅色默认的两个理由：① 此前 `:root` 是暗色，而 `index.html` 里没有 `data-theme`，
+浏览器先按 `:root` 渲染一帧再等 JS 切换 —— 浅色用户每次启动都闪一下黑；
+② 参考实现就是"浅色暖中性"的第一印象，冷蓝灰（GitHub 那套）会显得"工程感"。
+**刻意不随主题走的令牌**（终端面板、窗口控件红黄绿、皮肤色卡、外来内容面、搜索高亮、纯黑底）
+现在在浅色块里也写明并注明理由，避免读者以为"漏了"。
+
 ### 2.4 间距与尺寸
 
 - 间距走 **2px 网格**（1px 仅用于细线）；常用 4/6/8/10/12/14/16/20/24。
@@ -133,8 +149,22 @@ frakio-work 的两条关键惯例（我们同步遵守）：
 - 尺寸（`width` / `height` / `top` 这类几何）**不**用间距令牌 —— 它们是布局坐标，不是节奏。
 - 控件高度：密集 30px、标准 34px、表单 38–44px；图标按钮 30–38px（见上面的 `--control-*` 令牌）。
 - 图标与文字：**14px 图标 ↔ 13px 标签**，`gap: 8px`；描边统一 **1.75**（小徽标 2、大空态图标 1.5）。
-- 对齐原语（第 32 波）：设置/表单行用 **grid 两列模板**（标签列 `minmax(88px, max-content)` + 内容列
-  `minmax(0, 1fr)`），而不是 flex + margin —— 参考实现用了 583 处 grid，标签因此对齐成一条竖线。
+- 对齐原语（第 32 波起）：设置/表单行用 **grid 两列模板**（标签列 `minmax(88px, max-content)` + 内容列
+  `minmax(0, 1fr)`），而不是 flex + margin —— 参考实现用了 574 处 grid，标签因此对齐成一条竖线。
+  **第 37 波把这件事推到了"重复行"层**：225 处「重复行」成对替换（`display: flex` → `display: grid`
+  + 一行 `grid-template-columns`），列模板按子元素数确定：
+
+  | 形态 | 模板 | 说明 |
+  | --- | --- | --- |
+  | 2 列（图标 + 文本） | `max-content minmax(0, 1fr)` | 图标只吃自身宽度 → **跨行对齐成竖线** |
+  | 3 列（图标 + 文本 + 尾部值） | `max-content minmax(0, 1fr) max-content` | 尾部数值贴右且不被压缩 |
+  | 4 列 | `max-content minmax(0, 1fr) max-content max-content` | 尾部操作簇逐个成列 |
+  | 动作簇 / 工具条（本身要右对齐或等宽） | `repeat(N, max-content)` | 保持整簇宽度不变；配 `justify-content: flex-end` 仍然生效 |
+
+  为什么必须**成对**替换：`display: flex` 单独换成 `display: grid` 会让所有子元素落到单列里（纵向堆叠），
+  布局直接崩 —— 这是这一层唯一不可省的约束。**不动的**：`flex-direction: column` 的纵向堆叠（315 处，
+  没有列可对齐）、`flex-wrap` 换行行（75 处，要换列模板才行）、以及"行但无 gap"的 243 处（换成 grid
+  间距仍是 0，没有对齐收益，且顺手补 `gap` 会叠成双倍间距）。
 - 图标尺寸**只用 `.icon-*` 一档 8 级**（`--icon-2xs` 10 / `--icon-xs` 12 / `--icon-sm` 14 /
   `--icon-md` 16 / `--icon-lg` 20 / `--icon-xl` 24 / `--icon-2xl` 32 / `--icon-3xl` 48），
   装饰性图标加 `.icon-dim`。**TSX 里的 `size={n}` 也必须落在这八级上**（硬规则 `icon-size-offscale`，第 34 波起）——
@@ -375,6 +405,8 @@ node tools/ui-audit/codemod-icon-scale.mjs [--write]  # 图标工具类 → .ico
 | **第 32 波** | 2026-09-10 | **0** ✅ | **0** ✅ | **对齐原语与状态语义（补参考实现的结构性差距）**：把参考实现整份 checkout 拉下来后逐项度量，发现三处**结构性**差距（不是配色问题）：参考实现用 `display: grid` **583 处**做对齐、`:has()` **41 处**做父级状态、`prefers-reduced-motion` **27 处**；我们分别是 50 / 7 / 8。<br>① **设置/表单行改用 grid 对齐**：`.setting-group` / `.mp-form-row` / `.sp-field-row` / `.agent-input-row` / `.git-env-row` 收成「标签列 `minmax(88px, max-content)` + 内容列 `minmax(0,1fr)`」两列模板（三列行用 `--3` 修饰、堆叠行用 `--stack`），标签从此对齐成一条竖线（此前标签宽度不一、输入框左边缘参差，这正是"没对齐=不精致"的主因之一）；单列内容（说明文字、卡片、表格、模板列表）用 `grid-column: 1/-1` 跨列，避免被塞进两列网格。<br>② **`:has()` 做父级状态**：卡片里任意子元素获得键盘焦点时整张卡片给出描边（`.sp-card` / `.tool-card` / `.market-skill-card`），字段行内输入非法时整行标红（`input:user-invalid`）—— 焦点在子元素、反馈在父级。<br>③ **状态属性驱动样式**：设置侧栏 tab、笔记本视图 tab、设置面板 tab、任务中心 tab、工具 pill 补 `aria-current="page"` / `aria-selected` / `aria-expanded`（`SettingsPanel` 内 24 个 tab 按钮），并让属性选择器与 `.active` 类**同源驱动**样式 —— 此前是"类名说选中、ARIA 说没选中"，读屏用户完全得不到切换反馈。<br>④ **逐组件减动效**：浮层/抽屉/面板/toast/卡片的**入场位移动画**在 `prefers-reduced-motion` 下直接取消（`animation/transition/transform: none`），而非只停循环动画。 |
 | **第 33 波** | 2026-09-10 | **0** ✅ | **0** ✅ | **"为什么我们像项目、他们像产品"—— 带数据的诊断与底层修正**（详见 §2.8）。用户反馈"精细度比不上"，于是不再猜、把决定观感的量全部量化对比，再逐项动手：<br>① **字重是最大差异**：我们用 600 **235 次**（"哪里都半粗"），参考实现用 **650/720/620/560** 细档建层次、400 只有 11 处。新增 `--weight-regular/medium/semibold(560)/bold(620)/heavy` 五档令牌，把 34 处 meta/值类从 600 降到 500/560，并在末尾补「层次收口」规则：区块标题 620、列表项 560、**值与数字回到 400**（表格里全粗体会让数字互相打架）。<br>② **控件高度整体上抬**：24/28 为主 → `--control-*` 改为 **26/30/34/38/44**（参考实现以 34 为主），小控件不再"挤"。<br>③ **圆角软化 + 胶囊化**：`--radius-sm` 4→**6px**、`--radius-xs` 6→**8px**；10 个标签/徽标/计数类（`.market-skill-tag` / `.petm-tag` / `.sp-chip` / `.model-badge` / `.nb-count-badge` …）统一 `--radius-full` —— 方角小块像"数据表"，胶囊像"产品"。<br>④ **图标描边统一**：此前 `<svg strokeWidth>` 在 0.6/1/1.2/1.5/2/2.5 之间抖动，12–14px 上的细线发虚；统一 `1.75`，并按尺寸反向补偿（`.icon-2xs/-xs` → 2，`.icon-2xl/-3xl` → 1.5）。<br>**结论**：观感差距主要来自 ①字重层次 ②控件尺度 ③圆角与胶囊 ④图标描边一致性 ⑤窗口外壳 ⑥默认主题明度 —— **都不是"令牌化"能自动解决的**，而是逐部件的光学调校 + 品牌选择；令牌化的价值是让这些调校**一次改全局**。⑤⑥（mac 风格窗口外壳、默认浅色暖灰）需要产品决策，本轮未动。 |
 | **第 35 波** | 2026-09-10 | **0** ✅ | **0** ✅ | **字体栈收敛 + 一处自我更正（门禁规则 17 → 18 条）**。<br>① 用户点名怀疑"字体"，于是先做体检：`font-face` 用的是 `public/fonts/AlimamaFangYuanTiVF-Thin.ttf`，我用 `fvar` 表核验它**确实是可变字体**（`wght` 200–700 + `BEVL` 1–100，18 个具名实例）—— 于是**第 33 波写在 §2.1b 的"我们是静态字重、细档会被取整"是错的**，560/620 一直真实生效；同时把 `@font-face` 的 `font-weight` 从 `100 900` 收窄到真实的 `200 700`（声明超出轴范围会让浏览器在 700 以上合成伪粗体，中文界面会糊）。<br>② 真正的字体问题是**栈太散**：31 种不同 `font-family` 取值 / 192 处声明，其中**等宽栈 14 种写法**（`"SF Mono", "Fira Code", monospace`×15、`'SF Mono', Consolas, monospace`×9、`'SF Mono', Consolas, 'Liberation Mono', monospace`…），同一段代码在不同组件可能落到不同字体上；参考实现只有 15 处声明且全走令牌栈。收敛成 `--font-ui` / `--font-mono` / `--font-display` 三档（`--font-family` 降为兼容别名），**50 处等宽栈 + 6 处 UI 栈**收回令牌，不同取值 31 → **7 种**。新增规则 `font-stack-raw`。插件 CSS 保留 `var(--font-mono, ui-monospace, monospace)` 带兜底写法。 |
+| **第 36 波** | 2026-09-10 | **0** ✅ | **0** ✅ | **默认档位改为浅色暖中性 + 首屏不再闪（B 组第 6 项）**。<br>① 问题有两层：**默认档位**（`--bg-primary` 是 `rgba(14,15,15,1)` 近黑）和**散落的默认值**（`|| "dark"` 在 TitleBar / SkinSelector / CodeBlockView / ThemeManager 各写一遍，改默认要同时改五处），外加**首屏闪烁**（`index.html` 里没有 `data-theme`，浏览器先按 `:root` 的暗色渲染一帧再等 JS 切，浅色用户每次启动都闪黑）。<br>② 做法：CSS 侧 `:root, [data-theme="light"]` 变成浅色档、`[data-theme="dark"]` 是显式覆盖（两档令牌从此**完全对称**，此前 light 块只覆盖 49/76 个令牌，`--highlight-top` 等 22 个在浅色下一直沿用的暗色值）；色板从冷蓝灰（GitHub 那套）换成**暖中性**（画布 `#fcfcfb`、卡片 `#f5f5f3`、文字 `#1f1f1e`、线 12%/7% 黑），并补齐浅色档缺失的 `--highlight-top*`（暗色下是"白 5% 透光"，浅色下必须是实白，否则面与面没有厚度差）。<br>③ 代码侧新增唯一真相源 `src/core/theme/theme-default.ts`（`DEFAULT_THEME` / `isThemeMode` / `applyThemeAttribute` / `cacheTheme`），四处 `|| "dark"` 全部改为读它；换档时写 localStorage 镜像，`index.html` 加一段内联脚本在首屏渲染前读镜像设属性 —— **两个方向都不再闪烁**（SQLite 的 `codem-theme` 仍是真相源，镜像只是"首屏预测"）。<br>④ 顺带修掉自己造的两处违规（`--shadow-raise-*` 在重写主题块时被漏掉、注释里写了原始色值触发了颜色规则）——**门禁规则又一次抓住了我自己的手误**。 |
+| **第 37 波** | 2026-09-10 | **0** ✅ | **0** ✅ | **grid 对齐原语铺到"重复行"层（225 处）**。先用只读分析把全项目 1184 处 `display: flex` 分级：**第一档 226 处**（子元素数固定 2–4、已有 `gap`、无 `flex-wrap`、无 `space-between` 依赖、无子元素依赖父级 flex 分配），第二档 88 处（子元素数随状态变化或 ≥5），第三档 19 处（`space-between` 语义 / 自身被外部 `flex: 1` 撑宽），**明确不该改** 638 处（315 处 `column` 堆叠 + 75 处 `flex-wrap` + 124 处 TSX 里找不到对应类 + 243 处"行但无 gap"—— 无 gap 的行换成 grid 间距仍是 0，**没有对齐收益**，而且顺手补 `gap` 会叠成双倍间距）。<br>按第一档清单做**成对替换**（`display: flex` → `display: grid` + 一行 `grid-template-columns`，脚本 225 处落地，1 处多选择器规则人工跳过）：列模板按子元素数取 `max-content minmax(0, 1fr)`（2 列）/ `… max-content`（3 列）/ `… max-content max-content`（4 列），动作簇与工具条取 `repeat(N, max-content)` 以保持整簇宽度不变。<br>**结果**：`display: grid` 50 → **275**、`grid-template-columns` 53 → **278**（参考实现分别是 574 / 320，已在同一量级）；`display: flex` 1184 → **959**。收益是**标签、图标、数值跨行对齐成竖线** —— 这正是"精致"最直接来源，而 `flex` 的 `justify-content` 做不到跨行对齐。 |
 | **第 34 波** | 2026-09-10 | **0** ✅ | **0** ✅ | **"局部细节"三件事：图标刻度 / 圆角令牌 / 状态小块（门禁规则 15 → 17 条）**。用户点名怀疑"是菜单栏、字体、间距、状态背景色、图标？"—— 于是把这五项**各自量化**（`.preview-shot/five-dims.mjs`，两侧同口径）。结论：间距与状态色**我们的做法不比它差**（间距全部令牌化、状态色有语义淡底；它反而是 8px/10px/12px 写死 + `rgb(x x x / a)` 中性 alpha），真正拉开差距的是 **图标与圆角这两处"局部细节"**。<br>① **图标尺寸不在刻度上（149 处）**：实测 `size={14}`×270、`12`×204、`16`×172 是主力，但旁边还散着 `13`×46、`18`×45、`11`×26、`15`×23、`9`×3、`8`×3、`26`×1、`28`×2 —— 同一行里 13px 与 14px 图标并排、18px 关掉按钮挤着 16px 图标，**视觉节奏被这些 ±1~2px 打散**。全部按 13/15→14、11→12、17/18→16、19/21→20、22/25/26→24、28→32、8/9→10 吸附（参考实现的图标尺寸集中在 15px 一档，同样只用一个刻度）。新增规则 `icon-size-offscale` 锁住（排除画布/图表/头像/抽屉这类"size 不是图标刻度"的组件）。<br>② **圆角阶梯是倒的，且 700 处绕过令牌**：`--radius-xs` 竟是 8px、比 `--radius-sm` 的 4px 还大（命名与大小相反），而 CSS 里躺着 `4px`×124 / `6px`×113 / `8px`×76 / `12px`×24 / `10px`×18 字面量、TSX 内联样式里另有 `4/6/8/10/12/14` 共 208 处 —— 它们**都能通过 `radius-offscale`**，却让"改一个令牌、全局圆角一起动"彻底失效。本轮：阶梯改成严格单调（xs 4 / sm 6 / radius 8 / md 10 / lg 14 / **新增 xl 20** / full 9999），**381 处 CSS + 208 处 TSX 字面量收回令牌**（映射到同值或最近档，视觉变化 ≤2px），原本 84 处 `var(--radius-xs)`（当时=8px）迁到 `var(--radius)`（零变化），并去掉 88 处**过时/写错的兜底**（`var(--radius-sm, 4px)` 已经是旧值、`var(--radius-md, 8px)` 干脆是错的）。新增规则 `radius-raw`。**插件侧例外**：插件 CSS 保留 `var(--radius-md, 10px)` 带兜底写法（插件必须能脱离宿主独立渲染，`LO-ICON-5` 测试正是这条契约，本轮被它当场抓住一次）。<br>③ **状态小块只做了一半**：§2.3 早写明"文字色 + 同色淡底 + 同色淡边"，实测 47 处里只有 26 处带淡底 —— `running`/`done`/`exit 1`/`已安装` 只是一行有颜色的字。补统一形状，且淡底淡边全部 **`currentColor` 派生**：状态修饰类只给 `color`，底与边自动同源，以后新增状态不用再抄 `color-mix`。<br>**下一步结构性差距**（已量、未做）：`display: grid` 50 vs 参考 574、`:has()` 7 vs 41、`prefers-reduced-motion` 8 vs 27 —— 这三项是"对齐原语"层面的差距，见 §7 A 组。 |
 
 ### 全项目现场事实（来自 UI 交互界面清单，作为工作队列）
@@ -518,20 +550,31 @@ node tools/ui-audit/codemod-icon-scale.mjs [--write]  # 图标工具类 → .ico
 ### 尚未追平参考实现的部分（第 34 波诊断后剩下的，按"要不要动"分类）
 
 **A. 技术性差距，还能继续追（不需要产品决策）**
-1. `display: grid` 50 → 参考 **574**：目前只把设置/表单行改成了 grid（第 32 波）。下一步轮到列表行、
-   卡片宫格、工具条的「图标 + 文本 + 尾部操作」三段式（参考实现全部用 `grid-template-columns` 模板
-   而不是 flex + margin —— 它 `grid-template-columns` 出现 320 次，我们 53 次）。
+1. `display: grid` **275** → 参考 **574**（第 37 波从 50 铺到 275，已在同一量级）：下一步是第二档
+   （88 处"子元素数随状态变化"的行，需要按最大子元素数设计模板或改用
+   `grid-auto-flow: column` + `grid-auto-columns: max-content`），以及 `flex-wrap` 标签墙改
+   `repeat(auto-fill, minmax(Npx, 1fr))`。
 2. `:has()` 7 → 参考 **41**：已用两个真实场景（卡片聚焦、字段非法）。可继续用于「卡片内有选中项」
    「行内有禁用控件」「有错误时整块标红」这类**父级状态**。
-3. `prefers-reduced-motion` 8 → 参考 **27**：已覆盖主要浮层族，剩余是图表/动画类组件。
-4. `focus-visible` 带环 21 → 参考 43：全局兜底规则已在，逐组件还差一圈（表格行、菜单项、树节点）。
+3. `prefers-reduced-motion` 8 → 参考 **27**：审计结论是**兜底覆盖得很宽、显式关停不够** ——
+   60 条循环动画里 35 条已显式关停、**25 条只靠兜底冻结**；更关键的两个盲区：
+   ① 全仓库 **0 处** `matchMedia('(prefers-reduced-motion…)')`，宠物精灵的 rAF 逐帧切换
+   （`PetSprite.tsx`）与图书馆场景的相机缓动（`LibraryScene.tsx` / `PixelLibraryScene.tsx`）完全无视该偏好；
+   ② `pet-main.tsx` 只加载 `pet-window.css`，**宠物窗口既没有减动效兜底也没有焦点环**。
+4. `focus-visible` 带环 21 → 参考 43：审计发现焦点环其实由 3 条全局规则兜住（`a/button/[tabindex]` 走
+   (0,3,0) 的令牌环），所以**真正的洞只有 6 处**：4 条 `select:focus { outline: none }`
+   （`styles.css` 的 `.resolution-select` / `.plugin-market__search select` / `.mcp-form-row select` /
+   `.memory-edit-field select`）+ `task-center.css` 的 select 分支 + `SlideCanvas.tsx` 的**内联**
+   `outline:'none'`（内联优先级压过所有非 `!important` 规则，连 `div[tabindex=0]` 的环也吃掉了）；
+   另有 19 条规则把输入控件的实色 2px 环降级成 22% 软环，值得一并提回 `--focus-ring-color`（75%）。
 
 **B. 需要产品/品牌决策，第 33–34 波刻意没动**
 5. **窗口外壳**：参考实现有 mac 风格窗口（`mac-window` 34 处 + `workbench-window` 7 处 + `topbar` 22 +
    `app-menu` 16：红黄绿灯、一体化工具条、应用级菜单），我们只有 `titlebar` 37 处、`-webkit-app-region: drag`
    3 处 —— 这是"产品感"最强的单一信号（它 56 个 menu 类名 vs 我们 39），但改的是应用外框，属于品牌决策。
-6. **默认主题明度**：我们默认深色冷色（平均明度 0.50），参考实现默认浅色暖灰（0.60）。
-   浅色主题的能力我们已具备（第 22–23 波修完令牌后浅色才真正正确），缺的只是"默认档位"。
+6. **默认主题明度**：✅ **第 36 波完成** —— 默认档位改为**浅色暖中性**（画布 `#fcfcfb`、
+   卡片 `#f5f5f3`、文字 `#1f1f1e`、线 12%/7% 黑），`:root` 即默认档、暗色改为显式覆盖，
+   两档令牌完全对称（此前浅色块只覆盖 49/76 个令牌），并加首屏镜像脚本消除启动闪烁。
 7. **UI 字体**：✅ **第 35 波完成（比预想更好）** —— 自查发现自带的 `AlimamaFangYuanTiVF-Thin.ttf`
    本身就是**可变字体**（`wght` 200–700），第 33 波的 560/620 细档一直真实生效（此前文档里的
    "静态字重"判断是错的，已更正）；本轮把 31 种散写法收成 `--font-ui` / `--font-mono` / `--font-display`

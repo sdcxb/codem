@@ -247,7 +247,8 @@
 .player-name {
   font-weight: bold;
   font-size: 13px;
-  display: flex;
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr) max-content;
   align-items: center;
   gap: 4px;
 }
@@ -336,7 +337,8 @@
 
 /* 骰子面板 */
 .dice-panel {
-  display: flex;
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
   align-items: center;
   gap: 8px;
   padding: 4px 8px;
@@ -665,7 +667,8 @@
 }
 
 .card-icon-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
   align-items: center;
   gap: 6px;
 }
@@ -690,7 +693,8 @@
 
 .target-select {
   margin-top: 8px;
-  display: flex;
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
   align-items: center;
   gap: 8px;
 }
@@ -828,7 +832,8 @@
 }
 
 .bank-input {
-  display: flex;
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
   align-items: center;
   gap: 4px;
   margin-bottom: 8px;
@@ -870,7 +875,8 @@
 }
 
 .auction-player {
-  display: flex;
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr) max-content max-content;
   align-items: center;
   gap: 4px;
   padding: 6px;
@@ -943,7 +949,8 @@
 
 /* G35: 设置条 */
 .settings-bar {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(2, max-content);
   gap: 8px;
   align-items: center;
   padding: 2px 8px;
@@ -954,7 +961,8 @@
 }
 
 .setting-item {
-  display: flex;
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
   align-items: center;
   gap: 4px;
   color: #95a5a6;

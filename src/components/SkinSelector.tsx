@@ -10,6 +10,7 @@
 import { useState, useEffect } from "react";
 import { ThemeManager } from "../core/theme";
 import type { SkinId } from "../core/theme";
+import { DEFAULT_THEME, applyThemeAttribute, isThemeMode } from "../core/theme/theme-default";
 import { getSetting, setSetting } from "../core/storage/settings";
 import { useLang, S } from "../core/i18n/lang";
 import { Film, Image as ImageIcon, Clock, Camera } from "lucide-react";
@@ -17,9 +18,10 @@ import { Film, Image as ImageIcon, Clock, Camera } from "lucide-react";
 export function SkinSelector() {
   const [skin, setSkin] = useState<SkinId>(ThemeManager.getSkin());
   // 明暗模式读取 codem-theme（与 Sidebar 一致），而非 ThemeManager
-  const [themeMode, setThemeMode] = useState<"dark" | "light">(
-    () => (getSetting("codem-theme") as "dark" | "light") || "dark"
-  );
+  const [themeMode, setThemeMode] = useState<"dark" | "light">(() => {
+    const saved = getSetting("codem-theme");
+    return isThemeMode(saved) ? saved : DEFAULT_THEME;
+  });
   const lang = useLang();
 
   useEffect(() => {
@@ -38,7 +40,7 @@ export function SkinSelector() {
     setThemeMode(mode);
     // 与 Sidebar 使用同一套 codem-theme 系统
     setSetting("codem-theme", mode);
-    document.documentElement.setAttribute("data-theme", mode);
+    applyThemeAttribute(mode);
   };
 
   const skins = ThemeManager.getAvailableSkins();

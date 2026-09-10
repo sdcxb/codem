@@ -16,13 +16,14 @@
   justify-content: space-between;
   margin-bottom: var(--space-8);
 }
-.squads-header-title { display: flex; align-items: center; gap: var(--space-4); }
+.squads-header-title { display: grid; grid-template-columns: max-content minmax(0, 1fr); align-items: center; gap: var(--space-4); }
 .squads-header-title svg { color: var(--accent); }
 .squads-title { font-size: var(--fs-md); font-weight: 600; color: var(--text-primary); }
 
 /* 主按钮（§3）：accent 底 + --text-on-accent 字 */
 .squads-new-btn {
-  display: flex;
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
   align-items: center;
   gap: var(--space-2);
   padding: var(--space-3) var(--space-7);
@@ -51,7 +52,7 @@
   border-radius: var(--radius);
   background: var(--bg-tertiary);
 }
-.squads-card-head { display: flex; align-items: center; gap: var(--space-4); cursor: pointer; }
+.squads-card-head { display: grid; grid-template-columns: max-content minmax(0, 1fr) max-content max-content; align-items: center; gap: var(--space-4); cursor: pointer; }
 .squads-card-head > svg:first-child { color: var(--text-secondary); }
 .squads-name { font-size: var(--fs-md); font-weight: 600; color: var(--text-primary); }
 
@@ -83,7 +84,8 @@
 .squads-chevron.is-open { transform: rotate(90deg); }
 
 .squads-leader {
-  display: flex;
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr) max-content;
   align-items: center;
   gap: var(--space-3);
   margin-top: var(--space-4);
@@ -209,7 +211,8 @@
 .automation-desc { margin-bottom: var(--space-8); font-size: var(--fs-sm); color: var(--text-secondary); }
 
 .automation-trigger {
-  display: flex;
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr) max-content max-content;
   align-items: center;
   gap: var(--space-4);
   padding: var(--space-5) var(--space-6);
@@ -223,7 +226,8 @@
 .automation-trigger-main { flex: 1; min-width: 0; }
 .automation-trigger-name { font-weight: 600; color: var(--text-primary); }
 .automation-trigger-meta {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(4, max-content);
   align-items: center;
   gap: var(--space-2);
   font-size: var(--fs-xs);
@@ -238,7 +242,8 @@
 .automation-actions { display: flex; gap: var(--space-4); margin-bottom: var(--space-8); }
 
 .automation-history-title {
-  display: flex;
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr) max-content;
   align-items: center;
   gap: var(--space-2);
   margin-bottom: var(--space-4);
@@ -373,7 +378,8 @@
 }
 .issue-detail-picker-empty { padding: var(--space-2); font-size: var(--fs-sm); color: var(--text-muted); }
 .issue-detail-picker-item {
-  display: flex;
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr) max-content;
   align-items: center;
   gap: var(--space-3);
   padding: var(--space-3) var(--space-5);
@@ -407,7 +413,7 @@
   font-size: var(--fs-sm);
 }
 .issue-detail-comment.is-system { background: var(--bg-secondary); border-left-color: var(--text-muted); }
-.issue-detail-comment-head { display: flex; align-items: center; gap: var(--space-3); margin-bottom: var(--space-2); }
+.issue-detail-comment-head { display: grid; grid-template-columns: max-content minmax(0, 1fr); align-items: center; gap: var(--space-3); margin-bottom: var(--space-2); }
 .issue-detail-comment-author { font-weight: 600; color: var(--text-primary); }
 .issue-detail-comment.is-system .issue-detail-comment-author { color: var(--text-muted); }
 .issue-detail-comment-time { font-size: var(--fs-xs); color: var(--text-muted); }
@@ -428,7 +434,8 @@
 }
 .issue-detail-input:focus { outline: none; border-color: var(--accent); }
 .issue-detail-send {
-  display: flex;
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
   align-items: center;
   gap: var(--space-2);
   padding: var(--space-4) var(--space-7);

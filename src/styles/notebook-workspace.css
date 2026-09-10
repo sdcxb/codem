@@ -44,7 +44,8 @@
 }
 
 .nb-back-btn {
-  display: flex;
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
   align-items: center;
   gap: var(--space-2);
   padding: var(--space-1) var(--space-3);
@@ -84,7 +85,8 @@
 }
 
 .nb-studio-btn {
-  display: flex;
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
   align-items: center;
   gap: var(--space-2);
   padding: var(--space-1) var(--space-3);
@@ -138,7 +140,8 @@
 }
 
 .nb-studio-option {
-  display: flex;
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
   align-items: center;
   gap: var(--space-4);
   width: 100%;
@@ -271,7 +274,8 @@
 
 /* 建议问题 — 融入对话区域 */
 .nb-chat-loading-questions {
-  display: flex;
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
   align-items: center;
   gap: var(--space-3);
   font-size: var(--fs-sm);
@@ -368,7 +372,8 @@
 }
 
 .nb-panel-title {
-  display: flex;
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr) max-content;
   align-items: center;
   gap: var(--space-2);
   font-size: var(--fs-xs);
@@ -540,7 +545,8 @@
 
 /* Meta 行 */
 .nb-source-meta {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(4, max-content);
   align-items: center;
   gap: var(--space-2);
   font-size: var(--fs-xs);
@@ -598,7 +604,8 @@
 }
 
 .nb-source-summary-toggle {
-  display: flex;
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr) max-content;
   align-items: center;
   gap: var(--space-2);
   background: transparent;
@@ -674,14 +681,16 @@
 
 /* 来源卡片操作栏 — 查看原文 + 重新索引 同一行 */
 .nb-source-actions {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(2, max-content);
   align-items: center;
   gap: var(--space-2);
   margin-top: var(--space-1);
 }
 
 .nb-source-action-btn {
-  display: flex;
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
   align-items: center;
   gap: var(--space-1);
   padding: 1px var(--space-3);
@@ -702,7 +711,8 @@
 
 /* ========== Indexing Progress ========== */
 .nb-indexing-progress {
-  display: flex;
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
   align-items: center;
   gap: var(--space-2);
   padding: var(--space-3) var(--space-4);
@@ -1103,14 +1113,16 @@ top: 36px;
 }
 
 .nb-file-select {
-  display: flex;
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
   align-items: center;
   gap: var(--space-5);
   margin-bottom: var(--space-6);
 }
 
 .nb-file-btn {
-  display: flex;
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
   align-items: center;
   gap: var(--space-2);
   padding: var(--space-2) var(--space-5);
@@ -1303,7 +1315,8 @@ top: 36px;
 }
 
 .kg-toolbar {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(2, max-content);
   align-items: center;
   gap: var(--space-4);
   padding: var(--space-4) var(--space-8);
@@ -1376,7 +1389,8 @@ top: 36px;
 }
 
 .kg-sidebar-header {
-  display: flex;
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
   align-items: center;
   gap: var(--space-4);
   padding-bottom: var(--space-6);
@@ -1421,7 +1435,8 @@ top: 36px;
 }
 
 .kg-connected-item {
-  display: flex;
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr) max-content;
   align-items: center;
   gap: var(--space-4);
   padding: var(--space-3) var(--space-5);
@@ -1550,19 +1565,20 @@ top: 36px;
 
 .kg-sidebar { background: var(--bg-secondary); border-left: 1px solid var(--border-primary); }
 .kg-sidebar-header { border-bottom: 1px solid var(--border-primary); }
-.kg-sidebar-title-row { display: flex; align-items: center; gap: var(--space-4); }
+.kg-sidebar-title-row { display: grid; grid-template-columns: max-content minmax(0, 1fr); align-items: center; gap: var(--space-4); }
 .kg-entity-icon { font-size: var(--fs-2xl); }
 .kg-sidebar-title { margin: 0; color: var(--accent); }
 .kg-detail-section h4 { color: var(--text-secondary); }
 .kg-detail-section p { color: var(--text-primary); }
-.kg-weight-row { display: flex; align-items: center; gap: var(--space-4); }
+.kg-weight-row { display: grid; grid-template-columns: max-content minmax(0, 1fr); align-items: center; gap: var(--space-4); }
 .kg-weight-track { flex: 1; height: 4px; overflow: hidden; border-radius: var(--radius-full); background: var(--bg-tertiary); }
 .kg-weight-fill { height: 100%; border-radius: var(--radius-full); background: var(--accent); }
 .kg-weight-value { color: var(--text-primary); font-size: var(--fs-sm); }
 .kg-source-hint { color: var(--text-secondary); font-size: var(--fs-xs); }
 .kg-connected-icon { font-size: var(--fs-md); }
 .kg-action-btn {
-  display: flex;
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
   align-items: center;
   justify-content: center;
   gap: var(--space-2);
@@ -1628,7 +1644,8 @@ top: 36px;
 
 .kg-menu { padding: var(--space-2); min-width: 140px; }
 .kg-menu-item {
-  display: flex;
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
   align-items: center;
   gap: var(--space-3);
   width: 100%;
@@ -1668,7 +1685,8 @@ top: 36px;
 .ppt-studio-screen--center { align-items: center; justify-content: center; }
 
 .ppt-studio-topbar {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(4, max-content);
   align-items: center;
   flex-shrink: 0;
   gap: var(--space-4);
@@ -1699,7 +1717,8 @@ top: 36px;
 .ppt-studio-lead { margin-bottom: var(--space-9); color: var(--text-muted); font-size: var(--fs-base); }
 
 .ppt-studio-import-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr) max-content;
   align-items: center;
   gap: var(--space-6);
   margin-bottom: var(--space-9);
@@ -1816,7 +1835,7 @@ top: 36px;
 .ppt-studio-canvas-name { color: var(--text-primary); font-size: var(--fs-sm); font-weight: 600; }
 .ppt-studio-canvas-desc { margin-top: var(--space-1); color: var(--text-muted); font-size: var(--fs-xs); }
 
-.ppt-studio-count-row { display: flex; align-items: center; gap: var(--space-6); margin-bottom: var(--space-8); }
+.ppt-studio-count-row { display: grid; grid-template-columns: max-content minmax(0, 1fr); align-items: center; gap: var(--space-6); margin-bottom: var(--space-8); }
 .ppt-studio-range { flex: 1; max-width: 300px; }
 .ppt-studio-count-value {
   min-width: 40px;
@@ -1826,7 +1845,8 @@ top: 36px;
 }
 
 .ppt-studio-option-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
   align-items: center;
   gap: var(--space-5);
   margin-bottom: var(--space-10);
@@ -2558,7 +2578,8 @@ top: 36px;
 }
 
 .nb-backlinks-header {
-  display: flex;
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
   align-items: center;
   gap: var(--space-3);
   padding: var(--space-5) var(--space-6);
@@ -2610,7 +2631,8 @@ top: 36px;
 }
 
 .nb-backlink-item {
-  display: flex;
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
   align-items: center;
   gap: var(--space-3);
   padding: var(--space-3) var(--space-4);
@@ -2974,13 +2996,15 @@ top: 36px;
  * （`.nb-panel-tabs` 甚至是"写了但 CSS 里没有"的假钩子——因为同行有内联样式，
  * `css-class-undefined` 规则看不到它）。这里补上真实定义。 */
 .nb-panel-tabs {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(2, max-content);
   align-items: center;
   gap: var(--space-1);
 }
 
 .nb-summary-toggle {
-  display: flex;
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr) max-content;
   align-items: center;
   gap: var(--space-2);
   width: 100%;

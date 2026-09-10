@@ -5,6 +5,20 @@
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Codem</title>
+    <script>
+      // 首屏主题镜像（第 36 波）：SQLite 里的 codem-theme 才是真相源，但它要等应用启动才能读到；
+      // 这里同步读一份 localStorage 镜像，在**首屏渲染前**把 data-theme 设好，
+      // 于是"默认浅色"与"用户选了暗色"两个方向都不再闪一下。
+      // 读不到镜像时不设属性 —— CSS 的 :root 本身就是默认档（浅色暖中性）。
+      (function () {
+        try {
+          var t = localStorage.getItem("codem-theme-cache");
+          if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t);
+        } catch (e) {
+          /* localStorage 不可用：退化为 CSS 默认档，不影响功能 */
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

@@ -10,6 +10,7 @@ import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark, oneLight } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { ContentFrame } from "./ContentFrame";
 import { getSetting } from "../../core/storage/settings";
+import { DEFAULT_THEME, isThemeMode } from "../../core/theme/theme-default";
 import { ActionIcons } from "../../core/icons/icon-map";
 
 interface CodeBlockViewProps {
@@ -29,8 +30,9 @@ export const CodeBlockView = memo(function CodeBlockView({
 }: CodeBlockViewProps) {
   const [fullscreen, setFullscreen] = useState(false);
   const CloseIcon = ActionIcons.close;
-  const theme = (typeof getSetting === "function" ? getSetting("codem-theme") : "dark") as string;
-  const isDark = theme !== "light";
+  const theme = typeof getSetting === "function" ? getSetting("codem-theme") : null;
+  // 第 36 波：默认档位改为浅色，这里不能再写死"没读到就是暗色"
+  const isDark = isThemeMode(theme) ? theme === "dark" : DEFAULT_THEME === "dark";
 
   const handleCopy = useCallback(() => {
     navigator.clipboard.writeText(code).catch(() => {});
