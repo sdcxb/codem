@@ -9,6 +9,8 @@
  * 事件订阅：桥（startWechatBridge）把 Rust ilink-* 事件转成 window CustomEvent
  * （EVT_STATE/EVT_QR/EVT_NEED_VERIFY/EVT_EXPIRED），本组件监听 + 主动 invoke
  * ilink_status 刷新（挂载/动作后）。
+ *
+ * 样式：第 17 波把内联样式收口成 `.wx-*` 具名类（见 src/styles.css）。
  */
 import { useState, useEffect, useCallback } from "react";
 import { useLang } from "../core/i18n/lang";
@@ -62,15 +64,12 @@ function QrSvg({ text }: { text: string }) {
     }
   }, [text]);
   if (!svg) {
-    return <div style={{ color: "var(--text-muted)", fontSize: "var(--fs-xs)" }}>二维码渲染失败，请用下方链接打开</div>;
+    return <div className="wx-status-meta">二维码渲染失败，请用下方链接打开</div>;
   }
   return (
     <div
       dangerouslySetInnerHTML={{ __html: svg }}
-      style={{
-        width: 190, height: 190, background: "var(--text-on-accent)", borderRadius: 10,
-        padding: 6, boxSizing: "border-box", display: "flex", alignItems: "center", justifyContent: "center",
-      }}
+      className="wx-qr"
     />
   );
 }
@@ -130,11 +129,11 @@ export function WechatSettings() {
   const [sLabel, eLabel] = STATE_LABEL[status.state] || ["", ""];
 
   return (
-    <div style={{ display: "grid", gap: 14 }}>
-      <div style={{ fontSize: 'var(--fs-md)', fontWeight: 600 }}>
+    <div className="wx-panel">
+      <div className="wx-title">
         {zh ? "微信 ClawBot（iLink）" : "WeChat ClawBot (iLink)"}
       </div>
-      <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", lineHeight: 1.7 }}>
+      <div className="wx-desc">
         {zh
           ? "扫码把你的微信绑成 Bot：之后在微信里直接发消息，就能驱动 Codem 助手干活（任务在桌面端执行）。传输层常驻 Rust 进程——主窗口最小化/刷新也不中断收消息。陌生人消息默认进入「待批准」，防止远程误用你的文件与工具。"
           : "Scan to bind your WeChat as a Bot: messages sent to it in WeChat drive the Codem assistant (work runs on this desktop). Transport lives in the Rust process — minimized/refreshed windows keep receiving. Stranger messages go to \"pending approval\" to prevent remote misuse of your files and tools."}
@@ -142,40 +141,33 @@ export function WechatSettings() {
 
       {/* ---- 连接状态区 ---- */}
       <div className="setting-group">
-        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-          <span
-            style={{
-              padding: "3px 10px", borderRadius: 999, fontSize: 'var(--fs-xs)', fontWeight: 600,
-              background: connected ? "color-mix(in srgb, var(--success) 18%, transparent)" : "color-mix(in srgb, var(--accent) 14%, transparent)",
-              color: connected ? "var(--success)" : "var(--text-primary)",
-              border: connected ? "1px solid color-mix(in srgb, var(--success) 40%, transparent)" : "1px solid var(--border-primary)",
-            }}
-          >
+        <div className="wx-status-row">
+          <span className={`wx-state-badge${connected ? " is-connected" : ""}`}>
             {zh ? sLabel : eLabel}
           </span>
           {connected && (
-            <span style={{ fontSize: 'var(--fs-xs)', color: "var(--text-muted)" }}>
+            <span className="wx-status-meta">
               {zh
                 ? `Bot ${status.bot_id || ""} · 剩余 ${expiresH} 小时 · 收 ${status.inbound_count} / 发 ${status.outbound_count}`
                 : `Bot ${status.bot_id || ""} · ~${expiresH}h left · in ${status.inbound_count} / out ${status.outbound_count}`}
             </span>
           )}
           {!connected && status.last_error && (
-            <span style={{ fontSize: 'var(--fs-xs)', color: "var(--warning)" }}>{status.last_error}</span>
+            <span className="wx-status-error">{status.last_error}</span>
           )}
         </div>
 
         {notice && (
-          <div style={{ fontSize: 'var(--fs-xs)', color: "var(--error)", marginTop: 6 }}>{notice}</div>
+          <div className="wx-notice">{notice}</div>
         )}
 
         {/* 未连接 / 过期 → 扫码按钮 */}
         {(status.state === "disconnected" || status.state === "expired") && (
-          <div style={{ marginTop: 10 }}>
+          <div className="wx-block">
             <button
               disabled={busy}
               onClick={() => act(async () => { setNotice(""); await tauriInvoke("ilink_start_login"); await refreshStatus(); })}
-              style={{ ...btnStyle, background: "var(--accent)", color: "var(--text-on-accent)", fontWeight: 600 }}
+              className="wx-btn wx-btn--primary"
             >
               {zh ? "扫码登录微信" : "Scan to login"}
             </button>
@@ -184,21 +176,21 @@ export function WechatSettings() {
 
         {/* 等待扫码 / 取码中 → QR */}
         {(status.state === "waiting_qr" || status.state === "waiting_scan") && (
-          <div style={{ marginTop: 10, display: "flex", gap: 16, flexWrap: "wrap", alignItems: "flex-start" }}>
+          <div className="wx-qr-row">
             {qrUrl ? (
               <>
                 <QrSvg text={qrUrl} />
-                <div style={{ display: "grid", gap: 6, maxWidth: 300 }}>
-                  <div style={{ fontSize: 'var(--fs-sm)' }}>
+                <div className="wx-qr-col">
+                  <div className="wx-qr-hint">
                     {zh ? "用微信「扫一扫」扫描，在手机上确认绑定" : "Scan with WeChat to confirm binding"}
                   </div>
                   {status.state === "waiting_scan" && !status.last_error && (
-                    <div style={{ fontSize: 'var(--fs-xs)', color: "var(--text-muted)" }}>二维码已就绪…</div>
+                    <div className="wx-status-meta">二维码已就绪…</div>
                   )}
                   <button
                     disabled={busy}
                     onClick={() => act(async () => { await tauriInvoke("ilink_start_login"); await refreshStatus(); })}
-                    style={{ ...btnStyle, justifySelf: "start" }}
+                    className="wx-btn wx-btn--start"
                   >
                     {zh ? "刷新二维码" : "Refresh QR"}
                   </button>
@@ -209,15 +201,15 @@ export function WechatSettings() {
                         () => setNotice(qrUrl),
                       );
                     }}
-                    style={{ ...btnStyle, justifySelf: "start" }}
+                    className="wx-btn wx-btn--start"
                   >
                     {zh ? "复制绑定链接" : "Copy link"}
                   </button>
-                  <div style={{ fontSize: 'var(--fs-xs)', color: "var(--text-muted)", wordBreak: "break-all" }}>{qrUrl}</div>
+                  <div className="wx-qr-url">{qrUrl}</div>
                 </div>
               </>
             ) : (
-              <div style={{ fontSize: 'var(--fs-xs)', color: "var(--text-muted)" }}>
+              <div className="wx-status-meta">
                 {zh ? "正在获取二维码…" : "Fetching QR…"}
               </div>
             )}
@@ -226,18 +218,18 @@ export function WechatSettings() {
 
         {/* 配对码 */}
         {status.state === "need_verify_code" && (
-          <div style={{ marginTop: 10, display: "grid", gap: 8, maxWidth: 360 }}>
-            <div style={{ fontSize: 'var(--fs-sm)' }}>
+          <div className="wx-code-block">
+            <div className="wx-qr-hint">
               {zh
                 ? "手机微信上会显示一组数字配对码（也可能已显示）："
                 : "Your phone shows a numeric pairing code (or already did):"}
             </div>
-            <div style={{ display: "flex", gap: 8 }}>
+            <div className="wx-code-row">
               <input
                 value={verifyCode}
                 onChange={(e) => setVerifyCode(e.target.value.replace(/[^0-9]/g, ""))}
                 placeholder={zh ? "输入配对码" : "Enter code"}
-                style={{ ...inputStyle, flex: 1, letterSpacing: 2 }}
+                className="wx-input wx-input--code"
               />
               <button
                 disabled={busy || !verifyCode}
@@ -245,12 +237,12 @@ export function WechatSettings() {
                   await tauriInvoke("ilink_login_submit_verify", { code: verifyCode });
                   setVerifyCode("");
                 })}
-                style={{ ...btnStyle, background: "var(--accent)", color: "var(--text-on-accent)" }}
+                className="wx-btn wx-btn--primary"
               >
                 {zh ? "提交" : "Submit"}
               </button>
             </div>
-            <div style={{ fontSize: 'var(--fs-xs)', color: "var(--text-muted)" }}>
+            <div className="wx-status-meta">
               {zh ? "码错误会被提示重新输入；多次错误会暂时受限并自动刷新二维码。" : "Wrong codes are rejected; repeated failures refresh the QR."}
             </div>
           </div>
@@ -258,18 +250,18 @@ export function WechatSettings() {
 
         {/* 已连接 → 断开/重登 */}
         {connected && (
-          <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <div className="wx-actions">
             <button
               disabled={busy}
               onClick={() => act(async () => { setNotice(""); await tauriInvoke("ilink_logout"); })}
-              style={btnStyle}
+              className="wx-btn"
             >
               {zh ? "断开" : "Logout"}
             </button>
             <button
               disabled={busy}
               onClick={() => act(async () => { await tauriInvoke("ilink_start_login"); })}
-              style={btnStyle}
+              className="wx-btn"
             >
               {zh ? "重新扫码（换 24h token）" : "Re-scan (new 24h token)"}
             </button>
@@ -279,17 +271,16 @@ export function WechatSettings() {
 
       {/* ---- 主开关 ---- */}
       <div className="setting-group">
-        <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+        <label className="wx-toggle-label">
           <input
             type="checkbox"
             checked={enabled}
             onChange={(e) => { const v = e.target.checked; setEnabled(v); saveSettings({ enabled: v }); }}
-            style={{ accentColor: "var(--accent)" }}
           />
           {zh ? "启用微信桥（响应微信消息）" : "Enable WeChat bridge (respond to messages)"}
         </label>
         {!enabled && (
-          <div style={{ fontSize: 'var(--fs-xs)', color: "var(--error)", marginTop: 4 }}>
+          <div className="wx-toggle-hint">
             {zh ? "已停用：微信消息不会被处理，也不会回复（含白名单账号）。可随时在此重新开启。" : "Disabled: inbound messages are ignored entirely. Re-enable anytime."}
           </div>
         )}
@@ -302,7 +293,7 @@ export function WechatSettings() {
           value={model}
           onChange={(e) => { setModel(e.target.value); saveSettings({ model: e.target.value }); }}
           placeholder={zh ? "如 gpt-5（微信内可用 /model 切换）" : "e.g. gpt-5 (/model in chat)"}
-          style={{ ...inputStyle, width: "100%" }}
+          className="wx-input wx-input--full"
         />
       </div>
       <div className="setting-group">
@@ -311,7 +302,7 @@ export function WechatSettings() {
           value={workspace}
           onChange={(e) => { setWorkspace(e.target.value); saveSettings({ workspacePath: e.target.value }); }}
           placeholder={zh ? "如 D:/codem-workspace（微信内可用 /attach <目录> 切换）" : "e.g. D:/codem-workspace (/attach <dir> in chat)"}
-          style={{ ...inputStyle, width: "100%" }}
+          className="wx-input wx-input--full"
         />
       </div>
 
@@ -320,20 +311,20 @@ export function WechatSettings() {
         <label>{zh ? "准入管理（Bot 主人自动放行）" : "Access control (owner auto-approved)"}</label>
 
         {access.pending.length > 0 && (
-          <div style={{ marginTop: 6, display: "grid", gap: 6 }}>
-            <div style={{ fontSize: 'var(--fs-xs)', fontWeight: 600, color: "var(--warning)" }}>
+          <div className="wx-pending-list">
+            <div className="wx-pending-title">
               {zh ? `待批准（${access.pending.length}）：首次发消息即可触发 Agent，请审慎` : `Pending (${access.pending.length}):`}
             </div>
             {access.pending.map((p) => (
-              <div key={p.peer} style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", background: "var(--bg-secondary)", border: "1px solid var(--border-primary)", borderRadius: 8, padding: "6px 10px" }}>
-                <div style={{ fontSize: 'var(--fs-xs)', flex: 1, minWidth: 160 }}>
-                  <div style={{ fontWeight: 600 }}>{p.peer}</div>
-                  <div style={{ color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 320 }}>{p.text}</div>
+              <div key={p.peer} className="wx-pending-item">
+                <div className="wx-pending-main">
+                  <div className="wx-peer">{p.peer}</div>
+                  <div className="wx-peer-text">{p.text}</div>
                 </div>
-                <button onClick={() => act(async () => { approvePendingPeer(p.peer); refreshAccess(); setNotice(zh ? "已批准" : "Approved"); })} style={{ ...miniBtn, color: "var(--success)", borderColor: "color-mix(in srgb, #22c55e 50%, transparent)" }}>
+                <button onClick={() => act(async () => { approvePendingPeer(p.peer); refreshAccess(); setNotice(zh ? "已批准" : "Approved"); })} className="wx-mini-btn is-ok">
                   {zh ? "批准" : "Allow"}
                 </button>
-                <button onClick={() => act(async () => { ignorePeer(p.peer); refreshAccess(); })} style={{ ...miniBtn, color: "var(--error)", borderColor: "color-mix(in srgb, #ef4444 50%, transparent)" }}>
+                <button onClick={() => act(async () => { ignorePeer(p.peer); refreshAccess(); })} className="wx-mini-btn is-bad">
                   {zh ? "拉黑" : "Block"}
                 </button>
               </div>
@@ -342,12 +333,12 @@ export function WechatSettings() {
         )}
 
         {access.allow.length > 0 && (
-          <div style={{ marginTop: 6 }}>
-            <div style={{ fontSize: 'var(--fs-xs)', fontWeight: 600 }}>{zh ? "白名单" : "Allowlist"}</div>
+          <div className="wx-list">
+            <div className="wx-list-title">{zh ? "白名单" : "Allowlist"}</div>
             {access.allow.map((p) => (
-              <div key={p} style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4 }}>
-                <span style={{ fontSize: 'var(--fs-xs)', flex: 1 }}>{p}</span>
-                <button onClick={() => act(async () => { ignorePeer(p); refreshAccess(); })} style={{ ...miniBtn, color: "var(--error)" }}>
+              <div key={p} className="wx-list-row">
+                <span className="wx-list-peer">{p}</span>
+                <button onClick={() => act(async () => { ignorePeer(p); refreshAccess(); })} className="wx-mini-btn is-bad">
                   {zh ? "移除" : "Remove"}
                 </button>
               </div>
@@ -356,12 +347,12 @@ export function WechatSettings() {
         )}
 
         {access.block.length > 0 && (
-          <div style={{ marginTop: 6 }}>
-            <div style={{ fontSize: 'var(--fs-xs)', fontWeight: 600, color: "var(--error)" }}>{zh ? "黑名单" : "Blocklist"}</div>
+          <div className="wx-list">
+            <div className="wx-list-title is-error">{zh ? "黑名单" : "Blocklist"}</div>
             {access.block.map((p) => (
-              <div key={p} style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4 }}>
-                <span style={{ fontSize: 'var(--fs-xs)', flex: 1, textDecoration: "line-through" }}>{p}</span>
-                <button onClick={() => act(async () => { const a = { ...loadAccess(), block: loadAccess().block.filter((x) => x !== p) }; saveAccess(a); refreshAccess(); })} style={{ ...miniBtn, color: "var(--success)" }}>
+              <div key={p} className="wx-list-row">
+                <span className="wx-list-peer is-blocked">{p}</span>
+                <button onClick={() => act(async () => { const a = { ...loadAccess(), block: loadAccess().block.filter((x) => x !== p) }; saveAccess(a); refreshAccess(); })} className="wx-mini-btn is-ok">
                   {zh ? "解除" : "Unblock"}
                 </button>
               </div>
@@ -369,16 +360,16 @@ export function WechatSettings() {
           </div>
         )}
 
-        <div style={{ display: "flex", gap: 8, marginTop: 8, alignItems: "center" }}>
+        <div className="wx-add-row">
           <input
             value={newPeer}
             onChange={(e) => setNewPeer(e.target.value)}
             placeholder={zh ? "手动添加白名单 peer（xxx@im.wechat）" : "Manually allow peer (xxx@im.wechat)"}
-            style={{ ...inputStyle, flex: 1 }}
+            className="wx-input wx-input--grow"
           />
           <button
             onClick={() => act(async () => { allowPeerByInput(newPeer); setNewPeer(""); refreshAccess(); setNotice(zh ? "已添加" : "Added"); })}
-            style={btnStyle}
+            className="wx-btn"
           >
             {zh ? "添加" : "Add"}
           </button>
@@ -386,7 +377,7 @@ export function WechatSettings() {
       </div>
 
       {/* ---- 合规提示 ---- */}
-      <div style={{ fontSize: 'var(--fs-xs)', color: "var(--text-muted)", lineHeight: 1.7, borderTop: "1px solid var(--border-primary)", paddingTop: 8 }}>
+      <div className="wx-compliance">
         {zh
           ? "须知：① 绑定 token 约 24h 过期，需重新扫码；② 主动消息约 10 条/24h 配额（含回复），为社区实测、非官方承诺，本端按真实发送记账；③ 请勿用于垃圾/营销消息——可能触发腾讯限制；④ 图片/文件/语音等媒体暂不支持（二期）；⑤ 群消息不支持。关闭请到插件管理器禁用 @codem/wechat-bridge。"
           : "Notes: ① binding token expires ~24h (re-scan needed); ② ~10 proactive msgs/24h incl. replies (community-measured, not official — soft accounting here); ③ no spam/marketing — may trigger Tencent limits; ④ media (image/file/voice) unsupported (phase 2); ⑤ group chat unsupported. Disable via Plugin Manager (@codem/wechat-bridge)."}
@@ -394,19 +385,3 @@ export function WechatSettings() {
     </div>
   );
 }
-
-// 轻量样式（与 ComputerUseSettings 一致的内联风格）
-const btnStyle: React.CSSProperties = {
-  padding: "6px 12px", borderRadius: 6, cursor: "pointer",
-  background: "var(--bg-secondary)", color: "var(--text-primary)",
-  border: "1px solid var(--border-color)", fontSize: 'var(--fs-sm)',
-};
-const miniBtn: React.CSSProperties = {
-  padding: "2px 8px", borderRadius: 6, cursor: "pointer", fontSize: 'var(--fs-xs)',
-  background: "transparent", border: "1px solid var(--border-color)",
-};
-const inputStyle: React.CSSProperties = {
-  padding: "6px 8px", background: "var(--bg-tertiary)", color: "var(--text-primary)",
-  border: "1px solid var(--border-color)", borderRadius: 6,
-  fontSize: 'var(--fs-sm)', boxSizing: "border-box",
-};

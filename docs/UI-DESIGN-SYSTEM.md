@@ -187,8 +187,10 @@ node tools/ui-audit/codemod-icon-scale.mjs [--write]  # 图标工具类 → .ico
 
 | **第 17 波** | 2026-09-10 | **0** ✅ | **17** | **内联样式收口 + 又一处工具盲区**：① `UsageStats`（128 → 0）、`GitEnvSettings`（172 → 0，两个重复了 20 多次的「标签+输入+说明」表单收成 `.git-env-*`，保存按钮复用共享 `.panel-btn--primary`）；② **TSX 侧色值判定也改成逐字面量**：此前它和 CSS 侧犯同一个错 —— 「这行有 `var(--` 就整行放过」，于是 `color: cond ? "#22c55e" : "var(--text-primary)"` 这类混写一直漏检；修好后立刻报出 **18 处**藏在条件分支里的硬编码色（红/绿/琥珀/紫各有，含 `#e55` 这种缩写），已全部换成语义令牌；`ppt/SlideCanvas` 的幻灯片占位块按「白纸内容」单列 `--ppt-placeholder-*` 令牌（不随主题走）；③ 顺手删掉一处自己引入的重复定义（`.panel-btn` 在第 14 波提升为共享类时留下了两份） |
 
-### 全项目现场事实（来自 UI 交互界面清单，作为工作队列）
 
+| **第 18 波** | 2026-09-10 | **0** ✅ | **16** | **内联样式收口（微信桥设置）**：`WechatSettings`（141 → 0）改 `.wx-*` 具名类，连二维码容器（190×190 白底 + 内边距 + 居中）也收成类。**又修掉一处真实 bug**：该组件原来用的边框色是 `var(--border-color)` —— 这个令牌在项目里**根本不存在**，所有边框一直在吃 fallback 值；统一改回 `--border-primary` 后边框才真正跟随主题 |
+
+### 全项目现场事实（来自 UI 交互界面清单，作为工作队列）
 - 挂载层：64 个 `SlotBridge` 渲染点 + 54 处 `slots.register` + 44 处 `createPortal`（另 51 个 SlotBridge 在 `App.tsx`）。
 - 浮层：205 个 overlay 类名实例散在 60 个 tsx 里，约 35 种外壳；`var(--z-*)` 只被用了 9 次，
   而有 23 个 tsx 数值 z-index + 13 个 CSS 层级（`modal-overlay` 是 200，`--z-modal` 是 1300，互相矛盾）。
@@ -221,9 +223,9 @@ node tools/ui-audit/codemod-icon-scale.mjs [--write]  # 图标工具类 → .ico
 | `modal-shell-bespoke` | error | 15 | **0** ✅ |
 | `spacing-offgrid` | warn | 13 | **0** ✅ |
 | `css-class-undefined` | warn | — | **0** ✅（第 10 波清零；审计器已扩面到模板字面量） |
-| `inline-style-dense` | warn | 58 | 17（唯一剩下的 warn；第 14 波先修正了度量口径 50 → 25，再累计收口 8 个文件） |
+| `inline-style-dense` | warn | 58 | 16（唯一剩下的 warn；第 14 波先修正了度量口径 50 → 25，再累计收口 9 个文件） |
 | **error 合计** | | **533** | **0** ✅ |
-| **warn 合计** | | 64 | **17** |
+| **warn 合计** | | 64 | **16** |
 
 > 注：`color-hardcoded-tsx` 中途曾报 53 → 9 —— 不是"改多了"，而是审计器修掉了假阳性（见第 11 波说明）。
 > `fs-hardcoded` 第 12 波一度报 590 —— 也不是"变差了"，而是审计器**首次开始扫 CSS 侧**（此前 591 处写死的字号
@@ -253,7 +255,8 @@ node tools/ui-audit/codemod-icon-scale.mjs [--write]  # 图标工具类 → .ico
 14. **第 14 波**：内联样式收口开工 —— 修正 `inline-style-dense` 的度量口径（50 → 25 个文件）、定义闭集共享具名类、`RecoveryPanel` 149 → 0、`FlashcardViewer` 139 → 0（详见 §5 表）。
 15. **第 15 波**：新建 `src/styles/task-center.css`，任务管理面板三个组件（SquadsTab 176、IssueDetailPanel 133、AutomationTab 134）内联样式全部收口并抽出 `tc-*` 通用族；顺带修掉 `var(--accent)22` 这类无效 CSS（详见 §5 表）。
 16. **第 16 波**：设置类面板 `LayeredSettingsPanel`（141 → 0）收口（详见 §5 表）。
-17. **第 17 波（本轮）**：`UsageStats`（128 → 0）、`GitEnvSettings`（172 → 0）收口；TSX 侧色值判定改为逐字面量，暴露并修掉 18 处藏在条件分支里的硬编码色（详见 §5 表）。
+17. **第 17 波**：`UsageStats`（128 → 0）、`GitEnvSettings`（172 → 0）收口；TSX 侧色值判定改为逐字面量，暴露并修掉 18 处藏在条件分支里的硬编码色（详见 §5 表）。
+18. **第 18 波（本轮）**：`WechatSettings`（141 → 0）收口，顺带修掉 `var(--border-color)` 这个不存在的令牌（详见 §5 表）。
 
 ### 下一轮的工作队列（按性价比排序）
 

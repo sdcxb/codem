@@ -8067,6 +8067,141 @@ border-bottom: 1px solid var(--accent);
 }
 
 /* ==========================================================================
+ * 微信 ClawBot 设置（WechatSettings）：第 17 波
+ * 此前三个共享内联对象（btnStyle/miniBtn/inputStyle）+ 40 多处零散内联；
+ * 另外原代码用的是 `var(--border-color)` —— 这个令牌根本不存在，边框一直在吃 fallback。
+ * ========================================================================== */
+.wx-panel { display: grid; gap: var(--space-7); }
+.wx-title { font-size: var(--fs-md); font-weight: 600; color: var(--text-primary); }
+.wx-desc { font-size: var(--fs-sm); color: var(--text-muted); line-height: 1.7; }
+
+.wx-status-row { display: flex; align-items: center; gap: var(--space-5); flex-wrap: wrap; }
+/* 二维码容器（原为内联样式：190×190 白底 + 6px 内边距 + 居中） */
+.wx-qr {
+  width: 190px;
+  height: 190px;
+  box-sizing: border-box;
+  padding: var(--space-3);
+  background: var(--text-on-accent);
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.wx-qr > svg { width: 100%; height: 100%; }
+.wx-state-badge {
+  padding: 3px var(--space-5);
+  border-radius: var(--radius-full);
+  border: 1px solid var(--border-primary);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--text-primary);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+}
+.wx-state-badge.is-connected {
+  background: color-mix(in srgb, var(--success) 18%, transparent);
+  border-color: color-mix(in srgb, var(--success) 40%, transparent);
+  color: var(--success);
+}
+.wx-status-meta { font-size: var(--fs-xs); color: var(--text-muted); }
+.wx-status-error { font-size: var(--fs-xs); color: var(--warning); }
+.wx-notice { margin-top: var(--space-3); font-size: var(--fs-xs); color: var(--error); }
+.wx-block { margin-top: var(--space-5); }
+
+.wx-qr-row { margin-top: var(--space-5); display: flex; gap: var(--space-8); flex-wrap: wrap; align-items: flex-start; }
+.wx-qr-col { display: grid; gap: var(--space-3); max-width: 300px; }
+.wx-qr-hint { font-size: var(--fs-sm); }
+.wx-qr-url { font-size: var(--fs-xs); color: var(--text-muted); word-break: break-all; }
+.wx-code-block { margin-top: var(--space-5); display: grid; gap: var(--space-4); max-width: 360px; }
+.wx-code-row { display: flex; gap: var(--space-4); }
+.wx-actions { margin-top: var(--space-5); display: flex; gap: var(--space-4); flex-wrap: wrap; }
+
+.wx-btn {
+  padding: var(--space-3) var(--space-6);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-xs);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  transition: var(--transition-color);
+}
+.wx-btn:hover:not(:disabled) { border-color: var(--accent); }
+.wx-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.wx-btn--primary { background: var(--accent); border-color: var(--accent); color: var(--text-on-accent); font-weight: 600; }
+.wx-btn--primary:hover:not(:disabled) { background: var(--accent-hover); }
+.wx-btn--start { justify-self: start; }
+
+.wx-mini-btn {
+  padding: var(--space-1) var(--space-4);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-xs);
+  background: transparent;
+  font-family: inherit;
+  font-size: var(--fs-xs);
+  cursor: pointer;
+}
+.wx-mini-btn.is-ok { color: var(--success); border-color: color-mix(in srgb, var(--success) 50%, transparent); }
+.wx-mini-btn.is-bad { color: var(--error); border-color: color-mix(in srgb, var(--error) 50%, transparent); }
+
+.wx-input {
+  padding: var(--space-3) var(--space-4);
+  box-sizing: border-box;
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-xs);
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: var(--fs-sm);
+}
+.wx-input:focus { outline: none; border-color: var(--accent); }
+.wx-input--full { width: 100%; }
+.wx-input--grow { flex: 1; min-width: 0; }
+.wx-input--code { flex: 1; min-width: 0; letter-spacing: 2px; }
+
+.wx-toggle-label { display: flex; align-items: center; gap: var(--space-4); cursor: pointer; }
+.wx-toggle-hint { margin-top: var(--space-2); font-size: var(--fs-xs); color: var(--error); }
+
+.wx-pending-list { margin-top: var(--space-3); display: grid; gap: var(--space-3); }
+.wx-pending-title { font-size: var(--fs-xs); font-weight: 600; color: var(--warning); }
+.wx-pending-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  padding: var(--space-3) var(--space-5);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius);
+  background: var(--bg-secondary);
+}
+.wx-pending-main { flex: 1; min-width: 160px; font-size: var(--fs-xs); }
+.wx-peer { font-weight: 600; }
+.wx-peer-text {
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-muted);
+}
+
+.wx-list { margin-top: var(--space-3); }
+.wx-list-title { font-size: var(--fs-xs); font-weight: 600; }
+.wx-list-title.is-error { color: var(--error); }
+.wx-list-row { display: flex; align-items: center; gap: var(--space-4); margin-top: var(--space-2); }
+.wx-list-peer { flex: 1; min-width: 0; font-size: var(--fs-xs); }
+.wx-list-peer.is-blocked { text-decoration: line-through; }
+.wx-add-row { display: flex; align-items: center; gap: var(--space-4); margin-top: var(--space-4); }
+
+.wx-compliance {
+  border-top: 1px solid var(--border-primary);
+  padding-top: var(--space-4);
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  line-height: 1.7;
+}
+
+/* ==========================================================================
  * 会话恢复面板（RecoveryPanel）：把内联样式收口成具名类（第 14 波）
  * 该组件此前 149 个内联样式属性（审计规则 inline-style-dense），
  * 这里按 §3 组件语言改用具名类，只保留真正动态的部分（统计卡的颜色）留在内联。
