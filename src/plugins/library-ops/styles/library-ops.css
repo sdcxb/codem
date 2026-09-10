@@ -200,7 +200,7 @@
   --issue-col-min: 128px;
 }
 .lo-task__content::-webkit-scrollbar { width: 6px; height: 6px; }
-.lo-task__content::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 3px; }
+.lo-task__content::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: var(--radius-sm); }
 
 .lo-task__feed {
   width: clamp(200px, 24cqw, 280px);
@@ -223,7 +223,7 @@
 }
 .lo-task__feed-body { flex: 1; overflow-y: auto; padding: 6px; min-height: 0; }
 .lo-task__feed-body::-webkit-scrollbar { width: 5px; }
-.lo-task__feed-body::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 3px; }
+.lo-task__feed-body::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: var(--radius-sm); }
 
 /* ===== 卡片（与宿主 .card 同一视觉语言：10px 圆角 + bg-secondary + border-primary） ===== */
 .lo-card {
@@ -253,7 +253,7 @@
 .lo-card__body { min-height: 0; }
 .lo-card__body--scroll { flex: 1; overflow-y: auto; min-height: 0; }
 .lo-card__body--scroll::-webkit-scrollbar { width: 5px; }
-.lo-card__body--scroll::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 3px; }
+.lo-card__body--scroll::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: var(--radius-sm); }
 
 /* ===== 用量视图（总览 + 成本两块堆叠，自然高度） ===== */
 .lo-usage { display: flex; flex-direction: column; gap: 10px; }
@@ -651,7 +651,7 @@
 .lo-card--detail { flex: 0 1 auto; min-height: 120px; }
 .lo-card--detail .lo-card__body { overflow-y: auto; min-height: 0; }
 .lo-card--detail .lo-card__body::-webkit-scrollbar { width: 5px; }
-.lo-card--detail .lo-card__body::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 3px; }
+.lo-card--detail .lo-card__body::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: var(--radius-sm); }
 
 .lo-scene { position: absolute; inset: 0; overflow: hidden; touch-action: none; cursor: grab; }
 .lo-scene:active { cursor: grabbing; }

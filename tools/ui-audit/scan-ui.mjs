@@ -61,11 +61,6 @@ const ALLOWLIST = [
   { re: /^src\/styles\/skin-[^/]+\.css$/, why: "皮肤定义源（每个皮肤的调色板与覆盖层：原始色值就是该皮肤的真相源）" },
   { re: /^src\/plugins\/library-ops\/data\/characters\.ts$/, why: "图书馆角色调色板（注释性常量，实际渲染已用 var() 令牌）" },
   {
-    re: /^src\/styles\.css$/,
-    why: "宿主样式表：字号（第 12 波）与离格圆角（第 13 波）已令牌化；色值尚未迁移（实测 231 行字面量），是下一波的队列，故先按规则豁免这一条",
-    rules: ["color-hardcoded-css"],
-  },
-  {
     re: /^src\/components\/AppErrorBoundary\.tsx$/,
     why: "崩溃兜底页必须能在样式表整体失效时仍然可读，所以刻意全部走内联样式（不依赖任何 CSS 外壳）",
     rules: ["modal-shell-bespoke"],
@@ -114,6 +109,32 @@ function add(rule, file, line, text, detail) {
 /** 去掉行内注释，避免把注释里的示例算成违规 */
 function stripComments(line) {
   return line.replace(/\/\/.*$/, "").replace(/\/\*.*?\*\//g, "");
+}
+
+/**
+ * 一行里所有 `var(...)` 的区间（含 fallback）。
+ * `var(--token, #fallback)` 里的原始色值是「令牌缺失时的兜底」，不是写死的样式，
+ * 判定违规时要排除它们 —— 但必须**按字面量位置**排除：一行里出现过 var(-- 不代表整行都干净
+ * （`box-shadow: 0 0 0 1px var(--border-primary), 0 1px 2px rgba(0,0,0,.04)` 曾因此长期漏检）。
+ */
+function varRanges(line) {
+  const ranges = [];
+  let i = 0;
+  while (i < line.length) {
+    const at = line.indexOf("var(", i);
+    if (at < 0) break;
+    let j = at + 3;
+    let depth = 0;
+    do {
+      const c = line[j];
+      if (c === "(") depth++;
+      else if (c === ")") depth--;
+      j++;
+    } while (j < line.length && depth > 0);
+    ranges.push([at, j]);
+    i = j;
+  }
+  return ranges;
 }
 
 /**
@@ -281,15 +302,33 @@ function scanCss(rel, src) {
       add("fs-hardcoded", rel, no, raw, `font-size: ${fsz[1]}${fsz[2]}`);
     }
 
+    // 色值：**逐个字面量**判定，而不是"这行有 var(-- 就整行放过" ——
+    // 后者是真实盲区：`box-shadow: 0 0 0 1px var(--border-primary), 0 1px 2px rgba(0,0,0,.04)`
+    // 里的黑投影就这样一直没被看见（styles.css 里曾有 12 行是这种混写）。
+    const ranges = varRanges(line);
+    const outsideVar = (offset) => offset >= 0 && !ranges.some(([s, e]) => offset >= s && offset < e);
+
     const hex = /#[0-9a-fA-F]{3,8}\b/.exec(line);
     const rgb = /\b(?:rgba?|hsla?)\(/.exec(line);
-    if ((hex || rgb) && !line.includes("var(--")) {
-      add("color-hardcoded-css", rel, no, raw, hex ? hex[0] : "rgb()/hsl()");
+    if ((hex && outsideVar(hex.index)) || (rgb && outsideVar(rgb.index))) {
+      add("color-hardcoded-css", rel, no, raw, hex && outsideVar(hex.index) ? hex[0] : "rgb()/hsl()");
     }
     const br = /border-radius:\s*([0-9.]+)(px|rem|%)?/.exec(line);
-    if (br && !line.includes("var(--") && br[2] !== "%") {
+    if (br && br[2] !== "%") {
       const v = br[2] === "rem" ? parseFloat(br[1]) * 16 : parseFloat(br[1]);
       if (!RADIUS_OK.has(String(v))) add("radius-offscale", rel, no, raw, `border-radius: ${br[0]}`);
+    }
+
+    // 命名色（white/black/…）：此前完全不被看见，`color: white` 可以一路写下去。
+    // 只在「值」的位置判定：前面是空格/,/(/:，后面是空格/,/;/)，因此 `white-space` 不误报；
+    // 含 url() 的行跳过（data URI 里的颜色是内容，不是 UI 样式）。
+    if (!line.includes("url(")) {
+      const named = /(?:^|[\s,:(])(white|black|red|green|blue|gray|grey|orange|purple|pink|yellow|cyan|magenta|silver|maroon|navy|teal|olive|lime|aqua|fuchsia)(?=[\s,;)]|$)/gi;
+      for (const m of line.matchAll(named)) {
+        if (!outsideVar(m.index)) continue;
+        add("color-hardcoded-css", rel, no, raw, `命名色: ${m[1]}`);
+        break;
+      }
     }
   });
 }

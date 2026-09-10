@@ -164,7 +164,7 @@ export function PresentationMode({ deck, startIndex = 0, onExit }: PresentationM
           else goPrev();
         }
       }}
-      style={{ position: 'fixed', inset: 0, zIndex: 99999, background: 'var(--presentation-backdrop)' }}
+      style={{ position: 'fixed', inset: 0, zIndex: 99999, background: 'var(--backdrop-black)' }}
     >
       {/* 幻灯片画布 */}
       <div ref={containerRef} style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', overflow: 'hidden' }}>

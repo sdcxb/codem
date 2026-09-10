@@ -402,7 +402,7 @@
 
 .nb-add-btn:hover:not(:disabled) {
   background: var(--accent);
-  color: white;
+  color: var(--text-on-accent);
   border-color: var(--accent);
 }
 
@@ -527,7 +527,7 @@
   content: '';
   width: 3px;
   height: 6px;
-  border: solid white;
+  border: solid var(--text-on-accent);
   border-width: 0 1.5px 1.5px 0;
   transform: rotate(45deg);
   margin-bottom: 1px;
@@ -833,7 +833,7 @@
   background: var(--accent);
   border: none;
   border-radius: 6px;
-  color: white;
+  color: var(--text-on-accent);
   font-size: var(--fs-base);
   font-weight: 600;
   cursor: pointer;
@@ -1052,7 +1052,7 @@ top: 36px;
 .nb-type-tab.active {
   background: var(--accent);
   border-color: var(--accent);
-  color: white;
+  color: var(--text-on-accent);
 }
 
 .nb-dialog-input {
@@ -1180,7 +1180,7 @@ top: 36px;
   background: var(--accent);
   border: none;
   border-radius: var(--radius-sm);
-  color: white;
+  color: var(--text-on-accent);
   font-size: var(--fs-sm);
   font-weight: 500;
   cursor: pointer;
@@ -1633,7 +1633,7 @@ top: 36px;
   aspect-ratio: 16 / 9;
   border: 1px solid var(--border-primary);
   border-radius: 8px;
-  background: white;
+  background: var(--surface-content);
   box-shadow: var(--shadow-md);
 }
 
@@ -1861,7 +1861,7 @@ top: 36px;
 
 .nb-mode-btn.active {
   background: var(--accent);
-  color: white;
+  color: var(--text-on-accent);
 }
 
 .nb-editor-close {
@@ -2417,7 +2417,7 @@ top: 36px;
   width: 28px;
   height: 28px;
   background: var(--accent);
-  color: white;
+  color: var(--text-on-accent);
   border-radius: 50%;
   font-size: var(--fs-base);
   font-weight: 600;

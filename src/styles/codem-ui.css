@@ -507,7 +507,7 @@
   width: 100%;
   min-height: 120px;
   border: none;
-  background: white;
+  background: var(--surface-content);
 }
 
 /* Math formula body */
@@ -749,7 +749,7 @@
   width: 100%;
   min-height: 120px;
   border: none;
-  background: white;
+  background: var(--surface-content);
 }
 
 /* Fullscreen viewer */
@@ -786,7 +786,7 @@
   border-radius: var(--radius-full);
   border: none;
   background: color-mix(in srgb, var(--text-on-accent) 12%, transparent);
-  color: white;
+  color: var(--text-on-accent);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -1331,7 +1331,7 @@
 }
 .decision-tray-btn.approve {
   background: var(--success);
-  color: white;
+  color: var(--text-on-accent);
 }
 .decision-tray-btn.approve:hover {
   background: var(--success-hover);
@@ -1342,7 +1342,7 @@
 }
 .decision-tray-btn.reject:hover {
   background: var(--error);
-  color: white;
+  color: var(--text-on-accent);
 }
 .decision-tray-btn.submit {
   background: var(--accent);
@@ -1616,7 +1616,7 @@ transition: border-color var(--duration-fast) var(--ease-out), box-shadow var(--
 }
 .composer-attachment-remove:hover {
   background: var(--error);
-  color: white;
+  color: var(--text-on-accent);
 }
 
 /* Composer drag overlay */
@@ -1780,7 +1780,7 @@ transition: border-color var(--duration-fast) var(--ease-out), box-shadow var(--
 }
 .native-title-bar-tab-close:hover {
   background: var(--error);
-  color: white;
+  color: var(--text-on-accent);
 }
 .native-title-bar-right {
   display: flex;
@@ -1811,7 +1811,7 @@ transition: border-color var(--duration-fast) var(--ease-out), box-shadow var(--
 }
 .native-title-bar-window-btn.close:hover {
   background: var(--titlebar-btn-close-hover);
-  color: white;
+  color: var(--text-on-accent);
 }
 
 /* ========== 11. Right Rail ========== */
@@ -1885,7 +1885,7 @@ transition: border-color var(--duration-fast) var(--ease-out), box-shadow var(--
 }
 .right-rail-tab-close:hover {
   background: var(--error);
-  color: white;
+  color: var(--text-on-accent);
 }
 .right-rail-add-tab {
   position: relative;
@@ -2687,7 +2687,7 @@ body.resizing-columns * {
   left: 2px;
   width: 18px;
   height: 18px;
-  background: white;
+  background: var(--surface-content);
   border-radius: 50%;
   transition: transform var(--duration-fast) var(--ease-out);
   box-shadow: var(--shadow-sm);
@@ -3602,7 +3602,7 @@ background: var(--bg-secondary, var(--surface));
 }
 .inline-diff-btn.accept {
   background: var(--success);
-  color: white;
+  color: var(--text-on-accent);
 }
 .inline-diff-btn.accept:hover {
   background: var(--success-hover, #27ae60);
@@ -3614,7 +3614,7 @@ background: var(--bg-secondary, var(--surface));
 }
 .inline-diff-btn.reject:hover {
   background: var(--error);
-  color: white;
+  color: var(--text-on-accent);
   border-color: var(--error);
 }
 .inline-diff-btn.accept-all {

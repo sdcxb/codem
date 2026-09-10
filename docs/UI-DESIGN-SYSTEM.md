@@ -135,11 +135,11 @@ node tools/ui-audit/codemod-icon-scale.mjs [--write]  # 图标工具类 → .ico
 | `css-class-undefined` | warn | **tsx 里用了但没有任何 CSS 定义的类名**（等于没样式；已排除运行时状态类与第三方库类名；模板字面量里的静态类名同样计入） |
 
 **合法例外**（写在 `scan-ui.mjs` 的 `ALLOWLIST`，每条都带理由；`rules` 字段可只豁免某一条规则）：
-皮肤令牌定义源、PPT 生成内容配色、大富翁游戏插件（自带美术语言）、图书馆角色调色板注释常量；
-以及三条**按规则豁免**的：`AppErrorBoundary`（崩溃兜底页必须在样式表失效时仍可读，刻意全内联样式）、
-`ppt/PPTAdapter|PresentationMode`（整屏工作台/演示舞台，不是应用内浮层）、
-`src/styles.css` 的 `color-hardcoded-css`（该文件的字号与离格圆角均已令牌化，
-色值 231 行是下一波的队列，先按规则豁免以免门禁失真 —— 数字与映射方向记在 §7）。
+皮肤令牌定义源（`src/core/theme/`、`src/styles/skin-*.css`）、PPT 生成内容配色、大富翁游戏插件（自带美术语言）、
+图书馆角色调色板注释常量；
+以及两条**按规则豁免**的：`AppErrorBoundary`（崩溃兜底页必须在样式表失效时仍可读，刻意全内联样式）、
+`ppt/PPTAdapter|PresentationMode`（整屏工作台/演示舞台，不是应用内浮层）。
+**`src/styles.css` 不再有任何豁免** —— 字号、色值、圆角三样都已令牌化并被门禁覆盖。
 例外不是后门 —— 新增例外必须在文档里说明理由。
 
 ## 5. 进度（迭代记录）
@@ -158,7 +158,7 @@ node tools/ui-audit/codemod-icon-scale.mjs [--write]  # 图标工具类 → .ico
 
 | **第 12 波** | 2026-09-10 | **0** ✅ | **50** | **字号令牌化（宿主样式表纳入审计）**：① 审计器新增 **CSS 侧 `fs-hardcoded` 规则**（此前只查 tsx 内联样式，而 `styles.css` 整份被排除在扫描外 —— 最大的现场反而没人看）；② 592 处 `font-size` 写死像素/rem → `var(--fs-*)`，实测**只有 11 处发生 ±1px 变化**（9 处 15px 标题 → `--fs-lg`、1 处 17px 弹窗标题 → `--fs-xl`、2 处输入框镜像层统一到 `--fs-md`），其余 578 处取值不变；③ 补 `--fs-2xs`(11px) 令牌：11px 是项目第二多的小字号（121 处），补档而不是并进 10/12，既保住排版密度，又让它**跟着字号滑杆缩放** —— 这正是「设置里调字号没反应」的根因（滑杆只影响 `var(--fs-*)`）；④ 明确 `em`/`%` 是允许的相对层级（markdown 标题、行内代码）；⑤ 顺带把输入框/镜像层/消息正文统一到 `--fs-md`（此前 15px/15px/14px 三档，发送前后字号会跳变） |
 
-| **第 13 波** | 2026-09-10 | **0** ✅ | **50** | **`styles.css` 的离格圆角清零**：22 处不在刻度上的圆角 → 令牌，`radius-offscale` 对该文件**不再需要豁免**。3px×11（小徽标/关闭按钮）→ `--radius-sm`(4)；5px×9（小按钮/标签）→ `--radius-xs`(6)；11px 开关轨道与 9px 未读徽标 → `--radius-full`（这两个值本来就是"半高 = 胶囊"，换成胶囊令牌后取值完全一致，只是语义变对了）。**色值（231 行字面量）留到下一波** |
+| **第 13 波** | 2026-09-10 | **0** ✅ | **50** | **`styles.css` 的色值与圆角全部令牌化，该文件的例外彻底删除**：① 圆角 22 处（3px×11 → `--radius-sm`；5px×9 → `--radius-xs`；11px 开关轨道/9px 未读徽标 → `--radius-full`，本来就是"半高 = 胶囊"）；② 色值 249 处 → 语义令牌：状态色按色系归位（红→`--error`、绿→`--success`、琥珀→`--warning`、蓝→`--info`、紫蓝→`--accent`），带 alpha 的一律 `color-mix(in srgb, var(--token) N%, transparent)`；投影里的黑 → `--shadow-color`/`--shadow-color-soft`；遮罩黑 → `--overlay-backdrop(-strong)`；`color: white` → `--text-on-accent`、`background: white` → `--surface-content`；③ **新增一批"语义身份"令牌**：`--terminal-bg/-fg`、`--backdrop-black`、`--surface-content`、`--mac-btn-*`、`--window-close-*`、`--skin-preview-*` —— 这些是"外来内容/平台惯例/皮肤数据"，不该硬塞进主题令牌里，但也不该散在规则中；④ **审计器补两处盲区**：命名色（`color: white` 此前完全看不见）现在纳入；`var(--token, #fallback)` 的兜底值按**字面量位置**排除而不是"整行有 var(-- 就放过"—— 后者让 12 行混写（`box-shadow: … var(--border-primary), 0 1px 2px rgba(0,0,0,.04)`）长期漏检，修好后立刻又暴露出 library-ops.css 里 4 处被同一原因藏起来的离格圆角 |
 
 ### 全项目现场事实（来自 UI 交互界面清单，作为工作队列）
 
@@ -190,7 +190,7 @@ node tools/ui-audit/codemod-icon-scale.mjs [--write]  # 图标工具类 → .ico
 | `fs-hardcoded` | error | 78 | **0** ✅（门禁锁定；第 12 波起**同时覆盖 CSS**） |
 | `radius-offscale` | error | 38 | **0** ✅（门禁锁定；第 13 波起覆盖 `styles.css` 本体，不需豁免） |
 | `color-hardcoded-tsx` | error | 325 | **0** ✅ |
-| `color-hardcoded-css` | error | 209 | **0** ✅（`src/styles.css` 本体仍有 239 处待迁移，见下） |
+| `color-hardcoded-css` | error | 209 | **0** ✅（第 13 波起**连 `src/styles.css` 本体一起覆盖**，无豁免） |
 | `modal-shell-bespoke` | error | 15 | **0** ✅ |
 | `spacing-offgrid` | warn | 13 | **0** ✅ |
 | `css-class-undefined` | warn | — | **0** ✅（第 10 波清零；审计器已扩面到模板字面量） |
@@ -201,39 +201,35 @@ node tools/ui-audit/codemod-icon-scale.mjs [--write]  # 图标工具类 → .ico
 > 注：`color-hardcoded-tsx` 中途曾报 53 → 9 —— 不是"改多了"，而是审计器修掉了假阳性（见第 11 波说明）。
 > `fs-hardcoded` 第 12 波一度报 590 —— 也不是"变差了"，而是审计器**首次开始扫 CSS 侧**（此前 591 处写死的字号
 > 因为 `src/styles.css` 整份被排除而完全不可见）。
+> 第 13 波把 CSS 侧判定从「整行」改到「逐字面量」后，又冒出 12 行混写色值与 4 处离格圆角 —— 同样是
+> **工具看不见**而不是"新问题"，修完才真正归零。
 
 ### 已完成的波次
 
 1. **规范落地**：按 frakio-work 实测规范写成本文件（令牌契约 + 组件语言 + 门禁 + 例外表）。
-2. **机具**：`scan-ui.mjs`（9 条规则 + `--census/--json/--rule/--write-baseline`）、`codemod-tokens.mjs`（令牌化改写，默认 dry-run，只动 `style={{}}` 与 CSS，跳过含 `var(--` 的行与注释）、`codemod-icon-scale.mjs`（图标工具类 → `--icon-*` 刻度）、`codemod-css-fs.mjs`（CSS 字号 → `--fs-*` 刻度）。
+2. **机具**：`scan-ui.mjs`（9 条规则 + `--census/--json/--rule/--write-baseline`）、`codemod-tokens.mjs`（令牌化改写，默认 dry-run，只动 `style={{}}` 与 CSS）、`codemod-icon-scale.mjs`（图标工具类 → `--icon-*` 刻度）、`codemod-css-fs.mjs`（CSS 字号 → `--fs-*`）、`codemod-css-colors.mjs`（CSS 色值 → 语义令牌，含命名色与 `var()` 兜底值按位置排除）。
 3. **第 1 波**：478 处令牌化（色 409 / 圆角 32 / 字号 37）→ `fs-hardcoded`、`radius-offscale` 清零。
 4. **第 2 波**：84 处淡色底边 → `color-mix(in srgb, var(--token) N%, transparent)`。
-5. **补令牌**：`--fs-2xs`(11) / `--fs-display`(28) / `--fs-hero`(32) / `--overlay-backdrop(-strong)` / `--space-1..12` / `--radius-xs`(6px) / `--shadow-color` / `--presentation-backdrop` / `--icon-2xs..--icon-3xl` / `--pet-*`。
+5. **补令牌**：`--fs-2xs`(11) / `--fs-display`(28) / `--fs-hero`(32) / `--overlay-backdrop(-strong)` / `--space-1..12` / `--radius-xs`(6px) / `--shadow-color(-soft)` / `--backdrop-black` / `--surface-content` / `--terminal-bg/-fg` / `--window-close-*` / `--mac-btn-*` / `--skin-preview-*` / `--icon-2xs..--icon-3xl` / `--pet-*`。
 6. **门禁**：`src/test/ui-consistency.test.ts`（逐规则对比基线，只降不升；字号/圆角必须保持 0）。
 7. **补样式**：Pipeline 下一步对话框、纠偏结果对比面板（此前类名无 CSS = 没样式）。
 8. **间距归一**：`spacing-offgrid` 13 → 0（只对齐离格值，±1px）。
 9. **CSS 色令牌化**：31 → 17（遮罩/底色/状态淡色）。
 10. **第 10 波**：图标刻度 + 253 处「有类名没样式」清零（详见 §5 表）。
 11. **第 11 波**：色值 70 处（CSS 17 + TSX 53）→ 0；15 处自建浮层 → 统一外壳；审计器精度修复（详见 §5 表）。
-12. **第 12 波（本轮）**：宿主样式表纳入审计 + 592 处字号令牌化（详见 §5 表）。
+12. **第 12 波**：宿主样式表纳入审计 + 592 处字号令牌化（详见 §5 表）。
+13. **第 13 波（本轮）**：`styles.css` 的 249 处色值 + 22 处离格圆角 → 令牌，该文件的例外彻底删除；审计器补掉命名色与"整行放过"两处盲区（详见 §5 表）。
 
 ### 下一轮的工作队列（按性价比排序）
 
-1. **`src/styles.css` 的色值**（唯一还挂着按规则豁免的地方，数字不是 0 而是"还没量"）：
-   实测 **231 行色值字面量**，按属性分布：`background` 97 / `color` 38 / `box-shadow` 36 / 简写与其余 60。
-   频率最高的几组已定位好映射方向 ——
-   `box-shadow: rgba(0,0,0,0.3)×12 / 0.4×8 / 0.08×3`（→ `--shadow-*` / `--shadow-color`）、
-   `background: rgba(0,0,0,0.5)×7 / 0.6×6`（→ `--overlay-backdrop(-strong)`）、
-   红系 `#f87171×5 / #ef4444×8 / #ff5050×3 / rgba(239,68,68,*)×11`（→ `var(--error)` + `color-mix`）、
-   绿系 `#22c55e / #4ade80 / rgba(34,197,94,*)`（→ `var(--success)`）、
-   蓝紫系 `rgba(99,102,241,*)×6 / #6366f1`（→ `var(--accent)` 家族）、
-   琥珀系 `#ffa500 / #f59e0b / #e0a91f`（→ `var(--warning)`）、
-   以及少数"自带调色板"（`#0d1117/#161b22/#21262d` 的 GitHub 暗色、关闭按钮的 Windows 红 `#e81123`）需要逐个判断是
-   收敛到令牌还是写进例外表。做完这一波才能把 `styles.css` 从 ALLOWLIST 里彻底移除；
-2. **50 个「内联样式过密」文件**：按钮/输入/卡片/空态/列表行改具名类（`inline-style-dense` 的唯一来源）；
-3. **z-index 令牌化**：`modal-overlay`=200 与 `--z-modal`=1300 互相矛盾，`popover-shield` 的层级仍留在调用处（23 个 tsx 数值 + 13 个 CSS 层级）；
-4. **重复定义收敛**：`styles.css` 内已有同名类被定义两次且取值不同（如 `.badge` 的圆角 10px vs 4px、
+1. **50 个「内联样式过密」文件**（`inline-style-dense` 是唯一剩下的 warn）：
+   把按钮/输入/卡片/空态/列表行改用具名类，优先处理属性最多的一批
+   （`--rule=inline-style-dense --verbose` 会按文件列出来）；
+2. **z-index 令牌化**：`modal-overlay`=200 与 `--z-modal`=1300 互相矛盾，`popover-shield` 的层级仍留在调用处（23 个 tsx 数值 + 13 个 CSS 层级）；
+3. **重复定义收敛**：`styles.css` 内已有同名类被定义两次且取值不同（如 `.badge` 的圆角 10px vs 4px、
    `.workspace-tab` 的 11px vs 12px 字号 —— 后者已被第 12 波统一到 `--fs-sm`），需要新增一条「重复/冲突定义」审计规则；
+4. **间距令牌化**：`--space-*` 已补齐但 CSS 里 2482 个数值间距还在用字面量（第 8 波只对齐了离格值），
+   可以再走一遍与字号同款的做法（codemod + 刻度映射）；
 5. **收尾**：门禁归零 → `CHANGELOG` / `README` / `PROJECT-GUIDE` / 本文件同步 → 升版本号 → 构建安装包 → 发布 Release。
 
 ### 已知例外（都写在 `scan-ui.mjs` 的 ALLOWLIST 里并附理由）
