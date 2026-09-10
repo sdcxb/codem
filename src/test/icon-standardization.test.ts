@@ -342,7 +342,11 @@ describe("图标标准化测试 — ICON-001 ~ ICON-060", () => {
   describe("CSS 变量替代硬编码颜色", () => {
     it("ICON-051: styles.css 不再使用 --accent-color", () => {
       const css = readFile("styles.css");
-      expect(css).not.toContain("--accent-color");
+      // 判定「是否还在用」而不是「文本里有没有出现过」：
+      // 注释里点名这个坏令牌（说明它为什么不存在）是文档，不是违规。
+      // 真正的违规形态只有两种：`--accent-color: <值>` 定义，或 `var(--accent-color)` 取用。
+      expect(css).not.toMatch(/--accent-color\s*:/);
+      expect(css).not.toMatch(/var\(\s*--accent-color/);
       // 应该使用 --accent
       expect(css).toContain("--accent:");
     });

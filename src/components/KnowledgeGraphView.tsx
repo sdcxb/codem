@@ -37,7 +37,6 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { Loader2, Search, Share2, Download, Edit3, Trash2 } from 'lucide-react';
-import { useSkin } from '../core/theme';
 import { getGraphData, updateGraphNode, deleteGraphNode, deleteGraphEdge } from '../core/knowledge';
 import type { GraphData, GraphNode, GraphEdge, EntityType } from '../core/knowledge';
 import { useLang } from '../core/i18n/lang';
@@ -71,17 +70,22 @@ type KGFlowEdge = Edge<KGEdgeData, 'kgEdge'>;
 
 // ========== Helpers ==========
 
-function getEntityColor(entityType: EntityType, accent: string, isDark: boolean): string {
+/**
+ * 实体类型的着色 —— 这是**类别色板**（数据），不是状态色，所以用 --chart-cat-* 而不是语义色。
+ * 之前这里按皮肤 id 在 JS 里挑 16 进制对（深浅各一套），等于把皮肤表抄进了组件；
+ * 现在颜色回到令牌，皮肤/主题切换自动跟随。
+ */
+function getEntityColor(entityType: EntityType): string {
   const colorMap: Record<EntityType, string> = {
-    concept: accent,
-    entity: isDark ? '#58a6ff' : '#0969da',
-    event: isDark ? '#d29922' : '#bf8700',
-    person: isDark ? '#f85149' : '#cf222e',
-    place: isDark ? '#3fb950' : '#1a7f37',
-    organization: isDark ? '#bc8cff' : '#8250df',
-    technology: isDark ? '#7ee787' : '#0550ae',
+    concept: 'var(--accent)',
+    entity: 'var(--chart-cat-1)',
+    event: 'var(--chart-cat-2)',
+    person: 'var(--chart-cat-3)',
+    place: 'var(--chart-cat-4)',
+    organization: 'var(--chart-cat-5)',
+    technology: 'var(--chart-cat-6)',
   };
-  return colorMap[entityType] || accent;
+  return colorMap[entityType] || 'var(--accent)';
 }
 
 function getEntityIcon(entityType: EntityType): string {
@@ -105,76 +109,35 @@ function getEntityLabel(entityType: EntityType, isZh: boolean): string {
   return isZh ? labelMap[entityType]?.zh : labelMap[entityType]?.en;
 }
 
-function isDarkSkin(skinId: string): boolean {
-  return skinId === 'default' || skinId === 'hub';
-}
-
 // ========== Custom Node Component ==========
 
 function KGNodeComponent({ data, selected }: NodeProps<KGFlowNode>) {
-  const { skin } = useSkin();
-  const dark = isDarkSkin(skin);
-  const accent = skin === 'hub' ? '#ff6b00' : skin === 'dream' ? '#e88c9a' : '#7c6cf0';
-  const color = getEntityColor(data.entityType, accent, dark);
+  const color = getEntityColor(data.entityType);
   const radius = 18 + Math.min(data.weight * 3, 20);
 
-  const textColor = skin === 'hub' ? '#e0e0e0' : skin === 'dream' ? '#6c474d' : '#f0f6fc';
-  const textSecondaryColor = skin === 'hub' ? '#888888' : skin === 'dream' ? '#a88a8f' : '#8b949e';
-  const bgSecondary = skin === 'hub' ? '#121212' : skin === 'dream' ? '#ffffff' : '#161b22';
-  const borderColor = skin === 'hub' ? '#2a2a2a' : skin === 'dream' ? '#f7dee2' : '#30363d';
-
   return (
-    <div
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        cursor: 'pointer',
-        transition: 'opacity 0.2s',
-      }}
-    >
+    <div className="kg-node">
       {/* React Flow handles for edge connections */}
-      <Handle type="target" position={Position.Top} style={{ opacity: 0, width: 1, height: 1 }} />
-      <Handle type="source" position={Position.Bottom} style={{ opacity: 0, width: 1, height: 1 }} />
-      <Handle type="target" position={Position.Left} style={{ opacity: 0, width: 1, height: 1 }} />
-      <Handle type="source" position={Position.Right} style={{ opacity: 0, width: 1, height: 1 }} />
+      <Handle type="target" position={Position.Top} className="kg-node-handle" />
+      <Handle type="source" position={Position.Bottom} className="kg-node-handle" />
+      <Handle type="target" position={Position.Left} className="kg-node-handle" />
+      <Handle type="source" position={Position.Right} className="kg-node-handle" />
 
-      {/* Node circle */}
+      {/* Node circle — 半径/字号/类别色是真动态值，其余在 .kg-node-circle 里 */}
       <div
+        className={`kg-node-circle ${selected ? 'is-selected' : ''}`}
         style={{
           width: radius * 2,
           height: radius * 2,
-          borderRadius: '50%',
-          background: `radial-gradient(circle at 35% 35%, ${color}, ${dark ? color + 'cc' : color + 'dd'})`,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          fontSize: `${radius * 0.7}px`,
-          border: `${selected ? 3 : 1.5}px solid ${selected ? 'var(--text-primary)' : 'var(--border-primary)'}`,
-          boxShadow: selected ? `0 0 20px ${color}88` : 'none',
-          userSelect: 'none',
+          color,
+          ["--kg-node-font" as string]: `${radius * 0.7}px`,
         }}
       >
         {getEntityIcon(data.entityType)}
       </div>
 
       {/* Node label */}
-      <div
-        style={{
-          marginTop: '4px',
-          padding: '1px 6px',
-          borderRadius: '4px',
-          background: dark ? 'rgba(14,15,15,0.7)' : 'rgba(255,255,255,0.7)',
-          color: textColor,
-          fontSize: 'var(--fs-sm)',
-          fontWeight: selected ? 600 : 400,
-          maxWidth: '120px',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap',
-          textAlign: 'center',
-        }}
-      >
+      <div className={`kg-node-label ${selected ? 'is-selected' : ''}`}>
         {data.label}
       </div>
     </div>
@@ -184,39 +147,26 @@ function KGNodeComponent({ data, selected }: NodeProps<KGFlowNode>) {
 // ========== Custom Edge Component ==========
 
 function KGEdgeComponent({ id, sourceX, sourceY, targetX, targetY, data, selected }: EdgeProps<KGFlowEdge>) {
-  const { skin } = useSkin();
-  const dark = isDarkSkin(skin);
-  const accent = skin === 'hub' ? '#ff6b00' : skin === 'dream' ? '#e88c9a' : '#7c6cf0';
-
   const [edgePath, labelX, labelY] = getBezierPath({
     sourceX, sourceY, targetX, targetY,
   });
-
-  const textSecondaryColor = skin === 'hub' ? '#888888' : skin === 'dream' ? '#a88a8f' : '#8b949e';
-  const bgSecondary = skin === 'hub' ? '#121212' : skin === 'dream' ? '#ffffff' : '#161b22';
 
   return (
     <>
       <path
         id={id}
         d={edgePath}
-        stroke={selected ? accent : (dark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.15)')}
+        className="kg-edge-path"
+        stroke={selected ? 'var(--accent)' : 'var(--border-primary)'}
         strokeWidth={selected ? 2.5 : 1.2}
         fill="none"
-        style={{ transition: 'stroke 0.2s, stroke-width 0.2s' }}
       />
       {selected && (
         <EdgeLabelRenderer>
           <div
+            className="kg-edge-label"
             style={{
-              position: 'absolute',
               transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`,
-              background: dark ? 'rgba(26,28,28,0.9)' : 'rgba(255,255,255,0.9)',
-              color: textSecondaryColor,
-              padding: '2px 6px',
-              borderRadius: '4px',
-              fontSize: 'var(--fs-xs)',
-              pointerEvents: 'none',
             }}
           >
             {data?.relationType}
@@ -280,7 +230,6 @@ const edgeTypes = { kgEdge: KGEdgeComponent };
 function KnowledgeGraphViewInner({ notebookId, onNodeSelect }: KnowledgeGraphViewProps) {
   const lang = useLang();
   const isZh = lang === 'zh';
-  const { skin } = useSkin();
 
   const [loading, setLoading] = useState(false);
   const [graphData, setGraphData] = useState<GraphData>({ nodes: [], edges: [] });
@@ -298,16 +247,6 @@ function KnowledgeGraphViewInner({ notebookId, onNodeSelect }: KnowledgeGraphVie
   const [edges, setEdges, onEdgesChange] = useEdgesState<KGFlowEdge>([]);
 
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
-
-  // Skin-based styling
-  const dark = isDarkSkin(skin);
-  const bgColor = skin === 'hub' ? '#0a0a0a' : skin === 'dream' ? '#fdf5f7' : '#0d1117';
-  const bgSecondary = skin === 'hub' ? '#121212' : skin === 'dream' ? '#ffffff' : '#161b22';
-  const bgTertiary = skin === 'hub' ? '#1c1c1e' : skin === 'dream' ? '#fce8eb' : '#21262d';
-  const textColor = skin === 'hub' ? '#e0e0e0' : skin === 'dream' ? '#6c474d' : '#f0f6fc';
-  const textSecondaryColor = skin === 'hub' ? '#888888' : skin === 'dream' ? '#a88a8f' : '#8b949e';
-  const borderColor = skin === 'hub' ? '#2a2a2a' : skin === 'dream' ? '#f7dee2' : '#30363d';
-  const accentColor = skin === 'hub' ? '#ff6b00' : skin === 'dream' ? '#e88c9a' : '#7c6cf0';
 
   // Load graph data
   const loadGraph = useCallback(async () => {
@@ -470,9 +409,9 @@ function KnowledgeGraphViewInner({ notebookId, onNodeSelect }: KnowledgeGraphVie
   // Loading state
   if (loading) {
     return (
-      <div className="kg-loading" style={{ background: bgColor, color: textColor }}>
-        <Loader2 size={24} className="spin" style={{ color: accentColor }} />
-        <span style={{ color: textSecondaryColor }}>
+      <div className="kg-loading">
+        <Loader2 size={24} className="spin kg-refresh-btn" />
+        <span className="kg-source-hint">
           {isZh ? '正在提取知识图谱...' : 'Extracting knowledge graph...'}
         </span>
       </div>
@@ -482,12 +421,12 @@ function KnowledgeGraphViewInner({ notebookId, onNodeSelect }: KnowledgeGraphVie
   // Empty state
   if (graphData.nodes.length === 0) {
     return (
-      <div className="kg-empty" style={{ background: bgColor, color: textSecondaryColor }}>
-        <Share2 size={48} style={{ opacity: 0.3 }} />
+      <div className="kg-empty">
+        <Share2 size={48} className="kg-empty-icon" />
         {extractError ? (
           <>
-            <p style={{ color: 'var(--error)' }}>{extractError}</p>
-            <button onClick={loadGraph} style={{ background: accentColor, color: 'var(--text-on-accent)' }} className="kg-retry-btn">
+            <p className="kg-error-text">{extractError}</p>
+            <button onClick={loadGraph} className="kg-retry-btn">
               {isZh ? '重新提取' : 'Extract Again'}
             </button>
           </>
@@ -496,7 +435,7 @@ function KnowledgeGraphViewInner({ notebookId, onNodeSelect }: KnowledgeGraphVie
         ) : (
           <>
             <p>{isZh ? '正在提取知识图谱...' : 'Extracting knowledge graph...'}</p>
-            <button onClick={loadGraph} style={{ background: accentColor, color: 'var(--text-on-accent)' }} className="kg-retry-btn">
+            <button onClick={loadGraph} className="kg-retry-btn">
               {isZh ? '重新提取' : 'Extract Again'}
             </button>
           </>
@@ -506,35 +445,34 @@ function KnowledgeGraphViewInner({ notebookId, onNodeSelect }: KnowledgeGraphVie
   }
 
   return (
-    <div className="kg-container" style={{ background: bgColor, color: textColor, height: '100%' }}>
+    <div className="kg-container">
       {/* Toolbar */}
-      <div className="kg-toolbar" style={{ background: bgSecondary, borderBottom: `1px solid ${borderColor}` }}>
+      <div className="kg-toolbar">
         <div className="kg-search-wrapper">
-          <Search size={14} style={{ color: textSecondaryColor }} />
+          <Search size={14} className="kg-search-icon" />
           <input
             className="kg-search-input"
             placeholder={isZh ? '搜索节点...' : 'Search nodes...'}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            style={{ background: bgTertiary, color: textColor, border: `1px solid ${borderColor}` }}
           />
         </div>
         <div className="kg-toolbar-actions">
-          <button className="kg-tool-btn kg-refresh-btn" onClick={loadGraph} title={isZh ? '重新提取图谱' : 'Re-extract Graph'} style={{ color: accentColor }}>
+          <button className="kg-tool-btn kg-refresh-btn" onClick={loadGraph} title={isZh ? '重新提取图谱' : 'Re-extract Graph'}>
             <Loader2 size={16} />
           </button>
           <button className="kg-tool-btn" onClick={handleExportPNG} title={isZh ? '导出为 PNG' : 'Export as PNG'}>
             <Download size={16} />
           </button>
-          <button className="kg-tool-btn" onClick={handleExportJSON} title={isZh ? '导出为 JSON' : 'Export as JSON'} style={{ fontSize: 'var(--fs-xs)' }}>
+          <button className="kg-tool-btn kg-export-btn" onClick={handleExportJSON} title={isZh ? '导出为 JSON' : 'Export as JSON'}>
             JSON
           </button>
         </div>
       </div>
 
       {/* React Flow Canvas + Sidebar */}
-      <div className="kg-body" style={{ flex: 1, overflow: 'hidden' }}>
-        <div ref={reactFlowWrapper} className="kg-canvas-wrapper" style={{ flex: 1, height: '100%' }}>
+      <div className="kg-body">
+        <div ref={reactFlowWrapper} className="kg-canvas-wrapper">
           <ReactFlow
             nodes={nodes}
             edges={edges}
@@ -552,56 +490,62 @@ function KnowledgeGraphViewInner({ notebookId, onNodeSelect }: KnowledgeGraphVie
             minZoom={0.2}
             maxZoom={4}
             proOptions={{ hideAttribution: true }}
-            style={{ background: bgColor }}
+            className="kg-rf-canvas"
           >
-            <Background variant={BackgroundVariant.Dots} gap={20} size={1} color={dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)'} />
+            <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="var(--border-primary)" />
             <Controls
               showInteractive={false}
-              style={{ background: bgSecondary, border: `1px solid ${borderColor}`, borderRadius: '6px' }}
+              className="kg-rf-controls"
             />
             <MiniMap
               nodeColor={(node) => {
                 const n = node as KGFlowNode;
-                return getEntityColor(n.data?.entityType || 'concept', accentColor, dark);
+                return getEntityColor(n.data?.entityType || 'concept');
               }}
-              maskColor={dark ? 'rgba(0,0,0,0.7)' : 'rgba(255,255,255,0.7)'}
-              style={{ background: bgSecondary, border: `1px solid ${borderColor}` }}
+              maskColor="color-mix(in srgb, var(--bg-primary) 70%, transparent)"
+              className="kg-rf-minimap"
             />
           </ReactFlow>
         </div>
 
         {/* Node Detail Sidebar */}
         {selectedNode && (
-          <div className="kg-sidebar" style={{ background: bgSecondary, borderLeft: `1px solid ${borderColor}` }}>
-            <div className="kg-sidebar-header" style={{ borderBottom: `1px solid ${borderColor}` }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{ fontSize: 'var(--fs-2xl)' }}>{getEntityIcon(selectedNode.entityType)}</span>
-                <h3 style={{ color: accentColor, margin: 0 }}>{selectedNode.label}</h3>
+          <div className="kg-sidebar">
+            <div className="kg-sidebar-header">
+              <div className="kg-sidebar-title-row">
+                <span className="kg-entity-icon">{getEntityIcon(selectedNode.entityType)}</span>
+                <h3 className="kg-sidebar-title">{selectedNode.label}</h3>
               </div>
-              <span className="kg-entity-badge" style={{ background: getEntityColor(selectedNode.entityType, accentColor, dark), color: 'var(--text-on-accent)', fontSize: 'var(--fs-xs)' }}>
+              <span
+                className="kg-entity-badge"
+                style={{ background: getEntityColor(selectedNode.entityType) }}
+              >
                 {getEntityLabel(selectedNode.entityType, isZh)}
               </span>
             </div>
 
             {selectedNode.description && (
               <div className="kg-detail-section">
-                <h4 style={{ color: textSecondaryColor, fontSize: 'var(--fs-sm)' }}>{isZh ? '描述' : 'Description'}</h4>
-                <p style={{ color: textColor, fontSize: 'var(--fs-base)' }}>{selectedNode.description}</p>
+                <h4>{isZh ? '描述' : 'Description'}</h4>
+                <p>{selectedNode.description}</p>
               </div>
             )}
 
             <div className="kg-detail-section">
-              <h4 style={{ color: textSecondaryColor, fontSize: 'var(--fs-sm)' }}>{isZh ? '权重' : 'Weight'}</h4>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <div style={{ flex: 1, height: '4px', background: bgTertiary, borderRadius: '2px', overflow: 'hidden' }}>
-                  <div style={{ width: `${Math.min(selectedNode.weight * 10, 100)}%`, height: '100%', background: accentColor, borderRadius: '2px' }} />
+              <h4>{isZh ? '权重' : 'Weight'}</h4>
+              <div className="kg-weight-row">
+                <div className="kg-weight-track">
+                  <div
+                    className="kg-weight-fill"
+                    style={{ width: `${Math.min(selectedNode.weight * 10, 100)}%` }}
+                  />
                 </div>
-                <span style={{ color: textColor, fontSize: 'var(--fs-sm)' }}>{selectedNode.weight}</span>
+                <span className="kg-weight-value">{selectedNode.weight}</span>
               </div>
             </div>
 
             <div className="kg-detail-section">
-              <h4 style={{ color: textSecondaryColor, fontSize: 'var(--fs-sm)' }}>
+              <h4>
                 {isZh ? '关联实体' : 'Connected Entities'} ({connectedNodes.length})
               </h4>
               <div className="kg-connected-list">
@@ -610,10 +554,12 @@ function KnowledgeGraphViewInner({ notebookId, onNodeSelect }: KnowledgeGraphVie
                     key={node.id}
                     className="kg-connected-item"
                     onClick={() => setSelectedNode(node)}
-                    style={{ background: bgTertiary, border: `1px solid ${borderColor}`, color: textColor, fontSize: 'var(--fs-sm)' }}
                   >
-                    <span style={{ fontSize: 'var(--fs-md)' }}>{getEntityIcon(node.entityType)}</span>
-                    <span className="kg-connected-dot" style={{ background: getEntityColor(node.entityType, accentColor, dark) }} />
+                    <span className="kg-connected-icon">{getEntityIcon(node.entityType)}</span>
+                    <span
+                      className="kg-connected-dot"
+                      style={{ background: getEntityColor(node.entityType) }}
+                    />
                     {node.label}
                   </button>
                 ))}
@@ -622,10 +568,10 @@ function KnowledgeGraphViewInner({ notebookId, onNodeSelect }: KnowledgeGraphVie
 
             {selectedNode.sourceIds.length > 0 && (
               <div className="kg-detail-section">
-                <h4 style={{ color: textSecondaryColor, fontSize: 'var(--fs-sm)' }}>
+                <h4>
                   {isZh ? '来源' : 'Sources'} ({selectedNode.sourceIds.length})
                 </h4>
-                <p style={{ color: textSecondaryColor, fontSize: 'var(--fs-xs)' }}>
+                <p className="kg-source-hint">
                   {isZh ? '该实体出现在多个来源中' : 'This entity appears in multiple sources'}
                 </p>
               </div>
@@ -635,14 +581,14 @@ function KnowledgeGraphViewInner({ notebookId, onNodeSelect }: KnowledgeGraphVie
             <div className="kg-detail-section">
               <button
                 onClick={() => { setEditingNodeId(selectedNode.id); setEditLabel(selectedNode.label); }}
-                style={{ width: '100%', padding: '6px', marginBottom: '6px', background: bgTertiary, border: `1px solid ${borderColor}`, borderRadius: '6px', color: textColor, cursor: 'pointer', fontSize: 'var(--fs-sm)', display: 'flex', alignItems: 'center', gap: '4px', justifyContent: 'center' }}
+                className="kg-action-btn kg-action-btn--edit"
               >
                 <Edit3 size={12} />
                 {isZh ? '编辑节点' : 'Edit Node'}
               </button>
               <button
                 onClick={() => handleDeleteNode(selectedNode.id)}
-                style={{ width: '100%', padding: '6px', background: 'transparent', border: `1px solid #ef444455`, borderRadius: '6px', color: 'var(--error)', cursor: 'pointer', fontSize: 'var(--fs-sm)', display: 'flex', alignItems: 'center', gap: '4px', justifyContent: 'center' }}
+                className="kg-action-btn kg-action-btn--danger"
               >
                 <Trash2 size={12} />
                 {isZh ? '删除节点' : 'Delete Node'}
@@ -653,16 +599,19 @@ function KnowledgeGraphViewInner({ notebookId, onNodeSelect }: KnowledgeGraphVie
       </div>
 
       {/* Legend */}
-      <div className="kg-legend" style={{ background: bgSecondary, borderTop: `1px solid ${borderColor}` }}>
+      <div className="kg-legend">
         {(['concept', 'entity', 'event', 'person', 'place', 'organization', 'technology'] as EntityType[]).map(type => (
-          <div key={type} className="kg-legend-item" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-            <span style={{ fontSize: 'var(--fs-sm)' }}>{getEntityIcon(type)}</span>
-            <span className="kg-legend-dot" style={{ background: getEntityColor(type, accentColor, dark) }} />
-            <span style={{ color: textSecondaryColor, fontSize: 'var(--fs-xs)' }}>{getEntityLabel(type, isZh)}</span>
+          <div key={type} className="kg-legend-item">
+            <span className="kg-legend-icon">{getEntityIcon(type)}</span>
+            <span
+              className="kg-legend-dot"
+              style={{ background: getEntityColor(type) }}
+            />
+            <span className="kg-legend-text">{getEntityLabel(type, isZh)}</span>
           </div>
         ))}
-        <div className="kg-legend-item" style={{ marginLeft: 'auto' }}>
-          <span style={{ color: textSecondaryColor, fontSize: 'var(--fs-xs)' }}>
+        <div className="kg-legend-item kg-legend-hint">
+          <span className="kg-legend-text">
             {isZh ? '单击选中 · 双击打开文档 · 右键菜单' : 'Click to select · Double-click to open · Right-click for menu'}
           </span>
         </div>
@@ -670,25 +619,25 @@ function KnowledgeGraphViewInner({ notebookId, onNodeSelect }: KnowledgeGraphVie
 
       {/* Inline node label editor */}
       {editingNodeId && (
-        <div className="nb-dialog-overlay" onClick={() => setEditingNodeId(null)} style={{ background: 'transparent', pointerEvents: 'auto' }}>
+        <div className="nb-dialog-overlay kg-edit-overlay" onClick={() => setEditingNodeId(null)}>
           <div
             onClick={(e) => e.stopPropagation()}
-            style={{ position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%, -50%)', background: bgSecondary, border: `1px solid ${borderColor}`, borderRadius: '8px', padding: '16px', display: 'flex', flexDirection: 'column', gap: '8px', minWidth: '300px' }}
+            className="kg-edit-dialog"
           >
-            <label style={{ fontSize: 'var(--fs-sm)', color: textSecondaryColor }}>{isZh ? '编辑节点标签' : 'Edit Node Label'}</label>
+            <label className="kg-edit-label">{isZh ? '编辑节点标签' : 'Edit Node Label'}</label>
             <input
               type="text"
               value={editLabel}
               onChange={(e) => setEditLabel(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') handleSaveEdit(); if (e.key === 'Escape') setEditingNodeId(null); }}
               autoFocus
-              style={{ padding: '6px 8px', background: bgTertiary, border: `1px solid ${borderColor}`, borderRadius: '4px', color: textColor, fontSize: 'var(--fs-base)', outline: 'none' }}
+              className="kg-edit-input"
             />
-            <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
-              <button onClick={() => setEditingNodeId(null)} style={{ padding: '4px 12px', background: 'transparent', border: `1px solid ${borderColor}`, borderRadius: '4px', color: textColor, cursor: 'pointer', fontSize: 'var(--fs-sm)' }}>
+            <div className="kg-edit-actions">
+              <button onClick={() => setEditingNodeId(null)} className="kg-edit-btn kg-edit-btn--ghost">
                 {isZh ? '取消' : 'Cancel'}
               </button>
-              <button onClick={handleSaveEdit} style={{ padding: '4px 12px', background: accentColor, border: 'none', borderRadius: '4px', color: 'var(--text-on-accent)', cursor: 'pointer', fontSize: 'var(--fs-sm)' }}>
+              <button onClick={handleSaveEdit} className="kg-edit-btn kg-edit-btn--primary">
                 {isZh ? '保存' : 'Save'}
               </button>
             </div>
@@ -701,20 +650,20 @@ function KnowledgeGraphViewInner({ notebookId, onNodeSelect }: KnowledgeGraphVie
         <>
           <div className="popover-shield" style={{ zIndex: 9998 }} onClick={() => setContextMenu(null)} onContextMenu={(e) => { e.preventDefault(); setContextMenu(null); }} />
           {createPortal(
-            <div className="popover-shell" style={{ position: 'fixed', left: contextMenu.x, top: contextMenu.y, zIndex: 9999, padding: '4px', minWidth: '140px' }}>
+            <div className="popover-shell kg-menu" style={{ position: 'fixed', left: contextMenu.x, top: contextMenu.y, zIndex: 9999 }}>
               {contextMenu.nodeId && (
                 <>
                   <button
                     onClick={() => { setEditingNodeId(contextMenu.nodeId!); const n = graphData.nodes.find(x => x.id === contextMenu.nodeId); if (n) setEditLabel(n.label); setContextMenu(null); }}
-                    style={{ display: 'flex', alignItems: 'center', gap: '6px', width: '100%', padding: '6px 8px', background: 'transparent', border: 'none', color: textColor, cursor: 'pointer', fontSize: 'var(--fs-sm)', borderRadius: '4px', textAlign: 'left' }}
+                    className="kg-menu-item"
                   >
                     <Edit3 size={12} />
                     {isZh ? '编辑标签' : 'Edit Label'}
                   </button>
-                  <div style={{ height: '1px', background: borderColor, margin: '2px 0' }} />
+                  <div className="kg-menu-sep" />
                   <button
                     onClick={() => handleDeleteNode(contextMenu.nodeId!)}
-                    style={{ display: 'flex', alignItems: 'center', gap: '6px', width: '100%', padding: '6px 8px', background: 'transparent', border: 'none', color: 'var(--error)', cursor: 'pointer', fontSize: 'var(--fs-sm)', borderRadius: '4px', textAlign: 'left' }}
+                    className="kg-menu-item kg-menu-item--danger"
                   >
                     <Trash2 size={12} />
                     {isZh ? '删除节点' : 'Delete Node'}
@@ -724,7 +673,7 @@ function KnowledgeGraphViewInner({ notebookId, onNodeSelect }: KnowledgeGraphVie
               {contextMenu.edgeId && (
                 <button
                   onClick={() => handleDeleteEdge(contextMenu.edgeId!)}
-                  style={{ display: 'flex', alignItems: 'center', gap: '6px', width: '100%', padding: '6px 8px', background: 'transparent', border: 'none', color: 'var(--error)', cursor: 'pointer', fontSize: 'var(--fs-sm)', borderRadius: '4px', textAlign: 'left' }}
+                  className="kg-menu-item kg-menu-item--danger"
                 >
                   <Trash2 size={12} />
                   {isZh ? '删除连线' : 'Delete Edge'}

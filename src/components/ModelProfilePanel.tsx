@@ -185,36 +185,27 @@ export function ModelProfilePanel({ onClose }: ModelProfilePanelProps) {
 
   return createPortal(
     <div className="settings-overlay" onClick={onClose} style={{ zIndex: 2000 }}>
-      <div className="settings-panel" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 720, display: "flex", flexDirection: "column", zIndex: 2001 }}>
+      <div className="settings-panel mp-panel" onClick={(e) => e.stopPropagation()} style={{ zIndex: 2001 }}>
         <div className="settings-header">
           <h3>{zh ? "模型配置方案" : "Model Profiles"}</h3>
           <button className="settings-close" onClick={onClose}>✕</button>
         </div>
 
-        <div style={{ padding: "20px", overflowY: "auto", flex: 1, display: "flex", flexDirection: "column", gap: 16 }}>
+        <div className="mp-body">
           {/* Active profile selector */}
           <div className="setting-group">
-            <label style={{ fontWeight: 600, marginBottom: 8, display: "block" }}>
+            <label className="mp-field-label">
               {zh ? "当前方案" : "Active Profile"}
             </label>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <div className="mp-profile-row">
               {profiles.map((p) => (
                 <button
                   key={p.id}
                   onClick={() => handleSetActive(p.id)}
-                  style={{
-                    padding: "10px 16px",
-                    borderRadius: 8,
-                    border: `2px solid ${activeProfileId === p.id ? "var(--accent)" : "var(--border-primary)"}`,
-                    background: activeProfileId === p.id ? "var(--accent)" : "var(--bg-secondary)",
-                    color: activeProfileId === p.id ? "var(--text-on-accent)" : "var(--text-primary)",
-                    cursor: "pointer",
-                    transition: "all 0.2s",
-                    textAlign: "left",
-                  }}
+                  className={`mp-profile-btn ${activeProfileId === p.id ? "is-active" : ""}`}
                 >
-                  <div style={{ fontWeight: 600, fontSize: 'var(--fs-md)' }}>{p.name}</div>
-                  <div style={{ fontSize: 'var(--fs-sm)', opacity: 0.8, marginTop: 2 }}>{p.description}</div>
+                  <div className="mp-profile-name">{p.name}</div>
+                  <div className="mp-profile-desc">{p.description}</div>
                 </button>
               ))}
             </div>
@@ -223,21 +214,13 @@ export function ModelProfilePanel({ onClose }: ModelProfilePanelProps) {
           <div className="settings-divider" />
 
           {/* Profile management */}
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-            <div className="settings-section-title" style={{ margin: 0 }}>
+          <div className="mp-bar">
+            <div className="settings-section-title mp-bar-title">
               {zh ? "方案管理" : "Profile Management"}
             </div>
             <button
               onClick={() => setShowCreateForm(!showCreateForm)}
-              style={{
-                padding: "6px 14px",
-                borderRadius: 6,
-                border: "1px solid var(--border-primary)",
-                background: "var(--bg-secondary)",
-                color: "var(--text-primary)",
-                cursor: "pointer",
-                fontSize: 'var(--fs-sm)',
-              }}
+              className="mp-btn mp-btn--plain"
             >
               {showCreateForm ? (zh ? "取消" : "Cancel") : `+ ${zh ? "新建方案" : "New Profile"}`}
             </button>
@@ -252,53 +235,31 @@ export function ModelProfilePanel({ onClose }: ModelProfilePanelProps) {
           {profiles.map((profile) => (
             <div
               key={profile.id}
-              style={{
-                marginBottom: 16,
-                padding: 12,
-                borderRadius: 8,
-                border: `1px solid ${editingProfileId === profile.id ? "var(--accent)" : "var(--border-primary)"}`,
-                background: "var(--bg-secondary)",
-              }}
+              className={`mp-card ${editingProfileId === profile.id ? "is-accent" : ""}`}
             >
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+              <div className="mp-card-head">
                 <div>
-                  <span style={{ fontWeight: 600, fontSize: 'var(--fs-md)' }}>
+                  <span className="mp-card-name">
                     {profile.name}
                     {profile.isBuiltIn && (
-                      <span style={{ fontSize: 'var(--fs-xs)', marginLeft: 6, padding: "2px 6px", borderRadius: 4, background: "var(--bg-tertiary)", color: "var(--text-secondary)" }}>
+                      <span className="mp-badge">
                         {zh ? "内置" : "Built-in"}
                       </span>
                     )}
                   </span>
                 </div>
-                <div style={{ display: "flex", gap: 8 }}>
+                <div className="mp-card-actions">
                   {!profile.isBuiltIn && (
                     <>
                       <button
                         onClick={() => setEditingProfileId(editingProfileId === profile.id ? null : profile.id)}
-                        style={{
-                          padding: "4px 10px",
-                          borderRadius: 4,
-                          border: "1px solid var(--border-primary)",
-                          background: "var(--bg-tertiary)",
-                          color: "var(--text-primary)",
-                          cursor: "pointer",
-                          fontSize: 'var(--fs-sm)',
-                        }}
+                        className="mp-btn"
                       >
                         {editingProfileId === profile.id ? (zh ? "收起" : "Collapse") : (zh ? "编辑槽位" : "Edit Slots")}
                       </button>
                       <button
                         onClick={() => handleDelete(profile.id)}
-                        style={{
-                          padding: "4px 10px",
-                          borderRadius: 4,
-                          border: "1px solid var(--error)",
-                          background: "transparent",
-                          color: "var(--error)",
-                          cursor: "pointer",
-                          fontSize: 'var(--fs-sm)',
-                        }}
+                        className="mp-btn mp-btn--danger"
                       >
                         {zh ? "删除" : "Delete"}
                       </button>
@@ -307,15 +268,7 @@ export function ModelProfilePanel({ onClose }: ModelProfilePanelProps) {
                   {profile.isBuiltIn && (
                     <button
                       onClick={() => handleDuplicate(profile)}
-                      style={{
-                        padding: "4px 10px",
-                        borderRadius: 4,
-                        border: "1px solid var(--accent)",
-                        background: "transparent",
-                        color: "var(--accent)",
-                        cursor: "pointer",
-                        fontSize: 'var(--fs-sm)',
-                      }}
+                      className="mp-btn mp-btn--accent"
                     >
                       {zh ? "复制并编辑" : "Duplicate & Edit"}
                     </button>
@@ -343,25 +296,20 @@ export function ModelProfilePanel({ onClose }: ModelProfilePanelProps) {
 
               {/* Slot summary (read-only) */}
               {(editingProfileId !== profile.id || profile.isBuiltIn) && (
-                <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-secondary)", marginTop: 4 }}>
+                <div className="mp-slot-summary">
                   {EDITABLE_SLOTS.filter(s => profile.slots[s]).length > 0 ? (
-                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                    <div className="mp-slot-chips">
                       {EDITABLE_SLOTS.filter(s => profile.slots[s]).map(slot => (
                         <span
                           key={slot}
-                          style={{
-                            padding: "2px 8px",
-                            borderRadius: 4,
-                            background: "var(--bg-tertiary)",
-                            fontSize: 'var(--fs-sm)',
-                          }}
+                          className="mp-slot-chip"
                         >
                           {slotLabels[slot]}: {profile.slots[slot]!.provider}/{profile.slots[slot]!.model}
                         </span>
                       ))}
                     </div>
                   ) : (
-                    <span style={{ fontStyle: "italic" }}>
+                    <span className="mp-empty-hint">
                       {zh ? "未配置槽位，所有任务使用引擎默认模型" : "No slots configured, all tasks use engine default"}
                     </span>
                   )}
@@ -371,7 +319,7 @@ export function ModelProfilePanel({ onClose }: ModelProfilePanelProps) {
           ))}
         </div>
 
-        <div style={{ display: "flex", justifyContent: "flex-end", padding: "12px 20px", borderTop: "1px solid var(--border-primary)" }}>
+        <div className="mp-footer">
           <button className="save-btn" onClick={onClose}>
             {zh ? "完成" : "Done"}
           </button>
@@ -395,15 +343,7 @@ function CreateProfileForm({
   const [desc, setDesc] = useState("");
 
   return (
-    <div
-      style={{
-        marginBottom: 16,
-        padding: 12,
-        borderRadius: 8,
-        border: "1px solid var(--accent)",
-        background: "var(--bg-secondary)",
-      }}
-    >
+    <div className="mp-card is-accent">
       <div className="setting-group">
         <label>{zh ? "方案名称" : "Profile Name"}</label>
         <input
@@ -411,7 +351,7 @@ function CreateProfileForm({
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder={zh ? "例如：自定义经济模式" : "e.g., Custom Economy"}
-          style={{ width: "100%" }}
+          className="mp-input--full"
         />
       </div>
       <div className="setting-group">
@@ -421,22 +361,13 @@ function CreateProfileForm({
           value={desc}
           onChange={(e) => setDesc(e.target.value)}
           placeholder={zh ? "方案用途说明" : "What this profile is for"}
-          style={{ width: "100%" }}
+          className="mp-input--full"
         />
       </div>
       <button
         onClick={() => name.trim() && onCreate(name.trim(), desc.trim())}
         disabled={!name.trim()}
-        style={{
-          padding: "8px 20px",
-          borderRadius: 6,
-          border: "none",
-          background: name.trim() ? "var(--accent)" : "var(--bg-tertiary)",
-          color: "var(--text-on-accent)",
-          cursor: name.trim() ? "pointer" : "not-allowed",
-          fontSize: 'var(--fs-base)',
-          width: "100%",
-        }}
+        className="mp-btn--wide"
       >
         {zh ? "创建并编辑槽位" : "Create & Edit Slots"}
       </button>
@@ -457,9 +388,9 @@ function ProfileNameEditor({
   const [desc, setDesc] = useState(profile.description);
 
   return (
-    <div style={{ marginBottom: 12, display: "flex", flexDirection: "column", gap: 6 }}>
-      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-        <label style={{ fontSize: 'var(--fs-sm)', color: "var(--text-secondary)", minWidth: 48 }}>
+    <div className="mp-form">
+      <div className="mp-form-row">
+        <label className="mp-form-label">
           {zh ? "名称" : "Name"}
         </label>
         <input
@@ -467,11 +398,11 @@ function ProfileNameEditor({
           value={name}
           onChange={(e) => setName(e.target.value)}
           onBlur={() => onRename(name, desc)}
-          style={{ flex: 1, padding: "4px 8px", borderRadius: 4, border: "1px solid var(--border-primary)", background: "var(--bg-tertiary)", color: "var(--text-primary)", fontSize: 'var(--fs-base)' }}
+          className="mp-input"
         />
       </div>
-      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-        <label style={{ fontSize: 'var(--fs-sm)', color: "var(--text-secondary)", minWidth: 48 }}>
+      <div className="mp-form-row">
+        <label className="mp-form-label">
           {zh ? "描述" : "Desc"}
         </label>
         <input
@@ -479,7 +410,7 @@ function ProfileNameEditor({
           value={desc}
           onChange={(e) => setDesc(e.target.value)}
           onBlur={() => onRename(name, desc)}
-          style={{ flex: 1, padding: "4px 8px", borderRadius: 4, border: "1px solid var(--border-primary)", background: "var(--bg-tertiary)", color: "var(--text-primary)", fontSize: 'var(--fs-base)' }}
+          className="mp-input"
         />
       </div>
     </div>
@@ -498,23 +429,23 @@ function SlotConfigTable({
   onUpdateSlot: (slot: TaskSlot, config: ModelSlotConfig | null) => void;
 }) {
   return (
-    <div style={{ marginTop: 8 }}>
-      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 'var(--fs-sm)' }}>
+    <div className="mp-table-wrap">
+      <table className="mp-table">
         <thead>
-          <tr style={{ borderBottom: "1px solid var(--border-primary)" }}>
-            <th style={{ textAlign: "left", padding: "6px 8px", color: "var(--text-secondary)" }}>
+          <tr>
+            <th>
               {zh ? "任务槽位" : "Slot"}
             </th>
-            <th style={{ textAlign: "left", padding: "6px 8px", color: "var(--text-secondary)" }}>
+            <th>
               {zh ? "提供商" : "Provider"}
             </th>
-            <th style={{ textAlign: "left", padding: "6px 8px", color: "var(--text-secondary)" }}>
+            <th>
               {zh ? "模型" : "Model"}
             </th>
-            <th style={{ textAlign: "left", padding: "6px 8px", color: "var(--text-secondary)" }}>
+            <th>
               {zh ? "推理强度" : "Reasoning"}
             </th>
-            <th style={{ padding: "6px 8px" }} />
+            <th />
           </tr>
         </thead>
         <tbody>
@@ -533,7 +464,7 @@ function SlotConfigTable({
           })}
         </tbody>
       </table>
-      <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", marginTop: 8 }}>
+      <div className="mp-table-hint">
         {zh
           ? "💡 未配置的槽位会自动回退：memory→subagent→chat, compaction→subagent→chat"
           : "💡 Unconfigured slots fall back: memory→subagent→chat, compaction→subagent→chat"}
@@ -599,19 +530,19 @@ function SlotConfigRow({
   };
 
   return (
-    <tr style={{ borderBottom: "1px solid var(--border-primary)" }}>
-      <td style={{ padding: "8px" }}>
-        <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
+    <tr>
+      <td>
+        <label className="mp-check">
           <input type="checkbox" checked={enabled} onChange={handleToggle} />
-          <span style={{ fontWeight: 500 }}>{label}</span>
+          <span className="mp-check-label">{label}</span>
         </label>
       </td>
-      <td style={{ padding: "8px" }}>
+      <td>
         {enabled ? (
           <select
             value={provider}
             onChange={(e) => handleProviderChange(e.target.value)}
-            style={{ width: "100%", fontSize: 'var(--fs-sm)' }}
+            className="mp-select"
           >
             {availableProviders.map((p) => (
               <option key={p.id} value={p.id}>
@@ -620,15 +551,15 @@ function SlotConfigRow({
             ))}
           </select>
         ) : (
-          <span style={{ color: "var(--text-muted)" }}>—</span>
+          <span className="mp-none">—</span>
         )}
       </td>
-      <td style={{ padding: "8px" }}>
+      <td>
         {enabled ? (
           <select
             value={model}
             onChange={(e) => handleModelChange(e.target.value)}
-            style={{ width: "100%", fontSize: 'var(--fs-sm)' }}
+            className="mp-select"
           >
             {providerModels.map((m) => (
               <option key={m.id} value={m.id}>
@@ -637,27 +568,27 @@ function SlotConfigRow({
             ))}
           </select>
         ) : (
-          <span style={{ color: "var(--text-muted)" }}>—</span>
+          <span className="mp-none">—</span>
         )}
       </td>
-      <td style={{ padding: "8px" }}>
+      <td>
         {enabled ? (
           <select
             value={reasoning}
             onChange={(e) => handleReasoningChange(e.target.value as "low" | "medium" | "high")}
-            style={{ width: "100%", fontSize: 'var(--fs-sm)' }}
+            className="mp-select"
           >
             <option value="low">{zh ? "低" : "Low"}</option>
             <option value="medium">{zh ? "中" : "Medium"}</option>
             <option value="high">{zh ? "高" : "High"}</option>
           </select>
         ) : (
-          <span style={{ color: "var(--text-muted)" }}>—</span>
+          <span className="mp-none">—</span>
         )}
       </td>
-      <td style={{ padding: "8px" }}>
+      <td>
         {!enabled && (
-          <span style={{ fontSize: 'var(--fs-xs)', color: "var(--text-muted)" }}>
+          <span className="mp-fallback">
             {zh ? "回退到上级" : "Fallback"}
           </span>
         )}

@@ -223,7 +223,7 @@ export function HeartbeatMonitor() {
           {stats.active > 0 && (
             <button onClick={handleStopAll} style={{
               padding: "6px 16px", borderRadius: 4, fontSize: 'var(--fs-sm)',
-              border: "1px solid #e74c3c", background: "none",
+              border: "1px solid var(--error)", background: "none",
               color: "var(--error)", cursor: "pointer",
             }}>
               {zh ? "停止所有心跳" : "Stop All"}

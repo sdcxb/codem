@@ -75,7 +75,7 @@ function PetCardPreview({ pet }: { pet: MarketPet }) {
   }, [pet.previewUrl, pet.spritesheetUrl]);
 
   if (failed || !imgSrc) {
-    return <span style={{ fontSize: "var(--fs-hero)" }}>🐾</span>;
+    return <span className="petm-state-icon">🐾</span>;
   }
 
   // 完整 spritesheet 模式：背景宽度 1536px，取 idle 行（row 0）
@@ -83,13 +83,7 @@ function PetCardPreview({ pet }: { pet: MarketPet }) {
   const sheetWidth = useFullSheet ? 1536 : PREVIEW_STRIP_WIDTH;
 
   return (
-    <div
-      className="pet-sprite-card"
-      style={{
-        transform: "scale(0.45)",
-        transformOrigin: "center",
-      }}
-    >
+    <div className="pet-sprite-card petm-sprite">
       <div
         className="pet-sprite-card-inner"
         style={{
@@ -105,7 +99,7 @@ function PetCardPreview({ pet }: { pet: MarketPet }) {
         src={imgSrc}
         alt=""
         aria-hidden
-        style={{ display: "none" }}
+        className="petm-sprite-probe"
         referrerPolicy="no-referrer"
         onError={() => tryProxyFallback()}
       />
@@ -219,113 +213,62 @@ export function PetMarketDialog({ open, onClose }: PetMarketDialogProps) {
 
   return (
     <div
-      className="modal-overlay"
-      style={{ zIndex: 100000, backdropFilter: "blur(4px)" }}
+      className="modal-overlay petm-overlay"
+      style={{ zIndex: 100000 }}
       onClick={onClose}
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="modal-panel"
-        style={{
-          width: "80%",
-          maxWidth: "720px",
-          height: "70%",
-          maxHeight: "600px",
-        }}
+        className="modal-panel petm-panel"
       >
         {/* 标题栏 */}
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            padding: "16px 20px",
-            borderBottom: "1px solid var(--border-color, rgba(255, 255, 255, 0.08))",
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-            <span style={{ fontSize: "var(--fs-2xl)" }}>🐾</span>
-            <h2 style={{ margin: 0, fontSize: "var(--fs-xl)", fontWeight: 600, color: "var(--text-primary, #e0e0e0)" }}>
+        <div className="petm-header">
+          <div className="petm-header-left">
+            <span className="petm-logo">🐾</span>
+            <h2 className="petm-title">
               宠物市场
             </h2>
             {pets.length > 0 && (
-              <span style={{ fontSize: "var(--fs-sm)", color: "var(--text-secondary, #888)" }}>
+              <span className="petm-count">
                 ({filteredPets.length}/{pets.length})
               </span>
             )}
           </div>
           <button
             onClick={onClose}
-            style={{
-              background: "none",
-              border: "none",
-              color: "var(--text-secondary, #888)",
-              cursor: "pointer",
-              padding: "4px",
-              borderRadius: "4px",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-            onMouseEnter={(e) => e.currentTarget.style.background = "rgba(255,255,255,0.1)"}
-            onMouseLeave={(e) => e.currentTarget.style.background = "none"}
+            className="petm-close"
           >
             <CloseIcon size={16} />
           </button>
         </div>
 
         {/* 搜索栏 */}
-        <div style={{ padding: "12px 20px" }}>
+        <div className="petm-search-row">
           <input
             type="text"
             placeholder="搜索宠物..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            style={{
-              width: "100%",
-              padding: "8px 12px",
-              borderRadius: "8px",
-              border: "1px solid var(--border-color, rgba(255, 255, 255, 0.1))",
-              background: "var(--bg-tertiary, #181825)",
-              color: "var(--text-primary, #e0e0e0)",
-              fontSize: "var(--fs-base)",
-              outline: "none",
-              boxSizing: "border-box",
-            }}
+            className="petm-search"
           />
         </div>
 
         {/* 内容区 */}
-        <div
-          ref={scrollRef}
-          style={{
-            flex: 1,
-            overflowY: "auto",
-            padding: "0 20px 16px",
-          }}
-        >
+        <div ref={scrollRef} className="petm-body">
           {loading && (
-            <div style={{ textAlign: "center", padding: "40px", color: "var(--text-secondary, #888)" }}>
-              <div style={{ fontSize: "var(--fs-hero)", marginBottom: "8px" }}>🔄</div>
+            <div className="petm-state">
+              <div className="petm-state-icon">🔄</div>
               <div>正在加载宠物市场...</div>
             </div>
           )}
 
           {error && !loading && (
-            <div style={{ textAlign: "center", padding: "40px", color: "var(--error)" }}>
-              <div style={{ fontSize: "var(--fs-hero)", marginBottom: "8px" }}>😞</div>
-              <div style={{ marginBottom: "12px" }}>{error}</div>
+            <div className="petm-state petm-state--error">
+              <div className="petm-state-icon">😞</div>
+              <div className="petm-state-gap">{error}</div>
               <button
                 onClick={() => { setError(null); loadMarket(); }}
-                style={{
-                  padding: "6px 16px",
-                  borderRadius: "6px",
-                  border: "1px solid var(--border-color, rgba(255, 255, 255, 0.2))",
-                  background: "var(--bg-tertiary, #181825)",
-                  color: "var(--text-primary, #e0e0e0)",
-                  cursor: "pointer",
-                  fontSize: "var(--fs-base)",
-                }}
+                className="petm-retry"
               >
                 重试
               </button>
@@ -333,99 +276,43 @@ export function PetMarketDialog({ open, onClose }: PetMarketDialogProps) {
           )}
 
           {!loading && !error && filteredPets.length === 0 && (
-            <div style={{ textAlign: "center", padding: "40px", color: "var(--text-secondary, #888)" }}>
-              <div style={{ fontSize: "var(--fs-hero)", marginBottom: "8px" }}>🔍</div>
+            <div className="petm-state">
+              <div className="petm-state-icon">🔍</div>
               <div>未找到宠物</div>
             </div>
           )}
 
           {/* 宠物卡片网格 */}
           {!loading && !error && filteredPets.length > 0 && (
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))",
-                gap: "12px",
-              }}
-            >
+            <div className="petm-grid">
               {filteredPets.map((pet) => {
                 const isInstalling = installProgress?.slug === pet.slug;
                 return (
-                  <div
-                    key={pet.id}
-                    style={{
-                      borderRadius: "10px",
-                      border: "1px solid var(--border-color, rgba(255, 255, 255, 0.08))",
-                      background: "var(--bg-tertiary, #181825)",
-                      overflow: "hidden",
-                      display: "flex",
-                      flexDirection: "column",
-                      transition: "transform 0.15s ease, border-color 0.15s ease",
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.transform = "translateY(-2px)";
-                      e.currentTarget.style.borderColor = "rgba(255, 255, 255, 0.2)";
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.transform = "none";
-                      e.currentTarget.style.borderColor = "var(--border-color, rgba(255, 255, 255, 0.08))";
-                    }}
-                  >
+                  <div key={pet.id} className="petm-card">
                     {/* 预览图 */}
-                    <div
-                      style={{
-                        width: "100%",
-                        height: "120px",
-                        background: "var(--bg-secondary, #1e1e2e)",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        position: "relative",
-                      }}
-                    >
+                    <div className="petm-preview">
                       <PetCardPreview pet={pet} />
                       {pet.installed && (
-                        <span
-                          style={{
-                            position: "absolute",
-                            top: "6px",
-                            right: "6px",
-                            padding: "2px 6px",
-                            borderRadius: "4px",
-                            background: "color-mix(in srgb, var(--success) 80%, transparent)",
-                            color: "var(--text-on-accent)",
-                            fontSize: "var(--fs-xs)",
-                            fontWeight: 600,
-                          }}
-                        >
+                        <span className="petm-installed">
                           已安装
                         </span>
                       )}
                     </div>
 
                     {/* 信息区 */}
-                    <div style={{ padding: "10px 12px", flex: 1, display: "flex", flexDirection: "column" }}>
-                      <div style={{ fontWeight: 600, fontSize: "var(--fs-base)", color: "var(--text-primary, #e0e0e0)", marginBottom: "4px" }}>
+                    <div className="petm-info">
+                      <div className="petm-name">
                         {pet.name}
                       </div>
-                      <div style={{ fontSize: "var(--fs-xs)", color: "var(--text-secondary, #888)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>
+                      <div className="petm-desc">
                         {pet.description || "暂无描述"}
                       </div>
 
                       {/* 标签 */}
                       {pet.tags && pet.tags.length > 0 && (
-                        <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", marginTop: "6px" }}>
+                        <div className="petm-tags">
                           {pet.tags.slice(0, 3).map((tag) => (
-                            <span
-                              key={tag}
-                              style={{
-                                padding: "1px 6px",
-                                borderRadius: "var(--radius-sm)",
-                                background: "var(--bg-tertiary)",
-                                color: "var(--text-secondary, #aaa)",
-                                fontSize: "var(--fs-xs)",
-                              }}
-                            >
+                            <span key={tag} className="petm-tag">
                               {tag}
                             </span>
                           ))}
@@ -433,62 +320,30 @@ export function PetMarketDialog({ open, onClose }: PetMarketDialogProps) {
                       )}
 
                       {/* 操作按钮 */}
-                      <div style={{ marginTop: "8px" }}>
+                      <div className="petm-actions">
                         {isInstalling ? (
-                          <div style={{ width: "100%" }}>
-                            <div
-                              style={{
-                                width: "100%",
-                                height: "4px",
-                                borderRadius: "2px",
-                                background: "var(--bg-hover)",
-                                overflow: "hidden",
-                              }}
-                            >
+                          <div className="petm-install-block">
+                            <div className="petm-progress-track">
                               <div
-                                style={{
-                                  width: `${installProgress!.progress}%`,
-                                  height: "100%",
-                                  background: "var(--accent-color, #6366f1)",
-                                  transition: "width 0.3s ease",
-                                }}
+                                className="petm-progress-fill"
+                                style={{ width: `${installProgress!.progress}%` }}
                               />
                             </div>
-                            <div style={{ fontSize: "var(--fs-xs)", color: "var(--text-secondary, #888)", marginTop: "4px" }}>
+                            <div className="petm-progress-msg">
                               {installProgress!.message}
                             </div>
                           </div>
                         ) : pet.installed ? (
                           <button
                             onClick={() => handleUninstall(pet)}
-                            style={{
-                              width: "100%",
-                              padding: "5px 0",
-                              borderRadius: "6px",
-                              border: "1px solid color-mix(in srgb, var(--error) 30%, transparent)",
-                              background: "color-mix(in srgb, var(--error) 10%, transparent)",
-                              color: "var(--error)",
-                              cursor: "pointer",
-                              fontSize: "var(--fs-sm)",
-                              fontWeight: 500,
-                            }}
+                            className="petm-btn petm-btn--uninstall"
                           >
                             卸载
                           </button>
                         ) : (
                           <button
                             onClick={() => handleInstall(pet)}
-                            style={{
-                              width: "100%",
-                              padding: "5px 0",
-                              borderRadius: "6px",
-                              border: "none",
-                              background: "var(--accent-color, #6366f1)",
-                              color: "var(--text-on-accent)",
-                              cursor: "pointer",
-                              fontSize: "var(--fs-sm)",
-                              fontWeight: 500,
-                            }}
+                            className="petm-btn petm-btn--install"
                           >
                             安装
                           </button>
@@ -503,17 +358,7 @@ export function PetMarketDialog({ open, onClose }: PetMarketDialogProps) {
         </div>
 
         {/* 底部信息 */}
-        <div
-          style={{
-            padding: "8px 20px",
-            borderTop: "1px solid var(--border-color, rgba(255, 255, 255, 0.08))",
-            fontSize: "var(--fs-xs)",
-            color: "var(--text-secondary, #666)",
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-          }}
-        >
+        <div className="petm-footer">
           <span>数据来源: Petdex (MIT License)</span>
           <span>已安装: {installedPets.length} 个宠物</span>
         </div>

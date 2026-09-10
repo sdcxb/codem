@@ -3804,7 +3804,7 @@ onClose={() => setCitationViewer(null)}
                   <div style={{ fontSize: 'var(--fs-sm)', opacity: 0.7, marginTop: 2 }}>{lang === "zh" ? "从列表移除，不删除文件" : "Remove from list, keep files"}</div>
                 </button>
                 <button
-                  style={{ padding: "10px 16px", borderRadius: 6, border: "1px solid #e74c3c", background: "none", color: "var(--error)", cursor: "pointer", fontSize: 'var(--fs-base)', textAlign: "left" }}
+                  style={{ padding: "10px 16px", borderRadius: 6, border: "1px solid var(--error)", background: "none", color: "var(--error)", cursor: "pointer", fontSize: 'var(--fs-base)', textAlign: "left" }}
                   onClick={async () => {
                     try {
                       const { invoke } = (window as any).__TAURI__.core;

@@ -573,7 +573,7 @@ export function SlideCanvas({
           top: `${minY}%`,
           width: `${w}%`,
           height: `${h}%`,
-          border: '1px solid #7c6cf0',
+          border: '1px solid var(--accent)',
           background: 'color-mix(in srgb, var(--accent) 10%, transparent)',
           pointerEvents: 'none',
           zIndex: 9999,
@@ -604,7 +604,7 @@ export function SlideCanvas({
               top: `${y}%`,
               width: `${w}%`,
               height: `${h}%`,
-              border: '2px solid #7c6cf0',
+              border: '2px solid var(--accent)',
               pointerEvents: 'none',
               zIndex: 10000,
             }}
@@ -617,7 +617,7 @@ export function SlideCanvas({
                   width: 10,
                   height: 10,
                   background: 'var(--text-on-accent)',
-                  border: '2px solid #7c6cf0',
+                  border: '2px solid var(--accent)',
                   borderRadius: 2,
                   pointerEvents: 'auto',
                   cursor: h.cursor,
@@ -674,7 +674,7 @@ export function SlideCanvas({
                 key={`${el.id}-${animationKey}`}
                 style={{
                   ...style,
-                  outline: '2px solid #7c6cf0',
+                  outline: '2px solid var(--accent)',
                   cursor: 'text',
                   userSelect: 'text',
                 }}
@@ -700,7 +700,7 @@ export function SlideCanvas({
                 key={`${el.id}-${animationKey}`}
                 style={{
                   ...style,
-                  outline: '2px solid #7c6cf0',
+                  outline: '2px solid var(--accent)',
                   cursor: 'text',
                   userSelect: 'text',
                 }}
@@ -729,7 +729,7 @@ export function SlideCanvas({
                   ...style,
                   ...animStyle,
                   cursor: 'move',
-                  outline: isSelected ? '2px solid #7c6cf0' : 'none',
+                  outline: isSelected ? '2px solid var(--accent)' : 'none',
                 }}
                 onMouseDown={(e) => handleElementMouseDown(e, el.id)}
                 onDoubleClick={(e) => handleDoubleClick(e, el.id)}
@@ -746,7 +746,7 @@ export function SlideCanvas({
                 ...style,
                 ...animStyle,
                 cursor: 'move',
-                outline: isSelected ? '2px solid #7c6cf0' : 'none',
+                outline: isSelected ? '2px solid var(--accent)' : 'none',
                 outlineOffset: isSelected ? '0px' : undefined,
               }}
               onMouseDown={(e) => handleElementMouseDown(e, el.id)}

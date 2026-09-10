@@ -99,6 +99,15 @@
   --warning: #d29922;
   --error: #f85149;
   --info: #58a6ff;
+  /* 分类色板：图表/图谱的「类别」着色（概念/实体/人物…），不是状态色。
+     与语义色分开是因为语义色只有 5 个且浅色主题里 --info 与 --accent 同值，
+     类别一多就会撞色。这套是「数据调色板」，深浅主题各一套。 */
+  --chart-cat-1: #58a6ff;
+  --chart-cat-2: #d29922;
+  --chart-cat-3: #f85149;
+  --chart-cat-4: #3fb950;
+  --chart-cat-5: #bc8cff;
+  --chart-cat-6: #7ee787;
   --user-bg: rgba(124, 108, 240, 1);
   --assistant-bg: transparent;
   --system-bg: rgba(33, 36, 36, 1);
@@ -178,6 +187,13 @@
   --warning: #9a6700;
   --error: #cf222e;
   --info: #6b5ce7;
+  /* 分类色板（浅色主题）：与深色主题刻意取不同的明度，保证在浅底上仍可区分 */
+  --chart-cat-1: #0969da;
+  --chart-cat-2: #bf8700;
+  --chart-cat-3: #cf222e;
+  --chart-cat-4: #1a7f37;
+  --chart-cat-5: #8250df;
+  --chart-cat-6: #0550ae;
   --user-bg: rgba(107, 92, 231, 1);
   --assistant-bg: rgba(246, 248, 250, 1);
   --system-bg: rgba(234, 238, 242, 1);
@@ -9114,6 +9130,255 @@ border-bottom: 1px solid var(--accent);
 .tj-tone-primary { color: var(--text-primary); }
 .tj-tone-secondary { color: var(--text-secondary); }
 .tj-tone-muted { color: var(--text-muted); }
+
+/* ==========================================================================
+ * 模型配置方案（ModelProfilePanel）：第 21 波
+ * 外壳沿用 .settings-overlay/.settings-panel；这里收口方案卡、槽位表格与行内编辑表单。
+ * ========================================================================== */
+.mp-panel { max-width: 720px; display: flex; flex-direction: column; }
+.mp-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-8);
+  padding: var(--space-9);
+  overflow-y: auto;
+}
+.mp-field-label { display: block; margin-bottom: var(--space-4); font-weight: 600; }
+.mp-profile-row { display: flex; flex-wrap: wrap; gap: var(--space-4); }
+.mp-profile-btn {
+  padding: var(--space-5) var(--space-8);
+  border: 2px solid var(--border-primary);
+  border-radius: var(--radius);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.mp-profile-btn.is-active { border-color: var(--accent); background: var(--accent); color: var(--text-on-accent); }
+.mp-profile-name { font-weight: 600; font-size: var(--fs-md); }
+.mp-profile-desc { margin-top: var(--space-1); font-size: var(--fs-sm); opacity: 0.8; }
+
+.mp-bar { display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--space-6); }
+.mp-bar-title { margin: 0; }
+.mp-card {
+  margin-bottom: var(--space-8);
+  padding: var(--space-6);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius);
+  background: var(--bg-secondary);
+}
+.mp-card.is-accent { border-color: var(--accent); }
+.mp-card-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--space-4); }
+.mp-card-actions { display: flex; gap: var(--space-4); }
+.mp-card-name { font-weight: 600; font-size: var(--fs-md); }
+.mp-badge {
+  margin-left: var(--space-3);
+  padding: 2px var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  font-size: var(--fs-xs);
+}
+.mp-btn {
+  padding: var(--space-2) var(--space-5);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-sm);
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+.mp-btn--plain { background: var(--bg-secondary); padding: var(--space-3) var(--space-7); border-radius: var(--radius-xs); }
+.mp-btn--danger { border-color: var(--error); background: transparent; color: var(--error); }
+.mp-btn--accent { border-color: var(--accent); background: transparent; color: var(--accent); }
+.mp-btn--wide { width: 100%; padding: var(--space-4) var(--space-9); border: none; border-radius: var(--radius-xs); background: var(--accent); color: var(--text-on-accent); font-size: var(--fs-base); cursor: pointer; }
+.mp-btn--wide:disabled { background: var(--bg-tertiary); cursor: not-allowed; }
+
+.mp-slot-summary { margin-top: var(--space-2); font-size: var(--fs-sm); color: var(--text-secondary); }
+.mp-slot-chips { display: flex; flex-wrap: wrap; gap: var(--space-3); }
+.mp-slot-chip { padding: 2px var(--space-4); border-radius: var(--radius-sm); background: var(--bg-tertiary); font-size: var(--fs-sm); }
+.mp-empty-hint { font-style: italic; }
+.mp-footer {
+  display: flex;
+  justify-content: flex-end;
+  padding: var(--space-6) var(--space-9);
+  border-top: 1px solid var(--border-primary);
+}
+
+.mp-form { margin-bottom: var(--space-6); display: flex; flex-direction: column; gap: var(--space-3); }
+.mp-form-row { display: flex; align-items: center; gap: var(--space-4); }
+.mp-form-label { min-width: 48px; font-size: var(--fs-sm); color: var(--text-secondary); }
+.mp-input {
+  flex: 1;
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-sm);
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  font-size: var(--fs-base);
+}
+.mp-input--full { width: 100%; }
+
+.mp-table { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); }
+.mp-table td { padding: var(--space-4); }
+.mp-table th { padding: var(--space-3) var(--space-4); text-align: left; color: var(--text-secondary); }
+.mp-table thead tr { border-bottom: 1px solid var(--border-primary); }
+.mp-table tbody tr { border-bottom: 1px solid var(--border-primary); }
+.mp-table-hint { margin-top: var(--space-4); font-size: var(--fs-sm); color: var(--text-muted); }
+.mp-check { display: flex; align-items: center; gap: var(--space-3); cursor: pointer; }
+.mp-check-label { font-weight: 500; }
+.mp-select { width: 100%; font-size: var(--fs-sm); }
+.mp-none { color: var(--text-muted); }
+.mp-fallback { font-size: var(--fs-xs); color: var(--text-muted); }
+.mp-table-wrap { margin-top: var(--space-4); }
+
+/* ==========================================================================
+ * 宠物市场（PetMarketDialog）：第 21 波
+ * 外壳用统一 .modal-overlay + .modal-panel；卡片悬停原本靠 JS 改 style，
+ * 现在收回 CSS :hover。**顺带修掉两处一直没生效的令牌**：
+ * --border-color / --accent-color 在项目里根本不存在（所有边框与安装按钮的底色
+ * 一直吃的是 fallback 里的深色硬编码），统一改成 --border-primary / --accent。
+ * ========================================================================== */
+.petm-panel { width: 80%; max-width: 720px; height: 70%; max-height: 600px; }
+/* 宠物市场原本在内联样式里给自己的遮罩加了 4px 虚化；统一外壳不带虚化，这里按需补回 */
+.petm-overlay { backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); }
+.petm-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-8) var(--space-9);
+  border-bottom: 1px solid var(--border-primary);
+}
+.petm-header-left { display: flex; align-items: center; gap: var(--space-4); }
+.petm-logo { font-size: var(--fs-2xl); }
+.petm-title { margin: 0; font-size: var(--fs-xl); font-weight: 600; color: var(--text-primary); }
+.petm-count { font-size: var(--fs-sm); color: var(--text-secondary); }
+.petm-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-2);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.petm-close:hover { background: var(--bg-hover); color: var(--text-primary); }
+.petm-search-row { padding: var(--space-6) var(--space-9); }
+.petm-search {
+  box-sizing: border-box;
+  width: 100%;
+  padding: var(--space-4) var(--space-6);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius);
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  font-size: var(--fs-base);
+  outline: none;
+}
+.petm-body { flex: 1; overflow-y: auto; padding: 0 var(--space-9) var(--space-8); }
+.petm-state { padding: var(--space-10); text-align: center; color: var(--text-secondary); }
+.petm-state--error { color: var(--error); }
+.petm-state-icon { margin-bottom: var(--space-4); font-size: var(--fs-hero); }
+.petm-state-gap { margin-bottom: var(--space-6); }
+.petm-retry {
+  padding: var(--space-3) var(--space-8);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-xs);
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: var(--fs-base);
+  cursor: pointer;
+}
+.petm-retry:hover { background: var(--bg-hover); }
+.petm-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: var(--space-6); }
+.petm-card {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  background: var(--bg-tertiary);
+  transition: transform 0.15s ease, border-color 0.15s ease;
+}
+.petm-card:hover { transform: translateY(-2px); border-color: var(--accent); }
+.petm-preview {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 120px;
+  background: var(--bg-secondary);
+}
+.petm-sprite { transform: scale(0.45); transform-origin: center; }
+.petm-sprite-probe { display: none; }
+.petm-installed {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
+  padding: 2px var(--space-3);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--success) 80%, transparent);
+  color: var(--text-on-accent);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+}
+.petm-info { display: flex; flex: 1; flex-direction: column; padding: var(--space-5) var(--space-6); }
+.petm-name { margin-bottom: var(--space-2); font-weight: 600; font-size: var(--fs-base); color: var(--text-primary); }
+.petm-desc {
+  display: -webkit-box;
+  flex: 1;
+  overflow: hidden;
+  font-size: var(--fs-xs);
+  color: var(--text-secondary);
+  text-overflow: ellipsis;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+.petm-tags { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-3); }
+.petm-tag {
+  padding: 1px var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+  font-size: var(--fs-xs);
+}
+.petm-actions { margin-top: var(--space-4); }
+.petm-install-block { width: 100%; }
+.petm-progress-track { width: 100%; height: 4px; overflow: hidden; border-radius: var(--radius-full); background: var(--bg-hover); }
+.petm-progress-fill { height: 100%; background: var(--accent); transition: width 0.3s ease; }
+.petm-progress-msg { margin-top: var(--space-2); font-size: var(--fs-xs); color: var(--text-secondary); }
+.petm-btn {
+  width: 100%;
+  padding: var(--space-2) 0;
+  border-radius: var(--radius-xs);
+  font-family: inherit;
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  cursor: pointer;
+}
+.petm-btn--install { border: none; background: var(--accent); color: var(--text-on-accent); }
+.petm-btn--install:hover { background: var(--accent-hover); }
+.petm-btn--uninstall {
+  border: 1px solid color-mix(in srgb, var(--error) 30%, transparent);
+  background: color-mix(in srgb, var(--error) 10%, transparent);
+  color: var(--error);
+}
+.petm-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-4) var(--space-9);
+  border-top: 1px solid var(--border-primary);
+  font-size: var(--fs-xs);
+  color: var(--text-secondary);
+}
 
 /* ==========================================================================
  * 会话恢复面板（RecoveryPanel）：把内联样式收口成具名类（第 14 波）

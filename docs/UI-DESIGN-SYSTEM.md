@@ -60,6 +60,9 @@
 - 面：`--bg-primary`（页面/卡片底）、`--bg-secondary`、`--bg-tertiary`、`--bg-hover`
 - 线：`--border-primary`（10% alpha）、`--border-secondary`（6%）
 - 强调/状态：`--accent` / `--accent-hover` / `--accent-muted`、`--success` / `--warning` / `--error` / `--info`
+- **分类色板**：`--chart-cat-1..6` —— 只用于「类别」着色（知识图谱的实体类型、图表的多序列），
+  **不是状态色**。单列一套的理由：语义色只有 5 个，且浅色主题里 `--info` 与 `--accent` 同值，
+  类别一多就会撞色；它同时是唯一允许出现在内联样式里的「成组色值」（配合 `currentColor` 派生淡底淡边）。
 - 浮层：`--overlay-backdrop`（0.5）、`--overlay-backdrop-strong`（0.72）、`--dropdown-bg`、`--tooltip-*`
 - 阴影：`--shadow-sm/md/lg/popover`；字体/动效：`--duration-*`、`--ease-*`、`--transition-*`
 
@@ -147,7 +150,7 @@ node tools/ui-audit/codemod-icon-scale.mjs [--write]  # 图标工具类 → .ico
 | 规则 | 级别 | 含义 |
 | --- | --- | --- |
 | `fs-hardcoded` | error | 字号硬编码（tsx 内联样式 **与 CSS** 双侧都查；只拦绝对单位 `px`/`rem`/`pt`，见 §2.1 第 2 条） |
-| `color-hardcoded-tsx` / `-css` | error | 硬编码颜色（应为语义令牌） |
+| `color-hardcoded-tsx` / `-css` | error | 硬编码颜色（应为语义令牌）；TSX 侧按**字面量位置**逐个判定，复合值里的 hex（`border: "1px solid #ef444455"`）同样计入 |
 | `radius-offscale` | error | 圆角离格 |
 | `modal-shell-bespoke` | error | 自建浮层外壳，未用统一 `modal-overlay` |
 | `spacing-offgrid` | warn | 间距不在 2px 网格 |
@@ -198,6 +201,8 @@ node tools/ui-audit/codemod-icon-scale.mjs [--write]  # 图标工具类 → .ico
 
 | **第 21 波** | 2026-09-10 | **0** ✅ | **9** | **内联样式收口（项目/插件/轨迹三个面板，524 个属性 → 0）**：① `ProjectManager`（173 → 0，`.pm-*`）；② `PluginManager`（141 → 0，`.plugin-mgr-*`）—— 卡片外壳继续复用 `.market-skill-*`，把插件特有的风险框/依赖列表/UI 影响声明/级联确认对话框/标签页/toast 收成具名类，风险色按「红=`--error`、琥珀=`--warning`」两态各一个修饰类（原来是四个内联 `color-mix` 三元）；③ `TrajectoryPanel`（225 → 0，`.tj-*`）—— 摘要区三段（content/error/result）原本把同一份 9 行样式对象抄了三遍，收成 `.tj-summary` + `--muted/--error` 修饰类后三处共用；三步都重复的内联折叠箭头抽成 `SummaryChevron` 子组件（`.tj-chevron`）；类型图标七种颜色的内联 `style` 换成 `.tj-tone-*` 色调类。④ **顺带统一了一处浮层**：轨迹过滤下拉原来是自建外观（自带 background/border/shadow），改成 `.popover-shell` 外壳——§3 的浮层闭集又多一个真实使用者；⑤ 发现 `.trajectory-panel` 是"写了但没定义"的假钩子（它平时被同行内联样式挡着，所以从未被 `css-class-undefined` 报出来——**内联样式正好是类名审计的遮羞布**），本次补上真实定义 |
 
+| **第 22 波** | 2026-09-10 | **0** ✅ | **6** | **内联样式收口（模型方案 / 宠物市场 / 知识图谱）+ 抓出 12 处藏在复合值里的硬编码色**：① `ModelProfilePanel`（179 → 0，`.mp-*`）、`PetMarketDialog`（159 → 0，`.petm-*`）、`KnowledgeGraphView`（174 → 0，样式落在 `src/styles/notebook-workspace.css` 的 `.kg-*` 段）。② **审计器又补掉一处 error 级盲区**：色值兜底只认「整个字符串就是一个 hex」（`color: "#ef4444"`），于是 `border: "1px solid #ef444455"`、`linear-gradient(135deg,#6366f1,#8b5cf6)` 这类**复合值里的 hex 长期看不见**；改成在样式对象区间内按字面量位置逐个找 hex 后，立刻报出 **12 处**真硬编码（App.tsx 与 HeartbeatMonitor 的红色描边、PhoneLinkSettings 的批准/拒绝按钮、ppt/SlideCanvas 的 7 处选中描边 `#7c6cf0`、zvec 市场卡片的紫色渐变），已全部换成语义令牌 —— 其中 `#7c6cf0` 正好就是默认皮肤的 `--accent`，写着硬编码的后果是换皮肤时选中框不跟着变。③ **宠物市场修掉两处"一直没生效的令牌"**：`--border-color` / `--accent-color` 在项目里**根本不存在**（与第 18 波 WechatSettings 同一类问题、同一批人写的），所有边框与安装按钮底色一直在吃 fallback 里的深色硬编码 —— 统一到 `--border-primary` / `--accent` 后浅色主题才正常；卡片悬停原来靠 JS 改 `style.transform/borderColor`，收回 CSS `:hover`。④ **知识图谱不再在 JS 里重抄皮肤表**：原组件按皮肤 id 三分支算出一整套颜色（bg/bg2/bg3/text/text2/border/accent）再塞进内联样式，而 hub 那套值与 `skin-hub.css` 一字不差 —— 代价是皮肤改了图谱不跟、**浅色主题完全没被考虑**（永远渲染成深色 GitHub 配色）。现在颜色全走语义令牌，节点类别色新增 `--chart-cat-1..6` 分类色板令牌（类别色是数据不是状态色；浅色主题里 `--info` 与 `--accent` 同值，直接复用会撞色）；节点圆形的动态半径/类别色用 `currentColor` + 派生渐变表达，选中态进 `.is-selected`。⑤ 顺带修掉一个**脆弱的测试断言**：`ICON-051` 用「文本里不许出现 `--accent-color`」判定，导致文档/注释里点名这个坏令牌都会失败；改成判定真实违规形态（`--accent-color:` 定义或 `var(--accent-color` 取用） |
+
 ### 全项目现场事实（来自 UI 交互界面清单，作为工作队列）
 - 挂载层：64 个 `SlotBridge` 渲染点 + 54 处 `slots.register` + 44 处 `createPortal`（另 51 个 SlotBridge 在 `App.tsx`）。
 - 浮层：205 个 overlay 类名实例散在 60 个 tsx 里，约 35 种外壳；`var(--z-*)` 只被用了 9 次，
@@ -218,7 +223,7 @@ node tools/ui-audit/codemod-icon-scale.mjs [--write]  # 图标工具类 → .ico
 
 ---
 
-## 7. 交接快照（2026-09-10 · 第 21 波后）
+## 7. 交接快照（2026-09-10 · 第 22 波后）
 
 ### 当前数字（`node tools/ui-audit/scan-ui.mjs`）
 
@@ -231,9 +236,9 @@ node tools/ui-audit/codemod-icon-scale.mjs [--write]  # 图标工具类 → .ico
 | `modal-shell-bespoke` | error | 15 | **0** ✅ |
 | `spacing-offgrid` | warn | 13 | **0** ✅ |
 | `css-class-undefined` | warn | — | **0** ✅（第 10 波清零；审计器已扩面到模板字面量） |
-| `inline-style-dense` | warn | 58 | 9（唯一剩下的 warn；第 14 波先修正了度量口径 50 → 25，再累计收口 16 个文件） |
+| `inline-style-dense` | warn | 58 | 6（唯一剩下的 warn；第 14 波先修正了度量口径 50 → 25，再累计收口 19 个文件） |
 | **error 合计** | | **533** | **0** ✅ |
-| **warn 合计** | | 64 | **9** |
+| **warn 合计** | | 64 | **6** |
 
 > 注：`color-hardcoded-tsx` 中途曾报 53 → 9 —— 不是"改多了"，而是审计器修掉了假阳性（见第 11 波说明）。
 > `fs-hardcoded` 第 12 波一度报 590 —— 也不是"变差了"，而是审计器**首次开始扫 CSS 侧**（此前 591 处写死的字号
@@ -248,6 +253,10 @@ node tools/ui-audit/codemod-icon-scale.mjs [--write]  # 图标工具类 → .ico
 > （规则本意是"有内联样式就不算没样式"）—— 于是 `.trajectory-panel` 这种"写了但 CSS 里根本没有"的假钩子
 > 一直藏在审计视野外；把内联样式搬进 CSS 后，它才浮出水面。收口内联样式的过程会持续暴露这类空壳类名，
 > 每波都要顺手补定义（或删掉死类名）。
+> 第 22 波补掉的是色值规则的最后一处：兜底只认「整个字符串就是一个 hex」。`border: "1px solid #ef444455"`
+> 与 `linear-gradient(135deg,#6366f1,#8b5cf6)` 这类**复合值里的 hex** 因此长期不可见（改完立刻报出 12 处）。
+> 三次修复（第 11 波行→字符、第 17 波整行→逐字面量、第 22 波单值→复合值）说明同一件事：
+> **"计数为 0"要先能证明"工具看得见"，否则只是没看见。**
 
 ### 已完成的波次
 
@@ -271,17 +280,20 @@ node tools/ui-audit/codemod-icon-scale.mjs [--write]  # 图标工具类 → .ico
 18. **第 18 波**：`WechatSettings`（141 → 0）收口，顺带修掉 `var(--border-color)` 这个不存在的令牌（详见 §5 表）。
 19. **第 19 波**：新增 `codemod-inline-to-class.mjs`（重复内联形态 → 共享类，首轮 64 处）；`AgentManager`（170 → 0）与 `CicdPanel`（176 → 0）收口（详见 §5 表）。
 20. **第 20 波**：`PerformanceDashboard`（151 → 0）、`MultimodalPanel`（121 → 0）收口（详见 §5 表）。
-21. **第 21 波（本轮）**：`ProjectManager`（173 → 0）、`PluginManager`（141 → 0）、`TrajectoryPanel`（225 → 0）收口；
+21. **第 21 波**：`ProjectManager`（173 → 0）、`PluginManager`（141 → 0）、`TrajectoryPanel`（225 → 0）收口；
     轨迹过滤下拉改用 `.popover-shell` 外壳；补上 `.trajectory-panel` 这个从未定义的假钩子（详见 §5 表）。
+22. **第 22 波（本轮）**：`ModelProfilePanel`（179 → 0）、`PetMarketDialog`（159 → 0）、`KnowledgeGraphView`（174 → 0）收口；
+    审计器补掉「复合值字符串里的 hex」这处 error 级盲区并修掉暴露出的 12 处硬编码色；
+    新增 `--chart-cat-1..6` 分类色板令牌，知识图谱不再在 JS 里重抄皮肤表（详见 §5 表）。
 
 ### 下一轮的工作队列（按性价比排序）
 
-1. **继续「内联样式过密」的 9 个文件**（`inline-style-dense` 是唯一剩下的 warn）：
-   剩下的是 `TrajectoryPanel` 之后的 9 个：`SettingsPanel`（1054 属性 / 密度最高）、`ppt/PPTAdapter`（281 / 62 每百行）、
-   `ToolCallCard`（257）、`ChatPanel`（163）、`InputArea`（182）、`ModelProfilePanel`（179）、
-   `KnowledgeGraphView`（174）、`PetMarketDialog`（159）、`NotebookWorkspace`（134）；
+1. **继续「内联样式过密」的 6 个文件**（`inline-style-dense` 是唯一剩下的 warn）：
+   剩下的都是聊天/工作台区域的大文件：`SettingsPanel`（1054 属性，密度最高）、`ppt/PPTAdapter`（281）、
+   `ToolCallCard`（257）、`InputArea`（182）、`ChatPanel`（163）、`NotebookWorkspace`（134）；
    每个文件的做法固定为「读组件 → 写组件级具名类（能复用 §3 共享类或 `tc-*` 的就复用）→
-   只留真动态值内联 → 审计计数必须为 0」，每轮 2–3 个；同类面板可继续按 `src/styles/<面板>.css` 拆分；
+   只留真动态值内联 → 审计计数必须为 0」，每轮 2–3 个；同类面板可继续按 `src/styles/<面板>.css` 拆分
+   （`KnowledgeGraphView` 的 `.kg-*` 就是落在 `src/styles/notebook-workspace.css` 里的）；
 2. **z-index 令牌化**：`modal-overlay`=200 与 `--z-modal`=1300 互相矛盾，`popover-shield` 的层级仍留在调用处（23 个 tsx 数值 + 13 个 CSS 层级）；
 3. **重复定义收敛**：`styles.css` 内已有同名类被定义两次且取值不同（如 `.badge` 的圆角 10px vs 4px、
    `.workspace-tab` 的 11px vs 12px 字号 —— 后者已被第 12 波统一到 `--fs-sm`），需要新增一条「重复/冲突定义」审计规则；

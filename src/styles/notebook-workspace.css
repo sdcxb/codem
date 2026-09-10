@@ -1462,6 +1462,193 @@ top: 36px;
   border-radius: 50%;
 }
 
+/* ---- 图谱收口（第 21 波）----
+ * 组件原本在 JS 里按皮肤 id 三分支算出一整套颜色（bg/bg2/bg3/text/text2/border/accent），
+ * 再逐个塞进内联样式 —— 那其实就是把皮肤表在 JS 里重抄了一遍（hub 皮肤抄的值与
+ * skin-hub.css 一字不差），代价是：皮肤改了图谱不跟着变，而且**浅色主题完全没被考虑**
+ * （永远渲染成深色 GitHub 配色）。现在颜色一律走语义令牌，内联样式只剩动态几何
+ * （节点半径、连线坐标、迷你图 mask 之类）。
+ * 节点颜色来自 --chart-cat-*：类别色板是数据（不是状态色），所以单列令牌而不用语义色
+ * —— 浅色主题里 --info 与 --accent 同值，直接复用会撞色。 */
+.kg-container {
+  height: 100%;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+.kg-loading { background: var(--bg-primary); color: var(--text-primary); }
+.kg-empty { background: var(--bg-primary); color: var(--text-secondary); }
+.kg-empty-icon { opacity: 0.3; }
+.kg-error-text { color: var(--error); }
+.kg-retry-btn { background: var(--accent); color: var(--text-on-accent); }
+
+.kg-toolbar { background: var(--bg-secondary); border-bottom: 1px solid var(--border-primary); }
+.kg-search-icon { color: var(--text-secondary); }
+.kg-search-input {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-primary);
+}
+.kg-refresh-btn { color: var(--accent); }
+.kg-export-btn { font-size: var(--fs-xs); }
+.kg-canvas-wrapper { height: 100%; }
+.kg-rf-canvas { background: var(--bg-primary); }
+.kg-rf-controls,
+.kg-rf-minimap {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-xs);
+}
+
+.kg-node { display: flex; flex-direction: column; align-items: center; cursor: pointer; transition: opacity 0.2s; }
+.kg-node-handle { opacity: 0; width: 1px; height: 1px; }
+.kg-node-circle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px solid var(--border-primary);
+  border-radius: var(--radius-full);
+  background: radial-gradient(circle at 35% 35%, currentColor, color-mix(in srgb, currentColor 80%, transparent));
+  font-size: var(--kg-node-font, var(--fs-md));
+  user-select: none;
+  transition: box-shadow 0.15s ease, border-width 0.15s ease;
+}
+.kg-node-circle.is-selected {
+  border-width: 3px;
+  border-color: var(--text-primary);
+  box-shadow: 0 0 20px color-mix(in srgb, currentColor 53%, transparent);
+}
+.kg-node-label {
+  max-width: 120px;
+  margin-top: var(--space-2);
+  padding: 1px var(--space-3);
+  overflow: hidden;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--bg-primary) 70%, transparent);
+  color: var(--text-primary);
+  font-size: var(--fs-sm);
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.kg-node-label.is-selected { font-weight: 600; }
+
+.kg-edge-path { transition: stroke 0.2s, stroke-width 0.2s; }
+.kg-edge-label {
+  position: absolute;
+  padding: 2px var(--space-3);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--bg-secondary) 90%, transparent);
+  color: var(--text-secondary);
+  font-size: var(--fs-xs);
+  pointer-events: none;
+}
+
+.kg-sidebar { background: var(--bg-secondary); border-left: 1px solid var(--border-primary); }
+.kg-sidebar-header { border-bottom: 1px solid var(--border-primary); }
+.kg-sidebar-title-row { display: flex; align-items: center; gap: var(--space-4); }
+.kg-entity-icon { font-size: var(--fs-2xl); }
+.kg-sidebar-title { margin: 0; color: var(--accent); }
+.kg-entity-badge { color: var(--text-on-accent); font-size: var(--fs-xs); }
+.kg-detail-section h4 { color: var(--text-secondary); }
+.kg-detail-section p { color: var(--text-primary); }
+.kg-weight-row { display: flex; align-items: center; gap: var(--space-4); }
+.kg-weight-track { flex: 1; height: 4px; overflow: hidden; border-radius: var(--radius-full); background: var(--bg-tertiary); }
+.kg-weight-fill { height: 100%; border-radius: var(--radius-full); background: var(--accent); }
+.kg-weight-value { color: var(--text-primary); font-size: var(--fs-sm); }
+.kg-source-hint { color: var(--text-secondary); font-size: var(--fs-xs); }
+.kg-connected-item {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-primary);
+  color: var(--text-primary);
+  font-size: var(--fs-sm);
+}
+.kg-connected-icon { font-size: var(--fs-md); }
+.kg-action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-3);
+  border-radius: var(--radius-xs);
+  font-family: inherit;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+.kg-action-btn--edit {
+  margin-bottom: var(--space-3);
+  border: 1px solid var(--border-primary);
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+.kg-action-btn--danger {
+  border: 1px solid color-mix(in srgb, var(--error) 33%, transparent);
+  background: transparent;
+  color: var(--error);
+}
+
+.kg-legend { background: var(--bg-secondary); border-top: 1px solid var(--border-primary); }
+.kg-legend-icon { font-size: var(--fs-sm); }
+.kg-legend-text { color: var(--text-secondary); font-size: var(--fs-xs); }
+.kg-legend-hint { margin-left: auto; }
+
+.kg-edit-overlay { background: transparent; pointer-events: auto; }
+.kg-edit-dialog {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 300px;
+  padding: var(--space-9);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius);
+  background: var(--bg-secondary);
+}
+.kg-edit-label { font-size: var(--fs-sm); color: var(--text-secondary); }
+.kg-edit-input {
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-sm);
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  font-size: var(--fs-base);
+  outline: none;
+}
+.kg-edit-actions { display: flex; justify-content: flex-end; gap: var(--space-3); }
+.kg-edit-btn {
+  padding: var(--space-2) var(--space-6);
+  border-radius: var(--radius-sm);
+  font-family: inherit;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+.kg-edit-btn--ghost { border: 1px solid var(--border-primary); background: transparent; color: var(--text-primary); }
+.kg-edit-btn--primary { border: none; background: var(--accent); color: var(--text-on-accent); }
+
+.kg-menu { padding: var(--space-2); min-width: 140px; }
+.kg-menu-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-3) var(--space-4);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: var(--fs-sm);
+  text-align: left;
+  cursor: pointer;
+}
+.kg-menu-item:hover { background: var(--bg-hover); }
+.kg-menu-item--danger { color: var(--error); }
+.kg-menu-sep { height: 1px; margin: var(--space-1) 0; background: var(--border-primary); }
+
 /* ========== PPT Editor ========== */
 /* PPT 编辑器样式 — 借鉴 oh-my-ppt 三栏布局, 自研实现 */
 .ppt-editor {

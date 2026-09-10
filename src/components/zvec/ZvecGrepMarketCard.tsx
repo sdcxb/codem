@@ -119,7 +119,7 @@ export function ZvecGrepMarketCard() {
   return (
     <div className="market-skill-card" style={{ display: "flex", flexDirection: "column", gap: 8, borderColor: "var(--accent-muted, color-mix(in srgb, var(--accent) 40%, transparent))" }}>
       <div className="market-skill-card-header">
-        <span className="market-skill-icon" style={{ background: "linear-gradient(135deg,#6366f1,#8b5cf6)", color: "var(--text-on-accent)" }}>
+        <span className="market-skill-icon" style={{ background: "linear-gradient(135deg, var(--accent), var(--accent-hover))", color: "var(--text-on-accent)" }}>
           <Sparkles size={16} />
         </span>
         <div style={{ minWidth: 0 }}>

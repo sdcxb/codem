@@ -253,6 +253,20 @@ function scanTsx(rel, src) {
         add("color-hardcoded-tsx", rel, no, raw, `hex ${hex[1]}`);
       }
     }
+    // 兜底之二：hex 藏在**复合值字符串**里，例如
+    //   border: '1px solid #ef444455'
+    //   background: 'linear-gradient(180deg, #fff, #000)'
+    // 上面那条只认「整个字符串就是一个 hex」，这类混写长期漏检（知识图谱的删除按钮边框
+    // 就这么一直写着硬编码红）。这里按字面量位置逐个找 hex，并跳过 var() 的兜底值。
+    if (!colorM && !/url\(/.test(line)) {
+      for (const m of line.matchAll(/#[0-9a-fA-F]{3,8}\b/g)) {
+        const abs = lineStarts[i] + m.index;
+        if (!styleRanges.some(([s, e]) => abs >= s && abs < e)) continue;
+        if (!notInVar(m.index)) continue;
+        add("color-hardcoded-tsx", rel, no, raw, `hex ${m[0]}`);
+        break;
+      }
+    }
 
     // 3) 圆角离格
     const br = /borderRadius:\s*(?:'|")?([0-9.]+)(px|rem|%)?(?:'|")?/.exec(line);

@@ -191,11 +191,11 @@ export function PhoneLinkSettings() {
                     {zh ? `有手机等待配对（${leftSec}s 内有效）…` : `A phone is waiting (${leftSec}s)…`}
                   </span>
                   <button disabled={busy} onClick={() => act(() => tauriInvoke("phone_decide", { approved: true }))}
-                    style={{ ...btnStyle, color: "var(--success)", borderColor: "color-mix(in srgb, #22c55e 50%, transparent)" }}>
+                    style={{ ...btnStyle, color: "var(--success)", borderColor: "color-mix(in srgb, var(--success) 50%, transparent)" }}>
                     {zh ? "批准" : "Allow"}
                   </button>
                   <button disabled={busy} onClick={() => act(() => tauriInvoke("phone_decide", { approved: false }))}
-                    style={{ ...btnStyle, color: "var(--error)", borderColor: "color-mix(in srgb, #ef4444 50%, transparent)" }}>
+                    style={{ ...btnStyle, color: "var(--error)", borderColor: "color-mix(in srgb, var(--error) 50%, transparent)" }}>
                     {zh ? "拒绝" : "Deny"}
                   </button>
                 </div>
