@@ -13589,3 +13589,27 @@ color: var(--accent, #7c6cf0);
   font-size: var(--fs-base);
   color: var(--text-secondary);
 }
+
+/* ==========================================================================
+ * UI 统一：补齐缺失的刻度令牌（见 docs/UI-DESIGN-SYSTEM.md §2）
+ * 现状事实（来自全项目 UI 清单）：--space-* 完全不存在，而 CSS 有 2482、tsx 有 1389
+ * 个数值间距；6px 圆角被用了 259 次却没有对应令牌（--radius-sm=4px、--radius=8px）。
+ * 这里补成刻度，后续各波把字面量迁移过来。
+ * ========================================================================== */
+:root {
+  /* 间距刻度（2px 网格；1px 仅用于细线） */
+  --space-1: 2px;
+  --space-2: 4px;
+  --space-3: 6px;
+  --space-4: 8px;
+  --space-5: 10px;
+  --space-6: 12px;
+  --space-7: 14px;
+  --space-8: 16px;
+  --space-9: 20px;
+  --space-10: 24px;
+  --space-11: 28px;
+  --space-12: 32px;
+  /* 小圆角（菜单项/胶囊按钮/密集控件；补齐 6px 这一档） */
+  --radius-xs: 6px;
+}
