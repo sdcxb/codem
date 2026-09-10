@@ -86,7 +86,7 @@ export const AudioPlayer = memo(function AudioPlayer({ filePath, src, fileName, 
           onClick={togglePlay}
           style={{
             width: 36, height: 36, borderRadius: "50%",
-            background: "var(--accent)", color: "#fff",
+            background: "var(--accent)", color: "var(--text-on-accent)",
             border: "none", cursor: "pointer",
             display: "flex", alignItems: "center", justifyContent: "center",
           }}

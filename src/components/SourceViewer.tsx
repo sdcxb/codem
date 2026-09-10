@@ -120,7 +120,7 @@ export function SourceViewer({
                 <button
                   onClick={() => setViewMode('text')}
                   style={{
-                    padding: '2px 8px', fontSize: 'var(--fs-xs)', borderRadius: '3px', cursor: 'pointer',
+                    padding: '2px 8px', fontSize: 'var(--fs-xs)', borderRadius: "var(--radius-sm)", cursor: 'pointer',
                     background: viewMode === 'text' ? 'var(--accent)' : 'transparent',
                     color: viewMode === 'text' ? 'var(--text-on-accent)' : 'var(--text-muted)',
                     border: '1px solid var(--border-primary)',
@@ -131,7 +131,7 @@ export function SourceViewer({
                 <button
                   onClick={() => setViewMode('pdf')}
                   style={{
-                    padding: '2px 8px', fontSize: 'var(--fs-xs)', borderRadius: '3px', cursor: 'pointer',
+                    padding: '2px 8px', fontSize: 'var(--fs-xs)', borderRadius: "var(--radius-sm)", cursor: 'pointer',
                     background: viewMode === 'pdf' ? 'var(--accent)' : 'transparent',
                     color: viewMode === 'pdf' ? 'var(--text-on-accent)' : 'var(--text-muted)',
                     border: '1px solid var(--border-primary)',
@@ -147,7 +147,7 @@ export function SourceViewer({
                 <button
                   onClick={() => setViewMode('text')}
                   style={{
-                    padding: '2px 8px', fontSize: 'var(--fs-xs)', borderRadius: '3px', cursor: 'pointer',
+                    padding: '2px 8px', fontSize: 'var(--fs-xs)', borderRadius: "var(--radius-sm)", cursor: 'pointer',
                     background: viewMode === 'text' ? 'var(--accent)' : 'transparent',
                     color: viewMode === 'text' ? 'var(--text-on-accent)' : 'var(--text-muted)',
                     border: '1px solid var(--border-primary)',
@@ -158,7 +158,7 @@ export function SourceViewer({
                 <button
                   onClick={() => setViewMode('docx')}
                   style={{
-                    padding: '2px 8px', fontSize: 'var(--fs-xs)', borderRadius: '3px', cursor: 'pointer',
+                    padding: '2px 8px', fontSize: 'var(--fs-xs)', borderRadius: "var(--radius-sm)", cursor: 'pointer',
                     background: viewMode === 'docx' ? 'var(--accent)' : 'transparent',
                     color: viewMode === 'docx' ? 'var(--text-on-accent)' : 'var(--text-muted)',
                     border: '1px solid var(--border-primary)',

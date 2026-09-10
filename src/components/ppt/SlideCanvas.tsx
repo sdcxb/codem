@@ -616,7 +616,7 @@ export function SlideCanvas({
                   position: 'absolute',
                   width: 10,
                   height: 10,
-                  background: '#fff',
+                  background: 'var(--text-on-accent)',
                   border: '2px solid #7c6cf0',
                   borderRadius: 2,
                   pointerEvents: 'auto',

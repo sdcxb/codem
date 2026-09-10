@@ -307,7 +307,7 @@ export function UsageStats({ onClose }: UsageStatsProps) {
                     <span>每日用量</span>
                     <span>${stats.todayCost.toFixed(2)} / ${limits.perDay?.toFixed(2) ?? "∞"}</span>
                   </div>
-                  <div style={{ height: 6, borderRadius: 3, background: "var(--bg-tertiary)", overflow: "hidden" }}>
+                  <div style={{ height: 6, borderRadius: "var(--radius-sm)", background: "var(--bg-tertiary)", overflow: "hidden" }}>
                     <div style={{
                       height: "100%",
                       width: `${limits.perDay ? Math.min(100, (stats.todayCost / limits.perDay) * 100) : 0}%`,
@@ -323,7 +323,7 @@ export function UsageStats({ onClose }: UsageStatsProps) {
                     <span>总用量</span>
                     <span>${stats.totalCost.toFixed(2)} / ${limits.total.toFixed(2)}</span>
                   </div>
-                  <div style={{ height: 6, borderRadius: 3, background: "var(--bg-tertiary)", overflow: "hidden" }}>
+                  <div style={{ height: 6, borderRadius: "var(--radius-sm)", background: "var(--bg-tertiary)", overflow: "hidden" }}>
                     <div style={{
                       height: "100%",
                       width: `${Math.min(100, (stats.totalCost / limits.total) * 100)}%`,
@@ -345,7 +345,7 @@ export function UsageStats({ onClose }: UsageStatsProps) {
               }}
               style={{
                 marginTop: 8, padding: "8px 16px", borderRadius: 6, fontSize: 'var(--fs-base)', fontWeight: 500,
-                border: "1px solid var(--accent)", background: "var(--accent)", color: "#fff",
+                border: "1px solid var(--accent)", background: "var(--accent)", color: "var(--text-on-accent)",
                 cursor: "pointer",
               }}
             >

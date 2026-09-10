@@ -190,7 +190,7 @@ export function ToolManager({ onClose }: ToolManagerProps) {
                       {tool.id}
                     </span>
                     <span style={{
-                      fontSize: 9, padding: "1px 6px", borderRadius: 8,
+                      fontSize: "var(--fs-xs)", padding: "1px 6px", borderRadius: 8,
                       background: catInfo.color + "20", color: catInfo.color,
                     }}>
                       {catInfo.label}
@@ -269,7 +269,7 @@ export function ToolManager({ onClose }: ToolManagerProps) {
                                 fontWeight: 600, flexShrink: 0,
                               }}>
                                 {name}
-                                {isRequired && <span style={{ color: "#e74c3c" }}>*</span>}
+                                {isRequired && <span style={{ color: "var(--error)" }}>*</span>}
                               </span>
                               <span style={{ color: "var(--text-muted)" }}>
                                 {schema.type || "any"}

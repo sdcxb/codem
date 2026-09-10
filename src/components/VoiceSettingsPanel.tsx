@@ -281,7 +281,7 @@ export function VoiceSettingsPanel() {
             gap: 6,
             padding: "6px 16px",
             background: isSpeaking ? "var(--danger, #ef4444)" : "var(--accent)",
-            color: "#fff",
+            color: "var(--text-on-accent)",
             border: "none",
             borderRadius: 6,
             fontSize: 'var(--fs-sm)',

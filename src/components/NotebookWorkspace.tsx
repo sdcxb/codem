@@ -1536,7 +1536,7 @@ function NoteCard({
                 padding: '0 4px',
                 background: 'var(--bg-tertiary)',
                 borderRadius: '6px',
-                fontSize: '8px',
+                fontSize: "var(--fs-xs)",
                 color: 'var(--text-muted)',
               }}
             >

@@ -128,7 +128,7 @@ return createPortal(
                   }}
                 >
                   {q.question}
-                  {q.required !== false && <span style={{ color: "#e74c3c", marginLeft: "4px" }}>*</span>}
+                  {q.required !== false && <span style={{ color: "var(--error)", marginLeft: "4px" }}>*</span>}
                 </label>
               )}
 
@@ -191,7 +191,7 @@ return createPortal(
                                 padding: "2px 8px",
                                 borderRadius: "10px",
                                 background: "rgba(46, 204, 113, 0.2)",
-                                color: "#2ecc71",
+                                color: "var(--success)",
                                 marginLeft: "auto",
                               }}
                             >
@@ -303,7 +303,7 @@ return createPortal(
               borderRadius: "8px",
               border: "none",
               background: "var(--accent-color, #6c5ce7)",
-              color: "white",
+              color: "var(--text-on-accent)",
               cursor: "pointer",
               fontSize: "var(--fs-md)",
               fontWeight: 500,

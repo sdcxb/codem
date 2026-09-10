@@ -214,7 +214,7 @@ export class AppErrorBoundary extends Component<AppErrorBoundaryProps, AppErrorB
             <h2
               style={{
                 margin: 0,
-                fontSize: 17,
+                fontSize: "var(--fs-lg)",
                 fontWeight: 700,
                 color: "var(--text-primary, #e6e6e6)",
               }}
@@ -225,21 +225,21 @@ export class AppErrorBoundary extends Component<AppErrorBoundaryProps, AppErrorB
           <p
             style={{
               margin: "0 0 6px",
-              fontSize: 13,
+              fontSize: "var(--fs-base)",
               lineHeight: 1.6,
               color: "var(--text-secondary, #a8a8a8)",
             }}
           >
             应用界面遇到一个意外错误。你的会话数据已保存在本地数据库中，可以放心重试或重新加载。
           </p>
-          <p style={{ margin: "0 0 16px", fontSize: 12, color: "var(--text-muted, #7a7a7a)" }}>
+          <p style={{ margin: "0 0 16px", fontSize: "var(--fs-sm)", color: "var(--text-muted, #7a7a7a)" }}>
             若问题反复出现，可尝试「重置界面设置并重新加载」，或前往 设置 → 会话恢复 查看历史快照。
           </p>
 
           <details
             style={{
               marginBottom: 20,
-              fontSize: 12,
+              fontSize: "var(--fs-sm)",
               color: "var(--text-muted, #8a8a8a)",
             }}
           >
@@ -256,7 +256,7 @@ export class AppErrorBoundary extends Component<AppErrorBoundaryProps, AppErrorB
                 maxHeight: 180,
                 overflow: "auto",
                 fontFamily: "ui-monospace, Consolas, monospace",
-                fontSize: 11,
+                fontSize: "var(--fs-sm)",
                 color: "var(--text-secondary, #b0b0b0)",
               }}
             >

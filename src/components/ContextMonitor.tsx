@@ -419,7 +419,7 @@ export function ContextMonitor({ sessionId, visible }: ContextMonitorProps) {
                 }}
                 style={{
                   padding: "6px 14px", borderRadius: 4, fontSize: 'var(--fs-sm)', fontWeight: 500,
-                  border: "1px solid var(--accent)", background: "var(--accent)", color: "#fff",
+                  border: "1px solid var(--accent)", background: "var(--accent)", color: "var(--text-on-accent)",
                   cursor: "pointer", alignSelf: "flex-start",
                 }}
               >

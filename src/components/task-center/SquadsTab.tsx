@@ -94,7 +94,7 @@ export function SquadsTab() {
             fontSize: 'var(--fs-base)',
             border: "1px solid var(--accent)",
             background: "var(--accent)",
-            color: "#fff",
+            color: "var(--text-on-accent)",
             cursor: "pointer",
           }}
         >
@@ -129,7 +129,7 @@ export function SquadsTab() {
               <span style={{
                 fontSize: "var(--fs-xs)",
                 padding: "2px 8px",
-                borderRadius: 3,
+                borderRadius: "var(--radius-sm)",
                 background: "var(--accent)22",
                 color: "var(--accent)",
               }}>
@@ -179,7 +179,7 @@ export function SquadsTab() {
                       <span style={{ fontSize: "var(--fs-xs)", color: "var(--text-muted)" }}>{m.roleDescription}</span>
                     )}
                     {m.id === squad.members[0]?.id && (
-                      <span style={{ fontSize: "9px", padding: "1px 6px", borderRadius: 3, background: "var(--warning)22", color: "var(--warning)" }}>
+                      <span style={{ fontSize: "var(--fs-xs)", padding: "1px 6px", borderRadius: "var(--radius-sm)", background: "var(--warning)22", color: "var(--warning)" }}>
                         {zh ? "Leader" : "Leader"}
                       </span>
                     )}
@@ -263,7 +263,7 @@ export function SquadsTab() {
               style={{
                 padding: "6px 16px", borderRadius: 4, fontSize: 'var(--fs-sm)',
                 border: "1px solid var(--accent)", background: "var(--accent)",
-                color: "#fff", cursor: "pointer", opacity: !editing.name || !editing.leaderAgentId ? 0.5 : 1,
+                color: "var(--text-on-accent)", cursor: "pointer", opacity: !editing.name || !editing.leaderAgentId ? 0.5 : 1,
               }}
             >
               {zh ? "创建" : "Create"}

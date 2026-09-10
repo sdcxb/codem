@@ -74,7 +74,7 @@ const TurnErrorRow = memo(function TurnErrorRow({
         <code style={{
           fontSize: 'var(--fs-xs)',
           padding: '1px 4px',
-          borderRadius: 3,
+          borderRadius: "var(--radius-sm)",
           background: 'rgba(239, 68, 68, 0.15)',
           color: 'var(--error)',
           flexShrink: 0,

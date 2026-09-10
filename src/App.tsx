@@ -3207,7 +3207,7 @@ notebookId={activeNotebookId || undefined}
 
 {gameEnabled && bottomTab === "game" && (
   <div style={{ width: "100%", height: "100%", overflow: "hidden", position: "relative" }}>
-    <Suspense fallback={<div style={{ color: "#fff", textAlign: "center", marginTop: 200 }}>加载游戏...</div>}>
+    <Suspense fallback={<div style={{ color: "var(--text-on-accent)", textAlign: "center", marginTop: 200 }}>加载游戏...</div>}>
       <GameViewLazy />
     </Suspense>
   </div>
@@ -3331,7 +3331,7 @@ notebookId={activeNotebookId || undefined}
 
 {gameEnabled && bottomTab === "game" && (
   <div style={{ width: "100%", height: "100%", overflow: "hidden", position: "relative" }}>
-    <Suspense fallback={<div style={{ color: "#fff", textAlign: "center", marginTop: 200 }}>加载游戏...</div>}>
+    <Suspense fallback={<div style={{ color: "var(--text-on-accent)", textAlign: "center", marginTop: 200 }}>加载游戏...</div>}>
       <GameViewLazy />
     </Suspense>
   </div>
@@ -3498,7 +3498,7 @@ notebookId={activeNotebookId || undefined}
 
 {gameEnabled && bottomTab === "game" && (
   <div style={{ width: "100%", height: "100%", overflow: "hidden", position: "relative" }}>
-    <Suspense fallback={<div style={{ color: "#fff", textAlign: "center", marginTop: 200 }}>加载游戏...</div>}>
+    <Suspense fallback={<div style={{ color: "var(--text-on-accent)", textAlign: "center", marginTop: 200 }}>加载游戏...</div>}>
       <GameViewLazy />
     </Suspense>
   </div>
@@ -3804,7 +3804,7 @@ onClose={() => setCitationViewer(null)}
                   <div style={{ fontSize: 'var(--fs-sm)', opacity: 0.7, marginTop: 2 }}>{lang === "zh" ? "从列表移除，不删除文件" : "Remove from list, keep files"}</div>
                 </button>
                 <button
-                  style={{ padding: "10px 16px", borderRadius: 6, border: "1px solid #e74c3c", background: "none", color: "#e74c3c", cursor: "pointer", fontSize: 'var(--fs-base)', textAlign: "left" }}
+                  style={{ padding: "10px 16px", borderRadius: 6, border: "1px solid #e74c3c", background: "none", color: "var(--error)", cursor: "pointer", fontSize: 'var(--fs-base)', textAlign: "left" }}
                   onClick={async () => {
                     try {
                       const { invoke } = (window as any).__TAURI__.core;

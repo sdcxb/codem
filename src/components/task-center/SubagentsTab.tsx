@@ -127,9 +127,9 @@ export function SubagentsTab({ agents, onSelectAgent }: SubagentsTabProps) {
                       display: "inline-flex",
                       alignItems: "center",
                       gap: 2,
-                      fontSize: "9px",
+                      fontSize: "var(--fs-xs)",
                       padding: "1px 6px",
-                      borderRadius: "3px",
+                      borderRadius: "var(--radius-sm)",
                       background: "var(--accent)22",
                       color: "var(--accent)",
                     }}>

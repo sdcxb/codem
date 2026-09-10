@@ -86,7 +86,7 @@ export function IssueCard({ issue, onClick, compact = false }: IssueCardProps) {
           )}
           {issue.labels.length > 0 && issue.labels.slice(0, 3).map((label) => (
             <span key={label} style={{
-              padding: "1px 6px", borderRadius: 3,
+              padding: "1px 6px", borderRadius: "var(--radius-sm)",
               background: "var(--bg-secondary)", fontSize: "var(--fs-xs)",
             }}>{label}</span>
           ))}

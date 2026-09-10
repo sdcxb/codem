@@ -180,7 +180,7 @@ export function RetryConfigPanel() {
           <button onClick={handleSave} style={{
             padding: "6px 16px", borderRadius: 4, fontSize: 'var(--fs-sm)',
             border: "1px solid var(--accent)", background: "var(--accent)",
-            color: "#fff", cursor: "pointer",
+            color: "var(--text-on-accent)", cursor: "pointer",
           }}>
             {saved ? "✅ " + (zh ? "已保存" : "Saved") : (zh ? "保存配置" : "Save Config")}
           </button>
@@ -249,7 +249,7 @@ export function RetryConfigPanel() {
           <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 4 }}>
             {Object.entries(zh ? ERROR_TYPE_LABELS_ZH : ERROR_TYPE_LABELS_EN).map(([type, label]) => (
               <span key={type} style={{
-                padding: "2px 6px", borderRadius: 3, background: "var(--bg-tertiary)",
+                padding: "2px 6px", borderRadius: "var(--radius-sm)", background: "var(--bg-tertiary)",
                 border: "1px solid var(--border-primary)", fontSize: 'var(--fs-xs)',
               }}>{label}</span>
             ))}

@@ -216,7 +216,7 @@ export function HeartbeatMonitor() {
           <button onClick={handleSaveConfig} style={{
             padding: "6px 16px", borderRadius: 4, fontSize: 'var(--fs-sm)',
             border: "1px solid var(--accent)", background: "var(--accent)",
-            color: "#fff", cursor: "pointer",
+            color: "var(--text-on-accent)", cursor: "pointer",
           }}>
             {saved ? "✅ " + (zh ? "已保存" : "Saved") : (zh ? "保存配置" : "Save Config")}
           </button>
@@ -224,7 +224,7 @@ export function HeartbeatMonitor() {
             <button onClick={handleStopAll} style={{
               padding: "6px 16px", borderRadius: 4, fontSize: 'var(--fs-sm)',
               border: "1px solid #e74c3c", background: "none",
-              color: "#e74c3c", cursor: "pointer",
+              color: "var(--error)", cursor: "pointer",
             }}>
               {zh ? "停止所有心跳" : "Stop All"}
             </button>

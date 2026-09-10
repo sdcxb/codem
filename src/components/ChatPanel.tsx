@@ -547,7 +547,7 @@ setStepTooltipLocked(false);
                             }}
                           >
                             <span className="model-option-name">{lang === "zh" ? opt.zh : opt.en}</span>
-                            {opt.id === "ultra" && <span style={{ fontSize: 9, opacity: 0.5, marginLeft: 4 }}>max tokens</span>}
+                            {opt.id === "ultra" && <span style={{ fontSize: "var(--fs-xs)", opacity: 0.5, marginLeft: 4 }}>max tokens</span>}
                           </div>
                         );
                       })}

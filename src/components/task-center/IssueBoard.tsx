@@ -139,7 +139,7 @@ export function IssueBoard() {
                     color: "var(--text-secondary)",
                     background: "var(--bg-tertiary)",
                     padding: "1px 6px",
-                    borderRadius: 3,
+                    borderRadius: "var(--radius-sm)",
                   }}
                 >
                   {colIssues.length}

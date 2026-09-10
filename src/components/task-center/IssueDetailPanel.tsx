@@ -253,7 +253,7 @@ export function IssueDetailPanel({ issue, onClose, onRefresh }: IssueDetailPanel
             display: "flex", alignItems: "center", gap: 4,
             padding: "8px 14px", borderRadius: 6, fontSize: 'var(--fs-base)',
             border: "1px solid var(--accent)", background: "var(--accent)",
-            color: "#fff", cursor: "pointer", opacity: commentText.trim() ? 1 : 0.5,
+            color: "var(--text-on-accent)", cursor: "pointer", opacity: commentText.trim() ? 1 : 0.5,
           }}
         >
           <Send size={14} /> {zh ? "发送" : "Send"}

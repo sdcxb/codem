@@ -356,7 +356,7 @@ export function PetWindowApp() {
               border: "1px solid rgba(255,255,255,0.12)",
               boxShadow: "0 4px 12px rgba(0,0,0,0.3)",
               backdropFilter: "blur(8px)",
-              color: "#e8e8f0",
+              color: "var(--text-primary)",
               fontFamily: "sans-serif",
               fontSize: "var(--fs-xs)",
               lineHeight: `${BUBBLE_LINE_HEIGHT}px`,
@@ -421,21 +421,21 @@ export function PetWindowApp() {
             border: "1px solid rgba(255,255,255,0.14)",
             boxShadow: "0 4px 14px rgba(0,0,0,0.35)",
             backdropFilter: "blur(8px)",
-            color: "#e8e8f0",
+            color: "var(--text-primary)",
             fontFamily: "sans-serif",
             zIndex: 10,
             animation: "petCardIn 0.22s ease",
           }}
         >
           {state.card.project && (
-            <div style={{ fontSize: "9px", opacity: 0.55, lineHeight: "13px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            <div style={{ fontSize: "var(--fs-xs)", opacity: 0.55, lineHeight: "13px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
               {state.card.project}
             </div>
           )}
-          <div style={{ fontSize: "11px", fontWeight: 600, lineHeight: "16px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          <div style={{ fontSize: "var(--fs-sm)", fontWeight: 600, lineHeight: "16px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
             {state.card.message || state.card.phase || (state.petState === "sleeping" ? "空闲中" : "")}
           </div>
-          <div style={{ fontSize: "9px", opacity: 0.7, lineHeight: "13px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          <div style={{ fontSize: "var(--fs-xs)", opacity: 0.7, lineHeight: "13px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
             {[
               state.card.phase ? (state.card.message ? "" : state.card.phase) : "",
               state.card.step?.title,

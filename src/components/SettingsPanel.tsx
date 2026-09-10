@@ -1840,7 +1840,7 @@ marginTop: 4,
         }}
         style={{
           padding: "8px 16px", fontSize: 'var(--fs-base)', cursor: "pointer",
-          background: "var(--accent)", color: "#fff",
+          background: "var(--accent)", color: "var(--text-on-accent)",
           border: "none", borderRadius: 6,
         }}
       >
@@ -1868,7 +1868,7 @@ marginTop: 4,
       <button
         id="check-update-btn"
         className="save-btn"
-        style={{ marginTop: 8, background: "var(--accent)", color: "#fff", border: "none", padding: "6px 16px", borderRadius: 6, cursor: "pointer", fontSize: 'var(--fs-sm)' }}
+        style={{ marginTop: 8, background: "var(--accent)", color: "var(--text-on-accent)", border: "none", padding: "6px 16px", borderRadius: 6, cursor: "pointer", fontSize: 'var(--fs-sm)' }}
         onClick={async () => {
           const btn = document.getElementById("check-update-btn") as HTMLButtonElement;
           if (!btn) return;
@@ -2011,7 +2011,7 @@ function PetSettingsSection({ lang, onOpenMarket }: { lang: Language; onOpenMark
             borderRadius: "12px",
             border: enabled ? "none" : "1px solid var(--border-primary)",
             background: enabled ? "var(--accent)" : "var(--bg-hover)",
-            color: "#fff",
+            color: "var(--text-on-accent)",
             cursor: "pointer",
             position: "relative",
             transition: "background 0.2s, border-color 0.2s",
@@ -2057,7 +2057,7 @@ function PetSettingsSection({ lang, onOpenMarket }: { lang: Language; onOpenMark
             borderRadius: "6px",
             border: "1px solid var(--accent)",
             background: "var(--accent)",
-            color: "#fff",
+            color: "var(--text-on-accent)",
             cursor: "pointer",
             fontSize: "var(--fs-base)",
             fontWeight: 500,
@@ -2137,7 +2137,7 @@ function PetSettingsSection({ lang, onOpenMarket }: { lang: Language; onOpenMark
                       borderRadius: "4px",
                       border: "1px solid rgba(239, 68, 68, 0.3)",
                       background: "rgba(239, 68, 68, 0.1)",
-                      color: "#f87171",
+                      color: "var(--error)",
                       cursor: "pointer",
                       fontSize: "var(--fs-sm)",
                     }}
@@ -2455,7 +2455,7 @@ flex: "0 0 auto",
               padding: "3px 8px",
               background: "var(--bg-tertiary)",
               border: "1px solid var(--border-primary)",
-              borderRadius: 3,
+              borderRadius: "var(--radius-sm)",
               fontSize: 'var(--fs-sm)',
               cursor: "pointer",
               color: "var(--text-secondary)",
@@ -2685,7 +2685,7 @@ function WorktreeSettingsSection({ lang }: { lang: ReturnType<typeof useLang> })
           </div>
         )}
         {scanError && (
-          <div style={{ fontSize: 'var(--fs-sm)', color: "#e74c3c", marginBottom: 8 }}>{scanError}</div>
+          <div style={{ fontSize: 'var(--fs-sm)', color: "var(--error)", marginBottom: 8 }}>{scanError}</div>
         )}
         {scanResults.length > 0 && (
           <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
@@ -2712,7 +2712,7 @@ function WorktreeSettingsSection({ lang }: { lang: ReturnType<typeof useLang> })
                   style={{
                     padding: "2px 8px", borderRadius: 4, fontSize: 'var(--fs-sm)',
                     border: "1px solid #e74c3c", background: "transparent",
-                    color: "#e74c3c", cursor: "pointer",
+                    color: "var(--error)", cursor: "pointer",
                   }}
                 >
                   {zh ? "删除" : "Delete"}
@@ -2889,7 +2889,7 @@ function AgentProfileSection({ lang }: { lang: Language }) {
         <h3 style={{ margin: 0, fontSize: 'var(--fs-md)', fontWeight: 600 }}>{zh ? "👤 Agent Profile 管理" : "👤 Agent Profile Management"}</h3>
         <button
           onClick={() => setEditing({ identity: "", domain: "", scope: "" })}
-          style={{ padding: "4px 12px", fontSize: 'var(--fs-sm)', cursor: "pointer", background: "var(--accent)", color: "#fff", border: "none", borderRadius: 4 }}
+          style={{ padding: "4px 12px", fontSize: 'var(--fs-sm)', cursor: "pointer", background: "var(--accent)", color: "var(--text-on-accent)", border: "none", borderRadius: 4 }}
         >+ {zh ? "新建" : "New"}</button>
       </div>
       <p style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", lineHeight: 1.5 }}>
@@ -2903,7 +2903,7 @@ function AgentProfileSection({ lang }: { lang: Language }) {
           <input value={editing.scope || ""} onChange={(e) => setEditing({ ...editing, scope: e.target.value })} placeholder={zh ? "范围（如：组件开发/性能优化）" : "Scope (e.g.: Components/Performance)"} style={{ fontSize: 'var(--fs-sm)', padding: "4px 8px" }} />
           <textarea value={editing.experience_summary || ""} onChange={(e) => setEditing({ ...editing, experience_summary: e.target.value })} placeholder={zh ? "经验摘要（可选）" : "Experience summary (optional)"} rows={2} style={{ fontSize: 'var(--fs-sm)', padding: "4px 8px", resize: "vertical" }} />
           <div style={{ display: "flex", gap: 8 }}>
-            <button onClick={handleSave} style={{ padding: "4px 12px", fontSize: 'var(--fs-sm)', cursor: "pointer", background: "var(--accent)", color: "#fff", border: "none", borderRadius: 4 }}>{zh ? "保存" : "Save"}</button>
+            <button onClick={handleSave} style={{ padding: "4px 12px", fontSize: 'var(--fs-sm)', cursor: "pointer", background: "var(--accent)", color: "var(--text-on-accent)", border: "none", borderRadius: 4 }}>{zh ? "保存" : "Save"}</button>
             <button onClick={() => setEditing(null)} style={{ padding: "4px 12px", fontSize: 'var(--fs-sm)', cursor: "pointer", background: "none", border: "1px solid var(--border-primary)", borderRadius: 4 }}>{zh ? "取消" : "Cancel"}</button>
           </div>
         </div>
@@ -2918,15 +2918,15 @@ function AgentProfileSection({ lang }: { lang: Language }) {
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <span style={{ fontSize: 'var(--fs-base)', fontWeight: 500 }}>{p.identity}</span>
             <div style={{ display: "flex", gap: 4 }}>
-              <button onClick={() => setEditing(p)} style={{ fontSize: 'var(--fs-sm)', padding: "2px 8px", cursor: "pointer", background: "transparent", border: "1px solid var(--border-primary)", borderRadius: 3 }}>{zh ? "编辑" : "Edit"}</button>
-              <button onClick={() => handleDelete(p.id)} style={{ fontSize: 'var(--fs-sm)', padding: "2px 8px", cursor: "pointer", background: "transparent", border: "1px solid #e55", borderRadius: 3, color: "#e55" }}>{zh ? "删除" : "Delete"}</button>
+              <button onClick={() => setEditing(p)} style={{ fontSize: 'var(--fs-sm)', padding: "2px 8px", cursor: "pointer", background: "transparent", border: "1px solid var(--border-primary)", borderRadius: "var(--radius-sm)" }}>{zh ? "编辑" : "Edit"}</button>
+              <button onClick={() => handleDelete(p.id)} style={{ fontSize: 'var(--fs-sm)', padding: "2px 8px", cursor: "pointer", background: "transparent", border: "1px solid #e55", borderRadius: "var(--radius-sm)", color: "#e55" }}>{zh ? "删除" : "Delete"}</button>
             </div>
           </div>
           <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)" }}>{p.domain} · {p.scope}</div>
           {p.experience_summary && <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-secondary)", lineHeight: 1.4 }}>{p.experience_summary}</div>}
           {p.skills && p.skills.length > 0 && (
             <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-              {p.skills.map((s) => <span key={s} style={{ fontSize: 'var(--fs-xs)', padding: "1px 6px", background: "var(--bg-secondary)", borderRadius: 3, border: "1px solid var(--border-primary)" }}>{s}</span>)}
+              {p.skills.map((s) => <span key={s} style={{ fontSize: 'var(--fs-xs)', padding: "1px 6px", background: "var(--bg-secondary)", borderRadius: "var(--radius-sm)", border: "1px solid var(--border-primary)" }}>{s}</span>)}
             </div>
           )}
         </div>
@@ -3156,10 +3156,10 @@ function CodeGraphSettingsSection({ lang }: { lang: ReturnType<typeof useLang> }
           </button>
         </div>
         {status === "checking" && <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)" }}>{zh ? "正在执行 codegraph --version..." : "Running codegraph --version..."}</div>}
-        {status === "installed" && <div style={{ fontSize: 'var(--fs-sm)', color: "#22c55e" }}>✓ {zh ? "codegraph CLI 已安装" : "codegraph CLI is installed"}</div>}
+        {status === "installed" && <div style={{ fontSize: 'var(--fs-sm)', color: "var(--success)" }}>✓ {zh ? "codegraph CLI 已安装" : "codegraph CLI is installed"}</div>}
         {status === "not_installed" && (
           <div>
-            <div style={{ fontSize: 'var(--fs-sm)', color: "#e74c3c", marginBottom: 8 }}>✗ {zh ? "codegraph CLI 未安装" : "codegraph CLI is not installed"}</div>
+            <div style={{ fontSize: 'var(--fs-sm)', color: "var(--error)", marginBottom: 8 }}>✗ {zh ? "codegraph CLI 未安装" : "codegraph CLI is not installed"}</div>
             <button
               onClick={handleInstall}
               disabled={installing}
@@ -3179,7 +3179,7 @@ function CodeGraphSettingsSection({ lang }: { lang: ReturnType<typeof useLang> }
             <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", lineHeight: 1.5 }}>
               {zh ? "或手动安装（PowerShell）：" : "Or install manually (PowerShell):"}
               <br />
-              <code style={{ background: "var(--bg-secondary)", padding: "2px 6px", borderRadius: 3, fontSize: 'var(--fs-sm)' }}>
+              <code style={{ background: "var(--bg-secondary)", padding: "2px 6px", borderRadius: "var(--radius-sm)", fontSize: 'var(--fs-sm)' }}>
                 irm https://raw.githubusercontent.com/colbymchenry/codegraph/main/install.ps1 | iex
               </code>
             </div>
@@ -3193,9 +3193,9 @@ function CodeGraphSettingsSection({ lang }: { lang: ReturnType<typeof useLang> }
           <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", marginBottom: 8, wordBreak: "break-all" }}>{projectPath}</div>
           <div style={{ fontSize: 'var(--fs-sm)', marginBottom: 8 }}>
             {hasIndex ? (
-              <span style={{ color: "#22c55e" }}>✓ {zh ? "已有 .codegraph/ 索引" : ".codegraph/ index exists"}</span>
+              <span style={{ color: "var(--success)" }}>✓ {zh ? "已有 .codegraph/ 索引" : ".codegraph/ index exists"}</span>
             ) : (
-              <span style={{ color: "#e74c3c" }}>✗ {zh ? "未找到 .codegraph/ 索引" : ".codegraph/ index not found"}</span>
+              <span style={{ color: "var(--error)" }}>✗ {zh ? "未找到 .codegraph/ 索引" : ".codegraph/ index not found"}</span>
             )}
           </div>
           {!hasIndex && status === "installed" && (
@@ -3204,7 +3204,7 @@ function CodeGraphSettingsSection({ lang }: { lang: ReturnType<typeof useLang> }
               disabled={initRunning}
               style={{
                 padding: "8px 16px", fontSize: 'var(--fs-sm)', cursor: initRunning ? "wait" : "pointer",
-                background: "var(--accent)", border: "none", borderRadius: 4, color: "white",
+                background: "var(--accent)", border: "none", borderRadius: 4, color: "var(--text-on-accent)",
                 fontWeight: 500, opacity: initRunning ? 0.6 : 1,
               }}
             >

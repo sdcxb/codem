@@ -158,10 +158,10 @@ export function FlashcardViewer({ notebookId, noteId, onClose }: FlashcardViewer
             {showAnswer && (
               <div style={{ display: 'flex', gap: '6px', marginTop: '16px', width: '100%' }}>
                 {([
-                  { r: 'again' as ReviewRating, label: isZh ? '重来' : 'Again', color: '#ef4444' },
-                  { r: 'hard' as ReviewRating, label: isZh ? '困难' : 'Hard', color: '#eab308' },
-                  { r: 'good' as ReviewRating, label: isZh ? '良好' : 'Good', color: '#22c55e' },
-                  { r: 'easy' as ReviewRating, label: isZh ? '简单' : 'Easy', color: '#6366f1' },
+                  { r: 'again' as ReviewRating, label: isZh ? '重来' : 'Again', color: 'var(--error)' },
+                  { r: 'hard' as ReviewRating, label: isZh ? '困难' : 'Hard', color: 'var(--warning)' },
+                  { r: 'good' as ReviewRating, label: isZh ? '良好' : 'Good', color: 'var(--success)' },
+                  { r: 'easy' as ReviewRating, label: isZh ? '简单' : 'Easy', color: 'var(--accent)' },
                 ]).map(({ r, label, color }) => (
                   <button
                     key={r}
@@ -169,7 +169,7 @@ export function FlashcardViewer({ notebookId, noteId, onClose }: FlashcardViewer
                     style={{
                       flex: 1, padding: '6px 8px',
                       background: `${color}22`, border: `1px solid ${color}55`,
-                      borderRadius: '5px', color, cursor: 'pointer',
+                      borderRadius: "var(--radius-sm)", color, cursor: 'pointer',
                       fontSize: 'var(--fs-sm)', fontWeight: 500,
                     }}
                   >
@@ -196,11 +196,11 @@ export function FlashcardViewer({ notebookId, noteId, onClose }: FlashcardViewer
           <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
             <div>
               <label style={{ fontSize: 'var(--fs-xs)', opacity: 0.6, marginBottom: '4px', display: 'block' }}>{isZh ? '正面（问题）' : 'Front (Question)'}</label>
-              <textarea style={{ width: '100%', minHeight: '70px', padding: '6px 10px', background: 'var(--bg-tertiary)', border: '1px solid var(--border-primary)', borderRadius: '5px', color: 'var(--text-primary)', fontSize: 'var(--fs-sm)', resize: 'vertical' }} value={front} onChange={(e) => setFront(e.target.value)} placeholder={isZh ? '输入问题...' : 'Enter question...'} />
+              <textarea style={{ width: '100%', minHeight: '70px', padding: '6px 10px', background: 'var(--bg-tertiary)', border: '1px solid var(--border-primary)', borderRadius: "var(--radius-sm)", color: 'var(--text-primary)', fontSize: 'var(--fs-sm)', resize: 'vertical' }} value={front} onChange={(e) => setFront(e.target.value)} placeholder={isZh ? '输入问题...' : 'Enter question...'} />
             </div>
             <div>
               <label style={{ fontSize: 'var(--fs-xs)', opacity: 0.6, marginBottom: '4px', display: 'block' }}>{isZh ? '背面（答案）' : 'Back (Answer)'}</label>
-              <textarea style={{ width: '100%', minHeight: '70px', padding: '6px 10px', background: 'var(--bg-tertiary)', border: '1px solid var(--border-primary)', borderRadius: '5px', color: 'var(--text-primary)', fontSize: 'var(--fs-sm)', resize: 'vertical' }} value={back} onChange={(e) => setBack(e.target.value)} placeholder={isZh ? '输入答案...' : 'Enter answer...'} />
+              <textarea style={{ width: '100%', minHeight: '70px', padding: '6px 10px', background: 'var(--bg-tertiary)', border: '1px solid var(--border-primary)', borderRadius: "var(--radius-sm)", color: 'var(--text-primary)', fontSize: 'var(--fs-sm)', resize: 'vertical' }} value={back} onChange={(e) => setBack(e.target.value)} placeholder={isZh ? '输入答案...' : 'Enter answer...'} />
             </div>
             <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end', marginTop: '4px' }}>
               <button className="nb-btn-cancel" onClick={() => setMode('list')}>{isZh ? '取消' : 'Cancel'}</button>
@@ -260,7 +260,7 @@ export function FlashcardViewer({ notebookId, noteId, onClose }: FlashcardViewer
                       </button>
                     </div>
                     <div style={{ display: 'flex', gap: '6px', marginTop: '4px', fontSize: 'var(--fs-xs)', opacity: 0.5 }}>
-                      {isDue && <span style={{ color: '#eab308' }}>● {isZh ? '待复习' : 'Due'}</span>}
+                      {isDue && <span style={{ color: 'var(--warning)' }}>● {isZh ? '待复习' : 'Due'}</span>}
                       {card.repetitions > 0 && <span>{isZh ? `复习 ${card.repetitions} 次` : `${card.repetitions} reps`}</span>}
                       <span>{isZh ? `间隔 ${card.intervalDays} 天` : `${card.intervalDays}d interval`}</span>
                     </div>

@@ -462,7 +462,7 @@ function FilePreviewHtml({ filePath }: { filePath: string }) {
         <iframe
           srcDoc={content}
           sandbox="allow-scripts"
-          style={{ width: "100%", height: "100%", border: "none", background: "#fff" }}
+          style={{ width: "100%", height: "100%", border: "none", background: "var(--text-on-accent)" }}
           title="HTML Preview"
         />
       )}

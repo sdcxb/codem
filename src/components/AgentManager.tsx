@@ -205,7 +205,7 @@ export function AgentManager({ onClose }: { onClose: () => void }) {
                   <span className="market-skill-name">{agent.name || agent.id}</span>
                   {builtin && <span style={{ fontSize: 'var(--fs-xs)', color: "var(--text-muted)" }}>{zh ? "内置" : "built-in"}</span>}
                 </div>
-                <span style={{ fontSize: 'var(--fs-xs)', padding: "2px 6px", borderRadius: 3, background: "var(--bg-secondary)", color: "var(--text-secondary)" }}>
+                <span style={{ fontSize: 'var(--fs-xs)', padding: "2px 6px", borderRadius: "var(--radius-sm)", background: "var(--bg-secondary)", color: "var(--text-secondary)" }}>
                   {MODE_LABELS[agent.mode]}
                 </span>
               </div>
@@ -261,7 +261,7 @@ export function AgentManager({ onClose }: { onClose: () => void }) {
           {/* Permissions */}
           <div style={{ marginTop: 8, marginBottom: 4, fontWeight: 600, color: "var(--text-secondary)" }}>{zh ? "权限规则" : "Permissions"}</div>
           {selected.permissions.map((p, i) => (
-            <div key={i} style={{ fontFamily: "monospace", fontSize: 'var(--fs-sm)', padding: "3px 6px", background: "var(--bg-tertiary)", borderRadius: 3, marginBottom: 2 }}>
+            <div key={i} style={{ fontFamily: "monospace", fontSize: 'var(--fs-sm)', padding: "3px 6px", background: "var(--bg-tertiary)", borderRadius: "var(--radius-sm)", marginBottom: 2 }}>
               {p.tool} {p.resource && `→ ${p.resource}`} <span style={{ color: p.action === "allow" ? "var(--success)" : p.action === "deny" ? "var(--error)" : "var(--text-secondary)" }}>[{p.action}]</span>
             </div>
           ))}
@@ -490,7 +490,7 @@ export function AgentManager({ onClose }: { onClose: () => void }) {
             <button onClick={handleSave} disabled={!editing.name.trim()} style={{
               padding: "6px 16px", borderRadius: 4, fontSize: 'var(--fs-sm)',
               border: "1px solid var(--accent)", background: "var(--accent)",
-              color: "#fff", cursor: "pointer", opacity: editing.name.trim() ? 1 : 0.5,
+              color: "var(--text-on-accent)", cursor: "pointer", opacity: editing.name.trim() ? 1 : 0.5,
             }}>{zh ? "保存" : "Save"}</button>
             <button onClick={handleCancel} style={{
               padding: "6px 16px", borderRadius: 4, fontSize: 'var(--fs-sm)',

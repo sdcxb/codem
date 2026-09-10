@@ -210,7 +210,7 @@ export function AgentPanel({ agents, onClose, onSelectAgent }: AgentPanelProps) 
                     )}
                     {/* 结果/错误摘要 */}
                     {task.error && (
-                      <div style={{ fontSize: "var(--fs-xs)", color: "#ef4444", wordBreak: "break-word" }}>
+                      <div style={{ fontSize: "var(--fs-xs)", color: "var(--error)", wordBreak: "break-word" }}>
                         {zh ? "失败: " : "Error: "}{task.error.slice(0, 200)}
                       </div>
                     )}

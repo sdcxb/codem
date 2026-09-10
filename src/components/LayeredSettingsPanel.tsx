@@ -151,7 +151,7 @@ export function LayeredSettingsPanel() {
                   </span>
                 )}
                 {s.data && Object.keys(s.data).length > 0 && (
-                  <span style={{ fontSize: 'var(--fs-xs)', padding: "1px 6px", borderRadius: 3, background: "var(--bg-secondary)", color: "var(--text-secondary)" }}>
+                  <span style={{ fontSize: 'var(--fs-xs)', padding: "1px 6px", borderRadius: "var(--radius-sm)", background: "var(--bg-secondary)", color: "var(--text-secondary)" }}>
                     {Object.keys(s.data).length} {zh ? "项" : "keys"}
                   </span>
                 )}

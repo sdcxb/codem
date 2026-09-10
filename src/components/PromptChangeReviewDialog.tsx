@@ -163,7 +163,7 @@ onClick={(e) => e.stopPropagation()}
                           fontSize: "var(--fs-xs)",
                           fontWeight: 600,
                           textTransform: "uppercase",
-                          color: "#e74c3c",
+                          color: "var(--error)",
                           marginBottom: "6px",
                         }}
                       >
@@ -192,7 +192,7 @@ onClick={(e) => e.stopPropagation()}
                           fontSize: "var(--fs-xs)",
                           fontWeight: 600,
                           textTransform: "uppercase",
-                          color: "#2ecc71",
+                          color: "var(--success)",
                           marginBottom: "6px",
                         }}
                       >
@@ -231,8 +231,8 @@ onClick={(e) => e.stopPropagation()}
           }}
         >
           <div style={{ fontSize: "var(--fs-base)", color: "var(--text-secondary, #888)" }}>
-            {applyCount > 0 && <span style={{ color: "#2ecc71" }}>{applyCount} 项应用</span>}
-            {skipCount > 0 && <span style={{ marginLeft: "8px", color: "#e74c3c" }}>{skipCount} 项跳过</span>}
+            {applyCount > 0 && <span style={{ color: "var(--success)" }}>{applyCount} 项应用</span>}
+            {skipCount > 0 && <span style={{ marginLeft: "8px", color: "var(--error)" }}>{skipCount} 项跳过</span>}
             {pendingCount > 0 && <span style={{ marginLeft: "8px" }}>{pendingCount} 项待定</span>}
           </div>
           <div style={{ display: "flex", gap: "10px" }}>

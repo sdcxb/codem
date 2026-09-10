@@ -78,7 +78,7 @@ export const ReasoningRow = memo(function ReasoningRow({
           border: 'none',
           cursor: 'pointer',
           fontSize: 'var(--fs-sm)',
-          color: '#9333ea',
+          color: 'var(--accent)',
           textAlign: 'left',
         }}
       >

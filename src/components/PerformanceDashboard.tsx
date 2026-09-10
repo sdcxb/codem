@@ -174,13 +174,13 @@ export function PerformanceDashboard({ onClose }: PerformanceDashboardProps) {
         </div>
 
         {exportMsg && (
-          <div style={{ padding: "4px 16px", fontSize: 'var(--fs-sm)', color: "#22c55e" }}>{exportMsg}</div>
+          <div style={{ padding: "4px 16px", fontSize: 'var(--fs-sm)', color: "var(--success)" }}>{exportMsg}</div>
         )}
 
         {/* Content */}
         <div style={{ flex: 1, overflowY: "auto", padding: "12px 16px" }}>
           {overview.totalEvents === 0 ? (
-            <div style={{ textAlign: "center", padding: 48, color: "#6b7280" }}>
+            <div style={{ textAlign: "center", padding: 48, color: "var(--text-muted)" }}>
               <Activity size={48} style={{ opacity: 0.3, marginBottom: 8 }} />
               <div>{S.perf.noData[lang]}</div>
             </div>
@@ -216,7 +216,7 @@ export function PerformanceDashboard({ onClose }: PerformanceDashboardProps) {
                     }} title={`${formatTime(bucket.timestamp)}: ${bucket.count}`} />
                   ))}
                 </div>
-                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 'var(--fs-xs)', color: "#6b7280", marginTop: 4 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 'var(--fs-xs)', color: "var(--text-muted)", marginTop: 4 }}>
                   <span>{formatTime(timeSeries[0]?.timestamp || 0)}</span>
                   <span>{formatTime(timeSeries[timeSeries.length - 1]?.timestamp || 0)}</span>
                 </div>
@@ -240,8 +240,8 @@ export function PerformanceDashboard({ onClose }: PerformanceDashboardProps) {
                             borderRadius: 4,
                           }} />
                         </div>
-                        <span style={{ minWidth: 60, textAlign: "right", color: "#6b7280" }}>{evt.count}</span>
-                        <span style={{ minWidth: 50, textAlign: "right", color: "#6b7280" }}>{pct.toFixed(1)}%</span>
+                        <span style={{ minWidth: 60, textAlign: "right", color: "var(--text-muted)" }}>{evt.count}</span>
+                        <span style={{ minWidth: 50, textAlign: "right", color: "var(--text-muted)" }}>{pct.toFixed(1)}%</span>
                       </div>
                     );
                   })}
@@ -278,7 +278,7 @@ export function PerformanceDashboard({ onClose }: PerformanceDashboardProps) {
             <>
               {/* Latency Stats */}
               {latencyStats.length === 0 ? (
-                <div style={{ textAlign: "center", padding: 24, color: "#6b7280" }}>
+                <div style={{ textAlign: "center", padding: 24, color: "var(--text-muted)" }}>
                   {S.perf.noData[lang]} — {lang === "zh" ? "需要事件 data 中包含 duration_ms 字段" : "Requires duration_ms field in event data"}
                 </div>
               ) : (
@@ -327,13 +327,13 @@ export function PerformanceDashboard({ onClose }: PerformanceDashboardProps) {
               borderRadius: 12, padding: 24, maxWidth: 360,
               textAlign: "center",
             }} onClick={e => e.stopPropagation()}>
-              <Trash2 size={32} style={{ color: "#ef4444", marginBottom: 8 }} />
+              <Trash2 size={32} style={{ color: "var(--error)", marginBottom: 8 }} />
               <div style={{ marginBottom: 16, fontSize: 'var(--fs-md)' }}>{S.perf.clearConfirm[lang]}</div>
               <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
                 <button onClick={() => setShowClearConfirm(false)} style={dialogBtnStyle}>
                   {S.perf.clearAll[lang].includes("清") ? "取消" : "Cancel"}
                 </button>
-                <button onClick={handleClearAll} style={{ ...dialogBtnStyle, background: "#ef4444", color: "#fff", border: "none" }}>
+                <button onClick={handleClearAll} style={{ ...dialogBtnStyle, background: "var(--error)", color: "var(--text-on-accent)", border: "none" }}>
                   {S.perf.clearAll[lang]}
                 </button>
               </div>
@@ -375,10 +375,10 @@ function StatCard({ value, label, color, suffix }: { value: number; label: strin
       background: `${color}10`,
       minWidth: 120,
     }}>
-      <span style={{ fontSize: 'var(--fs-3xl)', fontWeight: 700, color }}>
+      <span style={{ fontSize: 'var(--fs-hero)', fontWeight: 700, color }}>
         {value}{suffix ? <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 400, marginLeft: 4 }}>{suffix}</span> : null}
       </span>
-      <span style={{ fontSize: 'var(--fs-sm)', color: "#6b7280", marginTop: 2 }}>{label}</span>
+      <span style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", marginTop: 2 }}>{label}</span>
     </div>
   );
 }
@@ -405,7 +405,7 @@ const tableStyle: React.CSSProperties = {
 const thStyle: React.CSSProperties = {
   textAlign: "left", padding: "8px 6px",
   borderBottom: "1px solid var(--border-color, #333)",
-  fontWeight: 600, fontSize: 'var(--fs-sm)', color: "#6b7280",
+  fontWeight: 600, fontSize: 'var(--fs-sm)', color: "var(--text-muted)",
   textTransform: "uppercase",
 };
 

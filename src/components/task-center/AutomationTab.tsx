@@ -202,7 +202,7 @@ export function AutomationTab() {
             fontSize: 'var(--fs-base)',
             border: "1px solid var(--accent)",
             background: "var(--accent)",
-            color: "#fff",
+            color: "var(--text-on-accent)",
             cursor: "pointer",
             display: "flex",
             alignItems: "center",
@@ -391,7 +391,7 @@ export function AutomationTab() {
                 fontSize: 'var(--fs-sm)',
                 border: "1px solid var(--accent)",
                 background: "var(--accent)",
-                color: "#fff",
+                color: "var(--text-on-accent)",
                 cursor: "pointer",
                 opacity: !editing.name || !editing.message ? 0.5 : 1,
               }}

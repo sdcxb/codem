@@ -338,7 +338,7 @@ export function PdfViewer({ filePath, pdfData, highlightText, onClose }: PdfView
               style={{
                 display: 'block',
                 boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
-                background: '#fff',
+                background: 'var(--text-on-accent)',
               }}
             />
           </div>

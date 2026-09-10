@@ -42,7 +42,7 @@
   border-radius: var(--radius-sm, 6px);
   padding: 6px 14px;
   cursor: pointer;
-  font-size: 13px;
+  font-size: var(--fs-base);
   display: flex;
   align-items: center;
   gap: 4px;
@@ -55,7 +55,7 @@
 
 .ppt-editor-backbar span {
   color: var(--text-muted, #888);
-  font-size: 13px;
+  font-size: var(--fs-base);
 }
 
 /* --- 工具栏 --- */
@@ -94,7 +94,7 @@
   border: 1px solid transparent;
   border-radius: var(--radius-sm, 6px);
   color: var(--text-secondary, #b0b0c0);
-  font-size: 13px;
+  font-size: var(--fs-base);
   cursor: pointer;
   transition: var(--transition-color);
   white-space: nowrap;
@@ -127,7 +127,7 @@
 }
 
 .ppt-toolbar-label {
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--text-muted, #888);
   margin-right: 4px;
 }
@@ -209,10 +209,10 @@
   top: 4px;
   left: 4px;
   background: rgba(0, 0, 0, 0.6);
-  color: #fff;
-  font-size: 11px;
+  color: var(--text-on-accent);
+  font-size: var(--fs-sm);
   padding: 1px 6px;
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   z-index: 10;
 }
 
@@ -221,12 +221,12 @@
   top: 4px;
   right: 4px;
   background: rgba(220, 50, 50, 0.8);
-  color: #fff;
+  color: var(--text-on-accent);
   border: none;
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   width: 20px;
   height: 20px;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   cursor: pointer;
   display: none;
   z-index: 10;
@@ -245,7 +245,7 @@
   border: 1px dashed var(--text-muted, #555);
   border-radius: var(--radius-sm, 6px);
   color: var(--text-muted, #888);
-  font-size: 13px;
+  font-size: var(--fs-base);
   cursor: pointer;
   text-align: center;
   transition: var(--transition-color);
@@ -269,7 +269,7 @@
 
 .ppt-property-header {
   padding: 10px 16px;
-  font-size: 14px;
+  font-size: var(--fs-md);
   font-weight: 600;
   color: var(--text-primary, #e0e0e0);
   border-bottom: 1px solid var(--border-primary, #3a3a4c);
@@ -282,7 +282,7 @@
 }
 
 .ppt-property-section-title {
-  font-size: 11px;
+  font-size: var(--fs-sm);
   text-transform: uppercase;
   color: var(--text-muted, #888);
   margin-bottom: 8px;
@@ -301,7 +301,7 @@
 }
 
 .ppt-property-label {
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--text-secondary, #a0a0b0);
   width: 60px;
   flex-shrink: 0;
@@ -314,7 +314,7 @@
   border-radius: var(--radius-sm, 4px);
   padding: 4px 8px;
   color: var(--text-primary, #e0e0e0);
-  font-size: 12px;
+  font-size: var(--fs-sm);
   outline: none;
   transition: border-color var(--duration-fast) var(--ease-out);
 }
@@ -344,7 +344,7 @@
   border-radius: var(--radius-sm, 4px);
   padding: 4px 8px;
   color: var(--text-primary, #e0e0e0);
-  font-size: 12px;
+  font-size: var(--fs-sm);
   outline: none;
 }
 
@@ -359,7 +359,7 @@
   background: var(--input-bg, #1e1e2e);
   border: 1px solid var(--border-primary, #3a3a4c);
   color: var(--text-secondary, #a0a0b0);
-  font-size: 12px;
+  font-size: var(--fs-sm);
   cursor: pointer;
   border-radius: var(--radius-sm, 4px);
   transition: var(--transition-color);
@@ -381,7 +381,7 @@
   padding: 40px 16px;
   text-align: center;
   color: var(--text-muted, #666);
-  font-size: 13px;
+  font-size: var(--fs-base);
 }
 
 /* --- 底部状态栏 --- */
@@ -392,7 +392,7 @@
   padding: 4px 16px;
   background: var(--bg-secondary, #2a2a3c);
   border-top: 1px solid var(--border-primary, #3a3a4c);
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--text-muted, #888);
   flex-shrink: 0;
 }
@@ -446,12 +446,12 @@
 .ppt-present-btn {
   background: rgba(255, 255, 255, 0.15);
   border: none;
-  color: #fff;
+  color: var(--text-on-accent);
   width: 36px;
   height: 36px;
   border-radius: 50%;
   cursor: pointer;
-  font-size: 16px;
+  font-size: var(--fs-lg);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -482,7 +482,7 @@
 }
 
 .ppt-chat-msg {
-  font-size: 11px;
+  font-size: var(--fs-sm);
   padding: 3px 8px;
   border-radius: var(--radius-sm, 4px);
   max-width: 80%;
@@ -509,7 +509,7 @@
   border-radius: var(--radius-sm, 6px);
   padding: 6px 12px;
   color: var(--text-primary, #e0e0e0);
-  font-size: 12px;
+  font-size: var(--fs-sm);
   outline: none;
   font-family: inherit;
 }
@@ -525,7 +525,7 @@
   border-radius: var(--radius-sm, 6px);
   padding: 6px 14px;
   cursor: pointer;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   font-weight: 600;
   transition: var(--transition-color);
 }
@@ -587,7 +587,7 @@
 .ppt-editor-canvas-area::-webkit-scrollbar-thumb,
 .ppt-editor-toolbar::-webkit-scrollbar-thumb {
   background: var(--scrollbar-thumb, #444);
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
 }
 
 .ppt-property-panel::-webkit-scrollbar-thumb:hover,

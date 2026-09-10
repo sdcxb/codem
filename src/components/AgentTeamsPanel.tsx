@@ -89,7 +89,7 @@ export function AgentTeamsPanel({ onClose }: AgentTeamsPanelProps) {
           ) : (
             <div style={{ display: "grid", gap: 4 }}>
               {snap.members.map((m) => {
-                const meta = MEMBER_STATUS[m.status] || { color: "#888", zh: m.status };
+                const meta = MEMBER_STATUS[m.status] || { color: "var(--text-muted)", zh: m.status };
                 return (
                   <div key={m.name} style={{ display: "flex", alignItems: "center", gap: 6, padding: "4px 6px", background: "var(--bg-secondary, #232834)", borderRadius: 6 }}>
                     <span style={{ width: 8, height: 8, borderRadius: "50%", background: meta.color, flexShrink: 0 }} />
@@ -113,7 +113,7 @@ export function AgentTeamsPanel({ onClose }: AgentTeamsPanelProps) {
           ) : (
             <div style={{ display: "grid", gap: 4 }}>
               {snap.tasks.map((t) => {
-                const meta = STATUS_META[t.status] || { color: "#888", zh: t.status };
+                const meta = STATUS_META[t.status] || { color: "var(--text-muted)", zh: t.status };
                 const depText = t.dependencies.length ? ` ⛓${t.dependencies.join(",")}` : "";
                 return (
                   <div key={t.id} style={{ display: "flex", alignItems: "flex-start", gap: 6, padding: "4px 6px", background: "var(--bg-secondary, #232834)", borderRadius: 6 }}>

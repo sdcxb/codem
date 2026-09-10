@@ -524,14 +524,14 @@ export function ProjectManager({ onClose }: ProjectManagerProps) {
 
             {gitStatus === "creating" && (
               <div style={{ textAlign: "center", padding: "40px 0" }}>
-                <div style={{ fontSize: 32, marginBottom: 16, display: "flex", justifyContent: "center" }}><StatusIcons.pending size={32} /></div>
+                <div style={{ fontSize: "var(--fs-hero)", marginBottom: 16, display: "flex", justifyContent: "center" }}><StatusIcons.pending size={32} /></div>
                 <p style={{ color: "var(--text-secondary)", fontSize: 'var(--fs-md)' }}>{gitStatusMsg}</p>
               </div>
             )}
 
             {gitStatus === "done" && (
               <div style={{ textAlign: "center", padding: "40px 0" }}>
-                <div style={{ fontSize: 32, marginBottom: 16, display: "flex", justifyContent: "center" }}><StatusIcons.success size={32} style={{ color: "var(--success)" }} /></div>
+                <div style={{ fontSize: "var(--fs-hero)", marginBottom: 16, display: "flex", justifyContent: "center" }}><StatusIcons.success size={32} style={{ color: "var(--success)" }} /></div>
                 <p style={{ color: "var(--text-primary)", fontSize: 'var(--fs-md)', fontWeight: 500 }}>{gitStatusMsg}</p>
               </div>
             )}
@@ -549,7 +549,7 @@ export function ProjectManager({ onClose }: ProjectManagerProps) {
                 <button
                   onClick={() => { setGitStatus("idle"); setGitStatusMsg(""); }}
                   style={{ marginTop: 12, padding: "8px 20px", borderRadius: 8, border: "none",
-                    background: "var(--accent, #ff6b35)", color: "#fff", cursor: "pointer", fontSize: 'var(--fs-md)', width: "100%" }}
+                    background: "var(--accent, #ff6b35)", color: "var(--text-on-accent)", cursor: "pointer", fontSize: 'var(--fs-md)', width: "100%" }}
                 >
                   重试
                 </button>
@@ -592,14 +592,14 @@ export function ProjectManager({ onClose }: ProjectManagerProps) {
 
             {cloneStatus === "cloning" && (
               <div style={{ textAlign: "center", padding: "40px 0" }}>
-                <div style={{ fontSize: 32, marginBottom: 16, display: "flex", justifyContent: "center" }}><StatusIcons.pending size={32} /></div>
+                <div style={{ fontSize: "var(--fs-hero)", marginBottom: 16, display: "flex", justifyContent: "center" }}><StatusIcons.pending size={32} /></div>
                 <p style={{ color: "var(--text-secondary)", fontSize: 'var(--fs-md)' }}>{cloneMsg}</p>
               </div>
             )}
 
             {cloneStatus === "done" && (
               <div style={{ textAlign: "center", padding: "40px 0" }}>
-                <div style={{ fontSize: 32, marginBottom: 16, display: "flex", justifyContent: "center" }}><StatusIcons.success size={32} style={{ color: "var(--success)" }} /></div>
+                <div style={{ fontSize: "var(--fs-hero)", marginBottom: 16, display: "flex", justifyContent: "center" }}><StatusIcons.success size={32} style={{ color: "var(--success)" }} /></div>
                 <p style={{ color: "var(--text-primary)", fontSize: 'var(--fs-md)', fontWeight: 500 }}>{cloneMsg}</p>
               </div>
             )}
@@ -617,7 +617,7 @@ export function ProjectManager({ onClose }: ProjectManagerProps) {
                 <button
                   onClick={() => { setCloneStatus("idle"); setCloneMsg(""); }}
                   style={{ marginTop: 12, padding: "8px 20px", borderRadius: 8, border: "none",
-                    background: "var(--accent, #ff6b35)", color: "#fff", cursor: "pointer", fontSize: 'var(--fs-md)', width: "100%" }}
+                    background: "var(--accent, #ff6b35)", color: "var(--text-on-accent)", cursor: "pointer", fontSize: 'var(--fs-md)', width: "100%" }}
                 >
                   重试
                 </button>

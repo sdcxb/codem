@@ -487,7 +487,7 @@ function KnowledgeGraphViewInner({ notebookId, onNodeSelect }: KnowledgeGraphVie
         {extractError ? (
           <>
             <p style={{ color: 'var(--error)' }}>{extractError}</p>
-            <button onClick={loadGraph} style={{ background: accentColor, color: '#fff' }} className="kg-retry-btn">
+            <button onClick={loadGraph} style={{ background: accentColor, color: 'var(--text-on-accent)' }} className="kg-retry-btn">
               {isZh ? '重新提取' : 'Extract Again'}
             </button>
           </>
@@ -496,7 +496,7 @@ function KnowledgeGraphViewInner({ notebookId, onNodeSelect }: KnowledgeGraphVie
         ) : (
           <>
             <p>{isZh ? '正在提取知识图谱...' : 'Extracting knowledge graph...'}</p>
-            <button onClick={loadGraph} style={{ background: accentColor, color: '#fff' }} className="kg-retry-btn">
+            <button onClick={loadGraph} style={{ background: accentColor, color: 'var(--text-on-accent)' }} className="kg-retry-btn">
               {isZh ? '重新提取' : 'Extract Again'}
             </button>
           </>
@@ -578,7 +578,7 @@ function KnowledgeGraphViewInner({ notebookId, onNodeSelect }: KnowledgeGraphVie
                 <span style={{ fontSize: 'var(--fs-2xl)' }}>{getEntityIcon(selectedNode.entityType)}</span>
                 <h3 style={{ color: accentColor, margin: 0 }}>{selectedNode.label}</h3>
               </div>
-              <span className="kg-entity-badge" style={{ background: getEntityColor(selectedNode.entityType, accentColor, dark), color: '#fff', fontSize: 'var(--fs-xs)' }}>
+              <span className="kg-entity-badge" style={{ background: getEntityColor(selectedNode.entityType, accentColor, dark), color: 'var(--text-on-accent)', fontSize: 'var(--fs-xs)' }}>
                 {getEntityLabel(selectedNode.entityType, isZh)}
               </span>
             </div>
@@ -642,7 +642,7 @@ function KnowledgeGraphViewInner({ notebookId, onNodeSelect }: KnowledgeGraphVie
               </button>
               <button
                 onClick={() => handleDeleteNode(selectedNode.id)}
-                style={{ width: '100%', padding: '6px', background: 'transparent', border: `1px solid #ef444455`, borderRadius: '6px', color: '#ef4444', cursor: 'pointer', fontSize: 'var(--fs-sm)', display: 'flex', alignItems: 'center', gap: '4px', justifyContent: 'center' }}
+                style={{ width: '100%', padding: '6px', background: 'transparent', border: `1px solid #ef444455`, borderRadius: '6px', color: 'var(--error)', cursor: 'pointer', fontSize: 'var(--fs-sm)', display: 'flex', alignItems: 'center', gap: '4px', justifyContent: 'center' }}
               >
                 <Trash2 size={12} />
                 {isZh ? '删除节点' : 'Delete Node'}
@@ -688,7 +688,7 @@ function KnowledgeGraphViewInner({ notebookId, onNodeSelect }: KnowledgeGraphVie
               <button onClick={() => setEditingNodeId(null)} style={{ padding: '4px 12px', background: 'transparent', border: `1px solid ${borderColor}`, borderRadius: '4px', color: textColor, cursor: 'pointer', fontSize: 'var(--fs-sm)' }}>
                 {isZh ? '取消' : 'Cancel'}
               </button>
-              <button onClick={handleSaveEdit} style={{ padding: '4px 12px', background: accentColor, border: 'none', borderRadius: '4px', color: '#fff', cursor: 'pointer', fontSize: 'var(--fs-sm)' }}>
+              <button onClick={handleSaveEdit} style={{ padding: '4px 12px', background: accentColor, border: 'none', borderRadius: '4px', color: 'var(--text-on-accent)', cursor: 'pointer', fontSize: 'var(--fs-sm)' }}>
                 {isZh ? '保存' : 'Save'}
               </button>
             </div>
@@ -714,7 +714,7 @@ function KnowledgeGraphViewInner({ notebookId, onNodeSelect }: KnowledgeGraphVie
                   <div style={{ height: '1px', background: borderColor, margin: '2px 0' }} />
                   <button
                     onClick={() => handleDeleteNode(contextMenu.nodeId!)}
-                    style={{ display: 'flex', alignItems: 'center', gap: '6px', width: '100%', padding: '6px 8px', background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 'var(--fs-sm)', borderRadius: '4px', textAlign: 'left' }}
+                    style={{ display: 'flex', alignItems: 'center', gap: '6px', width: '100%', padding: '6px 8px', background: 'transparent', border: 'none', color: 'var(--error)', cursor: 'pointer', fontSize: 'var(--fs-sm)', borderRadius: '4px', textAlign: 'left' }}
                   >
                     <Trash2 size={12} />
                     {isZh ? '删除节点' : 'Delete Node'}
@@ -724,7 +724,7 @@ function KnowledgeGraphViewInner({ notebookId, onNodeSelect }: KnowledgeGraphVie
               {contextMenu.edgeId && (
                 <button
                   onClick={() => handleDeleteEdge(contextMenu.edgeId!)}
-                  style={{ display: 'flex', alignItems: 'center', gap: '6px', width: '100%', padding: '6px 8px', background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 'var(--fs-sm)', borderRadius: '4px', textAlign: 'left' }}
+                  style={{ display: 'flex', alignItems: 'center', gap: '6px', width: '100%', padding: '6px 8px', background: 'transparent', border: 'none', color: 'var(--error)', cursor: 'pointer', fontSize: 'var(--fs-sm)', borderRadius: '4px', textAlign: 'left' }}
                 >
                   <Trash2 size={12} />
                   {isZh ? '删除连线' : 'Delete Edge'}

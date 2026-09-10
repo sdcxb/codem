@@ -104,7 +104,7 @@ export function IssuesTab({ focusIssueId, onFocusConsumed }: IssuesTabProps = {}
             display: "flex", alignItems: "center", gap: 4,
             padding: "6px 14px", borderRadius: 6, fontSize: 'var(--fs-base)',
             border: "1px solid var(--accent)", background: "var(--accent)",
-            color: "#fff", cursor: projectId ? "pointer" : "not-allowed",
+            color: "var(--text-on-accent)", cursor: projectId ? "pointer" : "not-allowed",
             opacity: projectId ? 1 : 0.5,
           }}
         >
@@ -147,7 +147,7 @@ export function IssuesTab({ focusIssueId, onFocusConsumed }: IssuesTabProps = {}
               style={{
                 padding: "6px 16px", borderRadius: 4, fontSize: 'var(--fs-sm)',
                 border: "1px solid var(--accent)", background: "var(--accent)",
-                color: "#fff", cursor: "pointer", opacity: newTitle.trim() ? 1 : 0.5,
+                color: "var(--text-on-accent)", cursor: "pointer", opacity: newTitle.trim() ? 1 : 0.5,
               }}
             >
               {zh ? "创建" : "Create"}

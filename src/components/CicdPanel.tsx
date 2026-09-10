@@ -48,7 +48,7 @@ function StatusBadge({ status, conclusion }: { status: string; conclusion: strin
       style={{
         display: "inline-flex", alignItems: "center", gap: 4,
         padding: "2px 8px", borderRadius: 4,
-        fontSize: 'var(--fs-sm)', fontWeight: 600, color: "#fff",
+        fontSize: 'var(--fs-sm)', fontWeight: 600, color: "var(--text-on-accent)",
         background: color, textTransform: "capitalize",
       }}
     >
@@ -260,7 +260,7 @@ export function CicdPanel({ onClose }: CicdPanelProps) {
             onClick={handleLoadRepo}
             style={{
               padding: "6px 14px", borderRadius: 6, cursor: "pointer",
-              border: "none", background: "var(--accent, #7c3aed)", color: "#fff", fontSize: 'var(--fs-base)',
+              border: "none", background: "var(--accent, #7c3aed)", color: "var(--text-on-accent)", fontSize: 'var(--fs-base)',
             }}
           >
             {S.cicd.load[lang]}
@@ -273,14 +273,14 @@ export function CicdPanel({ onClose }: CicdPanelProps) {
 
         {/* Error */}
         {error && (
-          <div style={{ padding: "8px 16px", color: "#ef4444", fontSize: 'var(--fs-sm)' }}>
+          <div style={{ padding: "8px 16px", color: "var(--error)", fontSize: 'var(--fs-sm)' }}>
             ⚠ {error}
           </div>
         )}
 
         {/* Action feedback */}
         {actionMsg && (
-          <div style={{ padding: "4px 16px", fontSize: 'var(--fs-sm)', color: "#22c55e" }}>
+          <div style={{ padding: "4px 16px", fontSize: 'var(--fs-sm)', color: "var(--success)" }}>
             {actionMsg}
           </div>
         )}
@@ -295,20 +295,20 @@ export function CicdPanel({ onClose }: CicdPanelProps) {
                   <span style={{ fontSize: 'var(--fs-2xl)', fontWeight: 700 }}>{summary.total}</span>
                   <span style={{ fontSize: 'var(--fs-sm)' }}>{S.cicd.total[lang]}</span>
                 </div>
-                <div style={{ ...summaryCardStyle, borderColor: "#22c55e" }}>
-                  <span style={{ fontSize: 'var(--fs-2xl)', fontWeight: 700, color: "#22c55e" }}>{summary.success}</span>
+                <div style={{ ...summaryCardStyle, borderColor: "var(--success)" }}>
+                  <span style={{ fontSize: 'var(--fs-2xl)', fontWeight: 700, color: "var(--success)" }}>{summary.success}</span>
                   <span style={{ fontSize: 'var(--fs-sm)' }}>{S.cicd.success[lang]}</span>
                 </div>
-                <div style={{ ...summaryCardStyle, borderColor: "#ef4444" }}>
-                  <span style={{ fontSize: 'var(--fs-2xl)', fontWeight: 700, color: "#ef4444" }}>{summary.failure}</span>
+                <div style={{ ...summaryCardStyle, borderColor: "var(--error)" }}>
+                  <span style={{ fontSize: 'var(--fs-2xl)', fontWeight: 700, color: "var(--error)" }}>{summary.failure}</span>
                   <span style={{ fontSize: 'var(--fs-sm)' }}>{S.cicd.failure[lang]}</span>
                 </div>
-                <div style={{ ...summaryCardStyle, borderColor: "#3b82f6" }}>
-                  <span style={{ fontSize: 'var(--fs-2xl)', fontWeight: 700, color: "#3b82f6" }}>{summary.running}</span>
+                <div style={{ ...summaryCardStyle, borderColor: "var(--info)" }}>
+                  <span style={{ fontSize: 'var(--fs-2xl)', fontWeight: 700, color: "var(--info)" }}>{summary.running}</span>
                   <span style={{ fontSize: 'var(--fs-sm)' }}>{S.cicd.running[lang]}</span>
                 </div>
-                <div style={{ ...summaryCardStyle, borderColor: "#6b7280" }}>
-                  <span style={{ fontSize: 'var(--fs-2xl)', fontWeight: 700, color: "#6b7280" }}>{summary.cancelled}</span>
+                <div style={{ ...summaryCardStyle, borderColor: "var(--text-muted)" }}>
+                  <span style={{ fontSize: 'var(--fs-2xl)', fontWeight: 700, color: "var(--text-muted)" }}>{summary.cancelled}</span>
                   <span style={{ fontSize: 'var(--fs-sm)' }}>{S.cicd.cancelled[lang]}</span>
                 </div>
               </div>
@@ -323,9 +323,9 @@ export function CicdPanel({ onClose }: CicdPanelProps) {
               </div>
 
               {loading && runs.length === 0 ? (
-                <div style={{ textAlign: "center", padding: 24, color: "#6b7280" }}>{S.cicd.fetching[lang]}</div>
+                <div style={{ textAlign: "center", padding: 24, color: "var(--text-muted)" }}>{S.cicd.fetching[lang]}</div>
               ) : runs.length === 0 ? (
-                <div style={{ textAlign: "center", padding: 24, color: "#6b7280" }}>{S.cicd.noRuns[lang]}</div>
+                <div style={{ textAlign: "center", padding: 24, color: "var(--text-muted)" }}>{S.cicd.noRuns[lang]}</div>
               ) : (
                 <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                   {runs.map(run => (
@@ -337,9 +337,9 @@ export function CicdPanel({ onClose }: CicdPanelProps) {
                         </span>
                         <StatusBadge status={run.status} conclusion={run.conclusion} />
                         <span style={{ fontWeight: 600, fontSize: 'var(--fs-base)' }}>#{run.runNumber} {run.name}</span>
-                        <span style={{ fontSize: 'var(--fs-sm)', color: "#6b7280" }}>{run.event}</span>
-                        <span style={{ fontSize: 'var(--fs-sm)', color: "#6b7280" }}>{run.headBranch}</span>
-                        <span style={{ fontSize: 'var(--fs-sm)', color: "#6b7280", marginLeft: "auto" }}>{formatTime(run.createdAt)}</span>
+                        <span style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)" }}>{run.event}</span>
+                        <span style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)" }}>{run.headBranch}</span>
+                        <span style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", marginLeft: "auto" }}>{formatTime(run.createdAt)}</span>
                         <a href={run.htmlUrl} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} style={{ color: "inherit", display: "flex" }}>
                           <ExternalLink size={14} />
                         </a>
@@ -364,7 +364,7 @@ export function CicdPanel({ onClose }: CicdPanelProps) {
                         <div style={{ marginTop: 8, borderTop: "1px solid var(--border-color, #333)", paddingTop: 8 }}>
                           <div style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, marginBottom: 4 }}>{S.cicd.jobs[lang]}</div>
                           {runJobs[run.id]!.length === 0 ? (
-                            <div style={{ fontSize: 'var(--fs-sm)', color: "#6b7280" }}>—</div>
+                            <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)" }}>—</div>
                           ) : (
                             runJobs[run.id]!.map(job => (
                               <div key={job.id} style={{ marginBottom: 8 }}>
@@ -376,7 +376,7 @@ export function CicdPanel({ onClose }: CicdPanelProps) {
                                 {job.steps && job.steps.length > 0 && (
                                   <div style={{ marginLeft: 16, marginTop: 4 }}>
                                     {job.steps.map(step => (
-                                      <div key={step.number} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 'var(--fs-sm)', color: "#6b7280" }}>
+                                      <div key={step.number} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 'var(--fs-sm)', color: "var(--text-muted)" }}>
                                         <span style={{ width: 16, textAlign: "center", color: step.conclusion === "success" ? "#22c55e" : step.conclusion === "failure" ? "#ef4444" : "#6b7280" }}>
                                           {step.conclusion === "success" ? "✓" : step.conclusion === "failure" ? "✗" : "○"}
                                         </span>
@@ -438,7 +438,7 @@ export function CicdPanel({ onClose }: CicdPanelProps) {
                         <FileDown size={12} />
                         {S.cicd.saveToFile[lang]}
                       </button>
-                      <span style={{ fontSize: 'var(--fs-sm)', color: "#6b7280", alignSelf: "center" }}>{generatedWorkflow.path}</span>
+                      <span style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", alignSelf: "center" }}>{generatedWorkflow.path}</span>
                     </div>
                     <pre style={{
                       background: "var(--bg-secondary, #181825)",

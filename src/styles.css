@@ -25,6 +25,10 @@
   --fs-xl: calc(18px * var(--ui-font-scale));      /* 页面标题、弹窗标题 */
   --fs-2xl: calc(20px * var(--ui-font-scale));     /* 大标题 */
   --fs-3xl: calc(24px * var(--ui-font-scale));     /* Hero 标题 */
+  /* 展示型字号（演示模式 / 空态大标题 / 引导页：比页面标题更大的一档）
+   * —— 之前这些地方各自写 28/32/40px，是"字体大大小小不统一"的主要来源之一 */
+  --fs-display: calc(28px * var(--ui-font-scale));
+  --fs-hero: calc(32px * var(--ui-font-scale));
   --fs-icon-sm: 12px; /* 小图标 */
   --fs-icon: 16px;    /* 标准图标 */
   --fs-icon-lg: 20px; /* 大图标 */
@@ -116,6 +120,9 @@
   /* Dropdown */
   --dropdown-bg: rgba(26, 28, 28, 0.98);
   --dropdown-hover: rgba(255, 255, 255, 0.08);
+  /* Overlay / backdrop（弹窗遮罩：统一到令牌，避免各处写 rgba(0,0,0,.5)） */
+  --overlay-backdrop: rgba(0, 0, 0, 0.5);
+  --overlay-backdrop-strong: rgba(0, 0, 0, 0.72);
 }
 
 [data-theme="light"] {
@@ -163,6 +170,9 @@
   /* Dropdown */
   --dropdown-bg: rgba(255, 255, 255, 0.98);
   --dropdown-hover: rgba(234, 238, 242, 0.90);
+  /* Overlay / backdrop（浅色主题遮罩略轻，保持内容可辨） */
+  --overlay-backdrop: rgba(0, 0, 0, 0.32);
+  --overlay-backdrop-strong: rgba(0, 0, 0, 0.5);
 }
 
 /* ========== Reset ========== */

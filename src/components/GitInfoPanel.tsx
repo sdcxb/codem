@@ -231,7 +231,7 @@ export function GitInfoPanel() {
             ⚠️ {zh ? "未提交" : "dirty"}
           </span>
         ) : (
-          <span style={{ fontSize: 'var(--fs-xs)', color: "#22c55e" }}>✓ {zh ? "干净" : "clean"}</span>
+          <span style={{ fontSize: 'var(--fs-xs)', color: "var(--success)" }}>✓ {zh ? "干净" : "clean"}</span>
         ))}
       </div>
 

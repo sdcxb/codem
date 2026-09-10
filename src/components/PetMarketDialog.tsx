@@ -75,7 +75,7 @@ function PetCardPreview({ pet }: { pet: MarketPet }) {
   }, [pet.previewUrl, pet.spritesheetUrl]);
 
   if (failed || !imgSrc) {
-    return <span style={{ fontSize: "40px" }}>🐾</span>;
+    return <span style={{ fontSize: "var(--fs-hero)" }}>🐾</span>;
   }
 
   // 完整 spritesheet 模式：背景宽度 1536px，取 idle 行（row 0）
@@ -323,14 +323,14 @@ export function PetMarketDialog({ open, onClose }: PetMarketDialogProps) {
         >
           {loading && (
             <div style={{ textAlign: "center", padding: "40px", color: "var(--text-secondary, #888)" }}>
-              <div style={{ fontSize: "32px", marginBottom: "8px" }}>🔄</div>
+              <div style={{ fontSize: "var(--fs-hero)", marginBottom: "8px" }}>🔄</div>
               <div>正在加载宠物市场...</div>
             </div>
           )}
 
           {error && !loading && (
-            <div style={{ textAlign: "center", padding: "40px", color: "#f87171" }}>
-              <div style={{ fontSize: "32px", marginBottom: "8px" }}>😞</div>
+            <div style={{ textAlign: "center", padding: "40px", color: "var(--error)" }}>
+              <div style={{ fontSize: "var(--fs-hero)", marginBottom: "8px" }}>😞</div>
               <div style={{ marginBottom: "12px" }}>{error}</div>
               <button
                 onClick={() => { setError(null); loadMarket(); }}
@@ -351,7 +351,7 @@ export function PetMarketDialog({ open, onClose }: PetMarketDialogProps) {
 
           {!loading && !error && filteredPets.length === 0 && (
             <div style={{ textAlign: "center", padding: "40px", color: "var(--text-secondary, #888)" }}>
-              <div style={{ fontSize: "32px", marginBottom: "8px" }}>🔍</div>
+              <div style={{ fontSize: "var(--fs-hero)", marginBottom: "8px" }}>🔍</div>
               <div>未找到宠物</div>
             </div>
           )}
@@ -410,7 +410,7 @@ export function PetMarketDialog({ open, onClose }: PetMarketDialogProps) {
                             padding: "2px 6px",
                             borderRadius: "4px",
                             background: "rgba(34, 197, 94, 0.8)",
-                            color: "#fff",
+                            color: "var(--text-on-accent)",
                             fontSize: "var(--fs-xs)",
                             fontWeight: 600,
                           }}
@@ -437,7 +437,7 @@ export function PetMarketDialog({ open, onClose }: PetMarketDialogProps) {
                               key={tag}
                               style={{
                                 padding: "1px 6px",
-                                borderRadius: "3px",
+                                borderRadius: "var(--radius-sm)",
                                 background: "rgba(255, 255, 255, 0.06)",
                                 color: "var(--text-secondary, #aaa)",
                                 fontSize: "var(--fs-xs)",
@@ -484,7 +484,7 @@ export function PetMarketDialog({ open, onClose }: PetMarketDialogProps) {
                               borderRadius: "6px",
                               border: "1px solid rgba(239, 68, 68, 0.3)",
                               background: "rgba(239, 68, 68, 0.1)",
-                              color: "#f87171",
+                              color: "var(--error)",
                               cursor: "pointer",
                               fontSize: "var(--fs-sm)",
                               fontWeight: 500,
@@ -501,7 +501,7 @@ export function PetMarketDialog({ open, onClose }: PetMarketDialogProps) {
                               borderRadius: "6px",
                               border: "none",
                               background: "var(--accent-color, #6366f1)",
-                              color: "#fff",
+                              color: "var(--text-on-accent)",
                               cursor: "pointer",
                               fontSize: "var(--fs-sm)",
                               fontWeight: 500,

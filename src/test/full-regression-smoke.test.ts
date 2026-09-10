@@ -309,7 +309,8 @@ describe("UI 入口 — Sidebar 变更", () => {
   });
 
   it("Inbox 未读 badge 渲染存在（展开态）", () => {
-    expect(sidebarSource).toContain("#ef4444");
+    // v1.16.0 UI 统一：徽标底色改用语义令牌（原先硬编码 #ef4444）
+    expect(sidebarSource).toMatch(/var\(--error[^)]*\)/);
     expect(sidebarSource).toContain("inboxUnread > 0");
   });
 

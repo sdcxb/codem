@@ -134,13 +134,13 @@ export function RecoveryPanel() {
                     </div>
                   </div>
                   {s.projectId && (
-                    <span style={{ fontSize: 'var(--fs-xs)', padding: "1px 6px", borderRadius: 3, background: "var(--bg-secondary)", color: "var(--text-secondary)" }}>
+                    <span style={{ fontSize: 'var(--fs-xs)', padding: "1px 6px", borderRadius: "var(--radius-sm)", background: "var(--bg-secondary)", color: "var(--text-secondary)" }}>
                       {s.projectId.substring(0, 8)}
                     </span>
                   )}
                   <button
                     onClick={(e) => { e.stopPropagation(); handleDeleteSession(s.id); }}
-                    style={{ fontSize: 'var(--fs-xs)', padding: "2px 6px", borderRadius: 3, border: "1px solid #e74c3c", background: "none", color: "#e74c3c", cursor: "pointer" }}
+                    style={{ fontSize: 'var(--fs-xs)', padding: "2px 6px", borderRadius: "var(--radius-sm)", border: "1px solid #e74c3c", background: "none", color: "var(--error)", cursor: "pointer" }}
                   >
                     ✕
                   </button>
@@ -178,7 +178,7 @@ export function RecoveryPanel() {
               <div style={{ maxHeight: 150, overflowY: "auto", display: "flex", flexDirection: "column", gap: 2 }}>
                 {selectedSession.messages.slice(-5).map((m: any, i: number) => (
                   <div key={i} style={{
-                    padding: "4px 6px", borderRadius: 3, background: "var(--bg-tertiary)",
+                    padding: "4px 6px", borderRadius: "var(--radius-sm)", background: "var(--bg-tertiary)",
                     fontSize: 'var(--fs-xs)', color: "var(--text-secondary)",
                   }}>
                     <span style={{ fontWeight: 600, color: m.role === "user" ? "var(--info)" : "var(--accent)" }}>
@@ -212,7 +212,7 @@ export function RecoveryPanel() {
         <button onClick={handleClear} style={{
           padding: "6px 14px", borderRadius: 4, fontSize: 'var(--fs-sm)',
           border: "1px solid #e74c3c", background: "none",
-          color: "#e74c3c", cursor: "pointer",
+          color: "var(--error)", cursor: "pointer",
         }}>
           🗑️ {zh ? "清除所有" : "Clear All"}
         </button>
@@ -226,7 +226,7 @@ export function RecoveryPanel() {
               {zh ? "导出数据" : "Export Data"}
             </span>
             <button onClick={() => navigator.clipboard?.writeText(exportData)} style={{
-              padding: "2px 8px", borderRadius: 3, fontSize: 'var(--fs-xs)',
+              padding: "2px 8px", borderRadius: "var(--radius-sm)", fontSize: 'var(--fs-xs)',
               border: "1px solid var(--border-primary)", background: "var(--bg-tertiary)",
               color: "var(--text-primary)", cursor: "pointer",
             }}>

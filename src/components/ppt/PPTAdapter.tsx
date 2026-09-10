@@ -347,7 +347,7 @@ export function PPTAdapter({ notebookId, initialContent, title: initialTitle, au
             <button onClick={handleGenerate} style={{
               padding: '12px 32px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 'var(--fs-md)', fontWeight: 600,
               background: 'linear-gradient(135deg, var(--accent, #7c6cf0), var(--accent-hover, #9d8cf5))',
-              color: '#fff', transition: 'all 0.15s',
+              color: 'var(--text-on-accent)', transition: 'all 0.15s',
               boxShadow: '0 4px 20px rgba(124,108,240,0.3)',
             }}>
               ✨ 生成 PPT
@@ -373,7 +373,7 @@ export function PPTAdapter({ notebookId, initialContent, title: initialTitle, au
             borderRadius: '50%',
             background: 'linear-gradient(135deg, var(--accent, #7c6cf0), var(--accent-hover, #9d8cf5))',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: 28, animation: 'ppt-pulse 1.5s ease-in-out infinite',
+            fontSize: "var(--fs-hero)", animation: 'ppt-pulse 1.5s ease-in-out infinite',
           }}>
             {STAGES[currentStageIdx]?.icon || '⏳'}
           </div>
@@ -428,7 +428,7 @@ export function PPTAdapter({ notebookId, initialContent, title: initialTitle, au
             {error}
           </div>
           <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
-            <button onClick={() => { setError(null); setShowConfig(true); }} style={{ padding: '8px 16px', background: 'var(--accent, #7c6cf0)', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 'var(--fs-base)' }}>重新配置</button>
+            <button onClick={() => { setError(null); setShowConfig(true); }} style={{ padding: '8px 16px', background: 'var(--accent, #7c6cf0)', color: 'var(--text-on-accent)', border: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 'var(--fs-base)' }}>重新配置</button>
             <button onClick={onBack} style={{ padding: '8px 16px', background: 'var(--bg-hover, #3a3a4c)', color: 'var(--text-secondary, #ccc)', border: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 'var(--fs-base)' }}>返回</button>
           </div>
         </div>

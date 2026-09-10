@@ -47,7 +47,7 @@ function QrSvg({ text }: { text: string }) {
     <div
       dangerouslySetInnerHTML={{ __html: svg }}
       style={{
-        width: 190, height: 190, background: "#fff", borderRadius: 10,
+        width: 190, height: 190, background: "var(--text-on-accent)", borderRadius: 10,
         padding: 6, boxSizing: "border-box", display: "flex", alignItems: "center", justifyContent: "center",
       }}
     />
@@ -148,12 +148,12 @@ export function PhoneLinkSettings() {
             </span>
           )}
         </div>
-        {notice && <div style={{ fontSize: 'var(--fs-xs)', color: "#ef4444", marginTop: 6 }}>{notice}</div>}
+        {notice && <div style={{ fontSize: 'var(--fs-xs)', color: "var(--error)", marginTop: 6 }}>{notice}</div>}
 
         <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
           {!status.running ? (
             <button disabled={busy} onClick={() => act(() => tauriInvoke("phone_start"))}
-              style={{ ...btnStyle, background: "var(--accent)", color: "#fff", fontWeight: 600 }}>
+              style={{ ...btnStyle, background: "var(--accent)", color: "var(--text-on-accent)", fontWeight: 600 }}>
               {zh ? "开始配对（启动 LAN 服务）" : "Start pairing (start LAN)"}
             </button>
           ) : (
@@ -187,21 +187,21 @@ export function PhoneLinkSettings() {
 
               {pairingWaiting && (
                 <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 4 }}>
-                  <span style={{ fontSize: 'var(--fs-xs)', color: "#f59e0b" }}>
+                  <span style={{ fontSize: 'var(--fs-xs)', color: "var(--warning)" }}>
                     {zh ? `有手机等待配对（${leftSec}s 内有效）…` : `A phone is waiting (${leftSec}s)…`}
                   </span>
                   <button disabled={busy} onClick={() => act(() => tauriInvoke("phone_decide", { approved: true }))}
-                    style={{ ...btnStyle, color: "#22c55e", borderColor: "color-mix(in srgb, #22c55e 50%, transparent)" }}>
+                    style={{ ...btnStyle, color: "var(--success)", borderColor: "color-mix(in srgb, #22c55e 50%, transparent)" }}>
                     {zh ? "批准" : "Allow"}
                   </button>
                   <button disabled={busy} onClick={() => act(() => tauriInvoke("phone_decide", { approved: false }))}
-                    style={{ ...btnStyle, color: "#ef4444", borderColor: "color-mix(in srgb, #ef4444 50%, transparent)" }}>
+                    style={{ ...btnStyle, color: "var(--error)", borderColor: "color-mix(in srgb, #ef4444 50%, transparent)" }}>
                     {zh ? "拒绝" : "Deny"}
                   </button>
                 </div>
               )}
               {!pairingWaiting && pairing?.decided === true && (
-                <div style={{ fontSize: 'var(--fs-xs)', color: "#22c55e" }}>
+                <div style={{ fontSize: 'var(--fs-xs)', color: "var(--success)" }}>
                   {zh ? "配对已完成（手机端将自动进入）" : "Paired — the phone will enter automatically"}
                 </div>
               )}
@@ -224,7 +224,7 @@ export function PhoneLinkSettings() {
                 </span>
               </span>
               <button onClick={() => act(() => tauriInvoke("phone_unpair", { deviceId: d.id }))}
-                style={{ ...btnStyle, color: "#ef4444" }}>
+                style={{ ...btnStyle, color: "var(--error)" }}>
                 {zh ? "解除" : "Unpair"}
               </button>
             </div>

@@ -143,7 +143,7 @@ const overallIcon = audit.overall === "danger" ? <ShieldAlert size={24} />
                 })}
               </div>
               {unknownPerms.length > 0 && (
-                <div style={{ fontSize: 'var(--fs-sm)', color: "#f59e0b", marginTop: 4 }}>
+                <div style={{ fontSize: 'var(--fs-sm)', color: "var(--warning)", marginTop: 4 }}>
                   {zh ? `⚠ ${unknownPerms.length} 个未知权限` : `⚠ ${unknownPerms.length} unknown permission(s)`}
                 </div>
               )}
@@ -179,7 +179,7 @@ const overallIcon = audit.overall === "danger" ? <ShieldAlert size={24} />
               padding: "12px 16px",
               background: "rgba(34, 197, 94, 0.08)",
               borderRadius: 8,
-              color: "#22c55e",
+              color: "var(--success)",
               fontSize: 'var(--fs-sm)',
             }}>
               <ActionIcons.confirm size={16} />
@@ -206,7 +206,7 @@ const overallIcon = audit.overall === "danger" ? <ShieldAlert size={24} />
                 onChange={e => setAccepted(e.target.checked)}
                 style={{ marginTop: 2 }}
               />
-              <span style={{ color: "#ef4444" }}>
+              <span style={{ color: "var(--error)" }}>
                 {zh
                   ? "我理解安装此技能可能存在安全风险，确认继续安装。"
                   : "I understand this skill may pose security risks and wish to proceed."}
@@ -249,7 +249,7 @@ const overallIcon = audit.overall === "danger" ? <ShieldAlert size={24} />
                 : audit.overall === "danger" ? "#ef4444"
                 : audit.overall === "warning" ? "#f59e0b"
                 : "var(--accent)",
-              color: "#fff",
+              color: "var(--text-on-accent)",
               fontSize: 'var(--fs-sm)',
               cursor: audit.overall === "danger" && !accepted ? "not-allowed" : "pointer",
               opacity: audit.overall === "danger" && !accepted ? 0.5 : 1,

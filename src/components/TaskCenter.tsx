@@ -222,7 +222,7 @@ export function TaskCenter({ onClose, initialTab = "overview", subagentTasks = [
                 <Icon size={14} />
                 {tab.label}
                 {!tab.available && (
-                  <span style={{ fontSize: "9px", opacity: 0.5, marginLeft: 2 }}>soon</span>
+                  <span style={{ fontSize: "var(--fs-xs)", opacity: 0.5, marginLeft: 2 }}>soon</span>
                 )}
               </button>
             );

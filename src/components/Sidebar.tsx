@@ -356,8 +356,8 @@ const handleDrop = useCallback((e: React.DragEvent, targetSessionId: string, pro
                 {inboxUnread > 0 && (
                   <span style={{
                     position: "absolute", top: -2, right: -2,
-                    fontSize: 9, fontWeight: 700, color: "#fff",
-                    background: "#ef4444", borderRadius: 8,
+                    fontSize: "var(--fs-xs)", fontWeight: 700, color: "var(--text-on-accent)",
+                    background: "var(--error)", borderRadius: 8,
                     minWidth: 16, height: 16, display: "flex",
                     alignItems: "center", justifyContent: "center", padding: "0 4px",
                   }}>{inboxUnread}</span>
@@ -449,8 +449,8 @@ const handleDrop = useCallback((e: React.DragEvent, targetSessionId: string, pro
               {inboxUnread > 0 && (
                 <span style={{
                   position: "absolute", top: -4, right: -6,
-                  fontSize: 9, fontWeight: 700, color: "#fff",
-                  background: "#ef4444", borderRadius: 8,
+                  fontSize: "var(--fs-xs)", fontWeight: 700, color: "var(--text-on-accent)",
+                  background: "var(--error)", borderRadius: 8,
                   minWidth: 14, height: 14, display: "flex",
                   alignItems: "center", justifyContent: "center", padding: "0 3px",
                 }}>{inboxUnread}</span>
@@ -458,7 +458,7 @@ const handleDrop = useCallback((e: React.DragEvent, targetSessionId: string, pro
             </span>
             <span>{lang === 'zh' ? '任务管理' : 'Task Center'}</span>
             {inboxUnread > 0 && (
-              <span style={{ marginLeft: "auto", fontSize: 'var(--fs-xs)', fontWeight: 700, color: "#ef4444" }}>
+              <span style={{ marginLeft: "auto", fontSize: 'var(--fs-xs)', fontWeight: 700, color: "var(--error)" }}>
                 {inboxUnread}
               </span>
             )}

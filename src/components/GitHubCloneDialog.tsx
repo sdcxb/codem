@@ -169,7 +169,7 @@ return createPortal(
                   borderRadius: "8px",
                   border: "none",
                   background: url.trim() ? "var(--accent, #ff6b35)" : "var(--bg-hover, #2a2a3a)",
-                  color: "#fff",
+                  color: "var(--text-on-accent)",
                   cursor: url.trim() ? "pointer" : "not-allowed",
                   fontSize: "var(--fs-md)",
                   fontWeight: 500,
@@ -184,7 +184,7 @@ return createPortal(
 
         {status === "cloning" && (
           <div style={{ textAlign: "center", padding: "40px 0" }}>
-            <i className="fas fa-spinner fa-spin" style={{ fontSize: "32px", color: "var(--accent, #ff6b35)", marginBottom: "16px" }} />
+            <i className="fas fa-spinner fa-spin" style={{ fontSize: "var(--fs-hero)", color: "var(--accent, #ff6b35)", marginBottom: "16px" }} />
             <p style={{ color: "var(--text-secondary)", fontSize: "var(--fs-md)" }}>
               {lang === "zh" ? `正在克隆 ${projectName}...` : `Cloning ${projectName}...`}
             </p>
@@ -193,7 +193,7 @@ return createPortal(
 
         {status === "done" && (
           <div style={{ textAlign: "center", padding: "40px 0" }}>
-            <i className="fas fa-check-circle" style={{ fontSize: "32px", color: "#22c55e", marginBottom: "16px" }} />
+            <i className="fas fa-check-circle" style={{ fontSize: "var(--fs-hero)", color: "var(--success)", marginBottom: "16px" }} />
             <p style={{ color: "var(--text-primary)", fontSize: "var(--fs-md)", fontWeight: 500 }}>
               {lang === "zh" ? `项目 ${projectName} 创建成功！` : `Project ${projectName} created successfully!`}
             </p>
@@ -202,7 +202,7 @@ return createPortal(
 
         {status === "error" && (
           <div style={{ padding: "20px 0" }}>
-            <div style={{ color: "#ef4444", fontSize: "var(--fs-md)", marginBottom: "12px" }}>
+            <div style={{ color: "var(--error)", fontSize: "var(--fs-md)", marginBottom: "12px" }}>
               <i className="fas fa-exclamation-circle" style={{ marginRight: "6px" }} />
               {lang === "zh" ? "克隆失败" : "Clone failed"}
             </div>
@@ -211,7 +211,7 @@ return createPortal(
               padding: "12px",
               borderRadius: "8px",
               fontSize: "var(--fs-sm)",
-              color: "#ef4444",
+              color: "var(--error)",
               maxHeight: "150px",
               overflow: "auto",
               whiteSpace: "pre-wrap",
@@ -227,7 +227,7 @@ return createPortal(
                 borderRadius: "8px",
                 border: "none",
                 background: "var(--accent, #ff6b35)",
-                color: "#fff",
+                color: "var(--text-on-accent)",
                 cursor: "pointer",
                 fontSize: "var(--fs-md)",
                 width: "100%",

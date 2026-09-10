@@ -247,19 +247,19 @@ export function MultimodalPanel({ onClose, inline }: MultimodalPanelProps) {
                         <span style={{
                           padding: "1px 6px",
                           background: "var(--bg-secondary)",
-                          borderRadius: 3,
+                          borderRadius: "var(--radius-sm)",
                           fontSize: 'var(--fs-xs)',
                         }}>维度: {modelInfo.dim}</span>
                         <span style={{
                           padding: "1px 6px",
                           background: "var(--bg-secondary)",
-                          borderRadius: 3,
+                          borderRadius: "var(--radius-sm)",
                           fontSize: 'var(--fs-xs)',
                         }}>{modelInfo.languages}</span>
                         <span style={{
                           padding: "1px 6px",
                           background: "var(--bg-secondary)",
-                          borderRadius: 3,
+                          borderRadius: "var(--radius-sm)",
                           fontSize: 'var(--fs-xs)',
                         }}>{modelInfo.license}</span>
                       </div>

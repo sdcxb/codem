@@ -211,7 +211,7 @@ export function CorrectionModelConfig() {
             fontSize: "var(--fs-base)",
             cursor: "pointer",
             background: "var(--accent)",
-            color: "#fff",
+            color: "var(--text-on-accent)",
             border: "none",
             borderRadius: 6,
           }}

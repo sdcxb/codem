@@ -68,7 +68,7 @@ function QrSvg({ text }: { text: string }) {
     <div
       dangerouslySetInnerHTML={{ __html: svg }}
       style={{
-        width: 190, height: 190, background: "#fff", borderRadius: 10,
+        width: 190, height: 190, background: "var(--text-on-accent)", borderRadius: 10,
         padding: 6, boxSizing: "border-box", display: "flex", alignItems: "center", justifyContent: "center",
       }}
     />
@@ -161,12 +161,12 @@ export function WechatSettings() {
             </span>
           )}
           {!connected && status.last_error && (
-            <span style={{ fontSize: 'var(--fs-xs)', color: "#f59e0b" }}>{status.last_error}</span>
+            <span style={{ fontSize: 'var(--fs-xs)', color: "var(--warning)" }}>{status.last_error}</span>
           )}
         </div>
 
         {notice && (
-          <div style={{ fontSize: 'var(--fs-xs)', color: "#ef4444", marginTop: 6 }}>{notice}</div>
+          <div style={{ fontSize: 'var(--fs-xs)', color: "var(--error)", marginTop: 6 }}>{notice}</div>
         )}
 
         {/* 未连接 / 过期 → 扫码按钮 */}
@@ -175,7 +175,7 @@ export function WechatSettings() {
             <button
               disabled={busy}
               onClick={() => act(async () => { setNotice(""); await tauriInvoke("ilink_start_login"); await refreshStatus(); })}
-              style={{ ...btnStyle, background: "var(--accent)", color: "#fff", fontWeight: 600 }}
+              style={{ ...btnStyle, background: "var(--accent)", color: "var(--text-on-accent)", fontWeight: 600 }}
             >
               {zh ? "扫码登录微信" : "Scan to login"}
             </button>
@@ -245,7 +245,7 @@ export function WechatSettings() {
                   await tauriInvoke("ilink_login_submit_verify", { code: verifyCode });
                   setVerifyCode("");
                 })}
-                style={{ ...btnStyle, background: "var(--accent)", color: "#fff" }}
+                style={{ ...btnStyle, background: "var(--accent)", color: "var(--text-on-accent)" }}
               >
                 {zh ? "提交" : "Submit"}
               </button>
@@ -289,7 +289,7 @@ export function WechatSettings() {
           {zh ? "启用微信桥（响应微信消息）" : "Enable WeChat bridge (respond to messages)"}
         </label>
         {!enabled && (
-          <div style={{ fontSize: 'var(--fs-xs)', color: "#ef4444", marginTop: 4 }}>
+          <div style={{ fontSize: 'var(--fs-xs)', color: "var(--error)", marginTop: 4 }}>
             {zh ? "已停用：微信消息不会被处理，也不会回复（含白名单账号）。可随时在此重新开启。" : "Disabled: inbound messages are ignored entirely. Re-enable anytime."}
           </div>
         )}
@@ -321,7 +321,7 @@ export function WechatSettings() {
 
         {access.pending.length > 0 && (
           <div style={{ marginTop: 6, display: "grid", gap: 6 }}>
-            <div style={{ fontSize: 'var(--fs-xs)', fontWeight: 600, color: "#f59e0b" }}>
+            <div style={{ fontSize: 'var(--fs-xs)', fontWeight: 600, color: "var(--warning)" }}>
               {zh ? `待批准（${access.pending.length}）：首次发消息即可触发 Agent，请审慎` : `Pending (${access.pending.length}):`}
             </div>
             {access.pending.map((p) => (
@@ -330,10 +330,10 @@ export function WechatSettings() {
                   <div style={{ fontWeight: 600 }}>{p.peer}</div>
                   <div style={{ color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 320 }}>{p.text}</div>
                 </div>
-                <button onClick={() => act(async () => { approvePendingPeer(p.peer); refreshAccess(); setNotice(zh ? "已批准" : "Approved"); })} style={{ ...miniBtn, color: "#22c55e", borderColor: "color-mix(in srgb, #22c55e 50%, transparent)" }}>
+                <button onClick={() => act(async () => { approvePendingPeer(p.peer); refreshAccess(); setNotice(zh ? "已批准" : "Approved"); })} style={{ ...miniBtn, color: "var(--success)", borderColor: "color-mix(in srgb, #22c55e 50%, transparent)" }}>
                   {zh ? "批准" : "Allow"}
                 </button>
-                <button onClick={() => act(async () => { ignorePeer(p.peer); refreshAccess(); })} style={{ ...miniBtn, color: "#ef4444", borderColor: "color-mix(in srgb, #ef4444 50%, transparent)" }}>
+                <button onClick={() => act(async () => { ignorePeer(p.peer); refreshAccess(); })} style={{ ...miniBtn, color: "var(--error)", borderColor: "color-mix(in srgb, #ef4444 50%, transparent)" }}>
                   {zh ? "拉黑" : "Block"}
                 </button>
               </div>
@@ -347,7 +347,7 @@ export function WechatSettings() {
             {access.allow.map((p) => (
               <div key={p} style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4 }}>
                 <span style={{ fontSize: 'var(--fs-xs)', flex: 1 }}>{p}</span>
-                <button onClick={() => act(async () => { ignorePeer(p); refreshAccess(); })} style={{ ...miniBtn, color: "#ef4444" }}>
+                <button onClick={() => act(async () => { ignorePeer(p); refreshAccess(); })} style={{ ...miniBtn, color: "var(--error)" }}>
                   {zh ? "移除" : "Remove"}
                 </button>
               </div>
@@ -357,11 +357,11 @@ export function WechatSettings() {
 
         {access.block.length > 0 && (
           <div style={{ marginTop: 6 }}>
-            <div style={{ fontSize: 'var(--fs-xs)', fontWeight: 600, color: "#ef4444" }}>{zh ? "黑名单" : "Blocklist"}</div>
+            <div style={{ fontSize: 'var(--fs-xs)', fontWeight: 600, color: "var(--error)" }}>{zh ? "黑名单" : "Blocklist"}</div>
             {access.block.map((p) => (
               <div key={p} style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4 }}>
                 <span style={{ fontSize: 'var(--fs-xs)', flex: 1, textDecoration: "line-through" }}>{p}</span>
-                <button onClick={() => act(async () => { const a = { ...loadAccess(), block: loadAccess().block.filter((x) => x !== p) }; saveAccess(a); refreshAccess(); })} style={{ ...miniBtn, color: "#22c55e" }}>
+                <button onClick={() => act(async () => { const a = { ...loadAccess(), block: loadAccess().block.filter((x) => x !== p) }; saveAccess(a); refreshAccess(); })} style={{ ...miniBtn, color: "var(--success)" }}>
                   {zh ? "解除" : "Unblock"}
                 </button>
               </div>

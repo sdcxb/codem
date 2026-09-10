@@ -749,7 +749,7 @@ const handleThemeChange = useCallback((theme: PPTTheme) => {
         <span className="ppt-thumbnail-number">{index + 1}</span>
         <button className="ppt-thumbnail-delete" onClick={(e) => { e.stopPropagation(); handleDeleteSlide(index); }}>✕</button>
         {firstText && (
-          <div style={{ fontSize: 8, color: deck.theme.textColor, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '90%' }}>
+          <div style={{ fontSize: "var(--fs-xs)", color: deck.theme.textColor, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '90%' }}>
             {(firstText as any).content}
           </div>
         )}

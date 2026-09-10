@@ -467,28 +467,28 @@ export const TrajectoryPanel = memo(function TrajectoryPanel({
                 )}
                 {/* LLM provider — 紧凑 */}
                 {step.data?.provider && (
-                  <span style={{ display: 'flex', alignItems: 'center', gap: 1, fontSize: 9, color: 'var(--text-muted)', flexShrink: 0 }}>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 1, fontSize: "var(--fs-xs)", color: 'var(--text-muted)', flexShrink: 0 }}>
                     <Cpu size={8} />{step.data.provider}
                   </span>
                 )}
                 {/* LLM usage — input↓/output↑（对标 dsh 每 request usage 展示） */}
                 {step.type === 'llm_call' && step.data?.usage && (
-                  <span style={{ fontSize: 9, color: 'var(--text-muted)', flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}>
+                  <span style={{ fontSize: "var(--fs-xs)", color: 'var(--text-muted)', flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}>
                     {formatTokens(step.data.usage.promptTokens ?? step.data.usage.inputTokens ?? 0)}↓/{formatTokens(step.data.usage.completionTokens ?? step.data.usage.outputTokens ?? 0)}↑
                   </span>
                 )}
                 {/* toolCallCount */}
                 {step.type === 'llm_call' && step.data?.toolCallCount != null && step.data.toolCallCount > 0 && (
-                  <span style={{ fontSize: 9, color: 'var(--info)', flexShrink: 0 }}>⚙{step.data.toolCallCount}</span>
+                  <span style={{ fontSize: "var(--fs-xs)", color: 'var(--info)', flexShrink: 0 }}>⚙{step.data.toolCallCount}</span>
                 )}
                 {/* iteration */}
                 {step.data?.iteration != null && (
-                  <span style={{ fontSize: 9, color: 'var(--text-muted)', flexShrink: 0 }}>
+                  <span style={{ fontSize: "var(--fs-xs)", color: 'var(--text-muted)', flexShrink: 0 }}>
                     #{step.data.iteration}
                   </span>
                 )}
                 {/* 时间 — 右对齐 */}
-                <span style={{ marginLeft: 'auto', fontSize: 9, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 2, flexShrink: 0 }}>
+                <span style={{ marginLeft: 'auto', fontSize: "var(--fs-xs)", color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 2, flexShrink: 0 }}>
                   <Clock size={8} />
                   {formatTime(step.timestamp)}
                   {step.duration && <span>·{formatDuration(step.duration)}</span>}
@@ -569,7 +569,7 @@ export const TrajectoryPanel = memo(function TrajectoryPanel({
 
               {/* token usage 行 — 独立小行 */}
               {step.data?.usage && !isExpanded && (
-                <div style={{ fontSize: 9, color: 'var(--text-muted)', marginTop: 1, display: 'flex', alignItems: 'center', gap: 3 }}>
+                <div style={{ fontSize: "var(--fs-xs)", color: 'var(--text-muted)', marginTop: 1, display: 'flex', alignItems: 'center', gap: 3 }}>
                   <Zap size={8} />
                   {formatTokens(step.data.usage.promptTokens || step.data.usage.inputTokens || 0)}↓
                   {' '}

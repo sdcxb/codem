@@ -130,7 +130,7 @@ export function InboxTab() {
           </span>
           {unreadCount > 0 && (
             <span style={{
-              fontSize: "var(--fs-xs)", fontWeight: 700, color: "#fff",
+              fontSize: "var(--fs-xs)", fontWeight: 700, color: "var(--text-on-accent)",
               background: "var(--error)", padding: "1px 8px", borderRadius: 10,
             }}>
               {unreadCount}

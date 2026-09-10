@@ -1338,7 +1338,7 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
                 className="mode-toggle-btn"
                 onClick={() => setShowPlusMenu(!showPlusMenu)}
                 title={zh ? "添加" : "Add"}
-                style={showPlusMenu ? { background: "var(--accent)", color: "#fff", fontSize: 'var(--fs-xs)', width: 18, height: 18, padding: 0, minWidth: 18 } : { fontSize: 'var(--fs-xs)', width: 18, height: 18, padding: 0, minWidth: 18 }}
+                style={showPlusMenu ? { background: "var(--accent)", color: "var(--text-on-accent)", fontSize: 'var(--fs-xs)', width: 18, height: 18, padding: 0, minWidth: 18 } : { fontSize: 'var(--fs-xs)', width: 18, height: 18, padding: 0, minWidth: 18 }}
               >
                 ＋
               </button>
@@ -1382,7 +1382,7 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
                           }}
                         >
                           <ImageIcon size={14} /> <span>{zh ? "生成图片" : "Generate image"}</span>
-                          {!imageGenConfig && <span style={{ fontSize: 9, opacity: 0.6, marginLeft: "auto" }}>{zh ? "未配置" : "Not configured"}</span>}
+                          {!imageGenConfig && <span style={{ fontSize: "var(--fs-xs)", opacity: 0.6, marginLeft: "auto" }}>{zh ? "未配置" : "Not configured"}</span>}
                         </button>
                         <button
                           disabled={!ttsConfig}
@@ -1404,7 +1404,7 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
                           }}
                         >
                           <Volume2 size={14} /> <span>{zh ? "语音合成" : "Voice synthesis"}</span>
-                          {!ttsConfig && <span style={{ fontSize: 9, opacity: 0.6, marginLeft: "auto" }}>{zh ? "未配置" : "Not configured"}</span>}
+                          {!ttsConfig && <span style={{ fontSize: "var(--fs-xs)", opacity: 0.6, marginLeft: "auto" }}>{zh ? "未配置" : "Not configured"}</span>}
                         </button>
                       </>);
                     })()}
@@ -1491,7 +1491,7 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
                   setShowSourceSelector(!showSourceSelector);
                 }}
                 title={zh ? "知识来源选择器" : "Knowledge source selector"}
-                style={showSourceSelector ? { background: "var(--accent)", color: "#fff" } : {}}
+                style={showSourceSelector ? { background: "var(--accent)", color: "var(--text-on-accent)" } : {}}
               >
                 <BookMarked size={14} />
               </button>
@@ -1588,7 +1588,7 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
                 style={{
                   width: 18, height: 32, padding: 0, border: "none",
                   background: disabled ? "var(--bg-tertiary)" : (showMoreActions ? "var(--accent-hover)" : "var(--accent)"),
-                  color: disabled ? "var(--text-muted)" : "white", fontSize: 9, cursor: "pointer",
+                  color: disabled ? "var(--text-muted)" : "white", fontSize: "var(--fs-xs)", cursor: "pointer",
                   borderRadius: "0 6px 6px 0", display: "flex", alignItems: "center", justifyContent: "center",
                 }}
               >

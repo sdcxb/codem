@@ -119,7 +119,7 @@ export function ZvecGrepMarketCard() {
   return (
     <div className="market-skill-card" style={{ display: "flex", flexDirection: "column", gap: 8, borderColor: "var(--accent-muted, rgba(124,108,240,0.4))" }}>
       <div className="market-skill-card-header">
-        <span className="market-skill-icon" style={{ background: "linear-gradient(135deg,#6366f1,#8b5cf6)", color: "#fff" }}>
+        <span className="market-skill-icon" style={{ background: "linear-gradient(135deg,#6366f1,#8b5cf6)", color: "var(--text-on-accent)" }}>
           <Sparkles size={16} />
         </span>
         <div style={{ minWidth: 0 }}>
@@ -216,7 +216,7 @@ export function ZvecGrepMarketCard() {
           </div>
 
           <div style={{ display: "flex", justifyContent: "flex-end" }}>
-            <button className="save-btn" style={{ ...btnGhost, color: "#ef4444" }} onClick={handleUninstall} disabled={busy}>
+            <button className="save-btn" style={{ ...btnGhost, color: "var(--error)" }} onClick={handleUninstall} disabled={busy}>
               {zh ? "卸载（删除运行时与模型）" : "Uninstall"}
             </button>
           </div>
