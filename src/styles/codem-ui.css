@@ -2632,7 +2632,7 @@ body.resizing-columns * {
 }
 .settings-nav-section-label {
   font-size: var(--fs-sm);
-  font-weight: 600;
+  font-weight: var(--weight-medium);
   color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -3336,7 +3336,7 @@ box-shadow: var(--elevation-1);
   border-radius: var(--radius-full);
   background: var(--accent-soft, rgba(108, 92, 231, 0.15));
   color: var(--accent);
-  font-weight: 600;
+  font-weight: var(--weight-medium);
   flex-shrink: 0;
 }
 .inline-diff-new-badge {
@@ -3345,7 +3345,7 @@ box-shadow: var(--elevation-1);
   border-radius: var(--radius-full);
   background: color-mix(in srgb, var(--success) 15%, transparent);
   color: var(--success);
-  font-weight: 600;
+  font-weight: var(--weight-medium);
   flex-shrink: 0;
 }
 .inline-diff-stats {
@@ -3483,7 +3483,7 @@ background: var(--bg-tertiary);
   font-size: var(--fs-xs);
   padding: var(--space-1) var(--space-4);
   border-radius: var(--radius-full);
-  font-weight: 600;
+  font-weight: var(--weight-medium);
 }
 .inline-diff-preview-badge.old {
   background: color-mix(in srgb, var(--error) 12%, transparent);
@@ -3943,7 +3943,7 @@ background: var(--bg-secondary);
   background: var(--bg-tertiary);
   color: var(--text-muted);
   font-size: var(--fs-xs);
-  font-weight: 600;
+  font-weight: var(--weight-medium);
   text-align: center;
 }
 .tool-io-label--icon { display: flex; align-items: center; }

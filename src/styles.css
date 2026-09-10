@@ -22,6 +22,14 @@
      连共享类 .mono 都没真正等宽过。这里补成真令牌，与代码编辑器的字体栈保持一致。 */
   --font-mono: 'SF Mono', 'Fira Code', 'Cascadia Code', ui-monospace, monospace;
   --font-weight: 400;
+  /* 字重档位（第 33 波）：参考实现用 560/620/650/720 这种细档建层次，
+     我们此前只有 400/500/600/700 且 600 用了 235 次 —— "哪里都加粗"等于没有层次。
+     这里补出细档令牌；静态字体下浏览器会就近取整，换可变字体后即生效。 */
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 560;
+  --weight-bold: 620;
+  --weight-heavy: 700;
 
   /* Font size scale (对标 frakio-work UI 规范) */
   /* D1: --ui-font-scale 由设置页字号滑杆写入（1.0 = 13px 基准）；全部字号刻度随其缩放 */
@@ -49,7 +57,7 @@
   --fs-icon-lg: 20px; /* 大图标 */
 
   /* Radius scale */
-  --radius-sm: 0.25rem;
+  --radius-sm: 0.375rem; /* 4 → 6px：形状软化一档（第 33 波） */
   --radius: 0.5rem;
   --radius-md: 0.625rem;
   --radius-lg: 0.875rem;
@@ -84,13 +92,14 @@
   --focus-ring-offset: 2px;
   /* 按下反馈：整体下沉 1px（比只改颜色更"有手感"，且不触发重排） */
   --press-shift: 1px;
+  --focus-ring: 0 0 0 var(--focus-ring-width) var(--focus-ring-color);
   /* 控件高度尺度（第 31 波）：文档 §2.4 早就定了档位，但此前所有控件都是 padding 撑出来的，
      同一行里两个控件能差 1–6px —— 这是"没对齐"的根因。现在统一写高度。 */
-  --control-xs: 24px;    /* 密集内联：标签页、迷你按钮、chip */
-  --control-dense: 28px; /* 密集：工具条按钮、次级按钮 */
-  --control-md: 32px;    /* 常规：图标按钮、搜索框 */
-  --control-std: 36px;   /* 标准：表单控件、主按钮 */
-  --control-form: 40px;  /* 宽松：大表单、发送按钮 */
+  --control-xs: 26px;    /* 密集内联：标签页、迷你按钮、chip */
+  --control-dense: 30px; /* 密集：工具条按钮、次级按钮 */
+  --control-md: 34px;    /* 常规：图标按钮、搜索框 */
+  --control-std: 38px;   /* 标准：表单控件、主按钮 */
+  --control-form: 44px;  /* 宽松：大表单、发送按钮 */
 
   /* 原生控件配色跟随主题（滚动条、下拉、日期选择、自动填充的底色）。
      不声明 color-scheme 时，暗色主题里原生控件仍按亮色渲染 —— 观感粗糙的常见来源。 */
@@ -3630,7 +3639,7 @@ background: var(--bg-secondary);
 
 .project-item-name {
   font-size: var(--fs-md);
-  font-weight: 600;
+  font-weight: var(--weight-medium);
   margin-bottom: var(--space-2);
 }
 
@@ -4626,7 +4635,7 @@ color: var(--text-primary);
   background: var(--accent);
   color: var(--text-on-accent);
   font-size: var(--fs-xs);
-  font-weight: 600;
+  font-weight: var(--weight-medium);
   border-radius: 8px;
   display: flex;
   align-items: center;
@@ -4805,7 +4814,7 @@ color: var(--accent);
 background: color-mix(in srgb, var(--accent) 15%, transparent);
   padding: 1px var(--space-3);
   border-radius: 8px;
-  font-weight: 600;
+  font-weight: var(--weight-medium);
   flex-shrink: 0;
 }
 
@@ -4957,7 +4966,7 @@ background: color-mix(in srgb, var(--accent) 15%, transparent);
 
 .agent-item-name {
   font-size: var(--fs-base);
-  font-weight: 600;
+  font-weight: var(--weight-medium);
   flex: 1;
 }
 
@@ -6922,7 +6931,7 @@ color: var(--text-on-accent);
 
 .skill-item-name {
   font-size: var(--fs-base);
-  font-weight: 600;
+  font-weight: var(--weight-medium);
 }
 
 .skill-item-source {
@@ -7781,7 +7790,7 @@ color: var(--text-on-accent);
 
 .context-stat-value {
   font-size: var(--fs-sm);
-  font-weight: 600;
+  font-weight: var(--weight-medium);
 }
 
 .context-balance-section {
@@ -7980,7 +7989,7 @@ border-bottom: 1px solid var(--accent);
 }
 .layered-priority.is-off { background: var(--bg-secondary); color: var(--text-muted); }
 .layered-item-main { flex: 1; min-width: 0; }
-.layered-item-name { font-weight: 600; color: var(--text-primary); }
+.layered-item-name { font-weight: var(--weight-medium); color: var(--text-primary); }
 .layered-item-disabled { margin-left: var(--space-3); font-size: var(--fs-xs); color: var(--text-muted); }
 .layered-item-desc { font-size: var(--fs-xs); color: var(--text-muted); }
 .layered-item-path {
@@ -8006,7 +8015,7 @@ border-bottom: 1px solid var(--accent);
   display: block;
   margin-bottom: var(--space-2);
   font-size: var(--fs-sm);
-  font-weight: 600;
+  font-weight: var(--weight-medium);
   color: var(--text-secondary);
 }
 .layered-value { font-size: var(--fs-sm); color: var(--text-primary); }
@@ -8029,7 +8038,7 @@ border-bottom: 1px solid var(--accent);
 
 .layered-policy { display: flex; flex-direction: column; gap: var(--space-2); font-size: var(--fs-sm); }
 .layered-policy-key { color: var(--text-muted); }
-.layered-policy-value { font-weight: 600; color: var(--text-primary); }
+.layered-policy-value { font-weight: var(--weight-medium); color: var(--text-primary); }
 .layered-policy-value.is-ok { color: var(--success); }
 .layered-policy-value.is-warn { color: var(--warning); }
 .layered-policy-value.is-bad { color: var(--error); }
@@ -8200,7 +8209,7 @@ border-bottom: 1px solid var(--accent);
   background: color-mix(in srgb, var(--accent) 14%, transparent);
   color: var(--text-primary);
   font-size: var(--fs-xs);
-  font-weight: 600;
+  font-weight: var(--weight-medium);
 }
 .wx-state-badge.is-connected {
   background: color-mix(in srgb, var(--success) 18%, transparent);
@@ -8366,7 +8375,7 @@ border-bottom: 1px solid var(--accent);
 
 .agent-form-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-4); }
 .agent-form-grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: var(--space-4); }
-.agent-label { display: block; margin-bottom: var(--space-2); font-size: var(--fs-sm); font-weight: 600; color: var(--text-secondary); }
+.agent-label { display: block; margin-bottom: var(--space-2); font-size: var(--fs-sm); font-weight: var(--weight-medium); color: var(--text-secondary); }
 .agent-input {
   width: 100%;
   box-sizing: border-box;
@@ -8537,7 +8546,7 @@ border-bottom: 1px solid var(--accent);
   border-radius: var(--radius-sm);
   color: var(--text-on-accent);
   font-size: var(--fs-sm);
-  font-weight: 600;
+  font-weight: var(--weight-medium);
   text-transform: capitalize;
 }
 
@@ -9021,7 +9030,7 @@ border-bottom: 1px solid var(--accent);
   background: var(--bg-tertiary);
   font-size: var(--fs-sm);
 }
-.plugin-mgr-dialog-item-name { font-weight: 600; }
+.plugin-mgr-dialog-item-name { font-weight: var(--weight-medium); }
 .plugin-mgr-dialog-actions { display: flex; gap: var(--space-4); justify-content: flex-end; }
 .plugin-mgr-confirm-btn.is-danger { background: var(--error); border: none; color: var(--text-on-accent); }
 .plugin-mgr-confirm-btn.is-warn { background: var(--warning); border: none; color: var(--text-on-accent); }
@@ -9138,7 +9147,7 @@ border-bottom: 1px solid var(--accent);
   white-space: nowrap;
 }
 .tj-chip-label { opacity: 0.6; }
-.tj-chip-value { font-weight: 600; color: var(--text-secondary); }
+.tj-chip-value { font-weight: var(--weight-medium); color: var(--text-secondary); }
 
 .tj-steps { flex: 1; overflow-y: auto; padding: var(--space-2) 0; }
 .tj-step { padding: var(--space-3) var(--space-5); border-bottom: 1px solid var(--border-primary); }
@@ -9224,7 +9233,7 @@ border-bottom: 1px solid var(--accent);
   padding: var(--space-9);
   overflow-y: auto;
 }
-.mp-field-label { display: block; margin-bottom: var(--space-4); font-weight: 600; }
+.mp-field-label { display: block; margin-bottom: var(--space-4); font-weight: var(--weight-medium); }
 .mp-profile-row { display: flex; flex-wrap: wrap; gap: var(--space-4); }
 .mp-profile-btn {
   padding: var(--space-5) var(--space-8);
@@ -9489,7 +9498,7 @@ border-bottom: 1px solid var(--accent);
 }
 .recovery-item-icon { font-size: var(--fs-md); }
 .recovery-item-body { flex: 1; min-width: 0; }
-.recovery-item-id { font-weight: 600; color: var(--text-primary); font-family: var(--font-mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.recovery-item-id { font-weight: var(--weight-medium); color: var(--text-primary); font-family: var(--font-mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .recovery-item-meta { font-size: var(--fs-xs); color: var(--text-muted); }
 .recovery-item-project {
   font-size: var(--fs-xs);
@@ -10385,7 +10394,7 @@ border-bottom: 1px solid var(--accent);
 .diff-preview-new { border: 1px solid color-mix(in srgb, var(--success) 30%, transparent); }
 .diff-preview-new-file { text-align: center; padding: var(--space-6); }
 .diff-preview-label { display: flex; align-items: center; justify-content: space-between; padding: var(--space-3) var(--space-6); background: var(--bg-tertiary); }
-.diff-preview-badge { font-size: var(--fs-sm); font-weight: 600; padding: var(--space-1) var(--space-5); border-radius: 4px; }
+.diff-preview-badge { font-size: var(--fs-sm); font-weight: var(--weight-medium); padding: var(--space-1) var(--space-5); border-radius: 4px; }
 .diff-preview-badge-old { background: color-mix(in srgb, var(--error) 15%, transparent); color: var(--error); }
 .diff-preview-badge-new { background: color-mix(in srgb, var(--success) 15%, transparent); color: var(--success); }
 .diff-preview-meta { font-size: 11px; color: var(--text-muted); }
@@ -10808,7 +10817,7 @@ min-height: 36px;
 .dropdown-menu-label {
   padding: var(--space-3) var(--space-5);
   font-size: var(--fs-2xs);
-  font-weight: 600;
+  font-weight: var(--weight-medium);
   color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -11052,7 +11061,7 @@ border-color: var(--text-muted);
 /* #9: Session time grouping */
 .sidebar-session-group-label {
   font-size: var(--fs-2xs);
-  font-weight: 600;
+  font-weight: var(--weight-medium);
   color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -13466,7 +13475,7 @@ html.pet-window-mode #root {
   background: var(--bg-tertiary);
 }
 .conversation-overview-round-num {
-  font-weight: 600;
+  font-weight: var(--weight-medium);
   color: var(--accent);
   flex-shrink: 0;
 }
@@ -14563,7 +14572,7 @@ color: var(--accent, #7c6cf0);
 }
 .quote-context-label {
   font-size: var(--fs-xs);
-  font-weight: 600;
+  font-weight: var(--weight-medium);
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--accent, #7c6cf0);
@@ -15454,7 +15463,7 @@ color: var(--accent, #7c6cf0);
   --space-14: 48px;
   --space-15: 64px;
   /* 小圆角（菜单项/胶囊按钮/密集控件；补齐 6px 这一档） */
-  --radius-xs: 6px;
+  --radius-xs: 8px;
 
   /* 图标刻度（§2.4「14px 图标 ↔ 13px 标签」的完整档位）
    * 现状事实：tsx 里有 ~100 处写 Tailwind 风格的 `w-3 h-3` / `animate-spin` /
@@ -16480,7 +16489,7 @@ color: var(--accent, #7c6cf0);
   padding: var(--space-2) var(--space-6);
   cursor: pointer;
 }
-.chat-effort-value { font-size: var(--fs-sm); font-weight: 600; color: var(--accent); }
+.chat-effort-value { font-size: var(--fs-sm); font-weight: var(--weight-medium); color: var(--accent); }
 .chat-effort-hint { margin-left: var(--space-2); font-size: var(--fs-xs); opacity: 0.5; }
 .chat-effort-menu {
   position: absolute;
@@ -17577,4 +17586,157 @@ input,
 select,
 textarea {
   min-width: 0; /* flex 行里输入框不再撑破容器（与 .sp-* 一起构成溢出防线） */
+}
+
+/* 11. 表单与设置行用 grid 对齐（第 32 波）：
+      参考实现用 grid 做对齐原语（583 处），我们此前全是 flex —— 标签宽度不一、输入框左边缘参差。
+      这里把「标签列 / 内容列 / 操作列」收成三档网格模板，标签自然对齐成一条竖线。 */
+.setting-group,
+.mp-form-row,
+.sp-field-row,
+.agent-input-row,
+.git-env-row {
+  display: grid;
+  grid-template-columns: minmax(88px, max-content) minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-4);
+}
+.setting-group > label,
+.mp-form-row > label {
+  margin: 0; /* 网格已经管间距，标签自己不再留 margin */
+}
+/* 只有单列内容的设置组（说明文字、按钮堆叠）走单列，避免被塞进两列网格 */
+.setting-group > :is(p, .sp-note, .sp-hint, .sp-col, .sp-row, .sp-card, .sp-output, .sp-empty, table, pre, .sp-templates, .sp-plot) {
+  grid-column: 1 / -1;
+}
+.sp-field-row--3 { grid-template-columns: minmax(88px, max-content) minmax(0, 1fr) auto; }
+.sp-field-row--stack { grid-template-columns: minmax(0, 1fr); }
+
+/* 12. 用 :has() 做父级状态（第 32 波）：参考实现大量使用（41 处）。
+      两个真实用途：① 卡片里有元素获得焦点时，整张卡片给出描边（焦点在子元素但反馈在父级，
+      键盘用户一眼看出"我在哪个卡片里"）；② 输入框非法时，所在的字段行整行标红。 */
+.sp-card:has(:focus-visible),
+.tool-card:has(:focus-visible),
+.market-skill-card:has(:focus-visible) {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 var(--focus-ring-width) var(--focus-ring-color);
+}
+.sp-field-row:has(input:user-invalid),
+.setting-group:has(input:user-invalid) > label {
+  color: var(--error);
+}
+
+/* 13. 状态属性驱动样式（第 32 波）：与 .active 类并存 —— 读屏语义与样式同源，
+      再也不会出现"类名说 active、ARIA 说没选中"的不一致。 */
+[aria-selected="true"],
+[aria-current="page"] {
+  font-weight: var(--weight-semibold);
+}
+.settings-sidebar-item[aria-current="page"],
+.nb-view-tab[aria-selected="true"],
+.sp-tab[aria-selected="true"],
+.tc-tab[aria-selected="true"],
+.tool-pill[aria-expanded="true"] {
+  color: var(--text-primary);
+}
+.settings-sidebar-item[aria-current="page"] {
+  background: var(--bg-hover);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.nb-view-tab[aria-selected="true"],
+.sp-tab[aria-selected="true"],
+.tc-tab[aria-selected="true"] {
+  background: var(--bg-tertiary);
+}
+
+/* 14. 逐组件减动效（第 32 波，补到与参考实现同量级）：
+      浮层/抽屉/面板的**入场位移动画**在「减少动效」下直接取消，只保留瞬时显隐。 */
+@media (prefers-reduced-motion: reduce) {
+  .modal-overlay,
+  .modal-panel,
+  .modal-editor,
+  .settings-overlay,
+  .settings-panel,
+  .drawer-overlay,
+  .drawer-panel,
+  .popover-shell,
+  .floating-overlay-panel,
+  .chat-float-panel,
+  .toast-item,
+  .market-skill-card,
+  .sp-card,
+  .nb-note-card,
+  .stat-card,
+  .tool-pill {
+    animation: none !important;
+    transition: none !important;
+    transform: none !important;
+  }
+}
+
+/* ==========================================================================
+ * 产品感底层修正（第 33 波）：图标描边 / 胶囊化 / 层次
+ * 诊断依据见 §2.8：参考实现图标描边统一在 2、形状以 8px 圆角 + 999 胶囊为主。
+ * ========================================================================== */
+
+/* 1. 图标描边统一：lucide 默认 2，我们此前在 <svg strokeWidth="1.2/0.6/1.5"> 之间抖动，
+      12–14px 的细线在大屏上"发虚"。统一到 1.75 —— 比 2 略轻、比 1 明确，
+      并且按尺寸反向补偿：大图标（空态 32/48px）用更细的描边才不糊，小徽标用更重。 */
+svg.lucide,
+.lucide {
+  stroke-width: 1.75;
+}
+.icon-2xs.lucide,
+.icon-xs.lucide {
+  stroke-width: 2;
+}
+.icon-2xl.lucide,
+.icon-3xl.lucide {
+  stroke-width: 1.5;
+}
+
+/* 2. 胶囊化：标签/徽标/计数这类"短文本小块"统一走全圆角 ——
+      方角小块看起来像"数据表"，胶囊看起来像"产品"。 */
+.market-skill-tag,
+.nb-note-tag,
+.petm-tag,
+.sp-chip,
+.sp-tag-chip,
+.model-badge,
+.nb-count-badge,
+.kg-entity-badge,
+.skill-filter-count,
+.tool-card-count {
+  border-radius: var(--radius-full);
+}
+
+/* 3. 层次收口：把"什么都加粗"改成三档 ——
+      区块标题 620（--weight-bold）、列表项/标签 560（semibold）、正文与值 400/500。
+      这样扫视时先看到标题、再看到项、最后才是数据，而不是满屏同粗。 */
+.settings-section-title,
+.panel-section-title,
+.nb-section-label,
+.tc-label,
+.sp-title,
+.tj-title,
+.market-skill-name,
+.nb-note-title {
+  font-weight: var(--weight-bold);
+}
+.sp-title--section,
+.tj-step-type,
+.petm-name,
+.tool-pill-title,
+.sp-chip-value,
+.mp-card-name {
+  font-weight: var(--weight-semibold);
+}
+/* 值与数值型单元格回到常规字重：表格里全粗体会让数字彼此"打架" */
+td,
+.tj-num,
+.sp-slider-value,
+.sp-weight-value,
+.market-skill-meta,
+.nb-note-meta {
+  font-weight: var(--weight-regular);
 }

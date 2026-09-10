@@ -613,7 +613,7 @@
   align-items: center;
   gap: var(--space-2);
   font-size: var(--fs-xs);
-  font-weight: 600;
+  font-weight: var(--weight-medium);
   color: var(--text-secondary);
   text-transform: uppercase;
 }
@@ -729,7 +729,7 @@
   align-items: center;
   gap: var(--space-2);
   font-size: var(--fs-xs);
-  font-weight: 600;
+  font-weight: var(--weight-medium);
   color: var(--text-secondary);
   text-transform: uppercase;
   letter-spacing: 0.5px;
@@ -1822,7 +1822,7 @@ top: 36px;
   min-width: 40px;
   color: var(--text-primary);
   font-size: var(--fs-lg);
-  font-weight: 600;
+  font-weight: var(--weight-medium);
 }
 
 .ppt-studio-option-row {
@@ -2906,7 +2906,7 @@ top: 36px;
   color: var(--text-on-accent);
   border-radius: 50%;
   font-size: var(--fs-base);
-  font-weight: 600;
+  font-weight: var(--weight-medium);
   flex-shrink: 0;
 }
 

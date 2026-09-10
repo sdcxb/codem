@@ -758,72 +758,94 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
                 </div>
               )}
             </div>
-            <button className={`settings-sidebar-item ${activeTab === "general" ? "active" : ""}`} onClick={() => setActiveTab("general")}>
+            <button className={`settings-sidebar-item ${activeTab === "general" ? "active" : ""}`}
+              aria-current={activeTab === "general" ? "page" : undefined} onClick={() => setActiveTab("general")}>
               <span className="sidebar-icon"><SettingsIcon size={16} /></span>{lang === "zh" ? "通用" : "General"}
             </button>
-            <button className={`settings-sidebar-item ${activeTab === "appearance" ? "active" : ""}`} onClick={() => setActiveTab("appearance")}>
+            <button className={`settings-sidebar-item ${activeTab === "appearance" ? "active" : ""}`}
+              aria-current={activeTab === "appearance" ? "page" : undefined} onClick={() => setActiveTab("appearance")}>
               <span className="sidebar-icon"><Palette size={16} /></span>{lang === "zh" ? "外观" : "Appearance"}
             </button>
-            <button className={`settings-sidebar-item ${activeTab === "security" ? "active" : ""}`} onClick={() => setActiveTab("security")}>
+            <button className={`settings-sidebar-item ${activeTab === "security" ? "active" : ""}`}
+              aria-current={activeTab === "security" ? "page" : undefined} onClick={() => setActiveTab("security")}>
               <span className="sidebar-icon"><Shield size={16} /></span>{lang === "zh" ? "安全" : "Security"}
             </button>
-            <button className={`settings-sidebar-item ${activeTab === "git" ? "active" : ""}`} onClick={() => setActiveTab("git")}>
+            <button className={`settings-sidebar-item ${activeTab === "git" ? "active" : ""}`}
+              aria-current={activeTab === "git" ? "page" : undefined} onClick={() => setActiveTab("git")}>
               <span className="sidebar-icon"><GitBranchIcon size={16} /></span>{lang === "zh" ? "Git" : "Git"}
             </button>
-<button className={`settings-sidebar-item ${activeTab === "environment" ? "active" : ""}`} onClick={() => setActiveTab("environment")}>
+<button className={`settings-sidebar-item ${activeTab === "environment" ? "active" : ""}`}
+              aria-current={activeTab === "environment" ? "page" : undefined} onClick={() => setActiveTab("environment")}>
 <span className="sidebar-icon"><Server size={16} /></span>{lang === "zh" ? "环境" : "Environment"}
 </button>
-<button className={`settings-sidebar-item ${activeTab === "worktree" ? "active" : ""}`} onClick={() => setActiveTab("worktree")}>
+<button className={`settings-sidebar-item ${activeTab === "worktree" ? "active" : ""}`}
+              aria-current={activeTab === "worktree" ? "page" : undefined} onClick={() => setActiveTab("worktree")}>
 <span className="sidebar-icon"><FolderTree size={16} /></span>{lang === "zh" ? "工作树" : "Worktree"}
 </button>
-<button className={`settings-sidebar-item ${activeTab === "knowledge" ? "active" : ""}`} onClick={() => setActiveTab("knowledge")}>
+<button className={`settings-sidebar-item ${activeTab === "knowledge" ? "active" : ""}`}
+              aria-current={activeTab === "knowledge" ? "page" : undefined} onClick={() => setActiveTab("knowledge")}>
 <span className="sidebar-icon"><BookOpenIcon size={16} /></span>{lang === "zh" ? "知识" : "Knowledge"}
 </button>
-<button className={`settings-sidebar-item ${activeTab === "automation" ? "active" : ""}`} onClick={() => setActiveTab("automation")}>
+<button className={`settings-sidebar-item ${activeTab === "automation" ? "active" : ""}`}
+              aria-current={activeTab === "automation" ? "page" : undefined} onClick={() => setActiveTab("automation")}>
 <span className="sidebar-icon"><Bot size={16} /></span>{lang === "zh" ? "自动化" : "Automation"}
 </button>
-<button className={`settings-sidebar-item ${activeTab === "multimodal" ? "active" : ""}`} onClick={() => setActiveTab("multimodal")}>
+<button className={`settings-sidebar-item ${activeTab === "multimodal" ? "active" : ""}`}
+              aria-current={activeTab === "multimodal" ? "page" : undefined} onClick={() => setActiveTab("multimodal")}>
 <span className="sidebar-icon"><Layers size={16} /></span>{lang === "zh" ? "多模态" : "Multimodal"}
 </button>
-<button className={`settings-sidebar-item ${activeTab === "voice" ? "active" : ""}`} onClick={() => setActiveTab("voice")}>
+<button className={`settings-sidebar-item ${activeTab === "voice" ? "active" : ""}`}
+              aria-current={activeTab === "voice" ? "page" : undefined} onClick={() => setActiveTab("voice")}>
 <span className="sidebar-icon"><Mic size={16} /></span>{lang === "zh" ? "语音" : "Voice"}
 </button>
-<button className={`settings-sidebar-item ${activeTab === "ollama" ? "active" : ""}`} onClick={() => setActiveTab("ollama")}>
+<button className={`settings-sidebar-item ${activeTab === "ollama" ? "active" : ""}`}
+              aria-current={activeTab === "ollama" ? "page" : undefined} onClick={() => setActiveTab("ollama")}>
 <span className="sidebar-icon"><Server size={16} /></span>{lang === "zh" ? "Ollama" : "Ollama"}
 </button>
-            <button className={`settings-sidebar-item ${activeTab === "tools" ? "active" : ""}`} onClick={() => setActiveTab("tools")}>
+            <button className={`settings-sidebar-item ${activeTab === "tools" ? "active" : ""}`}
+              aria-current={activeTab === "tools" ? "page" : undefined} onClick={() => setActiveTab("tools")}>
               <span className="sidebar-icon"><Wrench size={16} /></span>{lang === "zh" ? "工具" : "Tools"}
             </button>
-            <button className={`settings-sidebar-item ${activeTab === "persona" ? "active" : ""}`} onClick={() => setActiveTab("persona")}>
+            <button className={`settings-sidebar-item ${activeTab === "persona" ? "active" : ""}`}
+              aria-current={activeTab === "persona" ? "page" : undefined} onClick={() => setActiveTab("persona")}>
               <span className="sidebar-icon"><BrainCircuit size={16} /></span>{lang === "zh" ? "人设" : "Persona"}
             </button>
-            <button className={`settings-sidebar-item ${activeTab === "computer" ? "active" : ""}`} onClick={() => setActiveTab("computer")}>
+            <button className={`settings-sidebar-item ${activeTab === "computer" ? "active" : ""}`}
+              aria-current={activeTab === "computer" ? "page" : undefined} onClick={() => setActiveTab("computer")}>
               <span className="sidebar-icon"><MousePointer2 size={16} /></span>{lang === "zh" ? "电脑操作" : "Computer Use"}
             </button>
-            <button className={`settings-sidebar-item ${activeTab === "wechat" ? "active" : ""}`} onClick={() => setActiveTab("wechat")}>
+            <button className={`settings-sidebar-item ${activeTab === "wechat" ? "active" : ""}`}
+              aria-current={activeTab === "wechat" ? "page" : undefined} onClick={() => setActiveTab("wechat")}>
               <span className="sidebar-icon"><MessageCircle size={16} /></span>{lang === "zh" ? "微信 ClawBot" : "WeChat ClawBot"}
             </button>
-            <button className={`settings-sidebar-item ${activeTab === "phone" ? "active" : ""}`} onClick={() => setActiveTab("phone")}>
+            <button className={`settings-sidebar-item ${activeTab === "phone" ? "active" : ""}`}
+              aria-current={activeTab === "phone" ? "page" : undefined} onClick={() => setActiveTab("phone")}>
               <span className="sidebar-icon"><Smartphone size={16} /></span>{lang === "zh" ? "连接手机" : "Phone Link"}
             </button>
-            <button className={`settings-sidebar-item ${activeTab === "codegraph" ? "active" : ""}`} onClick={() => setActiveTab("codegraph")}>
+            <button className={`settings-sidebar-item ${activeTab === "codegraph" ? "active" : ""}`}
+              aria-current={activeTab === "codegraph" ? "page" : undefined} onClick={() => setActiveTab("codegraph")}>
               <span className="sidebar-icon"><Network size={16} /></span>{lang === "zh" ? "代码图谱" : "CodeGraph"}
             </button>
-            <button className={`settings-sidebar-item ${activeTab === "pet" ? "active" : ""}`} onClick={() => setActiveTab("pet")}>
+            <button className={`settings-sidebar-item ${activeTab === "pet" ? "active" : ""}`}
+              aria-current={activeTab === "pet" ? "page" : undefined} onClick={() => setActiveTab("pet")}>
               <span className="sidebar-icon"><PawPrint size={16} /></span>{lang === "zh" ? "宠物" : "Pet"}
             </button>
-            <button className={`settings-sidebar-item ${activeTab === "advanced" ? "active" : ""}`} onClick={() => setActiveTab("advanced")}>
+            <button className={`settings-sidebar-item ${activeTab === "advanced" ? "active" : ""}`}
+              aria-current={activeTab === "advanced" ? "page" : undefined} onClick={() => setActiveTab("advanced")}>
               <span className="sidebar-icon"><Zap size={16} /></span>{lang === "zh" ? "高级" : "Advanced"}
             </button>
-            <button className={`settings-sidebar-item ${activeTab === "help" ? "active" : ""}`} onClick={() => setActiveTab("help")}>
+            <button className={`settings-sidebar-item ${activeTab === "help" ? "active" : ""}`}
+              aria-current={activeTab === "help" ? "page" : undefined} onClick={() => setActiveTab("help")}>
               <span className="sidebar-icon"><HelpCircle size={16} /></span>{lang === "zh" ? "帮助" : "Help"}
             </button>
             {/* P2 #35: Usage stats tab */}
-            <button className={`settings-sidebar-item ${activeTab === "usage" ? "active" : ""}`} onClick={() => setActiveTab("usage")}>
+            <button className={`settings-sidebar-item ${activeTab === "usage" ? "active" : ""}`}
+              aria-current={activeTab === "usage" ? "page" : undefined} onClick={() => setActiveTab("usage")}>
               <span className="sidebar-icon"><Zap size={16} /></span>{lang === "zh" ? "用量统计" : "Usage"}
             </button>
             {/* 性能面板：从主对话区域顶部 tab 移入设置 */}
-            <button className={`settings-sidebar-item ${activeTab === "performance" ? "active" : ""}`} onClick={() => setActiveTab("performance")}>
+            <button className={`settings-sidebar-item ${activeTab === "performance" ? "active" : ""}`}
+              aria-current={activeTab === "performance" ? "page" : undefined} onClick={() => setActiveTab("performance")}>
               <span className="sidebar-icon"><Activity size={16} /></span>{lang === "zh" ? "性能" : "Performance"}
             </button>
           </div>

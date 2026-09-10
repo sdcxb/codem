@@ -173,7 +173,7 @@
   display: block;
   margin-bottom: var(--space-2);
   font-size: var(--fs-sm);
-  font-weight: 600;
+  font-weight: var(--weight-medium);
   color: var(--text-primary);
 }
 .tc-editor-actions { display: flex; gap: var(--space-4); }
@@ -254,7 +254,7 @@
   gap: var(--space-2);
 }
 .automation-history-item { padding: var(--space-3) var(--space-4); border-radius: var(--radius-sm); background: var(--bg-tertiary); font-size: var(--fs-sm); }
-.automation-history-time { color: var(--accent); font-weight: 600; }
+.automation-history-time { color: var(--accent); font-weight: var(--weight-medium); }
 .automation-history-name { margin-left: var(--space-3); }
 .automation-history-msg {
   margin-left: var(--space-3);
@@ -337,7 +337,7 @@
   display: block;
   margin-bottom: var(--space-3);
   font-size: var(--fs-sm);
-  font-weight: 600;
+  font-weight: var(--weight-medium);
   color: var(--text-secondary);
 }
 .issue-detail-status-row { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
