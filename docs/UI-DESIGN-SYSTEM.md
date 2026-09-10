@@ -18,19 +18,29 @@
 
 | 令牌 | 值 | 用途 |
 | --- | --- | --- |
-| `--fs-xs` | 10px | 徽标、辅助说明、密集元信息 |
+| `--fs-2xs` | 11px | 密集元信息：时间戳、路径、状态行、侧栏副标题 |
+| `--fs-xs` | 10px | 徽标、辅助说明、上标 |
 | `--fs-sm` | 12px | 次要文本、按钮、表格、列表副标题 |
 | `--fs-base` | 13px | **正文基准**（桌面应用主密度） |
-| `--fs-md` | 14px | 主要文本、列表项标题、输入框 |
+| `--fs-md` | 14px | 主要文本、列表项标题、输入框、消息正文 |
 | `--fs-lg` | 16px | 区块标题、面板标题 |
 | `--fs-xl` | 18px | 页面标题、弹窗标题 |
 | `--fs-2xl` | 20px | 大标题 |
 | `--fs-3xl` | 24px | Hero 标题 |
 | `--fs-display` | 28px | 演示模式 / 空态大标题 |
 | `--fs-hero` | 32px | 引导页 / 全屏演示主标题 |
+| `--icon-3xl` | 48px | 空态/欢迎页的大号字形（`font-size` 也用它） |
 
 **禁止**在 `style` 或 CSS 里写数字字号（含 `32px`）。frakio-work 的密度事实：12px(291 次)、
 11px(211)、10px(175)、13px(170) 是主力，最大 UI 文本也只有 24px —— **层级靠字重与颜色，不靠字号**。
+
+两条补充规则（第 12 波落地时确定）：
+
+1. **11px 保留为独立档**（`--fs-2xs`）：项目里 11px 是使用第二多的小字号（styles.css 里 121 处，
+   与参考实现的 211 次同源）。补成令牌而不是并进 10/12，是为了保住既有排版密度；关键是这些文字
+   此前写死 px、**不吃字号滑杆**，令牌化后才会跟着 `--ui-font-scale` 走。
+2. **相对单位 `em`/`%` 允许保留**：内容排版里的相对层级（markdown 的 `h1>h2>正文`、行内代码
+   比正文小一档）本来就该跟随父级，父级是令牌，缩放链没有断 —— 审计只拦绝对单位 `px`/`rem`/`pt`。
 
 ### 2.2 圆角（`--radius-*`）
 
@@ -115,7 +125,7 @@ node tools/ui-audit/codemod-icon-scale.mjs [--write]  # 图标工具类 → .ico
 
 | 规则 | 级别 | 含义 |
 | --- | --- | --- |
-| `fs-hardcoded` | error | 字号硬编码（应为 `var(--fs-*)`） |
+| `fs-hardcoded` | error | 字号硬编码（tsx 内联样式 **与 CSS** 双侧都查；只拦绝对单位 `px`/`rem`/`pt`，见 §2.1 第 2 条） |
 | `color-hardcoded-tsx` / `-css` | error | 硬编码颜色（应为语义令牌） |
 | `radius-offscale` | error | 圆角离格 |
 | `modal-shell-bespoke` | error | 自建浮层外壳，未用统一 `modal-overlay` |
@@ -126,8 +136,10 @@ node tools/ui-audit/codemod-icon-scale.mjs [--write]  # 图标工具类 → .ico
 
 **合法例外**（写在 `scan-ui.mjs` 的 `ALLOWLIST`，每条都带理由；`rules` 字段可只豁免某一条规则）：
 皮肤令牌定义源、PPT 生成内容配色、大富翁游戏插件（自带美术语言）、图书馆角色调色板注释常量；
-以及两条**按规则豁免**的：`AppErrorBoundary`（崩溃兜底页必须在样式表失效时仍可读，刻意全内联样式）、
-`ppt/PPTAdapter|PresentationMode`（整屏工作台/演示舞台，不是应用内浮层）。
+以及三条**按规则豁免**的：`AppErrorBoundary`（崩溃兜底页必须在样式表失效时仍可读，刻意全内联样式）、
+`ppt/PPTAdapter|PresentationMode`（整屏工作台/演示舞台，不是应用内浮层）、
+`src/styles.css` 的 `color-hardcoded-css` + `radius-offscale`（该文件的字号已令牌化，
+色值 239 处与离格圆角 22 处是下一波的队列，先按规则豁免以免门禁失真 —— 数字记在 §7）。
 例外不是后门 —— 新增例外必须在文档里说明理由。
 
 ## 5. 进度（迭代记录）
@@ -142,8 +154,9 @@ node tools/ui-audit/codemod-icon-scale.mjs [--write]  # 图标工具类 → .ico
 | 第 5 波 | 待做 | — | — | 组件语言收口：按钮/输入/卡片/空态/列表行改具名类，压缩 50 个「内联样式过密」文件 |
 | 第 6 波 | 待做 | — | — | 门禁归零（只剩 warn）+ 文档 + 发布 |
 | **第 10 波** | 2026-09-10 | 85 | **50** | **`css-class-undefined` 253 → 0**：① 新增 `--icon-2xs..--icon-3xl` 图标刻度与 `.icon-*` 工具类（tsx 里 ~100 处 `w-3 h-3` / `animate-spin` / `opacity-40` 全是无效类名，图标实际渲染成 lucide 默认 24px —— 比 13px 标签大一倍）；② 补 ConfigEditor(24 类) / ClarificationForm(11) / CorrectionResultPanel(11) / NotebookManager 分组视图 / plugin-market 等全部缺失样式，一律只用令牌；③ **审计器扩面**：模板字面量 `` className={`a ${x}`} `` 里的静态类名此前被整段跳过（工具漏检），现在纳入并过滤 `status-` 这类残片；④ 死类名清理：`titlebar-btn-minimize` / `video-btn play` / `font-semibold` 之类"写了但既不匹配 CSS、也无 JS 查询"的修饰类直接删掉 |
-
 | **第 11 波** | 2026-09-10 | **0** ✅ | **50** | **error 级全线归零**：① 色值：CSS 17 处 + TSX 53 处 → 0（`--overlay-backdrop` / `--shadow-*` / 新增 `--shadow-color` 与 `--presentation-backdrop` / `color-mix` / 语义状态色；宠物窗口是独立 WebView 拿不到主令牌，自带 `--pet-*` 最小令牌表）；② 浮层：15 处自建外壳 → `modal-overlay`+`modal-panel`（对话框）/ `popover-shell`+`popover-shield`（菜单）/ `floating-overlay-panel`（浮动面板），并把 4 个菜单类（skill-picker-popup / bottom-bar-dropdown / file-link-context-menu / sidebar-project-more-menu）各写一套的外观收口到 `.popover-shell`；③ **审计器精度修复**：原来用「行内花括号平衡」推算 `style={{}}` 深度，单行样式对象会算错并越算越漏，把整份文件都当成样式上下文 —— `MEMBER_DOT = { done: "#22c55e" }`、cytoscape 图表入参这类非样式色值被算成违规（虚高的 53 条里相当一部分是假阳性），而真正的「样式在行中间」反而漏检；改为按字符扫描 + 行区间求交后收敛到 9 条真问题并全部修掉；④ 例外表支持 `rules` 字段（崩溃兜底页 / PPT 演示舞台只豁免 `modal-shell-bespoke`） |
+
+| **第 12 波** | 2026-09-10 | **0** ✅ | **50** | **字号令牌化（宿主样式表纳入审计）**：① 审计器新增 **CSS 侧 `fs-hardcoded` 规则**（此前只查 tsx 内联样式，而 `styles.css` 整份被排除在扫描外 —— 最大的现场反而没人看）；② 592 处 `font-size` 写死像素/rem → `var(--fs-*)`，实测**只有 11 处发生 ±1px 变化**（9 处 15px 标题 → `--fs-lg`、1 处 17px 弹窗标题 → `--fs-xl`、2 处输入框镜像层统一到 `--fs-md`），其余 578 处取值不变；③ 补 `--fs-2xs`(11px) 令牌：11px 是项目第二多的小字号（121 处），补档而不是并进 10/12，既保住排版密度，又让它**跟着字号滑杆缩放** —— 这正是「设置里调字号没反应」的根因（滑杆只影响 `var(--fs-*)`）；④ 明确 `em`/`%` 是允许的相对层级（markdown 标题、行内代码）；⑤ 顺带把输入框/镜像层/消息正文统一到 `--fs-md`（此前 15px/15px/14px 三档，发送前后字号会跳变） |
 
 ### 全项目现场事实（来自 UI 交互界面清单，作为工作队列）
 
@@ -172,10 +185,10 @@ node tools/ui-audit/codemod-icon-scale.mjs [--write]  # 图标工具类 → .ico
 
 | 规则 | 级别 | 起点 | 现在 |
 | --- | --- | --- | --- |
-| `fs-hardcoded` | error | 78 | **0** ✅（门禁锁定） |
+| `fs-hardcoded` | error | 78 | **0** ✅（门禁锁定；第 12 波起**同时覆盖 CSS**） |
 | `radius-offscale` | error | 38 | **0** ✅（门禁锁定） |
 | `color-hardcoded-tsx` | error | 325 | **0** ✅ |
-| `color-hardcoded-css` | error | 209 | **0** ✅ |
+| `color-hardcoded-css` | error | 209 | **0** ✅（`src/styles.css` 本体仍有 239 处待迁移，见下） |
 | `modal-shell-bespoke` | error | 15 | **0** ✅ |
 | `spacing-offgrid` | warn | 13 | **0** ✅ |
 | `css-class-undefined` | warn | — | **0** ✅（第 10 波清零；审计器已扩面到模板字面量） |
@@ -184,31 +197,36 @@ node tools/ui-audit/codemod-icon-scale.mjs [--write]  # 图标工具类 → .ico
 | **warn 合计** | | 64 | **50** |
 
 > 注：`color-hardcoded-tsx` 中途曾报 53 → 9 —— 不是"改多了"，而是审计器修掉了假阳性（见第 11 波说明）。
+> `fs-hardcoded` 第 12 波一度报 590 —— 也不是"变差了"，而是审计器**首次开始扫 CSS 侧**（此前 591 处写死的字号
+> 因为 `src/styles.css` 整份被排除而完全不可见）。
 
 ### 已完成的波次
 
 1. **规范落地**：按 frakio-work 实测规范写成本文件（令牌契约 + 组件语言 + 门禁 + 例外表）。
-2. **机具**：`scan-ui.mjs`（9 条规则 + `--census/--json/--rule/--write-baseline`）、`codemod-tokens.mjs`（令牌化改写，默认 dry-run，只动 `style={{}}` 与 CSS，跳过含 `var(--` 的行与注释）、`codemod-icon-scale.mjs`（图标工具类 → `--icon-*` 刻度）。
+2. **机具**：`scan-ui.mjs`（9 条规则 + `--census/--json/--rule/--write-baseline`）、`codemod-tokens.mjs`（令牌化改写，默认 dry-run，只动 `style={{}}` 与 CSS，跳过含 `var(--` 的行与注释）、`codemod-icon-scale.mjs`（图标工具类 → `--icon-*` 刻度）、`codemod-css-fs.mjs`（CSS 字号 → `--fs-*` 刻度）。
 3. **第 1 波**：478 处令牌化（色 409 / 圆角 32 / 字号 37）→ `fs-hardcoded`、`radius-offscale` 清零。
 4. **第 2 波**：84 处淡色底边 → `color-mix(in srgb, var(--token) N%, transparent)`。
-5. **补令牌**：`--fs-display`(28) / `--fs-hero`(32) / `--overlay-backdrop(-strong)` / `--space-1..12` / `--radius-xs`(6px)。
+5. **补令牌**：`--fs-2xs`(11) / `--fs-display`(28) / `--fs-hero`(32) / `--overlay-backdrop(-strong)` / `--space-1..12` / `--radius-xs`(6px) / `--shadow-color` / `--presentation-backdrop` / `--icon-2xs..--icon-3xl` / `--pet-*`。
 6. **门禁**：`src/test/ui-consistency.test.ts`（逐规则对比基线，只降不升；字号/圆角必须保持 0）。
 7. **补样式**：Pipeline 下一步对话框、纠偏结果对比面板（此前类名无 CSS = 没样式）。
 8. **间距归一**：`spacing-offgrid` 13 → 0（只对齐离格值，±1px）。
 9. **CSS 色令牌化**：31 → 17（遮罩/底色/状态淡色）。
 10. **第 10 波**：图标刻度 + 253 处「有类名没样式」清零（详见 §5 表）。
-11. **第 11 波（本轮）**：色值 70 处（CSS 17 + TSX 53）→ 0；15 处自建浮层 → 统一外壳；审计器精度修复（详见 §5 表）。
+11. **第 11 波**：色值 70 处（CSS 17 + TSX 53）→ 0；15 处自建浮层 → 统一外壳；审计器精度修复（详见 §5 表）。
+12. **第 12 波（本轮）**：宿主样式表纳入审计 + 592 处字号令牌化（详见 §5 表）。
 
 ### 下一轮的工作队列（按性价比排序）
 
-1. **`styles.css` 本体**（最大的一块）：该文件目前整份被排除在扫描之外，而它恰恰是最大的现场 ——
-   实测 **591 处硬编码字号**（12px×170 / 11px×121 / 13px×118 / 14px×71 / 10px×44 …）、
-   233 行硬编码颜色、22 处离格圆角。这些字号**不吃 `--ui-font-scale`**，正是「设置里调字号没反应」的根因。
-   做法：把它纳入扫描（`:root` / `[data-theme]` / `[data-skin]` 块已能自动豁免），先按 §2.1 的刻度做字号令牌化
-   （11px 这一档要么并入 10/12，要么补 `--fs-2xs` 并写进契约，需一次决策）；
+1. **`src/styles.css` 的色值与圆角**（已按规则豁免，数字不是 0 而是"还没量"）：
+   实测 **239 处色值字面量**（141 个不同取值；`rgba(0,0,0,0.3)×12`、`#ef4444×9`、`rgba(99,102,241,0.15)×6` …）
+   与 **22 处离格圆角**（3px×11 / 5px×9 / 11px×1 / 9px×1）。迁移方向已明确：
+   状态色 → `var(--error/--success/--warning/--info)` 与 `color-mix`；遮罩 → `--overlay-backdrop`；
+   投影 → `--shadow-*` / `--shadow-color`；`rgba(99,102,241,*)` 这类"自带蓝紫" → `--accent` 家族。
+   做完这一波才能把 `styles.css` 的例外从 ALLOWLIST 里删掉；
 2. **50 个「内联样式过密」文件**：按钮/输入/卡片/空态/列表行改具名类（`inline-style-dense` 的唯一来源）；
 3. **z-index 令牌化**：`modal-overlay`=200 与 `--z-modal`=1300 互相矛盾，`popover-shield` 的层级仍留在调用处（23 个 tsx 数值 + 13 个 CSS 层级）；
-4. **重复定义收敛**：`styles.css` 内已有同名类被定义两次且取值不同（如 `.badge` 的圆角 10px vs 4px、`.workspace-tab` 的 11px vs 12px 字号），需要新增一条「重复/冲突定义」审计规则；
+4. **重复定义收敛**：`styles.css` 内已有同名类被定义两次且取值不同（如 `.badge` 的圆角 10px vs 4px、
+   `.workspace-tab` 的 11px vs 12px 字号 —— 后者已被第 12 波统一到 `--fs-sm`），需要新增一条「重复/冲突定义」审计规则；
 5. **收尾**：门禁归零 → `CHANGELOG` / `README` / `PROJECT-GUIDE` / 本文件同步 → 升版本号 → 构建安装包 → 发布 Release。
 
 ### 已知例外（都写在 `scan-ui.mjs` 的 ALLOWLIST 里并附理由）

@@ -332,8 +332,25 @@ describe('架构变更: InputArea 两行布局', () => {
     // 锚定行首，避免误匹配 `.input-card-container.blur-folded .message-input {` 等后代规则
     const inputBlock = css.match(/(?:^|\n)\.message-input\s*\{[^}]+\}/s)?.[0]
     expect(inputBlock).toBeDefined()
-    expect(inputBlock).toContain('font-size: 15px')
+    // 字号必须走设计系统令牌（audit 规则 fs-hardcoded 禁止写死 px），
+    // 但「>= 15px」这个可读性要求不变 —— 于是从 :root 解析令牌的实际数值来断言。
+    const token = /font-size:\s*var\((--[a-z0-9-]+)\)/.exec(inputBlock!)?.[1]
+    expect(token, '输入框字号必须使用设计系统令牌 var(--fs-*)').toBeTruthy()
+    const rawPx = new RegExp(`\\${token}:\\s*calc\\(([0-9.]+)px`).exec(css)?.[1]
+    expect(Number(rawPx), `${token} = ${rawPx}px，输入框字号必须 >= 15px`).toBeGreaterThanOrEqual(15)
     expect(inputBlock).toContain('min-height: 56px')
     expect(inputBlock).toContain('line-height: 24px')
+  })
+
+  it('输入框实时镜像层（.input-backdrop）与 .message-input 同字号令牌', async () => {
+    const src = await vi.importActual('fs')
+    const css = src.readFileSync('src/styles.css', 'utf8')
+    const grab = (sel: string) =>
+      /font-size:\s*var\((--[a-z0-9-]+)\)/.exec(css.match(new RegExp(`(?:^|\\n)\\${sel}\\s*\\{[^}]+\\}`, 's'))?.[0] ?? '')?.[1]
+    const a = grab('.message-input')
+    const b = grab('.input-backdrop')
+    expect(a).toBeTruthy()
+    // 两层字号一旦漂移，输入文字与镜像文字会错位（光标跑到文字前面/后面）
+    expect(b, '.input-backdrop 必须与 .message-input 同字号令牌').toBe(a)
   })
 })

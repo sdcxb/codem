@@ -30,8 +30,6 @@ const EXCLUDE_DIRS = new Set(["node_modules", "dist", "target", "test", "__snaps
 const EXCLUDE_FILE_RE = [
   /\.test\.(ts|tsx)$/,
   /\.d\.ts$/,
-  // 令牌定义处允许出现原始色值/像素（它们是"唯一真相源"）
-  /^src[\\/]styles\.css$/,
 ];
 
 function listFiles(dir) {
@@ -62,6 +60,11 @@ const ALLOWLIST = [
   { re: /^src\/plugins\/monopoly-game\//, why: "大富翁游戏插件（自带美术语言：棋盘/卡牌/角色是一套独立视觉，改令牌会破坏美术）" },
   { re: /^src\/styles\/skin-[^/]+\.css$/, why: "皮肤定义源（每个皮肤的调色板与覆盖层：原始色值就是该皮肤的真相源）" },
   { re: /^src\/plugins\/library-ops\/data\/characters\.ts$/, why: "图书馆角色调色板（注释性常量，实际渲染已用 var() 令牌）" },
+  {
+    re: /^src\/styles\.css$/,
+    why: "宿主样式表：本波（第 12 波）只完成了字号令牌化；色值与圆角尚未迁移（实测 239 处色值字面量 / 22 处离格圆角），是下一波的队列，故先按规则豁免这两条",
+    rules: ["color-hardcoded-css", "radius-offscale"],
+  },
   {
     re: /^src\/components\/AppErrorBoundary\.tsx$/,
     why: "崩溃兜底页必须能在样式表整体失效时仍然可读，所以刻意全部走内联样式（不依赖任何 CSS 外壳）",
@@ -205,7 +208,8 @@ function scanTsx(rel, src) {
     }
 
     // 1) 字体硬编码：fontSize: 13 / fontSize: "13px" / fontSize: '0.8rem'
-    const fs = /fontSize:\s*(?:'|")?([0-9.]+)(px|rem|em)?(?:'|")?/.exec(line);
+    //    （em/% 是刻意的相对层级，见 scanCss 处的说明）
+    const fs = /fontSize:\s*(?:'|")?([0-9.]+)(px|rem|pt)(?:'|")?/.exec(line);
     if (fs && !line.includes("var(--fs")) {
       add("fs-hardcoded", rel, no, raw, `fontSize: ${fs[1]}${fs[2] ?? ""}`);
     }
@@ -267,6 +271,15 @@ function scanCss(rel, src) {
     if (/^\s*:root|^\s*\[data-theme|^\s*\[data-skin/.test(line)) inRoot = true;
     if (inRoot && /^\s*\}/.test(line)) inRoot = false;
     if (inRoot) return; // 令牌定义块允许原始值
+
+    // 字号硬编码（CSS 侧，§2.1：禁止在 style 或 CSS 里写数字字号）
+    // 写成 px/rem 的字号既不在刻度上，也**不吃 --ui-font-scale**（设置里调字号没反应）。
+    // 相对单位 em/% 除外：它们是刻意的相对层级（如 markdown 内容里 h1>h2>正文），
+    // 父级字号本身就是令牌，缩放链没有断。
+    const fsz = /font-size:\s*([0-9.]+)(px|rem|pt)\b/.exec(line);
+    if (fsz && !line.includes("var(--")) {
+      add("fs-hardcoded", rel, no, raw, `font-size: ${fsz[1]}${fsz[2]}`);
+    }
 
     const hex = /#[0-9a-fA-F]{3,8}\b/.exec(line);
     const rgb = /\b(?:rgba?|hsla?)\(/.exec(line);
