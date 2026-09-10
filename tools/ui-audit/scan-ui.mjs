@@ -134,6 +134,8 @@ const RULES = {
 const findings = [];
 /** CSS 源码收集（供跨文件规则使用：减动效覆盖需要"全项目关停清单"才能判定） */
 const cssSources = [];
+/** TSX/TS 源码收集（供跨文件规则使用：死类名判定需要"全项目渲染代码"语料） */
+const codeSources = [];
 /** 每个文件的「内联样式属性数」（供 --inline-counts 看收口进度：门禁只看 >120 的，
  *  但排队时要知道每个文件离阈值多远、以及收口后还剩多少） */
 const inlineCounts = [];
@@ -903,6 +905,74 @@ function scanMotionCoverage(cssFiles) {
   }
 }
 
+/**
+ * 死类名（第 44 波新增规则 `css-class-unused`）—— `css-class-undefined` 的镜像。
+ *
+ * 那边查"TSX 用了但 CSS 没定义"（等于没样式），这边查"CSS 定义了但没人用"（等于死代码）。
+ * 实测起点：3396 个顶层类名里 258 个（7.6%）从未被 TSX/TS 使用 ——
+ * 整族整族的 `composer-*`（22）、`code-block-*`、`native-title-bar-*`（13）、`hub-*`、`nb-guided-questions` 族。
+ * 第 44 波清掉 176 条规则 / 177 个类名后，这里作为**只降不升**的棘轮锁住。
+ *
+ * 判定保守到什么程度（宁可少报）：
+ * - 只认"纯类名选择器"（含后代与伪类），带 `[属性]` 的规则**一律不判** —— 属性驱动的样式
+ *   可能配合运行时的 data-* 状态，删错代价大于收益；
+ * - 类名在 TSX/TS 里**以字符串出现**就算在用（包含 `clsx("x")`、`classList.add("x")`、
+ *   模板字面量里的静态部分），避免把动态类名判死；
+ * - 类名的任一前缀后跟 `${` / `+` 拼接（`` `nb-${x}` ``）一律视为"可能被拼出来"，不报；
+ * - **减动效 / 减透明媒体块整块跳过**：那是无障碍安全网 —— 第 44 波第一刀就误删过
+ *   library-ops 的减动效规则，当场被 `motion-uncovered` 抓住（教训：清理脚本也要认得出"安全网"）。
+ */
+function scanUnusedClasses(cssFiles, codeFiles) {
+  const corpus = codeFiles.join("\n");
+  const dynamicCache = new Map();
+  const maybeDynamic = (cls) => {
+    if (dynamicCache.has(cls)) return dynamicCache.get(cls);
+    const parts = cls.split("-");
+    let dyn = false;
+    for (let k = parts.length - 1; k >= 1 && !dyn; k--) {
+      // 前缀必须**以 `-` 结尾**才算"类名前缀"：只看前缀本身会让 `code` / `hub` / `tool` / `table`
+      // 这类短词撞上语料里的普通文本（`code + 1`、`tool" + ...`），把成片真死类名误判成"活的"。
+      const prefix = parts.slice(0, k).join("-") + "-";
+      const esc = prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      if (new RegExp(`${esc}\\$\\{`).test(corpus)) dyn = true;              // nb-${x}
+      else if (new RegExp(`${esc}["'\`]?\\s*\\+`).test(corpus)) dyn = true; // "lo-" + name
+    }
+    dynamicCache.set(cls, dyn);
+    return dyn;
+  };
+
+  for (const { rel, src } of cssFiles) {
+    const clean = src.replace(/\/\*[\s\S]*?\*\//g, (c) => c.replace(/[^\n]/g, " "));
+    const protectedRanges = [];
+    const mediaRe = /@media\s*\(([^)]*prefers-reduced-(?:motion|transparency)[^)]*)\)\s*\{/g;
+    let mm;
+    while ((mm = mediaRe.exec(clean))) {
+      let depth = 1, i = mm.index + mm[0].length;
+      while (i < clean.length && depth > 0) {
+        if (clean[i] === "{") depth++;
+        else if (clean[i] === "}") depth--;
+        i++;
+      }
+      protectedRanges.push([mm.index, i]);
+    }
+    const isProtected = (idx) => protectedRanges.some(([a, b]) => idx >= a && idx < b);
+
+    for (const m of clean.matchAll(/(^|\n)([^\n{}]+)\{([^{}]*)\}/g)) {
+      const selText = m[2].trim();
+      if (/^@/.test(selText) || /\[/.test(selText) || isProtected(m.index)) continue;
+      const sels = selText.split(",").map((x) => x.trim()).filter(Boolean);
+      const allUnused = sels.every((sel) => {
+        const classes = [...sel.matchAll(/\.([a-zA-Z][\w-]*)/g)].map((x) => x[1]);
+        if (!classes.length) return false;
+        return classes.every((c) => !corpus.includes(c) && !maybeDynamic(c));
+      });
+      if (!allUnused) continue;
+      const line = src.slice(0, m.index).split("\n").length;
+      add("css-class-unused", rel, line, selText.replace(/\s+/g, " ").slice(0, 80), "CSS 定义了但 TSX/TS 里从未使用");
+    }
+  }
+}
+
 for (const full of files) {
   const rel = relative(ROOT, full).replace(/\\/g, "/");
   if (shouldSkip(rel)) continue;
@@ -918,6 +988,7 @@ for (const full of files) {
     continue;
   }
   const ranges = computeStyleRanges(src);
+  codeSources.push(src);
   scanColorOutsideStyle(rel, src, ranges);
   scanZIndex(rel, src, false, ranges);
   scanTsx(rel, src);
@@ -940,6 +1011,8 @@ for (const full of files) {
 
 // 跨文件规则：循环动画的减动效覆盖（需要全项目的关停清单才能判定）
 scanMotionCoverage(cssSources);
+// 跨文件规则：死类名（需要全项目渲染代码语料）
+scanUnusedClasses(cssSources, codeSources);
 
 const onlyRule = value("--rule");
 const onlyFile = value("--file");

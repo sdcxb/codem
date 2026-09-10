@@ -326,17 +326,10 @@
 .lo-status__item:is(:hover, :focus-visible) { background: var(--bg-hover); }
 .lo-status__item-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-primary); }
 .lo-status__item-type { color: var(--text-muted); white-space: nowrap; }
-.lo-status__usage {
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-2);
-  margin-top: auto;
-  padding-top: var(--space-4);
-  border-top: 1px solid var(--border-primary);
-}
-.lo-status__tokens { font-size: var(--fs-lg); font-weight: 700; color: var(--warning); }
-.lo-status__unit { font-size: var(--fs-xs); color: var(--text-muted); }
-.lo-status__cost { margin-left: auto; font-size: var(--fs-xs); color: var(--text-secondary); }
+
+
+
+
 
 /* 会话卡片网格（对标 TaskGrid） */
 .lo-session-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: var(--space-3); align-content: start; }
@@ -555,25 +548,19 @@
 .lo-ring__label { font-size: var(--fs-xs); color: var(--text-muted); }
 
 /* ===== 总览布局 ===== */
-.lo-overview__row {
-  display: grid;
-  grid-template-columns: minmax(200px, 240px) minmax(240px, 1fr) minmax(280px, 1.4fr);
-  gap: var(--space-5);
-  margin-bottom: var(--space-6);
-  align-items: stretch;
-}
-.lo-overview__row--bottom { grid-template-columns: minmax(220px, 1fr) minmax(280px, 1.4fr); }
+
+
 .lo-card--health .lo-card__body { display: flex; align-items: center; }
 .lo-health { display: grid; grid-template-columns: max-content minmax(0, 1fr); align-items: center; gap: var(--space-7); width: 100%; }
-.lo-health__fields { flex: 1; display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; }
 
-.lo-mini-scene { display: flex; flex-direction: column; gap: var(--space-2); }
-.lo-mini-scene__row { display: flex; align-items: center; gap: var(--space-4); font-size: var(--fs-xs); }
-.lo-mini-scene__icon { width: 16px; text-align: center; }
-.lo-mini-scene__name { width: 84px; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.lo-mini-scene__bar { flex: 1; display: flex; gap: var(--space-2); }
-.lo-mini-scene__dot { width: 8px; height: 8px; border-radius: 50%; opacity: 0.85; }
-.lo-mini-scene__count { color: var(--text-primary); font-variant-numeric: tabular-nums; }
+
+
+
+
+
+
+
+
 
 /* ===== 事件 / 流水 / 时间线 ===== */
 .lo-events, .lo-stream, .lo-timeline, .lo-alerts { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-1); }

@@ -754,37 +754,13 @@
 }
 
 /* ========== Chat Panel ========== */
-.nb-guided-questions {
-  margin-bottom: var(--space-10);
-}
 
-.nb-section-title {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  font-size: var(--fs-base);
-  font-weight: 600;
-  color: var(--text-primary);
-  margin: 0 0 var(--space-5) 0;
-}
 
-.nb-question-list {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-}
 
-.nb-question-card {
-  text-align: left;
-  padding: var(--space-4) var(--space-6);
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-primary);
-  border-radius: var(--radius-sm);
-  color: var(--text-primary);
-  font-size: var(--fs-sm);
-  cursor: pointer;
-  transition: var(--transition-color), var(--transition-transform), var(--transition-shadow), var(--transition-fade);
-}
+
+
+
+
 
 .nb-question-card:is(:hover, :focus-visible) {
   border-color: var(--accent);
@@ -792,14 +768,7 @@
   transform: translateX(2px);
 }
 
-.nb-loading-questions {
-  display: flex;
-  align-items: center;
-  gap: var(--space-4);
-  color: var(--text-secondary);
-  font-size: var(--fs-base);
-  padding: var(--space-8) 0;
-}
+
 
 /* ========== Chat Empty State ========== */
 .nb-chat-empty {
@@ -826,29 +795,9 @@
 }
 
 /* ========== Chat CTA ========== */
-.nb-chat-cta {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: var(--space-6);
-}
 
-.nb-start-chat-btn {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  padding: var(--space-4) var(--space-9);
-  background: var(--accent);
-  border: none;
-  border-radius: var(--radius-sm);
-  color: var(--text-on-accent);
-  font-size: var(--fs-base);
-  font-weight: 600;
-  cursor: pointer;
-  transition: var(--transition-color), var(--transition-transform), var(--transition-shadow), var(--transition-fade);
-}
+
+
 
 .nb-start-chat-btn:is(:hover, :focus-visible) {
   background: var(--accent-hover);
@@ -856,10 +805,7 @@
   box-shadow: 0 4px 12px var(--accent-muted);
 }
 
-.nb-chat-hint {
-  font-size: var(--fs-sm);
-  color: var(--text-muted);
-}
+
 
 /* ========== Notes Panel ========== */
 .nb-note-list {
@@ -999,9 +945,7 @@ top: 36px;
   box-shadow: var(--shadow-popover);
 }
 
-.nb-dialog-editor {
-  width: 640px;
-}
+
 
 .nb-dialog-header {
   display: flex;
@@ -1082,10 +1026,7 @@ top: 36px;
   border-color: var(--accent);
 }
 
-.nb-note-title-input {
-  font-size: var(--fs-base);
-  font-weight: 600;
-}
+
 
 .nb-dialog-textarea {
   width: 100%;
@@ -1106,11 +1047,7 @@ top: 36px;
   border-color: var(--accent);
 }
 
-.nb-note-content-area {
-  min-height: 320px;
-  font-size: var(--fs-base);
-  line-height: 1.6;
-}
+
 
 .nb-file-select {
   display: grid;
@@ -1242,14 +1179,7 @@ top: 36px;
 
 /* ========== View Mode Tabs ========== */
 /* 视图切换标签 — 借鉴 NotebookLM 三栏 + Understand-Anything 图谱视图思路 */
-.nb-view-tabs {
-  display: flex;
-  gap: var(--space-1);
-  padding: 0 var(--space-4);
-  background: var(--bg-secondary);
-  border-bottom: 1px solid var(--border-primary);
-  flex-shrink: 0;
-}
+
 
 .nb-view-tab {
   display: flex;
@@ -1983,96 +1913,32 @@ top: 36px;
   z-index: var(--z-modal-stacked);
 }
 
-.ppt-header {
-  display: flex;
-  align-items: center;
-  gap: var(--space-6);
-  padding: var(--space-4) var(--space-8);
-  flex-shrink: 0;
-}
 
-.ppt-back-btn {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  background: transparent;
-  border: none;
-  cursor: pointer;
-  font-size: var(--fs-base);
-  padding: var(--space-2) var(--space-4);
-  border-radius: var(--radius-xs);
-}
+
+
 
 .ppt-back-btn:is(:hover, :focus-visible) {
   background: var(--bg-hover);
 }
 
-.ppt-title-input {
-  flex: 1;
-  font-size: var(--fs-lg);
-  font-weight: 600;
-  outline: none;
-}
 
-.ppt-header-actions {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
 
-.ppt-theme-select {
-  padding: var(--space-2) var(--space-4);
-  border-radius: var(--radius-sm);
-  font-size: var(--fs-sm);
-  outline: none;
-  cursor: pointer;
-}
 
-.ppt-action-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border-primary);
-  border-radius: var(--radius-sm);
-  color: var(--text-secondary);
-  cursor: pointer;
-}
+
+
+
+
 
 .ppt-action-btn:is(:hover, :focus-visible) {
   color: var(--text-primary);
   background: var(--bg-hover);
 }
 
-.ppt-save-btn {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-3) var(--space-8);
-  border: none;
-  border-radius: var(--radius-sm);
-  font-size: var(--fs-base);
-  cursor: pointer;
-  margin-left: var(--space-2);
-}
 
-.ppt-body {
-  flex: 1;
-  display: flex;
-  overflow: hidden;
-}
 
-.ppt-thumbnails {
-  width: 140px;
-  padding: var(--space-4);
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-  overflow-y: auto;
-  flex-shrink: 0;
-}
+
+
+
 
 .ppt-thumb {
   display: flex;
@@ -2089,184 +1955,52 @@ top: 36px;
   filter: brightness(1.1);
 }
 
-.ppt-thumb-num {
-  font-size: var(--fs-sm);
-  font-weight: 500;
-}
 
-.ppt-thumb-preview {
-  width: 100%;
-  height: 60px;
-  border-radius: var(--radius-xs);
-  padding: var(--space-4);
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
 
-.ppt-thumb-add {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-  height: 60px;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-}
 
-.ppt-slide-area {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
 
-.ppt-slide-wrapper {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: var(--space-9);
-  overflow: hidden;
-}
 
-.ppt-slide-iframe {
-  width: 100%;
-  max-width: 960px;
-  aspect-ratio: 16 / 9;
-  border: 1px solid var(--border-primary);
-  border-radius: var(--radius);
-  background: var(--surface-content);
-  box-shadow: var(--shadow-md);
-}
 
-.ppt-nav {
-  display: flex;
-  align-items: center;
-  gap: var(--space-6);
-  padding: var(--space-4) var(--space-8);
-  flex-shrink: 0;
-}
 
-.ppt-nav-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  border: 1px solid var(--border-primary);
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-}
 
-.ppt-nav-btn:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
+
+
+
+
+
+
+
+
+
 
 /* PPT Generation Screen */
-.ppt-gen-screen {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  padding: var(--space-10);
-  overflow-y: auto;
-}
 
-.ppt-gen-header {
-  display: flex;
-  align-items: center;
-  gap: var(--space-6);
-  margin-bottom: var(--space-10);
-}
 
-.ppt-gen-header h2 {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  font-size: var(--fs-lg);
-  font-weight: 600;
-}
 
-.ppt-gen-form {
-  max-width: 600px;
-  padding: var(--space-10);
-  border-radius: var(--radius-md);
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-9);
-}
 
-.ppt-form-group {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-}
 
-.ppt-form-group label {
-  font-size: var(--fs-base);
-  font-weight: 500;
-}
 
-.ppt-form-input {
-  padding: var(--space-3) var(--space-5);
-  border-radius: var(--radius-sm);
-  font-size: var(--fs-sm);
-  outline: none;
-}
 
-.ppt-theme-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
-  gap: var(--space-4);
-}
 
-.ppt-theme-card {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-  padding: var(--space-4);
-  border-radius: var(--radius);
-  cursor: pointer;
-  transition: var(--transition-color), var(--transition-transform), var(--transition-shadow), var(--transition-fade);
-  font-size: var(--fs-sm);
-}
+
+
+
+
+
+
+
+
+
 
 .ppt-theme-card:is(:hover, :focus-visible) {
   transform: translateY(-2px);
 }
 
-.ppt-theme-preview {
-  height: 40px;
-  border-radius: var(--radius-xs);
-  padding: var(--space-3);
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
 
-.ppt-gen-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--space-3);
-  padding: var(--space-4) var(--space-9);
-  border: none;
-  border-radius: var(--radius-sm);
-  font-size: var(--fs-base);
-  font-weight: 600;
-  cursor: pointer;
-  margin-top: var(--space-4);
-}
 
-.ppt-loading {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: var(--space-8);
-}
+
+
+
 
 /* ========== Note Editor (Markdown + Preview + Backlinks) ========== */
 /* 借鉴 Lumina Note 的 Markdown 编辑器 + Backlinks 面板设计, 自研实现 */
@@ -2762,35 +2496,13 @@ top: 36px;
 /* ========== Mind Map View ========== */
 /* 思维导图样式 — 对标 NotebookLM 思维导图 */
 
-.nb-mindmap-container {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
 
-.nb-mindmap-loading {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: var(--space-6);
-}
 
-.nb-mindmap-canvas {
-  flex: 1;
-  overflow: auto;
-  padding: var(--space-9);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
 
-.nb-mindmap-canvas svg {
-  max-width: 100%;
-  height: auto;
-}
+
+
+
+
 
 /* ========== Notebook Export Menu ========== */
 .nb-export-menu {
@@ -2823,48 +2535,15 @@ top: 36px;
   justify-content: center;
 }
 
-.ppt-present-iframe {
-  width: 100vw;
-  height: 100dvh;
-  border: none;
-}
 
-.ppt-present-nav {
-  position: fixed;
-  bottom: 20px;
-  left: 50%;
-  transform: translateX(-50%);
-  display: flex;
-  align-items: center;
-  gap: var(--space-6);
-  padding: var(--space-4) var(--space-8);
-  background: var(--overlay-backdrop-strong);
-  border-radius: var(--radius-xl);
-  opacity: 0;
-  transition: opacity var(--duration-slow);
-  z-index: var(--z-present-ui);
-}
+
+
 
 .ppt-present-mode:is(:hover, :focus-visible) .ppt-present-nav {
   opacity: 1;
 }
 
-.ppt-present-notes {
-  position: fixed;
-  bottom: 60px;
-  left: 50%;
-  transform: translateX(-50%);
-  max-width: 600px;
-  padding: var(--space-6) var(--space-9);
-  background: var(--overlay-backdrop-strong);
-  border-radius: var(--radius);
-  color: var(--text-primary);
-  font-size: var(--fs-base);
-  line-height: 1.5;
-  opacity: 0;
-  transition: opacity var(--duration-slow);
-  z-index: var(--z-present-ui);
-}
+
 
 .ppt-present-mode:is(:hover, :focus-visible) .ppt-present-notes {
   opacity: 1;
