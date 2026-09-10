@@ -234,9 +234,16 @@ function scanTsx(rel, src) {
 
     // 1) 字体硬编码：fontSize: 13 / fontSize: "13px" / fontSize: '0.8rem'
     //    （em/% 是刻意的相对层级，见 scanCss 处的说明）
-    const fs = /fontSize:\s*(?:'|")?([0-9.]+)(px|rem|pt)(?:'|")?/.exec(line);
+    //    无单位的纯数字也要拦：React 的内联 `fontSize: 13` 就是 13px。
+    //    三元分支里的数字同样是像素（`fontSize: compact ? 11 : 13`），以前整条看不见 ——
+    //    这一类已全部清零，门禁留着防回归。
+    const fs = /fontSize:\s*(?:'|")?([0-9.]+)\s*(px|rem|pt)?\s*(?:'|")?\s*[,}\n]/.exec(line);
     if (fs && !line.includes("var(--fs")) {
-      add("fs-hardcoded", rel, no, raw, `fontSize: ${fs[1]}${fs[2] ?? ""}`);
+      add("fs-hardcoded", rel, no, raw, `fontSize: ${fs[1]}${fs[2] ?? "px(无单位)"}`);
+    }
+    const fsTernary = /fontSize:\s*[^,}\n]*?\?\s*([0-9.]+)\s*:\s*([0-9.]+)/.exec(line);
+    if (fsTernary) {
+      add("fs-hardcoded", rel, no, raw, `fontSize 三元分支: ${fsTernary[1]}px / ${fsTernary[2]}px`);
     }
 
     // 2) 颜色硬编码（属性级：color/background/border*Color/fill/stroke）

@@ -1035,7 +1035,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
                   document.documentElement.style.setProperty("--font-weight", w);
                   window.dispatchEvent(new Event("codem-settings-changed"));
                 }}
-                style={{ flex: 1 }}
+                className="sp-flex-fill"
               />
               <span className="sp-weight-value" style={{ fontWeight: Number(fontWeight) }}>
                 {fontWeight}
@@ -1060,7 +1060,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
               <option value="unified">{lang === "zh" ? "统一模式（多轮回复合并为一个气泡）" : "Unified (merge multi-turn replies)"}</option>
               <option value="segmented">{lang === "zh" ? "分段模式（每轮回复独立显示）" : "Segmented (each reply separate)"}</option>
             </select>
-            <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", marginTop: 2 }}>
+            <div className="sp-hint sp-hint--tiny">
               {lang === "zh" ? "统一模式：AI 的多轮回复合并为一个连续气泡，阅读更连贯" : "Unified: merges AI multi-turn replies into one continuous bubble"}
             </div>
           </div>
@@ -1124,7 +1124,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
               <option value="'Courier New', monospace">Courier New</option>
               <option value="Georgia, serif">Georgia</option>
             </select>
-            <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", marginTop: 2 }}>
+            <div className="sp-hint sp-hint--tiny">
               {lang === "zh" ? "选择应用全局使用的字体（外观选项卡可调粗细）" : "Select the global font (adjust weight in Appearance tab)"}
             </div>
           </div>
@@ -1218,11 +1218,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
           <div className="setting-group">
             <label>{lang === "zh" ? "头像" : "Avatar"}</label>
             <div className="sp-row sp-row--gap-md sp-row--lead">
-              <div className="user-avatar-preview" style={{
-                width: 48, height: 48, borderRadius: "50%", overflow: "hidden",
-                background: "var(--bg-tertiary)", display: "flex", alignItems: "center",
-                justifyContent: "center", flexShrink: 0, border: "2px solid var(--border-primary)",
-              }}>
+              <div className="user-avatar-preview">
                 {userConfig.avatar ? (
                   <img src={userConfig.avatar} alt="avatar" className="sp-avatar-img" />
                 ) : (
@@ -1249,7 +1245,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
                 id="avatar-upload-input"
                 type="file"
                 accept="image/png,image/jpeg,image/gif,image/svg+xml,image/webp"
-                style={{ display: "none" }}
+                className="sp-hidden"
                 onChange={(e) => {
                   const file = e.target.files?.[0];
                   if (!file) return;
@@ -1373,16 +1369,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
                 <button
                   onClick={() => refreshProviderModels(provider.id)}
                   disabled={refreshingModels[provider.id]}
-                  style={{
-                    padding: "4px 12px",
-                    background: refreshingModels[provider.id] ? "var(--bg-tertiary)" : "var(--accent)",
-                    color: "var(--text-on-accent)",
-                    border: "1px solid var(--border-primary)",
-                    borderRadius: 4,
-                    fontSize: 'var(--fs-sm)',
-                    cursor: refreshingModels[provider.id] ? "not-allowed" : "pointer",
-                    opacity: refreshingModels[provider.id] ? 0.6 : 1,
-                  }}
+                  className={`sp-btn sp-btn--sm ${refreshingModels[provider.id] ? "sp-btn--busy" : "sp-btn--primary"}`}
                 >
                   {refreshingModels[provider.id] ? "获取中..." : "刷新模型列表"}
                 </button>
@@ -1413,17 +1400,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
                 <button
                   onClick={() => handleAddCustomModel(provider.id)}
                   disabled={!(customModelDrafts[provider.id] || "").trim()}
-                  style={{
-                    padding: "6px 12px",
-                    background: "var(--accent)",
-                    color: "var(--text-on-accent)",
-                    border: "none",
-                    borderRadius: 4,
-                    fontSize: 'var(--fs-sm)',
-                    cursor: (customModelDrafts[provider.id] || "").trim() ? "pointer" : "not-allowed",
-                    opacity: (customModelDrafts[provider.id] || "").trim() ? 1 : 0.5,
-                    whiteSpace: "nowrap",
-                  }}
+                  className="sp-btn sp-btn--primary sp-btn--nowrap"
                 >
                   {lang === "zh" ? "添加模型" : "Add Model"}
                 </button>
@@ -1460,16 +1437,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
                   // Trigger engine reconfigure
                   window.dispatchEvent(new Event("codem-settings-changed"));
                 }}
-                style={{
-                  padding: "6px 16px",
-background: "var(--accent)",
-color: "var(--text-on-accent)",
-border: "none",
-borderRadius: 4,
-fontSize: 'var(--fs-sm)',
-cursor: "pointer",
-marginTop: 4,
-                }}
+                className="sp-btn sp-btn--sm sp-btn--primary sp-btn--spaced"
               >
                 {S.settings.saveRefresh[lang]}
               </button>
@@ -1481,13 +1449,7 @@ marginTop: 4,
             {!showAddCustom ? (
               <button
                 onClick={() => setShowAddCustom(true)}
-                style={{
-                  width: "100%", padding: "8px 12px",
-                  background: "var(--bg-tertiary)", color: "var(--text-secondary)",
-                  border: "1px dashed var(--border-primary)", borderRadius: 6,
-                  fontSize: 'var(--fs-sm)', cursor: "pointer",
-                  display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
-                }}
+                className="sp-btn sp-btn--dashed sp-btn--block"
               >
                 <Plus size={14} />
                 {lang === "zh" ? "添加自定义 Provider（通用 OpenAI 兼容协议）" : "Add Custom Provider (OpenAI-compatible)"}
@@ -1511,33 +1473,26 @@ marginTop: 4,
                   value={customBaseUrl}
                   onChange={(e) => setCustomBaseUrl(e.target.value)}
                   placeholder={lang === "zh" ? "Base URL（如 https://api.baichuan-ai.com/v1）" : "Base URL (e.g. https://api.baichuan-ai.com/v1)"}
-                  style={{ padding: "6px 10px", borderRadius: 4, border: "1px solid var(--border-primary)", background: "var(--bg-tertiary)", color: "var(--text-primary)", fontSize: 'var(--fs-sm)' }}
+                  className="sp-input sp-input--compact"
                 />
                 <input
                   type="password"
                   value={customApiKey}
                   onChange={(e) => setCustomApiKey(e.target.value)}
                   placeholder={lang === "zh" ? "API Key" : "API Key"}
-                  style={{ padding: "6px 10px", borderRadius: 4, border: "1px solid var(--border-primary)", background: "var(--bg-tertiary)", color: "var(--text-primary)", fontSize: 'var(--fs-sm)' }}
+                  className="sp-input sp-input--compact"
                 />
                 <div className="sp-row">
                   <button
                     onClick={addCustomProvider}
                     disabled={!customName.trim() || !customBaseUrl.trim()}
-                    style={{
-                      padding: "6px 16px", background: "var(--accent)", color: "var(--text-on-accent)",
-                      border: "none", borderRadius: 4, fontSize: 'var(--fs-sm)', cursor: "pointer",
-                      opacity: (!customName.trim() || !customBaseUrl.trim()) ? 0.5 : 1,
-                    }}
+                    className="sp-btn sp-btn--lg sp-btn--primary"
                   >
                     {lang === "zh" ? "保存 Provider" : "Save Provider"}
                   </button>
                   <button
                     onClick={() => { setShowAddCustom(false); setCustomName(""); setCustomBaseUrl(""); setCustomApiKey(""); }}
-                    style={{
-                      padding: "6px 16px", background: "var(--bg-tertiary)", color: "var(--text-secondary)",
-                      border: "1px solid var(--border-primary)", borderRadius: 4, fontSize: 'var(--fs-sm)', cursor: "pointer",
-                    }}
+                    className="sp-btn sp-btn--lg"
                   >
                     {lang === "zh" ? "取消" : "Cancel"}
                   </button>
@@ -1586,19 +1541,7 @@ marginTop: 4,
             </div>
             <button
               onClick={() => setShowMultimodal(!showMultimodal)}
-              style={{
-                padding: "8px 16px",
-                borderRadius: 6,
-                border: "1px solid var(--border-primary)",
-                background: showMultimodal ? "var(--accent-muted)" : "var(--bg-secondary)",
-                color: "var(--text-primary)",
-                cursor: "pointer",
-                fontSize: 'var(--fs-base)',
-                width: "100%",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-              }}
+              className={`sp-btn sp-btn--lg sp-btn--block sp-row--between ${showMultimodal ? "is-active" : ""}`}
             >
               <span>{lang === "zh" ? <><Palette size={12} className="icon-inline" /> 多模态设置</> : <><Palette size={12} className="icon-inline" /> Multimodal Settings</>}</span>
               <span className="hint-sm">{showMultimodal ? '▼' : '▶'}</span>
@@ -1722,13 +1665,7 @@ marginTop: 4,
     <button
       key={tab.id}
       onClick={() => setAdvancedSubTab(tab.id as any)}
-      style={{
-        padding: "5px 12px", borderRadius: 4, fontSize: 'var(--fs-sm)',
-        border: `1px solid ${advancedSubTab === tab.id ? "var(--accent)" : "var(--border-primary)"}`,
-        background: advancedSubTab === tab.id ? "var(--accent)" : "var(--bg-tertiary)",
-        color: advancedSubTab === tab.id ? "var(--text-on-accent)" : "var(--text-primary)",
-        cursor: "pointer", whiteSpace: "nowrap",
-      }}
+      className={`sp-tab ${advancedSubTab === tab.id ? "is-active" : ""}`}
     >
       {tab.icon} {tab.label}
     </button>
@@ -1767,18 +1704,14 @@ marginTop: 4,
           setSetting("onboarding-completed", "");
           setShowOnboardingReplay?.(true);
         }}
-        style={{
-          padding: "8px 16px", fontSize: 'var(--fs-base)', cursor: "pointer",
-          background: "var(--accent)", color: "var(--text-on-accent)",
-          border: "none", borderRadius: 6,
-        }}
+        className="sp-btn sp-btn--lg sp-btn--primary"
       >
         {lang === "zh" ? <><Play size={12} className="icon-inline" /> 重新播放新手引导</> : <><Play size={12} className="icon-inline" /> Replay Onboarding Tour</>}
       </button>
     </div>
 
     <div className="setting-group">
-      <label style={{ fontSize: 'var(--fs-md)', fontWeight: 500 }}>{lang === "zh" ? "快捷键" : "Keyboard Shortcuts"}</label>
+      <label className="sp-label-md">{lang === "zh" ? "快捷键" : "Keyboard Shortcuts"}</label>
       <div className="sp-note sp-shortcuts">
         <div><kbd>Ctrl + K</kbd> — {lang === "zh" ? "搜索对话" : "Search chat"}</div>
         <div><kbd>Ctrl + B</kbd> — {lang === "zh" ? "切换侧边栏" : "Toggle sidebar"}</div>
@@ -1788,7 +1721,7 @@ marginTop: 4,
     </div>
 
     <div className="setting-group">
-      <label style={{ fontSize: 'var(--fs-md)', fontWeight: 500 }}>{lang === "zh" ? "关于" : "About"}</label>
+      <label className="sp-label-md">{lang === "zh" ? "关于" : "About"}</label>
       <div className="sp-hint sp-hint--relaxed-16">
         Codem (mimo-gui) v{APP_VERSION}
         <br />
@@ -1850,12 +1783,12 @@ marginTop: 4,
 )}
 {/* P2 #35: Usage stats embedded in settings */}
 {activeTab === "usage" && (
-  <div style={{ padding: 16 }}>
+  <div className="sp-card">
     <UsageStats onClose={() => setActiveTab("general")} />
   </div>
 )}
 {activeTab === "performance" && (
-  <div style={{ padding: 16 }}>
+  <div className="sp-card">
     <PerformanceDashboard onClose={() => setActiveTab("general")} />
   </div>
 )}
@@ -1918,76 +1851,38 @@ function PetSettingsSection({ lang, onOpenMarket }: { lang: Language; onOpenMark
   };
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+    <div className="sp-col sp-col--lg">
       {/* 启用开关 */}
-      <div className="settings-row" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+      <div className="settings-row">
         <div>
-          <div style={{ fontWeight: 600, fontSize: "var(--fs-md)", color: "var(--text-primary)" }}>
+          <div className="sp-title--md">
             {zh ? "启用桌面宠物" : "Enable Desktop Pet"}
           </div>
-          <div style={{ fontSize: "var(--fs-sm)", color: "var(--text-secondary)", marginTop: "2px" }}>
+          <div className="sp-note sp-note--spaced">
             {zh ? "在窗口右下角显示宠物，它会响应 Agent 的工作状态" : "Show a pet in the bottom-right corner that reacts to Agent activity"}
           </div>
         </div>
         <button
           onClick={() => setEnabled(!enabled)}
-          style={{
-            width: "44px",
-            height: "24px",
-            borderRadius: "12px",
-            border: enabled ? "none" : "1px solid var(--border-primary)",
-            background: enabled ? "var(--accent)" : "var(--bg-hover)",
-            color: "var(--text-on-accent)",
-            cursor: "pointer",
-            position: "relative",
-            transition: "background 0.2s, border-color 0.2s",
-            flexShrink: 0,
-          }}
+          className={`sp-toggle ${enabled ? "is-on" : ""}`}
         >
-          <span style={{
-            position: "absolute",
-            top: enabled ? "2px" : "1px",
-            left: enabled ? "22px" : "2px",
-            width: "20px",
-            height: "20px",
-            borderRadius: "50%",
-            background: enabled ? "var(--surface-content)" : "var(--text-secondary)",
-            transition: "left 0.2s, background 0.2s",
-            boxShadow: "0 1px 3px var(--shadow-color)",
-          }} />
+          <span className="sp-toggle-knob" />
         </button>
       </div>
 
       {/* 宠物市场按钮 */}
-      <div style={{
-        padding: "12px 16px",
-        borderRadius: "8px",
-        background: "var(--bg-tertiary)",
-        border: "1px solid var(--border-primary)",
-        display: "flex",
-        justifyContent: "space-between",
-        alignItems: "center",
-      }}>
+      <div className="sp-card--lg sp-card--between sp-card">
         <div>
-          <div style={{ fontWeight: 600, fontSize: "var(--fs-base)", color: "var(--text-primary)" }}>
+          <div className="sp-title--sm">
             {zh ? "宠物市场" : "Pet Market"}
           </div>
-          <div style={{ fontSize: "var(--fs-xs)", color: "var(--text-secondary)", marginTop: "2px" }}>
+          <div className="sp-hint--xs sp-note--spaced">
             {zh ? "从 Petdex 浏览和下载更多宠物" : "Browse and download more pets from Petdex"}
           </div>
         </div>
         <button
           onClick={onOpenMarket}
-          style={{
-            padding: "6px 16px",
-            borderRadius: "6px",
-            border: "1px solid var(--accent)",
-            background: "var(--accent)",
-            color: "var(--text-on-accent)",
-            cursor: "pointer",
-            fontSize: "var(--fs-base)",
-            fontWeight: 500,
-          }}
+          className="sp-btn sp-btn--lg sp-btn--primary"
         >
           🐾 {zh ? "浏览市场" : "Browse Market"}
         </button>
@@ -1995,60 +1890,36 @@ function PetSettingsSection({ lang, onOpenMarket }: { lang: Language; onOpenMark
 
       {/* 已安装宠物列表 */}
       <div>
-        <div style={{ fontWeight: 600, fontSize: "var(--fs-md)", color: "var(--text-primary)", marginBottom: "8px" }}>
+        <div className="sp-title--md sp-title--lead">
           {zh ? "已安装宠物" : "Installed Pets"} ({installedPets.length})
         </div>
         {installedPets.length === 0 ? (
-          <div style={{
-            padding: "24px",
-            textAlign: "center",
-            color: "var(--text-secondary)",
-            fontSize: "var(--fs-base)",
-            background: "var(--bg-tertiary)",
-            borderRadius: "8px",
-            border: "1px dashed var(--border-primary)",
-          }}>
+          <div className="sp-empty">
             {zh ? "暂无已安装的宠物，去市场看看吧~" : "No pets installed yet. Check out the market!"}
           </div>
         ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+          <div className="sp-col">
             {installedPets.map((pet) => (
               <div
                 key={pet.slug}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  padding: "10px 14px",
-                  borderRadius: "8px",
-                  background: activePet?.slug === pet.slug ? "color-mix(in srgb, var(--accent) 15%, transparent)" : "var(--bg-tertiary)",
-                  border: activePet?.slug === pet.slug ? "1px solid var(--accent)" : "1px solid var(--border-primary)",
-                }}
+                className={`sp-pet-row ${activePet?.slug === pet.slug ? "is-active" : ""}`}
               >
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: 600, fontSize: "var(--fs-base)", color: "var(--text-primary)" }}>
+                <div className="sp-flex-fill">
+                  <div className="sp-title--sm">
                     {pet.definition.name}
                     {activePet?.slug === pet.slug && (
-                      <span style={{ marginLeft: "8px", fontSize: "var(--fs-xs)", color: "var(--accent)" }}>● {zh ? "当前" : "Active"}</span>
+                      <span className="sp-active-dot">● {zh ? "当前" : "Active"}</span>
                     )}
                   </div>
-                  <div style={{ fontSize: "var(--fs-xs)", color: "var(--text-secondary)" }}>
+                  <div className="sp-hint--xs">
                     {pet.definition.description || pet.definition.author || pet.slug}
                   </div>
                 </div>
-                <div style={{ display: "flex", gap: "6px" }}>
+                <div className="sp-row sp-row--gap-xs">
                   {activePet?.slug !== pet.slug && (
                     <button
                       onClick={() => setActivePet(pet.slug)}
-                      style={{
-                        padding: "4px 10px",
-                        borderRadius: "4px",
-                        border: "1px solid var(--border-primary)",
-                        background: "none",
-                        color: "var(--text-primary)",
-                        cursor: "pointer",
-                        fontSize: "var(--fs-sm)",
-                      }}
+                      className="sp-btn sp-btn--sm sp-btn--ghost"
                     >
                       {zh ? "激活" : "Activate"}
                     </button>
@@ -2058,15 +1929,7 @@ function PetSettingsSection({ lang, onOpenMarket }: { lang: Language; onOpenMark
                       await uninstallPet(pet.slug);
                       await refreshInstalledPets();
                     }}
-                    style={{
-                      padding: "4px 10px",
-                      borderRadius: "4px",
-                      border: "1px solid color-mix(in srgb, var(--error) 30%, transparent)",
-                      background: "color-mix(in srgb, var(--error) 10%, transparent)",
-                      color: "var(--error)",
-                      cursor: "pointer",
-                      fontSize: "var(--fs-sm)",
-                    }}
+                    className="sp-btn sp-btn--sm sp-btn--danger"
                   >
                     {zh ? "卸载" : "Uninstall"}
                   </button>
@@ -2079,9 +1942,9 @@ function PetSettingsSection({ lang, onOpenMarket }: { lang: Language; onOpenMark
 
       {/* 缩放滑轨 — 始终可见 */}
       <div>
-        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "4px" }}>
-          <span style={{ fontSize: "var(--fs-base)", color: "var(--text-primary)" }}>{zh ? "宠物大小" : "Pet Size"}</span>
-          <span style={{ fontSize: "var(--fs-sm)", color: "var(--text-secondary)" }}>{Math.round(scale * 100)}%</span>
+        <div className="sp-slider-row">
+          <span className="sp-slider-label">{zh ? "宠物大小" : "Pet Size"}</span>
+          <span className="sp-slider-value">{Math.round(scale * 100)}%</span>
         </div>
         <input
           type="range"
@@ -2090,9 +1953,9 @@ function PetSettingsSection({ lang, onOpenMarket }: { lang: Language; onOpenMark
           step="0.05"
           value={scale}
           onChange={(e) => setScale(parseFloat(e.target.value))}
-          style={{ width: "100%" }}
+          className="sp-range-full"
         />
-        <div style={{ display: "flex", justifyContent: "space-between", marginTop: "2px", fontSize: "var(--fs-xs)", color: "var(--text-muted, #666)" }}>
+        <div className="sp-slider-hint">
           <span>{zh ? "小" : "Small"}</span>
           <span>{zh ? "大" : "Large"}</span>
         </div>
@@ -2103,9 +1966,9 @@ function PetSettingsSection({ lang, onOpenMarket }: { lang: Language; onOpenMark
         <>
           {/* 透明度 */}
           <div>
-            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "4px" }}>
-              <span style={{ fontSize: "var(--fs-base)", color: "var(--text-primary)" }}>{zh ? "透明度" : "Opacity"}</span>
-              <span style={{ fontSize: "var(--fs-sm)", color: "var(--text-secondary)" }}>{Math.round(opacity * 100)}%</span>
+            <div className="sp-slider-row">
+              <span className="sp-slider-label">{zh ? "透明度" : "Opacity"}</span>
+              <span className="sp-slider-value">{Math.round(opacity * 100)}%</span>
             </div>
             <input
               type="range"
@@ -2114,15 +1977,15 @@ function PetSettingsSection({ lang, onOpenMarket }: { lang: Language; onOpenMark
               step="0.05"
               value={opacity}
               onChange={(e) => setOpacity(parseFloat(e.target.value))}
-              style={{ width: "100%" }}
+              className="sp-range-full"
             />
           </div>
 
           {/* 位置 X */}
           <div>
-            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "4px" }}>
-              <span style={{ fontSize: "var(--fs-base)", color: "var(--text-primary)" }}>{zh ? "水平位置" : "Position X"}</span>
-              <span style={{ fontSize: "var(--fs-sm)", color: "var(--text-secondary)" }}>{positionX}px</span>
+            <div className="sp-slider-row">
+              <span className="sp-slider-label">{zh ? "水平位置" : "Position X"}</span>
+              <span className="sp-slider-value">{positionX}px</span>
             </div>
             <input
               type="range"
@@ -2131,15 +1994,15 @@ function PetSettingsSection({ lang, onOpenMarket }: { lang: Language; onOpenMark
               step="4"
               value={positionX}
               onChange={(e) => handlePosChange("x", parseInt(e.target.value))}
-              style={{ width: "100%" }}
+              className="sp-range-full"
             />
           </div>
 
           {/* 位置 Y */}
           <div>
-            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "4px" }}>
-              <span style={{ fontSize: "var(--fs-base)", color: "var(--text-primary)" }}>{zh ? "垂直位置" : "Position Y"}</span>
-              <span style={{ fontSize: "var(--fs-sm)", color: "var(--text-secondary)" }}>{positionY}px</span>
+            <div className="sp-slider-row">
+              <span className="sp-slider-label">{zh ? "垂直位置" : "Position Y"}</span>
+              <span className="sp-slider-value">{positionY}px</span>
             </div>
             <input
               type="range"
@@ -2148,19 +2011,12 @@ function PetSettingsSection({ lang, onOpenMarket }: { lang: Language; onOpenMark
               step="4"
               value={positionY}
               onChange={(e) => handlePosChange("y", parseInt(e.target.value))}
-              style={{ width: "100%" }}
+              className="sp-range-full"
             />
           </div>
 
           {/* 提示 */}
-          <div style={{
-            padding: "8px 12px",
-            borderRadius: "6px",
-            background: "color-mix(in srgb, var(--accent) 8%, transparent)",
-            border: "1px solid color-mix(in srgb, var(--accent) 20%, transparent)",
-            fontSize: "var(--fs-xs)",
-            color: "var(--text-secondary)",
-          }}>
+          <div className="sp-callout">
             <Lightbulb size={11} className="icon-inline" /> {zh ? "提示：可以直接拖拽窗口中的宠物来移动位置。空闲时点击宠物有彩蛋。" : "Tip: Drag the pet in the window to reposition. Click the pet when idle for a surprise."}
           </div>
         </>
@@ -2227,7 +2083,7 @@ function PermissionRulesSection() {
       <div className="settings-section-title">
         {zh ? "🔐 权限规则" : "🔐 Permission Rules"}
       </div>
-      <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-secondary)", marginBottom: 12 }}>
+      <div className="sp-note sp-hint--lead">
         {zh
           ? "自定义工具权限规则。规则按顺序匹配，最后匹配的规则生效。内置规则（受保护路径、危险命令）始终生效。"
           : "Custom tool permission rules. Rules are matched in order, last match wins. Built-in rules (protected paths, dangerous commands) always apply."}
@@ -2235,45 +2091,29 @@ function PermissionRulesSection() {
 
       {/* Existing custom rules */}
       {customRules.length > 0 && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 12 }}>
+        <div className="sp-check-row">
           {customRules.map((rule, i) => (
             <div
               key={i}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 8,
-                padding: "6px 10px",
-                background: "var(--bg-secondary)",
-                borderRadius: 6,
-                border: "1px solid var(--border-primary)",
-                fontSize: 'var(--fs-sm)',
-              }}
+              className="sp-rule-row"
             >
-              <span style={{ fontFamily: "monospace", flex: "0 0 auto", color: "var(--text-primary)" }}>
+              <span className="sp-mono-auto">
                 {rule.tool}
               </span>
               {rule.resource && (
                 <>
-                  <span style={{ color: "var(--text-muted)" }}>→</span>
-                  <span style={{ fontFamily: "monospace", flex: "0 0 auto", color: "var(--text-secondary)" }}>
+                  <span className="sp-muted">→</span>
+                  <span className="sp-mono-auto sp-mono-auto--secondary">
                     {rule.resource}
                   </span>
                 </>
               )}
-              <span style={{ color: actionColors[rule.action], fontWeight: 600, marginLeft: "auto" }}>
+              <span className="sp-rule-action" style={{ color: actionColors[rule.action] }}>
                 {actionLabels[rule.action]}
               </span>
               <button
                 onClick={() => handleRemove(i)}
-                style={{
-                  background: "none",
-                  border: "none",
-                  color: "var(--text-muted)",
-                  cursor: "pointer",
-                  fontSize: 'var(--fs-md)',
-                  padding: "0 4px",
-                }}
+                className="sp-btn sp-btn--icon sp-btn--icon-text"
                 title={zh ? "删除" : "Delete"}
               >
                 ✕
@@ -2284,25 +2124,17 @@ function PermissionRulesSection() {
       )}
 
       {customRules.length === 0 && (
-        <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", marginBottom: 12, fontStyle: "italic" }}>
+        <div className="sp-hint sp-hint--italic">
           {zh ? "暂无自定义规则" : "No custom rules"}
         </div>
       )}
 
       {/* Add new rule */}
       <div
-        style={{
-          display: "flex",
-          gap: 6,
-          alignItems: "flex-end",
-          padding: 10,
-          background: "var(--bg-secondary)",
-          borderRadius: 6,
-          border: "1px solid var(--border-primary)",
-        }}
+        className="sp-rule-form"
       >
-        <div style={{ flex: 1 }}>
-          <label style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", display: "block", marginBottom: 4 }}>
+        <div className="sp-flex-fill">
+          <label className="sp-field-label">
             {zh ? "工具名 (支持 * 通配)" : "Tool (supports * wildcard)"}
           </label>
           <input
@@ -2310,11 +2142,11 @@ function PermissionRulesSection() {
             value={newRule.tool}
             onChange={(e) => setNewRule({ ...newRule, tool: e.target.value })}
             placeholder="bash / write / *"
-            style={{ width: "100%", fontSize: 'var(--fs-sm)', fontFamily: "monospace" }}
+            className="sp-input sp-input--mono"
           />
         </div>
-        <div style={{ flex: 1 }}>
-          <label style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", display: "block", marginBottom: 4 }}>
+        <div className="sp-flex-fill">
+          <label className="sp-field-label">
             {zh ? "资源匹配 (可选)" : "Resource (optional)"}
           </label>
           <input
@@ -2322,17 +2154,17 @@ function PermissionRulesSection() {
             value={newRule.resource || ""}
             onChange={(e) => setNewRule({ ...newRule, resource: e.target.value })}
             placeholder="rm -rf* / **/.env"
-            style={{ width: "100%", fontSize: 'var(--fs-sm)', fontFamily: "monospace" }}
+            className="sp-input sp-input--mono"
           />
         </div>
-        <div style={{ flex: "0 0 auto" }}>
-          <label style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", display: "block", marginBottom: 4 }}>
+        <div className="sp-auto">
+          <label className="sp-field-label">
             {zh ? "动作" : "Action"}
           </label>
           <select
             value={newRule.action}
             onChange={(e) => setNewRule({ ...newRule, action: e.target.value as PermissionAction })}
-            style={{ fontSize: 'var(--fs-sm)' }}
+            className="sp-hint"
           >
             <option value="ask">{zh ? "询问" : "Ask"}</option>
             <option value="allow">{zh ? "允许" : "Allow"}</option>
@@ -2341,24 +2173,14 @@ function PermissionRulesSection() {
         </div>
         <button
           onClick={handleAdd}
-          style={{
-            padding: "6px 14px",
-background: "var(--accent)",
-color: "var(--text-on-accent)",
-border: "none",
-borderRadius: 4,
-fontSize: 'var(--fs-sm)',
-cursor: "pointer",
-whiteSpace: "nowrap",
-flex: "0 0 auto",
-          }}
+          className="sp-btn sp-btn--primary sp-btn--nowrap sp-auto"
         >
           {zh ? "添加" : "Add"}
         </button>
       </div>
 
       {/* Quick templates */}
-      <div style={{ marginTop: 8, display: "flex", flexWrap: "wrap", gap: 6 }}>
+      <div className="sp-templates">
         <span className="hint-sm">{zh ? "快速添加: " : "Quick add: "}</span>
         {[
           { label: zh ? "禁止 bash sudo" : "Deny sudo", tool: "bash", action: "deny" as PermissionAction, resource: "sudo*" },
@@ -2377,15 +2199,7 @@ flex: "0 0 auto",
               });
               refresh();
             }}
-            style={{
-              padding: "3px 8px",
-              background: "var(--bg-tertiary)",
-              border: "1px solid var(--border-primary)",
-              borderRadius: "var(--radius-sm)",
-              fontSize: 'var(--fs-sm)',
-              cursor: "pointer",
-              color: "var(--text-secondary)",
-            }}
+            className="sp-btn sp-btn--sm"
           >
             {tpl.label}
           </button>
@@ -2410,33 +2224,18 @@ export function SecurityModeSelector({
 }) {
   const zh = lang === "zh";
   return (
-    <div style={{ display: "flex", gap: compact ? 4 : 8, flexWrap: "wrap" }}>
+    <div className={`sp-row sp-row--wrap ${compact ? "sp-row--gap-tight" : ""}`}>
       {SECURITY_MODES.map((m) => (
         <button
           key={m.mode}
           onClick={() => onModeChange(m.mode)}
-          style={{
-            flex: compact ? undefined : 1,
-            padding: compact ? "4px 8px" : "8px 12px",
-            borderRadius: 6,
-            border: `1px solid ${currentMode === m.mode ? "var(--accent)" : "var(--border-primary)"}`,
-            background: currentMode === m.mode ? "var(--accent)" : "var(--bg-secondary)",
-            color: currentMode === m.mode ? "var(--text-on-accent)" : "var(--text-primary)",
-            cursor: "pointer",
-            fontSize: compact ? 11 : 13,
-            fontWeight: currentMode === m.mode ? 600 : 400,
-            transition: "all 0.15s ease",
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            gap: 2,
-          }}
+          className={`sp-mode-btn ${compact ? "sp-mode-btn--compact" : ""} ${currentMode === m.mode ? "is-active" : ""}`}
           title={zh ? m.desc_zh : m.desc_en}
         >
-          <span style={{ fontSize: compact ? 12 : 16 }}>{m.icon}</span>
+          <span className={`sp-mode-icon ${compact ? "sp-mode-icon--compact" : ""}`}>{m.icon}</span>
           <span>{zh ? m.label_zh : m.label_en}</span>
           {!compact && (
-            <span style={{ fontSize: 'var(--fs-xs)', opacity: 0.8, textAlign: "center", marginTop: 2 }}>
+            <span className="sp-mode-desc">
               {zh ? m.desc_zh : m.desc_en}
             </span>
           )}
@@ -2501,31 +2300,23 @@ function WorktreeSettingsSection({ lang }: { lang: ReturnType<typeof useLang> })
     }
   };
 
-  const labelStyle: React.CSSProperties = {
-    fontSize: 'var(--fs-sm)', fontWeight: 600, color: "var(--text-primary)", marginBottom: 4,
-    display: "block",
-  };
-  const inputStyle: React.CSSProperties = {
-    padding: "6px 10px", borderRadius: 4,
-    border: "1px solid var(--border-primary)",
-    background: "var(--bg-tertiary)", color: "var(--text-primary)",
-    fontSize: 'var(--fs-base)', width: 80,
-  };
+  const labelStyle = "sp-field-label sp-field-label--strong";
+  const inputStyle = "sp-input sp-input--number";
 
   return (
     <div className="setting-group">
-      <label style={{ fontSize: 'var(--fs-md)', fontWeight: 700, marginBottom: 8, display: "block" }}>
+      <label className="sp-label-lg">
         🌲 {zh ? "Git 工作树管理" : "Git Worktree Management"}
       </label>
-      <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-secondary)", marginBottom: 12 }}>
+      <div className="sp-note sp-hint--lead">
         {zh
           ? "管理 Git Worktree 的创建、清理和数量限制。工作树模式为每个任务创建独立的文件系统目录，实现真正的并行隔离。"
           : "Manage Git Worktree creation, cleanup, and limits. Worktree mode creates isolated filesystem directories per task for true parallel isolation."}
       </div>
 
       {/* Max worktrees */}
-      <div style={{ marginBottom: 16 }}>
-        <label style={labelStyle}>{zh ? "最大工作树数量" : "Max Worktrees"}</label>
+      <div className="sp-block-lead">
+        <label className={labelStyle}>{zh ? "最大工作树数量" : "Max Worktrees"}</label>
         <input
           type="number"
           min={1}
@@ -2537,21 +2328,21 @@ function WorktreeSettingsSection({ lang }: { lang: ReturnType<typeof useLang> })
             setWorktreeSettings({ maxWorktrees: val });
             setSettings(getWorktreeSettings());
           }}
-          style={inputStyle}
+          className={inputStyle}
         />
-        <span style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", marginLeft: 8 }}>
+        <span className="sp-hint sp-ml">
           {zh ? "超过此数量自动清理最旧的（默认 15）" : "Auto-clean oldest when exceeded (default 15)"}
         </span>
         {scanResults.length > 0 && (
-          <span style={{ fontSize: 'var(--fs-sm)', marginLeft: 12, color: scanResults.length >= settings.maxWorktrees ? "var(--error)" : "var(--success)" }}>
+          <span className={`sp-hint sp-ml-lg ${scanResults.length >= settings.maxWorktrees ? "sp-icon-error" : "sp-icon-success"}`}>
             {zh ? `当前: ${scanResults.length}/${settings.maxWorktrees}` : `Current: ${scanResults.length}/${settings.maxWorktrees}`}
           </span>
         )}
       </div>
 
       {/* Auto clean oldest */}
-      <div style={{ marginBottom: 16 }}>
-        <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontSize: 'var(--fs-base)' }}>
+      <div className="sp-block-lead">
+        <label className="sp-check">
           <input
             type="checkbox"
             checked={settings.autoCleanOldest}
@@ -2559,18 +2350,18 @@ function WorktreeSettingsSection({ lang }: { lang: ReturnType<typeof useLang> })
               setWorktreeSettings({ autoCleanOldest: e.target.checked });
               setSettings(getWorktreeSettings());
             }}
-            style={{ width: 16, height: 16 }}
+            className="icon-md"
           />
           <span>{zh ? "自动清理最旧工作树" : "Auto-clean oldest worktrees"}</span>
         </label>
-        <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", marginTop: 4, marginLeft: 24 }}>
+        <div className="sp-hint sp-hint--indent">
           {zh ? "新建工作树时，如果超过上限，自动删除最旧的非活跃工作树。" : "When creating a new worktree, auto-remove the oldest inactive one if limit exceeded."}
         </div>
       </div>
 
       {/* Warn on dirty */}
-      <div style={{ marginBottom: 16 }}>
-        <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontSize: 'var(--fs-base)' }}>
+      <div className="sp-block-lead">
+        <label className="sp-check">
           <input
             type="checkbox"
             checked={settings.warnOnDirty}
@@ -2578,29 +2369,24 @@ function WorktreeSettingsSection({ lang }: { lang: ReturnType<typeof useLang> })
               setWorktreeSettings({ warnOnDirty: e.target.checked });
               setSettings(getWorktreeSettings());
             }}
-            style={{ width: 16, height: 16 }}
+            className="icon-md"
           />
           <span>{zh ? "归档前检查未提交修改" : "Warn on uncommitted changes before archive"}</span>
         </label>
-        <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", marginTop: 4, marginLeft: 24 }}>
+        <div className="sp-hint sp-hint--indent">
           {zh ? "删除工作树前检查是否有未提交的代码，有则提示确认。" : "Check for uncommitted changes before deleting a worktree; prompt for confirmation."}
         </div>
       </div>
 
-      <div style={{ borderTop: "1px solid var(--border-primary)", margin: "16px 0", paddingTop: 16 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-          <label style={{ ...labelStyle, marginBottom: 0 }}>
+      <div className="sp-block-sep">
+        <div className="sp-row sp-block-lead">
+          <label className="sp-field-label sp-field-label--strong sp-label-flush">
             {zh ? "已有工作树" : "Existing Worktrees"}
           </label>
           <button
             onClick={handleScan}
             disabled={scanning || !currentProject?.path}
-            style={{
-              padding: "4px 12px", borderRadius: 4, fontSize: 'var(--fs-sm)',
-              border: "1px solid var(--border-primary)",
-              background: "var(--bg-tertiary)", color: "var(--text-primary)",
-              cursor: scanning ? "wait" : "pointer",
-            }}
+            className="sp-btn sp-btn--sm"
           >
             {scanning ? <Clock size={12} className="icon-inline" /> : <RotateCcw size={12} className="icon-inline" />} {zh ? "扫描" : "Scan"}
           </button>
@@ -2611,25 +2397,20 @@ function WorktreeSettingsSection({ lang }: { lang: ReturnType<typeof useLang> })
           </div>
         )}
         {scanError && (
-          <div style={{ fontSize: 'var(--fs-sm)', color: "var(--error)", marginBottom: 8 }}>{scanError}</div>
+          <div className="sp-hint sp-hint--error sp-hint--lead">{scanError}</div>
         )}
         {scanResults.length > 0 && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          <div className="sp-col sp-col--tight">
             {scanResults.map(wt => (
-              <div key={wt.sessionId} style={{
-                display: "flex", alignItems: "center", gap: 8,
-                padding: "6px 8px", borderRadius: 4,
-                border: "1px solid var(--border-primary)",
-                background: "var(--bg-tertiary)", fontSize: 'var(--fs-sm)',
-              }}>
-                <span style={{ fontSize: 'var(--fs-md)' }}>{wt.hasUncommitted ? <AlertTriangle size={14} style={{ color: 'var(--warning)' }} /> : <GitBranchIcon size={14} style={{ color: 'var(--success)' }} />}</span>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontWeight: 600 }}>{wt.sessionId}</div>
-                  <div style={{ fontSize: 'var(--fs-xs)', opacity: 0.6, overflow: "hidden", textOverflow: "ellipsis" }}>{wt.path}</div>
+              <div key={wt.sessionId} className="sp-wt-row">
+                <span className="sp-mode-icon">{wt.hasUncommitted ? <AlertTriangle size={14} className="sp-icon-warning" /> : <GitBranchIcon size={14} className="sp-icon-success" />}</span>
+                <div className="sp-flex-fill sp-min0">
+                  <div className="sp-strong">{wt.sessionId}</div>
+                  <div className="sp-mini sp-ellipsis sp-dim">{wt.path}</div>
                 </div>
-                <span style={{ fontSize: 'var(--fs-xs)', opacity: 0.7, display: 'flex', alignItems: 'center', gap: 2 }}><GitBranchIcon size={10} /> {wt.branch}</span>
+                <span className="sp-mini sp-row sp-row--gap-xs sp-dim"><GitBranchIcon size={10} /> {wt.branch}</span>
                 {wt.hasUncommitted && (
-                  <span style={{ fontSize: 'var(--fs-xs)', color: "var(--warning)" }}>
+                  <span className="sp-mini sp-icon-warning">
                     {zh ? "未提交" : "dirty"}
                   </span>
                 )}
@@ -2689,11 +2470,11 @@ function NotebookSettingsSection() {
   };
 
   return (
-    <div style={{ marginTop: 16, padding: 12, border: '1px solid var(--border-primary)', borderRadius: 8, background: 'var(--bg-secondary)' }}>
-      <div className="settings-section-title" style={{ marginBottom: 12 }}>
+    <div className="sp-card sp-card--secondary sp-card--mt">
+      <div className="settings-section-title sp-title--lead">
         {zh ? '📓 知识笔记本设置' : '📓 Notebook Knowledge Settings'}
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+      <div className="sp-grid-2">
         <div>
           <label style={labelStyle}>
             {zh ? '最大分块大小（字符）' : 'Max Chunk Size (chars)'}
@@ -2751,7 +2532,7 @@ function NotebookSettingsSection() {
           />
         </div>
       </div>
-      <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', marginTop: 8, marginBottom: 0 }}>
+      <p className="sp-hint sp-hint--spaced sp-flush">
         {zh
           ? '调整知识笔记本的文本分块和检索参数。较小的分块提供更精确的检索但可能丢失上下文；较大的分块保留更多上下文但可能引入噪声。'
           : 'Adjust text chunking and retrieval parameters for knowledge notebooks. Smaller chunks provide more precise retrieval but may lose context; larger chunks retain more context but may introduce noise.'}
@@ -2806,27 +2587,27 @@ function AgentProfileSection({ lang }: { lang: Language }) {
   };
 
   return (
-    <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <h3 style={{ margin: 0, fontSize: 'var(--fs-md)', fontWeight: 600 }}>{zh ? "👤 Agent Profile 管理" : "👤 Agent Profile Management"}</h3>
+    <div className="sp-card sp-card--col">
+      <div className="sp-row--between sp-row">
+        <h3 className="sp-title">{zh ? "👤 Agent Profile 管理" : "👤 Agent Profile Management"}</h3>
         <button
           onClick={() => setEditing({ identity: "", domain: "", scope: "" })}
-          style={{ padding: "4px 12px", fontSize: 'var(--fs-sm)', cursor: "pointer", background: "var(--accent)", color: "var(--text-on-accent)", border: "none", borderRadius: 4 }}
+          className="sp-btn sp-btn--sm sp-btn--primary"
         >+ {zh ? "新建" : "New"}</button>
       </div>
-      <p style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", lineHeight: 1.5 }}>
+      <p className="sp-hint sp-hint--relaxed">
         {zh ? "Profile 是子智能体的持久化身份/领域/范围记录，生成子智能体时自动注入到 system prompt。" : "Profiles are persistent identity/domain/scope records for subagents, auto-injected into system prompt on spawn."}
       </p>
 
       {editing && (
-        <div style={{ padding: 12, borderRadius: 6, background: "var(--bg-tertiary)", border: "1px solid var(--border-primary)", display: "flex", flexDirection: "column", gap: 8 }}>
-          <input value={editing.identity || ""} onChange={(e) => setEditing({ ...editing, identity: e.target.value })} placeholder={zh ? "身份标识（如：前端专家）" : "Identity (e.g.: Frontend Expert)"} style={{ fontSize: 'var(--fs-sm)', padding: "4px 8px" }} />
-          <input value={editing.domain || ""} onChange={(e) => setEditing({ ...editing, domain: e.target.value })} placeholder={zh ? "领域（如：React/TypeScript）" : "Domain (e.g.: React/TypeScript)"} style={{ fontSize: 'var(--fs-sm)', padding: "4px 8px" }} />
-          <input value={editing.scope || ""} onChange={(e) => setEditing({ ...editing, scope: e.target.value })} placeholder={zh ? "范围（如：组件开发/性能优化）" : "Scope (e.g.: Components/Performance)"} style={{ fontSize: 'var(--fs-sm)', padding: "4px 8px" }} />
-          <textarea value={editing.experience_summary || ""} onChange={(e) => setEditing({ ...editing, experience_summary: e.target.value })} placeholder={zh ? "经验摘要（可选）" : "Experience summary (optional)"} rows={2} style={{ fontSize: 'var(--fs-sm)', padding: "4px 8px", resize: "vertical" }} />
-          <div style={{ display: "flex", gap: 8 }}>
-            <button onClick={handleSave} style={{ padding: "4px 12px", fontSize: 'var(--fs-sm)', cursor: "pointer", background: "var(--accent)", color: "var(--text-on-accent)", border: "none", borderRadius: 4 }}>{zh ? "保存" : "Save"}</button>
-            <button onClick={() => setEditing(null)} style={{ padding: "4px 12px", fontSize: 'var(--fs-sm)', cursor: "pointer", background: "none", border: "1px solid var(--border-primary)", borderRadius: 4 }}>{zh ? "取消" : "Cancel"}</button>
+        <div className="sp-card--sm sp-card--col sp-card">
+          <input value={editing.identity || ""} onChange={(e) => setEditing({ ...editing, identity: e.target.value })} placeholder={zh ? "身份标识（如：前端专家）" : "Identity (e.g.: Frontend Expert)"} className="sp-input sp-input--compact" />
+          <input value={editing.domain || ""} onChange={(e) => setEditing({ ...editing, domain: e.target.value })} placeholder={zh ? "领域（如：React/TypeScript）" : "Domain (e.g.: React/TypeScript)"} className="sp-input sp-input--compact" />
+          <input value={editing.scope || ""} onChange={(e) => setEditing({ ...editing, scope: e.target.value })} placeholder={zh ? "范围（如：组件开发/性能优化）" : "Scope (e.g.: Components/Performance)"} className="sp-input sp-input--compact" />
+          <textarea value={editing.experience_summary || ""} onChange={(e) => setEditing({ ...editing, experience_summary: e.target.value })} placeholder={zh ? "经验摘要（可选）" : "Experience summary (optional)"}  rows={2} className="sp-input sp-input--compact sp-input--resize" />
+          <div className="sp-row">
+            <button onClick={handleSave} className="sp-btn sp-btn--sm sp-btn--primary">{zh ? "保存" : "Save"}</button>
+            <button onClick={() => setEditing(null)} className="sp-btn sp-btn--sm sp-btn--ghost">{zh ? "取消" : "Cancel"}</button>
           </div>
         </div>
       )}
@@ -2836,19 +2617,19 @@ function AgentProfileSection({ lang }: { lang: Language }) {
       )}
 
       {profiles.map((p) => (
-        <div key={p.id} style={{ padding: 10, borderRadius: 6, background: "var(--bg-tertiary)", border: "1px solid var(--border-primary)", display: "flex", flexDirection: "column", gap: 4 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <span style={{ fontSize: 'var(--fs-base)', fontWeight: 500 }}>{p.identity}</span>
-            <div style={{ display: "flex", gap: 4 }}>
-              <button onClick={() => setEditing(p)} style={{ fontSize: 'var(--fs-sm)', padding: "2px 8px", cursor: "pointer", background: "transparent", border: "1px solid var(--border-primary)", borderRadius: "var(--radius-sm)" }}>{zh ? "编辑" : "Edit"}</button>
+        <div key={p.id} className="sp-card--tight sp-card--col sp-card sp-col--tight">
+          <div className="sp-row sp-row--between">
+            <span className="sp-text-medium">{p.identity}</span>
+            <div className="sp-row sp-row--gap-tight">
+              <button onClick={() => setEditing(p)} className="sp-btn sp-btn--xs sp-btn--ghost">{zh ? "编辑" : "Edit"}</button>
               <button onClick={() => handleDelete(p.id)} className="sp-btn sp-btn--xs sp-btn--danger-ghost">{zh ? "删除" : "Delete"}</button>
             </div>
           </div>
           <div className="hint-sm">{p.domain} · {p.scope}</div>
-          {p.experience_summary && <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-secondary)", lineHeight: 1.4 }}>{p.experience_summary}</div>}
+          {p.experience_summary && <div className="sp-note sp-line-14">{p.experience_summary}</div>}
           {p.skills && p.skills.length > 0 && (
-            <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-              {p.skills.map((s) => <span key={s} style={{ fontSize: 'var(--fs-xs)', padding: "1px 6px", background: "var(--bg-secondary)", borderRadius: "var(--radius-sm)", border: "1px solid var(--border-primary)" }}>{s}</span>)}
+            <div className="sp-row sp-row--gap-tight sp-row--wrap">
+              {p.skills.map((s) => <span key={s} className="sp-mini sp-tag-chip">{s}</span>)}
             </div>
           )}
         </div>
@@ -2873,33 +2654,33 @@ function TranscriptCacheStats({ lang }: { lang: Language }) {
   const pct = stats.maxSize > 0 ? Math.round((stats.size / stats.maxSize) * 100) : 0;
 
   return (
-    <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
-      <h3 style={{ margin: 0, fontSize: 'var(--fs-md)', fontWeight: 600 }}>{zh ? "💬 Transcript 缓存统计" : "💬 Transcript Cache Stats"}</h3>
-      <p style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", lineHeight: 1.5 }}>
+    <div className="sp-card sp-card--col">
+      <h3 className="sp-title">{zh ? "💬 Transcript 缓存统计" : "💬 Transcript Cache Stats"}</h3>
+      <p className="sp-hint sp-hint--relaxed">
         {zh ? "缓存 LLM 请求/响应对以减少 token 消耗。10 分钟 TTL，最多 100 条。上下文压缩时自动清空。" : "Caches LLM request/response pairs to reduce token waste. 10min TTL, max 100 entries. Auto-cleared on context compaction."}
       </p>
 
-      <div style={{ padding: 16, borderRadius: 6, background: "var(--bg-tertiary)", border: "1px solid var(--border-primary)" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-          <span style={{ fontSize: 'var(--fs-base)', fontWeight: 500 }}>{zh ? "缓存占用" : "Cache Usage"}</span>
+      <div className="sp-card">
+        <div className="sp-row--between sp-row sp-row--lead">
+          <span className="sp-text-medium">{zh ? "缓存占用" : "Cache Usage"}</span>
           <span className="hint-sm">{stats.size} / {stats.maxSize}</span>
         </div>
-        <div style={{ height: 8, borderRadius: 4, background: "var(--bg-secondary)", overflow: "hidden" }}>
-          <div style={{ height: "100%", width: `${pct}%`, background: pct > 80 ? "var(--error)" : "var(--accent)", borderRadius: 4, transition: "width 0.3s" }} />
+        <div className="sp-bar-track">
+          <div className={`sp-bar-fill ${pct > 80 ? "is-danger" : ""}`} style={{ width: `${pct}%` }} />
         </div>
-        <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", marginTop: 4 }}>{pct}% {zh ? "已使用" : "used"}</div>
+        <div className="sp-hint sp-hint--spaced">{pct}% {zh ? "已使用" : "used"}</div>
       </div>
 
-      <div style={{ display: "flex", gap: 8 }}>
+      <div className="sp-row">
         <button
           onClick={() => { TranscriptCache.clear(); setStats(TranscriptCache.stats()); }}
-          style={{ padding: "6px 12px", fontSize: 'var(--fs-sm)', cursor: "pointer", background: "var(--bg-tertiary)", border: "1px solid var(--border-primary)", borderRadius: 4 }}
+          className="sp-btn"
         >{zh ? "🗑️ 清空缓存" : "🗑️ Clear Cache"}</button>
         <button
           onClick={() => setStats(TranscriptCache.stats())}
-          style={{ padding: "6px 12px", fontSize: 'var(--fs-sm)', cursor: "pointer", background: "var(--bg-tertiary)", border: "1px solid var(--border-primary)", borderRadius: 4 }}
+          className="sp-btn"
         >{zh ? "🔄 刷新" : "🔄 Refresh"}</button>
-        <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 'var(--fs-sm)', cursor: "pointer" }}>
+        <label className="sp-inline-check">
           <input type="checkbox" checked={autoRefresh} onChange={(e) => setAutoRefresh(e.target.checked)} />
           {zh ? "自动刷新" : "Auto refresh"}
         </label>
@@ -3039,69 +2820,61 @@ function CodeGraphSettingsSection({ lang }: { lang: ReturnType<typeof useLang> }
   };
 
   return (
-    <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 16 }}>
-      <h3 style={{ margin: 0, fontSize: 'var(--fs-md)', fontWeight: 600 }}>
+    <div className="sp-card sp-card--col sp-col--lg">
+      <h3 className="sp-title">
         {zh ? "🔗 CodeGraph 代码知识图谱" : "🔗 CodeGraph Code Intelligence"}
       </h3>
-      <p style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", lineHeight: 1.6, margin: 0 }}>
+      <p className="sp-hint sp-hint--relaxed-16 sp-flush">
         {zh
           ? "CodeGraph 把代码库从\"文件集合\"转换成\"可查询的关系图\"，帮助 AI 更快理解大型项目。Agent 用一次 codegraph_explore 调用替代 10-20 次 grep+read，大幅减少 token 消耗。"
           : "CodeGraph transforms your codebase from a \"collection of files\" into a \"queryable relationship graph\", helping AI understand large projects faster. One codegraph_explore call replaces 10-20 grep+read calls, dramatically reducing token usage."}
       </p>
 
-      <div style={{ padding: 16, borderRadius: 6, background: "var(--bg-tertiary)", border: "1px solid var(--border-primary)" }}>
-        <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontSize: 'var(--fs-base)' }}>
-          <input type="checkbox" checked={enabled} onChange={(e) => handleToggle(e.target.checked)} style={{ width: 16, height: 16 }} />
-          <span style={{ fontWeight: 600 }}>{zh ? "启用 CodeGraph 集成" : "Enable CodeGraph Integration"}</span>
+      <div className="sp-card">
+        <label className="sp-check">
+          <input type="checkbox" checked={enabled} onChange={(e) => handleToggle(e.target.checked)} className="icon-md" />
+          <span className="sp-strong">{zh ? "启用 CodeGraph 集成" : "Enable CodeGraph Integration"}</span>
         </label>
-        <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", marginTop: 4, marginLeft: 24 }}>
+        <div className="sp-hint sp-hint--indent">
           {zh
             ? "开启后，打开包含 .codegraph/ 目录的项目时自动连接 CodeGraph MCP Server，agent 将获得 codegraph_explore 工具。"
             : "When enabled, opening a project with a .codegraph/ directory auto-connects the CodeGraph MCP Server. The agent gains the codegraph_explore tool."}
         </div>
       </div>
 
-      <div style={{ padding: 16, borderRadius: 6, background: "var(--bg-tertiary)", border: "1px solid var(--border-primary)" }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-          <div style={{ fontSize: 'var(--fs-base)', fontWeight: 500 }}>{zh ? "CLI 状态" : "CLI Status"}</div>
+      <div className="sp-card">
+        <div className="sp-row sp-row--between sp-row--lead">
+          <div className="sp-text-medium">{zh ? "CLI 状态" : "CLI Status"}</div>
           <button
             onClick={handleRecheck}
             disabled={status === "checking"}
-            style={{
-              padding: "3px 10px", fontSize: 'var(--fs-xs)', cursor: status === "checking" ? "wait" : "pointer",
-              background: "var(--bg-secondary)", border: "1px solid var(--border-primary)", borderRadius: 4,
-              color: "var(--text-secondary)", flexShrink: 0,
-            }}
+            className="sp-btn sp-btn--xs"
             title={zh ? "重新检测 CLI 与索引" : "Re-check CLI and index"}
           >
             {status === "checking" ? (zh ? "检测中..." : "Checking...") : (zh ? "🔄 重新检测" : "🔄 Re-check")}
           </button>
         </div>
         {status === "checking" && <div className="hint-sm">{zh ? "正在执行 codegraph --version..." : "Running codegraph --version..."}</div>}
-        {status === "installed" && <div style={{ fontSize: 'var(--fs-sm)', color: "var(--success)" }}>✓ {zh ? "codegraph CLI 已安装" : "codegraph CLI is installed"}</div>}
+        {status === "installed" && <div className="sp-hint sp-icon-success">✓ {zh ? "codegraph CLI 已安装" : "codegraph CLI is installed"}</div>}
         {status === "not_installed" && (
           <div>
-            <div style={{ fontSize: 'var(--fs-sm)', color: "var(--error)", marginBottom: 8 }}>✗ {zh ? "codegraph CLI 未安装" : "codegraph CLI is not installed"}</div>
+            <div className="sp-hint sp-hint--error sp-hint--lead">✗ {zh ? "codegraph CLI 未安装" : "codegraph CLI is not installed"}</div>
             <button
               onClick={handleInstall}
               disabled={installing}
-              style={{
-                padding: "8px 16px", fontSize: 'var(--fs-sm)', cursor: installing ? "wait" : "pointer",
-                background: "var(--accent)", border: "none", borderRadius: 4, color: "var(--text-on-accent)",
-                fontWeight: 500, opacity: installing ? 0.65 : 1, marginBottom: 8,
-              }}
+              className="sp-btn sp-btn--lg sp-btn--primary sp-hint--lead"
             >
               {installing ? (zh ? "⏳ 安装中..." : "⏳ Installing...") : (zh ? "⬇️ 一键安装 CodeGraph（约 52MB）" : "⬇️ Install CodeGraph (~52MB)")}
             </button>
             {installMsg && (
-              <pre style={{ margin: "0 0 8px", padding: 8, background: "var(--bg-secondary)", borderRadius: 4, fontSize: 'var(--fs-xs)', overflow: "auto", maxHeight: 120, whiteSpace: "pre-wrap", color: "var(--text-secondary)" }}>
+              <pre className="sp-output sp-output--short">
                 {installMsg}
               </pre>
             )}
-            <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", lineHeight: 1.5 }}>
+            <div className="sp-hint sp-hint--relaxed">
               {zh ? "或手动安装（PowerShell）：" : "Or install manually (PowerShell):"}
               <br />
-              <code style={{ background: "var(--bg-secondary)", padding: "2px 6px", borderRadius: "var(--radius-sm)", fontSize: 'var(--fs-sm)' }}>
+              <code className="sp-code-chip">
                 irm https://raw.githubusercontent.com/colbymchenry/codegraph/main/install.ps1 | iex
               </code>
             </div>
@@ -3110,42 +2883,38 @@ function CodeGraphSettingsSection({ lang }: { lang: ReturnType<typeof useLang> }
       </div>
 
       {projectPath && (
-        <div style={{ padding: 16, borderRadius: 6, background: "var(--bg-tertiary)", border: "1px solid var(--border-primary)" }}>
-          <div style={{ fontSize: 'var(--fs-base)', fontWeight: 500, marginBottom: 8 }}>{zh ? "当前项目" : "Current Project"}</div>
-          <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", marginBottom: 8, wordBreak: "break-all" }}>{projectPath}</div>
-          <div style={{ fontSize: 'var(--fs-sm)', marginBottom: 8 }}>
+        <div className="sp-card">
+          <div className="sp-text-medium sp-hint--lead">{zh ? "当前项目" : "Current Project"}</div>
+          <div className="sp-hint sp-hint--lead sp-break">{projectPath}</div>
+          <div className="sp-hint-sm-block">
             {hasIndex ? (
-              <span style={{ color: "var(--success)" }}>✓ {zh ? "已有 .codegraph/ 索引" : ".codegraph/ index exists"}</span>
+              <span className="sp-icon-success">✓ {zh ? "已有 .codegraph/ 索引" : ".codegraph/ index exists"}</span>
             ) : (
-              <span style={{ color: "var(--error)" }}>✗ {zh ? "未找到 .codegraph/ 索引" : ".codegraph/ index not found"}</span>
+              <span className="sp-icon-error">✗ {zh ? "未找到 .codegraph/ 索引" : ".codegraph/ index not found"}</span>
             )}
           </div>
           {!hasIndex && status === "installed" && (
             <button
               onClick={handleInit}
               disabled={initRunning}
-              style={{
-                padding: "8px 16px", fontSize: 'var(--fs-sm)', cursor: initRunning ? "wait" : "pointer",
-                background: "var(--accent)", border: "none", borderRadius: 4, color: "var(--text-on-accent)",
-                fontWeight: 500, opacity: initRunning ? 0.6 : 1,
-              }}
+              className="sp-btn sp-btn--lg sp-btn--primary"
             >
               {initRunning ? (zh ? "构建中..." : "Building...") : (zh ? "🔨 构建代码图谱" : "🔨 Build Code Graph")}
             </button>
           )}
           {initOutput && (
-            <pre style={{ marginTop: 8, padding: 8, background: "var(--bg-secondary)", borderRadius: 4, fontSize: 'var(--fs-sm)', overflow: "auto", maxHeight: 200, whiteSpace: "pre-wrap" }}>
+            <pre className="sp-output">
               {initOutput}
             </pre>
           )}
         </div>
       )}
 
-      <div style={{ padding: 16, borderRadius: 6, background: "var(--bg-secondary)", border: "1px solid var(--border-primary)" }}>
-        <div style={{ fontSize: 'var(--fs-sm)', fontWeight: 500, marginBottom: 8 }}>
+      <div className="sp-card sp-card--sm sp-card--secondary">
+        <div className="sp-text-soft sp-hint--lead">
           {zh ? "📊 实测效果（7 个真实项目基准）" : "📊 Measured Results (7 real-world repos)"}
         </div>
-        <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", lineHeight: 1.6 }}>
+        <div className="sp-hint sp-hint--relaxed-16">
           {zh ? "• 工具调用次数减少 88%（28 次 → 2 次）" : "• Tool calls reduced 88% (28 → 2)"}<br />
           {zh ? "• 文件读取次数降为零（19 次 → 0 次）" : "• File reads reduced to zero (19 → 0)"}<br />
           {zh ? "• Token 消耗减少 62%" : "• Token usage reduced 62%"}<br />
