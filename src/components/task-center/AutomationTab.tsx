@@ -1,17 +1,19 @@
 /**
- * AutomationTab — 自动化任务 Tab
+ * AutomationTab — 自动化任务 Tab（任务管理）
  *
- * 复用 SettingsPanel 中 AutomationSettingsSection 的核心逻辑，
- * 去掉 Settings 面板的样式约束，适配 TaskCenter 的布局。
+ * 这是自动化触发器的**唯一编辑入口**：原 SettingsPanel 里的
+ * AutomationSettingsSection 已删除，设置面板只保留跳转提示，避免两套 UI 各写一份配置。
  */
 
 import { useState, useEffect } from "react";
-import { Bot, Folder, Clock, CheckCircle, Plus, History, Calendar, AlertTriangle } from "lucide-react";
+import { Bot, Folder, Clock, Play, Plus, History, Calendar, AlertTriangle } from "lucide-react";
 import {
   getAutomationConfig,
   setAutomationConfig,
   refreshAutomationEngines,
   stopAutomationEngines,
+  resumeAutomationEngines,
+  isAutomationStopped,
   type AutomationTrigger,
   type TriggerType,
 } from "../../core/automation/automation-manager";
@@ -23,12 +25,14 @@ export function AutomationTab() {
   const [triggers, setTriggers] = useState<AutomationTrigger[]>([]);
   const [editing, setEditing] = useState<Partial<AutomationTrigger> | null>(null);
   const [history, setHistory] = useState<any[]>([]);
-  const [enginesStopped, setEnginesStopped] = useState(false);
+  // 暂停状态从模块读取（引擎是单例）：卸载重挂 / 切页签都不会与真实状态脱节
+  const [enginesStopped, setEnginesStopped] = useState(() => isAutomationStopped());
 
   useEffect(() => {
     const config = getAutomationConfig();
     setTriggers(config.triggers);
     setHistory(config.history || []);
+    setEnginesStopped(isAutomationStopped());
     const handler = () => {
       const c = getAutomationConfig();
       setTriggers(c.triggers);
@@ -37,6 +41,17 @@ export function AutomationTab() {
     window.addEventListener("codem-automation-config-changed", handler);
     return () => window.removeEventListener("codem-automation-config-changed", handler);
   }, []);
+
+  const handleToggleEngines = () => {
+    if (isAutomationStopped()) {
+      // 恢复：handler 仍在，重新起表；引擎从未装配过则保持暂停态（按钮不变）
+      const resumed = resumeAutomationEngines();
+      setEnginesStopped(!resumed);
+      return;
+    }
+    stopAutomationEngines();
+    setEnginesStopped(true);
+  };
 
   const handleAdd = () => {
     setEditing({
@@ -198,24 +213,28 @@ export function AutomationTab() {
 
         {triggers.length > 0 && (
           <button
-            onClick={() => {
-              stopAutomationEngines();
-              setEnginesStopped(true);
-              setTimeout(() => setEnginesStopped(false), 3000);
-            }}
+            onClick={handleToggleEngines}
+            title={
+              enginesStopped
+                ? zh ? "重新启动所有自动化引擎" : "Restart all automation engines"
+                : zh ? "暂停所有自动化引擎（可随时恢复）" : "Pause all automation engines (resumable)"
+            }
             style={{
               padding: "8px 16px",
               borderRadius: 6,
               fontSize: 'var(--fs-base)',
-              border: "1px solid var(--error)",
+              border: enginesStopped ? "1px solid var(--success)" : "1px solid var(--error)",
               background: "none",
-              color: "var(--error)",
+              color: enginesStopped ? "var(--success)" : "var(--error)",
               cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              gap: 4,
             }}
           >
             {enginesStopped ? (
               <>
-                <CheckCircle size={12} style={{ display: "inline", verticalAlign: "middle" }} /> {zh ? "已停止" : "Stopped"}
+                <Play size={12} /> {zh ? "恢复运行" : "Resume"}
               </>
             ) : zh ? "停止所有" : "Stop All"}
           </button>

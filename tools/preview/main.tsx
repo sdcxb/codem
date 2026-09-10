@@ -7,11 +7,14 @@
 import { createRoot } from "react-dom/client";
 import { LibraryScene } from "../../src/plugins/library-ops/components/library/LibraryScene";
 import { PixelLibraryScene } from "../../src/plugins/library-ops/components/library/PixelLibraryScene";
-import { LibraryOpsTaskView } from "../../src/plugins/library-ops/components/LibraryOpsTaskView";
+import { CostPanel } from "../../src/plugins/library-ops/components/monitor/CostPanel";
+import { ErrorsPanel } from "../../src/plugins/library-ops/components/monitor/ErrorsPanel";
+import { SettingsPanel } from "../../src/plugins/library-ops/components/monitor/SettingsPanel";
+import { TimelinePanel } from "../../src/plugins/library-ops/components/monitor/TimelinePanel";
+import { ToolsPanel } from "../../src/plugins/library-ops/components/monitor/ToolsPanel";
 import { LibraryPanel } from "../../src/plugins/library-ops/components/monitor/LibraryPanel";
 import { OverviewPanel } from "../../src/plugins/library-ops/components/monitor/OverviewPanel";
 import { SceneImageCard } from "../../src/plugins/library-ops/components/monitor/SceneImageCard";
-import { TeamsPanel } from "../../src/plugins/library-ops/components/monitor/TeamsPanel";
 import { useLibraryOps } from "../../src/plugins/library-ops/store";
 import type { LibraryActor, LibrarySnapshot } from "../../src/plugins/library-ops/types";
 import { generateLook } from "../../src/plugins/library-ops/data/characters";
@@ -179,8 +182,10 @@ function settledPixelScene() {
 const INITIAL_PIXEL_SCENE = settledPixelScene();
 
 function Preview() {
-  // ?audit=1 → 只渲染任务管理里的图书馆视图，并按「宿主面板尺寸」铺满视口，
-  // 供 audit-layout.mjs 在不同窗口宽度下检查有没有横向溢出/挤压。
+  // ?audit=1 → 只渲染「看板页签」里的插件视图（按宿主面板尺寸铺满视口），
+  // 供 audit-layout.mjs 在不同窗口宽度下逐个视图检查裁切/重叠。
+  // 注意：这里不渲染 IssueBoard（宿主看板，依赖 node 内建模块，浏览器预览构建不了），
+  // 只审计插件自己的视图；宿主看板的布局由任务管理自身的测试覆盖。
   const auditMode = typeof location !== "undefined" && location.search.includes("audit");
   if (auditMode) {
     return (
@@ -189,14 +194,20 @@ function Preview() {
         style={{ padding: 0, gap: 0, width: "min(1180px, 96vw)", height: "min(720px, 88vh)", margin: "0 auto" }}
       >
         <div style={{ position: "relative", height: "100%", border: "1px solid var(--border-primary)", borderRadius: 12, overflow: "hidden" }}>
-          <LibraryOpsTaskView />
+          <div className="lo-task" data-lo-view="task-center-board">
+            <div className="lo-task__body">
+              <main className="lo-task__content">
+                <AuditedView />
+              </main>
+            </div>
+          </div>
         </div>
       </div>
     );
   }
   return (
     <div className="preview-wrap">
-      <h3 style={{ margin: 0, fontSize: 14 }}>任务管理「图书馆」页签视图（融合后的形态 · 无独立面板）</h3>
+      <h3 style={{ margin: 0, fontSize: 14 }}>看板页签「场景」视图（融合后的形态 · 无独立面板）</h3>
       <div
         style={{
           width: "min(1180px, 96vw)",
@@ -207,7 +218,13 @@ function Preview() {
           overflow: "hidden",
         }}
       >
-        <LibraryOpsTaskView />
+        <div className="lo-task" data-lo-view="task-center-board">
+          <div className="lo-task__body">
+            <main className="lo-task__content">
+              <LibraryPanel snapshot={snapshot} zh />
+            </main>
+          </div>
+        </div>
       </div>
       <h3 style={{ margin: 0, fontSize: 14 }}>像素图书馆（内置场景图预设 · 可在设置里换图 / 上传自己的图）</h3>
       <div className="preview-scene">
@@ -239,7 +256,7 @@ function Preview() {
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, width: 1180 }}>
         <OverviewPanel snapshot={snapshot} series={series} zh onOpenLibrary={() => {}} onOpenTab={() => {}} />
-        <TeamsPanel snapshot={snapshot} zh />
+        <CostPanel snapshot={snapshot} series={series} zh />
       </div>
       <div style={{ width: 1180, height: 640, position: "relative", border: "1px solid var(--border-primary)", borderRadius: 12 }}>
         <LibraryPanel snapshot={snapshot} zh />
@@ -248,53 +265,149 @@ function Preview() {
   );
 }
 
+/** 审计模式下按 store.tab 渲染对应的插件视图 */
+function AuditedView() {
+  const tab = useLibraryOps((s) => s.tab);
+  if (tab === "scene") return <LibraryPanel snapshot={snapshot} zh />;
+  if (tab === "usage")
+    return (
+      <div className="lo-usage">
+        <OverviewPanel snapshot={snapshot} series={series} zh onOpenLibrary={() => {}} onOpenTab={() => {}} />
+        <CostPanel snapshot={snapshot} series={series} zh />
+      </div>
+    );
+  if (tab === "tools") return <ToolsPanel snapshot={snapshot} zh />;
+  if (tab === "errors") return <ErrorsPanel snapshot={snapshot} zh />;
+  if (tab === "timeline") return <TimelinePanel snapshot={snapshot} zh />;
+  if (tab === "settings") return <SettingsPanel zh />;
+  return <div className="lo-empty">board</div>;
+}
+
 createRoot(document.getElementById("root")!).render(<Preview />);
 
 /**
- * 版面自检（?audit=1）：把「有没有横向溢出」写进 DOM，供 headless 抓取。
+ * 版面自检（?audit=1）：逐个渲染「图书馆」页签的每个子视图，把
+ * 「被裁切 / 元素互相重叠」写进 DOM，供 headless 抓取。
  *
- * 判定：容器内任何元素的 scrollWidth 明显大于 clientWidth（>2px）且自身不是
- * 可滚动容器（overflow-x: auto/scroll），就算溢出 —— 这类元素在小窗口下就是
- * 用户看到的「挤在一起 / 被裁切」。
+ * 判定三类问题：
+ * 1. **横向裁切**：元素的 scrollWidth 明显大于 clientWidth（内容放不下）
+ * 2. **纵向裁切**：overflow-y: hidden 且 scrollHeight > clientHeight（内容被切掉）
+ * 3. **元素重叠**：同一容器内两个非绝对定位兄弟的包围盒重叠面积 > 4×4px
+ *    （这就是用户看到的「堆叠到一起」）
+ *
+ * 排除：场景画布内部（可平移缩放，重叠是设计）、绝对定位元素、纯装饰容器。
  */
 if (typeof location !== "undefined" && location.search.includes("audit")) {
-  window.setTimeout(() => {
+  const measureView = (tab: string) => {
     const root = document.querySelector(".lo-task");
-    const report: { viewport: string; rootWidth: number; overflow: unknown[]; minFontPx: number } = {
-      viewport: `${window.innerWidth}x${window.innerHeight}`,
+    const view: {
+      tab: string;
+      rootWidth: number;
+      clipped: Array<Record<string, unknown>>;
+      overlapping: Array<Record<string, unknown>>;
+      minFontPx: number;
+    } = {
+      tab,
       rootWidth: root ? Math.round((root as HTMLElement).getBoundingClientRect().width) : 0,
-      overflow: [],
+      clipped: [],
+      overlapping: [],
       minFontPx: 0,
     };
-    if (root) {
-      for (const el of Array.from(root.querySelectorAll<HTMLElement>("*"))) {
-        const style = getComputedStyle(el);
-        if (style.display === "none" || style.visibility === "hidden") continue;
-        // 场景画布可平移缩放（溢出是设计），绝对定位的角色/精灵同理
-        if (el.closest(".lo-scene") || style.position === "absolute" || style.position === "fixed") continue;
-        // 只关心「文字/卡片被裁切」——纯装饰容器不算
-        const hasText = Array.from(el.childNodes).some((n) => n.nodeType === 3 && (n.textContent ?? "").trim());
-        if (!hasText && !el.classList.contains("lo-card")) continue;
-        const scrollableX = style.overflowX === "auto" || style.overflowX === "scroll";
-        const dx = el.scrollWidth - el.clientWidth;
-        const dy = el.scrollHeight - el.clientHeight;
-        if (!scrollableX && dx > 2) {
-          report.overflow.push({
-            sel: `${el.tagName.toLowerCase()}.${(el.className || "").toString().split(" ").filter(Boolean).slice(0, 2).join(".")}`,
-            dx,
-            w: el.clientWidth,
-          });
-        }
-        if (!scrollableX && dy > 2 && style.overflowY === "hidden") {
-          report.overflow.push({
-            sel: `${el.tagName.toLowerCase()}.${(el.className || "").toString().split(" ").filter(Boolean).slice(0, 2).join(".")}`,
-            dy,
-            h: el.clientHeight,
-          });
-        }
-        const fs = parseFloat(style.fontSize);
-        if (fs && fs < (report.minFontPx || 999)) report.minFontPx = Math.round(fs * 10) / 10;
+    if (!root) return view;
+    const sel = (el: Element) =>
+      `${el.tagName.toLowerCase()}.${(el.className || "").toString().split(" ").filter(Boolean).slice(0, 2).join(".")}`;
+    const visible = (el: HTMLElement) => {
+      const s = getComputedStyle(el);
+      if (s.display === "none" || s.visibility === "hidden" || s.opacity === "0") return false;
+      const r = el.getBoundingClientRect();
+      return r.width > 0 && r.height > 0;
+    };
+
+    for (const el of Array.from(root.querySelectorAll<HTMLElement>("*"))) {
+      const style = getComputedStyle(el);
+      if (!visible(el)) continue;
+      if (el.closest(".lo-scene") || style.position === "absolute" || style.position === "fixed") continue;
+      const hasText = Array.from(el.childNodes).some((n) => n.nodeType === 3 && (n.textContent ?? "").trim());
+      const fs = parseFloat(style.fontSize);
+      if (fs && fs < (view.minFontPx || 999)) view.minFontPx = Math.round(fs * 10) / 10;
+
+      const scrollableX = style.overflowX === "auto" || style.overflowX === "scroll";
+      const scrollableY = style.overflowY === "auto" || style.overflowY === "scroll";
+      // 省略号截断是设计（不是布局问题）
+      const ellipsis = style.textOverflow === "ellipsis";
+      const dx = el.scrollWidth - el.clientWidth;
+      const dy = el.scrollHeight - el.clientHeight;
+      // 横向 6px 以内视为亚像素/字距噪声（视觉上看不出裁切）
+      if (!scrollableX && !ellipsis && dx > 6 && (hasText || el.classList.contains("lo-card"))) {
+        view.clipped.push({ sel: sel(el), dx, w: el.clientWidth });
       }
+      if (!scrollableY && style.overflowY === "hidden" && dy > 4 && (hasText || el.classList.contains("lo-card"))) {
+        view.clipped.push({ sel: sel(el), dy, h: el.clientHeight });
+      }
+    }
+
+    // 同一容器的直接子元素两两比较（只在 grid/flex 容器里，绝对定位元素跳过）
+    for (const box of Array.from(root.querySelectorAll<HTMLElement>("*"))) {
+      const style = getComputedStyle(box);
+      if (style.display !== "grid" && style.display !== "flex") continue;
+      if (box.closest(".lo-scene")) continue;
+      const kids = Array.from(box.children).filter(
+        (k): k is HTMLElement => k instanceof HTMLElement && visible(k) && getComputedStyle(k).position === "static",
+      );
+      for (let i = 0; i < kids.length; i++) {
+        for (let j = i + 1; j < kids.length; j++) {
+          const ra = kids[i].getBoundingClientRect();
+          const rb = kids[j].getBoundingClientRect();
+          const ox = Math.min(ra.right, rb.right) - Math.max(ra.left, rb.left);
+          const oy = Math.min(ra.bottom, rb.bottom) - Math.max(ra.top, rb.top);
+          if (ox > 4 && oy > 4) {
+            view.overlapping.push({ a: sel(kids[i]), b: sel(kids[j]), ox: Math.round(ox), oy: Math.round(oy) });
+          }
+        }
+      }
+    }
+    return view;
+  };
+
+  const SUB_VIEWS = ["scene", "usage", "tools", "errors", "timeline", "settings"] as const;
+
+  window.setTimeout(async () => {
+    const { useLibraryOps } = await import("../../src/plugins/library-ops/store");
+    const report: { viewport: string; views: unknown[] } = {
+      viewport: `${window.innerWidth}x${window.innerHeight}`,
+      views: [],
+    };
+    for (const tab of SUB_VIEWS) {
+      useLibraryOps.getState().setTab(tab);
+      // 等 React 提交 + 图表/场景布局稳定
+      await new Promise((r) => setTimeout(r, 420));
+      const v = measureView(tab);
+      // 调试用：附带容器样式与子元素矩形，便于定位重叠原因
+      const container = document.querySelector(".lo-settings, .lo-grid--lp, .lo-tools, .lo-errors");
+      if (container) {
+        const cs = getComputedStyle(container);
+        (v as Record<string, unknown>).containerDebug = {
+          sel: `${container.tagName.toLowerCase()}.${(container.className || "").toString().split(" ").join(".")}`,
+          display: cs.display,
+          columns: cs.gridTemplateColumns,
+          rows: cs.gridTemplateRows,
+          alignContent: cs.alignContent,
+          alignItems: cs.alignItems,
+          gap: cs.gap,
+          height: Math.round((container as HTMLElement).getBoundingClientRect().height),
+          children: Array.from(container.children).map((c) => {
+            const r = (c as HTMLElement).getBoundingClientRect();
+            return {
+              cls: (c.className || "").toString().split(" ").slice(0, 2).join("."),
+              top: Math.round(r.top),
+              h: Math.round(r.height),
+              left: Math.round(r.left),
+              w: Math.round(r.width),
+            };
+          }),
+        };
+      }
+      report.views.push(v);
     }
     const pre = document.createElement("pre");
     pre.id = "layout-audit";

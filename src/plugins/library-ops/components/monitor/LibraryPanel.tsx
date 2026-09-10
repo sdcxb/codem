@@ -1,4 +1,4 @@
-﻿/**
+/**
  * LibraryPanel —— 图书馆场景页（本插件的核心视图）。
  *
  * 左侧：完整等距图书馆场景（角色在岗位上工作）
@@ -81,6 +81,14 @@ export function LibraryPanel({ snapshot, zh }: LibraryPanelProps) {
           scroll
           className="lo-card--roster"
         >
+          {/* 去重说明：场景与「子智能体」「团队」页签是同一份数据的两种表达，
+              这里只做可视化，不再重复提供明细列表。 */}
+          <p className="lo-note" style={{ margin: "0 0 8px" }}>
+            <LoIcon name="users" size={11} />{" "}
+            {zh
+              ? "场景 = 子智能体 / 团队的可视化视图（同一份数据）；明细列表见「子智能体」「团队」页签。"
+              : "Scene = a visual view of the same Sub-agents / Teams data; see those tabs for detail lists."}
+          </p>
           {actors.length === 0 ? (
             <Empty text={zh ? "暂无角色" : "No actors"} />
           ) : (

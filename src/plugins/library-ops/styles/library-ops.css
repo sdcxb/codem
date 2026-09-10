@@ -134,23 +134,33 @@
   font-weight: 600;
 }
 
-/* ===== 内容区 ===== */
+/* ===== 内容区 =====
+ * 原则：子视图**按内容自然高度排布，容器负责滚动**；
+ * 只有「场景」子视图铺满（画布要自适应容器）。
+ * 这样任何窗口尺寸下都不会因为强行塞进固定高度而挤压/重叠。
+ */
 .lo-task__content {
   flex: 1;
   min-width: 0;
-  overflow: hidden;
+  overflow-y: auto;
+  overflow-x: hidden;
   display: flex;
   flex-direction: column;
 }
 .lo-task__content > * {
-  flex: 1;
-  min-height: 0;
+  flex: 0 0 auto;
   min-width: 0;
-  overflow: auto;
   padding: 12px;
 }
-.lo-task__content > *::-webkit-scrollbar { width: 6px; height: 6px; }
-.lo-task__content > *::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 3px; }
+/* 场景视图铺满可视区（其余子视图自然高度，由内容区滚动） */
+.lo-task__content > .lo-library {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  padding: 10px;
+}
+.lo-task__content::-webkit-scrollbar { width: 6px; height: 6px; }
+.lo-task__content::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 3px; }
 
 .lo-task__feed {
   width: clamp(200px, 24cqw, 280px);
@@ -205,19 +215,25 @@
 .lo-card__body--scroll::-webkit-scrollbar { width: 5px; }
 .lo-card__body--scroll::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 3px; }
 
-/* ===== 总览网格（布局对标 lobster-pet DetailPanel；宽度全部用 minmax，不留死值） ===== */
-.lo-grid--lp { display: flex; flex-direction: column; gap: 10px; height: 100%; min-height: 0; }
-.lo-grid__row { display: grid; gap: 10px; min-height: 0; }
+/* ===== 用量视图（总览 + 成本两块堆叠，自然高度） ===== */
+.lo-usage { display: flex; flex-direction: column; gap: 10px; }
+
+/* ===== 总览/用量网格（自然高度，容器滚动；对标 lobster-pet DetailPanel 的三段式） ===== */
+.lo-grid--lp { display: flex; flex-direction: column; gap: 10px; }
+.lo-grid__row { display: grid; gap: 10px; }
 .lo-grid__row--top {
   grid-template-columns: minmax(180px, 236px) minmax(0, 1fr) minmax(0, 1.45fr);
-  flex-shrink: 0;
 }
-.lo-grid__row--mid { grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); flex: 1; min-height: 0; }
-.lo-stack { display: flex; flex-direction: column; gap: 10px; min-height: 0; }
-.lo-stack__row { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; flex: 1; min-height: 0; }
-.lo-card--memo { flex-shrink: 0; }
-.lo-card--scene { min-height: 0; }
+.lo-grid__row--mid { grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); }
+.lo-stack { display: flex; flex-direction: column; gap: 10px; }
+.lo-stack__row { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; }
+.lo-card--memo { }
+/* 场景卡固定一段高度（画布自适应这段高度），其余卡片自然高度 + 内部滚动 */
+.lo-card--scene { height: clamp(220px, 34vh, 340px); }
 .lo-card--scene .lo-card__body { flex: 1; min-height: 0; display: flex; }
+.lo-card--status,
+.lo-card--sessions,
+.lo-card--activity { max-height: 320px; }
 .lo-card--status .lo-card__body,
 .lo-card--sessions .lo-card__body,
 .lo-card--activity .lo-card__body { flex: 1; min-height: 0; overflow: hidden; }
@@ -232,7 +248,7 @@
 .lo-scene-host {
   position: relative;
   flex: 1;
-  min-height: 320px;
+  min-height: 180px;
   min-width: 0;
   border-radius: var(--radius-sm);
   overflow: hidden;
@@ -368,6 +384,15 @@
   cursor: pointer;
 }
 .lo-btn:hover { background: var(--bg-hover); border-color: var(--accent); }
+.lo-btn--primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  color: var(--accent);
+}
+.lo-btn--primary:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 24%, transparent); }
 .lo-select {
   background: var(--input-bg, var(--bg-tertiary));
   color: var(--text-primary);
@@ -560,8 +585,11 @@
   overflow: hidden;
 }
 .lo-library__side { display: flex; flex-direction: column; gap: 10px; min-height: 0; }
-.lo-card--roster { flex: 1 1 auto; min-height: 120px; }
-.lo-card--detail { flex-shrink: 0; }
+.lo-card--roster { flex: 1 1 auto; min-height: 140px; }
+.lo-card--detail { flex: 0 1 auto; min-height: 120px; }
+.lo-card--detail .lo-card__body { overflow-y: auto; min-height: 0; }
+.lo-card--detail .lo-card__body::-webkit-scrollbar { width: 5px; }
+.lo-card--detail .lo-card__body::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 3px; }
 
 .lo-scene { position: absolute; inset: 0; overflow: hidden; touch-action: none; cursor: grab; }
 .lo-scene:active { cursor: grabbing; }
@@ -1153,43 +1181,8 @@
 }
 .lo-zone-occupants__item:hover { border-color: var(--accent); }
 
-/* ===== 团队 ===== */
-.lo-teams { display: flex; flex-direction: column; gap: 10px; }
-.lo-team__meta { display: inline-flex; align-items: center; gap: 6px; }
-.lo-team__age { font-size: var(--fs-xs); color: var(--text-muted); }
-.lo-team__grid { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.4fr) minmax(160px, 0.8fr); gap: 12px; }
-.lo-team__col { min-width: 0; }
-.lo-members__item, .lo-tasks__item {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  padding: 3px 6px;
-  border-radius: var(--radius-sm);
-  font-size: var(--fs-xs);
-}
-.lo-members__item:hover, .lo-tasks__item:hover { background: var(--bg-hover); }
+/* ===== 团队 / 会话（独立视图已并入任务管理，只保留概览页用到的成员状态点） ===== */
 .lo-members__dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
-.lo-members__name { font-weight: 600; color: var(--text-primary); }
-.lo-members__role { color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 110px; }
-.lo-members__tasks { margin-left: auto; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
-.lo-members__status { white-space: nowrap; }
-.lo-members__focus { width: 100%; color: var(--text-muted); font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.lo-tasks__id { color: var(--text-muted); font-variant-numeric: tabular-nums; }
-.lo-tasks__subject { flex: 1; min-width: 0; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.lo-tasks__assignee { color: var(--text-secondary); white-space: nowrap; }
-.lo-tasks__deps { color: var(--warning); font-size: 10px; }
-.lo-team__ring { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
-.lo-team__pct { font-size: var(--fs-lg); font-weight: 700; color: var(--success); }
-.lo-team__bar { display: block; width: 44px; height: 6px; border-radius: var(--radius-full, 999px); background: color-mix(in srgb, var(--text-muted) 18%, transparent); overflow: hidden; }
-.lo-team__bar > span { display: block; height: 100%; }
-
-/* ===== 会话 ===== */
-.lo-sessions { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }
-.lo-session { display: flex; flex-direction: column; gap: 4px; }
-.lo-session__row { display: flex; gap: 8px; font-size: var(--fs-xs); }
-.lo-session__k { color: var(--text-muted); flex-shrink: 0; }
-.lo-session__v { margin-left: auto; color: var(--text-primary); text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.lo-session__stats { display: flex; gap: 10px; margin-top: 4px; font-size: var(--fs-xs); color: var(--text-muted); }
 
 /* ===== 工具 / 成本 / 错误 ===== */
 .lo-tools { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); gap: 10px; align-items: start; }
@@ -1290,6 +1283,7 @@
 .lo-scene-picker { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; }
 .lo-scene-option {
   position: relative;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -1324,7 +1318,15 @@
   color: var(--text-muted);
   font-size: var(--fs-lg);
 }
-.lo-scene-option__label { font-size: var(--fs-xs); line-height: 1.4; }
+.lo-scene-option__label {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  font-size: var(--fs-xs);
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
 .lo-scene-option__tag {
   position: absolute;
   right: 6px;

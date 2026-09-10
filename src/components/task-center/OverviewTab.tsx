@@ -10,9 +10,10 @@ import { getDelegationOrchestrator } from "../../core/session";
 import { getAutomationConfig } from "../../core/automation/automation-manager";
 import { getIssueManager } from "../../core/issue/issue";
 import { getInboxManager } from "../../core/inbox/inbox";
-import { useProjectStore } from "../../core/store";
 import { useLang } from "../../core/i18n/lang";
-import type { TaskCenterTab } from "../TaskCenter";
+import { useSlotHasEntries } from "../../core/slots/SlotBridge";
+import { TASK_CENTER_BOARD_SLOT, type TaskCenterTab } from "../TaskCenter";
+import { getCurrentProjectId } from "./use-current-project";
 
 interface OverviewTabProps {
   onNavigate: (tab: TaskCenterTab) => void;
@@ -28,7 +29,8 @@ interface ActivityEntry {
 export function OverviewTab({ onNavigate }: OverviewTabProps) {
   const lang = useLang();
   const zh = lang === "zh";
-  const sessions = useProjectStore((s) => s.sessions);
+  // 「看板」页签是否被插件接管（接管后才有「时间线」全量视图）
+  const boardHasPlugin = useSlotHasEntries(TASK_CENTER_BOARD_SLOT);
 
   const [delegationStats, setDelegationStats] = useState({ total: 0, running: 0, completed: 0, failed: 0, pending: 0 });
   const [automationCount, setAutomationCount] = useState({ active: 0, total: 0, todayTriggered: 0 });
@@ -37,9 +39,20 @@ export function OverviewTab({ onNavigate }: OverviewTabProps) {
   const [activities, setActivities] = useState<ActivityEntry[]>([]);
 
   const loadData = useCallback(() => {
-    // Delegation stats
+    const projectId = getCurrentProjectId();
+
+    // Delegation stats（与「委派」页签严格同口径：无项目 → 0 条，有项目 → 按项目过滤，P1-6）
     const orch = getDelegationOrchestrator();
-    setDelegationStats(orch.getStats());
+    const allTasks = projectId
+      ? orch.getAllDelegations().filter((t) => !t.projectId || t.projectId === projectId)
+      : [];
+    setDelegationStats({
+      total: allTasks.length,
+      running: allTasks.filter((t) => t.status === "running").length,
+      completed: allTasks.filter((t) => t.status === "completed").length,
+      failed: allTasks.filter((t) => t.status === "failed").length,
+      pending: allTasks.filter((t) => t.status === "pending").length,
+    });
 
     // Automation stats
     const config = getAutomationConfig();
@@ -49,9 +62,11 @@ export function OverviewTab({ onNavigate }: OverviewTabProps) {
     const todayTriggered = (config.history || []).filter((h) => h.timestamp >= today.getTime()).length;
     setAutomationCount({ active, total: config.triggers.length, todayTriggered });
 
-    // Issue stats
+    // Issue stats（无项目时不做全局统计，避免跨项目串数据，P2-12）
     const issueMgr = getIssueManager();
-    const stats = issueMgr.getStats(useProjectStore.getState().currentProject?.id);
+    const stats = projectId
+      ? issueMgr.getStats(projectId)
+      : ({} as Record<string, number>);
     setIssueStats({
       total: Object.values(stats).reduce((a, b) => a + b, 0),
       inProgress: stats.in_progress || 0,
@@ -60,16 +75,12 @@ export function OverviewTab({ onNavigate }: OverviewTabProps) {
     });
 
     // Inbox stats
-    setInboxUnread(getInboxManager().getUnreadCount(useProjectStore.getState().currentProject?.id));
+    setInboxUnread(projectId ? getInboxManager().getUnreadCount(projectId) : 0);
 
     // Build activity timeline from delegation tasks + automation history
     const allActivities: ActivityEntry[] = [];
 
-    // Delegation activities
-    const allTasks = sessions.flatMap((s) => [
-      ...orch.getDelegationsBySource(s.id),
-      ...orch.getDelegationsByTarget(s.id),
-    ]);
+    // Delegation activities（复用上面已按项目过滤的列表）
     const seen = new Set<string>();
     for (const t of allTasks) {
       if (seen.has(t.id)) continue;
@@ -101,7 +112,7 @@ const iconColor = t.status === "completed" ? "var(--success)" :
 
     allActivities.sort((a, b) => b.timestamp - a.timestamp);
     setActivities(allActivities.slice(0, 15));
-  }, [sessions, zh]);
+  }, [zh]);
 
   useEffect(() => {
     loadData();
@@ -202,10 +213,39 @@ const iconColor = t.status === "completed" ? "var(--success)" :
         })}
       </div>
 
-      {/* Recent activity timeline */}
+      {/* Recent activity timeline（概览只做「最近 5 条」预览，全量在看板 → 时间线） */}
       <div>
-        <div style={{ fontSize: "var(--fs-md)", fontWeight: 600, color: "var(--text-primary)", marginBottom: "12px" }}>
-          {zh ? "最近活动" : "Recent Activity"}
+        <div style={{
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+          gap: 12, marginBottom: "12px",
+        }}>
+          <span style={{ fontSize: "var(--fs-md)", fontWeight: 600, color: "var(--text-primary)" }}>
+            {zh ? "最近活动" : "Recent Activity"}
+          </span>
+          {boardHasPlugin && (
+            <button
+              onClick={() => {
+                onNavigate("board");
+                // 插件接管看板时，额外请求它切到「时间线」子视图
+                // （插件监听宿主已有的 codem:open-task-center 事件，宿主不直接依赖插件）
+                try {
+                  window.dispatchEvent(
+                    new CustomEvent("codem:open-task-center", { detail: { tab: "board", view: "timeline" } }),
+                  );
+                } catch {
+                  /* 忽略：事件派发失败不影响切页签 */
+                }
+              }}
+              style={{
+                display: "flex", alignItems: "center", gap: 4,
+                background: "none", border: "none", padding: 0,
+                color: "var(--accent)", fontSize: "var(--fs-sm)", cursor: "pointer",
+              }}
+            >
+              {zh ? "查看完整时间线" : "Full timeline"}
+              <ChevronRight size={12} />
+            </button>
+          )}
         </div>
         {activities.length === 0 ? (
           <div style={{ padding: "20px", textAlign: "center", color: "var(--text-secondary, #666)", fontSize: "var(--fs-base)" }}>
@@ -213,7 +253,7 @@ const iconColor = t.status === "completed" ? "var(--success)" :
           </div>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-            {activities.map((act, i) => (
+            {activities.slice(0, 5).map((act, i) => (
               <div
                 key={i}
                 style={{

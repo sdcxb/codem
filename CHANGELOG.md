@@ -2,141 +2,136 @@
 
 All notable changes to Codem will be documented in this file.
 
-## [Unreleased] — 图书馆界面自适应改造 + 统一图标库 + 样式对齐宿主
+## [1.14.0] - 2026-09-10 — 图书馆并入「看板」+ 场景图可上传/自动对位 + 界面自适应与图标统一
 
-> 融合进任务管理后，图书馆页签在非 1180px 宽度下元素会挤在一起（固定 236px 列、
-> 460px 最小高度、280px 事件流、视口断点判容器宽度），而且样式自成一套、图标全是
-> emoji。本版重做版面与图标体系。
+> 「图书馆」与「任务管理」在入口层大量重叠：两处都能看到同一批团队 / 会话 / 任务，
+> 图书馆只多了一层动画场景。本版把它收敛成任务管理里的一部分（**并入「看板」页签**），
+> 并解决换图与版面两件麻烦事：**场景图可上传替换**、**自动对位（不用手工拖）**、
+> **容器查询自适应**、**图标统一到 lucide**。
 
-### 自适应版面（容器查询，不再按视口断点猜）
+### 重构：图书馆并入「看板」页签（不再有独立面板）
+
+- **合并理由**：图书馆场景的初衷就是「谁在做什么、在哪做」的可视化看板，与宿主
+  「看板」页签（Issues 按状态分列）是同一类信息的不同表达
+- **新结构**：看板页签 = 宿主 Issues 看板（默认视图）+ 插件追加
+  **场景 / 用量 / 工具 / 错误 / 时间线 / 设置** 六个视图
+- **去掉重复入口**：原「总览」→「用量」（并合并原「成本」视图）；
+  原「团队」→ 任务管理「团队」；原「会话」→ 任务管理「委派 / 子智能体」+ 场景花名册
+- **宿主扩展点**：新增 `task-center.board` slot，`BoardTab` 用 `SlotBridge` 渲染，
+  插件禁用时回退到自带 Issues 看板；`TaskCenter` 固定 8 个页签（旧 `library` tab id 自动归一为 `board`）
+- **删除**：`components/LibraryOpsPanel.tsx`（全屏外壳）、`components/LibraryOpsLauncher.tsx`
+  （悬浮圆钮 + 徽标）、store 的 `open/openPanel/closePanel/togglePanel`、`SessionsPanel`
+- `Ctrl/Cmd+Shift+L` 与 `codem:open-library-ops` 改为打开「任务管理 → 看板」
+
+### 新增：场景图可上传替换
+
+- 设置 →「场景图片」：内置像素画 / 内置 AI 场景图一键切换；点「选择图片」或
+  **把图片直接拖到场景上**即可上传（PNG/JPG/WebP/AVIF/GIF/BMP，≤32MB、≥640×360）
+- 图片以 Blob 存浏览器 IndexedDB（`codem-library-ops` / `scene-images`，不写宿主数据）；
+  环境不支持时降级为「本次会话有效」并明确提示
+- `scripts/build-library-ops-scene-preset.mjs`：任意图 → 2752×1536 WebP 预设 + 480×268 缩略图
+- `public/library-ops/scenes/`：本项目自有素材（AI 生成，可商用）+ `SOURCE.md`
+
+### 新增：场景自动对位（纯像素统计，不用手工拖拽）
+
+- `core/scene-align.ts`：地面掩码（亮度 + 3×3 局部方差）vs 内置房间掩码，
+  在「缩放 × 平移」粗到细网格上最大化 IoU；输出 `{scale,x,y}` + 置信度
+- 上传后自动跑一次，置信度 ≥ 0.42 自动应用并显示百分比；不满意可点
+  「手动对位编辑器」再微调（房间框 / 走道节点拖拽，按图分别保存）
+- 7 个纯函数单测（含「已知变换能否反解回来」与噪声图低置信度）
+
+### 改造：界面自适应（容器查询）
 
 - `.lo-task` 设为容器（`container-type: inline-size`），按**面板实际宽度**分档：
-  ≥1080px 三栏（导航 + 内容 + 事件流）/ 980–1080px 收事件流 / 980px 以下全部单列 /
-  ≤820px 子导航收成图标条；另按**容器高度**（≤620px）压缩场景最小高度
-- 去掉所有固定死值：`grid-template-columns: 236px …` → `minmax(180px, 236px)`、
-  `.lo-grid__row--mid { min-height: 460px }` → `0`、事件流 `width: 280px` →
-  `clamp(200px, 24cqw, 280px)`、`.lo-library` 侧栏 `300px` → `minmax(200px, 300px)`
-- 场景 + 花名册在窄容器下改为上下两段（下段最多 45% 且卡片内部滚动），
-  彻底消除「角色详情被裁掉 25px」这类挤压
-- 新增 `tools/preview/audit-layout.mjs`：headless 在 **7 种窗口尺寸**
-  （1600→760 宽）下渲染「图书馆」页签，读页面自检的 `#layout-audit`
-  （元素 scrollWidth/clientWidth 差 + 最小字号），全部 0 溢出通过
+  ≥1080 三栏 / 980–1080 收事件流 / <980 单列 / ≤820 导航图标条；按容器高度压缩场景
+- 固定死值全部换弹性值（`236px` 列 → `minmax(180px,236px)`、`min-height:460px` → 0、
+  事件流 `280px` → `clamp(200px,24cqw,280px)`）；**子视图改为自然高度 + 内容区滚动**，
+  修掉「用量 / 设置 / 错误」等视图在窄窗口下元素重叠、内容被裁切
+- 新增 `tools/preview/audit-layout.mjs`：7 种窗口宽度 × 每个子视图检查
+  横向/纵向裁切与兄弟元素重叠（全部 0）
 
-### 图标体系统一（emoji → lucide-react）
+### 审计与修复：任务管理（宿主，8 个页签）
 
-- 新增 `components/icons.tsx`：`LoIcon` + `LO_ICONS` 映射表（49 个语义名 → lucide 组件），
-  数据层只存语义名（`types.ts` 新增 `LoIconName` 联合类型），渲染层统一 `<LoIcon>`
-- 替换全部 emoji：11 种工作状态 / 5 种角色来源 / 10 个岗位 / 各面板卡片图标 /
-  场景 HUD（＋ － ⤢ ✥ ↺）/ 子导航 / 上传提示 / 趋势箭头（▲▼ → TrendingUp/Down）
-- 门禁 `library-ops-icons.test.tsx` LO-ICON-1~5：数据层图标名必须登记在映射表、
-  插件源码不得再出现 emoji、`LoIcon` 渲染 svg、公共组件渲染 svg、样式层无死样式
+对「任务管理」做了一轮逐页签审计（含插件接管后的看板页签），修掉下列问题：
 
-### 样式对齐宿主
-
-- `.lo-card` 改为宿主 `.card` 同一语言：`--radius-md` 10px + `var(--bg-secondary)` +
-  `border-primary` + hover 边框；`.lo-pill` 改 `--radius-sm`（对齐 `.badge`）；
-  `.lo-section-title` 去掉 uppercase；`.lo-stat` 圆角 12px → 10px、底色改 `--bg-secondary`
-- 删除独立面板遗留的死样式（`.lo-launcher*` / `.lo-overlay` / `.lo-shell*`）
-
-### 验证
-
-- 新增 `library-ops-icons.test.tsx`（5 例）；全量 193 文件 / 4515 用例通过；
-  `tsc --noEmit` 零错误；`vite build` 成功
-- DOM 审计 `issues: []`（4 个像素场景 / 48 房间 / 48 角色 / 等距 12/12 在岗）
-- 版面审计 7 种窗口尺寸全部 0 溢出
-
-## [Unreleased] — 图书馆功能融合进「任务管理」（不再单独显示面板）
-
-> 图书馆插件与「任务管理」面板在入口层大量重叠：两处都能看到同一批团队、会话、任务，
-> 只是图书馆多了一层动画场景。本版把图书馆**降级为任务管理里的一个页签**：
-> 删掉重复页签与独立面板，保留任务管理没有的视图（场景/用量/会话/工具/成本/错误/时间线/设置）。
-
-### 分析结论（详见 `docs/LIBRARY-OPS-PLUGIN.md` 第九节）
-
-| 图书馆原页签 | 任务管理对应 | 处置 |
+| 级别 | 问题 | 处理 |
 | --- | --- | --- |
-| 总览 | 概览 | 同义入口 → 保留为「用量」（token/成本/健康/活动分布是任务管理没有的） |
-| 团队 | 团队 | 完全重复 → **删除**，「全部 →」按钮跳任务管理「团队」 |
-| 会话 / 工具 / 成本 / 错误 / 时间线 / 设置 / 图书馆 | 无 | 独有 → 全部保留为子视图 |
+| P0 | 「子智能体」页签列表恒空：`App.tsx` 在 render 里 `require()` 取运行时，ESM 下必然抛错被 catch 吞掉 | 改为顶层 `import` + 事件驱动订阅 `getSubagentRuntime().subscribe()` |
+| P1 | `codem:open-task-center` 只认 `tab: "teams"`，其它页签请求被忽略 | 透传任意合法 tab id（旧 id 由 `normalizeTab()` 归一） |
+| P1 | 点「子智能体」条目不切会话 | 切到 `task.parentId` 对应会话再关面板 |
+| P1 | 看板拖拽在部分浏览器不生效 / 离开子元素误判为离开列 / 同列拖动仍写库 | `setData("text/plain")`、用 `relatedTarget` 判断、同列 no-op |
+| P1 | 看板缺 `blocked` / `cancelled` 列，这两个状态的 Issue 在「看板」上直接消失 | 补齐 7 列（与 `IssueStatus` 全集对齐） |
+| P1 | 看板内容区 `overflow: hidden` 导致列多时无法滚动 | 恢复内容区滚动 |
+| P1 | 「委派」统计走全局 `orch.getStats()`，列表按项目过滤 → 「统计 5 条、列表 0 条」 | 新增 `getAllDelegations()`，统计与列表同口径（概览页同步） |
+| P1 | 面板已打开时再派发 `codem:open-task-center` 不切页签（只认挂载时 `initialTab`） | 面板内监听事件 + `initialTab` 变化同步 |
+| P2 | 自动化「停止所有」点了就再也恢复不了（3 秒后按钮复位，引擎仍是停的） | 改为「停止所有 / 恢复运行」真开关（`refreshAutomationEngines()`） |
+| P2 | Issues 筛选器缺 `backlog` / `cancelled` 两项 | 补齐 8 个状态筛选 |
+| P2 | 收件箱未读徽标随分类筛选变化；点通知只是标已读，不跳转 | 徽标改「项目整体未读」；点击穿透到对应页签（Issue 直达详情） |
+| P2 | 无当前项目时各页签直接传 `undefined` 查库 → **跨项目串数据**，新建 Issue 还会产生孤儿记录 | 新增 `use-current-project.ts`：无项目不查库、不建记录、给出提示 |
+| P2 | `IssueCard` hover 覆盖左侧状态色条 | hover 只改上/右/下边框 |
+| P2 | 详情面板切换 Issue 时右侧内容不刷新 | `useEffect` 同步 `currentIssue` |
 
-### 新增：任务管理「图书馆」页签（宿主扩展点）
+- 新增 `src/test/task-center-audit-fixes.test.tsx`（12 用例）钉住上述行为。
 
-- 宿主声明 `task-center.library` slot（`declare-slots.ts`）+ 新增
-  `useSlotHasEntries()`（`SlotBridge.tsx`），`TaskCenter.tsx` 用它在**有插件贡献时**
-  才显示「图书馆」页签（`<SlotBridge>` 渲染内容），并给该页签加宽到 1180px
-- 插件 provider 改为注册 `LibraryOpsTaskView` 到该 slot（React.lazy 独立 chunk）；
-  禁用插件 → 页签不出现、其余 8 个页签不受影响；页签被移除时自动回落到「概览」
-- `Ctrl/Cmd+Shift+L` 与 `codem:open-library-ops` 改为派发宿主已有的
-  `codem:open-task-center`（`detail.tab = "library"`），不新增宿主耦合
+### 审计与修复：任务管理（第二轮，独立复审）
 
-### 变更
+第二轮由独立审计（只读复审 + 代码级验证）发现 14 项（P1×2 / P2×8 / P3×4，无 P0），全部修复：
 
-- **删除** `components/LibraryOpsPanel.tsx`（全屏外壳）与 `components/LibraryOpsLauncher.tsx`
-  （悬浮圆钮 + 状态徽标），以及 store 的 `open/openPanel/closePanel/togglePanel`
-- 图书馆子视图改为 8 个：场景（默认）/ 用量 / 会话 / 工具 / 成本 / 错误 / 时间线 / 设置
-- 采样生命周期跟随页签：挂载即采样，切走/关闭即停止（无后台轮询）
-- 设置项语义：`defaultTab` = 页签内默认子视图（默认「场景」）；`autoOpen` = 启动时
-  自动打开「任务管理 → 图书馆」
-- 插件元数据 `slots: ['app.overlay'] → ['task-center.library']`，影响面描述同步
+| 级别 | 问题 | 处理 |
+| --- | --- | --- |
+| P1 | `issue_create` / `issue_list` **工具路径**没有项目边界：无当前项目时 `listAll` 退化成全库查询（把别的项目 Issue 喂给模型），`create` 写入 `project_id = NULL` 的孤儿 Issue（UI 按项目过滤 → 永远看不到） | 两个工具都加前置判断：无项目直接拒绝并给出提示 |
+| P1 | `STATUS_CONFIG[issue.status].Icon` 无回退：非法 status（旧数据 / 手工改库 / 工具写入）会让渲染抛错冒到顶层错误边界，**整个应用变崩溃卡片** | `IssueCard` / `IssueDetailPanel` 均回退 `todo`；`issue_update` 增加 status / priority 枚举校验 |
+| P2 | 详情面板点「当前状态」也会写一条假的状态变更评论 + 收件箱通知（看板已守卫，面板漏了） | `handleStatusChange` 同值直接 return |
+| P2 | 自动化「停止所有」是组件局部状态：编辑触发器会静默重启引擎、切页签后按钮复位且**无法恢复** | 暂停状态提到模块级（`isAutomationStopped` / `resumeAutomationEngines`），暂停期间 `refreshAutomationEngines()` 为 no-op |
+| P2 | cron 步长 `*/0` → `Array.from({length: Infinity})` 抛 `RangeError`，每 30 秒重复抛且**后续 cron 触发器全部失效** | 步长校验（非有限/≤0 返回空集）+ `checkAll` 单个触发器 try/catch |
+| P2 | 概览的委派统计在无项目时统计全部项目（与委派页签 0 条自相矛盾） | 过滤条件与「委派」页签统一 |
+| P2 | 重启后委派历史与「已完成/失败」统计全丢（`restoreFromDB` 只恢复 pending/running，历史恢复是空循环） | 新增 `getRecentDelegations(limit)`，启动时一并恢复到内存（依赖图仍只按未完成任务重建） |
+| P2 | Issues / 看板 / 收件箱的加载函数依赖数组缺 `projectId` → 面板打开期间切项目仍显示上一个项目的数据 | 三处都把 `projectId` 放进依赖 |
+| P2 | `single` 槽位「**最低**优先级胜出」（`entriesOfSlot` 升序 + 取首元素），与注释/接管语义相反 | `entriesOfSlot` 对 single/keyed 反向遍历；`SlotBridge` 改为按 priority 取最大（顺序无关） |
+| P3 | 「查看完整时间线」只切宿主页签，不会切插件的「时间线」子视图 | 宿主事件 detail 增加 `view`，插件监听 `codem:open-task-center` 消费它 |
+| P3 | 新建 Issue 会被当前状态筛选藏起来（新 Issue 固定 `todo`） | 创建成功后若筛选非「全部」则切回全部 |
+| P3 | 详情面板每次渲染都 `listSquads()`（每个 squad 读成员 + 查 AgentRegistry）→ 评论输入每击键一次 N+1 查询 | 改为 `useMemo`，只在打开选择器时查询 |
+| P3 | 收件箱只增不减（`deleteOlderThan` 无调用者），定时触发器每天插入上千行 | 写入时顺带裁剪 30 天前的旧通知 |
+| — | 死代码：`monitor/TeamsPanel.tsx`（团队视图已删除后无人引用）+ 其 CSS（`.lo-teams*` / `.lo-members__*` / `.lo-sessions*`） | 删除组件与样式，只保留概览页用到的 `.lo-members__dot` |
 
-### 验证
+- 新增 `src/test/task-center-audit-fixes-2.test.tsx`（14 用例）钉住以上行为。
 
-- 新增 `library-ops-task-center.test.tsx`（7 例：无/有贡献者、直达页签、真实 provider 渲染、
-  贡献者移除回落、快捷键与事件别名、slot 声明）；
-- `library-ops-ui.test.tsx` 12 例改为挂载新视图（断言无独立面板外壳、8 个子视图、
-  采样挂载/卸载）；`library-ops-integration.test.ts` 同步
-- 全量 192 文件 / 4510 用例通过；`tsc --noEmit` 零错误；`vite build` 成功
+### 去重：任务管理内不再有「相似功能」
 
-## [Unreleased] — 图书馆场景图可上传替换 + 房间框可视化对位
+| 重叠 | 处理 |
+| --- | --- |
+| 图书馆「团队」↔ 任务管理「团队」 | 删掉插件侧 Teams 视图入口，数据只有一份（`AgentTeamsService`） |
+| 图书馆「会话」↔ 委派 / 子智能体 | 删掉 `SessionsPanel`，会话信息由「委派 / 子智能体」+ 场景花名册承担 |
+| 图书馆「总览」↔「成本」↔ 任务管理「概览」 | 插件侧合并为「用量」一个视图；任务管理「概览」只放统计卡 + 最近 5 条活动，并给「查看完整时间线」入口（仅在插件启用时出现） |
+| 场景 ↔「子智能体 / 团队」 | 场景只是同一份数据的**可视化表达**，面板里明确标注，不再重复提供明细列表 |
+| 自动化触发器 ↔ 设置面板里的自动化设置 | 唯一入口是「任务管理 → 自动化」，设置面板只保留跳转提示 |
 
-> 场景「画面」与「布局」解耦：角色站位、岗位标签、点击热区都来自固定数据，
-> 图片只是一个铺满 1920×1072 画布的图层 —— 于是换图不再需要改代码，
-> 你自己用绘图模型生成的场景图可以直接在插件里上传、立即生效、下次打开还在；
-> 画面里的房间和内置布局对不上时，直接在场景上把房间框拖过去即可。
+### 改造：图标与样式统一
 
-### 新增：场景图片（设置 →「场景图片」）
+- 新增 `components/icons.tsx`（`LoIcon` + `LO_ICONS`，49 个语义名 → **lucide-react**）；
+  `types.ts` 新增 `LoIconName`，数据层只存语义名；全部 emoji（工作状态 / 角色来源 /
+  岗位 / 卡片 / HUD / 导航 / 趋势箭头）替换为图标组件
+- 卡片 / 标签 / 圆角 / 底色对齐宿主 `.card` / `.badge`（10px 圆角 + `--bg-secondary` +
+  `--border-primary` + hover 边框）；删除独立面板遗留死样式
 
-- **内置画廊**：`claw`（ClawLibrary 像素画，地板 + 家具两层）/ `ai-library-01`
-  （本项目内置的 AI 生成整图，2752×1536，可商用）一键切换
-- **上传自己的图**：点「选择图片」或**直接把图片拖到场景上**松手即可；
-  支持 PNG / JPG / WebP / AVIF / GIF / BMP，≤32MB、≥640×360，
-  比例偏离 16:9 超过 8% 会提醒「会被拉伸」
-- **持久化**：图片以 Blob 存进浏览器 IndexedDB（`codem-library-ops` / `scene-images`），
-  避免 localStorage 5MB 配额；读出后 `URL.createObjectURL` 渲染；环境不支持时降级为
-  「本次会话有效」并明确提示（不静默失败）
-- **删除**：一键「删除我的上传」回到内置场景，同时清理 IndexedDB 与 objectURL
+### 修复
 
-### 新增：对位编辑器（拖动房间框 / 走道节点）
-
-- 场景右下角 **✥** 进入对位模式（Esc 退出，设置卡也有「打开对位编辑器」入口）：
-  - 拖**房间框** = 移动房间，工作锚点与标签一起走（角色随后走到新位置）；
-  - 拖房间框右下角**小方块** = 改尺寸（锚点自动夹回矩形内）；
-  - 拖**圆点** = 移动路网节点，BFS 邻接表按覆盖版本号自动重建（走位路线跟着变）；
-  - 拖动过程只改本地预览，松手才提交（不每帧写 localStorage）；
-- 覆盖层按**场景图片 id** 分别保存（localStorage `codem-library-ops-layout`），换图互不污染；
-  模块级注册表让引擎零签名改动地读到新布局；
-- 设置卡内保留「画面微调」（缩放/位移）+ 房间框叠缩略图的对位预览 + 「重置对位」按钮
-
-### 新增：内置 AI 场景图预设
-
-- `scripts/build-library-ops-scene-preset.mjs`：把任意一张场景图规范化成
-  2752×1536 的 WebP 预设 + 480×268 缩略图，并输出可直接粘贴进
-  `data/pixel-art.ts` 的 `SCENE_PRESETS` 条目
-- `public/library-ops/scenes/`：本项目**自有素材**（AI 生成，可商用），
-  含 `SOURCE.md` 出处与许可说明；`docs/ASSET-LICENSES.md` / `public/library-ops/README.md` 同步更新
-- 默认场景图改为 `ai-library-01`（角色精灵仍来自 ClawLibrary，商用需替换，见许可文档）
-
-### 变更
-
-- 像素场景图层由「写死的两张图」改为数据驱动的 `SCENE_PRESETS`（支持多层预设）
-- 房间表与路网改为访问器（`pixelRooms()` / `walkNodes()`），支持运行时覆盖
-- 像素画图层用 `image-rendering: pixelated`，平滑场景图用默认插值（按预设声明）
-- `vite.config.ts`：忽略 `*.tmpdir` / `*.tmp`，修复编辑器原子写入时 Vite 文件监听 EBUSY 崩溃
+- **dev 模式白屏**：`src/core/zvec-grep/types.ts` 顶层 `process.env` 在 Vite dev 下抛
+  `ReferenceError: process is not defined` → 新增 dev-only `src/stubs/process-polyfill.ts`
+  （与生产构建的静态替换语义一致），`main.tsx` / `pet-main.tsx` 首行导入；该文件同时加
+  `typeof process` 保护
+- **`tauri dev` 直接退出**：编辑器原子写入的 `*.tmpdir` 触发 Vite 文件监听 EBUSY →
+  `vite.config.ts` 忽略 `*.tmpdir` / `*.tmp` / 构建产物目录
+- 子视图被强行塞进固定高度导致的挤压 / 重叠（见上「界面自适应」）
 
 ### 验证
 
-- 新增 5 个测试文件 / 40 用例（`LO-SCENE-IMG-*` 10 / `LO-SCENE-DB-*` 6 / `LO-SCENE-UI-*` 8 /
-  `LO-PIXEL-RENDER-8~16` 9 / `LO-LAYOUT-*` 10）；`npx tsc --noEmit` 零错误；`npx vitest run` 全绿
+- 全量 `npx vitest run`：**196 文件 / 4533 用例通过 + 15 跳过（共 4548）**（新增 `library-ops-align`、
+  `library-ops-icons`、`library-ops-scene-image*`、`library-ops-layout-override`、
+  `library-ops-task-center`、`task-center-audit-fixes`、`task-center-audit-fixes-2` 等）
+- `npx tsc --noEmit` 零错误；`npx vite build` 成功
+- headless DOM 审计 `issues: []`（4 像素场景 / 48 房间 / 48 角色 / 等距 12/12 在岗 / 0 NaN）
+- 版面审计：7 种窗口宽度（1600→760）× 6 个插件视图全部 0 裁切 / 0 重叠
 
 ## [1.13.0] - 2026-09-10 — 图书馆插件集成手绘像素美术（场景直接用参考项目的场景）+ 监控面板对标 lobster-pet
 

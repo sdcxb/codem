@@ -131,10 +131,10 @@ vi.mock("../plugins/library-ops/core/telemetry-adapter", async (importOriginal) 
 
 /** 挂载「任务管理 → 图书馆」页签视图（不再有独立面板） */
 async function mountTaskView() {
-  const { LibraryOpsTaskView } = await import("../plugins/library-ops/components/LibraryOpsTaskView");
+  const { LibraryOpsBoardView } = await import("../plugins/library-ops/components/LibraryOpsBoardView");
   const { useLibraryOps } = await import("../plugins/library-ops/store");
   useLibraryOps.getState()._reset();
-  const utils = render(<LibraryOpsTaskView />);
+  const utils = render(<LibraryOpsBoardView />);
   // 等挂载时的首次采样落地
   await act(async () => {
     await Promise.resolve();
@@ -199,7 +199,7 @@ describe("LO-UI 监控面板", () => {
     localStorage.clear();
   });
 
-  it("LO-UI-3: 图书馆视图渲染状态条 + 8 个子视图导航 + 默认场景视图", async () => {
+  it("LO-UI-3: 看板视图渲染状态条 + 7 个视图导航 + 默认看板视图", async () => {
     await mountTaskView();
     expect(document.querySelector(".lo-task")).toBeTruthy();
     // 没有独立面板外壳（融合进任务管理）
@@ -209,14 +209,15 @@ describe("LO-UI 监控面板", () => {
     // 状态条：实时状态 + 时钟
     expect(document.querySelector(".lo-task__live")).toBeTruthy();
     expect(document.querySelector(".lo-task__clock")).toBeTruthy();
-    // 8 个子视图（场景/用量/会话/工具/成本/错误/时间线/设置）
-    expect(document.querySelectorAll(".lo-nav__btn").length).toBe(8);
-    // 默认就是场景视图
-    expect(document.querySelector('.lo-scene[data-scene="pixel"]')).toBeTruthy();
+    // 7 个视图（看板/场景/用量/工具/错误/时间线/设置）
+    expect(document.querySelectorAll(".lo-nav__btn").length).toBe(7);
+    // 默认视图是看板（宿主 Issues 看板）
+    expect(document.body.textContent).toContain("Backlog");
   });
 
-  it("LO-UI-4: 场景视图渲染像素场景（默认）与花名册；切换风格后渲染等距场景", async () => {
+  it("LO-UI-4: 场景视图渲染像素场景与花名册；切换风格后渲染等距场景", async () => {
     await mountTaskView();
+    await clickSubNav("场景");
 
     // 默认：像素场景（默认内置场景图，单图层）
     const pixel = document.querySelector('.lo-scene[data-scene="pixel"]')!;
@@ -248,6 +249,7 @@ describe("LO-UI 监控面板", () => {
 
   it("LO-UI-5: 点击花名册角色 → 详情卡展示该角色信息", async () => {
     await mountTaskView();
+    await clickSubNav("场景");
     const firstRoster = [...document.querySelectorAll(".lo-roster__item")].find((el) =>
       el.textContent?.includes("角色-a1"),
     )!;
@@ -257,13 +259,12 @@ describe("LO-UI 监控面板", () => {
     expect(screen.getAllByText(/正在处理 a1/).length).toBeGreaterThan(0);
   });
 
-  it("LO-UI-6: 用量子视图渲染 KPI；成本子视图渲染 token/成本卡", async () => {
+  it("LO-UI-6: 用量视图渲染 KPI + token/成本卡（成本已并入用量）", async () => {
     await mountTaskView();
     await clickSubNav("用量");
     expect(document.querySelectorAll(".lo-stat").length).toBeGreaterThanOrEqual(6);
-
-    await clickSubNav("成本");
-    expect(screen.getByText(/150\.0k/)).toBeTruthy(); // 120k + 30k
+    // 原「成本」视图已合并进「用量」：token 构成 + 成本趋势都在这里
+    expect(screen.getAllByText(/150\.0k/).length).toBeGreaterThan(0); // 120k + 30k
     expect(screen.getAllByText(/\$3\.50/).length).toBeGreaterThan(0);
   });
 
@@ -296,7 +297,7 @@ describe("LO-UI 监控面板", () => {
     expect(Object.keys(saved).length).toBeGreaterThan(0);
   });
 
-  it("LO-UI-9: 打开图书馆 = 派发宿主「打开任务管理」事件（不再有独立面板）", async () => {
+  it("LO-UI-9: 打开看板视图 = 派发宿主「打开任务管理」事件（不再有独立面板）", async () => {
     const { openLibraryView } = await import("../core/provider/ui-library-ops-provider");
     const seen: Array<Record<string, unknown>> = [];
     const listener = (e: Event) => seen.push((e as CustomEvent).detail ?? {});
@@ -304,7 +305,7 @@ describe("LO-UI 监控面板", () => {
     try {
       openLibraryView();
       expect(seen.length).toBe(1);
-      expect(seen[0]).toEqual({ tab: "library" });
+      expect(seen[0]).toEqual({ tab: "board" });
     } finally {
       window.removeEventListener("codem:open-task-center", listener);
     }
@@ -330,6 +331,7 @@ describe("LO-UI 监控面板", () => {
 
   it("LO-UI-11: 场景视图点击岗位 → 详情卡显示岗位职责与在岗角色", async () => {
     await mountTaskView();
+    await clickSubNav("场景");
     // 像素场景里的房间可点击（12 个）
     const room = document.querySelector(".lo-pixel-room") as HTMLElement;
     expect(room).toBeTruthy();
@@ -347,6 +349,7 @@ describe("LO-UI 监控面板", () => {
 
   it("LO-UI-12: 场景 HUD 提供缩放按钮，且画布使用平移+缩放变换", async () => {
     await mountTaskView();
+    await clickSubNav("场景");
     const hud = document.querySelector(".lo-scene__hud")!;
     expect(hud).toBeTruthy();
     // 放大 / 缩小 / 适应窗口 / 对位模式

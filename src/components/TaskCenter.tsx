@@ -4,30 +4,17 @@
  * 将委派监控、子智能体监控、自动化任务、Issue/Board/Squad/Inbox
  * 全部归入一个面板，通过 Tab 切换。
  *
- * Phase 1: 骨架 + 现有功能归入（概览/委派/子智能体/自动化）
- * Phase 2+: 后续增加 Issues/Board/Squads/Inbox
- *
- * 扩展页签：`task-center.library`（由 @codem/ui-library-ops 贡献「图书馆」页签，
- * 把团队角色/子智能体在图书馆各岗位工作的动画场景 + 用量/工具/成本/错误/时间线
- * 融进本面板）。插件被禁用时该 slot 无贡献者 → 页签不出现，宿主 UI 回到原样。
+ * 扩展点：`task-center.board`（「看板」页签）。
+ * `@codem/ui-library-ops` 启用时接管该页签，在「看板」里追加
+ * 场景 / 用量 / 工具 / 错误 / 时间线 / 设置 视图（原独立「图书馆」页签已并入）；
+ * 插件关闭时回退到宿主自带 Issues 看板，页签数量与行为完全不变。
  */
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import {
-  LayoutDashboard,
-  Link2,
-  Bot,
-  Clock,
-  ClipboardList,
-  Columns,
-  Users,
-  Inbox as InboxIcon,
-  BookOpen,
-} from "lucide-react";
+import { LayoutDashboard, Link2, Bot, Clock, ClipboardList, Columns, Users, Inbox as InboxIcon } from "lucide-react";
 import { ActionIcons } from "../core/icons/icon-map";
 import { useLang } from "../core/i18n/lang";
-import { SlotBridge, useSlotHasEntries } from "../core/slots/SlotBridge";
 import { OverviewTab } from "./task-center/OverviewTab";
 import { DelegationTab } from "./task-center/DelegationTab";
 import { SubagentsTab } from "./task-center/SubagentsTab";
@@ -45,11 +32,10 @@ export type TaskCenterTab =
   | "delegation"
   | "subagents"
   | "automation"
-  | "inbox"
-  | "library";
+  | "inbox";
 
-/** 扩展页签的 slot 名（与 @codem/ui-library-ops 约定） */
-export const TASK_CENTER_LIBRARY_SLOT = "task-center.library";
+/** 「看板」页签的扩展 slot（@codem/ui-library-ops 在此接管，追加场景/用量等视图） */
+export const TASK_CENTER_BOARD_SLOT = "task-center.board";
 
 interface TaskCenterProps {
   onClose: () => void;
@@ -59,17 +45,41 @@ interface TaskCenterProps {
   onSelectSubagent?: (taskId: string) => void;
 }
 
-/** 旧 tab id 兼容归一（squads → teams；外部旧调用仍可用） */
+/** 旧 tab id 兼容归一（squads → teams；library → board；外部旧调用仍可用） */
 function normalizeTab(t: string): TaskCenterTab {
-  return (t === "squads" ? "teams" : t) as TaskCenterTab;
+  if (t === "squads") return "teams";
+  if (t === "library") return "board";
+  return t as TaskCenterTab;
 }
 
 export function TaskCenter({ onClose, initialTab = "overview", subagentTasks = [], onSelectSubagent }: TaskCenterProps) {
   const lang = useLang();
   const zh = lang === "zh";
   const [activeTab, setActiveTab] = useState<TaskCenterTab>(() => normalizeTab(initialTab));
-  /** 图书馆扩展页签是否可用（插件启用时才为 true） */
-  const hasLibrary = useSlotHasEntries(TASK_CENTER_LIBRARY_SLOT);
+  // 收件箱点击穿透 / 外部事件请求聚焦的 Issue（消费后清空）
+  const [focusIssueId, setFocusIssueId] = useState<string | null>(null);
+
+  // P1-13：面板已打开时外部再次派发 `codem:open-task-center`（例如收件箱点击穿透、
+  // 图书馆视图跳转），必须跟随切换页签，而不是只认挂载时的 initialTab。
+  useEffect(() => {
+    setActiveTab(normalizeTab(initialTab));
+  }, [initialTab]);
+
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail || {};
+      if (typeof detail.tab === "string" && detail.tab) {
+        setActiveTab(normalizeTab(detail.tab));
+      }
+      if (typeof detail.issueId === "string" && detail.issueId) {
+        setFocusIssueId(detail.issueId);
+      }
+    };
+    window.addEventListener("codem:open-task-center", handler as EventListener);
+    return () => window.removeEventListener("codem:open-task-center", handler as EventListener);
+  }, []);
+
+  const clearFocusIssue = useCallback(() => setFocusIssueId(null), []);
 
   const tabs: { id: TaskCenterTab; label: string; icon: typeof LayoutDashboard; available: boolean }[] = [
     { id: "overview", label: zh ? "概览" : "Overview", icon: LayoutDashboard, available: true },
@@ -80,18 +90,9 @@ export function TaskCenter({ onClose, initialTab = "overview", subagentTasks = [
     { id: "board", label: zh ? "看板" : "Board", icon: Columns, available: true },
     { id: "teams", label: zh ? "团队" : "Teams", icon: Users, available: true },
     { id: "inbox", label: zh ? "收件箱" : "Inbox", icon: InboxIcon, available: true },
-    ...(hasLibrary
-      ? [{ id: "library" as TaskCenterTab, label: zh ? "图书馆" : "Library", icon: BookOpen, available: true }]
-      : []),
   ];
 
-  // 插件在面板打开期间被禁用 → 页签消失，回落到概览
-  useEffect(() => {
-    if (!tabs.some((t) => t.id === activeTab)) setActiveTab("overview");
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hasLibrary]);
-
-  const wide = activeTab === "library";
+  const wide = activeTab === "board";
 
   const panel = (
     <div className="modal-overlay" onClick={onClose}>
@@ -198,7 +199,7 @@ export function TaskCenter({ onClose, initialTab = "overview", subagentTasks = [
         </div>
 
         {/* Tab content */}
-        <div style={{ flex: 1, overflow: activeTab === "library" ? "hidden" : "auto" }}>
+        <div style={{ flex: 1, overflow: activeTab === "board" ? "hidden" : "auto" }}>
           {activeTab === "overview" && <OverviewTab onNavigate={setActiveTab} />}
           {activeTab === "delegation" && <DelegationTab />}
           {activeTab === "subagents" && (
@@ -206,10 +207,9 @@ export function TaskCenter({ onClose, initialTab = "overview", subagentTasks = [
           )}
           {activeTab === "automation" && <AutomationTab />}
           {activeTab === "teams" && <TeamTab />}
-          {activeTab === "issues" && <IssuesTab />}
+          {activeTab === "issues" && <IssuesTab focusIssueId={focusIssueId} onFocusConsumed={clearFocusIssue} />}
           {activeTab === "board" && <BoardTab />}
           {activeTab === "inbox" && <InboxTab />}
-          {activeTab === "library" && <SlotBridge name={TASK_CENTER_LIBRARY_SLOT} fallback={null} />}
         </div>
 
         {/* Footer status bar */}

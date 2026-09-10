@@ -187,6 +187,26 @@ export function getActiveDelegations(): DelegationTask[] {
   }
 }
 
+/**
+ * 获取最近 N 条委派任务（含已完成/失败/取消）。
+ * 用于重启后恢复「委派」页签的历史列表与统计——`getActiveDelegations` 只含未完成任务，
+ * 只用它恢复会让历史记录与「已完成/失败」统计恒为 0。
+ */
+export function getRecentDelegations(limit: number = 200): DelegationTask[] {
+  try {
+    const db = getDatabase();
+    const result = db.exec(
+      "SELECT * FROM delegation_tasks ORDER BY created_at DESC LIMIT ?",
+      [Math.max(1, limit)],
+    );
+    if (result.length === 0) return [];
+    return result[0].values.map(rowToTaskFromValues);
+  } catch (e) {
+    console.error("[DelegationStorage] getRecentDelegations failed:", e);
+    return [];
+  }
+}
+
 /** 删除委派任务 */
 export function deleteDelegationTask(taskId: string): void {
   try {

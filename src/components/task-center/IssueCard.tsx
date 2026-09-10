@@ -33,7 +33,8 @@ interface IssueCardProps {
 export function IssueCard({ issue, onClick, compact = false }: IssueCardProps) {
   const lang = useLang();
   const zh = lang === "zh";
-  const config = STATUS_CONFIG[issue.status];
+  // 未知状态（旧数据 / 手工改过的行）回退到 todo，避免 `undefined.Icon` 崩掉整个应用
+  const config = STATUS_CONFIG[issue.status] ?? STATUS_CONFIG.todo;
   const StatusIcon = config.Icon;
   const priorityColor = PRIORITY_COLORS[issue.priority] || PRIORITY_COLORS.normal;
 
@@ -52,8 +53,19 @@ export function IssueCard({ issue, onClick, compact = false }: IssueCardProps) {
         transition: "border-color 0.2s",
         borderLeft: `3px solid ${config.color}`,
       }}
-      onMouseEnter={(e) => onClick && (e.currentTarget.style.borderColor = "var(--accent)")}
-      onMouseLeave={(e) => onClick && (e.currentTarget.style.borderColor = "var(--border-primary)")}
+      onMouseEnter={(e) => {
+        if (!onClick) return;
+        e.currentTarget.style.borderTopColor = "var(--accent)";
+        e.currentTarget.style.borderRightColor = "var(--accent)";
+        e.currentTarget.style.borderBottomColor = "var(--accent)";
+      }}
+      onMouseLeave={(e) => {
+        if (!onClick) return;
+        // 只改上/右/下边框，保留左侧 3px 状态色条（改 borderColor 会把它一起覆盖掉）
+        e.currentTarget.style.borderTopColor = "var(--border-primary)";
+        e.currentTarget.style.borderRightColor = "var(--border-primary)";
+        e.currentTarget.style.borderBottomColor = "var(--border-primary)";
+      }}
     >
       {/* Header: status icon + title + priority */}
       <div style={{ display: "flex", alignItems: "flex-start", gap: "6px" }}>

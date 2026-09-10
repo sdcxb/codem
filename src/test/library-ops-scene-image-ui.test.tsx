@@ -217,17 +217,17 @@ describe("LO-SCENE-UI 场景图片设置卡", () => {
     utils.unmount();
   });
 
-  it("LO-SCENE-UI-8: 「打开对位编辑器」跳到图书馆页签并进入对位模式", async () => {
+  it("LO-SCENE-UI-8: 「手动对位编辑器」跳到场景视图并进入对位模式", async () => {
     const utils = render(<SceneImageCard zh />);
     const btn = [...utils.container.querySelectorAll<HTMLButtonElement>(".lo-btn")].find((b) =>
-      b.textContent?.includes("打开对位编辑器"),
+      b.textContent?.includes("手动对位编辑器"),
     )!;
     expect(btn).toBeTruthy();
     await act(async () => {
       fireEvent.click(btn);
     });
     expect(useLibraryOps.getState().editingLayout).toBe(true);
-    expect(useLibraryOps.getState().tab).toBe("library");
+    expect(useLibraryOps.getState().tab).toBe("scene");
 
     // 有对位调整后，卡片上出现「重置对位」按钮并显示计数
     useLibraryOps.getState().setNodeOverride("GW1", { x: 500, y: 500 });

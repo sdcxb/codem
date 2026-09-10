@@ -1,19 +1,20 @@
 /**
- * LibraryOpsTaskView —— 图书馆视图（渲染在宿主「任务管理」面板的
- * `task-center.library` slot 里，**没有独立面板**）。
+ * LibraryOpsBoardView —— 「看板」页签的接管视图（渲染在 `task-center.board` slot 里）。
  *
- * 版面设计（自适应，不写死宽度）：
+ * 为什么并进看板：图书馆场景的初衷就是「谁在做什么、在哪做」的可视化看板，
+ * 与宿主「看板」页签（Issues 按状态分列）是同一类信息的不同表达；
+ * 分成两个页签会让用户在两处看到同一批团队/会话/任务。
+ * 现在合成一个页签：**看板（宿主 Issues）为默认视图**，插件追加
+ * 场景 / 用量 / 工具 / 错误 / 时间线 / 设置 六个视图。
+ *
+ * 版面（自适应，见 styles/library-ops.css 的 @container 规则）：
  * ```
  * ┌ 状态条（自动换行）───────────────────────────────┐
- * ├ 子导航 │ 内容区（场景 / 用量 / 工具 / 成本 …） │ 事件流（窄屏自动收起）┤
+ * ├ 视图导航 │ 内容区（自然高度 + 滚动） │ 事件流（窄屏自动收起）┤
  * └──────────────────────────────────────────────┘
  * ```
- * - 容器宽度 ≥ 1080px：导航带文字 + 右侧事件流
- * - 900–1080px：导航带文字，事件流收起（设置里可手动关）
- * - < 900px：导航变图标条（文字隐藏），内容区单列
  *
- * 采样生命周期：本组件挂载时按 `settings.refreshMs` 采样，卸载（切到别的页签
- * 或关闭任务管理）立即停止 —— 宿主零后台开销。
+ * 采样生命周期：挂载即采样，卸载（切视图/关面板）立即停止 —— 宿主零后台开销。
  */
 
 import { useEffect } from "react";
@@ -22,12 +23,12 @@ import { ACTIVITY_META } from "../types";
 import { useLibraryOps } from "../store";
 import { useLang } from "../../../core/i18n/lang";
 import { formatClock } from "../core/format";
+import { IssueBoard } from "../../../components/task-center/IssueBoard";
 import { LoIcon } from "./icons";
 import { OverviewPanel } from "./monitor/OverviewPanel";
-import { LibraryPanel } from "./monitor/LibraryPanel";
-import { SessionsPanel } from "./monitor/SessionsPanel";
-import { ToolsPanel } from "./monitor/ToolsPanel";
 import { CostPanel } from "./monitor/CostPanel";
+import { LibraryPanel } from "./monitor/LibraryPanel";
+import { ToolsPanel } from "./monitor/ToolsPanel";
 import { ErrorsPanel } from "./monitor/ErrorsPanel";
 import { TimelinePanel } from "./monitor/TimelinePanel";
 import { SettingsPanel } from "./monitor/SettingsPanel";
@@ -35,19 +36,18 @@ import { EventList } from "./monitor/EventList";
 import { Pill } from "./monitor/common";
 import "../styles/library-ops.css";
 
-/** 子导航（去掉与任务管理重复的「总览 / 团队」） */
-const SUB_NAV: Array<{ id: MonitorTab; zh: string; en: string; icon: LoIconName }> = [
-  { id: "library", zh: "场景", en: "Scene", icon: "library" },
+/** 视图导航（看板 = 宿主 Issues 看板；其余为本插件视图） */
+const VIEWS: Array<{ id: MonitorTab; zh: string; en: string; icon: LoIconName }> = [
+  { id: "board", zh: "看板", en: "Board", icon: "columns" },
+  { id: "scene", zh: "场景", en: "Scene", icon: "users" },
   { id: "usage", zh: "用量", en: "Usage", icon: "bar-chart-3" },
-  { id: "sessions", zh: "会话", en: "Sessions", icon: "message-square" },
   { id: "tools", zh: "工具", en: "Tools", icon: "wrench" },
-  { id: "cost", zh: "成本", en: "Cost", icon: "circle-dollar-sign" },
   { id: "errors", zh: "错误", en: "Errors", icon: "triangle-alert" },
   { id: "timeline", zh: "时间线", en: "Timeline", icon: "clock" },
   { id: "settings", zh: "设置", en: "Settings", icon: "settings" },
 ];
 
-export function LibraryOpsTaskView() {
+export function LibraryOpsBoardView() {
   const zh = useLang() === "zh";
   const tab = useLibraryOps((s) => s.tab);
   const setTab = useLibraryOps((s) => s.setTab);
@@ -58,12 +58,24 @@ export function LibraryOpsTaskView() {
   const error = useLibraryOps((s) => s.error);
   const sampling = useLibraryOps((s) => s.sampling);
 
-  // 挂载即采样；卸载立即停止（无后台轮询）
   useEffect(() => {
     void refresh();
     const timer = setInterval(() => void refresh(), settings.refreshMs);
     return () => clearInterval(timer);
   }, [settings.refreshMs, refresh]);
+
+  // 宿主「概览 → 查看完整时间线」会派发 codem:open-task-center { tab: 'board', view: 'timeline' }，
+  // 这里消费 detail.view 切到对应子视图（插件依赖宿主事件，方向正确）。
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const view = (e as CustomEvent).detail?.view;
+      if (typeof view === "string" && VIEWS.some((v) => v.id === view)) {
+        setTab(view as MonitorTab);
+      }
+    };
+    window.addEventListener("codem:open-task-center", handler as EventListener);
+    return () => window.removeEventListener("codem:open-task-center", handler as EventListener);
+  }, [setTab]);
 
   const live = (() => {
     if (!snapshot) return { token: "--text-muted", zh: "无数据", en: "no data", icon: "gauge" as LoIconName };
@@ -75,8 +87,8 @@ export function LibraryOpsTaskView() {
   })();
 
   return (
-    <div className="lo-task" data-lo-view="task-center">
-      {/* 状态条（窄屏自动换行） */}
+    <div className="lo-task" data-lo-view="task-center-board">
+      {/* 状态条 */}
       <header className="lo-task__bar">
         <span className="lo-task__live" style={{ ["--lo-live-token" as string]: `var(${live.token})` }}>
           <span className="lo-task__live-dot" />
@@ -117,35 +129,37 @@ export function LibraryOpsTaskView() {
       )}
 
       <div className="lo-task__body">
-        <nav className="lo-task__rail" aria-label={zh ? "图书馆子视图" : "Library sub views"}>
-          {SUB_NAV.map((n) => (
+        <nav className="lo-task__rail" aria-label={zh ? "看板视图" : "Board views"}>
+          {VIEWS.map((v) => (
             <button
-              key={n.id}
-              className={`lo-nav__btn${tab === n.id ? " is-active" : ""}`}
-              onClick={() => setTab(n.id)}
-              title={zh ? n.zh : n.en}
-              aria-pressed={tab === n.id}
+              key={v.id}
+              className={`lo-nav__btn${tab === v.id ? " is-active" : ""}`}
+              onClick={() => setTab(v.id)}
+              title={zh ? v.zh : v.en}
+              aria-pressed={tab === v.id}
             >
-              <LoIcon name={n.icon} size={14} />
-              <span className="lo-nav__label">{zh ? n.zh : n.en}</span>
+              <LoIcon name={v.icon} size={14} />
+              <span className="lo-nav__label">{zh ? v.zh : v.en}</span>
             </button>
           ))}
         </nav>
 
         <main className="lo-task__content">
-          {tab === "library" && <LibraryPanel snapshot={snapshot} zh={zh} />}
+          {tab === "board" && <IssueBoard />}
+          {tab === "scene" && <LibraryPanel snapshot={snapshot} zh={zh} />}
           {tab === "usage" && (
-            <OverviewPanel
-              snapshot={snapshot}
-              series={series}
-              zh={zh}
-              onOpenLibrary={() => setTab("library")}
-              onOpenTab={setTab}
-            />
+            <div className="lo-usage">
+              <OverviewPanel
+                snapshot={snapshot}
+                series={series}
+                zh={zh}
+                onOpenLibrary={() => setTab("scene")}
+                onOpenTab={setTab}
+              />
+              <CostPanel snapshot={snapshot} series={series} zh={zh} />
+            </div>
           )}
-          {tab === "sessions" && <SessionsPanel snapshot={snapshot} zh={zh} />}
           {tab === "tools" && <ToolsPanel snapshot={snapshot} zh={zh} />}
-          {tab === "cost" && <CostPanel snapshot={snapshot} series={series} zh={zh} />}
           {tab === "errors" && <ErrorsPanel snapshot={snapshot} zh={zh} />}
           {tab === "timeline" && <TimelinePanel snapshot={snapshot} zh={zh} />}
           {tab === "settings" && <SettingsPanel zh={zh} />}
@@ -170,4 +184,4 @@ export function LibraryOpsTaskView() {
   );
 }
 
-export default LibraryOpsTaskView;
+export default LibraryOpsBoardView;

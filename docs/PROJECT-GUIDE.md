@@ -272,6 +272,12 @@ mimo-gui/
 │   │   ├── SelectionTooltip.tsx # 选中文字浮窗工具栏
 │   │   ├── UsageStats.tsx       # 用量统计面板
 │   │   ├── PetOverlay.tsx       # 宠物市场/设置浮层入口（主窗口内）
+│   │   ├── TaskCenter.tsx       # ★ 任务管理面板（8 页签；「看板」= task-center.board slot）
+│   │   ├── task-center/         # ★ 任务管理页签组件（v1.14.0 审计修复）
+│   │   │   ├── OverviewTab.tsx / DelegationTab.tsx / SubagentsTab.tsx / AutomationTab.tsx
+│   │   │   ├── IssuesTab.tsx / IssueBoard.tsx（看板基础视图）/ IssueCard.tsx / IssueDetailPanel.tsx
+│   │   │   ├── TeamTab.tsx / InboxTab.tsx / BoardTab.tsx（SlotBridge + IssueBoard 回退）
+│   │   │   └── use-current-project.ts # ★ 项目边界：无项目不查库 / 不建记录（P2-12）
 │   │   │
 │   │   │  ── v0.96 新增组件 ──
 │   │   ├── BootSplash.tsx       # 启动加载画面
@@ -626,10 +632,10 @@ mimo-gui/
 │   │
 │   ├── plugins/                  # 完全独立的大插件（启停不影响现有功能）
 │   │   ├── monopoly-game/        # 大富翁小游戏（v1.6.2，Phaser 3，@codem/ui-game）
-│   │   └── library-ops/          # ★ 图书馆运营监控（v1.13.0，@codem/ui-library-ops）
+│   │   └── library-ops/          # ★ 图书馆运营监控（v1.14.0，@codem/ui-library-ops）
 │   │       ├── index.ts          # 公共导出
-│   │       ├── types.ts          # 领域类型 + ACTIVITY_META（11 种工作态）+ 设置（sceneStyle / sceneImageId / sceneImageAdjust）
-│   │       ├── store.ts          # zustand store（面板/采样/时间序列/isoScene+pixelScene 双槽位/自定义场景图）
+│   │       ├── types.ts          # 领域类型 + ACTIVITY_META（11 种工作态）+ LoIconName + 设置
+│   │       ├── store.ts          # zustand store（视图/采样/时间序列/双场景槽位/场景图/自动对位）
 │   │       ├── data/
 │   │       │   ├── library-map.ts  # 岗位地图：10 岗位 + 装饰 + 投影 + 岗位路由 + 工位槽位
 │   │       │   ├── characters.ts   # 角色外观生成器（等距场景用，34560 种，令牌化调色板）
@@ -642,15 +648,17 @@ mimo-gui/
 │   │       │   ├── pixel-scene.ts  # 像素场景状态机（纯函数）
 │   │       │   ├── scene-image.ts  # ★ 场景图片校验/微调/解码（纯函数 + 可注入 IO）
 │   │       │   ├── scene-image-db.ts # ★ 场景图片 IndexedDB 持久化（Blob 原样存）
+│   │       │   ├── scene-align.ts  # ★ 场景自动对位（地面掩码 vs 房间掩码的 IoU 拟合）
 │   │       │   ├── telemetry-adapter.ts # 真实宿主数据 → LibrarySnapshot（只读 + 可注入）
 │   │       │   └── format.ts       # 数值/时间格式化
 │   │       ├── components/
-│   │       │   ├── LibraryOpsTaskView.tsx # ★ 任务管理「图书馆」页签视图（无独立面板）
+│   │       │   ├── LibraryOpsBoardView.tsx # ★ 接管「任务管理 → 看板」页签（看板/场景/用量/工具/错误/时间线/设置）
+│   │       │   ├── icons.tsx        # ★ LoIcon + LO_ICONS（49 个语义名 → lucide-react）
 │   │       │   ├── library/PixelLibraryScene.tsx # ★ 像素图书馆场景（内置预设/自定义图 + 拖拽换图）
 │   │       │   ├── library/LibraryScene.tsx      # 等距矢量场景（备用，自绘）
 │   │       │   ├── library/{iso,SceneFurniture,CharacterActor}.tsx # 等距几何/家具/角色
-│   │       │   └── monitor/          # common / charts / labels / EventList / SceneImageCard / 8 个监控面板
-│   │       └── styles/library-ops.css # 样式（只消费皮肤令牌）
+│   │       │   └── monitor/          # common / charts / labels / EventList / SceneImageCard / 监控面板
+│   │       └── styles/library-ops.css # 样式（只消费皮肤令牌 + 容器查询自适应）
 │   │
 │   ├── hooks/                    # React Hooks（v0.96 新增目录）
 │   │   ├── useDraftPersistence.ts # 草稿持久化 Hook
@@ -1020,6 +1028,7 @@ Rust 后端 (lib.rs):
 
 | 版本 | 日期 | 主要内容 |
 |------|------|---------|
+| v1.14.0 | 2026-09-10 | **图书馆并入「看板」+ 场景图可上传/自动对位 + 界面自适应与图标统一** — ①**并入看板**：图书馆场景的初衷即「谁在做什么、在哪做」的可视化看板，与宿主「看板」页签（Issues 状态列）合并为一个页签 —— 看板为默认视图，插件追加 场景/用量（合并原「成本」）/工具/错误/时间线/设置；去掉与任务管理重复的「总览/团队/会话」入口；宿主新增 `task-center.board` slot（`BoardTab` = `SlotBridge` + `IssueBoard` 回退），插件禁用即回退自带看板；删除独立面板/悬浮入口/store 的 open 状态。②**场景图可上传**：设置 →「场景图片」拖拽或选择上传，Blob 存 IndexedDB，`build-library-ops-scene-preset.mjs` 可做内置预设。③**自动对位**：`core/scene-align.ts` 用「地面掩码 vs 房间掩码 IoU 粗到细搜索」自动求缩放/位移 + 置信度，上传后自动应用，仍可手动微调。④**界面自适应**：容器查询按面板实际宽度分档、子视图自然高度 + 内容区滚动、固定值换 `minmax/clamp`；新增 `tools/preview/audit-layout.mjs`（7 种窗口宽度逐视图检查裁切/重叠）。⑤**图标/样式统一**：emoji → lucide-react（`icons.tsx`，49 语义名），卡片/标签对齐宿主 `.card`/`.badge`。⑥**修复**：dev 白屏 `process is not defined`（dev-only polyfill）、Vite 监听 `*.tmpdir` EBUSY、子视图固定高度挤压重叠。⑦**任务管理全量审计 15 项**：P0 子智能体列表恒空（render 里 `require()`）；P1 事件只认 teams 页签 / 子智能体点不开父会话 / 看板拖拽与同列误写库 / 看板缺 `blocked`+`cancelled` 列 / 看板无法滚动 / 委派统计与列表口径不一致 / 面板打开期间不跟随页签；P2 自动化「停止所有」无法恢复 / Issues 筛选缺 backlog+cancelled / 收件箱徽标与点击穿透 / **无项目跨项目串数据**（新增 `use-current-project.ts`）/ `IssueCard` hover 覆盖状态条 / 详情面板切换不刷新；新增 `task-center-audit-fixes.test.tsx` 12 例。⑧**二次去重**：概览只留最近 5 条 + 「查看完整时间线」入口、场景标注为可视化表达、自动化唯一入口、删除插件元数据旧按钮 id。**第二轮独立复审 14 项**（P1 工具路径项目边界 + 非法 status 崩溃；P2 详情面板假评论 / 自动化暂停状态 / cron 步长为零 / 概览统计口径 / 委派历史恢复 / 切项目重查 / single 槽位优先级；P3 时间线深链 / 新建被筛选藏起来 / N+1 查询 / 收件箱裁剪）全部修复，新增 `task-center-audit-fixes-2.test.tsx` 14 例。全量 196 文件 / 4533 用例通过（+15 跳过）|
 | v1.13.0 | 2026-09-10 | **图书馆插件集成手绘像素美术 + 监控面板对标 lobster-pet** — ①**像素图书馆场景（默认）**：直接使用 ClawLibrary 的 `scene-floor`/`scene-objects`（2752×1536 手绘像素画）+ `walkGraph`（20 节点）+ 12 资源分区坐标；角色用其 Capy-Claw / Cat-Claw 精灵表（128×128 帧 @6fps，各 12 动作），按 id 稳定分配变体；11 种工作状态 → 上游动作（walk/idea/read/work/rest/coffee/error/sleep…）；相机缩放平移定位；资源缺失降级到等距矢量。②**资源管道与许可**：`scripts/sync-library-ops-assets.mjs`（PNG→WebP 30.1MB→5.1MB + 每源 SOURCE.md + 复制 LICENSE）+ `docs/ASSET-LICENSES.md` + THIRD_PARTY_NOTICES 条目 + 设置页「美术资源许可」卡；刻意排除 LimeZu 派生素材；**仅限非商业**，商用切等距矢量或替换资源。③**面板对标**：总览页改为 lobster-pet `DetailPanel` 单屏卡片网格，**图书馆作为监控界面内的一张卡**嵌入。④修复：两套场景引擎共享 store 槽位崩溃（双槽位）/ 上游 4 个房间 workZone 锚点越界（夹回房间）。新增 2 测试文件 / 18 用例。全量 186 文件 / 4432 用例通过 |
 | v1.12.0 | 2026-09-10 | **图书馆运营监控插件（@codem/ui-library-ops，完全独立可启停）+ 四轮全面审计修复 28 项** — 团队角色/子智能体 → 各自不同的动画角色（12×4×5×6×6×4=34560 种外观，id 确定性生成，岗位影响头饰/道具）在图书馆的 10 个职能岗位工作（按角色标签关键词自动分配 + 寻路 + 工位槽位 + 11 种工作动画，由真实工具调用/任务状态驱动）；监控界面对标 lobster-pet（9 页签：总览/图书馆/团队/会话/工具/成本/错误/时间线/设置），数据只读（会话/团队/子智能体/模板/工具/成本/遥测），App.tsx 零改动（挂 `app.overlay`），禁用即不装配、面板关闭即停止采样；皮肤契约零硬编码色值。**审计修复 28 项**（P0 8 / P1 11 / P2 9），含宿主 Bug：agent-teams 成员完成任务后状态永不回落 `working`（新增 `releaseAssigneeIfIdle()`）；等距几何双重偏移致区域高亮整体放大错位；活跃会话 Map 判定失效；气泡/动画态不随场景更新；`done` 动画永久定格；角色站到岗位外；道具转向换手等。新增 9 个测试文件 / 100 用例（含真实服务联动 8 例 + 渲染几何 7 例）+ `tools/preview/` DOM 审计脚本。全量 184 文件 / 4414 用例通过 |
 | v0.70 | 2026-07-06 | SQLite统一存储 + 中文编码 + 子智能体重构 |

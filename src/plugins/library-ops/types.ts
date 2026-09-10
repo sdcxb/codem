@@ -69,6 +69,7 @@ export type LoIconName =
   | "scroll-text"
   | "ruler"
   | "gauge"
+  | "columns"
   | "sparkles"
   // HUD 操作
   | "plus"
@@ -454,22 +455,23 @@ export interface SeriesPoint {
 }
 
 /**
- * 图书馆页签内的子视图（任务管理 →「图书馆」页签里切换）。
+ * 看板页签内的子视图（任务管理 →「看板」页签里切换）。
  *
- * 说明：本插件**不再有独立面板**，而是作为 `task-center.library` slot 的贡献者，
- * 渲染在宿主「任务管理」面板内。原先与任务管理重复的「总览 / 团队」两个页签已移除
- * （总览 → 任务管理「概览」，团队 → 任务管理「团队」）；`usage` 是互补的用量/健康视图。
+ * 说明：本插件**没有独立面板/页签**，而是接管宿主「看板」页签（`task-center.board`），
+ * 在其上追加 场景 / 用量 / 工具 / 错误 / 时间线 / 设置 视图。
+ * 原先与任务管理重复的「总览 / 团队 / 会话 / 成本」已合并或移除：
+ * 总览 → 本插件的「用量」（并合并了原「成本」页），团队 → 任务管理「团队」，
+ * 会话 → 任务管理「委派 / 子智能体」+ 场景花名册。
  */
-export type MonitorTab = "library" | "usage" | "tools" | "cost" | "errors" | "sessions" | "timeline" | "settings";
+export type MonitorTab = "board" | "scene" | "usage" | "tools" | "errors" | "timeline" | "settings";
 
 /** 全部合法子视图（持久化校验 / 设置页签选择用） */
 export const MONITOR_TABS: MonitorTab[] = [
-  "library",
+  "board",
+  "scene",
   "usage",
   "tools",
-  "cost",
   "errors",
-  "sessions",
   "timeline",
   "settings",
 ];
@@ -559,7 +561,7 @@ export const DEFAULT_SETTINGS: LibraryOpsSettings = {
   showZoneLabels: true,
   maxActors: 24,
   showEventFeed: true,
-  defaultTab: "library",
+  defaultTab: "board",
   autoOpen: false,
 };
 

@@ -24,6 +24,7 @@ import {
   Code2,
   Coffee,
   Cog,
+  Columns,
   ConciergeBell,
   Crown,
   Footprints,
@@ -122,6 +123,7 @@ export const LO_ICONS: Record<LoIconName, LucideIcon> = {
   "scroll-text": ScrollText,
   ruler: Ruler,
   gauge: Gauge,
+  columns: Columns,
   sparkles: Sparkles,
 
   // ── HUD 操作 ──

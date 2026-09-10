@@ -14,11 +14,10 @@ import { SceneImageCard } from "./SceneImageCard";
 import { LoIcon } from "../icons";
 
 const TABS: Array<{ id: MonitorTab; zh: string; en: string; icon: LoIconName }> = [
-  { id: "library", zh: "场景", en: "Scene", icon: "library" },
+  { id: "board", zh: "看板", en: "Board", icon: "columns" },
+  { id: "scene", zh: "场景", en: "Scene", icon: "users" },
   { id: "usage", zh: "用量", en: "Usage", icon: "bar-chart-3" },
-  { id: "sessions", zh: "会话", en: "Sessions", icon: "message-square" },
   { id: "tools", zh: "工具", en: "Tools", icon: "wrench" },
-  { id: "cost", zh: "成本", en: "Cost", icon: "circle-dollar-sign" },
   { id: "errors", zh: "错误", en: "Errors", icon: "triangle-alert" },
   { id: "timeline", zh: "时间线", en: "Timeline", icon: "clock" },
   { id: "settings", zh: "设置", en: "Settings", icon: "settings" },
@@ -168,7 +167,7 @@ export function SettingsPanel({ zh }: { zh: boolean }) {
           <Switch
             checked={settings.autoOpen}
             onChange={(v) => update({ autoOpen: v })}
-            label={zh ? "启动时自动打开「任务管理 → 图书馆」" : "Auto-open Task Center → Library on startup"}
+            label={zh ? "启动时自动打开「任务管理 → 看板」" : "Auto-open Task Center → Board on startup"}
           />
         </div>
         <div className="lo-settings__actions">

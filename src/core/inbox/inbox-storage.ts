@@ -38,6 +38,14 @@ export const InboxStorage = {
        item.source_id ?? null, item.project_id ?? null, item.squad_id ?? null, item.issue_id ?? null,
        item.priority || "normal", now],
     );
+    // 只增不减会让 sql.js 数据库与每次 persistDatabase() 持续膨胀
+    // （自动化触发器每次触发都插一行）→ 每次写入顺带裁掉 30 天前的旧通知。
+    try {
+      const cutoff = now - 30 * 24 * 60 * 60 * 1000;
+      db.run("DELETE FROM inbox WHERE created_at < ?", [cutoff]);
+    } catch {
+      /* 清理失败不影响写入 */
+    }
     return { ...item, read: 0, archived: 0, created_at: now };
   },
 

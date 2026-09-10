@@ -273,7 +273,11 @@ export class SlotCore {
     if (kind === 'chain') return rec.entries
     const heads: StoredEntry[] = []
     const seenCells = new Set<string | undefined>()
-    for (const entry of rec.entries) {
+    // rec.entries 是按 priority 升序排的（list 槽位需要这个顺序）。
+    // single / keyed 是「覆盖语义」：胜出者必须是**优先级最高**的那个，
+    // 所以这里反向遍历（原先正序遍历 + 单元素 heads → 优先级最低的反而生效）。
+    const ordered = kind === 'list' ? rec.entries : [...rec.entries].reverse()
+    for (const entry of ordered) {
       if (this.abdicated.has(entry)) continue
       const cell = kind === 'keyed' ? entry.options.key : kind === 'list' ? entry.options.id : undefined
       if (seenCells.has(cell)) continue

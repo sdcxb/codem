@@ -7,8 +7,8 @@
  * 3. 时间序列环形缓冲：为监控面板的迷你折线图提供历史（token / 成本 / 工具 / 角色）
  * 4. 设置持久化：localStorage `codem-library-ops`（与宿主其它键同前缀，互不干扰）
  *
- * 本插件**没有独立面板**：视图渲染在宿主「任务管理」面板的 `task-center.library`
- * slot 里（components/LibraryOpsTaskView.tsx），页签卸载即停止采样 → 宿主零额外开销。
+ * 本插件**没有独立面板/页签**：接管宿主「任务管理 → 看板」页签（`task-center.board`，
+ * components/LibraryOpsBoardView.tsx），页签卸载即停止采样 → 宿主零额外开销。
  */
 
 import { create } from "zustand";
@@ -45,6 +45,13 @@ import {
   type LayoutOverride,
   type RoomOverride,
 } from "./data/layout-override";
+import { CLAW_SCENE, FALLBACK_SCENE_PRESET_ID, getScenePreset, pixelRooms } from "./data/pixel-art";
+import {
+  ALIGN_MIN_SCORE,
+  autoAlignFromLuma,
+  decodeImageToLuma,
+  type AlignResult,
+} from "./core/scene-align";
 
 /** 时间序列最大长度（约 3 分钟 @1.5s） */
 export const SERIES_CAP = 120;
@@ -191,6 +198,10 @@ interface LibraryOpsState {
   sceneImageError: string | null;
   /** 场景图片操作成功提示 */
   sceneImageNotice: string | null;
+  /** 是否正在自动对位 */
+  aligning: boolean;
+  /** 最近一次自动对位的置信度（0..1） */
+  alignScore: number | null;
 
   /** 场景对位覆盖层（按场景图片 id 分开存） */
   layoutOverrides: Record<string, LayoutOverride>;
@@ -222,6 +233,11 @@ interface LibraryOpsState {
   resetLayout: () => void;
   /** 清除全部场景图片的对位覆盖 */
   resetAllLayouts: () => void;
+  /**
+   * 自动对位：把当前场景图自动缩放到与内置房间布局最贴合的位置。
+   * 返回拟合结果（含置信度 0..1）；无法解析像素时返回 null。
+   */
+  autoAlignScene: () => Promise<AlignResult | null>;
   /** 重置（测试用） */
   _reset: () => void;
 }
@@ -247,6 +263,8 @@ export const useLibraryOps = create<LibraryOpsState>((set, get) => ({
   sceneImageBusy: false,
   sceneImageError: null,
   sceneImageNotice: null,
+  aligning: false,
+  alignScore: null,
   layoutOverrides: INITIAL_LAYOUTS,
   editingLayout: false,
 
@@ -372,6 +390,8 @@ export const useLibraryOps = create<LibraryOpsState>((set, get) => ({
         set({ sceneImageError: `图片未能保存到本地（${persistError}），重启后会恢复内置场景。` });
       }
       get().updateSettings({ sceneImageId: "custom" });
+      // 上传后自动对位（像素统计拟合，失败不影响上传本身）
+      void get().autoAlignScene();
       return true;
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -446,6 +466,35 @@ export const useLibraryOps = create<LibraryOpsState>((set, get) => ({
     set({ layoutOverrides: {} });
   },
 
+  autoAlignScene: async () => {
+    set({ aligning: true });
+    try {
+      const blob = await activeSceneBlob(get());
+      if (!blob) {
+        set({ aligning: false });
+        return null;
+      }
+      const luma = await decodeImageToLuma(blob);
+      const result = autoAlignFromLuma(luma, pixelRooms(), CLAW_SCENE.displayWidth, CLAW_SCENE.displayHeight);
+      const ok = result.score >= ALIGN_MIN_SCORE;
+      if (ok) {
+        get().updateSettings({ sceneImageAdjust: { scale: result.scale, x: result.x, y: result.y } });
+      }
+      set({
+        aligning: false,
+        alignScore: result.score,
+        sceneImageNotice: ok
+          ? `已自动对位（置信度 ${Math.round(result.score * 100)}%）`
+          : `自动对位置信度较低（${Math.round(result.score * 100)}%），建议用对位编辑器手动微调`,
+      });
+      return result;
+    } catch (e) {
+      console.warn("[library-ops] 自动对位失败:", e);
+      set({ aligning: false });
+      return null;
+    }
+  },
+
   _reset: () =>
     set(() => {
       // 布局注册表是模块级状态，必须一并复位（否则测试之间互相污染）
@@ -480,6 +529,24 @@ function revokeUrl(url: string): void {
   } catch {
     /* 忽略：某些 WebView 在页面卸载后调用会抛错 */
   }
+}
+
+/**
+ * 取当前生效场景图的二进制：用户上传的从 IndexedDB 读，内置预设走 fetch。
+ * 自动对位靠它拿像素。
+ */
+async function activeSceneBlob(state: LibraryOpsState): Promise<Blob | null> {
+  const sceneId = state.settings.sceneImageId;
+  if (sceneId === "custom") {
+    const record = await getSceneImage(CUSTOM_SCENE_KEY);
+    return record?.blob ?? null;
+  }
+  const preset = getScenePreset(sceneId) ?? getScenePreset(FALLBACK_SCENE_PRESET_ID);
+  const url = preset?.layers[0];
+  if (!url || typeof fetch !== "function") return null;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`读取场景图失败：HTTP ${res.status}`);
+  return res.blob();
 }
 
 /** 从快照里取演员（按严重度与活跃度排序，供列表/场景共用） */

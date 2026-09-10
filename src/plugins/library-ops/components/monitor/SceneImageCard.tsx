@@ -44,6 +44,9 @@ export function SceneImageCard({ zh }: { zh: boolean }) {
   const setEditingLayout = useLibraryOps((s) => s.setEditingLayout);
   const resetLayout = useLibraryOps((s) => s.resetLayout);
   const layoutOverrides = useLibraryOps((s) => s.layoutOverrides);
+  const autoAlign = useLibraryOps((s) => s.autoAlignScene);
+  const aligning = useLibraryOps((s) => s.aligning);
+  const alignScore = useLibraryOps((s) => s.alignScore);
 
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [dragOver, setDragOver] = useState(false);
@@ -196,7 +199,15 @@ export function SceneImageCard({ zh }: { zh: boolean }) {
       {/* 微调 + 对位预览 */}
       {showAdjust && (
         <>
-          <SectionTitle hint={zh ? "把图挪到与房间框重合即可" : "nudge the image to match the rooms"}>
+          <SectionTitle
+            hint={
+              alignScore === null
+                ? zh
+                  ? "自动对位会按画面结构拟合，之后可再手动微调"
+                  : "Auto align fits by image structure; fine-tune after"
+                : `${zh ? "上次自动对位置信度" : "last auto-align"} ${Math.round(alignScore * 100)}%`
+            }
+          >
             {zh ? "画面微调" : "Image adjustment"}
           </SectionTitle>
           <div className="lo-align">
@@ -268,14 +279,23 @@ export function SceneImageCard({ zh }: { zh: boolean }) {
           </div>
           <div className="lo-settings__actions">
             <button
+              className="lo-btn lo-btn--primary"
+              onClick={() => void autoAlign()}
+              disabled={aligning}
+              title={zh ? "按画面结构自动缩放到与内置房间布局最贴合的位置（上传后也会自动跑一次）" : "Auto-fit the image to the built-in room layout (also runs on upload)"}
+            >
+              <LoIcon name="sparkles" size={12} />{" "}
+              {aligning ? (zh ? "正在对位…" : "Aligning…") : zh ? "自动对位" : "Auto align"}
+            </button>
+            <button
               className="lo-btn"
               onClick={() => {
-                setTab("library");
+                setTab("scene");
                 setEditingLayout(true);
               }}
-              title={zh ? "跳到「图书馆」页签，直接在场景上拖动房间框 / 走道节点" : "Open the library tab and drag rooms/nodes on the scene"}
+              title={zh ? "跳到「场景」视图，直接在场景上拖动房间框 / 走道节点" : "Open the scene view and drag rooms/nodes on the scene"}
             >
-              {zh ? "打开对位编辑器" : "Open alignment editor"}
+              {zh ? "手动对位编辑器" : "Manual alignment"}
             </button>
             <button className="lo-btn" onClick={() => update({ sceneImageAdjust: { scale: 1, x: 0, y: 0 } })}>
               {zh ? "重置微调" : "Reset adjustment"}

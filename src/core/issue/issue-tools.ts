@@ -56,6 +56,17 @@ export function createIssueCreateTool(): ToolDef {
       const mgr = getIssueManager();
       const projectId = useProjectStore.getState().currentProject?.id;
 
+      // 无当前项目时不创建：否则会写入 project_id = NULL 的孤儿 Issue，
+      // 而 UI 按 project_id 过滤（IssueStorage.listAll），用户永远看不到它。
+      if (!projectId) {
+        return {
+          title: "issue_create",
+          output: zh
+            ? "尚未选择项目，无法创建 Issue（Issue 必须归属到某个项目）。请先在侧栏选择或新建项目。"
+            : "No project selected — issues are project-scoped. Select or create a project first.",
+        };
+      }
+
       const issue = mgr.create({
         title: args.title as string,
         description: args.description as string | undefined,
@@ -131,9 +142,28 @@ export function createIssueUpdateTool(): ToolDef {
         return { title: "issue_update", output: (zh ? "错误: Issue 不存在" : "Error: Issue not found") };
       }
 
+      // 校验枚举：非法 status/priority 会让 UI 的 STATUS_CONFIG[status] 取到 undefined
+      // 并在渲染时抛错（IssueCard / IssueDetailPanel），必须在这里拦掉。
+      const VALID_STATUS = ["backlog", "todo", "in_progress", "in_review", "done", "blocked", "cancelled"];
+      const VALID_PRIORITY = ["low", "normal", "high", "urgent"];
+      const nextStatus = args.status as string | undefined;
+      const nextPriority = args.priority as string | undefined;
+      if (nextStatus !== undefined && !VALID_STATUS.includes(nextStatus)) {
+        return {
+          title: "issue_update",
+          output: (zh ? "错误: 非法 status（可选值: " : "Error: invalid status (allowed: ") + VALID_STATUS.join(", ") + ")",
+        };
+      }
+      if (nextPriority !== undefined && !VALID_PRIORITY.includes(nextPriority)) {
+        return {
+          title: "issue_update",
+          output: (zh ? "错误: 非法 priority（可选值: " : "Error: invalid priority (allowed: ") + VALID_PRIORITY.join(", ") + ")",
+        };
+      }
+
       mgr.update(issueId, {
-        status: args.status as IssueStatus | undefined,
-        priority: args.priority as IssuePriority | undefined,
+        status: nextStatus as IssueStatus | undefined,
+        priority: nextPriority as IssuePriority | undefined,
         assigneeType: args.assignee_type as any | undefined,
         assigneeId: args.assignee_id as string | undefined,
         title: args.title as string | undefined,
@@ -216,6 +246,17 @@ export function createIssueListTool(): ToolDef {
       const zh = getLang() === "zh";
       const mgr = getIssueManager();
       const projectId = useProjectStore.getState().currentProject?.id;
+
+      // 无当前项目时不查库：IssueStorage.listAll 在 projectId 为空时会退化成全库查询，
+      // 把其它项目的 Issue 也返回给模型（与工具描述 "in the current project" 矛盾）。
+      if (!projectId) {
+        return {
+          title: "issue_list",
+          output: zh
+            ? "尚未选择项目，无法列出 Issue。请先在侧栏选择或新建项目。"
+            : "No project selected — issues are project-scoped. Select or create a project first.",
+        };
+      }
 
       const issues = mgr.list({
         projectId,

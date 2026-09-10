@@ -158,8 +158,13 @@ export function SlotBridge<P extends Record<string, any> = Record<string, any>>(
     return renderFallback(Fallback, rest as Record<string, any>, name, showDegraded)
   }
 
-  // 取最高优先级的注册组件（对标 DSH entriesOfSlot 的 shadowing winner）
-  const entry = entries[entries.length - 1]
+  // 取最高优先级的注册组件（对标 DSH entriesOfSlot 的 shadowing winner）。
+  // 不依赖数组顺序：entriesOfSlot 对 list 是升序、对 single/keyed 是降序，
+  // 直接按 priority 取最大值最稳。
+  const entry = entries.reduce(
+    (best, e) => ((e.options.priority ?? 0) >= (best.options.priority ?? 0) ? e : best),
+    entries[0],
+  )
   const Component = entry.component as ComponentType<P>
 
   if (!Component) {

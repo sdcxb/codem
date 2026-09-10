@@ -30,6 +30,7 @@ import {
   updateDelegationTaskStatus,
   getDelegationTask,
   getActiveDelegations,
+  getRecentDelegations,
   clearCompletedDelegations,
 } from "./delegation-storage";
 import { getSessionMessageBus } from "./bus";
@@ -311,6 +312,15 @@ export class DelegationOrchestrator {
     return Array.from(this.tasks.values()).filter((t) => t.status === "running");
   }
 
+  /**
+   * 获取全部委派任务（按创建时间倒序）。
+   * 供「委派」页签按项目过滤展示：原先页签只能靠 source/target 会话反查，
+   * 会漏掉源会话已删除的委派任务（P1-6）。
+   */
+  getAllDelegations(): DelegationTask[] {
+    return Array.from(this.tasks.values()).sort((a, b) => b.createdAt - a.createdAt);
+  }
+
   /** 获取统计信息 */
   getStats(): {
     total: number;
@@ -480,9 +490,11 @@ export class DelegationOrchestrator {
         }
       }
 
-      // 也加载已完成的任务（用于历史查询），但不重建依赖图
-      for (const task of active) {
-        // already loaded
+      // 历史记录（completed/failed/cancelled）也恢复到内存：只重建未完成任务的依赖图，
+      // 但「委派」页签与概览需要看到历史与统计（原先这里是个空循环 → 重启后历史全丢）。
+      const activeIds = new Set(active.map((t) => t.id));
+      for (const task of getRecentDelegations(200)) {
+        if (!activeIds.has(task.id)) this.tasks.set(task.id, task);
       }
 
       if (active.length > 0) {

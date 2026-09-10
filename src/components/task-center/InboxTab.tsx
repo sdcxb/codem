@@ -10,10 +10,10 @@
  */
 
 import { useState, useEffect, useCallback } from "react";
-import { Inbox as InboxIcon, CheckCheck, Archive, ClipboardList, Link2, Bot, Clock, Users, AlertTriangle } from "lucide-react";
+import { Inbox as InboxIcon, CheckCheck, Archive, ClipboardList, Link2, Bot, Clock, Users, AlertTriangle, ChevronRight } from "lucide-react";
 import { getInboxManager, type InboxItem, type InboxCategory } from "../../core/inbox/inbox";
-import { useProjectStore } from "../../core/store";
 import { useLang } from "../../core/i18n/lang";
+import { getCurrentProjectId, useCurrentProjectId } from "./use-current-project";
 
 const CATEGORY_CONFIG: Record<InboxCategory, { Icon: typeof InboxIcon; color: string }> = {
   issue: { Icon: ClipboardList, color: "var(--accent)" },
@@ -32,20 +32,47 @@ function formatTime(timestamp: number, zh: boolean): string {
   return new Date(timestamp).toLocaleDateString();
 }
 
+/** 点击穿透目标：通知 → 任务管理页签（+ 可选 Issue 聚焦） */
+function inboxTarget(item: InboxItem): { tab: string; issueId?: string } | null {
+  if (item.issueId) return { tab: "issues", issueId: item.issueId };
+  if (item.squadId) return { tab: "teams" };
+  switch (item.category) {
+    case "delegation":
+      return { tab: "delegation" };
+    case "agent":
+      return { tab: "subagents" };
+    case "automation":
+      return { tab: "automation" };
+    default:
+      return null;
+  }
+}
+
 export function InboxTab() {
   const lang = useLang();
   const zh = lang === "zh";
   const [items, setItems] = useState<InboxItem[]>([]);
+  const [totalUnread, setTotalUnread] = useState(0);
   const [filter, setFilter] = useState<InboxCategory | "all">("all");
+  const projectId = useCurrentProjectId();
 
   const loadItems = useCallback(() => {
     const mgr = getInboxManager();
-    const projectId = useProjectStore.getState().currentProject?.id;
+    const pid = getCurrentProjectId();
+    // 无项目时不查库：否则会把其他项目的通知也列出来（P2-12）
+    if (!pid) {
+      setItems([]);
+      setTotalUnread(0);
+      return;
+    }
     setItems(mgr.list({
-      projectId,
+      projectId: pid,
       category: filter === "all" ? undefined : filter,
     }));
-  }, [filter]);
+    // 徽标显示「项目整体未读」，不随筛选变化（P2-11）
+    setTotalUnread(mgr.getUnreadCount(pid));
+    // projectId 进依赖：面板打开期间切项目必须重查，否则会显示上一个项目的通知
+  }, [filter, projectId]);
 
   useEffect(() => {
     loadItems();
@@ -55,14 +82,24 @@ export function InboxTab() {
   }, [loadItems]);
 
   const handleMarkAllRead = () => {
-    const projectId = useProjectStore.getState().currentProject?.id;
-    getInboxManager().markAllRead(projectId);
+    const pid = getCurrentProjectId();
+    if (!pid) return;
+    getInboxManager().markAllRead(pid);
     loadItems();
   };
 
   const handleClick = (item: InboxItem) => {
     if (!item.read) {
       getInboxManager().markRead(item.id);
+    }
+    const target = inboxTarget(item);
+    if (target) {
+      // 点击穿透：切到对应页签（Issue 会直接打开详情面板）
+      try {
+        window.dispatchEvent(new CustomEvent("codem:open-task-center", { detail: target }));
+      } catch {
+        /* 忽略：派发失败不影响已读标记 */
+      }
     }
   };
 
@@ -71,7 +108,7 @@ export function InboxTab() {
     loadItems();
   };
 
-  const unreadCount = items.filter((i) => !i.read).length;
+  const unreadCount = totalUnread;
   const filters: { value: InboxCategory | "all"; labelZh: string; labelEn: string }[] = [
     { value: "all", labelZh: "全部", labelEn: "All" },
     { value: "issue", labelZh: "Issue", labelEn: "Issues" },
@@ -137,7 +174,9 @@ export function InboxTab() {
       {/* Items */}
       {items.length === 0 ? (
         <div style={{ padding: "40px 20px", textAlign: "center", color: "var(--text-secondary)", fontSize: "var(--fs-md)" }}>
-          {zh ? "暂无通知" : "No notifications"}
+          {projectId
+            ? (zh ? "暂无通知" : "No notifications")
+            : (zh ? "尚未选择项目，通知按项目聚合。" : "No project selected — notifications are project-scoped.")}
         </div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
@@ -152,7 +191,10 @@ export function InboxTab() {
                   display: "flex", alignItems: "flex-start", gap: "10px",
                   padding: "10px 12px", borderRadius: 6,
                   background: item.read ? "var(--bg-tertiary)" : "var(--bg-secondary)",
-                  border: `1px solid ${item.read ? "var(--border-primary)" : `${catConfig.color}44`}`,
+                  // 不用 border 简写：与 borderLeft 混用会在重渲染时互相覆盖（React 警告）
+                  borderTop: `1px solid ${item.read ? "var(--border-primary)" : `${catConfig.color}44`}`,
+                  borderRight: `1px solid ${item.read ? "var(--border-primary)" : `${catConfig.color}44`}`,
+                  borderBottom: `1px solid ${item.read ? "var(--border-primary)" : `${catConfig.color}44`}`,
                   borderLeft: `3px solid ${catConfig.color}`,
                   cursor: "pointer", fontSize: "var(--fs-sm)",
                 }}
@@ -183,6 +225,9 @@ export function InboxTab() {
                     </div>
                   )}
                 </div>
+                {inboxTarget(item) && (
+                  <ChevronRight size={12} style={{ color: "var(--text-muted)", flexShrink: 0, alignSelf: "center" }} />
+                )}
                 <button
                   onClick={(e) => { e.stopPropagation(); handleArchive(item.id); }}
                   style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: "2px", flexShrink: 0 }}

@@ -49,8 +49,8 @@ export function declareAppSlots(ctx: Context): void {
   slots.declareSlot('app.session-recovery', { kind: 'single', scope: 'root' }, 'framework')
   slots.declareSlot('app.usage-stats', { kind: 'single', scope: 'root' }, 'framework')
   slots.declareSlot('app.task-center', { kind: 'single', scope: 'root' }, 'framework')
-  // 任务管理「图书馆」扩展页签（由 @codem/ui-library-ops 贡献；插件关闭时页签不出现）
-  slots.declareSlot('task-center.library', { kind: 'single', scope: 'root' }, 'framework')
+  // 任务管理「看板」页签扩展点（由 @codem/ui-library-ops 接管：看板 + 场景/用量/工具/错误/时间线/设置）
+  slots.declareSlot('task-center.board', { kind: 'single', scope: 'root' }, 'framework')
   slots.declareSlot('app.agent-manager', { kind: 'single', scope: 'root' }, 'framework')
   slots.declareSlot('app.notebook-manager', { kind: 'single', scope: 'root' }, 'framework')
   slots.declareSlot('app.notebook-workspace', { kind: 'single', scope: 'root' }, 'framework')

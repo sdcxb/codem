@@ -4,7 +4,7 @@
  * 展示 Issue 完整信息 + 评论 + 状态变更操作
  */
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useMemo } from "react";
 import { ArrowLeft, Send, Users } from "lucide-react";
 import { getIssueManager, type IssueWithComments } from "../../core/issue/issue";
 import { getSquadManager } from "../../core/squad/squad";
@@ -27,6 +27,12 @@ export function IssueDetailPanel({ issue, onClose, onRefresh }: IssueDetailPanel
   const [currentIssue, setCurrentIssue] = useState(issue);
   const [showSquadPicker, setShowSquadPicker] = useState(false);
 
+  // 父组件拿到的 issue 变了（切换选中 / 订阅到 issue_change）→ 同步本地副本，
+  // 否则面板会一直显示打开时的旧快照（agent 侧改状态/加评论看不到）
+  useEffect(() => {
+    setCurrentIssue(issue);
+  }, [issue]);
+
   const refresh = useCallback(() => {
     const updated = getIssueManager().get(issue.id);
     if (updated) setCurrentIssue(updated);
@@ -34,6 +40,9 @@ export function IssueDetailPanel({ issue, onClose, onRefresh }: IssueDetailPanel
   }, [issue.id, onRefresh]);
 
   const handleStatusChange = (newStatus: IssueStatus) => {
+    // 点「当前状态」不算变更：否则 IssueManager 会写一条假的状态变更评论 + 收件箱通知
+    // （看板拖拽已有同样的守卫，这里补齐）
+    if (newStatus === currentIssue.status) return;
     getIssueManager().update(issue.id, { status: newStatus });
     refresh();
   };
@@ -46,7 +55,12 @@ export function IssueDetailPanel({ issue, onClose, onRefresh }: IssueDetailPanel
     }
   };
 
-  const availableSquads = getSquadManager().listSquads();
+  const availableSquads = useMemo(
+    // 只在需要选择器时查库：listSquads() 每个 squad 都要读成员 + 查 AgentRegistry，
+    // 放在渲染体里会让评论输入框每次击键都打一串 SQL（N+1）
+    () => (showSquadPicker ? getSquadManager().listSquads() : []),
+    [showSquadPicker],
+  );
 
   const handleAddComment = () => {
     if (!commentText.trim()) return;
@@ -58,7 +72,7 @@ export function IssueDetailPanel({ issue, onClose, onRefresh }: IssueDetailPanel
     refresh();
   };
 
-  const config = STATUS_CONFIG[currentIssue.status];
+  const config = STATUS_CONFIG[currentIssue.status] ?? STATUS_CONFIG.todo;
   const StatusIcon = config.Icon;
 
   return (

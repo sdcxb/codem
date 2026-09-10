@@ -304,59 +304,107 @@ lobster-pet 的 `DetailPanel` 是「单屏卡片网格」：
 **用量/工具/成本/错误/时间线**这几张任务管理没有的卡。因此不是「二选一」，
 而是**把图书馆降级为任务管理的一个页签**：删掉重复页签，保留独有视图。
 
-### 9.2 融合后的结构
+### 9.2 融合后的结构（v1.14.0：并入「看板」）
 
 ```
-任务管理（TaskCenter，宿主）
-├── 概览 / 委派 / 子智能体 / 自动化 / Issues / 看板 / 团队 / 收件箱   ← 原有 8 个
-└── 图书馆（仅插件启用时出现；slot: task-center.library）
-    ├── 状态条：实时状态 · 在馆/待命/工具数 · 时钟 · 刷新
-    ├── 子导航：场景(默认) / 用量 / 会话 / 工具 / 成本 / 错误 / 时间线 / 设置
-    ├── 内容区：像素或等距图书馆场景 + 花名册 + 角色详情 + 岗位分布 …
-    └── 右侧：实时事件流（可在设置里关掉）
+任务管理（TaskCenter，宿主，固定 8 个页签）
+├── 概览 / 委派 / 子智能体 / 自动化 / Issues / 看板 / 团队 / 收件箱
+└── 看板（slot: task-center.board；插件启用时接管，禁用时回退宿主 Issues 看板）
+    ├── 看板      ← 宿主 Issues 看板（默认视图）
+    ├── 场景      ← 像素/等距图书馆场景 + 花名册 + 角色详情 + 岗位分布
+    ├── 用量      ← KPI/健康/活动分布 + token 构成/成本趋势（原「总览」+「成本」合并）
+    ├── 工具 / 错误 / 时间线 / 设置
+    └── 右侧实时事件流（可在设置里关掉）
 ```
 
-- 图书馆页签会把面板加宽到 1180px（`data-wide="1"`），场景才有足够空间；
-- 打开方式：任务管理里点「图书馆」页签，或 `Ctrl/Cmd+Shift+L` /
-  `codem:open-library-ops` 事件（派发宿主已有的 `codem:open-task-center`，`detail.tab = "library"`）。
+- **为什么并进看板**：图书馆场景的初衷就是「谁在做什么、在哪做」的可视化看板，
+  与宿主「看板」页签（Issues 按状态分列）是同一类信息的不同表达；
+  分成两个页签会让用户在两处看到同一批团队/会话/任务。
+- 看板页签会把面板加宽到 1180px（`data-wide="1"`），场景才有足够空间；
+- 打开方式：任务管理 →「看板」页签，或 `Ctrl/Cmd+Shift+L` / `codem:open-library-ops`
+  （派发宿主已有的 `codem:open-task-center`，`detail.tab = "board"`）；
+  旧的 `tab: "library"` 会被 `normalizeTab()` 归一为 `board`。
 
 ### 9.3 实现要点
 
 | 关注点 | 做法 |
 | --- | --- |
-| 宿主扩展点 | `declare-slots.ts` 声明 `task-center.library`（single）；`TaskCenter` 用 `useSlotHasEntries()` 决定页签是否出现，用 `<SlotBridge name="task-center.library" />` 渲染内容 |
-| 插件侧 | provider 注册 `LibraryOpsTaskView` 到该 slot（React.lazy，独立 chunk）；`provide('uiLibraryOps')` 的 `open()` 改为派发宿主事件 |
-| 采样生命周期 | 视图挂载 → `refresh()` + `setInterval(settings.refreshMs)`；卸载 → `clearInterval`。页签切走即停，无后台轮询 |
-| 删除的东西 | `components/LibraryOpsPanel.tsx`（全屏外壳）、`components/LibraryOpsLauncher.tsx`（悬浮圆钮 + 徽标）、store 里的 `open/openPanel/closePanel/togglePanel`、`MonitorTab` 的 `overview/teams`、CSS 的 `.lo-overlay/.lo-shell*` |
-| 设置项语义 | `defaultTab` → 图书馆页签打开时的默认子视图（默认 `library`）；`autoOpen` → 启动时自动打开「任务管理 → 图书馆」（默认关） |
-| 皮肤/许可 | 不变：新增 CSS 只用皮肤令牌；美术许可卡仍在「设置」子视图里 |
+| 宿主扩展点 | `declare-slots.ts` 声明 `task-center.board`（single）；`BoardTab` = `<SlotBridge name="task-center.board" fallback={IssueBoard} />`（`IssueBoard` 是从原 `BoardTab` 抽出的纯看板组件） |
+| 插件侧 | provider 注册 `LibraryOpsBoardView` 到该 slot（React.lazy，独立 chunk）；视图切换器渲染 7 个视图，其中「看板」直接渲染宿主的 `IssueBoard` |
+| 采样生命周期 | 视图挂载 → `refresh()` + `setInterval(settings.refreshMs)`；卸载 → `clearInterval`。切视图/关面板即停，无后台轮询 |
+| 删除的东西 | `components/LibraryOpsPanel.tsx`、`components/LibraryOpsLauncher.tsx`、`components/monitor/SessionsPanel.tsx`、store 的 `open/openPanel/closePanel/togglePanel`、`MonitorTab` 的 `overview/teams/sessions/cost`、CSS 的 `.lo-overlay/.lo-shell*` |
+| 设置项语义 | `defaultTab` → 看板页签打开时的默认视图（默认 `board`）；`autoOpen` → 启动时自动打开「任务管理 → 看板」（默认关） |
+| 皮肤/许可 | 不变：CSS 只用皮肤令牌；美术许可卡仍在「设置」视图里 |
 
-### 9.4 验证
+### 9.4 场景图可上传 + 自动对位（v1.14.0）
 
-- `library-ops-task-center.test.tsx` LO-TASK-1~7：无贡献者时只有 8 个页签 / 有贡献者时
-  出现「图书馆」并渲染 slot 内容 / `initialTab=library` 直达 / 真实 provider 装配后
-  `.lo-task` 渲染 / 贡献者被移除时页签消失并回落概览 / 快捷键与事件别名 / 宿主声明了 slot；
-- `library-ops-ui.test.tsx` LO-UI-3~12：改为挂载 `LibraryOpsTaskView`，断言无独立面板外壳、
-  8 个子视图、场景/用量/成本/错误/时间线/设置渲染、挂载采样 + 卸载停止；
-- 全量 `npx vitest run` 192 文件 / 4510 用例通过。
+**上传**：设置 →「场景图片」可切换内置像素画 / 内置 AI 场景图，或把图片**拖到场景上**上传；
+图片以 Blob 存 IndexedDB（`codem-library-ops` / `scene-images`），不写宿主数据。
+`scripts/build-library-ops-scene-preset.mjs` 可把任意图规范化成 2752×1536 的内置预设。
 
-### 9.4 界面自适应与图标/样式统一（v1.14.1）
+**自动对位**（`core/scene-align.ts`，纯函数）：
 
-融合后的第一版在窄窗口下会挤在一起，本版重做：
+1. 上传图缩到 96×54 灰度网格；
+2. **地面掩码** = 亮度高于均值 92% 且 3×3 局部方差 ≤ 260 的像素（地面平滑，墙线/家具边缘被排除）；
+3. **目标掩码** = 内置 12 个房间矩形栅格化（内缩 12%）；
+4. 在「缩放 0.86–1.14 × 平移 ±9%/±9%」粗网格（7×9×9）+ 最优解附近精搜索上最大化 **IoU**；
+5. 输出 `{scale,x,y}`（与 CSS `transform-origin: 50% 50%` 同一变换约定）+ 置信度；
+   置信度 ≥ `ALIGN_MIN_SCORE`(0.42) 自动应用，否则只提示「建议手动微调」。
+
+上传后自动跑一次；设置卡里可点「自动对位」重跑、点「手动对位编辑器」进入对位模式
+（拖房间框/走道节点，按场景图分别持久化）。
+
+### 9.5 界面自适应与图标/样式统一（v1.14.0）
 
 | 问题 | 原因 | 处理 |
 | --- | --- | --- |
-| 元素挤压 / 裁切 | 版面写死：`236px` 列、`min-height: 460px`、事件流 `280px`、侧栏 `300px`；断点用**视口**宽度判断，而宿主面板宽度是 `min(1180px, 96vw)` | `.lo-task` 设为**容器**（`container-type: inline-size`），全部改 `minmax()` / `clamp()`，断点改 `@container lo (max-width: …)`；另加 `@container lo (max-height: 620px)` 压场景高度 |
+| 元素挤压 / 重叠 / 裁切 | 版面写死（236px 列、`min-height:460px`、事件流 280px、侧栏 300px）+ 断点用**视口**宽度判断（面板宽度其实是 `min(1180px,96vw)`）+ 子视图被 `flex:1` 塞进固定高度 | `.lo-task` 设为**容器**（`container-type: inline-size`），全部改 `minmax()/clamp()`，断点改 `@container lo (…)`；**内容区滚动、子视图自然高度**；新增 `audit-layout.mjs` 逐视图检查 |
 | 场景 + 花名册在窄容器挤成两列 | 固定两列网格 | ≤980px 改上下两段（下段 ≤45%，卡片内部滚动） |
-| 样式自成一套 | 卡片圆角 12–16px、半透明底色、uppercase 小标题 | 对齐宿主 `.card`/`.badge`：10px 圆角 + `--bg-secondary` + `--border-primary` + hover 边框、`.lo-pill` 用 4px 圆角、去掉 uppercase |
-| 图标是 emoji | 数据层 `icon` 字段存 emoji | 新增 `components/icons.tsx`（`LoIcon` + `LO_ICONS`），数据层改存语义名（`LoIconName`），全部渲染走 lucide-react |
+| 样式自成一套 | 圆角 12–16px、半透明底色、uppercase 小标题 | 对齐宿主 `.card`/`.badge`：10px 圆角 + `--bg-secondary` + `--border-primary` + hover 边框 |
+| 图标是 emoji | 数据层 `icon` 存 emoji | `components/icons.tsx`（`LoIcon` + `LO_ICONS`，49 个语义名 → lucide-react），数据层改存 `LoIconName` |
 
 **自动门禁**：
 - `tools/preview/audit-layout.mjs` —— headless 在 7 种窗口宽度（1600/1440/1280/1100/980/860/760）
-  下渲染图书馆页签，读页面自检写入的 `#layout-audit`（元素 `scrollWidth - clientWidth > 2`
-  即判溢出、并记录最小字号），要求全部 0 溢出；
+  下逐个渲染插件视图，读页面自检写入的 `#layout-audit`（横向 >6px / 纵向 >4px 裁切、
+  兄弟元素重叠 >4×4px），要求全部为 0；
 - `src/test/library-ops-icons.test.tsx` LO-ICON-1~5 —— 图标名登记、源码无 emoji、
   `LoIcon` 渲染 svg、公共组件渲染 svg、样式层无死样式 + 含容器查询规则。
+
+### 9.6 验证
+
+- `library-ops-task-center.test.tsx` LO-TASK-1~7：任务管理固定 8 个页签（无「图书馆」）/
+  无贡献者渲染宿主 Issues 看板 / 有贡献者渲染接管视图（7 个视图）/
+  `initialTab=board` 直达 / 贡献者被移除时回退看板 / 快捷键与事件别名 / slot 声明；
+- `library-ops-ui.test.tsx` LO-UI-3~12：挂载 `LibraryOpsBoardView`，断言无独立面板外壳、
+  7 个视图、场景/用量/错误/时间线/设置渲染、挂载采样 + 卸载停止；
+- `library-ops-align.test.ts` LO-ALIGN-1~7：灰度化 / 地面掩码 / 房间掩码 / 已知变换反解 /
+  端到端 adjust 与低置信度 / clamp / 解码降级；
+- 全量 `npx vitest run` 196 文件 / 4533 用例通过（+15 跳过）+ `tsc` 零错误 + DOM 审计 0 issue +
+  版面审计 7 种宽度全 0。
+
+### 9.7 第二轮去重与宿主审计（v1.14.0 收尾）
+
+**去重（图书馆 ↔ 任务管理）**：
+
+| 重叠 | 决策 | 落点 |
+| --- | --- | --- |
+| 「概览」最近活动 ↔ 插件「时间线」 | 概览只留**最近 5 条**，全量入口给「查看完整时间线」（`useSlotHasEntries(TASK_CENTER_BOARD_SLOT)` 判定插件是否启用，禁用时不出现） | `OverviewTab.tsx` |
+| 插件「场景」↔ 宿主「子智能体 / 团队」 | 场景是**同一份数据的可视化表达**，面板内明确标注，不再重复明细列表 | `LibraryPanel.tsx` |
+| 自动化触发器 ↔ 设置面板自动化设置 | 唯一编辑入口是「任务管理 → 自动化」，设置面板只留跳转提示 | `SettingsPanel.tsx` |
+| 插件元数据里的旧「图书馆页签」按钮 id | 删除 `task-center-library-tab`，`degradedTo` 改为「看板回退」 | `plugin-registry-provider.ts` |
+
+**宿主侧审计（不是插件缺陷，但会影响看板体验）**：任务管理 8 个页签 + 看板页签两轮共修
+29 项（第一轮 15 项：P0 1 / P1 7 / P2 7；第二轮独立复审 14 项：P1 2 / P2 8 / P3 4），
+详见 `CHANGELOG.md` 的「审计与修复：任务管理」两张表。与插件直接相关的两项：
+
+1. 看板缺 `blocked` / `cancelled` 列 —— 这两类 Issue 在「看板」页签上会**直接消失**（插件接管后
+   默认视图就是它），已补齐 7 列；
+2. 看板内容区 `overflow: hidden` —— 列多/窗口窄时无法滚动，已恢复滚动。
+
+回归用例：`src/test/task-center-audit-fixes.test.tsx`（TC-AUDIT-* 12 例）+
+`src/test/task-center-audit-fixes-2.test.tsx`（TC-AUDIT2-* 14 例，含
+「面板打开期间跟随页签请求」「无项目不跨项目串数据」「收件箱点击穿透到 Issue 详情」
+「single 槽位最高优先级胜出」）。
 
 ---
 
@@ -367,7 +415,7 @@ lobster-pet 的 `DetailPanel` 是「单屏卡片网格」：
 | 缓存命中 token | 适配层预留 `tokensCached` 字段，当前 CostTracker 聚合口径未提供 | 接入 provider 上报的 cache 字段 |
 | 权限/审批等待态 | 只能从工具名（`ask_user_question` 等）推断 | 接入 `PermissionRequest` 待决队列，角色真正站到「等待授权」岗位 |
 | 场景地图 | 单层平面（10 岗位） | 可扩展多层/多馆，按项目分馆 |
-| 场景图片 | 可上传替换画面（IndexedDB）；房间框与走道可在对位模式里拖动，按图分别保存 | 可做多套「分馆」布局与导出/分享对位数据 |
+| 场景图片 | 可上传替换画面（IndexedDB）+ 自动对位；房间框与走道可在对位模式里拖动，按图分别保存 | 可做「逐房间」自动对位（当前只做全局相似变换）与对位数据导出/分享 |
 | 角色移动 | 网格 BFS + 线性插值 | 可加转弯缓动、避让、结伴同行 |
 | 历史回放 | 只有最近 120 个采样点 | 可接 EventLog 做时间轴回放 |
-| 与任务管理的边界 | 图书馆只保留任务管理没有的视图（场景/用量/会话/工具/成本/错误/时间线/设置） | 若任务管理后续新增用量或成本页签，继续把对应子视图移过去 |
+| 与任务管理的边界 | 只保留任务管理没有的视图（场景/用量/工具/错误/时间线/设置） | 若任务管理后续新增用量页签，把「用量」移过去 |

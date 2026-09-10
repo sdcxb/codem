@@ -203,6 +203,9 @@ async function getCordisContext(): Promise<Context> {
 }
 // ====== Cordis 插件系统初始化结束 ======
 import { RefreshCw, X, MessageSquare, Terminal, BookOpen, Save, FolderOpen, PencilLine, Trash2, CheckCircle, Menu, Hammer, ClipboardList, Search, Bot, Activity, GitBranch, Gamepad2 } from "lucide-react";
+// 子智能体任务（任务管理「子智能体」页签）：ESM 环境不能用 require()，必须静态导入 + 订阅
+import { getSubagentRuntime } from "./core/subagent/index";
+import type { SubagentTask } from "./core/subagent/subagent";
 import { readRendererCrashRecord, clearRendererCrashRecord } from "./components/AppErrorBoundary";
 import { TooltipProvider } from "./components/ui/tooltip";
 import { TitleBar } from "./components/TitleBar";
@@ -469,12 +472,25 @@ const [citationViewer, setCitationViewer] = useState<{ sourceId: string; noteboo
   const [showUsageStats, setShowUsageStats] = useState(false);
 const [showTaskCenter, setShowTaskCenter] = useState(false);
 const [taskCenterTab, setTaskCenterTab] = useState<TaskCenterTab>("overview");
+// 子智能体任务列表：事件驱动订阅（不再在 render 里 require()，那样在 ESM 里必然抛错 → 永远空列表）
+const [subagentTasks, setSubagentTasks] = useState<SubagentTask[]>([]);
+useEffect(() => {
+  const runtime = getSubagentRuntime();
+  const update = () => setSubagentTasks(runtime ? runtime.getAllTasks() : []);
+  update();
+  const unsubscribe = runtime?.subscribe(update);
+  return () => {
+    if (unsubscribe) unsubscribe();
+  };
+}, []);
 // 团队活动快捷入口：对话顶部「团队」按钮 → 打开任务管理「团队」Tab（B 深合并收敛）
 useEffect(() => {
   const openTaskCenter = (e: Event) => {
     const detail = (e as CustomEvent).detail || {};
-    const tab = detail.tab === "overview" ? "overview" : "teams";
-    setTaskCenterTab(tab as TaskCenterTab);
+    // 允许指定任意合法页签（如插件派发的 { tab: "board" }）；未指定或非法值回退「概览」。
+    // 旧 id（squads → teams、library → board）由 TaskCenter.normalizeTab 归一。
+    const requested = typeof detail.tab === "string" && detail.tab ? detail.tab : "overview";
+    setTaskCenterTab(requested as TaskCenterTab);
     setShowTaskCenter(true);
   };
   window.addEventListener("codem:open-task-center", openTaskCenter as EventListener);
@@ -3665,14 +3681,15 @@ onClose={() => setCitationViewer(null)}
         <SlotBridge name="app.task-center" fallback={TaskCenter}
           onClose={() => setShowTaskCenter(false)}
           initialTab={taskCenterTab}
-          subagentTasks={(() => {
+          subagentTasks={subagentTasks}
+          onSelectSubagent={(taskId: string) => {
+            // 选中子智能体任务：切到它的父会话（SubagentTask.parentId），再关掉面板
             try {
-              const { getSubagentRuntime } = require("./core/subagent/index");
-              const runtime = getSubagentRuntime();
-              return runtime ? runtime.getAllTasks() : [];
-            } catch { return []; }
-          })()}
-          onSelectSubagent={() => {
+              const task = subagentTasks.find((t) => t.id === taskId);
+              if (task?.parentId) useProjectStore.getState().switchSession(task.parentId);
+            } catch {
+              /* 忽略：切不过去就只关面板 */
+            }
             setShowTaskCenter(false);
           }}
         />

@@ -1,4 +1,4 @@
-﻿/**
+/**
  * OverviewPanel —— 运营总览（**布局对标 lobster-pet 的 DetailPanel**）。
  *
  * lobster-pet 的监控界面是「单屏卡片网格」：
@@ -36,7 +36,7 @@ export interface OverviewPanelProps {
   };
   zh: boolean;
   onOpenLibrary: () => void;
-  onOpenTab: (tab: "sessions" | "tools" | "cost" | "errors") => void;
+  onOpenTab: (tab: "board" | "scene" | "usage" | "tools" | "errors" | "timeline" | "settings") => void;
 }
 
 /** 跳转到任务管理的其它页签（团队/委派/子智能体等已并入任务管理） */
@@ -268,7 +268,7 @@ export function OverviewPanel({ snapshot, series, zh, onOpenLibrary, onOpenTab }
 
         {/* 场景大卡（对标 MiniOffice，但换成我们的图书馆） */}
         <Card
-          title={zh ? "图书馆实况" : "Library live"}
+          title={zh ? "场景实况" : "Scene live"}
           icon="library"
           className="lo-card--scene"
           actions={
@@ -277,7 +277,7 @@ export function OverviewPanel({ snapshot, series, zh, onOpenLibrary, onOpenTab }
                 {m.actorsWorking} {zh ? "工作中" : "working"}
               </Pill>
               <button className="lo-link-btn" onClick={onOpenLibrary}>
-                {zh ? "全屏 →" : "Full →"}
+                {zh ? "场景 →" : "Scene →"}
               </button>
             </span>
           }

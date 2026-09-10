@@ -1,13 +1,14 @@
 // @ts-nocheck
 /**
- * @codem/ui-library-ops — 图书馆运营监控 UI 插件
+ * @codem/ui-library-ops — 图书馆运营监控 UI 插件（接管「看板」页签）
  *
- * 注册 `LibraryOpsTaskView` 到 `task-center.library`（宿主「任务管理」面板的
- * 扩展页签 slot）。**本插件没有独立面板**：图书馆视图就是任务管理里的
- * 「图书馆」页签，插件禁用时该 slot 无贡献者 → 页签不出现，宿主 UI 回到原样。
+ * 注册 `LibraryOpsBoardView` 到 `task-center.board`（宿主「任务管理 → 看板」页签）。
+ * **本插件没有独立面板/页签**：接管看板页签，在 Issues 看板之上追加
+ * 场景 / 用量 / 工具 / 错误 / 时间线 / 设置 视图；插件禁用时该 slot 无贡献者
+ * → 看板回退到宿主自带 Issues 看板，宿主 UI 回到原样。
  *
  * 快捷键 / 事件：
- * - `Ctrl/Cmd+Shift+L` 或 `codem:open-library-ops` → 打开「任务管理 → 图书馆」
+ * - `Ctrl/Cmd+Shift+L` 或 `codem:open-library-ops` → 打开「任务管理 → 看板」
  *   （派发宿主已有的 `codem:open-task-center` 事件，不新增宿主耦合）。
  * - 设置里勾选「启动时自动打开」→ 启动后自动切到该页签。
  *
@@ -21,19 +22,19 @@
 import type { Plugin } from '../cordis/src/index.ts'
 import { lazy, Suspense, createElement } from 'react'
 
-/** 任务管理里的图书馆扩展页签 slot（与 TaskCenter.tsx 的 TASK_CENTER_LIBRARY_SLOT 一致） */
-export const LIBRARY_TASK_SLOT = 'task-center.library'
+/** 任务管理「看板」页签的扩展 slot（与 TaskCenter.tsx 的 TASK_CENTER_BOARD_SLOT 一致） */
+export const LIBRARY_TASK_SLOT = 'task-center.board'
 
-/** 打开图书馆视图（等价于打开任务管理并切到该页签） */
+/** 打开看板视图（等价于打开任务管理并切到「看板」页签） */
 export function openLibraryView() {
   if (typeof window !== 'undefined') {
-    window.dispatchEvent(new CustomEvent('codem:open-task-center', { detail: { tab: 'library' } }))
+    window.dispatchEvent(new CustomEvent('codem:open-task-center', { detail: { tab: 'board' } }))
   }
   return { opened: true }
 }
 
 const ViewLazy = lazy(() =>
-  import('../../plugins/library-ops/components/LibraryOpsTaskView').then(m => ({ default: m.LibraryOpsTaskView }))
+  import('../../plugins/library-ops/components/LibraryOpsBoardView').then(m => ({ default: m.LibraryOpsBoardView }))
 )
 
 function ViewWrapper() {
@@ -47,7 +48,7 @@ function ViewWrapper() {
 export const uiLibraryOpsProvider: Plugin = Object.assign(
   (ctx: any) => {
     const s = {
-      /** 打开图书馆视图（任务管理 → 图书馆页签） */
+      /** 打开看板视图（任务管理 → 看板页签） */
       open() {
         return openLibraryView()
       },
@@ -59,7 +60,7 @@ export const uiLibraryOpsProvider: Plugin = Object.assign(
 
     const slots = ctx.get('slots')
     const unreg = slots.register(
-      { name: LIBRARY_TASK_SLOT, id: 'library-ops-task-view', priority: 20 },
+      { name: LIBRARY_TASK_SLOT, id: 'library-ops-board-view', priority: 20 },
       ViewWrapper
     )
 

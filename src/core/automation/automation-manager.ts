@@ -259,21 +259,27 @@ function parseCronField(field: string, min: number, max: number): number[] {
   if (field === "*") return Array.from({ length: max - min + 1 }, (_, i) => min + i);
   if (field.startsWith("*/")) {
     const step = parseInt(field.substring(2));
+    // 步长非法（*/0、*/abc、负数）时返回空集合：
+    // 否则 Math.floor((max-min)/0) 为 Infinity → Array.from 抛 RangeError，
+    // 每 30 秒重复抛出并让排在后面的 cron 触发器全部失效。
+    if (!Number.isFinite(step) || step <= 0) return [];
     return Array.from({ length: Math.floor((max - min) / step) + 1 }, (_, i) => min + i * step);
   }
   const values: number[] = [];
   for (const part of field.split(",")) {
     if (part.includes("-")) {
       const [s, e] = part.split("-").map(Number);
+      if (!Number.isFinite(s) || !Number.isFinite(e)) continue;
       for (let i = s; i <= e; i++) values.push(i);
     } else {
       values.push(parseInt(part));
     }
   }
-  return values.filter((v) => v >= min && v <= max);
+  return values.filter((v) => Number.isFinite(v) && v >= min && v <= max);
 }
 
-function shouldFireCron(expr: string, date: Date): boolean {
+/** 导出供测试使用（纯函数，无副作用） */
+export function shouldFireCron(expr: string, date: Date): boolean {
   const parts = expr.trim().split(/\s+/);
   if (parts.length !== 5) return false;
   const [minF, hourF, domF, monF, dowF] = parts;
@@ -320,16 +326,21 @@ class CronEngine {
         if (elapsed < trigger.cooldownMs) continue;
         if (elapsed < 60000) continue; // at most once per minute
       }
-      if (shouldFireCron(trigger.cronExpression, now)) {
-        updateTrigger(trigger.id, { lastTriggered: Date.now() });
-        addTriggerHistory({
-          triggerId: trigger.id,
-          triggerName: trigger.name,
-          timestamp: Date.now(),
-          message: trigger.message,
-        });
-        try { getInboxManager().add({ category: "automation", title: `Cron 触发: ${trigger.name}`, body: trigger.message.substring(0, 200), sourceType: "automation", sourceId: trigger.id, priority: "low" }); } catch {}
-        this.onTrigger?.(trigger);
+      // 单个触发器解析/触发异常不能拖垮整轮检查（否则后面的 cron 触发器永远没机会）
+      try {
+        if (shouldFireCron(trigger.cronExpression, now)) {
+          updateTrigger(trigger.id, { lastTriggered: Date.now() });
+          addTriggerHistory({
+            triggerId: trigger.id,
+            triggerName: trigger.name,
+            timestamp: Date.now(),
+            message: trigger.message,
+          });
+          try { getInboxManager().add({ category: "automation", title: `Cron 触发: ${trigger.name}`, body: trigger.message.substring(0, 200), sourceType: "automation", sourceId: trigger.id, priority: "low" }); } catch {}
+          this.onTrigger?.(trigger);
+        }
+      } catch (e) {
+        console.warn("[automation] cron trigger failed:", trigger.id, e);
       }
     }
   }
@@ -391,6 +402,19 @@ export function notifyIssueStatusChange(issueId: string, newStatus: string, proj
 
 // ========== Combined Engine ==========
 
+/**
+ * 引擎是否被用户显式暂停。
+ * 放在模块级（而不是组件 state）：引擎是单例，暂停状态必须跨页签卸载/重挂、
+ * 跨设置面板保持一致，否则「停止所有」后编辑一次触发器就会静默重启（P2-4）。
+ */
+let automationStopped = false;
+/** 引擎是否被装配过（`startAutomationEngines` 调用过）——决定能否从暂停态恢复 */
+let automationStarted = false;
+
+export function isAutomationStopped(): boolean {
+  return automationStopped;
+}
+
 export function startAutomationEngines(onTrigger: (trigger: AutomationTrigger) => void): void {
   timerEngine.setHandler(onTrigger);
   fileWatchEngine.setHandler(onTrigger);
@@ -399,15 +423,33 @@ export function startAutomationEngines(onTrigger: (trigger: AutomationTrigger) =
   timerEngine.start();
   fileWatchEngine.start();
   cronEngine.start();
+  automationStarted = true;
+  automationStopped = false;
 }
 
 export function stopAutomationEngines(): void {
   timerEngine.stopAll();
   fileWatchEngine.stopAll();
   cronEngine.stopAll();
+  automationStopped = true;
+}
+
+/**
+ * 从「暂停」恢复（handler 仍在，重新起表）。
+ * @returns 是否成功恢复（引擎从未装配过则返回 false，调用方应保持暂停态）
+ */
+export function resumeAutomationEngines(): boolean {
+  if (!automationStarted) return false;
+  automationStopped = false;
+  timerEngine.start();
+  fileWatchEngine.start();
+  cronEngine.start();
+  return true;
 }
 
 export function refreshAutomationEngines(): void {
+  // 显式暂停期间不重启：否则「停止所有」后保存/启用任一触发器都会把引擎悄悄拉起来
+  if (automationStopped) return;
   timerEngine.refresh();
   fileWatchEngine.refresh();
   cronEngine.refresh();

@@ -11,6 +11,7 @@ import { getDelegationOrchestrator } from "../../core/session";
 import type { DelegationTask, DelegationState } from "../../core/session";
 import { useProjectStore } from "../../core/store";
 import { useLang } from "../../core/i18n/lang";
+import { useCurrentProjectId } from "./use-current-project";
 
 const STATUS_CONFIG: Record<DelegationState, { label: string; labelEn: string; color: string; Icon: typeof CheckCircle2 }> = {
   pending: { label: "等待中", labelEn: "Pending", color: "var(--text-muted)", Icon: Timer },
@@ -43,38 +44,27 @@ export function DelegationTab() {
   const [tasks, setTasks] = useState<DelegationTask[]>([]);
   const [stats, setStats] = useState({ total: 0, pending: 0, running: 0, completed: 0, failed: 0, cancelled: 0 });
   const sessions = useProjectStore((s) => s.sessions);
+  const projectId = useCurrentProjectId();
 
   const loadTasks = useCallback(() => {
     const orch = getDelegationOrchestrator();
-    const projectId = useProjectStore.getState().currentProject?.id || "";
-    const allTasks = projectId
-      ? Array.from(orch.getDelegationsBySource("")).concat(
-          sessions.flatMap((s) => orch.getDelegationsByTarget(s.id)),
-        )
+    // 无项目 → 列表与统计都为空（委派任务带 projectId，跨项目展示会串数据，P2-12）
+    const scoped = projectId
+      ? orch.getAllDelegations().filter((t) => !t.projectId || t.projectId === projectId)
       : [];
 
-    const seen = new Set<string>();
-    const unique = allTasks.filter((t) => {
-      if (seen.has(t.id)) return false;
-      seen.add(t.id);
-      return true;
+    setTasks(scoped);
+    // 统计口径必须与列表一致：原先直接用 orch.getStats()（全库、跨项目），
+    // 会出现「统计 5 条、列表 0 条」的错位（P1-6）。
+    setStats({
+      total: scoped.length,
+      pending: scoped.filter((t) => t.status === "pending").length,
+      running: scoped.filter((t) => t.status === "running").length,
+      completed: scoped.filter((t) => t.status === "completed").length,
+      failed: scoped.filter((t) => t.status === "failed").length,
+      cancelled: scoped.filter((t) => t.status === "cancelled").length,
     });
-
-    const allFromMemory = sessions.flatMap((s) => [
-      ...orch.getDelegationsBySource(s.id),
-      ...orch.getDelegationsByTarget(s.id),
-    ]);
-    for (const t of allFromMemory) {
-      if (!seen.has(t.id)) {
-        seen.add(t.id);
-        unique.push(t);
-      }
-    }
-
-    unique.sort((a, b) => b.createdAt - a.createdAt);
-    setTasks(unique);
-    setStats(orch.getStats());
-  }, [sessions]);
+  }, [projectId]);
 
   useEffect(() => {
     loadTasks();
@@ -118,9 +108,15 @@ export function DelegationTab() {
           color: "var(--text-secondary, #888)",
           fontSize: "var(--fs-md)",
         }}>
-          {zh ? "暂无委派任务。在对话中使用 " : "No delegation tasks. Use "}
-          <code style={{ color: "var(--accent)" }}>delegate_to_session</code>
-          {zh ? " 工具来委派任务到其他会话。" : " tool to delegate tasks."}
+          {projectId ? (
+            <>
+              {zh ? "暂无委派任务。在对话中使用 " : "No delegation tasks. Use "}
+              <code style={{ color: "var(--accent)" }}>delegate_to_session</code>
+              {zh ? " 工具来委派任务到其他会话。" : " tool to delegate tasks."}
+            </>
+          ) : (
+            zh ? "尚未选择项目，委派任务按项目隔离。" : "No project selected — delegations are project-scoped."
+          )}
         </div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
