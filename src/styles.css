@@ -118,6 +118,10 @@
      我们此前是 36px —— 36px 里塞 26px 控件只剩 5px 余量，视觉上"贴边"。
      44px 让 30px 的控件上下各留 7px，和 mac 窗口的比例接近。 */
   --chrome-height: 44px;
+  /* 右侧浮层面板（PanelSidebar：Git / 文件 / 变更 / 工作台 / CI·CD）的宽度。
+     第 46 波：用户反馈"tab 按钮区出现滚动条"—— 按钮区不该滚动，所以把面板加宽到一行放得下
+     （420 → 520），并让 tab 栏 overflow: hidden + 按钮可压缩。 */
+  --panel-sidebar-width: 520px;
   /* 遮罩用的不透明色（mask 只看 alpha，颜色本身无意义）：
      标签条的"两端渐隐"需要它，之前直接写 #000 被颜色规则拦下 —— 令牌化之后
      既过了门禁，也说明了"这不是一个颜色选择，而是一个 alpha 占位"。 */
@@ -423,8 +427,11 @@ position: relative;
   --chrome-safe-right: var(--space-2);
 }
 
-/* 交互内容统一抬到拖拽区之上 */
-.titlebar > * {
+/* 第 46 波修正（用户反馈）：原来把 `.titlebar > *` 整组抬到 z-index 1，
+   于是 `.titlebar-left`（flex: 1，会撑满中段）与 `.titlebar-nav-actions`（同样 flex: 1）
+   这两块**容器的空白部分**也盖在拖拽区之上 —— 结果"执行模型按钮右边到中间那段空白拖不动窗口"。
+   现在只把**真正可交互的元素**抬上去：容器保持 static，它们之间的空白就重新落回拖拽区。 */
+.titlebar :is(button, a, input, select, textarea, [role="button"], [role="tab"], [role="menuitem"], .app-menubar, .titlebar-tabs, .titlebar-buttons, .titlebar-buttons-mac) {
   position: relative;
   z-index: 1;
 }
@@ -580,7 +587,9 @@ justify-content: flex-start;
 display: flex;
 align-items: center;
 gap: var(--space-2);
--webkit-app-region: drag;
+/* 第 46 波：这里不再声明 drag —— 容器整段可拖会把"按钮之外也想拖"和
+   "容器空白处拖不动"两件事搅在一起（用户反馈的空白区拖不动就是这么来的：
+   容器 flex:1 撑满中段、又被抬到拖拽区之上）。拖拽交给 .titlebar-drag-region 一条专用区。 */
 margin-right: var(--space-4);
 flex: 1;
 justify-content: flex-end;
@@ -1109,7 +1118,12 @@ flex-shrink: 0;
 }
 
 .sidebar-project-more-menu button {
-  display: block;
+  /* 第 46 波：菜单项改成「图标 + 文字」两列（原来只有文字，图标是 i18n 文案里的 emoji）——
+     用 grid 让图标与文字跨行对齐，图标列宽度固定，文字列吃满剩余宽度 */
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-4);
   width: 100%;
   padding: var(--space-3) var(--space-6);
   background: none;
@@ -1119,6 +1133,20 @@ flex-shrink: 0;
   font-size: var(--fs-sm);
   text-align: left;
   white-space: nowrap;
+}
+
+/* 菜单项图标：与项目其它菜单一致（次要色、14px、1.75 描边由 §2.4 的全局规则给） */
+.pm-menu-icon {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+/* 危险动作：「移除项目」用错误色，和别处危险项一个语言 */
+.sidebar-project-more-menu button.pm-menu-danger {
+  color: var(--error);
+}
+.sidebar-project-more-menu button.pm-menu-danger .pm-menu-icon {
+  color: var(--error);
 }
 
 .sidebar-project-more-menu button:is(:hover, :focus-visible) {
@@ -2031,6 +2059,11 @@ margin-top: var(--space-4);
 
 .files-cleanup-btn {
   width: 100%;
+  /* 第 46 波：图标 + 文字两列（图标是新增的线性图标，替代原先文案里的 emoji） */
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-4);
   padding: var(--space-4) var(--space-6);
   background: var(--bg-tertiary);
   border: none;
@@ -4953,7 +4986,15 @@ background: color-mix(in srgb, var(--accent) 15%, transparent);
 }
 
 .agent-item-icon {
-  font-size: var(--fs-lg);
+  /* 第 46 波：图标从 emoji 换成 lucide svg —— 容器改成居中的定宽盒（尺寸由 <Icon size> 决定，
+     不再靠 font-size 撑 emoji 字形） */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--space-8);
+  height: var(--space-8);
+  color: var(--text-secondary);
+  flex-shrink: 0;
 }
 
 .agent-item-name {
@@ -5037,7 +5078,14 @@ background: color-mix(in srgb, var(--accent) 15%, transparent);
 }
 
 .agent-detail-icon {
-  font-size: var(--fs-lg);
+  /* 第 46 波：同 .agent-item-icon —— emoji 换 lucide 图标后改成定宽居中盒 */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--space-8);
+  height: var(--space-8);
+  color: var(--accent);
+  flex-shrink: 0;
 }
 
 .agent-detail-status {
@@ -8393,7 +8441,13 @@ border-bottom: 1px solid var(--accent);
 .agent-tool-item.is-locked { cursor: not-allowed; opacity: 0.6; }
 .agent-tool-name { font-family: var(--font-mono); color: var(--text-primary); }
 .agent-tool-name.is-required { color: var(--text-muted); }
-.agent-tool-lock { font-size: var(--fs-xs); margin-left: var(--space-1); }
+.agent-tool-lock {
+  /* 第 46 波：锁形 emoji → lucide Lock（尺寸随图标，不再靠 font-size） */
+  display: inline-flex;
+  align-items: center;
+  margin-left: var(--space-1);
+  color: var(--warning);
+}
 .agent-tool-hint { margin-top: var(--space-2); font-size: var(--fs-sm); color: var(--text-muted); }
 
 .agent-perm-list { display: flex; flex-direction: column; gap: var(--space-2); }

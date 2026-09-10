@@ -2668,16 +2668,10 @@ padding: 0 var(--space-3);
 height: 38px;
 flex-shrink: 0;
 border-bottom: 1px solid var(--border-primary);
-overflow-x: auto;
-}
-
-.panel-sidebar-tabs::-webkit-scrollbar {
-height: 3px;
-}
-
-.panel-sidebar-tabs::-webkit-scrollbar-thumb {
-background: var(--text-muted);
-border-radius: 2px;
+/* 第 46 波（用户反馈）：这是**按钮区**，不该出现滚动条 —— 面板宽度已加宽到
+   `--panel-sidebar-width`（5 个 tab 一行放得下），这里改成裁切兜底 + 允许按钮压缩，
+   所以不再需要 overflow-x: auto 与滚动条样式。 */
+overflow: hidden;
 }
 
 .panel-sidebar-tab {
@@ -2696,7 +2690,9 @@ border-radius: 2px;
   border-radius: var(--radius-xs) var(--radius-xs) 0 0;
   cursor: pointer;
   transition: color var(--duration-fast), background var(--duration-fast), border-color var(--duration-fast);
-  flex-shrink: 0;
+  /* 第 46 波：允许压缩（窗口很小时优雅收窄，而不是把容器撑出滚动条） */
+  flex-shrink: 1;
+  min-width: 0;
 }
 
 .panel-sidebar-tab:is(:hover, :focus-visible) {
@@ -2713,6 +2709,9 @@ border-radius: 2px;
 
 .panel-sidebar-tab-label {
   line-height: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .panel-sidebar-close {

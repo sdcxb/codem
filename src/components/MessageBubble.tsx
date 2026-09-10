@@ -22,7 +22,7 @@ import { openFileLink } from "../utils/file-link";
 // P3-26: Voice output (TTS) — browser speech synthesis hook
 import { useSpeechSynthesis } from "../hooks/useSpeechSynthesis";
 import { getMultimodalSettings, textToSpeech, playTTSAudio } from "../core/llm/multimodal";
-import { Bot, CheckCircle, XCircle, Clock, FileText, Image as ImageIcon, Pencil, PencilLine, Clipboard, Check, BookOpen, BookX, Brain, ChevronDown, ChevronUp, User, Volume2, Square as StopIcon, Undo2, Pin, PinOff } from "lucide-react";
+import { Bot, CheckCircle, XCircle, Clock, FileText, Image as ImageIcon, Pencil, PencilLine, Clipboard, Check, BookOpen, BookX, Brain, ChevronDown, ChevronUp, User, Volume2, Square as StopIcon, Undo2, Pin, PinOff, Trash2 } from "lucide-react";
 import { getSettingJSON } from "../core/storage/settings";
 import type { UserConfig } from "../core/types";
 import { MessageActions } from "./MessageActions";
@@ -816,7 +816,9 @@ const opLabel = tc.tool === 'create_note'
                 className="files-cleanup-btn"
                 onClick={() => setShowFilesConfirm(true)}
               >
-                {S.bubble.cleanFiles[lang]} ({message.generatedFiles.length})
+                {/* 第 46 波：文案里的 emoji 换成与项目一致的线性图标 */}
+                <Trash2 size={14} className="icon-inline" />
+                <span>{S.bubble.cleanFiles[lang]} ({message.generatedFiles.length})</span>
               </button>
             ) : (
               <div className="files-confirm">

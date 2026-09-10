@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { Lock } from "lucide-react";
 import {
   getAgentRegistry,
   type AgentDefinition,
@@ -244,7 +245,7 @@ export function AgentManager({ onClose }: { onClose: () => void }) {
           <DetailRow label={zh ? "模型槽位" : "Model Slot"} value={selected.modelSlot ? SLOT_LABELS[selected.modelSlot] : "-"} />
           <DetailRow label={zh ? "最大步数" : "Max Steps"} value={String(selected.maxSteps ?? "-")} />
           <DetailRow label={zh ? "可生成子智能体" : "Can Spawn"} value={selected.canSpawnSubagents ? (zh ? "是" : "Yes") : (zh ? "否" : "No")} />
-          <DetailRow label={zh ? "工具白名单" : "Tool Allowlist"} value={selected.toolAllowlist && selected.toolAllowlist.length > 0 ? selected.toolAllowlist.map(t => REQUIRED_TOOLS.includes(t) ? `${t}🔒` : t).join(", ") : (zh ? "全部工具" : "All tools")} />
+          <DetailRow label={zh ? "工具白名单" : "Tool Allowlist"} value={selected.toolAllowlist && selected.toolAllowlist.length > 0 ? selected.toolAllowlist.map(t => REQUIRED_TOOLS.includes(t) ? `${t}（${zh ? "必需" : "required"}）` : t).join(", ") : (zh ? "全部工具" : "All tools")} />
           <DetailRow label={zh ? "上下文模式" : "Context Mode"} value={selected.contextMode === "fork" ? (zh ? "隔离 (fork)" : "Fork (isolated)") : (zh ? "内联 (inline)" : "Inline")} />
           {selected.model && <DetailRow label={zh ? "模型覆盖" : "Model Override"} value={selected.model} />}
           {selected.temperature !== undefined && <DetailRow label={zh ? "温度" : "Temperature"} value={String(selected.temperature)} />}
@@ -400,14 +401,21 @@ export function AgentManager({ onClose }: { onClose: () => void }) {
                     />
                     <span className={`agent-tool-name${isRequired ? " is-required" : ""}`}>
                       {toolName}
-                      {isRequired && <span className="agent-tool-lock">🔒</span>}
+                      {isRequired && (
+                        <span className="agent-tool-lock" title={zh ? "必需工具（不可关闭）" : "Required tool"}>
+                          <Lock size={10} />
+                        </span>
+                      )}
                     </span>
                   </label>
                 );
               })}
             </div>
             <div className="agent-tool-hint">
-              {zh ? "🔒 标记的工具为必选工具，不可取消。留空=全部工具权限。外部技能加载的工具也会自动可用。" : "🔒 Required tools cannot be unchecked. Empty = all tools. Skill tools are auto-available."}
+              {/* 第 46 波：说明文案里的锁形 emoji 也换成同一枚线性图标，
+                  避免"图例用 emoji、标记用 svg"的错位 */}
+              <Lock size={10} className="icon-inline" />
+              {zh ? " 标记的工具为必选工具，不可取消。留空=全部工具权限。外部技能加载的工具也会自动可用。" : " Required tools cannot be unchecked. Empty = all tools. Skill tools are auto-available."}
             </div>
           </div>
 

@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { Wrench, Search, Bot, Pin } from "lucide-react";
 import { SubagentTask, SubagentActivity } from "../core/subagent/subagent";
 import { getLang } from "../core/i18n/lang";
 
@@ -7,12 +8,14 @@ interface AgentDetailProps {
   onBack: () => void;
 }
 
-function getAgentIcon(agentId: string): string {
+/** 子智能体类型图标（第 46 波：此前返回 emoji 字符串 —— 与项目其它图标的线性风格不一致）。
+ *  现在返回 lucide 组件，调用处统一 `<Icon size={14} />`。 */
+function getAgentIcon(agentId: string) {
   switch (agentId) {
-    case "build": return "🔧";
-    case "explore": return "🔍";
-    case "general": return "🤖";
-    default: return "📌";
+    case "build": return Wrench;
+    case "explore": return Search;
+    case "general": return Bot;
+    default: return Pin;
   }
 }
 
@@ -70,7 +73,14 @@ export function AgentDetail({ task, onBack }: AgentDetailProps) {
           ← {zh ? "返回" : "Back"}
         </button>
         <div className="agent-detail-title">
-          <span className="agent-detail-icon">{getAgentIcon(task.agentId)}</span>
+          {(() => {
+            const Icon = getAgentIcon(task.agentId);
+            return (
+              <span className="agent-detail-icon">
+                <Icon size={14} />
+              </span>
+            );
+          })()}
           <span>{task.name || task.agentId}</span>
         </div>
         <span className={`agent-detail-status ${task.status}`}>

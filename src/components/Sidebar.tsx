@@ -680,10 +680,12 @@ const handleDrop = useCallback((e: React.DragEvent, targetSessionId: string, pro
                           }}
                         >
                           <button onClick={(e) => { e.stopPropagation(); updateProject(project.id, { pinned: !project.pinned }); setHoverMenuProjectId(null); setClickedMenuProjectId(null); }}>
-                            {project.pinned ? S.sidebar.unpinProject[lang] : S.sidebar.pinProject[lang]}
+                            <Pin size={14} className="pm-menu-icon" />
+                            <span>{project.pinned ? S.sidebar.unpinProject[lang] : S.sidebar.pinProject[lang]}</span>
                           </button>
                           <button onClick={(e) => { e.stopPropagation(); onToggleFileExplorer?.(project.id); setHoverMenuProjectId(null); setClickedMenuProjectId(null); }}>
-                            {S.sidebar.fileBrowser[lang]}
+                            <FolderOpen size={14} className="pm-menu-icon" />
+                            <span>{S.sidebar.fileBrowser[lang]}</span>
                           </button>
                           <button onClick={async (e) => {
                             e.stopPropagation();
@@ -703,10 +705,15 @@ const handleDrop = useCallback((e: React.DragEvent, targetSessionId: string, pro
                               }
                             }
                           }}>
-                            {S.sidebar.openInFileManager[lang]}
+                            <Folder size={14} className="pm-menu-icon" />
+                            <span>{S.sidebar.openInFileManager[lang]}</span>
                           </button>
-                          <button onClick={(e) => { e.stopPropagation(); onRemoveProject?.(project.id, project.name, project.path); setHoverMenuProjectId(null); setClickedMenuProjectId(null); }}>
-                            {S.sidebar.removeProject[lang]}
+                          <button
+                            className="pm-menu-danger"
+                            onClick={(e) => { e.stopPropagation(); onRemoveProject?.(project.id, project.name, project.path); setHoverMenuProjectId(null); setClickedMenuProjectId(null); }}
+                          >
+                            <Trash2 size={14} className="pm-menu-icon" />
+                            <span>{S.sidebar.removeProject[lang]}</span>
                           </button>
                         </div>,
                         document.body

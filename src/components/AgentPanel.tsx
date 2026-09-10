@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { Wrench, Search, Bot, Pin } from "lucide-react";
 import { SubagentTask, SubagentStatus } from "../core/subagent/subagent";
 import { PanelIcons, ActionIcons } from "../core/icons/icon-map";
 import { useProjectStore } from "../core/store";
@@ -33,12 +34,13 @@ function getStatusLabel(status: SubagentStatus): string {
   }
 }
 
-function getAgentIcon(agentId: string): string {
+/** 子智能体类型图标（第 46 波：此前返回 emoji，改为 lucide 组件，与项目图标风格统一） */
+function getAgentIcon(agentId: string) {
   switch (agentId) {
-    case "build": return "🔧";
-    case "explore": return "🔍";
-    case "general": return "🤖";
-    default: return "📌";
+    case "build": return Wrench;
+    case "explore": return Search;
+    case "general": return Bot;
+    default: return Pin;
   }
 }
 
@@ -252,7 +254,14 @@ export function AgentPanel({ agents, onClose, onSelectAgent }: AgentPanelProps) 
             onClick={() => onSelectAgent(agent.id)}
           >
             <div className="agent-item-header">
-              <span className="agent-item-icon">{getAgentIcon(agent.agentId)}</span>
+              {(() => {
+                const Icon = getAgentIcon(agent.agentId);
+                return (
+                  <span className="agent-item-icon">
+                    <Icon size={14} />
+                  </span>
+                );
+              })()}
               <span className="agent-item-name">{agent.name || agent.agentId}</span>
               {agent.persistent && <span className="agent-item-badge">持久</span>}
               <span className="agent-item-status">

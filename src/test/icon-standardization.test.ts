@@ -285,6 +285,39 @@ describe("图标标准化测试 — ICON-001 ~ ICON-060", () => {
     });
   });
 
+  // ===== E. 第 46 波：菜单/列表里的 emoji 图标换成线性图标 =====
+  describe("第 46 波：UI 图标不使用 emoji（菜单 / 列表 / 对话框）", () => {
+    it("ICON-053: 侧栏「项目 → 更多操作」菜单用 lucide 图标，i18n 文案里不含 emoji", () => {
+      const sidebar = readFile("components/Sidebar.tsx");
+      // 菜单项必须是「图标 + 文字」，图标走 lucide
+      for (const icon of ["Pin", "FolderOpen", "Folder", "Trash2"]) {
+        expect(sidebar, `Sidebar 的更多操作菜单应使用 ${icon} 图标`).toContain(`<${icon} size={14}`);
+      }
+      // 文案里不能再埋 emoji（原来图标就是靠 "📌 置顶项目" 这种文案塞进去的）
+      const lang = readFile("core/i18n/lang.ts");
+      for (const key of ["pinProject", "unpinProject", "fileBrowser", "openInFileManager", "removeProject"]) {
+        const line = lang.split("\n").find((l) => l.trim().startsWith(key + ":"));
+        expect(line, `i18n 里应有 ${key}`).toBeTruthy();
+        expect(line!, `${key} 的文案不应含 emoji（图标改由组件渲染）`).not.toMatch(/[\u{1F000}-\u{1FFFF}\u{2600}-\u{27BF}]/u);
+      }
+    });
+
+    it("ICON-054: 子智能体类型图标返回 lucide 组件而不是 emoji 字符串", () => {
+      for (const file of ["components/AgentDetail.tsx", "components/AgentPanel.tsx"]) {
+        const src = readFile(file);
+        const fn = src.slice(src.indexOf("function getAgentIcon"), src.indexOf("function getAgentIcon") + 400);
+        expect(fn, `${file} 的 getAgentIcon 不应再返回 emoji`).not.toMatch(/[\u{1F000}-\u{1FFFF}]/u);
+        expect(fn, `${file} 的 getAgentIcon 应返回 lucide 组件`).toMatch(/return (Wrench|Search|Bot|Pin);/);
+      }
+    });
+
+    it("ICON-055: 必需工具标记用 lucide Lock，而不是 emoji", () => {
+      const src = readFile("components/AgentManager.tsx");
+      expect(src).toContain('<Lock size={10} />');
+      expect(src).not.toContain("🔒");
+    });
+  });
+
   // ===== D. 关闭按钮使用 ActionIcons.close =====
   describe("关闭按钮使用 ActionIcons.close", () => {
     const componentsWithCloseButton = [
