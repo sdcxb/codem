@@ -441,7 +441,7 @@ node tools/ui-audit/codemod-icon-scale.mjs [--write]  # 图标工具类 → .ico
 
 ---
 
-## 7. 交接快照（2026-09-10 · 第 34 波后）
+## 7. 交接快照（2026-09-10 · 第 45 波后）
 
 ### 当前数字（`node tools/ui-audit/scan-ui.mjs`）
 
@@ -684,8 +684,18 @@ node tools/ui-audit/codemod-icon-scale.mjs [--write]  # 图标工具类 → .ico
   残留的 110 个都在"与活类共存的选择器"里（如 `.run-status-bar.phase-thinking` 这类**修饰类**）：
   删整条会连带删掉活类的样式，所以规则刻意不判 —— 这一层要人工逐个确认，收益不大，暂不再动。
 
-### 发布收尾队列
-- `CHANGELOG` / `README` / `PROJECT-GUIDE` / 本文件同步 → 升版本号 → 构建安装包 → 发布 Release。
+### 发布收尾队列 ✅ 第 45 波完成
+
+- **v1.16.0 已发布**：`CHANGELOG.md`（顶部新增 `[1.16.0]` 条目，按「用户能直接看到的改变 / 工程侧 /
+  已知取舍」三段写）、`README.md`（「作者的话」追加 v1.16.0 段落）、`docs/PROJECT-GUIDE.md`
+  （6.1 已发布版本表新增一行）三处同步；版本号在 `package.json` / `src-tauri/tauri.conf.json` /
+  `src-tauri/Cargo.toml` 三处一起改。
+- **新增 `src/test/version-consistency.test.ts`**（VERSION-1~4）把「三处版本一致 + 语义化三段式 +
+  CHANGELOG 顶部有当前版本条目 + PROJECT-GUIDE 版本表已登记」变成机器约束 ——
+  此前只有"三处一起改"的人工纪律，而漏改的后果是**安装包版本与前端版本不一致**，开发环境里看不出来。
+- **安装包构建**按 `docs/RELEASE-GUIDE.md` 的流程执行：必须先设签名环境变量
+  （`TAURI_SIGNING_PRIVATE_KEY` + `TAURI_SIGNING_PRIVATE_KEY_PASSWORD=dummy`），否则 tauri CLI
+  会卡在交互式密码输入（密钥是 `rsign encrypted secret key`）。
 
 ### 明确保留、不再动的（避免下一轮重复劳动）
 1. **`z-index` 的局部层叠（<100）**：目前 149 处写死值按规则**允许保留**（幻灯片元素 96 处、棋盘格子、图标叠层）。
