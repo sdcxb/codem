@@ -308,7 +308,7 @@
   padding: var(--space-1) var(--space-3);
   border-radius: var(--radius-sm);
   font-size: 0.88em;
-  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', Consolas, monospace;
+  font-family: var(--font-mono);
   color: var(--accent);
 }
 
@@ -492,7 +492,7 @@
 .json-format-body {
   margin: 0;
   padding: var(--space-6) var(--space-7);
-  font-family: 'SF Mono', Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: var(--fs-base);
   line-height: 1.6;
   overflow-x: auto;
@@ -577,7 +577,7 @@
   color: var(--text-secondary);
 }
 .code-block-lang {
-  font-family: 'SF Mono', 'Fira Code', Consolas, monospace;
+  font-family: var(--font-mono);
   font-weight: 500;
   text-transform: lowercase;
 }
@@ -624,7 +624,7 @@
 .code-block-pre {
   margin: 0;
   padding: var(--space-6) var(--space-8);
-  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: var(--fs-base);
   line-height: 1.6;
   overflow-x: auto;
@@ -813,7 +813,7 @@
   margin: 0;
   padding: var(--space-6) var(--space-7);
   background: transparent;
-  font-family: var(--font-mono, ui-monospace, monospace);
+  font-family: var(--font-mono);
   font-size: var(--fs-base, 13px);
   line-height: 1.6;
   white-space: pre-wrap;
@@ -1039,7 +1039,7 @@
   margin: 0;
   padding: var(--space-4);
   font-size: var(--fs-sm);
-  font-family: 'SF Mono', Consolas, monospace;
+  font-family: var(--font-mono);
   overflow-x: auto;
   background: transparent;
   color: var(--text-secondary);
@@ -1153,7 +1153,7 @@
 .tool-pill-detail-code {
   margin: 0;
   font-size: var(--fs-sm);
-  font-family: 'SF Mono', Consolas, monospace;
+  font-family: var(--font-mono);
   overflow-x: auto;
   color: var(--text-secondary);
   white-space: pre-wrap;
@@ -1290,7 +1290,7 @@
   border: 1px solid var(--rich-code-border);
   border-radius: var(--radius-sm);
   font-size: var(--fs-sm);
-  font-family: 'SF Mono', Consolas, monospace;
+  font-family: var(--font-mono);
   overflow-x: auto;
   overflow-y: auto;
   max-height: 240px;
@@ -1429,7 +1429,7 @@ transition: border-color var(--duration-fast) var(--ease-out), box-shadow var(--
   background: transparent;
   color: var(--text-primary);
   font-size: var(--fs-md);
-  font-family: var(--font-family);
+  font-family: var(--font-ui);
   line-height: 1.6;
   padding: var(--space-6) var(--space-7) var(--space-2);
   resize: none;
@@ -3328,7 +3328,7 @@ box-shadow: var(--elevation-1);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  font-family: 'SF Mono', Consolas, monospace;
+  font-family: var(--font-mono);
 }
 .inline-diff-sequence-badge {
   font-size: var(--fs-xs);
@@ -3357,13 +3357,13 @@ box-shadow: var(--elevation-1);
   font-size: var(--fs-sm);
   color: var(--success);
   font-weight: 600;
-  font-family: 'SF Mono', Consolas, monospace;
+  font-family: var(--font-mono);
 }
 .inline-diff-stat-removed {
   font-size: var(--fs-sm);
   color: var(--error);
   font-weight: 600;
-  font-family: 'SF Mono', Consolas, monospace;
+  font-family: var(--font-mono);
 }
 .inline-diff-body {
   display: flex;
@@ -3408,7 +3408,7 @@ background: var(--bg-tertiary);
 .inline-diff-table {
   width: 100%;
   border-collapse: collapse;
-  font-family: 'SF Mono', Consolas, 'Cascadia Code', monospace;
+  font-family: var(--font-mono);
   font-size: var(--fs-sm);
   line-height: 1.5;
 }
@@ -3496,7 +3496,7 @@ background: var(--bg-tertiary);
 .inline-diff-preview-meta {
   font-size: var(--fs-xs);
   color: var(--text-muted);
-  font-family: 'SF Mono', Consolas, monospace;
+  font-family: var(--font-mono);
 }
 .inline-diff-preview-content {
   margin: 0;
@@ -3507,7 +3507,7 @@ background: var(--bg-tertiary);
   line-height: 1.5;
   white-space: pre-wrap;
   word-break: break-word;
-  font-family: 'SF Mono', Consolas, monospace;
+  font-family: var(--font-mono);
   max-height: 180px;
   overflow: auto;
 }

@@ -1085,7 +1085,7 @@ top: 36px;
   border-radius: var(--radius-sm);
   color: var(--text-primary);
   font-size: var(--fs-sm);
-  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  font-family: var(--font-mono);
   resize: vertical;
   margin-bottom: var(--space-5);
   outline: none;
@@ -2444,7 +2444,7 @@ top: 36px;
   border: none;
   outline: none;
   color: var(--text-primary);
-  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  font-family: var(--font-mono);
   font-size: var(--fs-md);
   line-height: 1.7;
   resize: none;
@@ -2499,7 +2499,7 @@ top: 36px;
   padding: var(--space-1) var(--space-3);
   border-radius: var(--radius-xs);
   font-size: var(--fs-base);
-  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-family: var(--font-mono);
 }
 
 .nb-md-preview pre {

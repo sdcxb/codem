@@ -1,8 +1,12 @@
 /* ========== Custom Fonts ========== */
+/* 第 35 波：这确实是**可变字体**（fvar 轴 wght 200–700 + BEVL 1–100，18 个具名实例），
+   所以 --weight-* 的 560/620 细档是真实生效的，不是靠浏览器取整。
+   `font-weight` 声明改成真实轴范围 200–700：以前写 100 900 会让浏览器在 700 以上
+   合成伪粗体（中文界面会糊），声明窄范围可以禁止这种合成。 */
 @font-face {
   font-family: 'AlimamaFangYuanTi';
   src: url('/fonts/AlimamaFangYuanTiVF-Thin.ttf') format('truetype-variations');
-  font-weight: 100 900;
+  font-weight: 200 700;
   font-style: normal;
   font-display: swap;
 }
@@ -16,15 +20,21 @@
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
   font-synthesis: none;
-  /* Font family */
-  --font-family: 'AlimamaFangYuanTi', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  /* 等宽字体栈：此前只有引用、从未定义（`font-family: var(--font-mono)` 无兜底时整条失效），
-     连共享类 .mono 都没真正等宽过。这里补成真令牌，与代码编辑器的字体栈保持一致。 */
+  /* ===== 字体栈令牌（第 35 波收敛）=====
+     背景：实测全项目有 31 种不同的 font-family 取值、192 处声明 —— 其中**等宽栈就有 14 种写法**
+     （`"SF Mono", "Fira Code", monospace` 15 处、`'SF Mono', Consolas, monospace` 9 处 …），
+     同一个代码块在不同组件里可能落到不同字体上。参考实现只有 15 处声明，全部走令牌栈。
+     现在收成三档：UI / 等宽 / 展示（展示档目前与 UI 同源，留给将来换标题字体）。
+     插件 CSS 用 `var(--font-mono, ui-monospace, monospace)` 这种**带兜底**写法（插件须能独立渲染）。 */
+  --font-ui: 'AlimamaFangYuanTi', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-display: var(--font-ui);
   --font-mono: 'SF Mono', 'Fira Code', 'Cascadia Code', ui-monospace, monospace;
+  /* 兼容别名：历史代码与插件里仍按 --font-family 取用 */
+  --font-family: var(--font-ui);
   --font-weight: 400;
   /* 字重档位（第 33 波）：参考实现用 560/620/650/720 这种细档建层次，
      我们此前只有 400/500/600/700 且 600 用了 235 次 —— "哪里都加粗"等于没有层次。
-     这里补出细档令牌；静态字体下浏览器会就近取整，换可变字体后即生效。 */
+     本项目自带的是**可变字体**（wght 200–700），所以 560/620 是真实字重，不靠合成。 */
   --weight-regular: 400;
   --weight-medium: 500;
   --weight-semibold: 560;
@@ -335,7 +345,7 @@ button:not(:disabled):active,
 }
 
 body {
-  font-family: var(--font-family);
+  font-family: var(--font-ui);
   font-weight: var(--font-weight);
   background: transparent;
   color: var(--text-primary);
@@ -1879,7 +1889,7 @@ color: var(--text-secondary);
 max-height: 300px;
 overflow-y: auto;
 white-space: pre-wrap;
-font-family: 'SF Mono', Consolas, 'Liberation Mono', monospace;
+font-family: var(--font-mono);
 line-height: 1.6;
 }
 
@@ -1941,7 +1951,7 @@ margin-top: var(--space-4);
 }
 
 .tool-name {
-  font-family: "SF Mono", "Fira Code", monospace;
+  font-family: var(--font-mono);
   color: var(--accent);
 }
 
@@ -1957,7 +1967,7 @@ margin-top: var(--space-4);
   color: var(--error);
   background: color-mix(in srgb, var(--error) 10%, transparent);
   border-radius: var(--radius-xs);
-  font-family: "SF Mono", "Fira Code", monospace;
+  font-family: var(--font-mono);
   word-break: break-word;
   white-space: pre-wrap;
 }
@@ -1998,7 +2008,7 @@ margin-top: var(--space-4);
 .file-item {
   padding: var(--space-2) 0;
   font-size: var(--fs-sm);
-  font-family: "SF Mono", "Fira Code", monospace;
+  font-family: var(--font-mono);
   color: var(--text-secondary);
   border-bottom: 1px solid var(--border-secondary);
 }
@@ -2211,7 +2221,7 @@ z-index: 50;
 }
 
 .input-backdrop {
-  font-family: var(--font-family), sans-serif;
+  font-family: var(--font-ui);
   font-variant-ligatures: none;
   position: absolute;
   inset: 0;
@@ -2254,7 +2264,7 @@ z-index: 50;
 }
 
 .message-input {
-  font-family: var(--font-family), sans-serif;
+  font-family: var(--font-ui);
   font-variant-ligatures: none;
   position: absolute;
   inset: 0;
@@ -2803,7 +2813,7 @@ min-height: 0;
   color: var(--text-primary);
   border: none;
   padding: var(--space-6);
-  font-family: "SF Mono", "Fira Code", "Consolas", monospace;
+  font-family: var(--font-mono);
   font-size: var(--fs-base);
   line-height: 1.6;
   resize: none;
@@ -2845,7 +2855,7 @@ min-height: 0;
 .code-editor-line-number {
   display: block;
   padding: 0 var(--space-5) 0 0;
-  font-family: "SF Mono", "Fira Code", "Consolas", monospace;
+  font-family: var(--font-mono);
   font-size: var(--fs-base);
   line-height: 1.6;
   color: var(--text-muted);
@@ -2868,7 +2878,7 @@ min-height: 0;
   bottom: 0;
   margin: 0;
   padding: var(--space-6);
-  font-family: "SF Mono", "Fira Code", "Consolas", monospace;
+  font-family: var(--font-mono);
   font-size: var(--fs-base);
   line-height: 1.6;
   tab-size: 2;
@@ -2897,7 +2907,7 @@ min-height: 0;
   bottom: 0;
   margin: 0;
   padding: var(--space-6);
-  font-family: "SF Mono", "Fira Code", "Consolas", monospace;
+  font-family: var(--font-mono);
   font-size: var(--fs-base);
   line-height: 1.6;
   tab-size: 2;
@@ -2922,7 +2932,7 @@ min-height: 0;
   border-top: 1px solid var(--border-primary);
   font-size: var(--fs-2xs);
   color: var(--text-muted);
-  font-family: "SF Mono", "Fira Code", "Consolas", monospace;
+  font-family: var(--font-mono);
 }
 
 .code-editor-status-lang {
@@ -3649,7 +3659,7 @@ background: var(--bg-secondary);
 .project-item-path {
   font-size: var(--fs-sm);
   color: var(--text-muted);
-  font-family: "SF Mono", "Fira Code", monospace;
+  font-family: var(--font-mono);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -5118,7 +5128,7 @@ background: color-mix(in srgb, var(--accent) 15%, transparent);
 }
 
 .agent-detail-value.mono {
-  font-family: "SF Mono", "Fira Code", monospace;
+  font-family: var(--font-mono);
 }
 
 .agent-detail-prompt {
@@ -5209,7 +5219,7 @@ background: color-mix(in srgb, var(--accent) 15%, transparent);
 }
 
 .agent-result-files li {
-  font-family: "SF Mono", "Fira Code", monospace;
+  font-family: var(--font-mono);
   font-size: var(--fs-sm);
   padding: var(--space-2) var(--space-4);
   background: var(--bg-primary);
@@ -5417,7 +5427,7 @@ background: color-mix(in srgb, var(--accent) 15%, transparent);
 .permission-tool-name {
   font-size: var(--fs-md);
   font-weight: 600;
-  font-family: "SF Mono", "Fira Code", monospace;
+  font-family: var(--font-mono);
 }
 
 .permission-risk {
@@ -5446,7 +5456,7 @@ background: color-mix(in srgb, var(--accent) 15%, transparent);
 }
 
 .permission-resource .mono {
-  font-family: "SF Mono", "Fira Code", monospace;
+  font-family: var(--font-mono);
   font-size: var(--fs-sm);
   color: var(--text-secondary);
   word-break: break-all;
@@ -5608,7 +5618,7 @@ background: color-mix(in srgb, var(--accent) 15%, transparent);
 }
 
 .snapshot-item-id {
-  font-family: "SF Mono", "Fira Code", monospace;
+  font-family: var(--font-mono);
   font-size: var(--fs-sm);
   color: var(--text-primary);
 }
@@ -5670,7 +5680,7 @@ background: color-mix(in srgb, var(--accent) 15%, transparent);
 }
 
 .snapshot-info-field .mono {
-  font-family: "SF Mono", "Fira Code", monospace;
+  font-family: var(--font-mono);
 }
 
 .snapshot-files {
@@ -5692,7 +5702,7 @@ background: color-mix(in srgb, var(--accent) 15%, transparent);
 }
 
 .snapshot-files li {
-  font-family: "SF Mono", "Fira Code", monospace;
+  font-family: var(--font-mono);
   font-size: var(--fs-2xs);
   padding: var(--space-2) var(--space-4);
   background: var(--bg-primary);
@@ -5848,7 +5858,7 @@ background: color-mix(in srgb, var(--accent) 15%, transparent);
   border-radius: var(--radius);
   padding: var(--space-5);
   color: var(--text-primary, #fff);
-  font-family: "Cascadia Code", "Fira Code", monospace;
+  font-family: var(--font-mono);
   font-size: var(--fs-base);
   resize: vertical;
   outline: none;
@@ -6014,7 +6024,7 @@ color: var(--text-on-accent);
 }
 
 .mcp-server-url {
-  font-family: "SF Mono", "Fira Code", monospace;
+  font-family: var(--font-mono);
   font-size: var(--fs-2xs);
   color: var(--text-muted);
   margin-bottom: var(--space-4);
@@ -7004,7 +7014,7 @@ color: var(--text-on-accent);
 }
 
 .skill-detail-mono {
-  font-family: "SF Mono", "Fira Code", monospace;
+  font-family: var(--font-mono);
   font-size: var(--fs-sm);
 }
 
@@ -7532,7 +7542,7 @@ color: var(--text-on-accent);
 }
 
 .memory-detail-mono {
-  font-family: "SF Mono", "Fira Code", monospace;
+  font-family: var(--font-mono);
   font-size: var(--fs-sm);
 }
 
@@ -7678,7 +7688,7 @@ color: var(--text-on-accent);
 .memory-edit-field textarea {
   resize: vertical;
   min-height: 80px;
-  font-family: "Cascadia Code", "Fira Code", monospace;
+  font-family: var(--font-mono);
 }
 
 .memory-edit-field input:focus,
@@ -8614,7 +8624,7 @@ border-bottom: 1px solid var(--accent);
   border: 1px solid var(--border-primary);
   border-radius: var(--radius);
   background: var(--bg-secondary);
-  font-family: 'Cascadia Code', 'Fira Code', var(--font-mono);
+  font-family: var(--font-mono);
   font-size: var(--fs-sm);
 }
 
@@ -9727,7 +9737,7 @@ border-bottom: 1px solid var(--accent);
 }
 
 .session-detail-mono {
-  font-family: "SF Mono", "Fira Code", monospace;
+  font-family: var(--font-mono);
   font-size: var(--fs-sm);
 }
 
@@ -10264,7 +10274,7 @@ border-bottom: 1px solid var(--accent);
   background: var(--bg-tertiary);
   padding: var(--space-1) var(--space-3);
   border-radius: var(--radius-xs);
-  font-family: monospace;
+  font-family: var(--font-mono);
 }
 
 /* ========== Pin Button ========== */
@@ -10387,7 +10397,7 @@ border-bottom: 1px solid var(--accent);
 .diff-reject-btn:is(:hover, :focus-visible) { background: color-mix(in srgb, var(--error) 30%, transparent); }
 .diff-close-btn { padding: var(--space-2); border: none; background: transparent; color: var(--text-secondary); cursor: pointer; border-radius: var(--radius-xs); transition: var(--transition-color); display: flex; align-items: center; justify-content: center; }
 .diff-close-btn:is(:hover, :focus-visible) { color: var(--text-primary); background: var(--bg-hover); }
-.diff-viewer-path { padding: var(--space-3) var(--space-8); font-size: 11px; color: var(--text-muted); background: var(--bg-primary); border-bottom: 1px solid var(--border-secondary); font-family: monospace; flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.diff-viewer-path { padding: var(--space-3) var(--space-8); font-size: 11px; color: var(--text-muted); background: var(--bg-primary); border-bottom: 1px solid var(--border-secondary); font-family: var(--font-mono); flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .diff-viewer-body { flex: 1; overflow: auto; min-height: 200px; }
 
 /* Preview View (default) */
@@ -10401,13 +10411,13 @@ border-bottom: 1px solid var(--accent);
 .diff-preview-badge-old { background: color-mix(in srgb, var(--error) 15%, transparent); color: var(--error); }
 .diff-preview-badge-new { background: color-mix(in srgb, var(--success) 15%, transparent); color: var(--success); }
 .diff-preview-meta { font-size: 11px; color: var(--text-muted); }
-.diff-preview-content { margin: 0; padding: var(--space-6); font-family: "Cascadia Code", "Fira Code", "Consolas", monospace; font-size: var(--fs-base); line-height: 1.5; white-space: pre-wrap; word-break: break-all; max-height: 300px; overflow: auto; }
+.diff-preview-content { margin: 0; padding: var(--space-6); font-family: var(--font-mono); font-size: var(--fs-base); line-height: 1.5; white-space: pre-wrap; word-break: break-all; max-height: 300px; overflow: auto; }
 .diff-preview-content-old { background: color-mix(in srgb, var(--error) 5%, transparent); color: var(--text-secondary); }
 .diff-preview-content-new { background: color-mix(in srgb, var(--success) 5%, transparent); color: var(--text-primary); }
 .diff-preview-arrow { text-align: center; font-size: 20px; color: var(--text-muted); padding: var(--space-4) 0; }
 
 /* Unified Diff View */
-.diff-table { width: 100%; border-collapse: collapse; font-family: "Cascadia Code", "Fira Code", "Consolas", monospace; font-size: var(--fs-base); }
+.diff-table { width: 100%; border-collapse: collapse; font-family: var(--font-mono); font-size: var(--fs-base); }
 .diff-table td { padding: 0; vertical-align: top; }
 .diff-line { line-height: 1.5; }
 .diff-line-num { width: 40px; min-width: 40px; padding: 0 var(--space-4); text-align: right; color: var(--text-muted); font-size: 11px; user-select: none; border-right: 1px solid var(--border-secondary); }
@@ -13177,7 +13187,7 @@ html.pet-window-mode #root {
   overflow: auto;
   max-height: 200px;
   margin-top: var(--space-4);
-  font-family: monospace;
+  font-family: var(--font-mono);
   white-space: pre-wrap;
 }
 .error-card-copied {
@@ -13210,7 +13220,7 @@ html.pet-window-mode #root {
   overflow: auto;
 }
 .shiki-loading code {
-  font-family: "Cascadia Code", "Fira Code", "Consolas", monospace;
+  font-family: var(--font-mono);
 }
 .shiki-fallback {
   margin: 0;
@@ -13446,7 +13456,7 @@ html.pet-window-mode #root {
   overflow: auto;
   padding: var(--space-6);
   font-size: var(--fs-base);
-  font-family: "Cascadia Code", "Fira Code", "Consolas", monospace;
+  font-family: var(--font-mono);
   white-space: pre-wrap;
   word-break: break-all;
   color: var(--text-primary);
@@ -13690,7 +13700,7 @@ html.pet-window-mode #root {
   border-bottom: 1px solid var(--border-primary, #1e1e24);
 }
 .workbench-file .file-path { color: var(--text-secondary, #a0a0a8); }
-.workbench-file .file-stats { font-family: monospace; }
+.workbench-file .file-stats { font-family: var(--font-mono); }
 .workbench-file .additions { color: var(--success); }
 .workbench-file .deletions { color: var(--error); }
 
@@ -15073,7 +15083,7 @@ color: var(--accent, #7c6cf0);
 }
 
 .drawer {
-  font-family: var(--font-family, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif);
+  font-family: var(--font-ui);
 }
 
 .drawer-header {
@@ -15425,7 +15435,7 @@ color: var(--accent, #7c6cf0);
   overflow: auto;
   white-space: pre-wrap;
   word-break: break-word;
-  font-family: var(--font-mono, ui-monospace, monospace);
+  font-family: var(--font-mono);
   font-size: var(--fs-sm);
   line-height: 1.5;
   color: var(--text-primary);
@@ -17329,7 +17339,7 @@ color: var(--accent, #7c6cf0);
 .sp-weight-value {
   min-width: 36px;
   color: var(--text-secondary);
-  font-family: var(--font-family);
+  font-family: var(--font-ui);
   font-size: var(--fs-sm);
   text-align: right;
 }

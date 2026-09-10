@@ -78,6 +78,16 @@ const ALLOWLIST = [
     why: "PPT 工作区全屏视图与演示舞台（投影输出）：是整屏「工作台/舞台」而不是应用内浮层，套 modal-overlay 的遮罩与 Esc 行为会与演示交互冲突",
     rules: ["modal-shell-bespoke"],
   },
+  {
+    re: /^src\/components\/rich-content\/HtmlPreviewView\.tsx$/,
+    why: "HTML 预览：字体栈是**被预览内容**的默认样式（不是宿主 UI 的字体），要跟随用户内容",
+    rules: ["font-stack-raw"],
+  },
+  {
+    re: /^src\/core\/skills\/skill-creator\/scripts\//,
+    why: "技能脚手架脚本：生成的是独立 HTML 审阅页（脱离宿主渲染，读不到宿主 CSS 变量）",
+    rules: ["font-stack-raw"],
+  },
 ];
 function allowedReason(rel, rule) {
   // 不带 rule 调用（shouldSkip）时只认「整份文件豁免」的条目；
@@ -114,6 +124,7 @@ const RULES = {
   "spacing-raw": { level: "error", desc: "CSS 间距属性写了裸数字（应使用 var(--space-*)；0/1px 细线/负值/百分比/calc 例外）" },
   "radius-raw": { level: "error", desc: "圆角写了裸长度（应使用 var(--radius-*)；0/2px 细条、50% 圆形、inherit 例外）" },
   "icon-size-offscale": { level: "error", desc: "图标尺寸不在 --icon-* 八级刻度上（10/12/14/16/20/24/32/48）" },
+  "font-stack-raw": { level: "error", desc: "CSS 里写死了字体栈（应用 var(--font-ui) / var(--font-mono)；inherit 例外）" },
 };
 
 // ========== 扫描器 ==========
@@ -415,9 +426,12 @@ function scanTsx(rel, src) {
 function scanCss(rel, src) {
   const lines = src.split("\n");
   let inRoot = false;
+  let inFontFace = false; // @font-face 里的 font-family 是**声明字体的名字**，不是使用字体栈
   lines.forEach((raw, i) => {
     const no = i + 1;
     const line = stripComments(raw);
+    if (/@font-face/.test(line)) inFontFace = true;
+    if (inFontFace && /\}/.test(line) && !/@font-face/.test(line)) inFontFace = false;
     if (/^\s*:root|^\s*\[data-theme|^\s*\[data-skin/.test(line)) inRoot = true;
     if (inRoot && /^\s*\}/.test(line)) inRoot = false;
     if (inRoot) return; // 令牌定义块允许原始值
@@ -457,6 +471,16 @@ function scanCss(rel, src) {
         .map((v) => v.trim())
         .filter((v) => v && v !== "0" && v !== "2px" && v !== "50%" && v !== "inherit" && v !== "initial" && v !== "unset");
       if (bad.length) add("radius-raw", rel, no, raw, `border-radius: ${bad.join(" ")}`);
+    }
+    // 字体栈令牌化（第 35 波）：实测曾有 31 种不同 font-family 取值、192 处声明，
+    // 其中等宽栈 14 种写法（同一段代码在不同组件可能落到不同字体上）。
+    // 例外：inherit（继承父级是刻意的）、var(--font-*)（含插件带兜底写法）。
+    const ffDecl = inFontFace ? null : /font-family:\s*([^;{}\n]+)/i.exec(line);
+    if (ffDecl) {
+      const val = ffDecl[1].trim();
+      if (!/^inherit(\s*!important)?$/i.test(val) && !val.includes("var(--font-") && !/^(initial|unset|revert)$/i.test(val)) {
+        add("font-stack-raw", rel, no, raw, `font-family: ${val.slice(0, 60)}`);
+      }
     }
 
     // 命名色（white/black/…）：此前完全不被看见，`color: white` 可以一路写下去。

@@ -41,7 +41,7 @@
   overflow: hidden;
   background: var(--bg-primary, #1e1e2e);
   color: var(--text-primary, #e0e0e0);
-  font-family: var(--font-family, sans-serif);
+  font-family: var(--font-ui);
 }
 
 /* --- 返回按钮栏 --- */
