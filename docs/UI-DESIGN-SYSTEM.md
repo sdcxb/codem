@@ -143,3 +143,45 @@ PPT 生成内容配色、大富翁游戏插件（自带美术语言）、图书�
 3. 人工处理 codemod 不敢猜的（渐变、动态拼接、图表入参、自建外壳）；
 4. `npx tsc --noEmit` + `npx vitest run` + `--host=` 版面审计；
 5. 更新 §5 表格，直到 error/warn 全部为 0。
+
+---
+
+## 7. 交接快照（2026-09-10 · goal round 10）
+
+### 当前数字（`node tools/ui-audit/scan-ui.mjs`）
+
+| 规则 | 级别 | 起点 | 现在 |
+| --- | --- | --- | --- |
+| `fs-hardcoded` | error | 78 | **0** ✅（门禁锁定） |
+| `radius-offscale` | error | 38 | **0** ✅（门禁锁定） |
+| `spacing-offgrid` | warn | 13 | **0** ✅ |
+| `color-hardcoded-css` | error | 209 | 17 |
+| `color-hardcoded-tsx` | error | 325 | 53 |
+| `modal-shell-bespoke` | error | 15 | 15 |
+| `css-class-undefined` | warn | — | 253 |
+| `inline-style-dense` | warn | 58 | 50 |
+| **error 合计** | | **533** | **85** |
+
+### 已完成的波次
+
+1. **规范落地**：按 frakio-work 实测规范写成本文件（令牌契约 + 组件语言 + 门禁 + 例外表）。
+2. **机具**：`scan-ui.mjs`（6 条规则 + `--census/--json/--rule/--write-baseline`）、`codemod-tokens.mjs`（令牌化改写，默认 dry-run，只动 `style={{}}` 与 CSS，跳过含 `var(--` 的行与注释）。
+3. **第 1 波**：478 处令牌化（色 409 / 圆角 32 / 字号 37）→ `fs-hardcoded`、`radius-offscale` 清零。
+4. **第 2 波**：84 处淡色底边 → `color-mix(in srgb, var(--token) N%, transparent)`。
+5. **补令牌**：`--fs-display`(28) / `--fs-hero`(32) / `--overlay-backdrop(-strong)` / `--space-1..12` / `--radius-xs`(6px)。
+6. **门禁**：`src/test/ui-consistency.test.ts`（逐规则对比基线，只降不升；字号/圆角必须保持 0）。
+7. **补样式**：Pipeline 下一步对话框、纠偏结果对比面板（此前类名无 CSS = 没样式）。
+8. **间距归一**：`spacing-offgrid` 13 → 0（只对齐离格值，±1px）。
+9. **CSS 色令牌化**：31 → 17（遮罩/底色/状态淡色）。
+
+### 下一轮的工作队列（按性价比排序）
+
+1. **253 处「有类名没样式」**（先 NotebookWorkspace 78 / ConfigEditor 32 / NoteEditor）—— 补 CSS，只用令牌，视觉收益最大；
+2. **15 个自建浮层** → `modal-overlay` / `modal-editor`（含 z-index 令牌化：`modal-overlay`=200 与 `--z-modal`=1300 需先统一）；
+3. **剩余 17 处 CSS 色 + 53 处 TSX 色**：逐点判断是「皮肤/数据色（保留）」还是「UI 色（改令牌）」；
+4. **组件语言收口**：按钮/输入/卡片/空态/列表行改具名类，压低 50 个 `inline-style-dense`；
+5. **收尾**：门禁归零 → `CHANGELOG` / `README` / `PROJECT-GUIDE` / 本文件同步 → 升版本号 → 构建安装包 → 发布 Release。
+
+### 已知例外（都写在 `scan-ui.mjs` 的 ALLOWLIST 里并附理由）
+
+皮肤令牌源（`src/styles.css`、`src/styles/skin-*.css`、`src/core/theme/`）、PPT 生成内容配色（`src/core/knowledge/ppt-*`）、大富翁游戏插件（自带美术语言）、图书馆角色调色板注释常量。
