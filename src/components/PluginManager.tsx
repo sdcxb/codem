@@ -303,7 +303,7 @@ function CascadeConfirmDialog({
   const targetMeta = cascade.affected.find(a => a.name === request.targetPlugin)
 
   return (
-    <div className="modal-overlay" style={{ zIndex: 2000 }} onClick={onCancel}>
+    <div className="modal-overlay" style={{ zIndex: "var(--z-modal-stacked)" }} onClick={onCancel}>
       <div
         className="modal-editor plugin-mgr-dialog"
         onClick={e => e.stopPropagation()}

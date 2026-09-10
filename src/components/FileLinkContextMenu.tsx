@@ -64,7 +64,7 @@ export function FileLinkContextMenu() {
         position: "fixed",
         left: state.x,
         top: state.y,
-        zIndex: 100000,
+        zIndex: "var(--z-top)",
       }}
     >
       <button className="file-link-menu-item" onClick={() => handleAction("reveal")}>

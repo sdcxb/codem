@@ -657,7 +657,7 @@ const handleDrop = useCallback((e: React.DragEvent, targetSessionId: string, pro
                             top: menuPos.top,
                             bottom: menuPos.bottom,
                             left: menuPos.left,
-                            zIndex: 10000,
+                            zIndex: "var(--z-top)",
                             background: 'var(--dream-panel-bg, var(--bg-secondary))',
                             backdropFilter: 'blur(20px) saturate(1.5)',
                             WebkitBackdropFilter: 'blur(20px) saturate(1.5)',

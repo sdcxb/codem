@@ -129,7 +129,7 @@ export function SideSessionPanel({ onClose, open = true }: SideSessionPanelProps
         border: "1px solid var(--border-primary)",
         borderRadius: 14,
         boxShadow: "0 16px 48px var(--shadow-color)",
-        zIndex: 950,
+        zIndex: "var(--z-floating)",
         overflow: "hidden",
       }}
     >

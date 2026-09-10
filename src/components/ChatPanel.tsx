@@ -447,7 +447,7 @@ setStepTooltipLocked(false);
           {showTitleDropdown && (
             <>
               <div className="popover-shield" style={{ zIndex: 99 }} onClick={() => setShowTitleDropdown(false)} />
-              <div className="bottom-bar-dropdown popover-shell chat-dropdown--sessions" style={{ zIndex: 100 }}>
+              <div className="bottom-bar-dropdown popover-shell chat-dropdown--sessions" style={{ zIndex: "var(--z-chrome)" }}>
                 <div className="bottom-bar-dropdown-header">{lang === "zh" ? "切换会话" : "Switch Session"}</div>
                 {(() => {
                   const sessions = currentProject
@@ -521,7 +521,7 @@ setStepTooltipLocked(false);
                 {showEffortPicker && (
                   <>
                     <div className="popover-shield" style={{ zIndex: 99 }} onClick={(e) => { e.stopPropagation(); setShowEffortPicker(false); }} />
-                    <div className="chat-effort-menu popover-shell" style={{ zIndex: 100 }}>
+                    <div className="chat-effort-menu popover-shell" style={{ zIndex: "var(--z-chrome)" }}>
                       {([
                         { id: "low", zh: "低", en: "Low" },
                         { id: "medium", zh: "中", en: "Medium" },
@@ -636,7 +636,7 @@ setStepTooltipLocked(false);
           filtered, so jumping always finds the target by data-message-id. */}
       {showSearch && (
         <>
-          <div className="modal-overlay" style={{ zIndex: 300 }} onClick={() => { setShowSearch(false); setSearchQuery(''); }}>
+          <div className="modal-overlay" style={{ zIndex: "var(--z-modal)" }} onClick={() => { setShowSearch(false); setSearchQuery(''); }}>
             <div className="modal-panel chat-search-panel">
             <div className="chat-search-row">
               <Search size={14} className="chat-search-icon" />

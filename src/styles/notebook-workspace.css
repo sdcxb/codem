@@ -10,7 +10,7 @@
   left: 0;
   right: 0;
   bottom: 0;
-  z-index: 1000;
+  z-index: var(--z-dropdown);
   background: var(--bg-primary);
   display: flex;
   flex-direction: column;
@@ -117,7 +117,7 @@
   border: 1px solid var(--border-primary);
   border-radius: 8px;
   box-shadow: var(--shadow-popover);
-  z-index: 100;
+  z-index: var(--z-chrome);
   overflow: hidden;
   animation: nb-dropdown-slide 0.15s ease-out;
 }
@@ -968,7 +968,7 @@ top: 36px;
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 2000;
+  z-index: var(--z-modal-stacked);
   animation: nb-dialog-fade-in 0.15s ease-out;
 }
 
@@ -1392,9 +1392,10 @@ top: 36px;
 .kg-entity-badge {
   padding: 2px 8px;
   border-radius: 4px;
-  font-size: var(--fs-sm);
+  font-size: var(--fs-xs);
   font-weight: 500;
   text-transform: uppercase;
+  color: var(--text-on-accent);
 }
 
 .kg-detail-section {
@@ -1425,9 +1426,12 @@ top: 36px;
   gap: 8px;
   padding: 6px 10px;
   border-radius: 6px;
-  font-size: var(--fs-base);
+  font-size: var(--fs-sm);
   cursor: pointer;
   transition: all 0.15s;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-primary);
+  color: var(--text-primary);
 }
 
 .kg-connected-item:hover {
@@ -1549,7 +1553,6 @@ top: 36px;
 .kg-sidebar-title-row { display: flex; align-items: center; gap: var(--space-4); }
 .kg-entity-icon { font-size: var(--fs-2xl); }
 .kg-sidebar-title { margin: 0; color: var(--accent); }
-.kg-entity-badge { color: var(--text-on-accent); font-size: var(--fs-xs); }
 .kg-detail-section h4 { color: var(--text-secondary); }
 .kg-detail-section p { color: var(--text-primary); }
 .kg-weight-row { display: flex; align-items: center; gap: var(--space-4); }
@@ -1557,12 +1560,6 @@ top: 36px;
 .kg-weight-fill { height: 100%; border-radius: var(--radius-full); background: var(--accent); }
 .kg-weight-value { color: var(--text-primary); font-size: var(--fs-sm); }
 .kg-source-hint { color: var(--text-secondary); font-size: var(--fs-xs); }
-.kg-connected-item {
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border-primary);
-  color: var(--text-primary);
-  font-size: var(--fs-sm);
-}
 .kg-connected-icon { font-size: var(--fs-md); }
 .kg-action-btn {
   display: flex;
@@ -1662,7 +1659,7 @@ top: 36px;
   right: 0;
   bottom: 0;
   left: 0;
-  z-index: 10001; /* 层级统一到令牌是后面单独一波（见 §7 队列） */
+  z-index: var(--z-top); /* 层级统一到令牌是后面单独一波（见 §7 队列） */
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -1963,7 +1960,7 @@ top: 36px;
   left: 0;
   right: 0;
   bottom: 0;
-  z-index: 2000;
+  z-index: var(--z-modal-stacked);
 }
 
 .ppt-header {
@@ -2264,7 +2261,7 @@ top: 36px;
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 2000;
+  z-index: var(--z-modal-stacked);
   animation: nb-dialog-fade-in 0.15s ease-out;
 }
 
@@ -2683,7 +2680,7 @@ top: 36px;
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 2100;
+  z-index: var(--z-modal-stacked);
 }
 
 .nb-source-viewer {
@@ -2783,7 +2780,7 @@ top: 36px;
   border: 1px solid var(--border-primary);
   border-radius: 8px;
   box-shadow: var(--shadow-popover);
-  z-index: 100;
+  z-index: var(--z-chrome);
   overflow: hidden;
   animation: nb-dropdown-slide 0.15s ease-out;
 }
@@ -2797,7 +2794,7 @@ top: 36px;
   left: 0;
   right: 0;
   bottom: 0;
-  z-index: 3000;
+  z-index: var(--z-present);
   background: var(--bg-primary);
   display: flex;
   align-items: center;
@@ -2823,7 +2820,7 @@ top: 36px;
   border-radius: 24px;
   opacity: 0;
   transition: opacity 0.3s;
-  z-index: 3001;
+  z-index: var(--z-present-ui);
 }
 
 .ppt-present-mode:hover .ppt-present-nav {
@@ -2844,7 +2841,7 @@ top: 36px;
   line-height: 1.5;
   opacity: 0;
   transition: opacity 0.3s;
-  z-index: 3001;
+  z-index: var(--z-present-ui);
 }
 
 .ppt-present-mode:hover .ppt-present-notes {

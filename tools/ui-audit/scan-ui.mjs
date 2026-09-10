@@ -109,6 +109,8 @@ const RULES = {
   "css-var-undefined": { level: "error", desc: "var(--x) 引用了从未定义的令牌（无兜底时整条声明失效）" },
   "color-hardcoded-ts": { level: "error", desc: "style={{}} 之外的 TS 里写死颜色（状态色表/主题常量/JS 改样式）" },
   "svg-attr-var": { level: "error", desc: "把 var() 写在原生 SVG 表现属性里（属性不吃 var()，整条属性失效）" },
+  "zindex-raw": { level: "error", desc: "全局层级的 z-index 写了裸数字（>=100 应用 --z-* 令牌；<100 属组件内局部层叠，允许）" },
+  "css-class-duplicate": { level: "error", desc: "同一个类在顶层被定义多次且属性取值冲突（后一份会静默覆盖前一份）" },
 };
 
 // ========== 扫描器 ==========
@@ -489,6 +491,104 @@ function scanColorOutsideStyle(rel, src, styleRanges) {
   });
 }
 
+/**
+ * 跨文件规则之三：全局层级的 z-index 必须是令牌。
+ *
+ * 为什么：z-index 是**全局耦合**的属性 —— 任何一处随手写个 9999，都可能把别人的浮层盖住，
+ * 而单看那一行完全看不出问题（第 27 波实测：205 处写死值散在 40 多个文件里，
+ * 同一个"模态层"有两套矛盾的值 .modal-overlay=200 / --z-modal=1300，
+ * toast 1400 盖不住 9999 的 portal 菜单）。
+ * 判据：**>= 100 视为全局层级，必须用 var(--z-*)**；< 100 是组件内部的局部层叠
+ * （幻灯片元素、棋盘格子、图标叠层），允许裸数字。
+ * TSX 只在 `style={{…}}` 区间内判定 —— `createTextElement({ zIndex: 100 })` 这类是数据字段，
+ * 不是 CSS，必须保持数字。
+ */
+const Z_LOCAL_MAX = 99;
+function scanZIndex(rel, src, isCss, styleRanges) {
+  const lines = src.split("\n");
+  let off = 0;
+  lines.forEach((raw, i) => {
+    const lineStart = off;
+    off += raw.length + 1;
+    const line = stripComments(raw);
+    if (/var\(--z-/.test(line)) return; // 已走令牌
+    const m = /z-index:\s*(\d+)/.exec(line);
+    const t = /zIndex:\s*(\d+)/.exec(line);
+    const v = m ? Number(m[1]) : t ? Number(t[1]) : null;
+    if (v === null || v <= Z_LOCAL_MAX) return;
+    if (!isCss) {
+      const inStyle = styleRanges.some(([s, e]) => s < lineStart + raw.length && e > lineStart);
+      if (!inStyle) return; // JS 数据字段（图层序、棋盘位置）不是 CSS 层叠
+    }
+    add("zindex-raw", rel, i + 1, line, `z-index: ${v}（>=100 的全局层级应使用 var(--z-*) 令牌）`);
+  });
+}
+
+/**
+ * 跨文件规则之四：同一个类在顶层被定义多次，且同一属性给出了不同取值。
+ * 后一份会**静默覆盖**前一份（同特异度、后者胜），于是"改了没生效"或"某处样式与设计不符"
+ * 都极难排查。第 27 波实测 18 个类中招（最典型是 .badge 的圆角 10px vs 4px）。
+ * 只认纯顶层选择器（`.foo`）：伪类、后代选择器、[data-skin]/[data-theme] 都是**有意的分层覆盖**，不算。
+ */
+function scanCssDuplicates(rel, src) {
+  const clean = src.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, " "));
+  const rules = [];
+  let i = 0;
+  let depth = 0;
+  let selStart = 0;
+  while (i < clean.length) {
+    const c = clean[i];
+    if (c === "{") {
+      depth++;
+      if (depth === 1) {
+        const sel = clean.slice(selStart, i).trim().replace(/\s+/g, " ");
+        let j = i + 1;
+        let d = 1;
+        while (j < clean.length && d > 0) {
+          if (clean[j] === "{") d++;
+          else if (clean[j] === "}") d--;
+          j++;
+        }
+        if (!sel.includes("@")) {
+          rules.push({ sel, body: clean.slice(i + 1, j - 1), line: clean.slice(0, selStart).split("\n").length });
+        }
+        i = j;
+        depth = 0;
+        selStart = j;
+        continue;
+      }
+    } else if (c === "}" && depth === 0) {
+      selStart = i + 1;
+    }
+    i++;
+  }
+  const bySel = new Map();
+  for (const r of rules) {
+    if (!/^[.a-zA-Z][\w-]*$/.test(r.sel)) continue; // 只要纯顶层选择器
+    if (!bySel.has(r.sel)) bySel.set(r.sel, []);
+    bySel.get(r.sel).push(r);
+  }
+  for (const [sel, list] of bySel) {
+    if (list.length < 2) continue;
+    const seen = new Map();
+    for (const r of list) {
+      for (const part of r.body.split(";")) {
+        const idx = part.indexOf(":");
+        if (idx < 0) continue;
+        const prop = part.slice(0, idx).trim();
+        const val = part.slice(idx + 1).trim();
+        if (!prop || !val) continue;
+        const prev = seen.get(prop);
+        if (!prev) {
+          seen.set(prop, { val, line: r.line });
+        } else if (prev.val !== val) {
+          add("css-class-duplicate", rel, r.line, `${sel} { ${prop}: ${val} }`, `${sel} 已被定义过：${prop} ${prev.val}（L${prev.line}） vs ${val}（L${r.line}）`);
+        }
+      }
+    }
+  }
+}
+
 // ========== 主流程 ==========
 const args = process.argv.slice(2);
 const flag = (name) => args.includes(name);
@@ -583,9 +683,13 @@ for (const full of files) {
   scanVarRefs(rel, src);
   if (rel.endsWith(".css")) {
     scanCss(rel, src);
+    scanCssDuplicates(rel, src);
+    scanZIndex(rel, src, true, []);
     continue;
   }
-  scanColorOutsideStyle(rel, src, computeStyleRanges(src));
+  const ranges = computeStyleRanges(src);
+  scanColorOutsideStyle(rel, src, ranges);
+  scanZIndex(rel, src, false, ranges);
   scanTsx(rel, src);
 
   for (const { raw, index } of staticClassTokens(src)) {

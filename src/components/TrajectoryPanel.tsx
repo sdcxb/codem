@@ -345,7 +345,7 @@ export const TrajectoryPanel = memo(function TrajectoryPanel({
           {showFilterDropdown && (
             <>
               <div className="popover-shield" style={{ zIndex: 99 }} onClick={(e) => { e.stopPropagation(); setShowFilterDropdown(false) }} />
-              <div className="tj-filter-menu popover-shell" style={{ zIndex: 100 }}>
+              <div className="tj-filter-menu popover-shell" style={{ zIndex: "var(--z-chrome)" }}>
                 {filterTypes.map(t => (
                   <div
                     key={t}

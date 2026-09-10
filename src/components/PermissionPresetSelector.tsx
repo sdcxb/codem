@@ -167,7 +167,7 @@ export function PermissionPresetSelector({
               left: dropdownPos.left,
               bottom: dropdownPos.bottom,
               minWidth: 180,
-              zIndex: 99999,
+              zIndex: "var(--z-top)",
             }}
           >
             <div className="bottom-bar-dropdown-header">
@@ -239,7 +239,7 @@ export function PermissionPresetSelector({
             border: '1px solid var(--border-primary)',
             borderRadius: 8,
             boxShadow: '0 4px 16px var(--shadow-color)',
-            zIndex: 100,
+            zIndex: "var(--z-chrome)",
             overflow: 'hidden',
           }}
         >

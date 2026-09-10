@@ -648,9 +648,9 @@ function KnowledgeGraphViewInner({ notebookId, onNodeSelect }: KnowledgeGraphVie
       {/* Right-click context menu */}
       {contextMenu && (
         <>
-          <div className="popover-shield" style={{ zIndex: 9998 }} onClick={() => setContextMenu(null)} onContextMenu={(e) => { e.preventDefault(); setContextMenu(null); }} />
+          <div className="popover-shield" style={{ zIndex: "var(--z-context-menu)" }} onClick={() => setContextMenu(null)} onContextMenu={(e) => { e.preventDefault(); setContextMenu(null); }} />
           {createPortal(
-            <div className="popover-shell kg-menu" style={{ position: 'fixed', left: contextMenu.x, top: contextMenu.y, zIndex: 9999 }}>
+            <div className="popover-shell kg-menu" style={{ position: 'fixed', left: contextMenu.x, top: contextMenu.y, zIndex: "var(--z-context-menu-top)" }}>
               {contextMenu.nodeId && (
                 <>
                   <button

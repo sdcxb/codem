@@ -180,7 +180,7 @@ export class AppErrorBoundary extends Component<AppErrorBoundaryProps, AppErrorB
         style={{
           position: "fixed",
           inset: 0,
-          zIndex: 2147483000,
+          zIndex: "var(--z-max)",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",

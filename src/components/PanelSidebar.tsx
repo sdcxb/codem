@@ -80,7 +80,7 @@ export function PanelSidebar({ open, onClose }: RightSidebarProps) {
         width: 420,
         maxWidth: "calc(100vw - 16px)",
         // 高于消息导航轨 ScrollbarMarkers（z 900/901），磨砂背景不透出紫色节点
-        zIndex: 920,
+        zIndex: "var(--z-floating)",
         display: "flex",
         flexDirection: "column",
         boxShadow: "-4px 0 16px var(--shadow-color-soft)",

@@ -168,7 +168,7 @@ export function JobsBadge({ jobs = [], onSelectJob }: JobsBadgeProps) {
             border: '1px solid var(--border-primary)',
             borderRadius: 8,
             boxShadow: '0 4px 16px var(--shadow-color)',
-            zIndex: 100,
+            zIndex: "var(--z-chrome)",
           }}
         >
           <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>

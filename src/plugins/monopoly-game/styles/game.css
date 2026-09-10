@@ -487,7 +487,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 1000;
+  z-index: var(--z-dropdown);
 }
 
 .stock-panel {
@@ -592,7 +592,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 1000;
+  z-index: var(--z-dropdown);
 }
 
 .card-panel, .shop-panel {

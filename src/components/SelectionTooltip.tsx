@@ -100,7 +100,7 @@ export function SelectionTooltip({ containerRef, onQuote }: SelectionTooltipProp
         top: `${position.top}px`,
         left: `${position.left}px`,
         transform: "translateX(-50%)",
-        zIndex: 1200,
+        zIndex: "var(--z-popover)",
       }}
       onMouseDown={(e) => e.preventDefault()} // Prevent losing selection
     >

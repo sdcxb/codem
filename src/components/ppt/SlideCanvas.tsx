@@ -576,7 +576,7 @@ export function SlideCanvas({
           border: '1px solid var(--accent)',
           background: 'color-mix(in srgb, var(--accent) 10%, transparent)',
           pointerEvents: 'none',
-          zIndex: 9999,
+          zIndex: "var(--z-context-menu-top)",
         }}
       />
     );
@@ -606,7 +606,7 @@ export function SlideCanvas({
               height: `${h}%`,
               border: '2px solid var(--accent)',
               pointerEvents: 'none',
-              zIndex: 10000,
+              zIndex: "var(--z-top)",
             }}
           >
             {HANDLES.map(h => (

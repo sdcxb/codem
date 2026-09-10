@@ -214,7 +214,7 @@ export function PetMarketDialog({ open, onClose }: PetMarketDialogProps) {
   return (
     <div
       className="modal-overlay petm-overlay"
-      style={{ zIndex: 100000 }}
+      style={{ zIndex: "var(--z-top)" }}
       onClick={onClose}
     >
       <div

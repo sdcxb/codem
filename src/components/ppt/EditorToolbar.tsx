@@ -127,7 +127,7 @@ export function EditorToolbar({
             position: 'absolute', top: '100%', left: 0, marginTop: 4,
             width: 420, maxHeight: 400, overflowY: 'auto',
             background: 'var(--bg-secondary, #252535)', border: '1px solid var(--border-primary, #3a3a4c)', borderRadius: 8,
-            zIndex: 100000, padding: 12,
+            zIndex: "var(--z-top)", padding: 12,
             boxShadow: 'var(--shadow-popover, 0 8px 32px rgba(0,0,0,0.3))',
           }}>
             {/* 分类筛选 */}
@@ -180,7 +180,7 @@ export function EditorToolbar({
           <div style={{
             position: 'absolute', top: '100%', right: 0, marginTop: 4,
             width: 180, background: 'var(--bg-secondary, #252535)', border: '1px solid var(--border-primary, #3a3a4c)', borderRadius: 8,
-            zIndex: 100000, padding: 4,
+            zIndex: "var(--z-top)", padding: 4,
             boxShadow: 'var(--shadow-popover, 0 8px 32px rgba(0,0,0,0.3))',
           }}>
             <button className="ppt-export-menu-item" onClick={() => { onExportHTML(); setShowExportMenu(false); }}>

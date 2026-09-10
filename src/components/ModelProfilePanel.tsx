@@ -184,8 +184,8 @@ export function ModelProfilePanel({ onClose }: ModelProfilePanelProps) {
   const slotLabels = zh ? SLOT_LABELS_ZH : SLOT_LABELS_EN;
 
   return createPortal(
-    <div className="settings-overlay" onClick={onClose} style={{ zIndex: 2000 }}>
-      <div className="settings-panel mp-panel" onClick={(e) => e.stopPropagation()} style={{ zIndex: 2001 }}>
+    <div className="settings-overlay" onClick={onClose} style={{ zIndex: "var(--z-modal-stacked)" }}>
+      <div className="settings-panel mp-panel" onClick={(e) => e.stopPropagation()} style={{ zIndex: "var(--z-modal-stacked)" }}>
         <div className="settings-header">
           <h3>{zh ? "模型配置方案" : "Model Profiles"}</h3>
           <button className="settings-close" onClick={onClose}>✕</button>

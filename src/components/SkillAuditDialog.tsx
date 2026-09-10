@@ -69,7 +69,7 @@ const overallIcon = audit.overall === "danger" ? <ShieldAlert size={24} />
     : (zh ? "✓ 安全" : "✓ Safe");
 
   return (
-    <div className="modal-overlay" style={{ zIndex: 10000 }} onClick={onCancel}>
+    <div className="modal-overlay" style={{ zIndex: "var(--z-top)" }} onClick={onCancel}>
       <div className="modal-panel" style={{
         maxWidth: 560,
         width: "90%",

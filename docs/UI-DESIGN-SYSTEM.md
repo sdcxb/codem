@@ -91,6 +91,34 @@ frakio-work 的两条关键惯例（我们同步遵守）：
 - `:focus-visible` 必须有可见焦点环；弹窗必须支持 Esc 关闭 + 点击遮罩关闭（统一走 `modal-overlay`）。
 - 尊重 `prefers-reduced-motion`。
 
+### 2.6 层级（z-index 梯子，第 27 波统一）
+
+浮层的层叠顺序是**全局耦合**的：任何一处随手写个 `9999` 都可能盖住别人的浮层，
+而单看那一行完全看不出问题。实测（第 27 波）205 处写死 z-index 散在 40 多个文件里，
+同一个"模态层"有两套互相矛盾的值（`.modal-overlay`=200 与 `--z-modal`=1300）。
+
+现在只有一条链，**全局层级（>= 100）一律用令牌**：
+
+| 令牌 | 值 | 谁用 |
+| --- | --- | --- |
+| `--z-chrome` | 100 | 页面级 chrome：侧栏、随页面走的内联下拉 |
+| `--z-floating` | 900 | 浮动面板/工具条：滚动条标记、内联 diff、侧会话面板 |
+| `--z-dropdown` | 1000 | 下拉菜单 |
+| `--z-tooltip` | 1100 | 工具提示 |
+| `--z-popover` | 1200 | popover（选区工具条等） |
+| `--z-modal` | 1300 | 模态遮罩 + 面板（`.modal-overlay`/`.settings-overlay` 归位到此） |
+| `--z-modal-stacked` | 2000 | 模态之上的模态 / 工作台内部浮层（级联确认、笔记本弹窗、PPT 全屏编辑） |
+| `--z-present` | 3000 | 演示模式舞台 |
+| `--z-present-ui` | 3001 | 演示模式的导航/备注（要压在舞台之上） |
+| `--z-context-menu` | 9000 | portal 右键菜单的点击盾 |
+| `--z-context-menu-top` | 9999 | 右键菜单本体 |
+| `--z-top` | 10000 | 窗口级整屏浮层（宠物市场、PPT Studio 这类"盖住一切"的工作台） |
+| `--z-toast` | 20000 | 提示条 —— **比所有交互浮层都高**（原来 1400，盖不住 9999 的 portal 菜单，提示会被吃掉） |
+| `--z-max` | 2147483647 | 必须永远最上（拖拽预览等） |
+
+**组件内部的局部层叠（0/1/2/10 这类 < 100）仍写普通数字**：幻灯片元素层序、棋盘格子、
+图标叠层这些都是"局部坐标"，全局化反而更难读。审计规则 `zindex-raw` 就是按这条线切的。
+
 ## 3. 组件语言（统一外壳）
 
 **外壳类清单（浮层只允许这四种，审计规则 `modal-shell-bespoke` 认的就是它们）**：
@@ -162,6 +190,8 @@ node tools/ui-audit/codemod-icon-scale.mjs [--write]  # 图标工具类 → .ico
 | `css-var-undefined` | error | **`var(--x)` 引用了全项目从未定义的令牌**（第 26 波新增）。无兜底时整条声明失效（`font-family: var(--font-mono)` 让等宽字体从未生效、`border: 1px solid var(--border)` 让边框整条消失），有兜底时则永远吃写死的深色、不跟随主题/皮肤 |
 | `color-hardcoded-ts` | error | **`style={{}}` 之外的 TS 里写死颜色**（第 26 波新增）：状态色表（`{ failed: "#ef4444" }`）、主题常量、`el.style.background = "#..."`。此前只有内联样式对象区间内的色值被检查 |
 | `svg-attr-var` | error | **把 `var()` 写在原生 SVG 表现属性里**（第 26 波新增）：`stroke="var(--accent)"` 这类属性**不吃** CSS 变量，浏览器判非法后整条属性失效（stroke 默认 `none` → 图形不画）。颜色要走 CSS 类 |
+| `zindex-raw` | error | **全局层级的 z-index 写了裸数字**（第 27 波新增）：`>= 100` 一律用 `--z-*` 令牌（§2.6 的层级梯子）；`< 100` 视为组件内部的局部层叠（幻灯片元素、棋盘格子、图标叠层），允许裸数字。TSX 只在 `style={{}}` 区间内判定 —— `createTextElement({ zIndex: 100 })` 是**数据字段**不是 CSS |
+| `css-class-duplicate` | error | **同一个类在顶层被定义多次且属性取值冲突**（第 27 波新增）：同特异度时后者静默覆盖前者，于是"改了没生效 / 某处样式和设计不符"极难排查。只认纯顶层选择器 —— 伪类、后代选择器、`[data-skin]` / `[data-theme]` 这些**有意的分层覆盖**不算 |
 
 **合法例外**（写在 `scan-ui.mjs` 的 `ALLOWLIST`，每条都带理由；`rules` 字段可只豁免某一条规则）：
 皮肤令牌定义源（`src/core/theme/`、`src/styles/skin-*.css`）、PPT 生成内容配色、大富翁游戏插件（自带美术语言）、
@@ -216,6 +246,8 @@ node tools/ui-audit/codemod-icon-scale.mjs [--write]  # 图标工具类 → .ico
 
 | **第 26 波** | 2026-09-10 | **0** ✅ | **0** ✅ | **"归零"之后再核查一遍：三处此前没查干净的地方，全部补掉并做成规则**。起因是自问"这些发现真的解决了吗"，于是写了三个独立核查脚本（不看审计结论、直接自己对账）：<br>① **未定义令牌**：把全项目 `var(--x)` 引用与所有定义（CSS 声明 / `setProperty` / 内联就地定义）对账，**96 处引用 10 个从未定义的令牌**仍然存在（第 23 波清掉的只是"当时人工发现的那几个"）—— 其中三类是真 bug：`--font-mono`（24 处，绝大多数**没兜底** → `font-family` 整条失效、连 §3 的共享类 `.mono` 从来没真正等宽过）、`--border`（7 处无兜底 → 边框整条不画）、`--bg-active`（1 处，JS hover 静默失效）；其余 `--destructive` / `--accent-primary` / `--accent-alpha` / `--bg-elevated` / `--border-hover` / `--bg-base` / `--accent-light` / `--success-bg` / `--surface` / `--hub-accent` / `--transform-origin` / `--text-tertiary` 都在吃写死的深色。全部改成真令牌 / 语义令牌，`--font-mono` 补成正式令牌。<br>② **空壳类名**：`css-class-undefined` 规则有一条"元素自己有内联样式就不算没样式"的豁免 —— 去掉豁免再查，**29 个类名 / 35 处**在 CSS 里一条定义都没有（`turn-status-row`、`agent-teams-panel`、`settings-section(-header/-field)`、`excel-viewer*`、`reasoning-summary/-body`、`deliverable-files*`、`stats-line`、`task-center-panel`、`side-session-panel`、`audio-player`、`drawer-body`、`nb-msg-sources*`、`note-op-notifications`、`sidebar-user-plugin-btn`、`persona-manager`、`tool-collapse-toggle`、`file-mention-btn`、`inline-file-link`、`lo-card--tools`），逐个补上真实定义（同行内联样式同时搬进类里），并**永久去掉那条豁免**。<br>③ **`style={{}}` 之外的色值**：新增规则后一次报出 **29 处**真硬编码 —— AgentTeamsPanel 的 10 个状态色、ToolManager 的 4 个分类色、ChatPanel 提示环里的 6 个 SVG 色值、lucide 图标的 `color="white"`/`#2ecc71`/`#22c55e`/`#ef4444`、游戏加载占位、崩溃兜底页（保留字面量兜底）等，全部改成语义令牌或 CSS 类；xterm 主题与 PPT 内容配色按规则写入例外表并附理由。<br>④ **顺手挖出第七类盲区（`svg-attr-var`）**：`stroke="var(--accent)"` 写在**原生 SVG 表现属性**里是无效的 —— 属性不吃 CSS 变量，React 原样输出后浏览器判非法、整条属性失效（stroke 默认 `none`，**图形根本不画**）；全项目 5 处（步骤进度环、子智能体完成勾）已改用 CSS 类，并新增规则拦住。<br>**首尾同框**：门禁规则 9 条 → **12 条**，依然 **error 0 / warn 0**；三处"已归零"经独立对账后各自又清出 96 / 29 / 29 处真问题 —— 结论写进 §7：**"计数为 0" 只代表"当前这把尺子量不到"，换一把尺子还要再量一次** |
 
+| **第 27 波** | 2026-09-10 | **0** ✅ | **0** ✅ | **两把新尺子：z-index 与重复类定义**（文档 §7 队列里早就记着这两项"还没有规则覆盖"，规则数 12 → **14**）。<br>**① z-index 层级**：先做层级地图（`list-zindex-sites.mjs` 把每一处写死值连同它所属选择器列出来），量出 **205 处写死值散在 40 多个文件**里，而同一个模态层有**两套互相矛盾的值**：`.modal-overlay`=200 与 `--z-modal`=1300；提示条 `--z-toast`=1400 却盖不住 9999 的 portal 菜单（提示会被吃掉）；菜单散在 100、模态散在 200/1000/2000 三档。修法：把梯子补成一条链（§2.6，14 个令牌：chrome → 浮动面板 → 下拉 → tooltip → popover → 模态 → 模态之上 → 演示舞台 → portal 菜单 → 提示条 → 整屏浮层 → 永远最上），**97 处写死值按"保持原有先后"的映射归位到令牌**，模态层统一到 `--z-modal`、提示条提到 20000（高于所有交互浮层）。剩下 149 处 <100 的是组件内部局部层叠（幻灯片元素 96 处、棋盘格子、图标叠层），规则**明确允许**裸数字 —— 它们是"局部坐标"，全局化反而更难读。<br>**② 重复/冲突类定义**：按"纯顶层选择器 + 同属性不同值"写了个 CSS 解析器，量出 **18 个类 / 35 条属性冲突**（`.badge` 圆角 10px vs 4px、`.workspace-tab` 字号 11px vs 12px、`.skill-item` 内边距两套、`.badge-muted` 底色两套、`.streaming-timer-spinner` 尺寸 12px vs 14px…），全部按"后者胜出 = 生效值"合并回一处，并保留声明顺序（避免 shorthand/longhand 关系被改坏），规则 `css-class-duplicate` 入门禁。<br>**踩坑**：合并脚本第一版"先删块、再重新解析定位首块"，偏移量全错、把 `styles.css` 改坏（审计瞬间报 890 处），已回滚改成**所有编辑用原始坐标一次算好、按起点从后往前应用**。教训：动 1.7 万行样式表的脚本，先把文件复制一份再动。 |
+
 ### 全项目现场事实（来自 UI 交互界面清单，作为工作队列）
 - 挂载层：64 个 `SlotBridge` 渲染点 + 54 处 `slots.register` + 44 处 `createPortal`（另 51 个 SlotBridge 在 `App.tsx`）。
 - 浮层：205 个 overlay 类名实例散在 60 个 tsx 里，约 35 种外壳；`var(--z-*)` 只被用了 9 次，
@@ -236,13 +268,15 @@ node tools/ui-audit/codemod-icon-scale.mjs [--write]  # 图标工具类 → .ico
 
 ---
 
-## 7. 交接快照（2026-09-10 · 第 26 波后：12 条规则全绿）
+## 7. 交接快照（2026-09-10 · 第 27 波后：14 条规则全绿）
 
 ### 当前数字（`node tools/ui-audit/scan-ui.mjs`）
 
 | 规则 | 级别 | 起点 | 现在 |
 | --- | --- | --- | --- |
 | `fs-hardcoded` | error | 78 | **0** ✅（门禁锁定；第 12 波起**同时覆盖 CSS**） |
+| `zindex-raw` | error | 205 处写死值（第 27 波首次量） | **0** ✅（97 处归位到 14 个 `--z-*` 令牌；余下 <100 的是组件内局部层叠，规则明确允许） |
+| `css-class-duplicate` | error | 18 类 / 35 条冲突（第 27 波首次量） | **0** ✅（按"后者胜出"合并回一处，保留声明顺序） |
 | `css-var-undefined` | error | 96（第 26 波首次对账） | **0** ✅（第 26 波新增规则；含 `--font-mono` 24 处无兜底这类"声明整条失效"） |
 | `color-hardcoded-ts` | error | 29（第 26 波首次对账） | **0** ✅（第 26 波新增规则：`style={{}}` 之外的状态色表/主题常量/JS 改样式） |
 | `svg-attr-var` | error | 5（第 26 波首次对账） | **0** ✅（第 26 波新增规则：`stroke="var(--x)"` 在属性位置无效，图形会不画） |
@@ -319,19 +353,21 @@ node tools/ui-audit/codemod-icon-scale.mjs [--write]  # 图标工具类 → .ico
     审计器补掉「无害匹配把整行兜底短路」这处盲区（报出 2 处藏在 `background: transparent` 旁边的硬编码红）；
     `SettingsPanel`（999 → 673）开工，新建 `.sp-*` 设置面板零件类（详见 §5 表）。
 25. **第 25 波**：`SettingsPanel`（999 → 0）收口完成 —— **门禁归零：error 0 / warn 0**（详见 §5 表）。
-26. **第 26 波（本轮）**：门禁 9 条 → **12 条规则全绿**。用三个独立对账脚本重核"已归零"的三项：
+26. **第 26 波**：门禁 9 条 → **12 条规则全绿**。用三个独立对账脚本重核"已归零"的三项：
     补掉 96 处未定义令牌引用（含 `--font-mono` 24 处无兜底、`--border` 7 处、`--bg-active` 静默失效）、
     29 个空壳类名（并永久去掉 `css-class-undefined` 的内联样式豁免）、29 处 `style={{}}` 之外的硬编码色，
     外加新发现的一类盲区 `svg-attr-var`（`stroke="var(--x)"` 在属性位置无效 → 图形不画，5 处）（详见 §5 表）。
 
 ### 门禁已归零，剩下的（都不属于"违规清零"这件事，按性价比排序）
 
-1. **z-index 令牌化**：`modal-overlay`=200 与 `--z-modal`=1300 互相矛盾，`popover-shield` 的层级仍留在调用处（23 个 tsx 数值 + 13 个 CSS 层级）；
-2. **重复定义收敛**：`styles.css` 内已有同名类被定义两次且取值不同（如 `.badge` 的圆角 10px vs 4px、
-   `.workspace-tab` 的 11px vs 12px 字号 —— 后者已被第 12 波统一到 `--fs-sm`），需要新增一条「重复/冲突定义」审计规则；
-3. **间距令牌化**：`--space-*` 已补齐但 CSS 里 2482 个数值间距还在用字面量（第 8 波只对齐了离格值），
-   可以再走一遍与字号同款的做法（codemod + 刻度映射）；
-4. **发布收尾**：`CHANGELOG` / `README` / `PROJECT-GUIDE` / 本文件同步 → 升版本号 → 构建安装包 → 发布 Release。
+1. ~~**z-index 令牌化**~~ ✅ **第 27 波完成**：层级梯子见 §2.6（14 个 `--z-*` 令牌），97 处写死值归位，
+   `modal-overlay`=200 与 `--z-modal`=1300 的矛盾、以及"提示条盖不住 portal 菜单"一并修掉；规则 `zindex-raw` 锁住（>=100 必须走令牌）；
+2. ~~**重复定义收敛**~~ ✅ **第 27 波完成**：18 个类 / 35 条属性冲突按"后者胜出"合并回一处，规则 `css-class-duplicate` 锁住；
+3. **间距令牌化**：`--space-*` 已补齐，但 CSS 里仍有大量数值间距是字面量（第 8 波只对齐了离格值）。
+   做法可复用字号的 codemod + 刻度映射，但难点在"哪些间距是排版语义、哪些是几何尺寸"，需要先量分布再定映射；
+4. **`z-index` 的局部层叠（<100）**：目前 149 处写死值按规则**允许保留**（幻灯片元素 96 处、棋盘格子、图标叠层）。
+   若将来要动，建议只做"同一容器内的一致性归并"，不要全局令牌化 —— 它们是局部坐标，全局化反而更难读；
+5. **发布收尾**：`CHANGELOG` / `README` / `PROJECT-GUIDE` / 本文件同步 → 升版本号 → 构建安装包 → 发布 Release。
 
 ### 收口这一层用到的工具与手法（下一批文件可直接复用）
 

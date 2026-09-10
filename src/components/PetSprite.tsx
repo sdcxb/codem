@@ -128,7 +128,7 @@ export const PetSprite = memo(function PetSprite({
         userSelect: "none",
         pointerEvents: "auto",
         position: "relative",
-        zIndex: 2147483647,
+        zIndex: "var(--z-max)",
       }}
     />
   );

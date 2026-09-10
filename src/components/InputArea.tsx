@@ -1193,7 +1193,7 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
                 left: slashMenuPos.left,
                 bottom: slashMenuPos.bottom,
                 width: slashMenuPos.width,
-                zIndex: 99999,
+                zIndex: "var(--z-top)",
               }}
             >
               <SlotBridge
@@ -1328,12 +1328,12 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
               </button>
               {showPlusMenu && plusMenuPos && createPortal(
                 <>
-                  <div className="popover-shield" style={{ zIndex: 99998 }} onClick={() => setShowPlusMenu(false)} />
+                  <div className="popover-shield" style={{ zIndex: "var(--z-top)" }} onClick={() => setShowPlusMenu(false)} />
                   <div
                     className="skill-picker-popup popover-shell input-popover"
                     style={{
                       left: plusMenuPos.left, bottom: plusMenuPos.bottom,
-                      minWidth: 200, zIndex: 99999,
+                      minWidth: 200, zIndex: "var(--z-top)",
                     }}
                   >
                     <button className="more-action-item"
@@ -1396,12 +1396,12 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
             <div ref={skillPickerBtnRef} className="input-relative-anchor">
               {showSkillPicker && skillPickerPos && createPortal(
                 <>
-                  <div className="popover-shield" style={{ zIndex: 99998 }} onClick={() => setShowSkillPicker(false)} />
+                  <div className="popover-shield" style={{ zIndex: "var(--z-top)" }} onClick={() => setShowSkillPicker(false)} />
                   <div
                     className="skill-picker-popup popover-shell input-popover input-popover--skills"
                     style={{
                       left: skillPickerPos.left, bottom: skillPickerPos.bottom,
-                      minWidth: 220, zIndex: 99999,
+                      minWidth: 220, zIndex: "var(--z-top)",
                     }}
                   >
                     <div className="input-popover-title">
@@ -1471,7 +1471,7 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
               </button>
             )}
             {showSourceSelector && notebookId && !hideSourceSelector && (
-              <div className="input-float-anchor" style={{ zIndex: 100 }}>
+              <div className="input-float-anchor" style={{ zIndex: "var(--z-chrome)" }}>
                 <SourceSelector
                   sources={notebookSources}
                   selectedIds={selectedSourceIds}
@@ -1497,7 +1497,7 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
 
             {/* P3: Multimodal generate mode panel */}
             {showMultimodal && generateMode !== "text" && (
-              <div className="input-float-anchor input-float-panel" style={{ zIndex: 100 }}>
+              <div className="input-float-anchor input-float-panel" style={{ zIndex: "var(--z-chrome)" }}>
                 <GenerateModeSelector mode={generateMode} onModeChange={setGenerateMode} />
                 <ResolutionSelector resolution={resolution} onResolutionChange={setResolution} />
                 <button
@@ -1566,7 +1566,7 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
                   <div className="popover-shield" style={{ zIndex: 99 }} onClick={() => setShowMoreActions(false)} />
                   <div
                     className="skill-picker-popup popover-shell input-popover input-popover--more"
-                    style={{ minWidth: 200, zIndex: 100 }}
+                    style={{ minWidth: 200, zIndex: "var(--z-chrome)" }}
                   >
                     {onToggleQuickPhrase && (
                       <button className="more-action-item" onClick={() => { onToggleQuickPhrase(); setShowMoreActions(false); }}>

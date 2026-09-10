@@ -83,7 +83,7 @@ export const Drawer = memo(function Drawer({
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={closeOnOverlayClick ? onClose : undefined}
-              style={{ position: "fixed", inset: 0, zIndex: 9998, background: "var(--overlay-backdrop)" }}
+              style={{ position: "fixed", inset: 0, zIndex: "var(--z-context-menu)", background: "var(--overlay-backdrop)" }}
             />
           )}
           <motion.div
@@ -94,7 +94,7 @@ export const Drawer = memo(function Drawer({
             transition={{ type: "spring", damping: 30, stiffness: 300 }}
             style={{
               position: "fixed",
-              zIndex: 9999,
+              zIndex: "var(--z-context-menu-top)",
               background: "var(--bg-secondary, #1e1e2e)",
               boxShadow: "0 8px 32px var(--shadow-color)",
               display: "flex",

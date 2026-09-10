@@ -1230,7 +1230,7 @@
   left: 50%;
   transform: translateX(-50%);
   width: min(680px, calc(100vw - 32px));
-  z-index: 9000;
+  z-index: var(--z-context-menu);
   border: 1px solid var(--glass-border);
   border-radius: var(--radius-md);
   overflow: hidden;
@@ -1689,7 +1689,7 @@ transition: border-color var(--duration-fast) var(--ease-out), box-shadow var(--
   -webkit-backdrop-filter: blur(var(--glass-blur));
   border-bottom: 1px solid var(--glass-border);
   position: relative;
-  z-index: 100;
+  z-index: var(--z-chrome);
   user-select: none;
   -webkit-user-select: none;
 }
@@ -2263,7 +2263,7 @@ body.resizing-columns * {
 .boot-splash {
   position: fixed;
   inset: 0;
-  z-index: 9999;
+  z-index: var(--z-context-menu-top);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2534,7 +2534,7 @@ body.resizing-columns * {
   height: clamp(48px, 8vw, 72px);
   border-radius: var(--radius-lg);
   background: var(--accent-muted);
-  color: var(--accent);
+  color: var(--accent) !important;
   font-size: clamp(20px, 4vw, 32px);
 }
 .new-chat-title {
@@ -3254,11 +3254,6 @@ border-radius: 2px;
   color: var(--text-primary);
   background: var(--surface-hover);
 }
-
-/* ========== 19. New chat page icon visibility (dark theme fix) ========== */
-.new-chat-logo {
-  color: var(--accent) !important;
-}
 .new-chat-suggestion-icon {
   color: var(--accent) !important;
 }
@@ -3643,7 +3638,7 @@ background: var(--bg-secondary);
   left: 50%;
   transform: translateX(-50%);
   width: min(90vw, 800px);
-  z-index: 900;
+  z-index: var(--z-floating);
   animation: inline-diff-slide-up 0.2s ease-out;
 }
 @keyframes inline-diff-slide-up {

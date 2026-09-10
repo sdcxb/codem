@@ -34,7 +34,7 @@
   left: 0;
   right: 0;
   bottom: 0;
-  z-index: 10001;
+  z-index: var(--z-top);
   display: flex;
   flex-direction: column;
   max-height: calc(100vh - 36px);
@@ -430,7 +430,7 @@
 .ppt-present-mode {
   position: fixed;
   inset: 0;
-  z-index: 99999;
+  z-index: var(--z-top);
   background: var(--bg-primary);
   display: flex;
   align-items: center;
@@ -568,7 +568,7 @@
   width: 280px;
   background: var(--bg-secondary, #1e1e2e);
   border-left: 1px solid var(--border-primary, #3a3a4c);
-  z-index: 100;
+  z-index: var(--z-chrome);
   overflow: auto;
   padding: 16px;
 }
