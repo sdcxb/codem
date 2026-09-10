@@ -2732,9 +2732,12 @@ top: 36px;
 }
 
 .nb-source-highlight {
-  background: color-mix(in srgb, var(--warning) 20%, transparent);
+  padding: 0 3px;
   border-radius: var(--radius-sm);
-  padding: 1px 2px;
+  background: var(--match-highlight-strong);
+  color: var(--match-highlight-fg);
+  font-weight: 700;
+  box-shadow: 0 0 0 2px var(--match-highlight-strong);
 }
 
 /* ========== Mind Map View ========== */

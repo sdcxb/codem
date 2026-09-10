@@ -137,6 +137,7 @@
      也刻意不随主题反转 —— 半透明黄在深底浅底上都能读。此前它在 5 个文件里各写一遍。 */
   --match-highlight: rgba(255, 235, 59, 0.3);
   --match-highlight-strong: rgba(255, 235, 59, 0.5);
+  --match-highlight-fg: #1a1a1a;
   /* 终端面板自成一块暗色表面（xterm 自带配色），刻意不跟随亮色主题 */
   --terminal-bg: #0d1117;
   --terminal-fg: #f0f6fc;

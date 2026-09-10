@@ -480,8 +480,10 @@ function scanColorOutsideStyle(rel, src, styleRanges) {
     const outsideVar = (o) => !ranges.some(([s, e]) => o >= s && o < e);
     const m = /(['"`])(#[0-9a-fA-F]{3,8}|white|black|red|green|blue|gray|grey|orange|purple|pink|yellow|cyan|magenta|silver|maroon|navy|teal|olive|lime|aqua|fuchsia)\1/i.exec(line);
     if (!m || !outsideVar(m.index)) return;
-    // 颜色值前面必须紧跟一个「像 CSS 属性」的键，才认定是样式（避免误伤普通业务对象）
-    const key = /(?:^|[\s,{[(])(color|background|backgroundColor|border|borderColor|borderTop|borderBottom|borderLeft|borderRight|fill|stroke|boxShadow|outline|caretColor|accentColor)\s*[:=]\s*$/i.exec(line.slice(0, m.index));
+    // 颜色值前面必须紧跟一个「像 CSS 属性」的键，才认定是样式（避免误伤普通业务对象）。
+    // 前缀类里带 `.`：JS 直接改样式的写法是 `el.style.background = '#...'`，
+    // 键前面是点而不是空格 —— 漏掉这个点，DocxViewer 里的高亮黄就永远查不到。
+    const key = /(?:^|[\s,{[(.])(color|background|backgroundColor|border|borderColor|borderTop|borderBottom|borderLeft|borderRight|fill|stroke|boxShadow|outline|caretColor|accentColor)\s*[:=]\s*$/i.exec(line.slice(0, m.index));
     if (!key) return;
     add("color-hardcoded-ts", rel, i + 1, line, `${key[1]}: ${m[2]}`);
   });

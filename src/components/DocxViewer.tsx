@@ -114,12 +114,6 @@ export function DocxViewer({ filePath, data, onClose, onSaveAsNote, highlightTex
         const before = document.createTextNode(text.substring(0, idx));
         const match = document.createElement('span');
         match.className = 'nb-source-highlight';
-        match.style.background = '#ffeb3b';
-        match.style.color = '#1a1a1a';
-        match.style.fontWeight = '700';
-        match.style.borderRadius = '3px';
-        match.style.padding = '0 3px';
-        match.style.boxShadow = '0 0 0 2px var(--match-highlight-strong)';
         match.textContent = text.substring(idx, idx + query.length);
         const after = document.createTextNode(text.substring(idx + query.length));
         const parent = textNode.parentNode;
