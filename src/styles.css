@@ -394,11 +394,43 @@ flex-shrink: 0;
 display: flex;
 align-items: center;
 background: transparent;
--webkit-app-region: drag;
+/* 第 44 波：容器不再整条可拖 —— 改由 .titlebar-drag-region 这条专用拖拽区负责，
+     左右各留安全区（mac 红黄绿灯 / Windows 窗口按钮）。这样交互元素不必逐个 no-drag。 */
+-webkit-app-region: no-drag;
 user-select: none;
 z-index: var(--z-context-menu-top);
 position: relative;
 }
+
+/* 第 44 波：专用拖拽区（参考实现的 .mac-window-drag-region 同构）。
+   左右 inset 由安全区令牌决定：mac 左侧留红黄绿灯宽度，Windows 右侧留窗口按钮宽度。
+   拖拽区是绝对定位元素，会盖住静态兄弟节点 —— 所以下面还有一条 .titlebar > * 的抬升规则，
+   让"内容区点得动、空白处拖得动"。 */
+.titlebar-drag-region {
+  position: absolute;
+  inset-block: 0;
+  inset-inline: var(--chrome-safe-left) var(--chrome-safe-right);
+  z-index: 0;
+  -webkit-app-region: drag;
+}
+
+/* 安全区令牌：默认（Windows/Linux）左侧只需一点边距，右侧留给最小化/最大化/关闭三个按钮 */
+.titlebar {
+  --chrome-safe-left: var(--space-2);
+  --chrome-safe-right: calc(var(--control-dense) * 3 + var(--space-8));
+}
+/* mac：左侧红黄绿灯占位（参考实现用 110px，含左留白）；右侧由系统控件区自己占 */
+.titlebar--mac {
+  --chrome-safe-left: 76px;
+  --chrome-safe-right: var(--space-2);
+}
+
+/* 交互内容统一抬到拖拽区之上 */
+.titlebar > * {
+  position: relative;
+  z-index: 1;
+}
+
 
 .titlebar-left {
 display: flex;
@@ -16276,6 +16308,31 @@ color: var(--accent, #7c6cf0);
   opacity: 0.6;
   transition: var(--transition-color);
 }
+
+/* 第 44 波：标签条末尾的"新建"按钮（参考实现 .mac-window-add-tab 同构）。
+   它比菜单里的"新建对话"更好找 —— 标签条正是用户"想再开一个"时视线所在处。
+   虚线边表示"这里还能加"，悬停转为实线与强调色。 */
+.titlebar-add-tab {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--control-xs);
+  height: var(--control-xs);
+  flex: 0 0 auto;
+  border: 1px dashed var(--border-primary);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: var(--transition-color);
+}
+.titlebar-add-tab:is(:hover, :focus-visible) {
+  border-style: solid;
+  border-color: var(--accent);
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
 .titlebar-tab-close:is(:hover, :focus-visible) {
   background: var(--bg-tertiary);
   opacity: 1;

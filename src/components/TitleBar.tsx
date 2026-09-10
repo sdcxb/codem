@@ -249,7 +249,13 @@ export function TitleBar({
   ];
 
   return (
-    <div className="titlebar" data-tauri-drag-region>
+    <div className={`titlebar ${isMac ? "titlebar--mac" : ""}`}>
+      {/* 第 44 波：专用拖拽区（对齐参考实现的结构）——
+          容器不再整条可拖，只在这条"中间空档"上可拖：左右各留安全区
+          （mac 左侧红黄绿灯、Windows 右侧三个窗口按钮），交互元素不必再逐个 no-drag。
+          此前是"整条可拖 + 每个按钮单独 no-drag"，漏一个就按钮点不动。 */}
+      <div className="titlebar-drag-region" data-tauri-drag-region />
+
       {/* P3: Mac-style window controls (left side) */}
       {isMac && (
         <div className="titlebar-buttons-mac" style={{ marginRight: 8 }}>
@@ -259,12 +265,12 @@ export function TitleBar({
         </div>
       )}
 
-      <div className="titlebar-left" data-tauri-drag-region>
+      <div className="titlebar-left">
         {/* Bug9: 新建对话按钮已移至侧边栏全局对话栏右侧，此处删除 */}
-        <span className="titlebar-icon" data-tauri-drag-region>
+        <span className="titlebar-icon">
           <img src={codemLogoUrl} alt="Codem" className="titlebar-logo-img" />
         </span>
-        <span className="titlebar-title" data-tauri-drag-region>Codem</span>
+        <span className="titlebar-title">Codem</span>
         {/* 第 41 波：应用级菜单栏 —— 在应用名右侧，和原生桌面应用一致 */}
         <AppMenuBar zh={zh} menus={appMenus} />
         {/* 执行模式切换（本地处理 / 新工作树）—— 侧边栏按钮与项目 LOGO 右侧 */}
@@ -289,7 +295,7 @@ export function TitleBar({
 
       {/* 工作区标签栏（可选） */}
       {workspaceTabs.length > 0 && (
-        <div className="titlebar-tabs" role="tablist" data-tauri-drag-region>
+        <div className="titlebar-tabs" role="tablist">
           {workspaceTabs.map((tab) => (
             <div
               key={tab.id}
@@ -313,6 +319,18 @@ export function TitleBar({
               )}
             </div>
           ))}
+          {/* 第 44 波：标签条末尾的"新建"按钮（参考实现的 .mac-window-add-tab 同构）——
+              标签条是唯一能一眼看出"这里可以再开一个"的位置，比只在菜单里放"新建对话"更好找 */}
+          {onNewChat && (
+            <button
+              className="titlebar-add-tab"
+              onClick={onNewChat}
+              title={zh ? "新建对话" : "New chat"}
+              aria-label={zh ? "新建对话" : "New chat"}
+            >
+              <ActionIcons.add size={12} />
+            </button>
+          )}
         </div>
       )}
 
