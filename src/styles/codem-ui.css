@@ -1330,7 +1330,6 @@
   font-size: var(--fs-base);
 }
 .decision-tray-reject-input:focus {
-  outline: none;
   border-color: var(--accent);
 }
 .decision-tray-actions {
@@ -1419,7 +1418,6 @@
   font-size: var(--fs-base);
 }
 .decision-tray-answer-input:focus {
-  outline: none;
   border-color: var(--accent);
 }
 
@@ -2266,7 +2264,6 @@ body.resizing-columns * {
   font-size: var(--fs-sm);
 }
 .git-branch-input:focus {
-  outline: none;
   border-color: var(--accent);
 }
 .git-branch-create-btn {
@@ -3577,7 +3574,6 @@ background: var(--bg-tertiary);
   font-family: inherit;
 }
 .inline-diff-custom-textarea:focus {
-  outline: none;
   border-color: var(--accent);
 }
 .inline-diff-custom-actions {

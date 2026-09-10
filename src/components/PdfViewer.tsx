@@ -323,7 +323,6 @@ export function PdfViewer({ filePath, pdfData, highlightText, onClose }: PdfView
                 padding: '3px 6px',
                 color: 'var(--text-primary, #e0e0e4)',
                 fontSize: 'var(--fs-xs)',
-                outline: 'none',
                 width: '120px',
               }}
             />

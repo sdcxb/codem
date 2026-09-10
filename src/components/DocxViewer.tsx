@@ -229,7 +229,6 @@ export function DocxViewer({ filePath, data, onClose, onSaveAsNote, highlightTex
               padding: '4px 8px',
               color: 'var(--text-primary, #e0e0e4)',
               fontSize: 'var(--fs-sm)',
-              outline: 'none',
             }}
           />
         </div>

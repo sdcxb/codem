@@ -185,7 +185,7 @@ export function SideSessionPanel({ onClose, open = true }: SideSessionPanelProps
           }}
           rows={2}
           placeholder={zh ? "追问（Enter 发送，Shift+Enter 换行）…" : "Follow-up (Enter to ask)…"}
-          style={{ flex: 1, background: "var(--bg-tertiary, #2a2f3a)", color: "var(--text-primary)", border: "1px solid var(--border-primary)", borderRadius: "var(--radius)", padding: "6px 8px", fontSize: 'var(--fs-sm)', resize: "none", outline: "none" }}
+          style={{ flex: 1, background: "var(--bg-tertiary, #2a2f3a)", color: "var(--text-primary)", border: "1px solid var(--border-primary)", borderRadius: "var(--radius)", padding: "6px 8px", fontSize: 'var(--fs-sm)', resize: "none",}}
         />
         <button
           className="toolbar-btn"

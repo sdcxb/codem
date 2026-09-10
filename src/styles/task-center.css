@@ -153,7 +153,7 @@
   font-family: inherit;
   font-size: var(--fs-sm);
 }
-.tc-field:focus { outline: none; border-color: var(--accent); }
+.tc-field:focus { border-color: var(--accent); }
 .tc-field--add { margin-top: var(--space-4); }
 .tc-field--area { min-height: 60px; resize: vertical; }
 
@@ -432,7 +432,7 @@
   font-family: inherit;
   font-size: var(--fs-base);
 }
-.issue-detail-input:focus { outline: none; border-color: var(--accent); }
+.issue-detail-input:focus { border-color: var(--accent); }
 .issue-detail-send {
   display: grid;
   grid-template-columns: max-content minmax(0, 1fr);

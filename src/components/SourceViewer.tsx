@@ -196,7 +196,6 @@ export function SourceViewer({
               padding: '4px 8px',
               color: 'var(--text-primary)',
               fontSize: 'var(--fs-sm)',
-              outline: 'none',
             }}
           />
           <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted, #555)' }}>

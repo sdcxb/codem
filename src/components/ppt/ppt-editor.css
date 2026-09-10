@@ -194,9 +194,7 @@
   flex-shrink: 1;
 }
 
-.ppt-slide-canvas:focus {
-  outline: none;
-}
+
 
 /* --- 缩略图侧边栏 --- */
 .ppt-thumbnail-bar {
@@ -653,4 +651,12 @@
 .ppt-export-menu-item:is(:hover, :focus-visible) {
   background: var(--bg-hover);
   color: var(--text-primary);
+}
+
+/* 第 39 波：幻灯片画布是 div[tabindex=0]（键盘可聚焦），且容器 overflow: hidden ——
+   外扩环会被裁掉，所以用 inset 环；此前它的键盘焦点是**完全不可见**的
+   （内联 outline:none + 容器裁切两件事叠加）。 */
+.ppt-slide-canvas:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 var(--focus-ring-width) var(--focus-ring-color);
 }

@@ -125,6 +125,8 @@ const RULES = {
   "radius-raw": { level: "error", desc: "圆角写了裸长度（应使用 var(--radius-*)；0/2px 细条、50% 圆形、inherit 例外）" },
   "icon-size-offscale": { level: "error", desc: "图标尺寸不在 --icon-* 八级刻度上（10/12/14/16/20/24/32/48）" },
   "font-stack-raw": { level: "error", desc: "CSS 里写死了字体栈（应用 var(--font-ui) / var(--font-mono)；inherit 例外）" },
+  "focus-outline-none": { level: "error", desc: "焦点规则里 outline:none 却没有替代环（键盘用户看不到焦点）" },
+  "inline-outline-none": { level: "error", desc: "TSX 内联 outline:none —— 内联优先级会吃掉所有全局焦点环" },
 };
 
 // ========== 扫描器 ==========
@@ -251,6 +253,14 @@ function scanTsx(rel, src) {
   // 统一外壳类名（出现任意一个即认为该文件用了共享外壳）
   if (/modal-overlay|modal-panel|modal-editor|drawer-|popover-|popover-shell|floating-overlay-panel|task-center-panel/.test(src)) hasUnifiedShell = true;
 
+  // 内联 outline:none（第 39 波）：内联样式优先级高于所有非 !important 规则，
+  // 一处内联 `outline: 'none'` 就能吃掉全局焦点环 —— 实测 14 处（含幻灯片画布的 div[tabindex=0]）
+  lines.forEach((raw, i) => {
+    if (/outline:\s*(?:"none"|'none')/.test(stripComments(raw))) {
+      add("inline-outline-none", rel, i + 1, raw, "内联 outline:none");
+    }
+  });
+
   /**
    * 只在 `style={{ … }}` 里判定颜色/字号/圆角：
    * - SVG/Canvas 属性（`stroke="#888"`、`fill="…"`）与图表库入参不能吃 CSS 变量，属正当用法；
@@ -275,8 +285,7 @@ function scanTsx(rel, src) {
     const line = stripComments(raw);
     const no = i + 1;
 
-    // 0) 图标尺寸刻度（第 34 波）：`size={n}` 必须落在 --icon-* 八级刻度上。
-    //    背景：实测 10/12/14/16/20/24 之外还散着 13×46、18×45、11×26、15×23、9×8、28×2 共 149 处，
+    // 0) 图标尺寸刻度（第 34 波）：`size={n}` 必须落在 --icon-* 八级刻度上。    //    背景：实测 10/12/14/16/20/24 之外还散着 13×46、18×45、11×26、15×23、9×8、28×2 共 149 处，
     //    同一行里 13px 与 14px 图标并排 = 视觉节奏被打破，这正是"局部细节不精致"的典型来源。
     //    排除非图标组件：它们的 size 是内容尺寸（画布、图表、头像、抽屉宽度），不是图标刻度。
     for (const m of line.matchAll(/size=\{(\d+)\}/g)) {
@@ -609,6 +618,38 @@ function scanZIndex(rel, src, isCss, styleRanges) {
  * 都极难排查。第 27 波实测 18 个类中招（最典型是 .badge 的圆角 10px vs 4px）。
  * 只认纯顶层选择器（`.foo`）：伪类、后代选择器、[data-skin]/[data-theme] 都是**有意的分层覆盖**，不算。
  */
+/**
+ * 焦点可见性抑制（第 39 波新增规则 `focus-outline-none`）。
+ *
+ * 为什么单列一条：焦点样式是**唯一一个"失效了也没人发现"**的东西 ——
+ * 鼠标用户完全不受影响，只有键盘/读屏用户能感觉到，而他们不在开发者的视线里。
+ * 第 39 波的实测：项目里其实有 3 条全局焦点环规则（`*:focus-visible`、原生控件、`:is(a,button,[role],[tabindex])`），
+ * 但 21 条组件规则写了 `:focus { outline: none }` —— 它们的特异度高于那几条全局规则（尤其对 `<select>`，
+ * 全局规则里根本没覆盖 select + `:focus` 类规则是 (0,2,0)），于是这些控件的键盘焦点**彻底不可见**；
+ * 另有 14 处 TSX **内联** `outline: 'none'`，内联优先级高于所有非 `!important` 规则，连
+ * `[tabindex]:focus-visible` 的 (0,3,0) 环都被吃掉（幻灯片画布就是这样）。
+ *
+ * 允许的写法：① 带 `:not(:focus-visible)` 的——那是刻意的"鼠标点击不画环"；
+ * ② 规则体内自带 `box-shadow` 环的——那是"改用内嵌环"（输入框、被 overflow 裁切的容器）。
+ */
+function scanFocusSuppression(rel, src) {
+  // 先把注释替换成等长空白（保留换行，行号才不错位）—— 否则文档里写的
+  // 反例（"`：focus { outline: none }` 是坏的"）会被当成真规则报出来。
+  const clean = src.replace(/\/\*[\s\S]*?\*\//g, (c) => c.replace(/[^\n]/g, " "));
+  const re = /([^{}]+)\{([^{}]*)\}/g;
+  let m;
+  while ((m = re.exec(clean))) {
+    const sel = m[1];
+    const body = m[2];
+    if (!/:focus/.test(sel)) continue;
+    if (/:not\(:focus-visible\)/.test(sel)) continue;
+    if (!/outline:\s*none/.test(body)) continue;
+    if (/box-shadow/.test(body)) continue; // 已用内嵌环替代
+    const line = src.slice(0, m.index).split("\n").length;
+    add("focus-outline-none", rel, line, sel.trim().replace(/\s+/g, " "), "focus 规则里 outline:none 且没有替代环");
+  }
+}
+
 function scanCssDuplicates(rel, src) {
   const clean = src.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, " "));
   const rules = [];
@@ -805,6 +846,7 @@ for (const full of files) {
     scanCss(rel, src);
     scanCssDuplicates(rel, src);
     scanCssSpacing(rel, src);
+    scanFocusSuppression(rel, src);
     scanZIndex(rel, src, true, []);
     continue;
   }

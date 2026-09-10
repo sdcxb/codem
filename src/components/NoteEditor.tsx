@@ -395,7 +395,6 @@ export function NoteEditor({
               border: 'none',
               color: 'var(--text-primary, #e0e0e4)',
               fontSize: 'var(--fs-xs)',
-              outline: 'none',
             }}
           />
         </div>

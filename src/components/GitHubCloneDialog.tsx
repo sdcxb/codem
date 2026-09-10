@@ -142,7 +142,6 @@ return createPortal(
                 background: "var(--input-bg, #1e1e2e)",
                 color: "var(--text-primary, #e0e0e0)",
                 fontSize: "var(--fs-md)",
-                outline: "none",
                 marginBottom: "16px",
               }}
             />

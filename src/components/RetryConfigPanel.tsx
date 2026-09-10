@@ -74,7 +74,6 @@ export function RetryConfigPanel() {
   const inputStyle: React.CSSProperties = {
     padding: "5px 8px", borderRadius: "var(--radius-xs)", border: "1px solid var(--border-primary)",
     background: "var(--bg-tertiary)", color: "var(--text-primary)", fontSize: 'var(--fs-sm)', width: "100%",
-    outline: "none",
   };
 
   // Calculate preview delay for attempt 1

@@ -372,6 +372,20 @@ const FileEntryNode = memo(function FileEntryNode({ entry, depth, expanded, onTo
             onFileClick?.(entry.path);
           }
         }}
+        // 第 39 波：文件树条目此前是**不可聚焦的 div** —— 键盘用户根本到不了它（不是"焦点看不见"，
+        // 是"焦点到不了"）。补 role/tabIndex 与 Enter/Space 处理；焦点环由全局
+        // `:is(a,button,[role=button],summary,[tabindex]):focus-visible` 规则提供。
+        role="treeitem"
+        tabIndex={0}
+        aria-expanded={entry.isDirectory ? isExpanded : undefined}
+        aria-selected={isSelected}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            if (entry.isDirectory) onToggle(entry.path);
+            else onFileClick?.(entry.path);
+          }
+        }}
         title={entry.path}
       >
         <Icon size={14} className="file-entry-icon" />

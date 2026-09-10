@@ -38,7 +38,6 @@ const inputStyle: CSSProperties = {
   color: "var(--text-primary)",
   border: "1px solid var(--border-primary)",
   borderRadius: "var(--radius-xs)",
-  outline: "none",
 };
 
 export function CorrectionModelConfig() {

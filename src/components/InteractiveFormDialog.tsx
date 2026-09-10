@@ -241,7 +241,6 @@ return createPortal(
                         background: "var(--bg-tertiary, #16213e)",
                         color: "var(--text-primary, #e0e0e0)",
                         fontSize: "var(--fs-md)",
-                        outline: "none",
                       }}
                       autoFocus
                     />
@@ -263,7 +262,6 @@ return createPortal(
                     background: "var(--bg-tertiary, #16213e)",
                     color: "var(--text-primary, #e0e0e0)",
                     fontSize: "var(--fs-md)",
-                    outline: "none",
                   }}
                   autoFocus={isSingleQuestion}
                 />

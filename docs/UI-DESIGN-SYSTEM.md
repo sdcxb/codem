@@ -340,6 +340,8 @@ node tools/ui-audit/codemod-icon-scale.mjs [--write]  # 图标工具类 → .ico
 | `radius-raw` | error | **圆角写了裸长度**（第 34 波新增）：**在刻度上**的字面量也要拦 —— 它们能通过 `radius-offscale`，却让「改一个令牌、全局圆角一起动」失效（当时 styles.css 里躺着 `4px`×124 / `6px`×113 / `8px`×76，TSX 内联样式里另有 208 处）。例外：`0`、`2px`（细条端头）、`50%`（圆形）、`inherit`、`var()`/`calc()`。插件 CSS 用 `var(--radius-md, 10px)` 这种**带兜底**写法不触发（插件必须能脱离宿主独立渲染） |
 | `icon-size-offscale` | error | **图标尺寸不在 `--icon-*` 八级刻度上**（第 34 波新增）：刻度为 10/12/14/16/20/24/32/48。实测曾散着 `13`×46、`18`×45、`11`×26、`15`×23、`9`/`8`/`26`/`28` 共 149 处，同一行 13px 与 14px 图标并排会把视觉节奏打散。`size` 不是图标刻度的组件（画布、图表、头像、抽屉宽度）在规则里显式排除 |
 | `font-stack-raw` | error | **CSS 里写死了字体栈**（第 35 波新增）：必须走 `var(--font-ui)` / `var(--font-mono)` / `var(--font-display)`。例外：`inherit`（继承父级是刻意的）、`var(--font-*, 兜底)`（插件须能独立渲染）、`@font-face` 里的字体**名字**声明。起点是 31 种取值 / 192 处声明 |
+| `focus-outline-none` | error | **焦点规则里 `outline: none` 却没有替代环**（第 39 波新增）：焦点样式是唯一"失效了也没人发现"的东西 —— 鼠标用户完全不受影响，只有键盘/读屏用户感觉得到。例外：`:not(:focus-visible)`（刻意的鼠标抑制）、规则体内自带 `box-shadow` 环（"改用内嵌环"） |
+| `inline-outline-none` | error | **TSX 内联 `outline: 'none'`**（第 39 波新增）：内联优先级高于所有非 `!important` 规则，**一处内联就能吃掉全局焦点环**（实测 14 处，含幻灯片画布的 `div[tabindex=0]`）。想抑制鼠标焦点请用 CSS 的 `:not(:focus-visible)` |
 
 **合法例外**（写在 `scan-ui.mjs` 的 `ALLOWLIST`，每条都带理由；`rules` 字段可只豁免某一条规则）：
 皮肤令牌定义源（`src/core/theme/`、`src/styles/skin-*.css`）、PPT 生成内容配色、大富翁游戏插件（自带美术语言）、
@@ -405,6 +407,7 @@ node tools/ui-audit/codemod-icon-scale.mjs [--write]  # 图标工具类 → .ico
 | **第 32 波** | 2026-09-10 | **0** ✅ | **0** ✅ | **对齐原语与状态语义（补参考实现的结构性差距）**：把参考实现整份 checkout 拉下来后逐项度量，发现三处**结构性**差距（不是配色问题）：参考实现用 `display: grid` **583 处**做对齐、`:has()` **41 处**做父级状态、`prefers-reduced-motion` **27 处**；我们分别是 50 / 7 / 8。<br>① **设置/表单行改用 grid 对齐**：`.setting-group` / `.mp-form-row` / `.sp-field-row` / `.agent-input-row` / `.git-env-row` 收成「标签列 `minmax(88px, max-content)` + 内容列 `minmax(0,1fr)`」两列模板（三列行用 `--3` 修饰、堆叠行用 `--stack`），标签从此对齐成一条竖线（此前标签宽度不一、输入框左边缘参差，这正是"没对齐=不精致"的主因之一）；单列内容（说明文字、卡片、表格、模板列表）用 `grid-column: 1/-1` 跨列，避免被塞进两列网格。<br>② **`:has()` 做父级状态**：卡片里任意子元素获得键盘焦点时整张卡片给出描边（`.sp-card` / `.tool-card` / `.market-skill-card`），字段行内输入非法时整行标红（`input:user-invalid`）—— 焦点在子元素、反馈在父级。<br>③ **状态属性驱动样式**：设置侧栏 tab、笔记本视图 tab、设置面板 tab、任务中心 tab、工具 pill 补 `aria-current="page"` / `aria-selected` / `aria-expanded`（`SettingsPanel` 内 24 个 tab 按钮），并让属性选择器与 `.active` 类**同源驱动**样式 —— 此前是"类名说选中、ARIA 说没选中"，读屏用户完全得不到切换反馈。<br>④ **逐组件减动效**：浮层/抽屉/面板/toast/卡片的**入场位移动画**在 `prefers-reduced-motion` 下直接取消（`animation/transition/transform: none`），而非只停循环动画。 |
 | **第 33 波** | 2026-09-10 | **0** ✅ | **0** ✅ | **"为什么我们像项目、他们像产品"—— 带数据的诊断与底层修正**（详见 §2.8）。用户反馈"精细度比不上"，于是不再猜、把决定观感的量全部量化对比，再逐项动手：<br>① **字重是最大差异**：我们用 600 **235 次**（"哪里都半粗"），参考实现用 **650/720/620/560** 细档建层次、400 只有 11 处。新增 `--weight-regular/medium/semibold(560)/bold(620)/heavy` 五档令牌，把 34 处 meta/值类从 600 降到 500/560，并在末尾补「层次收口」规则：区块标题 620、列表项 560、**值与数字回到 400**（表格里全粗体会让数字互相打架）。<br>② **控件高度整体上抬**：24/28 为主 → `--control-*` 改为 **26/30/34/38/44**（参考实现以 34 为主），小控件不再"挤"。<br>③ **圆角软化 + 胶囊化**：`--radius-sm` 4→**6px**、`--radius-xs` 6→**8px**；10 个标签/徽标/计数类（`.market-skill-tag` / `.petm-tag` / `.sp-chip` / `.model-badge` / `.nb-count-badge` …）统一 `--radius-full` —— 方角小块像"数据表"，胶囊像"产品"。<br>④ **图标描边统一**：此前 `<svg strokeWidth>` 在 0.6/1/1.2/1.5/2/2.5 之间抖动，12–14px 上的细线发虚；统一 `1.75`，并按尺寸反向补偿（`.icon-2xs/-xs` → 2，`.icon-2xl/-3xl` → 1.5）。<br>**结论**：观感差距主要来自 ①字重层次 ②控件尺度 ③圆角与胶囊 ④图标描边一致性 ⑤窗口外壳 ⑥默认主题明度 —— **都不是"令牌化"能自动解决的**，而是逐部件的光学调校 + 品牌选择；令牌化的价值是让这些调校**一次改全局**。⑤⑥（mac 风格窗口外壳、默认浅色暖灰）需要产品决策，本轮未动。 |
 | **第 35 波** | 2026-09-10 | **0** ✅ | **0** ✅ | **字体栈收敛 + 一处自我更正（门禁规则 17 → 18 条）**。<br>① 用户点名怀疑"字体"，于是先做体检：`font-face` 用的是 `public/fonts/AlimamaFangYuanTiVF-Thin.ttf`，我用 `fvar` 表核验它**确实是可变字体**（`wght` 200–700 + `BEVL` 1–100，18 个具名实例）—— 于是**第 33 波写在 §2.1b 的"我们是静态字重、细档会被取整"是错的**，560/620 一直真实生效；同时把 `@font-face` 的 `font-weight` 从 `100 900` 收窄到真实的 `200 700`（声明超出轴范围会让浏览器在 700 以上合成伪粗体，中文界面会糊）。<br>② 真正的字体问题是**栈太散**：31 种不同 `font-family` 取值 / 192 处声明，其中**等宽栈 14 种写法**（`"SF Mono", "Fira Code", monospace`×15、`'SF Mono', Consolas, monospace`×9、`'SF Mono', Consolas, 'Liberation Mono', monospace`…），同一段代码在不同组件可能落到不同字体上；参考实现只有 15 处声明且全走令牌栈。收敛成 `--font-ui` / `--font-mono` / `--font-display` 三档（`--font-family` 降为兼容别名），**50 处等宽栈 + 6 处 UI 栈**收回令牌，不同取值 31 → **7 种**。新增规则 `font-stack-raw`。插件 CSS 保留 `var(--font-mono, ui-monospace, monospace)` 带兜底写法。 |
+| **第 39 波** | 2026-09-10 | **0** ✅ | **0** ✅ | **焦点可见性收口（把"焦点"当独立课题查一遍，门禁规则 18 → 20 条）**。<br>① **根因不是"缺环"，而是"有环却被抑制"**：项目其实有 3 条全局焦点环规则（`codem-ui.css` 的 `*:focus-visible` 与原生控件规则、`styles.css` 里 (0,3,0) 的 `:is(a,button,[role=button],summary,[tabindex]):focus-visible`），但 **21 条组件规则写了 `:focus { outline: none }`**，特异度高于全局规则 —— 其中 4 条是 `<select>`，而全局规则里恰好没有覆盖 select，于是这些控件的键盘焦点**彻底不可见**；另有 **14 处 TSX 内联 `outline: 'none'`**，内联优先级高于所有非 `!important` 规则，连 `[tabindex]:focus-visible` 的 (0,3,0) 环都被吃掉（幻灯片画布 `div[tabindex=0]` 正是如此）。两类全部删除。<br>② 全局输入控件的焦点环从 `color-mix(accent 22%)` 的软环提到令牌强度（`--focus-ring-color`，75%）；会给容器裁切的场景改用 **inset 环**（工作区标签栏 / PPT 缩略图栏 / 面板侧栏标签 / 幻灯片画布 / 文件树 / 图谱节点）—— `overflow` 非 visible 的那一侧会**双向**裁切，外扩环必然被切掉。<br>③ **两处"键盘根本到不了"**（比"焦点看不见"更严重）：文件树条目 `.file-entry` 与图谱节点 `.kg-node` 都是不可聚焦的 `div` —— 补 `role`/`tabIndex`/`aria-selected`/Enter-Space（图谱节点用"派发一次 click"复用鼠标路径，不必给节点 data 加字段）。<br>④ 新增门禁规则 `focus-outline-none`（焦点规则里 `outline: none` 且无替代环）与 `inline-outline-none`（TSX 内联抑制）；写规则时又把**文档里的反例**当成真规则误报了一次 —— 已让规则解析先剥离注释（保留换行以免行号错位）。<br>⑤ **同口径实测已超过参考实现**：`:focus-visible` 规则 490 vs 57、带环规则 22 vs 21、`outline:none` 抑制 5 vs 19（详见 §5 后的对照表）。 |
 | **第 36 波** | 2026-09-10 | **0** ✅ | **0** ✅ | **默认档位改为浅色暖中性 + 首屏不再闪（B 组第 6 项）**。<br>① 问题有两层：**默认档位**（`--bg-primary` 是 `rgba(14,15,15,1)` 近黑）和**散落的默认值**（`|| "dark"` 在 TitleBar / SkinSelector / CodeBlockView / ThemeManager 各写一遍，改默认要同时改五处），外加**首屏闪烁**（`index.html` 里没有 `data-theme`，浏览器先按 `:root` 的暗色渲染一帧再等 JS 切，浅色用户每次启动都闪黑）。<br>② 做法：CSS 侧 `:root, [data-theme="light"]` 变成浅色档、`[data-theme="dark"]` 是显式覆盖（两档令牌从此**完全对称**，此前 light 块只覆盖 49/76 个令牌，`--highlight-top` 等 22 个在浅色下一直沿用的暗色值）；色板从冷蓝灰（GitHub 那套）换成**暖中性**（画布 `#fcfcfb`、卡片 `#f5f5f3`、文字 `#1f1f1e`、线 12%/7% 黑），并补齐浅色档缺失的 `--highlight-top*`（暗色下是"白 5% 透光"，浅色下必须是实白，否则面与面没有厚度差）。<br>③ 代码侧新增唯一真相源 `src/core/theme/theme-default.ts`（`DEFAULT_THEME` / `isThemeMode` / `applyThemeAttribute` / `cacheTheme`），四处 `|| "dark"` 全部改为读它；换档时写 localStorage 镜像，`index.html` 加一段内联脚本在首屏渲染前读镜像设属性 —— **两个方向都不再闪烁**（SQLite 的 `codem-theme` 仍是真相源，镜像只是"首屏预测"）。<br>④ 顺带修掉自己造的两处违规（`--shadow-raise-*` 在重写主题块时被漏掉、注释里写了原始色值触发了颜色规则）——**门禁规则又一次抓住了我自己的手误**。 |
 | **第 37 波** | 2026-09-10 | **0** ✅ | **0** ✅ | **grid 对齐原语铺到"重复行"层（225 处）**。先用只读分析把全项目 1184 处 `display: flex` 分级：**第一档 226 处**（子元素数固定 2–4、已有 `gap`、无 `flex-wrap`、无 `space-between` 依赖、无子元素依赖父级 flex 分配），第二档 88 处（子元素数随状态变化或 ≥5），第三档 19 处（`space-between` 语义 / 自身被外部 `flex: 1` 撑宽），**明确不该改** 638 处（315 处 `column` 堆叠 + 75 处 `flex-wrap` + 124 处 TSX 里找不到对应类 + 243 处"行但无 gap"—— 无 gap 的行换成 grid 间距仍是 0，**没有对齐收益**，而且顺手补 `gap` 会叠成双倍间距）。<br>按第一档清单做**成对替换**（`display: flex` → `display: grid` + 一行 `grid-template-columns`，脚本 225 处落地，1 处多选择器规则人工跳过）：列模板按子元素数取 `max-content minmax(0, 1fr)`（2 列）/ `… max-content`（3 列）/ `… max-content max-content`（4 列），动作簇与工具条取 `repeat(N, max-content)` 以保持整簇宽度不变。<br>**结果**：`display: grid` 50 → **275**、`grid-template-columns` 53 → **278**（参考实现分别是 574 / 320，已在同一量级）；`display: flex` 1184 → **959**。收益是**标签、图标、数值跨行对齐成竖线** —— 这正是"精致"最直接来源，而 `flex` 的 `justify-content` 做不到跨行对齐。 |
 | **第 38 波** | 2026-09-10 | **0** ✅ | **0** ✅ | **`:has()` 父级状态铺开（7 → 41 处，与参考实现持平）+ 死类名普查**。<br>① **每条 `:has()` 都先核对 TSX**：写了 `.preview-shot/verify-has.mjs`（把「祖先类名 → 后代特征」在 TSX 里逐条验证），一次就把两条**本来会写成死代码**的规则拦下来 —— 容器类名写成不存在的 `.tool-pill`（真实类名是 `.tool-call-pill`）、以及第 32 波文档里点名的 `.sp-field-row` **全项目没有任何 TSX 使用**。核对通过后落地 34 条规则：选中态外显（`.sp-check` / `.sp-row` / `.git-env-field` / `.agent-check-label` / `.wx-list-row` / `.mode-option` / `.pm-radio` / `.todo-item` 的"勾选→整行高亮"）、禁用态整行淡化（`.mcp-form-row:has(:disabled)`）、运行/失败竖条（`.tool-call-pill:has(.tool-pill-icon-spin)`、`.tool-card:has(.tool-card-status--error)`）、焦点父级环（焦点在子控件、环画在整行上）、已完成项淡化 + 删除线。<br>② **顺手修掉两处"写了但没作用"**：`.tool-card` / `.tool-call-pill` 都没有 `position: relative`，状态竖条用 `::before` 绝对定位会锚到更外层容器；另外 `.tool-call-pill` 的展开态此前**没有 `aria-expanded`**，于是第 32 波写的 `[aria-expanded="true"]` 样式永远是死的 —— 补上属性（连同 `tabIndex` 与 Enter/Space 键盘展开），样式与读屏语义同时到位。<br>③ **死类名普查（新维度：`css-class-undefined` 的镜像）**：那边查"用了没定义"，这边查"定义了没人用"。`.preview-shot/dead-classes.mjs` 量出 **3396 个顶层类名里 258 个（7.6%）在 TSX/TS 里从未出现**（`composer-*` 整族、`nb-guided-questions` 族、`ppt-*` 族、`sidebar-*` 若干）。本轮**不批量删除**（部分可能是动态拼接的前缀，误删风险大于收益），但把脚本与数字记进 §7：这是一个"该有但没量过"的队列。 |
@@ -553,9 +556,26 @@ node tools/ui-audit/codemod-icon-scale.mjs [--write]  # 图标工具类 → .ico
     新增唯一真相源 `src/core/theme/theme-default.ts` 与首屏镜像脚本（详见 §2.3 与 §5 表）。
 36. **第 37 波**：grid 对齐原语铺到重复行（225 处成对替换）—— `display: grid` 50 → **275**、
     `grid-template-columns` 53 → **278**（详见 §2.4 与 §5 表）。
-37. **第 38 波（本轮）**：`:has()` 父级状态 7 → **41 处**（每条都先用 `verify-has.mjs` 核对 TSX）；
+37. **第 38 波**：`:has()` 父级状态 7 → **41 处**（每条都先用 `verify-has.mjs` 核对 TSX）；
     顺带修掉"`::before` 竖条没有定位上下文"与"展开态没有 `aria-expanded`"两处写了不生效的样式；
     新增**死类名普查**维度（3396 个类名里 258 个从未被 TSX 使用，7.6%）（详见 §5 表与下方队列）。
+38. **第 39 波（本轮）**：**焦点可见性收口**（门禁规则 18 → 20 条）—— 删掉 21 处 `:focus { outline: none }`
+    抑制与 14 处内联 `outline: 'none'`，全局输入环提到令牌强度，裁切容器改 inset 环，
+    文件树/图谱节点从"不可聚焦的 div"改成键盘可达；同口径实测已超过参考实现（详见 §7 A4）。
+
+### 同口径对照（`.preview-shot/focus-compare.mjs`，第 39 波实测）
+
+| 指标 | 我们 | 参考实现 | 结论 |
+| --- | ---: | ---: | --- |
+| `:focus-visible` 规则 | **490** | 57 | ✅ 远超（第 29–30 波把 `:hover` 统一改成 `:is(:hover, :focus-visible)`） |
+| 带令牌环的规则 | 22 | 21 | ✅ 持平 |
+| `:focus { outline: none }` 抑制 | **5** | 19 | ✅ 更少（第 39 波清掉 21 处）；**注意此前文档里"21 vs 43"是错的**，那是不同口径 |
+| `display: grid` | 275 | 574 | ⏳ 同一量级，继续铺第二档 |
+| `grid-template-columns` | 276 | 320 | ✅ 接近 |
+| `display: flex` | 959 | 245 | ⚠️ 我们仍大量用 flex（这是 grid 差距的另一面） |
+| `:has()` | 41 | 41 | ✅ 持平 |
+| `prefers-reduced-motion` | 8 | **27** | ⏳ **最大剩余差距**（第 40 波） |
+| `@keyframes` / `infinite` 动画 | **85 / 60** | 41 / 16 | ⚠️ **我们动得太多** —— 产品级界面应是少数几处有意义的动效，其余保持安静 |
 
 ### 尚未追平参考实现的部分（第 38 波后剩下的，按"要不要动"分类）
 
@@ -569,17 +589,24 @@ node tools/ui-audit/codemod-icon-scale.mjs [--write]  # 图标工具类 → .ico
    **一条铁律**：写 `:has()` 之前必须用 `.preview-shot/verify-has.mjs` 核对"祖先类名 → 后代特征"
    在 TSX 里真的成立 —— 写错的 `:has()` 不报错也不生效，只是悄悄变成死代码（本轮就靠这道核对
    拦下了两条：容器类名写成了不存在的 `.tool-pill`，以及 `.sp-field-row` 根本没有 TSX 使用）。
-3. `prefers-reduced-motion` 8 → 参考 **27**：审计结论是**兜底覆盖得很宽、显式关停不够** ——
+3. `prefers-reduced-motion` **8 → 参考 27**（第 40 波做）：审计结论是**兜底覆盖得很宽、显式关停不够** ——
    60 条循环动画里 35 条已显式关停、**25 条只靠兜底冻结**；更关键的两个盲区：
    ① 全仓库 **0 处** `matchMedia('(prefers-reduced-motion…)')`，宠物精灵的 rAF 逐帧切换
    （`PetSprite.tsx`）与图书馆场景的相机缓动（`LibraryScene.tsx` / `PixelLibraryScene.tsx`）完全无视该偏好；
    ② `pet-main.tsx` 只加载 `pet-window.css`，**宠物窗口既没有减动效兜底也没有焦点环**。
-4. `focus-visible` 带环 21 → 参考 43：审计发现焦点环其实由 3 条全局规则兜住（`a/button/[tabindex]` 走
-   (0,3,0) 的令牌环），所以**真正的洞只有 6 处**：4 条 `select:focus { outline: none }`
-   （`styles.css` 的 `.resolution-select` / `.plugin-market__search select` / `.mcp-form-row select` /
-   `.memory-edit-field select`）+ `task-center.css` 的 select 分支 + `SlideCanvas.tsx` 的**内联**
-   `outline:'none'`（内联优先级压过所有非 `!important` 规则，连 `div[tabindex=0]` 的环也吃掉了）；
-   另有 19 条规则把输入控件的实色 2px 环降级成 22% 软环，值得一并提回 `--focus-ring-color`（75%）。
+   **另一项同源发现**：我们的 `@keyframes` **85 个 / infinite 动画 60 条**，参考实现是 **41 / 16** ——
+   "动得多"本身就不像产品：产品级界面通常是**少数几处有意义的动效**，其余保持安静。
+   所以第 40 波不只是补减动效覆盖，还要**删掉没有信息量的循环动画**（装饰性呼吸/脉冲/漂移）。
+4. `focus-visible` ✅ **第 39 波完成（同口径实测已超过参考实现）**：用同一个脚本量两边 ——
+   我们 `:focus-visible` 规则 **490** 条 vs 参考 **57** 条；带令牌环的规则 **22** vs **21**；
+   `:focus { outline: none }` 抑制 **5** 处 vs 参考 **19** 处。第 39 波的动作：
+   ① 删掉 21 处 `:focus { outline: none }` 抑制（其中 4 条是 `<select>`，而全局环规则恰好没覆盖
+   select → 这些控件的键盘焦点**完全不可见**）；② 删掉 14 处 TSX **内联** `outline: 'none'`
+   （内联优先级压过所有非 `!important` 规则，连 `[tabindex]:focus-visible` 的 (0,3,0) 环都被吃掉）；
+   ③ 全局输入控件的软环从 22% 提到令牌强度 75%；④ 会给容器裁切的场景（工作区标签栏、PPT 缩略图栏、
+   面板侧栏标签、幻灯片画布、文件树、图谱节点）改用 inset 环；⑤ 文件树条目与图谱节点此前是
+   **不可聚焦的 div**（键盘根本到不了），补 `role`/`tabIndex`/Enter-Space；
+   ⑥ 新增门禁规则 `focus-outline-none` 与 `inline-outline-none`。
 
 **B. 需要产品/品牌决策**（第 39 波起逐项落地 —— 用户已确认"A 和 B 都做，一切以追平甚至超越它为目标"）
 

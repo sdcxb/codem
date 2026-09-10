@@ -643,7 +643,6 @@ export function SlideCanvas({
         overflow: 'hidden',
         borderRadius: presentationMode ? 0 : 8,
         boxShadow: presentationMode ? 'none' : '0 4px 24px var(--shadow-color-soft)',
-        outline: 'none',
       }}
       tabIndex={0}
       onMouseDown={handleCanvasMouseDown}

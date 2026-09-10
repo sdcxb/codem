@@ -2481,7 +2481,6 @@ function NotebookSettingsSection() {
     background: 'var(--bg-secondary)',
     color: 'var(--text-primary)',
     fontSize: 'var(--fs-base)',
-    outline: 'none',
   };
 
   const labelStyle: React.CSSProperties = {

@@ -551,7 +551,7 @@ overflow: hidden;
   font-size: var(--fs-sm);
   resize: vertical;
 }
-.flashcard-textarea:focus { outline: none; border-color: var(--accent); }
+.flashcard-textarea:focus { border-color: var(--accent); }
 .flashcard-form-actions { display: flex; gap: var(--space-3); justify-content: flex-end; margin-top: var(--space-2); }
 .flashcard-toolbar { padding: var(--space-5) var(--space-8); border-bottom: 1px solid var(--border-secondary); display: flex; gap: var(--space-3); flex-wrap: wrap; }
 .flashcard-tool-btn { font-size: var(--fs-xs); padding: var(--space-2) var(--space-5); }
@@ -3747,7 +3747,6 @@ background: var(--bg-secondary);
 
 .project-form .setting-group input:focus {
   border-color: var(--accent);
-  outline: none;
 }
 
 .project-form-hint {
@@ -5946,7 +5945,6 @@ background: color-mix(in srgb, var(--accent) 15%, transparent);
 .mcp-form-row input:focus,
 .mcp-form-row select:focus {
   border-color: var(--accent);
-  outline: none;
 }
 
 .mcp-form-actions {
@@ -6213,7 +6211,6 @@ color: var(--text-on-accent);
   color: var(--text-primary);
 }
 .mcp-search-input:focus {
-  outline: none;
   border-color: var(--accent);
 }
 
@@ -6433,7 +6430,6 @@ color: var(--text-on-accent);
   color: var(--text-primary);
 }
 .mcp-config-row input:focus {
-  outline: none;
   border-color: var(--accent);
 }
 
@@ -7430,7 +7426,6 @@ color: var(--text-on-accent);
 
 .memory-search input:focus {
   border-color: var(--accent);
-  outline: none;
 }
 
 .memory-search button {
@@ -7745,7 +7740,6 @@ color: var(--text-on-accent);
 .memory-edit-field input:focus,
 .memory-edit-field select:focus,
 .memory-edit-field textarea:focus {
-  outline: none;
   border-color: var(--accent);
 }
 
@@ -8333,7 +8327,7 @@ border-bottom: 1px solid var(--accent);
   font-family: inherit;
   font-size: var(--fs-sm);
 }
-.wx-input:focus { outline: none; border-color: var(--accent); }
+.wx-input:focus { border-color: var(--accent); }
 .wx-input--full { width: 100%; }
 .wx-input--grow { flex: 1; min-width: 0; }
 .wx-input--code { flex: 1; min-width: 0; letter-spacing: 2px; }
@@ -8536,7 +8530,7 @@ border-bottom: 1px solid var(--accent);
   font-family: inherit;
   font-size: var(--fs-base);
 }
-.cicd-repo-input:focus { outline: none; border-color: var(--accent); }
+.cicd-repo-input:focus { border-color: var(--accent); }
 .cicd-load-btn {
   padding: var(--space-3) var(--space-7);
   border: none;
@@ -10068,7 +10062,7 @@ border-bottom: 1px solid var(--accent);
   font-family: inherit;
   font-size: var(--fs-base);
 }
-.usage-limit-input:focus { outline: none; border-color: var(--accent); }
+.usage-limit-input:focus { border-color: var(--accent); }
 
 .usage-progress-block { margin-top: var(--space-4); display: flex; flex-direction: column; gap: var(--space-4); }
 .usage-progress-head { display: flex; justify-content: space-between; margin-bottom: var(--space-2); font-size: var(--fs-sm); }
@@ -10518,7 +10512,7 @@ border-bottom: 1px solid var(--accent);
 .diff-custom-label { font-size: 12px; color: var(--text-secondary); margin-bottom: var(--space-4); }
 .diff-custom-input-row { margin-bottom: var(--space-4); }
 .diff-custom-textarea { width: 100%; padding: var(--space-4) var(--space-5); font-size: 13px; font-family: inherit; background: var(--bg-secondary); color: var(--text-primary); border: 1px solid var(--border-primary); border-radius: var(--radius-sm); resize: vertical; min-height: 50px; }
-.diff-custom-textarea:focus { outline: none; border-color: var(--accent); }
+.diff-custom-textarea:focus { border-color: var(--accent); }
 .diff-custom-actions { display: flex; gap: var(--space-4); }
 .diff-custom-submit-btn { padding: var(--space-3) var(--space-8); font-size: 13px; font-weight: 600; border: none; background: color-mix(in srgb, var(--info) 20%, transparent); color: var(--accent); cursor: pointer; border-radius: var(--radius-sm); transition: var(--transition-color); }
 .diff-custom-submit-btn:hover:not(:disabled) { background: color-mix(in srgb, var(--info) 35%, transparent); }
@@ -15776,7 +15770,6 @@ color: var(--accent, #7c6cf0);
 .config-form-group textarea:focus,
 .config-textarea:focus,
 .clarification-textarea:focus {
-  outline: none;
   border-color: var(--accent);
 }
 .config-form-group input::placeholder,
@@ -16244,7 +16237,6 @@ color: var(--accent, #7c6cf0);
   transition: var(--transition-color);
 }
 .github-clone-input:focus {
-  outline: none;
   border-color: var(--accent);
 }
 .github-clone-input::placeholder {
@@ -16295,7 +16287,6 @@ color: var(--accent, #7c6cf0);
   transition: var(--transition-color);
 }
 .resolution-select:focus {
-  outline: none;
   border-color: var(--accent);
 }
 
@@ -16463,7 +16454,6 @@ color: var(--accent, #7c6cf0);
 }
 .plugin-market__search input:focus,
 .plugin-market__search select:focus {
-  outline: none;
   border-color: var(--accent);
 }
 .plugin-market__list {
@@ -17688,8 +17678,11 @@ progress {
 input:focus-visible,
 textarea:focus-visible,
 [contenteditable="true"]:focus-visible {
+  /* 文本输入用**内嵌环**而不是外扩 outline：输入框贴着容器边，外扩环常被裁 */
+
   outline: none;
-  box-shadow: 0 0 0 var(--focus-ring-width) color-mix(in srgb, var(--accent) 22%, transparent);
+
+  box-shadow: 0 0 0 var(--focus-ring-width) var(--focus-ring-color);
   transition: box-shadow var(--duration-fast) var(--ease-out);
 }
 
@@ -17854,6 +17847,40 @@ textarea {
 /* 9) 活跃项：子智能体活动项里有 spinner 时整行提亮（AgentDetail） */
 .subagent-activity-item:has(.spinner) {
   color: var(--text-primary);
+}
+
+/* ==========================================================================
+ * 第 39 波：焦点可见性收口
+ *
+ * 这轮把"焦点"当独立课题查了一遍，结论值得记下来：
+ * ① 项目其实有 3 条全局焦点环规则，但 **21 条组件规则写了 `:focus { outline: none }`**，
+ *    特异度高于全局规则 —— 其中 4 条是 `<select>`，而全局规则里恰好没有覆盖 select，
+ *    于是这些控件的键盘焦点**完全不可见**；
+ * ② **14 处 TSX 内联 `outline: 'none'`**：内联优先级高于所有非 `!important` 规则，
+ *    连 `[tabindex]:focus-visible` 的 (0,3,0) 环都被吃掉（幻灯片画布的 div[tabindex=0] 就是）。
+ * 上面两类已全部删除，并加了 `focus-outline-none` / `inline-outline-none` 两条门禁规则锁住。
+ * 这里只补"容器会裁切"的场景。
+ * ========================================================================== */
+
+/* 横向滚动容器（overflow 非 visible 的那一侧会**双向**裁切）里，子元素的外扩环会被切掉，
+   所以换成 inset 环。三个容器是实测出 overflow 的：工作区标签栏、PPT 缩略图栏、面板侧栏标签。 */
+.workspace-tabs > *:focus-visible,
+.ppt-thumbnail-bar > *:focus-visible,
+.panel-sidebar-tabs > *:focus-visible,
+.focus-inset:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 var(--focus-ring-width) var(--focus-ring-color);
+}
+/* 文件树条目（第 39 波新补的键盘可达元素）：树是纵向滚动容器，外扩环同样会被裁 */
+.file-entry:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 var(--focus-ring-width) var(--focus-ring-color);
+}
+/* 图谱节点：React Flow 节点外壳自带边框与投影，inset 环与它同构 */
+.kg-node:focus-visible {
+  outline: none;
+  border-radius: var(--radius-lg);
+  box-shadow: inset 0 0 0 var(--focus-ring-width) var(--focus-ring-color);
 }
 
 /* 13. 状态属性驱动样式（第 32 波）：与 .active 类并存 —— 读屏语义与样式同源，

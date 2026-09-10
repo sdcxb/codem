@@ -116,7 +116,22 @@ function KGNodeComponent({ data, selected }: NodeProps<KGFlowNode>) {
   const radius = 18 + Math.min(data.weight * 3, 20);
 
   return (
-    <div className="kg-node">
+    // 第 39 波：图谱节点此前不可聚焦 —— 键盘用户在节点间"走不过去"（不是焦点看不见，是到不了）。
+    // 补 role/tabIndex + Enter/Space：按键时向节点元素派发一次 click，事件冒泡到 React Flow
+    // 的节点外壳后会走与鼠标完全相同的选中路径（onNodeClick → setSelectedNode），
+    // 因此不需要给节点 data 增加新字段。
+    <div
+      className="kg-node"
+      role="button"
+      tabIndex={0}
+      aria-label={data.label}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          (e.currentTarget as HTMLElement).click();
+        }
+      }}
+    >
       {/* React Flow handles for edge connections */}
       <Handle type="target" position={Position.Top} className="kg-node-handle" />
       <Handle type="source" position={Position.Bottom} className="kg-node-handle" />
