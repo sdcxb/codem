@@ -82,6 +82,10 @@
 }
 .lo-icon-btn:hover { background: var(--bg-hover); color: var(--text-primary); }
 .lo-icon-btn.is-busy { animation: lo-spin 0.7s linear infinite; }
+.lo-icon-btn.is-active {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
 
 .lo-task__error {
   display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
@@ -158,6 +162,26 @@
   min-height: 0;
   overflow: hidden;
   padding: 10px;
+}
+/* 看板子视图（宿主 IssueBoard）：同样铺满内容区，
+ * 且不允许它把内容区撑高——否则横向滚动条会被挤到可视区之外。 */
+.lo-task__content > .lo-board-host {
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.lo-board-host > * {
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+}
+/* 看板 7 列：宽面板里一屏排完（7×128 + 6×12 gap + 24 padding ≈ 1020 ≤ 内容区宽度），
+ * 窄面板仍由看板自身横向滚动兜底 */
+.lo-board-host {
+  --issue-col-min: 128px;
 }
 .lo-task__content::-webkit-scrollbar { width: 6px; height: 6px; }
 .lo-task__content::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 3px; }

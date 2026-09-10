@@ -17,7 +17,7 @@
  * 采样生命周期：挂载即采样，卸载（切视图/关面板）立即停止 —— 宿主零后台开销。
  */
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import type { LoIconName, MonitorTab } from "../types";
 import { ACTIVITY_META } from "../types";
 import { useLibraryOps } from "../store";
@@ -57,6 +57,14 @@ export function LibraryOpsBoardView() {
   const settings = useLibraryOps((s) => s.settings);
   const error = useLibraryOps((s) => s.error);
   const sampling = useLibraryOps((s) => s.sampling);
+  /**
+   * 看板子视图默认**不渲染实时事件流**：看板 7 列本来就需要横向空间，
+   * 事件流再占 200–280px 会把右侧列挤出可视区（用户反馈「看板被实时事件遮挡」）。
+   * 需要时可以点状态条的按钮临时打开。
+   */
+  const [feedOnBoard, setFeedOnBoard] = useState(false);
+  /** 实时事件流是否显示：看板视图默认收起（见上），其它视图按设置显示 */
+  const feedVisible = settings.showEventFeed && tab !== "timeline" && (tab !== "board" || feedOnBoard);
 
   useEffect(() => {
     void refresh();
@@ -109,6 +117,25 @@ export function LibraryOpsBoardView() {
           </span>
         )}
         <span className="lo-task__clock">{formatClock(snapshot?.at ?? Date.now())}</span>
+        {settings.showEventFeed && tab === "board" && (
+          <button
+            className={`lo-icon-btn${feedOnBoard ? " is-active" : ""}`}
+            onClick={() => setFeedOnBoard((v) => !v)}
+            title={
+              feedOnBoard
+                ? zh
+                  ? "收起实时事件（看板占满宽度）"
+                  : "Hide live feed (full-width board)"
+                : zh
+                  ? "显示实时事件（会占用右侧宽度）"
+                  : "Show live feed (takes right-side width)"
+            }
+            aria-label={zh ? "实时事件" : "Live feed"}
+            aria-pressed={feedOnBoard}
+          >
+            <LoIcon name="layout-panel-left" size={14} />
+          </button>
+        )}
         <button
           className={`lo-icon-btn${sampling ? " is-busy" : ""}`}
           onClick={() => void refresh()}
@@ -145,7 +172,13 @@ export function LibraryOpsBoardView() {
         </nav>
 
         <main className="lo-task__content">
-          {tab === "board" && <IssueBoard />}
+          {tab === "board" && (
+            // 包一层 flex 宿主：让宿主 IssueBoard（inline height:100% + overflow:auto）
+            // 始终正好填满内容区，横向滚动条不会被挤出可视区
+            <div className="lo-board-host">
+              <IssueBoard />
+            </div>
+          )}
           {tab === "scene" && <LibraryPanel snapshot={snapshot} zh={zh} />}
           {tab === "usage" && (
             <div className="lo-usage">
@@ -165,7 +198,7 @@ export function LibraryOpsBoardView() {
           {tab === "settings" && <SettingsPanel zh={zh} />}
         </main>
 
-        {settings.showEventFeed && tab !== "timeline" && (
+        {feedVisible && (
           <aside className="lo-task__feed">
             <div className="lo-task__feed-title">
               <LoIcon name="radio" size={12} /> {zh ? "实时事件" : "Live feed"}

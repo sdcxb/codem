@@ -15,6 +15,8 @@ import { ToolsPanel } from "../../src/plugins/library-ops/components/monitor/Too
 import { LibraryPanel } from "../../src/plugins/library-ops/components/monitor/LibraryPanel";
 import { OverviewPanel } from "../../src/plugins/library-ops/components/monitor/OverviewPanel";
 import { SceneImageCard } from "../../src/plugins/library-ops/components/monitor/SceneImageCard";
+import { IssueBoard } from "../../src/components/task-center/IssueBoard";
+import { LibraryOpsBoardView } from "../../src/plugins/library-ops/components/LibraryOpsBoardView";
 import { useLibraryOps } from "../../src/plugins/library-ops/store";
 import type { LibraryActor, LibrarySnapshot } from "../../src/plugins/library-ops/types";
 import { generateLook } from "../../src/plugins/library-ops/data/characters";
@@ -22,6 +24,9 @@ import { resolveZoneId } from "../../src/plugins/library-ops/data/library-map";
 import { advanceScene, createSceneState, stepActorMovement } from "../../src/plugins/library-ops/core/scene-engine";
 import { advancePixelScene, createPixelSceneState, stepPixelMovement } from "../../src/plugins/library-ops/core/pixel-scene";
 import "../../src/plugins/library-ops/styles/library-ops.css";
+// 载入宿主全局样式（reset + 皮肤令牌）：预览必须与真实应用同一套 box-sizing / 令牌，
+// 否则版面审计的几何值会与线上不一致（例如 height:100% 的盒模型差异）。
+import "../../src/styles.css";
 
 const NOW = Date.now();
 
@@ -182,10 +187,10 @@ function settledPixelScene() {
 const INITIAL_PIXEL_SCENE = settledPixelScene();
 
 function Preview() {
-  // ?audit=1 → 只渲染「看板页签」里的插件视图（按宿主面板尺寸铺满视口），
-  // 供 audit-layout.mjs 在不同窗口宽度下逐个视图检查裁切/重叠。
-  // 注意：这里不渲染 IssueBoard（宿主看板，依赖 node 内建模块，浏览器预览构建不了），
-  // 只审计插件自己的视图；宿主看板的布局由任务管理自身的测试覆盖。
+  // ?audit=1 → 渲染**真实的** LibraryOpsBoardView（含左侧子导航 + 右侧实时事件流 + 各子视图），
+  // 按宿主面板尺寸铺满视口；audit-layout.mjs 通过 store 切子视图后逐个检查裁切/重叠。
+  // 宿主 IssueBoard 由 issue-stub.ts 提供数据、core/store 由 store-stub.ts 替换，
+  // 因此「看板内容与实时事件流互相遮挡」这类问题也能被审计到。
   const auditMode = typeof location !== "undefined" && location.search.includes("audit");
   if (auditMode) {
     return (
@@ -194,13 +199,7 @@ function Preview() {
         style={{ padding: 0, gap: 0, width: "min(1180px, 96vw)", height: "min(720px, 88vh)", margin: "0 auto" }}
       >
         <div style={{ position: "relative", height: "100%", border: "1px solid var(--border-primary)", borderRadius: 12, overflow: "hidden" }}>
-          <div className="lo-task" data-lo-view="task-center-board">
-            <div className="lo-task__body">
-              <main className="lo-task__content">
-                <AuditedView />
-              </main>
-            </div>
-          </div>
+          <LibraryOpsBoardView />
         </div>
       </div>
     );
@@ -268,6 +267,8 @@ function Preview() {
 /** 审计模式下按 store.tab 渲染对应的插件视图 */
 function AuditedView() {
   const tab = useLibraryOps((s) => s.tab);
+  // 看板子视图 = 宿主 IssueBoard 真组件（IssueManager 由 issue-stub.ts 替换）
+  if (tab === "board") return <IssueBoard />;
   if (tab === "scene") return <LibraryPanel snapshot={snapshot} zh />;
   if (tab === "usage")
     return (
@@ -282,6 +283,19 @@ function AuditedView() {
   if (tab === "settings") return <SettingsPanel zh />;
   return <div className="lo-empty">board</div>;
 }
+
+/**
+ * 视觉预览：`?audit=1&view=board` 会停在指定子视图（供人工截图/目视检查），
+ * 不带 view 时保持 audit-layout.mjs 的自动轮转。
+ */
+const VIEW_PARAM = (() => {
+  try {
+    return new URLSearchParams(location.search).get("view");
+  } catch {
+    return null;
+  }
+})();
+if (VIEW_PARAM) useLibraryOps.getState().setTab(VIEW_PARAM as never);
 
 createRoot(document.getElementById("root")!).render(<Preview />);
 
@@ -316,6 +330,31 @@ if (typeof location !== "undefined" && location.search.includes("audit")) {
     if (!root) return view;
     const sel = (el: Element) =>
       `${el.tagName.toLowerCase()}.${(el.className || "").toString().split(" ").filter(Boolean).slice(0, 2).join(".")}`;
+    // 版面探针：把关键容器/子视图的矩形与溢出量记下来（定位「被遮挡」类问题）
+    (view as Record<string, unknown>).probe = [
+      ".lo-task__body",
+      ".lo-task__rail",
+      ".lo-task__content",
+      ".lo-task__feed",
+      ".lo-task__content > *",
+      ".lo-board-host > *",
+    ].map((s) => {
+      const el = document.querySelector<HTMLElement>(s);
+      if (!el) return { sel: s, missing: true };
+      const r = el.getBoundingClientRect();
+      const cs = getComputedStyle(el);
+      return {
+        sel: s,
+        x: Math.round(r.left),
+        y: Math.round(r.top),
+        w: Math.round(r.width),
+        h: Math.round(r.height),
+        sw: el.scrollWidth,
+        sh: el.scrollHeight,
+        ox: cs.overflowX,
+        oy: cs.overflowY,
+      };
+    });
     const visible = (el: HTMLElement) => {
       const s = getComputedStyle(el);
       if (s.display === "none" || s.visibility === "hidden" || s.opacity === "0") return false;
@@ -369,9 +408,11 @@ if (typeof location !== "undefined" && location.search.includes("audit")) {
     return view;
   };
 
-  const SUB_VIEWS = ["scene", "usage", "tools", "errors", "timeline", "settings"] as const;
+  const SUB_VIEWS = ["board", "scene", "usage", "tools", "errors", "timeline", "settings"] as const;
 
   window.setTimeout(async () => {
+    // ?view=xxx → 停在指定视图，不做自动轮转（供人工截图/目视检查）
+    if (VIEW_PARAM) return;
     const { useLibraryOps } = await import("../../src/plugins/library-ops/store");
     const report: { viewport: string; views: unknown[] } = {
       viewport: `${window.innerWidth}x${window.innerHeight}`,

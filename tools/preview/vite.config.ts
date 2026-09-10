@@ -16,6 +16,14 @@ export default defineConfig({
       enforce: "pre",
       resolveId(source: string) {
         if (source.includes("telemetry-adapter")) return resolve(__dirname, "adapter-stub.ts");
+        // 宿主 IssueManager → 桩：让预览能渲染真实 IssueBoard（看板子视图）做版面审计
+        if (/core[/\\]issue[/\\]issue$/.test(source) || /core[/\\]issue[/\\]issue\.ts$/.test(source)) {
+          return resolve(__dirname, "issue-stub.ts");
+        }
+        // 宿主项目 store → 桩：真 store 会拉进 sql.js / node 内建模块
+        if (/core[/\\]store$/.test(source) || /core[/\\]store\.ts$/.test(source)) {
+          return resolve(__dirname, "store-stub.ts");
+        }
         return null;
       },
     },

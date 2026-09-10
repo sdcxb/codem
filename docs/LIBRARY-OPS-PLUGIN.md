@@ -406,6 +406,34 @@ lobster-pet 的 `DetailPanel` 是「单屏卡片网格」：
 「面板打开期间跟随页签请求」「无项目不跨项目串数据」「收件箱点击穿透到 Issue 详情」
 「single 槽位最高优先级胜出」）。
 
+### 9.8 看板子视图与实时事件流的冲突（v1.14.1）
+
+**现象**：v1.14.0 上线后用户反馈「看板里的看板子视图内容被实时事件遮挡」。
+
+**原因**：`.lo-task__body` 是三栏 flex（导航 + 内容 + 事件流）。事件流固定占
+`clamp(200px, 24cqw, 280px)`，看板 7 列的最小宽度是 `7×180 + 6×12 + 24 = 1344px`，
+内容区只剩 ~800px → 右侧 3 列被挤出可视区；更糟的是宿主 `IssueBoard` 的
+`height: 100%` 在内容区里会多出 24px（盒模型差异），把它的横向滚动条推到折叠线以下，
+用户既看不到被切掉的列，也看不到滚动条 —— 观感就是「被事件流盖住了」。
+
+**处理**：
+
+| 关注点 | 做法 |
+| --- | --- |
+| 看板让位 | 看板子视图**默认不渲染**事件流（`feedVisible = showEventFeed && tab !== "timeline" && (tab !== "board" || feedOnBoard)`）；状态条新增「实时事件」开关（`layout-panel-left`，`aria-pressed`）供临时打开 |
+| 铺满内容区 | 插件侧新增 `.lo-board-host` 包裹宿主 `IssueBoard`（`flex: 1 1 auto; min-height: 0`），看板正好等于内容区高度，横向滚动条落在可视区内 |
+| 7 列一屏排完 | 宿主列最小宽度改走 CSS 变量 `--issue-col-min`（默认 180px 不变，保持宿主回退时的可读性），插件在看板宿主上收紧到 128px：宽面板内容区 1089px 可放下 `7×128 + 6×12 + 24 ≈ 1020px`，`scrollWidth == clientWidth` |
+| 其它视图 | 不变：场景/用量/工具/错误/设置仍按设置显示事件流（内容宽度 809px + 事件流 280px） |
+
+**审计为什么没抓到（已修）**：旧 `tools/preview` 只渲染插件的子视图容器
+（`<div class="lo-task"><div class="lo-task__body"><main class="lo-task__content">`），
+既没有导航栏也没有事件流，而且根本不渲染宿主看板（`AuditedView` 对 `board` 返回占位）。
+现在预览改为渲染**真实的** `LibraryOpsBoardView`，并在审计模式下把宿主 `IssueBoard`
+真组件一起测（`issue-stub.ts` 提供固定 Issue 数据、`store-stub.ts` 顶掉会拉进 sql.js 的项目 store），
+同时加载宿主全局样式 `src/styles.css`（`* { box-sizing: border-box }` + 皮肤令牌）以保证几何一致。
+子视图审计 6 → 7（含「看板」），并新增 `tools/preview/probe-layout.mjs` 打印
+body/导航/内容区/事件流/看板宿主的矩形与 `scrollWidth`，用于定位「被遮挡 / 被裁切」类问题。
+
 ---
 
 ## 十、已知边界与后续可做

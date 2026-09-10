@@ -108,7 +108,9 @@ export function IssueBoard() {
               onDrop={(e) => handleDrop(e, col.status)}
               style={{
                 flex: "1 1 0",
-                minWidth: "180px",
+                // 列最小宽度走变量：宿主里默认 180px；插件把看板嵌进「任务管理 → 看板」
+                // 时可以在 .lo-board-host 上收紧，让 7 列在宽面板里一屏排完
+                minWidth: "var(--issue-col-min, 180px)",
                 display: "flex",
                 flexDirection: "column",
                 gap: "8px",

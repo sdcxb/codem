@@ -42,6 +42,8 @@
 >
 > **v1.6.0 更新**：SubagentRuntime 架构重构 + 技能市场 Trees API 改造 + GitHub Token 修复 — ①**SubagentRuntime 全面重构（对标 DSH）**：移除旧 `SubagentManager`（-642 行）和 `LLMSubagentSpawner`（-338 行），新增 DSH 风格 `SubagentRuntime` 持续后台子智能体运行时 + `InProcessSpawnProvider`，4 个新工具（`subagent`/`send_message`/`interrupt_agent`/`list_agents`），`ToolRegistry.createScope()` 隔离工具作用域，系统提示词对标 DSH 重写为后台默认运行 + 自动通知模式 ②**技能市场 Trees API 改造（移植 vercel-labs/skills 官方 CLI 逻辑）**：Contents API 逐层遍历（O(N×M) 次调用）→ Trees API 一次性获取全量文件树（1 次调用），在内存中搜索 SKILL.md，支持 30+ Agent 目录约定前缀（Claude/Cline/Goose/Codex 等），修复 `dreambigou/eli5` 和 `cloudflare/cloudflare-docs`（15296 文件大仓库）等安装失败问题 ③**GitHub Token 配置链路修复**：统一 Token 读取链路 ④i18n-templates 新增子智能体协作模板（+138 行）⑤42 文件修改（+1542/-1562 行），`tsc --noEmit` 零错误。
 >
+> **v1.14.1 更新（修复：看板子视图被「实时事件」挤占/遮挡，2026-09-10）**：v1.14.0 把图书馆并进「看板」页签后，右侧「实时事件」事件流会一直占着 200–280px，把看板的 7 列挤出可视区。①**看板默认不收事件流**：看板子视图不再渲染右侧事件流（状态条新增「实时事件」开关，需要时可临时打开），其它监控视图（场景/用量/工具/错误/设置）行为不变。②**看板铺满内容区**：新增 `.lo-board-host` 包裹宿主 `IssueBoard`（`flex:1 1 auto` + `min-height:0`），看板正好填满内容区高度，横向滚动条不再落在折叠线以下；同时宿主列最小宽度改走变量 `--issue-col-min`（默认 180px），插件在看板宿主里收紧到 128px —— 宽面板下 7 列一屏排完、不再横向滚动。③**审计工具补齐这次的漏检**：`tools/preview` 改为渲染**真实**的 `LibraryOpsBoardView`（含导航栏 + 事件流），并在审计模式下把**宿主 `IssueBoard` 真组件**纳入检查（新增 `issue-stub.ts`/`store-stub.ts` 避免 node 内建依赖进浏览器构建）；预览同时加载宿主全局样式（`src/styles.css`）以对齐 `box-sizing`；子视图审计从 6 个增至 **7 个（含看板）**；新增 `tools/preview/probe-layout.mjs` 打印关键容器矩形与溢出量，支持 `?audit=1&view=<视图>` 目视检查。全量 vitest 196 文件 / 4534 用例通过 + tsc 零错误 + 版面审计 7 宽度 × 7 视图全 0 + DOM 审计 0 issue。
+>
 > **v1.14.0 更新（图书馆并入「看板」+ 场景图可上传/自动对位 + 界面自适应与图标统一，2026-09-10）**：把「图书馆」从**独立面板**收敛成任务管理里的一部分，并解决换图与版面两件麻烦事。①**功能并入「看板」**：图书馆场景的初衷就是「谁在做什么、在哪做」的可视化看板，与宿主「看板」页签（Issues 状态列）是同一类信息 —— 现在合成一个页签：**看板（宿主 Issues）为默认视图**，插件在其上追加 场景 / 用量（合并原「成本」）/ 工具 / 错误 / 时间线 / 设置 六个视图；与任务管理重复的「总览 / 团队 / 会话」入口全部去掉（团队看任务管理「团队」、会话看「委派 / 子智能体」+ 场景花名册）。②**场景图可上传替换**：设置 →「场景图片」可切换内置像素画 / 内置 AI 场景图，或**直接把图拖到场景上**上传（存本机 IndexedDB，不写宿主数据）；`scripts/build-library-ops-scene-preset.mjs` 可把任意图做成内置预设。③**自动对位（不用手工拖了）**：上传后自动跑一次像素统计拟合（地面掩码 vs 内置房间掩码的 IoU 粗到细搜索），给出缩放/位移并显示置信度；不满意再点「手动对位编辑器」微调（房间框/走道节点拖拽，按图分别保存）。④**界面自适应**：图书馆视图改用**容器查询**（按面板实际宽度分档，而不是视口），固定死值全部换成 `minmax()/clamp()`；新增 `tools/preview/audit-layout.mjs` 在 7 种窗口宽度下逐视图检查裁切/重叠（全部 0）。⑤**图标与样式统一**：emoji 全部换成项目图标库 **lucide-react**（`components/icons.tsx`，49 个语义名），卡片/标签/圆角/底色对齐宿主 `.card`/`.badge` 语言。⑥**修复**：dev 模式 `process is not defined` 白屏（`src/stubs/process-polyfill.ts`）、Vite 监听 `*.tmpdir` 崩溃、子视图被强行塞进固定高度导致挤压/重叠。⑦**任务管理全量审计（两轮共 29 项）**：「子智能体」列表恒空（P0，render 里 `require()`）、看板缺 `blocked`/`cancelled` 列与滚动、委派统计与列表口径不一致、自动化「停止所有」无法恢复、cron 步长为零导致后续触发器失效、收件箱点击不跳转、**无项目时跨项目串数据**（UI 与 LLM 工具两条路径）、非法 status 让整个应用崩溃等修复 + 26 个回归用例；并把「概览 / 用量 / 时间线 / 场景」等重叠功能收敛成单一入口。全量 vitest 196 文件 / 4533 用例通过（+15 跳过）+ tsc 零错误 + DOM 审计 0 issue + 版面审计 7/7 通过。
 >
 > **v1.13.0 更新（图书馆插件集成手绘像素美术 + 监控面板对标 lobster-pet，2026-09-10）**：把**美观提到第一位**——上一版图书馆场景是程序化矢量绘制，质感不如参考项目；本版**直接集成参考项目的手绘像素美术资源，场景直接用参考项目的场景**。①**像素图书馆场景（默认）**：使用 [ClawLibrary](https://github.com/shengyu-meng/ClawLibrary) 的 `scene-floor` + `scene-objects`（2752×1536 手绘像素画）+ `walkGraph`（20 节点）+ 12 个资源分区坐标；角色用其 **Capy-Claw / Cat-Claw** 精灵表（128×128 帧 @6fps，各 12 套动作），按角色 id 稳定分配变体；11 种工作状态映射到上游动作（行走→walk、思考→idea、阅读→read、执行→work、等待授权→rest、完成→coffee、出错→error、休眠→sleep…）；相机可缩放/平移/定位；资源缺失可降级到等距矢量场景。②**资源管道与许可合规**：新增 `scripts/sync-library-ops-assets.mjs`（PNG→WebP **30.1MB→5.1MB** + 每源 `SOURCE.md` + 复制上游 LICENSE）；新增 [docs/ASSET-LICENSES.md](docs/ASSET-LICENSES.md) + `THIRD_PARTY_NOTICES.md` 条目 + 插件设置页「美术资源许可」卡；**刻意排除** LimeZu 派生素材（其许可禁止再分发）；**像素美术仅限非商业**，商用请切「等距矢量」或替换资源。③**监控面板对标 lobster-pet 重排**：总览页改为其 `DetailPanel` 单屏卡片网格（状态卡 + 最近会话卡网格 + 活动概览 / 左栈团队·任务·数据源 + **图书馆场景大卡** / 6 张紧凑 KPI 卡），**场景从「一个页签」变成「监控界面里的一张卡」**。④**修复**：两套场景引擎共享 store 槽位导致像素场景态喂给等距引擎崩溃（改为双槽位）；上游 4 个房间 workZone 锚点越界（按边距夹回房间内）。全量 vitest 186 文件 / 4432 用例通过 + tsc 零错误 + headless DOM 审计通过。
@@ -368,6 +370,16 @@ npm run tauri:build
 - 两种模式均使用内置 LLM 引擎直连 API，无需依赖外部进程
 
 ## 更新日志
+
+### 2026-09-10（v1.14.1）
+
+> 修复：看板子视图被「实时事件」挤占/遮挡。详细见 `CHANGELOG.md`。
+
+- 「看板」子视图默认不再渲染右侧实时事件流（状态条新增开关，可临时打开）；其它监控视图不变
+- 新增 `.lo-board-host` 包裹宿主 `IssueBoard`，看板铺满内容区、横向滚动条可达；
+  宿主列最小宽度改走 `--issue-col-min` 变量（插件内 128px）→ 宽面板 7 列一屏排完
+- 版面审计补齐漏检：预览渲染真实 `LibraryOpsBoardView` + 宿主 `IssueBoard`（新增两个桩）、
+  加载宿主全局样式、子视图审计 6 → 7 个（含看板）、新增 `tools/preview/probe-layout.mjs` 探针
 
 ### 2026-09-10（v1.14.0）
 

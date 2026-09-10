@@ -199,6 +199,37 @@ describe("LO-UI 监控面板", () => {
     localStorage.clear();
   });
 
+  it("LO-UI-13: 看板子视图默认不渲染实时事件流（否则 7 列被挤到可视区外），可手动打开", async () => {
+    await mountTaskView();
+    const { useLibraryOps } = await import("../plugins/library-ops/store");
+
+    // 默认设置 showEventFeed = true，但看板视图必须让位给 7 列
+    expect(useLibraryOps.getState().settings.showEventFeed).toBe(true);
+    expect(document.querySelector(".lo-task__feed")).toBeFalsy();
+    // 看板视图铺满内容区（.lo-board-host 包裹宿主 IssueBoard）
+    const host = document.querySelector(".lo-task__content > .lo-board-host");
+    expect(host).toBeTruthy();
+    expect(host!.querySelector(".lo-task__feed")).toBeFalsy();
+
+    // 状态条上的开关：打开后事件流出现，再点收起
+    const toggle = [...document.querySelectorAll(".lo-icon-btn")].find(
+      (b) => b.getAttribute("aria-label") === "实时事件" || b.getAttribute("aria-label") === "Live feed",
+    );
+    expect(toggle, "看板视图应提供实时事件开关").toBeTruthy();
+    await act(async () => {
+      fireEvent.click(toggle!);
+    });
+    expect(document.querySelector(".lo-task__feed")).toBeTruthy();
+    await act(async () => {
+      fireEvent.click(toggle!);
+    });
+    expect(document.querySelector(".lo-task__feed")).toBeFalsy();
+
+    // 其它监控视图仍然按设置显示事件流
+    await clickSubNav("用量");
+    expect(document.querySelector(".lo-task__feed")).toBeTruthy();
+  });
+
   it("LO-UI-3: 看板视图渲染状态条 + 7 个视图导航 + 默认看板视图", async () => {
     await mountTaskView();
     expect(document.querySelector(".lo-task")).toBeTruthy();
