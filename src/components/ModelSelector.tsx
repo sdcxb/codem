@@ -144,7 +144,7 @@ export function ModelSelector({ model, models, onModelChange, locked = false }: 
             }}
             onClick={cycleEffort}
           >
-            <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)' }}>
+            <span className="hint-sm">
               {zh ? '推理强度' : 'Reasoning'}
             </span>
             <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--accent)' }}>

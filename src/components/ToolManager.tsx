@@ -291,7 +291,7 @@ export function ToolManager({ onClose }: ToolManagerProps) {
       </div>
 
       <div style={{ padding: "8px 16px", fontSize: 'var(--fs-sm)', color: "var(--text-muted)", borderTop: "1px solid var(--border-primary)" }}>
-        <Lightbulb size={11} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 4 }} />禁用的工具不会出现在 LLM 的可用工具列表中。内置工具禁用后可能影响核心功能。
+        <Lightbulb size={11} className="icon-inline-gap" />禁用的工具不会出现在 LLM 的可用工具列表中。内置工具禁用后可能影响核心功能。
       </div>
     </div>
   );

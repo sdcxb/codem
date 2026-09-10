@@ -506,7 +506,7 @@ setStepTooltipLocked(false);
               <div style={{ padding: "4px 12px", display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer", position: "relative" }}
                 onClick={(e) => { e.stopPropagation(); setShowEffortPicker(!showEffortPicker); }}
               >
-                <span style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)" }}>{lang === "zh" ? "推理强度" : "Reasoning Effort"}</span>
+                <span className="hint-sm">{lang === "zh" ? "推理强度" : "Reasoning Effort"}</span>
                 <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, color: "var(--accent)" }}>
                   {(() => {
                     const effort = getSettingJSON<string>("codem-reasoning-effort", "high");

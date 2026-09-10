@@ -292,7 +292,7 @@ export function VoiceSettingsPanel() {
           {isSpeaking ? <Square size={14} fill="currentColor" /> : <Play size={14} />}
           {isSpeaking ? S.voice.stopReading[lang] : S.voice.testVoice[lang]}
         </button>
-        <span style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)" }}>
+        <span className="hint-sm">
           {voices.length > 0
             ? (zh ? `${voices.length} 个可用语音` : `${voices.length} voices available`)
             : (zh ? "正在加载语音..." : "Loading voices...")

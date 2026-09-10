@@ -115,6 +115,8 @@ frakio-work 的两条关键惯例（我们同步遵守）：
 | 类名 | 用途 |
 | --- | --- |
 | `.mono` | 等宽文本（ID / 路径 / 时间戳） |
+| `.icon-inline` / `.icon-inline-gap` | 行内图标与文字同基线（带/不带 4px 右间距） |
+| `.hint-sm` | 次要说明文字（`--fs-sm` + `--text-muted`） |
 | `.panel-section-title` | 面板内小节标题（`--fs-sm` + 600 + `--text-secondary`） |
 | `.panel-empty` | 面板内空态块（虚边 + `--bg-tertiary` + 居中） |
 | `.panel-btn` / `--danger` / `--sm` | 面板内次级按钮；危险态换 `--error` 边与字；`--sm` 用于浮层里的迷你按钮 |
@@ -190,6 +192,8 @@ node tools/ui-audit/codemod-icon-scale.mjs [--write]  # 图标工具类 → .ico
 
 | **第 18 波** | 2026-09-10 | **0** ✅ | **16** | **内联样式收口（微信桥设置）**：`WechatSettings`（141 → 0）改 `.wx-*` 具名类，连二维码容器（190×190 白底 + 内边距 + 居中）也收成类。**又修掉一处真实 bug**：该组件原来用的边框色是 `var(--border-color)` —— 这个令牌在项目里**根本不存在**，所有边框一直在吃 fallback 值；统一改回 `--border-primary` 后边框才真正跟随主题 |
 
+| **第 19 波** | 2026-09-10 | **0** ✅ | **14** | **内联样式收口 + 重复形态变成工具**：① 新增 `codemod-inline-to-class.mjs`：把**完全相同的**内联样式对象批量换成共享类，首轮扫出 64 处 —— `display:inline + verticalAlign:middle`（31）、`fs-sm + text-muted`（27）、带 4px 间距的图标（6），这些形态此前在每个文件里手写一遍；为此补 `.icon-inline` / `.icon-inline-gap` / `.hint-sm` 三个共享类（写进 §3 闭集表）。② `AgentManager`（170 → 0）与 `CicdPanel`（176 → 0）收口；`CicdPanel` 的状态色表从写死的十六进制改成语义令牌字符串（`success: "var(--success)"` …），徽标颜色从此跟着主题走；又发现两个"从没定义过"的类名（`.cicd-panel-inline`）。③ codemod 第一版曾把整行缩进压成一个空格（用了全局空白压缩），已修成"只清理被删属性留下的空白"，并把超范围替换改为逐行全局替换 |
+
 ### 全项目现场事实（来自 UI 交互界面清单，作为工作队列）
 - 挂载层：64 个 `SlotBridge` 渲染点 + 54 处 `slots.register` + 44 处 `createPortal`（另 51 个 SlotBridge 在 `App.tsx`）。
 - 浮层：205 个 overlay 类名实例散在 60 个 tsx 里，约 35 种外壳；`var(--z-*)` 只被用了 9 次，
@@ -223,9 +227,9 @@ node tools/ui-audit/codemod-icon-scale.mjs [--write]  # 图标工具类 → .ico
 | `modal-shell-bespoke` | error | 15 | **0** ✅ |
 | `spacing-offgrid` | warn | 13 | **0** ✅ |
 | `css-class-undefined` | warn | — | **0** ✅（第 10 波清零；审计器已扩面到模板字面量） |
-| `inline-style-dense` | warn | 58 | 16（唯一剩下的 warn；第 14 波先修正了度量口径 50 → 25，再累计收口 9 个文件） |
+| `inline-style-dense` | warn | 58 | 14（唯一剩下的 warn；第 14 波先修正了度量口径 50 → 25，再累计收口 11 个文件） |
 | **error 合计** | | **533** | **0** ✅ |
-| **warn 合计** | | 64 | **16** |
+| **warn 合计** | | 64 | **14** |
 
 > 注：`color-hardcoded-tsx` 中途曾报 53 → 9 —— 不是"改多了"，而是审计器修掉了假阳性（见第 11 波说明）。
 > `fs-hardcoded` 第 12 波一度报 590 —— 也不是"变差了"，而是审计器**首次开始扫 CSS 侧**（此前 591 处写死的字号
@@ -256,7 +260,8 @@ node tools/ui-audit/codemod-icon-scale.mjs [--write]  # 图标工具类 → .ico
 15. **第 15 波**：新建 `src/styles/task-center.css`，任务管理面板三个组件（SquadsTab 176、IssueDetailPanel 133、AutomationTab 134）内联样式全部收口并抽出 `tc-*` 通用族；顺带修掉 `var(--accent)22` 这类无效 CSS（详见 §5 表）。
 16. **第 16 波**：设置类面板 `LayeredSettingsPanel`（141 → 0）收口（详见 §5 表）。
 17. **第 17 波**：`UsageStats`（128 → 0）、`GitEnvSettings`（172 → 0）收口；TSX 侧色值判定改为逐字面量，暴露并修掉 18 处藏在条件分支里的硬编码色（详见 §5 表）。
-18. **第 18 波（本轮）**：`WechatSettings`（141 → 0）收口，顺带修掉 `var(--border-color)` 这个不存在的令牌（详见 §5 表）。
+18. **第 18 波**：`WechatSettings`（141 → 0）收口，顺带修掉 `var(--border-color)` 这个不存在的令牌（详见 §5 表）。
+19. **第 19 波（本轮）**：新增 `codemod-inline-to-class.mjs`（重复内联形态 → 共享类，首轮 64 处）；`AgentManager`（170 → 0）与 `CicdPanel`（176 → 0）收口（详见 §5 表）。
 
 ### 下一轮的工作队列（按性价比排序）
 

@@ -105,7 +105,7 @@ export function SelectionTooltip({ containerRef, onQuote }: SelectionTooltipProp
       onMouseDown={(e) => e.preventDefault()} // Prevent losing selection
     >
       <button className="selection-tooltip-btn" onClick={handleQuote}>
-        <MessageSquare size={12} style={{ display: 'inline', verticalAlign: 'middle' }} /> {lang === "zh" ? "引用提问" : "Quote & Ask"}
+        <MessageSquare size={12} className="icon-inline" /> {lang === "zh" ? "引用提问" : "Quote & Ask"}
       </button>
     </div>,
     containerRef.current || document.body

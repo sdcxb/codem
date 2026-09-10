@@ -168,12 +168,12 @@ const displayName = name || (zh ? "子智能体" : "Sub-agent");
 if (status === "init") return null;
 
 if (status === "completed") {
-    return <span className="subagent-status done"><CheckCircle size={12} style={{ display: "inline", verticalAlign: "middle" }} /> {displayName} {zh ? "完成" : "completed"}{summary ? `: ${summary}` : ""}</span>;
+    return <span className="subagent-status done icon-inline"><CheckCircle size={12} /> {displayName} {zh ? "完成" : "completed"}{summary ? `: ${summary}` : ""}</span>;
   }
   if (status === "failed") {
-    return <span className="subagent-status failed"><XCircle size={12} style={{ display: "inline", verticalAlign: "middle" }} /> {displayName} {zh ? "失败" : "failed"}</span>;
+    return <span className="subagent-status failed icon-inline"><XCircle size={12} /> {displayName} {zh ? "失败" : "failed"}</span>;
   }
-  return <span className="subagent-status running"><Clock size={12} style={{ display: "inline", verticalAlign: "middle" }} /> {displayName} {zh ? "运行中..." : "running..."}</span>;
+  return <span className="subagent-status running icon-inline"><Clock size={12} /> {displayName} {zh ? "运行中..." : "running..."}</span>;
 }
 
 // D2-1: 不在模块加载时获取服务 — 改为延迟获取，确保 Provider ACTIVE 后才消费
@@ -676,7 +676,7 @@ setTimeout(() => setCopied(false), 2000);
                   e.currentTarget.style.color = 'var(--text-secondary, #a0a0a8)';
                 }}
               >
-                <BookOpen size={14} style={{ display: "inline", verticalAlign: "middle" }} /> {src.sourceName}
+                <BookOpen size={14} className="icon-inline" /> {src.sourceName}
               </button>
             ))}
           </div>

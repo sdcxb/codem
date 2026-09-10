@@ -1458,12 +1458,12 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
                   {refreshingModels[provider.id] ? "获取中..." : "刷新模型列表"}
                 </button>
                 {refreshStatus[provider.id] && (
-                  <span style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)" }}>
+                  <span className="hint-sm">
                     {refreshStatus[provider.id]}
                   </span>
                 )}
                 {dynamicModels[provider.id] && dynamicModels[provider.id].length > 0 && !refreshStatus[provider.id] && (
-                  <span style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)" }}>
+                  <span className="hint-sm">
                     ✓ {dynamicModels[provider.id].length} 个动态模型
                   </span>
                 )}
@@ -1649,7 +1649,7 @@ marginTop: 4,
           <>
           {/* F4: Multimodal Settings Entry */}
           <div className="setting-group">
-            <label><Palette size={14} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 4 }} />{lang === "zh" ? "多模态能力" : "Multimodal"}</label>
+            <label><Palette size={14} className="icon-inline-gap" />{lang === "zh" ? "多模态能力" : "Multimodal"}</label>
             <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-secondary)", marginBottom: 8 }}>
               {lang === "zh"
                 ? "配置 Embedding 语义搜索、TTS 语音合成、ImageGen 图像生成。"
@@ -1671,8 +1671,8 @@ marginTop: 4,
                 justifyContent: "space-between",
               }}
             >
-              <span>{lang === "zh" ? <><Palette size={12} style={{ display: 'inline', verticalAlign: 'middle' }} /> 多模态设置</> : <><Palette size={12} style={{ display: 'inline', verticalAlign: 'middle' }} /> Multimodal Settings</>}</span>
-              <span style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)" }}>{showMultimodal ? '▼' : '▶'}</span>
+              <span>{lang === "zh" ? <><Palette size={12} className="icon-inline" /> 多模态设置</> : <><Palette size={12} className="icon-inline" /> Multimodal Settings</>}</span>
+              <span className="hint-sm">{showMultimodal ? '▼' : '▶'}</span>
             </button>
           </div>
 
@@ -1694,7 +1694,7 @@ marginTop: 4,
   <div style={{ fontSize: 'var(--fs-md)', color: "var(--text-secondary)", marginBottom: 12 }}>
     {lang === "zh" ? "自动化任务已移至任务管理面板。" : "Automation tasks have moved to Task Center."}
   </div>
-  <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)" }}>
+  <div className="hint-sm">
     {lang === "zh" ? "请在侧边栏点击“任务管理” → “自动化” Tab。" : "Click \"Task Center\" in the sidebar → \"Automation\" tab."}
   </div>
 </div>
@@ -1780,15 +1780,15 @@ marginTop: 4,
 {/* Advanced Settings with sub-tabs */}
 <div style={{ display: "flex", gap: 4, marginBottom: 12, flexWrap: "wrap" }}>
   {[
-    { id: "agents", label: lang === "zh" ? "智能体" : "Agents", icon: <Bot size={12} style={{ display: 'inline', verticalAlign: 'middle' }} /> },
-    { id: "heartbeat", label: lang === "zh" ? "心跳" : "Heartbeat", icon: <HeartPulse size={12} style={{ display: 'inline', verticalAlign: 'middle' }} /> },
-    { id: "retry", label: lang === "zh" ? "重试" : "Retry", icon: <RotateCcw size={12} style={{ display: 'inline', verticalAlign: 'middle' }} /> },
-    { id: "prompt", label: lang === "zh" ? "提示词" : "Prompt", icon: <FileText size={12} style={{ display: 'inline', verticalAlign: 'middle' }} /> },
-    { id: "settings", label: lang === "zh" ? "分层设置" : "Layered", icon: <Layers size={12} style={{ display: 'inline', verticalAlign: 'middle' }} /> },
-    { id: "correction", label: lang === "zh" ? "纠偏模型" : "Correction", icon: <SearchIcon size={12} style={{ display: 'inline', verticalAlign: 'middle' }} /> },
-    { id: "profiles", label: "Agent Profile", icon: <User size={12} style={{ display: 'inline', verticalAlign: 'middle' }} /> },
-    { id: "transcript", label: lang === "zh" ? "缓存统计" : "Cache", icon: <MessageSquare size={12} style={{ display: 'inline', verticalAlign: 'middle' }} /> },
-    { id: "recovery", label: lang === "zh" ? "恢复" : "Recovery", icon: <RotateCcw size={12} style={{ display: 'inline', verticalAlign: 'middle' }} /> },
+    { id: "agents", label: lang === "zh" ? "智能体" : "Agents", icon: <Bot size={12} className="icon-inline" /> },
+    { id: "heartbeat", label: lang === "zh" ? "心跳" : "Heartbeat", icon: <HeartPulse size={12} className="icon-inline" /> },
+    { id: "retry", label: lang === "zh" ? "重试" : "Retry", icon: <RotateCcw size={12} className="icon-inline" /> },
+    { id: "prompt", label: lang === "zh" ? "提示词" : "Prompt", icon: <FileText size={12} className="icon-inline" /> },
+    { id: "settings", label: lang === "zh" ? "分层设置" : "Layered", icon: <Layers size={12} className="icon-inline" /> },
+    { id: "correction", label: lang === "zh" ? "纠偏模型" : "Correction", icon: <SearchIcon size={12} className="icon-inline" /> },
+    { id: "profiles", label: "Agent Profile", icon: <User size={12} className="icon-inline" /> },
+    { id: "transcript", label: lang === "zh" ? "缓存统计" : "Cache", icon: <MessageSquare size={12} className="icon-inline" /> },
+    { id: "recovery", label: lang === "zh" ? "恢复" : "Recovery", icon: <RotateCcw size={12} className="icon-inline" /> },
   ].map(tab => (
     <button
       key={tab.id}
@@ -1844,7 +1844,7 @@ marginTop: 4,
           border: "none", borderRadius: 6,
         }}
       >
-        {lang === "zh" ? <><Play size={12} style={{ display: 'inline', verticalAlign: 'middle' }} /> 重新播放新手引导</> : <><Play size={12} style={{ display: 'inline', verticalAlign: 'middle' }} /> Replay Onboarding Tour</>}
+        {lang === "zh" ? <><Play size={12} className="icon-inline" /> 重新播放新手引导</> : <><Play size={12} className="icon-inline" /> Replay Onboarding Tour</>}
       </button>
     </div>
 
@@ -2235,7 +2235,7 @@ function PetSettingsSection({ lang, onOpenMarket }: { lang: Language; onOpenMark
             fontSize: "var(--fs-xs)",
             color: "var(--text-secondary)",
           }}>
-            <Lightbulb size={11} style={{ display: 'inline', verticalAlign: 'middle' }} /> {zh ? "提示：可以直接拖拽窗口中的宠物来移动位置。空闲时点击宠物有彩蛋。" : "Tip: Drag the pet in the window to reposition. Click the pet when idle for a surprise."}
+            <Lightbulb size={11} className="icon-inline" /> {zh ? "提示：可以直接拖拽窗口中的宠物来移动位置。空闲时点击宠物有彩蛋。" : "Tip: Drag the pet in the window to reposition. Click the pet when idle for a surprise."}
           </div>
         </>
       )}
@@ -2433,7 +2433,7 @@ flex: "0 0 auto",
 
       {/* Quick templates */}
       <div style={{ marginTop: 8, display: "flex", flexWrap: "wrap", gap: 6 }}>
-        <span style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)" }}>{zh ? "快速添加: " : "Quick add: "}</span>
+        <span className="hint-sm">{zh ? "快速添加: " : "Quick add: "}</span>
         {[
           { label: zh ? "禁止 bash sudo" : "Deny sudo", tool: "bash", action: "deny" as PermissionAction, resource: "sudo*" },
           { label: zh ? "允许 read *" : "Allow read", tool: "read", action: "allow" as PermissionAction, resource: "" },
@@ -2676,11 +2676,11 @@ function WorktreeSettingsSection({ lang }: { lang: ReturnType<typeof useLang> })
               cursor: scanning ? "wait" : "pointer",
             }}
           >
-            {scanning ? <Clock size={12} style={{ display: 'inline', verticalAlign: 'middle' }} /> : <RotateCcw size={12} style={{ display: 'inline', verticalAlign: 'middle' }} />} {zh ? "扫描" : "Scan"}
+            {scanning ? <Clock size={12} className="icon-inline" /> : <RotateCcw size={12} className="icon-inline" />} {zh ? "扫描" : "Scan"}
           </button>
         </div>
         {!currentProject?.path && (
-          <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)" }}>
+          <div className="hint-sm">
             {zh ? "请先选择项目" : "Select a project first"}
           </div>
         )}
@@ -2722,7 +2722,7 @@ function WorktreeSettingsSection({ lang }: { lang: ReturnType<typeof useLang> })
           </div>
         )}
         {scanResults.length === 0 && currentProject?.path && !scanning && !scanError && (
-          <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)" }}>
+          <div className="hint-sm">
             {zh ? "无工作树（扫描后显示）" : "No worktrees (scan to see)"}
           </div>
         )}
@@ -2922,7 +2922,7 @@ function AgentProfileSection({ lang }: { lang: Language }) {
               <button onClick={() => handleDelete(p.id)} style={{ fontSize: 'var(--fs-sm)', padding: "2px 8px", cursor: "pointer", background: "transparent", border: "1px solid #e55", borderRadius: "var(--radius-sm)", color: "#e55" }}>{zh ? "删除" : "Delete"}</button>
             </div>
           </div>
-          <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)" }}>{p.domain} · {p.scope}</div>
+          <div className="hint-sm">{p.domain} · {p.scope}</div>
           {p.experience_summary && <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-secondary)", lineHeight: 1.4 }}>{p.experience_summary}</div>}
           {p.skills && p.skills.length > 0 && (
             <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
@@ -2960,7 +2960,7 @@ function TranscriptCacheStats({ lang }: { lang: Language }) {
       <div style={{ padding: 16, borderRadius: 6, background: "var(--bg-tertiary)", border: "1px solid var(--border-primary)" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
           <span style={{ fontSize: 'var(--fs-base)', fontWeight: 500 }}>{zh ? "缓存占用" : "Cache Usage"}</span>
-          <span style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)" }}>{stats.size} / {stats.maxSize}</span>
+          <span className="hint-sm">{stats.size} / {stats.maxSize}</span>
         </div>
         <div style={{ height: 8, borderRadius: 4, background: "var(--bg-secondary)", overflow: "hidden" }}>
           <div style={{ height: "100%", width: `${pct}%`, background: pct > 80 ? "var(--error)" : "var(--accent)", borderRadius: 4, transition: "width 0.3s" }} />
@@ -3155,7 +3155,7 @@ function CodeGraphSettingsSection({ lang }: { lang: ReturnType<typeof useLang> }
             {status === "checking" ? (zh ? "检测中..." : "Checking...") : (zh ? "🔄 重新检测" : "🔄 Re-check")}
           </button>
         </div>
-        {status === "checking" && <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)" }}>{zh ? "正在执行 codegraph --version..." : "Running codegraph --version..."}</div>}
+        {status === "checking" && <div className="hint-sm">{zh ? "正在执行 codegraph --version..." : "Running codegraph --version..."}</div>}
         {status === "installed" && <div style={{ fontSize: 'var(--fs-sm)', color: "var(--success)" }}>✓ {zh ? "codegraph CLI 已安装" : "codegraph CLI is installed"}</div>}
         {status === "not_installed" && (
           <div>

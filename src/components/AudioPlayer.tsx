@@ -62,7 +62,7 @@ export const AudioPlayer = memo(function AudioPlayer({ filePath, src, fileName, 
         <Volume2 size={24} style={{ color: "var(--accent)" }} />
         <div style={{ flex: 1 }}>
           <div style={{ fontWeight: 600, fontSize: 'var(--fs-base)' }}>{fileName || "Audio"}</div>
-          <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)" }}>{formatTime(duration)}</div>
+          <div className="hint-sm">{formatTime(duration)}</div>
         </div>
         {onClose && (
           <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)" }}>

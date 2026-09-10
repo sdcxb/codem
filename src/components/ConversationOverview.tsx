@@ -177,7 +177,7 @@ export const ConversationOverview = memo(function ConversationOverview({
                 <div key={idx} className="conversation-overview-round-item" title={preview}>
                   <span className="conversation-overview-round-num">#{idx + 1}</span>
                   <span className="conversation-overview-round-preview">{preview}{preview.length >= 40 ? "..." : ""}</span>
-                  {toolCount > 0 && <span className="conversation-overview-round-tools">{toolCount} <Wrench size={10} style={{ display: 'inline', verticalAlign: 'middle' }} /></span>}
+                  {toolCount > 0 && <span className="conversation-overview-round-tools icon-inline">{toolCount} <Wrench size={10} /></span>}
                 </div>
               );
             })}

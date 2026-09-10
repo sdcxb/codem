@@ -115,7 +115,7 @@ export function OllamaSettingsPanel() {
           <input type="checkbox" checked={autoDetect} onChange={e => setAutoDetect(e.target.checked)} />
           <div>
             <div style={{ fontSize: 'var(--fs-base)', fontWeight: 600 }}>{S.ollama.autoDetect[lang]}</div>
-            <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)" }}>{S.ollama.autoDetectHint[lang]}</div>
+            <div className="hint-sm">{S.ollama.autoDetectHint[lang]}</div>
           </div>
         </label>
       </div>
@@ -154,7 +154,7 @@ export function OllamaSettingsPanel() {
             <>
               <CheckCircle size={14} color="#22c55e" />
               <span style={{ color: "var(--success)" }}>{S.ollama.connected[lang]}</span>
-              <span style={{ color: "var(--text-muted)", fontSize: 'var(--fs-sm)' }}>— {status.url}</span>
+              <span className="hint-sm">— {status.url}</span>
               <span style={{ marginLeft: "auto", fontWeight: 600 }}>
                 {S.ollama.modelCount[lang]}: {status.modelCount}
               </span>
@@ -163,7 +163,7 @@ export function OllamaSettingsPanel() {
             <>
               <XCircle size={14} color="#ef4444" />
               <span style={{ color: "var(--error)" }}>{S.ollama.disconnected[lang]}</span>
-              <span style={{ color: "var(--text-muted)", fontSize: 'var(--fs-sm)' }}>— {status.error}</span>
+              <span className="hint-sm">— {status.error}</span>
             </>
           ) : null}
         </div>
@@ -201,7 +201,7 @@ export function OllamaSettingsPanel() {
                 }}>
                   <Cpu size={14} style={{ flexShrink: 0 }} />
                   <span style={{ fontWeight: 600, fontFamily: "'Cascadia Code', monospace" }}>{m.id}</span>
-                  <span style={{ color: "var(--text-muted)", fontSize: 'var(--fs-sm)' }}>
+                  <span className="hint-sm">
                     ctx: {(m.contextWindow / 1000).toFixed(0)}K
                   </span>
                   {m.supportsTools && (

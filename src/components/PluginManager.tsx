@@ -157,7 +157,7 @@ function PluginCard({
           )}
           {!plugin.canSafelyDisable && !isCore && (
             <span style={{ color: 'var(--warning)' }}>
-              <StatusIcons.danger size={11} style={{ display: 'inline', verticalAlign: 'middle' }} />
+              <StatusIcons.danger size={11} className="icon-inline" />
               关闭将影响其他插件
             </span>
           )}
@@ -259,7 +259,7 @@ function PluginCard({
       {/* 底部：作者 + 开关 */}
       <div className="market-skill-card-footer">
         <div className="market-skill-meta">
-          {plugin.author && <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)' }}>@{plugin.author}</span>}
+          {plugin.author && <span className="hint-sm">@{plugin.author}</span>}
           {plugin.hot && <Badge variant="warning">可热重载</Badge>}
         </div>
         <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
@@ -356,7 +356,7 @@ function CascadeConfirmDialog({
                 }}>
                   <StatusIcons.danger size={12} style={{ color: 'var(--warning)' }} />
                   <span style={{ fontWeight: 600 }}>{item.name}</span>
-                  <span style={{ color: 'var(--text-muted)', fontSize: 'var(--fs-sm)' }}>— {item.reason}</span>
+                  <span className="hint-sm">— {item.reason}</span>
                 </div>
               ))}
             </div>

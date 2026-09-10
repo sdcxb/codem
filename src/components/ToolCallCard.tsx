@@ -278,7 +278,7 @@ function TerminalBlock({ model }) {
         borderBottom: '1px solid var(--border-primary)',
       }}>
         <TerminalIcon size={11} style={{ flexShrink: 0, color: 'var(--text-muted)' }} />
-        <span style={{ color: 'var(--text-muted)', fontSize: 'var(--fs-sm)' }}>
+        <span className="hint-sm">
           {model.cwd ? model.cwd.split(/[\\/]/).pop() + '$' : '$'}
         </span>
         <code style={{ color: 'var(--text-primary)', fontSize: 'var(--fs-sm)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>

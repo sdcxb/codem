@@ -304,7 +304,7 @@ export function ProjectManager({ onClose }: ProjectManagerProps) {
     <div className="settings-overlay" onClick={onClose}>
       <div className="project-manager" role="dialog" aria-modal="true" aria-label="项目管理" onClick={(e) => e.stopPropagation()}>
         <div className="settings-header">
-          <h3><Folder size={16} style={{ display: "inline", verticalAlign: "middle" }} /> 项目管理</h3>
+          <h3><Folder size={16} className="icon-inline" /> 项目管理</h3>
           <button className="settings-close" onClick={onClose}><ActionIcons.close size={18} /></button>
         </div>
 

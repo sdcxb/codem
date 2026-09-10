@@ -89,7 +89,7 @@ const overallIcon = audit.overall === "danger" ? <ShieldAlert size={24} />
             <div style={{ fontSize: 'var(--fs-md)', fontWeight: 600, color: "var(--text-primary)" }}>
               {zh ? "技能安全审计" : "Skill Security Audit"}
             </div>
-            <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)" }}>
+            <div className="hint-sm">
               {skillDisplayName || skillName}
             </div>
           </div>

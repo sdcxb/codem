@@ -110,7 +110,7 @@ const TurnMaxTokensRow = memo(function TurnMaxTokensRow() {
         <span style={{ fontWeight: 600, color: 'var(--warning, #eab008)' }}>
           {zh ? '已达到输出上限' : 'Max Tokens Reached'}
         </span>
-        <span style={{ color: 'var(--text-muted)', fontSize: 'var(--fs-sm)' }}>
+        <span className="hint-sm">
           {zh ? '回复被截断，可通过继续指令让模型补全。' : 'Response was truncated. Use continue to let the model finish.'}
         </span>
       </div>

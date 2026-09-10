@@ -3126,7 +3126,7 @@ onRemoveProject={(id, name, path) => {
                           {compactionStatus.active ? (
                             <><span className="compaction-spinner" /> 正在压缩上下文...</>
                           ) : (
-                            <><CheckCircle size={12} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 4 }} /> 上下文已压缩{compactionStatus.messagesRemoved ? `（移除 ${compactionStatus.messagesRemoved} 条旧消息）` : ""}</>
+                            <><CheckCircle size={12} className="icon-inline-gap" /> 上下文已压缩{compactionStatus.messagesRemoved ? `（移除 ${compactionStatus.messagesRemoved} 条旧消息）` : ""}</>
                           )}
                         </div>
                       )}
@@ -3250,7 +3250,7 @@ onRemoveProject={(id, name, path) => {
                         {compactionStatus.active ? (
                           <><span className="compaction-spinner" /> 正在压缩上下文...</>
                         ) : (
-                          <><CheckCircle size={12} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 4 }} /> 上下文已压缩{compactionStatus.messagesRemoved ? `（移除 ${compactionStatus.messagesRemoved} 条旧消息）` : ""}</>
+                          <><CheckCircle size={12} className="icon-inline-gap" /> 上下文已压缩{compactionStatus.messagesRemoved ? `（移除 ${compactionStatus.messagesRemoved} 条旧消息）` : ""}</>
                         )}
                       </div>
                     )}
@@ -3397,7 +3397,7 @@ onRemoveProject={(id, name, path) => {
                 {compactionStatus.active ? (
                   <><span className="compaction-spinner" /> 正在压缩上下文...</>
                 ) : (
-                  <><CheckCircle size={12} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 4 }} /> 上下文已压缩{compactionStatus.messagesRemoved ? `（移除 ${compactionStatus.messagesRemoved} 条旧消息）` : ""}</>
+                  <><CheckCircle size={12} className="icon-inline-gap" /> 上下文已压缩{compactionStatus.messagesRemoved ? `（移除 ${compactionStatus.messagesRemoved} 条旧消息）` : ""}</>
                 )}
               </div>
             )}
@@ -3816,7 +3816,7 @@ onClose={() => setCitationViewer(null)}
                     setRemoveProjectDialog(null);
                   }}
                 >
-                  <span style={{ fontWeight: 600 }}><Trash2 size={14} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 4 }} /> {lang === "zh" ? "移除并删除文件到回收站" : "Remove & Recycle"}</span>
+                  <span style={{ fontWeight: 600 }}><Trash2 size={14} className="icon-inline-gap" /> {lang === "zh" ? "移除并删除文件到回收站" : "Remove & Recycle"}</span>
                   <div style={{ fontSize: 'var(--fs-sm)', opacity: 0.7, marginTop: 2 }}>{lang === "zh" ? "从列表移除 + 文件送入回收站" : "Remove from list + send files to Recycle Bin"}</div>
                 </button>
               </div>

@@ -10,6 +10,13 @@ import type { TaskSlot } from "../core/llm/model-profile";
 import { PanelIcons, ActionIcons } from "../core/icons/icon-map";
 import { useLang } from "../core/i18n/lang";
 
+/**
+ * AgentManager — 智能体定义管理（列表 + 详情 + 编辑表单）。
+ *
+ * 样式：第 19 波把内联样式收口成 `.agent-*` 具名类（见 src/styles.css），
+ * 外壳沿用 `.skill-manager-*` / `.market-skill-*`（与技能管理同一套）。
+ */
+
 const MODE_LABELS: Record<AgentMode, string> = {
   primary: "主智能体",
   subagent: "子智能体",
@@ -149,15 +156,6 @@ export function AgentManager({ onClose }: { onClose: () => void }) {
     setIsNew(false);
   };
 
-  const labelStyle: React.CSSProperties = {
-    fontSize: 'var(--fs-sm)', fontWeight: 600, color: "var(--text-secondary)", marginBottom: 3, display: "block",
-  };
-  const inputStyle: React.CSSProperties = {
-    padding: "5px 8px", borderRadius: 4, border: "1px solid var(--border-primary)",
-    background: "var(--bg-tertiary)", color: "var(--text-primary)", fontSize: 'var(--fs-sm)', width: "100%",
-    outline: "none",
-  };
-
   return (
     <div className="skill-manager">
       {/* Header */}
@@ -173,21 +171,20 @@ export function AgentManager({ onClose }: { onClose: () => void }) {
 
       {/* Toolbar */}
       <div className="skill-manager-toolbar">
-        <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-secondary)" }}>
+        <div className="agent-toolbar-note">
           {zh ? "查看、创建和编辑智能体定义。内置智能体不可编辑/删除。" : "View, create, and edit agent definitions. Built-in agents are read-only."}
         </div>
         <button
           onClick={handleNew}
-          className="market-skill-link-btn"
-          style={{ whiteSpace: "nowrap" }}
+          className="market-skill-link-btn agent-new-btn"
         >
           <AddIcon size={12} /> {zh ? "新建" : "New"}
         </button>
       </div>
 
       {/* Agent list + detail/edit form (scrollable) */}
-      <div style={{ flex: 1, overflowY: "auto", padding: "12px 16px", display: "flex", flexDirection: "column", gap: 12 }}>
-        <div className="skill-market-grid" style={{ overflow: "visible", flex: "none", padding: 0 }}>
+      <div className="agent-list">
+        <div className="skill-market-grid agent-grid">
         {agents.map(agent => {
           const builtin = getAgentRegistry().isBuiltin(agent.id);
           const active = selectedId === agent.id && !editing;
@@ -203,9 +200,9 @@ export function AgentManager({ onClose }: { onClose: () => void }) {
                 </span>
                 <div className="market-skill-card-title">
                   <span className="market-skill-name">{agent.name || agent.id}</span>
-                  {builtin && <span style={{ fontSize: 'var(--fs-xs)', color: "var(--text-muted)" }}>{zh ? "内置" : "built-in"}</span>}
+                  {builtin && <span className="agent-builtin-tag">{zh ? "内置" : "built-in"}</span>}
                 </div>
-                <span style={{ fontSize: 'var(--fs-xs)', padding: "2px 6px", borderRadius: "var(--radius-sm)", background: "var(--bg-secondary)", color: "var(--text-secondary)" }}>
+                <span className="agent-mode-badge">
                   {MODE_LABELS[agent.mode]}
                 </span>
               </div>
@@ -223,8 +220,7 @@ export function AgentManager({ onClose }: { onClose: () => void }) {
                   {!builtin && (
                     <button
                       onClick={(e) => { e.stopPropagation(); handleDelete(agent.id); }}
-                      className="market-skill-link-btn"
-                      style={{ color: "var(--error)" }}
+                      className="market-skill-link-btn agent-delete-btn"
                     >
                       {zh ? "删除" : "Del"}
                     </button>
@@ -238,12 +234,9 @@ export function AgentManager({ onClose }: { onClose: () => void }) {
 
       {/* Detail view (read-only, when not editing) */}
       {!editing && selected && (
-        <div style={{
-          padding: 12, borderRadius: 8, border: "1px solid var(--border-primary)",
-          background: "var(--bg-secondary)", fontSize: 'var(--fs-sm)',
-        }}>
-          <div style={{ fontWeight: 700, fontSize: 'var(--fs-base)', marginBottom: 8, color: "var(--text-primary)" }}>
-            {selected.name} <span style={{ fontSize: 'var(--fs-xs)', color: "var(--text-muted)" }}>({selected.id})</span>
+        <div className="agent-card">
+          <div className="agent-card-title">
+            {selected.name} <span className="agent-detail-id">({selected.id})</span>
           </div>
           <DetailRow label={zh ? "描述" : "Description"} value={selected.description} />
           <DetailRow label={zh ? "模式" : "Mode"} value={MODE_LABELS[selected.mode]} />
@@ -259,20 +252,16 @@ export function AgentManager({ onClose }: { onClose: () => void }) {
           {selected.reasoningEffort && <DetailRow label={zh ? "推理强度" : "Reasoning Effort"} value={selected.reasoningEffort} />}
 
           {/* Permissions */}
-          <div style={{ marginTop: 8, marginBottom: 4, fontWeight: 600, color: "var(--text-secondary)" }}>{zh ? "权限规则" : "Permissions"}</div>
+          <div className="agent-section-title">{zh ? "权限规则" : "Permissions"}</div>
           {selected.permissions.map((p, i) => (
-            <div key={i} style={{ fontFamily: "monospace", fontSize: 'var(--fs-sm)', padding: "3px 6px", background: "var(--bg-tertiary)", borderRadius: "var(--radius-sm)", marginBottom: 2 }}>
-              {p.tool} {p.resource && `→ ${p.resource}`} <span style={{ color: p.action === "allow" ? "var(--success)" : p.action === "deny" ? "var(--error)" : "var(--text-secondary)" }}>[{p.action}]</span>
+            <div key={i} className="agent-perm-row">
+              {p.tool} {p.resource && `→ ${p.resource}`} <span className={`agent-perm-action is-${p.action}`}>[{p.action}]</span>
             </div>
           ))}
 
           {/* Prompt preview */}
-          <div style={{ marginTop: 8, marginBottom: 4, fontWeight: 600, color: "var(--text-secondary)" }}>{zh ? "系统提示词" : "System Prompt"}</div>
-          <pre style={{
-            fontSize: 'var(--fs-xs)', padding: 8, background: "var(--bg-tertiary)", borderRadius: 4,
-            maxHeight: 200, overflow: "auto", whiteSpace: "pre-wrap", margin: 0,
-            color: "var(--text-secondary)",
-          }}>
+          <div className="agent-section-title">{zh ? "系统提示词" : "System Prompt"}</div>
+          <pre className="agent-prompt">
             {selected.prompt}
           </pre>
         </div>
@@ -280,50 +269,47 @@ export function AgentManager({ onClose }: { onClose: () => void }) {
 
       {/* Edit form */}
       {editing && (
-        <div ref={editorRef} style={{
-          padding: 12, borderRadius: 8, border: "1px solid var(--accent)",
-          background: "var(--bg-secondary)", display: "flex", flexDirection: "column", gap: 10,
-        }}>
-          <div style={{ fontWeight: 700, fontSize: 'var(--fs-base)', color: "var(--text-primary)" }}>
+        <div ref={editorRef} className="agent-card agent-card--editing">
+          <div className="agent-card-title agent-card-title--tight">
             {isNew ? (zh ? "新建智能体" : "New Agent") : (zh ? "编辑智能体" : "Edit Agent")}
           </div>
 
           {/* Basic info */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+          <div className="agent-form-grid2">
             <div>
-              <label style={labelStyle}>{zh ? "名称" : "Name"}</label>
-              <input style={inputStyle} value={editing.name} onChange={e => setEditing({ ...editing, name: e.target.value })} placeholder="My Agent" />
+              <label className="agent-label">{zh ? "名称" : "Name"}</label>
+              <input className="agent-input" value={editing.name} onChange={e => setEditing({ ...editing, name: e.target.value })} placeholder="My Agent" />
             </div>
             <div>
-              <label style={labelStyle}>{zh ? "ID (只读)" : "ID (read-only)"}</label>
-              <input style={{ ...inputStyle, opacity: 0.6 }} value={editing.id} readOnly />
+              <label className="agent-label">{zh ? "ID (只读)" : "ID (read-only)"}</label>
+              <input className="agent-input agent-input--dim" value={editing.id} readOnly />
             </div>
           </div>
 
           <div>
-            <label style={labelStyle}>{zh ? "描述" : "Description"}</label>
-            <input style={inputStyle} value={editing.description} onChange={e => setEditing({ ...editing, description: e.target.value })} placeholder={zh ? "智能体用途描述" : "What this agent does"} />
+            <label className="agent-label">{zh ? "描述" : "Description"}</label>
+            <input className="agent-input" value={editing.description} onChange={e => setEditing({ ...editing, description: e.target.value })} placeholder={zh ? "智能体用途描述" : "What this agent does"} />
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+          <div className="agent-form-grid3">
             <div>
-              <label style={labelStyle}>{zh ? "模式" : "Mode"}</label>
-              <select style={inputStyle} value={editing.mode} onChange={e => setEditing({ ...editing, mode: e.target.value as AgentMode })}>
+              <label className="agent-label">{zh ? "模式" : "Mode"}</label>
+              <select className="agent-input" value={editing.mode} onChange={e => setEditing({ ...editing, mode: e.target.value as AgentMode })}>
                 <option value="primary">{zh ? "主智能体" : "Primary"}</option>
                 <option value="subagent">{zh ? "子智能体" : "Sub-agent"}</option>
                 <option value="all">{zh ? "通用" : "All"}</option>
               </select>
             </div>
             <div>
-              <label style={labelStyle}>{zh ? "协作模式" : "Collaboration"}</label>
-              <select style={inputStyle} value={editing.collaborationMode || "default"} onChange={e => setEditing({ ...editing, collaborationMode: e.target.value as CollaborationMode })}>
+              <label className="agent-label">{zh ? "协作模式" : "Collaboration"}</label>
+              <select className="agent-input" value={editing.collaborationMode || "default"} onChange={e => setEditing({ ...editing, collaborationMode: e.target.value as CollaborationMode })}>
                 <option value="default">{zh ? "默认（自主执行）" : "Default (autonomous)"}</option>
                 <option value="plan">{zh ? "规划（只读分析）" : "Plan (read-only)"}</option>
               </select>
             </div>
             <div>
-              <label style={labelStyle}>{zh ? "模型槽位" : "Model Slot"}</label>
-              <select style={inputStyle} value={editing.modelSlot || "subagent"} onChange={e => setEditing({ ...editing, modelSlot: e.target.value as TaskSlot })}>
+              <label className="agent-label">{zh ? "模型槽位" : "Model Slot"}</label>
+              <select className="agent-input" value={editing.modelSlot || "subagent"} onChange={e => setEditing({ ...editing, modelSlot: e.target.value as TaskSlot })}>
                 {Object.entries(SLOT_LABELS).map(([slot, label]) => (
                   <option key={slot} value={slot}>{label}</option>
                 ))}
@@ -331,25 +317,25 @@ export function AgentManager({ onClose }: { onClose: () => void }) {
             </div>
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+          <div className="agent-form-grid3">
             <div>
-              <label style={labelStyle}>{zh ? "最大步数" : "Max Steps"}</label>
-              <input type="number" min={1} max={100} style={inputStyle} value={editing.maxSteps ?? 10} onChange={e => setEditing({ ...editing, maxSteps: parseInt(e.target.value) || 10 })} />
+              <label className="agent-label">{zh ? "最大步数" : "Max Steps"}</label>
+              <input type="number" min={1} max={100} className="agent-input" value={editing.maxSteps ?? 10} onChange={e => setEditing({ ...editing, maxSteps: parseInt(e.target.value) || 10 })} />
             </div>
             <div>
-              <label style={labelStyle}>{zh ? "最大 Token" : "Max Tokens"}</label>
-              <input type="number" min={0} style={inputStyle} value={editing.maxTokens ?? ""} onChange={e => setEditing({ ...editing, maxTokens: e.target.value ? parseInt(e.target.value) : undefined })} />
+              <label className="agent-label">{zh ? "最大 Token" : "Max Tokens"}</label>
+              <input type="number" min={0} className="agent-input" value={editing.maxTokens ?? ""} onChange={e => setEditing({ ...editing, maxTokens: e.target.value ? parseInt(e.target.value) : undefined })} />
             </div>
             <div>
-              <label style={labelStyle}>{zh ? "温度" : "Temperature"}</label>
-              <input type="number" min={0} max={2} step={0.1} style={inputStyle} value={editing.temperature ?? ""} onChange={e => setEditing({ ...editing, temperature: e.target.value ? parseFloat(e.target.value) : undefined })} />
+              <label className="agent-label">{zh ? "温度" : "Temperature"}</label>
+              <input type="number" min={0} max={2} step={0.1} className="agent-input" value={editing.temperature ?? ""} onChange={e => setEditing({ ...editing, temperature: e.target.value ? parseFloat(e.target.value) : undefined })} />
             </div>
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+          <div className="agent-form-grid2">
             <div>
-              <label style={labelStyle}>{zh ? "推理强度" : "Reasoning Effort"}</label>
-              <select style={inputStyle} value={editing.reasoningEffort || ""} onChange={e => setEditing({ ...editing, reasoningEffort: (e.target.value || undefined) as "low" | "medium" | "high" | undefined })}>
+              <label className="agent-label">{zh ? "推理强度" : "Reasoning Effort"}</label>
+              <select className="agent-input" value={editing.reasoningEffort || ""} onChange={e => setEditing({ ...editing, reasoningEffort: (e.target.value || undefined) as "low" | "medium" | "high" | undefined })}>
                 <option value="">{zh ? "默认" : "Default"}</option>
                 <option value="low">{zh ? "低" : "Low"}</option>
                 <option value="medium">{zh ? "中" : "Medium"}</option>
@@ -357,25 +343,25 @@ export function AgentManager({ onClose }: { onClose: () => void }) {
               </select>
             </div>
             <div>
-              <label style={labelStyle}>{zh ? "上下文模式" : "Context Mode"}</label>
-              <select style={inputStyle} value={editing.contextMode || "inline"} onChange={e => setEditing({ ...editing, contextMode: e.target.value as "inline" | "fork" })}>
+              <label className="agent-label">{zh ? "上下文模式" : "Context Mode"}</label>
+              <select className="agent-input" value={editing.contextMode || "inline"} onChange={e => setEditing({ ...editing, contextMode: e.target.value as "inline" | "fork" })}>
                 <option value="inline">{zh ? "内联（共享上下文）" : "Inline (shared)"}</option>
                 <option value="fork">{zh ? "隔离（独立上下文）" : "Fork (isolated)"}</option>
               </select>
             </div>
           </div>
 
-          <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-            <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: 'var(--fs-sm)' }}>
+          <div className="agent-checks">
+            <label className="agent-check-label">
               <input type="checkbox" checked={editing.canSpawnSubagents ?? false} onChange={e => setEditing({ ...editing, canSpawnSubagents: e.target.checked })} />
               {zh ? "可生成子智能体" : "Can spawn sub-agents"}
             </label>
-            <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: 'var(--fs-sm)' }}>
+            <label className="agent-check-label">
               <input type="checkbox" checked={editing.mode === "primary"} onChange={e => setEditing({ ...editing, mode: e.target.checked ? "primary" : "subagent" })} />
               {zh ? "Squad Leader 适配" : "Squad Leader compatible"}
             </label>
             {(editing.canSpawnSubagents || editing.mode === "primary") && (
-              <span style={{ fontSize: 'var(--fs-xs)', color: "var(--text-muted)" }}>
+              <span className="agent-check-hint">
                 {zh ? "此 agent 可作为 Squad Leader 使用（任务管理 → Squads）" : "This agent can be used as a Squad Leader (Task Center → Squads)"}
               </span>
             )}
@@ -383,13 +369,8 @@ export function AgentManager({ onClose }: { onClose: () => void }) {
 
           {/* Tool allowlist — checkbox grid with required tools locked */}
           <div>
-            <label style={labelStyle}>{zh ? "工具权限" : "Tool Permissions"}</label>
-            <div style={{
-              display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))",
-              gap: 4, marginTop: 4, padding: "8px 12px",
-              background: "var(--bg-secondary)", borderRadius: 6,
-              border: "1px solid var(--border-primary)",
-            }}>
+            <label className="agent-label">{zh ? "工具权限" : "Tool Permissions"}</label>
+            <div className="agent-tool-grid">
               {BUILTIN_TOOL_NAMES.map((toolName) => {
                 const isRequired = REQUIRED_TOOLS.includes(toolName);
                 const currentAllowlist = editing.toolAllowlist || [];
@@ -397,11 +378,7 @@ export function AgentManager({ onClose }: { onClose: () => void }) {
                 return (
                   <label
                     key={toolName}
-                    style={{
-                      display: "flex", alignItems: "center", gap: 4,
-                      cursor: isRequired ? "not-allowed" : "pointer",
-                      fontSize: 'var(--fs-sm)', opacity: isRequired ? 0.6 : 1,
-                    }}
+                    className={`agent-tool-item${isRequired ? " is-locked" : ""}`}
                   >
                     <input
                       type="checkbox"
@@ -421,49 +398,46 @@ export function AgentManager({ onClose }: { onClose: () => void }) {
                         });
                       }}
                     />
-                    <span style={{
-                      color: isRequired ? "var(--text-muted)" : "var(--text-primary)",
-                      fontFamily: "monospace",
-                    }}>
+                    <span className={`agent-tool-name${isRequired ? " is-required" : ""}`}>
                       {toolName}
-                      {isRequired && <span style={{ fontSize: 'var(--fs-xs)', marginLeft: 2 }}>🔒</span>}
+                      {isRequired && <span className="agent-tool-lock">🔒</span>}
                     </span>
                   </label>
                 );
               })}
             </div>
-            <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", marginTop: 4 }}>
+            <div className="agent-tool-hint">
               {zh ? "🔒 标记的工具为必选工具，不可取消。留空=全部工具权限。外部技能加载的工具也会自动可用。" : "🔒 Required tools cannot be unchecked. Empty = all tools. Skill tools are auto-available."}
             </div>
           </div>
 
           {/* System prompt */}
           <div>
-            <label style={labelStyle}>{zh ? "系统提示词 (中文)" : "System Prompt (Chinese)"}</label>
-            <textarea style={{ ...inputStyle, minHeight: 80, resize: "vertical", fontFamily: "monospace" }} value={editing.prompt} onChange={e => setEditing({ ...editing, prompt: e.target.value })} />
+            <label className="agent-label">{zh ? "系统提示词 (中文)" : "System Prompt (Chinese)"}</label>
+            <textarea className="agent-input agent-input--prompt" value={editing.prompt} onChange={e => setEditing({ ...editing, prompt: e.target.value })} />
           </div>
           <div>
-            <label style={labelStyle}>{zh ? "系统提示词 (英文, 可选)" : "System Prompt (English, optional)"}</label>
-            <textarea style={{ ...inputStyle, minHeight: 60, resize: "vertical", fontFamily: "monospace" }} value={editing.promptEn || ""} onChange={e => setEditing({ ...editing, promptEn: e.target.value || undefined })} />
+            <label className="agent-label">{zh ? "系统提示词 (英文, 可选)" : "System Prompt (English, optional)"}</label>
+            <textarea className="agent-input agent-input--prompt-sm" value={editing.promptEn || ""} onChange={e => setEditing({ ...editing, promptEn: e.target.value || undefined })} />
           </div>
 
           {/* Permissions editor */}
           <div>
-            <label style={labelStyle}>{zh ? "权限规则" : "Permission Rules"}</label>
-            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            <label className="agent-label">{zh ? "权限规则" : "Permission Rules"}</label>
+            <div className="agent-perm-list">
               {(editing.permissions || []).map((p, i) => (
-                <div key={i} style={{ display: "flex", gap: 4, alignItems: "center" }}>
-                  <input style={{ ...inputStyle, flex: 2, fontFamily: "monospace" }} value={p.tool} onChange={e => {
+                <div key={i} className="agent-perm-edit-row">
+                  <input className="agent-input agent-input--w2 agent-input--mono" value={p.tool} onChange={e => {
                     const perms = [...(editing.permissions || [])];
                     perms[i] = { ...perms[i], tool: e.target.value };
                     setEditing({ ...editing, permissions: perms });
                   }} placeholder="bash / write / *" />
-                  <input style={{ ...inputStyle, flex: 2, fontFamily: "monospace" }} value={p.resource || ""} onChange={e => {
+                  <input className="agent-input agent-input--w2 agent-input--mono" value={p.resource || ""} onChange={e => {
                     const perms = [...(editing.permissions || [])];
                     perms[i] = { ...perms[i], resource: e.target.value || undefined };
                     setEditing({ ...editing, permissions: perms });
                   }} placeholder="rm -rf* / **/.env" />
-                  <select style={{ ...inputStyle, flex: 1 }} value={p.action} onChange={e => {
+                  <select className="agent-input agent-input--w1" value={p.action} onChange={e => {
                     const perms = [...(editing.permissions || [])];
                     perms[i] = { ...perms[i], action: e.target.value as "allow" | "deny" | "ask" };
                     setEditing({ ...editing, permissions: perms });
@@ -475,28 +449,17 @@ export function AgentManager({ onClose }: { onClose: () => void }) {
                   <button onClick={() => {
                     const perms = (editing.permissions || []).filter((_, idx) => idx !== i);
                     setEditing({ ...editing, permissions: perms });
-                  }} style={{ display: "flex", alignItems: "center", padding: "4px 8px", border: "1px solid var(--border-primary)", background: "none", color: "var(--text-muted)", borderRadius: 4, cursor: "pointer" }}><CloseIcon size={14} /></button>
+                  }} className="agent-perm-remove"><CloseIcon size={14} /></button>
                 </div>
               ))}
-              <button onClick={() => setEditing({ ...editing, permissions: [...(editing.permissions || []), { tool: "*", action: "ask" }] })} style={{
-                fontSize: 'var(--fs-sm)', padding: "4px 10px", borderRadius: 4, border: "1px solid var(--border-primary)",
-                background: "var(--bg-tertiary)", color: "var(--text-primary)", cursor: "pointer", alignSelf: "flex-start",
-              }}>+ {zh ? "添加规则" : "Add Rule"}</button>
+              <button onClick={() => setEditing({ ...editing, permissions: [...(editing.permissions || []), { tool: "*", action: "ask" }] })} className="agent-add-rule-btn">+ {zh ? "添加规则" : "Add Rule"}</button>
             </div>
           </div>
 
           {/* Action buttons */}
-          <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
-            <button onClick={handleSave} disabled={!editing.name.trim()} style={{
-              padding: "6px 16px", borderRadius: 4, fontSize: 'var(--fs-sm)',
-              border: "1px solid var(--accent)", background: "var(--accent)",
-              color: "var(--text-on-accent)", cursor: "pointer", opacity: editing.name.trim() ? 1 : 0.5,
-            }}>{zh ? "保存" : "Save"}</button>
-            <button onClick={handleCancel} style={{
-              padding: "6px 16px", borderRadius: 4, fontSize: 'var(--fs-sm)',
-              border: "1px solid var(--border-primary)", background: "none",
-              color: "var(--text-primary)", cursor: "pointer",
-            }}>{zh ? "取消" : "Cancel"}</button>
+          <div className="agent-editor-actions">
+            <button onClick={handleSave} disabled={!editing.name.trim()} className="panel-btn panel-btn--primary">{zh ? "保存" : "Save"}</button>
+            <button onClick={handleCancel} className="panel-btn">{zh ? "取消" : "Cancel"}</button>
           </div>
         </div>
       )}
@@ -509,9 +472,9 @@ export function AgentManager({ onClose }: { onClose: () => void }) {
 
 function DetailRow({ label, value }: { label: string; value: string }) {
   return (
-    <div style={{ display: "flex", gap: 8, marginBottom: 4 }}>
-      <span style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", minWidth: 90 }}>{label}:</span>
-      <span style={{ fontSize: 'var(--fs-sm)', color: "var(--text-primary)", flex: 1 }}>{value}</span>
+    <div className="agent-detail-row">
+      <span className="agent-detail-label">{label}:</span>
+      <span className="agent-detail-value">{value}</span>
     </div>
   );
 }

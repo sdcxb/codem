@@ -134,7 +134,7 @@ export function SnapshotPanel({ cwd, onClose, onRestore }: SnapshotPanelProps) {
               </div>
               <div className="snapshot-item-meta">
                 <span className="snapshot-item-files">
-                  <Folder size={12} style={{ display: 'inline', verticalAlign: 'middle' }} /> {snapshot.files.length} 个文件
+                  <Folder size={12} className="icon-inline" /> {snapshot.files.length} 个文件
                 </span>
                 <span className="snapshot-item-arrow">
                   {expandedId === snapshot.id ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
@@ -170,7 +170,7 @@ export function SnapshotPanel({ cwd, onClose, onRestore }: SnapshotPanelProps) {
                             onClick={() => handleViewDiff(file.path, file.content, file.isNew || false)}
                             title="查看变更"
                           >
-                            <Search size={12} style={{ display: 'inline', verticalAlign: 'middle' }} /> Diff
+                            <Search size={12} className="icon-inline" /> Diff
                           </button>
                         </li>
                       ))}
