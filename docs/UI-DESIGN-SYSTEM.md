@@ -256,13 +256,13 @@ frakio-work 的两条关键惯例（我们同步遵守）：
 | **控件高度** | 24/28 为主 | **34 为主**（43 处） | 我们控件偏紧。已整体上抬 2–4px → 26/30/34/38/44 |
 | **圆角** | 4×125、6×115（小、硬） | **8×173 + 999 胶囊×96** | 他们更圆、胶囊用得多。已把 `--radius-sm` 4→6、`--radius-xs` 6→8，标签/徽标类统一走胶囊 |
 | **图标描边** | 0.6/1/1.2/1.5/2/2.5 混用 | 统一 ~2，尺寸以 15px 为主 | 细线在 12–14px 上"发虚"。已统一 `stroke-width: 1.75`（小徽标 2、大空态图标 1.5） |
-| **窗口外壳** | `titlebar` 37 处，无窗口 chrome | **`mac-window` 34 + `workbench-window` 7** | 他们有 mac 风格窗口外壳（红黄绿灯 + 工具条）—— "产品感"最强的信号。**品牌决策，未动** |
-| 平均明度 | 0.50（暗冷，默认深色） | 0.60（亮暖，默认浅色） | 他们以浅色暖灰为默认。我们浅色主题已具备，**默认档位是产品决策，未动** |
+| **窗口外壳** | `titlebar` 37 处，无应用菜单 | **`mac-window` 34 + `workbench-window` 7 + `topbar` 22 + `app-menu` 16** | 他们有 mac 风格外壳（50px 工具条 + 专门拖拽区 + 独立动作栏 + 带遮罩渐隐的标签条）与一套应用菜单。**第 41 波补齐**：外壳高度令牌 44px、标签条两端渐隐、应用菜单栏（文件/视图/帮助） |
+| 平均明度 | 0.50（暗冷，默认深色） | 0.60（亮暖，默认浅色） | 他们以浅色暖灰为默认。**第 36 波已改为浅色暖中性**（画布 `#fcfcfb`） |
 
 **结论**：观感差距主要来自 ① 字重层次 ② 控件尺度 ③ 圆角与胶囊 ④ 图标描边一致性
 ⑤ 窗口外壳 ⑥ 默认主题明度 —— **都不是"令牌化"能自动解决的**，而是每个部件的光学调校 + 品牌选择。
-令牌化的价值在于让这些调校能一次改全局（`--control-*` / `--radius-*` / `--weight-*` 一改全动），
-但"调到多少"始终是设计判断。**⑤⑥ 需要产品决策，不是技术问题。**
+令牌化的价值在于让这些调校能一次改全局（`--control-*` / `--radius-*` / `--weight-*` / `--chrome-height` 一改全动），
+但"调到多少"始终是设计判断。六项现已全部落地（第 33–41 波）。
 
 ## 3. 组件语言（统一外壳）
 **外壳类清单（浮层只允许这四种，审计规则 `modal-shell-bespoke` 认的就是它们）**：
@@ -297,6 +297,7 @@ frakio-work 的两条关键惯例（我们同步遵守）：
 | `.panel-btn` / `--danger` / `--sm` | 面板内次级按钮；危险态换 `--error` 边与字；`--sm` 用于浮层里的迷你按钮 |
 | `.stat-cards` / `.stat-card` / `.stat-card-value` / `.stat-card-label` | 统计卡片行与卡片 |
 | `.tc-tab` | 任务管理面板的内容区（`padding` 与页面 gutter 一致） |
+| `.app-menubar` / `.app-menu-trigger` / `.app-menu-surface` / `.app-menu-item` / `.app-menu-shortcut` / `.app-menu-separator` | 应用级菜单栏（第 41 波）。触发器展开态由 `[aria-expanded="true"]` 驱动；菜单面板复用 `--dropdown-bg` / `--radius-md` / `--shadow-raise-3` / `--z-dropdown`；菜单项 30px 高 + 快捷键右对齐等宽提示 |
 | `.tc-empty` | 面板内空态文案 |
 | `.tc-label` / `.tc-field` / `.tc-field--area` | 面板内表单的标签与输入框（含下拉/多行） |
 | `.tc-field-row` / `.tc-editor` / `.tc-editor-title` / `.tc-editor-actions` | 面板内联编辑器的行、外壳、标题、按钮行 |
@@ -408,6 +409,7 @@ node tools/ui-audit/codemod-icon-scale.mjs [--write]  # 图标工具类 → .ico
 | **第 32 波** | 2026-09-10 | **0** ✅ | **0** ✅ | **对齐原语与状态语义（补参考实现的结构性差距）**：把参考实现整份 checkout 拉下来后逐项度量，发现三处**结构性**差距（不是配色问题）：参考实现用 `display: grid` **583 处**做对齐、`:has()` **41 处**做父级状态、`prefers-reduced-motion` **27 处**；我们分别是 50 / 7 / 8。<br>① **设置/表单行改用 grid 对齐**：`.setting-group` / `.mp-form-row` / `.sp-field-row` / `.agent-input-row` / `.git-env-row` 收成「标签列 `minmax(88px, max-content)` + 内容列 `minmax(0,1fr)`」两列模板（三列行用 `--3` 修饰、堆叠行用 `--stack`），标签从此对齐成一条竖线（此前标签宽度不一、输入框左边缘参差，这正是"没对齐=不精致"的主因之一）；单列内容（说明文字、卡片、表格、模板列表）用 `grid-column: 1/-1` 跨列，避免被塞进两列网格。<br>② **`:has()` 做父级状态**：卡片里任意子元素获得键盘焦点时整张卡片给出描边（`.sp-card` / `.tool-card` / `.market-skill-card`），字段行内输入非法时整行标红（`input:user-invalid`）—— 焦点在子元素、反馈在父级。<br>③ **状态属性驱动样式**：设置侧栏 tab、笔记本视图 tab、设置面板 tab、任务中心 tab、工具 pill 补 `aria-current="page"` / `aria-selected` / `aria-expanded`（`SettingsPanel` 内 24 个 tab 按钮），并让属性选择器与 `.active` 类**同源驱动**样式 —— 此前是"类名说选中、ARIA 说没选中"，读屏用户完全得不到切换反馈。<br>④ **逐组件减动效**：浮层/抽屉/面板/toast/卡片的**入场位移动画**在 `prefers-reduced-motion` 下直接取消（`animation/transition/transform: none`），而非只停循环动画。 |
 | **第 33 波** | 2026-09-10 | **0** ✅ | **0** ✅ | **"为什么我们像项目、他们像产品"—— 带数据的诊断与底层修正**（详见 §2.8）。用户反馈"精细度比不上"，于是不再猜、把决定观感的量全部量化对比，再逐项动手：<br>① **字重是最大差异**：我们用 600 **235 次**（"哪里都半粗"），参考实现用 **650/720/620/560** 细档建层次、400 只有 11 处。新增 `--weight-regular/medium/semibold(560)/bold(620)/heavy` 五档令牌，把 34 处 meta/值类从 600 降到 500/560，并在末尾补「层次收口」规则：区块标题 620、列表项 560、**值与数字回到 400**（表格里全粗体会让数字互相打架）。<br>② **控件高度整体上抬**：24/28 为主 → `--control-*` 改为 **26/30/34/38/44**（参考实现以 34 为主），小控件不再"挤"。<br>③ **圆角软化 + 胶囊化**：`--radius-sm` 4→**6px**、`--radius-xs` 6→**8px**；10 个标签/徽标/计数类（`.market-skill-tag` / `.petm-tag` / `.sp-chip` / `.model-badge` / `.nb-count-badge` …）统一 `--radius-full` —— 方角小块像"数据表"，胶囊像"产品"。<br>④ **图标描边统一**：此前 `<svg strokeWidth>` 在 0.6/1/1.2/1.5/2/2.5 之间抖动，12–14px 上的细线发虚；统一 `1.75`，并按尺寸反向补偿（`.icon-2xs/-xs` → 2，`.icon-2xl/-3xl` → 1.5）。<br>**结论**：观感差距主要来自 ①字重层次 ②控件尺度 ③圆角与胶囊 ④图标描边一致性 ⑤窗口外壳 ⑥默认主题明度 —— **都不是"令牌化"能自动解决的**，而是逐部件的光学调校 + 品牌选择；令牌化的价值是让这些调校**一次改全局**。⑤⑥（mac 风格窗口外壳、默认浅色暖灰）需要产品决策，本轮未动。 |
 | **第 35 波** | 2026-09-10 | **0** ✅ | **0** ✅ | **字体栈收敛 + 一处自我更正（门禁规则 17 → 18 条）**。<br>① 用户点名怀疑"字体"，于是先做体检：`font-face` 用的是 `public/fonts/AlimamaFangYuanTiVF-Thin.ttf`，我用 `fvar` 表核验它**确实是可变字体**（`wght` 200–700 + `BEVL` 1–100，18 个具名实例）—— 于是**第 33 波写在 §2.1b 的"我们是静态字重、细档会被取整"是错的**，560/620 一直真实生效；同时把 `@font-face` 的 `font-weight` 从 `100 900` 收窄到真实的 `200 700`（声明超出轴范围会让浏览器在 700 以上合成伪粗体，中文界面会糊）。<br>② 真正的字体问题是**栈太散**：31 种不同 `font-family` 取值 / 192 处声明，其中**等宽栈 14 种写法**（`"SF Mono", "Fira Code", monospace`×15、`'SF Mono', Consolas, monospace`×9、`'SF Mono', Consolas, 'Liberation Mono', monospace`…），同一段代码在不同组件可能落到不同字体上；参考实现只有 15 处声明且全走令牌栈。收敛成 `--font-ui` / `--font-mono` / `--font-display` 三档（`--font-family` 降为兼容别名），**50 处等宽栈 + 6 处 UI 栈**收回令牌，不同取值 31 → **7 种**。新增规则 `font-stack-raw`。插件 CSS 保留 `var(--font-mono, ui-monospace, monospace)` 带兜底写法。 |
+| **第 41 波** | 2026-09-10 | **0** ✅ | **0** ✅ | **应用外壳：应用级菜单栏 + 窗口 chrome（B 组第 5 项，A/B 两组到此全部落地）**。<br>① **诊断**：参考实现的"产品感"有很大一部分来自窗口外壳 —— mac 风格工具条（50px + 专门的拖拽安全区 + 独立动作栏 + 带遮罩渐隐的标签条）加一套**应用菜单**（`.app-menu-surface` 10px 圆角 / 30px 菜单项 / 14px 图标 1.8 描边）。我们此前只有一排图标按钮 —— 能点，但**没有可读的命令名**：用户不知道有哪些功能、也看不到快捷键。这正是"项目级 vs 产品级"最直观的差别之一。<br>② **新增 `AppMenuBar`**（纯自研，不引第三方菜单原语）：文件 / 视图 / 帮助三组，只放**真实可用**的命令（新建对话 / 搜索 / 设置 / 关闭窗口 / 切换侧边栏 / 切换终端 / 切换主题），**不放灰掉的假项**。ARIA 与样式同源（`role="menubar"/"menu"/"menuitem"` + `aria-haspopup` + `aria-expanded` + `aria-keyshortcuts`，展开态样式挂在 `[aria-expanded="true"]` 上）；键盘完整可用：↓/Enter 打开并聚焦首项、↑↓ 项间循环、←→ 换菜单（展开态）、Home/End 跳首尾、Tab/Esc 关闭且 Esc 把焦点交回触发器、点击别处关闭。**8 条行为测试**（`src/test/app-menu-bar.test.tsx`）—— 菜单栏的价值一半在键盘，而键盘回归肉眼看不出来。<br>③ **chrome 尺寸与细节**：新增 `--chrome-height` 令牌并把外壳从 36px 提到 **44px**（36px 里塞 26px 控件，上下只剩 5px 余量 —— 这是"贴边感"的来源）；动作栏按钮统一 30px 固定高度（原为 padding 撑出）；标签条加**两端渐隐** `mask-image`（参考实现的同一细节，滚动内容不再硬切）。<br>④ 写遮罩时直接写了 `#000` 被颜色规则拦下 —— 新增 `--mask-opaque` 令牌（mask 只看 alpha，颜色本身无意义，令牌化顺便把这件事写清楚）。<br>⑤ **踩坑记录**：焦点进菜单不能靠 `requestAnimationFrame`（菜单是条件渲染的，DOM 时序不可控，在测试与慢机器上会闪失）—— 改成"记一个待聚焦项 + 用 `useEffect` 在渲染完成后聚焦"。 |
 | **第 40 波** | 2026-09-10 | **0** ✅ | **0** ✅ | **减动效覆盖 + 动效降噪（门禁规则 20 → 21 条）**。<br>① **起点**：60 条 `infinite` 动画里只有 35 条被显式关停，而且关停清单是**类名模式匹配**（`[class*="-spin"]`、`[class*="-pulse"]`）—— `.spinning` / `.thinking-text` / `.activity-dot.active` / `.session-running-dot` / `.boot-splash-logo-icon.pulsing` / `.ppt-studio-orb` / `.lo-icon-btn.is-busy` 这些名字里不含这两个片段的全部漏网；更强的漏洞是**全局兜底对它没有意义**：`animation-duration: 0.01ms` 只会让循环动画瞬间跳到最后一个关键帧。<br>② **做法**：先把 60 条 infinite 逐条列出来核对，关停清单改成**显式选择器清单**；每个自带动画的样式表**自己兜底**（`codem-ui.css` / `notebook-workspace.css` / `game.css` / `pet-window.css` / `library-ops.css`）—— 组件级 CSS 可能被单独加载，不能假设 `styles.css` 一定在；全局兜底补上 `animation-delay` / `transition-delay` 归零，并删掉与文件末尾**逐字重复**的那份兜底块。<br>③ **宠物窗口是独立入口**（`pet-main.tsx` 只加载 `pet-window.css`）：此前它既没有减动效兜底、也没有焦点环，现已补上（焦点环带令牌兜底，因为这个入口下令牌可能未定义）。<br>④ **CSS 管不到的那一半**：新增 `src/hooks/useReducedMotion.ts`，让宠物精灵的 rAF 逐帧切换与图书馆场景的相机缓动/逐帧推进在该偏好下短路 —— 这是全仓库**第一处** `matchMedia('(prefers-reduced-motion…)')`。<br>⑤ **降噪**：删掉背景光斑的无限漂移（25s/30s/20s 交替，纯装饰、零信息量，却让界面永远在动）与死掉的 `@keyframes streaming-dots`；游戏插件的 `pulse` 改名 `mnp-pulse`（此前与 `styles.css` 同名 kf 冲突，插件 CSS 最后加载会**静默顶掉**宿主定义）。<br>⑥ 新增门禁规则 `motion-uncovered`：跨文件比对"每条循环动画是否都有显式关停"，现在 57 条全部覆盖。 |
 | **第 39 波** | 2026-09-10 | **0** ✅ | **0** ✅ | **焦点可见性收口（把"焦点"当独立课题查一遍，门禁规则 18 → 20 条）**。<br>① **根因不是"缺环"，而是"有环却被抑制"**：项目其实有 3 条全局焦点环规则（`codem-ui.css` 的 `*:focus-visible` 与原生控件规则、`styles.css` 里 (0,3,0) 的 `:is(a,button,[role=button],summary,[tabindex]):focus-visible`），但 **21 条组件规则写了 `:focus { outline: none }`**，特异度高于全局规则 —— 其中 4 条是 `<select>`，而全局规则里恰好没有覆盖 select，于是这些控件的键盘焦点**彻底不可见**；另有 **14 处 TSX 内联 `outline: 'none'`**，内联优先级高于所有非 `!important` 规则，连 `[tabindex]:focus-visible` 的 (0,3,0) 环都被吃掉（幻灯片画布 `div[tabindex=0]` 正是如此）。两类全部删除。<br>② 全局输入控件的焦点环从 `color-mix(accent 22%)` 的软环提到令牌强度（`--focus-ring-color`，75%）；会给容器裁切的场景改用 **inset 环**（工作区标签栏 / PPT 缩略图栏 / 面板侧栏标签 / 幻灯片画布 / 文件树 / 图谱节点）—— `overflow` 非 visible 的那一侧会**双向**裁切，外扩环必然被切掉。<br>③ **两处"键盘根本到不了"**（比"焦点看不见"更严重）：文件树条目 `.file-entry` 与图谱节点 `.kg-node` 都是不可聚焦的 `div` —— 补 `role`/`tabIndex`/`aria-selected`/Enter-Space（图谱节点用"派发一次 click"复用鼠标路径，不必给节点 data 加字段）。<br>④ 新增门禁规则 `focus-outline-none`（焦点规则里 `outline: none` 且无替代环）与 `inline-outline-none`（TSX 内联抑制）；写规则时又把**文档里的反例**当成真规则误报了一次 —— 已让规则解析先剥离注释（保留换行以免行号错位）。<br>⑤ **同口径实测已超过参考实现**：`:focus-visible` 规则 490 vs 57、带环规则 22 vs 21、`outline:none` 抑制 5 vs 19（详见 §5 后的对照表）。 |
 | **第 36 波** | 2026-09-10 | **0** ✅ | **0** ✅ | **默认档位改为浅色暖中性 + 首屏不再闪（B 组第 6 项）**。<br>① 问题有两层：**默认档位**（`--bg-primary` 是 `rgba(14,15,15,1)` 近黑）和**散落的默认值**（`|| "dark"` 在 TitleBar / SkinSelector / CodeBlockView / ThemeManager 各写一遍，改默认要同时改五处），外加**首屏闪烁**（`index.html` 里没有 `data-theme`，浏览器先按 `:root` 的暗色渲染一帧再等 JS 切，浅色用户每次启动都闪黑）。<br>② 做法：CSS 侧 `:root, [data-theme="light"]` 变成浅色档、`[data-theme="dark"]` 是显式覆盖（两档令牌从此**完全对称**，此前 light 块只覆盖 49/76 个令牌，`--highlight-top` 等 22 个在浅色下一直沿用的暗色值）；色板从冷蓝灰（GitHub 那套）换成**暖中性**（画布 `#fcfcfb`、卡片 `#f5f5f3`、文字 `#1f1f1e`、线 12%/7% 黑），并补齐浅色档缺失的 `--highlight-top*`（暗色下是"白 5% 透光"，浅色下必须是实白，否则面与面没有厚度差）。<br>③ 代码侧新增唯一真相源 `src/core/theme/theme-default.ts`（`DEFAULT_THEME` / `isThemeMode` / `applyThemeAttribute` / `cacheTheme`），四处 `|| "dark"` 全部改为读它；换档时写 localStorage 镜像，`index.html` 加一段内联脚本在首屏渲染前读镜像设属性 —— **两个方向都不再闪烁**（SQLite 的 `codem-theme` 仍是真相源，镜像只是"首屏预测"）。<br>④ 顺带修掉自己造的两处违规（`--shadow-raise-*` 在重写主题块时被漏掉、注释里写了原始色值触发了颜色规则）——**门禁规则又一次抓住了我自己的手误**。 |
@@ -568,6 +570,10 @@ node tools/ui-audit/codemod-icon-scale.mjs [--write]  # 图标工具类 → .ico
     57 条循环动画全部有显式关停（清单从"类名模式匹配"改成显式选择器）、每个自带动画的样式表自己兜底、
     宠物窗口补齐兜底与焦点环、新增 `useReducedMotion` 让 rAF 逐帧动画也尊重该偏好，
     删掉背景光斑漂移与死 kf，游戏插件 kf 改名避免静默覆盖；新增规则 `motion-uncovered`（详见 §7 A3）。
+40. **第 41 波（本轮）**：**应用外壳：应用级菜单栏 + 窗口 chrome**（B 组第 5 项）——
+    新增 `AppMenuBar`（文件/视图/帮助，纯自研、完整键盘可达 + ARIA，8 条行为测试）、
+    外壳高度令牌 `--chrome-height` 44px（原 36px 里塞 26px 控件只剩 5px 余量）、
+    标签条两端渐隐遮罩、动作栏按钮统一 30px 固定高度、`--mask-opaque` 令牌（详见 §2.8 与 §5 表）。
 
 ### 同口径对照（`.preview-shot/focus-compare.mjs`，第 39 波实测）
 
@@ -630,9 +636,16 @@ node tools/ui-audit/codemod-icon-scale.mjs [--write]  # 图标工具类 → .ico
 
 **B. 需要产品/品牌决策**（第 39 波起逐项落地 —— 用户已确认"A 和 B 都做，一切以追平甚至超越它为目标"）
 
-5. **窗口外壳**：参考实现有 mac 风格窗口（`mac-window` 34 处 + `workbench-window` 7 处 + `topbar` 22 +
-   `app-menu` 16：红黄绿灯、一体化工具条、应用级菜单），我们只有 `titlebar` 37 处、`-webkit-app-region: drag`
-   3 处 —— 这是"产品感"最强的单一信号（它 56 个 menu 类名 vs 我们 39）。**第 39–40 波做**。
+5. **窗口外壳** ✅ **第 41 波完成（应用级菜单栏 + chrome 尺寸/细节）**：加了一条**应用级菜单栏**
+   （文件 / 视图 / 帮助，纯自研组件 `AppMenuBar`，`role="menubar"/"menu"/"menuitem"` +
+   `aria-haspopup`/`aria-expanded`/`aria-keyshortcuts`，键盘完整可用：↓ 打开、↑↓ 选项、
+   ←→ 换菜单、Home/End 跳首尾、Esc 关闭并把焦点交回触发器；8 条行为测试锁住）。
+   **只放真实可用的命令**（新建对话 / 搜索 / 设置 / 关闭窗口 / 切换侧边栏 / 切换终端 / 切换主题），
+   不放灰掉的假项。外壳本身：`--chrome-height` 44px（原 36px 里塞 26px 控件，上下只剩 5px 余量）、
+   动作栏按钮统一 30px 固定高度、标签条两端渐隐（`mask-image`，遮罩色用 `--mask-opaque` 令牌）。
+   **还差一步（未做，属可选）**：参考实现的工具条有**独立拖拽安全区**（`--mac-window-chrome-left/right-safe-area`
+   + 一条专门的 `.mac-window-drag-region`）与"新建标签"下拉；我们目前是整条 `-webkit-app-region: drag`
+   加逐个 `no-drag`，功能等价但不如它的结构清晰。
 6. **默认主题明度**：✅ **第 36 波完成** —— 默认档位改为**浅色暖中性**（画布 `#fcfcfb`、
    卡片 `#f5f5f3`、文字 `#1f1f1e`、线 12%/7% 黑），`:root` 即默认档、暗色改为显式覆盖，
    两档令牌完全对称（此前浅色块只覆盖 49/76 个令牌），并加首屏镜像脚本消除启动闪烁。

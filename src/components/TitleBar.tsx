@@ -15,6 +15,8 @@ import codemLogoUrl from "../assets/codem-logo.png";
 import { getSetting, setSetting } from "../core/storage/settings";
 import { ThemeManager } from "../core/theme";
 import { DEFAULT_THEME, applyThemeAttribute, isThemeMode } from "../core/theme/theme-default";
+import { AppMenuBar } from "./AppMenuBar";
+import type { AppMenuSection } from "./AppMenuBar";
 import { useProjectStore } from "../core/store";
 import { useAppStore } from "../store";
 import { getLang } from "../core/i18n/lang";
@@ -58,6 +60,8 @@ export function TitleBar({
   onNewChat,
   onSearch,
   onSettings,
+  sidebarOpen = false,
+  onToggleSidebar,
   terminalOpen = false,
   onToggleTerminal,
   workspaceTabs = [],
@@ -206,6 +210,44 @@ export function TitleBar({
     return () => window.removeEventListener("keydown", handler);
   }, [onSearch]);
 
+  // 第 41 波：应用级菜单栏（文件 / 视图 / 帮助）。
+  // 只放**真实可用**的命令 —— 菜单项全部映射到已有回调或已有快捷键上，
+  // 不放灰掉的假项（那只会让人以为功能存在）。
+  const mod = isMac ? "⌘" : "Ctrl+";
+  const appMenus: AppMenuSection[] = [
+    {
+      id: "file",
+      label: zh ? "文件" : "File",
+      items: [
+        { id: "new-chat", label: zh ? "新建对话" : "New chat", shortcut: `${mod}N`, onSelect: onNewChat },
+        { id: "search", label: zh ? "搜索" : "Search", shortcut: `${mod}K`, onSelect: onSearch },
+        { id: "settings", label: zh ? "设置" : "Settings", shortcut: `${mod},`, separatorBefore: true, onSelect: onSettings },
+        { id: "close", label: zh ? "关闭窗口" : "Close window", shortcut: isMac ? "⌘Q" : "Alt+F4", separatorBefore: true, onSelect: handleClose },
+      ],
+    },
+    {
+      id: "view",
+      label: zh ? "视图" : "View",
+      items: [
+        { id: "sidebar", label: zh ? "显示/隐藏侧边栏" : "Toggle sidebar", shortcut: `${mod}B`, onSelect: onToggleSidebar },
+        { id: "terminal", label: zh ? "显示/隐藏终端" : "Toggle terminal", shortcut: `${mod}\``, onSelect: onToggleTerminal },
+        {
+          id: "theme",
+          label: theme === "dark" ? (zh ? "切换到浅色主题" : "Switch to light theme") : (zh ? "切换到深色主题" : "Switch to dark theme"),
+          onSelect: toggleTheme,
+        },
+      ],
+    },
+    {
+      id: "help",
+      label: zh ? "帮助" : "Help",
+      items: [
+        { id: "commands", label: zh ? "命令与搜索" : "Commands & search", shortcut: `${mod}K`, onSelect: onSearch },
+        { id: "help-settings", label: zh ? "设置与帮助" : "Settings & help", onSelect: onSettings },
+      ],
+    },
+  ];
+
   return (
     <div className="titlebar" data-tauri-drag-region>
       {/* P3: Mac-style window controls (left side) */}
@@ -223,6 +265,8 @@ export function TitleBar({
           <img src={codemLogoUrl} alt="Codem" className="titlebar-logo-img" />
         </span>
         <span className="titlebar-title" data-tauri-drag-region>Codem</span>
+        {/* 第 41 波：应用级菜单栏 —— 在应用名右侧，和原生桌面应用一致 */}
+        <AppMenuBar zh={zh} menus={appMenus} />
         {/* 执行模式切换（本地处理 / 新工作树）—— 侧边栏按钮与项目 LOGO 右侧 */}
         <button
           className={`titlebar-action-btn execution-mode-toggle ${executionMode === "git_worktree" ? "active" : ""}`}

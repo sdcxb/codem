@@ -114,6 +114,15 @@
   --control-std: 38px;   /* 标准：表单控件、主按钮 */
   --control-form: 44px;  /* 宽松：大表单、发送按钮 */
 
+  /* 应用外壳高度（第 41 波）：参考实现的窗口工具条是 50px（含标签条），
+     我们此前是 36px —— 36px 里塞 26px 控件只剩 5px 余量，视觉上"贴边"。
+     44px 让 30px 的控件上下各留 7px，和 mac 窗口的比例接近。 */
+  --chrome-height: 44px;
+  /* 遮罩用的不透明色（mask 只看 alpha，颜色本身无意义）：
+     标签条的"两端渐隐"需要它，之前直接写 #000 被颜色规则拦下 —— 令牌化之后
+     既过了门禁，也说明了"这不是一个颜色选择，而是一个 alpha 占位"。 */
+  --mask-opaque: rgb(0 0 0 / 100%);
+
   /* 原生控件配色跟随主题（滚动条、下拉、日期选择、自动填充的底色）。
      不声明 color-scheme 时，暗色主题里原生控件仍按亮色渲染 —— 观感粗糙的常见来源。 */
   color-scheme: dark;
@@ -380,7 +389,7 @@ body {
 
 /* 自定义标题栏：透明背景，让 Mica 透出 */
 .titlebar {
-height: 36px;
+height: var(--chrome-height); /* 第 41 波：外壳高度令牌（原 36px 塞 26px 控件，上下只剩 5px） */
 flex-shrink: 0;
 display: flex;
 align-items: center;
@@ -417,9 +426,117 @@ justify-content: flex-start;
 
 .titlebar-title {
   font-size: var(--fs-sm);
-  font-weight: 600;
-  color: var(--text-secondary);
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
   letter-spacing: 0.5px;
+}
+
+/* ==========================================================================
+ * 第 41 波：应用外壳（应用级菜单栏 + 菜单面板）
+ *
+ * 参考实现的"产品感"有很大一部分来自**窗口外壳**：mac 风格窗口（50px 工具条 + 专门的拖拽区
+ * + 独立动作栏 + 带遮罩渐隐的标签条）与一套应用菜单（`.app-menu-surface` 10px 圆角 / 5px 内边距 /
+ * 30px 菜单项 / 14px 图标 + 1.8 描边）。我们此前只有一排图标按钮 —— 能点，
+ * 但没有**可读的命令名**：用户不知道有哪些功能、也看不到快捷键。
+ *
+ * 这一层刻意复用父级已有令牌（`--dropdown-bg` / `--radius-md` / `--shadow-raise-3` / `--z-dropdown`），
+ * 不新造"外壳专用色"，这样皮肤与深浅主题都能直接跟随。
+ * ========================================================================== */
+.app-menubar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-left: var(--space-2);
+  -webkit-app-region: no-drag;
+}
+
+.app-menu {
+  position: relative;
+}
+
+.app-menu-trigger {
+  height: var(--control-dense);
+  padding: 0 var(--space-5);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: var(--fs-sm);
+  font-weight: var(--weight-medium);
+  cursor: default;
+  transition: var(--transition-color);
+}
+.app-menu-trigger:is(:hover, :focus-visible) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+/* 展开态由 ARIA 驱动（与第 32 波的状态属性约定一致） */
+.app-menu-trigger[aria-expanded="true"] {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  border-color: var(--border-primary);
+}
+
+.app-menu-surface {
+  position: absolute;
+  top: calc(100% + var(--space-2));
+  left: 0;
+  z-index: var(--z-dropdown);
+  display: flex;
+  min-width: 200px;
+  max-width: min(300px, calc(100vw - var(--space-9)));
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  background: var(--dropdown-bg);
+  box-shadow: var(--shadow-raise-3);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.app-menu-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content;
+  align-items: center;
+  gap: var(--space-5);
+  width: 100%;
+  min-height: var(--control-dense);
+  padding: var(--space-2) var(--space-4);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: var(--fs-sm);
+  font-weight: var(--weight-medium);
+  text-align: left;
+  cursor: default;
+  transition: var(--transition-color);
+}
+.app-menu-item:is(:hover, :focus-visible) {
+  background: var(--dropdown-hover);
+}
+.app-menu-item:disabled {
+  color: var(--text-muted);
+}
+.app-menu-item-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.app-menu-shortcut {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  letter-spacing: 0.02em;
+}
+.app-menu-separator {
+  height: 1px;
+  margin: var(--space-2) var(--space-3);
+  background: var(--border-secondary);
 }
 
 .titlebar-buttons {
@@ -444,7 +561,8 @@ justify-content: flex-end;
   border: none;
   color: var(--text-secondary);
   cursor: pointer;
-  padding: var(--space-3) var(--space-4);
+  height: var(--control-dense);
+  padding: 0 var(--space-4); /* 第 41 波：固定高度 + 水平内边距，图标在 44px 外壳里垂直居中 */
   border-radius: var(--radius-sm);
   display: flex;
   align-items: center;
@@ -16103,6 +16221,8 @@ color: var(--accent, #7c6cf0);
   overflow-x: auto;
   scrollbar-width: none;
   -webkit-app-region: no-drag;
+  /* 第 41 波：滚动到边缘时两端渐隐（参考实现的同一细节），不再硬切 */
+  mask-image: linear-gradient(90deg, transparent 0, var(--mask-opaque) var(--space-6), var(--mask-opaque) calc(100% - var(--space-6)), transparent 100%);
 }
 .titlebar-tabs::-webkit-scrollbar {
   display: none;
