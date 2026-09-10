@@ -690,6 +690,10 @@ node tools/ui-audit/codemod-icon-scale.mjs [--write]  # 图标工具类 → .ico
   已知取舍」三段写）、`README.md`（「作者的话」追加 v1.16.0 段落）、`docs/PROJECT-GUIDE.md`
   （6.1 已发布版本表新增一行）三处同步；版本号在 `package.json` / `src-tauri/tauri.conf.json` /
   `src-tauri/Cargo.toml` 三处一起改。
+  产物与地址：`https://github.com/sdcxb/codem/releases/tag/v1.16.0`
+  —— `Codem_1.16.0_x64-setup.exe`（39.7MB）+ `.sig`、`Codem_1.16.0_x64_en-US.msi`（42.0MB）+ `.sig`、
+  `latest.json`（updater 清单）共 5 个资产；构建日志显示 Rust `release` profile 编译 2m23s、
+  前端 `vite build` 37s、NSIS 与 MSI 两套包与 updater 签名全部生成。
 - **新增 `src/test/version-consistency.test.ts`**（VERSION-1~4）把「三处版本一致 + 语义化三段式 +
   CHANGELOG 顶部有当前版本条目 + PROJECT-GUIDE 版本表已登记」变成机器约束 ——
   此前只有"三处一起改"的人工纪律，而漏改的后果是**安装包版本与前端版本不一致**，开发环境里看不出来。
