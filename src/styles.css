@@ -2223,13 +2223,41 @@ z-index: 50;
   min-width: 0;
 }
 
-/* P-UI: 左侧工具组 */
+/* P-UI: 左侧工具组
+   第 48 波（用户反馈）：这里是**工具行**，不是"标签墙" —— 第 42 波把它一并改成
+   `repeat(auto-fill, minmax(40px, max-content))` 是改错了对象：auto-fill 的列数由
+   "容器宽度 ÷ 最小列宽"推出来，而带文字的 chip（执行模式 / 安全策略 / 临时会话）远宽于 40px，
+   于是轨道被撑大、后面的 chip 被挤到下一行 —— 表现就是"＋ 自己一行、执行模式+安全策略 一行、
+   搜索+临时会话 一行"。这里改回**不换行的 flex 行**：始终一行，宽度不够时压缩文字（省略号）。 */
 .input-tools-left {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(var(--space-13), max-content));
+  display: flex;
+  flex-wrap: nowrap;
   align-items: center;
   gap: var(--space-2);
   min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+}
+
+/* 行内子项：默认可以压缩到省略号；图标型按钮与浮层锚点固定尺寸（压它们只会把图标裁掉） */
+.input-tools-left > * {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+.input-tools-left > :is(.mode-toggle-btn, .input-relative-anchor, .input-float-anchor, .upload-btn) {
+  flex: 0 0 auto;
+}
+/* 计划模式 chip：带文字，允许压缩 */
+.plan-mode-chip {
+  min-width: 0;
+  flex: 0 1 auto;
+}
+
+/* 第 48 波：这条行是 overflow: hidden（保证不换行），外扩焦点环会被裁掉 ——
+   所以行内控件的键盘焦点改走 inset 环（与第 39 波处理"会裁切容器"的同一套做法）。 */
+.input-tools-left :is(button, [role="button"]):focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 var(--focus-ring-width) var(--focus-ring-color);
 }
 
 /* P-UI: 右侧发送组 */
@@ -10699,6 +10727,10 @@ min-height: 36px;
   background: none;
   transition: background var(--duration-press), border-color var(--duration-press);
   white-space: nowrap;
+  /* 第 48 波：工具行不换行 —— 宽度不够时压缩文字而不是把后面的 chip 顶到下一行 */
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .input-control-item:is(:hover, :focus-visible) {

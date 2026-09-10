@@ -6,6 +6,8 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { InputArea } from "../components/InputArea";
 import type { CollaborationMode } from "../core/agent/agent";
 
@@ -114,6 +116,20 @@ describe("InputArea — 渲染测试", () => {
  * 测试依然全绿，等于没有保护。
  */
 describe("InputArea — 第 46 波：输入区辅助按钮", () => {
+  it("工具行是「不换行的一行」——CSS 契约：flex + flex-wrap: nowrap（不是会折行的 auto-fill 网格）", () => {
+    // 第 48 波（用户反馈）：第 42 波把这条行一并改成了 `repeat(auto-fill, minmax(40px, max-content))`，
+    // 而 auto-fill 的列数由"容器宽度 ÷ 最小列宽"推出，带文字的 chip 远比 40px 宽 →
+    // 轨道被撑大、后面的 chip 被挤到下一行（表现为"＋ 一行 / 执行模式+安全策略 一行 / 搜索+临时会话 一行"）。
+    // 这条断言把"工具行必须一行放完"变成机器约束 —— jsdom 不做布局，所以用 CSS 契约来守。
+    const css = readFileSync(join(__dirname, "..", "styles.css"), "utf8");
+    const block = /\/\* P-UI: 左侧工具组[\s\S]*?(\.input-tools-left \{[\s\S]*?\})/.exec(css)?.[1] ?? "";
+    expect(block, "应能定位 .input-tools-left 规则").toBeTruthy();
+    expect(block).toMatch(/display:\s*flex;/);
+    expect(block).toMatch(/flex-wrap:\s*nowrap;/);
+    expect(block, "不应再是 grid 自动填充（那样会把 chip 折到多行）").not.toMatch(/display:\s*grid/);
+    expect(block, "不应有 grid-template-columns 自动填充").not.toMatch(/grid-template-columns/);
+  });
+
   it("在编辑器工具行渲染「搜索」与「临时会话」，且样式与安全策略同一类（.input-control-item）", () => {
     const { container } = renderInputArea({
       onToggleSearch: () => {},
@@ -135,8 +151,7 @@ describe("InputArea — 第 46 波：输入区辅助按钮", () => {
     }
   });
 
-  it("按压态由 aria-pressed 表达，点击回调被触发", async () => {
-    const user = userEvent.setup();
+  it("按压态由 aria-pressed 表达，点击回调被触发", async () => {    const user = userEvent.setup();
     const onToggleSearch = vi.fn();
     const onToggleSideSession = vi.fn();
     const { container, rerender } = render(

@@ -47,7 +47,9 @@ export function PlanModeChip({ mode, onModeChange, locked = false }: PlanModeChi
   if (mode !== 'plan') return null
 
   return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
+    // 第 48 波：加一个具名类 —— 工具行现在是"不换行"的 flex 行，需要给这个带文字的 chip
+    // 一个可被压缩（min-width: 0）的钩子，否则窄窗口下会把后面的 chip 顶到下一行
+    <span className="plan-mode-chip" style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
       <button
         type="button"
         aria-label={zh ? '退出计划模式' : 'Exit plan mode'}
