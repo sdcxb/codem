@@ -24,7 +24,7 @@ import { useScrollState, useUnreadMessagesTracker } from "../hooks/useScrollStat
 import {
   PanelLeftClose, PanelLeftOpen, ChevronDown, Brain, Bot, Camera, BarChart3, LayoutGrid,
   Search, X, GitFork, RotateCcw, Check, Hammer, ClipboardList, Zap,
-  Activity, Pencil, MessageSquareText,
+  Activity, Pencil,
 } from "lucide-react";
 // P2 #38: framer-motion for smooth list animations
 import { motion, AnimatePresence } from "framer-motion";
