@@ -183,6 +183,8 @@ node tools/ui-audit/codemod-icon-scale.mjs [--write]  # 图标工具类 → .ico
 
 | **第 15 波** | 2026-09-10 | **0** ✅ | **20** | **内联样式收口（任务管理面板）**：新建 `src/styles/task-center.css`（首个按"面板"拆分的样式文件，之前所有样式都堆在 1.4 万行的 styles.css 里），把任务管理三个组件全部收口 —— `SquadsTab`（176 → 0）、`IssueDetailPanel`（133 → 0）、`AutomationTab`（134 → 0），并抽出 `tc-*` 通用族（表单/编辑器/按钮族）。**顺带修掉三处真实 bug**：`background: "var(--accent)22"`（在 `var()` 后面拼十六进制 alpha 是无效 CSS，Squad 成员徽标与「已分配 Squad」按钮其实一直没有底色）、`IssueDetailPanel` 里 `authorType === "agent" ? accent : accent` 的死三元、以及用 JS 的 `onMouseEnter` 直接改 `style.background` 做 hover（改成 CSS `:hover`） |
 
+| **第 16 波** | 2026-09-10 | **0** ✅ | **19** | **内联样式收口（设置类面板）**：`LayeredSettingsPanel`（141 → 0）改 `.layered-*` 具名类并复用共享 `.panel-btn`；优先级圆形徽标、策略限制的 ok/warn/bad 三态都收成类。顺手修掉一处重复求值：`mgr.getBlockedModels()` / `getBlockedProviders()` 原在渲染里被调了两遍，改成先取值（这两个 getter 每次都会走一遍策略计算） |
+
 ### 全项目现场事实（来自 UI 交互界面清单，作为工作队列）
 
 - 挂载层：64 个 `SlotBridge` 渲染点 + 54 处 `slots.register` + 44 处 `createPortal`（另 51 个 SlotBridge 在 `App.tsx`）。
@@ -217,9 +219,9 @@ node tools/ui-audit/codemod-icon-scale.mjs [--write]  # 图标工具类 → .ico
 | `modal-shell-bespoke` | error | 15 | **0** ✅ |
 | `spacing-offgrid` | warn | 13 | **0** ✅ |
 | `css-class-undefined` | warn | — | **0** ✅（第 10 波清零；审计器已扩面到模板字面量） |
-| `inline-style-dense` | warn | 58 | 20（唯一剩下的 warn；第 14 波先修正了度量口径 50 → 25，再累计收口 5 个文件） |
+| `inline-style-dense` | warn | 58 | 19（唯一剩下的 warn；第 14 波先修正了度量口径 50 → 25，再累计收口 6 个文件） |
 | **error 合计** | | **533** | **0** ✅ |
-| **warn 合计** | | 64 | **20** |
+| **warn 合计** | | 64 | **19** |
 
 > 注：`color-hardcoded-tsx` 中途曾报 53 → 9 —— 不是"改多了"，而是审计器修掉了假阳性（见第 11 波说明）。
 > `fs-hardcoded` 第 12 波一度报 590 —— 也不是"变差了"，而是审计器**首次开始扫 CSS 侧**（此前 591 处写死的字号
@@ -245,7 +247,8 @@ node tools/ui-audit/codemod-icon-scale.mjs [--write]  # 图标工具类 → .ico
 12. **第 12 波**：宿主样式表纳入审计 + 592 处字号令牌化（详见 §5 表）。
 13. **第 13 波**：`styles.css` 的 249 处色值 + 22 处离格圆角 → 令牌，该文件的例外彻底删除；审计器补掉命名色与"整行放过"两处盲区（详见 §5 表）。
 14. **第 14 波**：内联样式收口开工 —— 修正 `inline-style-dense` 的度量口径（50 → 25 个文件）、定义闭集共享具名类、`RecoveryPanel` 149 → 0、`FlashcardViewer` 139 → 0（详见 §5 表）。
-15. **第 15 波（本轮）**：新建 `src/styles/task-center.css`，任务管理面板三个组件（SquadsTab 176、IssueDetailPanel 133、AutomationTab 134）内联样式全部收口并抽出 `tc-*` 通用族；顺带修掉 `var(--accent)22` 这类无效 CSS（详见 §5 表）。
+15. **第 15 波**：新建 `src/styles/task-center.css`，任务管理面板三个组件（SquadsTab 176、IssueDetailPanel 133、AutomationTab 134）内联样式全部收口并抽出 `tc-*` 通用族；顺带修掉 `var(--accent)22` 这类无效 CSS（详见 §5 表）。
+16. **第 16 波（本轮）**：设置类面板 `LayeredSettingsPanel`（141 → 0）收口（详见 §5 表）。
 
 ### 下一轮的工作队列（按性价比排序）
 

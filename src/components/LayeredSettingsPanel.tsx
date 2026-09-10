@@ -7,6 +7,13 @@ import {
 import { useProjectStore } from "../core/store";
 import { useLang } from "../core/i18n/lang";
 
+/**
+ * 分层设置管理面板。
+ *
+ * 样式：第 16 波把内联样式收口成 `.layered-*` 具名类（见 src/styles.css），
+ * 按钮复用共享 `.panel-btn`，等宽文本复用 `.mono`。
+ */
+
 const SOURCE_LABELS_ZH: Record<SettingsSource, string> = {
   cli: "命令行参数",
   policy: "企业策略",
@@ -80,78 +87,64 @@ export function LayeredSettingsPanel() {
     setShowExport(true);
   };
 
-  const labelStyle: React.CSSProperties = {
-    fontSize: 'var(--fs-sm)', fontWeight: 600, color: "var(--text-secondary)", marginBottom: 3, display: "block",
-  };
+  // 一次算好，避免同一个 getter 在渲染里被反复调用（原代码每处都调了两遍）
+  const blockedModels = mgr ? mgr.getBlockedModels() : [];
+  const blockedProviders = mgr ? mgr.getBlockedProviders() : [];
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+    <div className="layered-panel">
       <div>
-        <div style={{ fontSize: 'var(--fs-md)', fontWeight: 700, color: "var(--text-primary)" }}>
+        <div className="layered-title">
           🏗️ {zh ? "分层设置管理" : "Layered Settings Management"}
         </div>
-        <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-secondary)", marginTop: 2 }}>
+        <div className="layered-subtitle">
           {zh
             ? "查看设置来源优先级链。高优先级来源覆盖低优先级。当前项目: "
             : "View settings source priority chain. Higher priority overrides lower. Current project: "}
-          <span style={{ fontFamily: "monospace", color: "var(--text-primary)" }}>
+          <span className="layered-path">
             {currentProject?.path || zh ? "(未选择)" : "(none)"}
           </span>
         </div>
       </div>
 
       {/* Priority chain visualization */}
-      <div style={{
-        padding: 12, borderRadius: 8, border: "1px solid var(--border-primary)",
-        background: "var(--bg-secondary)",
-      }}>
-        <div style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, color: "var(--text-secondary)", marginBottom: 8 }}>
+      <div className="layered-card">
+        <div className="layered-card-title">
           {zh ? "优先级链（从高到低）" : "Priority Chain (high to low)"}
         </div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-          {sortedSources.map((s, i) => {
+        <div className="layered-chain">
+          {sortedSources.map((s) => {
             const isActive = selectedSource === s.source;
             return (
               <div
                 key={s.source}
                 onClick={() => setSelectedSource(isActive ? null : s.source)}
-                style={{
-                  display: "flex", alignItems: "center", gap: 8, padding: "6px 10px",
-                  borderRadius: 4, cursor: "pointer", fontSize: 'var(--fs-sm)',
-                  border: `1px solid ${isActive ? "var(--accent)" : "var(--border-primary)"}`,
-                  background: isActive ? "color-mix(in srgb, var(--accent) 10%, transparent)" : "var(--bg-tertiary)",
-                }}
+                className={`layered-item${isActive ? " is-active" : ""}`}
               >
-                <span style={{
-                  width: 20, height: 20, borderRadius: "50%", flexShrink: 0,
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  fontSize: 'var(--fs-xs)', fontWeight: 700,
-                  background: s.enabled ? "var(--accent)" : "var(--bg-secondary)",
-                  color: s.enabled ? "#fff" : "var(--text-muted)",
-                }}>
+                <span className={`layered-priority${s.enabled ? "" : " is-off"}`}>
                   {s.priority}
                 </span>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontWeight: 600, color: "var(--text-primary)" }}>
+                <div className="layered-item-main">
+                  <div className="layered-item-name">
                     {zh ? SOURCE_LABELS_ZH[s.source] : SOURCE_LABELS_EN[s.source]}
-                    {!s.enabled && <span style={{ marginLeft: 6, fontSize: 'var(--fs-xs)', color: "var(--text-muted)" }}>({zh ? "已禁用" : "disabled"})</span>}
+                    {!s.enabled && <span className="layered-item-disabled">({zh ? "已禁用" : "disabled"})</span>}
                   </div>
-                  <div style={{ fontSize: 'var(--fs-xs)', color: "var(--text-muted)" }}>
+                  <div className="layered-item-desc">
                     {zh ? SOURCE_PRIORITY_DESC_ZH[s.source] : SOURCE_PRIORITY_DESC_EN[s.source]}
                   </div>
                 </div>
                 {s.path && (
-                  <span style={{ fontSize: 'var(--fs-xs)', color: "var(--text-muted)", fontFamily: "monospace", maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  <span className="layered-item-path">
                     {s.path}
                   </span>
                 )}
                 {s.lastLoaded && (
-                  <span style={{ fontSize: 'var(--fs-xs)', color: "var(--text-muted)" }}>
+                  <span className="layered-item-note">
                     {zh ? "已加载" : "loaded"}
                   </span>
                 )}
                 {s.data && Object.keys(s.data).length > 0 && (
-                  <span style={{ fontSize: 'var(--fs-xs)', padding: "1px 6px", borderRadius: "var(--radius-sm)", background: "var(--bg-secondary)", color: "var(--text-secondary)" }}>
+                  <span className="layered-item-count">
                     {Object.keys(s.data).length} {zh ? "项" : "keys"}
                   </span>
                 )}
@@ -163,30 +156,27 @@ export function LayeredSettingsPanel() {
 
       {/* Selected source detail */}
       {selectedConfig && (
-        <div style={{
-          padding: 12, borderRadius: 8, border: "1px solid var(--border-primary)",
-          background: "var(--bg-secondary)",
-        }}>
-          <div style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, color: "var(--text-primary)", marginBottom: 8 }}>
+        <div className="layered-card">
+          <div className="layered-card-title is-strong">
             {zh ? SOURCE_LABELS_ZH[selectedConfig.source] : SOURCE_LABELS_EN[selectedConfig.source]} — {zh ? "详情" : "Details"}
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
+          <div className="layered-detail-grid">
             <div>
-              <label style={labelStyle}>{zh ? "来源" : "Source"}</label>
-              <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-primary)", fontFamily: "monospace" }}>{selectedConfig.source}</div>
+              <label className="layered-label">{zh ? "来源" : "Source"}</label>
+              <div className="layered-value layered-value--mono">{selectedConfig.source}</div>
             </div>
             <div>
-              <label style={labelStyle}>{zh ? "优先级" : "Priority"}</label>
-              <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-primary)" }}>{selectedConfig.priority}</div>
+              <label className="layered-label">{zh ? "优先级" : "Priority"}</label>
+              <div className="layered-value">{selectedConfig.priority}</div>
             </div>
             <div>
-              <label style={labelStyle}>{zh ? "路径" : "Path"}</label>
-              <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-secondary)", fontFamily: "monospace" }}>{selectedConfig.path || "-"}</div>
+              <label className="layered-label">{zh ? "路径" : "Path"}</label>
+              <div className="layered-value layered-value--mono layered-value--muted">{selectedConfig.path || "-"}</div>
             </div>
             <div>
-              <label style={labelStyle}>{zh ? "已加载" : "Last Loaded"}</label>
-              <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-primary)" }}>
+              <label className="layered-label">{zh ? "已加载" : "Last Loaded"}</label>
+              <div className="layered-value">
                 {selectedConfig.lastLoaded ? new Date(selectedConfig.lastLoaded).toLocaleString() : "-"}
               </div>
             </div>
@@ -194,19 +184,15 @@ export function LayeredSettingsPanel() {
 
           {selectedConfig.data && Object.keys(selectedConfig.data).length > 0 && (
             <div>
-              <label style={labelStyle}>{zh ? "数据" : "Data"}</label>
-              <pre style={{
-                fontSize: 'var(--fs-xs)', padding: 8, background: "var(--bg-tertiary)", borderRadius: 4,
-                maxHeight: 200, overflow: "auto", whiteSpace: "pre-wrap", margin: 0,
-                color: "var(--text-secondary)", fontFamily: "monospace",
-              }}>
+              <label className="layered-label">{zh ? "数据" : "Data"}</label>
+              <pre className="layered-pre">
                 {JSON.stringify(selectedConfig.data, null, 2)}
               </pre>
             </div>
           )}
 
           {(!selectedConfig.data || Object.keys(selectedConfig.data).length === 0) && (
-            <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", fontStyle: "italic" }}>
+            <div className="layered-empty-data">
               {zh ? "无数据" : "No data"}
             </div>
           )}
@@ -215,30 +201,27 @@ export function LayeredSettingsPanel() {
 
       {/* Policy info */}
       {mgr && (
-        <div style={{
-          padding: 12, borderRadius: 8, border: "1px solid var(--border-primary)",
-          background: "var(--bg-secondary)",
-        }}>
-          <div style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, color: "var(--text-secondary)", marginBottom: 8 }}>
+        <div className="layered-card">
+          <div className="layered-card-title">
             🛡️ {zh ? "策略限制" : "Policy Restrictions"}
           </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 'var(--fs-sm)' }}>
+          <div className="layered-policy">
             <div>
-              <span style={{ color: "var(--text-muted)" }}>{zh ? "绕过权限禁用" : "Bypass disabled"}: </span>
-              <span style={{ fontWeight: 600, color: mgr.isBypassDisabled() ? "var(--error)" : "var(--success)" }}>
+              <span className="layered-policy-key">{zh ? "绕过权限禁用" : "Bypass disabled"}: </span>
+              <span className={`layered-policy-value ${mgr.isBypassDisabled() ? "is-bad" : "is-ok"}`}>
                 {mgr.isBypassDisabled() ? "✅ " + (zh ? "是" : "Yes") : "❌ " + (zh ? "否" : "No")}
               </span>
             </div>
             <div>
-              <span style={{ color: "var(--text-muted)" }}>{zh ? "屏蔽模型" : "Blocked models"}: </span>
-              <span style={{ fontWeight: 600, color: mgr.getBlockedModels().length > 0 ? "var(--warning)" : "var(--success)" }}>
-                {mgr.getBlockedModels().length > 0 ? mgr.getBlockedModels().join(", ") : (zh ? "无" : "None")}
+              <span className="layered-policy-key">{zh ? "屏蔽模型" : "Blocked models"}: </span>
+              <span className={`layered-policy-value ${blockedModels.length > 0 ? "is-warn" : "is-ok"}`}>
+                {blockedModels.length > 0 ? blockedModels.join(", ") : (zh ? "无" : "None")}
               </span>
             </div>
             <div>
-              <span style={{ color: "var(--text-muted)" }}>{zh ? "屏蔽供应商" : "Blocked providers"}: </span>
-              <span style={{ fontWeight: 600, color: mgr.getBlockedProviders().length > 0 ? "var(--warning)" : "var(--success)" }}>
-                {mgr.getBlockedProviders().length > 0 ? mgr.getBlockedProviders().join(", ") : (zh ? "无" : "None")}
+              <span className="layered-policy-key">{zh ? "屏蔽供应商" : "Blocked providers"}: </span>
+              <span className={`layered-policy-value ${blockedProviders.length > 0 ? "is-warn" : "is-ok"}`}>
+                {blockedProviders.length > 0 ? blockedProviders.join(", ") : (zh ? "无" : "None")}
               </span>
             </div>
           </div>
@@ -246,32 +229,19 @@ export function LayeredSettingsPanel() {
       )}
 
       {/* Export */}
-      <div style={{ display: "flex", gap: 8 }}>
-        <button onClick={handleExport} style={{
-          padding: "6px 14px", borderRadius: 4, fontSize: 'var(--fs-sm)',
-          border: "1px solid var(--border-primary)", background: "var(--bg-tertiary)",
-          color: "var(--text-primary)", cursor: "pointer",
-        }}>
+      <div className="layered-actions">
+        <button onClick={handleExport} className="panel-btn">
           📤 {zh ? "导出所有设置" : "Export All Settings"}
         </button>
         {showExport && (
-          <button onClick={() => { navigator.clipboard?.writeText(exportData); }} style={{
-            padding: "6px 14px", borderRadius: 4, fontSize: 'var(--fs-sm)',
-            border: "1px solid var(--border-primary)", background: "var(--bg-tertiary)",
-            color: "var(--text-primary)", cursor: "pointer",
-          }}>
+          <button onClick={() => { navigator.clipboard?.writeText(exportData); }} className="panel-btn">
             📋 {zh ? "复制到剪贴板" : "Copy to Clipboard"}
           </button>
         )}
       </div>
 
       {showExport && (
-        <pre style={{
-          fontSize: 'var(--fs-xs)', padding: 8, background: "var(--bg-tertiary)", borderRadius: 4,
-          maxHeight: 300, overflow: "auto", whiteSpace: "pre-wrap", margin: 0,
-          color: "var(--text-secondary)", fontFamily: "monospace",
-          border: "1px solid var(--border-primary)",
-        }}>
+        <pre className="layered-pre layered-pre--export">
           {exportData}
         </pre>
       )}

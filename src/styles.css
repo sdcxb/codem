@@ -7829,6 +7829,116 @@ border-bottom: 1px solid var(--accent);
   to { opacity: 1; transform: translateY(0); }
 }
 
+/* ==========================================================================
+ * 分层设置面板（LayeredSettingsPanel）：把内联样式收口成具名类（第 16 波）
+ * 按钮复用共享的 .panel-btn；等宽文本复用 .mono。
+ * ========================================================================== */
+.layered-panel { display: flex; flex-direction: column; gap: var(--space-6); }
+.layered-title { font-size: var(--fs-md); font-weight: 700; color: var(--text-primary); }
+.layered-subtitle { margin-top: var(--space-1); font-size: var(--fs-sm); color: var(--text-secondary); }
+.layered-path { font-family: var(--font-mono); color: var(--text-primary); }
+
+.layered-card {
+  padding: var(--space-6);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius);
+  background: var(--bg-secondary);
+}
+.layered-card-title {
+  margin-bottom: var(--space-4);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.layered-card-title.is-strong { color: var(--text-primary); }
+.layered-chain { display: flex; flex-direction: column; gap: var(--space-2); }
+.layered-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-5);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-sm);
+  background: var(--bg-tertiary);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  transition: var(--transition-color);
+}
+.layered-item:hover { border-color: var(--accent); }
+.layered-item.is-active {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+.layered-priority {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--radius-full);
+  background: var(--accent);
+  color: var(--text-on-accent);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+}
+.layered-priority.is-off { background: var(--bg-secondary); color: var(--text-muted); }
+.layered-item-main { flex: 1; min-width: 0; }
+.layered-item-name { font-weight: 600; color: var(--text-primary); }
+.layered-item-disabled { margin-left: var(--space-3); font-size: var(--fs-xs); color: var(--text-muted); }
+.layered-item-desc { font-size: var(--fs-xs); color: var(--text-muted); }
+.layered-item-path {
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+.layered-item-note { font-size: var(--fs-xs); color: var(--text-muted); }
+.layered-item-count {
+  padding: 1px var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-size: var(--fs-xs);
+}
+
+.layered-detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-4); margin-bottom: var(--space-4); }
+.layered-label {
+  display: block;
+  margin-bottom: 3px;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.layered-value { font-size: var(--fs-sm); color: var(--text-primary); }
+.layered-value--mono { font-family: var(--font-mono); }
+.layered-value--muted { color: var(--text-secondary); }
+.layered-pre {
+  margin: 0;
+  padding: var(--space-4);
+  max-height: 200px;
+  overflow: auto;
+  white-space: pre-wrap;
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+}
+.layered-pre--export { max-height: 300px; border: 1px solid var(--border-primary); }
+.layered-empty-data { font-size: var(--fs-sm); font-style: italic; color: var(--text-muted); }
+
+.layered-policy { display: flex; flex-direction: column; gap: var(--space-2); font-size: var(--fs-sm); }
+.layered-policy-key { color: var(--text-muted); }
+.layered-policy-value { font-weight: 600; color: var(--text-primary); }
+.layered-policy-value.is-ok { color: var(--success); }
+.layered-policy-value.is-warn { color: var(--warning); }
+.layered-policy-value.is-bad { color: var(--error); }
+.layered-actions { display: flex; gap: var(--space-4); }
+
 /* ========== Session Recovery ========== */
 /* ==========================================================================
  * 共享组件语言（第 14 波起）
