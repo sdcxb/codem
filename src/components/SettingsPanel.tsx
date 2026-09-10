@@ -736,7 +736,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
         <div className="settings-body">
           <div className="settings-sidebar">
             {/* P2 #36: Settings search */}
-            <div className="settings-search-box" style={{ padding: "8px 12px", borderBottom: "1px solid var(--border-color)" }}>
+            <div className="settings-search-box" style={{ padding: "8px 12px", borderBottom: "1px solid var(--border-primary)" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 6, background: "var(--bg-tertiary)", borderRadius: 6, padding: "4px 8px" }}>
                 <SearchIcon size={14} style={{ color: "var(--text-muted)" }} />
                 <input
@@ -1108,7 +1108,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
                 useAppStore.getState().setDisplayMode(e.target.value as "unified" | "segmented");
                 setSettingJSON("codem-display-mode", e.target.value);
               }}
-              style={{ padding: "6px 8px", fontSize: 'var(--fs-base)', background: "var(--bg-tertiary)", color: "var(--text-primary)", border: "1px solid var(--border-color)", borderRadius: 4 }}
+              style={{ padding: "6px 8px", fontSize: 'var(--fs-base)', background: "var(--bg-tertiary)", color: "var(--text-primary)", border: "1px solid var(--border-primary)", borderRadius: 4 }}
             >
               <option value="unified">{lang === "zh" ? "统一模式（多轮回复合并为一个气泡）" : "Unified (merge multi-turn replies)"}</option>
               <option value="segmented">{lang === "zh" ? "分段模式（每轮回复独立显示）" : "Segmented (each reply separate)"}</option>
@@ -2027,7 +2027,7 @@ function PetSettingsSection({ lang, onOpenMarket }: { lang: Language; onOpenMark
             borderRadius: "50%",
             background: enabled ? "var(--surface-content)" : "var(--text-secondary)",
             transition: "left 0.2s, background 0.2s",
-            boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
+            boxShadow: "0 1px 3px var(--shadow-color)",
           }} />
         </button>
       </div>

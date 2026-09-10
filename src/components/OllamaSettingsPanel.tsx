@@ -134,7 +134,7 @@ export function OllamaSettingsPanel() {
         padding: "10px 12px",
         borderRadius: 8,
         background: "var(--bg-secondary, #181825)",
-        border: "1px solid var(--border-color, #333)",
+        border: "1px solid var(--border-primary)",
         marginBottom: 16,
       }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
@@ -196,7 +196,7 @@ export function OllamaSettingsPanel() {
                   display: "flex", alignItems: "center", gap: 8,
                   padding: "6px 10px", borderRadius: 6,
                   background: "var(--bg-secondary, #181825)",
-                  border: "1px solid var(--border-color, #333)",
+                  border: "1px solid var(--border-primary)",
                   fontSize: 'var(--fs-sm)',
                 }}>
                   <Cpu size={14} style={{ flexShrink: 0 }} />
@@ -228,7 +228,7 @@ const inputStyle: React.CSSProperties = {
   width: "100%",
   padding: "6px 10px",
   background: "var(--bg-secondary, #181825)",
-  border: "1px solid var(--border-color, #333)",
+  border: "1px solid var(--border-primary)",
   borderRadius: 6,
   color: "inherit",
   fontSize: 'var(--fs-base)',
@@ -243,7 +243,7 @@ const btnStyle: React.CSSProperties = {
   borderRadius: 6,
   fontSize: 'var(--fs-sm)',
   cursor: "pointer",
-  border: "1px solid var(--border-color, #333)",
+  border: "1px solid var(--border-primary)",
   background: "transparent",
   color: "inherit",
 };

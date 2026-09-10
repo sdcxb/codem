@@ -98,7 +98,7 @@ export function ComputerUseSettings() {
           value={screenshotDir}
           onChange={(e) => { setScreenshotDir(e.target.value); persist({ screenshot_dir: e.target.value }); }}
           placeholder={zh ? "如 D:/codem-shots" : "e.g. D:/codem-shots"}
-          style={{ width: "100%", padding: "6px 8px", background: "var(--bg-tertiary)", color: "var(--text-primary)", border: "1px solid var(--border-color)", borderRadius: 6, fontSize: 'var(--fs-sm)', boxSizing: "border-box" }}
+          style={{ width: "100%", padding: "6px 8px", background: "var(--bg-tertiary)", color: "var(--text-primary)", border: "1px solid var(--border-primary)", borderRadius: 6, fontSize: 'var(--fs-sm)', boxSizing: "border-box" }}
         />
       </div>
       <div className="setting-group">

@@ -642,7 +642,7 @@ export function SlideCanvas({
         background: slide.background,
         overflow: 'hidden',
         borderRadius: presentationMode ? 0 : 8,
-        boxShadow: presentationMode ? 'none' : '0 4px 24px rgba(0,0,0,0.15)',
+        boxShadow: presentationMode ? 'none' : '0 4px 24px var(--shadow-color-soft)',
         outline: 'none',
       }}
       tabIndex={0}

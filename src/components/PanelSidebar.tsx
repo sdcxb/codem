@@ -83,7 +83,7 @@ export function PanelSidebar({ open, onClose }: RightSidebarProps) {
         zIndex: 920,
         display: "flex",
         flexDirection: "column",
-        boxShadow: "-4px 0 16px rgba(0,0,0,0.15)",
+        boxShadow: "-4px 0 16px var(--shadow-color-soft)",
         borderRadius: "var(--radius, 12px)",
         overflow: "hidden",
       }}

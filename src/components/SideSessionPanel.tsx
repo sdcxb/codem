@@ -126,9 +126,9 @@ export function SideSessionPanel({ onClose, open = true }: SideSessionPanelProps
         width: 380, height: 480, maxWidth: "calc(100vw - 32px)", maxHeight: "calc(100vh - 180px)",
         display: "flex", flexDirection: "column",
         background: "var(--dropdown-bg, #1e222d)",
-        border: "1px solid var(--border-color, #333)",
+        border: "1px solid var(--border-primary)",
         borderRadius: 14,
-        boxShadow: "0 16px 48px rgba(0,0,0,.3)",
+        boxShadow: "0 16px 48px var(--shadow-color)",
         zIndex: 950,
         overflow: "hidden",
       }}
@@ -185,7 +185,7 @@ export function SideSessionPanel({ onClose, open = true }: SideSessionPanelProps
           }}
           rows={2}
           placeholder={zh ? "追问（Enter 发送，Shift+Enter 换行）…" : "Follow-up (Enter to ask)…"}
-          style={{ flex: 1, background: "var(--bg-tertiary, #2a2f3a)", color: "var(--text-primary)", border: "1px solid var(--border-color, #333)", borderRadius: 8, padding: "6px 8px", fontSize: 'var(--fs-sm)', resize: "none", outline: "none" }}
+          style={{ flex: 1, background: "var(--bg-tertiary, #2a2f3a)", color: "var(--text-primary)", border: "1px solid var(--border-primary)", borderRadius: 8, padding: "6px 8px", fontSize: 'var(--fs-sm)', resize: "none", outline: "none" }}
         />
         <button
           className="toolbar-btn"

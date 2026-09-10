@@ -3188,7 +3188,7 @@ gap: 2px;
 padding: 0 6px;
 height: 38px;
 flex-shrink: 0;
-border-bottom: 1px solid var(--border-color);
+border-bottom: 1px solid var(--border-primary);
 overflow-x: auto;
 }
 

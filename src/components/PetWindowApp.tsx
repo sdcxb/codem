@@ -378,7 +378,7 @@ export function PetWindowApp() {
                 height: "0",
                 borderLeft: "4px solid transparent",
                 borderRight: "4px solid transparent",
-                borderTop: "4px solid rgba(30, 30, 46, 0.92)",
+                borderTop: "4px solid var(--pet-glass-bg)",
               }}
             />
           </div>

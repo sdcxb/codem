@@ -435,20 +435,19 @@ setStepTooltipLocked(false);
           {sidebarOpen ? <PanelLeftClose size={18} /> : <PanelLeftOpen size={18} />}
         </button>
         {/* P2 #37: Task title dropdown */}
-        <div style={{ position: "relative" }}>
+        <div className="chat-relative-anchor">
           <button
             className="chat-title-dropdown-btn"
             onClick={() => setShowTitleDropdown(!showTitleDropdown)}
-            style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-primary)", fontSize: 'var(--fs-md)', fontWeight: 600, display: "flex", alignItems: "center", gap: 4, padding: "2px 8px", borderRadius: 4 }}
             title={currentSession?.title || "Codem"}
           >
             <span className="chat-title">{currentSession?.title || "Codem"}</span>
-            <ChevronDown size={12} style={{ opacity: 0.5 }} />
+            <ChevronDown size={12} className="icon-dim" />
           </button>
           {showTitleDropdown && (
             <>
               <div className="popover-shield" style={{ zIndex: 99 }} onClick={() => setShowTitleDropdown(false)} />
-              <div className="bottom-bar-dropdown popover-shell" style={{ position: "absolute", top: "100%", left: 0, marginTop: 4, minWidth: 240, maxHeight: 300, overflowY: "auto", zIndex: 100 }}>
+              <div className="bottom-bar-dropdown popover-shell chat-dropdown--sessions" style={{ zIndex: 100 }}>
                 <div className="bottom-bar-dropdown-header">{lang === "zh" ? "切换会话" : "Switch Session"}</div>
                 {(() => {
                   const sessions = currentProject
@@ -461,7 +460,7 @@ setStepTooltipLocked(false);
                       className={`bottom-bar-dropdown-item ${currentSession?.id === s.id ? "active" : ""}`}
                       onClick={() => { useProjectStore.getState().switchSession(s.id); setShowTitleDropdown(false); }}
                     >
-                      <span style={{ fontSize: 'var(--fs-sm)' }}>{s.title || (lang === "zh" ? "新对话" : "New Chat")}</span>
+                      <span className="chat-session-title">{s.title || (lang === "zh" ? "新对话" : "New Chat")}</span>
                     </button>
                   ));
                 })()}
@@ -502,12 +501,12 @@ setStepTooltipLocked(false);
                 </div>
               ))}
               {/* Reasoning effort divider + selector */}
-              <div style={{ height: 1, background: "var(--border-primary)", margin: "6px 0" }} />
-              <div style={{ padding: "4px 12px", display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer", position: "relative" }}
+              <div className="menu-divider" />
+              <div className="chat-effort-row"
                 onClick={(e) => { e.stopPropagation(); setShowEffortPicker(!showEffortPicker); }}
               >
                 <span className="hint-sm">{lang === "zh" ? "推理强度" : "Reasoning Effort"}</span>
-                <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, color: "var(--accent)" }}>
+                <span className="chat-effort-value">
                   {(() => {
                     const effort = getSettingJSON<string>("codem-reasoning-effort", "high");
                     const labels: Record<string, { zh: string; en: string }> = {
@@ -522,12 +521,7 @@ setStepTooltipLocked(false);
                 {showEffortPicker && (
                   <>
                     <div className="popover-shield" style={{ zIndex: 99 }} onClick={(e) => { e.stopPropagation(); setShowEffortPicker(false); }} />
-                    <div style={{
-                      position: "absolute", top: "100%", right: 0, marginTop: 4,
-                      minWidth: 120, zIndex: 100, padding: 4,
-                      background: "var(--bg-secondary)", border: "1px solid var(--border-primary)",
-                      borderRadius: 8, boxShadow: "0 4px 12px rgba(0,0,0,0.2)",
-                    }}>
+                    <div className="chat-effort-menu popover-shell" style={{ zIndex: 100 }}>
                       {([
                         { id: "low", zh: "低", en: "Low" },
                         { id: "medium", zh: "中", en: "Medium" },
@@ -537,8 +531,7 @@ setStepTooltipLocked(false);
                         const currentEffort = getSettingJSON<string>("codem-reasoning-effort", "high");
                         return (
                           <div key={opt.id}
-                            className={`model-option ${currentEffort === opt.id ? "active" : ""}`}
-                            style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}
+                            className={`model-option chat-effort-option ${currentEffort === opt.id ? "active" : ""}`}
                             onClick={(e) => {
                               e.stopPropagation();
                               setSettingJSON("codem-reasoning-effort", opt.id);
@@ -547,7 +540,7 @@ setStepTooltipLocked(false);
                             }}
                           >
                             <span className="model-option-name">{lang === "zh" ? opt.zh : opt.en}</span>
-                            {opt.id === "ultra" && <span style={{ fontSize: "var(--fs-xs)", opacity: 0.5, marginLeft: 4 }}>max tokens</span>}
+                            {opt.id === "ultra" && <span className="chat-effort-hint">max tokens</span>}
                           </div>
                         );
                       })}
@@ -623,7 +616,7 @@ setStepTooltipLocked(false);
           <Search size={16} />
         </button>
         {/* Display mode toggle moved to Settings > Appearance — default unified mode */}
-        <span className="header-spacer" style={{ flex: 1 }} />
+        <span className="header-spacer" />
         {/* Side panel toggle — header right */}
         <button
           className={`agent-toggle ${showRightSidebar ? "active" : ""}`}
@@ -644,9 +637,9 @@ setStepTooltipLocked(false);
       {showSearch && (
         <>
           <div className="modal-overlay" style={{ zIndex: 300 }} onClick={() => { setShowSearch(false); setSearchQuery(''); }}>
-            <div className="modal-panel" style={{ width: '480px', maxWidth: '90vw', padding: 16 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-              <Search size={14} style={{ color: 'var(--text-muted)' }} />
+            <div className="modal-panel chat-search-panel">
+            <div className="chat-search-row">
+              <Search size={14} className="chat-search-icon" />
               <input
                 type="text"
                 autoFocus
@@ -663,33 +656,24 @@ setStepTooltipLocked(false);
                     jumpToMessage(first.id);
                   }
                 }}
-                style={{
-                  flex: 1,
-                  background: 'var(--bg-primary)',
-                  border: '1px solid var(--border-color)',
-                  borderRadius: 6,
-                  padding: '8px 12px',
-                  color: 'var(--text-primary)',
-                  fontSize: 'var(--fs-base)',
-                  outline: 'none',
-                }}
+                className="chat-search-input"
               />
-              <button onClick={() => { setShowSearch(false); setSearchQuery(''); }} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', display: 'flex', alignItems: 'center' }}><X size={16} /></button>
+              <button onClick={() => { setShowSearch(false); setSearchQuery(''); }} className="chat-search-close"><X size={16} /></button>
             </div>
             {searchQuery.trim() && (
-              <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', marginBottom: 8 }}>
+              <div className="chat-search-count">
                 {searchMatches.length} / {messages.length} {lang === 'zh' ? '条匹配' : 'matches'}
               </div>
             )}
             {searchQuery.trim() && searchMatches.length === 0 && (
-              <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', padding: '8px 4px' }}>
+              <div className="chat-search-empty">
                 {lang === 'zh' ? '无匹配消息' : 'No matching messages'}
               </div>
             )}
             {searchQuery.trim() && searchMatches.slice(0, 10).map(m => (
               <div
                 key={m.id}
-                style={{ padding: '8px', borderRadius: 6, cursor: 'pointer', marginBottom: 4, background: 'var(--bg-tertiary)' }}
+                className="chat-search-result"
                 onClick={() => {
                   // Dismiss the dialog and jump to the matching message in the chat body
                   setShowSearch(false);
@@ -698,8 +682,8 @@ setStepTooltipLocked(false);
                 }}
                 title={lang === 'zh' ? '跳转到该消息' : 'Jump to message'}
               >
-                <span style={{ fontSize: 'var(--fs-xs)', opacity: 0.6 }}>{m.role}</span>
-                <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <span className="chat-search-role">{m.role}</span>
+                <div className="chat-search-text">
                   {(m.content || '').substring(0, 80) || (lang === 'zh' ? '(无文本内容)' : '(no text)')}
                 </div>
               </div>
@@ -744,7 +728,7 @@ setStepTooltipLocked(false);
               />
               {/* P2: Quick access cards + quick phrases in empty state */}
               {showQuickAccess && connected && !isSessionStreaming && (
-                <div style={{ width: "100%", maxWidth: 600, margin: "0 auto", display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div className="chat-empty-inner">
                   <QuickAccessCards
                     agents={getAgentRegistry().getPrimary().map(a => ({
                       id: a.id,
@@ -782,7 +766,7 @@ setStepTooltipLocked(false);
                   />
                   {/* Quick phrase list in empty state (per benchmark plan) */}
                   {quickPhrases.length > 0 && (
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, justifyContent: 'center' }}>
+                    <div className="chat-empty-suggestions">
                       {quickPhrases.slice(0, 6).map((p, i) => (
                         <button
                           key={i}
@@ -790,11 +774,7 @@ setStepTooltipLocked(false);
                             setQuoteContext(p.content);
                             setShowQuickAccess(false);
                           }}
-                          style={{
-                            padding: '4px 10px', borderRadius: 16, border: '1px solid var(--border-color)',
-                            background: 'var(--bg-tertiary)', color: 'var(--text-secondary)',
-                            fontSize: 'var(--fs-sm)', cursor: 'pointer', whiteSpace: 'nowrap',
-                          }}
+                          className="chat-suggestion-btn"
                         >
                           {p.title || p.content.substring(0, 20)}
                         </button>
@@ -1049,14 +1029,7 @@ canEdit={!isSessionStreaming}
 
       {/* TrajectoryPanel — floating overlay */}
       {showTrajectoryPanel && (
-        <div className="floating-overlay-panel" style={{
-          position: 'fixed', top: 'var(--chat-body-top, 48px)', right: 0, bottom: 'var(--chat-body-bottom, 140px)', width: 'min(380px, calc(100vw - 24px))',
-          zIndex: 200,
-          borderRadius: 0,
-          display: 'flex',
-          flexDirection: 'column',
-          overflow: 'hidden',
-        }}>
+        <div className="floating-overlay-panel chat-float-panel chat-float-panel--narrow chat-float-panel--trajectory">
           <TrajectoryPanel
             messages={messages}
             sessionId={currentSession?.id || sessionId || null}
@@ -1067,11 +1040,7 @@ canEdit={!isSessionStreaming}
 
       {/* AgentPanel — floating overlay outside chat-body */}
       {showAgentPanel && (
-        <div className="floating-overlay-panel" style={{
-          position: 'fixed', top: 'var(--chat-body-top, 48px)', right: 0, bottom: 'var(--chat-body-bottom, 140px)', width: 'min(380px, calc(100vw - 24px))',
-          zIndex: 200, overflowY: 'auto',
-          borderRadius: 0,
-        }}>
+        <div className="floating-overlay-panel chat-float-panel chat-float-panel--narrow">
           {selectedAgent ? (
             <AgentDetail task={selectedAgent} onBack={handleBackToList} />
           ) : (
@@ -1086,11 +1055,7 @@ canEdit={!isSessionStreaming}
 
       {/* SnapshotPanel — floating overlay */}
       {showSnapshotPanel && (
-        <div className="floating-overlay-panel" style={{
-          position: 'fixed', top: 'var(--chat-body-top, 48px)', right: 0, bottom: 'var(--chat-body-bottom, 140px)', width: 'min(380px, calc(100vw - 24px))',
-          zIndex: 200, overflowY: 'auto',
-          borderRadius: 0,
-        }}>
+        <div className="floating-overlay-panel chat-float-panel chat-float-panel--narrow">
           <SnapshotPanel
             cwd={currentProject?.path || ""}
             onClose={() => setShowSnapshotPanel(false)}
@@ -1100,11 +1065,7 @@ canEdit={!isSessionStreaming}
 
       {/* ContextMonitor — floating overlay */}
       {showContextMonitor && (
-        <div className="floating-overlay-panel" style={{
-          position: 'fixed', top: 'var(--chat-body-top, 48px)', right: 0, bottom: 'var(--chat-body-bottom, 140px)', width: 'min(380px, calc(100vw - 24px))',
-          zIndex: 200, overflowY: 'auto',
-          borderRadius: 0,
-        }}>
+        <div className="floating-overlay-panel chat-float-panel chat-float-panel--narrow">
           <ContextMonitor sessionId={currentSession?.id || ""} visible={showContextMonitor} />
         </div>
       )}
@@ -1120,10 +1081,7 @@ canEdit={!isSessionStreaming}
       <PanelSidebar open={showRightSidebar} onClose={() => setShowRightSidebar(false)} />
 
       {showQuickPhrase && (
-        <div className="floating-overlay-panel" style={{
-          position: 'fixed', top: 'var(--chat-body-top, 48px)', right: 0, bottom: 'var(--chat-body-bottom, 140px)', width: 300,
-          zIndex: 200, overflowY: 'auto',
-        }}>
+        <div className="floating-overlay-panel chat-float-panel chat-float-panel--w300">
           <QuickPhraseSelector
             phrases={quickPhrases}
             onSelect={handleQuickPhraseSelect}
@@ -1133,10 +1091,7 @@ canEdit={!isSessionStreaming}
       )}
 
       {showDraftPicker && (
-        <div className="floating-overlay-panel" style={{
-          position: 'fixed', top: 'var(--chat-body-top, 48px)', right: 0, bottom: 'var(--chat-body-bottom, 140px)', width: 360,
-          zIndex: 200, overflowY: 'auto',
-        }}>
+        <div className="floating-overlay-panel chat-float-panel chat-float-panel--w360">
           <PromptDraftPicker
             drafts={promptDrafts}
             onSelect={handleDraftSelect}
@@ -1151,7 +1106,6 @@ canEdit={!isSessionStreaming}
           <div
             className="step-progress-pill"
             onClick={() => setStepTooltipLocked(v => !v)}
-            style={{ cursor: "pointer" }}
           >
             {/* Mini circular indicator */}
             <svg className="step-progress-ring" width="16" height="16" viewBox="0 0 16 16">
@@ -1163,7 +1117,7 @@ canEdit={!isSessionStreaming}
                   strokeDashoffset={`${2 * Math.PI * 6 * (1 - stepProgress.current / stepProgress.total)}`}
                   strokeLinecap="round"
                   transform="rotate(-90 8 8)"
-                  style={{ transition: "stroke-dashoffset 0.4s ease" }}
+                  className="step-ring-progress"
                 />
               ) : (
                 <circle

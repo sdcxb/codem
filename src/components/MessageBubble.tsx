@@ -661,7 +661,7 @@ setTimeout(() => setCopied(false), 2000);
                   fontSize: 'var(--fs-xs)',
                   padding: '2px 8px',
                   background: 'var(--bg-tertiary, #25252b)',
-                  border: '1px solid var(--border-color, #2a2a30)',
+                  border: '1px solid var(--border-primary)',
                   borderRadius: '10px',
                   color: 'var(--text-secondary, #a0a0a8)',
                   cursor: 'pointer',
@@ -672,7 +672,7 @@ setTimeout(() => setCopied(false), 2000);
                   e.currentTarget.style.color = 'var(--accent, #6366f1)';
                 }}
                 onMouseLeave={(e) => {
-                  e.currentTarget.style.borderColor = 'var(--border-color, #2a2a30)';
+                  e.currentTarget.style.borderColor = 'var(--border-primary)';
                   e.currentTarget.style.color = 'var(--text-secondary, #a0a0a8)';
                 }}
               >

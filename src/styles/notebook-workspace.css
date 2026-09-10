@@ -2669,3 +2669,149 @@ top: 36px;
   background: var(--bg-hover);
   color: var(--text-primary);
 }
+
+/* ========== 笔记本工作台内联样式收口（第 21/22 波） ==========
+ * 这些类此前只有 :hover 或干脆没有任何定义，布局全靠组件里的内联样式撑着
+ * （`.nb-panel-tabs` 甚至是"写了但 CSS 里没有"的假钩子——因为同行有内联样式，
+ * `css-class-undefined` 规则看不到它）。这里补上真实定义。 */
+.nb-panel-tabs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.nb-summary-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: 0;
+  background: transparent;
+  border: none;
+  color: inherit;
+  font-family: inherit;
+  cursor: pointer;
+}
+.nb-summary-toggle-label { margin: 0; }
+.nb-summary-text { margin-top: var(--space-3); }
+.nb-chevron-end { margin-left: auto; }
+
+.nb-note-search { padding: var(--space-2) var(--space-6) var(--space-3); }
+.nb-note-search-input {
+  width: 100%;
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-xs);
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  font-size: var(--fs-sm);
+  outline: none;
+}
+
+.nb-tag-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  padding: var(--space-2) 0 var(--space-4);
+}
+.nb-tag-chip {
+  padding: 2px var(--space-4);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: var(--fs-xs);
+  cursor: pointer;
+}
+.nb-tag-chip.active {
+  background: var(--accent);
+  color: var(--text-on-accent);
+}
+
+.nb-study-empty { padding: var(--space-10); text-align: center; color: var(--text-muted); }
+.nb-study-empty-icon { margin: 0 auto var(--space-4); opacity: 0.5; }
+.nb-study-path-item-reason { opacity: 0.7; }
+/* 学习路径条目原本用 JS 的 onMouseEnter/Leave 改 style.background，直接把下面这条
+ * CSS :hover（accent 淡底 + accent 描边）盖掉了 —— 内联样式优先级高于样式表。
+ * 去掉 JS 改样式后，悬停效果才第一次按设计生效。 */
+.nb-dialog--study { width: 600px; }
+
+.nb-dialog--studio {
+  display: flex;
+  flex-direction: column;
+  width: 900px;
+  max-width: 95vw;
+  max-height: 90vh;
+}
+.nb-dialog-title-input {
+  flex: 1;
+  min-width: 200px;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font-family: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+  outline: none;
+}
+.nb-mode-btn--labelled { padding: var(--space-2) var(--space-4); font-size: var(--fs-sm); }
+
+.nb-studio-body { display: flex; flex: 1; flex-direction: column; overflow: hidden; }
+.nb-studio-body.is-split { flex-direction: row; }
+.nb-studio-pane { flex: 1; overflow: auto; padding: var(--space-6) var(--space-8); }
+.nb-studio-body.is-split .nb-studio-pane--edit { border-right: 1px solid var(--border-primary); }
+.nb-studio-textarea {
+  width: 100%;
+  height: 100%;
+  min-height: 400px;
+  padding: var(--space-4);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-xs);
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: var(--fs-base);
+  line-height: 1.6;
+  resize: none;
+  outline: none;
+}
+.nb-mermaid-block {
+  margin: var(--space-4) 0;
+  padding: var(--space-4);
+  border-radius: var(--radius-xs);
+  background: var(--bg-tertiary);
+}
+.nb-mermaid-pre { margin: 0; font-size: var(--fs-sm); color: var(--text-secondary); white-space: pre-wrap; }
+.nb-mermaid-hint { margin-top: var(--space-2); font-size: var(--fs-xs); color: var(--text-muted); }
+.nb-studio-empty { padding: var(--space-10); color: var(--text-muted); text-align: center; }
+.nb-dialog-footer { padding: var(--space-6) var(--space-9); border-top: 1px solid var(--border-primary); }
+.nb-dialog-actions { display: flex; align-items: center; gap: var(--space-2); }
+.nb-studio-footer-hint { margin-right: auto; font-size: var(--fs-xs); color: var(--text-muted); }
+
+.nb-note-card.is-pinned { border-left: 2px solid var(--accent); }
+.nb-note-pin-icon { color: var(--accent); }
+.nb-note-pin-btn { opacity: 0.4; }
+.nb-note-pin-btn.is-pinned { opacity: 1; }
+.nb-note-tags { display: flex; flex-wrap: wrap; gap: 2px; margin-top: 2px; }
+.nb-note-tag {
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-xs);
+  background: var(--bg-tertiary);
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+}
+.nb-note-flash-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 var(--space-2);
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: var(--fs-xs);
+  cursor: pointer;
+}
+.nb-note-flash-btn:hover { color: var(--text-primary); }
+.nb-file-names { margin-top: var(--space-2); font-size: var(--fs-xs); color: var(--text-muted); }

@@ -36,7 +36,7 @@ const inputStyle: CSSProperties = {
   fontSize: "var(--fs-base)",
   background: "var(--bg-tertiary)",
   color: "var(--text-primary)",
-  border: "1px solid var(--border-color)",
+  border: "1px solid var(--border-primary)",
   borderRadius: 4,
   outline: "none",
 };
@@ -114,7 +114,7 @@ export function CorrectionModelConfig() {
           lineHeight: 1.6,
           padding: 10,
           background: "var(--bg-tertiary)",
-          border: "1px solid var(--border-color)",
+          border: "1px solid var(--border-primary)",
           borderRadius: 6,
         }}
       >
@@ -226,7 +226,7 @@ export function CorrectionModelConfig() {
             cursor: "pointer",
             background: "var(--bg-tertiary)",
             color: "var(--text-primary)",
-            border: "1px solid var(--border-color)",
+            border: "1px solid var(--border-primary)",
             borderRadius: 6,
           }}
         >
@@ -236,7 +236,7 @@ export function CorrectionModelConfig() {
       </div>
 
       {error && (
-        <p style={{ fontSize: "var(--fs-sm)", color: "var(--danger, #ef4444)", margin: 0 }}>{error}</p>
+        <p style={{ fontSize: "var(--fs-sm)", color: "var(--error)", margin: 0 }}>{error}</p>
       )}
     </div>
   );

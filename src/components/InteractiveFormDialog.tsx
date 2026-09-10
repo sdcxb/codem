@@ -98,10 +98,10 @@ return createPortal(
             alignItems: "center",
             gap: "10px",
             padding: "16px 20px",
-            borderBottom: "1px solid var(--border-color, #333)",
+            borderBottom: "1px solid var(--border-primary)",
           }}
         >
-          <HelpCircle size={20} style={{ color: "var(--accent-color, #6c5ce7)" }} />
+          <HelpCircle size={20} style={{ color: "var(--accent)" }} />
           <h2 style={{ margin: 0, fontSize: "var(--fs-lg)", fontWeight: 600 }}>
             {isSingleQuestion ? questions[0].question : "请回答以下问题"}
           </h2>
@@ -151,10 +151,10 @@ return createPortal(
                             padding: "10px 14px",
                             borderRadius: "8px",
                             border: isSelected
-                              ? "2px solid var(--accent-color, #6c5ce7)"
-                              : "2px solid var(--border-color, #444)",
+                              ? "2px solid var(--accent)"
+                              : "2px solid var(--border-primary)",
                             background: isSelected
-                              ? "rgba(108, 92, 231, 0.15)"
+                              ? "color-mix(in srgb, var(--accent) 15%, transparent)"
                               : "var(--bg-tertiary, #16213e)",
                             cursor: "pointer",
                             textAlign: "left",
@@ -171,7 +171,7 @@ return createPortal(
                               border: isSelected
                                 ? "none"
                                 : "2px solid var(--text-secondary, #666)",
-                              background: isSelected ? "var(--accent-color, #6c5ce7)" : "transparent",
+                              background: isSelected ? "var(--accent)" : "transparent",
                               display: "flex",
                               alignItems: "center",
                               justifyContent: "center",
@@ -211,7 +211,7 @@ return createPortal(
                       marginTop: "8px",
                       padding: "8px 14px",
                       background: "none",
-                      border: `1px dashed var(--border-color, #444)`,
+                      border: `1px dashed var(--border-primary)`,
                       borderRadius: "8px",
                       cursor: "pointer",
                       color: "var(--text-secondary, #888)",
@@ -237,7 +237,7 @@ return createPortal(
                         marginTop: "8px",
                         padding: "10px 14px",
                         borderRadius: "8px",
-                        border: "2px solid var(--border-color, #444)",
+                        border: "2px solid var(--border-primary)",
                         background: "var(--bg-tertiary, #16213e)",
                         color: "var(--text-primary, #e0e0e0)",
                         fontSize: "var(--fs-md)",
@@ -259,7 +259,7 @@ return createPortal(
                     width: "100%",
                     padding: "10px 14px",
                     borderRadius: "8px",
-                    border: "2px solid var(--border-color, #444)",
+                    border: "2px solid var(--border-primary)",
                     background: "var(--bg-tertiary, #16213e)",
                     color: "var(--text-primary, #e0e0e0)",
                     fontSize: "var(--fs-md)",
@@ -279,7 +279,7 @@ return createPortal(
             justifyContent: "flex-end",
             gap: "10px",
             padding: "16px 20px",
-            borderTop: "1px solid var(--border-color, #333)",
+            borderTop: "1px solid var(--border-primary)",
           }}
         >
           <button
@@ -287,7 +287,7 @@ return createPortal(
             style={{
               padding: "8px 16px",
               borderRadius: "8px",
-              border: "1px solid var(--border-color, #444)",
+              border: "1px solid var(--border-primary)",
               background: "transparent",
               color: "var(--text-secondary, #888)",
               cursor: "pointer",
@@ -302,7 +302,7 @@ return createPortal(
               padding: "8px 20px",
               borderRadius: "8px",
               border: "none",
-              background: "var(--accent-color, #6c5ce7)",
+              background: "var(--accent)",
               color: "var(--text-on-accent)",
               cursor: "pointer",
               fontSize: "var(--fs-md)",

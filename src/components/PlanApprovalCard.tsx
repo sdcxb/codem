@@ -30,14 +30,14 @@ export function PlanApprovalCard({ plan, onApprove, onReject }: PlanApprovalCard
           width: "90vw", maxWidth: 680, maxHeight: "80vh",
           background: "var(--bg-primary, #1e1e2e)",
           borderRadius: 12, display: "flex", flexDirection: "column",
-          border: "1px solid var(--border-color, #333)",
+          border: "1px solid var(--border-primary)",
           overflow: "hidden",
         }}>
         {/* Header */}
         <div style={{
           display: "flex", alignItems: "center", gap: 8,
           padding: "12px 16px",
-          borderBottom: "1px solid var(--border-color, #333)",
+          borderBottom: "1px solid var(--border-primary)",
         }}>
           <ClipboardList size={18} />
           <span style={{ fontSize: 'var(--fs-lg)', fontWeight: 700 }}>
@@ -56,7 +56,7 @@ export function PlanApprovalCard({ plan, onApprove, onReject }: PlanApprovalCard
           </div>
           <div style={{
             background: "var(--bg-secondary, #181825)",
-            border: "1px solid var(--border-color, #333)",
+            border: "1px solid var(--border-primary)",
             borderRadius: 8, padding: 12,
             fontSize: 'var(--fs-base)', lineHeight: 1.6,
             whiteSpace: "pre-wrap",
@@ -77,7 +77,7 @@ export function PlanApprovalCard({ plan, onApprove, onReject }: PlanApprovalCard
               style={{
                 width: "100%", minHeight: 60, padding: "8px 10px",
                 background: "var(--bg-secondary, #181825)",
-                border: "1px solid var(--border-color, #333)",
+                border: "1px solid var(--border-primary)",
                 borderRadius: 6, color: "inherit", fontSize: 'var(--fs-base)',
                 resize: "vertical",
               }}
@@ -90,7 +90,7 @@ export function PlanApprovalCard({ plan, onApprove, onReject }: PlanApprovalCard
         <div style={{
           display: "flex", gap: 8, justifyContent: "flex-end",
           padding: "12px 16px",
-          borderTop: "1px solid var(--border-color, #333)",
+          borderTop: "1px solid var(--border-primary)",
         }}>
           {showFeedback ? (
             <>
@@ -125,5 +125,5 @@ export function PlanApprovalCard({ plan, onApprove, onReject }: PlanApprovalCard
 const btnStyle: React.CSSProperties = {
   display: "inline-flex", alignItems: "center", gap: 4,
   padding: "6px 14px", borderRadius: 6, fontSize: 'var(--fs-base)', cursor: "pointer",
-  border: "1px solid var(--border-color, #333)", background: "transparent", color: "inherit",
+  border: "1px solid var(--border-primary)", background: "transparent", color: "inherit",
 };

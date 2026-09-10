@@ -244,10 +244,10 @@ export function SourceViewer({
                     style={{
                       padding: '12px 16px',
                       background: isHighlighted
-                        ? 'rgba(255, 235, 59, 0.06)'
+                        ? 'color-mix(in srgb, var(--match-highlight) 20%, transparent)'
                         : 'var(--bg-tertiary)',
                       border: isHighlighted
-                        ? '1px solid rgba(255, 235, 59, 0.3)'
+                        ? '1px solid var(--match-highlight)'
                         : '1px solid var(--border-primary)',
                       borderRadius: '8px',
                     }}

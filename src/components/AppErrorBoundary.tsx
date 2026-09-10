@@ -95,8 +95,10 @@ const primaryButton: React.CSSProperties = {
 const dangerButton: React.CSSProperties = {
   ...buttonBase,
   background: "transparent",
-  color: "var(--danger, #e5484d)",
-  borderColor: "var(--danger, rgba(229,72,77,0.5))",
+  // 崩溃兜底页要能在样式表整体失效时仍然可读，所以这里的令牌**必须带字面量兜底**
+  // （正常页面里 var() 的兜底值是冗余的，这一页不是）
+  color: "var(--error, #e5484d)",
+  borderColor: "var(--error, #e5484d)",
 };
 
 export class AppErrorBoundary extends Component<AppErrorBoundaryProps, AppErrorBoundaryState> {
@@ -196,7 +198,7 @@ export class AppErrorBoundary extends Component<AppErrorBoundaryProps, AppErrorB
             border: "1px solid var(--border-primary, rgba(128,128,128,0.25))",
             borderRadius: 12,
             padding: "28px 26px",
-            boxShadow: "0 12px 40px rgba(0,0,0,0.35)",
+            boxShadow: "0 12px 40px var(--shadow-color, rgba(0,0,0,0.35))",
             boxSizing: "border-box",
           }}
         >
@@ -206,7 +208,7 @@ export class AppErrorBoundary extends Component<AppErrorBoundaryProps, AppErrorB
                 width: 10,
                 height: 10,
                 borderRadius: "50%",
-                background: "var(--danger, #e5484d)",
+                background: "var(--error, #e5484d)",
                 flexShrink: 0,
               }}
               aria-hidden

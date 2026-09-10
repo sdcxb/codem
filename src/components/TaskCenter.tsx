@@ -138,8 +138,8 @@ export function TaskCenter({ onClose, initialTab = "overview", subagentTasks = [
           maxHeight: "90vh",
           background: "var(--bg-secondary, #1e1e2e)",
           borderRadius: "12px",
-          border: "1px solid var(--border-color, #333344)",
-          boxShadow: "0 8px 32px rgba(0,0,0,0.4)",
+          border: "1px solid var(--border-primary)",
+          boxShadow: "0 8px 32px var(--shadow-color)",
           display: "flex",
           flexDirection: "column",
           overflow: "hidden",
@@ -153,7 +153,7 @@ export function TaskCenter({ onClose, initialTab = "overview", subagentTasks = [
             alignItems: "center",
             justifyContent: "space-between",
             padding: "16px 20px",
-            borderBottom: "1px solid var(--border-color, #333344)",
+            borderBottom: "1px solid var(--border-primary)",
             flexShrink: 0,
           }}
         >
@@ -186,7 +186,7 @@ export function TaskCenter({ onClose, initialTab = "overview", subagentTasks = [
             display: "flex",
             gap: "2px",
             padding: "0 12px",
-            borderBottom: "1px solid var(--border-color, #333344)",
+            borderBottom: "1px solid var(--border-primary)",
             flexShrink: 0,
             overflowX: "auto",
           }}
@@ -254,7 +254,7 @@ export function TaskCenter({ onClose, initialTab = "overview", subagentTasks = [
         <div
           style={{
             padding: "6px 20px",
-            borderTop: "1px solid var(--border-color, #333344)",
+            borderTop: "1px solid var(--border-primary)",
             fontSize: "var(--fs-xs)",
             color: "var(--text-secondary, #666)",
             display: "flex",

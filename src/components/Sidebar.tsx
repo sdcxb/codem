@@ -663,7 +663,7 @@ const handleDrop = useCallback((e: React.DragEvent, targetSessionId: string, pro
                             WebkitBackdropFilter: 'blur(20px) saturate(1.5)',
                             border: '1px solid var(--border-primary)',
                             borderRadius: '8px',
-                            boxShadow: '0 4px 16px rgba(0,0,0,0.15)',
+                            boxShadow: '0 4px 16px var(--shadow-color-soft)',
                           }}
                           onMouseEnter={() => {
                             if (menuCloseTimer.current) {

@@ -96,7 +96,7 @@ export const Drawer = memo(function Drawer({
               position: "fixed",
               zIndex: 9999,
               background: "var(--bg-secondary, #1e1e2e)",
-              boxShadow: "0 8px 32px rgba(0,0,0,0.3)",
+              boxShadow: "0 8px 32px var(--shadow-color)",
               display: "flex",
               flexDirection: "column",
               ...config.style,

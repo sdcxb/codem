@@ -133,7 +133,7 @@ export function VoiceSettingsPanel() {
         </div>
       )}
 
-      <div style={{ height: 1, background: "var(--border-color)", margin: "12px 0" }} />
+      <div style={{ height: 1, background: "var(--border-primary)", margin: "12px 0" }} />
       <div style={{ fontWeight: 600, marginBottom: 8, fontSize: 'var(--fs-sm)' }}>
         {zh ? "朗读（文字转语音）" : "Read aloud (text-to-speech)"}
       </div>
@@ -141,11 +141,11 @@ export function VoiceSettingsPanel() {
       {!isSupported && (
         <div style={{
           padding: 12,
-          background: "var(--danger-bg, color-mix(in srgb, var(--error) 10%, transparent))",
-          border: "1px solid var(--danger-border, color-mix(in srgb, var(--error) 30%, transparent))",
+          background: "color-mix(in srgb, var(--error) 10%, transparent)",
+          border: "1px solid color-mix(in srgb, var(--error) 30%, transparent)",
           borderRadius: 8,
           fontSize: 'var(--fs-sm)',
-          color: "var(--danger, #ef4444)",
+          color: "var(--error)",
           marginBottom: 16,
         }}>
           {S.voice.ttsUnsupported[lang]}
@@ -280,7 +280,7 @@ export function VoiceSettingsPanel() {
             alignItems: "center",
             gap: 6,
             padding: "6px 16px",
-            background: isSpeaking ? "var(--danger, #ef4444)" : "var(--accent)",
+            background: isSpeaking ? "var(--error)" : "var(--accent)",
             color: "var(--text-on-accent)",
             border: "none",
             borderRadius: 6,

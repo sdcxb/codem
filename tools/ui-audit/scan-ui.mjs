@@ -85,6 +85,8 @@ function allowedReason(rel, rule) {
 const RADIUS_OK = new Set(["0", "2", "4", "6", "8", "10", "12", "14", "16", "18", "20", "24", "999", "9999", "50%"]);
 /** 间距按 2px 网格；1px 用于边框/细线 */
 const SPACING_OK = (n) => n % 2 === 0 || n === 1;
+/** 内联样式密度阈值（可用 --dense-threshold=N 临时调整，便于压测/查看队列） */
+let DENSE_THRESHOLD = 120;
 
 const RULES = {
   "fs-hardcoded": { level: "error", desc: "字体大小硬编码（应使用 var(--fs-*)）" },
@@ -100,6 +102,9 @@ const RULES = {
 
 // ========== 扫描器 ==========
 const findings = [];
+/** 每个文件的「内联样式属性数」（供 --inline-counts 看收口进度：门禁只看 >120 的，
+ *  但排队时要知道每个文件离阈值多远、以及收口后还剩多少） */
+const inlineCounts = [];
 function add(rule, file, line, text, detail) {
   // 例外按「文件 + 规则」判定：豁免一份文件不再等于豁免它的所有规则
   if (allowedReason(file, rule)) return;
@@ -267,6 +272,31 @@ function scanTsx(rel, src) {
         break;
       }
     }
+    // 兜底之三：**条件表达式里的命名色**。`color: disabled ? "var(--text-muted)" : "white"`
+    // 既躲过属性级判定（冒号后面不是引号），也不是 hex，于是 `: "white"` 长期不可见。
+    // 这里在样式对象区间内找「引号包起来的命名色」，跳过 var() 兜底值。
+    if (!colorM && !/url\(/.test(line)) {
+      const namedVal = /(['"])(white|black|red|green|blue|gray|grey|orange|purple|pink|yellow|cyan|magenta|silver|maroon|navy|teal|olive|lime|aqua|fuchsia)\1/gi;
+      for (const m of line.matchAll(namedVal)) {
+        const abs = lineStarts[i] + m.index;
+        if (!styleRanges.some(([s, e]) => abs >= s && abs < e)) continue;
+        if (!notInVar(m.index)) continue;
+        add("color-hardcoded-tsx", rel, no, raw, `命名色: ${m[2]}`);
+        break;
+      }
+    }
+    // 兜底之四：复合值里的 rgb()/rgba()，典型是投影 ——
+    //   boxShadow: "0 4px 12px rgba(0,0,0,0.2)"
+    // 投影里的黑在 CSS 侧早就要求走 --shadow-color（见 §2.3），TSX 侧却一直看不见。
+    if (!colorM && !/url\(/.test(line)) {
+      const rgbM = /\b(?:rgba?|hsla?)\(/.exec(line);
+      if (rgbM) {
+        const abs = lineStarts[i] + rgbM.index;
+        if (styleRanges.some(([s, e]) => abs >= s && abs < e) && notInVar(rgbM.index)) {
+          add("color-hardcoded-tsx", rel, no, raw, "rgb()/hsl()");
+        }
+      }
+    }
 
     // 3) 圆角离格
     const br = /borderRadius:\s*(?:'|")?([0-9.]+)(px|rem|%)?(?:'|")?/.exec(line);
@@ -299,9 +329,10 @@ function scanTsx(rel, src) {
   if (modalish > 0 && !hasUnifiedShell) {
     add("modal-shell-bespoke", rel, 1, "(file-level)", `${modalish} 处 position:fixed 浮层，未见统一外壳类`);
   }
-  if (styleProps > 120) {
+  if (styleProps > DENSE_THRESHOLD) {
     add("inline-style-dense", rel, 1, "(file-level)", `${styleProps} 个内联样式属性`);
   }
+  inlineCounts.push({ file: rel, props: styleProps, modalish });
   if (/className="(?:popup|overlay|modal-box|dialog-box|sheet)-/.test(src)) {
     add("legacy-popup-shell", rel, 1, "(file-level)", "自建浮层类名");
   }
@@ -366,6 +397,14 @@ const value = (name) => {
 };
 
 const files = SCAN_DIRS.flatMap((d) => (existsSync(join(ROOT, d)) ? listFiles(join(ROOT, d)) : []));
+
+// 内联样式密度阈值可按命令行调整：`--dense-threshold=60` 能看到"还没超标但已经很密"的文件
+// （排队时用），`--inline-counts` 直接列出全部文件的属性数。
+{
+  const t = value("--dense-threshold");
+  if (t) DENSE_THRESHOLD = Number(t);
+}
+const inlineCountsOnly = flag("--inline-counts");
 
 // ---- 先建「CSS 里定义过的类名」索引（跨文件，供 css-class-undefined 规则用） ----
 const definedClasses = new Set();
@@ -465,6 +504,14 @@ if (flag("--write-baseline")) {
     JSON.stringify({ at: new Date().toISOString(), errorCount, warnCount, byRule }, null, 2) + "\n",
   );
   console.log(`baseline written → ${relative(ROOT, BASELINE_PATH)}  errors=${errorCount} warns=${warnCount}`);
+  process.exit(0);
+}
+
+if (flag("--inline-counts")) {
+  console.log(`${"属性数".padStart(6)}  ${"浮层".padStart(4)}  文件`);
+  for (const r of [...inlineCounts].sort((a, b) => b.props - a.props).slice(0, Number(value("--top") ?? 30))) {
+    console.log(`${String(r.props).padStart(6)}  ${String(r.modalish).padStart(4)}  ${r.file}`);
+  }
   process.exit(0);
 }
 

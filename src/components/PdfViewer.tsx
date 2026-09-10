@@ -159,8 +159,8 @@ export function PdfViewer({ filePath, pdfData, highlightText, onClose }: PdfView
               highlight.className = 'pdf-highlight';
               highlight.style.cssText = `
                 position: absolute;
-                background: rgba(255, 235, 59, 0.3);
-                border: 1px solid rgba(255, 235, 59, 0.5);
+                background: var(--match-highlight);
+                border: 1px solid var(--match-highlight-strong);
                 pointer-events: none;
                 border-radius: 2px;
               `;
@@ -262,7 +262,7 @@ export function PdfViewer({ filePath, pdfData, highlightText, onClose }: PdfView
         {/* Toolbar */}
         <div style={{
           padding: '6px 16px',
-          borderBottom: '1px solid var(--border-color, #2a2a30)',
+          borderBottom: '1px solid var(--border-primary)',
           display: 'flex',
           alignItems: 'center',
           gap: '8px',
@@ -271,7 +271,7 @@ export function PdfViewer({ filePath, pdfData, highlightText, onClose }: PdfView
             onClick={goPrev}
             disabled={currentPage <= 1}
             style={{
-              background: 'none', border: '1px solid var(--border-color, #2a2a30)',
+              background: 'none', border: '1px solid var(--border-primary)',
               borderRadius: '4px', padding: '3px 6px', cursor: currentPage <= 1 ? 'default' : 'pointer',
               opacity: currentPage <= 1 ? 0.3 : 1, color: 'var(--text-secondary, #a0a0a8)',
             }}
@@ -285,17 +285,17 @@ export function PdfViewer({ filePath, pdfData, highlightText, onClose }: PdfView
             onClick={goNext}
             disabled={currentPage >= numPages}
             style={{
-              background: 'none', border: '1px solid var(--border-color, #2a2a30)',
+              background: 'none', border: '1px solid var(--border-primary)',
               borderRadius: '4px', padding: '3px 6px', cursor: currentPage >= numPages ? 'default' : 'pointer',
               opacity: currentPage >= numPages ? 0.3 : 1, color: 'var(--text-secondary, #a0a0a8)',
             }}
           >
             <ChevronRight size={14} />
           </button>
-          <div style={{ width: '1px', height: '16px', background: 'var(--border-color, #2a2a30)' }} />
+          <div style={{ width: '1px', height: '16px', background: 'var(--border-primary)' }} />
           <button
             onClick={() => setScale(Math.max(0.5, scale - 0.2))}
-            style={{ background: 'none', border: '1px solid var(--border-color, #2a2a30)', borderRadius: '4px', padding: '3px 6px', cursor: 'pointer', color: 'var(--text-secondary, #a0a0a8)' }}
+            style={{ background: 'none', border: '1px solid var(--border-primary)', borderRadius: '4px', padding: '3px 6px', cursor: 'pointer', color: 'var(--text-secondary, #a0a0a8)' }}
           >
             <ZoomOut size={14} />
           </button>
@@ -304,7 +304,7 @@ export function PdfViewer({ filePath, pdfData, highlightText, onClose }: PdfView
           </span>
           <button
             onClick={() => setScale(Math.min(3, scale + 0.2))}
-            style={{ background: 'none', border: '1px solid var(--border-color, #2a2a30)', borderRadius: '4px', padding: '3px 6px', cursor: 'pointer', color: 'var(--text-secondary, #a0a0a8)' }}
+            style={{ background: 'none', border: '1px solid var(--border-primary)', borderRadius: '4px', padding: '3px 6px', cursor: 'pointer', color: 'var(--text-secondary, #a0a0a8)' }}
           >
             <ZoomIn size={14} />
           </button>
@@ -318,7 +318,7 @@ export function PdfViewer({ filePath, pdfData, highlightText, onClose }: PdfView
               onChange={(e) => setSearchQuery(e.target.value)}
               style={{
                 background: 'var(--bg-primary, #0f0f10)',
-                border: '1px solid var(--border-color, #2a2a30)',
+                border: '1px solid var(--border-primary)',
                 borderRadius: '4px',
                 padding: '3px 6px',
                 color: 'var(--text-primary, #e0e0e4)',
@@ -337,7 +337,7 @@ export function PdfViewer({ filePath, pdfData, highlightText, onClose }: PdfView
               ref={canvasRef}
               style={{
                 display: 'block',
-                boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+                boxShadow: '0 4px 12px var(--shadow-color)',
                 background: 'var(--text-on-accent)',
               }}
             />

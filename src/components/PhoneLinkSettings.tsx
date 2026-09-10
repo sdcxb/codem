@@ -57,11 +57,11 @@ function QrSvg({ text }: { text: string }) {
 const btnStyle: React.CSSProperties = {
   padding: "6px 12px", borderRadius: 6, cursor: "pointer",
   background: "var(--bg-secondary)", color: "var(--text-primary)",
-  border: "1px solid var(--border-color)", fontSize: 'var(--fs-sm)',
+  border: "1px solid var(--border-primary)", fontSize: 'var(--fs-sm)',
 };
 const inputStyle: React.CSSProperties = {
   padding: "6px 8px", background: "var(--bg-tertiary)", color: "var(--text-primary)",
-  border: "1px solid var(--border-color)", borderRadius: 6, fontSize: 'var(--fs-sm)', boxSizing: "border-box",
+  border: "1px solid var(--border-primary)", borderRadius: 6, fontSize: 'var(--fs-sm)', boxSizing: "border-box",
 };
 
 export function PhoneLinkSettings() {

@@ -238,7 +238,7 @@ export function PermissionPresetSelector({
             background: 'var(--bg-secondary)',
             border: '1px solid var(--border-primary)',
             borderRadius: 8,
-            boxShadow: '0 4px 16px rgba(0,0,0,0.2)',
+            boxShadow: '0 4px 16px var(--shadow-color)',
             zIndex: 100,
             overflow: 'hidden',
           }}

@@ -831,7 +831,7 @@ notebookId={notebookId}
                 >
                   <PanelLeftClose size={16} />
                 </button>
-                <div className="nb-panel-tabs" style={{ display: 'flex', gap: '2px', alignItems: 'center' }}>
+                <div className="nb-panel-tabs">
                   <button
                     className={`nb-view-tab ${viewMode === 'sources' ? 'active' : ''}`}
                     onClick={() => setViewMode('sources')}
@@ -894,22 +894,17 @@ notebookId={notebookId}
                   <button
                     className="nb-summary-toggle"
                     onClick={() => setSummaryCollapsed(!summaryCollapsed)}
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: '4px',
-                      background: 'transparent', border: 'none', cursor: 'pointer',
-                      padding: 0, width: '100%',
-                    }}
                   >
                     <BookOpen className="icon-xs" />
-                    <span className="nb-section-label" style={{ margin: 0 }}>
+                    <span className="nb-section-label nb-summary-toggle-label">
                       {isZh ? '摘要' : 'Summary'}
                     </span>
                     {summaryCollapsed
-                      ? <ChevronRight className="icon-xs" style={{ marginLeft: 'auto' }} />
-                      : <ChevronDown className="icon-xs" style={{ marginLeft: 'auto' }} />}
+                      ? <ChevronRight className="icon-xs nb-chevron-end" />
+                      : <ChevronDown className="icon-xs nb-chevron-end" />}
                   </button>
                   {!summaryCollapsed && (
-                    <p className="nb-summary-text" style={{ marginTop: '6px' }}>{notebook.summary}</p>
+                    <p className="nb-summary-text">{notebook.summary}</p>
                   )}
                 </div>
               )}
@@ -978,22 +973,13 @@ notebookId={notebookId}
 
               {/* Note search */}
               {notes.length > 0 && (
-                <div style={{ padding: '4px 12px 6px' }}>
+                <div className="nb-note-search">
                   <input
                     type="text"
                     value={noteSearchQuery}
                     onChange={(e) => setNoteSearchQuery(e.target.value)}
                     placeholder={isZh ? '搜索笔记...' : 'Search notes...'}
-                    style={{
-                      width: '100%',
-                      padding: '4px 8px',
-                      fontSize: 'var(--fs-sm)',
-                      background: 'var(--bg-tertiary)',
-                      border: '1px solid var(--border-primary)',
-                      borderRadius: '6px',
-                      color: 'var(--text-primary)',
-                      outline: 'none',
-                    }}
+                    className="nb-note-search-input"
                   />
                 </div>
               )}
@@ -1007,22 +993,9 @@ notebookId={notebookId}
                 )}
                 {/* Tag filter bar */}
                 {Array.from(new Set(notes.flatMap(n => n.tags || []))).length > 0 && (
-                  <div style={{
-                    display: 'flex',
-                    gap: '4px',
-                    flexWrap: 'wrap',
-                    padding: '4px 0 8px',
-                  }}>
+                  <div className="nb-tag-filter">
                     <button
-                      style={{
-                        padding: '2px 8px',
-                        borderRadius: '10px',
-                        fontSize: 'var(--fs-xs)',
-                        border: '1px solid var(--border-primary)',
-                        background: !tagFilter ? 'var(--accent)' : 'transparent',
-                        color: !tagFilter ? 'var(--text-on-accent)' : 'var(--text-secondary)',
-                        cursor: 'pointer',
-                      }}
+                      className={`nb-tag-chip ${!tagFilter ? 'active' : ''}`}
                       onClick={() => setTagFilter(null)}
                     >
                       {isZh ? '全部' : 'All'}
@@ -1030,15 +1003,7 @@ notebookId={notebookId}
                     {Array.from(new Set(notes.flatMap(n => n.tags || []))).map(tag => (
                       <button
                         key={tag}
-                        style={{
-                          padding: '2px 8px',
-                          borderRadius: '10px',
-                          fontSize: 'var(--fs-xs)',
-                          border: '1px solid var(--border-primary)',
-                          background: tagFilter === tag ? 'var(--accent)' : 'transparent',
-                          color: tagFilter === tag ? 'var(--text-on-accent)' : 'var(--text-secondary)',
-                          cursor: 'pointer',
-                        }}
+                        className={`nb-tag-chip ${tagFilter === tag ? 'active' : ''}`}
                         onClick={() => setTagFilter(tagFilter === tag ? null : tag)}
                       >
                         {tag}
@@ -1122,7 +1087,7 @@ notebookId={notebookId}
       {/* 学习路径弹窗 (借鉴 Understand-Anything Guided Tours 思路, 自研拓扑排序) */}
       {showStudyPath && (
         <div className="nb-dialog-overlay" onClick={() => setShowStudyPath(false)}>
-          <div className="nb-dialog" style={{ width: '600px' }} onClick={(e) => e.stopPropagation()}>
+          <div className="nb-dialog nb-dialog--study" onClick={(e) => e.stopPropagation()}>
             <div className="nb-dialog-header">
               <h3 className="nb-dialog-title">
                 <Route className="icon-md" />
@@ -1134,8 +1099,8 @@ notebookId={notebookId}
             </div>
             <div className="nb-study-path">
               {studyPath.length === 0 ? (
-                <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>
-                  <Map className="icon-2xl" style={{ margin: '0 auto 8px', opacity: 0.5 }} />
+                <div className="nb-study-empty">
+                  <Map className="icon-2xl nb-study-empty-icon" />
                   <p>{isZh ? '请先生成知识图谱后再使用学习路径' : 'Please generate a knowledge graph first'}</p>
                 </div>
               ) : (
@@ -1155,7 +1120,6 @@ notebookId={notebookId}
                       <div key={item.node.id}>
                         <div
                           className="nb-study-path-item"
-                          style={{ cursor: 'pointer', transition: 'background 0.15s ease' }}
                           onClick={() => {
                             // B12: 点击学习路径步骤 → 跳转到对应笔记或图谱节点
                             const matchingNote = notes.find(n =>
@@ -1171,8 +1135,6 @@ notebookId={notebookId}
                               setShowStudyPath(false);
                             }
                           }}
-                          onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'var(--bg-tertiary)'; }}
-                          onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = ''; }}
                         >
                           <div className="nb-study-path-num">{item.order}</div>
                           <div className="nb-study-path-content">
@@ -1180,7 +1142,7 @@ notebookId={notebookId}
                             {item.node.description && (
                               <p className="nb-study-path-item-desc">{item.node.description}</p>
                             )}
-                            <p className="nb-study-path-item-desc" style={{ opacity: 0.7 }}>
+                            <p className="nb-study-path-item-desc nb-study-path-item-reason">
                               {item.reason}
                             </p>
                           </div>
@@ -1209,8 +1171,7 @@ notebookId={notebookId}
       {studioPreview && (
         <div className="nb-dialog-overlay" onClick={() => setStudioPreview(null)}>
           <div
-            className="nb-dialog"
-            style={{ width: '900px', maxWidth: '95vw', maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}
+            className="nb-dialog nb-dialog--studio"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="nb-dialog-header">
@@ -1220,36 +1181,29 @@ notebookId={notebookId}
                   type="text"
                   value={studioPreviewTitle}
                   onChange={(e) => setStudioPreviewTitle(e.target.value)}
-                  style={{
-                    background: 'transparent', border: 'none', outline: 'none',
-                    color: 'inherit', fontSize: 'inherit', fontWeight: 'inherit',
-                    flex: 1, minWidth: '200px',
-                  }}
+                  className="nb-dialog-title-input"
                 />
               </h3>
-              <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+              <div className="nb-dialog-actions">
                 {/* 模式切换: 预览 / 编辑 / 分屏 */}
                 <button
-                  className={`nb-mode-btn ${studioPreviewMode === 'preview' ? 'active' : ''}`}
+                  className={`nb-mode-btn nb-mode-btn--labelled ${studioPreviewMode === 'preview' ? 'active' : ''}`}
                   onClick={() => setStudioPreviewMode('preview')}
                   title={isZh ? '预览模式' : 'Preview'}
-                  style={{ padding: '4px 8px', fontSize: 'var(--fs-sm)' }}
                 >
                   <Eye className="icon-sm" />
                 </button>
                 <button
-                  className={`nb-mode-btn ${studioPreviewMode === 'edit' ? 'active' : ''}`}
+                  className={`nb-mode-btn nb-mode-btn--labelled ${studioPreviewMode === 'edit' ? 'active' : ''}`}
                   onClick={() => setStudioPreviewMode('edit')}
                   title={isZh ? '编辑模式' : 'Edit'}
-                  style={{ padding: '4px 8px', fontSize: 'var(--fs-sm)' }}
                 >
                   <Edit3 className="icon-sm" />
                 </button>
                 <button
-                  className={`nb-mode-btn ${studioPreviewMode === 'split' ? 'active' : ''}`}
+                  className={`nb-mode-btn nb-mode-btn--labelled ${studioPreviewMode === 'split' ? 'active' : ''}`}
                   onClick={() => setStudioPreviewMode('split')}
                   title={isZh ? '分屏模式' : 'Split'}
-                  style={{ padding: '4px 8px', fontSize: 'var(--fs-sm)' }}
                 >
                   <Columns className="icon-sm" />
                 </button>
@@ -1260,28 +1214,21 @@ notebookId={notebookId}
             </div>
 
             {/* 内容区域 */}
-            <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: studioPreviewMode === 'split' ? 'row' : 'column' }}>
+            <div className={`nb-studio-body ${studioPreviewMode === 'split' ? 'is-split' : ''}`}>
               {/* 编辑区 */}
               {studioPreviewMode !== 'preview' && (
-                <div style={{ flex: 1, overflow: 'auto', padding: '12px 16px', borderRight: studioPreviewMode === 'split' ? '1px solid var(--border-primary)' : 'none' }}>
+                <div className="nb-studio-pane nb-studio-pane--edit">
                   <textarea
                     value={studioPreviewContent}
                     onChange={(e) => setStudioPreviewContent(e.target.value)}
-                    style={{
-                      width: '100%', height: '100%', minHeight: '400px',
-                      padding: '8px', fontSize: 'var(--fs-base)', lineHeight: '1.6',
-                      background: 'var(--bg-tertiary)',
-                      border: '1px solid var(--border-primary)',
-                      borderRadius: '6px', color: 'var(--text-primary)',
-                      outline: 'none', resize: 'none', fontFamily: 'var(--font-mono, monospace)',
-                    }}
+                    className="nb-studio-textarea"
                     placeholder={isZh ? '编辑内容...' : 'Edit content...'}
                   />
                 </div>
               )}
               {/* 预览区 */}
               {studioPreviewMode !== 'edit' && (
-                <div style={{ flex: 1, overflow: 'auto', padding: '12px 16px' }}>
+                <div className="nb-studio-pane">
                   <div className="nb-md-preview">
                     {studioPreviewContent.trim() ? (
                       <ReactMarkdown
@@ -1293,11 +1240,11 @@ notebookId={notebookId}
                             const codeStr = String(children).replace(/\n$/, '');
                             if (match && match[1] === 'mermaid') {
                               return (
-                                <div style={{ padding: '8px', background: 'var(--bg-tertiary)', borderRadius: '6px', margin: '8px 0' }}>
-                                  <pre style={{ margin: 0, whiteSpace: 'pre-wrap', fontSize: 'var(--fs-sm)', color: 'var(--text-secondary)' }}>
+                                <div className="nb-mermaid-block">
+                                  <pre className="nb-mermaid-pre">
                                     {codeStr}
                                   </pre>
-                                  <p style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', marginTop: '4px' }}>
+                                  <p className="nb-mermaid-hint">
                                     {isZh ? '保存为笔记后可查看渲染的 Mermaid 图表' : 'Save as note to view rendered Mermaid diagram'}
                                   </p>
                                 </div>
@@ -1310,7 +1257,7 @@ notebookId={notebookId}
                         {studioPreviewContent}
                       </ReactMarkdown>
                     ) : (
-                      <p style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '40px' }}>
+                      <p className="nb-studio-empty">
                         {isZh ? '内容为空' : 'Content is empty'}
                       </p>
                     )}
@@ -1320,8 +1267,8 @@ notebookId={notebookId}
             </div>
 
             {/* 底部操作栏 */}
-            <div className="nb-dialog-footer" style={{ padding: '12px 20px', borderTop: '1px solid var(--border-primary)' }}>
-              <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', marginRight: 'auto' }}>
+            <div className="nb-dialog-footer">
+              <span className="nb-studio-footer-hint">
                 {isZh ? '预览满意后点击保存，或切换到编辑模式修改内容' : 'Preview, then save. Switch to edit mode to modify.'}
               </span>
               <button className="nb-btn-cancel" onClick={() => setStudioPreview(null)}>
@@ -1426,8 +1373,8 @@ function SourceCard({
                 <Sparkles className="icon-2xs" />
                 <span className="nb-source-summary-label">{isZh ? 'AI 摘要' : 'AI Summary'}</span>
                 {summaryCollapsed
-                  ? <ChevronRight className="icon-2xs" style={{ marginLeft: 'auto' }} />
-                  : <ChevronDown className="icon-2xs" style={{ marginLeft: 'auto' }} />}
+                  ? <ChevronRight className="icon-2xs nb-chevron-end" />
+                  : <ChevronDown className="icon-2xs nb-chevron-end" />}
               </button>
               {!summaryCollapsed && (
                 <>
@@ -1502,9 +1449,8 @@ function NoteCard({
 
   return (
     <div
-      className="nb-note-card"
+      className={`nb-note-card ${isPinned ? 'is-pinned' : ''}`}
       onClick={isPPT && onEditPPT ? onEditPPT : onEdit}
-      style={isPinned ? { borderLeft: '2px solid var(--accent)' } : undefined}
     >
       <div className="nb-note-card-header">
         {isPPT ? (
@@ -1513,12 +1459,11 @@ function NoteCard({
           <StickyNote className="icon-2xs" />
         )}
         <span className="nb-note-title">{note.title}</span>
-        {isPinned && <Pin className="icon-2xs" style={{ color: 'var(--accent)' }} />}
+        {isPinned && <Pin className="icon-2xs nb-note-pin-icon" />}
         <button
-          className="nb-note-delete"
+          className={`nb-note-delete nb-note-pin-btn ${isPinned ? 'is-pinned' : ''}`}
           onClick={(e) => { e.stopPropagation(); onTogglePin?.(); }}
           title={isPinned ? (isZh ? '取消置顶' : 'Unpin') : (isZh ? '置顶' : 'Pin')}
-          style={{ opacity: isPinned ? 1 : 0.4 }}
         >
           <Pin className="icon-2xs" />
         </button>
@@ -1528,17 +1473,11 @@ function NoteCard({
       </div>
       {preview && <p className="nb-note-preview">{preview}</p>}
       {note.tags && note.tags.length > 0 && (
-        <div style={{ display: 'flex', gap: '2px', flexWrap: 'wrap', marginTop: '2px' }}>
+        <div className="nb-note-tags">
           {note.tags.map(tag => (
             <span
               key={tag}
-              style={{
-                padding: '0 4px',
-                background: 'var(--bg-tertiary)',
-                borderRadius: '6px',
-                fontSize: "var(--fs-xs)",
-                color: 'var(--text-muted)',
-              }}
+              className="nb-note-tag"
             >
               {tag}
             </span>
@@ -1554,11 +1493,7 @@ function NoteCard({
           <button
             onClick={(e) => { e.stopPropagation(); onGenerateFlashcards(); }}
             title={isZh ? '从笔记生成闪卡' : 'Generate Flashcards from Note'}
-            style={{
-              display: 'inline-flex', alignItems: 'center', gap: '2px',
-              padding: '0 4px', background: 'transparent', border: 'none',
-              color: 'var(--text-muted)', cursor: 'pointer', fontSize: 'var(--fs-xs)',
-            }}
+            className="nb-note-flash-btn"
           >
             <Layers className="icon-2xs" />
             {isZh ? '闪卡' : 'Cards'}
@@ -1617,7 +1552,7 @@ function AddSourceDialog({
               ? <span className="nb-file-path">{sourceFilePaths[0]}</span>
               : <>
                 <span className="nb-file-count">{sourceFilePaths.length} 个文件已选</span>
-                <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', marginTop: '4px' }}>
+                <div className="nb-file-names">
                   {sourceFilePaths.map((p, i) => {
                     const name = p.split(/[\\/]/).pop() || p;
                     return <div key={i}>• {name}</div>;

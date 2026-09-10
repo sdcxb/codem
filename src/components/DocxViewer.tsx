@@ -119,7 +119,7 @@ export function DocxViewer({ filePath, data, onClose, onSaveAsNote, highlightTex
         match.style.fontWeight = '700';
         match.style.borderRadius = '3px';
         match.style.padding = '0 3px';
-        match.style.boxShadow = '0 0 0 2px rgba(255, 235, 59, 0.4)';
+        match.style.boxShadow = '0 0 0 2px var(--match-highlight-strong)';
         match.textContent = text.substring(idx, idx + query.length);
         const after = document.createTextNode(text.substring(idx + query.length));
         const parent = textNode.parentNode;
@@ -184,7 +184,7 @@ export function DocxViewer({ filePath, data, onClose, onSaveAsNote, highlightTex
                 onClick={() => onSaveAsNote(html, text)}
                 title={isZh ? '保存为笔记' : 'Save as Note'}
                 style={{
-                  background: 'none', border: '1px solid var(--border-color, #2a2a30)',
+                  background: 'none', border: '1px solid var(--border-primary)',
                   borderRadius: '4px', padding: '4px 8px', cursor: 'pointer',
                   color: 'var(--text-secondary, #a0a0a8)', fontSize: 'var(--fs-xs)',
                   display: 'flex', alignItems: 'center', gap: '4px',
@@ -198,7 +198,7 @@ export function DocxViewer({ filePath, data, onClose, onSaveAsNote, highlightTex
               onClick={() => navigator.clipboard.writeText(text)}
               title={isZh ? '复制文本' : 'Copy Text'}
               style={{
-                background: 'none', border: '1px solid var(--border-color, #2a2a30)',
+                background: 'none', border: '1px solid var(--border-primary)',
                 borderRadius: '4px', padding: '4px 8px', cursor: 'pointer',
                 color: 'var(--text-secondary, #a0a0a8)', fontSize: 'var(--fs-xs)',
                 display: 'flex', alignItems: 'center', gap: '4px',
@@ -216,7 +216,7 @@ export function DocxViewer({ filePath, data, onClose, onSaveAsNote, highlightTex
         {/* Search bar */}
         <div style={{
           padding: '8px 16px',
-          borderBottom: '1px solid var(--border-color, #2a2a30)',
+          borderBottom: '1px solid var(--border-primary)',
           display: 'flex',
           alignItems: 'center',
           gap: '8px',
@@ -230,7 +230,7 @@ export function DocxViewer({ filePath, data, onClose, onSaveAsNote, highlightTex
             style={{
               flex: 1,
               background: 'var(--bg-primary, #0f0f10)',
-              border: '1px solid var(--border-color, #2a2a30)',
+              border: '1px solid var(--border-primary)',
               borderRadius: '4px',
               padding: '4px 8px',
               color: 'var(--text-primary, #e0e0e4)',

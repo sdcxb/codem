@@ -74,7 +74,7 @@ const MermaidBlock = ({ chart }: { chart: string }) => {
 
   if (loading) return <div style={{ padding: '12px', opacity: 0.5, fontSize: 'var(--fs-sm)' }}>Rendering diagram...</div>;
   if (error) return (
-    <div style={{ padding: '8px', border: '1px solid var(--border-color)', borderRadius: '4px', fontSize: 'var(--fs-xs)', color: 'var(--text-muted)' }}>
+    <div style={{ padding: '8px', border: '1px solid var(--border-primary)', borderRadius: '4px', fontSize: 'var(--fs-xs)', color: 'var(--text-muted)' }}>
       <pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{chart}</pre>
     </div>
   );
@@ -337,7 +337,7 @@ export function NoteEditor({
         {/* Tags input (always visible) */}
         <div style={{
           padding: '6px 16px',
-          borderBottom: '1px solid var(--border-color, #2a2a30)',
+          borderBottom: '1px solid var(--border-primary)',
           display: 'flex',
           alignItems: 'center',
           gap: '6px',
@@ -353,7 +353,7 @@ export function NoteEditor({
                 gap: '4px',
                 padding: '2px 6px',
                 background: 'var(--bg-tertiary, #25252b)',
-                border: '1px solid var(--border-color, #2a2a30)',
+                border: '1px solid var(--border-primary)',
                 borderRadius: '10px',
                 fontSize: 'var(--fs-xs)',
                 color: 'var(--text-secondary, #a0a0a8)',
@@ -600,7 +600,7 @@ export function NoteEditor({
                       style={{
                         padding: '12px',
                         background: 'var(--bg-tertiary, #25252b)',
-                        border: '1px solid var(--border-color, #2a2a30)',
+                        border: '1px solid var(--border-primary)',
                         borderRadius: '8px',
                       }}
                     >
@@ -622,7 +622,7 @@ export function NoteEditor({
                             onClick={() => handleRestoreVersion(ver.id)}
                             title={isZh ? '恢复此版本' : 'Restore this version'}
                             style={{
-                              background: 'none', border: '1px solid var(--border-color, #2a2a30)',
+                              background: 'none', border: '1px solid var(--border-primary)',
                               borderRadius: '4px', padding: '4px 6px', cursor: 'pointer',
                               color: 'var(--accent-primary, #6366f1)',
                             }}
@@ -633,7 +633,7 @@ export function NoteEditor({
                             onClick={() => handleDeleteVersion(ver.id)}
                             title={isZh ? '删除此版本' : 'Delete this version'}
                             style={{
-                              background: 'none', border: '1px solid var(--border-color, #2a2a30)',
+                              background: 'none', border: '1px solid var(--border-primary)',
                               borderRadius: '4px', padding: '4px 6px', cursor: 'pointer',
                               color: 'var(--text-muted, #555)',
                             }}

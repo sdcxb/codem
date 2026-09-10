@@ -96,7 +96,7 @@ export function PersonaManager({ onClose }: PersonaManagerProps) {
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder={zh ? "如：严谨工程师 / 创意作家" : "e.g. Senior Engineer"}
-              style={{ width: "100%", padding: "6px 8px", background: "var(--bg-tertiary)", color: "var(--text-primary)", border: "1px solid var(--border-color)", borderRadius: 6, fontSize: 'var(--fs-sm)', boxSizing: "border-box" }}
+              style={{ width: "100%", padding: "6px 8px", background: "var(--bg-tertiary)", color: "var(--text-primary)", border: "1px solid var(--border-primary)", borderRadius: 6, fontSize: 'var(--fs-sm)', boxSizing: "border-box" }}
             />
           </div>
           <div>
@@ -108,7 +108,7 @@ export function PersonaManager({ onClose }: PersonaManagerProps) {
               onChange={(e) => setContent(e.target.value)}
               rows={6}
               placeholder={zh ? "你是……请始终……" : "You are... Always..."}
-              style={{ width: "100%", padding: "6px 8px", background: "var(--bg-tertiary)", color: "var(--text-primary)", border: "1px solid var(--border-color)", borderRadius: 6, fontSize: 'var(--fs-sm)', boxSizing: "border-box", resize: "vertical" }}
+              style={{ width: "100%", padding: "6px 8px", background: "var(--bg-tertiary)", color: "var(--text-primary)", border: "1px solid var(--border-primary)", borderRadius: 6, fontSize: 'var(--fs-sm)', boxSizing: "border-box", resize: "vertical" }}
             />
           </div>
           <div>
@@ -119,7 +119,7 @@ export function PersonaManager({ onClose }: PersonaManagerProps) {
               value={path}
               onChange={(e) => setPath(e.target.value)}
               placeholder={zh ? "如 D:/Workspace/soul.md（留空则用上方内容）" : "e.g. D:/Workspace/soul.md (leave empty to use content above)"}
-              style={{ width: "100%", padding: "6px 8px", background: "var(--bg-tertiary)", color: "var(--text-primary)", border: "1px solid var(--border-color)", borderRadius: 6, fontSize: 'var(--fs-sm)', boxSizing: "border-box" }}
+              style={{ width: "100%", padding: "6px 8px", background: "var(--bg-tertiary)", color: "var(--text-primary)", border: "1px solid var(--border-primary)", borderRadius: 6, fontSize: 'var(--fs-sm)', boxSizing: "border-box" }}
             />
           </div>
           <div>
@@ -129,7 +129,7 @@ export function PersonaManager({ onClose }: PersonaManagerProps) {
             <input
               value={fallback}
               onChange={(e) => setFallback(e.target.value)}
-              style={{ width: "100%", padding: "6px 8px", background: "var(--bg-tertiary)", color: "var(--text-primary)", border: "1px solid var(--border-color)", borderRadius: 6, fontSize: 'var(--fs-sm)', boxSizing: "border-box" }}
+              style={{ width: "100%", padding: "6px 8px", background: "var(--bg-tertiary)", color: "var(--text-primary)", border: "1px solid var(--border-primary)", borderRadius: 6, fontSize: 'var(--fs-sm)', boxSizing: "border-box" }}
             />
           </div>
           <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>

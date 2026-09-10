@@ -57,10 +57,10 @@ onClick={(e) => e.stopPropagation()}
             alignItems: "center",
             gap: "10px",
             padding: "16px 20px",
-            borderBottom: "1px solid var(--border-color, #333)",
+            borderBottom: "1px solid var(--border-primary)",
           }}
         >
-          <FileText size={20} style={{ color: "var(--accent-color, #6c5ce7)" }} />
+          <FileText size={20} style={{ color: "var(--accent)" }} />
           <h2 style={{ margin: 0, fontSize: "var(--fs-lg)", fontWeight: 600 }}>
             提示词修改审核 ({changes.length} 项变更)
           </h2>
@@ -89,7 +89,7 @@ onClick={(e) => e.stopPropagation()}
                       ? "color-mix(in srgb, var(--success) 40%, transparent)"
                       : decision === "skip"
                         ? "color-mix(in srgb, var(--error) 30%, transparent)"
-                        : "var(--border-color, #444)"
+                        : "var(--border-primary)"
                   }`,
                   overflow: "hidden",
                   background: "var(--bg-tertiary, #16213e)",
@@ -120,9 +120,9 @@ onClick={(e) => e.stopPropagation()}
                       style={{
                         padding: "4px 12px",
                         borderRadius: "6px",
-                        border: decision === "apply" ? "none" : "1px solid var(--border-color, #444)",
+                        border: decision === "apply" ? "none" : "1px solid var(--border-primary)",
                         background: decision === "apply" ? "var(--success)" : "transparent",
-                        color: decision === "apply" ? "white" : "var(--text-secondary, #888)",
+                        color: decision === "apply" ? "var(--text-on-accent)" : "var(--text-secondary, #888)",
                         cursor: "pointer",
                         fontSize: "var(--fs-sm)",
                         fontWeight: 500,
@@ -139,9 +139,9 @@ onClick={(e) => e.stopPropagation()}
                       style={{
                         padding: "4px 12px",
                         borderRadius: "6px",
-                        border: decision === "skip" ? "none" : "1px solid var(--border-color, #444)",
+                        border: decision === "skip" ? "none" : "1px solid var(--border-primary)",
                         background: decision === "skip" ? "var(--error)" : "transparent",
-                        color: decision === "skip" ? "white" : "var(--text-secondary, #888)",
+                        color: decision === "skip" ? "var(--text-on-accent)" : "var(--text-secondary, #888)",
                         cursor: "pointer",
                         fontSize: "var(--fs-sm)",
                         fontWeight: 500,
@@ -155,9 +155,9 @@ onClick={(e) => e.stopPropagation()}
 
                 {/* Diff content */}
                 {expanded && (
-                  <div style={{ borderTop: "1px solid var(--border-color, #333)" }}>
+                  <div style={{ borderTop: "1px solid var(--border-primary)" }}>
                     {/* Original */}
-                    <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--border-color, #333)" }}>
+                    <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--border-primary)" }}>
                       <div
                         style={{
                           fontSize: "var(--fs-xs)",
@@ -227,7 +227,7 @@ onClick={(e) => e.stopPropagation()}
             alignItems: "center",
             justifyContent: "space-between",
             padding: "16px 20px",
-            borderTop: "1px solid var(--border-color, #333)",
+            borderTop: "1px solid var(--border-primary)",
           }}
         >
           <div style={{ fontSize: "var(--fs-base)", color: "var(--text-secondary, #888)" }}>
@@ -241,7 +241,7 @@ onClick={(e) => e.stopPropagation()}
               style={{
                 padding: "8px 16px",
                 borderRadius: "8px",
-                border: "1px solid var(--border-color, #444)",
+                border: "1px solid var(--border-primary)",
                 background: "transparent",
                 color: "var(--text-secondary, #888)",
                 cursor: "pointer",
@@ -257,8 +257,8 @@ onClick={(e) => e.stopPropagation()}
                 padding: "8px 20px",
                 borderRadius: "8px",
                 border: "none",
-                background: applyCount > 0 ? "var(--accent-color, #6c5ce7)" : "var(--border-color, #333)",
-                color: applyCount > 0 ? "white" : "var(--text-secondary, #666)",
+                background: applyCount > 0 ? "var(--accent)" : "var(--border-primary)",
+                color: applyCount > 0 ? "var(--text-on-accent)" : "var(--text-secondary, #666)",
                 cursor: applyCount > 0 ? "pointer" : "not-allowed",
                 fontSize: "var(--fs-md)",
                 fontWeight: 500,

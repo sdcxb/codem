@@ -1159,7 +1159,7 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
             <div key={att.id} className="pending-attachment">
               <span className="attachment-icon">{att.type === "image" ? <ImageIcon size={14} /> : <FileText size={14} />}</span>
               {att.type === "image" && att.content ? (
-                <img src={att.content} alt={att.name} style={{ width: 32, height: 32, objectFit: "cover", borderRadius: 4, marginRight: 4 }} />
+                <img src={att.content} alt={att.name} className="pending-attachment-thumb" />
               ) : null}
               <span className="attachment-name">{att.name}</span>
               {att.size && <span className="attachment-size">{formatSize(att.size)}</span>}
@@ -1172,9 +1172,9 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
             const currentModel = settings.model || "";
             const supportsVision = currentModel.startsWith("gpt-4o") || currentModel.startsWith("claude-3") || currentModel.startsWith("claude-4") || currentModel.startsWith("gemini-1.5") || currentModel.startsWith("gemini-2") || currentModel.startsWith("o3") || currentModel.startsWith("o4");
             if (!supportsVision && !visionConfig?.enabled) {
-              return <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", padding: "4px 0" }}>{zh ? "当前模型不支持视觉，图片将以文字标注发送。配置视觉代理请在 设置→多模态→Vision 中开启。" : "Current model doesn't support vision. Images will be sent as text. Configure vision proxy in Settings→Multimodal→Vision."}</div>;
+              return <div className="attachment-hint">{zh ? "当前模型不支持视觉，图片将以文字标注发送。配置视觉代理请在 设置→多模态→Vision 中开启。" : "Current model doesn't support vision. Images will be sent as text. Configure vision proxy in Settings→Multimodal→Vision."}</div>;
             } else if (!supportsVision && visionConfig?.enabled) {
-              return <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", padding: "4px 0" }}>{zh ? "将使用视觉代理 (" + visionConfig.model + ") 描述图片内容" : "Will use vision proxy (" + visionConfig.model + ") to describe image"}</div>;
+              return <div className="attachment-hint">{zh ? "将使用视觉代理 (" + visionConfig.model + ") 描述图片内容" : "Will use vision proxy (" + visionConfig.model + ") to describe image"}</div>;
             }
             return null;
           })()}
@@ -1187,13 +1187,15 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
         <div className="input-textarea-row" ref={textareaRowRef}>
           {/* Slash command menu — 用 Portal 渲染到 document.body，避免被 overflow:hidden 裁剪 */}
           {slashFilter !== null && slashMenuPos && createPortal(
-            <div style={{
-              position: "fixed",
-              left: slashMenuPos.left,
-              bottom: slashMenuPos.bottom,
-              width: slashMenuPos.width,
-              zIndex: 99999,
-            }}>
+            <div
+              className="slash-menu-portal"
+              style={{
+                left: slashMenuPos.left,
+                bottom: slashMenuPos.bottom,
+                width: slashMenuPos.width,
+                zIndex: 99999,
+              }}
+            >
               <SlotBridge
                 name="app.ui-commands"
                 fallback={SlashCommandMenu}
@@ -1295,24 +1297,7 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
           {/* P3-26: Voice 状态指示 — browser interim / whisper 录音·转写中 / 错误提示 */}
           {((isListeningVoice && voiceInterim) || whisperActive || whisperBusy || voiceError) && (
             <span
-              style={{
-                position: "absolute",
-                right: 60,
-                bottom: 8,
-                fontSize: 'var(--fs-sm)',
-                color: voiceError ? "var(--danger, #ef4444)" : "var(--text-muted)",
-                fontStyle: voiceError ? "normal" : "italic",
-                background: "var(--bg-tertiary, rgba(0,0,0,0.35))",
-                padding: "2px 8px",
-                borderRadius: 10,
-                opacity: 0.85,
-                pointerEvents: "none",
-                maxWidth: 380,
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-                zIndex: 5,
-              }}
+              className={`voice-status ${voiceError ? "voice-status--error" : ""}`}
               title={voiceError || undefined}
             >
               {voiceError
@@ -1332,32 +1317,34 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
           {/* 左侧工具组 */}
           <div className="input-tools-left">
             {/* + button — 添加文件/技能/多模态 */}
-            <div style={{ position: "relative" }}>
+            <div className="input-relative-anchor">
               <button
                 ref={plusBtnRef}
-                className="mode-toggle-btn"
+                className={`mode-toggle-btn mode-toggle-btn--compact ${showPlusMenu ? "is-active" : ""}`}
                 onClick={() => setShowPlusMenu(!showPlusMenu)}
                 title={zh ? "添加" : "Add"}
-                style={showPlusMenu ? { background: "var(--accent)", color: "var(--text-on-accent)", fontSize: 'var(--fs-xs)', width: 18, height: 18, padding: 0, minWidth: 18 } : { fontSize: 'var(--fs-xs)', width: 18, height: 18, padding: 0, minWidth: 18 }}
               >
                 ＋
               </button>
               {showPlusMenu && plusMenuPos && createPortal(
                 <>
                   <div className="popover-shield" style={{ zIndex: 99998 }} onClick={() => setShowPlusMenu(false)} />
-                  <div className="skill-picker-popup popover-shell" style={{
-                    position: "fixed", left: plusMenuPos.left, bottom: plusMenuPos.bottom,
-                    minWidth: 200, zIndex: 99999, padding: 4,
-                  }}>
-                    <button className="more-action-item" style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", cursor: "pointer", border: "none", background: "transparent", color: "var(--text-primary)", fontSize: 'var(--fs-sm)', width: "100%", textAlign: "left" }}
+                  <div
+                    className="skill-picker-popup popover-shell input-popover"
+                    style={{
+                      left: plusMenuPos.left, bottom: plusMenuPos.bottom,
+                      minWidth: 200, zIndex: 99999,
+                    }}
+                  >
+                    <button className="more-action-item"
                       onClick={() => { setShowPlusMenu(false); document.getElementById('file-upload-input')?.click(); }}>
                       <Paperclip size={14} /> <span>{zh ? "上传文件" : "Upload file"}</span>
                     </button>
-                    <button className="more-action-item" style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", cursor: "pointer", border: "none", background: "transparent", color: "var(--text-primary)", fontSize: 'var(--fs-sm)', width: "100%", textAlign: "left" }}
+                    <button className="more-action-item"
                       onClick={() => { setShowPlusMenu(false); setShowSkillPicker(true); }}>
                       <Target size={14} /> <span>{zh ? "选择技能" : "Select skills"}</span>
                     </button>
-                    <div style={{ height: 1, background: "var(--border-color)", margin: "4px 0" }} />
+                    <div className="menu-divider" />
                     {(() => {
                       const mmSettings = getMultimodalSettings();
                       const imageGenConfig = mmSettings.imageGen;
@@ -1365,13 +1352,7 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
                       return (<>
                         <button
                           disabled={!imageGenConfig}
-                          style={{
-                            display: "flex", alignItems: "center", gap: 8, padding: "8px 12px",
-                            cursor: imageGenConfig ? "pointer" : "not-allowed",
-                            border: "none", fontSize: 'var(--fs-sm)', width: "100%", textAlign: "left",
-                            background: "transparent",
-                            color: imageGenConfig ? "var(--text-primary)" : "var(--text-muted)",
-                          }}
+                          className="more-action-item"
                           title={imageGenConfig ? (zh ? "生成图片" : "Generate image") : (zh ? "请先在设置中配置图像生成模型" : "Please configure image generation model in Settings")}
                           onClick={() => {
                             if (!imageGenConfig) return;
@@ -1382,17 +1363,11 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
                           }}
                         >
                           <ImageIcon size={14} /> <span>{zh ? "生成图片" : "Generate image"}</span>
-                          {!imageGenConfig && <span style={{ fontSize: "var(--fs-xs)", opacity: 0.6, marginLeft: "auto" }}>{zh ? "未配置" : "Not configured"}</span>}
+                          {!imageGenConfig && <span className="input-popover-hint">{zh ? "未配置" : "Not configured"}</span>}
                         </button>
                         <button
                           disabled={!ttsConfig}
-                          style={{
-                            display: "flex", alignItems: "center", gap: 8, padding: "8px 12px",
-                            cursor: ttsConfig ? "pointer" : "not-allowed",
-                            border: "none", fontSize: 'var(--fs-sm)', width: "100%", textAlign: "left",
-                            background: "transparent",
-                            color: ttsConfig ? "var(--text-primary)" : "var(--text-muted)",
-                          }}
+                          className="more-action-item"
                           title={ttsConfig ? (zh ? "语音合成" : "Voice synthesis") : (zh ? "请先在设置中配置语音合成模型" : "Please configure TTS model in Settings")}
                           onClick={() => {
                             if (!ttsConfig) return;
@@ -1404,7 +1379,7 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
                           }}
                         >
                           <Volume2 size={14} /> <span>{zh ? "语音合成" : "Voice synthesis"}</span>
-                          {!ttsConfig && <span style={{ fontSize: "var(--fs-xs)", opacity: 0.6, marginLeft: "auto" }}>{zh ? "未配置" : "Not configured"}</span>}
+                          {!ttsConfig && <span className="input-popover-hint">{zh ? "未配置" : "Not configured"}</span>}
                         </button>
                       </>);
                     })()}
@@ -1418,15 +1393,18 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
             <SlotBridge name="app.attachment" fallback={FileUpload} onUpload={handleUpload} hideButton />
 
             {/* Skill picker popup */}
-            <div ref={skillPickerBtnRef} style={{ position: "relative" }}>
+            <div ref={skillPickerBtnRef} className="input-relative-anchor">
               {showSkillPicker && skillPickerPos && createPortal(
                 <>
                   <div className="popover-shield" style={{ zIndex: 99998 }} onClick={() => setShowSkillPicker(false)} />
-                  <div className="skill-picker-popup popover-shell" style={{
-                    position: "fixed", left: skillPickerPos.left, bottom: skillPickerPos.bottom,
-                    minWidth: 220, maxWidth: 320, zIndex: 99999, maxHeight: 300, overflowY: "auto",
-                  }}>
-                    <div style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, marginBottom: 6, opacity: 0.7 }}>
+                  <div
+                    className="skill-picker-popup popover-shell input-popover input-popover--skills"
+                    style={{
+                      left: skillPickerPos.left, bottom: skillPickerPos.bottom,
+                      minWidth: 220, zIndex: 99999,
+                    }}
+                  >
+                    <div className="input-popover-title">
                       {zh ? "选择技能（本次消息）" : "Select skills (this message)"}
                     </div>
                     {(() => {
@@ -1434,20 +1412,17 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
                       try { disabled = getSettingJSON<string[]>("codem-disabled-skills", []); } catch {}
                       const skills = getSkillRegistry().getAll().filter(s => !disabled.includes(s.name));
                       if (skills.length === 0) {
-                        return <div style={{ fontSize: 'var(--fs-sm)', opacity: 0.5, padding: "8px 0" }}>{zh ? "无可用技能" : "No skills available"}</div>;
+                        return <div className="input-popover-empty">{zh ? "无可用技能" : "No skills available"}</div>;
                       }
                       return skills.map(s => (
-                        <label key={s.name} style={{ display: "flex", alignItems: "flex-start", gap: 6, padding: "6px 4px", cursor: "pointer", borderRadius: 4, fontSize: 'var(--fs-sm)' }}
-                          onMouseEnter={(e) => (e.currentTarget.style.background = "var(--bg-tertiary)")}
-                          onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
-                        >
+                        <label key={s.name} className="skill-option">
                           <input type="checkbox" checked={selectedSkills.includes(s.name)} onChange={(e) => {
                             if (e.target.checked) setSelectedSkills([...selectedSkills, s.name]);
                             else setSelectedSkills(selectedSkills.filter(n => n !== s.name));
-                          }} style={{ marginTop: 2 }} />
+                          }} className="skill-option-check" />
                           <div>
-                            <div style={{ fontWeight: 600 }}>{s.displayName || s.name}</div>
-                            <div style={{ opacity: 0.6, fontSize: 'var(--fs-xs)', lineHeight: 1.3 }}>{s.description}</div>
+                            <div className="skill-option-name">{s.displayName || s.name}</div>
+                            <div className="skill-option-desc">{s.description}</div>
                           </div>
                         </label>
                       ));
@@ -1480,7 +1455,7 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
             {/* P4: Knowledge source selector (notebook mode) — hidden when hideSourceSelector is true */}
             {notebookId && !hideSourceSelector && (
               <button
-                className={`mode-toggle-btn ${showSourceSelector ? "active" : ""}`}
+                className={`mode-toggle-btn ${showSourceSelector ? "is-active" : ""}`}
                 onClick={() => {
                   if (!showSourceSelector) {
                     try {
@@ -1491,13 +1466,12 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
                   setShowSourceSelector(!showSourceSelector);
                 }}
                 title={zh ? "知识来源选择器" : "Knowledge source selector"}
-                style={showSourceSelector ? { background: "var(--accent)", color: "var(--text-on-accent)" } : {}}
               >
                 <BookMarked size={14} />
               </button>
             )}
             {showSourceSelector && notebookId && !hideSourceSelector && (
-              <div style={{ position: "absolute", bottom: "100%", left: 0, right: 0, zIndex: 100 }}>
+              <div className="input-float-anchor" style={{ zIndex: 100 }}>
                 <SourceSelector
                   sources={notebookSources}
                   selectedIds={selectedSourceIds}
@@ -1523,12 +1497,12 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
 
             {/* P3: Multimodal generate mode panel */}
             {showMultimodal && generateMode !== "text" && (
-              <div style={{ position: "absolute", bottom: "100%", left: 0, right: 0, zIndex: 100, padding: "8px 12px", background: "var(--bg-secondary)", border: "1px solid var(--border-primary)", borderRadius: 6, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+              <div className="input-float-anchor input-float-panel" style={{ zIndex: 100 }}>
                 <GenerateModeSelector mode={generateMode} onModeChange={setGenerateMode} />
                 <ResolutionSelector resolution={resolution} onResolutionChange={setResolution} />
                 <button
                   onClick={() => { setShowMultimodal(false); setGenerateMode("text"); }}
-                  style={{ marginLeft: "auto", padding: "4px 8px", fontSize: 'var(--fs-sm)', cursor: "pointer", background: "transparent", border: "1px solid var(--border-primary)", borderRadius: 4 }}
+                  className="input-float-panel-close"
                 >
                   <X size={14} />
                 </button>
@@ -1540,12 +1514,11 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
           <div className="input-tools-right">
             {/* Voice input — 双引擎：browser (Web Speech API) / whisper (云端 OpenAI) */}
             <button
-              className={`mode-toggle-btn ${micActive ? "voice-rec-active" : ""}`}
+              className={`mode-toggle-btn mode-toggle-btn--mic ${micActive ? "voice-rec-active" : ""}`}
               onClick={handleVoiceToggle}
               disabled={disabled || (voiceEngine === "whisper" && whisperBusy)}
               title={voiceTitle}
               style={{
-                color: micActive ? "var(--danger, #ef4444)" : undefined,
                 opacity: disabled ? 0.4 : (voiceEngine === "browser" && !voiceSupported ? 0.55 : 1),
               }}
             >
@@ -1568,15 +1541,14 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
                   内部已分流：流式时走 onSendGuidance，即引导消息进入引导栏）
                 - 流式 + 输入框空 → Stop（停止当前回复）
             */}
-            <div style={{ display: "flex", alignItems: "center", gap: 0, flexShrink: 0, position: "relative" }}>
+            <div className="input-send-group">
               {isStreaming && !input.trim() && pendingAttachments.length === 0 ? (
-                <button className="send-btn cancel-btn" onClick={onCancel} title={S.input.cancel[lang]} style={{ borderRadius: "6px 0 0 6px" }}><Square size={14} fill="currentColor" /></button>
+                <button className="send-btn send-btn--split-left cancel-btn" onClick={onCancel} title={S.input.cancel[lang]}><Square size={14} fill="currentColor" /></button>
               ) : (
                 <button
-                  className={`send-btn ${disabled ? "disabled" : ""}`}
+                  className={`send-btn send-btn--split-left ${disabled ? "disabled" : ""}`}
                   onClick={handleSubmit}
                   disabled={disabled || (!input.trim() && pendingAttachments.length === 0)}
-                  style={{ borderRadius: "6px 0 0 6px" }}
                   title={isStreaming ? (zh ? "发送引导消息（注入当前任务）" : "Send guidance (inject into current task)") : (zh ? "发送 (Enter)" : "Send (Enter)")}
                 ><ArrowRight size={16} /></button>
               )}
@@ -1585,29 +1557,24 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
               <button
                 onClick={() => setShowMoreActions(!showMoreActions)}
                 title={zh ? "快捷短语 / 草稿" : "Quick phrases / Drafts"}
-                style={{
-                  width: 18, height: 32, padding: 0, border: "none",
-                  background: disabled ? "var(--bg-tertiary)" : (showMoreActions ? "var(--accent-hover)" : "var(--accent)"),
-                  color: disabled ? "var(--text-muted)" : "white", fontSize: "var(--fs-xs)", cursor: "pointer",
-                  borderRadius: "0 6px 6px 0", display: "flex", alignItems: "center", justifyContent: "center",
-                }}
+                className={`send-more-btn ${disabled ? "is-disabled" : showMoreActions ? "is-open" : ""}`}
               >
                 <ChevronUp size={10} />
               </button>
               {showMoreActions && (
                 <>
                   <div className="popover-shield" style={{ zIndex: 99 }} onClick={() => setShowMoreActions(false)} />
-                  <div className="skill-picker-popup popover-shell" style={{
-                    position: "absolute", bottom: "100%", right: 0, marginBottom: 4,
-                    minWidth: 200, zIndex: 100, maxHeight: 400, overflowY: "auto",
-                  }}>
+                  <div
+                    className="skill-picker-popup popover-shell input-popover input-popover--more"
+                    style={{ minWidth: 200, zIndex: 100 }}
+                  >
                     {onToggleQuickPhrase && (
-                      <button className="more-action-item" onClick={() => { onToggleQuickPhrase(); setShowMoreActions(false); }} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", cursor: "pointer", border: "none", background: "transparent", color: "var(--text-primary)", fontSize: 'var(--fs-sm)', width: "100%", textAlign: "left" }}>
+                      <button className="more-action-item" onClick={() => { onToggleQuickPhrase(); setShowMoreActions(false); }}>
                         <ClipboardList size={14} /> <span>{zh ? "快捷短语" : "Quick Phrases"}</span>
                       </button>
                     )}
                     {onToggleDraftPicker && hasDrafts && (
-                      <button className="more-action-item" onClick={() => { onToggleDraftPicker(); setShowMoreActions(false); }} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", cursor: "pointer", border: "none", background: "transparent", color: "var(--text-primary)", fontSize: 'var(--fs-sm)', width: "100%", textAlign: "left" }}>
+                      <button className="more-action-item" onClick={() => { onToggleDraftPicker(); setShowMoreActions(false); }}>
                         <StickyNote size={14} /> <span>{zh ? "提示词草稿" : "Prompt Drafts"}</span>
                       </button>
                     )}
@@ -1625,11 +1592,10 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
           {customOps.filter(op => op.command.trim()).slice(0, 2).map(op => (
             <button
               key={op.id}
-              className="input-control-item"
+              className={`input-control-item ${runningOp === op.id ? "is-busy" : ""}`}
               onClick={() => handleRunOp(op)}
               disabled={runningOp !== null}
               title={`${op.name}: ${op.command}`}
-              style={{ opacity: runningOp === op.id ? 0.5 : 1 }}
             >
               {runningOp === op.id ? <Clock size={12} /> : <Wrench size={12} />} {op.name}
             </button>
