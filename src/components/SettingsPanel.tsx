@@ -1021,7 +1021,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
 
           <div className="setting-group">
             <label>{lang === "zh" ? "字体粗细 (wght)" : "Font Weight (wght)"}</label>
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div className="sp-row sp-row--gap-wide">
               <input
                 type="range"
                 min={100}
@@ -1037,11 +1037,11 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
                 }}
                 style={{ flex: 1 }}
               />
-              <span style={{ fontSize: 'var(--fs-sm)', color: "var(--text-secondary)", minWidth: 36, textAlign: "right", fontFamily: "var(--font-family)", fontWeight: Number(fontWeight) }}>
+              <span className="sp-weight-value" style={{ fontWeight: Number(fontWeight) }}>
                 {fontWeight}
               </span>
             </div>
-            <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", marginTop: 2 }}>
+            <div className="sp-hint sp-hint--spaced">
               {lang === "zh" ? "100=极细 · 400=常规 · 700=粗体 · 900=极粗" : "100=Thin · 400=Regular · 700=Bold · 900=Black"}
             </div>
           </div>
@@ -1055,7 +1055,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
                 useAppStore.getState().setDisplayMode(e.target.value as "unified" | "segmented");
                 setSettingJSON("codem-display-mode", e.target.value);
               }}
-              style={{ padding: "6px 8px", fontSize: 'var(--fs-base)', background: "var(--bg-tertiary)", color: "var(--text-primary)", border: "1px solid var(--border-primary)", borderRadius: 4 }}
+              className="sp-select"
             >
               <option value="unified">{lang === "zh" ? "统一模式（多轮回复合并为一个气泡）" : "Unified (merge multi-turn replies)"}</option>
               <option value="segmented">{lang === "zh" ? "分段模式（每轮回复独立显示）" : "Segmented (each reply separate)"}</option>
@@ -1071,8 +1071,8 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
           <>
           {/* Security Mode — three-tier approval policy */}
           <div className="setting-group">
-            <label style={{ display: "flex", alignItems: "center", gap: 6 }}>{lang === "zh" ? <><Shield size={16} /> 安全策略</> : <><Shield size={16} /> Security Policy</>}</label>
-            <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-secondary)", marginBottom: 8 }}>
+            <label className="sp-row sp-row--gap-sm">{lang === "zh" ? <><Shield size={16} /> 安全策略</> : <><Shield size={16} /> Security Policy</>}</label>
+            <div className="sp-note sp-hint--lead">
               {lang === "zh"
                 ? "控制 AI 执行操作时的审批级别。项目级设置可覆盖全局策略。"
                 : "Control the approval level for AI operations. Per-project settings can override this."}
@@ -1116,7 +1116,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
                 document.documentElement.style.setProperty("--font-family", e.target.value);
                 window.dispatchEvent(new Event("codem-settings-changed"));
               }}
-              style={{ fontSize: 'var(--fs-base)', fontFamily: "inherit" }}
+              className="sp-select--inherit"
             >
               <option value="AlimamaFangYuanTi">Alimama 方圆体 (默认)</option>
               <option value="Inter, sans-serif">Inter</option>
@@ -1217,40 +1217,29 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
 
           <div className="setting-group">
             <label>{lang === "zh" ? "头像" : "Avatar"}</label>
-            <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
+            <div className="sp-row sp-row--gap-md sp-row--lead">
               <div className="user-avatar-preview" style={{
                 width: 48, height: 48, borderRadius: "50%", overflow: "hidden",
                 background: "var(--bg-tertiary)", display: "flex", alignItems: "center",
                 justifyContent: "center", flexShrink: 0, border: "2px solid var(--border-primary)",
               }}>
                 {userConfig.avatar ? (
-                  <img src={userConfig.avatar} alt="avatar" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                  <img src={userConfig.avatar} alt="avatar" className="sp-avatar-img" />
                 ) : (
-                  <User size={24} style={{ color: "var(--text-muted)" }} />
+                  <User size={24} className="sp-icon-muted" />
                 )}
               </div>
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <div className="sp-row sp-row--wrap">
                 <button
                   onClick={() => document.getElementById("avatar-upload-input")?.click()}
-                  style={{
-                    padding: "6px 12px", borderRadius: 6,
-                    border: "1px solid var(--border-primary)",
-                    background: "var(--bg-secondary)", color: "var(--text-primary)",
-                    cursor: "pointer", fontSize: 'var(--fs-sm)',
-                    display: "flex", alignItems: "center", gap: 4,
-                  }}
+                  className="sp-btn sp-btn--secondary"
                 >
                   {lang === "zh" ? "上传头像" : "Upload"}
                 </button>
                 {userConfig.avatar && (
                   <button
                     onClick={() => setUserConfig({ ...userConfig, avatar: "" })}
-                    style={{
-                      padding: "6px 12px", borderRadius: 6,
-                      border: "1px solid var(--border-primary)",
-                      background: "var(--bg-secondary)", color: "var(--text-primary)",
-                      cursor: "pointer", fontSize: 'var(--fs-sm)',
-                    }}
+                    className="sp-btn sp-btn--secondary"
                   >
                     {lang === "zh" ? "清除" : "Clear"}
                   </button>
@@ -1276,25 +1265,18 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
                 }}
               />
             </div>
-            <div className="preset-avatar-grid" style={{
-              display: "grid", gridTemplateColumns: "repeat(10, 1fr)", gap: 8, marginTop: 8,
-            }}>
+            <div className="preset-avatar-grid">
               {PRESET_AVATARS.map((url) => (
                 <button
                   key={url}
                   onClick={() => setUserConfig({ ...userConfig, avatar: url })}
-                  style={{
-                    width: 36, height: 36, borderRadius: "50%", padding: 0,
-                    border: userConfig.avatar === url ? "2px solid var(--accent)" : "2px solid transparent",
-                    background: "var(--bg-tertiary)", cursor: "pointer", overflow: "hidden",
-                    display: "flex", alignItems: "center", justifyContent: "center",
-                  }}
+                  className={`sp-avatar--sm sp-avatar ${userConfig.avatar === url ? "is-active" : ""}`}
                 >
-                  <img src={url} alt="preset" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                  <img src={url} alt="preset" className="sp-avatar-img" />
                 </button>
               ))}
             </div>
-            <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", marginTop: 6 }}>
+            <div className="sp-hint sp-hint--spaced">
               {lang === "zh" ? "预设头像来自 DiceBear (MIT)，也可上传自定义图片（≤2MB）" : "Presets from DiceBear (MIT), or upload your own (≤2MB)"}
             </div>
           </div>
@@ -1341,7 +1323,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
                     type="text"
                     value={provider.name}
                     onChange={(e) => updateProvider(provider.id, { name: e.target.value })}
-                    style={{ flex: 1, background: "transparent", border: "none", color: "var(--text-primary)", fontSize: 'var(--fs-base)', fontWeight: 600, outline: "none", borderBottom: "1px dashed var(--border-primary)", padding: "2px 0", marginRight: 8 }}
+                    className="sp-input--title"
                     title={lang === "zh" ? "自定义 Provider 名称（可修改）" : "Custom provider name (editable)"}
                   />
                 ) : (
@@ -1352,7 +1334,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
                   <button
                     onClick={() => removeCustomProvider(provider.id)}
                     title={lang === "zh" ? "删除此 Provider" : "Remove this provider"}
-                    style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", marginLeft: 6, display: "flex", alignItems: "center" }}
+                    className="sp-btn sp-btn--icon"
                   >
                     <Trash2 size={13} />
                   </button>
@@ -1387,7 +1369,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
                 />
               </div>
 
-              <div className="setting-group" style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+              <div className="setting-group sp-row sp-row--wrap">
                 <button
                   onClick={() => refreshProviderModels(provider.id)}
                   disabled={refreshingModels[provider.id]}
@@ -1417,7 +1399,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
               </div>
 
               {/* 手动添加服务器列表外的模型：内测/测试模型（调用方式与同 provider 其它模型一致，仅模型名不同） */}
-              <div className="setting-group" style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+              <div className="setting-group sp-row sp-row--gap-sm sp-row--wrap">
                 <input
                   type="text"
                   value={customModelDrafts[provider.id] || ""}
@@ -1426,7 +1408,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
                     ? "手动添加模型名（服务器列表外的内测模型，如 deepseek-xxx-expires-on-0910）"
                     : "Add model name not in server list (e.g. deepseek-xxx-expires-on-0910)"}
                   onKeyDown={(e) => { if (e.key === "Enter") handleAddCustomModel(provider.id); }}
-                  style={{ flex: 1, minWidth: 180, padding: "6px 10px", borderRadius: 4, border: "1px solid var(--border-primary)", background: "var(--bg-tertiary)", color: "var(--text-primary)", fontSize: 'var(--fs-sm)' }}
+                  className="sp-input sp-input--inline"
                 />
                 <button
                   onClick={() => handleAddCustomModel(provider.id)}
@@ -1446,21 +1428,21 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
                   {lang === "zh" ? "添加模型" : "Add Model"}
                 </button>
                 {customNamesFor(provider.id).length > 0 && (
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 4, alignItems: "center", width: "100%" }}>
-                    <span style={{ fontSize: 'var(--fs-xs)', color: "var(--text-muted)" }}>
+                  <div className="sp-row sp-row--gap-tight sp-row--wrap sp-row--full">
+                    <span className="sp-mini">
                       {lang === "zh" ? "自定义：" : "Custom: "}
                     </span>
                     {customNamesFor(provider.id).map((nm) => (
                       <span
                         key={nm}
                         title={nm}
-                        style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "2px 8px", borderRadius: 10, background: "var(--bg-tertiary)", border: "1px solid var(--border-primary)", color: "var(--text-secondary)", fontSize: 'var(--fs-xs)', maxWidth: 240 }}
+                        className="sp-chip"
                       >
-                        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{nm}</span>
+                        <span className="sp-ellipsis">{nm}</span>
                         <button
                           onClick={() => handleRemoveCustomModel(provider.id, nm)}
                           title={lang === "zh" ? "移除" : "Remove"}
-                          style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", display: "flex", padding: 0 }}
+                          className="sp-btn sp-btn--icon sp-btn--flush"
                         >
                           <X size={11} />
                         </button>
@@ -1495,7 +1477,7 @@ marginTop: 4,
           ))}
 
           {/* 通用协议配置：添加自定义 OpenAI-compatible Provider（如 b.ai / 百川智能等） */}
-          <div className="provider-group" style={{ borderTop: "1px dashed var(--border-primary)", paddingTop: 10, marginTop: 4 }}>
+          <div className="provider-group sp-group-dashed">
             {!showAddCustom ? (
               <button
                 onClick={() => setShowAddCustom(true)}
@@ -1511,8 +1493,8 @@ marginTop: 4,
                 {lang === "zh" ? "添加自定义 Provider（通用 OpenAI 兼容协议）" : "Add Custom Provider (OpenAI-compatible)"}
               </button>
             ) : (
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-secondary)", marginBottom: 2 }}>
+              <div className="sp-col">
+                <div className="sp-note sp-note--tight">
                   {lang === "zh"
                     ? "输入任意 OpenAI 兼容服务的 Base URL 和 API Key，点击保存后可从服务商拉取模型列表（如 b.ai: https://api.baichuan-ai.com/v1）。"
                     : "Enter any OpenAI-compatible service Base URL and API Key. After saving, the model list can be fetched from the provider (e.g. b.ai: https://api.baichuan-ai.com/v1)."}
@@ -1522,7 +1504,7 @@ marginTop: 4,
                   value={customName}
                   onChange={(e) => setCustomName(e.target.value)}
                   placeholder={lang === "zh" ? "Provider 名称（如 b.ai）" : "Provider name (e.g. b.ai)"}
-                  style={{ padding: "6px 10px", borderRadius: 4, border: "1px solid var(--border-primary)", background: "var(--bg-tertiary)", color: "var(--text-primary)", fontSize: 'var(--fs-sm)' }}
+                  className="sp-input"
                 />
                 <input
                   type="text"
@@ -1538,7 +1520,7 @@ marginTop: 4,
                   placeholder={lang === "zh" ? "API Key" : "API Key"}
                   style={{ padding: "6px 10px", borderRadius: 4, border: "1px solid var(--border-primary)", background: "var(--bg-tertiary)", color: "var(--text-primary)", fontSize: 'var(--fs-sm)' }}
                 />
-                <div style={{ display: "flex", gap: 8 }}>
+                <div className="sp-row">
                   <button
                     onClick={addCustomProvider}
                     disabled={!customName.trim() || !customBaseUrl.trim()}
@@ -1583,7 +1565,7 @@ marginTop: 4,
               />
               {lang === "zh" ? "🔒 沙箱模式（限制写入范围到工作目录）" : "🔒 Sandbox Mode (restrict writes to workspace)"}
             </label>
-            <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-secondary)", marginTop: 4 }}>
+            <div className="sp-note sp-note--spaced">
               {lang === "zh"
                 ? "开启后，AI 助手只能在当前工作目录及其子目录中写入文件，防止意外修改项目外部文件。"
                 : "When enabled, the AI assistant can only write files within the current workspace directory and its subdirectories."}
@@ -1597,7 +1579,7 @@ marginTop: 4,
           {/* F4: Multimodal Settings Entry */}
           <div className="setting-group">
             <label><Palette size={14} className="icon-inline-gap" />{lang === "zh" ? "多模态能力" : "Multimodal"}</label>
-            <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-secondary)", marginBottom: 8 }}>
+            <div className="sp-note sp-hint--lead">
               {lang === "zh"
                 ? "配置 Embedding 语义搜索、TTS 语音合成、ImageGen 图像生成。"
                 : "Configure Embedding semantic search, TTS text-to-speech, and ImageGen image generation."}
@@ -1637,8 +1619,8 @@ marginTop: 4,
 )}
 {activeTab === "automation" && (
 <>
-<div style={{ padding: "40px 20px", textAlign: "center" }}>
-  <div style={{ fontSize: 'var(--fs-md)', color: "var(--text-secondary)", marginBottom: 12 }}>
+<div className="sp-placeholder">
+  <div className="sp-placeholder-text">
     {lang === "zh" ? "自动化任务已移至任务管理面板。" : "Automation tasks have moved to Task Center."}
   </div>
   <div className="hint-sm">

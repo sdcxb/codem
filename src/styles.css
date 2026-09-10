@@ -16924,7 +16924,7 @@ color: var(--accent, #7c6cf0);
   border: 2px solid var(--border-primary);
   border-radius: var(--radius-full);
 }
-.preset-avatar-grid { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.preset-avatar-grid { display: grid; grid-template-columns: repeat(10, 1fr); gap: var(--space-4); margin-top: var(--space-4); }
 /* 设置面板里的状态色图标：只换颜色，尺寸由 .icon-* 决定 */
 .sp-icon-success { color: var(--success); }
 .sp-icon-warning { color: var(--warning); }
@@ -16932,4 +16932,40 @@ color: var(--accent, #7c6cf0);
 .sp-icon-accent { color: var(--accent); }
 .sp-icon-muted { color: var(--text-muted); }
 .sp-select-flex { flex: 1; }
+.sp-select {
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-sm);
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: var(--fs-base);
+}
+.sp-select--inherit { font-family: inherit; font-size: var(--fs-base); }
+.sp-row--gap-wide { gap: var(--space-5); }
+.sp-row--gap-md { gap: var(--space-6); }
+.sp-row--lead { margin-bottom: var(--space-6); }
+.sp-row--full { width: 100%; }
+.sp-mini { font-size: var(--fs-xs); color: var(--text-muted); }
+.sp-ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sp-btn--flush { margin-left: var(--space-3); }
+.sp-btn--spaced { margin-top: var(--space-2); }
+.sp-btn--dashed {
+  border: 1px dashed var(--border-primary);
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+}
+.provider-group.sp-group-dashed { padding-top: var(--space-5); margin-top: var(--space-2); border-top: 1px dashed var(--border-primary); }
+.sp-note--tight { margin-bottom: 2px; }
+.sp-note--spaced { margin-top: var(--space-2); }
+.sp-placeholder { padding: var(--space-10) var(--space-9); text-align: center; }
+.sp-placeholder-text { margin-bottom: var(--space-6); font-size: var(--fs-md); color: var(--text-secondary); }
+.sp-btn--block.sp-row--between.is-active { border-color: var(--accent); }
+.sp-weight-value {
+  min-width: 36px;
+  color: var(--text-secondary);
+  font-family: var(--font-family);
+  font-size: var(--fs-sm);
+  text-align: right;
+}
 .sp-btn--nowrap { white-space: nowrap; }
