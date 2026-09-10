@@ -59,6 +59,7 @@ const ALLOWLIST = [
   { re: /^src\/core\/theme\//, why: "主题/令牌定义源（原始色值是唯一真相源）" },
   { re: /^src\/core\/knowledge\/ppt-/, why: "PPT 生成内容的配色（导出文件的内容样式，不跟随宿主皮肤）" },
   { re: /^src\/plugins\/monopoly-game\//, why: "大富翁游戏插件（自带美术语言：棋盘/卡牌/角色是一套独立视觉，改令牌会破坏美术）" },
+  { re: /^src\/styles\/skin-[^/]+\.css$/, why: "皮肤定义源（每个皮肤的调色板与覆盖层：原始色值就是该皮肤的真相源）" },
   { re: /^src\/plugins\/library-ops\/data\/characters\.ts$/, why: "图书馆角色调色板（注释性常量，实际渲染已用 var() 令牌）" },
 ];
 function allowedReason(rel) {
