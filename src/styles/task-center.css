@@ -188,6 +188,7 @@
   font-size: var(--fs-sm);
   cursor: pointer;
   transition: var(--transition-color);
+  height: var(--control-dense);
 }
 .tc-btn:is(:hover, :focus-visible) { background: var(--bg-hover); }
 .tc-btn--primary {

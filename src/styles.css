@@ -84,6 +84,13 @@
   --focus-ring-offset: 2px;
   /* 按下反馈：整体下沉 1px（比只改颜色更"有手感"，且不触发重排） */
   --press-shift: 1px;
+  /* 控件高度尺度（第 31 波）：文档 §2.4 早就定了档位，但此前所有控件都是 padding 撑出来的，
+     同一行里两个控件能差 1–6px —— 这是"没对齐"的根因。现在统一写高度。 */
+  --control-xs: 24px;    /* 密集内联：标签页、迷你按钮、chip */
+  --control-dense: 28px; /* 密集：工具条按钮、次级按钮 */
+  --control-md: 32px;    /* 常规：图标按钮、搜索框 */
+  --control-std: 36px;   /* 标准：表单控件、主按钮 */
+  --control-form: 40px;  /* 宽松：大表单、发送按钮 */
 
   /* 原生控件配色跟随主题（滚动条、下拉、日期选择、自动填充的底色）。
      不声明 color-scheme 时，暗色主题里原生控件仍按亮色渲染 —— 观感粗糙的常见来源。 */
@@ -2142,6 +2149,7 @@ z-index: 50;
   line-height: 1;
   transition: var(--transition-color);
   flex-shrink: 0;
+  height: var(--control-md);
 }
 
 .mode-toggle-btn:is(:hover, :focus-visible) {
@@ -3730,6 +3738,7 @@ background: var(--bg-secondary);
   display: flex;
   align-items: center;
   justify-content: center;
+  height: var(--control-md);
 }
 
 .settings-close:is(:hover, :focus-visible) {
@@ -3770,6 +3779,7 @@ background: var(--bg-secondary);
   background: none;
   text-align: left;
   width: 100%;
+  height: var(--control-md);
 }
 
 .settings-sidebar-item:is(:hover, :focus-visible) {
@@ -8072,10 +8082,12 @@ border-bottom: 1px solid var(--accent);
   font-size: var(--fs-sm);
   cursor: pointer;
   transition: var(--transition-color);
+  height: var(--control-dense);
 }
 .panel-btn:is(:hover, :focus-visible) { border-color: var(--accent); }
 .panel-btn--danger { border-color: var(--error); background: none; color: var(--error); }
-.panel-btn--sm { padding: var(--space-1) var(--space-4); font-size: var(--fs-xs); }
+.panel-btn--sm { padding: var(--space-1) var(--space-4); font-size: var(--fs-xs); 
+  height: var(--control-xs);}
 .panel-btn--xs { padding: var(--space-2) var(--space-5); }
 .panel-btn--primary { border-color: var(--accent); background: var(--accent); color: var(--text-on-accent); }
 .panel-btn--primary:is(:hover, :focus-visible) { background: var(--accent-hover); border-color: var(--accent-hover); }
@@ -16720,6 +16732,7 @@ color: var(--accent, #7c6cf0);
   font-family: inherit;
   font-size: var(--fs-sm);
   cursor: pointer;
+  height: var(--control-dense);
 }
 .sp-btn:is(:hover, :focus-visible) { background: var(--bg-hover); }
 .sp-btn:disabled { opacity: 0.55; cursor: not-allowed; }
@@ -16734,8 +16747,10 @@ color: var(--accent, #7c6cf0);
 }
 .sp-btn--danger-ghost { border-color: var(--error); background: transparent; color: var(--error); }
 .sp-btn--xs { padding: var(--space-1) var(--space-4); font-size: var(--fs-xs); }
-.sp-btn--sm { padding: var(--space-1) var(--space-5); border-radius: var(--radius-sm); }
-.sp-btn--lg { padding: var(--space-4) var(--space-8); border-radius: var(--radius-xs); font-size: var(--fs-base); }
+.sp-btn--sm { padding: var(--space-1) var(--space-5); border-radius: var(--radius-sm); 
+  height: var(--control-xs);}
+.sp-btn--lg { padding: var(--space-4) var(--space-8); border-radius: var(--radius-xs); font-size: var(--fs-base); 
+  height: var(--control-std);}
 .sp-btn--block { width: 100%; }
 .sp-btn--icon { padding: var(--space-2); background: none; border: none; color: var(--text-muted); }
 .sp-btn--icon:is(:hover, :focus-visible) { background: var(--bg-hover); color: var(--text-primary); }
@@ -16751,6 +16766,7 @@ color: var(--accent, #7c6cf0);
   font-family: inherit;
   font-size: var(--fs-sm);
   outline: none;
+  height: var(--control-std);
 }
 .sp-input--inline {
   flex: 1;
@@ -16797,6 +16813,7 @@ color: var(--accent, #7c6cf0);
   font-family: inherit;
   font-size: var(--fs-sm);
   outline: none;
+  height: var(--control-std);
 }
 .sp-search-status { padding: var(--space-2) var(--space-1) 0; font-size: var(--fs-xs); color: var(--text-muted); }
 
@@ -16911,6 +16928,7 @@ color: var(--accent, #7c6cf0);
   color: var(--text-primary);
   font-family: inherit;
   font-size: var(--fs-base);
+  height: var(--control-std);
 }
 .sp-select--inherit { font-family: inherit; font-size: var(--fs-base); }
 .sp-row--gap-wide { gap: var(--space-5); }
@@ -17062,7 +17080,8 @@ color: var(--accent, #7c6cf0);
 .sp-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-6); }
 .sp-flush { margin-bottom: 0; }
 .sp-input--number { width: 80px; }
-.sp-input--compact { padding: var(--space-3) var(--space-5); border-radius: var(--radius-sm); }
+.sp-input--compact { padding: var(--space-3) var(--space-5); border-radius: var(--radius-sm); 
+  height: var(--control-xs);}
 .sp-input--resize { resize: vertical; }
 .sp-text-medium { font-size: var(--fs-base); font-weight: 500; }
 .sp-line-14 { line-height: 1.4; }
@@ -17546,4 +17565,16 @@ textarea:focus-visible,
 input::selection,
 textarea::selection {
   background: color-mix(in srgb, var(--accent) 28%, transparent);
+}
+
+/* 10. 占位符与原生控件细节（第 31 波）：
+      此前 placeholder 直接用浏览器默认（深浅主题下都是同一档灰，看起来"没设计过"）。 */
+::placeholder {
+  color: var(--text-muted);
+  opacity: 1;
+}
+input,
+select,
+textarea {
+  min-width: 0; /* flex 行里输入框不再撑破容器（与 .sp-* 一起构成溢出防线） */
 }
