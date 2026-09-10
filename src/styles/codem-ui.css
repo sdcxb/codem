@@ -3784,3 +3784,217 @@ background: var(--bg-secondary, var(--surface));
 .inline-diff-new-num {
   border-right: 2px solid var(--border-primary);
 }
+
+/* ==========================================================================
+ * 工具调用卡片（ToolCallCard）：第 24 波
+ * `.tool-card` / `.tool-io-card` / `.tool-io-section` / `.tool-io-label` / `.tool-io-text`
+ * 此前**在 CSS 里完全不存在** —— 它们的外观 100% 来自组件里的内联样式（因为同行有内联样式，
+ * `css-class-undefined` 看不到这些空壳）。这里把外观补成真实定义，内联样式只留动态值。
+ * ========================================================================== */
+.tool-card {
+  overflow: hidden;
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-xs);
+  font-size: var(--fs-sm);
+}
+.tool-card--scroll { max-height: 300px; overflow-y: auto; }
+
+.tool-card-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  border-bottom: 1px solid var(--border-primary);
+  background: var(--bg-tertiary);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.tool-card-head--accent { color: var(--accent); }
+.tool-card-head-icon { flex-shrink: 0; color: var(--text-muted); }
+.tool-card-head--tight { padding: var(--space-1) var(--space-4); }
+.tool-card-row { border-bottom: 1px solid var(--border-primary); }
+.tool-card-row:last-child { border-bottom: none; }
+
+.tool-card-command {
+  flex: 1;
+  overflow: hidden;
+  color: var(--text-primary);
+  font-size: var(--fs-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tool-card-status { flex-shrink: 0; font-size: var(--fs-xs); }
+.tool-card-status--running { color: var(--accent); }
+.tool-card-status--error { color: var(--error); }
+.tool-card-status--done { color: var(--success); }
+.tool-card-copy {
+  flex-shrink: 0;
+  padding: var(--space-1) var(--space-2);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: var(--fs-xs);
+  cursor: pointer;
+}
+.tool-card-copy:hover { color: var(--text-primary); background: var(--bg-hover); }
+.tool-card-expand {
+  width: 100%;
+  padding: var(--space-1) var(--space-4);
+  border: none;
+  background: none;
+  color: var(--accent);
+  font-family: inherit;
+  font-size: var(--fs-xs);
+  text-align: left;
+  cursor: pointer;
+}
+.tool-card-expand:hover { background: var(--bg-hover); }
+
+.tool-card-pre {
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  max-height: 200px;
+  overflow-y: auto;
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+}
+.tool-card-pre--tight { padding: var(--space-2) var(--space-4); }
+.tool-card-pre--plain { max-height: none; overflow: visible; }
+
+/* diff 行：颜色与淡底由行首字符决定（+ / -） */
+.diff-line { color: var(--text-secondary); }
+.diff-line--add { color: var(--success); background: color-mix(in srgb, var(--success) 8%, transparent); }
+.diff-line--del { color: var(--error); background: color-mix(in srgb, var(--error) 8%, transparent); }
+
+.line-num {
+  min-width: 24px;
+  color: var(--text-muted);
+  text-align: right;
+  user-select: none;
+  opacity: 0.6;
+}
+.line-num--wide { min-width: 28px; }
+.line-text { color: var(--text-secondary); white-space: pre-wrap; }
+.read-row { display: flex; gap: var(--space-4); }
+.read-more { padding: var(--space-2) 0; font-size: var(--fs-xs); color: var(--text-muted); }
+.search-match-row {
+  display: flex;
+  gap: var(--space-4);
+  padding: var(--space-1) var(--space-4);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+}
+.search-match-text { overflow: hidden; color: var(--text-secondary); text-overflow: ellipsis; white-space: pre-wrap; }
+.search-match-more { padding: var(--space-1) var(--space-4); font-size: var(--fs-xs); color: var(--text-muted); }
+.search-paths { padding: var(--space-2) var(--space-4); font-family: var(--font-mono); font-size: var(--fs-sm); }
+.search-path { padding: 1px 0; color: var(--text-secondary); }
+.search-path-more { padding: var(--space-2) 0; font-size: var(--fs-xs); color: var(--text-muted); }
+.tool-card-count { font-size: var(--fs-xs); font-weight: 400; color: var(--text-muted); }
+
+/* Web 搜索结果 */
+.websearch-head { display: flex; align-items: center; gap: var(--space-3); margin-bottom: var(--space-4); }
+.websearch-icon { color: var(--accent); }
+.websearch-list { display: flex; flex-direction: column; gap: var(--space-3); }
+.websearch-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-xs);
+  background: var(--bg-tertiary);
+}
+.websearch-item-row { display: flex; align-items: center; gap: var(--space-2); }
+.websearch-index { min-width: 16px; font-size: var(--fs-xs); color: var(--text-muted); }
+.websearch-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  overflow: hidden;
+  color: var(--text-primary);
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.websearch-title--link { color: var(--accent); text-decoration: none; }
+.websearch-snippet {
+  padding-left: var(--space-9);
+  overflow: hidden;
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.websearch-source { font-size: var(--fs-xs); color: var(--text-muted); }
+
+/* IN/OUT 通用卡片 */
+.tool-io-card {
+  overflow: hidden;
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-xs);
+}
+.tool-io-card--stacked { margin-top: var(--space-2); }
+.tool-io-section { display: flex; gap: var(--space-4); }
+.tool-io-section--bordered { border-bottom: 1px solid var(--border-primary); }
+.tool-io-label {
+  flex-shrink: 0;
+  min-width: 28px;
+  padding: var(--space-2) var(--space-4);
+  background: var(--bg-tertiary);
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  text-align: center;
+}
+.tool-io-label--icon { display: flex; align-items: center; }
+.tool-io-text {
+  margin: 0;
+  padding: var(--space-2) var(--space-4);
+  max-height: 200px;
+  overflow-y: auto;
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+}
+.tool-io-text[data-error] { color: var(--error); }
+.tool-io-paths {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-4);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+}
+.tool-io-file-link {
+  color: var(--accent);
+  line-height: 1.4;
+  text-decoration: underline;
+  text-decoration-style: dashed;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.tool-pill-detail--inset { margin-left: var(--space-8); }
+.tool-pill-title { font-weight: 600; }
+.tool-pill-file {
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+}
+.tool-pill-detail-label--flush { margin: 0; }
+.icon-shrink-none { flex-shrink: 0; }
+.tool-pill-icon-warning { color: var(--warning); }
+
+/* 卡片变体钩子：此前 tsx 里写了 `terminal-block` / `diff-block` / `read-block` / `search-block`
+ * 四个类，但 CSS 里一个都没定义（外观全由内联样式撑着，所以 `css-class-undefined` 看不见）。
+ * 这里给它们真实定义 —— 变体之间只有「内容区要不要滚动」这一处差异。 */
+.terminal-block,
+.diff-block,
+.read-block,
+.search-block { max-height: 300px; overflow-y: auto; }
+.terminal-block { max-height: none; overflow: visible; }

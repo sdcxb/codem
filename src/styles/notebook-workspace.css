@@ -1649,6 +1649,305 @@ top: 36px;
 .kg-menu-item--danger { color: var(--error); }
 .kg-menu-sep { height: 1px; margin: var(--space-1) 0; background: var(--border-primary); }
 
+/* ========== PPT Studio（PPTAdapter）：第 24 波 ==========
+ * 整屏「工作台」—— 按例外表刻意不套 modal-overlay（它会带来遮罩与 Esc 行为，
+ * 与整屏工作台的交互冲突），但外观同样必须走令牌与具名类。
+ * 此前 59 处内联样式、281 个属性；关键帧还是每次渲染注入一份 <style>，现在回到样式表。
+ * 注意：本体从 `--text-faded` 取"未到达阶段"的灰，而这个令牌**根本不存在**，
+ * 一直吃 fallback 里的深灰；改用 --text-muted 的 60% 表达同一层"更淡"，
+ * 否则与"已完成"阶段的 --text-muted 撞成一样。 */
+.ppt-studio-screen {
+  position: fixed;
+  top: 36px;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 10001; /* 层级统一到令牌是后面单独一波（见 §7 队列） */
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--bg-primary);
+}
+.ppt-studio-screen--center { align-items: center; justify-content: center; }
+
+.ppt-studio-topbar {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: var(--space-4);
+  padding: var(--space-6) var(--space-9);
+  border-bottom: 1px solid var(--border-primary);
+  background: var(--bg-secondary);
+}
+.ppt-studio-back-btn {
+  padding: var(--space-3) var(--space-7);
+  border: none;
+  border-radius: var(--radius-xs);
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: var(--fs-base);
+  cursor: pointer;
+  transition: var(--transition-color);
+}
+.ppt-studio-back-btn:hover { background: var(--bg-hover); }
+.ppt-studio-crumb { color: var(--text-muted); font-size: var(--fs-md); }
+.ppt-studio-crumb-sep { margin: 0 var(--space-2); color: var(--text-muted); }
+.ppt-studio-title { color: var(--text-primary); font-size: var(--fs-md); }
+
+.ppt-studio-body { flex: 1; overflow-y: auto; padding: var(--space-10) var(--space-12); }
+.ppt-studio-inner { max-width: 1000px; margin: 0 auto; }
+.ppt-studio-h2 { margin-bottom: var(--space-2); color: var(--text-primary); font-size: var(--fs-2xl); }
+.ppt-studio-h3 { margin-bottom: var(--space-5); color: var(--text-primary); font-size: var(--fs-lg); }
+.ppt-studio-lead { margin-bottom: var(--space-9); color: var(--text-muted); font-size: var(--fs-base); }
+
+.ppt-studio-import-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+  margin-bottom: var(--space-9);
+  padding: var(--space-6) var(--space-8);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  background: var(--bg-tertiary);
+}
+.ppt-studio-import-text { flex: 1; color: var(--text-secondary); font-size: var(--fs-base); }
+.ppt-studio-import-btn {
+  padding: var(--space-3) var(--space-8);
+  border: none;
+  border-radius: var(--radius-xs);
+  background: var(--accent);
+  color: var(--text-on-accent);
+  font-family: inherit;
+  font-size: var(--fs-base);
+  cursor: pointer;
+}
+.ppt-studio-import-btn:disabled { background: var(--bg-hover); opacity: 0.6; cursor: not-allowed; }
+.ppt-studio-hidden-input { display: none; }
+
+.ppt-studio-error {
+  margin-bottom: var(--space-8);
+  padding: var(--space-4) var(--space-6);
+  border: 1px solid color-mix(in srgb, var(--error) 30%, transparent);
+  border-radius: var(--radius-xs);
+  background: color-mix(in srgb, var(--error) 15%, transparent);
+  color: var(--error);
+  font-size: var(--fs-sm);
+}
+
+.ppt-studio-filters { display: flex; flex-wrap: wrap; gap: var(--space-3); margin-bottom: var(--space-8); }
+.ppt-studio-filter {
+  padding: var(--space-2) var(--space-7);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-lg);
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.ppt-studio-filter:hover { border-color: var(--accent); color: var(--text-primary); }
+.ppt-studio-filter.is-active {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--text-on-accent);
+}
+
+.ppt-studio-style-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: var(--space-6);
+  margin-bottom: var(--space-11);
+}
+.ppt-studio-style-card {
+  overflow: hidden;
+  border: 2px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  background: var(--bg-tertiary);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.ppt-studio-style-card:hover { border-color: color-mix(in srgb, var(--accent) 50%, transparent); }
+.ppt-studio-style-card.is-active { border-color: var(--accent); }
+.ppt-studio-style-preview {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 80px;
+}
+.ppt-studio-style-orb { width: 40px; height: 40px; border-radius: var(--radius-full); opacity: 0.8; }
+.ppt-studio-style-badge {
+  position: absolute;
+  bottom: var(--space-4);
+  left: var(--space-4);
+  padding: 2px var(--space-4);
+  border-radius: var(--radius-sm);
+  background: var(--overlay-backdrop);
+  font-size: var(--fs-sm);
+}
+.ppt-studio-style-meta { padding: var(--space-4) var(--space-6); }
+.ppt-studio-style-name { color: var(--text-primary); font-size: var(--fs-sm); font-weight: 600; }
+.ppt-studio-style-desc {
+  margin-top: var(--space-1);
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ppt-studio-canvas-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: var(--space-5);
+  margin-bottom: var(--space-10);
+}
+.ppt-studio-canvas-card {
+  padding: var(--space-5) var(--space-6);
+  border: 2px solid var(--border-primary);
+  border-radius: var(--radius);
+  background: var(--bg-tertiary);
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.ppt-studio-canvas-card:hover { border-color: color-mix(in srgb, var(--accent) 50%, transparent); }
+.ppt-studio-canvas-card.is-active { border-color: var(--accent); }
+.ppt-studio-canvas-icon { margin-bottom: var(--space-2); font-size: var(--fs-2xl); }
+.ppt-studio-canvas-name { color: var(--text-primary); font-size: var(--fs-sm); font-weight: 600; }
+.ppt-studio-canvas-desc { margin-top: var(--space-1); color: var(--text-muted); font-size: var(--fs-xs); }
+
+.ppt-studio-count-row { display: flex; align-items: center; gap: var(--space-6); margin-bottom: var(--space-8); }
+.ppt-studio-range { flex: 1; max-width: 300px; }
+.ppt-studio-count-value {
+  min-width: 40px;
+  color: var(--text-primary);
+  font-size: var(--fs-lg);
+  font-weight: 600;
+}
+
+.ppt-studio-option-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  margin-bottom: var(--space-10);
+  padding: var(--space-6) var(--space-8);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius);
+  background: var(--bg-tertiary);
+}
+.ppt-studio-checkbox { width: 18px; height: 18px; cursor: pointer; }
+.ppt-studio-option-label { color: var(--text-primary); font-size: var(--fs-md); cursor: pointer; }
+.ppt-studio-option-label:has(+ .ppt-studio-option-hint) { cursor: pointer; }
+.ppt-studio-option-hint { margin-left: var(--space-4); color: var(--text-muted); font-size: var(--fs-sm); }
+
+.ppt-studio-generate-btn {
+  padding: var(--space-6) var(--space-12);
+  border: none;
+  border-radius: var(--radius);
+  background: linear-gradient(135deg, var(--accent), var(--accent-hover));
+  color: var(--text-on-accent);
+  font-family: inherit;
+  font-size: var(--fs-md);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+  box-shadow: 0 4px 20px color-mix(in srgb, var(--accent) 30%, transparent);
+}
+.ppt-studio-generate-btn:hover { filter: brightness(1.06); }
+
+.ppt-studio-stage { width: 90%; text-align: center; }
+.ppt-studio-stage--narrow { max-width: 420px; }
+.ppt-studio-stage--wide { max-width: 500px; }
+.ppt-studio-orb {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 64px;
+  height: 64px;
+  margin: 0 auto var(--space-9);
+  border-radius: var(--radius-full);
+  background: linear-gradient(135deg, var(--accent), var(--accent-hover));
+  font-size: var(--fs-hero);
+  animation: ppt-pulse 1.5s ease-in-out infinite;
+}
+.ppt-studio-orb--error {
+  width: 48px;
+  height: 48px;
+  margin: 0 auto var(--space-8);
+  background: color-mix(in srgb, var(--error) 15%, transparent);
+  font-size: var(--fs-2xl);
+  animation: none;
+}
+.ppt-studio-heading { margin-bottom: var(--space-3); color: var(--text-primary); font-size: var(--fs-lg); font-weight: 600; }
+.ppt-studio-heading--error { margin-bottom: var(--space-4); color: var(--error); }
+.ppt-studio-detail { min-height: 20px; margin-bottom: var(--space-9); color: var(--text-muted); font-size: var(--fs-base); }
+.ppt-studio-progress { display: flex; justify-content: center; gap: var(--space-2); margin-bottom: var(--space-8); }
+.ppt-studio-progress-seg {
+  flex: 1;
+  max-width: 60px;
+  height: 3px;
+  border-radius: var(--radius-full);
+  background: var(--border-primary);
+  transition: background 0.3s ease;
+}
+.ppt-studio-progress-seg.is-done { background: var(--accent); }
+.ppt-studio-stages { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--space-2); }
+.ppt-studio-stage-label {
+  color: color-mix(in srgb, var(--text-muted) 60%, transparent);
+  font-size: var(--fs-xs);
+  font-weight: 400;
+  transition: all 0.3s ease;
+}
+.ppt-studio-stage-label.is-done { color: var(--text-muted); }
+.ppt-studio-stage-label.is-current { color: var(--accent); font-weight: 600; }
+.ppt-studio-dots {
+  margin-top: var(--space-8);
+  color: color-mix(in srgb, var(--text-muted) 60%, transparent);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+}
+.ppt-studio-dots-anim { display: inline-block; animation: ppt-dots 1.4s steps(4) infinite; }
+.ppt-studio-error-text {
+  margin-bottom: var(--space-9);
+  padding: var(--space-6) var(--space-8);
+  max-height: 200px;
+  overflow-y: auto;
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius);
+  background: var(--bg-secondary);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  line-height: 1.6;
+  text-align: left;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.ppt-studio-actions { display: flex; justify-content: center; gap: var(--space-4); }
+.ppt-studio-btn {
+  padding: var(--space-4) var(--space-8);
+  border: none;
+  border-radius: var(--radius-xs);
+  font-family: inherit;
+  font-size: var(--fs-base);
+  cursor: pointer;
+}
+.ppt-studio-btn--primary { background: var(--accent); color: var(--text-on-accent); }
+.ppt-studio-btn--ghost { background: var(--bg-hover); color: var(--text-secondary); }
+
+@keyframes ppt-pulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.08); opacity: 0.85; }
+}
+@keyframes ppt-dots {
+  0% { opacity: 0.2; }
+  50% { opacity: 1; }
+  100% { opacity: 0.2; }
+}
+
 /* ========== PPT Editor ========== */
 /* PPT 编辑器样式 — 借鉴 oh-my-ppt 三栏布局, 自研实现 */
 .ppt-editor {

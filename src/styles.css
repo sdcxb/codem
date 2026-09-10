@@ -16679,3 +16679,257 @@ color: var(--accent, #7c6cf0);
   pointer-events: none;
 }
 .voice-status--error { color: var(--error); font-style: normal; }
+
+/* ==========================================================================
+ * 设置面板（SettingsPanel）：第 24 波
+ * 全项目最大的一块内联样式（255 个样式对象 / 999 个属性）。形态高度重复：
+ * 小按钮、卡片、提示文案、行内输入框各写了几十遍。这里给它们具名类。
+ * 命名取 sp-（settings panel），与全局 .settings-* 外壳类区分开：外壳管面板本身，
+ * sp-* 管面板内部的零件。
+ * ========================================================================== */
+.sp-row { display: flex; align-items: center; gap: var(--space-4); }
+.sp-row--between { justify-content: space-between; }
+.sp-row--start { align-items: flex-start; }
+.sp-row--end { align-items: flex-end; }
+.sp-row--wrap { flex-wrap: wrap; }
+.sp-row--gap-sm { gap: var(--space-3); }
+.sp-row--gap-tight { gap: var(--space-2); }
+.sp-col { display: flex; flex-direction: column; gap: var(--space-4); }
+.sp-col--tight { gap: var(--space-2); }
+.sp-col--gap-sm { gap: var(--space-3); }
+
+.sp-card {
+  padding: var(--space-8);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-xs);
+  background: var(--bg-tertiary);
+}
+.sp-card--sm { padding: var(--space-6); }
+.sp-card--tight { padding: var(--space-5); }
+.sp-card--flush { padding: 0; overflow: hidden; }
+.sp-card--secondary { background: var(--bg-secondary); }
+.sp-card--col { display: flex; flex-direction: column; gap: var(--space-4); }
+.sp-card--row { display: flex; align-items: center; gap: var(--space-4); }
+.sp-card--between { display: flex; align-items: center; justify-content: space-between; }
+.sp-card--lg { border-radius: var(--radius); padding: var(--space-6) var(--space-8); }
+.sp-empty {
+  padding: var(--space-10);
+  border: 1px dashed var(--border-primary);
+  border-radius: var(--radius);
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  font-size: var(--fs-base);
+  text-align: center;
+}
+.sp-empty--plain { border: none; background: transparent; }
+
+.sp-hint { font-size: var(--fs-sm); color: var(--text-muted); }
+.sp-hint--block { display: block; }
+.sp-hint--lead { margin-bottom: var(--space-4); }
+.sp-hint--error { color: var(--error); }
+.sp-hint--spaced { margin-top: var(--space-3); }
+.sp-note { font-size: var(--fs-sm); color: var(--text-secondary); }
+.sp-note--lead { margin-bottom: var(--space-4); }
+.sp-text { font-size: var(--fs-base); color: var(--text-primary); }
+.sp-text--secondary { color: var(--text-secondary); }
+.sp-title { margin: 0; font-size: var(--fs-md); font-weight: 600; }
+.sp-title--section { font-size: var(--fs-base); font-weight: 600; color: var(--text-primary); }
+.sp-divider { height: 1px; margin: var(--space-6) 0; background: var(--border-primary); }
+
+.sp-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-6);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-xs);
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+.sp-btn:hover { background: var(--bg-hover); }
+.sp-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+.sp-btn--secondary { background: var(--bg-secondary); }
+.sp-btn--ghost { background: transparent; }
+.sp-btn--primary { border-color: var(--accent); background: var(--accent); color: var(--text-on-accent); }
+.sp-btn--primary:hover { background: var(--accent-hover); }
+.sp-btn--danger {
+  border-color: color-mix(in srgb, var(--error) 30%, transparent);
+  background: color-mix(in srgb, var(--error) 10%, transparent);
+  color: var(--error);
+}
+.sp-btn--danger-ghost { border-color: var(--error); background: transparent; color: var(--error); }
+.sp-btn--xs { padding: 2px var(--space-4); font-size: var(--fs-xs); }
+.sp-btn--sm { padding: var(--space-1) var(--space-5); border-radius: var(--radius-sm); }
+.sp-btn--lg { padding: var(--space-4) var(--space-8); border-radius: var(--radius-xs); font-size: var(--fs-base); }
+.sp-btn--block { width: 100%; }
+.sp-btn--icon { padding: var(--space-2); background: none; border: none; color: var(--text-muted); }
+.sp-btn--icon:hover { background: var(--bg-hover); color: var(--text-primary); }
+.sp-btn--busy { opacity: 0.6; cursor: wait; }
+
+.sp-input {
+  width: 100%;
+  padding: var(--space-4) var(--space-6);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-xs);
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: var(--fs-sm);
+  outline: none;
+}
+.sp-input--inline {
+  flex: 1;
+  min-width: 180px;
+  padding: var(--space-3) var(--space-5);
+  border-radius: var(--radius-sm);
+}
+.sp-input--bare {
+  flex: 1;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: var(--fs-sm);
+}
+.sp-input--title {
+  flex: 1;
+  margin-right: var(--space-4);
+  padding: var(--space-1) 0;
+  border: none;
+  border-bottom: 1px dashed var(--border-primary);
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: var(--fs-base);
+  font-weight: 600;
+  outline: none;
+}
+.sp-search {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-xs);
+  background: var(--bg-tertiary);
+}
+.sp-search-icon { color: var(--text-muted); }
+.sp-search-input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: var(--fs-sm);
+  outline: none;
+}
+.sp-search-status { padding: var(--space-2) var(--space-1) 0; font-size: var(--fs-xs); color: var(--text-muted); }
+
+.sp-output {
+  margin-top: var(--space-4);
+  padding: var(--space-4);
+  max-height: 200px;
+  overflow: auto;
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-sm);
+  background: var(--bg-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  white-space: pre-wrap;
+}
+.sp-output--page { max-height: 300px; border-radius: var(--radius-sm); background: var(--bg-primary); }
+
+.sp-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  max-width: 240px;
+  padding: 2px var(--space-4);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  font-size: var(--fs-xs);
+}
+.sp-chip--plain { border: none; border-radius: var(--radius-sm); max-width: none; }
+
+.sp-avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 48px;
+  height: 48px;
+  overflow: hidden;
+  border: 2px solid var(--border-primary);
+  border-radius: var(--radius-full);
+  background: var(--bg-tertiary);
+}
+.sp-avatar--sm {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border-color: transparent;
+  cursor: pointer;
+}
+.sp-avatar.is-active { border-color: var(--accent); }
+.sp-avatar-img { width: 100%; height: 100%; object-fit: cover; }
+
+.sp-toggle {
+  position: relative;
+  flex-shrink: 0;
+  width: 44px;
+  height: 24px;
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-full);
+  background: var(--bg-hover);
+  color: var(--text-on-accent);
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s;
+}
+.sp-toggle.is-on { border-color: transparent; background: var(--accent); }
+.sp-toggle-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: var(--radius-full);
+  background: var(--surface-content);
+  transition: left 0.2s;
+}
+.sp-toggle.is-on .sp-toggle-knob { left: 22px; }
+
+.sp-check { display: flex; align-items: center; gap: var(--space-3); font-size: var(--fs-base); cursor: pointer; }
+.sp-inline-check { display: flex; align-items: center; gap: var(--space-2); font-size: var(--fs-sm); cursor: pointer; }
+.sp-field-row { display: flex; gap: var(--space-3); align-items: flex-end; }
+.sp-field-label { flex-shrink: 0; font-size: var(--fs-sm); color: var(--text-muted); }
+.sp-stat { font-size: var(--fs-sm); color: var(--text-muted); }
+.sp-link { color: var(--accent); cursor: pointer; text-decoration: underline; }
+.settings-search-box--bordered { padding: var(--space-4) var(--space-6); border-bottom: 1px solid var(--border-primary); }
+/* 这几个类此前只在 tsx 里出现、CSS 里根本没有（外观全靠同行内联样式撑着，
+   所以 css-class-undefined 一直看不到）：现在补上真实定义。 */
+.settings-search-box { flex-shrink: 0; }
+.settings-row { display: flex; align-items: center; justify-content: space-between; }
+.user-avatar-preview {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  overflow: hidden;
+  border: 2px solid var(--border-primary);
+  border-radius: var(--radius-full);
+}
+.preset-avatar-grid { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+/* 设置面板里的状态色图标：只换颜色，尺寸由 .icon-* 决定 */
+.sp-icon-success { color: var(--success); }
+.sp-icon-warning { color: var(--warning); }
+.sp-icon-error { color: var(--error); }
+.sp-icon-accent { color: var(--accent); }
+.sp-icon-muted { color: var(--text-muted); }
+.sp-select-flex { flex: 1; }
+.sp-btn--nowrap { white-space: nowrap; }

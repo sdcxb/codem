@@ -201,31 +201,31 @@ export function PPTAdapter({ notebookId, initialContent, title: initialTitle, au
   // ====== 生成配置面板 (风格选择 + 画布尺寸 + 页数) ======
   if (showConfig && !loading && !deck) {
     return (
-      <div style={{ position: 'fixed', top: 36, left: 0, right: 0, bottom: 0, background: 'var(--bg-primary, #1e1e2e)', display: 'flex', flexDirection: 'column', zIndex: 10001, overflow: 'hidden' }}>
+      <div className="ppt-studio-screen">
         {/* 顶部栏 */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 20px', background: 'var(--bg-secondary, #2a2a3c)', borderBottom: '1px solid var(--border-primary, #3a3a4c)', flexShrink: 0 }}>
-          <button onClick={onBack} style={{ background: 'var(--bg-tertiary, #3a3a4c)', color: 'var(--text-primary, #e0e0e0)', border: 'none', borderRadius: 6, padding: '6px 14px', cursor: 'pointer', fontSize: 'var(--fs-base)', transition: 'var(--transition-color)' }}>← 返回</button>
-          <span style={{ color: 'var(--text-muted, #888)', fontSize: 'var(--fs-md)' }}>PPT Studio</span>
-          <span style={{ color: 'var(--text-muted, #555)', margin: '0 4px' }}>/</span>
-          <span style={{ color: 'var(--text-primary, #e0e0e0)', fontSize: 'var(--fs-md)' }}>{title}</span>
+        <div className="ppt-studio-topbar">
+          <button onClick={onBack} className="ppt-studio-back-btn">← 返回</button>
+          <span className="ppt-studio-crumb">PPT Studio</span>
+          <span className="ppt-studio-crumb-sep">/</span>
+          <span className="ppt-studio-title">{title}</span>
         </div>
 
         {/* 可滚动内容 */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: '24px 32px' }}>
-          <div style={{ maxWidth: 1000, margin: '0 auto' }}>
-            <h2 style={{ color: 'var(--text-primary, #e0e0e0)', fontSize: 'var(--fs-2xl)', marginBottom: 4 }}>选择演示风格</h2>
-            <p style={{ color: 'var(--text-muted, #888)', fontSize: 'var(--fs-base)', marginBottom: 20 }}>选择风格、画布尺寸和页数，从知识库内容生成 PPT</p>
+        <div className="ppt-studio-body">
+          <div className="ppt-studio-inner">
+            <h2 className="ppt-studio-h2">选择演示风格</h2>
+            <p className="ppt-studio-lead">选择风格、画布尺寸和页数，从知识库内容生成 PPT</p>
 
             {/* PPTX 导入入口 */}
-            <div style={{ marginBottom: 20, padding: '12px 16px', borderRadius: 10, background: 'var(--bg-tertiary, #252535)', border: '1px solid var(--border-primary, #3a3a4c)', display: 'flex', alignItems: 'center', gap: 12 }}>
-              <span style={{ color: 'var(--text-secondary, #a0a0b0)', fontSize: 'var(--fs-base)', flex: 1 }}>
+            <div className="ppt-studio-import-row">
+              <span className="ppt-studio-import-text">
                 📥 已有 PPTX 文件？直接导入编辑
               </span>
               <input
                 ref={fileInputRef}
                 type="file"
                 accept=".pptx"
-                style={{ display: 'none' }}
+                className="ppt-studio-hidden-input"
                 onChange={e => {
                   const file = e.target.files?.[0];
                   if (file) handleImportPPTX(file);
@@ -235,108 +235,101 @@ export function PPTAdapter({ notebookId, initialContent, title: initialTitle, au
               <button
                 onClick={() => fileInputRef.current?.click()}
                 disabled={importing}
-                style={{
-                  padding: '6px 16px', borderRadius: 6, border: 'none', cursor: 'pointer', fontSize: 'var(--fs-base)',
-                  background: importing ? 'var(--bg-hover, #3a3a4c)' : 'var(--accent, #7c6cf0)', color: 'var(--text-on-accent, #fff)',
-                  opacity: importing ? 0.6 : 1,
-                }}
+                className="ppt-studio-import-btn"
               >
                 {importing ? '导入中...' : '导入 PPTX'}
               </button>
             </div>
             {importError && (
-              <div style={{ marginBottom: 16, padding: '8px 12px', borderRadius: 6, background: 'color-mix(in srgb, var(--error) 15%, transparent)', border: '1px solid color-mix(in srgb, var(--error) 30%, transparent)', color: 'var(--error, #ff8080)', fontSize: 'var(--fs-sm)' }}>
+              <div className="ppt-studio-error">
                 导入失败: {importError}
               </div>
             )}
 
             {/* 分类筛选 */}
-            <div style={{ display: 'flex', gap: 6, marginBottom: 16, flexWrap: 'wrap' }}>
+            <div className="ppt-studio-filters">
               {categories.map(cat => (
-                <button key={cat} onClick={() => setStyleFilter(cat)} style={{
-                  padding: '5px 14px', borderRadius: 16, border: '1px solid', cursor: 'pointer', fontSize: 'var(--fs-sm)',
-                  background: styleFilter === cat ? 'var(--accent, #7c6cf0)' : 'transparent',
-                  borderColor: styleFilter === cat ? 'var(--accent, #7c6cf0)' : 'var(--border-primary, #3a3a4c)',
-                  color: styleFilter === cat ? 'var(--text-on-accent, #fff)' : 'var(--text-secondary, #a0a0b0)',
-                  transition: 'all 0.15s',
-                }}>
+                <button
+                  key={cat}
+                  onClick={() => setStyleFilter(cat)}
+                  className={`ppt-studio-filter ${styleFilter === cat ? 'is-active' : ''}`}
+                >
                   {cat === 'all' ? '全部' : STYLE_CATEGORY_LABELS[cat]}
                 </button>
               ))}
             </div>
 
             {/* 风格网格 */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 12, marginBottom: 28 }}>
+            <div className="ppt-studio-style-grid">
               {filteredStyles.map(style => (
-                <div key={style.id} onClick={() => setSelectedStyleId(style.id)} style={{
-                  cursor: 'pointer', borderRadius: 10, overflow: 'hidden', transition: 'all 0.15s',
-                  border: selectedStyleId === style.id ? '2px solid var(--accent, #7c6cf0)' : '2px solid var(--border-primary, #3a3a4c)',
-                  background: 'var(--bg-tertiary, #252535)',
-                }}>
-                  {/* 预览色块 */}
-                  <div style={{ height: 80, background: style.backgroundGradient || style.colors.background, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <div style={{
-                      width: 40, height: 40, borderRadius: '50%',
-                      background: `linear-gradient(135deg, ${style.colors.primary}, ${style.colors.accent})`,
-                      opacity: 0.8,
-                    }} />
-                    <div style={{ position: 'absolute', bottom: 8, left: 8, fontSize: 'var(--fs-sm)', color: style.colors.text, background: 'var(--overlay-backdrop)', padding: '2px 8px', borderRadius: 4 }}>
+                <div
+                  key={style.id}
+                  onClick={() => setSelectedStyleId(style.id)}
+                  className={`ppt-studio-style-card ${selectedStyleId === style.id ? 'is-active' : ''}`}
+                >
+                  {/* 预览色块 — 底色/球体渐变/文字色来自风格数据，按「只给动态值」保留内联 */}
+                  <div
+                    className="ppt-studio-style-preview"
+                    style={{ background: style.backgroundGradient || style.colors.background }}
+                  >
+                    <div
+                      className="ppt-studio-style-orb"
+                      style={{ background: `linear-gradient(135deg, ${style.colors.primary}, ${style.colors.accent})` }}
+                    />
+                    <div className="ppt-studio-style-badge" style={{ color: style.colors.text }}>
                       {style.name}
                     </div>
                   </div>
                   {/* 描述 */}
-                  <div style={{ padding: '8px 12px' }}>
-                    <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-primary, #e0e0e0)', fontWeight: 600 }}>{style.name}</div>
-                    <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted, #888)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{style.description}</div>
+                  <div className="ppt-studio-style-meta">
+                    <div className="ppt-studio-style-name">{style.name}</div>
+                    <div className="ppt-studio-style-desc">{style.description}</div>
                   </div>
                 </div>
               ))}
             </div>
 
             {/* 画布尺寸 */}
-            <h3 style={{ color: 'var(--text-primary, #e0e0e0)', fontSize: 'var(--fs-lg)', marginBottom: 10 }}>画布尺寸</h3>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 10, marginBottom: 24 }}>
+            <h3 className="ppt-studio-h3">画布尺寸</h3>
+            <div className="ppt-studio-canvas-grid">
               {CANVAS_SIZES.map(cs => (
-                <div key={cs.id} onClick={() => setSelectedCanvasId(cs.id)} style={{
-                  cursor: 'pointer', padding: '10px 12px', borderRadius: 8, textAlign: 'center', transition: 'all 0.15s',
-                  border: selectedCanvasId === cs.id ? '2px solid var(--accent, #7c6cf0)' : '2px solid var(--border-primary, #3a3a4c)',
-                  background: 'var(--bg-tertiary, #252535)',
-                }}>
-                  <div style={{ fontSize: 'var(--fs-2xl)', marginBottom: 4 }}>{cs.icon}</div>
-                  <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-primary, #e0e0e0)', fontWeight: 600 }}>{cs.name}</div>
-                  <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted, #888)', marginTop: 2 }}>{cs.description}</div>
+                <div
+                  key={cs.id}
+                  onClick={() => setSelectedCanvasId(cs.id)}
+                  className={`ppt-studio-canvas-card ${selectedCanvasId === cs.id ? 'is-active' : ''}`}
+                >
+                  <div className="ppt-studio-canvas-icon">{cs.icon}</div>
+                  <div className="ppt-studio-canvas-name">{cs.name}</div>
+                  <div className="ppt-studio-canvas-desc">{cs.description}</div>
                 </div>
               ))}
             </div>
 
             {/* 页数 */}
-            <h3 style={{ color: 'var(--text-primary, #e0e0e0)', fontSize: 'var(--fs-lg)', marginBottom: 10 }}>幻灯片页数</h3>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+            <h3 className="ppt-studio-h3">幻灯片页数</h3>
+            <div className="ppt-studio-count-row">
               <input type="range" min={3} max={20} value={slideCount}
                 onChange={e => setSlideCount(parseInt(e.target.value))}
-                style={{ flex: 1, maxWidth: 300 }}
+                className="ppt-studio-range"
               />
-              <span style={{ color: 'var(--text-primary, #e0e0e0)', fontSize: 'var(--fs-lg)', fontWeight: 600, minWidth: 40 }}>{slideCount} 页</span>
+              <span className="ppt-studio-count-value">{slideCount} 页</span>
             </div>
 
             {/* AI 配图 */}
-            <div style={{
-              display: 'flex', alignItems: 'center', gap: 10, marginBottom: 24,
-              padding: '12px 16px', borderRadius: 8, background: 'var(--bg-tertiary, #252535)',
-              border: '1px solid var(--border-primary, #3a3a4c)', opacity: checkImageGen() ? 1 : 0.5,
-            }}>
+            <div
+              className="ppt-studio-option-row"
+              style={{ opacity: checkImageGen() ? 1 : 0.5 }}
+            >
               <input type="checkbox" id="enable-images"
                 checked={enableImages}
                 onChange={e => setEnableImages(e.target.checked)}
                 disabled={!checkImageGen()}
-                style={{ width: 18, height: 18, cursor: 'pointer' }}
+                className="ppt-studio-checkbox"
               />
-              <label htmlFor="enable-images" style={{
-                color: 'var(--text-primary, #e0e0e0)', fontSize: 'var(--fs-md)', cursor: checkImageGen() ? 'pointer' : 'not-allowed',
-              }}>
+              <label htmlFor="enable-images" className="ppt-studio-option-label">
                 🖼️ 启用 AI 配图
                 {!checkImageGen() && (
-                  <span style={{ color: 'var(--text-muted, #888)', fontSize: 'var(--fs-sm)', marginLeft: 8 }}>
+                  <span className="ppt-studio-option-hint">
                     (需在设置中配置生图模型)
                   </span>
                 )}
@@ -344,12 +337,7 @@ export function PPTAdapter({ notebookId, initialContent, title: initialTitle, au
             </div>
 
             {/* 生成按钮 */}
-            <button onClick={handleGenerate} style={{
-              padding: '12px 32px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 'var(--fs-md)', fontWeight: 600,
-              background: 'linear-gradient(135deg, var(--accent, #7c6cf0), var(--accent-hover, #9d8cf5))',
-              color: 'var(--text-on-accent)', transition: 'all 0.15s',
-              boxShadow: '0 4px 20px color-mix(in srgb, var(--accent) 30%, transparent)',
-            }}>
+            <button onClick={handleGenerate} className="ppt-studio-generate-btn">
               ✨ 生成 PPT
             </button>
           </div>
@@ -363,53 +351,43 @@ export function PPTAdapter({ notebookId, initialContent, title: initialTitle, au
     const currentStageIdx = STAGES.findIndex(s => s.key === progressStage);
     const isGenerating = progressStage === 'generating';
     return (
-      <div style={{
-        position: 'fixed', top: 36, left: 0, right: 0, bottom: 0, background: 'var(--bg-primary, #1e1e2e)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10001,
-      }}>
-        <div style={{ textAlign: 'center', maxWidth: 420, width: '90%' }}>
-          <div style={{
-            width: 64, height: 64, margin: '0 auto 20px',
-            borderRadius: '50%',
-            background: 'linear-gradient(135deg, var(--accent, #7c6cf0), var(--accent-hover, #9d8cf5))',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: "var(--fs-hero)", animation: 'ppt-pulse 1.5s ease-in-out infinite',
-          }}>
+      <div className="ppt-studio-screen ppt-studio-screen--center">
+        <div className="ppt-studio-stage ppt-studio-stage--narrow">
+          <div className="ppt-studio-orb">
             {STAGES[currentStageIdx]?.icon || '⏳'}
           </div>
-          <div style={{ fontSize: 'var(--fs-lg)', fontWeight: 600, marginBottom: 6, color: 'var(--text-primary, #e0e0e0)' }}>
+          <div className="ppt-studio-heading">
             AI 正在生成 PPT
           </div>
-          <div style={{ fontSize: 'var(--fs-base)', marginBottom: 20, color: 'var(--text-muted, #888)', minHeight: 20 }}>
+          <div className="ppt-studio-detail">
             {progressDetail || STAGES[currentStageIdx]?.label || '请稍候...'}
           </div>
-          <div style={{ display: 'flex', gap: 4, marginBottom: 16, justifyContent: 'center' }}>
+          <div className="ppt-studio-progress">
             {STAGES.map((s, i) => (
-              <div key={s.key} style={{
-                height: 3, flex: 1, maxWidth: 60, borderRadius: 2,
-                background: i <= currentStageIdx ? 'var(--accent, #7c6cf0)' : 'var(--border-primary, #333)',
-                transition: 'background 0.3s ease',
-              }} />
+              <div
+                key={s.key}
+                className={`ppt-studio-progress-seg ${i <= currentStageIdx ? 'is-done' : ''}`}
+              />
             ))}
           </div>
-          <div style={{ display: 'flex', gap: 4, justifyContent: 'center', flexWrap: 'wrap' }}>
+          <div className="ppt-studio-stages">
             {STAGES.map((s, i) => (
-              <div key={s.key} style={{
-                fontSize: 'var(--fs-xs)',
-                color: i === currentStageIdx ? 'var(--accent, #7c6cf0)' : i < currentStageIdx ? 'var(--text-muted, #666)' : 'var(--text-faded, #444)',
-                fontWeight: i === currentStageIdx ? 600 : 400, transition: 'all 0.3s ease',
-              }}>
+              <div
+                key={s.key}
+                className={`ppt-studio-stage-label ${
+                  i === currentStageIdx ? 'is-current' : i < currentStageIdx ? 'is-done' : ''
+                }`}
+              >
                 {s.label}{i < STAGES.length - 1 ? ' ·' : ''}
               </div>
             ))}
           </div>
           {isGenerating && (
-            <div style={{ marginTop: 16, fontSize: 'var(--fs-sm)', color: 'var(--text-faded, #555)', fontFamily: 'monospace' }}>
-              <span style={{ animation: 'ppt-dots 1.4s steps(4) infinite', display: 'inline-block' }}>●●●</span>
+            <div className="ppt-studio-dots">
+              <span className="ppt-studio-dots-anim">●●●</span>
             </div>
           )}
         </div>
-        <style>{`@keyframes ppt-pulse { 0%,100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.08); opacity: 0.85; } } @keyframes ppt-dots { 0% { opacity: 0.2; } 50% { opacity: 1; } 100% { opacity: 0.2; } }`}</style>
       </div>
     );
   }
@@ -417,19 +395,16 @@ export function PPTAdapter({ notebookId, initialContent, title: initialTitle, au
   // 生成失败
   if (error) {
     return (
-      <div style={{
-        position: 'fixed', top: 36, left: 0, right: 0, bottom: 0, background: 'var(--bg-primary, #1e1e2e)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10001,
-      }}>
-        <div style={{ textAlign: 'center', maxWidth: 500, width: '90%' }}>
-          <div style={{ width: 48, height: 48, margin: '0 auto 16px', borderRadius: '50%', background: 'color-mix(in srgb, var(--error) 15%, transparent)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 'var(--fs-2xl)' }}>⚠️</div>
-          <div style={{ fontSize: 'var(--fs-lg)', fontWeight: 600, marginBottom: 8, color: 'var(--error)' }}>生成失败</div>
-          <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted, #888)', marginBottom: 20, lineHeight: 1.6, textAlign: 'left', background: 'var(--bg-secondary, #2a2a3c)', padding: '12px 16px', borderRadius: 8, border: '1px solid var(--border-primary, #333)', maxHeight: 200, overflowY: 'auto', fontFamily: 'monospace', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+      <div className="ppt-studio-screen ppt-studio-screen--center">
+        <div className="ppt-studio-stage ppt-studio-stage--wide">
+          <div className="ppt-studio-orb ppt-studio-orb--error">⚠️</div>
+          <div className="ppt-studio-heading ppt-studio-heading--error">生成失败</div>
+          <div className="ppt-studio-error-text">
             {error}
           </div>
-          <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
-            <button onClick={() => { setError(null); setShowConfig(true); }} style={{ padding: '8px 16px', background: 'var(--accent, #7c6cf0)', color: 'var(--text-on-accent)', border: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 'var(--fs-base)' }}>重新配置</button>
-            <button onClick={onBack} style={{ padding: '8px 16px', background: 'var(--bg-hover, #3a3a4c)', color: 'var(--text-secondary, #ccc)', border: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 'var(--fs-base)' }}>返回</button>
+          <div className="ppt-studio-actions">
+            <button onClick={() => { setError(null); setShowConfig(true); }} className="ppt-studio-btn ppt-studio-btn--primary">重新配置</button>
+            <button onClick={onBack} className="ppt-studio-btn ppt-studio-btn--ghost">返回</button>
           </div>
         </div>
       </div>

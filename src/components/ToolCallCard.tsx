@@ -267,37 +267,30 @@ function TerminalBlock({ model }) {
     : outputLines
 
   return (
-    <div className="tool-card terminal-block" style={{
-      borderRadius: 6, overflow: 'hidden', border: '1px solid var(--border-primary)',
-      fontSize: 'var(--fs-sm)',
-    }}>
+    <div className="tool-card terminal-block">
       {/* Prompt 行 */}
-      <div style={{
-        display: 'flex', alignItems: 'center', gap: 4,
-        padding: '4px 8px', background: 'var(--bg-tertiary)',
-        borderBottom: '1px solid var(--border-primary)',
-      }}>
-        <TerminalIcon size={11} style={{ flexShrink: 0, color: 'var(--text-muted)' }} />
+      <div className="tool-card-head">
+        <TerminalIcon size={11} className="tool-card-head-icon" />
         <span className="hint-sm">
           {model.cwd ? model.cwd.split(/[\\/]/).pop() + '$' : '$'}
         </span>
-        <code style={{ color: 'var(--text-primary)', fontSize: 'var(--fs-sm)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        <code className="tool-card-command">
           {model.command}
         </code>
         {model.running ? (
-          <span style={{ color: 'var(--accent)', fontSize: 'var(--fs-xs)' }}>
-            <LoaderCircle size={10} className="tool-pill-icon-spin" style={{ display: 'inline' }} /> running
+          <span className="tool-card-status tool-card-status--running">
+            <LoaderCircle size={10} className="tool-pill-icon-spin icon-inline" /> running
           </span>
         ) : model.exitCode !== undefined && model.exitCode !== 0 ? (
-          <span style={{ color: 'var(--error)', fontSize: 'var(--fs-xs)' }}>
+          <span className="tool-card-status tool-card-status--error">
             exit {model.exitCode}
           </span>
         ) : model.signal ? (
-          <span style={{ color: 'var(--error)', fontSize: 'var(--fs-xs)' }}>
+          <span className="tool-card-status tool-card-status--error">
             {model.signal}
           </span>
         ) : (
-          <span style={{ color: 'var(--success)', fontSize: 'var(--fs-xs)' }}>
+          <span className="tool-card-status tool-card-status--done">
             done
           </span>
         )}
@@ -305,11 +298,7 @@ function TerminalBlock({ model }) {
           <button
             type="button"
             onClick={onCopy}
-            style={{
-              background: 'none', border: 'none', cursor: 'pointer',
-              color: 'var(--text-muted)', fontSize: 'var(--fs-xs)',
-              padding: '2px 4px', borderRadius: 4, flexShrink: 0,
-            }}
+            className="tool-card-copy"
             title={copied ? '已复制' : '复制输出'}
           >
             {copied ? '✓' : '复制'}
@@ -318,12 +307,7 @@ function TerminalBlock({ model }) {
       </div>
       {/* Output */}
       {model.output && (
-        <pre style={{
-          margin: 0, padding: '6px 8px',
-          fontSize: 'var(--fs-sm)', fontFamily: 'monospace',
-          maxHeight: 200, overflowY: 'auto',
-          whiteSpace: 'pre-wrap', color: 'var(--text-secondary)',
-        }}>
+        <pre className="tool-card-pre">
           {visibleLines.join('\n').slice(0, 2000)}
           {model.output.length > 2000 && !capped && '\n... (truncated)'}
         </pre>
@@ -332,11 +316,7 @@ function TerminalBlock({ model }) {
         <button
           type="button"
           onClick={() => setExpanded(true)}
-          style={{
-            background: 'none', border: 'none', cursor: 'pointer',
-            color: 'var(--accent)', fontSize: 'var(--fs-xs)',
-            padding: '2px 8px', width: '100%', textAlign: 'left',
-          }}
+          className="tool-card-expand"
         >
           展开全部输出
         </button>
@@ -367,38 +347,24 @@ function tryDiffModel(metadata: any, result: string | undefined): DiffHunk[] | n
 
 function DiffBlockCard({ hunks }: { hunks: DiffHunk[] }) {
   return (
-    <div className="tool-card diff-block" style={{
-      borderRadius: 6, overflow: 'hidden',
-      border: '1px solid var(--border-primary)',
-      maxHeight: 300, overflowY: 'auto',
-    }}>
+    <div className="tool-card tool-card--scroll diff-block">
       {hunks.map((hunk, idx) => (
-        <div key={idx} style={{ borderBottom: idx < hunks.length - 1 ? '1px solid var(--border-primary)' : 'none' }}>
-          <div style={{
-            padding: '4px 8px', background: 'var(--bg-tertiary)',
-            fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--text-secondary)',
-            display: 'flex', alignItems: 'center', gap: 4,
-          }}>
+        <div key={idx} className="tool-card-row">
+          <div className="tool-card-head">
             <FileEdit size={11} /> {hunk.path}
           </div>
-          <pre style={{
-            margin: 0, padding: '4px 8px',
-            fontSize: 'var(--fs-sm)', fontFamily: 'monospace',
-            whiteSpace: 'pre-wrap',
-          }}>
+          <pre className="tool-card-pre tool-card-pre--tight tool-card-pre--plain">
             {hunk.newText.split('\n').map((line, i) => (
-              <div key={i} style={{
-                color: line.startsWith('+') && !line.startsWith('+++')
-                  ? 'var(--success)'
-                  : line.startsWith('-') && !line.startsWith('---')
-                  ? 'var(--error)'
-                  : 'var(--text-secondary)',
-                background: line.startsWith('+') && !line.startsWith('+++')
-                  ? 'color-mix(in srgb, var(--success) 8%, transparent)'
-                  : line.startsWith('-') && !line.startsWith('---')
-                  ? 'color-mix(in srgb, var(--error) 8%, transparent)'
-                  : 'transparent',
-              }}>
+              <div
+                key={i}
+                className={
+                  line.startsWith('+') && !line.startsWith('+++')
+                    ? 'diff-line diff-line--add'
+                    : line.startsWith('-') && !line.startsWith('---')
+                    ? 'diff-line diff-line--del'
+                    : 'diff-line'
+                }
+              >
                 {line || ' '}
               </div>
             ))}
@@ -425,31 +391,23 @@ function tryReadModel(metadata: any, result: string | undefined): { path: string
 function ReadBlockCard({ path, content }: { path: string; content: string }) {
   const lines = content.split('\n').slice(0, 50)
   return (
-    <div className="tool-card read-block" style={{
-      borderRadius: 6, overflow: 'hidden',
-      border: '1px solid var(--border-primary)',
-      maxHeight: 300, overflowY: 'auto',
-    }}>
-      <div style={{
-        padding: '4px 8px', background: 'var(--bg-tertiary)',
-        fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--text-secondary)',
-        display: 'flex', alignItems: 'center', gap: 4,
-      }}>
+    <div className="tool-card tool-card--scroll read-block">
+      <div className="tool-card-head">
         <FileText size={11} /> {path}
       </div>
-      <pre style={{ margin: 0, padding: '4px 8px', fontSize: 'var(--fs-sm)', fontFamily: 'monospace' }}>
+      <pre className="tool-card-pre tool-card-pre--tight tool-card-pre--plain">
         {lines.map((line, i) => (
-          <div key={i} style={{ display: 'flex', gap: 8 }}>
-            <span style={{ color: 'var(--text-muted)', minWidth: 24, textAlign: 'right', userSelect: 'none', opacity: 0.6 }}>
+          <div key={i} className="read-row">
+            <span className="line-num">
               {i + 1}
             </span>
-            <span style={{ color: 'var(--text-secondary)', whiteSpace: 'pre-wrap' }}>
+            <span className="line-text">
               {line || ' '}
             </span>
           </div>
         ))}
         {content.split('\n').length > 50 && (
-          <div style={{ color: 'var(--text-muted)', fontSize: 'var(--fs-xs)', padding: '4px 0' }}>
+          <div className="read-more">
             ... ({content.split('\n').length - 50} more lines)
           </div>
         )}
@@ -491,52 +449,41 @@ function trySearchModel(toolName: string, result: string | undefined): { kind: '
 
 function SearchBlockCard({ model }: { model: { kind: 'matches' | 'paths'; files?: any[]; paths?: string[] } }) {
   return (
-    <div className="tool-card search-block" style={{
-      borderRadius: 6, overflow: 'hidden',
-      border: '1px solid var(--border-primary)',
-      maxHeight: 300, overflowY: 'auto',
-    }}>
+    <div className="tool-card tool-card--scroll search-block">
           {model.kind === 'matches' && model.files?.map((file, fi) => (
-            <div key={fi} style={{ borderBottom: fi < (model.files?.length ?? 0) - 1 ? '1px solid var(--border-primary)' : 'none' }}>
-          <div style={{
-            padding: '3px 8px', background: 'var(--bg-tertiary)',
-            fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--accent)',
-            display: 'flex', alignItems: 'center', gap: 4,
-          }}>
+            <div key={fi} className="tool-card-row">
+          <div className="tool-card-head tool-card-head--accent">
             <FolderSearch size={11} /> {file.path}
-            <span style={{ fontSize: 'var(--fs-xs)', fontWeight: 400, color: 'var(--text-muted)' }}>
+            <span className="tool-card-count">
               · {file.matches.length} match{file.matches.length > 1 ? 'es' : ''}
             </span>
           </div>
           {file.matches.slice(0, 8).map((m: any, mi: number) => (
-            <div key={mi} style={{
-              display: 'flex', gap: 8, padding: '2px 8px',
-              fontSize: 'var(--fs-sm)', fontFamily: 'monospace',
-            }}>
-              <span style={{ color: 'var(--text-muted)', minWidth: 28, textAlign: 'right', opacity: 0.6 }}>
+            <div key={mi} className="search-match-row">
+              <span className="line-num line-num--wide">
                 {m.lineNumber}
               </span>
-              <span style={{ color: 'var(--text-secondary)', whiteSpace: 'pre-wrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              <span className="search-match-text">
                 {m.line}
               </span>
             </div>
           ))}
           {file.matches.length > 8 && (
-            <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', padding: '2px 8px' }}>
+            <div className="search-match-more">
               ... {file.matches.length - 8} more
             </div>
           )}
         </div>
       ))}
       {model.kind === 'paths' && model.paths && (
-        <div style={{ padding: '4px 8px', fontSize: 'var(--fs-sm)', fontFamily: 'monospace' }}>
+        <div className="search-paths">
           {model.paths.map((p, pi) => (
-            <div key={pi} style={{ color: 'var(--text-secondary)', padding: '1px 0' }}>
+            <div key={pi} className="search-path">
               {p}
             </div>
           ))}
           {model.paths.length === 100 && (
-            <div style={{ color: 'var(--text-muted)', fontSize: 'var(--fs-xs)', padding: '4px 0' }}>
+            <div className="search-path-more">
               ... (truncated at 100 paths)
             </div>
           )}
@@ -583,40 +530,32 @@ function WebSearchResultCard({ output }: { output: string }) {
 
   return (
     <div className="tool-pill-detail-section">
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
-        <Globe size={12} style={{ color: 'var(--accent)' }} />
-        <span className="tool-pill-detail-label" style={{ margin: 0 }}>
+      <div className="websearch-head">
+        <Globe size={12} className="websearch-icon" />
+        <span className="tool-pill-detail-label tool-pill-detail-label--flush">
           {query ? `Search: "${query}"` : 'Web Search'}
         </span>
-        {source && <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)' }}>· {source}</span>}
-        <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)' }}>· {searchResults.length} results</span>
+        {source && <span className="websearch-source">· {source}</span>}
+        <span className="websearch-source">· {searchResults.length} results</span>
       </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <div className="websearch-list">
         {searchResults.map((result, idx) => (
-          <div key={idx} style={{
-            padding: '6px 8px', borderRadius: 6,
-            background: 'var(--bg-tertiary)',
-            display: 'flex', flexDirection: 'column', gap: 2,
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-              <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', minWidth: 16 }}>{idx + 1}.</span>
+          <div key={idx} className="websearch-item">
+            <div className="websearch-item-row">
+              <span className="websearch-index">{idx + 1}.</span>
               {result.url ? (
-                <a href={result.url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} style={{
-                  fontSize: 'var(--fs-sm)', fontWeight: 500, color: 'var(--accent)', textDecoration: 'none',
-                  display: 'flex', alignItems: 'center', gap: 2,
-                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                }}>
+                <a href={result.url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="websearch-title websearch-title--link">
                   {result.title || result.url}
-                  <ExternalLink size={10} style={{ flexShrink: 0 }} />
+                  <ExternalLink size={10} className="icon-shrink-none" />
                 </a>
               ) : (
-                <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <span className="websearch-title">
                   {result.title}
                 </span>
               )}
             </div>
             {result.snippet && (
-              <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', paddingLeft: 20, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              <span className="websearch-snippet">
                 {result.snippet}
               </span>
             )}
@@ -713,7 +652,7 @@ export const ToolCallCard = memo(function ToolCallCard({
   function leadingFor(state: ToolRowState, icon: ReactNode): ReactNode {
     switch (state) {
       case 'error': return <XCircle size={10} className="tool-pill-icon-error" />
-      case 'stopped': return <XCircle size={10} style={{ color: 'var(--warning, #eab008)' }} />
+      case 'stopped': return <XCircle size={10} className="tool-pill-icon-warning" />
       default: return icon
     }
   }
@@ -737,14 +676,14 @@ export const ToolCallCard = memo(function ToolCallCard({
 
         {/* 标题 */}
         <span className="tool-pill-text">
-          <span style={{ fontWeight: 600 }}>{title}</span>
+          <span className="tool-pill-title">{title}</span>
           {/* 摘要 */}
           {collapsedSummary && collapsedSummary !== title && (
             <span className="tool-pill-preview"> · {collapsedSummary}</span>
           )}
           {/* 文件路径链接 */}
           {filePath && (
-            <span className="tool-pill-preview" style={{ color: 'var(--accent)', fontFamily: 'monospace', fontSize: 'var(--fs-sm)' }}>
+            <span className="tool-pill-preview tool-pill-file">
               {filePath}
             </span>
           )}
@@ -764,7 +703,7 @@ export const ToolCallCard = memo(function ToolCallCard({
 
       {/* 展开体 — 对标 DSH ToolRow bodyWrap */}
       {open && (
-        <div className="tool-pill-detail" style={{ marginLeft: 16 }}>
+        <div className="tool-pill-detail tool-pill-detail--inset">
           {/* 专用卡片优先 */}
           {terminalModel !== null ? (
             <TerminalBlock model={terminalModel} />
@@ -779,42 +718,17 @@ export const ToolCallCard = memo(function ToolCallCard({
           ) : (
             /* 通用 IN/OUT 卡片 */
             (body !== null || output !== null) && (
-              <div className="tool-io-card" style={{
-                borderRadius: 6, overflow: 'hidden',
-                border: '1px solid var(--border-primary)',
-              }}>
+              <div className="tool-io-card">
                 {body !== null && (
-                  <div className="tool-io-section" style={{
-                    display: 'flex', gap: 8,
-                    borderBottom: output !== null ? '1px solid var(--border-primary)' : 'none',
-                  }}>
-                    <span className="tool-io-label" style={{
-                      padding: '4px 8px', background: 'var(--bg-tertiary)',
-                      fontSize: 'var(--fs-xs)', fontWeight: 600, color: 'var(--text-muted)',
-                      minWidth: 28, textAlign: 'center', flexShrink: 0,
-                    }}>IN</span>
-                    <pre className="tool-io-text" style={{
-                      margin: 0, padding: '4px 8px',
-                      fontSize: 'var(--fs-sm)', fontFamily: 'monospace',
-                      whiteSpace: 'pre-wrap', color: 'var(--text-secondary)',
-                      maxHeight: 200, overflowY: 'auto',
-                    }}>{body}</pre>
+                  <div className={`tool-io-section ${output !== null ? 'tool-io-section--bordered' : ''}`}>
+                    <span className="tool-io-label">IN</span>
+                    <pre className="tool-io-text">{body}</pre>
                   </div>
                 )}
                 {output !== null && (
-                  <div className="tool-io-section" style={{ display: 'flex', gap: 8 }}>
-                    <span className="tool-io-label" style={{
-                      padding: '4px 8px', background: 'var(--bg-tertiary)',
-                      fontSize: 'var(--fs-xs)', fontWeight: 600, color: 'var(--text-muted)',
-                      minWidth: 28, textAlign: 'center', flexShrink: 0,
-                    }}>OUT</span>
-                    <pre className="tool-io-text" style={{
-                      margin: 0, padding: '4px 8px',
-                      fontSize: 'var(--fs-sm)', fontFamily: 'monospace',
-                      whiteSpace: 'pre-wrap',
-                      color: isError ? 'var(--error)' : 'var(--text-secondary)',
-                      maxHeight: 200, overflowY: 'auto',
-                    }} data-error={isError || undefined}>{output}</pre>
+                  <div className="tool-io-section">
+                    <span className="tool-io-label">OUT</span>
+                    <pre className="tool-io-text" data-error={isError || undefined}>{output}</pre>
                   </div>
                 )}
               </div>
@@ -823,23 +737,10 @@ export const ToolCallCard = memo(function ToolCallCard({
 
           {/* 结构化文件路径列表 — 来自工具返回的 metadata.file_paths */}
           {metadataFilePaths && (
-            <div className="tool-io-card" style={{
-              borderRadius: 6, overflow: 'hidden',
-              border: '1px solid var(--border-primary)',
-              marginTop: 4,
-            }}>
-              <div className="tool-io-section" style={{ display: 'flex', gap: 8 }}>
-                <span className="tool-io-label" style={{
-                  padding: '4px 8px', background: 'var(--bg-tertiary)',
-                  fontSize: 'var(--fs-xs)', fontWeight: 600, color: 'var(--text-muted)',
-                  minWidth: 28, textAlign: 'center', flexShrink: 0,
-                  display: 'flex', alignItems: 'center',
-                }}><Files size={10} /></span>
-                <div style={{
-                  padding: '4px 8px',
-                  fontSize: 'var(--fs-sm)', fontFamily: 'monospace',
-                  display: 'flex', flexDirection: 'column', gap: 2,
-                }}>
+            <div className="tool-io-card tool-io-card--stacked">
+              <div className="tool-io-section">
+                <span className="tool-io-label tool-io-label--icon"><Files size={10} /></span>
+                <div className="tool-io-paths">
                   {metadataFilePaths.map((p, i) => (
                     <a
                       key={i}
@@ -847,12 +748,8 @@ export const ToolCallCard = memo(function ToolCallCard({
                       onClick={(e) => handleFileLinkClick(e, p)}
                       onContextMenu={(e) => handleFileLinkContextMenu(e, p)}
                       title={`点击打开: ${p}`}
-                      style={{
-                        color: 'var(--accent)', cursor: 'pointer',
-                        textDecoration: 'underline', textDecorationStyle: 'dashed',
-                        textUnderlineOffset: '2px',
-                        lineHeight: 1.4,
-                      }}>
+                      className="tool-io-file-link"
+                    >
                       {p}
                     </a>
                   ))}

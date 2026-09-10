@@ -248,14 +248,22 @@ function scanTsx(rel, src) {
       /(?:^|[\s,{])(color|background|backgroundColor|borderColor|borderTopColor|borderBottomColor|borderLeftColor|borderRightColor|outlineColor|fill|stroke)\s*:\s*(?:'|")(#[0-9a-fA-F]{3,8}|rgba?\([^)]*\)|hsla?\([^)]*\)|(?:red|blue|green|white|black|gray|grey|orange|purple|pink|yellow|cyan|magenta|transparent))(?:'|")/;
     const colorM = colorProp.exec(line);
     const colorOffset = colorM ? line.indexOf(colorM[2], colorM.index) : -1;
+    // 注意：这里用「本行是否已经报过」而不是「colorM 是否存在」来决定要不要走兜底。
+    // 曾经的写法是 `if (!colorM)` —— 于是一行里只要出现一个**无害的**属性级匹配
+    // （典型是 `background: "transparent"`），后面所有兜底全部跳过：
+    //   border: "1px solid #e74c3c", background: "transparent",
+    // 这行里的硬编码红就这么一直没被看见。匹配到 ≠ 报警过，两者必须分开。
+    let flagged = false;
     if (colorM && colorM[2] !== "transparent" && notInVar(colorOffset)) {
       add("color-hardcoded-tsx", rel, no, raw, `${colorM[1]}: ${colorM[2]}`);
+      flagged = true;
     }
     // 属性级不够时兜底：样式对象里直接出现 hex（排除 boxShadow 字符串）
-    if (!colorM) {
+    if (!flagged) {
       const hex = /(?:'|")(#[0-9a-fA-F]{3,8})(?:'|")/.exec(line);
       if (hex && notInVar(hex.index) && !/boxShadow|textShadow|filter/.test(line)) {
         add("color-hardcoded-tsx", rel, no, raw, `hex ${hex[1]}`);
+        flagged = true;
       }
     }
     // 兜底之二：hex 藏在**复合值字符串**里，例如
@@ -263,32 +271,34 @@ function scanTsx(rel, src) {
     //   background: 'linear-gradient(180deg, #fff, #000)'
     // 上面那条只认「整个字符串就是一个 hex」，这类混写长期漏检（知识图谱的删除按钮边框
     // 就这么一直写着硬编码红）。这里按字面量位置逐个找 hex，并跳过 var() 的兜底值。
-    if (!colorM && !/url\(/.test(line)) {
+    if (!flagged && !/url\(/.test(line)) {
       for (const m of line.matchAll(/#[0-9a-fA-F]{3,8}\b/g)) {
         const abs = lineStarts[i] + m.index;
         if (!styleRanges.some(([s, e]) => abs >= s && abs < e)) continue;
         if (!notInVar(m.index)) continue;
         add("color-hardcoded-tsx", rel, no, raw, `hex ${m[0]}`);
+        flagged = true;
         break;
       }
     }
     // 兜底之三：**条件表达式里的命名色**。`color: disabled ? "var(--text-muted)" : "white"`
     // 既躲过属性级判定（冒号后面不是引号），也不是 hex，于是 `: "white"` 长期不可见。
     // 这里在样式对象区间内找「引号包起来的命名色」，跳过 var() 兜底值。
-    if (!colorM && !/url\(/.test(line)) {
+    if (!flagged && !/url\(/.test(line)) {
       const namedVal = /(['"])(white|black|red|green|blue|gray|grey|orange|purple|pink|yellow|cyan|magenta|silver|maroon|navy|teal|olive|lime|aqua|fuchsia)\1/gi;
       for (const m of line.matchAll(namedVal)) {
         const abs = lineStarts[i] + m.index;
         if (!styleRanges.some(([s, e]) => abs >= s && abs < e)) continue;
         if (!notInVar(m.index)) continue;
         add("color-hardcoded-tsx", rel, no, raw, `命名色: ${m[2]}`);
+        flagged = true;
         break;
       }
     }
     // 兜底之四：复合值里的 rgb()/rgba()，典型是投影 ——
     //   boxShadow: "0 4px 12px rgba(0,0,0,0.2)"
     // 投影里的黑在 CSS 侧早就要求走 --shadow-color（见 §2.3），TSX 侧却一直看不见。
-    if (!colorM && !/url\(/.test(line)) {
+    if (!flagged && !/url\(/.test(line)) {
       const rgbM = /\b(?:rgba?|hsla?)\(/.exec(line);
       if (rgbM) {
         const abs = lineStarts[i] + rgbM.index;

@@ -736,20 +736,20 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
         <div className="settings-body">
           <div className="settings-sidebar">
             {/* P2 #36: Settings search */}
-            <div className="settings-search-box" style={{ padding: "8px 12px", borderBottom: "1px solid var(--border-primary)" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 6, background: "var(--bg-tertiary)", borderRadius: 6, padding: "4px 8px" }}>
-                <SearchIcon size={14} style={{ color: "var(--text-muted)" }} />
+            <div className="settings-search-box settings-search-box--bordered">
+              <div className="sp-search">
+                <SearchIcon size={14} className="sp-search-icon" />
                 <input
                   type="text"
                   placeholder={lang === "zh" ? "搜索设置..." : "Search settings..."}
                   value={settingsSearch}
                   onChange={(e) => setSettingsSearch(e.target.value)}
-                  style={{ flex: 1, background: "transparent", border: "none", color: "var(--text-primary)", fontSize: 'var(--fs-sm)', outline: "none" }}
+                  className="sp-search-input"
                 />
-                {settingsSearch && <button onClick={() => setSettingsSearch("")} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)" }}><X size={12} /></button>}
+                {settingsSearch && <button onClick={() => setSettingsSearch("")} className="sp-btn--icon sp-btn"><X size={12} /></button>}
               </div>
               {settingsSearch.trim() && (
-                <div style={{ padding: "4px 2px 0", fontSize: 'var(--fs-xs)', color: "var(--text-muted)" }}>
+                <div className="sp-search-status">
                   {searchFilteredTabs.length > 0
                     ? (lang === "zh"
                       ? `已跳转至「${SETTINGS_TAB_INDEX.find(([id]) => id === searchFilteredTabs[0])?.[1]?.[0] || searchFilteredTabs[0]}」设置`
@@ -866,32 +866,16 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
           {settings.mode === "cli" && (
             <div className="setting-group">
               <label>MiMo 账号</label>
-              <div style={{ fontSize: 'var(--fs-base)', color: "var(--text-secondary)", marginBottom: 8 }}>
+              <div className="sp-text sp-text--secondary sp-hint--lead">
                 登录小米账号，mimo-v2.5-pro 模型免费
               </div>
 
               {mimoAccount ? (
-                <div style={{
-                  padding: "8px 12px",
-                  background: "var(--bg-secondary)",
-                  borderRadius: 6,
-                  border: "1px solid var(--border-primary)",
-                  fontSize: 'var(--fs-base)',
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                }}>
-                  <span style={{ display: "flex", alignItems: "center", gap: 4 }}><CheckCircle size={14} style={{ color: "var(--success)" }} /> 已登录</span>
+                <div className="sp-card--secondary sp-card--between sp-card sp-text">
+                  <span className="sp-row--gap-tight sp-row"><CheckCircle size={14} className="sp-icon-success" /> 已登录</span>
                   <button
                     onClick={handleLogout}
-                    style={{
-                      padding: "4px 8px",
-                      background: "var(--bg-tertiary)",
-                      border: "1px solid var(--border-primary)",
-                      borderRadius: 4,
-                      fontSize: 'var(--fs-sm)',
-                      cursor: "pointer",
-                    }}
+                    className="sp-btn sp-btn--sm"
                   >
                     登出
                   </button>
@@ -900,59 +884,31 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
                 <button
                   onClick={handleLogin}
                   disabled={loginStatus === "loading"}
-                  style={{
-                    padding: "8px 16px",
-                    background: loginStatus === "loading" ? "var(--bg-tertiary)" : "var(--accent)",
-                    color: "var(--text-on-accent)",
-                    border: "none",
-                    borderRadius: 6,
-                    fontSize: 'var(--fs-base)',
-                    cursor: loginStatus === "loading" ? "wait" : "pointer",
-                    width: "100%",
-                  }}
+                  className="sp-btn sp-btn--lg sp-btn--block sp-btn--primary"
                 >
-                  {loginStatus === "loading" ? "正在打开浏览器..." : <span style={{ display: "flex", alignItems: "center", gap: 6, justifyContent: "center" }}><LogIn size={16} /> 登录小米账号</span>}
+                  {loginStatus === "loading" ? "正在打开浏览器..." : <span className="sp-row sp-row--gap-sm"><LogIn size={16} /> 登录小米账号</span>}
                 </button>
               )}
 
               {loginStatus === "error" && (
-                <div style={{ fontSize: 'var(--fs-sm)', color: "var(--error)", marginTop: 6 }}>
+                <div className="sp-hint sp-hint--error sp-hint--spaced">
                   {loginError}
                 </div>
               )}
 
-              <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", marginTop: 6 }}>
+              <div className="sp-hint sp-hint--spaced">
                 点击后会打开浏览器，在浏览器中完成授权即可。
               </div>
 
               <button
                 onClick={runLoginTest}
-                style={{
-                  marginTop: 12,
-                  padding: "6px 12px",
-                  background: "var(--bg-tertiary)",
-                  border: "1px solid var(--border-primary)",
-                  borderRadius: 4,
-                  fontSize: 'var(--fs-sm)',
-                  cursor: "pointer",
-                  width: "100%",
-                }}
+                className="sp-btn sp-btn--sm sp-btn--block sp-btn--secondary"
               >
-                <span style={{ display: "flex", alignItems: "center", gap: 6, justifyContent: "center" }}><SearchIcon size={14} /> 运行登录测试</span>
+                <span className="sp-row sp-row--gap-sm"><SearchIcon size={14} /> 运行登录测试</span>
               </button>
 
               {testResult && (
-                <pre style={{
-                  marginTop: 8,
-                  padding: 8,
-                  background: "var(--bg-primary)",
-                  border: "1px solid var(--border-primary)",
-                  borderRadius: 4,
-                  fontSize: 'var(--fs-sm)',
-                  whiteSpace: "pre-wrap",
-                  maxHeight: 300,
-                  overflow: "auto",
-                }}>
+                <pre className="sp-output sp-output--page">
                   {testResult}
                 </pre>
               )}
@@ -961,11 +917,11 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
 
           <div className="setting-group">
             <label>{S.settings.model[lang]}</label>
-            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <div className="sp-row">
               <select
                 value={settings.model}
                 onChange={(e) => setSettings({ ...settings, model: e.target.value })}
-                style={{ flex: 1 }}
+                className="sp-select-flex"
               >
               {settings.mode === "cli" ? (
                 <>
@@ -1007,18 +963,9 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
             </select>
               <button
                 onClick={() => setShowModelProfiles(true)}
-                style={{
-                  padding: "6px 12px",
-                  borderRadius: 4,
-                  border: "1px solid var(--border-primary)",
-                  background: "var(--bg-secondary)",
-                  color: "var(--text-primary)",
-                  cursor: "pointer",
-                  fontSize: 'var(--fs-sm)',
-                  whiteSpace: "nowrap",
-                }}
+                className="sp-btn sp-btn--secondary sp-btn--nowrap"
               >
-                {lang === "zh" ? <span style={{ display: "flex", alignItems: "center", gap: 4 }}><SettingsIcon size={14} /> 配置方案</span> : <span style={{ display: "flex", alignItems: "center", gap: 4 }}><SettingsIcon size={14} /> Profiles</span>}
+                {lang === "zh" ? <span className="sp-row--gap-tight sp-row"><SettingsIcon size={14} /> 配置方案</span> : <span className="sp-row--gap-tight sp-row"><SettingsIcon size={14} /> Profiles</span>}
               </button>
             </div>
           </div>
@@ -2709,11 +2656,7 @@ function WorktreeSettingsSection({ lang }: { lang: ReturnType<typeof useLang> })
                 )}
                 <button
                   onClick={() => handleDelete(wt)}
-                  style={{
-                    padding: "2px 8px", borderRadius: 4, fontSize: 'var(--fs-sm)',
-                    border: "1px solid #e74c3c", background: "transparent",
-                    color: "var(--error)", cursor: "pointer",
-                  }}
+                  className="sp-btn sp-btn--xs sp-btn--danger-ghost"
                 >
                   {zh ? "删除" : "Delete"}
                 </button>
@@ -2919,7 +2862,7 @@ function AgentProfileSection({ lang }: { lang: Language }) {
             <span style={{ fontSize: 'var(--fs-base)', fontWeight: 500 }}>{p.identity}</span>
             <div style={{ display: "flex", gap: 4 }}>
               <button onClick={() => setEditing(p)} style={{ fontSize: 'var(--fs-sm)', padding: "2px 8px", cursor: "pointer", background: "transparent", border: "1px solid var(--border-primary)", borderRadius: "var(--radius-sm)" }}>{zh ? "编辑" : "Edit"}</button>
-              <button onClick={() => handleDelete(p.id)} style={{ fontSize: 'var(--fs-sm)', padding: "2px 8px", cursor: "pointer", background: "transparent", border: "1px solid #e55", borderRadius: "var(--radius-sm)", color: "#e55" }}>{zh ? "删除" : "Delete"}</button>
+              <button onClick={() => handleDelete(p.id)} className="sp-btn sp-btn--xs sp-btn--danger-ghost">{zh ? "删除" : "Delete"}</button>
             </div>
           </div>
           <div className="hint-sm">{p.domain} · {p.scope}</div>
