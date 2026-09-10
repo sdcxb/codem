@@ -123,20 +123,14 @@ export function MultimodalPanel({ onClose, inline }: MultimodalPanelProps) {
     return (
       <div
         key={modality}
-        style={{
-          padding: 12,
-          background: "var(--bg-secondary)",
-          borderRadius: 8,
-          border: `1px solid ${isEnabled ? "var(--accent)" : "var(--border-primary)"}`,
-          marginBottom: 12,
-        }}
+        className={`mm-card${isEnabled ? " is-enabled" : ""}`}
       >
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+        <div className="mm-card-head">
           <div>
-            <span style={{ fontSize: 'var(--fs-lg)', marginRight: 6 }}>{icon}</span>
-            <span style={{ fontWeight: 600, fontSize: 'var(--fs-md)' }}>{title}</span>
+            <span className="mm-card-icon">{icon}</span>
+            <span className="mm-card-title">{title}</span>
           </div>
-          <label style={{ cursor: "pointer", fontSize: 'var(--fs-sm)' }}>
+          <label className="mm-toggle">
             <input
               type="checkbox"
               checked={isEnabled}
@@ -145,32 +139,23 @@ export function MultimodalPanel({ onClose, inline }: MultimodalPanelProps) {
             {isEnabled ? "已启用" : "已禁用"}
           </label>
         </div>
-        <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-secondary)", marginBottom: isEnabled ? 10 : 0 }}>
+        <div className={`mm-card-desc${isEnabled ? "" : " mm-card-desc--tight"}`}>
           {description}
         </div>
 
         {/* Embedding 未配置时显示默认本地模型提示 */}
         {!isEnabled && modality === "embedding" && (
-          <div style={{
-            marginTop: 8,
-            padding: "6px 10px",
-            background: "color-mix(in srgb, var(--success) 8%, transparent)",
-            borderRadius: 6,
-            fontSize: 'var(--fs-sm)',
-            color: "var(--text-secondary)",
-            lineHeight: 1.6,
-            border: "1px solid color-mix(in srgb, var(--success) 20%, transparent)",
-          }}>
+          <div className="mm-note">
             ✅ 当前默认使用内置本地模型（{getDefaultLocalEmbeddingConfig().model}，~22MB），
             随安装包打包，无需配置 API Key，安装后即可离线使用。如需更高精度，可启用后选择其他本地模型或远程 API。
           </div>
         )}
 
         {isEnabled && config && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <div className="mm-fields">
             {/* Provider selector */}
             <div>
-              <label style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", display: "block", marginBottom: 4 }}>
+              <label className="mm-label">
                 Provider
               </label>
               <select
@@ -198,7 +183,7 @@ export function MultimodalPanel({ onClose, inline }: MultimodalPanelProps) {
                     }
                   }
                 }}
-                style={{ width: "100%", fontSize: 'var(--fs-sm)' }}
+                className="mm-control"
               >
                 {providerKeys.map(p => (
                   <option key={p.id} value={p.id}>{p.name}{p.apiKey ? " ✓" : ""}</option>
@@ -215,13 +200,13 @@ export function MultimodalPanel({ onClose, inline }: MultimodalPanelProps) {
               <>
                 {/* 本地模型选择器 */}
                 <div>
-                  <label style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", display: "block", marginBottom: 4 }}>
+                  <label className="mm-label">
                     本地模型
                   </label>
                   <select
                     value={config.model}
                     onChange={(e) => updateModality(modality, "model", e.target.value)}
-                    style={{ width: "100%", fontSize: 'var(--fs-sm)' }}
+                    className="mm-control"
                   >
                     {AVAILABLE_LOCAL_MODELS.map(m => (
                       <option key={m.id} value={m.id}>{m.name} ({m.size})</option>
@@ -234,52 +219,19 @@ export function MultimodalPanel({ onClose, inline }: MultimodalPanelProps) {
                   const modelInfo = AVAILABLE_LOCAL_MODELS.find(m => m.id === config.model);
                   if (!modelInfo) return null;
                   return (
-                    <div style={{
-                      padding: 8,
-                      background: "var(--bg-tertiary, var(--bg-primary))",
-                      borderRadius: 6,
-                      fontSize: 'var(--fs-sm)',
-                      color: "var(--text-secondary)",
-                      lineHeight: 1.6,
-                    }}>
-                      <div style={{ marginBottom: 4 }}>{modelInfo.description}</div>
-                      <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
-                        <span style={{
-                          padding: "1px 6px",
-                          background: "var(--bg-secondary)",
-                          borderRadius: "var(--radius-sm)",
-                          fontSize: 'var(--fs-xs)',
-                        }}>维度: {modelInfo.dim}</span>
-                        <span style={{
-                          padding: "1px 6px",
-                          background: "var(--bg-secondary)",
-                          borderRadius: "var(--radius-sm)",
-                          fontSize: 'var(--fs-xs)',
-                        }}>{modelInfo.languages}</span>
-                        <span style={{
-                          padding: "1px 6px",
-                          background: "var(--bg-secondary)",
-                          borderRadius: "var(--radius-sm)",
-                          fontSize: 'var(--fs-xs)',
-                        }}>{modelInfo.license}</span>
+                    <div className="mm-model-info">
+                      <div className="mm-model-desc">{modelInfo.description}</div>
+                      <div className="mm-model-tags">
+                        <span className="mm-tag">维度: {modelInfo.dim}</span>
+                        <span className="mm-tag">{modelInfo.languages}</span>
+                        <span className="mm-tag">{modelInfo.license}</span>
                       </div>
                     </div>
                   );
                 })()}
 
                 {/* 模型状态指示器 */}
-                <div style={{
-                  padding: "6px 8px",
-                  borderRadius: 6,
-                  fontSize: 'var(--fs-sm)',
-                  background: localStatus.state === "ready" ? "color-mix(in srgb, var(--success) 10%, transparent)"
-                    : localStatus.state === "loading" ? "color-mix(in srgb, var(--info) 10%, transparent)"
-                    : localStatus.state === "error" ? "color-mix(in srgb, var(--error) 10%, transparent)"
-                    : "var(--bg-tertiary, var(--bg-primary))",
-                  color: localStatus.state === "ready" ? "var(--success)"
-                    : localStatus.state === "error" ? "var(--danger)"
-                    : "var(--text-secondary)",
-                }}>
+                <div className={`mm-status is-${localStatus.state === "ready" ? "ready" : localStatus.state === "loading" ? "loading" : localStatus.state === "error" ? "error" : "idle"}`}>
                   {localStatus.state === "ready" && "✅ 模型已加载，可正常使用"}
                   {localStatus.state === "loading" && `⏳ ${localStatus.message || "正在加载..."}`}
                   {localStatus.state === "not-loaded" && "⚪ 模型未加载（首次使用时自动下载）"}
@@ -287,12 +239,7 @@ export function MultimodalPanel({ onClose, inline }: MultimodalPanelProps) {
                 </div>
 
                 {/* 说明文字 */}
-                <div style={{
-                  fontSize: 'var(--fs-sm)',
-                  color: "var(--text-muted)",
-                  lineHeight: 1.6,
-                  padding: "4px 0",
-                }}>
+                <div className="mm-help">
                   💡 本地模式无需 API Key，模型在本地运行（ONNX Runtime WASM）。
                   默认模型（all-MiniLM-L6-v2）已随安装包内置，开箱即用。
                   其他模型首次使用时从 HuggingFace 下载并缓存。超长文本自动子分块处理。
@@ -304,14 +251,14 @@ export function MultimodalPanel({ onClose, inline }: MultimodalPanelProps) {
 
                 {/* Model selector */}
                 <div>
-                  <label style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", display: "block", marginBottom: 4 }}>
+                  <label className="mm-label">
                     模型
                   </label>
                   {availableModels && availableModels.length > 0 ? (
                     <select
                       value={config.model}
                       onChange={(e) => updateModality(modality, "model", e.target.value)}
-                      style={{ width: "100%", fontSize: 'var(--fs-sm)' }}
+                      className="mm-control"
                     >
                       {availableModels.map(m => (
                         <option key={m} value={m}>{m}</option>
@@ -323,14 +270,14 @@ export function MultimodalPanel({ onClose, inline }: MultimodalPanelProps) {
                       value={config.model}
                       onChange={(e) => updateModality(modality, "model", e.target.value)}
                       placeholder="输入模型名称"
-                      style={{ width: "100%", fontSize: 'var(--fs-sm)' }}
+                      className="mm-control"
                     />
                   )}
                 </div>
 
                 {/* API Key */}
                 <div>
-                  <label style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", display: "block", marginBottom: 4 }}>
+                  <label className="mm-label">
                     API Key
                   </label>
                   <input
@@ -338,20 +285,20 @@ export function MultimodalPanel({ onClose, inline }: MultimodalPanelProps) {
                     value={config.apiKey}
                     onChange={(e) => updateModality(modality, "apiKey", e.target.value)}
                     placeholder="API Key"
-                    style={{ width: "100%", fontSize: 'var(--fs-sm)' }}
+                    className="mm-control"
                   />
                 </div>
 
                 {/* Base URL */}
                 <div>
-                  <label style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", display: "block", marginBottom: 4 }}>
+                  <label className="mm-label">
                     Base URL
                   </label>
                   <input
                     type="text"
                     value={config.baseUrl}
                     onChange={(e) => updateModality(modality, "baseUrl", e.target.value)}
-                    style={{ width: "100%", fontSize: 'var(--fs-sm)' }}
+                    className="mm-control"
                   />
                 </div>
               </>
@@ -364,53 +311,20 @@ export function MultimodalPanel({ onClose, inline }: MultimodalPanelProps) {
 
   return (
     <div
-      className={inline ? "multimodal-inline-panel" : "floating-overlay-panel"}
-      style={inline ? {
-        background: "var(--bg-primary)",
-        border: "1px solid var(--border-primary)",
-        borderRadius: 8,
-        display: "flex",
-        flexDirection: "column",
-        marginTop: 8,
-      } : {
-        position: "fixed",
-        top: "var(--chat-body-top, 48px)",
-        right: 0,
-        width: 480,
-        bottom: "var(--chat-body-bottom, 140px)",
-        background: "var(--bg-primary)",
-        borderLeft: "1px solid var(--border-primary)",
-        zIndex: 1000,
-        display: "flex",
-        flexDirection: "column",
-      }}
+      className={inline ? "mm-panel-inline" : "floating-overlay-panel mm-panel-floating"}
     >
-      <div
-        style={{
-          padding: "12px 16px",
-          borderBottom: "1px solid var(--border-primary)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-        }}
-      >
-        <h3 style={{ margin: 0, fontSize: 'var(--fs-lg)' }}>🎨 多模态设置</h3>
+      <div className="mm-header">
+        <h3 className="mm-title">🎨 多模态设置</h3>
         <button
           onClick={onClose}
-          style={{
-            background: "none",
-            border: "none",
-            color: "var(--text-muted)",
-            cursor: "pointer",
-            fontSize: 'var(--fs-xl)',
-          }}
+          className="mm-close"
         >
           ✕
         </button>
       </div>
 
-      <div style={{ flex: 1, overflow: "auto", padding: 16 }}>
-        <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-secondary)", marginBottom: 16 }}>
+      <div className="mm-body">
+        <div className="mm-intro">
           配置 Embedding（语义搜索）、TTS（语音合成）、ImageGen（图像生成）三种多模态能力。
           启用后 AI 助手可以在对话中使用这些能力。
         </div>
@@ -451,30 +365,13 @@ export function MultimodalPanel({ onClose, inline }: MultimodalPanelProps) {
         )}
       </div>
 
-      <div
-        style={{
-          padding: "12px 16px",
-          borderTop: "1px solid var(--border-primary)",
-          display: "flex",
-          alignItems: "center",
-          gap: 8,
-        }}
-      >
+      <div className="mm-footer">
         {saved && (
-          <span style={{ fontSize: 'var(--fs-sm)', color: "var(--success)" }}>✅ 已保存</span>
+          <span className="mm-saved">✅ 已保存</span>
         )}
         <button
           onClick={handleSave}
-          style={{
-            marginLeft: "auto",
-            padding: "8px 20px",
-            background: "var(--accent)",
-            color: "var(--text-on-accent)",
-            border: "none",
-            borderRadius: 6,
-            fontSize: 'var(--fs-base)',
-            cursor: "pointer",
-          }}
+          className="panel-btn panel-btn--primary mm-save-btn"
         >
           保存
         </button>

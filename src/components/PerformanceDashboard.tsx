@@ -108,27 +108,15 @@ export function PerformanceDashboard({ onClose }: PerformanceDashboardProps) {
   const barWidth = chartWidth / Math.max(1, timeSeries.length);
 
   const panel = (
-    <div
-      className="perf-dashboard perf-dashboard-inline"
-      style={{
-        width: "100%", height: "100%",
-        background: "var(--bg-primary, #1e1e2e)",
-        display: "flex", flexDirection: "column",
-        overflow: "hidden",
-      }}
-    >
+    <div className="perf-panel perf-panel-inline">
         {/* Header */}
-        <div style={{
-          display: "flex", alignItems: "center", justifyContent: "space-between",
-          padding: "12px 16px", borderBottom: "1px solid var(--border-color, #333)",
-          flexShrink: 0,
-        }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <div className="perf-header">
+          <div className="perf-header-title">
             <Activity size={18} />
-            <span style={{ fontSize: 'var(--fs-lg)', fontWeight: 700 }}>{S.perf.title[lang]}</span>
+            <span className="perf-title">{S.perf.title[lang]}</span>
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <button onClick={() => { telemetry.flush(); refresh(); }} style={headerBtnStyle}>
+          <div className="perf-header-actions">
+            <button onClick={() => { telemetry.flush(); refresh(); }} className="perf-btn">
               <RefreshCw size={14} />
               {S.perf.refresh[lang]}
             </button>
@@ -136,37 +124,33 @@ export function PerformanceDashboard({ onClose }: PerformanceDashboardProps) {
         </div>
 
         {/* Tabs + Controls */}
-        <div style={{
-          display: "flex", justifyContent: "space-between", alignItems: "center",
-          padding: "8px 16px", borderBottom: "1px solid var(--border-color, #333)",
-          flexShrink: 0, flexWrap: "wrap", gap: 8,
-        }}>
-          <div style={{ display: "flex", gap: 4 }}>
+        <div className="perf-tabs">
+          <div className="perf-tab-group">
             <TabButton active={activeTab === "overview"} onClick={() => setActiveTab("overview")} icon={<BarChart3 size={14} />} label={S.perf.overview[lang]} />
             <TabButton active={activeTab === "sessions"} onClick={() => setActiveTab("sessions")} icon={<Clock size={14} />} label={S.perf.sessions[lang]} />
             <TabButton active={activeTab === "latency"} onClick={() => setActiveTab("latency")} icon={<Gauge size={14} />} label={S.perf.latency[lang]} />
           </div>
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <div className="perf-controls">
             {activeTab === "overview" && (
               <select
                 value={timeRange}
                 onChange={e => setTimeRange(e.target.value as TimeRange)}
-                style={selectStyle}
+                className="perf-select"
               >
                 <option value="5min">{S.perf.last5Min[lang]}</option>
                 <option value="30min">{S.perf.last30Min[lang]}</option>
                 <option value="60min">{S.perf.last60Min[lang]}</option>
               </select>
             )}
-            <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 'var(--fs-sm)', cursor: "pointer" }}>
+            <label className="perf-auto-refresh">
               <input type="checkbox" checked={autoRefresh} onChange={e => setAutoRefresh(e.target.checked)} />
               {S.perf.autoRefresh[lang]}
             </label>
-            <button onClick={handleExportOTel} style={headerBtnStyle}>
+            <button onClick={handleExportOTel} className="perf-btn">
               <Download size={12} />
               {S.perf.exportOTel[lang]}
             </button>
-            <button onClick={() => setShowClearConfirm(true)} style={headerBtnStyle}>
+            <button onClick={() => setShowClearConfirm(true)} className="perf-btn">
               <Trash2 size={12} />
               {S.perf.clearAll[lang]}
             </button>
@@ -174,49 +158,40 @@ export function PerformanceDashboard({ onClose }: PerformanceDashboardProps) {
         </div>
 
         {exportMsg && (
-          <div style={{ padding: "4px 16px", fontSize: 'var(--fs-sm)', color: "var(--success)" }}>{exportMsg}</div>
+          <div className="perf-msg">{exportMsg}</div>
         )}
 
         {/* Content */}
-        <div style={{ flex: 1, overflowY: "auto", padding: "12px 16px" }}>
+        <div className="perf-content">
           {overview.totalEvents === 0 ? (
-            <div style={{ textAlign: "center", padding: 48, color: "var(--text-muted)" }}>
-              <Activity size={48} style={{ opacity: 0.3, marginBottom: 8 }} />
+            <div className="perf-empty">
+              <Activity size={48} className="perf-empty-icon" />
               <div>{S.perf.noData[lang]}</div>
             </div>
           ) : activeTab === "overview" ? (
             <>
               {/* Stat Cards */}
-              <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 16 }}>
-                <StatCard value={overview.totalEvents} label={S.perf.totalEvents[lang]} color="#3b82f6" />
-                <StatCard value={overview.totalSessions} label={S.perf.totalSessions[lang]} color="#a855f7" />
-                <StatCard value={overview.recentEventRate} suffix={S.perf.eventsPerMin[lang]} label={S.perf.recentRate[lang]} color="#22c55e" />
+              <div className="perf-stat-row">
+                <StatCard value={overview.totalEvents} label={S.perf.totalEvents[lang]} color="var(--info)" />
+                <StatCard value={overview.totalSessions} label={S.perf.totalSessions[lang]} color="var(--accent)" />
+                <StatCard value={overview.recentEventRate} suffix={S.perf.eventsPerMin[lang]} label={S.perf.recentRate[lang]} color="var(--success)" />
               </div>
 
               {/* Trend Chart */}
-              <div style={{ marginBottom: 16 }}>
-                <div style={{ fontSize: 'var(--fs-md)', fontWeight: 600, marginBottom: 8, display: "flex", alignItems: "center", gap: 4 }}>
+              <div className="perf-section">
+                <div className="perf-section-title">
                   <Zap size={14} />
                   {S.perf.eventTrend[lang]}
                 </div>
-                <div style={{
-                  display: "flex", alignItems: "flex-end", gap: 1,
-                  height: 120, padding: "8px 0",
-                  background: "var(--bg-secondary, #181825)",
-                  borderRadius: 8, border: "1px solid var(--border-color, #333)",
-                }}>
+                <div className="perf-chart">
                   {timeSeries.map((bucket, i) => (
-                    <div key={i} style={{
-                      flex: 1, minWidth: 2,
+                    <div key={i} className={`perf-chart-bar${bucket.count > 0 ? " has-value" : ""}`} style={{
                       height: `${(bucket.count / maxCount) * 100}%`,
                       minHeight: bucket.count > 0 ? 2 : 0,
-                      background: bucket.count > 0 ? "linear-gradient(180deg, #3b82f6, #1e40af)" : "transparent",
-                      borderRadius: "2px 2px 0 0",
-                      margin: "0 0.5px",
                     }} title={`${formatTime(bucket.timestamp)}: ${bucket.count}`} />
                   ))}
                 </div>
-                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 'var(--fs-xs)', color: "var(--text-muted)", marginTop: 4 }}>
+                <div className="perf-chart-axis">
                   <span>{formatTime(timeSeries[0]?.timestamp || 0)}</span>
                   <span>{formatTime(timeSeries[timeSeries.length - 1]?.timestamp || 0)}</span>
                 </div>
@@ -224,24 +199,20 @@ export function PerformanceDashboard({ onClose }: PerformanceDashboardProps) {
 
               {/* Events by Type */}
               <div>
-                <div style={{ fontSize: 'var(--fs-md)', fontWeight: 600, marginBottom: 8 }}>
+                <div className="perf-section-title">
                   {S.perf.eventsByType[lang]}
                 </div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                <div className="perf-type-list">
                   {overview.eventsByType.map(evt => {
                     const pct = (evt.count / overview.totalEvents) * 100;
                     return (
-                      <div key={evt.name} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 'var(--fs-sm)' }}>
-                        <span style={{ minWidth: 200, fontFamily: "'Cascadia Code', monospace" }}>{evt.name}</span>
-                        <div style={{ flex: 1, height: 16, background: "var(--bg-secondary, #181825)", borderRadius: 4, overflow: "hidden" }}>
-                          <div style={{
-                            width: `${pct}%`, height: "100%",
-                            background: "linear-gradient(90deg, #3b82f6, #1e40af)",
-                            borderRadius: 4,
-                          }} />
+                      <div key={evt.name} className="perf-type-row">
+                        <span className="perf-type-name">{evt.name}</span>
+                        <div className="perf-type-bar">
+                          <div className="perf-type-fill" style={{ width: `${pct}%` }} />
                         </div>
-                        <span style={{ minWidth: 60, textAlign: "right", color: "var(--text-muted)" }}>{evt.count}</span>
-                        <span style={{ minWidth: 50, textAlign: "right", color: "var(--text-muted)" }}>{pct.toFixed(1)}%</span>
+                        <span className="perf-type-count">{evt.count}</span>
+                        <span className="perf-type-pct">{pct.toFixed(1)}%</span>
                       </div>
                     );
                   })}
@@ -251,24 +222,24 @@ export function PerformanceDashboard({ onClose }: PerformanceDashboardProps) {
           ) : activeTab === "sessions" ? (
             <>
               {/* Session Stats Table */}
-              <table style={tableStyle}>
+              <table className="perf-table">
                 <thead>
                   <tr>
-                    <th style={thStyle}>{S.perf.sessionId[lang]}</th>
-                    <th style={thStyle}>{S.perf.eventCount[lang]}</th>
-                    <th style={thStyle}>{S.perf.duration[lang]}</th>
-                    <th style={thStyle}>{S.perf.firstEvent[lang]}</th>
-                    <th style={thStyle}>{S.perf.lastEvent[lang]}</th>
+                    <th className="perf-th">{S.perf.sessionId[lang]}</th>
+                    <th className="perf-th">{S.perf.eventCount[lang]}</th>
+                    <th className="perf-th">{S.perf.duration[lang]}</th>
+                    <th className="perf-th">{S.perf.firstEvent[lang]}</th>
+                    <th className="perf-th">{S.perf.lastEvent[lang]}</th>
                   </tr>
                 </thead>
                 <tbody>
                   {sessionStats.map(s => (
                     <tr key={s.sessionId}>
-                      <td style={tdStyle}>{s.sessionId.slice(0, 20)}...</td>
-                      <td style={tdStyle}>{s.eventCount}</td>
-                      <td style={tdStyle}>{formatDuration(s.duration)}</td>
-                      <td style={tdStyle}>{formatTime(s.firstEventAt)}</td>
-                      <td style={tdStyle}>{formatTime(s.lastEventAt)}</td>
+                      <td className="perf-td">{s.sessionId.slice(0, 20)}...</td>
+                      <td className="perf-td">{s.eventCount}</td>
+                      <td className="perf-td">{formatDuration(s.duration)}</td>
+                      <td className="perf-td">{formatTime(s.firstEventAt)}</td>
+                      <td className="perf-td">{formatTime(s.lastEventAt)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -278,32 +249,32 @@ export function PerformanceDashboard({ onClose }: PerformanceDashboardProps) {
             <>
               {/* Latency Stats */}
               {latencyStats.length === 0 ? (
-                <div style={{ textAlign: "center", padding: 24, color: "var(--text-muted)" }}>
+                <div className="perf-empty">
                   {S.perf.noData[lang]} — {lang === "zh" ? "需要事件 data 中包含 duration_ms 字段" : "Requires duration_ms field in event data"}
                 </div>
               ) : (
-                <table style={tableStyle}>
+                <table className="perf-table">
                   <thead>
                     <tr>
-                      <th style={thStyle}>{S.perf.eventName[lang]}</th>
-                      <th style={thStyle}>{S.perf.count[lang]}</th>
-                      <th style={thStyle}>{S.perf.avgMs[lang]}</th>
-                      <th style={thStyle}>{S.perf.minMs[lang]}</th>
-                      <th style={thStyle}>{S.perf.maxMs[lang]}</th>
-                      <th style={thStyle}>{S.perf.p50Ms[lang]}</th>
-                      <th style={thStyle}>{S.perf.p95Ms[lang]}</th>
+                      <th className="perf-th">{S.perf.eventName[lang]}</th>
+                      <th className="perf-th">{S.perf.count[lang]}</th>
+                      <th className="perf-th">{S.perf.avgMs[lang]}</th>
+                      <th className="perf-th">{S.perf.minMs[lang]}</th>
+                      <th className="perf-th">{S.perf.maxMs[lang]}</th>
+                      <th className="perf-th">{S.perf.p50Ms[lang]}</th>
+                      <th className="perf-th">{S.perf.p95Ms[lang]}</th>
                     </tr>
                   </thead>
                   <tbody>
                     {latencyStats.map(l => (
                       <tr key={l.eventName}>
-                        <td style={tdStyle}>{l.eventName}</td>
-                        <td style={tdStyle}>{l.count}</td>
-                        <td style={tdStyle}>{l.avgMs}</td>
-                        <td style={tdStyle}>{l.minMs}</td>
-                        <td style={tdStyle}>{l.maxMs}</td>
-                        <td style={tdStyle}>{l.p50Ms}</td>
-                        <td style={tdStyle}>{l.p95Ms}</td>
+                        <td className="perf-td">{l.eventName}</td>
+                        <td className="perf-td">{l.count}</td>
+                        <td className="perf-td">{l.avgMs}</td>
+                        <td className="perf-td">{l.minMs}</td>
+                        <td className="perf-td">{l.maxMs}</td>
+                        <td className="perf-td">{l.p50Ms}</td>
+                        <td className="perf-td">{l.p95Ms}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -315,25 +286,15 @@ export function PerformanceDashboard({ onClose }: PerformanceDashboardProps) {
 
         {/* Clear confirmation dialog */}
         {showClearConfirm && (
-          <div style={{
-            position: "absolute", inset: 0,
-            background: "var(--overlay-backdrop)",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            zIndex: 10,
-          }} onClick={() => setShowClearConfirm(false)}>
-            <div style={{
-              background: "var(--bg-primary, #1e1e2e)",
-              border: "1px solid var(--border-color, #333)",
-              borderRadius: 12, padding: 24, maxWidth: 360,
-              textAlign: "center",
-            }} onClick={e => e.stopPropagation()}>
-              <Trash2 size={32} style={{ color: "var(--error)", marginBottom: 8 }} />
-              <div style={{ marginBottom: 16, fontSize: 'var(--fs-md)' }}>{S.perf.clearConfirm[lang]}</div>
-              <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
-                <button onClick={() => setShowClearConfirm(false)} style={dialogBtnStyle}>
+          <div className="perf-dialog-overlay" onClick={() => setShowClearConfirm(false)}>
+            <div className="perf-dialog" onClick={e => e.stopPropagation()}>
+              <Trash2 size={32} className="perf-dialog-icon" />
+              <div className="perf-dialog-text">{S.perf.clearConfirm[lang]}</div>
+              <div className="perf-dialog-actions">
+                <button onClick={() => setShowClearConfirm(false)} className="perf-dialog-btn">
                   {S.perf.clearAll[lang].includes("清") ? "取消" : "Cancel"}
                 </button>
-                <button onClick={handleClearAll} style={{ ...dialogBtnStyle, background: "var(--error)", color: "var(--text-on-accent)", border: "none" }}>
+                <button onClick={handleClearAll} className="perf-dialog-btn is-danger">
                   {S.perf.clearAll[lang]}
                 </button>
               </div>
@@ -352,13 +313,7 @@ function TabButton({ active, onClick, icon, label }: { active: boolean; onClick:
   return (
     <button
       onClick={onClick}
-      style={{
-        display: "flex", alignItems: "center", gap: 4,
-        padding: "4px 10px", borderRadius: 6, fontSize: 'var(--fs-sm)', cursor: "pointer",
-        border: active ? "1px solid var(--accent, #7c3aed)" : "1px solid var(--border-color, #333)",
-        background: active ? "var(--accent-soft, rgba(124,58,237,0.15))" : "transparent",
-        color: "inherit", fontWeight: active ? 600 : 400,
-      }}
+      className={`perf-tab-btn${active ? " is-active" : ""}`}
     >
       {icon}
       {label}
@@ -368,53 +323,11 @@ function TabButton({ active, onClick, icon, label }: { active: boolean; onClick:
 
 function StatCard({ value, label, color, suffix }: { value: number; label: string; color: string; suffix?: string }) {
   return (
-    <div style={{
-      display: "flex", flexDirection: "column", alignItems: "center",
-      padding: "12px 20px", borderRadius: 8,
-      border: `1px solid ${color}40`,
-      background: `${color}10`,
-      minWidth: 120,
-    }}>
-      <span style={{ fontSize: 'var(--fs-hero)', fontWeight: 700, color }}>
-        {value}{suffix ? <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 400, marginLeft: 4 }}>{suffix}</span> : null}
+    <div className="perf-stat-card" style={{ color }}>
+      <span className="perf-stat-value">
+        {value}{suffix ? <span className="perf-stat-suffix">{suffix}</span> : null}
       </span>
-      <span style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", marginTop: 2 }}>{label}</span>
+      <span className="perf-stat-label">{label}</span>
     </div>
   );
 }
-
-// ========== Styles ==========
-
-const headerBtnStyle: React.CSSProperties = {
-  display: "inline-flex", alignItems: "center", gap: 4,
-  padding: "3px 8px", borderRadius: 4, fontSize: 'var(--fs-sm)', cursor: "pointer",
-  border: "1px solid var(--border-color, #333)", background: "transparent", color: "inherit",
-};
-
-const selectStyle: React.CSSProperties = {
-  padding: "3px 8px", borderRadius: 4, fontSize: 'var(--fs-sm)',
-  background: "var(--bg-secondary, #181825)",
-  border: "1px solid var(--border-color, #333)",
-  color: "inherit", cursor: "pointer",
-};
-
-const tableStyle: React.CSSProperties = {
-  width: "100%", borderCollapse: "collapse", fontSize: 'var(--fs-sm)',
-};
-
-const thStyle: React.CSSProperties = {
-  textAlign: "left", padding: "8px 6px",
-  borderBottom: "1px solid var(--border-color, #333)",
-  fontWeight: 600, fontSize: 'var(--fs-sm)', color: "var(--text-muted)",
-  textTransform: "uppercase",
-};
-
-const tdStyle: React.CSSProperties = {
-  padding: "6px", borderBottom: "1px solid var(--border-color, #222)",
-  fontFamily: "'Cascadia Code', 'Fira Code', monospace",
-};
-
-const dialogBtnStyle: React.CSSProperties = {
-  padding: "6px 16px", borderRadius: 6, fontSize: 'var(--fs-base)', cursor: "pointer",
-  border: "1px solid var(--border-color, #333)", background: "transparent", color: "inherit",
-};

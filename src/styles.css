@@ -8511,6 +8511,285 @@ border-bottom: 1px solid var(--accent);
 }
 
 /* ==========================================================================
+ * 性能面板（PerformanceDashboard）：第 20 波
+ * 统计卡的色用「内联只给 color + currentColor 派生淡底淡边」（§2.3 状态色不实心填充），
+ * 趋势图/占比条的蓝色渐变也从写死的十六进制改成 --info 派生。
+ * ========================================================================== */
+.perf-panel { width: 100%; height: 100%; display: flex; flex-direction: column; overflow: hidden; background: var(--bg-primary); }
+.perf-panel-inline { position: relative; }
+
+.perf-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+  padding: var(--space-6) var(--space-8);
+  border-bottom: 1px solid var(--border-primary);
+}
+.perf-header-title { display: flex; align-items: center; gap: var(--space-4); }
+.perf-title { font-size: var(--fs-lg); font-weight: 700; }
+.perf-header-actions { display: flex; align-items: center; gap: var(--space-4); }
+
+.perf-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 3px var(--space-4);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: inherit;
+  font-family: inherit;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+.perf-btn:hover { background: var(--bg-hover); }
+
+.perf-tabs {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-8);
+  border-bottom: 1px solid var(--border-primary);
+}
+.perf-tab-group { display: flex; gap: var(--space-2); }
+.perf-controls { display: flex; align-items: center; gap: var(--space-4); }
+.perf-select {
+  padding: 3px var(--space-4);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-sm);
+  background: var(--bg-secondary);
+  color: inherit;
+  font-family: inherit;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+.perf-auto-refresh { display: flex; align-items: center; gap: var(--space-2); font-size: var(--fs-sm); cursor: pointer; }
+.perf-msg { padding: var(--space-2) var(--space-8); font-size: var(--fs-sm); color: var(--success); }
+.perf-content { flex: 1; overflow-y: auto; padding: var(--space-6) var(--space-8); }
+
+.perf-empty { padding: var(--space-12); text-align: center; color: var(--text-muted); }
+.perf-empty-icon { opacity: 0.3; margin-bottom: var(--space-4); }
+
+.perf-stat-row { display: flex; gap: var(--space-6); flex-wrap: wrap; margin-bottom: var(--space-8); }
+/* 颜色由内联 style 给出，底/边从当前色派生 */
+.perf-stat-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 120px;
+  padding: var(--space-6) var(--space-9);
+  border: 1px solid color-mix(in srgb, currentColor 25%, transparent);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, currentColor 6%, transparent);
+}
+.perf-stat-value { font-size: var(--fs-hero); font-weight: 700; }
+.perf-stat-suffix { font-size: var(--fs-sm); font-weight: 400; margin-left: var(--space-2); }
+.perf-stat-label { margin-top: var(--space-1); font-size: var(--fs-sm); color: var(--text-muted); }
+
+.perf-section { margin-bottom: var(--space-8); }
+.perf-section-title { display: flex; align-items: center; gap: var(--space-2); margin-bottom: var(--space-4); font-size: var(--fs-md); font-weight: 600; }
+
+.perf-chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 1px;
+  height: 120px;
+  padding: var(--space-4) 0;
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius);
+  background: var(--bg-secondary);
+}
+.perf-chart-bar {
+  flex: 1;
+  min-width: 2px;
+  margin: 0 0.5px;
+  border-radius: 2px 2px 0 0;
+  background: transparent;
+}
+.perf-chart-bar.has-value {
+  background: linear-gradient(180deg, var(--info), color-mix(in srgb, var(--info) 55%, var(--bg-primary)));
+}
+.perf-chart-axis { display: flex; justify-content: space-between; margin-top: var(--space-2); font-size: var(--fs-xs); color: var(--text-muted); }
+
+.perf-type-list { display: flex; flex-direction: column; gap: var(--space-2); }
+.perf-type-row { display: flex; align-items: center; gap: var(--space-4); font-size: var(--fs-sm); }
+.perf-type-name { min-width: 200px; font-family: var(--font-mono); }
+.perf-type-bar { flex: 1; height: 16px; border-radius: var(--radius-sm); background: var(--bg-secondary); overflow: hidden; }
+.perf-type-fill {
+  height: 100%;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(90deg, var(--info), color-mix(in srgb, var(--info) 55%, var(--bg-primary)));
+}
+.perf-type-count { min-width: 60px; text-align: right; color: var(--text-muted); }
+.perf-type-pct { min-width: 50px; text-align: right; color: var(--text-muted); }
+
+/* 表格：表头大写下划线，正文等宽（数值列对齐） */
+.perf-table { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); }
+.perf-th {
+  padding: var(--space-4) var(--space-3);
+  border-bottom: 1px solid var(--border-primary);
+  text-align: left;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+}
+.perf-td {
+  padding: var(--space-3);
+  border-bottom: 1px solid var(--border-secondary);
+  font-family: var(--font-mono);
+}
+
+/* 面板内的确认层（不覆盖整窗，所以是 absolute 而不是统一 modal-overlay） */
+.perf-dialog-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: var(--z-dropdown);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--overlay-backdrop);
+}
+.perf-dialog {
+  max-width: 360px;
+  padding: var(--space-10);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-lg);
+  background: var(--bg-primary);
+  text-align: center;
+}
+.perf-dialog-icon { color: var(--error); margin-bottom: var(--space-4); }
+.perf-dialog-text { margin-bottom: var(--space-8); font-size: var(--fs-md); }
+.perf-dialog-actions { display: flex; gap: var(--space-4); justify-content: center; }
+.perf-dialog-btn {
+  padding: var(--space-3) var(--space-8);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: inherit;
+  font-family: inherit;
+  font-size: var(--fs-base);
+  cursor: pointer;
+}
+.perf-dialog-btn.is-danger { border: none; background: var(--error); color: var(--text-on-accent); }
+.perf-dialog-btn.is-danger:hover { background: var(--error-hover); }
+
+.perf-tab-btn {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-5);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: inherit;
+  font-family: inherit;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+.perf-tab-btn.is-active { border-color: var(--accent); background: var(--accent-muted); font-weight: 600; }
+
+/* ==========================================================================
+ * 多模态设置面板（MultimodalPanel）：第 20 波
+ * 内嵌态 / 浮动态由两个类区分（此前是一段三元内联样式）；表单重复的
+ * 「标签 + 100% 宽控件」也收成 .mm-label / .mm-control。
+ * ========================================================================== */
+.mm-panel-inline {
+  display: flex;
+  flex-direction: column;
+  margin-top: var(--space-4);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius);
+  background: var(--bg-primary);
+}
+.mm-panel-floating {
+  position: fixed;
+  top: var(--chat-body-top, 48px);
+  right: 0;
+  bottom: var(--chat-body-bottom, 140px);
+  z-index: var(--z-dropdown);
+  display: flex;
+  flex-direction: column;
+  width: 480px;
+  border-left: 1px solid var(--border-primary);
+  background: var(--bg-primary);
+}
+.mm-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-6) var(--space-8);
+  border-bottom: 1px solid var(--border-primary);
+}
+.mm-title { margin: 0; font-size: var(--fs-lg); }
+.mm-close { border: none; background: none; color: var(--text-muted); font-size: var(--fs-xl); cursor: pointer; }
+.mm-close:hover { color: var(--text-primary); }
+.mm-body { flex: 1; overflow: auto; padding: var(--space-8); }
+.mm-intro { margin-bottom: var(--space-8); font-size: var(--fs-sm); color: var(--text-secondary); }
+
+.mm-card {
+  margin-bottom: var(--space-6);
+  padding: var(--space-6);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius);
+  background: var(--bg-secondary);
+}
+.mm-card.is-enabled { border-color: var(--accent); }
+.mm-card-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--space-4); }
+.mm-card-icon { margin-right: var(--space-3); font-size: var(--fs-lg); }
+.mm-card-title { font-weight: 600; font-size: var(--fs-md); }
+.mm-toggle { font-size: var(--fs-sm); cursor: pointer; }
+.mm-card-desc { margin-bottom: var(--space-5); font-size: var(--fs-sm); color: var(--text-secondary); }
+.mm-card-desc--tight { margin-bottom: 0; }
+
+.mm-note {
+  margin-top: var(--space-4);
+  padding: var(--space-3) var(--space-5);
+  border: 1px solid color-mix(in srgb, var(--success) 20%, transparent);
+  border-radius: var(--radius-xs);
+  background: color-mix(in srgb, var(--success) 8%, transparent);
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+.mm-fields { display: flex; flex-direction: column; gap: var(--space-4); }
+.mm-label { display: block; margin-bottom: var(--space-2); font-size: var(--fs-sm); color: var(--text-muted); }
+.mm-control { width: 100%; box-sizing: border-box; font-size: var(--fs-sm); }
+
+.mm-model-info {
+  padding: var(--space-4);
+  border-radius: var(--radius-xs);
+  background: var(--bg-tertiary);
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+.mm-model-desc { margin-bottom: var(--space-2); }
+.mm-model-tags { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.mm-tag { padding: 1px var(--space-3); border-radius: var(--radius-sm); background: var(--bg-secondary); font-size: var(--fs-xs); }
+
+.mm-status { padding: var(--space-3) var(--space-4); border-radius: var(--radius-xs); font-size: var(--fs-sm); background: var(--bg-tertiary); color: var(--text-secondary); }
+.mm-status.is-ready { background: color-mix(in srgb, var(--success) 10%, transparent); color: var(--success); }
+.mm-status.is-loading { background: color-mix(in srgb, var(--info) 10%, transparent); color: var(--info); }
+.mm-status.is-error { background: color-mix(in srgb, var(--error) 10%, transparent); color: var(--error); }
+.mm-help { padding: var(--space-2) 0; font-size: var(--fs-sm); color: var(--text-muted); line-height: 1.6; }
+
+.mm-footer {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-6) var(--space-8);
+  border-top: 1px solid var(--border-primary);
+}
+.mm-saved { font-size: var(--fs-sm); color: var(--success); }
+.mm-save-btn { margin-left: auto; padding: var(--space-4) var(--space-9); font-size: var(--fs-base); }
+
+/* ==========================================================================
  * 会话恢复面板（RecoveryPanel）：把内联样式收口成具名类（第 14 波）
  * 该组件此前 149 个内联样式属性（审计规则 inline-style-dense），
  * 这里按 §3 组件语言改用具名类，只保留真正动态的部分（统计卡的颜色）留在内联。

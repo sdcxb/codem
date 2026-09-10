@@ -194,6 +194,8 @@ node tools/ui-audit/codemod-icon-scale.mjs [--write]  # 图标工具类 → .ico
 
 | **第 19 波** | 2026-09-10 | **0** ✅ | **14** | **内联样式收口 + 重复形态变成工具**：① 新增 `codemod-inline-to-class.mjs`：把**完全相同的**内联样式对象批量换成共享类，首轮扫出 64 处 —— `display:inline + verticalAlign:middle`（31）、`fs-sm + text-muted`（27）、带 4px 间距的图标（6），这些形态此前在每个文件里手写一遍；为此补 `.icon-inline` / `.icon-inline-gap` / `.hint-sm` 三个共享类（写进 §3 闭集表）。② `AgentManager`（170 → 0）与 `CicdPanel`（176 → 0）收口；`CicdPanel` 的状态色表从写死的十六进制改成语义令牌字符串（`success: "var(--success)"` …），徽标颜色从此跟着主题走；又发现两个"从没定义过"的类名（`.cicd-panel-inline`）。③ codemod 第一版曾把整行缩进压成一个空格（用了全局空白压缩），已修成"只清理被删属性留下的空白"，并把超范围替换改为逐行全局替换 |
 
+| **第 20 波** | 2026-09-10 | **0** ✅ | **12** | **内联样式收口（性能面板 + 多模态设置）**：`PerformanceDashboard`（151 → 0）与 `MultimodalPanel`（121 → 0）。① 统计卡改成「内联只给 `color`，淡底淡边由 `currentColor` 派生」，调用处也从写死的十六进制改成语义令牌（`#3b82f6`→`var(--info)`、`#a855f7`→`var(--accent)`、`#22c55e`→`var(--success)`）；② 趋势图与占比条的蓝色渐变从写死色值改成 `--info` 派生；③ `MultimodalPanel` 的"内嵌 / 浮动"两态原本是一段三元内联样式，改成 `.mm-panel-inline` / `.mm-panel-floating` 两个类；④ 又发现两个"从没定义过"的类名（`.perf-dashboard*`、`.multimodal-inline-panel`）—— 这些组件此前**完全靠内联样式撑着**，类名只是空壳 |
+
 ### 全项目现场事实（来自 UI 交互界面清单，作为工作队列）
 - 挂载层：64 个 `SlotBridge` 渲染点 + 54 处 `slots.register` + 44 处 `createPortal`（另 51 个 SlotBridge 在 `App.tsx`）。
 - 浮层：205 个 overlay 类名实例散在 60 个 tsx 里，约 35 种外壳；`var(--z-*)` 只被用了 9 次，
@@ -227,9 +229,9 @@ node tools/ui-audit/codemod-icon-scale.mjs [--write]  # 图标工具类 → .ico
 | `modal-shell-bespoke` | error | 15 | **0** ✅ |
 | `spacing-offgrid` | warn | 13 | **0** ✅ |
 | `css-class-undefined` | warn | — | **0** ✅（第 10 波清零；审计器已扩面到模板字面量） |
-| `inline-style-dense` | warn | 58 | 14（唯一剩下的 warn；第 14 波先修正了度量口径 50 → 25，再累计收口 11 个文件） |
+| `inline-style-dense` | warn | 58 | 12（唯一剩下的 warn；第 14 波先修正了度量口径 50 → 25，再累计收口 13 个文件） |
 | **error 合计** | | **533** | **0** ✅ |
-| **warn 合计** | | 64 | **14** |
+| **warn 合计** | | 64 | **12** |
 
 > 注：`color-hardcoded-tsx` 中途曾报 53 → 9 —— 不是"改多了"，而是审计器修掉了假阳性（见第 11 波说明）。
 > `fs-hardcoded` 第 12 波一度报 590 —— 也不是"变差了"，而是审计器**首次开始扫 CSS 侧**（此前 591 处写死的字号
@@ -261,7 +263,8 @@ node tools/ui-audit/codemod-icon-scale.mjs [--write]  # 图标工具类 → .ico
 16. **第 16 波**：设置类面板 `LayeredSettingsPanel`（141 → 0）收口（详见 §5 表）。
 17. **第 17 波**：`UsageStats`（128 → 0）、`GitEnvSettings`（172 → 0）收口；TSX 侧色值判定改为逐字面量，暴露并修掉 18 处藏在条件分支里的硬编码色（详见 §5 表）。
 18. **第 18 波**：`WechatSettings`（141 → 0）收口，顺带修掉 `var(--border-color)` 这个不存在的令牌（详见 §5 表）。
-19. **第 19 波（本轮）**：新增 `codemod-inline-to-class.mjs`（重复内联形态 → 共享类，首轮 64 处）；`AgentManager`（170 → 0）与 `CicdPanel`（176 → 0）收口（详见 §5 表）。
+19. **第 19 波**：新增 `codemod-inline-to-class.mjs`（重复内联形态 → 共享类，首轮 64 处）；`AgentManager`（170 → 0）与 `CicdPanel`（176 → 0）收口（详见 §5 表）。
+20. **第 20 波（本轮）**：`PerformanceDashboard`（151 → 0）、`MultimodalPanel`（121 → 0）收口（详见 §5 表）。
 
 ### 下一轮的工作队列（按性价比排序）
 
