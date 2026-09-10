@@ -378,6 +378,28 @@
   font-size: var(--fs-xs);
   color: var(--text-muted);
 }
+/* 空态诊断（时间线为空时列出采样看到的计数，便于判断是「真没事件」还是「数据源没接上」） */
+.lo-empty--diag { text-align: left; padding: 12px 8px; }
+.lo-empty__title { margin: 0 0 8px; color: var(--text-secondary); }
+.lo-diag {
+  list-style: none;
+  margin: 0 0 8px;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 4px 10px;
+}
+.lo-diag li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 3px 8px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--bg-tertiary) 60%, transparent);
+}
+.lo-diag li > span { color: var(--text-muted); }
+.lo-diag li > b { color: var(--text-primary); font-variant-numeric: tabular-nums; }
 .lo-pill {
   display: inline-flex;
   align-items: center;

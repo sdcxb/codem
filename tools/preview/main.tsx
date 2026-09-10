@@ -117,12 +117,33 @@ const snapshot: LibrarySnapshot = {
     messages: 96,
     health: 0.74,
   },
-  events: [
-    { id: "e1", at: NOW - 2_000, kind: "tool", severity: "active", text: "write · src/App.tsx" },
-    { id: "e2", at: NOW - 5_000, kind: "task", severity: "ok", text: "[前端重构小队] t2 调研方案", teamId: "team-1" },
-    { id: "e3", at: NOW - 9_000, kind: "tool", severity: "bad", text: "bash · npm test" },
-    { id: "e4", at: NOW - 20_000, kind: "agent", severity: "active", text: "审计插件 — grep" },
-  ],
+  // 事件流用「真实规模」的条数（线上最多 120 条）：4 条时看不出列表被裁切/滚动的问题
+  events: Array.from({ length: 60 }, (_, i) => {
+    const kinds = ["tool", "task", "session", "agent", "error", "cost", "system"] as const;
+    const kind = kinds[i % kinds.length];
+    const sev = kind === "error" ? "bad" : kind === "task" || kind === "cost" ? "ok" : "active";
+    return {
+      id: `evt-${i}`,
+      at: NOW - i * 3_000,
+      kind,
+      severity: sev,
+      text:
+        kind === "tool"
+          ? `write · src/module-${i}.tsx`
+          : kind === "task"
+            ? `[前端重构小队] t${i} 实现第 ${i} 个模块`
+            : kind === "agent"
+              ? `审计插件 — grep 第 ${i} 轮`
+              : kind === "error"
+                ? `bash · npm test（第 ${i} 次失败）`
+                : kind === "cost"
+                  ? `token 消耗 ${1000 + i * 37}`
+                  : kind === "session"
+                    ? `主控会话 — 第 ${i} 步`
+                    : `telemetry.tool.executed #${i}`,
+      ...(kind === "task" || kind === "agent" ? { teamId: "team-1" } : {}),
+    } as never;
+  }),
   activity: {
     perDay: Object.fromEntries(Array.from({ length: 14 }, (_, i) => [`2026-08-${String(i + 28).padStart(2, "0")}`, (i * 7) % 19])),
     perHour: new Array(24).fill(0).map((_, h) => (h > 8 && h < 20 ? (h * 3) % 11 : 0)),

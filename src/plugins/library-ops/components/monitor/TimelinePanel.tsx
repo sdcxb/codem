@@ -1,4 +1,4 @@
-﻿/**
+/**
  * TimelinePanel —— 时间线页（对标 lobster-pet 的实时事件流 / `CronList`）。
  *
  * 全量事件按时间倒序展示，按严重度着色，支持按类别过滤；
@@ -10,7 +10,6 @@ import type { LibraryEvent, LibraryEventKind, LibrarySnapshot } from "../../type
 import { formatClock } from "../../core/format";
 import { Card, Empty, Pill } from "./common";
 import { eventKindLabel, eventKindToken } from "./labels";
-
 const KINDS: LibraryEventKind[] = ["session", "team", "task", "tool", "agent", "error", "cost", "system"];
 
 export interface TimelinePanelProps {
@@ -51,7 +50,7 @@ export function TimelinePanel({ snapshot, zh }: TimelinePanelProps) {
       }
     >
       {events.length === 0 ? (
-        <Empty text={zh ? "暂无事件" : "No events"} />
+        <EmptyDiag snapshot={snapshot} zh={zh} filtered={filter !== "all"} />
       ) : (
         <ul className="lo-timeline">
           {events.map((e) => (
@@ -60,6 +59,55 @@ export function TimelinePanel({ snapshot, zh }: TimelinePanelProps) {
         </ul>
       )}
     </Card>
+  );
+}
+
+/**
+ * 空态诊断 —— 时间线为空时，直接把「采样看到了什么」列出来，
+ * 用户（和我们）一眼能判断是「真的没事件」还是「某个数据源没接上」。
+ */
+function EmptyDiag({ snapshot, zh, filtered }: { snapshot: LibrarySnapshot; zh: boolean; filtered: boolean }) {
+  const m = snapshot.metrics;
+  const s = snapshot.sources;
+  const rows: Array<[string, string | number]> = [
+    [zh ? "会话" : "Sessions", `${s.sessions}${zh ? "（活跃 " : " (active "}${s.activeSessions}${zh ? "）" : ")"}`],
+    [zh ? "消息" : "Messages", m.messages],
+    [zh ? "工具调用" : "Tool calls", m.toolCalls],
+    [zh ? "子智能体" : "Sub-agents", s.subagents],
+    [zh ? "运行时团队" : "Runtime teams", s.teams],
+    [zh ? "遥测事件" : "Telemetry events", s.telemetryEvents],
+  ];
+  return (
+    <div className="lo-empty lo-empty--diag">
+      <p className="lo-empty__title">
+        {filtered
+          ? zh
+            ? "该类别下暂无事件"
+            : "No events in this category"
+          : zh
+            ? "这个窗口里暂时没有事件"
+            : "No events in this window"}
+      </p>
+      <ul className="lo-diag">
+        {rows.map(([k, v]) => (
+          <li key={k}>
+            <span>{k}</span>
+            <b>{v}</b>
+          </li>
+        ))}
+      </ul>
+      {s.failed.length > 0 && (
+        <p className="lo-note" style={{ color: "var(--error)" }}>
+          {zh ? "采集失败的来源：" : "Failed sources: "}
+          {s.failed.join(", ")}
+        </p>
+      )}
+      <p className="lo-note">
+        {zh
+          ? "时间线的事件来自：对话消息（用户发言 / 助手回复）、工具调用、团队任务、子智能体活动、宿主遥测。"
+          : "The timeline collects: chat messages, tool calls, team tasks, sub-agent activity and host telemetry."}
+      </p>
+    </div>
   );
 }
 

@@ -805,6 +805,40 @@ function buildEvents(input: {
   const { actors, teams, telemetry, messages, now } = input;
   const events: LibraryEvent[] = [];
 
+  /**
+   * 对话消息（v1.15.2 新增）。
+   *
+   * 以前只有**工具调用**会变成事件，于是「纯聊天 / 只问答」的会话在时间线里是空的 ——
+   * 用户明明有项目有对话，却看到「暂无事件」。这里把最近 30 条消息也纳入时间线：
+   * - 用户发言 → `session` / active
+   * - 助手回复（有正文）→ `session` / ok
+   * - 失败消息 → `error` / bad
+   * 纯工具调用消息不重复出条目（下面已有专门的 `tool` 事件）。
+   */
+  const recentMessages = [...messages]
+    .sort((a, b) => (b.timestamp ?? 0) - (a.timestamp ?? 0))
+    .slice(0, 30);
+  for (const m of recentMessages) {
+    const at = m.timestamp ?? now;
+    const body = typeof m.content === "string" ? m.content.replace(/\s+/g, " ").trim().slice(0, 80) : "";
+    if (m.status === "error") {
+      events.push({
+        id: `msg:${m.id}:error`,
+        at,
+        kind: "error",
+        severity: "bad",
+        text: `对话出错 — ${body || m.id}`,
+      });
+      continue;
+    }
+    if (!body) continue;
+    if (m.role === "user") {
+      events.push({ id: `msg:${m.id}:user`, at, kind: "session", severity: "active", text: `用户：${body}` });
+    } else if (m.role === "assistant") {
+      events.push({ id: `msg:${m.id}:assistant`, at, kind: "session", severity: "ok", text: `助手：${body}` });
+    }
+  }
+
   // 最近的工具调用（倒序取 20 条）
   const calls: Array<{ msgId: string; call: ToolCallLike; at: number }> = [];
   for (const m of messages) {
