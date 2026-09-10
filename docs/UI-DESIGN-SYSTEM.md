@@ -110,6 +110,19 @@ frakio-work 的两条关键惯例（我们同步遵守）：
 | 空态 | 居中、`--fs-base`、`--text-muted`，配 1px 虚线或 `0 0 0 1px` 环，最小高度 130px |
 | 列表行 | 32–36px 行高，hover `--bg-hover`，分隔线 `--border-secondary` 且不顶到边 |
 
+**共享具名类（闭集，第 14 波起）**——各面板里反复内联的形态收口到这里，**新增必须写进本表**：
+
+| 类名 | 用途 |
+| --- | --- |
+| `.mono` | 等宽文本（ID / 路径 / 时间戳） |
+| `.panel-section-title` | 面板内小节标题（`--fs-sm` + 600 + `--text-secondary`） |
+| `.panel-empty` | 面板内空态块（虚边 + `--bg-tertiary` + 居中） |
+| `.panel-btn` / `--danger` / `--sm` | 面板内次级按钮；危险态换 `--error` 边与字；`--sm` 用于浮层里的迷你按钮 |
+| `.stat-cards` / `.stat-card` / `.stat-card-value` / `.stat-card-label` | 统计卡片行与卡片 |
+
+> 这一层刻意**保持极小**：它只收口"到处重复写了 5 遍以上、且与业务无关"的形态。
+> 组件自己的结构（`.recovery-item-*` 之类）仍留在组件命名空间里。
+
 ## 4. 审计门禁（可重复运行）
 
 ```bash
@@ -130,7 +143,7 @@ node tools/ui-audit/codemod-icon-scale.mjs [--write]  # 图标工具类 → .ico
 | `radius-offscale` | error | 圆角离格 |
 | `modal-shell-bespoke` | error | 自建浮层外壳，未用统一 `modal-overlay` |
 | `spacing-offgrid` | warn | 间距不在 2px 网格 |
-| `inline-style-dense` | warn | 单文件内联样式过密（应抽 CSS 类） |
+| `inline-style-dense` | warn | 单文件内联样式过密（只数**样式对象内部**的属性；第 14 波修正前会把普通 TS 对象字面量也数进去） |
 | `legacy-popup-shell` | warn | 历史遗留的自建浮层类名（`popup-*`/`overlay-*`/`modal-box-*`/`dialog-box-*`/`sheet-*`） |
 | `css-class-undefined` | warn | **tsx 里用了但没有任何 CSS 定义的类名**（等于没样式；已排除运行时状态类与第三方库类名；模板字面量里的静态类名同样计入） |
 
@@ -159,6 +172,8 @@ node tools/ui-audit/codemod-icon-scale.mjs [--write]  # 图标工具类 → .ico
 | **第 12 波** | 2026-09-10 | **0** ✅ | **50** | **字号令牌化（宿主样式表纳入审计）**：① 审计器新增 **CSS 侧 `fs-hardcoded` 规则**（此前只查 tsx 内联样式，而 `styles.css` 整份被排除在扫描外 —— 最大的现场反而没人看）；② 592 处 `font-size` 写死像素/rem → `var(--fs-*)`，实测**只有 11 处发生 ±1px 变化**（9 处 15px 标题 → `--fs-lg`、1 处 17px 弹窗标题 → `--fs-xl`、2 处输入框镜像层统一到 `--fs-md`），其余 578 处取值不变；③ 补 `--fs-2xs`(11px) 令牌：11px 是项目第二多的小字号（121 处），补档而不是并进 10/12，既保住排版密度，又让它**跟着字号滑杆缩放** —— 这正是「设置里调字号没反应」的根因（滑杆只影响 `var(--fs-*)`）；④ 明确 `em`/`%` 是允许的相对层级（markdown 标题、行内代码）；⑤ 顺带把输入框/镜像层/消息正文统一到 `--fs-md`（此前 15px/15px/14px 三档，发送前后字号会跳变） |
 
 | **第 13 波** | 2026-09-10 | **0** ✅ | **50** | **`styles.css` 的色值与圆角全部令牌化，该文件的例外彻底删除**：① 圆角 22 处（3px×11 → `--radius-sm`；5px×9 → `--radius-xs`；11px 开关轨道/9px 未读徽标 → `--radius-full`，本来就是"半高 = 胶囊"）；② 色值 249 处 → 语义令牌：状态色按色系归位（红→`--error`、绿→`--success`、琥珀→`--warning`、蓝→`--info`、紫蓝→`--accent`），带 alpha 的一律 `color-mix(in srgb, var(--token) N%, transparent)`；投影里的黑 → `--shadow-color`/`--shadow-color-soft`；遮罩黑 → `--overlay-backdrop(-strong)`；`color: white` → `--text-on-accent`、`background: white` → `--surface-content`；③ **新增一批"语义身份"令牌**：`--terminal-bg/-fg`、`--backdrop-black`、`--surface-content`、`--mac-btn-*`、`--window-close-*`、`--skin-preview-*` —— 这些是"外来内容/平台惯例/皮肤数据"，不该硬塞进主题令牌里，但也不该散在规则中；④ **审计器补两处盲区**：命名色（`color: white` 此前完全看不见）现在纳入；`var(--token, #fallback)` 的兜底值按**字面量位置**排除而不是"整行有 var(-- 就放过"—— 后者让 12 行混写（`box-shadow: … var(--border-primary), 0 1px 2px rgba(0,0,0,.04)`）长期漏检，修好后立刻又暴露出 library-ops.css 里 4 处被同一原因藏起来的离格圆角 |
+
+| **第 14 波** | 2026-09-10 | **0** ✅ | **24** | **内联样式收口（开工）**：① **先修工具**：`inline-style-dense` 此前按行统计 `xxx: value` 形态，把普通 TS 对象字面量、函数入参也数进去了 —— 改成只统计 `style={{}}` 真实区间内的属性，文件数 50 → 25（这不是"改好了"，是"量对了"）；② 定义**闭集共享具名类**（`.mono` / `.panel-section-title` / `.panel-empty` / `.panel-btn(--danger/--sm)` / `.stat-cards` / `.stat-card*`），后续文件直接复用而不是各写一套；③ 第一个文件 `RecoveryPanel.tsx`：149 个内联属性 → 0（只留统计卡的颜色这一处真动态值），并顺手统一了它自己的重复按钮/空态/统计卡 |
 
 ### 全项目现场事实（来自 UI 交互界面清单，作为工作队列）
 
@@ -194,15 +209,17 @@ node tools/ui-audit/codemod-icon-scale.mjs [--write]  # 图标工具类 → .ico
 | `modal-shell-bespoke` | error | 15 | **0** ✅ |
 | `spacing-offgrid` | warn | 13 | **0** ✅ |
 | `css-class-undefined` | warn | — | **0** ✅（第 10 波清零；审计器已扩面到模板字面量） |
-| `inline-style-dense` | warn | 58 | 50（仅剩这一类） |
+| `inline-style-dense` | warn | 58 | 24（唯一剩下的 warn；第 14 波先修正了度量口径 50 → 25，再收口 1 个文件） |
 | **error 合计** | | **533** | **0** ✅ |
-| **warn 合计** | | 64 | **50** |
+| **warn 合计** | | 64 | **24** |
 
 > 注：`color-hardcoded-tsx` 中途曾报 53 → 9 —— 不是"改多了"，而是审计器修掉了假阳性（见第 11 波说明）。
 > `fs-hardcoded` 第 12 波一度报 590 —— 也不是"变差了"，而是审计器**首次开始扫 CSS 侧**（此前 591 处写死的字号
 > 因为 `src/styles.css` 整份被排除而完全不可见）。
 > 第 13 波把 CSS 侧判定从「整行」改到「逐字面量」后，又冒出 12 行混写色值与 4 处离格圆角 —— 同样是
 > **工具看不见**而不是"新问题"，修完才真正归零。
+> `inline-style-dense` 第 14 波 50 → 24 是**度量口径修正**（只数样式对象内部），不是重构成果；
+> 重构成果是那之后的 1 个文件（RecoveryPanel 149 → 0）。
 
 ### 已完成的波次
 
@@ -218,13 +235,16 @@ node tools/ui-audit/codemod-icon-scale.mjs [--write]  # 图标工具类 → .ico
 10. **第 10 波**：图标刻度 + 253 处「有类名没样式」清零（详见 §5 表）。
 11. **第 11 波**：色值 70 处（CSS 17 + TSX 53）→ 0；15 处自建浮层 → 统一外壳；审计器精度修复（详见 §5 表）。
 12. **第 12 波**：宿主样式表纳入审计 + 592 处字号令牌化（详见 §5 表）。
-13. **第 13 波（本轮）**：`styles.css` 的 249 处色值 + 22 处离格圆角 → 令牌，该文件的例外彻底删除；审计器补掉命名色与"整行放过"两处盲区（详见 §5 表）。
+13. **第 13 波**：`styles.css` 的 249 处色值 + 22 处离格圆角 → 令牌，该文件的例外彻底删除；审计器补掉命名色与"整行放过"两处盲区（详见 §5 表）。
+14. **第 14 波（本轮）**：内联样式收口开工 —— 修正 `inline-style-dense` 的度量口径（50 → 25 个文件）、定义闭集共享具名类、`RecoveryPanel` 149 → 0（详见 §5 表）。
 
 ### 下一轮的工作队列（按性价比排序）
 
-1. **50 个「内联样式过密」文件**（`inline-style-dense` 是唯一剩下的 warn）：
-   把按钮/输入/卡片/空态/列表行改用具名类，优先处理属性最多的一批
-   （`--rule=inline-style-dense --verbose` 会按文件列出来）；
+1. **继续「内联样式过密」的 24 个文件**（`inline-style-dense` 是唯一剩下的 warn）：
+   按"属性数 ÷ 代码行数"排序做，密度最高的先上（实测：`ppt/PPTAdapter` 62/100 行、`task-center/SquadsTab` 61、
+   `FlashcardViewer`/`LayeredSettingsPanel`/`IssueDetailPanel` 50、`CicdPanel` 37）；
+   每个文件的做法固定为「读组件 → 写组件级具名类（能复用 §3 共享类的就复用）→ 只留真动态值内联 →
+   审计计数必须为 0」，每轮 2–3 个，并同步把新出现的通用形态补进 §3 共享表；
 2. **z-index 令牌化**：`modal-overlay`=200 与 `--z-modal`=1300 互相矛盾，`popover-shield` 的层级仍留在调用处（23 个 tsx 数值 + 13 个 CSS 层级）；
 3. **重复定义收敛**：`styles.css` 内已有同名类被定义两次且取值不同（如 `.badge` 的圆角 10px vs 4px、
    `.workspace-tab` 的 11px vs 12px 字号 —— 后者已被第 12 波统一到 `--fs-sm`），需要新增一条「重复/冲突定义」审计规则；

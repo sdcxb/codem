@@ -7755,6 +7755,155 @@ border-bottom: 1px solid var(--accent);
 }
 
 /* ========== Session Recovery ========== */
+/* ==========================================================================
+ * 共享组件语言（第 14 波起）
+ * 各面板里反复内联的形态收口成这里的**闭集**具名类；新增共享类必须同时写进
+ * docs/UI-DESIGN-SYSTEM.md §3。已收口：
+ *   .mono / .panel-section-title / .panel-empty / .panel-btn(--danger/--sm) /
+ *   .stat-cards / .stat-card(-value/-label)
+ * ========================================================================== */
+.mono { font-family: var(--font-mono); }
+.panel-section-title { font-size: var(--fs-sm); font-weight: 600; color: var(--text-secondary); margin-bottom: var(--space-3); }
+.panel-empty {
+  padding: var(--space-8);
+  text-align: center;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  background: var(--bg-tertiary);
+  border: 1px dashed var(--border-primary);
+  border-radius: var(--radius-xs);
+}
+.stat-cards { display: flex; gap: var(--space-4); flex-wrap: wrap; }
+.stat-card {
+  flex: 1;
+  min-width: 100px;
+  padding: var(--space-4) var(--space-6);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-xs);
+  background: var(--bg-tertiary);
+  text-align: center;
+}
+.stat-card-value { font-size: var(--fs-xl); font-weight: 700; }
+.stat-card-label { font-size: var(--fs-xs); color: var(--text-muted); }
+.panel-btn {
+  padding: var(--space-3) var(--space-7);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-sm);
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  transition: var(--transition-color);
+}
+.panel-btn:hover { border-color: var(--accent); }
+.panel-btn--danger { border-color: var(--error); background: none; color: var(--error); }
+.panel-btn--sm { padding: 2px var(--space-4); font-size: var(--fs-xs); }
+
+/* ==========================================================================
+ * 会话恢复面板（RecoveryPanel）：把内联样式收口成具名类（第 14 波）
+ * 该组件此前 149 个内联样式属性（审计规则 inline-style-dense），
+ * 这里按 §3 组件语言改用具名类，只保留真正动态的部分（统计卡的颜色）留在内联。
+ * ========================================================================== */
+.recovery-panel { display: flex; flex-direction: column; gap: var(--space-6); }
+.recovery-title { font-size: var(--fs-md); font-weight: 700; color: var(--text-primary); }
+.recovery-subtitle { font-size: var(--fs-sm); color: var(--text-secondary); margin-top: var(--space-1); }
+
+.recovery-list { display: flex; flex-direction: column; gap: var(--space-2); max-height: 300px; overflow-y: auto; }
+.recovery-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-5);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-sm);
+  background: var(--bg-tertiary);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  transition: var(--transition-color);
+}
+.recovery-item:hover { border-color: var(--accent); }
+.recovery-item.is-active {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+.recovery-item-icon { font-size: var(--fs-md); }
+.recovery-item-body { flex: 1; min-width: 0; }
+.recovery-item-id { font-weight: 600; color: var(--text-primary); font-family: var(--font-mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.recovery-item-meta { font-size: var(--fs-xs); color: var(--text-muted); }
+.recovery-item-project {
+  font-size: var(--fs-xs);
+  padding: 1px var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+}
+.recovery-item-delete {
+  font-size: var(--fs-xs);
+  padding: 2px var(--space-3);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--error);
+  background: none;
+  color: var(--error);
+  cursor: pointer;
+}
+
+.recovery-detail {
+  padding: var(--space-6);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius);
+  background: var(--bg-secondary);
+  font-size: var(--fs-sm);
+}
+.recovery-detail-title { font-weight: 700; font-size: var(--fs-base); margin-bottom: var(--space-4); color: var(--text-primary); }
+.recovery-detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-3); }
+.recovery-detail-key { color: var(--text-muted); }
+.mono { font-family: var(--font-mono); }
+.recovery-messages { margin-top: var(--space-4); }
+.recovery-messages-title { font-weight: 600; color: var(--text-secondary); margin-bottom: var(--space-2); }
+.recovery-messages-list { max-height: 150px; overflow-y: auto; display: flex; flex-direction: column; gap: var(--space-1); }
+.recovery-message {
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--bg-tertiary);
+  font-size: var(--fs-xs);
+  color: var(--text-secondary);
+}
+.recovery-message-role { font-weight: 600; color: var(--accent); }
+.recovery-message-role.is-user { color: var(--info); }
+
+.recovery-actions { display: flex; gap: var(--space-4); flex-wrap: wrap; }
+.panel-btn {
+  padding: var(--space-3) var(--space-7);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-sm);
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  transition: var(--transition-color);
+}
+.panel-btn:hover { border-color: var(--accent); }
+.panel-btn--danger { border-color: var(--error); background: none; color: var(--error); }
+.panel-btn--sm { padding: 2px var(--space-4); font-size: var(--fs-xs); }
+
+.recovery-export-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-2); }
+.recovery-export-title { font-size: var(--fs-sm); font-weight: 600; color: var(--text-secondary); }
+.recovery-export-pre {
+  font-size: var(--fs-xs);
+  font-family: var(--font-mono);
+  padding: var(--space-4);
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-sm);
+  max-height: 200px;
+  overflow: auto;
+  white-space: pre-wrap;
+  margin: 0;
+}
+
 .session-recovery {
   display: flex;
   flex-direction: column;

@@ -224,7 +224,6 @@ function scanTsx(rel, src) {
 
     if (!wasInStyle) {
       if (/position:\s*(?:'|")fixed/.test(line)) modalish++;
-      styleProps += (line.match(/[a-zA-Z]+:\s*(?:'|"|\{|[0-9]|var\()/g) ?? []).length;
       return;
     }
 
@@ -268,9 +267,15 @@ function scanTsx(rel, src) {
       add("spacing-offgrid", rel, no, raw, `${sp[1]}: ${sp[2]}`);
     }
 
-    styleProps += (line.match(/[a-zA-Z]+:\s*(?:'|"|\{|[0-9]|var\()/g) ?? []).length;
     if (/position:\s*(?:'|")fixed/.test(line)) modalish++;
   });
+
+  // 内联样式密度：**只数样式对象内部**的属性。
+  // 此前按行统计 `xxx: value` 形态，会把普通 TS 对象字面量、函数入参也数进去 ——
+  // 那不是"内联样式过密"，是"这个文件代码多"。现在按 computeStyleRanges 的真实区间统计。
+  for (const [s, e] of styleRanges) {
+    styleProps += (src.slice(s, e).match(/[a-zA-Z-]+:\s*(?:'|"|\{|[0-9]|var\()/g) ?? []).length;
+  }
 
   if (modalish > 0 && !hasUnifiedShell) {
     add("modal-shell-bespoke", rel, 1, "(file-level)", `${modalish} 处 position:fixed 浮层，未见统一外壳类`);
