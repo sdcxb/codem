@@ -95,7 +95,7 @@ export function UsageStats({ onClose }: UsageStatsProps) {
             {/* Conversation Overview */}
             <div className="usage-viz-section">
               <div className="usage-viz-section-header">
-                <span style={{ display: "flex", alignItems: "center", gap: 6 }}><UsageIcon size={14} /> 对话概览</span>
+                <span className="usage-viz-section-title"><UsageIcon size={14} /> 对话概览</span>
               </div>
               <ConversationOverview sessionId={currentSession?.id} showCostBar={true} />
             </div>
@@ -120,7 +120,7 @@ export function UsageStats({ onClose }: UsageStatsProps) {
             {cacheAgg && (
               <div className="usage-stat-card" title={`缓存读 ${cacheAgg.hit.toLocaleString()} / 输入 ${cacheAgg.input.toLocaleString()}（近 7 天 ${cacheAgg.calls} 次上报调用）`}>
                 <span className="usage-stat-label">缓存命中率</span>
-                <span className="usage-stat-value" style={{ color: "var(--success)" }}>{cacheAgg.pct}%</span>
+                <span className="usage-stat-value is-success">{cacheAgg.pct}%</span>
               </div>
             )}
             <div className="usage-stat-card">
@@ -199,7 +199,7 @@ export function UsageStats({ onClose }: UsageStatsProps) {
                   <span>{formatTime(record.timestamp)}</span>
                   <span>{record.inputTokens}→{record.outputTokens} tokens</span>
                   <span>{formatDuration(record.duration)}</span>
-                  {record.toolCalls > 0 && <span style={{ display: "flex", alignItems: "center", gap: 4 }}><Wrench size={11} /> {record.toolCalls}</span>}
+                  {record.toolCalls > 0 && <span className="usage-record-tools"><Wrench size={11} /> {record.toolCalls}</span>}
                 </div>
                 {record.error && (
                   <div className="usage-record-error">{record.error}</div>
@@ -211,20 +211,20 @@ export function UsageStats({ onClose }: UsageStatsProps) {
 
         {activeTab === "limits" && limits && (
           <div className="usage-limits">
-            <div style={{ marginBottom: 12, fontSize: 'var(--fs-sm)', color: "var(--text-secondary)" }}>
+            <div className="usage-limits-hint">
               设置费用上限，超出限额时将在控制台输出告警日志。
             </div>
 
             {/* Per-session limit */}
-            <div className="usage-stat-card" style={{ flexDirection: "column", alignItems: "stretch", gap: 6 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span className="usage-stat-label" style={{ display: "flex", alignItems: "center", gap: 6 }}><ClipboardList size={16} /> 每会话限额</span>
-                <span style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)" }}>
+            <div className="usage-stat-card usage-stat-card--limit">
+              <div className="usage-limit-row">
+                <span className="usage-stat-label usage-limit-label"><ClipboardList size={16} /> 每会话限额</span>
+                <span className="usage-limit-used">
                   {stats.todayCost > 0 ? `今日已用 $${stats.todayCost.toFixed(4)}` : ""}
                 </span>
               </div>
-              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                <span style={{ fontSize: 'var(--fs-base)', color: "var(--text-muted)" }}>$</span>
+              <div className="usage-limit-input-row">
+                <span className="usage-limit-currency">$</span>
                 <input
                   type="number"
                   step="0.5"
@@ -232,27 +232,23 @@ export function UsageStats({ onClose }: UsageStatsProps) {
                   value={limits.perSession ?? ""}
                   onChange={(e) => setLimits({ ...limits, perSession: e.target.value ? parseFloat(e.target.value) : undefined })}
                   placeholder="不限"
-                  style={{
-                    flex: 1, padding: "6px 10px", fontSize: 'var(--fs-base)', borderRadius: 6,
-                    border: "1px solid var(--border-primary)",
-                    background: "var(--bg-tertiary)", color: "var(--text-primary)",
-                  }}
+                  className="usage-limit-input"
                 />
-                <span style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)" }}>USD</span>
+                <span className="usage-limit-unit">USD</span>
               </div>
-              <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)" }}>单次对话最高费用，默认 $5</div>
+              <div className="usage-limit-note">单次对话最高费用，默认 $5</div>
             </div>
 
             {/* Per-day limit */}
-            <div className="usage-stat-card" style={{ flexDirection: "column", alignItems: "stretch", gap: 6 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span className="usage-stat-label" style={{ display: "flex", alignItems: "center", gap: 6 }}><Calendar size={16} /> 每日限额</span>
-                <span style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)" }}>
+            <div className="usage-stat-card usage-stat-card--limit">
+              <div className="usage-limit-row">
+                <span className="usage-stat-label usage-limit-label"><Calendar size={16} /> 每日限额</span>
+                <span className="usage-limit-used">
                   {stats.todayCost > 0 ? `今日已用 $${stats.todayCost.toFixed(4)}` : ""}
                 </span>
               </div>
-              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                <span style={{ fontSize: 'var(--fs-base)', color: "var(--text-muted)" }}>$</span>
+              <div className="usage-limit-input-row">
+                <span className="usage-limit-currency">$</span>
                 <input
                   type="number"
                   step="1"
@@ -260,27 +256,23 @@ export function UsageStats({ onClose }: UsageStatsProps) {
                   value={limits.perDay ?? ""}
                   onChange={(e) => setLimits({ ...limits, perDay: e.target.value ? parseFloat(e.target.value) : undefined })}
                   placeholder="不限"
-                  style={{
-                    flex: 1, padding: "6px 10px", fontSize: 'var(--fs-base)', borderRadius: 6,
-                    border: "1px solid var(--border-primary)",
-                    background: "var(--bg-tertiary)", color: "var(--text-primary)",
-                  }}
+                  className="usage-limit-input"
                 />
-                <span style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)" }}>USD</span>
+                <span className="usage-limit-unit">USD</span>
               </div>
-              <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)" }}>每天累计最高费用，默认 $20</div>
+              <div className="usage-limit-note">每天累计最高费用，默认 $20</div>
             </div>
 
             {/* Total limit */}
-            <div className="usage-stat-card" style={{ flexDirection: "column", alignItems: "stretch", gap: 6 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span className="usage-stat-label" style={{ display: "flex", alignItems: "center", gap: 6 }}><InfinityIcon size={16} /> 总限额</span>
-                <span style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)" }}>
+            <div className="usage-stat-card usage-stat-card--limit">
+              <div className="usage-limit-row">
+                <span className="usage-stat-label usage-limit-label"><InfinityIcon size={16} /> 总限额</span>
+                <span className="usage-limit-used">
                   已用 $${stats.totalCost.toFixed(4)}
                 </span>
               </div>
-              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                <span style={{ fontSize: 'var(--fs-base)', color: "var(--text-muted)" }}>$</span>
+              <div className="usage-limit-input-row">
+                <span className="usage-limit-currency">$</span>
                 <input
                   type="number"
                   step="1"
@@ -288,48 +280,40 @@ export function UsageStats({ onClose }: UsageStatsProps) {
                   value={limits.total ?? ""}
                   onChange={(e) => setLimits({ ...limits, total: e.target.value ? parseFloat(e.target.value) : undefined })}
                   placeholder="不限"
-                  style={{
-                    flex: 1, padding: "6px 10px", fontSize: 'var(--fs-base)', borderRadius: 6,
-                    border: "1px solid var(--border-primary)",
-                    background: "var(--bg-tertiary)", color: "var(--text-primary)",
-                  }}
+                  className="usage-limit-input"
                 />
-                <span style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)" }}>USD</span>
+                <span className="usage-limit-unit">USD</span>
               </div>
-              <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)" }}>所有时间的总费用上限，不设则无限制</div>
+              <div className="usage-limit-note">所有时间的总费用上限，不设则无限制</div>
             </div>
 
             {/* Usage progress bars */}
-            <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 8 }}>
+            <div className="usage-progress-block">
               {limits.perSession && stats.todayCost > 0 && (
                 <div>
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 'var(--fs-sm)', marginBottom: 4 }}>
+                  <div className="usage-progress-head">
                     <span>每日用量</span>
                     <span>${stats.todayCost.toFixed(2)} / ${limits.perDay?.toFixed(2) ?? "∞"}</span>
                   </div>
-                  <div style={{ height: 6, borderRadius: "var(--radius-sm)", background: "var(--bg-tertiary)", overflow: "hidden" }}>
-                    <div style={{
-                      height: "100%",
-                      width: `${limits.perDay ? Math.min(100, (stats.todayCost / limits.perDay) * 100) : 0}%`,
-                      background: limits.perDay && stats.todayCost / limits.perDay > 0.8 ? "#e74c3c" : "var(--accent)",
-                      transition: "width 0.3s ease",
-                    }} />
+                  <div className="usage-progress-track">
+                    <div
+                      className={`usage-progress-fill${limits.perDay && stats.todayCost / limits.perDay > 0.8 ? " is-over" : ""}`}
+                      style={{ width: `${limits.perDay ? Math.min(100, (stats.todayCost / limits.perDay) * 100) : 0}%` }}
+                    />
                   </div>
                 </div>
               )}
               {limits.total && (
                 <div>
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 'var(--fs-sm)', marginBottom: 4 }}>
+                  <div className="usage-progress-head">
                     <span>总用量</span>
                     <span>${stats.totalCost.toFixed(2)} / ${limits.total.toFixed(2)}</span>
                   </div>
-                  <div style={{ height: 6, borderRadius: "var(--radius-sm)", background: "var(--bg-tertiary)", overflow: "hidden" }}>
-                    <div style={{
-                      height: "100%",
-                      width: `${Math.min(100, (stats.totalCost / limits.total) * 100)}%`,
-                      background: stats.totalCost / limits.total > 0.8 ? "#e74c3c" : "var(--accent)",
-                      transition: "width 0.3s ease",
-                    }} />
+                  <div className="usage-progress-track">
+                    <div
+                      className={`usage-progress-fill${stats.totalCost / limits.total > 0.8 ? " is-over" : ""}`}
+                      style={{ width: `${Math.min(100, (stats.totalCost / limits.total) * 100)}%` }}
+                    />
                   </div>
                 </div>
               )}
@@ -343,13 +327,9 @@ export function UsageStats({ onClose }: UsageStatsProps) {
                 setSavingLimits(true);
                 setTimeout(() => setSavingLimits(false), 2000);
               }}
-              style={{
-                marginTop: 8, padding: "8px 16px", borderRadius: 6, fontSize: 'var(--fs-base)', fontWeight: 500,
-                border: "1px solid var(--accent)", background: "var(--accent)", color: "var(--text-on-accent)",
-                cursor: "pointer",
-              }}
+              className="usage-save-btn"
             >
-              {savingLimits ? <span style={{ display: "flex", alignItems: "center", gap: 6, justifyContent: "center" }}><CheckCircle size={16} /> 已保存</span> : "保存限额"}
+              {savingLimits ? <span className="usage-saved"><CheckCircle size={16} /> 已保存</span> : "保存限额"}
             </button>
           </div>
         )}

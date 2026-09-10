@@ -91,7 +91,7 @@ export const ReasoningRow = memo(function ReasoningRow({
           className={running ? 'reasoning-icon-streaming' : ''}
           style={{
             flexShrink: 0,
-            color: running ? 'var(--accent)' : '#9333ea',
+            color: running ? 'var(--accent)' : 'var(--accent)',
             animation: running ? 'pulse 2s ease-in-out infinite' : 'none',
           }}
         />

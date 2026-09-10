@@ -227,7 +227,7 @@ export function GitInfoPanel() {
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
         <GitBranchSelector refreshInterval={5000} onBranchChange={handleBranchChange} />
         {status && (status.isDirty ? (
-          <span style={{ fontSize: 'var(--fs-xs)', color: "#e67e22", background: "rgba(230,126,34,0.15)", padding: "1px 6px", borderRadius: 8 }}>
+          <span style={{ fontSize: 'var(--fs-xs)', color: "var(--warning)", background: "color-mix(in srgb, var(--warning) 15%, transparent)", padding: "1px 6px", borderRadius: 8 }}>
             ⚠️ {zh ? "未提交" : "dirty"}
           </span>
         ) : (
@@ -307,7 +307,7 @@ export function GitInfoPanel() {
       )}
 
       {actionResult && (
-        <div style={{ fontSize: 'var(--fs-xs)', color: actionResult.startsWith("✅") ? "#22c55e" : "#e74c3c" }}>
+        <div style={{ fontSize: 'var(--fs-xs)', color: actionResult.startsWith("✅") ? "var(--success)" : "var(--error)" }}>
           {actionResult}
         </div>
       )}

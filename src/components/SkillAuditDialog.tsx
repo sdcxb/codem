@@ -123,7 +123,7 @@ const overallIcon = audit.overall === "danger" ? <ShieldAlert size={24} />
                       borderRadius: 10,
                       background: isUnknown ? "color-mix(in srgb, var(--warning) 15%, transparent)" : "var(--bg-tertiary)",
                       border: `1px solid ${isUnknown ? "color-mix(in srgb, var(--warning) 30%, transparent)" : "var(--border-primary)"}`,
-                      color: isUnknown ? "#f59e0b" : "var(--text-secondary)",
+                      color: isUnknown ? "var(--warning)" : "var(--text-secondary)",
                     }}>
                       {getPermissionDescription(perm, lang)}
                     </span>

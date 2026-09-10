@@ -2,6 +2,26 @@
  * 所有颜色使用项目 CSS 变量驱动，自动适配三套皮肤（default/hub/dream）
  */
 
+/* 幻灯片是**白纸内容**（导出后也是白底），因此画布里的占位块用固定的中性灰，
+ * 不跟随宿主主题 —— 否则亮/暗主题切换会让幻灯片内的占位块忽明忽暗。 */
+:root {
+  --ppt-paper-bg: #ffffff;
+  --ppt-placeholder-bg: #f0f0f0;
+  --ppt-placeholder-fg: #999999;
+}
+
+/* 未上传图片时的占位块 */
+.ppt-image-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  background: var(--ppt-placeholder-bg);
+  color: var(--ppt-placeholder-fg);
+  font-size: var(--fs-md);
+}
+
 .ppt-editor-root *,
 .ppt-present-mode * {
   box-sizing: border-box;

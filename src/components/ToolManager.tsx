@@ -220,7 +220,7 @@ export function ToolManager({ onClose }: ToolManagerProps) {
                     position: "absolute", top: enabled ? "1px" : "1px",
                     left: enabled ? "18px" : "2px",
                     width: "16px", height: "16px", borderRadius: "50%",
-                    background: enabled ? "#fff" : "var(--text-secondary)",
+                    background: enabled ? "var(--surface-content)" : "var(--text-secondary)",
                     transition: "left 0.2s, background 0.2s",
                   }} />
                 </button>

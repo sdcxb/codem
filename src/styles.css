@@ -7984,6 +7984,87 @@ border-bottom: 1px solid var(--accent);
 .panel-btn:hover { border-color: var(--accent); }
 .panel-btn--danger { border-color: var(--error); background: none; color: var(--error); }
 .panel-btn--sm { padding: 2px var(--space-4); font-size: var(--fs-xs); }
+.panel-btn--xs { padding: 3px var(--space-5); }
+.panel-btn--primary { border-color: var(--accent); background: var(--accent); color: var(--text-on-accent); }
+.panel-btn--primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+
+/* ==========================================================================
+ * Git / 环境脚本设置（GitConfigSection / EnvironmentConfigSection）：第 17 波
+ * 两个 section 是同一套「标签 + 输入 + 说明」表单，原先每个字段都写一遍内联样式
+ * （同一个 width/fontSize/marginBottom 组合重复了 20 多次）。
+ * ========================================================================== */
+.git-env-desc { margin-bottom: var(--space-6); font-size: var(--fs-sm); color: var(--text-secondary); }
+.git-env-field { margin-bottom: var(--space-6); }
+.git-env-field--inline { display: flex; align-items: center; gap: var(--space-4); }
+.git-env-label { display: block; margin-bottom: var(--space-2); font-size: var(--fs-sm); color: var(--text-muted); }
+.git-env-input { width: 100%; box-sizing: border-box; font-size: var(--fs-sm); }
+.git-env-input.is-mono { font-family: var(--font-mono); }
+.git-env-hint { margin-top: var(--space-1); font-size: var(--fs-sm); color: var(--text-muted); }
+.git-env-check-label { font-size: var(--fs-sm); cursor: pointer; }
+
+.git-env-toggle-card {
+  margin-bottom: var(--space-6);
+  padding: var(--space-5) var(--space-6);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-xs);
+  background: var(--bg-tertiary);
+}
+.git-env-toggle-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-6); }
+.git-env-toggle-label { font-size: var(--fs-base); font-weight: 500; cursor: pointer; }
+.git-env-checkbox { width: 18px; height: 18px; cursor: pointer; accent-color: var(--accent); }
+.git-env-save-btn { padding: var(--space-3) var(--space-8); font-size: var(--fs-sm); }
+
+.git-env-ops-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-3); }
+.git-env-ops-empty { font-size: var(--fs-sm); font-style: italic; color: var(--text-muted); }
+.git-env-op {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  margin-bottom: var(--space-3);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-xs);
+  background: var(--bg-secondary);
+}
+.git-env-op-icon { width: 36px; box-sizing: border-box; font-size: var(--fs-sm); text-align: center; }
+.git-env-op-main { flex: 1; min-width: 0; }
+.git-env-op-name { width: 100%; box-sizing: border-box; margin-bottom: var(--space-2); font-size: var(--fs-sm); }
+.git-env-op-cmd { width: 100%; box-sizing: border-box; font-size: var(--fs-sm); font-family: var(--font-mono); }
+.git-env-run-btn {
+  padding: var(--space-2) var(--space-5);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: var(--accent);
+  color: var(--text-on-accent);
+  font-family: inherit;
+  font-size: var(--fs-sm);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: var(--transition-color);
+}
+.git-env-run-btn:hover:not(:disabled) { background: var(--accent-hover); }
+.git-env-run-btn:disabled { background: var(--bg-tertiary); cursor: wait; }
+.git-env-remove-btn {
+  padding: 0 var(--space-2);
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: var(--fs-md);
+  cursor: pointer;
+}
+.git-env-remove-btn:hover { color: var(--error); }
+.git-env-result {
+  margin-top: var(--space-4);
+  padding: var(--space-4);
+  max-height: 200px;
+  overflow: auto;
+  white-space: pre-wrap;
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-sm);
+  background: var(--bg-primary);
+  font-size: var(--fs-sm);
+}
 
 /* ==========================================================================
  * 会话恢复面板（RecoveryPanel）：把内联样式收口成具名类（第 14 波）
@@ -8058,20 +8139,6 @@ border-bottom: 1px solid var(--accent);
 .recovery-message-role.is-user { color: var(--info); }
 
 .recovery-actions { display: flex; gap: var(--space-4); flex-wrap: wrap; }
-.panel-btn {
-  padding: var(--space-3) var(--space-7);
-  border: 1px solid var(--border-primary);
-  border-radius: var(--radius-sm);
-  background: var(--bg-tertiary);
-  color: var(--text-primary);
-  font-family: inherit;
-  font-size: var(--fs-sm);
-  cursor: pointer;
-  transition: var(--transition-color);
-}
-.panel-btn:hover { border-color: var(--accent); }
-.panel-btn--danger { border-color: var(--error); background: none; color: var(--error); }
-.panel-btn--sm { padding: 2px var(--space-4); font-size: var(--fs-xs); }
 
 .recovery-export-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-2); }
 .recovery-export-title { font-size: var(--fs-sm); font-weight: 600; color: var(--text-secondary); }
@@ -8492,6 +8559,57 @@ border-bottom: 1px solid var(--accent);
   font-size: var(--fs-2xs);
   color: var(--error);
 }
+
+/* 用量统计面板：把内联样式收口成具名类（第 17 波） */
+/* 「限额」页签的容器（此前类名一直没定义，布局靠子元素撑） */
+.usage-limits { display: flex; flex-direction: column; gap: var(--space-6); }
+.usage-viz-section-title { display: flex; align-items: center; gap: var(--space-3); }
+.usage-record-tools { display: flex; align-items: center; gap: var(--space-2); }
+.usage-stat-value.is-success { color: var(--success); }
+
+.usage-limits-hint { margin-bottom: var(--space-6); font-size: var(--fs-sm); color: var(--text-secondary); }
+.usage-stat-card--limit { flex-direction: column; align-items: stretch; gap: var(--space-3); }
+.usage-limit-row { display: flex; justify-content: space-between; align-items: center; }
+.usage-limit-label { display: flex; align-items: center; gap: var(--space-3); }
+.usage-limit-used { font-size: var(--fs-sm); color: var(--text-muted); }
+.usage-limit-input-row { display: flex; gap: var(--space-4); align-items: center; }
+.usage-limit-currency { font-size: var(--fs-base); color: var(--text-muted); }
+.usage-limit-unit { font-size: var(--fs-sm); color: var(--text-muted); }
+.usage-limit-note { font-size: var(--fs-sm); color: var(--text-muted); }
+.usage-limit-input {
+  flex: 1;
+  min-width: 0;
+  padding: var(--space-3) var(--space-5);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-xs);
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: var(--fs-base);
+}
+.usage-limit-input:focus { outline: none; border-color: var(--accent); }
+
+.usage-progress-block { margin-top: var(--space-4); display: flex; flex-direction: column; gap: var(--space-4); }
+.usage-progress-head { display: flex; justify-content: space-between; margin-bottom: var(--space-2); font-size: var(--fs-sm); }
+.usage-progress-track { height: 6px; border-radius: var(--radius-full); background: var(--bg-tertiary); overflow: hidden; }
+.usage-progress-fill { height: 100%; background: var(--accent); transition: width var(--duration-slow) var(--ease-out); }
+.usage-progress-fill.is-over { background: var(--error); }
+
+.usage-save-btn {
+  margin-top: var(--space-4);
+  padding: var(--space-4) var(--space-8);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-xs);
+  background: var(--accent);
+  color: var(--text-on-accent);
+  font-family: inherit;
+  font-size: var(--fs-base);
+  font-weight: 500;
+  cursor: pointer;
+  transition: var(--transition-color);
+}
+.usage-save-btn:hover { background: var(--accent-hover); }
+.usage-saved { display: flex; align-items: center; justify-content: center; gap: var(--space-3); }
 
 .session-detail-actions {
   display: flex;

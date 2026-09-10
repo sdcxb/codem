@@ -280,7 +280,7 @@ export function PPTAdapter({ notebookId, initialContent, title: initialTitle, au
                       background: `linear-gradient(135deg, ${style.colors.primary}, ${style.colors.accent})`,
                       opacity: 0.8,
                     }} />
-                    <div style={{ position: 'absolute', bottom: 8, left: 8, fontSize: 'var(--fs-sm)', color: style.colors.text, background: 'rgba(0,0,0,0.3)', padding: '2px 8px', borderRadius: 4 }}>
+                    <div style={{ position: 'absolute', bottom: 8, left: 8, fontSize: 'var(--fs-sm)', color: style.colors.text, background: 'var(--overlay-backdrop)', padding: '2px 8px', borderRadius: 4 }}>
                       {style.name}
                     </div>
                   </div>

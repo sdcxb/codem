@@ -5,6 +5,13 @@ import type { GitConfig, EnvironmentConfig, CustomOperation } from "../core/sett
 import { runCustomOperation } from "../core/environment";
 import { isAutoCommitEnabled, setAutoCommitEnabled } from "../core/environment/git-commit-service";
 
+/**
+ * Git 偏好 / 环境脚本 两段设置。
+ *
+ * 样式：第 17 波把内联样式收口成 `.git-env-*` 具名类（见 src/styles.css），
+ * 保存按钮复用共享 `.panel-btn .panel-btn--primary`。
+ */
+
 // ========== G Series: Git Configuration Section ==========
 
 export function GitConfigSection() {
@@ -31,13 +38,13 @@ export function GitConfigSection() {
   return (
     <div className="setting-group">
       <div className="settings-section-title">{zh ? "🌿 Git 偏好配置" : "🌿 Git Preferences"}</div>
-      <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-secondary)", marginBottom: 12 }}>
+      <div className="git-env-desc">
         {zh ? "配置 Git 操作偏好。AI 执行 Git 命令时会遵循这些规则。" : "Configure Git preferences. The AI follows these rules for Git operations."}
       </div>
 
       {/* Branch prefix */}
-      <div style={{ marginBottom: 12 }}>
-        <label style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", display: "block", marginBottom: 4 }}>
+      <div className="git-env-field">
+        <label className="git-env-label">
           {zh ? "分支前缀" : "Branch Prefix"}
         </label>
         <input
@@ -45,22 +52,22 @@ export function GitConfigSection() {
           value={gitConfig.branchPrefix || ""}
           onChange={(e) => update({ branchPrefix: e.target.value })}
           placeholder={zh ? "如 feature/ 或 feat/" : "e.g. feature/ or feat/"}
-          style={{ width: "100%", fontSize: 'var(--fs-sm)', fontFamily: "monospace" }}
+          className="git-env-input is-mono"
         />
-        <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", marginTop: 2 }}>
+        <div className="git-env-hint">
           {zh ? "创建新分支时自动添加此前缀" : "Prepended to new branch names"}
         </div>
       </div>
 
       {/* Merge method */}
-      <div style={{ marginBottom: 12 }}>
-        <label style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", display: "block", marginBottom: 4 }}>
+      <div className="git-env-field">
+        <label className="git-env-label">
           {zh ? "PR 合并方法" : "PR Merge Method"}
         </label>
         <select
           value={gitConfig.mergeMethod || ""}
           onChange={(e) => update({ mergeMethod: (e.target.value || undefined) as GitConfig["mergeMethod"] })}
-          style={{ width: "100%", fontSize: 'var(--fs-sm)' }}
+          className="git-env-input"
         >
           <option value="">{zh ? "默认（不指定）" : "Default"}</option>
           <option value="merge">Merge commit</option>
@@ -70,39 +77,41 @@ export function GitConfigSection() {
       </div>
 
       {/* Force push */}
-      <div style={{ marginBottom: 12, display: "flex", alignItems: "center", gap: 8 }}>
+      <div className="git-env-field git-env-field--inline">
         <input
           type="checkbox"
           id="git-force-push"
           checked={gitConfig.forcePush === true}
           onChange={(e) => update({ forcePush: e.target.checked })}
+          className="git-env-checkbox"
         />
-        <label htmlFor="git-force-push" style={{ fontSize: 'var(--fs-sm)', cursor: "pointer" }}>
+        <label htmlFor="git-force-push" className="git-env-check-label">
           {zh ? "允许强制推送 (force push)" : "Allow force push"}
         </label>
       </div>
 
       {/* Draft PR */}
-      <div style={{ marginBottom: 12, display: "flex", alignItems: "center", gap: 8 }}>
+      <div className="git-env-field git-env-field--inline">
         <input
           type="checkbox"
           id="git-draft-pr"
           checked={gitConfig.draftPR === true}
           onChange={(e) => update({ draftPR: e.target.checked })}
+          className="git-env-checkbox"
         />
-        <label htmlFor="git-draft-pr" style={{ fontSize: 'var(--fs-sm)', cursor: "pointer" }}>
+        <label htmlFor="git-draft-pr" className="git-env-check-label">
           {zh ? "默认创建草稿 PR" : "Default to draft PR"}
         </label>
       </div>
 
       {/* Auto Commit */}
-      <div style={{ marginBottom: 12, padding: "10px 12px", borderRadius: 6, background: "var(--bg-tertiary)", border: "1px solid var(--border-primary)" }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+      <div className="git-env-toggle-card">
+        <div className="git-env-toggle-row">
           <div>
-            <label style={{ fontSize: 'var(--fs-base)', fontWeight: 500, cursor: "pointer" }} htmlFor="git-auto-commit">
+            <label className="git-env-toggle-label" htmlFor="git-auto-commit">
               {zh ? "🔄 自动 Commit" : "🔄 Auto Commit"}
             </label>
-            <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", marginTop: 2 }}>
+            <div className="git-env-hint">
               {zh ? "Agent 每轮修改后自动 git add + commit（可通过 LLM 生成提交信息）" : "Auto git add + commit after each agent turn (LLM-generated message)"}
             </div>
           </div>
@@ -111,14 +120,14 @@ export function GitConfigSection() {
             id="git-auto-commit"
             checked={autoCommit}
             onChange={(e) => { setAutoCommit(e.target.checked); setAutoCommitEnabled(e.target.checked); }}
-            style={{ width: 18, height: 18, cursor: "pointer" }}
+            className="git-env-checkbox"
           />
         </div>
       </div>
 
       {/* GitHub Token */}
-      <div style={{ marginBottom: 12 }}>
-        <label style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", display: "block", marginBottom: 4 }}>
+      <div className="git-env-field">
+        <label className="git-env-label">
           {zh ? "GitHub Token（用于 API 操作）" : "GitHub Token (for API operations)"}
         </label>
         <input
@@ -126,16 +135,16 @@ export function GitConfigSection() {
           value={gitConfig.githubToken || ""}
           onChange={(e) => update({ githubToken: e.target.value })}
           placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
-          style={{ width: "100%", fontSize: 'var(--fs-sm)', fontFamily: "monospace" }}
+          className="git-env-input is-mono"
         />
-        <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", marginTop: 2 }}>
+        <div className="git-env-hint">
           {zh ? "用于创建远程仓库、技能市场 API 认证等操作。需要 repo 权限。配置后可将 GitHub API 限流从 60 次/小时提升至 5000 次/小时。" : "Used for creating repositories, skill market API auth, etc. Requires repo scope. Raises API rate limit from 60 to 5000 req/hour."}
         </div>
       </div>
 
       {/* Commit message instructions */}
-      <div style={{ marginBottom: 12 }}>
-        <label style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", display: "block", marginBottom: 4 }}>
+      <div className="git-env-field">
+        <label className="git-env-label">
           {zh ? "提交信息风格指令" : "Commit Message Instructions"}
         </label>
         <textarea
@@ -143,13 +152,13 @@ export function GitConfigSection() {
           onChange={(e) => update({ commitMessageInstructions: e.target.value })}
           placeholder={zh ? "如：conventional commits 格式" : "e.g. conventional commits"}
           rows={2}
-          style={{ width: "100%", fontSize: 'var(--fs-sm)', resize: "vertical" }}
+          className="git-env-input"
         />
       </div>
 
       {/* PR title instructions */}
-      <div style={{ marginBottom: 12 }}>
-        <label style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", display: "block", marginBottom: 4 }}>
+      <div className="git-env-field">
+        <label className="git-env-label">
           {zh ? "PR 标题风格指令" : "PR Title Instructions"}
         </label>
         <input
@@ -157,13 +166,13 @@ export function GitConfigSection() {
           value={gitConfig.prTitleInstructions || ""}
           onChange={(e) => update({ prTitleInstructions: e.target.value })}
           placeholder={zh ? "如：[模块] 简短描述" : "e.g. [Module] Brief"}
-          style={{ width: "100%", fontSize: 'var(--fs-sm)' }}
+          className="git-env-input"
         />
       </div>
 
       {/* PR description instructions */}
-      <div style={{ marginBottom: 12 }}>
-        <label style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", display: "block", marginBottom: 4 }}>
+      <div className="git-env-field">
+        <label className="git-env-label">
           {zh ? "PR 描述风格指令" : "PR Description Instructions"}
         </label>
         <textarea
@@ -171,21 +180,13 @@ export function GitConfigSection() {
           onChange={(e) => update({ prDescriptionInstructions: e.target.value })}
           placeholder={zh ? "如：包含改动原因、测试方案" : "e.g. Include rationale and tests"}
           rows={2}
-          style={{ width: "100%", fontSize: 'var(--fs-sm)', resize: "vertical" }}
+          className="git-env-input"
         />
       </div>
 
       <button
         onClick={handleSave}
-        style={{
-          padding: "6px 16px",
-          background: "var(--accent)",
-          color: "var(--text-on-accent)",
-          border: "none",
-          borderRadius: 4,
-          fontSize: 'var(--fs-sm)',
-          cursor: "pointer",
-        }}
+        className="panel-btn panel-btn--primary git-env-save-btn"
       >
         {saved ? (zh ? "✅ 已保存" : "✅ Saved") : (zh ? "保存 Git 配置" : "Save Git Config")}
       </button>
@@ -275,15 +276,15 @@ export function EnvironmentConfigSection() {
   return (
     <div className="setting-group">
       <div className="settings-section-title">{zh ? "🏗️ 环境脚本配置" : "🏗️ Environment Scripts"}</div>
-      <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-secondary)", marginBottom: 12 }}>
+      <div className="git-env-desc">
         {zh
           ? "配置项目环境脚本。打开/切换项目时自动执行设置和清理脚本，还可以定义一键操作。"
           : "Setup/cleanup scripts run automatically on project switch. Custom operations are one-click actions."}
       </div>
 
       {/* Setup script */}
-      <div style={{ marginBottom: 12 }}>
-        <label style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", display: "block", marginBottom: 4 }}>
+      <div className="git-env-field">
+        <label className="git-env-label">
           {zh ? "设置脚本（打开项目时自动执行）" : "Setup Script (on project open)"}
         </label>
         <input
@@ -291,13 +292,13 @@ export function EnvironmentConfigSection() {
           value={envConfig.setupScript || ""}
           onChange={(e) => update({ setupScript: e.target.value })}
           placeholder={zh ? "如 npm install" : "e.g. npm install"}
-          style={{ width: "100%", fontSize: 'var(--fs-sm)', fontFamily: "monospace" }}
+          className="git-env-input is-mono"
         />
       </div>
 
       {/* Cleanup script */}
-      <div style={{ marginBottom: 12 }}>
-        <label style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", display: "block", marginBottom: 4 }}>
+      <div className="git-env-field">
+        <label className="git-env-label">
           {zh ? "清理脚本（切换/关闭项目时执行）" : "Cleanup Script (on project close)"}
         </label>
         <input
@@ -305,100 +306,65 @@ export function EnvironmentConfigSection() {
           value={envConfig.cleanupScript || ""}
           onChange={(e) => update({ cleanupScript: e.target.value })}
           placeholder={zh ? "如 docker compose down" : "e.g. docker compose down"}
-          style={{ width: "100%", fontSize: 'var(--fs-sm)', fontFamily: "monospace" }}
+          className="git-env-input is-mono"
         />
       </div>
 
       {/* Custom operations */}
-      <div style={{ marginBottom: 12 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-          <label style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)" }}>
+      <div className="git-env-field">
+        <div className="git-env-ops-head">
+          <label className="git-env-label" style={{ marginBottom: 0 }}>
             {zh ? "自定义操作" : "Custom Operations"}
           </label>
           <button
             onClick={addCustomOperation}
-            style={{
-              padding: "3px 10px",
-              background: "var(--bg-tertiary)",
-              border: "1px solid var(--border-primary)",
-              borderRadius: 4,
-              fontSize: 'var(--fs-sm)',
-              cursor: "pointer",
-            }}
+            className="panel-btn panel-btn--xs"
           >
             + {zh ? "添加" : "Add"}
           </button>
         </div>
 
         {(envConfig.customOperations || []).length === 0 && (
-          <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", fontStyle: "italic" }}>
+          <div className="git-env-ops-empty">
             {zh ? "暂无自定义操作。点击\"添加\"创建一键构建/启动/测试等操作。" : "No custom operations yet."}
           </div>
         )}
 
         {(envConfig.customOperations || []).map((op) => (
-          <div
-            key={op.id}
-            style={{
-              display: "flex",
-              gap: 6,
-              alignItems: "flex-end",
-              padding: 8,
-              background: "var(--bg-secondary)",
-              borderRadius: 6,
-              border: "1px solid var(--border-primary)",
-              marginBottom: 6,
-            }}
-          >
+          <div key={op.id} className="git-env-op">
             <input
               type="text"
               value={op.icon || ""}
               onChange={(e) => updateOp(op.id, { icon: e.target.value })}
               placeholder="🔧"
-              style={{ width: 36, fontSize: 'var(--fs-sm)', textAlign: "center" }}
+              className="git-env-op-icon"
             />
-            <div style={{ flex: 1 }}>
+            <div className="git-env-op-main">
               <input
                 type="text"
                 value={op.name}
                 onChange={(e) => updateOp(op.id, { name: e.target.value })}
                 placeholder={zh ? "操作名称" : "Name"}
-                style={{ width: "100%", fontSize: 'var(--fs-sm)', marginBottom: 4 }}
+                className="git-env-op-name"
               />
               <input
                 type="text"
                 value={op.command}
                 onChange={(e) => updateOp(op.id, { command: e.target.value })}
                 placeholder={zh ? "如 npm run build" : "e.g. npm run build"}
-                style={{ width: "100%", fontSize: 'var(--fs-sm)', fontFamily: "monospace" }}
+                className="git-env-op-cmd"
               />
             </div>
             <button
               onClick={() => handleRun(op.id)}
               disabled={running === op.id || !op.command.trim()}
-              style={{
-                padding: "4px 10px",
-                background: running === op.id ? "var(--bg-tertiary)" : "var(--accent)",
-                color: "var(--text-on-accent)",
-                border: "none",
-                borderRadius: 4,
-                fontSize: 'var(--fs-sm)',
-                cursor: running === op.id ? "wait" : "pointer",
-                whiteSpace: "nowrap",
-              }}
+              className="git-env-run-btn"
             >
               {running === op.id ? "⏳" : "▶"}
             </button>
             <button
               onClick={() => removeOp(op.id)}
-              style={{
-                background: "none",
-                border: "none",
-                color: "var(--text-muted)",
-                cursor: "pointer",
-                fontSize: 'var(--fs-md)',
-                padding: "0 4px",
-              }}
+              className="git-env-remove-btn"
             >
               ✕
             </button>
@@ -407,34 +373,14 @@ export function EnvironmentConfigSection() {
       </div>
 
       {runResult && (
-        <pre
-          style={{
-            marginTop: 8,
-            padding: 8,
-            background: "var(--bg-primary)",
-            border: "1px solid var(--border-primary)",
-            borderRadius: 4,
-            fontSize: 'var(--fs-sm)',
-            whiteSpace: "pre-wrap",
-            maxHeight: 200,
-            overflow: "auto",
-          }}
-        >
+        <pre className="git-env-result">
           {runResult}
         </pre>
       )}
 
       <button
         onClick={handleSave}
-        style={{
-          padding: "6px 16px",
-          background: "var(--accent)",
-          color: "var(--text-on-accent)",
-          border: "none",
-          borderRadius: 4,
-          fontSize: 'var(--fs-sm)',
-          cursor: "pointer",
-        }}
+        className="panel-btn panel-btn--primary git-env-save-btn"
       >
         {saved ? (zh ? "✅ 已保存" : "✅ Saved") : (zh ? "保存环境配置" : "Save Environment Config")}
       </button>

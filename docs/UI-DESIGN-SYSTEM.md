@@ -185,6 +185,8 @@ node tools/ui-audit/codemod-icon-scale.mjs [--write]  # 图标工具类 → .ico
 
 | **第 16 波** | 2026-09-10 | **0** ✅ | **19** | **内联样式收口（设置类面板）**：`LayeredSettingsPanel`（141 → 0）改 `.layered-*` 具名类并复用共享 `.panel-btn`；优先级圆形徽标、策略限制的 ok/warn/bad 三态都收成类。顺手修掉一处重复求值：`mgr.getBlockedModels()` / `getBlockedProviders()` 原在渲染里被调了两遍，改成先取值（这两个 getter 每次都会走一遍策略计算） |
 
+| **第 17 波** | 2026-09-10 | **0** ✅ | **17** | **内联样式收口 + 又一处工具盲区**：① `UsageStats`（128 → 0）、`GitEnvSettings`（172 → 0，两个重复了 20 多次的「标签+输入+说明」表单收成 `.git-env-*`，保存按钮复用共享 `.panel-btn--primary`）；② **TSX 侧色值判定也改成逐字面量**：此前它和 CSS 侧犯同一个错 —— 「这行有 `var(--` 就整行放过」，于是 `color: cond ? "#22c55e" : "var(--text-primary)"` 这类混写一直漏检；修好后立刻报出 **18 处**藏在条件分支里的硬编码色（红/绿/琥珀/紫各有，含 `#e55` 这种缩写），已全部换成语义令牌；`ppt/SlideCanvas` 的幻灯片占位块按「白纸内容」单列 `--ppt-placeholder-*` 令牌（不随主题走）；③ 顺手删掉一处自己引入的重复定义（`.panel-btn` 在第 14 波提升为共享类时留下了两份） |
+
 ### 全项目现场事实（来自 UI 交互界面清单，作为工作队列）
 
 - 挂载层：64 个 `SlotBridge` 渲染点 + 54 处 `slots.register` + 44 处 `createPortal`（另 51 个 SlotBridge 在 `App.tsx`）。
@@ -214,14 +216,14 @@ node tools/ui-audit/codemod-icon-scale.mjs [--write]  # 图标工具类 → .ico
 | --- | --- | --- | --- |
 | `fs-hardcoded` | error | 78 | **0** ✅（门禁锁定；第 12 波起**同时覆盖 CSS**） |
 | `radius-offscale` | error | 38 | **0** ✅（门禁锁定；第 13 波起覆盖 `styles.css` 本体，不需豁免） |
-| `color-hardcoded-tsx` | error | 325 | **0** ✅ |
+| `color-hardcoded-tsx` | error | 325 | **0** ✅（第 17 波起与 CSS 侧同款精度：按字面量位置排除 `var()` 兜底值） |
 | `color-hardcoded-css` | error | 209 | **0** ✅（第 13 波起**连 `src/styles.css` 本体一起覆盖**，无豁免） |
 | `modal-shell-bespoke` | error | 15 | **0** ✅ |
 | `spacing-offgrid` | warn | 13 | **0** ✅ |
 | `css-class-undefined` | warn | — | **0** ✅（第 10 波清零；审计器已扩面到模板字面量） |
-| `inline-style-dense` | warn | 58 | 19（唯一剩下的 warn；第 14 波先修正了度量口径 50 → 25，再累计收口 6 个文件） |
+| `inline-style-dense` | warn | 58 | 17（唯一剩下的 warn；第 14 波先修正了度量口径 50 → 25，再累计收口 8 个文件） |
 | **error 合计** | | **533** | **0** ✅ |
-| **warn 合计** | | 64 | **19** |
+| **warn 合计** | | 64 | **17** |
 
 > 注：`color-hardcoded-tsx` 中途曾报 53 → 9 —— 不是"改多了"，而是审计器修掉了假阳性（见第 11 波说明）。
 > `fs-hardcoded` 第 12 波一度报 590 —— 也不是"变差了"，而是审计器**首次开始扫 CSS 侧**（此前 591 处写死的字号
@@ -229,7 +231,9 @@ node tools/ui-audit/codemod-icon-scale.mjs [--write]  # 图标工具类 → .ico
 > 第 13 波把 CSS 侧判定从「整行」改到「逐字面量」后，又冒出 12 行混写色值与 4 处离格圆角 —— 同样是
 > **工具看不见**而不是"新问题"，修完才真正归零。
 > `inline-style-dense` 第 14 波 50 → 24 是**度量口径修正**（只数样式对象内部），不是重构成果；
-> 重构成果是那之后的 2 个文件（RecoveryPanel 149 → 0、FlashcardViewer 139 → 0）。
+> 重构成果是那之后的 8 个文件（RecoveryPanel 149 → 0、FlashcardViewer 139 → 0、SquadsTab 176 → 0、
+> IssueDetailPanel 133 → 0、AutomationTab 134 → 0、LayeredSettingsPanel 141 → 0、UsageStats 128 → 0、GitEnvSettings 172 → 0）。
+> 第 17 波同理：`color-hardcoded-tsx` 0 → 18 → 0 不是"改坏了又改回来"，而是**审计器终于能看见条件分支里的色值**。
 
 ### 已完成的波次
 
@@ -248,7 +252,8 @@ node tools/ui-audit/codemod-icon-scale.mjs [--write]  # 图标工具类 → .ico
 13. **第 13 波**：`styles.css` 的 249 处色值 + 22 处离格圆角 → 令牌，该文件的例外彻底删除；审计器补掉命名色与"整行放过"两处盲区（详见 §5 表）。
 14. **第 14 波**：内联样式收口开工 —— 修正 `inline-style-dense` 的度量口径（50 → 25 个文件）、定义闭集共享具名类、`RecoveryPanel` 149 → 0、`FlashcardViewer` 139 → 0（详见 §5 表）。
 15. **第 15 波**：新建 `src/styles/task-center.css`，任务管理面板三个组件（SquadsTab 176、IssueDetailPanel 133、AutomationTab 134）内联样式全部收口并抽出 `tc-*` 通用族；顺带修掉 `var(--accent)22` 这类无效 CSS（详见 §5 表）。
-16. **第 16 波（本轮）**：设置类面板 `LayeredSettingsPanel`（141 → 0）收口（详见 §5 表）。
+16. **第 16 波**：设置类面板 `LayeredSettingsPanel`（141 → 0）收口（详见 §5 表）。
+17. **第 17 波（本轮）**：`UsageStats`（128 → 0）、`GitEnvSettings`（172 → 0）收口；TSX 侧色值判定改为逐字面量，暴露并修掉 18 处藏在条件分支里的硬编码色（详见 §5 表）。
 
 ### 下一轮的工作队列（按性价比排序）
 

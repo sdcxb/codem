@@ -1797,7 +1797,7 @@ marginTop: 4,
         padding: "5px 12px", borderRadius: 4, fontSize: 'var(--fs-sm)',
         border: `1px solid ${advancedSubTab === tab.id ? "var(--accent)" : "var(--border-primary)"}`,
         background: advancedSubTab === tab.id ? "var(--accent)" : "var(--bg-tertiary)",
-        color: advancedSubTab === tab.id ? "#fff" : "var(--text-primary)",
+        color: advancedSubTab === tab.id ? "var(--text-on-accent)" : "var(--text-primary)",
         cursor: "pointer", whiteSpace: "nowrap",
       }}
     >
@@ -2025,7 +2025,7 @@ function PetSettingsSection({ lang, onOpenMarket }: { lang: Language; onOpenMark
             width: "20px",
             height: "20px",
             borderRadius: "50%",
-            background: enabled ? "#fff" : "var(--text-secondary)",
+            background: enabled ? "var(--surface-content)" : "var(--text-secondary)",
             transition: "left 0.2s, background 0.2s",
             boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
           }} />
@@ -2495,7 +2495,7 @@ export function SecurityModeSelector({
             borderRadius: 6,
             border: `1px solid ${currentMode === m.mode ? "var(--accent)" : "var(--border-primary)"}`,
             background: currentMode === m.mode ? "var(--accent)" : "var(--bg-secondary)",
-            color: currentMode === m.mode ? "#fff" : "var(--text-primary)",
+            color: currentMode === m.mode ? "var(--text-on-accent)" : "var(--text-primary)",
             cursor: "pointer",
             fontSize: compact ? 11 : 13,
             fontWeight: currentMode === m.mode ? 600 : 400,
@@ -2617,7 +2617,7 @@ function WorktreeSettingsSection({ lang }: { lang: ReturnType<typeof useLang> })
           {zh ? "超过此数量自动清理最旧的（默认 15）" : "Auto-clean oldest when exceeded (default 15)"}
         </span>
         {scanResults.length > 0 && (
-          <span style={{ fontSize: 'var(--fs-sm)', marginLeft: 12, color: scanResults.length >= settings.maxWorktrees ? "#e74c3c" : "#22c55e" }}>
+          <span style={{ fontSize: 'var(--fs-sm)', marginLeft: 12, color: scanResults.length >= settings.maxWorktrees ? "var(--error)" : "var(--success)" }}>
             {zh ? `当前: ${scanResults.length}/${settings.maxWorktrees}` : `Current: ${scanResults.length}/${settings.maxWorktrees}`}
           </span>
         )}
@@ -2703,7 +2703,7 @@ function WorktreeSettingsSection({ lang }: { lang: ReturnType<typeof useLang> })
                 </div>
                 <span style={{ fontSize: 'var(--fs-xs)', opacity: 0.7, display: 'flex', alignItems: 'center', gap: 2 }}><GitBranchIcon size={10} /> {wt.branch}</span>
                 {wt.hasUncommitted && (
-                  <span style={{ fontSize: 'var(--fs-xs)', color: "#e67e22" }}>
+                  <span style={{ fontSize: 'var(--fs-xs)', color: "var(--warning)" }}>
                     {zh ? "未提交" : "dirty"}
                   </span>
                 )}
@@ -2963,7 +2963,7 @@ function TranscriptCacheStats({ lang }: { lang: Language }) {
           <span style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)" }}>{stats.size} / {stats.maxSize}</span>
         </div>
         <div style={{ height: 8, borderRadius: 4, background: "var(--bg-secondary)", overflow: "hidden" }}>
-          <div style={{ height: "100%", width: `${pct}%`, background: pct > 80 ? "#e55" : "var(--accent)", borderRadius: 4, transition: "width 0.3s" }} />
+          <div style={{ height: "100%", width: `${pct}%`, background: pct > 80 ? "var(--error)" : "var(--accent)", borderRadius: 4, transition: "width 0.3s" }} />
         </div>
         <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", marginTop: 4 }}>{pct}% {zh ? "已使用" : "used"}</div>
       </div>

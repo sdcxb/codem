@@ -134,7 +134,7 @@ export function ZvecGrepMarketCard() {
               <span style={{
                 fontSize: "var(--fs-2xs,10px)", padding: "1px 6px", borderRadius: 8,
                 background: installed ? "color-mix(in srgb, var(--success) 15%, transparent)" : "var(--bg-tertiary)",
-                color: installed ? "#22c55e" : "var(--text-muted)",
+                color: installed ? "var(--success)" : "var(--text-muted)",
               }}>
                 {installed ? (zh ? "已安装" : "Installed") : (zh ? "未安装" : "Not installed")}
               </span>
@@ -165,7 +165,7 @@ export function ZvecGrepMarketCard() {
         </div>
       )}
       {resultMsg && (
-        <div style={{ fontSize: "var(--fs-xs)", color: resultMsg.ok ? "#22c55e" : "#ef4444", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+        <div style={{ fontSize: "var(--fs-xs)", color: resultMsg.ok ? "var(--success)" : "var(--error)", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
           {resultMsg.ok ? "✅ " : "❌ "}{resultMsg.text}
         </div>
       )}

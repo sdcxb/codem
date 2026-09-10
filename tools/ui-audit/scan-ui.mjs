@@ -235,16 +235,21 @@ function scanTsx(rel, src) {
     }
 
     // 2) 颜色硬编码（属性级：color/background/border*Color/fill/stroke）
+    //    与 CSS 侧同款精度：按**字面量位置**排除 `var(--token, #fallback)` 的兜底值，
+    //    而不是"这行有 var(-- 就整行放过"（后者会让 `cond ? "#22c55e" : "var(--x)"` 这类漏检）。
+    const vRanges = varRanges(line);
+    const notInVar = (offset) => offset < 0 || !vRanges.some(([s, e]) => offset >= s && offset < e);
     const colorProp =
       /(?:^|[\s,{])(color|background|backgroundColor|borderColor|borderTopColor|borderBottomColor|borderLeftColor|borderRightColor|outlineColor|fill|stroke)\s*:\s*(?:'|")(#[0-9a-fA-F]{3,8}|rgba?\([^)]*\)|hsla?\([^)]*\)|(?:red|blue|green|white|black|gray|grey|orange|purple|pink|yellow|cyan|magenta|transparent))(?:'|")/;
     const colorM = colorProp.exec(line);
-    if (colorM && !line.includes("var(--") && colorM[2] !== "transparent") {
+    const colorOffset = colorM ? line.indexOf(colorM[2], colorM.index) : -1;
+    if (colorM && colorM[2] !== "transparent" && notInVar(colorOffset)) {
       add("color-hardcoded-tsx", rel, no, raw, `${colorM[1]}: ${colorM[2]}`);
     }
     // 属性级不够时兜底：样式对象里直接出现 hex（排除 boxShadow 字符串）
-    if (!colorM && !line.includes("var(--")) {
+    if (!colorM) {
       const hex = /(?:'|")(#[0-9a-fA-F]{3,8})(?:'|")/.exec(line);
-      if (hex && !/boxShadow|textShadow|filter/.test(line)) {
+      if (hex && notInVar(hex.index) && !/boxShadow|textShadow|filter/.test(line)) {
         add("color-hardcoded-tsx", rel, no, raw, `hex ${hex[1]}`);
       }
     }

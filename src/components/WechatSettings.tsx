@@ -146,9 +146,9 @@ export function WechatSettings() {
           <span
             style={{
               padding: "3px 10px", borderRadius: 999, fontSize: 'var(--fs-xs)', fontWeight: 600,
-              background: connected ? "color-mix(in srgb, #22c55e 18%, transparent)" : "color-mix(in srgb, var(--accent) 14%, transparent)",
-              color: connected ? "#22c55e" : "var(--text-primary)",
-              border: connected ? "1px solid color-mix(in srgb, #22c55e 40%, transparent)" : "1px solid var(--border-primary)",
+              background: connected ? "color-mix(in srgb, var(--success) 18%, transparent)" : "color-mix(in srgb, var(--accent) 14%, transparent)",
+              color: connected ? "var(--success)" : "var(--text-primary)",
+              border: connected ? "1px solid color-mix(in srgb, var(--success) 40%, transparent)" : "1px solid var(--border-primary)",
             }}
           >
             {zh ? sLabel : eLabel}
