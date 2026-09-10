@@ -35,8 +35,8 @@
 .nb-workspace-header {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 4px 10px;
+  gap: var(--space-4);
+  padding: var(--space-2) var(--space-5);
   min-height: 34px;
   background: var(--bg-secondary);
   border-bottom: 1px solid var(--border-primary);
@@ -46,8 +46,8 @@
 .nb-back-btn {
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 2px 6px;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-3);
   background: transparent;
   border: 1px solid var(--border-primary);
   border-radius: 4px;
@@ -65,7 +65,7 @@
 .nb-workspace-title {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--space-2);
   font-size: var(--fs-sm);
   font-weight: 600;
   color: var(--text-primary);
@@ -75,7 +75,7 @@
 
 .nb-workspace-actions {
   display: flex;
-  gap: 12px;
+  gap: var(--space-6);
 }
 
 /* ========== Studio Dropdown ========== */
@@ -86,8 +86,8 @@
 .nb-studio-btn {
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 2px 6px;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-3);
   background: transparent;
   border: 1px solid var(--border-primary);
   border-radius: 4px;
@@ -128,7 +128,7 @@
 }
 
 .nb-studio-dropdown-header {
-  padding: 8px 14px;
+  padding: var(--space-4) var(--space-7);
   font-size: var(--fs-sm);
   font-weight: 600;
   color: var(--text-muted);
@@ -140,9 +140,9 @@
 .nb-studio-option {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-4);
   width: 100%;
-  padding: 8px 12px;
+  padding: var(--space-4) var(--space-6);
   background: transparent;
   border: none;
   color: var(--text-primary);
@@ -193,8 +193,8 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 8px 0;
-  gap: 4px;
+  padding: var(--space-4) 0;
+  gap: var(--space-2);
 }
 
 .nb-notes-panel {
@@ -208,8 +208,8 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 8px 0;
-  gap: 4px;
+  padding: var(--space-4) 0;
+  gap: var(--space-2);
 }
 
 .nb-chat-panel {
@@ -234,7 +234,7 @@
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 8px 0;
+  padding: var(--space-4) 0;
 }
 
 /* 空状态欢迎页 */
@@ -245,15 +245,15 @@
   justify-content: center;
   height: 100%;
   min-height: 200px;
-  gap: 8px;
-  padding: 24px;
+  gap: var(--space-4);
+  padding: var(--space-10);
   text-align: center;
 }
 
 .nb-chat-welcome-icon {
   color: var(--text-muted);
   opacity: 0.4;
-  margin-bottom: 4px;
+  margin-bottom: var(--space-2);
 }
 
 .nb-chat-welcome-title {
@@ -266,30 +266,30 @@
 .nb-chat-welcome-desc {
   font-size: var(--fs-sm);
   color: var(--text-muted);
-  margin: 0 0 12px;
+  margin: 0 0 var(--space-6);
 }
 
 /* 建议问题 — 融入对话区域 */
 .nb-chat-loading-questions {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-3);
   font-size: var(--fs-sm);
   color: var(--text-muted);
-  margin-top: 4px;
+  margin-top: var(--space-2);
 }
 
 .nb-chat-suggested-questions {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--space-3);
   max-width: 480px;
   width: 100%;
-  margin-top: 8px;
+  margin-top: var(--space-4);
 }
 
 .nb-chat-question-card {
-  padding: 8px 14px;
+  padding: var(--space-4) var(--space-7);
   font-size: var(--fs-sm);
   text-align: left;
   cursor: pointer;
@@ -310,7 +310,7 @@
 /* 加载更多 */
 .nb-chat-load-more {
   text-align: center;
-  padding: 8px;
+  padding: var(--space-4);
   font-size: var(--fs-sm);
   color: var(--text-muted);
   cursor: pointer;
@@ -323,7 +323,7 @@
 /* 输入框容器 — 去掉底部 bar；增加底部空间让权限选择器弹出列表不被遮挡 */
 .nb-chat-input-wrapper {
   flex-shrink: 0;
-  padding-bottom: 8px;
+  padding-bottom: var(--space-4);
   overflow: visible;
 }
 
@@ -362,7 +362,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 6px 8px;
+  padding: var(--space-3) var(--space-4);
   border-bottom: 1px solid var(--border-primary);
   flex-shrink: 0;
 }
@@ -370,7 +370,7 @@
 .nb-panel-title {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--space-2);
   font-size: var(--fs-xs);
   font-weight: 600;
   color: var(--text-primary);
@@ -380,7 +380,7 @@
 .nb-count-badge {
   font-size: var(--fs-xs);
   font-weight: 500;
-  padding: 0 5px;
+  padding: 0 var(--space-3);
   border-radius: 8px;
   background: var(--bg-tertiary);
   color: var(--text-secondary);
@@ -415,10 +415,10 @@
 .nb-source-list {
   flex: 1;
   overflow-y: auto;
-  padding: 4px;
+  padding: var(--space-2);
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--space-2);
 }
 
 /* ========== 来源卡片 — 极简单行风格，对齐主页 sidebar-session ========== */
@@ -453,8 +453,8 @@
 .nb-source-row {
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 4px 6px;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
   min-height: 26px;
 }
 
@@ -484,10 +484,10 @@
 
 /* 展开态详情 */
 .nb-source-detail {
-  padding: 4px 8px 8px 20px;
+  padding: var(--space-2) var(--space-4) var(--space-4) var(--space-9);
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--space-2);
 }
 
 /* Custom Checkbox */
@@ -542,7 +542,7 @@
 .nb-source-meta {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--space-2);
   font-size: var(--fs-xs);
   color: var(--text-muted);
 }
@@ -553,12 +553,12 @@
 }
 
 .nb-source-chunks {
-  padding: 0 4px;
+  padding: 0 var(--space-2);
   border-radius: var(--radius-sm);
 }
 
 .nb-source-type-tag {
-  padding: 0 4px;
+  padding: 0 var(--space-2);
   border-radius: 2px;
   background: transparent;
   color: var(--text-muted);
@@ -587,8 +587,8 @@
 
 /* AI 摘要 */
 .nb-source-summary {
-  padding: 4px 6px;
-  margin-top: 2px;
+  padding: var(--space-2) var(--space-3);
+  margin-top: var(--space-1);
   background: transparent;
   border: 1px solid var(--border-primary);
   border-radius: 4px;
@@ -600,7 +600,7 @@
 .nb-source-summary-toggle {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--space-2);
   background: transparent;
   border: none;
   cursor: pointer;
@@ -611,7 +611,7 @@
 .nb-source-summary-label {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--space-2);
   font-size: var(--fs-xs);
   font-weight: 600;
   color: var(--text-secondary);
@@ -619,7 +619,7 @@
 }
 
 .nb-source-summary-text {
-  margin: 4px 0 0;
+  margin: var(--space-2) 0 0;
   font-size: var(--fs-xs);
   line-height: 1.35;
 }
@@ -627,13 +627,13 @@
 .nb-source-topics {
   display: flex;
   flex-wrap: wrap;
-  gap: 2px;
-  margin-top: 3px;
+  gap: var(--space-1);
+  margin-top: var(--space-2);
 }
 
 .nb-source-topic-tag {
   font-size: var(--fs-xs);
-  padding: 1px 4px;
+  padding: 1px var(--space-2);
   border-radius: 2px;
   background: transparent;
   color: var(--text-muted);
@@ -644,8 +644,8 @@
 .nb-source-error {
   font-size: var(--fs-xs);
   color: var(--error);
-  margin-top: 2px;
-  padding: 1px 4px;
+  margin-top: var(--space-1);
+  padding: 1px var(--space-2);
   background: color-mix(in srgb, var(--error) 8%, transparent);
   border-radius: 2px;
 }
@@ -656,7 +656,7 @@
   border: none;
   color: var(--text-muted);
   cursor: pointer;
-  padding: 2px;
+  padding: var(--space-1);
   border-radius: var(--radius-sm);
   opacity: 0;
   transition: all 0.15s ease;
@@ -676,15 +676,15 @@
 .nb-source-actions {
   display: flex;
   align-items: center;
-  gap: 4px;
-  margin-top: 2px;
+  gap: var(--space-2);
+  margin-top: var(--space-1);
 }
 
 .nb-source-action-btn {
   display: flex;
   align-items: center;
-  gap: 2px;
-  padding: 1px 5px;
+  gap: var(--space-1);
+  padding: 1px var(--space-3);
   background: transparent;
   border: 1px solid var(--border-primary);
   border-radius: var(--radius-sm);
@@ -704,8 +704,8 @@
 .nb-indexing-progress {
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 6px 8px;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
   font-size: var(--fs-xs);
   color: var(--text-secondary);
   border-top: 1px solid var(--border-primary);
@@ -713,7 +713,7 @@
 
 /* ========== Summary Section ========== */
 .nb-summary-section {
-  padding: 6px 8px;
+  padding: var(--space-3) var(--space-4);
   border-top: 1px solid var(--border-primary);
   flex-shrink: 0;
   max-height: 180px;
@@ -727,13 +727,13 @@
 .nb-section-label {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--space-2);
   font-size: var(--fs-xs);
   font-weight: 600;
   color: var(--text-secondary);
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  margin: 0 0 4px 0;
+  margin: 0 0 var(--space-2) 0;
 }
 
 .nb-summary-text {
@@ -745,28 +745,28 @@
 
 /* ========== Chat Panel ========== */
 .nb-guided-questions {
-  margin-bottom: 24px;
+  margin-bottom: var(--space-10);
 }
 
 .nb-section-title {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--space-2);
   font-size: var(--fs-base);
   font-weight: 600;
   color: var(--text-primary);
-  margin: 0 0 10px 0;
+  margin: 0 0 var(--space-5) 0;
 }
 
 .nb-question-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-4);
 }
 
 .nb-question-card {
   text-align: left;
-  padding: 8px 12px;
+  padding: var(--space-4) var(--space-6);
   background: var(--bg-secondary);
   border: 1px solid var(--border-primary);
   border-radius: 6px;
@@ -785,10 +785,10 @@
 .nb-loading-questions {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-4);
   color: var(--text-secondary);
   font-size: var(--fs-base);
-  padding: 16px 0;
+  padding: var(--space-8) 0;
 }
 
 /* ========== Chat Empty State ========== */
@@ -799,14 +799,14 @@
   align-items: center;
   justify-content: center;
   text-align: center;
-  gap: 8px;
+  gap: var(--space-4);
 }
 
 .nb-empty-title {
   font-size: var(--fs-md);
   font-weight: 600;
   color: var(--text-primary);
-  margin: 8px 0 4px;
+  margin: var(--space-4) 0 var(--space-2);
 }
 
 .nb-empty-desc {
@@ -822,14 +822,14 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 12px;
+  gap: var(--space-6);
 }
 
 .nb-start-chat-btn {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 8px 18px;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-9);
   background: var(--accent);
   border: none;
   border-radius: 6px;
@@ -855,14 +855,14 @@
 .nb-note-list {
   flex: 1;
   overflow-y: auto;
-  padding: 4px;
+  padding: var(--space-2);
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--space-2);
 }
 
 .nb-note-card {
-  padding: 6px 8px;
+  padding: var(--space-3) var(--space-4);
   background: transparent;
   border: 1px solid transparent;
   border-radius: var(--radius-sm);
@@ -878,7 +878,7 @@
 .nb-note-card-header {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--space-2);
 }
 
 /* 卡片头部的前导图标跟随正文色（此前 tsx 里写 `text-primary`，而本项目没有 Tailwind，
@@ -902,7 +902,7 @@
   border: none;
   color: var(--text-muted);
   cursor: pointer;
-  padding: 2px;
+  padding: var(--space-1);
   border-radius: var(--radius-sm);
   opacity: 0;
   transition: all 0.15s ease;
@@ -919,7 +919,7 @@
 .nb-note-preview {
   font-size: var(--fs-xs);
   color: var(--text-muted);
-  margin: 4px 0 0;
+  margin: var(--space-2) 0 0;
   line-height: 1.35;
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -930,14 +930,14 @@
 .nb-note-meta {
   display: flex;
   align-items: center;
-  gap: 4px;
-  margin-top: 3px;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
   font-size: var(--fs-xs);
   color: var(--text-muted);
 }
 
 .nb-note-source-tag {
-  padding: 0 4px;
+  padding: 0 var(--space-2);
   border-radius: 2px;
   background: var(--accent-muted);
   color: var(--accent);
@@ -950,8 +950,8 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 4px;
-  padding: 16px 8px;
+  gap: var(--space-2);
+  padding: var(--space-8) var(--space-4);
   text-align: center;
   color: var(--text-muted);
   font-size: var(--fs-xs);
@@ -981,7 +981,7 @@ top: 36px;
   background: var(--bg-secondary);
   border: 1px solid var(--border-primary);
   border-radius: 8px;
-  padding: 16px;
+  padding: var(--space-8);
   width: 460px;
   max-width: 90vw;
   max-height: 80vh;
@@ -997,17 +997,17 @@ top: 36px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 16px;
+  margin-bottom: var(--space-8);
 }
 
 .nb-dialog-title {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-3);
   font-size: var(--fs-base);
   font-weight: 600;
   color: var(--text-primary);
-  margin: 0 0 12px 0;
+  margin: 0 0 var(--space-6) 0;
 }
 
 .nb-dialog-header .nb-dialog-title {
@@ -1019,7 +1019,7 @@ top: 36px;
   border: none;
   color: var(--text-muted);
   cursor: pointer;
-  padding: 4px;
+  padding: var(--space-2);
   border-radius: 4px;
   transition: all 0.15s ease;
 }
@@ -1031,15 +1031,15 @@ top: 36px;
 
 .nb-source-type-tabs {
   display: flex;
-  gap: 6px;
-  margin-bottom: 16px;
+  gap: var(--space-3);
+  margin-bottom: var(--space-8);
 }
 
 .nb-type-tab {
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 4px 10px;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-5);
   background: transparent;
   border: 1px solid var(--border-primary);
   border-radius: var(--radius-sm);
@@ -1057,13 +1057,13 @@ top: 36px;
 
 .nb-dialog-input {
   width: 100%;
-  padding: 8px 10px;
+  padding: var(--space-4) var(--space-5);
   background: var(--bg-primary);
   border: 1px solid var(--border-primary);
   border-radius: var(--radius-sm);
   color: var(--text-primary);
   font-size: var(--fs-sm);
-  margin-bottom: 10px;
+  margin-bottom: var(--space-5);
   outline: none;
   transition: border-color 0.15s ease;
 }
@@ -1079,7 +1079,7 @@ top: 36px;
 
 .nb-dialog-textarea {
   width: 100%;
-  padding: 8px 10px;
+  padding: var(--space-4) var(--space-5);
   background: var(--bg-primary);
   border: 1px solid var(--border-primary);
   border-radius: var(--radius-sm);
@@ -1087,7 +1087,7 @@ top: 36px;
   font-size: var(--fs-sm);
   font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
   resize: vertical;
-  margin-bottom: 10px;
+  margin-bottom: var(--space-5);
   outline: none;
   transition: border-color 0.15s ease;
 }
@@ -1105,15 +1105,15 @@ top: 36px;
 .nb-file-select {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin-bottom: 12px;
+  gap: var(--space-5);
+  margin-bottom: var(--space-6);
 }
 
 .nb-file-btn {
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 4px 10px;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-5);
   background: var(--bg-tertiary);
   border: 1px solid var(--border-primary);
   border-radius: var(--radius-sm);
@@ -1152,12 +1152,12 @@ top: 36px;
 .nb-dialog-footer {
   display: flex;
   justify-content: flex-end;
-  gap: 8px;
-  margin-top: 8px;
+  gap: var(--space-4);
+  margin-top: var(--space-4);
 }
 
 .nb-btn-cancel {
-  padding: 4px 12px;
+  padding: var(--space-2) var(--space-6);
   background: transparent;
   border: 1px solid var(--border-primary);
   border-radius: var(--radius-sm);
@@ -1175,8 +1175,8 @@ top: 36px;
 .nb-btn-confirm {
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 4px 12px;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-6);
   background: var(--accent);
   border: none;
   border-radius: var(--radius-sm);
@@ -1232,8 +1232,8 @@ top: 36px;
 /* 视图切换标签 — 借鉴 NotebookLM 三栏 + Understand-Anything 图谱视图思路 */
 .nb-view-tabs {
   display: flex;
-  gap: 2px;
-  padding: 0 8px;
+  gap: var(--space-1);
+  padding: 0 var(--space-4);
   background: var(--bg-secondary);
   border-bottom: 1px solid var(--border-primary);
   flex-shrink: 0;
@@ -1242,8 +1242,8 @@ top: 36px;
 .nb-view-tab {
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 4px 8px;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
   background: transparent;
   border: none;
   border-bottom: 2px solid transparent;
@@ -1267,7 +1267,7 @@ top: 36px;
 .nb-studio-divider {
   height: 1px;
   background: var(--border-primary);
-  margin: 4px 0;
+  margin: var(--space-2) 0;
 }
 
 .nb-studio-ppt {
@@ -1290,37 +1290,37 @@ top: 36px;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 12px;
+  gap: var(--space-6);
 }
 
 .kg-retry-btn {
-  padding: 8px 20px;
+  padding: var(--space-4) var(--space-9);
   border: none;
   border-radius: 6px;
   font-size: var(--fs-base);
   cursor: pointer;
-  margin-top: 8px;
+  margin-top: var(--space-4);
 }
 
 .kg-toolbar {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 16px;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-8);
   flex-shrink: 0;
 }
 
 .kg-search-wrapper {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-3);
   flex: 1;
   max-width: 300px;
 }
 
 .kg-search-input {
   flex: 1;
-  padding: 6px 10px;
+  padding: var(--space-3) var(--space-5);
   border-radius: 6px;
   font-size: var(--fs-base);
   outline: none;
@@ -1328,7 +1328,7 @@ top: 36px;
 
 .kg-toolbar-actions {
   display: flex;
-  gap: 4px;
+  gap: var(--space-2);
 }
 
 .kg-tool-btn {
@@ -1370,7 +1370,7 @@ top: 36px;
 
 .kg-sidebar {
   width: 300px;
-  padding: 16px;
+  padding: var(--space-8);
   overflow-y: auto;
   flex-shrink: 0;
 }
@@ -1378,9 +1378,9 @@ top: 36px;
 .kg-sidebar-header {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding-bottom: 12px;
-  margin-bottom: 12px;
+  gap: var(--space-4);
+  padding-bottom: var(--space-6);
+  margin-bottom: var(--space-6);
 }
 
 .kg-sidebar-header h3 {
@@ -1390,7 +1390,7 @@ top: 36px;
 }
 
 .kg-entity-badge {
-  padding: 2px 8px;
+  padding: var(--space-1) var(--space-4);
   border-radius: 4px;
   font-size: var(--fs-xs);
   font-weight: 500;
@@ -1399,13 +1399,13 @@ top: 36px;
 }
 
 .kg-detail-section {
-  margin-bottom: 16px;
+  margin-bottom: var(--space-8);
 }
 
 .kg-detail-section h4 {
   font-size: var(--fs-sm);
   text-transform: uppercase;
-  margin-bottom: 6px;
+  margin-bottom: var(--space-3);
   font-weight: 500;
 }
 
@@ -1417,14 +1417,14 @@ top: 36px;
 .kg-connected-list {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--space-2);
 }
 
 .kg-connected-item {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 10px;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-5);
   border-radius: 6px;
   font-size: var(--fs-sm);
   cursor: pointer;
@@ -1447,8 +1447,8 @@ top: 36px;
 
 .kg-legend {
   display: flex;
-  gap: 12px;
-  padding: 8px 16px;
+  gap: var(--space-6);
+  padding: var(--space-4) var(--space-8);
   flex-wrap: wrap;
   flex-shrink: 0;
 }
@@ -1456,7 +1456,7 @@ top: 36px;
 .kg-legend-item {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--space-2);
   font-size: var(--fs-sm);
 }
 
@@ -1540,7 +1540,7 @@ top: 36px;
 .kg-edge-path { transition: stroke 0.2s, stroke-width 0.2s; }
 .kg-edge-label {
   position: absolute;
-  padding: 2px var(--space-3);
+  padding: var(--space-1) var(--space-3);
   border-radius: var(--radius-sm);
   background: color-mix(in srgb, var(--bg-secondary) 90%, transparent);
   color: var(--text-secondary);
@@ -1779,7 +1779,7 @@ top: 36px;
   position: absolute;
   bottom: var(--space-4);
   left: var(--space-4);
-  padding: 2px var(--space-4);
+  padding: var(--space-1) var(--space-4);
   border-radius: var(--radius-sm);
   background: var(--overlay-backdrop);
   font-size: var(--fs-sm);
@@ -1966,20 +1966,20 @@ top: 36px;
 .ppt-header {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 8px 16px;
+  gap: var(--space-6);
+  padding: var(--space-4) var(--space-8);
   flex-shrink: 0;
 }
 
 .ppt-back-btn {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--space-2);
   background: transparent;
   border: none;
   cursor: pointer;
   font-size: var(--fs-base);
-  padding: 4px 8px;
+  padding: var(--space-2) var(--space-4);
   border-radius: 4px;
 }
 
@@ -1997,11 +1997,11 @@ top: 36px;
 .ppt-header-actions {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--space-2);
 }
 
 .ppt-theme-select {
-  padding: 4px 8px;
+  padding: var(--space-2) var(--space-4);
   border-radius: 6px;
   font-size: var(--fs-sm);
   outline: none;
@@ -2029,13 +2029,13 @@ top: 36px;
 .ppt-save-btn {
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 6px 16px;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-8);
   border: none;
   border-radius: 6px;
   font-size: var(--fs-base);
   cursor: pointer;
-  margin-left: 4px;
+  margin-left: var(--space-2);
 }
 
 .ppt-body {
@@ -2046,10 +2046,10 @@ top: 36px;
 
 .ppt-thumbnails {
   width: 140px;
-  padding: 8px;
+  padding: var(--space-4);
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--space-3);
   overflow-y: auto;
   flex-shrink: 0;
 }
@@ -2058,8 +2058,8 @@ top: 36px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
-  padding: 6px;
+  gap: var(--space-2);
+  padding: var(--space-3);
   border-radius: 6px;
   cursor: pointer;
   transition: all 0.15s;
@@ -2078,10 +2078,10 @@ top: 36px;
   width: 100%;
   height: 60px;
   border-radius: 4px;
-  padding: 8px;
+  padding: var(--space-4);
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--space-2);
 }
 
 .ppt-thumb-add {
@@ -2106,7 +2106,7 @@ top: 36px;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 20px;
+  padding: var(--space-9);
   overflow: hidden;
 }
 
@@ -2123,8 +2123,8 @@ top: 36px;
 .ppt-nav {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 8px 16px;
+  gap: var(--space-6);
+  padding: var(--space-4) var(--space-8);
   flex-shrink: 0;
 }
 
@@ -2149,38 +2149,38 @@ top: 36px;
   flex: 1;
   display: flex;
   flex-direction: column;
-  padding: 24px;
+  padding: var(--space-10);
   overflow-y: auto;
 }
 
 .ppt-gen-header {
   display: flex;
   align-items: center;
-  gap: 12px;
-  margin-bottom: 24px;
+  gap: var(--space-6);
+  margin-bottom: var(--space-10);
 }
 
 .ppt-gen-header h2 {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-3);
   font-size: var(--fs-lg);
   font-weight: 600;
 }
 
 .ppt-gen-form {
   max-width: 600px;
-  padding: 24px;
+  padding: var(--space-10);
   border-radius: 12px;
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: var(--space-9);
 }
 
 .ppt-form-group {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--space-3);
 }
 
 .ppt-form-group label {
@@ -2189,7 +2189,7 @@ top: 36px;
 }
 
 .ppt-form-input {
-  padding: 6px 10px;
+  padding: var(--space-3) var(--space-5);
   border-radius: var(--radius-sm);
   font-size: var(--fs-sm);
   outline: none;
@@ -2198,14 +2198,14 @@ top: 36px;
 .ppt-theme-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
-  gap: 8px;
+  gap: var(--space-4);
 }
 
 .ppt-theme-card {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 8px;
+  gap: var(--space-3);
+  padding: var(--space-4);
   border-radius: 8px;
   cursor: pointer;
   transition: all 0.15s;
@@ -2219,24 +2219,24 @@ top: 36px;
 .ppt-theme-preview {
   height: 40px;
   border-radius: 4px;
-  padding: 6px;
+  padding: var(--space-3);
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--space-2);
 }
 
 .ppt-gen-btn {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  padding: 8px 18px;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-9);
   border: none;
   border-radius: 6px;
   font-size: var(--fs-base);
   font-weight: 600;
   cursor: pointer;
-  margin-top: 8px;
+  margin-top: var(--space-4);
 }
 
 .ppt-loading {
@@ -2245,7 +2245,7 @@ top: 36px;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 16px;
+  gap: var(--space-8);
 }
 
 /* ========== Note Editor (Markdown + Preview + Backlinks) ========== */
@@ -2282,7 +2282,7 @@ top: 36px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 16px;
+  padding: var(--space-5) var(--space-8);
   border-bottom: 1px solid var(--border-primary);
   flex-shrink: 0;
 }
@@ -2290,7 +2290,7 @@ top: 36px;
 .nb-editor-title-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-4);
   flex: 1;
 }
 
@@ -2311,13 +2311,13 @@ top: 36px;
 .nb-editor-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-4);
 }
 
 .nb-editor-mode-toggle {
   display: flex;
-  gap: 2px;
-  padding: 2px;
+  gap: var(--space-1);
+  padding: var(--space-1);
   background: var(--bg-primary);
   border: 1px solid var(--border-primary);
   border-radius: 6px;
@@ -2370,8 +2370,8 @@ top: 36px;
 .nb-editor-toolbar {
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 6px 16px;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-8);
   border-bottom: 1px solid var(--border-primary);
   background: var(--bg-primary);
   flex-shrink: 0;
@@ -2406,13 +2406,13 @@ top: 36px;
   width: 1px;
   height: 20px;
   background: var(--border-primary);
-  margin: 0 4px;
+  margin: 0 var(--space-2);
 }
 
 .nb-tool-hint {
   font-size: var(--fs-sm);
   color: var(--text-muted);
-  margin-left: 8px;
+  margin-left: var(--space-4);
 }
 
 /* Body: Editor + Preview + Backlinks */
@@ -2439,7 +2439,7 @@ top: 36px;
 .nb-md-textarea {
   flex: 1;
   width: 100%;
-  padding: 16px 20px;
+  padding: var(--space-8) var(--space-9);
   background: var(--bg-primary);
   border: none;
   outline: none;
@@ -2461,7 +2461,7 @@ top: 36px;
 }
 
 .nb-md-preview {
-  padding: 16px 20px;
+  padding: var(--space-8) var(--space-9);
   color: var(--text-primary);
   font-size: var(--fs-md);
   line-height: 1.7;
@@ -2472,7 +2472,7 @@ top: 36px;
 .nb-md-preview h3,
 .nb-md-preview h4 {
   color: var(--text-primary);
-  margin: 16px 0 8px;
+  margin: var(--space-8) 0 var(--space-4);
   font-weight: 600;
 }
 
@@ -2481,22 +2481,22 @@ top: 36px;
 .nb-md-preview h3 { font-size: var(--fs-lg); }
 
 .nb-md-preview p {
-  margin: 8px 0;
+  margin: var(--space-4) 0;
 }
 
 .nb-md-preview ul,
 .nb-md-preview ol {
-  margin: 8px 0;
-  padding-left: 24px;
+  margin: var(--space-4) 0;
+  padding-left: var(--space-10);
 }
 
 .nb-md-preview li {
-  margin: 4px 0;
+  margin: var(--space-2) 0;
 }
 
 .nb-md-preview code {
   background: var(--bg-tertiary);
-  padding: 2px 6px;
+  padding: var(--space-1) var(--space-3);
   border-radius: 4px;
   font-size: var(--fs-base);
   font-family: 'SF Mono', 'Fira Code', monospace;
@@ -2504,10 +2504,10 @@ top: 36px;
 
 .nb-md-preview pre {
   background: var(--bg-tertiary);
-  padding: 12px 16px;
+  padding: var(--space-6) var(--space-8);
   border-radius: 8px;
   overflow-x: auto;
-  margin: 12px 0;
+  margin: var(--space-6) 0;
 }
 
 .nb-md-preview pre code {
@@ -2517,21 +2517,21 @@ top: 36px;
 
 .nb-md-preview blockquote {
   border-left: 3px solid var(--accent);
-  padding-left: 16px;
-  margin: 12px 0;
+  padding-left: var(--space-8);
+  margin: var(--space-6) 0;
   color: var(--text-secondary);
 }
 
 .nb-md-preview table {
   width: 100%;
   border-collapse: collapse;
-  margin: 12px 0;
+  margin: var(--space-6) 0;
 }
 
 .nb-md-preview th,
 .nb-md-preview td {
   border: 1px solid var(--border-primary);
-  padding: 8px 12px;
+  padding: var(--space-4) var(--space-6);
   text-align: left;
 }
 
@@ -2543,7 +2543,7 @@ top: 36px;
 .nb-preview-empty {
   color: var(--text-muted);
   text-align: center;
-  padding: 40px 0;
+  padding: var(--space-13) 0;
 }
 
 /* Backlinks Sidebar */
@@ -2560,8 +2560,8 @@ top: 36px;
 .nb-backlinks-header {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 10px 12px;
+  gap: var(--space-3);
+  padding: var(--space-5) var(--space-6);
   border-bottom: 1px solid var(--border-primary);
 }
 
@@ -2574,7 +2574,7 @@ top: 36px;
 }
 
 .nb-backlinks-section {
-  padding: 10px 12px;
+  padding: var(--space-5) var(--space-6);
   border-bottom: 1px solid var(--border-primary);
 }
 
@@ -2585,12 +2585,12 @@ top: 36px;
   font-size: var(--fs-sm);
   font-weight: 600;
   color: var(--text-secondary);
-  margin: 0 0 8px 0;
+  margin: 0 0 var(--space-4) 0;
 }
 
 .nb-backlinks-count {
   font-size: var(--fs-xs);
-  padding: 1px 6px;
+  padding: 1px var(--space-3);
   border-radius: 8px;
   background: var(--bg-tertiary);
   color: var(--text-muted);
@@ -2606,14 +2606,14 @@ top: 36px;
 .nb-backlinks-list {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--space-2);
 }
 
 .nb-backlink-item {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 8px;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
   background: var(--bg-tertiary);
   border: 1px solid transparent;
   border-radius: var(--radius-sm);
@@ -2643,7 +2643,7 @@ top: 36px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 16px;
+  padding: var(--space-4) var(--space-8);
   border-top: 1px solid var(--border-primary);
   flex-shrink: 0;
 }
@@ -2651,20 +2651,20 @@ top: 36px;
 .nb-editor-stats {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--space-2);
   font-size: var(--fs-sm);
   color: var(--text-muted);
 }
 
 .nb-editor-footer-actions {
   display: flex;
-  gap: 8px;
+  gap: var(--space-4);
 }
 
 .nb-shortcut-hint {
   font-size: var(--fs-xs);
   opacity: 0.6;
-  margin-left: 4px;
+  margin-left: var(--space-2);
 }
 
 /* ========== Source Viewer Modal ========== */
@@ -2700,7 +2700,7 @@ top: 36px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 16px;
+  padding: var(--space-5) var(--space-8);
   border-bottom: 1px solid var(--border-primary);
   flex-shrink: 0;
 }
@@ -2708,7 +2708,7 @@ top: 36px;
 .nb-source-viewer-title {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-3);
   font-size: var(--fs-base);
   font-weight: 600;
   color: var(--text-primary);
@@ -2717,7 +2717,7 @@ top: 36px;
 .nb-source-viewer-body {
   flex: 1;
   overflow-y: auto;
-  padding: 20px;
+  padding: var(--space-9);
 }
 
 .nb-source-viewer-content {
@@ -2729,7 +2729,7 @@ top: 36px;
 }
 
 .nb-source-highlight {
-  padding: 0 3px;
+  padding: 0 var(--space-2);
   border-radius: var(--radius-sm);
   background: var(--match-highlight-strong);
   color: var(--match-highlight-fg);
@@ -2753,13 +2753,13 @@ top: 36px;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 12px;
+  gap: var(--space-6);
 }
 
 .nb-mindmap-canvas {
   flex: 1;
   overflow: auto;
-  padding: 20px;
+  padding: var(--space-9);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2814,8 +2814,8 @@ top: 36px;
   transform: translateX(-50%);
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 8px 16px;
+  gap: var(--space-6);
+  padding: var(--space-4) var(--space-8);
   background: var(--overlay-backdrop-strong);
   border-radius: 24px;
   opacity: 0;
@@ -2833,7 +2833,7 @@ top: 36px;
   left: 50%;
   transform: translateX(-50%);
   max-width: 600px;
-  padding: 12px 20px;
+  padding: var(--space-6) var(--space-9);
   background: var(--overlay-backdrop-strong);
   border-radius: 8px;
   color: var(--text-primary);
@@ -2854,18 +2854,18 @@ top: 36px;
 .nb-study-path {
   flex: 1;
   overflow-y: auto;
-  padding: 24px;
+  padding: var(--space-10);
 }
 
 .nb-study-path-header {
-  margin-bottom: 20px;
+  margin-bottom: var(--space-9);
 }
 
 .nb-study-path-title {
   font-size: var(--fs-md);
   font-weight: 600;
   color: var(--text-primary);
-  margin: 0 0 6px;
+  margin: 0 0 var(--space-3);
 }
 
 .nb-study-path-desc {
@@ -2876,15 +2876,15 @@ top: 36px;
 .nb-study-path-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-4);
   max-width: 600px;
 }
 
 .nb-study-path-item {
   display: flex;
   align-items: flex-start;
-  gap: 12px;
-  padding: 14px 16px;
+  gap: var(--space-6);
+  padding: var(--space-7) var(--space-8);
   background: var(--bg-secondary);
   border: 1px solid var(--border-primary);
   border-radius: 8px;
@@ -2918,7 +2918,7 @@ top: 36px;
   font-size: var(--fs-base);
   font-weight: 500;
   color: var(--text-primary);
-  margin: 0 0 4px;
+  margin: 0 0 var(--space-2);
 }
 
 .nb-study-path-item-desc {
@@ -2931,7 +2931,7 @@ top: 36px;
   width: 2px;
   height: 16px;
   background: var(--border-primary);
-  margin-left: 13px;
+  margin-left: var(--space-7);
 }
 
 /* ========== “移动到分组”下拉（此前 nb-move-menu / nb-move-option 没有定义） ========== */
@@ -2976,7 +2976,7 @@ top: 36px;
 .nb-panel-tabs {
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: var(--space-1);
 }
 
 .nb-summary-toggle {
@@ -3014,7 +3014,7 @@ top: 36px;
   padding: var(--space-2) 0 var(--space-4);
 }
 .nb-tag-chip {
-  padding: 2px var(--space-4);
+  padding: var(--space-1) var(--space-4);
   border: 1px solid var(--border-primary);
   border-radius: var(--radius-md);
   background: transparent;
@@ -3092,7 +3092,7 @@ top: 36px;
 .nb-note-pin-icon { color: var(--accent); }
 .nb-note-pin-btn { opacity: 0.4; }
 .nb-note-pin-btn.is-pinned { opacity: 1; }
-.nb-note-tags { display: flex; flex-wrap: wrap; gap: 2px; margin-top: 2px; }
+.nb-note-tags { display: flex; flex-wrap: wrap; gap: var(--space-1); margin-top: var(--space-1); }
 .nb-note-tag {
   padding: 0 var(--space-2);
   border-radius: var(--radius-xs);
@@ -3103,7 +3103,7 @@ top: 36px;
 .nb-note-flash-btn {
   display: inline-flex;
   align-items: center;
-  gap: 2px;
+  gap: var(--space-1);
   padding: 0 var(--space-2);
   border: none;
   background: transparent;

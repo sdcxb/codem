@@ -185,7 +185,9 @@ describe("LO-SKIN 皮肤兼容契约", () => {
     const css = raw.replace(/\/\*[\s\S]*?\*\//g, "");
     const used = new Set<string>();
     for (const m of css.matchAll(/var\((--[\w-]+)/g)) used.add(m[1]);
-    const allowedPrefixes = ["--bg-", "--text-", "--border-", "--accent", "--success", "--warning", "--error", "--info", "--security-", "--sidebar-bg", "--input-bg", "--code-bg", "--scrollbar-", "--tooltip-", "--dropdown-", "--user-bg", "--assistant-bg", "--system-bg", "--fs-", "--radius", "--shadow-", "--duration-", "--ease-", "--transition-", "--z-", "--lo-"];
+    // 契约：只消费宿主设计令牌。`--space-*` 是第 28 波补进契约的 —— 此前插件用自己的像素间距，
+    // 于是全局密度改档时插件不跟随；间距令牌与 `--fs-*` / `--radius` 同性质：宿主提供、与皮肤无关。
+    const allowedPrefixes = ["--bg-", "--text-", "--border-", "--accent", "--success", "--warning", "--error", "--info", "--security-", "--sidebar-bg", "--input-bg", "--code-bg", "--scrollbar-", "--tooltip-", "--dropdown-", "--user-bg", "--assistant-bg", "--system-bg", "--fs-", "--space-", "--radius", "--shadow-", "--duration-", "--ease-", "--transition-", "--z-", "--lo-"];
     for (const token of used) {
       const ok = allowedPrefixes.some((p) => token.startsWith(p));
       expect(ok, `令牌 ${token} 不在契约允许的前缀集合内`).toBe(true);

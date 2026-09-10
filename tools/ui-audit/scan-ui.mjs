@@ -111,6 +111,7 @@ const RULES = {
   "svg-attr-var": { level: "error", desc: "把 var() 写在原生 SVG 表现属性里（属性不吃 var()，整条属性失效）" },
   "zindex-raw": { level: "error", desc: "全局层级的 z-index 写了裸数字（>=100 应用 --z-* 令牌；<100 属组件内局部层叠，允许）" },
   "css-class-duplicate": { level: "error", desc: "同一个类在顶层被定义多次且属性取值冲突（后一份会静默覆盖前一份）" },
+  "spacing-raw": { level: "error", desc: "CSS 间距属性写了裸数字（应使用 var(--space-*)；0/1px 细线/负值/百分比/calc 例外）" },
 };
 
 // ========== 扫描器 ==========
@@ -589,6 +590,47 @@ function scanCssDuplicates(rel, src) {
   }
 }
 
+/**
+ * 间距令牌化（第 28 波）：CSS 的间距属性必须用 var(--space-*)。
+ *
+ * 为什么单独一条：间距是**排版节奏**的载体，写死像素意味着"改全局密度要翻 2900 处"
+ * （第 28 波实测 2906 处数值间距，其中 2414 处正好落在刻度上/可以并到刻度）。
+ * 例外（都有明确理由，规则直接放行）：
+ *   · 0 / auto：不是间距
+ *   · 1px / 0.5px：细线（§2.4 明确允许）
+ *   · 负值：光学微调（图标对齐之类）
+ *   · %/calc()/clamp()/var()：动态值
+ */
+const SPACING_PROPS =
+  /(?:^|[\s;{])(padding|margin|gap|row-gap|column-gap|padding-top|padding-right|padding-bottom|padding-left|margin-top|margin-right|margin-bottom|margin-left)\s*:\s*([^;{}]+)/g;
+const SPACE_SCALE = new Set(["2", "4", "6", "8", "10", "12", "14", "16", "20", "24", "28", "32", "40", "48", "64"]);
+function scanCssSpacing(rel, src) {
+  const lines = src.split("\n");
+  let inRoot = false;
+  lines.forEach((raw, i) => {
+    const line = stripComments(raw);
+    if (/^\s*:root|^\s*\[data-theme|^\s*\[data-skin/.test(line)) inRoot = true;
+    if (inRoot && /^\s*\}/.test(line)) inRoot = false;
+    if (inRoot) return; // 令牌定义块里当然是字面量
+    if (!/var\(--space-/.test(line)) {
+      // 本行可能是"跨行声明"的一半，用整份源码里的间距声明另判；这里只处理本行能看全的
+    }
+    for (const m of line.matchAll(SPACING_PROPS)) {
+      for (const part of m[2].trim().split(/\s+/)) {
+        const px = /^(-?[0-9.]+)px$/.exec(part);
+        if (!px) continue; // var()/calc()/%/auto
+        const v = px[1];
+        if (v === "0" || v === "1" || v === "0.5" || v.startsWith("-")) continue;
+        if (SPACE_SCALE.has(v)) {
+          add("spacing-raw", rel, i + 1, line, `${m[1]}: ${part}（刻度值应用 var(--space-*)）`);
+        } else {
+          add("spacing-raw", rel, i + 1, line, `${m[1]}: ${part}（不在 2px 网格/刻度上）`);
+        }
+      }
+    }
+  });
+}
+
 // ========== 主流程 ==========
 const args = process.argv.slice(2);
 const flag = (name) => args.includes(name);
@@ -684,6 +726,7 @@ for (const full of files) {
   if (rel.endsWith(".css")) {
     scanCss(rel, src);
     scanCssDuplicates(rel, src);
+    scanCssSpacing(rel, src);
     scanZIndex(rel, src, true, []);
     continue;
   }

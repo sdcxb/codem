@@ -170,9 +170,9 @@
 [data-skin="hub"] .panel-tabs {
   background: var(--hub-bg-panel);
   border-bottom: 1px solid var(--hub-border-color);
-  padding: 0 12px;
+  padding: 0 var(--space-6);
   display: flex;
-  gap: 4px;
+  gap: var(--space-2);
   height: 40px;
   align-items: center;
 }
@@ -182,7 +182,7 @@
   color: var(--hub-text-muted);
   border: none;
   border-bottom: 2px solid transparent;
-  padding: 8px 16px;
+  padding: var(--space-4) var(--space-8);
   cursor: pointer;
   font-size: 13px;
   transition: color 0.2s, border-color 0.2s;
@@ -335,7 +335,7 @@
   height: 50px;
   display: flex;
   align-items: center;
-  padding: 0 16px;
+  padding: 0 var(--space-8);
   border-bottom: 1px solid var(--hub-border-color);
   background: var(--hub-bg-base);
   flex-shrink: 0;
@@ -347,7 +347,7 @@
   align-items: center;
   font-weight: 900;
   font-size: 18px;
-  margin-right: 40px;
+  margin-right: var(--space-13);
   letter-spacing: 1px;
   color: var(--hub-text-main);
   -webkit-app-region: no-drag;
@@ -357,16 +357,16 @@
 [data-skin="hub"] .hub-navbar-logo .hub-badge {
   background: var(--hub-color-primary);
   color: #000;
-  padding: 2px 6px;
+  padding: var(--space-1) var(--space-3);
   border-radius: 4px;
-  margin-left: 4px;
+  margin-left: var(--space-2);
   font-size: 14px;
   font-weight: 700;
 }
 
 [data-skin="hub"] .hub-navbar-links {
   display: flex;
-  gap: 24px;
+  gap: var(--space-10);
   flex: 1;
   -webkit-app-region: no-drag;
 }
@@ -375,7 +375,7 @@
   color: var(--hub-text-muted);
   text-decoration: none;
   font-weight: 500;
-  padding: 16px 0;
+  padding: var(--space-8) 0;
   border-bottom: 2px solid transparent;
   cursor: pointer;
   transition: color 0.2s, border-color 0.2s;
@@ -393,7 +393,7 @@
 [data-skin="hub"] .hub-navbar-actions {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: var(--space-8);
   color: var(--hub-text-muted);
   -webkit-app-region: no-drag;
 }
@@ -414,7 +414,7 @@
   border-left: 1px solid var(--hub-border-color);
   display: flex;
   flex-direction: column;
-  padding: 20px;
+  padding: var(--space-9);
   overflow-y: auto;
   flex-shrink: 0;
 }
@@ -423,9 +423,9 @@
   background: #050505;
   border: 1px solid var(--hub-border-color);
   border-radius: 12px;
-  padding: 20px;
+  padding: var(--space-9);
   text-align: center;
-  margin-bottom: 24px;
+  margin-bottom: var(--space-10);
 }
 
 [data-skin="hub"] .hub-agent-image {
@@ -433,7 +433,7 @@
   height: 120px;
   background: #1a1a1a;
   border-radius: 20px;
-  margin: 0 auto 16px;
+  margin: 0 auto var(--space-8);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -448,7 +448,7 @@
 }
 
 [data-skin="hub"] .hub-agent-info p {
-  margin-bottom: 4px;
+  margin-bottom: var(--space-2);
 }
 
 [data-skin="hub"] .hub-status-dot {
@@ -464,7 +464,7 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 16px;
+  margin-bottom: var(--space-8);
 }
 
 [data-skin="hub"] .hub-tasks-header h3 {
@@ -483,16 +483,16 @@
 [data-skin="hub"] .hub-task-list {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--space-6);
 }
 
 [data-skin="hub"] .hub-task-item {
   background: var(--hub-bg-card);
   border: 1px solid var(--hub-border-color);
   border-radius: 8px;
-  padding: 12px;
+  padding: var(--space-6);
   display: flex;
-  gap: 12px;
+  gap: var(--space-6);
   cursor: pointer;
   transition: border-color 0.2s;
 }
@@ -515,21 +515,21 @@
 
 [data-skin="hub"] .hub-task-content h4 {
   font-size: 13px;
-  margin-bottom: 6px;
+  margin-bottom: var(--space-3);
   font-weight: 500;
   color: var(--hub-text-main);
 }
 
 [data-skin="hub"] .hub-task-tags {
   display: flex;
-  gap: 6px;
+  gap: var(--space-3);
   font-size: 11px;
   color: var(--hub-text-muted);
 }
 
 [data-skin="hub"] .hub-task-tags span {
   background: #222;
-  padding: 2px 6px;
+  padding: var(--space-1) var(--space-3);
   border-radius: 4px;
 }
 
@@ -588,7 +588,7 @@
   display: flex;
   align-items: flex-start;
   justify-content: center;
-  padding-top: 12px !important;
+  padding-top: var(--space-6) !important;
 }
 
 [data-skin="hub"] .hub-right-sidebar-collapsed .hub-sidebar-toggle {

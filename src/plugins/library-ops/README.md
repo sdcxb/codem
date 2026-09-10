@@ -114,9 +114,10 @@ public/library-ops/               # 第三方像素美术资源（仅限非商�
 ## 5. 皮肤兼容
 
 插件样式只消费 Codem 设计令牌（`--bg-*` / `--text-*` / `--accent*` /
-`--success|warning|error|info` / `--fs-*` / `--radius*` / `--shadow-*`），
+`--success|warning|error|info` / `--fs-*` / `--radius*` / `--shadow-*` / `--space-*` / `--z-*`），
 半透明一律用 `color-mix(in srgb, var(--token) N%, transparent)` 派生，
-**全文件零硬编码色值** —— 因此 default（亮/暗）、dream、hub 四态自动适配。
+**全文件零硬编码色值、间距也全部走 `--space-*`** —— 因此 default（亮/暗）、dream、hub 四态自动适配，
+且全局密度调整（`--space-*` 改档）会一起生效。
 门禁：`src/test/library-ops-integration.test.ts` 的 LO-SKIN-1 ~ LO-SKIN-4。
 
 角色配色同样令牌化：12 套调色板全部由 `var(--token)` 组成，皮肤切换时角色一起变。

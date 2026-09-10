@@ -195,8 +195,8 @@
 
 /* Bug5: 梦幻皮肤 — app-content 加 padding+gap 创造间距 */
 [data-skin="dream"] .app-content {
-  padding: 8px 8px 8px 8px;
-  gap: 8px;
+  padding: var(--space-4) var(--space-4) var(--space-4) var(--space-4);
+  gap: var(--space-4);
 }
 
 /* Bug5: 梦幻皮肤 — 边栏圆角+毛玻璃，不再单独设 margin（由 app-content 的 padding 统一控制） */
@@ -243,9 +243,9 @@
 [data-skin="dream"] .panel-tabs {
   background: rgba(0, 0, 0, 0.03);
   border-bottom: 1px solid var(--dream-border-color, rgba(0, 0, 0, 0.1));
-  padding: 0 12px;
+  padding: 0 var(--space-6);
   display: flex;
-  gap: 4px;
+  gap: var(--space-2);
   height: 40px;
   align-items: center;
 }
@@ -255,7 +255,7 @@
   color: var(--dream-text-muted, #a88a8f);
   border: none;
   border-bottom: 2px solid transparent;
-  padding: 8px 16px;
+  padding: var(--space-4) var(--space-8);
   cursor: pointer;
   font-size: 13px;
   transition: color 0.2s, border-color 0.2s;
@@ -507,7 +507,7 @@ backdrop-filter: none !important;
   object-fit: cover;
   object-position: center top;
   background-color: #eee;
-  margin-bottom: 12px;
+  margin-bottom: var(--space-6);
   border-radius: 2px;
 }
 
@@ -561,7 +561,7 @@ backdrop-filter: none !important;
   border: 1px solid var(--dream-border-color, rgba(0, 0, 0, 0.12));
   border-radius: 12px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
-  padding: 10px 12px;
+  padding: var(--space-5) var(--space-6);
   color: var(--dream-text-main, #1a1a2e) !important;
 }
 
