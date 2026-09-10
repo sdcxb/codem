@@ -316,9 +316,9 @@
 }
 
 .issue-detail-meta {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(var(--space-12), max-content));
   gap: var(--space-8);
-  flex-wrap: wrap;
   margin-bottom: var(--space-8);
   font-size: var(--fs-sm);
   color: var(--text-secondary);

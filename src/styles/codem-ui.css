@@ -1222,8 +1222,8 @@
 }
 
 .tool-group-body-inline {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(var(--space-12), max-content));
   gap: var(--space-1);
   margin-top: var(--space-2);
   padding-left: var(--space-2);
@@ -1386,8 +1386,8 @@
   margin-bottom: var(--space-3);
 }
 .decision-tray-options {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(var(--space-13), max-content));
   gap: var(--space-3);
 }
 .decision-tray-option {

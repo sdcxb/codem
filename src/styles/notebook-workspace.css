@@ -632,8 +632,8 @@
 }
 
 .nb-source-topics {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(var(--space-12), max-content));
   gap: var(--space-1);
   margin-top: var(--space-2);
 }
@@ -1461,10 +1461,10 @@ top: 36px;
 }
 
 .kg-legend {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(var(--space-13), max-content));
   gap: var(--space-6);
   padding: var(--space-4) var(--space-8);
-  flex-wrap: wrap;
   flex-shrink: 0;
 }
 
@@ -1751,7 +1751,7 @@ top: 36px;
   font-size: var(--fs-sm);
 }
 
-.ppt-studio-filters { display: flex; flex-wrap: wrap; gap: var(--space-3); margin-bottom: var(--space-8); }
+.ppt-studio-filters { display: grid; gap: var(--space-3); margin-bottom: var(--space-8); }
 .ppt-studio-filter {
   padding: var(--space-2) var(--space-7);
   border: 1px solid var(--border-primary);
@@ -1911,7 +1911,7 @@ top: 36px;
   transition: background var(--duration-slow) ease;
 }
 .ppt-studio-progress-seg.is-done { background: var(--accent); }
-.ppt-studio-stages { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--space-2); }
+.ppt-studio-stages { display: grid; justify-content: center; gap: var(--space-2); }
 .ppt-studio-stage-label {
   color: color-mix(in srgb, var(--text-muted) 60%, transparent);
   font-size: var(--fs-xs);
@@ -3032,8 +3032,8 @@ top: 36px;
 }
 
 .nb-tag-filter {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(var(--space-12), max-content));
   gap: var(--space-2);
   padding: var(--space-2) 0 var(--space-4);
 }
@@ -3116,7 +3116,7 @@ top: 36px;
 .nb-note-pin-icon { color: var(--accent); }
 .nb-note-pin-btn { opacity: 0.4; }
 .nb-note-pin-btn.is-pinned { opacity: 1; }
-.nb-note-tags { display: flex; flex-wrap: wrap; gap: var(--space-1); margin-top: var(--space-1); }
+.nb-note-tags { display: grid; gap: var(--space-1); margin-top: var(--space-1); }
 .nb-note-tag {
   padding: 0 var(--space-2);
   border-radius: var(--radius);
