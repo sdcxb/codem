@@ -55,14 +55,14 @@ export interface TrajectoryPanelProps {
 /** 类型图标 */
 function TypeIcon({ type }: { type: TrajectoryStepType }) {
   switch (type) {
-    case 'llm_call': return <Brain size={12} style={{ color: 'var(--accent)', flexShrink: 0 }} />
-    case 'tool_call': return <Wrench size={12} style={{ color: 'var(--info)', flexShrink: 0 }} />
-    case 'tool_result': return <CheckCircle2 size={12} style={{ color: 'var(--success)', flexShrink: 0 }} />
-    case 'user_input': return <MessageSquare size={12} style={{ color: 'var(--text-secondary)', flexShrink: 0 }} />
-    case 'assistant_output': return <MessageSquare size={12} style={{ color: 'var(--text-primary)', flexShrink: 0 }} />
-    case 'error': return <AlertCircle size={12} style={{ color: 'var(--error)', flexShrink: 0 }} />
-    case 'turn_end': return <Activity size={12} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
-    default: return <Clock size={12} style={{ flexShrink: 0 }} />
+    case 'llm_call': return <Brain size={12} className="tj-icon tj-tone-accent" />
+    case 'tool_call': return <Wrench size={12} className="tj-icon tj-tone-info" />
+    case 'tool_result': return <CheckCircle2 size={12} className="tj-icon tj-tone-success" />
+    case 'user_input': return <MessageSquare size={12} className="tj-icon tj-tone-secondary" />
+    case 'assistant_output': return <MessageSquare size={12} className="tj-icon tj-tone-primary" />
+    case 'error': return <AlertCircle size={12} className="tj-icon tj-tone-error" />
+    case 'turn_end': return <Activity size={12} className="tj-icon tj-tone-muted" />
+    default: return <Clock size={12} className="tj-icon" />
   }
 }
 
@@ -243,22 +243,19 @@ function useTrajectorySteps(sessionId: string | null): TrajectoryStep[] {
 /** 单个指标卡片 */
 function MetricChip({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
   return (
-    <div style={{
-      display: 'flex',
-      alignItems: 'center',
-      gap: 4,
-      padding: '2px 6px',
-      background: 'var(--bg-tertiary)',
-      borderRadius: 4,
-      fontSize: 'var(--fs-xs)',
-      color: 'var(--text-muted)',
-      whiteSpace: 'nowrap',
-    }}>
+    <div className="tj-chip">
       {icon}
-      <span style={{ opacity: 0.6 }}>{label}</span>
-      <span style={{ fontWeight: 600, color: 'var(--text-secondary)' }}>{value}</span>
+      <span className="tj-chip-label">{label}</span>
+      <span className="tj-chip-value">{value}</span>
     </div>
   )
+}
+
+/** 摘要区折叠箭头（三处摘要共用） */
+function SummaryChevron({ expanded }: { expanded: boolean }) {
+  return expanded
+    ? <ChevronDown size={10} className="tj-chevron" />
+    : <ChevronRight size={10} className="tj-chevron" />
 }
 
 /**
@@ -317,50 +314,29 @@ export const TrajectoryPanel = memo(function TrajectoryPanel({
 
   if (steps.length === 0) {
     return (
-      <div style={{ padding: '24px 12px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 'var(--fs-sm)' }}>
+      <div className="tj-empty">
         {zh ? '暂无执行轨迹' : 'No trajectory data'}
       </div>
     )
   }
 
   return (
-    <div className="trajectory-panel" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+    <div className="trajectory-panel">
       {/* Header — 紧凑单行 */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 4,
-          padding: '8px 10px',
-          borderBottom: '1px solid var(--border-primary)',
-          flexShrink: 0,
-        }}
-      >
-        <Activity size={14} style={{ color: 'var(--accent)', flexShrink: 0 }} />
-        <span style={{ fontWeight: 600, fontSize: 'var(--fs-sm)', color: 'var(--text-primary)' }}>
+      <div className="tj-header">
+        <Activity size={14} className="tj-icon tj-tone-accent" />
+        <span className="tj-title">
           {zh ? '执行轨迹' : 'Trajectory'}
         </span>
-        <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)' }}>
+        <span className="tj-count">
           ({filteredSteps.length})
         </span>
 
         {/* 过滤器 — 下拉选择，不占横向空间 */}
-        <div style={{ marginLeft: 'auto', position: 'relative' }}>
+        <div className="tj-filter-wrap">
           <button
             onClick={(e) => { e.stopPropagation(); setShowFilterDropdown(!showFilterDropdown) }}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 4,
-              padding: '2px 6px',
-              borderRadius: 4,
-              border: '1px solid var(--border-primary)',
-              background: 'var(--bg-tertiary)',
-              color: 'var(--text-secondary)',
-              fontSize: 'var(--fs-xs)',
-              cursor: 'pointer',
-              whiteSpace: 'nowrap',
-            }}
+            className="tj-filter-btn"
           >
             <Filter size={10} />
             {filter === 'all' ? (zh ? '全部' : 'All') : typeLabel(filter as TrajectoryStepType, zh)}
@@ -369,34 +345,12 @@ export const TrajectoryPanel = memo(function TrajectoryPanel({
           {showFilterDropdown && (
             <>
               <div className="popover-shield" style={{ zIndex: 99 }} onClick={(e) => { e.stopPropagation(); setShowFilterDropdown(false) }} />
-              <div style={{
-                position: 'absolute',
-                top: '100%',
-                right: 0,
-                marginTop: 2,
-                minWidth: 100,
-                zIndex: 100,
-                padding: 4,
-                background: 'var(--bg-secondary)',
-                border: '1px solid var(--border-primary)',
-                borderRadius: 6,
-                boxShadow: '0 4px 12px rgba(0,0,0,0.2)',
-              }}>
+              <div className="tj-filter-menu popover-shell" style={{ zIndex: 100 }}>
                 {filterTypes.map(t => (
                   <div
                     key={t}
                     onClick={(e) => { e.stopPropagation(); setFilter(t); setShowFilterDropdown(false) }}
-                    style={{
-                      padding: '4px 8px',
-                      borderRadius: 4,
-                      cursor: 'pointer',
-                      fontSize: 'var(--fs-sm)',
-                      background: filter === t ? 'var(--accent-alpha)' : 'transparent',
-                      color: filter === t ? 'var(--accent)' : 'var(--text-secondary)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 6,
-                    }}
+                    className={`tj-filter-item ${filter === t ? 'is-active' : ''}`}
                   >
                     {t !== 'all' && <TypeIcon type={t as TrajectoryStepType} />}
                     <span>{t === 'all' ? (zh ? '全部' : 'All') : typeLabel(t as TrajectoryStepType, zh)}</span>
@@ -410,14 +364,7 @@ export const TrajectoryPanel = memo(function TrajectoryPanel({
 
       {/* Stats — 网格布局自动换行 */}
       {turnMetrics.turns > 0 && (
-        <div style={{
-          display: 'flex',
-          flexWrap: 'wrap',
-          gap: 4,
-          padding: '6px 10px',
-          borderBottom: '1px solid var(--border-primary)',
-          flexShrink: 0,
-        }}>
+        <div className="tj-stats">
           <MetricChip icon={<Timer size={10} />} label="" value={`${turnMetrics.turns}T · ${turnMetrics.steps}S`} />
           {turnMetrics.llmMs > 0 && <MetricChip icon={<Clock size={10} />} label="LLM" value={formatDuration(turnMetrics.llmMs)} />}
           {turnMetrics.toolMs > 0 && <MetricChip icon={<Wrench size={10} />} label="" value={formatDuration(turnMetrics.toolMs)} />}
@@ -434,7 +381,7 @@ export const TrajectoryPanel = memo(function TrajectoryPanel({
       )}
 
       {/* Steps timeline — 竖向列表，全宽 */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '4px 0' }}>
+      <div className="tj-steps">
         {filteredSteps.map((step, idx) => {
           const isExpanded = expandedSteps.has(step.id)
           const hasDetail = step.data && (
@@ -445,50 +392,45 @@ export const TrajectoryPanel = memo(function TrajectoryPanel({
             step.data.usage ||
             step.data.provider
           )
+          const summaryClass = `tj-summary ${hasDetail ? 'is-clickable' : ''}`
           return (
-            <div
-              key={step.id || idx}
-              style={{
-                padding: '6px 10px',
-                borderBottom: idx < filteredSteps.length - 1 ? '1px solid var(--border-primary)' : 'none',
-              }}
-            >
+            <div key={step.id || idx} className="tj-step">
               {/* 第一行：图标 + 类型 + 补充信息 + 时间 */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 2 }}>
+              <div className="tj-step-head">
                 <TypeIcon type={step.type} />
-                <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--text-secondary)', flexShrink: 0 }}>
+                <span className="tj-step-type">
                   {typeLabel(step.type, zh)}
                 </span>
                 {/* 工具名 */}
                 {step.data?.name && (
-                  <span style={{ fontFamily: 'monospace', fontSize: 'var(--fs-xs)', color: 'var(--accent)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <span className="mono tj-tool-name">
                     {step.data.name}
                   </span>
                 )}
                 {/* LLM provider — 紧凑 */}
                 {step.data?.provider && (
-                  <span style={{ display: 'flex', alignItems: 'center', gap: 1, fontSize: "var(--fs-xs)", color: 'var(--text-muted)', flexShrink: 0 }}>
+                  <span className="tj-meta">
                     <Cpu size={8} />{step.data.provider}
                   </span>
                 )}
                 {/* LLM usage — input↓/output↑（对标 dsh 每 request usage 展示） */}
                 {step.type === 'llm_call' && step.data?.usage && (
-                  <span style={{ fontSize: "var(--fs-xs)", color: 'var(--text-muted)', flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}>
+                  <span className="tj-num">
                     {formatTokens(step.data.usage.promptTokens ?? step.data.usage.inputTokens ?? 0)}↓/{formatTokens(step.data.usage.completionTokens ?? step.data.usage.outputTokens ?? 0)}↑
                   </span>
                 )}
                 {/* toolCallCount */}
                 {step.type === 'llm_call' && step.data?.toolCallCount != null && step.data.toolCallCount > 0 && (
-                  <span style={{ fontSize: "var(--fs-xs)", color: 'var(--info)', flexShrink: 0 }}>⚙{step.data.toolCallCount}</span>
+                  <span className="tj-num tj-num--info">⚙{step.data.toolCallCount}</span>
                 )}
                 {/* iteration */}
                 {step.data?.iteration != null && (
-                  <span style={{ fontSize: "var(--fs-xs)", color: 'var(--text-muted)', flexShrink: 0 }}>
+                  <span className="tj-num">
                     #{step.data.iteration}
                   </span>
                 )}
                 {/* 时间 — 右对齐 */}
-                <span style={{ marginLeft: 'auto', fontSize: "var(--fs-xs)", color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 2, flexShrink: 0 }}>
+                <span className="tj-time">
                   <Clock size={8} />
                   {formatTime(step.timestamp)}
                   {step.duration && <span>·{formatDuration(step.duration)}</span>}
@@ -498,78 +440,42 @@ export const TrajectoryPanel = memo(function TrajectoryPanel({
               {/* 第二行：摘要内容 — 可换行 */}
               {step.data?.content && typeof step.data.content === 'string' && (
                 <div
-                  style={{
-                    fontSize: 'var(--fs-sm)',
-                    color: 'var(--text-muted)',
-                    lineHeight: 1.4,
-                    overflow: 'hidden',
-                    display: '-webkit-box',
-                    WebkitLineClamp: 2,
-                    WebkitBoxOrient: 'vertical',
-                    cursor: hasDetail ? 'pointer' : 'default',
-                    wordBreak: 'break-word',
-                  }}
+                  className={`${summaryClass} tj-summary--muted`}
                   onClick={() => hasDetail && toggleStep(step.id)}
                 >
                   {step.data.content.slice(0, 200)}
                   {step.data.content.length > 200 && '...'}
-                  {hasDetail && (isExpanded
-                    ? <ChevronDown size={10} style={{ display: 'inline', marginLeft: 2, verticalAlign: 'text-bottom' }} />
-                    : <ChevronRight size={10} style={{ display: 'inline', marginLeft: 2, verticalAlign: 'text-bottom' }} />)}
+                  {hasDetail && <SummaryChevron expanded={isExpanded} />}
                 </div>
               )}
 
               {/* error 摘要 */}
               {step.data?.error && !step.data?.content && (
                 <div
-                  style={{
-                    fontSize: 'var(--fs-sm)',
-                    color: 'var(--error)',
-                    lineHeight: 1.4,
-                    overflow: 'hidden',
-                    display: '-webkit-box',
-                    WebkitLineClamp: 2,
-                    WebkitBoxOrient: 'vertical',
-                    cursor: hasDetail ? 'pointer' : 'default',
-                    wordBreak: 'break-word',
-                  }}
+                  className={`${summaryClass} tj-summary--error`}
                   onClick={() => hasDetail && toggleStep(step.id)}
                 >
                   {step.data.error.slice(0, 200)}
                   {step.data.error.length > 200 && '...'}
-                  {hasDetail && (isExpanded
-                    ? <ChevronDown size={10} style={{ display: 'inline', marginLeft: 2, verticalAlign: 'text-bottom' }} />
-                    : <ChevronRight size={10} style={{ display: 'inline', marginLeft: 2, verticalAlign: 'text-bottom' }} />)}
+                  {hasDetail && <SummaryChevron expanded={isExpanded} />}
                 </div>
               )}
 
               {/* result 摘要 */}
               {step.data?.result && !step.data?.content && (
                 <div
-                  style={{
-                    fontSize: 'var(--fs-sm)',
-                    color: 'var(--text-muted)',
-                    lineHeight: 1.4,
-                    overflow: 'hidden',
-                    display: '-webkit-box',
-                    WebkitLineClamp: 2,
-                    WebkitBoxOrient: 'vertical',
-                    cursor: hasDetail ? 'pointer' : 'default',
-                    wordBreak: 'break-word',
-                  }}
+                  className={`${summaryClass} tj-summary--muted`}
                   onClick={() => hasDetail && toggleStep(step.id)}
                 >
                   {typeof step.data.result === 'string' ? step.data.result.slice(0, 200) : JSON.stringify(step.data.result).slice(0, 200)}
                   {'...'}
-                  {hasDetail && (isExpanded
-                    ? <ChevronDown size={10} style={{ display: 'inline', marginLeft: 2, verticalAlign: 'text-bottom' }} />
-                    : <ChevronRight size={10} style={{ display: 'inline', marginLeft: 2, verticalAlign: 'text-bottom' }} />)}
+                  {hasDetail && <SummaryChevron expanded={isExpanded} />}
                 </div>
               )}
 
               {/* token usage 行 — 独立小行 */}
               {step.data?.usage && !isExpanded && (
-                <div style={{ fontSize: "var(--fs-xs)", color: 'var(--text-muted)', marginTop: 1, display: 'flex', alignItems: 'center', gap: 4 }}>
+                <div className="tj-usage">
                   <Zap size={8} />
                   {formatTokens(step.data.usage.promptTokens || step.data.usage.inputTokens || 0)}↓
                   {' '}
@@ -579,76 +485,67 @@ export const TrajectoryPanel = memo(function TrajectoryPanel({
 
               {/* 展开详情 — 全宽竖向堆叠 */}
               {isExpanded && step.data && (
-                <div style={{
-                  marginTop: 4,
-                  padding: 8,
-                  background: 'var(--bg-tertiary)',
-                  borderRadius: 4,
-                  fontSize: 'var(--fs-xs)',
-                  lineHeight: 1.5,
-                  maxHeight: 250,
-                  overflowY: 'auto',
-                }}>
+                <div className="tj-detail">
                   {/* LLM usage */}
                   {step.data.usage && (
-                    <div style={{ marginBottom: 4, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                      <span style={{ color: 'var(--text-secondary)' }}>
+                    <div className="tj-detail-usage">
+                      <span className="tj-detail-secondary">
                         <strong>Prompt:</strong> {formatTokens(step.data.usage.promptTokens || step.data.usage.inputTokens || 0)}
                       </span>
-                      <span style={{ color: 'var(--text-secondary)' }}>
+                      <span className="tj-detail-secondary">
                         <strong>Completion:</strong> {formatTokens(step.data.usage.completionTokens || step.data.usage.outputTokens || 0)}
                       </span>
-                      <span style={{ color: 'var(--text-secondary)' }}>
+                      <span className="tj-detail-secondary">
                         <strong>Total:</strong> {formatTokens(step.data.usage.totalTokens || 0)}
                       </span>
                     </div>
                   )}
                   {/* provider/model */}
                   {step.data.provider && (
-                    <div style={{ marginBottom: 4, color: 'var(--text-muted)' }}>
+                    <div className="tj-detail-row tj-detail-muted">
                       <strong>Provider:</strong> {step.data.provider}
                       {step.data.model && <span> · <strong>Model:</strong> {step.data.model}</span>}
                     </div>
                   )}
                   {/* args */}
                   {step.data.args && (
-                    <div style={{ marginBottom: 4 }}>
-                      <div style={{ color: 'var(--text-secondary)', marginBottom: 2 }}><strong>Args:</strong></div>
-                      <pre style={{ margin: 0, fontFamily: 'monospace', fontSize: 'var(--fs-xs)', whiteSpace: 'pre-wrap', wordBreak: 'break-all', color: 'var(--text-muted)' }}>
+                    <div className="tj-detail-row">
+                      <div className="tj-detail-label"><strong>Args:</strong></div>
+                      <pre className="mono tj-pre">
                         {typeof step.data.args === 'string' ? step.data.args : JSON.stringify(step.data.args, null, 2)}
                       </pre>
                     </div>
                   )}
                   {/* content */}
                   {step.data.content && (
-                    <div style={{ marginBottom: 4 }}>
-                      <div style={{ color: 'var(--text-secondary)', marginBottom: 2 }}><strong>Content:</strong></div>
-                      <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', color: 'var(--text-muted)' }}>
+                    <div className="tj-detail-row">
+                      <div className="tj-detail-label"><strong>Content:</strong></div>
+                      <div className="tj-detail-body">
                         {step.data.content}
                       </div>
                     </div>
                   )}
                   {/* result */}
                   {step.data.result && (
-                    <div style={{ marginBottom: 4 }}>
-                      <div style={{ color: 'var(--text-secondary)', marginBottom: 2 }}><strong>Result:</strong></div>
-                      <pre style={{ margin: 0, fontFamily: 'monospace', fontSize: 'var(--fs-xs)', whiteSpace: 'pre-wrap', wordBreak: 'break-all', color: 'var(--text-muted)' }}>
+                    <div className="tj-detail-row">
+                      <div className="tj-detail-label"><strong>Result:</strong></div>
+                      <pre className="mono tj-pre">
                         {typeof step.data.result === 'string' ? step.data.result : JSON.stringify(step.data.result, null, 2)}
                       </pre>
                     </div>
                   )}
                   {/* error */}
                   {step.data.error && (
-                    <div style={{ marginBottom: 4 }}>
-                      <div style={{ color: 'var(--error)', marginBottom: 2 }}><strong>Error:</strong></div>
-                      <pre style={{ margin: 0, fontFamily: 'monospace', fontSize: 'var(--fs-xs)', whiteSpace: 'pre-wrap', wordBreak: 'break-all', color: 'var(--error)' }}>
+                    <div className="tj-detail-row">
+                      <div className="tj-detail-label tj-detail-label--error"><strong>Error:</strong></div>
+                      <pre className="mono tj-pre tj-pre--error">
                         {step.data.error}
                       </pre>
                     </div>
                   )}
                   {/* turn_end */}
                   {step.data.reason && (
-                    <div style={{ color: 'var(--text-muted)' }}>
+                    <div className="tj-detail-muted">
                       <strong>Stop:</strong> {step.data.reason}
                       {step.data.duration_ms && <span> · <strong>Duration:</strong> {formatDuration(step.data.duration_ms)}</span>}
                       {step.data.iterations != null && <span> · <strong>Iterations:</strong> {step.data.iterations}</span>}

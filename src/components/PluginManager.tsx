@@ -106,7 +106,7 @@ function PluginCard({
           {plugin.version && <Badge variant="muted">v{plugin.version}</Badge>}
           {isCore && (
             <Badge variant="info">
-              <Lock size={10} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 2 }} />
+              <Lock size={10} className="icon-inline plugin-mgr-risk-icon" />
               核心
             </Badge>
           )}
@@ -119,7 +119,7 @@ function PluginCard({
 
       {/* 类型标签 */}
       {tags.length > 0 && (
-        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+        <div className="plugin-mgr-tag-row">
           {tags.map(tag => {
             const cfg = TAG_CONFIG[tag] || { label: tag, variant: 'default' as const }
             return <Badge key={tag} variant={cfg.variant}>{cfg.label}</Badge>
@@ -130,7 +130,7 @@ function PluginCard({
             if (plugin.riskLevel === 'safe') return null
             return (
               <Badge variant={plugin.riskLevel === 'danger' ? 'warning' : 'muted'}>
-                <span style={{ marginRight: 2 }}>{risk.icon}</span>
+                <span className="plugin-mgr-risk-icon">{risk.icon}</span>
                 {risk.label}
               </Badge>
             )
@@ -141,22 +141,22 @@ function PluginCard({
       {/* 依赖信息摘要 */}
       {(plugin.dependencies?.length > 0 || plugin.dependents?.length > 0) && (
         <div
-          style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, fontSize: 'var(--fs-sm)', color: 'var(--text-muted)' }}
+          className="plugin-mgr-deps"
           onClick={(e) => { e.stopPropagation(); setExpanded(!expanded) }}
         >
           {expanded ? <ActionIcons.expand size={12} /> : <ActionIcons.collapse size={12} />}
           {plugin.dependencies.length > 0 && (
-            <span style={{ color: 'var(--accent)' }}>
+            <span className="plugin-mgr-dep-accent">
               依赖 {plugin.dependencies.length} 个
             </span>
           )}
           {plugin.dependents.length > 0 && (
-            <span style={{ color: 'var(--warning)' }}>
+            <span className="plugin-mgr-dep-warn">
               被 {plugin.dependents.length} 个依赖
             </span>
           )}
           {!plugin.canSafelyDisable && !isCore && (
-            <span style={{ color: 'var(--warning)' }}>
+            <span className="plugin-mgr-dep-warn">
               <StatusIcons.danger size={11} className="icon-inline" />
               关闭将影响其他插件
             </span>
@@ -166,88 +166,84 @@ function PluginCard({
 
       {/* 展开的详细信息 */}
       {expanded && (
-        <div style={{ padding: 8, background: 'var(--bg-tertiary)', borderRadius: 6, fontSize: 'var(--fs-sm)' }}>
+        <div className="plugin-mgr-detail">
           {/* 风险说明 */}
           {plugin.riskLevel && plugin.riskLevel !== 'safe' && (
-            <div style={{
-              marginBottom: 6, padding: '6px 8px', borderRadius: 4,
-              background: plugin.riskLevel === 'danger' ? 'color-mix(in srgb, var(--error) 12%, transparent)' : 'color-mix(in srgb, var(--warning) 12%, transparent)',
-              border: `1px solid ${plugin.riskLevel === 'danger' ? 'color-mix(in srgb, var(--error) 30%, transparent)' : 'color-mix(in srgb, var(--warning) 30%, transparent)'}`,
-            }}>
-              <div style={{ fontWeight: 600, marginBottom: 2, color: RISK_LEVEL_CONFIG[plugin.riskLevel].color }}>
+            <div className={`plugin-mgr-box ${plugin.riskLevel === 'danger' ? 'is-danger' : 'is-warn'}`}>
+              <div className="plugin-mgr-box-title" style={{ color: RISK_LEVEL_CONFIG[plugin.riskLevel].color }}>
                 {RISK_LEVEL_CONFIG[plugin.riskLevel].icon} {RISK_LEVEL_CONFIG[plugin.riskLevel].label}
               </div>
-              <div style={{ color: 'var(--text-secondary)' }}>{plugin.riskDescription}</div>
+              <div className="plugin-mgr-box-text">{plugin.riskDescription}</div>
             </div>
           )}
           {plugin.dependencies?.length > 0 && (
-            <div style={{ marginBottom: 6 }}>
-              <div style={{ fontWeight: 600, marginBottom: 2 }}>依赖的插件：</div>
-              <div style={{ maxHeight: 120, overflowY: 'auto' }}>
+            <div className="plugin-mgr-section">
+              <div className="plugin-mgr-section-title">依赖的插件：</div>
+              <div className="plugin-mgr-list">
                 {plugin.dependencies.map((dep: string) => (
-                  <div key={dep} style={{ color: 'var(--accent)', marginLeft: 12 }}>→ {dep}</div>
+                  <div key={dep} className="plugin-mgr-list-item is-accent">→ {dep}</div>
                 ))}
               </div>
             </div>
           )}
           {plugin.dependents?.length > 0 && (
-            <div style={{ marginBottom: 6 }}>
-              <div style={{ fontWeight: 600, marginBottom: 2 }}>被以下插件依赖：</div>
-              <div style={{ maxHeight: 120, overflowY: 'auto' }}>
+            <div className="plugin-mgr-section">
+              <div className="plugin-mgr-section-title">被以下插件依赖：</div>
+              <div className="plugin-mgr-list">
                 {plugin.dependents.map((dep: string) => (
-                  <div key={dep} style={{ color: 'var(--warning)', marginLeft: 12 }}>← {dep}</div>
+                  <div key={dep} className="plugin-mgr-list-item is-warn">← {dep}</div>
                 ))}
               </div>
             </div>
           )}
           {plugin.provides?.length > 0 && (
-            <div style={{ marginBottom: 6 }}>
-              <div style={{ fontWeight: 600, marginBottom: 2 }}>提供的服务：</div>
-              <div style={{ marginLeft: 12 }}>
+            <div className="plugin-mgr-section">
+              <div className="plugin-mgr-section-title">提供的服务：</div>
+              <div className="plugin-mgr-inline-tags">
                 {plugin.provides.map((s: string) => <Badge key={s} variant="success">{s}</Badge>)}
               </div>
             </div>
           )}
           {plugin.inject?.length > 0 && (
             <div>
-              <div style={{ fontWeight: 600, marginBottom: 2 }}>消费的服务：</div>
-              <div style={{ marginLeft: 12 }}>
+              <div className="plugin-mgr-section-title">消费的服务：</div>
+              <div className="plugin-mgr-inline-tags">
                 {plugin.inject.map((s: string) => <Badge key={s} variant="info">{s}</Badge>)}
               </div>
             </div>
           )}
           {/* UI 影响声明 — P1-1 */}
           {plugin.uiImpact && (
-            <div style={{ marginTop: 6, padding: '6px 8px', borderRadius: 4, background: 'color-mix(in srgb, var(--accent) 8%, transparent)', border: '1px solid color-mix(in srgb, var(--accent) 20%, transparent)' }}>
-              <div style={{ fontWeight: 600, marginBottom: 4, color: 'var(--accent)' }}>
+            <div className="plugin-mgr-box is-accent plugin-mgr-impact">
+              <div className="plugin-mgr-impact-title">
                 🖥️ UI 影响
               </div>
               {plugin.uiImpact.slots?.length > 0 && (
-                <div style={{ marginBottom: 4 }}>
-                  <span style={{ color: 'var(--text-muted)' }}>影响槽位：</span>
+                <div className="plugin-mgr-impact-row">
+                  <span className="plugin-mgr-impact-key">影响槽位：</span>
                   {plugin.uiImpact.slots.map((slot: string) => (
                     <Badge key={slot} variant="default">{slot}</Badge>
                   ))}
                 </div>
               )}
               {plugin.uiImpact.buttons?.length > 0 && (
-                <div style={{ marginBottom: 4 }}>
-                  <span style={{ color: 'var(--text-muted)' }}>影响按钮：</span>
+                <div className="plugin-mgr-impact-row">
+                  <span className="plugin-mgr-impact-key">影响按钮：</span>
                   {plugin.uiImpact.buttons.map((btn: string) => (
                     <Badge key={btn} variant="warning">{btn}</Badge>
                   ))}
                 </div>
               )}
               {plugin.uiImpact.panels?.length > 0 && (
-                <div style={{ marginBottom: 4 }}>
-                  <span style={{ color: 'var(--text-muted)' }}>影响面板：</span>
+                <div className="plugin-mgr-impact-row">
+                  <span className="plugin-mgr-impact-key">影响面板：</span>
                   {plugin.uiImpact.panels.map((panel: string) => (
                     <Badge key={panel} variant="info">{panel}</Badge>
                   ))}
                 </div>
               )}
               {plugin.uiImpact.degradedTo && (
-                <div style={{ color: 'var(--text-secondary)' }}>
+                <div className="plugin-mgr-impact-degraded">
                   ↳ 降级为：{plugin.uiImpact.degradedTo}
                 </div>
               )}
@@ -262,13 +258,12 @@ function PluginCard({
           {plugin.author && <span className="hint-sm">@{plugin.author}</span>}
           {plugin.hot && <Badge variant="warning">可热重载</Badge>}
         </div>
-        <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+        <div className="plugin-mgr-switch-row">
           {plugin.hot && isEnabled && (
             <button
-              className="market-skill-link-btn"
+              className="market-skill-link-btn plugin-mgr-hot-btn"
               title="热重载"
               onClick={(e) => { e.stopPropagation(); onRestart(plugin.name) }}
-              style={{ padding: '2px 6px', fontSize: 'var(--fs-sm)' }}
             >
               <ActionIcons.refresh size={12} />
             </button>
@@ -285,7 +280,7 @@ function PluginCard({
 
       {/* 错误信息 */}
       {plugin.error && (
-        <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--error)' }}>
+        <div className="plugin-mgr-error">
           {plugin.error}
         </div>
       )}
@@ -310,32 +305,27 @@ function CascadeConfirmDialog({
   return (
     <div className="modal-overlay" style={{ zIndex: 2000 }} onClick={onCancel}>
       <div
-        className="modal-editor"
+        className="modal-editor plugin-mgr-dialog"
         onClick={e => e.stopPropagation()}
-        style={{ maxWidth: 480, maxHeight: '70vh', overflowY: 'auto' }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-          <StatusIcons.danger size={20} style={{ color: 'var(--warning)' }} />
-          <span style={{ fontWeight: 700, fontSize: 'var(--fs-lg)' }}>
+        <div className="plugin-mgr-dialog-head">
+          <StatusIcons.danger size={20} className="plugin-mgr-dep-warn" />
+          <span className="plugin-mgr-dialog-title">
             {hasCascade ? '关闭插件将影响其他插件' : '确认关闭插件'}
           </span>
         </div>
 
-        <div style={{ fontSize: 'var(--fs-base)', color: 'var(--text-muted)', marginBottom: 12 }}>
-          您即将关闭 <strong style={{ color: 'var(--text-primary)' }}>{request.targetPlugin}</strong>
+        <div className="plugin-mgr-dialog-lead">
+          您即将关闭 <strong className="plugin-mgr-dialog-lead-strong">{request.targetPlugin}</strong>
         </div>
 
         {/* 风险提示区域 */}
         {request.riskLevel && request.riskLevel !== 'safe' && (
-          <div style={{
-            marginBottom: 12, padding: '10px 12px', borderRadius: 6,
-            background: request.riskLevel === 'danger' ? 'color-mix(in srgb, var(--error) 10%, transparent)' : 'color-mix(in srgb, var(--warning) 10%, transparent)',
-            border: `1px solid ${request.riskLevel === 'danger' ? 'color-mix(in srgb, var(--error) 30%, transparent)' : 'color-mix(in srgb, var(--warning) 30%, transparent)'}`,
-          }}>
-            <div style={{ fontWeight: 600, marginBottom: 4, fontSize: 'var(--fs-base)', color: RISK_LEVEL_CONFIG[request.riskLevel].color }}>
+          <div className={`plugin-mgr-dialog-risk ${request.riskLevel === 'danger' ? 'is-danger' : 'is-warn'}`}>
+            <div className="plugin-mgr-dialog-risk-title" style={{ color: RISK_LEVEL_CONFIG[request.riskLevel].color }}>
               {RISK_LEVEL_CONFIG[request.riskLevel].icon} 风险等级：{RISK_LEVEL_CONFIG[request.riskLevel].label}
             </div>
-            <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-secondary)' }}>
+            <div className="plugin-mgr-dialog-risk-desc">
               {request.riskDescription}
             </div>
           </div>
@@ -344,18 +334,14 @@ function CascadeConfirmDialog({
         {/* 级联关闭列表 */}
         {hasCascade && (
           <>
-            <div style={{ fontSize: 'var(--fs-base)', color: 'var(--text-muted)', marginBottom: 8 }}>
+            <div className="plugin-mgr-dialog-list-lead">
               以下插件依赖它，将同时被关闭：
             </div>
-            <div style={{ maxHeight: 200, overflowY: 'auto', marginBottom: 12 }}>
+            <div className="plugin-mgr-dialog-list">
               {cascade.affected.filter(a => a.name !== request.targetPlugin).map(item => (
-                <div key={item.name} style={{
-                  padding: '8px 12px', marginBottom: 4, borderRadius: 4,
-                  background: 'var(--bg-tertiary)', fontSize: 'var(--fs-sm)',
-                  display: 'flex', alignItems: 'center', gap: 8,
-                }}>
-                  <StatusIcons.danger size={12} style={{ color: 'var(--warning)' }} />
-                  <span style={{ fontWeight: 600 }}>{item.name}</span>
+                <div key={item.name} className="plugin-mgr-dialog-item">
+                  <StatusIcons.danger size={12} className="plugin-mgr-dep-warn" />
+                  <span className="plugin-mgr-dialog-item-name">{item.name}</span>
                   <span className="hint-sm">— {item.reason}</span>
                 </div>
               ))}
@@ -363,15 +349,11 @@ function CascadeConfirmDialog({
           </>
         )}
 
-        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+        <div className="plugin-mgr-dialog-actions">
           <button className="skill-detail-btn" onClick={onCancel}>取消</button>
           <button
-            className="skill-detail-btn delete"
+            className={`skill-detail-btn delete plugin-mgr-confirm-btn ${request.riskLevel === 'danger' ? 'is-danger' : 'is-warn'}`}
             onClick={onConfirm}
-            style={{
-              background: request.riskLevel === 'danger' ? 'var(--error)' : 'var(--warning)',
-              color: 'var(--text-on-accent)', border: 'none',
-            }}
           >
             {hasCascade ? '确认全部关闭' : '确认关闭'}
           </button>
@@ -615,16 +597,12 @@ export function PluginManager({ onClose }: PluginManagerProps) {
       </div>
 
       {/* Tab：已安装 / 插件市场 */}
-      <div style={{ display: 'flex', gap: 2, padding: '0 14px', borderBottom: '1px solid var(--border-primary)', flexShrink: 0 }}>
+      <div className="plugin-mgr-tabs">
         {([['installed', zh ? '已安装' : 'Installed'], ['market', zh ? '插件市场' : 'Market']] as const).map(([key, label]) => (
           <button
             key={key}
             onClick={() => setTab(key)}
-            style={{
-              padding: '8px 14px', fontSize: 'var(--fs-sm)', cursor: 'pointer', background: 'transparent',
-              border: 'none', borderBottom: tab === key ? '2px solid var(--accent)' : '2px solid transparent',
-              color: tab === key ? 'var(--accent)' : 'var(--text-secondary)', fontWeight: tab === key ? 600 : 400,
-            }}
+            className={`plugin-mgr-tab ${tab === key ? 'is-active' : ''}`}
           >
             {label}
           </button>
@@ -709,7 +687,7 @@ export function PluginManager({ onClose }: PluginManagerProps) {
       </div>
 
       {/* 核心插件说明 */}
-      <div style={{ padding: '8px 12px', fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', borderTop: '1px solid var(--border-primary)' }}>
+      <div className="plugin-mgr-footnote">
         💡 {zh ? '标有「核心」的插件是系统运行的基础设施，关闭会导致系统崩溃，已锁定不可关闭。其他插件可自由开关，系统会在关闭前检查依赖关系。' : 'Plugins marked as "Core" are system infrastructure. Disabling them would crash the system, so they are locked. Other plugins can be freely toggled; the system checks dependencies before disabling.'}
       </div>
         </>
@@ -727,14 +705,7 @@ export function PluginManager({ onClose }: PluginManagerProps) {
       {/* Toast 消息 */}
       {toast && (
         <>
-          <div style={{
-            position: 'fixed', bottom: 20, right: 20, padding: '10px 16px', borderRadius: 6,
-            background: toast.type === 'success' ? 'var(--success)' :
-                       toast.type === 'error' ? 'var(--error)' :
-                       'var(--warning)',
-            color: 'var(--text-on-accent)', fontSize: 'var(--fs-base)', zIndex: 3000, boxShadow: 'var(--shadow-popover)',
-            maxWidth: 400,
-          }}>
+          <div className={`plugin-mgr-toast ${toast.type === 'success' ? 'is-success' : toast.type === 'error' ? 'is-error' : 'is-warn'}`}>
             {toast.msg}
           </div>
           <TimeoutToast key={toast.msg} onDismiss={() => setToast(null)} />

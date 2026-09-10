@@ -310,7 +310,7 @@ export function ProjectManager({ onClose }: ProjectManagerProps) {
 
         {mode === "list" && (
           <div className="project-list-body">
-            <div className="project-actions" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 12 }}>
+            <div className="project-actions pm-actions-grid">
               <button className="project-action-btn" onClick={() => setMode("create")}>
                 <ActionIcons.add size={14} /> 新建项目
               </button>
@@ -337,7 +337,7 @@ export function ProjectManager({ onClose }: ProjectManagerProps) {
                     {p.description && <div className="project-item-desc">{p.description}</div>}
                   </div>
                   <button
-                    className="project-item-delete"
+                    className="project-item-delete pm-icon-gap"
                     onClick={(e) => {
                       e.stopPropagation();
                       // Load existing env config and switch to env mode
@@ -346,7 +346,6 @@ export function ProjectManager({ onClose }: ProjectManagerProps) {
                       setMode("env");
                     }}
                     title="环境配置"
-                    style={{ marginRight: 4 }}
                   >
                     <Server size={16} />
                   </button>
@@ -435,9 +434,9 @@ export function ProjectManager({ onClose }: ProjectManagerProps) {
                     value={gitRepoName}
                     onChange={(e) => setGitRepoName(e.target.value)}
                     placeholder="my-awesome-project"
-                    style={{ fontFamily: "monospace" }}
+                    className="pm-mono"
                   />
-                  <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", marginTop: 2 }}>
+                  <div className="pm-field-hint">
                     将在 GitHub 上创建同名仓库，并在本地 git init
                   </div>
                 </div>
@@ -473,8 +472,8 @@ export function ProjectManager({ onClose }: ProjectManagerProps) {
                 </div>
                 <div className="setting-group">
                   <label>仓库可见性</label>
-                  <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-                    <label style={{ display: "flex", alignItems: "center", gap: 4, cursor: "pointer", fontSize: 'var(--fs-base)' }}>
+                  <div className="pm-radio-row">
+                    <label className="pm-radio">
                       <input
                         type="radio"
                         checked={gitIsPrivate}
@@ -482,7 +481,7 @@ export function ProjectManager({ onClose }: ProjectManagerProps) {
                       />
                       <Lock size={14} /> 私有
                     </label>
-                    <label style={{ display: "flex", alignItems: "center", gap: 4, cursor: "pointer", fontSize: 'var(--fs-base)' }}>
+                    <label className="pm-radio">
                       <input
                         type="radio"
                         checked={!gitIsPrivate}
@@ -499,11 +498,11 @@ export function ProjectManager({ onClose }: ProjectManagerProps) {
                     value={gitToken}
                     onChange={(e) => setGitToken(e.target.value)}
                     placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
-                    style={{ fontFamily: "monospace" }}
+                    className="pm-mono"
                   />
-                  <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", marginTop: 2 }}>
+                  <div className="pm-field-hint">
                     需要 repo 权限。
-                    <a href="https://github.com/settings/tokens/new?scopes=repo" target="_blank" rel="noopener" style={{ color: "var(--accent)", textDecoration: "underline" }}>
+                    <a href="https://github.com/settings/tokens/new?scopes=repo" target="_blank" rel="noopener" className="pm-link">
                       点击创建 Token
                     </a>
                     {getSettingJSON<GitConfig>("codem-git-config", {}).githubToken && "（已保存，可从设置中清除）"}
@@ -523,33 +522,28 @@ export function ProjectManager({ onClose }: ProjectManagerProps) {
             )}
 
             {gitStatus === "creating" && (
-              <div style={{ textAlign: "center", padding: "40px 0" }}>
-                <div style={{ fontSize: "var(--fs-hero)", marginBottom: 16, display: "flex", justifyContent: "center" }}><StatusIcons.pending size={32} /></div>
-                <p style={{ color: "var(--text-secondary)", fontSize: 'var(--fs-md)' }}>{gitStatusMsg}</p>
+              <div className="pm-status-block">
+                <div className="pm-status-icon"><StatusIcons.pending size={32} /></div>
+                <p className="pm-status-text">{gitStatusMsg}</p>
               </div>
             )}
 
             {gitStatus === "done" && (
-              <div style={{ textAlign: "center", padding: "40px 0" }}>
-                <div style={{ fontSize: "var(--fs-hero)", marginBottom: 16, display: "flex", justifyContent: "center" }}><StatusIcons.success size={32} style={{ color: "var(--success)" }} /></div>
-                <p style={{ color: "var(--text-primary)", fontSize: 'var(--fs-md)', fontWeight: 500 }}>{gitStatusMsg}</p>
+              <div className="pm-status-block">
+                <div className="pm-status-icon"><StatusIcons.success size={32} style={{ color: "var(--success)" }} /></div>
+                <p className="pm-status-text is-strong">{gitStatusMsg}</p>
               </div>
             )}
 
             {gitStatus === "error" && (
-              <div style={{ padding: "20px 0" }}>
-                <div style={{ color: "var(--error)", fontSize: 'var(--fs-md)', marginBottom: 12, display: "flex", alignItems: "center", gap: 6 }}><StatusIcons.error size={14} /> 创建失败</div>
-                <pre style={{
-                  background: "var(--bg-hover, #2a2a3a)",
-                  padding: 12, borderRadius: 8, fontSize: 'var(--fs-sm)', color: "var(--error)",
-                  maxHeight: 150, overflow: "auto", whiteSpace: "pre-wrap", wordBreak: "break-all",
-                }}>
+              <div className="pm-error-block">
+                <div className="pm-error-title"><StatusIcons.error size={14} /> 创建失败</div>
+                <pre className="pm-error-pre">
                   {gitStatusMsg}
                 </pre>
                 <button
                   onClick={() => { setGitStatus("idle"); setGitStatusMsg(""); }}
-                  style={{ marginTop: 12, padding: "8px 20px", borderRadius: 8, border: "none",
-                    background: "var(--accent, #ff6b35)", color: "var(--text-on-accent)", cursor: "pointer", fontSize: 'var(--fs-md)', width: "100%" }}
+                  className="pm-retry-btn"
                 >
                   重试
                 </button>
@@ -571,9 +565,9 @@ export function ProjectManager({ onClose }: ProjectManagerProps) {
                     placeholder="https://github.com/user/repo.git"
                     onKeyDown={(e) => { if (e.key === "Enter" && cloneUrl.trim()) handleClone(); }}
                     autoFocus
-                    style={{ fontFamily: "monospace" }}
+                    className="pm-mono"
                   />
-                  <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", marginTop: 2 }}>
+                  <div className="pm-field-hint">
                     输入 GitHub 仓库 URL，将自动 clone 到本地并创建项目
                   </div>
                 </div>
@@ -591,33 +585,28 @@ export function ProjectManager({ onClose }: ProjectManagerProps) {
             )}
 
             {cloneStatus === "cloning" && (
-              <div style={{ textAlign: "center", padding: "40px 0" }}>
-                <div style={{ fontSize: "var(--fs-hero)", marginBottom: 16, display: "flex", justifyContent: "center" }}><StatusIcons.pending size={32} /></div>
-                <p style={{ color: "var(--text-secondary)", fontSize: 'var(--fs-md)' }}>{cloneMsg}</p>
+              <div className="pm-status-block">
+                <div className="pm-status-icon"><StatusIcons.pending size={32} /></div>
+                <p className="pm-status-text">{cloneMsg}</p>
               </div>
             )}
 
             {cloneStatus === "done" && (
-              <div style={{ textAlign: "center", padding: "40px 0" }}>
-                <div style={{ fontSize: "var(--fs-hero)", marginBottom: 16, display: "flex", justifyContent: "center" }}><StatusIcons.success size={32} style={{ color: "var(--success)" }} /></div>
-                <p style={{ color: "var(--text-primary)", fontSize: 'var(--fs-md)', fontWeight: 500 }}>{cloneMsg}</p>
+              <div className="pm-status-block">
+                <div className="pm-status-icon"><StatusIcons.success size={32} style={{ color: "var(--success)" }} /></div>
+                <p className="pm-status-text is-strong">{cloneMsg}</p>
               </div>
             )}
 
             {cloneStatus === "error" && (
-              <div style={{ padding: "20px 0" }}>
-                <div style={{ color: "var(--error)", fontSize: 'var(--fs-md)', marginBottom: 12, display: "flex", alignItems: "center", gap: 6 }}><StatusIcons.error size={14} /> 克隆失败</div>
-                <pre style={{
-                  background: "var(--bg-hover, #2a2a3a)",
-                  padding: 12, borderRadius: 8, fontSize: 'var(--fs-sm)', color: "var(--error)",
-                  maxHeight: 150, overflow: "auto", whiteSpace: "pre-wrap", wordBreak: "break-all",
-                }}>
+              <div className="pm-error-block">
+                <div className="pm-error-title"><StatusIcons.error size={14} /> 克隆失败</div>
+                <pre className="pm-error-pre">
                   {cloneMsg}
                 </pre>
                 <button
                   onClick={() => { setCloneStatus("idle"); setCloneMsg(""); }}
-                  style={{ marginTop: 12, padding: "8px 20px", borderRadius: 8, border: "none",
-                    background: "var(--accent, #ff6b35)", color: "var(--text-on-accent)", cursor: "pointer", fontSize: 'var(--fs-md)', width: "100%" }}
+                  className="pm-retry-btn"
                 >
                   重试
                 </button>
@@ -629,7 +618,7 @@ export function ProjectManager({ onClose }: ProjectManagerProps) {
         {mode === "env" && (
           <div className="project-form">
             <div className="setting-group">
-              <label style={{ display: "flex", alignItems: "center", gap: 6 }}><Server size={16} /> 环境脚本配置</label>
+              <label className="pm-label-row"><Server size={16} /> 环境脚本配置</label>
               <p className="project-form-hint">配置打开/关闭项目时自动执行的脚本</p>
             </div>
             <div className="setting-group">
@@ -639,7 +628,7 @@ export function ProjectManager({ onClose }: ProjectManagerProps) {
                 value={envConfig.setupScript || ""}
                 onChange={(e) => setEnvConfig({ ...envConfig, setupScript: e.target.value })}
                 placeholder="如 npm install"
-                style={{ fontFamily: "monospace" }}
+                className="pm-mono"
               />
             </div>
             <div className="setting-group">
@@ -649,7 +638,7 @@ export function ProjectManager({ onClose }: ProjectManagerProps) {
                 value={envConfig.cleanupScript || ""}
                 onChange={(e) => setEnvConfig({ ...envConfig, cleanupScript: e.target.value })}
                 placeholder="如 docker compose down"
-                style={{ fontFamily: "monospace" }}
+                className="pm-mono"
               />
             </div>
             <div className="project-form-actions">
@@ -662,7 +651,7 @@ export function ProjectManager({ onClose }: ProjectManagerProps) {
                   setTimeout(() => { setEnvSaved(false); setMode("list"); }, 1000);
                 }}
               >
-                {envSaved ? <span style={{ display: "flex", alignItems: "center", gap: 6, justifyContent: "center" }}><StatusIcons.success size={14} /> 已保存</span> : "保存"}
+                {envSaved ? <span className="pm-saved"><StatusIcons.success size={14} /> 已保存</span> : "保存"}
               </button>
             </div>
           </div>

@@ -8790,6 +8790,332 @@ border-bottom: 1px solid var(--accent);
 .mm-save-btn { margin-left: auto; padding: var(--space-4) var(--space-9); font-size: var(--fs-base); }
 
 /* ==========================================================================
+ * 项目管理（ProjectManager）：第 21 波
+ * 两个「进行中 / 完成 / 失败」状态块（Git 新建 与 GitHub 拉取）此前各写一遍同样的内联样式。
+ * ========================================================================== */
+.pm-actions-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-4); margin-bottom: var(--space-6); }
+.pm-icon-gap { margin-right: var(--space-2); }
+.pm-mono { font-family: var(--font-mono); }
+.pm-field-hint { margin-top: var(--space-1); font-size: var(--fs-sm); color: var(--text-muted); }
+.pm-link { color: var(--accent); text-decoration: underline; }
+.pm-radio-row { display: flex; align-items: center; gap: var(--space-6); }
+.pm-radio { display: flex; align-items: center; gap: var(--space-2); font-size: var(--fs-base); cursor: pointer; }
+.pm-label-row { display: flex; align-items: center; gap: var(--space-3); }
+
+.pm-status-block { padding: var(--space-11) 0; text-align: center; }
+.pm-status-icon { display: flex; justify-content: center; margin-bottom: var(--space-8); font-size: var(--fs-hero); }
+.pm-status-text { font-size: var(--fs-md); color: var(--text-secondary); }
+.pm-status-text.is-strong { color: var(--text-primary); font-weight: 500; }
+
+.pm-error-block { padding: var(--space-9) 0; }
+.pm-error-title { display: flex; align-items: center; gap: var(--space-3); margin-bottom: var(--space-6); font-size: var(--fs-md); color: var(--error); }
+.pm-error-pre {
+  padding: var(--space-6);
+  max-height: 150px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  border-radius: var(--radius);
+  background: var(--bg-hover);
+  color: var(--error);
+  font-size: var(--fs-sm);
+}
+.pm-retry-btn {
+  width: 100%;
+  margin-top: var(--space-6);
+  padding: var(--space-4) var(--space-9);
+  border: none;
+  border-radius: var(--radius);
+  background: var(--accent);
+  color: var(--text-on-accent);
+  font-family: inherit;
+  font-size: var(--fs-md);
+  cursor: pointer;
+}
+.pm-retry-btn:hover { background: var(--accent-hover); }
+.pm-saved { display: flex; align-items: center; justify-content: center; gap: var(--space-3); }
+
+/* ==========================================================================
+ * 插件管理（PluginManager）：第 21 波
+ * 卡片沿用 .market-skill-*；这里补依赖/风险/UI 影响的展开区、级联关闭对话框、标签页与 toast。
+ * ========================================================================== */
+.plugin-mgr-tag-row { display: flex; gap: var(--space-2); flex-wrap: wrap; }
+.plugin-mgr-risk-icon { margin-right: var(--space-1); }
+.plugin-mgr-deps {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.plugin-mgr-dep-accent { color: var(--accent); }
+.plugin-mgr-dep-warn { color: var(--warning); }
+
+.plugin-mgr-detail { padding: var(--space-4); border-radius: var(--radius-xs); background: var(--bg-tertiary); font-size: var(--fs-sm); }
+.plugin-mgr-section { margin-bottom: var(--space-3); }
+.plugin-mgr-section-title { margin-bottom: var(--space-1); font-weight: 600; }
+.plugin-mgr-list { max-height: 120px; overflow-y: auto; }
+.plugin-mgr-list-item { margin-left: var(--space-6); }
+.plugin-mgr-list-item.is-accent { color: var(--accent); }
+.plugin-mgr-list-item.is-warn { color: var(--warning); }
+.plugin-mgr-inline-tags { margin-left: var(--space-6); }
+
+/* 风险提示框：底/边按等级二选一（danger → error，warning → warning），字号只用令牌 */
+.plugin-mgr-box {
+  margin-bottom: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-sm);
+}
+.plugin-mgr-impact { margin-top: var(--space-3); }
+.plugin-mgr-box.is-danger {
+  background: color-mix(in srgb, var(--error) 12%, transparent);
+  border-color: color-mix(in srgb, var(--error) 30%, transparent);
+}
+.plugin-mgr-box.is-warn {
+  background: color-mix(in srgb, var(--warning) 12%, transparent);
+  border-color: color-mix(in srgb, var(--warning) 30%, transparent);
+}
+.plugin-mgr-box.is-accent {
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 20%, transparent);
+}
+.plugin-mgr-box-title { margin-bottom: var(--space-1); font-weight: 600; }
+.plugin-mgr-box-text { color: var(--text-secondary); }
+.plugin-mgr-impact-title { margin-bottom: var(--space-2); font-weight: 600; color: var(--accent); }
+.plugin-mgr-impact-row { margin-bottom: var(--space-2); }
+.plugin-mgr-impact-key { color: var(--text-muted); }
+.plugin-mgr-impact-degraded { color: var(--text-secondary); }
+
+.plugin-mgr-switch-row { display: flex; align-items: center; gap: var(--space-2); }
+.plugin-mgr-hot-btn { padding: 2px var(--space-3); font-size: var(--fs-sm); }
+.plugin-mgr-error { font-size: var(--fs-sm); color: var(--error); }
+
+.plugin-mgr-dialog { max-width: 480px; max-height: 70vh; overflow-y: auto; }
+.plugin-mgr-dialog-head { display: flex; align-items: center; gap: var(--space-4); margin-bottom: var(--space-6); }
+.plugin-mgr-dialog-title { font-weight: 700; font-size: var(--fs-lg); }
+.plugin-mgr-dialog-lead { margin-bottom: var(--space-6); font-size: var(--fs-base); color: var(--text-muted); }
+.plugin-mgr-dialog-lead-strong { color: var(--text-primary); }
+.plugin-mgr-dialog-risk {
+  margin-bottom: var(--space-6);
+  padding: var(--space-5) var(--space-6);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-xs);
+}
+.plugin-mgr-dialog-risk.is-danger {
+  background: color-mix(in srgb, var(--error) 10%, transparent);
+  border-color: color-mix(in srgb, var(--error) 30%, transparent);
+}
+.plugin-mgr-dialog-risk.is-warn {
+  background: color-mix(in srgb, var(--warning) 10%, transparent);
+  border-color: color-mix(in srgb, var(--warning) 30%, transparent);
+}
+.plugin-mgr-dialog-risk-title { margin-bottom: var(--space-2); font-size: var(--fs-base); font-weight: 600; }
+.plugin-mgr-dialog-risk-desc { font-size: var(--fs-sm); color: var(--text-secondary); }
+.plugin-mgr-dialog-list-lead { margin-bottom: var(--space-4); font-size: var(--fs-base); color: var(--text-muted); }
+.plugin-mgr-dialog-list { max-height: 200px; overflow-y: auto; margin-bottom: var(--space-6); }
+.plugin-mgr-dialog-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-6);
+  margin-bottom: var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--bg-tertiary);
+  font-size: var(--fs-sm);
+}
+.plugin-mgr-dialog-item-name { font-weight: 600; }
+.plugin-mgr-dialog-actions { display: flex; gap: var(--space-4); justify-content: flex-end; }
+.plugin-mgr-confirm-btn.is-danger { background: var(--error); border: none; color: var(--text-on-accent); }
+.plugin-mgr-confirm-btn.is-warn { background: var(--warning); border: none; color: var(--text-on-accent); }
+
+.plugin-mgr-tabs {
+  display: flex;
+  gap: var(--space-1);
+  flex-shrink: 0;
+  padding: 0 var(--space-7);
+  border-bottom: 1px solid var(--border-primary);
+}
+.plugin-mgr-tab {
+  padding: var(--space-4) var(--space-7);
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+.plugin-mgr-tab.is-active { border-bottom-color: var(--accent); color: var(--accent); font-weight: 600; }
+.plugin-mgr-footnote {
+  padding: var(--space-4) var(--space-6);
+  border-top: 1px solid var(--border-primary);
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+.plugin-mgr-toast {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: var(--z-toast);
+  max-width: 400px;
+  padding: var(--space-5) var(--space-8);
+  border-radius: var(--radius-xs);
+  box-shadow: var(--shadow-popover);
+  color: var(--text-on-accent);
+  font-size: var(--fs-base);
+}
+.plugin-mgr-toast.is-success { background: var(--success); }
+.plugin-mgr-toast.is-error { background: var(--error); }
+.plugin-mgr-toast.is-warn { background: var(--warning); }
+
+/* ==========================================================================
+ * 执行轨迹（TrajectoryPanel）：第 21 波
+ * 单行头部 + 下拉过滤器（外壳复用 .popover-shell）+ 指标 chip + 步骤竖排列表。
+ * 等宽字体走共享类 .mono，这里不再各写一遍 font-family。
+ * ========================================================================== */
+.trajectory-panel { display: flex; flex-direction: column; height: 100%; }
+.tj-empty { padding: var(--space-10) var(--space-6); text-align: center; color: var(--text-muted); font-size: var(--fs-sm); }
+.tj-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-shrink: 0;
+  padding: var(--space-4) var(--space-5);
+  border-bottom: 1px solid var(--border-primary);
+}
+.tj-title { font-weight: 600; font-size: var(--fs-sm); color: var(--text-primary); }
+.tj-count { font-size: var(--fs-xs); color: var(--text-muted); }
+.tj-filter-wrap { position: relative; margin-left: auto; }
+.tj-filter-btn {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 2px var(--space-3);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-sm);
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.tj-filter-menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: var(--space-1);
+  min-width: 100px;
+  padding: var(--space-2);
+}
+.tj-filter-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+.tj-filter-item.is-active { background: var(--accent-alpha); color: var(--accent); }
+
+.tj-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  flex-shrink: 0;
+  padding: var(--space-3) var(--space-5);
+  border-bottom: 1px solid var(--border-primary);
+}
+.tj-chip {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 2px var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--bg-tertiary);
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+}
+.tj-chip-label { opacity: 0.6; }
+.tj-chip-value { font-weight: 600; color: var(--text-secondary); }
+
+.tj-steps { flex: 1; overflow-y: auto; padding: var(--space-2) 0; }
+.tj-step { padding: var(--space-3) var(--space-5); border-bottom: 1px solid var(--border-primary); }
+.tj-step:last-child { border-bottom: none; }
+.tj-step-head { display: flex; align-items: center; gap: var(--space-2); margin-bottom: var(--space-1); }
+.tj-step-type { flex-shrink: 0; font-size: var(--fs-sm); font-weight: 600; color: var(--text-secondary); }
+.tj-tool-name { overflow: hidden; font-size: var(--fs-xs); color: var(--accent); text-overflow: ellipsis; white-space: nowrap; }
+.tj-meta { display: flex; align-items: center; gap: 1px; flex-shrink: 0; font-size: var(--fs-xs); color: var(--text-muted); }
+.tj-num { flex-shrink: 0; font-size: var(--fs-xs); color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.tj-num--info { color: var(--info); }
+.tj-time {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-left: auto;
+  flex-shrink: 0;
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+.tj-summary {
+  display: -webkit-box;
+  overflow: hidden;
+  font-size: var(--fs-sm);
+  line-height: 1.4;
+  word-break: break-word;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  cursor: default;
+}
+.tj-summary.is-clickable { cursor: pointer; }
+.tj-summary--muted { color: var(--text-muted); }
+.tj-summary--error { color: var(--error); }
+.tj-chevron { display: inline; margin-left: var(--space-1); vertical-align: text-bottom; }
+.tj-usage {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: 1px;
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+
+.tj-detail {
+  margin-top: var(--space-2);
+  padding: var(--space-4);
+  max-height: 250px;
+  overflow-y: auto;
+  border-radius: var(--radius-sm);
+  background: var(--bg-tertiary);
+  font-size: var(--fs-xs);
+  line-height: 1.5;
+}
+.tj-detail-row { margin-bottom: var(--space-2); }
+.tj-detail-usage { display: flex; flex-wrap: wrap; gap: var(--space-3); margin-bottom: var(--space-2); }
+.tj-detail-label { margin-bottom: var(--space-1); color: var(--text-secondary); }
+.tj-detail-label--error { color: var(--error); }
+.tj-detail-secondary { color: var(--text-secondary); }
+.tj-detail-muted { color: var(--text-muted); }
+.tj-pre { margin: 0; font-size: var(--fs-xs); white-space: pre-wrap; word-break: break-all; color: var(--text-muted); }
+.tj-pre--error { color: var(--error); }
+.tj-detail-body { white-space: pre-wrap; word-break: break-word; color: var(--text-muted); }
+
+/* 轨迹图标着色：形状由图标组件决定，颜色只在这几个色调类里选（不写内联 style） */
+.tj-icon { flex-shrink: 0; }
+.tj-tone-accent { color: var(--accent); }
+.tj-tone-info { color: var(--info); }
+.tj-tone-success { color: var(--success); }
+.tj-tone-error { color: var(--error); }
+.tj-tone-primary { color: var(--text-primary); }
+.tj-tone-secondary { color: var(--text-secondary); }
+.tj-tone-muted { color: var(--text-muted); }
+
+/* ==========================================================================
  * 会话恢复面板（RecoveryPanel）：把内联样式收口成具名类（第 14 波）
  * 该组件此前 149 个内联样式属性（审计规则 inline-style-dense），
  * 这里按 §3 组件语言改用具名类，只保留真正动态的部分（统计卡的颜色）留在内联。

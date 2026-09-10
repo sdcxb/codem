@@ -196,6 +196,8 @@ node tools/ui-audit/codemod-icon-scale.mjs [--write]  # 图标工具类 → .ico
 
 | **第 20 波** | 2026-09-10 | **0** ✅ | **12** | **内联样式收口（性能面板 + 多模态设置）**：`PerformanceDashboard`（151 → 0）与 `MultimodalPanel`（121 → 0）。① 统计卡改成「内联只给 `color`，淡底淡边由 `currentColor` 派生」，调用处也从写死的十六进制改成语义令牌（`#3b82f6`→`var(--info)`、`#a855f7`→`var(--accent)`、`#22c55e`→`var(--success)`）；② 趋势图与占比条的蓝色渐变从写死色值改成 `--info` 派生；③ `MultimodalPanel` 的"内嵌 / 浮动"两态原本是一段三元内联样式，改成 `.mm-panel-inline` / `.mm-panel-floating` 两个类；④ 又发现两个"从没定义过"的类名（`.perf-dashboard*`、`.multimodal-inline-panel`）—— 这些组件此前**完全靠内联样式撑着**，类名只是空壳 |
 
+| **第 21 波** | 2026-09-10 | **0** ✅ | **9** | **内联样式收口（项目/插件/轨迹三个面板，524 个属性 → 0）**：① `ProjectManager`（173 → 0，`.pm-*`）；② `PluginManager`（141 → 0，`.plugin-mgr-*`）—— 卡片外壳继续复用 `.market-skill-*`，把插件特有的风险框/依赖列表/UI 影响声明/级联确认对话框/标签页/toast 收成具名类，风险色按「红=`--error`、琥珀=`--warning`」两态各一个修饰类（原来是四个内联 `color-mix` 三元）；③ `TrajectoryPanel`（225 → 0，`.tj-*`）—— 摘要区三段（content/error/result）原本把同一份 9 行样式对象抄了三遍，收成 `.tj-summary` + `--muted/--error` 修饰类后三处共用；三步都重复的内联折叠箭头抽成 `SummaryChevron` 子组件（`.tj-chevron`）；类型图标七种颜色的内联 `style` 换成 `.tj-tone-*` 色调类。④ **顺带统一了一处浮层**：轨迹过滤下拉原来是自建外观（自带 background/border/shadow），改成 `.popover-shell` 外壳——§3 的浮层闭集又多一个真实使用者；⑤ 发现 `.trajectory-panel` 是"写了但没定义"的假钩子（它平时被同行内联样式挡着，所以从未被 `css-class-undefined` 报出来——**内联样式正好是类名审计的遮羞布**），本次补上真实定义 |
+
 ### 全项目现场事实（来自 UI 交互界面清单，作为工作队列）
 - 挂载层：64 个 `SlotBridge` 渲染点 + 54 处 `slots.register` + 44 处 `createPortal`（另 51 个 SlotBridge 在 `App.tsx`）。
 - 浮层：205 个 overlay 类名实例散在 60 个 tsx 里，约 35 种外壳；`var(--z-*)` 只被用了 9 次，
@@ -216,7 +218,7 @@ node tools/ui-audit/codemod-icon-scale.mjs [--write]  # 图标工具类 → .ico
 
 ---
 
-## 7. 交接快照（2026-09-10 · goal round 11）
+## 7. 交接快照（2026-09-10 · 第 21 波后）
 
 ### 当前数字（`node tools/ui-audit/scan-ui.mjs`）
 
@@ -229,9 +231,9 @@ node tools/ui-audit/codemod-icon-scale.mjs [--write]  # 图标工具类 → .ico
 | `modal-shell-bespoke` | error | 15 | **0** ✅ |
 | `spacing-offgrid` | warn | 13 | **0** ✅ |
 | `css-class-undefined` | warn | — | **0** ✅（第 10 波清零；审计器已扩面到模板字面量） |
-| `inline-style-dense` | warn | 58 | 12（唯一剩下的 warn；第 14 波先修正了度量口径 50 → 25，再累计收口 13 个文件） |
+| `inline-style-dense` | warn | 58 | 9（唯一剩下的 warn；第 14 波先修正了度量口径 50 → 25，再累计收口 16 个文件） |
 | **error 合计** | | **533** | **0** ✅ |
-| **warn 合计** | | 64 | **12** |
+| **warn 合计** | | 64 | **9** |
 
 > 注：`color-hardcoded-tsx` 中途曾报 53 → 9 —— 不是"改多了"，而是审计器修掉了假阳性（见第 11 波说明）。
 > `fs-hardcoded` 第 12 波一度报 590 —— 也不是"变差了"，而是审计器**首次开始扫 CSS 侧**（此前 591 处写死的字号
@@ -242,6 +244,10 @@ node tools/ui-audit/codemod-icon-scale.mjs [--write]  # 图标工具类 → .ico
 > 重构成果是那之后的 8 个文件（RecoveryPanel 149 → 0、FlashcardViewer 139 → 0、SquadsTab 176 → 0、
 > IssueDetailPanel 133 → 0、AutomationTab 134 → 0、LayeredSettingsPanel 141 → 0、UsageStats 128 → 0、GitEnvSettings 172 → 0）。
 > 第 17 波同理：`color-hardcoded-tsx` 0 → 18 → 0 不是"改坏了又改回来"，而是**审计器终于能看见条件分支里的色值**。
+> 第 21 波又发现一类同类盲区：**同行有内联样式的元素，其类名不会被 `css-class-undefined` 判定**
+> （规则本意是"有内联样式就不算没样式"）—— 于是 `.trajectory-panel` 这种"写了但 CSS 里根本没有"的假钩子
+> 一直藏在审计视野外；把内联样式搬进 CSS 后，它才浮出水面。收口内联样式的过程会持续暴露这类空壳类名，
+> 每波都要顺手补定义（或删掉死类名）。
 
 ### 已完成的波次
 
@@ -264,14 +270,16 @@ node tools/ui-audit/codemod-icon-scale.mjs [--write]  # 图标工具类 → .ico
 17. **第 17 波**：`UsageStats`（128 → 0）、`GitEnvSettings`（172 → 0）收口；TSX 侧色值判定改为逐字面量，暴露并修掉 18 处藏在条件分支里的硬编码色（详见 §5 表）。
 18. **第 18 波**：`WechatSettings`（141 → 0）收口，顺带修掉 `var(--border-color)` 这个不存在的令牌（详见 §5 表）。
 19. **第 19 波**：新增 `codemod-inline-to-class.mjs`（重复内联形态 → 共享类，首轮 64 处）；`AgentManager`（170 → 0）与 `CicdPanel`（176 → 0）收口（详见 §5 表）。
-20. **第 20 波（本轮）**：`PerformanceDashboard`（151 → 0）、`MultimodalPanel`（121 → 0）收口（详见 §5 表）。
+20. **第 20 波**：`PerformanceDashboard`（151 → 0）、`MultimodalPanel`（121 → 0）收口（详见 §5 表）。
+21. **第 21 波（本轮）**：`ProjectManager`（173 → 0）、`PluginManager`（141 → 0）、`TrajectoryPanel`（225 → 0）收口；
+    轨迹过滤下拉改用 `.popover-shell` 外壳；补上 `.trajectory-panel` 这个从未定义的假钩子（详见 §5 表）。
 
 ### 下一轮的工作队列（按性价比排序）
 
-1. **继续「内联样式过密」的 20 个文件**（`inline-style-dense` 是唯一剩下的 warn）：
-   按"属性数 ÷ 代码行数"排序做，密度最高的先上（实测：`ppt/PPTAdapter` 62/100 行、
-   `LayeredSettingsPanel` 50、`GitEnvSettings` 39、`CicdPanel` 38、`PerformanceDashboard`/`UsageStats` 36、
-   `TrajectoryPanel` 34 / 225 属性、`WechatSettings` 34、`AgentManager` 33、`SettingsPanel` 33/100 行但 1054 属性）；
+1. **继续「内联样式过密」的 9 个文件**（`inline-style-dense` 是唯一剩下的 warn）：
+   剩下的是 `TrajectoryPanel` 之后的 9 个：`SettingsPanel`（1054 属性 / 密度最高）、`ppt/PPTAdapter`（281 / 62 每百行）、
+   `ToolCallCard`（257）、`ChatPanel`（163）、`InputArea`（182）、`ModelProfilePanel`（179）、
+   `KnowledgeGraphView`（174）、`PetMarketDialog`（159）、`NotebookWorkspace`（134）；
    每个文件的做法固定为「读组件 → 写组件级具名类（能复用 §3 共享类或 `tc-*` 的就复用）→
    只留真动态值内联 → 审计计数必须为 0」，每轮 2–3 个；同类面板可继续按 `src/styles/<面板>.css` 拆分；
 2. **z-index 令牌化**：`modal-overlay`=200 与 `--z-modal`=1300 互相矛盾，`popover-shield` 的层级仍留在调用处（23 个 tsx 数值 + 13 个 CSS 层级）；
