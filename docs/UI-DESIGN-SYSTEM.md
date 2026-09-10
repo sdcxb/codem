@@ -232,7 +232,7 @@ node tools/ui-audit/codemod-icon-scale.mjs [--write]  # 图标工具类 → .ico
 
 ---
 
-## 7. 交接快照（2026-09-10 · 第 23 波后）
+## 7. 交接快照（2026-09-10 · 第 25 波后：门禁归零）
 
 ### 当前数字（`node tools/ui-audit/scan-ui.mjs`）
 
