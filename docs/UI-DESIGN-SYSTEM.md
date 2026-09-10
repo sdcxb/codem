@@ -207,7 +207,7 @@ node tools/ui-audit/codemod-icon-scale.mjs [--write]  # 图标工具类 → .ico
 
 | **第 23 波** | 2026-09-10 | **0** ✅ | **3** | **内联样式收口（笔记本工作台 / 输入区 / 会话区）+ 全项目「根本不存在的令牌」大扫除**：① `NotebookWorkspace`（134 → 0，样式落在 `src/styles/notebook-workspace.css`）、`InputArea`（182 → 12）、`ChatPanel`（163 → 5）。三处的共同形态是「同一个内联样式对象在同一个文件里抄 5 遍」：`.more-action-item`（+ 菜单里 5 个按钮各抄一遍 9 个属性）、`.chat-float-panel`（右侧 6 个浮动面板的几何完全一样，只有宽度与滚动方式不同）。② **128 处引用了不存在的令牌**：`--border-color`（105）、`--danger`（14）、`--accent-color`（6）、`--danger-muted/bg/border`（3），横跨 22 个文件（含 `styles.css` 自己）—— `styles.css`、皮肤文件、`ThemeManager` 里**都从未定义过**它们，所以全部一直在吃 fallback 里的硬编码深色：**浅色与 dream 皮肤下这些边框/错误色一直是错的**（第 18 波在 WechatSettings 里发现的是同一问题的单个实例，这次是全项目普查）。统一到 `--border-primary` / `--error` / `--accent`，并在 `.preview-shot/fix-missing-tokens.mjs` 留下可复跑的脚本（按 `var(` 配对扫描，能正确处理 fallback 里嵌套的 `color-mix()`）。③ **审计器补完色值规则的最后两处盲区**：条件表达式里的**命名色**（`color: disabled ? "var(--text-muted)" : "white"` → 4 处 `"white"`）与复合值里的 **`rgba()`**（投影里的黑 → 16 处，`boxShadow: "0 4px 12px rgba(0,0,0,0.2)"` 这类）。投影黑统一到 `--shadow-color(-soft)`；搜索命中高亮在 5 个文件里各写一份同一段黄，收成 `--match-highlight(-strong)` 令牌；宠物窗口的玻璃底用回了它自己的 `--pet-glass-bg`。④ **新增 `--inline-counts` 与 `--dense-threshold=N`**：门禁只看「>120 属性」这一条线，排队时却需要知道每个文件离阈值多远、收口后还剩多少 —— 现在能直接列出全项目属性数排序（本轮就是靠它确认「每个文件都真的降到 0 附近」而不是「刚好压到 119」）。⑤ 顺带修掉两处「JS 改样式盖住 CSS」的老写法（学习路径条目的 hover、技能选项的 hover），它们此前让 CSS `:hover` 永远不生效 |
 
-| **第 24 波** | 2026-09-10 | **0** ✅ | **1** | **内联样式收口（工具调用卡片 / PPT Studio）+ 审计器第五处盲区**：① `ToolCallCard`（257 → 0，样式落在 `codem-ui.css`）—— `.tool-card` / `.tool-io-card` / `.tool-io-section` / `.tool-io-label` / `.tool-io-text` 这五个类**在 CSS 里完全不存在**，外观 100% 靠内联样式撑着（内联样式正好挡住了类名审计），连 `terminal-block` / `diff-block` / `read-block` / `search-block` 四个变体钩子也是空壳；diff 行的加减色从两段内联三元（同时给 `color` 与 `background`）改成 `.diff-line--add/--del`。② `ppt/PPTAdapter`（281 → 0）—— 整屏 PPT 工作台按例外表不套 `modal-overlay`，但同样不该写 59 处内联样式：收成 `.ppt-studio-*`；顺带把**每次渲染注入一份的 `@keyframes`**（`ppt-pulse`/`ppt-dots`）搬回样式表；又发现 `--text-faded` 这个令牌**不存在**（"未到达阶段"的灰一直在吃 fallback），改用 `--text-muted` 的 60% 表达同一层"更淡"，否则会与"已完成"阶段撞色。③ **审计器第五处盲区：匹配到 ≠ 报警过。** 此前用「本行有没有属性级匹配」决定要不要走兜底，于是一行里只要出现一个**无害**匹配（典型 `background: "transparent"`），后面几条兜底全部跳过 —— `border: "1px solid #e74c3c", background: "transparent"` 里的硬编码红就这么藏了不知多久。改成「本行是否已经报过」后立刻报出 2 处。④ `SettingsPanel` 开工（999 → 727）：新建 `.sp-*` 设置面板零件类（行/列、卡片、按钮族、输入框、提示文案、头像、开关、状态色图标），并补上 4 个"只在 tsx 里出现、CSS 里没有"的类（`.settings-search-box` / `.settings-row` / `.user-avatar-preview` / `.preset-avatar-grid`）；**该文件是本项目最后一块 `inline-style-dense`**（255 个样式对象、密度全项目最高），收口仍在进行中 |- 挂载层：64 个 `SlotBridge` 渲染点 + 54 处 `slots.register` + 44 处 `createPortal`（另 51 个 SlotBridge 在 `App.tsx`）。
+| **第 24 波** | 2026-09-10 | **0** ✅ | **1** | **内联样式收口（工具调用卡片 / PPT Studio）+ 审计器第五处盲区**：① `ToolCallCard`（257 → 0，样式落在 `codem-ui.css`）—— `.tool-card` / `.tool-io-card` / `.tool-io-section` / `.tool-io-label` / `.tool-io-text` 这五个类**在 CSS 里完全不存在**，外观 100% 靠内联样式撑着（内联样式正好挡住了类名审计），连 `terminal-block` / `diff-block` / `read-block` / `search-block` 四个变体钩子也是空壳；diff 行的加减色从两段内联三元（同时给 `color` 与 `background`）改成 `.diff-line--add/--del`。② `ppt/PPTAdapter`（281 → 0）—— 整屏 PPT 工作台按例外表不套 `modal-overlay`，但同样不该写 59 处内联样式：收成 `.ppt-studio-*`；顺带把**每次渲染注入一份的 `@keyframes`**（`ppt-pulse`/`ppt-dots`）搬回样式表；又发现 `--text-faded` 这个令牌**不存在**（"未到达阶段"的灰一直在吃 fallback），改用 `--text-muted` 的 60% 表达同一层"更淡"，否则会与"已完成"阶段撞色。③ **审计器第五处盲区：匹配到 ≠ 报警过。** 此前用「本行有没有属性级匹配」决定要不要走兜底，于是一行里只要出现一个**无害**匹配（典型 `background: "transparent"`），后面几条兜底全部跳过 —— `border: "1px solid #e74c3c", background: "transparent"` 里的硬编码红就这么藏了不知多久。改成「本行是否已经报过」后立刻报出 2 处。④ `SettingsPanel` 开工（999 → 673）：新建 `.sp-*` 设置面板零件类（行/列、卡片、按钮族、输入框、提示文案、头像、开关、状态色图标、标签页），并补上 4 个"只在 tsx 里出现、CSS 里没有"的类（`.settings-search-box` / `.settings-row` / `.user-avatar-preview` / `.preset-avatar-grid`）；**该文件是本项目最后一块 `inline-style-dense`**（255 个样式对象、密度全项目最高），收口仍在进行中 |- 挂载层：64 个 `SlotBridge` 渲染点 + 54 处 `slots.register` + 44 处 `createPortal`（另 51 个 SlotBridge 在 `App.tsx`）。
 - 浮层：205 个 overlay 类名实例散在 60 个 tsx 里，约 35 种外壳；`var(--z-*)` 只被用了 9 次，
   而有 23 个 tsx 数值 z-index + 13 个 CSS 层级（`modal-overlay` 是 200，`--z-modal` 是 1300，互相矛盾）。
 - 令牌缺口：`--space-*` **完全不存在**（CSS 2482 + tsx 1389 个数值间距）；6px 圆角被用 259 次却没有令牌
@@ -239,7 +239,7 @@ node tools/ui-audit/codemod-icon-scale.mjs [--write]  # 图标工具类 → .ico
 | `modal-shell-bespoke` | error | 15 | **0** ✅ |
 | `spacing-offgrid` | warn | 13 | **0** ✅ |
 | `css-class-undefined` | warn | — | **0** ✅（第 10 波清零；审计器已扩面到模板字面量） |
-| `inline-style-dense` | warn | 58 | 1（唯一剩下的 warn；第 14 波先修正了度量口径 50 → 25，再累计收口 24 个文件；最后一块是 `SettingsPanel` 999 → 727，收口中） |
+| `inline-style-dense` | warn | 58 | 1（唯一剩下的 warn；第 14 波先修正了度量口径 50 → 25，再累计收口 24 个文件；最后一块是 `SettingsPanel` 999 → 673，收口中） |
 | **error 合计** | | **533** | **0** ✅ |
 | **warn 合计** | | 64 | **1** |
 
@@ -294,21 +294,24 @@ node tools/ui-audit/codemod-icon-scale.mjs [--write]  # 图标工具类 → .ico
     新增 `--inline-counts` / `--dense-threshold=N` 查看收口进度（详见 §5 表）。
 24. **第 24 波（本轮）**：`ToolCallCard`（257 → 0）、`ppt/PPTAdapter`（281 → 0）收口；
     审计器补掉「无害匹配把整行兜底短路」这处盲区（报出 2 处藏在 `background: transparent` 旁边的硬编码红）；
-    `SettingsPanel`（999 → 727）开工，新建 `.sp-*` 设置面板零件类（详见 §5 表）。
+    `SettingsPanel`（999 → 673）开工，新建 `.sp-*` 设置面板零件类（详见 §5 表）。
 
 ### 下一轮的工作队列（按性价比排序）
 
-1. **收掉最后一块 `inline-style-dense`：`SettingsPanel`（999 → 727，仍在进行）**。
+1. **收掉最后一块 `inline-style-dense`：`SettingsPanel`（999 → 673，仍在进行）**。
    该文件 3100 行、255 个内联样式对象，形态分布（用 `.preview-shot/style-buckets.mjs` 量的）：
    纯文字 223 属性 / 78 处、按钮状 188 / 25、布局 119 / 36、面状 119 / 21、其余 183 / 62。
-   `.sp-*` 零件类已就位（行/列、卡片、按钮族、输入框、提示文案、头像、开关、状态色图标），
-   剩下的就是把剩下的内联样式逐个换上（阈值 120，需要降到 120 以下才算清零）。
+   `.sp-*` 零件类已就位（行/列、卡片、按钮族、输入框、提示文案、头像、开关、状态色图标、标签页），
+   剩下的把剩余内联样式逐个换上即可（阈值 120，需要降到 120 以下才算清零；
+   用 `node tools/ui-audit/scan-ui.mjs --inline-counts --top=3` 随时看进度）。
    配套工具：`style-hotspots.mjs`（哪几段最肥）、`style-signature-census.mjs`（哪些形态在重复，
    决定要不要提升成类）、`style-buckets.mjs`（属性质量分布）、`undefined-classes.mjs`
    （收口过程中新冒出来的空壳类名）。
-   实用手法：用 `pwsh` 的 `Select-String -Context` 或按行号区间 dump（只打印 `style={{` 前后几行），
-   比整窗读文件省得多；改动用 `.preview-shot/apply-edits.mjs` 那种「精确串 → 替换」批量脚本，
-   一次提交十几处，跑完 `npx tsc --noEmit` + `--inline-counts` 核对再继续。
+   实用手法：用 `pwsh` 按行号区间 dump（只打印 `style={{` 前后几行）比整窗读文件省得多；
+   改动用 `.preview-shot/apply-edits.mjs` 那种「精确串 → 替换」批量脚本，一次十几处，
+   跑完 `npx tsc --noEmit` + `--inline-counts` 核对再继续。
+   **踩过的坑**：批量加类时若元素已有 `className`，必须合并而不是新增一个同名属性
+   （TS17001，本轮出现过 3 次）。
 2. **z-index 令牌化**：`modal-overlay`=200 与 `--z-modal`=1300 互相矛盾，`popover-shield` 的层级仍留在调用处（23 个 tsx 数值 + 13 个 CSS 层级）；
 3. **重复定义收敛**：`styles.css` 内已有同名类被定义两次且取值不同（如 `.badge` 的圆角 10px vs 4px、
    `.workspace-tab` 的 11px vs 12px 字号 —— 后者已被第 12 波统一到 `--fs-sm`），需要新增一条「重复/冲突定义」审计规则；

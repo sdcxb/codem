@@ -1707,7 +1707,7 @@ marginTop: 4,
 {activeTab === "advanced" && (
 <>
 {/* Advanced Settings with sub-tabs */}
-<div style={{ display: "flex", gap: 4, marginBottom: 12, flexWrap: "wrap" }}>
+<div className="sp-row sp-row--gap-tight sp-row--wrap sp-row--lead">
   {[
     { id: "agents", label: lang === "zh" ? "智能体" : "Agents", icon: <Bot size={12} className="icon-inline" /> },
     { id: "heartbeat", label: lang === "zh" ? "心跳" : "Heartbeat", icon: <HeartPulse size={12} className="icon-inline" /> },
@@ -1740,9 +1740,9 @@ marginTop: 4,
 {advancedSubTab === "prompt" && <PromptDebugger />}
 {advancedSubTab === "settings" && <LayeredSettingsPanel />}
 {advancedSubTab === "correction" && (
-  <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
-    <h3 style={{ margin: 0, fontSize: 'var(--fs-md)', fontWeight: 600 }}>{lang === "zh" ? "纠偏模型配置" : "Correction Model Config"}</h3>
-    <p style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", lineHeight: 1.5 }}>
+  <div className="sp-card sp-card--col">
+    <h3 className="sp-title">{lang === "zh" ? "纠偏模型配置" : "Correction Model Config"}</h3>
+    <p className="sp-hint sp-hint--relaxed">
       {lang === "zh" ? "配置 fact_check 事实核查使用的专属纠偏模型。保存后立即生效；未配置时自动回退使用当前主模型并如实标注。" : "Configure the dedicated model used by fact_check. Takes effect once saved; when unset, falls back to the main model with an honest note."}
     </p>
     <CorrectionModelConfig />
@@ -1754,12 +1754,12 @@ marginTop: 4,
 </>
 )}
 {activeTab === "help" && (
-  <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 16, maxWidth: 500 }}>
-    <h3 style={{ margin: 0, fontSize: 'var(--fs-lg)', fontWeight: 600 }}>{lang === "zh" ? "帮助" : "Help"}</h3>
+  <div className="sp-card sp-card--col sp-card--narrow">
+    <h3 className="sp-title sp-title--lg">{lang === "zh" ? "帮助" : "Help"}</h3>
     
     <div className="setting-group">
-      <label style={{ fontSize: 'var(--fs-md)', fontWeight: 500 }}>{lang === "zh" ? "新手引导" : "Onboarding Tour"}</label>
-      <p style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", lineHeight: 1.5, marginTop: 4 }}>
+      <label className="sp-label-md">{lang === "zh" ? "新手引导" : "Onboarding Tour"}</label>
+      <p className="sp-hint sp-hint--relaxed sp-note--spaced">
         {lang === "zh" ? "重新查看应用功能引导教程。" : "Replay the app feature tour."}
       </p>
       <button
@@ -1779,7 +1779,7 @@ marginTop: 4,
 
     <div className="setting-group">
       <label style={{ fontSize: 'var(--fs-md)', fontWeight: 500 }}>{lang === "zh" ? "快捷键" : "Keyboard Shortcuts"}</label>
-      <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-secondary)", lineHeight: 2 }}>
+      <div className="sp-note sp-shortcuts">
         <div><kbd>Ctrl + K</kbd> — {lang === "zh" ? "搜索对话" : "Search chat"}</div>
         <div><kbd>Ctrl + B</kbd> — {lang === "zh" ? "切换侧边栏" : "Toggle sidebar"}</div>
         <div><kbd>Esc</kbd> — {lang === "zh" ? "关闭弹窗/取消" : "Close dialog/cancel"}</div>
@@ -1789,15 +1789,14 @@ marginTop: 4,
 
     <div className="setting-group">
       <label style={{ fontSize: 'var(--fs-md)', fontWeight: 500 }}>{lang === "zh" ? "关于" : "About"}</label>
-      <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", lineHeight: 1.6 }}>
+      <div className="sp-hint sp-hint--relaxed-16">
         Codem (mimo-gui) v{APP_VERSION}
         <br />
         {lang === "zh" ? "AI 编程助手 — 本地优先，隐私安全" : "AI Coding Assistant — Local-first, Privacy-focused"}
       </div>
       <button
         id="check-update-btn"
-        className="save-btn"
-        style={{ marginTop: 8, background: "var(--accent)", color: "var(--text-on-accent)", border: "none", padding: "6px 16px", borderRadius: 6, cursor: "pointer", fontSize: 'var(--fs-sm)' }}
+        className="sp-btn sp-btn--primary sp-btn--spaced"
         onClick={async () => {
           const btn = document.getElementById("check-update-btn") as HTMLButtonElement;
           if (!btn) return;
@@ -1866,8 +1865,7 @@ marginTop: 4,
         <div className="settings-footer">
           {onSessionRecovery && (
             <button
-              className="save-btn"
-              style={{ background: "var(--bg-tertiary)", color: "var(--text-primary)", border: "1px solid var(--border-primary)", marginRight: "auto" }}
+              className="save-btn sp-btn-auto"
               onClick={onSessionRecovery}
             >
               {S.settings.sessionRecovery[lang]}
@@ -1875,8 +1873,7 @@ marginTop: 4,
           )}
           {onUsageStats && (
             <button
-              className="save-btn"
-              style={{ background: "var(--bg-tertiary)", color: "var(--text-primary)", border: "1px solid var(--border-primary)", marginRight: "8px" }}
+              className="save-btn sp-btn-mr"
               onClick={onUsageStats}
             >
               {S.settings.usageStats[lang]}
@@ -2835,7 +2832,7 @@ function AgentProfileSection({ lang }: { lang: Language }) {
       )}
 
       {profiles.length === 0 && !editing && (
-        <div style={{ fontSize: 'var(--fs-sm)', color: "var(--text-muted)", textAlign: "center", padding: 16 }}>{zh ? "暂无 Agent Profile" : "No agent profiles yet"}</div>
+        <div className="sp-empty sp-empty--plain">{zh ? "暂无 Agent Profile" : "No agent profiles yet"}</div>
       )}
 
       {profiles.map((p) => (

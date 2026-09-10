@@ -16961,6 +16961,26 @@ color: var(--accent, #7c6cf0);
 .sp-placeholder { padding: var(--space-10) var(--space-9); text-align: center; }
 .sp-placeholder-text { margin-bottom: var(--space-6); font-size: var(--fs-md); color: var(--text-secondary); }
 .sp-btn--block.sp-row--between.is-active { border-color: var(--accent); }
+.sp-hint--relaxed { line-height: 1.5; }
+.sp-hint--relaxed-16 { line-height: 1.6; }
+.sp-title--lg { font-size: var(--fs-lg); }
+.sp-label-md { font-size: var(--fs-md); font-weight: 500; }
+.sp-shortcuts { line-height: 2; }
+.sp-card--narrow { max-width: 500px; }
+.sp-tab {
+  padding: var(--space-2) var(--space-6);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-sm);
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: var(--fs-sm);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.sp-tab.is-active { border-color: var(--accent); background: var(--accent); color: var(--text-on-accent); }
+.sp-btn-auto { margin-right: auto; }
+.sp-btn-mr { margin-right: var(--space-4); }
 .sp-weight-value {
   min-width: 36px;
   color: var(--text-secondary);
