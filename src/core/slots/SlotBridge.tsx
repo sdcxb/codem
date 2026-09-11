@@ -17,6 +17,7 @@
 import { useSyncExternalStore, useState, useEffect, type ComponentType, type ReactNode, Component } from 'react'
 import { tryGetCtx, onCtxReady, useCtxReady } from '../consumer/index.ts'
 import type { StoredEntry } from '../slots/index.ts'
+import { ActionIcons } from "../../core/icons/icon-map";
 
 /**
  * 插件组件错误边界 — 对标 DSH scoped-slots.tsx SlotErrorBoundary。
@@ -216,8 +217,9 @@ function DegradedBanner({ slotName }: { slotName: string }) {
       <button
         onClick={() => setDismissed(true)}
         style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 'var(--fs-sm)' }}
+        aria-label="关闭"
       >
-        ×
+        <ActionIcons.close size={14} />
       </button>
     </div>
   )

@@ -6,6 +6,7 @@
 
 import { memo, useState, useEffect } from "react";
 import { useLang, S } from "../core/i18n/lang";
+import { ActionIcons } from "../core/icons/icon-map";
 
 interface ImageGalleryProps {
   /** Image URLs or data URIs */
@@ -50,7 +51,7 @@ export const ImageGallery = memo(function ImageGallery({
   return (
     <div className="image-gallery-overlay" onClick={onClose}>
       <div className="image-gallery" onClick={(e) => e.stopPropagation()}>
-        <button className="gallery-close" onClick={onClose}>✕</button>
+        <button className="gallery-close" onClick={onClose} aria-label="关闭"><ActionIcons.close size={16} /></button>
         <button className="gallery-nav prev" onClick={handlePrev}>
           ‹
         </button>

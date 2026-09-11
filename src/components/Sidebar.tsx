@@ -15,6 +15,7 @@ import { useLang, S } from "../core/i18n/lang";
 import { Tooltip, TooltipTrigger, TooltipContent } from "./ui/tooltip";
 import { getDelegationOrchestrator } from "../core/session";
 import { getInboxManager } from "../core/inbox/inbox";
+import { ActionIcons } from "../core/icons/icon-map";
 
 interface SidebarProps {
   identity: AppIdentity | null;
@@ -961,7 +962,7 @@ function SessionItem({
         <button
           className="sidebar-session-delete"
           onClick={(e) => { e.stopPropagation(); onDelete(); }}
-        >✕</button>
+        ><ActionIcons.close size={12} /></button>
       </div>
     </div>
   );

@@ -7,6 +7,7 @@
 import { memo, useState } from "react";
 import { useLang, S } from "../core/i18n/lang";
 import type { QuickPhrase } from "../core/storage/settings";
+import { ActionIcons } from "../core/icons/icon-map";
 
 interface QuickPhraseSelectorProps {
   /** Available phrases */
@@ -34,7 +35,7 @@ export const QuickPhraseSelector = memo(function QuickPhraseSelector({
     <div className="quick-phrase-selector">
       <div className="quick-phrase-header">
         <h3>{S.quickPhrase.title[lang]}</h3>
-        <button className="quick-phrase-close" onClick={onClose}>✕</button>
+        <button className="quick-phrase-close" onClick={onClose} aria-label="关闭"><ActionIcons.close size={14} /></button>
       </div>
 
       <div className="quick-phrase-categories">

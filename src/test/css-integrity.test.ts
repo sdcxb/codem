@@ -16,7 +16,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { readFileSync, readdirSync } from "node:fs";
+import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { join, relative } from "node:path";
 
 const ROOT = join(__dirname, "..", "..");
@@ -183,5 +183,58 @@ describe("CSS 结构完整性（第 52 波）", () => {
     const scanner = readFileSync(join(ROOT, "tools", "ui-audit", "scan-ui.mjs"), "utf8");
     expect(scanner, "scan-ui.mjs 应有条件块范围识别").toContain("conditionalAtRuleRanges");
     expect(scanner, "应跳过条件块内的规则").toMatch(/if \(inConditional\(m\.index\)\) continue;/);
+  });
+
+  it("CSS-INTEGRITY-5: 固定数量页签的行不得「nowrap + overflow:hidden」把放不下的页签裁掉", () => {
+    // 背景（第 53 波）：配置弹窗只有 560px 宽，却有 7 个页签。第 51 波把 .config-tabs 改成
+    // nowrap + overflow: hidden，结果后几个页签**直接消失、点不到**（和用户在左右侧栏
+    // 报的问题是同一类）。判定方式：所有「flex 行容器 + overflow: hidden」的规则，
+    // 若同时写了 flex-wrap: nowrap，就会裁切 —— 必须逐个有理由地豁免。
+    const ALLOWLIST: Record<string, string> = {
+      ".sr-only": "视觉隐藏工具类，内容本来就不显示",
+      ".input-tools-left": "编辑器工具行的 chip 自带 min-width:0 + 省略号，整行就是为单行设计",
+      ".right-sidebar-tabs": "只有 2 个页签（文件 / 浏览器），页签文字可压缩成省略号",
+      ".panel-sidebar-tabs": "5 个页签，标签走 .panel-sidebar-tab-label（overflow:hidden + 省略号）可压缩",
+      ".nb-panel-tabs": "只有 2 个页签（来源 / 图谱），且是窄边栏里的固定两项",
+      ".kg-toolbar": "工具栏是整幅工作区宽度（不是窄边栏），6 个控件都是 32px 图标按钮，不需要省略号",
+    };
+    const offenders: string[] = [];
+    for (const rel of ["src/styles.css", "src/styles/codem-ui.css", "src/styles/notebook-workspace.css", "src/styles/task-center.css"]) {
+      const abs = join(ROOT, rel);
+      if (!existsSync(abs)) continue;
+      const css = readFileSync(abs, "utf8").replace(/\/\*[\s\S]*?\*\//g, (c) => c.replace(/[^\n]/g, " "));
+      for (const m of css.matchAll(/(^|\n)([^\n{}]+)\{([^{}]*)\}/g)) {
+        const body = m[3];
+        if (!/overflow:\s*hidden/.test(body) || !/flex-wrap:\s*nowrap/.test(body)) continue;
+        for (const sel of m[2].split(",")) {
+          const s = sel.trim();
+          if (!s.startsWith(".")) continue;
+          const base = s.split(/[\s:>]/)[0];
+          if (ALLOWLIST[base]) continue;
+          const line = css.slice(0, m.index).split("\n").length;
+          offenders.push(`${rel}:${line} ${base}`);
+        }
+      }
+    }
+    expect(
+      offenders,
+      `这些行容器会把放不下的内容裁掉（要么允许换行，要么写进豁免清单并说明理由）：\n${offenders.join("\n")}`,
+    ).toEqual([]);
+  });
+
+  it("CSS-INTEGRITY-6: 配置弹窗的 7 个页签可换行、且标签文字能压缩成省略号", () => {
+    const styles = FILES.find((f) => f.rel === "src/styles.css")!;
+    const stripped = stripComments(styles.css);
+    const rule = (selector: string) => {
+      const re = new RegExp(`(?:^|\\n)${selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} \\{([\\s\\S]*?)\\n\\}`);
+      return re.exec(stripped)?.[1] ?? "";
+    };
+    const tabs = rule(".config-tabs");
+    expect(tabs, "应能定位 .config-tabs").toBeTruthy();
+    expect(tabs, "必须允许换行（否则 560px 弹窗里放不下的页签会消失）").toMatch(/flex-wrap:\s*wrap/);
+    expect(tabs, "不得再裁切").not.toMatch(/overflow:\s*hidden/);
+    expect(tabs).not.toMatch(/flex-wrap:\s*nowrap/);
+    expect(rule(".config-tab"), "页签要能压缩").toMatch(/min-width:\s*0/);
+    expect(rule(".config-tab-label"), "标签文字要能变省略号").toMatch(/text-overflow:\s*ellipsis/);
   });
 });

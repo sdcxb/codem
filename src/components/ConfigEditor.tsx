@@ -1,5 +1,21 @@
 import { useState, useEffect } from "react";
 import {
+  ClipboardList,
+  Gem,
+  IdCard,
+  User as UserIcon,
+  Wrench,
+  HeartPulse,
+  FolderTree,
+  Home,
+  FolderClosed,
+  FolderOpen,
+  Check,
+  Square,
+  Settings2,
+} from "lucide-react";
+import { ActionIcons } from "../core/icons/icon-map";
+import {
   HierarchicalConfig,
   IdentityConfig,
   UserConfig,
@@ -22,13 +38,25 @@ interface ConfigEditorProps {
 type TabKey = "agents" | "soul" | "identity" | "user" | "tools" | "heartbeat" | "structure";
 
 const TAB_LABELS: Record<TabKey, string> = {
-  agents: "📋 AGENTS",
-  soul: "💎 SOUL",
-  identity: "🪪 IDENTITY",
-  user: "👤 USER",
-  tools: "🔧 TOOLS",
-  heartbeat: "💓 HEARTBEAT",
-  structure: "🌳 层级结构",
+  agents: "AGENTS",
+  soul: "SOUL",
+  identity: "IDENTITY",
+  user: "USER",
+  tools: "TOOLS",
+  heartbeat: "HEARTBEAT",
+  structure: "层级结构",
+};
+
+/* 第 53 波：页签图标从 emoji 改为线性图标（icon-map 的既定政策：管理界面用 Lucide、聊天消息才用 emoji）。
+   emoji 还有个副作用：单个 emoji 就要 ~20px 宽，7 个页签在 560px 的弹窗里必然放不下。 */
+const TAB_ICONS: Record<TabKey, typeof ClipboardList> = {
+  agents: ClipboardList,
+  soul: Gem,
+  identity: IdCard,
+  user: UserIcon,
+  tools: Wrench,
+  heartbeat: HeartPulse,
+  structure: FolderTree,
 };
 
 export function ConfigEditor({ appRoot, projectPath, onClose }: ConfigEditorProps) {
@@ -96,8 +124,8 @@ export function ConfigEditor({ appRoot, projectPath, onClose }: ConfigEditorProp
     <div className="settings-overlay" onClick={onClose}>
       <div className="config-editor" onClick={(e) => e.stopPropagation()}>
         <div className="settings-header">
-          <h3>⚙️ 分层配置管理</h3>
-          <button className="settings-close" onClick={onClose}>✕</button>
+          <h3><Settings2 size={16} className="icon-inline" />分层配置管理</h3>
+          <button className="settings-close" onClick={onClose} aria-label="关闭"><ActionIcons.close size={16} /></button>
         </div>
 
         <div className="config-body">
@@ -112,7 +140,8 @@ export function ConfigEditor({ appRoot, projectPath, onClose }: ConfigEditorProp
                   className={`config-level-btn ${activeLevel === lvl ? "active" : ""} ${!exists ? "missing" : ""}`}
                   onClick={() => setActiveLevel(lvl)}
                 >
-                  {lvl === "app" ? "🏠 全局" : "📁 项目"}
+                  {lvl === "app" ? <Home size={14} /> : <FolderClosed size={14} />}
+                  {lvl === "app" ? "全局" : "项目"}
                   {!exists && " (未初始化)"}
                 </button>
               );
@@ -123,22 +152,27 @@ export function ConfigEditor({ appRoot, projectPath, onClose }: ConfigEditorProp
                 className={`config-level-btn ${activeLevel === "subfolder" ? "active" : ""}`}
                 onClick={() => { setActiveLevel("subfolder"); }}
               >
-                📂 {l.basePath.split("\\").pop()}
+                <FolderOpen size={14} />
+                {l.basePath.split("\\").pop()}
               </button>
             ))}
           </div>
 
           {/* Tab Bar */}
           <div className="config-tabs">
-            {(Object.keys(TAB_LABELS) as TabKey[]).map((tab) => (
-              <button
-                key={tab}
-                className={`config-tab ${activeTab === tab ? "active" : ""}`}
-                onClick={() => setActiveTab(tab)}
-              >
-                {TAB_LABELS[tab]}
-              </button>
-            ))}
+            {(Object.keys(TAB_LABELS) as TabKey[]).map((tab) => {
+              const TabIcon = TAB_ICONS[tab];
+              return (
+                <button
+                  key={tab}
+                  className={`config-tab ${activeTab === tab ? "active" : ""}`}
+                  onClick={() => setActiveTab(tab)}
+                >
+                  <TabIcon size={14} />
+                  <span className="config-tab-label">{TAB_LABELS[tab]}</span>
+                </button>
+              );
+            })}
           </div>
 
           {/* Content */}
@@ -151,7 +185,7 @@ export function ConfigEditor({ appRoot, projectPath, onClose }: ConfigEditorProp
                   <div key={lvl.level} className="structure-level">
                     <div className="structure-header">
                       <span className="structure-icon">
-                        {lvl.level === "app" ? "🏠" : lvl.level === "project" ? "📁" : "📂"}
+                        {lvl.level === "app" ? <Home size={14} /> : lvl.level === "project" ? <FolderClosed size={14} /> : <FolderOpen size={14} />}
                       </span>
                       <span className="structure-name">
                         {lvl.level === "app" ? "全局配置" : lvl.level === "project" ? "项目配置" : lvl.basePath.split("\\").pop()}
@@ -161,7 +195,7 @@ export function ConfigEditor({ appRoot, projectPath, onClose }: ConfigEditorProp
                     <div className="structure-files">
                       {Object.entries(lvl.exists).map(([file, exists]) => (
                         <span key={file} className={`structure-file ${exists ? "exists" : "missing"}`}>
-                          {exists ? "✅" : "⬜"} {file}
+                          {exists ? <Check size={12} className="icon-inline" /> : <Square size={12} className="icon-inline" />} {file}
                         </span>
                       ))}
                     </div>
@@ -170,10 +204,10 @@ export function ConfigEditor({ appRoot, projectPath, onClose }: ConfigEditorProp
                 <div className="config-init-section">
                   <h4>初始化配置目录</h4>
                   <button className="config-init-btn" onClick={() => handleInitLevel("app")}>
-                    🏠 初始化全局配置 (.codem-app/)
+                    <Home size={14} /> 初始化全局配置 (.codem-app/)
                   </button>
                   <button className="config-init-btn" onClick={() => handleInitLevel("project")}>
-                    📁 初始化项目配置 (.codem/)
+                    <FolderClosed size={14} /> 初始化项目配置 (.codem/)
                   </button>
                 </div>
               </div>
@@ -239,9 +273,9 @@ export function ConfigEditor({ appRoot, projectPath, onClose }: ConfigEditorProp
 
           {/* Footer */}
           <div className="config-footer">
-            {saved && <span className="config-saved">✅ 已保存</span>}
+            {saved && <span className="config-saved"><Check size={12} className="icon-inline" /> 已保存</span>}
             {activeTab !== "structure" && (
-              <button className="config-save-btn" onClick={handleSave}>💾 保存</button>
+              <button className="config-save-btn" onClick={handleSave}><ActionIcons.save size={14} /> 保存</button>
             )}
           </div>
         </div>

@@ -4,6 +4,7 @@
 
 import { type SlideElement, type TextElement, type ShapeElement, type ImageElement, type ListElement, type ShapeKind, type ElementAnimation, type AnimationType, type AnimationTrigger } from '../../core/knowledge/ppt-types';
 import { PPT_FONTS } from '../../core/knowledge/ppt-styles';
+import { ActionIcons } from "../../core/icons/icon-map";
 
 export interface PropertyPanelProps {
   selectedElements: SlideElement[];
@@ -269,7 +270,8 @@ function ListProperties({ el, onUpdate }: { el: ListElement; onUpdate: (id: stri
                 onUpdate(el.id, { items });
               }} />
             <button className="ppt-property-btn" style={{ flex: '0 0 auto', padding: '4px 8px' }}
-              onClick={() => { const items = el.items.filter((_, idx) => idx !== i); onUpdate(el.id, { items }); }}>✕</button>
+              aria-label="删除该项"
+              onClick={() => { const items = el.items.filter((_, idx) => idx !== i); onUpdate(el.id, { items }); }}><ActionIcons.delete size={12} /></button>
           </div>
         ))}
         <button className="ppt-property-btn" style={{ marginTop: 4 }}

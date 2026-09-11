@@ -29,6 +29,7 @@ import { PropertyPanel } from './PropertyPanel';
 import { EditorToolbar } from './EditorToolbar';
 import { PresentationMode } from './PresentationMode';
 import './ppt-editor.css';
+import { ActionIcons } from "../../core/icons/icon-map";
 
 // ========== 命令接口 (Undo/Redo) ==========
 
@@ -747,7 +748,7 @@ const handleThemeChange = useCallback((theme: PPTTheme) => {
         style={{ background: slide.background, aspectRatio, display: 'flex', alignItems: 'flex-start', justifyContent: 'flex-start', padding: 8 }}
       >
         <span className="ppt-thumbnail-number">{index + 1}</span>
-        <button className="ppt-thumbnail-delete" onClick={(e) => { e.stopPropagation(); handleDeleteSlide(index); }}>✕</button>
+        <button className="ppt-thumbnail-delete" onClick={(e) => { e.stopPropagation(); handleDeleteSlide(index); }} aria-label="删除这张幻灯片"><ActionIcons.delete size={12} /></button>
         {firstText && (
           <div style={{ fontSize: "var(--fs-xs)", color: deck.theme.textColor, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '90%' }}>
             {(firstText as any).content}
@@ -927,7 +928,7 @@ const handleThemeChange = useCallback((theme: PPTTheme) => {
         <div className="ppt-version-panel">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
             <span style={{ color: 'var(--text-primary)', fontSize: 'var(--fs-md)', fontWeight: 600 }}>📚 版本历史</span>
-            <button onClick={() => setShowVersionPanel(false)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 'var(--fs-lg)' }}>✕</button>
+            <button onClick={() => setShowVersionPanel(false)} aria-label="关闭" style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 'var(--fs-lg)' }}><ActionIcons.close size={14} /></button>
           </div>
           {versions.length === 0 ? (
             <div style={{ color: 'var(--text-muted)', fontSize: 'var(--fs-sm)', textAlign: 'center', padding: 20 }}>暂无保存的版本</div>
@@ -958,7 +959,7 @@ const handleThemeChange = useCallback((theme: PPTTheme) => {
               >
                 {generatingNotes ? '生成中...' : '重新生成'}
               </button>
-              <button onClick={() => setShowNotesPanel(false)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 'var(--fs-lg)' }}>✕</button>
+              <button onClick={() => setShowNotesPanel(false)} aria-label="关闭" style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 'var(--fs-lg)' }}><ActionIcons.close size={14} /></button>
             </div>
           </div>
           <div>

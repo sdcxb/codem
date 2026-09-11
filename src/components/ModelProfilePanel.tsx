@@ -10,6 +10,7 @@ import {
 import { getSettingJSON } from "../core/storage/settings";
 import { mergeCustomModels } from "../core/llm/custom-models";
 import { MIMO_MODELS } from "../core/model-config";
+import { ActionIcons } from "../core/icons/icon-map";
 
 // ========== Constants ==========
 
@@ -188,7 +189,7 @@ export function ModelProfilePanel({ onClose }: ModelProfilePanelProps) {
       <div className="settings-panel mp-panel" onClick={(e) => e.stopPropagation()} style={{ zIndex: "var(--z-modal-stacked)" }}>
         <div className="settings-header">
           <h3>{zh ? "模型配置方案" : "Model Profiles"}</h3>
-          <button className="settings-close" onClick={onClose}>✕</button>
+          <button className="settings-close" onClick={onClose} aria-label="关闭"><ActionIcons.close size={16} /></button>
         </div>
 
         <div className="mp-body">

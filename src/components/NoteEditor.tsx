@@ -36,6 +36,7 @@ import {
   saveNoteVersion, listNoteVersions, restoreNoteVersion, deleteNoteVersion,
 } from '../core/knowledge';
 import type { Note, NoteLink, NoteVersion } from '../core/knowledge';
+import { ActionIcons } from "../core/icons/icon-map";
 
 // Mermaid 代码块渲染组件 (复用 MessageBubble 中的渲染逻辑)
 const MermaidBlock = ({ chart }: { chart: string }) => {
@@ -368,11 +369,13 @@ export function NoteEditor({
                   color: 'var(--text-muted, #555)',
                   cursor: 'pointer',
                   padding: '0',
-                  fontSize: 'var(--fs-xs)',
                   lineHeight: '1',
+                  display: 'inline-flex',
+                  alignItems: 'center',
                 }}
+                aria-label="移除标签"
               >
-                ×
+                <ActionIcons.close size={12} />
               </button>
             </span>
           ))}

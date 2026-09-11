@@ -88,6 +88,7 @@ import {
   Trash2,
   Plus,
 } from "lucide-react";
+import { ActionIcons } from "../core/icons/icon-map";
 
 interface ProviderKey {
   id: string;
@@ -2137,8 +2138,9 @@ function PermissionRulesSection() {
                 onClick={() => handleRemove(i)}
                 className="sp-btn sp-btn--icon sp-btn--icon-text"
                 title={zh ? "删除" : "Delete"}
+                aria-label={zh ? "删除" : "Delete"}
               >
-                ✕
+                <ActionIcons.delete size={14} />
               </button>
             </div>
           ))}

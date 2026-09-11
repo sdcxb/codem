@@ -1,5 +1,5 @@
 /**
- * 图标标准化测试 — ICON-001 ~ ICON-060
+ * 图标标准化测试 — ICON-001 ~ ICON-066
  *
  * 覆盖范围：
  *   A. icon-map.ts 完整性（ICON-001 ~ ICON-015）
@@ -7,6 +7,12 @@
  *   C. 弹窗组件中无 Emoji 残留（ICON-031 ~ ICON-040）
  *   D. 关闭按钮使用 ActionIcons.close（ICON-041 ~ ICON-050）
  *   E. CSS 变量替代硬编码颜色（ICON-051 ~ ICON-060）
+ *   F. 图标集键名有效性（ICON-061 之前的补充）
+ *   G. 全仓库扫描（第 53 波新增，ICON-062 ~ ICON-066）：
+ *      —— 为什么加：上面 A~D 都是**逐文件白名单**，于是没被列进名单的文件可以一直带着
+ *      emoji 图标和「文字 ✕ 关闭按钮」而不被发现（第 53 波实测：ConfigEditor 有 11 处 emoji +
+ *      文字 ✕，另有 6 个组件也用文字 ✕ 当关闭/删除按钮，全都在名单之外）。
+ *      门禁必须**全仓库扫描 + 显式豁免清单**，而不是逐个点名。
  */
 import { describe, it, expect } from "vitest";
 import * as fs from "fs";
@@ -509,6 +515,102 @@ describe("图标标准化测试 — ICON-001 ~ ICON-060", () => {
           }
         }
       }
+    });
+  });
+
+  // ===== G. 全仓库扫描（第 53 波新增）=====
+  describe("全仓库扫描：不用逐文件白名单（第 53 波）", () => {
+    /** 递归收集 src 下所有 tsx（排除测试文件） */
+    function allTsx(): string[] {
+      const out: string[] = [];
+      const walk = (dir: string) => {
+        for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+          const full = path.join(dir, entry.name);
+          if (entry.isDirectory()) {
+            if (!["node_modules", "dist", "target", ".git"].includes(entry.name)) walk(full);
+          } else if (entry.name.endsWith(".tsx") && !entry.name.endsWith(".test.tsx")) {
+            out.push(full);
+          }
+        }
+      };
+      walk(SRC);
+      return out;
+    }
+
+    const TSX = allTsx();
+    const rel = (p: string) => path.relative(SRC, p).replace(/\\/g, "/");
+
+    it("ICON-062: 扫描范围覆盖全仓库（防止 glob 写错导致「空集也通过」）", () => {
+      expect(TSX.length).toBeGreaterThanOrEqual(60);
+      expect(TSX.map(rel)).toContain("components/ConfigEditor.tsx");
+      expect(TSX.map(rel)).toContain("components/AgentPanel.tsx");
+    });
+
+    it("ICON-063: 全仓库没有「用文字 ✕ / × 当按钮图标」（插件除外）", () => {
+      // 插件（大富翁）自带美术语言，与审计 ALLOWLIST 一致地整体豁免
+      const PLUGIN_ALLOW = /^plugins\/monopoly-game\//;
+      const offenders: string[] = [];
+      for (const file of TSX) {
+        const r = rel(file);
+        if (PLUGIN_ALLOW.test(r)) continue;
+        fs.readFileSync(file, "utf8").split("\n").forEach((line, i) => {
+          if (/>\s*[✕×]\s*</.test(line) || /^\s*[✕×]\s*$/.test(line)) {
+            offenders.push(`${r}:${i + 1}  ${line.trim().slice(0, 70)}`);
+          }
+        });
+      }
+      expect(offenders, `这些按钮还在用文字 ✕/× 当图标：\n${offenders.join("\n")}`).toEqual([]);
+    });
+
+    it("ICON-063b: 第 53 波迁移过的组件确实改用 ActionIcons（校验产物本身，不看白名单）", () => {
+      // 这一波把「文字 ✕/×」换成了 ActionIcons.close / delete。断言这些文件真的引入了图标集，
+      // 而不是"看起来改完了"（踩过：脚本报成功、实际匹配 0 次）。
+      const migrated = [
+        "components/ConfigEditor.tsx",
+        "components/AgentPanel.tsx",
+        "components/ImageGallery.tsx",
+        "components/ModelProfilePanel.tsx",
+        "components/PromptDraftPicker.tsx",
+        "components/QuickPhraseSelector.tsx",
+        "components/SkillManager.tsx",
+        "components/Sidebar.tsx",
+        "components/GitEnvSettings.tsx",
+        "components/MultimodalPanel.tsx",
+        "components/NoteEditor.tsx",
+        "components/RecoveryPanel.tsx",
+        "components/SettingsPanel.tsx",
+        "components/AudioPlayer.tsx",
+        "core/slots/SlotBridge.tsx",
+        "components/ppt/PPTEditor.tsx",
+        "components/ppt/PropertyPanel.tsx",
+      ];
+      for (const f of migrated) {
+        const src = readFile(f);
+        expect(src, `${f} 应引入 icon-map 并使用具体图标`).toMatch(/from "(\.\.\/)+core\/icons\/icon-map"/);
+        expect(src, `${f} 应使用 ActionIcons 的某个图标`).toMatch(/ActionIcons\.(close|delete)/);
+      }
+    });
+
+    it("ICON-064: 已迁移的两个管理界面组件里没有「当图标用的 emoji」（ConfigEditor / AgentPanel）", () => {
+      const EMOJI = /[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}]/u;
+      // 例外：emoji 作为**用户数据**出现是正当的（ConfigEditor 的 "Emoji" 输入框，placeholder 就是示例 emoji）
+      const DATA_LINE = /\bemoji\b|placeholder|avatar/i;
+      for (const file of ["components/ConfigEditor.tsx", "components/AgentPanel.tsx"]) {
+        const hits = readFile(file)
+          .split("\n")
+          .map((l, i) => ({ l, i: i + 1 }))
+          .filter(({ l }) => EMOJI.test(l) && !/^\s*(\/\/|\*|\/\*)/.test(l) && !DATA_LINE.test(l))
+          .map(({ l, i }) => `${file}:${i}  ${l.trim().slice(0, 70)}`);
+        expect(hits, `仍有当图标用的 emoji：\n${hits.join("\n")}`).toEqual([]);
+      }
+    });
+
+    it("ICON-065: 已迁移组件的状态图标来自 icon-map 的 StatusIcons（不再自定义 emoji 状态符）", () => {
+      const panel = readFile("components/AgentPanel.tsx");
+      // 状态图标必须取自统一图标集，而不是 switch 返回 emoji 字符串
+      expect(panel).toMatch(/import \{[^}]*StatusIcons[^}]*\} from "\.\.\/core\/icons\/icon-map"/);
+      expect(panel).toMatch(/StatusIcons\.(running|success|error|paused|pending|idle)/);
+      expect(panel, "不应再有返回 emoji 的状态函数").not.toMatch(/function getStatusIcon\([\s\S]{0,300}?return "[\u{1F000}-\u{1FAFF}]/u);
     });
   });
 });

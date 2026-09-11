@@ -589,7 +589,7 @@ return true;
           {installError && (
             <div className="skill-install-error">
               <span>{installError}</span>
-              <button onClick={() => setInstallError(null)}>✕</button>
+              <button onClick={() => setInstallError(null)} aria-label="关闭"><ActionIcons.close size={14} /></button>
             </div>
           )}
 
@@ -815,7 +815,7 @@ return true;
           {marketError && (
             <div className="skill-install-error">
               <span>{marketError}</span>
-              <button onClick={() => setMarketError(null)}>✕</button>
+              <button onClick={() => setMarketError(null)} aria-label="关闭"><ActionIcons.close size={14} /></button>
             </div>
           )}
 

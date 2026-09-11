@@ -4,6 +4,7 @@ import {
   type RecoveryConfig,
 } from "../core/recovery/recovery";
 import { useLang } from "../core/i18n/lang";
+import { ActionIcons } from "../core/icons/icon-map";
 
 export function RecoveryPanel() {
   const lang = useLang();
@@ -129,8 +130,9 @@ export function RecoveryPanel() {
                   <button
                     onClick={(e) => { e.stopPropagation(); handleDeleteSession(s.id); }}
                     className="recovery-item-delete"
+                    aria-label={zh ? "删除会话" : "Delete session"}
                   >
-                    ✕
+                    <ActionIcons.delete size={12} />
                   </button>
                 </div>
               );

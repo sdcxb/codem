@@ -4,6 +4,7 @@ import { getSettingJSON, setSettingJSON } from "../core/storage/settings";
 import type { GitConfig, EnvironmentConfig, CustomOperation } from "../core/settings/settings";
 import { runCustomOperation } from "../core/environment";
 import { isAutoCommitEnabled, setAutoCommitEnabled } from "../core/environment/git-commit-service";
+import { ActionIcons } from "../core/icons/icon-map";
 
 /**
  * Git 偏好 / 环境脚本 两段设置。
@@ -365,8 +366,9 @@ export function EnvironmentConfigSection() {
             <button
               onClick={() => removeOp(op.id)}
               className="git-env-remove-btn"
+              aria-label={zh ? "删除" : "Delete"}
             >
-              ✕
+              <ActionIcons.delete size={12} />
             </button>
           </div>
         ))}

@@ -7,6 +7,7 @@
 
 import { useState, useRef, useEffect, memo } from "react";
 import { Play, Pause, Volume2, Download } from "lucide-react";
+import { ActionIcons } from "../core/icons/icon-map";
 
 interface AudioPlayerProps {
   filePath?: string;
@@ -65,8 +66,8 @@ export const AudioPlayer = memo(function AudioPlayer({ filePath, src, fileName, 
           <div className="hint-sm">{formatTime(duration)}</div>
         </div>
         {onClose && (
-          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)" }}>
-            ✕
+          <button className="audio-player-close" onClick={onClose} aria-label="关闭">
+            <ActionIcons.close size={16} />
           </button>
         )}
       </div>

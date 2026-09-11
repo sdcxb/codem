@@ -78,6 +78,7 @@ import {
   ArrowDownToLine, // 下载（导出技能包）
   FolderUp,        // 上传（导入技能包）
   Copy,            // 复制
+  Save,            // 保存
   Check,           // 确认 / 已连接
   X,               // 关闭 / 取消 / 断开
 
@@ -214,6 +215,7 @@ export const ActionIcons = {
   download: ArrowDownToLine,
   upload: FolderUp,
   copy: Copy,
+  save: Save,
   confirm: Check,
   close: X,
   search: Search,

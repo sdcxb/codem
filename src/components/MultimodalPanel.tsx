@@ -16,6 +16,7 @@ import {
 } from "../core/llm/multimodal";
 import { getSettingJSON } from "../core/storage/settings";
 import { AVAILABLE_LOCAL_MODELS, getStatus as getLocalStatus, type LocalEmbeddingStatus } from "../core/knowledge/local-embedding";
+import { ActionIcons } from "../core/icons/icon-map";
 
 interface ProviderKey {
   id: string;
@@ -318,8 +319,9 @@ export function MultimodalPanel({ onClose, inline }: MultimodalPanelProps) {
         <button
           onClick={onClose}
           className="mm-close"
+          aria-label="关闭"
         >
-          ✕
+          <ActionIcons.close size={16} />
         </button>
       </div>
 

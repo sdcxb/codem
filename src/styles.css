@@ -15408,14 +15408,30 @@ color: var(--accent, #7c6cf0);
 }
 .config-tabs {
   display: flex;
-  flex-wrap: nowrap;
+  /* 第 53 波：这行有 7 个页签（AGENTS/SOUL/IDENTITY/USER/TOOLS/HEARTBEAT/层级结构），
+     而弹窗只有 560px 宽 —— 第 51 波改成 nowrap + overflow: hidden 后，放不下的页签被**直接裁掉、
+     既看不见也点不到**。容器高度是自适应的，所以正确做法是允许换行：多出来的页签排到第二行，
+     永远不会消失；文字再配合省略号压缩。 */
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--space-2);
   padding-bottom: var(--space-4);
   border-bottom: 1px solid var(--border-secondary);
-  /* 第 51 波：标签行不折行（原来 flex-wrap: wrap），窄窗口下压缩而不是换行 */
+  min-width: 0;
+}
+/* 页签：图标不被压缩、文字可压缩成省略号（窄弹窗里是"文字变省略号"而不是"整块消失"） */
+.config-tab {
+  min-width: 0;
+  max-width: 100%;
+}
+.config-tab > svg {
+  flex: 0 0 auto;
+}
+.config-tab-label {
   min-width: 0;
   overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .config-content {
   min-height: 200px;
@@ -16948,6 +16964,22 @@ color: var(--accent, #7c6cf0);
 
 .persona-manager { display: flex; flex-direction: column; }
 .audio-player { display: flex; flex-direction: column; gap: var(--space-6); padding: var(--space-8); }
+/* 第 53 波：关闭按钮从内联样式收口成类（配 ActionIcons.close，与其它弹窗一致） */
+.audio-player-close {
+  display: flex;
+  align-items: center;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: var(--space-2);
+  border-radius: var(--radius-xs);
+  transition: var(--transition-color);
+}
+.audio-player-close:is(:hover, :focus-visible) {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
 .drawer-body { flex: 1; overflow: auto; padding: var(--space-8); }
 .excel-viewer { display: flex; flex-direction: column; height: 100%; overflow: hidden; }
 .excel-viewer-tabs {

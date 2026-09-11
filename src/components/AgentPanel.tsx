@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
-import { Wrench, Search, Bot, Pin } from "lucide-react";
+import { Wrench, Search, Bot, Pin, Users, MessageCircle, FileText, Check } from "lucide-react";
 import { SubagentTask, SubagentStatus } from "../core/subagent/subagent";
-import { PanelIcons, ActionIcons } from "../core/icons/icon-map";
+import { PanelIcons, ActionIcons, StatusIcons } from "../core/icons/icon-map";
 import { useProjectStore } from "../core/store";
 import { AgentTeamsService } from "../core/provider/agent-teams-service";
 import { getLang } from "../core/i18n/lang";
@@ -12,14 +12,16 @@ interface AgentPanelProps {
   onSelectAgent: (taskId: string) => void;
 }
 
-function getStatusIcon(status: SubagentStatus): string {
+/* 第 53 波：状态图标从 emoji 改为线性图标（icon-map 的政策：管理界面用 Lucide、只有聊天消息才用 emoji）。
+   emoji 状态符在不同平台字形/宽度都不同，和旁边的线性图标放在一起像是"贴纸"。 */
+function getStatusIcon(status: SubagentStatus) {
   switch (status) {
-    case "running": return "🔄";
-    case "completed": return "✅";
-    case "failed": return "❌";
-    case "cancelled": return "⏹️";
-    case "pending": return "⏳";
-    default: return "❓";
+    case "running": return StatusIcons.running;
+    case "completed": return StatusIcons.success;
+    case "failed": return StatusIcons.error;
+    case "cancelled": return StatusIcons.paused;
+    case "pending": return StatusIcons.pending;
+    default: return StatusIcons.idle;
   }
 }
 
@@ -136,7 +138,7 @@ export function AgentPanel({ agents, onClose, onSelectAgent }: AgentPanelProps) 
       {teamSnap && (
         <div style={{ margin: "0 10px 6px", border: "1px solid var(--border-primary, rgba(0,0,0,.1))", borderRadius: "var(--radius-md)", overflow: "hidden", background: "var(--bg-secondary, #232834)" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 10px", borderBottom: "1px solid var(--border-primary, rgba(0,0,0,.08))" }}>
-            <span style={{ fontWeight: 700, fontSize: "var(--fs-sm)" }}>👥 {teamSnap.name}</span>
+            <span style={{ fontWeight: 700, fontSize: "var(--fs-sm)", display: "inline-flex", alignItems: "center", gap: 4 }}><Users size={14} /> {teamSnap.name}</span>
             <span style={{ marginLeft: "auto", fontSize: "var(--fs-xs)", color: "var(--text-muted)" }}>
               {zh ? `成员 ${(teamSnap.members || []).length} · 任务 ${(teamSnap.tasks || []).length}` : `${(teamSnap.members || []).length} members · ${(teamSnap.tasks || []).length} tasks`}
             </span>
@@ -201,10 +203,10 @@ export function AgentPanel({ agents, onClose, onSelectAgent }: AgentPanelProps) 
                       <div style={{ display: "grid", gap: 4 }}>
                         {(task.activities || []).slice(-3).reverse().map((act: any) => (
                           <div key={act.id} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: "var(--fs-xs)", color: "var(--text-secondary)" }}>
-                            <span>{act.type === "tool" ? "🔧" : "💭"}</span>
+                            <span style={{ display: "inline-flex", alignItems: "center" }}>{act.type === "tool" ? <Wrench size={12} /> : <MessageCircle size={12} />}</span>
                             <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{act.label}</span>
                             <span style={{ color: act.status === "done" ? "var(--success)" : "var(--warning)" }}>
-                              {act.status === "done" ? (zh ? "✓ 完成" : "✓ done") : (zh ? "进行中" : "running")}
+                              {act.status === "done" ? (<><Check size={12} /> {zh ? "完成" : "done"}</>) : (zh ? "进行中" : "running")}
                             </span>
                           </div>
                         ))}
@@ -219,7 +221,7 @@ export function AgentPanel({ agents, onClose, onSelectAgent }: AgentPanelProps) 
                     {task.result && !task.error && (
                       <div style={{ fontSize: "var(--fs-xs)", color: "var(--text-muted)" }}>
                         {task.result.status === "success"
-                          ? (zh ? `完成 ✓ · 触及 ${task.result.filesTouched.length} 个文件` : `Done ✓ · touched ${task.result.filesTouched.length} files`)
+                          ? (zh ? `完成 · 触及 ${task.result.filesTouched.length} 个文件` : `Done · touched ${task.result.filesTouched.length} files`)
                           : (zh ? `结果: ${task.result.status}` : `Result: ${task.result.status}`)}
                       </div>
                     )}
@@ -265,7 +267,7 @@ export function AgentPanel({ agents, onClose, onSelectAgent }: AgentPanelProps) 
               <span className="agent-item-name">{agent.name || agent.agentId}</span>
               {agent.persistent && <span className="agent-item-badge">持久</span>}
               <span className="agent-item-status">
-                {getStatusIcon(agent.status)} {getStatusLabel(agent.status)}
+                {(() => { const StatusIcon = getStatusIcon(agent.status); return <StatusIcon size={12} className="icon-inline" />; })()} {getStatusLabel(agent.status)}
               </span>
             </div>
             <div className="agent-item-prompt">{agent.prompt}</div>
@@ -273,7 +275,7 @@ export function AgentPanel({ agents, onClose, onSelectAgent }: AgentPanelProps) 
               <span>{formatTime(agent.createdAt)}</span>
               {agent.result && (
                 <span className="agent-item-files">
-                  📁 {agent.result.filesTouched.length} 个文件
+                  <FileText size={12} className="icon-inline" /> {agent.result.filesTouched.length} 个文件
                 </span>
               )}
             </div>
