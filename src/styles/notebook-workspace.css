@@ -844,9 +844,9 @@
 }
 
 .nb-note-title {
+  font-weight: 600;
   flex: 1;
   font-size: var(--fs-sm);
-  font-weight: 600;
   color: var(--text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -975,6 +975,9 @@ top: 36px;
   cursor: pointer;
   padding: var(--space-2);
   border-radius: var(--radius-xs);
+  display: flex;
+  align-items: center;
+  justify-content: center;
   transition: var(--transition-color), var(--transition-transform), var(--transition-shadow), var(--transition-fade);
 }
 
@@ -1245,12 +1248,15 @@ top: 36px;
 }
 
 .kg-toolbar {
-  display: grid;
-  grid-template-columns: repeat(2, max-content);
+  display: flex;
+  flex-wrap: nowrap;
   align-items: center;
   gap: var(--space-4);
   padding: var(--space-4) var(--space-8);
   flex-shrink: 0;
+  /* 第 51 波：工具栏里 6 个控件放进 repeat(2, …) 网格会折成三行 —— 改成一行，允许压缩 */
+  min-width: 0;
+  overflow: hidden;
 }
 
 .kg-search-wrapper {
@@ -1392,7 +1398,7 @@ top: 36px;
 
 .kg-legend {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(var(--space-13), max-content));
+  grid-template-columns: repeat(auto-fit, minmax(96px, max-content));
   gap: var(--space-6);
   padding: var(--space-4) var(--space-8);
   flex-shrink: 0;
@@ -2675,10 +2681,13 @@ top: 36px;
  * （`.nb-panel-tabs` 甚至是"写了但 CSS 里没有"的假钩子——因为同行有内联样式，
  * `css-class-undefined` 规则看不到它）。这里补上真实定义。 */
 .nb-panel-tabs {
-  display: grid;
-  grid-template-columns: repeat(2, max-content);
+  display: flex;
+  flex-wrap: nowrap;
   align-items: center;
   gap: var(--space-1);
+  /* 第 51 波：3 个标签放进 repeat(2, …) 网格必然折行 —— 标签行统一一行放完 */
+  min-width: 0;
+  overflow: hidden;
 }
 
 .nb-summary-toggle {

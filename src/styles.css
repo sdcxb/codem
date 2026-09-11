@@ -141,13 +141,13 @@
   --duration-dropdown: 200ms;     /* dropdowns, selects */
   --duration-modal: 300ms;        /* modals, drawers */
 
-  /* Easing curves �?strong, not built-in CSS easings */
+  /* Easing curves — strong, not built-in CSS easings */
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);        /* strong ease-out for UI entrances/exits */
   --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);    /* strong ease-in-out for on-screen movement */
   --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);     /* iOS-like drawer curve */
   --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);     /* Material standard */
 
-  /* Transition presets �?specific properties, never "all" */
+  /* Transition presets — specific properties, never "all" */
   --transition-color: color var(--duration-fast) var(--ease-out), background-color var(--duration-fast) var(--ease-out), border-color var(--duration-fast) var(--ease-out);
   --transition-transform: transform var(--duration-press) var(--ease-out);
   --transition-opacity: opacity var(--duration-fast) var(--ease-out);
@@ -897,7 +897,7 @@ flex-shrink: 0;
   background: var(--bg-hover);
 }
 
-/* Segmented control for MCP / Skills / Memory �?accent-adaptive */
+/* Segmented control for MCP / Skills / Memory — accent-adaptive */
 .sidebar-tool-row {
   display: flex;
   gap: var(--space-1);
@@ -1882,14 +1882,6 @@ margin-top: var(--space-1);
   text-align: center;
   color: var(--text-secondary, #888);
   font-size: var(--fs-md);
-}
-.mermaid-error {
-  margin: var(--space-6) 0;
-  padding: var(--space-6);
-  background: color-mix(in srgb, var(--error) 10%, transparent);
-  border: 1px solid color-mix(in srgb, var(--error) 30%, transparent);
-  border-radius: var(--radius-sm);
-  font-size: var(--fs-base);
 }
 .mermaid-error-title {
   color: var(--error);
@@ -3882,35 +3874,6 @@ background: var(--bg-secondary);
   flex-direction: row;
   max-height: 60vh;
   overflow: hidden;
-}
-
-.settings-sidebar {
-  width: 160px;
-  flex-shrink: 0;
-  padding: var(--space-6) var(--space-4);
-  border-right: 1px solid var(--border-primary);
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-}
-
-.settings-sidebar-item {
-  display: grid;
-  grid-template-columns: max-content minmax(0, 1fr);
-  align-items: center;
-  gap: var(--space-4);
-  padding: var(--space-4) var(--space-6);
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  font-size: var(--fs-base);
-  color: var(--text-secondary);
-  transition: background var(--duration-fast), color var(--duration-fast);
-  border: none;
-  background: none;
-  text-align: left;
-  width: 100%;
-  height: var(--control-md);
 }
 
 .settings-sidebar-item:is(:hover, :focus-visible) {
@@ -8714,13 +8677,15 @@ border-bottom: 1px solid var(--accent);
 
 .perf-tabs {
   display: flex;
+  flex-wrap: nowrap;
   justify-content: space-between;
   align-items: center;
   flex-shrink: 0;
-  flex-wrap: wrap;
   gap: var(--space-4);
   padding: var(--space-4) var(--space-8);
   border-bottom: 1px solid var(--border-primary);
+  /* 第 51 波：标签行不折行（原来 flex-wrap: wrap） */
+  min-width: 0;
 }
 .perf-tab-group { display: flex; gap: var(--space-2); }
 .perf-controls { display: grid; grid-template-columns: repeat(4, max-content); align-items: center; gap: var(--space-4); }
@@ -10129,7 +10094,7 @@ border-bottom: 1px solid var(--accent);
   background: var(--error)10;
 }
 
-/* ========== Message Fork (legacy �?removed, fork now in toolbar) ========== */
+/* ========== Message Fork (legacy — removed, fork now in toolbar) ========== */
 
 /* ========== Thinking Indicator ========== */
 
@@ -10514,17 +10479,6 @@ border-bottom: 1px solid var(--accent);
 }
 
 /* Dropdown Menu (Radix UI) */
-.dropdown-menu-content {
-  z-index: var(--z-dropdown);
-  min-width: 160px;
-  padding: var(--space-2);
-  background: var(--dropdown-bg);
-  border: 1px solid var(--border-primary);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow-popover);
-  backdrop-filter: blur(12px);
-  animation: dropdown-slide-in var(--duration-fast) ease;
-}
 @keyframes dropdown-slide-in {
   from { opacity: 0; transform: translateY(-4px); }
   to { opacity: 1; transform: translateY(0); }
@@ -10885,15 +10839,6 @@ min-height: 36px;
 }
 
 /* Popover (Radix UI) */
-.popover-content {
-  z-index: var(--z-popover);
-  background: var(--dropdown-bg);
-  border: 1px solid var(--border-primary);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow-popover);
-  backdrop-filter: blur(12px);
-  animation: popover-slide-in var(--duration-fast) ease;
-}
 @keyframes popover-slide-in {
   from { opacity: 0; transform: scale(0.96); }
   to { opacity: 1; transform: scale(1); }
@@ -11240,31 +11185,6 @@ border-color: var(--text-muted);
 }
 
 /* Dialog */
-.dialog-overlay {
-  position: fixed;
-  inset: 0;
-  background: var(--overlay-backdrop);
-  backdrop-filter: blur(2px);
-  z-index: var(--z-dropdown);
-  animation: dialog-fade-in 0.15s ease-out;
-}
-.dialog-content {
-  position: fixed;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  background: var(--bg-primary, #1e1e2e);
-  border: 1px solid var(--border-primary, #333);
-  border-radius: var(--radius-md);
-  padding: var(--space-10);
-  max-width: 500px;
-  width: 90%;
-  max-height: 85vh;
-  overflow-y: auto;
-  z-index: var(--z-dropdown);
-  box-shadow: 0 20px 60px var(--shadow-color);
-  animation: dialog-slide-in 0.2s ease-out;
-}
 .dialog-close {
   position: absolute;
   top: 16px;
@@ -11506,18 +11426,6 @@ border-color: var(--text-muted);
 }
 
 /* Standard dialog close button (PdfViewer, SourceViewer, FlashcardViewer, etc.) */
-.nb-dialog-close {
-  background: none;
-  border: none;
-  color: var(--text-secondary);
-  cursor: pointer;
-  padding: var(--space-2);
-  border-radius: var(--radius-xs);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: background var(--duration-fast), color var(--duration-fast);
-}
 .nb-dialog-close:is(:hover, :focus-visible) {
   background: var(--bg-hover);
   color: var(--text-primary);
@@ -11544,18 +11452,6 @@ border-color: var(--text-muted);
 }
 
 /* Fullscreen viewer close button (CodeBlock, Mermaid, Image, FullscreenViewer) */
-.content-fullscreen-close {
-  background: none;
-  border: none;
-  color: var(--text-secondary);
-  cursor: pointer;
-  padding: var(--space-2);
-  border-radius: var(--radius-xs);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: background var(--duration-fast), color var(--duration-fast);
-}
 .content-fullscreen-close:is(:hover, :focus-visible) {
   background: var(--bg-hover);
   color: var(--text-primary);
@@ -12272,7 +12168,7 @@ box-shadow: 0 4px 12px var(--shadow-color);
 }
 
 /* ========== Skin Selector ========== */
-/* 皮肤选择器卡片式选项卡样�?*/
+/* 皮肤选择器卡片式选项卡样式 */
 
 .skin-selector-grid {
 display: grid;
@@ -12486,9 +12382,9 @@ line-height: 1.3;
 }
 
 /* ========== Pet Sprite Animation ==========
-   基于 Petdex (MIT) 的精灵图 CSS 动画方案�?
-   精灵图是固定网格�?92×208px 帧宽�? �?1536px 总宽�?
-   通过 CSS steps() 步进 background-position 实现帧动画�?
+   基于 Petdex (MIT) 的精灵图 CSS 动画方案。
+   精灵图是固定网格：192×208px 帧宽，8 列 1536px 总宽。
+   通过 CSS steps() 步进 background-position 实现帧动画。
 */
 
 .pet-sprite-card {
@@ -12524,8 +12420,8 @@ line-height: 1.3;
 }
 
 /* ========== Pet Window Mode ==========
-   独立宠物窗口的透明背景�?
-   强制所有层级透明，消�?WebView2 可能残留的黑色背�?边框�?
+   独立宠物窗口的透明背景。
+   强制所有层级透明，消除 WebView2 可能残留的黑色背景/边框。
 */
 html.pet-window-mode,
 html.pet-window-mode body,
@@ -12533,7 +12429,7 @@ html.pet-window-mode body,
 
 /* ========== Guidance (Mid-Turn Steering) ========== */
 
-/* Guidance messages bar �?shows pending/consumed guidance above the input */
+/* Guidance messages bar — shows pending/consumed guidance above the input */
 /* Guidance messages bar — floating card above input (wecode-aligned) */
 .guidance-messages-bar {
   margin: 0 auto var(--space-4);
@@ -12665,7 +12561,7 @@ html.pet-window-mode body,
 }
 
 
-/* Guidance input container �?replaces InputArea when agent is running */
+/* Guidance input container — replaces InputArea when agent is running */
 
 
 
@@ -14651,32 +14547,40 @@ color: var(--accent, #7c6cf0);
 /* ========== P2: Right Sidebar Multi-tab ========== */
 .right-sidebar-tabs {
   display: flex;
+  flex-wrap: nowrap;
   border-bottom: 1px solid var(--border-primary, #2a2a30);
   background: var(--bg-tertiary);
-  overflow-x: auto;
   align-items: center;
   gap: var(--space-1);
   padding: 0 var(--space-3);
   padding-right: var(--space-11);
   height: 36px;
   flex-shrink: 0;
+  /* 第 51 波：按钮/标签行必须一行放完 —— 不滚动、不折行；宽度不足时标签文字省略号 */
+  overflow: hidden;
 }
 
 .right-sidebar-tab {
-  padding: var(--space-3) var(--space-5);
-  font-size: var(--fs-2xs);
-  color: var(--text-muted, #6b6b7b);
-  cursor: pointer;
-  border: none;
-  background: transparent;
-  border-bottom: 2px solid transparent;
-  white-space: nowrap;
-  transition: color var(--duration-fast), background var(--duration-fast), border-color var(--duration-fast);
-  display: grid;
-  grid-template-columns: repeat(2, max-content);
+  /* 第 51 波：这个类在 codem-ui.css 里**又写了一遍**（display / padding / font-size 等取值都不同），
+     而 codem-ui.css 后加载 → 那边的值静默胜出。两份定义合并到这一处，并采用"后者胜出"的结果
+     （即 codem-ui 那套取值），同时把这边独有的属性（底部指示条、white-space、font-weight）写进来，
+     避免同一属性在两处打架（透明/细微差异肉眼看不出来，但改样式时"改了没生效"就是这么来的）。 */
+  display: inline-flex;
   align-items: center;
   gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  font-size: var(--fs-sm);
   font-weight: 500;
+  border: 1px solid transparent;
+  border-bottom: 2px solid transparent;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--text-muted, #6b6b7b);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color var(--duration-fast), background var(--duration-fast), border-color var(--duration-fast);
+  /* 宽度不足时压缩标签文字，而不是撑出滚动条 */
+  min-width: 0;
 }
 
 .right-sidebar-tab:is(:hover, :focus-visible) {
@@ -15504,10 +15408,14 @@ color: var(--accent, #7c6cf0);
 }
 .config-tabs {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  align-items: center;
   gap: var(--space-2);
   padding-bottom: var(--space-4);
   border-bottom: 1px solid var(--border-secondary);
+  /* 第 51 波：标签行不折行（原来 flex-wrap: wrap），窄窗口下压缩而不是换行 */
+  min-width: 0;
+  overflow: hidden;
 }
 .config-content {
   min-height: 200px;
@@ -17734,9 +17642,6 @@ svg.lucide,
 .sp-title,
 .tj-title,
 .market-skill-name,
-.nb-note-title {
-  font-weight: var(--weight-bold);
-}
 .sp-title--section,
 .tj-step-type,
 .petm-name,

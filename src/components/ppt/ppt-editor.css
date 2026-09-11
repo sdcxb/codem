@@ -423,15 +423,8 @@
 }
 
 /* --- 放映模式 --- */
-.ppt-present-mode {
-  position: fixed;
-  inset: 0;
-  z-index: var(--z-top);
-  background: var(--bg-primary);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
+/* 第 51 波：.ppt-present-mode 的基准态由 notebook-workspace.css 权威定义
+   （position: fixed / inset / z-index: var(--z-present)），此处不再重复声明。 */
 
 
 

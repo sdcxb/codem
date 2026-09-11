@@ -156,33 +156,58 @@
 /* ========== 2. Enhanced Overlay Styles ========== */
 /* 玻璃质感 Dialog */
 .dialog-overlay {
+  position: fixed;
+  inset: 0;
+  background: var(--overlay-backdrop);
   backdrop-filter: blur(4px);
+  z-index: var(--z-dropdown);
+  animation: dialog-fade-in 0.15s ease-out;
   -webkit-backdrop-filter: blur(4px);
 }
 .dialog-content {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
   background: var(--glass-bg-strong) !important;
+  border: 1px solid var(--glass-border) !important;
+  border-radius: var(--radius-md);
+  padding: var(--space-10);
+  max-width: 500px;
+  width: 90%;
+  max-height: 85vh;
+  overflow-y: auto;
+  z-index: var(--z-dropdown);
+  box-shadow: var(--elevation-4) !important;
+  animation: dialog-slide-in 0.2s ease-out;
   backdrop-filter: blur(var(--glass-blur-strong)) saturate(var(--glass-saturate));
   -webkit-backdrop-filter: blur(var(--glass-blur-strong)) saturate(var(--glass-saturate));
-  border: 1px solid var(--glass-border) !important;
-  box-shadow: var(--elevation-4) !important;
 }
 
 /* 玻璃质感 Dropdown */
 .dropdown-menu-content {
+  z-index: var(--z-dropdown);
+  min-width: 160px;
+  padding: var(--space-2);
   background: var(--glass-bg-strong) !important;
-  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   border: 1px solid var(--glass-border) !important;
+  border-radius: var(--radius);
   box-shadow: var(--elevation-3) !important;
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  animation: dropdown-slide-in var(--duration-fast) ease;
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
 }
 
 /* 玻璃质感 Popover */
 .popover-content {
+  z-index: var(--z-popover);
   background: var(--glass-bg-strong) !important;
-  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   border: 1px solid var(--glass-border) !important;
+  border-radius: var(--radius);
   box-shadow: var(--elevation-3) !important;
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  animation: popover-slide-in var(--duration-fast) ease;
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
 }
 
 /* ========== 3. Rich Content Styles ========== */
@@ -437,18 +462,20 @@
   color: var(--text-primary);
 }
 .content-fullscreen-close {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: var(--space-2);
+  border-radius: var(--radius-sm);
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
-  border: none;
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-  border-radius: var(--radius-sm);
-  font-size: var(--fs-lg);
   transition: var(--transition-color);
+  /* 第 51 波：宽高从 28px 改为控件尺度令牌（28 不在 §2.4 的刻度上；顺带统一到 30px） */
+  width: var(--control-dense);
+  height: var(--control-dense);
+  font-size: var(--fs-lg);
 }
 .content-fullscreen-close:is(:hover, :focus-visible) {
   background: var(--surface-hover);
@@ -647,9 +674,13 @@
   height: auto;
 }
 .mermaid-error {
+  margin: var(--space-6) 0;
   padding: var(--space-6);
-  color: var(--error);
+  background: color-mix(in srgb, var(--error) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--error) 30%, transparent);
+  border-radius: var(--radius-sm);
   font-size: var(--fs-sm);
+  color: var(--error);
   text-align: center;
 }
 
@@ -966,6 +997,9 @@
 }
 
 .tool-call-pill {
+  animation: none !important;
+  transition: var(--transition-color), var(--transition-transform), var(--transition-shadow), var(--transition-fade);
+  transform: none !important;
   display: inline-flex;
   align-items: center;
   gap: var(--space-3);
@@ -974,9 +1008,8 @@
   border: 1px solid var(--border-primary);
   background: var(--bg-secondary);
   font-size: var(--fs-sm);
-  transition: var(--transition-color), var(--transition-transform), var(--transition-shadow), var(--transition-fade);
   vertical-align: top;
-  position: relative; /* 第 38 波：运行态竖条用 ::before 绝对定位，需要定位上下文 */
+  position: relative;
 }
 
 /* 第 38 波：运行态此前只有"图标在转"一个信号，整行扫过去和完成态几乎一样。
@@ -1420,24 +1453,9 @@
 
 
 /* ========== 9b. Enhanced TitleBar (Legacy bar with Git + actions) ========== */
-.titlebar-action-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  border: none;
-  background: transparent;
-  color: var(--text-secondary);
-  cursor: pointer;
-  border-radius: var(--radius);
-  transition: var(--transition-color);
-  -webkit-app-region: no-drag;
-}
-.titlebar-action-btn:is(:hover, :focus-visible) {
-  background: var(--surface-hover);
-  color: var(--text-primary);
-}
+/* 第 51 波：.titlebar-action-btn 基准态与 hover 态统一由 styles.css 权威定义
+   （此处原先的孤儿声明块 + --surface-hover 覆盖会把浅色主题的 hover 变成深色半透明，
+   且 28px 不在 §2.4 控件刻度上）。 */
 
 /* 执行模式切换按钮（顶部状态栏 · 本地处理/新工作树） */
 .execution-mode-toggle {
@@ -2516,14 +2534,34 @@ body.resizing-columns * {
 .settings-panel,
 
 .settings-sidebar {
+  width: 160px;
+  flex-shrink: 0;
+  padding: var(--space-6) var(--space-4);
+  border-right: 1px solid var(--glass-border) !important;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
   background: var(--glass-bg-subtle);
   backdrop-filter: blur(var(--glass-blur-subtle));
   -webkit-backdrop-filter: blur(var(--glass-blur-subtle));
-  border-right: 1px solid var(--glass-border) !important;
 }
 .settings-sidebar-item {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-6);
   border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: var(--fs-base);
+  color: var(--text-secondary);
   transition: var(--transition-color);
+  border: none;
+  background: none;
+  text-align: left;
+  width: 100%;
+  height: var(--control-md);
 }
 .settings-sidebar-item:is(:hover, :focus-visible) {
   background: var(--surface-hover) !important;
@@ -2600,23 +2638,16 @@ select:focus-visible,
 }
 .right-sidebar-tabs {
   display: flex;
+  flex-wrap: nowrap;
   gap: var(--space-1);
-  padding: var(--space-2) var(--space-4);
-  flex-wrap: wrap;
+  padding: 0 var(--space-3);
+  /* 第 51 波：这里此前是 flex-wrap: wrap —— 与 styles.css 的 overflow-x: auto 叠加后，
+     两个标签折行 + 出现横向滚动条。标签行统一改为一行的 flex。 */
+  overflow: hidden;
 }
-.right-sidebar-tab {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-2) var(--space-4);
-  font-size: var(--fs-sm);
-  border: 1px solid transparent;
-  border-radius: var(--radius-xs);
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-  transition: var(--transition-color), var(--transition-transform), var(--transition-shadow), var(--transition-fade);
-}
+/* 第 51 波：.right-sidebar-tab / .right-sidebar-tabs 的**权威定义已合并到 styles.css**
+   （同一个类在两个基础样式表里各写一遍、由加载顺序决定谁生效，正是这次"标签行折行 + 滚动条"
+   排查出来的根因）。这里只保留本文件特有的悬浮/选中态，不再重复给基础属性。 */
 .right-sidebar-tab:is(:hover, :focus-visible) {
   background: var(--surface-hover);
   color: var(--text-primary);

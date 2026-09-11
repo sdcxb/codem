@@ -117,6 +117,7 @@ const RULES = {
   "legacy-popup-shell": { level: "warn", desc: "历史遗留的自建浮层类名" },
   "css-class-undefined": { level: "warn", desc: "tsx 里用了但没有任何 CSS 定义的类名（等于没样式）" },
   "css-class-unused": { level: "warn", desc: "CSS 里定义了但 TSX/TS 从未使用的类名（死代码；属性驱动与可动态拼接的除外）" },
+  "css-class-cross-file": { level: "error", desc: "同一个类在两个基础样式表里定义了不同取值（后加载的静默覆盖前者）" },
   "css-var-undefined": { level: "error", desc: "var(--x) 引用了从未定义的令牌（无兜底时整条声明失效）" },
   "color-hardcoded-ts": { level: "error", desc: "style={{}} 之外的 TS 里写死颜色（状态色表/主题常量/JS 改样式）" },
   "svg-attr-var": { level: "error", desc: "把 var() 写在原生 SVG 表现属性里（属性不吃 var()，整条属性失效）" },
@@ -129,6 +130,7 @@ const RULES = {
   "focus-outline-none": { level: "error", desc: "焦点规则里 outline:none 却没有替代环（键盘用户看不到焦点）" },
   "inline-outline-none": { level: "error", desc: "TSX 内联 outline:none —— 内联优先级会吃掉所有全局焦点环" },
   "motion-uncovered": { level: "error", desc: "循环动画没有在 prefers-reduced-motion 下显式关停（全局兜底对它无效）" },
+  "encoding-replacement-char": { level: "error", desc: "源码里出现 U+FFFD 替换字符（编码损坏，原文已不可逆）" },
 };
 
 // ========== 扫描器 ==========
@@ -619,6 +621,94 @@ function scanZIndex(rel, src, isCss, styleRanges) {
 }
 
 /**
+ * 跨文件重复定义（第 51 波新增规则 `css-class-cross-file`）。
+ *
+ * 为什么需要它：`css-class-duplicate` 只在**单个文件内**比对，于是"同一个类在两个基础样式表里
+ * 各写一遍、后者静默覆盖前者"这种问题一直看不见 —— 第 51 波用户反馈的右侧边栏滚动条就是它：
+ * `.right-sidebar-tabs` 在 `styles.css` 里是 `overflow-x: auto`（横向滚动），
+ * 在 `codem-ui.css` 里又写了一遍 `flex-wrap: wrap`（折行），而 `codem-ui.css` 后加载 →
+ * 两个属性同时生效：**既折行又有滚动条**。
+ *
+ * 判定：只在"基础样式表"之间比对（skins 是有意的分层覆盖，排除），
+ * 且同类在同一属性上给出了不同取值才报。
+ */
+const BASE_STYLE_FILES = [
+  "src/styles.css",
+  "src/styles/codem-ui.css",
+  "src/styles/notebook-workspace.css",
+  "src/styles/task-center.css",
+  "src/styles/pet-window.css",
+  "src/components/ppt/ppt-editor.css",
+];
+
+/**
+ * 条件覆盖块的范围（`@media` / `@supports` / `@container` / `@layer` / `@scope`）。
+ *
+ * 为什么需要：条件块内的规则是**有意的分层覆盖**（最典型是
+ * `@media (prefers-reduced-motion: reduce) { .foo { transition: none !important } }`），
+ * 它并不参与「同特异度、后加载者胜」的静默覆盖，因此不能算跨文件冲突。
+ */
+function conditionalAtRuleRanges(clean) {
+  const ranges = [];
+  const re = /@(media|supports|container|layer|scope)\b[^{]*\{/g;
+  let m;
+  while ((m = re.exec(clean)) !== null) {
+    let depth = 1;
+    let i = re.lastIndex;
+    while (i < clean.length && depth > 0) {
+      const c = clean[i];
+      if (c === "{") depth++;
+      else if (c === "}") depth--;
+      i++;
+    }
+    ranges.push([m.index, i]);
+    re.lastIndex = i;
+  }
+  return ranges;
+}
+
+function scanCrossFileDuplicates(cssFiles) {
+  /** class -> Map(prop -> Map(value -> [file:line])) */
+  const table = new Map();
+  for (const { rel, src } of cssFiles) {
+    if (!BASE_STYLE_FILES.includes(rel)) continue;
+    const clean = src.replace(/\/\*[\s\S]*?\*\//g, (c) => c.replace(/[^\n]/g, " "));
+    const conditional = conditionalAtRuleRanges(clean);
+    const inConditional = (idx) => conditional.some(([a, b]) => idx >= a && idx < b);
+    for (const m of clean.matchAll(/(^|\n)([^\n{}]+)\{([^{}]*)\}/g)) {
+      if (inConditional(m.index)) continue; // 条件覆盖块不算静默覆盖
+      const sel = m[2].trim();
+      if (!/^\.[a-zA-Z][\w-]*$/.test(sel)) continue; // 只认单类顶层选择器
+      const cls = sel.slice(1);
+      const line = src.slice(0, m.index).split("\n").length;
+      if (!table.has(cls)) table.set(cls, new Map());
+      const props = table.get(cls);
+      for (const decl of m[3].split(";")) {
+        const idx = decl.indexOf(":");
+        if (idx <= 0) continue;
+        const prop = decl.slice(0, idx).trim();
+        const value = decl.slice(idx + 1).trim().replace(/\s+/g, " ");
+        if (!prop || !value || prop.startsWith("--")) continue;
+        if (!props.has(prop)) props.set(prop, new Map());
+        const values = props.get(prop);
+        if (!values.has(value)) values.set(value, []);
+        values.get(value).push(`${rel}:${line}`);
+      }
+    }
+  }
+  for (const [cls, props] of table) {
+    for (const [prop, values] of props) {
+      const usedInFiles = new Set([...values.values()].flat().map((s) => s.split(":")[0]));
+      if (usedInFiles.size < 2) continue; // 冲突发生在同一个文件内 → 由 css-class-duplicate 管
+      if (values.size < 2) continue;      // 取值一致，只是重复声明，不算冲突
+      const detail = [...values.entries()].map(([v, where]) => `${v} @ ${where[0]}`).join("  vs  ");
+      const [firstWhere] = [...values.values()].flat();
+      add("css-class-cross-file", firstWhere.split(":")[0], Number(firstWhere.split(":")[1]), `.${cls}`, `${prop}: ${detail}`);
+    }
+  }
+}
+
+/**
  * 跨文件规则之四：同一个类在顶层被定义多次，且同一属性给出了不同取值。
  * 后一份会**静默覆盖**前一份（同特异度、后者胜），于是"改了没生效"或"某处样式与设计不符"
  * 都极难排查。第 27 波实测 18 个类中招（最典型是 .badge 的圆角 10px vs 4px）。
@@ -998,11 +1088,32 @@ function scanUnusedClasses(cssFiles) {
   }
 }
 
+/**
+ * 编码损坏（第 52 波新增规则 `encoding-replacement-char`）。
+ *
+ * 为什么需要：第 52 波修 CSS 结构残骸时，发现 3 个样式表里有 **87 处 U+FFFD**（替换字符）——
+ * 都是过去某次「用字符串改写文件」时把 UTF-8 多字节汉字截断留下的（常伴随一个 `?`）。
+ * 这些损坏**不可逆**（原始字节已经丢了），只能从 git 历史里找回干净版本、
+ * 按 ASCII 骨架 + 通配正则对齐后还原。
+ * 损坏发生在注释里时页面照常渲染，于是 `tsc`、单测、其他 23 条规则全都看不见它 ——
+ * 需要一条最朴素的规则：源码里不许出现 U+FFFD。
+ */
+function scanEncodingDamage(rel, src) {
+  const re = /\uFFFD/g;
+  let m;
+  while ((m = re.exec(src)) !== null) {
+    const line = src.slice(0, m.index).split("\n").length;
+    const lineText = src.split("\n")[line - 1] ?? "";
+    add("encoding-replacement-char", rel, line, lineText.trim().slice(0, 80), "该处原文已损坏（U+FFFD），需从 git 历史或上下文还原");
+  }
+}
+
 for (const full of files) {
   const rel = relative(ROOT, full).replace(/\\/g, "/");
   if (shouldSkip(rel)) continue;
   const src = readFileSync(full, "utf8");
   scanVarRefs(rel, src);
+  scanEncodingDamage(rel, src);
   if (rel.endsWith(".css")) {
     scanCss(rel, src);
     scanCssDuplicates(rel, src);
@@ -1038,6 +1149,8 @@ for (const full of files) {
 scanMotionCoverage(cssSources);
 // 跨文件规则：死类名（需要全项目渲染代码语料）
 scanUnusedClasses(cssSources);
+// 跨文件规则：基础样式表之间的重复定义（第 51 波）
+scanCrossFileDuplicates(cssSources);
 
 const onlyRule = value("--rule");
 const onlyFile = value("--file");
