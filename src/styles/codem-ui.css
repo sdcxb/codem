@@ -2531,8 +2531,11 @@ body.resizing-columns * {
 }
 
 /* ========== 23. Enhanced Settings Panel (Glass overrides) ========== */
-.settings-panel,
-
+/* 第 54 波紧急修复：这里原本残留着一个悬空的 `.settings-panel,`（第 51 波跨文件合并脚本的残骸），
+   于是选择器列表变成 `.settings-panel, .settings-sidebar` —— 设置弹窗继承了侧栏的
+   `width: 160px` / `flex-shrink: 0` / 纵向 flex，整个设置窗口塌成一条 160px 的窄条，
+   内容区只剩 40px 宽（用户报的「设置窗口很狭长的一条，内容都看不到」）。
+   教训：选择器列表里混入无关的类是**合法 CSS**，构建、单测、审计都看不见它 —— 见 §7 新增的布局契约。 */
 .settings-sidebar {
   width: 160px;
   flex-shrink: 0;

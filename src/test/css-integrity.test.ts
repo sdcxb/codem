@@ -16,6 +16,7 @@
  */
 
 import { describe, it, expect } from "vitest";
+import { execFileSync } from "node:child_process";
 import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { join, relative } from "node:path";
 
@@ -236,5 +237,27 @@ describe("CSS 结构完整性（第 52 波）", () => {
     expect(tabs).not.toMatch(/flex-wrap:\s*nowrap/);
     expect(rule(".config-tab"), "页签要能压缩").toMatch(/min-width:\s*0/);
     expect(rule(".config-tab-label"), "标签文字要能变省略号").toMatch(/text-overflow:\s*ellipsis/);
+  });
+
+  it("CSS-INTEGRITY-7: 每个类的「生效取值」必须与快照一致（拦住静默改动）", () => {
+    // 第 51 波的批量合并连续造成三次事故：设置弹窗宽 760→160px、浅色主题悬停发黑、
+    // 区块标题字重 620→560。三次都是「类名没错、取值被悄悄改了」，没有任何门禁在看生效取值。
+    // 现在把「每个类 → 生效后的声明集合」存成快照（tools/ui-audit/css-contract.json），
+    // 取值一变测试就红，必须显式跑 --write 更新快照（于是 diff 里会写清改了什么）。
+    const script = join(ROOT, "tools", "ui-audit", "css-contract.mjs");
+    expect(existsSync(script), "缺少 tools/ui-audit/css-contract.mjs").toBe(true);
+    let output = "";
+    let failed = false;
+    try {
+      output = execFileSync(process.execPath, [script], { cwd: ROOT, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+    } catch (err) {
+      failed = true;
+      const e = err as { stdout?: string; stderr?: string };
+      output = `${e.stdout ?? ""}${e.stderr ?? ""}`;
+    }
+    expect(
+      failed,
+      `以下类的生效取值变了（类名没错、取值被改）——确认是有意改动后跑 \`node tools/ui-audit/css-contract.mjs --write\`：\n${output}`,
+    ).toBe(false);
   });
 });

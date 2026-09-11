@@ -17667,13 +17667,18 @@ svg.lucide,
 /* 3. 层次收口：把"什么都加粗"改成三档 ——
       区块标题 620（--weight-bold）、列表项/标签 560（semibold）、正文与值 400/500。
       这样扫视时先看到标题、再看到项、最后才是数据，而不是满屏同粗。 */
+/* 第 54 波修复：这两组曾被第 51 波的跨文件合并**并成一条**（都取 semibold），
+   于是"区块标题 620"被悄悄降成 560 —— 正好破坏了上面这条注释写明的字重层次。
+   两组必须分开：标题档 --weight-bold，列表项/标签档 --weight-semibold。 */
 .settings-section-title,
 .panel-section-title,
 .nb-section-label,
 .tc-label,
 .sp-title,
 .tj-title,
-.market-skill-name,
+.market-skill-name {
+  font-weight: var(--weight-bold);
+}
 .sp-title--section,
 .tj-step-type,
 .petm-name,

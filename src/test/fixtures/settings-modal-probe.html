@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<title>弹窗外壳布局契约探针</title>
+<!--
+  用**源码 CSS**（与应用 main.tsx 相同的加载顺序）而不是 dist 产物：
+  这样单测不需要先构建，也能测到真实的层叠结果。
+  顺序：styles.css → skin-hub → skin-dream → notebook-workspace → codem-ui → task-center
+-->
+<link rel="stylesheet" href="../../styles.css" />
+<link rel="stylesheet" href="../../styles/skin-hub.css" />
+<link rel="stylesheet" href="../../styles/skin-dream.css" />
+<link rel="stylesheet" href="../../styles/notebook-workspace.css" />
+<link rel="stylesheet" href="../../styles/codem-ui.css" />
+<link rel="stylesheet" href="../../styles/task-center.css" />
+<style>
+  html, body { margin: 0; padding: 0; }
+  body { background: var(--bg-primary, #fcfcfb); font-family: var(--font-ui, system-ui); }
+  /* 探针专用：把弹窗放进可指定尺寸的舞台，一次加载测多种分辨率 */
+  #stage { position: relative; overflow: hidden; }
+  #stage > .settings-overlay { position: absolute !important; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div class="settings-overlay">
+    <div class="settings-panel" id="panel" role="dialog" aria-modal="true" aria-label="设置">
+      <div class="settings-header"><h3>设置</h3><button class="settings-close">✕</button></div>
+      <div class="settings-body" id="body">
+        <div class="settings-sidebar" id="sb">
+          <div class="settings-search-box settings-search-box--bordered"><div class="sp-search"><input type="text" placeholder="搜索设置..." class="sp-search-input" /></div></div>
+          <button class="settings-sidebar-item active"><span class="sidebar-icon">G</span>通用</button>
+          <button class="settings-sidebar-item"><span class="sidebar-icon">A</span>外观</button>
+          <button class="settings-sidebar-item"><span class="sidebar-icon">S</span>安全</button>
+          <button class="settings-sidebar-item"><span class="sidebar-icon">G</span>Git</button>
+          <button class="settings-sidebar-item"><span class="sidebar-icon">E</span>环境</button>
+          <button class="settings-sidebar-item"><span class="sidebar-icon">W</span>工作树</button>
+          <button class="settings-sidebar-item"><span class="sidebar-icon">K</span>知识库</button>
+          <button class="settings-sidebar-item"><span class="sidebar-icon">U</span>自动化</button>
+          <button class="settings-sidebar-item"><span class="sidebar-icon">M</span>多模态</button>
+          <button class="settings-sidebar-item"><span class="sidebar-icon">V</span>语音</button>
+          <button class="settings-sidebar-item"><span class="sidebar-icon">O</span>本地模型</button>
+          <button class="settings-sidebar-item"><span class="sidebar-icon">T</span>工具</button>
+          <button class="settings-sidebar-item"><span class="sidebar-icon">P</span>人设</button>
+          <button class="settings-sidebar-item"><span class="sidebar-icon">C</span>电脑操作</button>
+          <button class="settings-sidebar-item"><span class="sidebar-icon">X</span>微信</button>
+          <button class="settings-sidebar-item"><span class="sidebar-icon">Y</span>手机</button>
+          <button class="settings-sidebar-item"><span class="sidebar-icon">D</span>代码图谱</button>
+          <button class="settings-sidebar-item"><span class="sidebar-icon">Z</span>宠物</button>
+        </div>
+        <div class="settings-content" id="content">
+          <div class="settings-section">
+            <div class="settings-section-title">通用设置</div>
+            <div class="setting-group"><label>界面语言</label><select class="sp-select"><option>简体中文</option></select></div>
+            <div class="setting-group"><label>字体缩放</label><input class="sp-input" value="100%" /></div>
+            <div class="setting-group"><label>开机自动启动</label><button class="sp-toggle" aria-pressed="true"></button></div>
+          </div>
+          <div class="settings-section">
+            <div class="settings-section-title">对话</div>
+            <div class="setting-group"><label>默认执行模型</label><select class="sp-select"><option>deepseek-v4.1</option></select></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<pre id="probe"></pre>
+<script>
+  const SIZES = [
+    [2560, 1440], [1920, 1080], [1600, 900], [1440, 900], [1366, 768], [1280, 720],
+    [1200, 800], [1024, 768], [1000, 700], [900, 650], [800, 600], [700, 900], [640, 800],
+  ];
+  const stage = document.getElementById('stage');
+  const el = (id) => document.getElementById(id);
+  function box(id) {
+    const node = el(id);
+    const r = node.getBoundingClientRect();
+    const cs = getComputedStyle(node);
+    return {
+      w: Math.round(r.width), h: Math.round(r.height),
+      width: cs.width, maxWidth: cs.maxWidth, display: cs.display, flexShrink: cs.flexShrink,
+      overflowY: cs.overflowY, scrollHeight: node.scrollHeight, clientHeight: node.clientHeight,
+    };
+  }
+  const results = [];
+  for (const [w, h] of SIZES) {
+    stage.style.width = w + 'px';
+    stage.style.height = h + 'px';
+    void stage.offsetHeight;
+    results.push({
+      w, h,
+      panel: box('panel'), body: box('body'), sidebar: box('sb'), content: box('content'),
+      media: { max768: matchMedia('(max-width: 768px)').matches },
+    });
+  }
+  document.getElementById('probe').textContent = 'PROBE_JSON=' + JSON.stringify({ viewport: { w: innerWidth, h: innerHeight, dpr: devicePixelRatio }, results });
+</script>
+</body>
+</html>
