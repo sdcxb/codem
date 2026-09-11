@@ -1503,14 +1503,23 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
                 而这两个是**编辑器辅助动作**（在输入区找东西 / 开一个不污染主会话的侧会话），
                 和同一行的执行模式、安全策略是同一类 —— 放一起更符合"这一行"的语义。
                 样式直接复用本行的 `.input-control-item`（与安全策略同一个类），
-                按压态由 `aria-pressed` 驱动（与第 32 波「状态属性驱动样式」的约定一致）。 */}
+                按压态由 `aria-pressed` 驱动（与第 32 波「状态属性驱动样式」的约定一致）。
+
+                第 49 波：**没有会话时禁用**（刚打开应用停在主页时，会话内搜索与临时会话都无处可施）。
+                用原生 `disabled`（不是只把透明度调低）—— 这样点击、键盘 Enter/Space、读屏
+                三处同时失效；标题也换成"为什么点不了"的说明，而不是继续显示功能名。 */}
             {onToggleSearch && (
               <button
                 type="button"
                 className="input-control-item input-aux-btn"
                 aria-pressed={searchOpen}
+                disabled={noSession}
                 onClick={onToggleSearch}
-                title={zh ? "搜索当前会话（会话内消息搜索）" : "Search current session"}
+                title={
+                  noSession
+                    ? zh ? "先开始一个对话才能搜索会话内容" : "Start a conversation to search within it"
+                    : zh ? "搜索当前会话（会话内消息搜索）" : "Search current session"
+                }
               >
                 <Search size={14} />
                 <span>{zh ? "搜索" : "Search"}</span>
@@ -1521,8 +1530,13 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
                 type="button"
                 className="input-control-item input-aux-btn"
                 aria-pressed={sideSessionOpen}
+                disabled={noSession}
                 onClick={onToggleSideSession}
-                title={zh ? "临时会话（不污染主会话）" : "Side session (no main-chat pollution)"}
+                title={
+                  noSession
+                    ? zh ? "先开始一个对话才能开启临时会话" : "Start a conversation to open a side session"
+                    : zh ? "临时会话（不污染主会话）" : "Side session (no main-chat pollution)"
+                }
               >
                 <MessageSquareText size={14} />
                 <span>{zh ? "临时会话" : "Side Session"}</span>

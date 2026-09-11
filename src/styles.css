@@ -10754,6 +10754,24 @@ min-height: 36px;
   background: color-mix(in srgb, var(--accent) 10%, transparent);
   color: var(--accent);
 }
+
+/* 第 49 波：没有会话时这两个动作无处可施（会话内搜索 / 临时会话），禁用它们。
+   视觉上要"看起来就是不能点"：降透明度 + 禁止光标 + **取消悬停反馈**（否则鼠标划过还会亮，
+   用户会以为能点）。规则必须排在 :hover 之后，同特异度才由顺序决定胜负。 */
+.input-control-item:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.input-control-item:disabled:is(:hover, :focus-visible) {
+  background: none;
+  color: var(--text-secondary);
+  border-color: transparent;
+}
+.input-control-item:disabled[aria-pressed="true"] {
+  border-color: transparent;
+  background: none;
+  color: var(--text-secondary);
+}
 .input-aux-btn {
   flex: 0 0 auto;
 }

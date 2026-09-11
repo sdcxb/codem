@@ -2660,21 +2660,23 @@ select:focus-visible,
 }
 
 .panel-sidebar-tabs {
-display: grid;
-grid-template-columns: repeat(2, max-content);
+/* 第 50 波（用户反馈）：这里原本是 `grid-template-columns: repeat(2, max-content)` ——
+   也就是**两列网格**，5 个 tab 会被排成 3 行；第 46 波把滚动条去掉、改成 overflow: hidden 后，
+   多出来的行就被裁掉了（只能看到前两个 tab：Git / 文件）。
+   按钮行必须**一行放完**，所以改成不换行的 flex：始终一行，宽度不够时压缩文字（省略号）。 */
+display: flex;
+flex-wrap: nowrap;
 align-items: center;
 gap: var(--space-1);
 padding: 0 var(--space-3);
 height: 38px;
 flex-shrink: 0;
 border-bottom: 1px solid var(--border-primary);
-/* 第 46 波（用户反馈）：这是**按钮区**，不该出现滚动条 —— 面板宽度已加宽到
-   `--panel-sidebar-width`（5 个 tab 一行放得下），这里改成裁切兜底 + 允许按钮压缩，
-   所以不再需要 overflow-x: auto 与滚动条样式。 */
 overflow: hidden;
 }
 
 .panel-sidebar-tab {
+  /* 第 50 波：两列网格是给"图标 + 文字"用的（这是对的）；容器那一层才需要一行排开 */
   display: grid;
   grid-template-columns: repeat(2, max-content);
   align-items: center;

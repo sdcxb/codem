@@ -185,6 +185,15 @@ export function ChatPanel({ onSend, onCancel, onSendGuidance, onToggleSidebar, s
   // A9: Chat history search
   const [showSearch, setShowSearch] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  // 第 49 波：会话消失（切到主页/新建会话）时，把这两个"会话内动作"的面板一并收起 ——
+  // 否则会留下一个浮在主页上的空面板（按钮已禁用，但面板还开着）。
+  useEffect(() => {
+    if (!currentSessionId) {
+      setShowSearch(false);
+      setSearchQuery('');
+      setShowSideSession(false);
+    }
+  }, [currentSessionId]);
   // P1: Correction mode toggle
   // Correction/Clarification removed from main UI — correction config moved to Settings, clarification auto-triggers
   // P1: Workbench panel

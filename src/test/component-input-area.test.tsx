@@ -151,7 +151,8 @@ describe("InputArea — 第 46 波：输入区辅助按钮", () => {
     }
   });
 
-  it("按压态由 aria-pressed 表达，点击回调被触发", async () => {    const user = userEvent.setup();
+  it("按压态由 aria-pressed 表达，点击回调被触发", async () => {
+    const user = userEvent.setup();
     const onToggleSearch = vi.fn();
     const onToggleSideSession = vi.fn();
     const { container, rerender } = render(
@@ -191,5 +192,68 @@ describe("InputArea — 第 46 波：输入区辅助按钮", () => {
       />,
     );
     expect(container.querySelectorAll(".input-aux-btn")).toHaveLength(0);
+  });
+
+  // 第 49 波（用户反馈）：刚打开应用停在主页、还没有会话时，这两个动作无处可施 —— 必须不能点
+  it("noSession 时「搜索」「临时会话」禁用：点击无回调、键盘也点不动，且标题说明原因", async () => {
+    const user = userEvent.setup();
+    const onToggleSearch = vi.fn();
+    const onToggleSideSession = vi.fn();
+    const { container } = render(
+      <InputArea
+        onSend={vi.fn()}
+        onCancel={vi.fn()}
+        disabled={false}
+        isStreaming={false}
+        noSession
+        collaborationMode={"default" as CollaborationMode}
+        onModeChange={vi.fn()}
+        connected
+        onToggleSearch={onToggleSearch}
+        onToggleSideSession={onToggleSideSession}
+      />,
+    );
+
+    const buttons = [...container.querySelectorAll<HTMLButtonElement>(".input-aux-btn")];
+    expect(buttons).toHaveLength(2);
+    for (const btn of buttons) {
+      // 用原生 disabled（不是只调透明度）：点击 / 键盘 / 读屏三处同时失效
+      expect(btn.disabled).toBe(true);
+      // 标题要说"为什么点不了"，而不是继续显示功能名
+      expect(btn.getAttribute("title")).toMatch(/先开始一个对话/);
+    }
+
+    // 鼠标点击 & 键盘 Enter 都不应该触发回调
+    await user.click(buttons[0]);
+    buttons[1].focus();
+    await user.keyboard("{Enter}");
+    expect(onToggleSearch).not.toHaveBeenCalled();
+    expect(onToggleSideSession).not.toHaveBeenCalled();
+
+    // 有会话（noSession=false）时恢复可点
+    const { container: withSession } = render(
+      <InputArea
+        onSend={vi.fn()}
+        onCancel={vi.fn()}
+        disabled={false}
+        isStreaming={false}
+        collaborationMode={"default" as CollaborationMode}
+        onModeChange={vi.fn()}
+        connected
+        onToggleSearch={onToggleSearch}
+        onToggleSideSession={onToggleSideSession}
+      />,
+    );
+    for (const btn of withSession.querySelectorAll<HTMLButtonElement>(".input-aux-btn")) {
+      expect(btn.disabled).toBe(false);
+    }
+  });
+
+  it("禁用态的视觉契约：.input-control-item:disabled 取消悬停反馈（不能「看着还能点」）", () => {
+    const css = readFileSync(join(__dirname, "..", "styles.css"), "utf8");
+    const disabledBlock = /\.input-control-item:disabled:is\(:hover, :focus-visible\) \{[\s\S]*?\}/.exec(css)?.[0] ?? "";
+    expect(disabledBlock, "应有 :disabled 的悬停复位规则").toBeTruthy();
+    expect(disabledBlock).toMatch(/background:\s*none/);
+    expect(/\.input-control-item:disabled \{[\s\S]*?cursor:\s*not-allowed/.test(css), "禁用态应给 not-allowed 光标").toBe(true);
   });
 });
