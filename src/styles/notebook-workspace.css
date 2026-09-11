@@ -632,8 +632,8 @@
 }
 
 .nb-source-topics {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(var(--space-12), max-content));
+  display: flex;
+  flex-wrap: wrap;
   gap: var(--space-1);
   margin-top: var(--space-2);
 }
@@ -645,6 +645,7 @@
   background: transparent;
   color: var(--text-muted);
   border: 1px solid var(--border-primary);
+  white-space: nowrap;
 }
 
 /* 错误信息 */
@@ -2720,8 +2721,8 @@ top: 36px;
 }
 
 .nb-tag-filter {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(var(--space-12), max-content));
+  display: flex;
+  flex-wrap: wrap;
   gap: var(--space-2);
   padding: var(--space-2) 0 var(--space-4);
 }
@@ -2734,6 +2735,7 @@ top: 36px;
   font-family: inherit;
   font-size: var(--fs-xs);
   cursor: pointer;
+  white-space: nowrap;
 }
 .nb-tag-chip.active {
   background: var(--accent);

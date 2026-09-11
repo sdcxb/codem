@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<title>标签墙/工具栏 挤压变形探针</title>
+<!--
+  用源码 CSS（与应用相同加载顺序）。
+  目的：在**真实渲染**下检测两类变形 ——
+    A. 文字被压成竖排（短标签却占 ≥3 行）
+    B. 内容溢出容器（放不下却看不到）
+  这些都是 jsdom 测不出来的。
+-->
+<link rel="stylesheet" href="../../styles.css" />
+<link rel="stylesheet" href="../../styles/skin-hub.css" />
+<link rel="stylesheet" href="../../styles/skin-dream.css" />
+<link rel="stylesheet" href="../../styles/notebook-workspace.css" />
+<link rel="stylesheet" href="../../styles/codem-ui.css" />
+<link rel="stylesheet" href="../../styles/task-center.css" />
+<style>
+  html, body { margin: 0; padding: 0; }
+  body { background: var(--bg-primary, #fcfcfb); font-family: var(--font-ui, system-ui); }
+  #stage { position: relative; overflow: hidden; outline: 1px solid magenta; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <!-- ① 设置 → 通用：我是什么 / 什么风格（用户报的竖排） -->
+  <div class="setting-group">
+    <label>我是什么</label>
+    <div class="identity-options" data-case="identity-options">
+      <button class="identity-option">AI 助手</button>
+      <button class="identity-option">数字精灵</button>
+      <button class="identity-option">代码伙伴</button>
+      <button class="identity-option selected">赛博管家</button>
+      <button class="identity-option">电子幽灵</button>
+    </div>
+  </div>
+  <div class="setting-group">
+    <label>什么风格</label>
+    <div class="identity-options" data-case="identity-style">
+      <button class="identity-option">靠谱、直接、有观点</button>
+      <button class="identity-option">温暖、耐心、鼓励型</button>
+      <button class="identity-option">犀利、幽默、毒舌</button>
+      <button class="identity-option">冷静、专业、简洁</button>
+      <button class="identity-option">随性、自然、像朋友</button>
+    </div>
+  </div>
+
+  <!-- ② 性能面板：页签行 + 控件行（用户报的变形） -->
+  <div class="perf-panel" data-case="perf" style="height:auto">
+    <div class="perf-header">
+      <div class="perf-header-title"><span>性能监控</span><span class="perf-title">Performance</span></div>
+      <div class="perf-header-actions"><button class="perf-btn">刷新</button></div>
+    </div>
+    <div class="perf-tabs" data-case="perf-tabs">
+      <div class="perf-tab-group" data-case="perf-tab-group">
+        <button class="perf-tab-btn is-active">总览</button>
+        <button class="perf-tab-btn">会话</button>
+        <button class="perf-tab-btn">时延</button>
+      </div>
+      <div class="perf-controls" data-case="perf-controls">
+        <select class="perf-select"><option>最近 5 分钟</option></select>
+        <label class="perf-auto-refresh"><input type="checkbox" checked /> 自动刷新</label>
+        <button class="perf-btn">导出 OTel</button>
+      </div>
+    </div>
+    <div class="perf-content" style="overflow:visible">
+      <div class="perf-type-list">
+        <div class="perf-type-row" data-case="perf-type-row">
+          <span class="perf-type-name">assistant_message_delta</span>
+          <span class="perf-type-bar"><span class="perf-type-fill" style="width:60%"></span></span>
+          <span class="perf-type-count">1,234</span>
+          <span class="perf-type-pct">62%</span>
+        </div>
+        <div class="perf-type-row">
+          <span class="perf-type-name">tool_call</span>
+          <span class="perf-type-bar"><span class="perf-type-fill" style="width:30%"></span></span>
+          <span class="perf-type-count">12</span>
+          <span class="perf-type-pct">8%</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ③ 其它同类标签墙（本波一起修的） -->
+  <div class="mcp-server-tools" data-case="mcp-tools"><span class="mcp-tools-label">工具:</span><span class="badge">read_file</span><span class="badge">write_file</span><span class="badge">list_directory</span></div>
+  <div class="mcp-catalog-tags" data-case="mcp-catalog"><span class="badge">需要 API Key</span><span class="badge">stdio</span></div>
+  <div class="skill-detail-tags" data-case="skill-tags"><span class="skill-detail-tag">数据分析</span><span class="skill-detail-tag tool">工具</span></div>
+  <div class="memory-detail-tags" data-case="memory-tags"><span class="memory-detail-tag">项目偏好</span><span class="memory-detail-tag">长期记忆</span></div>
+  <div class="wx-status-row" data-case="wx-status"><span class="wx-state-badge is-connected">已连接</span><span class="wx-status-meta">Bot 123456 · 剩余 30 天</span></div>
+  <div class="wx-actions" data-case="wx-actions"><button class="wx-btn">断开</button><button class="wx-btn">重新登录</button></div>
+  <div class="flashcard-toolbar" data-case="flashcard-toolbar"><button class="nb-studio-btn flashcard-tool-btn">复习 (12)</button><button class="nb-studio-btn flashcard-tool-btn">全部卡片</button></div>
+  <div class="agent-checks" data-case="agent-checks"><label class="agent-check-label"><input type="checkbox" checked /> 可生成子智能体</label><label class="agent-check-label"><input type="checkbox" /> 允许访问网络</label></div>
+  <div class="pending-attachments" data-case="pending-attachments">
+    <div class="pending-attachment"><span class="attachment-icon">F</span><span class="attachment-name">一个比较长的附件文件名示例.txt</span><span class="attachment-size">12KB</span></div>
+    <div class="pending-attachment"><span class="attachment-icon">F</span><span class="attachment-name">短.txt</span></div>
+  </div>
+  <div class="bootstrap-options" data-case="bootstrap-options"><button class="bootstrap-option">AI 助手</button><button class="bootstrap-option">数字精灵</button><button class="bootstrap-option selected">代码伙伴</button></div>
+</div>
+<pre id="probe"></pre>
+<script>
+  const WIDTHS = [1200, 900, 760, 640, 560, 480, 420, 360, 320];
+  const stage = document.getElementById('stage');
+
+  /** 文字行数：用 Range 量每行高度，得到真实换行行数 */
+  function textLines(el) {
+    const text = (el.textContent || '').trim();
+    if (!text) return 0;
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    const rects = [...range.getClientRects()].filter((r) => r.height > 0);
+    if (!rects.length) return 1;
+    // 按纵向位置聚类成行
+    const tops = [];
+    for (const r of rects) {
+      if (!tops.some((t) => Math.abs(t - r.top) < 4)) tops.push(r.top);
+    }
+    return tops.length;
+  }
+
+  const results = [];
+  for (const w of WIDTHS) {
+    stage.style.width = w + 'px';
+    void stage.offsetHeight;
+    for (const el of stage.querySelectorAll('[data-case]')) {
+      const kids = [...el.children];
+      const cs = getComputedStyle(el);
+      const row = {
+        w,
+        case: el.dataset.case,
+        containerWidth: Math.round(el.getBoundingClientRect().width),
+        scrollWidth: el.scrollWidth,
+        clientWidth: el.clientWidth,
+        overflow: el.scrollWidth > el.clientWidth + 1,
+        display: cs.display,
+        flexWrap: cs.flexWrap,
+        children: kids.map((k) => {
+          const r = k.getBoundingClientRect();
+          const label = (k.textContent || '').trim();
+          return {
+            cls: k.className,
+            w: Math.round(r.width),
+            h: Math.round(r.height),
+            lines: textLines(k),
+            chars: label.length,
+            whiteSpace: getComputedStyle(k).whiteSpace,
+          };
+        }),
+      };
+      // 判定 A：短标签（≤ 14 字）却排成 ≥3 行 = 被压成竖排
+      row.squeezed = row.children.filter((c) => c.chars > 0 && c.chars <= 14 && c.lines >= 3);
+      results.push(row);
+    }
+  }
+  document.getElementById('probe').textContent = 'PROBE_JSON=' + JSON.stringify({ results });
+</script>
+</body>
+</html>

@@ -170,4 +170,99 @@ describe("弹窗外壳的静态契约（第 54 波，不依赖浏览器）", () 
     expect(m![1]).toMatch(/width:\s*760px;/);
     expect(m![1]).toMatch(/max-width:\s*95vw;/);
   });
+
+  it("LAYOUT-7: 文字标签墙不得使用「小轨道 + max-content」的 auto-fill 网格（会压成竖排）", () => {
+    // 事故（第 42 波引入、第 55 波修复）：把 flex-wrap 的标签墙改成
+    //   grid-template-columns: repeat(auto-fill, minmax(var(--space-13), max-content))
+    // auto-fill 的**空轨道不会被折叠**，于是轨道数按最小轨道（40px）算满一整行，
+    // 文字芯片被塞进 40px 宽的轨道 → 中文逐字换行，按钮看着是"竖着的"。
+    // 判定：minmax 的最小值解析后 < 64px 的 auto-fill/auto-fit 网格一律不允许（除非豁免）。
+    const EMOJI_GRID_ALLOW = new Set([
+      // 内容是单个 emoji 的按钮网格：不存在"文字换行"，窄轨道是刻意的
+      ".identity-emoji-grid",
+      ".bootstrap-emoji-grid",
+    ]);
+    const SPACE: Record<string, number> = {};
+    const stylesRaw = readFileSync(join(ROOT, "src", "styles.css"), "utf8");
+    for (const m of stylesRaw.matchAll(/--space-(\d+):\s*(\d+)px/g)) SPACE[`--space-${m[1]}`] = Number(m[2]);
+    const CONTROL: Record<string, number> = {};
+    for (const m of stylesRaw.matchAll(/--control-([\w-]+):\s*(\d+)px/g)) CONTROL[`--control-${m[1]}`] = Number(m[2]);
+
+    const offenders: string[] = [];
+    for (const rel of BASE) {
+      const abs = join(ROOT, rel);
+      if (!existsSync(abs)) continue;
+      const css = readFileSync(abs, "utf8").replace(/\/\*[\s\S]*?\*\//g, (c) => c.replace(/[^\n]/g, " "));
+      for (const m of css.matchAll(/(?:^|\n)([^{}@;]+)\{([^{}]*)\}/g)) {
+        const grid = /grid-template-columns:\s*repeat\(auto-(fill|fit),\s*minmax\(([^,]+),\s*max-content\)\)/.exec(m[2]);
+        if (!grid) continue;
+        const min = grid[2].trim();
+        const px = SPACE[min] ?? CONTROL[min] ?? Number(/^(\d+)px$/.exec(min)?.[1] ?? NaN);
+        const base = m[1].split(",").map((s) => s.trim()).filter((s) => /^\.[a-zA-Z][\w-]*$/.test(s));
+        if (base.some((s) => EMOJI_GRID_ALLOW.has(s))) continue;
+        const line = css.slice(0, m.index).split("\n").length;
+        if (Number.isNaN(px)) { offenders.push(`${rel}:${line} ${base.join(", ")} —— 最小轨道 ${min} 无法解析成像素，请显式写清`); continue; }
+        if (px < 64) offenders.push(`${rel}:${line} ${base.join(", ")} —— 最小轨道 ${min}=${px}px < 64px，文字会被压成竖排`);
+      }
+    }
+    expect(
+      offenders,
+      `这些标签墙用了"小轨道 + max-content"的 auto-fill 网格（文字会被逐字换行）：\n${offenders.join("\n")}\n` +
+        `改用 display: flex; flex-wrap: wrap;（芯片保持自然宽度，放不下就换行）。`,
+    ).toEqual([]);
+  });
+});
+
+describe("标签墙/工具栏的真实渲染契约（第 55 波，需要浏览器）", () => {
+  const CHIP_FIXTURE = join(ROOT, "src", "test", "fixtures", "chip-rows-probe.html");
+
+  function measureChips(): Array<{
+    w: number;
+    case: string;
+    overflow: boolean;
+    display: string;
+    flexWrap: string;
+    squeezed: Array<{ cls: string; chars: number; lines: number; w: number }>;
+  }> {
+    const out = execFileSync(
+      BROWSER as string,
+      [
+        "--headless=new", "--disable-gpu", "--no-sandbox", "--dump-dom",
+        "--window-size=1400,2000", "--virtual-time-budget=6000",
+        `file:///${CHIP_FIXTURE.replace(/\\/g, "/")}`,
+      ],
+      { encoding: "utf8", maxBuffer: 128 * 1024 * 1024, stdio: ["ignore", "pipe", "ignore"] },
+    );
+    const m = /PROBE_JSON=(\{.*?\})<\/pre>/s.exec(out);
+    if (!m) throw new Error("标签墙探针没有输出：检查 fixtures/chip-rows-probe.html 是否被改动");
+    return JSON.parse(m[1].replace(/&quot;/g, '"')).results;
+  }
+
+  it.skipIf(!BROWSER)("LAYOUT-8: 标签墙/工具栏在 320~1200px 下都不竖排、不溢出", () => {
+    const rows = measureChips();
+    expect(rows.length, "探针测量点太少，可能 fixture 坏了").toBeGreaterThanOrEqual(50);
+    const squeezed = rows.filter((r) => r.squeezed.length);
+    const overflow = rows.filter((r) => r.overflow);
+    expect(
+      squeezed.map((r) => `${r.case} @${r.w}px: ${r.squeezed.map((c) => `${c.cls}(${c.chars}字→${c.lines}行/宽${c.w})`).join(", ")}`),
+      "这些标签被压成了竖排（短标签却排成 ≥3 行）",
+    ).toEqual([]);
+    expect(
+      overflow.map((r) => `${r.case} @${r.w}px scrollWidth=${r.scrollWidth} > clientWidth=${r.clientWidth}`),
+      "这些容器内容溢出（放不下又看不到）",
+    ).toEqual([]);
+  });
+
+  it.skipIf(!BROWSER)("LAYOUT-9: 设置「通用」的身份/风格标签、性能面板页签行确实是一行一个标签", () => {
+    const rows = measureChips();
+    for (const name of ["identity-options", "identity-style", "perf-tab-group"]) {
+      const cases = rows.filter((r) => r.case === name);
+      expect(cases.length, `探针里缺少 ${name} 的测量点`).toBeGreaterThan(0);
+      for (const r of cases) {
+        for (const child of r.children) {
+          expect(child.lines, `${name} @${r.w}px 的「${child.cls}」被压成了竖排（${child.lines} 行）`).toBeLessThan(3);
+        }
+      }
+    }
+  });
 });

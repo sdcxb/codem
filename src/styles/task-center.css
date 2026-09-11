@@ -316,12 +316,16 @@
 }
 
 .issue-detail-meta {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(var(--space-12), max-content));
+  display: flex;
+  flex-wrap: wrap;
   gap: var(--space-8);
   margin-bottom: var(--space-8);
   font-size: var(--fs-sm);
   color: var(--text-secondary);
+}
+/* 第 55 波：元信息是一行一项，任何宽度下都不许逐字竖排 */
+.issue-detail-meta > * {
+  white-space: nowrap;
 }
 .issue-detail-meta-mono { font-family: var(--font-mono); }
 .issue-detail-meta-strong { color: var(--text-primary); }
