@@ -260,4 +260,55 @@ describe("CSS 结构完整性（第 52 波）", () => {
       `以下类的生效取值变了（类名没错、取值被改）——确认是有意改动后跑 \`node tools/ui-audit/css-contract.mjs --write\`：\n${output}`,
     ).toBe(false);
   });
+
+  it("CSS-INTEGRITY-8: 输入光标颜色必须跟随正文文字色（不得用品牌色，且对比度 ≥7:1）", () => {
+    // 事故（用户报）：默认皮肤暗色主题下，对话编辑区打字时的光标是紫的（--accent #7c6cf0），
+    // 落在近黑背景上只有 4.33:1，而同一处的文字是 11.67:1 —— 一根 1px 闪烁竖线的可见度
+    // 只有文字的三分之一，等于"看不清光标在哪"。
+    const styles = FILES.find((f) => f.rel === "src/styles.css")!;
+    const stripped = stripComments(styles.css);
+
+    // ① 令牌：--caret-color 必须引用正文色（两档主题各自解析，皮肤也可覆盖）
+    expect(stripped, "应定义 --caret-color").toMatch(/--caret-color:\s*var\(--text-primary\)/);
+
+    // ② 使用处：编辑区光标必须用该令牌，且不得再用 --accent
+    //    注意排除「令牌定义」本身（`--caret-color: …` 也含 caret-color 子串）
+    const caretRules = [...stripped.matchAll(/(?:^|\n)([^\n{}]+)\{([^{}]*)\}/g)].filter((m) => /(?<!-)caret-color\s*:/.test(m[2]));
+    expect(caretRules.length, "应能找到使用 caret-color 的规则").toBeGreaterThan(0);
+    for (const m of caretRules) {
+      const sel = m[1].trim();
+      const body = m[2];
+      expect(body, `${sel} 的光标颜色应走 --caret-color`).toMatch(/(?<!-)caret-color:\s*var\(--caret-color\)/);
+      expect(body, `${sel} 不应把品牌色用作光标颜色`).not.toMatch(/(?<!-)caret-color:\s*var\(--accent/);
+    }
+    expect(stripped, ".message-input 是对话编辑区，必须有光标色").toMatch(/\.message-input[\s\S]{0,600}?caret-color:\s*var\(--caret-color\)/);
+
+    // ③ 对比度：按令牌实算，两档主题都要 ≥7:1（与正文色一致）
+    const token = (block: string, name: string) => new RegExp(`${name}:\\s*([^;]+);`).exec(block)?.[1]?.trim();
+    const dark = /\[data-theme="dark"\]\s*\{([\s\S]*?)\n\}/.exec(stripped)?.[1] ?? "";
+    const light = /:root,\s*\[data-theme="light"\]\s*\{([\s\S]*?)\n\}/.exec(stripped)?.[1] ?? "";
+    const parse = (v?: string | null): [number, number, number] | null => {
+      if (!v) return null;
+      const hex = /^#([0-9a-f]{6})$/i.exec(v.trim());
+      if (hex) { const n = parseInt(hex[1], 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; }
+      const m = /rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)/i.exec(v);
+      return m ? [Number(m[1]), Number(m[2]), Number(m[3])] : null;
+    };
+    const lum = ([r, g, b]: [number, number, number]) => {
+      const f = (c: number) => { const s = c / 255; return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4); };
+      return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
+    };
+    const contrast = (a: [number, number, number], b: [number, number, number]) => {
+      const la = lum(a), lb = lum(b);
+      const [hi, lo] = la > lb ? [la, lb] : [lb, la];
+      return (hi + 0.05) / (lo + 0.05);
+    };
+    for (const [name, block] of [["暗色", dark], ["浅色", light]] as const) {
+      const caret = parse(token(block, "--text-primary") ?? token(light, "--text-primary"));
+      const bg = parse(token(block, "--bg-primary"));
+      expect(caret && bg, `${name}主题应能解析 --text-primary 与 --bg-primary`).toBeTruthy();
+      const ratio = contrast(caret!, bg!);
+      expect(ratio, `${name}主题下光标与编辑区背景的对比度过低（${ratio.toFixed(2)}:1）`).toBeGreaterThanOrEqual(7);
+    }
+  });
 });

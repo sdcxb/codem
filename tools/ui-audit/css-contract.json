@@ -7592,7 +7592,7 @@
     "background": "transparent",
     "border": "none",
     "box-sizing": "border-box",
-    "caret-color": "var(--accent, #6b46c1)",
+    "caret-color": "var(--caret-color)",
     "color": "var(--text-primary)",
     "font-family": "inherit",
     "font-size": "var(--fs-lg)",

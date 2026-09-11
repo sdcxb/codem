@@ -192,6 +192,12 @@
   --accent-hover: #5a4bd1;
   --accent-muted: rgba(107, 92, 231, 0.15);
   --text-on-accent: #ffffff;
+  /* 输入光标颜色：跟"可见文字"同色。
+     第 59 波修复（用户报「默认皮肤暗色下，对话编辑区打字时紫光标在深底上看不清」）：
+     原来写成 var(--accent)，暗色主题下 accent 是 #7c6cf0、与输入框背景对比度只有 4.29:1，
+     而正文文字是 11.55:1 —— 一根 1px 的闪烁竖线按品牌色渲染，实际可见度只有文字的三分之一。
+     定义为「引用 --text-primary」而不是直接抄色值：两档主题各自解析，皮肤也可覆盖 --caret-color。 */
+  --caret-color: var(--text-primary);
   --success: #1a7f37;
   --warning: #9a6700;
   --error: #cf222e;
@@ -2328,7 +2334,8 @@ z-index: 50;
 
 .message-input.mirror-mode {
   color: transparent;
-  caret-color: var(--accent, #6b46c1);
+  /* 第 59 波：光标跟"可见文字"同色（镜像层文字用的是 --text-primary），不再用品牌紫 */
+  caret-color: var(--caret-color);
 }
 
 .input-backdrop {
@@ -2386,7 +2393,8 @@ z-index: 50;
   border: none;
   outline: none;
   color: var(--text-primary);
-  caret-color: var(--accent, #6b46c1);
+  /* 第 59 波：光标与文字同色（原为 --accent，暗色主题下在深底上过暗不易看见） */
+  caret-color: var(--caret-color);
   /* 输入框字号必须 >= 15px（见 src/test/architecture-changes.test.tsx 的回归断言），
    * 走设计系统令牌 --fs-lg(16px)，并随 --ui-font-scale 缩放 */
   font-size: var(--fs-lg);

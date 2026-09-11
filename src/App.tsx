@@ -292,6 +292,7 @@ import { getAgentRegistry } from "./core/agent/agent";
 import type { ClarificationFormData } from "./core/llm/agentic-loop";
 import { runSetupScript, runCleanupScript } from "./core/environment";
 import { applyStoredUiFont } from "./core/ui-font";
+import { debugLog } from "./core/debug";
 
 /**
  * 动态获取应用根目录（用户主目录）。
@@ -1607,7 +1608,7 @@ flushStreamBuffer(); // flush all on unmount
         // Debounce during streaming
         if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
         saveTimerRef.current = setTimeout(() => {
-          console.log(`[AutoSave] Debounce save: ${messages.length} messages to ${currentSession.id}`);
+          debugLog("autosave", `Debounce save: ${messages.length} messages to ${currentSession.id}`);
           saveMessages(currentSession.id);
         }, 2000);
       } else {

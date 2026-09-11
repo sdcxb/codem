@@ -16,6 +16,7 @@ import { AgentMessageQueue } from "./agent-message-queue";
 import { getPermissionManager, type PermissionRequest, type PermissionResult } from "../permission/permission";
 import { getVisionProxy } from "./vision-proxy";
 import { getSnapshotService } from "../snapshot/snapshot";
+import { debugLog, warnOnce } from "../debug";
 import * as MessageStorage from "../storage/message";
 // deriveMessagesFromEvents removed — DB CRUD is the single source of truth for LLM messages
 import { getEventLog } from "../storage/event-log";
@@ -395,7 +396,7 @@ export class AgenticLoop {
 
   private getPermissionManager() {
     // P0-7.1: ctx 可用时优先 ctx.get()，服务未就绪时回退到单例（容错）
-    if (this._ctx) { const s = this._ctx.get('permission'); if (s) return s; console.warn('[AgenticLoop] Service "permission" not available, falling back to singleton'); }
+    if (this._ctx) { const s = this._ctx.get('permission'); if (s) return s; warnOnce('svc:permission', '[AgenticLoop] Service "permission" not available, falling back to singleton'); }
     return getPermissionManager();
   }
   private evaluateSecurityMode(
@@ -408,32 +409,36 @@ export class AgenticLoop {
   }
   private getTelemetry() {
     // P0-7.1: ctx 可用时优先 ctx.get()，服务未就绪时回退到单例（容错）
-    if (this._ctx) { const s = this._ctx.get('telemetry'); if (s) return s; console.warn('[AgenticLoop] Service "telemetry" not available, falling back to singleton'); }
+    if (this._ctx) { const s = this._ctx.get('telemetry'); if (s) return s; warnOnce('svc:telemetry', '[AgenticLoop] Service "telemetry" not available, falling back to singleton'); }
     return getTelemetry();
   }
   private getTranscriptCache() {
     // P0-7.1: ctx 可用时优先 ctx.get()，服务未就绪时回退到单例（容错）
-    if (this._ctx) { const s = this._ctx.get('transcriptCache'); if (s) return s; console.warn('[AgenticLoop] Service "transcriptCache" not available, falling back to singleton'); }
+    if (this._ctx) { const s = this._ctx.get('transcriptCache'); if (s) return s; warnOnce('svc:transcriptCache', '[AgenticLoop] Service "transcriptCache" not available, falling back to singleton'); }
     return TranscriptCache;
   }
   private getMessageStorage() {
     // P0-7.1: ctx 可用时优先 ctx.get()，服务未就绪时回退到单例（容错）
-    if (this._ctx) { const s = this._ctx.get('messageStorage'); if (s) return s; console.warn('[AgenticLoop] Service "messageStorage" not available, falling back to singleton'); }
+    if (this._ctx) { const s = this._ctx.get('messageStorage'); if (s) return s; warnOnce('svc:messageStorage', '[AgenticLoop] Service "messageStorage" not available, falling back to singleton'); }
     return MessageStorage;
   }
   private getVisionProxy() {
     // P0-7.1: ctx 可用时优先 ctx.get()，服务未就绪时回退到单例（容错）
-    if (this._ctx) { const s = this._ctx.get('visionProxy'); if (s) return s; console.warn('[AgenticLoop] Service "visionProxy" not available, falling back to singleton'); }
+    if (this._ctx) { const s = this._ctx.get('visionProxy'); if (s) return s; warnOnce('svc:visionProxy', '[AgenticLoop] Service "visionProxy" not available, falling back to singleton'); }
     return getVisionProxy();
   }
+  /**
+   * 快照服务是**按 cwd 单例**的（`getSnapshotService(cwd)`：SnapshotPanel、测试都这么取），
+   * 没有任何 Provider 注册过 `ctx.provide('snapshot', …)` —— 于是原来那句
+   * `ctx.get('snapshot')` 必然落空、并在**每次工具调用**上打一遍带调用栈的 warn
+   * （用户报的控制台噪声：一次 write 就打两遍）。这里直接用按 cwd 取单例的公开入口。
+   */
   private getSnapshotService(cwd?: string) {
-    // P0-7.1: ctx 可用时优先 ctx.get()，服务未就绪或未注册时回退到单例（容错）
-    if (this._ctx) { const s = this._ctx.get('snapshot'); if (s) return s; console.warn('[AgenticLoop] Service "snapshot" not available, falling back to singleton'); }
     return getSnapshotService(cwd || this.lastCwd || ".");
   }
   private getEventLog() {
   // P0-7.1: ctx 可用时优先 ctx.get()，服务未就绪时回退到单例（容错）
-  if (this._ctx) { const s = this._ctx.get('eventLog'); if (s) return s; console.warn('[AgenticLoop] Service "eventLog" not available, falling back to singleton'); }
+  if (this._ctx) { const s = this._ctx.get('eventLog'); if (s) return s; warnOnce('svc:eventLog', '[AgenticLoop] Service "eventLog" not available, falling back to singleton'); }
   return getEventLog();
 }
 
@@ -687,7 +692,7 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
           .filter((s) => s.title.length > 0)
           .slice(0, 20);
         if (cleaned.length > 0) {
-          console.log(`[AgenticLoop] Planned ${cleaned.length} steps:`, cleaned.map(s => s.title));
+          debugLog("agent-loop", `Planned ${cleaned.length} steps:`, cleaned.map(s => s.title));
           return cleaned;
         }
       }
@@ -877,7 +882,7 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
         console.warn("[AgenticLoop] LLM plan failed, using heuristic:", planErr);
       }
     }
-    console.log(`[AgenticLoop] Plan ${this.activePlan.total ?? 0} steps:`, this.activePlan.plan?.map(s => s.title));
+    debugLog("agent-loop", `Plan ${this.activePlan.total ?? 0} steps:`, this.activePlan.plan?.map(s => s.title));
 
       // Main loop — DSH-aligned: no built-in turn budget, no token cap.
       // The loop runs until the model produces no tool calls (natural completion).
@@ -1065,7 +1070,7 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
         }
       }
 
-      console.log(`[AgenticLoop] collaborationMode=${this.config.collaborationMode}, hasAttachment=${hasDocumentAttachment}, tools available: ${toolDefs.length}/${allToolDefs.length} (deferred: ${deferredHints.length})`, toolDefs.map(t => t.name));
+      debugLog("agent-loop", `collaborationMode=${this.config.collaborationMode}, hasAttachment=${hasDocumentAttachment}, tools available: ${toolDefs.length}/${allToolDefs.length} (deferred: ${deferredHints.length})`, toolDefs.map(t => t.name));
 
       // B3: Inject pending skill prompts (from load_skill tool)
       const { consumePendingSkillPrompts, getLoadedSkillPrompts, tickSessionSkills } = await import("./tools/load-skill");
@@ -1102,7 +1107,7 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
             sysMsg.content += "\n\n" + catalogMessage;
           }
         }
-        console.log("[AgenticLoop] Injected skill catalog:", catalogMessage.length, "chars");
+        debugLog("agent-loop", "Injected skill catalog:", catalogMessage.length, "chars");
       }
 
       // 差距 2: /skill-name 用户手势 — 检测并自动加载技能
@@ -1235,9 +1240,10 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
 
       // P0: Start file change tracking at iteration boundary (before tools)
       // P1: 检查 fileChangeTracker Provider 服务可用性（对标 DSH 模式）
+      // 第 58 波：这句话原本每一轮迭代都输出一次；回退本身是设计好的容错，只需知道一次。
       const trackerSvc = this.getFileChangeTrackerService();
       if (!trackerSvc) {
-        console.warn('[AgenticLoop] Service "fileChangeTracker" not available from ctx, creating standalone instance');
+        warnOnce('svc:fileChangeTracker', '[AgenticLoop] Service "fileChangeTracker" not available from ctx, creating standalone instance');
       }
       this.fileChangeTracker = new FileChangeTracker(
         cwd, sessionId, assistantMsgId, this.state.iteration,
@@ -1365,7 +1371,7 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
       if (this.state.toolCallsInIteration > 0) {
         this.state.toolCallsInIteration = iterationToolCalls;
       }
-      console.log(`[AgenticLoop] Iteration ${this.state.iteration} completed: ${iterationToolCalls} tool calls (effective: ${this.state.toolCallsInIteration}), ${this.state.consecutiveErrors} consecutive errors`);
+      debugLog("agent-loop", `Iteration ${this.state.iteration} completed: ${iterationToolCalls} tool calls (effective: ${this.state.toolCallsInIteration}), ${this.state.consecutiveErrors} consecutive errors`);
       // Runaway detection: track whether this iteration made any progress.
       // Progress = text output OR at least one effective tool call.
       if (iterationHadText || this.state.toolCallsInIteration > 0) {
@@ -1665,7 +1671,7 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
       };
       const headerChange = trackRequestHeader(sessionId, currentHeader);
       if (headerChange) {
-        console.log(`[AgenticLoop] Request header changed: ${headerChange.reason} — prefix cache may miss`);
+        debugLog("agent-loop", `Request header changed: ${headerChange.reason} — prefix cache may miss`);
       }
       this.lastRequestHeader = computeHeaderFingerprint(currentHeader);
 
@@ -1681,7 +1687,7 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
           // of the async generator — this is where it can hang if the server
           // is unresponsive. The user sees "正在连接 AI 服务器..." and can
           // cancel via the ■ button at any time.
-          console.log(`[AgenticLoop] Iteration ${this.state.iteration}: calling LLM (attempt ${retryCount + 1}/${maxRetries}), messages: ${apiMessages.length}, tools: ${toolDefs.length}`);
+          debugLog("agent-loop", `Iteration ${this.state.iteration}: calling LLM (attempt ${retryCount + 1}/${maxRetries}), messages: ${apiMessages.length}, tools: ${toolDefs.length}`);
           yield { type: "llm_status", status: "connecting" };
           let firstEventReceived = false;
 
@@ -1783,7 +1789,7 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
             }
           }
           success = true;
-          console.log(`[AgenticLoop] Iteration ${this.state.iteration}: LLM stream ended. finishReason: ${finishReason}, toolCalls: ${currentToolCalls.length}, text length: ${currentText.length}`);
+          debugLog("agent-loop", `Iteration ${this.state.iteration}: LLM stream ended. finishReason: ${finishReason}, toolCalls: ${currentToolCalls.length}, text length: ${currentText.length}`);
         } catch (retryError: any) {
           retryCount++;
           console.error(`[AgenticLoop] Iteration ${this.state.iteration}: LLM stream error (attempt ${retryCount}/${maxRetries}):`, retryError.name, retryError.message);
@@ -2507,7 +2513,7 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
       }
     }
 
-    console.log(`[buildMessages] raw: ${messages.length}, llm: ${llmMessages.length}, selected: ${valid.length}, final: ${finalMessages.length}`);
+    debugLog("agent-loop", `buildMessages raw: ${messages.length}, llm: ${llmMessages.length}, selected: ${valid.length}, final: ${finalMessages.length}`);
     // Diagnostic: 逐条 dump 仅在调试模式输出 — 长会话（数百条消息）每次迭代
     // 全量打印产生数千行 console 噪音，拖慢 devtools 且掩盖真实错误。
     // 设置 DEBUG_BUILD_MESSAGES=1 可恢复逐条诊断。

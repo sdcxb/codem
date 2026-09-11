@@ -16,6 +16,7 @@ import { createIdleTimeout } from "./idle-tracker";
 import { OllamaProvider } from "./ollama-provider";
 import { ReplayAdapter } from "./replay-adapter";
 import { redactSecrets } from "../utils/redact";
+import { debugLog } from "../debug";
 // ========== Request-level timeout budget (对标 DSH request_timeout_seconds) ==========
 // DSH 的 SDK 层为每个 RPC 请求设置 deadline（request_timeout_seconds），超时抛
 // TimeoutError 并附带运行时诊断。我们对齐这一设计：每次 LLM HTTP 请求都有
@@ -319,7 +320,7 @@ export class OpenAICompatibleProvider implements LLMProvider {
       bodyObj.max_tokens = request.maxTokens;
     }
     const body = JSON.stringify(bodyObj);
-    console.log(`[Provider] stream: id=${this.id} baseUrl=${this.config.baseUrl} url=${url} model:`, request.model, "msgs:", request.messages.length, "tools:", tools?.length || 0);
+    debugLog("provider", `stream: id=${this.id} baseUrl=${this.config.baseUrl} url=${url} model:`, request.model, "msgs:", request.messages.length, "tools:", tools?.length || 0);
     const { signal, cleanup, isTimeout } = withRequestTimeout(request.abortSignal, STREAM_CONNECT_TIMEOUT_MS, "LLM streaming request");
     let response: Response;
     try {
@@ -481,7 +482,7 @@ export class OpenAICompatibleProvider implements LLMProvider {
                     console.error("[Provider] Failed to parse tool args:", tc.arguments.substring(0, 200));
                   }
                 }
-                console.log("[Provider] Tool call end:", tc.name, "args:", JSON.stringify(parsedArgs).substring(0, 200));
+                debugLog("provider", "Tool call end:", tc.name, "args:", JSON.stringify(parsedArgs).substring(0, 200));
                 yield { 
                   type: "tool_use_end" as const, 
                   id: tc.id,
