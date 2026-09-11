@@ -2612,8 +2612,10 @@ display: block;
 }
 
 .file-explorer-search-bar {
-  display: grid;
-  grid-template-columns: repeat(3, max-content);
+  /* 第 57 波：这里原本是 repeat(3, max-content) 的三列网格 —— 三列都按内容宽度排，
+  输入框上写的 flex: 1 在 grid 里**完全无效**，于是整行内容靠左、右侧空一片
+  （用户报的「刷新按钮没居右」）。改成 flex，输入框真正撑开、刷新按钮贴右边缘。 */
+  display: flex;
   align-items: center;
   gap: var(--space-3);
   height: 30px;
@@ -6318,8 +6320,10 @@ color: var(--text-on-accent);
 }
 
 .mcp-catalog-actions {
-  display: grid;
-  grid-template-columns: repeat(4, max-content);
+  /* 第 57 波：同上一类 —— 错误/成功提示上的 flex: 1 在 grid 里失效：
+  提示文本被卡在 220px、按钮紧跟其后，右侧大片留白，窄卡片下还会整行溢出。 */
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--space-4);
   margin-top: var(--space-2);
@@ -6369,13 +6373,21 @@ color: var(--text-on-accent);
 .mcp-catalog-error {
   font-size: var(--fs-2xs);
   color: var(--error);
-  flex: 1;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .mcp-catalog-success {
   font-size: var(--fs-2xs);
   color: var(--success);
-  flex: 1;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Config dialog */
@@ -8996,8 +9008,9 @@ border-bottom: 1px solid var(--accent);
 .mm-help { padding: var(--space-2) 0; font-size: var(--fs-sm); color: var(--text-muted); line-height: 1.6; }
 
 .mm-footer {
-  display: grid;
-  grid-template-columns: repeat(2, max-content);
+  /* 第 57 波：这里靠 .mm-save-btn 的 margin-left: auto 靠右，但 auto 外边距在 **grid** 里
+  不会吸收行尾空白（实测右边空出 616px）。改成 flex 后 auto 外边距才生效。 */
+  display: flex;
   align-items: center;
   gap: var(--space-4);
   padding: var(--space-6) var(--space-8);
@@ -11541,14 +11554,17 @@ border-color: var(--text-muted);
 }
 
 .notebook-manager-toolbar {
-  display: grid;
-  grid-template-columns: repeat(4, max-content);
-  gap: var(--space-4);
+  /* 第 57 波：同上一类 —— 搜索框的 flex: 1 在 grid 里失效，按钮没有靠右。
+  允许换行：极窄时按钮整块换到下一行，而不是压缩变形。 */
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
+  gap: var(--space-4);
 }
 
 .notebook-search-box {
   flex: 1;
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: var(--space-4);
@@ -14191,8 +14207,9 @@ color: var(--accent, #7c6cf0);
   display: block;
 }
 .video-controls {
-  display: grid;
-  grid-template-columns: repeat(3, max-content);
+  /* 第 57 波：同 .file-explorer-search-bar —— 进度条上的 flex: 1 在 grid 里失效，
+  进度条被卡在 129px、右边空出一大片。改成 flex。 */
+  display: flex;
   align-items: center;
   gap: var(--space-4);
   padding: var(--space-3) var(--space-5);
@@ -14209,6 +14226,7 @@ color: var(--accent, #7c6cf0);
 }
 .video-progress {
   flex: 1;
+  min-width: 0;
   accent-color: var(--accent, #7c6cf0);
 }
 

@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<title>工具行/搜索行的「靠右」探针</title>
+<!--
+  用源码 CSS 真渲染以下行，测量：
+    ① 可伸缩子元素（输入框/滑杆/提示文本）是否真的撑开（占行内可用宽度的比例）
+    ② 行内最后一个控件是否贴住行的右边缘（偏差 px）
+    ③ 行是否溢出
+  这些都是 jsdom 测不出来的（用户报的「刷新按钮没靠右、右边空一片」就是 ①②）。
+-->
+<link rel="stylesheet" href="../../styles.css" />
+<link rel="stylesheet" href="../../styles/skin-hub.css" />
+<link rel="stylesheet" href="../../styles/skin-dream.css" />
+<link rel="stylesheet" href="../../styles/notebook-workspace.css" />
+<link rel="stylesheet" href="../../styles/codem-ui.css" />
+<link rel="stylesheet" href="../../styles/task-center.css" />
+<style>
+  html, body { margin: 0; padding: 0; }
+  body { background: var(--bg-primary, #fcfcfb); font-family: var(--font-ui, system-ui); }
+  #stage { position: relative; overflow: hidden; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <!-- ① 右侧栏 → 文件 → 筛选文件（用户报的） -->
+  <div class="file-explorer-search">
+    <div class="file-explorer-search-bar" data-case="file-search">
+      <svg class="file-explorer-search-icon" width="14" height="14"></svg>
+      <input type="text" placeholder="筛选文件..." class="file-explorer-search-input" />
+      <button class="file-explorer-search-refresh" title="刷新">↻</button>
+    </div>
+  </div>
+
+  <!-- ② 视频播放器控制条（同一个失效 flex 模式） -->
+  <div class="video-controls" data-case="video-controls">
+    <button class="video-btn" title="播放">▶</button>
+    <input type="range" class="video-progress" min="0" max="100" value="30" />
+    <span class="video-time">00:30 / 01:40</span>
+  </div>
+
+  <!-- ③ 笔记本管理工具栏（搜索框该撑开） -->
+  <div class="notebook-manager-toolbar" data-case="notebook-toolbar">
+    <div class="notebook-search-box">
+      <svg width="14" height="14"></svg>
+      <input type="text" placeholder="搜索笔记本..." />
+    </div>
+    <button class="nb-studio-btn">新建笔记本</button>
+    <button class="nb-studio-btn">导入</button>
+  </div>
+
+  <!-- ④ MCP 市场卡片动作行（错误提示该占满剩余空间、按钮靠右） -->
+  <div class="mcp-catalog-actions" data-case="mcp-actions">
+    <span class="mcp-catalog-error">安装失败：网络超时，请检查代理设置后重试</span>
+    <button class="mcp-catalog-install-btn sp-btn">安装</button>
+    <button class="mcp-catalog-detail-btn sp-btn">详情</button>
+  </div>
+
+  <!-- ⑤ 多模态面板底部（保存按钮该靠右） -->
+  <div class="mm-footer" data-case="mm-footer">
+    <span class="mm-saved">已保存</span>
+    <button class="panel-btn panel-btn--primary mm-save-btn">保存</button>
+  </div>
+</div>
+<pre id="probe"></pre>
+<script>
+  const WIDTHS = [760, 640, 560, 480, 420, 360, 320];
+  const stage = document.getElementById('stage');
+
+  function analyze(row) {
+    const cs = getComputedStyle(row);
+    const padL = parseFloat(cs.paddingLeft), padR = parseFloat(cs.paddingRight);
+    const rect = row.getBoundingClientRect();
+    const innerRight = rect.right - padR;
+    const kids = [...row.children].map((k) => {
+      const r = k.getBoundingClientRect();
+      return {
+        cls: (k.className || '').toString().split(' ')[0],
+        w: Math.round(r.width),
+        top: Math.round(r.top),
+        bottom: Math.round(r.bottom),
+        left: Math.round(r.left),
+        right: Math.round(r.right),
+        gapRight: Math.round(innerRight - r.right),
+        grow: parseFloat(getComputedStyle(k).flexGrow) || 0,
+      };
+    });
+    const last = kids[kids.length - 1];
+    const growable = kids.filter((k) => k.grow > 0);
+    // 是否换行：以第一个子元素为基准，看其它子元素的纵向区间是否与它重叠（同一行 = 重叠）
+    const first = kids[0];
+    const wrapped = !!first && kids.some((k) => k.bottom < first.top || k.top > first.bottom);
+    return {
+      case: row.dataset.case,
+      rowWidth: Math.round(rect.width),
+      innerWidth: Math.round(rect.width - padL - padR),
+      display: cs.display,
+      gridColumns: cs.gridTemplateColumns,
+      overflow: row.scrollWidth > row.clientWidth + 1,
+      wrapped,
+      kids,
+      lastRightGap: last ? last.gapRight : null,
+      growable: growable.map((k) => ({ cls: k.cls, w: k.w, ratio: +(k.w / (rect.width - padL - padR)).toFixed(2) })),
+    };
+  }
+
+  const results = [];
+  for (const w of WIDTHS) {
+    stage.style.width = w + 'px';
+    void stage.offsetHeight;
+    for (const row of stage.querySelectorAll('[data-case]')) results.push({ width: w, ...analyze(row) });
+  }
+  document.getElementById('probe').textContent = 'PROBE_JSON=' + JSON.stringify({ results });
+</script>
+</body>
+</html>

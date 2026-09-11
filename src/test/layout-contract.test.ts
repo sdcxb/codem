@@ -222,6 +222,7 @@ describe("标签墙/工具栏的真实渲染契约（第 55 波，需要浏览�
     overflow: boolean;
     display: string;
     flexWrap: string;
+    children: Array<{ cls: string; lines: number; chars: number; w: number }>;
     squeezed: Array<{ cls: string; chars: number; lines: number; w: number }>;
   }> {
     const out = execFileSync(
@@ -238,8 +239,11 @@ describe("标签墙/工具栏的真实渲染契约（第 55 波，需要浏览�
     return JSON.parse(m[1].replace(/&quot;/g, '"')).results;
   }
 
+  // 无头浏览器冷启动可能超过 vitest 默认的 5s，所以：测量只跑一次 + 显式放宽超时
+  const chipRows = BROWSER ? measureChips() : [];
+
   it.skipIf(!BROWSER)("LAYOUT-8: 标签墙/工具栏在 320~1200px 下都不竖排、不溢出", () => {
-    const rows = measureChips();
+    const rows = chipRows;
     expect(rows.length, "探针测量点太少，可能 fixture 坏了").toBeGreaterThanOrEqual(50);
     const squeezed = rows.filter((r) => r.squeezed.length);
     const overflow = rows.filter((r) => r.overflow);
@@ -248,13 +252,13 @@ describe("标签墙/工具栏的真实渲染契约（第 55 波，需要浏览�
       "这些标签被压成了竖排（短标签却排成 ≥3 行）",
     ).toEqual([]);
     expect(
-      overflow.map((r) => `${r.case} @${r.w}px scrollWidth=${r.scrollWidth} > clientWidth=${r.clientWidth}`),
+      overflow.map((r) => `${r.case} @${r.w}px scrollWidth > clientWidth`),
       "这些容器内容溢出（放不下又看不到）",
     ).toEqual([]);
-  });
+  }, 30_000);
 
   it.skipIf(!BROWSER)("LAYOUT-9: 设置「通用」的身份/风格标签、性能面板页签行确实是一行一个标签", () => {
-    const rows = measureChips();
+    const rows = chipRows;
     for (const name of ["identity-options", "identity-style", "perf-tab-group"]) {
       const cases = rows.filter((r) => r.case === name);
       expect(cases.length, `探针里缺少 ${name} 的测量点`).toBeGreaterThan(0);
@@ -264,5 +268,60 @@ describe("标签墙/工具栏的真实渲染契约（第 55 波，需要浏览�
         }
       }
     }
-  });
+  }, 30_000);
+});
+
+describe("工具行/搜索行的「撑开与靠右」契约（第 57 波，需要浏览器）", () => {
+  const TOOLBAR_FIXTURE = join(ROOT, "src", "test", "fixtures", "toolbar-rows-probe.html");
+
+  interface ToolbarRow {
+    case: string;
+    innerWidth: number;
+    display: string;
+    gridColumns: string;
+    overflow: boolean;
+    wrapped: boolean;
+    lastRightGap: number | null;
+    growable: Array<{ cls: string; w: number; ratio: number }>;
+  }
+
+  function measureToolbars(): ToolbarRow[] {
+    const out = execFileSync(
+      BROWSER as string,
+      [
+        "--headless=new", "--disable-gpu", "--no-sandbox", "--dump-dom",
+        "--window-size=1400,1200", "--virtual-time-budget=6000",
+        `file:///${TOOLBAR_FIXTURE.replace(/\\/g, "/")}`,
+      ],
+      { encoding: "utf8", maxBuffer: 128 * 1024 * 1024, stdio: ["ignore", "pipe", "ignore"] },
+    );
+    const m = /PROBE_JSON=(\{.*?\})<\/pre>/s.exec(out);
+    if (!m) throw new Error("工具行探针没有输出：检查 fixtures/toolbar-rows-probe.html 是否被改动");
+    return JSON.parse(m[1].replace(/&quot;/g, '"')).results;
+  }
+
+  // 同上：测量只跑一次，并显式放宽超时（无头浏览器冷启动可能 >5s）
+  const toolbarRows = BROWSER ? measureToolbars() : [];
+
+  it.skipIf(!BROWSER)("LAYOUT-10: 可伸缩元素必须真的撑开、行尾控件必须贴右（不得靠左留一片空白）", () => {
+    // 真实事故（用户报）：右侧栏「筛选文件」搜索行的刷新按钮没有居右，右边空了一片。
+    // 根因：容器写的是 repeat(3, max-content) 的网格，而输入框上写着 flex: 1 —— 在 grid 里
+    // **完全无效**，于是整行内容按内容宽度靠左排（实测 724px 宽的行里按钮距右边缘还差 527px）。
+    const rows = toolbarRows;
+    expect(rows.length, "探针测量点太少，可能 fixture 坏了").toBeGreaterThanOrEqual(30);
+
+    const problems: string[] = [];
+    for (const r of rows) {
+      const where = `${r.case} @可用宽 ${r.innerWidth}px (display=${r.display}${r.gridColumns !== "none" ? `, columns=${r.gridColumns}` : ""})`;
+      if (r.overflow) problems.push(`${where}: 内容溢出（放不下又看不到）`);
+      for (const g of r.growable) {
+        if (g.ratio < 0.25) problems.push(`${where}: 可伸缩元素「${g.cls}」只有 ${g.w}px（占 ${(g.ratio * 100).toFixed(0)}%），没有被撑开`);
+      }
+      // 未换行时，行内最后一个控件必须贴住行的右边缘（换行是可接受的降级：宁可变两行，也不要挤压变形）
+      if (!r.wrapped && r.lastRightGap !== null && Math.abs(r.lastRightGap) > 2) {
+        problems.push(`${where}: 行尾控件距右边缘还有 ${r.lastRightGap}px（应贴右）`);
+      }
+    }
+    expect(problems, `工具行/搜索行没有撑开或没有靠右：\n${problems.join("\n")}`).toEqual([]);
+  }, 30_000);
 });
