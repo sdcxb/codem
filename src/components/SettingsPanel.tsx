@@ -38,7 +38,7 @@ import { PersonaManager } from "./PersonaManager";
 import { ComputerUseSettings } from "./ComputerUseSettings";
 import { WechatSettings } from "./WechatSettings";
 import { PhoneLinkSettings } from "./PhoneLinkSettings";
-import { applyUiFontScale, FONT_BASE_PX } from "../core/ui-font";
+import { applyUiFontScale, applyStoredUiFont, FONT_BASE_PX } from "../core/ui-font";
 // P2 #34: Import reusable settings components
 import { SettingsNav, ConfigEntry, ToggleEntry } from "./SettingsParts";
 // P2 #35: Import UsageStats for embedding in settings
@@ -124,7 +124,9 @@ const defaultSettings: Settings = {
   mimoPath: "",
   model: "mimo-v2.5-pro",
   theme: "dark",
-  fontSize: 14,
+  // 第 56 波：默认字号必须等于 `--fs-*` 的缩放基准（13px）。
+  // 此前这里是 14、而启动不应用字号 → 打开设置瞬间把全站放大 14/13 ≈ 7.7%，且关掉设置也不回退。
+  fontSize: FONT_BASE_PX,
   autoApprove: false,
   language: "zh",
   providers: defaultProviders,
@@ -260,9 +262,14 @@ export function SettingsPanel({ onClose, onSessionRecovery, onUsageStats, initia
         }
       }
       setSettings({ ...defaultSettings, ...parsed });
-      // D1: 打开设置时确保字号即时应用（含其它途径已存值）
-      applyUiFontScale((parsed as Settings).fontSize ?? FONT_BASE_PX);
     }
+
+    // D1: 打开设置时确保字号与**启动时一致** —— 共用 ui-font 的同一个解析器。
+    // 这里顺带把滑杆显示的值也统一成解析结果：旧版本把默认字号 14 一起写进了设置对象，
+    // 于是"滑杆显示 14、界面按 13 渲染"这种不一致也要一并消除（见 core/ui-font.ts 的归一规则）。
+    // 此前这里直接应用 parsed.fontSize（默认 14），而启动路径读的是旧扁平键 → 打开设置就跳字。
+    const appliedPx = applyStoredUiFont();
+    setSettings((prev) => ({ ...prev, fontSize: appliedPx }));
 
     // Load dynamically fetched models from DB cache
     try {

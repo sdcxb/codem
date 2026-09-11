@@ -160,7 +160,9 @@ const handleDrop = useCallback((e: React.DragEvent, targetSessionId: string, pro
       document.documentElement.style.setProperty("--font-weight", String(savedWeight));
     }
     // D1: 启动恢复字号缩放（字号滑杆真正生效）
-    applyStoredUiFont(getSetting);
+    // 第 56 波：改用无参版本 —— 与设置页共用同一个解析器（codem-settings.fontSize 权威、
+    // 旧扁平键仅作兼容回退），避免"启动读旧键、设置页读新键"造成的字号跳变。
+    applyStoredUiFont();
   }, []);
 
   useEffect(() => {

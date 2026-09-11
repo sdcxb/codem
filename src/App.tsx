@@ -291,6 +291,7 @@ import { PipelineNextStepDialog } from "./components/PipelineNextStepDialog";
 import { getAgentRegistry } from "./core/agent/agent";
 import type { ClarificationFormData } from "./core/llm/agentic-loop";
 import { runSetupScript, runCleanupScript } from "./core/environment";
+import { applyStoredUiFont } from "./core/ui-font";
 
 /**
  * 动态获取应用根目录（用户主目录）。
@@ -1080,6 +1081,10 @@ flushStreamBuffer(); // flush all on unmount
       try {
         setBootSplashPhase("loading-db");
         await initDatabase();
+        // 第 56 波：字号缩放必须在**数据库就绪后**应用（设置存在 SQLite 里，早期读取拿不到值）。
+        // 之前启动应用的是旧扁平键 codem-font-size（通常不存在 → 13px），而设置页应用的是
+        // codem-settings.fontSize（默认 14）→ 打开设置时全站突然放大且不回退。
+        applyStoredUiFont();
         // Expose settings functions via globalThis for Cordis Provider plugins that
         // need settings access but can't use require() in browser (ESM) environment.
         // This acts as a service locator bridge — Provider plugins can opt-in via
