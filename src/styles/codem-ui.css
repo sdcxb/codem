@@ -153,7 +153,7 @@
   inset: 0;
   background: var(--overlay-backdrop);
   backdrop-filter: blur(4px);
-  z-index: var(--z-dropdown);
+  z-index: var(--z-dialog-overlay);
   animation: dialog-fade-in 0.15s ease-out;
   -webkit-backdrop-filter: blur(4px);
 }
@@ -170,7 +170,7 @@
   width: 90%;
   max-height: 85vh;
   overflow-y: auto;
-  z-index: var(--z-dropdown);
+  z-index: var(--z-dialog);
   box-shadow: var(--elevation-4) !important;
   animation: dialog-slide-in 0.2s ease-out;
   backdrop-filter: blur(var(--glass-blur-strong)) saturate(var(--glass-saturate));

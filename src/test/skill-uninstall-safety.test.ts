@@ -38,7 +38,7 @@ vi.mock("../core/skill/skill-delete-diag", () => ({
   diagTrail: mocks.diagTrail,
 }));
 
-import { uninstallSkill } from "../core/skill/installer";
+import { uninstallSkill, loadInstalledSkills } from "../core/skill/installer";
 import { getSkillRegistry, type SkillDefinition } from "../core/skill/skill";
 
 function userSkill(name: string, filePath: string): SkillDefinition {
@@ -193,5 +193,33 @@ describe("卸载技能 — 永久删除 + 失败不谎报", () => {
     expect(mocks.deleteDirectoryPermanent).not.toHaveBeenCalled();
     expect(mocks.deleteFile).not.toHaveBeenCalled();
     registry.remove("uninst-root");
+  });
+
+  it("UNINST-9: 技能根目录下名为 SKILL.md 的异常目录不再变成幽灵技能（用户日志里的 name=\"skills\"）", async () => {
+    // 用户那份落盘轨迹里，删除目标是一个名叫 "skills"、filePath 指向
+    // <技能根目录>\SKILL.md 的技能 —— 即"技能根目录下有个叫 SKILL.md 的目录"，
+    // 里面那份没有 name 字段的 SKILL.md 被兜底成了父目录名。这种目录不是技能，必须跳过。
+    mocks.listDirectory.mockResolvedValue([
+      { name: "SKILL.md", path: "/appdata/.codem/skills/SKILL.md", isDirectory: true },
+      { name: "good-skill", path: "/appdata/.codem/skills/good-skill", isDirectory: true },
+    ]);
+    mocks.readFile.mockImplementation(async (p: string) => {
+      if (p.includes("good-skill")) {
+        return '---\nname: good-skill\ndescription: "A normal skill"\n---\n\n# Good\nBody';
+      }
+      return '---\ndescription: "No name field"\n---\n\n# Ghost\nBody';
+    });
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const registry = getSkillRegistry();
+    registry.remove("skills");
+    registry.remove("good-skill");
+
+    const loaded = await loadInstalledSkills();
+    warn.mockRestore();
+
+    expect(registry.get("skills"), "幽灵技能不该被注册").toBeUndefined();
+    expect(registry.get("good-skill")).toBeDefined();
+    expect(loaded).toBe(1);
+    registry.remove("good-skill");
   });
 });

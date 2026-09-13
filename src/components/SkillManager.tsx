@@ -82,7 +82,8 @@ export function SkillManager({ onClose }: SkillManagerProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [installProgress, setInstallProgress] = useState<{ value: number; message: string } | null>(null);
   const [installError, setInstallError] = useState<string | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<SkillDefinition | null>(null);
+  /** 面板内联确认：等待用户点"确认删除"的技能名（不再用嵌套模态弹窗做确认） */
+  const [confirmingDelete, setConfirmingDelete] = useState<string | null>(null);
   /** 正在删除的技能名 —— 删除期间给出可见反馈，避免"点了没反应"看起来像卡死 */
   const [deletingSkill, setDeletingSkill] = useState<string | null>(null);
   /** 本次删除的开始时间 —— 用于"已用 N 秒"进度，慢删除不该看起来像卡死 */
@@ -135,11 +136,11 @@ export function SkillManager({ onClose }: SkillManagerProps) {
     return () => clearInterval(timer);
   }, [deletingSkill, deleteStartedAt]);
 
-  // 确认弹窗开合也留轨迹：可以区分"点删除技能就卡住"（这里只会有 open=true）
-  // 与"点了确认才卡住"（open=true 之后还有 confirm action fired）
+  // 内联确认出现也留轨迹：可以区分"点了删除技能就卡住"（这里只有 delete button clicked）
+  // 与"点确认才卡住"（后面还有 confirm delete clicked）
   useEffect(() => {
-    if (deleteTarget) diagTrail("confirm dialog opened", { targetName: deleteTarget.name });
-  }, [deleteTarget]);
+    if (confirmingDelete) diagTrail("inline confirm shown", { targetName: confirmingDelete });
+  }, [confirmingDelete]);
 
   // ===== Market State =====
   const [marketSkills, setMarketSkills] = useState<MarketSkill[]>([]);
@@ -256,21 +257,24 @@ export function SkillManager({ onClose }: SkillManagerProps) {
     setSkills((prev) => prev.map((s) => s.name === skillName ? { ...s, enabled } : s));
   };
 
-  const handleDelete = async () => {
-    // 诊断轨迹的第一落点：无论后面走哪条分支（目标为空 / 内置 / 不存在 / 删除失败 / 成功），
-    // 都必须留下"确认动作确实发生了"的落盘记录 —— 用户报的"卡死且控制台一条都没有"必须可查。
-    diagTrail("confirm action fired", {
-      targetName: deleteTarget?.name ?? null,
-      targetSource: deleteTarget?.source ?? null,
-      targetPath: deleteTarget?.filePath ?? null,
-      deletingSkill,
+  /**
+   * 执行删除。**由详情面板里的"确认删除"直接调用**（不再是嵌套模态弹窗里的按钮）：
+   *
+   * 用户反馈的"删除技能卡死"最终root cause 就是那个嵌套确认框 —— 它在 `.modal-overlay`
+   * （z-index: var(--z-modal) = 1300）之上却只拿到 `--z-dropdown`（1000），
+   * 一旦模态落在另一个层叠上下文里，确认框就排到模态层后面：看不见、点不到，
+   * 而 Radix 打开模态时已把 body 的 pointer-events 关掉 → 整个窗口"点不动"。
+   * 主线程其实完全正常（落盘心跳 drift ±10ms 可以证明），所以控制台没有任何线索。
+   *
+   * 改成面板内联确认 = 不再有"模态里套模态"，确认按钮永远在用户看得见、点得到的地方。
+   */
+  const handleDelete = async (target: SkillDefinition) => {
+    diagTrail("confirm delete clicked", {
+      targetName: target.name,
+      targetSource: target.source,
+      targetPath: target.filePath ?? null,
     });
-    if (!deleteTarget) {
-      setInstallError("删除失败：没有选中技能（请关闭本窗口后重试）");
-      return;
-    }
-    const target = deleteTarget;
-    setDeleteTarget(null);
+    setConfirmingDelete(null);
     setInstallError(null);
     setDeleteError(null);
     setDeletingSkill(target.name);
@@ -853,9 +857,9 @@ return true;
                           path: selectedSkill.filePath ?? null,
                         });
                         setDeleteError(null);
-                        setDeleteTarget(selectedSkill);
+                        setConfirmingDelete(selectedSkill.name);
                       }}
-                      disabled={deletingSkill === selectedSkill.name}
+                      disabled={deletingSkill === selectedSkill.name || confirmingDelete === selectedSkill.name}
                     >
                       {deletingSkill === selectedSkill.name ? (
                         <LoadingIcon size={14} className="spin" />
@@ -864,6 +868,31 @@ return true;
                       )}
                       {deletingSkill === selectedSkill.name ? "删除中…" : "删除技能"}
                     </button>
+                  </div>
+                )}
+
+                {/* 内联确认（取代嵌套模态弹窗）：确认按钮就在用户刚点的地方，
+                    不会因为层叠上下文排到模态层后面而"看不见、点不到" */}
+                {confirmingDelete === selectedSkill.name && deletingSkill !== selectedSkill.name && (
+                  <div className="skill-delete-confirm" role="alertdialog" aria-label="确认删除技能">
+                    <span>
+                      确定要删除技能「{selectedSkill.name}」吗？将删除技能文件，无法撤销。
+                    </span>
+                    <div className="skill-delete-confirm-actions">
+                      <button
+                        className="skill-detail-btn delete"
+                        onClick={() => handleDelete(selectedSkill)}
+                      >
+                        <DeleteIcon size={14} />
+                        确认删除
+                      </button>
+                      <button
+                        className="skill-detail-btn"
+                        onClick={() => setConfirmingDelete(null)}
+                      >
+                        取消
+                      </button>
+                    </div>
                   </div>
                 )}
 
@@ -1130,21 +1159,9 @@ return true;
         </>
       )}
 
-      {/* Delete Confirmation */}
-      <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>确认删除技能</AlertDialogTitle>
-            <AlertDialogDescription>
-              确定要删除技能 "{deleteTarget?.name}" 吗？此操作将删除技能文件，无法撤销。
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>取消</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDelete}>删除</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      {/* 删除确认已改为详情面板内联确认（见 .skill-delete-confirm）：
+          嵌套模态确认框会落在模态层的层叠上下文之外，可能被压在模态后面 —— 看不见、点不到，
+          而 Radix 已把 body 的 pointer-events 关掉，于是整窗像卡死。这里不再使用弹窗。 */}
 
       {/* Overwrite Confirmation */}
       <AlertDialog open={!!overwriteTarget} onOpenChange={(open) => !open && setOverwriteTarget(null)}>

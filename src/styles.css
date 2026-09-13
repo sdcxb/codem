@@ -88,6 +88,13 @@
   --z-tooltip: 1100;
   --z-popover: 1200;
   --z-modal: 1300;
+  /* 对话框层：**必须高于 --z-modal**。
+     模态窗口内部弹出的确认框（例如技能管理里的删除确认、覆盖安装确认）如果低于模态层，
+     一旦两者落在不同的层叠上下文里，确认框就会排到模态层后面 —— 既看不见也点不到，
+     而 Radix 打开模态时会把 body 的 pointer-events 关掉，于是表现为"整个窗口都点不动"。
+     这类故障控制台不留任何痕迹（主线程其实正常），所以把它变成 token 顺序约束 + 回归测试。 */
+  --z-dialog-overlay: 1400;
+  --z-dialog: 1410;
   --z-modal-stacked: 2000;
   --z-present: 3000;
   --z-present-ui: 3001;
@@ -6678,6 +6685,30 @@ color: var(--text-on-accent);
   align-items: center;
 }
 
+/* 技能删除内联确认（第 73 波）：取代"模态里套模态"的确认弹窗。
+   弹窗版确认框只拿到 --z-dropdown，而技能管理器本身是 --z-modal：两者一旦落在不同层叠
+   上下文里，确认框就会被压在模态后面 —— 看不见、点不到，而 Radix 打开模态时已把 body 的
+   pointer-events 关掉，于是整个窗口像卡死（主线程其实正常，控制台没有任何线索）。
+   内联确认渲染在用户刚点过的按钮下方，不存在"被谁压住"的可能。 */
+.skill-delete-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-top: var(--space-4);
+  padding: var(--space-4) var(--space-6);
+  background: color-mix(in srgb, var(--error) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--error) 30%, transparent);
+  border-radius: var(--radius);
+  font-size: var(--fs-sm);
+  color: var(--text-primary);
+}
+
+.skill-delete-confirm-actions {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+}
+
 .skill-install-error button {
   background: none;
   border: none;
@@ -11355,7 +11386,7 @@ border-color: var(--text-muted);
   padding: var(--space-10);
   max-width: 420px;
   width: 90%;
-  z-index: var(--z-dropdown);
+  z-index: var(--z-dialog);
   box-shadow: 0 20px 60px var(--shadow-color);
 }
 .alert-dialog-action {

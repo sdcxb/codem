@@ -367,10 +367,20 @@ export async function loadInstalledSkills(): Promise<number> {
   let loaded = 0;
   try {
     const entries = await listDirectory(skillsDir);
+    const sep = skillsDir.includes("/") && !skillsDir.includes("\\") ? "/" : "\\";
     for (const entry of entries) {
       if (!entry.isDirectory) continue;
+      // 结构上不可能是技能的目录直接跳过并留痕（用户在技能管理里看到过一个叫 "skills" 的
+      // 幽灵技能：它是技能根目录下一个名为 SKILL.md 的目录，被当成技能名兜底成了父目录名）。
+      // 这类目录只会让人"删一个根本不该存在的技能"，明确报出来比静默注册更有用。
+      if (entry.name.toLowerCase() === "skill.md") {
+        console.warn(
+          `[SkillInstaller] 跳过结构异常的目录 "${entry.path}"：名为 SKILL.md 的目录不是技能目录，` +
+            `请把技能放在 skills\\<技能名>\\SKILL.md 下`,
+        );
+        continue;
+      }
       try {
-        const sep = skillsDir.includes("/") && !skillsDir.includes("\\") ? "/" : "\\";
         const skillMdPath = `${entry.path}${sep}SKILL.md`;
         const content = await readFile(skillMdPath);
         const skill = parseSkillMarkdown(content, entry.path);

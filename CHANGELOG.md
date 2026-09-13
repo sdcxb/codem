@@ -2,6 +2,65 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.16.23] - 2026-09-13 — 「删除技能卡死」真正根因：确认弹窗被压在模态窗口后面（看不见、点不到），而 Radix 已锁死 body
+
+### 用户提供的落盘轨迹给出了决定性证据
+
+```
++15065ms delete button clicked {"name":"skills","source":"user","path":"…\\.codem\\skills\\SKILL.md"}
++15091ms confirm dialog opened {"targetName":"skills"}
++15744ms heartbeat {"label":"skill-manager","driftMs":-7}     ← 之后 30 秒只有心跳，drift ±10ms
++41750ms heartbeat {"label":"skill-manager","driftMs":3}
+```
+
+两条结论直接落地：
+
+1. **窗口没有卡死，主线程完全正常** —— 心跳每 2 秒一行、漂移只有 ±10 毫秒。所谓"整个窗口点不动"
+   不是渲染/主线程冻结，而是**交互被挡住了**。
+2. **`confirm action fired` 一次都没有** —— 用户点不到那个"删除"按钮：它根本没被点到，
+   所以 `[SkillInstaller]` 一行都没有。
+
+### 根因（层叠顺序）
+
+| 元素 | 取值 |
+| --- | --- |
+| `.modal-overlay`（技能管理器本身是模态） | `z-index: var(--z-modal)` = **1300** |
+| `.alert-dialog-content`（"确认删除"弹窗） | `z-index: var(--z-dropdown)` = **1000** |
+
+确认弹窗通过 Portal 渲染在 `document.body` 下，与模态**不在同一个层叠上下文**里比较 ——
+只要模态落在一个"自带层叠上下文"的祖先里（皮肤、插件、祖先样式都可能造成），
+1300 的模态就会把 1000 的确认框整个压在下面：**看不见、点不到**。
+而 Radix 打开模态时已给 `body` 加了 `pointer-events: none`，此时点哪里都没反应 ——
+用户看到的就是"整个窗口卡死"，而主线程、日志、性能全都正常。这类事故**没有任何控制台线索**，
+这正是它查了三轮的原因。
+
+### 修复（两层，都不再依赖层叠运气）
+
+1. **层叠令牌：新增 `--z-dialog-overlay: 1400` / `--z-dialog: 1410`**（严格高于 `--z-modal: 1300`），
+   并让 `.alert-dialog-content`、`.dialog-content`、`.dialog-overlay` 使用它们 ——
+   对话框高于模态从此是**明文约束**，不再是"恰好没被压住"。
+2. **删除确认不再用嵌套模态弹窗**：改成**详情面板内联确认**（「确定要删除「X」吗？」+
+   「确认删除 / 取消」）。根因是"模态里再套一个模态"，那就让它不再套模态 ——
+   确认按钮永远渲染在用户刚点过的按钮下方，不可能被谁压住。
+   新增 `.skill-delete-confirm` / `.skill-delete-confirm-actions` 样式；CSS 契约快照同步更新
+   （2743 → 2745 个类，含三处 z-index 取值变化，diff 可见）。
+
+### 顺带修掉用户日志里的另一个问题：幽灵技能 "skills"
+
+轨迹里的删除目标名叫 `skills`、`filePath` 指向 `<技能根目录>\SKILL.md` ——
+即技能根目录下存在一个**名为 `SKILL.md` 的目录**，其内部 SKILL.md 没有 `name` 字段，
+于是被兜底成"父目录名"注册成了一个技能。现在加载时会**跳过结构异常的目录并给出明确警告**
+（正确结构是 `skills\<技能名>\SKILL.md`），不再把它变成"删一个根本不该存在的技能"。
+
+### 验证
+
+- 新增 `src/test/dialog-layer-contract.test.ts` LAYER-1~4：对话框令牌严格高于模态令牌、
+  三处规则确实使用它们、技能管理不再使用嵌套模态删除确认（**这正是本轮事故的机器约束**）
+- `skill-uninstall-safety.test.ts` UNINST-9：幽灵技能目录不再注册
+- 真实界面验证改用**真实鼠标事件**（CDP `Input.dispatchMouseEvent`）而不是 `element.click()` ——
+  上一轮我用 JS 点击"验证通过"属于**假绿**：JS 点击绕过命中测试，恰好绕过了这次的 bug
+- 全量用例、tsc、UI 审计、css-contract 见 PROJECT-GUIDE 版本表
+
 ## [1.16.22] - 2026-09-13 — 「删除技能卡死」第二轮：把不可复现的冻结变成可取证（落盘轨迹 + 心跳 + 渲染风暴检测）
 
 ### 这一轮先说清楚查到了什么
