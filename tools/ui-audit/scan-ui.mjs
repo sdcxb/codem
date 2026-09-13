@@ -131,6 +131,7 @@ const RULES = {
   "inline-outline-none": { level: "error", desc: "TSX 内联 outline:none —— 内联优先级会吃掉所有全局焦点环" },
   "motion-uncovered": { level: "error", desc: "循环动画没有在 prefers-reduced-motion 下显式关停（全局兜底对它无效）" },
   "encoding-replacement-char": { level: "error", desc: "源码里出现 U+FFFD 替换字符（编码损坏，原文已不可逆）" },
+  "css-var-unused": { level: "warn", desc: "定义了但全项目无人引用的 CSS 令牌（死令牌；公开刻度见豁免清单）" },
 };
 
 // ========== 扫描器 ==========
@@ -1108,6 +1109,77 @@ function scanEncodingDamage(rel, src) {
   }
 }
 
+/**
+ * 未被引用的 CSS 令牌（第 61 波新增规则 `css-var-unused`）。
+ *
+ * 为什么需要：第 61 波排查「死字段」时发现 7 个**定义了但全项目无人引用**的令牌
+ * （`--elevation-2` 定义了 3 档、`--composer-focus-border/send-bg/drag-overlay/tool-btn-bg`、
+ * `--window-close-fg`、`--ppt-paper-bg`）—— 它们不报错、不影响渲染，只是让读代码的人
+ * 误以为「改这个令牌能生效」。这类死令牌只能靠「定义 vs 引用」对账发现。
+ *
+ * 判定：收集全部 CSS 里的 `--x:` 定义 + 全部 CSS/TS/TSX 里的引用（`var(--x)` 以及任何
+ * `--x` 出现 —— 后者覆盖 JS 侧 `setProperty` / `getPropertyValue` / 内联样式对象），
+ * 定义了但零引用即报（**警告级**：设计系统允许先发布刻度、后消费）。
+ * 下面豁免清单里的都是**公开刻度**：已写进设计文档、供皮肤与后续组件使用。
+ */
+const UNUSED_VAR_ALLOWLIST = new Map([
+  ["--font-display", "§2.1c 公开的字体档位（与 --font-ui 同栈，供展示型标题使用）"],
+  ["--weight-heavy", "§2.1b 字重刻度最高档（预留）"],
+  ["--fs-display", "§2.1 字号刻度最大档（展示型数字/空态标题预留）"],
+  ["--fs-icon-sm", "图标字号刻度（icon 家族预留档）"],
+  ["--fs-icon", "图标字号刻度（icon 家族基准档）"],
+  ["--fs-icon-lg", "图标字号刻度（icon 家族预留档）"],
+  ["--z-present-ui", "§2.6 层级梯子里「演示模式浮层」一档（预留）"],
+  ["--focus-ring", "§2.7 焦点环令牌总称（组件用 --focus-ring-width/color）"],
+  ["--control-form", "§2.4 控件高度档位（表单档，当前用 --control-std）"],
+  ["--duration-tooltip", "§2.5 动效时长刻度（浮层档预留）"],
+  ["--ease-drawer", "§2.5 缓动曲线（抽屉档，当前抽屉用 --ease-out）"],
+  ["--ease-standard", "§2.5 缓动曲线（Material 标准档）"],
+  ["--transition-modal", "§2.5 过渡预设（弹窗档预留）"],
+  ["--transition-all", "§2.5 兼容别名（文档已注明优先用具体预设）"],
+  ["--space-15", "§2.4 间距刻度大留白档（页面级留白预留）"],
+  ["--icon-lg", "§2.3 图标八级刻度里的一档（预留）"],
+  // 第 61 波登记：这些由 ThemeManager **动态注入**（root.style.setProperty），但当前
+  // 内置皮肤与宿主 CSS **都没有消费**（连 var() 引用都没有）—— 属于「皮肤契约的历史遗留」。
+  // 删它们会动到皮肤重绘语义（且 ui-batch-a-d.test.ts 还断言着 --user-bg 的定义值），
+  // 因此本次只登记、不动手，留给"皮肤重绘"这一项单独评估（见 docs §7 死字段清单）。
+  ["--surface-3", "ThemeManager 注入，宿主 CSS 未消费（待与皮肤重绘一起评估）"],
+  ["--message-bubble-assistant", "同上（消息气泡毛玻璃变量，宿主已改用 --glass-*）"],
+  ["--message-bubble-user", "同上"],
+  ["--message-bubble-system", "同上"],
+  ["--composer-bg", "同上（composer 背景已改用 --glass-bg）"],
+  ["--composer-border", "同上"],
+  ["--titlebar-bg", "同上（标题栏背景已改用 --bg-*）"],
+  ["--assistant-bg", "同上（助手气泡背景已改用 --bg-*）"],
+  ["--user-bg", "同上（用户气泡背景已改用 --accent-muted；注意 ui-batch-a-d.test.ts 仍断言其定义值）"],
+  ["--dream-card-opacity", "梦幻皮肤注入的卡片透明度，宿主 CSS 未消费（待评估）"],
+]);
+
+function scanVarUnused() {
+  const defs = new Map();
+  const refs = new Set();
+  for (const { rel, src } of cssSources) {
+    const clean = src.replace(/\/\*[\s\S]*?\*\//g, (c) => c.replace(/[^\n]/g, " "));
+    clean.split("\n").forEach((line, i) => {
+      const d = /(^|[\s;{])(--[a-zA-Z][\w-]*)\s*:/.exec(line);
+      if (d) {
+        if (!defs.has(d[2])) defs.set(d[2], []);
+        defs.get(d[2]).push(`${rel}:${i + 1}`);
+      }
+      for (const m of line.matchAll(/var\(\s*(--[a-zA-Z][\w-]*)/g)) refs.add(m[1]);
+    });
+  }
+  for (const src of codeSources) {
+    const clean = src.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/\/\/[^\n]*/g, " ");
+    for (const m of clean.matchAll(/(--[a-zA-Z][\w-]*)/g)) refs.add(m[1]);
+  }
+  for (const [name, where] of defs) {
+    if (refs.has(name) || UNUSED_VAR_ALLOWLIST.has(name)) continue;
+    const [file, line] = where[0].split(":");
+    add("css-var-unused", file, Number(line), name, `定义了 ${where.length} 处但全项目无人引用（var() 与代码里都没有）`);
+  }
+}
+
 for (const full of files) {
   const rel = relative(ROOT, full).replace(/\\/g, "/");
   if (shouldSkip(rel)) continue;
@@ -1151,6 +1223,8 @@ scanMotionCoverage(cssSources);
 scanUnusedClasses(cssSources);
 // 跨文件规则：基础样式表之间的重复定义（第 51 波）
 scanCrossFileDuplicates(cssSources);
+// 跨文件规则：定义了但无人引用的 CSS 令牌（第 61 波）
+scanVarUnused();
 
 const onlyRule = value("--rule");
 const onlyFile = value("--file");

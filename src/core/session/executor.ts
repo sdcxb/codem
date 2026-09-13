@@ -112,10 +112,33 @@ export async function executeSessionTurn(params: ExecuteSessionTurnParams): Prom
   // 用于"无任何文本产出即异常终止"时落库并返回失败（否则微信/手机端静默无回复）。
   let endReason: string | undefined;
 
+  // 第 62 波：后台/委派会话的**墙钟上限**。
+  // 事故里子会话原地打转（反复枚举同一目录）十几分钟，父会话还在无限期等它。
+  // 循环内的「无进展」阀门看不见这种打转（每次都成功返回内容），所以这里加一道时间闸：
+  // 到点强制中止，并把已有产出按「部分完成」回传，父会话至少能拿到东西、知道发生了什么。
+  let timedOut = false;
+  let lastToolLabel = "";
+  const maxTurnMs = getDelegationOrchestrator().getConfig?.().maxTurnMs ?? 15 * 60 * 1000;
+  const turnTimer = setTimeout(() => {
+    timedOut = true;
+    console.warn(`[Executor] 会话 ${sessionId} 达到后台执行上限 ${Math.round(maxTurnMs / 1000)}s，强制中止（可能是原地打转）`);
+    abort.abort();
+  }, maxTurnMs);
+
   // 标记委派任务为 running
   if (delegationTaskId) {
     orchestrator.startTask(delegationTaskId);
   }
+
+  /** 第 62 波：把进度上报给编排器（等待超时的父会话据此看到子会话在干什么） */
+  const reportProgress = () => {
+    if (!delegationTaskId) return;
+    orchestrator.updateProgress(delegationTaskId, {
+      toolCalls: toolCallCount,
+      lastText: assistantContent.slice(-400),
+      lastTool: lastToolLabel || undefined,
+    });
+  };
 
   try {
     // 保存用户消息到 DB（委派任务作为 user message 注入目标会话）
@@ -189,6 +212,12 @@ export async function executeSessionTurn(params: ExecuteSessionTurnParams): Prom
 
         case "tool_start": {
           const tc = "toolCall" in event ? event.toolCall : null;
+          if (tc) {
+            // 第 62 波：记下"最近一次工具"，等待超时的父会话据此判断子会话是否在原地打转
+            const raw = (tc.input as any)?.command ?? (tc.input as any)?.path ?? "";
+            lastToolLabel = `${tc.name}${raw ? `: ${String(raw).replace(/\s+/g, " ").slice(0, 80)}` : ""}`;
+            reportProgress();
+          }
           if (tc && currentAssistantMsgId) {
             MessageStorage.addToolCall(currentAssistantMsgId, {
               id: tc.id,
@@ -202,6 +231,7 @@ export async function executeSessionTurn(params: ExecuteSessionTurnParams): Prom
 
         case "tool_complete": {
           toolCallCount++;
+          reportProgress();
           const tc = "toolCall" in event ? event.toolCall : null;
           if (tc && currentAssistantMsgId) {
             let resultStr: string;
@@ -295,6 +325,28 @@ export async function executeSessionTurn(params: ExecuteSessionTurnParams): Prom
     // 过滤 system-reminder 标签
     const cleanOutput = assistantContent.replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, "").trim();
 
+    // 第 62 波：墙钟到点被强制中止 —— 明确标记为"部分完成"，并把已有产出交回去，
+    // 而不是让父会话以为任务正常结束（原实现会把打转十几分钟的结果当成功回传）。
+    if (timedOut) {
+      const zht = getLang() === "zh";
+      const note = zht
+        ? `[后台执行达到上限 ${Math.round(maxTurnMs / 1000)}s，已中止] 已完成 ${toolCallCount} 次工具调用，最近一次工具：${lastToolLabel || "(无)"}。` +
+          `常见原因是**反复执行同一类操作**（例如反复枚举同一目录）。请检查子会话是否需要更明确的完成判据。`
+        : `[Background turn hit the ${Math.round(maxTurnMs / 1000)}s ceiling and was aborted] ${toolCallCount} tool calls done, last tool: ${lastToolLabel || "(none)"}. ` +
+          `A common cause is repeating the same action (e.g. enumerating the same directory). Give the child a sharper definition of done.`;
+      MessageStorage.createMessage({
+        id: `err-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        role: "system",
+        content: note,
+        timestamp: Date.now(),
+        status: "error",
+      }, sessionId);
+      if (delegationTaskId) {
+        orchestrator.failTask(delegationTaskId, `${note}\n\n${zht ? "已产出的内容" : "Partial output"}:\n${cleanOutput || "(none)"}`);
+      }
+      return { output: cleanOutput, toolCallCount, success: false, error: note };
+    }
+
     // P6：end 事件带异常 reason 且无任何文本产出 → 落库 system error 并返回失败
     //（对照 App runAgenticLoop 的 loop-error-* 行为；否则微信/手机端静默无回复）。
     // 判据：只要 endReason 存在且非正常 "completed" 即视为异常——覆盖全部 reason
@@ -356,14 +408,17 @@ export async function executeSessionTurn(params: ExecuteSessionTurnParams): Prom
       error: err.message || String(err),
     };
   } finally {
+    // 第 62 波：墙钟计时器必须清理，否则它会一直挂着（并且可能在任务结束后触发 abort）
+    clearTimeout(turnTimer);
+
     // 清理活跃执行追踪
     activeExecutions.delete(sessionId);
 
     // 标记会话为非活跃
     useAppStore.getState().setSessionActive(sessionId, false);
 
-    // 如果是委派任务被 abort，标记为 cancelled
-    if (abort.signal.aborted && delegationTaskId) {
+    // 如果是委派任务被 abort，标记为 cancelled（但"墙钟到点"已经按失败落库，别覆盖成 cancelled）
+    if (abort.signal.aborted && delegationTaskId && !timedOut) {
       orchestrator.cancelTask(delegationTaskId);
     }
   }

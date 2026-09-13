@@ -121,7 +121,36 @@ export function createWaitForDelegationTool(): ToolDef {
 
       try {
         // 轮询等待完成（复用 orchestrator.waitForCompletion）
+        // 第 62 波：等待有预算，到点带进度返回 —— 不再是无限期阻塞
         const completed = await orchestrator.waitForCompletion(taskId, ctx.abort);
+        const zh = getLang() === "zh";
+
+        // 仍在运行：给父会话「已跑多久 + 调了多少次工具 + 最新输出」，并给出可选动作。
+        // 事故里父会话在这里黑等十几分钟，既不知道子会话在干什么，也无法脱身。
+        if (completed.status === "running" || completed.status === "pending") {
+          const elapsedSec = Math.round((Date.now() - (completed.startedAt ?? completed.createdAt)) / 1000);
+          const p = completed.progress;
+          const lines = [
+            zh
+              ? `状态: 仍在运行（已 ${elapsedSec} 秒）—— 本轮等待到点返回，任务没有失败。`
+              : `Status: still running (${elapsedSec}s elapsed) — this wait returned on budget, the task is NOT failed.`,
+            zh ? `目标会话: ${completed.targetSessionId}` : `Target session: ${completed.targetSessionId}`,
+            p ? (zh ? `已完成工具调用: ${p.toolCalls} 次` : `Tool calls so far: ${p.toolCalls}`) : "",
+            p?.lastTool ? (zh ? `最近一次工具: ${p.lastTool}` : `Last tool: ${p.lastTool}`) : "",
+            p?.lastText ? (zh ? `子会话最新输出:\n${p.lastText}` : `Latest child output:\n${p.lastText}`) : "",
+            "",
+            zh
+              ? `你可以：① 继续等待（再调一次 wait_for_delegation("${taskId}")）；② 用 query_session_result 看它写到哪了；③ 先做别的事，稍后再收结果。`
+              : `You can: (1) wait again via wait_for_delegation("${taskId}"); (2) use query_session_result to peek; (3) do something else and collect later.`,
+            zh
+              ? `如果子会话的「最近一次工具」看起来在**反复做同一件事**，不要继续干等 —— 直接告诉用户它卡住了。`
+              : `If the child's last tool looks like it is repeating the same action, do NOT keep waiting — report to the user that it is stuck.`,
+          ].filter(Boolean);
+          return {
+            title: `wait_for_delegation: ${taskId.substring(0, 16)}... (running)`,
+            output: lines.join("\n"),
+          };
+        }
 
         const statusL = zh ? "状态" : "Status";
         const resultL = zh ? "结果" : "Result";

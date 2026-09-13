@@ -17,6 +17,7 @@ import { getPermissionManager, type PermissionRequest, type PermissionResult } f
 import { getVisionProxy } from "./vision-proxy";
 import { getSnapshotService } from "../snapshot/snapshot";
 import { debugLog, warnOnce } from "../debug";
+import { RepeatGuard } from "./loop-guard";
 import * as MessageStorage from "../storage/message";
 // deriveMessagesFromEvents removed — DB CRUD is the single source of truth for LLM messages
 import { getEventLog } from "../storage/event-log";
@@ -327,6 +328,16 @@ export class AgenticLoop {
   // Cross-session delegation tracking (same pattern as subagent tracking)
   private delegatedTasks: Set<string> = new Set(); // delegation task IDs (not yet waited on)
   private waitedDelegations: Map<string, string> = new Map(); // delegation taskId → cached result
+  /**
+   * 第 62 波：重复工具调用守卫。
+   *
+   * 事故：交接后的新会话连续几十次枚举同一个目录（只换装饰性开关），一路走到父会话等待超时。
+   * 既有的两道阀门都拦不住 —— 每次都"成功返回结果"所以算有进展，同轮次去重又不覆盖 bash。
+   * 守卫按「精确指纹 + 只读枚举意图指纹」识别原地打转：提醒 → 抑制 → 停。
+   */
+  private repeatGuard: RepeatGuard = new RepeatGuard();
+  /** 守卫判定「该停了」时的提示语 —— 在迭代末尾像 writeRejected 一样终止循环 */
+  private guardStopMessage: string | null = null;
   // Guidance queue — allows mid-turn message injection.
   // Messages are consumed at iteration boundaries (before each LLM call),
   // never during tool execution or subagent waiting.
@@ -536,6 +547,10 @@ private getFileChangeTrackerService(): FileChangeTracker | null {
       totalTimeout: 5 * 60 * 1000,
     });
     this.state = this.createInitialState();
+    // 第 62 波：每轮用户请求重置重复调用守卫 —— 新的指令意味着新的意图，
+    // 上一轮"已经枚举过这个目录"不该限制这一轮（阈值都在一轮内达到才是异常）。
+    this.repeatGuard.reset();
+    this.guardStopMessage = null;
   }
 
   private createInitialState(): LoopState {
@@ -1379,6 +1394,32 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
       } else {
         this.state.consecutiveNoProgress++;
       }
+      // 第 62 波：重复调用守卫判定「原地打转」→ 立刻收手（而不是让模型自己醒悟）
+      // 与 writeRejected 同一形态：状态标记 + 终止循环 + 给用户看得懂的一句话。
+      if (this.guardStopMessage) {
+        const stats = this.repeatGuard.stats;
+        console.warn(
+          `[AgenticLoop] Repeat guard stopped the loop — repeats: exact=${stats.exactRepeats}, enumerate=${stats.enumRepeats}, suppressed=${stats.suppressed}`,
+        );
+        yield { type: "text_delta", text: `\n\n⚠️ **检测到原地打转，已停止**（同一目标被反复只读枚举 10 次以上）：${this.guardStopMessage}` };
+        try {
+          getEventLog().append(sessionId, "loop_stopped", {
+            reason: "repeat_guard",
+            stats,
+          });
+        } catch (e) { warnOnce("repeat-guard:eventlog", "[agentic-loop] 记录 repeat_guard 事件失败", e); }
+        const result: LoopResult = {
+          type: "stop",
+          reason: "repeat_guard",
+          usage: this.state.totalUsage,
+        };
+        if (this.config.memoryEnabled && this.config.onTurnComplete) {
+          try { this.config.onTurnComplete(this.state.totalUsage); } catch (e) { console.warn('[agentic-loop.ts]', e) }
+        }
+        yield { type: "end", result };
+        return result;
+      }
+
       // S4: If a write was rejected by the user, stop the loop immediately
       // This prevents the LLM from retrying the write in subsequent iterations
       if (this.state.writeRejected) {
@@ -1893,7 +1934,16 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
       }
     }
 
-    console.log(`[AgenticLoop] Single-response dedup: ${currentToolCalls.length} tool calls in this response: [${currentToolCalls.map(tc => `${tc.name}(${JSON.stringify(tc.input?.task_id || tc.input?.path || "")})`).join(", ")}]`);
+    // 第 62 波：这行日志原先只打印 task_id / path，于是 bash 一律显示成 `bash("")` ——
+    // 用户贴日志排查"原地打转"时，恰恰是最需要看到命令的那一刻看不见命令。
+    // 现在把 command 也带出来（截断），并把重复调用的次数一起打出来。
+    const describeCall = (tc: StreamingToolCall) => {
+      const input: any = tc.input ?? {};
+      const arg = input.task_id ?? input.path ?? input.command ?? input.query ?? "";
+      const text = typeof arg === "string" ? arg.replace(/\s+/g, " ").slice(0, 120) : JSON.stringify(arg ?? "");
+      return `${tc.name}(${JSON.stringify(text)})`;
+    };
+    console.log(`[AgenticLoop] Single-response dedup: ${currentToolCalls.length} tool calls in this response: [${currentToolCalls.map(describeCall).join(", ")}]`);
     for (const tc of currentToolCalls) {
       const isRead = tc.name === "read" || tc.name === "read_file";
       const filePath = tc.input?.path || tc.input?.file_path;
@@ -2078,6 +2128,26 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
         // Do NOT duplicate them here — the pipeline calls this function as the
         // execute-layer handler after guards have already passed.
 
+        // ===== 第 62 波：重复调用守卫 =====
+        // 放在快照/权限之前：被拦下的调用不应该产生任何副作用（快照、权限询问都不该发生）。
+        // 事故背景见 loop-guard.ts 顶部 —— 交接后的会话原地枚举几十次，跑到父会话等待超时。
+        const guardDecision = this.repeatGuard.inspect(name, args as Record<string, unknown>, { cwd: ctx.cwd });
+        if (guardDecision.action === "suppress" || guardDecision.action === "stop") {
+          console.warn(
+            `[AgenticLoop] Repeat guard ${guardDecision.action}: ${name} (${guardDecision.kind}, x${guardDecision.count}) — ${guardDecision.signature ?? ""}`,
+          );
+          if (guardDecision.action === "stop" && !this.guardStopMessage) {
+            this.guardStopMessage = guardDecision.message ?? "检测到重复操作，已停止。";
+          }
+          return {
+            id: "",
+            name,
+            input: args,
+            output: guardDecision.message ?? "Skipped: repeated identical tool call.",
+            status: "error" as const,
+          };
+        }
+
         // Auto-snapshot before destructive tools
         if (["write", "edit", "bash"].includes(name) && ctx.cwd) {
           await this.ensureSnapshot(ctx.cwd, ctx.sessionId);
@@ -2171,6 +2241,11 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
         const effectiveArgs = args;
 
         const result = await tool.execute(effectiveArgs, ctx);
+
+        // 第 62 波：守卫的「提醒」档 —— 边执行边把提示贴到结果末尾（不打断，只纠正方向）
+        if (guardDecision.action === "warn" && guardDecision.message) {
+          result.output = `${result.output ?? ""}\n\n${guardDecision.message}`;
+        }
 
         console.log(`[AgenticLoop] Tool executed: ${name}, path: ${effectiveArgs.path || effectiveArgs.command || "(none)"}, output length: ${result.output?.length || 0}`);
 

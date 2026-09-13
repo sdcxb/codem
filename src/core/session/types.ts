@@ -55,6 +55,24 @@ export interface DelegationTask {
   squadId?: string;
   /** Member ID if this delegation targets a specific squad member */
   memberId?: string;
+  /**
+   * 第 62 波：子会话执行进度。
+   *
+   * 事故背景：父会话 `wait_for_delegation` 会**无限期阻塞**，而子会话在原地打转（反复枚举同一目录），
+   * 于是父会话十几分钟里既没有产出、也不知道子会话在干什么。现在子会话定期上报进度，
+   * 等待超时后父会话能拿到「已跑多久 / 调了多少次工具 / 最新输出」并自行决定继续等还是先干别的。
+   */
+  progress?: DelegationProgress;
+}
+
+export interface DelegationProgress {
+  /** 已完成的工具调用次数 */
+  toolCalls: number;
+  /** 子会话最新的文本片段（截断，用于判断它在干什么） */
+  lastText: string;
+  updatedAt: number;
+  /** 最近一次工具调用描述（第 62 波加：一眼看出是不是在重复同一件事） */
+  lastTool?: string;
 }
 
 // ========== 编排器配置 ==========
@@ -66,12 +84,27 @@ export interface DelegationConfig {
   maxConcurrent: number;
   /** 委派任务超时（ms），0 = 不超时 */
   defaultTimeout: number;
+  /**
+   * 第 62 波：`wait_for_delegation` 单次等待的预算（ms）。
+   *
+   * 语义是「**这一等最多等多久**」，不是「任务多久必须完成」：到点后等待会带着
+   * 当前进度返回，父会话可以选择继续等（再调一次）或先做别的事。
+   * 之所以必须加：不加就等于父会话把控制权无限期交出去，子会话打转时用户看到的是"卡住"。
+   */
+  waitTimeoutMs: number;
+  /**
+   * 第 62 波：后台/委派会话单轮执行的**墙钟上限**（ms）。
+   * 到点强制中止并回传部分产出 —— 兜住"子会话原地打转把父会话拖死"这一类。
+   */
+  maxTurnMs: number;
 }
 
 export const DEFAULT_DELEGATION_CONFIG: DelegationConfig = {
   maxDepth: 2,
   maxConcurrent: 5,
-  defaultTimeout: 0, // 不超时，依赖 abort 信号取消
+  defaultTimeout: 0, // 任务本身不设超时，依赖 abort 信号取消
+  waitTimeoutMs: 3 * 60 * 1000, // 单次等待 3 分钟（到点带进度返回，可再次等待）
+  maxTurnMs: 15 * 60 * 1000, // 后台单轮 15 分钟墙钟上限（正常任务远低于此）
 };
 
 // ========== DB 行类型 ==========

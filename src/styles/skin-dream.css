@@ -737,8 +737,6 @@ backdrop-filter: none !important;
 
   --composer-bg: var(--dream-bg-panel, rgba(255, 255, 255, 0.72));
   --composer-border: var(--dream-border-color, rgba(232, 140, 154, 0.20));
-  --composer-focus-border: var(--dream-accent, rgba(232, 140, 154, 0.50));
-  --composer-send-bg: var(--dream-accent, #e88c9a);
   --composer-send-hover: var(--dream-accent, #d97a88);
 
   --titlebar-bg: transparent;
@@ -823,7 +821,6 @@ backdrop-filter: none !important;
   --radius-full: 9999px;
   --border-primary: var(--dream-border-color, rgba(232, 140, 154, 0.20));
   --elevation-1: 0 1px 3px rgba(0, 0, 0, 0.06), 0 0 0 1px rgba(232, 140, 154, 0.06);
-  --elevation-2: 0 4px 12px rgba(0, 0, 0, 0.08), 0 0 0 1px rgba(232, 140, 154, 0.08);
   --accent-soft: rgba(232, 140, 154, 0.12);
   --success-hover: #22c55e;
   --input-bg: var(--dream-bg-card, rgba(255, 255, 255, 0.80));
@@ -833,7 +830,6 @@ backdrop-filter: none !important;
 [data-skin="dream"][data-theme="dark"] {
   --border-primary: var(--dream-border-color, rgba(232, 140, 154, 0.18));
   --elevation-1: 0 1px 3px rgba(0, 0, 0, 0.20), 0 0 0 1px rgba(232, 140, 154, 0.06);
-  --elevation-2: 0 4px 12px rgba(0, 0, 0, 0.30), 0 0 0 1px rgba(232, 140, 154, 0.08);
   --accent-soft: rgba(232, 140, 154, 0.10);
   --input-bg: var(--dream-bg-card, rgba(30, 30, 46, 0.80));
 }

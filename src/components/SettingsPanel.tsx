@@ -101,11 +101,8 @@ interface ProviderKey {
 
 interface Settings {
   mode: "cli" | "api";
-  mimoPath: string;
   model: string;
-  theme: "dark" | "light";
   fontSize: number;
-  autoApprove: boolean;
   language: Language;
   providers: ProviderKey[];
 }
@@ -119,15 +116,23 @@ const defaultProviders: ProviderKey[] = [
   { id: "gemini", name: "Google Gemini", apiKey: "", baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai" },
 ];
 
+/**
+ * 设置对象的默认值。
+ *
+ * 第 61 波（死字段排查）：删掉三个**从来没被读过**的字段 ——
+ *   · `theme`：明暗主题的真相源是 `codem-theme`（`theme-default.ts`），这里还留着一个
+ *     `theme: "dark"` 的旧默认值，与 `DEFAULT_THEME = "light"` 矛盾，是"两个来源不同默认值"的隐患；
+ *   · `mimoPath`：全项目只有"类型声明 + 这里的默认值 + 一个测试夹具"三处出现，没有任何读取；
+ *   · `autoApprove`：设置对象里没人读（真正生效的是 `App.tsx` 里**按会话**维护的
+ *     `writeConfirmStats.autoApprove`，与本字段无关）。
+ * 字段写得再整齐，只要没人读就是死代码 —— 而且会误导后续维护者以为"改这里能生效"。
+ */
 const defaultSettings: Settings = {
   mode: "api",
-  mimoPath: "",
   model: "mimo-v2.5-pro",
-  theme: "dark",
   // 第 56 波：默认字号必须等于 `--fs-*` 的缩放基准（13px）。
   // 此前这里是 14、而启动不应用字号 → 打开设置瞬间把全站放大 14/13 ≈ 7.7%，且关掉设置也不回退。
   fontSize: FONT_BASE_PX,
-  autoApprove: false,
   language: "zh",
   providers: defaultProviders,
 };
@@ -2775,8 +2780,10 @@ function CodeGraphSettingsSection({ lang }: { lang: ReturnType<typeof useLang> }
   // 索引检测（当前项目 .codegraph/ 是否存在）
   const checkIndex = useCallback(async () => {
     try {
-      const { getSetting } = require("../core/storage/settings");
-      const p = getSetting("codem-current-project-path") || "";
+      // 第 61 波（死字段排查）：原来是 getSetting("codem-current-project-path") ——
+      // 这个键**全项目没有任何写入方**，所以永远是空串，codegraph 的"索引检测"从来没生效过。
+      // 当前项目路径的正确来源是 project store（同一份数据，且一定是最新的）。
+      const p = useProjectStore.getState().currentProject?.path || "";
       setProjectPath(p);
       if (p) {
         const { invoke } = (window as any).__TAURI__.core;

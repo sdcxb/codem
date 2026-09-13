@@ -522,3 +522,90 @@ describe("跨会话委派 — executeSessionTurn", () => {
     expect(src).toContain("activeExecutions.delete");
   });
 });
+
+/**
+ * 第 62 波：交接/委派"黑等"修复。
+ *
+ * 事故：父会话 `wait_for_delegation` 无限期阻塞，子会话在原地反复枚举同一目录十几分钟，
+ * 用户既看不到进度、也无法脱身。下面锁住三件事：等待有预算、进度可见、后台执行有墙钟上限。
+ */
+describe("跨会话委派 — 等待预算与进度（第 62 波）", () => {
+  beforeEach(async () => {
+    try { await resetDatabase(); } catch { await initDatabase(); }
+    localStorage.clear();
+    setupProject();
+    resetSessionMessageBus();
+  });
+
+  async function makeTask(orch: DelegationOrchestrator) {
+    const task = await orch.delegate({
+      sourceSessionId: "sess-a",
+      targetSessionId: "sess-b",
+      task: "交接任务",
+      projectId: PROJECT_ID,
+      autoStart: false,
+    });
+    orch.startTask(task.id);
+    return task;
+  }
+
+  it("DELE-030: 等待到预算就用「仍在运行」返回，而不是无限期阻塞", async () => {
+    const orch = new DelegationOrchestrator({ waitTimeoutMs: 1200 });
+    const task = await makeTask(orch);
+
+    const t0 = Date.now();
+    const result = await orch.waitForCompletion(task.id, undefined, { timeoutMs: 1200 });
+    const elapsed = Date.now() - t0;
+
+    expect(result.status).toBe("running"); // 任务没失败，只是"这一等"到点了
+    expect(elapsed).toBeLessThan(4000); // 真的会返回（旧实现会永远卡在这里）
+  });
+
+  it("DELE-031: 任务完成时等待立即返回结果（不因为预算而漏掉结果）", async () => {
+    const orch = new DelegationOrchestrator({ waitTimeoutMs: 30_000 });
+    const task = await makeTask(orch);
+    setTimeout(() => orch.completeTask(task.id, "子会话产出"), 300);
+    const result = await orch.waitForCompletion(task.id, undefined, { timeoutMs: 30_000 });
+    expect(result.status).toBe("completed");
+    expect(result.result).toBe("子会话产出");
+  });
+
+  it("DELE-032: 子会话进度可上报 —— 等待超时后父会话能看到「调了多少次工具 / 最近在干什么」", async () => {
+    const orch = new DelegationOrchestrator({ waitTimeoutMs: 1000 });
+    const task = await makeTask(orch);
+    orch.updateProgress(task.id, { toolCalls: 17, lastText: "我在找 3000 字版", lastTool: "bash: Get-ChildItem ..." });
+
+    const result = await orch.waitForCompletion(task.id, undefined, { timeoutMs: 1000 });
+    expect(result.progress?.toolCalls).toBe(17);
+    expect(result.progress?.lastText).toContain("3000 字版");
+    expect(result.progress?.lastTool).toContain("Get-ChildItem");
+    expect(result.progress?.updatedAt).toBeGreaterThan(0);
+  });
+
+  it("DELE-033: wait_for_delegation 的返回文案包含「仍在运行 + 可选动作」，不再是一句阻塞等待", () => {
+    const fs = require("fs");
+    const path = require("path");
+    const src = fs.readFileSync(path.join(__dirname, "../core/session/tools.ts"), "utf-8");
+    expect(src).toContain("仍在运行");
+    expect(src).toContain("query_session_result"); // 给出「先看进展」的出路
+    expect(src).toContain("不要继续干等");
+  });
+
+  it("DELE-034: 后台执行有墙钟上限，到点按「部分完成」回传而不是当成正常结束", () => {
+    const fs = require("fs");
+    const path = require("path");
+    const executor = fs.readFileSync(path.join(__dirname, "../core/session/executor.ts"), "utf-8");
+    expect(executor).toContain("maxTurnMs");
+    expect(executor).toContain("clearTimeout(turnTimer)"); // 计时器必须清理，否则任务结束后还会 abort
+    expect(executor).toContain("timedOut");
+    // 到点时必须把"最近一次工具"一起交出去 —— 这正是判断"原地打转"的证据
+    expect(executor).toContain("lastToolLabel");
+  });
+
+  it("DELE-035: 默认预算是有限值（曾是「不超时」）", () => {
+    const types = require("fs").readFileSync(require("path").join(__dirname, "../core/session/types.ts"), "utf-8");
+    expect(types).toMatch(/waitTimeoutMs:\s*\d/);
+    expect(types).toMatch(/maxTurnMs:\s*\d/);
+    expect(types).not.toMatch(/defaultTimeout:\s*0,?\s*\/\/[^\n]*\n\s*\}\);/);
+  });
+});

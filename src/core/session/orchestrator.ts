@@ -349,12 +349,24 @@ export class DelegationOrchestrator {
   // ========== 等待完成 ==========
 
   /**
-   * 轮询等待任务完成。参考 SubagentManager.waitForCompletion 模式。
-   * 不设超时——委派任务可以运行很长时间（分钟、小时）。
-   * 取消由 abort 信号处理。
+   * 轮询等待任务完成。
+   *
+   * 第 62 波改动：**不再是无限期阻塞**。原实现写着「不设超时——委派任务可以运行很长时间」，
+   * 但真实事故是子会话原地打转，父会话十几分钟里既没产出、也看不到任何进展（用户只能干等）。
+   * 现在超过 `waitTimeoutMs`（默认 3 分钟）就带着**当前进度**返回，父会话可以：
+   *   · 再等一轮（再调一次 wait_for_delegation）；
+   *   · 先用 query_session_result 看子会话产出；
+   *   · 先干别的、稍后回来收结果。
+   * 任务本身仍然不设超时（`defaultTimeout: 0` 语义不变），取消仍由 abort 信号负责。
    */
-  async waitForCompletion(taskId: string, abortSignal?: AbortSignal): Promise<DelegationTask> {
+  async waitForCompletion(
+    taskId: string,
+    abortSignal?: AbortSignal,
+    opts: { timeoutMs?: number } = {},
+  ): Promise<DelegationTask> {
     const checkInterval = 1000;
+    const timeoutMs = opts.timeoutMs ?? this.config.waitTimeoutMs ?? DEFAULT_DELEGATION_CONFIG.waitTimeoutMs;
+    const startedAt = Date.now();
 
     while (true) {
       if (abortSignal?.aborted) {
@@ -378,8 +390,42 @@ export class DelegationOrchestrator {
         throw new Error("Delegation task cancelled");
       }
 
+      // 到点返回「仍在运行」的任务对象（status === "running"），由调用方渲染进度
+      if (timeoutMs > 0 && Date.now() - startedAt >= timeoutMs) {
+        console.warn(
+          `[DelegationOrchestrator] waitForCompletion(${taskId}) 等待 ${Math.round((Date.now() - startedAt) / 1000)}s 未完成，带进度返回`,
+        );
+        return task;
+      }
+
       await new Promise((resolve) => setTimeout(resolve, checkInterval));
     }
+  }
+
+  /** 第 62 波：只读配置（executor 需要 maxTurnMs 作为后台执行墙钟上限） */
+  getConfig(): Readonly<DelegationConfig> {
+    return this.config;
+  }
+
+  /**
+   * 第 62 波：子会话上报执行进度（executor 周期性调用）。
+   * 用于「等待超时后父会话能知道子会话在干什么」—— 尤其是"它在反复做同一件事"。
+   */
+  updateProgress(
+    taskId: string,
+    patch: { toolCalls?: number; lastText?: string; lastTool?: string },
+  ): void {
+    const task = this.tasks.get(taskId);
+    if (!task) return;
+    const prev = task.progress;
+    task.progress = {
+      toolCalls: patch.toolCalls ?? prev?.toolCalls ?? 0,
+      lastText: (patch.lastText ?? prev?.lastText ?? "").slice(-500),
+      lastTool: patch.lastTool ?? prev?.lastTool,
+      updatedAt: Date.now(),
+    };
+    this.tasks.set(taskId, task);
+    this.notifyListeners(task);
   }
 
   // ========== 监听器 ==========

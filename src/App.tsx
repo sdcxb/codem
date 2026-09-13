@@ -1095,6 +1095,15 @@ flushStreamBuffer(); // flush all on unmount
         await migrateFromLocalStorage();
         setBootSplashPhase("loading-config");
         ThemeManager.init();
+        // 第 61 波：恢复「对话显示模式」。
+        // 这个设置此前**只写不读**（设置页把它写进 codem-display-mode，但重启后没人读回来，
+        // 显示模式永远回到 store 的默认值）—— 属于"死字段"里最有存在感的一种：设置项看起来生效、实则不落地。
+        try {
+          const savedDisplayMode = getSetting("codem-display-mode");
+          if (savedDisplayMode === "unified" || savedDisplayMode === "segmented") {
+            useAppStore.getState().setDisplayMode(savedDisplayMode);
+          }
+        } catch { /* 读不到就用默认值 */ }
         useProjectStore.getState().loadFromDB();
         // S0-3: Initialize Capability Seam — register default local providers
         // for filesystem and shell. Tools can now access these capabilities
