@@ -11,7 +11,7 @@
 
 import type { SkinId, DreamSkinConfig, ExtractedPalette } from './types';
 import { DEFAULT_DREAM_CONFIG } from './presets';
-import { DEFAULT_THEME, THEME_SETTING_KEY, applyThemeAttribute, isThemeMode } from './theme-default';
+import { applyThemeAttribute, resolveEffectiveTheme } from './theme-default';
 import { ThemeExtractor } from './theme-extractor';
 import { getSetting, setSetting } from '../storage/settings';
 
@@ -194,9 +194,9 @@ class ThemeManagerClass {
       this.cleanDreamCSS();
       // 恢复用户保存的主题（codem-theme）；没保存过就走默认档位（第 36 波：浅色暖中性）。
       // cleanDreamCSS 会清掉 data-theme，所以这里必须重新写一次。
+      // 第 60 波：走统一解析器「DB → 镜像 → 默认档」，避免 DB 未就绪时把预渲染好的档位覆盖成默认档。
       try {
-        const userTheme = getSetting(THEME_SETTING_KEY);
-        applyThemeAttribute(isThemeMode(userTheme) ? userTheme : DEFAULT_THEME, root);
+        applyThemeAttribute(resolveEffectiveTheme(getSetting), root);
       } catch (e) { console.warn('[theme-manager.ts]', e) }
     } else if (this.currentSkin === 'hub') {
       // Hub 皮肤是暗色皮肤，强制 data-theme=dark 确保所有 dark 模式 CSS 变量生效
@@ -472,10 +472,9 @@ class ThemeManagerClass {
     }
     this.removeVideoBg();
 
-    // 恢复用户选择的主题（没保存过就走默认档位）
+    // 恢复用户选择的主题：统一走「DB → 镜像 → 默认档」解析器（第 60 波）
     try {
-      const userTheme = getSetting(THEME_SETTING_KEY);
-      applyThemeAttribute(isThemeMode(userTheme) ? userTheme : DEFAULT_THEME, root);
+      applyThemeAttribute(resolveEffectiveTheme(getSetting), root);
     } catch (e) { console.warn('[theme-manager.ts]', e) }
   }
 

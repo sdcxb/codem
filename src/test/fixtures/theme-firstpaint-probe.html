@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>首屏主题探针</title>
+<!--
+  首帧主题契约探针（第 60 波）：测「启动加载期间看到的底色」是不是跟随主题。
+  用源码 CSS（与应用相同的加载顺序），并按 ?cache=dark|light|none 预置 localStorage 镜像，
+  再**逐字执行 index.html 里的那段内联脚本**，然后读 html/body/启动页的实际底色。
+-->
+<link rel="stylesheet" href="../../styles.css" />
+<link rel="stylesheet" href="../../styles/skin-hub.css" />
+<link rel="stylesheet" href="../../styles/skin-dream.css" />
+<link rel="stylesheet" href="../../styles/notebook-workspace.css" />
+<link rel="stylesheet" href="../../styles/codem-ui.css" />
+<link rel="stylesheet" href="../../styles/task-center.css" />
+<script>
+  // 预置镜像（模拟"上一次会话写下的镜像"）：必须在 index.html 那段内联脚本之前执行
+  (function () {
+    var m = /[?&]cache=([^&]+)/.exec(location.search);
+    if (m && m[1] !== "none") localStorage.setItem("codem-theme-cache", m[1]);
+    else localStorage.removeItem("codem-theme-cache");
+  })();
+</script>
+<script>
+  // ↓↓↓ 与 index.html 的内联脚本保持一致（首屏预渲染主题）↓↓↓
+  (function () {
+    try {
+      var t = localStorage.getItem("codem-theme-cache");
+      if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t);
+    } catch (e) {
+      /* localStorage 不可用：退化为 CSS 默认档，不影响功能 */
+    }
+  })();
+</script>
+</head>
+<body>
+<div class="boot-splash" data-case="splash"><div class="boot-splash-content">Codem</div></div>
+<pre id="probe-out"></pre>
+<script>
+  const htmlEl = document.documentElement;
+  const cs = getComputedStyle(htmlEl);
+  const splash = document.querySelector(".boot-splash");
+  const out = {
+    cache: localStorage.getItem("codem-theme-cache"),
+    dataTheme: htmlEl.getAttribute("data-theme"),
+    colorScheme: cs.colorScheme,
+    htmlBackground: cs.backgroundColor,
+    bodyBackground: getComputedStyle(document.body).backgroundColor,
+    splashBackground: splash ? getComputedStyle(splash).backgroundColor : null,
+    bgPrimaryToken: cs.getPropertyValue("--bg-primary").trim(),
+  };
+  document.getElementById("probe-out").textContent = "PROBE_JSON=" + JSON.stringify(out);
+</script>
+</body>
+</html>

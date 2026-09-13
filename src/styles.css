@@ -370,6 +370,15 @@ button:not(:disabled):active,
   transform-origin: center;
 }
 
+/* 第 60 波：给首屏画布一层**跟随主题的不透明底色**。
+   此前 html/body/#root 全是 transparent，窗口又是 transparent: true —— 首帧底色只能靠
+   "浏览器对 color-scheme 的默认处理"，实测在启动瞬间会露出与当前主题相反的底色
+   （用户报的"启动先白后暗 / 先黑后亮"）。
+   用 `:not(.pet-window-mode)` 把宠物窗口排除在外（那个窗口本来就该透明浮在桌面上）。 */
+html:not(.pet-window-mode) {
+  background-color: var(--bg-primary);
+}
+
 body {
   font-family: var(--font-ui);
   font-weight: var(--font-weight);

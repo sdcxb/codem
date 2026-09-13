@@ -10,7 +10,7 @@
 import { useState, useEffect } from "react";
 import { ThemeManager } from "../core/theme";
 import type { SkinId } from "../core/theme";
-import { DEFAULT_THEME, applyThemeAttribute, isThemeMode } from "../core/theme/theme-default";
+import { DEFAULT_THEME, applyThemeAttribute, isThemeMode, resolveEffectiveTheme } from "../core/theme/theme-default";
 import { getSetting, setSetting } from "../core/storage/settings";
 import { useLang, S } from "../core/i18n/lang";
 import { Film, Image as ImageIcon, Clock, Camera } from "lucide-react";
@@ -18,10 +18,9 @@ import { Film, Image as ImageIcon, Clock, Camera } from "lucide-react";
 export function SkinSelector() {
   const [skin, setSkin] = useState<SkinId>(ThemeManager.getSkin());
   // 明暗模式读取 codem-theme（与 Sidebar 一致），而非 ThemeManager
-  const [themeMode, setThemeMode] = useState<"dark" | "light">(() => {
-    const saved = getSetting("codem-theme");
-    return isThemeMode(saved) ? saved : DEFAULT_THEME;
-  });
+  // 第 60 波：初值走统一的「启动期有效值」解析器（DB → 镜像 → 默认档），
+  // 避免 DB 未就绪时落到默认档、与首屏已渲染的档位不一致
+  const [themeMode, setThemeMode] = useState<"dark" | "light">(() => resolveEffectiveTheme(getSetting));
   const lang = useLang();
 
   useEffect(() => {

@@ -14,7 +14,7 @@ import { ActionIcons } from "../core/icons/icon-map";
 import codemLogoUrl from "../assets/codem-logo.png";
 import { getSetting, setSetting } from "../core/storage/settings";
 import { ThemeManager } from "../core/theme";
-import { DEFAULT_THEME, applyThemeAttribute, isThemeMode } from "../core/theme/theme-default";
+import { DEFAULT_THEME, applyThemeAttribute, isThemeMode, resolveEffectiveTheme } from "../core/theme/theme-default";
 import { AppMenuBar } from "./AppMenuBar";
 import type { AppMenuSection } from "./AppMenuBar";
 import { useProjectStore } from "../core/store";
@@ -69,10 +69,10 @@ export function TitleBar({
   onCloseTab,
 }: TitleBarProps = {}) {
   const [maximized, setMaximized] = useState(false);
-  const [theme, setTheme] = useState<"dark" | "light">(() => {
-    const saved = getSetting("codem-theme");
-    return isThemeMode(saved) ? saved : DEFAULT_THEME;
-  });
+  // 第 60 波：主题初值必须与「已经是 DOM 现状 + 首屏镜像」一致，否则挂载时会把
+  // 预渲染好的档位覆盖成默认档（用户报的"先白后暗 / 先黑后亮 / 黑→亮→黑"）。
+  // resolveEffectiveTheme = DB（就绪后）→ 镜像 → 默认档；DB 未就绪时它给的就是镜像值。
+  const [theme, setTheme] = useState<"dark" | "light">(() => resolveEffectiveTheme(getSetting));
   // 执行模式切换（本地处理 / 新工作树）—— 由 InputArea 底部 bar 移至顶部状态栏
   const currentProject = useProjectStore((s) => s.currentProject);
   const [executionMode, setExecutionMode] = useState<ExecutionMode>("current_workspace");
