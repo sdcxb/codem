@@ -17,7 +17,7 @@
 
 import { unzipSync, strFromU8 } from "fflate";
 import { getSkillRegistry, parseSkillMarkdown, type SkillDefinition } from "./skill";
-import { writeFile, deletePath, listDirectory, readFile } from "../file-api";
+import { writeFile, deleteDirectoryPermanent, deleteFile, listDirectory, readFile } from "../file-api";
 
 import { getAppDataDir } from "../file-api";
 
@@ -214,8 +214,43 @@ export async function installSkillFromZip(
 }
 
 /**
+ * 删除原语的兜底时限。原生调用一旦永远不返回，界面就会永久停在"删除中"——
+ * 有界失败（并说明下一步）远好过无限等待。
+ */
+const DELETE_TIMEOUT_MS = 30_000;
+
+/** 区分"超时"与普通失败，超时不再退避重试（免得又挂 30 秒）。 */
+class DeleteTimeoutError extends Error {}
+
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new DeleteTimeoutError(`${label} 超过 ${Math.round(ms / 1000)} 秒没有返回`));
+    }, ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+}
+
+/**
  * 卸载（删除）技能。
  * 删除技能目录和注册表中的记录。
+ *
+ * 三条必须遵守的约束：
+ * 1. 用**永久删除**（`deleteDirectoryPermanent`）。技能目录是应用自管数据，走回收站既无必要，
+ *    也会经过"可能弹系统对话框"的旧路径 —— 那条路曾在没人能点对话框时无限等待，
+ *    表现为「删除技能」卡死。
+ * 2. **删除失败必须如实报错，并且不把技能从注册表移除**。以前删除失败只 warn 就返回成功：
+ *    界面上技能消失了，磁盘上的文件夹还在，下次启动又会被扫描回来（"删了又回来"）。
+ * 3. **删除必须有界**：超时按失败处理并给出下一步，不把界面永久挂在"删除中"。
  */
 export async function uninstallSkill(skillName: string): Promise<{ success: boolean; error?: string }> {
   try {
@@ -230,15 +265,33 @@ export async function uninstallSkill(skillName: string): Promise<{ success: bool
       return { success: false, error: "内置技能不可删除。" };
     }
 
-    // 删除技能目录
+    // 删除技能目录（技能目录是目录；provider 技能可能指向单个文件，退回单文件删除）
     if (skill.filePath) {
-      const skillsDir = await getSkillsDir();
-      const sep = skillsDir.includes("/") && !skillsDir.includes("\\") ? "/" : "\\";
-      const skillDir = skill.filePath || `${skillsDir}${sep}${skillName}`;
+      const skillDir = skill.filePath;
+      console.log(`[SkillInstaller] uninstall "${skillName}" → 永久删除 ${skillDir}`);
       try {
-        await deletePath(skillDir);
-      } catch (err) {
-        console.warn(`[SkillInstaller] Failed to delete skill directory:`, err);
+        await withTimeout(deleteDirectoryPermanent(skillDir), DELETE_TIMEOUT_MS, "删除技能目录");
+      } catch (dirError) {
+        const timedOut = dirError instanceof DeleteTimeoutError;
+        if (!timedOut) {
+          // provider 技能可能指向单个文件
+          try {
+            await withTimeout(deleteFile(skillDir), DELETE_TIMEOUT_MS, "删除技能文件");
+            console.log(`[SkillInstaller] uninstall "${skillName}" → 单文件删除完成`);
+            registry.remove(skillName);
+            return { success: true };
+          } catch {
+            /* 落到下面的失败分支 */
+          }
+        }
+        const reason = dirError instanceof Error ? dirError.message : String(dirError);
+        console.warn(`[SkillInstaller] uninstall "${skillName}" failed:`, reason);
+        return {
+          success: false,
+          error: timedOut
+            ? `${reason}。技能仍保留在列表中；若目录被其他程序占用，请关闭占用后重试（目录：${skillDir}）`
+            : `技能文件删除失败：${reason}。技能仍保留在列表中，可重试或手动删除目录 ${skillDir}`,
+        };
       }
     }
 

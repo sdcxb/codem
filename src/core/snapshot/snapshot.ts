@@ -1,4 +1,4 @@
-import { readFile as apiReadFile, writeFile as apiWriteFile, listDirectory, deletePath } from "../file-api";
+import { readFile as apiReadFile, writeFile as apiWriteFile, listDirectory, deleteDirectoryPermanent, deleteFile } from "../file-api";
 
 // ========== Snapshot Types ==========
 export interface SnapshotFile {
@@ -74,7 +74,13 @@ async function apiList(path: string): Promise<Array<{ name: string; path: string
 }
 
 async function apiDelete(path: string): Promise<void> {
-  await deletePath(path);
+  // 快照目录是应用自管数据 → 永久删除；若是单个文件（快照文件）则走单文件删除。
+  // 都不经过回收站/系统对话框，避免删除动作卡在无人可点的对话框上。
+  try {
+    await deleteDirectoryPermanent(path);
+  } catch {
+    await deleteFile(path);
+  }
 }
 
 function simpleHash(content: string): string {

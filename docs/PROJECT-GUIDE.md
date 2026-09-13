@@ -1029,6 +1029,7 @@ Rust 后端 (lib.rs):
 
 | 版本 | 日期 | 主要内容 |
 |------|------|---------|
+| v1.16.21 | 2026-09-13 | **修复：技能管理「删除技能」卡死（第 71 波）** — ①**现象**：点删除后卡死，控制台只有启动日志、无任何错误（卡住的不是 JS，是一个永不完结的原生调用）。②**根因**：`uninstallSkill → deletePath(目录) → delete_directory` 在 Windows 上走 `powershell -Command "[Microsoft.VisualBasic.FileIO.FileSystem]::DeleteDirectory('<目录>','OnlyErrorDialogs','SendToRecycleBin')"` 并用 `Command::output()` 等它退出 —— `OnlyErrorDialogs` 的语义是「出错时弹对话框并等用户确认」，而 PowerShell 是**隐藏子进程**（没有可见窗口），于是删除一旦失败（文件被占用 / 回收站不可用 / 目录超过回收站配额）对话框就弹在没人能点的地方 → 进程永不退出 → Tauri 命令永不返回 → 前端 await 永不结束 = 卡死。同一命令还被项目删除与宠物卸载复用。③**修复三层**：新增 Rust `delete_directory_permanent`（`remove_dir_all` + 只读位清障重试）供**应用自管目录**（技能/宠物/zvec 运行时/快照）使用；`delete_directory`（回收站，留给项目文件夹等用户内容）改为直接调 `SHFileOperationW` 并抑制全部界面（`FOF_NOCONFIRMATION\|FOF_SILENT\|FOF_NOERRORUI\|FOF_ALLOWUNDO`），实测 **130 ms** 返回（旧 PowerShell 路径同机 473 ms）；前端 `uninstallSkill`/`uninstallPet` **失败不再谎报成功**（旧代码 catch 后照旧 return success → 界面显示已删、文件夹还在、重启又被扫回来），并加 30 秒兜底超时 + 「删除中…」可见反馈 + 失败可见。④**验证**：`cargo test --lib` 42 通过（含 4 条新删除用例）；新增 `skill-uninstall-safety.test.ts` UNINST-1~5，并**换回修复前 installer 跑过 —— 4 条失败**；全量 221 文件 / 4754 用例通过 / tsc 0 错误 / 审计 0-0 / css-contract 无变化。⑤**教训**：**不要让界面等待一个"可能弹对话框"的原生调用** —— 隐藏进程 + 弹窗等待 = 没有终点的等待。 |
 | v1.16.20 | 2026-09-13 | **修复：上传附件后「上下文」标签不消失 + 兼容第三方 Agent Skills（第 70 波）** — ①**用户反馈**：上传 a.md 后编辑框里出现「上下文：a.md」标签，发送后不消失、对话结束仍在。根因不是忘了清空，而是**同一份状态被手工复制成两份**（附件 `pendingAttachments` + 徽章 `contextBadges`，后者只在 textarea `onChange` 里重算）→ 四条路径全在说谎：发送后残留（用户报的）、点 × 移除附件后徽章仍声称会发送它、切换会话跨会话残留、粘贴/拖拽进来的附件不进徽章行。修复：徽章行改为从 `pendingAttachments` **派生**，删掉状态与手工同步；`component-input-area.test.tsx` 新增 ATTC-1~4，并**换回修复前组件验证过这 4 条用例确实会失败**（不是假通过）。②**AREX-Skill 集成暴露的第三方兼容缺陷**（实测上游真实 SKILL.md）：`name: "repo-skills-router"` 连引号一起注册成技能名 → `load_skill("repo-skills-router")` 查不到；跨行双引号描述被截断到第一行（vllm 描述 159 → 61 字符且带多余引号）；`description: >-` / `|` 被当成字面字符串（描述整段丢失）；正文没有 `# ` 一级标题时整份 SKILL.md 被静默丢弃。修复（`src/core/skill/skill.ts`）：字符串字段统一去引号 + 反转义；跨行双引号标量按 YAML 折行拼接；块标量 `> >- >+ \| \|- \|+` 全支持（折叠/字面 + chomping）；frontmatter 之后无一级标题的内容作为正文（无 frontmatter 的纯文本仍非法）；市场安装白名单补 `.jsonl` / `.csv`（AREX 路由器索引是 JSON Lines）。③**核对结论**：Codem 只加载技能目录一层子目录 → AREX「router + `repo-skills/<id>/` 兄弟目录」原始形状天然契合（只有 router 进技能目录，仓库根技能由路由器按需 read 展开）；`<skill_resources>` 给出技能目录绝对路径 → SKILL.md 里的相对路径可直接解析；`disable-model-invocation` 被忽略；项目根 `.codem\skills\` 只在项目管理器展示。④**文档**：新增 `docs/AREX-SKILL-INTEGRATION.md`（三种安装方式的可执行命令、实测体积 vllm 35 文件 217 KB / router 204 文件 1.6 MB、验证清单、边界）。⑤**教训**：**同一份事实存两份、其中一份靠手工同步维护，迟早会说谎**。校验：tsc 0 错误 / 220 文件 4749 用例通过 / 审计 25 条规则 0/0 / css-contract 无变化。 |
 | v1.16.19 | 2026-09-13 | **修复：上下文超限后的「白重试 + 假续写」；思考模型被输出上限掐断（第 69 波）** — 用户日志给出完整真相：`finish_reason=length — text 0 chars, tool calls 0`（思考吃光输出预算）→ 自动续写 → 之后每次请求都 400 `maximum context length is 1048576 tokens. However, you requested 1048735 tokens`，而且上下文还在变大（1048735 → 1048992 → 1049249），每轮还白重试 3 次。①**根因一**：反应式压缩的判定只认 `prompt_too_long` / `context_length_exceeded`，而 DeepSeek 的措辞是 `maximum context length is ...` → **本该救场的压缩从未触发**。②**根因二**：确定性错误被白重试（4xx 非 429 无意义），且 provider 没把 HTTP 状态挂到错误对象上，`classifyError` 也判不出来。③**根因三（我上一波引入）**：`lastFinishReason` 跨迭代不重置 → 失败轮沿用上一轮的 `length` 触发假续写，把超限上下文继续撑大。④**修复**：新增 `provider-errors.ts` 做**语义匹配**（maximum context length / context_length_exceeded / prompt too long / reduce the length of the messages / too many tokens…）并能解析上限与实际请求数字；溢出⇒**立即走压缩**不重试，压缩 3 次仍不够则停下（`context_overflow`）并给出可执行说明（数字 + 开新对话/收敛内容/换大模型）；不可重试的 4xx **立即失败**；provider 挂 `err.status` 并把错误体给足 2000 字符；**结束原因每轮重置**且记录本轮**正文长度**——「正文 0 字符」判定为「思考吃光预算」，续写提示改为「少想、直接产出」。⑤**按模型族给输出上限**（补强第 67 波）：`deepseek-flash` 在目录里查不到 → 以前落到 8192（对带思考的模型明显偏小，直接导致「正文 0 字符」）→ 现在按族推断（DeepSeek/推理系 65536、Claude 4 32000、Gemini 2.5+ 65536），未知型号仍保守兜底。⑥**教训**：**错误分类不能只匹配「自家见过的措辞」** —— 只认两个字符串，等于让一条能自动救场的路径形同虚设。校验：tsc 0 错误 / 219 文件 4729 用例通过 / 审计 25 条规则 0/0 / css-contract 无变化 / 打包成功；新增 OFLOW-1~7（用事故现场真实报错体做样本）。 |
 | v1.16.18 | 2026-09-13 | **修复：回复被输出上限截断时「任务又中断了」（第 68 波）** — 用户说「继续之前没完成的任务」，控制台显示一轮就收尾（`Single-response dedup: 0 tool calls` → 直接 `[extractMemories]`），没有报错也没有重试。①**根因**：`finish_reason === length`（达到单次输出上限、回复被截断）此前**只用于内容型工具的提示**，从不参与「要不要停」的判断 → 被截断的纯文本回复被当成「写完了」，循环以 `completed` 收尾；而 `finish_reason` 只写在默认静默的 `debugLog` 里，控制台毫无线索。②**修复**：截断 ⇒ **自动续写**（注入「从断点继续」提示：不要重复已输出内容 / 长文件改用 `write` + `append: true` 分块 / 写完就说明），界面显示「⏩ …正在自动续写」；③**续写预算 3 次**，用完则明确停下并给出下一步（分块写入 / 调大 `maxTokens`），停止原因 `output_truncated`（结构化事件 + 用户可见说明），不再静默结束；④**结束原因进入循环状态**（provider 的 `end` 事件不向上游 yield，故写入 `LoopState.lastFinishReason`），主循环的停止判断这才看得见它；⑤**非正常结束原因默认可见**（`finish_reason` 非 stop/tool_use 时 console.warn，例如「length（达到单次输出上限，回复被截断）」）。校验：tsc 0 错误 / 218 文件 4722 用例通过 / 审计 25 条规则 0/0 / css-contract 无变化 / 打包成功；新增 TRUNC-1~5 与**行为测试** TRUNC-B1~B3（脚本化 provider 真跑循环）。 |
@@ -1472,6 +1473,33 @@ npm run tauri build        # 构建 NSIS exe + MSI
 ---
 
 ## 八、版本历史
+
+### v1.16.21（2026-09-13）— 修复：技能管理「删除技能」卡死（第 71 波）
+
+- **现象**：技能管理点「删除技能」卡死；控制台只有启动日志、没有任何错误 —— 卡住的不是 JS，
+  而是一个永不完结的原生调用（前端 `await` 永不返回）
+- **根因**：`uninstallSkill → deletePath(技能目录) → delete_file 失败 → delete_directory`，而
+  `delete_directory` 在 Windows 上是 `powershell -Command "…FileSystem::DeleteDirectory('<目录>',
+  'OnlyErrorDialogs', 'SendToRecycleBin')"` + `Command::output()` 等待退出。`OnlyErrorDialogs`
+  语义 = 出错时弹对话框并等用户确认，而该 PowerShell 是**隐藏子进程**（没有可见窗口）→ 删除一旦
+  失败（目录被占用 / 回收站不可用 / 超过回收站配额）对话框就弹在没人能点的地方 → 进程永不退出
+  → 命令永不返回 → 前端 `await` 永不结束 = 卡死。项目删除与宠物卸载复用同一命令
+- **修复**：① 新增 Rust `delete_directory_permanent`（`remove_dir_all`，失败时清只读位重试一次），
+  应用自管目录（技能/宠物/zvec 运行时/快照）一律走它 —— 无 shell、无对话框、无回收站；
+  ② `delete_directory`（回收站，保留给项目文件夹等用户内容）改为直接调 `SHFileOperationW`，
+  `FOF_ALLOWUNDO | FOF_NOCONFIRMATION | FOF_SILENT | FOF_NOERRORUI` 抑制全部界面，只可能返回
+  （实测 130 ms，旧 PowerShell 路径同机 473 ms）；③ 前端 `uninstallSkill`/`uninstallPet` 失败
+  **不再谎报成功**并保留注册表记录（旧代码 catch 后照旧 return success → 界面显示已删、文件夹
+  还在、下次启动又被扫回来），删除加 30 秒兜底超时，删除期间显示「删除中…」、失败在界面可见
+- **验证**：`cargo test --lib` 42 通过（含 4 条新用例：嵌套+只读整树删除、缺失路径幂等、
+  拒绝空/根路径、回收站路径必须返回）；新增 `skill-uninstall-safety.test.ts` UNINST-1~5，
+  并**用修复前的 installer 跑过一遍：4 条失败**（证明用例真能抓住 bug）；全量 221 文件 /
+  4754 用例通过；tsc 0 错误；审计 25 条规则 0/0；css-contract 无变化
+- **同类清查**：`deletePath` 剩余用途均为临时文件（computer-use / 工具 / 市场下载），
+  不再对应用自管目录走回收站删除
+- **诚实交代**：未在机器上"亲眼复现"卡死那一刻（触发需要失败场景，而旧实现进入该场景会弹系统
+  对话框，不在用户桌面上弹一个来验证）；根因依据是 `OnlyErrorDialogs` 的 API 语义 + 用户症状，
+  且无论具体触发点为何，新链路都不再存在"等待对话框"这条路
 
 ### v1.16.20（2026-09-13）— 修复：上传附件后「上下文」标签不消失；兼容第三方 Agent Skills（AREX-Skill）
 

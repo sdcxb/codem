@@ -82,6 +82,8 @@ export function SkillManager({ onClose }: SkillManagerProps) {
   const [installProgress, setInstallProgress] = useState<{ value: number; message: string } | null>(null);
   const [installError, setInstallError] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<SkillDefinition | null>(null);
+  /** 正在删除的技能名 —— 删除期间给出可见反馈，避免"点了没反应"看起来像卡死 */
+  const [deletingSkill, setDeletingSkill] = useState<string | null>(null);
   const [overwriteTarget, setOverwriteTarget] = useState<{ zipData: Uint8Array; skillName: string } | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -205,14 +207,23 @@ export function SkillManager({ onClose }: SkillManagerProps) {
 
   const handleDelete = async () => {
     if (!deleteTarget) return;
-    const result = await uninstallSkill(deleteTarget.name);
-    if (result.success) {
-      setDeleteTarget(null);
-      setSelectedSkill(null);
-      setRefreshKey((k) => k + 1);
-    } else {
-      setInstallError(result.error || "删除失败");
-      setDeleteTarget(null);
+    const target = deleteTarget;
+    setDeleteTarget(null);
+    setInstallError(null);
+    setDeletingSkill(target.name);
+    try {
+      const result = await uninstallSkill(target.name);
+      if (result.success) {
+        setSelectedSkill(null);
+        setRefreshKey((k) => k + 1);
+      } else {
+        // 删除失败必须可见：以前失败只写控制台，界面看起来"点了没反应"
+        setInstallError(result.error || "删除失败");
+      }
+    } catch (err) {
+      setInstallError(`删除失败：${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setDeletingSkill(null);
     }
   };
 
@@ -766,9 +777,14 @@ return true;
                     <button
                       className="skill-detail-btn delete"
                       onClick={() => setDeleteTarget(selectedSkill)}
+                      disabled={deletingSkill === selectedSkill.name}
                     >
-                      <DeleteIcon size={14} />
-                      删除技能
+                      {deletingSkill === selectedSkill.name ? (
+                        <LoadingIcon size={14} className="spin" />
+                      ) : (
+                        <DeleteIcon size={14} />
+                      )}
+                      {deletingSkill === selectedSkill.name ? "删除中…" : "删除技能"}
                     </button>
                   </div>
                 )}

@@ -17,7 +17,7 @@ import {
   pickNodeLtsVersion,
   type ZvecPaths,
 } from "./runtime";
-import { exists, executeCommand, listDirectory, deletePath, readFile, writeFile } from "../file-api";
+import { exists, executeCommand, listDirectory, deleteDirectoryPermanent, readFile, writeFile } from "../file-api";
 import {
   ZVEC_MCP_SERVER,
   ZVEC_PACK_URL,
@@ -394,10 +394,11 @@ export async function uninstall(): Promise<void> {
     getMCPRegistry().removeServer(ZVEC_MCP_SERVER);
   } catch { /* 忽略 */ }
 
-  // 2) 删除运行时目录
+  // 2) 删除运行时目录（永久删除：应用自管的运行时/模型目录动辄数百 MB，
+  // 回收站既无意义，也可能撞上"文件太大放不进回收站"的系统对话框而永久卡住）
   const base = await getAppDataBaseDir();
   const paths = buildZvecPaths(base);
-  await deletePath(paths.baseDir).catch(() => {});
+  await deleteDirectoryPermanent(paths.baseDir).catch(() => {});
   notify();
 }
 

@@ -1860,6 +1860,8 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
 
 function PetSettingsSection({ lang, onOpenMarket }: { lang: Language; onOpenMarket: () => void }) {
   const zh = lang === "zh";
+  /** 卸载失败提示 —— 卸载失败必须可见，否则界面像是"点了没反应" */
+  const [petActionError, setPetActionError] = useState<string | null>(null);
   const {
     enabled,
     activePet,
@@ -1961,7 +1963,11 @@ function PetSettingsSection({ lang, onOpenMarket }: { lang: Language; onOpenMark
                   )}
                   <button
                     onClick={async () => {
-                      await uninstallPet(pet.slug);
+                      setPetActionError(null);
+                      const result = await uninstallPet(pet.slug);
+                      if (!result.success) {
+                        setPetActionError(result.error || (zh ? "卸载失败" : "Uninstall failed"));
+                      }
                       await refreshInstalledPets();
                     }}
                     className="sp-btn sp-btn--sm sp-btn--danger"

@@ -19,7 +19,7 @@
 import type { PetDefinition, InstalledPet, PetSettings, PetState } from "./pet-types";
 import { DEFAULT_PET_SETTINGS } from "./pet-types";
 import { getSettingJSON, setSettingJSON } from "../storage/settings";
-import { readFile, writeFile, listDirectory, deletePath } from "../file-api";
+import { readFile, writeFile, listDirectory, deleteDirectoryPermanent } from "../file-api";
 
 // ========== 常量 ==========
 
@@ -254,10 +254,10 @@ export async function installPet(
     const sep = await getPathSep();
     const petDir = `${petsDir}${sep}${definition.slug}`;
 
-    // 如果覆盖安装，先删除旧目录
+    // 如果覆盖安装，先删除旧目录（永久删除：应用自管目录，不进回收站、不弹对话框）
     if (existing && overwrite) {
       try {
-        await deletePath(petDir);
+        await deleteDirectoryPermanent(petDir);
       } catch {
         // Ignore deletion errors
       }
@@ -303,11 +303,16 @@ export async function uninstallPet(slug: string): Promise<{ success: boolean; er
       return { success: false, error: `宠物 "${slug}" 未安装。` };
     }
 
-    // 删除宠物目录
+    // 删除宠物目录 —— 永久删除（应用自管目录），失败如实报错而不是假装成功：
+    // 以前只 warn 就移除记录，目录留在磁盘上，重启后又被扫描回来（"卸载了又回来"）。
     try {
-      await deletePath(record.path);
+      await deleteDirectoryPermanent(record.path);
     } catch (err) {
-      console.warn(`[PetManager] Failed to delete pet directory:`, err);
+      const reason = err instanceof Error ? err.message : String(err);
+      return {
+        success: false,
+        error: `宠物文件删除失败：${reason}。宠物仍保留在列表中，可重试或手动删除目录 ${record.path}`,
+      };
     }
 
     // 从记录中移除

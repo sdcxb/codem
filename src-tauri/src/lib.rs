@@ -672,32 +672,161 @@ async fn list_directory(path: String, show_hidden: Option<bool>) -> Result<Vec<s
     Ok(result)
 }
 
+/// Move a directory to the recycle bin (user content: project folders).
+///
+/// Windows goes through `SHFileOperationW` with every dialog suppressed. The
+/// previous implementation shelled out to PowerShell and called
+/// `Microsoft.VisualBasic.FileIO.FileSystem::DeleteDirectory(..., 'OnlyErrorDialogs', ...)`,
+/// which can open a hidden error/progress dialog and then wait for a click
+/// nobody can give — the invoking frontend promise never settles, so the UI
+/// action (for example "删除技能") hung forever.
 #[tauri::command]
 async fn delete_directory(path: String) -> Result<(), String> {
-    // Move to recycle bin instead of permanent delete
     #[cfg(target_os = "windows")]
     {
-        use std::process::Command;
-        // PowerShell: move to recycle bin (VisualBasic assembly)
-        let script = format!(
-            "Add-Type -AssemblyName Microsoft.VisualBasic; [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteDirectory('{}', 'OnlyErrorDialogs', 'SendToRecycleBin')",
-            path.replace('\'', "''")
-        );
-        let output = Command::new("powershell")
-            .args(["-NoProfile", "-Command", &script])
-            .output()
-            .map_err(|e| format!("Failed to execute PowerShell: {}", e))?;
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(format!("Failed to move to recycle bin: {}", stderr));
-        }
-        Ok(())
+        move_directory_to_recycle_bin(&path)
     }
     #[cfg(not(target_os = "windows"))]
     {
         // On non-Windows, permanent delete as fallback
         std::fs::remove_dir_all(&path).map_err(|e| e.to_string())
     }
+}
+
+/// Recursively delete a directory, permanently, without any shell or dialog.
+///
+/// Use this for directories the app itself owns (installed skills, pets,
+/// downloaded runtimes): recycling them is not a safety net, and every dialog
+/// -capable deletion path risks blocking with no visible window to answer.
+#[tauri::command]
+async fn delete_directory_permanent(path: String) -> Result<(), String> {
+    remove_directory_permanent(&path)
+}
+
+/// Plain (non-command) implementation so it can be unit-tested directly.
+fn remove_directory_permanent(path: &str) -> Result<(), String> {
+    let trimmed = path.trim();
+    if trimmed.is_empty() {
+        return Err("拒绝删除空路径".to_string());
+    }
+    let target = std::path::Path::new(trimmed);
+    // A drive root (or any path without a parent) is never a skill/pet/runtime dir.
+    if target.parent().is_none() {
+        return Err(format!("拒绝删除根目录: {}", trimmed));
+    }
+    if !target.exists() {
+        return Ok(());
+    }
+    match std::fs::remove_dir_all(target) {
+        Ok(()) => Ok(()),
+        Err(first_error) => {
+            // Windows refuses to delete read-only files; clearing the flag on the
+            // tree and retrying once is enough for every install layout we ship.
+            clear_readonly_recursive(target);
+            std::fs::remove_dir_all(target).map_err(|retry_error| {
+                format!(
+                    "删除目录失败 {}: {} (首次尝试: {})",
+                    trimmed, retry_error, first_error
+                )
+            })
+        }
+    }
+}
+
+/// Clear the read-only flag across a tree so a retry can delete it (Windows).
+fn clear_readonly_recursive(path: &std::path::Path) {
+    let Ok(metadata) = std::fs::symlink_metadata(path) else {
+        return;
+    };
+    if metadata.is_dir() {
+        if let Ok(entries) = std::fs::read_dir(path) {
+            for entry in entries.flatten() {
+                clear_readonly_recursive(&entry.path());
+            }
+        }
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let mut permissions = metadata.permissions();
+        if permissions.readonly() {
+            permissions.set_readonly(false);
+            let _ = std::fs::set_permissions(path, permissions);
+        }
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = &metadata;
+    }
+}
+
+/// Recycle a directory through the shell, with confirmation, progress and error
+/// UI all suppressed so the call can only return — never wait for input.
+#[cfg(target_os = "windows")]
+fn move_directory_to_recycle_bin(path: &str) -> Result<(), String> {
+    use std::os::windows::ffi::OsStrExt;
+
+    #[repr(C)]
+    struct ShFileOpStructW {
+        hwnd: *mut core::ffi::c_void,
+        w_func: u32,
+        p_from: *const u16,
+        p_to: *const u16,
+        f_flags: u16,
+        f_any_operations_aborted: i32,
+        h_name_mappings: *mut core::ffi::c_void,
+        lpsz_progress_title: *const u16,
+    }
+
+    #[link(name = "shell32")]
+    extern "system" {
+        fn SHFileOperationW(operation: *mut ShFileOpStructW) -> i32;
+    }
+
+    const FO_DELETE: u32 = 0x0003;
+    const FOF_SILENT: u16 = 0x0004;
+    const FOF_NOCONFIRMATION: u16 = 0x0010;
+    const FOF_ALLOWUNDO: u16 = 0x0040;
+    const FOF_NOERRORUI: u16 = 0x0400;
+
+    let trimmed = path.trim();
+    if trimmed.is_empty() {
+        return Err("拒绝删除空路径".to_string());
+    }
+    let target = std::path::Path::new(trimmed);
+    if target.parent().is_none() {
+        return Err(format!("拒绝删除根目录: {}", trimmed));
+    }
+    if !target.exists() {
+        return Ok(());
+    }
+
+    // SHFileOperationW wants the source list double-NUL terminated.
+    let mut from: Vec<u16> = std::ffi::OsStr::new(trimmed).encode_wide().collect();
+    from.push(0);
+    from.push(0);
+
+    let mut operation = ShFileOpStructW {
+        hwnd: std::ptr::null_mut(),
+        w_func: FO_DELETE,
+        p_from: from.as_ptr(),
+        p_to: std::ptr::null(),
+        f_flags: FOF_ALLOWUNDO | FOF_NOCONFIRMATION | FOF_SILENT | FOF_NOERRORUI,
+        f_any_operations_aborted: 0,
+        h_name_mappings: std::ptr::null_mut(),
+        lpsz_progress_title: std::ptr::null(),
+    };
+
+    let code = unsafe { SHFileOperationW(&mut operation) };
+    if code != 0 {
+        return Err(format!(
+            "移入回收站失败（错误码 {}）：{}（请手动删除该目录）",
+            code, trimmed
+        ));
+    }
+    if operation.f_any_operations_aborted != 0 {
+        return Err(format!("移入回收站被中止：{}", trimmed));
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -2425,6 +2554,7 @@ let app = tauri::Builder::default()
             append_file,
             list_directory,
             delete_directory,
+            delete_directory_permanent,
             execute_command,
 codegraph_install,
             open_folder_dialog,
@@ -2676,4 +2806,73 @@ path_exists,
             _ => {}
         }
     });
+}
+
+#[cfg(test)]
+mod delete_tests {
+    use super::*;
+
+    fn temp_dir(name: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("codem-delete-test-{}-{}", name, std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("create temp dir");
+        dir
+    }
+
+    #[test]
+    fn removes_a_nested_tree_including_readonly_files() {
+        let root = temp_dir("nested");
+        let nested = root.join("sub-skills").join("openai-serving");
+        std::fs::create_dir_all(&nested).expect("create nested dir");
+        std::fs::write(root.join("SKILL.md"), "# skill").expect("write skill");
+        std::fs::write(nested.join("SKILL.md"), "# sub skill").expect("write sub skill");
+        let readonly = root.join("locked.md");
+        std::fs::write(&readonly, "locked").expect("write readonly file");
+        let mut permissions = std::fs::metadata(&readonly).expect("metadata").permissions();
+        permissions.set_readonly(true);
+        std::fs::set_permissions(&readonly, permissions).expect("set readonly");
+
+        remove_directory_permanent(&root.to_string_lossy()).expect("delete tree");
+
+        assert!(!root.exists(), "整棵目录树应被删除");
+    }
+
+    #[test]
+    fn is_idempotent_for_missing_paths() {
+        let root = temp_dir("missing");
+        std::fs::remove_dir_all(&root).expect("cleanup");
+        remove_directory_permanent(&root.to_string_lossy()).expect("missing path is not an error");
+    }
+
+    #[test]
+    fn refuses_empty_paths_and_drive_roots() {
+        assert!(remove_directory_permanent("").is_err());
+        assert!(remove_directory_permanent("   ").is_err());
+        #[cfg(target_os = "windows")]
+        assert!(remove_directory_permanent("C:\\").is_err());
+    }
+
+    /// The recycle-bin path must always return. The old PowerShell +
+    /// `OnlyErrorDialogs` implementation could wait on an invisible dialog
+    /// forever, which is what froze "删除技能" in the UI.
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn recycle_bin_path_returns_without_waiting_on_a_dialog() {
+        let root = temp_dir("recycle");
+        std::fs::write(root.join("note.md"), "hello").expect("write file");
+
+        let started = std::time::Instant::now();
+        let result = move_directory_to_recycle_bin(&root.to_string_lossy());
+        let elapsed = started.elapsed();
+        eprintln!("[delete_tests] recycle outcome={:?} elapsed={:?}", result, elapsed);
+
+        assert!(elapsed.as_secs() < 20, "移入回收站必须返回，实际耗时 {:?}", elapsed);
+        match result {
+            Ok(()) => assert!(!root.exists(), "返回成功后目录应已不在原位"),
+            Err(message) => {
+                assert!(root.exists(), "失败时目录应保持原样: {}", message);
+                assert!(message.contains("回收站"), "失败信息应说明回收站路径: {}", message);
+            }
+        }
+    }
 }

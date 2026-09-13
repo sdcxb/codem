@@ -103,6 +103,10 @@ export async function listDirectory(path: string): Promise<Array<{ name: string;
   return tauriInvoke("list_directory", { path });
 }
 
+export async function deleteFile(path: string): Promise<void> {
+  await tauriInvoke("delete_file", { path });
+}
+
 export async function deletePath(path: string): Promise<void> {
   // 先尝试删文件，失败再尝试删目录
   try {
@@ -110,6 +114,18 @@ export async function deletePath(path: string): Promise<void> {
   } catch {
     await tauriInvoke("delete_directory", { path });
   }
+}
+
+/**
+ * 递归永久删除目录（不进回收站、不弹任何系统对话框）。
+ *
+ * 用于**应用自管目录**（已安装技能、宠物、下载的运行时/模型）：这些目录删掉只是重新下载，
+ * 回收站不提供额外安全价值，而任何"可能弹对话框"的删除路径都可能永远卡住 —— 曾经的
+ * `delete_directory`（PowerShell + `OnlyErrorDialogs` + 回收站）就会在错误对话框无人可点时
+ * 无限等待，表现为界面上「删除技能」卡死。
+ */
+export async function deleteDirectoryPermanent(path: string): Promise<void> {
+  await tauriInvoke("delete_directory_permanent", { path });
 }
 
 export async function exists(path: string): Promise<boolean> {

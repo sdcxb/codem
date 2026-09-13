@@ -2,6 +2,67 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.16.21] - 2026-09-13 — 修复：技能管理「删除技能」卡死（删除链路可能永远等一个没人能点的系统对话框）
+
+### 现象（用户反馈）
+
+技能管理里点「删除技能」卡死。控制台只有启动日志、没有任何错误 —— 因为卡住的不是 JavaScript，
+而是**一个永不完结的原生调用**：前端 `await` 永不返回，界面就停在那里。
+
+### 旧链路与根因
+
+```
+SkillManager.handleDelete → uninstallSkill → deletePath(技能目录)
+  └ delete_file(目录) 必然失败 → delete_directory
+      └ Rust: powershell -Command "[Microsoft.VisualBasic.FileIO.FileSystem]::DeleteDirectory(
+                 '<目录>', 'OnlyErrorDialogs', 'SendToRecycleBin')"
+         且用 Command::output() 等它退出
+```
+
+`UIOption.OnlyErrorDialogs` 的语义就是「出错时弹对话框，并等用户确认」；而这个 PowerShell 是
+**隐藏子进程**（没有可见窗口）。于是只要删除失败一次 —— 目录被其他程序占用、回收站不可用、
+目录大于回收站配额 —— 对话框就弹在用户看不见也点不到的地方，PowerShell 永不退出，
+Tauri 命令永不返回，前端的 `await` 永不结束。这就是「卡死」：不是慢，是没有终点的等待。
+同一条命令还被项目删除（`App.tsx`）与宠物卸载复用，属于同一类风险。
+
+### 修复（三层，逐层都不再可能无限等待）
+
+1. **新增 Rust 命令 `delete_directory_permanent`**：应用自管目录（技能、宠物、zvec-grep 运行时/模型、
+   快照）改用 `remove_dir_all` 永久删除 —— 无 shell、无对话框、无回收站。首次失败会清掉整棵树的
+   只读位再重试一次（Windows 上最常见的拦路虎）。理由很直接：这些目录删掉只是重新下载，
+   回收站不提供额外安全价值，却带来"对话框等待"这一整类风险。
+2. **`delete_directory`（回收站，保留给项目文件夹等用户内容）改为直接调用 `SHFileOperationW`**，
+   标志 `FOF_ALLOWUNDO | FOF_NOCONFIRMATION | FOF_SILENT | FOF_NOERRORUI`：确认、进度、错误
+   三类界面全部抑制，函数只可能返回。实测同机：新路径 **130 ms** 返回（旧 PowerShell 路径 473 ms）。
+3. **前端不再谎报成功、且删除有界**：
+   - `uninstallSkill` / `uninstallPet` 删除失败时返回失败并**保留注册表记录**。旧代码 `catch` 后
+     照样 `return { success: true }`：界面上技能消失了、磁盘上的文件夹还在，下次启动又被扫描回来
+     （"删了又回来"）。
+   - 删除原语加 30 秒兜底超时：超时按失败报错并给出目录路径与下一步，界面不会永久停在"删除中"。
+   - 删除期间显示「删除中…」，失败在界面上可见（技能管理器的错误条 / 设置里的卸载提示）。
+
+### 验证（数据）
+
+- **Rust**：`cargo test --lib` **42 通过**，含 4 条新用例 —— 嵌套目录 + 只读文件的整树删除、
+  缺失路径幂等、拒绝空路径与盘符根、**回收站路径必须返回**（实测 `Ok` 且 130 ms）。
+- **前端**：新增 `src/test/skill-uninstall-safety.test.ts`（UNINST-1~5：永久删除且不经回收站命令、
+  失败不谎报且保留注册表、provider 单文件回退、内置/不存在拒绝、超时有界）；并**把组件换回修复前
+  的 installer 跑了一遍 —— 4 条失败**，证明用例确实能抓住这个 bug。
+- 全量：221 文件 / 4754 用例通过（15 skipped）；`tsc --noEmit` 0 错误；UI 审计 25 条规则
+  error 0 / warn 0；css-contract 2743 个类无变化。
+
+### 诚实交代
+
+未能在这台机器上"亲眼复现"卡死那一刻：触发它需要一个失败场景（文件被占用 / 回收站不可用），
+而旧实现一旦进入那个场景就会弹出系统对话框，我不想在你的桌面上弹一个来验证。
+根因判定依据是 API 语义（`OnlyErrorDialogs` = 弹对话框并等待）+ 你的症状（无错误、无返回、永久卡住）；
+而无论具体触发点是哪个，新链路都不再存在"等待对话框"这条路。
+
+### 同类清查
+
+`delete_directory` 的其它调用方一并确认：`deletePath` 剩余用途都是临时文件（computer-use 临时文件、
+工具临时文件、市场下载的临时 zip），不会再对应用自管目录做回收站删除。
+
 ## [1.16.20] - 2026-09-13 — 修复：上传附件后「上下文」标签不消失；兼容第三方 Agent Skills（AREX-Skill）
 
 ### 现象一（用户反馈）：上传 a.md 后，编辑框里的「上下文：a.md」标签发送后不消失
