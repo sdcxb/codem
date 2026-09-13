@@ -251,11 +251,141 @@ function parseYamlValue(raw: string): unknown {
   // Quoted string
   if ((value.startsWith('"') && value.endsWith('"')) ||
       (value.startsWith("'") && value.endsWith("'"))) {
-    return value.slice(1, -1);
+    return unquoteScalar(value);
   }
 
   // Plain string
   return value;
+}
+
+/**
+ * Strip matching surrounding quotes from a YAML scalar and unescape its content.
+ *
+ * Third-party Agent Skills routinely quote `name` and `description`
+ * (`name: "my-skill"`). Without this the quote characters leak into the skill
+ * name, so `load_skill("my-skill")` can no longer match the registered skill.
+ */
+function unquoteScalar(raw: string): string {
+  const value = raw.trim();
+  if (value.length >= 2 && value.startsWith('"') && value.endsWith('"')) {
+    return value
+      .slice(1, -1)
+      .replace(/\\(["\\nt])/g, (_match, ch: string) =>
+        ch === "n" ? "\n" : ch === "t" ? "\t" : ch,
+      );
+  }
+  if (value.length >= 2 && value.startsWith("'") && value.endsWith("'")) {
+    return value.slice(1, -1).replace(/''/g, "'");
+  }
+  return value;
+}
+
+/**
+ * Whether a quoted scalar already contains its closing quote.
+ */
+function isQuotedScalarClosed(value: string, quote: string): boolean {
+  const body = value.slice(1);
+  for (let k = 0; k < body.length; k++) {
+    const ch = body[k];
+    if (quote === '"' && ch === "\\") {
+      k++;
+      continue;
+    }
+    if (ch === quote) {
+      if (quote === "'" && body[k + 1] === "'") {
+        k++;
+        continue;
+      }
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Fold block-scalar lines the YAML way: single line breaks become spaces,
+ * blank lines become newlines.
+ */
+function foldBlockLines(lines: string[]): string {
+  let out = "";
+  let blanks = 0;
+  for (const line of lines) {
+    if (line.trim() === "") {
+      blanks++;
+      continue;
+    }
+    if (out !== "") out += blanks > 0 ? "\n".repeat(blanks) : " ";
+    out += line;
+    blanks = 0;
+  }
+  return out;
+}
+
+/**
+ * Resolve a YAML scalar that may continue on the following source lines.
+ *
+ * Handles folded (`>`) and literal (`|`) block scalars plus single/double
+ * quoted scalars that wrap across lines — both are common in third-party
+ * Agent Skills, and both used to be truncated to their first source line.
+ *
+ * @returns the resolved text plus how many extra lines were consumed.
+ */
+function resolveScalarAt(
+  lines: string[],
+  index: number,
+  rawValue: string,
+): { text: string; extraLines: number } {
+  const trimmed = rawValue.trim();
+
+  // Block scalar: >, >-, >+, |, |-, |+
+  const blockMatch = trimmed.match(/^([|>])([+-]?)$/);
+  if (blockMatch) {
+    const style = blockMatch[1];
+    const chomp = blockMatch[2];
+    const collected: string[] = [];
+    let j = index + 1;
+    let baseIndent = -1;
+    while (j < lines.length) {
+      const line = lines[j];
+      if (line.trim() === "---") break;
+      if (line.trim() === "") {
+        if (baseIndent >= 0) collected.push("");
+        j++;
+        continue;
+      }
+      const indent = line.length - line.trimStart().length;
+      if (baseIndent < 0) {
+        if (indent === 0) break;
+        baseIndent = indent;
+      }
+      if (indent < baseIndent) break;
+      collected.push(line.slice(baseIndent));
+      j++;
+    }
+    while (collected.length > 0 && collected[collected.length - 1] === "") collected.pop();
+    let text = style === "|" ? collected.join("\n") : foldBlockLines(collected);
+    if (text && chomp !== "+") {
+      text = text.replace(/\n+$/, "") + (chomp === "-" ? "" : "\n");
+    }
+    return { text, extraLines: j - index - 1 };
+  }
+
+  // Quoted scalar that wraps across lines
+  const quote = trimmed[0];
+  if ((quote === '"' || quote === "'") && !isQuotedScalarClosed(trimmed, quote)) {
+    const pieces = [trimmed];
+    let j = index;
+    while (j + 1 < lines.length) {
+      const next = lines[j + 1];
+      if (next.trim() === "---") break;
+      j++;
+      pieces.push(next.trim());
+      if (isQuotedScalarClosed(pieces.join(" "), quote)) break;
+    }
+    return { text: unquoteScalar(pieces.join(" ")), extraLines: j - index };
+  }
+
+  return { text: unquoteScalar(trimmed), extraLines: 0 };
 }
 
 /**
@@ -264,7 +394,7 @@ function parseYamlValue(raw: string): unknown {
  */
 function tryParseBlockArrayItem(line: string): string | null {
   const match = line.match(/^\s+-\s+(.+)$/);
-  return match ? match[1].trim().replace(/^["']|["']$/g, "") : null;
+  return match ? unquoteScalar(match[1]) : null;
 }
 
 // ========== Skill Parser ==========
@@ -297,6 +427,12 @@ export function parseSkillMarkdown(content: string, filePath: string): SkillDefi
 
   let inFrontmatter = false;
   let inPrompt = false;
+  /** Whether a frontmatter block was actually closed — a body without one is
+   * not a skill. */
+  let sawFrontmatter = false;
+  /** Body lines (everything after the frontmatter), used as a prompt fallback
+   * when a SKILL.md has no level-1 heading. */
+  const bodyLines: string[] = [];
 
   // Track current block array context (for parsing multi-line arrays)
   let currentBlockArray: { key: string; items: string[] } | null = null;
@@ -339,6 +475,7 @@ export function parseSkillMarkdown(content: string, filePath: string): SkillDefi
         currentNestedObj = null;
       }
       inFrontmatter = false;
+      sawFrontmatter = true;
       continue;
     }
 
@@ -422,7 +559,11 @@ export function parseSkillMarkdown(content: string, filePath: string): SkillDefi
         }
 
         const [, key, rawValue] = match;
-        const value = rawValue.trim();
+        // Scalars may wrap onto following lines (block scalars, long quoted
+        // descriptions) — resolve them and skip the consumed lines.
+        const resolved = resolveScalarAt(lines, i, rawValue);
+        i += resolved.extraLines;
+        const value = resolved.text.trim();
 
         switch (key) {
           case "name":
@@ -441,10 +582,10 @@ export function parseSkillMarkdown(content: string, filePath: string): SkillDefi
             author = value;
             break;
           case "aliases":
-            aliases = value.split(",").map((s) => s.trim());
+            aliases = value.split(",").map((s) => unquoteScalar(s)).filter(Boolean);
             break;
           case "allowedTools":
-            allowedTools = value.split(",").map((s) => s.trim());
+            allowedTools = value.split(",").map((s) => unquoteScalar(s)).filter(Boolean);
             break;
           case "model":
             model = value;
@@ -459,7 +600,7 @@ export function parseSkillMarkdown(content: string, filePath: string): SkillDefi
             whenToUse = value;
             break;
           case "references":
-            references = value.split(",").map((s) => s.trim());
+            references = value.split(",").map((s) => unquoteScalar(s)).filter(Boolean);
             break;
           case "contextMode":
             contextMode = value as "inline" | "fork";
@@ -517,6 +658,7 @@ export function parseSkillMarkdown(content: string, filePath: string): SkillDefi
     }
 
     // Parse prompt content
+    bodyLines.push(line);
     if (line.startsWith("# ")) {
       inPrompt = true;
       continue;
@@ -536,6 +678,13 @@ export function parseSkillMarkdown(content: string, filePath: string): SkillDefi
   // Fallback: use first line of prompt as description
   if (!description && prompt) {
     description = prompt.split("\n")[0].trim();
+  }
+
+  // Fallback: a SKILL.md body without a level-1 heading is still valid — the
+  // prompt used to be dropped, which made the whole skill parse as null.
+  // Text without any frontmatter stays invalid.
+  if (!prompt.trim() && sawFrontmatter && bodyLines.length > 0) {
+    prompt = bodyLines.join("\n").trim() + "\n";
   }
 
   if (!prompt.trim()) return null;

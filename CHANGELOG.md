@@ -2,6 +2,76 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.16.20] - 2026-09-13 — 修复：上传附件后「上下文」标签不消失；兼容第三方 Agent Skills（AREX-Skill）
+
+### 现象一（用户反馈）：上传 a.md 后，编辑框里的「上下文：a.md」标签发送后不消失
+
+标签在对话结束后依然挂着。排查发现根因不是「忘了清空」，而是**同一份状态被手工复制成两份**：
+附件存在 `pendingAttachments`，而编辑框里的徽章行存在另一份 `contextBadges`，后者只在
+textarea 的 `onChange` 里重算一次。于是这一类"徽章说谎"的路径全都在：
+
+| 路径 | 旧行为 |
+| --- | --- |
+| 发送消息 | `pendingAttachments` 清空，徽章**留下**（用户报的这条） |
+| 点附件的 × 移除 | 附件移除，徽章**仍声称会发送它** |
+| 切换会话 / 新建对话 | 附件清空，徽章**跨会话残留** |
+| 粘贴图片、拖拽文件进来 | 附件已入列，徽章行**看不到**（要再敲一个字才出现） |
+
+**修复**：徽章行改为从 `pendingAttachments` 派生（`src/components/InputArea.tsx`），
+删除 `contextBadges` 状态与 `onChange` 里的手工同步 —— 徽章行永远等于"这条消息真的要带的附件"，
+四条路径一次性同生共死。
+
+**测试**（`src/test/component-input-area.test.tsx`，ATTC-1~4）：四条路径各一条用例。
+并已用「换回修复前的组件」验证过这 4 条用例确实会失败（不是假通过）。
+
+### 现象二：想装 AREX-Skill 时暴露 —— 技能名/描述被引号与块标量破坏
+
+AREX-Skill 把 1000 个 ML 仓库蒸馏成 5000+ 个技能，全部使用标准 Agent Skills 写法。
+把上游真实的 `SKILL.md` 喂给 Codem 的解析器（实测，非推断）：
+
+```
+name: vllm                                     → "vllm"            ✅
+description: "Route vLLM tasks across …         → 截断: 「"Route vLLM tasks across offline inference, OpenAI-compatible」 (61 字符，且带一个多余引号)
+name: "repo-skills-router"                     → 「"repo-skills-router"」(技能名里连引号一起注册 → load_skill("repo-skills-router") 查不到)
+description: >-  …                             → 描述字面变成 ">-"   (描述整段丢失)
+description: |   …                             → 描述字面变成 "|"
+正文没有 `# ` 一级标题                          → 整份 SKILL.md 被判定非法，静默丢弃
+```
+
+即：**第三方技能能装上，但技能名、技能描述、甚至整份技能都可能已经损坏** —— 技能描述正是
+Codem 用来判断「该不该加载这个技能」的唯一依据，被截断就等于路由失效。
+
+### 修复（`src/core/skill/skill.ts`）
+
+- **标量去引号 + 反转义**：`name` / `description` / `version` / `whenToUse` 等字符串字段统一走
+  `unquoteScalar`（双引号内 `\"` `\\` `\n` `\t` 反转义，单引号 `''` 还原）。
+- **跨行双引号标量折行拼接**：YAML 允许长描述换行书写，解析器现在会一直读到闭合引号并按 YAML
+  规则折叠为空格，不再截断到第一行。
+- **块标量 `>` / `>-` / `>+` / `|` / `|-` / `|+`**：折叠式（换行转空格、空行转换行）与字面式
+  （保留换行）都按 YAML 语义解析，并正确处理 chomping。
+- **正文没有一级标题的技能不再被丢弃**：frontmatter 之后的内容作为技能正文（此前必须出现
+  `# ` 标题，否则整份返回 null）；没有 frontmatter 的纯文本仍然不是技能。
+- **市场安装保留 `.jsonl` / `.csv` 资源**：AREX 路由器的索引文件是 JSON Lines，此前会被扩展名
+  白名单拦掉，装出来的路由器缺索引。
+
+### 附带确认（不是修复，是核对过的事实，写进文档避免踩坑）
+
+- Codem **只加载技能目录的一层子目录**里的 `SKILL.md`；AREX「路由器 + `repo-skills/<id>/` 兄弟目录」
+  的原始形状正好契合：只有 `repo-skills-router` 进入技能目录，1000 个仓库根技能由路由器按需
+  `read` 展开（渐进式展开，不挤占上下文）。
+- 技能加载时 `<skill_resources>` 会给出技能目录绝对路径，`SKILL.md` 里的相对路径可直接解析。
+- `disable-model-invocation: true` 被忽略（Codem 无「仅用户可调用」技能类别）。
+- 项目根 `.codem\skills\` 只在项目管理器里展示，不注册成 `load_skill` 可调用的技能。
+
+### 文档与测试
+
+- 新增 `docs/AREX-SKILL-INTEGRATION.md`：三种安装方式（单技能 / 整库+路由器 / DisCo 官方导出）
+  的可执行命令、实测体积（vllm 35 文件 217 KB、router 204 文件 1.6 MB）、验证清单与边界。
+- 新增 `src/test/agent-skills-compat.test.ts`：16 个用例，含上游真实 `SKILL.md` 片段、
+  块标量五种写法、跨行标量后继续解析后续键、目录布局契约（只有 router 可注册）。
+- 全量校验：tsc 0 错误 / 220 文件 4749 用例通过（15 skipped）/ 审计 25 条规则 0/0 /
+  css-contract 2743 类无变化。
+
 ## [1.16.19] - 2026-09-13 — 修复：上下文超限后的「白重试 + 假续写」；思考模型被输出上限掐断
 
 ### 现象（用户控制台，这次给了完整真相）

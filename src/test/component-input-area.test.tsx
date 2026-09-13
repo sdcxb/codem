@@ -4,7 +4,7 @@
  * 验证输入区的核心交互：输入文本、发送、取消、禁用状态。
  */
 import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -255,5 +255,99 @@ describe("InputArea — 第 46 波：输入区辅助按钮", () => {
     expect(disabledBlock, "应有 :disabled 的悬停复位规则").toBeTruthy();
     expect(disabledBlock).toMatch(/background:\s*none/);
     expect(/\.input-control-item:disabled \{[\s\S]*?cursor:\s*not-allowed/.test(css), "禁用态应给 not-allowed 光标").toBe(true);
+  });
+});
+
+/**
+ * 用户反馈（v1.16.20 之后）：上传 a.md 后，编辑器里出现「上下文：a.md」标签，
+ * 发送之后标签不消失，对话结束还在。
+ *
+ * 根因不是"忘了清"，而是**同一份状态被手工复制成两份**：附件存在 `pendingAttachments`，
+ * 徽章行存在 `contextBadges`，后者只在 textarea 的 onChange 里重算一次。于是除了"发送后
+ * 不消失"，还有三条同样会骗人的路径：手动点 × 移除附件后徽章还在、切换会话后徽章跨会话残留、
+ * 粘贴/拖拽进来的附件不会出现在徽章行里。
+ *
+ * 现在徽章从 `pendingAttachments` 派生 —— 徽章行永远等于"这条消息真的要带的附件"。
+ * 这组用例把这四条路径都钉住。
+ */
+describe("InputArea — 附件徽章与附件同生共死", () => {
+  async function uploadFile(container: HTMLElement, name: string, content = "# hello") {
+    const fileInput = container.querySelector<HTMLInputElement>("#file-upload-input");
+    expect(fileInput, "#file-upload-input 应存在（FileUpload 提供）").toBeTruthy();
+    const file = new File([content], name, { type: "text/markdown" });
+    fireEvent.change(fileInput!, { target: { files: [file] } });
+    await waitFor(() => {
+      expect(container.querySelector(".pending-attachment")).toBeTruthy();
+    });
+  }
+
+  it("ATTC-1: 上传附件后，徽章行与附件卡片同时出现，且徽章写的是文件名", async () => {
+    const { container } = renderInputArea();
+    await uploadFile(container, "a.md");
+
+    const badges = container.querySelectorAll(".context-badge");
+    expect(badges).toHaveLength(1);
+    expect(badges[0].textContent).toContain("a.md");
+    expect(container.querySelector(".context-prefix")?.textContent).toContain("上下文");
+  });
+
+  it("ATTC-2: 发送后徽章与附件卡片一起消失（用户报的这条）", async () => {
+    const { container, onSend } = renderInputArea();
+    await uploadFile(container, "a.md");
+
+    const textarea = screen.getByRole("textbox");
+    fireEvent.change(textarea, { target: { value: "看看这个文件" } });
+    fireEvent.keyDown(textarea, { key: "Enter" });
+
+    expect(onSend).toHaveBeenCalledTimes(1);
+    expect(onSend.mock.calls[0][0]).toContain("看看这个文件");
+    expect(onSend.mock.calls[0][1]?.[0]?.name).toBe("a.md");
+
+    await waitFor(() => {
+      expect(container.querySelector(".context-badge-list")).toBeNull();
+    });
+    expect(container.querySelector(".pending-attachment")).toBeNull();
+  });
+
+  it("ATTC-3: 点 × 移除附件后徽章同步消失（徽章不能继续声称会发送它）", async () => {
+    const { container } = renderInputArea();
+    await uploadFile(container, "a.md");
+    expect(container.querySelector(".context-badge")).toBeTruthy();
+
+    const removeBtn = container.querySelector<HTMLButtonElement>(".attachment-remove");
+    expect(removeBtn).toBeTruthy();
+    fireEvent.click(removeBtn!);
+
+    await waitFor(() => {
+      expect(container.querySelector(".context-badge-list")).toBeNull();
+    });
+    expect(container.querySelector(".pending-attachment")).toBeNull();
+  });
+
+  it("ATTC-4: 仅切换会话（sessionKey 变化）也要清掉徽章，不跨会话残留", async () => {
+    const props = {
+      onSend: vi.fn(),
+      onCancel: vi.fn(),
+      disabled: false,
+      isStreaming: false,
+      collaborationMode: "default" as CollaborationMode,
+      onModeChange: vi.fn(),
+      connected: true,
+    };
+    const { container, rerender } = render(<InputArea {...props} sessionKey="session-a" />);
+    await uploadFile(container, "a.md");
+
+    // 先敲一个字，让徽章行真正渲染出来（这一步是这条用例的关键：
+    // 旧实现只在 onChange 里重算徽章，不敲字徽章根本不会出现，用例会假通过）
+    const textarea = screen.getByRole("textbox");
+    fireEvent.change(textarea, { target: { value: "半句话" } });
+    expect(container.querySelector(".context-badge")).toBeTruthy();
+
+    rerender(<InputArea {...props} sessionKey="session-b" />);
+
+    await waitFor(() => {
+      expect(container.querySelector(".context-badge-list")).toBeNull();
+    });
+    expect(container.querySelector(".pending-attachment")).toBeNull();
   });
 });

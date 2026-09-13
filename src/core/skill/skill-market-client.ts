@@ -1709,7 +1709,7 @@ async function installSkillFromGitHubDir(
 
     const files: FileEntry[] = [];
     const allowedExtensions = new Set([
-      ".md", ".txt", ".json", ".yaml", ".yml",
+      ".md", ".txt", ".json", ".jsonl", ".yaml", ".yml", ".csv",
       ".ts", ".tsx", ".js", ".jsx", ".mjs",
       ".py", ".sh", ".bat", ".ps1",
       ".css", ".html", ".svg",
@@ -1984,7 +1984,7 @@ async function installSkillFromZipFiltered(
     // 写入文件
     let filesWritten = 0;
     const allowedExtensions = new Set([
-      ".md", ".txt", ".json", ".yaml", ".yml",
+      ".md", ".txt", ".json", ".jsonl", ".yaml", ".yml", ".csv",
       ".ts", ".tsx", ".js", ".jsx", ".mjs",
       ".py", ".sh", ".bat", ".ps1",
       ".css", ".html", ".svg",

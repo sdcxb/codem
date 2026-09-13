@@ -482,8 +482,20 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
   // Composer badges: file refs, GitHub links, quotes, URLs
   const [composerBadges, setComposerBadges] = useState<ComposerBadge[]>([]);
   const fileMentionCache = useRef<{ cwd: string; items: MentionItem[]; ts: number } | null>(null);
-  // P4: Context badges for current input
-  const [contextBadges, setContextBadges] = useState<Array<{ id: string; type: "notebook" | "file" | "url"; label: string; icon?: string }>>([]);
+  // P4: Context badges for current input — derived from what will actually be sent.
+  // Keeping a hand-synced copy in state meant the row could outlive the attachment
+  // (send / session switch / manual removal never cleared it), so the composer showed
+  // a file that was no longer part of the message. Deriving it removes that class of desync.
+  const contextBadges = useMemo(
+    () =>
+      pendingAttachments.map((att) => ({
+        id: att.id,
+        type: "file" as const,
+        label: att.name,
+        icon: "📄",
+      })),
+    [pendingAttachments],
+  );
   // P3: Multimodal generate mode + resolution
   const [generateMode, setGenerateMode] = useState<"text" | "image" | "video">("text");
   const [resolution, setResolution] = useState("1024x1024");
@@ -1275,13 +1287,6 @@ const [showSkillPicker, setShowSkillPicker] = useState(false);
                 setMentionQuery(null);
               }
               scheduleGithubBadgeReconcile(val);
-              const badges: Array<{ id: string; type: "notebook" | "file" | "url"; label: string; icon?: string }> = [];
-              if (pendingAttachments.length > 0) {
-                pendingAttachments.forEach((att) => {
-                  badges.push({ id: att.id, type: "file", label: att.name, icon: "file" });
-                });
-              }
-              setContextBadges(badges);
             }}
             onKeyDown={handleKeyDown}
             onCompositionStart={() => { compositionJustEndedRef.current = false; }}

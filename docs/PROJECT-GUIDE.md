@@ -1,4 +1,4 @@
-﻿# Codem 项目完整说明
+# Codem 项目完整说明
 
 > **用途**：新对话快速理解项目全貌、架构、文件关联、当前状态。
 > 创建时间：2026-07-23 | 最后更新：2026-09-10 | 当前版本：v1.13.0（图书馆插件集成手绘像素美术 — 场景直接用 ClawLibrary 的图书馆像素画 + Capy/Cat 角色精灵；监控面板对标 lobster-pet 重排，图书馆作为监控界面内的一张卡；资源许可与义务见 docs/ASSET-LICENSES.md）
@@ -926,6 +926,7 @@ Rust 后端 (lib.rs):
 |------|------|------|------|
 | **PROJECT-GUIDE.md** | 📌本项目 | **本文档**，完整项目说明 | ✅ 最新 |
 | **RELEASE-GUIDE.md** | 发布指南 | **构建 + 签名 + GitHub Release 完整流程**（v1.9.0 成功经验固化；发布构建必读） | ✅ 最新 |
+| **AREX-SKILL-INTEGRATION.md** | 集成指南 | **第三方 Agent Skills（AREX-Skill）集成**：三种安装方式 + 实测体积 + 验证清单 + 已知边界 | ✅ 最新 |
 | **PROJECT_STATUS.md** | 项目简介 | 项目概述+架构+功能清单+版本历史 | v0.88 |
 | **PROJECT-CONTEXT.md** | 旧版交接 | v0.79 时的交接文档，已被 PROJECT_STATUS 替代 | 📦 归档 |
 | **TODO.md** | 待办跟踪 | Phase 0-G 全部完成记录 + v0.88-v1.1.0 全部版本变更 | ✅ 最新 |
@@ -1028,6 +1029,7 @@ Rust 后端 (lib.rs):
 
 | 版本 | 日期 | 主要内容 |
 |------|------|---------|
+| v1.16.20 | 2026-09-13 | **修复：上传附件后「上下文」标签不消失 + 兼容第三方 Agent Skills（第 70 波）** — ①**用户反馈**：上传 a.md 后编辑框里出现「上下文：a.md」标签，发送后不消失、对话结束仍在。根因不是忘了清空，而是**同一份状态被手工复制成两份**（附件 `pendingAttachments` + 徽章 `contextBadges`，后者只在 textarea `onChange` 里重算）→ 四条路径全在说谎：发送后残留（用户报的）、点 × 移除附件后徽章仍声称会发送它、切换会话跨会话残留、粘贴/拖拽进来的附件不进徽章行。修复：徽章行改为从 `pendingAttachments` **派生**，删掉状态与手工同步；`component-input-area.test.tsx` 新增 ATTC-1~4，并**换回修复前组件验证过这 4 条用例确实会失败**（不是假通过）。②**AREX-Skill 集成暴露的第三方兼容缺陷**（实测上游真实 SKILL.md）：`name: "repo-skills-router"` 连引号一起注册成技能名 → `load_skill("repo-skills-router")` 查不到；跨行双引号描述被截断到第一行（vllm 描述 159 → 61 字符且带多余引号）；`description: >-` / `|` 被当成字面字符串（描述整段丢失）；正文没有 `# ` 一级标题时整份 SKILL.md 被静默丢弃。修复（`src/core/skill/skill.ts`）：字符串字段统一去引号 + 反转义；跨行双引号标量按 YAML 折行拼接；块标量 `> >- >+ \| \|- \|+` 全支持（折叠/字面 + chomping）；frontmatter 之后无一级标题的内容作为正文（无 frontmatter 的纯文本仍非法）；市场安装白名单补 `.jsonl` / `.csv`（AREX 路由器索引是 JSON Lines）。③**核对结论**：Codem 只加载技能目录一层子目录 → AREX「router + `repo-skills/<id>/` 兄弟目录」原始形状天然契合（只有 router 进技能目录，仓库根技能由路由器按需 read 展开）；`<skill_resources>` 给出技能目录绝对路径 → SKILL.md 里的相对路径可直接解析；`disable-model-invocation` 被忽略；项目根 `.codem\skills\` 只在项目管理器展示。④**文档**：新增 `docs/AREX-SKILL-INTEGRATION.md`（三种安装方式的可执行命令、实测体积 vllm 35 文件 217 KB / router 204 文件 1.6 MB、验证清单、边界）。⑤**教训**：**同一份事实存两份、其中一份靠手工同步维护，迟早会说谎**。校验：tsc 0 错误 / 220 文件 4749 用例通过 / 审计 25 条规则 0/0 / css-contract 无变化。 |
 | v1.16.19 | 2026-09-13 | **修复：上下文超限后的「白重试 + 假续写」；思考模型被输出上限掐断（第 69 波）** — 用户日志给出完整真相：`finish_reason=length — text 0 chars, tool calls 0`（思考吃光输出预算）→ 自动续写 → 之后每次请求都 400 `maximum context length is 1048576 tokens. However, you requested 1048735 tokens`，而且上下文还在变大（1048735 → 1048992 → 1049249），每轮还白重试 3 次。①**根因一**：反应式压缩的判定只认 `prompt_too_long` / `context_length_exceeded`，而 DeepSeek 的措辞是 `maximum context length is ...` → **本该救场的压缩从未触发**。②**根因二**：确定性错误被白重试（4xx 非 429 无意义），且 provider 没把 HTTP 状态挂到错误对象上，`classifyError` 也判不出来。③**根因三（我上一波引入）**：`lastFinishReason` 跨迭代不重置 → 失败轮沿用上一轮的 `length` 触发假续写，把超限上下文继续撑大。④**修复**：新增 `provider-errors.ts` 做**语义匹配**（maximum context length / context_length_exceeded / prompt too long / reduce the length of the messages / too many tokens…）并能解析上限与实际请求数字；溢出⇒**立即走压缩**不重试，压缩 3 次仍不够则停下（`context_overflow`）并给出可执行说明（数字 + 开新对话/收敛内容/换大模型）；不可重试的 4xx **立即失败**；provider 挂 `err.status` 并把错误体给足 2000 字符；**结束原因每轮重置**且记录本轮**正文长度**——「正文 0 字符」判定为「思考吃光预算」，续写提示改为「少想、直接产出」。⑤**按模型族给输出上限**（补强第 67 波）：`deepseek-flash` 在目录里查不到 → 以前落到 8192（对带思考的模型明显偏小，直接导致「正文 0 字符」）→ 现在按族推断（DeepSeek/推理系 65536、Claude 4 32000、Gemini 2.5+ 65536），未知型号仍保守兜底。⑥**教训**：**错误分类不能只匹配「自家见过的措辞」** —— 只认两个字符串，等于让一条能自动救场的路径形同虚设。校验：tsc 0 错误 / 219 文件 4729 用例通过 / 审计 25 条规则 0/0 / css-contract 无变化 / 打包成功；新增 OFLOW-1~7（用事故现场真实报错体做样本）。 |
 | v1.16.18 | 2026-09-13 | **修复：回复被输出上限截断时「任务又中断了」（第 68 波）** — 用户说「继续之前没完成的任务」，控制台显示一轮就收尾（`Single-response dedup: 0 tool calls` → 直接 `[extractMemories]`），没有报错也没有重试。①**根因**：`finish_reason === length`（达到单次输出上限、回复被截断）此前**只用于内容型工具的提示**，从不参与「要不要停」的判断 → 被截断的纯文本回复被当成「写完了」，循环以 `completed` 收尾；而 `finish_reason` 只写在默认静默的 `debugLog` 里，控制台毫无线索。②**修复**：截断 ⇒ **自动续写**（注入「从断点继续」提示：不要重复已输出内容 / 长文件改用 `write` + `append: true` 分块 / 写完就说明），界面显示「⏩ …正在自动续写」；③**续写预算 3 次**，用完则明确停下并给出下一步（分块写入 / 调大 `maxTokens`），停止原因 `output_truncated`（结构化事件 + 用户可见说明），不再静默结束；④**结束原因进入循环状态**（provider 的 `end` 事件不向上游 yield，故写入 `LoopState.lastFinishReason`），主循环的停止判断这才看得见它；⑤**非正常结束原因默认可见**（`finish_reason` 非 stop/tool_use 时 console.warn，例如「length（达到单次输出上限，回复被截断）」）。校验：tsc 0 错误 / 218 文件 4722 用例通过 / 审计 25 条规则 0/0 / css-contract 无变化 / 打包成功；新增 TRUNC-1~5 与**行为测试** TRUNC-B1~B3（脚本化 provider 真跑循环）。 |
 | v1.16.17 | 2026-09-13 | **输出上限按模型动态解析（被拒自动降档）+ 同类问题清查（第 67 波）** — 用户指出上一版「让用户自己去设置里调 maxTokens」不对：应该**按模型上限动态取**或**被拒时临时调整**。① 查下去发现**模型目录里本来就有**每模型的 `maxOutputTokens`（`deepseek-v4-flash` 384000 / `gpt-4o` 16384 / `moonshot-v1-8k` 4096），写死常量的后果**两头都错**：小 → 大文件参数被截断（用户遇到的报错）；大 → 请求被 API 直接拒绝。② 新增 `src/core/llm/model-output-limit.ts`：优先级 **显式配置 → 被拒后学到的值 → 模型目录值（夹在 65536 天花板）→ 兜底 8192**。③ **被 API 拒绝自动折半降档 + 进程内按模型记住 + 自动重试一次**（用户不必手调）；拒绝判定保守（仅 400/422 + 提到 max_tokens + 像值不合法/超限）。④ 顺带修掉同类硬编码：ultra 模式原本 `Math.max(config \|\| 4096, 16384)`，对上限 4096 的模型会把请求打挂 → 改为同样按模型目录夹住。⑤ **同类问题清查（静默丢数据这一族）**：`provider.ts` 的 SSE 坏行 catch 以前只 warn 就丢整行 —— 若丢的是 tool_calls 参数增量，累积 JSON 即残缺（**与截断同一现象**）→ 现在计数并在 `tool_use_end` 标注「参数可能不完整」，走拒绝执行 + 引导重试；`finish_reason=length` 且跑了内容型工具 → 追加「核对完整性 + 用 append 补齐」提示与事件 `output_truncated`；`write` 把已有非空文件写成空 → 结果里警告并带原文件大小。⑥ **已核查不是问题的**（都有明确提示）：read 截断（showing lines X-Y of Z）、落盘失败截断、上下文预算截断、终端 `[output truncated]`、附件预览、记忆压缩占位符。⑦ 另有波 66 的一条断言因本波而退役（常量不再出现于 index.ts），按新事实更新为「按模型解析」。 校验：tsc 0 错误 / 216 文件 4714 用例通过 / 审计 25 条规则 0/0 / css-contract 无变化 / 打包成功；新增 OUTLIM-1~7 与 SAMECLASS-1~3。 |
@@ -1470,6 +1472,30 @@ npm run tauri build        # 构建 NSIS exe + MSI
 ---
 
 ## 八、版本历史
+
+### v1.16.20（2026-09-13）— 修复：上传附件后「上下文」标签不消失；兼容第三方 Agent Skills（AREX-Skill）
+
+- **附件徽章不消失（用户反馈）**：上传 a.md 后编辑框里的「上下文：a.md」标签发送后仍在。
+  根因是同一份状态被手工复制成两份（`pendingAttachments` + `contextBadges`，后者只在
+  textarea onChange 重算）。同类路径一次性同生共死：发送后残留、点 × 移除附件后仍显示、
+  跨会话残留、粘贴/拖拽的附件不进徽章行。修复：徽章行从 `pendingAttachments` 派生
+  （`src/components/InputArea.tsx`）；`component-input-area.test.tsx` 新增 ATTC-1~4，
+  并用「换回修复前组件」验证过 4 条用例确实会失败
+- **第三方 Agent Skills 兼容（AREX-Skill 集成驱动）**：`name: "x"` 连引号一起注册成技能名 →
+  `load_skill("x")` 查不到；跨行双引号描述被截断到第一行（vllm 描述 159 → 61 字符且带多余引号）；
+  `description: >-` / `|` 字面解析成 `>-` / `|`（描述整段丢失）；正文没有 `# ` 一级标题时整份
+  SKILL.md 被静默丢弃。修复（`src/core/skill/skill.ts`）：字符串字段统一去引号 + 反转义；
+  跨行双引号标量按 YAML 折行拼接；块标量 `> >- >+ | |- |+` 全支持（折叠/字面 + chomping）；
+  frontmatter 之后无一级标题的内容作为正文（无 frontmatter 的纯文本仍非法）；市场安装白名单
+  补 `.jsonl` / `.csv`（AREX 路由器索引是 JSON Lines）
+- **核对结论（写入文档）**：Codem 只加载技能目录一层子目录，AREX「router + `repo-skills/<id>/`
+  兄弟目录」原始形状天然契合（只有 router 进技能目录，仓库根技能由路由器按需 read 展开）；
+  `<skill_resources>` 提供技能目录绝对路径，相对路径可直接解析；`disable-model-invocation`
+  被忽略；项目根 `.codem\skills\` 只在项目管理器展示，不注册为可调用技能
+- **文档**：新增 `docs/AREX-SKILL-INTEGRATION.md`（三种安装方式的可执行命令、实测体积
+  vllm 35 文件 217 KB / router 204 文件 1.6 MB、验证清单、边界）
+- **测试**：`agent-skills-compat.test.ts` 16 用例 + `component-input-area.test.tsx` 4 用例；
+  全量 220 文件 / 4749 用例通过
 
 ### v1.11.2（2026-09-09）— zg 在线安装 Node 源根治 + 审计四坑修复 + 功能文档体系
 
