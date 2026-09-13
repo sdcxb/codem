@@ -17,7 +17,8 @@ import { getPermissionManager, type PermissionRequest, type PermissionResult } f
 import { getVisionProxy } from "./vision-proxy";
 import { getSnapshotService } from "../snapshot/snapshot";
 import { debugLog, warnOnce } from "../debug";
-import { RepeatGuard } from "./loop-guard";
+import { RepeatGuard, type GuardKind } from "./loop-guard";
+import { getDelegationOrchestrator } from "../session/orchestrator";
 import * as MessageStorage from "../storage/message";
 // deriveMessagesFromEvents removed — DB CRUD is the single source of truth for LLM messages
 import { getEventLog } from "../storage/event-log";
@@ -188,11 +189,6 @@ export interface LoopConfig {
  */
 const MAX_CONSECUTIVE_NO_PROGRESS = 30;
 
-/**
- * 第 63 波：同一个委派任务最多被"查看/等待"几次。
- * 超过之后不再返回进度，而是明确要求"要么报告、要么取消"。
- */
-const MAX_DELEGATION_PEEKS = 3;
 
 const DEFAULT_LOOP_CONFIG: LoopConfig = {
   maxIterations: 0,
@@ -335,10 +331,11 @@ export class AgenticLoop {
   private delegatedTasks: Set<string> = new Set(); // delegation task IDs (not yet waited on)
   private waitedDelegations: Map<string, string> = new Map(); // delegation taskId → cached result
   /**
-   * 第 63 波：每个委派任务被"查看/等待"的次数。
-   * 等待带预算后不再阻塞，于是需要单独兜住「秒回式空转」（查一下、再查一下）。
+   * 第 64 波：每个委派任务"上一次查看时子会话的进度"以及"连续几次查看之间没有新进展"。
+   * 判据是**两次查看之间子会话有没有动**（信息增益），不是"看了几次"。
    */
-  private delegationPeekCounts: Map<string, number> = new Map();
+  private delegationProgressAtWait: Map<string, string> = new Map();
+  private delegationStuckPeeks: Map<string, number> = new Map();
   /**
    * 第 62 波：重复工具调用守卫。
    *
@@ -349,8 +346,8 @@ export class AgenticLoop {
   private repeatGuard: RepeatGuard = new RepeatGuard();
   /** 守卫判定「该停了」时的提示语 —— 在迭代末尾像 writeRejected 一样终止循环 */
   private guardStopMessage: string | null = null;
-  /** 停档的类别（枚举 / 精确），决定给用户看的那句话 */
-  private guardStopKind: "exact" | "enumerate" = "enumerate";
+  /** 停档的类别（零信息增益 / 只读枚举），决定给用户看的那句话 */
+  private guardStopKind: GuardKind = "no-gain";
   /**
    * 本轮迭代里被守卫拦下的调用数。
    *
@@ -750,9 +747,10 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
     // 新的用户指令 = 新的意图，阈值只应在一轮之内达到。
     this.repeatGuard.reset();
     this.guardStopMessage = null;
-    this.guardStopKind = "enumerate";
+    this.guardStopKind = "no-gain";
     this.guardSuppressedThisIteration = 0;
-    this.delegationPeekCounts.clear();
+    this.delegationProgressAtWait.clear();
+    this.delegationStuckPeeks.clear();
 
     // Model-aware context window: resolve the current model's real window
     // from the provider and sync it into TokenTracker. Without this the
@@ -1430,16 +1428,15 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
       // 与 writeRejected 同一形态：状态标记 + 终止循环 + 给用户看得懂的一句话。
       if (this.guardStopMessage) {
         const stats = this.repeatGuard.stats;
-        // 显式标注类型：guardStopKind 是在工具回调里被赋值的，TS 的控制流分析在这里
-        // 只看到 run() 开头那次赋值，会把类型收窄成 "enumerate" 而报"不可能相等"。
-        const stopKind = this.guardStopKind as "exact" | "enumerate";
+        // 显式标注类型：guardStopKind 是在工具回调里被赋值的，TS 的控制流分析只看到 run() 开头那次赋值
+        const stopKind = this.guardStopKind as GuardKind;
         console.warn(
-          `[AgenticLoop] Repeat guard stopped the loop (${stopKind}) — repeats: exact=${stats.exactRepeats}, enumerate=${stats.enumRepeats}, suppressed=${stats.suppressed}, enumResets=${stats.enumResets}`,
+          `[AgenticLoop] Repeat guard stopped the loop (${stopKind}) — noGainRepeats=${stats.noGainRepeats}, distinctResults=${stats.distinctResults}, suppressed=${stats.suppressed}, advisories=${stats.advisories}`,
         );
         const headline =
-          stopKind === "exact"
-            ? "⚠️ **检测到原地打转，已停止**（同一次调用被一字不差地重复多次）"
-            : "⚠️ **检测到原地打转，已停止**（同一目标被反复只读枚举 10 次以上）";
+          stopKind === "enumerate"
+            ? "⚠️ **检测到原地打转，已停止**（同一目标被反复只读枚举）"
+            : "⚠️ **检测到原地打转，已停止**（连续拿到完全相同的内容 = 零信息增益）";
         yield { type: "text_delta", text: `\n\n${headline}：${this.guardStopMessage}` };
         try {
           getEventLog().append(sessionId, "loop_stopped", {
@@ -2179,7 +2176,7 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
           );
           if (guardDecision.action === "stop" && !this.guardStopMessage) {
             this.guardStopMessage = guardDecision.message ?? "检测到重复操作，已停止。";
-            this.guardStopKind = guardDecision.kind ?? "enumerate";
+            this.guardStopKind = guardDecision.kind ?? "no-gain";
           }
           // 审计修正：这里必须是 "completed" 而不是 "error"。
           // executor 会把 status:"error" 的结果当成 tool_error 抛出，而 tool_error 会累加
@@ -2281,23 +2278,30 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
             };
           }
 
-          // 第 63 波（审计补）：等待改成「带预算、到点返回进度」之后出现了一条新的空转路径 ——
-          // 预算用完后每次调用都是**秒回**，模型于是可以「查一下、再查一下」，不阻塞但也没进展。
-          // 因此对同一个任务的查看次数设上限：超过就抑制，只回一句"别再看了，去做事或报告"。
+          // 第 64 波：等待改成"按活动返回"之后，仍有"秒回式空转"的可能（子会话安静时每次查看都秒回）。
+          // 判据同样用**信息增益**而不是次数：比较两次查看之间子会话的进度是否变化 ——
+          // 进度没变（没有新工具调用、没有新事件）说明它确实没动静，这时才劝退。
           if (taskId) {
-            const attempts = (this.delegationPeekCounts.get(taskId) ?? 0) + 1;
-            this.delegationPeekCounts.set(taskId, attempts);
-            if (attempts > MAX_DELEGATION_PEEKS) {
-              console.warn(`[AgenticLoop] ${name}(${taskId}) 已查看 ${attempts} 次仍未完成 —— 抑制，引导不再空转`);
+            const prog = getDelegationOrchestrator().getTask(taskId)?.progress;
+            const progressKey = `${prog?.toolCalls ?? 0}|${prog?.updatedAt ?? 0}|${prog?.lastTool ?? ""}`;
+            const prevKey = this.delegationProgressAtWait.get(taskId);
+            const stuck = prevKey !== undefined && prevKey === progressKey
+              ? (this.delegationStuckPeeks.get(taskId) ?? 0) + 1
+              : 0;
+            this.delegationStuckPeeks.set(taskId, stuck);
+            this.delegationProgressAtWait.set(taskId, progressKey);
+            if (stuck >= 2) {
+              console.warn(`[AgenticLoop] ${name}(${taskId}) 两次查看之间没有任何进展 —— 抑制，引导不再空转`);
               this.guardSuppressedThisIteration++;
               return {
                 id: "",
                 name,
                 input: args,
                 output:
-                  `[REPEAT GUARD] 你已经查看这个委派任务 ${attempts} 次，它仍未完成。**不要再查看或等待了。**\n` +
-                  `请二选一：① 向用户报告「子会话仍在运行 + 它卡在什么动作上」（用上一次返回的进度信息）；` +
-                  `② 用 cancel_delegation 终止它，然后基于已有的部分产出自行动手收尾。`,
+                  `[REPEAT GUARD] 你两次查看这个委派任务之间，它**没有任何新的进展**（工具调用次数/最近动作都没变）。\n` +
+                  `**不要再查看或等待了。** 请二选一：\n` +
+                  `  ① 向用户报告「子会话已安静、卡在什么动作上」（用上一次返回的进度信息）；\n` +
+                  `  ② 用 cancel_delegation 终止它，然后基于已有部分产出自行动手收尾。`,
                 status: "completed" as const,
               };
             }
@@ -2310,9 +2314,20 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
 
         const result = await tool.execute(effectiveArgs, ctx);
 
-        // 第 62 波：守卫的「提醒」档 —— 边执行边把提示贴到结果末尾（不打断，只纠正方向）
+        // 第 64 波：把**结果**交给守卫 —— 判"原地打转"的依据是"拿到的东西是不是已经有了"，
+        // 不是"调用了几次"。守卫据此累计"零信息增益"次数，下一次 inspect 时决定提醒/跳过/停。
+        let guardGain: { gained: boolean; streak: number } | undefined;
+        try {
+          guardGain = this.repeatGuard.noteResult(name, effectiveArgs, result.output);
+        } catch (e) { warnOnce("repeat-guard:note-result", "[agentic-loop] 记录守卫结果失败", e); }
+
+        // 守卫的「提醒」档 —— 边执行边把提示贴到结果末尾（不打断，只纠正方向）
         if (guardDecision.action === "warn" && guardDecision.message) {
           result.output = `${result.output ?? ""}\n\n${guardDecision.message}`;
+        } else if (guardGain && !guardGain.gained) {
+          result.output =
+            `${result.output ?? ""}\n\n[REPEAT GUARD] 这次拿到的内容与之前**完全相同**（连续第 ${guardGain.streak} 次零信息增益）。` +
+            `再重复同类调用不会产生新信息：请换手段，或直接基于已有信息推进/报告。`;
         }
 
         console.log(`[AgenticLoop] Tool executed: ${name}, path: ${effectiveArgs.path || effectiveArgs.command || "(none)"}, output length: ${result.output?.length || 0}`);

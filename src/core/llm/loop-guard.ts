@@ -25,49 +25,47 @@
  */
 
 export type GuardAction = "allow" | "warn" | "suppress" | "stop";
-export type GuardKind = "exact" | "enumerate";
+export type GuardKind = "no-gain" | "no-gain-signature" | "enumerate";
 
 export interface GuardDecision {
   action: GuardAction;
   kind?: GuardKind;
   /** 归一化后的指纹（日志/事件里用） */
   signature?: string;
-  /** 该指纹累计出现次数 */
+  /** 触发时的计数：零增益档是「连续零增益次数」，枚举档是「第几次查看同一目标」 */
   count?: number;
   /** 追加到工具结果里的引导语（warn/suppress/stop） */
   message?: string;
 }
 
 export interface RepeatGuardLimits {
-  /** 精确指纹：第几次开始提醒（仍执行） */
-  exactWarn: number;
-  /** 精确指纹：第几次开始抑制（不执行，返回引导语） */
-  exactSuppress: number;
   /**
-   * 精确指纹：第几次直接停下整个循环。
+   * **零信息增益**重复到第几次开始提醒（仍执行）。
    *
-   * 为什么必须给精确档也留一个「停」：抑制只是"不给执行"，模型可以原样再叫一次 ——
-   * 而每次被抑制的调用**仍然会走一遍工具调用事件**（因此仍被算作"这一轮有工具调用"），
-   * 于是「连续无进展」阀门永远不会触发。没有这一档，精确重复会变成**新的死循环**。
+   * 这里的"次数"不是"调用了几次"，而是「**连续拿到已经见过的完全相同的内容、且期间没有任何写操作**」
+   * 的次数 —— 也就是**可证明的零进展**。第 64 波之前用的是「同一目标枚举到第 10 次就停」，
+   * 那是拿次数当可靠性：合法的反复查看（列目录 → 读 → 再列）会被误杀，而"换十几种写法拿到同一份内容"
+   * 反而要数到 10 次才停。现在判据换成信息增益，次数只是去抖。
    */
-  exactStop: number;
-  /** 只读枚举：第几次开始提醒 */
-  enumWarn: number;
-  /** 只读枚举：第几次开始抑制 */
-  enumSuppress: number;
-  /** 只读枚举：第几次直接停下整个循环 */
-  enumStop: number;
+  noGainWarn: number;
+  /** 零信息增益重复到第几次开始跳过（**只跳过那一个签名**，换新手段照常放行） */
+  noGainSuppress: number;
+  /** 零信息增益重复到第几次直接停下整个循环 */
+  noGainStop: number;
+  /**
+   * 只读枚举的"提醒"阈值（**仅提醒，不再拦**）。
+   * 保留它是因为文案里有价值（"你在反复看同一个目录"），但**不作为可靠性机制**。
+   */
+  enumAdvisoryAt: number;
   /** 文案里怎么称呼当前会话（"子会话" / "本次会话"） */
   label: string;
 }
 
 export const DEFAULT_GUARD_LIMITS: RepeatGuardLimits = {
-  exactWarn: 3,
-  exactSuppress: 5,
-  exactStop: 8,
-  enumWarn: 4,
-  enumSuppress: 7,
-  enumStop: 10,
+  noGainWarn: 2,
+  noGainSuppress: 4,
+  noGainStop: 6,
+  enumAdvisoryAt: 4,
   label: "本次会话",
 };
 
@@ -256,24 +254,43 @@ function truncate(s: string, n: number): string {
   return s.length > n ? `${s.slice(0, n)}…` : s;
 }
 
-// ========== 守卫状态机 ==========
+// ========== 守卫状态机（第 64 波：判据从「次数」改成「信息增益」）==========
+
+/** 结果摘要：只归一化空白并截断 —— **不要**抹掉数字/时间戳，否则"文件真的变了"会被误判成没变 */
+export function digestOf(output: unknown): string {
+  const s = typeof output === "string" ? output : JSON.stringify(output ?? "");
+  const normalized = s.replace(/\s+/g, " ").trim();
+  return normalized.length > 4000 ? normalized.slice(0, 4000) : normalized;
+}
 
 export class RepeatGuard {
   private readonly limits: RepeatGuardLimits;
-  private exact = new Map<string, number>();
-  private enumCounts = new Map<string, number>();
-  private exactWarned = new Set<string>();
-  private enumWarned = new Set<string>();
-  private mutatedSinceEnum = false;
-  /** 统计（写进日志/事件，便于排查「为什么停了」） */
+  /** 本轮见过的**结果内容**（跨签名）—— 换十几种写法拿到同一份内容，同样是零信息增益 */
+  private seenDigests = new Set<string>();
+  /**
+   * 连续"零信息增益"次数：每次都拿到**已经见过的内容**，而且期间没有任何写操作。
+   * 这是**可证明的零进展**（不是"猜它可能卡住了"），也是本守卫唯一的升级依据。
+   */
+  private noGainStreak = 0;
+  /** 已被判定为零增益的签名：不再执行（但**允许换新手段** —— 新签名照常放行） */
+  private suppressedSignatures = new Set<string>();
+  /** 写操作之后的第一份"老内容"是合法的新信息（世界变过了），宽容一次 */
+  private mutatedSinceEvidence = false;
+  private warned = false;
+  /** 只读枚举的观察计数（仅用于提醒文案，**不参与拦截**） */
+  private enumSeen = new Map<string, number>();
+  private enumAdvised = new Set<string>();
+
   readonly stats = {
-    exactRepeats: 0,
-    enumRepeats: 0,
+    /** 观察到的"零信息增益"重复次数 */
+    noGainRepeats: 0,
+    /** 见过多少份不同结果（= 真实进展的度量） */
+    distinctResults: 0,
     suppressed: 0,
     stopped: 0,
     mutations: 0,
-    /** 因为"又有新动作"而清空枚举历史的次数 */
-    enumResets: 0,
+    /** 提醒次数（枚举/零增益） */
+    advisories: 0,
   };
 
   constructor(limits: Partial<RepeatGuardLimits> = {}) {
@@ -281,26 +298,66 @@ export class RepeatGuard {
   }
 
   reset(): void {
-    this.exact.clear();
-    this.enumCounts.clear();
-    this.exactWarned.clear();
-    this.enumWarned.clear();
-    this.mutatedSinceEnum = false;
+    this.seenDigests.clear();
+    this.noGainStreak = 0;
+    this.suppressedSignatures.clear();
+    this.mutatedSinceEvidence = false;
+    this.warned = false;
+    this.enumSeen.clear();
+    this.enumAdvised.clear();
   }
 
-  /** 写操作发生 —— 世界变了，枚举计数清零（精确指纹保留：同一条命令再跑一次仍是重复） */
+  /** 写操作发生 —— 世界变了：之后的"老内容"也算新信息（宽容一次），并清空枚举观察 */
   noteMutation(): void {
     this.stats.mutations++;
-    this.enumCounts.clear();
-    this.enumWarned.clear();
-    this.mutatedSinceEnum = true;
+    this.mutatedSinceEvidence = true;
+    this.enumSeen.clear();
+    this.enumAdvised.clear();
+  }
+
+  /** 当前的零信息增益连续次数（agentic-loop 用来判"该收手了"） */
+  get noGainStreakCount(): number {
+    return this.noGainStreak;
+  }
+
+  /**
+   * 在执行**之后**调用：登记这次调用的结果，判定是否带来新信息。
+   *
+   * 这是整个守卫的**证据来源** —— 判据不是"你调了几次"，而是"你拿到的东西是不是已经有了"。
+   */
+  noteResult(name: string, input: Record<string, unknown> | undefined, output: unknown): { gained: boolean; streak: number } {
+    const args = input ?? {};
+    const signature = exactSignature(name, args);
+    const digest = digestOf(output);
+
+    // 写操作之后的第一次：世界已经变了，即使内容一样也按"新信息"处理并宽容一次
+    if (this.mutatedSinceEvidence) {
+      this.mutatedSinceEvidence = false;
+      this.seenDigests.add(digest);
+      this.stats.distinctResults++;
+      this.noGainStreak = 0;
+      return { gained: true, streak: 0 };
+    }
+
+    if (this.seenDigests.has(digest)) {
+      this.noGainStreak++;
+      this.stats.noGainRepeats++;
+      if (this.noGainStreak >= this.limits.noGainSuppress) this.suppressedSignatures.add(signature);
+      return { gained: false, streak: this.noGainStreak };
+    }
+
+    this.seenDigests.add(digest);
+    this.stats.distinctResults++;
+    this.noGainStreak = 0;
+    return { gained: true, streak: 0 };
   }
 
   /**
    * 在执行**之前**调用。返回的 `message` 应追加到工具结果里（warn），
    * 或作为替代结果返回（suppress/stop）。
    *
-   * `cwd` 用于把「裸枚举命令」（`Get-ChildItem -Force`）归到真实目标路径上。
+   * 升级依据只有一条：**零信息增益**（见 `noteResult`）。
+   * `cwd` 用于把「裸枚举命令」（`Get-ChildItem -Force`）归到真实目标路径上，仅供提醒文案使用。
    */
   inspect(
     name: string,
@@ -314,12 +371,10 @@ export class RepeatGuard {
       return { action: "allow" };
     }
 
-    // 先分类：这次调用是不是"只读目录枚举"？
+    // 只读枚举分类：只为提醒文案（"你在反复看同一个目录"），不作为拦截依据
     let enumerateSignature: string | undefined;
-    let enumerateCommand = "";
     if (name === "bash" || name === "shell" || name === "run_command" || name === "terminal") {
       const command = String((args as any).command ?? (args as any).cmd ?? "");
-      enumerateCommand = command;
       const intent = bashIntent(command, ctx.cwd);
       if (intent.kind === "mutate") {
         this.noteMutation();
@@ -328,117 +383,93 @@ export class RepeatGuard {
       if (intent.kind === "enumerate") enumerateSignature = intent.signature;
     }
 
-    // 「干了别的事」= 有进展 → 清空枚举历史。
-    // 这条判据必须按**分类**而不是按"指纹是否见过"：事故里那 17 条命令每一条都是新的精确指纹
-    // （开关不一样），按指纹判会把计数一路清零，反而永远抓不到打转。
-    // 而「列目录 → 读文件 → 再列目录」里的 read 不是枚举 → 正确清零。
-    if (!enumerateSignature && this.enumCounts.size > 0) {
-      this.enumCounts.clear();
-      this.enumWarned.clear();
-      this.stats.enumResets++;
+    const signature = exactSignature(name, args);
+
+    // ===== 唯一的重判据：零信息增益 =====
+    if (this.noGainStreak >= this.limits.noGainStop) {
+      this.stats.stopped++;
+      return {
+        action: "stop",
+        kind: "no-gain",
+        signature,
+        count: this.noGainStreak,
+        message:
+          `[REPEAT GUARD — STOP] 你连续 ${this.noGainStreak} 次拿到了**已经见过的完全相同的内容**` +
+          `（期间没有任何写操作）—— 这是"零信息增益"的硬证据，说明当前手段已经不可能再推进任务。\n` +
+          `现在停下来，改用以下之一：\n` +
+          `  1) 换一个真正不同的手段（读具体文件、用搜索定位、问用户）；\n` +
+          `  2) 如果你要找的东西确实不存在，**直接报告"未找到 + 已尝试的路径/命令"**；\n` +
+          `  3) 如果需要调用方补充信息，明确写出你需要什么。`,
+      };
     }
 
-    if (enumerateSignature) return this.bumpEnum(enumerateSignature, enumerateCommand);
+    if (this.suppressedSignatures.has(signature)) {
+      // 这个**具体调用**已被证明拿不到新信息，不再执行。
+      // 但**换新手段必须放行**（新签名不在此列）—— 否则模型永远没法改策略，
+      // 那正是第 64 波要修掉的"拿次数/黑名单当可靠性"。
+      // 同时把这次也算作零增益：否则被拦下的调用不产生证据，永远升不到"停"档。
+      this.noGainStreak++;
+      this.stats.noGainRepeats++;
+      this.stats.suppressed++;
+      if (this.noGainStreak >= this.limits.noGainStop) {
+        this.stats.stopped++;
+        return {
+          action: "stop",
+          kind: "no-gain",
+          signature,
+          count: this.noGainStreak,
+          message:
+            `[REPEAT GUARD — STOP] 你连续 ${this.noGainStreak} 次在同一个手段上打转` +
+            `（拿到的是**已经见过的完全相同的内容**，期间没有任何写操作）—— 零信息增益，任务不可能靠它推进。\n` +
+            `现在停下来：换一个真正不同的手段，或者直接报告"未找到 + 已尝试过的路径/命令"，或者说明你需要调用方补什么。`,
+        };
+      }
+      return {
+        action: "suppress",
+        kind: "no-gain-signature",
+        signature,
+        count: this.noGainStreak,
+        message:
+          `[REPEAT GUARD] 跳过这次 ${name}：**同样的调用已经连续拿到完全相同的内容**` +
+          `（连续第 ${this.noGainStreak} 次零信息增益），再执行一次不会有新信息。\n` +
+          `请换一个**不同手段**（不同工具 / 不同目标 / 直接 read 具体文件），或者直接给出结论、报告缺什么。`,
+      };
+    }
+
+    if (this.noGainStreak >= this.limits.noGainWarn && !this.warned) {
+      this.warned = true;
+      this.stats.advisories++;
+      return {
+        action: "warn",
+        kind: "no-gain",
+        signature,
+        count: this.noGainStreak,
+        message:
+          `[SYSTEM REMINDER] 你连续 ${this.noGainStreak} 次拿到的内容与之前**完全相同**。` +
+          `再重复同类调用不会有新信息 —— 请换手段，或直接基于已有信息推进/报告。`,
+      };
+    }
+
+    // 只读枚举的提醒（文案价值；闸门在"零信息增益"那三档）
+    if (enumerateSignature) {
+      const n = (this.enumSeen.get(enumerateSignature) ?? 0) + 1;
+      this.enumSeen.set(enumerateSignature, n);
+      if (n >= this.limits.enumAdvisoryAt && !this.enumAdvised.has(enumerateSignature)) {
+        this.enumAdvised.add(enumerateSignature);
+        this.stats.advisories++;
+        return {
+          action: "warn",
+          kind: "enumerate",
+          signature: enumerateSignature,
+          count: n,
+          message:
+            `[SYSTEM REMINDER] 你已经第 ${n} 次查看同一个目标：${truncate(enumerateSignature, 160)}。` +
+            `如果这里没有你要的文件，**不要继续换写法重试** —— 直接说明缺什么，或改用已知路径 read。`,
+        };
+      }
+    }
+
     if (GUARD_EXEMPT_TOOLS.has(name)) return { action: "allow" };
-    return this.bumpExact(exactSignature(name, args), name);
-  }
-
-  private bumpEnum(signature: string, command: string): GuardDecision {
-    const n = (this.enumCounts.get(signature) ?? 0) + 1;
-    this.enumCounts.set(signature, n);
-    if (n > 1) this.stats.enumRepeats++;
-
-    const where = truncate(signature, 160);
-    if (n >= this.limits.enumStop) {
-      this.stats.stopped++;
-      return {
-        action: "stop",
-        kind: "enumerate",
-        signature,
-        count: n,
-        message:
-          `[REPEAT GUARD — STOP] 你已经用不同写法**第 ${n} 次**枚举同一个目标，而且期间没有任何写操作：\n` +
-          `  目标: ${where}\n  最近一次命令: ${truncate(command, 200)}\n\n` +
-          `反复枚举不会带来新信息（内容没有变化），只会消耗时间和费用。现在停止枚举，改用以下之一：\n` +
-          `  1) 用 read 直接读你已经知道的文件；\n` +
-          `  2) 如果目标文件确实不存在，**直接报告"未找到 + 你已尝试的路径"**，并把结论交回调用方；\n` +
-          `  3) 如果需要调用方补充信息，明确写出你需要什么。\n` +
-          `不要再调用任何目录枚举命令。`,
-      };
-    }
-    if (n >= this.limits.enumSuppress) {
-      this.stats.suppressed++;
-      return {
-        action: "suppress",
-        kind: "enumerate",
-        signature,
-        count: n,
-        message:
-          `[REPEAT GUARD] 目录枚举被跳过：这是第 ${n} 次枚举 ${where}（期间没有任何写操作），` +
-          `结果不会变。请改用 read 读具体文件，或直接给出结论 / 报告缺失。`,
-      };
-    }
-    if (n >= this.limits.enumWarn && !this.enumWarned.has(signature)) {
-      this.enumWarned.add(signature);
-      return {
-        action: "warn",
-        kind: "enumerate",
-        signature,
-        count: n,
-        message:
-          `[SYSTEM REMINDER] 你已经在枚举同一个目标（第 ${n} 次）：${where}。` +
-          `如果这里没有你要的文件，**不要继续换写法重试** —— 直接说明缺什么、或改用已知路径 read。`,
-      };
-    }
-    return { action: "allow", kind: "enumerate", signature, count: n };
-  }
-
-  private bumpExact(signature: string, name: string): GuardDecision {
-    const n = (this.exact.get(signature) ?? 0) + 1;
-    this.exact.set(signature, n);
-    if (n > 1) this.stats.exactRepeats++;
-
-    const where = truncate(signature, 160);
-    if (n >= this.limits.exactStop) {
-      this.stats.stopped++;
-      return {
-        action: "stop",
-        kind: "exact",
-        signature,
-        count: n,
-        message:
-          `[REPEAT GUARD — STOP] 同一次 ${name} 调用你**一字不差地重复了 ${n} 次**：\n  ${where}\n\n` +
-          `重复执行不会得到不同结果。现在停下来，改用以下之一：\n` +
-          `  1) 换参数/换工具真正推进任务；\n` +
-          `  2) 如果你在等待某个外部状态变化，**明确说明你在等什么**；\n` +
-          `  3) 如果已经拿到需要的信息，直接给出结论并结束。`,
-      };
-    }
-    if (n >= this.limits.exactSuppress) {
-      this.stats.suppressed++;
-      return {
-        action: "suppress",
-        kind: "exact",
-        signature,
-        count: n,
-        message:
-          `[REPEAT GUARD] 完全相同的 ${name} 调用被跳过（第 ${n} 次，参数一字不差）。` +
-          `重复执行不会得到不同结果：请改用不同参数/不同工具，或直接给出结论。` +
-          `如果你在轮询等待，请说明你在等什么，而不是原样重试。`,
-      };
-    }
-    if (n >= this.limits.exactWarn && !this.exactWarned.has(signature)) {
-      this.exactWarned.add(signature);
-      return {
-        action: "warn",
-        kind: "exact",
-        signature,
-        count: n,
-        message:
-          `[SYSTEM REMINDER] 这是第 ${n} 次完全相同的 ${name} 调用。` +
-          `如果结果已经拿到，请直接使用它继续推进；不要原样重试。`,
-      };
-    }
-    return { action: "allow", kind: "exact", signature, count: n };
+    return { action: "allow", signature };
   }
 }

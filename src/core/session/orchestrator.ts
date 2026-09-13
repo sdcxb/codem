@@ -364,85 +364,53 @@ export class DelegationOrchestrator {
   // ========== 等待完成 ==========
 
   /**
-   * 轮询等待任务完成。
+   * 等待任务结束 —— **按活动而不是按时钟**（第 64 波重做）。
    *
-   * 第 62 波改动：**不再是无限期阻塞**。原实现写着「不设超时——委派任务可以运行很长时间」，
-   * 但真实事故是子会话原地打转，父会话十几分钟里既没产出、也看不到任何进展（用户只能干等）。
-   * 现在超过 `waitTimeoutMs`（默认 3 分钟）就带着**当前进度**返回，父会话可以：
-   *   · 再等一轮（再调一次 wait_for_delegation）；
-   *   · 先用 query_session_result 看子会话产出；
-   *   · 先干别的、稍后回来收结果。
-   * 任务本身仍然不设超时（`defaultTimeout: 0` 语义不变），取消仍由 abort 信号负责。
+   * 旧实现在两个极端之间摇摆：最早"不设超时"（子会话打转时父会话黑等十几分钟），
+   * 后来改成"单次 3 分钟 / 累计 8 分钟"（**拍出来的钟表阈值**：合法的长任务会被打断，
+   * 而阈值本身说不出"为什么是 8 分钟"）。现在改成看**子会话有没有在动**：
+   *   · 任务结束 → 立刻返回结果；
+   *   · 子会话连续 `waitIdleMs` 没有**任何进度上报** → 说明它安静了（卡死或停摆），
+   *     带着当前进度返回，让父会话去报告/终止/继续干别的；
+   *   · 一直在产出 → 就一直等，**等多久都行**（这与"它跑了 20 分钟所以要杀它"是完全不同的判据）。
    */
   async waitForCompletion(
     taskId: string,
     abortSignal?: AbortSignal,
-    opts: { timeoutMs?: number } = {},
+    opts: { idleMs?: number } = {},
   ): Promise<DelegationTask> {
     const checkInterval = 1000;
-
-    // 审计修正：单次预算不等于总预算 —— 模型完全可以「等一轮 → 再等一轮」，
-    // 于是父会话照样能黑等半小时（只是中间多了几行进度）。所以这里按任务累计等待时长：
-    // 总预算用完后，后续等待**立即返回进度**（只查看、不阻塞），直到任务真正结束。
-    const task = this.tasks.get(taskId);
-    if (!task) {
-      throw new Error(`Delegation task not found: ${taskId}`);
-    }
-    const perWait = opts.timeoutMs ?? this.config.waitTimeoutMs ?? DEFAULT_DELEGATION_CONFIG.waitTimeoutMs;
-    const totalBudget = this.config.waitBudgetMs ?? DEFAULT_DELEGATION_CONFIG.waitBudgetMs;
-    const used = task.waitedMs ?? 0;
-    const remainingTotal = totalBudget > 0 ? Math.max(0, totalBudget - used) : Number.POSITIVE_INFINITY;
-    const budget = Math.min(perWait > 0 ? perWait : Number.POSITIVE_INFINITY, remainingTotal);
-
-    if (budget <= 0) {
-      console.warn(
-        `[DelegationOrchestrator] waitForCompletion(${taskId}) 累计等待已达上限 ${Math.round(totalBudget / 1000)}s，改为立即返回进度`,
-      );
-      return task;
-    }
-
-    const startedAt = Date.now();
-    const recordWait = () => {
-      const t = this.tasks.get(taskId);
-      if (t) {
-        t.waitedMs = (t.waitedMs ?? 0) + (Date.now() - startedAt);
-        this.tasks.set(taskId, t);
-      }
-    };
+    const idleMs = opts.idleMs ?? this.config.waitIdleMs ?? DEFAULT_DELEGATION_CONFIG.waitIdleMs;
 
     while (true) {
       if (abortSignal?.aborted) {
-        recordWait();
         throw new Error("Wait cancelled (abort signal)");
       }
 
-      const current = this.tasks.get(taskId);
-      if (!current) {
-        recordWait();
+      const task = this.tasks.get(taskId);
+      if (!task) {
         throw new Error(`Delegation task not found: ${taskId}`);
       }
 
-      if (current.status === "completed" || current.status === "failed" || current.status === "cancelled") {
-        recordWait();
-        if (current.status === "completed") return current;
-        if (current.status === "failed") throw new Error(current.error || "Delegation task failed");
-        throw new Error("Delegation task cancelled");
-      }
+      if (task.status === "completed") return task;
+      if (task.status === "failed") throw new Error(task.error || "Delegation task failed");
+      if (task.status === "cancelled") throw new Error("Delegation task cancelled");
 
-      // 到点返回「仍在运行」的任务对象（status === "running"），由调用方渲染进度
-      if (Date.now() - startedAt >= budget) {
-        recordWait();
+      // 活动判据：最后一次进度上报距今多久
+      const lastActivity = task.progress?.updatedAt ?? task.startedAt ?? task.createdAt;
+      const quietFor = Date.now() - lastActivity;
+      if (idleMs > 0 && quietFor >= idleMs) {
         console.warn(
-          `[DelegationOrchestrator] waitForCompletion(${taskId}) 本次等待 ${Math.round((Date.now() - startedAt) / 1000)}s 未完成（累计 ${Math.round(((this.tasks.get(taskId)?.waitedMs ?? 0)) / 1000)}s），带进度返回`,
+          `[DelegationOrchestrator] waitForCompletion(${taskId}) 子会话已安静 ${Math.round(quietFor / 1000)}s（无进度上报），带进度返回`,
         );
-        return current;
+        return task;
       }
 
       await new Promise((resolve) => setTimeout(resolve, checkInterval));
     }
   }
 
-  /** 第 62 波：只读配置（executor 需要 maxTurnMs 作为后台执行墙钟上限） */
+  /** 第 64 波：只读配置（executor 需要 turnIdleMs / turnTokenBudget） */
   getConfig(): Readonly<DelegationConfig> {
     return this.config;
   }

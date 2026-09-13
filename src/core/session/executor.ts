@@ -18,6 +18,7 @@ import type { LoopEvent } from "../llm/agentic-loop";
 import * as MessageStorage from "../storage/message";
 import * as SessionStorage from "../storage/session";
 import { getSessionMessageBus } from "./bus";
+import { idleWatchdog } from "./idle-watchdog";
 import { getDelegationOrchestrator } from "./orchestrator";
 import type { DelegationTask } from "./types";
 import { useAppStore } from "../../store";
@@ -112,18 +113,21 @@ export async function executeSessionTurn(params: ExecuteSessionTurnParams): Prom
   // 用于"无任何文本产出即异常终止"时落库并返回失败（否则微信/手机端静默无回复）。
   let endReason: string | undefined;
 
-  // 第 62 波：后台/委派会话的**墙钟上限**。
-  // 事故里子会话原地打转（反复枚举同一目录）十几分钟，父会话还在无限期等它。
-  // 循环内的「无进展」阀门看不见这种打转（每次都成功返回内容），所以这里加一道时间闸：
-  // 到点强制中止，并把已有产出按「部分完成」回传，父会话至少能拿到东西、知道发生了什么。
-  let timedOut = false;
+  // 第 64 波（用户质疑「用时间做可靠性」之后重做）：
+  // 原来是「15 分钟墙钟上限」—— 那是**错的机制**：合法的长任务（装依赖、跑全量测试、编译）
+  // 会被误杀，而"还在产出废话"的卡死循环在到点前谁也拦不住。
+  // 现在按 DSH 的分法（`@deepseek-ai/dsh-timeout`）：
+  //   · **空闲看门狗**（时间只用于测"沉默"）：每个事件 `pulse()` 一次，只有连续 N 分钟
+  //     **一个事件都没有**才中止 —— 还在干活就永远不会被杀；
+  //   · **资源预算**（上限用资源而不是时钟）：后台会话累计估算 token 超过预算才中止。
+  // 两者都是"配置项"，不是散落的魔法数字（DSH 同样把上限放在 settings schema 里）。
+  let abortedBy: "idle" | "budget" | "cancel" | null = null;
   let lastToolLabel = "";
-  const maxTurnMs = getDelegationOrchestrator().getConfig?.().maxTurnMs ?? 15 * 60 * 1000;
-  const turnTimer = setTimeout(() => {
-    timedOut = true;
-    console.warn(`[Executor] 会话 ${sessionId} 达到后台执行上限 ${Math.round(maxTurnMs / 1000)}s，强制中止（可能是原地打转）`);
-    abort.abort();
-  }, maxTurnMs);
+  const delegCfg = getDelegationOrchestrator().getConfig?.();
+  const idleMs = delegCfg?.turnIdleMs ?? 5 * 60 * 1000;
+  const tokenBudget = delegCfg?.turnTokenBudget ?? 0; // 0 = 不限
+  const watchdog = idleWatchdog(abort.signal, idleMs, "BACKGROUND_TURN_IDLE");
+  let estimatedTokens = 0;
 
   // 标记委派任务为 running
   if (delegationTaskId) {
@@ -138,6 +142,24 @@ export async function executeSessionTurn(params: ExecuteSessionTurnParams): Prom
       lastText: assistantContent.slice(-400),
       lastTool: lastToolLabel || undefined,
     });
+  };
+
+  /**
+   * 每个事件都算一次"还活着"：重新上弦空闲看门狗，并累计估算 token 预算。
+   * 这是与"墙钟"最关键的区别 —— 时间只在**没有事件**时流逝。
+   */
+  const noteActivity = (text?: string) => {
+    watchdog.pulse();
+    if (typeof text === "string" && text.length > 0) {
+      estimatedTokens += Math.ceil(text.length / 3);
+      if (tokenBudget > 0 && estimatedTokens > tokenBudget) {
+        abortedBy = "budget";
+        console.warn(
+          `[Executor] 会话 ${sessionId} 累计估算 token 超过预算 ${tokenBudget}（约 ${estimatedTokens}），按资源上限中止`,
+        );
+        abort.abort();
+      }
+    }
   };
 
   try {
@@ -188,6 +210,10 @@ export async function executeSessionTurn(params: ExecuteSessionTurnParams): Prom
       securityMode: effectiveSecurityMode,
     })) {
       if (abort.signal.aborted) break;
+      // 每个事件都是"还活着"的证据：重新上弦空闲看门狗 + 计入资源预算
+      noteActivity(
+        "text" in (event as any) && typeof (event as any).text === "string" ? (event as any).text : undefined,
+      );
 
       switch (event.type) {
         case "reasoning_delta":
@@ -339,15 +365,21 @@ export async function executeSessionTurn(params: ExecuteSessionTurnParams): Prom
     // 过滤 system-reminder 标签
     const cleanOutput = assistantContent.replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, "").trim();
 
-    // 第 62 波：墙钟到点被强制中止 —— 明确标记为"部分完成"，并把已有产出交回去，
-    // 而不是让父会话以为任务正常结束（原实现会把打转十几分钟的结果当成功回传）。
-    if (timedOut) {
+    // 第 64 波：被"空闲看门狗"或"资源预算"中止 —— 明确说明是哪一种，并把已有产出交回去。
+    // 注意这**不是**"到点就杀"：还在产出的事件会让看门狗不断重新上弦（合法长任务不会被误杀）。
+    if (watchdog.timedOut() || abortedBy) {
       const zht = getLang() === "zh";
-      const note = zht
-        ? `[后台执行达到上限 ${Math.round(maxTurnMs / 1000)}s，已中止] 已完成 ${toolCallCount} 次工具调用，最近一次工具：${lastToolLabel || "(无)"}。` +
-          `常见原因是**反复执行同一类操作**（例如反复枚举同一目录）。请检查子会话是否需要更明确的完成判据。`
-        : `[Background turn hit the ${Math.round(maxTurnMs / 1000)}s ceiling and was aborted] ${toolCallCount} tool calls done, last tool: ${lastToolLabel || "(none)"}. ` +
-          `A common cause is repeating the same action (e.g. enumerating the same directory). Give the child a sharper definition of done.`;
+      const reason: "idle" | "budget" = abortedBy === "budget" ? "budget" : "idle";
+      const note =
+        reason === "budget"
+          ? zht
+            ? `[后台执行达到资源上限：估算 token 约 ${estimatedTokens} / 预算 ${tokenBudget}] 已完成 ${toolCallCount} 次工具调用，最近一次工具：${lastToolLabel || "(无)"}。` +
+              `如果这是正常的大任务，请提高预算或拆小；如果是原地打转，检查它是否在重复同一件事。`
+            : `[Background turn hit its token budget: ~${estimatedTokens} / ${tokenBudget}] ${toolCallCount} tool calls, last tool: ${lastToolLabel || "(none)"}.`
+          : zht
+            ? `[后台执行空闲超时：连续 ${Math.round(idleMs / 1000)} 秒没有任何事件] 已完成 ${toolCallCount} 次工具调用，最近一次工具：${lastToolLabel || "(无)"}。` +
+              `空闲超时意味着**它已经不产出任何东西**（不是"跑得久"）—— 常见原因是某个工具卡死，或模型停摆。`
+            : `[Background turn idle timeout: no event for ${Math.round(idleMs / 1000)}s] ${toolCallCount} tool calls, last tool: ${lastToolLabel || "(none)"}.`;
       MessageStorage.createMessage({
         id: `err-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
         role: "system",
@@ -429,8 +461,8 @@ export async function executeSessionTurn(params: ExecuteSessionTurnParams): Prom
       error: err.message || String(err),
     };
   } finally {
-    // 第 62 波：墙钟计时器必须清理，否则它会一直挂着（并且可能在任务结束后触发 abort）
-    clearTimeout(turnTimer);
+    // 第 64 波：看门狗必须释放（它持有定时器）
+    watchdog.dispose();
 
     // 清理活跃执行追踪
     activeExecutions.delete(sessionId);
@@ -438,8 +470,9 @@ export async function executeSessionTurn(params: ExecuteSessionTurnParams): Prom
     // 标记会话为非活跃
     useAppStore.getState().setSessionActive(sessionId, false);
 
-    // 如果是委派任务被 abort，标记为 cancelled（但"墙钟到点"已经按失败落库，别覆盖成 cancelled）
-    if (abort.signal.aborted && delegationTaskId && !timedOut) {
+    // 如果是委派任务被 abort，标记为 cancelled
+    // （但"空闲/预算中止"已经按失败落库，别覆盖成 cancelled）
+    if (abort.signal.aborted && delegationTaskId && !watchdog.timedOut() && !abortedBy) {
       orchestrator.cancelTask(delegationTaskId);
     }
   }

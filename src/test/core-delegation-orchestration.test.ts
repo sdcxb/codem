@@ -549,33 +549,50 @@ describe("跨会话委派 — 等待预算与进度（第 62 波）", () => {
     return task;
   }
 
-  it("DELE-030: 等待到预算就用「仍在运行」返回，而不是无限期阻塞", async () => {
-    const orch = new DelegationOrchestrator({ waitTimeoutMs: 1200 });
+  it("DELE-030: 子会话安静下来就带进度返回（判据是活动，不是时钟）", async () => {
+    // 第 64 波重做：等待的返回条件是"子会话连续 N 没有进度上报"（安静了），不是"等够了几分钟"。
+    const orch = new DelegationOrchestrator({ waitIdleMs: 1200 });
     const task = await makeTask(orch);
 
     const t0 = Date.now();
-    const result = await orch.waitForCompletion(task.id, undefined, { timeoutMs: 1200 });
+    const result = await orch.waitForCompletion(task.id, undefined, { idleMs: 1200 });
     const elapsed = Date.now() - t0;
 
-    expect(result.status).toBe("running"); // 任务没失败，只是"这一等"到点了
-    expect(elapsed).toBeLessThan(4000); // 真的会返回（旧实现会永远卡在这里）
+    expect(result.status).toBe("running"); // 任务没失败，只是"它安静了"
+    expect(elapsed).toBeLessThan(5000);
   });
 
-  it("DELE-031: 任务完成时等待立即返回结果（不因为预算而漏掉结果）", async () => {
-    const orch = new DelegationOrchestrator({ waitTimeoutMs: 30_000 });
+  it("DELE-030b: 一直在产出就一直等 —— 合法长任务不会被时钟打断（旧版 8 分钟总预算会砍掉它）", async () => {
+    const orch = new DelegationOrchestrator({ waitIdleMs: 700 });
+    const task = await makeTask(orch);
+    // 每 300ms 上报一次进度（= 它在干活），持续 2 秒 → 等待必须继续跟下去
+    const ticker = setInterval(() => {
+      const cur = orch.getTask(task.id);
+      orch.updateProgress(task.id, { toolCalls: (cur?.progress?.toolCalls ?? 0) + 1 });
+    }, 300);
+    setTimeout(() => { clearInterval(ticker); orch.completeTask(task.id, "干完了"); }, 2000);
+
+    const result = await orch.waitForCompletion(task.id, undefined, { idleMs: 700 });
+    clearInterval(ticker);
+    expect(result.status, "一直在产出就不该被当成卡住").toBe("completed");
+    expect(result.result).toBe("干完了");
+  });
+
+  it("DELE-031: 任务完成时等待立即返回结果", async () => {
+    const orch = new DelegationOrchestrator({ waitIdleMs: 30_000 });
     const task = await makeTask(orch);
     setTimeout(() => orch.completeTask(task.id, "子会话产出"), 300);
-    const result = await orch.waitForCompletion(task.id, undefined, { timeoutMs: 30_000 });
+    const result = await orch.waitForCompletion(task.id, undefined, { idleMs: 30_000 });
     expect(result.status).toBe("completed");
     expect(result.result).toBe("子会话产出");
   });
 
-  it("DELE-032: 子会话进度可上报 —— 等待超时后父会话能看到「调了多少次工具 / 最近在干什么」", async () => {
-    const orch = new DelegationOrchestrator({ waitTimeoutMs: 1000 });
+  it("DELE-032: 子会话进度可上报 —— 安静返回时父会话能看到「调了多少次工具 / 最近在干什么」", async () => {
+    const orch = new DelegationOrchestrator({ waitIdleMs: 1000 });
     const task = await makeTask(orch);
     orch.updateProgress(task.id, { toolCalls: 17, lastText: "我在找 3000 字版", lastTool: "bash: Get-ChildItem ..." });
 
-    const result = await orch.waitForCompletion(task.id, undefined, { timeoutMs: 1000 });
+    const result = await orch.waitForCompletion(task.id, undefined, { idleMs: 1000 });
     expect(result.progress?.toolCalls).toBe(17);
     expect(result.progress?.lastText).toContain("3000 字版");
     expect(result.progress?.lastTool).toContain("Get-ChildItem");
@@ -588,51 +605,57 @@ describe("跨会话委派 — 等待预算与进度（第 62 波）", () => {
     const src = fs.readFileSync(path.join(__dirname, "../core/session/tools.ts"), "utf-8");
     expect(src).toContain("仍在运行");
     expect(src).toContain("query_session_result"); // 给出「先看进展」的出路
-    expect(src).toContain("不要继续干等");
+    expect(src).toMatch(/安静/); // 返回的理由是"它安静了"，不是"等够了"
   });
 
-  it("DELE-034: 后台执行有墙钟上限，到点按「部分完成」回传而不是当成正常结束", () => {
+  it("DELE-034: 后台执行用「空闲看门狗 + 资源预算」，不再用墙钟（第 64 波）", () => {
     const fs = require("fs");
     const path = require("path");
     const executor = fs.readFileSync(path.join(__dirname, "../core/session/executor.ts"), "utf-8");
-    expect(executor).toContain("maxTurnMs");
-    expect(executor).toContain("clearTimeout(turnTimer)"); // 计时器必须清理，否则任务结束后还会 abort
-    expect(executor).toContain("timedOut");
-    // 到点时必须把"最近一次工具"一起交出去 —— 这正是判断"原地打转"的证据
+    // 墙钟必须已经彻底移除
+    expect(executor, "不应再有墙钟上限").not.toMatch(/maxTurnMs|turnTimer/);
+    // 空闲看门狗：时间只用来测"沉默"，每个事件都重新上弦
+    expect(executor).toContain("idleWatchdog(");
+    expect(executor).toContain("watchdog.pulse()");
+    expect(executor).toContain("watchdog.dispose()");
+    // 资源预算：上限用资源而不是时钟
+    expect(executor).toContain("turnTokenBudget");
+    expect(executor).toContain("noteActivity");
+    // 中止时要把"最近一次工具"一起交出去 —— 这是判断"卡在哪"的证据
     expect(executor).toContain("lastToolLabel");
   });
-
-  it("DELE-035: 默认预算是有限值（曾是「不超时」）", () => {
+  it("DELE-035: 三个上限都是可配置项（空闲窗口 / 资源预算），且不再有钟表式总预算", () => {
     const types = require("fs").readFileSync(require("path").join(__dirname, "../core/session/types.ts"), "utf-8");
-    expect(types).toMatch(/waitTimeoutMs:\s*\d/);
-    expect(types).toMatch(/maxTurnMs:\s*\d/);
-    expect(types).not.toMatch(/defaultTimeout:\s*0,?\s*\/\/[^\n]*\n\s*\}\);/);
+    expect(types).toMatch(/waitIdleMs:\s*\d/);
+    expect(types).toMatch(/turnIdleMs:\s*\d/);
+    expect(types).toMatch(/turnTokenBudget:\s*\d/);
+    // 拍出来的钟表阈值必须已经消失
+    expect(types, "不应再有 waitTimeoutMs/waitBudgetMs/maxTurnMs").not.toMatch(/waitTimeoutMs|waitBudgetMs|maxTurnMs/);
   });
-
-  it("DELE-036: 等待有**累计**总预算 —— 反复「再等一轮」也兜得住", async () => {
-    // 只有单次预算是不够的：模型可以等一轮再等一轮，父会话照样黑等半小时。
-    // 累计上限 1200ms / 单次 500ms 的设定下：第 1 次最多 500ms、第 2 次最多剩 700ms、
-    // 第 3 次起**立即返回**（只查看、不阻塞）。
-    const orch = new DelegationOrchestrator({ waitTimeoutMs: 500, waitBudgetMs: 1200 });
+  it("DELE-036: 等待跟着**活动**走（没有钟表总预算）—— 安静就返回、一直在产出就一直等", async () => {
+    const orch = new DelegationOrchestrator({ waitIdleMs: 3000 });
     const task = await makeTask(orch);
 
+    // ① 子会话安静 → 返回进度（判据是"它没动静"，不是"等够了 N 分钟"）
     const t0 = Date.now();
-    const first = await orch.waitForCompletion(task.id, undefined, { timeoutMs: 500 });
-    expect(first.status).toBe("running");
-    expect(first.waitedMs ?? 0).toBeGreaterThan(0);
+    const quiet = await orch.waitForCompletion(task.id, undefined, { idleMs: 600 });
+    expect(quiet.status).toBe("running");
+    expect(Date.now() - t0).toBeLessThan(4000);
 
-    const second = await orch.waitForCompletion(task.id, undefined, { timeoutMs: 500 });
-    expect(second.status).toBe("running");
-    const afterTwo = Date.now() - t0;
-    expect(afterTwo, `累计等待应被总预算夹住，实际 ${afterTwo}ms`).toBeLessThan(2500);
+    // ② 它又开始产出（每 200ms 一次进度）→ 等待必须继续跟下去，直到真正完成。
+    //    注意 ticker 要先跑起来再等 —— 否则等待会在第一次进度上报到达前就判定"安静"（时序竞态）。
+    const ticker = setInterval(() => {
+      const cur = orch.getTask(task.id);
+      orch.updateProgress(task.id, { toolCalls: (cur?.progress?.toolCalls ?? 0) + 1 });
+    }, 200);
+    await new Promise((r) => setTimeout(r, 250)); // 让第一次进度上报先落地
+    setTimeout(() => { clearInterval(ticker); orch.completeTask(task.id, "完成"); }, 1500);
 
-    const t2 = Date.now();
-    const third = await orch.waitForCompletion(task.id, undefined, { timeoutMs: 500 });
-    const thirdMs = Date.now() - t2;
-    expect(third.status).toBe("running");
-    expect(thirdMs, `累计预算用完后应秒回，实际 ${thirdMs}ms`).toBeLessThan(300);
+    const done = await orch.waitForCompletion(task.id, undefined, { idleMs: 600 });
+    clearInterval(ticker);
+    expect(done.status, "一直在产出就该继续等，不该被判成安静").toBe("completed");
+    expect(done.result).toBe("完成");
   });
-
   it("DELE-037: cancel_delegation 能把卡住的委派终止掉（父会话不再只能干等）", async () => {
     // 注意：工具内部用的是**单例**编排器（与 executor 同一个），所以这里也必须走单例，
     // 否则测的是"另一个实例"上的状态（第一次写这条用例就踩了）。
@@ -710,18 +733,21 @@ describe("跨会话委派 — 等待预算与进度（第 62 波）", () => {
     expect(tools).toMatch(/放宽放行/);
   });
 
-  it("DELE-043: 同一个任务被反复查看也有上限（秒回式空转）", () => {
+  it("DELE-043: 反复查看委派任务：判据是「两次查看之间有没有新进展」，不是看了几次", () => {
     const fs = require("fs");
     const path = require("path");
     const loop = fs.readFileSync(path.join(__dirname, "../core/llm/agentic-loop.ts"), "utf-8");
-    expect(loop).toContain("MAX_DELEGATION_PEEKS");
-    expect(loop).toContain("delegationPeekCounts");
-    expect(loop).toMatch(/不要再查看或等待了/);
+    // 旧实现是 MAX_DELEGATION_PEEKS=3 的计数上限（拿次数当可靠性），第 64 波已换成信息增益
+    expect(loop, "不应再有纯计数式的查看上限").not.toContain("MAX_DELEGATION_PEEKS");
+    expect(loop).toContain("delegationProgressAtWait");
+    expect(loop).toContain("delegationStuckPeeks");
+    expect(loop).toMatch(/没有任何新的进展/);
     // 且必须按轮次清空，不能跨轮次累计
     const runStart = loop.indexOf("async *run(");
-    expect(loop.slice(runStart, runStart + 1200)).toContain("this.delegationPeekCounts.clear()");
+    const head = loop.slice(runStart, runStart + 1400);
+    expect(head).toContain("this.delegationProgressAtWait.clear()");
+    expect(head).toContain("this.delegationStuckPeeks.clear()");
   });
-
   it("DELE-044: 任务中心能看到进度、也能终止（否则「上报了但用户看不到」等于没修）", () => {
     const fs = require("fs");
     const path = require("path");

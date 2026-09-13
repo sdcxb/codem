@@ -175,37 +175,31 @@ export function createWaitForDelegationTool(): ToolDef {
 
       try {
         // 轮询等待完成（复用 orchestrator.waitForCompletion）
-        // 第 62 波：等待有预算，到点带进度返回 —— 不再是无限期阻塞
+        // 第 64 波：等待**按活动返回**（它安静了才返回），没有钟表预算
         const completed = await orchestrator.waitForCompletion(taskId, ctx.abort);
         const zh = getLang() === "zh";
 
-        // 仍在运行：给父会话「已跑多久 + 调了多少次工具 + 最新输出」，并给出可选动作。
-        // 事故里父会话在这里黑等十几分钟，既不知道子会话在干什么，也无法脱身。
+        // 仍在运行：给父会话「已跑多久 + 安静了多久 + 调了多少次工具 + 最新输出」，并给出可选动作。
+        // 第 64 波：返回的触发条件不是"等够了几分钟"，而是**子会话安静了**（连续无进度上报）。
         if (completed.status === "running" || completed.status === "pending") {
           const elapsedSec = Math.round((Date.now() - (completed.startedAt ?? completed.createdAt)) / 1000);
-          const waitedSec = Math.round((completed.waitedMs ?? 0) / 1000);
-          const budgetExhausted = waitedSec * 1000 >= (orchestrator.getConfig().waitBudgetMs ?? Number.MAX_SAFE_INTEGER) * 0.95;
+          const quietSec = Math.round((Date.now() - (completed.progress?.updatedAt ?? completed.startedAt ?? completed.createdAt)) / 1000);
           const p = completed.progress;
           const lines = [
             zh
-              ? `状态: 仍在运行（已 ${elapsedSec} 秒）—— 本轮等待到点返回，任务没有失败。`
-              : `Status: still running (${elapsedSec}s elapsed) — this wait returned on budget, the task is NOT failed.`,
+              ? `状态: 仍在运行（已 ${elapsedSec} 秒）—— 它已经安静 ${quietSec} 秒没有任何进展上报，所以这次等待返回了；任务没有失败。`
+              : `Status: still running (${elapsedSec}s elapsed) — it has been quiet for ${quietSec}s with no progress, which is why this wait returned; the task is NOT failed.`,
             zh ? `目标会话: ${completed.targetSessionId}` : `Target session: ${completed.targetSessionId}`,
-            zh ? `累计已等待: ${waitedSec} 秒` : `Total time waited: ${waitedSec}s`,
             p ? (zh ? `已完成工具调用: ${p.toolCalls} 次` : `Tool calls so far: ${p.toolCalls}`) : "",
             p?.lastTool ? (zh ? `最近一次工具: ${p.lastTool}` : `Last tool: ${p.lastTool}`) : "",
             p?.lastText ? (zh ? `子会话最新输出:\n${p.lastText}` : `Latest child output:\n${p.lastText}`) : "",
             "",
-            budgetExhausted
-              ? zh
-                ? `⚠️ **等待总预算已用完**：不要再调用 wait_for_delegation 了（再调也只会立刻返回同样的进度）。请改为：向用户报告子会话仍未完成 + 它卡在哪，然后继续做自己能做的事（或用 cancel_delegation 终止它）。`
-                : `⚠️ The overall wait budget is exhausted: do NOT call wait_for_delegation again (it will only return this same progress). Report to the user that the child is still running and where it is stuck, then proceed with other work (or cancel it).`
-              : zh
-                ? `你可以：① 继续等待（再调一次 wait_for_delegation("${taskId}")，受总预算约束）；② 先做别的事，稍后再收结果。`
-                : `You can: (1) wait again via wait_for_delegation("${taskId}") within the total budget; (2) do other work and collect later.`,
             zh
-              ? `如果子会话的「最近一次工具」看起来在**反复做同一件事**，不要继续干等 —— 用 cancel_delegation 终止它，或直接告诉用户它卡住了。`
-              : `If the child's last tool looks like it is repeating the same action, do NOT keep waiting — cancel it or report to the user that it is stuck.`,
+              ? `你可以：① 再等一次 wait_for_delegation("${taskId}")（只要它又开始产出，等待就会继续跟下去）；② 先做别的事，结果到了会通过会话消息总线送到你这里；③ 用 query_session_result 看它写到哪了。`
+              : `You can: (1) wait again via wait_for_delegation("${taskId}") — the wait follows real activity, not a clock; (2) do other work; the result will arrive through the session message bus; (3) use query_session_result to peek.`,
+            zh
+              ? `「安静」通常意味着它卡住了：如果最近一次工具看起来在反复做同一件事，不要继续干等 —— 用 cancel_delegation 终止它，然后告诉用户发生了什么、已有部分产出是什么。`
+              : `Silence usually means it is stuck: if the last tool looks like it repeats the same action, do NOT keep waiting — cancel it and report what happened plus what partial output exists.`,
           ].filter(Boolean);
           return {
             title: `wait_for_delegation: ${taskId.substring(0, 16)}... (running)`,
