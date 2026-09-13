@@ -23,6 +23,7 @@ export type LoopStopReason =
   | "repeat_guard"
   | "args_truncated"
   | "output_truncated"
+  | "context_overflow"
   | "cancelled";
 
 /**

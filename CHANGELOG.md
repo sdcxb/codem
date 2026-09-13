@@ -2,6 +2,67 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.16.19] - 2026-09-13 — 修复：上下文超限后的「白重试 + 假续写」；思考模型被输出上限掐断
+
+### 现象（用户控制台，这次给了完整真相）
+
+```
+[AgenticLoop] 本轮结束原因 finish_reason=length（达到单次输出上限，回复被截断） — iteration 1, text 0 chars, tool calls 0
+[AgenticLoop] Response was truncated (finish_reason=length) — auto-continuing (1/3)
+[Provider] API error: 400 {"error":{"message":"This model's maximum context length is 1048576 tokens.
+  However, you requested 1048735 tokens ... Please reduce the length of the messages or completion."}}
+[AgenticLoop] Iteration 2: LLM stream error (attempt 1/3 / 2/3 / 3/3)   ← 同一个必然失败的请求重试三次
+… 1048992 … 1049249 …                                                    ← 而且上下文还在变大
+```
+
+三件事同时发生，互相放大：**思考吃光了输出预算**、**上下文已超上限**、**续写让上下文继续变大**。
+
+### 三个根因（含一个是我上一波引入的）
+
+1. **反应式压缩的判定字符串不匹配 → 本该救场的压缩从未触发。**
+   代码只认 `prompt_too_long` 与 `context_length_exceeded`，而 DeepSeek 的措辞是
+   `This model's maximum context length is 1048576 tokens` —— **一个都不含**。
+   于是循环把同一个必然失败的请求重试 3 次，然后整轮死掉。
+2. **确定性错误被白重试**：4xx（非 429）重试毫无意义；而且 `classifyError` 也判不出来 ——
+   因为 provider 抛出的错误**没有把 HTTP 状态挂到错误对象上**，它只看得到 message。
+3. **我上一波引入的 bug**：`lastFinishReason` **跨迭代不重置** —— 某轮失败（没有任何 `finish_reason`）
+   时会沿用上一轮的 `length`，触发一次毫无意义的"续写"，把已经超限的上下文又撑大
+   （日志里 1048735 → 1048992 → 1049249 正是这么来的）。
+
+### 修复
+
+- **溢出识别改成语义匹配**（新增 `src/core/llm/provider-errors.ts`）：覆盖 `maximum context length` /
+  `context_length_exceeded` / `prompt_too_long` / `prompt is too long` /
+  `reduce the length of the messages` / `too many tokens` / `input is too long` 等各家措辞，
+  并能解析出「上限 / 实际请求」两个数字。
+- **溢出 ⇒ 走压缩（不再白重试）**：溢出错误**立即**抛给"反应式压缩"路径，压缩后继续；
+  压缩 3 次仍放不下 → 明确停下（reason `context_overflow`）并给用户一句可执行说明：
+  本次请求约多少 token、上限多少、超出多少，以及"开新对话 / 收敛与会话内容 / 换大上下文模型"。
+- **确定性错误快速失败**：`classifyError` 结果为不可重试（非 429 的 4xx）→ 立即抛出，
+  不再耗 3 次重试；provider 现在把 **HTTP 状态挂到错误对象**上（这样 500 该重试、400 不该重试才分得清），
+  并把错误体给足 2000 字符（超限的关键数字不会被 200 字符截掉）。
+- **结束原因每轮重置**，并且**只有本轮真的结束过**才允许续写；同时记录本轮**正文长度**，
+  区分两种截断：**「正文 0 字符」= 思考把预算吃光** → 续写提示改为"少想、直接产出"，
+  而不是「从断点继续」（没有断点可续）。
+- **按模型族给输出上限**（第 67 波动态解析的补强）：`deepseek-flash` 这类模型**目录里查不到**
+  （目录只有 `deepseek-v4-flash`），以前一律落到保守的 8192 —— 对**带思考的模型明显偏小**
+  （思考 token 与正文共享预算，正是"正文 0 字符"的直接原因）。现在按族推断：
+  DeepSeek 系 / 推理系 → 65536（天花板），Claude 4 → 32000，Gemini 2.5+ → 65536；
+  未知型号仍走保守兜底。
+
+### 校验
+
+`tsc` 0 错误；**219 个测试文件 / 4729 条用例通过**（+15 skipped）；UI 审计 **25 条规则 error 0 / warn 0**；
+CSS 生效取值快照（2743 个类）**无变化**；打包成功。
+新增契约 `context-overflow-handling.test.ts`（OFLOW-1~7）：**用事故现场那条真实报错体**做样本，
+覆盖识别、数字解析、语义匹配替换、压缩救不回来时的说明、确定性错误不重试、状态码挂载、
+结束原因每轮重置、按族推断上限。
+
+### 教训
+
+**错误分类不能只匹配「自家见过的措辞」**：这次就是因为只认两个字符串，一个本来能自动救场的
+压缩路径形同虚设 —— 而日志里那句 `maximum context length is ...` 一直在明明白白地说清原因。
+
 ## [1.16.18] - 2026-09-13 — 修复：回复被输出上限截断时「任务又中断了」
 
 ### 现象（用户控制台）

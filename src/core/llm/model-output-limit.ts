@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 单次回复**输出上限**的解析与自适应（第 67 波）。
  *
  * ## 为什么不能写死，也不能只靠用户手工调
@@ -35,13 +35,42 @@ export const HARD_OUTPUT_CEILING = 65_536;
 /** 被拒绝时至少退到多少（避免一路退到 0） */
 const MIN_OUTPUT_TOKENS = 1024;
 
+/**
+ * 第 69 波：**按模型族给合理上限**（模型目录里查不到时用）。
+ *
+ * 为什么需要它：`deepseek-flash` 这类模型是**带思考的**（先输出 reasoning_content 再输出正文），
+ * 而思考 token 也计入 `max_tokens`。事故现场就是：输出上限太小 → **思考把预算吃光**，
+ * `finish_reason=length` 且**正文 0 字符** → 用户看到"任务又中断了"。
+ * 这些模型上下文 1M、支持很长的输出，给 8192 明显偏小。
+ *
+ * 只匹配"族"，不硬编码单个模型的精确上限（那会随版本变）；未知型号仍走兜底值。
+ */
+const MODEL_FAMILY_OUTPUT_LIMITS: Array<{ pattern: RegExp; maxTokens: number; reason: string }> = [
+  { pattern: /reasoner|thinking|-r1\b|deepseek-r1/i, maxTokens: 65_536, reason: "推理模型：思考 token 与正文共享输出预算" },
+  { pattern: /deepseek-(v4|v3|flash|pro|chat)/i, maxTokens: 65_536, reason: "DeepSeek 系（1M 上下文；部分型号带思考，reasoning 与正文共享输出预算）" },
+  { pattern: /o3|o4|gpt-5/i, maxTokens: 65_536, reason: "OpenAI 推理系" },
+  { pattern: /claude-(opus|sonnet)-4/i, maxTokens: 32_000, reason: "Claude 4" },
+  { pattern: /gemini-2\.5|gemini-3/i, maxTokens: 65_536, reason: "Gemini 2.5+" },
+];
+
+/** 按模型族推断上限；认不出来返回 undefined（交给兜底值） */
+export function inferFamilyOutputLimit(modelId: string): { maxTokens: number; reason: string } | undefined {
+  if (!modelId) return undefined;
+  for (const entry of MODEL_FAMILY_OUTPUT_LIMITS) {
+    if (entry.pattern.test(modelId)) return { maxTokens: Math.min(entry.maxTokens, HARD_OUTPUT_CEILING), reason: entry.reason };
+  }
+  return undefined;
+}
+
 export interface ResolvedOutputLimit {
   /** 要发给 API 的 max_tokens；undefined = 不发送（由 provider 用自己的默认上限） */
   maxTokens: number | undefined;
   /** 这个值是怎么来的（日志/排障用） */
-  source: "explicit" | "learned" | "catalog" | "default";
+  source: "explicit" | "learned" | "catalog" | "family" | "default";
   /** 模型目录里声明的上限（如果有），便于日志里对照 */
   catalogMax?: number;
+  /** 为什么取这个值（family 档附原因） */
+  note?: string;
 }
 
 /**
@@ -110,6 +139,13 @@ export function resolveMaxOutputTokens(opts: {
 
   if (typeof catalogMax === "number" && catalogMax > 0) {
     return { maxTokens: Math.min(catalogMax, HARD_OUTPUT_CEILING), source: "catalog", catalogMax };
+  }
+
+  // 第 69 波：目录里没有（常见于"服务端动态拉到的模型"）→ 按**模型族**推断，
+  // 而不是一律 8192。带思考的模型会先把预算花在 reasoning 上，8192 很容易"正文 0 字符就截断"。
+  const family = inferFamilyOutputLimit(modelId);
+  if (family) {
+    return { maxTokens: family.maxTokens, source: "family", note: family.reason };
   }
 
   return { maxTokens: DEFAULT_MAX_OUTPUT_TOKENS, source: "default", catalogMax };

@@ -39,7 +39,10 @@ describe("输出截断 ⇒ 自动续写（第 68 波）", () => {
     const src = loop();
     const idx = src.indexOf('if (this.state.lastFinishReason === "length") {');
     expect(idx).toBeGreaterThan(-1);
-    const block = src.slice(idx, idx + 2200);
+    // 按标记取块（不要用固定长度：这个分支本身会随修复长大，固定窗口会把断言截断）
+    const giveUpIdx = src.indexOf('phase: "give-up"', idx);
+    expect(giveUpIdx, "应能找到 give-up 分支作为块尾").toBeGreaterThan(idx);
+    const block = src.slice(idx, giveUpIdx);
     expect(block, "要有续写预算").toMatch(/MAX_TRUNCATED_CONTINUATIONS/);
     expect(block, "注入提示").toMatch(/从断点继续/);
     expect(block, "教它分块写入").toMatch(/append: true/);

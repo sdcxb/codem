@@ -21,6 +21,7 @@ import { RepeatGuard, type GuardKind, bashIntent } from "./loop-guard";
 import { StallGuard } from "./stall-guard";
 import { buildUnparsableArgsError, isContentBearingTool } from "./tool-args-guard";
 import { recordLoopStop } from "./loop-stop-log";
+import { isContextOverflowError, describeContextOverflow } from "./provider-errors";
 import { getDelegationOrchestrator } from "../session/orchestrator";
 import * as MessageStorage from "../storage/message";
 // deriveMessagesFromEvents removed — DB CRUD is the single source of truth for LLM messages
@@ -92,6 +93,8 @@ export interface LoopState {
   consecutiveNoProgress: number;
   /** 第 68 波：最近一次迭代的 provider 结束原因（截断判定要用；executeIteration 写入） */
   lastFinishReason: string;
+  /** 第 69 波：本轮正文输出了多少字符（0 = 只有思考、没有正文；用于区分两种截断） */
+  lastIterationTextChars: number;
   /** Turn start timestamp — set at the beginning of each run() for duration tracking */
   turnStartTime?: number;
 }
@@ -643,6 +646,7 @@ private getFileChangeTrackerService(): FileChangeTracker | null {
       writeRejected: false,
       consecutiveNoProgress: 0,
       lastFinishReason: "stop",
+      lastIterationTextChars: 0,
     };
   }
 
@@ -1014,6 +1018,11 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
         this.state.compactedThisIteration = false;
         this.guardSuppressedThisIteration = 0;
         this.iterationProducedArtifact = false;
+        // 第 69 波（修我自己上一波的 bug）：结束原因必须**每轮重置**。
+        // 否则某轮失败（没有任何 finish_reason）时会沿用上一轮的 "length"，
+        // 触发一次毫无意义的"续写" —— 事故现场就是这样把超限的上下文又撑大了 257/514 tokens。
+        this.state.lastFinishReason = "stop";
+        this.state.lastIterationTextChars = 0;
 
         // P0-7.1 / 6.5建议2: 每轮迭代检查关键服务可用性
         if (!this.checkCriticalServices()) {
@@ -1660,22 +1669,37 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
             console.warn(
               `[AgenticLoop] Response was truncated (finish_reason=length) — auto-continuing (${this.truncatedContinuations}/${MAX_TRUNCATED_CONTINUATIONS})`,
             );
+            // 第 69 波：区分"接不上"与"**正文 0 字符**"。
+            // 事故现场（iteration 1）就是 `finish_reason=length, text 0 chars, tool calls 0` ——
+            // 带思考的模型把整个输出预算花在 reasoning 上，正文一个字都没出来。
+            // 这种情况下要它"从断点继续"是没用的（没有断点），必须明确要求"少想、直接产出"。
+            const reasoningOnly = this.state.lastIterationTextChars === 0;
             try {
               this.getMessageStorage().createMessage({
                 id: `trunc-cont-${Date.now()}`,
                 role: "user",
-                content:
-                  `[SYSTEM] 你上一条回复因为**达到单次输出上限**被截断了（finish_reason=length）。请**从断点继续**：\n` +
-                  `  · **不要重复**已经输出过的内容，直接从断掉的地方往下写；\n` +
-                  `  · 如果要写的是长文件/长脚本，请改用**分块落盘**：\`write\` 写第一段，之后每次用 \`write\` + \`append: true\` 追加（每段建议 ≤200 行）；\n` +
-                  `  · 如果上一步其实已经写完，直接说明"已完成"并给出结论；\n` +
-                  `  · 不要重新开始整个任务。`,
+                content: reasoningOnly
+                  ? `[SYSTEM] 你上一条回复因为**达到单次输出上限**被截断了（finish_reason=length），` +
+                    `而且**正文一个字都没输出** —— 输出预算大概率被"思考"用光了。\n` +
+                    `请**立刻停止过度思考**，直接产出：少分析、少铺垫，先把要写的文件（\`write\`，长文件用首段 + \`append: true\`）` +
+                    `或要执行的命令发出来，再补必要的说明。\n` +
+                    `不要重新开始整个任务。`
+                  : `[SYSTEM] 你上一条回复因为**达到单次输出上限**被截断了（finish_reason=length）。请**从断点继续**：\n` +
+                    `  · **不要重复**已经输出过的内容，直接从断掉的地方往下写；\n` +
+                    `  · 如果要写的是长文件/长脚本，请改用**分块落盘**：\`write\` 写第一段，之后每次用 \`write\` + \`append: true\` 追加（每段建议 ≤200 行）；\n` +
+                    `  · 如果上一步其实已经写完，直接说明"已完成"并给出结论；\n` +
+                    `  · 不要重新开始整个任务。`,
                 timestamp: Date.now(),
                 status: "done",
               }, sessionId);
               this.msgCache = null;
             } catch (e) { console.warn('[agentic-loop.ts]', e) }
-            yield { type: "text_delta", text: "\n\n⏩ 上一条回复因达到输出上限被截断，正在自动续写…\n\n" };
+            yield {
+              type: "text_delta",
+              text: reasoningOnly
+                ? "\n\n⏩ 上一条回复只输出了思考、正文为空就撞到输出上限，已要求它直接产出…\n\n"
+                : "\n\n⏩ 上一条回复因达到输出上限被截断，正在自动续写…\n\n",
+            };
             continue;
           }
           // 连续被截断：停下来说清楚，别让用户以为任务"自己断了"
@@ -2053,6 +2077,7 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
             }
           }
           success = true;
+          this.state.lastIterationTextChars = currentText.length;
           debugLog("agent-loop", `Iteration ${this.state.iteration}: LLM stream ended. finishReason: ${finishReason}, toolCalls: ${currentToolCalls.length}, text length: ${currentText.length}`);
           // 第 68 波：非正常结束原因要**默认可见**（debugLog 默认静默，出问题时控制台什么都没有）。
           // 用户报"任务又中断了"时，控制台里唯一线索就是 finish_reason —— 现在一眼能看出来。
@@ -2066,6 +2091,18 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
         } catch (retryError: any) {
           retryCount++;
           console.error(`[AgenticLoop] Iteration ${this.state.iteration}: LLM stream error (attempt ${retryCount}/${maxRetries}):`, retryError.name, retryError.message);
+          // 第 69 波：**不要对确定性错误白重试**。
+          // 事故现场：上下文超限的 400 被重试 3 次（每次必然失败、还各带一次 1M token 请求），
+          // 而真正该做的事（反应式压缩）压根没被触发。溢出错误直接抛给外层走压缩路径。
+          if (isContextOverflowError(retryError.message)) {
+            console.warn(`[AgenticLoop] 上下文溢出错误（不重试，交给压缩路径）: ${retryError.message?.slice(0, 160)}`);
+            throw retryError;
+          }
+          const retryClass = classifyError(retryError);
+          if (!retryClass.isRetryable) {
+            console.warn(`[AgenticLoop] 不可重试的错误（4xx 客户端错误），立即失败: ${retryError.message?.slice(0, 160)}`);
+            throw retryError;
+          }
           if (retryCount >= maxRetries || retryError.name === "AbortError") {
             throw retryError;
           }
@@ -2093,7 +2130,23 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
         return;
       }
 
-      if (error.message?.includes("prompt_too_long") || error.message?.includes("context_length_exceeded")) {
+      // 第 69 波：溢出识别改成**语义匹配**（DeepSeek 的 wording 是 "maximum context length is ..."，
+      // 旧的 `prompt_too_long` / `context_length_exceeded` 一个都不含 → 反应式压缩从未触发过）
+      if (isContextOverflowError(error.message)) {
+        // 已经压缩过太多次还放不下 → 明确告诉用户怎么办，别静默死掉
+        if (this.state.consecutiveCompactions >= 3) {
+          recordLoopStop(sessionId, "context_overflow", {
+            consecutiveCompactions: this.state.consecutiveCompactions,
+            message: error.message?.slice(0, 300),
+          });
+          yield { type: "text_delta", text: `\n\n${describeContextOverflow(error.message)}` };
+          const overflowResult: LoopResult = { type: "stop", reason: "context_overflow", usage: this.state.totalUsage };
+          if (this.config.memoryEnabled && this.config.onTurnComplete) {
+            try { this.config.onTurnComplete(this.state.totalUsage); } catch (e) { console.warn("[agentic-loop.ts]", e) }
+          }
+          yield { type: "end", result: overflowResult };
+          return;
+        }
         if (this.config.enableReactiveCompaction) {
           yield { type: "compaction_start" };
           const compacted = await this.compactMessages(sessionId);

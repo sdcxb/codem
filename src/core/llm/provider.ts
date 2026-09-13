@@ -379,7 +379,12 @@ export class OpenAICompatibleProvider implements LLMProvider {
       // FIX(对标 dsh mask-secrets): 错误体可能回显密钥 — 日志与 Error 都脱敏。
       const safe = redactSecrets(error.substring(0, 2000));
       console.error("[Provider] API error:", response.status, safe.substring(0, 500));
-      throw new Error(`API error ${response.status}: ${safe.substring(0, 200)}`);
+      // 第 69 波：把状态码**挂到错误对象上**，并保留完整错误体（截断到 2000 字符）。
+      // 之前只把 200 字符塞进 message、且不带 status —— 于是 classifyError 分不清
+      // "500 该重试" 与 "400 不该重试"，而**上下文超限的关键数字也可能被 200 字符截掉**。
+      const apiErr = new Error(`API error ${response.status}: ${safe.substring(0, 2000)}`) as any;
+      apiErr.status = response.status;
+      throw apiErr;
     }
 
     const reader = response.body?.getReader();
