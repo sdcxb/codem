@@ -243,11 +243,13 @@ private loopPool: Map<string, AgenticLoop> = new Map();
       createWaitForDelegationTool,
       createQuerySessionResultTool,
       createListSessionsTool,
+      createCancelDelegationTool,
     }) => {
       this.tools.register(createDelegateToSessionTool());
       this.tools.register(createWaitForDelegationTool());
       this.tools.register(createQuerySessionResultTool());
       this.tools.register(createListSessionsTool());
+      this.tools.register(createCancelDelegationTool());
       console.log("[LLMEngine] Cross-session delegation tools registered");
     }).catch(() => {
       // Non-critical — import may fail during test environment teardown

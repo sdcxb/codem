@@ -173,6 +173,15 @@ export class DelegationOrchestrator {
       return;
     }
 
+    // 第 63 波（审计补）：已取消的任务不能又被"完成"覆盖掉。
+    // 取消是异步的（abort 信号 + 事件循环），子会话的循环往往还会跑到收尾逻辑，
+    // 若这里无条件改成 completed，用户点了"终止"却看到任务变成"已完成" —— 取消等于没生效。
+    if (task.status === "cancelled") {
+      console.warn(`[DelegationOrchestrator] completeTask: task ${taskId} 已被取消，忽略完成回调`);
+      return;
+    }
+    if (task.status === "completed") return; // 幂等：重复完成不重复通知
+
     task.status = "completed";
     task.result = result;
     task.completedAt = Date.now();
@@ -213,6 +222,12 @@ export class DelegationOrchestrator {
   failTask(taskId: string, error: string): void {
     const task = this.tasks.get(taskId);
     if (!task) return;
+
+    // 同 completeTask：已取消的任务不再被"失败"覆盖（取消是用户的明确意图，优先于收尾回调）
+    if (task.status === "cancelled") {
+      console.warn(`[DelegationOrchestrator] failTask: task ${taskId} 已被取消，忽略失败回调`);
+      return;
+    }
 
     task.status = "failed";
     task.error = error;
@@ -365,37 +380,62 @@ export class DelegationOrchestrator {
     opts: { timeoutMs?: number } = {},
   ): Promise<DelegationTask> {
     const checkInterval = 1000;
-    const timeoutMs = opts.timeoutMs ?? this.config.waitTimeoutMs ?? DEFAULT_DELEGATION_CONFIG.waitTimeoutMs;
+
+    // 审计修正：单次预算不等于总预算 —— 模型完全可以「等一轮 → 再等一轮」，
+    // 于是父会话照样能黑等半小时（只是中间多了几行进度）。所以这里按任务累计等待时长：
+    // 总预算用完后，后续等待**立即返回进度**（只查看、不阻塞），直到任务真正结束。
+    const task = this.tasks.get(taskId);
+    if (!task) {
+      throw new Error(`Delegation task not found: ${taskId}`);
+    }
+    const perWait = opts.timeoutMs ?? this.config.waitTimeoutMs ?? DEFAULT_DELEGATION_CONFIG.waitTimeoutMs;
+    const totalBudget = this.config.waitBudgetMs ?? DEFAULT_DELEGATION_CONFIG.waitBudgetMs;
+    const used = task.waitedMs ?? 0;
+    const remainingTotal = totalBudget > 0 ? Math.max(0, totalBudget - used) : Number.POSITIVE_INFINITY;
+    const budget = Math.min(perWait > 0 ? perWait : Number.POSITIVE_INFINITY, remainingTotal);
+
+    if (budget <= 0) {
+      console.warn(
+        `[DelegationOrchestrator] waitForCompletion(${taskId}) 累计等待已达上限 ${Math.round(totalBudget / 1000)}s，改为立即返回进度`,
+      );
+      return task;
+    }
+
     const startedAt = Date.now();
+    const recordWait = () => {
+      const t = this.tasks.get(taskId);
+      if (t) {
+        t.waitedMs = (t.waitedMs ?? 0) + (Date.now() - startedAt);
+        this.tasks.set(taskId, t);
+      }
+    };
 
     while (true) {
       if (abortSignal?.aborted) {
+        recordWait();
         throw new Error("Wait cancelled (abort signal)");
       }
 
-      const task = this.tasks.get(taskId);
-      if (!task) {
+      const current = this.tasks.get(taskId);
+      if (!current) {
+        recordWait();
         throw new Error(`Delegation task not found: ${taskId}`);
       }
 
-      if (task.status === "completed") {
-        return task;
-      }
-
-      if (task.status === "failed") {
-        throw new Error(task.error || "Delegation task failed");
-      }
-
-      if (task.status === "cancelled") {
+      if (current.status === "completed" || current.status === "failed" || current.status === "cancelled") {
+        recordWait();
+        if (current.status === "completed") return current;
+        if (current.status === "failed") throw new Error(current.error || "Delegation task failed");
         throw new Error("Delegation task cancelled");
       }
 
       // 到点返回「仍在运行」的任务对象（status === "running"），由调用方渲染进度
-      if (timeoutMs > 0 && Date.now() - startedAt >= timeoutMs) {
+      if (Date.now() - startedAt >= budget) {
+        recordWait();
         console.warn(
-          `[DelegationOrchestrator] waitForCompletion(${taskId}) 等待 ${Math.round((Date.now() - startedAt) / 1000)}s 未完成，带进度返回`,
+          `[DelegationOrchestrator] waitForCompletion(${taskId}) 本次等待 ${Math.round((Date.now() - startedAt) / 1000)}s 未完成（累计 ${Math.round(((this.tasks.get(taskId)?.waitedMs ?? 0)) / 1000)}s），带进度返回`,
         );
-        return task;
+        return current;
       }
 
       await new Promise((resolve) => setTimeout(resolve, checkInterval));

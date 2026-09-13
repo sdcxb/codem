@@ -63,6 +63,8 @@ export interface DelegationTask {
    * 等待超时后父会话能拿到「已跑多久 / 调了多少次工具 / 最新输出」并自行决定继续等还是先干别的。
    */
   progress?: DelegationProgress;
+  /** 已累计等待时长（ms）—— 父会话反复"再等一轮"时用它兜住总时长 */
+  waitedMs?: number;
 }
 
 export interface DelegationProgress {
@@ -93,6 +95,13 @@ export interface DelegationConfig {
    */
   waitTimeoutMs: number;
   /**
+   * 第 62 波（审计补）：同一任务**累计**等待预算（ms）。
+   *
+   * 只有单次预算是不够的 —— 「等一轮 → 再等一轮」可以无限循环，父会话照样黑等半小时。
+   * 累计预算用完之后，后续等待**立即返回进度**（只查看、不阻塞），直到任务真正结束。
+   */
+  waitBudgetMs: number;
+  /**
    * 第 62 波：后台/委派会话单轮执行的**墙钟上限**（ms）。
    * 到点强制中止并回传部分产出 —— 兜住"子会话原地打转把父会话拖死"这一类。
    */
@@ -104,6 +113,7 @@ export const DEFAULT_DELEGATION_CONFIG: DelegationConfig = {
   maxConcurrent: 5,
   defaultTimeout: 0, // 任务本身不设超时，依赖 abort 信号取消
   waitTimeoutMs: 3 * 60 * 1000, // 单次等待 3 分钟（到点带进度返回，可再次等待）
+  waitBudgetMs: 8 * 60 * 1000, // 同一任务累计等待 8 分钟（之后只查看进度，不再阻塞）
   maxTurnMs: 15 * 60 * 1000, // 后台单轮 15 分钟墙钟上限（正常任务远低于此）
 };
 

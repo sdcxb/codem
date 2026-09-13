@@ -43,6 +43,14 @@ export interface RepeatGuardLimits {
   exactWarn: number;
   /** 精确指纹：第几次开始抑制（不执行，返回引导语） */
   exactSuppress: number;
+  /**
+   * 精确指纹：第几次直接停下整个循环。
+   *
+   * 为什么必须给精确档也留一个「停」：抑制只是"不给执行"，模型可以原样再叫一次 ——
+   * 而每次被抑制的调用**仍然会走一遍工具调用事件**（因此仍被算作"这一轮有工具调用"），
+   * 于是「连续无进展」阀门永远不会触发。没有这一档，精确重复会变成**新的死循环**。
+   */
+  exactStop: number;
   /** 只读枚举：第几次开始提醒 */
   enumWarn: number;
   /** 只读枚举：第几次开始抑制 */
@@ -56,6 +64,7 @@ export interface RepeatGuardLimits {
 export const DEFAULT_GUARD_LIMITS: RepeatGuardLimits = {
   exactWarn: 3,
   exactSuppress: 5,
+  exactStop: 8,
   enumWarn: 4,
   enumSuppress: 7,
   enumStop: 10,
@@ -200,7 +209,16 @@ function stableStringify(value: unknown): string {
   return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${stableStringify(v)}`).join(",")}}`;
 }
 
-/** 精确指纹：工具名 + 归一化后的参数（小写、压缩空白） */
+/**
+ * 精确指纹：工具名 + 归一化后的参数。
+ *
+ * 两个刻意的取舍（都是审计时改的）：
+ *   · **只压缩空白，不转小写**：小写合并会在**大小写敏感**的文件系统（Linux/macOS）上
+ *     把 `Read a.txt` 与 `Read A.txt` 当成同一个调用 —— 那会**误拦一次合法读取**。
+ *     少拦一次重复的代价远小于拦错一次；大小写差异交给「枚举意图指纹」去合并（那里只影响循环判定）。
+ *   · **不截断**：早先截到 400 字符是为了日志好看，代价是两条长命令只要前 400 字符相同就会被
+ *     误判成同一次调用（超长命令恰恰是自动生成的那种）。现在键保留全文，只在文案里截断。
+ */
 export function exactSignature(name: string, input: unknown): string {
   let body: string;
   try {
@@ -208,12 +226,28 @@ export function exactSignature(name: string, input: unknown): string {
   } catch {
     body = String(input);
   }
-  const normalized = body.toLowerCase().replace(/\s+/g, " ").trim();
-  return `${name}::${normalized.length > 400 ? normalized.slice(0, 400) : normalized}`;
+  const normalized = body.replace(/\s+/g, " ").trim();
+  return `${name}::${normalized}`;
 }
 
-/** 这些工具自带更贴切的去重/缓存（readCache、writeCache、wait 结果缓存），不再叠一层 */
-const GUARD_EXEMPT_TOOLS = new Set(["wait_for_delegation", "wait_for_subagent", "update_plan", "show_todo"]);
+/**
+ * 这些工具自带更贴切的去重/缓存，不再叠一层守卫：
+ *   · `wait_for_delegation` —— 结果缓存 + 单任务查看上限（agentic-loop 里单独处理）；
+ *   · `read` / `read_file` / `write` —— readCache / writeCache **会把原内容或原文回给模型**
+ *     （"这就是你之前读到的内容，直接用"），比守卫那句"调用被跳过"有用得多；
+ *     而且"整轮全是缓存命中"本身就会被循环当成空转，进而走到停止判定。
+ * 守卫的位置在读取缓存之前（被拦下的调用不该产生快照等副作用），所以这里必须显式豁免，
+ * 否则守卫会把更友好的缓存回复抢先顶掉。
+ */
+const GUARD_EXEMPT_TOOLS = new Set([
+  "wait_for_delegation",
+  "wait_for_subagent",
+  "read",
+  "read_file",
+  "write",
+  "update_plan",
+  "show_todo",
+]);
 
 /** 语义上属于「写」的非 bash 工具 —— 见到就重置枚举计数 */
 const MUTATING_TOOLS = new Set(["write", "edit", "multi_edit", "patch", "apply_patch", "notebook_create", "notebook_update"]);
@@ -232,7 +266,15 @@ export class RepeatGuard {
   private enumWarned = new Set<string>();
   private mutatedSinceEnum = false;
   /** 统计（写进日志/事件，便于排查「为什么停了」） */
-  readonly stats = { exactRepeats: 0, enumRepeats: 0, suppressed: 0, stopped: 0, mutations: 0 };
+  readonly stats = {
+    exactRepeats: 0,
+    enumRepeats: 0,
+    suppressed: 0,
+    stopped: 0,
+    mutations: 0,
+    /** 因为"又有新动作"而清空枚举历史的次数 */
+    enumResets: 0,
+  };
 
   constructor(limits: Partial<RepeatGuardLimits> = {}) {
     this.limits = { ...DEFAULT_GUARD_LIMITS, ...limits };
@@ -272,16 +314,31 @@ export class RepeatGuard {
       return { action: "allow" };
     }
 
+    // 先分类：这次调用是不是"只读目录枚举"？
+    let enumerateSignature: string | undefined;
+    let enumerateCommand = "";
     if (name === "bash" || name === "shell" || name === "run_command" || name === "terminal") {
       const command = String((args as any).command ?? (args as any).cmd ?? "");
+      enumerateCommand = command;
       const intent = bashIntent(command, ctx.cwd);
       if (intent.kind === "mutate") {
         this.noteMutation();
         return { action: "allow" };
       }
-      if (intent.kind === "enumerate" && intent.signature) return this.bumpEnum(intent.signature, command);
+      if (intent.kind === "enumerate") enumerateSignature = intent.signature;
     }
 
+    // 「干了别的事」= 有进展 → 清空枚举历史。
+    // 这条判据必须按**分类**而不是按"指纹是否见过"：事故里那 17 条命令每一条都是新的精确指纹
+    // （开关不一样），按指纹判会把计数一路清零，反而永远抓不到打转。
+    // 而「列目录 → 读文件 → 再列目录」里的 read 不是枚举 → 正确清零。
+    if (!enumerateSignature && this.enumCounts.size > 0) {
+      this.enumCounts.clear();
+      this.enumWarned.clear();
+      this.stats.enumResets++;
+    }
+
+    if (enumerateSignature) return this.bumpEnum(enumerateSignature, enumerateCommand);
     if (GUARD_EXEMPT_TOOLS.has(name)) return { action: "allow" };
     return this.bumpExact(exactSignature(name, args), name);
   }
@@ -341,6 +398,22 @@ export class RepeatGuard {
     this.exact.set(signature, n);
     if (n > 1) this.stats.exactRepeats++;
 
+    const where = truncate(signature, 160);
+    if (n >= this.limits.exactStop) {
+      this.stats.stopped++;
+      return {
+        action: "stop",
+        kind: "exact",
+        signature,
+        count: n,
+        message:
+          `[REPEAT GUARD — STOP] 同一次 ${name} 调用你**一字不差地重复了 ${n} 次**：\n  ${where}\n\n` +
+          `重复执行不会得到不同结果。现在停下来，改用以下之一：\n` +
+          `  1) 换参数/换工具真正推进任务；\n` +
+          `  2) 如果你在等待某个外部状态变化，**明确说明你在等什么**；\n` +
+          `  3) 如果已经拿到需要的信息，直接给出结论并结束。`,
+      };
+    }
     if (n >= this.limits.exactSuppress) {
       this.stats.suppressed++;
       return {

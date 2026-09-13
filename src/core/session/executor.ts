@@ -144,10 +144,24 @@ export async function executeSessionTurn(params: ExecuteSessionTurnParams): Prom
     // 保存用户消息到 DB（委派任务作为 user message 注入目标会话）
     const userMsgId = `user-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
     const prefix = delegationTaskId ? "[DELEGATED TASK] " : "";
+    // 第 63 波（审计补）：给"接收方"一句兜底约束。
+    // 交接正文再规范，也可能漏东西；漏了的时候模型的本能是"把整个盘扫一遍找找看" ——
+    // 那正是第 62 波事故的行为。所以这句必须由系统注入（而不是指望交接里写了）。
+    const receiverNote = delegationTaskId
+      ? (getLang() === "zh"
+          ? "\n\n---\n[系统提示] 这是一次**会话交接**：上面是对方给你的全部信息，你没有它的对话历史。" +
+            "需要文件内容时，**直接用正文里给出的绝对路径 read**；" +
+            "如果正文缺少你要的信息（文件不存在、路径没给、完成判据不清），**先明确报告缺什么**，" +
+            "不要靠反复枚举目录/递归扫描来猜。同一个目录枚举超过几次就会被系统拦下并终止。"
+          : "\n\n---\n[SYSTEM] This is a session handover: the text above is ALL you get — you have none of the sender's history. " +
+            "When you need file content, `read` the absolute path given above. " +
+            "If something you need is missing (no path, file not found, no definition of done), REPORT WHAT IS MISSING first — " +
+            "do not guess by repeatedly enumerating directories or scanning recursively. Repeated enumeration of the same target gets blocked and terminated.")
+      : "";
     MessageStorage.createMessage({
       id: userMsgId,
       role: "user",
-      content: prefix + message,
+      content: prefix + message + receiverNote,
       timestamp: Date.now(),
       status: "done",
     }, sessionId);
@@ -375,8 +389,15 @@ export async function executeSessionTurn(params: ExecuteSessionTurnParams): Prom
     }
 
     // 通知编排器任务完成
+    // 第 63 波（审计补）：被取消（用户点了终止 / 父会话 cancel_delegation）而 abort 掉的执行，
+    // 不能在这里又报"完成" —— 否则取消会被收尾逻辑悄悄改回已完成。
     if (delegationTaskId) {
-      orchestrator.completeTask(delegationTaskId, cleanOutput || "[No output]");
+      if (abort.signal.aborted) {
+        console.log(`[SessionExecutor] ${sessionId} 已中止，不再上报完成（委派任务保持 cancelled）`);
+        orchestrator.cancelTask(delegationTaskId);
+      } else {
+        orchestrator.completeTask(delegationTaskId, cleanOutput || "[No output]");
+      }
     }
 
     return {

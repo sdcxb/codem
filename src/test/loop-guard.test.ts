@@ -114,19 +114,38 @@ describe("重复工具调用守卫（第 62 波）", () => {
     }
   });
 
-  it("GUARD-7: 精确指纹忽略参数顺序与大小写；不同参数必须是不同指纹", () => {
+  it("GUARD-7: 精确指纹忽略参数顺序与空白；不同参数必须是不同指纹", () => {
     expect(exactSignature("read", { path: "D:\\a.md", limit: 100 })).toBe(
-      exactSignature("read", { limit: 100, path: "d:\\A.md" }),
+      exactSignature("read", { limit: 100, path: "D:\\a.md" }),
     );
     expect(exactSignature("read", { path: "D:\\a.md" })).not.toBe(exactSignature("read", { path: "D:\\b.md" }));
     expect(normalizePath('"D:/A/B/"')).toBe("d:\\a\\b");
+
+    // 审计修正：精确指纹**不再转小写**（大小写敏感的文件系统上会误拦合法读取），
+    // 也不再把长参数截断（两条长命令前 400 字符相同会被误判成同一次调用）。
+    expect(exactSignature("read", { path: "D:\\A.md" })).not.toBe(exactSignature("read", { path: "D:\\a.md" }));
+    const longA = { command: `Get-Content "${"x".repeat(500)}A"` };
+    const longB = { command: `Get-Content "${"x".repeat(500)}B"` };
+    expect(exactSignature("bash", longA)).not.toBe(exactSignature("bash", longB));
   });
 
-  it("GUARD-8: 完全相同的调用第 5 次被抑制（覆盖 bash 之外的通用工具）", () => {
+  it("GUARD-8: 完全相同的调用第 5 次被抑制（覆盖 bash 之外、且没有自带缓存的工具）", () => {
     const guard = new RepeatGuard();
-    const args = { path: `${ROOT}\\x.md` };
-    const actions = Array.from({ length: 5 }, () => guard.inspect("read", args, CTX).action);
+    const args = { pattern: "TODO", path: `${ROOT}\\src` };
+    const actions = Array.from({ length: 5 }, () => guard.inspect("grep", args, CTX).action);
     expect(actions).toEqual(["allow", "allow", "warn", "allow", "suppress"]);
+  });
+
+  it("GUARD-8b: read/write/wait 交给各自的缓存处理（它们的回复比守卫更有用）", () => {
+    const guard = new RepeatGuard();
+    for (const [tool, args] of [
+      ["read", { path: `${ROOT}\\a.md` }],
+      ["write", { path: `${ROOT}\\a.md`, content: "x" }],
+      ["wait_for_delegation", { task_id: "del-1" }],
+    ] as Array<[string, Record<string, unknown>]>) {
+      const actions = Array.from({ length: 10 }, () => guard.inspect(tool, args, CTX).action);
+      expect(new Set(actions), `${tool} 不应被守卫拦（交给缓存）`).toEqual(new Set(["allow"]));
+    }
   });
 
   it("GUARD-9: 自带缓存/去重的工具不再叠一层（wait_for_delegation 等）", () => {
@@ -161,5 +180,58 @@ describe("重复工具调用守卫（第 62 波）", () => {
     const guard = new RepeatGuard();
     expect(guard.inspect("bash", {}, CTX).action).toBe("allow");
     expect(guard.inspect("bash", undefined, CTX).action).toBe("allow");
+  });
+
+  // ===== 审计后补的用例（都是"上一版会出错"的情形）=====
+
+  it("GUARD-13: 精确重复也有「停」档 —— 否则抑制会变成新的死循环", () => {
+    const guard = new RepeatGuard();
+    const args = { pattern: "TODO", path: `${ROOT}\\src` }; // 用无自带缓存的工具（read/write 走缓存）
+    const actions = Array.from({ length: DEFAULT_GUARD_LIMITS.exactStop }, () => guard.inspect("grep", args, CTX).action);
+    expect(actions.slice(0, 2)).toEqual(["allow", "allow"]);
+    expect(actions[2]).toBe("warn");
+    expect(actions[4]).toBe("suppress");
+    expect(actions.at(-1)).toBe("stop"); // 第 8 次
+    expect(guard.stats.stopped).toBeGreaterThanOrEqual(1);
+  });
+
+  it("GUARD-14: 出现「新动作」就清空枚举历史 —— 列目录→读文件→再列目录不该被判成打转", () => {
+    const guard = new RepeatGuard();
+    const seq: string[] = [];
+    for (let i = 0; i < 12; i++) {
+      seq.push(guard.inspect("bash", { command: `Get-ChildItem "${ROOT}" -File` }, CTX).action);
+      // 每轮读一个**新文件**（新动作 = 真的在推进）
+      guard.inspect("read", { path: `${ROOT}\\file${i}.md` }, CTX);
+    }
+    expect(seq.every((a) => a === "allow"), `不该出现非 allow：${seq.join(",")}`).toBe(true);
+    expect(guard.stats.enumResets).toBeGreaterThanOrEqual(10);
+    // 而"纯枚举、没有别的动作"依旧会被停（GUARD-3 已覆盖）
+  });
+
+  it("GUARD-15: 守卫的抑制/停不会污染「连续错误」计数（否则会以错误的理由停循环）", () => {
+    // 事故复查：抑制档最初返回 status:"error"，而 executor 把 error 结果抛成 tool_error，
+    // tool_error 会累加 consecutiveErrors（上限只有 3）—— 于是「第 7 次抑制」根本走不到，
+    // 循环会先以「连续错误过多」停掉。用户看到的是"错误"，而不是"你在原地打转"。
+    const fs = require("fs");
+    const path = require("path");
+    const loop = fs.readFileSync(path.join(__dirname, "../core/llm/agentic-loop.ts"), "utf-8");
+    const anchor = loop.indexOf("this.repeatGuard.inspect(");
+    expect(anchor, "agentic-loop 必须调用守卫").toBeGreaterThan(-1);
+    const guardBlock = loop.slice(anchor, anchor + 1500);
+    expect(guardBlock, "被拦下的调用必须返回 completed（不是 error）").toMatch(/status:\s*"completed" as const/);
+    expect(guardBlock, "被拦下的调用不能返回 error 状态").not.toMatch(/status:\s*"error" as const/);
+    // 而且必须从"有效工具调用"里扣掉，否则无进展阀门永远不触发
+    expect(loop).toContain("guardSuppressedThisIteration");
+    expect(loop).toMatch(/toolCallsInIteration - this\.guardSuppressedThisIteration/);
+  });
+
+  it("GUARD-16: 守卫按「轮次」重置（AgenticLoop 会按会话复用，构造期重置等于跨轮次累计）", () => {
+    const fs = require("fs");
+    const path = require("path");
+    const loop = fs.readFileSync(path.join(__dirname, "../core/llm/agentic-loop.ts"), "utf-8");
+    const runStart = loop.indexOf("async *run(");
+    const runHead = loop.slice(runStart, runStart + 1200);
+    expect(runHead, "run() 开头必须重置守卫").toContain("this.repeatGuard.reset()");
+    expect(runHead, "run() 开头必须清掉停档状态").toContain("this.guardStopMessage = null");
   });
 });

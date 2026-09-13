@@ -34,7 +34,7 @@ import {
   getActiveDelegations,
 } from "../core/session/delegation-storage";
 import { getSessionMessageBus, resetSessionMessageBus } from "../core/session/bus";
-import { DelegationOrchestrator } from "../core/session/orchestrator";
+import { DelegationOrchestrator, getDelegationOrchestrator, resetDelegationOrchestrator } from "../core/session/orchestrator";
 import type { DelegationTask } from "../core/session/types";
 
 const PROJECT_ID = "proj-dele-test";
@@ -607,5 +607,118 @@ describe("跨会话委派 — 等待预算与进度（第 62 波）", () => {
     expect(types).toMatch(/waitTimeoutMs:\s*\d/);
     expect(types).toMatch(/maxTurnMs:\s*\d/);
     expect(types).not.toMatch(/defaultTimeout:\s*0,?\s*\/\/[^\n]*\n\s*\}\);/);
+  });
+
+  it("DELE-036: 等待有**累计**总预算 —— 反复「再等一轮」也兜得住", async () => {
+    // 只有单次预算是不够的：模型可以等一轮再等一轮，父会话照样黑等半小时。
+    // 累计上限 1200ms / 单次 500ms 的设定下：第 1 次最多 500ms、第 2 次最多剩 700ms、
+    // 第 3 次起**立即返回**（只查看、不阻塞）。
+    const orch = new DelegationOrchestrator({ waitTimeoutMs: 500, waitBudgetMs: 1200 });
+    const task = await makeTask(orch);
+
+    const t0 = Date.now();
+    const first = await orch.waitForCompletion(task.id, undefined, { timeoutMs: 500 });
+    expect(first.status).toBe("running");
+    expect(first.waitedMs ?? 0).toBeGreaterThan(0);
+
+    const second = await orch.waitForCompletion(task.id, undefined, { timeoutMs: 500 });
+    expect(second.status).toBe("running");
+    const afterTwo = Date.now() - t0;
+    expect(afterTwo, `累计等待应被总预算夹住，实际 ${afterTwo}ms`).toBeLessThan(2500);
+
+    const t2 = Date.now();
+    const third = await orch.waitForCompletion(task.id, undefined, { timeoutMs: 500 });
+    const thirdMs = Date.now() - t2;
+    expect(third.status).toBe("running");
+    expect(thirdMs, `累计预算用完后应秒回，实际 ${thirdMs}ms`).toBeLessThan(300);
+  });
+
+  it("DELE-037: cancel_delegation 能把卡住的委派终止掉（父会话不再只能干等）", async () => {
+    // 注意：工具内部用的是**单例**编排器（与 executor 同一个），所以这里也必须走单例，
+    // 否则测的是"另一个实例"上的状态（第一次写这条用例就踩了）。
+    resetDelegationOrchestrator();
+    const orch = getDelegationOrchestrator();
+    const task = await makeTask(orch);
+    expect(orch.getTask(task.id)?.status).toBe("running");
+
+    const { createCancelDelegationTool } = await import("../core/session/tools");
+    const tool = createCancelDelegationTool();
+    const res = await tool.execute({ task_id: task.id, reason: "看起来在反复枚举同一目录" }, {} as any);
+
+    expect(res.output).toMatch(/已终止|Cancelled/);
+    expect(orch.getTask(task.id)?.status).toBe("cancelled");
+    // 终止后再等：应当立刻以 cancelled 结束（而不是继续阻塞）
+    await expect(orch.waitForCompletion(task.id, undefined, { timeoutMs: 1000 })).rejects.toThrow(/cancelled/i);
+    resetDelegationOrchestrator();
+  });
+
+  it("DELE-038: cancel_delegation 已注册（工具列表 + 提示词都要有，否则模型不知道能用）", () => {
+    const fs = require("fs");
+    const path = require("path");
+    const engine = fs.readFileSync(path.join(__dirname, "../core/llm/index.ts"), "utf-8");
+    expect(engine).toContain("createCancelDelegationTool");
+    const prompt = fs.readFileSync(path.join(__dirname, "../core/prompt/prompt.ts"), "utf-8");
+    expect(prompt).toContain("cancel_delegation");
+  });
+
+  // ===== 第二次审计补的用例 =====
+
+  it("DELE-039: 取消之后，子会话的收尾回调不能把任务改回「已完成」/「失败」", async () => {
+    // 取消是异步的：abort 之后子会话的循环往往还会跑到收尾逻辑。
+    // 若 completeTask/failTask 无条件覆盖状态，用户点了"终止"却看到任务变成"已完成" —— 取消等于没生效。
+    const orch = new DelegationOrchestrator();
+    const task = await makeTask(orch);
+    orch.cancelTask(task.id);
+
+    orch.completeTask(task.id, "迟到的完成回调");
+    expect(orch.getTask(task.id)?.status).toBe("cancelled");
+
+    orch.failTask(task.id, "迟到的失败回调");
+    expect(orch.getTask(task.id)?.status).toBe("cancelled");
+
+    // 幂等：重复完成不重复通知（状态不变）
+    const t2 = await makeTask(orch);
+    orch.completeTask(t2.id, "结果");
+    orch.completeTask(t2.id, "结果");
+    expect(orch.getTask(t2.id)?.status).toBe("completed");
+    expect(orch.getTask(t2.id)?.result).toBe("结果");
+  });
+
+  it("DELE-040: executor 在被 abort 时不再上报完成（从源头堵住覆盖）", () => {
+    const fs = require("fs");
+    const path = require("path");
+    const executor = fs.readFileSync(path.join(__dirname, "../core/session/executor.ts"), "utf-8");
+    expect(executor).toMatch(/if \(abort\.signal\.aborted\) \{[\s\S]{0,200}cancelTask/);
+  });
+
+  it("DELE-041: 委派注入的消息带「接收方兜底提示」（漏信息时要报告，不要盲目扫描）", () => {
+    const fs = require("fs");
+    const path = require("path");
+    const executor = fs.readFileSync(path.join(__dirname, "../core/session/executor.ts"), "utf-8");
+    expect(executor).toContain("receiverNote");
+    expect(executor).toMatch(/先明确报告缺什么|REPORT WHAT IS MISSING/);
+    expect(executor).toMatch(/不要靠反复枚举|do not guess by repeatedly enumerating/);
+  });
+
+  it("DELE-042: 交接校验会「放手」—— 连续被拒后放宽放行，避免把委派功能锁死", () => {
+    const fs = require("fs");
+    const path = require("path");
+    const tools = fs.readFileSync(path.join(__dirname, "../core/session/tools.ts"), "utf-8");
+    expect(tools).toContain("handoverRejections");
+    expect(tools).toMatch(/failOpen/);
+    expect(tools).toMatch(/rejections >= 2/);
+    expect(tools).toMatch(/放宽放行/);
+  });
+
+  it("DELE-043: 同一个任务被反复查看也有上限（秒回式空转）", () => {
+    const fs = require("fs");
+    const path = require("path");
+    const loop = fs.readFileSync(path.join(__dirname, "../core/llm/agentic-loop.ts"), "utf-8");
+    expect(loop).toContain("MAX_DELEGATION_PEEKS");
+    expect(loop).toContain("delegationPeekCounts");
+    expect(loop).toMatch(/不要再查看或等待了/);
+    // 且必须按轮次清空，不能跨轮次累计
+    const runStart = loop.indexOf("async *run(");
+    expect(loop.slice(runStart, runStart + 1200)).toContain("this.delegationPeekCounts.clear()");
   });
 });

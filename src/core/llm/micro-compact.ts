@@ -51,6 +51,7 @@ const NEVER_COMPACT_TOOLS = new Set([
   "wait_for_delegation",
   "query_session_result",
   "list_sessions",
+  "cancel_delegation",
   "show_todo",
   "ask_clarification",
   "fact_check",

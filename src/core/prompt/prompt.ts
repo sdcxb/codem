@@ -2,6 +2,7 @@ import type { AgentDefinition } from "../agent/agent";
 import type { AppIdentity, UserConfig } from "../types";
 import { getLang } from "../i18n/lang";
 import { getPromptTemplates } from "./i18n-templates";
+import { HANDOVER_SOFT_LIMIT, HANDOVER_TEMPLATE } from "../session/handover";
 import type { GitConfig, EnvironmentConfig } from "../settings/settings";
 
 // ========== System Prompt Builder ==========
@@ -135,8 +136,9 @@ Sub-agents have the same tools as you. Don't pass file contents — just tell th
 You can delegate tasks to OTHER chat sessions in the same project using:
 - \`list_sessions\`: List all available sessions with their IDs and status.
 - \`delegate_to_session\`: Send a task to another session's agent. Returns immediately with a task ID (non-blocking).
-- \`wait_for_delegation\`: Wait for a delegation task to complete and get the result. Blocks until the target session finishes.
+- \`wait_for_delegation\`: Wait for a delegation task to complete. Has a TIME BUDGET — it returns with progress instead of blocking forever.
 - \`query_session_result\`: Peek at another session's latest output without delegating.
+- \`cancel_delegation\`: Stop a delegated task that is stuck or no longer needed.
 
 ## How Cross-Session Delegation Works
 
@@ -148,6 +150,35 @@ The system prevents calling wait_for_delegation in the same response as delegate
 
 Use the ACTUAL task_id from delegate results (format: \`TASK_ID: del-xxxxx\`).
 
+## Writing a Handover (REQUIRED — the task text is validated)
+
+The receiving session has NONE of your conversation. It only gets the task text you write.
+So hand over **state and pointers, not a restatement of intent**. A handover that only says
+"review the project background / confirm the final version" forces the receiver to re-scan the
+filesystem from zero — which is exactly how a session ends up enumerating the same directory
+dozens of times and burning many minutes. The task text is rejected if it lacks an absolute
+path or a definition of done, or if it is absurdly long.
+
+Template (keep it tight; put details in a file and point to it):
+
+${HANDOVER_TEMPLATE}
+
+Rules that make handovers work:
+- **Absolute paths, always.** The receiver should \`read\` the file you name — never enumerate to find it.
+- **State what is already done** (files produced, decisions locked) so the receiver does not redo it.
+- **Always give a definition of done.** Without one the receiver has no stopping condition.
+- Keep the text short (roughly under ${HANDOVER_SOFT_LIMIT} chars). Long handovers lose the point AND still cause re-scanning.
+
+## Waiting and Stuck Children
+
+- \`wait_for_delegation\` waits at most a few minutes per call, then returns **progress**
+  (elapsed, tool calls so far, last tool, latest child output). The task is NOT failed.
+- Total wait per task is also budgeted. When the budget is exhausted, waiting returns immediately —
+  do NOT keep calling it. Report to the user and continue with other work.
+- If the child's "last tool" shows it **repeating the same action** (e.g. enumerating one directory
+  over and over), do not keep waiting: use \`cancel_delegation\`, then report what happened and
+  what partial output exists.
+
 ## When to Use Cross-Session Delegation
 - When another session has a different working directory (git worktree isolation)
 - When you need a different agent type to handle a specialized task
@@ -157,7 +188,8 @@ Use the ACTUAL task_id from delegate results (format: \`TASK_ID: del-xxxxx\`).
 - Delegation creates a circular dependency guard — A→B→A is automatically rejected.
 - The target session runs in the background. Its output is saved to the database.
 - If the target session needs permission for a tool, the user will be asked to approve it.
-- Maximum delegation depth is 2 (A→B→C is allowed, A→B→C→D is not).`);
+- Maximum delegation depth is 2 (A→B→C is allowed, A→B→C→D is not).
+- Background sessions have a wall-clock ceiling; on timeout their partial output is returned.`);
 
   // 7. Context management (i18n)
   sections.push(t.contextManagement);

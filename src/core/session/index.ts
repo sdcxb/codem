@@ -60,4 +60,5 @@ export {
   createWaitForDelegationTool,
   createQuerySessionResultTool,
   createListSessionsTool,
+  createCancelDelegationTool,
 } from "./tools";

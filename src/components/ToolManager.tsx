@@ -39,7 +39,7 @@ const BUILTIN_TOOL_IDS = new Set([
 
 // 委派工具 ID 列表
 const DELEGATION_TOOL_IDS = new Set([
-  "delegate_to_session", "wait_for_delegation", "query_session_result", "list_sessions",
+  "delegate_to_session", "wait_for_delegation", "query_session_result", "list_sessions", "cancel_delegation",
 ]);
 
 export function ToolManager({ onClose }: ToolManagerProps) {
