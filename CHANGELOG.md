@@ -2,6 +2,48 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.16.18] - 2026-09-13 — 修复：回复被输出上限截断时「任务又中断了」
+
+### 现象（用户控制台）
+
+用户说"继续之前没完成的任务"，然后**一轮就结束了**：
+
+```
+[AgenticLoop.run] sessionId: 1787630173686-ogk8e1sw4, userMessage: 继续之前没完成的任务...
+[AgenticLoop] Single-response dedup: 0 tool calls in this response: []
+[LLMEngine.resolveSlot] slot=memory → ...
+[extractMemories] Extracted 15 memories from session ...
+```
+
+没有报错、没有重试，直接进入记忆抽取 —— 表现就是"任务又中断了"。
+
+### 根因
+
+**`finish_reason === "length"`（达到单次输出上限、回复被截断）此前只用于"内容型工具"的提示，
+从不参与"要不要停"的判断。** 于是被截断的回复（尤其是**纯文本、没有工具调用**的那种）
+被当成"写完了"，循环以 `completed` 收尾。控制台里连 `finish_reason` 都看不到（它写在
+默认静默的 `debugLog` 里），所以只剩"莫名其妙断了"这一种观感。
+
+### 修复
+
+- **截断 ⇒ 自动续写**：`finish_reason=length` 时注入一条"**从断点继续**"的提示并继续循环 ——
+  明确要求：不要重复已输出内容、长文件改用 `write` + `append: true` 分块落盘、已写完就直接说明。
+  界面上会显示"⏩ 上一条回复因达到输出上限被截断，正在自动续写…"。
+- **续写有预算**（3 次）：用完则**明确停下**并给出下一步（分块写入 / 调大 `maxTokens`），
+  停止原因是 `output_truncated`（结构化事件 + 用户可见说明），而不是静默结束。
+- **结束原因进入循环状态**：provider 的 `end` 事件不会向上游 yield，所以把它写进 `LoopState.lastFinishReason`
+  —— 主循环的停止判断这才看得见它。
+- **非正常结束原因默认可见**：`finish_reason` 不是 `stop`/`tool_use` 时打一条 `console.warn`
+  （例如 `length（达到单次输出上限，回复被截断）`），下次一眼能看出是哪种结束。
+
+### 校验
+
+`tsc` 0 错误；**218 个测试文件 / 4722 条用例通过**（+15 skipped）；UI 审计 **25 条规则 error 0 / warn 0**；
+CSS 生效取值快照（2743 个类）**无变化**；打包成功。
+新增契约：`output-truncation-continue.test.ts`（TRUNC-1~5 源级 + **行为测试**）
+与 `output-truncation-behavior.test.ts`（TRUNC-B1~B3：用脚本化 provider 真跑循环 ——
+截断后**必须再请求一次**、连续截断到预算用完以 `output_truncated` 停止、正常回复不受影响）。
+
 ## [1.16.17] - 2026-09-13 — 输出上限按模型动态解析（被拒自动降档）+ 同类问题清查
 
 ### 起因（用户追问）

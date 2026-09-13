@@ -1,4 +1,4 @@
-﻿import type { LLMProvider, LLMRequest, ToolDefinition, TokenUsage } from "./types";
+import type { LLMProvider, LLMRequest, ToolDefinition, TokenUsage } from "./types";
 import type { ToolRegistry, ToolContext, WriteConfirmResult } from "./tools";
 import type { PlanUpdateOp } from "./plan-utils";
 import { applyPlanUpdate as applyPlanUpdatePure, looksLikeExecutableTask, renderPlanSection } from "./plan-utils";
@@ -90,6 +90,8 @@ export interface LoopState {
    * Reset whenever the model produces text or a tool returns new output.
    */
   consecutiveNoProgress: number;
+  /** 第 68 波：最近一次迭代的 provider 结束原因（截断判定要用；executeIteration 写入） */
+  lastFinishReason: string;
   /** Turn start timestamp — set at the beginning of each run() for duration tracking */
   turnStartTime?: number;
 }
@@ -223,6 +225,15 @@ function bashIntentKind(command: string): "enumerate" | "mutate" | "other" {
 }
 
 const MAX_CONSECUTIVE_NO_PROGRESS = 30;
+
+/**
+ * 第 68 波：因**单次输出上限**被截断时，最多自动续写几次。
+ *
+ * 真实事故：用户说"继续之前没完成的任务"，一轮就结束了（被截断的纯文本回复被当成写完了）。
+ * 自动续写能让截断变成"可恢复"；但也不能无限续（否则一个写不完的任务会一直烧钱），
+ * 所以给 3 次预算，用完就明确停下并告诉用户该怎么改（分块写入 / 调大上限）。
+ */
+const MAX_TRUNCATED_CONTINUATIONS = 3;
 
 
 const DEFAULT_LOOP_CONFIG: LoopConfig = {
@@ -389,6 +400,8 @@ export class AgenticLoop {
    * 刻意不用 macroStep —— 那是 UI 启发式步进，会让"计划推进"信号频繁误报。
    */
   private planRevision = 0;
+  /** 第 68 波：本轮因输出上限被截断后已自动续写几次 */
+  private truncatedContinuations = 0;
   /** 本轮迭代是否产出了交付物（写入/编辑/会改盘的命令） */
   private iterationProducedArtifact = false;
   /** 守卫判定「该停了」时的提示语 —— 在迭代末尾像 writeRejected 一样终止循环 */
@@ -629,6 +642,7 @@ private getFileChangeTrackerService(): FileChangeTracker | null {
       costDegraded: false,
       writeRejected: false,
       consecutiveNoProgress: 0,
+      lastFinishReason: "stop",
     };
   }
 
@@ -800,6 +814,7 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
     this.delegationStuckPeeks.clear();
     this.stallGuard.reset();
     this.planRevision = 0;
+    this.truncatedContinuations = 0;
     this.iterationProducedArtifact = false;
 
     // Model-aware context window: resolve the current model's real window
@@ -1358,6 +1373,7 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
         yield event;
         if (event.type === "tool_start") iterationToolCalls++;
         if (event.type === "text_delta" && event.text.trim()) iterationHadText = true;
+
 // 宏观步骤推进：
 // - Recon tools (read/glob/grep/tool_search/web_search/list) 与计划元操作
 //   (update_plan) 不推进步骤。
@@ -1623,6 +1639,69 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
           console.warn(`[AgenticLoop] ${unwaitedDelIds.length} un-waited delegation(s) — injected wait_for_delegation reminder instead of stopping. IDs: ${unwaitedDelIds.join(", ")}`);
           continue;
         }
+        // ===== 第 68 波：回复被输出上限截断时**自动续写**，而不是当成"正常完成" =====
+        //
+        // 真实事故：用户说"继续之前没完成的任务"，一轮之后循环就结束了
+        // （日志里只有 `Single-response dedup: 0 tool calls` 然后直接进入记忆抽取），
+        // 表现就是"任务又中断了"。原因：`finish_reason === "length"`（达到单次输出上限）
+        // **以前只用于内容型工具的提示**，从不参与"要不要停"的判断 —— 于是被截断的回复
+        // （尤其是纯文本、没有工具调用的那种）被当成写完了。
+        //
+        // 现在：截断 ⇒ 注入一条"从断点继续"的提示并继续循环（预算 3 次）；
+        // 预算用完 ⇒ 明确停下来并告诉用户该怎么做（分块 / 提高上限）。
+        if (this.state.lastFinishReason === "length") {
+          if (this.truncatedContinuations < MAX_TRUNCATED_CONTINUATIONS) {
+            this.truncatedContinuations++;
+            recordLoopStop(sessionId, "output_truncated", {
+              phase: "auto-continue",
+              continuation: this.truncatedContinuations,
+              iteration: this.state.iteration,
+            });
+            console.warn(
+              `[AgenticLoop] Response was truncated (finish_reason=length) — auto-continuing (${this.truncatedContinuations}/${MAX_TRUNCATED_CONTINUATIONS})`,
+            );
+            try {
+              this.getMessageStorage().createMessage({
+                id: `trunc-cont-${Date.now()}`,
+                role: "user",
+                content:
+                  `[SYSTEM] 你上一条回复因为**达到单次输出上限**被截断了（finish_reason=length）。请**从断点继续**：\n` +
+                  `  · **不要重复**已经输出过的内容，直接从断掉的地方往下写；\n` +
+                  `  · 如果要写的是长文件/长脚本，请改用**分块落盘**：\`write\` 写第一段，之后每次用 \`write\` + \`append: true\` 追加（每段建议 ≤200 行）；\n` +
+                  `  · 如果上一步其实已经写完，直接说明"已完成"并给出结论；\n` +
+                  `  · 不要重新开始整个任务。`,
+                timestamp: Date.now(),
+                status: "done",
+              }, sessionId);
+              this.msgCache = null;
+            } catch (e) { console.warn('[agentic-loop.ts]', e) }
+            yield { type: "text_delta", text: "\n\n⏩ 上一条回复因达到输出上限被截断，正在自动续写…\n\n" };
+            continue;
+          }
+          // 连续被截断：停下来说清楚，别让用户以为任务"自己断了"
+          recordLoopStop(sessionId, "output_truncated", {
+            phase: "give-up",
+            continuations: this.truncatedContinuations,
+          });
+          yield {
+            type: "text_delta",
+            text:
+              `\n\n⚠️ **已连续 ${this.truncatedContinuations} 次在单次输出上限处被截断**，为避免无限续写已停止。\n` +
+              `建议：① 让它把长文件**分块写入**（\`write\` 首段 + \`write append: true\` 追加）；` +
+              `② 或把这个模型/智能体的输出上限调大（设置 → maxTokens）。`,
+          };
+          const truncResult: LoopResult = {
+            type: "stop",
+            reason: "output_truncated",
+            usage: this.state.totalUsage,
+          };
+          if (this.config.memoryEnabled && this.config.onTurnComplete) {
+            try { this.config.onTurnComplete(this.state.totalUsage); } catch (e) { console.warn('[agentic-loop.ts]', e) }
+          }
+          yield { type: "end", result: truncResult };
+          return truncResult;
+        }
+
         // No un-waited sub-agents — safe to stop
         const result: LoopResult = {
           type: "stop",
@@ -1944,6 +2023,9 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
 
               case "end":
                 finishReason = event.finishReason;
+                // 第 68 波：把本轮的结束原因写到循环状态里 —— 主循环的"要不要停"判断要用
+                // （provider 的 end 事件不会向上游 yield，本地变量跨迭代拿不到）
+                this.state.lastFinishReason = finishReason;
                 // DSH-style EMPTY_RESPONSE: 模型以 stop 结束但没有任何输出
                 // （无文本 / 无推理 / 无工具调用）是退化完成——静默结束 turn
                 // 会让用户什么都看不到。抛出错误走既有重试路径，重试耗尽后
@@ -1972,6 +2054,15 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
           }
           success = true;
           debugLog("agent-loop", `Iteration ${this.state.iteration}: LLM stream ended. finishReason: ${finishReason}, toolCalls: ${currentToolCalls.length}, text length: ${currentText.length}`);
+          // 第 68 波：非正常结束原因要**默认可见**（debugLog 默认静默，出问题时控制台什么都没有）。
+          // 用户报"任务又中断了"时，控制台里唯一线索就是 finish_reason —— 现在一眼能看出来。
+          if (finishReason !== "stop" && finishReason !== "tool_use") {
+            console.warn(
+              `[AgenticLoop] 本轮结束原因 finish_reason=${finishReason}` +
+                (finishReason === "length" ? "（达到单次输出上限，回复被截断）" : "") +
+                ` — iteration ${this.state.iteration}, text ${currentText.length} chars, tool calls ${currentToolCalls.length}`,
+            );
+          }
         } catch (retryError: any) {
           retryCount++;
           console.error(`[AgenticLoop] Iteration ${this.state.iteration}: LLM stream error (attempt ${retryCount}/${maxRetries}):`, retryError.name, retryError.message);
