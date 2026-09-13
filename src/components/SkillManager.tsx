@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { getSkillRegistry, type SkillDefinition } from "../core/skill/skill";
 import { installSkillFromZip, uninstallSkill, readZipFile, type InstallResult } from "../core/skill/installer";
+import { diagTrail, startHeartbeat, noteRenderBurst } from "../core/skill/skill-delete-diag";
 import {
   listMarketSkills,
   searchMarketSkillsOnline,
@@ -84,11 +85,61 @@ export function SkillManager({ onClose }: SkillManagerProps) {
   const [deleteTarget, setDeleteTarget] = useState<SkillDefinition | null>(null);
   /** 正在删除的技能名 —— 删除期间给出可见反馈，避免"点了没反应"看起来像卡死 */
   const [deletingSkill, setDeletingSkill] = useState<string | null>(null);
+  /** 本次删除的开始时间 —— 用于"已用 N 秒"进度，慢删除不该看起来像卡死 */
+  const [deleteStartedAt, setDeleteStartedAt] = useState<number | null>(null);
+  /** 删除耗时（秒），删除进行中每秒刷新 */
+  const [deleteElapsedSec, setDeleteElapsedSec] = useState(0);
+  /** 删除失败信息（详情面板内就地显示，不依赖顶部横幅是否在视野内） */
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [overwriteTarget, setOverwriteTarget] = useState<{ zipData: Uint8Array; skillName: string } | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dragRef = useRef<HTMLDivElement>(null);
   const [isDragging, setIsDragging] = useState(false);
+
+  // ===== 诊断（第 72 波）=====
+  // 用户报「删除技能卡死、整个窗口点不动、控制台一条 [SkillInstaller] 都没有」。
+  // 这种情况下唯一能事后取证的载体是**落盘轨迹**：谁点的、走到哪一步、主线程是否被卡住。
+  // 心跳行里的 drift 远大于间隔，就是"主线程被同步工作占住"的机器可读证据；
+  // 渲染风暴检测则用来抓"无限渲染循环"（它不产生任何控制台输出，只在渲染函数里可见）。
+  useEffect(() => {
+    diagTrail("skill-manager mounted");
+    const stopHeartbeat = startHeartbeat("skill-manager");
+    return () => {
+      stopHeartbeat();
+      diagTrail("skill-manager unmounted");
+    };
+  }, []);
+
+  const renderWindowRef = useRef({ start: Date.now(), count: 0, reported: false });
+  {
+    const win = renderWindowRef.current;
+    const now = Date.now();
+    if (now - win.start >= 1000) {
+      renderWindowRef.current = { start: now, count: 1, reported: false };
+    } else {
+      win.count++;
+      if (!win.reported && noteRenderBurst(win.count, now - win.start)) win.reported = true;
+    }
+  }
+
+  // 删除进度计时：慢删除（大目录 / 网络盘）不该看起来像卡死
+  useEffect(() => {
+    if (!deletingSkill || deleteStartedAt === null) {
+      setDeleteElapsedSec(0);
+      return;
+    }
+    const tick = () => setDeleteElapsedSec(Math.round((Date.now() - deleteStartedAt) / 1000));
+    tick();
+    const timer = setInterval(tick, 1000);
+    return () => clearInterval(timer);
+  }, [deletingSkill, deleteStartedAt]);
+
+  // 确认弹窗开合也留轨迹：可以区分"点删除技能就卡住"（这里只会有 open=true）
+  // 与"点了确认才卡住"（open=true 之后还有 confirm action fired）
+  useEffect(() => {
+    if (deleteTarget) diagTrail("confirm dialog opened", { targetName: deleteTarget.name });
+  }, [deleteTarget]);
 
   // ===== Market State =====
   const [marketSkills, setMarketSkills] = useState<MarketSkill[]>([]);
@@ -206,11 +257,24 @@ export function SkillManager({ onClose }: SkillManagerProps) {
   };
 
   const handleDelete = async () => {
-    if (!deleteTarget) return;
+    // 诊断轨迹的第一落点：无论后面走哪条分支（目标为空 / 内置 / 不存在 / 删除失败 / 成功），
+    // 都必须留下"确认动作确实发生了"的落盘记录 —— 用户报的"卡死且控制台一条都没有"必须可查。
+    diagTrail("confirm action fired", {
+      targetName: deleteTarget?.name ?? null,
+      targetSource: deleteTarget?.source ?? null,
+      targetPath: deleteTarget?.filePath ?? null,
+      deletingSkill,
+    });
+    if (!deleteTarget) {
+      setInstallError("删除失败：没有选中技能（请关闭本窗口后重试）");
+      return;
+    }
     const target = deleteTarget;
     setDeleteTarget(null);
     setInstallError(null);
+    setDeleteError(null);
     setDeletingSkill(target.name);
+    setDeleteStartedAt(Date.now());
     try {
       const result = await uninstallSkill(target.name);
       if (result.success) {
@@ -219,11 +283,17 @@ export function SkillManager({ onClose }: SkillManagerProps) {
       } else {
         // 删除失败必须可见：以前失败只写控制台，界面看起来"点了没反应"
         setInstallError(result.error || "删除失败");
+        setDeleteError(result.error || "删除失败");
       }
     } catch (err) {
-      setInstallError(`删除失败：${err instanceof Error ? err.message : String(err)}`);
+      const message = `删除失败：${err instanceof Error ? err.message : String(err)}`;
+      diagTrail("handleDelete threw", { targetName: target.name, message });
+      setInstallError(message);
+      setDeleteError(message);
     } finally {
       setDeletingSkill(null);
+      setDeleteStartedAt(null);
+      diagTrail("delete flow finished", { targetName: target.name });
     }
   };
 
@@ -776,7 +846,15 @@ return true;
                     </button>
                     <button
                       className="skill-detail-btn delete"
-                      onClick={() => setDeleteTarget(selectedSkill)}
+                      onClick={() => {
+                        diagTrail("delete button clicked", {
+                          name: selectedSkill.name,
+                          source: selectedSkill.source,
+                          path: selectedSkill.filePath ?? null,
+                        });
+                        setDeleteError(null);
+                        setDeleteTarget(selectedSkill);
+                      }}
                       disabled={deletingSkill === selectedSkill.name}
                     >
                       {deletingSkill === selectedSkill.name ? (
@@ -786,6 +864,21 @@ return true;
                       )}
                       {deletingSkill === selectedSkill.name ? "删除中…" : "删除技能"}
                     </button>
+                  </div>
+                )}
+
+                {/* 删除进行中的实时进度：慢删除（大目录 / 网络盘）不该看起来像卡死 */}
+                {deletingSkill === selectedSkill.name && (
+                  <div className="skill-progress-message" role="status">
+                    正在删除「{deletingSkill}」… 已用 {deleteElapsedSec} 秒
+                    {deleteElapsedSec >= 5 ? "（目录较大或被占用时会较慢，超过 30 秒会给出失败原因）" : ""}
+                  </div>
+                )}
+
+                {/* 删除失败就地显示：不依赖顶部横幅是否在视野内 */}
+                {deleteError && !deletingSkill && (
+                  <div className="skill-install-error" role="alert">
+                    <span>{deleteError}</span>
                   </div>
                 )}
               </div>

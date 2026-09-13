@@ -117,6 +117,14 @@ export async function deletePath(path: string): Promise<void> {
 }
 
 /**
+ * 追加一行文本到文件（不存在则创建，含父目录）。用于诊断轨迹落盘：
+ * 追加比整文件重写便宜，也不会因为写一半崩掉而丢掉已有线索。
+ */
+export async function appendFile(path: string, content: string): Promise<void> {
+  await tauriInvoke("append_file", { path, content });
+}
+
+/**
  * 递归永久删除目录（不进回收站、不弹任何系统对话框）。
  *
  * 用于**应用自管目录**（已安装技能、宠物、下载的运行时/模型）：这些目录删掉只是重新下载，

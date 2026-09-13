@@ -2,6 +2,65 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.16.22] - 2026-09-13 — 「删除技能卡死」第二轮：把不可复现的冻结变成可取证（落盘轨迹 + 心跳 + 渲染风暴检测）
+
+### 这一轮先说清楚查到了什么
+
+v1.16.21 修掉的是"删除链路可能永远等一个没人能点的系统对话框"。用户复测后仍然卡死，
+并给出三条关键信息：**删的是「用户」来源的技能**、**整个窗口都点不动（切侧边栏也没反应）**、
+**控制台连一条 `[SkillInstaller]` 都没有**。
+
+第三条把范围完全改了：连删除逻辑的入口都没进去，说明卡点在「点击 → 进入删除逻辑」之间，
+而不是原生删除。为了不再靠猜，这一版做了两件事：
+
+1. **在本机把「修复后的删除」跑通并证明**：用 WebView2 远程调试（CDP）驱动真实界面 ——
+   建一个探针技能 → 打开技能管理 → 选中 → 删除技能 → 确认。结果：控制台出现
+   `[SkillInstaller] uninstall "zz-delete-probe" → 永久删除 …`，弹窗关闭、列表用户数 1 → 0、
+   磁盘上目录消失、无错误。同一构建（与用户日志逐行对得上：`main-IHu-_uUa.js:9571` / `:8813`）
+   在这一侧是正常的 —— 所以他的卡死是**数据/状态相关**的，不是那条代码路径本身。
+2. **给这条路径装上"黑匣子"**：窗口冻结时控制台什么都不会留下，唯一能事后取证的是落盘轨迹。
+
+### 新增：技能删除落盘轨迹（`src/core/skill/skill-delete-diag.ts`）
+
+写到 `<appData>/.codem/skills-delete-diag.log`（每次启动重写，单文件约 256 KB 上限），回答四个问题：
+
+- **点击有没有到达处理函数**：`delete button clicked`（含技能名/来源/路径）、`confirm action fired`、
+  `confirm dialog opened`。若日志停在 `confirm dialog opened` 而没有 `confirm action fired`，
+  说明卡在"弹窗打开"这一侧；若两条都没有，说明点击根本没进到组件（另一类问题）。
+- **目标是哪个技能/哪条路径**：每次都带 `name` / `source` / `path`，事后不必猜。
+- **每步花了多久**：每行带 `+Nms` 相对时间戳。
+- **主线程还在跑吗**：`heartbeat` 每 2 秒一行并报告 `driftMs`；漂移远大于间隔会附
+  `suspicion: "main-thread block"` —— 这就是"整个窗口点不动"的机器可读证据。
+- **是不是渲染风暴**：`render burst`（1 秒内渲染次数超阈值，每个窗口只报一次）。
+  无限渲染循环会把主线程钉死且**不产生任何控制台输出**，只有渲染函数自己看得见。
+
+轨迹的所有写盘都是 `fire-and-forget` + `try/catch`：**诊断失败绝不影响删除**（有专门用例守）。
+
+### 同时补上的三处体验/安全
+
+- **慢删除给出进度**：详情面板显示「正在删除「X」… 已用 N 秒」，超过 5 秒补一句说明 ——
+  慢（大目录、网络盘）不该看起来像卡死。
+- **删除失败就地显示**：错误同时出现在详情面板按钮下方，不再只依赖顶部横幅是否在视野内。
+- **目标护栏**：若记录的路径其实是技能根目录本身或它的上级（说明记录被写坏），
+  **直接拒绝删除**并说明原因 —— 否则"删一个技能"会变成"删掉全部技能"，
+  而且这种目标体积不可控、耗时不可预测。
+- 另外把 `handleDelete` 的"目标为空"分支从静默 `return` 改成可见错误 + 落盘记录。
+
+### 验证
+
+- 本机端到端（CDP 驱动真实界面）：探针技能删除成功，且 `skills-delete-diag.log` 落盘完整
+  （mounted → delete button clicked → confirm dialog opened → confirm action fired →
+  uninstallSkill deleting → directory removed → delete flow finished）
+- 新增 `src/test/skill-delete-diag.test.ts`（DIAG-1~4：落盘/失败不影响功能/心跳漂移/渲染风暴）
+  与 `skill-uninstall-safety.test.ts` 的 UNINST-6~7（轨迹先于原生调用、越界目标拒绝）
+- 全量用例、tsc、UI 审计、css-contract 结果见 PROJECT-GUIDE 版本表
+
+### 请用户配合的一步
+
+复测时若仍卡死，把 `<appData>\.codem\skills-delete-diag.log` 发我（Windows 上即
+`%APPDATA%\com.codem.app\.codem\skills-delete-diag.log`）。这份轨迹会直接指出卡在哪一步 ——
+包括"窗口冻结期间主线程停了多久"。
+
 ## [1.16.21] - 2026-09-13 — 修复：技能管理「删除技能」卡死（删除链路可能永远等一个没人能点的系统对话框）
 
 ### 现象（用户反馈）

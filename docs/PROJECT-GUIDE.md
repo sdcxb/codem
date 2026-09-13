@@ -1029,6 +1029,7 @@ Rust 后端 (lib.rs):
 
 | 版本 | 日期 | 主要内容 |
 |------|------|---------|
+| v1.16.22 | 2026-09-13 | **「删除技能卡死」第二轮：把不可复现的冻结变成可取证（第 72 波）** — ①**用户复测仍卡死**并给出三条关键信息：删的是**用户来源**技能、**整个窗口点不动**、控制台**连一条 `[SkillInstaller]` 都没有**。第三条改变范围判定：连删除逻辑入口都没进 → 卡点在「点击 → 进入删除逻辑」之间，而不是原生删除。②**本机用 WebView2 远程调试（CDP）驱动真实界面**把删除跑通取证：探针技能 → 技能管理 → 选中 → 删除技能 → 确认 ⇒ 控制台出现 `[SkillInstaller] uninstall … → 永久删除 …`、弹窗关闭、用户技能数 1 → 0、磁盘目录消失、无错误；且本机构建与用户日志**逐行对得上**（`main-IHu-_uUa.js:9571 / :8813`）→ 证明同一条代码路径在另一侧正常，他的卡死是数据/状态相关。③**新增落盘黑匣子** `src/core/skill/skill-delete-diag.ts`：写 `<appData>/.codem/skills-delete-diag.log`，记录 `delete button clicked` / `confirm dialog opened` / `confirm action fired`（含技能名·来源·路径 + `+Nms` 相对时间戳）、`heartbeat`（每 2 秒，`driftMs` 超阈值附 `suspicion: main-thread block` = 窗口点不动的机器可读证据）、`render burst`（1 秒内渲染数超阈值，抓"无限渲染循环"——它钉死主线程且不产生任何控制台输出）；写盘全部 fire-and-forget + try/catch，**诊断失败绝不影响删除**（有专门用例守）。④**同时补三处**：慢删除显示「正在删除… 已用 N 秒」（超过 5 秒补说明，慢 ≠ 卡死）；删除失败就地显示在详情面板按钮下方（不再只依赖顶部横幅）；**目标护栏** —— 若记录路径其实是技能根目录本身或其上级，直接拒绝并说明（否则"删一个技能"会变成"删掉全部技能"，且目标体积/耗时不可预测）；`handleDelete` 的空目标分支从静默 return 改为可见错误 + 落盘。⑤**验证**：CDP 端到端跑通并确认轨迹落盘完整；新增 `skill-delete-diag.test.ts` DIAG-1~4 与 UNINST-6~7；全量 222 文件 / 4760 用例通过 / tsc 0 错误 / 审计 0-0 / css-contract 无变化。⑥**教训**：**不可复现的卡死，第一步不是猜代码，而是把"点击到哪一步、主线程停了多久"变成落盘事实**。 |
 | v1.16.21 | 2026-09-13 | **修复：技能管理「删除技能」卡死（第 71 波）** — ①**现象**：点删除后卡死，控制台只有启动日志、无任何错误（卡住的不是 JS，是一个永不完结的原生调用）。②**根因**：`uninstallSkill → deletePath(目录) → delete_directory` 在 Windows 上走 `powershell -Command "[Microsoft.VisualBasic.FileIO.FileSystem]::DeleteDirectory('<目录>','OnlyErrorDialogs','SendToRecycleBin')"` 并用 `Command::output()` 等它退出 —— `OnlyErrorDialogs` 的语义是「出错时弹对话框并等用户确认」，而 PowerShell 是**隐藏子进程**（没有可见窗口），于是删除一旦失败（文件被占用 / 回收站不可用 / 目录超过回收站配额）对话框就弹在没人能点的地方 → 进程永不退出 → Tauri 命令永不返回 → 前端 await 永不结束 = 卡死。同一命令还被项目删除与宠物卸载复用。③**修复三层**：新增 Rust `delete_directory_permanent`（`remove_dir_all` + 只读位清障重试）供**应用自管目录**（技能/宠物/zvec 运行时/快照）使用；`delete_directory`（回收站，留给项目文件夹等用户内容）改为直接调 `SHFileOperationW` 并抑制全部界面（`FOF_NOCONFIRMATION\|FOF_SILENT\|FOF_NOERRORUI\|FOF_ALLOWUNDO`），实测 **130 ms** 返回（旧 PowerShell 路径同机 473 ms）；前端 `uninstallSkill`/`uninstallPet` **失败不再谎报成功**（旧代码 catch 后照旧 return success → 界面显示已删、文件夹还在、重启又被扫回来），并加 30 秒兜底超时 + 「删除中…」可见反馈 + 失败可见。④**验证**：`cargo test --lib` 42 通过（含 4 条新删除用例）；新增 `skill-uninstall-safety.test.ts` UNINST-1~5，并**换回修复前 installer 跑过 —— 4 条失败**；全量 221 文件 / 4754 用例通过 / tsc 0 错误 / 审计 0-0 / css-contract 无变化。⑤**教训**：**不要让界面等待一个"可能弹对话框"的原生调用** —— 隐藏进程 + 弹窗等待 = 没有终点的等待。 |
 | v1.16.20 | 2026-09-13 | **修复：上传附件后「上下文」标签不消失 + 兼容第三方 Agent Skills（第 70 波）** — ①**用户反馈**：上传 a.md 后编辑框里出现「上下文：a.md」标签，发送后不消失、对话结束仍在。根因不是忘了清空，而是**同一份状态被手工复制成两份**（附件 `pendingAttachments` + 徽章 `contextBadges`，后者只在 textarea `onChange` 里重算）→ 四条路径全在说谎：发送后残留（用户报的）、点 × 移除附件后徽章仍声称会发送它、切换会话跨会话残留、粘贴/拖拽进来的附件不进徽章行。修复：徽章行改为从 `pendingAttachments` **派生**，删掉状态与手工同步；`component-input-area.test.tsx` 新增 ATTC-1~4，并**换回修复前组件验证过这 4 条用例确实会失败**（不是假通过）。②**AREX-Skill 集成暴露的第三方兼容缺陷**（实测上游真实 SKILL.md）：`name: "repo-skills-router"` 连引号一起注册成技能名 → `load_skill("repo-skills-router")` 查不到；跨行双引号描述被截断到第一行（vllm 描述 159 → 61 字符且带多余引号）；`description: >-` / `|` 被当成字面字符串（描述整段丢失）；正文没有 `# ` 一级标题时整份 SKILL.md 被静默丢弃。修复（`src/core/skill/skill.ts`）：字符串字段统一去引号 + 反转义；跨行双引号标量按 YAML 折行拼接；块标量 `> >- >+ \| \|- \|+` 全支持（折叠/字面 + chomping）；frontmatter 之后无一级标题的内容作为正文（无 frontmatter 的纯文本仍非法）；市场安装白名单补 `.jsonl` / `.csv`（AREX 路由器索引是 JSON Lines）。③**核对结论**：Codem 只加载技能目录一层子目录 → AREX「router + `repo-skills/<id>/` 兄弟目录」原始形状天然契合（只有 router 进技能目录，仓库根技能由路由器按需 read 展开）；`<skill_resources>` 给出技能目录绝对路径 → SKILL.md 里的相对路径可直接解析；`disable-model-invocation` 被忽略；项目根 `.codem\skills\` 只在项目管理器展示。④**文档**：新增 `docs/AREX-SKILL-INTEGRATION.md`（三种安装方式的可执行命令、实测体积 vllm 35 文件 217 KB / router 204 文件 1.6 MB、验证清单、边界）。⑤**教训**：**同一份事实存两份、其中一份靠手工同步维护，迟早会说谎**。校验：tsc 0 错误 / 220 文件 4749 用例通过 / 审计 25 条规则 0/0 / css-contract 无变化。 |
 | v1.16.19 | 2026-09-13 | **修复：上下文超限后的「白重试 + 假续写」；思考模型被输出上限掐断（第 69 波）** — 用户日志给出完整真相：`finish_reason=length — text 0 chars, tool calls 0`（思考吃光输出预算）→ 自动续写 → 之后每次请求都 400 `maximum context length is 1048576 tokens. However, you requested 1048735 tokens`，而且上下文还在变大（1048735 → 1048992 → 1049249），每轮还白重试 3 次。①**根因一**：反应式压缩的判定只认 `prompt_too_long` / `context_length_exceeded`，而 DeepSeek 的措辞是 `maximum context length is ...` → **本该救场的压缩从未触发**。②**根因二**：确定性错误被白重试（4xx 非 429 无意义），且 provider 没把 HTTP 状态挂到错误对象上，`classifyError` 也判不出来。③**根因三（我上一波引入）**：`lastFinishReason` 跨迭代不重置 → 失败轮沿用上一轮的 `length` 触发假续写，把超限上下文继续撑大。④**修复**：新增 `provider-errors.ts` 做**语义匹配**（maximum context length / context_length_exceeded / prompt too long / reduce the length of the messages / too many tokens…）并能解析上限与实际请求数字；溢出⇒**立即走压缩**不重试，压缩 3 次仍不够则停下（`context_overflow`）并给出可执行说明（数字 + 开新对话/收敛内容/换大模型）；不可重试的 4xx **立即失败**；provider 挂 `err.status` 并把错误体给足 2000 字符；**结束原因每轮重置**且记录本轮**正文长度**——「正文 0 字符」判定为「思考吃光预算」，续写提示改为「少想、直接产出」。⑤**按模型族给输出上限**（补强第 67 波）：`deepseek-flash` 在目录里查不到 → 以前落到 8192（对带思考的模型明显偏小，直接导致「正文 0 字符」）→ 现在按族推断（DeepSeek/推理系 65536、Claude 4 32000、Gemini 2.5+ 65536），未知型号仍保守兜底。⑥**教训**：**错误分类不能只匹配「自家见过的措辞」** —— 只认两个字符串，等于让一条能自动救场的路径形同虚设。校验：tsc 0 错误 / 219 文件 4729 用例通过 / 审计 25 条规则 0/0 / css-contract 无变化 / 打包成功；新增 OFLOW-1~7（用事故现场真实报错体做样本）。 |
@@ -1473,6 +1474,28 @@ npm run tauri build        # 构建 NSIS exe + MSI
 ---
 
 ## 八、版本历史
+
+### v1.16.22（2026-09-13）— 「删除技能卡死」第二轮：把不可复现的冻结变成可取证（第 72 波）
+
+- **用户复测仍卡死**，并给出三条决定性信息：删的是「用户」来源技能、**整个窗口都点不动**、
+  控制台**连一条 `[SkillInstaller]` 都没有**。最后一条把范围从"原生删除"改到"点击 → 进入删除逻辑"之间
+- **本机取证（CDP 驱动真实界面）**：用 `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port`
+  启动构建产物，脚本化走完「技能管理 → 选中探针技能 → 删除技能 → 确认」：控制台出现
+  `[SkillInstaller] uninstall "zz-delete-probe" → 永久删除 …`，弹窗关闭、用户技能数 1 → 0、
+  磁盘目录消失、无错误横幅；且本机构建与用户日志逐行一致（`main-IHu-_uUa.js:9571 / :8813`）
+- **新增落盘黑匣子**（`src/core/skill/skill-delete-diag.ts` → `<appData>/.codem/skills-delete-diag.log`）：
+  - 点击链路：`delete button clicked`（技能名/来源/路径）→ `confirm dialog opened` → `confirm action fired`
+    → `uninstallSkill deleting` → `directory removed` / `failed` → `delete flow finished`，每行带 `+Nms`
+  - `heartbeat`（2 秒一次，报告 `driftMs`；漂移超阈值附 `suspicion: "main-thread block"`）
+  - `render burst`（1 秒内渲染超阈值，抓"无限渲染循环"这类**不产生任何控制台输出**的冻结）
+  - 约束：写盘 fire-and-forget + try/catch —— **诊断失败绝不影响删除**
+- **同时补三处**：慢删除显示「正在删除… 已用 N 秒」；删除失败就地显示在详情面板按钮下方；
+  **目标护栏**（记录路径若是技能根目录或其上级 → 拒绝删除并说明，避免"删一个技能"变成"删掉全部技能"）
+- **验证**：CDP 端到端 + 轨迹落盘完整；`skill-delete-diag.test.ts` DIAG-1~4、
+  `skill-uninstall-safety.test.ts` UNINST-1~7；全量 222 文件 / 4760 用例通过；tsc 0 错误；
+  审计 25 条规则 0/0；css-contract 无变化
+- **给用户的一步**：若仍卡死，把 `%APPDATA%\com.codem.app\.codem\skills-delete-diag.log` 发回 ——
+  轨迹会直接指出卡在哪一步、主线程停了多久
 
 ### v1.16.21（2026-09-13）— 修复：技能管理「删除技能」卡死（第 71 波）
 

@@ -11,7 +11,7 @@
  *    界面上技能消失了，磁盘上的文件夹还在，下次启动又被扫回来（"删了又回来"）。
  */
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   deleteDirectoryPermanent: vi.fn(),
@@ -21,6 +21,7 @@ const mocks = vi.hoisted(() => ({
   readFile: vi.fn(),
   writeFile: vi.fn(),
   getAppDataDir: vi.fn(),
+  diagTrail: vi.fn(),
 }));
 
 vi.mock("../core/file-api", () => ({
@@ -31,6 +32,10 @@ vi.mock("../core/file-api", () => ({
   readFile: mocks.readFile,
   writeFile: mocks.writeFile,
   getAppDataDir: mocks.getAppDataDir,
+}));
+
+vi.mock("../core/skill/skill-delete-diag", () => ({
+  diagTrail: mocks.diagTrail,
 }));
 
 import { uninstallSkill } from "../core/skill/installer";
@@ -54,10 +59,20 @@ describe("卸载技能 — 永久删除 + 失败不谎报", () => {
     mocks.deleteFile.mockReset().mockResolvedValue(undefined);
     mocks.deletePath.mockReset().mockResolvedValue(undefined);
     mocks.getAppDataDir.mockReset().mockResolvedValue("/appdata/");
+    mocks.diagTrail.mockReset();
+    // 让 installer 的 getSkillsDir() 走 Tauri 分支（取 appData 下的技能根目录），
+    // 这样"越界目标护栏"的判断与真实运行环境一致。
+    (window as unknown as Record<string, unknown>).__TAURI__ = {
+      core: { invoke: vi.fn().mockResolvedValue(undefined) },
+    };
     const registry = getSkillRegistry();
-    for (const name of ["uninst-ok", "uninst-fail", "uninst-file", "uninst-builtin", "uninst-timeout"]) {
+    for (const name of ["uninst-ok", "uninst-fail", "uninst-file", "uninst-builtin", "uninst-timeout", "uninst-root"]) {
       registry.remove(name);
     }
+  });
+
+  afterEach(() => {
+    delete (window as unknown as Record<string, unknown>).__TAURI__;
   });
 
   it("UNINST-1: 用户技能走永久删除，且**不**经过回收站命令（卡死的旧路径）", async () => {
@@ -140,5 +155,43 @@ describe("卸载技能 — 永久删除 + 失败不谎报", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("UNINST-6: 诊断轨迹先于原生删除落盘（用户报的场景里控制台什么都没有，只能靠落盘）", async () => {
+    const registry = getSkillRegistry();
+    registry.register(userSkill("uninst-ok", "C:\\appdata\\.codem\\skills\\uninst-ok"));
+    mocks.diagTrail.mockClear();
+
+    const order: string[] = [];
+    mocks.diagTrail.mockImplementation((event: string) => order.push(`diag:${event}`));
+    mocks.deleteDirectoryPermanent.mockImplementation(async () => {
+      order.push("native:delete_directory_permanent");
+    });
+
+    const result = await uninstallSkill("uninst-ok");
+
+    expect(result.success).toBe(true);
+    expect(order[0]).toBe("diag:uninstallSkill entered");
+    expect(order).toContain("diag:uninstallSkill deleting");
+    expect(order.indexOf("diag:uninstallSkill deleting")).toBeLessThan(
+      order.indexOf("native:delete_directory_permanent"),
+    );
+    expect(order).toContain("diag:uninstallSkill directory removed");
+    // 轨迹里必须带路径，否则事后无法判断删的到底是哪个目录
+    const deletingCall = mocks.diagTrail.mock.calls.find((c) => c[0] === "uninstallSkill deleting");
+    expect(deletingCall?.[1]?.path).toBe("C:\\appdata\\.codem\\skills\\uninst-ok");
+  });
+
+  it("UNINST-7: 目标是技能根目录（记录被写坏）时直接拒绝，不落盘删除", async () => {
+    const registry = getSkillRegistry();
+    registry.register(userSkill("uninst-root", "/appdata/.codem/skills"));
+
+    const result = await uninstallSkill("uninst-root");
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("拒绝删除");
+    expect(mocks.deleteDirectoryPermanent).not.toHaveBeenCalled();
+    expect(mocks.deleteFile).not.toHaveBeenCalled();
+    registry.remove("uninst-root");
   });
 });

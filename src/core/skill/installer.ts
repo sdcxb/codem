@@ -18,6 +18,7 @@
 import { unzipSync, strFromU8 } from "fflate";
 import { getSkillRegistry, parseSkillMarkdown, type SkillDefinition } from "./skill";
 import { writeFile, deleteDirectoryPermanent, deleteFile, listDirectory, readFile } from "../file-api";
+import { diagTrail } from "./skill-delete-diag";
 
 import { getAppDataDir } from "../file-api";
 
@@ -241,6 +242,34 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
 }
 
 /**
+ * 删除目标护栏：返回非空字符串表示"拒绝删除"的理由。
+ *
+ * 技能目录必须是技能根目录的**子目录**（或项目级 `.codem/skills/<名>`）。
+ * 目标是技能根目录本身、它的上级、盘符根 —— 都拒绝：那些目标要么意味着记录已被写坏，
+ * 要么会是"删掉一片不属于这个技能的东西"。
+ */
+async function checkDeleteTarget(skillDir: string): Promise<string | null> {
+  const normalize = (p: string): string =>
+    p.replace(/\//g, "\\").replace(/\\+$/, "").toLowerCase();
+  const target = normalize(skillDir);
+  if (!target) return "拒绝删除：目标路径为空。";
+
+  try {
+    const skillsRoot = normalize(await getSkillsDir());
+    if (target === skillsRoot || skillsRoot.startsWith(`${target}\\`)) {
+      return `拒绝删除：目标 "${skillDir}" 是技能根目录或其上级目录，不是某个技能自己的目录。`;
+    }
+  } catch {
+    /* 取不到技能根目录时不拦（护栏不能变成新的失败源） */
+  }
+  // 盘符根 / UNC 根：路径里没有可删的目录段
+  if (/^[a-z]:$/.test(target) || /^\\\\[^\\]+\\?[^\\]*$/.test(target)) {
+    return `拒绝删除：目标 "${skillDir}" 是根目录。`;
+  }
+  return null;
+}
+
+/**
  * 卸载（删除）技能。
  * 删除技能目录和注册表中的记录。
  *
@@ -253,30 +282,52 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
  * 3. **删除必须有界**：超时按失败处理并给出下一步，不把界面永久挂在"删除中"。
  */
 export async function uninstallSkill(skillName: string): Promise<{ success: boolean; error?: string }> {
+  diagTrail("uninstallSkill entered", { skillName });
   try {
     const registry = getSkillRegistry();
     const skill = registry.get(skillName);
     if (!skill) {
+      diagTrail("uninstallSkill aborted: skill not registered", { skillName });
       return { success: false, error: `技能 "${skillName}" 不存在。` };
     }
 
     // 不允许删除内置技能
     if (skill.source === "builtin") {
+      diagTrail("uninstallSkill aborted: builtin", { skillName });
       return { success: false, error: "内置技能不可删除。" };
     }
 
     // 删除技能目录（技能目录是目录；provider 技能可能指向单个文件，退回单文件删除）
     if (skill.filePath) {
       const skillDir = skill.filePath;
+
+      // 兜底护栏：目标既不能是技能根目录本身，也不能是它的上级。
+      // 一旦记录的路径被写坏（例如指向 %APPDATA%\.codem\skills 或更上层），删除会变成
+      // "删掉全部技能"甚至更糟，而且这种目标通常很大、耗时不可预测 —— 直接拒绝并说清原因。
+      const guard = await checkDeleteTarget(skillDir);
+      if (guard) {
+        diagTrail("uninstallSkill refused by path guard", { skillName, path: skillDir, reason: guard });
+        return { success: false, error: guard };
+      }
+
+      diagTrail("uninstallSkill deleting", {
+        skillName,
+        source: skill.source,
+        path: skillDir,
+      });
       console.log(`[SkillInstaller] uninstall "${skillName}" → 永久删除 ${skillDir}`);
       try {
         await withTimeout(deleteDirectoryPermanent(skillDir), DELETE_TIMEOUT_MS, "删除技能目录");
+        diagTrail("uninstallSkill directory removed", { skillName, path: skillDir });
       } catch (dirError) {
         const timedOut = dirError instanceof DeleteTimeoutError;
+        const firstReason = dirError instanceof Error ? dirError.message : String(dirError);
+        diagTrail("uninstallSkill directory delete failed", { skillName, path: skillDir, timedOut, reason: firstReason });
         if (!timedOut) {
           // provider 技能可能指向单个文件
           try {
             await withTimeout(deleteFile(skillDir), DELETE_TIMEOUT_MS, "删除技能文件");
+            diagTrail("uninstallSkill single file removed", { skillName, path: skillDir });
             console.log(`[SkillInstaller] uninstall "${skillName}" → 单文件删除完成`);
             registry.remove(skillName);
             return { success: true };
@@ -284,8 +335,9 @@ export async function uninstallSkill(skillName: string): Promise<{ success: bool
             /* 落到下面的失败分支 */
           }
         }
-        const reason = dirError instanceof Error ? dirError.message : String(dirError);
+        const reason = firstReason;
         console.warn(`[SkillInstaller] uninstall "${skillName}" failed:`, reason);
+        diagTrail("uninstallSkill failed", { skillName, path: skillDir, timedOut, reason });
         return {
           success: false,
           error: timedOut

@@ -583,7 +583,7 @@ dependencies = [
 
 [[package]]
 name = "codem"
-version = "1.16.21"
+version = "1.16.22"
 dependencies = [
  "aes-gcm",
  "base64 0.22.1",
