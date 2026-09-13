@@ -105,6 +105,20 @@ export type { TestLayer, SnapshotEntry, TestLayerResult } from "./test-layers";
 export { redactSecrets, redactSecretsDeep } from "../utils/redact";
 
 // ========== LLM Engine Config ==========
+
+/**
+ * 单次回复的**输出**上限（第 66 波）。
+ *
+ * 原来是硬编码 `4096`：真实事故里模型一次 `write` 一个 6–10KB 的 Python 脚本，
+ * 参数 JSON 正好在 4096 tokens 附近**被截断**（`Unterminated string in JSON at position 6648`），
+ * 于是 write 反复失败、任务卡住。4096 是聊天场景的旧值，对"生成大文件"这类任务明显偏小。
+ *
+ * 现在默认 **8192**（对 DeepSeek 系列普遍安全），并且**可配置**：
+ * `codem-settings.maxTokens` / 智能体级 `maxTokens` / 槽位配置都会覆盖它。
+ * 如果某个 provider 明确拒绝该上限，把它调小即可（错误信息会直接来自 API）。
+ */
+export const DEFAULT_MAX_OUTPUT_TOKENS = 8192;
+
 import { loadAppIdentity, loadUserConfig } from "../config/loader";
 import { getLang } from "../i18n/lang";
 import { getSettingJSON, setSettingJSON } from "../storage/settings";
@@ -395,7 +409,7 @@ private loopPool: Map<string, AgenticLoop> = new Map();
       {
         maxIterations: 0, // 0 = no cap (DSH-aligned); safety valves handle runaway
         temperature: agent?.temperature ?? resolved.temperature ?? this.config.temperature,
-        maxOutputTokens: agent?.maxTokens || resolved.maxTokens || this.config.maxTokens || 4096,
+        maxOutputTokens: agent?.maxTokens || resolved.maxTokens || this.config.maxTokens || DEFAULT_MAX_OUTPUT_TOKENS,
         model,
         contextWindow,
         // Pass through agent-level overrides (Phase 0 fields)
@@ -1789,7 +1803,8 @@ export function getLLMEngine(ctx?: Context): LLMEngine {
       defaultModel: "gpt-4o",
       defaultAgent: "build",
       temperature: 0.7,
-      maxTokens: 4096,
+      // 第 66 波：默认输出上限统一走常量（原先是硬编码 4096，会把大文件的工具参数截断）
+      maxTokens: DEFAULT_MAX_OUTPUT_TOKENS,
       maxToolCalls: 20,
     }, undefined, ctx);
   } else if (ctx && !engineInstance.hasContext()) {

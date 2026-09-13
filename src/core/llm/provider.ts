@@ -475,11 +475,21 @@ export class OpenAICompatibleProvider implements LLMProvider {
               if (tc) {
                 // Parse args if available
                 let parsedArgs: Record<string, unknown> = {};
+                let argsParseError: string | undefined;
                 if (tc.arguments) {
                   try {
                     parsedArgs = JSON.parse(tc.arguments);
-                  } catch (e) {
-                    console.error("[Provider] Failed to parse tool args:", tc.arguments.substring(0, 200));
+                  } catch (e: any) {
+                    // 第 66 波：**不再静默降级成空参数**。
+                    // 空参数会让 write 之类"内容型"工具拿着 content:"" 执行（写出空文件/清空已有文件），
+                    // 也会让模型完全看不出失败原因。这里把原因与长度带出去，由循环拒绝执行并给出指引。
+                    argsParseError = e?.message || String(e);
+                    console.error(
+                      `[Provider] Failed to parse tool args for ${tc.name} (${tc.arguments.length} chars):`,
+                      argsParseError,
+                      "…tail:",
+                      tc.arguments.slice(-120),
+                    );
                   }
                 }
                 debugLog("provider", "Tool call end:", tc.name, "args:", JSON.stringify(parsedArgs).substring(0, 200));
@@ -488,6 +498,7 @@ export class OpenAICompatibleProvider implements LLMProvider {
                   id: tc.id,
                   name: tc.name,
                   input: parsedArgs,
+                  ...(argsParseError ? { argsParseError, rawLength: tc.arguments.length } : {}),
                 };
               }
             }
@@ -522,11 +533,18 @@ export class OpenAICompatibleProvider implements LLMProvider {
         const tc = currentToolCalls[key];
         if (tc) {
           let parsedArgs: Record<string, unknown> = {};
+          let argsParseError: string | undefined;
           if (tc.arguments) {
             try {
               parsedArgs = JSON.parse(tc.arguments);
-            } catch (e) {
-              console.error("[Provider] Fallback: failed to parse tool args:", tc.arguments.substring(0, 200));
+            } catch (e: any) {
+              argsParseError = e?.message || String(e);
+              console.error(
+                `[Provider] Fallback: failed to parse tool args for ${tc.name} (${tc.arguments.length} chars):`,
+                argsParseError,
+                "…tail:",
+                tc.arguments.slice(-120),
+              );
             }
           }
           console.log("[Provider] Fallback tool_use_end:", tc.name, "args:", JSON.stringify(parsedArgs).substring(0, 200));
@@ -535,6 +553,7 @@ export class OpenAICompatibleProvider implements LLMProvider {
             id: tc.id,
             name: tc.name,
             input: parsedArgs,
+            ...(argsParseError ? { argsParseError, rawLength: tc.arguments.length } : {}),
           };
         }
       }

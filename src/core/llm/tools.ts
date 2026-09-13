@@ -1072,19 +1072,38 @@ export function createReadFileTool(): ToolDef {
 export function createWriteFileTool(): ToolDef {
   return {
     id: "write",
-    guidance: "Use write to create new files or completely replace existing ones. Include the COMPLETE final content in a single call. For appending or small changes, use edit instead. After writing, when you mention the file in your response, ALWAYS use a Markdown link with the full path: [filename](./path/to/file). This lets the user click to open it.",
-    description: "Write content to a file (creates or overwrites). Files are saved as UTF-8 without BOM. Chinese and emoji content is fully supported. For Python scripts, include '# -*- coding: utf-8 -*-' as the first line. WARNING: This tool overwrites the entire file. If the file already exists and you only need to change a few lines, use the 'edit' tool instead to avoid losing existing content.",
+    guidance: "Use write to create new files or completely replace existing ones. Include the COMPLETE final content in a single call. For appending or small changes, use edit instead. IMPORTANT: for very large files (roughly over 200 lines), do NOT try to emit everything in one call — the tool arguments can be truncated by the output limit. Instead write the first chunk, then append the remaining chunks with write + append: true. After writing, when you mention the file in your response, ALWAYS use a Markdown link with the full path: [filename](./path/to/file). This lets the user click to open it.",
+    description: "Write content to a file (creates or overwrites). Files are saved as UTF-8 without BOM. Chinese and emoji content is fully supported. For Python scripts, include '# -*- coding: utf-8 -*-' as the first line. WARNING: This tool overwrites the entire file. If the file already exists and you only need to change a few lines, use the 'edit' tool instead to avoid losing existing content. For large files, pass append: true on subsequent calls to add content to the end instead of overwriting.",
     parameters: {
       type: "object",
       properties: {
         path: { type: "string", description: "The file path to write" },
         content: { type: "string", description: "The content to write" },
+        append: {
+          type: "boolean",
+          description:
+            "第 66 波：为 true 时把 content **追加**到文件末尾（而不是覆盖）。生成大文件时用它分块写入：" +
+            "第一次不带 append（或 append:false）写第一段，之后每次 append:true 追加一段（建议每段 ≤200 行）。",
+        },
       },
       required: ["path", "content"],
     },
     async execute(args, ctx) {
       const path = args.path as string;
       const content = args.content as string;
+      const append = args.append === true;
+
+      // 第 66 波：内容型工具必须拿到"真正的字符串内容"。
+      // 参数被截断时循环已经拒绝执行，这里再兜一层：content 不是字符串 → 直接报错，
+      // 绝不用空值去覆盖文件（旧逻辑在截断时会走到 content:""，会把已有文件清空）。
+      if (typeof content !== "string") {
+        return {
+          title: `write: ${path}`,
+          output:
+            `Error: 'content' must be a string (received ${content === undefined ? "undefined" : typeof content}). ` +
+            `This usually means the tool arguments were truncated by the output limit — write the file in chunks (append: true) instead of one huge call.`,
+        };
+      }
 
       // S2: Protected path check
       if (isProtectedPath(path)) {
@@ -1109,7 +1128,7 @@ export function createWriteFileTool(): ToolDef {
           // File doesn't exist — proceed with creation
         }
 
-        if (existingContent !== null && existingContent.length > 0) {
+        if (existingContent !== null && existingContent.length > 0 && !append) {
           const similarity = calculateContentSimilarity(existingContent, content);
           if (similarity < OVERWRITE_SIMILARITY_THRESHOLD) {
             // S4: If onWriteConfirm callback is available AND security mode is "ask",
@@ -1154,14 +1173,18 @@ export function createWriteFileTool(): ToolDef {
           }
         }
 
-        await writeFile(path, content, { workspace: ctx.workspace || ctx.cwd });
+        // 第 66 波：append 模式 —— 生成大文件时"分块写入"的落点。
+        // 追加不会覆盖已有内容，因此跳过覆盖确认；但仍受保护路径/沙箱检查约束（前面已做）。
+        const finalContent = append && existingContent ? existingContent + content : content;
+        await writeFile(path, finalContent, { workspace: ctx.workspace || ctx.cwd });
         // E4: Invalidate cache after write
         fileCache.invalidate(path);
         // F3.4: Auto-lint after write
         const lintResult = await autoLint(path);
+        const action = append && existingContent ? "Appended" : "Successfully wrote";
         const output = lintResult
-          ? `Successfully wrote ${content.length} bytes to ${path}\n${lintResult}`
-          : `Successfully wrote ${content.length} bytes to ${path}`;
+          ? `${action} ${content.length} bytes to ${path} (total ${finalContent.length} bytes)\n${lintResult}`
+          : `${action} ${content.length} bytes to ${path} (total ${finalContent.length} bytes)`;
         return { title: `write: ${path}`, output, metadata: { file_paths: [path] } };
       } catch (error: any) {
         return { title: `write: ${path}`, output: `Error: ${error.message}` };

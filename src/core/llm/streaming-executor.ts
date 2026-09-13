@@ -101,6 +101,12 @@ export interface StreamingToolCall {
   result?: ToolCallResult;
   error?: string;
   abortController?: AbortController;
+  /** 累积到的工具参数原文（用于解析失败时诊断/拒绝执行，第 66 波） */
+  rawArgs?: string;
+  /** 参数 JSON 解析失败的原因 —— 有它就必须**拒绝执行**（第 66 波） */
+  argsError?: string;
+  /** 参数原文长度（判断是否被输出上限截断） */
+  argsRawLength?: number;
 }
 
 export interface ToolExecutorConfig {

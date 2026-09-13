@@ -21,6 +21,7 @@ export type LoopStopReason =
   | "plan_stale_ask"
   | "budget"
   | "repeat_guard"
+  | "args_truncated"
   | "cancelled";
 
 /**

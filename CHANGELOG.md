@@ -2,6 +2,64 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.16.16] - 2026-09-13 — 修复：大文件写入时「工具参数被截断」，以及一个数据安全级隐患
+
+### 现象（用户控制台截图）
+
+用户让模型用技能生成科研绘图，模型选择"先写一个 Python 脚本再跑它"（脚本约 6–10KB），
+控制台反复出现：
+
+```
+SyntaxError: Unterminated string in JSON at position 6648
+SyntaxError: Unterminated string in JSON at position 6348
+SyntaxError: Unterminated string in JSON at position 2080
+[Provider] Failed to parse tool args: {"content": "# -*- coding: utf-8 -*- ..."}
+[AgenticLoop] Failed to parse tool args: {"content": ...}
+Single-response dedup: 1 tool calls in this response: [write("")]
+```
+
+即**工具参数的 JSON 在字符串中间被切断**，同一个 `write` 反复失败、任务卡住。
+
+### 根因（两层）
+
+1. **单次输出上限被写死成 4096**（`index.ts` 的默认值 + `processor.ts` 的 `?? 4096`）。
+   一个 6–10KB 的脚本连同 JSON 转义正好在这个量级 —— 流在字符串中间被 cap 掉，
+   于是参数 JSON 天生不完整。
+2. **参数解析失败时的处理是"静默降级 + 正则兜底"，而且兜底比不兜底更危险**：
+   provider 解析失败只打一行日志，然后照旧返回 `input: {}`；
+   循环再用正则从残缺 JSON 里抽 `path`/`content` —— 而截断时**结尾引号还没生成**，
+   正则匹配不到 → `content` 取空串 → `write` 拿着**空内容**执行。
+   对已存在的文件，这就是**把文件清空**（覆盖保护在 auto/full 模式下不拦）。
+
+### 修复
+
+- **输出上限**：新增常量 `DEFAULT_MAX_OUTPUT_TOKENS = 8192` 并统一使用（原 4096），
+  仍然可配置（`codem-settings.maxTokens` / 智能体级 / 槽位级都可覆盖）；
+  `processor` 不再硬编码 —— 未配置时不发 `max_tokens`，由 provider 用自己的上限。
+- **参数不可用 ⇒ 一律拒绝执行**（`src/core/llm/tool-args-guard.ts`）：
+  删掉了"正则抽 path/content"的兜底，改为把原因与长度带出来，并给模型一句**可操作**的指引：
+  「这次调用没有执行；原因是单次输出过长被截断（如果结束原因是 `length` 会明确写"已确认"）；
+  请分块写入：先 write 第一段（≤~200 行），后续用 `write` + `append: true` 追加；不要原样重发」。
+- **`write` 支持 `append: true`**（生成大文件的分块落点），并在 `content` 不是字符串时直接报错 ——
+  绝不用空值覆盖文件。指导语也写清了"大文件要分块"。
+- **provider 不再静默降级**：解析失败会把 `argsParseError` + `rawLength` 带到事件里
+  （正常结束与"无 finish_reason 兜底"两条路径都带）。
+- **可观测**：这类拒绝执行会落一条结构化事件（`loop_stopped` + reason `args_truncated`，
+  含工具名与原始参数长度），便于统计"到底多常见"。
+
+### 本轮审计还修掉的（同一波内自查）
+
+- **provider 报错但没有 rawArgs 可重试时，仍可能带着空参数执行** → 已补上这条分支，同样拒绝执行。
+- 提示里补上**结束原因**：`length` 时明确写"已确认是达到输出上限"，不让用户猜。
+- 另一处残留的硬编码 4096（`getLLMEngine` 的默认配置）一并收口到常量。
+
+### 校验
+
+`tsc` 0 错误；**215 个测试文件 / 4704 条用例通过**（+15 skipped）；UI 审计 **25 条规则 error 0 / warn 0**；
+CSS 生效取值快照（2743 个类）**无变化**；打包成功。
+新增契约 `tool-args-truncation.test.ts`（ARGS-1~7）：内容型工具识别、提示三要素、`length` 确认、
+"不允许再从残缺 JSON 里抽 content"、provider 必须带错误与长度、上限不再是 4096、append 分块可用。
+
 ## [1.16.15] - 2026-09-13 — 把「卡住」治理从止损补齐到五层（预防 / 收敛 / 止损 / 恢复 / 可见）
 
 ### 背景

@@ -96,7 +96,9 @@ export class Processor {
         messages: apiMessages,
         tools: toolDefs.length > 0 ? toolDefs : undefined,
         temperature: this.config.temperature ?? 0.7,
-        maxTokens: this.config.maxTokens ?? 4096,
+        // 第 66 波：不再写死 4096 —— 未配置时不发 max_tokens（由 provider 用自己的上限），
+        // 因为写死的小上限会把"一次生成大文件"的工具参数**截断**（见 DEFAULT_MAX_OUTPUT_TOKENS 注释）。
+        ...(this.config.maxTokens ? { maxTokens: this.config.maxTokens } : {}),
         stream: true,
         abortSignal: this.abortController.signal,
       };

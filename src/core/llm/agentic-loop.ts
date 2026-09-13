@@ -19,6 +19,7 @@ import { getSnapshotService } from "../snapshot/snapshot";
 import { debugLog, warnOnce } from "../debug";
 import { RepeatGuard, type GuardKind, bashIntent } from "./loop-guard";
 import { StallGuard } from "./stall-guard";
+import { buildUnparsableArgsError } from "./tool-args-guard";
 import { recordLoopStop } from "./loop-stop-log";
 import { getDelegationOrchestrator } from "../session/orchestrator";
 import * as MessageStorage from "../storage/message";
@@ -1910,19 +1911,27 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
                     // Fallback: parse from rawArgs accumulated via tool_use_delta
                     try {
                       ended.input = JSON.parse((ended as any).rawArgs);
-                    } catch (parseErr) {
-                      console.error("[AgenticLoop] Failed to parse tool args:", (ended as any).rawArgs, parseErr);
-                      // Fallback: try to extract path and content from partial JSON
-                      const rawStr = (ended as any).rawArgs as string;
-                      const pathMatch = rawStr.match(/"path"\s*:\s*"([^"]*)"/);
-                      const contentMatch = rawStr.match(/"content"\s*:\s*"((?:[^"\\]|\\.)*)"/);
-                      if (pathMatch) {
-                        ended.input = {
-                          path: pathMatch[1],
-                          content: contentMatch ? JSON.parse(`"${contentMatch[1]}"`) : "",
-                        };
-                      }
+                    } catch (parseErr: any) {
+                      // 第 66 波：**删掉了"正则抽 path/content"的兜底**。
+                      // 那段兜底在截断场景下会抽出 `content: ""`（因为结尾引号还没生成），
+                      // 于是 write 会拿着空内容执行 —— 轻则写出空文件，重则把已有文件清空。
+                      // 正确做法：把"参数不可用"这件事标出来，由后面的执行前检查拒绝执行并给出指引。
+                      const raw = (ended as any).rawArgs as string;
+                      (ended as any).argsError = parseErr?.message || String(parseErr);
+                      (ended as any).argsRawLength = raw.length;
+                      console.error(
+                        `[AgenticLoop] Tool args are not valid JSON for ${ended.name} (${raw.length} chars) — 拒绝执行并引导分块:`,
+                        (ended as any).argsError,
+                        "…tail:",
+                        raw.slice(-120),
+                      );
                     }
+                  } else if ((event as any).argsParseError) {
+                    // 第 66 波（审计补）：provider 报了解析失败、而循环这边**没有 rawArgs 可重试**
+                    // （例如 provider 只发了 tool_use_end）。此时绝不能带着空参数执行 ——
+                    // 把这层错误原样接住，交给后面的"拒绝执行"分支。
+                    (ended as any).argsError = (event as any).argsParseError;
+                    (ended as any).argsRawLength = (event as any).rawLength ?? 0;
                   }
                   // Yield tool_start NOW with fully parsed input — preserves LLM output order
                   yield { type: "tool_start", toolCall: ended };
@@ -2076,6 +2085,27 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
       return `${tc.name}(${JSON.stringify(text)})`;
     };
     console.log(`[AgenticLoop] Single-response dedup: ${currentToolCalls.length} tool calls in this response: [${currentToolCalls.map(describeCall).join(", ")}]`);
+
+    // ===== 第 66 波：参数不可用的调用**一律不执行** =====
+    // 事故：模型一次 write 一个 6–10KB 脚本 → 参数 JSON 在输出上限处被截断 →
+    // 旧逻辑降级成空参数继续执行（`write(content:"")`），模型还看不出原因、反复重试。
+    // 这里改成：拒绝执行 + 给一句**可操作的**指引（分块写入），并落一条结构化事件便于统计。
+    {
+      const broken = currentToolCalls.filter((tc) => (tc as any).argsError);
+      if (broken.length > 0) {
+        for (const tc of broken) {
+          const rawLen = (tc as any).argsRawLength ?? 0;
+          console.error(`[AgenticLoop] Refusing to execute ${tc.name}: tool arguments were not valid JSON (${rawLen} chars)`);
+          recordLoopStop(sessionId, "args_truncated", { tool: tc.name, rawLength: rawLen, error: (tc as any).argsError });
+          yield {
+            type: "tool_error",
+            toolCall: tc,
+            error: buildUnparsableArgsError(tc.name, rawLen, (tc as any).argsError, finishReason),
+          };
+        }
+        currentToolCalls = currentToolCalls.filter((tc) => !(tc as any).argsError);
+      }
+    }
     for (const tc of currentToolCalls) {
       const isRead = tc.name === "read" || tc.name === "read_file";
       const filePath = tc.input?.path || tc.input?.file_path;

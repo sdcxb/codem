@@ -121,7 +121,23 @@ export type StreamEvent =
   | { type: "reasoning_delta"; text: string }
   | { type: "tool_use_start"; id: string; name: string }
   | { type: "tool_use_delta"; id: string; input: string }
-  | { type: "tool_use_end"; id: string; name?: string; input?: Record<string, unknown> }
+  | {
+      type: "tool_use_end";
+      id: string;
+      name?: string;
+      input?: Record<string, unknown>;
+      /**
+       * 工具参数 JSON 解析失败的原因（第 66 波）。
+       *
+       * 真实事故：模型一次 `write` 一个 6–10KB 的 Python 脚本，参数 JSON 在**输出上限处被截断**
+       * （`Unterminated string in JSON at position 6648`），而当时的处理是"只打日志 + 降级成空参数"，
+       * 于是 `write` 拿着 `content: ""` 继续执行 —— 轻则写出空文件、重则**把已有文件清空**。
+       * 现在把失败原因带出来，由循环**拒绝执行**并给模型一句可操作的指引：绝不猜参数。
+       */
+      argsParseError?: string;
+      /** 原始参数文本长度（用来判断"是不是被截断"） */
+      rawLength?: number;
+    }
   | { type: "usage"; usage: TokenUsage }
   | { type: "end"; finishReason: string }
   | { type: "error"; error: string }
