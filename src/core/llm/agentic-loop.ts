@@ -1,4 +1,4 @@
-import type { LLMProvider, LLMRequest, ToolDefinition, TokenUsage } from "./types";
+﻿import type { LLMProvider, LLMRequest, ToolDefinition, TokenUsage } from "./types";
 import type { ToolRegistry, ToolContext, WriteConfirmResult } from "./tools";
 import type { PlanUpdateOp } from "./plan-utils";
 import { applyPlanUpdate as applyPlanUpdatePure, looksLikeExecutableTask, renderPlanSection } from "./plan-utils";
@@ -19,7 +19,7 @@ import { getSnapshotService } from "../snapshot/snapshot";
 import { debugLog, warnOnce } from "../debug";
 import { RepeatGuard, type GuardKind, bashIntent } from "./loop-guard";
 import { StallGuard } from "./stall-guard";
-import { buildUnparsableArgsError } from "./tool-args-guard";
+import { buildUnparsableArgsError, isContentBearingTool } from "./tool-args-guard";
 import { recordLoopStop } from "./loop-stop-log";
 import { getDelegationOrchestrator } from "../session/orchestrator";
 import * as MessageStorage from "../storage/message";
@@ -2438,6 +2438,19 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
         const effectiveArgs = args;
 
         const result = await tool.execute(effectiveArgs, ctx);
+
+        // 第 67 波（同类问题清查）：**截断的"合法 JSON"也可能写下半截文件**。
+        // 如果本次回复的结束原因是 length（达到输出上限），而调用的是内容型工具，
+        // 那参数 JSON 有可能"恰好"是完整的、但内容被切在了一个合法边界上 —— 我们不能证明它完整，
+        // 所以**明确提示模型去核对并补齐**，同时落一条事件（可统计"多常见"）。
+        if (finishReason === "length" && isContentBearingTool(name)) {
+          console.warn(`[AgenticLoop] ${name} ran in a response truncated by the output limit — asking the model to verify completeness`);
+          recordLoopStop(sessionId, "output_truncated", { tool: name, finishReason });
+          result.output =
+            `${result.output ?? ""}\n\n[WARNING] 本次回复因**达到单次输出上限被截断**（finish_reason=length）。` +
+            `如果这次写的是一个大文件，请立刻核对它是否完整（例如 read 末尾几行）；` +
+            `缺失的部分请用 \`write\` + \`append: true\` 补齐，而不是整篇重写。`;
+        }
 
         // 第 65 波：交付物计数 —— 只有"写下来了"才算推进（读多少都不算）。
         // 会改盘的命令（bash 里的 git/npm/Set-Content…）同样算，因为世界确实被改了。

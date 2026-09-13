@@ -1,4 +1,4 @@
-import type { ToolDefinition, ToolCallResult, LLMMessage } from "./types";
+﻿import type { ToolDefinition, ToolCallResult, LLMMessage } from "./types";
 import { readFile, writeFile, deletePath, executeCommand, globSearch, grepSearch, isPathWithinWorkspace } from "../file-api";
 import { getLang } from "../i18n/lang";
 import { getSetting } from "../storage/settings";
@@ -1182,10 +1182,19 @@ export function createWriteFileTool(): ToolDef {
         // F3.4: Auto-lint after write
         const lintResult = await autoLint(path);
         const action = append && existingContent ? "Appended" : "Successfully wrote";
+        // 第 67 波（同类问题清查）：把**已有非空文件**写成空内容是很危险的静默破坏 ——
+        // 合法场景（用户就是想清空）依然放行，但必须在结果里说清楚，让模型有机会发现是自己搞错了。
+        const emptiedExisting = !append && content.length === 0 && !!existingContent && existingContent.length > 0;
         const output = lintResult
           ? `${action} ${content.length} bytes to ${path} (total ${finalContent.length} bytes)\n${lintResult}`
           : `${action} ${content.length} bytes to ${path} (total ${finalContent.length} bytes)`;
-        return { title: `write: ${path}`, output, metadata: { file_paths: [path] } };
+        return {
+          title: `write: ${path}`,
+          output: emptiedExisting
+            ? `${output}\n\n[WARNING] 你刚刚把**已有文件的全部内容**写成了空（原文件 ${existingContent!.length} 字符）。如果这不是你的本意，请立刻用 write 恢复内容或从版本控制里找回。`
+            : output,
+          metadata: { file_paths: [path] },
+        };
       } catch (error: any) {
         return { title: `write: ${path}`, output: `Error: ${error.message}` };
       }

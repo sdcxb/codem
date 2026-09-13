@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 工具参数截断守卫契约（第 66 波）。
  *
  * 真实事故（用户控制台日志）：
@@ -78,10 +78,13 @@ describe("工具参数截断守卫（第 66 波）", () => {
     expect(types).toMatch(/argsParseError\?: string/);
   });
 
-  it("ARGS-6: 输出上限不再是硬编码 4096，且默认可配置（尾随根因）", () => {
+  it("ARGS-6: 输出上限不再是硬编码 4096（第 67 波起改为按模型动态解析）", () => {
     const index = read("src/core/llm/index.ts");
-    expect(index).toMatch(/DEFAULT_MAX_OUTPUT_TOKENS\s*=\s*8192/);
-    expect(index, "要用常量而不是 4096").toMatch(/maxOutputTokens: [^\n]*DEFAULT_MAX_OUTPUT_TOKENS/);
+    // 第 66 波：先把它从 4096 提出来成为常量；第 67 波：真正解析交给 resolveMaxOutputTokens（按模型目录取值）。
+    expect(index, "index 不应再写死 4096 兜底").not.toMatch(/maxOutputTokens:[^\n]*(\|\||\?\?)\s*4096/);
+    expect(index, "创建循环时按模型解析").toMatch(/resolveMaxOutputTokens\(\{/);
+    const limits = read("src/core/llm/model-output-limit.ts");
+    expect(limits).toMatch(/DEFAULT_MAX_OUTPUT_TOKENS\s*=\s*8192/);
     const processor = read("src/core/llm/processor.ts");
     expect(processor, "processor 不应再写死 4096").not.toMatch(/maxTokens:\s*this\.config\.maxTokens \?\? 4096/);
   });

@@ -22,6 +22,7 @@ export type LoopStopReason =
   | "budget"
   | "repeat_guard"
   | "args_truncated"
+  | "output_truncated"
   | "cancelled";
 
 /**

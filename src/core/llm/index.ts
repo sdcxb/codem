@@ -107,15 +107,12 @@ export { redactSecrets, redactSecretsDeep } from "../utils/redact";
 // ========== LLM Engine Config ==========
 
 /**
- * 单次回复的**输出**上限（第 66 波）。
+ * 单次回复的**输出**上限（第 66/67 波）。
  *
- * 原来是硬编码 `4096`：真实事故里模型一次 `write` 一个 6–10KB 的 Python 脚本，
- * 参数 JSON 正好在 4096 tokens 附近**被截断**（`Unterminated string in JSON at position 6648`），
- * 于是 write 反复失败、任务卡住。4096 是聊天场景的旧值，对"生成大文件"这类任务明显偏小。
- *
- * 现在默认 **8192**（对 DeepSeek 系列普遍安全），并且**可配置**：
- * `codem-settings.maxTokens` / 智能体级 `maxTokens` / 槽位配置都会覆盖它。
- * 如果某个 provider 明确拒绝该上限，把它调小即可（错误信息会直接来自 API）。
+ * 第 66 波：把它从写死的 4096 提出来成为常量（4096 会截断大文件的工具参数）。
+ * 第 67 波：真正的解析交给 `resolveMaxOutputTokens` —— **按模型动态取**
+ * （显式配置 > 被 API 拒绝后学到的 > 模型目录的 `maxOutputTokens` > 这里这个兜底值）。
+ * 这个常量现在只用于"模型目录里查不到该模型"的情况。
  */
 export const DEFAULT_MAX_OUTPUT_TOKENS = 8192;
 
@@ -124,6 +121,7 @@ import { getLang } from "../i18n/lang";
 import { getSettingJSON, setSettingJSON } from "../storage/settings";
 import { getEventLog } from "../storage/event-log";
 import { extractJSON } from "./output-parser";
+import { resolveMaxOutputTokens } from "./model-output-limit";
 
 export interface LLMEngineConfig {
   defaultProvider?: string;
@@ -409,7 +407,13 @@ private loopPool: Map<string, AgenticLoop> = new Map();
       {
         maxIterations: 0, // 0 = no cap (DSH-aligned); safety valves handle runaway
         temperature: agent?.temperature ?? resolved.temperature ?? this.config.temperature,
-        maxOutputTokens: agent?.maxTokens || resolved.maxTokens || this.config.maxTokens || DEFAULT_MAX_OUTPUT_TOKENS,
+        // 第 67 波：输出上限**按模型动态解析**（显式配置 > 被拒绝后学到的 > 模型目录 > 兜底），
+        // 不再写死常量 —— 写小了会截断大文件的工具参数，写大了会被 API 拒绝。
+        maxOutputTokens: resolveMaxOutputTokens({
+          provider,
+          modelId: model,
+          explicit: agent?.maxTokens || resolved.maxTokens || this.config.maxTokens,
+        }).maxTokens,
         model,
         contextWindow,
         // Pass through agent-level overrides (Phase 0 fields)
@@ -903,7 +907,18 @@ Report earlier as well whenever a partial finding changes what that agent should
       loop.updateConfig({
         reasoningEffort: effort === "ultra" ? "high" : effort,
         // Ultra: increase max tokens budget for deeper reasoning
-        ...(effort === "ultra" ? { maxOutputTokens: Math.max((loop as any).config?.maxOutputTokens || 4096, 16384) } : {}),
+        // 第 67 波：这里原来写死 `|| 4096` 并把下限硬抬到 16384 —— 对**小上限模型**
+        // （例如 moonshot-v1-8k 的 4096）会直接被 API 拒绝。现在按模型目录夹住：
+        // 想抬到 16384，但不超过这个模型真正支持的上限。
+        ...(effort === "ultra"
+          ? {
+              maxOutputTokens: resolveMaxOutputTokens({
+                provider: this.providers.get(this.resolveSlot((loop as any).config?.modelSlot || "chat").providerId),
+                modelId: (loop as any).config?.model,
+                explicit: Math.max((loop as any).config?.maxOutputTokens || DEFAULT_MAX_OUTPUT_TOKENS, 16384),
+              }).maxTokens,
+            }
+          : {}),
       });
     }
     // Phase F: Notebook knowledge mode

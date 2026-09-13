@@ -17,6 +17,7 @@ import { OllamaProvider } from "./ollama-provider";
 import { ReplayAdapter } from "./replay-adapter";
 import { redactSecrets } from "../utils/redact";
 import { debugLog } from "../debug";
+import { isOutputLimitRejection, noteOutputLimitRejection } from "./model-output-limit";
 // ========== Request-level timeout budget (对标 DSH request_timeout_seconds) ==========
 // DSH 的 SDK 层为每个 RPC 请求设置 deadline（request_timeout_seconds），超时抛
 // TimeoutError 并附带运行时诊断。我们对齐这一设计：每次 LLM HTTP 请求都有
@@ -111,6 +112,19 @@ export class OpenAICompatibleProvider implements LLMProvider {
       )];
     }
     return this.config.models;
+  }
+
+  /**
+   * 第 67 波：**同步**查一个模型的静态配置。
+   *
+   * `listModels()` 是异步的（可能去服务端拉），而"创建 agent 循环时决定输出上限"是同步路径，
+   * 那里需要立刻拿到 `maxOutputTokens`（模型目录里本来就有这个字段）。
+   */
+  findModelConfig(modelId: string): ModelConfig | undefined {
+    if (!modelId) return undefined;
+    const hit = (this.dynamicModels || []).find((m) => m.id === modelId);
+    if (hit) return hit;
+    return this.config.models.find((m) => m.id === modelId);
   }
 
   /**
@@ -319,7 +333,7 @@ export class OpenAICompatibleProvider implements LLMProvider {
     if (request.maxTokens) {
       bodyObj.max_tokens = request.maxTokens;
     }
-    const body = JSON.stringify(bodyObj);
+    let body = JSON.stringify(bodyObj);
     debugLog("provider", `stream: id=${this.id} baseUrl=${this.config.baseUrl} url=${url} model:`, request.model, "msgs:", request.messages.length, "tools:", tools?.length || 0);
     const { signal, cleanup, isTimeout } = withRequestTimeout(request.abortSignal, STREAM_CONNECT_TIMEOUT_MS, "LLM streaming request");
     let response: Response;
@@ -336,6 +350,28 @@ export class OpenAICompatibleProvider implements LLMProvider {
     } finally {
       // 连接已建立：解除连接阶段超时，流式阶段沿用 idle timeout + 外部 abort signal
       cleanup();
+    }
+
+    // 第 67 波：**输出上限被 API 拒绝时自动降档并重试一次**（用户不需要去设置里手调）。
+    // 触发条件保守：400/422 + 明确提到 max_tokens + 像是"值不合法/超限"。
+    // 降档值会被进程内记住（`noteOutputLimitRejection`），后续任何会话都不会重复踩同一个坑。
+    if (!response.ok && request.maxTokens) {
+      const probe = await response.clone().text().catch(() => "");
+      if (isOutputLimitRejection(response.status, probe)) {
+        const next = noteOutputLimitRejection(request.model, request.maxTokens);
+        const retryBody = { ...bodyObj } as any;
+        if (next) retryBody.max_tokens = next;
+        else delete retryBody.max_tokens;
+        console.warn(
+          `[Provider] max_tokens=${request.maxTokens} 被 ${response.status} 拒绝，自动重试一次（max_tokens=${next ?? "(不发送)"}）`,
+        );
+        const retrySignal = withRequestTimeout(request.abortSignal, STREAM_CONNECT_TIMEOUT_MS, "LLM streaming request (max_tokens retry)");
+        try {
+          response = await fetch(url, { method: "POST", headers, body: JSON.stringify(retryBody), signal: retrySignal.signal });
+        } finally {
+          retrySignal.cleanup();
+        }
+      }
     }
 
     if (!response.ok) {
@@ -370,6 +406,14 @@ export class OpenAICompatibleProvider implements LLMProvider {
     let msgId = "";
     let currentToolCalls: Record<string, { id: string; name: string; arguments: string }> = {};
     let streamEnded = false;
+    /**
+     * 第 67 波：被丢弃的、无法解析的流数据行数。
+     *
+     * 以前这里只是 `console.warn` —— 丢掉的可能是 tool_calls 的参数增量，于是累积出的 JSON
+     * 残缺不全，现象与"参数被截断"完全一样（用户报的正是这一类）。现在计数，并在
+     * `tool_use_end` 上标注"参数可能不完整"，由循环拒绝执行并让模型重试。
+     */
+    let droppedStreamLines = 0;
 
     // P-OPT6: Adaptive idle timeout — replaces hard timeout
     // Only triggers when NO data arrives for idleThresholdMs (default 120s).
@@ -492,6 +536,10 @@ export class OpenAICompatibleProvider implements LLMProvider {
                     );
                   }
                 }
+                // 第 67 波：流里丢过行 ⇒ 参数可能不完整 ⇒ 标出来（由循环拒绝执行并引导重试）
+                if (droppedStreamLines > 0 && !argsParseError) {
+                  argsParseError = `stream had ${droppedStreamLines} unparsable SSE line(s); arguments may be incomplete`;
+                }
                 debugLog("provider", "Tool call end:", tc.name, "args:", JSON.stringify(parsedArgs).substring(0, 200));
                 yield { 
                   type: "tool_use_end" as const, 
@@ -521,7 +569,15 @@ export class OpenAICompatibleProvider implements LLMProvider {
 
             yield { type: "end", finishReason: finishReason === "tool_calls" ? "tool_use" : finishReason };
           }
-        } catch (e) { console.warn('[provider.ts]', e) }
+        } catch (e) {
+          // 第 66/67 波（同类问题清查）：**这条 catch 以前只是打一行 warn 就把整行丢了** ——
+          // 若被丢的那行正好带 tool_calls 的参数增量，累积出来的 JSON 就是残缺的，
+          // 现象与"参数被截断"一模一样（用户的报错就是这一类）。现在**计数并上报**：
+          // 丢过行就在 tool_use_end 上标出"参数可能不完整"，让它走"拒绝执行 + 引导重试"，
+          // 而不是拿着可能残缺的参数继续跑。
+          droppedStreamLines++;
+          console.warn(`[provider.ts] 丢弃了 1 行无法解析的流数据（累计 ${droppedStreamLines} 行）:`, e);
+        }
       }
     }
 
@@ -546,6 +602,9 @@ export class OpenAICompatibleProvider implements LLMProvider {
                 tc.arguments.slice(-120),
               );
             }
+          }
+          if (droppedStreamLines > 0 && !argsParseError) {
+            argsParseError = `stream had ${droppedStreamLines} unparsable SSE line(s); arguments may be incomplete`;
           }
           console.log("[Provider] Fallback tool_use_end:", tc.name, "args:", JSON.stringify(parsedArgs).substring(0, 200));
           yield {
