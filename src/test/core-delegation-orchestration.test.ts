@@ -721,4 +721,20 @@ describe("跨会话委派 — 等待预算与进度（第 62 波）", () => {
     const runStart = loop.indexOf("async *run(");
     expect(loop.slice(runStart, runStart + 1200)).toContain("this.delegationPeekCounts.clear()");
   });
+
+  it("DELE-044: 任务中心能看到进度、也能终止（否则「上报了但用户看不到」等于没修）", () => {
+    const fs = require("fs");
+    const path = require("path");
+    const tab = fs.readFileSync(path.join(__dirname, "../components/task-center/DelegationTab.tsx"), "utf-8");
+    // 进度可见
+    expect(tab).toContain("task.progress");
+    expect(tab).toMatch(/toolCalls/);
+    expect(tab).toMatch(/lastTool/);
+    // 用户能终止：先掐子会话循环，再置任务状态（顺序不能反，否则收尾回调会改回已完成）
+    expect(tab).toContain("cancelSessionExecution");
+    const cancelIdx = tab.indexOf("const handleCancel");
+    const block = tab.slice(cancelIdx, cancelIdx + 400);
+    expect(block.indexOf("cancelSessionExecution")).toBeLessThan(block.indexOf("cancelTask"));
+    expect(tab).toMatch(/终止/);
+  });
 });

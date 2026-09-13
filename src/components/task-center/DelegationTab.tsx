@@ -6,8 +6,8 @@
  */
 
 import { useState, useEffect, useCallback } from "react";
-import { CheckCircle2, Loader2, XCircle, Timer, Ban, ArrowRight, Link2 } from "lucide-react";
-import { getDelegationOrchestrator } from "../../core/session";
+import { CheckCircle2, Loader2, XCircle, Timer, Ban, ArrowRight, Link2, Activity } from "lucide-react";
+import { getDelegationOrchestrator, cancelSessionExecution } from "../../core/session";
 import type { DelegationTask, DelegationState } from "../../core/session";
 import { useProjectStore } from "../../core/store";
 import { useLang } from "../../core/i18n/lang";
@@ -72,6 +72,19 @@ export function DelegationTab() {
     const unsub = orch.onStateChange(() => loadTasks());
     const timer = setInterval(loadTasks, 1000);
     return () => { unsub(); clearInterval(timer); };
+  }, [loadTasks]);
+
+  /**
+   * 终止一个委派任务（第 63 波）。
+   *
+   * 为什么要有这个按钮：子会话原地打转时，用户此前只能**看着它转**（等墙钟上限或等模型自己停）。
+   * 现在两处都能停：模型可以调 cancel_delegation，用户可以直接在这里点。
+   * 先掐子会话的后台循环（真正停手），再置任务状态（否则收尾回调可能把它改回"已完成"）。
+   */
+  const handleCancel = useCallback((task: DelegationTask) => {
+    cancelSessionExecution(task.targetSessionId);
+    getDelegationOrchestrator().cancelTask(task.id);
+    loadTasks();
   }, [loadTasks]);
 
   return (
@@ -157,7 +170,47 @@ export function DelegationTab() {
                   <span style={{ marginLeft: "auto", fontSize: "var(--fs-xs)", color: "var(--text-muted, #555)" }}>
                     {formatTime(task.createdAt)}
                   </span>
+                  {(task.status === "running" || task.status === "pending") && (
+                    <button
+                      type="button"
+                      onClick={() => handleCancel(task)}
+                      title={zh ? "终止这个委派任务（子会话会被立刻中止）" : "Cancel this delegation (the child session is aborted immediately)"}
+                      aria-label={zh ? "终止委派任务" : "Cancel delegation"}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "4px",
+                        padding: "2px 8px",
+                        fontSize: "var(--fs-xs)",
+                        color: "var(--error)",
+                        background: "transparent",
+                        border: "1px solid var(--border-primary)",
+                        borderRadius: "var(--radius-xs)",
+                        cursor: "pointer",
+                      }}
+                    >
+                      <Ban size={12} />
+                      {zh ? "终止" : "Cancel"}
+                    </button>
+                  )}
                 </div>
+                {/* 进度：等待不再阻塞之后，用户至少要知道子会话"跑了多久、在反复做什么"（第 63 波） */}
+                {task.status === "running" && task.progress && (
+                  <div style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "6px",
+                    fontSize: "var(--fs-xs)",
+                    color: "var(--text-secondary, #888)",
+                  }}>
+                    <Activity size={12} />
+                    <span>
+                      {zh
+                        ? `已调用工具 ${task.progress.toolCalls} 次 · 最近：${task.progress.lastTool || "(无)"}`
+                        : `${task.progress.toolCalls} tool calls · last: ${task.progress.lastTool || "(none)"}`}
+                    </span>
+                  </div>
+                )}
                 <div style={{
                   fontSize: "var(--fs-sm)",
                   color: "var(--text-secondary, #aaa)",
