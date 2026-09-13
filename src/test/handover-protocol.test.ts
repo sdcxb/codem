@@ -77,6 +77,35 @@ describe("会话交接协议（第 63 波）", () => {
     expect(r.error).toMatch(/完成判据|验收标准|交付物/);
   });
 
+  // ===== 第 65 波（L0）：判据必须**可判定**，不能只是出现"完成判据"四个字 =====
+
+  it("HANDOVER-3b: 写了「完成判据：全部完成」这种空话 → 拒绝（接收方没法检查）", () => {
+    const hollow = `【会话交接】
+1. 目标：把课题二的稿子整理好。
+2. 已完成产物：D:\\proj\\对话交接总结.md：前序笔记
+3. 下一步：继续推进。
+4. 完成判据：全部完成。`;
+    const r = checkHandover(hollow);
+    expect(r.ok).toBe(false);
+    expect(r.stats.hasDoneCriteria).toBe(true); // 有"完成判据"字样
+    expect(r.stats.hasCheckableCriterion).toBe(false); // 但不可判定
+    expect(r.error).toMatch(/可判定/);
+  });
+
+  it("HANDOVER-3c: 判据里给出文件 / 命令 / 可比的量 → 通过", () => {
+    for (const line of [
+      "完成判据：产出 D:\\proj\\3000字版.docx 并归档",
+      "完成判据：`pytest tests/x.py` 全绿",
+      "完成判据：正文 2900–3100 字，且 ≥ 3 个章节",
+      "完成判据：通过率 100%",
+    ]) {
+      const text = `【会话交接】\n1. 目标：x\n2. 已完成产物：D:\\proj\\a.md：说明\n3. 下一步：写\n4. ${line}`;
+      const r = checkHandover(text);
+      expect(r.ok, `${line} 应通过：${r.error ?? ""}`).toBe(true);
+      expect(r.stats.hasCheckableCriterion, line).toBe(true);
+    }
+  });
+
   it("HANDOVER-4: 超硬上限 → 拒绝，并指向「细节写文件、正文只留摘要 + 路径」", () => {
     const huge = GOOD + "\n" + "补充说明：".repeat(HANDOVER_HARD_LIMIT);
     expect(huge.length).toBeGreaterThan(HANDOVER_HARD_LIMIT);

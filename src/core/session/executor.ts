@@ -19,6 +19,7 @@ import * as MessageStorage from "../storage/message";
 import * as SessionStorage from "../storage/session";
 import { getSessionMessageBus } from "./bus";
 import { idleWatchdog } from "./idle-watchdog";
+import { recordLoopStop } from "../llm/loop-stop-log";
 import { getDelegationOrchestrator } from "./orchestrator";
 import type { DelegationTask } from "./types";
 import { useAppStore } from "../../store";
@@ -61,6 +62,25 @@ export interface ExecuteSessionTurnResult {
 
 /** 当前正在后台执行的会话集合 */
 const activeExecutions = new Map<string, AbortController>();
+
+/**
+ * 第 65 波：把一个循环事件折算成"吃了多少上下文"的粗略估计（字符数）。
+ *
+ * 只统计模型自己吐出的 text/reasoning 是不够的 —— 真正把上下文撑满的是**工具结果**
+ * （一次列出几千行、一次读一个文件），以及**工具入参**（写文件时整篇内容都在入参里）。
+ * 这里把三者都算上，再除以 3 换算成估算 token（与工具栏的估算口径一致）。
+ */
+function estimateEventTokens(event: any): string | undefined {
+  const parts: string[] = [];
+  if (typeof event?.text === "string") parts.push(event.text);
+  if (event?.toolCall?.input) {
+    try { parts.push(JSON.stringify(event.toolCall.input)); } catch { /* 忽略不可序列化的入参 */ }
+  }
+  const result = event?.result;
+  if (typeof result === "string") parts.push(result);
+  else if (result && typeof result === "object" && typeof result.output === "string") parts.push(result.output);
+  return parts.length > 0 ? parts.join("") : undefined;
+}
 
 // ========== 核心执行函数 ==========
 
@@ -121,13 +141,49 @@ export async function executeSessionTurn(params: ExecuteSessionTurnParams): Prom
   //     **一个事件都没有**才中止 —— 还在干活就永远不会被杀；
   //   · **资源预算**（上限用资源而不是时钟）：后台会话累计估算 token 超过预算才中止。
   // 两者都是"配置项"，不是散落的魔法数字（DSH 同样把上限放在 settings schema 里）。
-  let abortedBy: "idle" | "budget" | "cancel" | null = null;
+  let abortedBy: "idle" | "budget" | "tool_hung" | "cancel" | null = null;
   let lastToolLabel = "";
   const delegCfg = getDelegationOrchestrator().getConfig?.();
   const idleMs = delegCfg?.turnIdleMs ?? 5 * 60 * 1000;
   const tokenBudget = delegCfg?.turnTokenBudget ?? 0; // 0 = 不限
   const watchdog = idleWatchdog(abort.signal, idleMs, "BACKGROUND_TURN_IDLE");
   let estimatedTokens = 0;
+
+  /**
+   * 第 65 波（审计发现）：**"事件流沉默"不等于"卡住"** —— 一个跑了 10 分钟的构建/测试
+   * 期间本来就不会有事件。原来的空闲看门狗会把这种**合法长工具**当成卡死砍掉，
+   * 父会话也会看到"安静 3 分钟"而误以为它卡住。
+   *
+   * 按 DSH 的思路把两种语义拆开（它的 `deadline` 与 `idleWatchdog` 也是分给不同能力的）：
+   *   · **空闲**（`idle`）：既没有事件、也没有工具在跑，连续 `idleMs` → 才是真的停摆；
+   *   · **工具挂死**（`tool_hung`）：单个工具在飞超过 `toolFlightMs`（默认 20 分钟）→ 那个工具卡死了
+   *     （正常情况下工具自己的超时会更早触发）。
+   * 工具在飞期间每 30 秒心跳一次：既给看门狗续命，也**向父会话上报进度**（它据此知道"还在干活"）。
+   */
+  const toolFlightMs = delegCfg?.toolFlightMs ?? 20 * 60 * 1000;
+  let toolsInFlight = 0;
+  let toolFlightTimer: ReturnType<typeof setTimeout> | undefined;
+  const clearToolFlight = () => {
+    if (toolFlightTimer !== undefined) clearTimeout(toolFlightTimer);
+    toolFlightTimer = undefined;
+  };
+  const armToolFlight = () => {
+    if (toolFlightTimer !== undefined || toolFlightMs <= 0) return;
+    toolFlightTimer = setTimeout(() => {
+      abortedBy = "tool_hung";
+      console.warn(`[Executor] 会话 ${sessionId} 的工具 ${lastToolLabel || "(unknown)"} 在飞超过 ${Math.round(toolFlightMs / 1000)}s，判定挂死并中止`);
+      abort.abort();
+    }, toolFlightMs);
+    (toolFlightTimer as any)?.unref?.();
+  };
+
+  // 工具在飞期间的心跳：续命 + 上报进度（父会话的"安静判定"据此保持正确）
+  const flightHeartbeat = setInterval(() => {
+    if (toolsInFlight <= 0) return;
+    watchdog.pulse();
+    reportProgress();
+  }, 30_000);
+  (flightHeartbeat as any)?.unref?.();
 
   // 标记委派任务为 running
   if (delegationTaskId) {
@@ -210,10 +266,10 @@ export async function executeSessionTurn(params: ExecuteSessionTurnParams): Prom
       securityMode: effectiveSecurityMode,
     })) {
       if (abort.signal.aborted) break;
-      // 每个事件都是"还活着"的证据：重新上弦空闲看门狗 + 计入资源预算
-      noteActivity(
-        "text" in (event as any) && typeof (event as any).text === "string" ? (event as any).text : undefined,
-      );
+      // 每个事件都是"还活着"的证据：重新上弦空闲看门狗 + 计入资源预算。
+      // 第 65 波修正：预算必须把**工具输入/输出**也算进去 —— 只统计模型吐出的文本
+      // 会严重低估（真正吃上下文的是工具结果），于是预算形同虚设。
+      noteActivity(estimateEventTokens(event as any));
 
       switch (event.type) {
         case "reasoning_delta":
@@ -256,6 +312,9 @@ export async function executeSessionTurn(params: ExecuteSessionTurnParams): Prom
             // 第 62 波：记下"最近一次工具"，等待超时的父会话据此判断子会话是否在原地打转
             const raw = (tc.input as any)?.command ?? (tc.input as any)?.path ?? "";
             lastToolLabel = `${tc.name}${raw ? `: ${String(raw).replace(/\s+/g, " ").slice(0, 80)}` : ""}`;
+            // 第 65 波：工具在飞 → 让空闲看门狗"暂停判定"，并另起一道"工具挂死"上限
+            toolsInFlight++;
+            armToolFlight();
             reportProgress();
           }
           if (tc && currentAssistantMsgId) {
@@ -271,6 +330,8 @@ export async function executeSessionTurn(params: ExecuteSessionTurnParams): Prom
 
         case "tool_complete": {
           toolCallCount++;
+          toolsInFlight = Math.max(0, toolsInFlight - 1);
+          if (toolsInFlight === 0) clearToolFlight();
           reportProgress();
           const tc = "toolCall" in event ? event.toolCall : null;
           if (tc && currentAssistantMsgId) {
@@ -299,6 +360,8 @@ export async function executeSessionTurn(params: ExecuteSessionTurnParams): Prom
 
         case "tool_error": {
           toolCallCount++;
+          toolsInFlight = Math.max(0, toolsInFlight - 1);
+          if (toolsInFlight === 0) clearToolFlight();
           const tc = "toolCall" in event ? event.toolCall : null;
           const err = "error" in event ? event.error : "Unknown error";
           if (tc && currentAssistantMsgId) {
@@ -369,17 +432,23 @@ export async function executeSessionTurn(params: ExecuteSessionTurnParams): Prom
     // 注意这**不是**"到点就杀"：还在产出的事件会让看门狗不断重新上弦（合法长任务不会被误杀）。
     if (watchdog.timedOut() || abortedBy) {
       const zht = getLang() === "zh";
-      const reason: "idle" | "budget" = abortedBy === "budget" ? "budget" : "idle";
+      const reason: "idle" | "budget" | "tool_hung" =
+        abortedBy === "budget" ? "budget" : abortedBy === "tool_hung" ? "tool_hung" : "idle";
       const note =
         reason === "budget"
           ? zht
             ? `[后台执行达到资源上限：估算 token 约 ${estimatedTokens} / 预算 ${tokenBudget}] 已完成 ${toolCallCount} 次工具调用，最近一次工具：${lastToolLabel || "(无)"}。` +
               `如果这是正常的大任务，请提高预算或拆小；如果是原地打转，检查它是否在重复同一件事。`
             : `[Background turn hit its token budget: ~${estimatedTokens} / ${tokenBudget}] ${toolCallCount} tool calls, last tool: ${lastToolLabel || "(none)"}.`
-          : zht
-            ? `[后台执行空闲超时：连续 ${Math.round(idleMs / 1000)} 秒没有任何事件] 已完成 ${toolCallCount} 次工具调用，最近一次工具：${lastToolLabel || "(无)"}。` +
-              `空闲超时意味着**它已经不产出任何东西**（不是"跑得久"）—— 常见原因是某个工具卡死，或模型停摆。`
-            : `[Background turn idle timeout: no event for ${Math.round(idleMs / 1000)}s] ${toolCallCount} tool calls, last tool: ${lastToolLabel || "(none)"}.`;
+          : reason === "tool_hung"
+            ? zht
+              ? `[工具挂死：${lastToolLabel || "(unknown)"} 在飞超过 ${Math.round(toolFlightMs / 1000)} 秒] 已强制中止。` +
+                `注意这**不是**"跑得久被砍"——工具自己的超时本该更早触发；请检查该工具是否需要更长的超时或是否真的卡住。`
+              : `[Tool hung: ${lastToolLabel || "(unknown)"} in flight for over ${Math.round(toolFlightMs / 1000)}s] aborted.`
+            : zht
+              ? `[后台执行空闲超时：连续 ${Math.round(idleMs / 1000)} 秒**既没有事件、也没有工具在跑**] 已完成 ${toolCallCount} 次工具调用，最近一次工具：${lastToolLabel || "(无)"}。` +
+                `空闲超时意味着**它已经不产出任何东西**（不是"跑得久"）—— 常见原因是模型停摆或 provider 无响应。`
+              : `[Background turn idle timeout: no event and no tool in flight for ${Math.round(idleMs / 1000)}s] ${toolCallCount} tool calls, last tool: ${lastToolLabel || "(none)"}.`;
       MessageStorage.createMessage({
         id: `err-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
         role: "system",
@@ -387,6 +456,14 @@ export async function executeSessionTurn(params: ExecuteSessionTurnParams): Prom
         timestamp: Date.now(),
         status: "error",
       }, sessionId);
+      // 第 65 波：停止原因结构化落库（idle / budget 两类），便于统计"哪种卡法最多"
+      recordLoopStop(sessionId, reason, {
+        toolCalls: toolCallCount,
+        lastTool: lastToolLabel,
+        estimatedTokens,
+        tokenBudget,
+        idleMs,
+      });
       if (delegationTaskId) {
         orchestrator.failTask(delegationTaskId, `${note}\n\n${zht ? "已产出的内容" : "Partial output"}:\n${cleanOutput || "(none)"}`);
       }
@@ -418,6 +495,33 @@ export async function executeSessionTurn(params: ExecuteSessionTurnParams): Prom
         success: false,
         error: `循环异常终止: ${endReason}`,
       };
+    }
+
+    // 第 65 波（审计发现）：循环因**停滞/打转**类原因停止时，即使模型吐了文字，
+    // 也不能当成"任务完成"上报 —— 否则父会话收到一个"已完成"、实际是"卡住了"的结果，
+    // 它会拿着半成品继续往下走。这类停止要按**失败**交回，并把已有产出一起附上。
+    const STALL_STOP_REASONS = new Set(["plan_stale", "repeat_guard", "no_progress", "too_many_errors"]);
+    if (endReason && STALL_STOP_REASONS.has(endReason)) {
+      const zhs = getLang() === "zh";
+      const note = zhs
+        ? `[循环因「${endReason}」停止：这不是正常完成] 已调用工具 ${toolCallCount} 次。已产出的内容附在下方，请人工确认后再继续。`
+        : `[Loop stopped due to "${endReason}": NOT a normal completion] ${toolCallCount} tool calls. Partial output below — verify before continuing.`;
+      MessageStorage.createMessage({
+        id: `err-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        role: "system",
+        content: note,
+        timestamp: Date.now(),
+        status: "error",
+      }, sessionId);
+      recordLoopStop(sessionId, endReason === "plan_stale" ? "plan_stale" : "no_gain", {
+        endReason,
+        toolCalls: toolCallCount,
+        partialOutputChars: cleanOutput.length,
+      });
+      if (delegationTaskId) {
+        orchestrator.failTask(delegationTaskId, `${note}\n\n${zhs ? "已产出的内容" : "Partial output"}:\n${cleanOutput || "(none)"}`);
+      }
+      return { output: cleanOutput, toolCallCount, success: false, error: note };
     }
 
     // 通知编排器任务完成
@@ -463,6 +567,9 @@ export async function executeSessionTurn(params: ExecuteSessionTurnParams): Prom
   } finally {
     // 第 64 波：看门狗必须释放（它持有定时器）
     watchdog.dispose();
+    // 第 65 波：工具挂死上限 + 心跳也要清掉（否则任务结束后还会跑）
+    clearToolFlight();
+    clearInterval(flightHeartbeat);
 
     // 清理活跃执行追踪
     activeExecutions.delete(sessionId);

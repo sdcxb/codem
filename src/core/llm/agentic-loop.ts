@@ -17,7 +17,9 @@ import { getPermissionManager, type PermissionRequest, type PermissionResult } f
 import { getVisionProxy } from "./vision-proxy";
 import { getSnapshotService } from "../snapshot/snapshot";
 import { debugLog, warnOnce } from "../debug";
-import { RepeatGuard, type GuardKind } from "./loop-guard";
+import { RepeatGuard, type GuardKind, bashIntent } from "./loop-guard";
+import { StallGuard } from "./stall-guard";
+import { recordLoopStop } from "./loop-stop-log";
 import { getDelegationOrchestrator } from "../session/orchestrator";
 import * as MessageStorage from "../storage/message";
 // deriveMessagesFromEvents removed — DB CRUD is the single source of truth for LLM messages
@@ -187,6 +189,38 @@ export interface LoopConfig {
  * 30 iterations is generous enough for complex multi-step tasks while still
  * catching genuine infinite loops.
  */
+/**
+ * 第 65 波：这次工具调用算不算"产出了交付物"？
+ *
+ * 只认**真的写下来了**的东西：成功的写入/编辑、会改盘的 bash 命令。
+ * 读、搜、列目录一律不算 —— 那正是"计划停滞"判据要抓的东西（读是为了写）。
+ * 判定刻意宽松（宁可多算、少误判停滞）：只要看起来成功就记一分。
+ */
+function isArtifactTool(name: string, args: Record<string, any>, output: unknown): boolean {
+  const text = typeof output === "string" ? output : "";
+  const failed = /^\s*(error|错误|failed|Traceback)/i.test(text) || /not found|权限不足|no such file/i.test(text);
+  if (name === "write" || name === "edit" || name === "multi_edit" || name === "patch" || name === "apply_patch") {
+    return !failed;
+  }
+  if (name === "notebook_create" || name === "notebook_update" || name === "install" || name === "run_test") return !failed;
+  if (name === "bash" || name === "shell" || name === "run_command" || name === "terminal") {
+    const cmd = String(args?.command ?? args?.cmd ?? "");
+    if (failed) return false;
+    // 审计修正：`git status` 这类**只读查询**虽然在 loop-guard 里按"会改盘"处理（避免被当成枚举），
+    // 但它显然不是"产出了交付物" —— 否则一个反复 `git status` 的会话永远不会被判停滞。
+    if (/^\s*(git\s+(status|log|diff|show|branch|remote|config|describe|rev-parse)|npm\s+(ls|list|view|outdated|why)|pnpm\s+(list|why)|pip\s+(list|show|freeze)|cargo\s+(tree|metadata))\b/i.test(cmd.trim())) {
+      return false;
+    }
+    return bashIntentKind(cmd) === "mutate";
+  }
+  return false;
+}
+
+/** 轻量包装：避免为了判一次类型而把 loop-guard 的完整意图对象搬进来 */
+function bashIntentKind(command: string): "enumerate" | "mutate" | "other" {
+  return bashIntent(command).kind;
+}
+
 const MAX_CONSECUTIVE_NO_PROGRESS = 30;
 
 
@@ -344,6 +378,18 @@ export class AgenticLoop {
    * 守卫按「精确指纹 + 只读枚举意图指纹」识别原地打转：提醒 → 抑制 → 停。
    */
   private repeatGuard: RepeatGuard = new RepeatGuard();
+  /**
+   * 第 65 波：计划停滞检测 —— 补上「每次输出都不一样但任务一步没走」的空转。
+   * 判据与内容无关：**计划指纹没变 + 没产出交付物**；先问（注入聚焦问题）再停。
+   */
+  private stallGuard: StallGuard = new StallGuard();
+  /**
+   * 计划修订号：**只在模型成功调用 update_plan 时 +1**（第 65 波）。
+   * 刻意不用 macroStep —— 那是 UI 启发式步进，会让"计划推进"信号频繁误报。
+   */
+  private planRevision = 0;
+  /** 本轮迭代是否产出了交付物（写入/编辑/会改盘的命令） */
+  private iterationProducedArtifact = false;
   /** 守卫判定「该停了」时的提示语 —— 在迭代末尾像 writeRejected 一样终止循环 */
   private guardStopMessage: string | null = null;
   /** 停档的类别（零信息增益 / 只读枚举），决定给用户看的那句话 */
@@ -751,6 +797,9 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
     this.guardSuppressedThisIteration = 0;
     this.delegationProgressAtWait.clear();
     this.delegationStuckPeeks.clear();
+    this.stallGuard.reset();
+    this.planRevision = 0;
+    this.iterationProducedArtifact = false;
 
     // Model-aware context window: resolve the current model's real window
     // from the provider and sync it into TokenTracker. Without this the
@@ -948,6 +997,7 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
         this.state.toolCallsInIteration = 0;
         this.state.compactedThisIteration = false;
         this.guardSuppressedThisIteration = 0;
+        this.iterationProducedArtifact = false;
 
         // P0-7.1 / 6.5建议2: 每轮迭代检查关键服务可用性
         if (!this.checkCriticalServices()) {
@@ -1424,6 +1474,47 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
       } else {
         this.state.consecutiveNoProgress++;
       }
+      // 第 65 波（审计修正）：停滞检测放在"重复调用守卫停止"**之后** ——
+      // 否则两者在同一迭代同时成立时，会先注入一条"进度自查"用户消息、紧接着循环就停了，
+      // 留下一条没有下文的孤儿消息（用户会看到一条突兀的系统提醒）。
+      // 先让"停"的决定生效，再考虑"问"。
+      if (!this.guardStopMessage) {
+        const stall = this.stallGuard.noteIteration({
+          planRevision: this.planRevision,
+          producedArtifact: this.iterationProducedArtifact,
+          stepLabel: this.currentStepTitle(),
+        });
+        if (stall.action === "ask") {
+          console.warn(`[AgenticLoop] Plan stall detected (${stall.stalledFor} iterations with no plan revision and no artifact) — asking the model instead of stopping`);
+          try {
+            this.getMessageStorage().createMessage({
+              id: `stall-ask-${Date.now()}`,
+              role: "user",
+              content: stall.message ?? "",
+              timestamp: Date.now(),
+              status: "done",
+            }, sessionId);
+            this.msgCache = null;
+            recordLoopStop(sessionId, "plan_stale_ask", { stalledFor: stall.stalledFor, planRevision: this.planRevision });
+          } catch (e) { console.warn('[agentic-loop.ts]', e) }
+          yield { type: "text_delta", text: `\n\n⏳ **进度自查**：已连续 ${stall.stalledFor} 个迭代没有产出交付物，正在要求模型说明卡点…` };
+        } else if (stall.action === "stop") {
+          console.warn(`[AgenticLoop] Plan stall stop after ${stall.stalledFor} iterations`);
+          recordLoopStop(sessionId, "plan_stale", { stalledFor: stall.stalledFor, planRevision: this.planRevision });
+          yield { type: "text_delta", text: `\n\n⚠️ **检测到停滞，已停止**：${stall.message ?? ""}` };
+          const result: LoopResult = {
+            type: "stop",
+            reason: "plan_stale",
+            usage: this.state.totalUsage,
+          };
+          if (this.config.memoryEnabled && this.config.onTurnComplete) {
+            try { this.config.onTurnComplete(this.state.totalUsage); } catch (e) { console.warn('[agentic-loop.ts]', e) }
+          }
+          yield { type: "end", result };
+          return result;
+        }
+      }
+
       // 第 62 波：重复调用守卫判定「原地打转」→ 立刻收手（而不是让模型自己醒悟）
       // 与 writeRejected 同一形态：状态标记 + 终止循环 + 给用户看得懂的一句话。
       if (this.guardStopMessage) {
@@ -1438,12 +1529,14 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
             ? "⚠️ **检测到原地打转，已停止**（同一目标被反复只读枚举）"
             : "⚠️ **检测到原地打转，已停止**（连续拿到完全相同的内容 = 零信息增益）";
         yield { type: "text_delta", text: `\n\n${headline}：${this.guardStopMessage}` };
-        try {
-          getEventLog().append(sessionId, "loop_stopped", {
-            reason: "repeat_guard",
-            stats,
-          });
-        } catch (e) { warnOnce("repeat-guard:eventlog", "[agentic-loop] 记录 repeat_guard 事件失败", e); }
+        // 统一走 recordLoopStop（第 65 波）：reason 用 no_gain 归类，便于统计"哪种卡法最多"
+        recordLoopStop(sessionId, "no_gain", {
+          kind: stopKind,
+          noGainRepeats: stats.noGainRepeats,
+          distinctResults: stats.distinctResults,
+          suppressed: stats.suppressed,
+          advisories: stats.advisories,
+        });
         const result: LoopResult = {
           type: "stop",
           reason: "repeat_guard",
@@ -1678,6 +1771,8 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
     if (!result.ok) return { ok: false, error: result.error };
     this.activePlan = { plan: result.items, total: result.items.length, fromLlm: this.activePlan.fromLlm };
     this.planDirty = true;
+    // 第 65 波：真正的计划修订 —— 这是"任务层面往前走了一步"的可靠信号（停滞检测据此清零）
+    this.planRevision++;
     console.log(
       `[AgenticLoop] Plan updated via update_plan (now ${result.items.length} steps):`,
       result.items.map((s) => s.title),
@@ -2313,6 +2408,10 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
         const effectiveArgs = args;
 
         const result = await tool.execute(effectiveArgs, ctx);
+
+        // 第 65 波：交付物计数 —— 只有"写下来了"才算推进（读多少都不算）。
+        // 会改盘的命令（bash 里的 git/npm/Set-Content…）同样算，因为世界确实被改了。
+        if (isArtifactTool(name, effectiveArgs, result.output)) this.iterationProducedArtifact = true;
 
         // 第 64 波：把**结果**交给守卫 —— 判"原地打转"的依据是"拿到的东西是不是已经有了"，
         // 不是"调用了几次"。守卫据此累计"零信息增益"次数，下一次 inspect 时决定提醒/跳过/停。

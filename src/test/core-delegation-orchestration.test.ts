@@ -748,6 +748,72 @@ describe("跨会话委派 — 等待预算与进度（第 62 波）", () => {
     expect(head).toContain("this.delegationProgressAtWait.clear()");
     expect(head).toContain("this.delegationStuckPeeks.clear()");
   });
+
+  // ===== 第 65 波：资源预算 + 停止原因结构化 =====
+
+  it("DELE-045: 资源预算默认有限，且把**工具入参/结果**也算进预算（否则形同虚设）", () => {
+    const fs = require("fs");
+    const path = require("path");
+    const types = fs.readFileSync(path.join(__dirname, "../core/session/types.ts"), "utf-8");
+    expect(types, "默认不应再是 0（不限）").toMatch(/turnTokenBudget:\s*[1-9]\d*/);
+    const executor = fs.readFileSync(path.join(__dirname, "../core/session/executor.ts"), "utf-8");
+    expect(executor).toContain("estimateEventTokens");
+    expect(executor, "工具入参要计入").toMatch(/toolCall\?\.input/);
+    expect(executor, "工具结果要计入").toMatch(/result\.output/);
+  });
+
+  it("DELE-046: 四类停止原因都结构化落库（能统计到底哪种卡法最多）", () => {
+    const fs = require("fs");
+    const path = require("path");
+    const log = fs.readFileSync(path.join(__dirname, "../core/llm/loop-stop-log.ts"), "utf-8");
+    for (const reason of ["no_gain", "idle", "plan_stale", "budget"]) {
+      expect(log, `${reason} 应在类型里`).toContain(reason);
+    }
+    expect(log).toContain("loop_stopped");
+    const executor = fs.readFileSync(path.join(__dirname, "../core/session/executor.ts"), "utf-8");
+    expect(executor, "executor 要记录 idle/budget").toMatch(/recordLoopStop\(sessionId, reason/);
+    const loop = fs.readFileSync(path.join(__dirname, "../core/llm/agentic-loop.ts"), "utf-8");
+    expect(loop, "循环要记录 no_gain / plan_stale").toMatch(/recordLoopStop\(sessionId, "no_gain"/);
+    expect(loop).toMatch(/recordLoopStop\(sessionId, "plan_stale"/);
+  });
+
+  it("DELE-048: 「长工具」不能被当成「沉默」（审计发现：合法长构建会被空闲看门狗砍掉）", () => {
+    const fs = require("fs");
+    const path = require("path");
+    const executor = fs.readFileSync(path.join(__dirname, "../core/session/executor.ts"), "utf-8");
+    const types = fs.readFileSync(path.join(__dirname, "../core/session/types.ts"), "utf-8");
+    // 两种语义必须分开：空闲（没事件且没工具在跑）与工具挂死（单工具在飞过久）
+    expect(types).toMatch(/toolFlightMs:\s*[1-9]\d*/);
+    expect(executor).toContain("toolsInFlight");
+    expect(executor).toContain("armToolFlight");
+    expect(executor).toContain("clearToolFlight");
+    expect(executor).toMatch(/abortedBy = "tool_hung"/);
+    // 工具在飞期间要有心跳：给看门狗续命 + 让父会话知道"还在干活"
+    expect(executor).toContain("flightHeartbeat");
+    expect(executor).toMatch(/if \(toolsInFlight <= 0\) return;\s*\n\s*watchdog\.pulse\(\);\s*\n\s*reportProgress\(\);/);
+    // 定时器必须清理（否则任务结束后还在跑）
+    expect(executor).toMatch(/clearInterval\(flightHeartbeat\)/);
+    // 日志里要把"空闲"和"工具挂死"分开说，避免用户误以为"跑得久被砍"
+    expect(executor).toMatch(/既没有事件、也没有工具在跑/);
+    expect(executor).toMatch(/工具挂死/);
+  });
+
+  it("DELE-047: 「因停滞而停」不能被当成「已完成」上报给父会话（否则父会话拿半成品继续走）", () => {
+    const fs = require("fs");
+    const path = require("path");
+    const executor = fs.readFileSync(path.join(__dirname, "../core/session/executor.ts"), "utf-8");
+    expect(executor).toContain("STALL_STOP_REASONS");
+    for (const r of ["plan_stale", "repeat_guard", "no_progress", "too_many_errors"]) {
+      expect(executor, `${r} 应被当作非正常完成`).toContain(r);
+    }
+    // 必须落到 failTask（而不是 completeTask），并把已产出内容一起交回
+    const idx = executor.indexOf("STALL_STOP_REASONS.has(endReason)");
+    expect(idx).toBeGreaterThan(-1);
+    const block = executor.slice(idx, idx + 1400);
+    expect(block).toMatch(/orchestrator\.failTask\(/);
+    expect(block).not.toMatch(/orchestrator\.completeTask\(/);
+    expect(block, "已产出内容要一起交回").toMatch(/Partial output|已产出的内容/);
+  });
   it("DELE-044: 任务中心能看到进度、也能终止（否则「上报了但用户看不到」等于没修）", () => {
     const fs = require("fs");
     const path = require("path");

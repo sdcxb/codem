@@ -110,6 +110,14 @@ export interface DelegationConfig {
    * （DSH 同样把 `maxTokens` 这类上限放在 settings schema 里，而不是散落的魔法数字）。
    */
   turnTokenBudget: number;
+  /**
+   * 第 65 波（审计补）：单个工具**在飞**多久算挂死（ms，默认 20 分钟）。
+   *
+   * 为什么需要单独一条：一个跑了 10 分钟的构建/测试期间**本来就没有事件**，
+   * 空闲看门狗会把这种合法长工具当成卡死。所以工具的"在飞时长"要有自己的上限，
+   * 而"空闲"只在**既没有事件、也没有工具在飞**时才判定。`<= 0` 表示不设上限。
+   */
+  toolFlightMs: number;
 }
 
 export const DEFAULT_DELEGATION_CONFIG: DelegationConfig = {
@@ -118,7 +126,10 @@ export const DEFAULT_DELEGATION_CONFIG: DelegationConfig = {
   defaultTimeout: 0, // 任务本身不设超时，依赖 abort 信号取消
   waitIdleMs: 3 * 60 * 1000, // 子会话连续 3 分钟没有进度上报 → 判定"安静了"，带进度返回
   turnIdleMs: 5 * 60 * 1000, // 后台会话连续 5 分钟没有任何事件 → 判定空闲（对齐 DSH 的流空闲默认值）
-  turnTokenBudget: 0, // 资源预算：0 = 不限（用资源设上限，不用时钟）
+  turnTokenBudget: 200_000, // 资源预算（估算 token 代理值，含工具入参/结果）：0 = 不限
+  // ↑ 第 65 波从 0 改为有限值：第三类打转（每次输出都不一样）只有资源上限兜得住。
+  //   200k 是"明显异常"的量级（正常后台任务远低于此），刻意给得宽松以免误杀大任务。
+  toolFlightMs: 20 * 60 * 1000, // 单个工具在飞超过 20 分钟判定挂死（工具自带超时通常更早触发）
 };
 
 // ========== DB 行类型 ==========
