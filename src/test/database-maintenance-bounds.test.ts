@@ -82,27 +82,27 @@ afterEach(() => {
 });
 
 describe("数据库维护的边界", () => {
-  it("MAINT-1: 默认不裁剪事件日志（它是被当作状态读取的，不是普通日志）", () => {
+  it("MAINT-1: 默认不裁剪事件日志（它是被当作状态读取的，不是普通日志）", async () => {
     const before = Number(getDatabase().exec("SELECT count(*) FROM session_events")[0].values[0][0]);
     expect(before).toBe(51);
 
-    const result = runDatabaseMaintenance();
+    const result = await runDatabaseMaintenance();
 
     expect(result.prunedEvents).toBe(0);
     const after = Number(getDatabase().exec("SELECT count(*) FROM session_events")[0].values[0][0]);
     expect(after).toBe(before); // 投影/不变量/预设发现都还在读它
   });
 
-  it("MAINT-2: 遥测按天清理（只用于本地统计，删掉不影响任何状态重建）", () => {
-    const result = runDatabaseMaintenance({ keepTelemetryDays: 7 });
+  it("MAINT-2: 遥测按天清理（只用于本地统计，删掉不影响任何状态重建）", async () => {
+    const result = await runDatabaseMaintenance({ keepTelemetryDays: 7 });
 
     expect(result.prunedTelemetry).toBe(1); // 只有那条 timestamp=1 的被删
     const ids = getDatabase().exec("SELECT id FROM telemetry_events")[0].values.map((r) => r[0]);
     expect(ids).toEqual(["t-new"]);
   });
 
-  it("MAINT-3: 显式开启事件裁剪时，session_meta 永不裁（预设归属/反馈状态靠它）", () => {
-    const result = runDatabaseMaintenance({ keepEventsPerSession: 10 });
+  it("MAINT-3: 显式开启事件裁剪时，session_meta 永不裁（预设归属/反馈状态靠它）", async () => {
+    const result = await runDatabaseMaintenance({ keepEventsPerSession: 10 });
 
     expect(result.prunedEvents).toBe(40); // 50 条 user_message 保留 10 条
     const rows = getDatabase().exec("SELECT event_type FROM session_events")[0].values.map((r) => r[0]);
@@ -113,21 +113,21 @@ describe("数据库维护的边界", () => {
   it("MAINT-4: 无内容可回收时不做 VACUUM（维护不能变成新的卡顿源）", async () => {
     // 遥测一条都不过期 → 没有任何裁剪 → 不应触发 VACUUM
     getDatabase().run("DELETE FROM telemetry_events WHERE id = 't-old'");
-    const result = runDatabaseMaintenance({ keepTelemetryDays: 3650 });
+    const result = await runDatabaseMaintenance({ keepTelemetryDays: 3650 });
     expect(result.prunedTelemetry).toBe(0);
     expect(result.vacuumed).toBe(false);
     await flushDatabase();
     expect(isDatabaseFatal()).toBe(false);
   });
 
-  it("MAINT-5: 维护失败不影响使用（异常被吞掉且带日志）", () => {
+  it("MAINT-5: 维护失败不影响使用（异常被吞掉且带日志）", async () => {
     const db = getDatabase();
     const originalRun = db.run.bind(db);
     (db as any).run = () => {
       throw new Error("simulated failure");
     };
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    expect(() => runDatabaseMaintenance()).not.toThrow();
+    await expect(runDatabaseMaintenance()).resolves.toBeTruthy();
     expect(warn).toHaveBeenCalled();
     (db as any).run = originalRun;
     warn.mockRestore();

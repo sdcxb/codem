@@ -129,7 +129,61 @@ export class EventLog {
   }
 
   /**
-   * Read all events for a session, ordered by sequence number.
+   * 事件日志压缩：先写**快照事件**，再删除它之前的事件（第 77 波）。
+   *
+   * 为什么必须"先快照后删除"：事件日志被 `event-projection` 当作状态读取，
+   * 直接按 seq 截断会让投影缺段（上一波审计因此把裁剪默认关掉了）。
+   * 快照把当时的投影状态固化成一个事件，回放 = 快照 + 其后事件，
+   * 与完整回放**等价**（`snapshot-compaction.test.ts` 的 SNAP-2 守着这条）。
+   *
+   * 实现要点（踩过的坑）：快照必须**占据锚点事件自己的 seq**，不能用新的最大 seq。
+   * 否则快照会排到"要保留的尾部事件"之后，而 `applySnapshot` 是**替换**语义 ——
+   * 回放时那批尾部事件会先被应用、再被快照覆盖掉，等于把刚发生的对话弄丢。
+   * 用 `INSERT OR REPLACE` 占位后：回放顺序仍是 [……, 快照@anchor, 尾部事件……] ✓
+   *
+   * @param projectUpTo 用"截至锚点的事件"计算快照载荷（保持 storage 层不反向依赖 projection）
+   * @returns 删除的事件数与快照 seq
+   */
+  compactWithSnapshot(
+    sessionId: string,
+    projectUpTo: (events: SessionEvent[]) => Record<string, unknown>,
+    opts: { keepEvents?: number } = {},
+  ): { removedEvents: number; snapshotSeq: number } {
+    const db = getDatabase();
+    const events = this.readAll(sessionId);
+    if (events.length === 0) return { removedEvents: 0, snapshotSeq: 0 };
+
+    const keepEvents = Math.max(0, opts.keepEvents ?? 0);
+    const cutoffIndex = events.length - keepEvents; // 锚点之后的事件要保留
+    if (cutoffIndex <= 0) return { removedEvents: 0, snapshotSeq: 0 };
+    const anchor = events[cutoffIndex - 1];
+
+    // 快照载荷 = 锚点及其之前所有事件的投影结果
+    const payload = projectUpTo(events.slice(0, cutoffIndex));
+    const payloadStr = JSON.stringify({
+      ...payload,
+      atSeq: anchor.seq,
+      compactedAt: Date.now(),
+      coveredEvents: cutoffIndex,
+    });
+
+    // 占位：用锚点的 seq 写入快照（替换掉那条事件，保持回放的顺序语义）
+    db.run(
+      "INSERT OR REPLACE INTO session_events (seq, session_id, event_type, payload, timestamp) VALUES (?, ?, ?, ?, ?)",
+      [anchor.seq, sessionId, "session_snapshot", payloadStr, Date.now()],
+    );
+    db.run("DELETE FROM session_events WHERE session_id = ? AND seq < ? AND event_type <> 'session_meta'", [
+      sessionId,
+      anchor.seq,
+    ]);
+    const removedEvents = Number(db.exec("SELECT changes()")?.[0]?.values?.[0]?.[0] ?? 0);
+    persistDatabase();
+
+    return { removedEvents, snapshotSeq: anchor.seq };
+  }
+
+  /**
+   * 读所有事件（含快照）。顺序保证：快照一定排在其覆盖的事件之后（seq 单调）。
    */
   readAll(sessionId: string): SessionEvent[] {
     const db = getDatabase();

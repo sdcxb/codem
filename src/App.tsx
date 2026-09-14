@@ -550,7 +550,7 @@ useEffect(() => {
       void (async () => {
         try {
           const { runDatabaseMaintenance } = await import("./core/storage/database");
-          runDatabaseMaintenance();
+          await runDatabaseMaintenance();
         } catch (e) {
           console.warn("[App] 数据库维护失败（不影响使用）:", e);
         }

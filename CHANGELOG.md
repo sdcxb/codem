@@ -2,6 +2,60 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.16.27] - 2026-09-14 — 治本（二）：事件日志快照式压缩 —— 让"只增不减"的表第一次可以安全变小
+
+### 上一步留下的死结
+
+上一波审计发现：`session_events` 只增不减（本机实测 2130 行 / 3.8 MB），但**不能按 seq 截断** ——
+事件日志被当作**状态**读取：`event-projection` 从事件重建投影、`runtime-invariants` 靠回放查不变量，
+`preset-discovery` / `feedback` / `postmortem` / `time-context` / `session-search` / `ui-trajectory` /
+`sync-engine` 都在 `readAll`。截断 = 悄悄改数据。于是上一波只能把裁剪默认关掉，
+留下"表还在长、但谁都不敢删"的死结。
+
+### 本波：先固化状态，再丢事件（DSH 的 projection-cache 思路）
+
+新增 `session_snapshot` 事件类型 + `EventLog.compactWithSnapshot()`：
+
+1. 把**截至锚点的投影结果**写成一个 `session_snapshot` 事件；
+2. 删掉锚点之前的事件（`session_meta` 永不删 —— 预设归属/反馈状态靠它）；
+3. 回放 = 快照 + 其后事件，与完整回放**逐条等价**。
+
+三个实现要点（都是我自己踩出来的）：
+
+- **快照必须占据锚点自己的 `seq`**（`INSERT OR REPLACE`），不能用新的最大 seq。否则快照会排到
+  "要保留的尾部事件"之后，而 `applySnapshot` 是**替换**语义 —— 回放时尾部事件先被应用、再被快照
+  覆盖掉，等于把刚发生的对话弄丢。我第一次就是这么写的，SNAP-4 当场抓住。
+- **`applySnapshot` 是替换而不是合并**：快照出现就意味着它之前的事件已被删除，合并会让残留叠加成重复消息。
+- **维护默认按阈值压缩（>5000 条事件的会话）并保留最近 8 条事件**：既回收绝大部分体积，
+  又保留最近细节供排查；阈值内的小会话完全不碰。
+
+### 验证（核心是那条等价性）
+
+`src/test/snapshot-compaction.test.ts`：
+
+- **SNAP-2 回放等价性**：压缩前后的投影逐条一致（id / role / content 全比）—— **这条不成立，
+  "裁剪"就变成"改数据"**；它是本波敢默认开启压缩的唯一理由。
+- SNAP-1 写入快照并删除旧事件且保留 `session_meta`；SNAP-3 压缩后新增事件照样接得上（快照不吞后续消息）；
+  SNAP-4 `keepEvents` 保留尾部细节（这条正是抓出上面第一个坑的用例）；
+  SNAP-5 维护只压缩超阈值会话且压缩后仍可读；SNAP-6 压缩失败不影响使用。
+
+全量 **228 文件 / 4795 用例通过**（15 skipped）· tsc 0 错误 · UI 审计 25 条规则 0/0 ·
+css-contract 2745 类无变化。
+
+### 这一步在整条"治本"路线里的位置
+
+```
+已做：① 保存削峰 + 2 秒节流（整库导出次数 ↓）
+      ② 原子写（先 .tmp 再 rename，杜绝对半截 DB）
+      ③ 致命错误识别 + 停止重试 + 会话抢救
+      ④ 换 WASM 引擎（堆扩容不再整块复制）
+      ⑤ 工具结果溢出到文件（大文本不进库）+ 溢出文件保留期
+      ⑥ 事件日志快照式压缩（只增不减的表第一次能安全变小）  ← 本波
+待做：⑦ 会话持久化改 append-only JSONL、SQLite 降级为**可重建索引**
+        （做完这一步，"整库导出"这个动作才会从架构里消失；
+          ⑥ 的快照机制正是 ⑦ 的前置：JSONL 重建索引时同样靠快照 + 增量事件）
+```
+
 ## [1.16.26] - 2026-09-14 — 数据库治本：换 WASM 引擎 + 对齐 DSH 的溢出（spill）与保留策略
 
 ### 先看 DSH 是怎么做的（本机 `app.asar.unpacked/node_modules/@deepseek-ai/`）

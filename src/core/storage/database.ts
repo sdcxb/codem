@@ -1081,6 +1081,8 @@ export interface MaintenanceResult {
   prunedEvents: number;
   prunedTelemetry: number;
   vacuumed: boolean;
+  /** 本次被快照式压缩的会话数（第 77 波） */
+  compactedSessions: number;
 }
 
 /**
@@ -1116,14 +1118,27 @@ export interface MaintenanceResult {
  *   - `telemetry_events`：本地遥测，按天保留（只用于本地统计，删除不影响任何状态重建）；
  *   - `VACUUM`：删除后回收文件空间（带两个护栏，见下）。
  */
-export function runDatabaseMaintenance(
-  opts: { keepEventsPerSession?: number; keepTelemetryDays?: number; vacuumMaxBytes?: number } = {},
-): MaintenanceResult {
+export async function runDatabaseMaintenance(
+  opts: {
+    keepEventsPerSession?: number;
+    keepTelemetryDays?: number;
+    vacuumMaxBytes?: number;
+    /** 事件数超过该值的会话会被**快照式压缩**（0 = 关闭） */
+    compactEventsOver?: number;
+  } = {},
+): Promise<MaintenanceResult> {
   /** 0 = 不裁剪事件（默认）：事件日志被投影/不变量当作状态读取，见上面的说明 */
   const keepEvents = opts.keepEventsPerSession ?? 0;
   const keepTelemetryDays = opts.keepTelemetryDays ?? 7;
   /** 超过这个体积就不在启动路径上 VACUUM（它在内存里整库重写一遍，大库会卡界面） */
   const vacuumMaxBytes = opts.vacuumMaxBytes ?? 256 * 1024 * 1024;
+  /**
+   * 快照式压缩阈值（第 77 波）：事件超过这个条数的会话才压缩。
+   * 默认 5000 —— 压缩本身也要代价，只对"确实很大"的会话做；
+   * 之所以现在敢默认开启，是因为压缩走的是"先写快照再删旧事件"，
+   * 回放等价性有 `snapshot-compaction.test.ts` 的 SNAP-2 守着。
+   */
+  const compactEventsOver = opts.compactEventsOver ?? 5000;
   const result: MaintenanceResult = {
     sizeBefore: databaseSizeBytes(),
     sizeAfter: 0,
@@ -1131,10 +1146,15 @@ export function runDatabaseMaintenance(
     prunedEvents: 0,
     prunedTelemetry: 0,
     vacuumed: false,
+    compactedSessions: 0,
   };
   if (!db || dbFatal) return { ...result, sizeAfter: result.sizeBefore };
 
   try {
+    if (compactEventsOver > 0) {
+      result.compactedSessions = await compactOversizedSessionLogs(compactEventsOver);
+    }
+
     if (keepEvents > 0) {
       // 显式开启时也**永不裁剪 session_meta**（预设归属/反馈状态靠它）。
       // 只有事件日志改为"快照 + 截断"之后，这个开关才应该被打开。
@@ -1184,6 +1204,50 @@ export function runDatabaseMaintenance(
       `（回收 ${(result.reclaimed / 1024).toFixed(0)} KB${result.vacuumed ? "，已 VACUUM" : ""}）`,
   );
   return result;
+}
+
+/**
+ * 对事件量过大的会话做**快照式压缩**（先写快照，再删它之前的事件）。
+ *
+ * 依赖注入：投影函数由调用方传入（storage 层不反向 import projection 层，避免循环依赖）。
+ * 失败只记日志 —— 维护永远不能让应用不可用。
+ */
+async function compactOversizedSessionLogs(threshold: number): Promise<number> {
+  if (!db) return 0;
+  let compacted = 0;
+  try {
+    const rows = db.exec(
+      "SELECT session_id, count(*) AS n FROM session_events GROUP BY session_id HAVING n > ?",
+      [threshold],
+    );
+    const sessions = rows?.[0]?.values?.map((r) => String(r[0])) ?? [];
+    if (sessions.length === 0) return 0;
+    for (const sessionId of sessions) {
+      try {
+        // 动态 import：storage 层不静态依赖 projection/event-log（避免模块循环），
+        // 且这条路径只在"确实需要压缩"时才加载。
+        const { getEventLog } = await import("./event-log");
+        const { getEventProjection } = await import("./event-projection");
+        const projection = getEventProjection();
+        // 快照载荷按"截至锚点的事件"计算（keepEvents 会保留尾部事件，不能被快照覆盖）
+        const res = getEventLog().compactWithSnapshot(sessionId, (events) => ({
+          messages: projection.projectFromEvents(events),
+        }), { keepEvents: 8 });
+        if (res.removedEvents > 0) {
+          compacted++;
+          console.log(
+            `[Database] 事件日志压缩：会话 ${sessionId} 删除 ${res.removedEvents} 条旧事件` +
+              `（快照 seq=${res.snapshotSeq}，回放 = 快照 + 其后事件）`,
+          );
+        }
+      } catch (e) {
+        console.warn(`[Database] 会话 ${sessionId} 事件压缩失败（跳过）:`, e);
+      }
+    }
+  } catch (e) {
+    console.warn("[Database] 事件压缩扫描失败（跳过）:", e);
+  }
+  return compacted;
 }
 
 /** 空闲页占比（判断 VACUUM 值不值得做） */

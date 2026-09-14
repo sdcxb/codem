@@ -124,6 +124,14 @@ export class EventProjection {
     state.lastSeq = event.seq;
 
     switch (event.type) {
+      // 第 77 波：快照事件 —— 让"裁剪事件日志"变成**安全**操作。
+      //
+      // 背景：事件日志被投影当状态读取，所以按 seq 截断会让投影缺段（上一波审计因此把
+      // 事件裁剪默认关掉了）。正确做法是先把投影状态**固化成一个事件**，再丢掉它之前的
+      // 事件：回放 = 快照 + 其后的事件，结果与完整回放一致（有 replay 等价性用例守着）。
+      case "session_snapshot":
+        this.applySnapshot(state, event);
+        break;
       case "user_message":
         this.applyUserMessage(state, event);
         break;
@@ -154,6 +162,35 @@ export class EventProjection {
         // They are metadata events used for replay, telemetry, etc.
         break;
     }
+  }
+
+  /**
+   * 应用快照事件：用快照里的状态**替换**当前投影状态。
+   *
+   * 为什么是"替换"而不是"合并"：快照是 compaction 之前所有事件的压缩结果，
+   * 它出现在日志中就意味着那些事件**已经被删除**；回放 = 快照 + 其后的事件。
+   * 若此处做合并，被删事件留下的残留会与快照叠加，出现重复消息。
+   */
+  private applySnapshot(state: ProjectionState, event: SessionEvent): void {
+    const payload = event.payload as unknown as {
+      messages?: LLMMessage[];
+      compactionSummary?: string | null;
+      removedMessageIds?: string[];
+      atSeq?: number;
+    };
+    state.messages = Array.isArray(payload.messages) ? payload.messages.map((m) => ({ ...m })) : [];
+    state.compactionSummary = payload.compactionSummary ?? null;
+    state.removedMessageIds = new Set(payload.removedMessageIds ?? []);
+    // 重建工具调用索引，保证后续 tool_result 仍能挂到对应的 assistant 消息上
+    state.toolCallIndex = new Map();
+    state.messages.forEach((m, idx) => {
+      const calls = (m as any).tool_calls;
+      if (Array.isArray(calls)) {
+        for (const tc of calls) {
+          if (tc?.id) state.toolCallIndex.set(tc.id, idx);
+        }
+      }
+    });
   }
 
   private applyUserMessage(state: ProjectionState, event: SessionEvent): void {
