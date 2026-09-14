@@ -1,4 +1,12 @@
 import { appendSessionMessage, appendMessageTombstone, readSessionMessages } from "./session-jsonl";
+import {
+  getCachedExternalContent,
+  warmExternalContent,
+  hydrateAttachmentsForSession,
+  externalizeAttachmentContent,
+  isExternalContent,
+  DEFAULT_EXTERNALIZE_THRESHOLD,
+} from "./attachment-files";
 import { getDatabase, persistDatabase, isFts5Available } from "./database";
 import { getEventLog } from "./event-log";
 import type { SessionEventType } from "./event-types";
@@ -346,6 +354,107 @@ export function listAllAttachments(limit?: number): Array<MessageAttachment & { 
  * listing query from pulling every attachment's full text into memory —
  * only the specific attachment the LLM requested is loaded.
  */
+/**
+ * 大附件内容外置（第 80 波）。
+ * 返回要写进 `content` 列的值（标记或原文）与 `preview` 列的值。
+ * 失败时回退内联 —— 宁可库大一点，也不能把附件内容丢掉。
+ */
+function externalizeIfLargeSync(att: MessageAttachment): { content: string | null; preview: string | null } {
+  const content = typeof att.content === "string" ? att.content : null;
+  const preview = att.preview ?? null;
+  if (!content) return { content, preview };
+
+  if (isExternalContent(content)) return { content, preview }; // 已经外置过
+  if (content.length <= DEFAULT_EXTERNALIZE_THRESHOLD) return { content, preview };
+  // 同步路径**先写内联**（保证不丢数据），同时排队外置；外置成功后把标记写回数据库。
+  // 这样 `createMessage` 不必变成 async —— 几十处调用点都依赖它是同步的。
+  queueAttachmentExternalization(att.id, att.name, content);
+  return { content, preview };
+}
+
+/** 排队把附件内容外置（异步、幂等、失败保留内联） */
+const pendingExternalization = new Set<string>();
+function queueAttachmentExternalization(attachmentId: string, name: string, content: string): void {
+  if (pendingExternalization.has(attachmentId)) return;
+  pendingExternalization.add(attachmentId);
+  void (async () => {
+    try {
+      const { marker, preview } = await externalizeAttachmentContent(attachmentId, name, content);
+      const db = getDatabase();
+      db.run("UPDATE attachments SET content = ?, preview = COALESCE(preview, ?) WHERE id = ?", [
+        marker,
+        preview,
+        attachmentId,
+      ]);
+      persistDatabase();
+      await hydrateAttachmentsForSession([{ id: attachmentId, content: marker }]);
+    } catch (e) {
+      console.warn("[Attachment] 外置失败，保留内联（不影响使用）:", e);
+    } finally {
+      pendingExternalization.delete(attachmentId);
+    }
+  })();
+}
+
+/**
+ * 重建全文检索索引，使其与"读者能看到的消息"严格一致（第 80 波收尾项）。
+ *
+ * 背景：`session_fts` 是独立表、没有外键级联 —— 索引被裁剪（或消息被删除）之后，
+ * FTS 里会留下**孤儿行**（真机实测 112 条）。上一波靠 `getMessage` 回退保证了"命中还能打开"，
+ * 但那只是兜住了读取；这一版把一致性做正：
+ *   - 删掉"既不在索引、也不在日志镜像"的行（消息已被墓碑删除）；
+ *   - 为"在日志镜像里但不在 FTS 里"的消息补行（被裁掉但仍可读的历史，搜索也应该能搜到）。
+ *
+ * @returns 删除与补充的行数
+ */
+export async function rebuildSessionFts(sessionId: string): Promise<{ removed: number; added: number }> {
+  const out = { removed: 0, added: 0 };
+  if (!isFts5Available()) return out;
+  const db = getDatabase();
+  try {
+    const indexIds = new Set(
+      db.exec("SELECT id FROM messages WHERE session_id = ?", [sessionId])?.[0]?.values?.map((r) => String(r[0])) ?? [],
+    );
+    const logRecords = cachedLogMessages.get(sessionId) ?? [];
+    const readableIds = new Set<string>([...indexIds, ...logRecords.map((m) => m.id)]);
+
+    const ftsIds =
+      db.exec("SELECT message_id FROM session_fts WHERE session_id = ?", [sessionId])?.[0]?.values?.map((r) =>
+        String(r[0]),
+      ) ?? [];
+
+    for (const id of ftsIds) {
+      if (readableIds.has(id)) continue;
+      db.run("DELETE FROM session_fts WHERE session_id = ? AND message_id = ?", [sessionId, id]);
+      out.removed++;
+    }
+
+    const alreadyIndexed = new Set(ftsIds);
+    for (const rec of logRecords) {
+      if (alreadyIndexed.has(rec.id)) continue;
+      try {
+        db.run("INSERT INTO session_fts (session_id, message_id, content, role, timestamp) VALUES (?, ?, ?, ?, ?)", [
+          sessionId,
+          rec.id,
+          rec.content,
+          rec.role,
+          rec.timestamp,
+        ]);
+        out.added++;
+      } catch {
+        /* 单条失败跳过 */
+      }
+    }
+    if (out.removed > 0 || out.added > 0) {
+      persistDatabase();
+      console.log(`[FTS] 会话 ${sessionId} 索引对齐：删除孤儿 ${out.removed} 条、补齐 ${out.added} 条`);
+    }
+  } catch (e) {
+    console.warn(`[FTS] 会话 ${sessionId} 索引对齐失败（跳过）:`, e);
+  }
+  return out;
+}
+
 export function getAttachmentContent(id: string): string | undefined {
   const db = getDatabase();
   try {
@@ -355,7 +464,20 @@ export function getAttachmentContent(id: string): string | undefined {
     );
     if (result.length === 0 || result[0].values.length === 0) return undefined;
     const content = result[0].values[0][0];
-    return content ? (content as string) : undefined;
+    if (!content) return undefined;
+    const text = content as string;
+    // 第 80 波：大附件内容外置在文件里。读取路径是同步的，所以走"预取 + 同步命中"：
+    // 命中即返回全文；未命中时**补一次异步预取**（下次读取命中），
+    // 绝不让调用方拿到 `file:` 标记去当正文用。
+    if (text.startsWith("file:")) {
+      const path = text.slice("file:".length);
+      const cached = getCachedExternalContent(path);
+      if (cached !== undefined) return cached;
+      void warmExternalContent(path);
+      console.warn("[getAttachmentContent] 外置附件尚未预热，已触发预取（请重试一次）:", path);
+      return undefined;
+    }
+    return text;
   } catch (e) {
     console.warn("[getAttachmentContent] Failed:", e);
     return undefined;
@@ -473,6 +595,9 @@ export function createMessage(message: Message, sessionId: string): void {
   if (message.attachments && message.attachments.length > 0) {
     for (const att of message.attachments) {
       try {
+        // 第 80 波：大附件内容外置到 <appData>/attachments/，库里只留 file:<路径> 标记 + 预览。
+        // 小内容（图片 data URL、短文本）保持内联 —— 常见场景行为不变。
+        const stored = externalizeIfLargeSync(att);
         db.run(
           "INSERT OR REPLACE INTO attachments (id, session_id, message_id, name, type, path, content, preview, sandbox_path, mime_type, size, added_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
           [
@@ -482,8 +607,8 @@ export function createMessage(message: Message, sessionId: string): void {
             att.name,
             att.type,
             (att as any).path ?? null,
-            att.content ?? null,
-            att.preview ?? null,
+            stored.content,
+            stored.preview,
             att.sandboxPath ?? null,
             att.mimeType ?? null,
             att.size ?? null,

@@ -1167,27 +1167,43 @@ export async function runDatabaseMaintenance(
 
     // 第 78 波：先把历史回填进**追加日志**（权威存储），再裁剪 SQLite 索引。
     // 顺序不能反 —— 裁剪的耐久性检查依赖日志里已经有这些消息。
-    if (keepIndexedMessages > 0) {
-      try {
-        const bridge = await import("./session-log-bridge");
-        result.backfilledMessages = await bridge.backfillAllSessions();
+    //
+    // 注意（第 80 波审计修正）：回填、附件预热、日志压缩**不能被"是否裁剪索引"这个开关挡住** ——
+    // 我曾把它们一起塞进 `if (keepIndexedMessages > 0)`，于是关掉裁剪时附件不预热（同步读取拿不到
+    // 外置内容）、日志也不压缩。只有"裁剪索引"这一步该受开关控制，其余是常规维护。
+    try {
+      const bridge = await import("./session-log-bridge");
+      result.backfilledMessages = await bridge.backfillAllSessions();
+
+      if (keepIndexedMessages > 0) {
         const trimmed = await bridge.trimIndexedMessages({ keepPerSession: keepIndexedMessages });
         result.trimmedIndexMessages = trimmed.deletedMessages;
-        const compactedLog = await bridge.compactOversizedSessionLogs();
-        if (compactedLog.compactedSessions > 0) {
+        if (trimmed.deletedMessages > 0 || trimmed.skippedSessions > 0) {
           console.log(
-            `[Database] 追加日志压缩：${compactedLog.compactedSessions} 个会话，省下 ${compactedLog.linesSaved} 行`,
-          );
-        }
-        if (result.backfilledMessages > 0 || trimmed.deletedMessages > 0 || trimmed.skippedSessions > 0) {
-          console.log(
-            `[Database] 追加日志：回填 ${result.backfilledMessages} 条；索引裁剪 ${trimmed.deletedMessages} 条` +
+            `[Database] 追加日志：索引裁剪 ${trimmed.deletedMessages} 条` +
               `（跳过 ${trimmed.skippedSessions} 个会话：日志尚未覆盖）`,
           );
         }
-      } catch (e) {
-        console.warn("[Database] 追加日志回填/索引裁剪失败（跳过）:", e);
       }
+      if (result.backfilledMessages > 0) {
+        console.log(`[Database] 追加日志：回填 ${result.backfilledMessages} 条历史`);
+      }
+
+      const attachments = await bridge.hydrateAllAttachments();
+      if (attachments.warmed > 0 || attachments.orphansRemoved > 0) {
+        console.log(
+          `[Database] 外置附件：预热 ${attachments.warmed} 个，清理孤儿文件 ${attachments.orphansRemoved} 个`,
+        );
+      }
+
+      const compactedLog = await bridge.compactOversizedSessionLogs();
+      if (compactedLog.compactedSessions > 0) {
+        console.log(
+          `[Database] 追加日志压缩：${compactedLog.compactedSessions} 个会话，省下 ${compactedLog.linesSaved} 行`,
+        );
+      }
+    } catch (e) {
+      console.warn("[Database] 追加日志/附件维护失败（跳过）:", e);
     }
 
     if (keepEvents > 0) {
