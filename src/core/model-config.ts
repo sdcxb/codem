@@ -6,7 +6,7 @@
  */
 
 import { getSettingJSON } from "./storage/settings";
-import { mergeCustomModels } from "./llm/custom-models";
+import { getMergedDynamicModels } from "./llm/model-catalog";
 
 export interface ModelOption {
   id: string;
@@ -60,9 +60,9 @@ export function getConfiguredApiModels(): ModelOption[] {
     const providers = settings.providers || [];
 
     // 读取设置页面从 API 服务器获取并持久化的动态模型列表
-    // （合并手动添加的自定义模型——服务器列表外的内测/测试模型）
-    type DynamicModelMap = { [providerId: string]: Array<{ id: string; name: string }> };
-    const dynamicModels = mergeCustomModels(getSettingJSON<DynamicModelMap>("codem-dynamic-models", {}));
+    // （合并手动添加的自定义模型 + 内置目录兜底：服务器 /models 不是可调用模型的完整真相，
+    //   例如 deepseek-v4-flash-vision-exp 不在列表里但能正常调用）
+    const dynamicModels = getMergedDynamicModels();
 
     const result: ModelOption[] = [];
     for (const p of providers) {
@@ -111,8 +111,7 @@ export function resolveProviderForModel(model: string): string {
   try {
     const settings = getSettingJSON<any>("codem-settings", {});
     const providers = settings.providers || [];
-    type DynamicModelMap = { [providerId: string]: Array<{ id: string; name: string }> };
-    const dynamicModels = mergeCustomModels(getSettingJSON<DynamicModelMap>("codem-dynamic-models", {}));
+    const dynamicModels = getMergedDynamicModels();
     for (const p of providers) {
       if (!p.apiKey || p.id === "mimo") continue;
       const dyn = dynamicModels[p.id];
@@ -133,8 +132,8 @@ export function getFirstConfiguredModel(): { model: string; provider: string } {
   try {
     const settings = getSettingJSON<any>("codem-settings", {});
     const providers = settings.providers || [];
-    type DynamicModelMap = { [providerId: string]: Array<{ id: string; name: string }> };
-    const dynamicModels = getSettingJSON<DynamicModelMap>("codem-dynamic-models", {});
+    // 走合并后的动态列表（服务器 + 手动 + 内置目录），自定义 provider 才能拿到兜底模型
+    const dynamicModels = getMergedDynamicModels();
     const defaultModels: Record<string, string> = {
       openai: "gpt-4o",
       anthropic: "claude-sonnet-4-20250514",

@@ -107,6 +107,8 @@ const MODEL_CAPABILITY_DB: Record<string, KnownModelCapabilities> = {
   'deepseek-coder': { supportsTools: true, supportsVision: false, supportsStreaming: true },
   'deepseek-reasoner': { supportsTools: true, supportsVision: false, supportsStreaming: true },
   'deepseek-v3': { supportsTools: true, supportsVision: false, supportsStreaming: true },
+  // 视觉实验模型：服务器 /models 不列它（只在内置目录里），但实测可调用并接受图片输入
+  'deepseek-v4-flash-vision-exp': { supportsTools: true, supportsVision: true, supportsStreaming: true },
 
   // MiMo
   'mimo-v2': { supportsTools: true, supportsVision: false, supportsStreaming: true },

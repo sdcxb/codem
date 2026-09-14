@@ -41,6 +41,7 @@ import { getModelProfileManager, type TaskSlot, type ModelSlotConfig } from "./m
 // F2.1: 统一脱敏工具 — 文件内使用需直接 import（re-export 不使文件内可见）
 import { redactSecrets } from "../utils/redact";
 import { mergeCustomModels } from "./custom-models";
+import { mergeModelsWithCatalog } from "./model-catalog";
 
 // ========== Re-exports ==========
 export type { LLMProvider, LLMRequest, LLMResponse, StreamEvent, TokenUsage, ToolDefinition } from "./types";
@@ -1279,9 +1280,18 @@ return loop.hasPendingGuidance();
           }
         }
         const provider = this.providers.get(providerId);
-        if (provider && "dynamicModels" in provider && Array.isArray(models)) {
-          (provider as any).dynamicModels = models;
-          console.log(`[LLMEngine.loadDynamicModels] Loaded ${models.length} models for ${providerId}`);
+        // 服务器 /models 不是"可调用模型"的完整真相：视觉实验模型不在列表里但能调用，
+        // 而且服务器还会改名（deepseek-v4-flash → deepseek-flash）。
+        // 所以注入的是"服务器列表 ∪ 内置目录"并集 —— 升级后即使用户从不点刷新，
+        // 目录里的模型也会出现（缓存本身仍只保存服务器事实）。
+        const merged = mergeModelsWithCatalog(providerId, models) as typeof models;
+        if (provider && "dynamicModels" in provider && Array.isArray(merged)) {
+          (provider as any).dynamicModels = merged;
+          const extra = merged.length - models.length;
+          console.log(
+            `[LLMEngine.loadDynamicModels] Loaded ${merged.length} models for ${providerId}` +
+              (extra > 0 ? `（其中 ${extra} 个来自内置目录，服务器未列出）` : ""),
+          );
         }
       }
       if (migrated) {

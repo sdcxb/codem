@@ -7,7 +7,8 @@ import type { LoginResult } from "../core/auth/mimo";
 import { useAppStore } from "../store";
 import { inferContextWindow } from "../core/llm/provider";
 import { getSettingJSON, setSettingJSON, getSetting, setSetting, removeSetting } from "../core/storage/settings";
-import { mergeCustomModels, addCustomModel, removeCustomModel, customNamesFor } from "../core/llm/custom-models";
+import { addCustomModel, removeCustomModel, customNamesFor } from "../core/llm/custom-models";
+import { mergeModelsWithCatalog, getMergedDynamicModels } from "../core/llm/model-catalog";
 import { setLang, useLang, S, type Language } from "../core/i18n/lang";
 import { ModelProfilePanel } from "./ModelProfilePanel";
 import { getPermissionManager, type PermissionRule, type PermissionAction } from "../core/permission/permission";
@@ -235,7 +236,7 @@ export function SettingsPanel({ onClose, onSessionRecovery, onUsageStats, initia
   const [userConfig, setUserConfig] = useState<UserConfig>(defaultUser);
   const [saved, setSaved] = useState(false);
   const [showKeys, setShowKeys] = useState<Record<string, boolean>>({});
-  const [dynamicModels, setDynamicModels] = useState<Record<string, Array<{ id: string; name: string; contextWindow?: number }>>>({});
+  const [dynamicModels, setDynamicModels] = useState<Record<string, Array<{ id: string; name: string; contextWindow?: number; catalogOnly?: boolean }>>>({});
   const [refreshingModels, setRefreshingModels] = useState<Record<string, boolean>>({});
   const [refreshStatus, setRefreshStatus] = useState<Record<string, string>>({});
   // Custom OpenAI-compatible provider form (通用协议配置)
@@ -281,7 +282,7 @@ export function SettingsPanel({ onClose, onSessionRecovery, onUsageStats, initia
       const stored = getSettingJSON<Record<string, Array<{ id: string; name: string; contextWindow?: number }>>>("codem-dynamic-models", {});
       if (stored && Object.keys(stored).length > 0) {
         // 合并手动添加的自定义模型（服务器列表外），与 engine.loadDynamicModels 保持一致
-        setDynamicModels(mergeCustomModels(stored));
+        setDynamicModels(getMergedDynamicModels()) /* 服务器 + 手动 + 内置目录 */;
       }
     } catch (e) { console.warn('[SettingsPanel] load dynamic models:', e) }
 
@@ -627,8 +628,8 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
       setRefreshStatus((prev) => ({ ...prev, [providerId]: "该模型已存在" }));
       return;
     }
-    // 同步合并进当前动态模型视图（✓ 计数即时更新）
-    setDynamicModels((prev) => mergeCustomModels(prev || {}));
+    // 同步合并进当前动态模型视图（✓ 计数即时更新）：重建 = 服务器缓存 + 手动 + 内置目录
+    setDynamicModels(getMergedDynamicModels());
     setRefreshStatus((prev) => ({ ...prev, [providerId]: "" }));
     // 通知引擎重载：模型选择器/方案立即可用
     window.dispatchEvent(new Event("codem-settings-changed"));
@@ -636,11 +637,10 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
 
   const handleRemoveCustomModel = (providerId: string, name: string) => {
     removeCustomModel(providerId, name);
-    // 重建视图 = 服务器缓存 + 剩余自定义（不基于 prev filter，
+    // 重建视图 = 服务器缓存 + 剩余自定义 + 内置目录（不基于 prev filter，
     // 避免服务器列表本身含同名模型时被误滤）
     try {
-      const cached = getSettingJSON<Record<string, Array<{ id: string; name: string; contextWindow?: number }>>>("codem-dynamic-models", {});
-      setDynamicModels(mergeCustomModels(cached));
+      setDynamicModels(getMergedDynamicModels());
     } catch (e) { console.warn('[SettingsPanel] rebuild models after remove:', e) }
     window.dispatchEvent(new Event("codem-settings-changed"));
   };
@@ -698,7 +698,7 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
         // Convert to {id, name, contextWindow} format.
         // 保留 contextWindow（用 ID 启发式推断），否则运行时窗口解析会回退
         // 128k，导致 1M 窗口模型（DeepSeek/Gemini/MiMo）过早压缩。
-        const models = serverModels.map((sm: any) => ({
+        const serverList = serverModels.map((sm: any) => ({
           id: sm.id,
           name: sm.id,
           contextWindow: sm.context_window || sm.contextWindow || inferContextWindow(sm.id),
@@ -706,15 +706,26 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
           supportsTools: sm.supports_tools ?? sm.supportsTools ?? true,
           supportsStreaming: sm.supports_streaming ?? sm.supportsStreaming ?? true,
         }));
+        // 服务器 /models 不列"能调用但未公开"的模型（实测 deepseek-v4-flash-vision-exp
+        // 不在列表里却返回 200），所以保存**并集**：服务器事实 + 内置目录兜底。
+        const models = mergeModelsWithCatalog(providerId, serverList);
+        const catalogOnly = models.filter((m) => m.catalogOnly).length;
 
         // Update state
         setDynamicModels((prev) => ({ ...prev, [providerId]: models }));
-        setRefreshStatus((prev) => ({ ...prev, [providerId]: `✓ 获取到 ${models.length} 个模型` }));
+        setRefreshStatus((prev) => ({
+          ...prev,
+          [providerId]:
+            `✓ 获取到 ${models.length} 个模型` +
+            (catalogOnly > 0 ? `（服务器 ${serverList.length} + 内置目录 ${catalogOnly}）` : ""),
+        }));
 
         // Persist to DB cache (merge with existing)
+        // 只落盘**服务器事实**，不落盘内置目录条目 —— 目录在读取处再做并集
+        // （否则目录条目会被冻进缓存，日后目录变动就反映不出来）。
         try {
           const existing = getSettingJSON<Record<string, any>>("codem-dynamic-models", {});
-          setSettingJSON("codem-dynamic-models", { ...existing, [providerId]: models });
+          setSettingJSON("codem-dynamic-models", { ...existing, [providerId]: serverList });
         } catch (e) { console.warn('[SettingsPanel] persist models:', e) }
 
         // Notify engine to reload
@@ -972,7 +983,10 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
                     const dynModels = dynamicModels[p.id];
                     if (dynModels && dynModels.length > 0) {
                       return dynModels.map(m => (
-                        <option key={m.id} value={m.id}>{p.name} - {m.name}</option>
+                        <option key={m.id} value={m.id}>
+                          {p.name} - {m.name}
+                          {m.catalogOnly ? "（内置目录，服务器未列出）" : ""}
+                        </option>
                       ));
                     }
                     // Static fallback

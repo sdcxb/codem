@@ -9,6 +9,7 @@
  */
 import { getSettingJSON, setSettingJSON } from "../storage/settings";
 import { flushDatabase } from "../storage/database";
+import { normalizeModelId } from "./model-catalog";
 
 // ========== Types ==========
 
@@ -67,7 +68,7 @@ const BUILTIN_PROFILES: ModelProfile[] = [
     enabled: true,
     isBuiltIn: true,
     slots: {
-      vision: { provider: "deepseek", model: "DeepSeek-V4-Flash-Vision-Exp" },
+      vision: { provider: "deepseek", model: "deepseek-v4-flash-vision-exp" },
     },
   },
   {
@@ -81,7 +82,7 @@ const BUILTIN_PROFILES: ModelProfile[] = [
       subagent:   { provider: "deepseek", model: "deepseek-v4-flash", reasoningEffort: "low" },
       memory:     { provider: "deepseek", model: "deepseek-v4-flash", reasoningEffort: "low" },
       compaction: { provider: "deepseek", model: "deepseek-v4-pro" },
-      vision:     { provider: "deepseek", model: "DeepSeek-V4-Flash-Vision-Exp" },
+      vision:     { provider: "deepseek", model: "deepseek-v4-flash-vision-exp" },
     },
   },
   {
@@ -95,7 +96,7 @@ const BUILTIN_PROFILES: ModelProfile[] = [
       subagent:   { provider: "deepseek", model: "deepseek-v4-flash", reasoningEffort: "low" },
       memory:     { provider: "deepseek", model: "deepseek-v4-flash", reasoningEffort: "low" },
       compaction: { provider: "deepseek", model: "deepseek-v4-pro" },
-      vision:     { provider: "deepseek", model: "DeepSeek-V4-Flash-Vision-Exp" },
+      vision:     { provider: "deepseek", model: "deepseek-v4-flash-vision-exp" },
     },
   },
   {
@@ -194,20 +195,34 @@ export class ModelProfileManager {
 
     // 1. Exact match
     if (profile.slots[slot]) {
-      return profile.slots[slot]!;
+      return this.normalizeSlot(profile.slots[slot]!);
     }
 
     // 2. Walk fallback chain
     let current: TaskSlot | null = SLOT_FALLBACK[slot];
     while (current) {
       if (profile.slots[current]) {
-        return profile.slots[current]!;
+        return this.normalizeSlot(profile.slots[current]!);
       }
       current = SLOT_FALLBACK[current];
     }
 
     // 3. No configuration found — caller uses engine default
     return null;
+  }
+
+  /**
+   * 槽位模型 id 归一化（第 74 波）。
+   *
+   * 历史版本把**显示名**当模型 id 存进了 slot（`DeepSeek-V4-Flash-Vision-Exp`），
+   * 而 DeepSeek API 对模型名大小写敏感 —— 实测该写法直接 400：
+   *   "The supported API model names are deepseek-flash, deepseek-v4-pro, but you passed …"
+   * 正确写法是 `deepseek-v4-flash-vision-exp`（HTTP 200）。
+   * 已保存的用户方案没法批量改，所以在**读取处**统一纠正。
+   */
+  private normalizeSlot(slot: ModelSlotConfig): ModelSlotConfig {
+    const normalized = normalizeModelId(slot.provider, slot.model);
+    return normalized === slot.model ? slot : { ...slot, model: normalized };
   }
 
   /** Get the fallback chain for a slot (for UI display) */

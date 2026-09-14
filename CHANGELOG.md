@@ -2,6 +2,62 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.16.24] - 2026-09-13 — 为什么模型下拉只有 2 个 DeepSeek 模型：服务器 /models 不是「可调用模型」的完整真相
+
+### 用户提问
+
+「之前改成从服务商获取模型列表，为什么 DeepSeek 只获取到两个模型、没有
+`deepseek-v4-flash-vision-exp`，而 DSH 能获取到？」
+
+### 实测（同一把 key 直连官方接口，脚本留在 `.preview-shot/probe-deepseek-*.mjs`）
+
+```
+GET  https://api.deepseek.com/v1/models
+     → 2 个：deepseek-flash, deepseek-v4-pro
+
+POST https://api.deepseek.com/v1/chat/completions  model=deepseek-v4-flash-vision-exp
+     → HTTP 200 ✅ 可正常调用
+POST https://api.deepseek.com/v1/chat/completions  model=DeepSeek-V4-Flash-Vision-Exp
+     → HTTP 400 ❌ "The supported API model names are deepseek-flash, deepseek-v4-pro, but you passed …"
+```
+
+三条结论：
+
+1. **服务器 `/models` 不是「可调用模型」的完整真相。** 视觉实验模型不在列表里，却能正常调用；
+   而且列表还会变 —— 这一侧实测已经从 `deepseek-v4-flash` 改名成 `deepseek-flash`。
+2. **DSH 之所以「能获取到」，是因为它的 DeepSeek 模型是静态目录**：
+   `dsh-llm-deepseek/lib/index.js` 的 `DEFAULT_MODELS` 里写死了
+   `deepseek-v4-flash` / `deepseek-v4-pro` / `deepseek-v4-flash-vision-exp`，
+   而它的 `listModels()` **根本不请求服务器**。Codem 之前只信服务器列表，于是这类
+   「能调用但未列出」的模型就消失了。
+3. **模型 id 大小写敏感**（实测 200 vs 400）。而 Codem 的内置方案
+   （`model-profile.ts`）把**显示名** `DeepSeek-V4-Flash-Vision-Exp` 当 id 用了 ——
+   视觉代理一旦走这个槽位，请求必然 400。
+
+### 修复
+
+- **新增内置模型目录 `src/core/llm/model-catalog.ts`**：`BUILTIN_MODEL_CATALOG`
+  （deepseek 三项，与 DSH 的 `DEFAULT_MODELS` 对齐）+ `mergeModelsWithCatalog()`
+  —— **服务器列表仍为事实来源**（它给出的模型全部保留，含改名后的新 id 与未来新模型），
+  目录只做并集兜底，补进来的条目标记 `catalogOnly: true`，界面如实标注
+  「（内置目录，服务器未列出）」，不假装是服务器给的。
+- **读取处统一走并集**：`LLMEngine.loadDynamicModels`（**升级后即使用户从不点刷新，
+  视觉模型也会出现在下拉里** —— 缓存本身仍只保存服务器事实，不被目录污染）、
+  `model-config.ts` 的模型列表/默认模型解析、设置页的动态模型视图与刷新结果
+  （刷新状态显示「服务器 N + 内置目录 M」）。
+- **id 大小写纠正**：`normalizeModelId()` + `resolveSlot()` 归一化，把历史上保存的
+  显示名当 id 的槽位纠正成可调用的小写 id（用户方案无需手动改）；内置方案的 vision 槽位
+  直接改成小写；`vision-proxy` 与 `capability-detector` 把该模型登记为支持视觉。
+- **退役两条把这个 bug 写进断言的用例**（`v1.5.2-full-regression`、`vision-proxy-media`
+  里断言 `DeepSeek-V4-Flash-Vision-Exp` 的地方），改为断言实测可调用的小写 id。
+
+### 验证
+
+- 新增 `src/test/model-catalog.test.ts` CAT-1~7：并集语义（服务器优先、目录独有才标记、
+  大小写去重、未知新模型不丢）、**用户场景回归**（缓存只有那两个模型时视觉模型必须出现）、
+  id 归一化（显示名→可用 id，自定义模型不被改写）、内置方案槽位与目录一致
+- 实测数据写进模块注释与 CHANGELOG，脚本可复跑（`node .preview-shot/probe-deepseek-models.mjs`）
+
 ## [1.16.23] - 2026-09-13 — 「删除技能卡死」真正根因：确认弹窗被压在模态窗口后面（看不见、点不到），而 Radix 已锁死 body
 
 ### 用户提供的落盘轨迹给出了决定性证据

@@ -467,10 +467,10 @@ describe("G. 模型配置系统", () => {
 
     it("default profile 有 vision slot", () => {
       const defaultSlots = {
-        vision: { provider: "deepseek", model: "DeepSeek-V4-Flash-Vision-Exp" },
+        vision: { provider: "deepseek", model: "deepseek-v4-flash-vision-exp" },
       };
       expect(defaultSlots.vision).toBeDefined();
-      expect(defaultSlots.vision.model).toBe("DeepSeek-V4-Flash-Vision-Exp");
+      expect(defaultSlots.vision.model).toBe("deepseek-v4-flash-vision-exp");
     });
 
     it("standard (常规模式) 包含所有 slot", () => {
@@ -479,13 +479,13 @@ describe("G. 模型配置系统", () => {
         subagent: { provider: "deepseek", model: "deepseek-v4-flash" },
         memory: { provider: "deepseek", model: "deepseek-v4-flash" },
         compaction: { provider: "deepseek", model: "deepseek-v4-pro" },
-        vision: { provider: "deepseek", model: "DeepSeek-V4-Flash-Vision-Exp" },
+        vision: { provider: "deepseek", model: "deepseek-v4-flash-vision-exp" },
       };
       expect(standardSlots.chat.model).toBe("deepseek-v4-pro");
       expect(standardSlots.subagent.model).toBe("deepseek-v4-flash");
       expect(standardSlots.memory.model).toBe("deepseek-v4-flash");
       expect(standardSlots.compaction.model).toBe("deepseek-v4-pro");
-      expect(standardSlots.vision.model).toBe("DeepSeek-V4-Flash-Vision-Exp");
+      expect(standardSlots.vision.model).toBe("deepseek-v4-flash-vision-exp");
     });
 
     it("economy (经济模式) 使用 Flash 模型", () => {
@@ -494,7 +494,7 @@ describe("G. 模型配置系统", () => {
         subagent: { provider: "deepseek", model: "deepseek-v4-flash" },
         memory: { provider: "deepseek", model: "deepseek-v4-flash" },
         compaction: { provider: "deepseek", model: "deepseek-v4-pro" },
-        vision: { provider: "deepseek", model: "DeepSeek-V4-Flash-Vision-Exp" },
+        vision: { provider: "deepseek", model: "deepseek-v4-flash-vision-exp" },
       };
       expect(economySlots.chat.model).toBe("deepseek-v4-flash");
     });
@@ -525,11 +525,11 @@ describe("G. 模型配置系统", () => {
         deepseek: [
           { id: "deepseek-v4-flash", name: "DeepSeek V4 Flash" },
           { id: "deepseek-v4-pro", name: "DeepSeek V4 Pro" },
-          { id: "DeepSeek-V4-Flash-Vision-Exp", name: "DeepSeek V4 Flash Vision" },
+          { id: "deepseek-v4-flash-vision-exp", name: "DeepSeek V4 Flash Vision" },
         ],
       };
       expect(dynamicModels.deepseek.length).toBe(3);
-      expect(dynamicModels.deepseek[2].id).toBe("DeepSeek-V4-Flash-Vision-Exp");
+      expect(dynamicModels.deepseek[2].id).toBe("deepseek-v4-flash-vision-exp");
     });
 
     it("无动态模型时回退到静态列表", () => {
@@ -1202,7 +1202,7 @@ describe("S. 集成场景模拟", () => {
   it("S4. Profile 切换 → Slot 变更 → 后续 LLM 调用使用新模型", () => {
     // 1. 初始 profile
     let activeProfile = "default";
-    let chatSlot = { provider: "deepseek", model: "DeepSeek-V4-Flash-Vision-Exp" };
+    let chatSlot = { provider: "deepseek", model: "deepseek-v4-flash-vision-exp" };
 
     // 2. 切换到 standard
     activeProfile = "standard";

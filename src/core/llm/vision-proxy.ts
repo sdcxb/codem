@@ -133,6 +133,9 @@ export class VisionProxy {
     // MiMo — 只有 mimo-v2.5 支持图片理解，mimo-v2.5-pro 不支持
     if (modelLower === "mimo-v2.5") return true;
 
+    // DeepSeek 视觉实验模型（服务器 /models 不列它，但实测可正常调用并接受图片）
+    if (modelLower.startsWith("deepseek-v4-flash-vision")) return true;
+
     return false;
   }
 

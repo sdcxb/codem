@@ -382,7 +382,7 @@ describe("C. ModelProfile vision slot", () => {
     expect(found!.slots.chat!.provider).toBe("deepseek");
     expect(found!.slots.vision).toBeDefined();
     expect(found!.slots.vision!.provider).toBe("deepseek");
-    expect(found!.slots.vision!.model).toBe("DeepSeek-V4-Flash-Vision-Exp");
+    expect(found!.slots.vision!.model).toBe("deepseek-v4-flash-vision-exp");
   });
 
   it("VP-029: resolveSlot('vision') 在默认方案返回配置的 vision slot", () => {
@@ -392,7 +392,7 @@ describe("C. ModelProfile vision slot", () => {
     // Default profile now has vision slot configured
     expect(result).not.toBeNull();
     expect(result!.provider).toBe("deepseek");
-    expect(result!.model).toBe("DeepSeek-V4-Flash-Vision-Exp");
+    expect(result!.model).toBe("deepseek-v4-flash-vision-exp");
   });
 
   it("VP-030: resolveSlot('vision') 返回 standard 方案配置的 slot", () => {
@@ -401,7 +401,7 @@ describe("C. ModelProfile vision slot", () => {
     const result = pm.resolveSlot("vision" as TaskSlot);
     expect(result).not.toBeNull();
     expect(result!.provider).toBe("deepseek");
-    expect(result!.model).toBe("DeepSeek-V4-Flash-Vision-Exp");
+    expect(result!.model).toBe("deepseek-v4-flash-vision-exp");
   });
 
   it("VP-031: vision slot 可被 resolveSlot 解析", () => {
@@ -420,7 +420,7 @@ describe("C. ModelProfile vision slot", () => {
     pm.setActiveProfile("default");
     const profile = pm.getAll().find(p => p.id === "default");
     expect(profile!.slots.vision).toBeDefined();
-    expect(profile!.slots.vision!.model).toBe("DeepSeek-V4-Flash-Vision-Exp");
+    expect(profile!.slots.vision!.model).toBe("deepseek-v4-flash-vision-exp");
   });
 
   it("VP-033: standard 方案的 slots 中包含 vision", () => {
@@ -1655,9 +1655,9 @@ describe("I. 全场景端到端链路测试", () => {
     const result = await proxy.processMessages(msgs, "deepseek-v4-pro", "deepseek");
 
     expect(result.visionUsed).toBe(true);
-    expect(result.visionModel).toBe("DeepSeek-V4-Flash-Vision-Exp");
+    expect(result.visionModel).toBe("deepseek-v4-flash-vision-exp");
 
-    expectFetchCalled("api.deepseek.com", "DeepSeek-V4-Flash-Vision-Exp");
+    expectFetchCalled("api.deepseek.com", "deepseek-v4-flash-vision-exp");
 
     const blocks = result.messages[0].content as ContentBlock[];
     const descBlock = blocks.find(b => b.text.includes("图片描述"));
