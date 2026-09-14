@@ -1560,6 +1560,46 @@ flushStreamBuffer(); // flush all on unmount
     window.addEventListener("codem:db-save-failed", onDbSaveFail);
     unlistenDbSaveFail = () => window.removeEventListener("codem:db-save-failed", onDbSaveFail);
 
+    // 数据库致命错误（sql.js 模块 OOM/abort）：写入已经不可能成功，此时最重要的不是重试，
+    // 而是**把当前会话抢救到磁盘**并给用户一条可执行说明 —— 数据库内存耗尽时，
+    // 直接写 JSON 备份（不经过 sql.js）是唯一还走得通的路。
+    let unlistenDbFatal: (() => void) | undefined;
+    const onDbFatal = async (ev: Event) => {
+      const detail = (ev as CustomEvent).detail as { message?: string } | undefined;
+      const state = useAppStore.getState();
+      const sessionId = useProjectStore.getState().currentSession?.id || "";
+      let rescuePath = "";
+      try {
+        const msgs = state.messages || [];
+        if (msgs.length > 0) {
+          const { invoke } = (window as any).__TAURI__?.core || {};
+          if (invoke) {
+            const dir = await invoke("get_app_data_dir");
+            rescuePath = `${dir}codem-session-rescue-${Date.now()}.json`;
+            await invoke("write_file", {
+              path: rescuePath,
+              content: JSON.stringify({ sessionId, rescuedAt: new Date().toISOString(), messages: msgs }, null, 2),
+            });
+            console.log(`[Database] 会话已抢救到 ${rescuePath}（${msgs.length} 条消息）`);
+          }
+        }
+      } catch (e) {
+        console.warn("[Database] 会话抢救写入失败:", e);
+      }
+      useAppStore.getState().addGuidanceMessage({
+        id: `db-fatal-${Date.now()}`,
+        message:
+          `本地数据库内存耗尽，已停止写入（原因：${detail?.message || "out of memory"}）。` +
+          (rescuePath ? `当前会话已抢救到：${rescuePath}。` : "") +
+          "请**关闭并重新打开应用**后再继续（数据库会从磁盘上最近一次成功保存的状态恢复）；" +
+          "若反复出现，请清理旧会话/附件，或把上面那份 rescue 文件发我。",
+        timestamp: Date.now(),
+        consumed: false,
+      });
+    };
+    window.addEventListener("codem:db-fatal", onDbFatal as EventListener);
+    unlistenDbFatal = () => window.removeEventListener("codem:db-fatal", onDbFatal as EventListener);
+
     // 托盘"退出"菜单 → Rust emit quit-requested：先 flush 所有待写 DB 再真正退出
     // （此前托盘退出直接 exit，跳过 flush，丢最近防抖窗口的写入）。
     // Rust 侧有 2.5s 兜底强退，因此这里不需要超时保护（flush 不会 reject）。
@@ -1574,7 +1614,7 @@ flushStreamBuffer(); // flush all on unmount
       invoke?.("quit_app");
     }).then((un: () => void) => { unlistenQuitReq = un; });
 
-    return () => { unlisten?.(); unlistenCrash?.(); unlistenDbSaveFail?.(); unlistenQuitReq?.(); };
+    return () => { unlisten?.(); unlistenCrash?.(); unlistenDbSaveFail?.(); unlistenDbFatal?.(); unlistenQuitReq?.(); };
   }, []);
 
   const handleCloseChoice = useCallback(async (action: "tray" | "close", remember: boolean) => {

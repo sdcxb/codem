@@ -44,14 +44,28 @@ async function getDbPath(): Promise<string> {
   return DB_FILE_NAME;
 }
 
-function uint8ToBase64(data: Uint8Array): string {
-  let binary = "";
-  const chunkSize = 8192;
-  for (let i = 0; i < data.length; i += chunkSize) {
-    const chunk = data.subarray(i, i + chunkSize);
-    binary += String.fromCharCode(...chunk);
+/**
+ * 分块 base64 编码（导出给测试：分块边界的填充错位会立刻表现为字节不一致，
+ * 必须能被独立验证，而不是只靠"保存成功"这种间接证据）。
+ */
+export function encodeBytesToBase64(data: Uint8Array): string {
+  const CHUNK = 3 * 8192; // 3 的倍数：base64 每 3 字节 → 4 字符，分块不会产生填充错位
+  const parts: string[] = [];
+  for (let i = 0; i < data.length; i += CHUNK) {
+    const slice = data.subarray(i, Math.min(i + CHUNK, data.length));
+    let binary = "";
+    for (let j = 0; j < slice.length; j++) binary += String.fromCharCode(slice[j]);
+    parts.push(btoa(binary));
   }
-  return btoa(binary);
+  return parts.join("");
+}
+
+function uint8ToBase64(data: Uint8Array): string {
+  // 分块编码后一次 join：避免旧实现先拼出一个与数据库等大的"二进制字符串"，再 btoa 出
+  // 1.33 倍的第二份 —— 每次保存的峰值内存因此从 ~2.3× 降到 ~1.33×。
+  // 为什么值得为此改：保存是全库导出（sql.js 只能整库 export），长会话下数据库本身就是几十 MB，
+  // 峰值内存翻倍足以把渲染进程推到 OOM。
+  return encodeBytesToBase64(data);
 }
 
 function base64ToUint8(base64: string): Uint8Array {
@@ -63,8 +77,79 @@ function base64ToUint8(base64: string): Uint8Array {
   return bytes;
 }
 
-async function saveDatabase(): Promise<void> {
-  if (!db) return;
+/** 是否脏（自上次成功导出后有写入）。用来避免"没有变化也整库导出"。 */
+let dirty = false;
+/** 上次成功导出的时间戳（用于合并高频写入）。 */
+let lastSaveAt = 0;
+
+/**
+ * 高频写入的合并窗口：无论有多少次 persistDatabase，两次整库导出之间至少间隔这么久。
+ * 为什么需要：sql.js 只能整库 export，而 telemetry / cost-tracker / autosave / 设置写入
+ * 会在一次对话里触发几十次 —— 每次都导出几十 MB，峰值内存反复冲高，最终把渲染进程推爆。
+ */
+const MIN_SAVE_INTERVAL_MS = 2000;
+
+/** 标记数据库已变更（所有写入路径都应调用；persistDatabase 会代为调用）。 */
+export function markDatabaseDirty(): void {
+  dirty = true;
+}
+
+/** 测试用：复位脏标记与节流时间戳。 */
+export function __resetDirtyForTests(): void {
+  dirty = false;
+  lastSaveAt = 0;
+}
+
+/**
+ * 致命错误（sql.js 模块已 abort / 数据库镜像损坏）判定。
+ *
+ * 事故现场（用户控制台）：先是
+ *   `[loadAttachmentsForMessage] Failed: TypeError: xe[e[((s + 12) >> 2)]] is not a function`
+ * 然后 `Error: out of memory` 刷屏，`malformed database schema (sqlite_master) - table x already exists`，
+ * 接着 saveMessages / loadFeedback / store.updateSession / telemetry / readAll 全部失败 ——
+ * 这是 asm.js 堆扩展失败后 **模块被 abort** 的典型级联：之后每一次调用都报同样的错，
+ * 而调用方仍在无限重试（日志里同一条 OOM 出现几十次）。
+ *
+ * 识别出来才有可能终止级联（停止写、停止重试、给用户一条可执行说明并尽力抢救数据）。
+ */
+export function isFatalDbError(e: unknown): boolean {
+  const msg = e instanceof Error ? e.message : String(e);
+  return /out of memory|malformed database schema|database disk image is malformed|bad parameter or other API misuse/i.test(
+    msg,
+  );
+}
+
+/** sql.js 模块已 abort 后就再也救不回来；此标志用于停止一切写入与重试。 */
+let dbFatal = false;
+/** 致命错误事件名（App 监听 → 抢救当前会话 + 提示用户）。 */
+export const DB_FATAL_EVENT = "codem:db-fatal";
+
+/** 数据库是否已进入致命状态（模块不可用）。 */
+export function isDatabaseFatal(): boolean {
+  return dbFatal;
+}
+
+/** 复位致命状态（恢复成功后 / 测试隔离）。 */
+export function resetDatabaseFatalState(): void {
+  dbFatal = false;
+}
+
+function noteFatalDbError(e: unknown): void {
+  if (dbFatal) return; // 只报一次：避免几十条同样的 OOM 刷屏
+  dbFatal = true;
+  const detail = { message: e instanceof Error ? e.message : String(e) };
+  console.error("[Database] FATAL — sql.js 模块已不可用，停止写入并进入抢救流程:", detail.message);
+  try {
+    window.dispatchEvent(new CustomEvent(DB_FATAL_EVENT, { detail }));
+  } catch {
+    /* dispatch 失败不影响主流程 */
+  }
+}
+
+async function saveDatabase(force = false): Promise<void> {
+  if (!db || dbFatal) return;
+  // 没有变化就不导出：整库 export 是最贵的一步
+  if (!dirty && !force) return;
   try {
     if (!isTauri()) {
       console.warn("[Database] Browser mode, cannot save");
@@ -73,11 +158,22 @@ async function saveDatabase(): Promise<void> {
     const data = db.export();
     const { invoke } = (window as any).__TAURI__.core;
     const path = await getDbPath();
+    // 原子写：先写临时文件再改名覆盖。
+    // 为什么必须这样：整库 base64 写到一半被杀进程/断电，磁盘上就是一个"半截 DB"，
+    // 下次启动会报 malformed database schema（本仓库里那个 codem-db-broken.bin 就是这么来的）。
+    const tmpPath = `${path}.tmp`;
     const base64 = uint8ToBase64(data);
-    await invoke("write_file", { path, content: base64, encoding: "base64" });
+    await invoke("write_file", { path: tmpPath, content: base64, encoding: "base64" });
+    await invoke("rename_file", { oldPath: tmpPath, newPath: path });
+    dirty = false;
+    lastSaveAt = Date.now();
     console.debug(`[Database] Saved ${data.length} bytes to file`);
     noteSaveSucceeded();
   } catch (e) {
+    if (isFatalDbError(e)) {
+      noteFatalDbError(e);
+      return; // 不再重试：模块已死，重试只会继续刷屏
+    }
     // 不 rethrow（保持写链不中断），但必须让失败可见：
     // 之前这里仅 console.error，磁盘满/权限问题导致保存持续失败时
     // 调用方（含退出前 flushDatabase）完全无感知 —— 静默丢数据。
@@ -154,22 +250,26 @@ let saveScheduled = false;
 let saveChain: Promise<void> = Promise.resolve();
 
 /** Queue a save behind any in-flight save; failures don't break the chain. */
-function enqueueSave(): Promise<void> {
-  const run = saveChain.then(() => saveDatabase());
+function enqueueSave(force = false): Promise<void> {
+  const run = saveChain.then(() => saveDatabase(force));
   saveChain = run.catch(() => {});
   return run;
 }
 
 function saveDatabaseAsync(): void {
+  if (dbFatal) return; // 模块已死：不再调度任何写入
   // Debounce: if multiple writes happen in quick succession (e.g. createSession + updateProject),
   // only persist once after the last write
   if (saveDebounceTimer) clearTimeout(saveDebounceTimer);
   saveScheduled = true;
+  // 与上次成功导出至少间隔 MIN_SAVE_INTERVAL_MS：把"对话里的几十次写入"合并成少数几次整库导出
+  const sinceLast = Date.now() - lastSaveAt;
+  const delay = Math.max(500, MIN_SAVE_INTERVAL_MS - sinceLast);
   saveDebounceTimer = setTimeout(() => {
     saveDebounceTimer = null;
     saveScheduled = false;
     enqueueSave().catch(e => console.error("[Database] Async save failed:", e));
-  }, 500);
+  }, delay);
 }
 
 async function loadDatabaseFromStorage(): Promise<Uint8Array | null> {
@@ -770,10 +870,14 @@ CREATE INDEX IF NOT EXISTS idx_telemetry_session ON telemetry_events(session_id)
 CREATE INDEX IF NOT EXISTS idx_telemetry_name ON telemetry_events(event_name);
 `;
 
+/** sql.js 模块（initSqlJs 的解析结果）。缓存下来供 importDatabase 复用。 */
+let sqlJsModule: any = null;
+
 export async function initDatabase(): Promise<SqlJsDatabase> {
   if (db) return db;
 
   const SQL = await initSqlJs();
+  sqlJsModule = SQL;
 
   const existingData = await loadDatabaseFromStorage();
   if (existingData) {
@@ -877,7 +981,7 @@ const migrations = [
     console.warn("[Database] Failed to fix corrupted reasoning:", e);
   }
 
-  await enqueueSave();
+  await enqueueSave(true);
   return db;
 }
 
@@ -900,22 +1004,21 @@ export function getDatabase(): SqlJsDatabase {
 }
 
 export function persistDatabase(): void {
-saveDatabaseAsync();
+  markDatabaseDirty();
+  saveDatabaseAsync();
 }
 
 /** Flush any pending debounced save immediately. Resolves when the pending write chain has
  *  settled, so callers (e.g. close-requested) can await it before quitting. */
 export function flushDatabase(): Promise<void> {
+  if (dbFatal) return saveChain; // 模块已死：不再尝试写盘
   if (saveDebounceTimer) {
     clearTimeout(saveDebounceTimer);
     saveDebounceTimer = null;
   }
-  // If a debounced save was scheduled (timer cleared above) or a save is still in flight,
-  // enqueue an immediate save so the latest state is written before quitting.
-  if (saveScheduled) {
-    saveScheduled = false;
-    enqueueSave();
-  }
+  saveScheduled = false;
+  // 退出/关窗路径必须**强制**写一次：即使此刻不脏（或节流窗口没到），也要保证最后状态落盘。
+  enqueueSave(true);
   return saveChain;
 }
 
@@ -935,11 +1038,23 @@ export function exportDatabase(): Uint8Array | null {
   return db.export();
 }
 
+/**
+ * 用一份数据库镜像替换当前内存库（恢复/导入用）。
+ *
+ * 旧实现写的是 `const SQL = initSqlJs(); new SQL.Database(data)` —— `initSqlJs()` 返回的是
+ * **Promise**，所以 `SQL.Database` 永远是 undefined，一调用就 `TypeError: SQL.Database is not a
+ * constructor`：也就是说"导入恢复"这条路以前根本走不通。现在复用 initDatabase 解析好的模块，
+ * 并顺手复位致命状态（这正是恢复路径的意义）。
+ */
 export function importDatabase(data: Uint8Array): void {
-  if (db) {
-    db.close();
+  if (!sqlJsModule) {
+    throw new Error("Database module not initialized; call initDatabase() first.");
   }
-  const SQL = initSqlJs();
-  db = new (SQL as any).Database(data);
+  if (db) {
+    try { db.close(); } catch { /* 已关闭 */ }
+  }
+  db = new sqlJsModule.Database(data);
+  dbFatal = false;
+  markDatabaseDirty();
   persistDatabase();
 }

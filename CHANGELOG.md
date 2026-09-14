@@ -2,6 +2,60 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.16.25] - 2026-09-14 — 本地数据库内存耗尽（out of memory 刷屏）：三条防线 —— 降峰值、原子写、认出致命错误后停止重试并抢救会话
+
+### 现象（用户控制台）
+
+```
+[loadAttachmentsForMessage] Failed: TypeError: xe[e[((s + 12) >> 2)]] is not a function
+[listMessages] Failed to convert row: Error: malformed database schema (sqlite_master) - table x already exists
+[cost-tracker.ts] / [Store] saveMessages / [loadFeedback] / [Telemetry] / [store.ts] …: Error: out of memory   ← 同一条刷屏几十次
+[extractMemories] Extracted 0 memories …          ← 功能静默失效
+```
+
+### 这是什么：一次 abort 之后的级联
+
+`sql-asm-memory-growth.js`（asm.js 版 sql.js）在堆扩展失败时会 **abort 整个模块**；abort 之后
+每一次调用都报同样的错 —— 那句 `xe[…] is not a function`（函数指针读成非法值）就是模块已死的
+典型签名，紧随其后的 OOM 与 `malformed database schema` 都是它的余波。真正的问题是**级联**：
+调用方仍在无限重试（日志里同一条 OOM 出现几十次），而**写入永远不成功** —— 消息写不进库。
+
+### 三条防线（层层都不需要"运气"）
+
+1. **削掉保存的尖峰内存 + 合并高频写入**（`src/core/storage/database.ts`）
+   - 旧实现每次保存都：`db.export()`（整库一份）→ 拼一个**与库等大的二进制字符串** → `btoa`
+     再出 1.33 倍的第二份 —— 峰值约 2.3× 库大小；现在改成分块编码后一次 join，峰值降到约 1.33×。
+   - 整库 `export()` 是 sql.js 唯一的落盘方式，那就**别那么频繁地做**：新增脏标记（没有变化
+     不导出）+ **2 秒节流窗口**（telemetry / cost-tracker / autosave / 设置写入在一次对话里
+     会轮番触发几十次，过去就是几十次全库导出）。
+2. **原子写盘**：先写 `codem-db.bin.tmp` 再 `rename` 覆盖。整库 base64 写到一半被杀进程/断电，
+   磁盘上就是"半截 DB"，下次启动直接 `malformed database schema`（仓库里那个
+   `codem-db-broken.bin` 就是这么来的）。
+3. **认出致命错误后停止重试 + 抢救会话**：新增 `isFatalDbError()`（OOM / malformed schema /
+   database disk image is malformed / bad parameter or other API misuse）与 `DB_FATAL_EVENT`：
+   - **只报一次**（不再刷屏），并**停止一切后续写入与重试**（重试一个已死的模块毫无意义）；
+   - App 收到事件后**不经过 sql.js** 把当前会话写入
+     `%APPDATA%\com.codem.app\codem-session-rescue-<时间戳>.json`，并提示用户"关闭重开应用 +
+     把 rescue 文件发我" —— 数据库这条路已经断了，只有直写 JSON 还能保住用户的消息。
+   - 顺带修掉 `importDatabase()`：旧实现 `const SQL = initSqlJs(); new SQL.Database(data)` 把
+     **Promise** 当构造函数用，一调用必抛 `TypeError: SQL.Database is not a constructor` ——
+     也就是说"导入恢复"这条路以前根本走不通。现在复用已解析的模块并复位致命状态。
+
+### 验证
+
+- 新增 `src/test/database-oom-defense.test.ts`（DB-OOM-1~6）：致命错误识别、脏标记 + 节流窗口
+  （**800ms 间隔的连续写入只导出一次**）、原子写（**绝不直接写目标文件**）、致命错误只报一次且
+  停止后续写入、分块 base64 严格无损（含 24576 边界与 100000 字节）、`importDatabase` 可用
+- **双向验证**：把三处修复临时改回旧行为 → DB-OOM-2 / DB-OOM-3 **立刻失败**；恢复后全绿
+- 全量用例、tsc、UI 审计、css-contract 见 PROJECT-GUIDE 版本表
+
+### 还没做完的（下一波，先记下来）
+
+- **换引擎**：asm.js 版堆扩展只能"拷贝整个堆"，大库下既慢又容易失败；`sql-wasm.js` 的线性内存
+  更省更好扩。
+- **控库体积**：本机实测 `session_events` 3.8 MB（2130 行，只增不减）、`tool_calls.result` 2.6 MB；
+  长会话应当有保留策略（事件裁剪 / 大工具结果落盘只存引用 / 定期 VACUUM）。
+
 ## [1.16.24] - 2026-09-13 — 为什么模型下拉只有 2 个 DeepSeek 模型：服务器 /models 不是「可调用模型」的完整真相
 
 ### 用户提问

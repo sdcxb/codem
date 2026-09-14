@@ -41,6 +41,14 @@ function mockTauri(): void {
           return null;
         }
         if (cmd === "delete_file") return null;
+        // 第 75 波起保存改为原子写：write_file(.tmp) → rename_file(覆盖目标)
+        if (cmd === "rename_file") {
+          if (failWrites > 0) {
+            failWrites -= 1;
+            throw new Error("No space left on device");
+          }
+          return null;
+        }
         throw new Error(`unexpected invoke: ${cmd}`);
       },
     },
