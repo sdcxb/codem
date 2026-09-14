@@ -116,6 +116,10 @@ export async function deletePath(path: string): Promise<void> {
   }
 }
 
+export async function renameFile(oldPath: string, newPath: string): Promise<void> {
+  await tauriInvoke("rename_file", { oldPath, newPath });
+}
+
 /**
  * 追加一行文本到文件（不存在则创建，含父目录）。用于诊断轨迹落盘：
  * 追加比整文件重写便宜，也不会因为写一半崩掉而丢掉已有线索。

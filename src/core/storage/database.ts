@@ -1,10 +1,16 @@
-// FIX: 使用 sql-asm-memory-growth.js 而非 sql-asm.js。
-// sql-asm.js 使用固定 21MB asm.js 内存堆，当会话数据（大量消息 +
-// 大工具结果）使 SQLite 内存分配超过堆容量时，底层 memory.fill 越界
-// 抛出 "trap: invalid memory.fill"（OOM），导致 DB 实例损坏、后续所有
-// 保存/读取/telemetry 全部失败（用户报告：改造长会话后 saveMessages
-// 持续崩溃）。memory-growth 版本提供 grow() 自动扩展堆，无此限制。
-import initSqlJs, { type Database as SqlJsDatabase } from "sql.js/dist/sql-asm-memory-growth.js";
+// 第 76 波：改用 **WASM** 版 sql.js。
+//
+// 为什么这是"治本"而不是换个体位：asm.js 版（sql-asm-memory-growth）的内存是 JS 里的一块
+// 定型数组，**扩容只能整块复制**——库越大，扩容越慢、越可能分配失败；一旦失败，asm.js 会
+// abort 整个模块（用户控制台那屏 `xe[…] is not a function` + `out of memory` 刷屏就是它）。
+// WASM 版用的是线性内存，扩容走 `memory.grow`（页级、由引擎负责），不存在"复制整个堆"这一步，
+// 内存占用也更省。代价是需要把 `sql-wasm.wasm` 随包发出去（Vite 已 assetsInclude **/*.wasm）。
+//
+// 兜底：万一 wasm 资源没打进包（打包/资源缺失），自动回退 asm.js —— 宁可慢，也不能打不开应用。
+import initSqlJsWasm from "sql.js/dist/sql-wasm.js";
+import initSqlJsAsm from "sql.js/dist/sql-asm-memory-growth.js";
+import sqlWasmUrl from "sql.js/dist/sql-wasm.wasm?url";
+import type { Database as SqlJsDatabase } from "sql.js";
 
 let db: SqlJsDatabase | null = null;
 /** FTS5 可用性标志 — sql.js 可能不支持 FTS5，创建失败后避免重复报错 */
@@ -872,17 +878,46 @@ CREATE INDEX IF NOT EXISTS idx_telemetry_name ON telemetry_events(event_name);
 
 /** sql.js 模块（initSqlJs 的解析结果）。缓存下来供 importDatabase 复用。 */
 let sqlJsModule: any = null;
+/** 实际使用的引擎（wasm / asm）——日志与诊断用。 */
+let engineKind: "wasm" | "asm" | "unknown" = "unknown";
+
+/** 当前引擎类型（测试与诊断）。 */
+export function getDatabaseEngine(): "wasm" | "asm" | "unknown" {
+  return engineKind;
+}
+
+/**
+ * 初始化 sql.js：优先 WASM，失败则回退 asm.js（并说明原因，不静默）。
+ * 测试环境（vitest，MODE=test）直接用 asm：wasm 资源在 Node 下要读磁盘文件，没必要拖慢测试。
+ */
+async function loadSqlJsEngine(): Promise<any> {
+  const isTest = (import.meta as any)?.env?.MODE === "test" || (import.meta as any)?.env?.VITEST === "true";
+  if (isTest) {
+    engineKind = "asm";
+    return await initSqlJsAsm();
+  }
+  try {
+    const mod = await initSqlJsWasm({ locateFile: () => sqlWasmUrl });
+    engineKind = "wasm";
+    console.log(`[Database] sql.js 引擎：wasm（${sqlWasmUrl}）`);
+    return mod;
+  } catch (e) {
+    console.warn("[Database] wasm 引擎初始化失败，回退 asm.js（内存增长靠整块复制，大库下更脆弱）:", e);
+    engineKind = "asm";
+    return await initSqlJsAsm();
+  }
+}
 
 export async function initDatabase(): Promise<SqlJsDatabase> {
   if (db) return db;
 
-  const SQL = await initSqlJs();
+  const SQL = await loadSqlJsEngine();
   sqlJsModule = SQL;
 
   const existingData = await loadDatabaseFromStorage();
   if (existingData) {
     try {
-      db = new SQL.Database(existingData);
+      db = new SQL.Database(existingData) as SqlJsDatabase;
       // Verify the loaded database is not corrupt. If it is, back up the bad file and rebuild
       // fresh instead of running on a broken database (which surfaces as
       // "database disk image is malformed" on the next query).
@@ -893,7 +928,7 @@ export async function initDatabase(): Promise<SqlJsDatabase> {
         await backupCorruptDatabase(existingData);
         await discardCorruptDatabase();
         db.close();
-        db = new SQL.Database();
+        db = new SQL.Database() as SqlJsDatabase;
         console.log("[Database] Created new database after corruption recovery");
       } else {
         console.log("[Database] Loaded existing database");
@@ -903,11 +938,11 @@ export async function initDatabase(): Promise<SqlJsDatabase> {
       await backupCorruptDatabase(existingData);
       await discardCorruptDatabase();
       try { db?.close(); } catch { /* already closed */ }
-      db = new SQL.Database();
+      db = new SQL.Database() as SqlJsDatabase;
       console.log("[Database] Created new database after corruption recovery");
     }
   } else {
-    db = new SQL.Database();
+    db = new SQL.Database() as SqlJsDatabase;
     console.log("[Database] Created new database");
   }
 
@@ -1026,6 +1061,143 @@ export function isFts5Available(): boolean {
   return ftsAvailable;
 }
 
+/** 数据库文件占用（页数 × 页大小）——维护前后对比用，不需要 VACUUM 也能读。 */
+export function databaseSizeBytes(): number {
+  if (!db) return 0;
+  try {
+    const pageCount = db.exec("PRAGMA page_count")?.[0]?.values?.[0]?.[0] as number | undefined;
+    const pageSize = db.exec("PRAGMA page_size")?.[0]?.values?.[0]?.[0] as number | undefined;
+    if (!pageCount || !pageSize) return 0;
+    return pageCount * pageSize;
+  } catch {
+    return 0;
+  }
+}
+
+export interface MaintenanceResult {
+  sizeBefore: number;
+  sizeAfter: number;
+  reclaimed: number;
+  prunedEvents: number;
+  prunedTelemetry: number;
+  vacuumed: boolean;
+}
+
+/**
+ * 数据库维护：裁剪"只增不减"的表 + VACUUM 回收文件空间（第 76 波）。
+ *
+ * 为什么必须做：本地库是**整库常驻内存**的（sql.js），表只增不减 → 库越大，
+ * 每次保存的导出/编码峰值越大，最终推爆渲染进程（用户报的 out of memory）。
+ * 本机实测：`session_events` 3.8 MB（2130 行）、`tool_calls.result` 2.6 MB。
+ *
+ * 取舍（诚实说明）：
+ *   - `session_events` 是事件溯源的日志，用于回放/分叉；这里**每会话保留最新 N 条**，
+ *     更早的事件删除。老会话的历史细节会让位给"应用还能跑"。
+ *   - `telemetry_events` 是本地遥测，只保留最近若干天。
+ *   - 删除后 `VACUUM` 才能真正把文件缩小（SQLite 的删除只把页标记为空闲）。
+ */
+/**
+ * 数据库维护：清理**只增不减且只写不读语义**的数据 + VACUUM 回收文件空间（第 76 波）。
+ *
+ * 为什么必须做：本地库是**整库常驻内存**的（sql.js），库越大，每次保存的导出/编码峰值越大，
+ * 最终推爆渲染进程（用户报的 out of memory）。
+ *
+ * ⚠️ 审计发现（本波自查，重要）：**默认不再裁剪 `session_events`**。
+ * 事件日志不是"日志"，而是**被当作状态读取**的：`event-projection.ts`（4 处）从事件重建投影、
+ * `runtime-invariants.ts` 靠回放检查不变量、`preset-discovery` / `feedback` / `postmortem` /
+ * `time-context` / `session-search` / `ui-trajectory` / `sync-engine` 都在 readAll。
+ * 按 seq 截断尾部会让投影缺段、让不变量检查看到"事件序列不完整" —— 那是**悄悄改数据**，
+ * 不是维护。要安全缩小事件日志，正确做法是**写快照事件**（把投影状态固化成一个
+ * `session_snapshot` 事件）之后再丢掉快照之前的事件；那是一次需要设计的事（见 CHANGELOG 的
+ * "留给下一波"）。因此这里把 `keepEventsPerSession` 默认设为 `0`（不裁剪），保留参数供
+ * 快照式压缩落地后显式开启。
+ *
+ * 会做的清理：
+ *   - `telemetry_events`：本地遥测，按天保留（只用于本地统计，删除不影响任何状态重建）；
+ *   - `VACUUM`：删除后回收文件空间（带两个护栏，见下）。
+ */
+export function runDatabaseMaintenance(
+  opts: { keepEventsPerSession?: number; keepTelemetryDays?: number; vacuumMaxBytes?: number } = {},
+): MaintenanceResult {
+  /** 0 = 不裁剪事件（默认）：事件日志被投影/不变量当作状态读取，见上面的说明 */
+  const keepEvents = opts.keepEventsPerSession ?? 0;
+  const keepTelemetryDays = opts.keepTelemetryDays ?? 7;
+  /** 超过这个体积就不在启动路径上 VACUUM（它在内存里整库重写一遍，大库会卡界面） */
+  const vacuumMaxBytes = opts.vacuumMaxBytes ?? 256 * 1024 * 1024;
+  const result: MaintenanceResult = {
+    sizeBefore: databaseSizeBytes(),
+    sizeAfter: 0,
+    reclaimed: 0,
+    prunedEvents: 0,
+    prunedTelemetry: 0,
+    vacuumed: false,
+  };
+  if (!db || dbFatal) return { ...result, sizeAfter: result.sizeBefore };
+
+  try {
+    if (keepEvents > 0) {
+      // 显式开启时也**永不裁剪 session_meta**（预设归属/反馈状态靠它）。
+      // 只有事件日志改为"快照 + 截断"之后，这个开关才应该被打开。
+      db.run(
+        `DELETE FROM session_events WHERE event_type <> 'session_meta' AND seq NOT IN (
+           SELECT seq FROM session_events se2
+           WHERE se2.session_id = session_events.session_id
+           ORDER BY seq DESC LIMIT ?
+         )`,
+        [keepEvents],
+      );
+      result.prunedEvents = Number(db.exec("SELECT changes()")?.[0]?.values?.[0]?.[0] ?? 0);
+    }
+
+    const cutoff = Date.now() - keepTelemetryDays * 24 * 60 * 60 * 1000;
+    db.run("DELETE FROM telemetry_events WHERE timestamp < ?", [cutoff]);
+    result.prunedTelemetry = Number(db.exec("SELECT changes()")?.[0]?.values?.[0]?.[0] ?? 0);
+
+    if (result.prunedEvents > 0 || result.prunedTelemetry > 0) {
+      // VACUUM 会把整库在内存里重写一遍：只有"真有可回收空间"且库不算大时才做 ——
+      // 否则宁可不回收，也不能在启动路径上卡住界面（这正是本波要治的那类自我伤害）。
+      const freeRatio = freePageRatio();
+      if (result.sizeBefore > vacuumMaxBytes) {
+        console.log(
+          `[Database] 跳过 VACUUM：库 ${(result.sizeBefore / 1024 / 1024).toFixed(0)} MB 超过阈值 ` +
+            `${(vacuumMaxBytes / 1024 / 1024).toFixed(0)} MB（VACUUM 需整库重写）。空闲页 ${(freeRatio * 100).toFixed(1)}%，` +
+            `建议删除不再需要的旧会话后重启。`,
+        );
+      } else if (freeRatio < 0.05) {
+        console.log(`[Database] 跳过 VACUUM：空闲页仅 ${(freeRatio * 100).toFixed(1)}%，回收收益极小`);
+      } else {
+        db.run("VACUUM");
+        result.vacuumed = true;
+      }
+      markDatabaseDirty();
+      saveDatabaseAsync();
+    }
+  } catch (e) {
+    console.warn("[Database] 维护失败（不影响使用）:", e);
+  }
+
+  result.sizeAfter = databaseSizeBytes();
+  result.reclaimed = Math.max(0, result.sizeBefore - result.sizeAfter);
+  console.log(
+    `[Database] 维护完成：事件裁剪 ${result.prunedEvents} 行、遥测 ${result.prunedTelemetry} 行，` +
+      `占用 ${(result.sizeBefore / 1024 / 1024).toFixed(1)} MB → ${(result.sizeAfter / 1024 / 1024).toFixed(1)} MB` +
+      `（回收 ${(result.reclaimed / 1024).toFixed(0)} KB${result.vacuumed ? "，已 VACUUM" : ""}）`,
+  );
+  return result;
+}
+
+/** 空闲页占比（判断 VACUUM 值不值得做） */
+function freePageRatio(): number {
+  if (!db) return 0;
+  try {
+    const free = Number(db.exec("PRAGMA freelist_count")?.[0]?.values?.[0]?.[0] ?? 0);
+    const total = Number(db.exec("PRAGMA page_count")?.[0]?.values?.[0]?.[0] ?? 0);
+    return total > 0 ? free / total : 0;
+  } catch {
+    return 0;
+  }
+}
+
 export function closeDatabase(): void {
   if (db) {
     db.close();
@@ -1053,7 +1225,7 @@ export function importDatabase(data: Uint8Array): void {
   if (db) {
     try { db.close(); } catch { /* 已关闭 */ }
   }
-  db = new sqlJsModule.Database(data);
+  db = new sqlJsModule.Database(data) as SqlJsDatabase;
   dbFatal = false;
   markDatabaseDirty();
   persistDatabase();

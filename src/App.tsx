@@ -542,6 +542,25 @@ useEffect(() => {
         const completed = getSetting("onboarding-completed");
         if (!completed) setShowOnboarding(true);
       } catch { /* DB not ready yet — will retry on next render */ }
+
+      // 第 76 波：DB 就绪后台跑一次维护 —— 裁剪"只增不减"的事件表 + 遥测 + VACUUM，
+      // 并清理过期的溢出文件（溢出把大文本搬到磁盘，磁盘同样需要保留策略）。
+      // 本地库整库常驻内存，表只增不减会让每次保存的导出峰值越来越大（用户报的 out of memory）。
+      // 放在启动后台执行：不阻塞首屏，失败也只记日志。
+      void (async () => {
+        try {
+          const { runDatabaseMaintenance } = await import("./core/storage/database");
+          runDatabaseMaintenance();
+        } catch (e) {
+          console.warn("[App] 数据库维护失败（不影响使用）:", e);
+        }
+        try {
+          const { pruneSpillFiles } = await import("./core/storage/spill");
+          await pruneSpillFiles();
+        } catch (e) {
+          console.warn("[App] 溢出文件清理失败（不影响使用）:", e);
+        }
+      })();
       // P0: DB 就绪后立即从 settings 同步读取正确的 model/mode/provider
       // 避免依赖 configureEngine 的异步重试链（engine 可能耗时才激活）
       try {

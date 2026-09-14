@@ -16,6 +16,7 @@
 import type { LLMEngine } from "../llm";
 import type { LoopEvent } from "../llm/agentic-loop";
 import * as MessageStorage from "../storage/message";
+import { retainToolResult } from "../storage/spill";
 import * as SessionStorage from "../storage/session";
 import { getSessionMessageBus } from "./bus";
 import { idleWatchdog } from "./idle-watchdog";
@@ -349,6 +350,26 @@ export async function executeSessionTurn(params: ExecuteSessionTurnParams): Prom
               resultStr = JSON.stringify(event.result || "");
             }
             resultStr = resultStr.replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, "").trim();
+            // 第 76 波（对齐 DSH dsh-spill-policy）：超大工具结果溢出到会话私有文件，
+            // 库里/上下文里只留 head+tail 预览和一行"全文在哪"的说明。
+            // 为什么在这里做：这是工具结果进库、进上下文的**唯一入口**，
+            // 在这里拦一次，DB 体积、后续每轮的上下文、以及每次整库导出的峰值都一起受控。
+            // 失败必须退回原文（宁可库大一点，也不能把工具结果变成一句"保存失败"）。
+            try {
+              const retained = await retainToolResult(resultStr, {
+                sessionId,
+                toolName: tc.name,
+                callId: tc.id,
+              });
+              if (retained.spilled) {
+                console.log(
+                  `[Spill] 工具结果 ${retained.totalBytes} 字节超过上限，已省略 ${retained.omittedBytes} 字节；全文：${retained.locator}`,
+                );
+              }
+              resultStr = retained.text;
+            } catch (e) {
+              console.warn("[Spill] 溢出保存失败，保留完整结果:", e);
+            }
             MessageStorage.updateToolCall(currentAssistantMsgId, tc.id, {
               status: "done",
               result: resultStr,

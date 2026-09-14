@@ -2,6 +2,82 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.16.26] - 2026-09-14 — 数据库治本：换 WASM 引擎 + 对齐 DSH 的溢出（spill）与保留策略
+
+### 先看 DSH 是怎么做的（本机 `app.asar.unpacked/node_modules/@deepseek-ai/`）
+
+| 包 | 做法 |
+| --- | --- |
+| `dsh-session-persistence-jsonl` | 会话的**权威存储是 append-only JSONL**（增量追加落盘，不存在"整库导出"这一步） |
+| `dsh-session-query-sqlite` | SQLite **只是可重建的查询索引**（FTS5 检索），不是主存储 |
+| `dsh-spill` / `dsh-spill-local` / `dsh-spill-policy` | 工具结果超过 `maxInlineBytes` → **全文写会话私有文件**，模型侧只留 head/tail 预览 + 定位符 + 说明行 |
+| `dsh-output-retention` | `ItemRetainer`/`TextRetainer`：按**字节**计预算、head/tail/headTail、**UTF-8 边界修剪**、"保留了什么/省略了什么"的 notice |
+| `dsh-atomic-write` | 独占创建随机后缀临时文件 + `rename` 落盘 |
+| `dsh-session-projection-cache` | 投影缓存节流 write-behind 检查点 |
+| `dsh-compaction-tool-result-pruner` | replay-safe 的 head/middle/tail 修剪 |
+
+一句话：**DSH 不让"一次性大文本"进主存储，也不做整库导出；SQLite 在那个架构里是可丢的索引。**
+Codem 的本地库是整库常驻内存 + 只能整库 `export()`，所以要把这三条策略搬过来。
+
+### 本波做了两条（用户要求的"两条都做"）
+
+1. **换 WASM 引擎**（`src/core/storage/database.ts`）
+   - asm.js 的堆是 JS 里的定型数组，**扩容只能整块复制**：库越大越慢、越可能分配失败，失败即
+     abort 整个模块（那屏 `xe[…] is not a function` + `out of memory` 刷屏）。WASM 版走
+     `memory.grow`（页级、引擎负责），没有"复制整个堆"这一步，占用也更省。
+   - 打包：`sql.js/dist/sql-wasm.wasm` 经 Vite（已 `assetsInclude **/*.wasm`）随包发出，
+     `locateFile` 指过去；**万一资源缺失自动回退 asm.js 并明确告警**（宁可慢，不能打不开应用）。
+   - 测试环境仍用 asm（wasm 在 Node 下要读磁盘文件，没必要拖慢测试）。
+2. **溢出（spill）+ 保留策略**（对齐 `dsh-spill-policy` / `dsh-output-retention`）
+   - 新增 `src/core/storage/spill.ts`：工具结果超过 **64 KB**（`DEFAULT_MAX_INLINE_BYTES`）时，
+     把**全文**写入 `<appData>/spill/<sessionId>/<tool>-<callId>.txt`（**原子写**：`.tmp` → `rename`），
+     入库与进入上下文的是 **head 8 KB + tail 8 KB 预览**（按字节、UTF-8 边界修剪，不会切出半个
+     中文/emoji）+ 一行说明：`（已省略 N 字节；完整结果保存在：<路径>）`。
+     未超限时**零 I/O**；溢出失败回退原文（宁可库大一点，也不能把结果变成"保存失败"）。
+   - 拦截点选在 `executor.ts` 的 `tool_complete` —— 工具结果**进库、进上下文的唯一入口**：
+     在这里拦一次，库体积、后续每轮上下文、以及每次整库导出的峰值一起受控。
+   - 启动后台跑一次 `runDatabaseMaintenance()`：清理 `telemetry_events`（保留 7 天）+ 按需 `VACUUM`，
+     并打印前后占用。**审计修正：默认不再裁剪 `session_events`** —— 见下一节。
+
+### 实测（不是估算）
+
+- 维护在**真实库副本**上（`.preview-shot/measure-db-maintenance.mjs`）：
+  `10.62 MB → 10.34 MB`（事件裁剪 0 行 / 遥测 960 行 / VACUUM 回收 **0.29 MB = 2.7%**）。
+  结论照实说：**本机这个 10 MB 库还不到维护能显著受益的规模** —— 说明把内存推爆的主因是
+  "每次保存整库导出 + asm.js 堆"，而不是这 10 MB 本身；维护的收益随库体积增长
+  （本机实测同库里 `session_events` 已 3.8 MB、`tool_calls.result` 2.1 MB，都是只增不减的）。
+- 溢出：200 KB 工具结果 → 入库文本 < 20 KB（省略约 197 KB），全文在溢出文件里（测试断言）。
+
+### 验证
+
+- 新增 `src/test/spill-retention.test.ts`（SPILL-1~5）：未超限零 I/O、超限后"预览 + 说明 + 全文落盘"
+  且原子写、UTF-8 边界安全（多字节 + emoji）、说明措辞、上限可配置
+- 全量 226 文件 / 4783 用例通过 · tsc 0 错误 · UI 审计 25 条规则 0/0 · css-contract 2745 类无变化
+- 真实应用（构建产物）启动日志确认：`[Database] sql.js 引擎：wasm` + 维护前后占用 + 保存往返成功
+
+### 本波自查（审计）修掉的三处
+
+1. **默认不再裁剪 `session_events`**（最重要的一条）。最初按"每会话保留最新 2000 条"实现，
+   审计发现事件日志**被当作状态读取**：`event-projection.ts`（4 处）从事件重建投影、
+   `runtime-invariants.ts` 靠回放检查不变量、`preset-discovery` / `feedback` / `postmortem` /
+   `time-context` / `session-search` / `ui-trajectory` / `sync-engine` 都在 `readAll`。
+   按 seq 截断尾部会让投影缺段、让不变量检查看到"事件序列不完整" —— 那是**悄悄改数据**。
+   正确处理是**写快照事件**（把投影固化成 `session_snapshot`）后再丢快照之前的事件，那需要设计。
+   现在默认 `keepEventsPerSession = 0`（不裁剪），参数保留给快照式压缩落地后开启；
+   显式开启时 `session_meta` 仍永不裁剪。
+2. **溢出文件必须有保留策略**：溢出把大文本从数据库搬到磁盘，只写不删等于把"库无限增长"换成
+   "溢出处无限增长"。新增 `pruneSpillFiles()`（保留 14 天、清掉崩溃残留的 `.tmp`、
+   认不出来历的文件不碰），时间戳写在文件名里（`list_directory` 不回传 mtime）。
+3. **VACUUM 加护栏**：VACUUM 会把整库在内存里重写一遍，库大时它自己就是卡顿源。
+   现在只在"确有可回收空间（空闲页 ≥5%）"且"库 < 256 MB"时执行，否则跳过并打印理由。
+
+### 与 DSH 的差距（诚实留给下一波）
+
+DSH 的权威存储是 **append-only JSONL**，SQLite 只是索引 —— 那才是"整库导出"这个动作从根上消失的
+做法。Codem 现在是"整库导出 + 削峰 + 节流 + 溢出 + 维护"，属于把同一条路上的风险压到最低，
+但**要彻底对齐需要把会话持久化换成 JSONL 追加 + SQLite 只做可重建索引**（并配套上面的
+快照式事件压缩），那是一次存储层重构，不在这一波里假装做完了。
+
 ## [1.16.25] - 2026-09-14 — 本地数据库内存耗尽（out of memory 刷屏）：三条防线 —— 降峰值、原子写、认出致命错误后停止重试并抢救会话
 
 ### 现象（用户控制台）
