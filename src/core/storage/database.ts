@@ -1083,6 +1083,10 @@ export interface MaintenanceResult {
   vacuumed: boolean;
   /** 本次被快照式压缩的会话数（第 77 波） */
   compactedSessions: number;
+  /** 本次回填进追加日志的消息数（第 78 波） */
+  backfilledMessages: number;
+  /** 本次从 SQLite 索引裁剪掉的消息数（第 78 波） */
+  trimmedIndexMessages: number;
 }
 
 /**
@@ -1125,6 +1129,8 @@ export async function runDatabaseMaintenance(
     vacuumMaxBytes?: number;
     /** 事件数超过该值的会话会被**快照式压缩**（0 = 关闭） */
     compactEventsOver?: number;
+    /** 每个会话在 SQLite 索引里至少保留多少条消息（0 = 不裁剪索引）（第 78 波） */
+    keepIndexedMessages?: number;
   } = {},
 ): Promise<MaintenanceResult> {
   /** 0 = 不裁剪事件（默认）：事件日志被投影/不变量当作状态读取，见上面的说明 */
@@ -1139,6 +1145,8 @@ export async function runDatabaseMaintenance(
    * 回放等价性有 `snapshot-compaction.test.ts` 的 SNAP-2 守着。
    */
   const compactEventsOver = opts.compactEventsOver ?? 5000;
+  /** 索引保留窗口：常用会话（≤500 条）完全不会触发裁剪 */
+  const keepIndexedMessages = opts.keepIndexedMessages ?? 500;
   const result: MaintenanceResult = {
     sizeBefore: databaseSizeBytes(),
     sizeAfter: 0,
@@ -1147,12 +1155,33 @@ export async function runDatabaseMaintenance(
     prunedTelemetry: 0,
     vacuumed: false,
     compactedSessions: 0,
+    backfilledMessages: 0,
+    trimmedIndexMessages: 0,
   };
   if (!db || dbFatal) return { ...result, sizeAfter: result.sizeBefore };
 
   try {
     if (compactEventsOver > 0) {
       result.compactedSessions = await compactOversizedSessionLogs(compactEventsOver);
+    }
+
+    // 第 78 波：先把历史回填进**追加日志**（权威存储），再裁剪 SQLite 索引。
+    // 顺序不能反 —— 裁剪的耐久性检查依赖日志里已经有这些消息。
+    if (keepIndexedMessages > 0) {
+      try {
+        const bridge = await import("./session-log-bridge");
+        result.backfilledMessages = await bridge.backfillAllSessions();
+        const trimmed = await bridge.trimIndexedMessages({ keepPerSession: keepIndexedMessages });
+        result.trimmedIndexMessages = trimmed.deletedMessages;
+        if (result.backfilledMessages > 0 || trimmed.deletedMessages > 0 || trimmed.skippedSessions > 0) {
+          console.log(
+            `[Database] 追加日志：回填 ${result.backfilledMessages} 条；索引裁剪 ${trimmed.deletedMessages} 条` +
+              `（跳过 ${trimmed.skippedSessions} 个会话：日志尚未覆盖）`,
+          );
+        }
+      } catch (e) {
+        console.warn("[Database] 追加日志回填/索引裁剪失败（跳过）:", e);
+      }
     }
 
     if (keepEvents > 0) {

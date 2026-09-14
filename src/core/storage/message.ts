@@ -1,3 +1,4 @@
+import { appendSessionMessage, appendMessageTombstone, readSessionMessages } from "./session-jsonl";
 import { getDatabase, persistDatabase, isFts5Available } from "./database";
 import { getEventLog } from "./event-log";
 import type { SessionEventType } from "./event-types";
@@ -107,6 +108,140 @@ function loadAttachmentsForMessage(db: any, messageId: string): MessageAttachmen
     console.warn("[loadAttachmentsForMessage] Failed:", e);
     return [];
   }
+}
+
+/**
+ * 有界裁剪 SQLite 索引 —— **只有确实已在 JSONL 里持久化的消息才允许删**（第 78 波）。
+ *
+ * 这是"SQLite 只是可重建索引"的落地：权威日志是 append-only JSONL，索引可以随体积增长被裁剪，
+ * 但裁剪必须满足**耐久性不变量**：一条消息只要还没进 JSONL，就绝不能被删。
+ * 读取侧（`loadMessagesWithDurableLog`）会把 JSONL 与索引合并，被裁掉的历史仍然读得到。
+ *
+ * 附加约束（数据完整性）：
+ *   - 带附件（attachments）的消息**不裁**：附件行不在 JSONL 里，裁消息会级联删掉附件；
+ *   - 每个会话至少保留最新 `keepPerSession` 条（默认 500），常用会话完全不触发裁剪。
+ *
+ * @returns 裁剪的消息数与跳过的会话数（因耐久性不足而放弃）
+ */
+export async function trimIndexedMessages(
+  opts: { keepPerSession?: number } = {},
+): Promise<{ deletedMessages: number; skippedSessions: number }> {
+  const keepPerSession = opts.keepPerSession ?? 500;
+  const out = { deletedMessages: 0, skippedSessions: 0 };
+  const db = getDatabase();
+
+  let sessionIds: string[] = [];
+  try {
+    const rows = db.exec("SELECT DISTINCT session_id FROM messages");
+    sessionIds = rows?.[0]?.values?.map((r) => String(r[0])) ?? [];
+  } catch {
+    return out;
+  }
+
+  const { durableMessageIds, flushSessionLogWrites } = await import("./session-jsonl");
+  // 先把在途的追加写等齐：耐久性检查必须看到最新日志，否则会"该裁的没裁"或误判
+  await flushSessionLogWrites();
+
+  for (const sessionId of sessionIds) {
+    try {
+      const countRows = db.exec("SELECT count(*) FROM messages WHERE session_id = ?", [sessionId]);
+      const total = Number(countRows?.[0]?.values?.[0]?.[0] ?? 0);
+      if (total <= keepPerSession) continue;
+
+      const durable = await durableMessageIds(sessionId);
+      if (durable.size === 0) {
+        out.skippedSessions++; // 老会话尚未回填 → 一律不动
+        continue;
+      }
+
+      const candidates = db.exec(
+        "SELECT id FROM messages WHERE session_id = ? AND hidden = 0 ORDER BY timestamp DESC LIMIT -1 OFFSET ?",
+        [sessionId, keepPerSession],
+      );
+      const candidateIds = candidates?.[0]?.values?.map((r) => String(r[0])) ?? [];
+      if (candidateIds.length === 0) continue;
+
+      const withAttachments = new Set(
+        db.exec(
+          "SELECT DISTINCT message_id FROM attachments WHERE session_id = ? AND message_id IS NOT NULL",
+          [sessionId],
+        )?.[0]?.values?.map((r) => String(r[0])) ?? [],
+      );
+      const deletable = candidateIds.filter((id) => durable.has(id) && !withAttachments.has(id));
+      if (deletable.length === 0) {
+        out.skippedSessions++;
+        continue;
+      }
+      for (const id of deletable) {
+        db.run("DELETE FROM messages WHERE id = ?", [id]); // tool_calls 由外键级联删除
+      }
+      out.deletedMessages += deletable.length;
+      console.log(`[Index] 会话 ${sessionId} 裁剪索引 ${deletable.length} 条（均在 JSONL 中；附件消息已跳过）`);
+    } catch (e) {
+      console.warn(`[Index] 会话 ${sessionId} 裁剪失败（跳过）:`, e);
+      out.skippedSessions++;
+    }
+  }
+  if (out.deletedMessages > 0) persistDatabase();
+  return out;
+}
+
+/**
+ * 读取会话历史：**权威日志（JSONL）+ SQLite 索引合并**（第 78 波）。
+ *
+ * 为什么需要合并：索引可以被有界裁剪（`trimIndexedMessages`），被裁掉的历史只存在于 JSONL 里。
+ * 合并规则：以 JSONL 为准（它就是权威），索引里多的（例如附件、尚未进日志的最近消息）也保留；
+ * 同 id 用 JSONL 的版本。排序按 timestamp。
+ *
+ * 这是同步接口 —— UI 的加载路径目前是同步的，所以这里只读**已缓存的日志**；
+ * 首次加载时若日志还没读进内存，则先用索引（随后 `hydrateSessionLog` 会补齐）。
+ */
+export function listMessagesMerged(sessionId: string, limit?: number): Message[] {
+  const fromIndex = listMessages(sessionId, limit);
+  const cached = cachedLogMessages.get(sessionId);
+  if (!cached || cached.length === 0) return fromIndex;
+
+  const merged = new Map<string, Message>();
+  for (const m of fromIndex) merged.set(m.id, m);
+  for (const rec of cached) {
+    const existing = merged.get(rec.id);
+    merged.set(rec.id, {
+      ...(existing ?? ({} as Message)),
+      id: rec.id,
+      role: rec.role as Message["role"],
+      content: rec.content,
+      timestamp: rec.timestamp,
+      ...(rec.reasoning ? { reasoning: rec.reasoning } : {}),
+      ...(rec.model ? { model: rec.model } : {}),
+      ...((rec as any).toolCalls ? { toolCalls: (rec as any).toolCalls } : {}),
+    } as Message);
+  }
+  const all = [...merged.values()].sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0));
+  return limit ? all.slice(-limit) : all;
+}
+
+/** 会话日志的内存镜像（由 hydrateSessionLog 填充） */
+const cachedLogMessages = new Map<string, Awaited<ReturnType<typeof readSessionMessages>>["messages"]>();
+
+/**
+ * 把会话的追加日志读进内存镜像（进入会话时调用一次）。
+ * 之后 listMessagesMerged 就能同步合并出被索引裁掉的历史。
+ */
+export async function hydrateSessionLog(sessionId: string): Promise<number> {
+  try {
+    const { messages } = await readSessionMessages(sessionId);
+    cachedLogMessages.set(sessionId, messages);
+    return messages.length;
+  } catch (e) {
+    console.warn("[SessionJSONL] 读取日志失败（回退到索引）:", e);
+    return 0;
+  }
+}
+
+/** 测试/会话关闭时清理镜像 */
+export function clearSessionLogCache(sessionId?: string): void {
+  if (sessionId) cachedLogMessages.delete(sessionId);
+  else cachedLogMessages.clear();
 }
 
 export function listMessages(sessionId: string, limit?: number): Message[] {
@@ -385,6 +520,10 @@ export function createMessage(message: Message, sessionId: string): void {
   }
 
   persistDatabase();
+  // 第 78 波：**权威日志是追加式 JSONL**（对齐 DSH 的 session-persistence-jsonl），
+  // SQLite 退化为"可重建的查询索引"。追加即持久 —— 这条路径不需要任何"整库导出"，
+  // 也是索引可以被有界裁剪（trimIndexedMessages）的前提。
+  void appendSessionMessage(sessionId, message);
 }
 
 export function updateMessage(id: string, update: Partial<Message>): void {
@@ -434,6 +573,24 @@ export function updateMessage(id: string, update: Partial<Message>): void {
     }
   }
   persistDatabase();
+  // 更新也要进追加日志（同 id 后写者胜）：流式回复、工具结果、状态变化都在这里落定
+  void appendUpdatedMessageToLog(id);
+}
+
+/**
+ * 把"当前索引里的这一条消息"追加进日志（更新路径用）。
+ * 读一次索引是为了拿到合并后的完整状态（含工具调用），避免把半截消息写进权威日志。
+ */
+async function appendUpdatedMessageToLog(id: string): Promise<void> {
+  try {
+    const message = getMessage(id);
+    if (!message) return;
+    const sessionId = (message as any).sessionId || (message as any).session_id;
+    if (!sessionId) return;
+    await appendSessionMessage(sessionId, message);
+  } catch (e) {
+    console.warn("[SessionJSONL] 更新消息追加日志失败（索引仍在）:", e);
+  }
 }
 
 export function appendToMessage(id: string, content: string): void {
@@ -470,8 +627,36 @@ export function updateToolCall(messageId: string, toolId: string, update: Partia
 
 export function deleteMessage(id: string): void {
   const db = getDatabase();
+  // 先取会话 id（删掉之后就查不到了）：墓碑需要它
+  const sessionId = currentSessionIdForMessage(id);
   db.run("DELETE FROM messages WHERE id = ?", [id]);
   persistDatabase();
+  if (sessionId) void appendMessageTombstone(sessionId, id);
+}
+
+/** 查一条消息属于哪个会话（删除前调用） */
+function currentSessionIdForMessage(messageId: string): string | null {
+  try {
+    const rows = getDatabase().exec("SELECT session_id FROM messages WHERE id = ?", [messageId]);
+    const value = rows?.[0]?.values?.[0]?.[0];
+    return value ? String(value) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 批量删除后补墓碑（第 78 波）。
+ *
+ * 为什么所有删除路径都要走这里：日志是权威存储、索引可重建 —— 任何"只删索引不记日志"的删除，
+ * 都会在下次从日志合并/重建时**复活**（压缩、清理旧消息、按范围删除都属于这条路径）。
+ */
+function appendTombstonesFor(sessionId: string, ids: string[]): void {
+  if (!sessionId || ids.length === 0) return;
+  void (async () => {
+    const { appendMessageTombstone: tombstone } = await import("./session-jsonl");
+    for (const id of ids) await tombstone(sessionId, id);
+  })();
 }
 
 /** Delete all messages before a given timestamp (exclusive) in a session */
@@ -495,6 +680,8 @@ export function deleteMessagesBefore(sessionId: string, timestamp: number): numb
     [sessionId, timestamp]
   );
   persistDatabase();
+  // 真删除必须留墓碑（否则下次从权威日志重建会复活）
+  appendTombstonesFor(sessionId, ids);
   return ids.length;
 }
 
