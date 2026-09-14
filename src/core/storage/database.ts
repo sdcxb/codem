@@ -1173,6 +1173,12 @@ export async function runDatabaseMaintenance(
         result.backfilledMessages = await bridge.backfillAllSessions();
         const trimmed = await bridge.trimIndexedMessages({ keepPerSession: keepIndexedMessages });
         result.trimmedIndexMessages = trimmed.deletedMessages;
+        const compactedLog = await bridge.compactOversizedSessionLogs();
+        if (compactedLog.compactedSessions > 0) {
+          console.log(
+            `[Database] 追加日志压缩：${compactedLog.compactedSessions} 个会话，省下 ${compactedLog.linesSaved} 行`,
+          );
+        }
         if (result.backfilledMessages > 0 || trimmed.deletedMessages > 0 || trimmed.skippedSessions > 0) {
           console.log(
             `[Database] 追加日志：回填 ${result.backfilledMessages} 条；索引裁剪 ${trimmed.deletedMessages} 条` +

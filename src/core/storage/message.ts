@@ -197,7 +197,7 @@ export async function trimIndexedMessages(
  * 首次加载时若日志还没读进内存，则先用索引（随后 `hydrateSessionLog` 会补齐）。
  */
 export function listMessagesMerged(sessionId: string, limit?: number): Message[] {
-  const fromIndex = listMessages(sessionId, limit);
+  const fromIndex = listMessagesFromIndex(sessionId, limit);
   const cached = cachedLogMessages.get(sessionId);
   if (!cached || cached.length === 0) return fromIndex;
 
@@ -244,7 +244,21 @@ export function clearSessionLogCache(sessionId?: string): void {
   else cachedLogMessages.clear();
 }
 
+/**
+ * 读取会话历史 —— **索引 + 追加日志合并**（第 79 波审计修正）。
+ *
+ * 审计发现（严重）：上一波实现了"索引可被有界裁剪"+"日志是权威"，但**读路径没接上**：
+ * `listMessages` 仍然只读索引，而全平台有几十处调用它（UI 的 `store.loadMessages`、
+ * agentic loop 的上下文、fork、导出、上下文监控、不变量检查…）。于是被裁掉的历史会**凭空消失**
+ * （真机上已经裁掉 112 条）。这里把合并收进 `listMessages` 本身：只要日志镜像已 hydrate
+ * （启动维护会回填并 hydrate），**所有调用点自动拿到完整历史**。
+ */
 export function listMessages(sessionId: string, limit?: number): Message[] {
+  return listMessagesMerged(sessionId, limit);
+}
+
+/** 只读 SQLite 索引（内部/诊断用）；对外请用 `listMessages`（会合并权威日志） */
+export function listMessagesFromIndex(sessionId: string, limit?: number): Message[] {
   const db = getDatabase();
   const limitClause = limit ? `LIMIT ${limit}` : "";
   const result = db.exec(
@@ -351,7 +365,26 @@ export function getAttachmentContent(id: string): string | undefined {
 export function getMessage(id: string): Message | null {
   const db = getDatabase();
   const result = db.exec("SELECT id, session_id, role, content, timestamp, model, prompt_tokens, completion_tokens, cost, status, reasoning, generated_files, retrieved_sources FROM messages WHERE id = ?", [id]);
-  if (result.length === 0 || result[0].values.length === 0) return null;
+  if (result.length === 0 || result[0].values.length === 0) {
+    // 第 79 波审计修正：索引被有界裁剪后，这个 id 可能只存在于权威日志里
+    // （全文搜索命中、跨会话引用、fork 的按 id 读取都会走到这里）。
+    // 回退到已 hydrate 的日志镜像，避免"搜索得到、点开却没有"的破图。
+    for (const records of cachedLogMessages.values()) {
+      const hit = records.find((m) => m.id === id);
+      if (hit) {
+        return {
+          id: hit.id,
+          role: hit.role as Message["role"],
+          content: hit.content,
+          timestamp: hit.timestamp,
+          ...(hit.reasoning ? { reasoning: hit.reasoning } : {}),
+          ...(hit.model ? { model: hit.model } : {}),
+          ...((hit as any).toolCalls ? { toolCalls: (hit as any).toolCalls } : {}),
+        } as Message;
+      }
+    }
+    return null;
+  }
 
   const row = result[0].values[0];
   const messageRow: MessageRow = {
@@ -579,14 +612,22 @@ export function updateMessage(id: string, update: Partial<Message>): void {
 
 /**
  * 把"当前索引里的这一条消息"追加进日志（更新路径用）。
- * 读一次索引是为了拿到合并后的完整状态（含工具调用），避免把半截消息写进权威日志。
+ *
+ * 审计修正（第 79 波）：这里以前靠 `getMessage(id)` 取 sessionId —— 而 `getMessage`
+ * 返回的 Message **不含 session id**（UI 侧本来也不关心它），于是 `sessionId` 一直是 undefined，
+ * 更新路径**从未真正写入日志**：日志里只有 createMessage 时的初版内容，
+ * 流式回复/工具结果的最新版本只存在于索引里 —— 一旦索引被裁剪或重建，内容就会**回退**。
+ * 现在直接查一次库拿 session_id（和删除路径同源），并在查不到时明确告警。
  */
 async function appendUpdatedMessageToLog(id: string): Promise<void> {
   try {
+    const sessionId = currentSessionIdForMessage(id);
+    if (!sessionId) {
+      console.warn(`[SessionJSONL] 更新消息 ${id} 时找不到所属会话，日志未更新（索引仍是最新）`);
+      return;
+    }
     const message = getMessage(id);
     if (!message) return;
-    const sessionId = (message as any).sessionId || (message as any).session_id;
-    if (!sessionId) return;
     await appendSessionMessage(sessionId, message);
   } catch (e) {
     console.warn("[SessionJSONL] 更新消息追加日志失败（索引仍在）:", e);

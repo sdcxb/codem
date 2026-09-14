@@ -18,7 +18,7 @@
  * 只有当一条消息**确实已经在 JSONL 里**，才允许把它从索引里删掉 —— 这就是"索引可重建"的前提。
  */
 
-import { getAppDataDir, appendFile, readFile, listDirectory, writeFile, deleteFile } from "../file-api";
+import { getAppDataDir, appendFile, readFile, listDirectory, writeFile, deleteFile, renameFile } from "../file-api";
 import type { Message } from "../../store";
 
 /** 单行格式版本：将来改字段时按版本兼容读取 */
@@ -228,6 +228,67 @@ export async function deleteSessionLog(sessionId: string): Promise<void> {
     /* 文件可能本来就不存在 */
   }
 }
+
+/**
+ * 追加日志压缩：把日志**重写**成"每个 id 只留最新一行"（第 79 波，收尾项）。
+ *
+ * 为什么需要：日志是 append-only，同一条消息被更新（流式回复、工具结果）就会多一行 ——
+ * 长会话下日志会持续膨胀（本机实测单会话 2.8 MB）。压缩保留语义不变（后写者胜 + 墓碑），
+ * 只是把被后续版本取代的行去掉。
+ *
+ * 安全要求：
+ *   - **先写临时文件再改名**（原子替换）—— 压缩过程中崩掉不能把日志毁掉；
+ *   - 压缩后的行数必须 ≥ 唯一 id 数，否则宁可放弃（宁可不省空间，也不能丢记录）；
+ *   - 压缩前等齐在途追加写（`flushSessionLogWrites`）。
+ *
+ * @returns 是否真的压缩了，以及压缩前后的行数
+ */
+export async function compactSessionLog(
+  sessionId: string,
+): Promise<{ compacted: boolean; linesBefore: number; linesAfter: number }> {
+  const out = { compacted: false, linesBefore: 0, linesAfter: 0 };
+  try {
+    await flushSessionLogWrites();
+    const path = await sessionLogPath(sessionId);
+    let raw: string;
+    try {
+      raw = await readFile(path);
+    } catch {
+      return out;
+    }
+    const lines = raw.split("\n").filter((l) => l.trim());
+    out.linesBefore = lines.length;
+    if (lines.length < MIN_LOG_LINES_TO_COMPACT) return out;
+
+    const lastById = new Map<string, string>();
+    for (const line of lines) {
+      try {
+        const parsed = JSON.parse(line) as JsonlMessageRecord;
+        if (parsed && typeof parsed.id === "string") lastById.set(parsed.id, line);
+      } catch {
+        /* 坏行在压缩时被丢弃（它本来也读不出来） */
+      }
+    }
+    out.linesAfter = lastById.size;
+    // 安全性检查：压缩只应减少"被取代的旧行"，不能少于唯一 id 数
+    if (out.linesAfter === 0 || out.linesAfter >= lines.length) return out;
+
+    const tmp = `${path}.tmp`;
+    await writeFile(tmp, [...lastById.values()].join("\n") + "\n");
+    await renameFile(tmp, path);
+    out.compacted = true;
+    console.log(
+      `[SessionJSONL] 会话 ${sessionId} 日志压缩：${out.linesBefore} 行 → ${out.linesAfter} 行（后写者胜语义不变）`,
+    );
+    return out;
+  } catch (e) {
+    console.warn("[SessionJSONL] 日志压缩失败（保留原文件）:", e);
+    return out;
+  }
+}
+
+/** 行数低于这个值不值得压缩 */
+const MIN_LOG_LINES_TO_COMPACT = 200;
 
 /** 测试用：直接写一份日志文件 */
 export async function __writeSessionLogForTests(sessionId: string, lines: string[]): Promise<void> {

@@ -69,8 +69,8 @@ import {
   resetSaveFailureState,
   runDatabaseMaintenance,
 } from "../core/storage/database";
-import { createMessage, listMessages, listMessagesMerged, clearSessionLogCache, trimIndexedMessages } from "../core/storage/message";
-import { appendSessionMessage, readSessionMessages, durableMessageIds, backfillSessionLog, flushSessionLogWrites, __resetJsonlCache } from "../core/storage/session-jsonl";
+import { createMessage, listMessages, listMessagesFromIndex, listMessagesMerged, clearSessionLogCache, trimIndexedMessages } from "../core/storage/message";
+import { appendSessionMessage, readSessionMessages, durableMessageIds, backfillSessionLog, flushSessionLogWrites, sessionLogPath, __resetJsonlCache } from "../core/storage/session-jsonl";
 import type { Message } from "../store";
 
 function makeMessage(id: string, timestamp: number, content = `内容 ${id}`): Message {
@@ -222,7 +222,9 @@ describe("追加日志（JSONL）", () => {
 
     expect(result.backfilledMessages).toBe(8); // 回填了 8 条
     expect(result.trimmedIndexMessages).toBe(5); // 裁掉 5 条（保留最新 3）
-    expect(listMessages(SESSION)).toHaveLength(3);
+    // 索引被有界裁剪，但**读者仍然看到完整历史**（第 79 波审计修正：合并收进 listMessages）
+    expect(listMessagesFromIndex(SESSION)).toHaveLength(3);
+    expect(listMessages(SESSION)).toHaveLength(8);
   });
   it("SLOG-9: 删除会留墓碑 —— 被删消息不会从权威日志里复活（本波自查发现的问题）", async () => {
     createMessage(makeMessage("keep1", 1000), SESSION);
@@ -238,5 +240,37 @@ describe("追加日志（JSONL）", () => {
     expect(messages.map((m) => m.id)).toEqual(["keep1", "keep2"]);
     await hydrateSessionLog(SESSION);
     expect(listMessagesMerged(SESSION).map((m) => m.id)).toEqual(["keep1", "keep2"]);
+  });
+  it("SLOG-10: 日志压缩把'被取代的旧行'去掉，语义不变（后写者胜 + 墓碑），且是原子替换", async () => {
+    // 造 300 条消息，其中同 id 反复更新（模拟流式）→ 日志行数远多于唯一消息数
+    for (let i = 0; i < 100; i++) {
+      const m = makeMessage(`c${i}`, 1000 + i, "第一版");
+      createMessage(m, SESSION);
+      for (let k = 0; k < 2; k++) {
+        const { updateMessage } = await import("../core/storage/message");
+        updateMessage(`c${i}`, { content: `第 ${k + 2} 版` });
+      }
+    }
+    await flushSessionLogWrites();
+    const before = await readSessionMessages(SESSION);
+    const linesBefore = files.get(await sessionLogPath(SESSION))!.split("\n").filter((l) => l.trim()).length;
+
+    const { compactSessionLog } = await import("../core/storage/session-jsonl");
+    const result = await compactSessionLog(SESSION);
+
+    expect(result.compacted).toBe(true);
+    expect(result.linesAfter).toBe(100); // 唯一 id 数
+    expect(result.linesBefore).toBeGreaterThan(result.linesAfter);
+    // 语义不变：内容仍是最后一版
+    const after = await readSessionMessages(SESSION);
+    expect(after.messages.map((m) => m.id)).toEqual(before.messages.map((m) => m.id));
+    expect(after.messages.every((m) => m.content === "第 3 版")).toBe(true);
+    // 原子替换：先写 .tmp 再改名
+    expect(invokeCalls).toContain("rename_file");
+    // 重新 hydrate 后读路径仍是 100 条
+    clearSessionLogCache();
+    const { hydrateSessionLog } = await import("../core/storage/message");
+    await hydrateSessionLog(SESSION);
+    expect(listMessages(SESSION)).toHaveLength(100);
   });
 });

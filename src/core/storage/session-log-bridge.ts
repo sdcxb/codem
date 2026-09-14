@@ -8,7 +8,7 @@
  */
 
 import { listMessages, trimIndexedMessages, hydrateSessionLog } from "./message";
-import { backfillSessionLog, listSessionLogs, flushSessionLogWrites } from "./session-jsonl";
+import { backfillSessionLog, listSessionLogs, flushSessionLogWrites, compactSessionLog } from "./session-jsonl";
 import { initDatabase } from "./database";
 
 export { trimIndexedMessages };
@@ -52,4 +52,25 @@ export async function backfillAllSessions(): Promise<number> {
 /** 已存在日志文件的会话数（诊断用） */
 export async function countSessionLogs(): Promise<number> {
   return (await listSessionLogs()).length;
+}
+
+/**
+ * 压缩膨胀的追加日志（第 79 波收尾项）：对行数明显多于"唯一消息数"的会话重写日志。
+ * 幂等、失败保留原文件；压缩后再 hydrate 一次，保证内存镜像同步。
+ */
+export async function compactOversizedSessionLogs(): Promise<{ compactedSessions: number; linesSaved: number }> {
+  const out = { compactedSessions: 0, linesSaved: 0 };
+  for (const sessionId of await listSessionLogs()) {
+    try {
+      const result = await compactSessionLog(sessionId);
+      if (result.compacted) {
+        out.compactedSessions++;
+        out.linesSaved += result.linesBefore - result.linesAfter;
+        await hydrateSessionLog(sessionId); // 镜像跟着换成压缩后的版本
+      }
+    } catch (e) {
+      console.warn(`[SessionLog] 会话 ${sessionId} 日志压缩失败（跳过）:`, e);
+    }
+  }
+  return out;
 }
