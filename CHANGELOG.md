@@ -84,9 +84,13 @@ All notable changes to Codem will be documented in this file.
 
 ### 验证方式
 
-- 新增回归用例（**撤掉修复必红**，逐条验过）：`hook-fail-closed` HK-1~12、`exit-plan-mode-switch` EPM-1~8、
-  `tool-result-status` TRS-1~12、`agent-teams-restart` TEAMR-1~9、`mcp-connection-honesty` MCP-H1~6、
-  `subagent-turn-valves` SUBV-1~5、`sandbox-glob-hardening` SBX-1~8、`honest-contracts-84` HC-1~8。
+- 新增回归用例（**撤掉修复必红**，逐条验过；8 个文件 **68 条**）：`hook-fail-closed` HK-1~12、
+  `exit-plan-mode-switch` EPM-1~8、`tool-result-status` TRS-1~12、`agent-teams-restart` TEAMR-1~9、
+  `mcp-connection-honesty` MCP-H1~6、`subagent-turn-valves` SUBV-1~5、`sandbox-glob-hardening` SBX-1~8、
+  `honest-contracts-84` HC-1~8。
+- 真机（打包版本）冒烟：exe 版本号 1.16.36、应用正常启动（DB 加载 / 引擎配置 / 技能与宠物加载 / 数据库维护均正常）、
+  经 IPC 实测 `path_exists` 对不存在/存在的路径分别返回 false/true（grepSearch 的"路径不存在即报错"依赖这一原语）；
+  冒烟后数据库已用备份恢复、探针文件已清理。
 - 全量 **250 文件 / 4968 用例通过 / 15 跳过**、`tsc --noEmit` 0 错、UI 审计 27 条规则 **0 error / 0 warn**、
   css-contract 2745 个类无变化；全量跑完**零 `[WriteGuard]` 空写告警**。
 
