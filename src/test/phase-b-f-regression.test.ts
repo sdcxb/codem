@@ -55,7 +55,7 @@
  *   X9: 一键安装约束验证
  * ═══════════════════════════════════════════════════════════
  */
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import * as fs from "fs";
 import * as path from "path";
 
@@ -879,17 +879,36 @@ describe("Phase F: 笔记本式知识管理", () => {
     });
 
     it("extractText URL 类型在非 Tauri 环境尝试 fetch", async () => {
-      const result = await extractText({
-        id: "test",
-        notebookId: "nb",
-        name: "url",
-        type: "url",
-        url: "https://example.com",
-        status: "pending",
-        chunkCount: 0,
-        createdAt: Date.now(),
-      }).catch(() => ({ text: "", error: "fetch failed" }));
-      expect(result).toBeDefined();
+      /**
+       * 这条用例原来**真的去 fetch example.com** —— 断网或网络慢的时候要等满 5s 超时，
+       * 于是"全量用例"随机红一条（第 83 波全量跑时踩到，单跑又绿）。
+       * 用例要验证的是"URL 类型会走 fetch 路径"，不是"外网通不通"，所以把 fetch 换成桩。
+       */
+      const originalFetch = globalThis.fetch;
+      const calls: string[] = [];
+      vi.stubGlobal("fetch", async (url: any) => {
+        calls.push(String(url));
+        return new Response("<html><body>stub</body></html>", {
+          status: 200,
+          headers: { "Content-Type": "text/html" },
+        });
+      });
+      try {
+        const result = await extractText({
+          id: "test",
+          notebookId: "nb",
+          name: "url",
+          type: "url",
+          url: "https://example.com",
+          status: "pending",
+          chunkCount: 0,
+          createdAt: Date.now(),
+        }).catch(() => ({ text: "", error: "fetch failed" }));
+        expect(result).toBeDefined();
+        expect(calls.length, "URL 类型必须走 fetch 路径（而不是静默跳过）").toBeGreaterThan(0);
+      } finally {
+        vi.stubGlobal("fetch", originalFetch);
+      }
     });
   });
 

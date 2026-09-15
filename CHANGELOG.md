@@ -2,6 +2,78 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.16.33] - 2026-09-15 — 上下文压缩是**假压缩**：删了 840 条，上下文一条没少（第 83 波）
+
+### 用户现场（控制台日志，v1.16.32 真机）
+
+```
+Iteration 1: API error 400 … requested 1050027 tokens
+[compactMessages] Removed 840 old messages, kept 20, inserted LLM compaction marker (summary length: 2803)
+Iteration 2: … requested 1051664 tokens          ← 比上一轮**还多**
+[compactMessages] Removed 841 old messages, kept 20 …
+Iteration 3: … requested 1051741 tokens
+Iteration 4: … requested 1051655 tokens
+```
+
+压缩每轮都"移除 840 条"，请求却始终 ~105 万 token，迭代 1→2→3→4 一路白烧 LLM 摘要，
+最后硬停"请开启新对话"——**一整场长会话就此报废**。
+
+### 根因①（致命）：压缩的删除被**权威日志合并**复活
+
+`doCompactMessages` 走 `deleteMessagesByIds`，而它只做索引侧的软删除：
+
+```ts
+db.run("UPDATE messages SET hidden = 1 WHERE id = ?", [id]);   // 只有索引，没有日志
+```
+
+而读路径（第 79 波把合并收进 `listMessages` 的那次改动）是：
+
+```
+listMessages = 索引(WHERE hidden = 0)  ∪  追加日志（权威，按 id 后写者胜）
+```
+
+日志里**根本没有 hidden 语义**（删除只写了索引）→ 被"移除"的消息被日志**整批加回来，而且不带 hidden** →
+压缩声称删了 840 条，下一次读又回来 840 条 → 上下文一点没小 → 循环 1→2→3→4。
+
+**复现（用例先红后绿）**：30 条消息，软删除 25 条 → `listMessages` 仍返回 **30** 条、其中带 hidden 的 **0** 条。
+
+**修复**（与既有删除路径对齐，`deleteMessage`/`deleteMessagesBefore` 早就这么做了）：
+
+- `deleteMessagesByIds` 除了标记索引，还**逐条写权威日志墓碑**（后写者胜），并**同步剔除内存镜像**
+  （镜像不刷新，本进程内照样复活）；
+- 墓碑写入纳入 `flushSessionLogWrites()` 的在途集合（原来墓碑没登记，"删完立刻 flush 再读"会读到旧内容）；
+- 读路径加**两道防御**：日志记录带 deleted/hidden 一律不进读集合；**索引里的 hidden 集合也参与判定**
+  —— 这样**老版本已经踩坑的会话**（索引 hidden=1、日志里没有墓碑）也能立刻恢复。
+
+### 根因②：压缩只看条数、不看体积（"保留最近 20 条"能自己顶满窗口）
+
+用户现场里 `kept 20` 之后请求仍 ~105 万 token —— 因为那 20 条本身就可能很大（一条大文件读取、
+一段大粘贴）。固定条数的压缩**永远压不进窗口**，只能反复重试。
+
+**修复**：抽出 `src/core/llm/compaction-budget.ts`（纯逻辑 + 独立用例），压缩时：
+估算保留集 token（窗口的一半为预算，另一半留给系统提示/工具/输出）→ 超预算就**成半收缩**
+（仍对齐轮次边界，避免出现"没有 tool_use 的 tool_result"）→ 直到进预算或触到下限（4 条）；
+连下限都装不下时**明确判定 overBudget**：直接顶满连压计数，让循环立刻给出"开新对话/改用附件"的
+可执行结论，而不是再白烧两次摘要调用。
+
+### 验证（真机 + 用例，两侧都有数据）
+
+**真机（打包版本 v1.16.33，同一现场：10 条大消息 ≈ 100 万 token，窗口 1M）**：
+
+```
+修复前（v1.16.32）：[AgenticLoop] Too many consecutive compactions, forcing stop
+                   —— 没有任何 [compactMessages] 日志（messagesToRemove = 0，压缩空转）
+修复后（v1.16.33）：[compactMessages] 保留集按体积收缩：11 → 5 条（估算 199976 tokens，预算 500000，窗口 1000000）
+                   [compactMessages] Removed 6 old messages, kept 5, inserted LLM compaction marker
+                   → 本轮正常回复结束；库内 6 条 hidden=1、权威日志写入 6 条墓碑、压缩标记就位
+```
+
+**用例**：`compaction-budget.test.ts` CB-1~12（预算规划成半收缩/下限/恶意对齐不死循环、
+轮次边界对齐、压缩后读路径只剩保留集、**模拟重启后仍不复活**、老版本现场恢复、
+硬删除可复活而软删除不许复活、复刻用户的"保留集自身超预算"链条并打印实测 token）、
+`compact-resurrect-repro.test.ts` REPRO-1~2（先红后绿的复现）。
+全量 **237 文件 / 4858 用例通过**（15 skipped）· tsc 0 错误 · UI 审计 27 条规则 0/0 · css-contract 无变化
+
 ## [1.16.32] - 2026-09-15 — 用户报的「推理强度点不动」+ 发布后自查的同源一致性（第 82 波）
 
 ### 用户报的 bug（先修这个）：主对话区域顶部的模型列表里，点「推理强度」闪烁、选不中

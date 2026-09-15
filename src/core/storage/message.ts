@@ -209,9 +209,32 @@ export function listMessagesMerged(sessionId: string, limit?: number): Message[]
   const cached = cachedLogMessages.get(sessionId);
   if (!cached || cached.length === 0) return fromIndex;
 
+  /**
+   * 第 83 波：**索引里的 hidden 状态也是权威**（软删除行只在索引里）。
+   *
+   * `listMessagesFromIndex` 用 `WHERE hidden = 0` 过滤掉了它们，而日志里没有对应的墓碑
+   * （老版本压缩只改索引），于是合并会把它们**当成"索引里没有、日志里有"的历史**重新加回来 ——
+   * 这正是用户现场"压缩了 840 条、上下文一点没小"的机制。对已经踩过坑的会话（索引里已有
+   * hidden=1 的行）也要能恢复：这里显式取一次 hidden id 集合，合并时一律排除。
+   *
+   * 这些行是**软删除**、且 `trimIndexedMessages` 只裁 `hidden = 0` 的行，所以这个集合长期有效。
+   */
+  const hiddenIds = hiddenMessageIds(sessionId);
   const merged = new Map<string, Message>();
   for (const m of fromIndex) merged.set(m.id, m);
   for (const rec of cached) {
+    /**
+     * 第 83 波（防御纵深）：日志镜像里被标记为删除/隐藏的记录**绝不能**进读集合。
+     *
+     * 为什么必须有这一层：`readSessionMessages` 已经过滤墓碑，但**镜像可能是删除之前填充的**
+     * （`hydrateSessionLog` 进会话时读一次）。只要哪条删除路径漏了同步镜像，
+     * 磁盘逻辑再正确，本进程内也照样"复活"—— 压缩被复活 = 上下文永不缩小 = 死循环，
+     * 代价太大。所以这里按最保守处理：宁可少显示，绝不复活。
+     */
+    if ((rec as any).deleted === true || (rec as any).hidden === true || hiddenIds.has(rec.id)) {
+      merged.delete(rec.id);
+      continue;
+    }
     const existing = merged.get(rec.id);
     merged.set(rec.id, {
       ...(existing ?? ({} as Message)),
@@ -226,6 +249,16 @@ export function listMessagesMerged(sessionId: string, limit?: number): Message[]
   }
   const all = [...merged.values()].sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0));
   return limit ? all.slice(-limit) : all;
+}
+
+/** 索引里被软删除（hidden=1）的消息 id 集合 */
+function hiddenMessageIds(sessionId: string): Set<string> {
+  try {
+    const rows = getDatabase().exec("SELECT id FROM messages WHERE session_id = ? AND hidden = 1", [sessionId]);
+    return new Set((rows?.[0]?.values ?? []).map((r: any[]) => String(r[0])));
+  } catch {
+    return new Set();
+  }
 }
 
 /** 会话日志的内存镜像（由 hydrateSessionLog 填充） */
@@ -819,10 +852,16 @@ function currentSessionIdForMessage(messageId: string): string | null {
  */
 function appendTombstonesFor(sessionId: string, ids: string[]): void {
   if (!sessionId || ids.length === 0) return;
-  void (async () => {
-    const { appendMessageTombstone: tombstone } = await import("./session-jsonl");
-    for (const id of ids) await tombstone(sessionId, id);
-  })();
+  /**
+   * 第 83 波：这里原来是 `await import("./session-jsonl")` 之后再写 ——
+   * 本文件顶部**早就**静态 import 了 `appendMessageTombstone`，动态 import 纯属多余；
+   * 更糟的是它把写入推迟到微任务之后，`flushSessionLogWrites()` 看不到这些在途写入
+   * （墓碑现在会登记在途状态），"删完立刻 flush 再读日志"就可能读到旧内容。
+   * 现在直接同步发起，全部登记进日志的在途集合。
+   */
+  for (const id of ids) {
+    void appendMessageTombstone(sessionId, id);
+  }
 }
 
 /** Delete all messages before a given timestamp (exclusive) in a session */
@@ -851,18 +890,75 @@ export function deleteMessagesBefore(sessionId: string, timestamp: number): numb
   return ids.length;
 }
 
-/** Delete messages by their IDs (and associated tool_calls) */
+/**
+ * 批量删除（上下文压缩走这条路径）。
+ *
+ * ## 第 83 波：这里曾经是个**致命的假删除**（用户现场）
+ *
+ * 原来只做 `UPDATE messages SET hidden = 1`（索引侧软删除），**不写权威日志**。
+ * 而读路径 `listMessages` = 索引(WHERE hidden=0) ∪ 缓存日志 —— 日志里根本没有 hidden 语义，
+ * 于是被"删掉"的消息**被日志整批加回来，而且不带 hidden**：
+ *
+ *   · 压缩说"移除 840 条"，下一次读又回来 840 条 → 上下文 token 一点没降；
+ *   · 每次迭代都重新压缩一遍（LLM 摘要调用白烧），最后硬停"请开启新对话"。
+ *   · 用户现场日志：`Removed 840/841 … kept 20`，请求恒为 ~105 万 token，迭代 1→2→3→4 循环。
+ *
+ * 修法与其它删除路径一致（`deleteMessage` / `deleteMessagesBefore` 早就这么做了）：
+ * **删除必须同时落到索引与权威日志**（墓碑 + 后写者胜），并且把内存镜像里的同 id 记录清掉 ——
+ * 镜像不刷新的话，本进程内的合并仍会从缓存里"复活"这些消息。
+ */
 export function deleteMessagesByIds(ids: string[]): number {
   if (ids.length === 0) return 0;
   const db = getDatabase();
-  // Soft-delete: mark messages as hidden instead of physically deleting them.
-  // This preserves conversation history for the user to scroll back and view,
-  // while keeping them out of the LLM context window (buildMessages filters hidden).
+  // 先按会话分组（墓碑要写进对应会话的日志），再软删除索引行
+  const bySession = sessionIdsForMessages(ids);
   for (const id of ids) {
     db.run("UPDATE messages SET hidden = 1 WHERE id = ?", [id]);
   }
   persistDatabase();
+  // 权威日志：逐条留墓碑（后写者胜：之后再写入同 id 即为重新出现）
+  for (const [sid, sids] of bySession) {
+    appendTombstonesFor(sid, sids);
+    // 内存镜像同步剔除：否则本次进程内的 listMessages 仍会从镜像复活这些消息
+    dropFromLogMirror(sid, sids);
+  }
   return ids.length;
+}
+
+/** 把一批消息 id 按所属会话分组（分块查询，避免超长 IN 子句） */
+function sessionIdsForMessages(ids: string[]): Map<string, string[]> {
+  const out = new Map<string, string[]>();
+  const CHUNK = 200;
+  for (let i = 0; i < ids.length; i += CHUNK) {
+    const chunk = ids.slice(i, i + CHUNK);
+    try {
+      const marks = chunk.map(() => "?").join(",");
+      const rows = getDatabase().exec(
+        `SELECT id, session_id FROM messages WHERE id IN (${marks})`,
+        chunk,
+      );
+      for (const row of rows?.[0]?.values ?? []) {
+        const id = String(row[0]);
+        const sid = String(row[1]);
+        if (!sid) continue;
+        const list = out.get(sid);
+        if (list) list.push(id);
+        else out.set(sid, [id]);
+      }
+    } catch (e) {
+      console.warn("[Storage] 查询消息所属会话失败（跳过墓碑写入）:", e);
+    }
+  }
+  return out;
+}
+
+/** 从日志内存镜像里剔除若干 id（删除/隐藏后必须调用） */
+function dropFromLogMirror(sessionId: string, ids: string[]): void {
+  const cached = cachedLogMessages.get(sessionId);
+  if (!cached || cached.length === 0) return;
+  const drop = new Set(ids);
+  const kept = cached.filter((rec) => !drop.has(rec.id));
+  if (kept.length !== cached.length) cachedLogMessages.set(sessionId, kept);
 }
 
 export function getMessageCount(sessionId: string): number {

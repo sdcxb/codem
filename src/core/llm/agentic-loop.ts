@@ -22,6 +22,7 @@ import { StallGuard } from "./stall-guard";
 import { buildUnparsableArgsError, isContentBearingTool } from "./tool-args-guard";
 import { recordLoopStop } from "./loop-stop-log";
 import { isContextOverflowError, describeContextOverflow } from "./provider-errors";
+import { planCompactionKeep, alignKeepToRoundBoundary } from "./compaction-budget";
 import { getDelegationOrchestrator } from "../session/orchestrator";
 import * as MessageStorage from "../storage/message";
 // deriveMessagesFromEvents removed — DB CRUD is the single source of truth for LLM messages
@@ -263,6 +264,15 @@ const KEEP_RECENT_MESSAGES_FOR_MICRO_COMPACT = 12;
  * DSH-aligned: cheap pruning first, full compaction only as a last resort.
  */
 const MICRO_COMPACT_PRESSURE_THRESHOLD = 0.5;
+
+/**
+ * 第 83 波：整段压缩时**最少保留多少条**消息。
+ *
+ * 保留集本身要参与"能否装进窗口"的判定（见 doCompactMessages 的按体积收缩）：
+ * 一条消息都不留会让模型完全失去正在进行的上下文，所以留个下限，
+ * 到这个下限还超预算就如实上报（单条消息本身超窗口，压缩救不了）。
+ */
+const MIN_KEEP_MESSAGES = 4;
 
 /**
  * 宏观步骤对齐：recon（只读侦查）工具名 + 计划元操作，不推进宏步骤计数器
@@ -3182,6 +3192,14 @@ private checkHasDocumentAttachment(sessionId: string): boolean {
     }
   }
 
+  /**
+   * 把"保留最近 N 条"对齐到安全的轮次边界（第 83 波；实现搬进 compaction-budget.ts，
+   * 那边有独立用例守着，这里只保留薄封装供循环内部调用）。
+   */
+  private alignKeepBoundary(messages: any[], desiredCount: number): number {
+    return alignKeepToRoundBoundary(messages, desiredCount);
+  }
+
   private async doCompactMessages(
     sessionId: string,
     isBoundarySafe: (events: any[], seq: number) => { safe: boolean; reason?: string },
@@ -3198,22 +3216,51 @@ private checkHasDocumentAttachment(sessionId: string): boolean {
     // (same assistant message ID = same round). The boundary is placed
     // at the start of the oldest round we want to keep.
     const maxKeepCount = Math.min(20, messages.length);
-    let keepCount = maxKeepCount;
+    let keepCount = this.alignKeepBoundary(messages, maxKeepCount);
 
-    // Scan backwards to find a safe boundary
-    // An assistant message starts a new API round. We want to keep
-    // complete rounds, so the boundary must be at or before an assistant message.
-    if (keepCount < messages.length) {
-      // Walk backwards from keepCount position, looking for an assistant message
-      let boundary = messages.length - keepCount;
-      // If the message at boundary is not an assistant message (it might be
-      // a tool result mid-round), walk backwards to find the start of the round
-      while (boundary > 0 && messages[boundary].role !== "assistant" &&
-             messages[boundary].role !== "user") {
-        boundary--;
-      }
-      // If we walked back to a user message, that's also a safe boundary
-      keepCount = messages.length - boundary;
+    /**
+     * 第 83 波：**按体积收缩保留集**（原来是固定"保留最近 20 条"，完全不看大小）。
+     *
+     * 用户现场：会话 861 条、压缩后仍 ~105 万 token，迭代 1→2→3→4 反复压缩 —— 因为
+     * "最近 20 条"本身就可能有几十万 token（一条大文件读取/大段粘贴就能顶满），
+     * 固定条数的压缩**永远压不到窗口之内**，只能白烧摘要调用然后硬停。
+     *
+     * 这里改成：估算保留集的 token，超过预算就成半收缩（仍对齐轮次边界），
+     * 直到进预算或触到下限。仍压不下去时如实记日志 —— 那种情况（单条消息本身就超窗口）
+     * 任何压缩都救不了，必须让用户看到"开新对话/改用附件"的明确结论。
+     */
+    const windowTokens = getTokenTracker().getContextWindow() || this.config.contextWindow || 128000;
+    // 预算：窗口的一半。留一半给系统提示、工具 schema、以及模型输出。
+    const keepBudget = Math.max(8000, Math.floor(windowTokens * 0.5));
+    const estimateKeepTokens = (count: number): number =>
+      messages
+        .slice(-count)
+        .reduce((sum: number, m: any) => sum + estimateTokens(String(m.content ?? "")), 0);
+    const plan = planCompactionKeep({
+      totalMessages: messages.length,
+      desiredKeep: maxKeepCount,
+      budget: keepBudget,
+      minKeep: MIN_KEEP_MESSAGES,
+      estimate: estimateKeepTokens,
+      align: (desired) => this.alignKeepBoundary(messages, desired),
+    });
+    keepCount = plan.keepCount;
+    if (plan.shrunk) {
+      console.log(
+        `[compactMessages] 保留集按体积收缩：${plan.initialKeep} → ${plan.keepCount} 条（估算 ${plan.estimated} tokens，预算 ${keepBudget}，窗口 ${windowTokens}）`,
+      );
+    }
+    if (plan.overBudget) {
+      console.warn(
+        `[compactMessages] 即使保留 ${plan.keepCount} 条仍超出预算（估算 ${plan.estimated} > ${keepBudget}）：` +
+          `单条消息本身过大时压缩无法解决，将由循环按"压缩无效"上报（建议开新对话或改用附件）。`,
+      );
+      /**
+       * 第 83 波：既然压缩救不了，就别再白烧两次摘要调用。
+       * 把连压计数直接顶到上限，循环下一轮就按"上下文装不下"给出可执行的建议
+       * （用户现场：压缩 → 仍溢出 → 再压缩，迭代 1→2→3→4 全是无用功）。
+       */
+      this.state.consecutiveCompactions = 3;
     }
 
     const messagesToKeep = messages.slice(-keepCount);

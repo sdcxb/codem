@@ -162,20 +162,32 @@ export async function readSessionMessages(
  * 那么下次从日志重建/合并时，删掉的消息会**复活**。墓碑让"删除"也变成一条可回放的记录。
  */
 export async function appendMessageTombstone(sessionId: string, messageId: string): Promise<void> {
-  try {
-    const record: JsonlMessageRecord = {
-      v: LINE_VERSION,
-      id: messageId,
-      sessionId,
-      role: "tombstone",
-      content: "",
-      timestamp: Date.now(),
-      deleted: true,
-    };
-    await appendFile(await sessionLogPath(sessionId), JSON.stringify(record));
-  } catch (e) {
-    console.warn("[SessionJSONL] 追加墓碑失败（索引已删除）:", e);
-  }
+  const task = (async () => {
+    try {
+      const record: JsonlMessageRecord = {
+        v: LINE_VERSION,
+        id: messageId,
+        sessionId,
+        role: "tombstone",
+        content: "",
+        timestamp: Date.now(),
+        deleted: true,
+      };
+      await appendFile(await sessionLogPath(sessionId), JSON.stringify(record));
+    } catch (e) {
+      console.warn("[SessionJSONL] 追加墓碑失败（索引已删除）:", e);
+    }
+  })();
+  /**
+   * 第 83 波：墓碑也要进 `pendingAppends`。
+   *
+   * 为什么：`flushSessionLogWrites()` 是全项目"把日志写入等齐"的**唯一**原语（裁剪索引前、退出前用）。
+   * 墓碑走 `appendFile` 但没登记在途状态 —— 于是"删了消息立刻 flush 再读日志"会读到旧内容，
+   * 压缩后的耐久性检查（以及退出时的落盘确定性）都跟着不可靠。
+   */
+  pendingAppends.add(task);
+  void task.finally(() => pendingAppends.delete(task));
+  return task;
 }
 
 /** 日志里已经持久化的消息 id 集合（裁剪索引前的**耐久性检查**用） */
