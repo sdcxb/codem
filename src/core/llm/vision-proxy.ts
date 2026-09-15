@@ -13,6 +13,7 @@ import { getLLMEngine } from "./index";
 import type { LLMMessage, ContentBlock } from "../storage/message";
 import { redactSecrets } from "../utils/redact";
 import { fetchWithTimeout } from "../utils/fetch-with-timeout";
+import { recordCatalogRejection, recordCatalogSuccess } from "./catalog-health";
 
 // ========== Vision System Prompt ==========
 
@@ -286,8 +287,15 @@ export class VisionProxy {
 
     if (!response.ok) {
       const error = await response.text();
-      throw new Error(`Vision API error ${response.status}: ${redactSecrets(error.substring(0, 2000))}`);
+      const safe = redactSecrets(error.substring(0, 2000));
+      // 第 81 波：视觉槽位通常正指向内置目录里的那个模型 —— 服务器若不认这个名字
+      // （供应商改名/下线），在这里也落一笔实证，设置里会如实标注。
+      recordCatalogRejection(config.providerId, config.model, safe, response.status);
+      throw new Error(`Vision API error ${response.status}: ${safe}`);
     }
+
+    // 视觉调用成功 → 撤销可能存在的失效标记
+    recordCatalogSuccess(config.providerId, config.model);
 
     const data = await response.json();
     return data.choices?.[0]?.message?.content || "(无法识别图片内容)";

@@ -18,6 +18,7 @@ import { ReplayAdapter } from "./replay-adapter";
 import { redactSecrets } from "../utils/redact";
 import { debugLog } from "../debug";
 import { isOutputLimitRejection, noteOutputLimitRejection } from "./model-output-limit";
+import { recordCatalogRejection, recordCatalogSuccess } from "./catalog-health";
 // ========== Request-level timeout budget (对标 DSH request_timeout_seconds) ==========
 // DSH 的 SDK 层为每个 RPC 请求设置 deadline（request_timeout_seconds），超时抛
 // TimeoutError 并附带运行时诊断。我们对齐这一设计：每次 LLM HTTP 请求都有
@@ -265,8 +266,14 @@ export class OpenAICompatibleProvider implements LLMProvider {
       const error = await response.text();
       // FIX(对标 dsh mask-secrets): 服务器错误体可能回显 Authorization/密钥，
       // 直接拼进 Error 会泄漏到 UI / 日志 / LLM 上下文。统一脱敏。
-      throw new Error(`API error ${response.status}: ${redactSecrets(error.substring(0, 2000))}`);
+      const safe = redactSecrets(error.substring(0, 2000));
+      // 第 81 波：服务器明确说"不认识这个模型名"时落盘记一笔（内置目录条目失效的实证）
+      recordCatalogRejection(this.id, request.model, safe, response.status);
+      throw new Error(`API error ${response.status}: ${safe}`);
     }
+
+    // 调用成功 → 撤销此前的失效标记（供应商可能已改回来 / 名字又对了）
+    recordCatalogSuccess(this.id, request.model);
 
     const data = await response.json();
     const choice = data.choices?.[0];
@@ -384,8 +391,13 @@ export class OpenAICompatibleProvider implements LLMProvider {
       // "500 该重试" 与 "400 不该重试"，而**上下文超限的关键数字也可能被 200 字符截掉**。
       const apiErr = new Error(`API error ${response.status}: ${safe.substring(0, 2000)}`) as any;
       apiErr.status = response.status;
+      // 第 81 波：内置目录条目的失效实证（服务器明确不认识这个模型名 → 记下来，界面如实标注）
+      recordCatalogRejection(this.id, request.model, safe, response.status);
       throw apiErr;
     }
+
+    // 流式调用握手成功 → 撤销此前的失效标记
+    recordCatalogSuccess(this.id, request.model);
 
     const reader = response.body?.getReader();
     if (!reader) throw new Error("No response body");

@@ -2,6 +2,85 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.16.31] - 2026-09-14 — 用户追问「内置目录」三连：旧名重复列出（修复）+ 供应商改名了怎么办（实证标记）
+
+### 用户的疑问（问得对）
+
+设置里填完 API Key 抓模型，DeepSeek 出来 4 条，其中两条写着「（内置目录，服务器未列出）」。
+服务器没有的模型，Codem 凭什么内置？既然都从服务器取，内置还有什么用？内置的话供应商改名了怎么办？
+
+### 事实（都实测过）
+
+| 来源 | 条目 |
+| --- | --- |
+| 服务器 `/models` 实际返回 | `deepseek-flash`、`deepseek-v4-pro` |
+| Codem **源码写死**的内置目录（`src/core/llm/model-catalog.ts`） | `deepseek-v4-flash`、`deepseek-v4-pro`、`deepseek-v4-flash-vision-exp` |
+| 合并 = 用户看到的 4 条 | 服务器 2 条 + 目录独有 2 条 |
+
+目录的来源：v1.16.24 那次排查发现 **服务器的 `/models` 不是"可调用模型"的完整真相** ——
+`GET /v1/models` 只有 2 条，但 `POST /v1/chat/completions model=deepseek-v4-flash-vision-exp`
+实测 **HTTP 200 可以正常调用**；DSH 里能看到它，是因为 DSH 把模型当**静态目录**（`listModels()` 根本不请求服务器）。
+Codem 当时只信服务器列表，于是这个"能调用但未列出"的视觉模型在界面上消失了（而内置方案的视觉槽位正指向它）。
+所以加了内置目录做**兜底并集**，并明确标注来源。
+
+### 但用户这一问暴露了一个真缺陷：旧名被当成独立条目
+
+目录里的 `deepseek-v4-flash` 其实是**服务器当前 `deepseek-flash` 的旧名**（改名后旧名仍可调用）。
+并集一趟就把同一个模型列成了两条，其中一条还挂着"服务器未列出"——看起来就像凭空多出来的。
+
+**修复**：目录条目支持 `aliases`，**服务器已列出等价 id 时该目录条目不再补入**：
+
+- `deepseek-v4-flash` 声明 `aliases: ["deepseek-flash"]` → 服务器列出 `deepseek-flash` 时不再重复；
+- 服务器两条都不列时，旧名**仍作为兜底出现**（不能因为去重把能力弄丢）；
+- 仅剩的目录条目就是那条真正"服务器不列但可调用"的视觉实验模型；
+- 设置里给目录条目加了 `title` 说明："Codem 内置目录条目：服务器 /models 没有列出它，但它确实可以调用……服务器的当前列表优先。"
+
+修复后用户在设置里看到的是 **3 条**：`deepseek-flash`、`deepseek-v4-pro`（服务器）+ `deepseek-v4-flash-vision-exp`（内置目录，标注来源）。
+
+### 追问：内置的话，供应商改名了怎么办？（这一问逼出了第二个真缺陷）
+
+先看"标准答案"（DSH，第三方客户端）到底怎么做 —— 读它的源码（`node_modules/@deepseek-ai/dsh-llm-deepseek/lib/index.js`）：
+
+| 问题 | DSH 的做法 | 位置 |
+| --- | --- | --- |
+| 模型表从哪来 | **纯静态目录** `DEFAULT_MODELS`（就那 3 条），`listModels()` 直接返回配置里的目录 | `:1825`、`:1558` |
+| 会不会查服务器 | **完全不查** —— 整个适配器唯一的网络调用是 `/chat/completions` | `:1754` |
+| 目录过期（改名/下线）怎么办 | **不处理**，但目录只是"建议"：`listModels` 文档写明 "an adapter may accept unlisted model ids, and consumers must not turn absence into request rejection"；`modelInfoFor` 对**不在目录里的 id 照样放行**，用 `defaultContextWindow` + 中性默认值补元数据 | `:169`、`:1563` |
+| 目录能不能改 | 能 —— `models` 是配置项（`z.array(catalogModel).default(DEFAULT_MODELS)`），改配置即可，不用改代码 | `:1870` |
+
+所以"凭什么内置"这个问题，DSH 的答案是：**它整个表都是内置的**。而"改名了怎么办"它的答案是：目录里的死条目**一直挂着**，但因为目录不参与校验，**调用不会因此失败**。
+
+Codem 的取舍不同 —— 服务器列表本来就是事实来源（改名、新增、下线它永远最新），内置目录只补服务器不列的空档；缺的是**目录条目失效时没人知道**。这次补上：
+
+**新增 `src/core/llm/catalog-health.ts` —— 只记实证，不猜**：
+
+- **触发极窄**：只有服务器**明确说"不认识这个模型名"**才记账（`isUnknownModelError`：
+  `supported api model names are` / `model_not_found` / `model ... does not exist` /
+  `try pulling it first` …），并且**先排除上下文超限的措辞**（它句子里也带 "model"）；
+  **网络失败、401、429、5xx、上下文超限一律不记** —— 记错会把一个能用的模型冤枉成失效。
+- **接线在三条真实错误路径**：`OpenAICompatibleProvider.stream()`、`.complete()`、
+  以及 `vision-proxy`（视觉槽位正指向目录里那条模型，它的失败最该被看见）。
+- **证据会翻转**：任何一次调用**成功**即撤销标记；记录带 **30 天有效期**（供应商可能早改回来了），
+  单 provider **上限 80 条**，坏数据 / localStorage 读不到都静默降级。
+- **界面如实说话**：被拒绝过的条目**沉到列表末尾**并标注「（内置目录，服务器已拒绝此名字）」，
+  悬停给出**时间 + 服务器原话**。**不删除** —— 供应商可能改回来，删了用户就再也看不到它。
+- **顺手堵上同一类谎话**：设置里还有一份"服务器列表还没取到时"用的写死名单（openai/anthropic/
+  moonshot/gemini），它过去**不带任何来源标注**，用户会当成"服务器给的"。现在同样标注
+  「（内置目录，服务器列表未获取）」并提示点『刷新』；其中 deepseek 那两行是内置目录的**旧副本**
+  （里面 `deepseek-v4-flash` 已是旧名）—— 删掉，有内置目录的 provider 一律走目录，
+  **一个名单只能有一个来源**。
+
+### 验证
+
+- `model-catalog.test.ts` 新增 CAT-8（服务器列出等价 id 时不重复；只有视觉那条标 `catalogOnly`）、
+  CAT-9（服务器两条都不列时旧名仍兜底）
+- `catalog-health.test.ts` 新增 CH-1~14：认得各家"模型名不对"的措辞、**上下文超限/401/429/网络失败
+  一律不记**、大小写归一、成功即撤销、常态不写盘（20 次成功调用写入次数不增）、坏数据与过期记录被丢弃、
+  读存储抛异常时静默降级、单 provider 上限、失效条目沉底且**不就地改动传入数组**、来源后缀措辞（服务器列出的模型被拒不许说"内置目录"）
+- `catalog-health-wiring.test.ts` 新增 CH-15~18：**接线**验证 —— 规则对但没接上等于没做，
+  用真实 `Response` 打三条错误路径（stream 400 记账 / 上下文超限不记 / 成功后撤销 / complete 同样记账）
+- 全量 **232 文件 / 4830 用例通过**（15 skipped）· tsc 0 错误 · UI 审计 25 条规则 0/0 · css-contract 无变化
+
 ## [1.16.30] - 2026-09-14 — 路线收尾两项：附件外置 + 全文索引一致性（并修掉一处我自己接错线的维护开关）
 
 ### ① 附件外置（`src/core/storage/attachment-files.ts`）

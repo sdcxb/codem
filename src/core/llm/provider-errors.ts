@@ -55,6 +55,44 @@ export function parseContextOverflowNumbers(message: string | undefined): { limi
 }
 
 /**
+ * 这个错误是不是"服务器不认识这个模型名"？（第 81 波）
+ *
+ * 为什么需要：内置目录里的条目是**我们写死的**。如果供应商把模型改名（DeepSeek 就干过：
+ * `deepseek-v4-flash` → `deepseek-flash`）甚至下线，用户会在下拉里看到一个**永远调不通**的
+ * 死选项，而且只有真正点了才会发现。
+ *
+ * 本函数只认"模型名不被接受"这一类语义，**不认**网络失败、鉴权失败、配额、限流、上下文超限 ——
+ * 那些都不是模型名的问题，误记会让用户看到错误的结论。实测样本（DeepSeek）：
+ *
+ *   HTTP 400 {"error":{"message":"The supported API model names are deepseek-flash,
+ *   deepseek-v4-pro, but you passed DeepSeek-V4-Flash-Vision-Exp"}}
+ *
+ * 各家措辞：OpenAI `model_not_found` / `The model 'x' does not exist`；Anthropic 404
+ * `model: x not found`；Ollama `model "x" not found, try pulling it first`。
+ */
+export function isUnknownModelError(message: string | undefined, status?: number): boolean {
+  if (!message) return false;
+  // 鉴权/限流/服务端故障都不是"名字不对"
+  if (status !== undefined && ![400, 404, 422].includes(status)) return false;
+  const m = message.toLowerCase();
+  // 上下文超限的措辞里也可能带 "model"，必须先排除（否则会把能用的模型标成失效）
+  if (isContextOverflowError(m)) return false;
+  return (
+    m.includes("supported api model names") ||
+    m.includes("model_not_found") ||
+    m.includes("model not found") ||
+    m.includes("unknown model") ||
+    m.includes("no such model") ||
+    m.includes("unrecognized model") ||
+    m.includes("unsupported model") ||
+    m.includes("invalid model") ||
+    m.includes("not a valid model") ||
+    m.includes("try pulling it first") ||
+    /model[^.\n]{0,60}(does not exist|not exist|not found|is not available)/.test(m)
+  );
+}
+
+/**
  * 给用户看的溢出说明：把"超了多少"讲清楚，并给出可执行的下一步。
  */
 export function describeContextOverflow(message: string | undefined): string {

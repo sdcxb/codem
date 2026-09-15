@@ -42,6 +42,15 @@ export interface CatalogModel {
   supportsStreaming?: boolean;
   /** 该模型支持的输入模态（视觉模型含 "image"） */
   inputModalities?: Array<"text" | "image">;
+  /**
+   * 同一模型的**其它 id 写法**（改名前后、实验后缀等）。
+   *
+   * 为什么需要（用户反馈）：服务器已改名为 `deepseek-flash`，而目录里还留着旧名
+   * `deepseek-v4-flash` —— 两者是**同一个模型**，并集一趟就会在设置里显示成两条，
+   * 看起来像"服务器没有却凭空多出来一个"。有了别名，只要服务器列出了等价的 id，
+   * 目录条目就不再补进来（目录只负责"服务器没覆盖的空档"）。
+   */
+  aliases?: string[];
   /** true = 服务器 /models 未列出，由内置目录补充 */
   catalogOnly?: boolean;
 }
@@ -55,13 +64,16 @@ export interface CatalogModel {
  */
 export const BUILTIN_MODEL_CATALOG: Record<string, CatalogModel[]> = {
   deepseek: [
-    { id: "deepseek-v4-flash", name: "DeepSeek V4 Flash", contextWindow: 1000000 },
+    // 旧名 → 服务器已改名 deepseek-flash（两者都可调用，但只应显示服务器当前给的那条）
+    { id: "deepseek-v4-flash", name: "DeepSeek V4 Flash", contextWindow: 1000000, aliases: ["deepseek-flash"] },
     { id: "deepseek-v4-pro", name: "DeepSeek V4 Pro", contextWindow: 1000000 },
     {
       id: "deepseek-v4-flash-vision-exp",
       name: "DeepSeek V4 Flash Vision (实验)",
       contextWindow: 1000000,
       inputModalities: ["text", "image"],
+      // 服务器从不列它（实测 /models 只有两条），但它确实能调用 —— 这正是目录存在的理由
+      aliases: ["deepseek-v4-flash-vision"],
     },
   ],
 };
@@ -76,6 +88,11 @@ export function catalogFor(providerId: string): CatalogModel[] {
  *
  * 规则：以 id（小写比较）去重；**服务器条目优先**（它的元数据更新鲜），
  * 目录独有的条目追加并标记 `catalogOnly: true`。
+ *
+ * 别名规则（用户反馈修正）：如果服务器已经列出了某条目录模型的**别名**
+ * （例如目录里的旧名 `deepseek-v4-flash` 与服务器当前的 `deepseek-flash` 是同一个模型），
+ * 则该目录条目**不再补进来** —— 目录只负责"服务器没覆盖的空档"，
+ * 否则设置里会出现两条一模一样的模型（一条还挂着"服务器未列出"的标签），看起来像凭空多出来的。
  */
 export function mergeModelsWithCatalog<T extends LightModel>(
   providerId: string,
@@ -85,6 +102,9 @@ export function mergeModelsWithCatalog<T extends LightModel>(
   const seen = new Set(out.map((m) => String(m.id || m.name).toLowerCase()));
   for (const entry of catalogFor(providerId)) {
     if (seen.has(entry.id.toLowerCase())) continue;
+    // 服务器已用等价 id 覆盖了这条目录模型 → 它是同一个模型，不再重复列出
+    const coveredByAlias = (entry.aliases ?? []).some((alias) => seen.has(alias.toLowerCase()));
+    if (coveredByAlias) continue;
     seen.add(entry.id.toLowerCase());
     out.push({ ...(entry as unknown as T & CatalogModel), catalogOnly: true });
   }

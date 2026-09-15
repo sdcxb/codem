@@ -8,7 +8,8 @@ import { useAppStore } from "../store";
 import { inferContextWindow } from "../core/llm/provider";
 import { getSettingJSON, setSettingJSON, getSetting, setSetting, removeSetting } from "../core/storage/settings";
 import { addCustomModel, removeCustomModel, customNamesFor } from "../core/llm/custom-models";
-import { mergeModelsWithCatalog, getMergedDynamicModels } from "../core/llm/model-catalog";
+import { mergeModelsWithCatalog, getMergedDynamicModels, catalogFor } from "../core/llm/model-catalog";
+import { getCatalogHealthFor, describeCatalogHealth, subscribeCatalogHealth, orderModelsByHealth, catalogModelLabelSuffix } from "../core/llm/catalog-health";
 import { setLang, useLang, S, type Language } from "../core/i18n/lang";
 import { ModelProfilePanel } from "./ModelProfilePanel";
 import { getPermissionManager, type PermissionRule, type PermissionAction } from "../core/permission/permission";
@@ -237,6 +238,15 @@ export function SettingsPanel({ onClose, onSessionRecovery, onUsageStats, initia
   const [saved, setSaved] = useState(false);
   const [showKeys, setShowKeys] = useState<Record<string, boolean>>({});
   const [dynamicModels, setDynamicModels] = useState<Record<string, Array<{ id: string; name: string; contextWindow?: number; catalogOnly?: boolean }>>>({});
+  /**
+   * 第 81 波：目录条目健康状态变化时重绘。
+   *
+   * `getCatalogHealthFor` 读的是模块内缓存（同步、便宜），所以渲染时直接调用即可；
+   * 这个 tick 只负责"调用结果翻转时让界面跟上"（例如设置面板开着的时候用户在聊天里
+   * 调用了一个失效的内置模型，下拉里的标注要立刻变成"服务器已拒绝"）。
+   */
+  const [, setCatalogHealthTick] = useState(0);
+  useEffect(() => subscribeCatalogHealth(() => setCatalogHealthTick((t) => t + 1)), []);
   const [refreshingModels, setRefreshingModels] = useState<Record<string, boolean>>({});
   const [refreshStatus, setRefreshStatus] = useState<Record<string, string>>({});
   // Custom OpenAI-compatible provider form (通用协议配置)
@@ -982,26 +992,54 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
                     // Use dynamic models if available, otherwise fall back to static list
                     const dynModels = dynamicModels[p.id];
                     if (dynModels && dynModels.length > 0) {
-                      return dynModels.map(m => (
-                        <option key={m.id} value={m.id}>
-                          {p.name} - {m.name}
-                          {m.catalogOnly ? "（内置目录，服务器未列出）" : ""}
-                        </option>
-                      ));
+                      // 第 81 波：内置目录条目的**实证**健康状态（服务器到底认不认这个名字）。
+                      // 被服务器拒绝过的条目沉到末尾并如实标注 —— 不删除，供应商可能改回来。
+                      const health = getCatalogHealthFor(p.id);
+                      const ordered = orderModelsByHealth(p.id, dynModels);
+                      return ordered.map(m => {
+                        const h = health[m.id.toLowerCase()];
+                        const rejected = h?.status === "rejected";
+                        // 措辞必须区分来源：服务器**自己列出来**的模型也可能被拒（改名/灰度），
+                        // 那时说"内置目录"就是错的 —— 用户会拿着错结论去查错地方。
+                        const suffix = catalogModelLabelSuffix({ catalogOnly: m.catalogOnly, rejected });
+                        const why = m.catalogOnly
+                          ? "它来自 Codem 内置目录，可能已被供应商改名或下线；服务器 /models 的当前列表优先，请优先选择服务器列出的条目。"
+                          : "它在服务器的 /models 列表里，但这次调用被拒；建议点『刷新』重新拉取列表，或改用手动添加的模型名。";
+                        const title = rejected
+                          ? `${describeCatalogHealth(h)}\n${why}`
+                          : m.catalogOnly
+                            ? "Codem 内置目录条目：服务器 /models 没有列出它，但它确实可以调用（例如 DeepSeek 的视觉实验模型）。服务器的当前列表优先。"
+                            : undefined;
+                        return (
+                          <option key={m.id} value={m.id} title={title}>
+                            {p.name} - {m.name}
+                            {suffix}
+                          </option>
+                        );
+                      });
                     }
-                    // Static fallback
+                    // Static fallback —— 服务器列表还没取到（没点过"刷新"或上次刷新失败）时用。
+                    // 这些同样是**写死在源码里的名单**，必须如实标注来源：否则用户会把它们
+                    // 当成"服务器给的"，进而以为是当前真相（与内置目录标注保持同一口径）。
+                    //
+                    // 有内置目录的 provider（`BUILTIN_MODEL_CATALOG`）走目录，不再走这份表 ——
+                    // **一个名单只能有一个来源**（这里原来的 deepseek 两行就是目录的旧版副本，
+                    // 里面的 `deepseek-v4-flash` 早已是旧名，留着只会某天被误当真）。
                     const staticModels: Record<string, Array<{id: string, name: string}>> = {
                       openai: [{id:"gpt-4o",name:"GPT-4o"},{id:"gpt-4o-mini",name:"GPT-4o Mini"},{id:"o3",name:"o3"}],
                       anthropic: [{id:"claude-sonnet-4-20250514",name:"Claude Sonnet 4"},{id:"claude-opus-4-20250514",name:"Claude Opus 4"}],
-                      deepseek: [
-                        {id:"deepseek-v4-flash",name:"DeepSeek V4 Flash"},
-                        {id:"deepseek-v4-pro",name:"DeepSeek V4 Pro"},
-                      ],
                       moonshot: [{id:"moonshot-v1-8k",name:"Moonshot 8K"},{id:"moonshot-v1-32k",name:"Moonshot 32K"},{id:"moonshot-v1-128k",name:"Moonshot 128K"}],
                       gemini: [{id:"gemini-2.5-flash",name:"Gemini 2.5 Flash"},{id:"gemini-2.5-pro",name:"Gemini 2.5 Pro"},{id:"gemini-2.0-flash",name:"Gemini 2.0 Flash"}],
                     };
-                    return (staticModels[p.id] || []).map(m => (
-                      <option key={m.id} value={m.id}>{p.name} - {m.name}</option>
+                    const fallbackModels = catalogFor(p.id).length > 0 ? catalogFor(p.id) : staticModels[p.id] || [];
+                    return fallbackModels.map(m => (
+                      <option
+                        key={m.id}
+                        value={m.id}
+                        title="Codem 内置名单：还没有从服务器取到模型列表（或上次获取失败）。点这一行的『刷新』按钮按服务器实际返回的列表更新；内置名单可能已过期。"
+                      >
+                        {p.name} - {m.name}（内置目录，服务器列表未获取）
+                      </option>
                     ));
                   })}
                   {!settings.providers.some(p => p.apiKey && p.id !== "mimo") && (

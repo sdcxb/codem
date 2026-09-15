@@ -132,4 +132,28 @@ describe("模型 id 大小写 —— API 敏感，必须纠正显示名当 id �
     const flash = BUILTIN_MODEL_CATALOG.deepseek.find((m) => m.id === "deepseek-v4-flash");
     expect(flash?.inputModalities).toBeUndefined();
   });
+  it("CAT-8: 服务器已列出等价 id 时，目录里的旧名不再重复列出（用户反馈：4 条里有 2 条'服务器未列出'）", () => {
+    // 现场：服务器返回 deepseek-flash / deepseek-v4-pro，而目录里还有旧名 deepseek-v4-flash
+    const server = [
+      { id: "deepseek-flash", name: "deepseek-flash" },
+      { id: "deepseek-v4-pro", name: "deepseek-v4-pro" },
+    ];
+    const merged = mergeModelsWithCatalog("deepseek", server);
+    const ids = merged.map((m) => m.id);
+
+    expect(ids).toContain("deepseek-flash");
+    expect(ids).toContain("deepseek-v4-pro");
+    expect(ids).toContain("deepseek-v4-flash-vision-exp"); // 服务器确实不列它 → 保留
+    expect(ids, "旧名与服务器当前名是同一个模型，不该重复出现").not.toContain("deepseek-v4-flash");
+    expect(ids).toHaveLength(3);
+    // 只有视觉那条是"目录补充"
+    expect(merged.filter((m) => m.catalogOnly).map((m) => m.id)).toEqual(["deepseek-v4-flash-vision-exp"]);
+  });
+
+  it("CAT-9: 服务器两条都不列时，旧名仍作为兜底出现（不能因为去重把能力弄丢）", () => {
+    const merged = mergeModelsWithCatalog("deepseek", [{ id: "some-other-model", name: "x" }]);
+    const ids = merged.map((m) => m.id);
+    expect(ids).toContain("deepseek-v4-flash");
+    expect(ids).toContain("deepseek-v4-flash-vision-exp");
+  });
 });
