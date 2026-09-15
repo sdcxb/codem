@@ -64,16 +64,35 @@ this.entries.clear();
 this.load();
 }
 
-  /** Save memory to SQLite */
-  private save() {
+  /**
+   * Save memory to SQLite.
+   *
+   * 第 84 波（审计修正）：**返回是否真的写成功**。
+   * 原来任何写入异常都被 `console.warn` 吞掉，而 `add`/`update`/`delete` 照常返回
+   * "成功" —— 用户以为记忆已保存，重启后全部消失（典型的乐观返回 / 静默丢失）。
+   */
+  private save(): boolean {
     const obj: Record<string, MemoryEntry> = {};
     for (const [id, entry] of this.entries) {
       obj[id] = entry;
     }
     try {
       saveMemory(JSON.stringify(obj));
-    } catch (e) { console.warn('[memory.ts]', e) }
+      this.lastPersistError = null;
+      return true;
+    } catch (e: any) {
+      this.lastPersistError = e?.message || String(e);
+      console.error(`[MemoryService] 记忆写入失败（本次改动只存在于内存，重启后会丢失）：${this.lastPersistError}`);
+      return false;
+    }
   }
+
+  /** 最近一次持久化失败的原因（成功时为 null） */
+  getLastPersistError(): string | null {
+    return this.lastPersistError;
+  }
+
+  private lastPersistError: string | null = null;
 
   /** Add a memory entry */
   add(entry: Omit<MemoryEntry, "id" | "timestamp">): MemoryEntry {

@@ -194,15 +194,56 @@ async function cwdForSession(sessionId: string): Promise<string> {
   return defaultWorkspacePath();
 }
 
+/**
+ * 把"回合没能跑起来"写进会话（第 84 波）。
+ *
+ * 背景：`POST /api/chat` 是**先回 202 再后台跑**（完整 agent 回合可能几分钟，远超 Rust 代理的
+ * 15s 超时），所以手机端只能靠轮询 messages 拿结果。原来前置校验失败（引擎未就绪 / 会话不存在 /
+ * 无工作区 / 会话忙）只 `console.warn` —— **手机端看到"已发送、处理中"，然后永远没有回复**，
+ * 而桌面上连一条错误都没有（这些失败发生在 executor 之前，executor 的落库覆盖不到）。
+ *
+ * 现在统一落一条 system/error 消息：手机上刷新就能看到"为什么没反应"。
+ */
+function noteTurnFailure(sessionId: string, reason: string): void {
+  try {
+    MessageStorage.createMessage({
+      id: `phone-err-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      role: "system",
+      content: `[手机端回合未启动] ${reason}`,
+      timestamp: Date.now(),
+      status: "error",
+    }, sessionId);
+  } catch (e) {
+    console.warn("[phone-link] 写入失败提示失败（会话可能不存在）:", e);
+  }
+  console.warn(`[phone-link] 回合未启动（${sessionId}）：${reason}`);
+}
+
 /** 手机续聊桌面会话 / 开新会话并跑一轮（真实引擎回合）。 */
-async function runAgentTurn(sessionId: string, text: string): Promise<{ ok: boolean; error?: string }> {
+async function runAgentTurn(sessionId: string, text: string): Promise<{ ok: boolean; error?: string; noted?: boolean }> {
   const engine = getLLMEngine();
-  if (!engine) return { ok: false, error: "引擎未就绪" };
-  if (isSessionExecuting(sessionId)) return { ok: false, error: "该会话正在处理中，请稍候" };
+  if (!engine) {
+    const reason = "引擎未就绪（LLM provider 未注册）";
+    noteTurnFailure(sessionId, reason);
+    return { ok: false, error: reason, noted: true };
+  }
+  if (isSessionExecuting(sessionId)) {
+    const reason = "该会话正在处理中，请稍候再发";
+    noteTurnFailure(sessionId, reason);
+    return { ok: false, error: reason, noted: true };
+  }
   const cwd = await cwdForSession(sessionId);
-  if (!cwd) return { ok: false, error: "会话无工作区" };
+  if (!cwd) {
+    const reason = "会话没有可用的工作区（项目路径为空，且没有默认目录）";
+    noteTurnFailure(sessionId, reason);
+    return { ok: false, error: reason, noted: true };
+  }
   const row = SessionStorage.getSession(sessionId);
-  if (!row) return { ok: false, error: "会话不存在" };
+  if (!row) {
+    const reason = `会话不存在：${sessionId}`;
+    noteTurnFailure(sessionId, reason);
+    return { ok: false, error: reason, noted: true };
+  }
   SessionStorage.updateSession(sessionId, {
     lastMessageAt: Date.now(),
     messageCount: (row.messageCount || 0) + 1,
@@ -220,13 +261,19 @@ async function runAgentTurn(sessionId: string, text: string): Promise<{ ok: bool
       timeoutRace,
     ]);
     if (!res.success) {
-      // 引擎报错也要让手机端能看到——executor 已写 error 消息进库。
-      return { ok: true, error: res.error || undefined };
+      /**
+       * 第 84 波（审计修正）：这里原来返回 `{ ok: true, error }` —— **把失败改写成成功**，
+       * 于是调用方（微信/手机）与日志都当它跑完了，手机端只能看到"[处理完成（无文本输出）]"。
+       * 现在如实返回失败；executor 已经写过错误消息，所以 marked 记 true（不再重复写）。
+       */
+      return { ok: false, error: res.error || "回合失败（详见会话内的错误消息）", noted: true };
     }
     return { ok: true };
   } catch (err: any) {
-    console.warn("[phone-link] turn error:", err);
-    return { ok: false, error: String(err?.message || err) };
+    const reason = String(err?.message || err);
+    // 超时/异常路径：executor 可能还没来得及落库 → 这里补一条，保证手机端看得见
+    noteTurnFailure(sessionId, reason);
+    return { ok: false, error: reason, noted: true };
   } finally {
     clearTimeout(timeout);
   }
@@ -280,8 +327,9 @@ async function handleProxyRequest(req: PhoneProxyRequest): Promise<void> {
       }
       // F1：先回 202（已接受）再后台跑回合——完整 agent 回合可能数分钟，
       // 远超 Rust 代理 15s 超时；结果经手机端轮询 messages 可见，失败写库。
-      await invokePhoneRespond(req.reqId, 202, { accepted: true, sessionId });
+      await invokePhoneRespond(req.reqId, 202, { accepted: true, sessionId, note: "回合在桌面端后台执行，请轮询 /api/sessions/<id>/messages 查看结果" });
       void runAgentTurn(sessionId, text).then((res) => {
+        // 失败已经写进会话（runAgentTurn 内部保证）；这里只留日志，绝不静默
         if (!res.ok) console.warn("[phone-link] chat turn failed:", res.error);
       });
       return;
@@ -308,7 +356,7 @@ async function handleProxyRequest(req: PhoneProxyRequest): Promise<void> {
         messageCount: 0,
       });
       // 同 chat：先 202 再后台执行
-      await invokePhoneRespond(req.reqId, 202, { accepted: true, sessionId });
+      await invokePhoneRespond(req.reqId, 202, { accepted: true, sessionId, note: "回合在桌面端后台执行，请轮询 /api/sessions/<id>/messages 查看结果" });
       void runAgentTurn(sessionId, text).then((res) => {
         if (!res.ok) console.warn("[phone-link] chat_new turn failed:", res.error);
       });

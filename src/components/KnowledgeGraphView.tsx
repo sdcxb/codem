@@ -290,7 +290,18 @@ function KnowledgeGraphViewInner({ notebookId, onNodeSelect }: KnowledgeGraphVie
           setNodes(fn);
           setEdges(fe);
           if (data.nodes.length === 0) {
-            setExtractError(isZh ? 'LLM 提取失败，请检查 API 配置后重试' : 'LLM extraction failed. Check API config and retry.');
+            setExtractError(
+              data.warnings?.length
+                ? (isZh ? `提取失败：${data.warnings.join('；')}` : `Extraction failed: ${data.warnings.join('; ')}`)
+                : (isZh ? 'LLM 提取失败，请检查 API 配置后重试' : 'LLM extraction failed. Check API config and retry.'),
+            );
+          } else if (data.warnings?.length) {
+            // 第 84 波：部分批次失败 → 图谱不完整，必须明说（否则用户以为这是全量图谱）
+            setExtractError(
+              isZh
+                ? `图谱不完整：${data.warnings.join('；')}`
+                : `Graph is incomplete: ${data.warnings.join('; ')}`,
+            );
           }
         }
       }

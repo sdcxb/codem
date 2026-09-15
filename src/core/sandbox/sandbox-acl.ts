@@ -18,6 +18,94 @@
  * 3. SandboxExecutor — 命令执行包装器（可选：在沙箱目录中执行）
  */
 
+// ========== Glob → Regex（第 84 波修正） ==========
+
+/** 用户主目录（正斜杠形式）；浏览器环境取不到时为 null */
+function homeDir(): string | null {
+  try {
+    const home =
+      (typeof process !== "undefined" && (process.env?.USERPROFILE || process.env?.HOME)) || "";
+    return home ? home.replace(/\\/g, "/").replace(/\/+$/, "") : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 规范化沙箱路径：反斜杠 → `/`，并把开头的 `~` 展开成真实主目录。
+ *
+ * 第 84 波：**输入路径和黑名单条目必须用同一套规范化**。只规范化一边的话，
+ * `~/.ssh` 这种条目要么永远匹配不上真实路径（`C:/Users/x/.ssh/id_rsa`），
+ * 要么只能匹配写字面量 `~` 的调用 —— 两种都不是我们要的。
+ */
+export function normalizeSandboxPath(p: string): string {
+  let out = String(p ?? "").replace(/\\/g, "/");
+  const home = homeDir();
+  if (home && (out === "~" || out.startsWith("~/"))) {
+    out = home + out.slice(1);
+  }
+  return out;
+}
+
+/**
+ * 把黑名单里的 glob / 路径写成真正能匹配的**正则**。
+ *
+ * 第 84 波（审计修正）：原来的实现在真机（Windows）上**几乎全部失效**：
+ *
+ *   旧实现：把条目里的双星号替换成 `.*`、单星号替换成 `[^/]*` 之后，
+ *   用 `new RegExp("^" + pattern, "i")` 直接匹配规范化过的输入路径。
+ *   · 黑名单条目**没有被规范化**（只有输入路径把反斜杠换成斜杠），于是 `"C:\\Windows"`
+ *     进了正则变成 `^C:\W...` —— `\W` 是"非单词字符"，`C:/Windows` 永远匹配不上；
+ *   · `~/.ssh`、`~/.gnupg`、`~/.aws` 里的 `~` 从不展开，等于死规则
+ *     （真正要保护的 `C:/Users/x/.ssh/id_rsa` 完全放行）；
+ *   · 前缀匹配没有边界，双星号 + `/.env` 会连 `.environment.ts` 一起拦（误伤）。
+ *
+ * 现在的语义：
+ *   · 双星号 + 斜杠 → 任意层级（含零层）；单星号 → 单层内任意字符；
+ *   · 条目里的反斜杠统一成 `/`、`~` 展开为主目录；
+ *   · 结尾不是星号的模式要求紧跟 `$`、`/` 或 `.`（既能拦住 `.env.local`，
+ *     又不会误伤 `.environment.ts`）。
+ */
+export function sandboxGlobToRegex(glob: string): RegExp {
+  const pattern = normalizeSandboxPath(glob);
+
+  let out = "";
+  for (let i = 0; i < pattern.length; i++) {
+    const ch = pattern[i];
+    if (ch === "*") {
+      if (pattern[i + 1] === "*") {
+        if (pattern[i + 2] === "/") {
+          out += "(?:.*/)?"; // 双星斜杠 → 任意层级（含零层）
+          i += 2;
+        } else {
+          out += ".*"; // 结尾的双星号
+          i += 1;
+        }
+      } else {
+        out += "[^/]*";
+      }
+    } else if ("^$.|?+()[]{}".includes(ch)) {
+      out += "\\" + ch;
+    } else {
+      out += ch;
+    }
+  }
+  /**
+   * 尾部边界：
+   *   · 以星号结尾         → 严格锚定 `$`（单星号只匹配一层，不越级）
+   *   · 含星号、末段是点文件 → 允许 `$` / `/` / `.`（`**` + `/.env` 也能拦住 `.env.local`）
+   *   · 含星号、末段是普通名 → 允许 `$` / `/`
+   *   · 完全不含星号（`/etc`、`C:/Windows`、`~/.ssh`）= 目录式规则 → 连它下面的所有内容一起拦
+   */
+  const lastSegment = pattern.split("/").pop() ?? "";
+  const suffix = /\*$/.test(pattern)
+    ? "$"
+    : !pattern.includes("*") || lastSegment.startsWith(".")
+      ? "(?=$|[/.])"
+      : "(?=$|/)";
+  return new RegExp("^" + out + suffix, "i");
+}
+
 // ========== Types ==========
 
 export interface SandboxPolicy {
@@ -160,12 +248,13 @@ export class SandboxGuard {
 
   /** 检查文件路径是否允许访问 */
   checkPath(path: string, mode: "read" | "write" = "read"): SandboxCheckResult {
-    const normalized = path.replace(/\\/g, "/");
+    // 第 84 波：输入路径与黑名单条目用同一套规范化（反斜杠 + `~` 展开）
+    const normalized = normalizeSandboxPath(path);
 
     // 1. 检查黑名单（优先）
     for (const blocked of this.policy.blockedPaths) {
-      const pattern = blocked.replace(/\*\*/g, ".*").replace(/\*/g, "[^/]*");
-      const regex = new RegExp(`^${pattern}`, "i");
+      // 第 84 波：黑名单条目也要规范化 + `~` 展开 + 正确 glob 语义（见 sandboxGlobToRegex）
+      const regex = sandboxGlobToRegex(blocked);
       if (regex.test(normalized)) {
         return {
           allowed: false,

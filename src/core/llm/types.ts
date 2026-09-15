@@ -110,6 +110,17 @@ export interface ToolCallResult {
   output?: string;
   status: "pending" | "running" | "completed" | "error";
   error?: string;
+  /**
+   * 第 84 波：`status: "error"` 的来源。
+   *
+   * - `"tool"`：工具**自己汇报**的失败（例如 `Error: oldString not found`）。
+   *   模型应当看到文本并自行纠正，因此**不**算"执行层异常"——
+   *   streaming-executor 不会把它转成 tool_error，也就不会累加
+   *   `consecutiveErrors`（否则连错 3 次就把整轮干掉，比原来更容易卡死）。
+   * - 其它（含未设置）：管线/宿主层的失败（权限拒绝、守卫拦截、异常、中止）。
+   *   这些仍然按原路径抛出并计入连续错误。
+   */
+  errorSource?: "tool" | "pipeline";
   /** 工具执行元数据（如 subagentId 等）— 从 ToolExecuteResult 透传 */
   metadata?: Record<string, any>;
 }

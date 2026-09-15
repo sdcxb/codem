@@ -56,12 +56,16 @@ export interface IdleTracker {
 /**
  * 创建一个自适应空闲追踪器。
  *
- * @param idleThresholdMs - 无数据流入的最大允许时间（默认 120 秒）
+ * @param idleThresholdMs - 无数据流入的最大允许时间（默认 120 秒）。
+ *   **`<= 0` 表示不设空闲上限**（与 `session/idle-watchdog.ts` 的 `idleMs <= 0` 语义一致）。
+ *   第 84 波修正：原来传 0 会让 `expired()` **恒为 true**（`Date.now() - last > 0`），
+ *   即"关闭看门狗"变成了"立刻超时"—— 调用方以为关掉了限制，实际会立刻被判定卡死。
  * @returns IdleTracker 实例
  */
 export function createIdleTracker(idleThresholdMs: number = 120_000): IdleTracker {
   let lastActivity = Date.now();
   let disposed = false;
+  const disabled = !(idleThresholdMs > 0);
   // 定期检查器（低频，仅用于 expired() 的主动轮询场景）
   let checker: ReturnType<typeof setInterval> | undefined;
 
@@ -82,7 +86,7 @@ export function createIdleTracker(idleThresholdMs: number = 120_000): IdleTracke
       lastActivity = Date.now();
     },
     expired(): boolean {
-      if (disposed) return false;
+      if (disposed || disabled) return false;
       return Date.now() - lastActivity > idleThresholdMs;
     },
     idleMs(): number {

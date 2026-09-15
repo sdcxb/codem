@@ -21,14 +21,31 @@ import type { ToolDef, ToolContext, ToolExecuteResult } from "../tools";
 
 // ========== Plan Approval Callback ==========
 
-let planApprovalCallback: ((plan: string) => Promise<{ approved: boolean; feedback?: string }>) | null = null;
+/**
+ * 审批结果。`modeSwitched` 是**由 UI 侧汇报的事实**，不是工具自己推断的：
+ * 第 84 波审计发现，原来只要 approved=true，工具就无条件宣称"你现在是 Default 模式"，
+ * 而 UI 并没有切模式（也没触及正在运行的 loop），于是模型在计划模式下继续尝试写操作、
+ * 全部被 PlanModeGuard 拦下 —— 典型的"假成功"。现在必须由 UI 明确报告切换结果。
+ */
+export interface PlanApprovalOutcome {
+  approved: boolean;
+  feedback?: string;
+  /** approve 时：协作模式是否**确实**已切到 default（附带正在运行的 loop 数） */
+  modeSwitched?: boolean;
+  /** 供人阅读的补充说明（例如"已切换，活动 loop=1"） */
+  modeNote?: string;
+}
+
+let planApprovalCallback:
+  | ((plan: string) => Promise<PlanApprovalOutcome>)
+  | null = null;
 
 /**
  * Set the callback that handles plan approval UI.
  * Called by App.tsx to wire the tool to the UI.
  */
 export function setPlanApprovalCallback(
-  cb: (plan: string) => Promise<{ approved: boolean; feedback?: string }>,
+  cb: (plan: string) => Promise<PlanApprovalOutcome>,
 ): void {
   planApprovalCallback = cb;
 }
@@ -91,9 +108,24 @@ If the user rejects, stay in Plan mode, revise the plan based on their feedback,
         const result = await planApprovalCallback(plan);
 
         if (result.approved) {
+          // 只有 UI 明确报告"模式已切换"时才宣称已进入 Default 模式；
+          // 报告失败 → 明确告诉模型仍在计划模式，别去写文件；
+          // 未报告 → 不臆断，提示以写操作是否被拒绝为准。
+          if (result.modeSwitched === false) {
+            return {
+              title: "Plan Approved (mode switch failed)",
+              output: `⚠️ 用户已批准计划，但**协作模式没有切换成功**（仍在 Plan 模式），写操作仍会被拦下。\n${result.modeNote ? `\n细节：${result.modeNote}\n` : ""}\n请不要继续尝试写入/执行；请让用户手动把模式切到 Default 后再说"继续"，或重新调用 exit_plan_mode。\n\n计划原文：\n${plan}`,
+            };
+          }
+          if (result.modeSwitched === undefined) {
+            return {
+              title: "Plan Approved",
+              output: `✅ 用户已批准计划。模式切换结果未被 UI 确认 —— 如果接下来的写入工具仍然报 "Cannot use ... in Plan mode"，说明模式没有切换，请停下来告诉用户手动切换到 Default 模式，不要反复重试。${result.modeNote ? `\n\n细节：${result.modeNote}` : ""}\n\n${plan}`,
+            };
+          }
           return {
             title: "Plan Approved",
-            output: `✅ Plan approved by user. You are now in Default mode. Begin executing the plan.\n\n${plan}`,
+            output: `✅ Plan approved by user. You are now in Default mode. Begin executing the plan.${result.modeNote ? `\n\n(${result.modeNote})` : ""}\n\n${plan}`,
           };
         } else {
           const feedback = result.feedback || "No specific feedback provided.";

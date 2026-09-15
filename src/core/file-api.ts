@@ -187,6 +187,28 @@ export async function globSearch(pattern: string, path?: string): Promise<string
 export async function grepSearch(pattern: string, path?: string, include?: string): Promise<string[]> {
   // Use PowerShell for better Unicode support
   const searchPath = path || await getDefaultCwd();
+  /**
+   * 第 84 波（A/B 类：静默空结果被当成"没有匹配"）：
+   *
+   * 底层命令里的 `Get-ChildItem … -ErrorAction SilentlyContinue` 会把"路径不存在"
+   * 这类错误一并吞掉，管道仍然成功（退出码 0）、stdout 为空 —— 调用方拿到 `[]`
+   * 只会以为"文件里没有这个符号"。`lsp` 工具因此会给出**假否定**：
+   * "No definition found for X"，而实际上它连目录都没读成。
+   *
+   * 现在：搜索路径不存在 → 抛错（调用方负责转成明确的错误信息）；
+   * 命令非零退出 → 抛错并带上 stderr。
+   */
+  let pathExists = true;
+  try {
+    pathExists = await exists(searchPath);
+  } catch {
+    // 存在性检查本身不可用（缺少 Tauri 命令等）—— 不要让它变成新的故障点
+    pathExists = true;
+  }
+  if (!pathExists) {
+    throw new Error(`搜索路径不存在：${searchPath}（grep 未执行，这不代表"没有匹配"）`);
+  }
+
   // Escape single quotes for PowerShell (single quote → double single quotes)
   const safePath = searchPath.replace(/'/g, "''");
   const safePattern = pattern.replace(/'/g, "''");
@@ -201,6 +223,10 @@ export async function grepSearch(pattern: string, path?: string, include?: strin
   const cmd = psCommand;
   console.log("[grepSearch] cmd:", cmd);
   const result = await executeCommand(cmd);
+  if (typeof result.exitCode === "number" && result.exitCode !== 0) {
+    const stderr = (result.stderr || "").trim().slice(0, 300);
+    throw new Error(`grep 命令失败（exit ${result.exitCode}）${stderr ? `：${stderr}` : ""}`);
+  }
   return result.stdout.split("\n").filter(line => line.trim() !== "");
 }
 

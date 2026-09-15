@@ -148,16 +148,29 @@ Available sources: ${available}`,
         const matchedStyle = PPT_STYLES.find(s => s.id === styleId);
         const styleName = matchedStyle?.name || styleId;
 
+        /**
+         * 第 84 波（假成功）：汇报**实际**页数，而不是"要求的页数"。
+         * 原来无脑写 `${slideCount}`，模型只产出 5 页时工具仍宣称"8 页演示文稿已生成"——
+         * 用户点开只看到 5 页，还以为是自己数错。
+         */
+        const actualSlides = deck.slides.length;
+        const countDesc =
+          actualSlides === slideCount
+            ? `${actualSlides}-slide`
+            : `${actualSlides}-slide (requested ${slideCount}, generated ${actualSlides}` +
+              (actualSlides < slideCount ? ' — content was not enough for the requested length' : '') +
+              ')';
+
         return {
           title: `PPT Generated: ${deck.title}`,
           output:
-            `Successfully generated a ${slideCount}-slide presentation "${deck.title}" ` +
+            `Successfully generated a ${countDesc} presentation "${deck.title}" ` +
             `in ${styleName} style (${canvasSizeId}).` +
-            (sourceIds ? `\nSources used: ${sourceIds.length} of ${getChunks(notebookId).length} chunks from selected sources.` : '\nSources used: all indexed sources.') +
+            (sourceIds ? `\nSources used: ${sourceIds.length} selected source(s).` : '\nSources used: all indexed sources.') +
             `\n\nThe presentation has been saved as a note in notebook "${notebook.name}" and is visible in the Notes panel.\n` +
             `Note ID: ${note.id}\n\n` +
             `The user can click the note to open the PPT editor for further editing.`,
-          metadata: { noteId: note.id, notebookId, slideCount: deck.slides.length, title: deck.title, sourceIds },
+          metadata: { noteId: note.id, notebookId, slideCount: actualSlides, requestedSlideCount: slideCount, title: deck.title, sourceIds },
         };
       } catch (error) {
         const errMsg = error instanceof Error ? error.message : String(error);

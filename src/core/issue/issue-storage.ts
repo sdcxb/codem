@@ -77,7 +77,16 @@ export const IssueStorage = {
     return result[0].values.map((row) => rowToIssue(row, result[0].columns));
   },
 
-  update(id: string, updates: Partial<Pick<IssueRow, "title" | "description" | "status" | "priority" | "assignee_type" | "assignee_id" | "squad_id" | "session_id" | "labels">>): void {
+  /**
+   * 更新议题字段。
+   *
+   * 第 84 波（A 类：静默空写）：`updates` 为空对象时原来直接 `return`（void），
+   * 调用方照样会加"状态已变更"的系统评论并通知——界面上写着"已更新"，
+   * 数据库里什么都没变。现在返回真正被更新的行数，并把"无字段可更新"记进日志。
+   *
+   * @returns 实际更新的行数（0 = 没有字段可更新，或该议题不存在）
+   */
+  update(id: string, updates: Partial<Pick<IssueRow, "title" | "description" | "status" | "priority" | "assignee_type" | "assignee_id" | "squad_id" | "session_id" | "labels">>): number {
     const db = getDatabase();
     const fields: string[] = [];
     const values: any[] = [];
@@ -86,14 +95,18 @@ export const IssueStorage = {
       fields.push(`${dbKey} = ?`);
       values.push(val ?? null);
     }
-    if (fields.length === 0) return;
+    if (fields.length === 0) {
+      console.warn(`[IssueStorage] update(${id}) 调用时没有任何可更新字段 —— 本次没有任何写入`);
+      return 0;
+    }
     fields.push("updated_at = ?");
     values.push(Date.now());
     values.push(id);
     // 第 83 波：任务管理链路也走空写探测 —— 议题更新打不到行 = 界面显示的状态与库不一致
-  runGuarded(db, `UPDATE issues SET ${fields.join(", ")} WHERE id = ?`, values,
+  const modified = runGuarded(db, `UPDATE issues SET ${fields.join(", ")} WHERE id = ?`, values,
     { table: "issues", op: "update", id, from: "updateIssue" });
     persistDatabase();
+    return modified;
   },
 
   delete(id: string): void {

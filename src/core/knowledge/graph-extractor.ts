@@ -88,8 +88,16 @@ export async function extractKnowledgeGraph(notebookId: string): Promise<GraphDa
   // Process chunks in batches to avoid token overflow
   const BATCH_SIZE = 10;
   const MAX_BATCHES = 6; // Limit to 60 chunks max
+  /** 第 84 波：部分失败必须可见（否则返回的图谱看起来是"完整"的） */
+  const warnings: string[] = [];
+  const totalBatches = Math.min(Math.ceil(chunks.length / BATCH_SIZE), MAX_BATCHES);
+  if (chunks.length > MAX_BATCHES * BATCH_SIZE) {
+    warnings.push(
+      `只提取了前 ${MAX_BATCHES * BATCH_SIZE} 个分块（共 ${chunks.length} 个），图谱覆盖不完整`,
+    );
+  }
 
-  for (let batchIdx = 0; batchIdx < Math.min(Math.ceil(chunks.length / BATCH_SIZE), MAX_BATCHES); batchIdx++) {
+  for (let batchIdx = 0; batchIdx < totalBatches; batchIdx++) {
     const batchChunks = chunks.slice(batchIdx * BATCH_SIZE, (batchIdx + 1) * BATCH_SIZE);
     const batchText = batchChunks
       .map((c, i) => `[Chunk ${batchIdx * BATCH_SIZE + i + 1}]\n${c.content.slice(0, 800)}`)
@@ -135,7 +143,9 @@ export async function extractKnowledgeGraph(notebookId: string): Promise<GraphDa
         }
       }
     } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
       console.error(`[GraphExtractor] Batch ${batchIdx} failed:`, error);
+      warnings.push(`第 ${batchIdx + 1}/${totalBatches} 批提取失败：${msg}`);
     }
   }
 
@@ -144,7 +154,13 @@ export async function extractKnowledgeGraph(notebookId: string): Promise<GraphDa
   assignCommunities(graphData);
 
   // Re-fetch with community IDs
-  return getGraphData(notebookId);
+  const finalData = getGraphData(notebookId);
+  if (warnings.length > 0) {
+    // 全部批次失败 = 完全没提取到东西，调用方据此显示明确的失败提示
+    console.warn(`[GraphExtractor] 图谱提取不完整（${warnings.length} 项）：${warnings.join("；")}`);
+    return { ...finalData, warnings };
+  }
+  return finalData;
 }
 
 /** 查找节点 ID by label (内部辅助) — 支持模糊匹配 */

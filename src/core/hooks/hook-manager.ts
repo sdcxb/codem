@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Hook Manager — Registration, matching, and execution of hooks
  *
  * Design (from CLAUDE-CODE-IMPACT-ANALYSIS.md):
@@ -140,12 +140,26 @@ export class HookManager {
           };
         }
 
-        if (result.action === "modify" && result.modifiedInput) {
-          currentInput = result.modifiedInput;
+        if (result.action === "modify") {
+          if (result.modifiedInput) {
+            currentInput = result.modifiedInput;
+          } else {
+            // 声明要改参数却没给参数：不能当成"没发生"，否则钩子静默失效
+            const message = `Hook "${hook.name}" returned action "modify" without modifiedInput — blocked instead of silently running the original input`;
+            console.warn(`[HookManager] ${message}`);
+            return { action: "deny", denyMessage: message };
+          }
         }
       } catch (error: any) {
-        console.warn(`[HookManager] PreToolUse hook "${hook.name}" error: ${error.message}`);
-        // On error, continue (don't block the tool)
+        // 第 84 波：原来无论钩子出什么错都"继续放行"。守卫失败 ≠ 通过。
+        const message = `PreToolUse hook "${hook.name}" threw: ${error?.message || error}`;
+        console.warn(`[HookManager] ${message}`);
+        if (!hook.allowOnError) {
+          return {
+            action: "deny",
+            denyMessage: `${message}（守卫钩子未生效，默认拦下；如确需放行请为该钩子设置 allowOnError）`,
+          };
+        }
       }
     }
 
@@ -274,6 +288,15 @@ export class HookManager {
    * - "DENY" → deny
    * - "MODIFY: <json>" → modify input
    * - Anything else → allow
+   *
+   * 第 84 波（审计修正）：**退出码必须被读取**。
+   * 原来只看 stdout —— 一个 `exit 1` / `exit 7` 的守卫钩子（拦下来最常见的写法）
+   * 等于什么都没做：用户以为钩子能拦、实际全部放行。属于"安全阀被缺省分支绕过"。
+   * 现在遵循通用钩子约定并 fail-closed：
+   *   · 退出码 2            → 拦下（stderr 作为原因）
+   *   · 其它非 0 退出码/超时 → 默认**拦下**（钩子没给出裁决 ≠ 允许）；
+   *                           仅当 hook.allowOnError === true 时才放行并告警
+   *   · 声明了 MODIFY: 但 JSON 非法 → 拦下（原意是改参数，改不成不能当成没这回事）
    */
   private async executeCommandPreHook(
     hook: HookDefinition,
@@ -289,31 +312,65 @@ export class HookManager {
       ]);
 
       const stdout = (result.stdout || "").trim();
+      const stderr = (result.stderr || "").trim();
+      const exitCode = typeof result.exitCode === "number" ? result.exitCode : 0;
+
       if (stdout === "DENY") {
-        return { action: "deny", denyMessage: `Hook "${hook.name}" denied this operation` };
+        return {
+          action: "deny",
+          denyMessage: `Hook "${hook.name}" denied this operation${stderr ? `: ${stderr.slice(0, 300)}` : ""}`,
+        };
       }
       if (stdout.startsWith("MODIFY:")) {
         try {
           const json = stdout.substring(7).trim();
           const modifiedInput = JSON.parse(json);
+          // 修改后的输入必须是对象，否则 deny（原来返回原参数继续跑 = 静默失效）
+          if (!modifiedInput || typeof modifiedInput !== "object" || Array.isArray(modifiedInput)) {
+            const message = `Hook "${hook.name}" returned "MODIFY:" but the payload is not a JSON object — blocked instead of running with unmodified input`;
+            console.warn(`[HookManager] ${message}`);
+            return { action: "deny", denyMessage: message };
+          }
           return { action: "modify", modifiedInput };
-        } catch {
-          // Invalid JSON — treat as allow
+        } catch (e: any) {
+          const message = `Hook "${hook.name}" returned "MODIFY:" with invalid JSON (${e?.message || "parse error"}) — blocked instead of running with unmodified input`;
+          console.warn(`[HookManager] ${message}`);
+          return { action: "deny", denyMessage: message };
         }
       }
+
+      if (exitCode !== 0) {
+        const detail = stderr ? `: ${stderr.slice(0, 300)}` : "";
+        const message = `Hook "${hook.name}" exited with code ${exitCode}${detail}`;
+        if (hook.allowOnError) {
+          console.warn(`[HookManager] ${message} — 按 allowOnError 放行`);
+          return { action: "allow" };
+        }
+        console.warn(`[HookManager] ${message} — 钩子未给出裁决，fail-closed 拦下该工具调用`);
+        return { action: "deny", denyMessage: `${message}（钩子未给出裁决，默认拦下；如确需放行请为该钩子设置 allowOnError）` };
+      }
+
       return { action: "allow" };
     } catch (error: any) {
-      if (error.message.includes("timed out")) {
-        console.warn(`[HookManager] Hook "${hook.name}" timed out after ${timeoutMs}ms — skipping`);
+      const isTimeout = String(error?.message || "").includes("timed out");
+      const message = isTimeout
+        ? `Hook "${hook.name}" timed out after ${timeoutMs}ms`
+        : `Hook "${hook.name}" failed to run: ${error?.message || error}`;
+      if (hook.allowOnError) {
+        console.warn(`[HookManager] ${message} — 按 allowOnError 放行`);
         return { action: "allow" };
       }
-      throw error;
+      console.warn(`[HookManager] ${message} — 守卫未生效，fail-closed 拦下该工具调用`);
+      return { action: "deny", denyMessage: `${message}（守卫钩子未生效，默认拦下；如确需放行请为该钩子设置 allowOnError）` };
     }
   }
 
   /**
    * Execute a command-type hook (for SessionStart/Stop/PostToolUse).
    * These don't return a result — they just run.
+   *
+   * 仍不阻塞流程（生命周期钩子没有裁决语义），但**非零退出码不再被吞掉**：
+   * 以前一个每次都失败的 SessionStart 钩子完全静默，用户没有任何线索。
    */
   private async executeCommandHook(
     hook: HookDefinition,
@@ -323,12 +380,19 @@ export class HookManager {
     const command = hook.command!;
 
     try {
-      await Promise.race([
+      const result = await Promise.race([
         executeCommand(command, ctx.cwd, timeoutMs), // FIX: 超时真正杀进程树
         this.timeout(timeoutMs),
       ]);
+      const exitCode = typeof result?.exitCode === "number" ? result.exitCode : 0;
+      if (exitCode !== 0) {
+        const stderr = (result?.stderr || "").trim();
+        console.warn(
+          `[HookManager] Hook "${hook.name}" (${hook.event}) exited with code ${exitCode}${stderr ? `: ${stderr.slice(0, 300)}` : ""}`,
+        );
+      }
     } catch (error: any) {
-      if (error.message.includes("timed out")) {
+      if (String(error?.message || "").includes("timed out")) {
         console.warn(`[HookManager] Hook "${hook.name}" timed out after ${timeoutMs}ms — skipping`);
         return;
       }
@@ -350,12 +414,23 @@ export class HookManager {
       const fn = new Function("ctx", hook.function!);
       const result = fn(ctx);
       if (result && typeof result === "object") {
+        const action = (result as PreToolHookResult).action;
+        // 第 84 波：返回了无法识别的 action（例如写成 {action:"denied"} / {deny:true}）
+        // 时，原来会被下游当成"非 deny 非 modify"→ 静默放行。守卫写法错了必须报错。
+        if (action !== "allow" && action !== "deny" && action !== "modify") {
+          const message = `Function hook "${hook.name}" returned an unrecognized action ${JSON.stringify(action)} (expected "allow" | "deny" | "modify") — blocked instead of silently allowing`;
+          console.warn(`[HookManager] ${message}`);
+          return { action: "deny", denyMessage: message };
+        }
         return result as PreToolHookResult;
       }
       return { action: "allow" };
     } catch (error: any) {
-      console.warn(`[HookManager] Function hook "${hook.name}" error: ${error.message}`);
-      return { action: "allow" };
+      const message = `Function hook "${hook.name}" threw: ${error?.message || error}`;
+      console.warn(`[HookManager] ${message}`);
+      // 与 command 钩子一致：默认 fail-closed，allowOnError 才放行
+      if (hook.allowOnError) return { action: "allow" };
+      return { action: "deny", denyMessage: `${message}（守卫钩子未生效，默认拦下；如确需放行请为该钩子设置 allowOnError）` };
     }
   }
 

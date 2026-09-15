@@ -16,7 +16,7 @@
 
 import {
   createTeam, addMember as engineAddMember, removeMember as engineRemoveMember,
-  createTask, claimTask, updateTask, beginReassign, finishReassign,
+  createTask, claimTask, updateTask, beginReassign, finishReassign, cancelReassign,
   appendMailbox, claimMailbox, acknowledgeMailbox, releaseMailbox,
   unreadMailbox, snapshot, nextReadyTask, rollbackClaim,
   genId,
@@ -48,8 +48,63 @@ export class AgentTeamsServiceClass {
       const raw = localStorage.getItem(STORE_KEY);
       if (!raw) return;
       const arr = JSON.parse(raw);
-      if (Array.isArray(arr)) for (const t of arr) this.teams.set(t.id, t);
-    } catch { /* ignore corrupt */ }
+      if (Array.isArray(arr)) for (const t of arr) if (t && t.id) this.teams.set(t.id, t);
+      else console.warn("[agent-teams] 持久化数据不是数组，已忽略（团队列表为空）：", typeof arr);
+      this.reconcileAfterRestart();
+    } catch (e) {
+      // 原来这里静默吞掉：数据损坏时用户看到的是"团队凭空消失"，没有任何线索
+      console.warn("[agent-teams] 团队持久化数据损坏，无法恢复（团队列表将为空）：", e);
+    }
+  }
+
+  /**
+   * 重启对账（第 84 波审计修正）。
+   *
+   * 缺陷：团队状态持久化在 localStorage，但**进程内没有任何东西在跑**。
+   * 重启后 `working` 的成员会让 `kick()` 永远跳过它、`reassigning` 的任务
+   * 会让 `nextReadyTask`/`claimTask` 永远拒绝它、带 attemptId 的 claimed 任务
+   * 指向一个已经不存在的执行 —— 三者合起来就是"任务永远没人做、界面还显示工作中"。
+   *
+   * 对账规则（只动"当前进程不可能还在进行"的状态，并逐条记录原因）：
+   *   · 成员 working → idle（并写明原因）
+   *   · 任务 reassigning → 取消静默期，回共享池
+   *   · 任务 claimed/in_progress 且带 attemptId → 令牌作废，回共享池重新调度
+   */
+  private reconcileAfterRestart(): void {
+    const now = Date.now();
+    let changed = false;
+    for (const team of this.teams.values()) {
+      if (team.archived) continue;
+      const notes: string[] = [];
+      for (const m of team.members) {
+        if (m.status === "working") {
+          m.status = "idle";
+          changed = true;
+          notes.push(`成员 ${m.name}：工作中 → 空闲（应用已重启，原执行不存在）`);
+        }
+      }
+      for (const t of team.tasks) {
+        if (TASK_TERMINAL.has(t.status)) continue;
+        if (t.reassigning) {
+          cancelReassign(team, t.id, t.assignee);
+          changed = true;
+          notes.push(`任务 ${t.id}：清除未完成的转派静默期，回到共享池`);
+          continue;
+        }
+        if (t.attemptId && (t.status === "claimed" || t.status === "in_progress")) {
+          t.status = "pending";
+          t.attemptId = undefined;
+          t.updatedAt = now;
+          changed = true;
+          notes.push(`任务 ${t.id}：领取令牌已随重启失效，回到共享池重新调度`);
+        }
+      }
+      if (notes.length) {
+        console.warn(`[agent-teams] 重启对账（${team.name}）：\n- ${notes.join("\n- ")}`);
+        this.addAlerts(team.id, notes.map((n) => `重启对账：${n}`));
+      }
+    }
+    if (changed) this.persist();
   }
 
   private persist(): void {
@@ -67,6 +122,22 @@ export class AgentTeamsServiceClass {
 
   private notify(): void {
     for (const fn of this.listeners) { try { fn(); } catch { /* noop */ } }
+  }
+
+  // ========== 告警（可见性） ==========
+
+  private alerts = new Map<string, string[]>();
+
+  /** 记录一条团队级告警（供 status 输出/UI 展示，不进持久化） */
+  private addAlerts(teamId: string, notes: string[]): void {
+    if (notes.length === 0) return;
+    const cur = this.alerts.get(teamId) ?? [];
+    for (const n of notes) if (!cur.includes(n)) cur.push(n);
+    this.alerts.set(teamId, cur.slice(-20));
+  }
+
+  getAlerts(teamId: string): string[] {
+    return [...(this.alerts.get(teamId) ?? [])];
   }
 
   // ========== 团队 CRUD ==========
@@ -212,21 +283,39 @@ export class AgentTeamsServiceClass {
     return { teamId, taskId, task };
   }
 
-  /** 转派：撤销旧 attempt → 静默期 → 对新 assignee 开新 attempt */
+  /**
+   * 转派：撤销旧 attempt → 静默期 → 对新 assignee 开新 attempt。
+   *
+   * 第 84 波（B 类缺陷）：原来**只有** `newAssignee === CAPTAIN` 时才结束静默期。
+   * 转派给普通成员时任务会永久停在 `reassigning: true`：
+   * `nextReadyTask` 跳过它、`claimTask` 抛 "is being reassigned; try later"，
+   * 而 `kick()` 也永远不会派它 —— 任务彻底卡死且界面上看不出原因。
+   * 现在两种目标都结束静默期；若开新 attempt 失败（例如依赖未满足），
+   * 也必须清掉静默标记（否则同样永久卡死），并把原因报出来。
+   */
   reassign(teamId: string, taskId: string, newAssignee: string) {
     const team = this.teams.get(teamId);
     if (!team) throw new Error(`team "${teamId}" not found`);
     const r = beginReassign(team, taskId, newAssignee);
     // 旧负责人不再持有该任务 → 若无其它在办任务则释放为 idle
     this.releaseAssigneeIfIdle(team, r.previousAssignee);
-    // 若接管者就是队长本人，立即结束静默（无成员需要中断）
-    if (newAssignee === CAPTAIN) {
-      finishReassign(team, taskId, CAPTAIN);
+
+    let claimed = false;
+    let note: string | undefined;
+    try {
+      finishReassign(team, taskId, newAssignee);
+      claimed = true;
+    } catch (e: any) {
+      cancelReassign(team, taskId, newAssignee);
+      note = `已清除转派静默期，但未能立即开新领取：${e?.message || e}`;
+      this.addAlerts(teamId, [note]);
+      console.warn(`[agent-teams] reassign(${taskId} → ${newAssignee}): ${note}`);
     }
+
     this.persist();
     this.notify();
     this.kick(teamId);
-    return r;
+    return { ...r, claimed, note };
   }
 
   /**
@@ -309,38 +398,62 @@ export class AgentTeamsServiceClass {
   /**
    * 任务图变更后尝试派活：找空闲成员 + 就绪任务，引擎原子领取 → 唤醒。
    * 简化（单进程同步语义）：对每个非 removed 成员，若有就绪任务则领取并唤醒。
+   *
+   * 第 84 波（B 类缺陷）：**领取前必须确认成员真的能被唤醒**。
+   * 原来先 `claimTask`（任务立刻被"幽灵成员"占住，别人再也看不到它）再投递，
+   * 而 `followup` 在应用重启后必然抛 "is not live or has settled" —— 于是任务
+   * 在 claim/rollback 之间反复横跳、成员状态在 working/idle 之间抖动，队长看到的
+   * 只有"任务一直 pending"。现在先验证子会话存在，不存在就把成员标成离线并给出
+   * 可执行的建议（重新添加成员 / 转派给队长）。
    */
   private kick(teamId: string): void {
     const team = this.teams.get(teamId);
     if (!team || team.archived) return;
+    const rt = getSubagentRuntime();
     for (const member of team.members) {
-      if (member.status === "removed" || member.status === "working" || member.status === "absent") continue;
+      if (member.status === "removed" || member.status === "working") continue;
       const task = nextReadyTask(team, member.name);
       if (!task) continue;
+
+      // 唤醒能力前置校验：子会话不存在 → 不领取（否则任务被占住没人做）
+      //
+      // 注意：`getTask` 是运行时的新接口，某些注入的运行时实现（测试替身、旧版插件）
+      // 可能没有它。拿不到"子会话是否存在"这一事实时**不能**当成"不存在"
+      // （那会把能用的成员误标离线），退回原来的"先试投递、失败再回滚"逻辑。
+      const canLookUpChild = typeof (rt as any)?.getTask === "function";
+      const child = canLookUpChild ? (rt as any).getTask(member.id) : undefined;
+      if (!rt || (canLookUpChild && !child)) {
+        if (member.status !== "absent") member.status = "absent";
+        this.addAlerts(teamId, [
+          `成员 ${member.name} 无法唤醒（子会话 ${member.id} 不存在，通常是应用重启后需要重新添加成员）；` +
+          `任务 ${task.id} 仍留在共享池，可用 agent_teams_reassign_task 指派给 captain 由队长自己完成。`,
+        ]);
+        console.warn(
+          `[agent-teams] 跳过唤醒：成员 ${member.name}(${member.id}) 的子会话不存在，任务 ${task.id} 未领取`,
+        );
+        continue;
+      }
+      if (member.status === "absent") member.status = "idle"; // 子会话又在了 → 离线状态作废
+
       try {
         const r = claimTask(team, task.id, member.name);
         member.status = "working";
         // 异步唤醒（不阻塞工具返回）
-        const rt = getSubagentRuntime();
-        if (rt && member.status !== "absent") {
-          const assignment = `[任务分配] ${task.id}: ${task.subject}${task.description ? "\n" + task.description : ""}\n` +
-            `用 agent_teams_claim_task 领取（会返回同一 attempt_id ${r.attemptId}），完成后 agent_teams_update_task(status=completed, attempt_id=…)。`;
-          rt.followup(team.captainSessionId, member.id, assignment, { signal: new AbortController().signal }).catch((e) => {
-            // 第 83 波：投递失败必须**可见**（原来是空 catch：任务被回滚、成员回到 idle，
-            // 但没有任何日志/状态说明，队长只能看到任务一直 pending 却不知道原因）
-            console.warn(
-              `[agent-teams] 唤醒成员失败（${member.name}/${member.id}，任务 ${task.id}）：${e?.message || e} —— 已回滚领取，成员回到 idle`,
-            );
-            rollbackClaim(team, task.id, r.attemptId, task.assignee);
-            member.status = "idle";
-            this.persist();
-            this.notify();
-          });
-        } else {
-          // 无 runtime（测试/冷态）：回滚，成员留 idle
-          rollbackClaim(team, task.id, r.attemptId);
+        const assignment = `[任务分配] ${task.id}: ${task.subject}${task.description ? "\n" + task.description : ""}\n` +
+          `用 agent_teams_claim_task 领取（会返回同一 attempt_id ${r.attemptId}），完成后 agent_teams_update_task(status=completed, attempt_id=…)。`;
+        rt.followup(team.captainSessionId, member.id, assignment, { signal: new AbortController().signal }).catch((e) => {
+          // 第 83 波：投递失败必须**可见**（原来是空 catch：任务被回滚、成员回到 idle，
+          // 但没有任何日志/状态说明，队长只能看到任务一直 pending 却不知道原因）
+          const reason = e?.message || String(e);
+          console.warn(
+            `[agent-teams] 唤醒成员失败（${member.name}/${member.id}，任务 ${task.id}）：${reason} —— 已回滚领取，成员回到 idle`,
+          );
+          this.addAlerts(teamId, [`唤醒成员 ${member.name} 失败（任务 ${task.id}）：${reason} —— 已回滚，任务回到共享池`]);
+          rollbackClaim(team, task.id, r.attemptId, task.assignee);
           member.status = "idle";
-        }
+          this.persist();
+          this.notify();
+        });
       } catch {
         /* claim race — next member */
       }
@@ -354,7 +467,9 @@ export class AgentTeamsServiceClass {
   status(teamId: string): TeamSnapshot {
     const team = this.teams.get(teamId);
     if (!team) throw new Error(`team "${teamId}" not found`);
-    return snapshot(team);
+    const snap = snapshot(team);
+    const alerts = this.getAlerts(teamId);
+    return alerts.length ? { ...snap, alerts } : snap;
   }
 
   listAll(): AgentTeam[] {

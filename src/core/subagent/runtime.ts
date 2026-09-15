@@ -34,6 +34,7 @@ import type { LLMEngine } from '../llm';
 import * as MessageStorage from '../storage/message';
 import { getLang } from '../i18n/lang';
 import { parseTaskResult, type SubagentTask, type SubagentActivity } from './subagent';
+import { idleWatchdog } from '../session/idle-watchdog';
 
 // ========== 活化状态 ==========
 
@@ -70,7 +71,20 @@ interface Activation {
   result?: SubagentResult;
   /** 汇报回调列表 */
   reportCallbacks: Array<(content: string, delivery: 'quiet' | 'wakeup') => void>;
+  /**
+   * 第 84 波：已执行的轮次数（followup 唤醒一次算一轮）。
+   * 用于**轮次预算**：可持续子智能体过去可以被无限唤醒，一个卡住的成员
+   * （或一个不停给自己派活的队长）能无上限地烧 token，没有任何阀门。
+   */
+  turns: number;
 }
+
+// ========== 阀门参数（第 84 波） ==========
+
+/** 单轮空闲窗口：连续这么久**一个事件都没有**才判定挂死（时间只测沉默，不测总时长） */
+const SUBAGENT_TURN_IDLE_MS = 5 * 60 * 1000;
+/** 单个可持续子智能体的轮次预算（0 = 不限）。用尽后 followup 会明确报错而不是继续烧 token。 */
+const SUBAGENT_MAX_TURNS = 60;
 
 function generateId(): string {
   return `sub-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
@@ -228,6 +242,7 @@ export class SubagentRuntime {
       executionDone: execResolvers.promise,
       executionResolver: execResolvers.resolve,
       reportCallbacks: [],
+      turns: 0,
     };
 
     this.activations.set(childId, activation);
@@ -274,6 +289,20 @@ export class SubagentRuntime {
       this.watchSettlement(activation);
       console.log(`[SubagentRuntime] Re-activated disposed child ${activation.childId} for followup`);
     }
+
+    /**
+     * 第 84 波（阀门缺失）：轮次预算。
+     * 之前可持续子智能体可以被**无限次**唤醒 —— 一个陷入自我循环的成员
+     * （或队长不断给它派活）能一直烧 token，没有任何上限。
+     * 现在用尽预算后明确报错（调用方会回滚领取并给出可见告警），而不是继续跑。
+     */
+    if (SUBAGENT_MAX_TURNS > 0 && activation.turns >= SUBAGENT_MAX_TURNS) {
+      throw new Error(
+        `Subagent "${childId}" 已用尽轮次预算（${activation.turns}/${SUBAGENT_MAX_TURNS}）—— ` +
+        `请新建成员或由队长接管该任务（agent_teams_reassign_task assignee=captain）`,
+      );
+    }
+    activation.turns += 1;
 
     // 生成确认 ID — 实际的 DB 消息 ID 由 processSubagent 内部生成
     const messageId = `followup-${activation.childId}-${Date.now()}`;
@@ -636,6 +665,30 @@ export class SubagentRuntime {
     activation.task.status = 'running';
     this.touchTask(activation);
 
+    /**
+     * 第 84 波：空闲看门狗（时间只测"沉默"，不测"总共跑了多久"）。
+     *
+     * 之前可持续子智能体**完全没有**看门狗：LLM 流挂死或工具卡住时，
+     * 这个成员会永远停在 running，队长/看板永远等不到结算，也没人知道为什么。
+     * 现在连续 SUBAGENT_TURN_IDLE_MS 一个事件都没有 → 判定挂死：
+     *   · 先真的中断引擎里那一轮（`abortSession` 现在能找到 scoped loop 了）；
+     *   · 再把本轮如实结算成失败（原因写清楚），让父会话/队长立刻能看见。
+     */
+    const idleMs = SUBAGENT_TURN_IDLE_MS;
+    const watchdog = idleWatchdog(undefined, idleMs, 'SUBAGENT_TURN_IDLE');
+    // 用对象持有（而不是裸 let）：赋值发生在看门狗回调里，TS 的控制流分析看不到，
+    // 裸变量会被窄化成"永远是 null"，比较就失去意义。
+    const abortState: { by: 'idle' | 'cancel' | null } = { by: null };
+    const onIdle = () => {
+      if (abortState.by !== null) return;
+      abortState.by = 'idle';
+      console.warn(
+        `[SubagentRuntime] 子智能体 ${activation.childId} 连续 ${Math.round(idleMs / 1000)}s 无任何事件 → 判定挂死，中断本轮`,
+      );
+      try { this.engine.abortSession(activation.childId); } catch (e) { console.warn('[SubagentRuntime] abortSession failed:', e); }
+    };
+    watchdog.signal.addEventListener('abort', onIdle, { once: true });
+
     try {
       // sessionId 直接使用 childId — 不再叠加额外前缀
       let output = '';
@@ -651,11 +704,14 @@ activation.task.cwd,
 activation.task.agentId,
 activation.task.profile_id,
 )) {
-        if (activation.abort.signal.aborted || signal.aborted) {
+        if (activation.abort.signal.aborted || signal.aborted || abortState.by === 'idle') {
           // 同 executeTurn：必须走统一收尾，否则父会话等不到结算（第 83 波审计修正）
           aborted = true;
+          if (abortState.by === null) abortState.by = 'cancel';
           break;
         }
+        // 有事件 = 有进展 → 重新上弦（合法长任务只要还在产出就永远不会被杀）
+        watchdog.pulse();
         if (event.type === 'text_delta') {
           output += event.text;
           if (hasRunningThinking) {
@@ -720,17 +776,51 @@ activation.task.profile_id,
         ? output + '\n\n' + (getLang() === 'zh' ? '[工具结果]' : '[Tool Results]') + '\n' + toolResults.join('\n---\n')
         : output;
 
-      const result = parseTaskResult(fullOutput);
-      activation.result = {
-        output: result.output,
-        stopReason: 'completed',
-        filesTouched: result.filesTouched,
-        summary: result.summary,
-      };
-      activation.task.status = 'completed';
-      activation.task.completedAt = Date.now();
-      activation.task.result = result;
-      this.completeRunningActivities(activation);
+      /**
+       * 第 84 波（B 类缺陷：假成功）：**被中止/被判定挂死的续聊轮不能算完成**。
+       *
+       * 原来这里不看 `aborted`（它虽然被赋值，却只用于 break），一律
+       * `status = 'completed'`、`stopReason = 'completed'` —— 于是：
+       *   · 队长看到"成员已完成"，实际这一轮什么都没做完；
+       *   · 空闲看门狗（本波新增）判定的挂死也会被记成正常完成，看板上完全看不出。
+       * 与 `executeTurn` 保持一致的结算语义。
+       */
+      if (aborted) {
+        const byIdle = abortState.by === 'idle';
+        activation.result = {
+          output: sanitizeSubagentOutput(output),
+          stopReason: 'aborted',
+          filesTouched: [],
+          summary: byIdle
+            ? (getLang() === 'zh'
+                ? `本轮被判定挂死并中断：连续 ${Math.round(idleMs / 1000)} 秒没有任何事件`
+                : `This turn was killed after ${Math.round(idleMs / 1000)}s with no events`)
+            : (getLang() === 'zh' ? '本轮被中断' : 'This turn was interrupted'),
+        };
+        activation.task.status = 'cancelled';
+        activation.task.error = activation.result.summary;
+        activation.task.completedAt = Date.now();
+        this.completeRunningActivities(activation);
+      } else {
+        const result = parseTaskResult(fullOutput);
+        // 第 83 波：子智能体自报失败/受阻时不能报"已完成"
+        const reported = result.status; // success | partial | failed | blocked
+        const failed = reported === 'failed' || reported === 'blocked';
+        activation.result = {
+          output: result.output,
+          stopReason: failed ? 'refusal' : 'completed',
+          filesTouched: result.filesTouched,
+          summary: result.summary,
+        };
+        activation.task.status = failed ? 'failed' : 'completed';
+        activation.task.completedAt = Date.now();
+        activation.task.result = result;
+        if (failed) {
+          activation.task.error = result.summary || (getLang() === 'zh' ? `子智能体自报 ${reported}` : `subagent reported ${reported}`);
+          console.warn(`[SubagentRuntime] 续聊子智能体 ${activation.childId} 自报 ${reported} → 按失败结算`);
+        }
+        this.completeRunningActivities(activation);
+      }
     } catch (err: any) {
       activation.task.status = 'failed';
       activation.task.error = err.message;
@@ -742,6 +832,8 @@ activation.task.profile_id,
         summary: err.message,
       };
       this.completeRunningActivities(activation);
+    } finally {
+      watchdog.dispose();
     }
 
     this.touchTask(activation);

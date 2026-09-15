@@ -229,7 +229,13 @@ export class StreamingToolExecutorImpl {
                 // S0-1 fix: Pipeline catches tool exceptions internally and returns
                 // status:"error" results. Re-throw to trigger catch block for
                 // tool_error event emission, preserving the original error message.
-                if (pr.result.status === "error") {
+                //
+                // 第 84 波：**工具自己汇报的失败**（errorSource:"tool"，例如
+                // `Error: oldString not found`）不在此列 —— 它要作为 tool_complete
+                // 带着 status:"error" 返回，让模型看到文本并纠正，同时界面显示失败；
+                // 若一并抛成 tool_error，会累加 consecutiveErrors（连错 3 次就整轮终止），
+                // 反而比修复前更容易卡死。
+                if (pr.result.status === "error" && pr.result.errorSource !== "tool") {
                   const errMsg = pr.result.error || pr.result.output || "Tool execution failed";
                   throw new Error(errMsg);
                 }
@@ -342,7 +348,8 @@ export class StreamingToolExecutorImpl {
           // S0-1 fix: Pipeline catches tool exceptions internally and returns
           // status:"error" results. Re-throw to trigger catch block for
           // tool_error event emission, preserving the original error message.
-          if (pr.result.status === "error") {
+          // 第 84 波：工具自报失败（errorSource:"tool"）除外，见 executeBatch 中的说明。
+          if (pr.result.status === "error" && pr.result.errorSource !== "tool") {
             const errMsg = pr.result.error || pr.result.output || "Tool execution failed";
             throw new Error(errMsg);
           }

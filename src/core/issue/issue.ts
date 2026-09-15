@@ -136,7 +136,18 @@ class IssueManagerClass {
     if (updates.sessionId !== undefined) dbUpdates.session_id = updates.sessionId;
     if (updates.labels !== undefined) dbUpdates.labels = updates.labels.join(",");
 
-    IssueStorage.update(id, dbUpdates);
+    const updatedRows = IssueStorage.update(id, dbUpdates);
+
+    /**
+     * 第 84 波：没有任何字段被写入时不能继续演"更新成功"。
+     * （`updates` 全为 undefined / 议题 id 不存在 → 之前照样加系统评论 + 通知 + 写收件箱）
+     */
+    if (updatedRows === 0) {
+      console.warn(
+        `[IssueStore] update(${id}) 没有实际写入任何字段（${Object.keys(dbUpdates).length === 0 ? "调用方未提供可更新字段" : "议题不存在或 id 不对"}）—— 已跳过状态变更评论与通知`,
+      );
+      return;
+    }
 
     // Add system comment for status changes
     if (updates.status) {

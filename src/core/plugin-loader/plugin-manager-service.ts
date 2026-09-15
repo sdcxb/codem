@@ -336,11 +336,13 @@ export class PluginManagerService {
    * 此前只处理前者且生产从不注册 loader → 对 YAML 装配插件的"禁用"仅改状态、
    * 插件/服务/工具仍在 ctx 运行（假禁用）——现真正 dispose。
    */
-  private async doDisable(name: string): Promise<void> {
+  private async doDisable(name: string): Promise<{ unloaded: boolean }> {
+    let unloaded = false
     const fiber = this.fibers.get(name)
     if (fiber?.dispose) {
       try {
         await fiber.dispose()
+        unloaded = true
       } catch (err) {
         console.warn(`[PluginManager] Error disposing ${name}:`, err)
       }
@@ -351,6 +353,7 @@ export class PluginManagerService {
     if (activeFiber?.dispose) {
       try {
         await activeFiber.dispose()
+        unloaded = true
       } catch (err) {
         console.warn(`[PluginManager] Error disposing (assembled) ${name}:`, err)
       }
@@ -358,7 +361,23 @@ export class PluginManagerService {
     unregisterActiveFiber(name)
 
     this.states.set(name, { name, status: 'disabled', updatedAt: Date.now() })
-    console.log(`[PluginManager] Disabled (unloaded): ${name}`)
+    /**
+     * 第 84 波（审计修正）：**"禁用"不等于"卸载成功"**。
+     *
+     * 有些插件（例如通过 `loadUIPlugins` 注册 slot 的 UI 插件）既不在 `this.fibers`
+     * 也不在 YAML 装配的登记表里 —— 那时两处 dispose 都落空、什么都没卸载，
+     * 原来却无条件打印 "Disabled (unloaded)" 并让 UI 弹「已关闭」，
+     * 插件下一轮照样加载、面板照样渲染。现在如实区分两种情况。
+     */
+    if (unloaded) {
+      console.log(`[PluginManager] Disabled (unloaded): ${name}`)
+    } else {
+      console.warn(
+        `[PluginManager] Disabled (状态已置 disabled，但**没有找到可卸载的实例**): ${name}` +
+          ` —— 该插件的代码/服务仍在本次进程内运行，重启后不再加载。`,
+      )
+    }
+    return { unloaded }
   }
 
   /**

@@ -83,7 +83,12 @@ function extractAttachmentsFromStore(): Map<string, { attachment: Attachment; me
 }
 
 /** 格式化附件内容 — 包裹数据隔离标记，防止文件内容被当作指令 */
-function formatAttachmentContent(att: Attachment, offset: number, limit: number): string {
+function formatAttachmentContent(
+  att: Attachment,
+  offset: number,
+  limit: number,
+  opts?: { offsetAlreadyApplied?: boolean; note?: string },
+): string {
   // Data-isolation header — same pattern as the read tool's data marker wrapper.
   // Prevents the LLM from treating uploaded file content as instructions.
   const dataHeader =
@@ -102,6 +107,19 @@ function formatAttachmentContent(att: Attachment, offset: number, limit: number)
     case "code":
     default: {
       const content = att.content || "";
+      /**
+       * 第 84 波（审计修正）：**偏移不能应用两次**。
+       *
+       * 走磁盘分页读取（`readFileLines`）时，`att.content` 已经是"从 offset 附近开始的一小段"。
+       * 原来接着又调 `formatAttachmentContent(att, offset, limit)` 对这段再 `substring(offset…)`：
+       *   · 模型实际拿到的起点约为请求偏移的 2 倍（前面的内容被静默吃掉）；
+       *   · 头部还写 `showing: 8000/8000 chars`，把"窗口长度"当成"文件总长"，
+       *     看上去像"这份文件只有 8000 字"，而它前后都还有内容。
+       * 现在这种窗口由调用方明确标注（windowed），这里只做包裹、不再二次切分。
+       */
+      if (opts?.offsetAlreadyApplied) {
+        return `${dataHeader}\n--- CONTENT BEGIN ---\n[${att.name}] ${opts.note || ""}\n\n${content}\n--- CONTENT END ---`;
+      }
       if (content.length <= offset) {
         return `[End of file: ${att.name}]`;
       }
@@ -224,6 +242,7 @@ export function createReadAttachmentTool(): ToolDef {
       // when we actually have a path. This avoids unnecessary dynamic import
       // when the attachment has neither sandboxPath nor path — in that case
       // we fall through to the "no readable content" branch below.
+      let windowedFromDisk: string | null = null;
       if (!target.content && target.type !== "url" && target.type !== "image") {
         // 1. Determine disk path before touching file-api
         let diskPath: string | undefined;
@@ -243,6 +262,7 @@ export function createReadAttachmentTool(): ToolDef {
         }
 
         // 2. Only import readFileLines when we have a path to read
+        let windowedFromDisk: string | null = null;
         if (diskPath) {
           try {
             const { readFileLines } = await import("../../file-api");
@@ -251,6 +271,10 @@ export function createReadAttachmentTool(): ToolDef {
             const lineLimit = Math.max(1, Math.ceil(limit / 80));
             const result = await readFileLines(diskPath, lineOffset, lineLimit, limit);
             target.content = result.text;
+            windowedFromDisk =
+              `(磁盘按行读取的近似窗口：第 ${lineOffset}-${lineOffset + lineLimit - 1} 行，` +
+              `约从字符 ${offset} 起，每行按 80 字符估算；此窗口**前后都可能有内容**，` +
+              `需要更多请调整 offset/limit，或直接用 read_file 读原文件)`;
           } catch (err: any) {
             return {
               title: `read_attachment: ${target.name}`,
@@ -258,17 +282,20 @@ export function createReadAttachmentTool(): ToolDef {
             };
           }
         }
+
+        // If still no content, inform the LLM
+        if (!target.content) {
+          return {
+            title: `read_attachment: ${target.name}`,
+            output: `Attachment "${target.name}" exists but has no readable content. Type: ${target.type}, Size: ${target.size || 0} bytes.`,
+          };
+        }
       }
 
-      // If still no content, inform the LLM
-      if (!target.content) {
-        return {
-          title: `read_attachment: ${target.name}`,
-          output: `Attachment "${target.name}" exists but has no readable content. Type: ${target.type}, Size: ${target.size || 0} bytes.`,
-        };
-      }
-
-      const formatted = formatAttachmentContent(target, offset, limit);
+      // 第 84 波：窗口内容已经切好，不能再按 offset 二次切分（见 formatAttachmentContent 注释）
+      const formatted = windowedFromDisk
+        ? formatAttachmentContent(target, offset, limit, { offsetAlreadyApplied: true, note: windowedFromDisk })
+        : formatAttachmentContent(target, offset, limit);
 
       // Append a sandbox-path hint so the LLM knows it can also use grep/glob
       const sandboxHint = target.sandboxPath

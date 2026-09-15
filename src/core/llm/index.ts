@@ -158,6 +158,11 @@ export class LLMEngine {
 private agenticLoop: AgenticLoop | null = null;
 /** Per-session agentic loop pool for parallel execution */
 private loopPool: Map<string, AgenticLoop> = new Map();
+/**
+ * 子智能体 scoped loop 的引用（sessionId → loop）：**只用于 abort，不复用**。
+ * 见 getAgenticLoop 中第 84 波的说明。
+ */
+private scopedLoopPool: Map<string, AgenticLoop> = new Map();
   private config: LLMEngineConfig;
   private snapshots: Map<string, SnapshotService> = new Map();
   // R4: Cordis Context — 当传入时通过 ctx.get() 消费服务
@@ -449,6 +454,17 @@ private loopPool: Map<string, AgenticLoop> = new Map();
     if (sessionId && !toolRegistryOverride) {
       this.loopPool.set(sessionId, loop);
     }
+    /**
+     * 第 84 波：scoped loop（子智能体）**单独记一份引用**，只用于 abort。
+     *
+     * 背景：scoped loop 故意不进 loopPool（避免污染主智能体工具集），但这样一来
+     * `abortSession(childId)` 就找不到它 —— 子智能体挂死在 LLM 流上时，运行时
+     * **没有任何句柄**可以中断它（空闲看门狗只能干等）。这里只存引用、不复用，
+     * 语义与"跳过池复用"不冲突。
+     */
+    if (sessionId && toolRegistryOverride) {
+      this.scopedLoopPool.set(sessionId, loop);
+    }
     // Also keep as fallback for non-session callers (not for scoped subagent loops)
     if (!toolRegistryOverride) {
       this.agenticLoop = loop;
@@ -459,6 +475,7 @@ private loopPool: Map<string, AgenticLoop> = new Map();
   /** Clean up a session's loop from the pool (call when session ends) */
   cleanupSessionLoop(sessionId: string): void {
     this.loopPool.delete(sessionId);
+    this.scopedLoopPool.delete(sessionId);
   }
 
   /** Build system prompt for a session */
@@ -1094,6 +1111,8 @@ Report earlier as well whenever a partial finding changes what that agent should
 
     // DSH-style: scoped ToolRegistry 随 loop 生命周期自然释放
     // 不需要手动移除 report 工具 — scope 是独立的，不影响主智能体
+    // 第 84 波：scoped loop 只用于 abort 的引用也要释放，否则子智能体越跑越多会一直挂着旧 loop
+    this.scopedLoopPool.delete(sessionId);
   }
 
   /** Abort current processing — DSH-style: also drain all background subagents */
@@ -1115,10 +1134,50 @@ Report earlier as well whenever a partial finding changes what that agent should
 
   /** Abort a single session's loop (per-session cancel) */
   abortSession(sessionId: string): void {
-    const loop = this.loopPool.get(sessionId);
-    if (loop) {
+    // 第 84 波：子智能体的 scoped loop 不在 loopPool 里，必须一起找 ——
+    // 否则"中止一个卡死的子智能体"根本没有句柄可用（看门狗只能干等）。
+    const loops = [this.loopPool.get(sessionId), this.scopedLoopPool.get(sessionId)];
+    let found = false;
+    for (const loop of loops) {
+      if (!loop) continue;
+      found = true;
       try { loop.abort(); } catch (e) { console.warn(`[LLMEngine] abortSession(${sessionId}) failed:`, e); }
     }
+    if (!found) {
+      console.warn(`[LLMEngine] abortSession(${sessionId})：没有活动的 loop（可能已结束）`);
+    }
+  }
+
+  /**
+   * 第 84 波（审计修正）：切换某个会话的协作模式，并作用到**正在运行**的 loop。
+   *
+   * 背景：`exit_plan_mode` 审批通过后，UI 只改了 React state（只影响"下一次请求"），
+   * 正在跑的那个回合里 loop.config.collaborationMode 仍然是 "plan"，
+   * PlanModeGuard 继续拦下所有写操作 —— 而工具已经告诉模型"你现在是 Default 模式"。
+   * 结果就是"假成功 + 后面每个写操作都失败"。
+   *
+   * @returns 真正被切换的活动 loop 数量（0 = 当前没有活动 loop，只影响后续请求）。
+   */
+  setCollaborationModeForSession(
+    sessionId: string,
+    mode: import("../agent/agent").CollaborationMode,
+  ): number {
+    const loop = this.loopPool.get(sessionId);
+    if (!loop) return 0;
+    try {
+      loop.updateConfig({ collaborationMode: mode });
+      return 1;
+    } catch (e) {
+      console.warn(`[LLMEngine] setCollaborationModeForSession(${sessionId}) failed:`, e);
+      return 0;
+    }
+  }
+
+  /** 读取正在运行的会话 loop 的协作模式（无活动 loop 时返回 null）。 */
+  getActiveCollaborationMode(sessionId: string): string | null {
+    const loop = this.loopPool.get(sessionId) as any;
+    if (!loop) return null;
+    return loop?.config?.collaborationMode ?? null;
   }
 
   /**

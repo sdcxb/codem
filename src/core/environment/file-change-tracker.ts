@@ -1,10 +1,17 @@
 /**
- * FileChangeTracker — Per-turn file change tracking via git tree snapshots
+ * FileChangeTracker — Per-turn file change tracking via **工作区快照**
  *
  * Lifecycle:
- *   start(workspace)  → capture before-tree (git rev-parse HEAD^{tree})
- *   finalize()         → capture after-tree → generate patch → store to SQLite → emit event
- *   revert(turnId)    → apply reverse patch → restore before state
+ *   start(workspace)  → capture before-snapshot（未提交改动也算）
+ *   finalize()         → capture after-snapshot → generate patch → store to SQLite → emit event
+ *   revert(turnId)    → apply reverse patch（+ 删掉本轮新建的未跟踪文件）→ restore before state
+ *
+ * 第 84 波（审计修正，真实缺陷）：原来 before/after 都取 `git rev-parse HEAD^{tree}` ——
+ * 那是**已提交**的树。agent 改文件只改工作区、不会自动提交，于是两次取样**恒等** →
+ * `finalize()` 永远返回 null → "文件变更"面板永远是空的、也点不到回滚
+ * （连开自动提交都救不了：finalize 早于 tryAutoCommit）。
+ * 现在改为记录**工作区快照**（`git stash create` 得到的树对象，不改动工作区/索引）
+ * + 未跟踪文件列表，未提交的改动终于能被看见与回滚。
  *
  * Key design:
  *   - Only invoked at iteration boundaries (not inside tool execution)
@@ -92,9 +99,46 @@ async function isGitRepo(cwd: string): Promise<boolean> {
   }
 }
 
+/** 工作区快照：能表达"未提交的改动" */
+interface WorkingTreeSnapshot {
+  /** 工作区对应的树对象（`git stash create` 的提交；工作区干净时回退到 HEAD^{tree}） */
+  ref: string;
+  /** 工作区当时是否完全干净（没有未提交改动） */
+  clean: boolean;
+  /** 未跟踪文件列表（agent 新建的文件就在这里） */
+  untracked: string[];
+}
+
+/**
+ * 取工作区快照（第 84 波）。
+ *
+ * `git stash create` 会为**当前工作区**创建一个提交对象并打印它的 SHA —— 它
+ * **不改动工作区、不改动索引、不产生 stash 记录**，正好用来做"本轮开始/结束"的对照物；
+ * 工作区没有改动时它输出空字符串（此时用 HEAD 的树当基准）。
+ */
+async function snapshotWorkingTree(workspace: string): Promise<WorkingTreeSnapshot> {
+  let stashRef = "";
+  try {
+    stashRef = (await runGit(workspace, ["stash", "create"])).trim();
+  } catch {
+    stashRef = ""; // 没有可 stash 的改动（或极老版本 git）→ 回退到 HEAD
+  }
+  const headTree = (await runGit(workspace, ["rev-parse", "HEAD^{tree}"])).trim();
+  let untracked: string[] = [];
+  try {
+    const out = await runGit(workspace, ["ls-files", "--others", "--exclude-standard"]);
+    untracked = out.split("\n").map((l) => l.trim()).filter(Boolean);
+  } catch {
+    untracked = [];
+  }
+  return { ref: stashRef || headTree, clean: !stashRef, untracked };
+}
+
 export class FileChangeTracker {
   private workspace: string;
   private beforeTree: string | null = null;
+  /** 本轮开始时的**工作区**快照（未提交改动也算，第 84 波） */
+  private beforeSnapshot: WorkingTreeSnapshot | null = null;
   private active = false;
   private sessionId: string;
   private messageId: string;
@@ -137,16 +181,18 @@ export class FileChangeTracker {
    * Returns null if tracking not active or no changes.
    */
   async finalize(): Promise<FileChangeResult | null> {
-    if (!this.active || !this.beforeTree) {
+    if (!this.active || !this.beforeTree || !this.beforeSnapshot) {
       return null;
     }
     this.active = false;
 
     try {
-      const afterTree = await runGit(this.workspace, ["rev-parse", "HEAD^{tree}"]);
+      const afterSnapshot = await snapshotWorkingTree(this.workspace);
+      const afterTree = afterSnapshot.ref;
+      const newUntracked = afterSnapshot.untracked.filter((f) => !this.beforeSnapshot!.untracked.includes(f));
 
-      // No changes — same tree
-      if (afterTree === this.beforeTree) {
+      // 没有任何变化（含"未跟踪文件也没多"）→ 不产生记录
+      if (afterTree === this.beforeTree && newUntracked.length === 0) {
         return null;
       }
 
@@ -159,6 +205,11 @@ export class FileChangeTracker {
       ]);
 
       const changedFiles = this.parseNameStatus(nameStatus);
+      // 未跟踪的新文件不在 git diff 里（`stash create` 不含 untracked），单独补上 —— 否则
+      // "agent 新建了文件"在面板里看不见、也回滚不掉。
+      for (const f of newUntracked) {
+        if (!changedFiles.some((c) => c.path === f)) changedFiles.push({ path: f, status: "A" });
+      }
 
       // Pre-check: get diff stat to estimate patch size before running full binary diff
       // This avoids running a potentially huge git diff --binary for very large changes
@@ -309,7 +360,38 @@ export class FileChangeTracker {
         return false;
       }
 
-      FileChangeStorage.updateStatus(artifactId, "reverted");
+      /**
+       * 第 84 波：**本轮新建的未跟踪文件不在 patch 里**（`stash create` 不含 untracked），
+       * 反向打补丁自然不会删掉它们 —— 于是"回滚"之后新建文件还留在工作区。
+       * 这里对记录里标记为 A（新增）的文件再确认一次：既没被 git 跟踪、又还在磁盘上 → 删掉。
+       */
+      try {
+        const listed = JSON.parse(record.changed_files || "[]") as Array<{ path: string; status: string }>;
+        for (const f of listed) {
+          if (f.status !== "A" || !f.path) continue;
+          const tracked = await invoke("execute_command", {
+            command: `git -C ${psQuote(workspace)} ls-files --error-unmatch ${psQuote(f.path)}`,
+            cwd: workspace,
+            timeout_ms: GIT_TIMEOUT_MS,
+          });
+          if ((tracked.exitCode ?? 1) === 0) continue; // 已被跟踪：patch 会处理
+          await invoke("execute_command", {
+            command: `powershell -Command "Remove-Item -LiteralPath ${psQuote(f.path)} -Force -ErrorAction SilentlyContinue"`,
+            cwd: workspace,
+          });
+        }
+      } catch (e) {
+        console.warn("[FileChangeTracker] revert: 清理新增文件失败（补丁已回滚）:", e);
+      }
+
+      // 第 84 波：状态更新必须确认真的改到了行 —— 原来无脑 return true，
+      // 记录不存在时"回滚成功"只写在返回值和提示里，数据库里仍是旧状态。
+      const statusRows = FileChangeStorage.updateStatus(artifactId, "reverted");
+      if (statusRows === 0) {
+        console.warn(
+          `[FileChangeTracker] revert: 补丁已回滚，但记录 ${artifactId} 的状态没更新（该行不存在）—— 变更历史里会一直显示为未回滚`,
+        );
+      }
       return true;
     } catch (e) {
       console.error("[FileChangeTracker] revert failed:", e);

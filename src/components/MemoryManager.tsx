@@ -156,6 +156,14 @@ export function MemoryManager({ onClose }: MemoryManagerProps) {
       });
     }
 
+    // 第 84 波：写入失败不能静默 —— 条目只存在于内存，重启就没了，必须当场告诉用户
+    const persistError = service.getLastPersistError();
+    if (persistError) {
+      setEditError(`保存到数据库失败：${persistError}（该记忆本次运行内可用，但重启后会丢失）`);
+      loadEntries();
+      return;
+    }
+
     setEditMode("none");
     setEditForm(EMPTY_FORM);
     setEditError("");
@@ -197,8 +205,14 @@ export function MemoryManager({ onClose }: MemoryManagerProps) {
     const reader = new FileReader();
     reader.onload = () => {
       const jsonStr = reader.result as string;
-      const count = getMemoryService().importFromJSON(jsonStr, false);
-      alert(count > 0 ? `成功导入 ${count} 条记忆` : "未导入任何记忆（可能所有记忆已存在）");
+      const service = getMemoryService();
+      const count = service.importFromJSON(jsonStr, false);
+      const importError = service.getLastPersistError();
+      if (importError) {
+        alert(`导入 ${count} 条记忆到内存，但**写入数据库失败**：${importError}\n重启后这些记忆会丢失。`);
+      } else {
+        alert(count > 0 ? `成功导入 ${count} 条记忆` : "未导入任何记忆（可能所有记忆已存在）");
+      }
       loadEntries();
     };
     reader.readAsText(file);

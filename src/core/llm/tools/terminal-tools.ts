@@ -514,6 +514,22 @@ export function createTerminalSendTool(): ToolDef {
 
       if (args.run_in_background === true) {
         const jobId = await getTerminalManager().sendBackground(id, text, submit);
+        /**
+         * 第 84 波（假成功）：`sendBackground` 在 write_pty 失败时也会返回 jobId
+         * （job.status 已经是 error）—— 原来照样回 "started background job …"，
+         * 模型以为命令在跑。现在按实际状态如实汇报。
+         */
+        const job = getTerminalManager().getBackgroundJob(jobId);
+        if (job && job.status === "error") {
+          return {
+            title: "terminal_send",
+            output:
+              `Error: 后台任务没有启动（${job.stderr || "terminal session has exited"}）。` +
+              `job id: ${jobId}（状态 error，不会有输出）—— 请重新打开终端会话后再试。`,
+            isError: true,
+            metadata: { kind: "background", jobId, status: job.status },
+          };
+        }
         return {
           title: "terminal_send",
           output: `started background job ${jobId}`,

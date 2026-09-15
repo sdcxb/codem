@@ -198,6 +198,11 @@ export function createAgentTeamsReassignTool(): ToolDef {
       return out("agent_teams_reassign_task", [
         t ? `任务 ${r.task.id} 转派给 ${r.task.assignee}` : `Task ${r.task.id} reassigned to ${r.task.assignee}`,
         r.previousAssignee ? (t ? `原负责人: ${r.previousAssignee}` : `Previous: ${r.previousAssignee}`) : "",
+        // 转派后是否真的开出了新 attempt —— 不能声称成功却把任务留在静默期
+        r.claimed
+          ? (t ? `已开新领取（attempt #${r.task.attempt}，状态 ${r.task.status}）` : `New attempt opened (#${r.task.attempt}, status ${r.task.status})`)
+          : (t ? `⚠️ 未开出新领取：${r.note ?? "未知原因"}（任务已回到共享池，可由 agent_teams_claim_task 直接领取）`
+               : `⚠️ No new attempt: ${r.note ?? "unknown"} (task returned to the shared pool)`),
       ]);
     },
   };
@@ -336,6 +341,13 @@ export function createAgentTeamsStatusTool(): ToolDef {
       for (const [to, n] of Object.entries(snap.unreadFor)) {
         lines.push("");
         lines.push(t ? `未读消息 → ${to}: ${n} 条` : `Unread → ${to}: ${n}`);
+      }
+      // 运行时告警（重启对账、唤醒失败、无法唤醒的成员）必须出现在模型看到的内容里，
+      // 否则队长会以为"任务在正常流转"，而实际没有任何成员在做。
+      if (snap.alerts?.length) {
+        lines.push("");
+        lines.push(t ? "## 需要注意" : "## Needs attention");
+        for (const a of snap.alerts) lines.push(`- ${a}`);
       }
       return out("agent_teams_status", lines);
     },

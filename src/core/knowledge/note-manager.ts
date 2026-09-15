@@ -157,9 +157,10 @@ export function syncNoteLinks(noteId: string, notebookId: string, content: strin
     }
 
     if (targetNote && !linkedIds.has(targetNote.id)) {
-      addNoteLink(noteId, targetNote.id, link.display);
+      // 第 84 波：只有真的插入了新行才计入 createdCount（INSERT OR IGNORE 可能被忽略）
+      const inserted = addNoteLink(noteId, targetNote.id, link.display);
       linkedIds.add(targetNote.id);
-      createdCount++;
+      if (inserted) createdCount++;
     }
   }
 

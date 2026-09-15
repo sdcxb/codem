@@ -582,6 +582,7 @@ export function createLoadSkillTool(toolRegistry: ToolRegistry): ToolDef {
       // 如果技能有 Provider，加载工具
       const skillToolRegistry = getSkillToolRegistry();
       let loadedTools: string[] = [];
+      let toolLoadError: string | null = null;
       if (skill.provider || skill.tools?.length) {
         try {
           const skillDir = skill.filePath
@@ -589,12 +590,20 @@ export function createLoadSkillTool(toolRegistry: ToolRegistry): ToolDef {
             : "";
           loadedTools = await skillToolRegistry.loadProvider(skill, skillDir, toolRegistry);
         } catch (err: any) {
-          console.error(`[load_skill] Failed to load provider for "${skill.name}":`, err.message);
+          // 第 84 波（假成功）：原来只写一行 console.error —— 工具结果里看不出
+          // "这个技能声明的工具根本没装上"，模型会照着技能正文去调用不存在的工具，
+          // 然后反复失败。现在把失败明确写进工具结果。
+          toolLoadError = err?.message || String(err);
+          console.error(`[load_skill] Failed to load provider for "${skill.name}":`, toolLoadError);
         }
       }
 
       const toolInfo = loadedTools.length > 0
         ? `\n\nTools from this skill are now available: ${loadedTools.join(", ")}`
+        : "";
+      const toolErrorInfo = toolLoadError
+        ? `\n\n[WARNING] 该技能声明的工具**未能加载**（${toolLoadError}）—— 正文里提到的工具在当前会话不可用，` +
+          `不要尝试调用它们；请改用现有工具，或告诉用户技能工具加载失败。`
         : "";
 
       // 关键修复：output 中直接包含 skillContent，
@@ -602,8 +611,8 @@ export function createLoadSkillTool(toolRegistry: ToolRegistry): ToolDef {
       // 不需要等到下一轮系统提示注入才能看到。
       return {
         title: `load_skill: ${skill.name}`,
-        output: `${skillContent}${toolInfo}`,
-        metadata: { skillName: skill.name, tools: loadedTools },
+        output: `${skillContent}${toolInfo}${toolErrorInfo}`,
+        metadata: { skillName: skill.name, tools: loadedTools, toolLoadError: toolLoadError ?? undefined },
       };
     },
   };

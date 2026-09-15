@@ -66,7 +66,22 @@ export function createClarificationTool(): ToolDef {
 
       // Note: The actual user interaction is handled via LoopEvent
       // This tool returns a placeholder; the UI will show the form
-      const answer = await ctx.onInteractiveForm?.([{
+      //
+      // 第 84 波（假成功）：**没有提问通道时必须报错**。
+      // 原来 `answer` 为 undefined 时照样返回 "[用户回答: (未回答)]" —— 模型会以为
+      // "已经问过用户、用户没回答"，于是继续瞎猜；而事实上问题**从未送达用户**
+      // （例如后台会话/子智能体/无 UI 的调用方）。
+      if (!ctx.onInteractiveForm) {
+        return {
+          title: "ask_clarification",
+          output:
+            `Error: 当前执行环境没有可用的用户交互通道，问题**没有**送达用户。` +
+            `请改用普通文本向用户提问（在你的回复里直接问），不要假设用户已经看过这个问题。`,
+          isError: true,
+        };
+      }
+
+      const answer = await ctx.onInteractiveForm([{
         id: formData.formId,
         question,
         input_type: type === "text" ? "text" : "choice",
@@ -94,18 +109,27 @@ function formatClarificationAnswers(formData: ClarificationFormData, answers: Re
 
   if (type === "text") {
     const textAnswer = answers[formData.formId] as string | undefined;
-    return `[用户回答: ${textAnswer || "(未回答)"}]\n${textAnswer || ""}`;
+    if (!textAnswer) {
+      return `[用户回答: 未作答${required ? "（此问题为必答，但用户没有填写）" : ""}]\n用户**没有**回答这个问题 —— 不要自行假设答案，必要时再用普通文本追问。`;
+    }
+    return `[用户回答: ${textAnswer}]\n${textAnswer}`;
   }
 
   if (type === "radio") {
     const selectedOption = answers[formData.formId] as string | undefined;
-    return `[用户选择: ${selectedOption || "(未选择)"}]\n${question}\n选择: ${selectedOption || "未选择"}`;
+    if (!selectedOption) {
+      return `[用户选择: 未选择${required ? "（必答项未填）" : ""}]\n${question}\n用户**没有**做出选择 —— 不要自行替他选，必要时再用普通文本追问。`;
+    }
+    return `[用户选择: ${selectedOption}]\n${question}\n选择: ${selectedOption}`;
   }
 
   if (type === "checkbox") {
     const selectedOptions = answers[formData.formId] as string[] | undefined;
     const formatted = (selectedOptions || []).join(", ");
-    return `[用户选择: ${formatted || "(未选择)"}]\n${question}\n选择: ${formatted || "无"}`;
+    if (!formatted) {
+      return `[用户选择: 未选择${required ? "（必答项未填）" : ""}]\n${question}\n用户**没有**勾选任何选项 —— 不要自行假设，必要时再用普通文本追问。`;
+    }
+    return `[用户选择: ${formatted}]\n${question}\n选择: ${formatted}`;
   }
 
   return `[用户回答: (无法解析)]`;

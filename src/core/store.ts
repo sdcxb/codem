@@ -140,7 +140,30 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         session.executionMode = execMode;
       } catch (e) { console.warn('[store.ts]', e) }
     }
-    try { SessionStorage.createSession(session); } catch (e) { console.error("[Store] createSession failed:", e); }
+    // 第 84 波（B 类缺陷：假成功）：会话创建失败不能假装成功。
+    // 原来异常只打一条 console.error，然后照样把该会话设为 currentSession ——
+    // 用户在这个"数据库里不存在"的会话里聊天，重启后整段对话凭空消失。
+    // 现在：瞬时失败重试一次；仍然失败则**明确上报**（事件 + 错误级别日志），
+    // 让界面能提示用户，而不是安静地丢数据。
+    let persistError: any = null;
+    try {
+      SessionStorage.createSession(session);
+    } catch (e1) {
+      console.error("[Store] createSession 写入失败，重试一次:", e1);
+      try {
+        SessionStorage.createSession(session);
+      } catch (e2) {
+        persistError = e2;
+        console.error("[Store] createSession 重试仍失败（该会话只存在于内存）:", e2);
+      }
+    }
+    if (persistError) {
+      try {
+        window.dispatchEvent(new CustomEvent("codem:session-persist-failed", {
+          detail: { sessionId: session.id, projectId, error: persistError?.message || String(persistError) },
+        }));
+      } catch { /* 非浏览器环境（测试）忽略 */ }
+    }
     const updated = [...get().sessions, session];
     set({ sessions: updated, currentSession: session });
     console.log(`[createSession] Set currentSession to: ${session.id}, title: ${session.title}`);

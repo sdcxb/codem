@@ -103,6 +103,8 @@ export interface RetryState {
 export class RetryExecutor {
   private config: RetryConfig;
   private state: RetryState;
+  /** 本次 execute 的开始时刻（0 = 尚未开始）；用于按**墙钟**核算总预算 */
+  private startedAt = 0;
 
   constructor(config?: Partial<RetryConfig>) {
     this.config = { ...DEFAULT_RETRY_CONFIG, ...config };
@@ -178,13 +180,23 @@ export class RetryExecutor {
       return false;
     }
 
-    const totalWait = this.state.totalWaitTime;
-    if (totalWait >= this.config.totalTimeout) {
+    /**
+     * 第 84 波（预算核算错误）：原来拿 **累计等待时间**（`totalWaitTime`，只统计 sleep）
+     * 和 `totalTimeout` 比较。而真正耗时的大头是每次请求本身（fn 的执行时间）——
+     * 于是一次 30 秒的请求 + 5 次重试能跑出远超 "总超时 30 分钟" 的墙钟时间，
+     * 用户以为有总超时保护，实际没有。
+     */
+    if (this.elapsedMs() >= this.config.totalTimeout) {
       return false;
     }
 
     const { isRetryable } = classifyError(error);
     return isRetryable;
+  }
+
+  /** 本次 execute 已消耗的墙钟时间（未开始计时时为 0） */
+  private elapsedMs(): number {
+    return this.startedAt > 0 ? Date.now() - this.startedAt : 0;
   }
 
   /** Execute with retry */
@@ -193,6 +205,7 @@ export class RetryExecutor {
     onRetry?: (attempt: number, delay: number, error: unknown) => void,
   ): Promise<T> {
     this.reset();
+    this.startedAt = Date.now();
 
     while (true) {
       try {
@@ -207,6 +220,15 @@ export class RetryExecutor {
 
         const { retryAfter } = classifyError(error);
         const delay = this.getDelay(this.state.attempt - 1, retryAfter);
+
+        // 预算里还要给这次等待留位置：等待完就超预算的话，不如现在就把最后的错误抛出去
+        const elapsed = this.elapsedMs();
+        if (elapsed + delay > this.config.totalTimeout) {
+          console.warn(
+            `[Retry] 重试预算已用尽（已耗时 ${elapsed}ms + 下次等待 ${delay}ms > 预算 ${this.config.totalTimeout}ms）—— 不再重试，直接抛出最后一次错误`,
+          );
+          throw error;
+        }
 
         this.state.totalWaitTime += delay;
         this.state.lastRetryTime = Date.now();

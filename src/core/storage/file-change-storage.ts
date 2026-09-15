@@ -6,6 +6,7 @@
  */
 
 import { getDatabase, persistDatabase } from "./database";
+import { runGuarded } from "./write-guard";
 
 export interface TurnFileChangeRecord {
   id: string;
@@ -100,11 +101,26 @@ export const FileChangeStorage = {
     return rowToRecord(obj);
   },
 
-  updateStatus(id: string, status: string): void {
+  /**
+   * 更新某条文件变更记录的状态。
+   *
+   * 第 84 波（A 类：静默空写）：原来直接 `db.run(UPDATE … WHERE id = ?)`，
+   * 影响 0 行时**没有任何痕迹**（记录不存在 / id 拼错 → 状态永远停在旧值，
+   * 界面上却以为已经改成 reverted/pending_review）。改走 runGuarded 让它可见。
+   *
+   * @returns 真正被更新的行数（0 = 目标记录不存在）
+   */
+  updateStatus(id: string, status: string): number {
     const db = getDatabase();
-    if (!db) return;
-    db.run(`UPDATE turn_file_changes SET status = ? WHERE id = ?`, [status, id]);
+    if (!db) return 0;
+    const modified = runGuarded(
+      db,
+      `UPDATE turn_file_changes SET status = ? WHERE id = ?`,
+      [status, id],
+      { table: "turn_file_changes", op: "updateStatus", id, from: "FileChangeStorage.updateStatus" },
+    );
     persistDatabase();
+    return modified;
   },
 
   deleteBySession(sessionId: string): void {

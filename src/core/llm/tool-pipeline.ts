@@ -373,6 +373,8 @@ export class ToolPipeline {
               ...result,
               output: postResult.rejectMessage || "Rejected by post-execute middleware",
               status: "error",
+              // 明确标注：这是管线层的拒绝，不是工具自报失败（不要被上面的 ...result 带成 "tool"）
+              errorSource: "pipeline",
             },
             events,
           };
@@ -549,16 +551,30 @@ export class PlanModeGuard implements GuardMiddleware {
 
 /**
  * Security scan middleware (pre-execute layer)
- * Scans tool parameters for sensitive data before execution.
+ *
+ * 扫描工具参数里是否出现**明文凭据**（sk-/Bearer/password:/私钥头…）。
+ *
+ * 第 84 波（审计修正）：这个中间件原来是**空的** —— 匹配到模式后直接
+ * `return { action: "proceed" }`，注释却写着 "we'll append to result in post-execute"，
+ * 而根本没有对应的 post-execute 实现。也就是说它给了"有安全检查"的错觉，
+ * 实际什么也没做、什么也没记。
+ *
+ * 现在：真正把命中记录下来（工具名 + 模式名 + **脱敏**上下文），
+ * 让"模型把密钥写进文件/命令"这类事故在运行日志里可追溯。
+ * 面向用户的提示由 streaming-executor 的 `scanParametersForSecrets` 追加到工具结果里
+ * （那条路径覆盖每一次工具调用，且会把警告显示给模型）。
+ *
+ * 有意**不阻断**：写 `.env`、生成密钥文件、把 token 传给 CLI 都是合法操作；
+ * 这里只负责"让事情可见"，不替用户决定。
  */
 export class SecurityScanMiddleware implements PreExecuteMiddleware {
   name = "security-scan";
 
-  private sensitivePatterns = [
-    /(?:sk-|pk-|Bearer\s+)[a-zA-Z0-9]{20,}/i,
-    /(?:password|passwd|pwd)\s*[:=]\s*\S+/i,
-    /(?:secret|token)\s*[:=]\s*\S+/i,
-    /-----BEGIN\s+(?:RSA\s+)?PRIVATE\s+KEY-----/i,
+  private sensitivePatterns: Array<{ name: string; re: RegExp }> = [
+    { name: "api-key", re: /(?:sk-|pk-|Bearer\s+)[a-zA-Z0-9]{20,}/i },
+    { name: "password", re: /(?:password|passwd|pwd)\s*[:=]\s*\S+/i },
+    { name: "secret-or-token", re: /(?:secret|token)\s*[:=]\s*\S+/i },
+    { name: "private-key", re: /-----BEGIN\s+(?:RSA\s+)?PRIVATE\s+KEY-----/i },
   ];
 
   async execute(
@@ -570,13 +586,12 @@ export class SecurityScanMiddleware implements PreExecuteMiddleware {
     if (!scanTools.includes(toolName)) return { action: "proceed" };
 
     const argsStr = JSON.stringify(args);
-    for (const pattern of this.sensitivePatterns) {
-      if (pattern.test(argsStr)) {
-        // Don't block — just warn (we'll append to result in post-execute)
-        return {
-          action: "proceed",
-        };
-      }
+    const hits = this.sensitivePatterns.filter((p) => p.re.test(argsStr)).map((p) => p.name);
+    if (hits.length > 0) {
+      console.warn(
+        `[SecurityScan] ${toolName} 的参数疑似包含明文凭据（${hits.join("、")}）—— 已放行，未做改动。` +
+          `如果这不是有意的（例如写入 .env/密钥文件），请检查是否有密钥被意外写进代码或提交。`,
+      );
     }
     return { action: "proceed" };
   }

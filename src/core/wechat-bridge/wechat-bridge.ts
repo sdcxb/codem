@@ -18,6 +18,7 @@
  * 发送失败（配额/网络）只在日志记录，不重试轰炸。
  */
 import * as SessionStorage from "../storage/session";
+import * as MessageStorage from "../storage/message";
 import * as ProjectStorage from "../storage/project";
 import { initDatabase } from "../storage/database";
 import { getSettingJSON, setSettingJSON } from "../storage/settings";
@@ -396,7 +397,24 @@ async function processInbound(m: InboundMessage): Promise<void> {
   }
 
   const reply = await runAgentTurn(m.peer, text);
-  await sendReply(m.peer, reply);
+  const delivered = await sendReply(m.peer, reply);
+  if (!delivered) {
+    // 第 84 波：出站失败**不能只留在 console** —— 在自己的会话里留一条，用户回桌面能看见
+    try {
+      const sid = (await ensurePeerSession(m.peer)).sessionId;
+      if (sid) {
+        MessageStorage.createMessage({
+          id: `wx-send-fail-${Date.now()}`,
+          role: "system",
+          content: `[微信回复发送失败] 本轮结果没能发到对方（配额/网络）。内容如下：\n\n${reply.slice(0, 1500)}`,
+          timestamp: Date.now(),
+          status: "error",
+        }, sid);
+      }
+    } catch (e) {
+      console.warn("[wechat-bridge] 记录出站失败信息失败:", e);
+    }
+  }
 }
 
 // ---- 命令短路（与 agent 自由对话分离）----
@@ -653,15 +671,50 @@ async function runAgentTurn(peer: string, text: string): Promise<string> {
   }
 }
 
-async function sendReply(peer: string, text: string): Promise<void> {
-  if (!text) return;
-  try {
-    const invoke = (window as any).__TAURI__?.core?.invoke;
-    if (!invoke) return;
-    await invoke("ilink_send_text", { peer, text });
-  } catch (err) {
-    console.warn("[wechat-bridge] send failed (配额/网络):", err);
+/**
+ * 把回复发给对方（第 84 波：**失败必须可见**）。
+ *
+ * 原来 `ilink_send_text` 的异常只 `console.warn`，Rust 侧返回的 `partial: true`
+ * （配额/长度导致只发了一半）更是整句丢弃 —— 用户侧表现为"AI 没回话"或"话说一半"，
+ * 而应用以为已经回过了。现在：
+ *   · 没有 invoke 通道（非 Tauri 环境）→ 明确告警；
+ *   · 发送抛错 → 记下来并**重试一次**（配额/网络多为瞬时），仍失败就把失败写进会话；
+ *   · `partial` → 用一条"（内容过长，已截断）"补齐提示，并记日志。
+ */
+async function sendReply(peer: string, text: string): Promise<boolean> {
+  if (!text) return true;
+  const invoke = (window as any).__TAURI__?.core?.invoke;
+  if (!invoke) {
+    console.warn("[wechat-bridge] 无法发送：当前环境没有 Tauri invoke 通道");
+    return false;
   }
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      const res: any = await invoke("ilink_send_text", { peer, text });
+      if (res && typeof res === "object" && res.partial === true) {
+        console.warn("[wechat-bridge] 对方只收到了部分内容（partial=true）");
+        try {
+          await invoke("ilink_send_text", { peer, text: "…（内容过长，已截断，完整结果请在桌面端查看）" });
+        } catch { /* 追加提示失败不影响主流程 */ }
+      }
+      return true;
+    } catch (err) {
+      console.warn(`[wechat-bridge] send failed (配额/网络，第 ${attempt} 次):`, err);
+      if (attempt === 2) {
+        lastSendFailure = { peer, error: String((err as any)?.message || err), at: Date.now() };
+        return false;
+      }
+      await new Promise((r) => setTimeout(r, 500));
+    }
+  }
+  return false;
+}
+
+/** 最近一次出站失败（诊断/设置面板用） */
+let lastSendFailure: { peer: string; error: string; at: number } | null = null;
+
+export function getLastWechatSendFailure(): { peer: string; error: string; at: number } | null {
+  return lastSendFailure;
 }
 
 // ========== UI 动作（设置面板调用）==========

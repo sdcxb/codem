@@ -76,16 +76,54 @@ export class MCPClient {
         await this.connectStdio(config, connection);
       } else if (config.transport === "http" || config.transport === "sse") {
         await this.connectHTTP(config, connection);
+      } else {
+        throw new Error(`Unsupported transport "${(config as any).transport}"`);
+      }
+
+      /**
+       * 第 84 波（B 类缺陷：假成功）：**必须先握手并真的拿到工具清单才算连上**。
+       *
+       * 原来这里只做两件事：spawn 进程（或发一次 HTTP initialize）→ 直接写
+       * `status = "connected"`，然后 `listTools()`（它把所有异常吞成 `[]`）。
+       * 结果：命令拼错、进程秒退、tools/list 被拒 —— 界面一律显示"已连接、0 个工具"，
+       * 用户没有任何线索，MCP 工具只是静默不存在。
+       */
+      const handshakeInfo = await this.handshake(config.name);
+      if (handshakeInfo) {
+        console.log(`[MCP] ${config.name} 握手完成：${handshakeInfo}`);
       }
 
       connection.status = "connected";
-      connection.tools = await this.listTools(config.name);
+      connection.tools = await this.fetchTools(config.name);
+      connection.error = undefined;
     } catch (error: any) {
       connection.status = "error";
-      connection.error = error.message;
+      connection.error = error?.message || String(error);
+      connection.tools = [];
+      console.warn(`[MCP] ${config.name} 连接失败：${connection.error}`);
     }
 
     return connection;
+  }
+
+  /**
+   * MCP 握手（initialize）：确认对端真的按 MCP 协议应答，而不是"进程起来了"。
+   * @returns 协商到的服务端描述（可为空字符串）
+   */
+  private async handshake(serverName: string): Promise<string> {
+    const result = await this.sendRequest(serverName, "initialize", {
+      protocolVersion: "2024-11-05",
+      capabilities: {},
+      clientInfo: { name: "codem", version: "0.1.0" },
+    });
+    if (!result || typeof result !== "object") {
+      throw new Error("initialize 未返回 JSON-RPC 结果（对端可能不是 MCP 服务）");
+    }
+    if (!result.protocolVersion && !result.serverInfo && !result.capabilities) {
+      throw new Error(`initialize 返回内容不符合 MCP 规范：${JSON.stringify(result).slice(0, 160)}`);
+    }
+    const info = result.serverInfo;
+    return info?.name ? `${info.name}${info.version ? ` ${info.version}` : ""}` : String(result.protocolVersion ?? "");
   }
 
   /** Disconnect from an MCP server */
@@ -121,11 +159,29 @@ export class MCPClient {
     if (!connection || connection.status !== "connected") return [];
 
     try {
-      const result = await this.sendRequest(serverName, "tools/list", {});
-      return result.tools || [];
-    } catch {
+      const tools = await this.fetchTools(serverName);
+      connection.tools = tools;
+      connection.error = undefined;
+      return tools;
+    } catch (e: any) {
+      // 第 84 波：原来任何失败都 `return []` —— 与"服务器确实没有工具"无法区分。
+      // 现在把原因挂到连接状态上（UI/status 可见），并写日志。
+      connection.error = `tools/list 失败：${e?.message || e}`;
+      console.warn(`[MCP] ${serverName} ${connection.error}`);
       return [];
     }
+  }
+
+  /** 拉取工具清单（内部）：失败就抛，由调用方决定降级策略 */
+  private async fetchTools(serverName: string): Promise<MCPTool[]> {
+    const result = await this.sendRequest(serverName, "tools/list", {});
+    const tools = result?.tools;
+    if (!Array.isArray(tools)) {
+      throw new Error(
+        `tools/list 未返回工具数组：${JSON.stringify(result ?? null).slice(0, 160)}`,
+      );
+    }
+    return tools as MCPTool[];
   }
 
   /** Call a tool on a server */
@@ -190,41 +246,8 @@ export class MCPClient {
 
   private async connectHTTP(config: MCPServerConfig, _connection: MCPConnection): Promise<void> {
     if (!config.url) throw new Error("URL required for HTTP transport");
-
-    try {
-      const response = await fetch(config.url, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...config.headers,
-        },
-        body: JSON.stringify({
-          jsonrpc: "2.0",
-          id: ++this.requestId,
-          method: "initialize",
-          params: {
-            protocolVersion: "2024-11-05",
-            capabilities: {},
-            clientInfo: {
-              name: "codem",
-              version: "0.1.0",
-            },
-          },
-        }),
-        signal: AbortSignal.timeout(config.timeout || 5000),
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-
-      const data = await response.json();
-      if (data.error) {
-        throw new Error(data.error.message || "Connection failed");
-      }
-    } catch (error: any) {
-      throw new Error(`Failed to connect to ${config.url}: ${error.message}`);
-    }
+    // 第 84 波：连通性/协议校验统一交给 handshake()（原来这里另发一次 initialize，
+    // 与 handshake 重复，而且失败时也只写一个笼统的 error 字符串）。
   }
 
   private async sendRequest(serverName: string, method: string, params: Record<string, unknown>): Promise<any> {
@@ -452,7 +475,17 @@ export async function isCodeGraphInstalled(): Promise<boolean> {
       command: "codegraph --version",
       cwd: null,
     });
-    return !result.stderr?.includes("not recognized");
+    // 第 84 波：原来只看 stderr 里有没有 "not recognized"。命令存在但返回非零
+    // （例如参数不对、启动器坏了）也算"已安装"，后续 autoDetect 就会去连一个连不上的服务。
+    // 退出码是唯一可靠信号：0 = 真的能跑。
+    const code = typeof result?.exitCode === "number" ? result.exitCode : (result?.exitCode === null ? 1 : 0);
+    if (code !== 0) {
+      console.warn(
+        `[CodeGraph] codegraph --version 退出码 ${code}：${String(result?.stderr || result?.stdout || "").trim().slice(0, 200)}`,
+      );
+      return false;
+    }
+    return true;
   } catch {
     return false;
   }
@@ -485,13 +518,21 @@ export async function autoDetectCodeGraph(
   try {
     const { getSetting } = await import("../storage/settings");
     const launcher = getSetting("codem-codegraph-launcher") || "codegraph";
-    await registry.connect({
+    const status = await registry.connect({
       name: CODEGRAPH_SERVER_NAME,
       transport: "stdio",
       command: launcher,
       args: ["mcp"],
       autoReconnect: true,
     });
+    // 第 84 波（假成功）：原来无脑 `return true` —— 即使 connect 把状态标成 error
+    // （命令不存在/握手失败/tools/list 被拒），调用方仍以为 CodeGraph 已可用。
+    if (!status?.connected) {
+      console.warn(
+        `[CodeGraph] MCP 未连接成功（${status?.error || "未知原因"}）—— 本次会话不会有 codegraph_* 工具`,
+      );
+      return false;
+    }
     return true;
   } catch (error) {
     console.error("[CodeGraph] Failed to connect MCP server:", error);

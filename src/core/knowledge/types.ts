@@ -219,6 +219,14 @@ export interface GraphEdge {
 export interface GraphData {
   nodes: GraphNode[];
   edges: GraphEdge[];
+  /**
+   * 第 84 波（假成功）：提取过程中的**部分失败**。
+   *
+   * `extractKnowledgeGraph` 是按批调用 LLM 的（每批 10 个 chunk，最多 6 批），
+   * 原来某批失败只 `console.error` 就继续 —— 返回的图谱看起来"完整"，
+   * 用户不知道它只覆盖了一部分内容。现在把失败批次如实带出来。
+   */
+  warnings?: string[];
 }
 
 /** LLM 提取的原始实体 */

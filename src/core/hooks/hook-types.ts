@@ -47,6 +47,14 @@ export interface HookDefinition {
   enabled: boolean;
   /** Timeout in milliseconds (default 10000) */
   timeoutMs?: number;
+  /**
+   * PreToolUse 专用：钩子自身失败（非零退出码 / 超时 / 抛错）时是否放行。
+   *
+   * 默认 false = **fail-closed（拦下）**。理由：守卫钩子失败与"未拦截"在外部
+   * 完全无法区分，静默放行等于用户以为有守卫、实际没有。只有明确知道自己
+   * 的钩子会因无关原因返回非零码（例如日志命令）时，才应设为 true。
+   */
+  allowOnError?: boolean;
 }
 
 // ========== Hook Execution Result ==========

@@ -481,14 +481,29 @@ function rowToNote(row: any[]): Note {
 
 // ========== Note Links ==========
 
-export function addNoteLink(sourceNoteId: string, targetNoteId: string, linkText?: string): void {
+/**
+ * 新增一条笔记链接。
+ *
+ * 第 84 波（A 类：静默空写）：原来 `INSERT OR IGNORE` 后无脑返回 void ——
+ * 被唯一约束忽略（链接已存在）与"真的插进去了"完全无法区分，调用方却按"已创建"计数。
+ *
+ * @returns 是否真的插入了新行（false = 该链接已存在，本次没有新增）
+ */
+export function addNoteLink(sourceNoteId: string, targetNoteId: string, linkText?: string): boolean {
   const db = getDatabase();
   const id = `link_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
   db.run(
     'INSERT OR IGNORE INTO note_links (id, source_note_id, target_note_id, link_text, created_at) VALUES (?, ?, ?, ?, ?)',
     [id, sourceNoteId, targetNoteId, linkText ?? null, Date.now()],
   );
+  let inserted = true;
+  try {
+    inserted = typeof (db as any).getRowsModified === "function" ? (db as any).getRowsModified() > 0 : true;
+  } catch {
+    inserted = true;
+  }
   persistDatabase();
+  return inserted;
 }
 
 export function getNoteLinks(noteId: string): NoteLink[] {

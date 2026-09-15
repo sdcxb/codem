@@ -1,4 +1,5 @@
-﻿import type { ToolDefinition, ToolCallResult, LLMMessage } from "./types";
+import type { ToolDefinition, ToolCallResult, LLMMessage } from "./types";
+import { classifyToolResult } from "./tool-result-status";
 import { readFile, writeFile, deletePath, executeCommand, globSearch, grepSearch, isPathWithinWorkspace } from "../file-api";
 import { getLang } from "../i18n/lang";
 import { getSetting } from "../storage/settings";
@@ -357,6 +358,11 @@ export interface ToolExecuteResult {
   title: string;
   metadata?: Record<string, any>;
   output: string;
+  /**
+   * 第 84 波：工具可以**显式**声明本次调用失败。
+   * 未声明时由 `classifyToolResult` 按输出推断（内容型工具不推断）。
+   */
+  isError?: boolean;
 }
 
 // ========== Phase D: Interactive Form & Prompt Optimization Types ==========
@@ -529,7 +535,8 @@ export class ToolRegistry {
     args: Record<string, unknown>,
     ctx: ToolContext,
   ): Promise<ToolCallResult> {
-    const tool = this.tools.get(toolName);
+    // 用虚方法 get()（而非 this.tools）以便 ScopedToolRegistry 的 overlay 生效
+    const tool = this.get(toolName);
     if (!tool) {
       return {
         id: toolCallId,
@@ -543,12 +550,19 @@ export class ToolRegistry {
 
     try {
       const result = await tool.execute(args, ctx);
+      // 第 84 波（B 类缺陷）：工具失败原来被**无条件**标成 completed。
+      // 现在按统一规则判定（见 tool-result-status.ts），显式声明优先、内容型工具不推断。
+      const verdict = classifyToolResult(toolName, result.output, result.isError);
       return {
         id: toolCallId,
         name: toolName,
         input: args,
         output: result.output,
-        status: "completed",
+        status: verdict.status,
+        ...(verdict.status === "error" ? { error: verdict.error, errorSource: "tool" as const } : {}),
+        // metadata 之前在这里被丢掉（类型里却写着"从 ToolExecuteResult 透传"），
+        // 例如 subagent 的 subagentId —— 上层据此判断要不要等待后台子智能体。
+        ...(result.metadata ? { metadata: result.metadata } : {}),
       };
     } catch (error: any) {
       return {
@@ -663,30 +677,15 @@ class ScopedToolRegistry extends ToolRegistry {
         id: toolCallId,
         name: toolName,
         input: args,
-        output: `Tool "${toolName}" not found`,
+        output: `Error: Tool "${toolName}" not found`,
         status: "error" as const,
         error: `Tool "${toolName}" not found`,
       };
     }
-    try {
-      const result = await tool.execute(args, ctx);
-      return {
-        id: toolCallId,
-        name: toolName,
-        input: args,
-        output: result.output,
-        status: "completed" as const,
-      };
-    } catch (error: any) {
-      return {
-        id: toolCallId,
-        name: toolName,
-        input: args,
-        output: `Error: ${error.message}`,
-        status: "error" as const,
-        error: error.message,
-      };
-    }
+    // 委托给基类实现 —— 基类用虚方法 this.get()，会命中本作用域的 overlay。
+    // （原来这里整段复制了基类逻辑，于是"失败被判成 completed"和"metadata 丢失"
+    //   要修两遍；去掉重复实现，只留一处判定。）
+    return super.execute(toolCallId, toolName, args, ctx);
   }
 }
 

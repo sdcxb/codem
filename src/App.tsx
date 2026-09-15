@@ -252,7 +252,7 @@ import { GitHubCloneDialog } from "./components/GitHubCloneDialog";
 import { CicdPanel } from "./components/CicdPanel";
 import { PerformanceDashboard } from "./components/PerformanceDashboard";
 import { PlanApprovalCard } from "./components/PlanApprovalCard";
-import { setPlanApprovalCallback, clearPlanApprovalCallback } from "./core/llm/tools/exit-plan-mode";
+import { setPlanApprovalCallback, clearPlanApprovalCallback, type PlanApprovalOutcome } from "./core/llm/tools/exit-plan-mode";
 import { SearchDialog } from "./components/SearchDialog";
 import { usePetStore } from "./core/pet/pet-store";
 import { loadInstalledPets as loadInstalledPetsPets } from "./core/pet/pet-manager";
@@ -464,7 +464,7 @@ const planPanelEnabled = !isPluginDisabled('@codem/ui-plan');
 const workspacePanelEnabled = !isPluginDisabled('@codem/ui-workspace');
 // 游戏面板由 @codem/ui-game 提供（默认关闭）
 const gameEnabled = !isPluginDisabled('@codem/ui-game');
-const [planApproval, setPlanApproval] = useState<{ plan: string; resolve: (result: { approved: boolean; feedback?: string }) => void } | null>(null);
+const [planApproval, setPlanApproval] = useState<{ plan: string; resolve: (result: PlanApprovalOutcome) => void } | null>(null);
   const [showSearchDialog, setShowSearchDialog] = useState(false);
 const [activeNotebookId, setActiveNotebookId] = useState<string | null>(null);
 const [activeNotebookName, setActiveNotebookName] = useState<string>('');
@@ -1035,6 +1035,25 @@ useEffect(() => {
 }, [])
 // Per-session abort controllers for parallel execution
 const abortControllersRef = useRef<Map<string, AbortController>>(new Map());
+/**
+ * 第 84 波（审计修正）：切换协作模式的**唯一入口**。
+ *
+ * 原来 UI 只是 setCollaborationMode(state)，这只影响"下一次请求"。正在跑的
+ * 那个回合里 AgenticLoop.config.collaborationMode 还是旧值，PlanModeGuard 继续
+ * 生效 —— 用户点了"切到 Default"，AI 这一回合照样写不了文件。
+ * 现在同时把活动 loop 一起切掉。
+ */
+const handleModeChange = useCallback((mode: CollaborationMode): number => {
+  setCollaborationMode(mode);
+  const sessionId = useProjectStore.getState().currentSession?.id;
+  if (!sessionId) return 0;
+  try {
+    return engineRef.current?.setCollaborationModeForSession?.(sessionId, mode) ?? 0;
+  } catch (e) {
+    console.warn("[App] Failed to switch live loop collaboration mode:", e);
+    throw e;
+  }
+}, []);
 // handleSend ref for automation callbacks (avoids stale closure)
 const handleSendRef = useRef<(message: string, attachments?: any[], selectedSkills?: string[]) => void>(() => {});
 const mimoSessionRef = useRef<string | null>(null);
@@ -1654,6 +1673,23 @@ flushStreamBuffer(); // flush all on unmount
     window.addEventListener("codem:db-save-failed", onDbSaveFail);
     unlistenDbSaveFail = () => window.removeEventListener("codem:db-save-failed", onDbSaveFail);
 
+    // 第 84 波：会话创建写库失败（store.createSession 上报）——
+    // 该会话只存在于内存，重启后整段对话会消失，必须当场提示而不是静默。
+    const onSessionPersistFail = (ev: Event) => {
+      const detail = (ev as CustomEvent).detail as { sessionId?: string; error?: string } | undefined;
+      useAppStore.getState().addGuidanceMessage({
+        id: `session-persist-fail-${Date.now()}`,
+        message:
+          `新建的会话无法写入数据库：${detail?.error || "未知原因"}。` +
+          `这段对话目前只存在于内存中，重启应用后会丢失；请先复制重要内容，并检查磁盘空间/数据库文件占用。`,
+        timestamp: Date.now(),
+        consumed: false,
+      });
+    };
+    let unlistenSessionPersist: (() => void) | undefined;
+    window.addEventListener("codem:session-persist-failed", onSessionPersistFail as EventListener);
+    unlistenSessionPersist = () => window.removeEventListener("codem:session-persist-failed", onSessionPersistFail as EventListener);
+
     // 数据库致命错误（sql.js 模块 OOM/abort）：写入已经不可能成功，此时最重要的不是重试，
     // 而是**把当前会话抢救到磁盘**并给用户一条可执行说明 —— 数据库内存耗尽时，
     // 直接写 JSON 备份（不经过 sql.js）是唯一还走得通的路。
@@ -1708,7 +1744,7 @@ flushStreamBuffer(); // flush all on unmount
       invoke?.("quit_app");
     }).then((un: () => void) => { unlistenQuitReq = un; });
 
-    return () => { unlisten?.(); unlistenCrash?.(); unlistenDbSaveFail?.(); unlistenDbFatal?.(); unlistenQuitReq?.(); };
+    return () => { unlisten?.(); unlistenCrash?.(); unlistenDbSaveFail?.(); unlistenDbFatal?.(); unlistenSessionPersist?.(); unlistenQuitReq?.(); };
   }, []);
 
   const handleCloseChoice = useCallback(async (action: "tray" | "close", remember: boolean) => {
@@ -2632,8 +2668,13 @@ saveMessages(session.id);
               }
               // Filter out <system-reminder> tags from tool results
               resultStr = resultStr.replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, "").trim();
+              // 第 84 波：工具自己汇报失败（result.status="error"）时界面必须显示失败，
+              // 不能一律标成 "done"（原来失败的写操作在时间线里是绿的）。
+              const resultStatus = (event.result && typeof event.result === "object" && "status" in event.result)
+                ? (event.result as any).status
+                : undefined;
               if (isViewingSession()) updateToolCall(assistantMsgId, tc.id, {
-                status: "done",
+                status: resultStatus === "error" ? "error" : "done",
                 result: resultStr,
                 metadata: toolMetadata,
               });
@@ -3327,7 +3368,7 @@ onEditAndRewind={handleEditAndRewind}
                           mode={currentMode}
                           providerId={currentProvider}
                           collaborationMode={collaborationMode}
-                          onModeChange={setCollaborationMode}
+                          onModeChange={handleModeChange}
 projectPath={currentProject?.path}
 currentSessionId={currentSession?.id}
 onCitationClick={activeNotebookId ? handleCitationClick : undefined}
@@ -3451,7 +3492,7 @@ onEditAndRewind={handleEditAndRewind}
                         mode={currentMode}
                         providerId={currentProvider}
                         collaborationMode={collaborationMode}
-                        onModeChange={setCollaborationMode}
+                        onModeChange={handleModeChange}
 projectPath={currentProject?.path}
 currentSessionId={currentSession?.id}
 onCitationClick={activeNotebookId ? handleCitationClick : undefined}
@@ -3618,7 +3659,7 @@ onEditAndRewind={handleEditAndRewind}
                 mode={currentMode}
                 providerId={currentProvider}
                 collaborationMode={collaborationMode}
-                onModeChange={setCollaborationMode}
+                onModeChange={handleModeChange}
 projectPath={currentProject?.path}
 currentSessionId={currentSession?.id}
 onCitationClick={activeNotebookId ? handleCitationClick : undefined}
@@ -3759,7 +3800,27 @@ onSessionRecovery={() => { setShowSettings(false); setShowSessionRecovery(true);
         <SlotBridge name="app.plan-approval-card" fallback={PlanApprovalCard}
           plan={planApproval.plan}
           onApprove={() => {
-            planApproval.resolve({ approved: true });
+            // 第 84 波：批准 = 真的切模式。原来只 resolve({approved:true})，
+            // UI 仍是 Plan 模式、正在运行的 loop 也仍是 Plan 模式 → 工具宣称
+            // "你现在是 Default 模式" 而后面每个写操作都被拦下（假成功）。
+            const sessionId = currentSession?.id;
+            let loops = 0;
+            let failure: string | null = null;
+            try {
+              loops = handleModeChange("default");
+            } catch (e: any) {
+              failure = e?.message || String(e);
+            }
+            planApproval.resolve({
+              approved: true,
+              modeSwitched: failure === null,
+              modeNote:
+                failure !== null
+                  ? `切换协作模式时出错：${failure}`
+                  : sessionId
+                    ? `协作模式已切到 default；当前活动 loop 切换数=${loops}`
+                    : "已切到 default（当时没有活动会话，只影响后续请求）",
+            });
             setPlanApproval(null);
           }}
           onReject={(feedback) => {

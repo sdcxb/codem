@@ -20,6 +20,7 @@ import { debugLog, warnOnce } from "../debug";
 import { RepeatGuard, type GuardKind, bashIntent } from "./loop-guard";
 import { StallGuard } from "./stall-guard";
 import { buildUnparsableArgsError, isContentBearingTool } from "./tool-args-guard";
+import { classifyToolResult } from "./tool-result-status";
 import { recordLoopStop } from "./loop-stop-log";
 import { isContextOverflowError, describeContextOverflow } from "./provider-errors";
 import { planCompactionKeep, alignKeepToRoundBoundary } from "./compaction-budget";
@@ -2733,7 +2734,21 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
             typeof args.path === "string") {
           result.output += `\n\n[Guidance] 写入已成功完成。请勿重复写入同一文件。请直接向用户报告结果并结束任务，不要再调用任何工具。`;
         }
-        return { id: "", name, input: args, output: result.output, status: "completed" as const, metadata: result.metadata };
+        // 第 84 波（B 类缺陷）：原来这里**无条件**写 "completed" ——
+        // 工具把失败写成 `Error: ...` 文本时，界面/守卫/上层委派全都以为成功了。
+        // errorSource:"tool" 让执行器知道这是"工具自己汇报的失败"（模型可自行纠正），
+        // 不要按执行层异常处理（那会累加 consecutiveErrors 并可能提前终止整轮）。
+        const verdict = classifyToolResult(name, result.output, result.isError);
+        return {
+          id: "",
+          name,
+          input: args,
+          output: result.output,
+          ...(verdict.status === "error"
+            ? { status: "error" as const, error: verdict.error, errorSource: "tool" as const }
+            : { status: "completed" as const }),
+          metadata: result.metadata,
+        };
       },
     )) {
       switch (event.type) {
@@ -2969,13 +2984,22 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
     if (valid.length > KEEP_RECENT_MESSAGES_FOR_MICRO_COMPACT) {
       const prePressure = this.estimateContextPressure(valid);
       if (prePressure >= MICRO_COMPACT_PRESSURE_THRESHOLD) {
-        const { microCompact, isAlreadyMicroCompacted } = await import("./micro-compact");
-        if (!isAlreadyMicroCompacted(valid)) {
-          const microResult = microCompact(valid);
-          if (microResult.compactedCount > 0) {
-            finalMessages = microResult.messages;
-            this.state.microCompactedThisRun = true;
-          }
+        const { microCompact } = await import("./micro-compact");
+        /**
+         * 第 84 波（审计修正）：这里原来用 `isAlreadyMicroCompacted(valid)` 当闸门 ——
+         * 那个函数只会回答"列表里**是否出现过**占位符"。于是一旦压缩过一次，
+         * 后续即使又积累了成百上千条新的工具结果也不会再压（"已经是压缩过的了"），
+         * 上下文压力照样顶满。
+         *
+         * `microCompact` 本身是**幂等**的：它内部会跳过已经是占位符的消息
+         * （见 micro-compact.ts 的 `[Tool result pruned …]` 跳过分支），
+         * 没有可压的就返回 compactedCount=0。所以直接让它自己判断更准确，
+         * 也去掉了这个语义错误的闸门。
+         */
+        const microResult = microCompact(valid);
+        if (microResult.compactedCount > 0) {
+          finalMessages = microResult.messages;
+          this.state.microCompactedThisRun = true;
         }
       }
     }

@@ -282,22 +282,36 @@ const { provider, model } = engine.getConfiguredProvider('subagent');
 export async function generateSourceSummary(
   sourceId: string,
   chunks?: { content: string }[],
-): Promise<void> {
+): Promise<boolean> {
   const { getSource, updateSource, getChunks } = await import('./storage');
 
   const source = getSource(sourceId);
-  if (!source) return;
+  if (!source) {
+    // 第 84 波（静默 no-op）：来源行不存在（已被删除/ID 过期）时原来直接 return，
+    // 调用方以为摘要"正在生成"，实际什么都不会发生。
+    console.warn(`[Indexer] 跳过摘要生成：来源 ${sourceId} 不存在（可能已被删除）`);
+    return false;
+  }
 
   // Use provided chunks or load from storage
   const sourceChunks = chunks ?? getChunks(source.notebookId).filter(c => c.sourceId === sourceId);
-  if (sourceChunks.length === 0) return;
+  if (sourceChunks.length === 0) {
+    console.warn(`[Indexer] 跳过摘要生成：来源 ${sourceId} 没有可用分块`);
+    return false;
+  }
 
 try {
 const { getLLMEngine } = await import('../llm/index');
 const engine = getLLMEngine();
 const resolved = engine.resolveSlot('subagent');
 const provider = engine.providers.get(resolved.providerId);
-if (!provider || !provider.isConfigured()) return;
+if (!provider || !provider.isConfigured()) {
+  // 未配置模型是最常见的"摘要卡片永远空着"的原因，必须留下可诊断的日志
+  console.warn(
+    `[Indexer] 跳过摘要生成：子智能体槽位（slot=subagent → ${resolved.providerId}/${resolved.modelId}）未配置可用的 API Key`,
+  );
+  return false;
+}
 const model = resolved.modelId;
 
     const isZh = navigator.language?.startsWith('zh');
@@ -327,6 +341,7 @@ const model = resolved.modelId;
         summary: result.summary || undefined,
         keyTopics: Array.isArray(result.keyTopics) ? result.keyTopics : undefined,
       });
+      return true;
     } else {
       // 模型未返回严格 JSON（常见：直接回文本/带解释/截断）——降级为文本摘要：
       // 去掉 markdown 代码块与"以下是摘要"引导词后取前 200 字，保证笔记本卡片
@@ -342,10 +357,14 @@ const model = resolved.modelId;
           summary: plain.slice(0, 200),
           keyTopics: undefined,
         });
+        return true;
       }
+      console.warn(`[Indexer] 来源 ${sourceId} 的摘要为空（模型返回内容为空）`);
+      return false;
     }
   } catch (error) {
     console.warn(`[Indexer] Source summary generation failed for ${sourceId}:`, error);
+    return false;
   }
 }
 

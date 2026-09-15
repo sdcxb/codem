@@ -2,6 +2,94 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.16.36] - 2026-09-15 — 「全修」：上一轮审计列出的**每一处**都修掉（第 85 波）
+
+用户要求：「全修！然后再审计。我们的目标是消灭所有问题。」
+于是把 v1.16.35 里逐条列出的"仍存在未修的"**全部**修掉，每条都先复核原文、再修、再补一条
+**会红的**回归用例（撤掉修复必红），最后按同一套三类问题（静默空写 / 假成功 / 守卫被绕过）
+重新跑一遍全量审计。
+
+### 类别一：守卫被绕过 / 缺省放行（安全阀形同虚设）
+
+- **hooks 的退出码从来没被读**（`hook-manager.ts`）—— 只解析 stdout，`exit 1` / `exit 7` 的守卫钩子
+  等于什么都没做（用户以为能拦、实际全放行）。现在：退出码 2 → 拦下；其它非 0 / 超时 / 抛错
+  → **默认拦下（fail-closed）**，仅当钩子显式 `allowOnError: true` 才放行；声明了 `MODIFY:` 但 JSON
+  非法、或函数钩子返回未识别的 action、或 `modify` 却没给 `modifiedInput` → 一律拦下（原来静默放行）。
+- **`exit_plan_mode` 审批通过后并没有真的切模式** —— 工具宣称 "You are now in Default mode"，
+  而 UI 只 `resolve({approved:true})`：计划模式仍在，同一回合里所有写操作继续被 `PlanModeGuard` 拦下。
+  现在批准 = 真的切（`handleModeChange` 同时改 UI 状态与**正在运行的 loop**），并把切换结果如实回报给
+  工具（失败/未确认时不再宣称已进入 Default 模式）。模式切换也统一走同一个入口（手动切换同样立即生效）。
+- **`SecurityScanMiddleware` 是空的** —— 匹配到明文凭据后直接 `proceed`，注释却写着"在 post-execute 追加"，
+  而根本没有那个实现。现在真正记录（工具名 + 模式名，不放回显）；
+  面向用户的提示仍由 `streaming-executor` 的 `scanParametersForSecrets` 追加。
+- **`grepSearch` 把"搜索失败"当成"没有匹配"** —— 路径不存在时 `Get-ChildItem -ErrorAction SilentlyContinue`
+  吞掉错误、管道成功、stdout 为空 → `lsp` 工具给出**假否定**（"No definition found"）。
+  现在路径不存在或命令非零退出都抛明确错误。
+
+### 类别二：假成功（失败被当成成功）
+
+- **工具把失败写成文本，状态却永远是 `completed`** —— 本仓库 100+ 处失败路径写 `output: "Error: ..."`，
+  而 `ToolRegistry.execute` 与 `AgenticLoop` 的内联 handler 都无条件标完成：界面显示绿色成功、
+  交付物判定把"报错的写操作"算成"写下来了"。
+  新增 `llm/tool-result-status.ts`：显式 `isError` 优先、**内容型工具（read/grep/web_fetch…）不推断**、
+  其余按首行失败前缀判定；`errorSource: "tool"` 让执行器区分"工具自报失败"（模型可自行纠正，不累加
+  `consecutiveErrors`）与"执行层异常"（权限拒绝/守卫拦截仍按原路径抛错）。顺带修好 `metadata` 被丢弃
+  （`subagentId` 到不了上层，后台子智能体的 settlement 登记因此失效）。
+- **MCP 的"连上了"是假的** —— stdio 传输连 `initialize` 都不发就写 `connected`；`tools/list` 的任何异常
+  都被吞成 `[]`；`autoDetectCodeGraph` 无脑返回 true。现在：连接 = 握手成功 + 工具清单真的是数组，
+  失败时 `status: "error"` + 原因，`autoDetectCodeGraph` 只在真的连上时返回 true；
+  `isCodeGraphInstalled` 改看退出码（原来只看 stderr 里有没有 "not recognized"）。
+- **agent-teams 三处永久卡死** —— ①重启零对账：`working` 成员让 `kick()` 永远跳过、`reassigning` 任务让
+  `nextReadyTask`/`claimTask` 永远拒绝、带 attemptId 的 claimed 任务指向已不存在的执行 → 现在重启即对账
+  （逐条写清原因 + 状态告警，`status` 工具会列出来）。②转派给普通成员后任务永久停在静默期（只有
+  captain 分支会 `finishReassign`）→ 现在两种目标都结束静默，开不出新领取时也会清掉标记并报出原因。
+  ③先 `claimTask` 再唤醒 = 幽灵占用 → 现在**先确认成员子会话存在**再领取，不存在就标离线并给出
+  "重新添加成员 / 转派给队长"的可执行建议。
+- **可持续子智能体没有阀门** —— ①缺空闲看门狗（LLM 流挂死就永远 running；而且子智能体的 scoped loop
+  不进 loopPool，`abortSession` 找不到它 → 连中断的句柄都没有）→ 新增看门狗 + `scopedLoopPool` 让中断真的
+  生效；②缺轮次预算（可无限唤醒、无限烧 token）→ 用尽后 followup 明确报错；③续聊轮被中止/判挂死时
+  仍结算成 `completed` → 现在如实标 `cancelled` 并写明原因。
+- **`generate_ppt` 汇报"要求的页数"而不是实际页数** —— 模型只产出 5 页时工具宣称"8 页演示文稿已生成"。
+  现在按 `deck.slides.length` 汇报，并在不一致时说明差异。
+- **`ask_clarification` 在没有交互通道时假装"用户未回答"** —— 问题根本没送达用户，模型却以为问过了。
+  现在明确报错并让模型改用普通文本提问；有通道但用户没作答时也写明"不要自行假设"。
+- **`read_attachment` 的偏移被应用了两次** —— 走磁盘分页读取时 `att.content` 已是窗口内容，接着又按
+  char offset 二次切分：实际起点约为请求值的 2 倍，且头部把窗口长度写成"文件总长"。
+  现在窗口路径不再二次切分，并明确标注"按行读取的近似窗口、前后都可能有内容"。
+- **`load_skill` 工具加载失败只写 console** —— 模型照着技能正文去调用不存在的工具。现在把失败写进工具结果。
+- **`terminal_send run_in_background` 在写入失败时照样回"已启动"** —— 现在按 job 实际状态汇报（error 即报错）。
+- **笔记图谱部分批次失败看不出来** —— `extractKnowledgeGraph` 某批失败只 `console.error`，返回的图谱看起来
+  是完整的。现在返回 `warnings`（超过 60 个分块的截断也如实说明），界面标注"图谱不完整"。
+- **`memory` / `heartbeat` / `store.createSession` 的乐观返回** —— 记忆写库失败会静默丢失、心跳配置写失败
+  看不见、会话创建写失败后仍把该会话设为当前会话（重启后整段对话消失）。
+  现在写入结果可查、界面当场提示、会话持久化失败会发事件让 App 弹出可执行说明。
+
+### 类别三：静默空写 / 静默无效
+
+- **`FileChangeStorage.updateStatus` 写 0 行没有任何痕迹** → 接入 `runGuarded`，并让 `revert()` 检查行数。
+- **`IssueStorage.update` 空更新照样"成功"** —— 调用方继续加"状态已变更"系统评论并通知。现在返回真实行数，
+  0 行时跳过评论与通知。
+- **`addNoteLink` 的 `INSERT OR IGNORE` 被忽略时仍按"已创建"计数** → 返回是否真的插入。
+- **`generateSourceSummary` 四处静默 return**（来源不存在 / 无分块 / 未配置 API Key / 模型返回空）
+  → 全部改为写明原因并返回布尔值（"摘要卡片永远空着"从此可诊断）。
+- **`idle-tracker` 的 0 语义反了** —— 传 0 本意是"关闭看门狗"，实际 `expired()` 恒为 true（立刻超时）。
+  现在 `<= 0` = 不设上限（与 `session/idle-watchdog.ts` 对齐）。
+- **`micro-compact` 的"已压缩过"闸门语义错误** —— 只要列表里出现过占位符就整体跳过，之后新积累的工具结果
+  再也不会被压。改为让 `microCompact` 自己判断（它本来就是幂等的）。
+- **`retry.ts` 的"总超时"只统计 sleep** —— 请求本身的耗时不计入，重试总墙钟可以远超预算。
+  现在按真实墙钟核算，并在"下一次等待就会超预算"时直接抛出最后的错误。
+- **沙箱 ACL 的黑名单在 Windows 上几乎全部失效** —— 条目不规范化（`C:\Windows` 进正则变成 `^C:\W…`）、
+  `~/.ssh` 从不展开（死规则）、前缀匹配误伤 `.environment.ts`。现在条目与输入同一套规范化（含 `~` 展开）、
+  正确的 glob 语义 + 尾部边界；顺带把 `checkPath` 的判定与测试补齐（正/反斜杠、真实主目录、任意深度）。
+
+### 验证方式
+
+- 新增回归用例（**撤掉修复必红**，逐条验过）：`hook-fail-closed` HK-1~12、`exit-plan-mode-switch` EPM-1~8、
+  `tool-result-status` TRS-1~12、`agent-teams-restart` TEAMR-1~9、`mcp-connection-honesty` MCP-H1~6、
+  `subagent-turn-valves` SUBV-1~5、`sandbox-glob-hardening` SBX-1~8、`honest-contracts-84` HC-1~8。
+- 全量 **250 文件 / 4968 用例通过 / 15 跳过**、`tsc --noEmit` 0 错、UI 审计 27 条规则 **0 error / 0 warn**、
+  css-contract 2745 个类无变化；全量跑完**零 `[WriteGuard]` 空写告警**。
+
 ## [1.16.35] - 2026-09-15 — 按「问题类型」全项目延伸审计：又抓到 11 处同类缺陷（第 84 波）
 
 用户要求：「审计一下还有没有类似的潜在问题，尤其是任务管理链路；有问题不论是新旧都修复，然后按问题类型做延伸审计，直到没有问题为止。」

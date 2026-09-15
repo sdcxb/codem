@@ -233,6 +233,25 @@ export function finishReassign(team: AgentTeam, taskId: string, by: string): { t
   return { team, task: getTask(team, taskId) };
 }
 
+/**
+ * 取消静默期（不领取）：回到共享池（可选保留目标 assignee）。
+ *
+ * 用途：`finishReassign` 失败（例如依赖未满足）时，任务**不能**继续挂着
+ * `reassigning: true` —— `nextReadyTask` 会永远跳过它、`claimTask` 会一直抛
+ * "is being reassigned"，任务就此永久卡死。
+ */
+export function cancelReassign(team: AgentTeam, taskId: string, keepAssignee?: string): { team: AgentTeam; task: TeamTask } {
+  const task = getTask(team, taskId);
+  task.reassigning = false;
+  task.handoffId = undefined;
+  task.status = "pending";
+  task.attemptId = undefined;
+  task.assignee = keepAssignee;
+  task.updatedAt = Date.now();
+  touch(team);
+  return { team, task };
+}
+
 /** 回滚一次领取（投递失败时，仅当 attemptId 仍是我们开的） */
 export function rollbackClaim(team: AgentTeam, taskId: string, attemptId: string, toAssignee?: string): { team: AgentTeam; task: TeamTask } {
   const task = getTask(team, taskId);
@@ -307,6 +326,11 @@ export interface TeamSnapshot {
   members: Array<{ id: string; name: string; role?: string; status: MemberStatus; provider?: string; model?: string }>;
   tasks: Array<{ id: string; subject: string; status: TeamTaskStatus; assignee?: string; dependencies: string[]; attempt: number; hasAttemptId: boolean; output?: string }>;
   unreadFor: Record<string, number>; // 收件人 → 未读条数
+  /**
+   * 运行时告警（不持久化）：重启对账结果、唤醒失败、无法唤醒的成员等。
+   * 这些是"用户/模型必须知道否则会误判"的事实，不能只写在 console 里。
+   */
+  alerts?: string[];
 }
 
 export function snapshot(team: AgentTeam): TeamSnapshot {

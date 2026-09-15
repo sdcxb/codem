@@ -266,18 +266,30 @@ const saved = getSettingJSON("codem-heartbeat-config", null) as HeartbeatConfig 
         this.globalConfig = { ...DEFAULT_CONFIG, ...saved };
         return this.globalConfig;
       }
-    } catch {}
+    } catch (e) {
+      // 读取失败不能静默：用户以为自己设过的心跳地址还在，实际已经回落到默认值
+      console.error("[Heartbeat] 读取全局心跳配置失败，使用默认配置：", e);
+    }
     this.globalConfig = { ...DEFAULT_CONFIG };
     return this.globalConfig;
   }
 
-  /** Set and persist global heartbeat config */
-  setGlobalConfig(config: Partial<HeartbeatConfig>): void {
+  /**
+   * Set and persist global heartbeat config.
+   *
+   * 第 84 波（乐观返回）：写库失败原来被空 catch 吞掉，界面显示"已保存"，
+   * 重启后配置回退 —— 现在返回是否真的写进去了。
+   */
+  setGlobalConfig(config: Partial<HeartbeatConfig>): boolean {
     const current = this.getGlobalConfig();
     this.globalConfig = { ...current, ...config };
     try {
 setSettingJSON("codem-heartbeat-config", this.globalConfig);
-    } catch {}
+      return true;
+    } catch (e) {
+      console.error("[Heartbeat] 心跳配置写入失败（仅在本次运行内生效）：", e);
+      return false;
+    }
   }
 
   /** Create a heartbeat for a session (uses global config if not specified) */
