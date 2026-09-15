@@ -59,6 +59,15 @@ export interface RepeatGuardLimits {
   enumAdvisoryAt: number;
   /** 文案里怎么称呼当前会话（"子会话" / "本次会话"） */
   label: string;
+  /**
+   * 同一（签名 + 结果）组合允许被"写之后宽容"多少次（第 83 波）。
+   *
+   * 为什么不是"一次就够"：世界真的变了时，同一份内容被重新观察到是合理的（写完再看一眼）；
+   * 但**不能无限** —— 否则模型每轮先做一次**幂等写**（`mkdir` 一个已存在的目录：
+   * 可证明会写、磁盘却没变）就能把宽容无限重新武装，零增益判据永远不成立（真机可用输入）。
+   * 取 3：给正常节奏留余量，又能在"原地打转"时把证据攒起来。
+   */
+  mutationExcusesPerPair: number;
 }
 
 export const DEFAULT_GUARD_LIMITS: RepeatGuardLimits = {
@@ -67,6 +76,7 @@ export const DEFAULT_GUARD_LIMITS: RepeatGuardLimits = {
   noGainStop: 6,
   enumAdvisoryAt: 4,
   label: "本次会话",
+  mutationExcusesPerPair: 3,
 };
 
 // ========== 命令意图识别 ==========
@@ -300,6 +310,18 @@ export class RepeatGuard {
   /** 只读枚举的观察计数（仅用于提醒文案，**不参与拦截**） */
   private enumSeen = new Map<string, number>();
   private enumAdvised = new Set<string>();
+  /**
+   * 已经**宽容过**的（签名 + 结果摘要）组合（第 83 波）。
+   *
+   * 为什么需要：宽容只对"**写操作之后第一次看到老内容**"成立。但"写"是**分类**得来的判定 ——
+   * 例如 `New-Item -Force` 建一个**已存在**的目录：可证明会写，磁盘什么都没变。
+   * 于是模型只要每轮先发一条**幂等写**命令，就能把宽容标记反复重新武装，
+   * 让后面那条"输出恒定"的解释器命令永远被记成新信息 → 零增益判据永远不成立。
+   * 现在同一组合只宽容一次，重复出现按零增益记账 → 守卫能正常升级到提醒/抑制/停。
+   */
+  private excusedPairs = new Map<string, number>();
+  /** 见过的"可证明写"的（签名 + 结果）组合：同一幂等写重复出现不再清零零增益证据 */
+  private mutationPairs = new Set<string>();
 
   readonly stats = {
     /** 观察到的"零信息增益"重复次数 */
@@ -356,20 +378,41 @@ export class RepeatGuard {
      * （而不是把它消耗在这次写操作自己的结果上，否则"写完再列一次目录"会立刻被记成零增益）。
      */
     if (this.isProvableMutation(name, args)) {
+      /**
+       * 「可证明的写」也要区分**首次**与**重复**（第 83 波审计）。
+       *
+       * 原来这里无条件 `noGainStreak = 0` —— 于是"每轮先做一次幂等写"（`mkdir` 已存在的目录、
+       * 覆盖写入同样的内容）就能**无限清空**零增益证据，守卫永远升不到提醒/抑制/停。
+       * 现在只有**新的**（签名 + 结果）组合才清零；同一条幂等写反复出现不再延长豁免。
+       */
+      const mutPair = `${signature}\u0000${digest}`;
+      const seenBefore = this.mutationPairs.has(mutPair);
+      this.mutationPairs.add(mutPair);
       this.mutatedSinceEvidence = true;
       this.seenDigests.add(digest);
-      this.stats.distinctResults++;
-      this.noGainStreak = 0;
-      return { gained: true, streak: 0 };
+      if (!seenBefore) {
+        this.stats.distinctResults++;
+        this.noGainStreak = 0;
+      }
+      return { gained: true, streak: this.noGainStreak };
     }
 
-    // 写操作之后的第一次重看：世界已经变了，即使内容一样也按"新信息"处理并宽容一次
+    // 写操作之后的第一次重看：世界已经变了，即使内容一样也按"新信息"处理并宽容一次。
+    // 但**同一（签名 + 摘要）只宽容一次** —— 否则每轮先做一次"幂等写"
+    // （例如 `New-Item -Force` 建一个**已存在**的目录：可证明会写、磁盘却没变），
+    // 就能无限重新武装宽容，零增益判据被彻底架空（第 83 波审计发现的可用输入）。
     if (this.mutatedSinceEvidence) {
       this.mutatedSinceEvidence = false;
-      this.seenDigests.add(digest);
-      this.stats.distinctResults++;
-      this.noGainStreak = 0;
-      return { gained: true, streak: 0 };
+      const pair = `${signature}\u0000${digest}`;
+      const excused = this.excusedPairs.get(pair) ?? 0;
+      if (excused < this.limits.mutationExcusesPerPair) {
+        this.excusedPairs.set(pair, excused + 1);
+        this.seenDigests.add(digest);
+        this.stats.distinctResults++;
+        this.noGainStreak = 0;
+        return { gained: true, streak: 0 };
+      }
+      // 同一份内容已经被"写后宽容"过允许的次数 → 不再当新信息，落回下面的零增益记账
     }
 
     if (this.seenDigests.has(digest)) {

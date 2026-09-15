@@ -2,7 +2,8 @@
  * Issue Storage — DB CRUD for issues + issue_comments tables
  */
 
-import { getDatabase } from "../storage/database";
+import { getDatabase, persistDatabase } from "../storage/database";
+import { runGuarded } from "../storage/write-guard";
 
 // ========== Types ==========
 
@@ -50,9 +51,11 @@ export const IssueStorage = {
        issue.assignee_type ?? null, issue.assignee_id ?? null, issue.project_id ?? null,
        issue.squad_id ?? null, issue.session_id ?? null, issue.labels ?? null, now, now],
     );
+    // 第 83 波（审计修正）：本文件原来**从不 persistDatabase()** —— 写入只留在内存里，
+    // 只有"正常退出"或别处触发脏标记才会落盘 → 强杀进程就丢议题。
+    persistDatabase();
     return { ...issue, created_at: now, updated_at: now };
   },
-
   getById(id: string): IssueRow | null {
     const db = getDatabase();
     const result = db.exec("SELECT * FROM issues WHERE id = ?", [id]);
@@ -87,12 +90,16 @@ export const IssueStorage = {
     fields.push("updated_at = ?");
     values.push(Date.now());
     values.push(id);
-    db.run(`UPDATE issues SET ${fields.join(", ")} WHERE id = ?`, values);
+    // 第 83 波：任务管理链路也走空写探测 —— 议题更新打不到行 = 界面显示的状态与库不一致
+  runGuarded(db, `UPDATE issues SET ${fields.join(", ")} WHERE id = ?`, values,
+    { table: "issues", op: "update", id, from: "updateIssue" });
+    persistDatabase();
   },
 
   delete(id: string): void {
     const db = getDatabase();
     db.run("DELETE FROM issues WHERE id = ?", [id]);
+    persistDatabase();
   },
 
   // ========== Comment CRUD ==========
@@ -107,7 +114,9 @@ export const IssueStorage = {
        comment.author_name ?? null, comment.content, comment.is_system, now],
     );
     // Update issue's updated_at
-    db.run("UPDATE issues SET updated_at = ? WHERE id = ?", [now, comment.issue_id]);
+    runGuarded(db, "UPDATE issues SET updated_at = ? WHERE id = ?", [now, comment.issue_id],
+    { table: "issues", op: "touch", id: comment.issue_id, from: "addIssueComment" });
+    persistDatabase();
     return { ...comment, created_at: now };
   },
 
@@ -121,6 +130,7 @@ export const IssueStorage = {
   deleteComment(commentId: string): void {
     const db = getDatabase();
     db.run("DELETE FROM issue_comments WHERE id = ?", [commentId]);
+    persistDatabase();
   },
 
   // ========== Stats ==========

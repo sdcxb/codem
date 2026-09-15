@@ -711,7 +711,15 @@ describe("跨会话委派 — 等待预算与进度（第 62 波）", () => {
     const fs = require("fs");
     const path = require("path");
     const executor = fs.readFileSync(path.join(__dirname, "../core/session/executor.ts"), "utf-8");
-    expect(executor).toMatch(/if \(abort\.signal\.aborted\) \{[\s\S]{0,200}cancelTask/);
+    /**
+     * 第 83 波加强：原断言只看"abort 分支里有 cancelTask"，现在还要保证
+     * **对被中止的回合不报成功**（原来取消后 `endReason` 是 undefined，
+     * 三处失败分支全部跳过 → `success: true` → 微信/手机桥收到"处理完成（无文本输出）"）。
+     */
+    expect(executor).toMatch(/if \(abort\.signal\.aborted\) \{[\s\S]{0,1200}cancelTask\(delegationTaskId\)/);
+    expect(executor, "中止必须带失败返回").toMatch(/success: false, error: note \};\s*\n\s*\}/);
+    // 看门狗中止要能**真的**终止引擎（否则卡在工具 await 上永远不动）
+    expect(executor).toContain("engine.abortSession");
   });
 
   it("DELE-041: 委派注入的消息带「接收方兜底提示」（漏信息时要报告，不要盲目扫描）", () => {

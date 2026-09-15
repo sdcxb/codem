@@ -9,6 +9,7 @@
  */
 
 import { getDatabase, persistDatabase } from "../storage/database";
+import { runGuarded } from "../storage/write-guard";
 
 // ========== Types ==========
 
@@ -87,7 +88,8 @@ export function updateGoal(id: string, update: Partial<Goal>): void {
   values.push(now);
   values.push(id);
 
-  db.run(`UPDATE goals SET ${fields.join(", ")} WHERE id = ?`, values);
+  runGuarded(db, `UPDATE goals SET ${fields.join(", ")} WHERE id = ?`, values,
+    { table: "goals", op: "update", id, from: "updateGoal" });
   persistDatabase();
 }
 

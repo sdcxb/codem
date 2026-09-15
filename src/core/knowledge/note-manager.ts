@@ -18,6 +18,7 @@ import {
   getNoteLinks,
 } from './storage';
 import type { Note, NoteLink } from './types';
+import { getDatabase, persistDatabase } from '../storage/database';
 
 /** WikiLinks 正则: 匹配 [[标题]] 或 [[标题|显示文本]] */
 const WIKILINK_REGEX = /\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g;
@@ -189,12 +190,23 @@ export function getIncomingLinks(noteId: string): NoteLink[] {
  * 这里需要在更新笔记内容时手动清理旧链接
  */
 function deleteNoteLinksBySource(noteId: string): void {
-  // 使用动态导入避免循环依赖
-  import('../storage/database').then(({ getDatabase, persistDatabase }) => {
+  /**
+   * 第 83 波（审计修正）：这里原来用 `import('../storage/database').then(...)` ——
+   * 删链接被排进**微任务**，必然排在 `syncNoteLinks` 里那次**同步**的新链接插入**之后**：
+   * 保存一篇带 `[[WikiLink]]` 的笔记 → 先建 N 条链接、紧接着把 N 条全删掉
+   * → 反向链接面板**永远是空的**（而函数仍返回"创建了 N 条"）。
+   *
+   * `knowledge/storage.ts` 本来就静态 import 了 `getDatabase/persistDatabase`
+   * （同一个模块图，没有循环依赖问题），所以这里改成**同步删除**：
+   * 顺序确定，删旧在前、插新在后。
+   */
+  try {
     const db = getDatabase();
     db.run('DELETE FROM note_links WHERE source_note_id = ?', [noteId]);
     persistDatabase();
-  });
+  } catch (e) {
+    console.warn('[note-manager] 删除旧的出链失败（继续按新内容重建）:', e);
+  }
 }
 
 /**

@@ -12,6 +12,7 @@
 
 import { getDatabase, persistDatabase } from "../storage/database";
 import type { DelegationTask, DelegationTaskRow, DelegationState } from "./types";
+import { runGuarded } from "../storage/write-guard";
 
 // ========== 行 → 对象转换 ==========
 
@@ -90,7 +91,9 @@ export function updateDelegationTaskStatus(
     }
 
     params.push(taskId);
-    db.run(`UPDATE delegation_tasks SET ${sets.join(", ")} WHERE id = ?`, params);
+    // 第 83 波：委派任务的"假成功"就是从这里开始的 —— 状态更新打不到行必须可见
+  runGuarded(db, `UPDATE delegation_tasks SET ${sets.join(", ")} WHERE id = ?`, params,
+    { table: "delegation_tasks", op: "update", id: taskId, from: "updateDelegationTask" });
     persistDatabase();
   } catch (e) {
     console.error("[DelegationStorage] updateDelegationTaskStatus failed:", e);

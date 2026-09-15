@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 计划停滞检测契约（第 65 波）—— 补上「每次输出都不一样」的空转。
  *
  * 为什么需要第三道检测（前两道的盲区，见各文件头注释）：
@@ -10,6 +10,7 @@
 
 import { describe, it, expect } from "vitest";
 import { StallGuard, DEFAULT_STALL_LIMITS } from "../core/llm/stall-guard";
+import { ArtifactTracker } from "../core/llm/artifact-tracker";
 
 const PLAN_A = { planRevision: 0, producedArtifact: false };
 const REVISED = { planRevision: 1, producedArtifact: false };
@@ -116,15 +117,54 @@ describe("计划停滞检测（第 65 波）", () => {
   });
 
   it("STALL-9: 「产出交付物」的判定不能把只读查询算进去（审计修正：反复 `git status` 不算干活）", () => {
+    const tracker = new ArtifactTracker();
+    // 写入类工具：算交付物
+    expect(tracker.note("write", { path: "D:\\a.md", content: "x" }, "Successfully wrote", null).artifact).toBe(true);
+    // 只读 VCS 查询：不算（否则反复 `git status` 的会话永远判不出停滞）
+    const readOnly = tracker.note("bash", { command: "git status" }, "On branch master", { kind: "mutate", provable: false });
+    expect(readOnly.artifact, "只读查询不该算交付物").toBe(false);
+    // 可证明会改盘的命令（Set-Content 等）：算
+    const provable = tracker.note("bash", { command: "Set-Content -Path D:\\a.txt -Value x" }, "written", { kind: "mutate", provable: true });
+    expect(provable).toEqual({ artifact: true, verdict: "provable" });
+    // 结果失败：不算
+    expect(tracker.note("write", { path: "D:\\a.md" }, "Error: permission denied", null).artifact).toBe(false);
+  });
+
+  it("STALL-10（第 83 波用户现场）: 同一条「可能写」的命令反复跑 → 不再算推进（停滞守卫不能被打转骗过）", () => {
+    const tracker = new ArtifactTracker(3); // 允许前 3 次
+    const cmd = 'python "D:\\课题3\\_tmp_extract.py"'; // 只读脚本，每轮输出都不同（带时间戳）
+    const verdicts: string[] = [];
+    for (let i = 0; i < 8; i++) {
+      const r = tracker.note("bash", { command: cmd }, `提取完成 ts=${Date.now()}`, { kind: "mutate", provable: false });
+      verdicts.push(`${i + 1}:${r.verdict}`);
+    }
+    // 前几次算推进（保护"构建→测试→再构建"这类正常节奏），重复到阈值后不再算
+    expect(verdicts.slice(0, 3).every((v) => v.endsWith("speculative-ok"))).toBe(true);
+    expect(verdicts.slice(3).every((v) => v.endsWith("speculative-repeat"))).toBe(true);
+    expect(tracker.stats.speculativeVetoed).toBe(5);
+  });
+
+  it("STALL-11: 命令各不相同（正常的构建/测试长任务）照常算推进；真实写入后重复计数清零", () => {
+    const tracker = new ArtifactTracker(2);
+    const cmds = ["npm run build", "npm test", "cargo build", "pytest -q", "npm run build -- --prod"];
+    for (const c of cmds) {
+      // npm/cargo/pytest 属于"可能写"：命令各不相同 → 每次都算推进
+      expect(tracker.note("bash", { command: c }, `输出 ${c}`, { kind: "mutate", provable: false }).artifact, c).toBe(true);
+    }
+    // 同一条命令重复到超过允许次数（allowance=2：第 3 次起）→ 不算了
+    expect(tracker.note("bash", { command: "npm test" }, "又跑一次", { kind: "mutate", provable: false }).artifact).toBe(true);
+    expect(tracker.note("bash", { command: "npm test" }, "第三次", { kind: "mutate", provable: false }).artifact).toBe(false);
+    // 出现一次**可证明**的写操作（真正改了盘）→ 记忆清零，重新给它机会
+    tracker.note("bash", { command: "Set-Content -Path D:\\out.txt -Value done" }, "written", { kind: "mutate", provable: true });
+    expect(tracker.note("bash", { command: "npm test" }, "改了盘之后再跑，合理", { kind: "mutate", provable: false }).artifact).toBe(true);
+  });
+
+  it("STALL-12: 判定逻辑真的接在循环里（否则守卫照样失效）", () => {
     const fs = require("fs");
     const path = require("path");
     const loop = fs.readFileSync(path.join(__dirname, "../core/llm/agentic-loop.ts"), "utf-8");
-    const idx = loop.indexOf("function isArtifactTool");
-    expect(idx).toBeGreaterThan(-1);
-    const block = loop.slice(idx, idx + 1800);
-    expect(block, "写入/编辑算交付物").toMatch(/name === "write"/);
-    expect(block, "只读 VCS 查询要排除").toMatch(/git\\s\+\(status\|log\|diff/);
-    // 与 loop-guard 的"会改盘"分类保持一致（但语义不同，注释里要写清）
-    expect(block).toMatch(/bashIntentKind/);
+    expect(loop, "循环必须用分级判定").toContain("this.artifactTracker.note(");
+    expect(loop, "旧的单一判定（mutate 即交付物）必须已经移除").not.toContain("function isArtifactTool");
+    expect(loop).toContain("this.iterationProducedArtifact = true");
   });
 });

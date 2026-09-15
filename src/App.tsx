@@ -1260,9 +1260,29 @@ flushStreamBuffer(); // flush all on unmount
       const { targetSessionId, task, taskId, sourceSessionId } = msg;
       if (!task || !taskId) return;
 
+      /**
+       * 第 83 波（审计修正）：这一整段里**每一个"不执行"的分支都必须把失败写回任务**。
+       *
+       * 原来这些分支只是 `console.log/warn` 然后 `return`，而任务在 `delegate()` 里
+       * 已经被置成 running —— 于是它**永久停在"执行中"**：委派页签永远显示在跑，
+       * 父会话 `wait_for_delegation` 永远等一个不会来的结果，直到用户手动终止。
+       * 这里统一走 `failTask`，让发起方**立刻**拿到"没跑起来 + 为什么"。
+       */
+      const failHonestly = (reason: string) => {
+        console.warn(`[Delegation] 任务 ${taskId} 未能执行：${reason}`);
+        try {
+          orchestrator.failTask(taskId, reason);
+        } catch (e) {
+          console.warn('[Delegation] failTask failed:', e);
+        }
+      };
+
       // 防止重复执行
       if (isSessionExecuting(targetSessionId)) {
-        console.log(`[Delegation] Session ${targetSessionId} is already executing, delegation ${taskId} queued`);
+        failHonestly(
+          `目标会话 ${targetSessionId} 正在执行另一个后台回合，本次委派没有被启动（不是排队）。` +
+            `请等它结束后重新发起，或改用别的会话。`,
+        );
         return;
       }
 
@@ -1302,7 +1322,7 @@ flushStreamBuffer(); // flush all on unmount
         }
         if (!cwdFallback) cwdFallback = useProjectStore.getState().currentProject?.path || "D:\\mimo";
         const engineFallback = engineRef.current;
-        if (!engineFallback) { console.warn('[App] engine not available'); return; }
+        if (!engineFallback) { failHonestly('LLM 引擎尚未就绪（engine not available），本次委派没有被启动。请稍后重新发起。'); return; }
         console.log(`[Delegation] Target session ${targetSessionId} 不在当前项目的 UI 列表里，改用持久层记录执行（cwd=${cwdFallback}）`);
         executeSessionTurn({
           sessionId: targetSessionId,
@@ -1332,7 +1352,7 @@ flushStreamBuffer(); // flush all on unmount
         cwd = session.worktreePath;
       }
 
-      const engine = engineRef.current; if (!engine) { console.warn('[App] engine not available'); return; }
+      const engine = engineRef.current; if (!engine) { failHonestly('LLM 引擎尚未就绪（engine not available），本次委派没有被启动。请稍后重新发起。'); return; }
 
       // 后台执行（不阻塞 UI）
       executeSessionTurn({
@@ -1353,6 +1373,8 @@ flushStreamBuffer(); // flush all on unmount
         },
       }).catch((err) => {
         console.error(`[Delegation] executeSessionTurn failed for ${targetSessionId}:`, err);
+        // 第 83 波：抛出来的失败同样要写回任务（否则任务停在 running，父会话干等）
+        failHonestly(`后台执行抛出异常：${err?.message || String(err)}`);
       });
     });
 

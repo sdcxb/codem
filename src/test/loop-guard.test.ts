@@ -318,4 +318,29 @@ describe("重复调用守卫（第 64 波：判据是信息增益，不是次数
     guard.noteResult("bash", args, LISTING_ROOT);
     expect(guard.noGainStreakCount).toBe(0);
   });
+
+  it("GUARD-20（第 83 波审计）: 每轮先做一次「幂等写」不能无限重新武装宽容（守卫照样要能停）", () => {
+    const guard = new RepeatGuard();
+    const MKDIR = { command: "New-Item -ItemType Directory -Force D:\\x\\y" }; // 目录已存在：可证明会写，但磁盘没变
+    const SCRIPT = { command: "python _s.py" };                              // 输出恒定
+    const SAME_OUTPUT = "extract ok 358";
+
+    const actions: string[] = [];
+    let executed = 0;
+    for (let i = 0; i < 30; i++) {
+      // 每轮先来一发幂等写（重新武装宽容标记）
+      expect(guard.inspect("bash", MKDIR, CTX).action).toBe("allow");
+      guard.noteResult("bash", MKDIR, "已存在，未改动");
+      // 再跑输出恒定的脚本
+      const d = guard.inspect("bash", SCRIPT, CTX);
+      actions.push(d.action);
+      if (d.action === "stop") break;
+      if (d.action === "allow" || d.action === "warn") {
+        executed++;
+        guard.noteResult("bash", SCRIPT, SAME_OUTPUT);
+      }
+    }
+    expect(actions, `必须停下来（否则守卫被幂等写无限架空）：${actions.join(",")}`).toContain("stop");
+    expect(executed, `真实执行次数应当很少（实际 ${executed}）`).toBeLessThanOrEqual(8);
+  });
 });

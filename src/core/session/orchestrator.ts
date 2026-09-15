@@ -540,12 +540,26 @@ export class DelegationOrchestrator {
         this.tasks.set(task.id, task);
         this.addDependency(task.sourceSessionId, task.targetSessionId);
 
-        // running 状态的任务在重启后标记为 interrupted（由调用方处理）
-        if (task.status === "running") {
-          console.warn(
-            `[DelegationOrchestrator] Task ${task.id} was running during shutdown, marking as interrupted`,
-          );
-          // 不自动失败——让 executor 决定是否重试
+        /**
+         * 第 83 波（审计修正）：重启后**曾经在跑**的任务不能只打一行 warn 就放着。
+         *
+         * 原代码写着"标记为 interrupted"，但 `DelegationState` 里根本没有这个状态，
+         * 也没有任何代码写回 —— 于是任务**永远停在 running**：
+         *   · 委派页签永远显示"执行中"，父会话 `wait_for_delegation` 永远等一个不会来的结果；
+         *   · `getRunningTasks()` 继续把它算进并发额度（maxConcurrent=5），攒够 5 条之后
+         *     **任何新委派都会被拒绝**（"Maximum concurrent delegations reached"）。
+         *
+         * 进程重启 ⇒ 那个后台回合不可能还在跑，事实就是"被中断"。这里如实落库为失败，
+         * 并把原因写清楚，让父会话立刻拿到结论（而不是干等）。
+         */
+        if (task.status === "running" || task.status === "pending") {
+          const reason = `委派任务在应用重启时被中断（原状态：${task.status}）—— 目标会话 ${task.targetSessionId} 的这一轮已经不可能继续。请重新发起委派，或改为直接在该会话里继续。`;
+          console.warn(`[DelegationOrchestrator] ${task.id} was ${task.status} during shutdown → 标记为失败（重启后不会自己继续）`);
+          try {
+            this.failTask(task.id, reason);
+          } catch (e) {
+            console.warn(`[DelegationOrchestrator] 标记中断任务失败（${task.id}）:`, e);
+          }
         }
       }
 

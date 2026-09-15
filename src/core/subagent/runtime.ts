@@ -471,6 +471,8 @@ export class SubagentRuntime {
       let output = '';
       let toolResults: string[] = [];
       let hasRunningThinking = false;
+      /** 第 83 波：本轮是否被中止（中止也要走统一收尾，否则父会话等不到结算） */
+      let aborted = false;
 
       for await (const event of this.engine.processSubagent(
         activation.childId,
@@ -480,11 +482,15 @@ export class SubagentRuntime {
         activation.task.profile_id,
       )) {
         if (activation.abort.signal.aborted) {
-          activation.task.status = 'cancelled';
-          activation.task.completedAt = Date.now();
-          this.completeRunningActivities(activation);
-          this.touchTask(activation);
-          return;
+          /**
+           * 第 83 波（审计修正）：这里原来直接 `return`，**跳过了下面的统一收尾**
+           * （`executionResolver()` / `poke.resolve()`）→ settlement watcher 永远不推进 →
+           * 父会话 `waitForTaskIdle` 永不 resolve → 父循环在 `await Promise.race(...)` 上
+           * **永久阻塞**（没有超时）。真机表现：中断一个后台子智能体之后，父会话再也不动。
+           * 现在只标记"这一轮被中止"，状态与结算交给统一收尾（下面按 aborted 分支落状态）。
+           */
+          aborted = true;
+          break;
         }
         // 捕获事件
         if (event.type === 'text_delta') {
@@ -556,17 +562,45 @@ export class SubagentRuntime {
         ? output + '\n\n' + (getLang() === 'zh' ? '[工具结果]' : '[Tool Results]') + '\n' + toolResults.join('\n---\n')
         : output;
 
-      const result = parseTaskResult(fullOutput);
-      activation.result = {
-        output: result.output,
-        stopReason: 'completed',
-        filesTouched: result.filesTouched,
-        summary: result.summary,
-      };
-      activation.task.status = 'completed';
-      activation.task.completedAt = Date.now();
-      activation.task.result = result;
-      this.completeRunningActivities(activation);
+      if (aborted) {
+        // 第 83 波：被中止**不是**完成（原来这条路径直接 return，连状态都没落）
+        activation.task.status = 'cancelled';
+        activation.task.completedAt = Date.now();
+        activation.result = {
+          output: sanitizeSubagentOutput(output),
+          stopReason: 'aborted',
+          filesTouched: [],
+          summary: getLang() === 'zh' ? '本轮被中断' : 'This turn was interrupted',
+        };
+        this.completeRunningActivities(activation);
+      } else {
+        const result = parseTaskResult(fullOutput);
+        /**
+         * 第 83 波（审计修正）：子智能体**自报失败**时不能报"已完成"。
+         *
+         * 原来 `stopReason` 硬编码 `'completed'`、任务状态硬编码 `'completed'`，
+         * `parseTaskResult` 解析出的 `failed` / `blocked` / `partial` 被整段丢弃 ——
+         * 父会话收到的是"[子智能体完成通知] … 已完成"，拿着半成品继续往下走。
+         */
+        const reported = result.status; // success | partial | failed | blocked
+        const failed = reported === 'failed' || reported === 'blocked';
+        activation.result = {
+          output: result.output,
+          // SubagentStopReason 只有 completed/aborted/error/max-tokens/refusal：
+          // 自报 failed/blocked → 归到 'refusal'（子智能体明确表示做不了），partial 仍按完成但摘要会写明
+          stopReason: failed ? 'refusal' : 'completed',
+          filesTouched: result.filesTouched,
+          summary: result.summary,
+        };
+        activation.task.status = failed ? 'failed' : 'completed';
+        activation.task.completedAt = Date.now();
+        activation.task.result = result;
+        if (failed) {
+          activation.task.error = result.summary || (getLang() === 'zh' ? `子智能体自报 ${reported}` : `subagent reported ${reported}`);
+          console.warn(`[SubagentRuntime] 子智能体 ${activation.childId} 自报 ${reported} → 按失败结算（不再当成完成）`);
+        }
+        this.completeRunningActivities(activation);
+      }
     } catch (err: any) {
       activation.task.status = 'failed';
       activation.task.error = err.message;
@@ -607,6 +641,8 @@ export class SubagentRuntime {
       let output = '';
       let toolResults: string[] = [];
       let hasRunningThinking = false;
+      /** 第 83 波：本轮是否被中止（中止也要走统一收尾） */
+      let aborted = false;
 
 for await (const event of this.engine.processSubagent(
 activation.childId,
@@ -616,11 +652,9 @@ activation.task.agentId,
 activation.task.profile_id,
 )) {
         if (activation.abort.signal.aborted || signal.aborted) {
-          activation.task.status = 'cancelled';
-          activation.task.completedAt = Date.now();
-          this.completeRunningActivities(activation);
-          this.touchTask(activation);
-          return;
+          // 同 executeTurn：必须走统一收尾，否则父会话等不到结算（第 83 波审计修正）
+          aborted = true;
+          break;
         }
         if (event.type === 'text_delta') {
           output += event.text;

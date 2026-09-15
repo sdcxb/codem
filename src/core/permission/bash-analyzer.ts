@@ -83,6 +83,38 @@ const DANGEROUS_PATTERNS: Array<{ regex: RegExp; description: string }> = [
 ];
 
 /**
+ * PowerShell 侧的**危险**命令（第 83 波审计修正）。
+ *
+ * 背景：本产品在 Windows 上的 shell 就是 PowerShell，而原来的实现
+ * `if (isPowerShellCommand(command)) return { classification: "write", dangerousPatterns: [] }`
+ * —— 只要命令以 `Get-/Set-/Remove-/Invoke-…` 开头（或含 `$env:`、`| Select-Object`），
+ * 就**整段跳过危险分析**。于是"替我审批"模式下：
+ *
+ *   Remove-Item -Recurse -Force C:\Users\me\Documents
+ *
+ * 既不询问、也不拦截（`isAutoApprovable` 的 unix 正则一个都匹配不上）。
+ * 这属于"闸门被分类绕过"，与第 83 波修的守卫短路是同一类问题。
+ */
+const POWERSHELL_DANGEROUS_PATTERNS: Array<{ regex: RegExp; description: string }> = [
+  { regex: /\bRemove-Item\b[\s\S]*(-Recurse|-Force)/i, description: "Remove-Item -Recurse/-Force — 递归/强制删除（PowerShell）" },
+  { regex: /\b(rm|del|erase|rd|rmdir)\b[\s\S]*\s(-r|-rf|-recurse|-force|\/s|\/q)\b/i, description: "递归/强制删除" },
+  { regex: /\bInvoke-Expression\b|\biex\b/i, description: "Invoke-Expression — 执行动态拼接的代码" },
+  { regex: /\bInvoke-WebRequest\b[\s\S]*\|\s*(Invoke-Expression|iex)\b/i, description: "下载并直接执行远端脚本" },
+  { regex: /\b(Invoke-WebRequest|iwr|curl|wget)\b[\s\S]*\|\s*(Invoke-Expression|iex)\b/i, description: "下载并直接执行远端脚本" },
+  { regex: /\bStop-Computer\b|\bRestart-Computer\b/i, description: "关机/重启" },
+  { regex: /\bFormat-Volume\b|\bClear-Disk\b|\bInitialize-Disk\b/i, description: "磁盘格式化/初始化" },
+  { regex: /\bSet-ExecutionPolicy\b/i, description: "修改执行策略（降低安全限制）" },
+  { regex: /\b(New-LocalUser|Add-LocalGroupMember)\b/i, description: "创建账号/提权" },
+  { regex: /\bSet-Content\b[\s\S]*\$env:/i, description: "批量覆盖环境相关文件" },
+  { regex: /\bStart-Process\b[\s\S]*-(Verb\s+RunAs|WindowStyle\s+Hidden)/i, description: "提权/隐藏窗口启动进程" },
+];
+
+/**
+ * PowerShell 侧的**只读**命令（避免把正常查询当成"会改盘"）。
+ */
+const POWERSHELL_READONLY_RE =
+  /^\s*(Get-|Test-Path|Resolve-Path|Select-String|Measure-Object|Where-Object|Sort-Object|Format-|Out-String|Compare-Object|ConvertFrom-)/i;
+/**
  * Patterns that indicate a command is read-only (safe).
  * Used to classify commands when no dangerous patterns are found.
  */
@@ -146,7 +178,7 @@ const WRITE_PATTERNS: RegExp[] = [
  */
 function isPowerShellCommand(command: string): boolean {
   // Common PowerShell cmdlets
-  const psCmdlets = /^(Get-|Set-|New-|Remove-|Invoke-|Start-|Stop-|Enable-|Disable-|Export-|Import-|ConvertTo-|ConvertFrom-|Out-|Write-|Read-|Test-|Select-|Where-|ForEach-|Measure-|Sort-|Group-|Compare-|Trace-|Wait-|Debug-|Update-|Add-|Clear-|Push-|Pop-|Use-|Register-|Unregister-|Suspend-|Resume-|Block-|Unblock-|Connect-|Disconnect-|Enter-|Exit-|Watch-)/;
+  const psCmdlets = /^(Get-|Set-|New-|Remove-|Invoke-|Start-|Stop-|Enable-|Disable-|Export-|Import-|ConvertTo-|ConvertFrom-|Out-|Write-|Read-|Test-|Select-|Where-|ForEach-|Measure-|Sort-|Group-|Compare-|Trace-|Wait-|Debug-|Update-|Add-|Clear-|Push-|Pop-|Use-|Register-|Unregister-|Suspend-|Resume-|Block-|Unblock-|Connect-|Disconnect-|Enter-|Exit-|Watch-|Format-|Optimize-|Repair-|Reset-|Restart-|Rename-|Move-|Copy-|Mount-|Dismount-)/;
   if (psCmdlets.test(command.trim())) return true;
 
   // PowerShell-specific operators
@@ -167,13 +199,27 @@ function isPowerShellCommand(command: string): boolean {
  * @returns Classification result with detected patterns
  */
 export function analyzeBashCommand(command: string): BashAnalysisResult {
-  // Skip analysis for PowerShell commands
+  /**
+   * PowerShell 命令**不再跳过分析**（第 83 波审计修正）。
+   *
+   * 本产品在 Windows 上的 shell 就是 PowerShell，而原来这里直接
+   * `return { classification: "write", dangerousPatterns: [] }` —— 等于在 Windows 上
+   * 把唯一的自动闸门关掉：`Remove-Item -Recurse -Force …`、`Invoke-Expression …`
+   * 都成了"write"，在"替我审批"模式下被自动放行（`isAutoApprovable` 的 unix 正则也匹配不上）。
+   * 现在用 PowerShell 侧的危险/只读清单做同样的分级。
+   */
   if (isPowerShellCommand(command)) {
-    return {
-      classification: "write", // Conservative default for PowerShell
-      dangerousPatterns: [],
-      isPowerShell: true,
-    };
+    const psDetected: string[] = [];
+    for (const { regex, description } of POWERSHELL_DANGEROUS_PATTERNS) {
+      if (regex.test(command)) psDetected.push(description);
+    }
+    if (psDetected.length > 0) {
+      return { classification: "dangerous", dangerousPatterns: psDetected, isPowerShell: true };
+    }
+    if (POWERSHELL_READONLY_RE.test(command)) {
+      return { classification: "readonly", dangerousPatterns: [], isPowerShell: true };
+    }
+    return { classification: "write", dangerousPatterns: [], isPowerShell: true };
   }
 
   // Check for dangerous patterns
@@ -190,6 +236,17 @@ export function analyzeBashCommand(command: string): BashAnalysisResult {
       dangerousPatterns: detectedPatterns,
       isPowerShell: false,
     };
+  }
+
+  /**
+   * 第 83 波（审计修正）：**有输出重定向就不是只读**。
+   *
+   * 原来 `echo hi > out.txt`、`ls -la > list.txt` 会因为首个命令词是 `echo`/`ls`
+   * 被 READONLY_PATTERNS 判成 readonly —— 而它们确实在写文件
+   * （计划模式的只读契约、auto 模式的自动放行都会因此放错）。
+   */
+  if (/(^|[^>])>>?(\s|$|[^>&])/.test(command)) {
+    return { classification: "write", dangerousPatterns: [], isPowerShell: false };
   }
 
   // Classify as readonly or write

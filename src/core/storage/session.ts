@@ -1,6 +1,7 @@
 import { getDatabase, persistDatabase } from "./database";
 import { getEventLog } from "./event-log";
 import type { Session } from "../types";
+import { runGuarded } from "./write-guard";
 
 export interface SessionRow {
   id: string;
@@ -118,7 +119,8 @@ export function updateSession(id: string, update: Partial<Session>): void {
 
   if (fields.length === 0) return;
   values.push(id);
-  db.run(`UPDATE sessions SET ${fields.join(", ")} WHERE id = ?`, values);
+  runGuarded(db, `UPDATE sessions SET ${fields.join(", ")} WHERE id = ?`, values,
+    { table: "sessions", op: "update", id, from: "updateSession" });
   persistDatabase();
 }
 
@@ -134,7 +136,8 @@ export function togglePinned(id: string): boolean {
   const result = db.exec("SELECT pinned FROM sessions WHERE id = ?", [id]);
   const current = result.length > 0 && result[0].values.length > 0 ? (result[0].values[0][0] as number) : 0;
   const newPinned = current === 1 ? 0 : 1;
-  db.run("UPDATE sessions SET pinned = ? WHERE id = ?", [newPinned, id]);
+  runGuarded(db, "UPDATE sessions SET pinned = ? WHERE id = ?", [newPinned, id],
+    { table: "sessions", op: "pin", id, from: "setSessionPinned" });
   persistDatabase();
   return newPinned === 1;
 }

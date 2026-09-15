@@ -2,6 +2,99 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.16.35] - 2026-09-15 — 按「问题类型」全项目延伸审计：又抓到 11 处同类缺陷（第 84 波）
+
+用户要求：「审计一下还有没有类似的潜在问题，尤其是任务管理链路；有问题不论是新旧都修复，然后按问题类型做延伸审计，直到没有问题为止。」
+于是按**三类问题**（静默空写 / 假成功 / 守卫被绕过）做了全项目审计（三路只读审计 + 本地代码复核），
+下面每一条都**先复核原文**再修，且都补了会红的回归用例。
+
+### 类别一：静默空写（写了不存在的行，无报错无日志）
+
+1. **`deleteMessagesAfter` 是唯一不写墓碑的删除路径**（编辑并重发会用到它）—— 用户"编辑并重发"后，
+   被删的旧回复会在下一次 `listMessages` 合并时**从权威日志复活**，而函数仍返回"删了 N 条"。
+   修复：与其它删除路径对齐（写墓碑 + 清内存镜像）。
+2. **新增静默空写探测器**（`src/core/storage/write-guard.ts`）：任何 id 定向的写操作只要
+   影响 0 行就记账 + 告警一次（按"表+操作"去重，不刷屏），并暴露 `getSilentWriteReport()`。
+   已接入 message / session / delegation / issue / inbox / squad / goal / agent-profile / file-change
+   共 9 个存储模块。**兜底不变量**：`SWG-5` 断言"跑完一整轮后台执行不允许出现任何静默空写"。
+3. **三个存储模块从不 `persistDatabase()`**（issues / squads / inbox 的大部分写入 +
+   agent-profile / file-change）—— 写入只留在内存，**强杀进程即丢数据**。已补齐落盘。
+
+### 类别二：假成功 / 永久卡住（对外报成功但实际没发生）
+
+4. **委派链的四个"不执行"分支只打日志不写失败**（`App.tsx`）：目标会话正在执行 / 引擎未就绪 /
+   抛异常 —— 任务在 `delegate()` 里已是 running，于是**永久停在"执行中"**，父会话干等。
+   修复：全部走 `failHonestly()` 如实写回失败与原因。
+5. **`executeSessionTurn` 重复执行保护只返回 success:false 不通知编排器** → 同样永久 running。已修。
+6. **被中止的回合对调用方报成功**（取消后没有 `end` 事件 → 三处失败分支全跳过 → `success: true`）
+   → 微信/手机桥收到"处理完成（无文本输出）"。修复：中止路径如实返回失败 + 落 system 说明。
+7. **重启后被中断的委派任务只 warn、不置失败**（注释宣称 interrupted，状态机里根本没这个状态）
+   → 永远 running，并且继续占并发额度（攒够 5 条后**任何新委派都被拒绝**）。修复：如实置失败并写清原因。
+8. **`agent-teams` 唤醒成员的 `followup` 参数位置全错**（3 参 vs 签名 4 参 `(parentSessionId, childId, message, options)`）
+   → `childId` 变成正文 → **每次都抛错并被 catch 吞掉**，成员永远收不到任务/消息，任务永远 pending，
+   而工具文案写着"消息已投递/调度器将唤醒成员"。修复：用 `team.captainSessionId` 传对参数 + 失败必须打日志。
+9. **`squad_dispatch` 的 `spawnFailures` 只声明、只 push、从不读取** → 成员根本没起来，
+   文案照样"成员已按角色就绪"。修复：如实报出失败成员与已就绪成员，并提示先补齐 provider。
+10. **子智能体中断后父会话永久阻塞**：abort 分支提前 `return`，跳过 `executionResolver()`/`poke.resolve()`
+    → settlement watcher 永不推进 → 父循环 `await Promise.race(...)` **永久卡住**（无超时）。
+    修复：中止走统一收尾（并如实把该轮标为 cancelled）。
+11. **子智能体自报失败被当成"已完成"**：`parseTaskResult` 解析出的 failed/blocked 被丢弃、
+    `stopReason` 硬编码 `'completed'` → 父会话收到"已完成"通知拿半成品继续。修复：按自报状态结算。
+12. **笔记 `[[WikiLink]]` 保存后必被删空**：删除旧链接被排进**微任务**，必然排在同步插入之后
+    → 反向链接面板永远是空的（函数却返回"创建了 N 条"）。修复：改为同步删除（删旧在前、插新在后）。
+13. **`list_sessions` 用一个永远为空的 Set 判"执行中"** → 模型永远看不到"执行中"状态，
+    会把任务委派给正在跑的会话（随后被拒、任务卡死）。修复：接真实执行态。
+
+### 类别三：守卫被"分类/缺省分支"绕过（本次已修两处，延伸审计又抓到三处）
+
+14. **停滞守卫的"交付物"判定把"可能写"的命令（python/node/npm/git…）当成真的写了** →
+    "用脚本当读手段"的会话每轮清零停滞计数，停滞守卫形同虚设。
+    修复：新增 `src/core/llm/artifact-tracker.ts` 分级判定 —— 可证明的写算交付物；
+    "可能写"的命令在同一条反复出现（默认 3 次）后不再算推进；只读查询永不计算（含 `git status`）。
+15. **重复守卫的"写后宽容"可被幂等写无限重新武装**（每轮 `mkdir` 一个已存在的目录即可）→
+    零增益判据永不成立。修复：同一（签名+结果）组合只宽容 3 次；同一条幂等写重复出现不再清空证据。
+16. **PowerShell 危险命令整段跳过分析**（平台默认 shell 就是 PowerShell！）→
+    "替我审批"模式下 `Remove-Item -Recurse -Force …` / `Invoke-Expression …` **被自动放行**。
+    修复：PowerShell 侧危险/只读清单 + `isAutoApprovable` 改为先问分析器（旧 unix 清单留兜底，异常一律 fail-closed）。
+17. **计划模式（只读契约）的写名单里没有 shell** → 计划模式下 `Set-Content …` 照样执行。
+    修复：按命令意图判定，非只读一律拒绝并说明。
+18. **权限层 `ask` 但没有审批回调时默认放行**（落到 `return { allowed: true }`）→
+    "ask"模式在没接回调的调用方那里**等于 full**。修复：fail-closed + 明确原因。
+19. **`echo x > file` 被判成只读**（重定向没算写）→ 自动放行/计划模式放行。修复：有输出重定向即非只读。
+
+### 验证
+
+- 新增/加强用例：`silent-write-guard.test.ts`（SWG-1~6，含系统级不变量）、`artifact-tracker`（STALL-10~12）、
+  `loop-guard.test.ts` GUARD-20（幂等写重新武装）、`note-links-order.test.ts`（NL-1~2，**修复前必红**）、
+  `powershell-danger-gate.test.ts`（17 条：危险必须拦、只读不许误判）、
+  `plan-mode-readonly-gate.test.ts`（PLAN-1~5）、`delegated-turn-persistence.test.ts` EXEC-1~3 + DELE-X1~2。
+- **审计仪器**：全量用例跑完**没有任何 `[WriteGuard] 空写` 告警**（说明被测路径没有空写）。
+- 全量 **242 文件 / 4900 用例通过**（15 skipped）· tsc 0 错误 · UI 审计 27 条规则 0/0 · css-contract 无变化。
+
+### 仍然存在、这版没修的问题（如实列出，附证据位置）
+
+按严重度（都已复核，不是猜测）：
+
+- **`phone-link` 先回 202 再干活，且失败只进 console**（`core/phone-link/phone-link.ts`）：手机端会看到
+  "已发送、处理中"然后永远没有回复；非法 sessionId 也是这样。需要把回合结果写回对端。
+- **`wechat-bridge` 出站失败被吞**（`core/wechat-bridge/wechat-bridge.ts`）：`ilink_send_text` 的
+  Err/`partial` 不回流 → 对端零回复或半截回复。
+- **关闭 UI 插件其实没有卸载，却报"已关闭"**（`core/plugin-loader/plugin-manager-service.ts`）：
+  只翻状态位、无 dispose，重启仍加载；需要真实卸载或如实告知"重启后生效"。
+- **文件变更面板恒空**（`core/environment/file-change-tracker.ts`）：before/after 都取 `HEAD^{tree}`，
+  未提交改动不改变它 → `finalize()` 恒返回 null（`turn_file_changes` 无新行、无法回滚）。
+- **Hooks 的退出码从未被读取**（`core/hooks/hook-manager.ts`）：PreToolUse 钩子非零退出=放行，
+  用户以为"钩子能拦"，实际拦不住。
+- **`exit_plan_mode` 批准后没有真的切回默认模式**（`core/llm/tools/exit-plan-mode.ts` + `App.tsx`）：
+  文案说"You are now in Default mode"，但下一轮 write 仍被过滤。
+- **`ToolRegistry.execute` 把"以文本返回错误"的工具一律标成 completed**（`core/llm/tools.ts`）：
+  框架级放大器，会让所有 `return { output: "Error: …" }` 的工具在 UI/事件里显示成功。
+- **团队链路仍有三处未闭环**（`core/provider/agent-teams-service.ts`）：成员从 localStorage 恢复时零对账
+  （working 成员永远跳过）、转派给成员后 `reassigning` 永为 true、`claimTask` 先于唤醒写入。
+- **子智能体没有空闲/预算上限**（`core/subagent/runtime.ts`）：对照后台回合的两道看门狗，子智能体只有 abort 检查。
+- **若干乐观返回**：`memory.ts`/`core/store.ts`/`heartbeat.ts` 的落库失败只 warn 而 UI 报成功；
+  `knowledge/importer.ts` 的 `indexSource` 吞异常仍计"已导入"。
+
 ## [1.16.34] - 2026-09-15 — 跨会话委派：b 会话原地打转、a 会话干等（第 83 波续）
 
 ### 用户现场

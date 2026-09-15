@@ -23,6 +23,7 @@ import { buildUnparsableArgsError, isContentBearingTool } from "./tool-args-guar
 import { recordLoopStop } from "./loop-stop-log";
 import { isContextOverflowError, describeContextOverflow } from "./provider-errors";
 import { planCompactionKeep, alignKeepToRoundBoundary } from "./compaction-budget";
+import { ArtifactTracker } from "./artifact-tracker";
 import { getDelegationOrchestrator } from "../session/orchestrator";
 import * as MessageStorage from "../storage/message";
 // deriveMessagesFromEvents removed — DB CRUD is the single source of truth for LLM messages
@@ -196,33 +197,6 @@ export interface LoopConfig {
  * 30 iterations is generous enough for complex multi-step tasks while still
  * catching genuine infinite loops.
  */
-/**
- * 第 65 波：这次工具调用算不算"产出了交付物"？
- *
- * 只认**真的写下来了**的东西：成功的写入/编辑、会改盘的 bash 命令。
- * 读、搜、列目录一律不算 —— 那正是"计划停滞"判据要抓的东西（读是为了写）。
- * 判定刻意宽松（宁可多算、少误判停滞）：只要看起来成功就记一分。
- */
-function isArtifactTool(name: string, args: Record<string, any>, output: unknown): boolean {
-  const text = typeof output === "string" ? output : "";
-  const failed = /^\s*(error|错误|failed|Traceback)/i.test(text) || /not found|权限不足|no such file/i.test(text);
-  if (name === "write" || name === "edit" || name === "multi_edit" || name === "patch" || name === "apply_patch") {
-    return !failed;
-  }
-  if (name === "notebook_create" || name === "notebook_update" || name === "install" || name === "run_test") return !failed;
-  if (name === "bash" || name === "shell" || name === "run_command" || name === "terminal") {
-    const cmd = String(args?.command ?? args?.cmd ?? "");
-    if (failed) return false;
-    // 审计修正：`git status` 这类**只读查询**虽然在 loop-guard 里按"会改盘"处理（避免被当成枚举），
-    // 但它显然不是"产出了交付物" —— 否则一个反复 `git status` 的会话永远不会被判停滞。
-    if (/^\s*(git\s+(status|log|diff|show|branch|remote|config|describe|rev-parse)|npm\s+(ls|list|view|outdated|why)|pnpm\s+(list|why)|pip\s+(list|show|freeze)|cargo\s+(tree|metadata))\b/i.test(cmd.trim())) {
-      return false;
-    }
-    return bashIntentKind(cmd) === "mutate";
-  }
-  return false;
-}
-
 /** 轻量包装：避免为了判一次类型而把 loop-guard 的完整意图对象搬进来 */
 function bashIntentKind(command: string): "enumerate" | "mutate" | "other" {
   return bashIntent(command).kind;
@@ -417,6 +391,8 @@ export class AgenticLoop {
   private truncatedContinuations = 0;
   /** 本轮迭代是否产出了交付物（写入/编辑/会改盘的命令） */
   private iterationProducedArtifact = false;
+  /** 第 83 波：交付物证据分级（写入类工具 / 可证明改盘命令 / 可能写命令的重复计数） */
+  private artifactTracker = new ArtifactTracker();
   /** 守卫判定「该停了」时的提示语 —— 在迭代末尾像 writeRejected 一样终止循环 */
   private guardStopMessage: string | null = null;
   /** 停档的类别（零信息增益 / 只读枚举），决定给用户看的那句话 */
@@ -827,6 +803,7 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
     this.delegationProgressAtWait.clear();
     this.delegationStuckPeeks.clear();
     this.stallGuard.reset();
+    this.artifactTracker.reset();
     this.planRevision = 0;
     this.truncatedContinuations = 0;
     this.iterationProducedArtifact = false;
@@ -948,6 +925,24 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
           }
         } else if (action === "deny") {
           return { allowed: false, denyMessage: `Permission denied by policy for tool "${toolName}"` };
+        } else if (action === "ask") {
+          /**
+           * 第 83 波（审计修正）：**没有人可以问的时候必须拒绝，不能默认放行**。
+           *
+           * 原来 `action === "ask"` 而 `onPermissionRequest` 为空时，两个分支都不命中，
+           * 直接落到 `return { allowed: true }` —— "ask"模式在任何**没接回调的调用方**
+           * （第三方/嵌入式 `engine.process(...)`、子智能体、后台桥接）那里等于 **full**：
+           * 本该要用户确认的写操作被静默放行。这是"守卫被缺省分支绕过"的典型。
+           *
+           * 现在 fail-closed：明确拒绝并说清原因（用户可改为 auto/full，或让调用方提供回调）。
+           */
+          return {
+            allowed: false,
+            denyMessage:
+              `Permission required for tool "${toolName}" but no approval channel is available ` +
+              `(the caller did not provide onPermissionRequest). Denied by default — ` +
+              `set the security mode to "auto"/"full" or provide an approval callback.`,
+          };
         }
 
         return { allowed: true };
@@ -2607,8 +2602,26 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
         }
 
         // 第 65 波：交付物计数 —— 只有"写下来了"才算推进（读多少都不算）。
-        // 会改盘的命令（bash 里的 git/npm/Set-Content…）同样算，因为世界确实被改了。
-        if (isArtifactTool(name, effectiveArgs, result.output)) this.iterationProducedArtifact = true;
+        // 第 83 波修正：判定改成**分级证据**（见 artifact-tracker.ts）——
+        // "可能写"的命令（python/node/npm/git…）在**同一条反复出现**时不再算推进，
+        // 否则"用脚本当读手段"的会话会让停滞守卫永远清零（真机现场：四道阀门同时失效）。
+        {
+          const cmd = String((effectiveArgs as any)?.command ?? (effectiveArgs as any)?.cmd ?? "");
+          const isBashLike = name === "bash" || name === "shell" || name === "run_command" || name === "terminal";
+          const verdict = this.artifactTracker.note(
+            name,
+            effectiveArgs as Record<string, any>,
+            result.output,
+            isBashLike ? bashIntent(cmd) : null,
+          );
+          if (verdict.artifact) {
+            this.iterationProducedArtifact = true;
+          } else if (verdict.verdict === "speculative-repeat") {
+            console.log(
+              `[AgenticLoop] 交付物判定：同一条"可能写"的命令已重复 ${this.artifactTracker.speculativeCountOf(cmd)} 次且期间没有任何可证明的写操作 → 本轮不计推进（${name}: ${cmd.slice(0, 80)}）`,
+            );
+          }
+        }
 
         // 第 64 波：把**结果**交给守卫 —— 判"原地打转"的依据是"拿到的东西是不是已经有了"，
         // 不是"调用了几次"。守卫据此累计"零信息增益"次数，下一次 inspect 时决定提醒/跳过/停。

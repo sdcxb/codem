@@ -198,10 +198,26 @@ export function createSquadDispatchTool(): ToolDef {
           `\n` + (zh ? "队长: 当前会话（你）" : "Captain: current session (you)") +
           `\n` + (zh ? "任务: " : "Task: ") + task.substring(0, 200) +
           `\n` +
-          (zh
-            ? "成员已按角色就绪，调度器将唤醒空闲成员领取任务。用 agent_teams_status 查看进度、agent_teams_send_message 指导成员、agent_teams_update_task 更新状态。"
-            : "Members are ready by role; the scheduler wakes idle members to claim the task. Use agent_teams_status to track, agent_teams_send_message to guide, agent_teams_update_task to update."),
-        metadata: { teamId: team.id, taskId: created?.id || "", squadTemplateId: squadId, task: task.substring(0, 100) },
+          /**
+           * 第 83 波（审计修正）：`spawnFailures` 原来**只声明、只 push、从不读取** ——
+           * 即使有几名成员根本没起来，文案照样写"成员已按角色就绪，调度器将唤醒空闲成员"，
+           * 队长于是拿着一个假结论往下走（任务永远没人领，等它自己发现）。
+           * 现在把失败如实报出来，并给出可执行的下一步。
+           */
+          (spawnFailures.length > 0
+            ? (zh
+                ? `⚠️ 有 ${spawnFailures.length} 名成员**没有起来**（已从团队移除）：${spawnFailures.join("；")}\n` +
+                  `已就绪的成员：${team.members.map((m) => `${m.name}(${m.status})`).join("、") || "(无)"}。\n` +
+                  `在成员补齐之前，这个任务很可能一直停在"待领取"——请检查 subagent provider 是否可用，或直接用当前会话自己干。`
+                : `⚠️ ${spawnFailures.length} member(s) FAILED to start (removed from team): ${spawnFailures.join("; ")}\nReady members: ${team.members.map((m) => `${m.name}(${m.status})`).join(", ") || "(none)"}.`)
+            : (zh
+                ? "成员已按角色就绪，调度器将唤醒空闲成员领取任务。用 agent_teams_status 查看进度、agent_teams_send_message 指导成员、agent_teams_update_task 更新状态。"
+                : "Members are ready by role; the scheduler wakes idle members to claim the task. Use agent_teams_status to track, agent_teams_send_message to guide, agent_teams_update_task to update.")),
+        metadata: {
+          teamId: team.id, taskId: created?.id || "", squadTemplateId: squadId,
+          task: task.substring(0, 100),
+          ...(spawnFailures.length > 0 ? { spawnFailures } : {}),
+        },
       };
     },
   };

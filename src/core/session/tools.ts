@@ -14,7 +14,7 @@
 import type { ToolDef } from "../llm/tools";
 import { getLang } from "../i18n/lang";
 import { getDelegationOrchestrator } from "./orchestrator";
-import { cancelSessionExecution } from "./executor";
+import { cancelSessionExecution, isSessionExecuting } from "./executor";
 import { checkHandover } from "./handover";
 import * as MessageStorage from "../storage/message";
 import * as SessionStorage from "../storage/session";
@@ -350,12 +350,19 @@ export function createListSessionsTool(): ToolDef {
       }
 
       const orchestrator = getDelegationOrchestrator();
-      const activeExecutions = new Set<string>(); // 可扩展：从 executor 模块导入 isSessionExecuting
+      /**
+       * 第 83 波（审计修正）：这里原来是一个**永远为空**的 Set
+       * （注释写着"可扩展：从 executor 模块导入 isSessionExecuting"但从未接上），
+       * 于是模型看到的会话状态永远是"空闲/委派中"，永远看不到"执行中" ——
+       * 它会因此把任务委派给一个正在跑的会话（随后被消费者拒绝，任务卡死）。
+       * 现在接真的执行态。
+       */
+      const isExecuting = isSessionExecuting;
 
       const lines = sessions.map((s) => {
         const delegations = orchestrator.getDelegationsByTarget(s.id);
         const pendingCount = delegations.filter((d) => d.status === "pending" || d.status === "running").length;
-        const status = activeExecutions.has(s.id)
+        const status = isExecuting(s.id)
           ? (zh ? "执行中" : "active")
           : pendingCount > 0
             ? (zh ? `委派中(${pendingCount})` : `delegated(${pendingCount})`)

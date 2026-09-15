@@ -282,7 +282,18 @@ export class AgentTeamsServiceClass {
       const rt = getSubagentRuntime();
       if (rt && member.status !== "absent") {
         const text = pending.map((m) => `[${m.from}] ${m.content}`).join("\n\n");
-        await rt.followup(member.id, text, { signal: new AbortController().signal });
+        /**
+         * 第 83 波（审计修正）：**参数位置全错**。
+         *
+         * `SubagentRuntime.followup` 的签名是 `(parentSessionId, childId, message, options)`，
+         * 这里原来只传了 3 个：`(member.id, text, {signal})` —— 于是
+         * `parentSessionId = member.id`、`childId = 正文` → `activations.get(正文)` 必然 undefined →
+         * **每次都抛 "Subagent … is not live"**，被 catch 吞掉降级成"留邮箱"，
+         * 而工具文案却写"消息已投递"。成员收件从此永远走不通。
+         *
+         * 成员是用 `parentSessionId: captainSessionId` spawn 的（见 addMember），所以父会话就是队长会话。
+         */
+        await rt.followup(team.captainSessionId, member.id, text, { signal: new AbortController().signal });
         acknowledgeMailbox(team, pending.map((m) => m.id));
         return "wake";
       }
@@ -314,8 +325,12 @@ export class AgentTeamsServiceClass {
         if (rt && member.status !== "absent") {
           const assignment = `[任务分配] ${task.id}: ${task.subject}${task.description ? "\n" + task.description : ""}\n` +
             `用 agent_teams_claim_task 领取（会返回同一 attempt_id ${r.attemptId}），完成后 agent_teams_update_task(status=completed, attempt_id=…)。`;
-          rt.followup(member.id, assignment, { signal: new AbortController().signal }).catch(() => {
-            // 投递失败 → 精确回滚
+          rt.followup(team.captainSessionId, member.id, assignment, { signal: new AbortController().signal }).catch((e) => {
+            // 第 83 波：投递失败必须**可见**（原来是空 catch：任务被回滚、成员回到 idle，
+            // 但没有任何日志/状态说明，队长只能看到任务一直 pending 却不知道原因）
+            console.warn(
+              `[agent-teams] 唤醒成员失败（${member.name}/${member.id}，任务 ${task.id}）：${e?.message || e} —— 已回滚领取，成员回到 idle`,
+            );
             rollbackClaim(team, task.id, r.attemptId, task.assignee);
             member.status = "idle";
             this.persist();

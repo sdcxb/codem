@@ -5,7 +5,7 @@
  * Tables are created in the SCHEMA constant (database.ts).
  */
 
-import { getDatabase } from "../storage/database";
+import { getDatabase, persistDatabase } from "../storage/database";
 
 // ========== Types ==========
 
@@ -41,6 +41,7 @@ export const SquadStorage = {
        VALUES (?, ?, ?, ?, ?, 0, ?, ?)`,
       [squad.id, squad.name, squad.leader_agent_id, squad.instructions ?? null, squad.project_id ?? null, now, now],
     );
+    persistDatabase();
     return { ...squad, archived: 0, created_at: now, updated_at: now };
   },
 
@@ -84,16 +85,19 @@ export const SquadStorage = {
     values.push(Date.now());
     values.push(id);
     db.run(`UPDATE squads SET ${fields.join(", ")} WHERE id = ?`, values);
+    persistDatabase();
   },
 
   archive(id: string): void {
     const db = getDatabase();
     db.run("UPDATE squads SET archived = 1, updated_at = ? WHERE id = ?", [Date.now(), id]);
+    persistDatabase();
   },
 
   delete(id: string): void {
     const db = getDatabase();
     db.run("DELETE FROM squads WHERE id = ?", [id]);
+    persistDatabase();
   },
 
   // ========== Member CRUD ==========
@@ -106,6 +110,7 @@ export const SquadStorage = {
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
       [member.id, member.squad_id, member.member_type, member.member_id, member.member_name, member.role_description ?? null, now],
     );
+    persistDatabase();
     return { ...member, created_at: now };
   },
 
@@ -119,11 +124,13 @@ export const SquadStorage = {
   removeMember(memberId: string): void {
     const db = getDatabase();
     db.run("DELETE FROM squad_members WHERE id = ?", [memberId]);
+    persistDatabase();
   },
 
   updateMemberRole(memberId: string, roleDescription: string): void {
     const db = getDatabase();
     db.run("UPDATE squad_members SET role_description = ? WHERE id = ?", [roleDescription, memberId]);
+    persistDatabase();
   },
 };
 

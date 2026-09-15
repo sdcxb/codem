@@ -17,6 +17,7 @@
  */
 
 import { getSetting, setSetting, removeSetting } from "../storage/settings";
+import { analyzeBashCommand } from "./bash-analyzer";
 
 // ========== Types ==========
 
@@ -148,6 +149,18 @@ export function shouldCheckPermissions(mode: SecurityMode): boolean {
 export function isAutoApprovable(tool: string, resource?: string): boolean {
   // Dangerous bash commands — never auto-approve
   if (tool === "bash" && resource) {
+    /**
+     * 第 83 波（审计修正）：这里原来维护着**另一份** unix-only 危险清单，
+     * 于是 Windows 上的 `Remove-Item -Recurse -Force …` / `Invoke-Expression …`
+     * 一个都匹配不上 → "替我审批"（auto）模式下被**自动放行**。
+     * 现在先问分析器（它已覆盖 PowerShell 危险命令），旧清单留作兜底；
+     * 分析器抛错时按"需要确认"处理（fail-closed，而不是放行）。
+     */
+    try {
+      if (analyzeBashCommand(resource).classification === "dangerous") return false;
+    } catch {
+      return false;
+    }
     const dangerousPatterns = [
       /rm\s+-rf/i,
       /git\s+push\s+--force/i,

@@ -2,7 +2,8 @@
  * Inbox Storage — DB CRUD for inbox table
  */
 
-import { getDatabase } from "../storage/database";
+import { getDatabase, persistDatabase } from "../storage/database";
+import { runGuarded } from "../storage/write-guard";
 
 // ========== Types ==========
 
@@ -38,11 +39,13 @@ export const InboxStorage = {
        item.source_id ?? null, item.project_id ?? null, item.squad_id ?? null, item.issue_id ?? null,
        item.priority || "normal", now],
     );
+    persistDatabase();
     // 只增不减会让 sql.js 数据库与每次 persistDatabase() 持续膨胀
     // （自动化触发器每次触发都插一行）→ 每次写入顺带裁掉 30 天前的旧通知。
     try {
       const cutoff = now - 30 * 24 * 60 * 60 * 1000;
       db.run("DELETE FROM inbox WHERE created_at < ?", [cutoff]);
+    persistDatabase();
     } catch {
       /* 清理失败不影响写入 */
     }
@@ -64,26 +67,31 @@ export const InboxStorage = {
 
   markRead(id: string): void {
     const db = getDatabase();
-    db.run("UPDATE inbox SET read = 1 WHERE id = ?", [id]);
+    runGuarded(db, "UPDATE inbox SET read = 1 WHERE id = ?", [id],
+    { table: "inbox", op: "mark-read", id, from: "markInboxRead" });
   },
 
   markAllRead(projectId?: string): void {
     const db = getDatabase();
     if (projectId) {
       db.run("UPDATE inbox SET read = 1 WHERE read = 0 AND (project_id = ? OR project_id IS NULL)", [projectId]);
+    persistDatabase();
     } else {
       db.run("UPDATE inbox SET read = 1 WHERE read = 0");
+    persistDatabase();
     }
   },
 
   archive(id: string): void {
     const db = getDatabase();
-    db.run("UPDATE inbox SET archived = 1 WHERE id = ?", [id]);
+    runGuarded(db, "UPDATE inbox SET archived = 1 WHERE id = ?", [id],
+    { table: "inbox", op: "archive", id, from: "archiveInbox" });
   },
 
   delete(id: string): void {
     const db = getDatabase();
     db.run("DELETE FROM inbox WHERE id = ?", [id]);
+    persistDatabase();
   },
 
   getUnreadCount(projectId?: string): number {
@@ -99,6 +107,7 @@ export const InboxStorage = {
   deleteOlderThan(timestamp: number): void {
     const db = getDatabase();
     db.run("DELETE FROM inbox WHERE created_at < ?", [timestamp]);
+    persistDatabase();
   },
 };
 

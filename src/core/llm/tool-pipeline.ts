@@ -31,6 +31,7 @@ import type { ToolContext, ToolDef } from "./tools";
 import type { ToolExecutorContext } from "./streaming-executor";
 import { validateToolOutput } from "./output-contract";
 import { RepeatToolReminderMiddleware } from "./repeat-tool-reminder";
+import { analyzeBashCommand } from "../permission/bash-analyzer";
 
 // ========== Pipeline Types ==========
 
@@ -503,7 +504,7 @@ export class PlanModeGuard implements GuardMiddleware {
 
   async execute(
     toolName: string,
-    _args: Record<string, unknown>,
+    args: Record<string, unknown>,
     _ctx: ToolExecutorContext,
   ): Promise<GuardResult> {
     if (!this.isPlanMode()) return { action: "proceed" };
@@ -514,6 +515,33 @@ export class PlanModeGuard implements GuardMiddleware {
         action: "deny",
         denyMessage: `Blocked: Cannot use "${toolName}" in Plan mode. Plan mode is read-only. Ask the user to switch to Default mode to execute changes.`,
       };
+    }
+
+    /**
+     * 第 83 波（审计修正）：**bash 也是写手段**。
+     *
+     * 原来这份名单里没有 shell 类工具 —— 于是计划模式（只读契约）下
+     * `Set-Content -Path src/x.ts -Value '…'`、`Remove-Item …` 照样能执行，
+     * "计划模式只读"这个承诺被绕过。现在按命令意图判定：只读查询放行，
+     * 其余（写/危险/认不出的）一律拒绝，并把原因说清楚。
+     */
+    if (toolName === "bash" || toolName === "shell" || toolName === "run_command" || toolName === "terminal") {
+      const command = String((args as any)?.command ?? (args as any)?.cmd ?? "");
+      let classification: "readonly" | "write" | "dangerous" = "write";
+      try {
+        classification = analyzeBashCommand(command).classification as any;
+      } catch {
+        classification = "write"; // 判不出来按"会写"处理（计划模式是只读契约，宁严不宽）
+      }
+      if (classification !== "readonly") {
+        return {
+          action: "deny",
+          denyMessage:
+            `Blocked: Plan mode is read-only — this ${toolName} command looks like "${classification}" (not a read-only query).\n` +
+            `Command: ${command.slice(0, 160)}\n` +
+            `Ask the user to approve the plan (switch to Default mode) before executing changes.`,
+        };
+      }
     }
     return { action: "proceed" };
   }

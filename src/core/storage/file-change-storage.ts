@@ -5,7 +5,7 @@
  * Independent from v2_sessions.messages JSON — not affected by context compaction.
  */
 
-import { getDatabase } from "./database";
+import { getDatabase, persistDatabase } from "./database";
 
 export interface TurnFileChangeRecord {
   id: string;
@@ -69,6 +69,7 @@ export const FileChangeStorage = {
         record.created_at,
       ],
     );
+    persistDatabase();
   },
 
   listBySession(sessionId: string): TurnFileChangeRecord[] {
@@ -103,12 +104,14 @@ export const FileChangeStorage = {
     const db = getDatabase();
     if (!db) return;
     db.run(`UPDATE turn_file_changes SET status = ? WHERE id = ?`, [status, id]);
+    persistDatabase();
   },
 
   deleteBySession(sessionId: string): void {
     const db = getDatabase();
     if (!db) return;
     db.run(`DELETE FROM turn_file_changes WHERE session_id = ?`, [sessionId]);
+    persistDatabase();
   },
 
   parseChangedFiles(record: TurnFileChangeRecord): ChangedFile[] {

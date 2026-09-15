@@ -5,8 +5,9 @@
  * Independent from v2_sessions.messages JSON — not affected by compaction.
  */
 
-import { getDatabase } from "./database";
+import { getDatabase, persistDatabase } from "./database";
 import { safeJsonParse } from "../utils/safe-json";
+import { runGuarded } from "./write-guard";
 
 export interface AgentProfile {
   id: string;
@@ -51,6 +52,7 @@ export const AgentProfileStorage = {
         now,
       ],
     );
+    persistDatabase();
     return { ...profile, created_at: now, updated_at: now };
   },
 
@@ -96,12 +98,14 @@ export const AgentProfileStorage = {
     fields.push("updated_at = ?");
     values.push(Date.now());
     values.push(id);
-    db.run(`UPDATE agent_profiles SET ${fields.join(", ")} WHERE id = ?`, values);
+    runGuarded(db, `UPDATE agent_profiles SET ${fields.join(", ")} WHERE id = ?`, values,
+    { table: "agent_profiles", op: "update", id, from: "updateAgentProfile" });
   },
 
   delete(id: string): void {
     const db = getDatabase();
     if (!db) return;
     db.run(`DELETE FROM agent_profiles WHERE id = ?`, [id]);
+    persistDatabase();
   },
 };

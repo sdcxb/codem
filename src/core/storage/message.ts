@@ -1,4 +1,5 @@
 import { appendSessionMessage, appendMessageTombstone, readSessionMessages } from "./session-jsonl";
+import { runGuarded } from "./write-guard";
 import {
   getCachedExternalContent,
   warmExternalContent,
@@ -730,7 +731,12 @@ export function updateMessage(id: string, update: Partial<Message>): void {
   if (fields.length > 0) {
     values.push(id);
     try {
-      db.run(`UPDATE messages SET ${fields.join(", ")} WHERE id = ?`, values);
+      // 第 83 波：这条 UPDATE 曾经**静默**影响 0 行 —— 后台执行路径只换内存 id 不建行，
+      // 于是第 2 轮之后的正文/工具结果全部无声丢失（真机表现：会话原地打转、父会话干等）。
+      // 现在走 runGuarded：写不到行就记账并告警一次，让"静默失败"变成"响"。
+      runGuarded(db, `UPDATE messages SET ${fields.join(", ")} WHERE id = ?`, values, {
+        table: "messages", op: "update", id, from: "updateMessage",
+      });
     } catch (e) {
       console.error("[updateMessage] Failed to update:", e);
     }
@@ -819,7 +825,17 @@ export function updateToolCall(messageId: string, toolId: string, update: Partia
 
   if (fields.length > 0) {
     values.push(toolId);
-    db.run(`UPDATE tool_calls SET ${fields.join(", ")} WHERE id = ? AND message_id = ?`, [...values, messageId]);
+    /**
+     * 第 83 波：工具结果写不到行 = **模型看不到自己这次调用的结果** ——
+     * 那正是"反复重发同一个工具调用"的直接诱因（用户现场：同一个脚本跑几十遍）。
+     * 所以这里必须能被发现（影响 0 行 → 记账 + 告警）。
+     */
+    runGuarded(
+      db,
+      `UPDATE tool_calls SET ${fields.join(", ")} WHERE id = ? AND message_id = ?`,
+      [...values, messageId],
+      { table: "tool_calls", op: "update", id: toolId, from: "updateToolCall" },
+    );
   }
   persistDatabase();
 }
@@ -1061,6 +1077,14 @@ export function deleteMessagesAfter(
     [sessionId, targetTimestamp]
   );
   persistDatabase();
+  /**
+   * 第 83 波（审计修正）：这是**唯一一条删了索引却不写墓碑、不清内存镜像**的删除路径
+   * （其它删除路径都做了 —— 见 `appendTombstonesFor` 的说明）。后果：
+   * 用户"编辑并重发"之后，被删掉的旧回复会在下一次 `listMessages` 合并时
+   * **从权威日志里整批复活**（读路径以日志为准），而函数仍然返回"删了 N 条"。
+   */
+  appendTombstonesFor(sessionId, ids);
+  dropFromLogMirror(sessionId, ids);
   return ids.length;
 }
 
@@ -1070,7 +1094,8 @@ export function deleteMessagesAfter(
  */
 export function updateMessageContent(messageId: string, content: string): void {
   const db = getDatabase();
-  db.run("UPDATE messages SET content = ? WHERE id = ?", [content, messageId]);
+  runGuarded(db, "UPDATE messages SET content = ? WHERE id = ?", [content, messageId],
+    { table: "messages", op: "set-content", id: messageId, from: "updateMessageContent" });
   persistDatabase();
 }
 
@@ -1078,20 +1103,23 @@ export function updateMessageContent(messageId: string, content: string): void {
 
 export function appendMessageContent(id: string, text: string): void {
   const db = getDatabase();
-  db.run("UPDATE messages SET content = content || ? WHERE id = ?", [text, id]);
+  runGuarded(db, "UPDATE messages SET content = content || ? WHERE id = ?", [text, id],
+    { table: "messages", op: "append-content", id, from: "appendToMessageContent" });
   persistDatabase();
 }
 
 export function setMessageContent(id: string, content: string): void {
   const db = getDatabase();
-  db.run("UPDATE messages SET content = ? WHERE id = ?", [content, id]);
+  runGuarded(db, "UPDATE messages SET content = ? WHERE id = ?", [content, id],
+    { table: "messages", op: "set-content", id, from: "updateMessageFullContent" });
   persistDatabase();
 }
 
 export function setMessageReasoning(id: string, reasoning: string): void {
   const db = getDatabase();
   try {
-    db.run("UPDATE messages SET reasoning = ? WHERE id = ?", [reasoning, id]);
+    runGuarded(db, "UPDATE messages SET reasoning = ? WHERE id = ?", [reasoning, id],
+    { table: "messages", op: "set-reasoning", id, from: "updateMessageReasoning" });
   } catch (e) {
     console.warn("[setMessageReasoning] Failed:", e);
   }
@@ -1100,7 +1128,8 @@ export function setMessageReasoning(id: string, reasoning: string): void {
 
 export function setMessageStatus(id: string, status: string): void {
   const db = getDatabase();
-  db.run("UPDATE messages SET status = ? WHERE id = ?", [status, id]);
+  runGuarded(db, "UPDATE messages SET status = ? WHERE id = ?", [status, id],
+    { table: "messages", op: "set-status", id, from: "updateMessageStatus" });
   persistDatabase();
 }
 

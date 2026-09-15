@@ -103,11 +103,44 @@ export async function executeSessionTurn(params: ExecuteSessionTurnParams): Prom
   // 防止同一会话被重复执行
   if (activeExecutions.has(sessionId)) {
     const errMsg = zh ? `会话 ${sessionId} 已在执行中` : `Session ${sessionId} is already executing`;
+    /**
+     * 第 83 波（审计修正）：这里原来**只返回** `success:false`，不通知编排器 ——
+     * 而调用方（App 的委派处理器）只挂了 `.catch`，返回值根本没人看：
+     * 任务在 `delegate()` 里已经是 running，于是**永久停在"执行中"**，
+     * 父会话一直等一个不会来的结果。这里必须把失败写回任务。
+     */
+    if (delegationTaskId) {
+      try {
+        orchestrator.failTask(delegationTaskId, errMsg);
+      } catch (e) {
+        console.warn("[SessionExecutor] failTask failed:", e);
+      }
+    }
     return { output: "", toolCallCount: 0, success: false, error: errMsg };
   }
 
   const abort = new AbortController();
   activeExecutions.set(sessionId, abort);
+
+  /**
+   * 第 83 波（审计修正）：把"中止"真正接到引擎上。
+   *
+   * 背景：本函数的两道看门狗（空闲 / 工具挂死）与预算都只调 `abort.abort()`，
+   * 而 `abort.signal` **只有在本循环拿到下一个事件时**才会被检查 ——
+   * 如果循环正卡在一个工具的 await 上（例如权限/写确认弹窗没人点、provider 停摆），
+   * 就再也没有"下一个事件"，中止信号形同虚设：会话永久卡住，
+   * `activeExecutions` 永久占用（此后任何委派都被判"已在执行中"）。
+   * App 侧的桌面路径早就是这么做的（`sessionAbort.abort()` + `engine.abortSession(id)`），
+   * 后台路径漏了后半截。这里补上。
+   */
+  const abortEngine = () => {
+    try {
+      (engine as any).abortSession?.(sessionId);
+    } catch (e) {
+      console.warn("[SessionExecutor] engine.abortSession failed:", e);
+    }
+  };
+  abort.signal.addEventListener("abort", abortEngine, { once: true });
 
   // 联动外部 abort 信号
   if (abortSignal) {
@@ -568,13 +601,33 @@ export async function executeSessionTurn(params: ExecuteSessionTurnParams): Prom
     // 通知编排器任务完成
     // 第 63 波（审计补）：被取消（用户点了终止 / 父会话 cancel_delegation）而 abort 掉的执行，
     // 不能在这里又报"完成" —— 否则取消会被收尾逻辑悄悄改回已完成。
-    if (delegationTaskId) {
-      if (abort.signal.aborted) {
+    //
+    // 第 83 波（审计修正）：**中止也不能对调用方报成功**。
+    // 取消时循环直接 break、不产生 `end` 事件 → `endReason` 是 undefined →
+    // 上面那几处"失败分支"一个都不会命中 → 这里就 `success: true` 返回了，
+    // 于是桥接层（微信/手机）把它当成"处理完成（无文本输出）"，用户看到的是"AI 没回话"。
+    if (abort.signal.aborted) {
+      const zhAbort = getLang() === "zh";
+      const note = zhAbort
+        ? `[回合被中止：${abortedBy ?? "cancel"}] 已完成 ${toolCallCount} 次工具调用，最近一次工具：${lastToolLabel || "(无)"}。` +
+          `中止**不是**正常完成 —— 已产出的内容附在下方，请确认后再继续。`
+        : `[Turn aborted: ${abortedBy ?? "cancel"}] ${toolCallCount} tool calls, last tool: ${lastToolLabel || "(none)"}. Aborted is NOT a normal completion.`;
+      MessageStorage.createMessage({
+        id: `err-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        role: "system",
+        content: note,
+        timestamp: Date.now(),
+        status: "error",
+      }, sessionId);
+      if (delegationTaskId) {
         console.log(`[SessionExecutor] ${sessionId} 已中止，不再上报完成（委派任务保持 cancelled）`);
         orchestrator.cancelTask(delegationTaskId);
-      } else {
-        orchestrator.completeTask(delegationTaskId, cleanOutput || "[No output]");
       }
+      return { output: cleanOutput, toolCallCount, success: false, error: note };
+    }
+
+    if (delegationTaskId) {
+      orchestrator.completeTask(delegationTaskId, cleanOutput || "[No output]");
     }
 
     return {
