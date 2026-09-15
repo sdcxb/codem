@@ -2,6 +2,70 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.16.34] - 2026-09-15 — 跨会话委派：b 会话原地打转、a 会话干等（第 83 波续）
+
+### 用户现场
+
+「a 对话把当前情况交给 b 对话，让 b 建立认知后继续同一主题」——a 侧正常（总结落文件），
+**b 侧卡住**：控制台反复刷
+
+```
+[AgenticLoop] Single-response dedup: 1 tool calls in this response: [bash("python \"…\_tmp_extract.py\"")]
+[AgenticLoop] Tool executed: bash, path: python "…\_tmp_extract.py", output length: 358     ← 每次都是 358
+[SessionJSONL] 更新消息 assistant-1789451758233-2 时找不到所属会话，日志未更新（索引仍是最新）
+```
+
+同一个脚本跑了几十遍、a 一直等不到反馈，最后 a 自己结束了。
+
+### 根因①（主因）：后台执行的**第 2 轮之后整轮历史都写不进库**
+
+`executeSessionTurn`（委派/后台执行走这条路，**不碰 React store**）在 `start`（iteration > 1）里
+**只换了 `currentAssistantMsgId`、没有建行**，而之后所有事件用的都是"更新"：
+
+```ts
+MessageStorage.updateMessage(currentAssistantMsgId, { content });      // UPDATE … WHERE id=? → 影响 0 行
+MessageStorage.addToolCall(currentAssistantMsgId, { … });              // tool_calls 挂在一条不存在的消息上
+```
+
+于是第 2 轮起的**正文、工具调用、工具结果全部丢失**（权威日志同步时也查不到所属会话 —— 就是那行刷屏告警）。
+而 `AgenticLoop` **每轮都从库里重建上下文**（`buildMessages` → `listMessages`）：
+模型看不到自己上一轮发出过什么调用、拿到了什么结果 → **一遍遍重发同一个工具调用** → 死循环。
+（用户交互路径 App.tsx 没这个问题：那边每轮 `saveMessages` 会把消息 upsert 进库。）
+
+**修复**：抽出 `ensureAssistantMessage()` —— 任何需要写"当前助手消息"的地方（delta / 工具开始 / 工具完成 /
+工具报错 / 新一轮）都先确保**这一行真实存在**。顺带修掉同一类的第二种丢法：
+模型「一句话不说直接调工具」时 `currentAssistantMsgId` 还是空的，以前 `if (tc && currentAssistantMsgId)`
+直接跳过 → 调用与结果凭空消失（同一个死循环）。
+
+### 根因②：重复调用守卫给解释器命令发了"永久免死金牌"
+
+用户现场的命令是 `python _tmp_extract.py`，而 `python` 在守卫的 `MUTATE_CMDS`（会改盘）清单里 →
+`inspect()` 判定 "mutate" 后**直接 return allow**，把零增益判定整段短路：
+
+- 每轮都清空"零信息增益"证据（世界可能变了）；
+- 结果相同也无所谓 → 守卫一次都没拦。
+
+第 62 波那次的现场是 `Get-ChildItem`（枚举类）所以拦住了；这次换成"用脚本当读手段"就绕过去了。
+**修复**：把清单拆成
+
+- `MUTATE_CMDS`（**可证明**会写：Set-Content/Remove-Item/重定向/新建/复制…）→ 仍然清零证据并放行；
+- `SPECULATIVE_MUTATE_CMDS`（**可能**写：python/node/npm/git/cargo/docker/curl/start-process…）→
+  **不清零、也不短路**，必须靠"结果是否真的变了"证明进展（`bashIntent` 增加 `provable` 字段，
+  `kind` 保持 `mutate` 不变，其它调用方不受影响）；
+- 另外把"写操作之后宽容一次"的豁免留给**紧随其后的那次重看**，而不是被写操作自己的结果消耗掉
+  （`noteResult` 里 `isProvableMutation` 判定）。
+
+### 验证
+
+- `delegated-turn-persistence.test.ts` EXEC-1~3：两轮脚本化引擎跑 `executeSessionTurn`，
+  断言第 2 轮的助手消息/正文/工具调用/工具结果都在库里、`tool_calls` 不挂在幽灵消息上、
+  「不说话直接调工具」也不丢。**先证明用例会红**：撤掉修复后 EXEC-1 失败
+  （实际 id 只剩 `assistant-…`、`err-…`）。
+- `loop-guard.test.ts` GUARD-17~19：复刻用户现场（同一脚本、输出恒为 358）**必须在有限次内被停**
+  （真实执行次数 ≤ 8，用户现场是几十次不停）；产出真在变时照常放行（不许误杀长任务）；
+  可证明的写操作才清零证据（GUARD-5 的语义不许丢）。
+- 全量 **238 文件 / 4864 用例通过**（15 skipped）· tsc 0 错误 · UI 审计 27 条规则 0/0 · css-contract 无变化
+
 ## [1.16.33] - 2026-09-15 — 上下文压缩是**假压缩**：删了 840 条，上下文一条没少（第 83 波）
 
 ### 用户现场（控制台日志，v1.16.32 真机）

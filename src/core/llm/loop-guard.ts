@@ -81,13 +81,30 @@ const ENUMERATE_CMDS = new Set([
 /** 只切换工作目录，不算枚举也不算写入 —— 但它的路径是所有后续枚举的上下文 */
 const CD_CMDS = new Set(["cd", "chdir", "set-location", "sl", "pushd", "popd"]);
 
-/** 会改变磁盘状态、或语义上属于「干活」的命令 —— 见到就把枚举计数清零 */
+/**
+ * **可证明**会改变磁盘状态的命令 —— 见到就把"零信息增益"证据清零（世界变了，重新看是合理的）。
+ */
 const MUTATE_CMDS = new Set([
   "set-content", "sc", "add-content", "ac", "out-file",
   "new-item", "ni", "mkdir", "md", "rmdir", "rd",
   "remove-item", "ri", "rm", "del", "erase",
   "move-item", "mi", "mv", "move", "copy-item", "cpi", "cp", "copy",
   "rename-item", "rni", "ren", "touch", "tee",
+]);
+
+/**
+ * **可能**会写、但**不能证明**会写的命令：解释器、包管理器、构建与网络工具。
+ *
+ * 为什么必须和上一类分开（第 83 波，用户现场）：
+ * 跨会话委派里，b 会话把"读文件"做成了 `python _tmp_extract.py` 脚本，于是每轮都是
+ * "解释器命令 → 按 mutate 处理 → 清零零增益证据 → 永远拿不到'原地打转'的证据" →
+ * 同一个命令跑了几十遍、输出长度恒为 358，守卫一次都没拦，父会话干等到超时。
+ *
+ * 这类命令**只有在真的产出新内容时**才算进展（`noteResult` 会按结果摘要判断），
+ * 不允许它们凭"身份"无限次豁免。判定顺序也保持"宁可漏判也不误杀"：
+ * 猜不出意图的命令仍然只参与精确指纹。
+ */
+const SPECULATIVE_MUTATE_CMDS = new Set([
   "git", "npm", "npx", "pnpm", "yarn", "pip", "pip3", "python", "python3",
   "node", "cargo", "rustc", "go", "dotnet", "make", "cmake", "gradle", "mvn",
   "tsc", "vite", "pytest", "jest", "vitest", "docker", "kubectl", "curl", "wget",
@@ -157,10 +174,10 @@ function pathsIn(segment: string): string[] {
 export function bashIntent(
   command: string,
   cwd?: string,
-): { kind: "enumerate" | "mutate" | "other"; signature?: string } {
+): { kind: "enumerate" | "mutate" | "other"; signature?: string; provable?: boolean } {
   const cmd = command ?? "";
   if (!cmd.trim()) return { kind: "other" };
-  if (/(^|\s)>>?(\s|$)/.test(cmd)) return { kind: "mutate" }; // 重定向写出
+  if (/(^|\s)>>?(\s|$)/.test(cmd)) return { kind: "mutate", provable: true }; // 重定向写出
 
   const words: Array<{ word: string; fragment: string }> = [];
   CMD_WORD_RE.lastIndex = 0;
@@ -172,8 +189,11 @@ export function bashIntent(
   }
   if (words.length === 0) return { kind: "other" };
 
-  // 写命令优先：只要出现过，就按「世界会变」处理
-  if (words.some((w) => MUTATE_CMDS.has(w.word))) return { kind: "mutate" };
+  // 写命令优先：只要出现过，就按「世界会变」处理。
+  // `provable` 区分"**证明**会写"（文件系统类命令）与"**可能**会写"（解释器/包管理器/构建/网络）：
+  // 前者清零零增益证据，后者不清（否则同一个只读脚本可以无限次豁免，第 83 波用户现场）。
+  if (words.some((w) => MUTATE_CMDS.has(w.word))) return { kind: "mutate", provable: true };
+  if (words.some((w) => SPECULATIVE_MUTATE_CMDS.has(w.word))) return { kind: "mutate", provable: false };
 
   // cd 提供「当前目录」上下文：裸 Get-ChildItem 归到它名下，而不是笼统的 <cwd>
   let cwdHint: string | undefined;
@@ -330,7 +350,20 @@ export class RepeatGuard {
     const signature = exactSignature(name, args);
     const digest = digestOf(output);
 
-    // 写操作之后的第一次：世界已经变了，即使内容一样也按"新信息"处理并宽容一次
+    /**
+     * 这次调用**本身**就是可证明的写操作（write/edit，或 bash 里的文件系统命令/重定向）：
+     * 世界确实变了 —— 给它"新信息"记账，并把宽容留给**紧随其后的那次重看**
+     * （而不是把它消耗在这次写操作自己的结果上，否则"写完再列一次目录"会立刻被记成零增益）。
+     */
+    if (this.isProvableMutation(name, args)) {
+      this.mutatedSinceEvidence = true;
+      this.seenDigests.add(digest);
+      this.stats.distinctResults++;
+      this.noGainStreak = 0;
+      return { gained: true, streak: 0 };
+    }
+
+    // 写操作之后的第一次重看：世界已经变了，即使内容一样也按"新信息"处理并宽容一次
     if (this.mutatedSinceEvidence) {
       this.mutatedSinceEvidence = false;
       this.seenDigests.add(digest);
@@ -350,6 +383,16 @@ export class RepeatGuard {
     this.stats.distinctResults++;
     this.noGainStreak = 0;
     return { gained: true, streak: 0 };
+  }
+
+  /** 这次调用是否**可证明**改变了磁盘（与 inspect 的分类同源，避免两处判断走偏） */
+  private isProvableMutation(name: string, args: Record<string, unknown>): boolean {
+    if (MUTATING_TOOLS.has(name)) return true;
+    if (name === "bash" || name === "shell" || name === "run_command" || name === "terminal") {
+      const intent = bashIntent(String((args as any).command ?? (args as any).cmd ?? ""));
+      return intent.kind === "mutate" && intent.provable !== false;
+    }
+    return false;
   }
 
   /**
@@ -377,10 +420,22 @@ export class RepeatGuard {
       const command = String((args as any).command ?? (args as any).cmd ?? "");
       const intent = bashIntent(command, ctx.cwd);
       if (intent.kind === "mutate") {
-        this.noteMutation();
-        return { action: "allow" };
+        /**
+         * 可证明的写操作：世界真的变了 → 清零零增益证据并放行（原有语义）。
+         *
+         * 「可能写」的命令（解释器/包管理器/构建/网络，见 SPECULATIVE_MUTATE_CMDS）**不能**在这里
+         * 直接放行 —— 那等于给它们一张永久免死金牌：用户现场里 b 会话把"读文件"做成
+         * `python _tmp_extract.py`，同一个命令跑了几十遍、输出长度恒为 358，
+         * 守卫因为"它是 mutate"一次都没拦。这类命令必须继续走下面的零增益判定，
+         * 靠**结果是否真的变了**证明自己在推进。
+         */
+        if (intent.provable !== false) {
+          this.noteMutation();
+          return { action: "allow" };
+        }
+      } else if (intent.kind === "enumerate") {
+        enumerateSignature = intent.signature;
       }
-      if (intent.kind === "enumerate") enumerateSignature = intent.signature;
     }
 
     const signature = exactSignature(name, args);
@@ -395,7 +450,7 @@ export class RepeatGuard {
         count: this.noGainStreak,
         message:
           `[REPEAT GUARD — STOP] 你连续 ${this.noGainStreak} 次拿到了**已经见过的完全相同的内容**` +
-          `（期间没有任何写操作）—— 这是"零信息增益"的硬证据，说明当前手段已经不可能再推进任务。\n` +
+          `（期间没有任何**可证明**的写操作）—— 这是"零信息增益"的硬证据，说明当前手段已经不可能再推进任务。\n` +
           `现在停下来，改用以下之一：\n` +
           `  1) 换一个真正不同的手段（读具体文件、用搜索定位、问用户）；\n` +
           `  2) 如果你要找的东西确实不存在，**直接报告"未找到 + 已尝试的路径/命令"**；\n` +
@@ -420,7 +475,7 @@ export class RepeatGuard {
           count: this.noGainStreak,
           message:
             `[REPEAT GUARD — STOP] 你连续 ${this.noGainStreak} 次在同一个手段上打转` +
-            `（拿到的是**已经见过的完全相同的内容**，期间没有任何写操作）—— 零信息增益，任务不可能靠它推进。\n` +
+            `（拿到的是**已经见过的完全相同的内容**，期间没有任何**可证明**的写操作）—— 零信息增益，任务不可能靠它推进。\n` +
             `现在停下来：换一个真正不同的手段，或者直接报告"未找到 + 已尝试过的路径/命令"，或者说明你需要调用方补什么。`,
         };
       }

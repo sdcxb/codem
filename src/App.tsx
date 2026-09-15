@@ -258,6 +258,8 @@ import { usePetStore } from "./core/pet/pet-store";
 import { loadInstalledPets as loadInstalledPetsPets } from "./core/pet/pet-manager";
 import { loadInstalledSkills } from "./core/skill/installer";
 import { getSessionMessageBus, getDelegationOrchestrator, executeSessionTurn, isSessionExecuting } from "./core/session";
+import { getSession as getStoredSession } from "./core/storage/session";
+import { getProject as getStoredProject } from "./core/storage/project";
 // 大富翁小游戏 — 懒加载
 const GameViewLazy = lazy(() => import("./plugins/monopoly-game/components/GameView").then(m => ({ default: m.GameView })));
 import type { InteractiveFormQuestion, PromptChange } from "./core/llm/tools";
@@ -1267,8 +1269,59 @@ flushStreamBuffer(); // flush all on unmount
       // 获取目标会话信息
       const session = useProjectStore.getState().sessions.find((s) => s.id === targetSessionId);
       if (!session) {
-        console.warn(`[Delegation] Target session not found: ${targetSessionId}`);
-        orchestrator.failTask(taskId, `Target session not found: ${targetSessionId}`);
+        /**
+         * 第 83 波（真机验证时发现）：UI store 里只有**当前项目**的会话，
+         * 而委派目标可能在别的项目 / 全局作用域 —— 那时这里会直接判失败，
+         * 父会话只看到"任务已创建"，要等到 wait_for_delegation 才知道对面根本没跑。
+         * 所以回退到持久层再查一次；确实不存在才失败。
+         */
+        let persisted: any = null;
+        try {
+          persisted = getStoredSession(targetSessionId);
+        } catch (e) {
+          console.warn(`[Delegation] 查询目标会话失败: ${targetSessionId}`, e);
+        }
+        if (!persisted) {
+          console.warn(`[Delegation] Target session not found: ${targetSessionId}`);
+          orchestrator.failTask(taskId, `Target session not found: ${targetSessionId}`);
+          return;
+        }
+        /**
+         * cwd 必须按**目标会话自己所属项目**解析（真机验证时踩到）：
+         * 第一版回退只用了"当前项目"的路径，而发起方常常是全局会话（没有项目）→
+         * 落到兜底 `D:\mimo`（不存在）→ 目标会话里每条 bash 都失败 → 循环以 too_many_errors 收场。
+         * 顺序：目标会话的 worktree > 目标会话所属项目 > 当前项目 > 兜底。
+         */
+        let cwdFallback = persisted.worktreePath || "";
+        if (!cwdFallback && persisted.projectId) {
+          try {
+            cwdFallback = getStoredProject(persisted.projectId)?.path || "";
+          } catch (e) {
+            console.warn(`[Delegation] 解析目标会话项目路径失败: ${targetSessionId}`, e);
+          }
+        }
+        if (!cwdFallback) cwdFallback = useProjectStore.getState().currentProject?.path || "D:\\mimo";
+        const engineFallback = engineRef.current;
+        if (!engineFallback) { console.warn('[App] engine not available'); return; }
+        console.log(`[Delegation] Target session ${targetSessionId} 不在当前项目的 UI 列表里，改用持久层记录执行（cwd=${cwdFallback}）`);
+        executeSessionTurn({
+          sessionId: targetSessionId,
+          message: task,
+          cwd: cwdFallback,
+          engine: engineFallback as any,
+          delegationTaskId: taskId,
+          onPermissionRequest: (request) => {
+            return new Promise((resolve) => {
+              setPendingPermissions((prev) => {
+                const next = new Map(prev);
+                next.set(targetSessionId, { request, resolve });
+                return next;
+              });
+            });
+          },
+        }).catch((err) => {
+          console.error(`[Delegation] executeSessionTurn failed for ${targetSessionId}:`, err);
+        });
         return;
       }
 

@@ -63,6 +63,37 @@ export function createDelegateToSessionTool(): ToolDef {
       const task = args.task as string;
       const orchestrator = getDelegationOrchestrator();
 
+      /**
+       * 第 83 波（真机验证时发现）：**目标会话必须先确认存在**，否则委派是"假成功"。
+       *
+       * 现场：A 委派到 `1788321681911-bzonm7mel`，工具返回"委派任务已创建"，但 App 侧的
+       * 执行入口在 `useProjectStore.sessions` 里找不到这个会话（它属于另一个项目/作用域），
+       * 于是刚创建的任务立刻被判 `Target session not found` 失败 —— 而 A 只看到"已创建"，
+       * 要等到 `wait_for_delegation` 才知道根本没跑。用户感受就是"委派发出去了，对面没动"。
+       *
+       * 判存在要**两条路都查**：UI store（当前项目的会话）+ 持久层（任何会话）。
+       */
+      const inStore = useProjectStore.getState().sessions.some((s) => s.id === targetSessionId);
+      let persisted: ReturnType<typeof SessionStorage.getSession> = null;
+      if (!inStore) {
+        try {
+          persisted = SessionStorage.getSession(targetSessionId);
+        } catch (e) {
+          console.warn("[delegate_to_session] 查询目标会话失败:", e);
+        }
+      }
+      if (!inStore && !persisted) {
+        return {
+          title: "delegate_to_session",
+          output:
+            (zh
+              ? `错误：目标会话不存在（未创建委派任务）："${targetSessionId}"。\n` +
+                `请用 list_sessions 拿当前项目里的会话 ID（注意：list_sessions 只列**当前项目**的会话）。`
+              : `Error: target session not found (no task created): "${targetSessionId}".\n` +
+                `Use list_sessions to get a session ID from the CURRENT project (it lists the current project only).`),
+        };
+      }
+
       // 第 63 波：交接协议机械校验（这是第 62 波事故的根因，守卫只是安全网）。
       // 缺"产物绝对路径/完成判据"或正文过长 → 直接拒绝并给改写指引，而不是把一团
       // 自由文本丢给接收方，让它从零重新遍历文件系统。

@@ -256,6 +256,34 @@ export async function executeSessionTurn(params: ExecuteSessionTurnParams): Prom
     // 委派/后台任务同样遵循用户选择的安全模式（项目级 > 全局 > 默认 ask），
     // 不再硬编码 "auto" —— 否则用户在 UI 选择"完全访问"后委派任务仍被权限层拦截。
     const effectiveSecurityMode = getEffectiveSecurityMode(cwd) || "ask";
+
+    /**
+     * 第 83 波：**当前轮次的助手消息一定是一张真实存在的行**（用户现场：委派出去的 b 会话原地打转）。
+     *
+     * 背景：这条路径不碰 React store（不像 App.tsx 每轮 `saveMessages` 会把消息 upsert 进库），
+     * 所有写入都直接打 DB。以前只有 `reasoning_delta` / `text_delta` 会**顺带**建行，
+     * 于是两类事件都会丢历史：
+     *   · `start`（iteration > 1）只换了 id 不建行 → 第 2 轮之后**整轮**写不进去；
+     *   · 模型"不说话直接调工具"时 `currentAssistantMsgId` 还是空的 → 这次调用与结果直接跳过。
+     * 而 `AgenticLoop` 每轮都从库里重建上下文，历史缺了 → 模型重发同一个工具调用 → 死循环，
+     * 父会话一直等不到结果。
+     */
+    const createdAssistantIds = new Set<string>();
+    const ensureAssistantMessage = (): string => {
+      if (!currentAssistantMsgId) currentAssistantMsgId = `assistant-${Date.now()}`;
+      if (!createdAssistantIds.has(currentAssistantMsgId)) {
+        createdAssistantIds.add(currentAssistantMsgId);
+        MessageStorage.createMessage({
+          id: currentAssistantMsgId,
+          role: "assistant",
+          content: assistantContent,
+          timestamp: Date.now(),
+          status: "streaming",
+        }, sessionId);
+      }
+      return currentAssistantMsgId;
+    };
+
     for await (const event of engine.process(sessionId, message, cwd, undefined, {
       onPermissionRequest: onPermissionRequest || ((_req) => {
         // 默认策略：后台执行时若用户模式为 full 则放行；否则自动拒绝需要权限的操作
@@ -275,36 +303,14 @@ export async function executeSessionTurn(params: ExecuteSessionTurnParams): Prom
       switch (event.type) {
         case "reasoning_delta":
           reasoningContent += event.text;
-          // 创建 assistant 消息（如果还没有）
-          if (!currentAssistantMsgId) {
-            currentAssistantMsgId = `assistant-${Date.now()}`;
-            MessageStorage.createMessage({
-              id: currentAssistantMsgId,
-              role: "assistant",
-              content: "",
-              reasoning: reasoningContent,
-              timestamp: Date.now(),
-              status: "streaming",
-            }, sessionId);
-          } else {
-            MessageStorage.updateMessage(currentAssistantMsgId, { reasoning: reasoningContent });
-          }
+          ensureAssistantMessage();
+          MessageStorage.updateMessage(currentAssistantMsgId, { reasoning: reasoningContent });
           break;
 
         case "text_delta":
           assistantContent += event.text;
-          if (!currentAssistantMsgId) {
-            currentAssistantMsgId = `assistant-${Date.now()}`;
-            MessageStorage.createMessage({
-              id: currentAssistantMsgId,
-              role: "assistant",
-              content: assistantContent,
-              timestamp: Date.now(),
-              status: "streaming",
-            }, sessionId);
-          } else {
-            MessageStorage.updateMessage(currentAssistantMsgId, { content: assistantContent });
-          }
+          ensureAssistantMessage();
+          MessageStorage.updateMessage(currentAssistantMsgId, { content: assistantContent });
           break;
 
         case "tool_start": {
@@ -318,8 +324,16 @@ export async function executeSessionTurn(params: ExecuteSessionTurnParams): Prom
             armToolFlight();
             reportProgress();
           }
-          if (tc && currentAssistantMsgId) {
-            MessageStorage.addToolCall(currentAssistantMsgId, {
+          if (tc) {
+            /**
+             * 第 83 波：工具调用必须挂在一张**真实存在**的消息上。
+             *
+             * 模型完全可能"一句正文都不说、直接调工具"（带思考的模型常把预算全花在 reasoning 上），
+             * 那时 `currentAssistantMsgId` 还是空的 —— 以前这里是 `if (tc && currentAssistantMsgId)`，
+             * 于是这次调用与它的结果在历史里**凭空消失**：下一轮模型从库里重建上下文，
+             * 看到的是"我没调用过任何工具"，于是重发同一个调用 → 死循环。
+             */
+            MessageStorage.addToolCall(ensureAssistantMessage(), {
               id: tc.id,
               tool: tc.name,
               args: { ...tc.input, name: tc.input?.name || (tc as any).metadata?.name },
@@ -335,7 +349,9 @@ export async function executeSessionTurn(params: ExecuteSessionTurnParams): Prom
           if (toolsInFlight === 0) clearToolFlight();
           reportProgress();
           const tc = "toolCall" in event ? event.toolCall : null;
-          if (tc && currentAssistantMsgId) {
+          if (tc) {
+            // 第 83 波：结果同样要落在真实存在的消息上（见 tool_start 的说明）
+            ensureAssistantMessage();
             let resultStr: string;
             let toolMetadata: Record<string, any> | undefined;
             if (typeof event.result === "string") {
@@ -385,7 +401,8 @@ export async function executeSessionTurn(params: ExecuteSessionTurnParams): Prom
           if (toolsInFlight === 0) clearToolFlight();
           const tc = "toolCall" in event ? event.toolCall : null;
           const err = "error" in event ? event.error : "Unknown error";
-          if (tc && currentAssistantMsgId) {
+          if (tc) {
+            ensureAssistantMessage();
             MessageStorage.updateToolCall(currentAssistantMsgId, tc.id, {
               status: "error",
               result: err,
@@ -395,7 +412,7 @@ export async function executeSessionTurn(params: ExecuteSessionTurnParams): Prom
         }
 
         case "start": {
-          // 新迭代：finalize 上一个 assistant message，创建新的
+          // 新迭代：finalize 上一个 assistant message，开启新的一条
           const iter = "iteration" in event ? event.iteration : 1;
           if (iter > 1 && currentAssistantMsgId) {
             MessageStorage.updateMessage(currentAssistantMsgId, {
@@ -405,6 +422,9 @@ export async function executeSessionTurn(params: ExecuteSessionTurnParams): Prom
             currentAssistantMsgId = `assistant-${Date.now()}-${iter}`;
             assistantContent = "";
             reasoningContent = "";
+            // 第 83 波：新迭代的消息**立刻建行**（见 ensureAssistantMessage 的说明）——
+            // 以前只换 id 不建行，第 2 轮之后整轮的正文/工具调用/结果全都写不进去。
+            ensureAssistantMessage();
           }
           break;
         }

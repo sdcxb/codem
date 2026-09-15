@@ -249,4 +249,73 @@ describe("重复调用守卫（第 64 波：判据是信息增益，不是次数
     expect(src).toMatch(/次数只是去抖|可证明的零进展/);
     expect(src).not.toMatch(/enumStop/);
   });
+
+  // ===== 第 83 波：用户现场（委派出去的会话用 python 脚本当"读"手段，原地打转）=====
+
+  it("GUARD-17: 反复跑同一个脚本、每次输出都一样 → 必须在有限次内被停（解释器不能无限次豁免）", () => {
+    const guard = new RepeatGuard();
+    const args = { command: 'python "D:\\课题3\\_tmp_extract.py"' };
+    // 现场事实：这条命令被判定为 mutate（python 在解释器清单里），于是每轮都"世界可能变了" → 免检
+    expect(bashIntent(String(args.command), CTX.cwd).kind).toBe("mutate");
+    expect(bashIntent(String(args.command), CTX.cwd).provable, "解释器只是**可能**写，不是可证明的写").toBe(false);
+
+    const actions: string[] = [];
+    let executed = 0;
+    for (let i = 0; i < 40; i++) {
+      const d = guard.inspect("bash", args, CTX);
+      actions.push(d.action);
+      if (d.action === "stop") break;
+      if (d.action === "allow" || d.action === "warn") {
+        executed++;
+        guard.noteResult("bash", args, "三个 docx 已提取，共 358 字符"); // 每次输出完全相同
+      }
+    }
+    expect(actions, "必须停下来（用户现场是几十次不停）").toContain("stop");
+    expect(executed, `真实执行次数应当很少（实际 ${executed}）：${actions.join(",")}`).toBeLessThanOrEqual(8);
+  });
+
+  it("GUARD-18: 脚本每次产出**新内容**时照常放行（不许把正常的长任务误杀）", () => {
+    const guard = new RepeatGuard();
+    const args = { command: "python build.py" };
+    const actions: string[] = [];
+    for (let i = 0; i < 20; i++) {
+      const d = guard.inspect("bash", args, CTX);
+      actions.push(d.action);
+      if (d.action === "stop") break;
+      guard.noteResult("bash", args, `第 ${i} 批产出，共 ${i * 13} 行`);
+    }
+    expect(new Set(actions)).toEqual(new Set(["allow"]));
+    expect(guard.stats.noGainRepeats).toBe(0);
+  });
+
+  it("GUARD-19: 可证明的写操作才清零零增益证据（文件系统命令 vs 解释器）", () => {
+    for (const c of [
+      `Set-Content -Path "${ROOT}\\a.txt" -Value x`,
+      `Remove-Item "${ROOT}\\old" -Recurse`,
+      `Get-ChildItem "${ROOT}" > "${ROOT}\\list.txt"`,
+      `New-Item -ItemType Directory "${ROOT}\\out"`,
+    ]) {
+      const intent = bashIntent(c, CTX.cwd);
+      expect(intent.kind, c).toBe("mutate");
+      expect(intent.provable, `"${c}" 是可证明的写操作`).toBe(true);
+    }
+    for (const c of ["python x.py", "node build.js", "git status", "npm run build", "curl https://example.com"]) {
+      const intent = bashIntent(c, CTX.cwd);
+      expect(intent.kind, c).toBe("mutate");
+      expect(intent.provable, `"${c}" 只是可能写`).toBe(false);
+    }
+    // 反向确认：可证明的写操作确实会清零证据（GUARD-5 的行为不能被这次改动弄丢）
+    const guard = new RepeatGuard();
+    const args = { command: `Get-ChildItem "${ROOT}" -File` };
+    guard.inspect("bash", args, CTX);
+    guard.noteResult("bash", args, LISTING_ROOT);
+    guard.inspect("bash", args, CTX);
+    guard.noteResult("bash", args, LISTING_ROOT);
+    expect(guard.noGainStreakCount).toBeGreaterThan(0);
+    guard.inspect("bash", { command: `Set-Content -Path "${ROOT}\\a.txt" -Value x` }, CTX);
+    guard.noteResult("bash", { command: `Set-Content -Path "${ROOT}\\a.txt" -Value x` }, "written");
+    guard.inspect("bash", args, CTX);
+    guard.noteResult("bash", args, LISTING_ROOT);
+    expect(guard.noGainStreakCount).toBe(0);
+  });
 });
