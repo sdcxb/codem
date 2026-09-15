@@ -2,6 +2,100 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.16.32] - 2026-09-15 — 用户报的「推理强度点不动」+ 发布后自查的同源一致性（第 82 波）
+
+### 用户报的 bug（先修这个）：主对话区域顶部的模型列表里，点「推理强度」闪烁、选不中
+
+**复现与测量**（打包版本 + CDP 真实鼠标事件，不是看代码猜的）：
+
+```
+点开模型下拉 → 在 (494,242) 按「推理强度」行：
+  pointerdown / mousedown 命中 → new-chat-page        ← 浮层不见了
+  mouseup                 命中 → chat-effort-row      ← 松手又回来了
+  期间 DOM **零变更**（MutationObserver 全程无记录）
+```
+
+**根因**：全局按压反馈给通用可点元素加了几何 transform ——
+
+```css
+button:not(:disabled):active, .clickable:active, [role="button"]:active { transform: scale(0.97); }
+button:active, [role="button"]:active, summary:active, .sp-btn:active { transform: translateY(var(--press-shift)); }
+```
+
+而聊天栏顶部的模型下拉正是 `<div class="model-selector" role="button">` **内部**渲染 `.model-picker`
+（推理强度行同理：`.chat-effort-row[role=button]` 内部渲染 `.chat-effort-menu`）。
+按住时 `:active` 的 transform **创建层叠上下文** → 浮层的 `z-index: 1300` 退化成"局部"的 →
+整个浮层被后面的兄弟节点（`.chat-body` / 空态页）盖住：
+
+- **视觉**：按下的一瞬间浮层被盖住 = 用户看到的"闪烁"；
+- **交互**：`mousedown` 命中浮层、`mouseup` 命中被盖住之后的正文 → 浏览器把 `click`
+  派发到两者的**共同祖先**（`.chat-panel`）→ 选项的 `onClick` 根本不执行 = "选不中"。
+
+**修复**（治本，且让这一类问题以后自己暴露）：
+
+- 新增宿主标记 `.press-layer-host`：**内部渲染浮层的可点元素**用它退出几何按压反馈
+  （`transform` 换成背景色反馈，手感仍在、层叠不再被破坏）；
+- 两条全局按压规则加 `:not(.press-layer-host)`；
+- ChatPanel 的两处宿主（`.model-selector`、`.chat-effort-row`）标上该类；
+- **审计门禁新增两条规则**（`tools/ui-audit/scan-ui.mjs`）：
+  `press-feedback-layer-host`（CSS 侧：通用按压规则必须排除浮层宿主）
+  + `press-transform-hosts-layer`（TSX 侧：用 TypeScript 编译器 API 精确遍历 JSX，
+  发现"内部有浮层却没标宿主类"就报错）。**规则自检过**：去掉标记 → 报 5 + 1 条，恢复 → 0。
+- 顺带排查了全项目同类结构（TS 遍历 JSX 全量扫描）：命中就是这两处，其余 5 处是误报
+  （菜单项自身类名里含 menu/dropdown），已排除。
+
+**顺带修掉的同类"点了没反应"**：`ModelSelector` 的推理强度只写存储、不进 state，
+写入后不触发重渲染 → 值变了界面不动；现在进 state，点了立刻回显。
+
+### 发布后自查：把「内置目录」的同源一致性补齐
+
+v1.16.31 发布后回头审计自己刚写的代码，抓到三处**同源不一致**，都属于"规则对了但没接到所有地方"。
+
+#### ① 引擎侧的注入范围漏了「配了 key 但没刷新过」的 provider（`LLMEngine.loadDynamicModels`）
+
+`loadDynamicModels()` 原来只遍历 `codem-dynamic-models` 缓存里的键 —— 而缓存是**用户点刷新**时才写入的。
+配好 key 却一次没刷新的机器上，缓存里连 `deepseek` 这个键都没有 → 目录模型一个都注入不进去：
+
+```
+界面（getMergedDynamicModels）：能看到 deepseek-v4-flash-vision-exp
+引擎（provider.dynamicModels）：没有它 → 选中后按默认窗口/默认能力跑
+```
+
+**修复**：注入范围改成 缓存里的 provider ∪ `BUILTIN_MODEL_CATALOG` 里的 provider。
+（`ENG-1~4` 守住：缓存为空也要注入、旧名不重复、contextWindow 迁移照旧、未注册 provider 不受影响）
+
+#### ② 方案面板（视觉/STT/嵌入槽位）根本选不到目录模型（`ModelProfilePanel`）
+
+它用的是 `mergeCustomModels(codem-dynamic-models 缓存)` —— **缓存里从来不含内置目录条目**
+（刷新时只落服务器事实），于是"主设置里能看到、方案面板里看不到"，全看缓存里恰好有没有它。
+更糟的是**内置方案的视觉槽位正指向** `deepseek-v4-flash-vision-exp`。
+
+**修复**：改走 `getMergedDynamicModels()`（`model-catalog.ts` 注释写的就是"界面与引擎统一走这里"），
+并把纯函数部分抽成 `buildAvailableProviders()` 以便用例守住（`MPS-1~4`）。
+
+#### ③ 错误识别收得太宽：`Invalid model input` 会被当成"名字不对"
+
+`isUnknownModelError` 原来只要含 `invalid model` 就成立 —— 而有些 provider 对**参数**问题也说
+"Invalid model input"（跟名字无关），那样会把一个能用的模型标成「服务器已拒绝此名字」。
+
+**修复**：`invalid model` 必须带 `name` / `id` / 冒号才算（`CH-1b` 守住两种措辞的分界）。
+
+#### ④ 记录条数上限在"同一毫秒"下会丢错人（全量跑用例才暴露）
+
+`capBucket`（单 provider 上限 80 条）只按 `at` 排序 —— 而 `at` 精度是毫秒，
+**同一毫秒内写入的多条时间戳完全相同**，稳定排序下被丢掉的恰恰是**最新写的那些**（与"保留最近的"语义相反）。
+单跑该文件时不复现、全量跑时复现。修复：先按写入顺序反转，再按 `at` 降序稳定排序，
+时间戳打平时保留的就是最近写入的；用例连跑 5 次稳定。
+
+### 验证（v1.16.32）
+
+- 真机（打包版本 + CDP 真实鼠标事件）：按下「推理强度」时浮层仍在命中栈顶、选项可点中、值即时回显
+- `engine-catalog-injection.test.ts` ENG-1~4（界面与引擎同源、旧名不重复、迁移不丢、未注册安全）
+- `model-profile-providers.test.ts` MPS-1~4（目录条目必须可选、无 key 不列、静态兜底、手动添加不被吃掉）
+- `catalog-health.test.ts` CH-1b（参数类措辞不算名字问题）
+- `press-layer-host.test.ts` PLH-1~5（CSS 契约必须排除宿主 + 宿主有非几何反馈 + 全项目扫描无漏标 + 审计规则存在 + 事故现场结构回归提醒）
+- 全量 **235 文件 / 4844 用例通过**（15 skipped）· tsc 0 错误 · UI 审计 **27 条规则** 0/0 · css-contract 无变化
+
 ## [1.16.31] - 2026-09-14 — 用户追问「内置目录」三连：旧名重复列出（修复）+ 供应商改名了怎么办（实证标记）
 
 ### 用户的疑问（问得对）

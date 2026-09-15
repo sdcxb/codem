@@ -493,7 +493,11 @@ setStepTooltipLocked(false);
             setShowAgentPanel(true)
           }}
         />
-        <div className="model-selector" role="button" tabIndex={0} aria-haspopup="listbox" aria-expanded={showModelPicker} onClick={() => setShowModelPicker(!showModelPicker)}>
+        {/* press-layer-host：这个可点元素内部渲染了浮层（下拉 + 推理强度菜单）。
+            没有它，按下时全局按压反馈的 transform 会把浮层压进"局部层叠上下文"，
+            被聊天正文盖住 → 按下瞬间浮层消失（闪烁）、且选项的 click 落在共同祖先上点不中。
+            见 styles.css 顶部 D-3 与 tools/ui-audit/scan-ui.mjs 的 press-transform-hosts-layer。 */}
+        <div className="model-selector press-layer-host" role="button" tabIndex={0} aria-haspopup="listbox" aria-expanded={showModelPicker} onClick={() => setShowModelPicker(!showModelPicker)}>
           <span className="model-badge">{models.find(m => m.id === model)?.name || model}</span>
           <span className="model-arrow"><ChevronDown size={10} /></span>
           {showModelPicker && (
@@ -509,7 +513,7 @@ setStepTooltipLocked(false);
               ))}
               {/* Reasoning effort divider + selector */}
               <div className="menu-divider" />
-              <div className="chat-effort-row" role="button" tabIndex={0} aria-expanded={showEffortPicker} onClick={(e) => { e.stopPropagation(); setShowEffortPicker(!showEffortPicker); }}
+              <div className="chat-effort-row press-layer-host" role="button" tabIndex={0} aria-expanded={showEffortPicker} onClick={(e) => { e.stopPropagation(); setShowEffortPicker(!showEffortPicker); }}
               >
                 <span className="hint-sm">{lang === "zh" ? "推理强度" : "Reasoning Effort"}</span>
                 <span className="chat-effort-value">

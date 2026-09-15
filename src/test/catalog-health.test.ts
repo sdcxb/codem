@@ -68,6 +68,13 @@ describe("未知模型名错误识别（不能冤枉能用的模型）", () => {
     expect(isUnknownModelError("The model 'gpt-5' does not exist", 404)).toBe(true);
     expect(isUnknownModelError('model "llama9" not found, try pulling it first', 404)).toBe(true);
     expect(isUnknownModelError("invalid model id", 400)).toBe(true);
+    expect(isUnknownModelError("Invalid model name: foo", 400)).toBe(true);
+    expect(isUnknownModelError("invalid model:", 400)).toBe(true);
+  });
+
+  it("CH-1b: 参数类措辞『Invalid model input』不算名字问题（那会把能用的模型标成失效）", () => {
+    expect(isUnknownModelError("Invalid model input format: image too large", 400)).toBe(false);
+    expect(isUnknownModelError("invalid model parameter temperature", 400)).toBe(false);
   });
 
   it("CH-2: 网络/鉴权/限流/上下文超限一律不算（否则会误标）", () => {
@@ -174,13 +181,14 @@ describe("失效标记的记账规则", () => {
     expect(recordCatalogRejection("deepseek", "x", DS_REJECTION, 400)).toBe(true);
   });
 
-  it("CH-11: 单个 provider 的记录数有上限（不会无限增长）", () => {
+  it("CH-11: 单个 provider 的记录数有上限（不会无限增长，且丢掉的是最旧的）", () => {
     for (let i = 0; i < 120; i++) {
       recordCatalogRejection("deepseek", `model-${i}`, DS_REJECTION, 400);
     }
     const bucket = getCatalogHealthFor("deepseek");
     expect(Object.keys(bucket).length).toBeLessThanOrEqual(80);
-    // 保留的是最近的
+    // 保留的是最近的 —— 注意这些写入**在同一毫秒内**（时间戳打平），
+    // 所以这条断言同时守住"打平时必须按写入顺序保留最新的"（全量跑用例时踩过）。
     expect(bucket["model-119"]).toBeDefined();
     expect(bucket["model-0"]).toBeUndefined();
   });

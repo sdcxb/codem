@@ -62,13 +62,23 @@ export function ModelSelector({ model, models, onModelChange, locked = false }: 
     ultra: { zh: '超高', en: 'Ultra' },
   }
 
-  const currentEffort = getSettingJSON<string>('codem-reasoning-effort', 'high')
+  /**
+   * 推理强度必须**进 state**（第 82 波修）。
+   *
+   * 之前是渲染时现读 `getSettingJSON('codem-reasoning-effort')`，而 `cycleEffort` 只写存储、
+   * 不触发重渲染 —— 于是点一下"值变了但界面不动"，要点好几次、或者等别的状态变化把界面刷出来
+   * 才看到结果，用户感受就是"点了没反应"。
+   */
+  const [currentEffort, setCurrentEffort] = useState<string>(() =>
+    getSettingJSON<string>('codem-reasoning-effort', 'high'),
+  )
 
   const cycleEffort = (e: React.MouseEvent) => {
     e.stopPropagation()
     const idx = efforts.indexOf(currentEffort as typeof efforts[number])
     const next = efforts[(idx + 1) % efforts.length]
     setSettingJSON('codem-reasoning-effort', next)
+    setCurrentEffort(next) // 立即回显（写入是持久化，setState 才是界面）
   }
 
   return (

@@ -354,12 +354,27 @@
 }
 
 /* ========== Global Interaction Polish ========== */
-/* D-3: Button press feedback — scale(0.97) on :active for instant physical response */
-button:not(:disabled):active,
-.clickable:not(:disabled):active,
-[role="button"]:not(:disabled):active {
+/* D-3: Button press feedback — scale(0.97) on :active for instant physical response
+ *
+ * `.press-layer-host` 例外（第 82 波，真实事故）：按压反馈用的是 **transform**，
+ * 而 transform 会创建**层叠上下文** —— 如果这个可点元素内部渲染了浮层（下拉/菜单），
+ * 浮层的 `z-index` 就退化成"局部"的，整个浮层会被后面的兄弟节点（聊天正文）盖住：
+ *   · 视觉上：按下去的一瞬间浮层消失/缩放 → 用户看到的是"闪烁"；
+ *   · 交互上：mousedown 命中浮层、mouseup 命中被盖住后的正文 →
+ *     click 被派发到两者的**共同祖先**，选项的 onClick 根本不触发 → "点了没反应"。
+ * 所以宿主自己声明 `.press-layer-host` 退出几何按压反馈（保留背景色反馈）。
+ * 这条约束有门禁守着：tools/ui-audit/scan-ui.mjs 的
+ * `press-feedback-layer-host`（CSS 侧）+ `press-transform-hosts-layer`（TSX 侧）。 */
+button:not(:disabled):not(.press-layer-host):active,
+.clickable:not(:disabled):not(.press-layer-host):active,
+[role="button"]:not(:disabled):not(.press-layer-host):active {
   transform: scale(0.97);
   transition: transform var(--duration-press) var(--ease-out);
+}
+
+/* 浮层宿主的按压反馈：不给 transform（保住浮层层叠），改用背景色。 */
+.press-layer-host:active {
+  background: var(--bg-hover);
 }
 
 /* D-4: Popover/dropdown transform-origin — scale from trigger, not center */
@@ -17271,9 +17286,10 @@ color: var(--accent, #7c6cf0);
 }
 
 /* 2. 按下反馈：所有可点元素统一下沉 1px。
- *    比"改个背景色"更有手感，且 transform 不触发重排。 */
-button:not(:disabled):active,
-[role="button"]:not([aria-disabled="true"]):active,
+ *    比"改个背景色"更有手感，且 transform 不触发重排。
+ *    `.press-layer-host` 例外见文件顶部 D-3 的说明（浮层会被盖住 → 闪烁 + 点不中）。 */
+button:not(:disabled):not(.press-layer-host):active,
+[role="button"]:not([aria-disabled="true"]):not(.press-layer-host):active,
 summary:active,
 .sp-btn:not(:disabled):active {
   transform: translateY(var(--press-shift));

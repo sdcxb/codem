@@ -8,7 +8,7 @@ import {
   type ModelSlotConfig,
 } from "../core/llm/model-profile";
 import { getSettingJSON } from "../core/storage/settings";
-import { mergeCustomModels } from "../core/llm/custom-models";
+import { getMergedDynamicModels } from "../core/llm/model-catalog";
 import { MIMO_MODELS } from "../core/model-config";
 import { ActionIcons } from "../core/icons/icon-map";
 
@@ -49,46 +49,44 @@ const SLOT_DESCRIPTIONS_ZH: Record<TaskSlot, string> = {
 
 /**
  * 从存储读取已配置 API Key 的 provider 列表和动态模型列表。
- * Provider 列表来自 codem-settings.providers，模型列表来自 codem-dynamic-models。
- * 如果动态模型不存在，回退到 API_MODELS 静态列表。
+ * Provider 列表来自 codem-settings.providers，模型列表来自 `getMergedDynamicModels()`
+ * （服务器缓存 + 手动添加 + **内置目录** 三路合并）。
+ *
+ * 为什么必须走统一的合并入口（第 81 波修）：这里原来只读 `codem-dynamic-models` 缓存，
+ * 于是**内置目录里的模型在这个面板里根本选不到** —— 例如视觉槽位正指向的
+ * `deepseek-v4-flash-vision-exp`：服务器 /models 从不列它，缓存里有没有它取决于上次
+ * 刷新时的版本，于是同一台机器上"主设置里能看到、方案面板里看不到"。
+ * `model-catalog.ts` 的注释写的就是"界面与引擎统一走这里"，这里之前漏了一处。
  */
 interface ProviderWithModels {
   id: string;
   name: string;
-  models: Array<{ id: string; name: string }>;
+  models: Array<{ id: string; name: string; catalogOnly?: boolean }>;
+}
+
+/** 纯函数部分抽出来，便于用例守住"内置目录条目必须出现在方案面板里" */
+export function buildAvailableProviders(
+  settings: { providers?: Array<{ id: string; name?: string; apiKey?: string }> },
+  dynamicModels: Record<string, Array<{ id: string; name: string; catalogOnly?: boolean }>>,
+  fallback: Record<string, Array<{ id: string; name: string }>> = API_MODELS_FALLBACK,
+  mimoModels: Array<{ id: string; name: string }> = MIMO_MODELS.map((m) => ({ id: m.id, name: m.name })),
+): ProviderWithModels[] {
+  const result: ProviderWithModels[] = [{ id: "mimo", name: "MiMo", models: mimoModels }];
+  for (const p of settings.providers || []) {
+    if (!p.apiKey || p.id === "mimo") continue;
+    const dynModels = dynamicModels[p.id];
+    if (dynModels && dynModels.length > 0) {
+      result.push({ id: p.id, name: p.name || p.id, models: dynModels });
+    } else if (fallback[p.id]) {
+      result.push({ id: p.id, name: p.name || p.id, models: fallback[p.id] });
+    }
+  }
+  return result;
 }
 
 function getAvailableProviders(): ProviderWithModels[] {
   try {
-    const settings = getSettingJSON<any>("codem-settings", {});
-    const providers = settings.providers || [];
-    // 合并手动添加的自定义模型（服务器列表外的内测/测试模型）
-    const dynamicModels = mergeCustomModels(getSettingJSON<Record<string, Array<{ id: string; name: string }>>>("codem-dynamic-models", {}));
-
-    const result: ProviderWithModels[] = [];
-
-    // MiMo provider 始终可用（CLI 模式），用静态列表
-    result.push({
-      id: "mimo",
-      name: "MiMo",
-      models: MIMO_MODELS.map(m => ({ id: m.id, name: m.name })),
-    });
-
-    // 已配置 API Key 的 provider
-    for (const p of providers) {
-      if (!p.apiKey || p.id === "mimo") continue;
-      // 优先使用动态模型列表
-      const dynModels = dynamicModels[p.id];
-      if (dynModels && dynModels.length > 0) {
-        result.push({ id: p.id, name: p.name || p.id, models: dynModels });
-      }
-      // 回退到静态列表
-      else if (API_MODELS_FALLBACK[p.id]) {
-        result.push({ id: p.id, name: p.name || p.id, models: API_MODELS_FALLBACK[p.id] });
-      }
-    }
-
-    return result;
+    return buildAvailableProviders(getSettingJSON<any>("codem-settings", {}), getMergedDynamicModels());
   } catch {
     return [{ id: "mimo", name: "MiMo", models: MIMO_MODELS.map(m => ({ id: m.id, name: m.name })) }];
   }

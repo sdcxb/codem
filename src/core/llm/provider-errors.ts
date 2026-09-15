@@ -85,9 +85,11 @@ export function isUnknownModelError(message: string | undefined, status?: number
     m.includes("no such model") ||
     m.includes("unrecognized model") ||
     m.includes("unsupported model") ||
-    m.includes("invalid model") ||
     m.includes("not a valid model") ||
     m.includes("try pulling it first") ||
+    // `invalid model` 必须带上 name/id/冒号才算 —— 有些 provider 对**参数**问题也说
+    // "Invalid model input"（跟名字无关），那样会把一个能用的模型冤枉成失效。
+    /invalid model(?:\s+(?:name|id|route)|\s*:)/.test(m) ||
     /model[^.\n]{0,60}(does not exist|not exist|not found|is not available)/.test(m)
   );
 }

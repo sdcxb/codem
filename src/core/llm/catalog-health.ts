@@ -108,12 +108,20 @@ function persist(next: CatalogHealthMap): void {
   }
 }
 
-/** 按时间保留最近的 N 条，避免无上限增长 */
+/**
+ * 保留最近的 N 条，避免无上限增长。
+ *
+ * 坑（全量跑用例时暴露）：`at` 的精度是毫秒，**同一毫秒内写入的多条时间戳完全相同**，
+ * 只按 `at` 排序时谁被丢掉就看排序实现的心情了（稳定排序 → 丢掉的反而是最新的几条）。
+ * 所以：先按**写入顺序反转**（新的在后 → 反转后新的在前），再按 `at` 降序稳定排序 ——
+ * 时间戳打平时保留的就是"最近写入的那些"，与调用方语义一致。
+ */
 function capBucket(bucket: Record<string, CatalogHealthEntry>): Record<string, CatalogHealthEntry> {
   const entries = Object.entries(bucket);
   if (entries.length <= MAX_ENTRIES_PER_PROVIDER) return bucket;
-  entries.sort((a, b) => b[1].at - a[1].at);
-  return Object.fromEntries(entries.slice(0, MAX_ENTRIES_PER_PROVIDER));
+  const newestFirst = entries.reverse();
+  newestFirst.sort((a, b) => b[1].at - a[1].at);
+  return Object.fromEntries(newestFirst.slice(0, MAX_ENTRIES_PER_PROVIDER).reverse());
 }
 
 /** 读取某条模型的健康记录（没有则 undefined = 尚无可信证据） */

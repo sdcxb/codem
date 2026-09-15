@@ -19,6 +19,7 @@
 import { readFileSync, writeFileSync, readdirSync, statSync, existsSync } from "node:fs";
 import { join, relative, extname, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import ts from "typescript";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, "..", "..");
@@ -132,6 +133,8 @@ const RULES = {
   "motion-uncovered": { level: "error", desc: "循环动画没有在 prefers-reduced-motion 下显式关停（全局兜底对它无效）" },
   "encoding-replacement-char": { level: "error", desc: "源码里出现 U+FFFD 替换字符（编码损坏，原文已不可逆）" },
   "css-var-unused": { level: "warn", desc: "定义了但全项目无人引用的 CSS 令牌（死令牌；公开刻度见豁免清单）" },
+  "press-feedback-layer-host": { level: "error", desc: "通用按压反馈的 transform 没排除浮层宿主（会把浮层压进局部层叠上下文 → 闪烁且点不中）" },
+  "press-transform-hosts-layer": { level: "error", desc: "可点元素内部渲染浮层但没标 .press-layer-host（按下时浮层会被盖住）" },
 };
 
 // ========== 扫描器 ==========
@@ -1180,6 +1183,114 @@ function scanVarUnused() {
   }
 }
 
+/**
+ * 规则（第 82 波）：**按压反馈的 transform 不许落在"内部有浮层"的可点元素上**。
+ *
+ * 真实事故（用户报「点推理强度会闪烁不能选」）：聊天栏顶部模型下拉是
+ * `<div class="model-selector" role="button">` 内部渲染 `.model-picker`，
+ * 而全局按压反馈给 `[role=button]:active` 加了 `transform: scale(0.97)`。
+ * transform 创建**层叠上下文** → 浮层的 z-index(1300) 变成局部的 →
+ * 整个浮层被后面的兄弟节点（`.chat-body`）盖住：
+ *   · 按下瞬间浮层消失 = 用户看到的"闪烁"；
+ *   · mousedown 命中浮层、mouseup 命中被盖住后的正文 → click 落到两者的**共同祖先** →
+ *     选项的 onClick 根本不执行 = "选不中"。
+ *
+ * 所以：几何按压反馈的规则必须排除 `.press-layer-host`；宿主由 TSX 侧规则
+ * （`press-transform-hosts-layer`）负责标注。
+ */
+function scanPressFeedbackLayerHost(rel, src) {
+  const clean = src.replace(/\/\*[\s\S]*?\*\//g, (c) => c.replace(/[^\n]/g, " "));
+  const GENERIC = [/\bbutton\b/, /\[role=["']?button["']?\]/, /\.clickable\b/];
+  for (const m of clean.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+    const selector = m[1];
+    const body = m[2];
+    if (!/:active/.test(selector)) continue;
+    if (!/transform:\s*(scale|translate|matrix|rotate|skew)/.test(body)) continue;
+    const line = clean.slice(0, m.index).split("\n").length;
+    for (const part of selector.split(",")) {
+      const sel = part.trim();
+      if (!GENERIC.some((re) => re.test(sel))) continue;
+      if (/press-layer-host/.test(sel)) continue;
+      add(
+        "press-feedback-layer-host",
+        rel,
+        line,
+        sel,
+        "通用按压反馈用 transform（会创建层叠上下文）；若该宿主内部渲染浮层，浮层会被兄弟节点盖住 → 闪烁且点不中。请加 :not(.press-layer-host) 并给宿主标 press-layer-host",
+      );
+    }
+  }
+}
+
+/**
+ * 规则（第 82 波，TSX 侧）：可点元素内部渲染了浮层（下拉/菜单）却没标 `.press-layer-host`。
+ *
+ * 与上一条 CSS 规则配对：CSS 负责"标了就不加 transform"，TSX 负责"该标的都标上"。
+ * 用 TypeScript 编译器 API 精确遍历 JSX（正则数标签层级太脆）。
+ */
+const PRESS_LAYER_TOKENS = new Set([
+  "popover-shell", "popover-shield", "model-picker", "chat-effort-menu", "bottom-bar-dropdown",
+  "dropdown-menu", "dropdown-menu-content", "context-menu", "skill-picker-popup", "file-link-context-menu",
+  "input-popover", "app-menu-surface", "kg-menu", "slash-command-menu", "slash-menu-portal",
+  "chat-dropdown--sessions", "git-branch-dropdown", "nb-export-menu", "nb-move-menu", "nb-studio-dropdown",
+  "right-rail-add-menu", "sidebar-project-more-menu", "sidebar-session-context-menu", "space-switcher-dropdown",
+  "tj-filter-menu", "regenerate-popover", "prompt-draft-picker", "issue-detail-picker", "modal-overlay",
+  "alert-dialog-content", "toolbar-menu", "menu-panel",
+]);
+
+function jsxClassName(opening) {
+  const attrs = opening.attributes?.properties;
+  if (!attrs) return "";
+  const attr = attrs.find((a) => ts.isJsxAttribute(a) && a.name.getText() === "className");
+  if (!attr?.initializer) return "";
+  return attr.initializer.getText().replace(/[`"'{}]/g, " ");
+}
+
+function scanPressLayerHosts(rel, src) {
+  // 预筛：没有可点元素就没有这个问题（TS 解析不便宜）
+  if (!/role="button"|<button|clickable/.test(src)) return;
+  const sf = ts.createSourceFile(rel, src, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const visit = (node) => {
+    const isElement = ts.isJsxElement(node) || ts.isJsxSelfClosingElement(node);
+    if (isElement) {
+      const opening = ts.isJsxElement(node) ? node.openingElement : node;
+      const tag = opening.tagName.getText();
+      const attrs = opening.attributes?.properties || [];
+      const isRoleButton = attrs.some(
+        (a) => ts.isJsxAttribute(a) && a.name.getText() === "role" && a.initializer?.getText().includes("button"),
+      );
+      const isPressTarget = tag === "button" || isRoleButton || /\bclickable\b/.test(jsxClassName(opening));
+      if (isPressTarget) {
+        const found = new Set();
+        const collect = (n) => {
+          if (ts.isJsxElement(n) || ts.isJsxSelfClosingElement(n)) {
+            const op = ts.isJsxElement(n) ? n.openingElement : n;
+            if (op !== opening) {
+              for (const tok of jsxClassName(op).split(/[\s`${}]+/).filter(Boolean)) {
+                if (PRESS_LAYER_TOKENS.has(tok)) found.add(tok);
+              }
+            }
+          }
+          ts.forEachChild(n, collect);
+        };
+        ts.forEachChild(node, collect);
+        if (found.size && !/\bpress-layer-host\b/.test(jsxClassName(opening))) {
+          const { line } = sf.getLineAndCharacterOfPosition(opening.getStart());
+          add(
+            "press-transform-hosts-layer",
+            rel,
+            line + 1,
+            `<${tag} class="${jsxClassName(opening).trim().slice(0, 50)}">`,
+            `内部渲染了浮层（${[...found].join(", ")}）但没标 press-layer-host —— 按下时全局按压反馈的 transform 会创建层叠上下文，浮层被兄弟节点盖住（闪烁 + 点不中）`,
+          );
+        }
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sf);
+}
+
 for (const full of files) {
   const rel = relative(ROOT, full).replace(/\\/g, "/");
   if (shouldSkip(rel)) continue;
@@ -1191,6 +1302,7 @@ for (const full of files) {
     scanCssDuplicates(rel, src);
     scanCssSpacing(rel, src);
     scanFocusSuppression(rel, src);
+    scanPressFeedbackLayerHost(rel, src);
     cssSources.push({ rel, src });
     scanZIndex(rel, src, true, []);
     continue;
@@ -1200,6 +1312,7 @@ for (const full of files) {
   scanColorOutsideStyle(rel, src, ranges);
   scanZIndex(rel, src, false, ranges);
   scanTsx(rel, src);
+  scanPressLayerHosts(rel, src);
 
   for (const { raw, index } of staticClassTokens(src)) {
     // 这里**刻意不再豁免「元素自己有内联样式」的情况**。

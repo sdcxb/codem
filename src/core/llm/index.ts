@@ -41,7 +41,7 @@ import { getModelProfileManager, type TaskSlot, type ModelSlotConfig } from "./m
 // F2.1: 统一脱敏工具 — 文件内使用需直接 import（re-export 不使文件内可见）
 import { redactSecrets } from "../utils/redact";
 import { mergeCustomModels } from "./custom-models";
-import { mergeModelsWithCatalog } from "./model-catalog";
+import { mergeModelsWithCatalog, BUILTIN_MODEL_CATALOG } from "./model-catalog";
 
 // ========== Re-exports ==========
 export type { LLMProvider, LLMRequest, LLMResponse, StreamEvent, TokenUsage, ToolDefinition } from "./types";
@@ -1272,7 +1272,20 @@ return loop.hasPendingGuidance();
       // 运行时窗口解析会回退 128k，导致 1M 窗口模型（DeepSeek/Gemini/MiMo）
       // 过早压缩。这里补上推断窗口，避免用户必须手动重新刷新模型。
       let migrated = false;
-      for (const [providerId, models] of Object.entries(stored)) {
+      /**
+       * 第 81 波：注入范围 = 缓存里有的 provider ∪ **内置目录里有的 provider**。
+       *
+       * 之前只遍历缓存 —— 于是"配了 key 但一次都没点过刷新"的 provider（缓存里根本没有
+       * 这个键）**一个目录模型都拿不到**：界面上（走 getMergedDynamicModels）能看到
+       * `deepseek-v4-flash-vision-exp`，引擎侧 provider.dynamicModels 里却没有它，
+       * 选中后只能吃默认窗口/默认能力。同一个名单必须在界面与引擎两处一致。
+       */
+      const providerIds = new Set<string>([
+        ...Object.keys(stored),
+        ...Object.keys(BUILTIN_MODEL_CATALOG),
+      ]);
+      for (const providerId of providerIds) {
+        const models = stored[providerId] ?? [];
         for (const m of models) {
           if (!m.contextWindow) {
             m.contextWindow = inferContextWindow(m.id);
