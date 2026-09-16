@@ -62,7 +62,13 @@ export function assess() {
     if (/sql-wasm\.wasm/.test(text)) l1.push({ file: rel, what: "sql-wasm.wasm 资源引用" });
 
     // L2：引擎本体（只有 database.ts 该有）
-    if (/sql\.js|initSqlJs/i.test(text) && rel !== "src/core/storage/database.ts") {
+    //
+    // ⚠️ 判定前先**剥掉注释**：注释里提到 "sql.js"（例如"不再依赖 sql.js"）不是真的 API 引用。
+    // 实测踩到：我自己写的一句注释让这个扫描器报了假阳性，而假阳性会让这份清单失去可信度。
+    const code = text
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+    if (/\binitSqlJs\b|\bSqlJsDatabase\b/.test(code) && rel !== "src/core/storage/database.ts" && rel !== "src/types/sql.js.d.ts") {
       l2.push({ file: rel, what: "引用了 sql.js API（应只出现在 database.ts）" });
     }
 
