@@ -73,9 +73,15 @@ describe("Git Worktree — 路径处理工具", () => {
 });
 
 describe("Git Worktree — Git 命令封装", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks();
-    try { resetDatabase(); } catch { initDatabase(); }
+    // ⚠️ 这里原来写的是 `try { resetDatabase(); } catch { initDatabase(); }` —— **没有 await**。
+    // `resetDatabase()` 是 async：不 await 时它返回一个 promise（永远不抛），
+    // 于是 initDatabase() 分支永不执行，而清库在后台进行 → 后续读写撞上
+    // "Database not initialized"（第 27 轮把 sql.js 改成动态 import 后，异步时序变化让这个
+    // 长期潜伏的竞态真正暴露出来：5 个测试变红）。
+    // 修法是把异步正确地 await 掉 —— 这是测试自己的问题，不是产品代码的问题。
+    await resetDatabase().catch(() => initDatabase());
     localStorage.clear();
   });
 
@@ -149,9 +155,15 @@ describe("Git Worktree — Git 命令封装", () => {
 });
 
 describe("Git Worktree — 创建与移除", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks();
-    try { resetDatabase(); } catch { initDatabase(); }
+    // ⚠️ 这里原来写的是 `try { resetDatabase(); } catch { initDatabase(); }` —— **没有 await**。
+    // `resetDatabase()` 是 async：不 await 时它返回一个 promise（永远不抛），
+    // 于是 initDatabase() 分支永不执行，而清库在后台进行 → 后续读写撞上
+    // "Database not initialized"（第 27 轮把 sql.js 改成动态 import 后，异步时序变化让这个
+    // 长期潜伏的竞态真正暴露出来：5 个测试变红）。
+    // 修法是把异步正确地 await 掉 —— 这是测试自己的问题，不是产品代码的问题。
+    await resetDatabase().catch(() => initDatabase());
     localStorage.clear();
   });
 
@@ -223,9 +235,15 @@ describe("Git Worktree — 创建与移除", () => {
 });
 
 describe("Git Worktree — 扫描与配额", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks();
-    try { resetDatabase(); } catch { initDatabase(); }
+    // ⚠️ 这里原来写的是 `try { resetDatabase(); } catch { initDatabase(); }` —— **没有 await**。
+    // `resetDatabase()` 是 async：不 await 时它返回一个 promise（永远不抛），
+    // 于是 initDatabase() 分支永不执行，而清库在后台进行 → 后续读写撞上
+    // "Database not initialized"（第 27 轮把 sql.js 改成动态 import 后，异步时序变化让这个
+    // 长期潜伏的竞态真正暴露出来：5 个测试变红）。
+    // 修法是把异步正确地 await 掉 —— 这是测试自己的问题，不是产品代码的问题。
+    await resetDatabase().catch(() => initDatabase());
     localStorage.clear();
   });
 
@@ -284,9 +302,15 @@ describe("Git Worktree — 扫描与配额", () => {
 });
 
 describe("Git Worktree — 执行模式", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks();
-    try { resetDatabase(); } catch { initDatabase(); }
+    // ⚠️ 这里原来写的是 `try { resetDatabase(); } catch { initDatabase(); }` —— **没有 await**。
+    // `resetDatabase()` 是 async：不 await 时它返回一个 promise（永远不抛），
+    // 于是 initDatabase() 分支永不执行，而清库在后台进行 → 后续读写撞上
+    // "Database not initialized"（第 27 轮把 sql.js 改成动态 import 后，异步时序变化让这个
+    // 长期潜伏的竞态真正暴露出来：5 个测试变红）。
+    // 修法是把异步正确地 await 掉 —— 这是测试自己的问题，不是产品代码的问题。
+    await resetDatabase().catch(() => initDatabase());
     localStorage.clear();
   });
 
@@ -317,9 +341,15 @@ describe("Git Worktree — 执行模式", () => {
 });
 
 describe("Git Worktree — 与对话/工具集成", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks();
-    try { resetDatabase(); } catch { initDatabase(); }
+    // ⚠️ 这里原来写的是 `try { resetDatabase(); } catch { initDatabase(); }` —— **没有 await**。
+    // `resetDatabase()` 是 async：不 await 时它返回一个 promise（永远不抛），
+    // 于是 initDatabase() 分支永不执行，而清库在后台进行 → 后续读写撞上
+    // "Database not initialized"（第 27 轮把 sql.js 改成动态 import 后，异步时序变化让这个
+    // 长期潜伏的竞态真正暴露出来：5 个测试变红）。
+    // 修法是把异步正确地 await 掉 —— 这是测试自己的问题，不是产品代码的问题。
+    await resetDatabase().catch(() => initDatabase());
     localStorage.clear();
   });
 

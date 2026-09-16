@@ -1130,6 +1130,67 @@ tsc 0 错 · 六道 audit 门禁全绿（A 类 0 / B 类 P1 3+P2 1 / C 类 4 / D
 **验证**：新增 4 项全绿 · 完整套件 269 → **270 文件 / 5187 通过 / 15 跳过** ·
 tsc 0 错 · 六道 audit 门禁全绿。
 
+### P5 第 7 段（第 92 波）—— 让 sql.js 变成"按需加载"，并量化剩余删除面
+
+#### 一、先量化：到底什么挡着删掉 WASM 引擎
+
+新增 `tools/audit/wasm-removal-readiness.mjs`，按"阻挡层级"列出全部残留
+（凭印象说"大概还有几十处"是不可接受的）：
+
+| 层级 | 数量 | 含义 |
+|---|---|---|
+| **L1 依赖** | 2 处（都在 `database.ts`） | `import type { Database } from "sql.js"` + wasm 资源引用 |
+| **L2 本体外泄** | 0 处（真正的 sql.js API 只在 `database.ts`） | 其余 16 个"命中"是**注释里提到 sql.js**，属扫描器噪声，已记录 |
+| **L3 回退分支** | **23 个文件 / 167 处 `getDatabase()`** | 每个都要"删回退、只留端口" |
+| **L4 开关与引导** | 3 处（`App.tsx` / `bootstrap.ts`） | `DEFAULT_ENGINE` 与回滚开关 |
+
+结论：删依赖的真正工作量在 L3（23 个文件）。这是**明确可执行的清单**，不再是估算。
+
+#### 二、这一段先做了一个"物有所值且低风险"的改动：sql.js 按需加载
+
+`database.ts` 顶部原来是**静态 import**：
+
+```ts
+import initSqlJsWasm from "sql.js/dist/sql-wasm.js";
+import initSqlJsAsm from "sql.js/dist/sql-asm-memory-growth.js";
+import sqlWasmUrl from "sql.js/dist/sql-wasm.wasm?url";
+```
+
+静态 import 会把 sql.js（连同那份 .wasm）**打进主 chunk** —— 于是
+"引擎是 rust、根本不加载 WASM 数据库"的产物里，**每次启动仍然要下载与解析 sql.js**。
+功能上没影响，但它与"渲染进程不再持有 WASM"这个目标在**产物层面**是矛盾的。
+
+改成动态 `import()` 后 Vite 把 sql.js 拆成独立 chunk，**只有真正走 WASM 回退时才会加载**。
+
+**真机验证（打包版 + CDP 抓网络请求）**：
+```
+启动期间总请求数: 124
+包含 sql.js 的请求: **0 个**
+包含 .wasm 的请求: 无
+```
+而回滚到 wasm 时它照常加载（测试套件走的就是 asm 分支，全部通过）。
+
+#### 三、顺带修掉一个被这次改动"引爆"的测试竞态
+
+把加载改成异步之后，`core-worktree-environment.test.ts` 里 **5 个测试变红**。
+我没有一口咬定"是测试太脆弱"，而是 `git stash` 后在干净树上跑了一遍确认**是我的改动引入的**，
+再定位到根因：
+
+```ts
+try { resetDatabase(); } catch { initDatabase(); }   // 没有 await！
+```
+
+`resetDatabase()` 是 async —— 不 await 时它返回一个 promise（**永远不抛**），
+于是 `initDatabase()` 分支永不执行，而清库在后台进行，后续读写撞上
+`Database not initialized`。这是**测试自己长期潜伏的竞态**，被异步时序变化暴露出来。
+修法是把异步正确地 await 掉（5 处 `beforeEach` 改为 `async`）。
+
+这条值得记住：**"改了 A 之后 B 变红"必须先用干净树复现确认归属**，
+否则很容易把真实回归误判成"测试本来就脆弱"。
+
+**验证**：完整套件 **271 文件 / 5198 通过 / 15 跳过** · tsc 0 错 · 七道 audit 门禁全绿 ·
+打包版实测 **0 个 sql.js 请求 / 0 个 .wasm 请求**。
+
 ### P6 第 5 段（第 92 波）—— 知识库大文档入库实测 + 全功能域真实路径巡检
 
 #### 一、全功能域巡检（打包版真机）

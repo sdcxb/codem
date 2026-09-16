@@ -2,6 +2,34 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.16.47] - 2026-09-16 — sql.js 改为按需加载（不再进主 chunk）+ 修一个被引爆的测试竞态
+
+### 改了什么
+`database.ts` 顶部原来**静态 import** sql.js（含那份 .wasm），于是"引擎是 rust、
+根本不加载 WASM 数据库"的产物里，**每次启动仍然要下载与解析 sql.js** ——
+功能上没影响，但白白背着这份体积与解析开销。
+
+改成动态 `import()` 后 sql.js 被拆成独立 chunk，**只有真正走 WASM 回退时才加载**。
+
+### 真机验证（打包版 + CDP 抓网络请求）
+```
+启动期间总请求数: 124
+包含 sql.js 的请求: 0 个
+包含 .wasm 的请求: 无
+```
+回滚到旧引擎时它照常加载（测试套件走的正是 asm 分支）。
+
+### 顺带修掉的测试竞态
+改成异步加载后 `core-worktree-environment.test.ts` 有 5 个测试变红。先用干净树确认
+**是本次改动引入的**，再定位根因：测试里的 `try { resetDatabase(); } catch { initDatabase(); }`
+**没有 await** —— `resetDatabase()` 是 async，不 await 时返回 promise（永不抛），
+于是 initDatabase() 分支永不执行、清库在后台跑，后续读写撞上 "Database not initialized"。
+把这个长期潜伏的竞态修掉（5 处 beforeEach 改 async）。
+
+### 另外：新增"WASM 可删除性"评估工具
+`tools/audit/wasm-removal-readiness.mjs` 按层级列出删掉旧引擎的全部阻挡项：
+L1 依赖 2 处（都在 database.ts）、L2 本体外泄 0 处、**L3 回退分支 23 个文件 / 167 处**、
+L4 开关与引导 3 处。删依赖的实际工作量因此变成明确清单，而不是估算。
 ## [1.16.46] - 2026-09-16 — 修中文搜索：迁移后 FTS 索引形态不对（英文能搜、中文恒为 0）
 
 ### 现象

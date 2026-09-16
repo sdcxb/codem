@@ -7,10 +7,16 @@
 // 内存占用也更省。代价是需要把 `sql-wasm.wasm` 随包发出去（Vite 已 assetsInclude **/*.wasm）。
 //
 // 兜底：万一 wasm 资源没打进包（打包/资源缺失），自动回退 asm.js —— 宁可慢，也不能打不开应用。
-import initSqlJsWasm from "sql.js/dist/sql-wasm.js";
-import initSqlJsAsm from "sql.js/dist/sql-asm-memory-growth.js";
-import sqlWasmUrl from "sql.js/dist/sql-wasm.wasm?url";
+//
+// ⚠️ **这三行刻意不用静态 import**（第 27 轮）：静态 import 会把 sql.js（连同那份 .wasm）
+// **打进主 chunk**，于是"引擎是 rust、根本不加载 WASM 数据库"的产物里，
+// 每次启动仍然要下载与解析 sql.js —— 功能上没影响，但白白背着这份体积与解析开销，
+// 而且它与"渲染进程不再持有 WASM"这个目标在**产物层面**是矛盾的。
+// 改成动态 import 后 Vite 会把 sql.js 拆成独立 chunk，只有真正走 WASM 回退时才加载。
+// 类型仍然用 `import type`（编译期擦除，不产生运行时依赖）。
 import type { Database as SqlJsDatabase } from "sql.js";
+/** initSqlJs 的形状（动态 import 后需要显式标注，因为拿到了模块命名空间对象） */
+type InitSqlJs = (config?: { locateFile?: (f: string) => string }) => Promise<any>;
 import { reportActionFailure } from "./persist-failure";
 
 let db: SqlJsDatabase | null = null;
@@ -1079,17 +1085,25 @@ async function loadSqlJsEngine(): Promise<any> {
   const isTest = (import.meta as any)?.env?.MODE === "test" || (import.meta as any)?.env?.VITEST === "true";
   if (isTest) {
     engineKind = "asm";
-    return await initSqlJsAsm();
+    const asm = await import("sql.js/dist/sql-asm-memory-growth.js");
+    return await (asm.default as InitSqlJs)();
   }
   try {
-    const mod = await initSqlJsWasm({ locateFile: () => sqlWasmUrl });
+    // 动态 import：只有走到这条分支才会下载/解析 sql.js（rust 引擎下永不执行）
+    const [wasmMod, urlMod] = await Promise.all([
+      import("sql.js/dist/sql-wasm.js"),
+      import("sql.js/dist/sql-wasm.wasm?url"),
+    ]);
+    const sqlWasmUrl = urlMod.default as string;
+    const mod = await (wasmMod.default as InitSqlJs)({ locateFile: () => sqlWasmUrl });
     engineKind = "wasm";
     console.log(`[Database] sql.js 引擎：wasm（${sqlWasmUrl}）`);
     return mod;
   } catch (e) {
     console.warn("[Database] wasm 引擎初始化失败，回退 asm.js（内存增长靠整块复制，大库下更脆弱）:", e);
     engineKind = "asm";
-    return await initSqlJsAsm();
+    const asm = await import("sql.js/dist/sql-asm-memory-growth.js");
+    return await (asm.default as InitSqlJs)();
   }
 }
 
