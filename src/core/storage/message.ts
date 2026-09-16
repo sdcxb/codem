@@ -227,6 +227,40 @@ export async function trimIndexedMessages(
  * 这是同步接口 —— UI 的加载路径目前是同步的，所以这里只读**已缓存的日志**；
  * 首次加载时若日志还没读进内存，则先用索引（随后 `hydrateSessionLog` 会补齐）。
  */
+/**
+ * 订阅"某会话的消息镜像已就绪"（第 33 轮：修"点开会话气泡数为 0"）。
+ *
+ * ## 为什么必须补这个（真机实测的根因）
+ *
+ * 打包版实测：点开一个**确实有 27 条消息**的会话，界面气泡数为 **0**，
+ * 控制台一行 `[Store] loadMessages sessionId=… → 0 条`，且**没有任何报错**。
+ *
+ * 机制是两条"各自都对"的规则叠在一起：
+ * 1. 移植期规则：**镜像未完整加载前不路由**（`rustMessageSource` 返回 null）——
+ *    这条本身是对的，否则会造成读写分裂；
+ * 2. `listMessagesFromIndex` 的兜底：索引不可用时返回**空列表**
+ *    （注释写着"留给 `listMessagesMerged` 用权威日志拼出完整历史"）。
+ *
+ * 但 `listMessagesMerged` 的日志兜底只在**日志已经被 hydrate 过**时才有内容，
+ * 而进入会话的第一次读发生在 hydrate 之前 —— 于是空 + 空 = 0 条，
+ * 而 `loadMessages` 是同步的一次调用，**没有任何东西会再读第二次**。
+ * 界面就一直空着，用户看到的是"会话点开什么都没有"。
+ *
+ * 与"首屏暂无项目"（第 92 波）是同一类**启动竞态**：异步存储 + 同步读 + 无人重试。
+ *
+ * 修法：让读路径能**订阅就绪事件**，在镜像加载完成时回调一次让上层重新读。
+ * 这是有界的一次通知（不是轮询），也不改变"未加载不路由"这条核心规则。
+ */
+export function onSessionMessagesReady(sessionId: string, cb: () => void): void {
+  const port = rustMessagePort();
+  if (!port?.messages) return;
+  try {
+    port.messages.ensureLoaded(sessionId, cb);
+  } catch {
+    /* 订阅失败不影响主流程 */
+  }
+}
+
 export function listMessagesMerged(sessionId: string, limit?: number): Message[] {
   /**
    * P5 第 10 段：工具调用**从缓存补上**（与 `getMessage` 同一来源）。

@@ -1019,6 +1019,7 @@ class RustMessageMirror {
         offset,
         include_hidden: true, // 索引读必须含 hidden（它的 hidden 状态是权威）
       });
+
       const items = (page?.items ?? []).map((r) => this.normalize(r));
       rows.push(...items);
       if (!page?.has_more || items.length === 0) break;

@@ -113,6 +113,25 @@ export async function registerRustStoragePort(
 
     const health = await port.start();
     setStoragePort(port);
+    /**
+     * 诊断入口：在**应用自己的上下文里**跑一条仓储命令并打印结果。
+     *
+     * 为什么需要它：真机排查时"CLI 读得到、应用读不到"这种分歧最难查 ——
+     * CLI 走的是另一个进程、另一次 `Engine::open`，看不见渲染侧端口的真实行为。
+     * 这个入口让排查者（以及真机验收脚本，经 CDP）能直接问应用：
+     * "你这条命令拿到了什么？"—— 与 `codem-db-cli` 的 `invoke` 同形，
+     * 但不接受 SQL、只走白名单命令，所以不放松任何安全边界。
+     */
+    (globalThis as unknown as Record<string, unknown>).__codemDb = async (
+      command: string,
+      params: Record<string, unknown> = {},
+    ) => {
+      const probe = port.data as unknown as {
+        command?: <T>(c: string, p?: Record<string, unknown>) => Promise<T>;
+      };
+      if (probe.command) return await probe.command(command, params);
+      return await port.data.execute(command, params);
+    };
     return {
       kind: "registered",
       engine: "rust",

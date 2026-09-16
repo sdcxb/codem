@@ -290,16 +290,46 @@ export const useAppStore = create<AppState>((set, get) => ({
   clearMessages: () => set({ messages: [], streamingMsgId: null, stepProgress: null, agentActivities: [], streamStartTime: null }),
 
   loadMessages: (sessionId) => {
-    try {
+    const applyMessages = (messages: ReturnType<typeof MessageStorage.listMessages>) => {
       const INITIAL_LIMIT = 10;
-      const messages = MessageStorage.listMessages(sessionId);
       const totalCount = messages.length;
       const initialMessages = totalCount > INITIAL_LIMIT ? messages.slice(totalCount - INITIAL_LIMIT) : messages;
-      set({ 
-        messages: initialMessages, 
+      set({
+        messages: initialMessages,
         hasMoreMessages: totalCount > INITIAL_LIMIT,
         isLoadingMore: false,
       });
+      return totalCount;
+    };
+
+    try {
+      const totalCount = applyMessages(MessageStorage.listMessages(sessionId));
+      console.log(`[Store] loadMessages sessionId=${sessionId} → ${totalCount} 条`);
+
+      /**
+       * 空结果 + 端口在 → 订阅一次"镜像就绪"，就绪后重读（第 33 轮修的真机缺陷）。
+       *
+       * 为什么会空：读路径的规则是"镜像未完整加载完不路由"（防读写分裂），
+       * 而进会话的第一次读正好落在加载窗口内 —— 那时日志也还没 hydrate，
+       * 两条兜底同时为空，于是 0 条；`loadMessages` 是同步单次调用，没人再读第二次。
+       * 真机实测：一个**确实有 27 条消息**的会话点开是空白，且无任何报错。
+       *
+       * 这里只订阅一次（镜像加载完成时回调），不是轮询；
+       * 重读结果为 0 就停下，不留循环。
+       */
+      if (totalCount === 0) {
+        try {
+          MessageStorage.onSessionMessagesReady(sessionId, () => {
+            const again = MessageStorage.listMessages(sessionId);
+            if (again.length > 0) {
+              applyMessages(again);
+              console.log(`[Store] 消息镜像就绪后重读：sessionId=${sessionId} → ${again.length} 条`);
+            }
+          });
+        } catch {
+          /* 订阅失败保持空列表（与既有行为一致） */
+        }
+      }
     } catch (e) {
       console.error("[Store] loadMessages failed:", e);
       set({ messages: [], hasMoreMessages: false, isLoadingMore: false });
