@@ -4,7 +4,7 @@
 
 - 扫描生产文件：**838**
 - 需要实现的仓储方法：**129**（对应 270 个 SQL 调用点）
-- 已实现：**41** → 方法覆盖率 **31.78%**，调用点覆盖率 **42.59%**
+- 已实现：**47** → 方法覆盖率 **36.43%**，调用点覆盖率 **45.93%**
 - Rust 侧已注册命令：**66**
 - **命令可用性覆盖：129/129（100%）** —— 这一项在第 10 段引入通用命令后已达 100%，但**不等于迁移完成**：渲染侧调用点是否已切到端口，看上面那个保守数字。
 
@@ -24,6 +24,7 @@
 | `messages.delete` | 4 | `messages.delete` |
 | `accounts.update` | 3 | `crud.upsert` |
 | `message_feedback.select` | 3 | `feedback.get` |
+| `prompt_drafts.select` | 3 | `crud.list` |
 | `session_events.delete` | 3 | `events.delete_session` |
 | `message_feedback.insert` | 2 | `feedback.set` |
 | `projects.insert` | 2 | `projects.upsert` |
@@ -32,6 +33,7 @@
 | `sessions.insert` | 2 | `sessions.upsert` |
 | `settings.select` | 2 | `settings.get_all` |
 | `telemetry_events.delete` | 2 | `telemetry.prune` |
+| `turn_file_changes.select` | 2 | `crud.list` |
 | `v2_sessions.select` | 2 | `crud.list` |
 | `accounts.delete` | 1 | `crud.delete` |
 | `accounts.insert` | 1 | `crud.upsert` |
@@ -42,6 +44,8 @@
 | `memory.insert` | 1 | `memory.set` |
 | `memory.select` | 1 | `memory.get` |
 | `messages.insert` | 1 | `messages.create` `messages.create_many` `messages.upsert_index` |
+| `prompt_drafts.delete` | 1 | `crud.delete` |
+| `prompt_drafts.insert` | 1 | `crud.upsert` |
 | `quick_phrases.delete` | 1 | `quick_phrases.delete` |
 | `quick_phrases.select` | 1 | `quick_phrases.list` |
 | `quick_phrases.update` | 1 | `quick_phrases.save` `quick_phrases.touch` |
@@ -50,11 +54,13 @@
 | `settings.delete` | 1 | `settings.remove` |
 | `settings.insert` | 1 | `settings.set` |
 | `telemetry_events.insert` | 1 | `telemetry.append` |
+| `turn_file_changes.delete` | 1 | `crud.delete` |
+| `turn_file_changes.update` | 1 | `crud.upsert` |
 | `v2_sessions.delete` | 1 | `crud.delete` |
 | `v2_sessions.insert` | 1 | `crud.upsert` |
 | `v2_sessions.update` | 1 | `crud.upsert` |
 
-## 待迁移（88 个方法，按调用点排序）
+## 待迁移（82 个方法，按调用点排序）
 
 | 渲染侧方法 | 调用点 | 建议阶段 |
 |---|---:|---|
@@ -74,7 +80,6 @@
 | `notebook_groups.select` | 3 | 5 其余域 |
 | `notebook_sources.select` | 3 | 5 其余域 |
 | `notebooks.update` | 3 | 5 其余域 |
-| `prompt_drafts.select` | 3 | 5 其余域 |
 | `sessions.update` | 3 | 4 会话/项目 |
 | `agent_profiles.select` | 2 | 5 其余域 |
 | `flashcards.delete` | 2 | 5 其余域 |
@@ -91,7 +96,6 @@
 | `squads.select` | 2 | 5 其余域 |
 | `squads.update` | 2 | 5 其余域 |
 | `todo_lists.select` | 2 | 5 其余域 |
-| `turn_file_changes.select` | 2 | 5 其余域 |
 | `agent_profiles.delete` | 1 | 5 其余域 |
 | `agent_profiles.insert` | 1 | 5 其余域 |
 | `agent_profiles.update` | 1 | 5 其余域 |
@@ -128,8 +132,6 @@
 | `notes.update` | 1 | 5 其余域 |
 | `projects.delete` | 1 | 4 会话/项目 |
 | `projects.update` | 1 | 4 会话/项目 |
-| `prompt_drafts.delete` | 1 | 5 其余域 |
-| `prompt_drafts.insert` | 1 | 5 其余域 |
 | `recovery_data.delete` | 1 | 5 其余域 |
 | `recovery_data.insert` | 1 | 5 其余域 |
 | `recovery_data.select` | 1 | 5 其余域 |
@@ -144,5 +146,3 @@
 | `todo_lists.update` | 1 | 5 其余域 |
 | `tool_calls.select` | 1 | 3 数据面 |
 | `tool_calls.update` | 1 | 3 数据面 |
-| `turn_file_changes.delete` | 1 | 5 其余域 |
-| `turn_file_changes.update` | 1 | 5 其余域 |

@@ -254,3 +254,108 @@ describe("域镜像分流 —— 账号域", () => {
     expect(() => listAccounts()).toThrow();
   });
 });
+
+describe("域镜像分流 —— v2_sessions / prompt_drafts / turn_file_changes", () => {
+  it("DOM-11: v2_sessions 的 JSON 列往返保真（messages / total_usage）", async () => {
+    const { port, executed } = portWith([]);
+    setStoragePort(port);
+    await port.start();
+    port.domains.ensureLoaded("v2_sessions");
+    await settle();
+
+    const { saveV2Session, loadV2Sessions } = await import("../core/storage/v2-session");
+    saveV2Session({
+      id: "s1",
+      projectId: "p1",
+      title: "会话",
+      model: "m",
+      messages: [{ id: "m1", content: "内容" }],
+      totalUsage: { promptTokens: 3, completionTokens: 4, cost: 0.5 },
+      createdAt: 1,
+      updatedAt: 2,
+    } as never);
+
+    const loaded = loadV2Sessions().get("s1");
+    expect(loaded?.messages).toEqual([{ id: "m1", content: "内容" }]);
+    expect(loaded?.totalUsage).toEqual({ promptTokens: 3, completionTokens: 4, cost: 0.5 });
+
+    await settle();
+    const up = executed.find((e) => e.cmd === "crud.upsert");
+    const row = (up?.params.rows as Array<Record<string, unknown>>)[0];
+    expect(row.messages, "JSON 列必须以文本落库").toBe(JSON.stringify([{ id: "m1", content: "内容" }]));
+    expect(typeof row.total_usage).toBe("string");
+  });
+
+  it("DOM-12: prompt_drafts 版本号在镜像上算出同样结果（MAX(version)+1）", async () => {
+    const { port, executed } = portWith([
+      { id: "d1", session_id: "s1", version: 1, content: "第一版", tags: "[]", created_at: 1 },
+      { id: "d2", session_id: "s1", version: 2, content: "第二版", tags: '["a"]', created_at: 2 },
+    ]);
+    setStoragePort(port);
+    await port.start();
+    port.domains.ensureLoaded("prompt_drafts");
+    await settle();
+
+    const { savePromptDraft, loadPromptDrafts } = await import("../core/storage/prompt-draft");
+    const id = savePromptDraft("s1", "第三版", ["x"]);
+    const list = loadPromptDrafts("s1");
+    expect(list.map((d) => d.version), "应按 version DESC").toEqual([3, 2, 1]);
+    expect(list[0].id).toBe(id);
+    expect(list[0].tags).toEqual(["x"]);
+
+    await settle();
+    const up = executed.find((e) => e.cmd === "crud.upsert");
+    const row = (up?.params.rows as Array<Record<string, unknown>>)[0];
+    expect(row.version, "新版本号必须是 3（旧实现是 MAX(version)+1）").toBe(3);
+  });
+
+  it("DOM-13: turn_file_changes.updateStatus 保住 A 类语义（不存在时返回 0）", async () => {
+    const { port } = portWith([
+      {
+        id: "t1",
+        session_id: "s1",
+        message_id: "m1",
+        turn_index: 1,
+        before_tree: null,
+        after_tree: null,
+        patch: null,
+        changed_files: null,
+        patch_sha256: null,
+        current_brief: null,
+        status: "completed",
+        created_at: 1,
+      },
+    ]);
+    setStoragePort(port);
+    await port.start();
+    port.domains.ensureLoaded("turn_file_changes");
+    await settle();
+
+    const { FileChangeStorage } = await import("../core/storage/file-change-storage");
+    // 存在 → 更新成功，返回 1，且立刻可读
+    expect(FileChangeStorage.updateStatus("t1", "reverted")).toBe(1);
+    expect(FileChangeStorage.getById("t1")?.status).toBe("reverted");
+
+    // 不存在 → 必须返回 0（第 84 波修过的 A 类问题：不能静默当成成功）
+    expect(FileChangeStorage.updateStatus("nope", "reverted")).toBe(0);
+
+    // 列表按 turn_index DESC
+    expect(FileChangeStorage.listBySession("s1").map((r) => r.id)).toEqual(["t1"]);
+  });
+
+  it("DOM-14: turn_file_changes 删除按会话生效（不牵连别的会话）", async () => {
+    const { port } = portWith([
+      { id: "t1", session_id: "s1", message_id: "m", turn_index: 1, status: "completed", created_at: 1 },
+      { id: "t2", session_id: "s2", message_id: "m", turn_index: 1, status: "completed", created_at: 1 },
+    ]);
+    setStoragePort(port);
+    await port.start();
+    port.domains.ensureLoaded("turn_file_changes");
+    await settle();
+
+    const { FileChangeStorage } = await import("../core/storage/file-change-storage");
+    FileChangeStorage.deleteBySession("s1");
+    expect(FileChangeStorage.listBySession("s1")).toEqual([]);
+    expect(FileChangeStorage.listBySession("s2"), "别的会话不该被牵连").toHaveLength(1);
+  });
+});

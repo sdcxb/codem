@@ -7,6 +7,7 @@
 
 import { getDatabase, persistDatabase } from "./database";
 import { runGuarded } from "./write-guard";
+import { domainDelete, domainReadMany, domainReadOne, domainWrite } from "./domain-store";
 
 export interface TurnFileChangeRecord {
   id: string;
@@ -30,6 +31,9 @@ export interface ChangedFile {
   after_hash?: string;
 }
 
+const TABLE = "turn_file_changes";
+
+/** 列名本来就是 snake_case，线协议行可直接用（这里只补齐缺省值） */
 function rowToRecord(row: any): TurnFileChangeRecord {
   return {
     id: row.id,
@@ -47,8 +51,29 @@ function rowToRecord(row: any): TurnFileChangeRecord {
   };
 }
 
+/** 记录 → 线协议行（列名一致，显式列出以避免把多余字段带进去） */
+function recordToWire(r: TurnFileChangeRecord): Record<string, unknown> {
+  return {
+    id: r.id,
+    session_id: r.session_id,
+    message_id: r.message_id,
+    turn_index: r.turn_index,
+    before_tree: r.before_tree,
+    after_tree: r.after_tree,
+    patch: r.patch,
+    changed_files: r.changed_files,
+    patch_sha256: r.patch_sha256,
+    current_brief: r.current_brief,
+    status: r.status,
+    created_at: r.created_at,
+  };
+}
+
 export const FileChangeStorage = {
   create(record: TurnFileChangeRecord): void {
+    if (domainWrite(TABLE, [recordToWire(record)], { scope: "fileChange.create", note: "文件变更记录未保存" })) {
+      return;
+    }
     const db = getDatabase();
     if (!db) return;
     db.run(
@@ -74,6 +99,8 @@ export const FileChangeStorage = {
   },
 
   listBySession(sessionId: string): TurnFileChangeRecord[] {
+    const rust = domainReadMany(TABLE, rowToRecord, { session_id: sessionId });
+    if (rust) return rust.sort((a, b) => b.turn_index - a.turn_index);
     const db = getDatabase();
     if (!db) return [];
     const result = db.exec(
@@ -90,6 +117,8 @@ export const FileChangeStorage = {
   },
 
   getById(id: string): TurnFileChangeRecord | null {
+    const rust = domainReadOne(TABLE, { id }, rowToRecord);
+    if (rust !== undefined) return rust;
     const db = getDatabase();
     if (!db) return null;
     const result = db.exec(`SELECT * FROM turn_file_changes WHERE id = ?`, [id]);
@@ -111,6 +140,20 @@ export const FileChangeStorage = {
    * @returns 真正被更新的行数（0 = 目标记录不存在）
    */
   updateStatus(id: string, status: string): number {
+    // 迁移期：从镜像读出记录 → 改状态 → 整体写回。
+    // **必须保住 A 类语义**：目标记录不存在时返回 0（调用方据此知道"没改成"），
+    // 而不是静默当成成功（第 84 波修过一次，不能再退化）。
+    const current = domainReadOne(TABLE, { id }, rowToRecord);
+    if (current !== undefined) {
+      if (!current) return 0;
+      const next = { ...current, status } as TurnFileChangeRecord;
+      domainWrite(TABLE, [recordToWire(next)], {
+        mode: "replace",
+        scope: "fileChange.updateStatus",
+        note: "文件变更状态未更新（记录不存在或写入失败）",
+      });
+      return 1;
+    }
     const db = getDatabase();
     if (!db) return 0;
     const modified = runGuarded(
@@ -124,6 +167,9 @@ export const FileChangeStorage = {
   },
 
   deleteBySession(sessionId: string): void {
+    if (domainDelete(TABLE, { session_id: sessionId }, { scope: "fileChange.deleteBySession", note: "文件变更记录未删除" })) {
+      return;
+    }
     const db = getDatabase();
     if (!db) return;
     db.run(`DELETE FROM turn_file_changes WHERE session_id = ?`, [sessionId]);

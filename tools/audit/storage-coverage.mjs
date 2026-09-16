@@ -153,6 +153,13 @@ export const IMPLEMENTED = {
   "projects.insert": ["projects.upsert"],
   "projects.select": ["projects.list"],
   // ===== P3 第 11 段：域镜像（accounts 为例，其余域同形状）=====
+  "prompt_drafts.select": ["crud.list"],
+  "prompt_drafts.insert": ["crud.upsert"],
+  "prompt_drafts.delete": ["crud.delete"],
+  "turn_file_changes.select": ["crud.list"],
+  "turn_file_changes.insert": ["crud.upsert"],
+  "turn_file_changes.update": ["crud.upsert"],
+  "turn_file_changes.delete": ["crud.delete"],
   "v2_sessions.select": ["crud.list"],
   "v2_sessions.insert": ["crud.upsert"],
   "v2_sessions.update": ["crud.upsert"],
