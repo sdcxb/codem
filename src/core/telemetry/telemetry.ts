@@ -7,7 +7,8 @@
  * - 支持 OpenTelemetry 格式导出（预留接口）
  */
 
-import { getDatabase, persistDatabase, isCompactionInProgress } from "../storage/database";
+import { getDatabase, persistDatabase, isCompactionInProgress, isDatabaseFatal, noteDatabaseError } from "../storage/database";
+import { reportPersistFailure } from "../storage/persist-failure";
 
 // ========== Types ==========
 
@@ -26,6 +27,8 @@ class TelemetryCollector {
   private flushTimer: ReturnType<typeof setTimeout> | null = null;
   private batchSize = 50;
   private flushIntervalMs = 5_000;
+  /** 第 90 波：致命 DB 错误只上报一次 */
+  private reportedFatal = false;
 
   /**
    * Record a telemetry event.
@@ -58,6 +61,25 @@ class TelemetryCollector {
 
     if (this.events.length === 0) return;
 
+    /**
+     * 第 90 波（用户现场）：数据库崩掉后（`RuntimeError: memory access out of bounds`），
+     * 这里会**无限重排定时器** —— 日志里同一条 flush 失败刷了十几遍、还带着层层嵌套的
+     * `setTimeout` 调用栈，事件却永远写不进去。
+     * 现在：致命状态**不再重排**（事件留在内存、一次性上报给用户），普通失败才继续重试。
+     */
+    if (isDatabaseFatal()) {
+      if (!this.reportedFatal) {
+        this.reportedFatal = true;
+        console.warn(`[Telemetry] 数据库已不可用，停止重试（${this.events.length} 条遥测事件保留在内存中）`);
+        reportPersistFailure(
+          "telemetry.flush",
+          new Error("数据库模块已崩溃"),
+          `${this.events.length} 条遥测事件未能写入（遥测不影响功能）`,
+        );
+      }
+      return;
+    }
+
     // Defense-in-depth: skip while compaction is mutating the DB.
     // Interleaving db.run with compaction's synchronous commit block corrupts
     // sql.js state ("bad parameter or other API misuse" / wasm traps).
@@ -83,6 +105,14 @@ class TelemetryCollector {
       // 成功才清空 — 失败时保留 events 供下次重试（防静默丢失遥测）。
       this.events = [];
     } catch (err) {
+      // 第 90 波：致命错误不再无限重试（见上方说明）；普通错误保留事件并有限重试
+      if (noteDatabaseError(err)) {
+        if (!this.reportedFatal) {
+          this.reportedFatal = true;
+          reportPersistFailure("telemetry.flush", err, `${this.events.length} 条遥测事件未能写入（遥测不影响功能）`);
+        }
+        return;
+      }
       console.warn("[Telemetry] Flush failed, keeping events for retry:", err);
       // 保留 events；安排一次重试（限制频率避免热循环）
       if (!this.flushTimer) {

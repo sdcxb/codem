@@ -705,6 +705,8 @@ export class OutputContractValidationMiddleware implements FinalizeMiddleware {
  * Event log finalize middleware (finalize layer)
  * Writes tool_call and tool_result events to the event log.
  */
+let warnedEventLogFatal = false;
+
 export class EventLogFinalizeMiddleware implements FinalizeMiddleware {
   name = "event-log";
 
@@ -735,7 +737,24 @@ export class EventLogFinalizeMiddleware implements FinalizeMiddleware {
         status: result.status === "error" ? "error" : "completed",
       });
     } catch (err) {
-      console.warn("[EventLogFinalize] Failed to write tool events (non-critical):", err);
+      /**
+       * 第 90 波（用户现场）：数据库崩掉后，这里**每次工具调用**都打一行
+       * "Failed to write tool events (non-critical)"，日志里同类错误刷满屏，
+       * 而且看不出"数据库整体已经不可用"这个真正的问题。
+       * 现在：致命状态只提示一次（App 已经收到 codem:db-fatal 并在抢救会话），
+       * 不再逐次刷屏。
+       */
+      const { isDatabaseFatal, noteDatabaseError } = await import("../storage/database");
+      if (isDatabaseFatal()) {
+        if (!warnedEventLogFatal) {
+          warnedEventLogFatal = true;
+          console.warn(
+            "[EventLogFinalize] 数据库已不可用，停止写入工具事件（本次运行内不再提示；界面已提示抢救当前会话）",
+          );
+        }
+      } else if (!noteDatabaseError(err)) {
+        console.warn("[EventLogFinalize] Failed to write tool events (non-critical):", err);
+      }
     }
 
     return result;

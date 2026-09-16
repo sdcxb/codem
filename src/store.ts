@@ -2,7 +2,11 @@ import { create } from "zustand";
 import * as MessageStorage from "./core/storage/message";
 import type { FeedbackType } from "./core/storage/message";
 import { putMessageFeedback } from "./core/llm/feedback";
-import { isCompactionInProgress } from "./core/storage/database";
+import { isCompactionInProgress, isDatabaseFatal, noteDatabaseError } from "./core/storage/database";
+import { reportPersistFailure } from "./core/storage/persist-failure";
+
+/** 第 90 波：致命状态只上报一次（否则 AutoSave 每几秒刷一条） */
+let warnedSaveMessagesFatal = false;
 
 /** Auto-retrieved knowledge source (from notebook RAG, not from tool calls) */
 export interface RetrievedSource {
@@ -305,6 +309,20 @@ export const useAppStore = create<AppState>((set, get) => ({
       console.log("[Store] saveMessages skipped — compaction in progress");
       return;
     }
+    /**
+     * 第 90 波（用户现场）：`saveMessages` 原来把失败只打成一行 `[Store] saveMessages failed:`
+     * 就结束 —— 而数据库已经崩了（`RuntimeError: memory access out of bounds`）时，
+     * 这段代码会被 AutoSave / 每轮循环反复调用，每次都在已崩的 WASM 堆上再撞一次：
+     * 日志刷屏 + 不知道"消息到底存没存下来"。
+     * 现在：致命状态直接跳过并**走统一失败上报**（界面能看见），普通失败也如实上报。
+     */
+    if (isDatabaseFatal()) {
+      if (!warnedSaveMessagesFatal) {
+        warnedSaveMessagesFatal = true;
+        reportPersistFailure("store.saveMessages", new Error("数据库模块已崩溃"), "本次运行内不再尝试写入（请重启应用，界面已尝试抢救当前会话）");
+      }
+      return;
+    }
     try {
       const msgs = get().messages;
       for (const msg of msgs) {
@@ -313,7 +331,15 @@ export const useAppStore = create<AppState>((set, get) => ({
         MessageStorage.createMessage(msg, sessionId);
       }
     } catch (e) {
+      if (noteDatabaseError(e)) {
+        if (!warnedSaveMessagesFatal) {
+          warnedSaveMessagesFatal = true;
+          reportPersistFailure("store.saveMessages", e, "数据库模块已崩溃，消息未能保存（界面已尝试抢救当前会话）");
+        }
+        return;
+      }
       console.error("[Store] saveMessages failed:", e);
+      reportPersistFailure("store.saveMessages", e, "消息未能保存");
     }
   },
 

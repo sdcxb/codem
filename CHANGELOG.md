@@ -2,6 +2,53 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.16.42] - 2026-09-15 — 用户现场：数据库 WASM 崩溃后**没有人发现**（错误刷屏、抢救流程从未执行）（第 90 波）
+
+用户跑"生成 2．主要研究内容 文档"这类长会话时，控制台开始刷同一条错误：
+
+```
+[Store] saveMessages failed: RuntimeError: memory access out of bounds
+[EventLogFinalize] Failed to write tool events (non-critical): RuntimeError: memory access out of bounds
+[loadFeedback] Failed: RuntimeError: memory access out of bounds
+[Telemetry] Flush failed, keeping events for retry: RuntimeError: memory access out of bounds   ← 还带层层嵌套的 setTimeout
+```
+
+同一条错误出现几十次，而且**没有任何提示告诉用户"数据库已经死了"**。
+
+### 根因（三个，都在同一个断点上）
+
+1. **不认识这类错误**：`isFatalDbError()` 的名单里只有 `out of memory` / `malformed database schema` /
+   `bad parameter…`；WASM 陷阱（`memory access out of bounds`、`RuntimeError: unreachable`、
+   `Cannot enlarge memory`、`null function or function signature mismatch`、`table index is out of bounds`）
+   **一条都不在** → 致命状态从未闩锁。
+2. **抢救流程从未执行**：`codem:db-fatal` 从未派发 → App 里那段"把当前会话写成 JSON 抢救到磁盘 +
+   提示用户重启"的处理函数（一直存在）**根本没跑**。那一刻会话的 113 条消息只存在于内存里，
+   用户只看到日志刷屏。
+3. **无限重试 + 刷屏**：查询路径（`saveMessages` / `EventLog.append` / `loadFeedback` / 遥测 flush）
+   各自 `catch` 一下就过去了，**每次都往已经崩掉的 WASM 堆上再撞一次**；遥测还会无限重排定时器。
+
+### 修复
+
+- `isFatalDbError()` 补齐 WASM 陷阱家族（并保持保守：`UNIQUE constraint failed` / `no such column` /
+  `FOREIGN KEY constraint failed` 等普通错误**不**判致命，避免误触发抢救）。
+- 新增 `DatabaseFatalError`（可读中文说明 + "请重启应用"）+ `noteDatabaseError()`（查询路径的统一上报入口）
+  + `installFatalGuard()`：**装在 `db.exec/run/prepare` 上**，任何 WASM 陷阱就地闩锁并派发 `codem:db-fatal`；
+  闩锁后再调用**直接抛错、不再进入底层**（止血：既不再刷屏，也不白烧 CPU）。
+- 调用点改为致命状态下跳过 + **一次性**上报（第 87 波建的统一失败通道）：
+  `store.saveMessages`（原来每几秒一条）、遥测 `flush`（原来无限重排定时器）、
+  `EventLogFinalize`（原来每次工具调用一条）、`loadFeedback`、`recovery.multiLayer` 的定时写。
+- 用户可见：数据库一崩，界面就会出现一条可执行说明（"已停止写入 + 当前会话已抢救到 <路径>，
+  请关闭并重新打开应用"），不再是一屏谁也看不懂的 WASM 报错。
+
+### 验证
+
+- 新增 `db-fatal-cascade.test.ts` **DBF-1~7**：致命错误识别（含 7 种 WASM/内存/Schema 文案）、
+  普通错误不误判、查询路径上报即闩锁且**事件只派发一次**、闩锁后 `getDatabase()` 抛可读错误、
+  `exec/run` 上的护栏"第一次进入底层、之后不再进入"、`saveMessages` 只上报一次、
+  遥测致命状态下不再重排定时器。撤掉修复（去掉 WASM 文案）**6 条立刻变红**。
+- 全量 **255 文件 / 5000 用例通过 / 15 跳过**、`tsc --noEmit` 0 错、UI 审计 27 条规则 0 error / 0 warn、
+  css-contract 2745 个类无变化、`npm run audit` 三类门禁全绿。
+
 ## [1.16.41] - 2026-09-15 — C 类（守卫被绕过）也成了门禁；三类问题现在全部机器把关（第 89 波）
 
 A 类（静默空写）与 B 类（假成功）在第 88 波已经是测试门禁，但 C 类（**安全阀自己失效时往哪边倒**）

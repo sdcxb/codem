@@ -120,9 +120,31 @@ export function __resetDirtyForTests(): void {
  */
 export function isFatalDbError(e: unknown): boolean {
   const msg = e instanceof Error ? e.message : String(e);
-  return /out of memory|malformed database schema|database disk image is malformed|bad parameter or other API misuse/i.test(
+  return /out of memory|malformed database schema|database disk image is malformed|bad parameter or other API misuse|memory access out of bounds|RuntimeError: unreachable|Cannot enlarge memory|null function or function signature mismatch|table index is out of bounds|abort\(/i.test(
     msg,
   );
+}
+
+/**
+ * 数据库已进入致命状态后抛出的错误。
+ *
+ * 第 90 波（用户现场）：`RuntimeError: memory access out of bounds`（sql-wasm 的 WASM 陷阱）
+ * **不在** `isFatalDbError` 的名单里，于是：
+ *   · `saveDatabase` 把它当成"磁盘满"这类可重试错误 → 一直重试；
+ *   · 查询路径（`saveMessages` / `loadFeedback` / `EventLog.append` / 遥测）根本没有分类，
+ *     每次调用都往已经崩掉的 WASM 堆上再撞一次，日志里同一条错误刷几十遍；
+ *   · `codem:db-fatal` 从未派发 → App 的**抢救流程（把会话落到 JSON）根本没跑**，
+ *     用户的 113 条消息只存在于内存里。
+ * 现在这类错误被识别、闩锁，并且后续调用**不再碰堆**，直接抛这个错误（信息可读、成本为零）。
+ */
+export class DatabaseFatalError extends Error {
+  constructor(detail = "sql.js 模块已崩溃") {
+    super(
+      `数据库模块已不可用（${detail}）。本次运行内不再尝试读写数据库：请重启应用；` +
+        `当前会话内容已尝试抢救到磁盘（见界面提示）。`,
+    );
+    this.name = "DatabaseFatalError";
+  }
 }
 
 /** sql.js 模块已 abort 后就再也救不回来；此标志用于停止一切写入与重试。 */
@@ -150,6 +172,56 @@ function noteFatalDbError(e: unknown): void {
   } catch {
     /* dispatch 失败不影响主流程 */
   }
+}
+
+/**
+ * 查询路径的致命错误上报入口（第 90 波）。
+ *
+ * `saveDatabase` 只覆盖"写盘"这一步；而用户现场里最先炸的是**查询**路径
+ * （`saveMessages` 批量写、`loadFeedback`、`EventLog.append`、遥测 flush）。
+ * 那些地方各自 catch 一下就过去了，没人分类 → 闩锁永远不生效。
+ * 现在这些 catch 统一调用这里；更彻底的一道保险是 `installFatalGuard()`：
+ * 直接包住 `db.exec/run/prepare`，**任何** WASM 陷阱都会在此闩锁。
+ */
+export function noteDatabaseError(e: unknown): boolean {
+  if (!isFatalDbError(e)) return false;
+  noteFatalDbError(e);
+  return true;
+}
+
+/**
+ * 给 sql.js 实例装上"致命陷阱"护栏（第 90 波）。
+ *
+ * 两个作用：
+ *  1. **分类**：任何 `exec/run/prepare` 抛出的 WASM 陷阱（memory access out of bounds 等）
+ *     立即闩锁致命状态并派发 `codem:db-fatal` → App 抢救会话；
+ *  2. **止血**：闩锁之后再调用直接抛 `DatabaseFatalError`，**不再进入已崩掉的 WASM 堆**
+ *     （原来每次调用都真撞一次，日志刷屏 + CPU 白烧）。
+ */
+function installFatalGuard(target: any): void {
+  if (!target || target.__fatalGuardInstalled) return;
+  for (const method of ["exec", "run", "prepare"] as const) {
+    const original = target[method];
+    if (typeof original !== "function") continue;
+    target[method] = function guardedDbCall(...args: any[]) {
+      if (dbFatal) throw new DatabaseFatalError();
+      try {
+        return original.apply(this, args);
+      } catch (e) {
+        noteDatabaseError(e);
+        throw e;
+      }
+    };
+  }
+  target.__fatalGuardInstalled = true;
+}
+
+/**
+ * 测试入口：把护栏装到任意"类 sql.js 对象"上（用于验证分类/闩锁/止血三条语义）。
+ * 生产代码只在 `initDatabase()` 里对本进程唯一的 DB 实例调用一次。
+ */
+export function __installFatalGuardForTests(target: any): void {
+  installFatalGuard(target);
 }
 
 async function saveDatabase(force = false): Promise<void> {
@@ -947,6 +1019,8 @@ export async function initDatabase(): Promise<SqlJsDatabase> {
   }
 
   db.run("PRAGMA foreign_keys = ON");
+  // 第 90 波：装上致命陷阱护栏（分类 + 闩锁 + 止血），必须在任何业务查询之前
+  installFatalGuard(db);
   db.run(SCHEMA);
 
   // FTS full-text search table — created using fts4 for compatibility with sql.js
@@ -1034,6 +1108,7 @@ export async function resetDatabase(): Promise<SqlJsDatabase> {
 }
 
 export function getDatabase(): SqlJsDatabase {
+  if (dbFatal) throw new DatabaseFatalError();
   if (!db) throw new Error("Database not initialized. Call initDatabase() first.");
   return db;
 }

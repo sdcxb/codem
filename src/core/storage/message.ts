@@ -8,7 +8,7 @@ import {
   isExternalContent,
   DEFAULT_EXTERNALIZE_THRESHOLD,
 } from "./attachment-files";
-import { getDatabase, persistDatabase, isFts5Available } from "./database";
+import { getDatabase, persistDatabase, isFts5Available, isDatabaseFatal, noteDatabaseError } from "./database";
 import { getEventLog } from "./event-log";
 import type { SessionEventType } from "./event-types";
 import type { Message, ToolCall, MessageAttachment, RetrievedSource } from "../../store";
@@ -1030,13 +1030,15 @@ export function saveFeedback(messageId: string, sessionId: string, feedback: Fee
 
 /** Load feedback for a specific message. Returns 'like', 'dislike', or null. */
 export function loadFeedback(messageId: string): FeedbackType | null {
+  // 第 90 波：数据库致命状态下直接返回（不再每次撞已崩的堆、也不再刷屏）
+  if (isDatabaseFatal()) return null;
   const db = getDatabase();
   try {
     const result = db.exec("SELECT feedback FROM message_feedback WHERE message_id = ?", [messageId]);
     if (result.length === 0 || result[0].values.length === 0) return null;
     return result[0].values[0][0] as FeedbackType;
   } catch (e) {
-    console.warn("[loadFeedback] Failed:", e);
+    if (!noteDatabaseError(e)) console.warn("[loadFeedback] Failed:", e);
     return null;
   }
 }
