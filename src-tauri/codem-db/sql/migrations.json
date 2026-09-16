@@ -21,5 +21,9 @@
   "ALTER TABLE sessions ADD COLUMN parent_id TEXT",
   "ALTER TABLE sessions ADD COLUMN sort_order INTEGER DEFAULT 0",
   "ALTER TABLE messages ADD COLUMN hidden INTEGER DEFAULT 0",
-  "ALTER TABLE tool_calls ADD COLUMN metadata TEXT"
+  "ALTER TABLE tool_calls ADD COLUMN metadata TEXT",
+  "ALTER TABLE message_feedback ADD COLUMN note TEXT",
+  "ALTER TABLE message_feedback ADD COLUMN version TEXT",
+  "ALTER TABLE message_feedback ADD COLUMN created_at INTEGER",
+  "ALTER TABLE message_feedback ADD COLUMN updated_at INTEGER"
 ]

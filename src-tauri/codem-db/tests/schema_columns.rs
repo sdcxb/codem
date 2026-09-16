@@ -75,6 +75,11 @@ fn ddl_columns(ddl: &str) -> BTreeMap<String, BTreeSet<String>> {
         if line.is_empty() {
             continue;
         }
+        // SQL 注释不是列定义。**踩过一次**：在建表语句上方/内部加注释块后，
+        // 注释行被当成"列名"混进期望集合，这个门禁就以"重叠列数对不上"的方式误报。
+        if line.starts_with("--") || line.starts_with("/*") || line.starts_with('*') {
+            continue;
+        }
         let kw = upper.split_whitespace().next().unwrap_or("");
         if matches!(kw, "PRIMARY" | "FOREIGN" | "UNIQUE" | "CHECK" | "CONSTRAINT") {
             continue;

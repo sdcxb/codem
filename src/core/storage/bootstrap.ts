@@ -23,8 +23,27 @@ import { STORAGE_ENGINE_KEY, getStoragePort, hasStoragePort, setStoragePort } fr
 import { RustStoragePort, type StorageTransport } from "./rust-port";
 import { reportActionFailure } from "./persist-failure";
 
-/** 迁移期默认引擎。P5（删除 WASM 路径）之后这个常量会变成固定的 "rust"。 */
-export const DEFAULT_ENGINE: "wasm" | "rust" = "wasm";
+/**
+ * 默认引擎（P5 第 2 段：已切到 `rust`）。
+ *
+ * ## 为什么现在敢切
+ *
+ * 切换的前提不是"代码写完了"，而是**默认路径上不再有只能靠 WASM 才能工作的域**。
+ * 切之前逐条查过并补上了：
+ * - `projects` 域（真机上 `createProject` 直接抛 sql.js 的
+ *   "tried to bind a value of an unknown type (undefined)" —— 它一直没接过端口）；
+ * - `message_feedback` 的四列（`note` / `version` / `created_at` / `updated_at`）
+ *   原来只在 `llm/feedback.ts` 里运行期 ALTER，真源与 Rust 侧都没有 →
+ *   宽松版反馈在 Rust 引擎下**写不进去**（真机复现，已修）；
+ * - `llm/feedback.ts` 的四个操作全部改走域端口。
+ *
+ * ## 回滚开关仍然在
+ *
+ * `localStorage["codem-storage-engine"] = "wasm"` 改完刷新即回退。
+ * 注意：要让它真的可用，**sql.js 依赖在本段之后暂时保留**（真机验证过没有回退需求
+ * 再单独删除依赖，见 docs 的 P5 顺序说明）。
+ */
+export const DEFAULT_ENGINE: "wasm" | "rust" = "rust";
 
 export type StorageBootResult =
   | {

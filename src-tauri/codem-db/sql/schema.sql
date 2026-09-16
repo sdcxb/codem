@@ -364,12 +364,26 @@ CREATE TABLE IF NOT EXISTS note_versions (
 CREATE INDEX IF NOT EXISTS idx_note_versions_note ON note_versions(note_id);
 
 -- P0: Message feedback (like / dislike)
+--
+-- P5 第 1 段（列级契约修正）：note / version / created_at / updated_at 四列
+-- 原来是在 llm/feedback.ts 的 ensureNoteColumn() 里用**运行期**
+-- ALTER TABLE … ADD COLUMN 加的 —— 这几条 ALTER 对 gen-schema-sql.mjs **不可见**
+-- （它只读 SCHEMA），所以 Rust 侧的库根本没有这四列，而 putMessageFeedback()
+-- 却按九列写入 → Rust 引擎直接拒收（实测报错：表 message_feedback 没有列 created_at）。
+-- 也就是说：宽松版反馈（评分 + 备注 + 乐观并发版本）在 Rust 路径下**写不进去**。
+-- 真源必须显式声明这些列；老库由 migrations 里的 ALTER 补齐（幂等）。
+--
+-- 注意：注释里**不要**出现反引号 —— SCHEMA 是模板字符串，反引号会提前把它结束掉。
 CREATE TABLE IF NOT EXISTS message_feedback (
   id TEXT PRIMARY KEY,
   message_id TEXT NOT NULL,
   session_id TEXT NOT NULL,
   feedback TEXT NOT NULL CHECK (feedback IN ('like', 'dislike')),
   timestamp INTEGER NOT NULL,
+  note TEXT,
+  version TEXT,
+  created_at INTEGER,
+  updated_at INTEGER,
   FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE CASCADE,
   FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
 );

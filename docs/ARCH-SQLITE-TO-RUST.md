@@ -1130,6 +1130,77 @@ tsc 0 错 · 六道 audit 门禁全绿（A 类 0 / B 类 P1 3+P2 1 / C 类 4 / D
 **验证**：新增 4 项全绿 · 完整套件 269 → **270 文件 / 5187 通过 / 15 跳过** ·
 tsc 0 错 · 六道 audit 门禁全绿。
 
+### P5 第 1 段（第 92 波）—— **默认引擎切到 rust**，并补上切换前必须补的两个域
+
+这一段的目标是"渲染进程不再持有 WASM 数据库"的第一步：**让默认路径走 Rust**。
+做法不是直接改常量，而是先把**默认路径上仍然只能靠 WASM 工作的域**补完 ——
+这一步是真机验证逼出来的，不是我事先列全的。
+
+#### 真机查出的两个真实缺口
+
+1. **`projects` 域从没接过端口。**
+   在 rust 引擎下调用 `createProject` 直接抛
+   `Wrong API use : tried to bind a value of an unknown type (undefined)`
+   —— 这是 **sql.js** 的报错，说明这个核心域一直在用 WASM 数据库。
+   也就是说：默认引擎切到 rust 之后，只要 WASM 库那一天被删掉（P5 后半段要做的事），
+   **项目域会整体失效**。整表接入域端口（含 `id != ''` / 非 `notebook:` 的可见性过滤、
+   `pinned DESC, last_accessed_at DESC` 排序、以及"缺省时间补齐"）。
+2. **`message_feedback` 的四个列在真源与 Rust 侧都不存在。**
+   `note` / `version` / `created_at` / `updated_at` 原来只由 `llm/feedback.ts` 的
+   `ensureNoteColumn()` 在**运行期** `ALTER TABLE … ADD COLUMN` 添加 ——
+   而 `gen-schema-sql.mjs` 只读 SCHEMA，**看不见这些 ALTER**。
+   实测两个库（Rust 与旧 WASM 库）的 `message_feedback` 都只有 5 列；用 CLI 写九列被引擎拒绝：
+   `表 message_feedback 没有列 created_at`。
+   结论：**宽松版反馈（评分 + 备注 + 乐观并发版本）在 Rust 路径下根本写不进去。**
+   修法：四列进 SCHEMA 真源 + 四条幂等 ALTER 进 migrations（老库自动补上，实测已生效），
+   并把 `llm/feedback.ts` 的四个操作（put / get / delete / list）全部改走域端口。
+
+顺带修掉一处**易碎点**：`createProject` 原来直接绑 `project.createdAt`，
+调用方漏传时 sql.js 会抛异常；镜像路径显式补 `Date.now()` 缺省值。
+
+#### 切换本身
+
+`DEFAULT_ENGINE: "wasm" | "rust"` 由 `"wasm"` 改为 **`"rust"`**。
+回滚开关（`localStorage["codem-storage-engine"] = "wasm"`）**保留且实测有效** ——
+本段刻意**不删 sql.js 依赖**，因为回滚开关必须真的能回滚；删除依赖要等真机验证过
+"没有回退需求"之后再单独做。
+
+#### 真机验证（debug 构建 + CDP，逐条实测）
+
+| 验证项 | 结果 |
+|---|---|
+| 默认引擎（**删掉 localStorage 开关键**后） | `DEFAULT_ENGINE="rust"`、`selectedEngine="rust"`、端口 `kind="rust"` |
+| 回滚开关置 `wasm` | 端口不注册（`hasPort=false`），应用正常回退到 WASM 库（旧库数据可见） |
+| 项目域 | `createProject → getProject → updateProject → deleteProject` 全部通过，删后 `null` |
+| 消息反馈（宽松版） | 写入 → 读回（含备注）→ **版本冲突被拒** → 正确版本可改 → 删除 → 复查 `null` |
+| 迁移落到真实库 | `codem-db-rust.bin` 的 `message_feedback` 由 5 列变 **9 列** |
+| 探针清理 | 真实库回到"全局项目 1 行 + settings 25 行"，无 `p5probe*` 残留 |
+
+#### 还有一个门禁自身的 bug 被顺手修掉
+
+列级契约测试在本次改动后误报（"被忽略的迁移条数应当正好等于重叠列数"）。
+原因是**我在 SQL 注释里写了反引号** —— SCHEMA 是模板字符串，
+那个反引号提前把模板字符串结束掉了，于是测试解析到的 schema 少了一段。
+测试已同时加固两点：解析时**跳过 SQL 注释行**（注释不该被当成列名）、
+并在真源注释里明确写"SCHEMA 区间内不要出现反引号"。
+
+**验证**：域镜像契约 **38 → 43 项**（projects 3 项 + message_feedback 2 项）·
+完整套件 **270 文件 / 5187 通过 / 15 跳过** · Rust **75 项** · tsc 0 错 ·
+六道 audit 门禁全绿。
+
+#### 还没做完的部分（P5 需要继续）
+
+删掉 WASM 路径之前，还有三个模块仍在直接读**旧库**（端口调用 0 次）：
+
+| 模块 | 涉及的表 | 状态 |
+|---|---|---|
+| `core/telemetry/telemetry.ts` | `telemetry_events` | 在用（agentic-loop / cost-tracker / 插件） |
+| `core/storage/persistence-provider.ts` | `session_events` | 在用（`SqlitePersistenceProvider` 是默认实现） |
+| `core/storage/session-log-bridge.ts` | `messages` / `sessions` / `tool_calls` / `attachments` | 在用（启动期索引回填/重建） |
+| `core/knowledge/note-manager.ts` | `note_links`（一条删除） | 在用（一行即可接入） |
+
+这四处就是"真正删除 sql.js 依赖"的前置条件，下一段按此清单继续。
+
 ### P6 与 P5 的先后（第 92 波，基于本轮实测的排序决定）
 
 P6 第 1 段的实测把一件事说清楚了：**只要 `DEFAULT_ENGINE` 还是 `wasm`，

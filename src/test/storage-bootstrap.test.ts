@@ -73,8 +73,9 @@ afterEach(() => {
 });
 
 describe("存储引导 —— 回滚开关", () => {
-  it("BOOT-1: 没有开关时用默认引擎（迁移期为 wasm，即「零行为变更」）", () => {
+  it("BOOT-1: 没有开关时用默认引擎（P5 第 2 段起为 rust）", () => {
     expect(selectedEngine()).toBe(DEFAULT_ENGINE);
+    expect(DEFAULT_ENGINE, "默认引擎已切到 rust —— 这是 P5 的核心开关").toBe("rust");
   });
 
   it("BOOT-2: 开关为 wasm 时明确跳过（不是失败）", async () => {

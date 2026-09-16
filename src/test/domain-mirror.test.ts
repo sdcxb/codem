@@ -1515,3 +1515,205 @@ describe("域镜像分流 —— knowledge/graph", () => {
     void debugGroups;
   });
 });
+
+// ========== projects 域（P5 第 1 段：真机发现它从没接过端口） ==========
+
+function projectRow(over: Record<string, unknown> = {}) {
+  return {
+    id: "p1",
+    name: "项目",
+    path: "C:/p1",
+    description: null,
+    pinned: 0,
+    created_at: 1,
+    last_accessed_at: 1,
+    ...over,
+  };
+}
+
+describe("域镜像分流 —— projects", () => {
+  it("DOM-39: 列表过滤与排序与旧 SQL 一致（隐藏全局项目与笔记本虚拟项目）", async () => {
+    const { port } = portWith({
+      projects: [
+        projectRow({ id: "", name: "全局对话", last_accessed_at: 99 }),
+        projectRow({ id: "notebook:nb1", name: "笔记本虚拟项目", last_accessed_at: 98 }),
+        projectRow({ id: "p-a", name: "A", pinned: 0, last_accessed_at: 10 }),
+        projectRow({ id: "p-b", name: "B", pinned: 1, last_accessed_at: 5 }),
+        projectRow({ id: "p-c", name: "C", pinned: 1, last_accessed_at: 20 }),
+      ],
+    });
+    setStoragePort(port);
+    await port.start();
+    port.domains.ensureLoaded("projects");
+    await settle();
+
+    const projects = await import("../core/storage/project");
+    // 全局项目与 notebook: 虚拟项目都不能出现在列表里；置顶优先，其次按最近访问
+    expect(projects.listProjects().map((p) => p.id), "pinned DESC, last_accessed_at DESC").toEqual([
+      "p-c",
+      "p-b",
+      "p-a",
+    ]);
+    // 但按 id 直接取仍然取得到（全局项目是外键种子，别的地方要用）
+    expect(projects.getProject("")?.name).toBe("全局对话");
+    expect(projects.getProject("notebook:nb1")?.name).toBe("笔记本虚拟项目");
+  });
+
+  it("DOM-40: createProject 补齐缺省时间（旧实现漏字段会被 sql.js 直接抛错）", async () => {
+    const { port, executed } = portWith({ projects: [] });
+    setStoragePort(port);
+    await port.start();
+    port.domains.ensureLoaded("projects");
+    await settle();
+
+    const projects = await import("../core/storage/project");
+    // 真机上漏传 createdAt/lastAccessedAt 时，旧实现抛
+    // "Wrong API use : tried to bind a value of an unknown type (undefined)"
+    projects.createProject({
+      id: "p-new",
+      name: "新项目",
+      path: "C:/new",
+      pinned: false,
+    } as never);
+
+    const got = projects.getProject("p-new");
+    expect(got?.name).toBe("新项目");
+    expect(got?.createdAt, "缺省时间必须是真实数字，不能是 undefined").toBeGreaterThan(0);
+    expect(got?.lastAccessedAt).toBeGreaterThan(0);
+
+    await settle();
+    const up = executed.find((e) => e.cmd === "crud.upsert");
+    const row = (up?.params.rows as Array<Record<string, unknown>>)[0];
+    expect(row.pinned, "pinned 以 0/1 落库").toBe(0);
+    expect(typeof row.created_at).toBe("number");
+    expect(row).not.toHaveProperty("createdAt");
+  });
+
+  it("DOM-41: update/delete 走端口，未改动列保留，空更新不写库", async () => {
+    const { port, executed } = portWith({
+      projects: [projectRow({ id: "p1", name: "旧名", description: "旧说明", pinned: 0 })],
+    });
+    setStoragePort(port);
+    await port.start();
+    port.domains.ensureLoaded("projects");
+    await settle();
+
+    const projects = await import("../core/storage/project");
+    projects.updateProject("p1", { name: "新名", pinned: true });
+    const after = projects.getProject("p1")!;
+    expect(after.name).toBe("新名");
+    expect(after.pinned).toBe(true);
+    expect(after.description, "未改动列必须保留").toBe("旧说明");
+
+    // 不存在的项目 → 不写
+    const before = executed.filter((e) => e.cmd === "crud.upsert").length;
+    projects.updateProject("nope", { name: "x" });
+    expect(executed.filter((e) => e.cmd === "crud.upsert").length).toBe(before);
+
+    // 空更新 → 不写且留痕
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    projects.updateProject("p1", {});
+    expect(executed.filter((e) => e.cmd === "crud.upsert").length).toBe(before);
+    expect(warn).toHaveBeenCalled();
+
+    projects.deleteProject("p1");
+    expect(projects.getProject("p1")).toBeNull();
+    await settle();
+    expect(executed.filter((e) => e.cmd === "crud.delete")[0]?.params).toEqual({
+      table: "projects",
+      where: { id: "p1" },
+    });
+  });
+});
+
+// ========== message_feedback 域（P5 第 1 段：宽松版反馈原来在 Rust 下写不进去） ==========
+
+describe("域镜像分流 —— message_feedback（宽松版反馈）", () => {
+  it("DOM-42: 评分/备注/版本乐观并发在镜像路径上语义不变", async () => {
+    const { port, executed } = portWith({ message_feedback: [] });
+    setStoragePort(port);
+    await port.start();
+    port.domains.ensureLoaded("message_feedback");
+    await settle();
+
+    const fb = await import("../core/llm/feedback");
+    const MID = "m1";
+    const SID = "s1";
+
+    // 首次写入：无现有版本，ifVersion 必须是 null
+    const put1 = fb.putMessageFeedback(SID, MID, "like", "备注一", null);
+    expect(put1.ok).toBe(true);
+    if (!put1.ok) return;
+    const read1 = fb.getMessageFeedback(MID);
+    expect(read1?.rating).toBe("like");
+    expect(read1?.note).toBe("备注一");
+    expect(read1?.version).toBe(put1.item.version);
+    expect(read1?.createdAt).toBeGreaterThan(0);
+
+    // 版本不符必须被拒（乐观并发）
+    const conflict = fb.putMessageFeedback(SID, MID, "dislike", undefined, "wrong");
+    expect(conflict.ok).toBe(false);
+    expect(fb.getMessageFeedback(MID)?.rating, "冲突时不能改动现有反馈").toBe("like");
+
+    // 正确版本：能改
+    const put2 = fb.putMessageFeedback(SID, MID, "dislike", "备注二", read1!.version);
+    expect(put2.ok).toBe(true);
+    if (put2.ok) expect(put2.item.version).not.toBe(read1!.version);
+    expect(fb.getMessageFeedback(MID)?.note).toBe("备注二");
+
+    // 按会话列出
+    expect(fb.listMessageFeedback(SID).map((f) => f.messageId)).toEqual([MID]);
+    expect(fb.listMessageFeedback("other")).toEqual([]);
+
+    // 删除（带版本校验）
+    expect(fb.deleteMessageFeedback(MID, fb.getMessageFeedback(MID)!.version)).toEqual({ ok: true, absent: true });
+    expect(fb.getMessageFeedback(MID)).toBeNull();
+    // 已不存在时再删：absent
+    expect(fb.deleteMessageFeedback(MID, null)).toEqual({ ok: true, absent: true });
+
+    await settle();
+    const ups = executed.filter((e) => e.cmd === "crud.upsert" && e.params.table === "message_feedback");
+    expect(ups.length, "两次成功写入（冲突那次不能写）").toBe(2);
+    const row = (ups[ups.length - 1].params.rows as Array<Record<string, unknown>>)[0];
+    expect(row, "四列必须一起落库").toMatchObject({
+      message_id: "m1",
+      session_id: "s1",
+      feedback: "dislike",
+      note: "备注二",
+    });
+    expect(typeof row.version).toBe("string");
+    expect(typeof row.updated_at).toBe("number");
+  });
+
+  it("DOM-43: 历史行 id 不是 fb-<messageId> 时也保持「一条消息最多一条反馈」", async () => {
+    const { port, executed } = portWith({
+      message_feedback: [
+        {
+          id: "legacy-row-id",
+          message_id: "m1",
+          session_id: "s1",
+          feedback: "like",
+          timestamp: 1,
+          note: null,
+          version: "v-old",
+          created_at: 1,
+          updated_at: 1,
+        },
+      ],
+    });
+    setStoragePort(port);
+    await port.start();
+    port.domains.ensureLoaded("message_feedback");
+    await settle();
+
+    const fb = await import("../core/llm/feedback");
+    const put = fb.putMessageFeedback("s1", "m1", "dislike", "改了", "v-old");
+    expect(put.ok).toBe(true);
+    // 必须**先删旧行再加新行**，否则会留下两条反馈
+    expect(fb.listMessageFeedback("s1"), "不能出现两条反馈").toHaveLength(1);
+
+    await settle();
+    const dels = executed.filter((e) => e.cmd === "crud.delete");
+    expect(dels.map((d) => (d.params.where as Record<string, unknown>).id)).toEqual(["legacy-row-id"]);
+  });
+});
