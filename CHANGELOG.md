@@ -2,6 +2,47 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.16.50] - 2026-09-17 — SQLite 侧删除审计：让数据库自己记账，把"数据消失"查到具体哪一步
+
+### 背景
+上一轮发现：迁移对账通过、标记已写之后，新库的消息/会话/事件会被清空，
+而**渲染进程的存储端口审计里没有任何删除** —— 也就是有一条绕过端口、无从追溯的删除路径。
+
+### 这一轮的做法：不再猜代码，让数据库自己记账
+新增 `codem-db/src/audit.rs`：在**引擎打开时**给四张核心表
+（`messages` / `sessions` / `session_events` / `tool_calls`）装
+`AFTER DELETE` 与 `AFTER UPDATE`（隐藏 0→1）触发器，把每一次"行消失/被隐藏"
+记进只增的 `storage_audit` 表。
+
+为什么必须是触发器：只在命令层记账抓不到"绕过端口"的删除；触发器在 SQLite 内部执行，
+无论删除来自哪条路径都会留下记录。**配套 CLI** `codem-db-cli --db <路径> audit [N|summary|clear]`
+—— 事故现场常常是"应用一开就变"，必须能在应用外取证。
+
+### 审计查出的结果
+复现后 `audit summary`：`session_events` 2131 / `tool_calls` 883 / `messages` 821 /
+`sessions` **2**，且 3000 条记录时间戳完全相同 → **单条 `DELETE FROM sessions` 触发的级联删除**。
+被删的两个会话正是用户的两个真实会话（笔记本会话保留），说明是**有选择的删除**而非清表。
+
+### 触发条件已被精确刻画
+| 操作 | 结果 |
+| --- | --- |
+| 启动后不操作、等 30 秒 | 821/3 **完好** |
+| 点项目 | 完好 |
+| **点会话** | **821→0、3→1（可重复）** |
+
+即：不是启动即坏，而是"**打开会话**"这条用户路径上触发。
+
+### 仍未定位（不声称已修）
+`domain-store` 的全部 5 个写穿点现已过 `write-audit.ts` 的 `recordWrite()`（含调用栈）；
+静态排查显示全仓只有 3 处直接写穿端口、且都不删除行。已收敛的线索：
+`索引暂不可用（Database not initialized）` 与删除**同秒**出现；
+`currentSessionIdForMessage()` 对迁移消息返回 null，会让 `updateMessage`/`deleteMessage`
+走进旧回退路径。下一步在 `SessionStorage.deleteSession` 与 `store.ts` 删除入口加同一处审计即可定位。
+
+### 其它
+46 个 Rust 测试全绿（含 4 个新增审计测试）、七个审计门禁 exit 0、`tsc` 0 错误。
+**数据已恢复**：`messages=821 / sessions=3 / tool_calls=883`，旧库那份始终完好。
+
 ## [1.16.49] - 2026-09-16 — 测试基座切到存储端口，逼出并修掉 7 个真实读写分裂
 
 ### 为什么做这件事
