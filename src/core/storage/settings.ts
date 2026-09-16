@@ -33,6 +33,59 @@ function rustConfig() {
   return port.kind === "rust" ? port.config : null;
 }
 
+/** 是否处于 rust 引擎（配置面扩展域的分流判据） */
+function isRust(): boolean {
+  return hasStoragePort() && getStoragePort().kind === "rust";
+}
+
+/** 配置面**扩展域**的内存镜像（quick_phrases / mcp_servers / memory） */
+function rustConfigDomain() {
+  if (!hasStoragePort()) return null;
+  const port = getStoragePort();
+  if (port.kind !== "rust") return null;
+  return (port as { configDomain?: unknown }).configDomain as
+    | {
+        isWarmed(): boolean;
+        read<T>(pick: (s: unknown) => T, fallback: T, scope: string): T;
+        patch(p: unknown): void;
+      }
+    | null
+    ?? null;
+}
+
+/**
+ * 内存镜像里**统一用线协议的行形状（snake_case）**。
+ *
+ * 这一点必须严格：镜像的读写两侧要用同一种形状。早先 `saveQuickPhrase` 往镜像里写
+ * camelCase（`usageCount`），而 `loadQuickPhrases` 按 snake_case（`usage_count`）解析，
+ * 结果"存完立刻读"拿到的是 0 —— 契约测试当场抓到（CFG-2/3/4）。
+ * 统一到线协议形状后，预热拉到的行与本地改动的行就是同一种东西。
+ */
+function phraseToRow(p: QuickPhrase, now: number): Record<string, unknown> {
+  return {
+    id: p.id,
+    title: p.title,
+    content: p.content,
+    category: p.category,
+    usage_count: p.usageCount,
+    created_at: p.createdAt || now,
+    updated_at: p.updatedAt || now,
+  };
+}
+
+function mcpToRow(s: McpServerConfig): Record<string, unknown> {
+  return { id: s.id, name: s.name, config: s.config, enabled: s.enabled };
+}
+
+/** 写穿：失败走统一上报（绝不静默吞掉） */
+function writeThrough(command: string, params: Record<string, unknown>, scope: string, note: string): void {
+  if (!hasStoragePort()) return;
+  const port = getStoragePort() as { data?: { execute(c: string, p?: Record<string, unknown>): Promise<{ written: number }> } };
+  void port.data
+    ?.execute(command, params)
+    .catch((e) => reportPersistFailure(scope, e, note));
+}
+
 export function getSetting(key: string): string | null {
   const cfg = rustConfig();
   if (cfg) {
@@ -104,6 +157,45 @@ export interface QuickPhrase {
 }
 
 export function saveQuickPhrase(phrase: QuickPhrase): void {
+  const dom = rustConfigDomain();
+  if (dom && isRust()) {
+    const now = Date.now();
+    // 内存镜像同步更新（界面立刻可见），写穿到 Rust
+    const current = dom.read<Array<Record<string, unknown>>>(
+      (s) => (s as { quickPhrases: Array<Record<string, unknown>> }).quickPhrases,
+      [],
+      "quick_phrases",
+    );
+    const existing = current.find((q) => q.id === phrase.id);
+    const next = existing
+      ? current.map((q) =>
+          q.id === phrase.id
+            ? phraseToRow(
+                { ...phrase, usageCount: Number(q.usage_count ?? 0) + 1, createdAt: phrase.createdAt || now },
+                now,
+              )
+            : q,
+        )
+      : [...current, phraseToRow({ ...phrase, usageCount: phrase.usageCount + 1 }, now)];
+    dom.patch({ quickPhrases: next });
+    // 注意：usage_count 的自增语义在 Rust 侧实现（`quick_phrases.save` 用
+    // `quick_phrases.usage_count + 1`），两边必须一致 —— 这是迁移的动机之一。
+    writeThrough(
+      "quick_phrases.save",
+      {
+        id: phrase.id,
+        title: phrase.title,
+        content: phrase.content,
+        category: phrase.category,
+        usage_count: phrase.usageCount,
+        created_at: phrase.createdAt || now,
+        updated_at: now,
+      },
+      "storage.saveQuickPhrase",
+      "快捷短语未保存，重启后会丢失",
+    );
+    return;
+  }
   const db = getDatabase();
   const now = Date.now();
 
@@ -114,7 +206,7 @@ export function saveQuickPhrase(phrase: QuickPhrase): void {
        title = excluded.title,
        content = excluded.content,
        category = excluded.category,
-       usage_count = excluded.usage_count + 1,
+       usage_count = usage_count + 1,
        updated_at = excluded.updated_at`,
     [phrase.id, phrase.title, phrase.content, phrase.category, phrase.usageCount + 1, phrase.createdAt || now, now]
   );
@@ -123,6 +215,23 @@ export function saveQuickPhrase(phrase: QuickPhrase): void {
 }
 
 export function loadQuickPhrases(): QuickPhrase[] {
+  const dom = rustConfigDomain();
+  if (dom && isRust()) {
+    const rows = dom.read<Array<Record<string, unknown>>>(
+      (s) => (s as { quickPhrases: Array<Record<string, unknown>> }).quickPhrases,
+      [],
+      "quick_phrases",
+    );
+    return rows.map((r) => ({
+      id: String(r.id ?? ""),
+      title: String(r.title ?? ""),
+      content: String(r.content ?? ""),
+      category: String(r.category ?? "other") as QuickPhrase["category"],
+      usageCount: Number(r.usage_count ?? 0),
+      createdAt: Number(r.created_at ?? 0),
+      updatedAt: Number(r.updated_at ?? 0),
+    }));
+  }
   try {
     const db = getDatabase();
     const result = db.exec(
@@ -144,6 +253,17 @@ export function loadQuickPhrases(): QuickPhrase[] {
 }
 
 export function deleteQuickPhrase(phraseId: string): void {
+  const dom = rustConfigDomain();
+  if (dom && isRust()) {
+    const current = dom.read<Array<Record<string, unknown>>>(
+      (s) => (s as { quickPhrases: Array<Record<string, unknown>> }).quickPhrases,
+      [],
+      "quick_phrases",
+    );
+    dom.patch({ quickPhrases: current.filter((q) => q.id !== phraseId) });
+    writeThrough("quick_phrases.delete", { id: phraseId }, "storage.deleteQuickPhrase", "快捷短语未删除，重启后还会出现");
+    return;
+  }
   try {
     const db = getDatabase();
     db.run("DELETE FROM quick_phrases WHERE id = ?", [phraseId]);
@@ -152,6 +272,22 @@ export function deleteQuickPhrase(phraseId: string): void {
 }
 
 export function incrementQuickPhraseUsage(phraseId: string): void {
+  const dom = rustConfigDomain();
+  if (dom && isRust()) {
+    const now = Date.now();
+    const current = dom.read<Array<Record<string, unknown>>>(
+      (s) => (s as { quickPhrases: Array<Record<string, unknown>> }).quickPhrases,
+      [],
+      "quick_phrases",
+    );
+    dom.patch({
+      quickPhrases: current.map((q) =>
+        q.id === phraseId ? { ...q, usage_count: Number(q.usage_count ?? 0) + 1, updated_at: now } : q,
+      ),
+    });
+    writeThrough("quick_phrases.touch", { id: phraseId, updated_at: now }, "storage.incrementQuickPhraseUsage", "快捷短语使用次数未累加");
+    return;
+  }
   try {
     const db = getDatabase();
     db.run(
@@ -172,6 +308,20 @@ export interface McpServerConfig {
 }
 
 export function loadMcpServers(): McpServerConfig[] {
+  const dom = rustConfigDomain();
+  if (dom && isRust()) {
+    const rows = dom.read<Array<Record<string, unknown>>>(
+      (s) => (s as { mcpServers: Array<Record<string, unknown>> }).mcpServers,
+      [],
+      "mcp_servers",
+    );
+    return rows.map((r) => ({
+      id: String(r.id ?? ""),
+      name: String(r.name ?? ""),
+      config: String(r.config ?? ""),
+      enabled: r.enabled === true,
+    }));
+  }
   try {
     const db = getDatabase();
     const result = db.exec("SELECT id, name, config, enabled FROM mcp_servers ORDER BY name");
@@ -188,6 +338,16 @@ export function loadMcpServers(): McpServerConfig[] {
 }
 
 export function saveMcpServer(id: string, name: string, config: string, enabled: boolean): void {
+  const dom = rustConfigDomain();
+  if (dom && isRust()) {
+    const current = dom.read<McpServerConfig[]>((s) => (s as { mcpServers: McpServerConfig[] }).mcpServers, [], "mcp_servers");
+    const next = current.some((s) => s.id === id)
+      ? current.map((s) => (s.id === id ? { id, name, config, enabled } : s))
+      : [...current, { id, name, config, enabled }];
+    dom.patch({ mcpServers: next });
+    writeThrough("mcp_servers.save", { id, name, config, enabled }, "storage.saveMcpServer", "MCP 服务器配置未保存");
+    return;
+  }
   const db = getDatabase();
   const now = Date.now();
   db.run(
@@ -198,6 +358,13 @@ export function saveMcpServer(id: string, name: string, config: string, enabled:
 }
 
 export function removeMcpServer(id: string): void {
+  const dom = rustConfigDomain();
+  if (dom && isRust()) {
+    const current = dom.read<McpServerConfig[]>((s) => (s as { mcpServers: McpServerConfig[] }).mcpServers, [], "mcp_servers");
+    dom.patch({ mcpServers: current.filter((s) => s.id !== id) });
+    writeThrough("mcp_servers.remove", { id }, "storage.removeMcpServer", "MCP 服务器未删除");
+    return;
+  }
   const db = getDatabase();
   db.run("DELETE FROM mcp_servers WHERE id = ?", [id]);
   persistDatabase();
@@ -206,6 +373,10 @@ export function removeMcpServer(id: string): void {
 // ========== Memory Storage ==========
 
 export function loadMemory(): string {
+  const dom = rustConfigDomain();
+  if (dom && isRust()) {
+    return dom.read<string>((s) => (s as { memory: string }).memory, "", "memory");
+  }
   try {
     const db = getDatabase();
     const result = db.exec("SELECT content FROM memory WHERE id = 'default'");
@@ -219,6 +390,12 @@ export function loadMemory(): string {
 }
 
 export function saveMemory(content: string): void {
+  const dom = rustConfigDomain();
+  if (dom && isRust()) {
+    dom.patch({ memory: content });
+    writeThrough("memory.set", { content }, "storage.saveMemory", "记忆内容未保存");
+    return;
+  }
   const db = getDatabase();
   const now = Date.now();
   db.run(

@@ -11,6 +11,7 @@
 //! Tauri 命令层（`src-tauri`）只是薄封装：解码参数 → 调 `dispatch` → 编码结果。
 
 pub mod authorizer;
+pub mod config;
 pub mod engine;
 pub mod error;
 pub mod migrate;
@@ -46,6 +47,17 @@ pub const COMMANDS: &[&str] = &[
     "health",
     "integrity_check",
     "checkpoint",
+    // ===== 配置面（P3 第 3 段）：小表 → 同步读内存镜像 + 写穿 =====
+    "quick_phrases.save",
+    "quick_phrases.list",
+    "quick_phrases.delete",
+    "quick_phrases.touch",
+    "mcp_servers.list",
+    "mcp_servers.save",
+    "mcp_servers.remove",
+    "memory.get",
+    "memory.set",
+    "config_warmup",
     // ===== P4 迁移原语（受控的结构化通道，非裸 SQL）=====
     "import.begin",
     "import.table",
@@ -83,6 +95,17 @@ pub fn dispatch(engine: &Engine, command: &str, params: &Value) -> DbResult<Valu
         "projects.upsert" => repo::projects_upsert(engine, params),
         "projects.list" => repo::projects_list(engine, params),
         "counts" => repo::counts_of(engine, params),
+        // ===== 配置面（P3 第 3 段）=====
+        "quick_phrases.save" => config::quick_phrases_save(engine, params),
+        "quick_phrases.list" => config::quick_phrases_list(engine, params),
+        "quick_phrases.delete" => config::quick_phrases_delete(engine, params),
+        "quick_phrases.touch" => config::quick_phrases_touch(engine, params),
+        "mcp_servers.list" => config::mcp_servers_list(engine, params),
+        "mcp_servers.save" => config::mcp_servers_save(engine, params),
+        "mcp_servers.remove" => config::mcp_servers_remove(engine, params),
+        "memory.get" => config::memory_get(engine, params),
+        "memory.set" => config::memory_set(engine, params),
+        "config_warmup" => config::config_warmup(engine, params),
         "health" => serde_json::to_value(engine.health()?).map_err(|e| DbError::other(e.to_string())),
         "integrity_check" => {
             serde_json::to_value(engine.integrity_check()?).map_err(|e| DbError::other(e.to_string()))

@@ -1,4 +1,4 @@
-//! 仓储命令（P1 第一切片：配置面 + 只追加面 + 消息/会话核心）
+﻿//! 仓储命令（P1 第一切片：配置面 + 只追加面 + 消息/会话核心）
 //!
 //! 渲染侧**只**能通过这些语义化命令访问数据（`src/core/storage/port.ts` 的 `StorageDataPort`）。
 //! 命令清单与 `tools/audit/storage-inventory.mjs` 的归类一一对应，后续按 P3 顺序补齐到 82 个。
@@ -24,7 +24,7 @@ use crate::schema::now_ms;
 //   存储边界上宁可返回 UNSUPPORTED/OTHER 让调用方看见，也不要写进一行看起来成功的垃圾数据。）
 
 /// 取可选字符串：非字符串一律报错（`null` 视为"未提供"）
-fn opt_text(v: &Value, key: &str) -> DbResult<Option<String>> {
+pub fn opt_text(v: &Value, key: &str) -> DbResult<Option<String>> {
     match v.get(key) {
         None | Some(Value::Null) => Ok(None),
         Some(Value::String(s)) => Ok(Some(s.clone())),
@@ -33,11 +33,11 @@ fn opt_text(v: &Value, key: &str) -> DbResult<Option<String>> {
 }
 
 /// 取必填字符串
-fn req_text(v: &Value, key: &str) -> DbResult<String> {
+pub fn req_text(v: &Value, key: &str) -> DbResult<String> {
     opt_text(v, key)?.ok_or_else(|| DbError::missing(key))
 }
 
-fn opt_i64(v: &Value, key: &str) -> DbResult<Option<i64>> {
+pub fn opt_i64(v: &Value, key: &str) -> DbResult<Option<i64>> {
     match v.get(key) {
         None | Some(Value::Null) => Ok(None),
         Some(Value::Number(n)) => Ok(Some(
@@ -70,7 +70,7 @@ fn offset_of(v: &Value) -> DbResult<usize> {
 }
 
 /// JSON → SQLite 绑定值（**拥有所有权**，不用 `Box::leak`，也不依赖借用生命周期）
-fn to_sql_value(v: &Value) -> SqlValue {
+pub fn to_sql_value(v: &Value) -> SqlValue {
     match v {
         Value::Null => SqlValue::Null,
         Value::Bool(b) => SqlValue::Integer(i64::from(*b)),

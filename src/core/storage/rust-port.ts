@@ -472,6 +472,108 @@ class RustAppendPort implements StorageAppendPort {
   }
 }
 
+// ========== 配置面的扩展域（P3 第 3 段） ==========
+//
+// `quick_phrases` / `mcp_servers` / `memory` 与 `settings` 同属"配置面"：
+// 判据是**量级**（小到可以整表放进内存），不是名字。实测生产库这几张表都是 0~1 行。
+//
+// 因此它们享受同一种形态：**同步读（内存镜像）+ 写穿**。
+// 好处是 `loadQuickPhrases()` / `loadMcpServers()` / `loadMemory()` 这些同步函数
+// **不需要改签名**就能切到 Rust —— settings 的 878 个调用点已经验证过这条路可行。
+//
+// ⚠️ 边界：`cost_records`（可能上万行）与 `recovery_data`（每会话一份快照）
+// **不进这个缓存** —— 它们属于数据面，必须走分页读。把大表塞进内存镜像
+// 就等于把"语料住在渲染进程"这个根因请回来（port.ts 硬约束 4）。
+
+export interface ConfigSnapshot {
+  quickPhrases: QuickPhraseRow[];
+  mcpServers: McpServerRow[];
+  memory: string;
+}
+
+export interface QuickPhraseRow {
+  id: string;
+  title: string;
+  content: string;
+  category: string;
+  usage_count: number;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface McpServerRow {
+  id: string;
+  name: string;
+  config: string;
+  enabled: boolean;
+}
+
+/**
+ * 配置面扩展域的内存镜像。
+ *
+ * 与 `RustConfigPort`（settings）分开是刻意的：两者的**失效策略不同** ——
+ * settings 是逐键覆盖（写穿即刻一致），这三个域是整表替换（改动后需要重新拉整表）。
+ * 混在一起会让"什么时候该重新拉"变得含糊。
+ */
+class RustConfigDomainCache {
+  private snapshot: ConfigSnapshot = { quickPhrases: [], mcpServers: [], memory: "" };
+  private warmed = false;
+  private failures = 0;
+
+  constructor(
+    private readonly t: StorageTransport,
+    private readonly onFailure: (scope: string, e: unknown, note: string) => void,
+  ) {}
+
+  /** 一次 IPC 拉齐三个域（启动预热用） */
+  async warmup(): Promise<ConfigSnapshot> {
+    const raw = await call<{
+      quick_phrases?: QuickPhraseRow[];
+      mcp_servers?: McpServerRow[];
+      memory?: string;
+    }>(this.t, "config_warmup");
+    this.snapshot = {
+      quickPhrases: raw?.quick_phrases ?? [],
+      mcpServers: raw?.mcp_servers ?? [],
+      memory: raw?.memory ?? "",
+    };
+    this.warmed = true;
+    return this.snapshot;
+  }
+
+  isWarmed(): boolean {
+    return this.warmed;
+  }
+
+  /** 同步读：未预热时返回 fallback 并留痕（与 settings 的处置一致） */
+  read<T>(pick: (s: ConfigSnapshot) => T, fallback: T, scope: string): T {
+    if (!this.warmed) {
+      this.onFailure(scope, new StorageError("UNAVAILABLE", "配置面尚未预热"), "读取回退到默认值");
+      return fallback;
+    }
+    return pick(this.snapshot);
+  }
+
+  /** 本地覆盖（写穿成功后由调用方触发，或写入路径自己维护） */
+  patch(patch: Partial<ConfigSnapshot>): void {
+    this.snapshot = { ...this.snapshot, ...patch };
+  }
+
+  stats(): { warmed: boolean; quickPhrases: number; mcpServers: number; memoryBytes: number; failures: number } {
+    return {
+      warmed: this.warmed,
+      quickPhrases: this.snapshot.quickPhrases.length,
+      mcpServers: this.snapshot.mcpServers.length,
+      memoryBytes: this.snapshot.memory.length,
+      failures: this.failures,
+    };
+  }
+
+  bumpFailure(): void {
+    this.failures++;
+  }
+}
+
 // ========== 聚合端口 ==========
 
 export class RustStoragePort implements StoragePort {
@@ -480,20 +582,46 @@ export class RustStoragePort implements StoragePort {
   readonly data: RustDataPort;
   readonly config: RustConfigPort;
   readonly append: RustAppendPort;
+  /** 配置面扩展域（quick_phrases / mcp_servers / memory）的内存镜像 */
+  readonly configDomain: RustConfigDomainCache;
+  private readonly reportFailure: (stream: string, e: unknown, note: string) => void;
 
   constructor(
     transport: StorageTransport = tauriTransport,
     onFailure: (stream: string, e: unknown, note: string) => void = () => {},
   ) {
+    this.reportFailure = onFailure;
     this.engine = new RustEnginePort(transport);
     this.data = new RustDataPort(transport);
     this.config = new RustConfigPort(transport, onFailure);
     this.append = new RustAppendPort(transport, onFailure);
+    this.configDomain = new RustConfigDomainCache(transport, onFailure);
   }
 
-  /** 启动顺序：先预热配置（同步读的前提），再报告健康 */
+  /**
+   * 启动顺序：先预热配置（同步读的前提），再报告健康。
+   *
+   * 两个预热阶段的**失败处置刻意不同**：
+   * - `settings` 预热失败 → 抛出（整个配置面不可用，界面连主题都读不到，
+   *   上层应当据此决定是否启用端口）；
+   * - 扩展域（quick_phrases / mcp_servers / memory）失败 → **只上报，不抛**：
+   *   这三块按默认值也能正常用（没有快捷短语、没有 MCP、没有记忆），
+   *   而"启动整体失败"会让用户连界面都进不去 —— 代价严重不成比例。
+   *
+   * （注释写"不阻塞启动"却 `throw` 是自相矛盾的；这里让代码和注释对齐。）
+   */
   async start(): Promise<StorageHealth> {
     await this.config.warmup();
+    try {
+      await this.configDomain.warmup();
+    } catch (e) {
+      this.configDomain.bumpFailure();
+      this.reportFailure(
+        "config-domain",
+        e,
+        "快捷短语 / MCP 服务器 / 记忆未能加载（功能降级，其余不受影响）",
+      );
+    }
     return this.engine.health();
   }
 

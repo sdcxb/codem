@@ -111,6 +111,11 @@ impl DbError {
     pub fn invalid(param: &str, why: impl Into<String>) -> Self {
         Self::new(ErrorCode::Other, format!("参数 {param} 不合法：{}", why.into()))
     }
+
+    /// 目标不存在（A 类防线：影响 0 行的写操作不能报成功）
+    pub fn not_found(what: impl Into<String>) -> Self {
+        Self::new(ErrorCode::NotFound, what)
+    }
 }
 
 impl std::fmt::Display for DbError {

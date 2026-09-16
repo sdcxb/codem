@@ -150,6 +150,18 @@ export const IMPLEMENTED = {
   "sessions.select": ["sessions.list"],
   "projects.insert": ["projects.upsert"],
   "projects.select": ["projects.list"],
+  // ===== P3 第 3 段：配置面扩展域 =====
+  "quick_phrases.select": ["quick_phrases.list"],
+  "quick_phrases.insert": ["quick_phrases.save"],
+  "quick_phrases.update": ["quick_phrases.save", "quick_phrases.touch"],
+  "quick_phrases.delete": ["quick_phrases.delete"],
+  "mcp_servers.select": ["mcp_servers.list"],
+  "mcp_servers.insert": ["mcp_servers.save"],
+  "mcp_servers.update": ["mcp_servers.save"],
+  "mcp_servers.delete": ["mcp_servers.remove"],
+  "memory.select": ["memory.get"],
+  "memory.insert": ["memory.set"],
+  "memory.update": ["memory.set"],
 };
 
 export function implementedCommands() {

@@ -2,10 +2,10 @@
 
 > 由 `node tools/audit/storage-coverage.mjs --md` 生成；不要手工编辑。
 
-- 扫描生产文件：**836**
-- 需要实现的仓储方法：**129**（对应 277 个 SQL 调用点）
-- 已实现：**14** → 方法覆盖率 **10.85%**，调用点覆盖率 **19.49%**
-- Rust 侧已注册命令：**22**
+- 扫描生产文件：**838**
+- 需要实现的仓储方法：**129**（对应 278 个 SQL 调用点）
+- 已实现：**22** → 方法覆盖率 **17.05%**，调用点覆盖率 **22.66%**
+- Rust 侧已注册命令：**42**
 
 ## 已实现（渲染侧方法 → Rust 命令）
 
@@ -19,14 +19,22 @@
 | `projects.insert` | 2 | `projects.upsert` |
 | `projects.select` | 2 | `projects.list` |
 | `sessions.insert` | 2 | `sessions.upsert` |
+| `settings.select` | 2 | `settings.get_all` |
 | `telemetry_events.delete` | 2 | `telemetry.prune` |
+| `mcp_servers.delete` | 1 | `mcp_servers.remove` |
+| `mcp_servers.insert` | 1 | `mcp_servers.save` |
+| `mcp_servers.select` | 1 | `mcp_servers.list` |
+| `memory.insert` | 1 | `memory.set` |
+| `memory.select` | 1 | `memory.get` |
 | `messages.insert` | 1 | `messages.create` `messages.create_many` |
+| `quick_phrases.delete` | 1 | `quick_phrases.delete` |
+| `quick_phrases.select` | 1 | `quick_phrases.list` |
+| `quick_phrases.update` | 1 | `quick_phrases.save` `quick_phrases.touch` |
 | `settings.delete` | 1 | `settings.remove` |
 | `settings.insert` | 1 | `settings.set` |
-| `settings.select` | 1 | `settings.get_all` |
 | `telemetry_events.insert` | 1 | `telemetry.append` |
 
-## 待迁移（115 个方法，按调用点排序）
+## 待迁移（107 个方法，按调用点排序）
 
 | 渲染侧方法 | 调用点 | 建议阶段 |
 |---|---:|---|
@@ -97,11 +105,6 @@
 | `issues.delete` | 1 | 5 其余域 |
 | `issues.insert` | 1 | 5 其余域 |
 | `issues.select` | 1 | 5 其余域 |
-| `mcp_servers.delete` | 1 | 5 其余域 |
-| `mcp_servers.insert` | 1 | 5 其余域 |
-| `mcp_servers.select` | 1 | 5 其余域 |
-| `memory.insert` | 1 | 5 其余域 |
-| `memory.select` | 1 | 5 其余域 |
 | `note_links.delete` | 1 | 5 其余域 |
 | `note_links.insert` | 1 | 5 其余域 |
 | `note_versions.delete` | 1 | 5 其余域 |
@@ -121,9 +124,6 @@
 | `projects.update` | 1 | 4 会话/项目 |
 | `prompt_drafts.delete` | 1 | 5 其余域 |
 | `prompt_drafts.insert` | 1 | 5 其余域 |
-| `quick_phrases.delete` | 1 | 1 配置面 |
-| `quick_phrases.select` | 1 | 1 配置面 |
-| `quick_phrases.update` | 1 | 1 配置面 |
 | `recovery_data.delete` | 1 | 5 其余域 |
 | `recovery_data.insert` | 1 | 5 其余域 |
 | `recovery_data.select` | 1 | 5 其余域 |
