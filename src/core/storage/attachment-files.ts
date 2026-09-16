@@ -74,32 +74,86 @@ export async function readExternalAttachment(path: string): Promise<string | und
 }
 
 /**
- * 外置内容的内存缓存（路径 → 内容）。
+ * 外置内容的内存缓存（路径 → 内容），带**总字节预算 + LRU 逐出**（P6 第 3 段）。
  *
  * 为什么需要缓存：附件的读取路径（`loadAttachmentsForMessage` / `getAttachmentContent`）
  * 是**同步**的，而文件读取是异步 IPC。所以采用"预取 + 同步命中"：
  * 进入会话/启动维护时调 `hydrateAttachments()` 把外置内容读进这里，之后同步路径透明命中；
  * 未命中时返回 undefined 并**补一次异步读取**（下次读取即可命中），绝不让气泡渲染出 `file:` 标记。
+ *
+ * ## 为什么必须加上限（这一段补的）
+ *
+ * 原来是"读过就永不释放"的 `Map`：附件正文动辄几 MB（外置阈值是 64KB），
+ * 用户翻过十个长文档附件，几十 MB 就**永久**留在渲染进程里 ——
+ * 与 P6 第 2 段给消息镜像加预算治的是同一种病（驻留无界）。
+ *
+ * 上限取 32MB：真实文档附件基本都能装下（保持"同步命中"的既有体验），
+ * 但堆不会再无界增长。超预算时按 LRU 逐出最久未用的**单条**；
+ * 逐出后该路径的下一次读取会走"补一次异步预取"的既有路径（返回 undefined、下次命中），
+ * 也就是**退化一次、不会读到错内容**。
  */
+const EXTERNAL_CACHE_BUDGET_BYTES = 32 * 1024 * 1024;
 const externalContentCache = new Map<string, string>();
+let externalCacheBytes = 0;
+let externalCacheEvictions = 0;
+
+/** 当前缓存占用（诊断/测试用，让"驻留有界"可断言） */
+export function externalContentCacheStats(): { entries: number; bytes: number; evictions: number; budgetBytes: number } {
+  return {
+    entries: externalContentCache.size,
+    bytes: externalCacheBytes,
+    evictions: externalCacheEvictions,
+    budgetBytes: EXTERNAL_CACHE_BUDGET_BYTES,
+  };
+}
+
+/** 命中即"最新使用"（Map 迭代序 = 插入序，删了再插即移到末尾） */
+function touchExternal(path: string, content: string): void {
+  externalContentCache.delete(path);
+  externalContentCache.set(path, content);
+}
+
+function putExternal(path: string, content: string): void {
+  if (externalContentCache.has(path)) {
+    // 覆盖：先把旧占用的字节扣掉，避免重复计数
+    externalCacheBytes -= externalContentCache.get(path)!.length;
+    externalContentCache.delete(path);
+  }
+  externalContentCache.set(path, content);
+  externalCacheBytes += content.length;
+  while (externalCacheBytes > EXTERNAL_CACHE_BUDGET_BYTES && externalContentCache.size > 1) {
+    const oldest = externalContentCache.keys().next().value as string | undefined;
+    if (oldest === undefined || oldest === path) break;
+    const dropped = externalContentCache.get(oldest)!;
+    externalContentCache.delete(oldest);
+    externalCacheBytes -= dropped.length;
+    externalCacheEvictions++;
+  }
+}
 
 /** 同步取已缓存的外置内容 */
 export function getCachedExternalContent(path: string): string | undefined {
-  return externalContentCache.get(path);
+  const hit = externalContentCache.get(path);
+  if (hit !== undefined) touchExternal(path, hit);
+  return hit;
 }
 
 /** 预热单个路径（未命中时调用；完成后写入缓存） */
 export async function warmExternalContent(path: string): Promise<string | undefined> {
   const cached = externalContentCache.get(path);
-  if (cached !== undefined) return cached;
+  if (cached !== undefined) {
+    touchExternal(path, cached);
+    return cached;
+  }
   const content = await readExternalAttachment(path);
-  if (content !== undefined) externalContentCache.set(path, content);
+  if (content !== undefined) putExternal(path, content);
   return content;
 }
 
 /** 测试/会话关闭时清理缓存 */
 export function clearExternalContentCache(): void {
   externalContentCache.clear();
+  externalCacheBytes = 0;
 }
 
 /**

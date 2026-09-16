@@ -113,7 +113,23 @@ function loadAttachmentsForMessage(db: any, messageId: string): MessageAttachmen
       name: row[1] as string,
       type: row[2] as "file" | "image" | "code" | "url",
       path: row[3] as string | undefined,
-      content: row[4] as string | undefined,
+      // P6 第 3 段：**外置附件在这里不再把正文搬进渲染进程**。
+      //
+      // 列里存的是标记 `file:<路径>`；正文在文件里，按需读取（`getAttachmentContent`）。
+      // 原来这里直接把标记字符串当 content 返回 —— 那是把 'file:C:\...' 当成正文交给上层
+      // （气泡会显示一个路径串，而 `isExternalContent` 的判断才是正确用法）。
+      // 现在：命中缓存就返回正文（字符串共享，不额外占内存）；未命中返回 undefined 并**补一次预取**
+      // —— 正是 `getAttachmentContent` 一直以来的既有约定，所以调用方无感。
+      content: (() => {
+        const raw = row[4] as string | undefined;
+        if (!raw) return undefined;
+        if (!isExternalContent(raw)) return raw;
+        const extPath = raw.slice("file:".length);
+        const cached = getCachedExternalContent(extPath);
+        if (cached !== undefined) return cached;
+        void warmExternalContent(extPath);
+        return undefined;
+      })(),
       preview: row[5] as string | undefined,
       sandboxPath: row[6] as string | undefined,
       mimeType: row[7] as string | undefined,
