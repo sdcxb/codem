@@ -32,6 +32,7 @@
 
 use std::process::ExitCode;
 
+use codem_db::migrate;
 use codem_db::{capabilities, dispatch, DbError, Engine};
 use serde_json::{json, Value};
 
@@ -128,6 +129,18 @@ fn run(engine: &Engine, path: &str, rest: &[String]) -> Result<Value, DbError> {
             Ok(json!({ "ok": true }))
         }
         "commands" => Ok(capabilities()),
+        // 一次性导入：**整批在同一个进程/连接里完成**。
+        //
+        // 为什么必须有这个子命令（而不是让人连续调用 import.begin / import.table / import.end）：
+        // `--db` 每次调用都会新开一个连接，而事务属于连接 —— 上一次调用开的 BEGIN
+        // 会随进程退出被回滚，下一次调用看到的是"没有进行中的事务"。
+        // 实测踩过：CLI 报 "import.table 必须在 import.begin 之后调用"，但表面上明明按顺序调了。
+        "import" => {
+            let payload = read_stdin_json()?.ok_or_else(|| {
+                DbError::other("import 需要从 stdin 读 JSON：数组或 {\"tables\":[…]}")
+            })?;
+            migrate::import_all(engine, &payload)
+        }
         "counts" => dispatch(engine, "counts", &json!({ "tables": tables_arg(rest) })),
         "invoke" => {
             let cmd = rest

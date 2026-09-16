@@ -45,10 +45,16 @@ function extract() {
 
 function build() {
   const { schema, migrations, ftsColumns } = extract();
+  // 业务表清单：从 schema DDL 里提取，**供 Rust 侧的迁移白名单使用**。
+  // 为什么要生成而不是手写：迁移工具的表清单一旦漏一张表，数据就会**静默少搬**
+  // （实测发生过：手写清单漏了 agent_messages / message_feedback / needs_you_pending
+  //   三张真实存在且有数据的表）。生成 + 门禁才能保证"新加表必须被迁移考虑"。
+  const tables = [...schema.matchAll(/CREATE TABLE IF NOT EXISTS\s+([A-Za-z_][\w]*)/g)].map((m) => m[1]);
   return {
     "schema.sql": schema.trimEnd() + "\n",
     "migrations.json": JSON.stringify(migrations, null, 2) + "\n",
     "fts.json": JSON.stringify({ columns: ftsColumns.trim() }, null, 2) + "\n",
+    "tables.json": JSON.stringify({ tables, source: "SCHEMA DDL in src/core/storage/database.ts" }, null, 2) + "\n",
     "SOURCE.json": JSON.stringify({ source: "src/core/storage/database.ts", generatedBy: "tools/audit/gen-schema-sql.mjs" }, null, 2) + "\n",
   };
 }

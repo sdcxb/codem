@@ -199,9 +199,9 @@ D 类规则的最终形态（分阶段收紧，未豁免即失败）：
   （**已完成**，Rust 27 项 + 契约 26 项 + 覆盖率 6 项全绿）
 - 第 92 波 P3 第 1 段：Tauri 命令层 + Rust 端口 + 启动引导/回滚开关 + **跨语言线协议契约**
   （**已完成**，端口契约 25 项 + 引导 11 项 + 线协议 2+6 项全绿；迁移期默认仍是 WASM，零行为变更）
-- 后续：P3 第 2 段（把调用点切到端口，需先做 settings 数据搬迁）→ P4（迁移与对账）→
-  P5（删除 WASM 路径）→ P6（大文档专项）
-
+- 第 92 波 P4：**数据迁移与对账**（迁移原语 + 孤儿处置 + 逐表摘要对账 + 咬合测试）
+  （**已完成**，真机 39 表 / 3989 行全部对账一致）
+- 后续：P3 第 2 段（把调用点切到端口）→ P5（删除 WASM 路径）→ P6（大文档专项）
 ## 8. 实际结果（按阶段追加）
 
 ### P0（第 92 波）—— 已完成，**但盘点数字后来被证实低估 43%**
@@ -371,7 +371,7 @@ P1 的引擎**在应用里根本调不到**（没有 Tauri 命令层）。这一
 **未做（下一轮）**：把调用点真正切到端口（settings 同步读需要一次性的数据搬迁，属 P4）；
 以及 `quick_phrases` 的"使用次数 +1"语义在 Rust 侧尚无对应命令（`settings_set` 是覆盖语义）。
 
-#### P3 第 1 段真机验证（打包前的实机证据）
+#### P3 第 1 段真机验证（实机证据）
 
 用 `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9222` 启动应用，经 CDP 在**真实渲染进程**里调用 Tauri 命令：
 
@@ -396,7 +396,67 @@ P1 的引擎**在应用里根本调不到**（没有 Tauri 命令层）。这一
 > WASM 库发生了**正常运行时写入**（文件大小不变、大小写与结构一致、`quick_check` 通过）。
 > 这是每次正常启动都会发生的事，不是探针污染。
 
+### P4（第 92 波）—— 数据迁移与对账（已完成，真机验证通过）
+
+**产物**
+
+| 组件 | 作用 |
+|---|---|
+| `src-tauri/codem-db/src/migrate.rs` | 迁移原语：`import.begin/table/end/rollback`、`import.tables`、`migration.status/mark`、`digest.tables`、`digest.rows`、`rebuild_fts`；另有单进程批量入口 `import_all` |
+| `src/bin/codem-db-cli.rs` 的 `import` 子命令 | **整批在同一个进程/连接里导入**（原因见下） |
+| `tools/migrate/storage-migrate.mjs` | 端到端工具：预检 → 备份 → 单事务导入 → 重建 FTS → 逐表对账 → 打标记；含 `--dry-run/--verify/--apply/--strict-fk/--rollback-hint` |
+| `tools/migrate/lib/digest.mjs` | 与 Rust 逐字节一致的摘要算法（对账的核心） |
+| `tools/migrate/bite-reconcile.mjs` | **咬合测试**：制造 5 类破坏，证明对账会失败（7 项全部符合预期） |
+
+**导入通道为什么不是"裸 SQL"**：`import.table` 的表名走白名单（由 `sql/tables.json` 生成）、
+列名与真实列定义逐字核对、值参数化绑定、不接受任何 SQL 片段。
+调用方只能说"把这些值放进这张表的这些列"，不能说"执行这条语句" —— 与裸 SQL 是**结构性**差别。
+
+**先修正一个严重低估**：Rust 侧的表清单原来是**手写**的，漏了三张真实有数据可能性的表
+（`agent_messages` / `message_feedback` / `needs_you_pending`）——迁移会**静默少搬**它们。
+现在该清单由 `tools/audit/gen-schema-sql.mjs` 从 `database.ts` 的 SCHEMA DDL 生成
+（`sql/tables.json`，39 张表），`IMPORT_ORDER` 必须覆盖它的每一项（有测试守住），
+迁移工具还会在 dry-run/apply 时做**覆盖性硬检查**（未覆盖就退出 1）。
+
+**实测数据（真实 11,137,024 B 生产库副本）**
+
+| 项 | 结果 |
+|---|---|
+| 计划搬运 | 39 张表 / 3989 行（已排除 FTS 影子表） |
+| 导入 | 单事务、22 批、7.1 MiB 负载，一次提交 3989 行 |
+| **对账** | **16 张非空表全部一致**（行数 + 内容摘要，两端各自计算） |
+| 全文索引 | 从 `messages` 重建，索引 777 条 |
+| 旧库 | 迁移前后 sha256 未变（工具只读源库） |
+| 咬合测试 | 7/7：少一行 / 值被改 / 覆盖性检查 / 外键预检 / `--strict-fk` / 回滚提示 / 正常通过 |
+
+**四条只有真机才暴露的事实**
+
+1. **生产库里本来就有 86 行外键孤儿**：67 行 `session_events` + 19 行 `telemetry_events`
+   指向已不存在的 session（旧引擎时期没有级联清理）。新引擎开着 `foreign_keys=ON`，
+   直接导入会**整个事务失败**。所以迁移必须**显式处置孤儿**：默认丢弃 + 打印明细，
+   `--strict-fk` 则中止并把决定权交给操作者。这也顺带说明：迁移本身是一次数据清理。
+2. **旧库的 `journal_mode = delete`（不是 WAL）**，`page_size=4096`、`synchronous=2`。
+   也就是说渲染侧这些年**一直在用 DELETE 日志模式**，每次事务都要写回主库文件 ——
+   规模基准里"单条写入成本随语料增长"的现象又多了一层解释。
+3. **摘要必须跨语言逐字节一致**，而 `cost REAL` / `weight REAL` 存整数值时是个坑：
+   Rust 看到 `Real(0.0)`、sql.js 给出 `number(0)`。两边编码规则不同的话，
+   会出现"**行数一致、逐行一致、摘要不同**"这种最难定位的假失败。
+   统一规则：**整数值一律按 `I` 编码**（Rust 侧改 `value_bytes`，JS 侧用 `Number.isInteger`），
+   并加了跨语言回归样本（`wire-fixtures.json` 的 `digestSample`）锁住。
+4. **导入必须单进程**：`--db` 每次调用新开连接，而事务属于连接 ——
+   连续调用 `import.begin` / `import.table` 时，上一次的 `BEGIN` 会随进程退出被回滚，
+   下一次调用报"没有进行中的事务"，而调用方明明按顺序调了。故提供单进程的 `import` 子命令。
+
+**另外两个工具自身的 bug（都是"对账工具输出不可信"这类问题，已修）**：
+`imported.tables` 按批**覆盖**而非累加（821 行的 `messages` 只报 321，看起来像少搬）；
+以及逐表期望值取错来源（明明搬对了却打印 ✗）。对账工具的输出本身必须可信。
+
+**回滚开关（已在 P3 段落实现，这里补齐文档）**：`localStorage[codem-storage-engine]`，
+`wasm` 即回退；`node tools/migrate/storage-migrate.mjs --rollback-hint` 打印可执行步骤
+（开关 + 备份路径 + 如何撤销迁移标记）。**旧库在 P5 之前一直是安全退路。**
+
 ### P1 规模基准（Rust 引擎 vs sql.js/WASM，1k / 10k / 100k）
+
 
 **读数（`docs/DB-SCALE-BENCH.json`，同一台机器、同一份数据形状；写入批次 1000 条/批）**
 

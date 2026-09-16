@@ -44,6 +44,22 @@ fn call(eng: &Engine, command: &str, params: Value) -> Value {
     reply(dispatch(eng, command, &params))
 }
 
+/// 对固定的一组行算摘要（走 `digest.rows` 命令，与 TS 侧 `digestRows` 对应）。
+///
+/// 为什么要走命令而不是直接调内部函数：这样测的是**和迁移工具同一条路径**
+/// （CLI → dispatch → value_bytes），避免"测试用的编码"和"生产用的编码"分叉。
+fn digest_sample() -> Value {
+    let (_d, eng) = engine("digest-sample");
+    let rows = json!([
+        ["m1", "s1", "user", "内容", 1_700_000_000_000_i64, 0, 0.0],
+        ["m2", "s1", "assistant", "含 emoji 🙂 与\n换行", 1_700_000_000_001_i64, 12, 0.55],
+        [null, "s1", "system", "", 0, 0, 0],
+    ]);
+    let out = call(&eng, "digest.rows", json!({ "rows": rows }));
+    assert_eq!(out["ok"], json!(true), "digest.rows 失败：{out}");
+    out["result"].clone()
+}
+
 #[test]
 fn wire_fixtures_match_both_sides() {
     let (_d, eng) = engine("wire");
@@ -73,6 +89,18 @@ fn wire_fixtures_match_both_sides() {
         "_comment": "由 src-tauri/codem-db/tests/wire_contract.rs 生成/校验；TS 侧 src/test/rust-port-wire.test.ts 用同一份样本断言解包结果。字段名是跨语言契约，改名等于破坏协议。",
         "_generatedBy": "cargo test --manifest-path src-tauri/codem-db/Cargo.toml --test wire_contract",
         "_generatedAtMs": codem_db::schema::now_ms(),
+        // 对账摘要的跨语言回归样本：JS 侧必须对同一组数据算出同一个值。
+        // 这一条是**真实 bug 的回归守卫**：`cost REAL` 存 0 时，
+        // sql.js 给出 number(0) 而 Rust 给出 Real(0.0)，两边若编码不同则摘要必然不同，
+        // 表现为"行数一致、逐行一致、摘要不同"（极难定位）。
+        "digestSample": {
+            "rows": [
+                ["m1", "s1", "user", "内容", 1_700_000_000_000_i64, 0, 0.0],
+                ["m2", "s1", "assistant", "含 emoji 🙂 与\n换行", 1_700_000_000_001_i64, 12, 0.55],
+                [null, "s1", "system", "", 0, 0, 0],
+            ],
+            "result": digest_sample()
+        },
         "write": call(&eng, "settings.set", json!({ "key": "codem-font-size", "value": "14" })),
         "list": call(&eng, "messages.list", json!({
             "session_id": "s1", "limit": 2, "include_hidden": true

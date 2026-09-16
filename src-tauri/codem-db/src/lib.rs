@@ -13,6 +13,7 @@
 pub mod authorizer;
 pub mod engine;
 pub mod error;
+pub mod migrate;
 pub mod repo;
 pub mod schema;
 
@@ -45,6 +46,17 @@ pub const COMMANDS: &[&str] = &[
     "health",
     "integrity_check",
     "checkpoint",
+    // ===== P4 迁移原语（受控的结构化通道，非裸 SQL）=====
+    "import.begin",
+    "import.table",
+    "import.end",
+    "import.rollback",
+    "import.tables",
+    "migration.status",
+    "migration.mark",
+    "digest.tables",
+    "digest.rows",
+    "rebuild_fts",
 ];
 
 /// 统一入口：命令名 + 结构化参数 → JSON 结果。
@@ -79,6 +91,17 @@ pub fn dispatch(engine: &Engine, command: &str, params: &Value) -> DbResult<Valu
             engine.checkpoint()?;
             Ok(json!({ "ok": true }))
         }
+        // ===== P4 迁移原语 =====
+        "import.begin" => migrate::import_begin(engine, params),
+        "import.table" => migrate::import_table(engine, params),
+        "import.end" => migrate::import_end(engine, params),
+        "import.rollback" => migrate::import_rollback(engine, params),
+        "import.tables" => migrate::importable_existing(engine, params),
+        "migration.status" => migrate::migration_status(engine, params),
+        "migration.mark" => migrate::mark_migrated(engine, params),
+        "digest.tables" => migrate::table_digest(engine, params),
+        "digest.rows" => migrate::digest_rows(params),
+        "rebuild_fts" => migrate::rebuild_fts(engine, params),
         other => Err(DbError::unsupported(format!(
             "未实现的仓储命令：{other}（迁移按 docs/ARCH-SQLITE-TO-RUST.md 的 P3 顺序补齐）"
         ))),
@@ -93,5 +116,10 @@ pub fn capabilities() -> Value {
         "max_rows_per_query": MAX_ROWS_PER_QUERY,
         "max_bytes_per_query": MAX_BYTES_PER_QUERY,
         "no_whole_file_export": true,
+        "migration_primitives": {
+            "note": "import.table 是受控的结构化通道：表名走白名单、列名与真实列定义逐字核对、值参数化绑定，不接受任何 SQL 片段",
+            "tables": migrate::importable_tables().len(),
+            "fts_shadow_excluded": true,
+        },
     })
 }

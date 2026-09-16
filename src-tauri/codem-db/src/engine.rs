@@ -49,6 +49,15 @@ pub struct Engine {
     opened_at: Instant,
     last_error_code: Mutex<Option<String>>,
     schema_report: SchemaReport,
+    /// 显式导入事务（P4）。
+    ///
+    /// 迁移要把 6000+ 行分表导入，必须"全成或全不成"。但 rusqlite 的
+    /// `Transaction` 借用了 `&mut Connection`，没法在函数之间传递；
+    /// 于是这里用 `BEGIN`/`COMMIT` 手工管理，并用一个标志位保证
+    /// **不会和普通 `write_tx` 交错**（交错会让 COMMIT 把别人的写入一起提交）。
+    import_open: Mutex<bool>,
+    /// 导入事务里累计写入的行数（`import_commit` 回报给调用方）
+    import_written: Mutex<usize>,
 }
 
 impl Engine {
@@ -91,6 +100,8 @@ impl Engine {
             opened_at: Instant::now(),
             last_error_code: Mutex::new(None),
             schema_report,
+            import_open: Mutex::new(false),
+            import_written: Mutex::new(0),
         })
     }
 
@@ -228,5 +239,96 @@ impl Engine {
             }
             Ok(out)
         })
+    }
+
+    // ===== 导入事务（P4 迁移原语：跨调用、全成或全不成） =====
+
+    /// 开始导入事务。重复调用是幂等的（不会嵌套 BEGIN）。
+    pub fn import_begin(&self) -> DbResult<()> {
+        let mut open = self
+            .import_open
+            .lock()
+            .map_err(|_| DbError::new(ErrorCode::Unavailable, "导入状态锁已中毒"))?;
+        if *open {
+            return Ok(());
+        }
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| DbError::new(ErrorCode::Unavailable, "连接锁已中毒（不应发生）"))?;
+        conn.execute_batch("BEGIN IMMEDIATE").map_err(DbError::from)?;
+        *open = true;
+        if let Ok(mut n) = self.import_written.lock() {
+            *n = 0;
+        }
+        Ok(())
+    }
+
+    /// 提交导入事务，返回累计写入行数。
+    pub fn import_commit(&self) -> DbResult<usize> {
+        let mut open = self
+            .import_open
+            .lock()
+            .map_err(|_| DbError::new(ErrorCode::Unavailable, "导入状态锁已中毒"))?;
+        if !*open {
+            return Err(DbError::other("没有进行中的导入事务（import.end 必须先 import.begin）"));
+        }
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| DbError::new(ErrorCode::Unavailable, "连接锁已中毒（不应发生）"))?;
+        conn.execute_batch("COMMIT").map_err(DbError::from)?;
+        *open = false;
+        Ok(self.import_written.lock().map(|g| *g).unwrap_or(0))
+    }
+
+    /// 回滚导入事务（失败收尾；没有进行中的事务时是安全的 no-op）
+    pub fn import_rollback(&self) -> DbResult<()> {
+        let mut open = self
+            .import_open
+            .lock()
+            .map_err(|_| DbError::new(ErrorCode::Unavailable, "导入状态锁已中毒"))?;
+        if !*open {
+            return Ok(());
+        }
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| DbError::new(ErrorCode::Unavailable, "连接锁已中毒（不应发生）"))?;
+        let rollback = conn.execute_batch("ROLLBACK").map_err(DbError::from);
+        *open = false;
+        rollback
+    }
+
+    /// 导入期间写一行：走显式导入事务（不自己 BEGIN），并累计计数。
+    pub fn import_write<T>(&self, f: impl FnOnce(&Connection) -> DbResult<T>) -> DbResult<T> {
+        {
+            let open = self
+                .import_open
+                .lock()
+                .map_err(|_| DbError::new(ErrorCode::Unavailable, "导入状态锁已中毒"))?;
+            if !*open {
+                return Err(DbError::other(
+                    "import.table 必须在 import.begin 之后调用（否则每批各行独立提交，中途失败会留下半个库）",
+                ));
+            }
+        }
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| DbError::new(ErrorCode::Unavailable, "连接锁已中毒（不应发生）"))?;
+        let out = f(&conn);
+        if let Ok(n) = &out {
+            if let Ok(mut w) = self.import_written.lock() {
+                *w += 1; // 按"批次"计；精确行数由各命令自己回报
+                let _ = n;
+            }
+        }
+        out
+    }
+
+    /// 是否有进行中的导入事务（诊断用）
+    pub fn import_in_progress(&self) -> bool {
+        self.import_open.lock().map(|g| *g).unwrap_or(false)
     }
 }

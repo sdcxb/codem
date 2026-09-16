@@ -30,6 +30,11 @@
     "db:cli": "cargo run --manifest-path src-tauri/codem-db/Cargo.toml --bin codem-db-cli --",
     "test:db": "npm run db:build && vitest run src/test/db-contract.test.ts",
     "bench:db": "npm run db:build && node tools/bench/db-scale.mjs",
+    "migrate:plan": "npm run db:build && node tools/migrate/storage-migrate.mjs --dry-run",
+    "migrate:apply": "npm run db:build && node tools/migrate/storage-migrate.mjs --apply",
+    "migrate:verify": "npm run db:build && node tools/migrate/storage-migrate.mjs --verify",
+    "migrate:rollback-hint": "node tools/migrate/storage-migrate.mjs --rollback-hint",
+    "migrate:bite": "npm run db:build && node tools/migrate/bite-reconcile.mjs",
     "verify": "vitest run --coverage && npx knip && npx jscpd"
   },
   "dependencies": {

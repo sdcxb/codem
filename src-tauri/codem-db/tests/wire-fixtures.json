@@ -1,6 +1,6 @@
 {
   "_comment": "由 src-tauri/codem-db/tests/wire_contract.rs 生成/校验；TS 侧 src/test/rust-port-wire.test.ts 用同一份样本断言解包结果。字段名是跨语言契约，改名等于破坏协议。",
-  "_generatedAtMs": 1789551594690,
+  "_generatedAtMs": 1789552272668,
   "_generatedBy": "cargo test --manifest-path src-tauri/codem-db/Cargo.toml --test wire_contract",
   "count": {
     "engine": "rust",
@@ -11,6 +11,41 @@
       "total": 1,
       "visible": 1
     }
+  },
+  "digestSample": {
+    "result": {
+      "digest": "3eeab1787334d4db",
+      "rows": 3
+    },
+    "rows": [
+      [
+        "m1",
+        "s1",
+        "user",
+        "内容",
+        1700000000000,
+        0,
+        0.0
+      ],
+      [
+        "m2",
+        "s1",
+        "assistant",
+        "含 emoji 🙂 与\n换行",
+        1700000000001,
+        12,
+        0.55
+      ],
+      [
+        null,
+        "s1",
+        "system",
+        "",
+        0,
+        0,
+        0
+      ]
+    ]
   },
   "error_bad_param": {
     "engine": "rust",

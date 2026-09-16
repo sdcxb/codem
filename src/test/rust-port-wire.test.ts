@@ -138,4 +138,33 @@ describe("线协议 —— Rust 生成的金样本必须被 TS 端口正确解�
     expect(typeof r.written).toBe("number");
     expect(r.written).toBeGreaterThan(0);
   });
+
+  it("WIRE-7: 对账摘要的**跨语言一致性**（真实 bug 的回归守卫）", async () => {
+    // 背景：`cost REAL` / `weight REAL` 存整数值时，Rust 看到 Real(0.0)、
+    // sql.js 给出 number(0)。两边若编码不同，摘要必然不同 ——
+    // 表现为"行数一致、逐行一致、摘要不同"，极难定位（实测踩过一次）。
+    // 这里用 Rust 生成的金样本锁住两边一致：
+    const sample = fixtures.digestSample;
+    expect(sample, "金样本缺少 digestSample").toBeTruthy();
+
+    const { digestRows } = await import("../../tools/migrate/lib/digest.mjs");
+    const js = digestRows(sample.rows);
+    expect(
+      js.digest,
+      `摘要跨语言不一致：JS=${js.digest} Rust=${sample.result.digest}。` +
+        `改动 digest.mjs 或 migrate.rs 的 value_bytes 时，两边必须同步。`,
+    ).toBe(sample.result.digest);
+    expect(js.rows).toBe(sample.result.rows);
+  });
+
+  it("WIRE-8: 摘要必须能区分类型与边界（1 与 \"1\"、1 与 1.5、列边界）", async () => {
+    const { digestRows } = await import("../../tools/migrate/lib/digest.mjs");
+    expect(digestRows([[1]]).digest).not.toBe(digestRows([["1"]]).digest);
+    expect(digestRows([[1]]).digest).not.toBe(digestRows([[1.5]]).digest);
+    expect(digestRows([["ab", "c"]]).digest).not.toBe(digestRows([["a", "bc"]]).digest);
+    expect(digestRows([["a"], ["b"]]).digest).not.toBe(digestRows([["a", "b"]]).digest);
+    expect(digestRows([[null]]).digest).not.toBe(digestRows([[""]]).digest);
+    // 整数值的浮点与整数摘要**必须相同**（这是与 Rust 约定好的规则，不是缺陷）
+    expect(digestRows([[0]]).digest).toBe(digestRows([[0.0]]).digest);
+  });
 });
