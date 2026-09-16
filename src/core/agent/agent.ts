@@ -2,6 +2,7 @@
 
 import type { TaskSlot } from "../llm/model-profile";
 import { getSettingJSON, setSettingJSON } from "../storage/settings";
+import { reportActionFailure } from "../storage/persist-failure";
 
 // ========== Agent Types ==========
 export type AgentMode = "primary" | "subagent" | "all";
@@ -82,7 +83,9 @@ export class AgentRegistry {
     this.registerBuiltinAgents();
     this.loadCustomAgents();
     // R3-2.3: Fire-and-forget preset discovery (async, can't await in constructor)
-    this.loadPresets().catch(() => {});
+    // 第 89 波：原来 `.catch(() => {})` 把失败吞得干干净净（内部虽有 warn，但外层静默）；
+    // 现在保留 fire-and-forget，但失败要可见（内部已走 reportActionFailure）。
+    this.loadPresets().catch(() => { /* 已在上报通道里处理，避免 unhandled rejection */ });
   }
 
   /**
@@ -112,8 +115,14 @@ export class AgentRegistry {
         console.log(`[AgentRegistry] Loaded ${presets.length} agent preset(s) from discovery`);
       }
     } catch (e: any) {
-      // Non-critical — presets are optional
-      console.warn("[AgentRegistry] Preset discovery failed:", e.message);
+      // 第 89 波（C 类门禁扫出）：预设发现失败原来只写一行 warn，而构造函数那边更是
+      // `.catch(() => {})` 全吞 —— 用户放在 preset 目录里的 agent.cordis.yml 静默不生效，
+      // 只在"我的自定义智能体怎么不见了"里体现。现在走统一失败上报（可见 + 可诊断）。
+      reportActionFailure(
+        "agentRegistry.loadPresets",
+        e,
+        "自定义智能体预设未加载（agent.cordis.yml 不会出现在智能体列表里）",
+      );
     }
   }
 

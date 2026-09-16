@@ -25,7 +25,8 @@ async function loadScanners() {
   // 用动态 import 直接调函数（避免子进程 + 管道，在受限环境下更稳）
   const fsScanner = await import(path.join(TOOLS, "scan-false-success.mjs") as any);
   const swScanner = await import(path.join(TOOLS, "scan-silent-write.mjs") as any);
-  return { fsScanner, swScanner };
+  const gbScanner = await import(path.join(TOOLS, "scan-guard-bypass.mjs") as any);
+  return { fsScanner, swScanner, gbScanner };
 }
 
 describe("审计门禁 —— 仓库当前必须零未豁免命中", () => {
@@ -48,18 +49,28 @@ describe("审计门禁 —— 仓库当前必须零未豁免命中", () => {
 
   it("GATE-3: 豁免清单里每条都必须写明理由（不允许无理由豁免）", () => {
     const allow = JSON.parse(fs.readFileSync(path.join(TOOLS, "allowlist.json"), "utf8"));
-    for (const key of ["falseSuccess", "silentWrites"]) {
+    for (const key of ["falseSuccess", "silentWrites", "guardBypass"]) {
       for (const entry of allow[key] ?? []) {
         expect(typeof entry.file, `${key} 条目缺少 file`).toBe("string");
         expect((entry.reason ?? "").length, `${key} 的 ${entry.file} 缺少理由`).toBeGreaterThan(8);
       }
     }
   });
+
+  it("GATE-5: C 类（守卫被绕过）扫描无未豁免命中", async () => {
+    const { gbScanner } = await loadScanners();
+    const result = gbScanner.scanGuardBypass({});
+    const detail = result.violations
+      .map((v: any) => `${v.file}:${v.line} [${v.kind}] ${v.fn} → ${v.preview}\n    ${v.why}`)
+      .join("\n");
+    expect(result.scannedFiles).toBeGreaterThan(100);
+    expect(result.violations, `未豁免的守卫绕过命中：\n${detail}`).toEqual([]);
+  });
 });
 
 describe("扫描器自检（门禁本身必须会咬）", () => {
-  it("GATE-4: 故意写坏的样本必须被两个扫描器报出来", async () => {
-    const { fsScanner, swScanner } = await loadScanners();
+  it("GATE-4: 故意写坏的样本必须被三个扫描器报出来", async () => {
+    const { fsScanner, swScanner, gbScanner } = await loadScanners();
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "codem-audit-gate-"));
     const probe = path.join(tmp, "probe.ts");
     fs.writeFileSync(
@@ -79,13 +90,21 @@ describe("扫描器自检（门禁本身必须会咬）", () => {
         "    return true;", // ← 典型假成功
         "  }",
         "}",
+        "export function checkPermission(tool: string) {",
+        "  try {",
+        "    return analyzeBashCommand(tool).classification;",
+        "  } catch {",
+        "    return { action: 'allow' };", // ← 守卫失败 → 默认放行
+        "  }",
+        "}",
       ].join("\n"),
       "utf8",
     );
 
     try {
-      const fsResult = fsScanner.scanFalseSuccess({ root: tmp, allowlist: { falseSuccess: [], silentWrites: [] } });
-      const swResult = swScanner.scanSilentWrites({ root: tmp, allowlist: { falseSuccess: [], silentWrites: [] } });
+      const fsResult = fsScanner.scanFalseSuccess({ root: tmp, allowlist: { falseSuccess: [], silentWrites: [], guardBypass: [] } });
+      const swResult = swScanner.scanSilentWrites({ root: tmp, allowlist: { falseSuccess: [], silentWrites: [], guardBypass: [] } });
+      const gbResult = gbScanner.scanGuardBypass({ root: tmp, allowlist: { falseSuccess: [], silentWrites: [], guardBypass: [] } });
 
       // P1：catch 里 return true
       expect(fsResult.p1.length, "应报出 catch 里 return true").toBeGreaterThan(0);
@@ -94,6 +113,9 @@ describe("扫描器自检（门禁本身必须会咬）", () => {
       // A 类：未走 runGuarded 的 UPDATE
       expect(swResult.updates.length, "应报出未接 runGuarded 的 UPDATE").toBeGreaterThan(0);
       expect(swResult.violations.length).toBeGreaterThan(0);
+      // C 类：守卫失败 → 默认放行
+      expect(gbResult.findings.length, "应报出守卫失败时的 fail-open 返回").toBeGreaterThan(0);
+      expect(gbResult.violations.length).toBeGreaterThan(0);
       expect(fsScanner.stripComments("// db.run(`UPDATE x SET y = ? WHERE id = ?`)\nconst a = 1;")).not.toMatch(/UPDATE/);
     } finally {
       fs.rmSync(tmp, { recursive: true, force: true });

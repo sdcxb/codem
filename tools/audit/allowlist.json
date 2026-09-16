@@ -22,5 +22,17 @@
       "reason": "createSession 里读会话数失败 → 退回内存计数，属读路径降级；真正的写失败已走 reportPersistFailure"
     }
   ],
-  "silentWrites": []
+  "silentWrites": [],
+  "guardBypass": [
+    {
+      "file": "src/core/mcp/mcp.ts",
+      "contains": "return true;",
+      "reason": "isCodeGraphEnabled()：这是『开关是否开启』的读取函数，读不到设置时按默认开启（既有产品语义）。它不是守门人：真正的门禁在 AgenticLoop/HookManager/权限层，且该默认值不会放行任何被拦下的动作。"
+    },
+    {
+      "file": "src/components/SettingsPanel.tsx",
+      "contains": "return true;",
+      "reason": "CodeGraph 设置项 UI 的初始值（动态 require 失败时按默认开启显示）。仅影响复选框初值，不参与任何放行判定。"
+    }
+  ]
 }

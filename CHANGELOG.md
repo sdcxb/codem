@@ -2,6 +2,58 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.16.41] - 2026-09-15 — C 类（守卫被绕过）也成了门禁；三类问题现在全部机器把关（第 89 波）
+
+A 类（静默空写）与 B 类（假成功）在第 88 波已经是测试门禁，但 C 类（**安全阀自己失效时往哪边倒**）
+还只有手工 grep。这一轮补齐，并当场修掉门禁抓出的问题。
+
+### 一、新门禁：`tools/audit/scan-guard-bypass.mjs`
+
+三类判据（只报可证明的结构，不猜语义）：
+
+- **C1 fail-open 返回**：`catch` 里返回放行语义（`true` / `"allow"` / `{ allowed: true }` /
+  `{ action: "allow" }` / `proceed`）。只报**无条件**放行，或"有放行返回但整块没有任何拒绝路径"的；
+  形如 `if (hook.allowOnError) { … return allow } return deny…` 这种**显式选择的** fail-open 开关
+  只记为"需人工确认"的信息项（不当缺陷）。
+- **C2 守卫调用被吞**：`catch` 里调用了守卫/权限类函数（`analyzeBashCommand` / `isAutoApprovable` /
+  `checkPermission` / `modeGate` / `getEffectiveSecurityMode` / `isProtectedPath` /
+  `isPathWithinWorkspace` / `isSandboxAclEnabled` / `PlanModeGuard` / `SandboxGuard` / `shouldFireHook` …）
+  而块内既没有 `throw`、也没有拒绝路径、也没有走统一失败上报 —— 判定失败被静默忽略。
+- **C3 审批缺省放行**：**空 catch** 且紧邻 `"ask"` 审批判断（前 25 行内）或位于权限/守卫语义的函数里。
+
+调优过程本身也留了记录：第一版把 `mode` / `allow` 放进函数名匹配，于是 `getMode`、
+`saveCustomModels`（"Model" 含 "mode"）被误报 —— 收紧为
+`permission|approve|guard|security|sandbox|consent|deny|hook`；C3 也从"整个函数体里出现过 ask"
+收紧为"catch 前 25 行内出现 ask"（否则三五百行的大函数里出现一次 `"ask"` 会把无关的 `catch {}` 全拖进来）。
+
+### 二、门禁当场抓出的问题（已修）
+
+- `AgentRegistry.loadPresets`：预设发现失败原来只写一行 warn，构造函数里更是 `.catch(() => {})` 全吞 ——
+  用户放在 preset 目录里的 `agent.cordis.yml` **静默不生效**（只在"我的自定义智能体怎么不见了"里体现）。
+  现在走统一失败上报（`agentRegistry.loadPresets`）。
+- 两处豁免写进了 `allowlist.json` 的 `guardBypass`（都附理由）：`isCodeGraphEnabled()` 与设置面板里同名
+  的"读不到设置时按默认开启"——它们是**读取开关**的函数，不是守门人，真正的门禁在
+  `AgenticLoop` / `HookManager` / 权限层。
+
+### 三、门禁套件现状
+
+| 门禁 | 扫描对象 | 违规数 |
+|---|---|---|
+| A 类 `scan-silent-write.mjs` | `db.run(UPDATE … WHERE id = ?)` 未走 `runGuarded` | **0** |
+| B 类 `scan-false-success.mjs` | catch 里 `return true`；写/动作类函数的 catch 只有日志 | **0**（4 条豁免均写明理由） |
+| C 类 `scan-guard-bypass.mjs` | fail-open 返回、守卫调用被吞、审批缺省放行 | **0**（2 条豁免均写明理由） |
+
+- `npm run audit` 一次跑完三类；`audit:silent-write` / `audit:false-success` / `audit:guard-bypass` /
+  `audit:json` 可单独用。
+- `src/test/audit-gates.test.ts` 扩到 **GATE-1~5**（含 GATE-3"豁免必须写理由"、GATE-5 C 类零未豁免），
+  自检样本也扩到三类（catch 里 `return true` + 只有日志的 catch + 未接 `runGuarded` 的 UPDATE +
+  守卫失败 `return { action: 'allow' }`）—— 门禁本身必须会咬。
+
+### 四、验证
+
+全量 **254 文件 / 4993 用例通过 / 15 跳过**、`tsc --noEmit` 0 错、UI 审计 27 条规则 0 error / 0 warn、
+css-contract 2745 个类无变化；`npm run audit` 三类扫描全部 exit 0。
+
 ## [1.16.40] - 2026-09-15 — 两个审计扫描器变成**测试门禁**；门禁上线当场又抓出 15 处 A 类（第 88 波）
 
 第 86/87 波的扫描器是一次性脚本 —— 结论会随时间失效：新写的代码可以再次引入同样的模式。

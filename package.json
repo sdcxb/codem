@@ -1,7 +1,7 @@
 {
   "name": "codem",
   "private": true,
-  "version": "1.16.40",
+  "version": "1.16.41",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -17,8 +17,9 @@
     "test:snapshot": "vitest run --config vitest.snapshot.config.ts",
     "audit:false-success": "node tools/audit/scan-false-success.mjs",
     "audit:silent-write": "node tools/audit/scan-silent-write.mjs",
-    "audit": "npm run audit:silent-write && npm run audit:false-success",
-    "audit:json": "node tools/audit/scan-silent-write.mjs --json && node tools/audit/scan-false-success.mjs --json",
+    "audit": "npm run audit:silent-write && npm run audit:false-success && npm run audit:guard-bypass",
+    "audit:guard-bypass": "node tools/audit/scan-guard-bypass.mjs",
+    "audit:json": "node tools/audit/scan-silent-write.mjs --json && node tools/audit/scan-false-success.mjs --json && node tools/audit/scan-guard-bypass.mjs --json",
     "verify": "vitest run --coverage && npx knip && npx jscpd"
   },
   "dependencies": {
