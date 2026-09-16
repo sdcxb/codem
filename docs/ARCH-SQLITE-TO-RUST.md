@@ -1990,3 +1990,78 @@ P6 在 Rust 路径上做的任何内存约束（镜像预算、每表上限、�
 | `sql-injection.test.ts` | 1 |
 | `task-center-audit-fixes-2.test.tsx` | 1 |
 | `trigger-call-execute-loop.test.ts` | 1 |
+
+---
+
+## 第 31 轮真机事故：查询索引被清空（未完全定位）+ 面板崩溃（已修）
+
+这一轮本来只打算做"测试基座切到端口"，结果真机验收连续抓到两个更严重的问题。
+按"如实记录、不掩盖"的规矩，把它们连**没查清的部分**一起写在这里。
+
+### 事故 A：`app.conversation` 面板整体崩溃（**已修**）
+
+**症状**：打包版启动后对话区一条消息都不渲染，控制台
+`Database not initialized. Call initDatabase() first.`，
+`[SlotBridge] Plugin component crashed for slot "app.conversation"`（ChatPanel 兜底也崩）。
+
+**根因**：`prompt-draft.ts` 的 `loadPromptDrafts` 在渲染期被调用，端口分支
+（`domainReadMany`）在**镜像尚未加载完**时返回 `undefined`（这是设计：未加载完不路由），
+于是落到 `const db = getDatabase()` 回退；而 rust 模式下旧库**刻意不加载**，
+`getDatabase()` 按设计抛错（`database.ts:1263`）→ 渲染期异常 → 面板被错误边界卸载。
+
+**性质**：**既有缺陷，非本轮引入** —— 已核对 `HEAD~1` 的同名文件，该模式与 v1.16.48 一致。
+
+**修法**：引入 `legacyDb()` = `tryGetDatabase()`，把该文件 4 处回退改为
+"旧库不存在 → 返回该域在 rust 模式下的合理结果（空列表 / 如实上报）"。
+`getDatabase()` 本身**仍保持抛错**（写路径上"没有库"是真错误，不该被静默吞掉）。
+
+**遗留风险（重要）**：全仓仍有约 **150 处** `const db = getDatabase()` 回退分支，
+它们每一个都可能在渲染期抛同样的异常。这不是"少调了一次 init"，而是
+**把"旧库不存在"当成异常**这类设计债 —— 真正的收敛方式是逐个改为 `tryGetDatabase()`
+并给出该域的合理空结果（这份清单见本文档末尾的待办表）。
+
+### 事故 B：查询索引被清空，而迁移标记还在（**未完全定位，数据可恢复**）
+
+**症状**：迁移**对账通过并写了标记**（`codem-storage-migrated-at` 在）之后，
+新库的 `messages / sessions / session_events / tool_calls` 变回 0
+（`sessions` 只剩 1 个笔记本会话）。用户看到的形态是"项目在、会话和消息全空"。
+
+**已知事实（都是命令输出，不是推测）**：
+
+| 事实 | 证据 |
+| --- | --- |
+| 旧库**始终完好** | `codem-db-cli --db codem-db.bin counts` → `messages=821 sessions=3 session_events=2198` |
+| 迁移能成功恢复 | `migration.auto` → `per_table` 对账通过：`messages=821 tool_calls=883 sessions=3` |
+| 恢复后完整性正常 | `integrity` → `{"ok":true,"detail":"ok"}` |
+| 清空**不经过端口** | 在端口 `data.execute/write/command` 三层都装了审计缓冲，复现期间只记录到 3 条写（`fts.rebuild_all` / `settings.set` / `crud.upsert projects`），**没有任何删除** |
+| 可复现 | 恢复 → 启动应用 → 点击项目/会话 → 数据变 0（发生 3 次） |
+| 标记仍在 | 清空后 `settings` 里 `codem-storage-migrated-at` 存在 |
+
+**结论**：确认存在一条**绕过渲染进程存储端口**的删除路径，在"进会话"这条用户路径上触发。
+本轮**没有定位到它**，因此**不声称已修复**。
+
+**已做的加固（都不是"修好了"，只是降低危害）**：
+
+1. **迁移守卫可续做**：原来"新库有用户项目就不覆盖"会把**半迁移**状态永久挡住
+   （用户看到的空列表永不恢复）。现在判据是"**有项目却没有任何用户消息/会话**"= 明显不完整
+   → 允许重跑一次（`replace: true` 幂等，内容是旧库那份权威副本）。
+2. **迁移标记不再等于"数据在"**：标记存在时额外做一次对账 ——
+   "新库核心表全空（messages/sessions/session_events/tool_calls 四张都空）+ 旧库有数据（`dry_run` 只读探测）"
+   → 允许重跑迁移自愈。判据刻意保守：**只在"新库为空且旧库非空"时触发，绝不覆盖任何非空数据**。
+   （本轮实测该自愈**没有触发**，因为清空后仍残留 1 个笔记本会话 → 未满足"四张全空"。所以它覆盖不了这次的形态，需要继续收紧。）
+3. **端口写审计**：端口 `data.execute/write/command` 上的审计缓冲作为排障能力保留建议
+   （本轮它给出了"删除不经过端口"这条关键结论）。
+
+**下一步（按顺序）**：
+
+1. 在 Rust 侧给 `crud_delete` / `messages.delete` / `events.delete_session` / `sessions.delete`
+   加"调用来源"标记与只增的审计表（写一行谁删了什么）—— 下一次复现就能直接读出凶手；
+2. 用 `codem-db-cli` 只读打开清空后的库，确认 `messages` 是**真空了**还是"表还在、行被删"
+   （本轮受限于工具，`crud.list` 只返回 1 行而 `counts` 报 3 行，这个不一致本身也要查清）；
+3. 定位后，在"进会话"路径上找到那条绕过端口的删除，并让它走端口（或在端口层拒绝）。
+
+### 本轮同时完成的正面工作
+
+- **测试基座切到端口**（`src/test/fake-storage-port.ts`）：见上一节，逼出并修掉 7 个真实读写分裂；
+- **新增两个审计工具**：`tools/audit/port-failure-table.mjs`、`tools/audit/show-failures.mjs`；
+- 七个审计门禁保持全绿（exit 0），`tsc` 0 错误。

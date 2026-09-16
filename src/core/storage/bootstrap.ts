@@ -19,7 +19,7 @@
  * 让用户和日志都能看见。
  */
 
-import { STORAGE_ENGINE_KEY, getStoragePort, hasStoragePort, setStoragePort } from "./port";
+import { STORAGE_ENGINE_KEY, getStoragePort, hasStoragePort, setStoragePort, type StoragePort } from "./port";
 import { RustStoragePort, type StorageTransport } from "./rust-port";
 import { reportActionFailure } from "./persist-failure";
 
@@ -234,6 +234,62 @@ export async function repairSearchIndexOnce(
     return { kind: "failed", error: e };
   }
 }
+/**
+ * 新库的"关键表"是否**全部为空**（消息 / 会话 / 事件 / 工具调用）。
+ *
+ * 为什么单看 `messages` 不够：真机事故里这四张表是一起变空的，
+ * 而"只有消息空、会话还在"也可能是正常的中间状态（用户刚开始用）。
+ * 四张都空 + 旧库有数据 = 几乎可以确定是索引不完整，而不是用户真把东西删光了。
+ */
+async function newDbCoreTablesEmpty(port: StoragePort): Promise<boolean> {
+  for (const table of ["messages", "sessions", "session_events", "tool_calls"]) {
+    try {
+      const page = await port.data.query<{ items?: unknown[] }>("crud.list", { table, limit: 1 });
+      if ((page.items?.length ?? 0) > 0) return false;
+    } catch {
+      // 读不到（表不存在等）不算"空"：宁可不动，也不误判成需要重建
+      return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * 旧库里是否有**值得恢复的内容**（消息 > 0）。
+ *
+ * 只读、只数一行：这是"要不要允许自愈重建"的唯一依据 ——
+ * 旧库也空的话，重跑迁移没有意义（也不该动任何东西）。
+ */
+async function legacyDbHasContent(
+  port: StoragePort,
+  legacyPath: string,
+): Promise<boolean> {
+  try {
+    /**
+     * 用 `migration.auto` 的 **`dry_run`**：它只**只读**扫一遍旧库并回报逐表行数，
+     * 不写任何东西（`migrate.rs:1417`）。这是渲染侧能拿到的、最便宜也最安全的
+     * "旧库有没有内容"的答案 —— 比在渲染进程里再开一个 sql.js 读旧库轻得多，
+     * 也避开了 FTS4 只读连接上的 `quick_check` 陷阱。
+     */
+    const probe = port.data as unknown as {
+      command?: <T>(cmd: string, params?: Record<string, unknown>) => Promise<T>;
+    };
+    if (!probe.command) return false;
+    const res = await probe.command<{
+      dry_run?: boolean;
+      per_table?: Array<{ table: string; rows: number }>;
+    }>("migration.auto", { legacy_path: legacyPath, dry_run: true });
+    const messages = (res.per_table ?? []).find((t) => t.table === "messages");
+    return (messages?.rows ?? 0) > 0;
+  } catch {
+    /**
+     * 拿不到旧库统计时**保守处理**：不触发重建。
+     * 宁可让用户看到空列表（并且日志里有明确告警），也不冒"误覆盖"的风险 ——
+     * 覆盖是单向的，等一次人工确认的成本远低于把用户数据盖掉。
+     */
+    return false;
+  }
+}
 export async function migrateFromLegacyDb(
   label = "storage.auto-migrate",
 ): Promise<{ kind: "skipped"; reason: string } | { kind: "migrated"; tables: number; rows: number } | { kind: "failed"; error: unknown }> {
@@ -261,9 +317,34 @@ export async function migrateFromLegacyDb(
       return { kind: "skipped", reason: "新库已有消息数据（不覆盖）" };
     }
     const projects = await port.data.query<{ id: string }>("crud.list", { table: "projects", limit: 5 });
-    const userProjects = (projects.items ?? []).filter((p) => p.id !== "");
+    const userProjects = (projects.items ?? []).filter((p) => p.id !== "" && !String(p.id).startsWith("notebook:"));
     if (userProjects.length > 0) {
-      return { kind: "skipped", reason: "新库已有用户项目（不覆盖）" };
+      /**
+       * ⚠️ 这里**不再直接返回 skipped**（第 31 轮真机事故后的修正）。
+       *
+       * 实测到的现场：新库里 `projects=3 / notebooks=1 / notebook_sources=8` 都搬好了，
+       * 而 **`messages=0 / sessions=1 / session_events=0 / tool_calls=0`** ——
+       * 也就是"导入事务在搬小表之后就回滚了"的半迁移状态。
+       *
+       * 旧库是**完好**的（`messages=821 / sessions=3 / session_events=2198 / projects=3`，
+       * 数据没丢），但"有用户项目就不覆盖"这条守卫把重试**永久挡住了**：
+       * 用户看到的是项目在、会话和消息全空，而且**再怎么重启也不会自愈**。
+       *
+       * 判据改成"**明显不完整**才允许再搬一次"：有项目却没有任何消息 ——
+       * 正常库里不可能有这种形态（用户至少会有一条消息才会产生会话/项目）。
+       * 真正"用户自己删光了消息"的情况由 `auto_migrate` 的 `replace: true` 兜住，
+       * 而它搬运的正是旧库那份权威内容，不会造成新的丢失。
+       */
+      const probe = await port.data.query<{ id: string }>("crud.list", { table: "messages", limit: 1 });
+      const hasAnyMessage = (probe.items?.length ?? 0) > 0;
+      const sessionProbe = await port.data.query<{ id: string }>("crud.list", { table: "sessions", limit: 5 });
+      const userSessions = (sessionProbe.items ?? []).filter(
+        (s) => !String((s as { project_id?: string }).project_id ?? "").startsWith("notebook:"),
+      );
+      if (hasAnyMessage || userSessions.length > 0) {
+        return { kind: "skipped", reason: "新库已有用户项目与会话数据（不覆盖）" };
+      }
+      // 落到这里：有用户项目、却一条用户消息都没有 → 半迁移，允许重搬（幂等覆盖）
     }
   } catch (e) {
     return { kind: "skipped", reason: `无法查询新库数据：${String(e)}` };
@@ -288,7 +369,29 @@ export async function migrateFromLegacyDb(
       limit: 2000,
     });
     if (settings.items?.some((s) => s.key === "codem-storage-migrated-at")) {
-      return { kind: "skipped", reason: "已有迁移标记" };
+      /**
+       * ⚠️ 有标记 ≠ 数据还在（第 31 轮真机事故的修正）。
+       *
+       * 实测到的现场：迁移**对账通过、标记已写**（`codem-storage-migrated-at` 在），
+       * 但之后新库的 `messages / sessions / session_events / tool_calls` 又变回了 0
+       * —— 而旧库那份完好（`messages=821 / sessions=3`）。
+       * 结果是：用户看到项目在、会话和消息全空，而且**重启永远不会自愈**
+       * （标记把迁移彻底挡住了）。
+       *
+       * 所以这里加一道**对账自愈**：标记存在、但新库的关键表为空而旧库非空 →
+       * 判定为"数据不完整"，允许重跑一次迁移（`replace: true` 幂等，内容是旧库那份权威副本）。
+       * 判据刻意保守：只在"新库为空 + 旧库非空"时触发，绝不覆盖任何非空数据。
+       */
+      const stillEmpty = await newDbCoreTablesEmpty(port);
+      const legacyHas = await legacyDbHasContent(port, legacyPath);
+      if (!(stillEmpty && legacyHas)) {
+        return { kind: "skipped", reason: "已有迁移标记" };
+      }
+      reportActionFailure(
+        label,
+        new Error("新库关键表为空但旧库有数据"),
+        "检测到查询索引不完整（消息/会话为空，而旧库有数据）—— 正在从旧库重建一次",
+      );
     }
   } catch {
     /* 读不到设置不阻塞：让 Rust 侧再判一次（它自己也写/读标记） */

@@ -4,7 +4,8 @@
  * 用于保存、加载、删除 Prompt 草稿，支持版本对比
  */
 
-import { getDatabase, persistDatabase } from "./database";
+import { tryGetDatabase, persistDatabase } from "./database";
+import { reportPersistFailure } from "./persist-failure";
 import { domainDelete, domainReadMany, domainReadOne, domainWrite } from "./domain-store";
 
 // ========== 迁移期分流（P3 第 13 段） ==========
@@ -14,6 +15,34 @@ import { domainDelete, domainReadMany, domainReadOne, domainWrite } from "./doma
 // 走镜像时要在**镜像里**算同样的东西（见 maxVersion），语义保持一致。
 
 const TABLE = "prompt_drafts";
+
+/**
+ * 旧库入口（P5 第 10 段）。
+ *
+ * ## 为什么这个文件要单独修
+ *
+ * 真机验收（打包版）实测：`app.conversation` 面板**整体崩溃**，
+ * 控制台是 `Database not initialized. Call initDatabase() first.`，
+ * 会话区一条消息都不渲染。堆栈落到本文件的 `listPromptDrafts`（渲染期同步调用）：
+ *
+ * - 端口分支用的是 `domainReadMany(...)`，而它在**镜像尚未加载完**时返回 `undefined`
+ *   （这是设计：未加载完不路由，避免读写分裂）；
+ * - 于是落到 `const db = getDatabase()` 这条回退；
+ * - 而 rust 模式下旧库是**刻意不加载**的（省内存的前提），`getDatabase()` 按设计抛错；
+ * - 渲染期抛出 = React 组件崩 → 面板变"此面板不可用"。
+ *
+ * 根因是**把"旧库不存在"当成了异常**。在新架构下它是正常状态，正确表达是
+ * `tryGetDatabase()` 返回 null，由调用方给出"该域在 rust 模式下的合理结果"。
+ *
+ * ⚠️ 注意：`getDatabase()` 本身**保持抛错不变**（写路径上"没有库"是真错误，
+ * 不该被静默吞掉）。所以这里逐个改为 `tryGetDatabase()` + 判空返回，
+ * 而不是去改底层语义 —— 那种改法会把真实故障一起静默掉。
+ */
+
+/** 取旧库；rust 模式下旧库刻意不存在 → 返回 null（调用方给空结果，不抛） */
+function legacyDb() {
+  return tryGetDatabase();
+}
 
 /** 线协议行 → PromptDraft（tags 是 JSON 文本） */
 function wireToDraft(row: Record<string, unknown>): PromptDraft {
@@ -78,7 +107,12 @@ export function savePromptDraft(
     return id;
   }
 
-  const db = getDatabase();
+  const db = legacyDb();
+  if (!db) {
+    // 写路径：不能静默，也不能抛（调用方多为 UI 动作）。如实上报为"未保存"。
+    reportPersistFailure("promptDraft.save", new Error("旧库不存在且端口未接手"), "草稿未保存（查询索引不可用）");
+    return id;
+  }
 
   // Get current version count
   const result = db.exec(
@@ -107,7 +141,8 @@ export function loadPromptDrafts(sessionId: string): PromptDraft[] {
     // 与旧实现一致：version DESC
     return rust.sort((a, b) => b.version - a.version);
   }
-  const db = getDatabase();
+  const db = legacyDb();
+  if (!db) return []; // rust 模式且镜像未就绪：给空结果，绝不在渲染期抛
   const result = db.exec(
     "SELECT id, session_id, version, content, tags, created_at FROM prompt_drafts WHERE session_id = ? ORDER BY version DESC",
     [sessionId]
@@ -130,7 +165,11 @@ export function loadPromptDrafts(sessionId: string): PromptDraft[] {
  */
 export function deletePromptDraft(draftId: string): void {
   if (domainDelete(TABLE, { id: draftId }, { scope: "promptDraft.delete", note: "草稿未删除" })) return;
-  const db = getDatabase();
+  const db = legacyDb();
+  if (!db) {
+    reportPersistFailure("promptDraft.delete", new Error("旧库不存在且端口未接手"), "草稿未删除");
+    return;
+  }
   db.run("DELETE FROM prompt_drafts WHERE id = ?", [draftId]);
   persistDatabase();
 }
@@ -152,13 +191,13 @@ export function comparePromptDrafts(
     // 与旧实现一致：按 version 升序排列
     [draft1, draft2] = d1.version <= d2.version ? [d1, d2] : [d2, d1];
   } else {
-    const db = getDatabase();
-    const result = db.exec(
-      "SELECT * FROM prompt_drafts WHERE id IN (?, ?) ORDER BY version",
-      [draftId1, draftId2]
-    );
+    const db = legacyDb();
+    const result = db
+      ? db.exec("SELECT * FROM prompt_drafts WHERE id IN (?, ?) ORDER BY version", [draftId1, draftId2])
+      : [];
 
     if (result.length === 0 || result[0].values.length < 2) {
+      // 读不到就是"找不到草稿"（业务语义），不该是"数据库没初始化"（基础设施语义）
       throw new Error("Drafts not found");
     }
 
