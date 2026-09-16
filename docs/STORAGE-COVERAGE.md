@@ -4,8 +4,8 @@
 
 - 扫描生产文件：**838**
 - 需要实现的仓储方法：**129**（对应 278 个 SQL 调用点）
-- 已实现：**24** → 方法覆盖率 **18.6%**，调用点覆盖率 **27.7%**
-- Rust 侧已注册命令：**54**
+- 已实现：**33** → 方法覆盖率 **25.58%**，调用点覆盖率 **36.33%**
+- Rust 侧已注册命令：**62**
 
 ## 已实现（渲染侧方法 → Rust 命令）
 
@@ -15,14 +15,21 @@
 | `messages.select` | 11 | `messages.get` `messages.list` |
 | `session_events.select` | 11 | `events.list` `events.count` `events.watermark` |
 | `session_events.insert` | 7 | `events.append` `events.append_batch` |
+| `attachments.select` | 6 | `attachments.list` |
 | `sessions.select` | 6 | `sessions.list` |
+| `message_feedback.alter` | 4 | `feedback.set` |
+| `message_feedback.delete` | 4 | `feedback.delete` |
 | `messages.delete` | 4 | `messages.delete` |
+| `message_feedback.select` | 3 | `feedback.get` |
 | `session_events.delete` | 3 | `events.delete_session` |
+| `message_feedback.insert` | 2 | `feedback.set` |
 | `projects.insert` | 2 | `projects.upsert` |
 | `projects.select` | 2 | `projects.list` |
+| `session_fts.insert` | 2 | `fts.rebuild` |
 | `sessions.insert` | 2 | `sessions.upsert` |
 | `settings.select` | 2 | `settings.get_all` |
 | `telemetry_events.delete` | 2 | `telemetry.prune` |
+| `attachments.update` | 1 | `attachments.update` |
 | `mcp_servers.delete` | 1 | `mcp_servers.remove` |
 | `mcp_servers.insert` | 1 | `mcp_servers.save` |
 | `mcp_servers.select` | 1 | `mcp_servers.list` |
@@ -32,32 +39,30 @@
 | `quick_phrases.delete` | 1 | `quick_phrases.delete` |
 | `quick_phrases.select` | 1 | `quick_phrases.list` |
 | `quick_phrases.update` | 1 | `quick_phrases.save` `quick_phrases.touch` |
+| `session_fts.delete` | 1 | `fts.delete_session` `fts.rebuild` |
+| `session_fts.select` | 1 | `fts.search` |
 | `settings.delete` | 1 | `settings.remove` |
 | `settings.insert` | 1 | `settings.set` |
 | `telemetry_events.insert` | 1 | `telemetry.append` |
 
-## 待迁移（105 个方法，按调用点排序）
+## 待迁移（96 个方法，按调用点排序）
 
 | 渲染侧方法 | 调用点 | 建议阶段 |
 |---|---:|---|
 | `accounts.select` | 7 | 5 其余域 |
 | `accounts.update` | 6 | 5 其余域 |
-| `attachments.select` | 6 | 3 数据面 |
 | `delegation_tasks.select` | 6 | 5 其余域 |
 | `telemetry_events.select` | 6 | 2 只追加 |
 | `cost_records.select` | 5 | 5 其余域 |
 | `flashcards.select` | 5 | 5 其余域 |
 | `graph_nodes.update` | 4 | 5 其余域 |
 | `inbox.update` | 4 | 5 其余域 |
-| `message_feedback.alter` | 4 | 3 数据面 |
-| `message_feedback.delete` | 4 | 3 数据面 |
 | `notebooks.select` | 4 | 5 其余域 |
 | `tool_calls.delete` | 4 | 3 数据面 |
 | `tool_calls.insert` | 4 | 3 数据面 |
 | `graph_edges.delete` | 3 | 5 其余域 |
 | `graph_nodes.select` | 3 | 5 其余域 |
 | `inbox.delete` | 3 | 5 其余域 |
-| `message_feedback.select` | 3 | 3 数据面 |
 | `notebook_chunks.select` | 3 | 5 其余域 |
 | `notebook_groups.select` | 3 | 5 其余域 |
 | `notebook_sources.select` | 3 | 5 其余域 |
@@ -73,13 +78,11 @@
 | `graph_edges.select` | 2 | 5 其余域 |
 | `graph_nodes.delete` | 2 | 5 其余域 |
 | `issues.update` | 2 | 5 其余域 |
-| `message_feedback.insert` | 2 | 3 数据面 |
 | `note_links.select` | 2 | 5 其余域 |
 | `note_versions.select` | 2 | 5 其余域 |
 | `notebook_chunks.insert` | 2 | 5 其余域 |
 | `notes.delete` | 2 | 5 其余域 |
 | `notes.select` | 2 | 5 其余域 |
-| `session_fts.insert` | 2 | 3 数据面 |
 | `squads.select` | 2 | 5 其余域 |
 | `squads.update` | 2 | 5 其余域 |
 | `todo_lists.select` | 2 | 5 其余域 |
@@ -89,7 +92,6 @@
 | `agent_profiles.insert` | 1 | 5 其余域 |
 | `agent_profiles.update` | 1 | 5 其余域 |
 | `attachments.insert` | 1 | 3 数据面 |
-| `attachments.update` | 1 | 3 数据面 |
 | `cost_records.insert` | 1 | 5 其余域 |
 | `delegation_tasks.delete` | 1 | 5 其余域 |
 | `delegation_tasks.update` | 1 | 5 其余域 |
@@ -127,8 +129,6 @@
 | `recovery_data.delete` | 1 | 5 其余域 |
 | `recovery_data.insert` | 1 | 5 其余域 |
 | `recovery_data.select` | 1 | 5 其余域 |
-| `session_fts.delete` | 1 | 3 数据面 |
-| `session_fts.select` | 1 | 3 数据面 |
 | `sessions.delete` | 1 | 4 会话/项目 |
 | `squad_members.delete` | 1 | 5 其余域 |
 | `squad_members.insert` | 1 | 5 其余域 |

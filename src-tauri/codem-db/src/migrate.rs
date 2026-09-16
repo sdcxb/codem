@@ -27,11 +27,12 @@
 use std::collections::HashSet;
 
 use rusqlite::types::Value as SqlValue;
-use rusqlite::{params_from_iter, Connection};
+use rusqlite::{params, params_from_iter, Connection};
 use serde_json::{json, Value};
 
 use crate::engine::Engine;
 use crate::error::{DbError, DbResult};
+use crate::repo::{limit_of, req_text};
 
 /// 允许导入的表 = **从 TS schema 生成**的业务表清单（`sql/tables.json`）。
 ///
@@ -561,6 +562,233 @@ pub fn digest_rows(p: &Value) -> DbResult<Value> {
         hash = hash.wrapping_mul(0x100_0000_01b3);
     }
     Ok(json!({ "rows": n, "digest": format!("{:016x}", hash as u64) }))
+}
+
+/// 会话全文索引的重建/对齐（`fts.rebuild`）。
+///
+/// ## 与渲染侧 `rebuildSessionFts` 的对应关系
+///
+/// 渲染侧的逻辑是"先删孤儿、再从日志补缺"：
+/// - 孤儿 = `session_fts` 里有、但 `messages`（索引）与会话日志里都没有的 message_id；
+/// - 补缺 = 日志里有、FTS 里没有的。
+///
+/// Rust 侧只认 `messages` 表（日志在渲染进程侧），所以：
+/// - `keep_ids`（可选）：渲染侧把"日志里存在但索引里没有"的 id 传进来，
+///   这些 id **不能被当作孤儿删除** —— 否则日志里还有的消息会丢掉全文索引；
+/// - 删孤儿 → 补缺（从 messages 里取未索引的行），单事务完成。
+///
+/// 注意 `session_fts` **没有外键级联**（虚拟表），所以消息删除后 FTS 行不会自动消失 ——
+/// 这正是渲染侧要写那套对齐逻辑的原因。
+pub fn fts_rebuild(engine: &Engine, p: &Value) -> DbResult<Value> {
+    let session_id = req_text(p, "session_id")?;
+    // 渲染侧日志里存在、必须保留的 id
+    let keep: Vec<String> = match p.get("keep_ids") {
+        None | Some(Value::Null) => Vec::new(),
+        Some(Value::Array(a)) => a
+            .iter()
+            .map(|x| {
+                x.as_str()
+                    .map(|s| s.to_string())
+                    .ok_or_else(|| DbError::invalid("keep_ids", "元素必须是字符串"))
+            })
+            .collect::<DbResult<Vec<_>>>()?,
+        Some(_) => return Err(DbError::invalid("keep_ids", "期望字符串数组")),
+    };
+
+    engine.write_tx(|tx| {
+        // 1) 删孤儿：FTS 里有、但既不在 messages 也不在 keep 集合里的
+        let mut stmt = tx
+            .prepare(
+                "SELECT message_id FROM session_fts WHERE session_id = ?1",
+            )
+            .map_err(DbError::from)?;
+        let rows = stmt
+            .query_map(params![session_id], |r| r.get::<_, Option<String>>(0))
+            .map_err(DbError::from)?;
+        let mut fts_ids: Vec<String> = Vec::new();
+        for r in rows {
+            if let Some(id) = r.map_err(DbError::from)? {
+                fts_ids.push(id);
+            }
+        }
+        drop(stmt);
+
+        let keep_set: std::collections::HashSet<&String> = keep.iter().collect();
+        let mut removed = 0usize;
+        for id in &fts_ids {
+            if keep_set.contains(id) {
+                continue;
+            }
+            let exists: i64 = tx
+                .query_row(
+                    "SELECT COUNT(*) FROM messages WHERE id = ?1",
+                    params![id],
+                    |r| r.get(0),
+                )
+                .map_err(DbError::from)?;
+            if exists == 0 {
+                tx.execute(
+                    "DELETE FROM session_fts WHERE session_id = ?1 AND message_id = ?2",
+                    params![session_id, id],
+                )
+                .map_err(DbError::from)?;
+                removed += 1;
+            }
+        }
+
+        // 2) 对齐**内容**：messages 里可见的行逐条与 FTS 比对。
+        //
+        // ⚠️ 这里不能"已索引就跳过" —— 实测生产库 837 行 FTS 里 **84.3% 的 content 是空的**
+        // （长度 ≤2 的占 93.9%，平均 5.2 字），也就是说**全文检索从来没有真正生效过**：
+        // 行都在、正文没进去。这不是"缺行"，而是"行在、内容错"。
+        // 只补缺的写法会看到"已索引"就跳过，永远修不好（实测 added:0 就是这个问题）。
+        // 所以改成**内容长度不符就重写**（先删该 message_id 的行再插）。
+        let indexed_len: std::collections::HashMap<String, i64> = {
+            let mut stmt2 = tx
+                .prepare("SELECT message_id, length(content) FROM session_fts WHERE session_id = ?1")
+                .map_err(DbError::from)?;
+            let rows2 = stmt2
+                .query_map(params![session_id], |r| {
+                    Ok((r.get::<_, Option<String>>(0)?, r.get::<_, Option<i64>>(1)?))
+                })
+                .map_err(DbError::from)?;
+            let mut m = std::collections::HashMap::new();
+            for r in rows2 {
+                let (id, len) = r.map_err(DbError::from)?;
+                if let Some(id) = id {
+                    m.insert(id, len.unwrap_or(0));
+                }
+            }
+            m
+        };
+        let mut stmt = tx
+            .prepare(
+                "SELECT id, content, role, timestamp FROM messages \
+                 WHERE session_id = ?1 AND hidden = 0 ORDER BY timestamp ASC",
+            )
+            .map_err(DbError::from)?;
+        let rows = stmt
+            .query_map(params![session_id], |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, Option<String>>(1)?,
+                    r.get::<_, Option<String>>(2)?,
+                    r.get::<_, Option<i64>>(3)?,
+                ))
+            })
+            .map_err(DbError::from)?;
+        let mut added = 0usize;
+        let mut refreshed = 0usize;
+        for r in rows {
+            let (id, content, role, timestamp) = r.map_err(DbError::from)?;
+            if keep_set.contains(&&id) {
+                continue;
+            }
+            // ⚠️ 长度判定必须用**切分后**的文本：索引里存的就是切分形式，
+            // 用原文长度会导致"每次 rebuild 都认为不一致"（白写一遍）
+            let tokenized = crate::fts::tokenize(content.as_deref().unwrap_or(""));
+            let want_len = tokenized.chars().count() as i64;
+            match indexed_len.get(&id) {
+                // 已在索引且长度一致 → 认为已对齐
+                Some(len) if *len == want_len => continue,
+                // 已在索引但内容不符（含"正文为空"的坏行）→ 重写
+                Some(_) => {
+                    tx.execute(
+                        "DELETE FROM session_fts WHERE session_id = ?1 AND message_id = ?2",
+                        params![session_id, id],
+                    )
+                    .map_err(DbError::from)?;
+                    tx.execute(
+                        "INSERT INTO session_fts (session_id, message_id, content, role, timestamp) \
+                         VALUES (?1, ?2, ?3, ?4, ?5)",
+                        params![
+                            session_id,
+                            id,
+                            crate::fts::tokenize(&content.clone().unwrap_or_default()),
+                            role.clone().unwrap_or_default(),
+                            timestamp.unwrap_or(0)
+                        ],
+                    )
+                    .map_err(DbError::from)?;
+                    refreshed += 1;
+                }
+                // 不在索引 → 新增
+                None => {
+                    tx.execute(
+                        "INSERT INTO session_fts (session_id, message_id, content, role, timestamp) \
+                         VALUES (?1, ?2, ?3, ?4, ?5)",
+                        params![
+                            session_id,
+                            id,
+                            tokenized.clone(),
+                            role.unwrap_or_default(),
+                            timestamp.unwrap_or(0)
+                        ],
+                    )
+                    .map_err(DbError::from)?;
+                    added += 1;
+                }
+            }
+        }
+
+        Ok(json!({ "removed": removed, "added": added, "refreshed": refreshed, "session_id": session_id }))
+    })
+}
+
+/// 删除会话的全部全文索引行（消息删除/会话删除时调用；虚拟表没有级联）
+pub fn fts_delete_session(engine: &Engine, p: &Value) -> DbResult<Value> {
+    let session_id = req_text(p, "session_id")?;
+    engine.write_tx(|tx| {
+        let n = tx
+            .execute("DELETE FROM session_fts WHERE session_id = ?1", params![session_id])
+            .map_err(DbError::from)?;
+        Ok(json!({ "written": n }))
+    })
+}
+
+/// 全文检索（返回命中消息的 id / 角色 / 时间，供搜索界面用）
+///
+/// ## 两个必须说明的点
+///
+/// 1. **查询要按同一套规则切分**：索引里存的是 CJK bigram 形式，
+///    所以 `存储迁移` 必须转成 `"存储" "迁移"` 之类的表达式才能命中
+///    （见 `crate::fts::query_expr`）。不切分的话中文永远搜不到 —— 那正是修复前的状态。
+/// 2. **不返回 `snippet()`**：索引里存的是切分后的文本，snippet 出来是
+///    `存 存储 储 …` 这种形式，没法展示。片段应由渲染侧按 message_id 取真实正文生成
+///    —— 这也符合"索引是索引、正文在正文表里"的分工。
+pub fn fts_search(engine: &Engine, p: &Value) -> DbResult<Value> {
+    let session_id = req_text(p, "session_id")?;
+    let raw_query = req_text(p, "query")?;
+    // 空查询 / 全是不可索引字符：明确报参数错误，**不要**退化成"匹配全表"
+    let expr = crate::fts::query_expr(&raw_query)
+        .ok_or_else(|| DbError::invalid("query", "查询词为空或全是不可索引字符"))?;
+    let limit = limit_of(p)?;
+    let desc = p.get("order").and_then(|x| x.as_str()) == Some("desc");
+    engine.with_conn(|conn| {
+        let sql = if desc {
+            "SELECT message_id, role, timestamp FROM session_fts \
+             WHERE session_fts MATCH ?1 AND session_id = ?2 ORDER BY timestamp DESC LIMIT ?3"
+        } else {
+            "SELECT message_id, role, timestamp FROM session_fts \
+             WHERE session_fts MATCH ?1 AND session_id = ?2 ORDER BY timestamp ASC LIMIT ?3"
+        };
+        let mut stmt = conn.prepare_cached(sql).map_err(DbError::from)?;
+        let rows = stmt
+            .query_map(params![expr, session_id, limit as i64], |r| {
+                Ok(json!({
+                    "message_id": r.get::<_, Option<String>>(0)?,
+                    "role": r.get::<_, Option<String>>(1)?,
+                    "timestamp": r.get::<_, Option<i64>>(2)?,
+                    "session_id": session_id,
+                }))
+            })
+            .map_err(DbError::from)?;
+        let mut items = Vec::new();
+        for r in rows {
+            items.push(r.map_err(DbError::from)?);
+        }
+        Ok(json!({ "items": items, "has_more": false, "next_cursor": Value::Null }))
+    })
 }
 
 /// 从 `messages` 重建全文索引（迁移不搬 FTS 影子表，导入后调这个）

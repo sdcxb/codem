@@ -1,4 +1,4 @@
-//! `codem-db` —— Codem 存储引擎（Rust 原生 SQLite）
+﻿//! `codem-db` —— Codem 存储引擎（Rust 原生 SQLite）
 //!
 //! 目的（见 `docs/ARCH-SQLITE-TO-RUST.md`）：把 SQLite 从渲染进程的 WASM 堆里搬出来，
 //! 让持久化变成 **WAL 页级增量**、让错误变成 **可处理的值**、让渲染进程**不再持有整个语料**。
@@ -13,6 +13,7 @@
 pub mod authorizer;
 pub mod config;
 pub mod engine;
+pub mod fts;
 pub mod error;
 pub mod migrate;
 pub mod repo;
@@ -70,6 +71,12 @@ pub const COMMANDS: &[&str] = &[
     "memory.get",
     "memory.set",
     "config_warmup",
+    // ===== 数据面补充（P3 第 8 段）=====
+    "feedback.set",
+    "feedback.get",
+    "feedback.delete",
+    "attachments.list",
+    "attachments.update",
     // ===== P4 迁移原语（受控的结构化通道，非裸 SQL）=====
     "import.begin",
     "import.table",
@@ -81,6 +88,9 @@ pub const COMMANDS: &[&str] = &[
     "digest.tables",
     "digest.rows",
     "rebuild_fts",
+    "fts.rebuild",
+    "fts.delete_session",
+    "fts.search",
 ];
 
 /// 统一入口：命令名 + 结构化参数 → JSON 结果。
@@ -130,6 +140,12 @@ pub fn dispatch(engine: &Engine, command: &str, params: &Value) -> DbResult<Valu
         "memory.get" => config::memory_get(engine, params),
         "memory.set" => config::memory_set(engine, params),
         "config_warmup" => config::config_warmup(engine, params),
+        // ===== 数据面补充（P3 第 8 段）=====
+        "feedback.set" => config::feedback_set(engine, params),
+        "feedback.get" => config::feedback_get(engine, params),
+        "feedback.delete" => config::feedback_delete(engine, params),
+        "attachments.list" => config::attachments_list(engine, params),
+        "attachments.update" => config::attachments_update(engine, params),
         "health" => serde_json::to_value(engine.health()?).map_err(|e| DbError::other(e.to_string())),
         "integrity_check" => {
             serde_json::to_value(engine.integrity_check()?).map_err(|e| DbError::other(e.to_string()))
@@ -149,6 +165,9 @@ pub fn dispatch(engine: &Engine, command: &str, params: &Value) -> DbResult<Valu
         "digest.tables" => migrate::table_digest(engine, params),
         "digest.rows" => migrate::digest_rows(params),
         "rebuild_fts" => migrate::rebuild_fts(engine, params),
+        "fts.rebuild" => migrate::fts_rebuild(engine, params),
+        "fts.delete_session" => migrate::fts_delete_session(engine, params),
+        "fts.search" => migrate::fts_search(engine, params),
         other => Err(DbError::unsupported(format!(
             "未实现的仓储命令：{other}（迁移按 docs/ARCH-SQLITE-TO-RUST.md 的 P3 顺序补齐）"
         ))),

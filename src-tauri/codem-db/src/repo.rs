@@ -1,4 +1,4 @@
-//! 仓储命令（P1 第一切片：配置面 + 只追加面 + 消息/会话核心）
+﻿//! 仓储命令（P1 第一切片：配置面 + 只追加面 + 消息/会话核心）
 //!
 //! 渲染侧**只**能通过这些语义化命令访问数据（`src/core/storage/port.ts` 的 `StorageDataPort`）。
 //! 命令清单与 `tools/audit/storage-inventory.mjs` 的归类一一对应，后续按 P3 顺序补齐到 82 个。
@@ -52,7 +52,7 @@ fn req_i64(v: &Value, key: &str) -> DbResult<i64> {
     opt_i64(v, key)?.ok_or_else(|| DbError::missing(key))
 }
 
-fn limit_of(v: &Value) -> DbResult<usize> {
+pub fn limit_of(v: &Value) -> DbResult<usize> {
     let raw = opt_i64(v, "limit")?.unwrap_or(100);
     if raw < 1 {
         return Err(DbError::invalid("limit", "必须 ≥ 1"));
@@ -61,7 +61,7 @@ fn limit_of(v: &Value) -> DbResult<usize> {
     Ok(raw.min(MAX_ROWS_PER_QUERY as i64) as usize)
 }
 
-fn offset_of(v: &Value) -> DbResult<usize> {
+pub fn offset_of(v: &Value) -> DbResult<usize> {
     let raw = opt_i64(v, "offset")?.unwrap_or(0);
     if raw < 0 {
         return Err(DbError::invalid("offset", "必须 ≥ 0"));

@@ -1,6 +1,6 @@
 {
   "_comment": "由 src-tauri/codem-db/tests/wire_contract.rs 生成/校验；TS 侧 src/test/rust-port-wire.test.ts 用同一份样本断言解包结果。字段名是跨语言契约，改名等于破坏协议。",
-  "_generatedAtMs": 1789555784923,
+  "_generatedAtMs": 1789556108699,
   "_generatedBy": "cargo test --manifest-path src-tauri/codem-db/Cargo.toml --test wire_contract",
   "count": {
     "engine": "rust",

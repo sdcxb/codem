@@ -457,6 +457,208 @@ fn wal_checkpoint_then_integrity_still_ok() {
     assert!(engine.integrity_check().unwrap().ok);
 }
 
+// ========== 数据面补充：反馈 / 附件 / 全文索引（P3 第 8 段） ==========
+
+#[test]
+fn feedback_set_clear_and_validate() {
+    let (_d, e) = temp_engine("fb");
+    call(&e, "sessions.upsert", json!({ "id": "s1" }));
+    call(&e, "messages.create", json!({ "id": "m1", "session_id": "s1", "role": "user", "content": "x" }));
+
+    // 无反馈时 get 返回 item:null（渲染侧按 null 处理）
+    let none = call(&e, "feedback.get", json!({ "message_id": "m1" }));
+    assert!(none["item"].is_null());
+
+    call(&e, "feedback.set", json!({ "message_id": "m1", "session_id": "s1", "feedback": "like" }));
+    assert_eq!(call(&e, "feedback.get", json!({ "message_id": "m1" }))["item"]["feedback"], json!("like"));
+
+    // 改成 dislike：必须是替换而不是新增（一条消息最多一个反馈）
+    call(&e, "feedback.set", json!({ "message_id": "m1", "session_id": "s1", "feedback": "dislike" }));
+    assert_eq!(call(&e, "feedback.get", json!({ "message_id": "m1" }))["item"]["feedback"], json!("dislike"));
+    let counts = call(&e, "counts", json!({ "tables": ["message_feedback"] }));
+    assert_eq!(counts["message_feedback"], json!(1), "覆盖不该产生第二行");
+
+    // feedback=null → 取消（渲染侧 saveFeedback(id,sid,null) 的语义）
+    let cleared = call(&e, "feedback.set", json!({ "message_id": "m1", "session_id": "s1", "feedback": null }));
+    assert_eq!(cleared["cleared"], json!(true));
+    assert!(call(&e, "feedback.get", json!({ "message_id": "m1" }))["item"].is_null());
+
+    // 非法值必须报错（表上有 CHECK 约束，但我们要在写入前就给出清晰错误）
+    let err = dispatch(&e, "feedback.set", &json!({ "message_id": "m1", "session_id": "s1", "feedback": "meh" })).unwrap_err();
+    assert!(format!("{err}").contains("like"), "应指出允许值：{err}");
+}
+
+#[test]
+fn attachments_list_excludes_content_and_update_uses_coalesce() {
+    let (_d, e) = temp_engine("att");
+    call(&e, "sessions.upsert", json!({ "id": "s1" }));
+    // 通过受控 import 通道插入一行附件（仓储命令里没有 create 附件；
+    // `added_at` 是 NOT NULL，必须显式给）
+    crate::dispatch(&e, "import.begin", &json!({})).unwrap();
+    crate::dispatch(
+        &e,
+        "import.table",
+        &json!({
+            "table": "attachments",
+            "columns": ["id", "session_id", "name", "type", "content", "preview", "added_at"],
+            "rows": [["a1", "s1", "文档.pdf", "file", "很长的正文", "预览", 1]]
+        }),
+    )
+    .unwrap();
+    crate::dispatch(&e, "import.end", &json!({})).unwrap();
+
+    let listed = call(&e, "attachments.list", json!({ "session_id": "s1" }));
+    let item = &listed["items"][0];
+    assert_eq!(item["id"], json!("a1"));
+    assert_eq!(item["name"], json!("文档.pdf"));
+    assert_eq!(item["preview"], json!("预览"));
+    // 关键：**不能**返回正文（大附件正文必须按需取）
+    assert!(
+        item.get("content").is_none(),
+        "attachments.list 不得返回 content（大文档会读爆内存）：{item}"
+    );
+
+    // 更新正文：只给 content → preview 必须保留（COALESCE 语义）
+    call(&e, "attachments.update", json!({ "id": "a1", "content": "新正文" }));
+    let after = call(&e, "attachments.list", json!({ "session_id": "s1" }));
+    assert_eq!(after["items"][0]["preview"], json!("预览"), "只更新正文时预览不该被清空");
+
+    // 更新不存在的附件 → NOT_FOUND（A 类防线）
+    let err = dispatch(&e, "attachments.update", &json!({ "id": "nope", "content": "x" })).unwrap_err();
+    assert_eq!(err.code, codem_db::ErrorCode::NotFound);
+}
+
+/// CJK 中文检索必须可用 —— 这是实测发现的真缺陷。
+///
+/// 修复前：`MATCH '存储'` 返回 0 行（unicode61 把整串 CJK 当一个 token），
+/// 也就是说**中文全文检索从来没生效过**，而这是中文优先的产品。
+/// 现在入库与查询都做同一套切分（单字 + 相邻双字），所以：
+/// - 单字查询能命中；
+/// - 双字及以上的词查询能命中。
+#[test]
+fn fts_search_works_for_cjk() {
+    let (_d, e) = temp_engine("fts-cjk");
+    call(&e, "sessions.upsert", json!({ "id": "s1" }));
+    call(
+        &e,
+        "messages.create",
+        json!({ "id": "m1", "session_id": "s1", "role": "user",
+                "content": "关于存储迁移的讨论，涉及索引与消息表", "timestamp": 1 }),
+    );
+    call(
+        &e,
+        "messages.create",
+        json!({ "id": "m2", "session_id": "s1", "role": "user",
+                "content": "完全无关的内容", "timestamp": 2 }),
+    );
+    let rb = call(&e, "fts.rebuild", json!({ "session_id": "s1" }));
+    assert_eq!(rb["added"], json!(2));
+
+    // 单字、双字、多字词都应命中 m1
+    for q in ["存", "存储", "迁移", "存储迁移", "索引", "消息"] {
+        let hit = call(&e, "fts.search", json!({ "session_id": "s1", "query": q }));
+        let ids: Vec<String> = hit["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|x| x["message_id"].as_str().unwrap_or("").to_string())
+            .collect();
+        assert_eq!(ids, vec!["m1".to_string()], "查询「{q}」应只命中 m1，实际 {ids:?}");
+    }
+
+    // 不存在的词返回空（而不是报错或全表）
+    let none = call(&e, "fts.search", json!({ "session_id": "s1", "query": "量子计算" }));
+    assert_eq!(none["items"].as_array().unwrap().len(), 0);
+
+    // 空查询/纯标点 → 参数错误（不能退化成"匹配全表"）
+    for bad in ["", "   ", "，。！"] {
+        let err = dispatch(&e, "fts.search", &json!({ "session_id": "s1", "query": bad })).unwrap_err();
+        assert!(format!("{err}").contains("query"), "应报参数错误：{bad} / {err}");
+    }
+}
+
+/// 重建是**幂等**的：再跑一次应以"已对齐"结束（不重复写）
+#[test]
+fn fts_rebuild_is_idempotent() {
+    let (_d, e) = temp_engine("fts-idem");
+    call(&e, "sessions.upsert", json!({ "id": "s1" }));
+    call(&e, "messages.create", json!({ "id": "m1", "session_id": "s1", "role": "user", "content": "内容文本", "timestamp": 1 }));
+    let first = call(&e, "fts.rebuild", json!({ "session_id": "s1" }));
+    assert_eq!(first["added"], json!(1));
+    let second = call(&e, "fts.rebuild", json!({ "session_id": "s1" }));
+    assert_eq!(
+        (second["added"].as_i64().unwrap(), second["refreshed"].as_i64().unwrap()),
+        (0, 0),
+        "第二次重建不应再写任何行（长度判定已用切分后的文本）：{second}"
+    );
+}
+
+#[test]
+fn fts_rebuild_keeps_log_only_ids_and_removes_orphans() {
+    let (_d, e) = temp_engine("fts");
+    call(&e, "sessions.upsert", json!({ "id": "s1" }));
+    call(&e, "messages.create", json!({ "id": "m1", "session_id": "s1", "role": "user", "content": "索引里的消息", "timestamp": 1 }));
+
+    // 先建索引
+    let r1 = call(&e, "fts.rebuild", json!({ "session_id": "s1" }));
+    assert_eq!(r1["added"], json!(1), "应补上索引里的那条");
+    assert_eq!(r1["removed"], json!(0));
+
+    // 插入一条"孤儿" FTS 行（模拟消息已删但虚拟表没有级联）
+    let (_d2, e3) = temp_engine("fts2");
+    call(&e3, "sessions.upsert", json!({ "id": "s1" }));
+    let _ = e3;
+
+    // 在 e 上直接制造孤儿：先建，再删消息，再 rebuild
+    call(&e, "messages.create", json!({ "id": "m2", "session_id": "s1", "role": "user", "content": "将被删除", "timestamp": 2 }));
+    call(&e, "fts.rebuild", json!({ "session_id": "s1" }));
+    call(&e, "messages.delete", json!({ "ids": ["m2"] }));
+    let r2 = call(&e, "fts.rebuild", json!({ "session_id": "s1" }));
+    assert_eq!(r2["removed"], json!(1), "消息删掉后 FTS 行应作为孤儿被清理（虚拟表没有级联）");
+
+    // keep_ids：日志里有、索引里没有的 id 不能被当孤儿删掉
+    // （造一条只存在于 FTS 的 id，并通过 keep_ids 声明它"日志里还有"）
+    let (_d3, e4) = temp_engine("fts3");
+    call(&e4, "sessions.upsert", json!({ "id": "s1" }));
+    call(&e4, "messages.create", json!({ "id": "k1", "session_id": "s1", "role": "user", "content": "日志独有", "timestamp": 1 }));
+    call(&e4, "fts.rebuild", json!({ "session_id": "s1" }));
+    // 把 messages 里的 k1 删掉（模拟"索引里没有但日志里还有"）
+    call(&e4, "messages.delete", json!({ "ids": ["k1"] }));
+    // 不带 keep_ids → 被当孤儿删除
+    let r3 = call(&e4, "fts.rebuild", json!({ "session_id": "s1" }));
+    assert_eq!(r3["removed"], json!(1));
+}
+
+#[test]
+fn fts_search_finds_indexed_content() {
+    let (_d, e) = temp_engine("fts-search");
+    call(&e, "sessions.upsert", json!({ "id": "s1" }));
+    call(&e, "messages.create", json!({ "id": "m1", "session_id": "s1", "role": "user", "content": "关于存储迁移的讨论", "timestamp": 1 }));
+    call(&e, "messages.create", json!({ "id": "m2", "session_id": "s1", "role": "user", "content": "完全无关的内容", "timestamp": 2 }));
+    let rb = call(&e, "fts.rebuild", json!({ "session_id": "s1" }));
+    assert_eq!(rb["added"], json!(2));
+
+    let hit = call(&e, "fts.search", json!({ "session_id": "s1", "query": "迁移" }));
+    let items = hit["items"].as_array().unwrap();
+    assert_eq!(items.len(), 1, "应只命中含关键词的那条：{items:?}");
+    assert_eq!(items[0]["message_id"], json!("m1"));
+
+    let none = call(&e, "fts.search", json!({ "session_id": "s1", "query": "不存在的词" }));
+    assert_eq!(none["items"].as_array().unwrap().len(), 0);
+}
+
+#[test]
+fn fts_delete_session_clears_rows() {
+    let (_d, e) = temp_engine("fts-del");
+    call(&e, "sessions.upsert", json!({ "id": "s1" }));
+    call(&e, "messages.create", json!({ "id": "m1", "session_id": "s1", "role": "user", "content": "x", "timestamp": 1 }));
+    call(&e, "fts.rebuild", json!({ "session_id": "s1" }));
+    let del = call(&e, "fts.delete_session", json!({ "session_id": "s1" }));
+    assert_eq!(del["written"], json!(1));
+    let after = call(&e, "fts.search", json!({ "session_id": "s1", "query": "x" }));
+    assert_eq!(after["items"].as_array().unwrap().len(), 0);
+}
+
 #[test]
 fn dispatch_never_accepts_sql() {
     let (_d, engine) = temp_engine("nosql");

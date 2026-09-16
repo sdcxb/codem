@@ -152,6 +152,17 @@ export const IMPLEMENTED = {
   "sessions.select": ["sessions.list"],
   "projects.insert": ["projects.upsert"],
   "projects.select": ["projects.list"],
+  // ===== P3 第 8 段：反馈 / 附件 / 全文索引 =====
+  "message_feedback.select": ["feedback.get"],
+  "message_feedback.insert": ["feedback.set"],
+  "message_feedback.alter": ["feedback.set"],
+  "message_feedback.delete": ["feedback.delete"],
+  "attachments.select": ["attachments.list"],
+  "attachments.update": ["attachments.update"],
+  "session_fts.select": ["fts.search"],
+  "session_fts.insert": ["fts.rebuild"],
+  "session_fts.delete": ["fts.delete_session", "fts.rebuild"],
+
   // ===== P3 第 3 段：配置面扩展域 =====
   "quick_phrases.select": ["quick_phrases.list"],
   "quick_phrases.insert": ["quick_phrases.save"],

@@ -20,7 +20,7 @@ use serde_json::{json, Value};
 
 use crate::engine::Engine;
 use crate::error::{DbError, DbResult};
-use crate::repo::{opt_i64, opt_text, req_text};
+use crate::repo::{limit_of, offset_of, opt_i64, opt_text, req_text};
 use crate::schema::now_ms;
 
 // ========== quick_phrases ==========
@@ -218,6 +218,161 @@ pub fn config_warmup(engine: &Engine, _p: &Value) -> DbResult<Value> {
         "mcp_servers": servers["items"],
         "memory": mem["content"],
         "warmed_at_ms": now_ms(),
+    }))
+}
+
+// ========== 消息反馈（message_feedback） ==========
+//
+// 渲染侧语义：一条消息最多一个反馈（like/dislike）。`saveFeedback(id, sid, null)` 是**取消**，
+// 所以这里用"先删后插"而不是 upsert —— 与渲染侧 `DELETE` + `INSERT` 完全一致。
+// 表上有 `CHECK (feedback IN ('like','dislike'))`，非法值由数据库拒绝（比静默写入好）。
+
+pub fn feedback_set(engine: &Engine, p: &Value) -> DbResult<Value> {
+    let message_id = req_text(p, "message_id")?;
+    let session_id = req_text(p, "session_id")?;
+    let feedback = opt_text(p, "feedback")?;
+    let ts = opt_i64(p, "timestamp")?.unwrap_or_else(now_ms);
+    engine.write_tx(|tx| {
+        // 先删（取消 + 覆盖两种情形都覆盖）
+        tx.execute(
+            "DELETE FROM message_feedback WHERE message_id = ?1",
+            params![message_id],
+        )
+        .map_err(DbError::from)?;
+        match feedback.as_deref() {
+            None | Some("") => Ok(json!({ "written": 0, "cleared": true })),
+            Some(kind) => {
+                if kind != "like" && kind != "dislike" {
+                    return Err(DbError::invalid(
+                        "feedback",
+                        format!("只允许 like / dislike（或 null 取消），收到 {kind}"),
+                    ));
+                }
+                let id = format!("fb-{message_id}");
+                tx.execute(
+                    "INSERT INTO message_feedback (id, message_id, session_id, feedback, timestamp) \
+                     VALUES (?1, ?2, ?3, ?4, ?5)",
+                    params![id, message_id, session_id, kind, ts],
+                )
+                .map_err(DbError::from)?;
+                Ok(json!({ "written": 1, "feedback": kind }))
+            }
+        }
+    })
+}
+
+pub fn feedback_get(engine: &Engine, p: &Value) -> DbResult<Value> {
+    let message_id = req_text(p, "message_id")?;
+    engine.with_conn(|conn| {
+        let kind: Option<String> = conn
+            .query_row(
+                "SELECT feedback FROM message_feedback WHERE message_id = ?1",
+                params![message_id],
+                |r| r.get(0),
+            )
+            .optional()
+            .map_err(DbError::from)?;
+        Ok(json!({ "item": kind.map(|k| json!({ "feedback": k })) }))
+    })
+}
+
+pub fn feedback_delete(engine: &Engine, p: &Value) -> DbResult<Value> {
+    let message_id = req_text(p, "message_id")?;
+    engine.write_tx(|tx| {
+        let n = tx
+            .execute(
+                "DELETE FROM message_feedback WHERE message_id = ?1",
+                params![message_id],
+            )
+            .map_err(DbError::from)?;
+        Ok(json!({ "written": n }))
+    })
+}
+
+// ========== 附件（attachments） ==========
+//
+// 渲染侧对附件只做两件事：更新正文/预览（大附件外置化时用）、列全部附件。
+// `attachments.content` 可能非常大（大文档），所以：
+// - **不提供把整表读进内存的命令**（list 不返回 content，只给元数据）；
+// - 需要正文时按 id 单独取（`attachments.content`）。
+
+/// 更新附件正文与预览（`preview` 用 COALESCE 语义：只给正文时不动原预览）
+pub fn attachments_update(engine: &Engine, p: &Value) -> DbResult<Value> {
+    let id = req_text(p, "id")?;
+    let content = opt_text(p, "content")?;
+    let preview = opt_text(p, "preview")?;
+    engine.write_tx(|tx| {
+        let n = tx
+            .execute(
+                "UPDATE attachments SET content = COALESCE(?1, content), \
+                   preview = COALESCE(?2, preview) WHERE id = ?3",
+                params![content, preview, id],
+            )
+            .map_err(DbError::from)?;
+        if n == 0 {
+            return Err(DbError::not_found(format!("attachments 里没有 id={id}")));
+        }
+        Ok(json!({ "written": n, "id": id }))
+    })
+}
+
+/// 分页列附件元数据（**不含 content** —— 大附件正文必须按需单独取）
+pub fn attachments_list(engine: &Engine, p: &Value) -> DbResult<Value> {
+    let session_id = opt_text(p, "session_id")?;
+    let limit = limit_of(p)?;
+    let offset = offset_of(p)?;
+    engine.with_conn(|conn| {
+        let mut items: Vec<Value> = Vec::new();
+        match session_id {
+            Some(sid) => {
+                let mut stmt = conn
+                    .prepare_cached(
+                        "SELECT id, session_id, message_id, name, type, path, mime_type, size, preview, sandbox_path \
+                         FROM attachments WHERE session_id = ?1 ORDER BY id ASC LIMIT ?2 OFFSET ?3",
+                    )
+                    .map_err(DbError::from)?;
+                let rows = stmt
+                    .query_map(params![sid, (limit + 1) as i64, offset as i64], attachment_row)
+                    .map_err(DbError::from)?;
+                for r in rows {
+                    items.push(r.map_err(DbError::from)?);
+                }
+            }
+            None => {
+                let mut stmt = conn
+                    .prepare_cached(
+                        "SELECT id, session_id, message_id, name, type, path, mime_type, size, preview, sandbox_path \
+                         FROM attachments ORDER BY id ASC LIMIT ?1 OFFSET ?2",
+                    )
+                    .map_err(DbError::from)?;
+                let rows = stmt
+                    .query_map(params![(limit + 1) as i64, offset as i64], attachment_row)
+                    .map_err(DbError::from)?;
+                for r in rows {
+                    items.push(r.map_err(DbError::from)?);
+                }
+            }
+        }
+        let has_more = items.len() > limit;
+        if has_more {
+            items.truncate(limit);
+        }
+        Ok(json!({ "items": items, "has_more": has_more, "next_cursor": Value::Null }))
+    })
+}
+
+fn attachment_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<Value> {
+    Ok(json!({
+        "id": r.get::<_, String>(0)?,
+        "session_id": r.get::<_, Option<String>>(1)?,
+        "message_id": r.get::<_, Option<String>>(2)?,
+        "name": r.get::<_, Option<String>>(3)?,
+        "type": r.get::<_, Option<String>>(4)?,
+        "path": r.get::<_, Option<String>>(5)?,
+        "mime_type": r.get::<_, Option<String>>(6)?,
+        "size": r.get::<_, Option<i64>>(7)?,
+        "preview": r.get::<_, Option<String>>(8)?,
+        "sandbox_path": r.get::<_, Option<String>>(9)?,
     }))
 }
 
