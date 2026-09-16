@@ -106,9 +106,17 @@ async function callPlaywrightTool(toolName: string, args: Record<string, unknown
   const data = JSON.parse(resp);
   if (data.error) throw new Error(data.error.message);
 
-  // Extract text from content
+  /**
+   * 第 86 波（假成功）：MCP 的 `tools/call` 用 `result.isError: true` 表示"工具执行失败"
+   * （例如选择器找不到元素）。原来只看 `content` 文本、**从不读 isError** ——
+   * 于是 Playwright 报错时调用方收到的是一段普通文本，被当成成功结果。
+   */
   const content = data.result?.content || [];
-  return content.map((c: any) => c.text || "").join("\n");
+  const text = content.map((c: any) => c.text || "").join("\n");
+  if (data.result?.isError) {
+    throw new Error(text || `Playwright 工具 ${toolName} 报了错但没有返回文本`);
+  }
+  return text;
 }
 
 // ========== 工具实现 ==========
@@ -157,6 +165,8 @@ export function createBrowserAutomateTool(): ToolDef {
 
       const zh = getLang() === "zh";
       const results: string[] = [];
+      /** 第 86 波：动作级失败必须让整次调用体现为失败（否则"5 个动作全失败"也是绿色成功） */
+      let failedActions = 0;
 
       try {
         for (let i = 0; i < actions.length; i++) {
@@ -213,23 +223,37 @@ export function createBrowserAutomateTool(): ToolDef {
                 break;
               }
               default:
+                failedActions++;
                 results.push(`${label}: Unknown action "${act.action}"`);
             }
           } catch (e: any) {
+            failedActions++;
             results.push(`${label}: ERROR - ${e.message}`);
           }
+        }
+
+        if (failedActions > 0) {
+          return {
+            title: `browser_automate (${actions.length} actions, ${failedActions} failed)`,
+            output:
+              `Error: ${failedActions}/${actions.length} 个浏览器动作失败\n\n` + results.join("\n\n"),
+            isError: true,
+            metadata: { total: actions.length, failed: failedActions },
+          };
         }
 
         return {
           title: `browser_automate (${actions.length} actions)`,
           output: results.join("\n\n"),
+          metadata: { total: actions.length, failed: 0 },
         };
       } catch (error: any) {
         return {
           title: "browser_automate",
           output: zh
-            ? `浏览器自动化失败: ${error.message}\n提示: Playwright MCP 需要安装 @anthropic/mcp-playwright，会自动通过 npx 运行。`
-            : `Browser automation failed: ${error.message}\nNote: Playwright MCP requires @anthropic/mcp-playwright, auto-started via npx.`,
+            ? `Error: 浏览器自动化失败: ${error.message}\n提示: Playwright MCP 需要安装 @anthropic/mcp-playwright，会自动通过 npx 运行。`
+            : `Error: Browser automation failed: ${error.message}\nNote: Playwright MCP requires @anthropic/mcp-playwright, auto-started via npx.`,
+          isError: true,
         };
       }
     },

@@ -865,9 +865,25 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
     console.log(`[AgenticLoop.run] sessionId: ${sessionId}, userMessage: ${userMessage.substring(0, 80)}...`);
 
     // P0-2: Initialize tool pipeline with 5-layer middlewares
+    /**
+     * 第 86 波（可见性）：`isSandboxEnabled` 目前**恒为 false** ——
+     * `SandboxGuard`（工作区外写入拦截）实际上没有启用，真正生效的是各工具自己的
+     * `isProtectedPath`（.git/.env/node_modules）与权限层。
+     *
+     * 有意保持"默认关闭"（默认拦工作区外写入会打断很多合法工作流，属于产品取舍），
+     * 但这件事必须**说出来**：否则任何人读这份接线都会以为沙箱是开着的。
+     * 每次进程只提醒一次，避免刷屏。
+     */
+    if (!(globalThis as any).__codemSandboxNoticeLogged) {
+      (globalThis as any).__codemSandboxNoticeLogged = true;
+      console.info(
+        '[Sandbox] 工具管线的 SandboxGuard 当前未启用（isSandboxEnabled=false）：工作区外写入不会被它拦截；' +
+          '生效的是工具级受保护路径（.git/.env/node_modules）与权限层。启用 ACL 请走 sandbox-acl 的 initDefaultSandbox + 显式接线。',
+      );
+    }
     await initDefaultPipeline({
       isPlanMode: () => this.config.collaborationMode === "plan",
-      isSandboxEnabled: () => false, // P1-5 sandbox not yet at Rust level
+      isSandboxEnabled: () => false, // P1-5 sandbox not yet at Rust level（见上方说明）
       isPathWithinWorkspace: (path: string, cwd: string) => {
         // Basic check: path should be within cwd
         const normalized = path.replace(/\\/g, "/");
@@ -2172,6 +2188,25 @@ yield { type: "step_progress", step: this.macroStep, total: this.activePlan.tota
           this.state.consecutiveCompactions++;
           return;
         }
+        /**
+         * 第 86 波（静默终止）：反应式压缩被关掉时，上下文溢出原来直接 `return;` ——
+         * 既没有文本、也没有事件，用户看到的是"助手突然不说话了"，也不知道原因。
+         * 现在与"压缩次数用尽"走同一套可见路径：写一条说明 + 记录停止原因。
+         */
+        recordLoopStop(sessionId, "context_overflow", {
+          reactiveCompactionDisabled: true,
+          message: error.message?.slice(0, 300),
+        });
+        yield {
+          type: "text_delta",
+          text:
+            `\n\n${describeContextOverflow(error.message)}` +
+            `\n\n（本次**没有自动压缩**：设置里关闭了「反应式压缩」。请开启它，或新建对话后继续。）`,
+        };
+        yield {
+          type: "end",
+          result: { type: "stop", reason: "context_overflow", usage: this.state.totalUsage } as LoopResult,
+        };
         return;
       }
 

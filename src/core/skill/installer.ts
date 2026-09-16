@@ -40,6 +40,12 @@ export interface InstallResult {
   skill?: SkillDefinition;
   error?: string;
   filesWritten?: number;
+  /**
+   * 第 86 波：被跳过的文件（不安全路径 / 扩展名不允许 / 过大 / 超上限）。
+   * 有值时说明"技能装上了但不完整"，调用方应当提示用户。
+   */
+  skipped?: Array<{ path: string; reason: string }>;
+  warning?: string;
 }
 
 /** 安装进度回调 */
@@ -139,6 +145,12 @@ export async function installSkillFromZip(
 
     // 写入所有文件
     let filesWritten = 0;
+    /**
+     * 第 86 波（假成功）：被跳过的文件（路径不安全 / 扩展名不允许 / 过大 / 超出文件数上限）
+     * 原来只写 console.warn，函数照样返回 `success: true` ——
+     * 技能可能只装了一半（例如 SKILL.md 装上了、脚本没装上），调用方与用户都看不出。
+     */
+    const skipped: Array<{ path: string; reason: string }> = [];
     const allPaths = Object.keys(files);
     const totalFiles = allPaths.length;
 
@@ -146,6 +158,7 @@ export async function installSkillFromZip(
       // 安全检查
       if (!isSafePath(zipPath)) {
         console.warn(`[SkillInstaller] Skipping unsafe path: ${zipPath}`);
+        skipped.push({ path: zipPath, reason: "不安全的路径" });
         continue;
       }
 
@@ -160,6 +173,7 @@ export async function installSkillFromZip(
       const ext = relativePath.substring(relativePath.lastIndexOf(".")).toLowerCase();
       if (!ALLOWED_EXTENSIONS.has(ext) && !relativePath.endsWith("/")) {
         console.warn(`[SkillInstaller] Skipping file with disallowed extension: ${relativePath}`);
+        skipped.push({ path: relativePath, reason: `扩展名 ${ext} 不在允许列表内` });
         continue;
       }
 
@@ -170,12 +184,14 @@ export async function installSkillFromZip(
       const fileData = files[zipPath];
       if (fileData.length > MAX_FILE_SIZE) {
         console.warn(`[SkillInstaller] Skipping oversized file: ${relativePath} (${fileData.length} bytes)`);
+        skipped.push({ path: relativePath, reason: `文件过大（${fileData.length} 字节 > ${MAX_FILE_SIZE}）` });
         continue;
       }
 
       // 检查文件数限制
       if (filesWritten >= MAX_FILES) {
         console.warn(`[SkillInstaller] Max file limit reached (${MAX_FILES})`);
+        skipped.push({ path: relativePath, reason: `超出单技能文件数上限（${MAX_FILES}）` });
         break;
       }
 
@@ -192,6 +208,17 @@ export async function installSkillFromZip(
 
     onProgress?.(90, "正在注册技能...");
 
+    // 第 86 波：一个文件都没写进去 = 安装失败（不能让"全部被跳过"变成成功）
+    if (filesWritten === 0) {
+      return {
+        success: false,
+        skillName: skill.name,
+        error:
+          `安装失败：压缩包里的文件全部被跳过（${skipped.map((s) => `${s.path}: ${s.reason}`).join("；") || "没有可写入的文件"}）`,
+        skipped,
+      };
+    }
+
     // 设置来源为 user 并注册
     skill.source = "user";
     skill.filePath = skillDir;
@@ -205,6 +232,8 @@ export async function installSkillFromZip(
       skillName: skill.name,
       skill,
       filesWritten,
+      // 部分文件被跳过时如实带出来（调用方据此提示"安装不完整"）
+      ...(skipped.length > 0 ? { skipped, warning: `${skipped.length} 个文件被跳过，技能可能不完整` } : {}),
     };
   } catch (err: any) {
     return {

@@ -37,15 +37,112 @@ const DEFAULT_HOOK_TIMEOUT_MS = 10_000;
 
 // ========== Hook Manager ==========
 
+/**
+ * 运行时钩子（程序注册，不落盘）。
+ *
+ * 第 86 波（审计修正）：`hooks-provider.ts` 一直把 `ctx.get('hooks')` 暴露成一个
+ * 有 `register` / `unregister` / `executeHooks` / `listHooks` / `clearAllHooks` 的服务，
+ * 并声称"第三方插件通过 ctx.hooks.register() 注册自定义钩子"、
+ * "ToolPipeline 会调用 ctx.hooks.executeHooks('PreToolUse', …)"。
+ * 但 `HookManager` **根本没有这些方法**（只有基于 settings 配置的钩子），于是：
+ *   · 任何插件调用 `ctx.hooks.register(...)` 直接 TypeError；
+ *   · provider 里的 `clearAllHooks()` 是空函数（注释说"Map 会自动回收"，
+ *     但那个 manager 仍被 service 引用着），禁用插件不会清任何东西；
+ *   · `_active: true` 让上层以为钩子服务可用。
+ *
+ * 现在补上真正的运行时钩子（内存、不落盘、进程内生命周期），并让 Pre/PostToolUse
+ * 执行链同时跑它们 —— provider 的承诺从此成立。
+ */
+export interface RuntimeHook {
+  id: string;
+  event: HookEventType;
+  name: string;
+  handler: (payload: any) => any;
+  timeoutMs: number;
+}
+
 export class HookManager {
   private config: HookConfig;
   /** Whether hooks are enabled globally */
   private enabled: boolean = true;
   /** Whether this is a sub-agent context (PreToolUse hooks disabled) */
   private subAgentMode: boolean = false;
+  /** 程序注册的运行时钩子（内存，不写 settings） */
+  private runtimeHooks: RuntimeHook[] = [];
+  private runtimeHookSeq = 0;
 
   constructor() {
     this.config = this.loadConfig();
+  }
+
+  // ========== Runtime hooks（程序注册） ==========
+
+  /** 注册一个运行时钩子，返回可传给 unregister 的 id */
+  register(event: HookEventType | string, handler: (payload: any) => any, options?: { timeout?: number; name?: string }): string {
+    if (typeof handler !== "function") {
+      throw new Error(`hooks.register: handler 必须是函数（event=${event}）`);
+    }
+    const id = `runtime-hook-${++this.runtimeHookSeq}`;
+    this.runtimeHooks.push({
+      id,
+      event: event as HookEventType,
+      name: options?.name || `runtime:${event}`,
+      handler,
+      timeoutMs: options?.timeout ?? DEFAULT_HOOK_TIMEOUT_MS,
+    });
+    return id;
+  }
+
+  /** 注销运行时钩子；返回是否真的删掉了 */
+  unregister(event: HookEventType | string, handlerId: string): boolean {
+    const before = this.runtimeHooks.length;
+    this.runtimeHooks = this.runtimeHooks.filter((h) => !(h.id === handlerId && h.event === event));
+    return this.runtimeHooks.length < before;
+  }
+
+  /** 列出钩子（配置钩子 + 运行时钩子）；给出 id/event/type 便于排查 */
+  listHooks(event?: HookEventType | string): Array<{ id: string; event: string; name: string; type: "config" | "runtime"; enabled: boolean }> {
+    const fromConfig = this.config.hooks
+      .filter((h) => !event || h.event === event)
+      .map((h) => ({ id: h.id, event: String(h.event), name: h.name, type: "config" as const, enabled: h.enabled !== false }));
+    const fromRuntime = this.runtimeHooks
+      .filter((h) => !event || h.event === event)
+      .map((h) => ({ id: h.id, event: String(h.event), name: h.name, type: "runtime" as const, enabled: !this.subAgentMode }));
+    return [...fromConfig, ...fromRuntime];
+  }
+
+  /** 清空运行时钩子（配置钩子在 settings 里，不在这里删） */
+  clearAllHooks(): void {
+    this.runtimeHooks = [];
+  }
+
+  /** 运行时钩子数量（诊断/测试用） */
+  runtimeHookCount(): number {
+    return this.runtimeHooks.length;
+  }
+
+  /**
+   * 通用事件分发：跑该事件下的**运行时**钩子，按注册顺序等待并收集结果。
+   * 单个钩子抛错或超时不会中断其它钩子，但会在结果里留下 `{ error }` 记录。
+   */
+  async executeHooks(event: HookEventType | string, payload: any): Promise<any[]> {
+    const hooks = this.runtimeHooks.filter((h) => h.event === event);
+    const results: any[] = [];
+    for (const hook of hooks) {
+      const timeoutMs = hook.timeoutMs > 0 ? hook.timeoutMs : DEFAULT_HOOK_TIMEOUT_MS;
+      try {
+        const value = await Promise.race([
+          Promise.resolve(hook.handler(payload)),
+          this.timeout(timeoutMs),
+        ]);
+        results.push(value);
+      } catch (e: any) {
+        const message = e?.message || String(e);
+        console.warn(`[HookManager] runtime hook "${hook.name}" (${event}) 失败：${message}`);
+        results.push({ error: message, hookId: hook.id });
+      }
+    }
+    return results;
   }
 
   // ========== Config ==========
@@ -119,7 +216,10 @@ export class HookManager {
       shouldFireHook(h, "PreToolUse", toolName, input),
     );
 
-    if (hooks.length === 0) {
+    // 第 86 波：运行时钩子（程序注册）与配置钩子同源参与判定
+    const runtimeHooks = this.runtimeHooks.filter((h) => h.event === "PreToolUse");
+
+    if (hooks.length === 0 && runtimeHooks.length === 0) {
       return { action: "allow" };
     }
 
@@ -168,6 +268,52 @@ export class HookManager {
       return { action: "modify", modifiedInput: currentInput };
     }
 
+    /**
+     * 运行时钩子（第 86 波）：
+     *   · 返回 undefined / null → "没有意见"（放行，继续问下一个）；
+     *   · 返回 `{action:"allow"|"deny"|"modify"}` → 按语义处理；
+     *   · 返回**无法识别**的东西 → 拦下（与函数钩子同一套 fail-closed 规则，
+     *     否则插件写错 action 名字会静默变成"放行"）；
+     *   · 钩子抛错/超时 → 拦下并说明（守卫没生效 ≠ 通过）。
+     */
+    for (const hook of runtimeHooks) {
+      let value: any;
+      try {
+        value = await Promise.race([
+          Promise.resolve(hook.handler({ event: "PreToolUse", toolName, input: currentInput, ctx })),
+          this.timeout(hook.timeoutMs > 0 ? hook.timeoutMs : DEFAULT_HOOK_TIMEOUT_MS),
+        ]);
+      } catch (error: any) {
+        const message = `Runtime PreToolUse hook "${hook.name}" failed: ${error?.message || error}`;
+        console.warn(`[HookManager] ${message} — 守卫未生效，fail-closed 拦下`);
+        return { action: "deny", denyMessage: message };
+      }
+      if (value === undefined || value === null) continue;
+
+      const action = value?.action;
+      if (action === undefined) continue; // 只是记录/统计，没有裁决
+      if (action === "allow") continue;
+      if (action === "deny") {
+        return { action: "deny", denyMessage: value.denyMessage || `Blocked by runtime hook "${hook.name}"` };
+      }
+      if (action === "modify") {
+        if (value.modifiedInput && typeof value.modifiedInput === "object") {
+          currentInput = value.modifiedInput;
+          continue;
+        }
+        const message = `Runtime hook "${hook.name}" returned action "modify" without a valid modifiedInput`;
+        console.warn(`[HookManager] ${message} — 拦下`);
+        return { action: "deny", denyMessage: message };
+      }
+      const message = `Runtime hook "${hook.name}" returned an unrecognized action ${JSON.stringify(action)} (expected "allow" | "deny" | "modify")`;
+      console.warn(`[HookManager] ${message} — 拦下`);
+      return { action: "deny", denyMessage: message };
+    }
+
+    if (currentInput !== input) {
+      return { action: "modify", modifiedInput: currentInput };
+    }
+
     return { action: "allow" };
   }
 
@@ -190,7 +336,9 @@ export class HookManager {
       shouldFireHook(h, "PostToolUse", toolName, input),
     );
 
-    if (hooks.length === 0) {
+    const hasRuntimePost = this.runtimeHooks.some((h) => h.event === "PostToolUse");
+
+    if (hooks.length === 0 && !hasRuntimePost) {
       return output;
     }
 
@@ -210,6 +358,24 @@ export class HookManager {
         }
       } catch (error: any) {
         console.warn(`[HookManager] PostToolUse hook "${hook.name}" error: ${error.message}`);
+      }
+    }
+
+    // 第 86 波：运行时 PostToolUse 钩子（可返回字符串直接替换输出，或 {modifiedOutput}）
+    const runtimePost = this.runtimeHooks.filter((h) => h.event === "PostToolUse");
+    for (const hook of runtimePost) {
+      try {
+        const value = await Promise.race([
+          Promise.resolve(hook.handler({ event: "PostToolUse", toolName, input, result: currentOutput, ctx })),
+          this.timeout(hook.timeoutMs > 0 ? hook.timeoutMs : DEFAULT_HOOK_TIMEOUT_MS),
+        ]);
+        if (typeof value === "string") {
+          currentOutput = value;
+        } else if (value && typeof value === "object" && typeof (value as any).modifiedOutput === "string") {
+          currentOutput = (value as any).modifiedOutput;
+        }
+      } catch (error: any) {
+        console.warn(`[HookManager] Runtime PostToolUse hook "${hook.name}" failed: ${error?.message || error}`);
       }
     }
 

@@ -10,6 +10,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useLang } from "../core/i18n/lang";
 import { getComputerSettings, setComputerMode, type ComputerMode } from "../core/computer-use/computer-use";
 import { getSettingJSON, setSettingJSON } from "../core/storage/settings";
+import { showToast } from "./ToastNotification";
 
 const MODE_OPTIONS: Array<{ id: ComputerMode; zh: string; en: string; descZh: string }> = [
   { id: "disabled", zh: "禁用", en: "Disabled", descZh: "拒绝所有 computer_* 调用" },
@@ -33,8 +34,15 @@ export function ComputerUseSettings() {
 
   const handleMode = (m: ComputerMode) => {
     setMode(m);
-    setComputerMode(m);
-    persist({ mode: m });
+    // 第 86 波：写入失败必须当场告诉用户（否则重启后模式会"自己变回去"）
+    const persisted = setComputerMode(m);
+    if (!persisted) {
+      showToast(
+        "error",
+        zh ? "模式设置未能写入数据库：本次运行内生效，重启后会回到旧模式。" : "Failed to persist the mode: it applies for this session only and will revert after restart.",
+        7000,
+      );
+    }
   };
 
   return (

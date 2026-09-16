@@ -13,11 +13,36 @@ import { JobsBadge } from '../../components/JobsBadge'
 
 export const uiJobsProvider: Plugin = Object.assign(
   (ctx: any) => {
+    /**
+     * 第 86 波（假成功）：`automation` 服务不存在时，原来 `cancelJob`/`retryJob` 直接
+     * `return true` —— 调用方（插件/界面）看到 true 会以为"取消/重试成功了"，
+     * 实际什么都没发生，任务还在跑。现在明确抛错，让调用方能分辨。
+     */
+    const requireAutomation = (op: string) => {
+      const auto = ctx.get('automation')
+      if (!auto) {
+        throw new Error(`uiJobs.${op}: automation 服务不可用（@codem/automation 插件未启用），本次操作没有执行`)
+      }
+      return auto
+    }
+
     const s = {
       render(jobs) { return { type: 'jobs-badge', jobs } },
       async listJobs() { const auto = ctx.get('automation'); return auto && auto.list ? auto.list() : [] },
-      async cancelJob(id) { const auto = ctx.get('automation'); return auto && auto.cancel ? auto.cancel(id) : true },
-      async retryJob(id) { const auto = ctx.get('automation'); return auto && auto.retry ? auto.retry(id) : true },
+      async cancelJob(id) {
+        const auto = requireAutomation('cancelJob')
+        if (typeof auto.cancel !== 'function') {
+          throw new Error(`uiJobs.cancelJob: automation 服务没有 cancel 能力，任务 ${id} 未被取消`)
+        }
+        return auto.cancel(id)
+      },
+      async retryJob(id) {
+        const auto = requireAutomation('retryJob')
+        if (typeof auto.retry !== 'function') {
+          throw new Error(`uiJobs.retryJob: automation 服务没有 retry 能力，任务 ${id} 未被重试`)
+        }
+        return auto.retry(id)
+      },
     }
 
     // Register React component to Slot — inject 保证 slots 可用

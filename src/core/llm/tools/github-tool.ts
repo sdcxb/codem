@@ -1,4 +1,4 @@
-﻿/**
+/**
  * github_tool 工具 — GitHub API 集成。
  *
  * 功能：PR 审查、代码搜索、Issue 追踪、仓库信息获取、Diff 分析。
@@ -293,10 +293,33 @@ export function createGitHubTool(): ToolDef {
 
           case "vulnerability_scan": {
             if (!owner || !repo) {
-              return { title: label, output: "Error: owner and repo are required for 'vulnerability_scan' action" };
+              return { title: label, output: "Error: owner and repo are required for 'vulnerability_scan' action", isError: true };
             }
             const data = await fetchVulnerabilityAlerts(owner, repo, token);
-            const alerts = data.data?.repository?.vulnerabilityAlerts?.nodes || [];
+            /**
+             * 第 86 波（假成功，安全影响）：GraphQL 出错时响应体里是 `errors` 数组、
+             * `data.repository` 为 null（token 缺 `security_events` 权限、仓库不存在、
+             * 组织未开启 Dependabot 等）。原来不做区分，一律走到下面的
+             * "✅ No open vulnerability alerts" —— **把"扫描没做成"报成"没有漏洞"**。
+             * 安全类工具最不能出的就是这个错。
+             */
+            if (data?.errors?.length) {
+              const msg = data.errors.map((e: any) => e?.message || String(e)).join("; ");
+              return {
+                title: label,
+                output: `Error: 漏洞扫描未执行成功（GraphQL 报错）：${msg}\n（这**不代表**没有漏洞；请检查 token 是否具备 security_events 权限、仓库是否存在、Dependabot 是否开启）`,
+                isError: true,
+              };
+            }
+            const repoNode = data?.data?.repository;
+            if (!repoNode) {
+              return {
+                title: label,
+                output: "Error: 漏洞扫描未返回 repository 数据（响应缺少 data.repository）—— 无法判断是否存在漏洞，请不要把本次结果当成「无漏洞」。",
+                isError: true,
+              };
+            }
+            const alerts = repoNode.vulnerabilityAlerts?.nodes || [];
             if (alerts.length === 0) {
               return {
                 title: label,
@@ -314,12 +337,15 @@ export function createGitHubTool(): ToolDef {
           }
 
           default:
-            return { title: label, output: `Unknown action: ${action}` };
+            return { title: label, output: `Error: Unknown action: ${action}`, isError: true };
         }
       } catch (error: any) {
         return {
           title: "github_tool",
-          output: zh ? `GitHub API 请求失败: ${error.message}` : `GitHub API request failed: ${error.message}`,
+          output: zh
+            ? `Error: GitHub API 请求失败: ${error.message}`
+            : `Error: GitHub API request failed: ${error.message}`,
+          isError: true,
         };
       }
     },

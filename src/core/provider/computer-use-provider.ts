@@ -17,6 +17,7 @@ import {
 export const computerUseProvider: Plugin = (ctx: any) => {
   const s = {
     getSettings: () => getComputerSettings(),
+    /** 第 86 波：转发写入结果（false = 没写进设置，调用方应据此提示用户） */
     setMode: (mode: ComputerMode) => setComputerMode(mode),
     isApproved: (sessionId: string) => isSessionApproved(sessionId),
     approve: (sessionId: string) => approveSession(sessionId),

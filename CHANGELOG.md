@@ -2,6 +2,61 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.16.37] - 2026-09-15 — 把"看起来有、实际没有"的服务面修成真的（第 86 波）
+
+继续上一轮列出的未修项。这一批的共同特征是：**服务/接口存在、文档承诺了能力，底层却没有实现**
+（调用即报错、或更糟：返回值看起来成功）。
+
+### 插件服务面
+
+- **`ctx.get('hooks')` 是个空壳** —— `hooks-provider` 把它暴露成有
+  `register` / `unregister` / `executeHooks` / `listHooks` / `clearAllHooks` 的服务，
+  并声称"第三方插件通过 `ctx.hooks.register()` 注册自定义钩子"、"ToolPipeline 会调用
+  `ctx.hooks.executeHooks(...)`"—— 而 `HookManager` **根本没有这四个方法**（只有基于 settings
+  的配置钩子）。后果：任何插件调用立即 TypeError；`clearAllHooks()` 是空函数（注释还写着
+  "Map 会自动回收"，但那个 manager 一直被 service 引用着），禁用插件不会清掉任何钩子。
+  现在 `HookManager` 补齐**运行时钩子**（内存、按事件、带超时）并接进 Pre/PostToolUse 执行链：
+  返回 `{action:"deny"|"modify"}` 真的能拦下/改参数，写错 action 名字按 fail-closed 拦下，
+  返回 `undefined` 视为"没有意见"；`hooks-provider` 改为直接转发真实方法。
+- **`uiJobs.cancelJob` / `retryJob` 在 automation 服务缺失时 `return true`** —— 调用方以为
+  "已取消/已重试"，实际什么都没发生。现在明确抛错。
+- **`uiGoal.setGoal` 在 driver 缺失时凭空造一个目标对象返回** —— 调用方以为目标已建立并持久化，
+  实际没有任何地方存过它（下一次 `getGoals()` 仍是空）。现在明确抛错。
+- **`sessionCheckpoint.saveCheckpoint` 返回 void** —— 调用方没在 state 里带 `id` 时，这个检查点
+  永远无法被 `restore(sessionId, id)` 取回。现在缺 id 自动生成并返回；并把"检查点是**进程内**的、
+  重启后不保留"写进文档与一次性日志（此前文案容易让人以为启用后崩溃也能回滚）。
+- **`schedule.addReminder` 到点但没有任何通知通道时静默丢弃** —— 用户永远收不到提醒且无告警。
+  现在明确告警；`addRecurring(0)` 会创建"能多快就多快"的紧循环定时器（打满主线程），现在直接拒绝。
+- **`computer.setMode` 写库失败不报** —— 设置界面显示"已切换"，重启后模式又变回去。
+  现在返回写入结果并在失败时弹提示（顺带去掉同一值的重复写入）。
+
+### 工具与循环
+
+- **`browser_automate` 从不读 MCP 的 `result.isError`** —— Playwright 报错（选择器找不到等）
+  会被当成普通文本成功返回；且单个动作失败只在下文里写一行 "ERROR -"，整次调用仍是成功。
+  现在 `isError` 会被转成异常，任一动作失败即整次调用标记失败并给出 `n/m 个动作失败`。
+- **`github_tool` 的漏洞扫描会把"扫描没做成"报成"没有漏洞"** —— GraphQL 报错 / 响应缺少
+  `data.repository`（token 缺 `security_events` 权限、仓库不存在、Dependabot 未开启）时，
+  原来一律走到 "✅ No open vulnerability alerts"。现在区分并明确说明"这不代表没有漏洞"。
+- **AgenticLoop 关闭"反应式压缩"后上下文溢出是静默终止** —— 既无文本也无事件，用户只看到
+  "助手突然不说话了"。现在与"压缩次数用尽"走同一套可见路径（说明 + `context_overflow` 停止原因）。
+- **工具管线的 `SandboxGuard` 恒为关闭却没人说明** —— `isSandboxEnabled: () => false` 属于既有
+  产品取舍（默认拦工作区外写入会打断很多合法流程），但接线读起来像"沙箱开着"。
+  现在进程内提醒一次，写清"生效的是工具级受保护路径 + 权限层"。
+
+### 技能安装
+
+- **`installSkill` 会静默跳过文件却仍返回 `success: true`** —— 路径不安全 / 扩展名不在白名单 /
+  文件过大 / 超出单技能上限的文件只写一行 `console.warn`，技能可能只装了一半（SKILL.md 装上了、
+  脚本没装上）。现在跳过项随结果返回（`skipped` / `warning`），**全部被跳过即判为安装失败**。
+
+### 验证
+
+- 新增 `provider-honesty-86.test.ts` **HK2-1~11**（逐条覆盖上面每个服务面；撤掉修复必红验过三处：
+  `clearAllHooks` 恢复为空函数、`uiJobs` 恢复返回 true、`addRecurring` 去掉校验）；
+  全量 **251 文件 / 4979 用例通过 / 15 跳过**、`tsc --noEmit` 0 错、UI 审计 27 条规则 **0 error / 0 warn**、
+  css-contract 2745 个类无变化、全量跑完零 `[WriteGuard]` 空写告警。
+
 ## [1.16.36] - 2026-09-15 — 「全修」：上一轮审计列出的**每一处**都修掉（第 85 波）
 
 用户要求：「全修！然后再审计。我们的目标是消灭所有问题。」

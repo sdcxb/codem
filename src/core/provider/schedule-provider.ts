@@ -14,7 +14,12 @@ export const scheduleProvider: Plugin = (ctx: any) => {
   const triggerReminder = (reminder: any) => {
     console.log(`[Schedule] Reminder triggered: ${reminder.message}`)
 
-    // Try to create an inbox notification
+    /**
+     * 第 86 波（静默丢失）：inbox 服务不可用时，原来只在前一行 `console.log` 一下就完事 ——
+     * 用户**永远收不到这条提醒**，而且没有任何告警（提醒对象随后还会被从列表里删掉，
+     * 连"它曾经存在过"都查不到）。现在明确告警。
+     */
+    let notified = false
     try {
       const inbox = ctx?.get?.('inbox')
       if (inbox?.add) {
@@ -25,8 +30,14 @@ export const scheduleProvider: Plugin = (ctx: any) => {
           sessionId: reminder.sessionId,
           timestamp: Date.now(),
         })
+        notified = true
       }
-    } catch (e) { console.warn('[schedule-provider.ts]', e) }
+    } catch (e) { console.warn('[schedule-provider.ts] inbox 投递失败：', e) }
+    if (!notified) {
+      console.warn(
+        `[Schedule] 提醒已到点但没有任何通知通道（inbox 服务不可用），用户不会看到它：${reminder.message}`,
+      )
+    }
 
     // Remove non-recurring reminders
     if (!reminder.recurring) {
@@ -57,6 +68,11 @@ export const scheduleProvider: Plugin = (ctx: any) => {
 
     /** Add a recurring reminder (e.g., every 5 minutes) */
     addRecurring(intervalMs: number, message: string, sessionId?: string): string {
+      // 第 86 波：`intervalMs <= 0` 会让 setInterval 变成"能多快就多快"的紧循环，
+      // 直接把界面/主线程拖死。这里明确拒绝，而不是接受一个必定出事的参数。
+      if (!Number.isFinite(intervalMs) || intervalMs < 1000) {
+        throw new Error(`schedule.addRecurring: intervalMs 必须 >= 1000ms（收到 ${intervalMs}）—— 拒绝创建会打满主线程的定时器`);
+      }
       const id = crypto.randomUUID()
       const reminder: any = {
         id,

@@ -19,7 +19,21 @@ export const uiGoalProvider: Plugin = Object.assign(
   (ctx: any) => {
     const s = {
       render(goal) { return { type: 'goal-bar', goal } },
-      async setGoal(goal) { const driver = ctx.get('goalRoundDriver'); if (driver && driver.setGoal) return driver.setGoal(goal); return { id: 'goal-' + Date.now(), ...goal } },
+      /**
+       * 第 86 波（假成功）：`goalRoundDriver` 不可用时，原来会**凭空造一个目标对象**
+       * `{ id: 'goal-' + Date.now(), ...goal }` 返回 —— 调用方以为目标已设置并持久化，
+       * 实际没有任何地方存过它（下一次 getGoals 还是空的）。
+       * 现在明确抛错，让调用方知道目标没有建立。
+       */
+      async setGoal(goal) {
+        const driver = ctx.get('goalRoundDriver')
+        if (!driver || typeof driver.setGoal !== 'function') {
+          throw new Error(
+            'uiGoal.setGoal: goalRoundDriver 服务不可用（@codem/goal-round-driver 插件未启用），目标没有被创建',
+          )
+        }
+        return driver.setGoal(goal)
+      },
       async getGoals() { const driver = ctx.get('goalRoundDriver'); return driver && driver.getGoals ? driver.getGoals() : [] },
     }
 

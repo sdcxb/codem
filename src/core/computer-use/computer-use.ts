@@ -65,9 +65,23 @@ export function getComputerSettings(): ComputerSettings {
   }
 }
 
-export function setComputerMode(mode: ComputerMode): void {
+/**
+ * 写入电脑操作模式。
+ *
+ * 第 86 波（乐观返回）：原来返回 void 且不处理写入异常 —— 设置界面显示"已切换"，
+ * 而数据库里可能还是旧模式（重启后又变回去，用户会以为设置"自己跳回去了"）。
+ *
+ * @returns 是否真的写进了设置
+ */
+export function setComputerMode(mode: ComputerMode): boolean {
   const cur = getComputerSettings();
-  setSettingJSON(SETTINGS_KEY, { ...cur, mode });
+  try {
+    setSettingJSON(SETTINGS_KEY, { ...cur, mode });
+    return true;
+  } catch (e) {
+    console.error(`[computer-use] 模式设置写入失败（仅本次运行内生效，重启后会回到旧模式）：`, e);
+    return false;
+  }
 }
 
 // ========== 会话级批准（/computer 命令） ==========
