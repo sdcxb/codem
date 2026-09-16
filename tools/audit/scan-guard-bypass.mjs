@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 审计门禁 #3 —— C 类「守卫被绕过」扫描器（第 89 波）
  *
  * ## 为什么单列一类
@@ -159,6 +159,12 @@ export function scanGuardBypass(opts = {}) {
     const rel = path.relative(repoRoot, file).replace(/\\/g, "/");
     let idx = -1;
     while ((idx = src.indexOf("catch", idx + 1)) !== -1) {
+      // ⚠️ 必须确认这是 **catch 子句**而非 `.catch(...)` 方法调用：
+      // 早期只看"`catch` 后面跟 `(` 或 `{`"，于是 `.catch((e) => …)` 被当成 catch 块，
+      // 向下配到不相干的 `}`，把整段代码误判成 fail-open
+      // （第 92 波实测：`domain-store.ts` 的写穿失败上报被误报）。
+      const prev = idx > 0 ? src[idx - 1] : "";
+      if (prev === "." || /[\w$]/.test(prev)) continue;
       const after = src.slice(idx + 5).replace(/^\s*/, "");
       if (!/^[({]/.test(after)) continue;
       const found = catchBody(src, idx);

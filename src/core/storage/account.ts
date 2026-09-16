@@ -1,40 +1,16 @@
-import { getDatabase, persistDatabase } from "./database";
+﻿import { getDatabase, persistDatabase } from "./database";
 import { runGuarded } from "./write-guard";
-import { reportPersistFailure } from "./persist-failure";
-import { getStoragePort, hasStoragePort } from "./port";
+import { domainDelete, domainPort, domainReadMany, domainReadOne, domainWrite } from "./domain-store";
 
-// ========== 迁移期分流（P3 第 11 段） ==========
+// ========== 迁移期分流（P3 第 11/12 段） ==========
 //
 // 账号表是**典型的小表域**（几条记录），读写都要同步（设置面板直接读）。
 // 走通用域镜像：按表加载 → 同步读 → 写穿 + 本地更新。
 //
-// 路由规则与其它域一致：**只有镜像加载完成后才切换**（读与写必须落在同一处）。
-// 未加载完时继续用旧库那份，避免"写进 Rust、读到的还是旧值"。
-
-type AccountDomainPort = {
-  domains: {
-    isReady(table: string): boolean;
-    ensureLoaded(table: string, onLoaded?: () => void): void;
-    all<R>(table: string): R[];
-    find<R>(table: string, where: Record<string, unknown>): R[];
-    findOne<R>(table: string, where: Record<string, unknown>): R | null;
-    applyWrite(table: string, row: Record<string, unknown>, primaryKey?: string): void;
-    applyDelete(table: string, where: Record<string, unknown>): void;
-  };
-  data: { execute(cmd: string, params?: Record<string, unknown>): Promise<{ written: number }> };
-};
+// 骨架（加载判定、写穿上报、超限回退）都在 `domain-store.ts`：
+// 本文件只负责"行 shape 转换"与业务语义（`setActiveAccount` 的不变量）。
 
 const TABLE = "accounts";
-
-function accountPort(): AccountDomainPort | null {
-  if (!hasStoragePort()) return null;
-  const port = getStoragePort();
-  if (port.kind !== "rust") return null;
-  const candidate = port as unknown as AccountDomainPort;
-  if (!candidate.domains) return null;
-  candidate.domains.ensureLoaded(TABLE);
-  return candidate.domains.isReady(TABLE) ? candidate : null;
-}
 
 /** Account → 线协议行（snake_case，与 Rust 契约一致） */
 function accountToRow(a: Account): Record<string, unknown> {
@@ -52,8 +28,8 @@ function accountToRow(a: Account): Record<string, unknown> {
   };
 }
 
-/** 线协议行 → Account */
-function rowToAccountRow(row: Record<string, unknown>): AccountRow {
+/** 线协议行 → AccountRow */
+function wireToRow(row: Record<string, unknown>): AccountRow {
   return {
     id: String(row.id ?? ""),
     email: String(row.email ?? ""),
@@ -66,15 +42,6 @@ function rowToAccountRow(row: Record<string, unknown>): AccountRow {
     created_at: Number(row.created_at ?? 0),
     updated_at: Number(row.updated_at ?? 0),
   };
-}
-
-/** 写穿：失败如实上报（不静默吞） */
-function writeThrough(cmd: string, params: Record<string, unknown>, note: string): void {
-  const port = accountPort();
-  if (!port) return;
-  void port.data.execute(cmd, params).catch((e) => {
-    reportPersistFailure(`account.${cmd}`, e, note);
-  });
 }
 
 export interface Account {
@@ -134,14 +101,10 @@ function rowToAccountFromAny(row: any[]): Account {
 }
 
 export function listAccounts(): Account[] {
-  const port = accountPort();
-  if (port) {
+  const rust = domainReadMany(TABLE, (row) => rowToAccount(wireToRow(row)));
+  if (rust) {
     // 与旧实现的排序一致：updated_at DESC
-    return port.domains
-      .all<Record<string, unknown>>(TABLE)
-      .map(rowToAccountRow)
-      .map(rowToAccount)
-      .sort((a, b) => b.updatedAt - a.updatedAt);
+    return rust.sort((a, b) => b.updatedAt - a.updatedAt);
   }
   const db = getDatabase();
   const result = db.exec("SELECT * FROM accounts ORDER BY updated_at DESC");
@@ -150,11 +113,8 @@ export function listAccounts(): Account[] {
 }
 
 export function getAccount(id: string): Account | null {
-  const port = accountPort();
-  if (port) {
-    const row = port.domains.findOne<Record<string, unknown>>(TABLE, { id });
-    return row ? rowToAccount(rowToAccountRow(row)) : null;
-  }
+  const rust = domainReadOne(TABLE, { id }, (row) => rowToAccount(wireToRow(row)));
+  if (rust !== undefined) return rust;
   const db = getDatabase();
   const result = db.exec("SELECT * FROM accounts WHERE id = ?", [id]);
   if (result.length === 0 || result[0].values.length === 0) return null;
@@ -162,11 +122,8 @@ export function getAccount(id: string): Account | null {
 }
 
 export function getActiveAccount(): Account | null {
-  const port = accountPort();
-  if (port) {
-    const row = port.domains.findOne<Record<string, unknown>>(TABLE, { is_active: 1 });
-    return row ? rowToAccount(rowToAccountRow(row)) : null;
-  }
+  const rust = domainReadOne(TABLE, { is_active: 1 }, (row) => rowToAccount(wireToRow(row)));
+  if (rust !== undefined) return rust;
   const db = getDatabase();
   const result = db.exec("SELECT * FROM accounts WHERE is_active = 1 LIMIT 1");
   if (result.length === 0 || result[0].values.length === 0) return null;
@@ -174,12 +131,7 @@ export function getActiveAccount(): Account | null {
 }
 
 export function createAccount(account: Account): void {
-  const port = accountPort();
-  if (port) {
-    // upsert 语义（存在则覆盖），一次写穿 + 本地更新
-    const row = accountToRow(account);
-    port.domains.applyWrite(TABLE, row);
-    writeThrough("crud.upsert", { table: TABLE, rows: [row], mode: "replace" }, "账号未保存");
+  if (domainWrite(TABLE, [accountToRow(account)], { mode: "replace", scope: "account.create", note: "账号未保存" })) {
     return;
   }
   const db = getDatabase();
@@ -218,17 +170,14 @@ export function createAccount(account: Account): void {
 export function updateAccount(id: string, update: Partial<Account>): void {
   // 迁移期：更新是把"当前完整行 + 本次改动"整体 upsert（与消息索引同一条思路）——
   // 通用命令没有"只改部分列"的参数化形态，而传完整行语义等价且更安全（不会漏列）。
-  const routed = accountPort();
-  if (routed) {
-    const current = routed.domains.findOne<Record<string, unknown>>(TABLE, { id });
-    if (current) {
-      const merged = rowToAccountRow({ ...current, ...accountToRow({ ...rowToAccount(rowToAccountRow(current)), ...update, id } as Account) });
-      routed.domains.applyWrite(TABLE, merged as unknown as Record<string, unknown>);
-      writeThrough("crud.upsert", { table: TABLE, rows: [merged], mode: "replace" }, "账号改动未保存");
+  const current = domainReadOne(TABLE, { id }, (row) => rowToAccount(wireToRow(row)));
+  if (current) {
+    const merged = { ...current, ...update, id };
+    if (domainWrite(TABLE, [accountToRow(merged)], { mode: "replace", scope: "account.update", note: "账号改动未保存" })) {
       return;
     }
-    // 镜像里没有这条：不猜数据，回退旧路径（旧路径的 runGuarded 会记 A 类问题）
   }
+  // 未接手 / 镜像里没有这条：回退旧路径（旧路径的 runGuarded 会记 A 类问题）
   const db = getDatabase();
   const fields: string[] = [];
   const values: (string | number | null)[] = [];
@@ -259,12 +208,7 @@ export function updateAccount(id: string, update: Partial<Account>): void {
 }
 
 export function deleteAccount(id: string): void {
-  const port = accountPort();
-  if (port) {
-    port.domains.applyDelete(TABLE, { id });
-    writeThrough("crud.delete", { table: TABLE, where: { id } }, "账号未删除，重启后会恢复");
-    return;
-  }
+  if (domainDelete(TABLE, { id }, { scope: "account.delete", note: "账号未删除，重启后会恢复" })) return;
   const db = getDatabase();
   db.run("DELETE FROM accounts WHERE id = ?", [id]);
   persistDatabase();
@@ -273,28 +217,21 @@ export function deleteAccount(id: string): void {
 /**
  * 设为当前账号。
  *
- * ⚠️ 这是本域**唯一有业务语义**的写操作：必须"先清空所有 is_active，再置位目标"，
- * 而且要在**一个事务**里完成 —— 否则中断会留下"没有当前账号"或"多个当前账号"。
- * 通用命令表达不了这个语义，所以旧路径用两条语句（第二句走 runGuarded），
- * Rust 路径则逐行 upsert（每行一个事务，但不一致窗口只有毫秒级且幂等可重放）。
+ * ⚠️ 这是本域**唯一有业务语义**的写操作：必须"先清空所有 is_active，再置位目标"。
+ * 通用命令表达不了这个语义，所以这里显式算出**全部行**的新状态一次性写回
+ * （Rust 路径逐行 upsert；旧路径用两条语句，第二句走 runGuarded）。
+ * 不变量（恰好一个 active）由 DOM-6 守住。
  */
 export function setActiveAccount(id: string): void {
-  const port = accountPort();
+  const port = domainPort(TABLE);
   if (port) {
     const now = Date.now();
-    const all = port.domains.all<Record<string, unknown>>(TABLE);
-    const rows = all.map((row) => {
-      const isTarget = row.id === id;
-      const next = { ...row, is_active: isTarget ? 1 : 0, ...(isTarget ? { updated_at: now } : {}) };
-      port.domains.applyWrite(TABLE, next);
-      return next;
-    });
-    // 目标账号可能不在镜像里（例如刚创建但镜像尚未刷新）——那样就不动它，等下次加载
-    writeThrough(
-      "crud.upsert",
-      { table: TABLE, rows, mode: "replace" },
-      "当前账号未切换（重启后可能回到旧账号）",
-    );
+    const rows = port.domains.all<Record<string, unknown>>(TABLE).map((row) => ({
+      ...row,
+      is_active: row.id === id ? 1 : 0,
+      ...(row.id === id ? { updated_at: now } : {}),
+    }));
+    domainWrite(TABLE, rows, { mode: "replace", scope: "account.activate", note: "当前账号未切换（重启后可能回到旧账号）" });
     return;
   }
   const db = getDatabase();

@@ -153,6 +153,10 @@ export const IMPLEMENTED = {
   "projects.insert": ["projects.upsert"],
   "projects.select": ["projects.list"],
   // ===== P3 第 11 段：域镜像（accounts 为例，其余域同形状）=====
+  "v2_sessions.select": ["crud.list"],
+  "v2_sessions.insert": ["crud.upsert"],
+  "v2_sessions.update": ["crud.upsert"],
+  "v2_sessions.delete": ["crud.delete"],
   "accounts.select": ["crud.list"],
   "accounts.insert": ["crud.upsert"],
   "accounts.update": ["crud.upsert"],

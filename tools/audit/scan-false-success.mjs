@@ -116,6 +116,17 @@ export function scanFalseSuccess(opts = {}) {
     const src = stripComments(raw);
     let idx = -1;
     while ((idx = src.indexOf("catch", idx + 1)) !== -1) {
+      /**
+       * ⚠️ 必须确认这是 **catch 子句**，而不是 `.catch(...)` **方法调用**。
+       *
+       * 早期实现只看"`catch` 后面跟 `(` 或 `{`"，于是 `.catch((e) => …)` 被当成
+       * catch 块解析：它会向下配对到一个**不相干**的 `}`，把整段代码误判成 P1
+       * （第 92 波实测：`domain-store.ts` 的写穿失败上报被误报为"catch 里 return true"）。
+       *
+       * 判据：`catch` 前面若是 `.`（属性访问）或标识符字符（如 `xxcatch`），就不是子句。
+       */
+      const prev = idx > 0 ? src[idx - 1] : "";
+      if (prev === "." || /[\w$]/.test(prev)) continue;
       const after = src.slice(idx + 5).replace(/^\s*/, "");
       if (!/^[({]/.test(after)) continue;
       const found = catchBody(src, idx);

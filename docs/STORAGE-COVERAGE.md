@@ -2,9 +2,9 @@
 
 > 由 `node tools/audit/storage-coverage.mjs --md` 生成；不要手工编辑。
 
-- 扫描生产文件：**837**
+- 扫描生产文件：**838**
 - 需要实现的仓储方法：**129**（对应 270 个 SQL 调用点）
-- 已实现：**37** → 方法覆盖率 **28.68%**，调用点覆盖率 **40.74%**
+- 已实现：**41** → 方法覆盖率 **31.78%**，调用点覆盖率 **42.59%**
 - Rust 侧已注册命令：**66**
 - **命令可用性覆盖：129/129（100%）** —— 这一项在第 10 段引入通用命令后已达 100%，但**不等于迁移完成**：渲染侧调用点是否已切到端口，看上面那个保守数字。
 
@@ -32,6 +32,7 @@
 | `sessions.insert` | 2 | `sessions.upsert` |
 | `settings.select` | 2 | `settings.get_all` |
 | `telemetry_events.delete` | 2 | `telemetry.prune` |
+| `v2_sessions.select` | 2 | `crud.list` |
 | `accounts.delete` | 1 | `crud.delete` |
 | `accounts.insert` | 1 | `crud.upsert` |
 | `attachments.update` | 1 | `attachments.update` |
@@ -49,8 +50,11 @@
 | `settings.delete` | 1 | `settings.remove` |
 | `settings.insert` | 1 | `settings.set` |
 | `telemetry_events.insert` | 1 | `telemetry.append` |
+| `v2_sessions.delete` | 1 | `crud.delete` |
+| `v2_sessions.insert` | 1 | `crud.upsert` |
+| `v2_sessions.update` | 1 | `crud.upsert` |
 
-## 待迁移（92 个方法，按调用点排序）
+## 待迁移（88 个方法，按调用点排序）
 
 | 渲染侧方法 | 调用点 | 建议阶段 |
 |---|---:|---|
@@ -88,7 +92,6 @@
 | `squads.update` | 2 | 5 其余域 |
 | `todo_lists.select` | 2 | 5 其余域 |
 | `turn_file_changes.select` | 2 | 5 其余域 |
-| `v2_sessions.select` | 2 | 5 其余域 |
 | `agent_profiles.delete` | 1 | 5 其余域 |
 | `agent_profiles.insert` | 1 | 5 其余域 |
 | `agent_profiles.update` | 1 | 5 其余域 |
@@ -143,6 +146,3 @@
 | `tool_calls.update` | 1 | 3 数据面 |
 | `turn_file_changes.delete` | 1 | 5 其余域 |
 | `turn_file_changes.update` | 1 | 5 其余域 |
-| `v2_sessions.delete` | 1 | 5 其余域 |
-| `v2_sessions.insert` | 1 | 5 其余域 |
-| `v2_sessions.update` | 1 | 5 其余域 |

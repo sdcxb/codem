@@ -1,7 +1,57 @@
 import { getDatabase, persistDatabase } from "./database";
 import type { Session } from "../llm/session";
+import { domainDelete, domainReadMany, domainWrite } from "./domain-store";
+
+// ========== 迁移期分流（P3 第 12 段） ==========
+//
+// `v2_sessions` 是"整会话一把存"的形态：`messages` / `total_usage` 两列存的是 JSON 文本。
+// 因此这里必须**逐行转换**（对象 ←→ JSON 字符串），不能像普通列那样直传。
+
+const TABLE = "v2_sessions";
+
+/** 线协议行 → Session（JSON 列需要解析） */
+function wireToSession(row: Record<string, unknown>): Session {
+  const parse = <T>(raw: unknown, fallback: T): T => {
+    if (typeof raw !== "string" || raw.length === 0) return fallback;
+    try {
+      return JSON.parse(raw) as T;
+    } catch {
+      return fallback;
+    }
+  };
+  return {
+    id: String(row.id ?? ""),
+    projectId: String(row.project_id ?? ""),
+    title: String(row.title ?? ""),
+    model: String(row.model ?? ""),
+    messages: parse(row.messages, [] as unknown[]),
+    totalUsage: parse(row.total_usage, { promptTokens: 0, completionTokens: 0, cost: 0 }),
+    createdAt: Number(row.created_at ?? 0),
+    updatedAt: Number(row.updated_at ?? 0),
+  } as Session;
+}
+
+/** Session → 线协议行（JSON 列序列化） */
+function sessionToWire(session: Session): Record<string, unknown> {
+  return {
+    id: session.id,
+    project_id: session.projectId,
+    title: session.title,
+    model: session.model ?? "",
+    messages: JSON.stringify(session.messages ?? []),
+    total_usage: JSON.stringify(session.totalUsage ?? { promptTokens: 0, completionTokens: 0, cost: 0 }),
+    created_at: session.createdAt,
+    updated_at: session.updatedAt,
+  };
+}
 
 export function loadV2Sessions(): Map<string, Session> {
+  const rust = domainReadMany(TABLE, wireToSession);
+  if (rust) {
+    const sessions = new Map<string, Session>();
+    for (const s of rust) sessions.set(s.id, s);
+    return sessions;
+  }
   const sessions = new Map<string, Session>();
   try {
     const db = getDatabase();
@@ -29,6 +79,9 @@ export function loadV2Sessions(): Map<string, Session> {
 }
 
 export function saveV2Session(session: Session): void {
+  if (domainWrite(TABLE, [sessionToWire(session)], { mode: "replace", scope: "v2Session.save", note: "会话未保存" })) {
+    return;
+  }
   const db = getDatabase();
   try {
     const existing = db.exec("SELECT id FROM v2_sessions WHERE id = ?", [session.id]);
@@ -50,6 +103,7 @@ export function saveV2Session(session: Session): void {
 }
 
 export function deleteV2Session(id: string): void {
+  if (domainDelete(TABLE, { id }, { scope: "v2Session.delete", note: "会话未删除" })) return;
   const db = getDatabase();
   try {
     db.run("DELETE FROM v2_sessions WHERE id = ?", [id]);
