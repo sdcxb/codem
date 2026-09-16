@@ -98,9 +98,46 @@ export type StorageTransport = {
   capabilities<T>(): Promise<T>;
 };
 
+/**
+ * 破坏性操作的**最终出口**留痕（第 36 轮，**长期保留**）。
+ *
+ * ## 为什么装在这里而不是别处
+ *
+ * 第 31–35 轮把渲染侧能查的地方都排除了：
+ * `data.execute/write/command`（端口层）、`domain-store` 五个写穿点、
+ * 删除类写操作的控制台记录、以及仓储命令唯一出口 `RustDataPort.execute/.command` ——
+ * 在"点开会话就删掉那个会话"这个可复现场景里**全部 0 命中**。
+ *
+ * 而 `tauriTransport.invokeCommand` / `invokeBatch` 是**所有 IPC 的最终出口**：
+ * 任何路径（`RustDataPort`、三个镜像类、任何直接持有 transport 的代码）想动数据库，
+ * 都必须经过这里。所以它是唯一无法绕过的位置 —— 也是"再插一个更靠外的桩"这件事的终点。
+ *
+ * 只记破坏性命令（delete / replace_table / compact），附调用栈；正文一律不记。
+ */
+function traceDestructiveIpc(command: string, params?: Record<string, unknown>): void {
+  if (!/delete|replace_table|compact/i.test(command)) return;
+  try {
+    const stack = (new Error().stack ?? "")
+      .split("\n")
+      .slice(2, 12)
+      .map((l) => l.trim());
+    console.warn(
+      `[IpcTrace] ${command} params=${JSON.stringify(params ?? {}).slice(0, 200)}\n` + stack.join("\n"),
+    );
+  } catch {
+    /* 留痕失败绝不影响功能 */
+  }
+}
+
 const tauriTransport: StorageTransport = {
-  invokeCommand: (command, params) => invoke("storage_invoke", { command, params: params ?? {} }),
-  invokeBatch: (commands) => invoke("storage_batch", { commands }),
+  invokeCommand: (command, params) => {
+    traceDestructiveIpc(command, params);
+    return invoke("storage_invoke", { command, params: params ?? {} });
+  },
+  invokeBatch: (commands) => {
+    for (const c of commands) traceDestructiveIpc(c.command, c.params);
+    return invoke("storage_batch", { commands });
+  },
   health: () => invoke("storage_health"),
   integrityCheck: () => invoke("storage_integrity_check"),
   checkpoint: () => invoke("storage_checkpoint"),
