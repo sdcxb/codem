@@ -208,8 +208,26 @@ export const STORAGE_ENGINE_KEY = "codem-storage-engine";
 
 let current: StoragePort | null = null;
 
+/**
+ * 端口注册计数（诊断用，第 34 轮）。
+ *
+ * 为什么要计这个：真机排查时出现了"仪器都装好了、日志通道也确认可用，
+ * 但删除就是不经过它们"的僵局。剩下最可能的解释是**注册了不止一个端口实例** ——
+ * 那么某些模块拿到的端口与我装仪器的那个不是同一个对象。
+ * 计数暴露在 `globalThis.__codemStoragePorts` 上，一次真机读取即可证伪或证实。
+ */
+let registrationCount = 0;
+
 export function setStoragePort(port: StoragePort | null): void {
   current = port;
+  if (port) {
+    registrationCount++;
+    try {
+      (globalThis as unknown as Record<string, unknown>).__codemStoragePorts = registrationCount;
+    } catch {
+      /* 诊断失败不影响功能 */
+    }
+  }
 }
 
 export function getStoragePort(): StoragePort {

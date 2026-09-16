@@ -2221,3 +2221,39 @@ P6 在 Rust 路径上做的任何内存约束（镜像预算、每表上限、�
 在 `RustMessageMirror` / `RustEventMirror` / `RustDomainMirror` 的 `call(this.t, …)`
 （即 `transport.invokeCommand`）上装同一个留痕 —— 那是唯一还没覆盖的渲染侧出口。
 若那里仍为 0 命中，就可以确定删除来自渲染进程之外，转而查"第二个连接/进程"。
+
+### 第 34 轮补充：镜像类与端口实例数也已排除，边界收敛完成
+
+上一条把"未覆盖的出口"指向三个镜像类。本轮**用静态证据把它们排除**：
+
+- 三个镜像类（`RustMessageMirror` / `RustEventMirror` / `RustDomainMirror`）里出现的命令名
+  **只有读**：`messages.list`、`messages.load`、`events.list`、`events.load`、`crud.list`；
+  它们内部的 `delete(` / `removeByIds(` 都是**改内存镜像**（`bySession` / `byId`），不发任何写命令。
+- **端口实例数 = 1**（新增计数暴露在 `globalThis.__codemStoragePorts`，真机读数为 1）。
+  这条排除了"装了仪器的端口与某些模块拿到的端口不是同一个对象"这个解释 —— 
+  它是本轮之前最后剩下的"仪器失效"类可能。
+
+于是边界如下（全部真机实测）：
+
+| 可能发出 `DELETE FROM sessions` 的渲染侧出口 | 仪器 | 命中 |
+| --- | --- | --- |
+| `data.execute` / `data.write` / `data.command` | 端口层缓冲 | 0 |
+| `domain-store` 5 个写穿点 | `write-audit.recordWrite` | 0 |
+| 删除类写操作（控制台） | `write-audit` | 0 |
+| 仓储命令唯一出口 `RustDataPort.execute/.command` | `[StorageTrace]` | 0 |
+| 三个镜像类 | 静态：只发读命令 | 不适用 |
+| 端口实例数 | `__codemStoragePorts` | **1** |
+
+**结论（可以写进结论的部分）**：那条删除**不是渲染进程通过任何可插桩的仓储入口发出的**。
+渲染侧的排查空间已经穷尽 —— 下一步应当转向**渲染进程之外**：
+核查是否存在第二个连接/进程（或某条绕过 `StoragePort` 抽象直连数据库的代码路径）。
+在此之前，两道兜底（批量删除闸门 + 启动自愈）继续保证用户数据不真的丢。
+
+**排查方法论（本轮最大收获，值得记下）**：
+
+1. 加仪器之前，先确认**运行中实际加载的 chunk** 里有没有这段代码
+   （本轮就踩到：入口 chunk 没有、懒加载 chunk 有 —— 差一点把"没生效"当成"没执行"）；
+2. 仪器要装在**唯一汇聚点**（`RustDataPort` 是所有仓储命令的唯一出口），
+   而不是逐个调用点 —— 前两轮"插了 A、漏了 B"的返工就是这么来的；
+3. 每排除一条路径就**记进矩阵**：排查的产出不只是"找到原因"，
+   也包括"把可能性一条条划掉"，后者同样可复用。
