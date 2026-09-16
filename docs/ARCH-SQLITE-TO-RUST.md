@@ -197,8 +197,10 @@ D 类规则的最终形态（分阶段收紧，未豁免即失败）：
 - 第 92 波 P0：盘点工具 + 端口定义 + D 类门禁（**已完成**；盘点数字后被修正 **+43%**，见下）
 - 第 92 波 P1：Rust 存储引擎 + CLI + 安全边界 + 错误映射 + 契约测试 + 覆盖率门禁 + 规模基准
   （**已完成**，Rust 27 项 + 契约 26 项 + 覆盖率 6 项全绿）
-- 后续：P3（按模块切换 129 个方法）→ P4（数据迁移与对账）→ P5（删除 WASM 路径）→ P6（大文档专项）
-  并行推进
+- 第 92 波 P3 第 1 段：Tauri 命令层 + Rust 端口 + 启动引导/回滚开关 + **跨语言线协议契约**
+  （**已完成**，端口契约 25 项 + 引导 11 项 + 线协议 2+6 项全绿；迁移期默认仍是 WASM，零行为变更）
+- 后续：P3 第 2 段（把调用点切到端口，需先做 settings 数据搬迁）→ P4（迁移与对账）→
+  P5（删除 WASM 路径）→ P6（大文档专项）
 
 ## 8. 实际结果（按阶段追加）
 
@@ -320,6 +322,79 @@ db.run(
 
 **未做（下一轮 P3）**：把 129 个方法按模块逐个切到 Rust（配置面 → 只追加 → 数据面 → 会话/项目 → 其余域），
 每切一个模块就删掉 D 类允许清单里的对应条目。
+
+### P3 第 1 段（第 92 波）—— 把 Rust 引擎接进应用（已完成）
+
+P1 的引擎**在应用里根本调不到**（没有 Tauri 命令层）。这一段补齐"渲染进程真的能用它"的全部环节。
+
+| 新增组件 | 作用 |
+|---|---|
+| `src-tauri/src/storage.rs` | Tauri 命令层：`storage_invoke` / `storage_batch` / `storage_health` / `storage_integrity_check` / `storage_checkpoint` / `storage_capabilities` / `storage_info`；**只做参数解析→dispatch→序列化**，无 SQL、无业务逻辑 |
+| `src-tauri/Cargo.toml` | 新增 `codem-db = { path = "codem-db" }`（crate 从"孤立可编译"变成"真被应用使用"） |
+| `src/core/storage/rust-port.ts` | 实现 `StoragePort` 的渲染侧适配：引擎/数据/配置/追加四个面全部走 IPC；`StorageTransport` 可注入（测试无需 Tauri 运行时） |
+| `src/core/storage/bootstrap.ts` | 启动注册 + **回滚开关** + 失败上报 |
+| `src/App.tsx` | 在 `initDatabase()` 之后注册端口（`await` 是必要的：配置面同步读依赖启动预热） |
+
+**库文件位置**：`%APPDATA%\com.codem.app\codem-db-rust.bin`。
+与 WASM 侧 `codem-db.bin` **刻意分开** —— 迁移期两个引擎可并存对照、互不锁文件；
+数据搬迁由 P4 的迁移/对账工具负责，而不是"两个引擎抢同一个文件"。
+
+**回滚开关刻意放在 localStorage**（`codem-storage-engine` = `rust|wasm`）：
+
+> 如果开关存在数据库里，那么"数据库读不出来"时你就无法回退 —— 而那恰好是最需要回退的时刻。
+> **存储层的开关必须住在存储层之外。**
+
+迁移期 `DEFAULT_ENGINE = "wasm"`，因此本段**零用户可见行为变更**。
+
+**这一段暴露并修掉的真缺陷（契约测试抓到，不是"顺手改改"）**
+
+1. **IPC 通道失败没被包成 `StorageError`**。Rust 返回 `{ok:false,error}` 时端口会转，
+   但**桥断了/命令名写错导致 Tauri 直接 reject** 时，调用方 `catch (e) => e.code` 拿到
+   `undefined` ——"错误是值"在渲染侧断了一截。现在所有单命令调用统一走 `call()` 包装（PORT-5 钉住）。
+2. **配置面 `flush()` 会在写失败之前就返回**。原实现用"计数 + sleep 轮询"判断排空，
+   而 `catch` 是微任务，`flush()` 早就返回了 —— 退出前的收尾会漏掉失败上报
+   （PORT-16 抓到：失败计数还是 0）。改为直接持有 Promise 并 `allSettled`。
+3. **追加面的背压上限永远达不到**。drain 先把一批从队列摘走再等 IPC，只看 `queue.length`
+   的话"在途条数"没有上界；现在 `backlog() = 队列 + 在途`（PORT-19 钉住）。
+
+**验证**
+
+| 项 | 结果 |
+|---|---|
+| `cargo test`（codem-db） | 29 项全绿（27 + 线协议 2） |
+| `cargo test`（Tauri 侧 `storage::tests`） | 4 项全绿（错误载荷、可重试标记、响应自描述） |
+| 端口契约 `src/test/rust-port.test.ts` | **25 项**全绿（错误映射/分页/批量/配置/背压/命令白名单/不缓存语料） |
+| 引导契约 `src/test/storage-bootstrap.test.ts` | **11 项**全绿（开关优先级、脏值兜底、localStorage 抛异常、失败不注册半死端口、幂等） |
+| **跨语言线协议** | Rust `wire_contract.rs` 生成并断言金样本（`tests/wire-fixtures.json`）；TS `rust-port-wire.test.ts` 用**同一份样本**断言解包 —— 字段名漂移会让两边同时红 |
+| 真实生产路径 | `engine_works_at_production_path_shape` 在 `%APPDATA%\com.codem.app\` 下真开库、写、读、checkpoint、quick_check（用独立文件名，不碰真实数据） |
+
+**未做（下一轮）**：把调用点真正切到端口（settings 同步读需要一次性的数据搬迁，属 P4）；
+以及 `quick_phrases` 的"使用次数 +1"语义在 Rust 侧尚无对应命令（`settings_set` 是覆盖语义）。
+
+#### P3 第 1 段真机验证（打包前的实机证据）
+
+用 `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9222` 启动应用，经 CDP 在**真实渲染进程**里调用 Tauri 命令：
+
+| 检查项 | 结果 |
+|---|---|
+| `storage_capabilities` | 22 个命令全部可见，`no_whole_file_export: true` |
+| `storage_health` | `journal_mode=wal` · `tables=45` · `fts_module=fts5` · `ready=true` · 文件落在 `%APPDATA%\com.codem.app\codem-db-rust.bin` |
+| 写入 → 读回 | `settings.set` → `written:1`，`settings.get_all` 读回 `realmachine-probe: ok` |
+| **SQL 被拒** | `sql.raw {sql:"SELECT 1"}` → `UNSUPPORTED`（且 `retryable:false`） |
+| A 类防线 | `messages.update` 命中 0 行 → `NOT_FOUND`（而不是"成功"） |
+| `storage_integrity_check` | `ok:true, detail:"ok"` |
+| `storage_batch` | 2 步全部成功，逐步回报 |
+| 启动引导 | `localStorage[codem-storage-engine]=rust` → 刷新后端口已注册（`kind:"rust"`）+ 启动日志 |
+| **回滚开关** | `=wasm` → 未注册端口；删除键 → 未注册（默认 wasm）——三种状态都实测过 |
+| 真实 WASM 库未被破坏 | 全程只读校验：`quick_check=ok`、821 条消息 / 883 次工具调用 / 2197 条事件原样 |
+
+真机验证本身**又抓到一个缺陷**：端口重复注册时返回的健康快照不完整，
+启动日志会打印 `[Storage] Rust 引擎已就绪：undefined（undefined 表 / undefined）`
+（StrictMode 双启动时必现）。已改为 `{opened:false}` 且不给 health 快照，日志只在真正打开时打印。
+
+> 说明：应用在这轮验证中被正常启动了 3 次（为了测回滚开关），因此用户自己的
+> WASM 库发生了**正常运行时写入**（文件大小不变、大小写与结构一致、`quick_check` 通过）。
+> 这是每次正常启动都会发生的事，不是探针污染。
 
 ### P1 规模基准（Rust 引擎 vs sql.js/WASM，1k / 10k / 100k）
 

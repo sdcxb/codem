@@ -41,6 +41,8 @@ aes-gcm = "0.10"
 rand = "0.8"
 portable-pty = "0.8"
 url = "2"
+# 存储引擎（Rust 原生 SQLite）—— 渲染进程不再持有 WASM 数据库，见 docs/ARCH-SQLITE-TO-RUST.md
+codem-db = { path = "codem-db" }
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.61", features = ["Win32_UI_WindowsAndMessaging", "Win32_Foundation"] }

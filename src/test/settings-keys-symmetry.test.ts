@@ -35,6 +35,12 @@ const ALLOWLIST = new Map<string, string>([
   ["codem-figma-token", "第三方 token：当前**没有设置界面**（图工具会提示去设置里配，属于待补的缺口）"],
   ["system-prompt-instructions", "高级旋钮：系统提示词覆盖，运行期只读，供手工配置"],
   ["ui-language", "由语言切换的其它通道写入（codem-language），此处兼容读取"],
+  [
+    "codem-storage-engine",
+    "第 92 波存储迁移的**回滚开关**（rust|wasm），刻意只读不写：它必须在「数据库打不开」时仍然可用，" +
+      "所以既不存在数据库里，也不由应用代码自动改写（否则回滚就成了「应用自己决定回滚」）。" +
+      "写入方式：devtools 里 localStorage.setItem，或支持同学远程指导。见 src/core/storage/bootstrap.ts",
+  ],
 ]);
 // 说明：`codem-settings` 一度也在白名单里（当时误判成"只写不读"），
 // 修好「同名常量跨文件串味」后它读写对称（读 22 / 写 11），于是从白名单移除 —— 能不自证就不要自证。

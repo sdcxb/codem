@@ -1,0 +1,106 @@
+{
+  "_comment": "由 src-tauri/codem-db/tests/wire_contract.rs 生成/校验；TS 侧 src/test/rust-port-wire.test.ts 用同一份样本断言解包结果。字段名是跨语言契约，改名等于破坏协议。",
+  "_generatedAtMs": 1789551594690,
+  "_generatedBy": "cargo test --manifest-path src-tauri/codem-db/Cargo.toml --test wire_contract",
+  "count": {
+    "engine": "rust",
+    "ok": true,
+    "result": {
+      "count": 1,
+      "hidden": 0,
+      "total": 1,
+      "visible": 1
+    }
+  },
+  "error_bad_param": {
+    "engine": "rust",
+    "error": {
+      "code": "OTHER",
+      "hint": "其它存储错误",
+      "message": "缺少必填参数 role",
+      "retryable": false
+    },
+    "ok": false
+  },
+  "error_constraint": {
+    "engine": "rust",
+    "error": {
+      "code": "CONSTRAINT",
+      "hint": "约束冲突：调用方需要先满足依赖（如外键指向的行）",
+      "message": "FOREIGN KEY constraint failed",
+      "retryable": false
+    },
+    "ok": false
+  },
+  "error_not_found": {
+    "engine": "rust",
+    "error": {
+      "code": "NOT_FOUND",
+      "hint": "目标记录不存在",
+      "message": "messages.update 未命中任何行：id=nope",
+      "retryable": false
+    },
+    "ok": false
+  },
+  "error_unsupported": {
+    "engine": "rust",
+    "error": {
+      "code": "UNSUPPORTED",
+      "hint": "该能力尚未实现（迁移期）",
+      "message": "未实现的仓储命令：sql.raw（迁移按 docs/ARCH-SQLITE-TO-RUST.md 的 P3 顺序补齐）",
+      "retryable": false
+    },
+    "ok": false
+  },
+  "list": {
+    "engine": "rust",
+    "ok": true,
+    "result": {
+      "has_more": false,
+      "items": [
+        {
+          "content": "线协议内容",
+          "id": "m1",
+          "model": null,
+          "reasoning": null,
+          "role": "user",
+          "session_id": "s1",
+          "status": "done",
+          "timestamp": 1700000000000
+        }
+      ],
+      "next_cursor": null
+    }
+  },
+  "missing": {
+    "engine": "rust",
+    "ok": true,
+    "result": {
+      "item": null
+    }
+  },
+  "single": {
+    "engine": "rust",
+    "ok": true,
+    "result": {
+      "item": {
+        "content": "线协议内容",
+        "id": "m1",
+        "model": null,
+        "reasoning": null,
+        "role": "user",
+        "session_id": "s1",
+        "status": "done",
+        "timestamp": 1700000000000
+      }
+    }
+  },
+  "write": {
+    "engine": "rust",
+    "ok": true,
+    "result": {
+      "key": "codem-font-size",
+      "written": 1
+    }
+  }
+}

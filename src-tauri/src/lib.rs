@@ -13,7 +13,6 @@ use tokio::sync::{oneshot, Mutex as TokioMutex};
 // 运行时事件文件日志（对标 dsh log-files.ts）：按日 + 轮转 + 上限 + 脱敏。
 // 打包版无控制台，常规事件落盘供用户/开发者诊断。
 mod runtime_log;
-
 // ========== 微信 ClawBot 桥（iLink）==========
 // 传输层（登录/长轮询/收发/配额），引擎集成在 TS 侧。
 mod ilink;
@@ -21,6 +20,11 @@ mod ilink;
 // ========== 手机连接（phone-link，对标 dsh-phone）==========
 // LAN HTTP 地基：配对门卫 + 静态页 + 请求代理到 WebView TS 引擎。
 mod phone;
+
+// ========== 存储引擎（Rust 原生 SQLite）==========
+// 迁移期定位：渲染侧通过 `storage_invoke` 走类型化仓储命令（不接受 SQL），
+// 引擎本体在 src-tauri/codem-db（独立 crate，可被 CLI 与 vitest 契约测试直接驱动）。
+mod storage;
 
 // ========== PTY Manager ==========
 // Interactive terminal support using portable-pty.
@@ -2508,6 +2512,10 @@ install_panic_hook();
 let ilink_state = ilink::IlinkState::new();
 // ===== 手机连接（phone-link）管理态 =====
 let phone_state = phone::PhoneState::new();
+// ===== 存储引擎（Rust 原生 SQLite）管理态 =====
+// 路径按 `%APPDATA%\<identifier>` 自行解析（不依赖 AppHandle，见 storage.rs 注释）；
+// 引擎本体在首次调用时惰性打开。
+let storage_state = storage::init_state();
 let app = tauri::Builder::default()
 .plugin(tauri_plugin_shell::init())
 .plugin(tauri_plugin_fs::init())
@@ -2517,6 +2525,7 @@ let app = tauri::Builder::default()
 .plugin(tauri_plugin_dialog::init())
         .manage(ilink_state.clone())
         .manage(phone_state.clone())
+        .manage(storage_state)
         .manage(Arc::new(Mutex::new(HashMap::<String, PtySession>::new())) as PtyMap)
         .manage(AppState {
             providers: Mutex::new(vec![
@@ -2613,6 +2622,14 @@ path_exists,
             phone::phone_decide,
             phone::phone_unpair,
             phone::phone_respond,
+            // 存储引擎（Rust 原生 SQLite）：类型化仓储命令，不接受 SQL
+            storage::storage_invoke,
+            storage::storage_batch,
+            storage::storage_health,
+            storage::storage_integrity_check,
+            storage::storage_checkpoint,
+            storage::storage_capabilities,
+            storage::storage_info,
         ])
         .setup({
             // 捕获 ilink_state（Arc owned）以满足 setup 闭包的 'static 约束。
