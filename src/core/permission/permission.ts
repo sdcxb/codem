@@ -1,5 +1,6 @@
 import { getAgentRegistry } from "../agent/agent";
 import { getSettingJSON, setSettingJSON } from "../storage/settings";
+import { reportPersistFailure } from "../storage/persist-failure";
 
 // ========== Permission Types ==========
 export type PermissionAction = "allow" | "deny" | "ask";
@@ -93,7 +94,11 @@ export class PermissionEvaluator {
     try {
       const custom = this.getCustomRules();
       setSettingJSON(CUSTOM_RULES_KEY, custom);
-    } catch (e) { console.warn('[permission.ts]', e) }
+    } catch (e) {
+      // 第 87 波：自定义权限规则写不进去 = 用户以为加的"拒绝规则"没生效（安全相关），
+      // 原来只打一行 warn。现在上报（error 级 + 事件 + 计数）。
+      reportPersistFailure("permission.saveCustomRules", e);
+    }
   }
 
   /** Clear all rules */

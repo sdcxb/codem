@@ -1,5 +1,6 @@
 // ========== Error Types ==========
 import { setSettingJSON } from "../storage/settings";
+import { reportPersistFailure } from "../storage/persist-failure";
 
 export type RetryableErrorType =
   | "rate_limit"        // HTTP 429
@@ -143,7 +144,7 @@ export class RetryExecutor {
     this.state.totalAttempts = this.config.maxAttempts;
     try {
       setSettingJSON("codem-retry-config", this.config);
-    } catch (e) { console.warn('[retry.ts]', e) }
+    } catch (e) { reportPersistFailure("retry.setConfig", e, "重试配置未保存，重启后回到默认值"); }
   }
 
   /** Reset retry state */

@@ -13,6 +13,7 @@
 import { getDatabase, persistDatabase } from "../storage/database";
 import type { DelegationTask, DelegationTaskRow, DelegationState } from "./types";
 import { runGuarded } from "../storage/write-guard";
+import { reportPersistFailure } from "../storage/persist-failure";
 
 // ========== 行 → 对象转换 ==========
 
@@ -58,7 +59,7 @@ export function createDelegationTask(task: DelegationTask): void {
     );
     persistDatabase();
   } catch (e) {
-    console.error("[DelegationStorage] createDelegationTask failed:", e);
+    reportPersistFailure("delegation.createDelegationTask", e);
   }
 }
 
@@ -217,7 +218,7 @@ export function deleteDelegationTask(taskId: string): void {
     db.run("DELETE FROM delegation_tasks WHERE id = ?", [taskId]);
     persistDatabase();
   } catch (e) {
-    console.error("[DelegationStorage] deleteDelegationTask failed:", e);
+    reportPersistFailure("delegation.deleteDelegationTask", e);
   }
 }
 
@@ -238,7 +239,7 @@ export function clearCompletedDelegations(keepCount: number = 50): void {
     );
     persistDatabase();
   } catch (e) {
-    console.error("[DelegationStorage] clearCompletedDelegations failed:", e);
+    reportPersistFailure("delegation.clearCompletedDelegations", e);
   }
 }
 

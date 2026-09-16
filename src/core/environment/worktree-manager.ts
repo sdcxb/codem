@@ -23,6 +23,7 @@
 
 import { executeCommand, exists } from "../file-api";
 import { getSettingJSON, setSettingJSON } from "../storage/settings";
+import { reportPersistFailure } from "../storage/persist-failure";
 
 // Platform detection for cross-platform path handling
 const isWindows = typeof navigator !== "undefined" && navigator.userAgent.includes("Win");
@@ -364,6 +365,6 @@ export function setProjectExecutionMode(
       })
     );
   } catch (e) {
-    console.error("[WorktreeManager] Failed to set execution mode:", e);
+    reportPersistFailure("worktree.setExecutionMode", e, "会话执行模式未写入，重启后会回到旧模式");
   }
 }

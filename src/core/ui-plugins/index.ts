@@ -48,6 +48,7 @@ import { uiLayoutProvider } from '../provider/ui-layout-provider'
 import { uiDirectoryPickerProvider } from '../provider/ui-directory-picker-provider'
 import { uiMessageFeedbackProvider } from '../provider/ui-message-feedback-provider'
 import { uiLibraryOpsProvider } from '../provider/ui-library-ops-provider'
+import { reportActionFailure } from "../storage/persist-failure";
 
 /**
  * 插件禁用门控表（短名 → 插件 id）。
@@ -93,7 +94,9 @@ export function loadUIPlugins(ctx: Context) {
       ctx.plugin({ inject: ['slots'], apply: (pluginCtx: any) => apply(pluginCtx) } as any)
       console.log(`[UI Plugins] Loaded: ${name}`)
     } catch (err) {
-      console.warn(`[UI Plugins] Failed to load ${name}:`, err)
+      // 第 87 波：UI 插件加载失败原来只有一行 warn —— 用户看到的是"某个界面区域凭空消失"，
+      // 完全不知道为什么。现在走统一上报（error 级 + 事件 → 界面提示）。
+      reportActionFailure("uiPlugins.load", err, `UI 插件 ${name} 未加载（对应界面区域会缺失）`);
     }
   }
 

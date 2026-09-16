@@ -10,6 +10,7 @@
 import { getSettingJSON, setSettingJSON } from "../storage/settings";
 import { flushDatabase } from "../storage/database";
 import { normalizeModelId } from "./model-catalog";
+import { reportPersistFailure } from "../storage/persist-failure";
 
 // ========== Types ==========
 
@@ -159,7 +160,7 @@ export class ModelProfileManager {
       // Force immediate flush instead of debounced 500ms delay
       // This ensures profile changes are persisted before app close/reload
       flushDatabase();
-    } catch (e) { console.warn('[model-profile.ts]', e) }
+    } catch (e) { reportPersistFailure("modelProfile.save", e); }
   }
 
   // ========== Queries ==========

@@ -3,6 +3,7 @@ import type { Project, Session, ProjectSkill, ProjectMemory, ProjectInstructions
 import * as ProjectStorage from "./storage/project";
 import * as SessionStorage from "./storage/session";
 import { getProjectExecutionMode, createWorktree, removeWorktree, getWorktreeRoot } from "./environment";
+import { reportPersistFailure, reportActionFailure } from "./storage/persist-failure";
 
 interface ProjectState {
   currentProject: Project | null;
@@ -77,7 +78,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 
   createProject: (name, path, description) => {
     const project: Project = { id: generateId(), name, path, createdAt: Date.now(), lastAccessedAt: Date.now(), description };
-    try { ProjectStorage.createProject(project); } catch (e) { console.error("[Store] createProject save failed:", e); }
+    try { ProjectStorage.createProject(project); } catch (e) { reportPersistFailure("store.createProject", e); }
     const updated = [...get().projects, project];
     set({ projects: updated, currentProject: project, sessions: [] });
     return project;
@@ -93,7 +94,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   },
 
   deleteProject: (projectId) => {
-    try { ProjectStorage.deleteProject(projectId); } catch (e) { console.warn('[store.ts]', e) }
+    try { ProjectStorage.deleteProject(projectId); } catch (e) { reportPersistFailure("store.deleteProject", e); }
     try { for (const s of SessionStorage.listSessions(projectId)) SessionStorage.deleteSession(s.id); } catch (e) { console.warn('[store.ts]', e) }
     set({
       projects: get().projects.filter((p) => p.id !== projectId),
@@ -104,7 +105,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   setProjects: (projects) => set({ projects }),
 
   updateProject: (projectId, update) => {
-    try { ProjectStorage.updateProject(projectId, { ...update, lastAccessedAt: Date.now() }); } catch (e) { console.warn('[store.ts]', e) }
+    try { ProjectStorage.updateProject(projectId, { ...update, lastAccessedAt: Date.now() }); } catch (e) { reportPersistFailure("store.updateProject", e); }
     const projects = get().projects.map((p) => p.id === projectId ? { ...p, ...update, lastAccessedAt: Date.now() } : p);
     set({ projects, currentProject: get().currentProject?.id === projectId ? { ...get().currentProject!, ...update } : get().currentProject });
   },
@@ -224,7 +225,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   setSessions: (sessions) => set({ sessions }),
 
   updateSession: (sessionId, update) => {
-    try { SessionStorage.updateSession(sessionId, { ...update, lastMessageAt: Date.now() }); } catch (e) { console.warn('[store.ts]', e) }
+    try { SessionStorage.updateSession(sessionId, { ...update, lastMessageAt: Date.now() }); } catch (e) { reportPersistFailure("store.updateSession", e); }
     const updated = get().sessions.map((s) => s.id === sessionId ? { ...s, ...update, lastMessageAt: Date.now() } : s);
     set({ sessions: updated, currentSession: get().currentSession?.id === sessionId ? { ...get().currentSession!, ...update } : get().currentSession });
   },
@@ -264,15 +265,16 @@ function createWorktreeSync(projectPath: string, sessionId: string, branch?: str
       const store = useProjectStore.getState();
       store.updateSession(sessionId, { worktreePath: actualPath });
     } catch (e) {
-      console.error("[Store] Failed to persist worktreePath:", e);
+      reportPersistFailure("store.persistWorktreePath", e, "会话 worktree 路径未保存");
     }
   }).catch(e => {
-    console.error("[Store] Async worktree creation failed:", e);
+    // 第 87 波：worktree 创建失败后已悄悄回退到主工作区 —— 用户必须在改动文件前知道这件事
+    reportActionFailure("store.createWorktree", e, "会话已回退为在主工作区运行");
     // Mark session as fallback to local mode
     try {
       const store = useProjectStore.getState();
       store.updateSession(sessionId, { executionMode: "current_workspace" });
-    } catch (e) { console.warn('[store.ts]', e) }
+    } catch (e) { reportPersistFailure("store.fallbackExecutionMode", e); }
   });
   // Return predicted path immediately (will be confirmed by async callback)
   return worktreePath;
@@ -281,6 +283,6 @@ function createWorktreeSync(projectPath: string, sessionId: string, branch?: str
 function removeWorktreeSync(projectPath: string, worktreePath: string): void {
   // Fire-and-forget async removal
   removeWorktree(projectPath, worktreePath).catch(e => {
-    console.error("[Store] Async worktree removal failed:", e);
+    reportActionFailure("store.removeWorktree", e, "worktree 目录未清理（磁盘上会残留）");
   });
 }

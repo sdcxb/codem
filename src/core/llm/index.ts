@@ -118,6 +118,7 @@ export { redactSecrets, redactSecretsDeep } from "../utils/redact";
 export const DEFAULT_MAX_OUTPUT_TOKENS = 8192;
 
 import { loadAppIdentity, loadUserConfig } from "../config/loader";
+import { reportActionFailure } from "../storage/persist-failure";
 import { getLang } from "../i18n/lang";
 import { getSettingJSON, setSettingJSON } from "../storage/settings";
 import { getEventLog } from "../storage/event-log";
@@ -308,7 +309,8 @@ private scopedLoopPool: Map<string, AgenticLoop> = new Map();
       registerAgentTeamsTools((t) => this.tools.register(t));
       console.log("[LLMEngine] agent-teams tools registered");
     }).catch((e) => {
-      console.warn("[LLMEngine] agent-teams tools register failed:", e);
+      // 第 87 波：注册失败 = 这些工具在当前会话里根本不存在（原来只有一行 warn）
+      reportActionFailure("delegationTools.agentTeams", e, "agent-teams 工具未注册，模型无法建队/派活");
     });
 
     // Register computer-use tools (对标 EAC computer-user，读屏+键鼠)
@@ -316,7 +318,7 @@ private scopedLoopPool: Map<string, AgenticLoop> = new Map();
       registerComputerUseTools((t) => this.tools.register(t));
       console.log("[LLMEngine] computer-use tools registered");
     }).catch((e) => {
-      console.warn("[LLMEngine] computer-use tools register failed:", e);
+      reportActionFailure("delegationTools.computerUse", e, "computer-use 工具未注册，模型无法读屏/操作桌面");
     });
   }
 

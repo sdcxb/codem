@@ -13,6 +13,7 @@
  * - 停止时：清除快照（正常退出时）
  */
 import type { Plugin } from '../cordis/src/index.ts'
+import { reportPersistFailure } from "../storage/persist-failure";
 
 class SessionRecovery {
   private snapshots: Map<string, { sessionId: string; messages: any[]; goalId: string | null; timestamp: number; iteration: number }> = new Map()
@@ -116,7 +117,7 @@ class SessionRecovery {
     this.snapshots.delete(sessionId)
     try {
       localStorage.removeItem(`__codem_recovery_${sessionId}`)
-    } catch (e) { console.warn('[session-recovery-provider.ts]', e) }
+    } catch (e) { reportPersistFailure("sessionRecovery.clearSnapshot", e, "恢复快照未清除，下次恢复可能提示旧内容"); }
   }
 
   /**

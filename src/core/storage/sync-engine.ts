@@ -22,6 +22,7 @@
 import { getEventLog } from "./event-log";
 import { getSetting, setSetting, getSettingJSON, setSettingJSON } from "./settings";
 import type { SessionEvent, SessionEventType } from "./event-types";
+import { reportPersistFailure } from "./persist-failure";
 
 // ========== Types ==========
 
@@ -342,7 +343,7 @@ export class SyncEngine {
     const config = getSyncConfig();
     this.autoSyncTimer = setInterval(() => {
       this.syncNow().catch((err) => {
-        console.error("[SyncEngine] Auto-sync error:", err);
+        reportPersistFailure("syncEngine.autoSync", err);
       });
     }, config.autoSyncInterval);
   }

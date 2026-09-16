@@ -1,5 +1,6 @@
 // ========== MCP Types ==========
 import { getSettingJSON, setSettingJSON, getSetting, setSetting } from "../storage/settings";
+import { reportPersistFailure } from "../storage/persist-failure";
 
 export interface MCPServerConfig {
   /** Server name */
@@ -331,7 +332,7 @@ export class MCPRegistry {
   private saveConfigs() {
     try {
       setSettingJSON("codem-mcp-servers", this.configs);
-    } catch (e) { console.warn('[mcp.ts]', e) }
+    } catch (e) { reportPersistFailure("mcp.saveConfigs", e); }
   }
 
   /** Add a server config */
@@ -454,7 +455,7 @@ export function isCodeGraphEnabled(): boolean {
 export function setCodeGraphEnabled(enabled: boolean): void {
   try {
     setSetting("codem-codegraph-enabled", enabled ? "true" : "false");
-  } catch (e) { console.warn('[mcp.ts]', e) }
+  } catch (e) { reportPersistFailure("mcp.setCodeGraphEnabled", e); }
 }
 
 /** Check if a project has a .codegraph/ directory (graph already built) */

@@ -2,6 +2,60 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.16.39] - 2026-09-15 — B 类机器扫描（31 → 2）+「沙箱模式」开关真的接线（第 87 波）
+
+按三类问题继续延伸审计，这一轮做的是**机器扫描 + 接线校验**，不是抽查。
+
+### 一、B 类（假成功）机器扫描：31 处 → 2 处
+
+写了扫描器（`.preview-shot/scan-false-success-87.mjs`，两级判据，只报"可证明"的）：
+- **P1**：`catch` 块里直接 `return true` / `success: true`（吞异常报成功）；
+- **P2**：`catch` 块**只有日志**，且所在函数名属于写/动作类（update/save/create/delete/set/send/
+  write/apply/install/enable/disable/commit/run/start/stop/retry/cancel/persist/register/add/remove/clear/reset/import/export）。
+
+结果：**31 处 P2**（P1 的 3 处复核后全是误报：`isCodeGraphEnabled` 的"读不到设置时默认开"是既有语义，
+不是动作假成功）。这 31 处包括：
+`updateSession` / `deleteProject` / `updateProject` / `createProject`（写库失败 → store 照常更新）、
+`createWorktree`（创建失败静默回退主工作区 —— 用户以为在隔离分支里改代码）、
+`removeWorktree`、`createDelegationTask` / `deleteDelegationTask` / `clearCompletedDelegations`、
+`recovery.save` / `multiLayer.saveState` / `multiLayer.saveSessions`、
+`permission.saveCustomRules`（**安全相关**：用户以为加的拒绝规则生效了）、`settings.saveFile`（导出其实没写）、
+`costTracker.setLimits`、`modelProfile.save`、`mcp.saveConfigs`、`mcp.setCodeGraphEnabled`、
+`sessionRecovery.clearSnapshot`、`storage.deleteQuickPhrase`、`syncEngine.autoSync`、
+`worktree.setExecutionMode`、`noteManager.deleteNoteLinksBySource`、`message.setMessageReasoning`、
+`saveFeedback`、`libraryOps.persistSettings` / `persistLayoutOverrides`、`retry.setConfig`、
+`delegationTools.agentTeams` / `delegationTools.computerUse`（工具注册失败 = 模型根本没这些工具）、
+`uiPlugins.load`（界面区域凭空消失）。
+
+新增统一上报通道 `src/core/storage/persist-failure.ts`：
+**error 级日志 + 按区域计数 + 窗口事件**（`codem:persist-failed`，带 `kind: persist|action`），
+App 侧转成**一次性可见提示**（同一区域不重复弹，避免磁盘满时刷屏）：
+落盘失败说"重启后会丢失"，动作失败说"该功能本次没有生效"。**不改控制流**（这些是高频 UI 路径，
+抛错会打断交互），但从此不再静默。
+
+扫描器复跑：**P2 = 2**（`persist-failure.ts` 自己的文档注释、`createSession` 里"读会话数失败就用内存计数"
+这一处**读**操作）—— 两者都是误报，等价于扫干净了。
+
+### 二、「🔒 沙箱模式」开关以前是装饰品
+
+事实：设置面板早就有"🔒 沙箱模式（限制写入范围到工作目录）"的勾选框（写 `codem-sandbox-enabled`），
+文案承诺"AI 只能在当前工作目录及其子目录中写入文件"；而 `AgenticLoop` 传给工具管线的
+`isSandboxEnabled` 是**硬编码 `() => false`** —— 用户打开开关、界面显示已开启，
+`SandboxGuard` 从未启用，模型照样写工作区外的文件。
+
+修复：`sandbox-acl.ts` 导出 `SANDBOX_SETTING_KEY` / `isSandboxAclEnabled()` / `setSandboxAclEnabled()`
+（与面板同一个键），`AgenticLoop` 改为跟随设置；面板改用统一入口 + 独立 state（原来勾选后不重渲染，
+要重开面板才看到状态）+ 写入失败弹提示；启动日志按真实状态说明"已启用/未启用 + 生效的是哪些防线"。
+
+### 三、验证
+
+- 新增 `persist-failure-reporting.test.ts` **PF-1~4**（含"关键路径必须接线"的契约断言）、
+  `sandbox-wiring-87.test.ts` **SBW-1~5**（含"面板不得再裸写该键"、"AgenticLoop 不得硬编码 false"、
+  以及真实管线行为：开关打开后工作区外写入被拒、关闭时放行）。
+- 全量 **253 文件 / 4988 用例通过 / 15 跳过**、`tsc --noEmit` 0 错、UI 审计 27 条规则 0 error / 0 warn、
+  css-contract 2745 个类无变化、全量跑完零 `[WriteGuard]` 空写告警。
+- 真机（打包版本）抽验见下一条目的说明（启动日志、沙箱开关可勾选且落库、无新增控制台报错）。
+
 ## [1.16.38] - 2026-09-15 — 延伸审计（A 类）：剩余 10 处"按 id 更新"接入静默空写探测器（第 86 波续）
 
 按同一套三类问题继续扫（"有问题不论是新旧都修"），这次针对 **A 类：静默空写**做机器扫描：

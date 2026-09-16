@@ -20,6 +20,44 @@
 
 // ========== Glob → Regex（第 84 波修正） ==========
 
+import { getSetting, setSetting, removeSetting } from "../storage/settings";
+
+/**
+ * 沙箱模式的设置键 —— **必须与设置面板里的开关一致**
+ * （`SettingsPanel.tsx` 的 "🔒 沙箱模式（限制写入范围到工作目录）" 写的就是这个键）。
+ *
+ * 第 87 波（接线修复）：这个开关此前是个"装饰品" —— 面板能勾、界面显示已开启，
+ * 而 `AgenticLoop` 里传给工具管线的 `isSandboxEnabled` 是硬编码 `() => false`，
+ * `SandboxGuard` 从来没有真正启用过。现在两处用同一个键。
+ */
+export const SANDBOX_SETTING_KEY = "codem-sandbox-enabled";
+
+/** 沙箱模式是否开启（默认关闭；读不到设置时按关闭处理，与面板默认一致） */
+export function isSandboxAclEnabled(): boolean {
+  try {
+    return getSetting(SANDBOX_SETTING_KEY) === "true";
+  } catch (e) {
+    console.warn("[Sandbox] 读取沙箱设置失败，按关闭处理：", e);
+    return false;
+  }
+}
+
+/**
+ * 写入沙箱模式开关。
+ * @returns 是否真的写进了设置（false = 只在本次运行内生效，重启后回到旧值）
+ */
+export function setSandboxAclEnabled(enabled: boolean): boolean {
+  try {
+    if (enabled) setSetting(SANDBOX_SETTING_KEY, "true");
+    else removeSetting(SANDBOX_SETTING_KEY);
+    return true;
+  } catch (e) {
+    console.error("[Sandbox] 沙箱设置写入失败（仅本次运行内生效）：", e);
+    return false;
+  }
+}
+
+
 /** 用户主目录（正斜杠形式）；浏览器环境取不到时为 null */
 function homeDir(): string | null {
   try {

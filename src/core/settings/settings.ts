@@ -1,4 +1,6 @@
 // ========== Settings Types ==========
+import { reportPersistFailure } from "../storage/persist-failure";
+
 export type SettingsSource =
   | "cli"           // Command line arguments (highest priority)
   | "policy"        // Enterprise/org policies
@@ -404,7 +406,10 @@ export class SettingsManager {
     try {
       const { writeFile } = await import("../file-api");
       await writeFile(path, JSON.stringify(data, null, 2));
-    } catch (e) { console.warn('[settings.ts]', e) }
+    } catch (e) {
+      // 第 87 波：导出设置写盘失败原来只打一行 warn（用户以为导出成功了）
+      reportPersistFailure("settings.saveFile", e, `path=${path}`);
+    }
   }
 
   /** Export all settings */

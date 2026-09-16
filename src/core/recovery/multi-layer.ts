@@ -1,5 +1,6 @@
 import type { Session, MessageV2 } from "../llm/session";
 import { loadRecoveryData, saveRecoveryData, removeRecoveryData } from "../storage/settings";
+import { reportPersistFailure } from "../storage/persist-failure";
 
 // ========== Recovery Types ==========
 export type RecoveryLayer = "memory" | "local" | "file";
@@ -241,14 +242,14 @@ export class MultiLayerRecovery {
         sessionsObj[id] = session;
       }
       saveRecoveryData(`${this.config.storagePrefix}-sessions`, JSON.stringify(sessionsObj));
-    } catch (e) { console.warn('[multi-layer.ts]', e) }
+    } catch (e) { reportPersistFailure("recovery.multiLayer.saveSessions", e) }
   }
 
   /** Save state */
   private saveState(): void {
     try {
       saveRecoveryData(`${this.config.storagePrefix}-state`, JSON.stringify(this.state));
-    } catch (e) { console.warn('[multi-layer.ts]', e) }
+    } catch (e) { reportPersistFailure("recovery.multiLayer.saveState", e) }
   }
 
   /** Save a session */

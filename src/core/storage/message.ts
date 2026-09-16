@@ -13,6 +13,7 @@ import { getEventLog } from "./event-log";
 import type { SessionEventType } from "./event-types";
 import type { Message, ToolCall, MessageAttachment, RetrievedSource } from "../../store";
 import { safeJsonParse } from "../utils/safe-json";
+import { reportPersistFailure } from "./persist-failure";
 
 export interface MessageRow {
   id: string;
@@ -1003,7 +1004,7 @@ export function saveFeedback(messageId: string, sessionId: string, feedback: Fee
   try {
     db.run("DELETE FROM message_feedback WHERE message_id = ?", [messageId]);
   } catch (e) {
-    console.warn("[saveFeedback] Failed to delete existing:", e);
+    reportPersistFailure("message.saveFeedback.clearExisting", e, "旧的反馈未清除，可能写入重复反馈");
   }
   if (feedback) {
     const id = `fb-${messageId}`;
@@ -1121,7 +1122,7 @@ export function setMessageReasoning(id: string, reasoning: string): void {
     runGuarded(db, "UPDATE messages SET reasoning = ? WHERE id = ?", [reasoning, id],
     { table: "messages", op: "set-reasoning", id, from: "updateMessageReasoning" });
   } catch (e) {
-    console.warn("[setMessageReasoning] Failed:", e);
+    reportPersistFailure("message.setMessageReasoning", e);
   }
   persistDatabase();
 }

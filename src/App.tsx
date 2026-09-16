@@ -1673,6 +1673,41 @@ flushStreamBuffer(); // flush all on unmount
     window.addEventListener("codem:db-save-failed", onDbSaveFail);
     unlistenDbSaveFail = () => window.removeEventListener("codem:db-save-failed", onDbSaveFail);
 
+    /**
+     * 第 87 波（B 类：假成功）：统一承接"写盘失败但界面照常当成功"的上报。
+     *
+     * 全项目曾有 31 处写/动作路径在 catch 里只打一行日志（更新会话标题、删除项目、
+     * 保存权限规则、导出设置、成本上限、恢复快照……）—— 用户看到改动生效、重启后丢失。
+     * 现在这些路径统一走 `reportPersistFailure` → 这里变成**一次性可见提示**
+     * （同一区域只提示第一次，随后只累计次数，避免磁盘满时刷屏）。
+     */
+    const reportedPersistAreas = new Set<string>();
+    const onPersistFail = (ev: Event) => {
+      const detail = (ev as CustomEvent).detail as
+        | { area?: string; message?: string; count?: number; kind?: "persist" | "action" }
+        | undefined;
+      const area = detail?.area || "unknown";
+      if (reportedPersistAreas.has(area)) return; // 同一区域只提示一次
+      reportedPersistAreas.add(area);
+      const isAction = detail?.kind === "action";
+      useAppStore.getState().addGuidanceMessage({
+        id: `persist-fail-${area}-${Date.now()}`,
+        message: isAction
+          ? `操作没有生效（${area}）：${detail?.message || "未知原因"}。` +
+            `该功能本次不可用，请重试或检查日志` +
+            (detail?.count && detail.count > 1 ? `（已累计失败 ${detail.count} 次）` : "") +
+            `。`
+          : `数据保存失败（${area}）：${detail?.message || "未知原因"}。` +
+            `这次改动目前只在内存里，重启应用后会丢失；请检查磁盘空间与数据库文件占用。` +
+            (detail?.count && detail.count > 1 ? `（该区域已累计失败 ${detail.count} 次）` : ""),
+        timestamp: Date.now(),
+        consumed: false,
+      });
+    };
+    let unlistenPersist: (() => void) | undefined;
+    window.addEventListener("codem:persist-failed", onPersistFail as EventListener);
+    unlistenPersist = () => window.removeEventListener("codem:persist-failed", onPersistFail as EventListener);
+
     // 第 84 波：会话创建写库失败（store.createSession 上报）——
     // 该会话只存在于内存，重启后整段对话会消失，必须当场提示而不是静默。
     const onSessionPersistFail = (ev: Event) => {
@@ -1744,7 +1779,7 @@ flushStreamBuffer(); // flush all on unmount
       invoke?.("quit_app");
     }).then((un: () => void) => { unlistenQuitReq = un; });
 
-    return () => { unlisten?.(); unlistenCrash?.(); unlistenDbSaveFail?.(); unlistenDbFatal?.(); unlistenSessionPersist?.(); unlistenQuitReq?.(); };
+    return () => { unlisten?.(); unlistenCrash?.(); unlistenDbSaveFail?.(); unlistenDbFatal?.(); unlistenSessionPersist?.(); unlistenPersist?.(); unlistenQuitReq?.(); };
   }, []);
 
   const handleCloseChoice = useCallback(async (action: "tray" | "close", remember: boolean) => {

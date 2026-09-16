@@ -1,5 +1,6 @@
 import type { Session, MessageV2 } from "../llm/session";
 import { loadRecoveryData, saveRecoveryData } from "../storage/settings";
+import { reportPersistFailure } from "../storage/persist-failure";
 
 // ========== Recovery Types ==========
 export interface RecoveryConfig {
@@ -83,7 +84,9 @@ export class SessionRecoveryService {
       saveRecoveryData(this.config.storagePrefix, JSON.stringify(this.data));
       this.dirty = false;
     } catch (error) {
-      console.error("[Recovery] Failed to save:", error);
+      // 第 87 波：写失败原来只打一行日志（`dirty` 仍为 true，下次自动保存会重试，
+      // 但用户与诊断界面完全看不到"恢复数据一直没写进去"）。现在上报（可见 + 计数）。
+      reportPersistFailure("recovery.save", error);
     }
   }
 

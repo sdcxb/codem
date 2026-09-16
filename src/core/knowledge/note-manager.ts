@@ -19,6 +19,7 @@ import {
 } from './storage';
 import type { Note, NoteLink } from './types';
 import { getDatabase, persistDatabase } from '../storage/database';
+import { reportPersistFailure } from "../storage/persist-failure";
 
 /** WikiLinks 正则: 匹配 [[标题]] 或 [[标题|显示文本]] */
 const WIKILINK_REGEX = /\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g;
@@ -206,7 +207,8 @@ function deleteNoteLinksBySource(noteId: string): void {
     db.run('DELETE FROM note_links WHERE source_note_id = ?', [noteId]);
     persistDatabase();
   } catch (e) {
-    console.warn('[note-manager] 删除旧的出链失败（继续按新内容重建）:', e);
+    // 第 87 波：删旧出链失败会让旧链接残留（与刚重建的链接叠加成重复/错误图谱）
+    reportPersistFailure("noteManager.deleteNoteLinksBySource", e, "旧出链未清除，笔记链接可能出现重复");
   }
 }
 

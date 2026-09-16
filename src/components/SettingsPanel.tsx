@@ -43,6 +43,8 @@ import { PhoneLinkSettings } from "./PhoneLinkSettings";
 import { applyUiFontScale, applyStoredUiFont, FONT_BASE_PX } from "../core/ui-font";
 // P2 #34: Import reusable settings components
 import { SettingsNav, ConfigEntry, ToggleEntry } from "./SettingsParts";
+import { setSandboxAclEnabled, isSandboxAclEnabled } from "../core/sandbox/sandbox-acl";
+import { showToast } from "./ToastNotification";
 // P2 #35: Import UsageStats for embedding in settings
 import { UsageStats } from "./UsageStats";
 import { PerformanceDashboard } from "./PerformanceDashboard";
@@ -233,6 +235,11 @@ const PRESET_AVATARS: string[] = [
 export function SettingsPanel({ onClose, onSessionRecovery, onUsageStats, initialTab, setShowOnboardingReplay }: SettingsPanelProps) {
   const lang = useLang();
   const [settings, setSettings] = useState<Settings>(defaultSettings);
+  /**
+   * 第 87 波：沙箱开关必须有自己的 state —— 原来直接读 `getSetting(...)`，
+   * 勾选后调用 set/removeSetting 却不触发重渲染，界面上的勾选状态要等面板重开才更新。
+   */
+  const [sandboxOn, setSandboxOn] = useState<boolean>(() => isSandboxAclEnabled());
   const [identity, setIdentity] = useState<IdentityConfig>(defaultIdentity);
   const [userConfig, setUserConfig] = useState<UserConfig>(defaultUser);
   const [saved, setSaved] = useState(false);
@@ -1595,12 +1602,19 @@ const [activeTab, setActiveTab] = useState<"general" | "appearance" | "security"
             <label>
               <input
                 type="checkbox"
-                checked={getSetting("codem-sandbox-enabled") === "true"}
+                checked={sandboxOn}
                 onChange={(e) => {
-                  if (e.target.checked) {
-                    setSetting("codem-sandbox-enabled", "true");
-                  } else {
-                    removeSetting("codem-sandbox-enabled");
+                  const next = e.target.checked;
+                  setSandboxOn(next);
+                  // 第 87 波：走统一入口（与 AgenticLoop 读的是同一个键），写入失败当场提示
+                  if (!setSandboxAclEnabled(next)) {
+                    showToast(
+                      "error",
+                      lang === "zh"
+                        ? "沙箱设置未能写入数据库：本次运行内生效，重启后会回到旧值。"
+                        : "Failed to persist the sandbox setting: it applies for this session only.",
+                      7000,
+                    );
                   }
                   window.dispatchEvent(new Event("codem-settings-changed"));
                 }}

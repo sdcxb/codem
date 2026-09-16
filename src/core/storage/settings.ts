@@ -1,4 +1,5 @@
 import { getDatabase, persistDatabase } from "./database";
+import { reportPersistFailure } from "./persist-failure";
 
 // ========== Settings Storage (replaces localStorage) ==========
 
@@ -102,7 +103,7 @@ export function deleteQuickPhrase(phraseId: string): void {
     const db = getDatabase();
     db.run("DELETE FROM quick_phrases WHERE id = ?", [phraseId]);
     persistDatabase();
-  } catch (e) { console.warn('[settings.ts]', e) }
+  } catch (e) { reportPersistFailure("storage.deleteQuickPhrase", e, "快捷短语未删除，重启后还会出现"); }
 }
 
 export function incrementQuickPhraseUsage(phraseId: string): void {

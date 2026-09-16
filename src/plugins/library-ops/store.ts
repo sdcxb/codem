@@ -50,6 +50,7 @@ import {
   type RoomOverride,
 } from "./data/layout-override";
 import { CLAW_SCENE, FALLBACK_SCENE_PRESET_ID, getScenePreset, pixelRooms } from "./data/pixel-art";
+import { reportPersistFailure } from "../../core/storage/persist-failure";
 import {
   ALIGN_MIN_SCORE,
   autoAlignFromLuma,
@@ -132,7 +133,7 @@ function persistSettings(settings: LibraryOpsSettings): void {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
   } catch (e) {
-    console.warn("[library-ops] settings persist failed:", e);
+    reportPersistFailure("libraryOps.persistSettings", e, "图书馆面板设置未保存");
   }
 }
 
@@ -160,7 +161,7 @@ function persistLayoutOverrides(all: Record<string, LayoutOverride>): void {
   try {
     localStorage.setItem(LAYOUT_STORAGE_KEY, JSON.stringify(all));
   } catch (e) {
-    console.warn("[library-ops] layout persist failed:", e);
+    reportPersistFailure("libraryOps.persistLayoutOverrides", e, "图书馆布局调整未保存");
   }
 }
 

@@ -24,6 +24,7 @@ import { classifyToolResult } from "./tool-result-status";
 import { recordLoopStop } from "./loop-stop-log";
 import { isContextOverflowError, describeContextOverflow } from "./provider-errors";
 import { planCompactionKeep, alignKeepToRoundBoundary } from "./compaction-budget";
+import { isSandboxAclEnabled } from "../sandbox/sandbox-acl";
 import { ArtifactTracker } from "./artifact-tracker";
 import { getDelegationOrchestrator } from "../session/orchestrator";
 import * as MessageStorage from "../storage/message";
@@ -866,24 +867,25 @@ Bad example: [{"title":"Answer question"},{"title":"Execute command"}]`;
 
     // P0-2: Initialize tool pipeline with 5-layer middlewares
     /**
-     * 第 86 波（可见性）：`isSandboxEnabled` 目前**恒为 false** ——
-     * `SandboxGuard`（工作区外写入拦截）实际上没有启用，真正生效的是各工具自己的
-     * `isProtectedPath`（.git/.env/node_modules）与权限层。
-     *
-     * 有意保持"默认关闭"（默认拦工作区外写入会打断很多合法工作流，属于产品取舍），
-     * 但这件事必须**说出来**：否则任何人读这份接线都会以为沙箱是开着的。
-     * 每次进程只提醒一次，避免刷屏。
+     * 第 87 波（接线修复）：这个开关此前**恒为 `false`** —— 而设置面板里早就有
+     * 一个"🔒 沙箱模式（限制写入范围到工作目录）"的勾选框（写 `codem-sandbox-enabled`）：
+     * 用户打开它、界面显示已开启，`SandboxGuard` 却从来没被启用过（模型照样写工作区外的文件）。
+     * 现在按该设置项真实生效（默认仍是关闭，与面板默认一致）。
      */
+    const sandboxEnabledNow = isSandboxAclEnabled();
     if (!(globalThis as any).__codemSandboxNoticeLogged) {
       (globalThis as any).__codemSandboxNoticeLogged = true;
       console.info(
-        '[Sandbox] 工具管线的 SandboxGuard 当前未启用（isSandboxEnabled=false）：工作区外写入不会被它拦截；' +
-          '生效的是工具级受保护路径（.git/.env/node_modules）与权限层。启用 ACL 请走 sandbox-acl 的 initDefaultSandbox + 显式接线。',
+        sandboxEnabledNow
+          ? '[Sandbox] 沙箱模式已启用（codem-sandbox-enabled=true）：工作区外的写入/读取会被 SandboxGuard 拦下。'
+          : '[Sandbox] 沙箱模式未启用（设置 → 安全 → 🔒 沙箱模式 可开启）：工作区外写入不会被拦截；' +
+            '仍然生效的是工具级受保护路径（.git/.env/node_modules）与权限层。',
       );
     }
     await initDefaultPipeline({
       isPlanMode: () => this.config.collaborationMode === "plan",
-      isSandboxEnabled: () => false, // P1-5 sandbox not yet at Rust level（见上方说明）
+      // 第 87 波：跟随设置（原来是硬编码 () => false，面板里的沙箱开关形同虚设）
+      isSandboxEnabled: () => isSandboxAclEnabled(),
       isPathWithinWorkspace: (path: string, cwd: string) => {
         // Basic check: path should be within cwd
         const normalized = path.replace(/\\/g, "/");

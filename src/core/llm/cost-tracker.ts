@@ -1,6 +1,7 @@
 import type { TokenUsage } from "./types";
 import { getSettingJSON, setSettingJSON } from "../storage/settings";
 import { getTelemetry } from "../telemetry/telemetry";
+import { reportPersistFailure } from "../storage/persist-failure";
 
 // ========== Cost Types ==========
 export interface ModelCost {
@@ -439,7 +440,7 @@ export class CostTracker {
     // Persist limits separately so they survive restarts
     try {
       setSettingJSON("codem-cost-limits", this.config.limits);
-    } catch (e) { console.warn('[cost-tracker.ts]', e) }
+    } catch (e) { reportPersistFailure("costTracker.setLimits", e, "成本上限设置未保存，重启后会回到旧值"); }
   }
 
   /** Format cost for display */
