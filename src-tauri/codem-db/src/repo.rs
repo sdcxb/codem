@@ -1,4 +1,4 @@
-﻿//! 仓储命令（P1 第一切片：配置面 + 只追加面 + 消息/会话核心）
+//! 仓储命令（P1 第一切片：配置面 + 只追加面 + 消息/会话核心）
 //!
 //! 渲染侧**只**能通过这些语义化命令访问数据（`src/core/storage/port.ts` 的 `StorageDataPort`）。
 //! 命令清单与 `tools/audit/storage-inventory.mjs` 的归类一一对应，后续按 P3 顺序补齐到 82 个。
@@ -174,6 +174,16 @@ pub fn settings_remove(engine: &Engine, p: &Value) -> DbResult<Value> {
 }
 
 // ========== 只追加面 ==========
+//
+// ## seq 由谁分配（第 92 波的重要发现）
+//
+// `session_events.seq` 是 SQLite 的 `INTEGER PRIMARY KEY AUTOINCREMENT` —— 一个**全局**单调计数，
+// 不是每会话从 1 开始（实测生产库：两个会话的事件 seq 交替递增，最大 2197）。因此：
+// - 渲染侧**不能**本地预分配 seq（不知道全局水位，会撞主键）；
+// - 必须由这边在事务里让表自己分配，并把**真实 seq 返回**给调用方。
+//
+// 返回真实 seq 的额外好处：渲染侧的内存镜像（事件回放用）能精确对齐数据库，
+// 于是"本地刚追加的事件"和"从库读回的事件"顺序完全一致。
 
 pub fn events_append(engine: &Engine, p: &Value) -> DbResult<Value> {
     let session_id = req_text(p, "session_id")?;
@@ -189,6 +199,219 @@ pub fn events_append(engine: &Engine, p: &Value) -> DbResult<Value> {
         .map_err(DbError::from)?;
         let seq = tx.last_insert_rowid();
         Ok(json!({ "written": 1, "seq": seq }))
+    })
+}
+
+/// 批量追加事件（单事务，seq 连续分配）。
+///
+/// 与逐条 `events.append` 的区别不只是性能：批量在一个事务里分配 seq，
+/// 因此这批事件的 seq 一定**连续** —— 渲染侧的回放逻辑靠连续性判断"有没有缺口"。
+pub fn events_append_batch(engine: &Engine, p: &Value) -> DbResult<Value> {
+    let session_id = req_text(p, "session_id")?;
+    let events = p
+        .get("events")
+        .and_then(|x| x.as_array())
+        .ok_or_else(|| DbError::missing("events（数组）"))?;
+    if events.is_empty() {
+        return Err(DbError::invalid("events", "不能为空数组"));
+    }
+    // 事务外先解析校验（参数错误不该留下半个事务）
+    let mut parsed: Vec<(String, String, i64)> = Vec::with_capacity(events.len());
+    for (i, e) in events.iter().enumerate() {
+        let ty = req_text(e, "type")?;
+        let payload = e.get("payload").cloned().unwrap_or_else(|| json!({}));
+        let ts = opt_i64(e, "timestamp")?.unwrap_or_else(|| now_ms() + i as i64);
+        parsed.push((ty, payload.to_string(), ts));
+    }
+    engine.write_tx(|tx| {
+        let mut stmt = tx
+            .prepare_cached(
+                "INSERT INTO session_events (session_id, event_type, payload, timestamp) VALUES (?1, ?2, ?3, ?4)",
+            )
+            .map_err(DbError::from)?;
+        let mut seqs: Vec<i64> = Vec::with_capacity(parsed.len());
+        for (ty, payload, ts) in &parsed {
+            stmt.execute(params![session_id, ty, payload, ts])
+                .map_err(DbError::from)?;
+            seqs.push(tx.last_insert_rowid());
+        }
+        Ok(json!({ "written": seqs.len(), "seqs": seqs }))
+    })
+}
+
+/// 读事件（分页；`from_seq` 用于"从某个水位之后读"，回放与增量同步都靠它）
+pub fn events_list(engine: &Engine, p: &Value) -> DbResult<Value> {
+    let session_id = req_text(p, "session_id")?;
+    let limit = limit_of(p)?;
+    let from_seq = opt_i64(p, "from_seq")?;
+    let to_seq = opt_i64(p, "to_seq")?;
+    let order_desc = p.get("order").and_then(|x| x.as_str()) == Some("desc");
+    engine.with_conn(|conn| {
+        let mut sql = String::from(
+            "SELECT seq, session_id, event_type, payload, timestamp FROM session_events WHERE session_id = ?1",
+        );
+        let mut idx = 2;
+        if from_seq.is_some() {
+            sql.push_str(&format!(" AND seq >= ?{idx}"));
+            idx += 1;
+        }
+        if to_seq.is_some() {
+            sql.push_str(&format!(" AND seq <= ?{idx}"));
+            idx += 1;
+        }
+        sql.push_str(if order_desc {
+            " ORDER BY seq DESC"
+        } else {
+            " ORDER BY seq ASC"
+        });
+        sql.push_str(&format!(" LIMIT ?{idx}"));
+
+        // 绑定：按占位符顺序拼参数
+        let mut vals: Vec<rusqlite::types::Value> = vec![rusqlite::types::Value::Text(session_id.clone())];
+        if let Some(f) = from_seq {
+            vals.push(rusqlite::types::Value::Integer(f));
+        }
+        if let Some(t) = to_seq {
+            vals.push(rusqlite::types::Value::Integer(t));
+        }
+        // 多取一行判断 has_more
+        vals.push(rusqlite::types::Value::Integer((limit + 1) as i64));
+
+        let mut stmt = conn.prepare_cached(&sql).map_err(DbError::from)?;
+        let rows = stmt
+            .query_map(rusqlite::params_from_iter(vals.iter()), |r| {
+                Ok(json!({
+                    "seq": r.get::<_, i64>(0)?,
+                    "session_id": r.get::<_, String>(1)?,
+                    "type": r.get::<_, String>(2)?,
+                    "payload": r.get::<_, String>(3)?,
+                    "timestamp": r.get::<_, i64>(4)?,
+                }))
+            })
+            .map_err(DbError::from)?;
+        let mut items = Vec::new();
+        for r in rows {
+            items.push(r.map_err(DbError::from)?);
+        }
+        let has_more = items.len() > limit;
+        if has_more {
+            items.truncate(limit);
+        }
+        Ok(json!({ "items": items, "has_more": has_more, "next_cursor": Value::Null }))
+    })
+}
+
+/// 事件计数（诊断与"权威副本是否齐全"的判断）
+pub fn events_count(engine: &Engine, p: &Value) -> DbResult<Value> {
+    let session_id = req_text(p, "session_id")?;
+    engine.with_conn(|conn| {
+        let n: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM session_events WHERE session_id = ?1",
+                params![session_id],
+                |r| r.get(0),
+            )
+            .map_err(DbError::from)?;
+        Ok(json!({ "count": n }))
+    })
+}
+
+/// 全局 seq 水位（渲染侧的内存镜像启动时用它对齐；注意它是**全局**水位，不是每会话）
+pub fn events_watermark(engine: &Engine, p: &Value) -> DbResult<Value> {
+    let session_id = opt_text(p, "session_id")?;
+    engine.with_conn(|conn| {
+        let (max_seq, count): (Option<i64>, i64) = match &session_id {
+            Some(s) => conn
+                .query_row(
+                    "SELECT MAX(seq), COUNT(*) FROM session_events WHERE session_id = ?1",
+                    params![s],
+                    |r| Ok((r.get(0)?, r.get(1)?)),
+                )
+                .map_err(DbError::from)?,
+            None => conn
+                .query_row("SELECT MAX(seq), COUNT(*) FROM session_events", [], |r| {
+                    Ok((r.get(0)?, r.get(1)?))
+                })
+                .map_err(DbError::from)?,
+        };
+        Ok(json!({
+            "max_seq": max_seq.unwrap_or(0),
+            "count": count,
+            "scope": session_id.unwrap_or_else(|| "<all>".to_string()),
+        }))
+    })
+}
+
+/// 删除会话的全部事件（级联清理时用）
+pub fn events_delete_session(engine: &Engine, p: &Value) -> DbResult<Value> {
+    let session_id = req_text(p, "session_id")?;
+    engine.write_tx(|tx| {
+        let n = tx
+            .execute("DELETE FROM session_events WHERE session_id = ?1", params![session_id])
+            .map_err(DbError::from)?;
+        Ok(json!({ "written": n }))
+    })
+}
+
+/// 压缩：把一段事件替换为一条快照，**占用锚点事件自己的 seq**。
+///
+/// 为什么必须保留锚点 seq（而不是用新的最大 seq）：回放逻辑靠 seq 单调来保证
+/// "快照排在被它覆盖的事件之后"。用新 seq 会让快照跑到未来，删掉旧事件后投影就缺段了
+/// —— 渲染侧早先正是踩了这个坑（所以裁剪默认关掉过）。
+pub fn events_compact(
+    engine: &Engine,
+    p: &Value,
+) -> DbResult<Value> {
+    let session_id = req_text(p, "session_id")?;
+    let snapshot_seq = req_i64(p, "snapshot_seq")?;
+    let payload = p.get("payload").cloned().unwrap_or_else(|| json!({}));
+    let cutoff_seq = req_i64(p, "cutoff_seq")?;
+    let ts = opt_i64(p, "timestamp")?.unwrap_or_else(now_ms);
+    engine.write_tx(|tx| {
+        // 锚点必须真实存在，否则"压缩"会凭空造出一条孤立快照
+        let exists: i64 = tx
+            .query_row(
+                "SELECT COUNT(*) FROM session_events WHERE session_id = ?1 AND seq = ?2",
+                params![session_id, snapshot_seq],
+                |r| r.get(0),
+            )
+            .map_err(DbError::from)?;
+        if exists == 0 {
+            return Err(DbError::not_found(format!(
+                "锚点事件不存在：session={session_id} seq={snapshot_seq}"
+            )));
+        }
+        tx.execute(
+            "INSERT OR REPLACE INTO session_events (seq, session_id, event_type, payload, timestamp) \
+             VALUES (?1, ?2, 'session_snapshot', ?3, ?4)",
+            params![snapshot_seq, session_id, payload.to_string(), ts],
+        )
+        .map_err(DbError::from)?;
+        // 删掉锚点之前的非 meta 事件（meta 必须保留：它承载会话身份）
+        let removed = tx
+            .execute(
+                "DELETE FROM session_events WHERE session_id = ?1 AND seq < ?2 AND event_type <> 'session_meta'",
+                params![session_id, cutoff_seq],
+            )
+            .map_err(DbError::from)?;
+        Ok(json!({ "removed_events": removed, "snapshot_seq": snapshot_seq }))
+    })
+}
+
+/// 会话内事件整体复制（fork）
+pub fn events_fork(engine: &Engine, p: &Value) -> DbResult<Value> {
+    let source = req_text(p, "source_session_id")?;
+    let target = req_text(p, "target_session_id")?;
+    let ts = opt_i64(p, "timestamp")?.unwrap_or_else(now_ms);
+    engine.write_tx(|tx| {
+        let n = tx
+            .execute(
+                "INSERT INTO session_events (session_id, event_type, payload, timestamp) \
+                 SELECT ?1, event_type, payload, ?2 FROM session_events WHERE session_id = ?3 ORDER BY seq ASC",
+                params![target, ts, source],
+            )
+            .map_err(DbError::from)?;
+        Ok(json!({ "written": n }))
     })
 }
 

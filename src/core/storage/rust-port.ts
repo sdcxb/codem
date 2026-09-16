@@ -574,6 +574,180 @@ class RustConfigDomainCache {
   }
 }
 
+// ========== 只追加面的内存镜像 + 发件箱（P3 第 4 段） ==========
+//
+// ## 这里解开的矛盾
+//
+// `EventLog` / `PersistenceProvider` 的接口**全是同步**的（`append(): number`、
+// `readAll(): PersistedEvent[]`），而 Rust 路径是异步 IPC。硬塞是不可能的。
+//
+// 解法是把"读"和"写"分开处理：
+//
+// - **读**：事件日志整份放进内存镜像（启动时一次拉齐）。这不是"把语料塞进渲染进程"
+//   的倒退 —— 事件日志本来就是**为回放而整份读取**的（投影、压缩、重建索引都读全量），
+//   所以镜像没有增加任何新的内存负担，反而省掉了反复查询。
+// - **写**：发件箱（outbox）。`append` 同步返回，写请求入队立刻冲刷；失败如实上报。
+//   崩溃时可能丢最后几条 —— 这是**可接受的**，因为会话 JSONL 才是权威副本，
+//   而事件索引本来就被设计成"可重建"（见 docs/ARCH-SQLITE-TO-RUST.md 的存储原则）。
+//
+// ## seq 的坑（真机实测发现）
+//
+// `session_events.seq` 是**全局** AUTOINCREMENT，不是每会话从 1 开始。所以本地不能
+// 预分配 seq（不知道全局水位会撞主键）。做法是：追加时先给一个**本地占位 seq**
+// （仅用于镜像内的相对顺序），写成功后用引擎回传的真实 seq 修正镜像。
+// 回放用的 `projectFromEvents` 依赖的是**相对顺序**与 `seq` 单调性，两者都成立。
+
+export interface MirrorEvent {
+  seq: number;
+  sessionId: string;
+  type: string;
+  payload: string;
+  timestamp: number;
+}
+
+class RustEventMirror {
+  private bySession = new Map<string, MirrorEvent[]>();
+  private warmed = false;
+  private failures = 0;
+  private pendingWrites = 0;
+  private inFlight = new Set<Promise<void>>();
+  /** 本地占位 seq 的起点：远大于任何真实 seq，只用于镜像内排序，永不落库 */
+  private placeholderBase = Number.MAX_SAFE_INTEGER - 1_000_000;
+
+  constructor(
+    private readonly t: StorageTransport,
+    private readonly onFailure: (scope: string, e: unknown, note: string) => void,
+  ) {}
+
+  isWarmed(): boolean {
+    return this.warmed;
+  }
+
+  /**
+   * 启动预热：把事件日志整份读进镜像。
+   *
+   * 分批读（每批 5000）避免一次 IPC 负载过大；上限保护避免极端情况下无限拉取。
+   */
+  async warmup(sessionIds: string[]): Promise<number> {
+    let total = 0;
+    const MAX_BATCH = 5000;
+    const MAX_ROUNDS = 20;
+    for (const sessionId of sessionIds) {
+      const list: MirrorEvent[] = [];
+      let fromSeq: number | undefined;
+      for (let round = 0; round < MAX_ROUNDS; round++) {
+        const page = await call<{ items?: unknown[]; has_more?: boolean }>(this.t, "events.list", {
+          session_id: sessionId,
+          limit: MAX_BATCH,
+          ...(fromSeq === undefined ? {} : { from_seq: fromSeq }),
+        });
+        const items = (page?.items ?? []).map((r) => this.normalize(r));
+        list.push(...items);
+        if (!page?.has_more || items.length === 0) break;
+        fromSeq = items[items.length - 1].seq + 1;
+      }
+      this.bySession.set(sessionId, list);
+      total += list.length;
+    }
+    this.warmed = true;
+    return total;
+  }
+
+  private normalize(r: unknown): MirrorEvent {
+    const o = (r ?? {}) as Record<string, unknown>;
+    return {
+      seq: Number(o.seq ?? 0),
+      sessionId: String(o.session_id ?? o.sessionId ?? ""),
+      type: String(o.type ?? ""),
+      payload: typeof o.payload === "string" ? o.payload : JSON.stringify(o.payload ?? {}),
+      timestamp: Number(o.timestamp ?? 0),
+    };
+  }
+
+  readAll(sessionId: string): MirrorEvent[] {
+    return [...(this.bySession.get(sessionId) ?? [])];
+  }
+
+  readFrom(sessionId: string, fromSeq: number): MirrorEvent[] {
+    return (this.bySession.get(sessionId) ?? []).filter((e) => e.seq >= fromSeq);
+  }
+
+  readRange(sessionId: string, fromSeq: number, toSeq: number): MirrorEvent[] {
+    return (this.bySession.get(sessionId) ?? []).filter((e) => e.seq >= fromSeq && e.seq <= toSeq);
+  }
+
+  /** 镜像内的最大 seq（对齐判断与诊断用） */
+  latestSeq(sessionId: string): number {
+    const list = this.bySession.get(sessionId) ?? [];
+    return list.length ? list[list.length - 1].seq : 0;
+  }
+
+  count(sessionId: string): number {
+    return (this.bySession.get(sessionId) ?? []).length;
+  }
+
+  sessions(): string[] {
+    return [...this.bySession.keys()];
+  }
+
+  /** 本地追加：立刻进镜像（相对顺序正确），并排队落库 */
+  appendLocal(sessionId: string, type: string, payload: string, timestamp: number): MirrorEvent {
+    const list = this.bySession.get(sessionId) ?? [];
+    const last = list.length ? list[list.length - 1].seq : 0;
+    const placeholder = Math.max(last + 1, this.placeholderBase++);
+    const evt: MirrorEvent = { seq: placeholder, sessionId, type, payload, timestamp };
+    list.push(evt);
+    this.bySession.set(sessionId, list);
+    return evt;
+  }
+
+  /** 用引擎回传的真实 seq 修正镜像里的占位 */
+  reconcile(sessionId: string, placeholderSeq: number, realSeq: number): void {
+    const list = this.bySession.get(sessionId);
+    if (!list) return;
+    const found = list.find((e) => e.seq === placeholderSeq);
+    if (found) found.seq = realSeq;
+  }
+
+  /** 排队一次写（不阻塞调用方） */
+  enqueue(job: Promise<void>, scope: string, note: string): void {
+    this.pendingWrites++;
+    const wrapped = job
+      .catch((e) => {
+        this.failures++;
+        this.onFailure(scope, e, note);
+      })
+      .finally(() => {
+        this.pendingWrites--;
+        this.inFlight.delete(wrapped);
+      });
+    this.inFlight.add(wrapped);
+  }
+
+  async flush(): Promise<void> {
+    for (let guard = 0; guard < 100 && this.inFlight.size > 0; guard++) {
+      await Promise.allSettled([...this.inFlight]);
+    }
+  }
+
+  stats(): { warmed: boolean; sessions: number; events: number; pendingWrites: number; failures: number } {
+    let events = 0;
+    for (const list of this.bySession.values()) events += list.length;
+    return {
+      warmed: this.warmed,
+      sessions: this.bySession.size,
+      events,
+      pendingWrites: this.pendingWrites,
+      failures: this.failures,
+    };
+  }
+
+  /** 删除整个会话的事件（供 compact/fork 后的镜像维护） */
+  replaceSession(sessionId: string, events: MirrorEvent[]): void {
+    this.bySession.set(sessionId, [...events].sort((a, b) => a.seq - b.seq));
+  }
+}
+
 // ========== 聚合端口 ==========
 
 export class RustStoragePort implements StoragePort {
@@ -584,18 +758,38 @@ export class RustStoragePort implements StoragePort {
   readonly append: RustAppendPort;
   /** 配置面扩展域（quick_phrases / mcp_servers / memory）的内存镜像 */
   readonly configDomain: RustConfigDomainCache;
+  /** 事件日志的镜像 + 发件箱（只追加面） */
+  readonly events: RustEventMirror;
   private readonly reportFailure: (stream: string, e: unknown, note: string) => void;
+  private readonly transport: StorageTransport;
 
   constructor(
     transport: StorageTransport = tauriTransport,
     onFailure: (stream: string, e: unknown, note: string) => void = () => {},
   ) {
     this.reportFailure = onFailure;
+    this.transport = transport;
     this.engine = new RustEnginePort(transport);
     this.data = new RustDataPort(transport);
     this.config = new RustConfigPort(transport, onFailure);
     this.append = new RustAppendPort(transport, onFailure);
     this.configDomain = new RustConfigDomainCache(transport, onFailure);
+    this.events = new RustEventMirror(transport, onFailure);
+  }
+
+  /**
+   * 事件日志整份预热（只追加面）。
+   *
+   * 与其它预热阶段一样**失败不阻塞启动**：事件索引读不到时回退到旧引擎路径
+   * （`EventLog` 会用 `events.isWarmed()` 判断），功能不会中断。
+   */
+  async warmupEvents(sessionIds: string[]): Promise<number> {
+    try {
+      return await this.events.warmup(sessionIds);
+    } catch (e) {
+      this.reportFailure("events", e, "事件索引未能加载（回退到旧引擎读取）");
+      return 0;
+    }
   }
 
   /**
@@ -628,8 +822,74 @@ export class RustStoragePort implements StoragePort {
   /** 退出顺序：先排空写队列，再 checkpoint（不是整库导出） */
   async stop(): Promise<void> {
     await this.append.flush();
+    await this.events.flush();
     await this.config.flush();
     await this.engine.checkpoint();
+  }
+
+  /** 供事件日志使用：把一条追加排队落库（并回传真实 seq 修正镜像） */
+  appendEventAsync(
+    sessionId: string,
+    type: string,
+    payload: string,
+    timestamp: number,
+    placeholderSeq: number,
+  ): void {
+    const job = call<{ seq?: number; written?: number }>(this.transport, "events.append", {
+      session_id: sessionId,
+      event_type: type,
+      payload: JSON.parse(payload || "{}") as unknown,
+      timestamp,
+    }).then((r) => {
+      const real = Number(r?.seq ?? 0);
+      // 用引擎分配的真实 seq 修正镜像里的占位 —— 顺序与数据库保持一致
+      if (real > 0) this.events.reconcile(sessionId, placeholderSeq, real);
+    });
+    this.events.enqueue(job, "events.append", "事件未写入索引（权威副本在会话 JSONL，索引可重建）");
+  }
+
+  /** 供事件日志使用：批量追加（单事务，seq 连续） */
+  appendEventBatchAsync(
+    sessionId: string,
+    events: Array<{ type: string; payload: string; timestamp: number; placeholderSeq: number }>,
+  ): void {
+    const job = call<{ seqs?: number[] }>(this.transport, "events.append_batch", {
+      session_id: sessionId,
+      events: events.map((e) => ({
+        type: e.type,
+        payload: JSON.parse(e.payload || "{}") as unknown,
+        timestamp: e.timestamp,
+      })),
+    }).then((r) => {
+      const seqs = r?.seqs ?? [];
+      events.forEach((e, i) => {
+        const real = Number(seqs[i] ?? 0);
+        if (real > 0) this.events.reconcile(sessionId, e.placeholderSeq, real);
+      });
+    });
+    this.events.enqueue(job, "events.append_batch", "事件批次未写入索引（权威副本在会话 JSONL，索引可重建）");
+  }
+
+  /** 供事件日志使用：压缩（快照占锚点 seq）。这是**写**操作，排队执行 */
+  compactEventAsync(
+    sessionId: string,
+    snapshotSeq: number,
+    cutoffSeq: number,
+    payload: string,
+  ): void {
+    const job = call(this.transport, "events.compact", {
+      session_id: sessionId,
+      snapshot_seq: snapshotSeq,
+      cutoff_seq: cutoffSeq,
+      payload: JSON.parse(payload || "{}") as unknown,
+    }).then(() => undefined);
+    this.events.enqueue(job, "events.compact", "事件压缩未写入索引（下次启动会重新读取）");
+  }
+
+  /** 供事件日志使用：删除会话事件 */
+  deleteEventsAsync(sessionId: string): void {
+    const job = call(this.transport, "events.delete_session", { session_id: sessionId }).then(() => undefined);
+    this.events.enqueue(job, "events.delete_session", "事件未删除（重启后会重新出现）");
   }
 }
 

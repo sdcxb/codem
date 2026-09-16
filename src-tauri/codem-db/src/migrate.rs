@@ -642,6 +642,186 @@ pub fn mark_migrated(engine: &Engine, p: &Value) -> DbResult<Value> {
 }
 
 #[cfg(test)]
+mod event_tests {
+    use crate::{dispatch, engine::Engine};
+    use serde_json::json;
+
+    fn eng(name: &str) -> (tempfile::TempDir, Engine) {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(format!("{name}.bin"));
+        (dir, Engine::open(&path).unwrap())
+    }
+    fn call(e: &Engine, cmd: &str, p: serde_json::Value) -> serde_json::Value {
+        dispatch(e, cmd, &p).unwrap_or_else(|err| panic!("{cmd} 失败：{err}"))
+    }
+    fn seed_session(e: &Engine, id: &str) {
+        call(e, "projects.upsert", json!({ "id": "p1", "name": "P" }));
+        call(e, "sessions.upsert", json!({ "id": id, "project_id": "p1" }));
+    }
+
+    /// seq 是**全局** AUTOINCREMENT，不是每会话从 1 开始。
+    ///
+    /// 这条断言是渲染侧设计的前提：正因为 seq 全局，才不能本地预分配
+    /// （不知道全局水位会撞主键），必须由引擎分配并回传真实值。
+    #[test]
+    fn seq_is_global_autoincrement_not_per_session() {
+        let (_d, e) = eng("evglobal");
+        seed_session(&e, "s1");
+        seed_session(&e, "s2");
+        let a1 = call(&e, "events.append", json!({ "session_id": "s1", "event_type": "t" }));
+        let b1 = call(&e, "events.append", json!({ "session_id": "s2", "event_type": "t" }));
+        let a2 = call(&e, "events.append", json!({ "session_id": "s1", "event_type": "t" }));
+        let (sa1, sb1, sa2) = (a1["seq"].as_i64().unwrap(), b1["seq"].as_i64().unwrap(), a2["seq"].as_i64().unwrap());
+        assert!(sb1 > sa1, "第二个会话的 seq 必须大于第一个（全局单调），实际 {sb1} vs {sa1}");
+        assert!(sa2 > sb1, "回到 s1 继续追加时 seq 继续增大，实际 {sa2}");
+        // s1 自己只有两条事件，但 seq 不连续（中间夹了 s2 的）——这正是"全局"的含义
+        assert_ne!(sa2, sa1 + 1, "seq 不应在会话内连续递增");
+    }
+
+    #[test]
+    fn batch_allocates_consecutive_seqs() {
+        let (_d, e) = eng("evbatch");
+        seed_session(&e, "s1");
+        let r = call(
+            &e,
+            "events.append_batch",
+            json!({ "session_id": "s1", "events": [
+                { "type": "a" }, { "type": "b" }, { "type": "c" }
+            ] }),
+        );
+        let seqs: Vec<i64> = r["seqs"].as_array().unwrap().iter().map(|x| x.as_i64().unwrap()).collect();
+        assert_eq!(seqs.len(), 3);
+        assert_eq!(
+            seqs[2] - seqs[0],
+            2,
+            "同一批次内的 seq 必须连续（渲染侧靠连续性判断缺口）：{seqs:?}"
+        );
+        assert_eq!(r["written"], json!(3));
+    }
+
+    #[test]
+    fn batch_rejects_empty_and_bad_items_atomically() {
+        let (_d, e) = eng("evbatchbad");
+        seed_session(&e, "s1");
+        assert!(dispatch(&e, "events.append_batch", &json!({ "session_id": "s1", "events": [] })).is_err());
+        // 第二条缺 type → 整批不落
+        let err = dispatch(
+            &e,
+            "events.append_batch",
+            &json!({ "session_id": "s1", "events": [{ "type": "a" }, { "payload": {} }] }),
+        )
+        .unwrap_err();
+        assert!(format!("{err}").contains("type"), "应指出缺哪个字段：{err}");
+        let n = call(&e, "events.count", json!({ "session_id": "s1" }));
+        assert_eq!(n["count"], json!(0), "批次失败不得留下部分写入");
+    }
+
+    #[test]
+    fn list_pages_and_from_seq_filters() {
+        let (_d, e) = eng("evlist");
+        seed_session(&e, "s1");
+        for i in 0..10 {
+            call(&e, "events.append", json!({ "session_id": "s1", "event_type": format!("e{i}") }));
+        }
+        let all = call(&e, "events.list", json!({ "session_id": "s1", "limit": 100 }));
+        assert_eq!(all["items"].as_array().unwrap().len(), 10);
+        assert_eq!(all["items"][0]["type"], json!("e0"), "默认按 seq 升序");
+        assert_eq!(all["has_more"], json!(false));
+
+        // 分页：多取一行判断 has_more
+        let p1 = call(&e, "events.list", json!({ "session_id": "s1", "limit": 4 }));
+        assert_eq!(p1["items"].as_array().unwrap().len(), 4);
+        assert_eq!(p1["has_more"], json!(true));
+
+        // from_seq：只读水位之后的事件（增量同步靠它）
+        let third = all["items"][3]["seq"].as_i64().unwrap();
+        let from = call(&e, "events.list", json!({ "session_id": "s1", "from_seq": third, "limit": 100 }));
+        assert_eq!(from["items"].as_array().unwrap().len(), 7, "seq >= 第 4 条 → 剩 7 条");
+        assert_eq!(from["items"][0]["seq"], json!(third));
+
+        // desc
+        let desc = call(&e, "events.list", json!({ "session_id": "s1", "limit": 3, "order": "desc" }));
+        assert_eq!(desc["items"][0]["type"], json!("e9"));
+    }
+
+    #[test]
+    fn watermark_reports_global_and_per_session() {
+        let (_d, e) = eng("evwm");
+        seed_session(&e, "s1");
+        seed_session(&e, "s2");
+        call(&e, "events.append", json!({ "session_id": "s1", "event_type": "a" }));
+        call(&e, "events.append", json!({ "session_id": "s2", "event_type": "b" }));
+        let g = call(&e, "events.watermark", json!({}));
+        assert_eq!(g["count"], json!(2));
+        assert_eq!(g["scope"], json!("<all>"));
+        let s1 = call(&e, "events.watermark", json!({ "session_id": "s1" }));
+        assert_eq!(s1["count"], json!(1));
+        let s2 = call(&e, "events.watermark", json!({ "session_id": "s2" }));
+        assert!(s2["max_seq"].as_i64().unwrap() > s1["max_seq"].as_i64().unwrap());
+    }
+
+    #[test]
+    fn compact_requires_real_anchor_and_removes_old_events() {
+        let (_d, e) = eng("evcompact");
+        seed_session(&e, "s1");
+        call(&e, "events.append", json!({ "session_id": "s1", "event_type": "session_meta", "payload": { "k": 1 } }));
+        for i in 0..5 {
+            call(&e, "events.append", json!({ "session_id": "s1", "event_type": format!("e{i}") }));
+        }
+        let all = call(&e, "events.list", json!({ "session_id": "s1", "limit": 100 }));
+        let items = all["items"].as_array().unwrap();
+        let anchor_seq = items[3]["seq"].as_i64().unwrap(); // 第 4 条（seq 索引 3）
+
+        let r = call(
+            &e,
+            "events.compact",
+            json!({ "session_id": "s1", "snapshot_seq": anchor_seq, "cutoff_seq": anchor_seq, "payload": { "messages": [] } }),
+        );
+        assert_eq!(r["snapshot_seq"], json!(anchor_seq), "快照必须占用锚点自己的 seq");
+        let after = call(&e, "events.list", json!({ "session_id": "s1", "limit": 100 }));
+        let seqs: Vec<i64> = after["items"].as_array().unwrap().iter().map(|x| x["seq"].as_i64().unwrap()).collect();
+        assert!(seqs.contains(&anchor_seq), "锚点 seq 上应是快照");
+        let snap = after["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|x| x["seq"].as_i64() == Some(anchor_seq))
+            .unwrap();
+        assert_eq!(snap["type"], json!("session_snapshot"));
+        // session_meta 必须保留（承载会话身份）
+        assert!(
+            after["items"].as_array().unwrap().iter().any(|x| x["type"] == json!("session_meta")),
+            "session_meta 不该被压缩删掉"
+        );
+
+        // 不存在的锚点必须报错（不能凭空造孤立快照）
+        let err = dispatch(
+            &e,
+            "events.compact",
+            &json!({ "session_id": "s1", "snapshot_seq": 999_999, "cutoff_seq": 999_999, "payload": {} }),
+        )
+        .unwrap_err();
+        assert_eq!(err.code, crate::ErrorCode::NotFound);
+    }
+
+    #[test]
+    fn fork_copies_events_to_another_session() {
+        let (_d, e) = eng("evfork");
+        seed_session(&e, "s1");
+        seed_session(&e, "s2");
+        for i in 0..3 {
+            call(&e, "events.append", json!({ "session_id": "s1", "event_type": format!("e{i}"), "payload": { "i": i } }));
+        }
+        let r = call(&e, "events.fork", json!({ "source_session_id": "s1", "target_session_id": "s2" }));
+        assert_eq!(r["written"], json!(3));
+        let s2 = call(&e, "events.list", json!({ "session_id": "s2", "limit": 100 }));
+        assert_eq!(s2["items"].as_array().unwrap().len(), 3);
+        // 内容按源会话 seq 升序复制
+        assert_eq!(s2["items"][0]["payload"], json!("{\"i\":0}"));
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
