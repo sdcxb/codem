@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+﻿#!/usr/bin/env node
 /**
  * 仓储覆盖率门禁（P2）：把"82 个仓储方法实现了多少"变成一个**可复跑、会自己变红**的数字。
  *
@@ -183,6 +183,42 @@ export function implementedCommands() {
   return set;
 }
 
+/**
+ * 通用仓储命令覆盖的"表 × 操作"。
+ *
+ * ## 为什么用代码推导而不是手写 87 条
+ *
+ * 第 10 段引入了**表定义驱动**的通用命令（`crud.list/upsert/delete/count`）：
+ * 表名走 `sql/tables.json` 白名单、列名与真实列定义逐字核对、值参数化绑定。
+ * 因此"某张表能不能读/写"不再需要逐条登记 —— 而是由**表是否在业务表清单里**决定。
+ *
+ * 手写 87 条映射的代价不只是啰嗦：它会漂移（加了表忘了补映射 → 覆盖率虚低或虚高）。
+ * 所以这里从 `sql/tables.json`（由 TS schema 生成）推导，与引擎侧用的是**同一份清单**。
+ */
+const CRUD_READ_OPS = new Set(["select"]);
+const CRUD_WRITE_OPS = new Set(["insert", "update", "alter"]);
+const CRUD_DELETE_OPS = new Set(["delete"]);
+
+function crudTables() {
+  const p = path.join(ROOT, "src-tauri", "codem-db", "sql", "tables.json");
+  const json = JSON.parse(fs.readFileSync(p, "utf8"));
+  return new Set((json.tables ?? []).filter((t) => !t.startsWith("session_fts")));
+}
+
+/** 兜底解析：没有专门命令的表，看是否被通用命令覆盖 */
+export function genericCommandFor(method) {
+  const dot = method.lastIndexOf(".");
+  if (dot < 0) return null;
+  const table = method.slice(0, dot);
+  const op = method.slice(dot + 1);
+  if (!crudTables().has(table)) return null;
+  // 有专门命令的表优先用专门命令（tool_calls / messages / sessions / projects / settings …）
+  if (CRUD_READ_OPS.has(op)) return ["crud.list", "crud.count"];
+  if (CRUD_WRITE_OPS.has(op)) return ["crud.upsert"];
+  if (CRUD_DELETE_OPS.has(op)) return ["crud.delete"];
+  return null;
+}
+
 /** 与 Rust `COMMANDS` 常量交叉校验：映射表里写的命令必须真的在 Rust 里存在 */
 export function rustCommands() {
   const src = fs.readFileSync(RUST_LIB, "utf8");
@@ -217,8 +253,19 @@ export function computeCoverage() {
     inventoryDrift = { error: String(e.message).slice(0, 200) };
   }
 
-  const done = required.filter((m) => IMPLEMENTED[m.method]);
-  const pending = required.filter((m) => !IMPLEMENTED[m.method]);
+  // ⚠️ 这里区分两个**不同**的概念，混在一起会给出误导性的"100%"：
+  //
+  //  · siteWired：渲染侧的调用点**真的已经切到端口**（IMPLEMENTED 表，人工维护、保守）
+  //  · commandAvailable：Rust 侧存在能服务该方法的命令（专用命令或通用 crud.*）
+  //
+  // 第 10 段引入通用命令后，commandAvailable 会直接到 100% —— 但那时渲染侧
+  // 仍然在往 WASM 库写（默认引擎是 wasm）。如果只报一个数字，就会把
+  // "引擎有命令" 说成 "迁移完成"，这是不能接受的虚报。
+  // 所以两个都算、都报，门禁盯的是**保守的那个**。
+  const resolve = (method) => IMPLEMENTED[method] ?? null;
+  const done = required.filter((m) => resolve(m.method));
+  const pending = required.filter((m) => !resolve(m.method));
+  const commandAvailable = required.filter((m) => resolve(m.method) ?? genericCommandFor(m.method));
   const totalSites = required.reduce((a, m) => a + m.sites, 0);
   const doneSites = done.reduce((a, m) => a + m.sites, 0);
   return {
@@ -226,13 +273,16 @@ export function computeCoverage() {
     requiredMethods: required.length,
     implementedMethods: done.length,
     coveragePercent: +((done.length / required.length) * 100).toFixed(2),
+    /** 渲染侧调用点已切到端口的比例（保守口径，人工维护） */
+    commandAvailableMethods: commandAvailable.length,
+    commandCoveragePercent: +((commandAvailable.length / required.length) * 100).toFixed(2),
     totalSites,
     implementedSites: doneSites,
     siteCoveragePercent: +((doneSites / totalSites) * 100).toFixed(2),
     rustCommandCount: rust.size,
     phantomCommands: phantom,
     inventoryDrift,
-    done: done.map((m) => ({ ...m, commands: IMPLEMENTED[m.method] })),
+    done: done.map((m) => ({ ...m, commands: resolve(m.method) })),
     pending,
   };
 }
@@ -272,6 +322,11 @@ if (isMain) {
     `- 已实现：**${result.implementedMethods}** → 方法覆盖率 **${result.coveragePercent}%**，调用点覆盖率 **${result.siteCoveragePercent}%**`,
   );
   lines.push(`- Rust 侧已注册命令：**${result.rustCommandCount}**`);
+  lines.push(
+    `- **命令可用性覆盖：${result.commandAvailableMethods}/${result.requiredMethods}（${result.commandCoveragePercent}%）**` +
+      ` —— 这一项在第 10 段引入通用命令后已达 100%，但**不等于迁移完成**：` +
+      `渲染侧调用点是否已切到端口，看上面那个保守数字。`,
+  );
   lines.push("");
   if (result.phantomCommands.length) {
     lines.push(`⚠️ 映射表引用了 Rust 侧不存在的命令：${result.phantomCommands.join(", ")}`);

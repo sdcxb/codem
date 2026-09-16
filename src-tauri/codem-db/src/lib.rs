@@ -12,6 +12,7 @@
 
 pub mod authorizer;
 pub mod config;
+pub mod crud;
 pub mod engine;
 pub mod fts;
 pub mod error;
@@ -71,6 +72,11 @@ pub const COMMANDS: &[&str] = &[
     "memory.get",
     "memory.set",
     "config_warmup",
+    // ===== 通用仓储命令（P3 第 10 段：表定义驱动，覆盖剩余域）=====
+    "crud.list",
+    "crud.upsert",
+    "crud.delete",
+    "crud.count",
     // ===== 数据面补充（P3 第 8 段）=====
     "feedback.set",
     "feedback.get",
@@ -140,6 +146,11 @@ pub fn dispatch(engine: &Engine, command: &str, params: &Value) -> DbResult<Valu
         "memory.get" => config::memory_get(engine, params),
         "memory.set" => config::memory_set(engine, params),
         "config_warmup" => config::config_warmup(engine, params),
+        // ===== 通用仓储命令（P3 第 10 段）=====
+        "crud.list" => crud::crud_list(engine, params),
+        "crud.upsert" => crud::crud_upsert(engine, params),
+        "crud.delete" => crud::crud_delete(engine, params),
+        "crud.count" => crud::crud_count(engine, params),
         // ===== 数据面补充（P3 第 8 段）=====
         "feedback.set" => config::feedback_set(engine, params),
         "feedback.get" => config::feedback_get(engine, params),

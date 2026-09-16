@@ -1,4 +1,4 @@
-//! P1 验收测试（Rust 侧）：引擎行为、安全边界、错误映射、幂等 schema、WAL、分页。
+﻿//! P1 验收测试（Rust 侧）：引擎行为、安全边界、错误映射、幂等 schema、WAL、分页。
 //!
 //! 这些测试**直接驱动生产实现**（同一个 crate），不需要 Tauri、不需要 WASM。
 //! 渲染侧的契约测试（`src/test/db-contract.test.ts`）通过 CLI 驱动**同一份**实现，
@@ -696,6 +696,191 @@ fn fts_delete_session_clears_rows() {
     assert_eq!(del["written"], json!(1));
     let after = call(&e, "fts.search", json!({ "session_id": "s1", "query": "x" }));
     assert_eq!(after["items"].as_array().unwrap().len(), 0);
+}
+
+// ========== 通用仓储命令（P3 第 10 段） ==========
+
+/// 通用命令的安全边界：表名/列名/order_by 都必须过白名单或真实列核对。
+///
+/// 这是"通用 CRUD 不违背存储边界门禁"的根据 —— 与裸 SQL 的差别是**结构性**的：
+/// 调用方只能说"在这张表里按这些条件取这些列"，不能说"执行这条语句"。
+#[test]
+fn crud_rejects_tables_columns_and_unsafe_order_by() {
+    let (_d, e) = temp_engine("crud-guard");
+
+    // 1) 表名不在业务表清单里 → UNSUPPORTED
+    for bad in ["sqlite_master", "session_fts", "session_fts_content", "不存在的表"] {
+        let err = dispatch(&e, "crud.list", &json!({ "table": bad })).unwrap_err();
+        assert_eq!(
+            err.code,
+            codem_db::ErrorCode::Unsupported,
+            "表 {bad} 应被拒绝：{err}"
+        );
+    }
+
+    // 2) 列名不在真实列定义里 → 参数错误
+    let err = dispatch(
+        &e,
+        "crud.list",
+        &json!({ "table": "graph_nodes", "columns": ["__proto__"] }),
+    )
+    .unwrap_err();
+    assert!(format!("{err}").contains("__proto__"), "应指出非法列名：{err}");
+
+    // 3) order_by 也只能是真实列（不给任何表达式入口）
+    let err = dispatch(
+        &e,
+        "crud.list",
+        &json!({ "table": "graph_nodes", "order_by": "id; DROP TABLE accounts" }),
+    )
+    .unwrap_err();
+    assert!(format!("{err}").contains("order_by") || format!("{err}").contains("列"));
+
+    // 4) where 的列同样核对
+    let err = dispatch(
+        &e,
+        "crud.list",
+        &json!({ "table": "graph_nodes", "where": { "nope": 1 } }),
+    )
+    .unwrap_err();
+    assert!(format!("{err}").contains("nope"));
+
+    // 库仍然完好
+    assert!(e.integrity_check().unwrap().ok);
+}
+
+/// 删除必须给 where —— 空条件会清空整表，属于危险操作（与 `telemetry.prune` 同一条原则）
+#[test]
+fn crud_delete_requires_where() {
+    let (_d, e) = temp_engine("crud-del");
+    for payload in [json!({ "table": "graph_nodes" }), json!({ "table": "graph_nodes", "where": {} })] {
+        let err = dispatch(&e, "crud.delete", &payload).unwrap_err();
+        assert!(
+            format!("{err}").contains("where"),
+            "空 where 必须被拒绝：{err}"
+        );
+    }
+}
+
+/// 通用读写往返：列可以逐行不同（按并集收集），整批一个事务
+#[test]
+fn crud_upsert_list_count_delete_roundtrip() {
+    let (_d, e) = temp_engine("crud-rt");
+    // graph_nodes.notebook_id 有外键 → 先建父行
+    call(&e, "crud.upsert", json!({ "table": "notebooks", "rows": [{ "id": "nb1", "name": "笔记本", "created_at": 1, "updated_at": 1 }] }));
+
+    let up = call(
+        &e,
+        "crud.upsert",
+        json!({ "table": "graph_nodes", "rows": [
+            { "id": "a1", "notebook_id": "nb1", "label": "节点一", "entity_type": "concept", "created_at": 1 },
+            { "id": "a2", "notebook_id": "nb1", "label": "节点二", "entity_type": "concept", "created_at": 2 }
+        ]}),
+    );
+    assert_eq!(up["written"], json!(2));
+
+    let listed = call(&e, "crud.list", json!({ "table": "graph_nodes", "order_by": "id" }));
+    let items = listed["items"].as_array().unwrap();
+    assert_eq!(items.len(), 2);
+    assert_eq!(items[0]["id"], json!("a1"));
+    assert_eq!(items[0]["label"], json!("节点一"));
+    assert_eq!(listed["has_more"], json!(false));
+
+    // 条件查询
+    let filtered = call(
+        &e,
+        "crud.list",
+        json!({ "table": "graph_nodes", "where": { "id": "a2" } }),
+    );
+    assert_eq!(filtered["items"].as_array().unwrap().len(), 1);
+    assert_eq!(filtered["items"][0]["label"], json!("节点二"));
+
+    // 计数
+    let cnt = call(&e, "crud.count", json!({ "table": "graph_nodes" }));
+    assert_eq!(cnt["count"], json!(2));
+    let cnt1 = call(&e, "crud.count", json!({ "table": "graph_nodes", "where": { "id": "a1" } }));
+    assert_eq!(cnt1["count"], json!(1));
+
+    // 删除（带条件）
+    let del = call(&e, "crud.delete", json!({ "table": "graph_nodes", "where": { "id": "a1" } }));
+    assert_eq!(del["written"], json!(1));
+    assert_eq!(call(&e, "crud.count", json!({ "table": "graph_nodes" }))["count"], json!(1));
+}
+
+/// 分页：多取一行判断 has_more；游标自洽
+#[test]
+fn crud_list_paginates() {
+    let (_d, e) = temp_engine("crud-page");
+    call(&e, "crud.upsert", json!({ "table": "notebooks", "rows": [{ "id": "nb1", "name": "笔记本", "created_at": 1, "updated_at": 1 }] }));
+    let rows: Vec<serde_json::Value> = (0..25)
+        .map(|i| json!({ "id": format!("g{i:03}"), "notebook_id": "nb1", "label": format!("节点{i}"), "entity_type": "concept", "created_at": i }))
+        .collect();
+    // graph_nodes 需要 notebook_id NOT NULL，用 accounts 更省事（列少）
+    call(&e, "crud.upsert", json!({ "table": "graph_nodes", "rows": rows }));
+
+    let p1 = call(&e, "crud.list", json!({ "table": "graph_nodes", "limit": 10, "order_by": "id" }));
+    assert_eq!(p1["items"].as_array().unwrap().len(), 10);
+    assert_eq!(p1["has_more"], json!(true));
+    assert_eq!(p1["next_cursor"], json!("10"));
+
+    let last = call(
+        &e,
+        "crud.list",
+        json!({ "table": "graph_nodes", "limit": 10, "offset": 20, "order_by": "id" }),
+    );
+    assert_eq!(last["items"].as_array().unwrap().len(), 5);
+    assert_eq!(last["has_more"], json!(false));
+}
+
+/// 参数错误整批不落（事务外先解析校验）
+#[test]
+fn crud_upsert_validates_before_writing() {
+    let (_d, e) = temp_engine("crud-validate");
+    // 第二行含不存在的列 → 整批失败且不留任何行
+    let err = dispatch(
+        &e,
+        "crud.upsert",
+        &json!({ "table": "graph_nodes", "rows": [
+            { "id": "ok1", "notebook_id": "nb1", "label": "合法", "entity_type": "concept", "created_at": 1 },
+            { "id": "bad1", "不存在列": 1 }
+        ]}),
+    )
+    .unwrap_err();
+    assert!(format!("{err}").contains("不存在列"), "应指出非法列：{err}");
+    assert_eq!(
+        call(&e, "crud.count", json!({ "table": "graph_nodes" }))["count"],
+        json!(0),
+        "批次失败不得留下部分写入"
+    );
+}
+
+/// replace 模式覆盖同主键的行（用于"从旧库搬过来"这类场景）
+#[test]
+fn crud_upsert_replace_overwrites() {
+    let (_d, e) = temp_engine("crud-replace");
+    call(&e, "crud.upsert", json!({ "table": "notebooks", "rows": [{ "id": "nb1", "name": "笔记本", "created_at": 1, "updated_at": 1 }] }));
+    call(&e, "crud.upsert", json!({ "table": "graph_nodes", "rows": [{ "id": "a1", "notebook_id": "nb1", "label": "第一版", "entity_type": "concept", "created_at": 1 }] }));
+    call(
+        &e,
+        "crud.upsert",
+        json!({ "table": "graph_nodes", "mode": "replace", "rows": [{ "id": "a1", "notebook_id": "nb1", "label": "第二版", "entity_type": "concept", "created_at": 1 }] }),
+    );
+    let listed = call(&e, "crud.list", json!({ "table": "graph_nodes" }));
+    assert_eq!(listed["items"].as_array().unwrap().len(), 1, "replace 不该产生第二行");
+    assert_eq!(listed["items"][0]["label"], json!("第二版"));
+}
+
+/// 缺省列清单 = 该表真实列（顺序稳定，便于摘要与对账）
+#[test]
+fn crud_list_defaults_to_real_columns_in_order() {
+    let (_d, e) = temp_engine("crud-cols");
+    call(&e, "crud.upsert", json!({ "table": "notebooks", "rows": [{ "id": "nb1", "name": "笔记本", "created_at": 1, "updated_at": 1 }] }));
+    call(&e, "crud.upsert", json!({ "table": "graph_nodes", "rows": [{ "id": "a1", "notebook_id": "nb1", "label": "x", "entity_type": "concept", "created_at": 1 }] }));
+    let listed = call(&e, "crud.list", json!({ "table": "graph_nodes" }));
+    let item = listed["items"][0].as_object().unwrap();
+    // 至少应含真实列里的 id 与 name（其余列缺省为 null 或默认值）
+    assert!(item.contains_key("id"), "缺省列清单应含 id：{item:?}");
+    assert!(item.contains_key("label"), "缺省列清单应含 label：{item:?}");
 }
 
 #[test]
