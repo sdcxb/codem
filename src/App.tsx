@@ -1127,12 +1127,17 @@ flushStreamBuffer(); // flush all on unmount
         // 端口自身可用性由 bootstrap 内部判定与上报，WASM 路径在任何情况下都能继续跑。
         // await 是必要的 —— 配置面（settings）的同步读依赖启动时的预热。
         {
-          const { registerRustStoragePort } = await import("./core/storage/bootstrap");
+          const { registerRustStoragePort, importSettingsFromLegacyDb } = await import("./core/storage/bootstrap");
           const boot = await registerRustStoragePort();
           // 只在**本次真的打开了引擎**时打日志：复用已有端口时没有 health 快照，
           // 早先无条件打印会输出 "undefined（undefined 表）" 这种误导性日志（StrictMode 双启动时必现）。
           if (boot.kind === "registered" && boot.opened) {
             console.log(`[Storage] Rust 引擎已就绪：${boot.health?.path}（${boot.health?.tables} 表 / ${boot.health?.journalMode}）`);
+          }
+          // 首次切到 Rust 时把配置从旧库搬过来（否则用户会觉得"设置全丢了"）。
+          // 必须在任何 getSetting() 之前完成 —— 它决定用户看到的是自己的偏好还是默认值。
+          if (boot.kind === "registered") {
+            await importSettingsFromLegacyDb();
           }
         }
         // 第 56 波：字号缩放必须在**数据库就绪后**应用（设置存在 SQLite 里，早期读取拿不到值）。

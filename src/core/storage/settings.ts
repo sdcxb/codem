@@ -1,9 +1,44 @@
 import { getDatabase, persistDatabase } from "./database";
 import { reportPersistFailure } from "./persist-failure";
+import { getStoragePort, hasStoragePort } from "./port";
 
 // ========== Settings Storage (replaces localStorage) ==========
+//
+// 第 92 波 P3：**配置面切到存储端口**（迁移期按引擎分流）。
+//
+// ## 为什么这组函数必须保持同步
+//
+// `getSetting` / `getSettingJSON` 有近 500 个调用点，遍布同步上下文（React 渲染、
+// 模块初始化、快捷键处理、主题引导）。把它们改成 `Promise` 会波及整条启动链，
+// 风险远大于收益。所以端口里的"配置面"就是**唯一允许同步读**的形态：
+// 启动时一次性预热进内存（`settings` 表极小，实测 24 行），之后读永远同步。
+//
+// ## 分流规则（迁移期）
+//
+// - 端口已注册且是 `rust` → 读走端口的内存缓存（同步），写走"内存即时生效 + 写穿队列"；
+// - 否则（默认）→ 完全维持原来的 WASM 行为，**一个字节都不变**。
+//
+// 这条分流是"回滚开关"能生效的关键：`localStorage[codem-storage-engine]=wasm`
+// 时端口不注册，这里自动退回原路径。
+//
+// ## 硬约束
+//
+// `settings` 是**唯一**允许进内存镜像的数据（配置的量级是几十行）。
+// 消息语料绝不进渲染进程 —— 见 port.ts 的硬约束 4。
+
+/** 端口可用时用端口（rust 引擎），否则返回 null 走原路径 */
+function rustConfig() {
+  if (!hasStoragePort()) return null;
+  const port = getStoragePort();
+  return port.kind === "rust" ? port.config : null;
+}
 
 export function getSetting(key: string): string | null {
+  const cfg = rustConfig();
+  if (cfg) {
+    // 端口未预热时 `get` 会返回 fallback 并留痕（不抛、不假装有值）
+    return cfg.get<string | null>(key, null);
+  }
   try {
     const db = getDatabase();
     const result = db.exec("SELECT value FROM settings WHERE key = ?", [key]);
@@ -17,6 +52,11 @@ export function getSetting(key: string): string | null {
 }
 
 export function setSetting(key: string, value: string): void {
+  const cfg = rustConfig();
+  if (cfg) {
+    cfg.set(key, value);
+    return;
+  }
   const db = getDatabase();
   const now = Date.now();
   db.run(
@@ -27,6 +67,11 @@ export function setSetting(key: string, value: string): void {
 }
 
 export function removeSetting(key: string): void {
+  const cfg = rustConfig();
+  if (cfg) {
+    cfg.remove(key);
+    return;
+  }
   const db = getDatabase();
   db.run("DELETE FROM settings WHERE key = ?", [key]);
   persistDatabase();

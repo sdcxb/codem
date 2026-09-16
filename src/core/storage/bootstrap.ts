@@ -121,3 +121,61 @@ export async function shutdownRustStoragePort(): Promise<void> {
     reportActionFailure("storage.shutdown", e, "存储收尾未完成，数据仍在 WAL 中，下次启动会继续");
   }
 }
+
+/**
+ * 一次性把配置面从旧库（WASM）搬进 Rust 库。
+ *
+ * ## 为什么需要它
+ *
+ * 切到 Rust 后，`getSetting` 读的是 Rust 库 —— 而 Rust 库刚创建时 `settings` 表是空的，
+ * 于是用户所有偏好（主题、字号、语言、显示模式…）会**看起来全部重置**。
+ * 用户不会认为"这是迁移"，只会认为"升级把设置弄丢了"。
+ *
+ * ## 触发条件（严格到不会误触发）
+ *
+ * 1. 端口是 rust 且**已预热**（预热过才知道 Rust 库到底有什么）；
+ * 2. Rust 库里**一个设置都没有**（`keys === 0`）；
+ * 3. 旧库可读、且 `settings` 表**确有内容**。
+ *
+ * 三条同时满足才搬。搬完写一个标记键，保证**只搬一次** ——
+ * 否则用户以后"清空某个设置"会被下一次启动从旧库又搬回来（这才是真正难查的 bug）。
+ */
+export async function importSettingsFromLegacyDb(label = "storage.settings-import"): Promise<number> {
+  if (!hasStoragePort()) return 0;
+  const port = getStoragePort();
+  if (port.kind !== "rust") return 0;
+
+  const stats = port.config.stats();
+  if (!stats.warmed) return 0;
+  if (stats.keys > 0) return 0; // Rust 库已有设置：不是首次，绝不搬
+
+  const MARKER = "codem-settings-imported-from-legacy";
+  let legacy: Array<[string, string]> = [];
+  try {
+    const { getDatabase } = await import("./database");
+    const db = getDatabase();
+    const result = db.exec("SELECT key, value FROM settings");
+    if (result.length > 0) {
+      legacy = result[0].values
+        .filter((row) => typeof row[0] === "string" && typeof row[1] === "string")
+        .map((row) => [row[0] as string, row[1] as string]);
+    }
+  } catch (e) {
+    // 旧库读不到（例如已被删除）：不搬，也不报成故障 —— 全新安装就是这个状态
+    return 0;
+  }
+  if (legacy.length === 0) return 0;
+
+  let imported = 0;
+  for (const [key, value] of legacy) {
+    // 标记键由这里自己写，不从旧库搬（旧库不会有它，防御性排除）
+    if (key === MARKER) continue;
+    port.config.set(key, value);
+    imported++;
+  }
+  port.config.set(MARKER, String(Date.now()));
+  await (port.config as { flush?: () => Promise<void> }).flush?.();
+  console.log(`[Storage] 已从旧库导入 ${imported} 项配置到 Rust 库（仅此一次）`);
+  void label;
+  return imported;
+}

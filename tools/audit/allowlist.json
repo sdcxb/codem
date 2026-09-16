@@ -155,6 +155,10 @@
     {
       "file": "src/core/telemetry/telemetry.ts",
       "reason": "P3-2 只追加面（遥测）：迁移后改为入队 + Rust 引擎"
+    },
+    {
+      "file": "src/core/storage/bootstrap.ts",
+      "reason": "【登记为过渡例外，P5 必须删除】首次从 WASM 引擎切到 Rust 时的一次性配置搬迁：read 旧库 settings 的 24 行并写入 Rust 库。为什么不能走端口：端口的 rust 实现只认 Rust 库，读不了旧库；为一个只用一次的功能加一条 Tauri 命令（任意路径读库）会把安全面永久扩大，代价大于收益。为什么不能交给迁移工具：用户装的是打包版，不会去跑 CLI —— 迁移必须由应用自己完成，否则用户会看到「设置全丢」。删除条件：P5 删除 WASM 路径后，本文件不再需要读旧库，此条目连同代码一起删除。"
     }
   ]
 }
