@@ -1,6 +1,6 @@
-﻿import { getDatabase, persistDatabase } from "./database";
+import { getDatabase, persistDatabase } from "./database";
 import { runGuarded } from "./write-guard";
-import { domainDelete, domainPort, domainReadMany, domainReadOne, domainWrite } from "./domain-store";
+import { shouldFallbackToLegacy, writeShouldFallBackToLegacy, domainDelete, domainPort, domainReadMany, domainReadOne, domainWrite } from "./domain-store";
 
 // ========== 迁移期分流（P3 第 11/12 段） ==========
 //
@@ -106,6 +106,7 @@ export function listAccounts(): Account[] {
     // 与旧实现的排序一致：updated_at DESC
     return rust.sort((a, b) => b.updatedAt - a.updatedAt);
   }
+  if (!shouldFallbackToLegacy()) return [];
   const db = getDatabase();
   const result = db.exec("SELECT * FROM accounts ORDER BY updated_at DESC");
   if (result.length === 0) return [];
@@ -115,6 +116,7 @@ export function listAccounts(): Account[] {
 export function getAccount(id: string): Account | null {
   const rust = domainReadOne(TABLE, { id }, (row) => rowToAccount(wireToRow(row)));
   if (rust !== undefined) return rust;
+  if (!shouldFallbackToLegacy()) return null;
   const db = getDatabase();
   const result = db.exec("SELECT * FROM accounts WHERE id = ?", [id]);
   if (result.length === 0 || result[0].values.length === 0) return null;
@@ -124,6 +126,7 @@ export function getAccount(id: string): Account | null {
 export function getActiveAccount(): Account | null {
   const rust = domainReadOne(TABLE, { is_active: 1 }, (row) => rowToAccount(wireToRow(row)));
   if (rust !== undefined) return rust;
+  if (!shouldFallbackToLegacy()) return null;
   const db = getDatabase();
   const result = db.exec("SELECT * FROM accounts WHERE is_active = 1 LIMIT 1");
   if (result.length === 0 || result[0].values.length === 0) return null;
@@ -134,6 +137,8 @@ export function createAccount(account: Account): void {
   if (domainWrite(TABLE, [accountToRow(account)], { mode: "replace", scope: "account.create", note: "账号未保存" })) {
     return;
   }
+  // 两态：A 态才回退旧库；B 态已如实上报
+  if (!writeShouldFallBackToLegacy("account.save", "账号未保存，重启后会恢复")) return;
   const db = getDatabase();
   const existing = db.exec("SELECT id FROM accounts WHERE id = ?", [account.id]);
   if (existing.length > 0 && existing[0].values.length > 0) {
@@ -177,7 +182,8 @@ export function updateAccount(id: string, update: Partial<Account>): void {
       return;
     }
   }
-  // 未接手 / 镜像里没有这条：回退旧路径（旧路径的 runGuarded 会记 A 类问题）
+  // 未接手 / 镜像里没有这条：先判两态（B 态不碰旧库，由 runGuarded 的记账取代静默）
+  if (!writeShouldFallBackToLegacy("account.update", "账号未更新，重启后会恢复")) return;
   const db = getDatabase();
   const fields: string[] = [];
   const values: (string | number | null)[] = [];
@@ -209,6 +215,7 @@ export function updateAccount(id: string, update: Partial<Account>): void {
 
 export function deleteAccount(id: string): void {
   if (domainDelete(TABLE, { id }, { scope: "account.delete", note: "账号未删除，重启后会恢复" })) return;
+  if (!writeShouldFallBackToLegacy("account.delete", "账号未删除，重启后会恢复")) return;
   const db = getDatabase();
   db.run("DELETE FROM accounts WHERE id = ?", [id]);
   persistDatabase();
@@ -234,6 +241,7 @@ export function setActiveAccount(id: string): void {
     domainWrite(TABLE, rows, { mode: "replace", scope: "account.activate", note: "当前账号未切换（重启后可能回到旧账号）" });
     return;
   }
+  if (!writeShouldFallBackToLegacy("account.activate", "当前账号未切换，重启后会恢复")) return;
   const db = getDatabase();
   db.run("UPDATE accounts SET is_active = 0");
   runGuarded(db, "UPDATE accounts SET is_active = 1, updated_at = ? WHERE id = ?", [Date.now(), id],

@@ -144,8 +144,19 @@ describe("域镜像分流 —— 账号域", () => {
     expect(port.domains.isReady("accounts")).toBe(false);
 
     const { getAccount } = await import("../core/storage/account");
-    // 未路由 → 走旧库（被 mock 成抛错）→ 原实现会把错误抛出（这里只断言"没有走镜像"）
-    expect(() => getAccount("a1")).toThrow();
+    /*
+     * 契约更新（B4 批）：这里的期望从"抛错"改为"返回 null 且**不碰旧库**"。
+     *
+     * 原因：本文件的 `getDatabase` mock 是"一旦被访问就抛错"，所以
+     * **不抛错本身就证明了旧库没被访问** —— 这是比原来更强的断言。
+     *
+     * 原断言的语义是"未路由 → 回退旧库 → 旧库抛错"，但那条回退只在
+     * **端口未注册**（A 态）时才对；这里是 **B 态**（端口在 rust、镜像未就绪），
+     * 而 rust 模式下旧库刻意不存在 —— 回退过去必然失败。所以 B 态的正确行为是
+     * 由端口负责：读给该域的合理空结果（null），写删如实上报。
+     */
+    expect(getAccount("a1"), "B 态读给空结果").toBeNull();
+    expect(failures.every((n) => !n.includes("旧库")), "不应有任何'回退旧库'的上报").toBe(true);
   });
 
   it("DOM-4: 写入走 crud.upsert 且本地镜像立刻可读", async () => {

@@ -9,7 +9,7 @@
 
 import { getDatabase, persistDatabase, isCompactionInProgress, isDatabaseFatal, noteDatabaseError } from "../storage/database";
 import { reportPersistFailure } from "../storage/persist-failure";
-import { domainDeleteWhere, domainReadMany, domainWrite } from "../storage/domain-store";
+import { domainDeleteWhere, domainReadMany, domainWrite, shouldFallbackToLegacy, writeShouldFallBackToLegacy } from "../storage/domain-store";
 
 // ========== Types ==========
 
@@ -172,6 +172,13 @@ class TelemetryCollector {
         this.events = [];
         return;
       }
+      /*
+       * 两态分流（B4 批）：B 态（端口在、镜像未就绪）不写旧库。
+       *
+       * 这里**不清空 `this.events`** —— 与上面"成功才清空"的既有约定一致：
+       * 遥测写不进去时保留在内存里等下次重试，而不是静默丢掉。
+       */
+      if (!writeShouldFallBackToLegacy("telemetry.flush", "遥测事件未写入（保留在内存等待重试）")) return;
       const db = getDatabase();
       for (const event of this.events) {
         db.run(
@@ -211,6 +218,7 @@ class TelemetryCollector {
         .slice(0, limit ?? undefined)
         .map(telemetryToEvent);
     }
+    if (!shouldFallbackToLegacy()) return [];
     const db = getDatabase();
     const nameClause = name ? `AND event_name = ?` : "";
     const limitClause = limit ? `LIMIT ${limit}` : "";
@@ -300,6 +308,10 @@ class TelemetryCollector {
       };
     }
 
+    if (!shouldFallbackToLegacy()) {
+      // B 态：该域由端口负责，镜像未就绪时如实返回"空统计"（而不是去读不存在的旧库）
+      return { totalEvents: 0, totalSessions: 0, eventsByType: [], recentEventRate: 0 };
+    }
     const db = getDatabase();
 
     let totalEvents = 0;
@@ -356,6 +368,7 @@ class TelemetryCollector {
         .sort((a, b) => b.lastEventAt - a.lastEventAt)
         .slice(0, limit);
     }
+    if (!shouldFallbackToLegacy()) return [];
     const db = getDatabase();
     try {
       const result = db.exec(`
@@ -402,6 +415,7 @@ class TelemetryCollector {
       return buckets;
     }
 
+    if (!shouldFallbackToLegacy()) return [];
     const db = getDatabase();
     for (let i = 0; i < bucketCount; i++) {
       const bucketStart = since + i * bucketMs;
@@ -466,6 +480,7 @@ class TelemetryCollector {
         .sort((a, b) => b.count - a.count);
     }
 
+    if (!shouldFallbackToLegacy()) return [];
     const db = getDatabase();
     try {
       // Fetch events that have duration_ms in their data
