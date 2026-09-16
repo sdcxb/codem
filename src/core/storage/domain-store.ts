@@ -32,7 +32,7 @@ import { reportPersistFailure } from "./persist-failure";
 export interface DomainMirrorPort {
   domains: {
     isReady(table: string): boolean;
-    ensureLoaded(table: string, onLoaded?: () => void): void;
+    ensureLoaded(table: string, onLoaded?: () => void, maxRowsOverride?: number): void;
     all<R>(table: string): R[];
     find<R>(table: string, where: Record<string, unknown>): R[];
     findOne<R>(table: string, where: Record<string, unknown>): R | null;
@@ -47,17 +47,31 @@ export interface DomainMirrorPort {
 }
 
 /**
+ * 某张表的镜像上限。
+ *
+ * 默认 `RustDomainMirror` 的上限（5000 行）是**按行数**算的，对大多数表够用。
+ * 但有两类表必须单独给更小的上限：
+ * - `notebook_chunks`：每行带一个 Base64 编码的 embedding（1536 维 ≈ 8KB 文本），
+ *   5000 行就是 40MB 级别的渲染进程内存 —— 这正是 P6 要消灭的那类占用；
+ * - 其它"每行都很大"的表同理（将来的附件表）。
+ */
+export interface DomainReadOpts {
+  /** 覆盖该表的镜像行数上限（超过则该表放弃镜像、回退旧路径） */
+  maxRows?: number;
+}
+
+/**
  * 取某表可用的域端口 —— **未加载完就返回 null**（调用方据此回退旧路径）。
  *
  * 副作用：每次调用都会顺带触发一次惰性加载，因此最迟在该域第二次访问时切过来。
  */
-export function domainPort(table: string): DomainMirrorPort | null {
+export function domainPort(table: string, opts: DomainReadOpts = {}): DomainMirrorPort | null {
   if (!hasStoragePort()) return null;
   const port = getStoragePort();
   if (port.kind !== "rust") return null;
   const candidate = port as unknown as DomainMirrorPort;
   if (!candidate.domains?.ensureLoaded) return null;
-  candidate.domains.ensureLoaded(table);
+  candidate.domains.ensureLoaded(table, undefined, opts.maxRows);
   return candidate.domains.isReady(table) ? candidate : null;
 }
 
@@ -66,8 +80,9 @@ export function domainReadOne<R>(
   table: string,
   where: Record<string, unknown>,
   convert: (row: Record<string, unknown>) => R,
+  opts: DomainReadOpts = {},
 ): R | null | undefined {
-  const port = domainPort(table);
+  const port = domainPort(table, opts);
   if (!port) return undefined; // undefined = "没接手"，与"确实没有这行"（null）区分
   const row = port.domains.findOne<Record<string, unknown>>(table, where);
   return row ? convert(row) : null;
@@ -78,8 +93,9 @@ export function domainReadMany<R>(
   table: string,
   convert: (row: Record<string, unknown>) => R,
   where?: Record<string, unknown>,
+  opts: DomainReadOpts = {},
 ): R[] | undefined {
-  const port = domainPort(table);
+  const port = domainPort(table, opts);
   if (!port) return undefined;
   const rows = where
     ? port.domains.find<Record<string, unknown>>(table, where)
@@ -98,9 +114,9 @@ export function domainReadMany<R>(
 export function domainWrite(
   table: string,
   rows: Array<Record<string, unknown>>,
-  opts: { mode?: "insert" | "replace"; note: string; scope: string },
+  opts: { mode?: "insert" | "replace"; note: string; scope: string } & DomainReadOpts,
 ): boolean {
-  const port = domainPort(table);
+  const port = domainPort(table, opts);
   if (!port) return false; // 未接手，调用方走旧路径
   if (rows.length === 0) return true;
   port.domains.applyWriteMany(table, rows);
@@ -114,9 +130,9 @@ export function domainWrite(
 export function domainDelete(
   table: string,
   where: Record<string, unknown>,
-  opts: { note: string; scope: string },
+  opts: { note: string; scope: string } & DomainReadOpts,
 ): boolean {
-  const port = domainPort(table);
+  const port = domainPort(table, opts);
   if (!port) return false;
   port.domains.applyDelete(table, where);
   void port.data
@@ -138,9 +154,9 @@ export function domainDeleteBeyond(
   table: string,
   rows: Array<Record<string, unknown>>,
   keep: number,
-  opts: { note: string; scope: string; key?: string; orderBy?: string },
+  opts: { note: string; scope: string; key?: string; orderBy?: string } & DomainReadOpts,
 ): number | null {
-  const port = domainPort(table);
+  const port = domainPort(table, opts);
   if (!port) return null;
   const key = opts.key ?? "id";
   const orderBy = opts.orderBy ?? "completed_at";
@@ -206,9 +222,9 @@ export function domainDeleteWhere(
   table: string,
   match: (row: Record<string, unknown>) => boolean,
   key: string,
-  opts: { note: string; scope: string },
+  opts: { note: string; scope: string } & DomainReadOpts,
 ): number | null {
-  const port = domainPort(table);
+  const port = domainPort(table, opts);
   if (!port) return null;
   const all = port.domains.all<Record<string, unknown>>(table);
   const doomed = all

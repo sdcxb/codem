@@ -991,6 +991,74 @@ tsc 0 错 · 六道 audit 门禁全绿（A 类 0 / B 类 P1 3+P2 1 / C 类 4 / D
 必须再用一次**运行期实测**去确认；`Select-String` 里 `\b` 的匹配结果是**易读错的证据**，
 不是结论。列级契约测试比人工比对可靠。）
 
+### P3 第 15 段（第 92 波）—— 知识域接入（9 张表，P3-14 收尾）
+
+这一段把最后、也是最大的一个域接进骨架：`knowledge/storage.ts`（原 988 行、9 张表）。
+接完之后，**渲染侧所有业务域都只有一条读写路径**（要么走域端口，要么整体回退旧库）。
+
+| 表 | 特殊之处 | 处理 |
+|---|---|---|
+| `notebooks` | `refreshNotebookCounts` 是"两条 COUNT + 一条 UPDATE" | 计数在**同一份镜像**上算完，再整体写回一行 |
+| `notebook_sources` | `key_topics` 是 JSON | 逐行转换；`summary` 列来自 ALTER |
+| `notebook_chunks` | 每行带 **Base64 embedding**（1536 维 ≈ 8KB 文本） | **单独调小镜像上限**（见下） |
+| `notes` | `tags` JSON；`pin_order DESC, updated_at DESC` | 逐行转换 + 排序等价 |
+| `note_links` | 无唯一约束，`INSERT OR IGNORE` 形同虚设 | 先在镜像判重再写（见下） |
+| `graph_nodes` | `source_ids` / `chunk_ids` 是 JSON；`findOrCreateNode` 有读-改-写 | 合并语义与返回值归一（见下） |
+| `graph_edges` | 同 `note_links`；按节点级联删除 | 先判重；删节点时按谓词删相连的边 |
+| `notebook_groups` | 删分组要把组内笔记本移到未分组 | 两步都走域端口 |
+| `note_versions` | 快照 / 回滚（回滚前自动存一份） | 组合已接管的 `getNote`/`updateNote`/`saveNoteVersion` |
+
+#### 为"大行表"加的每表镜像上限
+
+`notebook_chunks` 每行带一个 Base64 编码的 embedding（1536 维 ≈ 8KB 文本）。
+默认上限 5000 行意味着**几十 MB 常驻渲染进程内存** —— 这正是 P6 要消灭的那类占用。
+因此给 `domainPort` / `domainReadMany` / `domainWrite` 等加了可选的 `maxRows`，
+渲染侧对 `notebook_chunks` 声明 `CHUNK_MIRROR_MAX = 2000`（约 16MB），超过就放弃镜像、
+回退旧路径。**宁可慢，也不把渲染进程压死。**
+
+顺带把 `addChunksBulk` 旧实现的"N 条 `db.run`"改成**一次 `crud.upsert` 批量写**
+（大文档批处理时这是最直接的瓶颈之一）。
+
+#### 这一段查出的三个"旧实现本来就没生效"的问题
+
+审计的 D 类（存储边界）只关心"有没有绕过端口"，不关心"那行代码到底有没有用"。
+接这一段时逐条对照，发现三处**看着有防护、实际不生效**的代码：
+
+1. **`note_links` / `graph_edges` 上根本没有唯一约束**（schema 里只有普通索引
+   `idx_note_links_source` / `idx_graph_edges_*`），所以：
+   - `addNoteLink` 的 `INSERT OR IGNORE` 从来不会 IGNORE，
+     `getRowsModified() > 0` **永远是 true** —— 它返回的"是否真的新增"是假的；
+   - `addGraphEdge` 的 `try/catch → return null` **永远不会触发**，重复边照落库。
+   - 已用真机 CLI 实测确认：同一对节点连写两次，`counts graph_edges` 返回 **2**。
+   修法：在镜像上**写入之前**判重（不依赖数据库约束），重复时 `addNoteLink` 返回 false、
+   `addGraphEdge` 返回已存在的那条边。落库行为因此变成真正的"不产生重复行"。
+2. **`findOrCreateNode` 的返回值与落库内容不一致**：命中已有节点时它把"合并后的
+   ids + 真实 weight"写进库，却返回 `sourceIds: sourceId ? [sourceId] : []`、
+   `weight: 2` 这样的**字面量**。镜像路径改为返回真实状态（落库内容与旧实现完全一致，
+   只是返回值不再骗人）。
+3. **`deleteGroup` 不级联删子分组**：旧实现只删自己，子分组会变成指向已删父分组的孤儿。
+   这一条**没有改**，只在测试里如实钉住旧行为 —— 顺手"修好"它属于行为变更，不在本段范围。
+
+#### 关于覆盖率数字的一处口径说明
+
+`npm run audit:coverage` 报的"已实现 47 个方法 / 36.43%"**没有把这一段算进去**，
+因为它统计的是"有没有对应的**具名** Rust 仓储命令"，而这一段（以及上一段的 7 个域）
+走的是 P3 第 10 段引入的**通用命令** `crud.list` / `crud.upsert` / `crud.delete`。
+两个数字因此是**两回事**：
+
+- **命令可用性 129/129（100%）**：Rust 侧有命令能服务这个调用点（含通用命令）；
+- **已实现 47 / 36.43%**：渲染侧调用点是否切到**具名**命令。
+
+所以本段真实推进的既不是 36.43% 也不是 100%，而是"**实际走 Rust 读写的域**"
+（9 张表 / 40+ 个导出函数）。这一点必须写清楚，否则这两个数字都会被误读。
+把通用命令纳入统计口径是覆盖工具的事，留到 P5 与"删除 WASM 路径"一起做（那时
+真源切换到 Rust，统计口径要重写一遍）。
+
+**验证**：域镜像契约 **30 → 38 项**（新增 8 项：计数、分组过滤、embedding 往返与
+按来源删除、笔记排序与版本回滚、链接判重、节点合并语义、边去重与级联、分组删除）·
+完整套件 **269 文件 / 5183 通过 / 15 跳过** · tsc 0 错 · 六道 audit 门禁全绿
+（D 类 519 → **518**，调用点覆盖率 45.93% → **46.1%**）。
+
 ### P4（第 92 波）—— 数据迁移与对账（已完成，真机验证通过）
 
 **产物**

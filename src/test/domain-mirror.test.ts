@@ -1170,3 +1170,348 @@ describe("域镜像分流 —— delegation_tasks", () => {
     expect(deleted.sort(), "只能删已完成/失败/取消").toEqual(["a", "b", "d"]);
   });
 });
+
+// ========== 知识域（notebooks / sources / chunks / notes / links / graph / groups / versions） ==========
+
+function nbRow(over: Record<string, unknown> = {}) {
+  return {
+    id: "nb1",
+    name: "笔记本",
+    description: null,
+    summary: null,
+    summary_status: "pending",
+    source_count: 0,
+    chunk_count: 0,
+    group_id: null,
+    created_at: 1,
+    updated_at: 1,
+    ...over,
+  };
+}
+
+describe("域镜像分流 —— knowledge/notebooks + sources + counts", () => {
+  it("DOM-31: 计数在同一份数据上算完再写回（旧实现是两条 COUNT + 一条 UPDATE）", async () => {
+    const { port, executed } = portWith({
+      notebooks: [nbRow({ id: "nb1" })],
+      notebook_sources: [
+        { id: "s1", notebook_id: "nb1", name: "a", type: "text", status: "indexed", chunk_count: 2, created_at: 1 },
+        { id: "s2", notebook_id: "nb1", name: "b", type: "text", status: "pending", chunk_count: 0, created_at: 2 },
+        { id: "s9", notebook_id: "nb2", name: "别的", type: "text", status: "pending", chunk_count: 0, created_at: 3 },
+      ],
+      notebook_chunks: [
+        { id: "c1", source_id: "s1", notebook_id: "nb1", content: "x", chunk_index: 0, token_count: 1, created_at: 1 },
+        { id: "c2", source_id: "s1", notebook_id: "nb1", content: "y", chunk_index: 1, token_count: 1, created_at: 1 },
+        { id: "c9", source_id: "s9", notebook_id: "nb2", content: "z", chunk_index: 0, token_count: 1, created_at: 1 },
+      ],
+    });
+    setStoragePort(port);
+    await port.start();
+    port.domains.ensureLoaded("notebooks");
+    port.domains.ensureLoaded("notebook_sources");
+    port.domains.ensureLoaded("notebook_chunks");
+    await settle();
+
+    const k = await import("../core/knowledge/storage");
+    k.refreshNotebookCounts("nb1");
+    const nb = k.getNotebook("nb1")!;
+    expect(nb.sourceCount, "只数本笔记本的来源").toBe(2);
+    expect(nb.chunkCount, "只数本笔记本的文本块").toBe(2);
+    expect(nb.updatedAt).toBeGreaterThan(1);
+
+    await settle();
+    const up = executed.filter((e) => e.cmd === "crud.upsert" && e.params.table === "notebooks");
+    const row = (up[up.length - 1].params.rows as Array<Record<string, unknown>>)[0];
+    expect(row).toMatchObject({ id: "nb1", source_count: 2, chunk_count: 2 });
+
+    // 别的笔记本不受影响
+    expect(k.getNotebook("nb2")).toBeNull(); // 端口里没有 nb2
+    expect(k.listSources("nb1").map((s) => s.id)).toEqual(["s1", "s2"]);
+  });
+
+  it("DOM-32: listNotebooksByGroup 区分「未分组」与「某个分组」", async () => {
+    const { port } = portWith({
+      notebooks: [
+        nbRow({ id: "nb-a", group_id: "g1", updated_at: 10 }),
+        nbRow({ id: "nb-b", group_id: null, updated_at: 20 }),
+        nbRow({ id: "nb-c", group_id: "g2", updated_at: 30 }),
+      ],
+    });
+    setStoragePort(port);
+    await port.start();
+    port.domains.ensureLoaded("notebooks");
+    await settle();
+
+    const k = await import("../core/knowledge/storage");
+    expect(k.listNotebooks().map((n) => n.id), "updated_at DESC").toEqual(["nb-c", "nb-b", "nb-a"]);
+    expect(k.listNotebooksByGroup(null).map((n) => n.id), "IS NULL 才是未分组").toEqual(["nb-b"]);
+    expect(k.listNotebooksByGroup("g1").map((n) => n.id)).toEqual(["nb-a"]);
+
+    // 更新：未改动列保留，group_id 置空后落到"未分组"
+    k.updateNotebook("nb-a", { name: "改名", groupId: null });
+    const after = k.getNotebook("nb-a")!;
+    expect(after.name).toBe("改名");
+    expect(after.groupId).toBeUndefined();
+    expect(k.listNotebooksByGroup(null).map((n) => n.id).sort()).toEqual(["nb-a", "nb-b"]);
+    // 空更新不写库
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    k.updateNotebook("nb-a", {});
+    expect(warn).toHaveBeenCalled();
+  });
+
+  it("DOM-33: embedding 的 Base64 往返 + 文本块按 chunk_index 排序 + 按来源批量删", async () => {
+    const vec = new Float32Array([1.5, -2.25, 0, 3]);
+    const b64 = Buffer.from(
+      new Uint8Array(vec.buffer, vec.byteOffset, vec.byteLength),
+    ).toString("base64");
+    const { port, executed } = portWith({
+      notebook_chunks: [
+        { id: "c2", source_id: "s1", notebook_id: "nb1", content: "第二", chunk_index: 1, embedding: b64, token_count: 2, created_at: 5 },
+        { id: "c1", source_id: "s1", notebook_id: "nb1", content: "第一", chunk_index: 0, embedding: null, token_count: 1, created_at: 5 },
+        { id: "c3", source_id: "s2", notebook_id: "nb1", content: "别的来源", chunk_index: 0, embedding: null, token_count: 1, created_at: 5 },
+      ],
+    });
+    setStoragePort(port);
+    await port.start();
+    port.domains.ensureLoaded("notebook_chunks");
+    await settle();
+
+    const k = await import("../core/knowledge/storage");
+    // 排序断言必须先把 chunk_index 写在注释里核对一遍：
+    // c1→0、c2→1、c3→0，所以正确的顺序是 c1、c3（同为 0，保持相对次序）、c2。
+    expect(k.getChunks("nb1").map((c) => c.id), "chunk_index ASC").toEqual(["c1", "c3", "c2"]);
+    expect(k.getChunkCount("nb1")).toBe(3);
+    // Base64 → Float32Array 必须逐元素一致（向量检索全靠它）
+    const withVec = k.getChunks("nb1").find((c) => c.id === "c2")!;
+    expect(withVec.embedding).toBeInstanceOf(Float32Array);
+    expect(Array.from(withVec.embedding!)).toEqual([1.5, -2.25, 0, 3]);
+
+    // 新增：向量编码回 Base64
+    const created = k.addChunk({
+      sourceId: "s1",
+      notebookId: "nb1",
+      content: "新的",
+      chunkIndex: 9,
+      embedding: vec,
+      tokenCount: 4,
+    });
+    await settle();
+    const up = executed.filter((e) => e.cmd === "crud.upsert").pop()!;
+    const row = (up.params.rows as Array<Record<string, unknown>>)[0];
+    expect(row.embedding, "embedding 必须以 Base64 文本落库").toBe(b64);
+    expect(row.id).toBe(created.id);
+
+    // 按来源删：只删 s1 的两个
+    k.deleteChunksBySource("s1");
+    expect(k.getChunks("nb1").map((c) => c.id), "只剩 s2 的").toEqual(["c3"]);
+  });
+});
+
+describe("域镜像分流 —— knowledge/notes + links + versions", () => {
+  it("DOM-34: 笔记排序（pin_order DESC, updated_at DESC）、tags JSON、版本快照与回滚", async () => {
+    const { port, executed } = portWith({
+      notes: [
+        { id: "n1", notebook_id: "nb1", source_id: null, title: "未置顶", content: "a", content_type: "markdown", tags: "[\"x\"]", pin_order: 0, created_at: 1, updated_at: 10 },
+        { id: "n2", notebook_id: "nb1", source_id: null, title: "置顶", content: "b", content_type: "markdown", tags: null, pin_order: 5, created_at: 1, updated_at: 1 },
+      ],
+      note_versions: [],
+      note_links: [],
+    });
+    setStoragePort(port);
+    await port.start();
+    port.domains.ensureLoaded("notes");
+    port.domains.ensureLoaded("note_versions");
+    port.domains.ensureLoaded("note_links");
+    await settle();
+
+    const k = await import("../core/knowledge/storage");
+    expect(k.listNotes("nb1").map((n) => n.id), "pin_order 优先").toEqual(["n2", "n1"]);
+    expect(k.listNotes("nb1")[1].tags, "tags JSON → 数组").toEqual(["x"]);
+
+    // 更新：tags 编码回 JSON，未改动列保留
+    k.updateNote("n1", { title: "改了", tags: ["y", "z"] });
+    const n1 = k.getNote("n1")!;
+    expect(n1.title).toBe("改了");
+    expect(n1.tags).toEqual(["y", "z"]);
+    expect(n1.content, "未改动列保留").toBe("a");
+
+    // 存版本（快照当前状态）
+    await settle();
+    k.saveNoteVersion("n1", "第一版");
+    const versions = k.listNoteVersions("n1");
+    expect(versions).toHaveLength(1);
+    expect(versions[0].title).toBe("改了");
+    expect(versions[0].versionNote).toBe("第一版");
+    expect(versions[0].tags).toEqual(["y", "z"]);
+
+    // 回滚：先自动存一份当前状态，再把笔记改回版本内容
+    k.updateNote("n1", { title: "又改了", content: "内容变了" });
+    k.restoreNoteVersion(versions[0].id);
+    const restored = k.getNote("n1")!;
+    expect(restored.title).toBe("改了");
+    expect(restored.content).toBe("a");
+    expect(k.listNoteVersions("n1"), "回滚前会自动存一份").toHaveLength(2);
+
+    // 空更新不写库
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const before = executed.length;
+    k.updateNote("n1", {});
+    expect(executed.length).toBe(before);
+    expect(warn).toHaveBeenCalled();
+  });
+
+  it("DOM-35: 笔记链接去重 + 双向查询（旧实现的返回值恒为 true）", async () => {
+    const { port, executed } = portWith({ note_links: [] });
+    setStoragePort(port);
+    await port.start();
+    port.domains.ensureLoaded("note_links");
+    await settle();
+
+    const k = await import("../core/knowledge/storage");
+    // 第一次：真的新增
+    expect(k.addNoteLink("a", "b", "见 b")).toBe(true);
+    expect(k.getNoteLinks("a").map((l) => l.id)).toHaveLength(1);
+    expect(k.getBacklinks("b")).toHaveLength(1);
+    expect(k.getBacklinks("a"), "反向链接不该凭空出现").toHaveLength(0);
+
+    // 第二次（同一对笔记）：必须在**写入之前**判定为已存在 → 返回 false 且不新增行
+    await settle();
+    const writesBefore = executed.filter((e) => e.cmd === "crud.upsert").length;
+    expect(k.addNoteLink("a", "b", "再来一次"), "重复链接必须返回 false").toBe(false);
+    expect(k.getNoteLinks("a"), "不能出现重复行").toHaveLength(1);
+    expect(executed.filter((e) => e.cmd === "crud.upsert").length).toBe(writesBefore);
+
+    // 反向也算同一条链接（source/target 对调是另一条）
+    expect(k.addNoteLink("b", "a")).toBe(true);
+    expect(k.getNoteLinks("a")).toHaveLength(2);
+    expect(k.getBacklinks("a")).toHaveLength(1);
+  });
+});
+
+describe("域镜像分流 —— knowledge/graph", () => {
+  it("DOM-36: findOrCreateNode 的合并语义与返回值一致（旧实现返回值是字面量）", async () => {
+    const { port, executed } = portWith({
+      graph_nodes: [
+        {
+          id: "nd1",
+          notebook_id: "nb1",
+          label: "概念A",
+          entity_type: "concept",
+          description: null,
+          source_ids: '["s1"]',
+          chunk_ids: '["k1"]',
+          weight: 1,
+          community_id: null,
+          created_at: 1,
+        },
+      ],
+      graph_edges: [],
+    });
+    setStoragePort(port);
+    await port.start();
+    port.domains.ensureLoaded("graph_nodes");
+    port.domains.ensureLoaded("graph_edges");
+    await settle();
+
+    const k = await import("../core/knowledge/storage");
+
+    // 命中已有节点：weight +1，新的 source/chunk 合并进去（不重复加已有的）
+    const node = k.findOrCreateNode("nb1", "概念A", "concept", undefined, "s2", "k1");
+    expect(node.weight, "权重必须真的 +1").toBe(2);
+    expect(node.sourceIds.sort(), "新来源合并进来").toEqual(["s1", "s2"]);
+    expect(node.chunkIds, "已存在的 chunk 不该重复").toEqual(["k1"]);
+
+    // 返回值必须与落库一致（旧实现返回 weight:2 的字面量与只含新 id 的数组）
+    const persisted = k.getGraphData("nb1").nodes[0];
+    expect(persisted.weight).toBe(node.weight);
+    expect(persisted.sourceIds.sort()).toEqual(node.sourceIds.sort());
+    expect(persisted.chunkIds).toEqual(node.chunkIds);
+
+    // 没命中 → 走新增
+    const fresh = k.findOrCreateNode("nb1", "概念B", "concept", "说明", "s9");
+    expect(fresh.weight).toBe(1);
+    expect(fresh.sourceIds).toEqual(["s9"]);
+    expect(k.getGraphData("nb1").nodes.map((n) => n.label).sort()).toEqual(["概念A", "概念B"]);
+
+    await settle();
+    const ups = executed.filter((e) => e.cmd === "crud.upsert" && e.params.table === "graph_nodes");
+    const last = (ups[ups.length - 1].params.rows as Array<Record<string, unknown>>)[0];
+    expect(last.source_ids, "落库的是合并后的 JSON").toBe('["s9"]');
+  });
+
+  it("DOM-37: 图谱边的去重、按节点级联删除、按笔记本清空", async () => {
+    const { port, executed } = portWith({
+      graph_nodes: [
+        { id: "a", notebook_id: "nb1", label: "A", entity_type: "concept", source_ids: "[]", chunk_ids: "[]", weight: 1, created_at: 1 },
+        { id: "b", notebook_id: "nb1", label: "B", entity_type: "concept", source_ids: "[]", chunk_ids: "[]", weight: 1, created_at: 1 },
+        { id: "c", notebook_id: "nb2", label: "C", entity_type: "concept", source_ids: "[]", chunk_ids: "[]", weight: 1, created_at: 1 },
+      ],
+      graph_edges: [
+        { id: "e1", notebook_id: "nb1", source_node_id: "a", target_node_id: "b", relation_type: "related", weight: 1, created_at: 1 },
+        { id: "e2", notebook_id: "nb2", source_node_id: "c", target_node_id: "c", relation_type: "related", weight: 1, created_at: 1 },
+      ],
+    });
+    setStoragePort(port);
+    await port.start();
+    port.domains.ensureLoaded("graph_nodes");
+    port.domains.ensureLoaded("graph_edges");
+    await settle();
+
+    const k = await import("../core/knowledge/storage");
+    // 已存在同一条边 → 返回已有那条，不新增行
+    const dup = k.addGraphEdge("nb1", "a", "b");
+    expect(dup?.id, "重复边应返回已存在的那条").toBe("e1");
+    expect(k.getGraphData("nb1").edges).toHaveLength(1);
+
+    // 新的关系类型 = 另一条边
+    const neu = k.addGraphEdge("nb1", "a", "b", "depends_on");
+    expect(neu?.id).not.toBe("e1");
+    expect(k.getGraphData("nb1").edges).toHaveLength(2);
+
+    // 删节点 → 相连的边一起消失
+    k.deleteGraphNode("a");
+    expect(k.getGraphData("nb1").nodes.map((n) => n.id)).toEqual(["b"]);
+    expect(k.getGraphData("nb1").edges, "相连的边必须一起删").toEqual([]);
+    expect(k.getGraphData("nb2").edges, "别的笔记本不受影响").toHaveLength(1);
+
+    // 按笔记本清空
+    k.deleteGraphData("nb2");
+    expect(k.getGraphData("nb2")).toEqual({ nodes: [], edges: [] });
+
+    await settle();
+    const delIds = executed.filter((e) => e.cmd === "crud.delete").map((e) => (e.params.where as Record<string, unknown>).id);
+    expect(delIds).toContain("e1");
+    expect(delIds).toContain("e2");
+  });
+
+  it("DOM-38: 分组排序与删除时把笔记本移到未分组", async () => {
+    const { port } = portWith({
+      notebook_groups: [
+        { id: "g1", name: "乙", parent_id: null, sort_order: 2, created_at: 1 },
+        { id: "g2", name: "甲", parent_id: null, sort_order: 1, created_at: 2 },
+        { id: "g3", name: "子", parent_id: "g1", sort_order: 0, created_at: 3 },
+      ],
+      notebooks: [nbRow({ id: "nb-in", group_id: "g1" }), nbRow({ id: "nb-out", group_id: null })],
+    });
+    setStoragePort(port);
+    await port.start();
+    port.domains.ensureLoaded("notebook_groups");
+    port.domains.ensureLoaded("notebooks");
+    await settle();
+
+    const k = await import("../core/knowledge/storage");
+    const debugGroups = k.listGroups().map((g) => g.id);
+    // sort_order ASC, name ASC
+    expect(k.listGroups().map((g) => g.id), "按 sort_order").toEqual(["g3", "g2", "g1"]);
+    expect(k.listGroups(null).map((g) => g.id), "顶级分组").toEqual(["g2", "g1"]);
+    expect(k.listGroups("g1").map((g) => g.id)).toEqual(["g3"]);
+
+    // 删除分组：组内笔记本移到未分组；**子分组不会级联删除**（旧实现只删自己，
+    // 子分组会变成指向已删父分组的孤儿 —— 这里如实钉住旧行为，不顺手"修好"它）
+    k.deleteGroup("g1");
+    expect(k.listGroups().map((g) => g.id), "只删自己，子分组仍在").toEqual(["g3", "g2"]);
+    expect(k.listGroups("g1").map((g) => g.id), "子分组已成孤儿（父分组不存在）").toEqual(["g3"]);
+    expect(k.getNotebook("nb-in")?.groupId, "组内笔记本必须变成未分组").toBeUndefined();
+    expect(k.listNotebooksByGroup(null).map((n) => n.id).sort()).toEqual(["nb-in", "nb-out"]);
+    void debugGroups;
+  });
+});

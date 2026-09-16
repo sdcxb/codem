@@ -1029,13 +1029,13 @@ export class RustDomainMirror {
   }
 
   /** 同步触发加载（后台进行） */
-  ensureLoaded(table: string, onLoaded?: () => void): void {
+  ensureLoaded(table: string, onLoaded?: () => void, maxRowsOverride?: number): void {
     if (this.loaded.has(table) || this.loading.has(table)) {
       if (this.loaded.has(table)) onLoaded?.();
       else if (onLoaded) void this.loading.get(table)?.then(() => { if (this.isReady(table)) onLoaded(); });
       return;
     }
-    const job = this.loadTable(table)
+    const job = this.loadTable(table, maxRowsOverride)
       .then(() => {
         this.loaded.add(table);
       })
@@ -1050,7 +1050,10 @@ export class RustDomainMirror {
     if (onLoaded) void job.then(() => { if (this.isReady(table)) onLoaded(); });
   }
 
-  private async loadTable(table: string): Promise<void> {
+  private async loadTable(table: string, maxRowsOverride?: number): Promise<void> {
+    // 每张表可以有更小的上限（例如 notebook_chunks：每行带 Base64 embedding，
+    // 5000 行就是几十 MB 的渲染进程内存）。取更严格的那个。
+    const cap = maxRowsOverride === undefined ? this.maxRows : Math.min(this.maxRows, maxRowsOverride);
     const rows: Array<Record<string, unknown>> = [];
     let offset = 0;
     for (let round = 0; round < 40; round++) {
@@ -1061,12 +1064,12 @@ export class RustDomainMirror {
       );
       const items = page?.items ?? [];
       rows.push(...items);
-      if (rows.length > this.maxRows) {
+      if (rows.length > cap) {
         // 放弃镜像：这张表比预期大得多，继续镜像会把渲染进程压死
         this.refused.add(table);
         this.onFailure(
           `domain.${table}.too-large`,
-          new Error(`表 ${table} 超过镜像上限 ${this.maxRows} 行`),
+          new Error(`表 ${table} 超过镜像上限 ${cap} 行`),
           `表 ${table} 改用旧引擎读取（超出内存镜像上限）`,
         );
         return;
