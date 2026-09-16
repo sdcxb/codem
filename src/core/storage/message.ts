@@ -416,11 +416,12 @@ function queueAttachmentExternalization(attachmentId: string, name: string, cont
     try {
       const { marker, preview } = await externalizeAttachmentContent(attachmentId, name, content);
       const db = getDatabase();
-      db.run("UPDATE attachments SET content = ?, preview = COALESCE(preview, ?) WHERE id = ?", [
-        marker,
-        preview,
-        attachmentId,
-      ]);
+      runGuarded(
+        db,
+        "UPDATE attachments SET content = ?, preview = COALESCE(preview, ?) WHERE id = ?",
+        [marker, preview, attachmentId],
+        { table: "attachments", op: "externalize", id: attachmentId, from: "externalizeAttachment" },
+      );
       persistDatabase();
       await hydrateAttachmentsForSession([{ id: attachmentId, content: marker }]);
     } catch (e) {
@@ -602,7 +603,8 @@ export function createMessage(message: Message, sessionId: string): void {
   // Update generated_files separately to avoid INSERT failure if column missing
   if (message.generatedFiles && message.generatedFiles.length > 0) {
     try {
-      db.run("UPDATE messages SET generated_files = ? WHERE id = ?", [JSON.stringify(message.generatedFiles), message.id]);
+      runGuarded(db, "UPDATE messages SET generated_files = ? WHERE id = ?", [JSON.stringify(message.generatedFiles), message.id],
+        { table: "messages", op: "set-generated-files", id: message.id, from: "createMessage" });
     } catch (e) {
       console.warn("[createMessage] generated_files column may not exist:", e);
     }
@@ -611,7 +613,8 @@ export function createMessage(message: Message, sessionId: string): void {
   // Persist retrieved_sources (auto-retrieved knowledge citations)
   if (message.retrievedSources && message.retrievedSources.length > 0) {
     try {
-      db.run("UPDATE messages SET retrieved_sources = ? WHERE id = ?", [JSON.stringify(message.retrievedSources), message.id]);
+      runGuarded(db, "UPDATE messages SET retrieved_sources = ? WHERE id = ?", [JSON.stringify(message.retrievedSources), message.id],
+        { table: "messages", op: "set-retrieved-sources", id: message.id, from: "createMessage" });
     } catch (e) {
       console.warn("[createMessage] retrieved_sources column may not exist:", e);
     }
@@ -746,7 +749,8 @@ export function updateMessage(id: string, update: Partial<Message>): void {
   // Handle generated_files separately to avoid failure if column missing
   if (update.generatedFiles !== undefined) {
     try {
-      db.run("UPDATE messages SET generated_files = ? WHERE id = ?", [update.generatedFiles ? JSON.stringify(update.generatedFiles) : null, id]);
+      runGuarded(db, "UPDATE messages SET generated_files = ? WHERE id = ?", [update.generatedFiles ? JSON.stringify(update.generatedFiles) : null, id],
+        { table: "messages", op: "set-generated-files", id, from: "updateMessage" });
     } catch (e) {
       console.warn("[updateMessage] generated_files column may not exist:", e);
     }
@@ -755,7 +759,8 @@ export function updateMessage(id: string, update: Partial<Message>): void {
   // Handle retrieved_sources separately to avoid failure if column missing
   if (update.retrievedSources !== undefined) {
     try {
-      db.run("UPDATE messages SET retrieved_sources = ? WHERE id = ?", [update.retrievedSources ? JSON.stringify(update.retrievedSources) : null, id]);
+      runGuarded(db, "UPDATE messages SET retrieved_sources = ? WHERE id = ?", [update.retrievedSources ? JSON.stringify(update.retrievedSources) : null, id],
+        { table: "messages", op: "set-retrieved-sources", id, from: "updateMessage" });
     } catch (e) {
       console.warn("[updateMessage] retrieved_sources column may not exist:", e);
     }
@@ -801,7 +806,8 @@ async function appendUpdatedMessageToLog(id: string): Promise<void> {
 
 export function appendToMessage(id: string, content: string): void {
   const db = getDatabase();
-  db.run("UPDATE messages SET content = content || ? WHERE id = ?", [content, id]);
+  runGuarded(db, "UPDATE messages SET content = content || ? WHERE id = ?", [content, id],
+    { table: "messages", op: "append-content", id, from: "appendMessageContent" });
   persistDatabase();
 }
 
@@ -930,7 +936,9 @@ export function deleteMessagesByIds(ids: string[]): number {
   // 先按会话分组（墓碑要写进对应会话的日志），再软删除索引行
   const bySession = sessionIdsForMessages(ids);
   for (const id of ids) {
-    db.run("UPDATE messages SET hidden = 1 WHERE id = ?", [id]);
+    // 墓碑（hide）路径：0 行 = 这条消息根本不在索引里 —— 正是"假压缩"事故的观测点
+    runGuarded(db, "UPDATE messages SET hidden = 1 WHERE id = ?", [id],
+      { table: "messages", op: "hide", id, from: "deleteMessagesByIds" });
   }
   persistDatabase();
   // 权威日志：逐条留墓碑（后写者胜：之后再写入同 id 即为重新出现）

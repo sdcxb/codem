@@ -2,6 +2,54 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.16.40] - 2026-09-15 — 两个审计扫描器变成**测试门禁**；门禁上线当场又抓出 15 处 A 类（第 88 波）
+
+第 86/87 波的扫描器是一次性脚本 —— 结论会随时间失效：新写的代码可以再次引入同样的模式。
+这一轮把它们做成**每次跑测试都会执行的门禁**，并且上线当天就证明了价值。
+
+### 一、门禁落地
+
+- `tools/audit/scan-false-success.mjs`（B 类）：P1 = `catch` 里 `return true`/`success:true`；
+  P2 = 写/动作类函数的 `catch` **只有日志**。匹配前**先剥注释**（本仓库注释里就写着这些模式，
+  不剥会把文档当代码报出来 —— 上一版的一处误报正是这么来的）。
+- `tools/audit/scan-silent-write.mjs`（A 类）：`db.run(UPDATE … WHERE id = ?)` 未走 `runGuarded`。
+  `DELETE` 只列出不计违规（"删一个不存在的行"是正常语义），避免训练出"看什么都像 bug"的噪声。
+- `tools/audit/allowlist.json`：豁免必须写在清单里**并写明理由**（由 GATE-3 断言强制，
+  不允许无理由豁免；新增条目要在 CHANGELOG 说明为什么安全）。
+- `src/test/audit-gates.test.ts`：**GATE-1~4** —— 两条扫描零未豁免命中、豁免必须写理由、
+  以及**扫描器自检**（用临时样本证明它真的会报警，避免"门禁永远绿"这种更隐蔽的失效）。
+- `npm run audit` / `audit:false-success` / `audit:silent-write` / `audit:json`
+  （`npm run verify` 之外单独可用；测试套件里也已经是强制项）。
+
+### 二、门禁上线当场抓出 15 处此前漏掉的 A 类
+
+原因是**引用风格**：旧 grep 只认模板串（`` db.run(`UPDATE …`) ``），而项目里还有一批
+`db.run("UPDATE …")`。改成兼容三种引号后，立刻扫出 **15 处**未接 `runGuarded` 的按 id 更新：
+
+- `storage/message.ts` ×7：`hidden = 1`（**墓碑路径** —— 正是 v1.16.33「假压缩」事故的观测点）、
+  `generated_files` / `retrieved_sources`（create 与 update 两条路径）、`content = content || ?`（追加）、
+  `attachments` 外置写回；
+- `knowledge/storage.ts` ×3：`graph_nodes` 的 community_id / weight / source_ids+chunk_ids；
+- `squad/squad-storage.ts` ×2：归档、成员角色；
+- `accounts` 激活 ×2（auth/storage、storage/account）；
+- `sessions` 排序（`sort_order`）。
+
+全部接入探测器（影响 0 行时记账 + 告警一次，行为不变）。**这一步让"墓碑写了 0 行"这类事故
+从"只能靠旁证推断"变成"运行期直接响"**。
+
+### 三、门禁还当场抓出 1 处 B 类
+
+`LLMEngine.setupSubagentSpawner` 里 `SubagentRuntime` 初始化失败原来只有一行 warn ——
+后果是 subagent/委派能力整体不可用、依赖它的插件停在 PENDING，而用户只看到"某些功能不见了"。
+现在走统一失败上报（`llmEngine.subagentRuntimeInit`）。
+
+### 四、验证
+
+- 全量 **254 文件 / 4992 用例通过 / 15 跳过**、`tsc --noEmit` 0 错、UI 审计 27 条规则 0 error / 0 warn、
+  css-contract 2745 个类无变化；`npm run audit` 两类扫描均 exit 0（A 类未接 runGuarded = 0）。
+- 门禁自检（GATE-4）实测会咬：故意写坏的样本（catch 里 `return true` + 只有日志的 catch +
+  未接 `runGuarded` 的 `UPDATE`）全部被报出。
+
 ## [1.16.39] - 2026-09-15 — B 类机器扫描（31 → 2）+「沙箱模式」开关真的接线（第 87 波）
 
 按三类问题继续延伸审计，这一轮做的是**机器扫描 + 接线校验**，不是抽查。

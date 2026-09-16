@@ -151,6 +151,7 @@ export function deleteAccount(id: string): void {
 export function setActiveAccount(id: string): void {
   const db = getDatabase();
   db.run("UPDATE accounts SET is_active = 0");
-  db.run("UPDATE accounts SET is_active = 1, updated_at = ? WHERE id = ?", [Date.now(), id]);
+  runGuarded(db, "UPDATE accounts SET is_active = 1, updated_at = ? WHERE id = ?", [Date.now(), id],
+    { table: "accounts", op: "activate", id, from: "activateAccount" });
   persistDatabase();
 }

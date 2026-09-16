@@ -701,7 +701,8 @@ export function deleteGraphData(notebookId: string): void {
 
 export function updateNodeCommunity(nodeId: string, communityId: number): void {
   const db = getDatabase();
-  db.run('UPDATE graph_nodes SET community_id = ? WHERE id = ?', [communityId, nodeId]);
+  runGuarded(db, 'UPDATE graph_nodes SET community_id = ? WHERE id = ?', [communityId, nodeId],
+    { table: "graph_nodes", op: "update-community", id: nodeId, from: "updateNodeCommunity" });
   persistDatabase();
 }
 
@@ -722,7 +723,8 @@ export function findOrCreateNode(
   if (result.length > 0 && result[0].values.length > 0) {
     const existingId = result[0].values[0][0] as string;
     // Update weight and append source/chunk IDs
-    db.run('UPDATE graph_nodes SET weight = weight + 1 WHERE id = ?', [existingId]);
+    runGuarded(db, 'UPDATE graph_nodes SET weight = weight + 1 WHERE id = ?', [existingId],
+      { table: "graph_nodes", op: "bump-weight", id: existingId, from: "findOrCreateNode" });
     if (sourceId || chunkId) {
       const nodeResult = db.exec('SELECT source_ids, chunk_ids FROM graph_nodes WHERE id = ?', [existingId]);
       if (nodeResult.length > 0) {
@@ -732,9 +734,12 @@ export function findOrCreateNode(
         try { chunkIds = JSON.parse(nodeResult[0].values[0][1] as string || '[]'); } catch { chunkIds = []; }
         if (sourceId && !sourceIds.includes(sourceId)) sourceIds.push(sourceId);
         if (chunkId && !chunkIds.includes(chunkId)) chunkIds.push(chunkId);
-        db.run('UPDATE graph_nodes SET source_ids = ?, chunk_ids = ? WHERE id = ?', [
-          JSON.stringify(sourceIds), JSON.stringify(chunkIds), existingId,
-        ]);
+        runGuarded(
+          db,
+          'UPDATE graph_nodes SET source_ids = ?, chunk_ids = ? WHERE id = ?',
+          [JSON.stringify(sourceIds), JSON.stringify(chunkIds), existingId],
+          { table: "graph_nodes", op: "update-refs", id: existingId, from: "findOrCreateNode" },
+        );
       }
     }
     persistDatabase();

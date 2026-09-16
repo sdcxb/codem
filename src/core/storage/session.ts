@@ -215,7 +215,8 @@ export function reorderSessions(projectId: string, orderedIds: string[]): void {
   const db = getDatabase();
   // Update sort_order for each session
   for (let i = 0; i < orderedIds.length; i++) {
-    db.run("UPDATE sessions SET sort_order = ? WHERE id = ? AND project_id = ?", [i, orderedIds[i], projectId]);
+    runGuarded(db, "UPDATE sessions SET sort_order = ? WHERE id = ? AND project_id = ?", [i, orderedIds[i], projectId],
+      { table: "sessions", op: "reorder", id: orderedIds[i], from: "reorderSessions" });
   }
   persistDatabase();
 }

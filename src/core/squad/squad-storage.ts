@@ -100,7 +100,8 @@ export const SquadStorage = {
 
   archive(id: string): void {
     const db = getDatabase();
-    db.run("UPDATE squads SET archived = 1, updated_at = ? WHERE id = ?", [Date.now(), id]);
+    runGuarded(db, "UPDATE squads SET archived = 1, updated_at = ? WHERE id = ?", [Date.now(), id],
+      { table: "squads", op: "archive", id, from: "archiveSquad" });
     persistDatabase();
   },
 
@@ -139,7 +140,8 @@ export const SquadStorage = {
 
   updateMemberRole(memberId: string, roleDescription: string): void {
     const db = getDatabase();
-    db.run("UPDATE squad_members SET role_description = ? WHERE id = ?", [roleDescription, memberId]);
+    runGuarded(db, "UPDATE squad_members SET role_description = ? WHERE id = ?", [roleDescription, memberId],
+      { table: "squad_members", op: "update-role", id: memberId, from: "updateMemberRole" });
     persistDatabase();
   },
 };

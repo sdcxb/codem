@@ -230,7 +230,10 @@ private scopedLoopPool: Map<string, AgenticLoop> = new Map();
       setGlobalSubagentRuntime(runtime);
       console.log('[LLMEngine] SubagentRuntime initialized synchronously');
     } catch (e) {
-      console.warn('[LLMEngine] SubagentRuntime init failed:', e);
+      // 第 88 波（门禁扫出）：SubagentRuntime 初始化失败原来只有一行 warn ——
+      // 后果是 subagent/委派相关工具整体不可用、依赖它的插件停在 PENDING，
+      // 而用户只会看到"某些功能不见了"。现在走统一失败上报（可见 + 可诊断）。
+      reportActionFailure("llmEngine.subagentRuntimeInit", e, "子智能体/委派能力本次不可用");
     }
 
     // 注册 DSH 风格工具（异步：tools 层引用 runtime 已就绪，注册顺序不影响

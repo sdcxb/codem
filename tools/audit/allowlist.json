@@ -1,0 +1,26 @@
+{
+  "_comment": "审计门禁的豁免清单（第 88 波）。每条必须写明理由，且只对『逐条复核过、确实不是缺陷』的命中生效；新增条目需要在 CHANGELOG 里说明为什么它安全。",
+  "falseSuccess": [
+    {
+      "file": "src/core/mcp/mcp.ts",
+      "contains": "return true;",
+      "reason": "isCodeGraphEnabled()：读不到设置时按『默认开启』返回 true（既有产品语义），不是动作假成功"
+    },
+    {
+      "file": "src/components/SettingsPanel.tsx",
+      "contains": "return true;",
+      "reason": "CodeGraph 设置项的初始值：动态 require 失败时按默认开启，属读路径降级"
+    },
+    {
+      "file": "src/core/skill/installer.ts",
+      "contains": "success: true",
+      "reason": "uninstallSkill：目录删除失败后改按单文件删除，确实删掉并已从注册表移除 —— 是真成功（只在真正失败的分支返回 false）"
+    },
+    {
+      "file": "src/core/store.ts",
+      "contains": "Failed to count existing sessions",
+      "reason": "createSession 里读会话数失败 → 退回内存计数，属读路径降级；真正的写失败已走 reportPersistFailure"
+    }
+  ],
+  "silentWrites": []
+}
