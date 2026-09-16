@@ -8,7 +8,7 @@ import {
   isExternalContent,
   DEFAULT_EXTERNALIZE_THRESHOLD,
 } from "./attachment-files";
-import { getDatabase, persistDatabase, isFts5Available, isDatabaseFatal, noteDatabaseError } from "./database";
+import { getDatabase, tryGetDatabase, persistDatabase, isFts5Available, isDatabaseFatal, noteDatabaseError } from "./database";
 import { getEventLog } from "./event-log";
 import { getStoragePort, hasStoragePort } from "./port";
 import type { SessionEventType } from "./event-types";
@@ -282,7 +282,9 @@ function hiddenMessageIds(sessionId: string): Set<string> {
   const routed = rustMessageSource(sessionId);
   if (routed?.messages) return routed.messages.hiddenIds(sessionId);
   try {
-    const rows = getDatabase().exec("SELECT id FROM messages WHERE session_id = ? AND hidden = 1", [sessionId]);
+    // P5 第 7 段：旧库在 rust 模式下**刻意不存在**，这里不能直接 .exec（会抛 null 解引用）
+  const legacyDbHidden = tryGetDatabase();
+  const rows = legacyDbHidden ? legacyDbHidden.exec("SELECT id FROM messages WHERE session_id = ? AND hidden = 1", [sessionId]) : [];
     return new Set((rows?.[0]?.values ?? []).map((r: any[]) => String(r[0])));
   } catch {
     return new Set();
@@ -1213,7 +1215,8 @@ export function deleteMessage(id: string): void {
 /** 查一条消息属于哪个会话（删除前调用） */
 function currentSessionIdForMessage(messageId: string): string | null {
   try {
-    const rows = getDatabase().exec("SELECT session_id FROM messages WHERE id = ?", [messageId]);
+    const legacyDbSess = tryGetDatabase();
+  const rows = legacyDbSess ? legacyDbSess.exec("SELECT session_id FROM messages WHERE id = ?", [messageId]) : [];
     const value = rows?.[0]?.values?.[0]?.[0];
     if (value) return String(value);
   } catch {
@@ -1313,10 +1316,8 @@ function sessionIdsForMessages(ids: string[]): Map<string, string[]> {
     const chunk = ids.slice(i, i + CHUNK);
     try {
       const marks = chunk.map(() => "?").join(",");
-      const rows = getDatabase().exec(
-        `SELECT id, session_id FROM messages WHERE id IN (${marks})`,
-        chunk,
-      );
+      const legacyDb1316 = tryGetDatabase();
+      const rows = legacyDb1316 ? legacyDb1316.exec(`SELECT id, session_id FROM messages WHERE id IN (${marks})`, chunk) : [];
       for (const row of rows?.[0]?.values ?? []) {
         const id = String(row[0]);
         const sid = String(row[1]);

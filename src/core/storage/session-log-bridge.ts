@@ -12,6 +12,7 @@ import { backfillSessionLog, listSessionLogs, flushSessionLogWrites, compactSess
 import { initDatabase } from "./database";
 import { hydrateAttachmentsForSession } from "./attachment-files";
 import { getStoragePort, hasStoragePort } from "./port";
+import { tryGetDatabase } from "./database";
 import { reportPersistFailure } from "./persist-failure";
 
 export { trimIndexedMessages };
@@ -64,7 +65,7 @@ export async function backfillAllSessions(): Promise<number> {
   let sessionIds: string[] = [];
   try {
     const { getDatabase } = await import("./database");
-    const rows = getDatabase().exec("SELECT DISTINCT session_id FROM messages");
+    const rows = tryGetDatabase()?.exec("SELECT DISTINCT session_id FROM messages") ?? [];
     sessionIds = rows?.[0]?.values?.map((r) => String(r[0])) ?? [];
   } catch (e) {
     console.warn("[SessionLog] 枚举会话失败（跳过回填）:", e);

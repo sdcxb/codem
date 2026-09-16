@@ -1228,8 +1228,81 @@ export async function resetDatabase(): Promise<SqlJsDatabase> {
 
 export function getDatabase(): SqlJsDatabase {
   if (dbFatal) throw new DatabaseFatalError();
-  if (!db) throw new Error("Database not initialized. Call initDatabase() first.");
+  if (!db) {
+    /**
+     * P5 第 7 段（真机实测后的根因修正）：**引擎是 rust 时"没有旧库"是正常状态。**
+     *
+     * 引擎默认切到 rust 之后，旧库在正常路径下根本不会初始化（那正是省内存的前提）。
+     * 而全仓有 25 处"端口没接手就回退旧库"的分支都写着 `const db = getDatabase()`，
+     * 数量多、形态杂。打包版实测：这些分支抛出的 `Database not initialized`
+     * 把 store（项目列表）、委派任务恢复、甚至插件侧边栏一起打崩了
+     * （界面出现"此面板不可用"）。
+     *
+     * 与其逐个改写 25 处，不如在**唯一的入口**上表达这个语义：
+     * rust 模式下返回 `null` —— 绝大多数调用点本来就有 `if (!db) return;` 的判空，
+     * 于是它们自动进入"旧库不可用 → 跳过"的正确分支。
+     *
+     * 为什么不干脆永远返回 null：**wasm 模式下"没有库"是真错误**
+     * （启动流程出了问题），必须继续抛出，否则会退化成"静默什么都不发生"。
+     */
+    // 见上方说明：这里**必须继续抛**（返回 null 会让没判空的调用点退化成 null 解引用，更难查）
+    throw new Error("Database not initialized. Call initDatabase() first.");
+  }
   return db;
+}
+
+/** 引擎是 rust（或端口已注册）→ 旧库在本进程里被**刻意**不加载 */
+function legacyDbIntentionallyAbsent(): boolean {
+  try {
+    // 动态 require 会形成循环依赖，所以用一个由 bootstrap 写入的标记。
+    return storageEngineIsNonLegacy;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 由存储引导设置：本进程选择的是"非旧库"引擎（rust）。
+ *
+ * 用模块级布尔而不是 import 端口模块，是为了**避免 database.ts ↔ port.ts 的循环依赖**
+ * （database.ts 是最底层，不该向上依赖）。
+ */
+let storageEngineIsNonLegacy = false;
+
+/** 引导阶段调用：告诉底层"本进程不用旧库" */
+export function markLegacyDbNotUsed(): void {
+  storageEngineIsNonLegacy = true;
+}
+
+/** 测试用：复原标记 */
+export function resetLegacyDbNotUsed(): void {
+  storageEngineIsNonLegacy = false;
+}
+
+/**
+ * 可选的旧库句柄（P5 第 7 段）：**旧库不可用时返回 null，不抛**。
+ *
+ * ## 为什么需要它
+ *
+ * 引擎默认切到 rust 之后，旧库在正常路径下**根本不会初始化**（那正是省内存的前提）。
+ * 于是所有"回退旧路径"的代码都会撞上 `getDatabase()` 抛出的
+ * `Database not initialized` —— 在打包版里实测到的表现是：
+ * `[Store] loadFromDB failed`、`[DelegationStorage] ... failed`、
+ * 甚至插件侧边栏整体崩成"此面板不可用"。
+ *
+ * 根因不是"少调了一次 init"，而是**这些回退分支把"旧库不存在"当成了异常**。
+ * 在新架构下它是**正常状态**，所以需要一个能表达"没有旧库"的读取入口。
+ *
+ * 用法：需要旧库的地方这样写 ——
+ * ```ts
+ * const db = tryGetDatabase();
+ * if (!db) return <该域在 rust 模式下的合理结果>;   // 通常交给端口，或返回空
+ * ```
+ * `getDatabase()` 本身保持不变（仍然抛）：写路径上"没有库"是真错误，不该被静默吞掉。
+ */
+export function tryGetDatabase(): SqlJsDatabase | null {
+  if (dbFatal) return null;
+  return db ?? null;
 }
 
 export function persistDatabase(): void {

@@ -10,7 +10,7 @@
  * - 不抛异常，失败时返回 null/空数组并 console.error
  */
 
-import { getDatabase, persistDatabase } from "../storage/database";
+import { getDatabase, persistDatabase, tryGetDatabase } from "../storage/database";
 import type { DelegationTask, DelegationTaskRow, DelegationState } from "./types";
 import { runGuarded } from "../storage/write-guard";
 import { reportPersistFailure } from "../storage/persist-failure";
@@ -84,7 +84,8 @@ export function createDelegationTask(task: DelegationTask): void {
     if (domainWrite(TABLE, [taskToWire(task)], { scope: "delegation.createDelegationTask", note: "委派任务未保存" })) {
       return;
     }
-    const db = getDatabase();
+    const db = tryGetDatabase();
+  if (!db) return;
     db.run(
       `INSERT INTO delegation_tasks
         (id, source_session_id, target_session_id, task, status, result, error, project_id, created_at, started_at, completed_at)
@@ -136,7 +137,8 @@ export function updateDelegationTaskStatus(
       );
       return;
     }
-    const db = getDatabase();
+    const db = tryGetDatabase();
+  if (!db) return;
     const sets: string[] = ["status = ?"];
     const params: any[] = [status];
 
@@ -172,7 +174,8 @@ export function getDelegationTask(taskId: string): DelegationTask | null {
   try {
     const rust = domainReadOne(TABLE, { id: taskId }, wireToTask);
     if (rust !== undefined) return rust;
-    const db = getDatabase();
+    const db = tryGetDatabase();
+  if (!db) return null;
     const result = db.exec("SELECT * FROM delegation_tasks WHERE id = ?", [taskId]);
     if (result.length === 0 || result[0].values.length === 0) return null;
 
@@ -201,7 +204,8 @@ export function getDelegationsBySource(sourceSessionId: string): DelegationTask[
   try {
     const rust = domainReadMany(TABLE, wireToTask, { source_session_id: sourceSessionId });
     if (rust) return rust.sort((a, b) => a.createdAt - b.createdAt);
-    const db = getDatabase();
+    const db = tryGetDatabase();
+  if (!db) return [];
     const result = db.exec(
       "SELECT * FROM delegation_tasks WHERE source_session_id = ? ORDER BY created_at ASC",
       [sourceSessionId],
@@ -219,7 +223,8 @@ export function getDelegationsByTarget(targetSessionId: string): DelegationTask[
   try {
     const rust = domainReadMany(TABLE, wireToTask, { target_session_id: targetSessionId });
     if (rust) return rust.sort((a, b) => a.createdAt - b.createdAt);
-    const db = getDatabase();
+    const db = tryGetDatabase();
+  if (!db) return [];
     const result = db.exec(
       "SELECT * FROM delegation_tasks WHERE target_session_id = ? ORDER BY created_at ASC",
       [targetSessionId],
@@ -237,7 +242,8 @@ export function getDelegationsByProject(projectId: string): DelegationTask[] {
   try {
     const rust = domainReadMany(TABLE, wireToTask, { project_id: projectId });
     if (rust) return rust.sort((a, b) => a.createdAt - b.createdAt);
-    const db = getDatabase();
+    const db = tryGetDatabase();
+  if (!db) return [];
     const result = db.exec(
       "SELECT * FROM delegation_tasks WHERE project_id = ? ORDER BY created_at ASC",
       [projectId],
@@ -259,7 +265,8 @@ export function getActiveDelegations(): DelegationTask[] {
         .filter((t) => t.status === "pending" || t.status === "running")
         .sort((a, b) => a.createdAt - b.createdAt);
     }
-    const db = getDatabase();
+    const db = tryGetDatabase();
+  if (!db) return [];
     const result = db.exec(
       "SELECT * FROM delegation_tasks WHERE status IN ('pending', 'running') ORDER BY created_at ASC",
     );
@@ -282,7 +289,8 @@ export function getRecentDelegations(limit: number = 200): DelegationTask[] {
     if (rust) {
       return rust.sort((a, b) => b.createdAt - a.createdAt).slice(0, Math.max(1, limit));
     }
-    const db = getDatabase();
+    const db = tryGetDatabase();
+  if (!db) return [];
     const result = db.exec(
       "SELECT * FROM delegation_tasks ORDER BY created_at DESC LIMIT ?",
       [Math.max(1, limit)],
@@ -301,7 +309,8 @@ export function deleteDelegationTask(taskId: string): void {
     if (domainDelete(TABLE, { id: taskId }, { scope: "delegation.deleteDelegationTask", note: "委派任务未删除" })) {
       return;
     }
-    const db = getDatabase();
+    const db = tryGetDatabase();
+  if (!db) return;
     db.run("DELETE FROM delegation_tasks WHERE id = ?", [taskId]);
     persistDatabase();
   } catch (e) {
@@ -325,7 +334,8 @@ export function clearCompletedDelegations(keepCount: number = 50): void {
       );
       if (removed !== null) return;
     }
-    const db = getDatabase();
+    const db = tryGetDatabase();
+  if (!db) return;
     db.run(
       `DELETE FROM delegation_tasks
        WHERE status IN ('completed', 'failed', 'cancelled')

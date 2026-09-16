@@ -105,6 +105,12 @@ export async function registerRustStoragePort(
   });
 
   try {
+    // 告诉最底层："本进程不用旧库"。这样那些"端口没接手就回退旧库"的分支
+    // 会拿到 null 并走进各自的判空分支，而不是抛 `Database not initialized`
+    // （打包版实测：那些异常会把项目列表、委派恢复与插件侧边栏一起打崩）。
+    const { markLegacyDbNotUsed } = await import("./database");
+    markLegacyDbNotUsed();
+
     const health = await port.start();
     setStoragePort(port);
     return {

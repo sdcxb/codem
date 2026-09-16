@@ -1,4 +1,5 @@
 import { initDatabase } from "./database";
+import { getStoragePort, hasStoragePort } from "./port";
 import * as SessionStorage from "./session";
 import * as MessageStorage from "./message";
 import { getSetting, setSetting, setSettingJSON, getSettingJSON, removeSetting } from "./settings";
@@ -117,8 +118,20 @@ export async function migrateFromLocalStorage(): Promise<MigrationResult> {
   };
 
   try {
-    // Initialize SQLite database
-    await initDatabase();
+    // ⚠️ 这一步是**整个启动路径上最后一处会加载 WASM 库的地方**（P5 第 7 段真机抓到）。
+    //
+    // 原实现无条件 `await initDatabase()` —— 于是"引擎为 rust、不加载 WASM 库"的改动
+    // 在打包版里**被无声地废掉了**：日志里明明写着"不加载 WASM 数据库"，
+    // 紧接着却是 `[Database] sql.js 引擎：wasm` + `Loaded 11137024 bytes from file`
+    // + `Saved 11137024 bytes to file`（整库读进来又写回去，P5 第 4 段省下的内存全花回来）。
+    //
+    // 这个函数真正需要的只有"设置"那一半：① 旧 settings key 改名；② localStorage → settings。
+    // 两者都走设置接口（rust 模式下就是端口）。下面那段 `v2_sessions` 迁移是历史包袱，
+    // 需要旧库 —— 有旧库就跑，没有就跳过（它整体包在 try/catch 里，失败只警告）。
+    const rustActive = hasStoragePort() && getStoragePort().kind === "rust";
+    if (!rustActive) {
+      await initDatabase();
+    }
 
     // 1. 迁移 SQLite settings 表内旧 key → 新 key
     const settingsMigrated = migrateSettingsKeys();

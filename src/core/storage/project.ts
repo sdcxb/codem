@@ -19,7 +19,7 @@
  *    镜像路径必须保持同一条过滤，否则"全局对话"会突然出现在项目列表里。
  */
 
-import { getDatabase, persistDatabase } from "./database";
+import { getDatabase, persistDatabase, tryGetDatabase } from "./database";
 import type { Project } from "../types";
 import { runGuarded } from "./write-guard";
 import { domainDelete, domainReadMany, domainReadOne, domainWrite } from "./domain-store";
@@ -92,7 +92,12 @@ function rowToProject(row: ProjectRow): Project {
 export function listProjects(): Project[] {
   const rust = domainReadMany(TABLE, wireToProject);
   if (rust) return rust.filter(visible).sort(byPinnedThenAccess);
-  const db = getDatabase();
+  // P5 第 7 段：引擎是 rust 但端口**还没注册好**（启动前几百毫秒）时，
+  // 旧库并不存在 —— 这是正常状态，不是异常（原来在这里抛
+  // "Database not initialized"，打包版实测把 store 与插件侧边栏一起打崩了）。
+  // 返回空列表是安全的：端口就绪后调用方会重新加载。
+  const db = tryGetDatabase();
+  if (!db) return [];
   // Exclude the global project (id="") and notebook virtual projects (id LIKE 'notebook:%')
   // — global is a FK seed record; notebook projects are internal and shown in the notebook UI only
   const result = db.exec("SELECT * FROM projects WHERE id != '' AND id NOT LIKE 'notebook:%' ORDER BY pinned DESC, last_accessed_at DESC");
@@ -113,7 +118,8 @@ export function listProjects(): Project[] {
 export function getProject(id: string): Project | null {
   const rust = domainReadOne(TABLE, { id }, wireToProject);
   if (rust !== undefined) return rust;
-  const db = getDatabase();
+  const db = tryGetDatabase();
+  if (!db) return null;
   const result = db.exec("SELECT * FROM projects WHERE id = ?", [id]);
   if (result.length === 0 || result[0].values.length === 0) return null;
   const row = result[0].values[0];

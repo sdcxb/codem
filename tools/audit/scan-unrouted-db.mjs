@@ -60,6 +60,9 @@ const PORT_SYMBOLS = [
   "domainPort",
   "hasStoragePort",
   "getStoragePort",
+  // P5 第 7 段：`tryGetDatabase()` 是"旧库可能不存在"的读取入口 ——
+  // 用它的模块已经在按新架构思考（读不到就跳过），不该被判为"未接线"。
+  "tryGetDatabase",
 ];
 
 function walk(dir) {
