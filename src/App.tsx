@@ -1131,7 +1131,7 @@ flushStreamBuffer(); // flush all on unmount
     // 失败不阻塞启动的既有约定保持不变。
     (async () => {
       try {
-        const { registerRustStoragePort, importSettingsFromLegacyDb, selectedEngine } = await import("./core/storage/bootstrap");
+        const { registerRustStoragePort, importSettingsFromLegacyDb, migrateFromLegacyDb, selectedEngine } = await import("./core/storage/bootstrap");
 
         // ① 先注册端口。不 await 旧库相关的任何东西。
         let boot: Awaited<ReturnType<typeof registerRustStoragePort>> = { kind: "skipped", reason: "未尝试" };
@@ -1158,6 +1158,11 @@ flushStreamBuffer(); // flush all on unmount
         // importSettingsFromLegacyDb 内部对"旧库读不到"是按"全新安装"处理的（返回 0），
         // 所以这里不会把"没加载"误报成故障。
         if (rustActive) {
+          // **首次自动迁移**（P5 第 6 段）：必须在任何"读会话/消息"之前跑完。
+          // 引擎是 rust 时渲染进程不再加载旧库，所以新库若是空的，界面会显示"暂无对话" ——
+          // 而用户的会话其实都在旧库里。这一步由 Rust 侧只读打开旧库搬过来（含逐表对账）。
+          // 幂等：新库已有会话 / 已有迁移标记时直接跳过，绝不覆盖用户在新库上的数据。
+          await migrateFromLegacyDb();
           await importSettingsFromLegacyDb();
           void selectedEngine;
         }

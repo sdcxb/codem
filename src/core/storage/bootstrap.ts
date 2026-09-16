@@ -142,6 +142,130 @@ export async function shutdownRustStoragePort(): Promise<void> {
 }
 
 /**
+ * **首次启动自动迁移**（P5 第 6 段）：把旧库（WASM/sql.js 落盘的 `codem-db.bin`）
+ * 搬进 Rust 库。
+ *
+ * ## 为什么必须自动（而不是让用户手工跑脚本）
+ *
+ * 引擎默认切到 rust 之后，**渲染进程不再加载 WASM 库** —— 那是"内存不再放大"的前提。
+ * 但也因此：用户的会话/消息只存在于旧库里，新库是空的 → 界面会显示"暂无对话"。
+ * 让用户自己跑 `node tools/migrate/storage-migrate.mjs` 不是产品该有的行为，
+ * 所以这一步由应用自己做，而且**由 Rust 侧做**（在 Rust 里直接只读打开旧库文件；
+ * 渲染侧读会把整库拉回内存，把省下的全花回去）。
+ *
+ * ## 触发条件（三条同时满足才搬，避免误搬）
+ *
+ * 1. 端口是 rust 且已预热（否则谈不上搬）；
+ * 2. **新库里没有任何会话**（`sessions = 0`）—— 有会话就说明用户已经在新库上工作过，
+ *    绝不能再用旧库覆盖（那会丢掉新库里的数据）；
+ * 3. 旧库文件存在、且**没有迁移标记**（`codem-storage-migrated-at`）。
+ *
+ * ## 为什么可以放心 `replace`（清空再导入）
+ *
+ * 条件 2 保证"新库里没有用户数据"：schema 阶段只种了一行全局项目，设置也可能是
+ * 上一版 `importSettingsFromLegacyDb` 搬过的。旧库才是权威源，
+ * 所以"先清空再导入"不会丢任何东西 —— 而且这避免了主键冲突（实测踩到过
+ * `UNIQUE constraint failed: projects.id`）。
+ *
+ * ## 失败怎么办
+ *
+ * Rust 侧对账不通过就**不写标记**，这里如实上报。下次启动会再试 ——
+ * 半成品不会被当成"迁移完成"，用户的旧库也一直在（只读打开，从不修改）。
+ */
+export async function migrateFromLegacyDb(
+  label = "storage.auto-migrate",
+): Promise<{ kind: "skipped"; reason: string } | { kind: "migrated"; tables: number; rows: number } | { kind: "failed"; error: unknown }> {
+  if (!hasStoragePort()) return { kind: "skipped", reason: "端口未注册" };
+  const port = getStoragePort();
+  if (port.kind !== "rust") return { kind: "skipped", reason: `引擎为 ${port.kind}` };
+
+  // 条件 2：新库里已有会话 → 用户已在新库上工作过，绝不用旧库覆盖
+  try {
+    const page = await port.data.query<{ id: string }>("crud.list", { table: "sessions", limit: 1 });
+    if ((page.items?.length ?? 0) > 0) {
+      return { kind: "skipped", reason: "新库已有会话数据（不覆盖）" };
+    }
+  } catch (e) {
+    return { kind: "skipped", reason: `无法查询新库会话：${String(e)}` };
+  }
+
+  // 条件 3：旧库路径 + 迁移标记
+  const legacyPath = await legacyDbPath();
+  if (!legacyPath) return { kind: "skipped", reason: "拿不到应用数据目录" };
+
+  const rust = port as unknown as {
+    engine: { health?: () => Promise<unknown> };
+    data: {
+      execute: (cmd: string, params?: Record<string, unknown>) => Promise<unknown>;
+      command?: <T>(cmd: string, params?: Record<string, unknown>) => Promise<T>;
+    };
+  };
+
+  // 先看标记（在旧库里找过没有意义 —— 标记写在新库）：读一次新库的 settings
+  try {
+    const settings = await port.data.query<{ key: string; value: string }>("crud.list", {
+      table: "settings",
+      limit: 2000,
+    });
+    if (settings.items?.some((s) => s.key === "codem-storage-migrated-at")) {
+      return { kind: "skipped", reason: "已有迁移标记" };
+    }
+  } catch {
+    /* 读不到设置不阻塞：让 Rust 侧再判一次（它自己也写/读标记） */
+  }
+
+  try {
+    interface MigrateResult {
+      migrated?: boolean;
+      tables?: number;
+      rows?: number;
+      skipped?: Array<{ what: string; rows: number }>;
+    }
+    // 用 `command`（结构化结果）而不是 `execute`（会被压成 {written}）——
+    // 否则 tables/rows 读不到、`?? 0` 兜底成 0，日志会打出"迁移了 0 张表"这种假成功。
+    const res = rust.data.command
+      ? await rust.data.command<MigrateResult>("migration.auto", { legacy_path: legacyPath })
+      : ((await rust.data.execute("migration.auto", { legacy_path: legacyPath })) as MigrateResult);
+
+    if (typeof res?.tables !== "number" || typeof res?.rows !== "number") {
+      // 契约对不上就如实报错，**不猜**（猜出来的 0 会变成一条假成功日志）
+      throw new Error(
+        `migration.auto 的返回形状不符合契约（期望 {tables, rows}，收到 ${JSON.stringify(res)?.slice(0, 120)}）`,
+      );
+    }
+    const dropped = (res.skipped ?? [])
+      .filter((s) => s.what.includes("孤儿"))
+      .reduce((a, s) => a + s.rows, 0);
+    console.log(
+      `[Storage] 已从旧库自动迁移：${res.tables} 张表 / ${res.rows} 行（对账通过` +
+        (dropped > 0 ? `；丢弃 ${dropped} 行外键孤儿（父行不存在）` : "") +
+        `）`,
+    );
+    return { kind: "migrated", tables: res.tables, rows: res.rows };
+  } catch (e) {
+    reportActionFailure(
+      label,
+      e,
+      "旧数据自动迁移未完成（旧库未改动，下次启动会重试；本次仍可正常使用新库）",
+    );
+    return { kind: "failed", error: e };
+  }
+}
+
+/** 旧库（sql.js 落盘）的绝对路径 */
+async function legacyDbPath(): Promise<string | null> {
+  try {
+    const { getAppDataDir } = await import("../file-api");
+    const base = await getAppDataDir();
+    if (!base) return null;
+    const sep = base.includes("/") && !base.includes("\\") ? "/" : "\\";
+    return `${base}${sep}codem-db.bin`;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * 一次性把配置面从旧库（WASM）搬进 Rust 库。
  *
  * ## 为什么需要它

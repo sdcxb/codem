@@ -1,4 +1,4 @@
-﻿//! 迁移原语（P4）：**批量导入**与**对账**。
+//! 迁移原语（P4）：**批量导入**与**对账**。
 //!
 //! ## 为什么需要"批量导入"这种形态
 //!
@@ -31,7 +31,7 @@ use rusqlite::{params, params_from_iter, Connection};
 use serde_json::{json, Value};
 
 use crate::engine::Engine;
-use crate::error::{DbError, DbResult};
+use crate::error::{DbError, DbResult, ErrorCode};
 use crate::repo::{limit_of, opt_text, req_text};
 
 /// 允许导入的表 = **从 TS schema 生成**的业务表清单（`sql/tables.json`）。
@@ -1144,4 +1144,363 @@ mod tests {
             );
         }
     }
+}
+
+// ========== 自动迁移（P5 第 6 段）：Rust 侧直接打开旧库 ==========
+//
+// ## 为什么必须由 Rust 侧做
+//
+// P5 第 4 段之后，引擎为 rust 时渲染进程**不再加载 WASM 数据库** —— 那正是
+// "内存不再放大"的前提。所以"首次自动迁移"不能靠渲染侧读旧库：那会立刻把整库
+// 读回内存，把省下来的全花回去。
+//
+// ## 安全边界：为什么这不是"绕过 authorizer"
+//
+// authorizer 禁止的是 SQL 里的 `ATTACH`（把另一个库挂进当前连接）。
+// 这里用的是 SQLite 自己的**多连接**能力：`Connection::open_with_flags(旧库, READ_ONLY)`
+// 开一个普通只读连接去读它 —— 两个库各自独立，没有任何 SQL 级别的挂载。
+// 安全性不靠 SQL 开关，而靠"只对旧库执行固定的 SELECT"。
+//
+// ## 铁律
+//
+// 1. **只读旧库**（OPEN_READONLY），绝不写它 —— 回滚开关还要能回退到它；
+// 2. **先对账再宣告成功**：逐表比对行数与内容摘要，不一致就不写标记、如实报错；
+// 3. **失败不留半截**：导入走一个事务（全成或全不成）；
+// 4. **孤儿行**：旧库缺少级联清理，子行可能指向不存在的父行。直接导入会触发外键失败并
+//    整个事务回滚，所以按 IMPORT_ORDER 逐表导入时**跳过孤儿**并如实计数上报。
+
+/// 子表 → 它依赖的父表（用于孤儿过滤）。只列出真正有外键的关系。
+const FK_PARENTS: &[(&str, &str)] = &[
+    ("sessions", "projects"),
+    ("messages", "sessions"),
+    ("tool_calls", "messages"),
+    ("attachments", "sessions"),
+    ("session_events", "sessions"),
+    ("telemetry_events", "sessions"),
+    ("message_feedback", "messages"),
+    ("cost_records", "sessions"),
+    ("prompt_drafts", "sessions"),
+    ("todo_lists", "sessions"),
+    ("agent_messages", "sessions"),
+    ("needs_you_pending", "sessions"),
+    ("notes", "notebooks"),
+    ("note_links", "notes"),
+    ("note_versions", "notes"),
+    ("notebook_sources", "notebooks"),
+    ("notebook_chunks", "notebook_sources"),
+    ("flashcards", "notebooks"),
+    ("graph_nodes", "notebooks"),
+    ("graph_edges", "notebooks"),
+    ("notebook_groups", "notebooks"),
+    ("squad_members", "squads"),
+    ("issue_comments", "issues"),
+];
+
+fn fk_parent_of(table: &str) -> Option<&'static str> {
+    FK_PARENTS.iter().find(|(c, _)| *c == table).map(|(_, p)| *p)
+}
+
+/// 读旧库某张表的全部行；表不存在时返回空（旧库可能没有新表）
+fn read_legacy_table(conn: &Connection, table: &str) -> DbResult<(Vec<Value>, usize)> {
+    let exists: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?1",
+            [table],
+            |r| r.get(0),
+        )
+        .map_err(DbError::from)?;
+    if exists == 0 {
+        return Ok((Vec::new(), 0));
+    }
+    let mut stmt = conn
+        .prepare(&format!("SELECT * FROM \"{table}\""))
+        .map_err(DbError::from)?;
+    let col_count = stmt.column_count();
+    let mut rows = stmt.query([]).map_err(DbError::from)?;
+    let mut out: Vec<Value> = Vec::new();
+    let mut blob_columns_seen: usize = 0;
+    while let Some(row) = rows.next().map_err(DbError::from)? {
+        let mut arr: Vec<Value> = Vec::with_capacity(col_count);
+        for i in 0..col_count {
+            let v: SqlValue = row.get(i).map_err(DbError::from)?;
+            arr.push(match v {
+                SqlValue::Null => Value::Null,
+                SqlValue::Integer(n) => json!(n),
+                SqlValue::Real(f) => json!(f),
+                SqlValue::Text(s) => Value::String(s),
+                SqlValue::Blob(b) => {
+                    // BLOB 用**十六进制**搬运（不引入 base64 依赖；十六进制只比 base64 大 33%，
+                    // 而旧库里真正的二进制列很少）。调用方拿到的是 `blobhex:<hex>` 前缀的文本，
+                    // 一眼能看出它原本是 BLOB。
+                    let mut hex = String::with_capacity(7 + b.len() * 2);
+                    hex.push_str("blobhex:");
+                    for byte in &b {
+                        hex.push_str(&format!("{byte:02x}"));
+                    }
+                    blob_columns_seen += 1;
+                    Value::String(hex)
+                }
+            });
+        }
+        out.push(Value::Array(arr));
+    }
+    Ok((out, blob_columns_seen))
+}
+
+/// `SELECT *` 的列名（顺序与行数组一致）
+fn read_legacy_columns(conn: &Connection, table: &str) -> DbResult<Vec<String>> {
+    let mut stmt = conn
+        .prepare(&format!("SELECT * FROM \"{table}\" LIMIT 0"))
+        .map_err(DbError::from)?;
+    Ok(stmt
+        .column_names()
+        .iter()
+        .map(|s| s.to_string())
+        .collect::<Vec<_>>())
+}
+
+/// 对一组「二维数组行」按与 `table_digest` **完全相同**的规则算摘要。
+///
+/// 为什么要在内存里算：源端（旧库）的行已经被读成 JSON 了，
+/// 只有用同一套 `value_bytes` 规则才能保证"搬得对不对"可比。
+fn digest_json_rows(rows: &[Value]) -> (i64, String) {
+    let mut hash: i64 = -0x7a5b_2a3d_1c4f_9e11i64;
+    for row in rows {
+        if let Some(arr) = row.as_array() {
+            for v in arr {
+                let sv: SqlValue = match v {
+                    Value::Null => SqlValue::Null,
+                    Value::Bool(b) => SqlValue::Integer(i64::from(*b)),
+                    Value::Number(n) => {
+                        if let Some(i) = n.as_i64() {
+                            SqlValue::Integer(i)
+                        } else {
+                            SqlValue::Real(n.as_f64().unwrap_or(0.0))
+                        }
+                    }
+                    Value::String(s) => SqlValue::Text(s.clone()),
+                    other => SqlValue::Text(other.to_string()),
+                };
+                for byte in value_bytes(&sv) {
+                    hash ^= i64::from(byte);
+                    hash = hash.wrapping_mul(0x100_0000_01b3);
+                }
+                hash ^= 0x1f;
+                hash = hash.wrapping_mul(0x100_0000_01b3);
+            }
+        }
+        hash ^= 0x1e;
+        hash = hash.wrapping_mul(0x100_0000_01b3);
+    }
+    (rows.len() as i64, format!("{:016x}", hash as u64))
+}
+
+/// **自动迁移**：把旧库（sql.js 落盘的 `codem-db.bin`）搬进当前 Rust 库。
+///
+/// 参数：`{ "legacy_path": "…", "dry_run": false }`
+pub fn auto_migrate(engine: &Engine, p: &Value) -> DbResult<Value> {
+    let legacy_path = p
+        .get("legacy_path")
+        .and_then(|x| x.as_str())
+        .ok_or_else(|| DbError::missing("legacy_path"))?
+        .to_string();
+    let dry_run = p.get("dry_run").and_then(|x| x.as_bool()).unwrap_or(false);
+
+    if !std::path::Path::new(&legacy_path).exists() {
+        return Err(DbError::not_found(format!("旧库不存在：{legacy_path}")));
+    }
+
+    // 只读打开：绝不写旧库（回滚开关还要用它）
+    let legacy = Connection::open_with_flags(
+        &legacy_path,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_URI,
+    )
+    .map_err(DbError::from)?;
+
+    // 先确认旧库"能读"：坏的源不该被搬进新库。
+    //
+    // ⚠️ 这里**不能**用 `PRAGMA quick_check`（实测踩到）：旧库里有 **FTS4** 的
+    // `session_fts`，而 FTS4 的完整性检查会试图重建倒排索引 —— 在只读连接上直接失败：
+    // `unable to validate the inverted index for FTS4 table main.session_fts:
+    //  attempt to write a readonly database`。
+    // 旧库是只读打开的（回滚开关还要用它，绝不能写），所以改用**只读探针**：
+    // 能列举表 + 稍后逐表读行就算"可读"。真正的硬证据是导入之后的逐表对账。
+    let tables_readable: i64 = legacy
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table'",
+            [],
+            |r| r.get(0),
+        )
+        .map_err(|e| DbError::new(ErrorCode::Corrupt, format!("旧库不可读（无法列举表）：{e}")))?;
+    if tables_readable == 0 {
+        return Err(DbError::new(
+            ErrorCode::Corrupt,
+            "旧库里没有任何表（不是 Codem 的库？）",
+        ));
+    }
+
+    let allowed = importable_tables();
+    let mut jobs: Vec<Value> = Vec::new();
+    let mut source_rows: Vec<(String, i64, String)> = Vec::new();
+    let mut skipped: Vec<(String, i64)> = Vec::new();
+    let mut blob_columns_total: usize = 0;
+    // 每张表"有效主键"的集合（父表的），用于过滤子表的孤儿行
+    let mut id_sets: std::collections::HashMap<String, std::collections::HashSet<String>> =
+        std::collections::HashMap::new();
+
+    for table in IMPORT_ORDER {
+        if !allowed.iter().any(|t| t == table) {
+            continue;
+        }
+        let columns = match read_legacy_columns(&legacy, table) {
+            Ok(c) if !c.is_empty() => c,
+            _ => {
+                skipped.push((table.to_string(), 0));
+                continue;
+            }
+        };
+        let (mut rows, blob_cols) = read_legacy_table(&legacy, table)?;
+        blob_columns_total += blob_cols;
+
+        // 孤儿过滤：有父表时，丢弃"父行不存在"的子行
+        if let Some(parent) = fk_parent_of(table) {
+            if let Some(valid) = id_sets.get(parent) {
+                let fk_col = columns
+                    .iter()
+                    .position(|c| c == &format!("{}_id", parent.trim_end_matches('s')))
+                    .or_else(|| columns.iter().position(|c| c == "parent_id"))
+                    .or_else(|| columns.iter().position(|c| c == "note_id"))
+                    .or_else(|| columns.iter().position(|c| c == "issue_id"));
+                if let Some(idx) = fk_col {
+                    let before = rows.len();
+                    rows.retain(|r| {
+                        r.as_array()
+                            .and_then(|a| a.get(idx))
+                            .and_then(|v| v.as_str())
+                            .map(|s| valid.contains(s))
+                            .unwrap_or(false)
+                    });
+                    let dropped = before - rows.len();
+                    if dropped > 0 {
+                        skipped.push((format!("{table}(孤儿)"), dropped as i64));
+                    }
+                }
+            }
+        }
+
+        // 记录本表主键，供后面的子表过滤
+        if let Some(id_idx) = columns.iter().position(|c| c == "id") {
+            let set: std::collections::HashSet<String> = rows
+                .iter()
+                .filter_map(|r| {
+                    r.as_array()
+                        .and_then(|a| a.get(id_idx))
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string())
+                })
+                .collect();
+            id_sets.insert(table.to_string(), set);
+        }
+
+        let (n, digest) = digest_json_rows(&rows);
+        source_rows.push((table.to_string(), n, digest));
+        if !rows.is_empty() {
+            jobs.push(json!({
+                "table": table,
+                "columns": columns,
+                "rows": rows,
+                "mode": "insert",
+            }));
+        }
+    }
+
+    if dry_run {
+        return Ok(json!({
+            "dry_run": true,
+            "legacy_path": legacy_path,
+            "tables": jobs.len(),
+            "rows": source_rows.iter().map(|(_, n, _)| *n).sum::<i64>(),
+            "per_table": source_rows
+                .iter()
+                .map(|(t, n, d)| json!({ "table": t, "rows": n, "digest": d }))
+                .collect::<Vec<_>>(),
+        }));
+    }
+
+    // 单事务导入（`replace: true` 会先清空目标表：目标端的旧数据不该和源端混在一起）
+    let payload = json!({ "tables": jobs, "replace": true });
+    let imported = import_all(engine, &payload)?;
+    let _ = imported;
+
+    // **对账**：逐表比对行数与内容摘要（两端各自算）
+    let mut mismatches: Vec<Value> = Vec::new();
+    let mut reconciled: Vec<Value> = Vec::new();
+    for (table, src_rows, src_digest) in &source_rows {
+        let after = engine.with_conn(|conn| {
+            let exists: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?1",
+                    [table.as_str()],
+                    |r| r.get(0),
+                )
+                .map_err(DbError::from)?;
+            if exists == 0 {
+                return Ok((0i64, String::new()));
+            }
+            let mut stmt = conn
+                .prepare(&format!("SELECT * FROM \"{table}\""))
+                .map_err(DbError::from)?;
+            let col_count = stmt.column_count();
+            let mut rows = stmt.query([]).map_err(DbError::from)?;
+            let mut hash: i64 = -0x7a5b_2a3d_1c4f_9e11i64;
+            let mut n: i64 = 0;
+            while let Some(row) = rows.next().map_err(DbError::from)? {
+                n += 1;
+                for i in 0..col_count {
+                    let v: SqlValue = row.get(i).map_err(DbError::from)?;
+                    for byte in value_bytes(&v) {
+                        hash ^= i64::from(byte);
+                        hash = hash.wrapping_mul(0x100_0000_01b3);
+                    }
+                    hash ^= 0x1f;
+                    hash = hash.wrapping_mul(0x100_0000_01b3);
+                }
+                hash ^= 0x1e;
+                hash = hash.wrapping_mul(0x100_0000_01b3);
+            }
+            Ok((n, format!("{:016x}", hash as u64)))
+        })?;
+        if after.0 != *src_rows || (after.1 != *src_digest && *src_rows > 0) {
+            mismatches.push(json!({
+                "table": table,
+                "source_rows": src_rows, "source_digest": src_digest,
+                "target_rows": after.0, "target_digest": after.1,
+            }));
+        } else {
+            reconciled.push(json!({ "table": table, "rows": src_rows, "digest": src_digest }));
+        }
+    }
+
+    if !mismatches.is_empty() {
+        // 对账不通过 → **不写标记**（下次启动会再试），并如实报错
+        return Err(DbError::new(
+            ErrorCode::Other,
+            format!("自动迁移对账未通过（{} 张表）：{}", mismatches.len(), serde_json::to_string(&mismatches).unwrap_or_default()),
+        ));
+    }
+
+    // 对账通过 → 记录标记（"只搬一次"的依据）
+    let at = crate::schema::now_ms();
+    mark_migrated(engine, &json!({ "at": at }))?;
+
+    Ok(json!({
+        "migrated": true,
+        "legacy_path": legacy_path,
+        "tables": reconciled.len(),
+        "rows": reconciled.iter().filter_map(|t| t.get("rows").and_then(|v| v.as_i64())).sum::<i64>(),
+        "per_table": reconciled,
+        "skipped": skipped.iter().map(|(t, n)| json!({ "what": t, "rows": n })).collect::<Vec<_>>(),
+        // BLOB 列被转成 `blobhex:` 文本搬运 —— 数量如实上报（静默改形是最坏的一种）
+        "blob_columns_converted": blob_columns_total,
+    }))
 }

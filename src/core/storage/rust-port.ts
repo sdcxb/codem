@@ -266,6 +266,31 @@ class RustDataPort implements StorageDataPort {
     const raw = await call<{ written?: number }>(this.t, command, params);
     return { written: typeof raw?.written === "number" ? raw.written : 1 };
   }
+
+  /**
+   * 执行命令并返回**完整的结构化结果**（P5 第 6 段新增）。
+   *
+   * ## 为什么不能复用 `execute`
+   *
+   * `execute` 刻意把结果压成 `{ written }` —— 对"写入类"调用够用，而且能让调用方
+   * 一眼看出"到底写了几行"。但有些命令的返回值**本身就是结果**，例如
+   * `migration.auto` 返回 `{ migrated, tables, rows, per_table, skipped }`。
+   *
+   * 用 `execute` 调它踩过一次坑：拿到的对象里没有 `tables`/`rows`，
+   * 于是 `?? 0` 兜底成 0，日志打出 **"已从旧库自动迁移：0 张表 / 0 行（对账通过）"** ——
+   * 一次真实的迁移被记成了"0 行"的假成功。这类"字段读不到就静默取默认值"正是
+   * 本项目一直在消灭的模式，所以这里不猜：读不到就抛，让调用方知道契约对不上。
+   */
+  async command<T = Record<string, unknown>>(
+    command: string,
+    params: Record<string, unknown> = {},
+  ): Promise<T> {
+    const raw = await call<T>(this.t, command, params);
+    if (raw === null || raw === undefined) {
+      throw new Error(`命令 ${command} 返回了空结果（期望结构化对象）`);
+    }
+    return raw;
+  }
 }
 
 // ========== 配置面（同步读 + 写穿） ==========
