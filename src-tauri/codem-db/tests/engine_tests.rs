@@ -290,9 +290,56 @@ fn limit_is_clamped_and_has_more_is_engine_computed() {
     assert_eq!(last["next_cursor"], serde_json::Value::Null);
 }
 
+/// `hidden` 必须出现在消息读的返回值里。
+///
+/// 真机验证抓到的缺陷：`messages.list` 的 SELECT 漏了这一列，于是读侧镜像
+/// 以为"没有隐藏行"，页面刷新后已压缩的消息又出现了。
+/// 渲染侧的 `listMessagesMerged` 明确把"索引里的 hidden 状态"当权威，
+/// 所以少这一列会让压缩失效（上下文永不缩小）。
 #[test]
-fn messages_list_requires_explicit_include_hidden() {
-    let (_d, engine) = temp_engine("hidden");
+fn messages_list_and_get_expose_hidden_column() {
+    let (_d, engine) = temp_engine("hidden-col");
+    call(&engine, "sessions.upsert", json!({ "id": "s1" }));
+    call(
+        &engine,
+        "messages.create",
+        json!({ "id": "m1", "session_id": "s1", "role": "user", "content": "可见", "timestamp": 1 }),
+    );
+    call(
+        &engine,
+        "messages.create",
+        json!({ "id": "m2", "session_id": "s1", "role": "assistant", "content": "将被隐藏", "timestamp": 2 }),
+    );
+    call(&engine, "messages.update", json!({ "id": "m2", "hidden": 1 }));
+
+    // list（含 hidden）必须给出 hidden 字段
+    let all = call(
+        &engine,
+        "messages.list",
+        json!({ "session_id": "s1", "include_hidden": true, "limit": 10 }),
+    );
+    let items = all["items"].as_array().unwrap();
+    assert_eq!(items.len(), 2);
+    let m2 = items.iter().find(|m| m["id"] == json!("m2")).unwrap();
+    assert_eq!(m2["hidden"], json!(1), "list 必须返回 hidden 列（读侧镜像靠它判定压缩）");
+    let m1 = items.iter().find(|m| m["id"] == json!("m1")).unwrap();
+    assert_eq!(m1["hidden"], json!(0));
+
+    // 默认（不含 hidden）仍然过滤
+    let visible = call(
+        &engine,
+        "messages.list",
+        json!({ "session_id": "s1", "include_hidden": false, "limit": 10 }),
+    );
+    assert_eq!(visible["items"].as_array().unwrap().len(), 1);
+
+    // get 也要给
+    let got = call(&engine, "messages.get", json!({ "id": "m2" }));
+    assert_eq!(got["item"]["hidden"], json!(1), "messages.get 也必须返回 hidden");
+}
+
+#[test]
+fn messages_list_requires_explicit_include_hidden() {    let (_d, engine) = temp_engine("hidden");
     call(&engine, "sessions.upsert", json!({ "id": "s1" }));
     let err = dispatch(&engine, "messages.list", &json!({ "session_id": "s1" })).unwrap_err();
     assert!(

@@ -1148,7 +1148,14 @@ flushStreamBuffer(); // flush all on unmount
             if (activeId) {
               const { getStoragePort, hasStoragePort } = await import("./core/storage/port");
               if (hasStoragePort() && getStoragePort().kind === "rust") {
-                (getStoragePort() as unknown as { warmupEvents?: (ids: string[]) => void }).warmupEvents?.([activeId]);
+                const p = getStoragePort() as unknown as {
+                  warmupEvents?: (ids: string[]) => void;
+                  warmupMessages?: (id: string) => void;
+                };
+                p.warmupEvents?.([activeId]);
+                // 消息索引镜像也一起预热：否则该会话第一次读会落到旧库，
+                // 而旧库的 hidden 状态已经过时（写已经切到 Rust）→ 会把压缩消息复活
+                p.warmupMessages?.(activeId);
               }
             }
           }

@@ -817,6 +817,174 @@ class RustEventMirror {
   }
 }
 
+// ========== 消息索引的会话级镜像（P3 第 7 段） ==========
+//
+// ## 为什么读必须跟着写一起切（这是 P3 第 6 段留下的隐患）
+//
+// 第 6 段把**索引写**切到了 Rust，但**读**还在旧库。渲染侧有条明确的教训
+// （见 `listMessagesMerged` 的注释）：**索引里的 hidden 状态也是权威** ——
+// 软删除行只在索引里，日志里没有墓碑。于是：
+//   写进了 Rust → 旧库那份 hidden 状态是旧的 → 合并时把已压缩的消息**加回来** →
+//   上下文永不缩小 → 死循环（用户现场"压缩了 840 条、上下文一点没小"就是这个机制）。
+//
+// 所以这一段把读也切过来：**按会话**把该会话的消息索引读进镜像。
+//
+// ## 为什么这不违反"大表不进渲染进程"
+//
+// 镜像的粒度是**单个会话**，而不是整个库；而且 `listMessagesMerged` 本来就会把
+// 一个会话的消息**全部读进内存**再渲染（它返回的是数组）。所以这里没有增加新的
+// 内存负担 —— 只是把"每次查询都读一遍"变成"读一次、之后同步读"。
+// 真正的语料级缓冲（整个库、附件正文、全文索引）仍然不进来。
+
+export interface MirrorMessageRow {
+  id: string;
+  session_id: string;
+  role: string;
+  content: string;
+  reasoning?: string | null;
+  timestamp: number;
+  model?: string | null;
+  status?: string | null;
+  hidden?: number;
+}
+
+class RustMessageMirror {
+  private bySession = new Map<string, MirrorMessageRow[]>();
+  private byId = new Map<string, MirrorMessageRow>();
+  private loaded = new Set<string>();
+  private loading = new Map<string, Promise<void>>();
+  private failures = 0;
+  /** 单会话加载上限（防极端会话无限拉取；超出时记录并截断，读操作会回退） */
+  private readonly maxBatch = 5000;
+  private readonly maxRounds = 60;
+  private truncated = false;
+
+  constructor(
+    private readonly t: StorageTransport,
+    private readonly onFailure: (scope: string, e: unknown, note: string) => void,
+  ) {}
+
+  isLoaded(sessionId: string): boolean {
+    return this.loaded.has(sessionId);
+  }
+
+  /** 加载是否被上限截断（截断后必须以旧库为准，避免读到不完整集合） */
+  isTruncated(): boolean {
+    return this.truncated;
+  }
+
+  ensureLoaded(sessionId: string, onLoaded?: () => void): void {
+    if (this.loaded.has(sessionId)) {
+      onLoaded?.();
+      return;
+    }
+    if (this.loading.has(sessionId)) {
+      if (onLoaded) void this.loading.get(sessionId)?.then(() => onLoaded());
+      return;
+    }
+    const job = this.loadSession(sessionId)
+      .then(() => {
+        this.loaded.add(sessionId);
+      })
+      .catch((e) => {
+        this.failures++;
+        this.onFailure("messages.load", e, "消息索引未能加载（该会话继续使用旧引擎读取）");
+      })
+      .finally(() => {
+        this.loading.delete(sessionId);
+      });
+    this.loading.set(sessionId, job);
+    if (onLoaded) void job.then(() => { if (this.loaded.has(sessionId)) onLoaded(); });
+  }
+
+  private async loadSession(sessionId: string): Promise<void> {
+    const rows: MirrorMessageRow[] = [];
+    let offset = 0;
+    for (let round = 0; round < this.maxRounds; round++) {
+      const page = await call<{ items?: unknown[]; has_more?: boolean }>(this.t, "messages.list", {
+        session_id: sessionId,
+        limit: this.maxBatch,
+        offset,
+        include_hidden: true, // 索引读必须含 hidden（它的 hidden 状态是权威）
+      });
+      const items = (page?.items ?? []).map((r) => this.normalize(r));
+      rows.push(...items);
+      if (!page?.has_more || items.length === 0) break;
+      offset += items.length;
+      if (round === this.maxRounds - 1) this.truncated = true;
+    }
+    this.bySession.set(sessionId, rows);
+    for (const r of rows) this.byId.set(r.id, r);
+  }
+
+  private normalize(r: unknown): MirrorMessageRow {
+    const o = (r ?? {}) as Record<string, unknown>;
+    return {
+      id: String(o.id ?? ""),
+      session_id: String(o.session_id ?? ""),
+      role: String(o.role ?? "user"),
+      content: typeof o.content === "string" ? o.content : "",
+      reasoning: (o.reasoning as string | null) ?? null,
+      timestamp: Number(o.timestamp ?? 0),
+      model: (o.model as string | null) ?? null,
+      status: (o.status as string | null) ?? null,
+      hidden: Number(o.hidden ?? 0),
+    };
+  }
+
+  list(sessionId: string): MirrorMessageRow[] {
+    return [...(this.bySession.get(sessionId) ?? [])];
+  }
+
+  byIdLookup(id: string): MirrorMessageRow | undefined {
+    return this.byId.get(id);
+  }
+
+  hiddenIds(sessionId: string): Set<string> {
+    return new Set((this.bySession.get(sessionId) ?? []).filter((m) => m.hidden === 1).map((m) => m.id));
+  }
+
+  count(sessionId: string): number {
+    return (this.bySession.get(sessionId) ?? []).length;
+  }
+
+  /** 本地应用一次写入（让镜像与刚写进 Rust 的索引保持一致） */
+  applyWrite(row: Partial<MirrorMessageRow> & { id: string; session_id: string }): void {
+    const list = this.bySession.get(row.session_id);
+    const full: MirrorMessageRow = {
+      id: row.id,
+      session_id: row.session_id,
+      role: row.role ?? "user",
+      content: row.content ?? "",
+      reasoning: row.reasoning ?? null,
+      timestamp: row.timestamp ?? Date.now(),
+      model: row.model ?? null,
+      status: row.status ?? "done",
+      hidden: row.hidden ?? 0,
+    };
+    if (list) {
+      const i = list.findIndex((m) => m.id === row.id);
+      if (i >= 0) list[i] = { ...list[i], ...full };
+      else list.push(full);
+    }
+    this.byId.set(row.id, full);
+  }
+
+  /** 删除（deleteMessage / trim）后的镜像维护 */
+  removeByIds(sessionId: string, ids: string[]): void {
+    const set = new Set(ids);
+    const list = this.bySession.get(sessionId);
+    if (list) this.bySession.set(sessionId, list.filter((m) => !set.has(m.id)));
+    for (const id of ids) this.byId.delete(id);
+  }
+
+  stats(): { sessions: number; rows: number; failures: number; truncated: boolean } {
+    let rows = 0;
+    for (const l of this.bySession.values()) rows += l.length;
+    return { sessions: this.loaded.size, rows, failures: this.failures, truncated: this.truncated };
+  }
+}
+
 // ========== 聚合端口 ==========
 
 export class RustStoragePort implements StoragePort {
@@ -829,6 +997,8 @@ export class RustStoragePort implements StoragePort {
   readonly configDomain: RustConfigDomainCache;
   /** 事件日志的镜像 + 发件箱（只追加面） */
   readonly events: RustEventMirror;
+  /** 消息索引的会话级镜像（数据面读路径） */
+  readonly messages: RustMessageMirror;
   private readonly reportFailure: (stream: string, e: unknown, note: string) => void;
   private readonly transport: StorageTransport;
 
@@ -844,6 +1014,12 @@ export class RustStoragePort implements StoragePort {
     this.append = new RustAppendPort(transport, onFailure);
     this.configDomain = new RustConfigDomainCache(transport, onFailure);
     this.events = new RustEventMirror(transport, onFailure);
+    this.messages = new RustMessageMirror(transport, onFailure);
+  }
+
+  /** 为某个会话预热消息索引镜像（打开会话时调用） */
+  warmupMessages(sessionId: string): void {
+    this.messages.ensureLoaded(sessionId);
   }
 
   /**
@@ -889,6 +1065,16 @@ export class RustStoragePort implements StoragePort {
     await this.events.flush();
     await this.config.flush();
     await this.engine.checkpoint();
+  }
+
+  /** 供消息索引写路径使用：把刚写入 Rust 的行同步进镜像（读与写保持一致） */
+  applyMessageWrite(row: Partial<MirrorMessageRow> & { id: string; session_id: string }): void {
+    this.messages.applyWrite(row);
+  }
+
+  /** 供删除路径使用：把已删除的 id 从镜像移除 */
+  applyMessageDelete(sessionId: string, ids: string[]): void {
+    this.messages.removeByIds(sessionId, ids);
   }
 
   /** 供事件日志使用：把一条追加排队落库（并回传真实 seq 修正镜像） */

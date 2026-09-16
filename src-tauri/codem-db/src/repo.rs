@@ -463,6 +463,12 @@ fn message_row(r: &Row<'_>) -> rusqlite::Result<Value> {
         "timestamp": r.get::<_, i64>(5)?,
         "model": r.get::<_, Option<String>>(6)?,
         "status": r.get::<_, Option<String>>(7)?,
+        // ⚠️ `hidden` 必须返回：渲染侧的 `listMessagesMerged` 明确把"索引里的 hidden 状态"
+        // 当作权威（软删除行只在索引里）。少返回这一列，读侧的镜像就会以为"没有隐藏行"，
+        // 已压缩的消息会被**复活**（上下文永不缩小）。
+        // 这个缺陷是**真机验证**抓到的：单元测试里我在假数据里带了 hidden 字段，
+        // 而真实引擎的 SELECT 漏了这一列 —— 页面刷新后隐藏消息又出现了。
+        "hidden": r.get::<_, i64>(8)?,
     }))
 }
 
@@ -874,7 +880,7 @@ pub fn messages_get(engine: &Engine, p: &Value) -> DbResult<Value> {
     engine.with_conn(|conn| {
         let mut stmt = conn
             .prepare_cached(
-                "SELECT id, session_id, role, content, reasoning, timestamp, model, status \
+                "SELECT id, session_id, role, content, reasoning, timestamp, model, status, hidden \
                  FROM messages WHERE id = ?1",
             )
             .map_err(DbError::from)?;
@@ -899,7 +905,7 @@ pub fn messages_list(engine: &Engine, p: &Value) -> DbResult<Value> {
     engine.with_conn(|conn| {
         let hidden_clause = if include_hidden { "" } else { " AND hidden = 0" };
         let sql = format!(
-            "SELECT id, session_id, role, content, reasoning, timestamp, model, status \
+            "SELECT id, session_id, role, content, reasoning, timestamp, model, status, hidden \
              FROM messages WHERE session_id = ?1{hidden_clause} ORDER BY timestamp ASC, id ASC LIMIT ?2 OFFSET ?3"
         );
         let mut stmt = conn.prepare_cached(&sql).map_err(DbError::from)?;

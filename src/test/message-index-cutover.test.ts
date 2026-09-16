@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 消息索引写分流契约（P3 第 6 段）。
  *
  * ## 这一段与只追加面不同的地方
@@ -17,6 +17,7 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { setStoragePort } from "../core/storage/port";
+import { RustStoragePort } from "../core/storage/rust-port";
 
 const appendCalls: Array<{ sessionId: string; id: string; content: string }> = [];
 vi.mock("../core/storage/session-jsonl", () => ({
@@ -198,5 +199,89 @@ describe("消息索引写分流", () => {
     await settle();
     expect(appendCalls, "权威日志已写好，不因索引失败回滚").toHaveLength(1);
     expect(failures.some((n) => n.includes("索引"))).toBe(true);
+  });
+});
+
+describe("消息读路径（P3 第 7 段）—— 读写必须同处，隐藏状态不能过时", () => {
+  /** 带消息镜像的端口：`messages.list` 返回给定行 */
+  function portWithRows(rows: Array<Record<string, unknown>>) {
+    const executed: Array<{ cmd: string; params: Record<string, unknown> }> = [];
+    const transport = {
+      invokeCommand: async (command: string, params?: Record<string, unknown>) => {
+        executed.push({ command, params: params ?? {} });
+        if (command === "messages.list") {
+          return { ok: true, result: { items: rows, has_more: false, next_cursor: null } } as never;
+        }
+        return { ok: true, result: {} } as never;
+      },
+      invokeBatch: async () => ({ ok: true, result: {} }) as never,
+      health: async () => ({ ok: true, result: { ready: true, engine: "rust" } }) as never,
+      integrityCheck: async () => ({ ok: true, result: {} }) as never,
+      checkpoint: async () => ({ ok: true, result: {} }) as never,
+      capabilities: async () => ({}) as never,
+    };
+    const port = new RustStoragePort(transport as never, () => {});
+    return { port, executed };
+  }
+
+  it("MSG-7: 已加载的会话从镜像读（含 hidden 过滤语义一致）", async () => {
+    const { port } = portWithRows([
+      { id: "a", session_id: "s1", role: "user", content: "一", timestamp: 1, status: "done", hidden: 0 },
+      { id: "b", session_id: "s1", role: "assistant", content: "二", timestamp: 2, status: "done", hidden: 0 },
+    ]);
+    setStoragePort(port);
+    port.warmupMessages("s1");
+    await settle();
+    expect(port.messages.isLoaded("s1")).toBe(true);
+
+    const { listMessagesFromIndex } = await import("../core/storage/message");
+    const list = listMessagesFromIndex("s1");
+    expect(list.map((m) => m.id)).toEqual(["a", "b"]);
+    expect(legacyQuery, "已路由到镜像后不得读旧库").toBe(0);
+  });
+
+  it("MSG-8: **hidden 状态来自镜像**（这是 P3 第 6 段留下的隐患，必须钉住）", async () => {
+    // 镜像里 b 是 hidden=1（已被压缩）→ 它不能出现在可见列表里，
+    // 且 hiddenMessageIds 必须返回它（否则合并时会被复活，上下文永不缩小）
+    const { port } = portWithRows([
+      { id: "a", session_id: "s1", role: "user", content: "一", timestamp: 1, status: "done", hidden: 0 },
+      { id: "b", session_id: "s1", role: "assistant", content: "被压缩", timestamp: 2, status: "done", hidden: 1 },
+    ]);
+    setStoragePort(port);
+    port.warmupMessages("s1");
+    await settle();
+
+    const { listMessagesFromIndex, listMessagesMerged } = await import("../core/storage/message");
+    const visible = listMessagesFromIndex("s1");
+    expect(visible.map((m) => m.id), "hidden 行不进可见列表").toEqual(["a"]);
+    // 合并后也必须只有 a（日志为空时以索引为准）
+    expect(listMessagesMerged("s1").map((m) => m.id)).toEqual(["a"]);
+    expect(legacyQuery, "hidden 判定不得回落到旧库（那里状态已过时）").toBe(0);
+  });
+
+  it("MSG-9: 未加载完的会话不路由（继续用旧库，读写同处）", async () => {
+    const { port } = portWithRows([
+      { id: "a", session_id: "s2", role: "user", content: "一", timestamp: 1, status: "done", hidden: 0 },
+    ]);
+    setStoragePort(port);
+    // 刻意不 warmup：s2 未加载
+    const { listMessagesFromIndex } = await import("../core/storage/message");
+    listMessagesFromIndex("s2");
+    expect(legacyQuery, "未加载完应走旧库（而不是返回空/半个集合）").toBeGreaterThan(0);
+  });
+
+  it("MSG-10: 写入成功后镜像立刻可读（不必等下次加载）", async () => {
+    const { port } = portWithRows([]);
+    setStoragePort(port);
+    port.warmupMessages("s3");
+    await settle();
+    expect(port.messages.isLoaded("s3")).toBe(true);
+
+    const { createMessage, listMessagesFromIndex } = await import("../core/storage/message");
+    createMessage({ id: "n1", role: "user", content: "新消息", timestamp: 5 } as never, "s3");
+    await settle();
+    const list = listMessagesFromIndex("s3");
+    expect(list.map((m) => m.id), "刚创建的消息必须立刻可见").toEqual(["n1"]);
+    expect(list[0].content).toBe("新消息");
   });
 });

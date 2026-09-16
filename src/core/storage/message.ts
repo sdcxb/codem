@@ -256,6 +256,11 @@ export function listMessagesMerged(sessionId: string, limit?: number): Message[]
 
 /** 索引里被软删除（hidden=1）的消息 id 集合 */
 function hiddenMessageIds(sessionId: string): Set<string> {
+  // 迁移期分流：走 Rust 时**必须**用镜像的 hidden 集合 ——
+  // 索引里的 hidden 状态是权威（软删除行只在索引里），用旧库那份会把已压缩的消息**复活**
+  // （见 listMessagesMerged 的注释：那正是"压缩了 840 条、上下文一点没小"的机制）。
+  const routed = rustMessageSource(sessionId);
+  if (routed?.messages) return routed.messages.hiddenIds(sessionId);
   try {
     const rows = getDatabase().exec("SELECT id FROM messages WHERE session_id = ? AND hidden = 1", [sessionId]);
     return new Set((rows?.[0]?.values ?? []).map((r: any[]) => String(r[0])));
@@ -343,6 +348,23 @@ export function listMessages(sessionId: string, limit?: number): Message[] {
 
 /** 只读 SQLite 索引（内部/诊断用）；对外请用 `listMessages`（会合并权威日志） */
 export function listMessagesFromIndex(sessionId: string, limit?: number): Message[] {
+  /**
+   * 迁移期分流（P3 第 7 段）：端口是 rust 且该会话索引**已加载** → 从镜像读。
+   *
+   * 这里是读路径的入口（在 `listMessagesMerged` 里比 `hiddenMessageIds` 先执行），
+   * 所以把"触发加载"放在这里，能保证同一个会话的 hidden 状态与列表来自**同一份数据**。
+   */
+  const routed = rustMessageSource(sessionId);
+  if (routed) {
+    const all = routed.messages!.list(sessionId);
+    // 与旧实现的语义对齐：索引列表**只含可见行**（`WHERE hidden = 0`）。
+    // 镜像为了 hidden 判定必须加载全部行，所以这里是读的时候过滤
+    // （契约测试 MSG-8 抓到过漏过滤 —— 那会让已压缩的消息重新出现在对话里）。
+    const visible = all.filter((m) => !m.hidden);
+    // limit 语义与旧实现一致：取**最后** limit 条（`listMessagesMerged` 也是 slice(-limit)）
+    const rows = limit ? visible.slice(-limit) : visible;
+    return rows.map(messageRowToMessage);
+  }
   /**
    * 第 91 波（架构级修正）：索引是**可重建的查询索引**，日志才是权威 ——
    * 所以索引不可用时（数据库致命状态 / SQL 报错）**不能让读路径整体失败**：
@@ -681,6 +703,27 @@ export function createMessage(message: Message, sessionId: string): void {
 
 type RustMessagePortLike = {
   data: { execute(cmd: string, params?: Record<string, unknown>): Promise<{ written: number }> };
+  messages?: {
+    isLoaded(sessionId: string): boolean;
+    isTruncated(): boolean;
+    ensureLoaded(sessionId: string, onLoaded?: () => void): void;
+    list(sessionId: string): Array<{
+      id: string;
+      session_id: string;
+      role: string;
+      content: string;
+      reasoning?: string | null;
+      timestamp: number;
+      model?: string | null;
+      status?: string | null;
+      hidden?: number;
+    }>;
+    byIdLookup(id: string): { id: string; session_id: string } | undefined;
+    hiddenIds(sessionId: string): Set<string>;
+    count(sessionId: string): number;
+  };
+  applyMessageWrite?(row: Record<string, unknown> & { id: string; session_id: string }): void;
+  applyMessageDelete?(sessionId: string, ids: string[]): void;
 };
 
 function rustMessagePort(): RustMessagePortLike | null {
@@ -688,6 +731,48 @@ function rustMessagePort(): RustMessagePortLike | null {
   const port = getStoragePort();
   if (port.kind !== "rust") return null;
   return port as unknown as RustMessagePortLike;
+}
+
+/**
+ * 取某会话可用的 Rust 消息索引源 —— **未加载完就返回 null**（读写必须同处）。
+ *
+ * 这条规则与只追加面完全一致：只有该会话的索引**已完整加载**，才允许读写都走 Rust。
+ * 否则继续用旧库那份（旧库的 hidden 状态虽然旧，但读写都在同一处，不会出现
+ * "写进 Rust、读到的 hidden 是旧的"这种把压缩消息复活的情形）。
+ *
+ * 副作用：每次调用都会顺带触发一次惰性加载，因此最迟在该会话第二次访问时切过来。
+ */
+function rustMessageSource(sessionId: string): RustMessagePortLike | null {
+  const port = rustMessagePort();
+  if (!port?.messages) return null;
+  port.messages.ensureLoaded(sessionId);
+  if (!port.messages.isLoaded(sessionId)) return null;
+  // 加载被上限截断时不能用镜像（集合不完整 → hidden 判定会错 → 可能复活消息）
+  if (port.messages.isTruncated()) return null;
+  return port;
+}
+
+/** 镜像行 → Message（与 SQLite 行映射保持同一语义） */
+function messageRowToMessage(r: {
+  id: string;
+  session_id: string;
+  role: string;
+  content: string;
+  reasoning?: string | null;
+  timestamp: number;
+  model?: string | null;
+  status?: string | null;
+}): Message {
+  return {
+    id: r.id,
+    sessionId: r.session_id,
+    role: r.role as Message["role"],
+    content: r.content,
+    ...(r.reasoning ? { reasoning: r.reasoning } : {}),
+    timestamp: r.timestamp,
+    ...(r.model ? { model: r.model } : {}),
+    status: (r.status ?? "done") as Message["status"],
+  } as Message;
 }
 
 /** 工具调用 → 线协议形状（snake 字段、args/metadata 保留为对象由 Rust 侧序列化） */
@@ -725,14 +810,29 @@ function writeIndexViaRust(message: Message, sessionId: string, scope: "create" 
     tool_calls: toolCallsForWire(message),
   };
 
-  void port.data.execute("messages.upsert_index", params).catch((e) => {
-    // 索引失败不阻塞、不抛：权威副本（会话 JSONL）已经写好，索引可由日志重建
-    reportPersistFailure(
-      `message.${scope}Message.index`,
-      e,
-      "消息已写入权威日志，但查询索引更新失败（索引可由日志重建）",
-    );
-  });
+  void port.data
+    .execute("messages.upsert_index", params)
+    .then(() => {
+      // 写入成功后把行同步进镜像 —— 否则"刚写的消息"在镜像里看不到（读写分裂的微观版本）
+      port.applyMessageWrite?.({
+        id: message.id,
+        session_id: sessionId,
+        role: message.role,
+        content: message.content ?? "",
+        reasoning: message.reasoning ?? null,
+        timestamp: message.timestamp ?? Date.now(),
+        model: message.model ?? null,
+        status: message.status ?? "done",
+      });
+    })
+    .catch((e) => {
+      // 索引失败不阻塞、不抛：权威副本（会话 JSONL）已经写好，索引可由日志重建
+      reportPersistFailure(
+        `message.${scope}Message.index`,
+        e,
+        "消息已写入权威日志，但查询索引更新失败（索引可由日志重建）",
+      );
+    });
   return true;
 }
 
@@ -1205,6 +1305,8 @@ function dropFromLogMirror(sessionId: string, ids: string[]): void {
 }
 
 export function getMessageCount(sessionId: string): number {
+  const routed = rustMessageSource(sessionId);
+  if (routed?.messages) return routed.messages.count(sessionId);
   const db = getDatabase();
   const result = db.exec("SELECT COUNT(*) FROM messages WHERE session_id = ?", [sessionId]);
   if (result.length === 0) return 0;
