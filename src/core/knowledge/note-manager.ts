@@ -18,7 +18,6 @@ import {
   getNoteLinks,
 } from './storage';
 import type { Note, NoteLink } from './types';
-import { getDatabase, persistDatabase } from '../storage/database';
 import { reportPersistFailure } from "../storage/persist-failure";
 import { domainDeleteWhere } from "../storage/domain-store";
 
@@ -202,7 +201,7 @@ function deleteNoteLinksBySource(noteId: string): void {
    * 保存一篇带 `[[WikiLink]]` 的笔记 → 先建 N 条链接、紧接着把 N 条全删掉
    * → 反向链接面板**永远是空的**（而函数仍返回"创建了 N 条"）。
    *
-   * `knowledge/storage.ts` 本来就静态 import 了 `getDatabase/persistDatabase`
+   * `knowledge/storage.ts` 本来就静态 import 了旧库的读写入口
    * （同一个模块图，没有循环依赖问题），所以这里改成**同步删除**：
    * 顺序确定，删旧在前、插新在后。
    *
@@ -218,10 +217,24 @@ function deleteNoteLinksBySource(noteId: string): void {
       "id",
       { scope: "noteManager.deleteNoteLinksBySource", note: "旧出链未清除，笔记链接可能出现重复" },
     );
-    if (removed !== null) return;
-    const db = getDatabase();
-    db.run('DELETE FROM note_links WHERE source_note_id = ?', [noteId]);
-    persistDatabase();
+    /*
+     * L3 删除（B1 批）：端口未接手时**如实上报**，不再回退旧库。
+     *
+     * 为什么不能回退：rust 模式下旧库**刻意不存在**，旧库读取入口按设计抛错；
+     * 而这条回退装在 `try` 里，异常会被下面的 catch 吞成"已上报" ——
+     * 看起来有事发生，实际上**一条旧出链都没删**，图谱里会留下重复链接。
+     * 这正是 D 类（删除）最危险的形态：静默的不一致。
+     *
+     * 端口未接手的四种状态（未加载完 / 超上限拒绝镜像 / LRU 逐出 / 截断）都由
+     * `domainDeleteWhere` 统一表达为 `null`，所以这里只需如实上报。
+     */
+    if (removed === null) {
+      reportPersistFailure(
+        "noteManager.deleteNoteLinksBySource",
+        new Error("链接域端口未接手（镜像未就绪或该表未镜像）"),
+        "旧出链未清除，笔记链接可能出现重复",
+      );
+    }
   } catch (e) {
     // 第 87 波：删旧出链失败会让旧链接残留（与刚重建的链接叠加成重复/错误图谱）
     reportPersistFailure("noteManager.deleteNoteLinksBySource", e, "旧出链未清除，笔记链接可能出现重复");
