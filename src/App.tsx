@@ -1211,8 +1211,47 @@ flushStreamBuffer(); // flush all on unmount
         } catch { /* 读不到就用默认值 */ }
         useProjectStore.getState().loadFromDB();
         // S0-3: Initialize Capability Seam — register default local providers
+        /**
+         * 启动竞态修正（第 24 轮）：**端口就绪前读到的是空列表，之后没人再读一次。**
+         *
+         * 引擎是 rust 时，读路径要等端口注册 + 镜像加载完才会接手；在此之前 listProjects()
+         * 只能返回空（旧库在 rust 模式下刻意不存在，这是 P5 的既定设计）。
+         * 于是首屏会一直显示"暂无项目 / 暂无对话"，而数据其实都在库里
+         * （从"项目"菜单能看到 mimo-gui）—— 用户装完第一眼看到的就是这个，极易被当成数据丢了。
+         *
+         * 这里做**有界重试**（不是无限轮询）：端口就绪 -> 立刻重新加载一次；
+         * 20 次 x 250ms = 5 秒仍未就绪就放弃（引擎真出问题时有它自己的失败上报通道，
+         * 不该在这里无限重试把它掩盖掉）。
+         */
+        void (async () => {
+          try {
+            const { hasStoragePort, getStoragePort } = await import("./core/storage/port");
+            // 判据必须是「projects 这张表的**镜像**已就绪」，不是「端口存在」：
+            // 第一版只判 hasStoragePort()，重试在镜像加载完成前就触发，拿到的仍是空列表
+            // （真机实测：日志打了"重新加载"，界面照样"暂无项目"）。
+            const projectsReady = () => {
+              if (!hasStoragePort()) return false;
+              const port = getStoragePort() as unknown as {
+                domains?: { isReady?: (t: string) => boolean };
+                kind?: string;
+              };
+              if (port.kind !== "rust") return true; // wasm 回退：旧库就是数据源
+              return port.domains?.isReady?.("projects") === true;
+            };
+            for (let attempt = 0; attempt < 40; attempt++) {
+              if (projectsReady()) {
+                useProjectStore.getState().loadFromDB();
+                console.log("[Store] 端口就绪后重新加载了项目列表（启动竞态修正）");
+                return;
+              }
+              await new Promise((r) => setTimeout(r, 150));
+            }
+            console.warn("[Store] projects 镜像在 6 秒内未就绪，项目列表可能为空（引擎自身会另行上报失败原因）");
+          } catch { /* 端口模块不可用：保持首次加载的结果 */ }
+        })();
         // for filesystem and shell. Tools can now access these capabilities
         // through the seam registry instead of hard-importing file-api.
+        // S0-3: Initialize Capability Seam — register default local providers
         const { initDefaultSeams } = await import("./core/seam/types");
         await initDefaultSeams();
         // DB is now ready — re-configure engine to read the correct mode/model/provider.
