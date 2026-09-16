@@ -86,8 +86,8 @@ export { trackRequestHeader, computeHeaderFingerprint } from "./request-header";
 export { checkVisibleRecordedInvariant } from "./runtime-invariants";
 // R3-4.2: Postmortem — re-export
 export { generatePostmortem } from "./postmortem";
-// R3-3.8: Persistence provider — re-export
-export type { PersistenceProvider } from "../storage/persistence-provider";
+// R3-3.8 的 PersistenceProvider 再导出已在 P5 第 2 段随 persistence-provider.ts 一起删除
+// （它只被存进变量、从未接管任何读写，属于死代码；见 event-log.ts 同位置的说明）
 // R3-2.2: Feedback — re-export
 export { recordSessionFeedback, putMessageFeedback } from "./feedback";
 // R3-2.4: Instruction layers — re-export

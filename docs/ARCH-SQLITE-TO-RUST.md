@@ -1130,6 +1130,83 @@ tsc 0 错 · 六道 audit 门禁全绿（A 类 0 / B 类 P1 3+P2 1 / C 类 4 / D
 **验证**：新增 4 项全绿 · 完整套件 269 → **270 文件 / 5187 通过 / 15 跳过** ·
 tsc 0 错 · 六道 audit 门禁全绿。
 
+### P5 第 2 段（第 92 波）—— 清掉剩下四个"仍直接读旧库"的模块
+
+上一段列了四处的清单，这一段逐个处理完。**其中一处根本不是"要迁移的模块"，
+而是早就死掉的代码** —— 先把它认出来，比盲目迁移更省事也更正确。
+
+| 模块 | 处理 | 关键点 |
+|---|---|---|
+| `core/storage/persistence-provider.ts` | **删除**（238 行） | 见下：它从未接管过任何读写 |
+| `core/knowledge/note-manager.ts` | 接入端口 | `deleteNoteLinksBySource` 的"同步删除"性质必须保住 |
+| `core/storage/session-log-bridge.ts` | 接入端口（新增一条 Rust 复合命令） | 索引重建必须是**一个事务** |
+| `core/telemetry/telemetry.ts` | 接入端口（写 + 读 + 聚合都在同一份数据上算） | 遥测表可能十万行 → 单独的镜像上限 |
+
+#### 1. 删掉"假障碍"：`persistence-provider.ts` 是死代码
+
+它的注释写着"allows swapping the storage backend"，但实测：
+
+- `configurePersistenceProvider()` **只把对象存进一个变量**，注释里自己承认
+  "currently EventLog uses SQLite directly"；
+- 全仓只有**类型**引用（`import("./persistence-provider").PersistenceProvider`），
+  **零个值调用点**（连编译器都在报它）；
+- 唯一提到它的测试只是注释里的一行标题。
+
+也就是说：它是一份完整的、直接操作旧库的 `session_events` 实现（238 行），
+却从来没被任何真实路径用过。**它是"删除 WASM 依赖"清单上的假障碍。**
+已连同 `event-log.ts` 里的两个再导出函数、`llm/index.ts` 的类型再导出一起删除。
+（与第 11 段删掉的 `core/auth/storage.ts` 是同一类问题：死代码会虚增迁移面。）
+
+#### 2. 索引自愈改走端口 —— 新增 `messages.rebuild_index`
+
+`session-log-bridge.ts` 里有两件事必须走 Rust，因为**读的已经是 Rust 侧了**：
+
+- `hydrateAllAttachments`：只读"外置标记"（`content` = `file:<路径>`），
+  正文在文件里按需预热 → 用 `message.ts` 新增的
+  `listExternalAttachmentMarkers()` 走域端口即可；
+- `rebuildIndexFromSessionLogs`：原来是一整套裸 SQL
+  （`BEGIN; INSERT sessions; INSERT messages; DELETE tool_calls; INSERT tool_calls; COMMIT`）。
+
+第二条**必须是一个事务**：拆成多条 IPC 时，中途失败会留下
+"会话行在、消息只写了一半、工具调用还是旧的"半截索引 —— 比不重建更糟。
+因此 Rust 侧新增一条复合命令 `messages.rebuild_index`：
+
+```json
+{ "sessions": [ { "id": "...", "messages": [ { ...message..., "tool_calls": [...] } ] } ] }
+```
+
+它在一个事务里写 `sessions` 行 + 消息 + 工具调用（整体替换），并且**显式还原
+`hidden` / `parent_message_id` / `metadata`** —— 日志里记着压缩状态与消息链，
+重建后不一致会让**被压缩的消息复活**（这正是历史上修过的一类 bug）。
+
+#### 3. 顺带修掉 `upsert_index` 的一个真缺口：它从不写 `hidden`
+
+做上一件事时发现：`messages.upsert_index` 的 UPDATE 分支只更新
+content/reasoning/model/status/timestamp + 几个可选列，**`hidden` 完全没碰**。
+
+这在"普通写路径"下恰好是**正确的**（不传就不该动压缩状态），
+但对**索引重建**就是错的（重建的目的就是把 hidden 还原回去），
+而且 `hidden = 0` 是合法值，不能像其它列那样用 `COALESCE(?n, col)` 一把梭。
+
+修法：`hidden` 做成"显式区分给没给"的可选参数 ——
+`upsert_index` 先读出当前值，没传就原样保留、传了就（包括传 0）覆盖。
+新增 Rust 回归测试 `upsert_index_preserves_hidden_unless_explicitly_given` 钉住两条：
+**不传的普通更新不得复活已隐藏消息**；**显式 0 必须真的取消隐藏**。
+
+#### 4. 遥测：写、读、聚合都在同一份数据上算
+
+`telemetry_events` 是只增不改的日志（可能十万行），所以给了一个**单独的镜像上限
+5000 行**：超过就放弃镜像、回退旧路径（宁可仪表盘在超大遥测表上退回旧库，
+也不把渲染进程压死）。
+
+聚合（`COUNT` / `COUNT(DISTINCT)` / `GROUP BY event_name` / `MIN/MAX` 分组 /
+时间桶 / 延迟分位）**全部改成在同一份数据上用 JS 算**，而不是给每个查询新增一条 Rust 命令 ——
+后者要把同样的逻辑在两门语言里各写一遍，正是最容易漂移的那种重复。
+
+**验证**：Rust 76 项（引擎 45 + 契约 27 + 线协议 2 + 列级 2）· 完整套件 270 文件 /
+**5192 通过** / 15 跳过 · tsc 0 错 · 六道 audit 门禁全绿，
+**D 类命中 522 → 500**（删掉死模块 + 四个模块接入端口的直接结果）。
+
 ### P5 第 1 段（第 92 波）—— **默认引擎切到 rust**，并补上切换前必须补的两个域
 
 这一段的目标是"渲染进程不再持有 WASM 数据库"的第一步：**让默认路径走 Rust**。

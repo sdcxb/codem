@@ -1,4 +1,4 @@
-﻿//! P1 验收测试（Rust 侧）：引擎行为、安全边界、错误映射、幂等 schema、WAL、分页。
+//! P1 验收测试（Rust 侧）：引擎行为、安全边界、错误映射、幂等 schema、WAL、分页。
 //!
 //! 这些测试**直接驱动生产实现**（同一个 crate），不需要 Tauri、不需要 WASM。
 //! 渲染侧的契约测试（`src/test/db-contract.test.ts`）通过 CLI 驱动**同一份**实现，
@@ -1021,4 +1021,61 @@ fn upsert_index_validates_before_writing() {
     let counts = call(&e, "counts", json!({ "tables": ["messages", "tool_calls"] }));
     assert_eq!(counts["messages"], json!(0), "参数错误不得留下消息行");
     assert_eq!(counts["tool_calls"], json!(0));
+}
+
+/// `messages.upsert_index` 对 `hidden` 的语义（P5 第 2 段新增）。
+///
+/// 两条都必须成立：
+/// 1. **不传 hidden 的普通更新必须保留库里已有的 hidden** —— 否则一次内容更新就会把
+///    已压缩隐藏的消息复活（历史上修过的一类 bug：压缩后消息又进了上下文）；
+/// 2. **显式传 hidden 必须生效（包括传 0）** —— 索引重建要把日志里的 hidden 还原回来，
+///    而 `hidden = 0` 是合法值，不能被当成"没给"。
+#[test]
+fn upsert_index_preserves_hidden_unless_explicitly_given() {
+    let (_d, e) = temp_engine("hidden-semantics");
+    call(&e, "sessions.upsert", json!({ "id": "s1" }));
+
+    // 写入一条已隐藏的消息
+    call(
+        &e,
+        "messages.upsert_index",
+        json!({ "id": "m-hidden", "session_id": "s1", "role": "user", "content": "旧内容",
+                 "timestamp": 1, "hidden": 1 }),
+    );
+    let all = call(&e, "messages.list", json!({ "session_id": "s1", "limit": 50, "include_hidden": true }));
+    assert_eq!(all["items"][0]["hidden"], json!(1), "显式 hidden=1 必须生效");
+
+    // ① 不传 hidden 的更新：内容变了，hidden 必须原样保留
+    call(
+        &e,
+        "messages.upsert_index",
+        json!({ "id": "m-hidden", "session_id": "s1", "role": "user", "content": "新内容", "timestamp": 2 }),
+    );
+    let after = call(&e, "messages.list", json!({ "session_id": "s1", "limit": 50, "include_hidden": true }));
+    assert_eq!(after["items"][0]["content"], json!("新内容"));
+    assert_eq!(
+        after["items"][0]["hidden"],
+        json!(1),
+        "不传 hidden 的普通更新把已隐藏消息复活了（压缩语义被破坏）"
+    );
+
+    // ② 显式传 hidden=0：必须真的取消隐藏（不能被 COALESCE 吞掉）
+    call(
+        &e,
+        "messages.upsert_index",
+        json!({ "id": "m-hidden", "session_id": "s1", "role": "user", "content": "新内容",
+                 "timestamp": 2, "hidden": 0 }),
+    );
+    let visible = call(&e, "messages.list", json!({ "session_id": "s1", "limit": 50, "include_hidden": true }));
+    assert_eq!(visible["items"][0]["hidden"], json!(0), "显式 hidden=0 必须被当成有效值");
+
+    // ③ 默认可见性：include_hidden=false 时隐藏消息不该出现
+    call(
+        &e,
+        "messages.upsert_index",
+        json!({ "id": "m-hidden", "session_id": "s1", "role": "user", "content": "新内容",
+                 "timestamp": 2, "hidden": 1 }),
+    );
+    let onlyVisible = call(&e, "messages.list", json!({ "session_id": "s1", "limit": 50, "include_hidden": false }));
+    assert_eq!(onlyVisible["items"].as_array().map(|a| a.len()), Some(0));
 }

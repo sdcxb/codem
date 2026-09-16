@@ -9,6 +9,7 @@
 
 import { getDatabase, persistDatabase, isCompactionInProgress, isDatabaseFatal, noteDatabaseError } from "../storage/database";
 import { reportPersistFailure } from "../storage/persist-failure";
+import { domainReadMany, domainWrite } from "../storage/domain-store";
 
 // ========== Types ==========
 
@@ -21,6 +22,66 @@ export interface TelemetryEvent {
 }
 
 // ========== Telemetry Collector ==========
+
+const TABLE = "telemetry_events";
+
+/**
+ * `telemetry_events` 的镜像上限（P5 第 2 段）。
+ *
+ * 遥测是只增不改的日志，量级可能到十万条。全表进渲染进程内存不可接受，
+ * 所以给一个**较小**的镜像上限：超过就放弃镜像、回退旧路径。
+ * 代价是"仪表盘在超大遥测表上仍然依赖旧库" —— 这比把渲染进程压死要好，
+ * 而且遥测的历史数据本来就不需要精确（它是诊断用的，不是用户数据）。
+ */
+const TELEMETRY_MIRROR_MAX = 5000;
+const TELEMETRY_OPTS = { maxRows: TELEMETRY_MIRROR_MAX };
+
+interface TelemetryRow {
+  id: string;
+  session_id: string;
+  event_name: string;
+  event_data: string | null;
+  timestamp: number;
+}
+
+function wireToTelemetry(row: Record<string, unknown>): TelemetryRow {
+  return {
+    id: String(row.id ?? ""),
+    session_id: String(row.session_id ?? ""),
+    event_name: String(row.event_name ?? ""),
+    event_data: (row.event_data as string) ?? null,
+    timestamp: Number(row.timestamp ?? 0),
+  };
+}
+
+function telemetryToEvent(row: TelemetryRow): TelemetryEvent {
+  let data: Record<string, unknown> | undefined;
+  if (row.event_data) {
+    try {
+      data = JSON.parse(row.event_data) as Record<string, unknown>;
+    } catch {
+      data = undefined;
+    }
+  }
+  return { id: row.id, sessionId: row.session_id, name: row.event_name, data, timestamp: row.timestamp };
+}
+
+/** 读整个遥测镜像；未接手时返回 undefined（调用方回退旧库） */
+function telemetryRows(): TelemetryRow[] | undefined {
+  return domainReadMany(TABLE, wireToTelemetry, undefined, TELEMETRY_OPTS);
+}
+
+/** 计数类聚合在**同一份数据**上算（旧实现是一串 COUNT/DISTINCT/GROUP BY） */
+function groupBy<T, K extends string | number>(rows: T[], key: (row: T) => K): Map<K, T[]> {
+  const out = new Map<K, T[]>();
+  for (const row of rows) {
+    const k = key(row);
+    const list = out.get(k);
+    if (list) list.push(row);
+    else out.set(k, [row]);
+  }
+  return out;
+}
 
 class TelemetryCollector {
   private events: TelemetryEvent[] = [];
@@ -94,6 +155,23 @@ class TelemetryCollector {
     }
 
     try {
+      // P5 第 2 段：优先走端口（一次批量写 = 一次事务，比 N 条 db.run 更省往返）。
+      const rustRows = this.events.map((e) => ({
+        id: e.id,
+        session_id: e.sessionId,
+        event_name: e.name,
+        event_data: JSON.stringify(e.data || {}),
+        timestamp: e.timestamp,
+      }));
+      if (domainWrite(TABLE, rustRows, {
+        scope: "telemetry.flush",
+        note: `${this.events.length} 条遥测事件未能写入（遥测不影响功能）`,
+        ...TELEMETRY_OPTS,
+      })) {
+        // 写穿是异步的：本地镜像已更新，若写穿失败会走上报通道（不会静默丢）
+        this.events = [];
+        return;
+      }
       const db = getDatabase();
       for (const event of this.events) {
         db.run(
@@ -125,6 +203,14 @@ class TelemetryCollector {
    * Query events for a session.
    */
   query(sessionId: string, name?: string, limit?: number): TelemetryEvent[] {
+    const rust = telemetryRows();
+    if (rust) {
+      return rust
+        .filter((r) => r.session_id === sessionId && (!name || r.event_name === name))
+        .sort((a, b) => b.timestamp - a.timestamp)
+        .slice(0, limit ?? undefined)
+        .map(telemetryToEvent);
+    }
     const db = getDatabase();
     const nameClause = name ? `AND event_name = ?` : "";
     const limitClause = limit ? `LIMIT ${limit}` : "";
@@ -172,9 +258,26 @@ class TelemetryCollector {
     eventsByType: Array<{ name: string; count: number }>;
     recentEventRate: number; // events per minute in last 5 min
   } {
-    const db = getDatabase();
     const now = Date.now();
     const fiveMinAgo = now - 5 * 60 * 1000;
+
+    const rust = telemetryRows();
+    if (rust) {
+      const byType = groupBy(rust, (r) => r.event_name);
+      const eventsByType = [...byType.entries()]
+        .map(([name, list]) => ({ name, count: list.length }))
+        // 旧 SQL：GROUP BY event_name ORDER BY cnt DESC
+        .sort((a, b) => b.count - a.count);
+      const recentCount = rust.filter((r) => r.timestamp > fiveMinAgo).length;
+      return {
+        totalEvents: rust.length,
+        totalSessions: new Set(rust.map((r) => r.session_id)).size,
+        eventsByType,
+        recentEventRate: Math.round((recentCount / 5) * 10) / 10,
+      };
+    }
+
+    const db = getDatabase();
 
     let totalEvents = 0;
     let totalSessions = 0;
@@ -217,6 +320,19 @@ class TelemetryCollector {
     lastEventAt: number;
     duration: number; // ms
   }> {
+    const rust = telemetryRows();
+    if (rust) {
+      const bySession = groupBy(rust, (r) => r.session_id);
+      return [...bySession.entries()]
+        .map(([sessionId, list]) => {
+          const first = Math.min(...list.map((r) => r.timestamp));
+          const last = Math.max(...list.map((r) => r.timestamp));
+          return { sessionId, eventCount: list.length, firstEventAt: first, lastEventAt: last, duration: last - first };
+        })
+        // 旧 SQL：GROUP BY session_id ORDER BY last_ts DESC LIMIT n
+        .sort((a, b) => b.lastEventAt - a.lastEventAt)
+        .slice(0, limit);
+    }
     const db = getDatabase();
     try {
       const result = db.exec(`
@@ -247,12 +363,23 @@ class TelemetryCollector {
     timestamp: number;
     count: number;
   }> {
-    const db = getDatabase();
     const now = Date.now();
     const since = now - sinceMsAgo;
     const buckets: Array<{ timestamp: number; count: number }> = [];
     const bucketCount = Math.ceil(sinceMsAgo / bucketMs);
 
+    const rust = telemetryRows();
+    if (rust) {
+      for (let i = 0; i < bucketCount; i++) {
+        const bucketStart = since + i * bucketMs;
+        const bucketEnd = bucketStart + bucketMs;
+        const count = rust.filter((r) => r.timestamp >= bucketStart && r.timestamp < bucketEnd).length;
+        buckets.push({ timestamp: bucketStart, count });
+      }
+      return buckets;
+    }
+
+    const db = getDatabase();
     for (let i = 0; i < bucketCount; i++) {
       const bucketStart = since + i * bucketMs;
       const bucketEnd = bucketStart + bucketMs;
@@ -283,6 +410,39 @@ class TelemetryCollector {
     p50Ms: number;
     p95Ms: number;
   }> {
+    const rust = telemetryRows();
+    if (rust) {
+      // 旧 SQL：WHERE event_data LIKE '%"duration_ms"%' ORDER BY timestamp DESC LIMIT 10000
+      const withDuration = rust
+        .sort((a, b) => b.timestamp - a.timestamp)
+        .slice(0, 10000)
+        .filter((r) => (r.event_data ?? "").includes('"duration_ms"'));
+      const groups: Record<string, number[]> = {};
+      for (const row of withDuration) {
+        const parsed = telemetryToEvent(row).data;
+        const d = parsed?.duration_ms;
+        if (typeof d === "number") {
+          (groups[row.event_name] ??= []).push(d);
+        }
+      }
+      return Object.entries(groups)
+        .map(([eventName, durations]) => {
+          const sorted = durations.sort((a, b) => a - b);
+          const sum = sorted.reduce((a, b) => a + b, 0);
+          const count = sorted.length;
+          return {
+            eventName,
+            count,
+            avgMs: Math.round(sum / count),
+            minMs: sorted[0],
+            maxMs: sorted[count - 1],
+            p50Ms: sorted[Math.floor(count * 0.5)] || sorted[0],
+            p95Ms: sorted[Math.floor(count * 0.95)] || sorted[count - 1],
+          };
+        })
+        .sort((a, b) => b.count - a.count);
+    }
+
     const db = getDatabase();
     try {
       // Fetch events that have duration_ms in their data

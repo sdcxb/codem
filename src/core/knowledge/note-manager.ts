@@ -20,6 +20,10 @@ import {
 import type { Note, NoteLink } from './types';
 import { getDatabase, persistDatabase } from '../storage/database';
 import { reportPersistFailure } from "../storage/persist-failure";
+import { domainDeleteWhere } from "../storage/domain-store";
+
+/** `note_links` 表名（与 knowledge/storage.ts 里的常量保持一致） */
+const LINK_TABLE = "note_links";
 
 /** WikiLinks 正则: 匹配 [[标题]] 或 [[标题|显示文本]] */
 const WIKILINK_REGEX = /\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g;
@@ -201,8 +205,20 @@ function deleteNoteLinksBySource(noteId: string): void {
    * `knowledge/storage.ts` 本来就静态 import 了 `getDatabase/persistDatabase`
    * （同一个模块图，没有循环依赖问题），所以这里改成**同步删除**：
    * 顺序确定，删旧在前、插新在后。
+   *
+   * P5 第 2 段：接入域端口后，**"同步"这条性质必须继续成立** ——
+   * `domainDeleteWhere` 也是先把**本地镜像**里的行删掉（同步），写穿才在后台进行。
+   * 因此"删旧在前、插新在后"的顺序不受影响；而紧接着的 `addNoteLink` 也会因为
+   * 镜像里旧行已消失而正常判重（它按镜像判"是否已存在"）。
    */
   try {
+    const removed = domainDeleteWhere(
+      LINK_TABLE,
+      (row) => row.source_note_id === noteId,
+      "id",
+      { scope: "noteManager.deleteNoteLinksBySource", note: "旧出链未清除，笔记链接可能出现重复" },
+    );
+    if (removed !== null) return;
     const db = getDatabase();
     db.run('DELETE FROM note_links WHERE source_note_id = ?', [noteId]);
     persistDatabase();

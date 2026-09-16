@@ -7,10 +7,12 @@
  * **动态 import**，循环就断开了（与 `event-log` 的处理方式一致）。
  */
 
-import { listMessages, trimIndexedMessages, hydrateSessionLog, rebuildSessionFts } from "./message";
+import { listMessages, trimIndexedMessages, hydrateSessionLog, rebuildSessionFts, listExternalAttachmentMarkers } from "./message";
 import { backfillSessionLog, listSessionLogs, flushSessionLogWrites, compactSessionLog } from "./session-jsonl";
 import { initDatabase } from "./database";
 import { hydrateAttachmentsForSession } from "./attachment-files";
+import { getStoragePort, hasStoragePort } from "./port";
+import { reportPersistFailure } from "./persist-failure";
 
 export { trimIndexedMessages };
 
@@ -25,15 +27,22 @@ export { trimIndexedMessages };
 export async function hydrateAllAttachments(): Promise<{ warmed: number; orphansRemoved: number }> {
   const out = { warmed: 0, orphansRemoved: 0 };
   try {
-    const { getDatabase } = await import("./database");
-    const db = getDatabase();
-    const rows = db.exec("SELECT id, content FROM attachments WHERE content LIKE 'file:%'");
-    const entries = rows?.[0]?.values?.map((r) => ({ id: String(r[0]), content: String(r[1]) })) ?? [];
+    // P5 第 2 段：走端口读"外置标记"，不再依赖 WASM 库。
+    // 这里只读 `content`（值形如 `file:<路径>`），正文本身在文件里、按需预热。
+    const markers = listExternalAttachmentMarkers();
+    let entries: Array<{ id: string; content: string }>;
+    if (markers) {
+      entries = markers;
+    } else {
+      const { getDatabase } = await import("./database");
+      const db = getDatabase();
+      const rows = db.exec("SELECT id, content FROM attachments WHERE content LIKE 'file:%'");
+      entries = rows?.[0]?.values?.map((r) => ({ id: String(r[0]), content: String(r[1]) })) ?? [];
+    }
     out.warmed = await hydrateAttachmentsForSession(entries);
 
     // 孤儿清理：文件在、数据库里已无对应标记（附件被删/会话被清）→ 磁盘不能只涨不降
-    const allRows = db.exec("SELECT content FROM attachments WHERE content LIKE 'file:%'");
-    const referenced = new Set(allRows?.[0]?.values?.map((r) => String(r[0]).slice("file:".length)) ?? []);
+    const referenced = new Set(entries.map((e) => e.content.slice("file:".length)));
     const { pruneOrphanAttachmentFiles } = await import("./attachment-files");
     out.orphansRemoved = (await pruneOrphanAttachmentFiles(referenced)).deletedFiles;
   } catch (e) {
@@ -87,7 +96,7 @@ export async function countSessionLogs(): Promise<number> {
 // ========== 索引重建（第 91 波：自愈） ==========
 
 /**
- * 从**权威日志**重建 SQLite 查询索引。
+ * 从**权威日志**重建查询索引。
  *
  * 为什么这是"数据库崩了也不丢数据"的最后一块拼图：
  * 分层本来就写着"日志是权威、索引可重建"，但**重建方向从来没有实现过** ——
@@ -97,21 +106,89 @@ export async function countSessionLogs(): Promise<number> {
  * 现在：日志里有什么，索引就能重建出什么（幂等：同 id 覆盖写）。
  * 触发点有两个：①启动维护时若发现"上次崩溃"标记；②手工/维护显式调用。
  *
+ * ## P5 第 2 段：改走端口（不再依赖 WASM 库）
+ *
+ * 原实现是一整套裸 SQL（`BEGIN; INSERT sessions; INSERT messages; DELETE tool_calls;
+ * INSERT tool_calls; COMMIT`）。搬到端口后有两条硬要求：
+ * 1. **必须是一个事务** —— 拆成多条 IPC 时中途失败会留下"会话行在、消息只写了一半"
+ *    的半截索引，比不重建更糟。因此 Rust 侧做成一条复合命令 `messages.rebuild_index`；
+ * 2. **`hidden` 与 `parent_message_id` / `metadata` 必须还原** ——
+ *    日志里记着压缩状态与消息链，重建后不一致会让被压缩的消息复活
+ *    （`messages.upsert_index` 的 hidden 语义见 repo.rs 的注释）。
+ *
+ * 端口不可用时（回滚到 wasm）继续走原来的旧路径。
+ *
  * @returns 重建的会话数与消息数
  */
 export async function rebuildIndexFromSessionLogs(sessionId?: string): Promise<{ sessions: number; messages: number }> {
   await initDatabase();
-  const { readSessionMessages } = await import("./session-jsonl");
-  const { getDatabase } = await import("./database");
-  const db = getDatabase();
-
   const targets = sessionId ? [sessionId] : await listSessionLogs();
   const out = { sessions: 0, messages: 0 };
 
+  // 先把日志全部读出来（异步），再决定走端口还是旧路径
+  const batches: Array<{ id: string; messages: Awaited<ReturnType<typeof readSessionMessages>>["messages"] }> = [];
+  const { readSessionMessages } = await import("./session-jsonl");
   for (const sid of targets) {
     try {
       const { messages } = await readSessionMessages(sid);
       if (messages.length === 0) continue;
+      batches.push({ id: sid, messages });
+    } catch (e) {
+      console.warn(`[SessionLog] 会话 ${sid} 日志读取失败（跳过）:`, e);
+    }
+  }
+  if (batches.length === 0) return out;
+
+  const port = hasStoragePort() ? getStoragePort() : null;
+  if (port && port.kind === "rust") {
+    const payload = {
+      sessions: batches.map((b) => ({
+        id: b.id,
+        messages: b.messages.map((rec) => ({
+          id: rec.id,
+          session_id: b.id,
+          role: rec.role,
+          content: rec.content ?? "",
+          reasoning: (rec as { reasoning?: string | null }).reasoning ?? null,
+          timestamp: rec.timestamp ?? Date.now(),
+          model: (rec as { model?: string | null }).model ?? null,
+          status: (rec as { status?: string }).status ?? "done",
+          // 压缩状态必须还原（否则被压缩的消息会复活）
+          hidden: (rec as { hidden?: number }).hidden ?? 0,
+          parent_message_id: (rec as { parentMessageId?: string | null }).parentMessageId ?? null,
+          metadata: (rec as { metadata?: unknown }).metadata ?? null,
+          tool_calls: (rec as { toolCalls?: unknown[] }).toolCalls ?? null,
+        })),
+      })),
+    };
+    try {
+      const r = await port.data.execute("messages.rebuild_index", payload);
+      const written = r as unknown as { sessions?: number; messages?: number };
+      out.sessions = written?.sessions ?? batches.length;
+      out.messages = written?.messages ?? 0;
+      // 重建后把镜像换成新数据（否则镜像里还是崩溃前的旧集合）
+      for (const b of batches) await hydrateSessionLog(b.id);
+      if (out.messages > 0) {
+        console.log(`[Database] 索引已从权威日志重建（Rust 单事务）：${out.sessions} 个会话 / ${out.messages} 条消息`);
+      }
+      return out;
+    } catch (e) {
+      // 端口重建失败：如实上报，然后**回退旧路径**再试一次（用户的数据没丢，别让自愈失效）
+      reportPersistFailure(
+        "sessionLog.rebuildIndex",
+        e,
+        "Rust 侧索引重建失败，已回退旧路径重试",
+      );
+    }
+  }
+
+  const { getDatabase } = await import("./database");
+  const db = getDatabase();
+
+  for (const b of batches) {
+    const sid = b.id;
+    const messages = b.messages;
+    try {
       db.run("BEGIN TRANSACTION");
       try {
         /**
@@ -184,6 +261,7 @@ export async function rebuildIndexFromSessionLogs(sessionId?: string): Promise<{
   }
   return out;
 }
+
 
 /**
  * 压缩膨胀的追加日志（第 79 波收尾项）：对行数明显多于"唯一消息数"的会话重写日志。

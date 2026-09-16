@@ -15,6 +15,10 @@ import type { SessionEventType } from "./event-types";
 import type { Message, ToolCall, MessageAttachment, RetrievedSource } from "../../store";
 import { safeJsonParse } from "../utils/safe-json";
 import { reportPersistFailure } from "./persist-failure";
+import { domainReadMany } from "./domain-store";
+
+/** `attachments` 表名（P5 第 2 段：外置附件预热也走端口） */
+const ATTACHMENT_TABLE = "attachments";
 
 export interface MessageRow {
   id: string;
@@ -600,6 +604,23 @@ export function getAttachmentContent(id: string): string | undefined {
     console.warn("[getAttachmentContent] Failed:", e);
     return undefined;
   }
+}
+
+/**
+ * 列出所有 `file:` 外置附件的 `{id, content}`（P5 第 2 段）。
+ *
+ * 用途：启动维护时预热外置附件正文（`hydrateAllAttachments`）。
+ * 走域端口是为了让这一步不再依赖 WASM 库 —— 它读的只是"外置标记"（`file:<路径>`），
+ * 不是正文本身，所以镜像里那份内容完全够用（正文在文件里，按需预热）。
+ * 端口不可用时返回 `undefined`，调用方回退旧库。
+ */
+export function listExternalAttachmentMarkers(): Array<{ id: string; content: string }> | undefined {
+  const rust = domainReadMany<{ id: string; content: string }>(
+    ATTACHMENT_TABLE,
+    (row) => ({ id: String(row.id ?? ""), content: String(row.content ?? "") }),
+  );
+  if (!rust) return undefined;
+  return rust.filter((r) => r.content.startsWith("file:"));
 }
 
 export function getMessage(id: string): Message | null {

@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Event Log — Append-only event storage
  *
  * Design (对标 DeepSeek Harness event-sourcing):
@@ -508,20 +508,15 @@ export function getEventLog(): EventLog {
   return EventLog.getInstance();
 }
 
-// R3-3.8: Configure custom persistence provider
-// Allows swapping the storage backend from SQLite to other implementations
-export function configurePersistenceProvider(provider: import("./persistence-provider").PersistenceProvider): void {
-  // The persistence provider interface is available for future use.
-  // Currently EventLog uses SQLite directly, but this allows future migration.
-  // The provider is stored and can be queried via getActivePersistenceProvider()
-  activePersistenceProvider = provider;
-}
-
-let activePersistenceProvider: import("./persistence-provider").PersistenceProvider | null = null;
-
-export function getActivePersistenceProvider(): import("./persistence-provider").PersistenceProvider | null {
-  return activePersistenceProvider;
-}
+// R3-3.8 的「可替换持久化提供者」在 P5 第 2 段被删除。
+//
+// 原实现（configurePersistenceProvider / getActivePersistenceProvider +
+// storage/persistence-provider.ts 里的 SqlitePersistenceProvider）只把传入的对象
+// **存进一个变量**，注释里写着"currently EventLog uses SQLite directly" ——
+// 也就是说它从来没有真的接管过任何读写，却是一份完整的、直接操作旧库的 session_events
+// 实现（238 行），是"删除 WASM 依赖"清单上的假障碍。
+// 证据：全仓只有类型引用（`import("./persistence-provider").PersistenceProvider`），
+// 零个值调用点 —— 连编译器都在报它。
 
 // ========== Migration: Import existing messages as events ==========
 

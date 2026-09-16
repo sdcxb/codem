@@ -1,4 +1,4 @@
-﻿//! 仓储命令（P1 第一切片：配置面 + 只追加面 + 消息/会话核心）
+//! 仓储命令（P1 第一切片：配置面 + 只追加面 + 消息/会话核心）
 //!
 //! 渲染侧**只**能通过这些语义化命令访问数据（`src/core/storage/port.ts` 的 `StorageDataPort`）。
 //! 命令清单与 `tools/audit/storage-inventory.mjs` 的归类一一对应，后续按 P3 顺序补齐到 82 个。
@@ -488,6 +488,13 @@ fn message_fields(p: &Value) -> DbResult<MessageFields> {
         model: opt_text(p, "model")?,
         status: opt_text(p, "status")?.unwrap_or_else(|| "done".to_string()),
         timestamp: opt_i64(p, "timestamp")?.unwrap_or_else(now_ms),
+        // 缺省 0（可见）。索引重建会显式传日志里的真实值。
+        hidden: opt_i64(p, "hidden")?.unwrap_or(0),
+        parent_message_id: opt_text(p, "parent_message_id")?,
+        metadata: match p.get("metadata") {
+            None | Some(Value::Null) => None,
+            Some(other) => Some(other.to_string()),
+        },
     })
 }
 
@@ -500,13 +507,20 @@ struct MessageFields {
     model: Option<String>,
     status: String,
     timestamp: i64,
+    /// 可选：索引重建要还原压缩状态；普通写入不传时按 0（可见）落库。
+    hidden: i64,
+    /// 可选：消息链（fork）用；索引重建要还原
+    parent_message_id: Option<String>,
+    /// 可选：消息元数据（JSON 文本）；索引重建要还原
+    metadata: Option<String>,
 }
 
 const MESSAGE_UPSERT: &str = "INSERT INTO messages \
-     (id, session_id, role, content, reasoning, timestamp, model, status) \
-     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8) \
+     (id, session_id, role, content, reasoning, timestamp, model, status, hidden) \
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9) \
      ON CONFLICT(id) DO UPDATE SET content = excluded.content, reasoning = excluded.reasoning, \
-       model = excluded.model, status = excluded.status, timestamp = excluded.timestamp";
+       model = excluded.model, status = excluded.status, timestamp = excluded.timestamp, \
+       hidden = excluded.hidden";
 
 pub fn messages_create(engine: &Engine, p: &Value) -> DbResult<Value> {
     let f = message_fields(p)?;
@@ -514,7 +528,7 @@ pub fn messages_create(engine: &Engine, p: &Value) -> DbResult<Value> {
         let n = tx
             .execute(
                 MESSAGE_UPSERT,
-                params![f.id, f.session_id, f.role, f.content, f.reasoning, f.timestamp, f.model, f.status],
+                params![f.id, f.session_id, f.role, f.content, f.reasoning, f.timestamp, f.model, f.status, f.hidden],
             )
             .map_err(DbError::from)?;
         Ok(json!({ "written": n, "id": f.id }))
@@ -542,7 +556,8 @@ pub fn messages_create_many(engine: &Engine, p: &Value) -> DbResult<Value> {
                 f.reasoning,
                 f.timestamp,
                 f.model,
-                f.status
+                f.status,
+                f.hidden
             ])
             .map_err(DbError::from)?;
             n += 1;
@@ -622,6 +637,20 @@ pub fn messages_upsert_index(engine: &Engine, p: &Value) -> DbResult<Value> {
     let prompt_tokens = opt_i64(p, "prompt_tokens")?;
     let completion_tokens = opt_i64(p, "completion_tokens")?;
     let cost = p.get("cost").and_then(|x| x.as_f64());
+    // `hidden` 是**可选**参数，语义与其它可选列不同（不能用 COALESCE 一把梭）：
+    //
+    // - 普通写路径（渲染侧 writeIndexViaRust）**不传**它 —— 更新时必须保留库里已有的
+    //   hidden，否则一次普通的内容更新就会把"已压缩隐藏"的消息复活（历史上修过的一类 bug）。
+    // - 索引重建路径（session-log-bridge 的 rebuildSessionLogs）**要传**它 ——
+    //   它的目标就是把日志里的 hidden 还原进索引。而 `hidden = 0` 是合法值，
+    //   用 `COALESCE(?n, hidden)` 会把它误判成"没给"，所以这里显式区分"给了/没给"。
+    let hidden_arg: Option<i64> = match p.get("hidden") {
+        None | Some(Value::Null) => None,
+        Some(Value::Number(n)) => n.as_i64(),
+        Some(other) => {
+            return Err(DbError::invalid("hidden", format!("期望整数，收到 {other}")))
+        }
+    };
 
     // tool_calls 在事务外先解析校验（参数错误不该留下半个事务）
     let tool_calls: Option<Vec<ToolCallRow>> = match p.get("tool_calls") {
@@ -650,30 +679,33 @@ pub fn messages_upsert_index(engine: &Engine, p: &Value) -> DbResult<Value> {
 
     engine.write_tx(|tx| {
         // 1) messages 主行：存在则更新（只更动给出的列），不存在则插入
-        let exists: i64 = tx
+        //    顺带把当前 hidden 取出来：没显式传 hidden 时要原样保留它。
+        let (exists, current_hidden): (i64, i64) = tx
             .query_row(
-                "SELECT COUNT(*) FROM messages WHERE id = ?1",
+                "SELECT COUNT(*), COALESCE(MAX(hidden), 0) FROM messages WHERE id = ?1",
                 params![f.id],
-                |r| r.get(0),
+                |r| Ok((r.get(0)?, r.get(1)?)),
             )
             .map_err(DbError::from)?;
+        let hidden_next = hidden_arg.unwrap_or(current_hidden);
 
         let written = if exists > 0 {
             tx.execute(
                 "UPDATE messages SET content = ?1, reasoning = ?2, model = ?3, status = ?4, \
-                   timestamp = ?5, \
-                   generated_files = COALESCE(?6, generated_files), \
-                   retrieved_sources = COALESCE(?7, retrieved_sources), \
-                   prompt_tokens = COALESCE(?8, prompt_tokens), \
-                   completion_tokens = COALESCE(?9, completion_tokens), \
-                   cost = COALESCE(?10, cost) \
-                 WHERE id = ?11",
+                   timestamp = ?5, hidden = ?6, \
+                   generated_files = COALESCE(?7, generated_files), \
+                   retrieved_sources = COALESCE(?8, retrieved_sources), \
+                   prompt_tokens = COALESCE(?9, prompt_tokens), \
+                   completion_tokens = COALESCE(?10, completion_tokens), \
+                   cost = COALESCE(?11, cost) \
+                 WHERE id = ?12",
                 params![
                     f.content,
                     f.reasoning,
                     f.model,
                     f.status,
                     f.timestamp,
+                    hidden_next,
                     generated_files,
                     retrieved_sources,
                     prompt_tokens,
@@ -686,8 +718,8 @@ pub fn messages_upsert_index(engine: &Engine, p: &Value) -> DbResult<Value> {
         } else {
             tx.execute(
                 "INSERT INTO messages (id, session_id, role, content, reasoning, timestamp, model, status, \
-                   generated_files, retrieved_sources, prompt_tokens, completion_tokens, cost) \
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+                   generated_files, retrieved_sources, prompt_tokens, completion_tokens, cost, hidden) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
                 params![
                     f.id,
                     f.session_id,
@@ -701,7 +733,8 @@ pub fn messages_upsert_index(engine: &Engine, p: &Value) -> DbResult<Value> {
                     retrieved_sources,
                     prompt_tokens.unwrap_or(0),
                     completion_tokens.unwrap_or(0),
-                    cost.unwrap_or(0.0)
+                    cost.unwrap_or(0.0),
+                    hidden_next
                 ],
             )
             .map_err(DbError::from)?
@@ -995,6 +1028,177 @@ pub fn sessions_upsert(engine: &Engine, p: &Value) -> DbResult<Value> {
     })
 }
 
+/// **索引自愈的核心命令**（P5 第 2 段）：把「权威会话日志」的内容整批写回查询索引。
+///
+/// ## 为什么必须是**一条**命令、一个事务
+///
+/// 渲染侧的 `rebuildSessionLogs()` 原来是对旧库执行
+/// `BEGIN; INSERT sessions…; INSERT messages…; DELETE tool_calls…; INSERT tool_calls…; COMMIT`
+/// 一整套裸 SQL。搬到端口后如果拆成多条 IPC，中途失败就会留下
+/// "会话行在、消息只写了一半、工具调用还是旧的"这种半截索引 —— 比不重建更糟。
+///
+/// ## 参数形状
+///
+/// ```json
+/// { "sessions": [ { "id": "...", "messages": [ { ...message..., "tool_calls": [...] } ] } ] }
+/// ```
+///
+/// - `hidden` 会**显式还原**（日志里记着压缩状态，重建后必须一致，否则被压缩的消息会复活）；
+/// - 每条消息的 `tool_calls` 是**整体替换**（先删后插），与渲染侧语义一致；
+/// - 幂等：同 id 覆盖写，重复调用不会产生重复行。
+pub fn messages_rebuild_index(engine: &Engine, p: &Value) -> DbResult<Value> {
+    let sessions = p
+        .get("sessions")
+        .and_then(|x| x.as_array())
+        .ok_or_else(|| DbError::missing("sessions（数组）"))?;
+
+    // 先在事务外把参数解析校验完：参数错误不该留下半个事务
+    struct Parsed {
+        id: String,
+        title: String,
+        first_ts: i64,
+        last_ts: i64,
+        count: i64,
+        messages: Vec<(MessageFields, Option<Vec<ToolCallRow>>)>,
+    }
+    let mut parsed: Vec<Parsed> = Vec::with_capacity(sessions.len());
+    for s in sessions {
+        let sid = req_text(s, "id")?;
+        let items = s
+            .get("messages")
+            .and_then(|x| x.as_array())
+            .ok_or_else(|| DbError::missing("sessions[].messages（数组）"))?;
+        let mut msgs = Vec::with_capacity(items.len());
+        for m in items {
+            let f = message_fields(m)?;
+            let calls = parse_tool_calls(m)?;
+            msgs.push((f, calls));
+        }
+        // 归属项目在日志里没有记录 → 落到全局项目 ""（schema 阶段已种下该行，满足外键）
+        let first_user = items.iter().find(|m| {
+            m.get("role").and_then(|r| r.as_str()) == Some("user")
+        });
+        let title_src = first_user
+            .and_then(|m| m.get("content").and_then(|c| c.as_str()))
+            .unwrap_or("");
+        let title = title_src
+            .lines()
+            .next()
+            .unwrap_or("")
+            .chars()
+            .take(60)
+            .collect::<String>();
+        let title = if title.trim().is_empty() { format!("会话 {sid}") } else { title };
+        let first_ts = msgs.first().map(|(f, _)| f.timestamp).unwrap_or_else(now_ms);
+        let last_ts = msgs.last().map(|(f, _)| f.timestamp).unwrap_or(first_ts);
+        parsed.push(Parsed {
+            id: sid,
+            title,
+            first_ts,
+            last_ts,
+            count: msgs.len() as i64,
+            messages: msgs,
+        });
+    }
+
+    engine.write_tx(|tx| {
+        let mut sess_stmt = tx
+            .prepare_cached(
+                "INSERT INTO sessions (id, project_id, title, created_at, last_message_at, message_count, pinned) \
+                 VALUES (?1, '', ?2, ?3, ?4, ?5, 0) \
+                 ON CONFLICT(id) DO UPDATE SET last_message_at = excluded.last_message_at, \
+                   message_count = excluded.message_count",
+            )
+            .map_err(DbError::from)?;
+        let mut msg_stmt = tx.prepare_cached(MESSAGE_UPSERT).map_err(DbError::from)?;
+        let mut del_tc = tx
+            .prepare_cached("DELETE FROM tool_calls WHERE message_id = ?1")
+            .map_err(DbError::from)?;
+        let mut ins_tc = tx
+            .prepare_cached(
+                "INSERT INTO tool_calls (id, message_id, tool, args, result, status, metadata) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            )
+            .map_err(DbError::from)?;
+        // 补回可能缺失的 `messages.parent_message_id` / `metadata`（日志里有就带上）
+        let mut meta_stmt = tx
+            .prepare_cached(
+                "UPDATE messages SET parent_message_id = COALESCE(?2, parent_message_id), \
+                   metadata = COALESCE(?3, metadata) WHERE id = ?1",
+            )
+            .map_err(DbError::from)?;
+
+        let mut msgs_written = 0i64;
+        let mut tools_written = 0i64;
+        for s in &parsed {
+            sess_stmt
+                .execute(params![s.id, s.title, s.first_ts, s.last_ts, s.count])
+                .map_err(DbError::from)?;
+            for (f, calls) in &s.messages {
+                msg_stmt
+                    .execute(params![
+                        f.id,
+                        f.session_id,
+                        f.role,
+                        f.content,
+                        f.reasoning,
+                        f.timestamp,
+                        f.model,
+                        f.status,
+                        f.hidden
+                    ])
+                    .map_err(DbError::from)?;
+                msgs_written += 1;
+                meta_stmt
+                    .execute(params![
+                        f.id,
+                        f.parent_message_id,
+                        f.metadata
+                    ])
+                    .map_err(DbError::from)?;
+                if let Some(list) = calls {
+                    del_tc.execute(params![f.id]).map_err(DbError::from)?;
+                    for tc in list {
+                        ins_tc
+                            .execute(params![tc.id, f.id, tc.tool, tc.args, tc.result, tc.status, tc.metadata])
+                            .map_err(DbError::from)?;
+                        tools_written += 1;
+                    }
+                }
+            }
+        }
+        Ok(json!({
+            "sessions": parsed.len(),
+            "messages": msgs_written,
+            "tool_calls": tools_written,
+        }))
+    })
+}
+
+/// 解析消息的 `tool_calls`（与 `messages.upsert_index` 同一套校验）
+fn parse_tool_calls(p: &Value) -> DbResult<Option<Vec<ToolCallRow>>> {
+    match p.get("tool_calls") {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::Array(arr)) => {
+            let mut out = Vec::with_capacity(arr.len());
+            for tc in arr {
+                out.push(ToolCallRow {
+                    id: req_text(tc, "id")?,
+                    tool: req_text(tc, "tool")?,
+                    args: tc.get("args").cloned().unwrap_or_else(|| json!({})).to_string(),
+                    result: opt_text(tc, "result")?,
+                    status: opt_text(tc, "status")?.unwrap_or_else(|| "running".to_string()),
+                    metadata: match tc.get("metadata") {
+                        None | Some(Value::Null) => None,
+                        Some(other) => Some(other.to_string()),
+                    },
+                });
+            }
+            Ok(Some(out))
+        }
+        Some(other) => Err(DbError::invalid("tool_calls", format!("期望数组，收到 {other}"))),
+    }
+}
 fn session_row(r: &Row<'_>) -> rusqlite::Result<Value> {
     Ok(json!({
         "id": r.get::<_, String>(0)?,

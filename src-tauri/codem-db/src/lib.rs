@@ -1,4 +1,4 @@
-﻿//! `codem-db` —— Codem 存储引擎（Rust 原生 SQLite）
+//! `codem-db` —— Codem 存储引擎（Rust 原生 SQLite）
 //!
 //! 目的（见 `docs/ARCH-SQLITE-TO-RUST.md`）：把 SQLite 从渲染进程的 WASM 堆里搬出来，
 //! 让持久化变成 **WAL 页级增量**、让错误变成 **可处理的值**、让渲染进程**不再持有整个语料**。
@@ -43,6 +43,7 @@ pub const COMMANDS: &[&str] = &[
     "messages.create",
     "messages.create_many",
     "messages.upsert_index",
+    "messages.rebuild_index",
     "messages.update",
     "messages.update_many",
     "tool_calls.replace",
@@ -120,6 +121,7 @@ pub fn dispatch(engine: &Engine, command: &str, params: &Value) -> DbResult<Valu
         "messages.create" => repo::messages_create(engine, params),
         "messages.create_many" => repo::messages_create_many(engine, params),
         "messages.upsert_index" => repo::messages_upsert_index(engine, params),
+    "messages.rebuild_index" => repo::messages_rebuild_index(engine, params),
         "tool_calls.replace" => repo::tool_calls_replace(engine, params),
         "tool_calls.list" => repo::tool_calls_list(engine, params),
         "messages.update" => repo::messages_update(engine, params),
