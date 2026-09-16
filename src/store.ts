@@ -337,19 +337,26 @@ export const useAppStore = create<AppState>((set, get) => ({
             const heal = await guardContentBeforeSessionOpen(await legacyDbPath());
             if (heal.kind === "restored") {
               /*
-               * 恢复完成后要**重新读一次**，否则界面停在空列表上（用户感知不到已经救回来了）。
-               * 恢复是把整库内容换回旧库那份，会话 id 不变，所以按原 sessionId 重读即可；
-               * 但镜像/日志缓存此时都指向旧内容，所以先把缓存清掉再读。
+               * 恢复完成后必须**作废镜像并重拉**，否则界面停在空列表上 ——
+               * 真机实测过这个形态：数据已经救回（`messages=821`），
+               * 但镜像里那份"空快照"仍是 `loaded`，读路径继续返回空集合。
+               *
+               * 另外要把项目/会话列表也重新读一遍：清空时被删掉的会话此刻才回来，
+               * `currentSession` 可能指向一个已失效的对象。
                */
-              MessageStorage.clearSessionLogCache();
-              await new Promise((r) => setTimeout(r, 300));
-              const again = MessageStorage.listMessages(sessionId);
-              if (again.length > 0) {
-                applyMessages(again);
-                console.warn(
-                  `[Store] 检测到内容被清空并已恢复（上次水位 ${heal.previous?.messages} 条）→ 重读 ${again.length} 条`,
-                );
-              }
+              MessageStorage.reloadSessionMessages(sessionId, () => {
+                const again = MessageStorage.listMessages(sessionId);
+                if (again.length > 0) {
+                  applyMessages(again);
+                  console.warn(
+                    `[Store] 内容被清空后已恢复并重拉镜像（上次水位 ${heal.previous?.messages} 条）→ 显示 ${again.length} 条`,
+                  );
+                }
+              });
+              // 清空时被删掉的会话此刻才回来，项目/会话列表要重新读一遍
+              void import("./core/store").then(({ useProjectStore }) => {
+                useProjectStore.getState().loadFromDB();
+              });
             }
           } catch (e) {
             console.warn("[Store] 运行期内容核对未完成（不影响使用）:", e);

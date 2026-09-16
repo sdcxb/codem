@@ -261,6 +261,34 @@ export function onSessionMessagesReady(sessionId: string, cb: () => void): void 
   }
 }
 
+/**
+ * **作废并重拉**某会话的消息镜像（第 38 轮）。
+ *
+ * 用途：库内容被外部改动之后（典型场景是"运行期守护从旧库恢复"），
+ * 镜像里那份旧快照必须作废 —— 否则 `isLoaded` 会一直为真，
+ * 读路径继续返回**陈旧（空）集合**，表现为"数据救回来了、界面还是空的"。
+ */
+export function reloadSessionMessages(sessionId: string, onLoaded?: () => void): void {
+  const port = rustMessagePort();
+  if (!port?.messages) {
+    // 端口不可用时至少保留旧行为（清日志缓存，让下一次读走权威日志）
+    cachedLogMessages.delete(sessionId);
+    onLoaded?.();
+    return;
+  }
+  cachedLogMessages.delete(sessionId);
+  try {
+    if (port.messages.reload) {
+      port.messages.reload(sessionId, onLoaded);
+    } else {
+      // 假端口没有 reload：退化成"先确保加载、加载完再回调"
+      port.messages.ensureLoaded(sessionId, onLoaded);
+    }
+  } catch {
+    onLoaded?.();
+  }
+}
+
 export function listMessagesMerged(sessionId: string, limit?: number): Message[] {
   /**
    * P5 第 10 段：工具调用**从缓存补上**（与 `getMessage` 同一来源）。
@@ -884,6 +912,14 @@ type RustMessagePortLike = {
     byIdLookup(id: string): { id: string; session_id: string } | undefined;
     hiddenIds(sessionId: string): Set<string>;
     count(sessionId: string): number;
+    /**
+     * 作废并重新加载该会话镜像（第 38 轮）。
+     *
+     * 声明为可选：真实端口（`RustMessageMirror`）与测试用的内存端口都有，
+     * 但契约测试里的极简假端口可能没有 —— 缺省时 `reloadSessionMessages`
+     * 会退化成"只清日志缓存"的旧行为，不会抛。
+     */
+    reload?(sessionId: string, onLoaded?: () => void): void;
   };
   applyMessageWrite?(row: Record<string, unknown> & { id: string; session_id: string }): void;
   applyMessageDelete?(sessionId: string, ids: string[]): void;

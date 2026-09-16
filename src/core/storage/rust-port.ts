@@ -1025,6 +1025,27 @@ class RustMessageMirror {
   }
 
   /**
+   * **丢弃并重新加载**某会话的镜像（第 38 轮）。
+   *
+   * ## 为什么需要它
+   *
+   * 场景：数据被外部清空 → 运行期守护从旧库恢复 → 但镜像里那份"空集合"仍然是
+   * `loaded` 状态，于是 `rustMessageSource()` 认为"已加载完、可以路由"，
+   * 读出来还是空 —— 数据库已经救回来了，**界面却依旧空白**（真机实测就是这个形态）。
+   *
+   * 关键认知：**镜像的 `loaded` 标记是关于"这份快照完整"，不是关于"库没变"**。
+   * 一旦库内容被外部改动（恢复就是这种情况），旧快照必须作废重拉，
+   * 否则"未加载不路由"这条防读写分裂的规则，会反过来把陈旧快照当成权威。
+   */
+  reload(sessionId: string, onLoaded?: () => void): void {
+    this.loaded.delete(sessionId);
+    this.lru.delete(sessionId);
+    this.bySession.delete(sessionId);
+    this.loading.delete(sessionId); // 允许立刻重新发起（旧 job 的 finally 是幂等删除）
+    this.ensureLoaded(sessionId, onLoaded);
+  }
+
+  /**
    * 超出总预算时逐出最久未使用的会话镜像（**不动正在加载的会话**）。
    *
    * 只逐出到刚好低于预算：逐出动作本身不该引发抖动。
