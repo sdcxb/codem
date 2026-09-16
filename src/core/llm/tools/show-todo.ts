@@ -8,6 +8,44 @@
 import type { ToolDef, ToolExecuteResult, ToolContext } from "../tools";
 import type { TodoItem } from "../agentic-loop";
 import { getDatabase, persistDatabase } from "../../storage/database";
+import { domainReadOne, domainWrite } from "../../storage/domain-store";
+
+/**
+ * `todo_lists` 表与行转换（P5 第 2 段：接入域端口）
+ *
+ * 这个文件原来**自己拥有** `todo_lists` 表的读写（`INSERT` / `SELECT` / `UPDATE`），
+ * 是 D 类（存储边界）违例里比较隐蔽的一处：它藏在"工具实现"里，不在 storage 目录下。
+ * 切到 Rust 之后这些语句打的是旧库，待办列表会"看起来保存了、重启就没了"。
+ */
+const TODO_TABLE = "todo_lists";
+
+interface TodoListRow {
+  id: string;
+  session_id: string;
+  todos: string;
+  created_at: number;
+  updated_at: number;
+}
+
+function wireToTodoRow(row: Record<string, unknown>): TodoListRow {
+  return {
+    id: String(row.id ?? ""),
+    session_id: String(row.session_id ?? ""),
+    todos: String(row.todos ?? "[]"),
+    created_at: Number(row.created_at ?? 0),
+    updated_at: Number(row.updated_at ?? 0),
+  };
+}
+
+/** 解析待办 JSON（解析失败当"没有"，不让坏数据把工具整条链路拖死） */
+function parseTodos(json: string): TodoItem[] | null {
+  try {
+    const parsed = JSON.parse(json);
+    return Array.isArray(parsed) ? (parsed as TodoItem[]) : null;
+  } catch {
+    return null;
+  }
+}
 
 interface ShowTodoInput {
   todos: Array<{
@@ -116,8 +154,18 @@ export function createShowTodoTool(): ToolDef {
  * Save todo list to database
  */
 function saveTodoList(sessionId: string, todoId: string, todos: TodoItem[]): void {
-  const db = getDatabase();
   const now = Date.now();
+  const row: TodoListRow = {
+    id: todoId,
+    session_id: sessionId,
+    todos: JSON.stringify(todos),
+    created_at: now,
+    updated_at: now,
+  };
+  if (domainWrite(TODO_TABLE, [{ ...row }], { scope: "todo.save", note: "待办列表未保存" })) {
+    return;
+  }
+  const db = getDatabase();
 
   // Insert todo list
   db.run(
@@ -132,6 +180,8 @@ function saveTodoList(sessionId: string, todoId: string, todos: TodoItem[]): voi
  * Load todo list from database
  */
 export function loadTodoList(todoId: string): TodoItem[] | null {
+  const rust = domainReadOne(TODO_TABLE, { id: todoId }, wireToTodoRow);
+  if (rust !== undefined) return rust ? parseTodos(rust.todos) : null;
   const db = getDatabase();
   const result = db.exec("SELECT todos FROM todo_lists WHERE id = ?", [todoId]);
 
@@ -147,6 +197,23 @@ export function loadTodoList(todoId: string): TodoItem[] | null {
  * Update todo item status
  */
 export function updateTodoStatus(todoId: string, itemId: string, status: TodoItem["status"]): void {
+  const applyStatus = (todos: TodoItem[]): TodoItem[] =>
+    todos.map((todo) => (todo.id === itemId ? { ...todo, status } : todo));
+
+  // 迁移期：读出整行 → 改状态 → 整体写回（旧实现是读出 JSON、改、再 UPDATE 回去）
+  const rustCurrent = domainReadOne(TODO_TABLE, { id: todoId }, wireToTodoRow);
+  if (rustCurrent !== undefined) {
+    if (!rustCurrent) return; // 待办列表不存在：旧实现是直接 return
+    const todos = parseTodos(rustCurrent.todos);
+    if (!todos) return;
+    domainWrite(
+      TODO_TABLE,
+      [{ ...rustCurrent, todos: JSON.stringify(applyStatus(todos)), updated_at: Date.now() }],
+      { mode: "replace", scope: "todo.updateStatus", note: "待办状态未更新" },
+    );
+    return;
+  }
+
   const db = getDatabase();
   const result = db.exec("SELECT todos FROM todo_lists WHERE id = ?", [todoId]);
 
@@ -157,9 +224,7 @@ export function updateTodoStatus(todoId: string, itemId: string, status: TodoIte
   const todosJson = result[0].values[0][0] as string;
   const todos: TodoItem[] = JSON.parse(todosJson);
 
-  const updatedTodos = todos.map((todo) =>
-    todo.id === itemId ? { ...todo, status } : todo
-  );
+  const updatedTodos = applyStatus(todos);
 
   db.run(
     "UPDATE todo_lists SET todos = ?, updated_at = ? WHERE id = ?",

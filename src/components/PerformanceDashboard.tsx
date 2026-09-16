@@ -76,15 +76,21 @@ export function PerformanceDashboard({ onClose }: PerformanceDashboardProps) {
 
   const handleClearAll = useCallback(() => {
     try {
-      const db = getDatabase();
-      db.run("DELETE FROM telemetry_events");
-      persistDatabase();
+      // P5 第 2 段：不再由组件直接操作数据库（那是 D 类边界违例，
+      // 而且在 rust 引擎下会打在旧库上）。清空逻辑收进采集器、走域端口。
+      const removed = telemetry.clearAll();
+      if (removed === null) {
+        // 端口未接手（回滚到 wasm）→ 回退旧路径，行为与迁移前一致
+        const db = getDatabase();
+        db.run("DELETE FROM telemetry_events");
+        persistDatabase();
+      }
       setShowClearConfirm(false);
       refresh();
     } catch (err) {
       console.warn("[PerfDashboard] Clear failed:", err);
     }
-  }, [refresh]);
+  }, [refresh, telemetry]);
 
   const handleExportOTel = useCallback(() => {
     // Export all sessions' OTel data

@@ -9,7 +9,7 @@
 
 import { getDatabase, persistDatabase, isCompactionInProgress, isDatabaseFatal, noteDatabaseError } from "../storage/database";
 import { reportPersistFailure } from "../storage/persist-failure";
-import { domainReadMany, domainWrite } from "../storage/domain-store";
+import { domainDeleteWhere, domainReadMany, domainWrite } from "../storage/domain-store";
 
 // ========== Types ==========
 
@@ -230,6 +230,29 @@ class TelemetryCollector {
       data: row[3] ? JSON.parse(row[3] as string) : undefined,
       timestamp: row[4] as number,
     }));
+  }
+
+  /**
+   * 清空全部遥测事件（仪表盘的"清空"按钮）。
+   *
+   * P5 第 2 段：这段逻辑原来写在 `PerformanceDashboard.tsx` 里 ——
+   * **UI 组件直接 `getDatabase()` + `db.run("DELETE FROM telemetry_events")`**。
+   * 那是 D 类（存储边界）违例：组件不该知道表名，而且切到 Rust 之后
+   * 那个 DELETE 打的是旧库，仪表盘会"看起来清空了、刷新又回来"。
+   * 现在收进采集器，走域端口（按 id 逐个删，线协议 where 不支持整表删除）。
+   *
+   * @returns 删除的行数；`null` 表示端口未接手（由调用方回退旧路径）
+   */
+  clearAll(): number | null {
+    const rows = telemetryRows();
+    if (!rows) return null;
+    const removed = domainDeleteWhere(
+      TABLE,
+      () => true, // 全清（旧实现就是无条件 DELETE FROM telemetry_events）
+      "id",
+      { scope: "telemetry.clearAll", note: "遥测事件未清空", ...TELEMETRY_OPTS },
+    );
+    return removed;
   }
 
   /**
