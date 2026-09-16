@@ -1,6 +1,7 @@
-import { getDatabase, persistDatabase } from "./database";
+import { getDatabase, tryGetDatabase, persistDatabase } from "./database";
 import { reportPersistFailure } from "./persist-failure";
 import { getStoragePort, hasStoragePort } from "./port";
+import { domainDelete, domainReadMany, domainReadOne, domainWrite } from "./domain-store";
 
 // ========== Settings Storage (replaces localStorage) ==========
 //
@@ -407,9 +408,19 @@ export function saveMemory(content: string): void {
 
 // ========== Recovery Data Storage ==========
 
+// P5 第 8 段：`recovery_data` 与 `cost_records` 接入端口。
+// 原实现**没有端口分支** —— 也就是说这两张表的读写一直只走旧库，
+// 属于 L3 清单里"回退分支其实就是实现"的那一类（不是"回退"，是唯一实现）。
+// 不补上它们，删掉旧引擎时这两个域会真的失效（崩溃恢复数据、成本统计）。
+const RECOVERY_TABLE = "recovery_data";
+const COST_TABLE = "cost_records";
+
 export function loadRecoveryData(sessionId: string): string | null {
+  const rust = domainReadOne(RECOVERY_TABLE, { session_id: sessionId }, (row) => String(row.data ?? ""));
+  if (rust !== undefined) return rust;
   try {
-    const db = getDatabase();
+    const db = tryGetDatabase();
+    if (!db) return null;
     const result = db.exec("SELECT data FROM recovery_data WHERE session_id = ?", [sessionId]);
     if (result.length > 0 && result[0].values.length > 0) {
       return result[0].values[0][0] as string;
@@ -421,8 +432,15 @@ export function loadRecoveryData(sessionId: string): string | null {
 }
 
 export function saveRecoveryData(sessionId: string, data: string): void {
-  const db = getDatabase();
   const now = Date.now();
+  if (domainWrite(RECOVERY_TABLE, [{ session_id: sessionId, data, updated_at: now }], {
+    mode: "replace",
+    scope: "settings.saveRecoveryData",
+    note: "崩溃恢复数据未保存",
+  })) {
+    return;
+  }
+  const db = getDatabase();
   db.run(
     "INSERT OR REPLACE INTO recovery_data (session_id, data, updated_at) VALUES (?, ?, ?)",
     [sessionId, data, now]
@@ -431,6 +449,12 @@ export function saveRecoveryData(sessionId: string, data: string): void {
 }
 
 export function removeRecoveryData(sessionId: string): void {
+  if (domainDelete(RECOVERY_TABLE, { session_id: sessionId }, {
+    scope: "settings.removeRecoveryData",
+    note: "崩溃恢复数据未删除",
+  })) {
+    return;
+  }
   const db = getDatabase();
   db.run("DELETE FROM recovery_data WHERE session_id = ?", [sessionId]);
   persistDatabase();
@@ -450,7 +474,35 @@ export interface CostRecord {
   timestamp: number;
 }
 
+/** `cost_records` 行 → `CostRecord`（列名 snake_case → 驼峰） */
+function wireToCostRecord(row: Record<string, unknown>): CostRecord {
+  return {
+    id: String(row.id ?? ""),
+    sessionId: String(row.session_id ?? ""),
+    model: String(row.model ?? ""),
+    provider: String(row.provider ?? ""),
+    promptTokens: Number(row.prompt_tokens ?? 0),
+    completionTokens: Number(row.completion_tokens ?? 0),
+    cost: Number(row.cost ?? 0),
+    duration: Number(row.duration ?? 0),
+    timestamp: Number(row.timestamp ?? 0),
+  };
+}
+
 export function addCostRecord(record: CostRecord): void {
+  if (domainWrite(COST_TABLE, [{
+    id: record.id,
+    session_id: record.sessionId,
+    model: record.model,
+    provider: record.provider,
+    prompt_tokens: record.promptTokens,
+    completion_tokens: record.completionTokens,
+    cost: record.cost,
+    duration: record.duration,
+    timestamp: record.timestamp,
+  }], { scope: "settings.addCostRecord", note: "成本记录未保存" })) {
+    return;
+  }
   const db = getDatabase();
   db.run(
     "INSERT INTO cost_records (id, session_id, model, provider, prompt_tokens, completion_tokens, cost, duration, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
@@ -460,8 +512,14 @@ export function addCostRecord(record: CostRecord): void {
 }
 
 export function getCostRecords(limit: number = 1000): CostRecord[] {
+  const rust = domainReadMany(COST_TABLE, wireToCostRecord);
+  if (rust) {
+    // 旧 SQL：ORDER BY timestamp DESC LIMIT ?
+    return rust.sort((a, b) => b.timestamp - a.timestamp).slice(0, limit);
+  }
   try {
-    const db = getDatabase();
+    const db = tryGetDatabase();
+    if (!db) return [];
     const result = db.exec(
       "SELECT id, session_id, model, provider, prompt_tokens, completion_tokens, cost, duration, timestamp FROM cost_records ORDER BY timestamp DESC LIMIT ?",
       [limit]
@@ -484,9 +542,27 @@ export function getCostRecords(limit: number = 1000): CostRecord[] {
 }
 
 export function getCostStats(): { totalCost: number; todayCost: number; totalSessions: number; totalTokens: number } {
+  const rust = domainReadMany(COST_TABLE, wireToCostRecord);
+  if (rust) {
+    // 四个聚合在**同一份数据**上算完（旧实现是四条独立 SELECT）
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const since = todayStart.getTime();
+    let totalCost = 0;
+    let todayCost = 0;
+    let totalTokens = 0;
+    const sessions = new Set<string>();
+    for (const r of rust) {
+      totalCost += r.cost;
+      if (r.timestamp >= since) todayCost += r.cost;
+      totalTokens += r.promptTokens + r.completionTokens;
+      sessions.add(r.sessionId);
+    }
+    return { totalCost, todayCost, totalSessions: sessions.size, totalTokens };
+  }
   try {
-    const db = getDatabase();
-    
+    const db = tryGetDatabase();
+    if (!db) return { totalCost: 0, todayCost: 0, totalSessions: 0, totalTokens: 0 };
     const totalResult = db.exec("SELECT COALESCE(SUM(cost), 0) FROM cost_records");
     const totalCost = totalResult.length > 0 ? (totalResult[0].values[0][0] as number) : 0;
     

@@ -241,14 +241,32 @@ export async function migrateFromLegacyDb(
   const port = getStoragePort();
   if (port.kind !== "rust") return { kind: "skipped", reason: `引擎为 ${port.kind}` };
 
-  // 条件 2：新库里已有会话 → 用户已在新库上工作过，绝不用旧库覆盖
+  // 条件 2：**新库里既没有会话、也没有消息**才允许用旧库覆盖。
+  //
+  // ⚠️ 第 28 轮加固（真机事故后）：原来只判 `sessions > 0`，于是"用户把会话都删了"
+  // （或者某次测试/清理把 sessions 清空）就会重新触发一次全量覆盖迁移 ——
+  // 而 `migration.auto` 走的是 `replace: true`（**先清空目标表**），
+  // 于是一次误触发就把新库里剩下的数据（消息/事件/工具调用）清掉、
+  // 再从旧库导入**当时那份旧内容**。实测踩到：Rust 库只剩 1 个笔记本会话、
+  // 821 条消息与 2131 条事件全没了（数据在旧库里保住了，但用户看到的是"空的"）。
+  //
+  // 判据必须是"新库**确实什么都没有**" —— 只看会话不够，因为消息可以比会话活得久。
   try {
-    const page = await port.data.query<{ id: string }>("crud.list", { table: "sessions", limit: 1 });
-    if ((page.items?.length ?? 0) > 0) {
+    const sessions = await port.data.query<{ id: string }>("crud.list", { table: "sessions", limit: 1 });
+    if ((sessions.items?.length ?? 0) > 0) {
       return { kind: "skipped", reason: "新库已有会话数据（不覆盖）" };
     }
+    const messages = await port.data.query<{ id: string }>("crud.list", { table: "messages", limit: 1 });
+    if ((messages.items?.length ?? 0) > 0) {
+      return { kind: "skipped", reason: "新库已有消息数据（不覆盖）" };
+    }
+    const projects = await port.data.query<{ id: string }>("crud.list", { table: "projects", limit: 5 });
+    const userProjects = (projects.items ?? []).filter((p) => p.id !== "");
+    if (userProjects.length > 0) {
+      return { kind: "skipped", reason: "新库已有用户项目（不覆盖）" };
+    }
   } catch (e) {
-    return { kind: "skipped", reason: `无法查询新库会话：${String(e)}` };
+    return { kind: "skipped", reason: `无法查询新库数据：${String(e)}` };
   }
 
   // 条件 3：旧库路径 + 迁移标记

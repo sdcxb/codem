@@ -2,6 +2,42 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.16.48] - 2026-09-16 — 修一次**真实的数据清空事故**（全量覆盖迁移的守卫太弱）+ 补两张表接入端口
+
+### 事故与根因
+上一轮我在真机上验证回滚开关（切到 wasm 再切回 rust）时，发现 Rust 库变成了
+"只剩 1 个笔记本会话、**821 条消息与 2131 条事件全空**" —— 而旧库里数据完好。
+
+根因是**全量覆盖迁移的守卫太弱**：
+
+```ts
+// 原来只判"有没有会话"
+const page = await port.data.query("crud.list", { table: "sessions", limit: 1 });
+if (page.items.length > 0) return skipped;
+```
+
+而 `migration.auto` 走的是 `replace: true`（**先清空目标表再导入**）。
+于是只要 `sessions` 被清空一次（用户删光会话、或某个清理动作），
+下一次启动就会**重新触发一次全量覆盖**：把新库里剩下的消息/事件/工具调用清掉，
+再用旧库**当时那份内容**重新导入 —— 用户看到的就是"数据没了"。
+
+### 修法
+判据改成"新库**确实什么都没有**"才允许覆盖：会话、**消息**、用户项目三者都为空。
+只看会话不够 —— 消息可以比会话活得久（这次就是）。
+
+### 数据恢复
+先从旧库（`codem-db.bin`，数据完好）恢复：
+`migration.auto` → **39 张表 / 3990 行**，FTS 重建 2 个会话。
+恢复后核对：`messages=821 sessions=3 session_events=2131 tool_calls=883
+notebook_chunks=26`、`integrity_check=ok`、中文搜索 `消息` → **21 条**。
+
+### 顺带补上两张"一直只走旧库"的表
+`recovery_data` 与 `cost_records` 的读写**原本没有端口分支** —— 它们属于 L3 清单里
+"回退分支其实就是唯一实现"的那一类（不是回退，是唯一路径）。
+不补上，删掉旧引擎时"崩溃恢复数据"与"成本统计"会真的失效。已全部接入端口：
+`loadRecoveryData`/`saveRecoveryData`/`removeRecoveryData`/`addCostRecord`/
+`getCostRecords`/`getCostStats`。
+真机验证：recovery 与 cost 的写入→读回→删除全部通过。
 ## [1.16.47] - 2026-09-16 — sql.js 改为按需加载（不再进主 chunk）+ 修一个被引爆的测试竞态
 
 ### 改了什么
