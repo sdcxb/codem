@@ -1117,47 +1117,69 @@ flushStreamBuffer(); // flush all on unmount
 }, [flushStreamBuffer]);
 
   useEffect(() => {
-    // Initialize SQLite first, then load everything from database
+    // ⚠️ 顺序在这里是**语义**，不是风格（P5 第 4 段）：
+    //
+    // 1) **先**注册存储端口（它只取决于回滚开关，不需要旧库）；
+    // 2) 再决定要不要初始化 WASM 数据库 —— **引擎是 rust 时整段跳过**。
+    //
+    // 为什么必须跳过：`initDatabase()` 会把整个 `codem-db.bin` 读进渲染进程堆
+    // （还要再建一份 sql.js 实例）。只要它被调用，P6 实测的"3.7 倍内存"就原样存在 ——
+    // 换句话说，**默认走 Rust 但启动仍加载 WASM 库 = 一点内存都没省**。
+    //
+    // 跳过之后，所有仍写着"回退旧路径"的代码都会拿到"旧库不可用"，
+    // 这正好把**还没真正切到端口的路径**暴露出来（而不是让它们继续悄悄读写旧库）。
+    // 失败不阻塞启动的既有约定保持不变。
     (async () => {
       try {
-        setBootSplashPhase("loading-db");
-        await initDatabase();
-        // 第 92 波 P3：Rust 存储端口注册（迁移期默认不启用，回滚开关见 storage/port.ts）。
-        // 这里刻意**放在 initDatabase 之后、且失败不阻塞启动**：
-        // 端口自身可用性由 bootstrap 内部判定与上报，WASM 路径在任何情况下都能继续跑。
-        // await 是必要的 —— 配置面（settings）的同步读依赖启动时的预热。
-        {
-          const { registerRustStoragePort, importSettingsFromLegacyDb } = await import("./core/storage/bootstrap");
-          const boot = await registerRustStoragePort();
-          // 只在**本次真的打开了引擎**时打日志：复用已有端口时没有 health 快照，
-          // 早先无条件打印会输出 "undefined（undefined 表）" 这种误导性日志（StrictMode 双启动时必现）。
-          if (boot.kind === "registered" && boot.opened) {
-            console.log(`[Storage] Rust 引擎已就绪：${boot.health?.path}（${boot.health?.tables} 表 / ${boot.health?.journalMode}）`);
-          }
-          // 首次切到 Rust 时把配置从旧库搬过来（否则用户会觉得"设置全丢了"）。
-          // 必须在任何 getSetting() 之前完成 —— 它决定用户看到的是自己的偏好还是默认值。
-          if (boot.kind === "registered") {
-            await importSettingsFromLegacyDb();
-            // 第 92 波 P3 第 5 段：为**当前会话**预热事件镜像。
-            //
-            // 为什么要预热"当前会话"而不是全部：事件镜像的加载是按会话惰性的，
-            // 而路由规则要求"镜像加载完成后读写才走 Rust"。不预热的话，
-            // 当前会话在第一次访问前会把 append 写进旧库，等镜像加载完再切过去，
-            // 那批事件就只在旧库里了（窗口期）。预热当前会话能把窗口期缩到最小。
-            const activeId = useProjectStore.getState().currentSession?.id;
-            if (activeId) {
-              const { getStoragePort, hasStoragePort } = await import("./core/storage/port");
-              if (hasStoragePort() && getStoragePort().kind === "rust") {
-                const p = getStoragePort() as unknown as {
-                  warmupEvents?: (ids: string[]) => void;
-                  warmupMessages?: (id: string) => void;
-                };
-                p.warmupEvents?.([activeId]);
-                // 消息索引镜像也一起预热：否则该会话第一次读会落到旧库，
-                // 而旧库的 hidden 状态已经过时（写已经切到 Rust）→ 会把压缩消息复活
-                p.warmupMessages?.(activeId);
-              }
-            }
+        const { registerRustStoragePort, importSettingsFromLegacyDb, selectedEngine } = await import("./core/storage/bootstrap");
+
+        // ① 先注册端口。不 await 旧库相关的任何东西。
+        let boot: Awaited<ReturnType<typeof registerRustStoragePort>> = { kind: "skipped", reason: "未尝试" };
+        try {
+          boot = await registerRustStoragePort();
+        } catch (e) {
+          console.error("[Storage] 端口注册未预期地抛错（继续走旧库）:", e);
+        }
+        const rustActive = boot.kind === "registered";
+
+        // ② 旧库只在"本次确实要用 WASM"时加载
+        if (!rustActive) {
+          setBootSplashPhase("loading-db");
+          await initDatabase();
+        } else {
+          console.log("[Storage] 引擎为 rust：本次启动**不加载 WASM 数据库**（不再把整库读进渲染进程）");
+        }
+
+        if (rustActive && boot.kind === "registered" && boot.opened) {
+          console.log(`[Storage] Rust 引擎已就绪：${boot.health?.path}（${boot.health?.tables} 表 / ${boot.health?.journalMode}）`);
+        }
+        // 首次切到 Rust 时把配置从旧库搬过来（否则用户会觉得"设置全丢了"）。
+        // 注意：此时旧库可能**根本没加载**（rust 模式下就是如此），
+        // importSettingsFromLegacyDb 内部对"旧库读不到"是按"全新安装"处理的（返回 0），
+        // 所以这里不会把"没加载"误报成故障。
+        if (rustActive) {
+          await importSettingsFromLegacyDb();
+          void selectedEngine;
+        }
+
+        // 第 92 波 P3 第 5 段：为**当前会话**预热事件镜像。
+        //
+        // 为什么要预热"当前会话"而不是全部：事件镜像的加载是按会话惰性的，
+        // 而路由规则要求"镜像加载完成后读写才走 Rust"。不预热的话，
+        // 当前会话在第一次访问前会把 append 写进旧库，等镜像加载完再切过去，
+        // 那批事件就只在旧库里了（窗口期）。预热当前会话能把窗口期缩到最小。
+        const activeId = useProjectStore.getState().currentSession?.id;
+        if (activeId) {
+          const { getStoragePort, hasStoragePort } = await import("./core/storage/port");
+          if (hasStoragePort() && getStoragePort().kind === "rust") {
+            const p = getStoragePort() as unknown as {
+              warmupEvents?: (ids: string[]) => void;
+              warmupMessages?: (id: string) => void;
+            };
+            p.warmupEvents?.([activeId]);
+            // 消息索引镜像也一起预热：否则该会话第一次读会落到旧库，
+            // 而旧库的 hidden 状态已经过时（写已经切到 Rust）→ 会把压缩消息复活
+            p.warmupMessages?.(activeId);
           }
         }
         // 第 56 波：字号缩放必须在**数据库就绪后**应用（设置存在 SQLite 里，早期读取拿不到值）。
