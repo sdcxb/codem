@@ -854,18 +854,64 @@ class RustMessageMirror {
   private loaded = new Set<string>();
   private loading = new Map<string, Promise<void>>();
   private failures = 0;
-  /** 单会话加载上限（防极端会话无限拉取；超出时记录并截断，读操作会回退） */
+  /**
+   * 单会话加载上限（防极端会话无限拉取；超出时记录并截断，读操作会回退）。
+   *
+   * 这个值同时是**单会话**的内存上限：`MirrorMessageRow` 持有 `content` 字符串，
+   * 5000 条大消息就是几十上百 MB。所以它必须与 `totalBudgetRows` 一起看。
+   */
   private readonly maxBatch = 5000;
   private readonly maxRounds = 60;
   private truncated = false;
+  /**
+   * **跨会话**的总行数预算。
+   *
+   * 原来这里是"每个会话一旦加载就永远驻留"：用户浏览过 N 个大会话之后，
+   * N 份语料全留在渲染进程里（实测形态：1000 条 × 200KB 的会话 ≈ 195MB 正文，
+   * 两份引用（bySession + byId）指向同一批对象，但 N 个会话就是 N 份）。
+   * 这正是"大文档批处理把渲染进程压死"在**读路径**上的形态。
+   *
+   * 超出预算时按 **LRU** 逐出最久未使用的会话镜像：
+   * - 逐出后 `isLoaded` 为 false → 该会话的读**自动回退旧路径**，
+   *   同时下次访问会重新走 `ensureLoaded`（从 Rust 分页拉回）；
+   * - 因为路由规则本来就是"未加载完不路由"，逐出**不会**造成读写分裂。
+   */
+  private readonly totalBudgetRows: number;
+  /** 访问序（Map 的迭代顺序即插入序）：命中时删除再插入 = 移到末尾 = 最新使用 */
+  private lru = new Map<string, true>();
+  private evictions = 0;
 
   constructor(
     private readonly t: StorageTransport,
     private readonly onFailure: (scope: string, e: unknown, note: string) => void,
-  ) {}
+    totalBudgetRows = 20_000,
+  ) {
+    this.totalBudgetRows = totalBudgetRows;
+  }
 
   isLoaded(sessionId: string): boolean {
     return this.loaded.has(sessionId);
+  }
+
+  /** 当前镜像统计（用于诊断与契约测试：证明"驻留是有界的"） */
+  stats(): {
+    sessions: number;
+    rows: number;
+    failures: number;
+    truncated: boolean;
+    evictions: number;
+    budgetRows: number;
+  } {
+    let rows = 0;
+    for (const l of this.bySession.values()) rows += l.length;
+    return {
+      sessions: this.loaded.size,
+      rows,
+      failures: this.failures,
+      truncated: this.truncated,
+      evictions: this.evictions,
+      budgetRows: this.totalBudgetRows,
+    };
   }
 
   /** 加载是否被上限截断（截断后必须以旧库为准，避免读到不完整集合） */
@@ -873,8 +919,47 @@ class RustMessageMirror {
     return this.truncated;
   }
 
+  private touch(sessionId: string): void {
+    if (!this.loaded.has(sessionId)) return;
+    this.lru.delete(sessionId);
+    this.lru.set(sessionId, true);
+  }
+
+  /**
+   * 超出总预算时逐出最久未使用的会话镜像（**不动正在加载的会话**）。
+   *
+   * 只逐出到刚好低于预算：逐出动作本身不该引发抖动。
+   */
+  private enforceBudget(): void {
+    let rows = 0;
+    for (const l of this.bySession.values()) rows += l.length;
+    if (rows <= this.totalBudgetRows) return;
+    for (const sessionId of [...this.lru.keys()]) {
+      if (rows <= this.totalBudgetRows) break;
+      if (this.loading.has(sessionId)) continue;
+      const dropped = this.bySession.get(sessionId);
+      if (!dropped) continue;
+      for (const r of dropped) {
+        // byId 只在该 id 不再属于任何驻留会话时才删（同一条消息不会属于两个会话，
+        // 但这里仍然按"引用是否还存在"判断，避免将来支持跨会话引用时误删）
+        if (this.byId.get(r.id) === r) this.byId.delete(r.id);
+      }
+      this.bySession.delete(sessionId);
+      this.loaded.delete(sessionId);
+      this.lru.delete(sessionId);
+      rows -= dropped.length;
+      this.evictions++;
+      this.onFailure(
+        "messages.evict",
+        new Error(`消息镜像超出总预算，已逐出会话 ${sessionId}（${dropped.length} 条）`),
+        "已释放最久未使用的会话消息镜像（内存预算），下次读取该会话会重新加载",
+      );
+    }
+  }
+
   ensureLoaded(sessionId: string, onLoaded?: () => void): void {
     if (this.loaded.has(sessionId)) {
+      this.touch(sessionId);
       onLoaded?.();
       return;
     }
@@ -885,6 +970,8 @@ class RustMessageMirror {
     const job = this.loadSession(sessionId)
       .then(() => {
         this.loaded.add(sessionId);
+        this.lru.set(sessionId, true);
+        this.enforceBudget();
       })
       .catch((e) => {
         this.failures++;
@@ -950,6 +1037,7 @@ class RustMessageMirror {
 
   /** 本地应用一次写入（让镜像与刚写进 Rust 的索引保持一致） */
   applyWrite(row: Partial<MirrorMessageRow> & { id: string; session_id: string }): void {
+    this.touch(row.session_id);
     const list = this.bySession.get(row.session_id);
     const full: MirrorMessageRow = {
       id: row.id,
@@ -972,16 +1060,11 @@ class RustMessageMirror {
 
   /** 删除（deleteMessage / trim）后的镜像维护 */
   removeByIds(sessionId: string, ids: string[]): void {
+    this.touch(sessionId);
     const set = new Set(ids);
     const list = this.bySession.get(sessionId);
     if (list) this.bySession.set(sessionId, list.filter((m) => !set.has(m.id)));
     for (const id of ids) this.byId.delete(id);
-  }
-
-  stats(): { sessions: number; rows: number; failures: number; truncated: boolean } {
-    let rows = 0;
-    for (const l of this.bySession.values()) rows += l.length;
-    return { sessions: this.loaded.size, rows, failures: this.failures, truncated: this.truncated };
   }
 }
 
@@ -1175,6 +1258,7 @@ export class RustStoragePort implements StoragePort {
   constructor(
     transport: StorageTransport = tauriTransport,
     onFailure: (stream: string, e: unknown, note: string) => void = () => {},
+    opts: { messageMirrorBudgetRows?: number } = {},
   ) {
     this.reportFailure = onFailure;
     this.transport = transport;
@@ -1184,7 +1268,8 @@ export class RustStoragePort implements StoragePort {
     this.append = new RustAppendPort(transport, onFailure);
     this.configDomain = new RustConfigDomainCache(transport, onFailure);
     this.events = new RustEventMirror(transport, onFailure);
-    this.messages = new RustMessageMirror(transport, onFailure);
+    // 预算可注入：契约测试要用小预算来验证"驻留真的有界"（否则得造两万条消息）
+    this.messages = new RustMessageMirror(transport, onFailure, opts.messageMirrorBudgetRows);
     this.domains = new RustDomainMirror(transport, onFailure);
   }
 
