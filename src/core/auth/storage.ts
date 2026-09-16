@@ -1,4 +1,5 @@
 import { getDatabase, persistDatabase } from "../storage/database";
+import { runGuarded } from "../storage/write-guard";
 
 export interface Account {
   id: string;
@@ -74,9 +75,18 @@ export function updateAccount(id: string, update: Partial<Account>): void {
   if (update.tokenExpiry !== undefined) { fields.push("token_expiry = ?"); values.push(update.tokenExpiry ?? null); }
   if (update.isActive !== undefined) { fields.push("is_active = ?"); values.push(update.isActive ? 1 : 0); }
   fields.push("updated_at = ?"); values.push(Date.now());
-  if (fields.length === 0) return;
+  if (fields.length === 0) {
+      // 第 86 波：空更新原来静默返回 —— 调用方以为"更新成功"，实际没有任何写入
+      console.warn(`[storage.ts] update 调用未提供任何可更新字段 —— 本次没有任何写入`);
+      return;
+    }
   values.push(id);
-  db.run(`UPDATE accounts SET ${fields.join(", ")} WHERE id = ?`, values);
+  runGuarded(
+    db,
+    `UPDATE accounts SET ${fields.join(", ")} WHERE id = ?`,
+    values,
+    { table: "accounts", op: "update", id, from: "updateAccount" },
+  );
   persistDatabase();
 }
 

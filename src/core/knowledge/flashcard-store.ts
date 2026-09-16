@@ -8,6 +8,7 @@
  */
 
 import { getDatabase } from '../storage/database';
+import { runGuarded } from "../storage/write-guard";
 
 // ========== Types ==========
 
@@ -111,12 +112,21 @@ export function updateFlashcard(id: string, update: Partial<Pick<Flashcard, 'fro
   if (update.back !== undefined) { fields.push('back = ?'); values.push(update.back); }
   if (update.tags !== undefined) { fields.push('tags = ?'); values.push(JSON.stringify(update.tags)); }
 
-  if (fields.length === 0) return;
+  if (fields.length === 0) {
+      // 第 86 波：空更新原来静默返回 —— 调用方以为"更新成功"，实际没有任何写入
+      console.warn(`[flashcard-store.ts] update 调用未提供任何可更新字段 —— 本次没有任何写入`);
+      return;
+    }
   fields.push('updated_at = ?');
   values.push(Date.now());
   values.push(id);
 
-  db.run(`UPDATE flashcards SET ${fields.join(', ')} WHERE id = ?`, values);
+  runGuarded(
+    db,
+    `UPDATE flashcards SET ${fields.join(', ')} WHERE id = ?`,
+    values,
+    { table: "flashcards", op: "update", id, from: "updateFlashcard" },
+  );
 }
 
 export function deleteFlashcard(id: string): void {

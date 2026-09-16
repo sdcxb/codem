@@ -2,6 +2,32 @@
 
 All notable changes to Codem will be documented in this file.
 
+## [1.16.38] - 2026-09-15 — 延伸审计（A 类）：剩余 10 处"按 id 更新"接入静默空写探测器（第 86 波续）
+
+按同一套三类问题继续扫（"有问题不论是新旧都修"），这次针对 **A 类：静默空写**做机器扫描：
+`db.run(\`UPDATE … WHERE id = ?\`)` 全项目还有哪些没走 `runGuarded`。结果是 **10 处**（分布在 6 个存储模块）：
+
+- `auth/storage.ts` → `updateAccount`
+- `knowledge/storage.ts` → `updateNotebook` / `updateSource` / `updateNote` / `updateGroup` / `updateGraphNode`
+- `knowledge/flashcard-store.ts` → `updateFlashcard`
+- `squad/squad-storage.ts` → `updateSquad`
+- `storage/account.ts` → `updateAccount`
+- `storage/project.ts` → `updateProject`
+
+这些写入全部是"目标行应该存在"的 UPDATE。改动只有一件事：**接入探测器**（`runGuarded`），
+影响 0 行时记一笔并告警一次（行为不变、不改控制流）。另外这 10 个函数里都有
+`if (fields.length === 0) return;` 的**空更新静默返回** —— 调用方以为"更新成功"、实际一个字段都没写，
+现在同样会写一条带函数名的告警（例如 `updateNote 调用未提供任何可更新字段`）。
+
+**有意不动**的两处 DELETE（`agent_profiles.delete(id)`、`turn_file_changes.deleteBySession`）：
+"删一个本来就不存在的行"是正常语义，不该被当成空写告警。
+
+### 验证
+
+- 全量 **251 文件 / 4979 用例通过 / 15 跳过**、`tsc --noEmit` 0 错、UI 审计 27 条规则 0 error / 0 warn、
+  css-contract 2745 个类无变化；**全量跑完零 `[WriteGuard]` 空写告警**（说明这次接入后，
+  被测试覆盖的所有更新路径都真的写到了行 —— 没有新的隐藏空写）。
+
 ## [1.16.37] - 2026-09-15 — 把"看起来有、实际没有"的服务面修成真的（第 86 波）
 
 继续上一轮列出的未修项。这一批的共同特征是：**服务/接口存在、文档承诺了能力，底层却没有实现**

@@ -1,4 +1,5 @@
 import { getDatabase, persistDatabase } from "./database";
+import { runGuarded } from "./write-guard";
 
 export interface Account {
   id: string;
@@ -126,9 +127,18 @@ export function updateAccount(id: string, update: Partial<Account>): void {
   fields.push("updated_at = ?");
   values.push(Date.now());
 
-  if (fields.length === 0) return;
+  if (fields.length === 0) {
+      // 第 86 波：空更新原来静默返回 —— 调用方以为"更新成功"，实际没有任何写入
+      console.warn(`[account.ts] update 调用未提供任何可更新字段 —— 本次没有任何写入`);
+      return;
+    }
   values.push(id);
-  db.run(`UPDATE accounts SET ${fields.join(", ")} WHERE id = ?`, values);
+  runGuarded(
+    db,
+    `UPDATE accounts SET ${fields.join(", ")} WHERE id = ?`,
+    values,
+    { table: "accounts", op: "update", id, from: "updateAccount" },
+  );
   persistDatabase();
 }
 

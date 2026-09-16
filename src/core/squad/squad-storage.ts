@@ -6,6 +6,7 @@
  */
 
 import { getDatabase, persistDatabase } from "../storage/database";
+import { runGuarded } from "../storage/write-guard";
 
 // ========== Types ==========
 
@@ -80,11 +81,20 @@ export const SquadStorage = {
     if (updates.instructions !== undefined) { fields.push("instructions = ?"); values.push(updates.instructions); }
     if (updates.leader_agent_id !== undefined) { fields.push("leader_agent_id = ?"); values.push(updates.leader_agent_id); }
     if (updates.project_id !== undefined) { fields.push("project_id = ?"); values.push(updates.project_id); }
-    if (fields.length === 0) return;
+    if (fields.length === 0) {
+        // 第 86 波：空更新原来静默返回 —— 调用方以为"更新成功"，实际没有任何写入
+        console.warn(`[squad-storage.ts] update 调用未提供任何可更新字段 —— 本次没有任何写入`);
+        return;
+      }
     fields.push("updated_at = ?");
     values.push(Date.now());
     values.push(id);
-    db.run(`UPDATE squads SET ${fields.join(", ")} WHERE id = ?`, values);
+    runGuarded(
+      db,
+      `UPDATE squads SET ${fields.join(", ")} WHERE id = ?`,
+      values,
+      { table: "squads", op: "update", id, from: "update" },
+    );
     persistDatabase();
   },
 

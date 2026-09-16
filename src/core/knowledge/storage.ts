@@ -10,6 +10,7 @@
  */
 
 import { getDatabase, persistDatabase } from '../storage/database';
+import { runGuarded } from "../storage/write-guard";
 import type {
   Notebook,
   NotebookSource,
@@ -136,12 +137,21 @@ export function updateNotebook(id: string, update: Partial<Pick<Notebook, 'name'
   if (update.summaryStatus !== undefined) { fields.push('summary_status = ?'); values.push(update.summaryStatus); }
   if (update.groupId !== undefined) { fields.push('group_id = ?'); values.push(update.groupId ?? null); }
 
-  if (fields.length === 0) return;
+  if (fields.length === 0) {
+      // 第 86 波：空更新原来静默返回 —— 调用方以为"更新成功"，实际没有任何写入
+      console.warn(`[storage.ts] updateNotebook 调用未提供任何可更新字段 —— 本次没有任何写入`);
+      return;
+    }
   fields.push('updated_at = ?');
   values.push(Date.now());
   values.push(id);
 
-  db.run(`UPDATE notebooks SET ${fields.join(', ')} WHERE id = ?`, values);
+  runGuarded(
+    db,
+    `UPDATE notebooks SET ${fields.join(', ')} WHERE id = ?`,
+    values,
+    { table: "notebooks", op: "update", id, from: "updateNotebook" },
+  );
   persistDatabase();
 }
 
@@ -261,10 +271,19 @@ export function updateSource(id: string, update: Partial<Pick<NotebookSource, 's
   if (update.summary !== undefined) { fields.push('summary = ?'); values.push(update.summary); }
   if (update.keyTopics !== undefined) { fields.push('key_topics = ?'); values.push(update.keyTopics ? JSON.stringify(update.keyTopics) : null); }
 
-  if (fields.length === 0) return;
+  if (fields.length === 0) {
+      // 第 86 波：空更新原来静默返回 —— 调用方以为"更新成功"，实际没有任何写入
+      console.warn(`[storage.ts] updateSource 调用未提供任何可更新字段 —— 本次没有任何写入`);
+      return;
+    }
   values.push(id);
 
-  db.run(`UPDATE notebook_sources SET ${fields.join(', ')} WHERE id = ?`, values);
+  runGuarded(
+    db,
+    `UPDATE notebook_sources SET ${fields.join(', ')} WHERE id = ?`,
+    values,
+    { table: "notebook_sources", op: "update", id, from: "updateSource" },
+  );
   persistDatabase();
 }
 
@@ -438,12 +457,21 @@ export function updateNote(id: string, update: Partial<Pick<Note, 'title' | 'con
   if (update.pinOrder !== undefined) { fields.push('pin_order = ?'); values.push(update.pinOrder); }
   if (update.sourceId !== undefined) { fields.push('source_id = ?'); values.push(update.sourceId ?? null); }
 
-  if (fields.length === 0) return;
+  if (fields.length === 0) {
+      // 第 86 波：空更新原来静默返回 —— 调用方以为"更新成功"，实际没有任何写入
+      console.warn(`[storage.ts] updateNote 调用未提供任何可更新字段 —— 本次没有任何写入`);
+      return;
+    }
   fields.push('updated_at = ?');
   values.push(Date.now());
   values.push(id);
 
-  db.run(`UPDATE notes SET ${fields.join(', ')} WHERE id = ?`, values);
+  runGuarded(
+    db,
+    `UPDATE notes SET ${fields.join(', ')} WHERE id = ?`,
+    values,
+    { table: "notes", op: "update", id, from: "updateNote" },
+  );
   persistDatabase();
 }
 
@@ -773,9 +801,18 @@ export function updateGroup(id: string, update: Partial<Pick<NotebookGroup, 'nam
   if (update.parentId !== undefined) { fields.push('parent_id = ?'); values.push(update.parentId ?? null); }
   if (update.sortOrder !== undefined) { fields.push('sort_order = ?'); values.push(update.sortOrder); }
 
-  if (fields.length === 0) return;
+  if (fields.length === 0) {
+      // 第 86 波：空更新原来静默返回 —— 调用方以为"更新成功"，实际没有任何写入
+      console.warn(`[storage.ts] updateGroup 调用未提供任何可更新字段 —— 本次没有任何写入`);
+      return;
+    }
   values.push(id);
-  db.run(`UPDATE notebook_groups SET ${fields.join(', ')} WHERE id = ?`, values);
+  runGuarded(
+    db,
+    `UPDATE notebook_groups SET ${fields.join(', ')} WHERE id = ?`,
+    values,
+    { table: "notebook_groups", op: "update", id, from: "updateGroup" },
+  );
   persistDatabase();
 }
 
@@ -898,9 +935,18 @@ export function updateGraphNode(
   if (update.entityType !== undefined) { fields.push('entity_type = ?'); values.push(update.entityType); }
   if (update.description !== undefined) { fields.push('description = ?'); values.push(update.description ?? null); }
 
-  if (fields.length === 0) return;
+  if (fields.length === 0) {
+      // 第 86 波：空更新原来静默返回 —— 调用方以为"更新成功"，实际没有任何写入
+      console.warn(`[storage.ts] updateGraphNode 调用未提供任何可更新字段 —— 本次没有任何写入`);
+      return;
+    }
   values.push(nodeId);
-  db.run(`UPDATE graph_nodes SET ${fields.join(', ')} WHERE id = ?`, values);
+  runGuarded(
+    db,
+    `UPDATE graph_nodes SET ${fields.join(', ')} WHERE id = ?`,
+    values,
+    { table: "graph_nodes", op: "update", id: nodeId, from: "updateGraphNode" },
+  );
   persistDatabase();
 }
 

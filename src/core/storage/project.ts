@@ -1,5 +1,6 @@
 import { getDatabase, persistDatabase } from "./database";
 import type { Project } from "../types";
+import { runGuarded } from "./write-guard";
 
 export interface ProjectRow {
   id: string;
@@ -78,9 +79,18 @@ export function updateProject(id: string, update: Partial<Project>): void {
   if (update.pinned !== undefined) { fields.push("pinned = ?"); values.push(update.pinned ? 1 : 0); }
   if (update.lastAccessedAt !== undefined) { fields.push("last_accessed_at = ?"); values.push(update.lastAccessedAt); }
 
-  if (fields.length === 0) return;
+  if (fields.length === 0) {
+      // 第 86 波：空更新原来静默返回 —— 调用方以为"更新成功"，实际没有任何写入
+      console.warn(`[project.ts] update 调用未提供任何可更新字段 —— 本次没有任何写入`);
+      return;
+    }
   values.push(id);
-  db.run(`UPDATE projects SET ${fields.join(", ")} WHERE id = ?`, values);
+  runGuarded(
+    db,
+    `UPDATE projects SET ${fields.join(", ")} WHERE id = ?`,
+    values,
+    { table: "projects", op: "update", id, from: "updateProject" },
+  );
   persistDatabase();
 }
 
