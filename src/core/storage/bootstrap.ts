@@ -178,6 +178,62 @@ export async function shutdownRustStoragePort(): Promise<void> {
  * Rust 侧对账不通过就**不写标记**，这里如实上报。下次启动会再试 ——
  * 半成品不会被当成"迁移完成"，用户的旧库也一直在（只读打开，从不修改）。
  */
+/**
+ * **一次性搜索索引修复**（第 25 轮）：给"已经迁移过"的用户补上 FTS 重建。
+ *
+ * ## 为什么需要单独一步
+ *
+ * 中文搜索依赖 CJK bigram 切分，而**迁移搬进来的 `session_fts` 是老库那份
+ * unicode61 时代的原始文本** → 英文能搜、**中文恒为 0 条**
+ * （真机实测：`消息` 在库里 LIKE 命中 21 行、FTS 查询 0 条）。
+ *
+ * 修法是在自动迁移末尾加 `fts.rebuild_all` —— 但**已经跑过迁移的库有标记**，
+ * 迁移会（按设计）跳过，于是这些用户永远拿不到修复。
+ * 所以这里再补一个**独立的**标记与一次重建：只在"已迁移但还没修过索引"时执行一次。
+ *
+ * 用独立标记而不是每次启动都重建：重建代价与消息数成正比，
+ * 每次启动都做等于把启动时间绑在语料大小上。
+ */
+export async function repairSearchIndexOnce(
+  label = "storage.fts-repair",
+): Promise<{ kind: "skipped"; reason: string } | { kind: "repaired"; sessions: number; refreshed: number } | { kind: "failed"; error: unknown }> {
+  if (!hasStoragePort()) return { kind: "skipped", reason: "端口未注册" };
+  const port = getStoragePort();
+  if (port.kind !== "rust") return { kind: "skipped", reason: `引擎为 ${port.kind}` };
+
+  const MARKER = "codem-fts-bigram-rebuilt";
+  try {
+    const settings = await port.data.query<{ key: string; value: string }>("crud.list", {
+      table: "settings",
+      limit: 2000,
+    });
+    if (settings.items?.some((s) => s.key === MARKER)) {
+      return { kind: "skipped", reason: "已修过搜索索引" };
+    }
+  } catch {
+    /* 读不到设置不阻塞：宁可多修一次，也不要漏修 */
+  }
+
+  try {
+    // `command` 是 P5 第 6 段加的结构化结果入口（`execute` 会压成 {written}）；
+    // 类型上它在 StorageDataPort 里还没声明，所以这里显式标注一次。
+    const data = port.data as unknown as {
+      command: <T>(cmd: string, params?: Record<string, unknown>) => Promise<T>;
+    };
+    const res = await data.command<{ sessions?: number; refreshed?: number }>("fts.rebuild_all", {});
+    const sessions = res?.sessions ?? 0;
+    const refreshed = res?.refreshed ?? 0;
+    // 写标记（走端口；失败也不影响本次修复的效果）
+    try {
+      await data.command("settings.set", { key: MARKER, value: String(Date.now()) });
+    } catch { /* 标记没写上 → 下次启动会再修一遍（幂等、只是多花一次时间） */ }
+    console.log(`[Storage] 已重建搜索索引（中文搜索修复）：${sessions} 个会话 / 重写 ${refreshed} 条`);
+    return { kind: "repaired", sessions, refreshed };
+  } catch (e) {
+    reportActionFailure(label, e, "搜索索引重建未完成（中文搜索可能仍搜不到；下次启动会重试）");
+    return { kind: "failed", error: e };
+  }
+}
 export async function migrateFromLegacyDb(
   label = "storage.auto-migrate",
 ): Promise<{ kind: "skipped"; reason: string } | { kind: "migrated"; tables: number; rows: number } | { kind: "failed"; error: unknown }> {

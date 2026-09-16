@@ -1163,6 +1163,9 @@ flushStreamBuffer(); // flush all on unmount
           // 而用户的会话其实都在旧库里。这一步由 Rust 侧只读打开旧库搬过来（含逐表对账）。
           // 幂等：新库已有会话 / 已有迁移标记时直接跳过，绝不覆盖用户在新库上的数据。
           await migrateFromLegacyDb();
+          // 给"已经迁移过"的库补上搜索索引重建（中文搜索修复）。
+          // 独立于迁移标记：迁移幂等会跳过，这些用户否则永远拿不到修复。
+          await (await import("./core/storage/bootstrap")).repairSearchIndexOnce();
           await importSettingsFromLegacyDb();
           void selectedEngine;
         }

@@ -97,6 +97,7 @@ pub const COMMANDS: &[&str] = &[
     "digest.rows",
     "rebuild_fts",
     "fts.rebuild",
+    "fts.rebuild_all",
     "fts.delete_session",
     "fts.search",
 ];
@@ -181,6 +182,7 @@ pub fn dispatch(engine: &Engine, command: &str, params: &Value) -> DbResult<Valu
         "digest.rows" => migrate::digest_rows(params),
         "rebuild_fts" => migrate::rebuild_fts(engine, params),
         "fts.rebuild" => migrate::fts_rebuild(engine, params),
+    "fts.rebuild_all" => migrate::fts_rebuild_all(engine, params),
         "fts.delete_session" => migrate::fts_delete_session(engine, params),
         "fts.search" => migrate::fts_search(engine, params),
         other => Err(DbError::unsupported(format!(

@@ -1079,3 +1079,56 @@ fn upsert_index_preserves_hidden_unless_explicitly_given() {
     let onlyVisible = call(&e, "messages.list", json!({ "session_id": "s1", "limit": 50, "include_hidden": false }));
     assert_eq!(onlyVisible["items"].as_array().map(|a| a.len()), Some(0));
 }
+
+/// 中文必须能搜到（第 25 轮）：**索引与查询都要按 CJK bigram 切分**。
+///
+/// 这个测试守的是一个"行数对账发现不了"的缺陷：迁移搬进来的 `session_fts`
+/// 是老库那份 unicode61 时代的**原始文本**，英文能搜、**中文恒为 0 条**
+/// （真机实测：`消息` 在库里 LIKE 命中 21 行，FTS 查询返回 0；重建后同一查询 21 条）。
+#[test]
+fn chinese_is_searchable_after_rebuild() {
+    let (_d, e) = temp_engine("cjk-fts");
+    call(&e, "sessions.upsert", json!({ "id": "s1" }));
+    call(&e, "projects.upsert", json!({ "id": "p1", "name": "P" }));
+    call(
+        &e,
+        "messages.create",
+        json!({ "id": "m1", "session_id": "s1", "role": "user",
+                 "content": "关于存储迁移的讨论：上下文压缩会隐藏消息", "timestamp": 1 }),
+    );
+
+    // 重建索引（内部会把正文按 bigram 切分后写入 session_fts）
+    let rebuilt = call(&e, "fts.rebuild_all", json!({}));
+    assert!(rebuilt["sessions"].as_i64().unwrap_or(0) >= 1, "应至少重建一个会话：{rebuilt}");
+
+    // 索引里存的应该是**切分后**的文本（含单字与双字），不再是原文
+    let raw: String = e
+        .with_conn(|conn| {
+            conn.query_row("SELECT content FROM session_fts WHERE message_id = 'm1'", [], |r| {
+                r.get(0)
+            })
+            .map_err(codem_db::DbError::from)
+        })
+        .expect("读索引内容失败");
+    assert!(raw.starts_with("关") && raw.contains(' '), "索引应是切分形式：{raw:?}");
+
+    // 中文子串必须能搜到（这是修复前恒为 0 的那条路径）
+    for q in ["消息", "上下文", "压缩", "存储迁移"] {
+        let hits = call(&e, "fts.search", json!({ "query": q, "limit": 10 }));
+        assert!(
+            hits["items"].as_array().map(|a| a.len()).unwrap_or(0) >= 1,
+            "中文查询 {q:?} 应至少命中 1 条，实际：{hits}"
+        );
+    }
+
+    // 英文/ASCII 也要照旧能搜（回归保护）
+    call(
+        &e,
+        "messages.create",
+        json!({ "id": "m2", "session_id": "s1", "role": "assistant",
+                 "content": "ChatPanel 的渲染逻辑", "timestamp": 2 }),
+    );
+    call(&e, "fts.rebuild_all", json!({}));
+    let en = call(&e, "fts.search", json!({ "query": "ChatPanel", "limit": 10 }));
+    assert!(en["items"].as_array().map(|a| a.len()).unwrap_or(0) >= 1, "英文查询应命中：{en}");
+}

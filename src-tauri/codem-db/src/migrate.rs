@@ -1489,6 +1489,12 @@ pub fn auto_migrate(engine: &Engine, p: &Value) -> DbResult<Value> {
         ));
     }
 
+    // **重建 FTS**（第 25 轮）：迁移进来的 session_fts 是老库那份"unicode61 时代"的原始文本，
+    // 而中文搜索依赖 fts::tokenize 的 CJK bigram 切分 —— 不重建的话
+    // **英文能搜、中文恒为 0 条**（实测：库里 LIKE 命中 21 行、FTS 查询 0 条）。
+    // 行数对账发现不了这种"索引形态不对"，所以必须显式重建，且默认在这里做。
+    let fts = fts_rebuild_all(engine, &json!({}))?;
+
     // 对账通过 → 记录标记（"只搬一次"的依据）
     let at = crate::schema::now_ms();
     mark_migrated(engine, &json!({ "at": at }))?;
@@ -1502,5 +1508,62 @@ pub fn auto_migrate(engine: &Engine, p: &Value) -> DbResult<Value> {
         "skipped": skipped.iter().map(|(t, n)| json!({ "what": t, "rows": n })).collect::<Vec<_>>(),
         // BLOB 列被转成 `blobhex:` 文本搬运 —— 数量如实上报（静默改形是最坏的一种）
         "blob_columns_converted": blob_columns_total,
+        "fts": fts,
+    }))
+}
+
+/// **全库 FTS 重建**（第 25 轮）：对每个有消息的会话跑一遍 `fts_rebuild`。
+///
+/// ## 为什么迁移后必须做这一步
+///
+/// 中文搜索依赖 `fts::tokenize` 的 **CJK bigram 切分**：索引里存的是切分后的文本，
+/// 查询也要按同一套规则切分才能匹配。而迁移进来的 `session_fts` 内容
+/// （老库那份）是 **unicode61 时代**的原始文本 —— 于是：
+///
+/// - 英文搜索正常（ASCII 词原样保留，两边一致）；
+/// - **中文搜索恒为 0 条**（实测：`消息` 在库里 LIKE 命中 21 行，FTS 查询返回 0；
+///   重建后同一个查询返回 21 条）。
+///
+/// 这是"迁移搬对了行、但索引形态不对"的典型 —— 行数对账发现不了它，
+/// 所以必须显式重建，并且**默认在自动迁移末尾做**（不能让用户自己跑命令）。
+pub fn fts_rebuild_all(engine: &Engine, p: &Value) -> DbResult<Value> {
+    let limit = p.get("limit").and_then(|x| x.as_i64()).unwrap_or(10_000);
+    let sessions: Vec<String> = engine.with_conn(|conn| {
+        let mut stmt = conn
+            .prepare("SELECT DISTINCT session_id FROM messages LIMIT ?1")
+            .map_err(DbError::from)?;
+        let rows = stmt
+            .query_map(params![limit], |r| r.get::<_, String>(0))
+            .map_err(DbError::from)?;
+        let mut out = Vec::new();
+        for r in rows {
+            out.push(r.map_err(DbError::from)?);
+        }
+        Ok(out)
+    })?;
+
+    let mut total_added = 0i64;
+    let mut total_refreshed = 0i64;
+    let mut total_removed = 0i64;
+    let mut sessions_done = 0i64;
+    let mut failures: Vec<String> = Vec::new();
+    for sid in &sessions {
+        match fts_rebuild(engine, &json!({ "session_id": sid })) {
+            Ok(v) => {
+                sessions_done += 1;
+                total_added += v.get("added").and_then(|x| x.as_i64()).unwrap_or(0);
+                total_refreshed += v.get("refreshed").and_then(|x| x.as_i64()).unwrap_or(0);
+                total_removed += v.get("removed").and_then(|x| x.as_i64()).unwrap_or(0);
+            }
+            // 单个会话失败不该让整次重建失败（其余会话仍然受益），但要如实记录
+            Err(e) => failures.push(format!("{sid}: {e}")),
+        }
+    }
+    Ok(json!({
+        "sessions": sessions_done,
+        "added": total_added,
+        "refreshed": total_refreshed,
+        "removed": total_removed,
+        "failures": failures,
     }))
 }
