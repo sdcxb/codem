@@ -1159,6 +1159,87 @@ mod tests {
         );
     }
 
+    /// 打开一个临时新库（本模块自用；`event_tests` 里的同名助手不在本作用域）
+    fn eng(name: &str) -> (tempfile::TempDir, Engine) {
+        let dir = tempfile::tempdir().unwrap();
+        let engine = Engine::open(dir.path().join(format!("{name}.bin"))).unwrap();
+        (dir, engine)
+    }
+    /// 建一个"旧库"文件，供 legacy.read_table 的测试使用
+    fn write_legacy_settings(dir: &std::path::Path, rows: &[(&str, &str)]) -> std::path::PathBuf {
+        let path = dir.join("legacy.bin");
+        let conn = Connection::open(&path).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT, updated_at INTEGER);",
+        )
+        .unwrap();
+        for (k, v) in rows {
+            conn.execute(
+                "INSERT INTO settings (key, value, updated_at) VALUES (?1, ?2, 1)",
+                rusqlite::params![k, v],
+            )
+            .unwrap();
+        }
+        path
+    }
+
+    #[test]
+    fn legacy_read_table_returns_columns_and_rows() {
+        let dir = tempfile::tempdir().unwrap();
+        let legacy = write_legacy_settings(dir.path(), &[("codem-theme", "dark"), ("codem-language", "zh")]);
+        let (_d, engine) = eng("legacy-read");
+        let out = legacy_read_table(
+            &engine,
+            &json!({ "legacy_path": legacy.to_string_lossy(), "table": "settings" }),
+        )
+        .unwrap();
+        assert_eq!(out["table"], "settings");
+        let cols = out["columns"].as_array().unwrap();
+        assert!(cols.iter().any(|c| c == "key"), "要返回列名（渲染侧按列名取值）");
+        assert_eq!(out["rows"].as_array().unwrap().len(), 2, "两行都要读到");
+    }
+
+    #[test]
+    fn legacy_read_table_respects_limit() {
+        let dir = tempfile::tempdir().unwrap();
+        let legacy = write_legacy_settings(
+            dir.path(),
+            &[("a", "1"), ("b", "2"), ("c", "3")],
+        );
+        let (_d, engine) = eng("legacy-read-limit");
+        let out = legacy_read_table(
+            &engine,
+            &json!({ "legacy_path": legacy.to_string_lossy(), "table": "settings", "limit": 2 }),
+        )
+        .unwrap();
+        assert_eq!(out["rows"].as_array().unwrap().len(), 2, "limit 必须生效（防大表把 IPC 打爆）");
+    }
+
+    #[test]
+    fn legacy_read_table_rejects_tables_outside_whitelist() {
+        let dir = tempfile::tempdir().unwrap();
+        let legacy = write_legacy_settings(dir.path(), &[("a", "1")]);
+        let (_d, engine) = eng("legacy-read-deny");
+        // 表名白名单是这条命令的**安全边界**：不能变成"读任意表"
+        let err = legacy_read_table(
+            &engine,
+            &json!({ "legacy_path": legacy.to_string_lossy(), "table": "sqlite_master" }),
+        )
+        .unwrap_err();
+        assert_eq!(err.code, crate::error::ErrorCode::Unsupported);
+    }
+
+    #[test]
+    fn legacy_read_table_reports_missing_legacy_db() {
+        let (_d, engine) = eng("legacy-read-missing");
+        let err = legacy_read_table(
+            &engine,
+            &json!({ "legacy_path": "C:/definitely/not/here.bin", "table": "settings" }),
+        )
+        .unwrap_err();
+        assert_eq!(err.code, crate::error::ErrorCode::NotFound, "旧库不存在要如实报 NotFound");
+    }
+
     #[test]
     fn fts_shadow_tables_are_excluded() {
         for t in importable_tables() {
