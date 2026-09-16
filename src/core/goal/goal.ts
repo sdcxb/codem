@@ -10,7 +10,7 @@
 
 import { getDatabase, persistDatabase } from "../storage/database";
 import { runGuarded } from "../storage/write-guard";
-import { domainReadMany, domainReadOne, domainWrite } from "../storage/domain-store";
+import { domainReadMany, domainReadOne, domainWrite, shouldFallbackToLegacy, writeShouldFallBackToLegacy } from "../storage/domain-store";
 
 // ========== Types ==========
 
@@ -81,6 +81,8 @@ export function createGoal(goal: Omit<Goal, "id" | "createdAt" | "updatedAt">): 
     return created;
   }
 
+  // 两态：A 态才回退旧库；B 态已如实上报（返回内存镜像里那份有效对象）
+  if (!writeShouldFallBackToLegacy("goal.create", "目标未保存")) return created;
   const db = getDatabase();
   db.run(
     `INSERT INTO goals (id, session_id, title, description, status, priority, parent_id, success_criteria, created_at, updated_at)
@@ -96,6 +98,7 @@ export function createGoal(goal: Omit<Goal, "id" | "createdAt" | "updatedAt">): 
 export function getGoal(id: string): Goal | null {
   const rust = domainReadOne(TABLE, { id }, wireToGoal);
   if (rust !== undefined) return rust;
+  if (!shouldFallbackToLegacy()) return null;
   const db = getDatabase();
   const result = db.exec(
     `SELECT id, session_id, title, description, status, priority, parent_id, success_criteria, created_at, updated_at, completed_at
@@ -125,13 +128,21 @@ export function listGoals(sessionId: string, status?: string): Goal[] {
       return Number(a.createdAt) - Number(b.createdAt);
     });
   }
+  if (!shouldFallbackToLegacy()) return [];
   const db = getDatabase();
-  const statusClause = status ? `AND status = '${status}'` : "";
-  const result = db.exec(
-    `SELECT id, session_id, title, description, status, priority, parent_id, success_criteria, created_at, updated_at, completed_at
-     FROM goals WHERE session_id = ? ${statusClause} ORDER BY priority DESC, created_at ASC`,
-    [sessionId],
-  );
+  /*
+   * ⚠️ 顺带修掉一处 SQL 拼接（B3 批审计发现）：原来是
+   *   `const statusClause = status ? `AND status = '${status}'` : ""`
+   * 把调用方传来的 status 直接串进 SQL。虽然这条路径走的是渲染内的 sql.js（不是 IPC），
+   * 但"值必须参数化绑定"是这套迁移的硬约束 —— 拼接写法一旦被复制到别的语句上就是注入。
+   * 改为按需绑定参数。
+   */
+  const sql = status
+    ? `SELECT id, session_id, title, description, status, priority, parent_id, success_criteria, created_at, updated_at, completed_at
+       FROM goals WHERE session_id = ? AND status = ? ORDER BY priority DESC, created_at ASC`
+    : `SELECT id, session_id, title, description, status, priority, parent_id, success_criteria, created_at, updated_at, completed_at
+       FROM goals WHERE session_id = ? ORDER BY priority DESC, created_at ASC`;
+  const result = db.exec(sql, status ? [sessionId, status] : [sessionId]);
   if (result.length === 0) return [];
   return result[0].values.map(rowToGoal);
 }
@@ -162,6 +173,7 @@ export function updateGoal(id: string, update: Partial<Goal>): void {
     return;
   }
 
+  if (!writeShouldFallBackToLegacy("goal.update", "目标未更新")) return;
   const db = getDatabase();
   const fields: string[] = [];
   const values: any[] = [];

@@ -8,7 +8,7 @@
 import { getDatabase, persistDatabase } from "./database";
 import { safeJsonParse } from "../utils/safe-json";
 import { runGuarded } from "./write-guard";
-import { domainDelete, domainReadMany, domainReadOne, domainWrite } from "./domain-store";
+import { domainDelete, domainReadMany, domainReadOne, domainWrite, shouldFallbackToLegacy, writeShouldFallBackToLegacy } from "./domain-store";
 
 export interface AgentProfile {
   id: string;
@@ -72,8 +72,14 @@ export const AgentProfileStorage = {
     if (domainWrite(TABLE, [profileToWire(created)], { scope: "agentProfile.create", note: "智能体画像未保存" })) {
       return created;
     }
+    /*
+     * 两态分流（B3 批）。原来这里抛 `Database not loaded` —— 而 `if (!db)` 永不触发
+     * （旧库读取入口从不返回 null），所以 B 态下真正抛的是那句"Database not initialized"，
+     * 且**调用方没有预期会抛**（返回类型声明是具体的 AgentProfile）。
+     * 现在 B 态如实上报并返回已构造的对象（内存镜像里那份是有效的）。
+     */
+    if (!writeShouldFallBackToLegacy("agentProfile.create", "智能体画像未保存")) return created;
     const db = getDatabase();
-    if (!db) throw new Error("Database not loaded");
     db.run(
       `INSERT INTO agent_profiles (id, identity, domain, scope, skills, experience_summary, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -95,8 +101,8 @@ export const AgentProfileStorage = {
   getById(id: string): AgentProfile | null {
     const rust = domainReadOne(TABLE, { id }, wireToProfile);
     if (rust !== undefined) return rust;
+    if (!shouldFallbackToLegacy()) return null;
     const db = getDatabase();
-    if (!db) return null;
     const result = db.exec(`SELECT * FROM agent_profiles WHERE id = ?`, [id]);
     if (!result.length || !result[0].values.length) return null;
     const columns = result[0].columns;
@@ -109,8 +115,8 @@ export const AgentProfileStorage = {
   listAll(): AgentProfile[] {
     const rust = domainReadMany(TABLE, wireToProfile);
     if (rust) return rust.sort((a, b) => b.updated_at - a.updated_at);
+    if (!shouldFallbackToLegacy()) return [];
     const db = getDatabase();
-    if (!db) return [];
     const result = db.exec(`SELECT * FROM agent_profiles ORDER BY updated_at DESC`);
     if (!result.length || !result[0].values.length) return [];
     const columns = result[0].columns;
@@ -143,8 +149,9 @@ export const AgentProfileStorage = {
       });
       return;
     }
+    // B 态：原来静默 return = 调用方以为更新成功（假成功）。两态分流后如实上报。
+    if (!writeShouldFallBackToLegacy("agentProfile.update", "智能体画像未更新")) return;
     const db = getDatabase();
-    if (!db) return;
     const fields: string[] = [];
     const values: any[] = [];
     for (const [key, value] of Object.entries(updates)) {
@@ -165,8 +172,9 @@ export const AgentProfileStorage = {
 
   delete(id: string): void {
     if (domainDelete(TABLE, { id }, { scope: "agentProfile.delete", note: "智能体画像未删除" })) return;
+    // 删除静默失败 = 数据不一致（画像"看着还在"或"以为删了其实没删"）
+    if (!writeShouldFallBackToLegacy("agentProfile.delete", "智能体画像未删除")) return;
     const db = getDatabase();
-    if (!db) return;
     db.run(`DELETE FROM agent_profiles WHERE id = ?`, [id]);
     persistDatabase();
   },

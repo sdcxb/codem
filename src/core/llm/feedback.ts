@@ -20,7 +20,7 @@
 import { getDatabase, persistDatabase } from "../storage/database";
 import { getEventLog } from "../storage/event-log";
 import { getStoragePort, hasStoragePort } from "../storage/port";
-import { domainDelete, domainReadMany, domainReadOne, domainWrite } from "../storage/domain-store";
+import { domainDelete, domainReadMany, domainReadOne, domainWrite, shouldFallbackToLegacy, writeShouldFallBackToLegacy } from "../storage/domain-store";
 
 // ========== Types ==========
 
@@ -279,6 +279,10 @@ export function putMessageFeedback(
     return { ok: true, item };
   }
 
+  // B 态：端口在但镜像未接手 → 不能写旧库（读写分裂），如实上报
+  if (!writeShouldFallBackToLegacy("feedback.put", "消息反馈未保存")) {
+    return { ok: false, error: "反馈存储暂不可用（索引未就绪），请稍后重试" };
+  }
   const legacyDb = getDatabase();
 
   // 删除现有
@@ -312,6 +316,7 @@ export function getMessageFeedback(messageId: string): MessageFeedbackItem | nul
   ensureNoteColumn();
   const rust = domainReadOne(TABLE, { message_id: messageId }, wireToFeedback);
   if (rust !== undefined) return rust ? feedbackToItem(rust) : null;
+  if (!shouldFallbackToLegacy()) return null;
   const db = getDatabase();
   const result = db.exec(
     `SELECT message_id, feedback, note, version, created_at, updated_at
@@ -362,6 +367,9 @@ export function deleteMessageFeedback(
     return { ok: true, absent: true };
   }
 
+  if (!writeShouldFallBackToLegacy("feedback.clear", "消息反馈未删除")) {
+    return { ok: false, error: "反馈存储暂不可用（索引未就绪），请稍后重试" };
+  }
   const legacyDb = getDatabase();
   legacyDb.run("DELETE FROM message_feedback WHERE message_id = ?", [messageId]);
   persistDatabase();
@@ -379,6 +387,7 @@ export function listMessageFeedback(sessionId: string): MessageFeedbackItem[] {
       .sort((a, b) => (a.created_at ?? 0) - (b.created_at ?? 0))
       .map(feedbackToItem);
   }
+  if (!shouldFallbackToLegacy()) return [];
   const db = getDatabase();
   const result = db.exec(
     `SELECT message_id, feedback, note, version, created_at, updated_at
