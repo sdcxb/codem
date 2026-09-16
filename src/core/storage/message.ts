@@ -228,9 +228,26 @@ export async function trimIndexedMessages(
  * 首次加载时若日志还没读进内存，则先用索引（随后 `hydrateSessionLog` 会补齐）。
  */
 export function listMessagesMerged(sessionId: string, limit?: number): Message[] {
+  /**
+   * P5 第 10 段：工具调用**从缓存补上**（与 `getMessage` 同一来源）。
+   *
+   * 为什么必须补：镜像行不含 `tool_calls`（内存预算），日志镜像也只在
+   * "hydrate 过且那条记录带 toolCalls"时才有 —— 两个来源都可能缺，于是
+   * "列表里这条消息有没有工具调用"会随会话是否 hydrate 过而变化。
+   *
+   * ⚠️ 这一步必须在**所有**返回路径之前：合并的开头有一条"日志镜像为空就直接返回
+   * 索引结果"的短路（未 hydrate 的会话正是那条路），补在后面等于对最常见的形态无效。
+   */
+  const withToolCalls = (list: Message[]): Message[] =>
+    list.map((m) => {
+      if (m.toolCalls?.length) return m;
+      const cached = toolCallCache.get(m.id);
+      return cached?.length ? ({ ...m, toolCalls: cached } as Message) : m;
+    });
+
   const fromIndex = listMessagesFromIndex(sessionId, limit);
   const cached = cachedLogMessages.get(sessionId);
-  if (!cached || cached.length === 0) return fromIndex;
+  if (!cached || cached.length === 0) return withToolCalls(fromIndex);
 
   /**
    * 第 83 波：**索引里的 hidden 状态也是权威**（软删除行只在索引里）。
@@ -271,7 +288,8 @@ export function listMessagesMerged(sessionId: string, limit?: number): Message[]
     } as Message);
   }
   const all = [...merged.values()].sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0));
-  return limit ? all.slice(-limit) : all;
+  const enriched = withToolCalls(all);
+  return limit ? enriched.slice(-limit) : enriched;
 }
 
 /** 索引里被软删除（hidden=1）的消息 id 集合 */
@@ -642,15 +660,82 @@ export function listExternalAttachmentMarkers(): Array<{ id: string; content: st
 }
 
 export function getMessage(id: string): Message | null {
-  const db = getDatabase();
-  const result = db.exec("SELECT id, session_id, role, content, timestamp, model, prompt_tokens, completion_tokens, cost, status, reasoning, generated_files, retrieved_sources FROM messages WHERE id = ?", [id]);
+  /**
+   * P5 第 10 段（**读写分裂修正**）：`createMessage` / `updateMessage` 早就把索引写发往
+   * Rust 了（`writeIndexViaRust`），但这里一直是**只读旧库**。
+   *
+   * 后果是一个很难在真机上发现的形态：新消息（Rust 接手之后创建的那些）在旧库里
+   * **根本没有行**，于是 `getMessage(id)` 只能靠下面"扫日志镜像"那条兜底 —— 而日志镜像
+   * 要先被 hydrate 过才在内存里。换句话说，"消息明明存在、按 id 取却取不到"取决于
+   * 某个缓存有没有预热过，而不是数据在不在。
+   *
+   * 这条分裂**是测试基座（纯端口）逼出来的**：一旦测试不再回退旧库，194 个断言立刻
+   * 指向它。修法是让**读跟在写后面**：与 `listMessagesFromIndex` 用同一条路由规则
+   * （会话镜像已完整加载且未被截断 → 读镜像），镜像未就绪时保持原行为，一字节不变。
+   */
+  const port = rustMessagePort();
+  const routed = port?.messages;
+  const portRow = routed?.byIdLookup(id);
+  if (routed && portRow) {
+    routed.ensureLoaded(portRow.session_id);
+    if (routed.isLoaded(portRow.session_id) && !routed.isTruncated()) {
+      const mirrored = routed.byIdLookup(id);
+      if (mirrored) {
+        /**
+         * ⚠️ 镜像行**不含 `tool_calls`**（`MirrorMessageRow` 刻意只有 9 个字段：
+         * 镜像要装的是"几百 KB × N 个会话"的正文，工具结果全文再进镜像等于把
+         * P6 刚清掉的内存占用请回来）。
+         *
+         * 所以工具调用的形状是"**同步缓存命中就带上，未命中先触发一次异步预热**"：
+         * 与附件正文（`getCachedExternalContent` + `warmExternalContent`）同一套约定 ——
+         * 缓存由**写路径**（`addToolCall` / `updateToolCall` / `upsert_index`）负责维护，
+         * 因此"刚写的立刻读得到"，不依赖旧库那一行存在不存在。
+         */
+        const cached = toolCallCache.get(id);
+        if (!cached) warmToolCalls(id);
+        /**
+         * `byIdLookup` 的声明只覆盖"定位字段"（id / session_id），所以这里要显式放宽一次：
+         * 真实实现返回的是**完整镜像行**（`MirrorMessageRow`，9 个字段）。
+         * 保持窄声明是为了防止有人拿它当"读整行"用 —— 镜像行不含 `tool_calls`。
+         */
+        const message = messageRowToMessage(mirrored as unknown as Parameters<typeof messageRowToMessage>[0]);
+        return cached ? ({ ...message, toolCalls: cached } as Message) : message;
+      }
+    }
+  }
+
+  /**
+   * 权威日志镜像这条兜底**要提前**：日志里带 `toolCalls`（`logMirrorMessage` 会一起返回），
+   * 而旧库那条读路径对"Rust 接手之后新建的消息"根本查不到行 —— 顺序反了就会出现
+   * "从日志兜底拿到内容、但工具调用全靠旧库 → 结果为空"。
+   */
+  const logSessionId = sessionIdFromLogMirror(id);
+  if (logSessionId) {
+    const fromLog = logMirrorMessage(logSessionId, id);
+    if (fromLog) return fromLog;
+  }
+
+  let db: any;
+  try {
+    db = getDatabase();
+  } catch (e) {
+    // 旧库不可用（致命闩锁 / 从未初始化）不能直接抛：下面还有日志镜像那条兜底
+    warnIndexUnavailable(e);
+    db = null;
+  }
+  const result = db
+    ? db.exec("SELECT id, session_id, role, content, timestamp, model, prompt_tokens, completion_tokens, cost, status, reasoning, generated_files, retrieved_sources FROM messages WHERE id = ?", [id])
+    : [];
   if (result.length === 0 || result[0].values.length === 0) {
+
     // 第 79 波审计修正：索引被有界裁剪后，这个 id 可能只存在于权威日志里
     // （全文搜索命中、跨会话引用、fork 的按 id 读取都会走到这里）。
     // 回退到已 hydrate 的日志镜像，避免"搜索得到、点开却没有"的破图。
     for (const records of cachedLogMessages.values()) {
       const hit = records.find((m) => m.id === id);
       if (hit) {
+        const calls = (hit as any).toolCalls as ToolCall[] | undefined;
+        if (calls?.length) cacheToolCalls(id, calls); // 日志是权威，读到就顺手缓存
         return {
           id: hit.id,
           role: hit.role as Message["role"],
@@ -683,6 +768,11 @@ export function getMessage(id: string): Message | null {
   };
 
   const toolCalls = loadToolCallsForMessage(db, id);
+  /**
+   * 旧库这份读到了就缓存起来 —— 两条路径（镜像 / 旧库）因此收敛成"同一个缓存"，
+   * 上层调用方无论走哪条都能同步拿到工具调用。
+   */
+  if (toolCalls.length) cacheToolCalls(id, toolCalls);
   const attachments = loadAttachmentsForMessage(db, id);
   return rowToMessage(messageRow, toolCalls, attachments);
 }
@@ -765,6 +855,96 @@ type RustMessagePortLike = {
   applyMessageDelete?(sessionId: string, ids: string[]): void;
 };
 
+/**
+ * `tool_calls` 的同步读缓存（P5 第 10 段）。
+ *
+ * ## 为什么需要它
+ *
+ * 消息索引早就分流到 Rust 了（`writeIndexViaRust`），而 `tool_calls` 一直是"写旧库"：
+ * `addToolCall` / `updateToolCall` 走 `getDatabase()`，`getMessage` 也从旧库读。
+ * 于是工具调用成了整条消息链上**最后一处读写分裂**：
+ * - 消息正文：写在 Rust、读在镜像 ✅
+ * - 工具调用：写在旧库、读在旧库，但 Rust 侧那份只有 `upsert_index` 时写过一次
+ *
+ * 后果直接对应用户现场那个现象 —— **模型看不到自己这次调用的结果**（于是反复重发同一个
+ * 工具调用）。这里补上缓存，让"刚写进去的工具调用立刻读得到"，与消息正文同一条规则。
+ *
+ * ## 为什么是缓存而不是镜像
+ *
+ * 工具结果全文往往很大，进镜像等于把 P6 刚清掉的内存占用请回来。所以：
+ * 按 `messageId` 存"这条消息的工具调用"，只在**被读过**的消息上驻留，且有上限。
+ */
+const TOOL_CALL_CACHE_LIMIT = 200;
+const toolCallCache = new Map<string, ToolCall[]>();
+
+function cacheToolCalls(messageId: string, calls: ToolCall[]): void {
+  // Map 的插入序即 LRU 序：删了再插 = 移到最近使用
+  toolCallCache.delete(messageId);
+  toolCallCache.set(messageId, calls);
+  while (toolCallCache.size > TOOL_CALL_CACHE_LIMIT) {
+    const oldest = toolCallCache.keys().next().value;
+    if (oldest === undefined) break;
+    toolCallCache.delete(oldest);
+  }
+}
+
+/** 写路径调用：缓存立即反映本次写入（不依赖任何异步往返） */
+function mergeCachedToolCall(messageId: string, call: ToolCall): void {
+  const existing = toolCallCache.get(messageId) ?? [];
+  const idx = existing.findIndex((c) => c.id === call.id);
+  const next = idx >= 0 ? existing.map((c) => (c.id === call.id ? call : c)) : [...existing, call];
+  cacheToolCalls(messageId, next);
+}
+
+const toolCallWarmInFlight = new Set<string>();
+
+/**
+ * 异步预热某条消息的工具调用（端口可用时走 Rust）。
+ * 未命中缓存时触发，下一次同步读即命中 —— 与附件正文预热同一套约定。
+ */
+function warmToolCalls(messageId: string): void {
+  const port = rustMessagePort();
+  if (!port || toolCallWarmInFlight.has(messageId)) return;
+  toolCallWarmInFlight.add(messageId);
+  void port.data
+    .execute("tool_calls.list", { message_id: messageId })
+    .then((r) => {
+      const rows = (r as { items?: unknown[] })?.items;
+      if (!Array.isArray(rows)) return;
+      cacheToolCalls(
+        messageId,
+        rows.map((raw) => {
+          const o = (raw ?? {}) as Record<string, unknown>;
+          let args: Record<string, unknown> = {};
+          try {
+            args = typeof o.args === "string" ? JSON.parse(o.args) : ((o.args as Record<string, unknown>) ?? {});
+          } catch {
+            args = {};
+          }
+          let metadata: Record<string, unknown> | undefined;
+          try {
+            metadata =
+              typeof o.metadata === "string" ? JSON.parse(o.metadata) : (o.metadata as Record<string, unknown> | undefined);
+          } catch {
+            metadata = undefined;
+          }
+          return {
+            id: String(o.id ?? ""),
+            tool: String(o.tool ?? ""),
+            args,
+            result: (o.result as string | null) ?? undefined,
+            status: (o.status as ToolCall["status"]) ?? "running",
+            ...(metadata ? { metadata } : {}),
+          } as ToolCall;
+        }),
+      );
+    })
+    .catch((e) => {
+      // 工具调用热身失败不阻塞读：下面是旧库兜底
+      reportPersistFailure("message.toolCalls.warm", e, "工具调用未能从索引预热（本次读回退旧路径）");
+    })
+    .finally(() => toolCallWarmInFlight.delete(messageId));
+}
 function rustMessagePort(): RustMessagePortLike | null {
   if (!hasStoragePort()) return null;
   const port = getStoragePort();
@@ -849,21 +1029,32 @@ function writeIndexViaRust(message: Message, sessionId: string, scope: "create" 
     tool_calls: toolCallsForWire(message),
   };
 
+  /**
+   * ⚠️ **先本地、再 IPC**（P5 第 10 段修正）。
+   *
+   * 原来这个 `applyMessageWrite` 是挂在 `.then()` 里的：写完之后镜像是**等 IPC 往返
+   * 落地才更新**的，于是存在一个"写成功、紧接着同步读却是旧值"的窗口。
+   * 生产里这个窗口被 UI 渲染节奏盖住了（不容易看到），但它是一条真实的时序缺陷 ——
+   * `updateMessage(status)` 之后立刻读回旧 status 就是它的形态。
+   *
+   * 现在与 `domainWrite` 的约定完全一致（**先更新本地镜像，再写穿**）：
+   * 1. 本地立即生效 → "刚写的立刻读得到"；
+   * 2. IPC 失败 → 如实上报，并把镜像重新拉一次（`ensureLoaded` 会以 Rust 为准重建），
+   *    让"本地镜像"和"落库结果"重新收敛，而不是留一个假的最新值。
+   */
+  port.applyMessageWrite?.({
+    id: message.id,
+    session_id: sessionId,
+    role: message.role,
+    content: message.content ?? "",
+    reasoning: message.reasoning ?? null,
+    timestamp: message.timestamp ?? Date.now(),
+    model: message.model ?? null,
+    status: message.status ?? "done",
+  });
+
   void port.data
     .execute("messages.upsert_index", params)
-    .then(() => {
-      // 写入成功后把行同步进镜像 —— 否则"刚写的消息"在镜像里看不到（读写分裂的微观版本）
-      port.applyMessageWrite?.({
-        id: message.id,
-        session_id: sessionId,
-        role: message.role,
-        content: message.content ?? "",
-        reasoning: message.reasoning ?? null,
-        timestamp: message.timestamp ?? Date.now(),
-        model: message.model ?? null,
-        status: message.status ?? "done",
-      });
-    })
     .catch((e) => {
       // 索引失败不阻塞、不抛：权威副本（会话 JSONL）已经写好，索引可由日志重建
       reportPersistFailure(
@@ -871,6 +1062,11 @@ function writeIndexViaRust(message: Message, sessionId: string, scope: "create" 
         e,
         "消息已写入权威日志，但查询索引更新失败（索引可由日志重建）",
       );
+      /**
+       * 重新拉一次该会话的索引：镜像里那份"本地先生效"的值可能是错的
+       * （落库失败 = Rust 那份没有这次更新），必须以落库结果为准重新收敛。
+       */
+      port.messages?.ensureLoaded(sessionId);
     });
   return true;
 }
@@ -1167,7 +1363,45 @@ export function appendToMessage(id: string, content: string): void {
   persistDatabase();
 }
 
+/**
+ * 工具调用 → 线协议形状（`args` / `metadata` 传对象，由 Rust 侧序列化）
+ */
+function toolCallForWire(tc: ToolCall): Record<string, unknown> {
+  return {
+    id: tc.id,
+    tool: tc.tool,
+    args: tc.args ?? {},
+    result: tc.result ?? null,
+    status: tc.status ?? "running",
+    metadata: tc.metadata ?? null,
+  };
+}
+
+/**
+ * 新增一个工具调用（P5 第 10 段：读写同处）。
+ *
+ * ## 修复的是什么
+ *
+ * 消息正文走 `writeIndexViaRust`（写 Rust），工具调用却一直是"写旧库"。
+ * 于是工具调用成了整条消息链上最后一处读写分裂 —— 而它的失效形态正是用户现场的
+ * **"模型看不到自己这次调用的结果"（于是反复重发同一个工具调用）**。
+ *
+ * 现在：端口可用 → 写 `tool_calls.replace`（Rust 侧单事务），并**同步缓存**这条消息的
+ * 工具调用；端口不可用 → 完全维持原行为。缓存由读写两侧共同维护，所以
+ * "刚写进去的立刻读得到"，不再取决于旧库那一行在不在。
+ */
 export function addToolCall(messageId: string, toolCall: ToolCall): void {
+  mergeCachedToolCall(messageId, toolCall);
+
+  const port = rustMessagePort();
+  if (port) {
+    const current = toolCallCache.get(messageId) ?? [];
+    void port.data
+      .execute("tool_calls.replace", { message_id: messageId, tool_calls: current.map(toolCallForWire) })
+      .catch((e) => reportPersistFailure("message.addToolCall", e, "工具调用未写入查询索引（索引可由日志重建）"));
+    return;
+  }
+
   const db = getDatabase();
   db.run(
     "INSERT OR REPLACE INTO tool_calls (id, message_id, tool, args, result, status, metadata) VALUES (?, ?, ?, ?, ?, ?, ?)",
@@ -1176,7 +1410,26 @@ export function addToolCall(messageId: string, toolCall: ToolCall): void {
   persistDatabase();
 }
 
+/**
+ * 更新一个工具调用（结果回填的高频路径）。
+ *
+ * 第 83 波那条"写不到行 = 模型看不到结果"的告警**保留**：端口那边写失败同样上报（不静默）。
+ */
 export function updateToolCall(messageId: string, toolId: string, update: Partial<ToolCall>): void {
+  // 缓存先合并"补丁"：新值来自 update，未提到的字段沿用当前值（与 SQL UPDATE 语义一致）
+  const cached = toolCallCache.get(messageId);
+  const base = cached?.find((c) => c.id === toolId);
+  mergeCachedToolCall(messageId, { ...(base ?? { id: toolId, tool: "", args: {} }), ...update, id: toolId } as ToolCall);
+
+  const port = rustMessagePort();
+  if (port) {
+    const current = toolCallCache.get(messageId) ?? [];
+    void port.data
+      .execute("tool_calls.replace", { message_id: messageId, tool_calls: current.map(toolCallForWire) })
+      .catch((e) => reportPersistFailure("message.updateToolCall", e, "工具调用结果未写入查询索引（索引可由日志重建）"));
+    return;
+  }
+
   const db = getDatabase();
   const fields: string[] = [];
   const values: (string | number | null)[] = [];
@@ -1214,6 +1467,21 @@ export function deleteMessage(id: string): void {
 
 /** 查一条消息属于哪个会话（删除前调用） */
 function currentSessionIdForMessage(messageId: string): string | null {
+  /**
+   * P5 第 10 段：**先问镜像**。
+   *
+   * 这条"查消息属于哪个会话"以前只查旧库 + 日志镜像。但 Rust 接手之后新建的消息
+   * 在旧库那侧**根本没有行**，日志镜像也要 hydrate 过才有 —— 于是它返回 null，
+   * 连带三处功能静默降级：
+   * - `writeMessageUpdateIndex` 拿不到 sid → 更新**不走 Rust**，转去写旧库（读写分裂）；
+   * - `appendUpdatedMessageToLog` 拿不到 sid → 更新**不进权威日志**（内容会回退）；
+   * - `deleteMessage` 拿不到 sid → **不写墓碑** → 下次从日志重建时消息复活。
+   *
+   * 镜像的 `byIdLookup` 对"本进程写过的消息"总是有的（`upsert_index` 会同步进去），
+   * 所以这里补上之后，上面三条都回到正确路径。
+   */
+  const fromMirror = rustMessagePort()?.messages?.byIdLookup(messageId);
+  if (fromMirror?.session_id) return String(fromMirror.session_id);
   try {
     const legacyDbSess = tryGetDatabase();
   const rows = legacyDbSess ? legacyDbSess.exec("SELECT session_id FROM messages WHERE id = ?", [messageId]) : [];

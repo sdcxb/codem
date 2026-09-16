@@ -1890,3 +1890,103 @@ P6 在 Rust 路径上做的任何内存约束（镜像预算、每表上限、�
 2. **大文档能力的真正杠杆在 P6**：分页读写 + 附件外置 + 渲染进程不再持有语料；
 3. 基准脚本本身是资产：任何存储相关改动都可复跑对照，不靠印象。
 
+
+
+---
+
+## P5 第 10 段：把测试基座切到端口（删回退分支的前置条件）
+
+### 为什么这一步必须先做
+
+删掉 L3 回退分支（22 个模块、约 150 个 `getDatabase()`）之前，必须先让**测试跑在端口上**。
+
+否则会出现最坏的一种情况：测试全绿，但它们验证的是我们**马上就要删掉的那条路**，
+而生产走的是端口那条路。这就是"假传输掩盖真实契约"在存储层的版本。
+
+结论用一句话说清：**端口一开，套件从 5199 全绿变成 96 个失败 —— 而这 96 个全是真实缺陷。**
+
+### 对照实验（同一套件，只切一个开关）
+
+| 形态 | 命令 | 通过 | 失败 |
+| --- | --- | --- | --- |
+| 纯旧引擎（对照） | `CODEM_TEST_PORT=0 npx vitest run` | **5199** | 0 |
+| 端口模式（新默认） | `npx vitest run` | 5103 | **96** |
+
+对照那一路全绿，恰恰说明旧引擎路径被测试照顾得很好 —— 而它正是要删掉的那条。
+
+### 这一轮由"端口模式"逼出来并已修掉的真实缺陷（7 个）
+
+1. **`getMessage` 只读旧库**（`message.ts`）：`createMessage` / `updateMessage` 早就把索引写
+   发往 Rust，按 id 读却仍查旧库。Rust 接手之后新建的消息**在旧库里根本没有行**，
+   于是"消息明明存在、按 id 取却取不到"取决于某个缓存有没有预热过。
+   修法：与 `listMessagesFromIndex` 同一条路由规则（会话镜像已完整加载且未截断 → 读镜像）。
+2. **`tool_calls` 读写分裂**：消息正文写 Rust、工具调用写旧库。失效形态正是用户现场的
+   **"模型看不到自己这次调用的结果"（于是反复重发同一个工具调用）**。
+   修法：端口可用时走 `tool_calls.replace`（Rust 侧单事务），并加一条按 `messageId`
+   的有界同步缓存（`TOOL_CALL_CACHE_LIMIT`），让"刚写的立刻读得到"。
+3. **`currentSessionIdForMessage` 只查旧库 + 日志镜像**：对 Rust 接手后的新消息返回 null，
+   连带三处静默降级 —— 更新不走 Rust、更新不进权威日志（内容会回退）、
+   删除不写墓碑（**下次从日志重建时消息复活**）。修法：先问镜像（`byIdLookup`）。
+4. **镜像同步晚于 IPC**（`writeIndexViaRust`）：`applyMessageWrite` 原来挂在 `.then()` 里，
+   存在"写成功、紧接着同步读却是旧值"的窗口。修法：与 `domainWrite` 一致 —— 本地先生效、
+   再写穿；写穿失败则重新拉一次镜像收敛（不留假的最新值）。
+5. **`compactWithSnapshot` 在 rust 引擎下是空操作**（`event-log.ts`）：读走镜像、
+   而写快照 / 删事件**只对旧库生效**。后果是压缩"压缩了 N 条、上下文一点没小"，
+   机制与第 83 波那次不同但症状一样。修法：与 `deleteAllForSession` 同写法。
+6. **`cutoff_seq` 语义用错**：Rust `events.compact` 的 `cutoff_seq` 是**排他上界**
+   （`DELETE ... WHERE seq < cutoff_seq`）。传锚点自己会在 `INSERT OR REPLACE` 之后
+   **把刚写进去的快照又删掉**。正确取值 = **第一条被保留的尾部事件的 seq**，
+   没有尾部时取 `anchorSeq + 1`。
+7. **`anchor.seq` 可能是字符串**：`anchorSeq + 1` 于是变成**字符串拼接**（锚点 81 → `"811"`），
+   传给 Rust 之后把快照自己也算进删除范围。这个坑极隐蔽：算出来的界线"看起来"是对的，
+   只在"没有尾部事件"时才暴露。修法：进出端口一律 `Number(...)`。
+
+另有 1 个 Rust 侧加固建议（**尚未实施**）：`events_compact` 的 DELETE 建议加
+`AND event_type <> 'session_snapshot'` —— 快照行在任何调用参数下都不该被删。
+
+### 测试基座本身（`src/test/fake-storage-port.ts`）
+
+一个**如实的内存端口**，不是"让测试变绿"的开关：
+
+- `kind: "rust"`：`domainPort` 只认 rust，表示"路由契约生效"；
+- 写穿失败会**真抛**、镜像未加载会如实 `isLoaded=false`，所以路由层与上报层的 bug 照样暴露；
+- 实现了三张面 + 三个会话作用域镜像（`messages` / `events` / `domains`），
+  列名与语义对齐真实列（`session_events.event_type`、主键 `seq` 而非 `id`）；
+- 与真实端口的**唯一刻意差异**：`appendLocal` 直接分配"从 1 递增的真实 seq"，
+  而不是 `MAX_SAFE_INTEGER` 附近的占位值（真实端口的占位是 IPC 往返期间的无奈之举，
+  测试里这个往返是同步的，用占位只会让"seq 从 1 连续递增"这类断言失去意义）。
+
+### 剩下 96 个失败 = 删除工作的待办清单
+
+它们**不是回归**（对照那一路 0 失败），而是"旧路径还在被测试照顾"的那部分账。
+按下表逐文件推进；每修完一类，删回退分支的风险就小一分。
+失败用例 **96** 个，通过 **5103** 个，
+分布在 **25** 个文件（端口模式：测试跑在存储端口上，不再回退旧引擎）。
+
+| 测试文件 | 失败数 |
+| --- | --- |
+| `core-chat-message-storage.test.ts` | 16 |
+| `core-message-chain-storage.test.ts` | 9 |
+| `core-p1-integration.test.ts` | 9 |
+| `core-reasoning-feedback.test.ts` | 9 |
+| `encoding-toolcalls.test.ts` | 6 |
+| `compaction-budget.test.ts` | 5 |
+| `core-worktree-notebook-impact.test.ts` | 5 |
+| `regression-message-chain.test.ts` | 5 |
+| `session-jsonl-index.test.ts` | 5 |
+| `silent-write-guard.test.ts` | 4 |
+| `attachment-externalization.test.ts` | 3 |
+| `global-chat-persistence.test.ts` | 3 |
+| `compact-resurrect-repro.test.ts` | 2 |
+| `dsh-integration-full.test.ts` | 2 |
+| `regression-knowledge-full.test.ts` | 2 |
+| `repro-large-session-db.test.ts` | 2 |
+| `authority-first-storage.test.ts` | 1 |
+| `core-storage-persistence.test.ts` | 1 |
+| `encoding-project-session.test.ts` | 1 |
+| `fork.test.ts` | 1 |
+| `regression-git-worktree-env.test.ts` | 1 |
+| `snapshot-compaction.test.ts` | 1 |
+| `sql-injection.test.ts` | 1 |
+| `task-center-audit-fixes-2.test.tsx` | 1 |
+| `trigger-call-execute-loop.test.ts` | 1 |

@@ -305,7 +305,6 @@ export class EventLog {
     projectUpTo: (events: SessionEvent[]) => Record<string, unknown>,
     opts: { keepEvents?: number } = {},
   ): { removedEvents: number; snapshotSeq: number } {
-    const db = getDatabase();
     const events = this.readAll(sessionId);
     if (events.length === 0) return { removedEvents: 0, snapshotSeq: 0 };
 
@@ -323,6 +322,84 @@ export class EventLog {
       coveredEvents: cutoffIndex,
     });
 
+    /**
+     * P5 第 10 段（**修一个"压缩是空操作"的真实缺陷**）。
+     *
+     * 这个方法原来是"读走镜像、写走旧库"：上面的 `readAll` 在端口就绪后从镜像读，
+     * 而下面的快照写入 / 删除**只对旧库生效**。后果是 rust 引擎下压缩**什么都没删**
+     * —— 旧库里被删得干干净净（无人读），镜像里毫发无损（这才是读的那份），
+     * 于是"压缩了 N 条、上下文一点没小"再次发生，只是这次的机制不同。
+     *
+     * 现在与 `deleteAllForSession` 用同一套写法：**镜像先更新（读立刻一致）→ 真实写排队**。
+     */
+    const routed = rustEventPort(sessionId);
+    if (routed) {
+      const anchorSeq = anchor.seq;
+      const now = Date.now();
+      /**
+       * 与旧库那两条 SQL **逐字对齐**（这是"等价"的唯一判据）：
+       * 1. 快照 `INSERT OR REPLACE` 在锚点 seq 上（锚点那条事件被替换掉）；
+       * 2. `DELETE ... WHERE seq < anchor AND event_type <> 'session_meta'`
+       *    —— 锚点之后的分片原样保留（回放顺序不变），`session_meta` 永不删。
+       */
+      const retained = events.filter((e, i) => i >= cutoffIndex || e.type === "session_meta");
+      const replaced = retained.map((e) =>
+        e.seq === anchorSeq
+          ? {
+              seq: anchorSeq,
+              sessionId,
+              type: "session_snapshot",
+              payload: payloadStr,
+              timestamp: now,
+            }
+          : {
+              seq: e.seq,
+              sessionId,
+              type: String(e.type),
+              payload: JSON.stringify(e.payload ?? {}),
+              timestamp: e.timestamp,
+            },
+      );
+      // 锚点若本身就是 `session_meta`（它在 filter 里被保留但不是快照位置），要单独补上快照
+      if (!replaced.some((e) => e.seq === anchorSeq)) {
+        replaced.push({
+          seq: anchorSeq,
+          sessionId,
+          type: "session_snapshot",
+          payload: payloadStr,
+          timestamp: now,
+        });
+      }
+      const removedEvents = Math.max(0, events.length - replaced.length);
+      routed.events.replaceSession(sessionId, replaced);
+      /**
+       * `cutoff_seq` 是 Rust `events.compact` 的**排他上界**（`DELETE ... WHERE seq < cutoff_seq`），
+       * 所以它要取**第一条被保留的尾部事件的 seq**。
+       *
+       * 这里踩过两个坑，都记下来：
+       * - 传锚点自己 → 锚点被 `INSERT OR REPLACE` 换成快照之后**又被删掉**，
+       *   症状是"压缩完历史整段消失"；
+       * - 传 `anchorSeq + 1` → 只在"存在尾部事件"时才对；没有尾部（`keepEvents` 省略）时
+       *   等于"删掉锚点及其之前的一切"，**快照照样被删**（实测症状：压缩后只剩一条
+       *   `session_meta`）。
+       *
+       * 取"第一条保留事件的 seq"在两种情况下都正确：有尾部 → 精确等于旧库那条
+       * `seq < anchor`（因为保留集合从尾部开始）；无尾部 → 取 `anchorSeq + 1`，
+       * 此时序列里没有任何 seq ≥ 锚点的行，删除不会命中快照。
+       */
+      const firstKept = events[cutoffIndex];
+      /**
+       * ⚠️ `anchor.seq` **可能是字符串**（`readAll` 从镜像/旧库读回来的 `seq` 没做数值化），
+       * 于是 `anchorSeq + 1` 会变成**字符串拼接**：锚点 81 → `"811"`（锚点 8 → `"82"`），
+       * 传给 Rust 之后 `seq < cutoff` 把快照自己也算进去删掉了。
+       * 这个坑很隐蔽：算出来的界线"看起来"是对的，只有在"没有尾部事件"时才暴露。
+       */
+      const cutoffSeq = firstKept ? Number(firstKept.seq) : Number(anchorSeq) + 1;
+      routed.compactEventAsync(sessionId, Number(anchorSeq), cutoffSeq, payloadStr);
+      return { removedEvents, snapshotSeq: Number(anchorSeq) };
+    }
+
+    const db = getDatabase();
     // 占位：用锚点的 seq 写入快照（替换掉那条事件，保持回放的顺序语义）
     db.run(
       "INSERT OR REPLACE INTO session_events (seq, session_id, event_type, payload, timestamp) VALUES (?, ?, ?, ?, ?)",
