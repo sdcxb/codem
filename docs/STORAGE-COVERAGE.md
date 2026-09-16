@@ -5,13 +5,13 @@
 - 扫描生产文件：**838**
 - 需要实现的仓储方法：**129**（对应 278 个 SQL 调用点）
 - 已实现：**24** → 方法覆盖率 **18.6%**，调用点覆盖率 **27.7%**
-- Rust 侧已注册命令：**51**
+- Rust 侧已注册命令：**54**
 
 ## 已实现（渲染侧方法 → Rust 命令）
 
 | 渲染侧方法 | 调用点 | Rust 命令 |
 |---|---:|---|
-| `messages.update` | 13 | `messages.update` `messages.update_many` |
+| `messages.update` | 13 | `messages.update` `messages.update_many` `messages.upsert_index` |
 | `messages.select` | 11 | `messages.get` `messages.list` |
 | `session_events.select` | 11 | `events.list` `events.count` `events.watermark` |
 | `session_events.insert` | 7 | `events.append` `events.append_batch` |
@@ -28,7 +28,7 @@
 | `mcp_servers.select` | 1 | `mcp_servers.list` |
 | `memory.insert` | 1 | `memory.set` |
 | `memory.select` | 1 | `memory.get` |
-| `messages.insert` | 1 | `messages.create` `messages.create_many` |
+| `messages.insert` | 1 | `messages.create` `messages.create_many` `messages.upsert_index` |
 | `quick_phrases.delete` | 1 | `quick_phrases.delete` |
 | `quick_phrases.select` | 1 | `quick_phrases.list` |
 | `quick_phrases.update` | 1 | `quick_phrases.save` `quick_phrases.touch` |

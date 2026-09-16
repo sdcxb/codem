@@ -10,6 +10,7 @@ import {
 } from "./attachment-files";
 import { getDatabase, persistDatabase, isFts5Available, isDatabaseFatal, noteDatabaseError } from "./database";
 import { getEventLog } from "./event-log";
+import { getStoragePort, hasStoragePort } from "./port";
 import type { SessionEventType } from "./event-types";
 import type { Message, ToolCall, MessageAttachment, RetrievedSource } from "../../store";
 import { safeJsonParse } from "../utils/safe-json";
@@ -653,8 +654,92 @@ export function createMessage(message: Message, sessionId: string): void {
   }
 }
 
+// ========== 迁移期：索引写分流到 Rust（P3 第 6 段） ==========
+//
+// ## 为什么索引写要整体交给 Rust
+//
+// 渲染侧的索引写不是"一次简单 upsert"：它要同时处理 messages 主行 +
+// `generated_files` / `retrieved_sources` 两个 JSON 列 + **整批替换 tool_calls**
+// （先 DELETE 再逐条 INSERT）。拆成多条 IPC 的话，中途失败会留下
+// "消息更新了但工具调用只写了一半"的不一致状态。
+// 所以 Rust 侧做成单事务复合命令 `messages.upsert_index`，这里只负责把行数据传过去。
+//
+// ## 为什么这次可以直接切（与只追加面不同）
+//
+// `createMessage` / `updateMessage` 的结构本来就是：
+//   ① 权威日志（先写、必须成功）→ ② 索引（尽力而为、失败上报）
+// 索引侧**已经很明确地是"best-effort + 可重建"**：失败会走 `reportPersistFailure`，
+// 而数据不丢（权威副本在会话 JSONL 里）。
+// 因此把 ② 换成"异步发往 Rust"不引入新的丢数据风险，也不产生读写分裂
+// （读的是索引，索引的权威版本在 Rust；旧库那份只是过渡期缓存）。
+//
+// ## 返回 false 的含义
+//
+// 返回 false = "本次不接手，请调用方走原来的旧路径"。这样：
+// - 端口未注册 / 引擎是 wasm（回滚开关）→ 完全维持原行为；
+// - 读不到 base 行（更新路径）→ 回退到原路径，不猜数据。
+
+type RustMessagePortLike = {
+  data: { execute(cmd: string, params?: Record<string, unknown>): Promise<{ written: number }> };
+};
+
+function rustMessagePort(): RustMessagePortLike | null {
+  if (!hasStoragePort()) return null;
+  const port = getStoragePort();
+  if (port.kind !== "rust") return null;
+  return port as unknown as RustMessagePortLike;
+}
+
+/** 工具调用 → 线协议形状（snake 字段、args/metadata 保留为对象由 Rust 侧序列化） */
+function toolCallsForWire(message: Message): Array<Record<string, unknown>> | undefined {
+  if (!message.toolCalls) return undefined; // 未提供：交给 Rust 侧"不动"
+  return message.toolCalls.map((tc) => ({
+    id: tc.id,
+    tool: tc.tool,
+    args: tc.args ?? {},
+    result: tc.result ?? null,
+    status: tc.status ?? "running",
+    metadata: tc.metadata ?? null,
+  }));
+}
+
+/**
+ * 把一条完整消息行发往 Rust 索引（单事务）。
+ * @returns true = 已接手（调用方不要再走旧路径）；false = 未接手
+ */
+function writeIndexViaRust(message: Message, sessionId: string, scope: "create" | "update"): boolean {
+  const port = rustMessagePort();
+  if (!port) return false;
+
+  const params: Record<string, unknown> = {
+    id: message.id,
+    session_id: sessionId,
+    role: message.role,
+    content: message.content ?? "",
+    reasoning: message.reasoning ?? null,
+    timestamp: message.timestamp ?? Date.now(),
+    model: message.model ?? null,
+    status: message.status ?? "done",
+    generated_files: message.generatedFiles ?? null,
+    retrieved_sources: message.retrievedSources ?? null,
+    tool_calls: toolCallsForWire(message),
+  };
+
+  void port.data.execute("messages.upsert_index", params).catch((e) => {
+    // 索引失败不阻塞、不抛：权威副本（会话 JSONL）已经写好，索引可由日志重建
+    reportPersistFailure(
+      `message.${scope}Message.index`,
+      e,
+      "消息已写入权威日志，但查询索引更新失败（索引可由日志重建）",
+    );
+  });
+  return true;
+}
+
 /** 消息 → SQLite 索引（createMessage 的索引侧；失败由调用方兜底） */
 function writeMessageIndex(message: Message, sessionId: string): void {
+  // 迁移期分流：端口是 rust → 索引写走 Rust（**单事务**：主行 + JSON 列 + tool_calls 整体替换）
+  if (writeIndexViaRust(message, sessionId, "create")) return;
   const db = getDatabase();
   // Check if message already exists
   const existing = db.exec("SELECT id FROM messages WHERE id = ?", [message.id]);
@@ -852,6 +937,10 @@ function safeGetMessage(id: string): Message | null {
 
 /** 消息更新 → SQLite 索引（updateMessage 的索引侧；失败由调用方兜底） */
 function writeMessageUpdateIndex(id: string, update: Partial<Message>): void {
+  // 迁移期分流：端口是 rust → 走单事务复合写
+  const base = isDatabaseFatal() ? null : safeGetMessage(id);
+  const sid = base ? currentSessionIdForMessage(id) : null;
+  if (base && sid && writeIndexViaRust({ ...base, ...update, id } as Message, sid, "update")) return;
   const db = getDatabase();
   const fields: string[] = [];
   const values: (string | number | null)[] = [];

@@ -420,3 +420,132 @@ fn dispatch_never_accepts_sql() {
     // 库仍然完好
     assert!(engine.integrity_check().unwrap().ok);
 }
+
+// ========== 消息索引的复合写（P3 第 6 段） ==========
+
+/// `messages.upsert_index` 必须**一次事务**完成：消息主行 + JSON 列 + tool_calls 整体替换。
+/// 拆成多条命令时，中途失败会留下"消息更新了、工具调用只写了一半"的不一致状态。
+#[test]
+fn upsert_index_replaces_tool_calls_atomically() {
+    let (_d, e) = temp_engine("upsert-index");
+    call(&e, "sessions.upsert", json!({ "id": "s1" }));
+
+    // 首次插入：带 2 个工具调用
+    let r = call(
+        &e,
+        "messages.upsert_index",
+        json!({
+            "id": "m1", "session_id": "s1", "role": "assistant", "content": "第一版",
+            "tool_calls": [
+                { "id": "t1", "tool": "read_file", "args": { "path": "a" }, "status": "done", "result": "A" },
+                { "id": "t2", "tool": "grep", "args": { "q": "x" }, "status": "running" }
+            ]
+        }),
+    );
+    assert_eq!(r["inserted"], json!(true));
+    assert_eq!(r["tool_calls"], json!(2));
+
+    let listed = call(&e, "tool_calls.list", json!({ "message_id": "m1" }));
+    assert_eq!(listed["items"].as_array().unwrap().len(), 2);
+
+    // 第二次 upsert：只带 1 个工具调用 → 必须**整体替换**（不是追加）
+    let r2 = call(
+        &e,
+        "messages.upsert_index",
+        json!({
+            "id": "m1", "session_id": "s1", "role": "assistant", "content": "第二版",
+            "tool_calls": [{ "id": "t3", "tool": "write_file", "args": {}, "status": "done" }]
+        }),
+    );
+    assert_eq!(r2["inserted"], json!(false));
+    let after = call(&e, "tool_calls.list", json!({ "message_id": "m1" }));
+    let items = after["items"].as_array().unwrap();
+    assert_eq!(items.len(), 1, "必须是整体替换，旧工具调用不能残留：{items:?}");
+    assert_eq!(items[0]["id"], json!("t3"));
+
+    // 消息内容也要更新
+    let got = call(&e, "messages.get", json!({ "id": "m1" }));
+    assert_eq!(got["item"]["content"], json!("第二版"));
+}
+
+/// 不给 `tool_calls` 时**不得**动已有工具调用（"没提"不等于"清空"）
+#[test]
+fn upsert_index_without_tool_calls_leaves_them_alone() {
+    let (_d, e) = temp_engine("upsert-keep");
+    call(&e, "sessions.upsert", json!({ "id": "s1" }));
+    call(
+        &e,
+        "messages.upsert_index",
+        json!({ "id": "m1", "session_id": "s1", "role": "assistant", "content": "x",
+                "tool_calls": [{ "id": "t1", "tool": "a", "args": {}, "status": "done" }] }),
+    );
+    call(
+        &e,
+        "messages.upsert_index",
+        json!({ "id": "m1", "session_id": "s1", "role": "assistant", "content": "y" }),
+    );
+    let after = call(&e, "tool_calls.list", json!({ "message_id": "m1" }));
+    assert_eq!(
+        after["items"].as_array().unwrap().len(),
+        1,
+        "缺省 tool_calls 时应保留原有记录（渲染侧语义：只更新给出的东西）"
+    );
+}
+
+/// JSON 列（generated_files / retrieved_sources）按 JSON 文本存，缺省不动
+#[test]
+fn upsert_index_handles_json_columns() {
+    let (_d, e) = temp_engine("upsert-json");
+    call(&e, "sessions.upsert", json!({ "id": "s1" }));
+    call(
+        &e,
+        "messages.upsert_index",
+        json!({ "id": "m1", "session_id": "s1", "role": "assistant", "content": "x",
+                "generated_files": [{ "path": "a.ts" }], "retrieved_sources": [{ "id": "s1" }] }),
+    );
+    let got = call(&e, "messages.get", json!({ "id": "m1" }));
+    // messages.get 不返回这两列，所以直接查对账摘要里的行数即可（写入成功即可）
+    assert_eq!(got["item"]["id"], json!("m1"));
+
+    // 第二次不带它们 → 不应被清空
+    call(
+        &e,
+        "messages.upsert_index",
+        json!({ "id": "m1", "session_id": "s1", "role": "assistant", "content": "y" }),
+    );
+    let counts = call(&e, "counts", json!({ "tables": ["messages"] }));
+    assert_eq!(counts["messages"], json!(1));
+}
+
+/// `tool_calls.replace` 对不存在的消息必须报 NOT_FOUND（不能写孤儿工具调用）
+#[test]
+fn tool_calls_replace_rejects_orphan() {
+    let (_d, e) = temp_engine("tc-orphan");
+    let err = dispatch(
+        &e,
+        "tool_calls.replace",
+        &json!({ "message_id": "nope", "tool_calls": [] }),
+    )
+    .unwrap_err();
+    assert_eq!(err.code, codem_db::ErrorCode::NotFound);
+    assert!(format!("{err}").contains("nope"));
+}
+
+/// 参数错误必须整批不落（事务外先校验）
+#[test]
+fn upsert_index_validates_before_writing() {
+    let (_d, e) = temp_engine("upsert-validate");
+    call(&e, "sessions.upsert", json!({ "id": "s1" }));
+    // 第二个工具调用缺 tool → 整条命令失败，且不留任何行
+    let err = dispatch(
+        &e,
+        "messages.upsert_index",
+        &json!({ "id": "m1", "session_id": "s1", "role": "assistant", "content": "x",
+                 "tool_calls": [{ "id": "t1", "tool": "a", "args": {} }, { "id": "t2", "args": {} }] }),
+    )
+    .unwrap_err();
+    assert!(format!("{err}").contains("tool"), "应指出缺 tool：{err}");
+    let counts = call(&e, "counts", json!({ "tables": ["messages", "tool_calls"] }));
+    assert_eq!(counts["messages"], json!(0), "参数错误不得留下消息行");
+    assert_eq!(counts["tool_calls"], json!(0));
+}

@@ -594,6 +594,237 @@ pub fn messages_update(engine: &Engine, p: &Value) -> DbResult<Value> {
     })
 }
 
+// ========== 消息索引的复合写（P3 第 6 段） ==========
+//
+// 渲染侧的 `writeMessageIndex` / `writeMessageUpdateIndex` 不是"一次简单 upsert"：
+// 它要同时处理 messages 主行 + `generated_files` / `retrieved_sources` 两个 JSON 列
+// + **整批替换 tool_calls**（先 DELETE 再 INSERT）。拆成多条命令的话，
+// 中途失败会留下"消息更新了但工具调用只写了一半"这种不一致状态。
+// 所以这里做成**单事务的复合命令**，与渲染侧原语义一一对应。
+
+/// upsert 一条消息的索引行（含 JSON 列与 tool_calls 的整体替换）
+///
+/// 参数与 `messages.create` 兼容，另加：
+/// - `generated_files` / `retrieved_sources`：数组或 null（内部按 JSON 文本存）
+/// - `tool_calls`：数组（**给了就整体替换**：先删该消息的旧记录再插入）
+/// - `prompt_tokens` / `completion_tokens` / `cost`：可选，缺省不动（更新时）或 0（新建时）
+pub fn messages_upsert_index(engine: &Engine, p: &Value) -> DbResult<Value> {
+    let f = message_fields(p)?;
+    // JSON 列：数组 → JSON 文本；null/缺省 → NULL
+    let generated_files = json_col(p, "generated_files")?;
+    let retrieved_sources = json_col(p, "retrieved_sources")?;
+    let prompt_tokens = opt_i64(p, "prompt_tokens")?;
+    let completion_tokens = opt_i64(p, "completion_tokens")?;
+    let cost = p.get("cost").and_then(|x| x.as_f64());
+
+    // tool_calls 在事务外先解析校验（参数错误不该留下半个事务）
+    let tool_calls: Option<Vec<ToolCallRow>> = match p.get("tool_calls") {
+        None | Some(Value::Null) => None,
+        Some(Value::Array(arr)) => {
+            let mut out = Vec::with_capacity(arr.len());
+            for (i, tc) in arr.iter().enumerate() {
+                let id = req_text(tc, "id")?;
+                let tool = req_text(tc, "tool")?;
+                let args = tc.get("args").cloned().unwrap_or_else(|| json!({})).to_string();
+                let result = opt_text(tc, "result")?;
+                let status = opt_text(tc, "status")?.unwrap_or_else(|| "running".to_string());
+                let metadata = match tc.get("metadata") {
+                    None | Some(Value::Null) => None,
+                    Some(other) => Some(other.to_string()),
+                };
+                let _ = i;
+                out.push(ToolCallRow { id, tool, args, result, status, metadata });
+            }
+            Some(out)
+        }
+        Some(other) => {
+            return Err(DbError::invalid("tool_calls", format!("期望数组，收到 {other}")))
+        }
+    };
+
+    engine.write_tx(|tx| {
+        // 1) messages 主行：存在则更新（只更动给出的列），不存在则插入
+        let exists: i64 = tx
+            .query_row(
+                "SELECT COUNT(*) FROM messages WHERE id = ?1",
+                params![f.id],
+                |r| r.get(0),
+            )
+            .map_err(DbError::from)?;
+
+        let written = if exists > 0 {
+            tx.execute(
+                "UPDATE messages SET content = ?1, reasoning = ?2, model = ?3, status = ?4, \
+                   timestamp = ?5, \
+                   generated_files = COALESCE(?6, generated_files), \
+                   retrieved_sources = COALESCE(?7, retrieved_sources), \
+                   prompt_tokens = COALESCE(?8, prompt_tokens), \
+                   completion_tokens = COALESCE(?9, completion_tokens), \
+                   cost = COALESCE(?10, cost) \
+                 WHERE id = ?11",
+                params![
+                    f.content,
+                    f.reasoning,
+                    f.model,
+                    f.status,
+                    f.timestamp,
+                    generated_files,
+                    retrieved_sources,
+                    prompt_tokens,
+                    completion_tokens,
+                    cost,
+                    f.id
+                ],
+            )
+            .map_err(DbError::from)?
+        } else {
+            tx.execute(
+                "INSERT INTO messages (id, session_id, role, content, reasoning, timestamp, model, status, \
+                   generated_files, retrieved_sources, prompt_tokens, completion_tokens, cost) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+                params![
+                    f.id,
+                    f.session_id,
+                    f.role,
+                    f.content,
+                    f.reasoning,
+                    f.timestamp,
+                    f.model,
+                    f.status,
+                    generated_files,
+                    retrieved_sources,
+                    prompt_tokens.unwrap_or(0),
+                    completion_tokens.unwrap_or(0),
+                    cost.unwrap_or(0.0)
+                ],
+            )
+            .map_err(DbError::from)?
+        };
+
+        // 2) tool_calls：给了就**整体替换**（与渲染侧 `DELETE` + 逐条 `INSERT` 等价）
+        if let Some(calls) = &tool_calls {
+            tx.execute("DELETE FROM tool_calls WHERE message_id = ?1", params![f.id])
+                .map_err(DbError::from)?;
+            let mut stmt = tx
+                .prepare_cached(
+                    "INSERT INTO tool_calls (id, message_id, tool, args, result, status, metadata) \
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                )
+                .map_err(DbError::from)?;
+            for tc in calls {
+                stmt.execute(params![tc.id, f.id, tc.tool, tc.args, tc.result, tc.status, tc.metadata])
+                    .map_err(DbError::from)?;
+            }
+        }
+
+        Ok(json!({
+            "written": written,
+            "id": f.id,
+            "inserted": exists == 0,
+            "tool_calls": tool_calls.as_ref().map(|c| c.len()).unwrap_or(0),
+        }))
+    })
+}
+
+struct ToolCallRow {
+    id: String,
+    tool: String,
+    args: String,
+    result: Option<String>,
+    status: String,
+    metadata: Option<String>,
+}
+
+/// JSON 列取值：数组/对象 → JSON 文本；null/缺省 → None（表示"不动"）
+fn json_col(p: &Value, key: &str) -> DbResult<Option<String>> {
+    match p.get(key) {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::String(s)) => Ok(Some(s.clone())),
+        Some(other) => Ok(Some(other.to_string())),
+    }
+}
+
+/// 只替换某条消息的 tool_calls（渲染侧"更新工具调用结果"的高频路径）
+pub fn tool_calls_replace(engine: &Engine, p: &Value) -> DbResult<Value> {
+    let message_id = req_text(p, "message_id")?;
+    let arr = p
+        .get("tool_calls")
+        .and_then(|x| x.as_array())
+        .ok_or_else(|| DbError::missing("tool_calls（数组）"))?;
+    let mut rows = Vec::with_capacity(arr.len());
+    for tc in arr {
+        rows.push(ToolCallRow {
+            id: req_text(tc, "id")?,
+            tool: req_text(tc, "tool")?,
+            args: tc.get("args").cloned().unwrap_or_else(|| json!({})).to_string(),
+            result: opt_text(tc, "result")?,
+            status: opt_text(tc, "status")?.unwrap_or_else(|| "running".to_string()),
+            metadata: match tc.get("metadata") {
+                None | Some(Value::Null) => None,
+                Some(other) => Some(other.to_string()),
+            },
+        });
+    }
+    engine.write_tx(|tx| {
+        // 目标消息必须存在：否则会写出"孤儿工具调用"（外键会拦，但错误信息不直观）
+        let exists: i64 = tx
+            .query_row(
+                "SELECT COUNT(*) FROM messages WHERE id = ?1",
+                params![message_id],
+                |r| r.get(0),
+            )
+            .map_err(DbError::from)?;
+        if exists == 0 {
+            return Err(DbError::not_found(format!(
+                "messages 里没有 id={message_id}（不能写入孤儿工具调用）"
+            )));
+        }
+        tx.execute("DELETE FROM tool_calls WHERE message_id = ?1", params![message_id])
+            .map_err(DbError::from)?;
+        let mut stmt = tx
+            .prepare_cached(
+                "INSERT INTO tool_calls (id, message_id, tool, args, result, status, metadata) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            )
+            .map_err(DbError::from)?;
+        for tc in &rows {
+            stmt.execute(params![tc.id, message_id, tc.tool, tc.args, tc.result, tc.status, tc.metadata])
+                .map_err(DbError::from)?;
+        }
+        Ok(json!({ "written": rows.len(), "message_id": message_id }))
+    })
+}
+
+/// 读某条消息的 tool_calls（索引读；按 id 稳定排序）
+pub fn tool_calls_list(engine: &Engine, p: &Value) -> DbResult<Value> {
+    let message_id = req_text(p, "message_id")?;
+    engine.with_conn(|conn| {
+        let mut stmt = conn
+            .prepare_cached(
+                "SELECT id, tool, args, result, status, metadata FROM tool_calls \
+                 WHERE message_id = ?1 ORDER BY id ASC",
+            )
+            .map_err(DbError::from)?;
+        let rows = stmt
+            .query_map(params![message_id], |r| {
+                Ok(json!({
+                    "id": r.get::<_, String>(0)?,
+                    "tool": r.get::<_, String>(1)?,
+                    "args": r.get::<_, Option<String>>(2)?,
+                    "result": r.get::<_, Option<String>>(3)?,
+                    "status": r.get::<_, Option<String>>(4)?,
+                    "metadata": r.get::<_, Option<String>>(5)?,
+                }))
+            })
+            .map_err(DbError::from)?;
+        let mut items = Vec::new();
+        for r in rows {
+            items.push(r.map_err(DbError::from)?);
+        }
+        Ok(json!({ "items": items, "has_more": false, "next_cursor": Value::Null }))
+    })
+}
+
 /// 批量按 id 更新（`create_many` 的对称操作：上下文压缩/批量改写走这里）
 pub fn messages_update_many(engine: &Engine, p: &Value) -> DbResult<Value> {
     let items = p
