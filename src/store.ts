@@ -318,6 +318,44 @@ export const useAppStore = create<AppState>((set, get) => ({
        * 重读结果为 0 就停下，不留循环。
        */
       if (totalCount === 0) {
+        /**
+         * 运行期守护（第 37 轮）：**读不到消息时先判断"是不是数据被清空了"**。
+         *
+         * 文件级取证给出的时间线：应用启动后该会话有 277 条消息，点开它的那一刻
+         * WAL 在 1 秒内从 28KB 涨到 1.75MB，紧接着整库 `messages=0`。
+         * 也就是说用户是在**使用过程中**丢数据的，而启动自检覆盖不到这段。
+         *
+         * 所以这里加一道核对：内容归零 + 水位很高 + 旧库有内容 → 立刻恢复，
+         * 让用户看不到空列表（恢复完成后重读一次）。
+         */
+        void (async () => {
+          try {
+            const [{ guardContentBeforeSessionOpen }, { legacyDbPath }] = await Promise.all([
+              import("./core/storage/self-heal"),
+              import("./core/storage/bootstrap"),
+            ]);
+            const heal = await guardContentBeforeSessionOpen(await legacyDbPath());
+            if (heal.kind === "restored") {
+              /*
+               * 恢复完成后要**重新读一次**，否则界面停在空列表上（用户感知不到已经救回来了）。
+               * 恢复是把整库内容换回旧库那份，会话 id 不变，所以按原 sessionId 重读即可；
+               * 但镜像/日志缓存此时都指向旧内容，所以先把缓存清掉再读。
+               */
+              MessageStorage.clearSessionLogCache();
+              await new Promise((r) => setTimeout(r, 300));
+              const again = MessageStorage.listMessages(sessionId);
+              if (again.length > 0) {
+                applyMessages(again);
+                console.warn(
+                  `[Store] 检测到内容被清空并已恢复（上次水位 ${heal.previous?.messages} 条）→ 重读 ${again.length} 条`,
+                );
+              }
+            }
+          } catch (e) {
+            console.warn("[Store] 运行期内容核对未完成（不影响使用）:", e);
+          }
+        })();
+
         try {
           MessageStorage.onSessionMessagesReady(sessionId, () => {
             const again = MessageStorage.listMessages(sessionId);

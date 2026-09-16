@@ -104,12 +104,41 @@ function writeWatermark(w: Watermark): Promise<unknown> {
 }
 
 /**
+ * 运行期守护：**同一进程内**发现内容归零就立刻恢复（第 37 轮）。
+ *
+ * ## 为什么不能只在启动时自检
+ *
+ * 真机实测的完整时间线（文件级取证 + SQLite 审计对齐）：
+ * 应用启动后 `messages.count` 读到 **277**（该会话全在）、`sessions.list` 读到 **3**；
+ * 随后**点开一个会话**，WAL 在 1 秒内从 28KB 涨到 1.75MB，紧接着
+ * `messages=0 / sessions=1` —— 也就是说，**数据是在使用过程中消失的**，
+ * 而启动自检只能覆盖"启动那一刻"，中间这段时间用户是裸奔的。
+ *
+ * 所以需要第二个触发点：**打开会话前**做一次廉价核对（一条 `crud.count`），
+ * 发现"内容归零而水位很高"就立刻恢复，让用户根本看不到空列表。
+ *
+ * 判据与启动自检完全一致（同一水位、同一阈值、同样要求旧库确有内容），
+ * 并带一个"进行中"闩锁避免并发恢复。
+ */
+let healInFlight: Promise<SelfHealResult> | null = null;
+
+export function guardContentBeforeSessionOpen(legacyPath: string | null): Promise<SelfHealResult> {
+  if (healInFlight) return healInFlight;
+  healInFlight = verifyUserContentOrRestore(legacyPath, { quietWhenHealthy: true }).finally(() => {
+    healInFlight = null;
+  });
+  return healInFlight;
+}
+
+/**
  * 启动自检入口。**永不抛**（自检失败不该影响启动）。
  *
  * @param legacyPath 旧库路径（恢复源）
+ * @param opts.quietWhenHealthy 健康时不写水位（运行期高频调用用，避免每开一个会话都写一次 settings）
  */
 export async function verifyUserContentOrRestore(
   legacyPath: string | null,
+  opts: { quietWhenHealthy?: boolean } = {},
 ): Promise<SelfHealResult> {
   if (!hasStoragePort()) return { kind: "unavailable", reason: "端口未注册" };
   try {
@@ -126,9 +155,9 @@ export async function verifyUserContentOrRestore(
     const sessions = (await realCount("sessions")) ?? 0;
     const current: Watermark = { at: Date.now(), messages, sessions };
 
-    // 只要有消息，就认为内容健康 —— 只更新水位
+    // 只要有消息，就认为内容健康 —— 只更新水位（运行期核对时跳过，省一次写）
     if (messages > 0) {
-      await writeWatermark(current);
+      if (!opts.quietWhenHealthy) await writeWatermark(current);
       return { kind: "ok", previous: previous ?? undefined, current };
     }
 
