@@ -2176,3 +2176,48 @@ P6 在 Rust 路径上做的任何内存约束（镜像预算、每表上限、�
 下一步应在**应用的删除入口**（`store.ts` 的 `deleteSession` / `deleteProject`，
 以及 `SessionStorage.deleteSession`）打上与 `write-audit` 同源的记录，
 一次真机复现即可定位 —— 本轮已把"应用内可观测"这块短板补上（`__codemDb`）。
+
+---
+
+## 第 34 轮：把"排除法"做彻底 —— 四条路径全部排除，问题被夹到一个点上
+
+给 `RustDataPort.execute` / `.command` 加了破坏性命令留痕（`[StorageTrace]`，带调用栈），
+它是**所有**仓储命令的唯一出口（`domain-store`、`session-log-bridge`、`bootstrap` 都经过这里）。
+先确认代码确实在运行的 bundle 里（应用加载的入口 chunk 不含它，但懒加载的
+`bootstrap-*.js` 里有 —— 这一条本轮专门验证过，避免又出现"插了桩却没生效"的假阴性）。
+
+### 排除矩阵（每一行都是真机实测）
+
+| 被排除的路径 | 仪器 | 结果 |
+| --- | --- | --- |
+| 端口三层（`data.execute` / `write` / `command`） | 端口层审计缓冲 | **0 命中** |
+| `domain-store` 全部 5 个写穿点 | `write-audit.recordWrite`（含栈） | **0 命中** |
+| 删除类写操作 | `write-audit` 控制台输出 | **0 命中** |
+| `RustDataPort.execute/.command`（仓储命令唯一出口） | `[StorageTrace]` | **0 命中** |
+
+而 SQLite 侧的触发器**每次都记下了删除**（本轮：`sessions` 1 行 + `messages` 821 行 +
+`tool_calls` 883 行 + `session_events` 2131 行，单一时间戳）。
+
+### 由此得到的确定结论
+
+那条 `DELETE FROM sessions` **不是渲染进程通过任何已插桩的入口发出的**。
+渲染侧已经"无处可查"，所以问题被夹到两个可能：
+
+1. 还有一条我尚未覆盖的渲染侧入口（例如某个模块直接持有 transport 调 `call()` —— 
+   `RustMessageMirror` / `RustEventMirror` / `RustDomainMirror` **确实是直接调 `call(this.t, …)`**，
+   不经过 `RustDataPort`。这是**下一个最该查的点**）；
+2. 或者删除来自渲染进程之外（另一个连接/进程）。
+
+### 附带确认的两件事（都有实测依据）
+
+- **闲置时数据是安全的**：应用运行中、不点任何东西，30 秒后 `821/3` 完好、审计为空 ——
+  所以这不是"开着就掉"，而是**必须走"打开会话"这条交互路径**才触发；
+- **应用加载的 bundle 与刚构建的一致**：入口 `main-*.js` 里没有 `__codemDb`/`StorageTrace`，
+  但它们在懒加载的 `bootstrap-*.js` 里 —— 排查时必须以"运行中实际加载的 chunk"为准，
+  否则很容易把"代码没生效"误判成"代码没执行"。
+
+### 下一步（一条命令就能验证）
+
+在 `RustMessageMirror` / `RustEventMirror` / `RustDomainMirror` 的 `call(this.t, …)`
+（即 `transport.invokeCommand`）上装同一个留痕 —— 那是唯一还没覆盖的渲染侧出口。
+若那里仍为 0 命中，就可以确定删除来自渲染进程之外，转而查"第二个连接/进程"。

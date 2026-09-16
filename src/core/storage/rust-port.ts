@@ -207,6 +207,41 @@ class RustEnginePort implements StorageEnginePort {
 class RustDataPort implements StorageDataPort {
   constructor(private readonly t: StorageTransport) {}
 
+  /**
+   * 破坏性命令的控制台留痕（第 34 轮，**长期保留**）。
+   *
+   * ## 为什么在这一层
+   *
+   * 第 31–33 轮反复出现的困境：SQLite 侧的删除审计（触发器）能如实回答
+   * **"删了什么"**，但追不到**"谁发起"**；而 `write-audit` 与 `domain-store`
+   * 的 5 个写穿点都记录不到 —— 说明发起方走的是**别的入口**。
+   *
+   * `RustDataPort.execute` / `command` 是**所有**仓储命令的唯一出口
+   * （`domain-store`、`session-log-bridge`、`bootstrap` 都得经过这里），
+   * 所以把留痕放在这一层，能覆盖"任何一个调用点"而不必逐个插桩 ——
+   * 这正是前两轮"插了 A、漏了 B"的教训换来的位置。
+   *
+   * 只记**破坏性命令**（delete / replace_table / compact），避免正常读写刷屏；
+   * 记录里带调用栈，正文一律不记。
+   */
+  private traceDestructive(command: string, params?: Record<string, unknown>): void {
+    if (!/delete|replace_table|compact/i.test(command)) return;
+    try {
+      const stack = (new Error().stack ?? "")
+        .split("\n")
+        .slice(2, 10)
+        .map((l) => l.trim());
+      const table = params?.table ?? params?.stream ?? "";
+      const where = params?.where ?? params?.id ?? params?.ids ?? params?.session_id ?? "";
+      console.warn(
+        `[StorageTrace] ${command} table=${String(table)} target=${JSON.stringify(where).slice(0, 160)}\n` +
+          stack.join("\n"),
+      );
+    } catch {
+      /* 留痕失败绝不影响功能 */
+    }
+  }
+
   async query<T = unknown>(
     command: string,
     params: Record<string, unknown> = {},
@@ -263,6 +298,7 @@ class RustDataPort implements StorageDataPort {
     command: string,
     params: Record<string, unknown> = {},
   ): Promise<{ written: number }> {
+    this.traceDestructive(command, params);
     const raw = await call<{ written?: number }>(this.t, command, params);
     return { written: typeof raw?.written === "number" ? raw.written : 1 };
   }
@@ -285,6 +321,7 @@ class RustDataPort implements StorageDataPort {
     command: string,
     params: Record<string, unknown> = {},
   ): Promise<T> {
+    this.traceDestructive(command, params);
     const raw = await call<T>(this.t, command, params);
     if (raw === null || raw === undefined) {
       throw new Error(`命令 ${command} 返回了空结果（期望结构化对象）`);
