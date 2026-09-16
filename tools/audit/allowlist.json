@@ -34,5 +34,127 @@
       "contains": "return true;",
       "reason": "CodeGraph 设置项 UI 的初始值（动态 require 失败时按默认开启显示）。仅影响复选框初值，不参与任何放行判定。"
     }
+  ],
+  "storageBoundary": [
+    {
+      "file": "src/components/GitInfoPanel.tsx",
+      "reason": "P3 待迁移模块：迁移后改为仓储命令 + Rust 引擎"
+    },
+    {
+      "file": "src/components/PerformanceDashboard.tsx",
+      "reason": "P3 待迁移模块：迁移后改为仓储命令 + Rust 引擎"
+    },
+    {
+      "file": "src/core/auth/storage.ts",
+      "reason": "P3-5 其余域（账号/目标）：迁移后改为仓储命令 + Rust 引擎"
+    },
+    {
+      "file": "src/core/environment/git-commit-service.ts",
+      "reason": "P3 待迁移模块：迁移后改为仓储命令 + Rust 引擎"
+    },
+    {
+      "file": "src/core/goal/goal.ts",
+      "reason": "P3-5 其余域（账号/目标）：迁移后改为仓储命令 + Rust 引擎"
+    },
+    {
+      "file": "src/core/inbox/inbox-storage.ts",
+      "reason": "P3-5 其余域（议题/收件箱/小队）：迁移后改为仓储命令 + Rust 引擎"
+    },
+    {
+      "file": "src/core/issue/issue-storage.ts",
+      "reason": "P3-5 其余域（议题/收件箱/小队）：迁移后改为仓储命令 + Rust 引擎"
+    },
+    {
+      "file": "src/core/knowledge/flashcard-store.ts",
+      "reason": "P3-5 其余域（知识库/笔记/图谱）：迁移后改为仓储命令 + Rust 引擎"
+    },
+    {
+      "file": "src/core/knowledge/note-manager.ts",
+      "reason": "P3-5 其余域（知识库/笔记/图谱）：迁移后改为仓储命令 + Rust 引擎"
+    },
+    {
+      "file": "src/core/knowledge/storage.ts",
+      "reason": "P3-5 其余域（知识库/笔记/图谱）：迁移后改为仓储命令 + Rust 引擎"
+    },
+    {
+      "file": "src/core/llm/feedback.ts",
+      "reason": "P3-4 Agentic Loop 链路（反馈/工具/计划）：迁移后改为仓储命令 + Rust 引擎"
+    },
+    {
+      "file": "src/core/llm/tools/session-search.ts",
+      "reason": "P3-4 Agentic Loop 链路（反馈/工具/计划）：迁移后改为仓储命令 + Rust 引擎"
+    },
+    {
+      "file": "src/core/llm/tools/show-todo.ts",
+      "reason": "P3-4 Agentic Loop 链路（反馈/工具/计划）：迁移后改为仓储命令 + Rust 引擎"
+    },
+    {
+      "file": "src/core/session/delegation-storage.ts",
+      "reason": "P3-4 会话与委派链路：迁移后改为仓储命令 + Rust 引擎"
+    },
+    {
+      "file": "src/core/skill/skill-market-client.ts",
+      "reason": "P3 待迁移模块：迁移后改为仓储命令 + Rust 引擎"
+    },
+    {
+      "file": "src/core/squad/squad-storage.ts",
+      "reason": "P3-5 其余域（议题/收件箱/小队）：迁移后改为仓储命令 + Rust 引擎"
+    },
+    {
+      "file": "src/core/storage/account.ts",
+      "reason": "P3-3 数据面核心（messages/events/sessions/attachments…）：迁移后改为仓储命令 + Rust 引擎"
+    },
+    {
+      "file": "src/core/storage/agent-profile-storage.ts",
+      "reason": "P3-3 数据面核心（messages/events/sessions/attachments…）：迁移后改为仓储命令 + Rust 引擎"
+    },
+    {
+      "file": "src/core/storage/database.ts",
+      "reason": "迁移期 WASM 实现本体（sql.js + schema + 整库导出）：P5 删除，届时本条一起删"
+    },
+    {
+      "file": "src/core/storage/event-log.ts",
+      "reason": "P3-3 数据面核心（messages/events/sessions/attachments…）：迁移后改为仓储命令 + Rust 引擎"
+    },
+    {
+      "file": "src/core/storage/file-change-storage.ts",
+      "reason": "P3-3 数据面核心（messages/events/sessions/attachments…）：迁移后改为仓储命令 + Rust 引擎"
+    },
+    {
+      "file": "src/core/storage/message.ts",
+      "reason": "P3-3 数据面核心（messages/events/sessions/attachments…）：迁移后改为仓储命令 + Rust 引擎"
+    },
+    {
+      "file": "src/core/storage/persistence-provider.ts",
+      "reason": "P3-3 数据面核心（messages/events/sessions/attachments…）：迁移后改为仓储命令 + Rust 引擎"
+    },
+    {
+      "file": "src/core/storage/project.ts",
+      "reason": "P3-3 数据面核心（messages/events/sessions/attachments…）：迁移后改为仓储命令 + Rust 引擎"
+    },
+    {
+      "file": "src/core/storage/prompt-draft.ts",
+      "reason": "P3-3 数据面核心（messages/events/sessions/attachments…）：迁移后改为仓储命令 + Rust 引擎"
+    },
+    {
+      "file": "src/core/storage/session-log-bridge.ts",
+      "reason": "P3-3 数据面核心（messages/events/sessions/attachments…）：迁移后改为仓储命令 + Rust 引擎"
+    },
+    {
+      "file": "src/core/storage/session.ts",
+      "reason": "P3-3 数据面核心（messages/events/sessions/attachments…）：迁移后改为仓储命令 + Rust 引擎"
+    },
+    {
+      "file": "src/core/storage/settings.ts",
+      "reason": "P3-3 数据面核心（messages/events/sessions/attachments…）：迁移后改为仓储命令 + Rust 引擎"
+    },
+    {
+      "file": "src/core/storage/v2-session.ts",
+      "reason": "P3-3 数据面核心（messages/events/sessions/attachments…）：迁移后改为仓储命令 + Rust 引擎"
+    },
+    {
+      "file": "src/core/telemetry/telemetry.ts",
+      "reason": "P3-2 只追加面（遥测）：迁移后改为入队 + Rust 引擎"
+    }
   ]
 }

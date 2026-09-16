@@ -50,6 +50,8 @@ docs/*.jpg
 docs/*.md
 docs/*.docx
 !docs/PROJECT-GUIDE.md
+!docs/ARCH-SQLITE-TO-RUST.md
+!docs/STORAGE-INVENTORY.md
 !docs/TODO.md
 !docs/AlimamaFangYuanTiVF-Thin.ttf
 !docs/26720-1.png

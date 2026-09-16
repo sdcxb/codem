@@ -26,7 +26,8 @@ async function loadScanners() {
   const fsScanner = await import(path.join(TOOLS, "scan-false-success.mjs") as any);
   const swScanner = await import(path.join(TOOLS, "scan-silent-write.mjs") as any);
   const gbScanner = await import(path.join(TOOLS, "scan-guard-bypass.mjs") as any);
-  return { fsScanner, swScanner, gbScanner };
+  const sbScanner = await import(path.join(TOOLS, "scan-storage-boundary.mjs") as any);
+  return { fsScanner, swScanner, gbScanner, sbScanner };
 }
 
 describe("审计门禁 —— 仓库当前必须零未豁免命中", () => {
@@ -49,7 +50,7 @@ describe("审计门禁 —— 仓库当前必须零未豁免命中", () => {
 
   it("GATE-3: 豁免清单里每条都必须写明理由（不允许无理由豁免）", () => {
     const allow = JSON.parse(fs.readFileSync(path.join(TOOLS, "allowlist.json"), "utf8"));
-    for (const key of ["falseSuccess", "silentWrites", "guardBypass"]) {
+    for (const key of ["falseSuccess", "silentWrites", "guardBypass", "storageBoundary"]) {
       for (const entry of allow[key] ?? []) {
         expect(typeof entry.file, `${key} 条目缺少 file`).toBe("string");
         expect((entry.reason ?? "").length, `${key} 的 ${entry.file} 缺少理由`).toBeGreaterThan(8);
@@ -65,6 +66,48 @@ describe("审计门禁 —— 仓库当前必须零未豁免命中", () => {
       .join("\n");
     expect(result.scannedFiles).toBeGreaterThan(100);
     expect(result.violations, `未豁免的守卫绕过命中：\n${detail}`).toEqual([]);
+  });
+
+  it("GATE-6: D 类（存储边界）扫描无未豁免命中（迁移期基线以内）", async () => {
+    const { sbScanner } = await loadScanners();
+    const result = sbScanner.scanStorageBoundary({});
+    const detail = result.violations
+      .slice(0, 20)
+      .map((v: any) => `${v.file}:${v.line} [${v.rule}] ${v.preview}`)
+      .join("\n");
+    expect(result.scannedFiles).toBeGreaterThan(100);
+    expect(result.violations, `未豁免的存储边界命中：\n${detail}`).toEqual([]);
+  });
+
+  it("GATE-7: D 类门禁必须真的会咬（能发现新引入的回退）", async () => {
+    const { sbScanner } = await loadScanners();
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "codem-storage-gate-"));
+    fs.writeFileSync(
+      path.join(tmp, "regress.ts"),
+      [
+        'import initSqlJs from "sql.js";',
+        "export function bad(db: any) {",
+        "  const rows = db.exec(`SELECT id FROM messages WHERE session_id = ?`, ['s1']);",
+        "  db.run(`BEGIN TRANSACTION`);",
+        "  const dump = db.export();",
+        "  return rows ?? dump;",
+        "}",
+        "export function alsoBad() { return getDatabase(); }",
+      ].join("\n"),
+      "utf8",
+    );
+    try {
+      const r = sbScanner.scanStorageBoundary({ root: tmp, allowlist: { storageBoundary: [] } });
+      const rules = new Set(r.findings.map((f: any) => f.rule));
+      expect(rules.has("D1"), "应报出 sql.js 依赖").toBe(true);
+      expect(rules.has("D2"), "应报出整库导出").toBe(true);
+      expect(rules.has("D3"), "应报出裸 SQL").toBe(true);
+      expect(rules.has("D4"), "应报出渲染侧事务").toBe(true);
+      expect(rules.has("D5"), "应报出绕过端口的 getDatabase()").toBe(true);
+      expect(r.violations.length).toBeGreaterThanOrEqual(5);
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
   });
 });
 
