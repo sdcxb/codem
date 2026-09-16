@@ -1138,6 +1138,19 @@ flushStreamBuffer(); // flush all on unmount
           // 必须在任何 getSetting() 之前完成 —— 它决定用户看到的是自己的偏好还是默认值。
           if (boot.kind === "registered") {
             await importSettingsFromLegacyDb();
+            // 第 92 波 P3 第 5 段：为**当前会话**预热事件镜像。
+            //
+            // 为什么要预热"当前会话"而不是全部：事件镜像的加载是按会话惰性的，
+            // 而路由规则要求"镜像加载完成后读写才走 Rust"。不预热的话，
+            // 当前会话在第一次访问前会把 append 写进旧库，等镜像加载完再切过去，
+            // 那批事件就只在旧库里了（窗口期）。预热当前会话能把窗口期缩到最小。
+            const activeId = useProjectStore.getState().currentSession?.id;
+            if (activeId) {
+              const { getStoragePort, hasStoragePort } = await import("./core/storage/port");
+              if (hasStoragePort() && getStoragePort().kind === "rust") {
+                (getStoragePort() as unknown as { warmupEvents?: (ids: string[]) => void }).warmupEvents?.([activeId]);
+              }
+            }
           }
         }
         // 第 56 波：字号缩放必须在**数据库就绪后**应用（设置存在 SQLite 里，早期读取拿不到值）。

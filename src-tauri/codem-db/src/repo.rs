@@ -826,8 +826,43 @@ pub fn projects_upsert(engine: &Engine, p: &Value) -> DbResult<Value> {
     })
 }
 
-pub fn projects_list(engine: &Engine, p: &Value) -> DbResult<Value> {
-    let limit = limit_of(p)?;
+/// 删除会话（级联删除其消息/工具调用/事件 —— 外键 ON DELETE CASCADE）
+///
+/// 故意**不允许删全局项目**（`projects.id = ''`）：它是全局会话的外键目标，
+/// 删掉会让所有全局会话失去归属。所以 `projects.delete` 对空 id 直接报错。
+pub fn sessions_delete(engine: &Engine, p: &Value) -> DbResult<Value> {
+    let id = req_text(p, "id")?;
+    engine.write_tx(|tx| {
+        let n = tx
+            .execute("DELETE FROM sessions WHERE id = ?1", params![id])
+            .map_err(DbError::from)?;
+        if n == 0 {
+            return Err(DbError::not_found(format!("sessions 里没有 id={id}")));
+        }
+        Ok(json!({ "written": n }))
+    })
+}
+
+pub fn projects_delete(engine: &Engine, p: &Value) -> DbResult<Value> {
+    let id = req_text(p, "id")?;
+    if id.is_empty() {
+        return Err(DbError::invalid(
+            "id",
+            "不允许删除全局项目（projects.id='' 是全局会话的外键目标）",
+        ));
+    }
+    engine.write_tx(|tx| {
+        let n = tx
+            .execute("DELETE FROM projects WHERE id = ?1", params![id])
+            .map_err(DbError::from)?;
+        if n == 0 {
+            return Err(DbError::not_found(format!("projects 里没有 id={id}")));
+        }
+        Ok(json!({ "written": n }))
+    })
+}
+
+pub fn projects_list(engine: &Engine, p: &Value) -> DbResult<Value> {    let limit = limit_of(p)?;
     let offset = offset_of(p)?;
     engine.with_conn(|conn| {
         let mut stmt = conn

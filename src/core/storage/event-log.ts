@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Event Log — Append-only event storage
  *
  * Design (对标 DeepSeek Harness event-sourcing):
@@ -25,6 +25,26 @@ import { getStoragePort, hasStoragePort } from "./port";
 // 镜像未预热（尚未启动完 / 预热失败）时**完全走原路径** —— 功能不中断。
 // 这正是回滚开关能生效的前提。
 
+/**
+ * "加载窗口期"内写进旧库、但需要补进镜像与 Rust 库的事件。
+ *
+ * ## 为什么需要它
+ *
+ * 某会话的事件加载是后台进行的（几百毫秒）。在那个窗口里 `isLoaded` 还是 false，
+ * 所以 append 走的是**旧库**。等加载完成、切到镜像后，那几条事件就只在旧库里了 ——
+ * 表现为"刚发的消息在事件日志里消失"。契约测试 EV-5 正是抓这个。
+ *
+ * 解法：窗口期内的 append 记在这里，加载完成后补写进 Rust 库（发件箱）
+ * 并放进镜像，于是**两处最终一致**，一条都不丢。
+ */
+const pendingDuringLoad = new Map<string, Array<{ type: string; payload: string; timestamp: number; seq: number }>>();
+
+function notePendingDuringLoad(sessionId: string, type: string, payload: string, timestamp: number, seq: number): void {
+  const list = pendingDuringLoad.get(sessionId) ?? [];
+  list.push({ type, payload, timestamp, seq });
+  pendingDuringLoad.set(sessionId, list);
+}
+
 type RustEventPortLike = {
   events: {
     readAll(s: string): Array<{ seq: number; sessionId: string; type: string; payload: string; timestamp: number }>;
@@ -32,7 +52,8 @@ type RustEventPortLike = {
     readRange(s: string, from: number, to: number): Array<{ seq: number; sessionId: string; type: string; payload: string; timestamp: number }>;
     latestSeq(s: string): number;
     count(s: string): number;
-    isWarmed(): boolean;
+    isLoaded(sessionId: string): boolean;
+    ensureLoaded(sessionId: string, onLoaded?: () => void): void;
     appendLocal(s: string, type: string, payload: string, timestamp: number): { seq: number };
     replaceSession(s: string, events: Array<{ seq: number; sessionId: string; type: string; payload: string; timestamp: number }>): void;
   };
@@ -42,13 +63,34 @@ type RustEventPortLike = {
   deleteEventsAsync(s: string): void;
 };
 
-function rustEventPort(): RustEventPortLike | null {
+/**
+ * 取该会话可用的 Rust 事件通道 —— **不同步加载完就返回 null**。
+ *
+ * 这是"消除读写分裂"的关键判断：只有某会话的事件**已经完整加载进镜像**后，
+ * 才允许它的读写都走镜像。否则调用方继续用旧路径，读到的与写到的在同一个地方，
+ * 不会出现"写进镜像、读从旧库"的错位。
+ *
+ * 副作用是：每次调用都会顺带触发一次惰性加载（同步返回，后台进行），
+ * 因此最迟在该会话第二次访问时就会切到镜像。
+ */
+function rustEventPort(sessionId?: string): RustEventPortLike | null {
   if (!hasStoragePort()) return null;
   const port = getStoragePort();
   if (port.kind !== "rust") return null;
   const candidate = port as unknown as RustEventPortLike;
-  if (!candidate.events?.isWarmed?.()) return null;
-  return candidate;
+  if (!candidate.events?.ensureLoaded) return null;
+  if (sessionId === undefined) return candidate;
+  // 加载中或未加载 → 注册补写回调，并在加载完成后把窗口期事件补进 Rust 库与镜像
+  candidate.events.ensureLoaded(sessionId, () => {
+    const buffered = pendingDuringLoad.get(sessionId);
+    if (!buffered || buffered.length === 0) return;
+    pendingDuringLoad.delete(sessionId);
+    for (const b of buffered) {
+      const local = candidate.events.appendLocal(sessionId, b.type, b.payload, b.timestamp);
+      candidate.appendEventAsync(sessionId, b.type, b.payload, b.timestamp, local.seq);
+    }
+  });
+  return candidate.events.isLoaded(sessionId) ? candidate : null;
 }
 
 /** 镜像事件 → SessionEvent（payload 是 JSON 文本，要解析回来） */
@@ -115,6 +157,11 @@ export class EventLog {
     type: SessionEventType | string,
     payload: Record<string, unknown>,
   ): SessionEvent {
+    // 路由到镜像的**唯一条件**：该会话的事件已完整加载（见 rustEventPort 注释）。
+    // 未加载完 → 继续走下面的旧路径，保证"读到的与写到的在同一处"。
+    const routed = rustEventPort(sessionId);
+    if (routed) return this.appendViaMirror(routed, sessionId, type, payload);
+
     const db = getDatabase();
     const timestamp = Date.now();
     const payloadStr = JSON.stringify(payload);
@@ -138,6 +185,11 @@ export class EventLog {
       timestamp,
     };
 
+    // 若该会话正在加载事件镜像：记下这条，加载完成后补进 Rust 库与镜像（契约测试 EV-5）
+    if (hasStoragePort() && getStoragePort().kind === "rust") {
+      notePendingDuringLoad(sessionId, String(type), payloadStr, timestamp, seq);
+    }
+
     emitToBus(event);
     return event;
   }
@@ -151,13 +203,12 @@ export class EventLog {
    *
    * 所以这里保留实现待用，预热与接线一并放到下一步（Rust 侧命令与镜像/发件箱已就绪）。
    */
-  appendViaMirror(
+  private appendViaMirror(
+    port: RustEventPortLike,
     sessionId: string,
     type: SessionEventType | string,
     payload: Record<string, unknown>,
-  ): SessionEvent | null {
-    const port = rustEventPort();
-    if (!port) return null;
+  ): SessionEvent {
     const timestamp = Date.now();
     const payloadStr = JSON.stringify(payload);
     const placeholder = port.events.appendLocal(sessionId, String(type), payloadStr, timestamp);
@@ -181,6 +232,25 @@ export class EventLog {
     sessionId: string,
     events: Array<{ type: SessionEventType | string; payload: Record<string, unknown> }>,
   ): SessionEvent[] {
+    // 与 append 同样的分流：该会话已加载完 → 走镜像 + 批量发件箱（单事务、seq 连续）
+    const routed = rustEventPort(sessionId);
+    if (routed) {
+      const timestamp = Date.now();
+      const prepared = events.map((evt) => {
+        const payloadStr = JSON.stringify(evt.payload);
+        const placeholder = routed.events.appendLocal(sessionId, String(evt.type), payloadStr, timestamp);
+        return { type: String(evt.type), payload: payloadStr, timestamp, placeholderSeq: placeholder.seq };
+      });
+      routed.appendEventBatchAsync(sessionId, prepared);
+      return prepared.map((p, i) => ({
+        seq: p.placeholderSeq,
+        sessionId,
+        type: events[i].type as SessionEventType,
+        payload: events[i].payload,
+        timestamp,
+      }));
+    }
+
     const db = getDatabase();
     const timestamp = Date.now();
     const result: SessionEvent[] = [];
@@ -272,7 +342,7 @@ export class EventLog {
    * 读所有事件（含快照）。顺序保证：快照一定排在其覆盖的事件之后（seq 单调）。
    */
   readAll(sessionId: string): SessionEvent[] {
-    const mirror = rustEventPort()?.events ?? null;
+    const mirror = rustEventPort(sessionId)?.events ?? null;
     if (mirror) return mirror.readAll(sessionId).map(toSessionEvent);
     const db = getDatabase();
     const result = db.exec(
@@ -296,7 +366,7 @@ export class EventLog {
    * Used for incremental projections.
    */
   readFrom(sessionId: string, fromSeq: number): SessionEvent[] {
-    const mirror = rustEventPort()?.events ?? null;
+    const mirror = rustEventPort(sessionId)?.events ?? null;
     if (mirror) return mirror.readFrom(sessionId, fromSeq).map(toSessionEvent);
     const db = getDatabase();
     const result = db.exec(
@@ -319,7 +389,7 @@ export class EventLog {
    * Read events in a range (for pagination).
    */
   readRange(sessionId: string, fromSeq: number, toSeq: number): SessionEvent[] {
-    const mirror = rustEventPort()?.events ?? null;
+    const mirror = rustEventPort(sessionId)?.events ?? null;
     if (mirror) return mirror.readRange(sessionId, fromSeq, toSeq).map(toSessionEvent);
     const db = getDatabase();
     const result = db.exec(
@@ -343,7 +413,7 @@ export class EventLog {
    * Returns 0 if no events exist.
    */
   getLatestSeq(sessionId: string): number {
-    const mirror = rustEventPort()?.events ?? null;
+    const mirror = rustEventPort(sessionId)?.events ?? null;
     if (mirror) return mirror.latestSeq(sessionId);
     const db = getDatabase();
     const result = db.exec(
@@ -359,6 +429,8 @@ export class EventLog {
    * Count events for a session.
    */
   count(sessionId: string): number {
+    const routed = rustEventPort(sessionId);
+    if (routed && routed.events.isLoaded(sessionId)) return routed.events.count(sessionId);
     const db = getDatabase();
     const result = db.exec(
       "SELECT COUNT(*) FROM session_events WHERE session_id = ?",
@@ -374,6 +446,13 @@ export class EventLog {
    * This is the ONLY deletion path — individual events are never deleted.
    */
   deleteAllForSession(sessionId: string): void {
+    const routed = rustEventPort(sessionId);
+    if (routed) {
+      // 镜像先清（读立刻一致），再排队落库
+      routed.events.replaceSession(sessionId, []);
+      routed.deleteEventsAsync(sessionId);
+      return;
+    }
     const db = getDatabase();
     db.run("DELETE FROM session_events WHERE session_id = ?", [sessionId]);
     persistDatabase();
@@ -386,6 +465,20 @@ export class EventLog {
   forkSession(sourceSessionId: string, targetSessionId: string): number {
     const events = this.readAll(sourceSessionId);
     if (events.length === 0) return 0;
+
+    // 两端都已加载完才走镜像（fork 会同时写源与目标两侧的镜像状态）
+    const srcOk = rustEventPort(sourceSessionId) !== null;
+    const dstPort = rustEventPort(targetSessionId);
+    if (srcOk && dstPort) {
+      const timestamp = Date.now();
+      const prepared = events.map((evt) => {
+        const payloadStr = JSON.stringify(evt.payload);
+        const placeholder = dstPort.events.appendLocal(targetSessionId, String(evt.type), payloadStr, timestamp);
+        return { type: String(evt.type), payload: payloadStr, timestamp, placeholderSeq: placeholder.seq };
+      });
+      dstPort.appendEventBatchAsync(targetSessionId, prepared);
+      return prepared.length;
+    }
 
     const db = getDatabase();
     const timestamp = Date.now();

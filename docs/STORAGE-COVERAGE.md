@@ -4,8 +4,8 @@
 
 - 扫描生产文件：**838**
 - 需要实现的仓储方法：**129**（对应 278 个 SQL 调用点）
-- 已实现：**22** → 方法覆盖率 **17.05%**，调用点覆盖率 **22.66%**
-- Rust 侧已注册命令：**42**
+- 已实现：**24** → 方法覆盖率 **18.6%**，调用点覆盖率 **27.7%**
+- Rust 侧已注册命令：**51**
 
 ## 已实现（渲染侧方法 → Rust 命令）
 
@@ -13,9 +13,11 @@
 |---|---:|---|
 | `messages.update` | 13 | `messages.update` `messages.update_many` |
 | `messages.select` | 11 | `messages.get` `messages.list` |
-| `session_events.insert` | 7 | `events.append` |
+| `session_events.select` | 11 | `events.list` `events.count` `events.watermark` |
+| `session_events.insert` | 7 | `events.append` `events.append_batch` |
 | `sessions.select` | 6 | `sessions.list` |
 | `messages.delete` | 4 | `messages.delete` |
+| `session_events.delete` | 3 | `events.delete_session` |
 | `projects.insert` | 2 | `projects.upsert` |
 | `projects.select` | 2 | `projects.list` |
 | `sessions.insert` | 2 | `sessions.upsert` |
@@ -34,11 +36,10 @@
 | `settings.insert` | 1 | `settings.set` |
 | `telemetry_events.insert` | 1 | `telemetry.append` |
 
-## 待迁移（107 个方法，按调用点排序）
+## 待迁移（105 个方法，按调用点排序）
 
 | 渲染侧方法 | 调用点 | 建议阶段 |
 |---|---:|---|
-| `session_events.select` | 11 | 2 只追加 |
 | `accounts.select` | 7 | 5 其余域 |
 | `accounts.update` | 6 | 5 其余域 |
 | `attachments.select` | 6 | 3 数据面 |
@@ -62,7 +63,6 @@
 | `notebook_sources.select` | 3 | 5 其余域 |
 | `notebooks.update` | 3 | 5 其余域 |
 | `prompt_drafts.select` | 3 | 5 其余域 |
-| `session_events.delete` | 3 | 2 只追加 |
 | `sessions.update` | 3 | 4 会话/项目 |
 | `accounts.delete` | 2 | 5 其余域 |
 | `accounts.insert` | 2 | 5 其余域 |

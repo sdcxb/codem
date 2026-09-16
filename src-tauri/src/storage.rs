@@ -24,6 +24,18 @@
 //! `<app_data_dir>/codem-db-rust.bin`。
 //! 与 WASM 侧用的 `codem-db.bin` **刻意分开**：迁移期两个引擎可以并存对照，
 //! 互不锁文件；数据搬迁由 P4 的迁移/对账工具负责，而不是"两个引擎抢同一个文件"。
+//!
+//! ## ⚠️ 给后来者：新增仓储命令后**必须重建 Tauri 二进制**
+//!
+//! 这个坑实测踩过**两次**（新增 `config_warmup`、`events.list` 之后）：
+//! - 在 `codem-db` crate 里加了命令、`cargo test` 全绿、TS 契约测试（假 transport）也全绿；
+//! - 但**没有重建应用二进制**，于是真机上每条新命令都报"未实现的仓储命令"。
+//!
+//! 原因：`cargo test` 测的是 crate 自己的 `dispatch`，TS 契约测试用的是假 transport，
+//! **两者都看不见"应用里注册的 dispatch 表"**。只有真机会暴露。
+//! 所以：`cargo build`（from `src-tauri`）之后再上真机。
+//! `src/test/storage-command-parity.test.ts` 守着"源码层面"的一致性（声明/分支/注册），
+//! 但"二进制是否是最新的"只能靠这条流程纪律。
 
 use std::path::PathBuf;
 use std::sync::Mutex;

@@ -607,49 +607,118 @@ export interface MirrorEvent {
 
 class RustEventMirror {
   private bySession = new Map<string, MirrorEvent[]>();
-  private warmed = false;
+  /** 已**完成**从数据库加载的会话（只有这个集合里的会话才允许路由到镜像） */
+  private loaded = new Set<string>();
+  private loading = new Map<string, Promise<void>>();
   private failures = 0;
   private pendingWrites = 0;
   private inFlight = new Set<Promise<void>>();
-  /** 本地占位 seq 的起点：远大于任何真实 seq，只用于镜像内排序，永不落库 */
+  /**
+   * 本地占位 seq 的起点：远大于任何真实 seq，只用于镜像内排序，**永不落库**。
+   *
+   * 为什么需要占位：`seq` 是全局 AUTOINCREMENT，本地无法预知全局水位。
+   * 所以追加时先给一个占位保证镜像内的相对顺序，写成功后用引擎回传的真实 seq 修正。
+   */
   private placeholderBase = Number.MAX_SAFE_INTEGER - 1_000_000;
+  /** 单会话加载上限（防极端情况下无限拉取） */
+  private readonly maxBatch = 5000;
+  private readonly maxRounds = 40;
 
   constructor(
     private readonly t: StorageTransport,
     private readonly onFailure: (scope: string, e: unknown, note: string) => void,
   ) {}
 
-  isWarmed(): boolean {
-    return this.warmed;
+  /** 该会话的事件是否已经完整加载（**路由到镜像的唯一依据**） */
+  isLoaded(sessionId: string): boolean {
+    return this.loaded.has(sessionId);
   }
 
+  /** 全局是否已就绪（至少加载过一个会话 / 或明确标记过） */
+  isWarmed(): boolean {
+    return this.loaded.size > 0 || this.warmedFlag;
+  }
+  private warmedFlag = false;
+
   /**
-   * 启动预热：把事件日志整份读进镜像。
+   * 确保某个会话的事件已加载（**同步返回**，后台加载）。
    *
-   * 分批读（每批 5000）避免一次 IPC 负载过大；上限保护避免极端情况下无限拉取。
+   * 设计要点（为了彻底消除"读写分裂"）：
+   * - 未加载完之前，调用方**必须继续走旧路径**（`isLoaded` 返回 false）——
+   *   否则新写入的事件进了镜像、而读还从旧库取，用户会看到"记录不再更新"；
+   * - 加载是**按会话惰性**的：启动时不必把整个事件库拉进内存（生产库 2197 条、
+   *   将来可能十万条），只有真正被用到的会话才加载；
+   * - 加载完成后，本地已追加的**占位事件**要迁移到真实 seq（见 `reconcile`），
+   *   否则会与库里的同一条事件重复计数。
+   *
+   * @param onLoaded 加载完成后的回调。用于把"加载窗口期内**写进了旧库**的事件"
+   *   补进镜像与 Rust 库（见 EventLog 的 pendingDuringLoad）——
+   *   否则那一小段时间写入的事件会在切换引擎后"消失"。
    */
-  async warmup(sessionIds: string[]): Promise<number> {
-    let total = 0;
-    const MAX_BATCH = 5000;
-    const MAX_ROUNDS = 20;
-    for (const sessionId of sessionIds) {
-      const list: MirrorEvent[] = [];
-      let fromSeq: number | undefined;
-      for (let round = 0; round < MAX_ROUNDS; round++) {
-        const page = await call<{ items?: unknown[]; has_more?: boolean }>(this.t, "events.list", {
-          session_id: sessionId,
-          limit: MAX_BATCH,
-          ...(fromSeq === undefined ? {} : { from_seq: fromSeq }),
-        });
-        const items = (page?.items ?? []).map((r) => this.normalize(r));
-        list.push(...items);
-        if (!page?.has_more || items.length === 0) break;
-        fromSeq = items[items.length - 1].seq + 1;
-      }
-      this.bySession.set(sessionId, list);
-      total += list.length;
+  ensureLoaded(sessionId: string, onLoaded?: () => void): void {
+    if (this.loaded.has(sessionId)) {
+      onLoaded?.();
+      return;
     }
-    this.warmed = true;
+    if (this.loading.has(sessionId)) {
+      if (onLoaded) {
+        void this.loading.get(sessionId)?.then(() => onLoaded());
+      }
+      return;
+    }
+    const job = this.loadSession(sessionId)
+      .then(() => {
+        this.loaded.add(sessionId);
+        this.warmedFlag = true;
+      })
+      .catch((e) => {
+        this.failures++;
+        this.onFailure("events.load", e, "事件索引未能加载（该会话继续使用旧引擎读取）");
+      })
+      .finally(() => {
+        this.loading.delete(sessionId);
+      });
+    this.loading.set(sessionId, job);
+    if (onLoaded) {
+      void job.then(() => {
+        if (this.loaded.has(sessionId)) onLoaded();
+      });
+    }
+  }
+
+  private async loadSession(sessionId: string): Promise<void> {
+    const list: MirrorEvent[] = [];
+    let fromSeq: number | undefined;
+    for (let round = 0; round < this.maxRounds; round++) {
+      const page = await call<{ items?: unknown[]; has_more?: boolean }>(this.t, "events.list", {
+        session_id: sessionId,
+        limit: this.maxBatch,
+        ...(fromSeq === undefined ? {} : { from_seq: fromSeq }),
+      });
+      const items = (page?.items ?? []).map((r) => this.normalize(r));
+      list.push(...items);
+      if (!page?.has_more || items.length === 0) break;
+      fromSeq = items[items.length - 1].seq + 1;
+    }
+    // 合并：保留本地刚追加但还没被库覆盖的占位事件（否则会丢刚写的事件）
+    const local = this.bySession.get(sessionId) ?? [];
+    const maxReal = list.length ? list[list.length - 1].seq : 0;
+    const pendingLocal = local.filter((e) => e.seq > this.placeholderBase - 1_000_000 && e.seq > maxReal);
+    this.bySession.set(sessionId, [...list, ...pendingLocal]);
+  }
+
+  /** 启动预热：对给定会话批量触发加载（后台进行，不阻塞启动） */
+  async warmup(sessionIds: string[]): Promise<number> {
+    this.warmedFlag = true;
+    let total = 0;
+    await Promise.all(
+      sessionIds.map(async (sessionId) => {
+        this.ensureLoaded(sessionId);
+        const job = this.loading.get(sessionId);
+        if (job) await job;
+        total += this.bySession.get(sessionId)?.length ?? 0;
+      }),
+    );
     return total;
   }
 
@@ -734,8 +803,8 @@ class RustEventMirror {
     let events = 0;
     for (const list of this.bySession.values()) events += list.length;
     return {
-      warmed: this.warmed,
-      sessions: this.bySession.size,
+      warmed: this.isWarmed(),
+      sessions: this.loaded.size,
       events,
       pendingWrites: this.pendingWrites,
       failures: this.failures,
@@ -778,18 +847,13 @@ export class RustStoragePort implements StoragePort {
   }
 
   /**
-   * 事件日志整份预热（只追加面）。
+   * 事件日志预热（只追加面）。
    *
-   * 与其它预热阶段一样**失败不阻塞启动**：事件索引读不到时回退到旧引擎路径
-   * （`EventLog` 会用 `events.isWarmed()` 判断），功能不会中断。
+   * **不阻塞启动**：预热是后台进行的，且每个会话在加载完成前仍走旧引擎路径
+   * （由 `EventLog` 通过 `isLoaded(sessionId)` 判断）。失败同样只上报。
    */
-  async warmupEvents(sessionIds: string[]): Promise<number> {
-    try {
-      return await this.events.warmup(sessionIds);
-    } catch (e) {
-      this.reportFailure("events", e, "事件索引未能加载（回退到旧引擎读取）");
-      return 0;
-    }
+  warmupEvents(sessionIds: string[]): void {
+    for (const id of sessionIds) this.events.ensureLoaded(id);
   }
 
   /**
