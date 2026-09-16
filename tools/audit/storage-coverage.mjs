@@ -152,6 +152,12 @@ export const IMPLEMENTED = {
   "sessions.select": ["sessions.list"],
   "projects.insert": ["projects.upsert"],
   "projects.select": ["projects.list"],
+  // ===== P3 第 11 段：域镜像（accounts 为例，其余域同形状）=====
+  "accounts.select": ["crud.list"],
+  "accounts.insert": ["crud.upsert"],
+  "accounts.update": ["crud.upsert"],
+  "accounts.delete": ["crud.delete"],
+
   // ===== P3 第 8 段：反馈 / 附件 / 全文索引 =====
   "message_feedback.select": ["feedback.get"],
   "message_feedback.insert": ["feedback.set"],

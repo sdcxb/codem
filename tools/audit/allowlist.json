@@ -45,10 +45,6 @@
       "reason": "P3 待迁移模块：迁移后改为仓储命令 + Rust 引擎"
     },
     {
-      "file": "src/core/auth/storage.ts",
-      "reason": "P3-5 其余域（账号/目标）：迁移后改为仓储命令 + Rust 引擎"
-    },
-    {
       "file": "src/core/environment/git-commit-service.ts",
       "reason": "P3 待迁移模块：迁移后改为仓储命令 + Rust 引擎"
     },

@@ -2,9 +2,9 @@
 
 > 由 `node tools/audit/storage-coverage.mjs --md` 生成；不要手工编辑。
 
-- 扫描生产文件：**838**
-- 需要实现的仓储方法：**129**（对应 278 个 SQL 调用点）
-- 已实现：**33** → 方法覆盖率 **25.58%**，调用点覆盖率 **36.33%**
+- 扫描生产文件：**837**
+- 需要实现的仓储方法：**129**（对应 270 个 SQL 调用点）
+- 已实现：**37** → 方法覆盖率 **28.68%**，调用点覆盖率 **40.74%**
 - Rust 侧已注册命令：**66**
 - **命令可用性覆盖：129/129（100%）** —— 这一项在第 10 段引入通用命令后已达 100%，但**不等于迁移完成**：渲染侧调用点是否已切到端口，看上面那个保守数字。
 
@@ -18,9 +18,11 @@
 | `session_events.insert` | 7 | `events.append` `events.append_batch` |
 | `attachments.select` | 6 | `attachments.list` |
 | `sessions.select` | 6 | `sessions.list` |
+| `accounts.select` | 4 | `crud.list` |
 | `message_feedback.alter` | 4 | `feedback.set` |
 | `message_feedback.delete` | 4 | `feedback.delete` |
 | `messages.delete` | 4 | `messages.delete` |
+| `accounts.update` | 3 | `crud.upsert` |
 | `message_feedback.select` | 3 | `feedback.get` |
 | `session_events.delete` | 3 | `events.delete_session` |
 | `message_feedback.insert` | 2 | `feedback.set` |
@@ -30,6 +32,8 @@
 | `sessions.insert` | 2 | `sessions.upsert` |
 | `settings.select` | 2 | `settings.get_all` |
 | `telemetry_events.delete` | 2 | `telemetry.prune` |
+| `accounts.delete` | 1 | `crud.delete` |
+| `accounts.insert` | 1 | `crud.upsert` |
 | `attachments.update` | 1 | `attachments.update` |
 | `mcp_servers.delete` | 1 | `mcp_servers.remove` |
 | `mcp_servers.insert` | 1 | `mcp_servers.save` |
@@ -46,12 +50,10 @@
 | `settings.insert` | 1 | `settings.set` |
 | `telemetry_events.insert` | 1 | `telemetry.append` |
 
-## 待迁移（96 个方法，按调用点排序）
+## 待迁移（92 个方法，按调用点排序）
 
 | 渲染侧方法 | 调用点 | 建议阶段 |
 |---|---:|---|
-| `accounts.select` | 7 | 5 其余域 |
-| `accounts.update` | 6 | 5 其余域 |
 | `delegation_tasks.select` | 6 | 5 其余域 |
 | `telemetry_events.select` | 6 | 2 只追加 |
 | `cost_records.select` | 5 | 5 其余域 |
@@ -70,8 +72,6 @@
 | `notebooks.update` | 3 | 5 其余域 |
 | `prompt_drafts.select` | 3 | 5 其余域 |
 | `sessions.update` | 3 | 4 会话/项目 |
-| `accounts.delete` | 2 | 5 其余域 |
-| `accounts.insert` | 2 | 5 其余域 |
 | `agent_profiles.select` | 2 | 5 其余域 |
 | `flashcards.delete` | 2 | 5 其余域 |
 | `flashcards.update` | 2 | 5 其余域 |

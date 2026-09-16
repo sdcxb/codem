@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Rust 存储端口实现（P3）：渲染侧通过 **Tauri IPC** 调用 `codem-db` crate 的类型化仓储命令。
  *
  * ## 为什么这个文件是迁移的关键
@@ -985,6 +985,157 @@ class RustMessageMirror {
   }
 }
 
+// ========== 通用域镜像（P3 第 11 段） ==========
+//
+// ## 为什么需要它
+//
+// 剩余 14 个域模块（账号 / 图谱 / 笔记本 / 卡片 / 目标 / 团队 / 问题 / 收件箱 / 笔记 /
+// 委派任务 / 提议草稿 / 待办 / 轮次文件变更 / 智能体画像）都是同一个形状：
+// **纯 CRUD + 同步读**（列表 / 按 id 取 / 按条件取 / 写入 / 更新 / 删除），
+// 表都很小（实测 graph_nodes 33 行、notebooks 1 行、accounts 0~几条）。
+//
+// 与其为每个域写一遍镜像逻辑（14 次重复、14 次可能出错），不如做一个**通用域镜像**：
+// 按表名加载、同步读、写穿 + 本地更新。每个域的接入就变成"声明表名 + 保留原签名"。
+//
+// ## 边界（与"语料不进渲染进程"的分工）
+//
+// 这些域的数据天然是"整表即工作集"：图谱一次要渲染全部节点、笔记本列表要全部标题。
+// 而**消息/事件/附件正文**这类大量级语料绝不进来（各自有专门的分页或镜像策略）。
+// 所以判据仍是**量级**：单表几十到几百行 → 可镜像；上万行 → 必须分页。
+//
+// 每个域的镜像都会在加载时记录行数，超过上限（`maxRows`）就**放弃镜像**并回退旧路径，
+// 避免"某天图谱涨到十万行"时把渲染进程压死。
+
+export class RustDomainMirror {
+  private byTable = new Map<string, Array<Record<string, unknown>>>();
+  private loaded = new Set<string>();
+  private loading = new Map<string, Promise<void>>();
+  private refused = new Set<string>();
+  private failures = 0;
+  /** 单表镜像行数上限（超过则放弃镜像，回退旧路径） */
+  private readonly maxRows: number;
+
+  constructor(
+    private readonly t: StorageTransport,
+    private readonly onFailure: (scope: string, e: unknown, note: string) => void,
+    maxRows = 5000,
+  ) {
+    this.maxRows = maxRows;
+  }
+
+  /** 该表是否已加载且允许镜像（**路由的唯一依据**） */
+  isReady(table: string): boolean {
+    return this.loaded.has(table) && !this.refused.has(table);
+  }
+
+  /** 同步触发加载（后台进行） */
+  ensureLoaded(table: string, onLoaded?: () => void): void {
+    if (this.loaded.has(table) || this.loading.has(table)) {
+      if (this.loaded.has(table)) onLoaded?.();
+      else if (onLoaded) void this.loading.get(table)?.then(() => { if (this.isReady(table)) onLoaded(); });
+      return;
+    }
+    const job = this.loadTable(table)
+      .then(() => {
+        this.loaded.add(table);
+      })
+      .catch((e) => {
+        this.failures++;
+        this.onFailure(`domain.${table}.load`, e, `表 ${table} 未能加载（该域继续使用旧引擎读取）`);
+      })
+      .finally(() => {
+        this.loading.delete(table);
+      });
+    this.loading.set(table, job);
+    if (onLoaded) void job.then(() => { if (this.isReady(table)) onLoaded(); });
+  }
+
+  private async loadTable(table: string): Promise<void> {
+    const rows: Array<Record<string, unknown>> = [];
+    let offset = 0;
+    for (let round = 0; round < 40; round++) {
+      const page = await call<{ items?: Array<Record<string, unknown>>; has_more?: boolean }>(
+        this.t,
+        "crud.list",
+        { table, limit: 1000, offset },
+      );
+      const items = page?.items ?? [];
+      rows.push(...items);
+      if (rows.length > this.maxRows) {
+        // 放弃镜像：这张表比预期大得多，继续镜像会把渲染进程压死
+        this.refused.add(table);
+        this.onFailure(
+          `domain.${table}.too-large`,
+          new Error(`表 ${table} 超过镜像上限 ${this.maxRows} 行`),
+          `表 ${table} 改用旧引擎读取（超出内存镜像上限）`,
+        );
+        return;
+      }
+      if (!page?.has_more || items.length === 0) break;
+      offset += items.length;
+    }
+    this.byTable.set(table, rows);
+  }
+
+  all<R = Record<string, unknown>>(table: string): R[] {
+    return [...((this.byTable.get(table) ?? []) as R[])];
+  }
+
+  find<R = Record<string, unknown>>(table: string, where: Record<string, unknown>): R[] {
+    const keys = Object.entries(where);
+    return this.all<R>(table).filter((row) =>
+      keys.every(([k, v]) => (row as Record<string, unknown>)[k] === v),
+    );
+  }
+
+  findOne<R = Record<string, unknown>>(table: string, where: Record<string, unknown>): R | null {
+    return this.find<R>(table, where)[0] ?? null;
+  }
+
+  count(table: string): number {
+    return (this.byTable.get(table) ?? []).length;
+  }
+
+  /** 本地应用一次写入（键为**线协议列名**，snake_case） */
+  applyWrite(table: string, row: Record<string, unknown>, primaryKey = "id"): void {
+    const list = this.byTable.get(table);
+    if (!list) return;
+    const key = row[primaryKey];
+    const i = list.findIndex((r) => r[primaryKey] === key);
+    if (i >= 0) list[i] = { ...list[i], ...row };
+    else list.push({ ...row });
+  }
+
+  /** 本地应用批量写入 */
+  applyWriteMany(table: string, rows: Array<Record<string, unknown>>, primaryKey = "id"): void {
+    for (const r of rows) this.applyWrite(table, r, primaryKey);
+  }
+
+  /** 本地应用删除（按 where 匹配） */
+  applyDelete(table: string, where: Record<string, unknown>): void {
+    const list = this.byTable.get(table);
+    if (!list) return;
+    const keys = Object.entries(where);
+    this.byTable.set(
+      table,
+      list.filter((row) => !keys.every(([k, v]) => row[k] === v)),
+    );
+  }
+
+  /** 整表替换（清空+重建类操作用，例如按 notebook 重算图谱） */
+  replaceTable(table: string, rows: Array<Record<string, unknown>>): void {
+    this.byTable.set(table, [...rows]);
+    this.loaded.add(table);
+    this.refused.delete(table);
+  }
+
+  stats(): { tables: number; rows: number; refused: string[]; failures: number } {
+    let rows = 0;
+    for (const l of this.byTable.values()) rows += l.length;
+    return { tables: this.loaded.size, rows, refused: [...this.refused], failures: this.failures };
+  }
+}
+
 // ========== 聚合端口 ==========
 
 export class RustStoragePort implements StoragePort {
@@ -999,6 +1150,8 @@ export class RustStoragePort implements StoragePort {
   readonly events: RustEventMirror;
   /** 消息索引的会话级镜像（数据面读路径） */
   readonly messages: RustMessageMirror;
+  /** 通用域镜像（账号 / 图谱 / 笔记本 / 卡片 … 的表级镜像与写穿） */
+  readonly domains: RustDomainMirror;
   private readonly reportFailure: (stream: string, e: unknown, note: string) => void;
   private readonly transport: StorageTransport;
 
@@ -1015,6 +1168,7 @@ export class RustStoragePort implements StoragePort {
     this.configDomain = new RustConfigDomainCache(transport, onFailure);
     this.events = new RustEventMirror(transport, onFailure);
     this.messages = new RustMessageMirror(transport, onFailure);
+    this.domains = new RustDomainMirror(transport, onFailure);
   }
 
   /** 为某个会话预热消息索引镜像（打开会话时调用） */
