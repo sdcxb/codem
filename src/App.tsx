@@ -1166,7 +1166,8 @@ flushStreamBuffer(); // flush all on unmount
           // 给"已经迁移过"的库补上搜索索引重建（中文搜索修复）。
           // 独立于迁移标记：迁移幂等会跳过，这些用户否则永远拿不到修复。
           await (await import("./core/storage/bootstrap")).repairSearchIndexOnce();
-          await importSettingsFromLegacyDb();
+          // 旧库路径在这里解析一次并传入：让该函数的依赖显式可见（也便于测试替身）
+          await importSettingsFromLegacyDb("storage.settings-import", await (await import("./core/storage/bootstrap")).legacyDbPath());
           /*
            * **启动自检：用户内容无故消失 → 从旧库恢复**（第 32 轮）。
            *

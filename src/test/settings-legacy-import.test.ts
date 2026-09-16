@@ -23,16 +23,16 @@ const legacyRows: Array<[string, string]> = [
   ["codem-display-mode", "unified"],
 ];
 
-vi.mock("../core/storage/database", () => ({
-  getDatabase: () => {
-    legacyQueries++;
-    if (legacyRows.length === 0) return { exec: () => [] };
-    return {
-      exec: () => [{ columns: ["key", "value"], values: legacyRows.map((r) => [...r]) }],
-    };
-  },
-  persistDatabase: () => {},
-}));
+/*
+ * 旧库由 **Rust 只读命令** `legacy.read_table` 读取（第 43 轮改）。
+ *
+ * 为什么改：原实现走旧库句柄，而 rust 模式下旧库**从不加载** ——
+ * 于是"配置补搬"这条能力**从来没生效过**（抛错被吞成"返回 0"）。
+ * 现在改走只读命令；旧库路径由**调用方传入**（`legacyPathIn`），
+ * 所以这里直接传一个常量即可，不再需要 mock 模块内部函数。
+ * `legacyQueries` 仍由假端口的 data.command 递增，守住"非首次连旧库都不该读"。
+ */
+const LEGACY_PATH = "C:\\appdata\\codem-db.bin";
 vi.mock("../core/storage/persist-failure", () => ({
   reportPersistFailure: () => {},
   reportActionFailure: () => {},
@@ -64,7 +64,24 @@ function rustPortWith(initial: Record<string, string> = {}) {
     },
   };
   return {
-    port: { kind: "rust" as const, engine: {} as never, data: {} as never, config: config as never, append: {} as never },
+    port: {
+      kind: "rust" as const,
+      engine: {} as never,
+      // 旧库读取走这条命令：计数用于守住"非首次连旧库都不该读"
+      data: {
+        command: async (cmd: string) => {
+          if (cmd !== "legacy.read_table") return {};
+          legacyQueries++;
+          if (legacyRows.length === 0) return { columns: ["key", "value"], rows: [] };
+          return {
+            columns: ["key", "value"],
+            rows: legacyRows.map((r) => [...r]),
+          };
+        },
+      } as never,
+      config: config as never,
+      append: {} as never,
+    },
     store,
     getFlushed: () => flushed,
   };
@@ -83,7 +100,7 @@ describe("首次切换的配置导入", () => {
     setStoragePort(port);
 
     const { importSettingsFromLegacyDb } = await import("../core/storage/bootstrap");
-    const n = await importSettingsFromLegacyDb();
+    const n = await importSettingsFromLegacyDb("storage.settings-import", LEGACY_PATH);
     expect(n).toBe(3);
     expect(store.get("codem-theme")).toBe("dark");
     expect(store.get("codem-language")).toBe("zh");
@@ -98,7 +115,7 @@ describe("首次切换的配置导入", () => {
     setStoragePort(port);
 
     const { importSettingsFromLegacyDb } = await import("../core/storage/bootstrap");
-    const n = await importSettingsFromLegacyDb();
+    const n = await importSettingsFromLegacyDb("storage.settings-import", LEGACY_PATH);
     expect(n, "非首次必须完全不导入").toBe(0);
     expect(legacyQueries, "非首次连旧库都不该读（避免覆盖用户后来的修改）").toBe(0);
   });
@@ -109,18 +126,18 @@ describe("首次切换的配置导入", () => {
     setStoragePort(port);
 
     const { importSettingsFromLegacyDb } = await import("../core/storage/bootstrap");
-    expect(await importSettingsFromLegacyDb()).toBe(0);
+    expect(await importSettingsFromLegacyDb("storage.settings-import", LEGACY_PATH)).toBe(0);
     expect(legacyQueries).toBe(0);
   });
 
   it("IMP-4: 端口不是 rust（未注册 / wasm）时不导入", async () => {
     const { importSettingsFromLegacyDb } = await import("../core/storage/bootstrap");
     setStoragePort(null);
-    expect(await importSettingsFromLegacyDb()).toBe(0);
+    expect(await importSettingsFromLegacyDb("storage.settings-import", LEGACY_PATH)).toBe(0);
 
     const { port } = rustPortWith({});
     setStoragePort({ ...port, kind: "wasm" } as never);
-    expect(await importSettingsFromLegacyDb()).toBe(0);
+    expect(await importSettingsFromLegacyDb("storage.settings-import", LEGACY_PATH)).toBe(0);
     expect(legacyQueries).toBe(0);
   });
 
@@ -132,7 +149,7 @@ describe("首次切换的配置导入", () => {
       setStoragePort(port);
 
       const { importSettingsFromLegacyDb } = await import("../core/storage/bootstrap");
-      expect(await importSettingsFromLegacyDb()).toBe(0);
+      expect(await importSettingsFromLegacyDb("storage.settings-import", LEGACY_PATH)).toBe(0);
       expect(store.size, "没有可导入的内容时不该凭空造出设置").toBe(0);
     } finally {
       legacyRows.push(["codem-theme", "dark"], ["codem-language", "zh"], ["codem-display-mode", "unified"]);
@@ -145,7 +162,7 @@ describe("首次切换的配置导入", () => {
     setStoragePort(port);
 
     const { importSettingsFromLegacyDb } = await import("../core/storage/bootstrap");
-    await importSettingsFromLegacyDb();
+    await importSettingsFromLegacyDb("storage.settings-import", LEGACY_PATH);
     expect(getFlushed(), "导入是批量写，必须显式排空队列").toBeGreaterThan(0);
   });
 });

@@ -865,6 +865,53 @@ pub fn importable_existing(engine: &Engine, p: &Value) -> DbResult<Value> {
     })
 }
 
+/// **只读读旧库的某张表**（供渲染侧做定向补搬，例如配置面）。
+///
+/// ## 为什么需要它（第 43 轮）
+///
+/// 原来 `importSettingsFromLegacyDb()` 是这样读旧库的：`getDatabase()` ——
+/// 而 rust 模式下旧库**从不加载**（`markLegacyDbNotUsed()` 之后就没有 `initDatabase()`），
+/// 于是它必定抛 `Database not initialized`，被 catch 吞成"返回 0（没搬）"。
+/// 也就是说：**这个函数从来没生效过**，是一处静默 no-op。
+/// （当前用户没事，是因为全量迁移 `migration.auto` 本来就搬了 `settings` 表；
+///   但"配置面单独补搬"这条能力是坏的。）
+///
+/// 这条命令把那个能力补回来，并且**只读打开**旧库（绝不给回滚开关添乱）：
+/// 表名走白名单、行数有上限、只返回结构化行。
+pub fn legacy_read_table(engine: &Engine, p: &Value) -> DbResult<Value> {
+    let _ = engine; // 只读旧库，不碰新库
+    let legacy_path = crate::repo::req_text(p, "legacy_path")?;
+    let table = crate::repo::req_text(p, "table")?;
+    // 表名白名单：只允许可导入表（与迁移同一套判据），不接受任意 SQL 标识符
+    if !importable_tables().iter().any(|t| t == &table) {
+        return Err(DbError::unsupported(format!(
+            "legacy.read_table 不允许读表 {table}（不在可导入清单内）"
+        )));
+    }
+    let limit = p
+        .get("limit")
+        .and_then(|x| x.as_i64())
+        .unwrap_or(2_000)
+        .clamp(1, 20_000) as usize;
+
+    if !std::path::Path::new(&legacy_path).exists() {
+        return Err(DbError::not_found(format!("旧库不存在：{legacy_path}")));
+    }
+    let conn = Connection::open_with_flags(
+        &legacy_path,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_URI,
+    )
+    .map_err(DbError::from)?;
+
+    let columns = read_legacy_columns(&conn, &table)?;
+    if columns.is_empty() {
+        return Ok(json!({ "table": table, "columns": [], "rows": [] }));
+    }
+    // 复用迁移的行转换（含 BLOB → `blobhex:` 文本的约定），只截断到 limit
+    let (mut rows, _blobs) = read_legacy_table(&conn, &table)?;
+    rows.truncate(limit);
+    Ok(json!({ "table": table, "columns": columns, "rows": rows }))
+}
 /// 迁移状态（是否已导入过、导了多少行）—— 供"只迁一次"的判断与诊断
 pub fn migration_status(engine: &Engine, p: &Value) -> DbResult<Value> {
     let _ = p;

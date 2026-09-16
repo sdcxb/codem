@@ -485,7 +485,18 @@ export async function legacyDbPath(): Promise<string | null> {
  * 三条同时满足才搬。搬完写一个标记键，保证**只搬一次** ——
  * 否则用户以后"清空某个设置"会被下一次启动从旧库又搬回来（这才是真正难查的 bug）。
  */
-export async function importSettingsFromLegacyDb(label = "storage.settings-import"): Promise<number> {
+export async function importSettingsFromLegacyDb(
+  label = "storage.settings-import",
+  /**
+   * 旧库路径。
+   *
+   * 由**调用方传入**而不是内部自己解析：`legacyDbPath()` 依赖 `getAppDataDir()`（走 Tauri IPC），
+   * 在测试里不可用，而把它放在模块内部会让这个函数**无法被独立测试** ——
+   * 实测踩过：用 `vi.mock` 拦不住模块内部函数调用，测试只能看到"返回 0"。
+   * 显式传参让依赖可见、可替身，也让调用点（启动流程）自己保证"只在 rust 模式下调用"。
+   */
+  legacyPathIn?: string | null,
+): Promise<number> {
   if (!hasStoragePort()) return 0;
   const port = getStoragePort();
   if (port.kind !== "rust") return 0;
@@ -497,13 +508,36 @@ export async function importSettingsFromLegacyDb(label = "storage.settings-impor
   const MARKER = "codem-settings-imported-from-legacy";
   let legacy: Array<[string, string]> = [];
   try {
-    const { getDatabase } = await import("./database");
-    const db = getDatabase();
-    const result = db.exec("SELECT key, value FROM settings");
-    if (result.length > 0) {
-      legacy = result[0].values
-        .filter((row) => typeof row[0] === "string" && typeof row[1] === "string")
-        .map((row) => [row[0] as string, row[1] as string]);
+    /*
+     * **通过 Rust 只读读旧库**（第 43 轮修正）。
+     *
+     * 原来这里直接读旧库 —— 而 rust 模式下旧库**从不加载**
+     * （`markLegacyDbNotUsed()` 之后没有任何 `initDatabase()`），所以它必定抛
+     * `Database not initialized`，被下面的 catch 吞成"返回 0（没搬）"。
+     * 也就是说：**这条"配置面补搬"的能力从来没生效过**，是一处静默 no-op。
+     * （用户当前没事，是因为全量迁移 `migration.auto` 本来就搬了 `settings` 表 ——
+     *   实测 Rust 库 26 条 ≥ 旧库 24 条。但能力本身是坏的。）
+     *
+     * 现在改走 `legacy.read_table`（只读打开旧库、表名白名单、有行数上限），
+     * 它不依赖 sql.js，因此在 rust 模式下真的能工作。
+     */
+    const legacyPath = legacyPathIn ?? (await legacyDbPath());
+    if (!legacyPath) return 0;
+    const probe = port.data as unknown as {
+      command?: <T>(cmd: string, params?: Record<string, unknown>) => Promise<T>;
+    };
+    if (!probe.command) return 0;
+    const res = await probe.command<{
+      columns?: string[];
+      rows?: Array<Array<unknown>>;
+    }>("legacy.read_table", { legacy_path: legacyPath, table: "settings", limit: 5_000 });
+    const cols = res.columns ?? [];
+    const keyIdx = cols.indexOf("key");
+    const valIdx = cols.indexOf("value");
+    if (keyIdx >= 0 && valIdx >= 0) {
+      legacy = (res.rows ?? [])
+        .map((row) => [String(row[keyIdx] ?? ""), String(row[valIdx] ?? "")] as [string, string])
+        .filter(([k, v]) => k.length > 0 && v.length > 0);
     }
   } catch (e) {
     // 旧库读不到（例如已被删除）：不搬，也不报成故障 —— 全新安装就是这个状态
