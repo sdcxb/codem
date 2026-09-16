@@ -1,4 +1,4 @@
-import { getDatabase, persistDatabase } from "./database";
+import { getDatabase, persistDatabase, tryGetDatabase } from "./database";
 import { getEventLog } from "./event-log";
 import type { Session } from "../types";
 import { runGuarded } from "./write-guard";
@@ -128,7 +128,8 @@ export function listSessions(projectId: string): Session[] {
       return pa !== pb ? pb - pa : b.lastMessageAt - a.lastMessageAt;
     });
   }
-  const db = getDatabase();
+  const db = tryGetDatabase();
+  if (!db) return [];
   const result = db.exec(
     "SELECT * FROM sessions WHERE project_id = ? ORDER BY pinned DESC, last_message_at DESC",
     [projectId]
@@ -140,7 +141,8 @@ export function listSessions(projectId: string): Session[] {
 export function getSession(id: string): Session | null {
   const rust = domainReadOne(SESSION_TABLE, { id }, wireToSession);
   if (rust !== undefined) return rust;
-  const db = getDatabase();
+  const db = tryGetDatabase();
+  if (!db) return null;
   const result = db.exec("SELECT * FROM sessions WHERE id = ?", [id]);
   if (result.length === 0 || result[0].values.length === 0) return null;
   return rowToSessionFromAny(result[0].values[0]);
@@ -150,7 +152,8 @@ export function createSession(session: Session): void {
   if (domainWrite(SESSION_TABLE, [sessionToWire(session)], { scope: "session.create", note: "会话未保存" })) {
     return;
   }
-  const db = getDatabase();
+  const db = tryGetDatabase();
+  if (!db) return;
   db.run(
     "INSERT INTO sessions (id, project_id, title, model, created_at, last_message_at, message_count, pinned, execution_mode, worktree_path, worktree_branch, correction_mode, deep_thinking_mode, preserve_executor) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     [
@@ -208,7 +211,8 @@ export function updateSession(id: string, update: Partial<Session>): void {
     return;
   }
 
-  const db = getDatabase();
+  const db = tryGetDatabase();
+  if (!db) return;
   const fields: string[] = [];
   const values: (string | number | null)[] = [];
 
@@ -233,7 +237,8 @@ export function updateSession(id: string, update: Partial<Session>): void {
 
 export function deleteSession(id: string): void {
   if (domainDelete(SESSION_TABLE, { id }, { scope: "session.delete", note: "会话未删除" })) return;
-  const db = getDatabase();
+  const db = tryGetDatabase();
+  if (!db) return;
   db.run("DELETE FROM sessions WHERE id = ?", [id]);
   persistDatabase();
 }
@@ -251,7 +256,8 @@ export function togglePinned(id: string): boolean {
     });
     return nextPinned;
   }
-  const db = getDatabase();
+  const db = tryGetDatabase();
+  if (!db) return false;
   const result = db.exec("SELECT pinned FROM sessions WHERE id = ?", [id]);
   const current = result.length > 0 && result[0].values.length > 0 ? (result[0].values[0][0] as number) : 0;
   const newPinned = current === 1 ? 0 : 1;
@@ -270,7 +276,8 @@ export function searchSessions(query: string): Session[] {
       .sort((a, b) => b.lastMessageAt - a.lastMessageAt)
       .slice(0, 50);
   }
-  const db = getDatabase();
+  const db = tryGetDatabase();
+  if (!db) return [];
   const result = db.exec(
     "SELECT * FROM sessions WHERE title LIKE ? AND project_id NOT LIKE 'notebook:%' ORDER BY last_message_at DESC LIMIT 50",
     [`%${query}%`]
@@ -326,7 +333,8 @@ export function forkSession(
     return child;
   }
 
-  const db = getDatabase();
+  const db = tryGetDatabase();
+  if (!db) return null;
   db.run(
     "INSERT INTO sessions (id, project_id, title, model, created_at, last_message_at, message_count, pinned, parent_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
     [
@@ -372,7 +380,8 @@ export function reorderSessions(projectId: string, orderedIds: string[]): void {
     return;
   }
 
-  const db = getDatabase();
+  const db = tryGetDatabase();
+  if (!db) return;
   // Update sort_order for each session
   for (let i = 0; i < orderedIds.length; i++) {
     runGuarded(db, "UPDATE sessions SET sort_order = ? WHERE id = ? AND project_id = ?", [i, orderedIds[i], projectId],

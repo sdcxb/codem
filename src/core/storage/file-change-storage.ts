@@ -5,7 +5,7 @@
  * Independent from v2_sessions.messages JSON — not affected by context compaction.
  */
 
-import { getDatabase, persistDatabase } from "./database";
+import { getDatabase, persistDatabase, tryGetDatabase } from "./database";
 import { runGuarded } from "./write-guard";
 import { domainDelete, domainReadMany, domainReadOne, domainWrite } from "./domain-store";
 
@@ -101,7 +101,8 @@ export const FileChangeStorage = {
   listBySession(sessionId: string): TurnFileChangeRecord[] {
     const rust = domainReadMany(TABLE, rowToRecord, { session_id: sessionId });
     if (rust) return rust.sort((a, b) => b.turn_index - a.turn_index);
-    const db = getDatabase();
+    // P5 第 7 段：旧库在 rust 模式下刻意不存在 → 返回空（端口就绪后调用方会重载）
+    const db = tryGetDatabase();
     if (!db) return [];
     const result = db.exec(
       `SELECT * FROM turn_file_changes WHERE session_id = ? ORDER BY turn_index DESC`,
@@ -119,7 +120,7 @@ export const FileChangeStorage = {
   getById(id: string): TurnFileChangeRecord | null {
     const rust = domainReadOne(TABLE, { id }, rowToRecord);
     if (rust !== undefined) return rust;
-    const db = getDatabase();
+    const db = tryGetDatabase();
     if (!db) return null;
     const result = db.exec(`SELECT * FROM turn_file_changes WHERE id = ?`, [id]);
     if (!result.length || !result[0].values.length) return null;
