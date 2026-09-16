@@ -14,6 +14,8 @@ import { runGuarded } from "../storage/write-guard";
 import {
   domainDelete,
   domainDeleteWhere,
+  domainEnsureLoaded,
+  domainPortRegistered,
   domainReadMany,
   domainReadOne,
   domainWrite,
@@ -979,20 +981,50 @@ export function addNoteLink(sourceNoteId: string, targetNoteId: string, linkText
     source_note_id: sourceNoteId,
     target_note_id: targetNoteId,
   });
-  if (existing) {
-    if (existing.length > 0) return false; // 已存在：本次没有新增
-    domainWrite(
-      T_LINKS,
-      [{
-        id,
+  /**
+   * **端口已注册就必须由端口接手**（第 42 轮修正的读写分裂）。
+   *
+   * `domainReadMany` 在**镜像未加载完**时返回 `undefined`（设计如此：未加载完不路由），
+   * 而下面原来直接回退旧库 —— 于是出现本进程内的读写分裂：
+   *
+   * - 写：落到旧库（`note_links` 那一行只存在于旧库）；
+   * - 读/删：稍后镜像加载完成，`getNoteLinks` / `deleteNoteLinksBySource` 都走镜像 →
+   *   **刚写的链接读不到，也删不掉**（删除按 source 在镜像里找不到旧行）。
+   *
+   * 真机对应的形态：保存带 `[[WikiLink]]` 的笔记后反向链接面板是空的；
+   * 重复保存时旧链接残留（`note-links-order.test.ts` 的 NL-2 抓到的就是它）。
+   *
+   * 修法：端口在 → **等镜像就绪后再写**（一次性回调，不轮询）；端口不在 → 才回退旧库。
+   * 这与消息路径（`message.ts` 的 `onSessionMessagesReady`）是同一套做法。
+   */
+  const portReady = domainPortRegistered();
+  if (portReady) {
+    const writeViaPort = () => {
+      const again = domainReadMany(T_LINKS, wireToNoteLink, {
         source_note_id: sourceNoteId,
         target_note_id: targetNoteId,
-        link_text: linkText ?? null,
-        created_at: now,
-      }],
-      { scope: "noteLink.add", note: "笔记链接未保存" },
-    );
-    return true;
+      });
+      if (again && again.length > 0) return; // 期间已被写入：不重复
+      domainWrite(
+        T_LINKS,
+        [{
+          id,
+          source_note_id: sourceNoteId,
+          target_note_id: targetNoteId,
+          link_text: linkText ?? null,
+          created_at: now,
+        }],
+        { scope: "noteLink.add", note: "笔记链接未保存" },
+      );
+    };
+    if (existing) {
+      if (existing.length > 0) return false; // 已存在：本次没有新增
+      writeViaPort();
+      return true;
+    }
+    // 镜像未就绪：注册一次"就绪后写入"，并如实告知调用方"本次尚未落地"
+    domainEnsureLoaded(T_LINKS, writeViaPort);
+    return false;
   }
 
   const db = getDatabase();

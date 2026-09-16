@@ -18,6 +18,7 @@ import {
   getNoteLinks,
 } from './storage';
 import type { Note, NoteLink } from './types';
+import { getDatabase, persistDatabase } from '../storage/database';
 import { reportPersistFailure } from "../storage/persist-failure";
 import { domainDeleteWhere } from "../storage/domain-store";
 
@@ -218,23 +219,21 @@ function deleteNoteLinksBySource(noteId: string): void {
       { scope: "noteManager.deleteNoteLinksBySource", note: "旧出链未清除，笔记链接可能出现重复" },
     );
     /*
-     * L3 删除（B1 批）：端口未接手时**如实上报**，不再回退旧库。
+     * ⚠️ 为什么这里**必须保留**旧库回退（第 42 轮实测推翻了我最初的"直接删"）：
      *
-     * 为什么不能回退：rust 模式下旧库**刻意不存在**，旧库读取入口按设计抛错；
-     * 而这条回退装在 `try` 里，异常会被下面的 catch 吞成"已上报" ——
-     * 看起来有事发生，实际上**一条旧出链都没删**，图谱里会留下重复链接。
-     * 这正是 D 类（删除）最危险的形态：静默的不一致。
+     * `domainDeleteWhere` 在**端口未注册**（回滚到 wasm）时返回 `null` —— 那时旧库
+     * 就是唯一数据源，回退是**唯一正确的做法**。而我一度把它删成"只上报"，
+     * 结果基线套件（`CODEM_TEST_PORT=0`，正是这个形态）立刻红了一条
+     * （`note-links-order.test.ts` NL-2：旧链接没被删掉）。
      *
-     * 端口未接手的四种状态（未加载完 / 超上限拒绝镜像 / LRU 逐出 / 截断）都由
-     * `domainDeleteWhere` 统一表达为 `null`，所以这里只需如实上报。
+     * 教训（已记入 docs/L3-DELETION-PLAN.md）：**"端口未注册"与"端口在但镜像没就绪"
+     * 是两件完全不同的事**，前者必须回退旧库，后者才该由端口接手（等就绪或如实上报）。
+     * 删回退的前提，是先把这两种状态分开表达 —— 而不是把回退整段删掉。
      */
-    if (removed === null) {
-      reportPersistFailure(
-        "noteManager.deleteNoteLinksBySource",
-        new Error("链接域端口未接手（镜像未就绪或该表未镜像）"),
-        "旧出链未清除，笔记链接可能出现重复",
-      );
-    }
+    if (removed !== null) return;
+    const db = getDatabase();
+    db.run('DELETE FROM note_links WHERE source_note_id = ?', [noteId]);
+    persistDatabase();
   } catch (e) {
     // 第 87 波：删旧出链失败会让旧链接残留（与刚重建的链接叠加成重复/错误图谱）
     reportPersistFailure("noteManager.deleteNoteLinksBySource", e, "旧出链未清除，笔记链接可能出现重复");

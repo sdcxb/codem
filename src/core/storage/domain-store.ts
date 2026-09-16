@@ -76,9 +76,49 @@ export function domainPort(table: string, opts: DomainReadOpts = {}): DomainMirr
   return candidate.domains.isReady(table) ? candidate : null;
 }
 
+/**
+ * **端口是否已注册且是 rust 引擎**（不看镜像是否就绪）。
+ *
+ * 与 `domainPort()` 的区别正是这套分流的关键：
+ * - `domainPort()` 回答"**现在能不能读/写**"（镜像未就绪时为 null）；
+ * - `domainPortRegistered()` 回答"**这个进程该不该走端口**"。
+ *
+ * 写路径必须用后者决定去路：端口已注册却回退旧库 = 本进程内读写分裂。
+ */
+export function domainPortRegistered(): boolean {
+  if (!hasStoragePort()) return false;
+  return getStoragePort().kind === "rust";
+}
+
+/**
+ * **注册一次"该表镜像就绪后执行"**（第 42 轮新增）。
+ *
+ * ## 用途：消除"端口未就绪时写旧库"造成的读写分裂
+ *
+ * 写路径如果这样写：
+ * ```ts
+ * const existing = domainReadMany(T, ...);   // 镜像未就绪 → undefined
+ * if (existing) { domainWrite(T, ...); return; }
+ * legacyInsert();                             // ← 落到旧库
+ * ```
+ * 就会出现：**写进旧库、稍后读/删走镜像** —— 刚写的行读不到，也删不掉
+ * （`note-links-order.test.ts` 的 NL-2 抓到的就是这个）。
+ *
+ * 正确处置：端口已注册时，**等镜像就绪再写**（一次性回调，不轮询）；
+ * 端口未注册（回滚到 wasm）才走旧库。
+ */
+export function domainEnsureLoaded(table: string, onReady: () => void): void {
+  if (!hasStoragePort()) return;
+  const port = getStoragePort();
+  if (port.kind !== "rust") return;
+  const candidate = port as unknown as DomainMirrorPort;
+  candidate.domains?.ensureLoaded?.(table, () => {
+    if (candidate.domains.isReady(table)) onReady();
+  });
+}
+
 /** 读一行（未路由时返回 null，调用方回退旧路径） */
-export function domainReadOne<R>(
-  table: string,
+export function domainReadOne<R>(  table: string,
   where: Record<string, unknown>,
   convert: (row: Record<string, unknown>) => R,
   opts: DomainReadOpts = {},
