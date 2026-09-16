@@ -110,6 +110,27 @@ pub const COMMANDS: &[&str] = &[
 ///
 /// **不接受 SQL 字符串**（安全边界：仓储命令白名单之外一律 `UNSUPPORTED`）。
 pub fn dispatch(engine: &Engine, command: &str, params: &Value) -> DbResult<Value> {
+    /*
+     * 破坏性命令的**执行点**留痕（第 36 轮，长期保留）。
+     *
+     * 为什么装在这里：真机排查已经把渲染侧 JS **全部插过桩**并逐一排除
+     * （端口三层 / domain-store 五个写穿点 / write-audit / RustDataPort /
+     * tauriTransport 最终出口 —— 全部 0 命中，且仪器有效性经过验证）。
+     * 剩下的唯一未插桩执行点就是这里：`dispatch` 是**所有仓储命令的落地处**，
+     * 无论调用来自 Tauri 命令、CLI、还是任何直接持有 Engine 的代码，
+     * 都会经过这一行 —— 所以它能区分"JS 发的"与"进程内别处发的"。
+     *
+     * 打印到 stderr（CLI 与 Tauri 都会随进程输出可见），
+     * 带上调用线程与命令名/参数摘要（不打印正文）。
+     */
+    if command.contains("delete") || command.contains("replace") || command.contains("compact") {
+        eprintln!(
+            "[RustTrace] dispatch {command} params={}",
+            serde_json::to_string(params).unwrap_or_default()
+        );
+        let bt = std::backtrace::Backtrace::force_capture();
+        eprintln!("[RustTrace] backtrace:\n{bt}");
+    }
     match command {
         "settings.get_all" => repo::settings_get_all(engine),
         "settings.set" => repo::settings_set(engine, params),
