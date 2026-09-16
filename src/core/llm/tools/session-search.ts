@@ -74,6 +74,32 @@ Returns matching messages with snippets showing the matched content.`,
       }
 
       try {
+        // ===== 迁移期分流（P3 第 9 段）：端口是 rust → 走引擎的 FTS（含 CJK 切分）=====
+        //
+        // 为什么这条路径必须切：旧实现（下面的 WASM 分支）**中文永远搜不到** ——
+        // 它把查询原样加引号交给 FTS4/unicode61，而 unicode61 把整串 CJK 当一个 token；
+        // 另外它还算了 `matchExpr` 却从未用于 SQL（死代码），所以"全局搜索"也从没生效过。
+        // 引擎侧 `fts.search` 做了 CJK 切分，且不传 session_id 就是真正的跨会话搜索。
+        const viaRust = await searchViaRust(query, limit, sessionIdFilter);
+        if (viaRust) {
+          if (viaRust.length === 0) {
+            return { title: "session_search", output: `No results found for query: "${query}"` };
+          }
+          const formatted = viaRust
+            .map((r, i) => {
+              const date = new Date(r.timestamp).toLocaleString();
+              const title = r.sessionTitle || r.sessionId.substring(0, 8);
+              return `${i + 1}. [${r.role}] ${title} (${date})
+   Session: ${r.sessionId}
+   ${r.snippet}`;
+            })
+            .join("\n\n");
+          return {
+            title: `session_search: ${query}`,
+            output: `Found ${viaRust.length} result(s) for "${query}":\n\n${formatted}`,
+          };
+        }
+
         const { getDatabase } = await import("../../storage/database");
 
         // Build FTS5 query
@@ -162,6 +188,88 @@ Returns matching messages with snippets showing the matched content.`,
       }
     },
   };
+}
+
+/**
+ * 走 Rust 引擎做全文检索。
+ *
+ * @returns 命中结果数组；`null` = 本次不接手（端口未注册 / 是 wasm 引擎），调用方走原路径
+ *
+ * 关键点：
+ * - 引擎侧做了 **CJK 切分**（旧实现中文永远搜不到）；
+ * - **不传 session_id 就是跨会话搜索**（旧实现的"全局搜索"是死代码，从没生效）；
+ * - 引擎返回**真实正文**（索引里存的是切分后的文本，不能直接展示），
+ *   这里在正文上按查询词生成片段（高亮用方括号，与旧格式一致）。
+ */
+async function searchViaRust(
+  query: string,
+  limit: number,
+  sessionIdFilter?: string,
+): Promise<SessionSearchResult[] | null> {
+  const { hasStoragePort, getStoragePort } = await import("../../storage/port");
+  if (!hasStoragePort()) return null;
+  const port = getStoragePort();
+  if (port.kind !== "rust") return null;
+
+  type Row = {
+    message_id?: string | null;
+    role?: string | null;
+    timestamp?: number | null;
+    session_id?: string | null;
+    content?: string | null;
+    session_title?: string | null;
+  };
+  const params: Record<string, unknown> = { query, limit };
+  if (sessionIdFilter) params.session_id = sessionIdFilter;
+  const page = await port.data.query<Row>("fts.search", params, { limit });
+  return page.items.map((r) => {
+    const content = r.content ?? "";
+    return {
+      sessionId: r.session_id ?? "",
+      messageId: r.message_id ?? "",
+      role: r.role ?? "",
+      timestamp: r.timestamp ?? 0,
+      snippet: buildSnippet(content, query),
+      content,
+      sessionTitle: r.session_title ?? undefined,
+    };
+  });
+}
+
+/**
+ * 在真实正文上生成片段（旧实现靠 `snippet()`，但索引里存的是切分后的文本，
+ * 直接展示会是 `存 存储 储 …` 这种形式，所以改在正文上做）。
+ *
+ * 半径取 40 字：这是喂给模型的工具输出，片段必须短 ——
+ * 取太大（试过 60）会让短正文"整段"进去，等于没做片段化。
+ */
+function buildSnippet(content: string, query: string, radius = 40): string {
+  if (!content) return "";
+  const flat = content.replace(/\s+/g, " ").trim();
+  // 依次尝试：完整查询词 → 退化成"CJK 双字片段" → 都不命中则取开头。
+  //
+  // 为什么要退化：查询"上下文问题"会被引擎切成多个 bigram 参与匹配，
+  // 命中的可能是其中任意一段（例如正文只有"上下文压缩"），
+  // 所以片段定位必须按同样的粒度去找，否则会出现"引擎说命中了，但片段里看不到关键词"。
+  const candidates = [query, ...cjkBigrams(query)];
+  for (const cand of candidates) {
+    const idx = flat.toLowerCase().indexOf(cand.toLowerCase());
+    if (idx < 0) continue;
+    const start = Math.max(0, idx - radius);
+    const end = Math.min(flat.length, idx + cand.length + radius);
+    return `${start > 0 ? "…" : ""}${flat.slice(start, idx)}[${flat.slice(idx, idx + cand.length)}]${flat.slice(idx + cand.length, end)}${end < flat.length ? "…" : ""}`;
+  }
+  return flat.slice(0, radius * 2) + (flat.length > radius * 2 ? "…" : "");
+}
+
+/** 查询词里的 CJK 双字片段（与引擎侧的切分规则对应，用于片段定位） */
+function cjkBigrams(text: string): string[] {
+  const out: string[] = [];
+  const cjk = /[\u3400-\u9fff]/;
+  for (let i = 0; i < text.length - 1; i++) {
+    if (cjk.test(text[i]) && cjk.test(text[i + 1])) out.push(text.slice(i, i + 2));
+  }
+  return out;
 }
 
 /**

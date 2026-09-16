@@ -1326,7 +1326,41 @@ export interface FeedbackRecord {
 }
 
 /** Save or update feedback for a message. Passing null removes the feedback. */
+/**
+ * 反馈的内存缓存（P3 第 9 段）。
+ *
+ * ## 为什么用"写穿缓存"而不是整表加载
+ *
+ * `loadFeedback` 是**同步**接口，而 Rust 是异步 IPC。反馈表很小（一条消息最多一行），
+ * 但没有"按会话"的天然边界 —— 一条消息的反馈可能在任何会话里被查询。
+ * 整表加载会引入一个不必要的启动读；而**只缓存本进程写过的**就足够：
+ *
+ * - 写入走 Rust（权威），并同步进缓存 → 本进程内的读立即可见；
+ * - 缓存里没有的（历史反馈）→ 继续读旧库（那里是迁移前的数据，且读与写都在同一处）。
+ *
+ * 这条规则与只追加面/消息镜像同源：**只有当读与写落在同一处时才切换**。
+ * 旧库那份反馈值虽然会随时间变旧，但"没写过的消息"的反馈本来就没被本进程改动过。
+ */
+const feedbackCache = new Map<string, FeedbackType | null>();
+
+/** 反馈写入是否走 Rust（端口可用时的分流判据） */
+function rustFeedbackPort(): RustMessagePortLike | null {
+  const port = rustMessagePort();
+  return port?.data ? port : null;
+}
+
 export function saveFeedback(messageId: string, sessionId: string, feedback: FeedbackType | null): void {
+  const port = rustFeedbackPort();
+  if (port) {
+    // 先内存后落库：本进程内读立即可见，落库失败如实上报
+    feedbackCache.set(messageId, feedback);
+    void port.data
+      .execute("feedback.set", { message_id: messageId, session_id: sessionId, feedback })
+      .catch((e) => {
+        reportPersistFailure("message.saveFeedback", e, "反馈未保存，重启后会丢失");
+      });
+    return;
+  }
   const db = getDatabase();
   // Delete existing feedback for this message
   try {
@@ -1350,7 +1384,9 @@ export function saveFeedback(messageId: string, sessionId: string, feedback: Fee
 
 /** Load feedback for a specific message. Returns 'like', 'dislike', or null. */
 export function loadFeedback(messageId: string): FeedbackType | null {
-  // 第 90 波：数据库致命状态下直接返回（不再每次撞已崩的堆、也不再刷屏）
+  // 本进程写过的优先（与写入落在同一处：都走 Rust）
+  if (feedbackCache.has(messageId)) return feedbackCache.get(messageId) ?? null;
+  // 数据库致命状态下直接返回（不再每次撞已崩的堆、也不再刷屏）
   if (isDatabaseFatal()) return null;
   const db = getDatabase();
   try {

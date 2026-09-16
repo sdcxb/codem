@@ -1,4 +1,4 @@
-//! 迁移原语（P4）：**批量导入**与**对账**。
+﻿//! 迁移原语（P4）：**批量导入**与**对账**。
 //!
 //! ## 为什么需要"批量导入"这种形态
 //!
@@ -32,7 +32,7 @@ use serde_json::{json, Value};
 
 use crate::engine::Engine;
 use crate::error::{DbError, DbResult};
-use crate::repo::{limit_of, req_text};
+use crate::repo::{limit_of, opt_text, req_text};
 
 /// 允许导入的表 = **从 TS schema 生成**的业务表清单（`sql/tables.json`）。
 ///
@@ -746,48 +746,83 @@ pub fn fts_delete_session(engine: &Engine, p: &Value) -> DbResult<Value> {
     })
 }
 
-/// 全文检索（返回命中消息的 id / 角色 / 时间，供搜索界面用）
+/// 全文检索（返回命中消息的 id / 角色 / 时间 / **正文**，供搜索界面用）
 ///
-/// ## 两个必须说明的点
+/// ## 三个必须说明的点
 ///
 /// 1. **查询要按同一套规则切分**：索引里存的是 CJK bigram 形式，
 ///    所以 `存储迁移` 必须转成 `"存储" "迁移"` 之类的表达式才能命中
 ///    （见 `crate::fts::query_expr`）。不切分的话中文永远搜不到 —— 那正是修复前的状态。
 /// 2. **不返回 `snippet()`**：索引里存的是切分后的文本，snippet 出来是
-///    `存 存储 储 …` 这种形式，没法展示。片段应由渲染侧按 message_id 取真实正文生成
-///    —— 这也符合"索引是索引、正文在正文表里"的分工。
+///    `存 存储 储 …` 这种形式，没法展示。改成返回真实正文（取自 `messages`），
+///    由渲染侧在正文上做高亮 —— 这也符合"索引是索引、正文在正文表里"的分工。
+///    `limit` 有上限（默认 10、最大 50），所以正文读取量是有界的。
+/// 3. **`session_id` 可选**：不传就是**跨会话搜索**（原来的渲染侧实现里
+///    "全局搜索"其实从没生效过 —— 见 `session-search.ts` 的 matchExpr 死代码）。
 pub fn fts_search(engine: &Engine, p: &Value) -> DbResult<Value> {
-    let session_id = req_text(p, "session_id")?;
+    let session_id = opt_text(p, "session_id")?;
     let raw_query = req_text(p, "query")?;
     // 空查询 / 全是不可索引字符：明确报参数错误，**不要**退化成"匹配全表"
     let expr = crate::fts::query_expr(&raw_query)
         .ok_or_else(|| DbError::invalid("query", "查询词为空或全是不可索引字符"))?;
     let limit = limit_of(p)?;
-    let desc = p.get("order").and_then(|x| x.as_str()) == Some("desc");
+    let desc = p.get("order").and_then(|x| x.as_str()) != Some("asc");
     engine.with_conn(|conn| {
-        let sql = if desc {
-            "SELECT message_id, role, timestamp FROM session_fts \
-             WHERE session_fts MATCH ?1 AND session_id = ?2 ORDER BY timestamp DESC LIMIT ?3"
-        } else {
-            "SELECT message_id, role, timestamp FROM session_fts \
-             WHERE session_fts MATCH ?1 AND session_id = ?2 ORDER BY timestamp ASC LIMIT ?3"
+        let dir = if desc { "DESC" } else { "ASC" };
+        let sql = match &session_id {
+            Some(_) => format!(
+                "SELECT f.message_id, f.role, f.timestamp, f.session_id, m.content, s.title \
+                 FROM session_fts f \
+                 LEFT JOIN messages m ON m.id = f.message_id \
+                 LEFT JOIN sessions s ON s.id = f.session_id \
+                 WHERE f.session_fts MATCH ?1 AND f.session_id = ?2 \
+                 ORDER BY f.timestamp {dir} LIMIT ?3"
+            ),
+            None => format!(
+                "SELECT f.message_id, f.role, f.timestamp, f.session_id, m.content, s.title \
+                 FROM session_fts f \
+                 LEFT JOIN messages m ON m.id = f.message_id \
+                 LEFT JOIN sessions s ON s.id = f.session_id \
+                 WHERE f.session_fts MATCH ?1 \
+                 ORDER BY f.timestamp {dir} LIMIT ?2"
+            ),
         };
-        let mut stmt = conn.prepare_cached(sql).map_err(DbError::from)?;
-        let rows = stmt
-            .query_map(params![expr, session_id, limit as i64], |r| {
-                Ok(json!({
-                    "message_id": r.get::<_, Option<String>>(0)?,
-                    "role": r.get::<_, Option<String>>(1)?,
-                    "timestamp": r.get::<_, Option<i64>>(2)?,
-                    "session_id": session_id,
-                }))
-            })
-            .map_err(DbError::from)?;
+        let mut stmt = conn.prepare_cached(&sql).map_err(DbError::from)?;
+        let map_row = |r: &rusqlite::Row<'_>| -> rusqlite::Result<Value> {
+            Ok(json!({
+                "message_id": r.get::<_, Option<String>>(0)?,
+                "role": r.get::<_, Option<String>>(1)?,
+                "timestamp": r.get::<_, Option<i64>>(2)?,
+                "session_id": r.get::<_, Option<String>>(3)?,
+                "content": r.get::<_, Option<String>>(4)?.unwrap_or_default(),
+                "session_title": r.get::<_, Option<String>>(5)?,
+            }))
+        };
         let mut items = Vec::new();
-        for r in rows {
-            items.push(r.map_err(DbError::from)?);
+        match &session_id {
+            Some(sid) => {
+                let rows = stmt
+                    .query_map(params![expr, sid, limit as i64], map_row)
+                    .map_err(DbError::from)?;
+                for r in rows {
+                    items.push(r.map_err(DbError::from)?);
+                }
+            }
+            None => {
+                let rows = stmt
+                    .query_map(params![expr, limit as i64], map_row)
+                    .map_err(DbError::from)?;
+                for r in rows {
+                    items.push(r.map_err(DbError::from)?);
+                }
+            }
         }
-        Ok(json!({ "items": items, "has_more": false, "next_cursor": Value::Null }))
+        Ok(json!({
+            "items": items,
+            "has_more": false,
+            "next_cursor": Value::Null,
+            "scope": session_id.unwrap_or_else(|| "<all>".to_string()),
+        }))
     })
 }
 

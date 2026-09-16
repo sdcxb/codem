@@ -577,6 +577,45 @@ fn fts_search_works_for_cjk() {
     }
 }
 
+/// **跨会话搜索**（不传 session_id）必须真的跨会话。
+///
+/// 渲染侧原来的实现里"全局搜索"其实从没生效过：它算了一个 `matchExpr`
+/// 却从未用于 SQL（死代码），而两条 SQL 都带 `s.session_id = ?`。
+/// 这里从引擎侧钉住"不传 session_id 就是全局"。
+#[test]
+fn fts_search_spans_sessions_when_session_id_omitted() {
+    let (_d, e) = temp_engine("fts-global");
+    call(&e, "sessions.upsert", json!({ "id": "s1", "title": "会话一" }));
+    call(&e, "sessions.upsert", json!({ "id": "s2", "title": "会话二" }));
+    call(&e, "messages.create", json!({ "id": "m1", "session_id": "s1", "role": "user", "content": "共同关键词：存储迁移", "timestamp": 1 }));
+    call(&e, "messages.create", json!({ "id": "m2", "session_id": "s2", "role": "assistant", "content": "另一会话也提到存储迁移", "timestamp": 2 }));
+    call(&e, "fts.rebuild", json!({ "session_id": "s1" }));
+    call(&e, "fts.rebuild", json!({ "session_id": "s2" }));
+
+    // 限定会话 → 只 1 条
+    let one = call(&e, "fts.search", json!({ "session_id": "s1", "query": "存储" }));
+    assert_eq!(one["items"].as_array().unwrap().len(), 1);
+    assert_eq!(one["scope"], json!("s1"));
+
+    // 不限定 → 两条都在，且带上会话标题（搜索界面要显示"来自哪个会话"）
+    let all = call(&e, "fts.search", json!({ "query": "存储" }));
+    let items = all["items"].as_array().unwrap();
+    assert_eq!(items.len(), 2, "不传 session_id 必须跨会话：{items:?}");
+    assert_eq!(all["scope"], json!("<all>"));
+    let sid_set: std::collections::HashSet<&str> =
+        items.iter().filter_map(|x| x["session_id"].as_str()).collect();
+    assert_eq!(sid_set.len(), 2, "两条结果应来自不同会话");
+    // 正文随结果返回（渲染侧要在正文上做高亮）
+    assert!(
+        items.iter().all(|x| x["content"].as_str().map(|c| !c.is_empty()).unwrap_or(false)),
+        "必须返回真实正文（不是切分后的索引文本）：{items:?}"
+    );
+    assert!(
+        items.iter().any(|x| x["session_title"] == json!("会话一")),
+        "应带上会话标题"
+    );
+}
+
 /// 重建是**幂等**的：再跑一次应以"已对齐"结束（不重复写）
 #[test]
 fn fts_rebuild_is_idempotent() {
