@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Rust 存储端口实现（P3）：渲染侧通过 **Tauri IPC** 调用 `codem-db` crate 的类型化仓储命令。
  *
  * ## 为什么这个文件是迁移的关键
@@ -1127,6 +1127,20 @@ export class RustDomainMirror {
     this.byTable.set(table, [...rows]);
     this.loaded.add(table);
     this.refused.delete(table);
+  }
+
+  /**
+   * 本地按**谓词**删除（范围条件，例如 `created_at < cutoff`）。
+   *
+   * 只改本地镜像，**不写穿** —— 调用方（`domainDeleteWhere`）负责按筛出的 id 写穿。
+   */
+  applyDeleteWhere(table: string, match: (row: Record<string, unknown>) => boolean): number {
+    const list = this.byTable.get(table);
+    if (!list) return 0;
+    const kept = list.filter((row) => !match(row));
+    const removed = list.length - kept.length;
+    if (removed > 0) this.byTable.set(table, kept);
+    return removed;
   }
 
   stats(): { tables: number; rows: number; refused: string[]; failures: number } {

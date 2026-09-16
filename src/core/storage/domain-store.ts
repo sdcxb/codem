@@ -40,6 +40,7 @@ export interface DomainMirrorPort {
     applyWrite(table: string, row: Record<string, unknown>, primaryKey?: string): void;
     applyWriteMany(table: string, rows: Array<Record<string, unknown>>, primaryKey?: string): void;
     applyDelete(table: string, where: Record<string, unknown>): void;
+    applyDeleteWhere(table: string, match: (row: Record<string, unknown>) => boolean): number;
     replaceTable(table: string, rows: Array<Record<string, unknown>>): void;
   };
   data: { execute(cmd: string, params?: Record<string, unknown>): Promise<{ written: number }> };
@@ -124,6 +125,55 @@ export function domainDelete(
   return true;
 }
 
+/**
+ * 「保留最近的 N 条，其余删除」。
+ *
+ * 对应旧 SQL 的 `DELETE … WHERE … AND id NOT IN (SELECT id … ORDER BY x DESC LIMIT ?)`。
+ * 排序键用 `sorted` 列名（例如 `completed_at`），**排序与截断都在镜像上算**，
+ * 再把要删的 id 逐个写穿 —— 线协议 where 不支持子查询。
+ *
+ * @returns 被删除的行数；未路由时返回 `null`，调用方回退旧路径
+ */
+export function domainDeleteBeyond(
+  table: string,
+  rows: Array<Record<string, unknown>>,
+  keep: number,
+  opts: { note: string; scope: string; key?: string; orderBy?: string },
+): number | null {
+  const port = domainPort(table);
+  if (!port) return null;
+  const key = opts.key ?? "id";
+  const orderBy = opts.orderBy ?? "completed_at";
+  // 与 SQL 的 `ORDER BY completed_at DESC LIMIT ?` 同序。
+  //
+  // 注意并列：SQL 的 `id NOT IN (… LIMIT ?)` 在**并列**时保留哪几条是任意的
+  // （SQLite 的 ORDER BY 不保证稳定）。既然做不到"与旧实现逐行一致"，
+  // 就必须自己定一个**确定的**顺序（次级键 = id），否则同一批数据在两次运行里
+  // 会删掉不同的行 —— 那才是真正危险的那种不确定。
+  const sorted = [...rows].sort((a, b) => {
+    const av = a[orderBy] as number | null | undefined;
+    const bv = b[orderBy] as number | null | undefined;
+    const aNull = av === null || av === undefined;
+    const bNull = bv === null || bv === undefined;
+    if (aNull !== bNull) return aNull ? 1 : -1; // 无完成时间的排最后
+    if (!aNull && !bNull && av !== bv) return (bv as number) - (av as number);
+    const ak = String(a[key] ?? "");
+    const bk = String(b[key] ?? "");
+    return ak < bk ? -1 : ak > bk ? 1 : 0;
+  });
+  const doomed = sorted.slice(Math.max(0, keep));
+  if (doomed.length === 0) return 0;
+  const ids: unknown[] = doomed.map((row) => row[key]).filter((v) => v !== undefined && v !== null);
+  const doomedSet = new Set(ids.map((v) => String(v)));
+  port.domains.applyDeleteWhere(table, (row) => doomedSet.has(String(row[key])));
+  for (const id of ids) {
+    void port.data
+      .execute("crud.delete", { table, where: { [key]: id } })
+      .catch((e) => reportPersistFailure(opts.scope, e, opts.note));
+  }
+  return ids.length;
+}
+
 /** 整表替换（清空+重建类操作用，例如按 notebook 重算图谱） */
 export function domainReplaceTable(
   table: string,
@@ -133,6 +183,46 @@ export function domainReplaceTable(
   if (!port) return false;
   port.domains.replaceTable(table, rows);
   return true;
+}
+
+/**
+ * 按**谓词**删除（TTL 清理、`created_at < ?` 这类范围条件）。
+ *
+ * ## 为什么不能直接用 `crud.delete`
+ *
+ * 线协议（以及 Rust 侧的 `crud_delete`）的 `where` 只支持**等值**匹配，
+ * 而且**明确拒绝空 where**（防清空整表）。所以范围删除只能由渲染进程
+ * 按镜像里的行算出具体 id，再按 id 批量删除：
+ *
+ * - 先在镜像上筛出目标 id —— 保证"本地删掉的"与"写穿的"**是同一批 id**；
+ * - 本地先删，再写穿（与 `domainDelete` 同序），中途失败如实上报。
+ *
+ * 本地先删还有一个必须性：这类清理常常是**先写新行、再顺手清旧行**，
+ * 若等到写穿返回才删本地，调用方紧接着的同步读就会看到"早该过期的行"。
+ *
+ * @returns 被删除的行数；未路由（未接手）时返回 `null`，调用方回退旧路径
+ */
+export function domainDeleteWhere(
+  table: string,
+  match: (row: Record<string, unknown>) => boolean,
+  key: string,
+  opts: { note: string; scope: string },
+): number | null {
+  const port = domainPort(table);
+  if (!port) return null;
+  const all = port.domains.all<Record<string, unknown>>(table);
+  const doomed = all
+    .filter(match)
+    .map((row) => row[key])
+    .filter((v) => v !== undefined && v !== null);
+  if (doomed.length === 0) return 0;
+  const removed = port.domains.applyDeleteWhere(table, (row) => match(row));
+  for (const id of doomed) {
+    void port.data
+      .execute("crud.delete", { table, where: { [key]: id } })
+      .catch((e) => reportPersistFailure(opts.scope, e, opts.note));
+  }
+  return removed;
 }
 
 /**

@@ -913,6 +913,53 @@ Rust 73 项 · tsc 0 错 · 六道 audit 门禁全绿 · 覆盖率 25.58% → **
 · Rust 73 项 · 完整套件 269 文件 / 5159 通过 · tsc 0 错 · 六道 audit 门禁全绿 ·
 覆盖率 31.78% → **36.43%**（调用点 45.93%）。
 
+### P3 第 14 段（第 92 波）—— 七个域接入骨架（goal / inbox / agent_profiles / issues / squads / flashcards / delegation）
+
+上一段验证了骨架对"特殊列"的适应性，这一段把**剩下所有小域**一次性接完，
+只留最大的 `knowledge/storage.ts`（988 行、9 张表）单独做。
+
+| 域 | 表 | 需要注意的语义 |
+|---|---|---|
+| `goal/goal.ts` | `goals` | `listGoals` 的 `ORDER BY priority DESC` 是 **TEXT 的 BINARY 排序**（`normal → low → high`），不是语义序 |
+| `inbox/inbox-storage.ts` | `inbox` | `create` 顺带做 30 天 TTL 清理；`markRead`/`archive` 打不到行时**不写** |
+| `storage/agent-profile-storage.ts` | `agent_profiles` | `skills` 是 JSON；`update` 的 keys 来自调用方，镜像路径只认已知列 |
+| `issue/issue-storage.ts` | `issues` + `issue_comments` | `update` 返回行数（A 类）；`addComment` 要顶起议题 `updated_at` 但**不能**凭空造议题 |
+| `squad/squad-storage.ts` | `squads` + `squad_members` | 归档可见性；空更新不写库（第 86 波的修复） |
+| `knowledge/flashcard-store.ts` | `flashcards` | `tags` JSON；SM-2 复习整体写回；按笔记本批量删是**范围条件** |
+| `session/delegation-storage.ts` | `delegation_tasks` | `clearCompletedDelegations` 是"保留最近 N 条"的子查询删除 |
+
+#### 为范围条件补的原语：`domainDeleteWhere` / `domainDeleteBeyond`
+
+线协议的 `crud.delete` 只支持**等值** where（且明确拒绝空 where，防清空整表），
+所以 `created_at < ?`（收件箱 TTL）、`notebook_id = ?`（按笔记本删卡）、
+`id NOT IN (… ORDER BY completed_at DESC LIMIT ?)`（只留最近 N 条）这三类**范围删除**
+只能由渲染进程按镜像算出具体 id 再逐个写穿。两条原语都保持"**先本地删、再写穿**"：
+
+- 先本地删是**必须**的：这类清理往往紧跟在"写新行"之后，若等到写穿返回才删本地，
+  调用方紧接着的同步读就会看到"早该过期的行"；
+- `domainDeleteBeyond` 的并列顺序自己定（次级键 = id）。旧 SQL 的
+  `id NOT IN (… LIMIT ?)` 在**并列**时保留哪几条是任意的 —— 做不到"逐行一致"，
+  就必须换成确定的顺序，否则同一批数据两次运行会删掉不同的行。
+
+#### 这一段踩到的三个坑（都不是"跑一遍就过去"的那种）
+
+1. **`!current` 是假值判断，不是判空**：`domainReadOne` 用 `undefined` 表示"没接手"、
+   `null` 表示"确实没有这行"，我一度写成 `if (!current) return`。对 `inbox` 表
+   恰好不出事（`wireToInbox` 返回对象总是真值），但语义是错的，已全部改成 `=== null`。
+2. **假端口必须按表返回行**：`portWith` 原来对所有 `table` 都回同一份行，
+   于是"评论行"会出现在 `squads` 镜像里，断言以莫名其妙的方式失败（DOM-25/26/27 三条）。
+   改成 `{ 表名: 行数组 }` 之后立刻全绿 —— **假替身比被测代码更容易写错**。
+3. **时间算术不要靠心算**:我"算出"`now-5天 > now-2天`，据此写了一条注定失败的断言。
+   用 `node -e` 核对一眼就发现是自己算错了。断言里现在留了这条教训。
+
+另外 `reviewFlashcard` 原来是**漏掉的一处**（读走镜像、写还走旧库），
+被"旧库不应在已路由的域上被访问"这条 mock 直接抓出来 —— 这正是该 mock 存在的意义。
+
+**验证**：域镜像契约 **30 项**（新增 16 项）· 完整套件 269 文件 / 5168 通过 ·
+tsc 0 错 · 六道 audit 门禁全绿（A 类 0 / B 类 P1 3+P2 1 / C 类 4 / D 类 519，全在允许清单内）·
+覆盖率 36.43%（调用点 45.93%）—— 覆盖率只按**文件级**统计（这些文件仍含旧路径回退代码），
+所以本段不推高数字，推高的是"实际读写的域"。
+
 ### P4（第 92 波）—— 数据迁移与对账（已完成，真机验证通过）
 
 **产物**
