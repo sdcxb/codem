@@ -960,6 +960,37 @@ tsc 0 错 · 六道 audit 门禁全绿（A 类 0 / B 类 P1 3+P2 1 / C 类 4 / D
 覆盖率 36.43%（调用点 45.93%）—— 覆盖率只按**文件级**统计（这些文件仍含旧路径回退代码），
 所以本段不推高数字，推高的是"实际读写的域"。
 
+#### 附带查出并补上的一道**真门禁缺口**：列级 schema 契约
+
+这一段接 `notebooks` 域时，我据"`schema.sql` 里没有 `group_id`"得出过"Rust 侧缺 14 列"的结论。
+**这个结论是错的** —— 真源里有一半的列是后来用 `ALTER TABLE … ADD COLUMN` 加的（23 条），
+运行期由 `schema::apply()` 的迁移补齐；实测新建库后 `crud.upsert` 能正常写入
+`messages.hidden` / `notebooks.group_id` / `sessions.parent_id` 等全部列。
+
+但这次误判暴露了一个**真实的门禁缺口**，而且是危险的：
+
+- `npm run audit:schema-parity` 比的是 **`schema.sql` 这个文件**有没有被重新生成过 ——
+  它只能证明"生成物没被手改"，**不能证明"库能接受真源声明的所有列"**；
+- 真源里 23 条 `ALTER` 列**根本不在** `schema.sql` 里，它们靠运行期的
+  `migrations.json` 补齐，而这段逻辑**当时没有任何门禁**；
+- 一旦生成漏一条、或迁移被 `migrations_ignored` 静默吞掉，表现是"渲染侧写某列失败 / 静默丢列"，
+  而六道门禁全绿。这正是本项目一直在消灭的那类"静默失真"。
+
+补上 `src-tauri/codem-db/tests/schema_columns.rs`（Rust 契约，2 项）：
+
+| 测试 | 断言 |
+|---|---|
+| `fresh_db_accepts_every_column_the_ts_source_declares` | 从**真源 TS 文本**解析出 `CREATE TABLE` 的列 ∪ 23 条 `ALTER` 的列，新建库后逐表逐列核对 `PRAGMA table_info`；顺带核对 `migrations_ignored` 正好等于"与 CREATE TABLE 重叠的迁移条数" |
+| `every_migration_column_lands_even_on_a_fresh_database` | 每条迁移声明的列都必须真的落到库里（专抓"迁移被静默吞掉"） |
+
+两项都**不写具体列名字面量**：清单来自真源，真源改了就自动跟着变；解析不到 DDL 会直接 panic，
+不会静默通过。**并且验证了它会失败**：临时往真源里插一条 `ALTER TABLE notebooks ADD COLUMN zz_probe_column`，
+`cargo test` 立刻报 `迁移声明的列没落到库里：["notebooks.zz_probe_column"]`；还原后 0 残留、重新全绿。
+
+（教训记在这里：这次误判本身也说明"用脚本比对两个文件"得到的结论，
+必须再用一次**运行期实测**去确认；`Select-String` 里 `\b` 的匹配结果是**易读错的证据**，
+不是结论。列级契约测试比人工比对可靠。）
+
 ### P4（第 92 波）—— 数据迁移与对账（已完成，真机验证通过）
 
 **产物**
