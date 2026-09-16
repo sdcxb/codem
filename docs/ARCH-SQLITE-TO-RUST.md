@@ -2065,3 +2065,75 @@ P6 在 Rust 路径上做的任何内存约束（镜像预算、每表上限、�
 - **测试基座切到端口**（`src/test/fake-storage-port.ts`）：见上一节，逼出并修掉 7 个真实读写分裂；
 - **新增两个审计工具**：`tools/audit/port-failure-table.mjs`、`tools/audit/show-failures.mjs`；
 - 七个审计门禁保持全绿（exit 0），`tsc` 0 错误。
+
+---
+
+## 第 31 轮（下）：删除审计已经落地，事故根因缩到"点开会话"这一步
+
+### 做了什么：让数据库自己记账
+
+新增 `src-tauri/codem-db/src/audit.rs`：在**引擎打开时**给四张核心表装
+`AFTER DELETE` / `AFTER UPDATE(hidden 0→1)` 触发器，把每一次"行消失/被隐藏"
+记进只增的 `storage_audit` 表。配套：
+
+- 命令：`audit.recent` / `audit.summary` / `audit.clear`（白名单 + dispatch + 单元测试 4 个）；
+- CLI：`codem-db-cli --db <path> audit [N|summary|clear]` —— **不启动应用即可取证**
+  （事故现场常常是"应用一开就变"，必须能在应用外读）；
+- 4 个 Rust 单元测试：删除被记账、整表清空可聚合、重复安装幂等、软删除（隐藏）被记账。
+
+**为什么必须是触发器**：这次事故的形态是"渲染侧的端口审计里没有任何删除"。
+只在命令层记账抓不到它 —— 触发器在 SQLite 内部执行，无论删除来自哪条路径都会留下记录。
+
+### 审计给出的结论（硬证据）
+
+复现（恢复数据 → 启动 → 点会话）后，`audit.summary`：
+
+| 表 | 被删行数 |
+| --- | --- |
+| `session_events` | 2131 |
+| `tool_calls` | 883 |
+| `messages` | 821 |
+| `sessions` | **2** |
+
+关键判读：
+
+- **被删的 2 个会话正是用户的两个真实会话**（`1788321681911-bzonm7mel`、
+  `1788268497135-31x6vdt97`），笔记本会话 `nb-ses-…` 保留 —— 是**有选择的删除**，不是清表；
+- 子表那些行的 `session_id`/`key_sample` 显示它们是被**级联**删掉的
+  （`tool_calls` 行的 `session` 字段是 `assistant-…`，那是消息 id）；
+- 所有 3000 条记录的 `at` **完全相同** → 单条 `DELETE FROM sessions` 触发的 FK 级联。
+
+### 触发条件的精确刻画（本轮把范围缩到这一步）
+
+| 实验 | 结果 |
+| --- | --- |
+| 恢复数据 → 启动 → **不点任何东西**，等 30 秒 | **821/3 完好** |
+| 恢复数据 → 启动 → 点项目 | 821/3 完好 |
+| 恢复数据 → 启动 → 点项目 → **点会话** | **821→0、3→1**（可重复） |
+
+也就是说：**不是启动即坏，而是"打开会话"这条用户路径上触发**。
+
+### 仍然没定位的部分（如实记录，不声称已修）
+
+`domain-store.ts` 里所有写穿路径（`domainWrite` / `domainDelete` /
+`domainDeleteBeyond` / `domainDeleteWhere` / `domainReplaceTable`）现在都过
+`write-audit.ts` 的 `recordWrite()`（含调用栈）。而静态排查显示，**全仓只有 3 处
+直接写穿端口、且都不删除行**：
+
+- `bootstrap.ts`：`settings.set`（迁移标记）、`migration.auto`；
+- `session-log-bridge.ts`：`messages.rebuild_index`（只 upsert，不删行）。
+
+所以"谁删的"仍缺最后一环。已收敛的线索：
+
+1. `[MessageStorage] 索引暂不可用（Database not initialized…）` 这条日志与删除**在同一秒**出现
+   ——说明删除发生在"打开会话"的处理链里，且当时有代码走了**旧库回退**；
+2. `currentSessionIdForMessage()` 对"迁移进来的消息"会返回 null（镜像 `byIdLookup` 未命中、
+   旧库又不存在）→ 依赖它的 `updateMessage` / `deleteMessage` 会走进旧回退路径；
+3. 下一步应在 `SessionStorage.deleteSession` 与 `store.ts` 的删除入口
+   （而非 domain-store）加同一个 `recordWrite` + 栈，即可一次定位。
+
+### 本轮同时完成的
+
+- 审计能力（含 CLI 与测试）**作为长期能力保留**，不回滚 —— 它就是"下次这类问题一条命令查清"的基础设施；
+- 46 个 Rust 测试全绿；七个审计门禁 exit 0；`tsc` 0 错误；
+- 数据已恢复：`messages=821 / sessions=3 / tool_calls=883`，旧库那份始终完好。

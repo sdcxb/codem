@@ -10,6 +10,7 @@
 //!
 //! Tauri 命令层（`src-tauri`）只是薄封装：解码参数 → 调 `dispatch` → 编码结果。
 
+pub mod audit;
 pub mod authorizer;
 pub mod config;
 pub mod crud;
@@ -59,6 +60,9 @@ pub const COMMANDS: &[&str] = &[
     "projects.list",
     "projects.delete",
     "counts",
+    "audit.recent",
+    "audit.summary",
+    "audit.clear",
     "health",
     "integrity_check",
     "checkpoint",
@@ -136,6 +140,9 @@ pub fn dispatch(engine: &Engine, command: &str, params: &Value) -> DbResult<Valu
         "sessions.list" => repo::sessions_list(engine, params),
         "sessions.delete" => repo::sessions_delete(engine, params),
         "projects.upsert" => repo::projects_upsert(engine, params),
+        "audit.recent" => audit_recent(engine, params),
+        "audit.summary" => audit_summary(engine, params),
+        "audit.clear" => audit_clear(engine, params),
         "projects.list" => repo::projects_list(engine, params),
         "projects.delete" => repo::projects_delete(engine, params),
         "counts" => repo::counts_of(engine, params),
@@ -189,6 +196,37 @@ pub fn dispatch(engine: &Engine, command: &str, params: &Value) -> DbResult<Valu
             "未实现的仓储命令：{other}（迁移按 docs/ARCH-SQLITE-TO-RUST.md 的 P3 顺序补齐）"
         ))),
     }
+}
+
+// ===== 删除审计（第 31 轮事故排查：让数据库自己记账，见 audit.rs）=====
+
+/// 最近若干条删除/隐藏记录（默认 100）
+fn audit_recent(engine: &Engine, p: &Value) -> DbResult<Value> {
+    let limit = p.get("limit").and_then(|x| x.as_u64()).unwrap_or(100) as usize;
+    engine.with_conn(|conn| {
+        let rows = audit::recent(conn, limit)?;
+        Ok(json!({ "items": rows, "limit": limit }))
+    })
+}
+
+/// 按 (表, 操作) 聚合的审计摘要 —— "哪张表被删得最多"
+fn audit_summary(engine: &Engine, _p: &Value) -> DbResult<Value> {
+    engine.with_conn(|conn| {
+        let rows = audit::summary(conn)?;
+        let items: Vec<Value> = rows
+            .into_iter()
+            .map(|(t, op, n)| json!({ "table": t, "op": op, "records": n }))
+            .collect();
+        Ok(json!({ "items": items }))
+    })
+}
+
+/// 清空审计（排查完成后收尾；清审计本身不写审计）
+fn audit_clear(engine: &Engine, _p: &Value) -> DbResult<Value> {
+    engine.with_conn(|conn| {
+        let removed = audit::clear(conn)?;
+        Ok(json!({ "removed": removed }))
+    })
 }
 
 /// 命令清单 + 当前实现（自省）

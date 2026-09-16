@@ -27,6 +27,7 @@
 
 import { getStoragePort, hasStoragePort } from "./port";
 import { reportPersistFailure } from "./persist-failure";
+import { recordWrite } from "./write-audit";
 
 /** 域镜像端口（`RustDomainMirror` 的能力子集；不直接依赖 rust-port 以免循环引用） */
 export interface DomainMirrorPort {
@@ -120,6 +121,8 @@ export function domainWrite(
   if (!port) return false; // 未接手，调用方走旧路径
   if (rows.length === 0) return true;
   port.domains.applyWriteMany(table, rows);
+  // `mode: "replace"` 的覆盖写是"事实上的删除 + 重写"，同样要能被审计看见
+  recordWrite("crud.upsert", { table, rows, mode: opts.mode ?? "insert" });
   void port.data
     .execute("crud.upsert", { table, rows, mode: opts.mode ?? "insert" })
     .catch((e) => reportPersistFailure(opts.scope, e, opts.note));
@@ -135,6 +138,7 @@ export function domainDelete(
   const port = domainPort(table, opts);
   if (!port) return false;
   port.domains.applyDelete(table, where);
+  recordWrite("crud.delete", { table, where });
   void port.data
     .execute("crud.delete", { table, where })
     .catch((e) => reportPersistFailure(opts.scope, e, opts.note));
@@ -182,6 +186,11 @@ export function domainDeleteBeyond(
   const ids: unknown[] = doomed.map((row) => row[key]).filter((v) => v !== undefined && v !== null);
   const doomedSet = new Set(ids.map((v) => String(v)));
   port.domains.applyDeleteWhere(table, (row) => doomedSet.has(String(row[key])));
+  /*
+   * 批量删除只记**一条**审计（带行数与范围），不逐行记：
+   * 审计要回答的是"哪条代码路径删了多少行"，逐行记会把缓冲冲掉、反而看不见调用栈。
+   */
+  recordWrite("crud.delete", { table, where: { [key]: `${ids.length} 行（保留 ${keep}）` } });
   for (const id of ids) {
     void port.data
       .execute("crud.delete", { table, where: { [key]: id } })
@@ -197,6 +206,8 @@ export function domainReplaceTable(
 ): boolean {
   const port = domainPort(table);
   if (!port) return false;
+  // 整表替换是"事实上的全量删除 + 重写"，必须能被审计看见
+  recordWrite("crud.replace_table", { table, rows: Array.isArray(rows) ? rows : [] });
   port.domains.replaceTable(table, rows);
   return true;
 }
@@ -233,6 +244,7 @@ export function domainDeleteWhere(
     .filter((v) => v !== undefined && v !== null);
   if (doomed.length === 0) return 0;
   const removed = port.domains.applyDeleteWhere(table, (row) => match(row));
+  recordWrite("crud.delete", { table, where: { [key]: `${doomed.length} 行（按谓词）` } });
   for (const id of doomed) {
     void port.data
       .execute("crud.delete", { table, where: { [key]: id } })

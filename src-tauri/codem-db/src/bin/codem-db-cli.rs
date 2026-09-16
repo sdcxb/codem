@@ -142,6 +142,27 @@ fn run(engine: &Engine, path: &str, rest: &[String]) -> Result<Value, DbError> {
             migrate::import_all(engine, &payload)
         }
         "counts" => dispatch(engine, "counts", &json!({ "tables": tables_arg(rest) })),
+        /*
+         * 删除审计（第 31 轮事故排查）。
+         *
+         * `audit`            → 最近 50 条被删/被隐藏的行（哪张表、什么时候、哪个会话）
+         * `audit summary`    → 按 (表, 操作) 聚合（"哪张表被清得最多"）
+         * `audit clear`      → 清空审计表（排查完成后收尾）
+         *
+         * 之所以做成 CLI 子命令而不是只走 `invoke`：事故排查往往在**应用没启动**
+         * 的现场做（库可能是脏的、应用一开就变），CLI 能在不启动应用的前提下取证。
+         */
+        "audit" => match rest.get(1).map(|s| s.as_str()) {
+            Some("clear") => dispatch(engine, "audit.clear", &json!({})),
+            Some("summary") => dispatch(engine, "audit.summary", &json!({})),
+            _ => {
+                let limit = rest
+                    .get(1)
+                    .and_then(|s| s.parse::<u64>().ok())
+                    .unwrap_or(50);
+                dispatch(engine, "audit.recent", &json!({ "limit": limit }))
+            }
+        },
         "invoke" => {
             let cmd = rest
                 .get(1)

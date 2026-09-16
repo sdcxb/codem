@@ -94,6 +94,16 @@ impl Engine {
 
         let schema_report = schema::apply(&conn)?;
 
+        /*
+         * 删除审计（第 31 轮事故）。
+         *
+         * 装在**引擎打开时**、而不是"某个命令里"，是刻意的：
+         * 事故的形态是"数据消失了，但渲染侧的端口审计里没有任何删除" ——
+         * 也就是说，光在命令层记账抓不到它。触发器在 SQLite 内部执行，
+         * 无论删除来自哪条路径都会留下记录。
+         */
+        crate::audit::install(&conn)?;
+
         Ok(Self {
             path,
             conn: Mutex::new(conn),
