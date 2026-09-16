@@ -1130,6 +1130,66 @@ tsc 0 错 · 六道 audit 门禁全绿（A 类 0 / B 类 P1 3+P2 1 / C 类 4 / D
 **验证**：新增 4 项全绿 · 完整套件 269 → **270 文件 / 5187 通过 / 15 跳过** ·
 tsc 0 错 · 六道 audit 门禁全绿。
 
+### P5 第 5 段（第 92 波）—— 真机复验抓出 `session.ts` 完全没接端口 + 新增一道门禁
+
+第 4 段把启动改成"引擎为 rust 时不加载 WASM 库"之后，我在真机上按"真实读写路径"
+又走了一遍，结果抓到一个**足以让应用不可用**的缺口。
+
+#### 缺口：`core/storage/session.ts` 一个端口调用都没有
+
+按"全仓 `getDatabase()`"重新扫了一遍（不是只看我这轮改过的文件）：
+
+| 文件 | getDatabase 调用 | 端口调用 |
+|---|---|---|
+| `core/storage/session.ts` | **9** | **0** |
+| 其余生产模块 | — | 均已接线 |
+
+也就是说**创建会话、改标题、置顶、删除、fork、拖拽排序**全都还在打旧库。
+旧库不加载之后这些会直接失败 —— 而这是应用最核心的一条用户路径
+（"新对话"按钮就是它）。
+
+**为什么完整测试套件没抓到**：那 5192 项测试里，绝大多数自己 `initDatabase()`
+起了一个 WASM 库，于是模块的旧路径"看起来正常工作"。单元测试**结构上**看不见
+"这个模块在生产启动路径下没有库可用"。这一类问题只能靠**真机验证**
+或**模块层面的接线检查**发现。
+
+修法：9 个函数全部接入域端口（`listSessions` / `getSession` / `createSession` /
+`updateSession` / `deleteSession` / `togglePinned` / `searchSessions` /
+`forkSession` / `reorderSessions`），并保住各自的语义：
+`pinned DESC, last_message_at DESC` 排序、未改动列保留、`forkSession` 显式带
+`parent_id`、`reorderSessions` **只改 `sort_order`**。
+
+真机复验（无 WASM 库）：
+
+| 操作 | 结果 |
+|---|---|
+| `createSession` | ok |
+| `getSession` | `{title:"P5 会话探针", model:"probe", messageCount:0}` |
+| `updateSession`（只改标题） | 标题变了、`model` 保留、`createdAt` 未变 |
+| `togglePinned` | 返回值 `true`、库里也是 `true` |
+| `listSessions` | 能查到刚建的会话 |
+| `deleteSession` | 删后 `getSession` 为 `null` |
+| **已迁移的真实会话** | 仍可读：`["对话 2", "对话 1"]` |
+| 控制台 | 0 error |
+
+#### 新增第 7 道门禁：`audit:unrouted-db`
+
+`tools/audit/scan-unrouted-db.mjs`（并接进 `npm run audit` 与 `audit-gates.test.ts`
+的 GATE-8/GATE-9）。规则刻意保守、避免噪声：
+
+> 一个生产模块若 `getDatabase()` **≥2 次**且**完全没有**任何端口符号
+> （`domainRead*` / `domainWrite` / `domainDelete*` / `domainOr` / `hasStoragePort` /
+> `getStoragePort`），即判定为"未接线"。
+
+允许清单里的每一条都必须**写明理由**（不允许"因为现在通过"就放进去）。
+它盯的正是测试探测不到的那一半：**模块层面的接线**，而不是运行结果。
+
+**反向验证过它会咬**：临时把 `inbox-storage.ts` 的端口符号改掉 → 门禁立刻报
+`✗ src/core/inbox/inbox-storage.ts（getDatabase 8 次）` 且 exit 1；还原后重新全绿。
+
+**验证**：完整套件 270 文件 / **5194 通过** / 15 跳过（新增 GATE-8/GATE-9）·
+tsc 0 错 · 七道 audit 门禁全绿 · 真机 7 项操作全通过。
+
 ### P5 第 4 段（第 92 波）—— **启动不再加载 WASM 数据库**（目标的核心那一步）
 
 前几段把一切"接线"都接好了，但**目标其实一寸没动** —— 因为启动路径是这样的：

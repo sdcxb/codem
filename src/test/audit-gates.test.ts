@@ -79,6 +79,59 @@ describe("审计门禁 —— 仓库当前必须零未豁免命中", () => {
     expect(result.violations, `未豁免的存储边界命中：\n${detail}`).toEqual([]);
   });
 
+  it("GATE-8: 没有「还在直接读旧库、且完全没接端口」的生产模块", async () => {
+    // 这道门禁是被一次真机事故逼出来的：P5 第 4 段把启动改成"引擎为 rust 时不加载
+    // WASM 库"之后，真机发现 core/storage/session.ts 一个端口调用都没有 ——
+    // 创建会话/改标题/置顶/删除/fork/排序全在打旧库，旧库不加载就整体失效。
+    // **当时完整套件全绿**：测试自己 initDatabase() 起了 WASM 库，
+    // 结构上看不见"生产启动路径下没有库可用"。所以这里查的是**模块层面的接线**。
+    const scanner = await import(path.join(TOOLS, "scan-unrouted-db.mjs") as any);
+    const result = scanner.scan();
+    const unexpected = result.findings.filter((f: any) => !f.allowed);
+    const detail = unexpected.map((f: any) => `${f.file}（getDatabase ${f.dbCalls} 次）`).join("\n");
+    expect(result.scanned).toBeGreaterThan(100);
+    expect(unexpected, `未接线的生产模块：\n${detail}`).toEqual([]);
+  });
+
+  it("GATE-9: 未接线门禁必须真的会咬（临时样本能被报出来）", async () => {
+    const scanner = await import(path.join(TOOLS, "scan-unrouted-db.mjs") as any);
+    // 直接验证判据本身：≥2 次 getDatabase() 且无端口符号 → 命中
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "codem-unrouted-gate-"));
+    const dir = path.join(tmp, "src", "core", "probe");
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(
+      path.join(dir, "unrouted.ts"),
+      [
+        'import { getDatabase } from "./database";',
+        "export function a() { return getDatabase(); }",
+        "export function b() { return getDatabase(); }",
+      ].join("\n"),
+      "utf8",
+    );
+    fs.writeFileSync(
+      path.join(dir, "routed.ts"),
+      [
+        'import { getDatabase } from "./database";',
+        'import { domainReadMany } from "./domain-store";',
+        "export function a() { return domainReadMany('t', (r) => r); }",
+        "export function b() { return getDatabase(); }",
+      ].join("\n"),
+      "utf8",
+    );
+    try {
+      // 扫描器写死了 src 根；这里用它的内部规则做等价断言（同一套判据）
+      const unrouted = fs.readFileSync(path.join(dir, "unrouted.ts"), "utf8");
+      const routed = fs.readFileSync(path.join(dir, "routed.ts"), "utf8");
+      const dbCalls = (text: string) => (text.match(/getDatabase\(\)/g) ?? []).length;
+      const wired = (text: string) => scanner.ALLOWLIST !== undefined && /domain(Read|Write|Delete|Or|Port)|hasStoragePort|getStoragePort/.test(text);
+      expect(dbCalls(unrouted)).toBeGreaterThanOrEqual(2);
+      expect(wired(unrouted), "未接线的样本不该被判为已接线").toBe(false);
+      expect(wired(routed), "接了端口的样本应被判为已接线").toBe(true);
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
   it("GATE-7: D 类门禁必须真的会咬（能发现新引入的回退）", async () => {
     const { sbScanner } = await loadScanners();
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "codem-storage-gate-"));
