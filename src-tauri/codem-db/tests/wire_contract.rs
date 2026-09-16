@@ -185,17 +185,37 @@ fn wire_fixtures_match_both_sides() {
 
     // 写金样本（供 TS 侧测试读取并断言）。
     // `_generatedAtMs` 让 TS 侧能判断样本是否"过期很久"，见 rust-port-wire.test.ts 的 WIRE-0。
+    //
+    // **只在契约内容真的变了时才重写文件**：原来是无条件覆盖，于是每次 `cargo test`
+    // 都会只因为时间戳不同而改动这个被跟踪的文件 —— `git status` 永远不干净，
+    // 而真正的契约变更（字段名/错误码）混在时间戳噪声里看不出来。
+    // 现在把 `_generatedAtMs` 摘掉再比：内容一致就**原样保留旧文件**（连时间戳也不动）。
     let out = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/wire-fixtures.json");
     let mut prev_at: Option<i64> = None;
+    let mut prev_body: Option<Value> = None;
     if let Ok(existing) = std::fs::read_to_string(&out) {
         if let Ok(v) = serde_json::from_str::<Value>(&existing) {
             prev_at = v.get("_generatedAtMs").and_then(|x| x.as_i64());
+            let mut stripped = v.clone();
+            if let Some(obj) = stripped.as_object_mut() {
+                obj.remove("_generatedAtMs");
+            }
+            prev_body = Some(stripped);
         }
     }
     assert!(
         prev_at.is_none_or(|t| codem_db::schema::now_ms() >= t),
         "时间戳不该倒退"
     );
+
+    let mut fresh = fixtures.clone();
+    if let Some(obj) = fresh.as_object_mut() {
+        obj.remove("_generatedAtMs");
+    }
+    if prev_body.as_ref() == Some(&fresh) {
+        // 契约没变：保持文件原样（时间戳也保持不变，避免无意义的 diff）
+        return;
+    }
     std::fs::write(&out, serde_json::to_string_pretty(&fixtures).unwrap())
         .expect("写入 wire-fixtures.json");
 }
