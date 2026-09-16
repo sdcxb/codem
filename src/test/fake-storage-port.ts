@@ -167,6 +167,30 @@ export function createFakeStoragePort(opts: FakeStoragePortOptions = {}): FakeSt
       }
       return 1;
     }
+    if (command === "messages.delete") {
+      /*
+       * 软删除（压缩走这条）：把 `hidden` 置 1。
+       *
+       * 为什么假端口必须实现它（第 39 轮）：Rust 侧 `messages_delete` 支持 `soft: true`，
+       * 而假端口早先对这条命令**什么都不做** → 镜像里那些行仍是 `hidden=0` →
+       * 读路径照常返回它们 → 一批"压缩后不该复活"的用例**假绿**
+       * （掩盖了真实端口上的行为）。测试双不得比实现更宽松。
+       *
+       * `soft` 未给或为 false 时按硬删除（与 Rust 侧默认一致）。
+       */
+      const ids = (params?.ids as string[] | undefined) ?? [];
+      const soft = params?.soft === true;
+      const target = table("messages");
+      let n = 0;
+      for (const id of ids) {
+        const idx = target.findIndex((r) => r.id === id);
+        if (idx < 0) continue;
+        if (soft) target[idx] = { ...target[idx], hidden: 1 };
+        else target.splice(idx, 1);
+        n++;
+      }
+      return n;
+    }
     if (command === "messages.rebuild_index") {
       const p = (params ?? {}) as Row;
       const rows = (p.rows as Row[] | undefined) ?? [];
@@ -225,7 +249,16 @@ export function createFakeStoragePort(opts: FakeStoragePortOptions = {}): FakeSt
         const idx = target.findIndex((r) => r[pk] === row[pk]);
         if (idx >= 0) target[idx] = { ...target[idx], ...cloneRow(row) };
         else target.push(cloneRow(row));
-        loaded.add(String(row[sessionColumn] ?? ""));
+        /*
+         * ⚠️ **不要**在这里把会话标记为已加载（第 39 轮修正）。
+         *
+         * 真实端口（`RustMessageMirror.applyWrite`）只把行写进 `byId`，
+         * 并**不**把会话加入 `loaded` —— "已加载"只由 `loadSession` 完成时设置。
+         * 假端口早先顺手 `loaded.add(...)`，等于谎报"这个会话的镜像已完整"，
+         * 于是 `isLoaded` 撒谎 → 读路径基于不完整集合做 hidden 判定，
+         * 掩盖了"会话尚未加载"这一真实状态，让一批压缩用例假绿。
+         * 这里只写行：与真实端口保持一致（测试双不得比实现更宽松）。
+         */
       },
       removeByIds: (sid: string, ids: string[]) => {
         const set = new Set(ids);

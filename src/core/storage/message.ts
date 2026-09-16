@@ -306,7 +306,6 @@ export function listMessagesMerged(sessionId: string, limit?: number): Message[]
       const cached = toolCallCache.get(m.id);
       return cached?.length ? ({ ...m, toolCalls: cached } as Message) : m;
     });
-
   const fromIndex = listMessagesFromIndex(sessionId, limit);
   const cached = cachedLogMessages.get(sessionId);
   if (!cached || cached.length === 0) return withToolCalls(fromIndex);
@@ -360,7 +359,27 @@ function hiddenMessageIds(sessionId: string): Set<string> {
   // 索引里的 hidden 状态是权威（软删除行只在索引里），用旧库那份会把已压缩的消息**复活**
   // （见 listMessagesMerged 的注释：那正是"压缩了 840 条、上下文一点没小"的机制）。
   const routed = rustMessageSource(sessionId);
-  if (routed?.messages) return routed.messages.hiddenIds(sessionId);
+  const out = new Set<string>();
+  if (routed?.messages) {
+    for (const id of routed.messages.hiddenIds(sessionId)) out.add(id);
+  }
+  /**
+   * 叠加**本进程刚隐藏过**的 id（第 39 轮）。
+   *
+   * ## 为什么必须有这一层（这就是用户报的那个 bug）
+   *
+   * `rustMessageSource()` 的规则是"镜像未加载完不路由"，而压缩发生在**使用中** ——
+   * 那一刻镜像可能正好没加载完（或已被内存预算逐出）。此时上面的分支拿不到任何
+   * hidden id，于是合并阶段会把日志里那些**已被软删除**的消息整批加回来：
+   *
+   *   · 压缩说"移除 840 条"，下一次读又回来 840 条 → 上下文 token 一点没降；
+   *   · 每次迭代重新压缩（LLM 摘要白烧），最后硬停"请开启新对话"。
+   *
+   * 所以把"本进程隐藏过的 id"记在内存里当**权威补充**：只要这次 hide 是我们做的，
+   * 读路径立刻就能看见它，不必等镜像重新加载。
+   */
+  for (const id of localHiddenIds.get(sessionId) ?? []) out.add(id);
+  if (out.size > 0) return out;
   try {
     // P5 第 7 段：旧库在 rust 模式下**刻意不存在**，这里不能直接 .exec（会抛 null 解引用）
   const legacyDbHidden = tryGetDatabase();
@@ -944,6 +963,33 @@ type RustMessagePortLike = {
  * 工具结果全文往往很大，进镜像等于把 P6 刚清掉的内存占用请回来。所以：
  * 按 `messageId` 存"这条消息的工具调用"，只在**被读过**的消息上驻留，且有上限。
  */
+/**
+ * 本进程内**已软删除（hide）**的消息 id，按会话分组（第 39 轮）。
+ *
+ * 用途见 `hiddenMessageIds` 的说明：镜像未就绪时，它是"刚隐藏过"这一事实的唯一来源，
+ * 缺了它就会把已压缩的消息复活（用户现场那个"移除 840 条、token 一点没降"）。
+ * 容量有界：每个会话最多记 5 万个 id，超出丢最旧的（宁可少记也不无限涨）。
+ */
+const localHiddenIds = new Map<string, Set<string>>();
+const LOCAL_HIDDEN_MAX = 50_000;
+
+function rememberHidden(sessionId: string, id: string): void {
+  let set = localHiddenIds.get(sessionId);
+  if (!set) {
+    set = new Set<string>();
+    localHiddenIds.set(sessionId, set);
+  }
+  set.add(id);
+  if (set.size > LOCAL_HIDDEN_MAX) {
+    // Set 迭代序 = 插入序：删掉最早的那批
+    const drop = set.size - LOCAL_HIDDEN_MAX;
+    let n = 0;
+    for (const old of set) {
+      set.delete(old);
+      if (++n >= drop) break;
+    }
+  }
+}
 const TOOL_CALL_CACHE_LIMIT = 200;
 const toolCallCache = new Map<string, ToolCall[]>();
 
@@ -1628,15 +1674,36 @@ export function deleteMessagesBefore(sessionId: string, timestamp: number): numb
  */
 export function deleteMessagesByIds(ids: string[]): number {
   if (ids.length === 0) return 0;
-  const db = getDatabase();
   // 先按会话分组（墓碑要写进对应会话的日志），再软删除索引行
   const bySession = sessionIdsForMessages(ids);
-  for (const id of ids) {
-    // 墓碑（hide）路径：0 行 = 这条消息根本不在索引里 —— 正是"假压缩"事故的观测点
-    runGuarded(db, "UPDATE messages SET hidden = 1 WHERE id = ?", [id],
-      { table: "messages", op: "hide", id, from: "deleteMessagesByIds" });
+
+  /**
+   * **端口优先**（第 39 轮修复）：rust 模式下旧库刻意不存在，原来的
+   * `const db = getDatabase()` 会直接抛 `Database not initialized` ——
+   * 后果是压缩**一条都没隐藏**：日志里写了墓碑、索引里没有，
+   * 下一次读又把它们从日志合并回来（正是用户现场的"移除 840 条、token 一点没降"）。
+   *
+   * 所以这里改成：端口可用 → 走 `messages.delete`（Rust 侧真改 hidden）+ 记入
+   * `localHiddenIds`（让本次同步读立刻看见）；端口不可用 → 保留旧库路径（回滚开关）。
+   */
+  const port = rustMessagePort();
+  if (port) {
+    void port.data
+      .execute("messages.delete", { ids, soft: true })
+      .catch((e) => reportPersistFailure("message.deleteMessagesByIds", e, "消息未能软删除（索引侧未更新）"));
+    // 同步记录：镜像可能还没加载完，读路径必须立刻看到这次隐藏
+    for (const [sid, sids] of bySession) {
+      for (const id of sids) rememberHidden(sid, id);
+    }
+  } else {
+    const db = getDatabase();
+    for (const id of ids) {
+      // 墓碑（hide）路径：0 行 = 这条消息根本不在索引里 —— 正是"假压缩"事故的观测点
+      runGuarded(db, "UPDATE messages SET hidden = 1 WHERE id = ?", [id],
+        { table: "messages", op: "hide", id, from: "deleteMessagesByIds" });
+    }
+    persistDatabase();
   }
-  persistDatabase();
   // 权威日志：逐条留墓碑（后写者胜：之后再写入同 id 即为重新出现）
   for (const [sid, sids] of bySession) {
     appendTombstonesFor(sid, sids);
@@ -1649,6 +1716,32 @@ export function deleteMessagesByIds(ids: string[]): number {
 /** 把一批消息 id 按所属会话分组（分块查询，避免超长 IN 子句） */
 function sessionIdsForMessages(ids: string[]): Map<string, string[]> {
   const out = new Map<string, string[]>();
+
+  /**
+   * **端口优先**（第 39 轮修复）。
+   *
+   * 原来这里只查旧库（`tryGetDatabase()`），而 rust 模式下旧库刻意不存在 →
+   * 返回**空 Map** → 连带三件事全部静默失效：
+   * ① 墓碑不写（下次从日志重建时消息复活）；② 日志镜像不剔除（本进程内立刻复活）；
+   * ③ `deleteMessagesByIds` 里依赖它的隐藏记录也不生效。
+   *
+   * 这正是用户现场"移除 840 条、token 一点没降"的完整机制 —— 不是某一处漏了，
+   * 而是**整条删除链路的会话归属查不到**，于是整条链路空转。
+   */
+  const port = rustMessagePort();
+  if (port?.messages) {
+    for (const id of ids) {
+      const row = port.messages.byIdLookup(id);
+      const sid = row?.session_id ? String(row.session_id) : "";
+      if (!sid) continue;
+      const list = out.get(sid);
+      if (list) list.push(id);
+      else out.set(sid, [id]);
+    }
+    if (out.size > 0) return out;
+    return out; // 端口在但查不到归属：不再退回旧库（旧库本来就不存在）
+  }
+
   const CHUNK = 200;
   for (let i = 0; i < ids.length; i += CHUNK) {
     const chunk = ids.slice(i, i + CHUNK);
