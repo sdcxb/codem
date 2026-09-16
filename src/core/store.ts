@@ -95,7 +95,18 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 
   deleteProject: (projectId) => {
     try { ProjectStorage.deleteProject(projectId); } catch (e) { reportPersistFailure("store.deleteProject", e); }
-    try { for (const s of SessionStorage.listSessions(projectId)) SessionStorage.deleteSession(s.id); } catch (e) { console.warn('[store.ts]', e) }
+    /*
+     * 删项目的会话：**显式表达"我在做批量删除"**。
+     *
+     * 第 32 轮加了批量删除闸门（`confirm_bulk`）：受保护表上单次删除超过 50 行
+     * 必须显式确认 —— 因为事故形态正是"删 2 个会话却级联带走 821 条消息"，
+     * 规模不体现在调用参数里。用户点"删除项目"是明确的破坏性意图，
+     * 这里如实传达该意图（否则删一个大项目会被闸门拦下，看起来像"删不掉"）。
+     */
+    try {
+      const sessions = SessionStorage.listSessions(projectId);
+      for (const s of sessions) SessionStorage.deleteSession(s.id, { confirmBulk: true });
+    } catch (e) { console.warn('[store.ts]', e) }
     set({
       projects: get().projects.filter((p) => p.id !== projectId),
       currentProject: get().currentProject?.id === projectId ? null : get().currentProject,
@@ -218,7 +229,8 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       // useAppStore is in this module — no need to import from elsewhere
       // Abort controllers are managed in App.tsx's ref, not in store
     } catch (e) { console.warn('[store.ts]', e) }
-    try { SessionStorage.deleteSession(sessionId); } catch (e) { console.warn('[store.ts]', e) }
+    // 用户点"删除会话"是明确的破坏性意图 → 如实传达给存储层（见 deleteProject 的说明）
+    try { SessionStorage.deleteSession(sessionId, { confirmBulk: true }); } catch (e) { console.warn('[store.ts]', e) }
     set({ sessions: get().sessions.filter((s) => s.id !== sessionId), currentSession: get().currentSession?.id === sessionId ? null : get().currentSession });
   },
 

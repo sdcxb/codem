@@ -56,6 +56,19 @@ export function recordWrite(command: string, params?: Record<string, unknown>): 
       stack,
     });
     if (buffer.length > CAPACITY) buffer.splice(0, buffer.length - CAPACITY);
+    if (command.includes("delete") || command.includes("replace_table")) {
+      /*
+       * 删除类写操作**打一条**控制台记录（带调用栈）。
+       *
+       * 为什么要打到控制台而不是只留在内存缓冲：第 31 轮事故里缓冲装了却看不见 ——
+       * 生产 bundle 的内存缓冲没法从外部读，而控制台可以（真机验收脚本经 CDP 读）。
+       * 只记删除类，避免正常写入刷屏；正文一律不记。
+       */
+      console.warn(
+        `[WriteAudit] ${command} table=${String(params?.table ?? "-")} ${summarizeKey(params) ?? ""}\n` +
+          stack.slice(0, 8).join("\n"),
+      );
+    }
   } catch {
     /* 审计失败绝不影响功能 */
   }

@@ -129,18 +129,29 @@ export function domainWrite(
   return true;
 }
 
-/** 删除若干行（按 where）：同样"先本地、再写穿" */
+/**
+ * 删除若干行（按 where）：同样"先本地、再写穿"。
+ *
+ * `confirmBulk`：Rust 侧对受保护表（messages / sessions / session_events /
+ * tool_calls）有批量删除闸门 —— 单次删除（含外键级联）超过 50 行必须显式确认。
+ * **只有明确的用户破坏性操作**（点删除会话/项目）才该传 true；
+ * 自动清理、对账、修复路径一律不传，那正是闸门要拦下的东西。
+ */
 export function domainDelete(
   table: string,
   where: Record<string, unknown>,
-  opts: { note: string; scope: string } & DomainReadOpts,
+  opts: { note: string; scope: string; confirmBulk?: boolean } & DomainReadOpts,
 ): boolean {
   const port = domainPort(table, opts);
   if (!port) return false;
   port.domains.applyDelete(table, where);
   recordWrite("crud.delete", { table, where });
   void port.data
-    .execute("crud.delete", { table, where })
+    .execute("crud.delete", {
+      table,
+      where,
+      ...(opts.confirmBulk ? { confirm_bulk: true } : {}),
+    })
     .catch((e) => reportPersistFailure(opts.scope, e, opts.note));
   return true;
 }

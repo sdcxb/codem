@@ -436,7 +436,7 @@ export async function migrateFromLegacyDb(
 }
 
 /** 旧库（sql.js 落盘）的绝对路径 */
-async function legacyDbPath(): Promise<string | null> {
+export async function legacyDbPath(): Promise<string | null> {
   try {
     const { getAppDataDir } = await import("../file-api");
     const base = await getAppDataDir();

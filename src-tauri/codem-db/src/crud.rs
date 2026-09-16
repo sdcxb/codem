@@ -32,12 +32,110 @@ use crate::error::{DbError, DbResult};
 use crate::migrate::TABLE_LIST_JSON;
 use crate::repo::{limit_of, offset_of, to_sql_value};
 
+/// 受保护的"用户内容"表：一次删除如果波及它们太多行，必须显式确认。
+///
+/// ## 为什么需要这道闸（第 32 轮真机事故的直接产物）
+///
+/// 事故形态：一条看起来**范围很小**的删除（删 2 个会话）通过外键级联
+/// 一次带走了 **821 条消息 + 883 个工具调用 + 2131 条事件**，而调用方
+/// 从未表达"我要清空语料"的意图。渲染侧的所有审计都显示"没有大范围删除"，
+/// 因为从**调用方视角**它确实只是删了 2 行。
+///
+/// 结论：危险的不是"删除"这个动作，而是**级联的规模不体现在调用参数里**。
+/// 所以闸门必须装在**真正执行 SQL 的地方**，并且按**实际影响行数**判定 ——
+/// 而不是按调用方声明的范围。
+pub const PROTECTED_TABLES: &[&str] = &["messages", "sessions", "session_events", "tool_calls"];
+
+/// 单次删除在受保护表上的行数上限：超过就必须显式 `confirm_bulk: true`。
+///
+/// 取 50 的理由：正常交互路径（删一条消息、删一个会话、清一批工具调用）
+/// 都在这个量级以下；而"级联清空语料"（数百上千）会立刻被拦下。
+pub const BULK_DELETE_LIMIT: i64 = 50;
+
+/// **级联影响**闸门（供 `sessions_delete` 这类"只删一行、却级联几百行"的命令使用）。
+///
+/// 单独抽出来是因为事故的形态正是这个：调用方删 1 个会话（`where {id}` 只命中 1 行），
+/// 而外键级联带走了 821 条消息。只看 `where` 命中数**看不见**这个规模，
+/// 必须按"会被级联带走多少行"判定。
+pub fn guard_cascade_scope(
+    what: &str,
+    affected: i64,
+    confirmed: bool,
+) -> DbResult<()> {
+    if confirmed || affected <= BULK_DELETE_LIMIT {
+        return Ok(());
+    }
+    Err(DbError::invalid(
+        "confirm_bulk",
+        format!(
+            "拒绝级联删除：{what} 会连带删除 {affected} 行（上限 {BULK_DELETE_LIMIT}）。\
+             这类删除的规模不体现在调用参数里（参数只说删 1 行），所以必须显式传 \
+             confirm_bulk: true —— 要求调用方明确表达自己在做批量删除。"
+        ),
+    ))
+}
+
+/// 统计某条 where 会命中多少行（删除前预检用）
+fn count_matching(conn: &Connection, table: &str, where_pairs: &[(String, Option<Value>)]) -> DbResult<i64> {
+    let mut clauses = Vec::new();
+    let mut vals: Vec<SqlValue> = Vec::new();
+    for (col, v) in where_pairs {
+        match v {
+            None => clauses.push(format!("\"{col}\" IS NULL")),
+            Some(val) => {
+                vals.push(to_sql_value(val));
+                clauses.push(format!("\"{col}\" = ?{}", vals.len()));
+            }
+        }
+    }
+    let where_sql = if clauses.is_empty() {
+        String::new()
+    } else {
+        format!(" WHERE {}", clauses.join(" AND "))
+    };
+    let sql = format!("SELECT COUNT(*) FROM \"{table}\"{where_sql}");
+    let n: i64 = conn
+        .query_row(&sql, params_from_iter(vals.iter()), |r| r.get(0))
+        .map_err(DbError::from)?;
+    Ok(n)
+}
+
+/// 受保护表的删除闸门：命中行数超限且未显式确认 → 拒绝，并**如实说明规模**。
+///
+/// 错误信息刻意带上"这张表总共多少行、这次会删多少行"：
+/// 排查时最需要的就是这个比例，而不是一句"操作被拒绝"。
+fn guard_bulk_delete(
+    conn: &Connection,
+    table: &str,
+    where_pairs: &[(String, Option<Value>)],
+    confirmed: bool,
+) -> DbResult<()> {
+    if confirmed || !PROTECTED_TABLES.contains(&table) {
+        return Ok(());
+    }
+    let matched = count_matching(conn, table, where_pairs)?;
+    if matched <= BULK_DELETE_LIMIT {
+        return Ok(());
+    }
+    let total: i64 = conn
+        .query_row(&format!("SELECT COUNT(*) FROM \"{table}\""), [], |r| r.get(0))
+        .unwrap_or(0);
+    Err(DbError::invalid(
+        "confirm_bulk",
+        format!(
+            "拒绝批量删除：这次会从 {table} 删掉 {matched} 行（该表共 {total} 行，\
+             上限 {BULK_DELETE_LIMIT}）。级联删除的规模不会体现在 where 里，\
+             所以必须显式传 confirm_bulk: true 才能执行 —— 这不是限制能力，\
+             而是要求调用方**明确表达**自己在做批量删除。"
+        ),
+    ))
+}
+
 /// 允许通用操作的**业务表**清单（来自 TS schema，排除 FTS 影子表）。
 ///
 /// 这是**编译期常量**（`tables.json` 由 `gen-schema-sql.mjs` 生成），
 /// 因此调用方不可能通过表名参数访问清单之外的对象。
-fn allowed_tables() -> HashSet<String> {
-    let v: Value = serde_json::from_str(TABLE_LIST_JSON).expect("tables.json 解析失败");
+fn allowed_tables() -> HashSet<String> {    let v: Value = serde_json::from_str(TABLE_LIST_JSON).expect("tables.json 解析失败");
     v.get("tables")
         .and_then(|t| t.as_array())
         .expect("tables.json 缺少 tables 数组")
@@ -319,8 +417,11 @@ pub fn crud_delete(engine: &Engine, p: &Value) -> DbResult<Value> {
             "删除必须给出 where 条件（空条件会清空整表，属于危险操作）",
         ));
     }
+    // 受保护表的批量删除闸门（见 guard_bulk_delete 的说明）
+    let confirmed = p.get("confirm_bulk").and_then(|x| x.as_bool()).unwrap_or(false);
     engine.write_tx(|tx| {
         check_columns(tx, &table, &where_pairs.iter().map(|(c, _)| c.clone()).collect::<Vec<_>>())?;
+        guard_bulk_delete(tx, &table, &where_pairs, confirmed)?;
         let mut clauses = Vec::new();
         let mut vals: Vec<SqlValue> = Vec::new();
         for (col, v) in &where_pairs {
@@ -392,5 +493,87 @@ mod tests {
         assert_eq!(err.code, crate::error::ErrorCode::Unsupported);
         let err2 = assert_table("session_fts_content").unwrap_err();
         assert_eq!(err2.code, crate::error::ErrorCode::Unsupported);
+    }
+
+    // ===== 批量删除闸门（第 32 轮事故的直接产物）=====
+
+    /// 建一个带数据的真实引擎（用临时目录里的库文件，走完整 schema + 触发器路径）
+    fn engine_with_sessions(messages_per_session: usize) -> (Engine, tempfile::TempDir) {
+        let dir = tempfile::tempdir().unwrap();
+        let engine = Engine::open(dir.path().join("t.bin")).unwrap();
+        engine
+            .write_tx(|tx| {
+                tx.execute(
+                    "INSERT OR REPLACE INTO projects (id,name,path,created_at,last_accessed_at) \
+                     VALUES ('p','P','',1,1)",
+                    [],
+                )
+                .unwrap();
+                tx.execute(
+                    "INSERT INTO sessions (id,project_id,title,created_at,last_message_at,message_count) \
+                     VALUES ('s1','p','t',1,1,0)",
+                    [],
+                )
+                .unwrap();
+                for i in 0..messages_per_session {
+                    tx.execute(
+                        "INSERT INTO messages (id,session_id,role,content,timestamp) \
+                         VALUES (?1,'s1','user','x',1)",
+                        rusqlite::params![format!("m{i}")],
+                    )
+                    .unwrap();
+                }
+                Ok(())
+            })
+            .unwrap();
+        (engine, dir)
+    }
+
+    #[test]
+    fn bulk_delete_on_protected_table_is_refused_without_confirmation() {
+        // 事故形态：看起来只是"删一些消息"，实际会清掉整段语料
+        let (engine, _d) = engine_with_sessions(120);
+        let err = crud_delete(&engine, &json!({ "table": "messages", "where": { "session_id": "s1" } }))
+            .unwrap_err();
+        assert_eq!(err.code, crate::error::ErrorCode::Other, "拒绝批量删除是调用方参数问题（Other）");
+        assert!(
+            err.message.contains("confirm_bulk") && err.message.contains("120"),
+            "错误里必须说明规模与所需的确认参数：{}",
+            err.message
+        );
+        // 数据一行没少 —— 闸门的作用是"拒绝"，不是"删一半"
+        let after = crud_count(&engine, &json!({ "table": "messages" })).unwrap();
+        assert_eq!(after["count"], 120);
+    }
+
+    #[test]
+    fn bulk_delete_proceeds_with_explicit_confirmation() {
+        let (engine, _d) = engine_with_sessions(120);
+        let r = crud_delete(
+            &engine,
+            &json!({ "table": "messages", "where": { "session_id": "s1" }, "confirm_bulk": true }),
+        )
+        .unwrap();
+        assert_eq!(r["written"], 120);
+    }
+
+    #[test]
+    fn small_delete_is_not_gated() {
+        // 正常交互路径不该被这道闸打扰
+        let (engine, _d) = engine_with_sessions(5);
+        let r = crud_delete(&engine, &json!({ "table": "messages", "where": { "id": "m1" } })).unwrap();
+        assert_eq!(r["written"], 1);
+    }
+
+    #[test]
+    fn cascade_scope_guard_blocks_large_cascade_but_allows_small() {
+        assert!(guard_cascade_scope("删会话 s1", BULK_DELETE_LIMIT, false).is_ok());
+        let err = guard_cascade_scope("删会话 s1", BULK_DELETE_LIMIT + 1, false).unwrap_err();
+        assert!(
+            err.message.contains("级联") && err.message.contains("confirm_bulk"),
+            "必须说明这是级联规模问题：{}",
+            err.message
+        );
+        assert!(guard_cascade_scope("删会话 s1", 10_000, true).is_ok(), "显式确认后放行");
     }
 }

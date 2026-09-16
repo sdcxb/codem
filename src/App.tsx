@@ -1167,6 +1167,26 @@ flushStreamBuffer(); // flush all on unmount
           // 独立于迁移标记：迁移幂等会跳过，这些用户否则永远拿不到修复。
           await (await import("./core/storage/bootstrap")).repairSearchIndexOnce();
           await importSettingsFromLegacyDb();
+          /*
+           * **启动自检：用户内容无故消失 → 从旧库恢复**（第 32 轮）。
+           *
+           * 放在所有迁移/修复**之后**、任何"读会话消息"之前：
+           * 事故形态是"迁移对账通过、标记已写，之后内容被清空"，而渲染侧所有审计点
+           * 都没记录到删除。与其继续追调用栈（已花两轮真机实验），先保证
+           * **无论谁删的，用户都不真的丢数据** —— 判据三条同时成立才动手（见 self-heal.ts）。
+           */
+          try {
+            const { verifyUserContentOrRestore } = await import("./core/storage/self-heal");
+            const { legacyDbPath } = await import("./core/storage/bootstrap");
+            const heal = await verifyUserContentOrRestore(await legacyDbPath());
+            if (heal.kind === "restored") {
+              console.warn(
+                `[Storage] 自检发现消息全空（上次水位 ${heal.previous?.messages} 条）—— 已从旧库恢复 ${heal.restoredRows} 行`,
+              );
+            }
+          } catch (e) {
+            console.warn("[Storage] 启动自检未完成（不影响启动）:", e);
+          }
           void selectedEngine;
         }
 

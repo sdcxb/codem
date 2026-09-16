@@ -235,8 +235,29 @@ export function updateSession(id: string, update: Partial<Session>): void {
   persistDatabase();
 }
 
-export function deleteSession(id: string): void {
-  if (domainDelete(SESSION_TABLE, { id }, { scope: "session.delete", note: "会话未删除" })) return;
+/**
+ * 删除一个会话。
+ *
+ * ## `confirmBulk` 是什么（第 32 轮）
+ *
+ * 删 1 个会话会**级联**删掉它的全部消息 / 工具调用 / 事件 —— 实测事故里
+ * "删 2 个会话"带走了 821 条消息 + 883 个工具调用 + 2131 条事件，
+ * 而调用参数里完全看不出这个规模。Rust 侧因此加了闸门：
+ * 受保护表上单次删除（含级联）超过 50 行必须显式 `confirm_bulk: true`。
+ *
+ * 用户点"删除会话"是明确的破坏性意图，所以 UI 路径传 `confirmBulk: true`；
+ * 而**任何非交互路径**（自动清理、对账、修复）都不该传 —— 那正是闸门要拦的。
+ */
+export function deleteSession(id: string, opts: { confirmBulk?: boolean } = {}): void {
+  if (
+    domainDelete(SESSION_TABLE, { id }, {
+      scope: "session.delete",
+      note: "会话未删除",
+      confirmBulk: opts.confirmBulk,
+    })
+  ) {
+    return;
+  }
   const db = tryGetDatabase();
   if (!db) return;
   db.run("DELETE FROM sessions WHERE id = ?", [id]);

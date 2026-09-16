@@ -1273,14 +1273,33 @@ pub fn projects_upsert(engine: &Engine, p: &Value) -> DbResult<Value> {
 /// 删掉会让所有全局会话失去归属。所以 `projects.delete` 对空 id 直接报错。
 pub fn sessions_delete(engine: &Engine, p: &Value) -> DbResult<Value> {
     let id = req_text(p, "id")?;
+    let confirmed = p.get("confirm_bulk").and_then(|x| x.as_bool()).unwrap_or(false);
     engine.write_tx(|tx| {
+        /*
+         * 级联规模预检（第 32 轮事故）：这一步删的是 **1 行**，
+         * 但外键级联会带走该会话的全部消息 / 工具调用 / 事件。
+         * 实测事故：删 2 个会话 → 821 条消息 + 883 个工具调用 + 2131 条事件消失，
+         * 而调用参数里完全看不出这个规模。
+         */
+        let affected: i64 = tx
+            .query_row(
+                "SELECT COUNT(*) FROM messages WHERE session_id = ?1",
+                params![id],
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
+        crate::crud::guard_cascade_scope(
+            &format!("删除会话 {id}"),
+            affected,
+            confirmed,
+        )?;
         let n = tx
             .execute("DELETE FROM sessions WHERE id = ?1", params![id])
             .map_err(DbError::from)?;
         if n == 0 {
             return Err(DbError::not_found(format!("sessions 里没有 id={id}")));
         }
-        Ok(json!({ "written": n }))
+        Ok(json!({ "written": n, "cascaded_messages": affected }))
     })
 }
 
