@@ -194,32 +194,53 @@ D 类规则的最终形态（分阶段收紧，未豁免即失败）：
 
 - 第 90 波：致命错误识别 + 闩锁 + 抢救 + 止血（**已完成**，v1.16.42）
 - 第 91 波：权威日志优先写入 + 索引自愈重建 + 存储压力上界（**已完成**，v1.16.43）
-- 本轮（P0）：盘点工具 + 端口定义 + D 类门禁（报告模式）—— 见下方「实际结果」
-- 后续：P1 → P6 逐阶段推进
+- 第 92 波 P0：盘点工具 + 端口定义 + D 类门禁（**已完成**；盘点数字后被修正 **+43%**，见下）
+- 第 92 波 P1：Rust 存储引擎 + CLI + 安全边界 + 错误映射 + 契约测试 + 覆盖率门禁 + 规模基准
+  （**已完成**，Rust 27 项 + 契约 26 项 + 覆盖率 6 项全绿）
+- 后续：P3（按模块切换 129 个方法）→ P4（数据迁移与对账）→ P5（删除 WASM 路径）→ P6（大文档专项）
+  并行推进
 
 ## 8. 实际结果（按阶段追加）
 
-### P0（第 92 波，本轮）—— 已完成
+### P0（第 92 波）—— 已完成，**但盘点数字后来被证实低估 43%**
 
 **盘点（自动生成，可复跑）**
 
-| 指标 | 数字 |
-|---|---|
-| 扫描生产文件 | **835** |
-| SQL 调用点（`db.exec/run/prepare` + `runGuarded`） | **159** |
-| 涉及表 | **38** |
-| 需要实现的仓储方法（表 × 操作） | **82** |
-| 命中 D 类规则的文件（待迁移模块） | **30** |
+| 指标 | P0 当时报告 | **P1 修正后（真值）** |
+|---|---:|---:|
+| 扫描生产文件 | 831 | **836** |
+| SQL 调用点 | 159 | **277** |
+| 涉及表 | 38 | 38 |
+| 需要实现的仓储方法 | 82 | **129** |
 
-明细见 `docs/STORAGE-INVENTORY.md`（`npm run audit:inventory-md` 重新生成）。
-Top 方法：`messages.update`(13) / `accounts.select`(7) / `accounts.update`(6) / `messages.select`(6) /
-`cost_records.select`(4) / `graph_nodes.update`(4) / `inbox.update`(4) / `telemetry_events.select`(4) …
+**为什么错**：盘点正则写作 `db\.(exec|run|prepare)\(['"]`（要求引号**紧跟**括号），
+而本项目源码是 CRLF 且普遍写成
+
+```ts
+db.run(
+  "INSERT INTO messages …",
+```
+
+于是**所有 INSERT（也就是写路径）都被漏掉了**。发现的路径不是"再看一眼代码"，
+而是 P2 的覆盖率门禁要求"两个扫描器的方法集合必须一致"——
+覆盖率工具修正正则后，两者立刻对不上，门禁把这件事顶了出来。
+
+**留痕与防线**：
+- 两个扫描器的正则已统一为 `[\s\S]{0,40}?['"…]`（允许换行/缩进），文件集合口径统一为
+  "排除 `*.test.ts(x)`"（不再排除整个 `test` 目录）；
+- `GATE-DB-1`（两个扫描器必须一致）、`GATE-DB-5`（`messages/sessions/settings` 的 **insert**
+  必须出现在盘点里）已进 `npx vitest run`。GATE-DB-5 直接钉住"曾经被漏掉的那一类"：
+  正则若退回旧写法，测试立刻变红。
+
+**教训（值得记住）**：**用工具估算工作量之前，先验证工具能看见你已知存在的东西**。
+"扫到 0 个写路径"本该是明显的警报（一个数据库应用不可能没有 INSERT），
+但当时没有人拿已知事实去对照数字。
 
 **端口定义**：新增 `src/core/storage/port.ts` —— `StorageError`（结构化错误码 + `retryable`）、
 `PageRequest/Page<T>`、`StorageEnginePort`（open/close/health/integrityCheck/checkpoint）、
 `StorageDataPort`（异步分页 `query/write/execute`，**不接受 SQL 字符串**）、
 `StorageConfigPort`（同步读 + 写穿队列）、`StorageAppendPort`（入队 + 背压）、聚合 `StoragePort` 与注册表。
-尚未被任何调用点使用（P2/P3 逐步接管），因此**本轮无行为变更**。
+尚未被任何调用点使用（P3 逐步接管），因此 P0/P1 都**无行为变更**。
 
 **D 类门禁上线（迁移期基线）**：新增 `tools/audit/scan-storage-boundary.mjs` 五条规则
 （D1 sql.js 依赖 / D2 整库导出 / D3 裸 SQL / D4 渲染侧事务 / D5 绕过端口的 `getDatabase()`），
@@ -234,5 +255,110 @@ Top 方法：`messages.update`(13) / `accounts.select`(7) / `accounts.update`(6)
 **532 条中绝大多数是噪声**；改为要求"关键字后必须跟空白/后续子句"（`SELECT\s+…\sFROM`、`UPDATE x SET` 等）
 后噪声清零。
 
-**未做（下一轮）**：P1（Rust crate `codem-db` + CLI + 仓储命令 + authorizer + 错误映射）。
+### P1（第 92 波，本轮）—— 存储引擎落地为 Rust crate（已完成）
+
+**产物**
+
+| 组件 | 说明 |
+|---|---|
+| `src-tauri/codem-db/` | 独立 crate（lib `codem_db` + bin `codem-db-cli`），不依赖 Tauri |
+| `engine.rs` | `Engine::open`（PRAGMA: WAL + synchronous=NORMAL + busy_timeout=5000 + foreign_keys=ON）· `with_conn` / `write_tx`（单写者）· `health` / `integrity_check` / `checkpoint` / `table_counts` |
+| `authorizer.rs` | 安全边界：拒 `ATTACH`/`DETACH`/`load_extension`；引擎级 PRAGMA 只读不写；`writable_schema` 读写皆拒 |
+| `error.rs` | `ErrorCode`（与渲染侧 `StorageErrorCode` 一一对应）+ `retryable` + 由 sqlite 扩展码映射 |
+| `schema.rs` | `include_str!` 引用脚本生成的 `sql/schema.sql`(17,053 B) / `migrations.json`(23 条) / `fts.json`；幂等应用 + 全局项目种行 |
+| `repo.rs` | 第一切片 22 个命令：settings 3 · events/telemetry 3 · messages 8 · sessions/projects 4 · counts/health/integrity/checkpoint 4 |
+| `src/bin/codem-db-cli.rs` | 契约测试驱动入口（`init/health/integrity/counts/invoke/batch/commands/checkpoint`，stdout 单行自描述 JSON，退出码 0/1） |
+
+**验证（数字口径）**
+
+| 项 | 结果 |
+|---|---|
+| `cargo test`（Rust 单元 + 集成） | **27 passed / 0 failed**（含 ATTACH/load_extension 拒绝、错误码映射、分页不重不漏、批次原子性 23 项 + authorizer 4 项） |
+| `vitest src/test/db-contract.test.ts`（CLI 驱动生产实现） | **26 passed / 0 failed** |
+| 真实 11,137,024 B 生产库副本 | `init` 幂等（45 表 / 23 条迁移全部命中"列已存在"）· `fts_module=fts4`（老库不动）· `quick_check=ok` · 计划外文件 0 |
+| 真实库数据读数 | sessions 3 · messages 821 · tool_calls 883 · session_events 2197 · settings 24 · telemetry 19 · notebooks 1 |
+
+**四条"踩过才知道"的实测结论（都已写进代码注释与测试）**
+
+1. **authorizer 不能把内部探针 PRAGMA 一起拒掉**。`PRAGMA data_version` 是 SQLite 在
+   `sqlite3_prepare` 期间自己会读的；拒掉它导致**所有语句准备失败**，且报错完全指不到原因：
+   新建库时表现为 `vtable constructor failed: session_fts`（虚拟表构造期间的 prepare 被拒）。
+   现在 `data_version` / `integrity_check` / `quick_check` / `page_count` 等只读探针一律放行，
+   `writable_schema` 读写皆拒，引擎级 PRAGMA 读放行、写拒绝。
+2. **健康检查必须只读**。原实现用 `PRAGMA wal_checkpoint(PASSIVE)` 取 WAL 帧数，那是个**写操作**；
+   改为读 WAL 文件大小（`<db>-wal` 的 fs metadata）。
+3. **CLI 响应必须自描述**。成功分支漏 `ok` 字段时，调用方只能猜字段名判断"结果还是错误体"
+   （契约测试当场抓到，`commands`/`counts` 等分支曾漏）。
+4. **参数取值必须严格**。渲染侧历史写法 `String(x ?? "")` 会把数字静默变字符串；
+   存储边界上改为"类型不对就报错"，并把 `UPDATE` 影响 0 行升级为 `NOT_FOUND`（A 类防线）。
+
+**同时修掉的工具链缺陷**
+
+- `tools/bench/db-scale.mjs` 原在模块顶层写 `process.exit(1)`：审计扫描器一旦 import 它
+  （扫描会遍历 `tools/`）就会**杀掉 vitest worker**，表现为"无关测试随机失败"。
+  现已改为 `isMain` 守卫（库文件在顶层不得有 exit/写盘/长任务副作用）。
+- CLI 增加 `-`（从 stdin 读 JSON）与 BOM 剥离：PowerShell 会把参数里的 `"` 转义成 `\"`、
+  管道还会带 UTF-8 BOM，两种都会让参数解析莫名失败。
+- `TempDb` 增加进程退出兜底清理：测试失败/超时时 `afterAll` 不执行，
+  真实库副本（11 MB 起）会在 `%TEMP%` 堆积。
+
+**语义变更（迁移时必须跟的）**：`messages.list` 现在**要求显式 `include_hidden`** ——
+索引层不替调用方猜可见性（默认隐藏或默认包含都是错的：前者丢数据、后者把压缩内容喂给 LLM）。
+渲染侧的上下文裁剪是业务决策，必须显式表达。
+
+**覆盖率门禁（P2 的一部分提前落地）**
+
+`tools/audit/storage-coverage.mjs` 把"还差多少"变成数字：**277 个调用点 / 129 个方法**，
+当前已实现 **14 个方法（10.85%）**、覆盖 **19.49% 的调用点**。
+`GATE-DB-1..6` 已进 `npx vitest run`：扫描器一致性、覆盖率下限、映射表命令必须真实存在、
+盘点规模防退化（"扫到 0 个"这种静默失效）、**写路径必须被盘点覆盖**、已实现集合必须在 Rust 侧注册。
+报告落在 `docs/STORAGE-COVERAGE.md`（`node tools/audit/storage-coverage.mjs --md` 重新生成）。
+
+**规模基准**：`tools/bench/db-scale.mjs`（`npm run bench:db`）在 **1k / 10k / 100k** 三档、
+用同一份数据形状同时压 Rust 引擎与 sql.js(WASM)，报告落到 `docs/DB-SCALE-BENCH.json`。
+关键结论见下节。
+
+**未做（下一轮 P3）**：把 129 个方法按模块逐个切到 Rust（配置面 → 只追加 → 数据面 → 会话/项目 → 其余域），
+每切一个模块就删掉 D 类允许清单里的对应条目。
+
+### P1 规模基准（Rust 引擎 vs sql.js/WASM，1k / 10k / 100k）
+
+**读数（`docs/DB-SCALE-BENCH.json`，同一台机器、同一份数据形状；写入批次 1000 条/批）**
+
+| 规模 | 实现 | 批量写入 | 单条写入（200 次） | 分页读全量（100 条/页） | 改写 1 万条 | 落盘字节 |
+|---|---|---|---:|---:|---:|---:|---:|
+| 1k | rust | 61 ms（0.061 ms/条） | 26.3 ms/次 | 411 ms（34.3 ms/页） | 51 ms | 2,711,552 |
+| 1k | wasm | 106 ms（0.106 ms/条） | 0.46 ms/次 | 68 ms（5.7 ms/页） | 11 ms | 2,101,248 |
+| 10k | rust | 618 ms（0.062 ms/条） | 27.2 ms/次 | 8,585 ms（84.2 ms/页） | 495 ms | 21,635,072 |
+| 10k | wasm | 704 ms（0.070 ms/条） | 2.70 ms/次 | 5,544 ms（54.4 ms/页） | 102 ms | 20,803,584 |
+| 100k | rust | 4,633 ms（0.046 ms/条） | 26.4 ms/次 | 149,400 ms（149.1 ms/页） | 395 ms | 60,469,248 |
+| 100k | wasm | 6,105 ms（0.061 ms/条） | 7.34 ms/次 | 94,570 ms（94.4 ms/页） | 75 ms | 57,389,056 |
+
+固定开销实测：**纯进程启动 15~16 ms，一次 invoke（启动 + 打开库 + 一次只读查询）21~22 ms**。
+
+**怎么读这些数字（口径说明，避免误读）**
+
+- rust 每次 `invoke` 都是**一次进程启动 + 打开库**（≈21 ms/次）——
+  这是**未来 IPC 边界的成本形态**；wasm 是同进程调用，没有这笔固定开销。
+  所以不能直接比总墙钟时间，必须把固定开销分离出来：
+  - 100k 档分页读全量 1000 页 = 149.4 s，其中约 **22 s 是 1000 次进程启动**，
+    剩下 **127 ms/页** 是真实查询成本；WASM 是 **94 ms/页**（同进程、零调用开销）。
+  - 1k 档扣掉启动后 rust **13.25 ms/页**（含首次打开库摊销），wasm 5.7 ms/页 —— 小库上 WASM 更快，
+    因为整个库就在内存里、且无需跨边界。
+- **批量写入两边同量级**（100k：0.046 vs 0.061 ms/条），因为两边都用了单事务批量，
+  这也说明"批量写入正确姿势"本身比换引擎更影响性能。
+- **单条写入才是放大效应的量化形态**：rust 稳定在 **26 ms/次（几乎全是固定开销，不随语料增长）**；
+  wasm 从 0.46 ms（1k）→ 2.70 ms（10k）→ **7.34 ms（100k）**，因为它每次都要 `db.export()` 整库序列化。
+  **单条写入成本随整个语料线性增长** —— 这就是"内存访问越界"的根因在性能上的样子。
+- **落盘放大**：wasm 每次持久化都要序列化整库（100k 档 57.4 MB/次）；rust 是 WAL 页级增量
+  （文件 60.5 MB ≈ 真实数据量，且 `wal_size_bytes` 可观测）。
+- **批量改写 1 万条：wasm 更快**（75 ms vs 395 ms，后者含 10 次 invoke 开销）。如实记录：
+  同进程做 1 万次 UPDATE 确实省，代价是**渲染进程内存里持有整个库**（这正是要被移除的东西）。
+
+**结论（对"大文档批处理能力"的意义）**
+
+1. 迁到 Rust 解决的是**随语料增长的成本放大**（单条写入 O(语料)、整库序列化、32 位堆上限），
+   而不是"每个操作都更快"——小库上同进程反而更快，这一点必须如实说明；
+2. **大文档能力的真正杠杆在 P6**：分页读写 + 附件外置 + 渲染进程不再持有语料；
+3. 基准脚本本身是资产：任何存储相关改动都可复跑对照，不靠印象。
 

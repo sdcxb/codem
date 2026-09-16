@@ -1,0 +1,4 @@
+{
+  "source": "src/core/storage/database.ts",
+  "generatedBy": "tools/audit/gen-schema-sql.mjs"
+}

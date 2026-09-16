@@ -5,6 +5,8 @@ dist-server/
 
 # Tauri build artifacts
 src-tauri/target/
+# Rust 存储引擎 crate 的构建产物（crate 自身在 src-tauri/codem-db/ 下，独立于 Tauri workspace）
+src-tauri/codem-db/target/
 src-tauri/binaries/
 
 # Tauri updater signing private key (NEVER commit)
@@ -52,6 +54,8 @@ docs/*.docx
 !docs/PROJECT-GUIDE.md
 !docs/ARCH-SQLITE-TO-RUST.md
 !docs/STORAGE-INVENTORY.md
+!docs/STORAGE-COVERAGE.md
+!docs/DB-SCALE-BENCH.json
 !docs/TODO.md
 !docs/AlimamaFangYuanTiVF-Thin.ttf
 !docs/26720-1.png

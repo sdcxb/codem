@@ -21,16 +21,23 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..", "..");
 const SRC = path.join(ROOT, "src");
 
-/** 只扫生产代码（测试夹具不算迁移面） */
+/**
+ * 只扫生产代码（测试夹具不算迁移面）。
+ *
+ * 口径：**排除 `*.test.ts(x)` / `*.spec.ts(x)`**，而不是排除整个 `test` 目录 ——
+ * `src/test/helpers/*.ts` 这类辅助文件也可能包含 SQL，漏掉它们会让盘点与覆盖率对不上
+ * （实测：排除整个 test 目录得 831 个文件，按后缀排除得 836）。此口径与
+ * `tools/audit/storage-coverage.mjs` 必须一致（覆盖率工具会做交叉校验，漂了就报错）。
+ */
 function listFiles(dir) {
   const out = [];
   (function walk(d) {
     for (const e of fs.readdirSync(d, { withFileTypes: true })) {
       const p = path.join(d, e.name);
       if (e.isDirectory()) {
-        if (e.name === "node_modules" || e.name === ".git" || e.name === "test") continue;
+        if (e.name === "node_modules" || e.name === ".git" || e.name === "dist") continue;
         walk(p);
-      } else if (/\.tsx?$/.test(e.name) && !/\.test\.tsx?$/.test(e.name)) {
+      } else if (/\.tsx?$/.test(e.name) && !/\.(test|spec)\.tsx?$/.test(e.name)) {
         out.push(p);
       }
     }
@@ -78,10 +85,17 @@ for (const file of listFiles(SRC)) {
     const isCall = /\bdb\.(exec|run|prepare)\(/.test(line) || /runGuarded\(/.test(line);
     if (!isCall) return;
     // 取该行 + 后续 2 行里的第一个 SQL 字面量（多行 SQL 常见）
+    //
+    // ⚠️ 关键修正（第 92 波实测）：`(` 与 SQL 字面量之间必须允许换行/缩进。
+    // 本项目源码是 CRLF，且普遍写成
+    //     db.run(
+    //       "INSERT INTO messages …",
+    // 早先的正则写作 `db\.(exec|run|prepare)\(['"]`（引号紧跟括号），于是**所有 INSERT 都被漏掉**：
+    // 159 个调用点 / 82 个方法的旧数字其实是**少了 43% 的写路径**，是严重低估。
     const window = lines.slice(i, i + 3).join(" ");
     const sqlMatch =
-      /(?:db\.(?:exec|run|prepare)\(|runGuarded\(\s*db,\s*|,\s*)`([^`]{6,})`/.exec(window) ||
-      /(?:db\.(?:exec|run|prepare)\(|runGuarded\(\s*db,\s*)['"]([^'"]{6,})['"]/.exec(window);
+      /(?:db\.(?:exec|run|prepare)\(|runGuarded\(\s*db,\s*|,\s*)[\s\S]{0,40}?`([^`]{6,})`/.exec(window) ||
+      /(?:db\.(?:exec|run|prepare)\(|runGuarded\(\s*db,\s*)[\s\S]{0,40}?['"]([^'"]{6,})['"]/.exec(window);
     if (!sqlMatch) return;
     const cls = classifySql(sqlMatch[1]);
     if (!cls) return;

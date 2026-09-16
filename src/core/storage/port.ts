@@ -103,10 +103,14 @@ export interface StorageHealth {
   sizeBytes?: number;
   /** journal 模式（期望 wal） */
   journalMode?: string;
-  /** 未 checkpoint 的 WAL 帧数（诊断用） */
-  walFrames?: number;
+  /** WAL 文件字节数（诊断用；不是 checkpoint 结果 —— 健康检查保持只读） */
+  walSizeBytes?: number;
   /** 最近一次错误的错误码 */
   lastErrorCode?: StorageErrorCode;
+  /** 索引里的表/视图数（Rust `Health.tables`） */
+  tables?: number;
+  /** 全文检索表使用的模块：fts4（老库）/ fts5（新建）/ none */
+  ftsModule?: string;
 }
 
 export interface StorageEnginePort {

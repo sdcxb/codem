@@ -1,0 +1,3 @@
+{
+  "columns": "session_id UNINDEXED,\r\n  message_id UNINDEXED,\r\n  content,\r\n  role,\r\n  timestamp UNINDEXED,\r\n  tokenize=unicode61"
+}
