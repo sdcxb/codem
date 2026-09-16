@@ -199,8 +199,17 @@ export function createFakeStoragePort(opts: FakeStoragePortOptions = {}): FakeSt
       const pk = "id";
       for (const row of rows) {
         const idx = target.findIndex((r) => r[pk] === row[pk]);
-        if (idx >= 0) target[idx] = cloneRow(row);
-        else target.push(cloneRow(row));
+        /*
+         * ⚠️ 必须**保留已有的 hidden**（第 40 轮修正）。
+         *
+         * Rust 侧 `messages_rebuild_index` 只把日志里的字段写回去，不会重置软删除状态；
+         * 而日志本身**没有 hidden 语义**。早先这里直接用 `cloneRow(row)` **整行替换**，
+         * 等于把 `hidden=1` 悄悄改回 0 —— 于是"压缩后重启又复活"
+         * （CB-8/CB-9 那两个用例抓的就是这个）。
+         */
+        const hidden = idx >= 0 ? Number(target[idx].hidden ?? 0) : Number(row.hidden ?? 0);
+        if (idx >= 0) target[idx] = { ...cloneRow(row), hidden };
+        else target.push({ ...cloneRow(row), hidden });
       }
       return rows.length;
     }
@@ -210,8 +219,6 @@ export function createFakeStoragePort(opts: FakeStoragePortOptions = {}): FakeSt
       const before = table(name).length;
       tables.set(name, table(name).filter((r) => !matches(r, where)));
       return before - table(name).length;
-    }
-    if (false) {
     }
     return 0;
   }
