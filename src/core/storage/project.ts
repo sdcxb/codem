@@ -22,7 +22,7 @@
 import { getDatabase, persistDatabase, tryGetDatabase } from "./database";
 import type { Project } from "../types";
 import { runGuarded } from "./write-guard";
-import { domainDelete, domainReadMany, domainReadOne, domainWrite } from "./domain-store";
+import { domainDelete, domainReadMany, domainReadOne, domainWrite, writeShouldFallBackToLegacy } from "./domain-store";
 
 export interface ProjectRow {
   id: string;
@@ -148,6 +148,8 @@ export function createProject(project: Project): void {
   if (domainWrite(TABLE, [projectToWire(row)], { scope: "project.create", note: "项目未保存" })) {
     return;
   }
+  // 两态：A 态（端口未注册）才回退旧库；B 态（端口在、镜像未就绪）已如实上报
+  if (!writeShouldFallBackToLegacy("project.create", "项目未保存")) return;
   const db = getDatabase();
   db.run(
     "INSERT INTO projects (id, name, path, description, pinned, created_at, last_accessed_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
@@ -189,6 +191,7 @@ export function updateProject(id: string, update: Partial<Project>): void {
     return;
   }
 
+  if (!writeShouldFallBackToLegacy("project.update", "项目未更新")) return;
   const db = getDatabase();
   const values: (string | number | null)[] = [];
   for (const f of fields) {
@@ -210,6 +213,8 @@ export function updateProject(id: string, update: Partial<Project>): void {
 
 export function deleteProject(id: string): void {
   if (domainDelete(TABLE, { id }, { scope: "project.delete", note: "项目未删除" })) return;
+  // 删除路径尤其不能静默：静默失败会让项目"看着在、实际已删"或反之（数据不一致）
+  if (!writeShouldFallBackToLegacy("project.delete", "项目未删除")) return;
   const db = getDatabase();
   db.run("DELETE FROM projects WHERE id = ?", [id]);
   persistDatabase();

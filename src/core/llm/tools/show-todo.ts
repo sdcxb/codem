@@ -8,7 +8,7 @@
 import type { ToolDef, ToolExecuteResult, ToolContext } from "../tools";
 import type { TodoItem } from "../agentic-loop";
 import { getDatabase, persistDatabase } from "../../storage/database";
-import { domainReadOne, domainWrite } from "../../storage/domain-store";
+import { domainReadOne, domainWrite, writeShouldFallBackToLegacy, shouldFallbackToLegacy } from "../../storage/domain-store";
 
 /**
  * `todo_lists` 表与行转换（P5 第 2 段：接入域端口）
@@ -165,6 +165,8 @@ function saveTodoList(sessionId: string, todoId: string, todos: TodoItem[]): voi
   if (domainWrite(TODO_TABLE, [{ ...row }], { scope: "todo.save", note: "待办列表未保存" })) {
     return;
   }
+  // 两态：A 态才回退旧库；B 态由 writeShouldFallBackToLegacy 如实上报
+  if (!writeShouldFallBackToLegacy("todo.save", "待办列表未保存")) return;
   const db = getDatabase();
 
   // Insert todo list
@@ -182,6 +184,8 @@ function saveTodoList(sessionId: string, todoId: string, todos: TodoItem[]): voi
 export function loadTodoList(todoId: string): TodoItem[] | null {
   const rust = domainReadOne(TODO_TABLE, { id: todoId }, wireToTodoRow);
   if (rust !== undefined) return rust ? parseTodos(rust.todos) : null;
+  // 两态：B 态（端口在、镜像未就绪）不碰旧库，如实返回"现在读不到"
+  if (!shouldFallbackToLegacy()) return null;
   const db = getDatabase();
   const result = db.exec("SELECT todos FROM todo_lists WHERE id = ?", [todoId]);
 
@@ -214,6 +218,8 @@ export function updateTodoStatus(todoId: string, itemId: string, status: TodoIte
     return;
   }
 
+  // 两态：B 态不碰旧库（该域由端口负责，镜像未就绪时本次变更不落地）
+  if (!shouldFallbackToLegacy()) return;
   const db = getDatabase();
   const result = db.exec("SELECT todos FROM todo_lists WHERE id = ?", [todoId]);
 

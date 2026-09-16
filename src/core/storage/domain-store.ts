@@ -118,6 +118,45 @@ export function shouldFallbackToLegacy(): boolean {
 }
 
 /**
+ * **写/删失败后的统一收尾**（B0-2，第 44 轮）。
+ *
+ * ## 它把"端口未接手"的两种态收敛成一步
+ *
+ * 每个写/删点原来是这个形状：
+ * ```ts
+ * if (domainWrite(...)) return;      // 端口接手
+ * const db = getDatabase();          // ← 端口没接手：这里在 B 态下会抛
+ * db.run(...); persistDatabase();
+ * ```
+ * 加上两态判据后要写三行；而这个形状在 22 个文件里要重复 180 多次 ——
+ * 重复 180 次的东西，一定会有人写漏其中一种态。
+ *
+ * 所以收进一个函数：
+ * - 返回 `true` → **调用方该走旧库**（A 态：端口未注册 / wasm 回滚，旧库是唯一数据源）；
+ * - 返回 `false` → B 态（端口在 rust，只是镜像没就绪）：已**如实上报**，调用方直接 return。
+ *
+ * 用法（写与删都一样）：
+ * ```ts
+ * if (domainWrite(T, rows, opts)) return;
+ * if (!writeShouldFallBackToLegacy(opts.scope, opts.note)) return;
+ * ...旧库写入...
+ * ```
+ *
+ * @param scope 上报用的作用域（与其余 persist-failure 一致）
+ * @param note 上报的说明（要说清"什么没写成"）
+ * @returns 是否应当回退旧库
+ */
+export function writeShouldFallBackToLegacy(scope: string, note: string): boolean {
+  if (shouldFallbackToLegacy()) return true;
+  reportPersistFailure(
+    scope,
+    new Error("端口已注册但该域镜像未接手（未就绪 / 未镜像 / 被逐出）"),
+    note,
+  );
+  return false;
+}
+
+/**
  * **端口是否已注册且是 rust 引擎**（不看镜像是否就绪）。
  *
  * 与 `domainPort()` 的区别正是这套分流的关键：

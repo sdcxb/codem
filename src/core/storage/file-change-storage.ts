@@ -7,7 +7,7 @@
 
 import { getDatabase, persistDatabase, tryGetDatabase } from "./database";
 import { runGuarded } from "./write-guard";
-import { domainDelete, domainReadMany, domainReadOne, domainWrite } from "./domain-store";
+import { domainDelete, domainReadMany, domainReadOne, domainWrite, writeShouldFallBackToLegacy } from "./domain-store";
 
 export interface TurnFileChangeRecord {
   id: string;
@@ -74,8 +74,13 @@ export const FileChangeStorage = {
     if (domainWrite(TABLE, [recordToWire(record)], { scope: "fileChange.create", note: "文件变更记录未保存" })) {
       return;
     }
+  /*
+   * 两态分流（B0-2）：`getDatabase()` **从不返回 null**（它抛错），
+   * 所以原来的 `if (!db) return;` 是**无效防御** —— 永不触发，实际在 B 态直接抛。
+   * 改为真判据：A 态（端口未注册）才回退；B 态已如实上报。
+   */
+    if (!writeShouldFallBackToLegacy("fileChange.create", "文件变更记录未保存")) return;
     const db = getDatabase();
-    if (!db) return;
     db.run(
       `INSERT INTO turn_file_changes
        (id, session_id, message_id, turn_index, before_tree, after_tree, patch, changed_files, patch_sha256, current_brief, status, created_at)
@@ -155,8 +160,13 @@ export const FileChangeStorage = {
       });
       return 1;
     }
+  /*
+   * 两态分流（B0-2）：`getDatabase()` **从不返回 null**（它抛错），
+   * 所以原来的 `if (!db) return;` 是**无效防御** —— 永不触发，实际在 B 态直接抛。
+   * 改为真判据：A 态（端口未注册）才回退；B 态已如实上报。
+   */
+    if (!writeShouldFallBackToLegacy("fileChange.updateStatus", "文件变更状态未更新")) return 0;
     const db = getDatabase();
-    if (!db) return 0;
     const modified = runGuarded(
       db,
       `UPDATE turn_file_changes SET status = ? WHERE id = ?`,
@@ -171,8 +181,13 @@ export const FileChangeStorage = {
     if (domainDelete(TABLE, { session_id: sessionId }, { scope: "fileChange.deleteBySession", note: "文件变更记录未删除" })) {
       return;
     }
+  /*
+   * 两态分流（B0-2）：`getDatabase()` **从不返回 null**（它抛错），
+   * 所以原来的 `if (!db) return;` 是**无效防御** —— 永不触发，实际在 B 态直接抛。
+   * 改为真判据：A 态（端口未注册）才回退；B 态已如实上报。
+   */
+    if (!writeShouldFallBackToLegacy("fileChange.deleteBySession", "文件变更记录未删除")) return;
     const db = getDatabase();
-    if (!db) return;
     db.run(`DELETE FROM turn_file_changes WHERE session_id = ?`, [sessionId]);
     persistDatabase();
   },

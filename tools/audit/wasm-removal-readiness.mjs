@@ -73,10 +73,20 @@ export function assess() {
     }
 
     // L3：回退分支 —— 端口判断之后的旧库调用
-    const dbCalls = (text.match(/getDatabase\(\)/g) ?? []).length;
-    const portSymbols = (text.match(/domainRead|domainWrite|domainDelete|domainOr|hasStoragePort|getStoragePort|tryGetDatabase/g) ?? []).length;
+    //
+    // ⚠️ 与 L2 同样的教训：**必须剥掉注释再计数**。
+    // 实测踩到两次：我在注释里写"原来的旧库读取会抛错"，扫描器就把注释里的函数名
+    // 当成一处真实回退 —— 于是"改了代码但清单数字反而涨了"。
+    // 这份清单是后续 20+ 轮的主要进度指标，假数字会让整个判断失真。
+    //
+    // 另加指标 `gated`：这些旧库调用里有多少处已被
+    // `shouldFallbackToLegacy()` / `writeShouldFallBackToLegacy()` 门控
+    // （即 B 态下不会执行）。字面量要等回滚开关退役才清零，`gated` 才反映真实进度。
+    const dbCalls = (code.match(/getDatabase\(\)/g) ?? []).length;
+    const portSymbols = (code.match(/domainRead|domainWrite|domainDelete|domainOr|hasStoragePort|getStoragePort|tryGetDatabase|shouldFallbackToLegacy|writeShouldFallBackToLegacy|domainPortRegistered|domainEnsureLoaded/g) ?? []).length;
+    const gated = (code.match(/shouldFallbackToLegacy\(\)|writeShouldFallBackToLegacy\(/g) ?? []).length;
     if (dbCalls > 0 && portSymbols > 0 && rel !== "src/core/storage/database.ts") {
-      l3.push({ file: rel, dbCalls, portSymbols });
+      l3.push({ file: rel, dbCalls, portSymbols, gated });
     }
 
     // L4：开关与引导
@@ -105,9 +115,11 @@ if (isMain) {
     for (const x of r.L1_dependency) console.log(`   ${x.file}: ${x.what}`);
     console.log(`\nL2 引擎本体外泄（${r.L2_engineBody.length}）—— 应为 0（sql.js 只许出现在 database.ts）`);
     for (const x of r.L2_engineBody) console.log(`   ${x.file}: ${x.what}`);
-    console.log(`\nL3 回退分支（${r.L3_fallbackBranches.length} 个文件）—— 每个都要"删掉回退、只留端口"`);
+    const l3Total = r.L3_fallbackBranches.reduce((n, x) => n + x.dbCalls, 0);
+const l3Gated = r.L3_fallbackBranches.reduce((n, x) => n + (x.gated ?? 0), 0);
+console.log(`\nL3 回退分支（${r.L3_fallbackBranches.length} 个文件 / ${l3Total} 处旧库调用，其中 ${l3Gated} 处已门控）—— 字面量要等回滚开关退役才清零，gate 计数才反映真实进度`);
     for (const x of r.L3_fallbackBranches) {
-      console.log(`   ${String(x.dbCalls).padStart(2)} 处 getDatabase · 端口符号 ${x.portSymbols} · ${x.file}`);
+      console.log(`   ${String(x.dbCalls).padStart(2)} 处旧库调用 · 已门控 ${String(x.gated ?? 0).padStart(2)} · 端口符号 ${x.portSymbols} · ${x.file}`);
     }
     console.log(`\nL4 引擎开关 / 引导（${r.L4_switch.length}）`);
     for (const x of r.L4_switch) console.log(`   ${x.file}`);
