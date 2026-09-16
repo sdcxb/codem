@@ -77,6 +77,47 @@ export function domainPort(table: string, opts: DomainReadOpts = {}): DomainMirr
 }
 
 /**
+ * **回退决策的唯一入口**（B0-1，第 42 轮）。
+ *
+ * ## 它解决的是什么
+ *
+ * 迁移期每个回退点都写着同一句话："端口没接手 → 走旧库"。但这句里藏着**两种完全不同的状态**：
+ *
+ * | 态 | 判据 | 旧库状态 | 正确处置 |
+ * | --- | --- | --- | --- |
+ * | **A** | 端口**未注册**（回滚到 wasm / 旧引擎测试基座） | 是唯一数据源 | **必须**回退旧库 |
+ * | **B** | 端口在，但该表**镜像未就绪**（加载中 / 超上限被拒 / LRU 逐出 / 被截断） | **刻意不存在** | **不能**回退：应等就绪（`domainEnsureLoaded`）或如实上报 |
+ *
+ * `domainRead*` / `domainDelete*` 对这两态返回**同一个值**（`undefined` / `null`），
+ * 所以调用方无法区分、只能一律回退 —— 而"一律回退"在 B 态下就是**读写分裂**：
+ * 写进旧库、随后的读/删走镜像，于是刚写的读不到、也删不掉。
+ * （实测：`note-links-order.test.ts` NL-2；修复它的尝试反而把基线打红 —— 见 L3-DELETION-PLAN.md 第零节。）
+ *
+ * ## 用法（所有回退点都按这个形状写）
+ *
+ * ```ts
+ * const rust = domainReadMany(T, ...);
+ * if (rust !== undefined) return ...;            // 端口接手
+ * if (!shouldFallbackToLegacy()) {               // B 态：不碰旧库
+ *   domainEnsureLoaded(T, retry);                //   写：等就绪后重做
+ *   return <该域的合理空结果>;                    //   读：先给空
+ * }
+ * const db = getDatabase();                       // A 态：旧库是唯一数据源
+ * ```
+ *
+ * 这样两种态**各自有明确、可测的行为**，删回退时也不必"赌端口总是就绪"。
+ */
+export function shouldFallbackToLegacy(): boolean {
+  // 端口未注册 → A 态：旧库是唯一数据源，回退是唯一正确做法
+  if (!hasStoragePort()) return true;
+  const port = getStoragePort();
+  // wasm 引擎（回滚开关）→ 也是 A 态
+  if (port.kind !== "rust") return true;
+  // 端口在（rust）→ B 态：镜像无论就绪与否都不该碰旧库（旧库在 rust 模式下刻意不加载）
+  return false;
+}
+
+/**
  * **端口是否已注册且是 rust 引擎**（不看镜像是否就绪）。
  *
  * 与 `domainPort()` 的区别正是这套分流的关键：

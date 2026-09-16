@@ -58,6 +58,19 @@ export interface FakeStoragePortOptions {
   seed?: Record<string, Row[]>;
   /** 模拟落库失败（验证"写穿失败必须如实上报"的反向用例） */
   failWrites?: boolean;
+  /**
+   * 端口标识（默认 `"rust"`）。
+   *
+   * 设为 `"wasm"` 用来模拟**回滚开关切到旧引擎**的形态：此时读/写路径应走旧库。
+   */
+  kind?: "rust" | "wasm";
+  /**
+   * 这些表**永不就绪**：`isReady` 恒为 false。
+   *
+   * 用来模拟"端口在、但镜像没就绪"（加载中 / 超上限被拒 / LRU 逐出 / 被截断）——
+   * 也就是 B0-1 里的 **B 态**。它是"必须由端口接手、不能回退旧库"那条规则的反向用例载体。
+   */
+  neverReady?: string[];
 }
 
 export interface FakeStoragePort extends StoragePort {
@@ -468,8 +481,10 @@ export function createFakeStoragePort(opts: FakeStoragePortOptions = {}): FakeSt
 
   // ===== 通用域镜像（`domainPort` 只认 rust，且要求 domains.ensureLoaded 存在）=====
   const ready = new Set<string>();
+  /** 永不就绪的表（B 态载体）：见 FakeStoragePortOptions.neverReady */
+  const neverReady = new Set(opts.neverReady ?? []);
   const domains = {
-    isReady: (name: string) => ready.has(name),
+    isReady: (name: string) => ready.has(name) && !neverReady.has(name),
     ensureLoaded: (name: string, onLoaded?: () => void) => {
       ready.add(name);
       onLoaded?.();
@@ -539,7 +554,7 @@ export function createFakeStoragePort(opts: FakeStoragePortOptions = {}): FakeSt
   };
 
   return {
-    kind: "rust",
+    kind: opts.kind ?? "rust",
     engine,
     data,
     config,
