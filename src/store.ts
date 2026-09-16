@@ -8,6 +8,46 @@ import { reportPersistFailure } from "./core/storage/persist-failure";
 /** 第 90 波：致命状态只上报一次（否则 AutoSave 每几秒刷一条） */
 let warnedSaveMessagesFatal = false;
 
+/**
+ * 第 91 波（存储压力）：每条消息上次写库时的"内容指纹"。
+ *
+ * 为什么需要：`saveMessages` 会把**整份消息列表**逐条 `createMessage` 写一遍，
+ * 而长会话（用户现场 113 条、内容是大文档）每次自动保存都要做上百条 UPDATE +
+ * 每条工具调用先删后插 —— 这些写入都要经过 WASM 里的 SQLite，是"内存访问越界"
+ * 最现实的压力来源之一。
+ *
+ * 指纹 = 长度 + 首尾采样 + 字符码累加（O(n) 纯算术，比一次 SQL 写入便宜两个数量级）。
+ * 只有指纹变了才写；跳过的是"自上次保存以来没变过"的消息（绝大多数）。
+ */
+const persistedFingerprints = new Map<string, Map<string, string>>();
+
+function messageFingerprint(m: Message): string {
+  const content = typeof m.content === "string" ? m.content : "";
+  const len = content.length;
+  const head = content.slice(0, 24);
+  const tail = len > 24 ? content.slice(-24) : "";
+  let sum = 0;
+  for (let i = 0; i < content.length; i++) sum = (sum + content.charCodeAt(i)) % 2147483647;
+  const tools = (m.toolCalls ?? []).map((tc) => `${tc.id}:${tc.status ?? ""}:${(tc.result ?? "").length}`).join(",");
+  return [
+    len,
+    sum,
+    head,
+    tail,
+    m.status ?? "",
+    m.reasoning?.length ?? 0,
+    tools,
+    m.generatedFiles?.length ?? 0,
+    m.model ?? "",
+  ].join("|");
+}
+
+/** 测试/会话切换用：清空指纹缓存 */
+export function __resetSaveFingerprints(sessionId?: string): void {
+  if (sessionId) persistedFingerprints.delete(sessionId);
+  else persistedFingerprints.clear();
+}
+
 /** Auto-retrieved knowledge source (from notebook RAG, not from tool calls) */
 export interface RetrievedSource {
   sourceId: string;
@@ -325,10 +365,31 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
     try {
       const msgs = get().messages;
+      /**
+       * 第 91 波：**只写变化过的消息**（见 messageFingerprint 的说明）。
+       * `skipped` 数量进诊断日志 —— 长会话下它应该是绝大多数。
+       */
+      let seen = persistedFingerprints.get(sessionId);
+      if (!seen) {
+        seen = new Map<string, string>();
+        persistedFingerprints.set(sessionId, seen);
+      }
+      let written = 0;
+      let skipped = 0;
       for (const msg of msgs) {
+        const fp = messageFingerprint(msg);
+        if (seen.get(msg.id) === fp) {
+          skipped++;
+          continue;
+        }
         // createMessage handles dedup internally: new messages get INSERT + event log append,
         // existing messages get UPDATE only (no duplicate event).
         MessageStorage.createMessage(msg, sessionId);
+        seen.set(msg.id, fp);
+        written++;
+      }
+      if (skipped > 0) {
+        console.debug(`[Store] saveMessages: 写入 ${written} 条，跳过未变化 ${skipped} 条（会话 ${sessionId}）`);
       }
     } catch (e) {
       if (noteDatabaseError(e)) {

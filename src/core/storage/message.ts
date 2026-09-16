@@ -266,6 +266,46 @@ function hiddenMessageIds(sessionId: string): Set<string> {
 /** 会话日志的内存镜像（由 hydrateSessionLog 填充） */
 const cachedLogMessages = new Map<string, Awaited<ReturnType<typeof readSessionMessages>>["messages"]>();
 
+/** 第 91 波：索引不可用只提示一次（数据库致命时否则每次读都刷一行） */
+let warnedIndexUnavailable = false;
+function warnIndexUnavailable(e: unknown): void {
+  const fatal = isDatabaseFatal();
+  if (fatal && warnedIndexUnavailable) return;
+  warnedIndexUnavailable = true;
+  console.warn(
+    `[MessageStorage] 索引暂不可用（${e instanceof Error ? e.message : String(e)}）—— ` +
+      (fatal
+        ? "数据库模块已崩溃，本次运行内改为**只读权威日志**（会话历史仍完整可读）。"
+        : "本次读取回退到权威日志。"),
+  );
+}
+
+/** 从日志镜像里按 id 取一条消息（索引不可用时的兜底） */
+export function logMirrorMessage(sessionId: string, id: string): Message | null {
+  const mirror = cachedLogMessages.get(sessionId);
+  if (!mirror) return null;
+  const rec: any = mirror.find((m) => m.id === id);
+  if (!rec) return null;
+  return {
+    id: rec.id,
+    role: rec.role,
+    content: rec.content ?? "",
+    timestamp: rec.timestamp ?? Date.now(),
+    ...(rec.reasoning ? { reasoning: rec.reasoning } : {}),
+    ...(rec.model ? { model: rec.model } : {}),
+    ...(rec.status ? { status: rec.status } : {}),
+    ...(rec.toolCalls ? { toolCalls: rec.toolCalls } : {}),
+  } as Message;
+}
+
+/** 在整个日志镜像里找一个消息 id 属于哪个会话（索引不可用时的兜底） */
+function sessionIdFromLogMirror(messageId: string): string | null {
+  for (const [sessionId, mirror] of cachedLogMessages) {
+    if (mirror.some((m) => m.id === messageId)) return sessionId;
+  }
+  return null;
+}
+
 /**
  * 把会话的追加日志读进内存镜像（进入会话时调用一次）。
  * 之后 listMessagesMerged 就能同步合并出被索引裁掉的历史。
@@ -302,12 +342,31 @@ export function listMessages(sessionId: string, limit?: number): Message[] {
 
 /** 只读 SQLite 索引（内部/诊断用）；对外请用 `listMessages`（会合并权威日志） */
 export function listMessagesFromIndex(sessionId: string, limit?: number): Message[] {
-  const db = getDatabase();
-  const limitClause = limit ? `LIMIT ${limit}` : "";
-  const result = db.exec(
-    `SELECT id, session_id, role, content, timestamp, model, prompt_tokens, completion_tokens, cost, status, reasoning, generated_files, retrieved_sources, hidden FROM messages WHERE session_id = ? AND hidden = 0 ORDER BY timestamp ASC ${limitClause}`,
-    [sessionId]
-  );
+  /**
+   * 第 91 波（架构级修正）：索引是**可重建的查询索引**，日志才是权威 ——
+   * 所以索引不可用时（数据库致命状态 / SQL 报错）**不能让读路径整体失败**：
+   * 返回空列表，交给 `listMessagesMerged` 用权威日志拼出完整历史。
+   * 原来这里 `getDatabase()` 直接抛错 → 数据库一崩，连"读会话历史"都失败，
+   * 明明日志里一切都还在。
+   */
+  let db: any;
+  try {
+    db = getDatabase();
+  } catch (e) {
+    warnIndexUnavailable(e);
+    return [];
+  }
+  let result: any;
+  try {
+    const limitClause = limit ? `LIMIT ${limit}` : "";
+    result = db.exec(
+      `SELECT id, session_id, role, content, timestamp, model, prompt_tokens, completion_tokens, cost, status, reasoning, generated_files, retrieved_sources, hidden FROM messages WHERE session_id = ? AND hidden = 0 ORDER BY timestamp ASC ${limitClause}`,
+      [sessionId]
+    );
+  } catch (e) {
+    warnIndexUnavailable(e);
+    return [];
+  }
   if (result.length === 0) return [];
 
   return result[0].values.map((row: any[]) => {
@@ -566,7 +625,36 @@ export function getMessage(id: string): Message | null {
   return rowToMessage(messageRow, toolCalls, attachments);
 }
 
+/**
+ * 写入一条消息。
+ *
+ * 第 91 波（**架构级**修正）：**权威日志先写，索引尽力而为。**
+ *
+ * 本仓库的分层是"追加日志（JSONL）= 权威存储，SQLite = 可重建的查询索引"（第 78 波定的），
+ * 但写入顺序一直是反的：先 `getDatabase()` + INSERT/UPDATE + `persistDatabase()`，
+ * **最后**才 `appendSessionMessage(...)`。于是索引一出问题（WASM 陷阱、致命闩锁、SQL 报错），
+ * 函数在第一行就抛掉，**权威日志那一步根本没执行** —— 用户那 113 条消息之所以危险，
+ * 根子就在这：号称权威的那份副本，成了最脆弱那条路径的最后一道。
+ *
+ * 现在的顺序是：①日志先落盘（不受索引影响）→ ②再写索引；索引失败只上报、不再让调用方失败。
+ */
 export function createMessage(message: Message, sessionId: string): void {
+  // ① 权威日志：追加即持久，不碰索引、不做整库导出
+  void appendSessionMessage(sessionId, message);
+
+  // ② 索引：尽力而为。索引崩了不影响上面那条已经落盘的记录。
+  if (isDatabaseFatal()) return;
+  try {
+    writeMessageIndex(message, sessionId);
+  } catch (e) {
+    if (!noteDatabaseError(e)) {
+      reportPersistFailure("message.createMessage.index", e, "消息已写入权威日志，但查询索引更新失败（索引可由日志重建）");
+    }
+  }
+}
+
+/** 消息 → SQLite 索引（createMessage 的索引侧；失败由调用方兜底） */
+function writeMessageIndex(message: Message, sessionId: string): void {
   const db = getDatabase();
   // Check if message already exists
   const existing = db.exec("SELECT id FROM messages WHERE id = ?", [message.id]);
@@ -717,12 +805,53 @@ export function createMessage(message: Message, sessionId: string): void {
 
   persistDatabase();
   // 第 78 波：**权威日志是追加式 JSONL**（对齐 DSH 的 session-persistence-jsonl），
-  // SQLite 退化为"可重建的查询索引"。追加即持久 —— 这条路径不需要任何"整库导出"，
-  // 也是索引可以被有界裁剪（trimIndexedMessages）的前提。
-  void appendSessionMessage(sessionId, message);
+  // SQLite 退化为"可重建的查询索引"。这条追加已由 createMessage 在**索引之前**完成（第 91 波）。
 }
 
+/**
+ * 更新一条消息。
+ *
+ * 第 91 波（架构级）：与 createMessage 同一处修正 —— **先写权威日志，再更新索引**。
+ *
+ * 快照的来源优先用**日志镜像/索引里的现存消息**（不依赖"索引还能用"）；两者都取不到时
+ * 才退回老的"从索引读一遍再追加"路径（那样在索引崩掉时确实写不进日志，但至少不会写坏）。
+ */
 export function updateMessage(id: string, update: Partial<Message>): void {
+  // ① 权威日志：先用现有快照 + 本次改动合成一条完整记录追加（同 id 后写者胜）
+  const sessionId = currentSessionIdForMessage(id);
+  if (sessionId) {
+    const base = logMirrorMessage(sessionId, id) ?? (isDatabaseFatal() ? null : safeGetMessage(id));
+    if (base) {
+      void appendSessionMessage(sessionId, { ...base, ...update, id, timestamp: base.timestamp ?? Date.now() } as Message);
+    } else {
+      void appendUpdatedMessageToLog(id);
+    }
+  } else {
+    void appendUpdatedMessageToLog(id);
+  }
+
+  // ② 索引：尽力而为
+  if (isDatabaseFatal()) return;
+  try {
+    writeMessageUpdateIndex(id, update);
+  } catch (e) {
+    if (!noteDatabaseError(e)) {
+      reportPersistFailure("message.updateMessage.index", e, "消息改动已写入权威日志，但查询索引更新失败（索引可由日志重建）");
+    }
+  }
+}
+
+/** 索引不可用时的安全读取（不抛） */
+function safeGetMessage(id: string): Message | null {
+  try {
+    return getMessage(id);
+  } catch {
+    return null;
+  }
+}
+
+/** 消息更新 → SQLite 索引（updateMessage 的索引侧；失败由调用方兜底） */
+function writeMessageUpdateIndex(id: string, update: Partial<Message>): void {
   const db = getDatabase();
   const fields: string[] = [];
   const values: (string | number | null)[] = [];
@@ -776,8 +905,7 @@ export function updateMessage(id: string, update: Partial<Message>): void {
     }
   }
   persistDatabase();
-  // 更新也要进追加日志（同 id 后写者胜）：流式回复、工具结果、状态变化都在这里落定
-  void appendUpdatedMessageToLog(id);
+  // 更新也进追加日志（同 id 后写者胜）—— 该追加已由 updateMessage 在**索引之前**完成（第 91 波）
 }
 
 /**
@@ -861,10 +989,11 @@ function currentSessionIdForMessage(messageId: string): string | null {
   try {
     const rows = getDatabase().exec("SELECT session_id FROM messages WHERE id = ?", [messageId]);
     const value = rows?.[0]?.values?.[0]?.[0];
-    return value ? String(value) : null;
+    if (value) return String(value);
   } catch {
-    return null;
+    /* 索引不可用 → 走日志镜像兜底（第 91 波） */
   }
+  return sessionIdFromLogMirror(messageId);
 }
 
 /**

@@ -84,6 +84,107 @@ export async function countSessionLogs(): Promise<number> {
   return (await listSessionLogs()).length;
 }
 
+// ========== 索引重建（第 91 波：自愈） ==========
+
+/**
+ * 从**权威日志**重建 SQLite 查询索引。
+ *
+ * 为什么这是"数据库崩了也不丢数据"的最后一块拼图：
+ * 分层本来就写着"日志是权威、索引可重建"，但**重建方向从来没有实现过** ——
+ * 只有"索引 → 日志"的回填（`backfillAllSessions`）。于是索引一崩（WASM 陷阱、
+ * 索引文件损坏、被裁剪过），用户只能重启撞运气；索引里的附件/工具调用也不会自己回来。
+ *
+ * 现在：日志里有什么，索引就能重建出什么（幂等：同 id 覆盖写）。
+ * 触发点有两个：①启动维护时若发现"上次崩溃"标记；②手工/维护显式调用。
+ *
+ * @returns 重建的会话数与消息数
+ */
+export async function rebuildIndexFromSessionLogs(sessionId?: string): Promise<{ sessions: number; messages: number }> {
+  await initDatabase();
+  const { readSessionMessages } = await import("./session-jsonl");
+  const { getDatabase } = await import("./database");
+  const db = getDatabase();
+
+  const targets = sessionId ? [sessionId] : await listSessionLogs();
+  const out = { sessions: 0, messages: 0 };
+
+  for (const sid of targets) {
+    try {
+      const { messages } = await readSessionMessages(sid);
+      if (messages.length === 0) continue;
+      db.run("BEGIN TRANSACTION");
+      try {
+        /**
+         * 先补 `sessions` 行（第 91 波实测发现）。
+         *
+         * `messages.session_id` 有指向 `sessions(id)` 的外键 —— 崩溃后重建的库是空的，
+         * 直接插消息会 `FOREIGN KEY constraint failed`（真机验证时就是这么失败的）。
+         * 会话归属项目在日志里没有记录，落到内置的全局项目 `""`（initDatabase 会种下这一行），
+         * 标题取首条 user 消息的首行，便于用户在列表里认出来。
+         */
+        const firstUser = messages.find((m) => m.role === "user");
+        const title = (firstUser?.content || `会话 ${sid}`).split("\n")[0].slice(0, 60) || `会话 ${sid}`;
+        const firstTs = messages[0]?.timestamp ?? Date.now();
+        const lastTs = messages[messages.length - 1]?.timestamp ?? firstTs;
+        db.run(
+          `INSERT INTO sessions (id, project_id, title, created_at, last_message_at, message_count, pinned)
+             VALUES (?, '', ?, ?, ?, ?, 0)
+           ON CONFLICT(id) DO UPDATE SET last_message_at = excluded.last_message_at, message_count = excluded.message_count`,
+          [sid, title, firstTs, lastTs, messages.length],
+        );
+        for (const rec of messages) {
+          db.run(
+            `INSERT OR REPLACE INTO messages
+               (id, session_id, role, content, reasoning, timestamp, model, prompt_tokens, completion_tokens, cost, status, hidden)
+             VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, 0, ?, 0)`,
+            [
+              rec.id,
+              sid,
+              rec.role,
+              rec.content ?? "",
+              (rec as any).reasoning ?? null,
+              rec.timestamp ?? Date.now(),
+              (rec as any).model ?? null,
+              (rec as any).status ?? "done",
+            ],
+          );
+          // 工具调用：日志里带着完整数组，索引侧重建（幂等：先清后插）
+          const toolCalls = (rec as any).toolCalls as Array<any> | undefined;
+          if (Array.isArray(toolCalls)) {
+            db.run("DELETE FROM tool_calls WHERE message_id = ?", [rec.id]);
+            for (const tc of toolCalls) {
+              db.run(
+                "INSERT INTO tool_calls (id, message_id, tool, args, result, status, metadata) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                [
+                  tc.id ?? `${rec.id}-${tc.tool}`,
+                  rec.id,
+                  tc.tool ?? "unknown",
+                  JSON.stringify(tc.args ?? {}),
+                  tc.result ?? null,
+                  tc.status ?? "done",
+                  tc.metadata ? JSON.stringify(tc.metadata) : null,
+                ],
+              );
+            }
+          }
+          out.messages++;
+        }
+        db.run("COMMIT");
+      } catch (e) {
+        db.run("ROLLBACK");
+        throw e;
+      }
+      out.sessions++;
+    } catch (e) {
+      console.warn(`[SessionLog] 会话 ${sid} 索引重建失败（跳过）:`, e);
+    }
+  }
+  if (out.messages > 0) {
+    console.log(`[Database] 索引已从权威日志重建：${out.sessions} 个会话 / ${out.messages} 条消息`);
+  }
+  return out;
+}
+
 /**
  * 压缩膨胀的追加日志（第 79 波收尾项）：对行数明显多于"唯一消息数"的会话重写日志。
  * 幂等、失败保留原文件；压缩后再 hydrate 一次，保证内存镜像同步。

@@ -11,6 +11,7 @@ import initSqlJsWasm from "sql.js/dist/sql-wasm.js";
 import initSqlJsAsm from "sql.js/dist/sql-asm-memory-growth.js";
 import sqlWasmUrl from "sql.js/dist/sql-wasm.wasm?url";
 import type { Database as SqlJsDatabase } from "sql.js";
+import { reportActionFailure } from "./persist-failure";
 
 let db: SqlJsDatabase | null = null;
 /** FTS5 可用性标志 — sql.js 可能不支持 FTS5，创建失败后避免重复报错 */
@@ -167,10 +168,68 @@ function noteFatalDbError(e: unknown): void {
   dbFatal = true;
   const detail = { message: e instanceof Error ? e.message : String(e) };
   console.error("[Database] FATAL — sql.js 模块已不可用，停止写入并进入抢救流程:", detail.message);
+  /**
+   * 第 91 波（自愈）：留一个**不依赖数据库**的标记文件，下次启动时用它触发
+   * "从权威日志重建索引"。这样"索引崩了"不再是"重启后索引里空空如也"，
+   * 而是"重启后自动重建"（消息本身一直在 JSONL 里）。
+   */
+  void markIndexRebuildNeeded(detail.message);
   try {
     window.dispatchEvent(new CustomEvent(DB_FATAL_EVENT, { detail }));
   } catch {
     /* dispatch 失败不影响主流程 */
+  }
+}
+
+/** 索引重建标记文件（写文件走 IPC，与数据库无关） */
+export const INDEX_REBUILD_MARKER = "codem-index-rebuild-needed.json";
+
+async function markIndexRebuildNeeded(reason: string): Promise<void> {
+  try {
+    const { invoke } = (window as any).__TAURI__?.core || {};
+    if (!invoke) return; // 浏览器/测试环境：跳过
+    const dir = await invoke("get_app_data_dir");
+    await invoke("write_file", {
+      path: `${dir}${INDEX_REBUILD_MARKER}`,
+      content: JSON.stringify({ reason, at: new Date().toISOString() }),
+    });
+    console.log("[Database] 已留索引重建标记（下次启动将自动从权威日志重建索引）");
+  } catch (e) {
+    console.warn("[Database] 写索引重建标记失败（不影响抢救流程）:", e);
+  }
+}
+
+/** 是否存在"需要重建索引"的标记（启动维护用） */
+export async function indexRebuildNeeded(): Promise<{ needed: boolean; reason?: string }> {
+  try {
+    const { invoke } = (window as any).__TAURI__?.core || {};
+    if (!invoke) return { needed: false };
+    const dir = await invoke("get_app_data_dir");
+    const path = `${dir}${INDEX_REBUILD_MARKER}`;
+    const exists = await invoke("path_exists", { path });
+    if (!exists) return { needed: false };
+    let reason: string | undefined;
+    try {
+      const raw = await invoke("read_file", { path });
+      reason = JSON.parse(raw)?.reason;
+    } catch {
+      /* 内容读不出来也照样重建 */
+    }
+    return { needed: true, reason };
+  } catch {
+    return { needed: false };
+  }
+}
+
+/** 清除重建标记（重建成功后调用） */
+export async function clearIndexRebuildMarker(): Promise<void> {
+  try {
+    const { invoke } = (window as any).__TAURI__?.core || {};
+    if (!invoke) return;
+    const dir = await invoke("get_app_data_dir");
+    await invoke("delete_file", { path: `${dir}${INDEX_REBUILD_MARKER}` });
+  } catch {
+    /* 删不掉也无害：重建是幂等的 */
   }
 }
 
@@ -224,6 +283,22 @@ export function __installFatalGuardForTests(target: any): void {
   installFatalGuard(target);
 }
 
+/**
+ * 整库导出的硬上限（第 91 波）。
+ *
+ * 单次 `db.export()` 会在 WASM 堆里分配一整份库大小的缓冲再复制出来；库越大，
+ * "内存访问越界 / Cannot enlarge memory" 的风险越高。超过这个值就不再整库落盘，
+ * 改为"只写权威日志 + 下次启动重建索引"（数据不丢，索引可重建）。
+ * 256MB 是个保守值：正常使用（含大文档会话）远低于它。
+ */
+const MAX_EXPORT_BYTES = 256 * 1024 * 1024;
+/** 本次运行内是否已因超限暂停整库导出 */
+let exportSuspended = false;
+
+/** 诊断用：整库导出是否已暂停（测试与状态面板用） */
+export function isWholeFileExportSuspended(): boolean {
+  return exportSuspended;
+}
 async function saveDatabase(force = false): Promise<void> {
   if (!db || dbFatal) return;
   // 没有变化就不导出：整库 export 是最贵的一步
@@ -234,6 +309,30 @@ async function saveDatabase(force = false): Promise<void> {
       return;
     }
     const data = db.export();
+    /**
+     * 第 91 波（存储压力）：整库导出是**单次 O(库大小) 的 WASM 分配 + 复制**，
+     * 库越大越危险（这正是"内存访问越界"最可能的触发点）。
+     * 超过上限时**不再整库导出**：权威日志（JSONL）本来就在持续落盘，
+     * 索引丢掉也能在下次启动时重建 —— 宁可暂时不落盘索引，也不能把 WASM 堆撞死。
+     */
+    if (data.length > MAX_EXPORT_BYTES) {
+      if (!exportSuspended) {
+        exportSuspended = true;
+        const mb = (data.length / 1024 / 1024).toFixed(0);
+        const limitMb = (MAX_EXPORT_BYTES / 1024 / 1024).toFixed(0);
+        console.warn(
+          `[Database] 索引库已达 ${mb} MB（超过整库落盘上限 ${limitMb} MB）—— 本次运行内**暂停整库导出**，` +
+            `消息仍会持续写入权威日志（JSONL）；索引将在下次启动时从日志重建。请清理不再需要的旧会话或附件。`,
+        );
+        reportActionFailure(
+          "database.wholeFileExportSuspended",
+          new Error(`索引库 ${mb} MB 超过上限 ${limitMb} MB`),
+          "已切换为「只写权威日志」模式：数据不丢，但本次运行内索引不再落盘（下次启动自动重建）",
+        );
+      }
+      dirty = false; // 别让调度器一直重试
+      return;
+    }
     const { invoke } = (window as any).__TAURI__.core;
     const path = await getDbPath();
     // 原子写：先写临时文件再改名覆盖。
@@ -1160,6 +1259,8 @@ export interface MaintenanceResult {
   compactedSessions: number;
   /** 本次回填进追加日志的消息数（第 78 波） */
   backfilledMessages: number;
+  /** 本次**从权威日志重建进索引**的消息数（第 91 波：崩溃自愈） */
+  rebuiltIndexMessages: number;
   /** 本次从 SQLite 索引裁剪掉的消息数（第 78 波） */
   trimmedIndexMessages: number;
 }
@@ -1231,6 +1332,7 @@ export async function runDatabaseMaintenance(
     vacuumed: false,
     compactedSessions: 0,
     backfilledMessages: 0,
+    rebuiltIndexMessages: 0,
     trimmedIndexMessages: 0,
   };
   if (!db || dbFatal) return { ...result, sizeAfter: result.sizeBefore };
@@ -1248,6 +1350,21 @@ export async function runDatabaseMaintenance(
     // 外置内容）、日志也不压缩。只有"裁剪索引"这一步该受开关控制，其余是常规维护。
     try {
       const bridge = await import("./session-log-bridge");
+
+      // 第 91 波（自愈）：上次崩溃留下的标记 → 先**从权威日志重建索引**，再回填/裁剪。
+      // 顺序很重要：重建补回索引里缺的消息，回填再保证日志覆盖索引（双向对齐）。
+      try {
+        const marker = await indexRebuildNeeded();
+        if (marker.needed) {
+          console.log(`[Database] 检测到索引重建标记（原因：${marker.reason || "未知"}）—— 从权威日志重建索引`);
+          const rebuilt = await bridge.rebuildIndexFromSessionLogs();
+          result.rebuiltIndexMessages = rebuilt.messages;
+          await clearIndexRebuildMarker();
+        }
+      } catch (e) {
+        console.warn("[Database] 索引重建失败（保留标记，下次再试）:", e);
+      }
+
       result.backfilledMessages = await bridge.backfillAllSessions();
 
       if (keepIndexedMessages > 0) {
