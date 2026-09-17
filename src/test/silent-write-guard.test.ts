@@ -147,9 +147,17 @@ describe("静默空写探测器", () => {
   });
 
   it("SWG-2: 真改到行时不记账（正常路径零噪音）", () => {
-    switchToLegacyEngine(); // 探测器只对旧库 SQL 生效（端口侧是盲 upsert，没有空写这个概念）
+    switchToLegacyEngine(); // 直接单测探测器本身（它只对旧库 SQL 生效）
     const db = getDatabase();
-    createMessage({ id: "m-ok", role: "user", content: "x", timestamp: Date.now(), status: "done" } as any, SESSION);
+    /**
+     * 夹具必须**直接插进旧库**：`createMessage()` 现在只写端口与权威日志
+     * （第 17 轮 L4 把旧库写入路径删掉了），用它做夹具的话旧库里根本没有这一行，
+     * `runGuarded` 的 UPDATE 会打空 → 用例变成"断言探测器失灵"，与它想守的东西相反。
+     */
+    db.run(
+      "INSERT OR REPLACE INTO messages (id, session_id, role, content, timestamp, status) VALUES (?, ?, 'user', 'x', ?, 'done')",
+      ["m-ok", SESSION, Date.now()],
+    );
     resetSilentWriteReport();
 
     const modified = runGuarded(db, "UPDATE messages SET status = ? WHERE id = ?", ["done", "m-ok"], {
@@ -159,17 +167,34 @@ describe("静默空写探测器", () => {
     expect(getSilentWriteReport()).toHaveLength(0);
   });
 
-  it("SWG-3: 接了线的写入路径 —— updateMessage / updateToolCall 打不存在的 id 会被发现", () => {
-    switchToLegacyEngine(); // 旧库写入路径才接了探测器（见 switchToLegacyEngine 的说明）
+  it("SWG-3: 任务管理侧写入打不存在的 id —— 不造幽灵行，且不抛（第 17 轮 L4 后的新契约）", () => {
+    /**
+     * 这条用例原来断言"旧库 UPDATE 影响 0 行 → 探测器记账"（`messages:update` / `tool_calls:update`）。
+     * A 态删除后，`updateMessage` / `updateToolCall` 的索引写只走端口 —— 端口侧不存在
+     * "UPDATE 影响 0 行"这件事，判据因此换成更本质的两条：
+     *
+     *   1. **不许造幽灵行**：端口写是 `crud.upsert` / `tool_calls.replace`（会 insert），
+     *      所以"消息不存在"时不得凭空造出一条消息或一批工具调用；
+     *   2. **不许抛**：更新一个不存在的 id 必须静默成为一次"没落地"（并且由索引层的
+     *      `reportWriteNotAccepted` 如实上报），而不是把渲染路径打崩。
+     *
+     * 覆盖去哪了：原探测器守的"写没落地必须可见"，现在由端口写路径的
+     * `reportPersistFailure` / `reportWriteNotAccepted`（见 `persist-failure-reporting.test.ts`）
+     * 与 SWG-4 的"返回值可见 + 不造幽灵行"共同承担。
+     */
+    const p = useFreshPort();
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     resetSilentWriteReport();
 
-    updateMessage("幽灵消息", { content: "这条写不进去" });
-    updateToolCall("幽灵消息", "幽灵工具", { status: "done", result: "结果" });
+    expect(() => {
+      updateMessage("幽灵消息", { content: "这条写不进去" });
+      updateToolCall("幽灵消息", "幽灵工具", { status: "done", result: "结果" });
+    }, "更新不存在的 id 不得抛（渲染路径不能因为一次空写而崩）").not.toThrow();
 
-    const keys = getSilentWriteReport().map((e) => `${e.table}:${e.op}`);
-    expect(keys).toContain("messages:update");
-    expect(keys).toContain("tool_calls:update");
+    const ghostMessages = p
+      .__writes()
+      .filter((w) => w.command === "messages.upsert_index" && (w.params as { id?: string })?.id === "幽灵消息");
+    expect(ghostMessages, "不得为不存在的消息 upsert 出幽灵行").toHaveLength(0);
     warn.mockRestore();
   });
 

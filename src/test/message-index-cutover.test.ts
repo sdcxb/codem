@@ -164,16 +164,22 @@ describe("消息索引写分流", () => {
     expect(call?.params.tool_calls, "缺省必须是 undefined/null，不能是空数组").toBeUndefined();
   });
 
-  it("MSG-4: 端口未注册（默认/回滚）时**完全不接手**，走原 WASM 路径", async () => {
+  it("MSG-4: 端口未注册时**完全不接手**，也**不碰旧库**（第 17 轮 L4：A 态已删），但必须如实上报", async () => {
     setStoragePort(null);
     const { createMessage } = await import("../core/storage/message");
     createMessage({ id: "m4", role: "user", content: "x", timestamp: 1 } as never, "s1");
     await settle();
-    expect(appendCalls, "权威日志仍然要写").toHaveLength(1);
-    expect(legacyQuery, "回滚模式下索引写应落到旧库").toBeGreaterThan(0);
+    expect(appendCalls, "权威日志仍然要写（它是权威副本，不受索引影响）").toHaveLength(1);
+    /**
+     * 这条用例原来断言 `legacyQuery > 0`（"回滚模式下索引写应落到旧库"）。
+     * A 态（旧库回退）已在整个仓库删除 —— 端口不在时**没有第二条路**，
+     * 正确处置只剩"如实上报索引没写成"，而不是偷偷写进一份刻意不存在的旧库。
+     */
+    expect(legacyQuery, "端口不在时不得访问旧库（那里在 rust 模式下刻意不存在）").toBe(0);
+    expect(failures.some((n) => n.includes("索引")), "没写进去必须如实上报").toBe(true);
   });
 
-  it("MSG-5: 端口是 wasm 时同样不接手（回滚开关生效）", async () => {
+  it("MSG-5: 端口是 wasm 时同样不接手（回滚开关已退役，行为与 MSG-4 一致）", async () => {
     setStoragePort({
       kind: "wasm",
       engine: {} as never,
@@ -184,8 +190,8 @@ describe("消息索引写分流", () => {
     const { createMessage } = await import("../core/storage/message");
     createMessage({ id: "m5", role: "user", content: "x", timestamp: 1 } as never, "s1");
     await settle();
-    expect(legacyQuery, "wasm 模式下索引写应落到旧库").toBeGreaterThan(0);
-    expect(failures, "不应报索引失败").toEqual([]);
+    expect(legacyQuery, "wasm 端口在生产里已不可能出现；无论如何都不许回退旧库").toBe(0);
+    expect(failures.some((n) => n.includes("索引")), "不接手就要如实上报").toBe(true);
   });
 
   it("MSG-6: 索引写失败不抛、不影响权威日志，且如实上报", async () => {
@@ -259,17 +265,16 @@ describe("消息读路径（P3 第 7 段）—— 读写必须同处，隐藏状
     expect(legacyQuery, "hidden 判定不得回落到旧库（那里状态已过时）").toBe(0);
   });
 
-  it("MSG-9: 未加载完的会话**不路由，也不回退旧库**（B 态两态判据）", async () => {
+  it("MSG-9: 未加载完的会话**不路由，也不回退旧库**（只有一条路：端口）", async () => {
     /**
-     * 这条契约在第 44 轮（B0-2）被**改写**过，原断言是"未加载完应走旧库"。
+     * 这条契约在第 44 轮（B0-2）被**改写**过，原断言是"未加载完应走旧库"；
+     * 第 17 轮（L4）又删掉了它的后半段（A 态对照）。
      *
-     * 那个旧规则被证明是错的：端口已注册（rust）时旧库在真机上刻意不加载，
+     * 那条旧规则被证明是错的：端口已注册（rust）时旧库在真机上刻意不加载，
      * "回退旧库"要么抛错、要么（在测试基座里）写到一份**不会被读路径看到**的库里 ——
      * 也就是本进程内的读写分裂（`note-links-order.test.ts` 的 NL-2 抓到过同一形态）。
-     * 现在规则是：
-     *   - B 态（端口在 rust、镜像未就绪）→ 不碰旧库，返回**该域的合理空结果**；
-     *   - A 态（端口未注册 / wasm 回滚）→ 旧库是唯一数据源，必须回退。
-     * 两种态各自可测，删回退时才不必赌"端口总是就绪"。
+     * 现在规则只剩一条：**端口没接手 → 返回该域的合理空结果，绝不碰旧库**
+     * （A 态"端口未注册"在生产里已不存在：回滚开关退役、端口是唯一形态）。
      */
     const { port } = portWithRows([
       { id: "a", session_id: "s2", role: "user", content: "一", timestamp: 1, status: "done", hidden: 0 },
@@ -278,13 +283,13 @@ describe("消息读路径（P3 第 7 段）—— 读写必须同处，隐藏状
     // 刻意不 warmup：s2 未加载
     const { listMessagesFromIndex } = await import("../core/storage/message");
     const list = listMessagesFromIndex("s2");
-    expect(list, "B 态：镜像未就绪时给空，而不是半个集合").toEqual([]);
-    expect(legacyQuery, "B 态：索引读**不得**回退旧库（那里在 rust 模式下刻意不存在）").toBe(0);
+    expect(list, "镜像未就绪时给空，而不是半个集合").toEqual([]);
+    expect(legacyQuery, "索引读**不得**回退旧库（那里在 rust 模式下刻意不存在）").toBe(0);
 
-    // A 态对照：端口撤掉（等价于回滚开关切到 wasm）→ 必须回退旧库
+    // 端口撤掉（生产里不可能出现）：仍然是"空结果 + 不碰旧库"，没有第二条数据源
     setStoragePort(null);
-    listMessagesFromIndex("s2");
-    expect(legacyQuery, "A 态：端口不在时旧库是唯一数据源，必须读它").toBeGreaterThan(0);
+    expect(listMessagesFromIndex("s2"), "端口不在时也只能给空结果").toEqual([]);
+    expect(legacyQuery, "端口不在时**同样不许**读旧库（A 态已随 L4 删除）").toBe(0);
   });
 
   it("MSG-10: 写入成功后镜像立刻可读（不必等下次加载）", async () => {

@@ -197,40 +197,23 @@ describe("附件外置", () => {
 });
 
 describe("全文索引一致性（收尾项）", () => {
-  it("FTS-1(A 态): 对齐后：孤儿行被删、被裁但仍可读的历史被补进索引", async () => {
+  it("FTS-1(第 17 轮 L4 改写): 端口不在时**不假装对齐成功**（返回 0/0），且绝不碰旧库", async () => {
     /**
-     * ⚠️ 这条用例验证的是**旧库对齐逻辑**，因此必须显式进入 A 态（端口未注册）。
+     * 这条用例原来验证的是**旧库对齐逻辑**（补缺 / 删孤儿，用裸 SQL 断言 `session_fts` 的内容）。
      *
-     * 第 44 轮（B0）之后 `rebuildSessionFts` 按两态分流：端口在（rust）时交给 Rust 侧
-     * `fts.rebuild`。原因是 rust 模式下 `isFts5Available()` 恒为 false，旧实现直接
-     * 返回 {0,0} —— 也就是**索引永远不对齐、新消息永远搜不到**。
-     * A 态（旧库是唯一数据源）才是本用例的场景；B 态的契约见 FTS-2。
+     * A 态（"端口未注册 → 旧库是唯一数据源"）已随 L4 在整个仓库删除：
+     * `rebuildSessionFts` 的旧库分支**不再存在**，索引对齐只有一条路 ——
+     * 交给 Rust 侧 `fts.rebuild`（含 `keep_ids`，中文 bigram 切分），契约见 FTS-2。
+     *
+     * 那么这条用例现在守什么？守**"没有端口时的诚实"**：
+     *   · 不得静默假装"对齐完成"（返回值必须是 0/0，而不是编一个数字）；
+     *   · 不得去读旧库（rust 模式下那里刻意不存在）。
+     * 这两条正是旧实现最容易犯的错（旧实现第一行 `isFts5Available()` 在 rust 下恒为 false，
+     * 整个函数直接 `return {0,0}` —— 看起来"成功"，实际"新消息永远搜不到"）。
      */
     setStoragePort(null);
-    const db = getDatabase();
-    // 三条消息：m1 留在索引、m2 只存在于日志（模拟被裁）、m3 已被删除（孤儿）
-    db.run(
-      "INSERT INTO messages (id, session_id, role, content, timestamp, status) VALUES ('m1','sess-att','user','留在索引',1,'done')",
-    );
-    const { appendSessionMessage } = await import("../core/storage/session-jsonl");
-    await appendSessionMessage(SESSION, { id: "m2", role: "assistant", content: "只在日志里", timestamp: 2 } as Message);
-    await flushSessionLogWrites();
-    db.run(
-      "INSERT INTO session_fts (session_id, message_id, content, role, timestamp) VALUES ('sess-att','m1','留在索引','user',1), ('sess-att','m2','只在日志里','assistant',2), ('sess-att','m3','已经删了','user',3)",
-    );
-    // 把 m2 读进日志镜像（重建逻辑以镜像为准）
-    const { hydrateSessionLog } = await import("../core/storage/message");
-    await hydrateSessionLog(SESSION);
-
     const result = await rebuildSessionFts(SESSION);
-
-    expect(result.removed).toBe(1); // m3（既不在索引也不在日志）
-    expect(result.added).toBe(0); // m2 已在 FTS 里
-    const ids = db.exec("SELECT message_id FROM session_fts WHERE session_id = 'sess-att'")[0].values.map((r) => r[0]);
-    expect(ids).toContain("m1");
-    expect(ids).toContain("m2");
-    expect(ids).not.toContain("m3");
-    expect(listMessages(SESSION).map((m) => m.id)).toContain("m2"); // 读者仍看得到
+    expect(result, "没有端口时无可作为 —— 必须如实返回 0/0，不许编数字").toEqual({ removed: 0, added: 0 });
   });
 
   it("FTS-2(B 态): 端口在时对齐交给 Rust 侧（绝不静默什么都不做）", async () => {

@@ -1,5 +1,4 @@
 import { appendSessionMessage, appendMessageTombstone, readSessionMessages } from "./session-jsonl";
-import { runGuarded } from "./write-guard";
 import {
   getCachedExternalContent,
   warmExternalContent,
@@ -8,7 +7,7 @@ import {
   isExternalContent,
   DEFAULT_EXTERNALIZE_THRESHOLD,
 } from "./attachment-files";
-import { getDatabase, tryGetDatabase, persistDatabase, isFts5Available, isDatabaseFatal, noteDatabaseError } from "./database";
+import { isDatabaseFatal, noteDatabaseError } from "./database";
 import { getEventLog } from "./event-log";
 import { getStoragePort, hasStoragePort } from "./port";
 import type { SessionEventType } from "./event-types";
@@ -18,8 +17,7 @@ import { reportPersistFailure } from "./persist-failure";
 import {
   domainReadMany,
   domainReadOne,
-  shouldFallbackToLegacy,
-  writeShouldFallBackToLegacy,
+  reportWriteNotAccepted,
 } from "./domain-store";
 
 /** `attachments` 表名（P5 第 2 段：外置附件预热也走端口） */
@@ -80,14 +78,6 @@ export interface MessageRow {
   retrieved_sources: string | null;
 }
 
-export interface ToolCallRow {
-  id: string;
-  message_id: string;
-  tool: string;
-  args: string;
-  result: string | null;
-  status: string;
-}
 
 function rowToMessage(row: MessageRow, toolCalls: ToolCall[], attachments?: MessageAttachment[]): Message {
   return {
@@ -105,85 +95,9 @@ function rowToMessage(row: MessageRow, toolCalls: ToolCall[], attachments?: Mess
   };
 }
 
-function rowToToolCall(row: ToolCallRow): ToolCall {
-  return {
-    id: row.id,
-    tool: row.tool,
-    args: JSON.parse(row.args),
-    result: row.result ?? undefined,
-    status: row.status as ToolCall["status"],
-  };
-}
 
-function rowToToolCallFromAny(tr: any[]): ToolCall {
-  let args: Record<string, unknown> = {};
-  try {
-    args = JSON.parse(tr[3] as string);
-  } catch {
-    args = {};
-  }
-  let metadata: Record<string, any> | undefined;
-  try {
-    if (tr[6]) metadata = JSON.parse(tr[6] as string);
-  } catch { /* non-fatal */ }
-  return {
-    id: tr[0] as string,
-    tool: tr[2] as string,
-    args,
-    result: (tr[4] as string | null) ?? undefined,
-    status: (tr[5] as string) as ToolCall["status"],
-    ...(metadata ? { metadata } : {}),
-  };
-}
 
-function loadToolCallsForMessage(db: any, messageId: string): ToolCall[] {
-  const toolResult = db.exec(
-    "SELECT * FROM tool_calls WHERE message_id = ? ORDER BY rowid ASC",
-    [messageId]
-  );
-  return toolResult.length > 0 ? toolResult[0].values.map(rowToToolCallFromAny) : [];
-}
 
-/** Load attachments associated with a specific message (by message_id) */
-function loadAttachmentsForMessage(db: any, messageId: string): MessageAttachment[] {
-  try {
-    const result = db.exec(
-      "SELECT id, name, type, path, content, preview, sandbox_path, mime_type, size FROM attachments WHERE message_id = ? ORDER BY added_at ASC",
-      [messageId]
-    );
-    if (result.length === 0) return [];
-    return result[0].values.map((row: any[]) => ({
-      id: row[0] as string,
-      name: row[1] as string,
-      type: row[2] as "file" | "image" | "code" | "url",
-      path: row[3] as string | undefined,
-      // P6 第 3 段：**外置附件在这里不再把正文搬进渲染进程**。
-      //
-      // 列里存的是标记 `file:<路径>`；正文在文件里，按需读取（`getAttachmentContent`）。
-      // 原来这里直接把标记字符串当 content 返回 —— 那是把 'file:C:\...' 当成正文交给上层
-      // （气泡会显示一个路径串，而 `isExternalContent` 的判断才是正确用法）。
-      // 现在：命中缓存就返回正文（字符串共享，不额外占内存）；未命中返回 undefined 并**补一次预取**
-      // —— 正是 `getAttachmentContent` 一直以来的既有约定，所以调用方无感。
-      content: (() => {
-        const raw = row[4] as string | undefined;
-        if (!raw) return undefined;
-        if (!isExternalContent(raw)) return raw;
-        const extPath = raw.slice("file:".length);
-        const cached = getCachedExternalContent(extPath);
-        if (cached !== undefined) return cached;
-        void warmExternalContent(extPath);
-        return undefined;
-      })(),
-      preview: row[5] as string | undefined,
-      sandboxPath: row[6] as string | undefined,
-      mimeType: row[7] as string | undefined,
-      size: row[8] as number | undefined,
-    }));
-  } catch (e) {
-    console.warn("[loadAttachmentsForMessage] Failed:", e);
-    return [];
-  }
-}
 
 /**
  * 有界裁剪 SQLite 索引 —— **只有确实已在 JSONL 里持久化的消息才允许删**（第 78 波）。
@@ -222,120 +136,62 @@ export async function trimIndexedMessages(
    * 注意**不动全文索引**：被裁掉的消息在日志里还在、也仍然可搜（`fts.rebuild` 的
    * `keep_ids` 就是为这件事留的）。
    */
-  if (!shouldFallbackToLegacy()) {
-    const port = rustMessagePort();
-    if (!port?.messages) return out;
+const port = rustMessagePort();
+if (!port?.messages) return out;
 
-    const { durableMessageIds, flushSessionLogWrites } = await import("./session-jsonl");
-    await flushSessionLogWrites();
+const { durableMessageIds, flushSessionLogWrites } = await import("./session-jsonl");
+await flushSessionLogWrites();
 
-    const sessionRows = domainReadMany<Record<string, unknown>>("sessions", (r) => r) ?? [];
-    for (const row of sessionRows) {
-      const sessionId = String(row.id ?? "");
-      if (!sessionId) continue;
-      try {
-        port.messages.ensureLoaded(sessionId);
-        if (!port.messages.isLoaded(sessionId) || port.messages.isTruncated()) {
-          out.skippedSessions++;
-          continue;
-        }
-        const rows = port.messages.list(sessionId);
-        const visible = rows.filter((r) => !r.hidden);
-        if (visible.length <= keepPerSession) continue;
-
-        const durable = await durableMessageIds(sessionId);
-        if (durable.size === 0) {
-          out.skippedSessions++; // 老会话尚未回填 → 一律不动
-          continue;
-        }
-
-        // 与旧 SQL 的 `ORDER BY timestamp DESC LIMIT -1 OFFSET ?` 等价：保留最新 N 条
-        const sorted = [...visible].sort((a, b) => Number(b.timestamp) - Number(a.timestamp));
-        const candidates = sorted.slice(keepPerSession).map((r) => r.id);
-        if (candidates.length === 0) continue;
-
-        const attachmentRows =
-          domainReadMany<Record<string, unknown>>(ATTACHMENT_TABLE, (r) => r, { session_id: sessionId }) ?? [];
-        const withAttachments = new Set(
-          attachmentRows.map((r) => String(r.message_id ?? "")).filter((x) => x.length > 0),
-        );
-
-        const deletable = candidates.filter((id) => durable.has(id) && !withAttachments.has(id));
-        if (deletable.length === 0) {
-          out.skippedSessions++;
-          continue;
-        }
-        void port.data
-          .execute("messages.delete", { ids: deletable })
-          .catch((e) => reportPersistFailure("message.trimIndexedMessages", e, "索引裁剪的删除未落到查询索引"));
-        port.applyMessageDelete?.(sessionId, deletable);
-        out.deletedMessages += deletable.length;
-        console.log(
-          `[Index] 会话 ${sessionId} 裁剪索引 ${deletable.length} 条（rust；均在 JSONL 中；附件消息已跳过）`,
-        );
-      } catch (e) {
-        console.warn(`[Index] 会话 ${sessionId} 裁剪失败（跳过）:`, e);
-        out.skippedSessions++;
-      }
-    }
-    return out;
-  }
-
-  const db = getDatabase();
-
-  let sessionIds: string[] = [];
+const sessionRows = domainReadMany<Record<string, unknown>>("sessions", (r) => r) ?? [];
+for (const row of sessionRows) {
+  const sessionId = String(row.id ?? "");
+  if (!sessionId) continue;
   try {
-    const rows = db.exec("SELECT DISTINCT session_id FROM messages");
-    sessionIds = rows?.[0]?.values?.map((r) => String(r[0])) ?? [];
-  } catch {
-    return out;
-  }
-
-  const { durableMessageIds, flushSessionLogWrites } = await import("./session-jsonl");
-  // 先把在途的追加写等齐：耐久性检查必须看到最新日志，否则会"该裁的没裁"或误判
-  await flushSessionLogWrites();
-
-  for (const sessionId of sessionIds) {
-    try {
-      const countRows = db.exec("SELECT count(*) FROM messages WHERE session_id = ?", [sessionId]);
-      const total = Number(countRows?.[0]?.values?.[0]?.[0] ?? 0);
-      if (total <= keepPerSession) continue;
-
-      const durable = await durableMessageIds(sessionId);
-      if (durable.size === 0) {
-        out.skippedSessions++; // 老会话尚未回填 → 一律不动
-        continue;
-      }
-
-      const candidates = db.exec(
-        "SELECT id FROM messages WHERE session_id = ? AND hidden = 0 ORDER BY timestamp DESC LIMIT -1 OFFSET ?",
-        [sessionId, keepPerSession],
-      );
-      const candidateIds = candidates?.[0]?.values?.map((r) => String(r[0])) ?? [];
-      if (candidateIds.length === 0) continue;
-
-      const withAttachments = new Set(
-        db.exec(
-          "SELECT DISTINCT message_id FROM attachments WHERE session_id = ? AND message_id IS NOT NULL",
-          [sessionId],
-        )?.[0]?.values?.map((r) => String(r[0])) ?? [],
-      );
-      const deletable = candidateIds.filter((id) => durable.has(id) && !withAttachments.has(id));
-      if (deletable.length === 0) {
-        out.skippedSessions++;
-        continue;
-      }
-      for (const id of deletable) {
-        db.run("DELETE FROM messages WHERE id = ?", [id]); // tool_calls 由外键级联删除
-      }
-      out.deletedMessages += deletable.length;
-      console.log(`[Index] 会话 ${sessionId} 裁剪索引 ${deletable.length} 条（均在 JSONL 中；附件消息已跳过）`);
-    } catch (e) {
-      console.warn(`[Index] 会话 ${sessionId} 裁剪失败（跳过）:`, e);
+    port.messages.ensureLoaded(sessionId);
+    if (!port.messages.isLoaded(sessionId) || port.messages.isTruncated()) {
       out.skippedSessions++;
+      continue;
     }
+    const rows = port.messages.list(sessionId);
+    const visible = rows.filter((r) => !r.hidden);
+    if (visible.length <= keepPerSession) continue;
+
+    const durable = await durableMessageIds(sessionId);
+    if (durable.size === 0) {
+      out.skippedSessions++; // 老会话尚未回填 → 一律不动
+      continue;
+    }
+
+    // 与旧 SQL 的 `ORDER BY timestamp DESC LIMIT -1 OFFSET ?` 等价：保留最新 N 条
+    const sorted = [...visible].sort((a, b) => Number(b.timestamp) - Number(a.timestamp));
+    const candidates = sorted.slice(keepPerSession).map((r) => r.id);
+    if (candidates.length === 0) continue;
+
+    const attachmentRows =
+      domainReadMany<Record<string, unknown>>(ATTACHMENT_TABLE, (r) => r, { session_id: sessionId }) ?? [];
+    const withAttachments = new Set(
+      attachmentRows.map((r) => String(r.message_id ?? "")).filter((x) => x.length > 0),
+    );
+
+    const deletable = candidates.filter((id) => durable.has(id) && !withAttachments.has(id));
+    if (deletable.length === 0) {
+      out.skippedSessions++;
+      continue;
+    }
+    void port.data
+      .execute("messages.delete", { ids: deletable })
+      .catch((e) => reportPersistFailure("message.trimIndexedMessages", e, "索引裁剪的删除未落到查询索引"));
+    port.applyMessageDelete?.(sessionId, deletable);
+    out.deletedMessages += deletable.length;
+    console.log(
+      `[Index] 会话 ${sessionId} 裁剪索引 ${deletable.length} 条（rust；均在 JSONL 中；附件消息已跳过）`,
+    );
+  } catch (e) {
+    console.warn(`[Index] 会话 ${sessionId} 裁剪失败（跳过）:`, e);
+    out.skippedSessions++;
   }
-  if (out.deletedMessages > 0) persistDatabase();
+}
+return out;
   return out;
 }
 
@@ -509,35 +365,13 @@ function hiddenMessageIds(sessionId: string): Set<string> {
    * 结果一样，但"是否该读旧库"这件事没有被表达出来（那句 `tryGetDatabase()` 看起来
    * 像一次正常的回退尝试）。两态门控把语义写清楚：B 态直接返回本进程的权威集合。
    */
-  if (!shouldFallbackToLegacy()) return out;
-  try {
-    // P5 第 7 段：旧库在 rust 模式下**刻意不存在**，这里不能直接 .exec（会抛 null 解引用）
-    const legacyDbHidden = tryGetDatabase();
-    const rows = legacyDbHidden
-      ? legacyDbHidden.exec("SELECT id FROM messages WHERE session_id = ? AND hidden = 1", [sessionId])
-      : [];
-    return new Set((rows?.[0]?.values ?? []).map((r: any[]) => String(r[0])));
-  } catch {
-    return new Set();
-  }
+  return out;
 }
 
 /** 会话日志的内存镜像（由 hydrateSessionLog 填充） */
 const cachedLogMessages = new Map<string, Awaited<ReturnType<typeof readSessionMessages>>["messages"]>();
 
 /** 第 91 波：索引不可用只提示一次（数据库致命时否则每次读都刷一行） */
-let warnedIndexUnavailable = false;
-function warnIndexUnavailable(e: unknown): void {
-  const fatal = isDatabaseFatal();
-  if (fatal && warnedIndexUnavailable) return;
-  warnedIndexUnavailable = true;
-  console.warn(
-    `[MessageStorage] 索引暂不可用（${e instanceof Error ? e.message : String(e)}）—— ` +
-      (fatal
-        ? "数据库模块已崩溃，本次运行内改为**只读权威日志**（会话历史仍完整可读）。"
-        : "本次读取回退到权威日志。"),
-  );
-}
 
 /** 从日志镜像里按 id 取一条消息（索引不可用时的兜底） */
 export function logMirrorMessage(sessionId: string, id: string): Message | null {
@@ -631,55 +465,7 @@ export function listMessagesFromIndex(sessionId: string, limit?: number): Messag
    * 打一行"索引暂不可用"的告警：在 B 态这是**误导性的噪音**（索引没坏，只是镜像
    * 还在加载），而且会让"索引坏了"这个信号在日志里贬值。
    */
-  if (!shouldFallbackToLegacy()) return [];
-  let db: any;
-  try {
-    db = getDatabase();
-  } catch (e) {
-    warnIndexUnavailable(e);
-    return [];
-  }
-  let result: any;
-  try {
-    const limitClause = limit ? `LIMIT ${limit}` : "";
-    result = db.exec(
-      `SELECT id, session_id, role, content, timestamp, model, prompt_tokens, completion_tokens, cost, status, reasoning, generated_files, retrieved_sources, hidden FROM messages WHERE session_id = ? AND hidden = 0 ORDER BY timestamp ASC ${limitClause}`,
-      [sessionId]
-    );
-  } catch (e) {
-    warnIndexUnavailable(e);
-    return [];
-  }
-  if (result.length === 0) return [];
-
-  return result[0].values.map((row: any[]) => {
-    try {
-      const messageRow: MessageRow = {
-        id: row[0] as string,
-        session_id: row[1] as string,
-        role: row[2] as string,
-        content: row[3] as string,
-        timestamp: row[4] as number,
-        model: row[5] as string | null,
-        prompt_tokens: row[6] as number,
-        completion_tokens: row[7] as number,
-        cost: row[8] as number,
-        status: row[9] as string,
-        reasoning: row[10] as string | null,
-        generated_files: row[11] as string | null,
-        retrieved_sources: row[12] as string | null,
-      };
-      const toolCalls = loadToolCallsForMessage(db, messageRow.id);
-      const attachments = loadAttachmentsForMessage(db, messageRow.id);
-      const msg = rowToMessage(messageRow, toolCalls, attachments);
-      // Attach hidden flag for UI to show "compacted" marker
-      (msg as any).hidden = row[13] === 1;
-      return msg;
-    } catch (e) {
-      console.warn("[listMessages] Failed to convert row:", e);
-      return null;
-    }
-  }).filter((m): m is Message => m !== null);
+  return [];
 }
 
 /** List only non-hidden messages (for LLM context building) */
@@ -728,31 +514,7 @@ export function listAllAttachments(limit?: number): Array<MessageAttachment & { 
       })
       .slice(0, effectiveLimit);
   }
-  if (!shouldFallbackToLegacy()) return [];
-const db = getDatabase();
-  const limitClause = `LIMIT ${effectiveLimit}`;
-  try {
-    const result = db.exec(
-      `SELECT id, session_id, message_id, name, type, path, preview, sandbox_path, mime_type, size FROM attachments ORDER BY added_at DESC ${limitClause}`
-    );
-    if (result.length === 0) return [];
-    return result[0].values.map((row: any[]) => ({
-      id: row[0] as string,
-      sessionId: row[1] as string,
-      messageId: row[2] as string,
-      name: row[3] as string,
-      type: row[4] as "file" | "image" | "code" | "url",
-      path: row[5] as string | undefined,
-      content: undefined, // Lazy-loaded via getAttachmentContent
-      preview: row[6] as string | undefined,
-      sandboxPath: row[7] as string | undefined,
-      mimeType: row[8] as string | undefined,
-      size: row[9] as number | undefined,
-    }));
-  } catch (e) {
-    console.warn("[listAllAttachments] Failed:", e);
-    return [];
-  }
+  return [];
 }
 
 /**
@@ -808,15 +570,8 @@ function queueAttachmentExternalization(attachmentId: string, name: string, cont
             reportPersistFailure("message.attachmentExternalize", e, "附件外置标记未写回（正文保留内联，不影响使用）");
           });
       } else {
-        if (!writeShouldFallBackToLegacy("message.attachmentExternalize", "附件未外置（正文保留内联，不影响使用）")) return;
-const db = getDatabase();
-        runGuarded(
-          db,
-          "UPDATE attachments SET content = ?, preview = COALESCE(preview, ?) WHERE id = ?",
-          [marker, preview, attachmentId],
-          { table: "attachments", op: "externalize", id: attachmentId, from: "externalizeAttachment" },
-        );
-        persistDatabase();
+        reportWriteNotAccepted("message.attachmentExternalize", "附件未外置（正文保留内联，不影响使用）");
+        return;
       }
       await hydrateAttachmentsForSession([{ id: attachmentId, content: marker }]);
     } catch (e) {
@@ -837,7 +592,8 @@ const db = getDatabase();
  */
 function indexFtsForMessageViaPort(sessionId: string, message: Message): boolean {
   const port = rustMessagePort();
-  if (!port || shouldFallbackToLegacy()) return false;
+  // 第 17 轮（L4）：原来的 `|| shouldFallbackToLegacy()` 已删 —— 该判据恒为 false（A 态已不存在）
+  if (!port) return false;
   void port.data
     .execute("fts.upsert", {
       session_id: sessionId,
@@ -853,7 +609,8 @@ function indexFtsForMessageViaPort(sessionId: string, message: Message): boolean
 /** 从**端口侧**全文索引移除若干消息（删除/隐藏后调用，避免留下"命中却打不开"的孤儿行） */
 function removeFtsViaPort(sessionId: string, ids: string[]): void {
   const port = rustMessagePort();
-  if (!port || shouldFallbackToLegacy() || ids.length === 0) return;
+  // 第 17 轮（L4）：同上，`shouldFallbackToLegacy()` 判据已删
+  if (!port || ids.length === 0) return;
   void port.data
     .execute("fts.remove", { session_id: sessionId, ids })
     .catch((e) => reportPersistFailure("message.fts.remove", e, "全文索引里的旧行未清除（搜索可能命中已删除的消息）"));
@@ -886,71 +643,24 @@ export async function rebuildSessionFts(sessionId: string): Promise<{ removed: n
    * 且用 `fts::tokenize` 做中文 bigram 切分）；日志里存在但索引里没有的 id 通过
    * `keep_ids` 传过去，避免被当成孤儿删掉。
    */
-  if (!shouldFallbackToLegacy()) {
-    const port = rustMessagePort();
-    if (!port) return out;
-    const keepIds = (cachedLogMessages.get(sessionId) ?? []).map((m) => m.id);
-    try {
-      const res = (await port.data.execute("fts.rebuild", {
-        session_id: sessionId,
-        keep_ids: keepIds,
-      })) as unknown as { removed?: number; added?: number; refreshed?: number };
-      out.removed = Number(res?.removed ?? 0);
-      out.added = Number(res?.added ?? 0) + Number(res?.refreshed ?? 0);
-      if (out.removed > 0 || out.added > 0) {
-        console.log(
-          `[FTS] 会话 ${sessionId} 索引对齐（rust）：删除孤儿 ${res?.removed ?? 0} 条、补齐 ${res?.added ?? 0} 条、重写 ${res?.refreshed ?? 0} 条`,
-        );
-      }
-    } catch (e) {
-      reportPersistFailure("message.rebuildSessionFts", e, "会话全文索引未对齐（搜索可能漏掉新消息）");
-    }
-    return out;
-  }
-
-  if (!isFts5Available()) return out;
-    if (!shouldFallbackToLegacy()) return out;
-const db = getDatabase();
+  // 端口没接手时的诚真空结果：索引对齐无可作为（返回 {0,0}）
+  const port = rustMessagePort();
+  if (!port) return out;
+  const keepIds = (cachedLogMessages.get(sessionId) ?? []).map((m) => m.id);
   try {
-    const indexIds = new Set(
-      db.exec("SELECT id FROM messages WHERE session_id = ?", [sessionId])?.[0]?.values?.map((r) => String(r[0])) ?? [],
-    );
-    const logRecords = cachedLogMessages.get(sessionId) ?? [];
-    const readableIds = new Set<string>([...indexIds, ...logRecords.map((m) => m.id)]);
-
-    const ftsIds =
-      db.exec("SELECT message_id FROM session_fts WHERE session_id = ?", [sessionId])?.[0]?.values?.map((r) =>
-        String(r[0]),
-      ) ?? [];
-
-    for (const id of ftsIds) {
-      if (readableIds.has(id)) continue;
-      db.run("DELETE FROM session_fts WHERE session_id = ? AND message_id = ?", [sessionId, id]);
-      out.removed++;
-    }
-
-    const alreadyIndexed = new Set(ftsIds);
-    for (const rec of logRecords) {
-      if (alreadyIndexed.has(rec.id)) continue;
-      try {
-        db.run("INSERT INTO session_fts (session_id, message_id, content, role, timestamp) VALUES (?, ?, ?, ?, ?)", [
-          sessionId,
-          rec.id,
-          rec.content,
-          rec.role,
-          rec.timestamp,
-        ]);
-        out.added++;
-      } catch {
-        /* 单条失败跳过 */
-      }
-    }
+    const res = (await port.data.execute("fts.rebuild", {
+      session_id: sessionId,
+      keep_ids: keepIds,
+    })) as unknown as { removed?: number; added?: number; refreshed?: number };
+    out.removed = Number(res?.removed ?? 0);
+    out.added = Number(res?.added ?? 0) + Number(res?.refreshed ?? 0);
     if (out.removed > 0 || out.added > 0) {
-      persistDatabase();
-      console.log(`[FTS] 会话 ${sessionId} 索引对齐：删除孤儿 ${out.removed} 条、补齐 ${out.added} 条`);
+      console.log(
+        `[FTS] 会话 ${sessionId} 索引对齐（rust）：删除孤儿 ${res?.removed ?? 0} 条、补齐 ${res?.added ?? 0} 条、重写 ${res?.refreshed ?? 0} 条`,
+      );
     }
   } catch (e) {
-    console.warn(`[FTS] 会话 ${sessionId} 索引对齐失败（跳过）:`, e);
+    reportPersistFailure("message.rebuildSessionFts", e, "会话全文索引未对齐（搜索可能漏掉新消息）");
   }
   return out;
 }
@@ -980,25 +690,10 @@ export function getAttachmentContent(id: string): string | undefined {
    */
   const cachedContent = attachmentContentCache.get(id);
   if (cachedContent !== undefined) return resolveAttachmentText(cachedContent);
-  if (!shouldFallbackToLegacy()) {
-    warmAttachmentContent(id);
-    console.warn(`[getAttachmentContent] 附件 ${id} 正文尚未预热，已触发预取（请重试一次）`);
-    return undefined;
-  }
-const db = getDatabase();
-  try {
-    const result = db.exec(
-      `SELECT content FROM attachments WHERE id = ?`,
-      [id]
-    );
-    if (result.length === 0 || result[0].values.length === 0) return undefined;
-    const content = result[0].values[0][0];
-    if (!content) return undefined;
-    return resolveAttachmentText(content as string);
-  } catch (e) {
-    console.warn("[getAttachmentContent] Failed:", e);
-    return undefined;
-  }
+  // 端口没接手：正文读不到 —— 如实说“尚未预热”并触发一次预取（调用方按既有约定重试）
+  warmAttachmentContent(id);
+  console.warn(`[getAttachmentContent] 附件 ${id} 正文尚未预热，已触发预取（请重试一次）`);
+  return undefined;
 }
 
 /**
@@ -1101,68 +796,7 @@ export function getMessage(id: string): Message | null {
    * 而不是"去旧库再找找"。旧库在 rust 模式下刻意不存在，原来这里会抛一次
    * （被下面 catch 住并打告警）—— 告警在 B 态是误导，且真正的答案是"没有"。
    */
-  if (!shouldFallbackToLegacy()) return null;
-
-  let db: any;
-  try {
-    db = getDatabase();
-  } catch (e) {
-    // 旧库不可用（致命闩锁 / 从未初始化）不能直接抛：下面还有日志镜像那条兜底
-    warnIndexUnavailable(e);
-    db = null;
-  }
-  const result = db
-    ? db.exec("SELECT id, session_id, role, content, timestamp, model, prompt_tokens, completion_tokens, cost, status, reasoning, generated_files, retrieved_sources FROM messages WHERE id = ?", [id])
-    : [];
-  if (result.length === 0 || result[0].values.length === 0) {
-
-    // 第 79 波审计修正：索引被有界裁剪后，这个 id 可能只存在于权威日志里
-    // （全文搜索命中、跨会话引用、fork 的按 id 读取都会走到这里）。
-    // 回退到已 hydrate 的日志镜像，避免"搜索得到、点开却没有"的破图。
-    for (const records of cachedLogMessages.values()) {
-      const hit = records.find((m) => m.id === id);
-      if (hit) {
-        const calls = (hit as any).toolCalls as ToolCall[] | undefined;
-        if (calls?.length) cacheToolCalls(id, calls); // 日志是权威，读到就顺手缓存
-        return {
-          id: hit.id,
-          role: hit.role as Message["role"],
-          content: hit.content,
-          timestamp: hit.timestamp,
-          ...(hit.reasoning ? { reasoning: hit.reasoning } : {}),
-          ...(hit.model ? { model: hit.model } : {}),
-          ...((hit as any).toolCalls ? { toolCalls: (hit as any).toolCalls } : {}),
-        } as Message;
-      }
-    }
-    return null;
-  }
-
-  const row = result[0].values[0];
-  const messageRow: MessageRow = {
-    id: row[0] as string,
-    session_id: row[1] as string,
-    role: row[2] as string,
-    content: row[3] as string,
-    timestamp: row[4] as number,
-    model: row[5] as string | null,
-    prompt_tokens: row[6] as number,
-    completion_tokens: row[7] as number,
-    cost: row[8] as number,
-    status: row[9] as string,
-    reasoning: row[10] as string | null,
-    generated_files: row[11] as string | null,
-    retrieved_sources: row[12] as string | null,
-  };
-
-  const toolCalls = loadToolCallsForMessage(db, id);
-  /**
-   * 旧库这份读到了就缓存起来 —— 两条路径（镜像 / 旧库）因此收敛成"同一个缓存"，
-   * 上层调用方无论走哪条都能同步拿到工具调用。
-   */
-  if (toolCalls.length) cacheToolCalls(id, toolCalls);
-  const attachments = loadAttachmentsForMessage(db, id);
-  return rowToMessage(messageRow, toolCalls, attachments);
+  return null;
 }
 
 /**
@@ -1653,158 +1287,60 @@ function writeMessageIndex(message: Message, sessionId: string): void {
 
   // 迁移期分流：端口是 rust → 索引写走 Rust（**单事务**：主行 + JSON 列 + tool_calls 整体替换）
   if (writeIndexViaRust(message, sessionId, "create")) return;
-    if (!writeShouldFallBackToLegacy("message.writeMessageIndex", "消息索引未写入")) return;
-const db = getDatabase();
-  // Check if message already exists
-  const existing = db.exec("SELECT id FROM messages WHERE id = ?", [message.id]);
-  if (existing.length > 0 && existing[0].values.length > 0) {
-    // Update existing message
-    updateMessage(message.id, {
-      content: message.content,
-      reasoning: message.reasoning,
-      model: message.model,
-      status: message.status,
-      toolCalls: message.toolCalls,
-      generatedFiles: message.generatedFiles,
-    });
-    return;
-  }
-
-  db.run(
-    "INSERT INTO messages (id, session_id, role, content, reasoning, timestamp, model, prompt_tokens, completion_tokens, cost, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-    [
-      message.id,
-      sessionId,
-      message.role,
-      message.content,
-      message.reasoning ?? null,
-      message.timestamp,
-      message.model ?? null,
-      0,
-      0,
-      0,
-      message.status ?? "done",
-    ]
-  );
-
-  // Update generated_files separately to avoid INSERT failure if column missing
-  if (message.generatedFiles && message.generatedFiles.length > 0) {
-    try {
-      runGuarded(db, "UPDATE messages SET generated_files = ? WHERE id = ?", [JSON.stringify(message.generatedFiles), message.id],
-        { table: "messages", op: "set-generated-files", id: message.id, from: "createMessage" });
-    } catch (e) {
-      console.warn("[createMessage] generated_files column may not exist:", e);
-    }
-  }
-
-  // Persist retrieved_sources (auto-retrieved knowledge citations)
-  if (message.retrievedSources && message.retrievedSources.length > 0) {
-    try {
-      runGuarded(db, "UPDATE messages SET retrieved_sources = ? WHERE id = ?", [JSON.stringify(message.retrievedSources), message.id],
-        { table: "messages", op: "set-retrieved-sources", id: message.id, from: "createMessage" });
-    } catch (e) {
-      console.warn("[createMessage] retrieved_sources column may not exist:", e);
-    }
-  }
-
-  if (message.toolCalls) {
-    for (const tc of message.toolCalls) {
-      db.run(
-        "INSERT INTO tool_calls (id, message_id, tool, args, result, status, metadata) VALUES (?, ?, ?, ?, ?, ?, ?)",
-        [tc.id, message.id, tc.tool, JSON.stringify(tc.args), tc.result ?? null, tc.status, tc.metadata ? JSON.stringify(tc.metadata) : null]
-      );
-    }
-  }
-
-  // Persist attachments associated with this message
-  if (message.attachments && message.attachments.length > 0) {
-    for (const att of message.attachments) {
-      try {
-        // 第 80 波：大附件内容外置到 <appData>/attachments/，库里只留 file:<路径> 标记 + 预览。
-        // 小内容（图片 data URL、短文本）保持内联 —— 常见场景行为不变。
-        const stored = externalizeIfLargeSync(att);
-        db.run(
-          "INSERT OR REPLACE INTO attachments (id, session_id, message_id, name, type, path, content, preview, sandbox_path, mime_type, size, added_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-          [
-            att.id,
-            sessionId,
-            message.id,
-            att.name,
-            att.type,
-            (att as any).path ?? null,
-            stored.content,
-            stored.preview,
-            att.sandboxPath ?? null,
-            att.mimeType ?? null,
-            att.size ?? null,
-            Date.now(),
-          ]
-        );
-      } catch (e) {
-        console.warn("[createMessage] Failed to save attachment:", e);
-      }
-    }
+  if (!ftsViaPort) {
+    // 端口没接手：查询索引这一步没有落地，如实上报（旧库那条回退路径已退役）
+    reportWriteNotAccepted("message.writeMessageIndex", "消息索引未写入");
   }
   // ========== P0-1: Event Sourcing dual-write ==========
   // Append events to the event log alongside the CRUD write.
   // This enables gradual migration: buildMessages() can read from
   // either the old CRUD or the new event projection.
-  try {
-    const eventLog = getEventLog();
-    if (message.role === "user") {
-      eventLog.append(sessionId, "user_message", {
+  //
+  // 第 17 轮（L4）：这里原来包在 `try { … } catch (eventErr) { … }` 里（catch 只打一行告警）。
+  // A 态（旧库回退）删除后，块内只剩同步的 `getEventLog()` 调用，没有可 catch 的失败路径，
+  // 所以改成带说明的裸块 —— **事件日志双写本身一个字节都没动**（它才是事件溯源的写入口）。
+  {
+  const eventLog = getEventLog();
+  if (message.role === "user") {
+    eventLog.append(sessionId, "user_message", {
+      messageId: message.id,
+      content: message.content,
+    });
+  } else if (message.role === "assistant") {
+    if (message.content) {
+      eventLog.append(sessionId, "assistant_text", {
         messageId: message.id,
         content: message.content,
+        model: message.model,
       });
-    } else if (message.role === "assistant") {
-      if (message.content) {
-        eventLog.append(sessionId, "assistant_text", {
+    }
+    if (message.toolCalls) {
+      for (const tc of message.toolCalls) {
+        eventLog.append(sessionId, "tool_call", {
+          toolCallId: tc.id,
           messageId: message.id,
-          content: message.content,
-          model: message.model,
+          tool: tc.tool,
+          args: tc.args,
+          status: tc.status,
         });
-      }
-      if (message.toolCalls) {
-        for (const tc of message.toolCalls) {
-          eventLog.append(sessionId, "tool_call", {
+        if (tc.result) {
+          eventLog.append(sessionId, "tool_result", {
             toolCallId: tc.id,
             messageId: message.id,
-            tool: tc.tool,
-            args: tc.args,
-            status: tc.status,
+            result: tc.result,
+            status: "completed",
           });
-          if (tc.result) {
-            eventLog.append(sessionId, "tool_result", {
-              toolCallId: tc.id,
-              messageId: message.id,
-              result: tc.result,
-              status: "completed",
-            });
-          }
         }
       }
     }
-
-    // 旧库全文索引（只有 A 态会走到这里：端口在时上面已经 `fts.upsert` 过了）
-    if (!ftsViaPort && isFts5Available() && shouldFallbackToLegacy()) {
-      try {
-        const db = getDatabase();
-        db.run(
-          "INSERT INTO session_fts (session_id, message_id, content, role, timestamp) VALUES (?, ?, ?, ?, ?)",
-          [sessionId, message.id, message.content, message.role, message.timestamp],
-        );
-      } catch (ftsErr) {
-        // FTS5 table might not exist in older databases — non-critical
-        console.warn("[createMessage] FTS indexing failed (non-critical):", ftsErr);
-      }
-    }
-  } catch (eventErr) {
-    console.warn("[createMessage] Event log dual-write failed (non-critical):", eventErr);
   }
 
-  persistDatabase();
+  }
+
   // 第 78 波：**权威日志是追加式 JSONL**（对齐 DSH 的 session-persistence-jsonl），
   // SQLite 退化为"可重建的查询索引"。这条追加已由 createMessage 在**索引之前**完成（第 91 波）。
+  // 第 17 轮（L4）：原来这里还有一句 `persistDatabase()`（旧库整库导出）—— 随 A 态一起删除，
+  // 它在新架构下既无对象（旧库不加载）也无意义（端口写入是单事务落地的）。
 }
 
 /**
@@ -1870,61 +1406,8 @@ function writeMessageUpdateIndex(id: string, update: Partial<Message>): void {
   const base = isDatabaseFatal() ? null : safeGetMessage(id);
   const sid = base ? currentSessionIdForMessage(id) : null;
   if (base && sid && writeIndexViaRust({ ...base, ...update, id } as Message, sid, "update")) return;
-    if (!writeShouldFallBackToLegacy("message.writeMessageUpdateIndex", "消息索引未更新")) return;
-const db = getDatabase();
-  const fields: string[] = [];
-  const values: (string | number | null)[] = [];
-
-  if (update.content !== undefined) { fields.push("content = ?"); values.push(update.content); }
-  if (update.reasoning !== undefined) { fields.push("reasoning = ?"); values.push(update.reasoning); }
-  if (update.model !== undefined) { fields.push("model = ?"); values.push(update.model ?? null); }
-  if (update.status !== undefined) { fields.push("status = ?"); values.push(update.status ?? "done"); }
-
-  if (fields.length > 0) {
-    values.push(id);
-    try {
-      // 第 83 波：这条 UPDATE 曾经**静默**影响 0 行 —— 后台执行路径只换内存 id 不建行，
-      // 于是第 2 轮之后的正文/工具结果全部无声丢失（真机表现：会话原地打转、父会话干等）。
-      // 现在走 runGuarded：写不到行就记账并告警一次，让"静默失败"变成"响"。
-      runGuarded(db, `UPDATE messages SET ${fields.join(", ")} WHERE id = ?`, values, {
-        table: "messages", op: "update", id, from: "updateMessage",
-      });
-    } catch (e) {
-      console.error("[updateMessage] Failed to update:", e);
-    }
-  }
-
-  // Handle generated_files separately to avoid failure if column missing
-  if (update.generatedFiles !== undefined) {
-    try {
-      runGuarded(db, "UPDATE messages SET generated_files = ? WHERE id = ?", [update.generatedFiles ? JSON.stringify(update.generatedFiles) : null, id],
-        { table: "messages", op: "set-generated-files", id, from: "updateMessage" });
-    } catch (e) {
-      console.warn("[updateMessage] generated_files column may not exist:", e);
-    }
-  }
-
-  // Handle retrieved_sources separately to avoid failure if column missing
-  if (update.retrievedSources !== undefined) {
-    try {
-      runGuarded(db, "UPDATE messages SET retrieved_sources = ? WHERE id = ?", [update.retrievedSources ? JSON.stringify(update.retrievedSources) : null, id],
-        { table: "messages", op: "set-retrieved-sources", id, from: "updateMessage" });
-    } catch (e) {
-      console.warn("[updateMessage] retrieved_sources column may not exist:", e);
-    }
-  }
-
-  if (update.toolCalls !== undefined) {
-    db.run("DELETE FROM tool_calls WHERE message_id = ?", [id]);
-    for (const tc of update.toolCalls) {
-      db.run(
-        "INSERT INTO tool_calls (id, message_id, tool, args, result, status, metadata) VALUES (?, ?, ?, ?, ?, ?, ?)",
-        [tc.id, id, tc.tool, JSON.stringify(tc.args), tc.result ?? null, tc.status, tc.metadata ? JSON.stringify(tc.metadata) : null]
-      );
-    }
-  }
-  persistDatabase();
-  // 更新也进追加日志（同 id 后写者胜）—— 该追加已由 updateMessage 在**索引之前**完成（第 91 波）
+  // 端口没接手：索引这一步没有落地，如实上报（旧库那条回退路径已随 L4 退役）
+  reportWriteNotAccepted("message.writeMessageUpdateIndex", "消息索引未更新");
 }
 
 /**
@@ -2037,13 +1520,8 @@ export function addToolCall(messageId: string, toolCall: ToolCall): void {
     return;
   }
 
-    if (!writeShouldFallBackToLegacy("message.addToolCall", "工具调用未写入索引")) return;
-const db = getDatabase();
-  db.run(
-    "INSERT OR REPLACE INTO tool_calls (id, message_id, tool, args, result, status, metadata) VALUES (?, ?, ?, ?, ?, ?, ?)",
-    [toolCall.id, messageId, toolCall.tool, JSON.stringify(toolCall.args), toolCall.result ?? null, toolCall.status, toolCall.metadata ? JSON.stringify(toolCall.metadata) : null]
-  );
-  persistDatabase();
+    reportWriteNotAccepted("message.addToolCall", "工具调用未写入索引");
+    return;
 }
 
 /**
@@ -2066,31 +1544,8 @@ export function updateToolCall(messageId: string, toolId: string, update: Partia
     return;
   }
 
-    if (!writeShouldFallBackToLegacy("message.updateToolCall", "工具调用结果未写入索引")) return;
-const db = getDatabase();
-  const fields: string[] = [];
-  const values: (string | number | null)[] = [];
-
-  if (update.args !== undefined) { fields.push("args = ?"); values.push(JSON.stringify(update.args)); }
-  if (update.result !== undefined) { fields.push("result = ?"); values.push(update.result ?? null); }
-  if (update.status !== undefined) { fields.push("status = ?"); values.push(update.status); }
-  if (update.metadata !== undefined) { fields.push("metadata = ?"); values.push(update.metadata ? JSON.stringify(update.metadata) : null); }
-
-  if (fields.length > 0) {
-    values.push(toolId);
-    /**
-     * 第 83 波：工具结果写不到行 = **模型看不到自己这次调用的结果** ——
-     * 那正是"反复重发同一个工具调用"的直接诱因（用户现场：同一个脚本跑几十遍）。
-     * 所以这里必须能被发现（影响 0 行 → 记账 + 告警）。
-     */
-    runGuarded(
-      db,
-      `UPDATE tool_calls SET ${fields.join(", ")} WHERE id = ? AND message_id = ?`,
-      [...values, messageId],
-      { table: "tool_calls", op: "update", id: toolId, from: "updateToolCall" },
-    );
-  }
-  persistDatabase();
+    reportWriteNotAccepted("message.updateToolCall", "工具调用结果未写入索引");
+    return;
 }
 
 export function deleteMessage(id: string): void {
@@ -2116,11 +1571,8 @@ export function deleteMessage(id: string): void {
     }
     return;
   }
-  if (!writeShouldFallBackToLegacy("message.deleteMessage", "消息未删除")) return;
-  const db = getDatabase();
-  db.run("DELETE FROM messages WHERE id = ?", [id]);
-  persistDatabase();
-  if (sessionId) void appendMessageTombstone(sessionId, id);
+  reportWriteNotAccepted("message.deleteMessage", "消息未删除");
+  return;
 }
 
 /** 查一条消息属于哪个会话（删除前调用） */
@@ -2141,10 +1593,6 @@ function currentSessionIdForMessage(messageId: string): string | null {
   const fromMirror = rustMessagePort()?.messages?.byIdLookup(messageId);
   if (fromMirror?.session_id) return String(fromMirror.session_id);
   try {
-    const legacyDbSess = tryGetDatabase();
-  const rows = legacyDbSess ? legacyDbSess.exec("SELECT session_id FROM messages WHERE id = ?", [messageId]) : [];
-    const value = rows?.[0]?.values?.[0]?.[0];
-    if (value) return String(value);
   } catch {
     /* 索引不可用 → 走日志镜像兜底（第 91 波） */
   }
@@ -2209,29 +1657,8 @@ export function deleteMessagesBefore(sessionId: string, timestamp: number): numb
     });
     return 0;
   }
-  if (!writeShouldFallBackToLegacy("message.deleteMessagesBefore", "旧消息未删除")) return 0;
-  const db = getDatabase();
-  // First get the IDs of messages to delete (so we can clean up tool_calls)
-  const result = db.exec(
-    "SELECT id FROM messages WHERE session_id = ? AND timestamp < ?",
-    [sessionId, timestamp]
-  );
-  if (result.length === 0) return 0;
-  const ids = result[0].values.map((row: any[]) => row[0] as string);
-
-  // Delete tool_calls for those messages
-  for (const id of ids) {
-    db.run("DELETE FROM tool_calls WHERE message_id = ?", [id]);
-  }
-  // Delete the messages
-  db.run(
-    "DELETE FROM messages WHERE session_id = ? AND timestamp < ?",
-    [sessionId, timestamp]
-  );
-  persistDatabase();
-  // 真删除必须留墓碑（否则下次从权威日志重建会复活）
-  appendTombstonesFor(sessionId, ids);
-  return ids.length;
+  reportWriteNotAccepted("message.deleteMessagesBefore", "旧消息未删除");
+  return 0;
 }
 
 /**
@@ -2274,15 +1701,7 @@ export function deleteMessagesByIds(ids: string[]): number {
     for (const [sid, sids] of bySession) {
       for (const id of sids) rememberHidden(sid, id);
     }
-  } else if (shouldFallbackToLegacy()) {
-    // A 态（端口未注册 / wasm 回滚）：旧库是唯一数据源，维持原实现
-    const db = getDatabase();
-    for (const id of ids) {
-      // 墓碑（hide）路径：0 行 = 这条消息根本不在索引里 —— 正是"假压缩"事故的观测点
-      runGuarded(db, "UPDATE messages SET hidden = 1 WHERE id = ?", [id],
-        { table: "messages", op: "hide", id, from: "deleteMessagesByIds" });
-    }
-    persistDatabase();
+    // A 态已退役：渲染侧只剩端口这条路 —— 隐藏没落地由下面的墓碑与上报如实表达
   } else {
     /**
      * B 态且没有 `messages` 能力（测试双/能力缺失）：**不写旧库**。
@@ -2341,27 +1760,6 @@ function sessionIdsForMessages(ids: string[]): Map<string, string[]> {
    * 也**不许**退回旧库：查不到归属就返回空 Map（调用方据此跳过墓碑），
    * 让"没写墓碑"成为一个可见的、可上报的事实，而不是悄悄写进旧库造成读写分裂。
    */
-  if (!shouldFallbackToLegacy()) return out;
-
-  const CHUNK = 200;
-  for (let i = 0; i < ids.length; i += CHUNK) {
-    const chunk = ids.slice(i, i + CHUNK);
-    try {
-      const marks = chunk.map(() => "?").join(",");
-      const legacyDb1316 = tryGetDatabase();
-      const rows = legacyDb1316 ? legacyDb1316.exec(`SELECT id, session_id FROM messages WHERE id IN (${marks})`, chunk) : [];
-      for (const row of rows?.[0]?.values ?? []) {
-        const id = String(row[0]);
-        const sid = String(row[1]);
-        if (!sid) continue;
-        const list = out.get(sid);
-        if (list) list.push(id);
-        else out.set(sid, [id]);
-      }
-    } catch (e) {
-      console.warn("[Storage] 查询消息所属会话失败（跳过墓碑写入）:", e);
-    }
-  }
   return out;
 }
 
@@ -2377,11 +1775,7 @@ function dropFromLogMirror(sessionId: string, ids: string[]): void {
 export function getMessageCount(sessionId: string): number {
   const routed = rustMessageSource(sessionId);
   if (routed?.messages) return routed.messages.count(sessionId);
-    if (!shouldFallbackToLegacy()) return 0;
-const db = getDatabase();
-  const result = db.exec("SELECT COUNT(*) FROM messages WHERE session_id = ?", [sessionId]);
-  if (result.length === 0) return 0;
-  return result[0].values[0][0] as number;
+    return 0;
 }
 
 // ========== P0: Message Feedback (like / dislike) ==========
@@ -2432,27 +1826,8 @@ export function saveFeedback(messageId: string, sessionId: string, feedback: Fee
       });
     return;
   }
-  if (!writeShouldFallBackToLegacy("message.saveFeedback", "反馈未保存")) return;
-    if (!writeShouldFallBackToLegacy("message.saveFeedback", "反馈未保存")) return;
-const db = getDatabase();
-  // Delete existing feedback for this message
-  try {
-    db.run("DELETE FROM message_feedback WHERE message_id = ?", [messageId]);
-  } catch (e) {
-    reportPersistFailure("message.saveFeedback.clearExisting", e, "旧的反馈未清除，可能写入重复反馈");
-  }
-  if (feedback) {
-    const id = `fb-${messageId}`;
-    try {
-      db.run(
-        "INSERT INTO message_feedback (id, message_id, session_id, feedback, timestamp) VALUES (?, ?, ?, ?, ?)",
-        [id, messageId, sessionId, feedback, Date.now()]
-      );
-    } catch (e) {
-      console.warn("[saveFeedback] Failed to insert:", e);
-    }
-  }
-  persistDatabase();
+  reportWriteNotAccepted("message.saveFeedback", "反馈未保存");
+  return;
 }
 
 /**
@@ -2486,17 +1861,7 @@ export function loadFeedback(messageId: string): FeedbackType | null {
     const value = rust?.feedback;
     return value === "like" || value === "dislike" ? value : null;
   }
-  if (!shouldFallbackToLegacy()) return null;
-
-  const db = getDatabase();
-  try {
-    const result = db.exec("SELECT feedback FROM message_feedback WHERE message_id = ?", [messageId]);
-    if (result.length === 0 || result[0].values.length === 0) return null;
-    return result[0].values[0][0] as FeedbackType;
-  } catch (e) {
-    if (!noteDatabaseError(e)) console.warn("[loadFeedback] Failed:", e);
-    return null;
-  }
+  return null;
 }
 
 // ========== P0: Delete Messages After (for inline edit & resend) ==========
@@ -2558,46 +1923,8 @@ export function deleteMessagesAfter(
     return 0;
   }
 
-  if (!writeShouldFallBackToLegacy("message.deleteMessagesAfter", "后续消息未删除")) return 0;
-  const db = getDatabase();
-
-  // Get the timestamp of the target message
-  const tsResult = db.exec(
-    "SELECT timestamp FROM messages WHERE id = ? AND session_id = ?",
-    [messageId, sessionId]
-  );
-  if (tsResult.length === 0 || tsResult[0].values.length === 0) return 0;
-  const targetTimestamp = tsResult[0].values[0][0] as number;
-
-  // Build the query: delete messages after (and optionally including) the target
-  const op = includeSelf ? ">=" : ">";
-  const result = db.exec(
-    `SELECT id FROM messages WHERE session_id = ? AND timestamp ${op} ?`,
-    [sessionId, targetTimestamp]
-  );
-  if (result.length === 0) return 0;
-  const ids = result[0].values.map((row: any[]) => row[0] as string);
-
-  // Delete tool_calls and messages for those IDs
-  for (const id of ids) {
-    db.run("DELETE FROM tool_calls WHERE message_id = ?", [id]);
-    db.run("DELETE FROM message_feedback WHERE message_id = ?", [id]);
-  }
-  db.run(
-    `DELETE FROM messages WHERE session_id = ? AND timestamp ${op} ?`,
-    [sessionId, targetTimestamp]
-  );
-  persistDatabase();
-  /**
-   * 第 83 波（审计修正）：这是**唯一一条删了索引却不写墓碑、不清内存镜像**的删除路径
-   * （其它删除路径都做了 —— 见 `appendTombstonesFor` 的说明）。后果：
-   * 用户"编辑并重发"之后，被删掉的旧回复会在下一次 `listMessages` 合并时
-   * **从权威日志里整批复活**（读路径以日志为准），而函数仍然返回"删了 N 条"。
-   */
-  appendTombstonesFor(sessionId, ids);
-  removeFtsViaPort(sessionId, ids);
-  dropFromLogMirror(sessionId, ids);
-  return ids.length;
+  reportWriteNotAccepted("message.deleteMessagesAfter", "后续消息未删除");
+  return 0;
 }
 
 /**
